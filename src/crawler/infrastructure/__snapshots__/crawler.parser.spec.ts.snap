@@ -1,0 +1,15 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`crawlerParser 스냅샷 title + description 전체 구조가 스냅샷과 일치한다 1`] = `
+{
+  "description": "스냅샷 검증용 설명입니다.",
+  "title": "크롤링 테스트 페이지",
+}
+`;
+
+exports[`crawlerParser 스냅샷 빈 HTML 파싱 결과가 스냅샷과 일치한다 1`] = `
+{
+  "description": "",
+  "title": "",
+}
+`;
