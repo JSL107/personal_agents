@@ -16,8 +16,17 @@ export interface FinishAgentRunInput {
   output?: Record<string, unknown>;
 }
 
+export interface SucceededAgentRunSnapshot {
+  id: number;
+  output: Record<string, unknown> | null;
+  endedAt: Date;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
   recordEvidence(input: { agentRunId: number } & EvidenceInput): Promise<void>;
+  findLatestSucceededRun(input: {
+    agentType: AgentType;
+  }): Promise<SucceededAgentRunSnapshot | null>;
 }

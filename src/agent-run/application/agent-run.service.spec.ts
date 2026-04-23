@@ -8,6 +8,7 @@ describe('AgentRunService', () => {
     begin: jest.fn(),
     finish: jest.fn(),
     recordEvidence: jest.fn(),
+    findLatestSucceededRun: jest.fn(),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;

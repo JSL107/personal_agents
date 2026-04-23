@@ -23,6 +23,7 @@ describe('GenerateDailyPlanUsecase', () => {
 
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
+  let agentRunServiceFindLatest: jest.Mock;
   let listAssignedTasksExecute: jest.Mock;
   let usecase: GenerateDailyPlanUsecase;
 
@@ -32,11 +33,15 @@ describe('GenerateDailyPlanUsecase', () => {
       const execution = await input.run();
       return execution.result;
     });
+    agentRunServiceFindLatest = jest.fn().mockResolvedValue(null);
     listAssignedTasksExecute = jest.fn();
 
     usecase = new GenerateDailyPlanUsecase(
       modelRouter as unknown as ModelRouterUsecase,
-      { execute: agentRunServiceExecute } as unknown as AgentRunService,
+      {
+        execute: agentRunServiceExecute,
+        findLatestSucceededRun: agentRunServiceFindLatest,
+      } as unknown as AgentRunService,
       {
         execute: listAssignedTasksExecute,
       } as unknown as ListAssignedTasksUsecase,
@@ -230,5 +235,98 @@ describe('GenerateDailyPlanUsecase', () => {
     const call = agentRunServiceExecute.mock.calls[0][0];
     expect(call.agentType).toBe(AgentType.PM);
     expect(call.triggerType).toBe('SLACK_COMMAND_TODAY');
+  });
+
+  describe('전일 plan 참조 (옵션 C)', () => {
+    const yesterdayPlan: DailyPlan = {
+      topPriority: '어제의 최우선',
+      morning: ['어제 오전 1'],
+      afternoon: ['어제 오후 1'],
+      blocker: null,
+      estimatedHours: 5,
+      reasoning: 'r',
+    };
+
+    it('직전 PM run 이 있으면 prompt 에 [직전 PM 실행 ...] 섹션 포함 + evidence 에 PRIOR_DAILY_PLAN', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: yesterdayPlan,
+        endedAt: new Date('2026-04-22T05:00:00Z'),
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('[직전 PM 실행');
+      expect(promptArg).toContain('어제의 최우선');
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceType: 'PRIOR_DAILY_PLAN',
+            sourceId: '99',
+          }),
+        ]),
+      );
+      expect(call.inputSnapshot.previousPlanReferenced).toBe(true);
+      expect(call.inputSnapshot.previousPlanAgentRunId).toBe(99);
+    });
+
+    it('직전 PM run 이 없으면 prompt 에 섹션 없음 + evidence 에 PRIOR_DAILY_PLAN 없음', async () => {
+      agentRunServiceFindLatest.mockResolvedValue(null);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 PM 실행');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.previousPlanReferenced).toBe(false);
+      expect(call.inputSnapshot.previousPlanAgentRunId).toBeNull();
+    });
+
+    it('findLatestSucceededRun 이 throw 하면 graceful (prompt/evidence 영향 X)', async () => {
+      agentRunServiceFindLatest.mockRejectedValue(new Error('db down'));
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+      });
+
+      expect(result).toEqual(validPlan);
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 PM 실행');
+    });
+
+    it('이전 output 이 DailyPlan 스키마와 안 맞으면 무시', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 7,
+        output: { not: 'a plan' },
+        endedAt: new Date(),
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 PM 실행');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.previousPlanReferenced).toBe(false);
+    });
   });
 });

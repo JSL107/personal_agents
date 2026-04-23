@@ -5,6 +5,7 @@ import {
   EvidenceInput,
   TriggerType,
 } from '../../../agent-run/domain/agent-run.type';
+import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-run.repository.port';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { AssignedTasks } from '../../../github/domain/github.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -15,6 +16,16 @@ import { DailyPlan, GenerateDailyPlanInput } from '../domain/pm-agent.type';
 import { parseDailyPlan } from '../domain/prompt/daily-plan.parser';
 import { formatGithubTasksAsPromptSection } from '../domain/prompt/github-task-formatter';
 import { PM_SYSTEM_PROMPT } from '../domain/prompt/pm-system.prompt';
+import {
+  coerceToDailyPlan,
+  formatPreviousDailyPlanSection,
+} from '../domain/prompt/previous-plan-formatter';
+
+interface PreviousPlanContext {
+  plan: DailyPlan;
+  endedAt: Date;
+  agentRunId: number;
+}
 
 @Injectable()
 export class GenerateDailyPlanUsecase {
@@ -32,9 +43,11 @@ export class GenerateDailyPlanUsecase {
   }: GenerateDailyPlanInput): Promise<DailyPlan> {
     const userText = tasksText.trim();
 
-    // GitHub 호출은 graceful — 실패해도 사용자 입력만으로 계속 진행한다.
-    // 단 사용자 입력도 비어 있고 GitHub 도 비어 있으면 EMPTY 예외.
-    const githubTasks = await this.fetchGithubTasksOrNull();
+    // 외부 컨텍스트 두 가지 모두 graceful — 실패해도 사용자 입력만으로 계속 진행한다.
+    const [githubTasks, previousPlan] = await Promise.all([
+      this.fetchGithubTasksOrNull(),
+      this.fetchPreviousPlanOrNull(),
+    ]);
     const githubItemCount = githubTasks
       ? githubTasks.issues.length + githubTasks.pullRequests.length
       : 0;
@@ -48,11 +61,16 @@ export class GenerateDailyPlanUsecase {
       });
     }
 
-    const combinedPrompt = this.buildCombinedPrompt({ userText, githubTasks });
+    const combinedPrompt = this.buildCombinedPrompt({
+      userText,
+      githubTasks,
+      previousPlan,
+    });
     const evidence = this.buildEvidence({
       userText,
       slackUserId,
       githubTasks,
+      previousPlan,
     });
 
     return this.agentRunService.execute({
@@ -64,6 +82,8 @@ export class GenerateDailyPlanUsecase {
         githubItemCount,
         githubFetchAttempted: true,
         githubFetchSucceeded: githubTasks !== null,
+        previousPlanReferenced: previousPlan !== null,
+        previousPlanAgentRunId: previousPlan ? previousPlan.agentRunId : null,
       },
       evidence,
       run: async () => {
@@ -96,14 +116,52 @@ export class GenerateDailyPlanUsecase {
     }
   }
 
+  // 직전 PM 실행의 plan 을 조회해 모델에게 "전일 컨텍스트" 로 노출한다.
+  // 조회 실패 / shape 불일치 / 직전 run 없음 모두 graceful (null 반환).
+  private async fetchPreviousPlanOrNull(): Promise<PreviousPlanContext | null> {
+    let snapshot: SucceededAgentRunSnapshot | null;
+    try {
+      snapshot = await this.agentRunService.findLatestSucceededRun({
+        agentType: AgentType.PM,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `이전 PM plan 조회 실패 (전일 컨텍스트 없이 계속 진행): ${message}`,
+      );
+      return null;
+    }
+    if (!snapshot) {
+      return null;
+    }
+    const plan = coerceToDailyPlan(snapshot.output);
+    if (!plan) {
+      this.logger.warn(
+        `이전 AgentRun #${snapshot.id} 의 output 이 DailyPlan 스키마에 안 맞아 무시합니다.`,
+      );
+      return null;
+    }
+    return { plan, endedAt: snapshot.endedAt, agentRunId: snapshot.id };
+  }
+
   private buildCombinedPrompt({
     userText,
     githubTasks,
+    previousPlan,
   }: {
     userText: string;
     githubTasks: AssignedTasks | null;
+    previousPlan: PreviousPlanContext | null;
   }): string {
     const sections: string[] = [];
+    if (previousPlan) {
+      sections.push(
+        formatPreviousDailyPlanSection({
+          plan: previousPlan.plan,
+          endedAt: previousPlan.endedAt,
+        }),
+      );
+    }
     if (userText.length > 0) {
       sections.push(`[사용자 입력]\n${userText}`);
     }
@@ -117,10 +175,12 @@ export class GenerateDailyPlanUsecase {
     userText,
     slackUserId,
     githubTasks,
+    previousPlan,
   }: {
     userText: string;
     slackUserId: string;
     githubTasks: AssignedTasks | null;
+    previousPlan: PreviousPlanContext | null;
   }): EvidenceInput[] {
     const evidence: EvidenceInput[] = [
       {
@@ -136,6 +196,16 @@ export class GenerateDailyPlanUsecase {
         payload: {
           issues: githubTasks.issues,
           pullRequests: githubTasks.pullRequests,
+        },
+      });
+    }
+    if (previousPlan) {
+      evidence.push({
+        sourceType: 'PRIOR_DAILY_PLAN',
+        sourceId: String(previousPlan.agentRunId),
+        payload: {
+          plan: previousPlan.plan as unknown as Record<string, unknown>,
+          endedAt: previousPlan.endedAt.toISOString(),
         },
       });
     }

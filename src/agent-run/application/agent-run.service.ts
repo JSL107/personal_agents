@@ -9,6 +9,7 @@ import {
 import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
+  SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
 
 export interface AgentRunExecutionResult<T> {
@@ -81,5 +82,14 @@ export class AgentRunService {
 
       throw error;
     }
+  }
+
+  // 가장 최근 SUCCEEDED AgentRun 1건 조회 (전일 plan 참조 등 "직전 실행 컨텍스트" 가 필요한 유스케이스용).
+  async findLatestSucceededRun({
+    agentType,
+  }: {
+    agentType: AgentType;
+  }): Promise<SucceededAgentRunSnapshot | null> {
+    return this.repository.findLatestSucceededRun({ agentType });
   }
 }
