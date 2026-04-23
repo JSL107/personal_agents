@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -33,6 +34,7 @@ import { SlackModule } from './slack/slack.module';
     GithubModule,
     PmAgentModule,
     WorkReviewerModule,
+    CodeReviewerModule,
     SlackModule,
     CrawlerModule,
   ],

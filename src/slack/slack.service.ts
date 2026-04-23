@@ -7,6 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
+import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
+import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
 import { DailyPlan } from '../agent/pm/domain/pm-agent.type';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
@@ -25,6 +27,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
+    private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -185,6 +188,53 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
         });
       }
     });
+
+    app.command('/review-pr', async ({ ack, command, respond }) => {
+      const prRef = command.text?.trim() ?? '';
+      if (prRef.length === 0) {
+        await ack({
+          response_type: 'ephemeral',
+          text: '사용법: `/review-pr <PR URL 또는 owner/repo#번호>` (예: `/review-pr https://github.com/foo/bar/pull/34`)',
+        });
+        return;
+      }
+
+      await ack({
+        response_type: 'ephemeral',
+        text: `이대리가 PR ${prRef} 를 리뷰하는 중입니다 (15~40초 소요)...`,
+      });
+
+      try {
+        const review = await this.reviewPullRequestUsecase.execute({
+          prRef,
+          slackUserId: command.user_id,
+        });
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: formatPullRequestReview({ prRef, review }),
+        });
+      } catch (error: unknown) {
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `ReviewPullRequestUsecase 실패: ${rawMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+
+        const userFacingMessage =
+          error instanceof DomainException
+            ? rawMessage
+            : '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `이대리 /review-pr 실패: ${userFacingMessage}`,
+        });
+      }
+    });
   }
 }
 
@@ -245,6 +295,76 @@ export const formatDailyReview = (review: DailyReview): string => {
   }
 
   lines.push(`*한 줄 성과*: ${review.oneLineAchievement}`);
+
+  return lines.join('\n');
+};
+
+const RISK_LEVEL_LABEL: Record<PullRequestReview['riskLevel'], string> = {
+  low: '🟢 LOW',
+  medium: '🟡 MEDIUM',
+  high: '🔴 HIGH',
+};
+
+const APPROVAL_LABEL: Record<
+  PullRequestReview['approvalRecommendation'],
+  string
+> = {
+  approve: '✅ Approve',
+  request_changes: '✋ Request changes',
+  comment: '💬 Comment',
+};
+
+export const formatPullRequestReview = ({
+  prRef,
+  review,
+}: {
+  prRef: string;
+  review: PullRequestReview;
+}): string => {
+  const lines: string[] = [
+    `*PR 리뷰 — ${prRef}*`,
+    `위험도: ${RISK_LEVEL_LABEL[review.riskLevel]} · 권고: ${APPROVAL_LABEL[review.approvalRecommendation]}`,
+    '',
+    '*요약*',
+    review.summary,
+  ];
+
+  if (review.mustFix.length > 0) {
+    lines.push(
+      '',
+      '*Must-Fix*',
+      ...review.mustFix.map((item) => `• ${item}`),
+    );
+  }
+
+  if (review.niceToHave.length > 0) {
+    lines.push(
+      '',
+      '*Nice-to-have*',
+      ...review.niceToHave.map((item) => `• ${item}`),
+    );
+  }
+
+  if (review.missingTests.length > 0) {
+    lines.push(
+      '',
+      '*누락 테스트*',
+      ...review.missingTests.map((item) => `• ${item}`),
+    );
+  }
+
+  if (review.reviewCommentDrafts.length > 0) {
+    lines.push('', '*리뷰 코멘트 초안*');
+    for (const draft of review.reviewCommentDrafts) {
+      const location =
+        draft.file && draft.line
+          ? `\`${draft.file}:${draft.line}\` `
+          : draft.file
+            ? `\`${draft.file}\` `
+            : '';
+      lines.push(`• ${location}${draft.body}`);
+    }
+  }
 
   return lines.join('\n');
 };

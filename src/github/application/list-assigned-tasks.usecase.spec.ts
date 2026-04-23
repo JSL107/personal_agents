@@ -18,6 +18,8 @@ describe('ListAssignedTasksUsecase', () => {
     };
     const client: jest.Mocked<GithubClientPort> = {
       listMyAssignedTasks: jest.fn().mockResolvedValue(fixture),
+      getPullRequest: jest.fn(),
+      getPullRequestDiff: jest.fn(),
     };
     const usecase = new ListAssignedTasksUsecase(client);
 
@@ -32,6 +34,8 @@ describe('ListAssignedTasksUsecase', () => {
       listMyAssignedTasks: jest
         .fn()
         .mockResolvedValue({ issues: [], pullRequests: [] }),
+      getPullRequest: jest.fn(),
+      getPullRequestDiff: jest.fn(),
     };
     const usecase = new ListAssignedTasksUsecase(client);
 

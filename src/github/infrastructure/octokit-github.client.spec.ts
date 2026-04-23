@@ -93,4 +93,156 @@ describe('OctokitGithubClient', () => {
       expect.objectContaining({ per_page: 100 }),
     );
   });
+
+  describe('getPullRequest', () => {
+    const buildPrOctokit = ({
+      changedFilesTotalCount,
+      pages,
+    }: {
+      changedFilesTotalCount: number;
+      pages: Array<{ filename: string }[]>;
+    }): { octokit: Octokit; get: jest.Mock; listFiles: jest.Mock } => {
+      const get = jest.fn().mockResolvedValue({
+        data: {
+          title: 'feat: foo',
+          body: 'body text',
+          html_url: 'https://github.com/foo/bar/pull/34',
+          base: { ref: 'main' },
+          head: { ref: 'feature/foo' },
+          user: { login: 'octocat' },
+          additions: 120,
+          deletions: 30,
+          changed_files: changedFilesTotalCount,
+        },
+      });
+      const listFiles = jest.fn();
+      const iterator = jest.fn(() => ({
+        async *[Symbol.asyncIterator]() {
+          for (const data of pages) {
+            yield { data };
+          }
+        },
+      }));
+      const octokit = {
+        rest: { pulls: { get, listFiles } },
+        paginate: { iterator },
+      } as unknown as Octokit;
+      return { octokit, get, listFiles };
+    };
+
+    it('PR 메타 + changedFiles 를 합쳐 PullRequestDetail 로 반환한다', async () => {
+      const { octokit, get } = buildPrOctokit({
+        changedFilesTotalCount: 2,
+        pages: [[{ filename: 'src/a.ts' }, { filename: 'src/b.ts' }]],
+      });
+      const client = new OctokitGithubClient(octokit);
+
+      const detail = await client.getPullRequest({
+        repo: 'foo/bar',
+        number: 34,
+      });
+
+      expect(detail).toMatchObject({
+        number: 34,
+        title: 'feat: foo',
+        repo: 'foo/bar',
+        baseRef: 'main',
+        headRef: 'feature/foo',
+        authorLogin: 'octocat',
+        changedFiles: ['src/a.ts', 'src/b.ts'],
+        changedFilesTotalCount: 2,
+        changedFilesTruncated: false,
+        additions: 120,
+        deletions: 30,
+      });
+      expect(get).toHaveBeenCalledWith({
+        owner: 'foo',
+        repo: 'bar',
+        pull_number: 34,
+      });
+    });
+
+    it('변경 파일이 CHANGED_FILES_MAX(500) 초과하면 잘리고 truncated=true', async () => {
+      const huge: { filename: string }[] = [];
+      for (let i = 0; i < 600; i++) {
+        huge.push({ filename: `f${i}.ts` });
+      }
+      const { octokit } = buildPrOctokit({
+        changedFilesTotalCount: 600,
+        pages: [huge.slice(0, 100), huge.slice(100, 200), huge.slice(200, 300), huge.slice(300, 400), huge.slice(400, 500), huge.slice(500, 600)],
+      });
+      const client = new OctokitGithubClient(octokit);
+
+      const detail = await client.getPullRequest({
+        repo: 'foo/bar',
+        number: 1,
+      });
+
+      expect(detail.changedFiles).toHaveLength(500);
+      expect(detail.changedFilesTruncated).toBe(true);
+      expect(detail.changedFilesTotalCount).toBe(600);
+    });
+
+    it('잘못된 repo 형식이면 REQUEST_FAILED 예외', async () => {
+      const client = new OctokitGithubClient({} as Octokit);
+
+      await expect(
+        client.getPullRequest({ repo: 'invalid', number: 1 }),
+      ).rejects.toBeInstanceOf(GithubException);
+    });
+  });
+
+  describe('getPullRequestDiff', () => {
+    it('mediaType=diff 로 호출하고 diff 텍스트를 그대로 반환', async () => {
+      const get = jest.fn().mockResolvedValue({
+        data: 'diff --git a/x b/x\n+hello\n',
+      });
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+      });
+
+      expect(result.diff).toContain('diff --git a/x b/x');
+      expect(result.truncated).toBe(false);
+      expect(get).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaType: { format: 'diff' },
+        }),
+      );
+    });
+
+    it('maxBytes 초과 시 잘리고 truncated=true', async () => {
+      const big = 'x'.repeat(200);
+      const get = jest.fn().mockResolvedValue({ data: big });
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+        maxBytes: 50,
+      });
+
+      expect(result.diff).toHaveLength(50);
+      expect(result.truncated).toBe(true);
+      expect(result.bytes).toBe(200);
+    });
+
+    it('Octokit 인스턴스가 null 이면 TOKEN_NOT_CONFIGURED 예외', async () => {
+      const client = new OctokitGithubClient(null);
+
+      await expect(
+        client.getPullRequestDiff({ repo: 'foo/bar', number: 1 }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
+      });
+    });
+  });
 });

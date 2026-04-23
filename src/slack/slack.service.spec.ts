@@ -1,6 +1,11 @@
+import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { DailyPlan } from '../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
-import { formatDailyPlan, formatDailyReview } from './slack.service';
+import {
+  formatDailyPlan,
+  formatDailyReview,
+  formatPullRequestReview,
+} from './slack.service';
 
 describe('formatDailyPlan', () => {
   const base: DailyPlan = {
@@ -111,5 +116,77 @@ describe('formatDailyReview', () => {
   it('nextActions 가 비어있으면 다음 액션 섹션이 생략된다', () => {
     const output = formatDailyReview({ ...base, nextActions: [] });
     expect(output).not.toContain('*다음 액션*');
+  });
+});
+
+describe('formatPullRequestReview', () => {
+  const base: PullRequestReview = {
+    summary: 'GitHub 커넥터 추가',
+    riskLevel: 'medium',
+    mustFix: ['에러 마스킹 필요'],
+    niceToHave: ['주석 보강'],
+    missingTests: ['paginate truncated 케이스'],
+    reviewCommentDrafts: [
+      { file: 'src/x.ts', line: 10, body: '여기 위험' },
+      { body: '전반적으로 OK' },
+    ],
+    approvalRecommendation: 'request_changes',
+  };
+
+  it('PR ref / 위험도 / 권고 / 모든 섹션 출력', () => {
+    const output = formatPullRequestReview({
+      prRef: 'foo/bar#34',
+      review: base,
+    });
+
+    expect(output).toContain('*PR 리뷰 — foo/bar#34*');
+    expect(output).toContain('🟡 MEDIUM');
+    expect(output).toContain('✋ Request changes');
+    expect(output).toContain('*Must-Fix*');
+    expect(output).toContain('• 에러 마스킹 필요');
+    expect(output).toContain('*Nice-to-have*');
+    expect(output).toContain('*누락 테스트*');
+    expect(output).toContain('*리뷰 코멘트 초안*');
+    expect(output).toContain('• `src/x.ts:10` 여기 위험');
+    expect(output).toContain('• 전반적으로 OK');
+  });
+
+  it('빈 섹션은 헤더 자체를 생략', () => {
+    const output = formatPullRequestReview({
+      prRef: 'foo/bar#1',
+      review: {
+        ...base,
+        mustFix: [],
+        niceToHave: [],
+        missingTests: [],
+        reviewCommentDrafts: [],
+      },
+    });
+
+    expect(output).not.toContain('*Must-Fix*');
+    expect(output).not.toContain('*Nice-to-have*');
+    expect(output).not.toContain('*누락 테스트*');
+    expect(output).not.toContain('*리뷰 코멘트 초안*');
+  });
+
+  it('riskLevel low + approve 라벨 매핑', () => {
+    const output = formatPullRequestReview({
+      prRef: 'a/b#1',
+      review: { ...base, riskLevel: 'low', approvalRecommendation: 'approve' },
+    });
+    expect(output).toContain('🟢 LOW');
+    expect(output).toContain('✅ Approve');
+  });
+
+  it('reviewCommentDrafts 의 file/line 누락 시 location prefix 생략', () => {
+    const output = formatPullRequestReview({
+      prRef: 'a/b#1',
+      review: {
+        ...base,
+        reviewCommentDrafts: [{ body: '단순 코멘트' }],
+      },
+    });
+    expect(output).toContain('• 단순 코멘트');
+    expect(output).not.toContain('``');
   });
 });

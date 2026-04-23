@@ -1,4 +1,4 @@
-import { AssignedTasks } from '../github.type';
+import { AssignedTasks, PullRequestDetail, PullRequestDiff } from '../github.type';
 
 export const GITHUB_CLIENT_PORT = Symbol('GITHUB_CLIENT_PORT');
 
@@ -10,8 +10,23 @@ export interface ListAssignedTasksOptions {
   limit?: number;
 }
 
+export interface PullRequestRef {
+  repo: string; // "owner/repo"
+  number: number;
+}
+
+export interface GetPullRequestDiffOptions extends PullRequestRef {
+  maxBytes?: number;
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
   ): Promise<AssignedTasks>;
+
+  getPullRequest(ref: PullRequestRef): Promise<PullRequestDetail>;
+
+  getPullRequestDiff(
+    options: GetPullRequestDiffOptions,
+  ): Promise<PullRequestDiff>;
 }
