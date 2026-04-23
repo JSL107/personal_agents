@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { PmAgentModule } from './agent/pm/pm-agent.module';
+import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
@@ -29,6 +30,7 @@ import { SlackModule } from './slack/slack.module';
     ModelRouterModule,
     AgentRunModule,
     PmAgentModule,
+    WorkReviewerModule,
     SlackModule,
     CrawlerModule,
   ],

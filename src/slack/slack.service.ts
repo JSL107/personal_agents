@@ -9,6 +9,8 @@ import { App, LogLevel } from '@slack/bolt';
 
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
 import { DailyPlan } from '../agent/pm/domain/pm-agent.type';
+import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
+import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
 import { DomainException } from '../common/exception/domain.exception';
 
 // 이대리 Slack 어댑터.
@@ -22,6 +24,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
+    private readonly generateWorklogUsecase: GenerateWorklogUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -135,6 +138,53 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
         });
       }
     });
+
+    app.command('/worklog', async ({ ack, command, respond }) => {
+      const workText = command.text?.trim() ?? '';
+      if (workText.length === 0) {
+        await ack({
+          response_type: 'ephemeral',
+          text: '사용법: `/worklog <오늘 한 일을 자유롭게 적어주세요>`',
+        });
+        return;
+      }
+
+      await ack({
+        response_type: 'ephemeral',
+        text: '이대리가 오늘의 회고를 작성 중입니다 (10~20초 소요)...',
+      });
+
+      try {
+        const review = await this.generateWorklogUsecase.execute({
+          workText,
+          slackUserId: command.user_id,
+        });
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: formatDailyReview(review),
+        });
+      } catch (error: unknown) {
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `GenerateWorklogUsecase 실패: ${rawMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+
+        const userFacingMessage =
+          error instanceof DomainException
+            ? rawMessage
+            : '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `이대리 /worklog 실패: ${userFacingMessage}`,
+        });
+      }
+    });
   }
 }
 
@@ -160,6 +210,41 @@ export const formatDailyPlan = (plan: DailyPlan): string => {
     '',
     `*판단 근거*: ${plan.reasoning}`,
   );
+
+  return lines.join('\n');
+};
+
+export const formatDailyReview = (review: DailyReview): string => {
+  const lines: string[] = ['*오늘 한 일*', review.summary, ''];
+
+  if (review.impact.quantitative.length > 0) {
+    lines.push(
+      '*정량 근거*',
+      ...review.impact.quantitative.map((item) => `• ${item}`),
+      '',
+    );
+  }
+
+  lines.push('*질적 영향*', review.impact.qualitative, '');
+
+  if (review.improvementBeforeAfter) {
+    lines.push(
+      '*개선 전/후*',
+      `• Before: ${review.improvementBeforeAfter.before}`,
+      `• After: ${review.improvementBeforeAfter.after}`,
+      '',
+    );
+  }
+
+  if (review.nextActions.length > 0) {
+    lines.push(
+      '*다음 액션*',
+      ...review.nextActions.map((action) => `• ${action}`),
+      '',
+    );
+  }
+
+  lines.push(`*한 줄 성과*: ${review.oneLineAchievement}`);
 
   return lines.join('\n');
 };

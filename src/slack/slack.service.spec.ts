@@ -1,5 +1,6 @@
 import { DailyPlan } from '../agent/pm/domain/pm-agent.type';
-import { formatDailyPlan } from './slack.service';
+import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
+import { formatDailyPlan, formatDailyReview } from './slack.service';
 
 describe('formatDailyPlan', () => {
   const base: DailyPlan = {
@@ -53,5 +54,62 @@ describe('formatDailyPlan', () => {
       .find((block) => block.startsWith('*오전*'));
 
     expect(morningSection).toBe('*오전*');
+  });
+});
+
+describe('formatDailyReview', () => {
+  const base: DailyReview = {
+    summary: 'PM Agent / Work Reviewer 구현',
+    impact: {
+      quantitative: ['unit test +12건', 'CLI 격리 범위 +3항목'],
+      qualitative: 'prompt-injection 리스크 제거',
+    },
+    improvementBeforeAfter: {
+      before: 'codex 가 parent env/HOME 상속',
+      after: 'throwaway HOME + stdin prompt 로 격리',
+    },
+    nextActions: ['/review-pr 설계', 'Phase 2b GitHub 커넥터 착수'],
+    oneLineAchievement: 'codex 어댑터 격리로 secret 유출 경로 차단',
+  };
+
+  it('모든 섹션(요약/정량/질적/개선/다음/성과) 을 순서대로 출력한다', () => {
+    const output = formatDailyReview(base);
+
+    expect(output).toContain('*오늘 한 일*');
+    expect(output).toContain('PM Agent / Work Reviewer 구현');
+    expect(output).toContain('*정량 근거*');
+    expect(output).toContain('• unit test +12건');
+    expect(output).toContain('*질적 영향*');
+    expect(output).toContain('*개선 전/후*');
+    expect(output).toContain('• Before: codex 가 parent env/HOME 상속');
+    expect(output).toContain('• After: throwaway HOME + stdin prompt 로 격리');
+    expect(output).toContain('*다음 액션*');
+    expect(output).toContain('• /review-pr 설계');
+    expect(output).toContain(
+      '*한 줄 성과*: codex 어댑터 격리로 secret 유출 경로 차단',
+    );
+  });
+
+  it('improvementBeforeAfter 가 null 이면 개선 전/후 섹션이 생략된다', () => {
+    const output = formatDailyReview({ ...base, improvementBeforeAfter: null });
+    expect(output).not.toContain('*개선 전/후*');
+  });
+
+  it('impact.quantitative 가 비어있으면 정량 근거 섹션이 생략된다 (근거 부족 케이스)', () => {
+    const output = formatDailyReview({
+      ...base,
+      impact: {
+        quantitative: [],
+        qualitative: '정량 근거 부족으로 임팩트는 추정 수준',
+      },
+    });
+    expect(output).not.toContain('*정량 근거*');
+    expect(output).toContain('*질적 영향*');
+    expect(output).toContain('정량 근거 부족으로 임팩트는 추정 수준');
+  });
+
+  it('nextActions 가 비어있으면 다음 액션 섹션이 생략된다', () => {
+    const output = formatDailyReview({ ...base, nextActions: [] });
+    expect(output).not.toContain('*다음 액션*');
   });
 });
