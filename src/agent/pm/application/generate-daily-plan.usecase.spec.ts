@@ -329,4 +329,139 @@ describe('GenerateDailyPlanUsecase', () => {
       expect(call.inputSnapshot.previousPlanReferenced).toBe(false);
     });
   });
+
+  describe('전일 worklog 참조 (옵션 a)', () => {
+    const yesterdayReview = {
+      summary: '어제 한 일 요약',
+      impact: { quantitative: ['+5건'], qualitative: '리뷰 자동화' },
+      improvementBeforeAfter: null,
+      nextActions: ['오늘 마무리할 다음 액션'],
+      oneLineAchievement: '/review-pr E2E 진입',
+    };
+
+    it('agentType 에 따라 PM/WORK_REVIEWER 다른 결과 반환 시 두 섹션 모두 prompt 에 포함', async () => {
+      const yesterdayPlan = {
+        topPriority: '어제의 최우선',
+        morning: ['오전 1'],
+        afternoon: ['오후 1'],
+        blocker: null,
+        estimatedHours: 5,
+        reasoning: 'r',
+      };
+      agentRunServiceFindLatest.mockImplementation(({ agentType }) => {
+        if (agentType === AgentType.PM) {
+          return Promise.resolve({
+            id: 99,
+            output: yesterdayPlan,
+            endedAt: new Date('2026-04-22T05:00:00Z'),
+          });
+        }
+        if (agentType === AgentType.WORK_REVIEWER) {
+          return Promise.resolve({
+            id: 100,
+            output: yesterdayReview,
+            endedAt: new Date('2026-04-22T08:00:00Z'),
+          });
+        }
+        return Promise.resolve(null);
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('[직전 PM 실행');
+      expect(promptArg).toContain('[직전 Work Reviewer 실행');
+      expect(promptArg).toContain('어제의 최우선');
+      expect(promptArg).toContain('어제 한 일 요약');
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceType: 'PRIOR_DAILY_PLAN',
+            sourceId: '99',
+          }),
+          expect.objectContaining({
+            sourceType: 'PRIOR_DAILY_REVIEW',
+            sourceId: '100',
+          }),
+        ]),
+      );
+      expect(call.inputSnapshot.previousWorklogReferenced).toBe(true);
+      expect(call.inputSnapshot.previousWorklogAgentRunId).toBe(100);
+    });
+
+    it('WORK_REVIEWER run 만 있고 PM 은 없을 때도 worklog 섹션은 나옴', async () => {
+      agentRunServiceFindLatest.mockImplementation(({ agentType }) => {
+        if (agentType === AgentType.WORK_REVIEWER) {
+          return Promise.resolve({
+            id: 50,
+            output: yesterdayReview,
+            endedAt: new Date('2026-04-22T08:00:00Z'),
+          });
+        }
+        return Promise.resolve(null);
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 PM 실행');
+      expect(promptArg).toContain('[직전 Work Reviewer 실행');
+    });
+
+    it('WORK_REVIEWER output 이 DailyReview 스키마에 안 맞으면 무시', async () => {
+      agentRunServiceFindLatest.mockImplementation(({ agentType }) => {
+        if (agentType === AgentType.WORK_REVIEWER) {
+          return Promise.resolve({
+            id: 51,
+            output: { not: 'a review' },
+            endedAt: new Date(),
+          });
+        }
+        return Promise.resolve(null);
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 Work Reviewer 실행');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.previousWorklogReferenced).toBe(false);
+    });
+
+    it('WORK_REVIEWER 조회 실패해도 graceful (PM plan 만 보여도 OK)', async () => {
+      agentRunServiceFindLatest.mockImplementation(({ agentType }) => {
+        if (agentType === AgentType.WORK_REVIEWER) {
+          return Promise.reject(new Error('db down'));
+        }
+        return Promise.resolve(null);
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U',
+      });
+
+      expect(result).toEqual(validPlan);
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.previousWorklogReferenced).toBe(false);
+    });
+  });
 });

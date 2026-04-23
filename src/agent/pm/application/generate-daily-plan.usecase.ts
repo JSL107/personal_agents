@@ -10,6 +10,7 @@ import { ListAssignedTasksUsecase } from '../../../github/application/list-assig
 import { AssignedTasks } from '../../../github/domain/github.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { PmAgentException } from '../domain/pm-agent.exception';
 import { DailyPlan, GenerateDailyPlanInput } from '../domain/pm-agent.type';
 import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
@@ -20,9 +21,19 @@ import {
   coerceToDailyPlan,
   formatPreviousDailyPlanSection,
 } from '../domain/prompt/previous-plan-formatter';
+import {
+  coerceToDailyReview,
+  formatPreviousDailyReviewSection,
+} from '../domain/prompt/previous-worklog-formatter';
 
 interface PreviousPlanContext {
   plan: DailyPlan;
+  endedAt: Date;
+  agentRunId: number;
+}
+
+interface PreviousWorklogContext {
+  review: DailyReview;
   endedAt: Date;
   agentRunId: number;
 }
@@ -43,10 +54,11 @@ export class GenerateDailyPlanUsecase {
   }: GenerateDailyPlanInput): Promise<DailyPlan> {
     const userText = tasksText.trim();
 
-    // 외부 컨텍스트 두 가지 모두 graceful — 실패해도 사용자 입력만으로 계속 진행한다.
-    const [githubTasks, previousPlan] = await Promise.all([
+    // 외부 컨텍스트 셋 모두 graceful — 실패해도 사용자 입력만으로 계속 진행한다.
+    const [githubTasks, previousPlan, previousWorklog] = await Promise.all([
       this.fetchGithubTasksOrNull(),
       this.fetchPreviousPlanOrNull(),
+      this.fetchPreviousWorklogOrNull(),
     ]);
     const githubItemCount = githubTasks
       ? githubTasks.issues.length + githubTasks.pullRequests.length
@@ -65,12 +77,14 @@ export class GenerateDailyPlanUsecase {
       userText,
       githubTasks,
       previousPlan,
+      previousWorklog,
     });
     const evidence = this.buildEvidence({
       userText,
       slackUserId,
       githubTasks,
       previousPlan,
+      previousWorklog,
     });
 
     return this.agentRunService.execute({
@@ -84,6 +98,10 @@ export class GenerateDailyPlanUsecase {
         githubFetchSucceeded: githubTasks !== null,
         previousPlanReferenced: previousPlan !== null,
         previousPlanAgentRunId: previousPlan ? previousPlan.agentRunId : null,
+        previousWorklogReferenced: previousWorklog !== null,
+        previousWorklogAgentRunId: previousWorklog
+          ? previousWorklog.agentRunId
+          : null,
       },
       evidence,
       run: async () => {
@@ -116,42 +134,61 @@ export class GenerateDailyPlanUsecase {
     }
   }
 
-  // 직전 PM 실행의 plan 을 조회해 모델에게 "전일 컨텍스트" 로 노출한다.
-  // 조회 실패 / shape 불일치 / 직전 run 없음 모두 graceful (null 반환).
   private async fetchPreviousPlanOrNull(): Promise<PreviousPlanContext | null> {
-    let snapshot: SucceededAgentRunSnapshot | null;
-    try {
-      snapshot = await this.agentRunService.findLatestSucceededRun({
-        agentType: AgentType.PM,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `이전 PM plan 조회 실패 (전일 컨텍스트 없이 계속 진행): ${message}`,
-      );
-      return null;
-    }
+    const snapshot = await this.findLatestRunOrNull(AgentType.PM);
     if (!snapshot) {
       return null;
     }
     const plan = coerceToDailyPlan(snapshot.output);
     if (!plan) {
       this.logger.warn(
-        `이전 AgentRun #${snapshot.id} 의 output 이 DailyPlan 스키마에 안 맞아 무시합니다.`,
+        `이전 PM AgentRun #${snapshot.id} 의 output 이 DailyPlan 스키마에 안 맞아 무시합니다.`,
       );
       return null;
     }
     return { plan, endedAt: snapshot.endedAt, agentRunId: snapshot.id };
   }
 
+  private async fetchPreviousWorklogOrNull(): Promise<PreviousWorklogContext | null> {
+    const snapshot = await this.findLatestRunOrNull(AgentType.WORK_REVIEWER);
+    if (!snapshot) {
+      return null;
+    }
+    const review = coerceToDailyReview(snapshot.output);
+    if (!review) {
+      this.logger.warn(
+        `이전 WORK_REVIEWER AgentRun #${snapshot.id} 의 output 이 DailyReview 스키마에 안 맞아 무시합니다.`,
+      );
+      return null;
+    }
+    return { review, endedAt: snapshot.endedAt, agentRunId: snapshot.id };
+  }
+
+  // 두 fetcher 가 동일한 try/catch + null 패턴을 공유하므로 여기서 한번만 처리한다.
+  private async findLatestRunOrNull(
+    agentType: AgentType,
+  ): Promise<SucceededAgentRunSnapshot | null> {
+    try {
+      return await this.agentRunService.findLatestSucceededRun({ agentType });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `${agentType} 직전 run 조회 실패 (해당 컨텍스트 없이 계속 진행): ${message}`,
+      );
+      return null;
+    }
+  }
+
   private buildCombinedPrompt({
     userText,
     githubTasks,
     previousPlan,
+    previousWorklog,
   }: {
     userText: string;
     githubTasks: AssignedTasks | null;
     previousPlan: PreviousPlanContext | null;
+    previousWorklog: PreviousWorklogContext | null;
   }): string {
     const sections: string[] = [];
     if (previousPlan) {
@@ -159,6 +196,14 @@ export class GenerateDailyPlanUsecase {
         formatPreviousDailyPlanSection({
           plan: previousPlan.plan,
           endedAt: previousPlan.endedAt,
+        }),
+      );
+    }
+    if (previousWorklog) {
+      sections.push(
+        formatPreviousDailyReviewSection({
+          review: previousWorklog.review,
+          endedAt: previousWorklog.endedAt,
         }),
       );
     }
@@ -176,11 +221,13 @@ export class GenerateDailyPlanUsecase {
     slackUserId,
     githubTasks,
     previousPlan,
+    previousWorklog,
   }: {
     userText: string;
     slackUserId: string;
     githubTasks: AssignedTasks | null;
     previousPlan: PreviousPlanContext | null;
+    previousWorklog: PreviousWorklogContext | null;
   }): EvidenceInput[] {
     const evidence: EvidenceInput[] = [
       {
@@ -206,6 +253,16 @@ export class GenerateDailyPlanUsecase {
         payload: {
           plan: previousPlan.plan as unknown as Record<string, unknown>,
           endedAt: previousPlan.endedAt.toISOString(),
+        },
+      });
+    }
+    if (previousWorklog) {
+      evidence.push({
+        sourceType: 'PRIOR_DAILY_REVIEW',
+        sourceId: String(previousWorklog.agentRunId),
+        payload: {
+          review: previousWorklog.review as unknown as Record<string, unknown>,
+          endedAt: previousWorklog.endedAt.toISOString(),
         },
       });
     }
