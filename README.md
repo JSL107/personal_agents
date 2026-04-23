@@ -1,99 +1,132 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# personal_agents (이대리)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Slack 기반 멀티 에이전트 업무 자동화 시스템 — 코드명 **이대리**.
+GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · Work Reviewer 역할을 수행하는 개인 비서형 백엔드.
+상위 기획은 [`jarvis_agents_plan_2026.md`](./jarvis_agents_plan_2026.md) 참고.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 현재 상태
 
-## Description
+- ✅ NestJS + DDD/Hexagonal 기반 골격 (`common/`, `config/`, `prisma/`)
+- ✅ Prisma + PostgreSQL 영속성 계층 (`AgentRun`, `EvidenceRecord` 모델)
+- ✅ Slack Bolt 어댑터 (`src/slack/`) — Socket Mode, `/ping` · `/today` 슬래시 커맨드
+- ✅ Model Router (`src/model-router/`) — Port 인터페이스 + **CodexCliProvider (ChatGPT) / ClaudeCliProvider (Claude)** + Mock (Gemini), 에이전트→모델 라우팅 매핑 + cwd·env allowlist 격리
+- ✅ AgentRun 라이프사이클 (`src/agent-run/`) — `AgentRunService.execute({ begin → run → finish })` 템플릿, EvidenceRecord 자동 기록
+- ✅ PM Agent (`src/agent/pm/`) — `/today` 슬래시 커맨드, DailyPlan JSON 스키마 파서
+- ✅ 크롤러 도메인 (`src/crawler/`) — Port-Adapter 구조, BullMQ 큐, Puppeteer + Cheerio
+- ⏳ Work Reviewer / Code Reviewer / BE 에이전트, Notion/GitHub 커넥터 — 미구현
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 아키텍처
 
-## Project setup
-
-```bash
-$ pnpm install
+```
+src/
+  {domain}/
+    domain/          # 엔티티, Port 인터페이스, 도메인 예외/검증
+    application/     # 유스케이스
+    infrastructure/  # Port 어댑터 (DB, 큐, 외부 API 클라이언트)
+    interface/       # Controller, DTO, 큐 Provider
+  common/            # 공통 응답/예외/필터/인터셉터
+  config/            # 환경변수 검증
+  prisma/            # PrismaService, PrismaModule (Global)
+prisma/
+  schema.prisma      # Prisma 스키마 (DB 단일 소스)
 ```
 
-## Compile and run the project
+상세 컨벤션은 [`CODE_RULES.md`](./CODE_RULES.md).
+
+## 사전 요구사항
+
+- Node.js 20+
+- pnpm 9+
+- Docker (로컬 PostgreSQL + Redis 컨테이너)
+- **`codex` CLI** (로그인 완료) — PM / Work Reviewer 에이전트가 ChatGPT Plus 구독 쿼터로 호출. ModelRouter 의 `CodexCliProvider` 가 `codex exec` 를 spawn.
+- **`claude` CLI** (로그인 완료) — Code Reviewer / BE 에이전트가 Claude Max 구독 쿼터로 호출. `ClaudeCliProvider` 가 `claude -p --output-format json` 을 spawn.
+- 두 CLI 모두 prompt-injection 방지를 위해 빈 임시 디렉토리 + env allowlist(`PATH`/`HOME`/`CODEX_HOME`/`CLAUDE_HOME` 등)로 격리해 실행한다 (`src/model-router/infrastructure/cli-process.util.ts`).
+
+## 처음 실행
 
 ```bash
-# development
-$ pnpm run start
+pnpm install               # @prisma/client postinstall 이 schema 만으로 Prisma Client 생성 (DATABASE_URL 불필요)
+cp .env.example .env       # 앱 부팅·db:push·db:studio 에 필요
 
-# watch mode
-$ pnpm run start:dev
+pnpm db:up                 # PostgreSQL + Redis 컨테이너 기동 (--wait 로 healthy 까지 대기)
+pnpm db:push               # 스키마 동기화 (synchronize 방식, 마이그레이션 파일 미생성)
 
-# production mode
-$ pnpm run start:prod
+pnpm dev                   # watch 모드로 NestJS 기동
 ```
 
-## Run tests
+> `DATABASE_URL` 은 **앱 부팅 시점에 `config/app.config.ts` 가 class-validator 로 강제**합니다. `pnpm install` 자체(`prisma generate`)는 schema 파싱만 하므로 `DATABASE_URL` 없이도 성공합니다. 실제 DB 연결은 PrismaService 의 lazy connect 로 처리되어, DB 가 일시적으로 다운돼도 앱은 기동되며 첫 쿼리 시점에서 에러가 드러납니다.
+
+## 일상 명령
 
 ```bash
-# unit tests
-$ pnpm run test
+pnpm dev                   # 개발 watch 모드
+pnpm start                 # 일반 실행
+pnpm start:prod            # 프로덕션 빌드 산출물 실행
 
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm db:up                 # 로컬 DB/Redis 기동
+pnpm db:down               # 로컬 DB/Redis 종료
+pnpm db:push               # 스키마 변경 후 DB 즉시 반영 (synchronize 방식)
+pnpm db:studio             # Prisma Studio (브라우저 DB 뷰어)
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## 검증
 
 ```bash
-$ pnpm install -g mau
-$ mau deploy
+pnpm build                 # nest build
+pnpm test                  # jest 단위 테스트
+pnpm test:e2e              # e2e 테스트
+pnpm lint                  # ESLint --fix
+pnpm lint:check            # ESLint 검사 only
+pnpm format:check          # Prettier 검사
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## DB 변경 워크플로우
 
-## Resources
+> 현재 단계는 **synchronize 방식 (`prisma db push`)** — 마이그레이션 파일을 만들지 않고 스키마를 직접 DB에 반영한다. 프로덕션 운영 시작 전에 `prisma migrate dev` 워크플로우로 전환할 예정.
 
-Check out a few resources that may come in handy when working with NestJS:
+1. `prisma/schema.prisma` 수정
+2. `pnpm db:push` — DB에 스키마 반영 + Prisma Client 자동 재생성
+3. 앱 재시작
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## 환경변수
 
-## Support
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `PORT` | ❌ | HTTP 서버 포트 (기본 3000) |
+| `REDIS_HOST` | ✅ | BullMQ 연결용 Redis 호스트 |
+| `REDIS_PORT` | ✅ | BullMQ 연결용 Redis 포트 |
+| `DATABASE_URL` | ✅ | PostgreSQL 연결 문자열 (Prisma). 앱 부팅 시 config 검증과 Prisma CLI(`db:push` / `db:studio`) 에서 요구. `pnpm install` 의 `prisma generate` 는 schema 파싱만 하므로 DATABASE_URL 없이도 성공. 실제 DB 연결은 PrismaService 의 lazy connect 로 처리. docker-compose 의 postgres 자격증명/호스트 포트(`idaeri/idaeri/idaeri/5434`)와 짝을 이루므로, 변경 시 `docker-compose.yml` 도 함께 갱신. Redis 도 동일하게 `REDIS_PORT=6381` — 로컬에 이미 상주 중인 타 프로젝트 5432/5433/6379/6380 점유자와 충돌을 피하기 위한 전용 포트. |
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `SLACK_SIGNING_SECRET` | ⭕ | Slack 봇 기동용 (Socket Mode). 3개 모두 설정된 경우에만 Slack 봇 기동, 하나라도 비면 앱은 정상 부팅하되 Slack 기능만 비활성화. |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+> 설치와 `.env` 생성 순서는 서로 독립적입니다. `pnpm install` 은 DATABASE_URL 없이도 성공하지만, `pnpm dev` / `pnpm db:push` 이전에는 반드시 `.env` 가 준비돼야 합니다.
 
-## Stay in touch
+## 주요 엔드포인트
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/v1/crawl-jobs` | 크롤링 작업 큐 등록 |
 
-## License
+## Slack 슬래시 커맨드
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| Command | 설명 | 에이전트 / 모델 |
+|---|---|---|
+| `/ping` | 이대리 생존 확인. `pong — <ISO 시각>` 응답 | — |
+| `/today <오늘 할 일>` | 자유 텍스트로 받은 할 일을 우선순위 + 오전/오후 + 예상 소요 + 근거로 재구성해 응답 (ephemeral). AgentRun / EvidenceRecord 자동 기록. 소요 10~20초. | PM Agent / ChatGPT (codex CLI) |
+
+### Slack 봇 설정 (최초 1회)
+
+1. https://api.slack.com/apps 에서 앱 생성
+2. **Socket Mode** 활성화 → App-Level Token 발급 (scope: `connections:write`) → `SLACK_APP_TOKEN`
+3. **OAuth & Permissions** → Bot Token Scopes: `commands`, `chat:write` → 워크스페이스에 install → Bot User OAuth Token → `SLACK_BOT_TOKEN`
+4. **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`
+5. **Slash Commands** → 아래 2개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
+   - `/ping` — 이대리 생존 확인
+   - `/today` — 오늘 할 일 우선순위 정리 (Usage hint: `<오늘 할 일을 자유롭게 적어주세요>`)
+   > 또는 좌측 **`App Manifest`** 에서 `slash_commands` 배열에 두 커맨드를 한 번에 선언하고 **Save Changes** → **Reinstall your app** 으로 반영.
+6. `.env` 에 세 값 채운 뒤 `pnpm dev` 재기동 → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
+7. Slack 채널에서 `/ping` 입력해 응답 확인
+
+## 참고 문서
+
+- [기획서](./jarvis_agents_plan_2026.md)
+- [코드 규칙](./CODE_RULES.md)

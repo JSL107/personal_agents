@@ -6,13 +6,13 @@ import {
   validateCrawlUrl,
 } from '../domain/crawler.validator';
 import {
-  CRAWLER_REQUESTER_PORT,
-  CrawlerRequesterPort,
-} from '../domain/port/crawler-requester.port';
-import {
   CRAWLER_PARSER_PORT,
   CrawlerParserPort,
 } from '../domain/port/crawler-parser.port';
+import {
+  CRAWLER_REQUESTER_PORT,
+  CrawlerRequesterPort,
+} from '../domain/port/crawler-requester.port';
 
 @Injectable()
 export class ProcessCrawlJobUsecase {

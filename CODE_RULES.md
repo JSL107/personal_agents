@@ -75,7 +75,13 @@
     - **생략 허용**: `Promise<User>`, `Promise<Cohort>`, `Promise<User | null>`처럼 도메인 **엔티티(Entity)**를 그대로 반환하는 Repository/Service 메서드(추론이 자명한 경우).
     - **생략 허용**: `Controller` (Interface Layer) 엔드포인트 라우터 핸들러 메서드(추론 및 Swagger 데코레이터 명세 우선).
 
-13. TypeORM `@Column()`의 `type` 옵션은 생략을 기본으로 한다. TypeScript 필드 타입(`Date`, `string`, `number` 등)으로 자동 추론되며, PostgreSQL 전용 타입이 필요한 경우에만 명시한다.
+13. NestJS 기본값과 동일한 `@HttpCode()` 데코레이터는 중복 선언하지 않는다.
+    - 기본 상태 코드는 메서드 단위로만 정해진다. `@Post()` 는 201, `@Get()/@Put()/@Delete()/@Patch()` 등 그 외는 200 이다.
+    - 핸들러가 `void`/`undefined` 를 반환하더라도 NestJS 가 자동으로 204 로 바꾸지 않는다. 본문 없이 204 가 필요하면 반드시 `@HttpCode(HttpStatus.NO_CONTENT)` 를 명시한다.
+    - 기본값과 다른 상태 코드를 의도적으로 쓸 때만 `@HttpCode()` 를 붙인다. (예: `POST` 인데 200 으로 응답하는 검색/검증 API, `DELETE` 후 204 명시)
+    - 의미 변화 없는 데코레이터 중복은 코드 리뷰에서 제거 대상이다.
+
+14. TypeORM `@Column()`의 `type` 옵션은 생략을 기본으로 한다. TypeScript 필드 타입(`Date`, `string`, `number` 등)으로 자동 추론되며, PostgreSQL 전용 타입이 필요한 경우에만 명시한다.
 
     ```ts
     // ✅ 타입 생략 (TypeScript 타입으로 추론)

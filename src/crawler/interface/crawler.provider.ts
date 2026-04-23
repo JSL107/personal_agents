@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { createHash } from 'node:crypto';
+
+import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable } from '@nestjs/common';
+import { Queue } from 'bullmq';
 
 import { CrawlTarget } from '../domain/crawler.type';
 import {

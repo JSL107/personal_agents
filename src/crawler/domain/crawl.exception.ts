@@ -1,7 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { DomainException } from '../../common/exception/domain.exception';
-
 import { CrawlErrorCode } from './crawl-error-code.enum';
 
 type CrawlExceptionOptions = {

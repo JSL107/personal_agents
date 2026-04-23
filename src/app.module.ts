@@ -1,9 +1,14 @@
-import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+import { PmAgentModule } from './agent/pm/pm-agent.module';
+import { AgentRunModule } from './agent-run/agent-run.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
+import { ModelRouterModule } from './model-router/model-router.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { SlackModule } from './slack/slack.module';
 
 @Module({
   imports: [
@@ -20,6 +25,11 @@ import { CrawlerModule } from './crawler/crawler.module';
       }),
       inject: [ConfigService],
     }),
+    PrismaModule,
+    ModelRouterModule,
+    AgentRunModule,
+    PmAgentModule,
+    SlackModule,
     CrawlerModule,
   ],
 })

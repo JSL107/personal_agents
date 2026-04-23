@@ -1,5 +1,5 @@
-import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { Module } from '@nestjs/common';
 
 import { CrawlUsecase } from './application/crawl.usecase';
 import { ProcessCrawlJobUsecase } from './application/process-crawl-job.usecase';

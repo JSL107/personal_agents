@@ -1,0 +1,44 @@
+// 이대리 (personal_agents) Prisma schema
+// 기획서: jarvis_agents_plan_2026.md §11 참고
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AgentRun {
+  id                Int       @id @default(autoincrement())
+  agentType         String    @map("agent_type")
+  triggerType       String    @map("trigger_type")
+  status            String
+  modelUsed         String?   @map("model_used")
+  inputSnapshot     Json      @map("input_snapshot")
+  output            Json?
+  startedAt         DateTime  @default(now()) @map("started_at")
+  endedAt           DateTime? @map("ended_at")
+
+  evidenceRecords   EvidenceRecord[]
+
+  @@index([agentType, startedAt])
+  @@map("agent_run")
+}
+
+model EvidenceRecord {
+  id           Int       @id @default(autoincrement())
+  agentRunId   Int?      @map("agent_run_id")
+  agentRun     AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  sourceType   String    @map("source_type")
+  sourceId     String    @map("source_id")
+  url          String?
+  title        String?
+  excerpt      String?   @db.Text
+  payload      Json
+  collectedAt  DateTime  @default(now()) @map("collected_at")
+
+  @@index([sourceType, sourceId])
+  @@map("evidence_record")
+}

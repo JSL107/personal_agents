@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: idaeri-postgres
+    restart: unless-stopped
+    # DATABASE_URL 과 짝을 이루는 고정값. 자격증명을 바꾸고 싶을 땐 여기와 .env 의 DATABASE_URL 을 **함께** 갱신해야 한다.
+    # 호스트 포트는 로컬에 이미 떠 있는 다른 프로젝트 Postgres (5432/5433) 와 충돌하지 않도록 5434 로 분리한다.
+    environment:
+      POSTGRES_USER: idaeri
+      POSTGRES_PASSWORD: idaeri
+      POSTGRES_DB: idaeri
+    ports:
+      - '5434:5432'
+    volumes:
+      - idaeri_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U idaeri -d idaeri']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: idaeri-redis
+    restart: unless-stopped
+    # 호스트 포트는 로컬에 이미 떠 있는 다른 프로젝트 Redis (6379/6380) 와 충돌하지 않도록 6381 로 분리한다.
+    ports:
+      - '6381:6379'
+    volumes:
+      - idaeri_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  idaeri_postgres_data:
+  idaeri_redis_data:

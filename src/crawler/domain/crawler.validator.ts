@@ -1,10 +1,10 @@
 import { HttpStatus } from '@nestjs/common';
 
-import { CrawlErrorCode } from './crawl-error-code.enum';
 import {
   CrawlPermanentException,
   CrawlTransientException,
 } from './crawl.exception';
+import { CrawlErrorCode } from './crawl-error-code.enum';
 
 export const validateCrawlUrl = ({ url }: { url: string }): void => {
   try {
