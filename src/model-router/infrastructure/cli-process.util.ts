@@ -48,7 +48,7 @@ export const buildSafeChildEnv = ({
     env.PWD = cwd;
   }
 
-  // CLI 인증 보존: parent 의 CODEX_HOME / CLAUDE_CONFIG_DIR 을 실제 경로로 명시 전달한다.
+  // CLI 인증 보존: parent 의 CODEX_HOME / CLAUDE_CONFIG_DIR / GEMINI 인증 관련 변수를 명시 전달한다.
   // (HOME 을 throwaway 로 바꿨기 때문에 CLI 가 기본 추론하면 인증 파일을 못 찾는다)
   const codexHome = process.env.CODEX_HOME ?? buildDefaultAuthDir('.codex');
   if (codexHome) {
@@ -61,6 +61,30 @@ export const buildSafeChildEnv = ({
     buildDefaultAuthDir('.claude');
   if (claudeConfigDir) {
     env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+  }
+
+  // Gemini CLI 는 GEMINI_API_KEY / GOOGLE_GENAI_USE_* / GOOGLE_APPLICATION_CREDENTIALS 등으로 auth 결정.
+  // OAuth 사용 시는 ~/.gemini/settings.json 을 읽으므로 GEMINI_HOME 도 forward.
+  // 실제 토큰 값은 parent env 에서만 가져오고 (allowlist) 자식 본 디렉토리(throwaway HOME) 와 분리.
+  const geminiAuthKeys = [
+    'GEMINI_API_KEY',
+    'GEMINI_HOME',
+    'GOOGLE_API_KEY',
+    'GOOGLE_GENAI_USE_VERTEXAI',
+    'GOOGLE_GENAI_USE_GCA',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_CLOUD_PROJECT',
+  ];
+  for (const key of geminiAuthKeys) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  // Gemini CLI 가 OAuth 인증을 ~/.gemini 에서 로드하도록 명시 (HOME override 보완).
+  const geminiHome = process.env.GEMINI_HOME ?? buildDefaultAuthDir('.gemini');
+  if (geminiHome) {
+    env.GEMINI_HOME = geminiHome;
   }
 
   return env;

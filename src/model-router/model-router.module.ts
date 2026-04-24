@@ -5,10 +5,11 @@ import { ModelProviderName } from './domain/model-router.type';
 import { MODEL_PROVIDER_TOKENS } from './domain/port/model-provider.port';
 import { ClaudeCliProvider } from './infrastructure/claude-cli.provider';
 import { CodexCliProvider } from './infrastructure/codex-cli.provider';
-import { MockModelProvider } from './infrastructure/mock-model.provider';
+import { GeminiCliProvider } from './infrastructure/gemini-cli.provider';
 
-// ChatGPT / Claude 는 로컬 CLI 구독 어댑터를 바인딩한다 (개인용, API key 불필요).
-// Gemini 는 아직 `gemini` CLI 가 설치되어 있지 않아 Mock 으로 유지한다 — 설치 시 GeminiCliProvider 로 교체만 하면 된다.
+// 세 모델 모두 로컬 CLI 구독/무료 tier 어댑터로 바인딩 (개인용, API key 비용 회피).
+// Gemini 는 OAuth (gemini 인터랙티브 1회 로그인) 또는 GEMINI_API_KEY 설정 필요.
+// 실패 fallback chain 은 ModelRouterUsecase 에서 수행 — primary 실패 시 Gemini 로 자동 재시도.
 @Module({
   providers: [
     {
@@ -21,7 +22,7 @@ import { MockModelProvider } from './infrastructure/mock-model.provider';
     },
     {
       provide: MODEL_PROVIDER_TOKENS[ModelProviderName.GEMINI],
-      useFactory: () => new MockModelProvider(ModelProviderName.GEMINI),
+      useClass: GeminiCliProvider,
     },
     ModelRouterUsecase,
   ],
