@@ -1,19 +1,18 @@
-import { HttpStatus } from '@nestjs/common';
-
 import { DomainException } from '../../../common/exception/domain.exception';
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { WorkReviewerErrorCode } from './work-reviewer-error-code.enum';
 
 type WorkReviewerExceptionOptions = {
   message: string;
   code: WorkReviewerErrorCode;
-  status?: HttpStatus;
+  status?: DomainStatus;
   cause?: unknown;
 };
 
 export class WorkReviewerException extends DomainException {
   readonly workReviewerErrorCode: WorkReviewerErrorCode;
   readonly cause: unknown;
-  readonly httpStatus: number;
+  readonly status: DomainStatus;
 
   get errorCode(): string {
     return this.workReviewerErrorCode;
@@ -22,13 +21,13 @@ export class WorkReviewerException extends DomainException {
   constructor({
     message,
     code,
-    status = HttpStatus.INTERNAL_SERVER_ERROR,
+    status = DomainStatus.INTERNAL,
     cause,
   }: WorkReviewerExceptionOptions) {
     super(message);
     this.name = new.target.name;
     this.workReviewerErrorCode = code;
-    this.httpStatus = status;
+    this.status = status;
     this.cause = cause;
   }
 }

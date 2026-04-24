@@ -1,19 +1,18 @@
-import { HttpStatus } from '@nestjs/common';
-
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { NotionErrorCode } from './notion-error-code.enum';
 
 type NotionExceptionOptions = {
   message: string;
   code: NotionErrorCode;
-  status?: HttpStatus;
+  status?: DomainStatus;
   cause?: unknown;
 };
 
 export class NotionException extends DomainException {
   readonly notionErrorCode: NotionErrorCode;
   readonly cause: unknown;
-  readonly httpStatus: number;
+  readonly status: DomainStatus;
 
   get errorCode(): string {
     return this.notionErrorCode;
@@ -22,13 +21,13 @@ export class NotionException extends DomainException {
   constructor({
     message,
     code,
-    status = HttpStatus.BAD_GATEWAY,
+    status = DomainStatus.BAD_GATEWAY,
     cause,
   }: NotionExceptionOptions) {
     super(message);
     this.name = new.target.name;
     this.notionErrorCode = code;
-    this.httpStatus = status;
+    this.status = status;
     this.cause = cause;
   }
 }

@@ -1,5 +1,4 @@
-import { HttpStatus } from '@nestjs/common';
-
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ParsedPage } from '../domain/crawler.type';
 import { CrawlerParserPort } from '../domain/port/crawler-parser.port';
 import { CrawlerRequesterPort } from '../domain/port/crawler-requester.port';
@@ -63,7 +62,7 @@ describe('ProcessCrawlJobUsecase', () => {
       usecase.execute({ url: 'https://example.com' }),
     ).rejects.toMatchObject({
       errorCode: 'CRAWL_TARGET_UNAVAILABLE',
-      httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+      status: DomainStatus.SERVICE_UNAVAILABLE,
     });
     expect(crawlerParser.parse).not.toHaveBeenCalled();
   });

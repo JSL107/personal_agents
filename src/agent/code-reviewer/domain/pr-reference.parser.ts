@@ -1,5 +1,4 @@
-import { HttpStatus } from '@nestjs/common';
-
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { CodeReviewerException } from './code-reviewer.exception';
 import { CodeReviewerErrorCode } from './code-reviewer-error-code.enum';
 
@@ -40,5 +39,5 @@ const buildInvalidException = (raw: string): CodeReviewerException =>
   new CodeReviewerException({
     code: CodeReviewerErrorCode.INVALID_PR_REFERENCE,
     message: `PR 참조 형식이 잘못되었습니다: "${raw}". 사용 예: \`/review-pr https://github.com/owner/repo/pull/123\` 또는 \`/review-pr owner/repo#123\`.`,
-    status: HttpStatus.BAD_REQUEST,
+    status: DomainStatus.BAD_REQUEST,
   });

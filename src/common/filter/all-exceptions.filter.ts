@@ -10,8 +10,23 @@ import { Request, Response } from 'express';
 
 import { AppException } from '../exception/app.exception';
 import { DomainException } from '../exception/domain.exception';
+import { DomainStatus } from '../exception/domain-status.enum';
 import { ResponseCode } from '../exception/response-code.enum';
 import { ApiResponse } from '../response/api-response.type';
+
+const DOMAIN_TO_HTTP_STATUS: Readonly<Record<DomainStatus, HttpStatus>> = {
+  [DomainStatus.BAD_REQUEST]: HttpStatus.BAD_REQUEST,
+  [DomainStatus.UNAUTHORIZED]: HttpStatus.UNAUTHORIZED,
+  [DomainStatus.FORBIDDEN]: HttpStatus.FORBIDDEN,
+  [DomainStatus.NOT_FOUND]: HttpStatus.NOT_FOUND,
+  [DomainStatus.CONFLICT]: HttpStatus.CONFLICT,
+  [DomainStatus.PRECONDITION_FAILED]: HttpStatus.PRECONDITION_FAILED,
+  [DomainStatus.UNPROCESSABLE_ENTITY]: HttpStatus.UNPROCESSABLE_ENTITY,
+  [DomainStatus.INTERNAL]: HttpStatus.INTERNAL_SERVER_ERROR,
+  [DomainStatus.BAD_GATEWAY]: HttpStatus.BAD_GATEWAY,
+  [DomainStatus.SERVICE_UNAVAILABLE]: HttpStatus.SERVICE_UNAVAILABLE,
+  [DomainStatus.GATEWAY_TIMEOUT]: HttpStatus.GATEWAY_TIMEOUT,
+};
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -39,7 +54,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return exception.getStatus();
     }
     if (exception instanceof DomainException) {
-      return exception.httpStatus;
+      return DOMAIN_TO_HTTP_STATUS[exception.status];
     }
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }

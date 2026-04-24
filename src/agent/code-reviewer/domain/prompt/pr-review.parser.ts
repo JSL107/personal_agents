@@ -1,5 +1,4 @@
-import { HttpStatus } from '@nestjs/common';
-
+import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { CodeReviewerException } from '../code-reviewer.exception';
 import {
   ApprovalRecommendation,
@@ -27,7 +26,7 @@ export const parsePullRequestReview = (text: string): PullRequestReview => {
     throw new CodeReviewerException({
       code: CodeReviewerErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답이 PullRequestReview 스키마와 맞지 않습니다.',
-      status: HttpStatus.BAD_GATEWAY,
+      status: DomainStatus.BAD_GATEWAY,
     });
   }
 
@@ -46,7 +45,7 @@ const parseJson = (text: string): unknown => {
     throw new CodeReviewerException({
       code: CodeReviewerErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답을 JSON 으로 파싱하지 못했습니다.',
-      status: HttpStatus.BAD_GATEWAY,
+      status: DomainStatus.BAD_GATEWAY,
       cause: error,
     });
   }

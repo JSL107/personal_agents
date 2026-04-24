@@ -1,5 +1,6 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
   AgentType,
@@ -51,7 +52,7 @@ export class ModelRouterUsecase {
       throw new ModelRouterException({
         code: ModelRouterErrorCode.UNKNOWN_AGENT_TYPE,
         message: `라우팅 매핑이 없는 에이전트 타입입니다: ${agentType}`,
-        status: HttpStatus.BAD_REQUEST,
+        status: DomainStatus.BAD_REQUEST,
       });
     }
 
@@ -113,7 +114,7 @@ export class ModelRouterUsecase {
     return new ModelRouterException({
       code: ModelRouterErrorCode.COMPLETION_FAILED,
       message: summary,
-      status: HttpStatus.BAD_GATEWAY,
+      status: DomainStatus.BAD_GATEWAY,
       cause: primaryError ? { primaryError, lastError } : lastError,
     });
   }

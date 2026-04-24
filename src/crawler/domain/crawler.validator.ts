@@ -1,5 +1,4 @@
-import { HttpStatus } from '@nestjs/common';
-
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import {
   CrawlPermanentException,
   CrawlTransientException,
@@ -16,7 +15,7 @@ export const validateCrawlUrl = ({ url }: { url: string }): void => {
       throw new CrawlPermanentException({
         code: CrawlErrorCode.INVALID_URL,
         message: `지원하지 않는 URL 프로토콜입니다: ${url}`,
-        status: HttpStatus.BAD_REQUEST,
+        status: DomainStatus.BAD_REQUEST,
       });
     }
   } catch (error: unknown) {
@@ -27,7 +26,7 @@ export const validateCrawlUrl = ({ url }: { url: string }): void => {
     throw new CrawlPermanentException({
       code: CrawlErrorCode.INVALID_URL,
       message: `유효하지 않은 크롤링 URL입니다: ${url}`,
-      status: HttpStatus.BAD_REQUEST,
+      status: DomainStatus.BAD_REQUEST,
       cause: error,
     });
   }
@@ -62,7 +61,9 @@ export const validateCrawlResponse = ({
       code,
       message: `복구 불가능한 크롤링 대상 오류가 발생했습니다. (${responseStatus}) ${url}`,
       status:
-        responseStatus === 404 ? HttpStatus.NOT_FOUND : HttpStatus.BAD_GATEWAY,
+        responseStatus === 404
+          ? DomainStatus.NOT_FOUND
+          : DomainStatus.BAD_GATEWAY,
     });
   }
 };

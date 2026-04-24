@@ -1,19 +1,18 @@
-import { HttpStatus } from '@nestjs/common';
-
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { SlackCollectorErrorCode } from './slack-collector-error-code.enum';
 
 type SlackCollectorExceptionOptions = {
   message: string;
   code: SlackCollectorErrorCode;
-  status?: HttpStatus;
+  status?: DomainStatus;
   cause?: unknown;
 };
 
 export class SlackCollectorException extends DomainException {
   readonly slackCollectorErrorCode: SlackCollectorErrorCode;
   readonly cause: unknown;
-  readonly httpStatus: number;
+  readonly status: DomainStatus;
 
   get errorCode(): string {
     return this.slackCollectorErrorCode;
@@ -22,13 +21,13 @@ export class SlackCollectorException extends DomainException {
   constructor({
     message,
     code,
-    status = HttpStatus.BAD_GATEWAY,
+    status = DomainStatus.BAD_GATEWAY,
     cause,
   }: SlackCollectorExceptionOptions) {
     super(message);
     this.name = new.target.name;
     this.slackCollectorErrorCode = code;
-    this.httpStatus = status;
+    this.status = status;
     this.cause = cause;
   }
 }

@@ -1,19 +1,18 @@
-import { HttpStatus } from '@nestjs/common';
-
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { CrawlErrorCode } from './crawl-error-code.enum';
 
 type CrawlExceptionOptions = {
   message: string;
   code: CrawlErrorCode;
-  status?: HttpStatus;
+  status?: DomainStatus;
   cause?: unknown;
 };
 
 export class CrawlException extends DomainException {
   readonly crawlErrorCode: CrawlErrorCode;
   readonly cause: unknown;
-  readonly httpStatus: number;
+  readonly status: DomainStatus;
 
   get errorCode(): string {
     return this.crawlErrorCode;
@@ -23,7 +22,7 @@ export class CrawlException extends DomainException {
     super(message);
     this.name = new.target.name;
     this.crawlErrorCode = code;
-    this.httpStatus = status ?? HttpStatus.INTERNAL_SERVER_ERROR;
+    this.status = status ?? DomainStatus.INTERNAL;
     this.cause = cause;
   }
 }
@@ -32,12 +31,12 @@ export class CrawlTransientException extends CrawlException {
   constructor({
     message,
     code = CrawlErrorCode.TARGET_UNAVAILABLE,
-    status = HttpStatus.SERVICE_UNAVAILABLE,
+    status = DomainStatus.SERVICE_UNAVAILABLE,
     cause,
   }: {
     message: string;
     code?: CrawlErrorCode;
-    status?: HttpStatus;
+    status?: DomainStatus;
     cause?: unknown;
   }) {
     super({ message, code, status, cause });
@@ -48,12 +47,12 @@ export class CrawlPermanentException extends CrawlException {
   constructor({
     message,
     code = CrawlErrorCode.FAILED,
-    status = HttpStatus.INTERNAL_SERVER_ERROR,
+    status = DomainStatus.INTERNAL,
     cause,
   }: {
     message: string;
     code?: CrawlErrorCode;
-    status?: HttpStatus;
+    status?: DomainStatus;
     cause?: unknown;
   }) {
     super({ message, code, status, cause });

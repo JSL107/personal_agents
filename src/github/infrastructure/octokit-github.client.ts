@@ -1,6 +1,7 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Octokit } from '@octokit/rest';
 
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
@@ -167,7 +168,7 @@ export class OctokitGithubClient implements GithubClientPort {
         code: GithubErrorCode.TOKEN_NOT_CONFIGURED,
         message:
           'GITHUB_TOKEN 이 .env 에 설정되지 않아 GitHub API 를 호출할 수 없습니다.',
-        status: HttpStatus.PRECONDITION_FAILED,
+        status: DomainStatus.PRECONDITION_FAILED,
       });
     }
   }
@@ -248,7 +249,7 @@ const parseRepo = (repo: string): [string, string] => {
     throw new GithubException({
       code: GithubErrorCode.REQUEST_FAILED,
       message: `잘못된 repo 형식: "${repo}" (expected "owner/repo")`,
-      status: HttpStatus.BAD_REQUEST,
+      status: DomainStatus.BAD_REQUEST,
     });
   }
   return [repo.slice(0, slash), repo.slice(slash + 1)];

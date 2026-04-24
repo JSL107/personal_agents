@@ -1,19 +1,18 @@
-import { HttpStatus } from '@nestjs/common';
-
 import { DomainException } from '../../../common/exception/domain.exception';
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { PmAgentErrorCode } from './pm-agent-error-code.enum';
 
 type PmAgentExceptionOptions = {
   message: string;
   code: PmAgentErrorCode;
-  status?: HttpStatus;
+  status?: DomainStatus;
   cause?: unknown;
 };
 
 export class PmAgentException extends DomainException {
   readonly pmAgentErrorCode: PmAgentErrorCode;
   readonly cause: unknown;
-  readonly httpStatus: number;
+  readonly status: DomainStatus;
 
   get errorCode(): string {
     return this.pmAgentErrorCode;
@@ -22,13 +21,13 @@ export class PmAgentException extends DomainException {
   constructor({
     message,
     code,
-    status = HttpStatus.INTERNAL_SERVER_ERROR,
+    status = DomainStatus.INTERNAL,
     cause,
   }: PmAgentExceptionOptions) {
     super(message);
     this.name = new.target.name;
     this.pmAgentErrorCode = code;
-    this.httpStatus = status;
+    this.status = status;
     this.cause = cause;
   }
 }

@@ -1,8 +1,8 @@
-import { HttpStatus } from '@nestjs/common';
-
+import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { WorkReviewerException } from '../work-reviewer.exception';
 import { DailyReview } from '../work-reviewer.type';
 import { WorkReviewerErrorCode } from '../work-reviewer-error-code.enum';
+import { isDailyReviewShape } from './daily-review.shape';
 
 const CODE_FENCE_PATTERN = /^```(?:json)?\s*([\s\S]*?)\s*```$/;
 
@@ -17,7 +17,7 @@ export const parseDailyReview = (text: string): DailyReview => {
     throw new WorkReviewerException({
       code: WorkReviewerErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답이 DailyReview 스키마와 맞지 않습니다.',
-      status: HttpStatus.BAD_GATEWAY,
+      status: DomainStatus.BAD_GATEWAY,
     });
   }
 
@@ -39,46 +39,8 @@ const parseJson = (text: string): unknown => {
     throw new WorkReviewerException({
       code: WorkReviewerErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답을 JSON 으로 파싱하지 못했습니다.',
-      status: HttpStatus.BAD_GATEWAY,
+      status: DomainStatus.BAD_GATEWAY,
       cause: error,
     });
   }
 };
-
-const isDailyReviewShape = (value: unknown): value is DailyReview => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.summary === 'string' &&
-    isImpactShape(record.impact) &&
-    isImprovementShape(record.improvementBeforeAfter) &&
-    isStringArray(record.nextActions) &&
-    typeof record.oneLineAchievement === 'string'
-  );
-};
-
-const isImpactShape = (value: unknown): boolean => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    isStringArray(record.quantitative) && typeof record.qualitative === 'string'
-  );
-};
-
-const isImprovementShape = (value: unknown): boolean => {
-  if (value === null) {
-    return true;
-  }
-  if (typeof value !== 'object') {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return typeof record.before === 'string' && typeof record.after === 'string';
-};
-
-const isStringArray = (value: unknown): value is string[] =>
-  Array.isArray(value) && value.every((item) => typeof item === 'string');
