@@ -7,6 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
+import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
+import { BackendPlan } from '../agent/be/domain/be-agent.type';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -39,6 +41,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
+    private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -196,6 +199,53 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
           response_type: 'ephemeral',
           replace_original: true,
           text: `이대리 /worklog 실패: ${userFacingMessage}`,
+        });
+      }
+    });
+
+    app.command('/plan-task', async ({ ack, command, respond }) => {
+      const subject = command.text?.trim() ?? '';
+      if (subject.length === 0) {
+        await ack({
+          response_type: 'ephemeral',
+          text: '사용법: `/plan-task <PR URL / 작업 설명>` (예: `/plan-task 결제 검증 API 추가` 또는 `/plan-task foo/bar#34`)',
+        });
+        return;
+      }
+
+      await ack({
+        response_type: 'ephemeral',
+        text: `이대리(BE 모드) 가 구현 계획을 세우는 중입니다 (15~40초 소요)...`,
+      });
+
+      try {
+        const plan = await this.generateBackendPlanUsecase.execute({
+          subject,
+          slackUserId: command.user_id,
+        });
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: formatBackendPlan(plan),
+        });
+      } catch (error: unknown) {
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `GenerateBackendPlanUsecase 실패: ${rawMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+
+        const userFacingMessage =
+          error instanceof DomainException
+            ? rawMessage
+            : '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `이대리 /plan-task 실패: ${userFacingMessage}`,
         });
       }
     });
@@ -373,6 +423,54 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
   }
 }
+
+// /plan-task 결과 — BackendPlan 을 한국어 Slack 마크다운으로 렌더.
+export const formatBackendPlan = (plan: BackendPlan): string => {
+  const lines: string[] = [
+    `*백엔드 구현 계획* — ${plan.subject}`,
+    '',
+    `📌 *컨텍스트*: ${plan.context}`,
+    '',
+    '*구현 체크리스트*',
+    ...plan.implementationChecklist.flatMap((item) => {
+      const dep =
+        item.dependsOn.length > 0
+          ? ` _(선행: ${item.dependsOn.join(', ')})_`
+          : '';
+      return [`• *${item.title}*${dep}`, `   ↳ ${item.description}`];
+    }),
+    '',
+  ];
+
+  if (plan.apiDesign && plan.apiDesign.length > 0) {
+    lines.push('*API 설계*');
+    for (const api of plan.apiDesign) {
+      lines.push(`• \`${api.method} ${api.path}\``);
+      lines.push(`   req: ${api.request}`);
+      lines.push(`   res: ${api.response}`);
+      if (api.notes.length > 0) {
+        lines.push(`   📝 ${api.notes}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (plan.risks.length > 0) {
+    lines.push('*리스크*', ...plan.risks.map((r) => `• ${r}`), '');
+  }
+
+  if (plan.testPoints.length > 0) {
+    lines.push('*테스트 포인트*', ...plan.testPoints.map((t) => `• ${t}`), '');
+  }
+
+  lines.push(
+    `*예상 소요*: ${plan.estimatedHours}시간`,
+    '',
+    `*판단 근거*: ${plan.reasoning}`,
+  );
+
+  return lines.join('\n');
+};
 
 // /po-shadow 결과 — PO 시각의 검토를 한국어 Slack 마크다운으로 렌더.
 export const formatPoShadowReport = (report: PoShadowReport): string => {

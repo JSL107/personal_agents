@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { BeAgentModule } from '../agent/be/be.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
@@ -14,6 +15,7 @@ import { SlackService } from './slack.service';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
+    BeAgentModule,
   ],
   providers: [SlackService],
   exports: [SlackService],

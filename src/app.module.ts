@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+import { BeAgentModule } from './agent/be/be.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
@@ -43,6 +44,7 @@ import { SlackCollectorModule } from './slack-collector/slack-collector.module';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
+    BeAgentModule,
     SlackModule,
     CrawlerModule,
   ],
