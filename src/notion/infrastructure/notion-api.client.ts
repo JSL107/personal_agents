@@ -36,6 +36,11 @@ export class NotionApiClient implements NotionClientPort {
     Promise<NotionDailyPlanPage>
   >();
 
+  // 같은 pageId 에 대한 동시 replaceCheckInSection 을 직렬화 — 두 /today 가 같은 시점에
+  // 들어오면 둘 다 동일 초기 state 를 읽고 각자 append 해 Check in 섹션이 두 개 남는 race
+  // 방지 (codex review aaed1c2 P2 지적).
+  private readonly checkInLocks = new Map<string, Promise<void>>();
+
   constructor(
     @Inject(NOTION_CLIENT_INSTANCE) private readonly client: Client | null,
     private readonly configService: ConfigService,
@@ -207,29 +212,60 @@ export class NotionApiClient implements NotionClientPort {
   // /today 가 같은 day-page 에 여러 번 호출돼도 Notion 에 누적되지 않도록 — 기존 "Check in *"
   // heading_2 섹션(다음 heading_2 직전까지) 들을 모두 archive 후 신규 blocks 를 append.
   // /worklog 의 "Check Out" 처럼 다른 heading_2 로 시작하는 섹션은 보존된다.
+  // 순서가 중요: (1) 기존 Check in block id 수집 → (2) 신규 append → (3) 수집한 기존 id archive.
+  // append 가 실패하면 throw 만 하고 기존 Check in 은 그대로 살아남는다 (codex review aaed1c2 P2 지적).
   async replaceCheckInSection({
     pageId,
     blocks,
   }: ReplaceCheckInSectionOptions): Promise<void> {
     this.assertClientConfigured('replaceCheckInSection');
 
+    // per-page mutex — 동시 /today 두 건이 같은 초기 state 를 읽어 각자 append 하는 race 방지.
+    const pending = this.checkInLocks.get(pageId);
+    if (pending) {
+      await pending;
+    }
+    const work = this.runReplaceCheckInSection(pageId, blocks).finally(() => {
+      this.checkInLocks.delete(pageId);
+    });
+    this.checkInLocks.set(pageId, work);
+    return work;
+  }
+
+  private async runReplaceCheckInSection(
+    pageId: string,
+    blocks: NotionPlanBlock[],
+  ): Promise<void> {
+    let existingIds: string[];
     try {
-      const existingIds = await this.collectCheckInSectionBlockIds(pageId);
-      for (const blockId of existingIds) {
-        // archive — Notion API 의 blocks.delete 는 archive=true 로 마킹 (hard delete 아님).
-        await this.client!.blocks.delete({ block_id: blockId });
-      }
+      existingIds = await this.collectCheckInSectionBlockIds(pageId);
     } catch (error: unknown) {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} 의 기존 Check in 섹션 정리 실패: ${
+        message: `Notion page ${pageId} 의 기존 Check in 섹션 조회 실패: ${
           error instanceof Error ? error.message : String(error)
         }`,
         cause: error,
       });
     }
 
+    // 신규 append 가 먼저 — 이 단계가 실패하면 기존 Check in 은 그대로 남는다 (P2 mitigation).
     await this.appendBlocks({ pageId, blocks });
+
+    // 신규가 안전히 들어간 뒤에야 기존 archive. archive 실패하면 두 섹션이 잠시 공존 — append 가
+    // 0건일 때보다 나은 trade-off (사용자가 lost data 경험 안 하도록).
+    for (const blockId of existingIds) {
+      try {
+        // archive — Notion API 의 blocks.delete 는 archive=true 로 마킹 (hard delete 아님).
+        await this.client!.blocks.delete({ block_id: blockId });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Notion page ${pageId} 기존 Check in block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 
   // 페이지의 자식 블록을 순회하면서 "Check in *" heading_2 부터 다음 heading_2 직전까지의 block id 를 수집.
