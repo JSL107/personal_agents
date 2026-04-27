@@ -3,14 +3,12 @@ import { ContextSummary } from '../agent/pm/application/sync-context.usecase';
 import { DailyPlan, TaskItem } from '../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
 import { QuotaStatsResult } from '../agent-run/application/get-quota-stats.usecase';
-import {
-  formatContextSummary,
-  formatDailyPlan,
-  formatDailyReview,
-  formatModelFooter,
-  formatPullRequestReview,
-  formatQuotaStats,
-} from './slack.service';
+import { formatContextSummary } from './format/context-summary.formatter';
+import { formatDailyPlan } from './format/daily-plan.formatter';
+import { formatDailyReview } from './format/daily-review.formatter';
+import { formatModelFooter } from './format/model-footer.formatter';
+import { formatPullRequestReview } from './format/pull-request-review.formatter';
+import { formatQuotaStats } from './format/quota-stats.formatter';
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
   id: overrides.id ?? `user:${title}`,

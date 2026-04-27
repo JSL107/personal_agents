@@ -6,7 +6,8 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { PmAgentException } from '../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../agent/pm/domain/pm-agent-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
-import { formatDailyPlan, formatModelFooter } from '../../slack/slack.service';
+import { formatDailyPlan } from '../../slack/format/daily-plan.formatter';
+import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import {
   MORNING_BRIEFING_QUEUE,
   MorningBriefingJobData,
