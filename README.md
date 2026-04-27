@@ -2,7 +2,7 @@
 
 Slack 기반 멀티 에이전트 업무 자동화 시스템 — 코드명 **이대리**.
 GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · Work Reviewer 역할을 수행하는 개인 비서형 백엔드.
-상위 기획은 [`jarvis_agents_plan_2026.md`](./jarvis_agents_plan_2026.md) 참고.
+자동화 규칙은 [AGENTS.md](./AGENTS.md), 코드 컨벤션은 [CODE_RULES.md](./CODE_RULES.md) 참고.
 
 ## 현재 상태
 
@@ -160,5 +160,6 @@ pnpm format:check          # Prettier 검사
 
 ## 참고 문서
 
-- [기획서](./jarvis_agents_plan_2026.md)
+- [자동화 규칙 (AGENTS.md)](./AGENTS.md)
 - [코드 규칙](./CODE_RULES.md)
+- [과거 설계/기획 (archive)](./docs/archive/)
