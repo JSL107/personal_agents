@@ -1,4 +1,4 @@
-import { DynamicModule, Module, Type } from '@nestjs/common';
+import { DynamicModule, Module, ModuleMetadata, Type } from '@nestjs/common';
 
 import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
@@ -33,18 +33,29 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
   exports: [CreatePreviewUsecase, ApplyPreviewUsecase, CancelPreviewUsecase],
 })
 export class PreviewGateModule {
-  static forRoot(applierClasses: Type<PreviewApplier>[]): DynamicModule {
+  static forRoot({
+    appliers,
+    imports = [],
+  }: {
+    appliers: Type<PreviewApplier>[];
+    // applier 가 의존하는 도메인 모듈들 (GithubModule / NotionModule 등) — DynamicModule 안에서 import.
+    imports?: ModuleMetadata['imports'];
+  }): DynamicModule {
     return {
       module: PreviewGateModule,
+      // global: true 로 둬 SlackModule / PmAgentModule 등 사용 모듈이 별도 import 안 해도
+      // ApplyPreviewUsecase / CancelPreviewUsecase / CreatePreviewUsecase 주입 가능.
+      global: true,
+      imports,
       providers: [
-        ...applierClasses,
+        ...appliers,
         {
           provide: PREVIEW_APPLIERS,
-          useFactory: (...appliers: PreviewApplier[]) => appliers,
-          inject: applierClasses,
+          useFactory: (...resolved: PreviewApplier[]) => resolved,
+          inject: appliers,
         },
       ],
-      exports: [...applierClasses],
+      exports: [...appliers],
     };
   }
 }

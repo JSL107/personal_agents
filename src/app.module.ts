@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BeAgentModule } from './agent/be/be.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
+import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
@@ -47,7 +48,12 @@ import { SlackCollectorModule } from './slack-collector/slack-collector.module';
     ImpactReporterModule,
     PoShadowModule,
     BeAgentModule,
-    PreviewGateModule,
+    // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
+    // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
+    PreviewGateModule.forRoot({
+      appliers: [PmWriteBackApplier],
+      imports: [GithubModule, NotionModule],
+    }),
     SlackModule,
     MorningBriefingModule,
     CrawlerModule,

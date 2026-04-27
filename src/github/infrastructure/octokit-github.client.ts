@@ -184,6 +184,33 @@ export class OctokitGithubClient implements GithubClientPort {
     });
   }
 
+  // PM-2: Issue/PR 에 코멘트 append. PreviewAction 의 status 전이가 멱등성 보장 (같은 preview 두 번 apply 불가).
+  async addIssueComment({
+    repo,
+    number,
+    body,
+  }: {
+    repo: string;
+    number: number;
+    body: string;
+  }): Promise<void> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      await this.octokit!.rest.issues.createComment({
+        owner,
+        repo: repoName,
+        issue_number: number,
+        body,
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} 코멘트 추가 실패`,
+      );
+    }
+  }
+
   private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
     try {
       // assignee:@me 는 인증된 사용자에게 할당된 모든 open issue/PR 을 한 번에 조회한다.

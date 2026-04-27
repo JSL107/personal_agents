@@ -44,6 +44,7 @@ describe('ReviewPullRequestUsecase', () => {
       listMyAssignedTasks: jest.fn(),
       getPullRequest: jest.fn(),
       getPullRequestDiff: jest.fn(),
+      addIssueComment: jest.fn(),
     };
 
     usecase = new ReviewPullRequestUsecase(

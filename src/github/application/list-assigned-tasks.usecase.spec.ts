@@ -14,6 +14,7 @@ const buildClientMock = (
   listMyAssignedTasks: jest.fn().mockResolvedValue(fixture),
   getPullRequest: jest.fn(),
   getPullRequestDiff: jest.fn(),
+  addIssueComment: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {

@@ -11,7 +11,9 @@ import { DailyPlanEvidenceBuilder } from './application/daily-plan-evidence.buil
 import { DailyPlanPromptBuilder } from './application/daily-plan-prompt.builder';
 import { GenerateDailyPlanUsecase } from './application/generate-daily-plan.usecase';
 import { SyncContextUsecase } from './application/sync-context.usecase';
+import { SyncPlanUsecase } from './application/sync-plan.usecase';
 
+// PreviewGateModule (global) 가 CreatePreviewUsecase 를 자동 노출 — SyncPlanUsecase 가 그걸 inject.
 @Module({
   imports: [
     ModelRouterModule,
@@ -24,10 +26,11 @@ import { SyncContextUsecase } from './application/sync-context.usecase';
   providers: [
     GenerateDailyPlanUsecase,
     SyncContextUsecase,
+    SyncPlanUsecase,
     DailyPlanContextCollector,
     DailyPlanPromptBuilder,
     DailyPlanEvidenceBuilder,
   ],
-  exports: [GenerateDailyPlanUsecase, SyncContextUsecase],
+  exports: [GenerateDailyPlanUsecase, SyncContextUsecase, SyncPlanUsecase],
 })
 export class PmAgentModule {}

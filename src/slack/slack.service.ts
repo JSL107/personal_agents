@@ -18,6 +18,7 @@ import {
   ContextSummary,
   SyncContextUsecase,
 } from '../agent/pm/application/sync-context.usecase';
+import { SyncPlanUsecase } from '../agent/pm/application/sync-plan.usecase';
 import {
   DailyPlan,
   DailyPlanSource,
@@ -57,6 +58,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
+    private readonly syncPlanUsecase: SyncPlanUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -488,6 +490,41 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
           response_type: 'ephemeral',
           replace_original: true,
           text: `이대리 /sync-context 실패: ${userFacingMessage}`,
+        });
+      }
+    });
+
+    app.command('/sync-plan', async ({ ack, command, respond }) => {
+      // PM-2: 직전 PM plan 의 GITHUB/NOTION task subtasks 를 외부 시스템에 동기화하기 전 미리보기 + 동의 게이트.
+      // SyncPlanUsecase 가 후보 추출 + PreviewAction 생성 → 응답으로 ✅/❌ Block Kit 메시지 노출.
+      // 사용자가 ✅ 누르면 PmWriteBackApplier 가 GitHub Issue 코멘트 / Notion page Todo 추가.
+      await ack({
+        response_type: 'ephemeral',
+        text: '이대리가 동기화할 task 후보를 모으는 중입니다 (5~10초 소요)...',
+      });
+
+      try {
+        const { previewId, previewText } = await this.syncPlanUsecase.execute({
+          slackUserId: command.user_id,
+        });
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: previewText,
+          // Block Kit 의 apply/cancel 버튼 — 클릭 시 app.action(preview:apply|cancel) 핸들러로 이어짐.
+          blocks: buildPreviewBlocks({ previewText, previewId }) as never,
+        });
+      } catch (error: unknown) {
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `SyncPlanUsecase 실패: ${rawMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `이대리 /sync-plan 실패: ${this.toUserFacingErrorMessage(error)}`,
         });
       }
     });

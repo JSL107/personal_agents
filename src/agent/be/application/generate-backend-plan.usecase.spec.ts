@@ -72,6 +72,7 @@ describe('GenerateBackendPlanUsecase', () => {
       listMyAssignedTasks: jest.fn(),
       getPullRequest: jest.fn(),
       getPullRequestDiff: jest.fn(),
+      addIssueComment: jest.fn(),
     };
 
     usecase = new GenerateBackendPlanUsecase(

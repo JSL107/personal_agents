@@ -26,6 +26,15 @@ export interface GetPullRequestDiffOptions extends PullRequestRef {
   maxBytes?: number;
 }
 
+// PM-2 Write-back: GitHub Issue 또는 PR 의 코멘트 영역에 외부 게시 가능한 텍스트를 append.
+export interface AddIssueCommentInput {
+  // "owner/repo" 형식.
+  repo: string;
+  // issue 또는 PR number — GitHub API 에서 PR 도 issue endpoint 의 일종으로 취급.
+  number: number;
+  body: string;
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
@@ -36,4 +45,8 @@ export interface GithubClientPort {
   getPullRequestDiff(
     options: GetPullRequestDiffOptions,
   ): Promise<PullRequestDiff>;
+
+  // PM-2: 사용자 ✅ apply 후 Issue/PR 코멘트로 WBS subtask checklist 등을 append.
+  // GitHub PAT 가 `repo` 또는 fine-grained `Issues: Read+Write` scope 가 있어야 동작.
+  addIssueComment(input: AddIssueCommentInput): Promise<void>;
 }
