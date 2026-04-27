@@ -2,12 +2,14 @@ import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.t
 import { ContextSummary } from '../agent/pm/application/sync-context.usecase';
 import { DailyPlan, TaskItem } from '../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
+import { QuotaStatsResult } from '../agent-run/application/get-quota-stats.usecase';
 import {
   formatContextSummary,
   formatDailyPlan,
   formatDailyReview,
   formatModelFooter,
   formatPullRequestReview,
+  formatQuotaStats,
 } from './slack.service';
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
@@ -455,5 +457,53 @@ describe('formatDailyPlan — 참조 소스 섹션', () => {
     const sourcesIdx = output.indexOf('*참조 소스*');
     const topPriorityIdx = output.indexOf('*오늘의 최우선');
     expect(sourcesIdx).toBeLessThan(topPriorityIdx);
+  });
+});
+
+describe('formatQuotaStats (OPS-1)', () => {
+  it('rows 가 비어있으면 "기록 없음" 안내 문구', () => {
+    const result: QuotaStatsResult = {
+      range: 'TODAY',
+      sinceIso: '2026-04-26T12:00:00.000Z',
+      rows: [],
+      totals: { count: 0, totalDurationMs: 0 },
+    };
+    const output = formatQuotaStats(result);
+    expect(output).toContain('오늘 (24시간)');
+    expect(output).toContain('기록 없음');
+  });
+
+  it('provider 별 count 내림차순으로 출력 + 합계 라인', () => {
+    const result: QuotaStatsResult = {
+      range: 'WEEK',
+      sinceIso: '2026-04-20T12:00:00.000Z',
+      rows: [
+        {
+          cliProvider: 'claude-cli',
+          count: 3,
+          avgDurationMs: 20_000,
+          totalDurationMs: 60_000,
+        },
+        {
+          cliProvider: 'codex-cli',
+          count: 5,
+          avgDurationMs: 12_000,
+          totalDurationMs: 60_000,
+        },
+      ],
+      totals: { count: 8, totalDurationMs: 120_000 },
+    };
+    const output = formatQuotaStats(result);
+
+    expect(output).toContain('최근 7일');
+    expect(output).toContain('codex-cli — 5회');
+    expect(output).toContain('claude-cli — 3회');
+    // codex-cli (5회) 가 claude-cli (3회) 보다 위에 있어야 함
+    expect(output.indexOf('codex-cli')).toBeLessThan(
+      output.indexOf('claude-cli'),
+    );
+    expect(output).toContain('*합계*: 8회');
+    // 120_000 ms = 2.0분
+    expect(output).toContain('총 2.0분');
   });
 });

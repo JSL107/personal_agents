@@ -16,6 +16,10 @@ model AgentRun {
   triggerType       String    @map("trigger_type")
   status            String
   modelUsed         String?   @map("model_used")
+  // OPS-1 Quota Pane — 어떤 CLI provider 가 호출됐는지 (codex-cli / claude-cli / gemini-cli / mock)
+  // 와 execute 시작~종료 elapsed 시간을 기록. /quota 슬래시가 provider 별 count + 평균 duration 산출.
+  cliProvider       String?   @map("cli_provider")
+  durationMs        Int?      @map("duration_ms")
   inputSnapshot     Json      @map("input_snapshot")
   output            Json?
   startedAt         DateTime  @default(now()) @map("started_at")

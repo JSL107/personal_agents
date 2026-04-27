@@ -66,6 +66,10 @@ export class AgentRunService {
       inputSnapshot,
     });
 
+    // OPS-1 Quota Pane — execute 소요 시간을 finish 호출 시 함께 기록.
+    // begin 직후 시점부터 측정해 evidence 기록 + run 콜백 + finish 직전까지의 elapsed 가 잡힌다.
+    const startMs = Date.now();
+
     // evidence loop 을 try 안에 둬서 recordEvidence 가 throw 하더라도 AgentRun 이 IN_PROGRESS 에 고착되지 않도록 한다.
     try {
       for (const entry of evidence ?? []) {
@@ -79,6 +83,8 @@ export class AgentRunService {
         status: AgentRunStatus.SUCCEEDED,
         modelUsed: execution.modelUsed,
         output: execution.output,
+        cliProvider: execution.modelUsed,
+        durationMs: Date.now() - startMs,
       });
 
       return {
@@ -97,6 +103,9 @@ export class AgentRunService {
         id,
         status: AgentRunStatus.FAILED,
         output: { error: message },
+        // FAILED 시에도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율도 함께 보임.
+        // cliProvider 는 run 콜백이 throw 한 경우 모를 수 있어 옵션 (그 경우 'unknown' 으로 집계됨).
+        durationMs: Date.now() - startMs,
       });
 
       throw error;

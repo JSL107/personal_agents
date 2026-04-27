@@ -8,6 +8,8 @@ import {
   AgentRunRepositoryPort,
   BeginAgentRunInput,
   FinishAgentRunInput,
+  QuotaStatRow,
+  QuotaStatsQuery,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
 
@@ -38,12 +40,16 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     status,
     modelUsed,
     output,
+    cliProvider,
+    durationMs,
   }: FinishAgentRunInput): Promise<void> {
     await this.prisma.agentRun.update({
       where: { id },
       data: {
         status,
         modelUsed,
+        cliProvider,
+        durationMs,
         output: (output ?? null) as unknown as Prisma.InputJsonValue,
         endedAt: new Date(),
       },
@@ -105,5 +111,30 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       output: row.output as unknown,
       endedAt: row.endedAt,
     };
+  }
+
+  // OPS-1: cliProvider 별로 count + 평균/총 duration 집계 (slackUserId 한정).
+  // Prisma groupBy 사용 — JSON path 매칭 (inputSnapshot.slackUserId) + startedAt 범위 필터.
+  // cliProvider 가 null 인 row (구버전 / FAILED 시 미기록) 는 'unknown' 으로 합쳐 표기.
+  async aggregateQuotaStats({
+    slackUserId,
+    since,
+  }: QuotaStatsQuery): Promise<QuotaStatRow[]> {
+    const grouped = await this.prisma.agentRun.groupBy({
+      by: ['cliProvider'],
+      where: {
+        startedAt: { gte: since },
+        inputSnapshot: { path: ['slackUserId'], equals: slackUserId },
+      },
+      _count: { _all: true },
+      _sum: { durationMs: true },
+      _avg: { durationMs: true },
+    });
+    return grouped.map((row) => ({
+      cliProvider: row.cliProvider ?? 'unknown',
+      count: row._count._all,
+      totalDurationMs: row._sum.durationMs ?? 0,
+      avgDurationMs: Math.round(row._avg.durationMs ?? 0),
+    }));
   }
 }

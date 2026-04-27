@@ -219,7 +219,7 @@
 | **P0** | PRO-1 | Morning Briefing CRON | High | Low | 없음 |
 | **P0** | PRO-3 | 모델 라우팅 응답 푸터 | Med | Low | 없음 |
 | **P0** | PRO-2 | Plan Diff 라벨링 | High | Low | parser 변경 |
-| **P1** | OPS-1 | Cost / Quota Pane | High | Low | Prisma 스키마 |
+| **✅ Done** | OPS-1 | Cost / Quota Pane — `agent_run.cli_provider/duration_ms` + `/quota` 슬래시 | High | Low | — |
 | **P1** | PO-2 | Dry-run Preview Gate | High | Med | Slack Block Kit |
 | **P1** | PM-2 | PM Write-back (idempotency 우선) | High | Med | PO-2 선행 |
 | **P1** | OPS-4 | PII Redaction | High | Low | 없음 |

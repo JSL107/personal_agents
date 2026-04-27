@@ -28,6 +28,10 @@ import { PoShadowReport } from '../agent/po-shadow/domain/po-shadow.type';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
 import { AgentRunOutcome } from '../agent-run/application/agent-run.service';
+import {
+  GetQuotaStatsUsecase,
+  QuotaStatsResult,
+} from '../agent-run/application/get-quota-stats.usecase';
 import { DomainException } from '../common/exception/domain.exception';
 
 // 이대리 Slack 어댑터.
@@ -47,6 +51,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
+    private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -398,6 +403,49 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    app.command('/quota', async ({ ack, command, respond }) => {
+      // OPS-1: /quota [today|week] — 사용자 자신의 agent_run 사용량 통계.
+      // 인자 없으면 today 기본. 모델 호출 없이 DB groupBy 만 — 즉시 응답.
+      const arg = command.text?.trim().toLowerCase() ?? '';
+      const range: 'TODAY' | 'WEEK' = arg === 'week' ? 'WEEK' : 'TODAY';
+
+      await ack({
+        response_type: 'ephemeral',
+        text: `이대리가 ${range === 'WEEK' ? '최근 7일' : '오늘'} 사용량을 집계 중입니다...`,
+      });
+
+      try {
+        const stats = await this.getQuotaStatsUsecase.execute({
+          slackUserId: command.user_id,
+          range,
+        });
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: formatQuotaStats(stats),
+        });
+      } catch (error: unknown) {
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `GetQuotaStatsUsecase 실패: ${rawMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+
+        const userFacingMessage =
+          error instanceof DomainException
+            ? rawMessage
+            : '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `이대리 /quota 실패: ${userFacingMessage}`,
+        });
+      }
+    });
+
     app.command('/review-pr', async ({ ack, command, respond }) => {
       const prRef = command.text?.trim() ?? '';
       if (prRef.length === 0) {
@@ -469,6 +517,41 @@ export const formatModelFooter = ({
   agentRunId,
 }: AgentRunOutcome<unknown>): string =>
   `\n\n_model: ${sanitizeForSlackLink(modelUsed)} · run #${agentRunId}_`;
+
+// /quota 결과 — 사용자의 agent_run 사용량 통계 (provider 별 count + 평균/총 duration).
+// 모델 호출 없는 DB 집계라 footer 미부착. since 시각은 ISO 그대로 노출 (사후 분석용).
+export const formatQuotaStats = (stats: QuotaStatsResult): string => {
+  const rangeLabel = stats.range === 'WEEK' ? '최근 7일' : '오늘 (24시간)';
+  if (stats.totals.count === 0) {
+    return [
+      `*Quota 사용량 — ${rangeLabel}*`,
+      '',
+      `_${stats.sinceIso} 이후 본인 명의 agent_run 기록 없음._`,
+    ].join('\n');
+  }
+
+  const lines: string[] = [
+    `*Quota 사용량 — ${rangeLabel}*`,
+    `_since ${stats.sinceIso}_`,
+    '',
+    '*Provider 별*',
+  ];
+
+  // count 내림차순 — 가장 많이 쓴 provider 가 위로.
+  const sortedRows = [...stats.rows].sort((a, b) => b.count - a.count);
+  for (const row of sortedRows) {
+    const avgSec = (row.avgDurationMs / 1000).toFixed(1);
+    const totalSec = (row.totalDurationMs / 1000).toFixed(1);
+    lines.push(
+      `• ${row.cliProvider} — ${row.count}회, 평균 ${avgSec}s · 총 ${totalSec}s`,
+    );
+  }
+
+  const totalMin = (stats.totals.totalDurationMs / 60_000).toFixed(1);
+  lines.push('', `*합계*: ${stats.totals.count}회 · 총 ${totalMin}분`);
+
+  return lines.join('\n');
+};
 
 // /sync-context 결과 — 컨텍스트 재수집 상태 요약을 한국어 Slack 마크다운으로 렌더.
 // 모델 호출이 없으므로 formatModelFooter 는 붙이지 않는다 (HOTFIX-1).

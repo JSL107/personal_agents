@@ -9,6 +9,7 @@ describe('AgentRunService', () => {
     finish: jest.fn(),
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
+    aggregateQuotaStats: jest.fn(),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -52,6 +53,9 @@ describe('AgentRunService', () => {
       status: AgentRunStatus.SUCCEEDED,
       modelUsed: 'mock-chatgpt',
       output: plan,
+      // OPS-1 Quota Pane — cliProvider 는 modelUsed 와 동일 값으로 기록, durationMs 는 측정값.
+      cliProvider: 'mock-chatgpt',
+      durationMs: expect.any(Number),
     });
   });
 
@@ -106,6 +110,8 @@ describe('AgentRunService', () => {
       id: 42,
       status: AgentRunStatus.FAILED,
       output: { error: 'evidence persist 실패' },
+      // FAILED 경로도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율 확인용.
+      durationMs: expect.any(Number),
     });
   });
 
@@ -129,6 +135,7 @@ describe('AgentRunService', () => {
       id: 42,
       status: AgentRunStatus.FAILED,
       output: { error: 'boom' },
+      durationMs: expect.any(Number),
     });
   });
 });
