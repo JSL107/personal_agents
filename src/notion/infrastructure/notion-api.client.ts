@@ -226,16 +226,18 @@ export class NotionApiClient implements NotionClientPort {
     // map 항목 자체를 chain 시킨다. 모든 후속 호출이 이전 work 의 완료를 보장 후 시작.
     const previous = this.checkInLocks.get(pageId) ?? Promise.resolve();
     // 이전 호출이 throw 했어도 후속 호출은 정상 진행돼야 한다 — catch 로 swallow.
-    const work = previous
+    // finally 도 동일 work chain 안에 fold — caller 의 await/catch 가 cleanup 까지 커버.
+    // finally 를 별도 promise 로 분기하면 reject 시 unhandled rejection 으로 누수 (codex review a8b249d P1).
+    const work: Promise<void> = previous
       .catch(() => undefined)
-      .then(() => this.runReplaceCheckInSection(pageId, blocks));
+      .then(() => this.runReplaceCheckInSection(pageId, blocks))
+      .finally(() => {
+        // 후속 호출이 이미 lock 을 교체했을 수 있으므로 자기 work 일 때만 삭제.
+        if (this.checkInLocks.get(pageId) === work) {
+          this.checkInLocks.delete(pageId);
+        }
+      });
     this.checkInLocks.set(pageId, work);
-    work.finally(() => {
-      // 후속 호출이 이미 lock 을 교체했을 수 있으므로 자기 work 일 때만 삭제.
-      if (this.checkInLocks.get(pageId) === work) {
-        this.checkInLocks.delete(pageId);
-      }
-    });
     return work;
   }
 
