@@ -181,10 +181,10 @@
   - `agent_run.status = FAILED` 인 row 의 `input_snapshot` 으로 동일 prompt 재실행하는 `/retry-run <id>`.
   - 사용자가 매번 자유 텍스트 다시 입력 안 해도 됨.
 
-- **OPS-6 Stale Data Filter (사용자 발견 — 25년 자료 누적)**
-  - 현재 [`octokit-github.client.ts`](src/github/infrastructure/octokit-github.client.ts) 의 `q: 'assignee:@me state:open'` 은 open 만 컷할 뿐 1년 이상 묵은 issue 도 통과. Notion `listActiveTasks` 도 `Active` 상태면 작년 시작 task 도 통과.
-  - **컷오프 정책 결정 필요** (사용자 결정): 30일 / 60일 / 90일 / due_date 기반 / 휴리스틱 조합.
-  - 변경 폭: GitHub `since=<ISO date>` 또는 응답 후 `updatedAt` 필터 / Notion query 에 `last_edited_time` filter 추가.
+- **OPS-6 Stale Data Filter ✅ 완료** (60일 default — env `STALE_DATA_CUTOFF_DAYS` override 가능)
+  - GitHub Search API 의 `q` 에 `updated:>=YYYY-MM-DD` qualifier 추가 ([octokit-github.client.ts](src/github/infrastructure/octokit-github.client.ts) `invokeSearch`).
+  - Notion `databases.query` 에 `last_edited_time` `on_or_after` 필터 추가 ([notion-api.client.ts](src/notion/infrastructure/notion-api.client.ts) `queryDbOrNull`).
+  - 공통 컷오프 헬퍼 [`stale-data-cutoff.util.ts`](src/common/util/stale-data-cutoff.util.ts) — usecase 두 곳 (List Assigned / List Active Tasks) 이 ConfigService 로 동일 정책 공유.
 
 - **OPS-7 MorningBriefing Layer 정화 (codex P0 deferred)**
   - 현재 `MorningBriefingConsumer` (Infrastructure) 가 `SlackService` (Slack 어댑터) 와 `formatDailyPlan/formatModelFooter` (presentation) 를 직접 import — CODE_RULES §2.7 의 의존 방향과 충돌.
@@ -230,7 +230,7 @@
 | **P2** | PM-3' | FTS 기반 유사 plan 추출 | Med | Low | Postgres tsvector |
 | **P2** | OPS-3 | Slack Reaction → Inbox | Med | Low | slack-collector 확장 |
 | **P2** | OPS-5 | Failure Replay | Low | Low | 없음 |
-| **P2** | OPS-6 | Stale Data Filter (25년 자료 컷) | High | Low | 컷오프 정책 결정 |
+| **✅ Done** | OPS-6 | Stale Data Filter — 60일 default (env override) | High | Low | — |
 | **P2** | OPS-7 | MorningBriefing Layer 정화 (SlackNotifierPort 도입) | Med | Low | 없음 |
 | **P2** | OPS-8 | TriggerType.MORNING_BRIEFING_CRON 분리 | Med | Low | 없음 |
 | **P2** | PM-4 | extractSources 선언적 변환 | Low | Low | 없음 |

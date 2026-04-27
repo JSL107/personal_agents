@@ -89,6 +89,15 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   MORNING_BRIEFING_TIMEZONE?: string;
+
+  // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
+  // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'STALE_DATA_CUTOFF_DAYS 는 양의 정수 (예: "60") 만 허용합니다.',
+  })
+  STALE_DATA_CUTOFF_DAYS?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

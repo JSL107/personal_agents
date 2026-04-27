@@ -43,6 +43,7 @@ export class NotionApiClient implements NotionClientPort {
   async listActiveTasks({
     databaseIds,
     perDatabaseLimit = DEFAULT_PER_DB_LIMIT,
+    lastEditedSinceIsoDateTime,
   }: ListActiveTasksOptions = {}): Promise<NotionTask[]> {
     if (!this.client) {
       throw new NotionException({
@@ -61,7 +62,11 @@ export class NotionApiClient implements NotionClientPort {
 
     const tasks: NotionTask[] = [];
     for (const databaseId of targetDbs) {
-      const response = await this.queryDbOrNull(databaseId, perDatabaseLimit);
+      const response = await this.queryDbOrNull(
+        databaseId,
+        perDatabaseLimit,
+        lastEditedSinceIsoDateTime,
+      );
       if (!response) {
         continue;
       }
@@ -78,14 +83,24 @@ export class NotionApiClient implements NotionClientPort {
 
   // 한 DB 가 권한 미부여 / not_found 면 null 반환 — 다른 DB 는 계속 (listActiveTasks 안에서 skip).
   // try/catch + null 패턴을 별도 helper 로 추출해 caller 가 let 없이 const 로 받게 한다.
+  // OPS-6: lastEditedSinceIsoDateTime 이 있으면 last_edited_time timestamp filter 추가 — long-tail 컷.
   private async queryDbOrNull(
     databaseId: string,
     perDatabaseLimit: number,
+    lastEditedSinceIsoDateTime?: string,
   ): Promise<Awaited<ReturnType<Client['databases']['query']>> | null> {
     try {
       return await this.client!.databases.query({
         database_id: databaseId,
         page_size: perDatabaseLimit,
+        ...(lastEditedSinceIsoDateTime
+          ? {
+              filter: {
+                timestamp: 'last_edited_time' as const,
+                last_edited_time: { on_or_after: lastEditedSinceIsoDateTime },
+              },
+            }
+          : {}),
       });
     } catch (error: unknown) {
       this.logger.warn(

@@ -35,12 +35,13 @@ export class OctokitGithubClient implements GithubClientPort {
 
   async listMyAssignedTasks({
     limit = DEFAULT_LIMIT,
+    updatedSinceIsoDate,
   }: ListAssignedTasksOptions = {}): Promise<AssignedTasks> {
     this.assertOctokitConfigured();
 
     const perPage = Math.min(limit, MAX_LIMIT);
 
-    const response = await this.invokeSearch(perPage);
+    const response = await this.invokeSearch(perPage, updatedSinceIsoDate);
 
     const issues: GithubIssue[] = [];
     const pullRequests: GithubPullRequest[] = [];
@@ -183,12 +184,17 @@ export class OctokitGithubClient implements GithubClientPort {
     });
   }
 
-  private async invokeSearch(perPage: number) {
+  private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
     try {
       // assignee:@me 는 인증된 사용자에게 할당된 모든 open issue/PR 을 한 번에 조회한다.
       // PR 도 GitHub API 상 issue 의 일종이라 search/issues 엔드포인트로 함께 받는다.
+      // OPS-6: updatedSinceIsoDate 가 있으면 `updated:>=YYYY-MM-DD` qualifier 추가 — long-tail 컷.
+      const baseQuery = 'assignee:@me state:open';
+      const q = updatedSinceIsoDate
+        ? `${baseQuery} updated:>=${updatedSinceIsoDate}`
+        : baseQuery;
       return await this.octokit!.rest.search.issuesAndPullRequests({
-        q: 'assignee:@me state:open',
+        q,
         per_page: perPage,
         sort: 'updated',
         order: 'desc',

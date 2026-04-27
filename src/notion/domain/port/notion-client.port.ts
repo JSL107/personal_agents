@@ -11,6 +11,9 @@ export interface ListActiveTasksOptions {
   databaseIds?: string[];
   // DB 한 건당 최대 결과 수 (무한 페이지네이션 방지).
   perDatabaseLimit?: number;
+  // OPS-6: Notion API 의 last_edited_time on_or_after 필터에 들어갈 ISO 8601 datetime (UTC).
+  // 미지정 시 cutoff 적용 안 함 — usecase 가 ConfigService 기준으로 채워 넣는다.
+  lastEditedSinceIsoDateTime?: string;
 }
 
 // Day-page 블록 변환용 추상 타입. 도메인이 Notion SDK 에 의존하지 않도록 block 종류만 enum 형태로 노출.

@@ -12,6 +12,9 @@ export const OCTOKIT_INSTANCE = Symbol('OCTOKIT_INSTANCE');
 
 export interface ListAssignedTasksOptions {
   limit?: number;
+  // OPS-6: GitHub Search API 의 `updated:>=YYYY-MM-DD` qualifier 에 들어갈 ISO date.
+  // 미지정 시 cutoff 적용 안 함 — usecase 가 ConfigService 기준으로 채워 넣는다.
+  updatedSinceIsoDate?: string;
 }
 
 export interface PullRequestRef {
