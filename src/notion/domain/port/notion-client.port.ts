@@ -38,6 +38,15 @@ export interface AppendBlocksOptions {
   blocks: NotionPlanBlock[];
 }
 
+// 같은 day-page 안에서 "Check in *" 으로 시작하는 heading_2 섹션 (해당 heading + 다음 heading_2
+// 직전까지의 모든 block) 을 모두 삭제하고 새 blocks 를 append. /worklog 의 "Check Out" 등
+// 다른 heading_2 섹션은 그대로 보존된다.
+// /today 가 같은 날 여러 번 호출돼도 Notion page 가 누적 append 되지 않고 최신 한 건만 남는다.
+export interface ReplaceCheckInSectionOptions {
+  pageId: string;
+  blocks: NotionPlanBlock[];
+}
+
 export interface NotionDailyPlanPage {
   pageId: string;
   url: string;
@@ -50,6 +59,8 @@ export interface NotionClientPort {
   findOrCreateDailyPage(
     options: FindOrCreateDailyPageOptions,
   ): Promise<NotionDailyPlanPage>;
-  // 기존 page 에 block 추가. /today /worklog 가 섹션을 append 하는 용도.
+  // 기존 page 에 block 추가. /worklog 의 "Check Out" append 용도 (overwrite 의미 없음).
   appendBlocks(options: AppendBlocksOptions): Promise<void>;
+  // /today 의 "Check in" 섹션 전용 — 매 호출마다 기존 Check in 섹션 삭제 후 새로 입력.
+  replaceCheckInSection(options: ReplaceCheckInSectionOptions): Promise<void>;
 }

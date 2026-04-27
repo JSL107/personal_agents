@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { DailyPlan, TaskItem } from '../../agent/pm/domain/pm-agent.type';
+import {
+  DailyPlan,
+  DailyPlanSource,
+  TaskItem,
+} from '../../agent/pm/domain/pm-agent.type';
 import {
   NOTION_CLIENT_PORT,
   NotionClientPort,
@@ -12,12 +16,18 @@ import {
 export interface AppendDailyPlanInput {
   plan: DailyPlan;
   planDate: Date; // day-precision (UTC 00:00, PM usecase 가 KST 로 정규화해 전달)
+  // PM-2++: plan 이 어떤 외부 데이터(GitHub Issue/PR · Notion task · Slack 멘션 ·
+  // 직전 PM/Work Reviewer 실행) 를 참조해 만들어졌는지 — Notion check-in 섹션 맨 위에
+  // "참조 소스" 로 노출. Slack /today 응답 sources 와 동일 데이터.
+  sources: DailyPlanSource[];
 }
 
 const KST_OFFSET_HOURS = 9;
 
-// PM Agent `/today` 성공 후 Notion day-page 에 "Check in HH:MM" 섹션을 append.
+// PM Agent `/today` 성공 후 Notion day-page 의 "Check in HH:MM" 섹션을 갱신.
 // 같은 날 page 가 이미 있으면 재사용 (사용자 "일일 회고" 템플릿 — /today Check in + /worklog Check Out 같은 page).
+// /today 가 같은 날 여러 번 호출돼도 누적 append 되지 않도록 기존 Check in 섹션을 모두
+// archive 후 신규 한 건만 남긴다 (replaceCheckInSection). /worklog 의 Check Out 섹션은 보존.
 // DB 미설정 시 null — 호출자는 graceful skip.
 @Injectable()
 export class AppendDailyPlanUsecase {
@@ -31,6 +41,7 @@ export class AppendDailyPlanUsecase {
   async execute({
     plan,
     planDate,
+    sources,
   }: AppendDailyPlanInput): Promise<NotionDailyPlanPage | null> {
     const databaseId = this.resolveDailyPlanDatabaseId();
     if (!databaseId) {
@@ -45,9 +56,9 @@ export class AppendDailyPlanUsecase {
       databaseId,
       title,
     });
-    await this.client.appendBlocks({
+    await this.client.replaceCheckInSection({
       pageId: page.pageId,
-      blocks: buildCheckInBlocks(plan),
+      blocks: buildCheckInBlocks(plan, sources),
     });
     return page;
   }
@@ -81,19 +92,26 @@ const getKstHourMinute = (): string => {
 };
 
 // DailyPlan → Check in 섹션 blocks.
-// 사용자 "일일 회고" 템플릿 포맷: Check in HH:MM (heading2) / 오늘의 할 일 (heading3) / 최우선·오전·오후·Blocker 구조.
+// 사용자 "일일 회고" 템플릿 포맷: Check in HH:MM (heading2) / 참조 소스 / 오늘의 할 일 (heading3) / 최우선·오전·오후·Blocker 구조.
 // TaskItem 의 subtasks (WBS) 는 부모 todo 뒤에 들여쓴 todo 로, isCriticalPath 는 제목 앞에 ⚠ 마커로.
 // PRO-2++: task.url 이 있으면 해당 block 에 link 를 입혀 Notion 페이지에서도 PR/Issue/Notion 으로 클릭 이동 가능.
-const buildCheckInBlocks = (plan: DailyPlan): NotionPlanBlock[] => {
+// PM-2++: sources 가 있으면 "오늘의 할 일" 위에 "참조 소스" subheading 으로 데이터 출처를 노출.
+const buildCheckInBlocks = (
+  plan: DailyPlan,
+  sources: DailyPlanSource[],
+): NotionPlanBlock[] => {
   const blocks: NotionPlanBlock[] = [
     { type: 'heading', text: `Check in ${getKstHourMinute()}` },
+  ];
+  appendSourceBlocks(blocks, sources);
+  blocks.push(
     { type: 'subheading', text: '오늘의 할 일' },
     {
       type: 'bullet',
       text: `최우선: ${renderTaskTitle(plan.topPriority)}`,
       link: plan.topPriority.url,
     },
-  ];
+  );
   appendSubtaskBlocks(blocks, plan.topPriority);
 
   if (plan.morning.length > 0) {
@@ -153,6 +171,26 @@ const buildCheckInBlocks = (plan: DailyPlan): NotionPlanBlock[] => {
 const renderTaskTitle = (task: TaskItem): string => {
   const critical = task.isCriticalPath ? '⚠ ' : '';
   return `${critical}${task.title} (${task.source})`;
+};
+
+// 참조 소스 섹션을 Check in heading 직후에 추가. URL 이 있는 항목은 bullet 자체가 클릭 가능.
+// label 을 "참조 소스" 단일 subheading 으로 묶고, 한 항목당 한 bullet — Slack /today 응답의
+// `*참조 소스*` 섹션과 동일 정보를 Notion 에서도 그대로 확인 가능.
+const appendSourceBlocks = (
+  blocks: NotionPlanBlock[],
+  sources: DailyPlanSource[],
+): void => {
+  if (sources.length === 0) {
+    return;
+  }
+  blocks.push({ type: 'subheading', text: '참조 소스' });
+  for (const source of sources) {
+    blocks.push({
+      type: 'bullet',
+      text: source.label,
+      link: source.url,
+    });
+  }
 };
 
 // WBS 서브태스크를 부모 todo 바로 아래에 "  - subtitle (Nm)" 형태의 paragraph 들로 append.

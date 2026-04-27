@@ -110,9 +110,11 @@ export class GenerateDailyPlanUsecase {
           request: { prompt, systemPrompt: PM_SYSTEM_PROMPT },
         });
         const innerPlan = parseDailyPlan(completion.text);
+        const innerSources = extractSources(context);
 
         await this.persistPlanGracefully({
           plan: innerPlan,
+          sources: innerSources,
           agentRunId,
           planDate,
         });
@@ -155,10 +157,12 @@ export class GenerateDailyPlanUsecase {
   // 둘 다 graceful — 어느 하나 실패해도 plan 결과는 사용자에게 정상 반환.
   private async persistPlanGracefully({
     plan,
+    sources,
     agentRunId,
     planDate,
   }: {
     plan: DailyPlan;
+    sources: DailyPlanSource[];
     agentRunId: number;
     planDate: Date;
   }): Promise<void> {
@@ -177,7 +181,7 @@ export class GenerateDailyPlanUsecase {
     }
 
     try {
-      await this.appendDailyPlanUsecase.execute({ plan, planDate });
+      await this.appendDailyPlanUsecase.execute({ plan, planDate, sources });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(

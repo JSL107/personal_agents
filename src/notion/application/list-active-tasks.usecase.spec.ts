@@ -21,6 +21,7 @@ describe('ListActiveTasksUsecase', () => {
     listActiveTasks: jest.fn().mockResolvedValue(fixture),
     findOrCreateDailyPage: jest.fn(),
     appendBlocks: jest.fn(),
+    replaceCheckInSection: jest.fn(),
   });
 
   it('Notion client 호출 결과를 그대로 반환', async () => {

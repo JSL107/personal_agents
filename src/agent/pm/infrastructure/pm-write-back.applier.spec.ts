@@ -47,6 +47,7 @@ const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
   listActiveTasks: jest.fn(),
   findOrCreateDailyPage: jest.fn(),
   appendBlocks: jest.fn().mockResolvedValue(undefined),
+  replaceCheckInSection: jest.fn().mockResolvedValue(undefined),
 });
 
 describe('PmWriteBackApplier', () => {

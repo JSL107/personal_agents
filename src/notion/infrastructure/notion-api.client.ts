@@ -15,6 +15,7 @@ import {
   NotionClientPort,
   NotionDailyPlanPage,
   NotionPlanBlock,
+  ReplaceCheckInSectionOptions,
 } from '../domain/port/notion-client.port';
 
 const DEFAULT_PER_DB_LIMIT = 50;
@@ -203,6 +204,70 @@ export class NotionApiClient implements NotionClientPort {
     }
   }
 
+  // /today 가 같은 day-page 에 여러 번 호출돼도 Notion 에 누적되지 않도록 — 기존 "Check in *"
+  // heading_2 섹션(다음 heading_2 직전까지) 들을 모두 archive 후 신규 blocks 를 append.
+  // /worklog 의 "Check Out" 처럼 다른 heading_2 로 시작하는 섹션은 보존된다.
+  async replaceCheckInSection({
+    pageId,
+    blocks,
+  }: ReplaceCheckInSectionOptions): Promise<void> {
+    this.assertClientConfigured('replaceCheckInSection');
+
+    try {
+      const existingIds = await this.collectCheckInSectionBlockIds(pageId);
+      for (const blockId of existingIds) {
+        // archive — Notion API 의 blocks.delete 는 archive=true 로 마킹 (hard delete 아님).
+        await this.client!.blocks.delete({ block_id: blockId });
+      }
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 의 기존 Check in 섹션 정리 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+
+    await this.appendBlocks({ pageId, blocks });
+  }
+
+  // 페이지의 자식 블록을 순회하면서 "Check in *" heading_2 부터 다음 heading_2 직전까지의 block id 를 수집.
+  // 같은 page 에 과거 호출로 여러 Check in 섹션이 누적돼 있으면 모두 잡아서 한 번에 archive 한다.
+  private async collectCheckInSectionBlockIds(
+    pageId: string,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    let inCheckInSection = false;
+    let cursor: string | undefined;
+
+    do {
+      const response = await this.client!.blocks.children.list({
+        block_id: pageId,
+        start_cursor: cursor,
+        page_size: 100,
+      });
+      for (const child of response.results) {
+        const heading = isHeading2WithCheckInPrefix(child);
+        if (heading.isHeading2) {
+          inCheckInSection = heading.startsWithCheckIn;
+          if (inCheckInSection) {
+            ids.push((child as { id: string }).id);
+          }
+          continue;
+        }
+        if (inCheckInSection) {
+          ids.push((child as { id: string }).id);
+        }
+      }
+      cursor = response.has_more
+        ? (response.next_cursor ?? undefined)
+        : undefined;
+    } while (cursor);
+
+    return ids;
+  }
+
   async appendBlocks({ pageId, blocks }: AppendBlocksOptions): Promise<void> {
     this.assertClientConfigured('appendBlocks');
     if (blocks.length === 0) {
@@ -383,6 +448,27 @@ const isFullPage = (page: unknown): page is FullPage => {
     typeof record.properties === 'object' &&
     record.properties !== null
   );
+};
+
+// blocks.children.list 결과의 child 가 heading_2 인지, 그렇다면 "Check in *" 으로 시작하는지 판별.
+// Notion API child block 의 shape: { id, type: 'heading_2', heading_2: { rich_text: [{ plain_text }, ...] } }
+// 다른 type 의 child 는 isHeading2=false 로 응답해 caller 가 "이전 heading 의 섹션 본문" 으로 처리.
+const isHeading2WithCheckInPrefix = (
+  child: unknown,
+): { isHeading2: boolean; startsWithCheckIn: boolean } => {
+  if (typeof child !== 'object' || child === null) {
+    return { isHeading2: false, startsWithCheckIn: false };
+  }
+  const record = child as { type?: unknown; heading_2?: unknown };
+  if (record.type !== 'heading_2') {
+    return { isHeading2: false, startsWithCheckIn: false };
+  }
+  const heading = record.heading_2 as { rich_text?: unknown } | undefined;
+  const text = heading ? collectPlainText(heading.rich_text) : '';
+  return {
+    isHeading2: true,
+    startsWithCheckIn: text.trim().startsWith('Check in'),
+  };
 };
 
 // Notion property 종류는 많지만 PM evidence 용도엔 사람이 읽는 string 표현이면 충분.
