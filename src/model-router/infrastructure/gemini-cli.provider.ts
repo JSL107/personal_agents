@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -105,7 +105,13 @@ export class GeminiCliProvider implements ModelProviderPort {
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-gemini-'));
-    const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-gemini-home-'));
+
+    // codex/claude 는 CODEX_HOME / CLAUDE_CONFIG_DIR 같은 인증 디렉토리 override 환경변수가 있어
+    // throwaway HOME + 인증 dir 명시 forward 패턴이 가능하다. Gemini CLI 는 그 메커니즘이 없고
+    // 무조건 os.homedir()/.gemini 만 읽으므로 throwaway 시 OAuth 인증 (~/.gemini/oauth_creds.json)
+    // 을 못 찾는다. 따라서 Gemini 는 사용자 실제 HOME 을 그대로 쓴다 — `--approval-mode plan` 으로
+    // 도구 호출이 차단돼 있어 prompt-injected agent 가 ~/.ssh 등을 직접 읽을 surface 가 없다.
+    const homeDir = process.env.HOME ?? homedir();
 
     try {
       const args = buildGeminiArgs({ systemPrompt: request.systemPrompt });
@@ -126,10 +132,8 @@ export class GeminiCliProvider implements ModelProviderPort {
 
       return { text, modelUsed, provider: ModelProviderName.GEMINI };
     } finally {
-      await Promise.all([
-        rm(workDir, { recursive: true, force: true }),
-        rm(homeDir, { recursive: true, force: true }),
-      ]);
+      // workDir 만 cleanup — homeDir 은 사용자 실제 $HOME 이라 절대 rm 하면 안 된다.
+      await rm(workDir, { recursive: true, force: true });
     }
   }
 
