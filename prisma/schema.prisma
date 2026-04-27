@@ -48,6 +48,30 @@ model EvidenceRecord {
   @@map("evidence_record")
 }
 
+// PO-2 Preview Gate — Write-back 같은 외부 부작용 명령이 사용자 confirm 후에만 실행되도록 보장.
+// SlackService 가 user-facing Block Kit 메시지에 ✅ apply / ❌ cancel 버튼을 노출 → 사용자가 클릭하면
+// action_id (preview:apply / preview:cancel) 가 PreviewActionId 와 함께 들어와 PENDING → APPLIED/CANCELLED 전이.
+// kind 별 strategy (PreviewApplier) 가 payload 를 해석해 실제 부작용 (Notion/GitHub write 등) 을 수행.
+// expiresAt 이후 PENDING 인 row 는 EXPIRED 로 자연 만료 (별도 cron 스윕 가능 — 현재는 in-place 검증).
+model PreviewAction {
+  id           String    @id
+  slackUserId  String    @map("slack_user_id")
+  kind         String
+  payload      Json
+  status       String
+  // Slack interactivity payload 의 response_url — apply/cancel 후 원본 메시지를 update 하기 위해 보관.
+  responseUrl  String?   @map("response_url")
+  // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
+  previewText  String    @map("preview_text") @db.Text
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  appliedAt    DateTime? @map("applied_at")
+  cancelledAt  DateTime? @map("cancelled_at")
+
+  @@index([slackUserId, status])
+  @@map("preview_action")
+}
+
 // jarvis_agents_plan_2026.md §11.1 daily_plan — "오늘 plan" 을 날짜 단위로 직접 조회할 수 있게 하는 뷰용 테이블.
 // agent_run.output 에도 동일 정보가 있지만 plan_date 인덱스가 없어 날짜 기반 reporting 이 비효율.
 // 같은 날 재실행 시 upsert 로 최신 plan 덮어쓰기 (planDate @unique).

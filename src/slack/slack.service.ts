@@ -33,6 +33,9 @@ import {
   QuotaStatsResult,
 } from '../agent-run/application/get-quota-stats.usecase';
 import { DomainException } from '../common/exception/domain.exception';
+import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
+import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
+import { PREVIEW_ACTION_IDS } from '../preview-gate/domain/preview-action.type';
 
 // 이대리 Slack 어댑터.
 // SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET 가 모두 설정된 경우에만 Socket Mode 로 기동한다.
@@ -52,6 +55,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
+    private readonly applyPreviewUsecase: ApplyPreviewUsecase,
+    private readonly cancelPreviewUsecase: CancelPreviewUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -128,7 +133,91 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     await this.app.client.chat.postMessage({ channel: target, text });
   }
 
+  // 도메인 예외 message 는 그대로 노출, 그 외 (Prisma/네트워크/내부) 는 generic 으로 가린다 — 다른 핸들러와 동일 정책.
+  private toUserFacingErrorMessage(error: unknown): string {
+    if (error instanceof DomainException) {
+      return error.message;
+    }
+    return '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  }
+
+  // PO-2: previewId 가 박힌 ✅ apply / ❌ cancel 버튼이 달린 Block Kit 메시지 발송.
+  // PM-2 등 사용자 confirm 이 필요한 명령에서 호출. 사용자가 버튼을 누르면 app.action 핸들러가 PreviewGate usecase 로 위임.
+  async postPreviewMessage({
+    target,
+    previewText,
+    previewId,
+  }: {
+    target: string;
+    previewText: string;
+    previewId: string;
+  }): Promise<void> {
+    if (!this.app) {
+      throw new Error(
+        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
+      );
+    }
+    await this.app.client.chat.postMessage({
+      channel: target,
+      text: previewText,
+      // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
+      blocks: buildPreviewBlocks({ previewText, previewId }) as never,
+    });
+  }
+
   private registerCommands(app: App): void {
+    // PO-2 Preview Gate — apply / cancel 버튼 클릭 처리.
+    // body.actions[0].value 에 previewId 가 들어 있고 body.user.id 가 클릭한 사용자.
+    // ApplyPreviewUsecase 가 owner 매칭 + ttl + status 검증 + strategy.apply 위임.
+    app.action(PREVIEW_ACTION_IDS.APPLY, async ({ ack, body, respond }) => {
+      await ack();
+      const previewId = extractActionValue(body);
+      const slackUserId = extractActionUserId(body);
+      if (!previewId || !slackUserId) {
+        return;
+      }
+      try {
+        const { resultText } = await this.applyPreviewUsecase.execute({
+          previewId,
+          slackUserId,
+        });
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `✅ Preview 적용 완료 — ${resultText}`,
+        });
+      } catch (error: unknown) {
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `Preview 적용 실패: ${this.toUserFacingErrorMessage(error)}`,
+        });
+      }
+    });
+
+    app.action(PREVIEW_ACTION_IDS.CANCEL, async ({ ack, body, respond }) => {
+      await ack();
+      const previewId = extractActionValue(body);
+      const slackUserId = extractActionUserId(body);
+      if (!previewId || !slackUserId) {
+        return;
+      }
+      try {
+        await this.cancelPreviewUsecase.execute({ previewId, slackUserId });
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: '❌ Preview 취소됨 — 부작용 없이 마감되었습니다.',
+        });
+      } catch (error: unknown) {
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `Preview 취소 실패: ${this.toUserFacingErrorMessage(error)}`,
+        });
+      }
+    });
+
     app.command('/today', async ({ ack, command, respond }) => {
       // 자유 텍스트는 옵션. 빈 입력이면 GitHub assigned / Notion task / Slack 멘션 / 직전 PM·Work Reviewer
       // 자동 수집만으로 plan 생성 (사용자 발견 — 적을 일이 없을 때 굳이 텍스트 강제할 이유 없음).
@@ -895,4 +984,65 @@ export const formatPullRequestReview = ({
   }
 
   return lines.join('\n');
+};
+
+// PO-2 Block Kit — preview 메시지 (✅ apply / ❌ cancel 버튼 + previewId).
+// previewId 는 button.value 로 박힌다. block_id 는 매번 unique 가 좋음 — Slack API 가 같은 메시지 안 중복 block_id 거절.
+export const buildPreviewBlocks = ({
+  previewText,
+  previewId,
+}: {
+  previewText: string;
+  previewId: string;
+}): Array<Record<string, unknown>> => [
+  {
+    type: 'section',
+    text: { type: 'mrkdwn', text: previewText },
+  },
+  {
+    type: 'actions',
+    block_id: `preview-actions:${previewId}`,
+    elements: [
+      {
+        type: 'button',
+        action_id: PREVIEW_ACTION_IDS.APPLY,
+        text: { type: 'plain_text', text: '✅ 적용' },
+        value: previewId,
+        style: 'primary',
+      },
+      {
+        type: 'button',
+        action_id: PREVIEW_ACTION_IDS.CANCEL,
+        text: { type: 'plain_text', text: '❌ 취소' },
+        value: previewId,
+        style: 'danger',
+      },
+    ],
+  },
+];
+
+// Slack Bolt block_actions body 에서 button 의 value (previewId) 추출.
+// body 의 정확한 타입은 Bolt 가 union 으로 노출하므로 안전하게 narrowing.
+const extractActionValue = (body: unknown): string | null => {
+  if (typeof body !== 'object' || body === null) {
+    return null;
+  }
+  const actions = (body as { actions?: unknown }).actions;
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return null;
+  }
+  const value = (actions[0] as { value?: unknown }).value;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+};
+
+const extractActionUserId = (body: unknown): string | null => {
+  if (typeof body !== 'object' || body === null) {
+    return null;
+  }
+  const user = (body as { user?: unknown }).user;
+  if (typeof user !== 'object' || user === null) {
+    return null;
+  }
+  const id = (user as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 };

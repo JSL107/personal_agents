@@ -15,6 +15,7 @@ import { GithubModule } from './github/github.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
 import { NotionModule } from './notion/notion.module';
+import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
@@ -46,6 +47,7 @@ import { SlackCollectorModule } from './slack-collector/slack-collector.module';
     ImpactReporterModule,
     PoShadowModule,
     BeAgentModule,
+    PreviewGateModule,
     SlackModule,
     MorningBriefingModule,
     CrawlerModule,
