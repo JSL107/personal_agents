@@ -216,23 +216,23 @@
 
 | 우선 | ID | 제목 | 가치 | 위험 | 의존 |
 |---|---|---|---|---|---|
-| **P0** | PRO-1 | Morning Briefing CRON | High | Low | 없음 |
-| **P0** | PRO-3 | 모델 라우팅 응답 푸터 | Med | Low | 없음 |
-| **P0** | PRO-2 | Plan Diff 라벨링 | High | Low | parser 변경 |
+| **✅ Done** | PRO-1 | Morning Briefing CRON — `morning-briefing.scheduler.ts` + BullMQ consumer | High | Low | — |
+| **✅ Done** | PRO-3 | 모델 라우팅 응답 푸터 — `model-footer.formatter.ts` 전 명령 적용 | Med | Low | — |
+| **✅ Done** | PRO-2 | Plan Diff 라벨링 — `TaskLineage` 타입 + `LINEAGE_LABEL` formatter | High | Low | — |
 | **✅ Done** | OPS-1 | Cost / Quota Pane — `agent_run.cli_provider/duration_ms` + `/quota` 슬래시 | High | Low | — |
+| **✅ Done** | OPS-4 | PII Redaction — `pii-redaction.util.ts` CLI provider 경계 적용 | High | Low | — |
+| **✅ Done** | OPS-6 | Stale Data Filter — 60일 default (env override) | High | Low | — |
+| **✅ Done** | OPS-7 | MorningBriefing Layer 정화 — SlackNotifierPort 추출 (presentation 분리는 deferred) | Med | Low | — |
+| **✅ Done** | OPS-8 | TriggerType.MORNING_BRIEFING_CRON 분리 — `agent-run.type.ts` enum 추가 | Med | Low | — |
 | **✅ Done** | PO-2 | Dry-run Preview Gate — `src/preview-gate/` + `PreviewActionPrismaRepository` + Block Kit `actions` + apply/cancel handler | High | Med | — |
 | **✅ Done** | PM-2 | PM Write-back — `/sync-plan` + `PmWriteBackApplier` (PreviewGate strategy) | High | Med | — |
-| **P1** | OPS-4 | PII Redaction | High | Low | 없음 |
+| **✅ Done** | PM-4 | extractSources 선언적 변환 — spread 패턴으로 구현됨 | Low | Low | — |
 | **P2** | PO-1 | `/po-expand` (stage gate) | Med | Med | PO-2 선행 |
 | **P2** | OPS-2 | 단일 Webhook 수신부 | Med | Med | HMAC 검증 |
 | **P2** | PRO-4 | Weekly Summarizer | Med | Low | PRO-1 후 |
 | **P2** | PM-3' | FTS 기반 유사 plan 추출 | Med | Low | Postgres tsvector |
 | **P2** | OPS-3 | Slack Reaction → Inbox | Med | Low | slack-collector 확장 |
 | **P2** | OPS-5 | Failure Replay | Low | Low | 없음 |
-| **✅ Done** | OPS-6 | Stale Data Filter — 60일 default (env override) | High | Low | — |
-| **✅ Done** | OPS-7 | MorningBriefing Layer 정화 — SlackNotifierPort 추출 (presentation 분리는 deferred) | Med | Low | — |
-| **P2** | OPS-8 | TriggerType.MORNING_BRIEFING_CRON 분리 | Med | Low | 없음 |
-| **P2** | PM-4 | extractSources 선언적 변환 | Low | Low | 없음 |
 | **P2** | QA-1 | Reviewer 룰셋 학습 | Med | Low | review history 테이블 |
 | **P3** | BE-3 | PR description auto-draft | Med | Med | Octokit write scope |
 | **P3** | PO-3 | Impact Challenger 자동 훅 | Med | Med | OPS-2 선행 |
@@ -244,11 +244,13 @@
 
 ---
 
-## 5. 다음 액션 (당일 실행 권고)
+## 5. 다음 액션 (잔여 P2 기준)
 
-1. **PRO-3** 부터 — formatter 한두 곳만 손보면 끝, 전 명령에 `_model: …_` 푸터 노출. 가시성 즉시 개선.
-2. **PRO-1 Morning Briefing** — BullMQ Repeatable Job 1개 + `daily-plan` upsert 검증으로 마무리. 의존성 0.
-3. **OPS-1 Quota Pane** 의 Prisma 컬럼만 먼저 (`db:push`) — 운영 가시성 확보 후 다음 P1 진행.
-4. PM-2 Write-back 은 **PO-2 Preview Gate 와 묶어서** 한 PR 로. 단독 진행 시 idempotency 누락 회귀 위험.
+P0/P1 전부 완료. 남은 미구현 항목은 P2/P3/Hold 뿐.
+
+1. **PO-1** `/po-expand` — PO-2 Preview Gate 완료됐으므로 stage gate 설계 후 착수 가능.
+2. **OPS-2** 단일 Webhook 수신부 — HMAC 검증 설계 선행 후 `POST /v1/agent/trigger`.
+3. **PRO-4** Weekly Summarizer — PRO-1 Morning Briefing 운영 후 패턴 확인 시 착수.
+4. **PM-3'** FTS 기반 유사 plan — Postgres tsvector + GIN 인덱스, v3 Phase 2 와 중복 검토 필요.
 
 > 모든 코드 변경 후 [AGENTS.md §1](AGENTS.md) 의 `pnpm lint:check && pnpm test && pnpm build` 3중 green 필수. commit 은 사용자가 명시적으로 요청한 시점에만.
