@@ -113,6 +113,50 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     };
   }
 
+  async findRecentSucceededRuns({
+    agentType,
+    slackUserId,
+    sinceDays,
+    limit,
+  }: {
+    agentType: AgentType;
+    slackUserId?: string;
+    sinceDays: number;
+    limit: number;
+  }): Promise<SucceededAgentRunSnapshot[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - sinceDays);
+
+    const where: Prisma.AgentRunWhereInput = {
+      agentType,
+      status: AgentRunStatus.SUCCEEDED,
+      endedAt: { gte: cutoff },
+    };
+    if (slackUserId) {
+      where.inputSnapshot = {
+        path: ['slackUserId'],
+        equals: slackUserId,
+      };
+    }
+
+    const rows = await this.prisma.agentRun.findMany({
+      where,
+      orderBy: { endedAt: 'desc' },
+      take: limit,
+      select: { id: true, output: true, endedAt: true },
+    });
+
+    return rows
+      .filter(
+        (row): row is typeof row & { endedAt: Date } => row.endedAt !== null,
+      )
+      .map((row) => ({
+        id: row.id,
+        output: row.output as unknown,
+        endedAt: row.endedAt,
+      }));
+  }
+
   // OPS-1: cliProvider 별로 count + 평균/총 duration 집계 (slackUserId 한정).
   // Prisma groupBy 사용 — JSON path 매칭 (inputSnapshot.slackUserId) + startedAt 범위 필터.
   // cliProvider 가 null 인 row (구버전 / FAILED 시 미기록) 는 'unknown' 으로 합쳐 표기.

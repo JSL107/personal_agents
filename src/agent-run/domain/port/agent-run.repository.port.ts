@@ -52,6 +52,13 @@ export interface AgentRunRepositoryPort {
     agentType: AgentType;
     slackUserId?: string;
   }): Promise<SucceededAgentRunSnapshot | null>;
+  // V3-1: 최근 N일간의 성공한 실행 기록 다수 조회.
+  findRecentSucceededRuns(input: {
+    agentType: AgentType;
+    slackUserId?: string;
+    sinceDays: number;
+    limit: number;
+  }): Promise<SucceededAgentRunSnapshot[]>;
   // OPS-1: cliProvider 별 count + 평균/총 duration 집계 (slackUserId 한정).
   aggregateQuotaStats(input: QuotaStatsQuery): Promise<QuotaStatRow[]>;
 }

@@ -4,6 +4,7 @@ import { formatGithubTasksAsPromptSection } from '../domain/prompt/github-task-f
 import { formatNotionTasksAsPromptSection } from '../domain/prompt/notion-task-formatter';
 import { formatPreviousDailyPlanSection } from '../domain/prompt/previous-plan-formatter';
 import { formatPreviousDailyReviewSection } from '../domain/prompt/previous-worklog-formatter';
+import { formatRecentPlanSummariesSection } from '../domain/prompt/recent-plan-summary-formatter';
 import { formatSlackMentionsAsPromptSection } from '../domain/prompt/slack-mention-formatter';
 import {
   DailyPlanContext,
@@ -17,10 +18,12 @@ const MAX_PROMPT_BYTES = 16_000;
 // section drop 우선순위 — 인덱스 0 부터 차례로 drop.
 // userText / github / notion 은 절대 drop 하지 않는다 — empty guard 를 통과한 유일한 task source 가 잘려
 // 모델이 빈 prompt 로 호출되는 regression (codex review b1309omm0 P2) 방지.
+// V3-1: 새 섹션 recentPlanSummaries 는 7일치 패턴 (참고용) 이라 직전 plan/worklog 보다 먼저 drop.
 const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
+  'slackMentions',
+  'recentPlanSummaries',
   'previousWorklog',
   'previousPlan',
-  'slackMentions',
 ];
 
 interface PromptSections {
@@ -30,6 +33,7 @@ interface PromptSections {
   userText: string | null;
   github: string | null;
   notion: string | null;
+  recentPlanSummaries: string | null;
 }
 
 export interface TruncationMeta {
@@ -52,7 +56,7 @@ export class DailyPlanPromptBuilder {
 
   build(context: DailyPlanContext): BuiltPrompt {
     const { userText, githubTasks, previousPlan, previousWorklog } = context;
-    const { slackMentions, notionTasks } = context;
+    const { slackMentions, notionTasks, recentPlanSummaries } = context;
 
     const githubResult = githubTasks
       ? formatGithubTasksAsPromptSection(githubTasks)
@@ -86,6 +90,8 @@ export class DailyPlanPromptBuilder {
       userText: userText.length > 0 ? `[사용자 입력]\n${userText}` : null,
       github: githubResult ? githubResult.content : null,
       notion: notionResult ? notionResult.content : null,
+      recentPlanSummaries:
+        formatRecentPlanSummariesSection(recentPlanSummaries),
     };
 
     const droppedSections = this.trimSectionsToFit(sections);

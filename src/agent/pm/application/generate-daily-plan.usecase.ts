@@ -24,6 +24,7 @@ import { PM_SYSTEM_PROMPT } from '../domain/prompt/pm-system.prompt';
 import {
   DailyPlanContext,
   DailyPlanContextCollector,
+  RECENT_PLAN_LOOKBACK_DAYS,
   SLACK_MENTION_SINCE_HOURS,
 } from './daily-plan-context.collector';
 import { DailyPlanEvidenceBuilder } from './daily-plan-evidence.builder';
@@ -51,7 +52,7 @@ const getKstTodayAsUtcDate = (): Date => {
 
 // PM Agent `/today` 유스케이스 — orchestration only.
 // 실제 책임 분리:
-//  - 외부 context 5종 수집: DailyPlanContextCollector
+//  - 외부 context 6종 수집: DailyPlanContextCollector
 //  - prompt 조립 + byte cap: DailyPlanPromptBuilder
 //  - evidence 조립: DailyPlanEvidenceBuilder
 //  - plan 저장 (DB + Notion): DailyPlanService + AppendDailyPlanUsecase
@@ -207,6 +208,7 @@ export class GenerateDailyPlanUsecase {
       previousWorklog,
       slackMentions,
       notionTasks,
+      recentPlanSummaries,
     } = context;
     const githubItemCount = githubTasks
       ? githubTasks.issues.length + githubTasks.pullRequests.length
@@ -226,6 +228,8 @@ export class GenerateDailyPlanUsecase {
       slackMentionCount: slackMentions.length,
       slackMentionSinceHours: SLACK_MENTION_SINCE_HOURS,
       notionTaskCount: notionTasks.length,
+      recentPlanLookbackDays: RECENT_PLAN_LOOKBACK_DAYS,
+      recentPlanSampleCount: recentPlanSummaries.length,
       promptByteLength: Buffer.byteLength(combinedPrompt, 'utf8'),
       truncated: {
         github: truncated.github,

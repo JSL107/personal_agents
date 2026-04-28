@@ -43,6 +43,7 @@ describe('GenerateDailyPlanUsecase', () => {
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
   let agentRunServiceFindLatest: jest.Mock;
+  let agentRunServiceFindRecent: jest.Mock;
   let dailyPlanRecord: jest.Mock;
   let appendDailyPlanExecute: jest.Mock;
   let listAssignedTasksExecute: jest.Mock;
@@ -61,6 +62,7 @@ describe('GenerateDailyPlanUsecase', () => {
       };
     });
     agentRunServiceFindLatest = jest.fn().mockResolvedValue(null);
+    agentRunServiceFindRecent = jest.fn().mockResolvedValue([]);
     dailyPlanRecord = jest.fn().mockResolvedValue({
       id: 1,
       planDate: new Date('2026-04-24'),
@@ -81,6 +83,7 @@ describe('GenerateDailyPlanUsecase', () => {
     const agentRunService = {
       execute: agentRunServiceExecute,
       findLatestSucceededRun: agentRunServiceFindLatest,
+      findRecentSucceededRuns: agentRunServiceFindRecent,
     } as unknown as AgentRunService;
 
     // builder 3종은 실제 인스턴스 — 내부 로직 (fetch/prompt/evidence) 을 그대로 통합 검증.
@@ -805,6 +808,109 @@ describe('GenerateDailyPlanUsecase', () => {
       ).rejects.toMatchObject({
         pmAgentErrorCode: PmAgentErrorCode.EMPTY_TASKS_INPUT,
       });
+    });
+  });
+
+  describe('지난 7일 plan 패턴 참조 (V3-1)', () => {
+    const buildPastPlan = (label: string): DailyPlan => ({
+      topPriority: task(label, { isCriticalPath: true }),
+      varianceAnalysis: {
+        rolledOverTasks: [],
+        analysisReasoning: '(이월 없음)',
+      },
+      morning: [],
+      afternoon: [],
+      blocker: null,
+      estimatedHours: 6,
+      reasoning: 'r',
+    });
+
+    it('최근 7일 PM run 이 있으면 prompt 에 "지난 7일 plan 패턴" 섹션 포함 + inputSnapshot 에 sample count 기록', async () => {
+      agentRunServiceFindRecent.mockResolvedValue([
+        {
+          id: 201,
+          output: buildPastPlan('어제의 최우선'),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+        },
+        {
+          id: 200,
+          output: buildPastPlan('그제의 최우선'),
+          endedAt: new Date('2026-04-25T05:00:00Z'),
+        },
+      ]);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('## 지난 7일 plan 패턴 (최근순)');
+      expect(promptArg).toContain('어제의 최우선');
+      expect(promptArg).toContain('그제의 최우선');
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.recentPlanLookbackDays).toBe(7);
+      expect(call.inputSnapshot.recentPlanSampleCount).toBe(2);
+    });
+
+    it('최근 run 이 없으면 prompt 에 섹션 없음 + sampleCount=0', async () => {
+      agentRunServiceFindRecent.mockResolvedValue([]);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('## 지난 7일 plan 패턴');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.recentPlanSampleCount).toBe(0);
+    });
+
+    it('findRecentSucceededRuns 가 throw 하면 graceful (prompt/evidence 영향 X)', async () => {
+      agentRunServiceFindRecent.mockRejectedValue(new Error('db down'));
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+      });
+
+      expect(result.result.plan).toEqual(validPlan);
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('## 지난 7일 plan 패턴');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.recentPlanSampleCount).toBe(0);
+    });
+
+    it('스키마와 안 맞는 output 은 sample count 에서 제외', async () => {
+      agentRunServiceFindRecent.mockResolvedValue([
+        {
+          id: 301,
+          output: buildPastPlan('정상'),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+        },
+        {
+          id: 302,
+          output: { not: 'a daily plan' },
+          endedAt: new Date('2026-04-25T05:00:00Z'),
+        },
+      ]);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.recentPlanSampleCount).toBe(1);
     });
   });
 });

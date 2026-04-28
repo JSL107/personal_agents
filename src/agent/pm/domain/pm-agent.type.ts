@@ -98,6 +98,8 @@ export interface DailyPlanInputSnapshot {
   slackMentionCount: number;
   slackMentionSinceHours: number;
   notionTaskCount: number;
+  recentPlanLookbackDays: number;
+  recentPlanSampleCount: number;
   promptByteLength: number;
   truncated: {
     github: number;

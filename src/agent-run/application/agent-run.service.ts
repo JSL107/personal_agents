@@ -122,4 +122,14 @@ export class AgentRunService {
   }): Promise<SucceededAgentRunSnapshot | null> {
     return this.repository.findLatestSucceededRun({ agentType, slackUserId });
   }
+
+  // V3-1: 최근 N일간의 성공한 실행 기록 다수 조회.
+  async findRecentSucceededRuns(input: {
+    agentType: AgentType;
+    slackUserId?: string;
+    sinceDays: number;
+    limit: number;
+  }): Promise<SucceededAgentRunSnapshot[]> {
+    return this.repository.findRecentSucceededRuns(input);
+  }
 }

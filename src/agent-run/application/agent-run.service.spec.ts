@@ -9,6 +9,7 @@ describe('AgentRunService', () => {
     finish: jest.fn(),
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
+    findRecentSucceededRuns: jest.fn(),
     aggregateQuotaStats: jest.fn(),
   });
 
