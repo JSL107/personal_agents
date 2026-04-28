@@ -84,6 +84,7 @@ describe('GenerateDailyPlanUsecase', () => {
       execute: agentRunServiceExecute,
       findLatestSucceededRun: agentRunServiceFindLatest,
       findRecentSucceededRuns: agentRunServiceFindRecent,
+      findSimilarPlans: jest.fn().mockResolvedValue([]),
     } as unknown as AgentRunService;
 
     // builder 3종은 실제 인스턴스 — 내부 로직 (fetch/prompt/evidence) 을 그대로 통합 검증.
@@ -94,6 +95,10 @@ describe('GenerateDailyPlanUsecase', () => {
       } as unknown as ListAssignedTasksUsecase,
       { execute: listMyMentionsExecute } as unknown as ListMyMentionsUsecase,
       { execute: listActiveTasksExecute } as unknown as ListActiveTasksUsecase,
+      {
+        peekPending: jest.fn().mockResolvedValue([]),
+        markConsumed: jest.fn().mockResolvedValue(undefined),
+      } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
     );
     const promptBuilder = new DailyPlanPromptBuilder();
     const evidenceBuilder = new DailyPlanEvidenceBuilder();
@@ -110,6 +115,10 @@ describe('GenerateDailyPlanUsecase', () => {
       contextCollector,
       promptBuilder,
       evidenceBuilder,
+      {
+        peekPending: jest.fn().mockResolvedValue([]),
+        markConsumed: jest.fn().mockResolvedValue(undefined),
+      } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
     );
 
     modelRouter.route.mockResolvedValue({

@@ -22,6 +22,10 @@ import {
   PullRequestReview,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
+import {
+  PR_REVIEW_OUTCOME_REPOSITORY_PORT,
+  PrReviewOutcomeRepositoryPort,
+} from '../domain/port/pr-review-outcome.repository.port';
 import { parsePrReference } from '../domain/pr-reference.parser';
 import { CODE_REVIEWER_SYSTEM_PROMPT } from '../domain/prompt/code-reviewer-system.prompt';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
@@ -33,6 +37,8 @@ export class ReviewPullRequestUsecase {
     private readonly agentRunService: AgentRunService,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
+    @Inject(PR_REVIEW_OUTCOME_REPOSITORY_PORT)
+    private readonly outcomeRepository: PrReviewOutcomeRepositoryPort,
   ) {}
 
   async execute({
@@ -58,7 +64,24 @@ export class ReviewPullRequestUsecase {
           this.githubClient.getPullRequestDiff(ref),
         ]);
 
-        const prompt = buildReviewPrompt({ detail, diff });
+        const recentRejected = await this.outcomeRepository
+          .findRecentRejected({ slackUserId, limit: 2 })
+          .catch(
+            () =>
+              [] as Awaited<
+                ReturnType<PrReviewOutcomeRepositoryPort['findRecentRejected']>
+              >,
+          );
+
+        const negativeExamples =
+          recentRejected.length > 0
+            ? `\n\n[이 사용자가 과거에 무시한 리뷰 패턴 — 이런 코멘트는 피하세요]\n` +
+              recentRejected
+                .map((r) => `• ${r.comment ?? '(코멘트 없음)'}`)
+                .join('\n')
+            : '';
+
+        const prompt = buildReviewPrompt({ detail, diff }) + negativeExamples;
 
         const completion = await this.modelRouter.route({
           agentType: AgentType.CODE_REVIEWER,

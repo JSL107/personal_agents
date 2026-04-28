@@ -42,6 +42,21 @@ export interface QuotaStatsQuery {
   since: Date;
 }
 
+export interface FailedRunSnapshot {
+  id: number;
+  agentType: string;
+  inputSnapshot: unknown;
+  status: string;
+}
+
+// PM-3': FTS 유사 plan 조회 결과 단건.
+export interface SimilarPlanRow {
+  id: number;
+  output: unknown;
+  endedAt: Date;
+  rank: number;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -61,4 +76,13 @@ export interface AgentRunRepositoryPort {
   }): Promise<SucceededAgentRunSnapshot[]>;
   // OPS-1: cliProvider 별 count + 평균/총 duration 집계 (slackUserId 한정).
   aggregateQuotaStats(input: QuotaStatsQuery): Promise<QuotaStatRow[]>;
+  // OPS-5: Failure Replay — id 로 AgentRun 단건 조회.
+  findById(id: number): Promise<FailedRunSnapshot | null>;
+  // PM-3': FTS top-K 유사 plan 조회.
+  findSimilarPlans(input: {
+    query: string;
+    agentType: string;
+    limit: number;
+    excludeRunId?: number;
+  }): Promise<SimilarPlanRow[]>;
 }

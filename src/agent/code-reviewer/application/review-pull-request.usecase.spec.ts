@@ -46,11 +46,16 @@ describe('ReviewPullRequestUsecase', () => {
       getPullRequestDiff: jest.fn(),
       addIssueComment: jest.fn(),
     };
+    const outcomeRepoMock = {
+      save: jest.fn(),
+      findRecentRejected: jest.fn().mockResolvedValue([]),
+    };
 
     usecase = new ReviewPullRequestUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       githubClient,
+      outcomeRepoMock as any,
     );
 
     githubClient.getPullRequest.mockResolvedValue({

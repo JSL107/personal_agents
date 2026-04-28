@@ -49,6 +49,9 @@ const buildBaseContext = (
   slackMentions: [],
   notionTasks: [],
   recentPlanSummaries: [],
+  inboxItems: [],
+  inboxItemIds: [],
+  similarPlans: [],
   ...overrides,
 });
 

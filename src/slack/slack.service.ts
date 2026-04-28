@@ -9,15 +9,19 @@ import { App, LogLevel } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
+import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
 import { SyncContextUsecase } from '../agent/pm/application/sync-context.usecase';
 import { SyncPlanUsecase } from '../agent/pm/application/sync-plan.usecase';
+import { GeneratePoOutlineUsecase } from '../agent/po-expand/application/generate-po-outline.usecase';
 import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
 import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.usecase';
+import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
+import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
@@ -41,14 +45,18 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
     private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
+    private readonly saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase,
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
+    private readonly generatePoOutlineUsecase: GeneratePoOutlineUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
+    private readonly retryRunUsecase: RetryRunUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
     private readonly syncPlanUsecase: SyncPlanUsecase,
+    private readonly slackInboxService: SlackInboxService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -82,6 +90,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.registerCommands(app);
+    this.registerReactionHandlers(app);
 
     // Slack 기동 실패(유효하지 않은 토큰, Slack 일시적 장애 등)가 전체 NestJS 앱 부팅을 막지 않도록 격리한다.
     // 앱은 계속 떠 있고 Slack 기능만 비활성화된 상태로 남는다.
@@ -149,6 +158,50 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private registerReactionHandlers(app: App): void {
+    const inboxEmoji =
+      this.configService.get<string>('SLACK_INBOX_EMOJI') ?? 'raised_hand';
+
+    app.event('reaction_added', async ({ event, client }) => {
+      if (event.reaction !== inboxEmoji) {
+        return;
+      }
+      if (event.item.type !== 'message') {
+        return;
+      }
+      if (!event.user) {
+        return;
+      }
+
+      try {
+        const history = await client.conversations.history({
+          channel: event.item.channel,
+          latest: event.item.ts,
+          inclusive: true,
+          limit: 1,
+        });
+        const message = history.messages?.[0];
+        if (!message?.text) {
+          return;
+        }
+
+        await this.slackInboxService.addItem({
+          slackUserId: event.user,
+          channelId: event.item.channel,
+          messageTs: event.item.ts,
+          text: message.text,
+        });
+        this.logger.log(
+          `Slack Inbox 추가 — user=${event.user} channel=${event.item.channel} ts=${event.item.ts}`,
+        );
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Slack Inbox 추가 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+  }
+
   // 카테고리별 핸들러 모듈로 위임 — 각 핸들러는 ack/respond/usecase 호출만 담당.
   // 추가 명령은 적절한 카테고리에 끼워넣거나 새 register…Handlers 모듈을 만들어 여기에 등록한다.
   private registerCommands(app: App): void {
@@ -165,9 +218,12 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateDailyPlanUsecase: this.generateDailyPlanUsecase,
       generateWorklogUsecase: this.generateWorklogUsecase,
       reviewPullRequestUsecase: this.reviewPullRequestUsecase,
+      saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
+      generatePoOutlineUsecase: this.generatePoOutlineUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
+      retryRunUsecase: this.retryRunUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
