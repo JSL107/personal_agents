@@ -223,6 +223,8 @@ export class GenerateDailyPlanUsecase {
       slackMentions,
       notionTasks,
       recentPlanSummaries,
+      inboxItems,
+      similarPlans,
     } = context;
     const githubItemCount = githubTasks
       ? githubTasks.issues.length + githubTasks.pullRequests.length
@@ -244,11 +246,14 @@ export class GenerateDailyPlanUsecase {
       notionTaskCount: notionTasks.length,
       recentPlanLookbackDays: RECENT_PLAN_LOOKBACK_DAYS,
       recentPlanSampleCount: recentPlanSummaries.length,
+      inboxItemCount: inboxItems.length,
+      similarPlanCount: similarPlans.length,
       promptByteLength: Buffer.byteLength(combinedPrompt, 'utf8'),
       truncated: {
         github: truncated.github,
         notion: truncated.notion,
         slackMentions: truncated.slackMentions,
+        inboxItems: truncated.inboxItems,
         droppedSections: truncated.droppedSections,
       },
     };

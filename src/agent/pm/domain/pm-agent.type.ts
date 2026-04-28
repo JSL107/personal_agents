@@ -100,11 +100,16 @@ export interface DailyPlanInputSnapshot {
   notionTaskCount: number;
   recentPlanLookbackDays: number;
   recentPlanSampleCount: number;
+  // OPS-3: 이번 plan 에 주입된 Slack Inbox (✋ reaction) 항목 수.
+  inboxItemCount: number;
+  // PM-3': FTS 로 매칭된 유사 plan 개수 (top 3 cap).
+  similarPlanCount: number;
   promptByteLength: number;
   truncated: {
     github: number;
     notion: number;
     slackMentions: number;
+    inboxItems: number;
     droppedSections: string[];
   };
 }
