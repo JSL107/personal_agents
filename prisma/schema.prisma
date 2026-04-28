@@ -72,6 +72,25 @@ model PreviewAction {
   @@map("preview_action")
 }
 
+// OPS-3 Slack Reaction → Inbox
+// 사용자가 메시지에 configured emoji (기본 :raised_hand:) 를 달면 익일 /today 에 자동 흡수.
+// slackUserId 는 reaction 을 단 사용자 — 이 사용자의 /today 만 해당 항목을 소비.
+// 같은 메시지에 여러 사용자가 reaction 달면 각자 별도 inbox row 로 분리 (multi-user 격리).
+model SlackInboxItem {
+  id          Int       @id @default(autoincrement())
+  slackUserId String    @map("slack_user_id")
+  channelId   String    @map("channel_id")
+  messageTs   String    @map("message_ts")
+  text        String    @db.Text
+  addedAt     DateTime  @default(now()) @map("added_at")
+  consumed    Boolean   @default(false)
+  consumedAt  DateTime? @map("consumed_at")
+
+  @@unique([slackUserId, channelId, messageTs])
+  @@index([slackUserId, consumed, addedAt])
+  @@map("slack_inbox_item")
+}
+
 // jarvis_agents_plan_2026.md §11.1 daily_plan — "오늘 plan" 을 날짜 단위로 직접 조회할 수 있게 하는 뷰용 테이블.
 // agent_run.output 에도 동일 정보가 있지만 plan_date 인덱스가 없어 날짜 기반 reporting 이 비효율.
 // 같은 날 재실행 시 upsert 로 최신 plan 덮어쓰기 (planDate @unique).
@@ -86,4 +105,18 @@ model DailyPlan {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("daily_plan")
+}
+
+// QA-1 Reviewer 룰셋 학습 — /review-pr 결과에 사용자가 accept/reject 한 history 누적.
+// 다음 /review-pr 프롬프트에 reject 된 코멘트 패턴을 negative example 로 1~2개 주입.
+model PrReviewOutcome {
+  id          Int      @id @default(autoincrement())
+  agentRunId  Int      @map("agent_run_id")
+  slackUserId String   @map("slack_user_id")
+  accepted    Boolean
+  comment     String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([slackUserId, accepted, createdAt])
+  @@map("pr_review_outcome")
 }

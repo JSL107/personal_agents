@@ -7,6 +7,7 @@ import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
+import { PoExpandModule } from './agent/po-expand/po-expand.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -20,6 +21,9 @@ import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
+import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
+import { WebhookModule } from './webhook/webhook.module';
+import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
 
 @Module({
   imports: [
@@ -47,6 +51,7 @@ import { SlackCollectorModule } from './slack-collector/slack-collector.module';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
+    PoExpandModule,
     BeAgentModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
@@ -55,8 +60,12 @@ import { SlackCollectorModule } from './slack-collector/slack-collector.module';
       imports: [GithubModule, NotionModule],
     }),
     SlackModule,
+    // OPS-3 Slack Reaction → Inbox
+    SlackInboxModule,
     MorningBriefingModule,
+    WeeklySummaryModule,
     CrawlerModule,
+    WebhookModule,
   ],
 })
 export class AppModule {}

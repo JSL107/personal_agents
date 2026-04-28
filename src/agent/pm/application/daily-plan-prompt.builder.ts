@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { formatGithubTasksAsPromptSection } from '../domain/prompt/github-task-formatter';
 import { formatNotionTasksAsPromptSection } from '../domain/prompt/notion-task-formatter';
-import { formatPreviousDailyPlanSection } from '../domain/prompt/previous-plan-formatter';
+import {
+  coerceToDailyPlan,
+  formatPreviousDailyPlanSection,
+} from '../domain/prompt/previous-plan-formatter';
 import { formatPreviousDailyReviewSection } from '../domain/prompt/previous-worklog-formatter';
 import { formatRecentPlanSummariesSection } from '../domain/prompt/recent-plan-summary-formatter';
 import { formatSlackMentionsAsPromptSection } from '../domain/prompt/slack-mention-formatter';
@@ -19,7 +22,11 @@ const MAX_PROMPT_BYTES = 16_000;
 // userText / github / notion 은 절대 drop 하지 않는다 — empty guard 를 통과한 유일한 task source 가 잘려
 // 모델이 빈 prompt 로 호출되는 regression (codex review b1309omm0 P2) 방지.
 // V3-1: 새 섹션 recentPlanSummaries 는 7일치 패턴 (참고용) 이라 직전 plan/worklog 보다 먼저 drop.
+// OPS-3: inboxItems 는 reacted Slack 메시지로 context cap 을 단독으로 초과시킬 수 있어 가장 먼저 drop.
+// PM-3': similarPlans 는 FTS 참고용으로 가장 먼저 drop.
 const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
+  'similarPlans',
+  'inboxItems',
   'slackMentions',
   'recentPlanSummaries',
   'previousWorklog',
@@ -30,16 +37,19 @@ interface PromptSections {
   previousPlan: string | null;
   previousWorklog: string | null;
   slackMentions: string | null;
+  inboxItems: string | null;
   userText: string | null;
   github: string | null;
   notion: string | null;
   recentPlanSummaries: string | null;
+  similarPlans: string | null;
 }
 
 export interface TruncationMeta {
   github: number;
   notion: number;
   slackMentions: number;
+  inboxItems: number;
   droppedSections: string[];
 }
 
@@ -56,7 +66,13 @@ export class DailyPlanPromptBuilder {
 
   build(context: DailyPlanContext): BuiltPrompt {
     const { userText, githubTasks, previousPlan, previousWorklog } = context;
-    const { slackMentions, notionTasks, recentPlanSummaries } = context;
+    const {
+      slackMentions,
+      notionTasks,
+      recentPlanSummaries,
+      inboxItems,
+      similarPlans,
+    } = context;
 
     const githubResult = githubTasks
       ? formatGithubTasksAsPromptSection(githubTasks)
@@ -73,6 +89,11 @@ export class DailyPlanPromptBuilder {
           })
         : null;
 
+    const inboxSection =
+      inboxItems && inboxItems.length > 0
+        ? `[Slack Inbox (✋ 반응 저장 항목)]\n${inboxItems.map((t) => `- ${t}`).join('\n')}`
+        : null;
+
     const sections: PromptSections = {
       previousPlan: previousPlan
         ? formatPreviousDailyPlanSection({
@@ -87,11 +108,34 @@ export class DailyPlanPromptBuilder {
           })
         : null,
       slackMentions: slackResult ? slackResult.content : null,
+      inboxItems: inboxSection,
       userText: userText.length > 0 ? `[사용자 입력]\n${userText}` : null,
       github: githubResult ? githubResult.content : null,
       notion: notionResult ? notionResult.content : null,
       recentPlanSummaries:
         formatRecentPlanSummariesSection(recentPlanSummaries),
+      similarPlans:
+        similarPlans && similarPlans.length > 0
+          ? `[유사 plan (FTS top ${similarPlans.length})]\n` +
+            similarPlans
+              .map((p) => {
+                const plan = coerceToDailyPlan(p.output);
+                if (!plan) {
+                  return null;
+                }
+                const titles = [
+                  plan.topPriority,
+                  ...plan.morning,
+                  ...plan.afternoon,
+                ]
+                  .slice(0, 5)
+                  .map((t) => `  - ${t.title}`)
+                  .join('\n');
+                return `• ${p.endedAt.toISOString().slice(0, 10)} (rank=${p.rank.toFixed(3)})\n${titles}`;
+              })
+              .filter((line): line is string => line !== null)
+              .join('\n')
+          : null,
     };
 
     const droppedSections = this.trimSectionsToFit(sections);
@@ -123,6 +167,7 @@ export class DailyPlanPromptBuilder {
         github: githubResult?.truncatedCount ?? 0,
         notion: notionResult?.truncatedCount ?? 0,
         slackMentions: slackResult?.truncatedCount ?? 0,
+        inboxItems: 0,
         droppedSections,
       },
     };

@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
-import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-run.repository.port';
+import {
+  SimilarPlanRow,
+  SucceededAgentRunSnapshot,
+} from '../../../agent-run/domain/port/agent-run.repository.port';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { AssignedTasks } from '../../../github/domain/github.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -9,6 +12,7 @@ import { ListActiveTasksUsecase } from '../../../notion/application/list-active-
 import { NotionTask } from '../../../notion/domain/notion.type';
 import { ListMyMentionsUsecase } from '../../../slack-collector/application/list-my-mentions.usecase';
 import { SlackMention } from '../../../slack-collector/domain/slack-collector.type';
+import { SlackInboxService } from '../../../slack-inbox/application/slack-inbox.service';
 import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { DailyPlan } from '../domain/pm-agent.type';
 import { coerceToDailyPlan } from '../domain/prompt/previous-plan-formatter';
@@ -43,6 +47,9 @@ export interface DailyPlanContext {
   slackMentions: SlackMention[];
   notionTasks: NotionTask[];
   recentPlanSummaries: RecentPlanSummary[];
+  inboxItems: string[];
+  inboxItemIds: number[];
+  similarPlans: SimilarPlanRow[];
 }
 
 // PM `/today` 가 필요로 하는 외부 컨텍스트 6종을 병렬 수집. 모두 graceful — 실패해도 null/empty 로 빠진다.
@@ -56,6 +63,7 @@ export class DailyPlanContextCollector {
     private readonly listAssignedTasksUsecase: ListAssignedTasksUsecase,
     private readonly listMyMentionsUsecase: ListMyMentionsUsecase,
     private readonly listActiveTasksUsecase: ListActiveTasksUsecase,
+    private readonly slackInboxService: SlackInboxService,
   ) {}
 
   async collect({
@@ -72,6 +80,8 @@ export class DailyPlanContextCollector {
       slackMentions,
       notionTasks,
       recentPlanSummaries,
+      inboxResult,
+      similarPlans,
     ] = await Promise.all([
       this.fetchGithubTasksOrNull(),
       this.fetchPreviousPlanOrNull(),
@@ -79,6 +89,8 @@ export class DailyPlanContextCollector {
       this.fetchSlackMentionsOrEmpty({ slackUserId }),
       this.fetchNotionTasksOrEmpty(),
       this.fetchRecentPlanSummariesOrEmpty({ slackUserId }),
+      this.fetchInboxItemsOrEmpty({ slackUserId }),
+      this.fetchSimilarPlansOrEmpty({ userText }),
     ]);
 
     return {
@@ -90,6 +102,9 @@ export class DailyPlanContextCollector {
       slackMentions,
       notionTasks,
       recentPlanSummaries,
+      inboxItems: inboxResult.texts,
+      inboxItemIds: inboxResult.ids,
+      similarPlans,
     };
   }
 
@@ -177,6 +192,47 @@ export class DailyPlanContextCollector {
         `${agentType} 직전 run 조회 실패 (해당 컨텍스트 없이 계속 진행): ${message}`,
       );
       return null;
+    }
+  }
+
+  private async fetchInboxItemsOrEmpty({
+    slackUserId,
+  }: {
+    slackUserId: string;
+  }): Promise<{ texts: string[]; ids: number[] }> {
+    try {
+      const items = await this.slackInboxService.peekPending(slackUserId);
+      return {
+        texts: items.map((i) => i.text),
+        ids: items.map((i) => i.id),
+      };
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Slack Inbox 수집 실패 (해당 컨텍스트 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { texts: [], ids: [] };
+    }
+  }
+
+  private async fetchSimilarPlansOrEmpty({
+    userText,
+  }: {
+    userText: string;
+  }): Promise<SimilarPlanRow[]> {
+    if (userText.trim().length < 5) {
+      return [];
+    }
+    try {
+      return await this.agentRunService.findSimilarPlans({
+        query: userText,
+        agentType: AgentType.PM,
+        limit: 3,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `유사 plan FTS 실패 (해당 컨텍스트 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
     }
   }
 
