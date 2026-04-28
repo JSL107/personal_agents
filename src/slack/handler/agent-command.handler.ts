@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
+import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -12,6 +13,7 @@ import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/ge
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
+import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
@@ -33,6 +35,7 @@ export const registerAgentCommandHandlers = (
     generatePoShadowUsecase: GeneratePoShadowUsecase;
     generatePoOutlineUsecase: GeneratePoOutlineUsecase;
     generateBackendPlanUsecase: GenerateBackendPlanUsecase;
+    generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
     retryRunUsecase: RetryRunUsecase;
     logger: Logger;
   },
@@ -371,6 +374,33 @@ export const registerAgentCommandHandlers = (
         }
         return lines.join('\n');
       },
+    });
+  });
+
+  app.command('/be-schema', async ({ ack, command, respond }) => {
+    const request = command.text?.trim() ?? '';
+    if (request.length === 0) {
+      await ack({
+        response_type: 'ephemeral',
+        text: '사용법: `/be-schema <자연어 요청>` (예: `/be-schema 주문 취소 내역 테이블 추가`)',
+      });
+      return;
+    }
+    await ack({
+      response_type: 'ephemeral',
+      text: '이대리(BE Schema 모드) 가 schema.prisma 를 읽고 변경 제안을 작성 중입니다 (10~30초 소요)...',
+    });
+
+    await runAgentCommand({
+      respond,
+      logger: deps.logger,
+      commandLabel: '/be-schema',
+      execute: () =>
+        deps.generateSchemaProposalUsecase.execute({
+          request,
+          slackUserId: command.user_id,
+        }),
+      format: formatSchemaProposal,
     });
   });
 

@@ -15,6 +15,13 @@ const buildRepo = (
   aggregateQuotaStats: jest.fn().mockResolvedValue(rows),
   findById: jest.fn(),
   findSimilarPlans: jest.fn().mockResolvedValue([]),
+  aggregatePmContextStats: jest.fn().mockResolvedValue({
+    pmRunCount: 0,
+    totalInboxItems: 0,
+    pmRunsWithInbox: 0,
+    totalSimilarPlans: 0,
+    pmRunsWithSimilar: 0,
+  }),
 });
 
 describe('GetQuotaStatsUsecase', () => {

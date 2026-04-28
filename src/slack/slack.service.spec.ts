@@ -465,6 +465,13 @@ describe('formatQuotaStats (OPS-1)', () => {
       sinceIso: '2026-04-26T12:00:00.000Z',
       rows: [],
       totals: { count: 0, totalDurationMs: 0 },
+      pmContext: {
+        pmRunCount: 0,
+        totalInboxItems: 0,
+        pmRunsWithInbox: 0,
+        totalSimilarPlans: 0,
+        pmRunsWithSimilar: 0,
+      },
     };
     const output = formatQuotaStats(result);
     expect(output).toContain('오늘 (24시간)');
@@ -490,6 +497,13 @@ describe('formatQuotaStats (OPS-1)', () => {
         },
       ],
       totals: { count: 8, totalDurationMs: 120_000 },
+      pmContext: {
+        pmRunCount: 8,
+        totalInboxItems: 4,
+        pmRunsWithInbox: 2,
+        totalSimilarPlans: 6,
+        pmRunsWithSimilar: 3,
+      },
     };
     const output = formatQuotaStats(result);
 

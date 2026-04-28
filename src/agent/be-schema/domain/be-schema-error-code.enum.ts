@@ -1,0 +1,4 @@
+export enum BeSchemaErrorCode {
+  EMPTY_REQUEST = 'EMPTY_REQUEST',
+  SCHEMA_FILE_NOT_FOUND = 'SCHEMA_FILE_NOT_FOUND',
+}

@@ -12,6 +12,7 @@ export enum AgentType {
   IMPACT_REPORTER = 'IMPACT_REPORTER',
   PO_SHADOW = 'PO_SHADOW',
   PO_EXPAND = 'PO_EXPAND',
+  BE_SCHEMA = 'BE_SCHEMA',
 }
 
 export interface CompletionRequest {

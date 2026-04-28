@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
+  PmContextStats,
   QuotaStatRow,
 } from '../domain/port/agent-run.repository.port';
 
@@ -19,6 +20,8 @@ export interface QuotaStatsResult {
     count: number;
     totalDurationMs: number;
   };
+  // OPS-3 / PM-3' 컨텍스트 사용량 — agent_run.input_snapshot 누적 집계.
+  pmContext: PmContextStats;
 }
 
 // OPS-1 Cost / Quota Observability Pane.
@@ -45,10 +48,10 @@ export class GetQuotaStatsUsecase {
       range === 'TODAY' ? now.getTime() - DAY_MS : now.getTime() - 7 * DAY_MS;
     const since = new Date(sinceMs);
 
-    const rows = await this.repository.aggregateQuotaStats({
-      slackUserId,
-      since,
-    });
+    const [rows, pmContext] = await Promise.all([
+      this.repository.aggregateQuotaStats({ slackUserId, since }),
+      this.repository.aggregatePmContextStats({ slackUserId, since }),
+    ]);
 
     const totals = rows.reduce(
       (acc, row) => ({
@@ -63,6 +66,7 @@ export class GetQuotaStatsUsecase {
       sinceIso: since.toISOString(),
       rows,
       totals,
+      pmContext,
     };
   }
 }

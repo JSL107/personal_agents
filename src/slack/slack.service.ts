@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
+import { GenerateSchemaProposalUsecase } from '../agent/be-schema/application/generate-schema-proposal.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -50,6 +51,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
     private readonly generatePoOutlineUsecase: GeneratePoOutlineUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
+    private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
@@ -222,6 +224,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
       generatePoOutlineUsecase: this.generatePoOutlineUsecase,
+      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
       retryRunUsecase: this.retryRunUsecase,
       logger: this.logger,

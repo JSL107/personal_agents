@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { BeAgentModule } from './agent/be/be.module';
+import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
@@ -53,6 +54,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     PoShadowModule,
     PoExpandModule,
     BeAgentModule,
+    // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
+    BeSchemaModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({

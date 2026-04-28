@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { BeAgentModule } from '../agent/be/be.module';
+import { BeSchemaModule } from '../agent/be-schema/be-schema.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
@@ -20,6 +21,8 @@ import { SlackService } from './slack.service';
     PoShadowModule,
     PoExpandModule,
     BeAgentModule,
+    // V3 BE-3 /be-schema 슬래시 — Prisma schema 변경 제안.
+    BeSchemaModule,
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.

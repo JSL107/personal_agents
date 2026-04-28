@@ -32,5 +32,26 @@ export const formatQuotaStats = (stats: QuotaStatsResult): string => {
   const totalMin = (stats.totals.totalDurationMs / 60_000).toFixed(1);
   lines.push('', `*합계*: ${stats.totals.count}회 · 총 ${totalMin}분`);
 
+  // PM 컨텍스트 사용량 — OPS-3 (Slack Inbox) / PM-3' (FTS 유사 plan) 가
+  // 실제로 plan 에 주입됐는지 가시화.
+  const ctx = stats.pmContext;
+  if (ctx.pmRunCount > 0) {
+    lines.push('', '*PM 컨텍스트 주입*');
+    const inboxAvg =
+      ctx.pmRunCount > 0
+        ? (ctx.totalInboxItems / ctx.pmRunCount).toFixed(1)
+        : '0.0';
+    const similarAvg =
+      ctx.pmRunCount > 0
+        ? (ctx.totalSimilarPlans / ctx.pmRunCount).toFixed(1)
+        : '0.0';
+    lines.push(
+      `• PM 실행 ${ctx.pmRunCount}회 중 Slack Inbox 항목 누적 ${ctx.totalInboxItems}개 (실행당 평균 ${inboxAvg}개, ${ctx.pmRunsWithInbox}회 사용)`,
+    );
+    lines.push(
+      `• 유사 plan(FTS) 누적 ${ctx.totalSimilarPlans}개 (실행당 평균 ${similarAvg}개, ${ctx.pmRunsWithSimilar}회 매칭)`,
+    );
+  }
+
   return lines.join('\n');
 };

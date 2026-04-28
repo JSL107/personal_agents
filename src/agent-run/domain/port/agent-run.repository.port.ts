@@ -57,6 +57,16 @@ export interface SimilarPlanRow {
   rank: number;
 }
 
+// /quota 의 PM 컨텍스트 사용 통계 — input_snapshot 의 inboxItemCount / similarPlanCount 누적.
+// OPS-3 / PM-3' 가 실제로 plan 에 주입됐는지 사용자가 직접 확인할 수 있게 한다.
+export interface PmContextStats {
+  pmRunCount: number;
+  totalInboxItems: number;
+  pmRunsWithInbox: number;
+  totalSimilarPlans: number;
+  pmRunsWithSimilar: number;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -85,4 +95,6 @@ export interface AgentRunRepositoryPort {
     limit: number;
     excludeRunId?: number;
   }): Promise<SimilarPlanRow[]>;
+  // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 합산.
+  aggregatePmContextStats(input: QuotaStatsQuery): Promise<PmContextStats>;
 }

@@ -9,6 +9,7 @@ import {
   BeginAgentRunInput,
   FailedRunSnapshot,
   FinishAgentRunInput,
+  PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
   SimilarPlanRow,
@@ -238,5 +239,52 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       totalDurationMs: row._sum.durationMs ?? 0,
       avgDurationMs: Math.round(row._avg.durationMs ?? 0),
     }));
+  }
+
+  // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 누적.
+  // OPS-3 / PM-3' 가 실제로 plan 컨텍스트로 주입됐는지 사용자가 직접 확인할 수 있게 한다.
+  // input_snapshot 은 Json 타입 — JSONB 키 추출(->>) 후 ::int cast. 키 자체가 없는 구버전 row 는 NULL → 0 으로 처리.
+  async aggregatePmContextStats({
+    slackUserId,
+    since,
+  }: QuotaStatsQuery): Promise<PmContextStats> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        pm_run_count: bigint;
+        total_inbox_items: bigint | null;
+        pm_runs_with_inbox: bigint;
+        total_similar_plans: bigint | null;
+        pm_runs_with_similar: bigint;
+      }>
+    >`
+      SELECT
+        COUNT(*)::bigint AS pm_run_count,
+        COALESCE(SUM(COALESCE((input_snapshot->>'inboxItemCount')::int, 0)), 0)::bigint AS total_inbox_items,
+        COUNT(*) FILTER (WHERE COALESCE((input_snapshot->>'inboxItemCount')::int, 0) > 0)::bigint AS pm_runs_with_inbox,
+        COALESCE(SUM(COALESCE((input_snapshot->>'similarPlanCount')::int, 0)), 0)::bigint AS total_similar_plans,
+        COUNT(*) FILTER (WHERE COALESCE((input_snapshot->>'similarPlanCount')::int, 0) > 0)::bigint AS pm_runs_with_similar
+      FROM agent_run
+      WHERE agent_type = 'PM'
+        AND started_at >= ${since}
+        AND input_snapshot->>'slackUserId' = ${slackUserId}
+    `;
+
+    const row = rows[0];
+    if (!row) {
+      return {
+        pmRunCount: 0,
+        totalInboxItems: 0,
+        pmRunsWithInbox: 0,
+        totalSimilarPlans: 0,
+        pmRunsWithSimilar: 0,
+      };
+    }
+    return {
+      pmRunCount: Number(row.pm_run_count),
+      totalInboxItems: Number(row.total_inbox_items ?? 0n),
+      pmRunsWithInbox: Number(row.pm_runs_with_inbox),
+      totalSimilarPlans: Number(row.total_similar_plans ?? 0n),
+      pmRunsWithSimilar: Number(row.pm_runs_with_similar),
+    };
   }
 }
