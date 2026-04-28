@@ -10,6 +10,7 @@ import { DailyPlanService } from '../../../daily-plan/application/daily-plan.ser
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { AppendDailyPlanUsecase } from '../../../notion/application/append-daily-plan.usecase';
+import { SlackInboxService } from '../../../slack-inbox/application/slack-inbox.service';
 import { PmAgentException } from '../domain/pm-agent.exception';
 import {
   DailyPlan,
@@ -68,6 +69,7 @@ export class GenerateDailyPlanUsecase {
     private readonly contextCollector: DailyPlanContextCollector,
     private readonly promptBuilder: DailyPlanPromptBuilder,
     private readonly evidenceBuilder: DailyPlanEvidenceBuilder,
+    private readonly slackInboxService: SlackInboxService,
   ) {}
 
   async execute({
@@ -127,6 +129,18 @@ export class GenerateDailyPlanUsecase {
         };
       },
     });
+
+    // Plan 성공 후에만 inbox 항목을 consumed 마킹 — 중간 단계 실패 시 reacted 메시지 손실 방지 (codex P2).
+    if (context.inboxItemIds.length > 0) {
+      try {
+        await this.slackInboxService.markConsumed(context.inboxItemIds);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Slack Inbox markConsumed 실패 (plan 응답은 정상 반환): ${message}`,
+        );
+      }
+    }
 
     return {
       result: { plan: outcome.result, sources: extractSources(context) },

@@ -48,6 +48,7 @@ export class GenerateWorklogUsecase {
   async execute({
     workText,
     slackUserId,
+    triggerType,
   }: GenerateWorklogInput): Promise<AgentRunOutcome<DailyReview>> {
     const trimmed = workText.trim();
     if (trimmed.length === 0) {
@@ -63,7 +64,7 @@ export class GenerateWorklogUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.WORK_REVIEWER,
-      triggerType: TriggerType.SLACK_COMMAND_WORKLOG,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_WORKLOG,
       inputSnapshot: { workText: trimmed, slackUserId },
       evidence: [
         {

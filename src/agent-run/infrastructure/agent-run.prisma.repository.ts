@@ -7,9 +7,11 @@ import { AgentRunStatus, EvidenceInput } from '../domain/agent-run.type';
 import {
   AgentRunRepositoryPort,
   BeginAgentRunInput,
+  FailedRunSnapshot,
   FinishAgentRunInput,
   QuotaStatRow,
   QuotaStatsQuery,
+  SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
 
@@ -155,6 +157,62 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         output: row.output as unknown,
         endedAt: row.endedAt,
       }));
+  }
+
+  async findById(id: number): Promise<FailedRunSnapshot | null> {
+    const row = await this.prisma.agentRun.findUnique({
+      where: { id },
+      select: { id: true, agentType: true, inputSnapshot: true, status: true },
+    });
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      agentType: row.agentType,
+      inputSnapshot: row.inputSnapshot as unknown,
+      status: row.status,
+    };
+  }
+
+  // PM-3': FTS top-K 유사 plan 조회 — plainto_tsquery 로 free-text → tsquery 변환 (AND 조건).
+  async findSimilarPlans({
+    query,
+    agentType,
+    limit,
+    excludeRunId,
+  }: {
+    query: string;
+    agentType: string;
+    limit: number;
+    excludeRunId?: number;
+  }): Promise<SimilarPlanRow[]> {
+    // plainto_tsquery: free-text → tsquery (공백 = AND). to_tsquery 의 파싱 오류 회피.
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: number; output: unknown; ended_at: Date; rank: number }>
+    >`
+      SELECT
+        id,
+        output,
+        ended_at,
+        ts_rank(to_tsvector('simple', COALESCE(output::text, '')), plainto_tsquery('simple', ${query})) AS rank
+      FROM agent_run
+      WHERE
+        agent_type = ${agentType}
+        AND status = 'SUCCEEDED'
+        AND output IS NOT NULL
+        ${excludeRunId != null ? Prisma.sql`AND id != ${excludeRunId}` : Prisma.empty}
+        AND to_tsvector('simple', COALESCE(output::text, '')) @@ plainto_tsquery('simple', ${query})
+      ORDER BY rank DESC
+      LIMIT ${limit}
+    `;
+
+    return rows.map((r) => ({
+      id: r.id,
+      output: r.output,
+      endedAt: r.ended_at,
+      rank: Number(r.rank),
+    }));
   }
 
   // OPS-1: cliProvider 별로 count + 평균/총 duration 집계 (slackUserId 한정).

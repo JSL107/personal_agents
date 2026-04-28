@@ -1,3 +1,5 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 export interface DailyReviewImpact {
   quantitative: string[];
   qualitative: string;
@@ -19,4 +21,5 @@ export interface DailyReview {
 export interface GenerateWorklogInput {
   workText: string;
   slackUserId: string;
+  triggerType?: TriggerType;
 }

@@ -6,6 +6,7 @@ import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { SlackCollectorModule } from '../../slack-collector/slack-collector.module';
+import { SlackInboxModule } from '../../slack-inbox/slack-inbox.module';
 import { DailyPlanContextCollector } from './application/daily-plan-context.collector';
 import { DailyPlanEvidenceBuilder } from './application/daily-plan-evidence.builder';
 import { DailyPlanPromptBuilder } from './application/daily-plan-prompt.builder';
@@ -22,6 +23,8 @@ import { SyncPlanUsecase } from './application/sync-plan.usecase';
     GithubModule,
     NotionModule,
     SlackCollectorModule,
+    // OPS-3 Slack Reaction → Inbox
+    SlackInboxModule,
   ],
   providers: [
     GenerateDailyPlanUsecase,

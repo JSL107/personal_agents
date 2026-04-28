@@ -9,6 +9,7 @@ import {
 import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
+  SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
 
@@ -131,5 +132,18 @@ export class AgentRunService {
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
     return this.repository.findRecentSucceededRuns(input);
+  }
+
+  // PM-3': FTS top-K 유사 plan 조회.
+  async findSimilarPlans(input: {
+    query: string;
+    agentType: AgentType;
+    limit: number;
+    excludeRunId?: number;
+  }): Promise<SimilarPlanRow[]> {
+    return this.repository.findSimilarPlans({
+      ...input,
+      agentType: input.agentType as string,
+    });
   }
 }

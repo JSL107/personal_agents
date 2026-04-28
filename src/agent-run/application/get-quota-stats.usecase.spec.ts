@@ -13,6 +13,8 @@ const buildRepo = (
   findLatestSucceededRun: jest.fn(),
   findRecentSucceededRuns: jest.fn(),
   aggregateQuotaStats: jest.fn().mockResolvedValue(rows),
+  findById: jest.fn(),
+  findSimilarPlans: jest.fn().mockResolvedValue([]),
 });
 
 describe('GetQuotaStatsUsecase', () => {
