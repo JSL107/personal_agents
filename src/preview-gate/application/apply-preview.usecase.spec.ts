@@ -127,10 +127,9 @@ describe('ApplyPreviewUsecase', () => {
   });
 
   it('kind 에 매칭되는 PreviewApplier 가 없으면 NO_APPLIER_FOR_KIND 예외', async () => {
+    // PM_WRITE_BACK preview 가 있는데 PREVIEW_APPLIERS multi-provider 가 비어있는 DI 미스 상황을 시뮬레이션.
     const repo = buildRepo(buildPreview());
-    const usecase = new ApplyPreviewUsecase(repo, [
-      buildApplier(PREVIEW_KIND.PO_EXPAND),
-    ]);
+    const usecase = new ApplyPreviewUsecase(repo, []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),

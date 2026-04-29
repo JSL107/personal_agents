@@ -3,8 +3,6 @@
 export const PREVIEW_KIND = {
   // PM-2: PM Agent 가 만든 DailyPlan 의 task subtasks 를 GitHub Issue 코멘트 / Notion page 로 write-back.
   PM_WRITE_BACK: 'PM_WRITE_BACK',
-  // 향후: PRD 자동 생성, 기타 동의 게이트 작업
-  PO_EXPAND: 'PO_EXPAND',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];

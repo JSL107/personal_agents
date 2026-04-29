@@ -4,7 +4,7 @@ import { PreviewAction, PreviewKind } from '../preview-action.type';
 export const PREVIEW_APPLIERS = Symbol('PREVIEW_APPLIERS');
 
 // Strategy — kind 별 실제 부작용 (Notion/GitHub write 등) 수행.
-// PM-2 가 PM_WRITE_BACK applier 를, PO-1 (PRD 자동 생성) 이 PO_EXPAND applier 를 등록할 예정.
+// PM-2 가 PM_WRITE_BACK applier 를 등록. 추가 kind 는 새 PreviewApplier 구현체로 확장.
 export interface PreviewApplier {
   readonly kind: PreviewKind;
   // 사용자 ✅ 클릭 후 호출. preview 객체 전체를 받아 payload 를 strategy 자체 schema 로 narrow.
