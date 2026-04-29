@@ -1,11 +1,19 @@
 import { Module } from '@nestjs/common';
 
+import { CODE_PARSER_PORT } from './domain/port/code-parser.port';
+import { TreeSitterParser } from './infrastructure/tree-sitter-parser';
+
 // V3 SOTA Foundation 1.1 — Tree-sitter 기반 Code Graph (Plan: 2026-04-29-tree-sitter-code-graph-poc.md).
-// 단계 0: 빈 스캐폴드. 의존성 (tree-sitter / tree-sitter-typescript) 설치 + 모듈 등록만.
-// 단계 1 부터 chunker / relation extractor / 인메모리 그래프 / query usecase 가 채워진다.
+// 단계 1: chunker (CodeParserPort + TreeSitterParser).
+// 단계 2~5 에서 relation extractor / 인메모리 그래프 / query usecase / BE-3 통합이 추가된다.
 @Module({
   imports: [],
-  providers: [],
-  exports: [],
+  providers: [
+    {
+      provide: CODE_PARSER_PORT,
+      useClass: TreeSitterParser,
+    },
+  ],
+  exports: [CODE_PARSER_PORT],
 })
 export class CodeGraphModule {}
