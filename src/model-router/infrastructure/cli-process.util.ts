@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+
 // CLI provider 가 자식 프로세스로 실행될 때 상속할 환경변수 allowlist.
 // `.env` 의 SLACK_BOT_TOKEN / DATABASE_URL 등을 자식에게 넘기지 않아 prompt-injection 으로부터 시크릿을 격리한다.
 //
@@ -6,6 +8,10 @@
 //    → prompt-injected agent 가 `cat ~/.ssh/id_rsa` 같은 공격을 해도 빈 임시 디렉토리만 본다.
 // 2. 단, CLI 자체의 auth 는 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` 로 **실제 경로를 명시 전달** 해 구독 인증을 유지한다.
 //    envVar 가 이미 있으면 그대로, 없으면 real HOME 기반으로 기본 경로 주입.
+//
+// process.env 직접 참조 정책(AGENTS.md §5 / CODE_RULES §9 — ConfigService 우선) 의 예외 격리 위치:
+// 자식 프로세스 환경변수 구성은 NestJS DI 컨텍스트 외부 시스템 호출이라 ConfigService 로 추상화하지 않는다.
+// 다른 모듈에서 직접 `process.env.HOME` 을 읽는 대신 `getRealHomeDir()` 헬퍼를 통해 이 파일로 격리한다.
 const SAFE_ENV_KEYS = [
   'PATH',
   'USER',
@@ -89,3 +95,7 @@ export const buildSafeChildEnv = ({
 
   return env;
 };
+
+// throwaway HOME 메커니즘이 안 되는 CLI(예: Gemini, OAuth 인증을 ~/.gemini 에서 직접 로드) 에 사용자 실제
+// HOME 을 명시 전달할 때 사용. process.env.HOME 직접 참조를 이 파일로 격리.
+export const getRealHomeDir = (): string => process.env.HOME ?? homedir();

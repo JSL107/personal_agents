@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -11,7 +11,7 @@ import {
   ModelProviderName,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
-import { buildSafeChildEnv } from './cli-process.util';
+import { buildSafeChildEnv, getRealHomeDir } from './cli-process.util';
 import { redactPii } from './pii-redaction.util';
 
 const GEMINI_EXECUTABLE = 'gemini';
@@ -111,7 +111,8 @@ export class GeminiCliProvider implements ModelProviderPort {
     // 무조건 os.homedir()/.gemini 만 읽으므로 throwaway 시 OAuth 인증 (~/.gemini/oauth_creds.json)
     // 을 못 찾는다. 따라서 Gemini 는 사용자 실제 HOME 을 그대로 쓴다 — `--approval-mode plan` 으로
     // 도구 호출이 차단돼 있어 prompt-injected agent 가 ~/.ssh 등을 직접 읽을 surface 가 없다.
-    const homeDir = process.env.HOME ?? homedir();
+    // process.env.HOME 직접 참조는 cli-process.util.getRealHomeDir() 로 격리 (AGENTS.md §5 정책).
+    const homeDir = getRealHomeDir();
 
     try {
       const args = buildGeminiArgs({ systemPrompt: request.systemPrompt });
