@@ -21,6 +21,10 @@ export const formatSchemaProposal = (proposal: SchemaProposal): string => {
   appendSection(lines, '필요한 인덱스 / 유니크', proposal.requiredIndexes);
   appendSection(lines, '컨벤션 점검', proposal.conventionChecks);
   appendSection(lines, '리스크', proposal.risks);
+  // V3 단계 5 — Code Graph query 결과. @prisma/client 를 import 한 파일 surface.
+  if (proposal.affectedFiles.length > 0) {
+    appendAffectedFiles(lines, proposal.affectedFiles);
+  }
 
   if (proposal.migrationStrategy.trim().length > 0) {
     lines.push('');
@@ -55,3 +59,19 @@ const appendSection = (
 // (Slack 공식 가이드: https://api.slack.com/reference/surfaces/formatting#escaping)
 const escapeSlackMrkdwn = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// affectedFiles 는 서버 주입 (코드 그래프 결과) 이라 escape 불필요하지만 일관성 위해 escape.
+// 길이가 길어질 수 있어 head 10개만 노출 + 잔여 카운트.
+const FILES_DISPLAY_LIMIT = 10;
+const appendAffectedFiles = (lines: string[], files: string[]): void => {
+  lines.push('');
+  lines.push(`*영향 받는 파일 (\`@prisma/client\` 사용 — ${files.length}개)*`);
+  const head = files.slice(0, FILES_DISPLAY_LIMIT);
+  for (const file of head) {
+    lines.push(`• \`${escapeSlackMrkdwn(file)}\``);
+  }
+  const remaining = files.length - head.length;
+  if (remaining > 0) {
+    lines.push(`_(${remaining}개 추가 생략)_`);
+  }
+};

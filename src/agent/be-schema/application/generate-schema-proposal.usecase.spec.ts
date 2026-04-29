@@ -7,6 +7,8 @@ describe('GenerateSchemaProposalUsecase', () => {
       null as never,
       null as never,
       null as never,
+      null as never,
+      null as never,
     );
     await expect(
       usecase.execute({ request: '   ', slackUserId: 'U1' }),
@@ -21,6 +23,8 @@ describe('GenerateSchemaProposalUsecase', () => {
       null as never,
       null as never,
       reader as never,
+      null as never,
+      null as never,
     );
     await expect(
       usecase.execute({ request: 'add orders table', slackUserId: 'U1' }),

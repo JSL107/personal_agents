@@ -28,4 +28,8 @@ export interface SchemaProposal {
   migrationStrategy: string;
   // 종합 reasoning — 왜 이렇게 제안했는지 2~4 문장.
   reasoning: string;
+  // V3 SOTA Foundation 1.1 단계 5 — Code Graph query 결과 (서버 주입, LLM 응답에서 가져오지 않음).
+  // `@prisma/client` 를 import 하는 파일 list — 이 schema 변경이 영향 미칠 수 있는 surface.
+  // build 실패 또는 빈 결과면 빈 배열 ([]). LLM prompt 컨텍스트로도 주입돼 영향도 분석에 활용.
+  affectedFiles: string[];
 }

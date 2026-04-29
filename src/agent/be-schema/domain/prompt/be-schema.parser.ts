@@ -20,6 +20,8 @@ export const parseSchemaProposal = (
       risks: [],
       migrationStrategy: '(파싱 실패)',
       reasoning: '(파싱 실패)',
+      // V3 단계 5 — 서버에서 주입하므로 parser 는 항상 빈 배열로 시작. usecase 가 덮어쓴다.
+      affectedFiles: [],
     };
   }
 
@@ -36,6 +38,8 @@ export const parseSchemaProposal = (
         ? parsed.migrationStrategy
         : '',
     reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+    // V3 단계 5 — 서버에서 주입. LLM 이 affectedFiles 를 echo 하더라도 신뢰하지 않고 빈 배열로 reset.
+    affectedFiles: [],
   };
 };
 

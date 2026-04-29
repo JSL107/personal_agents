@@ -80,4 +80,27 @@ describe('parseSchemaProposal', () => {
     expect(result.migrationStrategy).toBe('');
     expect(result.reasoning).toBe('');
   });
+
+  it('LLM 이 affectedFiles 를 echo 해도 parser 는 항상 빈 배열로 reset (서버 주입)', () => {
+    // V3 단계 5 — parser 는 LLM 이 어떻게 응답해도 affectedFiles 를 신뢰하지 않는다.
+    // usecase 가 Code Graph query 결과로 덮어씀.
+    const text = JSON.stringify({
+      proposedModel: 'model A {}',
+      affectedRelations: [],
+      requiredIndexes: [],
+      conventionChecks: ['x'],
+      risks: [],
+      migrationStrategy: 'add-only',
+      reasoning: 'r',
+      affectedFiles: ['malicious.ts', '../etc/passwd'],
+    });
+
+    const result = parseSchemaProposal(REQUEST, text);
+    expect(result.affectedFiles).toEqual([]);
+  });
+
+  it('파싱 실패 시에도 affectedFiles 는 빈 배열', () => {
+    const result = parseSchemaProposal(REQUEST, 'not-json text');
+    expect(result.affectedFiles).toEqual([]);
+  });
 });
