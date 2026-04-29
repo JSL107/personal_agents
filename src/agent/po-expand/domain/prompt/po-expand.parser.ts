@@ -21,14 +21,18 @@ export const parsePoOutline = (subject: string, text: string): PoOutline => {
     };
   }
   // 파싱 실패 — 모델이 JSON 을 아예 안 줬거나 깨진 경우. 원문을 outline 한 줄로 보존.
-  return { subject, outline: [text.trim()], clarifyingQuestions: [] };
+  // parseError: true 로 표시해 formatter 가 사용자에게 ⚠️ 힌트를 노출하도록 한다.
+  return {
+    subject,
+    outline: [text.trim()],
+    clarifyingQuestions: [],
+    parseError: true,
+  };
 };
 
 const tryParseJson = (
   text: string,
-):
-  | { outline?: unknown; clarifyingQuestions?: unknown }
-  | null => {
+): { outline?: unknown; clarifyingQuestions?: unknown } | null => {
   try {
     return JSON.parse(text) as {
       outline?: unknown;

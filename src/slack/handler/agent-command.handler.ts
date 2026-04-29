@@ -17,6 +17,7 @@ import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
+import { formatPoOutline } from '../format/po-outline.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
 import { runAgentCommand } from './slack-handler.helper';
@@ -331,6 +332,34 @@ export const registerAgentCommandHandlers = (
         });
         break;
       }
+      case 'PO_EXPAND':
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (PO_EXPAND)`,
+          execute: () =>
+            deps.generatePoOutlineUsecase.execute({
+              subject: (snapshot.subject as string | undefined) ?? '',
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            }),
+          format: formatPoOutline,
+        });
+        break;
+      case 'BE_SCHEMA':
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (BE_SCHEMA)`,
+          execute: () =>
+            deps.generateSchemaProposalUsecase.execute({
+              request: (snapshot.request as string | undefined) ?? '',
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            }),
+          format: formatSchemaProposal,
+        });
+        break;
       default:
         await respond({
           response_type: 'ephemeral',
@@ -362,18 +391,7 @@ export const registerAgentCommandHandlers = (
           subject,
           slackUserId: command.user_id,
         }),
-      format: (outline) => {
-        const lines: string[] = [
-          `*📋 ${outline.subject} — 개요*`,
-          '',
-          outline.outline.map((l) => `• ${l}`).join('\n'),
-        ];
-        if (outline.clarifyingQuestions.length > 0) {
-          lines.push('', '*명확화 질문:*');
-          outline.clarifyingQuestions.forEach((q) => lines.push(`• ${q}`));
-        }
-        return lines.join('\n');
-      },
+      format: formatPoOutline,
     });
   });
 

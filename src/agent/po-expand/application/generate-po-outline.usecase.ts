@@ -24,6 +24,7 @@ export class GeneratePoOutlineUsecase {
   async execute({
     subject,
     slackUserId,
+    triggerType,
   }: GeneratePoOutlineInput): Promise<AgentRunOutcome<PoOutline>> {
     const trimmed = subject.trim();
     if (trimmed.length === 0) {
@@ -37,7 +38,7 @@ export class GeneratePoOutlineUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_EXPAND,
-      triggerType: TriggerType.SLACK_COMMAND_PO_EXPAND,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_PO_EXPAND,
       inputSnapshot: { subject: trimmed, slackUserId },
       evidence: [
         {

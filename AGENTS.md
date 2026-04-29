@@ -71,9 +71,12 @@ src/
 5. `AppModule` / `SlackModule` 에 모듈 등록
 6. `ResponseCode` enum 에 도메인 ErrorCode 와 1:1 동기화 항목 추가 (AllExceptionsFilter 가 매칭에 씀)
 7. `src/agent-run/domain/agent-run.type.ts` 의 `TriggerType` enum 에 `SLACK_COMMAND_*` 추가
-8. spec: parser / usecase / formatter 단위 테스트 (CODE_RULES §5)
-9. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
-10. Slack manifest 에 슬래시 커맨드 등록 (사용자 액션, README 에 가이드 포함)
+8. `src/model-router/domain/model-router.type.ts` 의 `AgentType` enum + `model-router.usecase.ts` 의 `AGENT_TO_PROVIDER` 매핑 추가
+9. `src/slack/handler/agent-command.handler.ts` 의 `/retry-run` switch 에 새 `case '{AGENT_TYPE}'` 추가 (FAILURE_REPLAY 라우팅) — 새 에이전트가 FAILED 되면 재실행 가능해야 함
+10. spec: parser / usecase / formatter 단위 테스트 (CODE_RULES §5)
+11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
+12. 새 환경변수가 필요하면 `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표 4곳 동기 갱신 (§5 환경변수 규칙)
+13. Slack manifest 에 슬래시 커맨드 등록 (사용자 액션, README 에 가이드 포함)
 
 ## 5. 인프라 / 보안 규칙 (절대 위반 금지)
 

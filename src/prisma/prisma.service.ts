@@ -20,6 +20,10 @@ export class PrismaService
       await this.$connect();
       // PM-3': agent_run.output 텍스트에 GIN 인덱스 생성 (tsvector 변환 후 FTS 쿼리 가속).
       // CONCURRENTLY 는 트랜잭션 밖에서만 가능. IF NOT EXISTS 로 멱등성 보장.
+      // ⚠️ SECURITY: $executeRawUnsafe 는 Prisma 의 SQL 인젝션 방어를 우회한다. 본 호출의 SQL 은
+      //   변수 보간이 전혀 없는 hardcoded 상수 문자열이므로 안전. 향후 이 SQL 에 어떤 형태로든 사용자/
+      //   런타임 값을 끼워 넣어야 한다면 반드시 Prisma.sql 태그 템플릿(`$executeRaw(Prisma.sql\`...\`)`)
+      //   으로 전환해 parameterized query 로 만들 것. (V3 mid-progress audit B4 M-4)
       await this.$executeRawUnsafe(
         `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_run_output_fts
          ON agent_run USING GIN (to_tsvector('simple', COALESCE(output::text, '')))`,

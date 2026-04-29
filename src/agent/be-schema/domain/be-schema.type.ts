@@ -1,9 +1,13 @@
 // V3 BE-3 Schema Architect (lite). 자연어 요청 + 현재 prisma/schema.prisma → 변경 제안.
 // AST/Code Graph 없는 lite 버전 — LLM 이 schema 텍스트 + 요청만 보고 제안. 실제 영향도 분석은 follow-up.
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 export interface GenerateSchemaProposalInput {
   request: string;
   slackUserId: string;
+  // /retry-run 같이 명시 trigger 가 필요할 때 외부에서 주입. 미지정 시 SLACK_COMMAND_BE_SCHEMA.
+  triggerType?: TriggerType;
 }
 
 // LLM 출력 — Slack 응답 + agent_run.output 에 저장.

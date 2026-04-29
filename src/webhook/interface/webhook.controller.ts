@@ -174,9 +174,9 @@ export class WebhookController {
     // fire-and-forget — webhook response 는 빠르게 200, 실제 작업은 비동기.
     void this.generateImpactReportUsecase
       .execute({ subject, slackUserId })
-      .catch((err: unknown) => {
+      .catch((error: unknown) => {
         this.logger.error(
-          `Webhook impact report 실패: ${err instanceof Error ? err.message : String(err)}`,
+          `Webhook impact report 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
   }
@@ -194,9 +194,11 @@ export class WebhookController {
   }): void {
     const secret = this.configService.get<string>(secretEnv);
     if (!secret) {
-      throw new UnauthorizedException(
-        `${secretEnv} 미설정 — 모든 ${headerName} 요청을 거부합니다.`,
+      // 외부 응답에는 env 변수명을 노출하지 않는다 (reconnaissance 차단). 운영 진단은 logger 로만.
+      this.logger.error(
+        `${secretEnv} 미설정 — ${headerName} 요청을 모두 거부합니다.`,
       );
+      throw new UnauthorizedException('Webhook authentication failed.');
     }
     if (!signature?.startsWith('sha256=')) {
       throw new UnauthorizedException(
@@ -208,12 +210,9 @@ export class WebhookController {
     const expected = `sha256=${hmac.digest('hex')}`;
     const a = Buffer.from(expected);
     const b = Buffer.from(signature);
-    const len = Math.max(a.length, b.length);
-    const pa = Buffer.alloc(len, 0);
-    const pb = Buffer.alloc(len, 0);
-    a.copy(pa);
-    b.copy(pb);
-    if (!crypto.timingSafeEqual(pa, pb)) {
+    // length-mismatch 는 즉시 reject — 정상 caller 는 항상 71 byte (sha256= + 64 hex). 길이 패딩 후
+    // timingSafeEqual 호출은 항상 mismatch 가 보장돼 무의미하고 zero-fill alloc 비용만 발생.
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       throw new UnauthorizedException(`${headerName} 시그니처 불일치.`);
     }
   }

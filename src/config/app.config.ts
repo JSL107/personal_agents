@@ -98,6 +98,51 @@ class EnvironmentVariables {
     message: 'STALE_DATA_CUTOFF_DAYS 는 양의 정수 (예: "60") 만 허용합니다.',
   })
   STALE_DATA_CUTOFF_DAYS?: string;
+
+  // OPS-3 Slack Reaction → Inbox 큐잉 시 트리거 이모지. 미설정 시 default 'raised_hand' (✋).
+  // 사용자가 다른 이모지로 바꾸고 싶으면 이 env 만 변경 (예: 'pushpin', 'eyes').
+  @IsOptional()
+  @IsString()
+  SLACK_INBOX_EMOJI?: string;
+
+  // OPS-2 Webhook 수신부.
+  // - WEBHOOK_SECRET: 자체 포맷(/v1/agent/trigger) HMAC-SHA256 키. 미설정 시 모든 요청 거부.
+  // - GITHUB_WEBHOOK_SECRET: GitHub 표준(/v1/agent/github) HMAC-SHA256 키. 미설정 시 모든 요청 거부.
+  // - GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID: GitHub payload 에 slackUserId 가 없으므로 자동
+  //   발화될 impact-report 의 사용자 컨텍스트 매핑. 미설정 시 GitHub webhook 수신은 200 OK 지만
+  //   impact-report 자동 발화는 skip.
+  @IsOptional()
+  @IsString()
+  WEBHOOK_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_WEBHOOK_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID?: string;
+
+  // PRO-4 Weekly Summary CRON.
+  // - WEEKLY_SUMMARY_OWNER_SLACK_USER_ID: 주간 요약을 만들 사용자(PM run 7건의 주체). 미설정 시 모듈 비활성화.
+  // - WEEKLY_SUMMARY_TARGET: 슬랙 user(U...) / channel(C.../G...) ID. 미설정 시 OWNER DM 으로.
+  // - WEEKLY_SUMMARY_CRON: BullMQ repeatable cron pattern (default 매주 금요일 17:00).
+  // - WEEKLY_SUMMARY_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
+  @IsOptional()
+  @IsString()
+  WEEKLY_SUMMARY_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  WEEKLY_SUMMARY_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  WEEKLY_SUMMARY_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  WEEKLY_SUMMARY_TIMEZONE?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

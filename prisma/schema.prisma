@@ -11,38 +11,39 @@ datasource db {
 }
 
 model AgentRun {
-  id                Int       @id @default(autoincrement())
-  agentType         String    @map("agent_type")
-  triggerType       String    @map("trigger_type")
-  status            String
-  modelUsed         String?   @map("model_used")
+  id            Int       @id @default(autoincrement())
+  agentType     String    @map("agent_type")
+  triggerType   String    @map("trigger_type")
+  status        String
+  modelUsed     String?   @map("model_used")
   // OPS-1 Quota Pane — 어떤 CLI provider 가 호출됐는지 (codex-cli / claude-cli / gemini-cli / mock)
   // 와 execute 시작~종료 elapsed 시간을 기록. /quota 슬래시가 provider 별 count + 평균 duration 산출.
-  cliProvider       String?   @map("cli_provider")
-  durationMs        Int?      @map("duration_ms")
-  inputSnapshot     Json      @map("input_snapshot")
-  output            Json?
-  startedAt         DateTime  @default(now()) @map("started_at")
-  endedAt           DateTime? @map("ended_at")
+  cliProvider   String?   @map("cli_provider")
+  durationMs    Int?      @map("duration_ms")
+  inputSnapshot Json      @map("input_snapshot")
+  output        Json?
+  startedAt     DateTime  @default(now()) @map("started_at")
+  endedAt       DateTime? @map("ended_at")
 
-  evidenceRecords   EvidenceRecord[]
-  dailyPlan         DailyPlan?
+  evidenceRecords  EvidenceRecord[]
+  dailyPlan        DailyPlan?
+  prReviewOutcomes PrReviewOutcome[]
 
   @@index([agentType, startedAt])
   @@map("agent_run")
 }
 
 model EvidenceRecord {
-  id           Int       @id @default(autoincrement())
-  agentRunId   Int?      @map("agent_run_id")
-  agentRun     AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  sourceType   String    @map("source_type")
-  sourceId     String    @map("source_id")
-  url          String?
-  title        String?
-  excerpt      String?   @db.Text
-  payload      Json
-  collectedAt  DateTime  @default(now()) @map("collected_at")
+  id          Int       @id @default(autoincrement())
+  agentRunId  Int?      @map("agent_run_id")
+  agentRun    AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  sourceType  String    @map("source_type")
+  sourceId    String    @map("source_id")
+  url         String?
+  title       String?
+  excerpt     String?   @db.Text
+  payload     Json
+  collectedAt DateTime  @default(now()) @map("collected_at")
 
   @@index([sourceType, sourceId])
   @@map("evidence_record")
@@ -54,19 +55,19 @@ model EvidenceRecord {
 // kind 별 strategy (PreviewApplier) 가 payload 를 해석해 실제 부작용 (Notion/GitHub write 등) 을 수행.
 // expiresAt 이후 PENDING 인 row 는 EXPIRED 로 자연 만료 (별도 cron 스윕 가능 — 현재는 in-place 검증).
 model PreviewAction {
-  id           String    @id
-  slackUserId  String    @map("slack_user_id")
-  kind         String
-  payload      Json
-  status       String
+  id          String    @id
+  slackUserId String    @map("slack_user_id")
+  kind        String
+  payload     Json
+  status      String
   // Slack interactivity payload 의 response_url — apply/cancel 후 원본 메시지를 update 하기 위해 보관.
-  responseUrl  String?   @map("response_url")
+  responseUrl String?   @map("response_url")
   // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
-  previewText  String    @map("preview_text") @db.Text
-  expiresAt    DateTime  @map("expires_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  appliedAt    DateTime? @map("applied_at")
-  cancelledAt  DateTime? @map("cancelled_at")
+  previewText String    @map("preview_text") @db.Text
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  appliedAt   DateTime? @map("applied_at")
+  cancelledAt DateTime? @map("cancelled_at")
 
   @@index([slackUserId, status])
   @@map("preview_action")
@@ -95,14 +96,14 @@ model SlackInboxItem {
 // agent_run.output 에도 동일 정보가 있지만 plan_date 인덱스가 없어 날짜 기반 reporting 이 비효율.
 // 같은 날 재실행 시 upsert 로 최신 plan 덮어쓰기 (planDate @unique).
 model DailyPlan {
-  id           Int      @id @default(autoincrement())
-  planDate     DateTime @unique @db.Date @map("plan_date")
-  planJson     Json     @map("plan_json")
-  agentRunId   Int      @unique @map("agent_run_id")
-  agentRun     AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
-  evidenceIds  Int[]    @map("evidence_ids")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id          Int      @id @default(autoincrement())
+  planDate    DateTime @unique @map("plan_date") @db.Date
+  planJson    Json     @map("plan_json")
+  agentRunId  Int      @unique @map("agent_run_id")
+  agentRun    AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  evidenceIds Int[]    @map("evidence_ids")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("daily_plan")
 }
@@ -112,6 +113,7 @@ model DailyPlan {
 model PrReviewOutcome {
   id          Int      @id @default(autoincrement())
   agentRunId  Int      @map("agent_run_id")
+  agentRun    AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
   slackUserId String   @map("slack_user_id")
   accepted    Boolean
   comment     String?  @db.Text

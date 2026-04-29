@@ -37,14 +37,9 @@ export const formatQuotaStats = (stats: QuotaStatsResult): string => {
   const ctx = stats.pmContext;
   if (ctx.pmRunCount > 0) {
     lines.push('', '*PM 컨텍스트 주입*');
-    const inboxAvg =
-      ctx.pmRunCount > 0
-        ? (ctx.totalInboxItems / ctx.pmRunCount).toFixed(1)
-        : '0.0';
-    const similarAvg =
-      ctx.pmRunCount > 0
-        ? (ctx.totalSimilarPlans / ctx.pmRunCount).toFixed(1)
-        : '0.0';
+    // 외부 guard 로 pmRunCount > 0 보장됨 — 내부 0-나눗셈 방어 중복 제거 (V3 mid-progress audit B3 P10).
+    const inboxAvg = (ctx.totalInboxItems / ctx.pmRunCount).toFixed(1);
+    const similarAvg = (ctx.totalSimilarPlans / ctx.pmRunCount).toFixed(1);
     lines.push(
       `• PM 실행 ${ctx.pmRunCount}회 중 Slack Inbox 항목 누적 ${ctx.totalInboxItems}개 (실행당 평균 ${inboxAvg}개, ${ctx.pmRunsWithInbox}회 사용)`,
     );

@@ -68,4 +68,5 @@ Thumbs.db
 # agents
 .codex/
 .omc/
+.claude
 jarvis_agents_plan_2026.md

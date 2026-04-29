@@ -37,6 +37,7 @@ export class GenerateSchemaProposalUsecase {
   async execute({
     request,
     slackUserId,
+    triggerType,
   }: GenerateSchemaProposalInput): Promise<AgentRunOutcome<SchemaProposal>> {
     const trimmed = request.trim();
     if (trimmed.length === 0) {
@@ -53,7 +54,7 @@ export class GenerateSchemaProposalUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.BE_SCHEMA,
-      triggerType: TriggerType.SLACK_COMMAND_BE_SCHEMA,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_BE_SCHEMA,
       inputSnapshot: {
         request: trimmed,
         slackUserId,

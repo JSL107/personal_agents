@@ -89,9 +89,13 @@ export class DailyPlanPromptBuilder {
           })
         : null;
 
+    // OPS-3 Slack Inbox 와 Slack Mentions 는 둘 다 "Slack 출처 컨텍스트" 라 LLM 이 합쳐서 인식할 위험.
+    // 라벨에 출처/방식을 명시해 모델이 분리 인식하도록 함 (V3 mid-progress audit B3 D3, v1 §4 항목 5).
+    //   - Slack Inbox: 사용자가 직접 :raised_hand: 반응으로 큐잉한 항목 (의도된 task)
+    //   - Slack Mentions: @멘션 자동 수집 (참고용 컨텍스트)
     const inboxSection =
       inboxItems && inboxItems.length > 0
-        ? `[Slack Inbox (✋ 반응 저장 항목)]\n${inboxItems.map((t) => `- ${t}`).join('\n')}`
+        ? `[Slack Inbox — 사용자가 직접 ✋ 반응으로 큐잉한 항목 (의도된 task)]\n${inboxItems.map((t) => `- ${t}`).join('\n')}`
         : null;
 
     const sections: PromptSections = {
