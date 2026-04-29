@@ -1,14 +1,17 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 
-import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
+import { IMPACT_REPORT_QUEUE } from '../domain/webhook.type';
 import { WebhookController } from './webhook.controller';
 
 describe('WebhookController', () => {
   let controller: WebhookController;
-  const mockUsecase = { execute: jest.fn() };
+  // V3 audit B2 #4 / B3 P5 / B4 H-2 — fire-and-forget 이 BullMQ queue 로 전환됐으므로
+  // controller 가 직접 호출하던 GenerateImpactReportUsecase 대신 queue.add 만 검증.
+  const mockQueue = { add: jest.fn() };
   const secret = 'test-secret';
   const githubSecret = 'gh-test-secret';
   const defaultSlackUser = 'U-default';
@@ -23,7 +26,7 @@ describe('WebhookController', () => {
     const module = await Test.createTestingModule({
       controllers: [WebhookController],
       providers: [
-        { provide: GenerateImpactReportUsecase, useValue: mockUsecase },
+        { provide: getQueueToken(IMPACT_REPORT_QUEUE), useValue: mockQueue },
         {
           provide: ConfigService,
           useValue: { get: (key: string) => configValues[key] },
@@ -31,7 +34,8 @@ describe('WebhookController', () => {
       ],
     }).compile();
     controller = module.get(WebhookController);
-    mockUsecase.execute.mockReset();
+    mockQueue.add.mockReset();
+    mockQueue.add.mockResolvedValue(undefined);
   });
 
   const sign = (body: string, signingSecret: string = secret) => {
@@ -42,11 +46,6 @@ describe('WebhookController', () => {
 
   describe('POST /v1/agent/trigger (이대리 자체 포맷)', () => {
     it('유효한 시그니처 + issues.opened → impact report 트리거', async () => {
-      mockUsecase.execute.mockResolvedValue({
-        result: {},
-        modelUsed: 'test',
-        agentRunId: 1,
-      });
       const body = JSON.stringify({
         event: 'issues.opened',
         repo: 'foo/bar',
@@ -55,7 +54,10 @@ describe('WebhookController', () => {
       });
       const result = await controller.trigger(body, sign(body));
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).toHaveBeenCalled();
+      // fire-and-forget queue.add — controller 가 enqueue 후 즉시 200 OK 반환.
+      // microtask 가 한 번 돌아야 add() 가 호출되니 microtask 큐 flush.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).toHaveBeenCalled();
     });
 
     it('잘못된 시그니처 → 401', async () => {
@@ -91,7 +93,8 @@ describe('WebhookController', () => {
       });
       const result = await controller.trigger(body, sign(body));
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).not.toHaveBeenCalled();
     });
   });
 
@@ -119,11 +122,6 @@ describe('WebhookController', () => {
     });
 
     it('유효한 시그니처 + issues opened → default slackUserId 로 impact report', async () => {
-      mockUsecase.execute.mockResolvedValue({
-        result: {},
-        modelUsed: 'test',
-        agentRunId: 1,
-      });
       const result = await controller.github(
         issuesOpenedBody,
         sign(issuesOpenedBody, githubSecret),
@@ -131,20 +129,18 @@ describe('WebhookController', () => {
         'delivery-uuid-1',
       );
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).toHaveBeenCalledWith(
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        'webhook-impact-report',
         expect.objectContaining({
           slackUserId: defaultSlackUser,
           subject: expect.stringContaining('foo/bar #42'),
         }),
+        expect.any(Object),
       );
     });
 
     it('유효한 시그니처 + pull_request opened → impact report', async () => {
-      mockUsecase.execute.mockResolvedValue({
-        result: {},
-        modelUsed: 'test',
-        agentRunId: 1,
-      });
       const result = await controller.github(
         prOpenedBody,
         sign(prOpenedBody, githubSecret),
@@ -152,11 +148,14 @@ describe('WebhookController', () => {
         'delivery-uuid-2',
       );
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).toHaveBeenCalledWith(
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        'webhook-impact-report',
         expect.objectContaining({
           slackUserId: defaultSlackUser,
           subject: expect.stringContaining('foo/bar #99'),
         }),
+        expect.any(Object),
       );
     });
 
@@ -195,7 +194,8 @@ describe('WebhookController', () => {
         'd5',
       );
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).not.toHaveBeenCalled();
     });
 
     it('지원 안 하는 event(push) → 200 no-op', async () => {
@@ -207,7 +207,8 @@ describe('WebhookController', () => {
         'd6',
       );
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).not.toHaveBeenCalled();
     });
   });
 
@@ -223,7 +224,7 @@ describe('WebhookController', () => {
       const module = await Test.createTestingModule({
         controllers: [WebhookController],
         providers: [
-          { provide: GenerateImpactReportUsecase, useValue: mockUsecase },
+          { provide: getQueueToken(IMPACT_REPORT_QUEUE), useValue: mockQueue },
           {
             provide: ConfigService,
             useValue: { get: (key: string) => limitedConfig[key] },
@@ -231,7 +232,8 @@ describe('WebhookController', () => {
         ],
       }).compile();
       limitedController = module.get(WebhookController);
-      mockUsecase.execute.mockReset();
+      mockQueue.add.mockReset();
+      mockQueue.add.mockResolvedValue(undefined);
     });
 
     it('issues.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, impact report 발화 X', async () => {
@@ -247,7 +249,8 @@ describe('WebhookController', () => {
         'd-no-owner',
       );
       expect(result).toEqual({ accepted: true });
-      expect(mockUsecase.execute).not.toHaveBeenCalled();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockQueue.add).not.toHaveBeenCalled();
     });
   });
 });

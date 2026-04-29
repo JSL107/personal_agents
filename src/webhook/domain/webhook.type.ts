@@ -13,3 +13,14 @@ export interface WebhookTriggerPayload {
 }
 
 export const WEBHOOK_SECRET_ENV = 'WEBHOOK_SECRET';
+
+// Webhook 으로 발화된 impact-report 를 직렬 처리하는 BullMQ 큐.
+// 기존 fire-and-forget 패턴은 burst (예: monorepo 에 10개 issue 동시 open) 시 LLM CLI 가
+// 동시 N개 spawn 돼 quota 폭주/리소스 고갈 위험 (V3 audit B2 #4 / B3 P5 / B4 H-2).
+// 큐 + concurrency=1 로 직렬화 — Slack 200 OK 응답은 즉시, 실제 LLM 호출은 백그라운드.
+export const IMPACT_REPORT_QUEUE = 'impact-report-webhook';
+
+export interface ImpactReportJobData {
+  subject: string;
+  slackUserId: string;
+}

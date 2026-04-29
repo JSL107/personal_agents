@@ -1,3 +1,4 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   Body,
   Controller,
@@ -9,9 +10,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 
-import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import {
   GITHUB_DELIVERY_HEADER,
   GITHUB_EVENT_HEADER,
@@ -23,6 +24,8 @@ import {
   GithubWebhookPayload,
 } from '../domain/github-webhook.type';
 import {
+  IMPACT_REPORT_QUEUE,
+  ImpactReportJobData,
   WEBHOOK_SECRET_ENV,
   WebhookTriggerPayload,
 } from '../domain/webhook.type';
@@ -36,7 +39,8 @@ export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
   constructor(
-    private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
+    @InjectQueue(IMPACT_REPORT_QUEUE)
+    private readonly impactReportQueue: Queue<ImpactReportJobData>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -171,12 +175,25 @@ export class WebhookController {
     subject: string;
     slackUserId: string;
   }): void {
-    // fire-and-forget — webhook response 는 빠르게 200, 실제 작업은 비동기.
-    void this.generateImpactReportUsecase
-      .execute({ subject, slackUserId })
+    // BullMQ 큐로 enqueue — webhook 응답 200 즉시, consumer (concurrency=1) 가 직렬 처리.
+    // 기존 fire-and-forget 은 burst (monorepo 다수 issue 동시 open) 시 LLM CLI 동시 spawn 으로
+    // quota/리소스 폭주 위험 (V3 audit B2 #4 / B3 P5 / B4 H-2). 큐 도입으로 backpressure 확보.
+    void this.impactReportQueue
+      .add(
+        'webhook-impact-report',
+        { subject, slackUserId },
+        {
+          // transient 실패 회복 — Slack 일시 장애 / 모델 timeout / 네트워크 흔들림.
+          // 30s → 1m 지수 백오프, 최대 2회 시도. quota 폭주 방지를 위해 attempts 제한.
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
       .catch((error: unknown) => {
         this.logger.error(
-          `Webhook impact report 실패: ${error instanceof Error ? error.message : String(error)}`,
+          `Webhook impact-report enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
   }
