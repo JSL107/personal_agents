@@ -11,7 +11,6 @@ import { GeneratePoOutlineUsecase } from '../../agent/po-expand/application/gene
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
-import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
@@ -20,6 +19,7 @@ import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatPoOutline } from '../format/po-outline.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
+import { registerRetryRunHandler } from './retry-run.handler';
 import { runAgentCommand } from './slack-handler.helper';
 
 // AgentRunOutcome<T> 를 반환하는 모델 호출 명령군. 모두 동일 골격:
@@ -193,180 +193,8 @@ export const registerAgentCommandHandlers = (
     });
   });
 
-  app.command('/retry-run', async ({ ack, command, respond }) => {
-    const idText = command.text?.trim() ?? '';
-    const id = Number(idText);
-    if (!idText || !Number.isInteger(id) || id <= 0) {
-      await ack({
-        response_type: 'ephemeral',
-        text: '사용법: `/retry-run <id>` (예: `/retry-run 42`)',
-      });
-      return;
-    }
-    await ack({
-      response_type: 'ephemeral',
-      text: `이대리가 run #${id} 를 재실행하는 중입니다...`,
-    });
-
-    const payload = await deps.retryRunUsecase.execute({ id });
-    if (!payload) {
-      await respond({
-        response_type: 'ephemeral',
-        text: `run #${id} 를 찾을 수 없거나 FAILED 상태가 아닙니다.`,
-      });
-      return;
-    }
-
-    const snapshot = payload.inputSnapshot as Record<string, unknown> | null;
-    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
-      await respond({
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `AgentRun #${id} 의 inputSnapshot 형식이 올바르지 않아 재실행할 수 없습니다.`,
-      });
-      return;
-    }
-    const originalUserId = snapshot.slackUserId as string | undefined;
-    if (originalUserId && originalUserId !== command.user_id) {
-      await respond({
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `AgentRun #${id} 는 다른 사용자의 실행 기록이라 재실행할 수 없습니다.`,
-      });
-      return;
-    }
-    const slackUserId = originalUserId ?? command.user_id;
-
-    switch (payload.agentType) {
-      case 'PM':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: '/retry-run(PM)',
-          execute: () =>
-            deps.generateDailyPlanUsecase.execute({
-              tasksText: (snapshot.tasksText as string | undefined) ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          format: (result) => formatDailyPlan(result.plan, result.sources),
-        });
-        break;
-      case 'WORK_REVIEWER':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: '/retry-run(WORK_REVIEWER)',
-          execute: () =>
-            deps.generateWorklogUsecase.execute({
-              workText: (snapshot.workText as string | undefined) ?? '',
-              slackUserId,
-            }),
-          format: formatDailyReview,
-        });
-        break;
-      case 'CODE_REVIEWER':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: '/retry-run(CODE_REVIEWER)',
-          execute: () =>
-            deps.reviewPullRequestUsecase.execute({
-              prRef: (snapshot.prRef as string | undefined) ?? '',
-              slackUserId,
-            }),
-          format: (review) =>
-            formatPullRequestReview({
-              prRef: (snapshot.prRef as string | undefined) ?? '',
-              review,
-            }),
-        });
-        break;
-      case 'IMPACT_REPORTER':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: '/retry-run(IMPACT_REPORTER)',
-          execute: () =>
-            deps.generateImpactReportUsecase.execute({
-              subject: (snapshot.subject as string | undefined) ?? '',
-              slackUserId,
-            }),
-          format: formatImpactReport,
-        });
-        break;
-      case 'BE':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: `/retry-run#${id} (BE)`,
-          execute: () =>
-            deps.generateBackendPlanUsecase.execute({
-              subject: (snapshot.subject as string) ?? '',
-              slackUserId,
-            }),
-          format: formatBackendPlan,
-        });
-        break;
-      case 'PO_SHADOW': {
-        const origLen =
-          (snapshot.extraContextLength as number | undefined) ?? 0;
-        if (origLen > 0) {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (PO_SHADOW) 는 추가 컨텍스트가 포함된 요청이라 정확히 재현할 수 없어 재실행을 지원하지 않습니다.`,
-          });
-          return;
-        }
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: `/retry-run#${id} (PO_SHADOW)`,
-          execute: () =>
-            deps.generatePoShadowUsecase.execute({
-              extraContext: '',
-              slackUserId,
-            }),
-          format: formatPoShadowReport,
-        });
-        break;
-      }
-      case 'PO_EXPAND':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: `/retry-run#${id} (PO_EXPAND)`,
-          execute: () =>
-            deps.generatePoOutlineUsecase.execute({
-              subject: (snapshot.subject as string | undefined) ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          format: formatPoOutline,
-        });
-        break;
-      case 'BE_SCHEMA':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: `/retry-run#${id} (BE_SCHEMA)`,
-          execute: () =>
-            deps.generateSchemaProposalUsecase.execute({
-              request: (snapshot.request as string | undefined) ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          format: formatSchemaProposal,
-        });
-        break;
-      default:
-        await respond({
-          response_type: 'ephemeral',
-          text: `agentType '${payload.agentType}' 는 retry-run 이 지원되지 않습니다.`,
-        });
-    }
-  });
+  // /retry-run 은 분리됨 (LOC 분할) — registerRetryRunHandler 로 위임.
+  registerRetryRunHandler(app, deps);
 
   app.command('/po-expand', async ({ ack, command, respond }) => {
     const subject = command.text?.trim() ?? '';
