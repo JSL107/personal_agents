@@ -12,6 +12,7 @@ import { PoExpandModule } from './agent/po-expand/po-expand.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
+import { CodeGraphModule } from './code-graph/code-graph.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { GithubModule } from './github/github.module';
@@ -44,6 +45,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     PrismaModule,
     ModelRouterModule,
     AgentRunModule,
+    // V3 SOTA Foundation 1.1 — Tree-sitter Code Graph (단계 0: 빈 스캐폴드).
+    CodeGraphModule,
     GithubModule,
     NotionModule,
     SlackCollectorModule,
