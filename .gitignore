@@ -13,6 +13,8 @@ coverage/
 lib-cov/
 tmp/
 temp/
+# V3 SOTA Foundation 1.1 — Code Graph snapshot (단계 3). 빌드 산출물.
+var/
 
 # logs
 logs/
