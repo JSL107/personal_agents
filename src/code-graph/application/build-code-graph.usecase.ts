@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
@@ -83,9 +84,11 @@ export class BuildCodeGraphUsecase {
   }
 
   private async walkDir(dir: string, files: string[]): Promise<void> {
-    let entries: Awaited<ReturnType<typeof readdir>>;
+    // readdir overload 의 generic 추론이 path 인자 타입을 좁히지 못해 Dirent<NonSharedBuffer>[]
+    // 로 falsely narrow 되는 경우가 있어 Dirent[] (string-name) 으로 명시 캐스트.
+    let entries: Dirent[];
     try {
-      entries = await readdir(dir, { withFileTypes: true });
+      entries = (await readdir(dir, { withFileTypes: true })) as Dirent[];
     } catch (error: unknown) {
       this.logger.warn(
         `Code Graph build — ${dir} 디렉터리 열기 실패 (skip): ${error instanceof Error ? error.message : String(error)}`,
