@@ -7,9 +7,12 @@ import {
 import { SlackInboxItem } from '../domain/slack-inbox.type';
 
 // Slack 메시지 1건이 PM prompt 1 섹션을 단독으로 압도하지 못하도록 한 항목당 cap.
-// PM-3' MAX_PROMPT_BYTES=16_000 의 1/4 수준 — inbox section 이 통째로 cap 을 잡아먹지 않게.
+// daily-plan-prompt.builder 의 MAX_PROMPT_BYTES=16_000 의 1/4 수준 — inbox section 이 통째로 cap 을 잡아먹지 않게.
+// 단위는 UTF-8 byte — 한글/이모지가 주류인 Slack 메시지에서 String.length(UTF-16 code unit) 기준이면 한글 1자가
+// 3 byte 로 부풀어 4000자만 모여도 12~16KB 가 돼 prompt cap 무력화 (codex review b… P2).
 // V3 mid-progress audit B4 M-1 대응 (prompt overflow / injection 표면 축소).
-const SLACK_INBOX_TEXT_MAX = 4_000;
+const SLACK_INBOX_TEXT_MAX_BYTES = 4_000;
+const TRUNCATE_SUFFIX = '\n... (생략됨 — Slack Inbox 항목 cap)';
 
 @Injectable()
 export class SlackInboxService {
@@ -44,9 +47,18 @@ export class SlackInboxService {
   }
 }
 
+// UTF-8 byte 기준으로 cap. byte 자르기 시 멀티바이트 경계가 깨질 수 있으므로 toString 후
+// 말미의 replacement char (U+FFFD) 를 제거. (daily-plan-prompt.builder.truncateUtf8 와 동일 패턴)
 const clampInboxText = (text: string): string => {
-  if (text.length <= SLACK_INBOX_TEXT_MAX) {
+  const buffer = Buffer.from(text, 'utf8');
+  if (buffer.byteLength <= SLACK_INBOX_TEXT_MAX_BYTES) {
     return text;
   }
-  return `${text.slice(0, SLACK_INBOX_TEXT_MAX)}\n... (생략됨 — Slack Inbox 항목 cap)`;
+  const suffixBytes = Buffer.byteLength(TRUNCATE_SUFFIX, 'utf8');
+  const targetBytes = Math.max(0, SLACK_INBOX_TEXT_MAX_BYTES - suffixBytes);
+  const sliced = buffer
+    .subarray(0, targetBytes)
+    .toString('utf8')
+    .replace(/�$/, '');
+  return `${sliced}${TRUNCATE_SUFFIX}`;
 };
