@@ -3,7 +3,9 @@ import { QuotaStatsResult } from '../../agent-run/application/get-quota-stats.us
 // /quota 결과 — 사용자의 agent_run 사용량 통계 (provider 별 count + 평균/총 duration).
 // 모델 호출 없는 DB 집계라 footer 미부착. since 시각은 ISO 그대로 노출 (사후 분석용).
 export const formatQuotaStats = (stats: QuotaStatsResult): string => {
-  const rangeLabel = stats.range === 'WEEK' ? '최근 7일' : '오늘 (24시간)';
+  // TODAY 는 자정 기준이 아닌 rolling 24h — UTC 자정 기준이라고 오해하지 않도록 라벨에 명시 (V3 audit B3 P9).
+  const rangeLabel =
+    stats.range === 'WEEK' ? '최근 7일' : '최근 24시간 (rolling)';
   if (stats.totals.count === 0) {
     return [
       `*Quota 사용량 — ${rangeLabel}*`,

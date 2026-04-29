@@ -49,9 +49,10 @@ export const registerDiagnosisHandlers = (
     const arg = command.text?.trim().toLowerCase() ?? '';
     const range: 'TODAY' | 'WEEK' = arg === 'week' ? 'WEEK' : 'TODAY';
 
+    // TODAY range 는 자정 기준이 아니라 rolling 24h 임을 라벨로 명시 — 사용자 오해 방지 (V3 audit B3 P9).
     await ack({
       response_type: 'ephemeral',
-      text: `이대리가 ${range === 'WEEK' ? '최근 7일' : '오늘'} 사용량을 집계 중입니다...`,
+      text: `이대리가 ${range === 'WEEK' ? '최근 7일' : '최근 24시간 (rolling)'} 사용량을 집계 중입니다...`,
     });
 
     await runEphemeral({
