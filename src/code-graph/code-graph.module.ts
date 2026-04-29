@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { BuildCodeGraphUsecase } from './application/build-code-graph.usecase';
+import { CodeGraphQueryUsecase } from './application/code-graph-query.usecase';
 import { CODE_PARSER_PORT } from './domain/port/code-parser.port';
 import { CODE_RELATION_EXTRACTOR_PORT } from './domain/port/code-relation-extractor.port';
 import { CodeGraphSnapshotStore } from './infrastructure/code-graph.snapshot-store';
@@ -11,7 +12,8 @@ import { TreeSitterRelationExtractor } from './infrastructure/tree-sitter-relati
 // 단계 1: chunker (CodeParserPort + TreeSitterParser).
 // 단계 2: relation indexer (CodeRelationExtractorPort + TreeSitterRelationExtractor).
 // 단계 3: BuildCodeGraphUsecase + CodeGraphSnapshotStore (인메모리 그래프 + JSON 직렬화).
-// 단계 4~5 에서 query usecase / BE-3 통합이 추가된다.
+// 단계 4: CodeGraphQueryUsecase (4종 query: implementers / callers / extenders / files-affected-by-import).
+// 단계 5 에서 BE-3 통합이 추가된다.
 @Module({
   imports: [],
   providers: [
@@ -24,12 +26,14 @@ import { TreeSitterRelationExtractor } from './infrastructure/tree-sitter-relati
       useClass: TreeSitterRelationExtractor,
     },
     BuildCodeGraphUsecase,
+    CodeGraphQueryUsecase,
     CodeGraphSnapshotStore,
   ],
   exports: [
     CODE_PARSER_PORT,
     CODE_RELATION_EXTRACTOR_PORT,
     BuildCodeGraphUsecase,
+    CodeGraphQueryUsecase,
     CodeGraphSnapshotStore,
   ],
 })
