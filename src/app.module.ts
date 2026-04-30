@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { BeAgentModule } from './agent/be/be.module';
 import { BeSchemaModule } from './agent/be-schema/be-schema.module';
+import { BeTestModule } from './agent/be-test/be-test.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
@@ -63,6 +64,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-1 / BE-4 self-correction 루프가
     // 호스트 직접 실행 대신 사용 예정 (현재는 첫 소비자 wiring 전).
     SandboxModule,
+    // V3 §8 BE-2 AST Test Gen — /be-test 슬래시. Tree-sitter AST 분석 + spec 생성.
+    // (sandbox 검증 루프는 P1 보안 점검 후 도입 — 현재 MVP 는 spec 생성/반환만.)
+    BeTestModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({

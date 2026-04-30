@@ -19,6 +19,7 @@ export interface AgentRetryInputSnapshot {
   prRef?: string; // CODE_REVIEWER
   subject?: string; // IMPACT_REPORTER / BE / PO_EXPAND
   request?: string; // BE_SCHEMA
+  filePath?: string; // BE_TEST
   extraContextLength?: number; // PO_SHADOW
 }
 

@@ -9,6 +9,7 @@ import { App, LogLevel } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../agent/be-schema/application/generate-schema-proposal.usecase';
+import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -25,6 +26,7 @@ import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview
 import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
+import { registerBeTestHandler } from './handler/be-test.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerPreviewActionHandlers } from './handler/preview-action.handler';
 import { registerWriteBackHandlers } from './handler/write-back.handler';
@@ -52,6 +54,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generatePoOutlineUsecase: GeneratePoOutlineUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
+    private readonly generateTestUsecase: GenerateTestUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
@@ -226,11 +229,16 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generatePoOutlineUsecase: this.generatePoOutlineUsecase,
       generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
+      generateTestUsecase: this.generateTestUsecase,
       retryRunUsecase: this.retryRunUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
       syncPlanUsecase: this.syncPlanUsecase,
+      logger: this.logger,
+    });
+    registerBeTestHandler(app, {
+      generateTestUsecase: this.generateTestUsecase,
       logger: this.logger,
     });
   }
