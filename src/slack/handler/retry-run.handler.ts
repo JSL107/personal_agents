@@ -3,6 +3,7 @@ import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
@@ -13,6 +14,7 @@ import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
+import { formatGeneratedTest } from '../format/be-test.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
@@ -34,6 +36,7 @@ export interface RetryRunHandlerDeps {
   generatePoShadowUsecase: GeneratePoShadowUsecase;
   generatePoOutlineUsecase: GeneratePoOutlineUsecase;
   generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
+  generateTestUsecase: GenerateTestUsecase;
   logger: Logger;
 }
 
@@ -211,6 +214,20 @@ export const registerRetryRunHandler = (
               triggerType: TriggerType.FAILURE_REPLAY,
             }),
           format: formatSchemaProposal,
+        });
+        break;
+      case 'BE_TEST':
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (BE_TEST)`,
+          execute: () =>
+            deps.generateTestUsecase.execute({
+              filePath: snapshot.filePath ?? '',
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            }),
+          format: formatGeneratedTest,
         });
         break;
       default:

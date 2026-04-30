@@ -22,6 +22,7 @@ export enum TriggerType {
   FAILURE_REPLAY = 'FAILURE_REPLAY',
   WEBHOOK = 'WEBHOOK',
   SLACK_COMMAND_BE_SCHEMA = 'SLACK_COMMAND_BE_SCHEMA',
+  SLACK_COMMAND_BE_TEST = 'SLACK_COMMAND_BE_TEST',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

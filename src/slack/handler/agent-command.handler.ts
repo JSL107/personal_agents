@@ -3,6 +3,7 @@ import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -37,6 +38,7 @@ export const registerAgentCommandHandlers = (
     generatePoOutlineUsecase: GeneratePoOutlineUsecase;
     generateBackendPlanUsecase: GenerateBackendPlanUsecase;
     generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
+    generateTestUsecase: GenerateTestUsecase;
     retryRunUsecase: RetryRunUsecase;
     logger: Logger;
   },
