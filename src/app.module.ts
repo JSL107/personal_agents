@@ -21,6 +21,7 @@ import { MorningBriefingModule } from './morning-briefing/morning-briefing.modul
 import { NotionModule } from './notion/notion.module';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
@@ -59,6 +60,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,
+    // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-1 / BE-4 self-correction 루프가
+    // 호스트 직접 실행 대신 사용 예정 (현재는 첫 소비자 wiring 전).
+    SandboxModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({
