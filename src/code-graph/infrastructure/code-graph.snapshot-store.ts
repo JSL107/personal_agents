@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   CODE_GRAPH_SNAPSHOT_VERSION,
@@ -44,9 +45,7 @@ export class CodeGraphSnapshotStore {
         !Array.isArray(parsed.relations) ||
         typeof parsed.builtAt !== 'string'
       ) {
-        this.logger.warn(
-          'Code Graph snapshot 형식 손상 — rebuild 필요.',
-        );
+        this.logger.warn('Code Graph snapshot 형식 손상 — rebuild 필요.');
         return null;
       }
       return parsed as CodeGraphSnapshot;

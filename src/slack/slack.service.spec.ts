@@ -474,7 +474,7 @@ describe('formatQuotaStats (OPS-1)', () => {
       },
     };
     const output = formatQuotaStats(result);
-    expect(output).toContain('오늘 (24시간)');
+    expect(output).toContain('최근 24시간 (rolling)');
     expect(output).toContain('기록 없음');
   });
 

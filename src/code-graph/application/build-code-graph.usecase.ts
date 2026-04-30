@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { CodeChunk } from '../domain/code-chunk.type';
 import {
@@ -51,9 +52,7 @@ export class BuildCodeGraphUsecase {
       const relPath = relative(rootDir, absPath);
       try {
         const source = await readFile(absPath, 'utf8');
-        chunks.push(
-          ...this.parser.parseFile({ filePath: relPath, source }),
-        );
+        chunks.push(...this.parser.parseFile({ filePath: relPath, source }));
         relations.push(
           ...this.extractor.extractRelations({ filePath: relPath, source }),
         );

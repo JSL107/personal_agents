@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import Parser from 'tree-sitter';
-import TreeSitterTypeScript from 'tree-sitter-typescript';
+// native CommonJS binding — esModuleInterop 없는 환경 호환을 위해 `import = require()` 사용.
+/* eslint-disable @typescript-eslint/no-require-imports */
+import Parser = require('tree-sitter');
+import TreeSitterTypeScript = require('tree-sitter-typescript');
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 import { CodeRelation } from '../domain/code-relation.type';
 import { CodeRelationExtractorPort } from '../domain/port/code-relation-extractor.port';
@@ -87,10 +90,7 @@ const extractImport = (
       if (named) {
         symbols.push(named.text);
       }
-    } else if (
-      n.type === 'identifier' &&
-      n.parent?.type === 'import_clause'
-    ) {
+    } else if (n.type === 'identifier' && n.parent?.type === 'import_clause') {
       // default import — `import Foo from './bar'` 에서 Foo 가 import_clause 직계 identifier.
       symbols.push(n.text);
     } else if (n.type === 'namespace_import') {

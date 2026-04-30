@@ -72,11 +72,7 @@ export class CodeGraphQueryUsecase {
   }): string[] {
     return uniq(
       filterImports(snapshot.relations)
-        .filter(
-          (r) =>
-            r.to === importPath ||
-            r.to.startsWith(`${importPath}/`),
-        )
+        .filter((r) => r.to === importPath || r.to.startsWith(`${importPath}/`))
         .map((r) => r.from),
     );
   }
@@ -94,7 +90,8 @@ const filterExtends = (
   relations: readonly CodeRelation[],
 ): Extract<CodeRelation, { kind: 'extends' }>[] =>
   relations.filter(
-    (r): r is Extract<CodeRelation, { kind: 'extends' }> => r.kind === 'extends',
+    (r): r is Extract<CodeRelation, { kind: 'extends' }> =>
+      r.kind === 'extends',
   );
 
 const filterCalls = (
@@ -108,7 +105,8 @@ const filterImports = (
   relations: readonly CodeRelation[],
 ): Extract<CodeRelation, { kind: 'imports' }>[] =>
   relations.filter(
-    (r): r is Extract<CodeRelation, { kind: 'imports' }> => r.kind === 'imports',
+    (r): r is Extract<CodeRelation, { kind: 'imports' }> =>
+      r.kind === 'imports',
   );
 
 // `obj.foo()` / `this.foo()` / `Foo.foo()` 모두 functionName='foo' 매칭. 단순 식별자도 매칭.

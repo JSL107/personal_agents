@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import Parser from 'tree-sitter';
-import TreeSitterTypeScript from 'tree-sitter-typescript';
+// tree-sitter 는 native CommonJS binding 이라 default 합성이 esModuleInterop 없는 환경에서 깨진다.
+// `import = require()` 형식으로 module.exports 를 직접 가져온다.
+/* eslint-disable @typescript-eslint/no-require-imports */
+import Parser = require('tree-sitter');
+import TreeSitterTypeScript = require('tree-sitter-typescript');
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 import { CodeChunk, CodeChunkKind } from '../domain/code-chunk.type';
 import { CodeParserPort } from '../domain/port/code-parser.port';

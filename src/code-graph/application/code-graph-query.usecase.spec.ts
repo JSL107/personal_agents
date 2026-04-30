@@ -46,9 +46,9 @@ describe('CodeGraphQueryUsecase', () => {
         { kind: 'implements', from: 'Foo', to: 'P' },
         { kind: 'implements', from: 'Foo', to: 'P' },
       ]);
-      expect(
-        usecase.findImplementersOf({ snapshot, portName: 'P' }),
-      ).toEqual(['Foo']);
+      expect(usecase.findImplementersOf({ snapshot, portName: 'P' })).toEqual([
+        'Foo',
+      ]);
     });
   });
 
@@ -166,9 +166,7 @@ describe('CodeGraphQueryUsecase', () => {
 
   it('빈 snapshot 은 모든 query 가 빈 배열 반환', () => {
     const snapshot = buildSnapshot([]);
-    expect(
-      usecase.findImplementersOf({ snapshot, portName: 'X' }),
-    ).toEqual([]);
+    expect(usecase.findImplementersOf({ snapshot, portName: 'X' })).toEqual([]);
     expect(usecase.findCallersOf({ snapshot, functionName: 'x' })).toEqual([]);
     expect(usecase.findExtendersOf({ snapshot, className: 'X' })).toEqual([]);
     expect(

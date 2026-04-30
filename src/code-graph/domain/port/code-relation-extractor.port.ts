@@ -7,8 +7,5 @@ export const CODE_RELATION_EXTRACTOR_PORT = Symbol(
 );
 
 export interface CodeRelationExtractorPort {
-  extractRelations(input: {
-    filePath: string;
-    source: string;
-  }): CodeRelation[];
+  extractRelations(input: { filePath: string; source: string }): CodeRelation[];
 }
