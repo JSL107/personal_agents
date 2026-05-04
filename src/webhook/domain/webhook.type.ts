@@ -24,3 +24,21 @@ export interface ImpactReportJobData {
   subject: string;
   slackUserId: string;
 }
+
+// pull_request.opened webhook 트리거. PR 메타로 BE-Fix 자동 분석.
+export const BE_FIX_QUEUE = 'be-fix-webhook';
+
+export interface BeFixJobData {
+  prRef: string; // 'owner/repo#number'
+  slackUserId: string;
+}
+
+// check_run.completed (conclusion: failure) webhook 트리거. workflow 메타로 stack trace 합성.
+export const BE_SRE_QUEUE = 'be-sre-webhook';
+
+export interface BeSreJobData {
+  // BE-SRE usecase 가 stackTrace string 을 받으므로, webhook payload 의 핵심 메타를
+  // 구조화된 텍스트로 합성해 전달한다 (실제 stack 은 workflow log 에 있어 별도 fetch 필요 — MVP 보류).
+  stackTrace: string;
+  slackUserId: string;
+}

@@ -31,7 +31,24 @@ export interface GithubPullRequestEvent {
   repository: GithubRepository;
 }
 
-export type GithubWebhookPayload = GithubIssuesEvent | GithubPullRequestEvent;
+export interface GithubCheckRunEvent {
+  action: string; // 'created' | 'completed' | 'rerequested' | 'requested_action'
+  check_run: {
+    id: number;
+    name: string;
+    status: string; // 'queued' | 'in_progress' | 'completed'
+    conclusion: string | null; // 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required' | null
+    head_sha: string;
+    html_url: string;
+    output?: { title?: string | null; summary?: string | null };
+  };
+  repository: { full_name: string };
+}
+
+export type GithubWebhookPayload =
+  | GithubIssuesEvent
+  | GithubPullRequestEvent
+  | GithubCheckRunEvent;
 
 // 헤더명 — 모두 소문자 (NestJS @Headers 파라미터는 lowercase 매칭).
 export const GITHUB_EVENT_HEADER = 'x-github-event';
