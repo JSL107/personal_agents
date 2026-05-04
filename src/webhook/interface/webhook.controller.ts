@@ -19,11 +19,16 @@ import {
   GITHUB_SIGNATURE_HEADER,
   GITHUB_WEBHOOK_OWNER_ENV,
   GITHUB_WEBHOOK_SECRET_ENV,
+  GithubCheckRunEvent,
   GithubIssuesEvent,
   GithubPullRequestEvent,
   GithubWebhookPayload,
 } from '../domain/github-webhook.type';
 import {
+  BE_FIX_QUEUE,
+  BE_SRE_QUEUE,
+  BeFixJobData,
+  BeSreJobData,
   IMPACT_REPORT_QUEUE,
   ImpactReportJobData,
   WEBHOOK_SECRET_ENV,
@@ -41,6 +46,10 @@ export class WebhookController {
   constructor(
     @InjectQueue(IMPACT_REPORT_QUEUE)
     private readonly impactReportQueue: Queue<ImpactReportJobData>,
+    @InjectQueue(BE_FIX_QUEUE)
+    private readonly beFixQueue: Queue<BeFixJobData>,
+    @InjectQueue(BE_SRE_QUEUE)
+    private readonly beSreQueue: Queue<BeSreJobData>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -113,23 +122,40 @@ export class WebhookController {
       `GitHub Webhook 수신 — event=${event} delivery=${delivery ?? '(없음)'} repo=${payload.repository?.full_name ?? '(미상)'}`,
     );
 
+    const slackUserId = this.configService.get<string>(
+      GITHUB_WEBHOOK_OWNER_ENV,
+    );
+    if (!slackUserId || slackUserId.trim().length === 0) {
+      this.logger.warn(
+        'GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID 미설정 — 자동 발화 생략 (수신 자체는 200 OK).',
+      );
+      return { accepted: true };
+    }
+
+    // check_run.completed + failure → BE-SRE 분석.
+    if (event === 'check_run' && this.isCheckRunFailure(payload)) {
+      this.fireBeSreAnalysis({
+        payload: payload as GithubCheckRunEvent,
+        slackUserId,
+      });
+      return { accepted: true };
+    }
+
     const subject = this.toImpactSubject({ event, payload });
     if (!subject) {
       // 지원하지 않는 event/action — accept 하되 작업 발화 X (재시도 폭주 방지).
       return { accepted: true };
     }
 
-    const slackUserId = this.configService.get<string>(
-      GITHUB_WEBHOOK_OWNER_ENV,
-    );
-    if (!slackUserId || slackUserId.trim().length === 0) {
-      this.logger.warn(
-        'GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID 미설정 — impact-report 자동 발화 생략 (수신 자체는 200 OK).',
-      );
-      return { accepted: true };
+    this.fireImpactReport({ subject, slackUserId });
+
+    // pull_request.opened → impact-report 와 병렬로 BE-FIX 자동 분석도 발화.
+    if (event === 'pull_request' && this.isPullRequestOpened(payload)) {
+      const pr = payload as GithubPullRequestEvent;
+      const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
+      this.fireBeFixAnalysis({ prRef, slackUserId });
     }
 
-    this.fireImpactReport({ subject, slackUserId });
     return { accepted: true };
   }
 
@@ -166,6 +192,85 @@ export class WebhookController {
       'pull_request' in payload &&
       (payload as GithubPullRequestEvent).action === 'opened'
     );
+  }
+
+  private isCheckRunFailure(
+    payload: GithubWebhookPayload,
+  ): payload is GithubCheckRunEvent {
+    if (!('check_run' in payload)) {
+      return false;
+    }
+    const cr = payload as GithubCheckRunEvent;
+    return cr.action === 'completed' && cr.check_run.conclusion === 'failure';
+  }
+
+  private fireBeFixAnalysis({
+    prRef,
+    slackUserId,
+  }: {
+    prRef: string;
+    slackUserId: string;
+  }): void {
+    // codex P1 — 같은 PR (force-push / re-deliver) 에 대해 BullMQ 가 dedup 하도록 jobId 사용.
+    // BullMQ 는 동일 jobId 가 살아있는 동안 같은 job 을 재추가하지 않는다 (removeOnComplete:50 까지 보존).
+    const jobId = `befix:${prRef}`;
+    void this.beFixQueue
+      .add(
+        'webhook-be-fix',
+        { prRef, slackUserId },
+        {
+          jobId,
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Webhook BE-Fix enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  }
+
+  private fireBeSreAnalysis({
+    payload,
+    slackUserId,
+  }: {
+    payload: GithubCheckRunEvent;
+    slackUserId: string;
+  }): void {
+    const { name, conclusion, head_sha, html_url, output } = payload.check_run;
+    const repo = payload.repository.full_name;
+    const title = output?.title ?? '(없음)';
+    const summary = output?.summary ?? '';
+    // 실제 workflow log 는 별도 API fetch 필요 — MVP 는 핵심 메타만 합성해 BE-SRE 에 전달.
+    const stackTrace = [
+      `Workflow ${name} 실패 (${conclusion ?? 'unknown'})`,
+      `repo=${repo} sha=${head_sha}`,
+      `url=${html_url}`,
+      `output=${title}: ${summary.slice(0, 1000)}`,
+    ].join('\n');
+
+    // codex P1 — CI re-run 으로 같은 head_sha + check_run.id 가 다시 도착해도 BullMQ 가 dedup.
+    const jobId = `besre:${repo}:${head_sha}:${payload.check_run.id}`;
+    void this.beSreQueue
+      .add(
+        'webhook-be-sre',
+        { stackTrace, slackUserId },
+        {
+          jobId,
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Webhook BE-SRE enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   private fireImpactReport({
