@@ -71,12 +71,22 @@ export class TreeSitterTestAnalyzer {
   }
 }
 
-const walk = (node: SyntaxNode, visit: (n: SyntaxNode) => void): void => {
-  visit(node);
-  for (const child of node.children) {
-    walk(child, visit);
+// codex P3 — 깊게 중첩된 파일에서 JS stack overflow 를 회피하기 위해 명시 stack 사용 (iterative).
+// pre-order traversal 순서를 유지하기 위해 children 을 역순으로 push.
+const walk = (root: SyntaxNode, visit: (n: SyntaxNode) => void): void => {
+  const stack: SyntaxNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop() as SyntaxNode;
+    visit(node);
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      stack.push(node.children[i]);
+    }
   }
 };
+
+// Tree-sitter typescript 의 logical operator anonymous token type. 셋 모두 short-circuit
+// 분기를 만들어 cyclomatic complexity 에 기여 (`a && b`, `a || b`, `a ?? b`).
+const LOGICAL_OPERATOR_TYPES = new Set(['&&', '||', '??']);
 
 const extractPortsFromConstructor = (
   classNode: SyntaxNode,
@@ -213,6 +223,11 @@ const extractBranches = (fnNode: SyntaxNode): BranchPath[] => {
 
     switch (node.type) {
       case 'if_statement': {
+        // codex P3 — `else if` 는 부모 else_clause 가 'else-if' kind 로 카운트하므로
+        // 같은 위치를 두 번 세지 않도록 여기서 skip.
+        if (node.parent?.type === 'else_clause') {
+          break;
+        }
         const condNode = node.childForFieldName('condition');
         branches.push({
           kind: 'if',
@@ -223,12 +238,39 @@ const extractBranches = (fnNode: SyntaxNode): BranchPath[] => {
         break;
       }
       case 'else_clause': {
-        branches.push({
-          kind: 'else',
-          startLine: node.startPosition.row + 1,
-          endLine: node.endPosition.row + 1,
-          condition: 'else',
-        });
+        // 자식이 if_statement 단독이면 `else if`. 그 외는 순수 else.
+        const innerIf = node.children.find((c) => c.type === 'if_statement');
+        if (innerIf) {
+          const condNode = innerIf.childForFieldName('condition');
+          branches.push({
+            kind: 'else-if',
+            startLine: node.startPosition.row + 1,
+            endLine: node.endPosition.row + 1,
+            condition: condNode ? extractText(condNode) : '',
+          });
+        } else {
+          branches.push({
+            kind: 'else',
+            startLine: node.startPosition.row + 1,
+            endLine: node.endPosition.row + 1,
+            condition: 'else',
+          });
+        }
+        break;
+      }
+      case 'binary_expression': {
+        // codex P3 — `&&` / `||` / `??` short-circuit 분기. operator 는 anonymous token 자식.
+        const hasLogicalOp = node.children.some((c) =>
+          LOGICAL_OPERATOR_TYPES.has(c.type),
+        );
+        if (hasLogicalOp) {
+          branches.push({
+            kind: 'logical',
+            startLine: node.startPosition.row + 1,
+            endLine: node.endPosition.row + 1,
+            condition: extractText(node),
+          });
+        }
         break;
       }
       case 'switch_case': {
