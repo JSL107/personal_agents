@@ -26,6 +26,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.PO_EXPAND]: ModelProviderName.CHATGPT,
   [AgentType.BE_SCHEMA]: ModelProviderName.CLAUDE,
   [AgentType.BE_TEST]: ModelProviderName.CLAUDE,
+  [AgentType.BE_SRE]: ModelProviderName.CLAUDE,
+  [AgentType.BE_FIX]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 fallback provider.

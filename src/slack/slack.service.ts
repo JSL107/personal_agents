@@ -8,7 +8,9 @@ import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
+import { AnalyzePrConventionUsecase } from '../agent/be-fix/application/analyze-pr-convention.usecase';
 import { GenerateSchemaProposalUsecase } from '../agent/be-schema/application/generate-schema-proposal.usecase';
+import { AnalyzeStackTraceUsecase } from '../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
@@ -26,6 +28,8 @@ import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview
 import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
+import { registerBeFixHandler } from './handler/be-fix.handler';
+import { registerBeSreHandler } from './handler/be-sre.handler';
 import { registerBeTestHandler } from './handler/be-test.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerPreviewActionHandlers } from './handler/preview-action.handler';
@@ -55,6 +59,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
     private readonly generateTestUsecase: GenerateTestUsecase,
+    private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
+    private readonly analyzePrConventionUsecase: AnalyzePrConventionUsecase,
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
@@ -230,6 +236,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
       generateTestUsecase: this.generateTestUsecase,
+      analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
+      analyzePrConventionUsecase: this.analyzePrConventionUsecase,
       retryRunUsecase: this.retryRunUsecase,
       logger: this.logger,
     });
@@ -239,6 +247,14 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
     registerBeTestHandler(app, {
       generateTestUsecase: this.generateTestUsecase,
+      logger: this.logger,
+    });
+    registerBeSreHandler(app, {
+      analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
+      logger: this.logger,
+    });
+    registerBeFixHandler(app, {
+      analyzePrConventionUsecase: this.analyzePrConventionUsecase,
       logger: this.logger,
     });
   }

@@ -2,7 +2,9 @@ import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
+import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analyze-pr-convention.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -13,7 +15,9 @@ import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/ge
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
+import { formatPrConventionReport } from '../format/be-fix.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
+import { formatSreAnalysis } from '../format/be-sre.formatter';
 import { formatGeneratedTest } from '../format/be-test.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
@@ -37,6 +41,8 @@ export interface RetryRunHandlerDeps {
   generatePoOutlineUsecase: GeneratePoOutlineUsecase;
   generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
   generateTestUsecase: GenerateTestUsecase;
+  analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
+  analyzePrConventionUsecase: AnalyzePrConventionUsecase;
   logger: Logger;
 }
 
@@ -228,6 +234,34 @@ export const registerRetryRunHandler = (
               triggerType: TriggerType.FAILURE_REPLAY,
             }),
           format: formatGeneratedTest,
+        });
+        break;
+      case 'BE_SRE':
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (BE_SRE)`,
+          execute: () =>
+            deps.analyzeStackTraceUsecase.execute({
+              stackTrace: snapshot.stackTrace ?? '',
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            }),
+          format: formatSreAnalysis,
+        });
+        break;
+      case 'BE_FIX':
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (BE_FIX)`,
+          execute: () =>
+            deps.analyzePrConventionUsecase.execute({
+              prRef: snapshot.prRef ?? '',
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            }),
+          format: formatPrConventionReport,
         });
         break;
       default:
