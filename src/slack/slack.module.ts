@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 
 import { BeAgentModule } from '../agent/be/be.module';
+import { BeFixModule } from '../agent/be-fix/be-fix.module';
 import { BeSchemaModule } from '../agent/be-schema/be-schema.module';
+import { BeSreModule } from '../agent/be-sre/be-sre.module';
 import { BeTestModule } from '../agent/be-test/be-test.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
@@ -26,6 +28,10 @@ import { SlackService } from './slack.service';
     BeSchemaModule,
     // V3 BE-2 /be-test 슬래시 — Tree-sitter AST 분석 + Sandbox self-correction.
     BeTestModule,
+    // V3 BE-1 /be-sre 슬래시 — Stack trace 파싱 + Code Graph 영향 분석.
+    BeSreModule,
+    // V3 BE-4 /be-fix 슬래시 — PR diff 컨벤션 위반 식별.
+    BeFixModule,
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.

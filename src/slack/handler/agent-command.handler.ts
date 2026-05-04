@@ -2,7 +2,9 @@ import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
+import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analyze-pr-convention.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
@@ -39,6 +41,8 @@ export const registerAgentCommandHandlers = (
     generateBackendPlanUsecase: GenerateBackendPlanUsecase;
     generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
     generateTestUsecase: GenerateTestUsecase;
+    analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
+    analyzePrConventionUsecase: AnalyzePrConventionUsecase;
     retryRunUsecase: RetryRunUsecase;
     logger: Logger;
   },

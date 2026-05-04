@@ -20,6 +20,7 @@ export interface AgentRetryInputSnapshot {
   subject?: string; // IMPACT_REPORTER / BE / PO_EXPAND
   request?: string; // BE_SCHEMA
   filePath?: string; // BE_TEST
+  stackTrace?: string; // BE_SRE
   extraContextLength?: number; // PO_SHADOW
 }
 
