@@ -33,6 +33,8 @@
 
 ### 에이전트 → 슬래시 → 진입 usecase 매핑
 
+> 모델 매핑 source-of-truth: `src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`. 아래 표는 슬래시명 + usecase 경로 (코드에 분산) 까지 한 번에 보기 위한 집약 인덱스.
+
 | 에이전트 | 슬래시 | Usecase | 모델 |
 |---|---|---|---|
 | PM | `/today` | `src/agent/pm/application/generate-daily-plan.usecase.ts` | ChatGPT |
@@ -94,13 +96,11 @@ if (a) { if (b) { ... } }        // → ts-pattern 의 match 검토
 
 ## 4. 슬래시 응답 패턴 (Slack)
 
-CLI latency 10~40초 → Slack 3초 안에 ack 강제. 반드시:
-```ts
-await ack(body);                                 // 즉시
-// ... 모델 호출
-await respond({ replace_original: true, ... });  // 결과로 덮어쓰기
-```
-ephemeral 응답에서 `replace_original: true` 가 가끔 안 먹는 건 Slack API 한계, 그대로 둠.
+CLI latency 10~40초 → Slack 3초 안 ack 강제 (즉시 `ack` → 모델 호출 → `respond({ replace_original: true })` 로 덮어쓰기).
+
+- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (9개 핸들러 일관 적용)
+- `replace_original: true` 헬퍼: `src/slack/handler/slack-handler.helper.ts:60-74`
+- ephemeral 응답에서 `replace_original` 가끔 안 먹는 건 Slack API 한계, 그대로 둠.
 
 LLM output 을 Slack mrkdwn 으로 직접 보낼 때는 control char (`*`, `_`, `~`, `<`, `>`, `&`, `` ` ``) escape 검토 — formatter 에서 처리.
 
@@ -130,6 +130,8 @@ pnpm prisma format  # schema 변경 시
 ---
 
 ## 7. 진행 중 작업 추적
+
+Dated reference snapshots — 단일 커밋 결정 기록, 사후 갱신 X (신규 결정은 새 파일):
 
 - **V3 plan 인덱스**: `docs/superpowers/plans/2026-04-29-v3-roadmap.md` (#6~#11 단계별)
 - **직전 audit**: `docs/superpowers/audits/2026-04-29-v3-mid-progress-audit.md` (P2 잔여 항목 §8)
