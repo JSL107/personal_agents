@@ -9,7 +9,6 @@ import { GenerateTestUsecase } from '../../agent/be-test/application/generate-te
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
-import { GeneratePoOutlineUsecase } from '../../agent/po-expand/application/generate-po-outline.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -22,7 +21,6 @@ import { formatGeneratedTest } from '../format/be-test.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
-import { formatPoOutline } from '../format/po-outline.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
 import { runAgentCommand } from './slack-handler.helper';
@@ -38,7 +36,6 @@ export interface RetryRunHandlerDeps {
   generateImpactReportUsecase: GenerateImpactReportUsecase;
   generateBackendPlanUsecase: GenerateBackendPlanUsecase;
   generatePoShadowUsecase: GeneratePoShadowUsecase;
-  generatePoOutlineUsecase: GeneratePoOutlineUsecase;
   generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
   generateTestUsecase: GenerateTestUsecase;
   analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
@@ -194,20 +191,6 @@ export const registerRetryRunHandler = (
         });
         break;
       }
-      case 'PO_EXPAND':
-        await runAgentCommand({
-          respond,
-          logger: deps.logger,
-          commandLabel: `/retry-run#${id} (PO_EXPAND)`,
-          execute: () =>
-            deps.generatePoOutlineUsecase.execute({
-              subject: snapshot.subject ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          format: formatPoOutline,
-        });
-        break;
       case 'BE_SCHEMA':
         await runAgentCommand({
           respond,

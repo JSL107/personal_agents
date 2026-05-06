@@ -11,7 +11,6 @@ import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
-import { PoExpandModule } from './agent/po-expand/po-expand.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -59,7 +58,6 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
-    PoExpandModule,
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,

@@ -42,7 +42,6 @@
 | Code Reviewer | `/review-pr` | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | Claude |
 | BE | `/plan-task` | `src/agent/be/application/generate-backend-plan.usecase.ts` | Claude |
 | PO Shadow | `/po-shadow` | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | ChatGPT |
-| PO Expand | `/po-expand` | `src/agent/po-expand/application/generate-po-outline.usecase.ts` | ChatGPT |
 | Impact Reporter | `/impact-report` | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | ChatGPT |
 | BE Schema | `/be-schema` | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Claude |
 | BE Test | `/be-test` | `src/agent/be-test/application/generate-test.usecase.ts` | Claude |

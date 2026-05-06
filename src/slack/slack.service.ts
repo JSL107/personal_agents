@@ -18,7 +18,6 @@ import { GenerateImpactReportUsecase } from '../agent/impact-reporter/applicatio
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
 import { SyncContextUsecase } from '../agent/pm/application/sync-context.usecase';
 import { SyncPlanUsecase } from '../agent/pm/application/sync-plan.usecase';
-import { GeneratePoOutlineUsecase } from '../agent/po-expand/application/generate-po-outline.usecase';
 import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
 import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.usecase';
@@ -55,7 +54,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase,
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
-    private readonly generatePoOutlineUsecase: GeneratePoOutlineUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
     private readonly generateTestUsecase: GenerateTestUsecase,
@@ -232,7 +230,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
-      generatePoOutlineUsecase: this.generatePoOutlineUsecase,
       generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
       generateTestUsecase: this.generateTestUsecase,

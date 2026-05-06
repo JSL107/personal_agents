@@ -10,7 +10,6 @@ import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
-import { GeneratePoOutlineUsecase } from '../../agent/po-expand/application/generate-po-outline.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -19,7 +18,6 @@ import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
-import { formatPoOutline } from '../format/po-outline.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
 import { registerRetryRunHandler } from './retry-run.handler';
@@ -37,7 +35,6 @@ export const registerAgentCommandHandlers = (
     saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase;
     generateImpactReportUsecase: GenerateImpactReportUsecase;
     generatePoShadowUsecase: GeneratePoShadowUsecase;
-    generatePoOutlineUsecase: GeneratePoOutlineUsecase;
     generateBackendPlanUsecase: GenerateBackendPlanUsecase;
     generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
     generateTestUsecase: GenerateTestUsecase;
@@ -201,33 +198,6 @@ export const registerAgentCommandHandlers = (
 
   // /retry-run 은 분리됨 (LOC 분할) — registerRetryRunHandler 로 위임.
   registerRetryRunHandler(app, deps);
-
-  app.command('/po-expand', async ({ ack, command, respond }) => {
-    const subject = command.text?.trim() ?? '';
-    if (subject.length === 0) {
-      await ack({
-        response_type: 'ephemeral',
-        text: '사용법: `/po-expand <아이디어 한 줄>` (예: `/po-expand 결제 실패 자동 재시도`)',
-      });
-      return;
-    }
-    await ack({
-      response_type: 'ephemeral',
-      text: '이대리(PO 모드) 가 개요를 작성 중입니다 (5~15초 소요)...',
-    });
-
-    await runAgentCommand({
-      respond,
-      logger: deps.logger,
-      commandLabel: '/po-expand',
-      execute: () =>
-        deps.generatePoOutlineUsecase.execute({
-          subject,
-          slackUserId: command.user_id,
-        }),
-      format: formatPoOutline,
-    });
-  });
 
   app.command('/be-schema', async ({ ack, command, respond }) => {
     const request = command.text?.trim() ?? '';

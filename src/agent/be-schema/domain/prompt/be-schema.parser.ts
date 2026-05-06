@@ -1,6 +1,6 @@
 import { SchemaProposal } from '../be-schema.type';
 
-// LLM 응답 → SchemaProposal. raw JSON / fence 둘 다 수용 (po-expand parser 와 동일 패턴).
+// LLM 응답 → SchemaProposal. raw JSON / fence 둘 다 수용.
 // 필드 누락 / 잘못된 타입은 graceful default — Slack 응답이 "파싱 실패" 로 끊기지 않게 한다.
 export const parseSchemaProposal = (
   request: string,

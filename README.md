@@ -135,7 +135,6 @@ pnpm format:check          # Prettier 검사
 | `/sync-context` | 외부 컨텍스트(GitHub/Notion/Slack) 강제 재수집 | — |
 | `/quota` | 본인의 에이전트 사용량 통계 확인 | — |
 | `/review-pr` | GitHub PR 심층 리뷰 (Must-fix 등 도출) | Code Reviewer / Claude |
-| `/po-expand` | 신규 아이디어 한 줄을 outline + 명확화 질문으로 확장 | PO Expand / ChatGPT |
 | `/be-schema` | 자연어 DB 변경 요청을 Prisma 스키마 제안으로 변환 (V3 BE-3 lite) | BE Schema / Claude |
 | `/retry-run` | FAILED 된 AgentRun 을 본인 입력으로 재실행 (OPS-5) | (선행 run 의 agent) |
 | `/review-feedback` | 직전 PR 리뷰의 accept / reject 학습 데이터 저장 (QA-1) | — |
@@ -147,14 +146,13 @@ pnpm format:check          # Prettier 검사
 2. **Socket Mode** 활성화 → App-Level Token 발급 (scope: `connections:write`) → `SLACK_APP_TOKEN`
 3. **OAuth & Permissions** → Bot Token Scopes: `commands`, `chat:write` → 워크스페이스에 install → Bot User OAuth Token → `SLACK_BOT_TOKEN`
 4. **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`
-5. **Slash Commands** → 아래 14개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
+5. **Slash Commands** → 아래 13개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
    - `/ping` — 이대리 생존 확인
    - `/today` — 오늘 할 일 우선순위 정리 (Usage hint: `<오늘 할 일을 자유롭게 적어주세요>`)
    - `/worklog` — 오늘 한 일 회고 (Usage hint: `<오늘 한 일을 자유롭게 적어주세요>`)
    - `/review-pr` — PR 리뷰 (Usage hint: `<PR URL 또는 owner/repo#번호>`)
    - `/plan-task` — 백엔드 구현 계획 (Usage hint: `<구현할 기능 설명 또는 PR URL>`)
    - `/po-shadow` — 계획 재검토 (Usage hint: `[선택] 추가 컨텍스트`)
-   - `/po-expand` — 신규 아이디어 outline 화 (Usage hint: `<아이디어 한 줄>`)
    - `/be-schema` — Prisma 스키마 변경 제안 (Usage hint: `<자연어 요청>`)
    - `/impact-report` — 임팩트 보고서 (Usage hint: `<작업 설명 또는 PR URL>`)
    - `/sync-plan` — 외부 시스템 동기화 (Preview Gate 연동)

@@ -17,7 +17,7 @@ export interface AgentRetryInputSnapshot {
   tasksText?: string; // PM
   workText?: string; // WORK_REVIEWER
   prRef?: string; // CODE_REVIEWER
-  subject?: string; // IMPACT_REPORTER / BE / PO_EXPAND
+  subject?: string; // IMPACT_REPORTER / BE
   request?: string; // BE_SCHEMA
   filePath?: string; // BE_TEST
   stackTrace?: string; // BE_SRE
