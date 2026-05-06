@@ -105,9 +105,9 @@ src/
 ## 6. 모델 / CLI 라우팅
 
 현재 매핑 (`src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`):
-- **PM / Work Reviewer** → ChatGPT (`codex` CLI, `codex exec`)
-- **Code Reviewer / BE** → Claude (`claude` CLI, `claude -p --output-format json`)
-- **Gemini** → 보조. 현재 `gemini` CLI 미설치, `MockModelProvider`.
+- **PM / Work Reviewer / Impact Reporter / PO Shadow** → ChatGPT (`codex` CLI, `codex exec`)
+- **Code Reviewer / BE / BE Schema / BE Test / BE SRE / BE Fix** → Claude (`claude` CLI, `claude -p --output-format json`)
+- **Gemini** → fallback. 모든 primary 호출이 실패하면 `gemini` CLI 로 자동 재시도 (`--approval-mode plan` read-only). primary 매핑 없음 — backup quota 전용.
 
 CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_original)` 패턴 강제 (사용자가 19초 침묵 X).
 
