@@ -109,9 +109,9 @@
 | 항목 | 상태 | 근거 |
 |---|---|---|
 | PoExpandApplier (Stage 2) | **이미 deprecated** | commit `c1c477b refactor(preview-gate): PREVIEW_KIND.PO_EXPAND deprecate (V3 #11)` |
-| `/po-expand` 슬래시 자체 | 검토 | "신규 아이디어 한 줄 → outline + 명확화 질문" 은 PO/PM 모두에 명확 매핑 X. 비전에서 미사용 시 deprecate 후보 — **사용자 결정 필요**. |
+| `/po-expand` 슬래시 + 모듈 전체 | **deprecated (2026-05-06)** | 사용자 결정. po-expand 9개 파일 + po-outline.formatter 삭제, AgentType/TriggerType enum 정리, README/AGENTS/CLAUDE.md 표 갱신. |
 | PO Shadow / Impact Reporter / Work Reviewer 분산 | **재구성 후보** | PO 단일 통합 시 흡수. 즉시 제거 X — 통합 plan 후 단계적 |
-| `MockModelProvider` (Gemini) | 검토 | [model-router.usecase.ts](../../../src/model-router/application/model-router.usecase.ts) 의 Gemini 매핑 — `gemini` CLI 미설치 상태. 비전에 Gemini 미언급. **제거 또는 정식 활성화** 결정 필요. |
+| Gemini provider | **정식 활성 (이미 fallback 으로 동작)** | [GeminiCliProvider](../../../src/model-router/infrastructure/gemini-cli.provider.ts) 가 `gemini` CLI 를 spawn (Mock 아님). primary 호출 실패 시 자동 재시도. AGENTS.md 의 "Mock" 표현은 stale — 2026-05-06 정정. |
 | Crawler 도메인 ([crawler/](../../../src/crawler/)) | 보존 | AGENTS.md "이대리에 위임 가능성으로 보존" — 비전과 무관해도 미래 가치. 단 비전 포지션과 직접 연결 X. |
 | `MCP+RBAC` 도입 | **이미 보류 결정** | [2026-04-30-mcp-rbac-decision.md](../plans/2026-04-30-mcp-rbac-decision.md) — 외부 부작용 surface 표면화 시 재평가 |
 
