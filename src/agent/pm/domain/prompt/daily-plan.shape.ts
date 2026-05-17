@@ -35,7 +35,9 @@ export const isDailyPlanShape = (value: unknown): value is DailyPlan => {
     isTaskItemArray(record.afternoon) &&
     (record.blocker === null || typeof record.blocker === 'string') &&
     typeof record.estimatedHours === 'number' &&
-    typeof record.reasoning === 'string'
+    typeof record.reasoning === 'string' &&
+    (record.assignableTaskIds === undefined ||
+      isStringArray(record.assignableTaskIds))
   );
 };
 

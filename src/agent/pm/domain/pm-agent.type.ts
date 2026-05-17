@@ -52,6 +52,10 @@ export interface DailyPlan {
   blocker: string | null;
   estimatedHours: number;
   reasoning: string;
+  // P2 (Assign) phase 입력 — morning/afternoon TaskItem.id 중 자동 개발 자동화 가능한 task 의 부분집합.
+  // 후속 CTO worker 가 BE/BE-* 분배 후보로 사용. optional — 구버전 plan record 와 LLM 이 키를 빠뜨린 경우 호환.
+  // 참조 무결성 (id ∈ morning ∪ afternoon) 과 빈 배열 정규화는 P2 (CTO worker) 입력 어댑터 책임.
+  assignableTaskIds?: string[];
 }
 
 export interface GenerateDailyPlanInput {

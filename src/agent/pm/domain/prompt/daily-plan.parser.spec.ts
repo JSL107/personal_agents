@@ -96,4 +96,36 @@ describe('parseDailyPlan', () => {
       PmAgentException,
     );
   });
+
+  it('assignableTaskIds 가 포함된 신버전 schema 를 정상 파싱', () => {
+    const withAssignable: DailyPlan = {
+      ...validPlan,
+      assignableTaskIds: ['user:prisma schema 확인', 'user:코드 리뷰 2건'],
+    };
+    expect(parseDailyPlan(JSON.stringify(withAssignable))).toEqual(
+      withAssignable,
+    );
+  });
+
+  it('assignableTaskIds 가 누락된 구버전 plan 도 graceful 통과', () => {
+    const withoutAssignable = JSON.parse(
+      JSON.stringify(validPlan),
+    ) as Partial<DailyPlan>;
+    delete withoutAssignable.assignableTaskIds;
+    expect(parseDailyPlan(JSON.stringify(withoutAssignable))).toEqual(
+      withoutAssignable,
+    );
+  });
+
+  it('assignableTaskIds 가 string 배열이 아니면 예외', () => {
+    const broken = { ...validPlan, assignableTaskIds: [1, 2, 3] };
+    expect(() => parseDailyPlan(JSON.stringify(broken))).toThrow(
+      PmAgentException,
+    );
+  });
+
+  it('assignableTaskIds 가 빈 배열인 정상 케이스 ("후보 없음" 명시) 통과', () => {
+    const empty: DailyPlan = { ...validPlan, assignableTaskIds: [] };
+    expect(parseDailyPlan(JSON.stringify(empty))).toEqual(empty);
+  });
 });
