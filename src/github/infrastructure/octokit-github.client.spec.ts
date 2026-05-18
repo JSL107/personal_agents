@@ -2,10 +2,20 @@ import { Octokit } from '@octokit/rest';
 
 import { GithubException } from '../domain/github.exception';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
-import { OctokitGithubClient } from './octokit-github.client';
+import {
+  computeIsApprovedFromReviews,
+  OctokitGithubClient,
+  PullsReview,
+} from './octokit-github.client';
 
 describe('OctokitGithubClient', () => {
-  const buildOctokitMock = (items: Array<Record<string, unknown>>): Octokit =>
+  // listMyAssignedTasks 가 PR 별 listReviews 로 isApproved 를 채우므로,
+  // 기본 mock 은 빈 reviews 배열을 돌려주는 paginate 도 함께 제공한다 (default isApproved=false).
+  // listReviews 별 시나리오 검증이 필요한 테스트는 paginateOverride 로 reviewer 시퀀스를 주입한다.
+  const buildOctokitMock = (
+    items: Array<Record<string, unknown>>,
+    paginateOverride?: jest.Mock,
+  ): Octokit =>
     ({
       rest: {
         search: {
@@ -13,7 +23,9 @@ describe('OctokitGithubClient', () => {
             .fn()
             .mockResolvedValue({ data: { items } }),
         },
+        pulls: { listReviews: jest.fn() },
       },
+      paginate: paginateOverride ?? jest.fn().mockResolvedValue([]),
     }) as unknown as Octokit;
 
   it('Octokit 인스턴스가 null 이면 TOKEN_NOT_CONFIGURED 예외', async () => {
@@ -250,6 +262,137 @@ describe('OctokitGithubClient', () => {
       ).rejects.toMatchObject({
         githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
       });
+    });
+  });
+
+  describe('listMyAssignedTasks — PR isApproved 판정', () => {
+    const prItem = {
+      number: 7,
+      title: 'test PR',
+      html_url: 'https://github.com/foo/bar/pull/7',
+      repository_url: 'https://api.github.com/repos/foo/bar',
+      updated_at: '2026-05-15T00:00:00Z',
+      pull_request: { url: '...' },
+      draft: false,
+    };
+
+    it('reviewer 모두 APPROVED 면 isApproved=true', async () => {
+      const reviews: PullsReview[] = [
+        {
+          state: 'APPROVED',
+          submitted_at: '2026-05-15T01:00:00Z',
+          user: { id: 1, login: 'alice' },
+        },
+      ];
+      const paginate = jest.fn().mockResolvedValue(reviews);
+      const client = new OctokitGithubClient(
+        buildOctokitMock([prItem], paginate),
+      );
+
+      const { pullRequests } = await client.listMyAssignedTasks();
+      expect(pullRequests[0].isApproved).toBe(true);
+    });
+
+    it('어떤 reviewer 가 CHANGES_REQUESTED 면 isApproved=false', async () => {
+      const reviews: PullsReview[] = [
+        {
+          state: 'APPROVED',
+          submitted_at: '2026-05-15T01:00:00Z',
+          user: { id: 1, login: 'alice' },
+        },
+        {
+          state: 'CHANGES_REQUESTED',
+          submitted_at: '2026-05-15T02:00:00Z',
+          user: { id: 2, login: 'bob' },
+        },
+      ];
+      const paginate = jest.fn().mockResolvedValue(reviews);
+      const client = new OctokitGithubClient(
+        buildOctokitMock([prItem], paginate),
+      );
+
+      const { pullRequests } = await client.listMyAssignedTasks();
+      expect(pullRequests[0].isApproved).toBe(false);
+    });
+
+    it('APPROVED → DISMISSED 시퀀스는 isApproved=false (codex/omc P1)', async () => {
+      const reviews: PullsReview[] = [
+        {
+          state: 'APPROVED',
+          submitted_at: '2026-05-15T01:00:00Z',
+          user: { id: 1, login: 'alice' },
+        },
+        {
+          state: 'DISMISSED',
+          submitted_at: '2026-05-15T03:00:00Z',
+          user: { id: 1, login: 'alice' },
+        },
+      ];
+      const paginate = jest.fn().mockResolvedValue(reviews);
+      const client = new OctokitGithubClient(
+        buildOctokitMock([prItem], paginate),
+      );
+
+      const { pullRequests } = await client.listMyAssignedTasks();
+      expect(pullRequests[0].isApproved).toBe(false);
+    });
+
+    it('listReviews 가 throw 하면 isApproved=false 로 fallback (graceful)', async () => {
+      const paginate = jest.fn().mockRejectedValue(new Error('scope missing'));
+      const client = new OctokitGithubClient(
+        buildOctokitMock([prItem], paginate),
+      );
+
+      const { pullRequests } = await client.listMyAssignedTasks();
+      expect(pullRequests[0].isApproved).toBe(false);
+    });
+  });
+
+  describe('computeIsApprovedFromReviews — unit', () => {
+    const review = (
+      state: string,
+      submittedAt: string,
+      user: { id?: number; login?: string } | null,
+    ): PullsReview => ({ state, submitted_at: submittedAt, user });
+
+    it('빈 reviews → false', () => {
+      expect(computeIsApprovedFromReviews([])).toBe(false);
+    });
+
+    it('COMMENTED 만 있으면 결정적 상태가 없으므로 false', () => {
+      expect(
+        computeIsApprovedFromReviews([
+          review('COMMENTED', '2026-05-15T01:00:00Z', { id: 1 }),
+        ]),
+      ).toBe(false);
+    });
+
+    it('같은 reviewer 의 APPROVED → CHANGES_REQUESTED 시퀀스 → false', () => {
+      expect(
+        computeIsApprovedFromReviews([
+          review('APPROVED', '2026-05-15T01:00:00Z', { id: 1 }),
+          review('CHANGES_REQUESTED', '2026-05-15T02:00:00Z', { id: 1 }),
+        ]),
+      ).toBe(false);
+    });
+
+    it('같은 reviewer 의 CHANGES_REQUESTED → APPROVED 시퀀스 → true', () => {
+      expect(
+        computeIsApprovedFromReviews([
+          review('CHANGES_REQUESTED', '2026-05-15T01:00:00Z', { id: 1 }),
+          review('APPROVED', '2026-05-15T02:00:00Z', { id: 1 }),
+        ]),
+      ).toBe(true);
+    });
+
+    it('식별 불가 reviewer (user=null) 는 reduction 에서 제외 (omc P1)', () => {
+      // user=null reviewer 의 CHANGES_REQUESTED 가 다른 reviewer 의 APPROVED 를 덮으면 안 됨
+      expect(
+        computeIsApprovedFromReviews([
+          review('APPROVED', '2026-05-15T01:00:00Z', { id: 1, login: 'alice' }),
+          review('CHANGES_REQUESTED', '2026-05-15T02:00:00Z', null),
+        ]),
+      ).toBe(true);
     });
   });
 });
