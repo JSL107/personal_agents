@@ -21,7 +21,7 @@ import { SlackService } from './slack.service';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
-    // /be plan|schema|test|sre|fix — 5종 백엔드 에이전트의 통합 진입점.
+    // /be plan|schema|test — 사용자-트리거 백엔드 에이전트 3종 통합 진입점 (SRE/FIX 는 webhook 자동 트리거).
     BeAgentModule,
     BeSchemaModule,
     BeTestModule,
