@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Octokit } from '@octokit/rest';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
@@ -29,6 +29,8 @@ const CHANGED_FILES_PAGE_SIZE = 100;
 
 @Injectable()
 export class OctokitGithubClient implements GithubClientPort {
+  private readonly logger = new Logger(OctokitGithubClient.name);
+
   constructor(
     @Inject(OCTOKIT_INSTANCE) private readonly octokit: Octokit | null,
   ) {}
@@ -72,8 +74,14 @@ export class OctokitGithubClient implements GithubClientPort {
         { owner, repo: repoName, pull_number: pr.number, per_page: 100 },
       );
       return computeIsApprovedFromReviews(reviews);
-    } catch {
-      // graceful — 권한 부족/네트워크 실패 시 isApproved=false 로 두고 plan 흐름 계속.
+    } catch (error: unknown) {
+      // graceful — 권한 부족(scope 미충족)/rate limit/네트워크 실패 모두 isApproved=false 로 떨어진다.
+      // 단, 가시성 확보를 위해 PR 정보와 함께 logger.warn 으로 기록 — silent drop 회피
+      // (codex P1: 어떤 PR 의 승인 판정이 unknown 으로 떨어졌는지 추적 가능해야 함).
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `PR ${pr.repo}#${pr.number} listReviews 실패 — isApproved=false 로 fallback: ${message}`,
+      );
       return false;
     }
   }
@@ -280,25 +288,37 @@ export class OctokitGithubClient implements GithubClientPort {
 }
 
 // pulls.listReviews 응답에서 PR 의 approval 여부 계산.
-// 같은 reviewer 가 후속으로 CHANGES_REQUESTED 했을 수 있으니 reviewer 별 최신 review 만 본다.
-// COMMENTED / DISMISSED 는 approval 상태 결정에 영향 주지 않아 제외 (가장 최근 결정적 review 만 본다).
-type PullsReview = {
+// reviewer 별 최신 결정적 review 만 본다 (decisive = APPROVED / CHANGES_REQUESTED / DISMISSED).
+// COMMENTED 는 approval 상태에 영향 X → 제외.
+// DISMISSED 는 직전 APPROVED 가 무효화된 상태 → reduction 에 기록은 하되 최종 판정에서 non-approved 처리
+// (omc/codex P1: APPROVED→DISMISSED 시퀀스 오판 방지).
+// reviewer 식별이 불가능한 review (user=null 이고 login 도 없음) 는 reduction 에서 제외
+// (omc P1: user:null reviewer 둘이 login:unknown 으로 머지되어 한쪽이 다른쪽을 덮는 오판 방지).
+export type PullsReview = {
   state?: string | null;
   submitted_at?: string | null;
   user?: { id?: number; login?: string } | null;
 };
 
-const computeIsApprovedFromReviews = (reviews: PullsReview[]): boolean => {
+const DECISIVE_REVIEW_STATES = new Set([
+  'APPROVED',
+  'CHANGES_REQUESTED',
+  'DISMISSED',
+]);
+
+export const computeIsApprovedFromReviews = (
+  reviews: PullsReview[],
+): boolean => {
   const latestByReviewer = new Map<string, PullsReview>();
   for (const review of reviews) {
     const state = review.state ?? '';
-    if (state !== 'APPROVED' && state !== 'CHANGES_REQUESTED') {
+    if (!DECISIVE_REVIEW_STATES.has(state)) {
       continue;
     }
-    const reviewerKey =
-      review.user?.id !== undefined
-        ? `id:${review.user.id}`
-        : `login:${review.user?.login ?? 'unknown'}`;
+    const reviewerKey = buildReviewerKey(review);
+    if (reviewerKey === null) {
+      continue;
+    }
     const previous = latestByReviewer.get(reviewerKey);
     if (
       !previous ||
@@ -311,13 +331,27 @@ const computeIsApprovedFromReviews = (reviews: PullsReview[]): boolean => {
     return false;
   }
   for (const review of latestByReviewer.values()) {
-    if (review.state === 'CHANGES_REQUESTED') {
+    if (
+      review.state === 'CHANGES_REQUESTED' ||
+      review.state === 'DISMISSED'
+    ) {
       return false;
     }
   }
   return Array.from(latestByReviewer.values()).some(
     (review) => review.state === 'APPROVED',
   );
+};
+
+const buildReviewerKey = (review: PullsReview): string | null => {
+  if (review.user?.id !== undefined && review.user.id !== null) {
+    return `id:${review.user.id}`;
+  }
+  const login = review.user?.login;
+  if (login !== undefined && login.length > 0) {
+    return `login:${login}`;
+  }
+  return null;
 };
 
 // search.issuesAndPullRequests 응답 item 의 구조 (필요한 필드만 추출).

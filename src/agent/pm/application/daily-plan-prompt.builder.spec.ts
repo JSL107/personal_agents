@@ -128,7 +128,7 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).not.toContain('## 지난 7일 plan 패턴');
   });
 
-  it("userText 에 ',' 가 2개 이상 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {
+  it("userText 가 ', ' 로 2개 이상 짧은 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {
     const built = builder.build(
       buildBaseContext({ userText: 'PR 리뷰, 회의 준비, 문서 보강' }),
     );
@@ -144,6 +144,30 @@ describe('DailyPlanPromptBuilder', () => {
     const built = builder.build(buildBaseContext({ userText: '오늘 할 일' }));
 
     expect(built.prompt).toContain('[사용자 입력]\n오늘 할 일');
+    expect(built.prompt).not.toContain('[사용자 명시 TODO');
+  });
+
+  it("split 기준 ', ' (콤마+공백) 미일치는 단일 자유 텍스트로 유지 (codex/omc P2)", () => {
+    // 공백 없는 콤마 ("A,B,C") 는 list 의도가 모호하므로 split 안 함
+    const built = builder.build(buildBaseContext({ userText: 'A,B,C' }));
+    expect(built.prompt).toContain('[사용자 입력]\nA,B,C');
+    expect(built.prompt).not.toContain('[사용자 명시 TODO');
+  });
+
+  it('split 결과에 50자 초과 항목이 섞이면 자연 문장으로 간주해 split 안 함 (omc P2)', () => {
+    const longTail =
+      '특히 카드사 응답이 비정상적으로 느려져서 timeout 이 자주 발생하는 케이스를 우선 살펴봐야 합니다';
+    const userText = `결제 API 버그 수정, ${longTail}`;
+    const built = builder.build(buildBaseContext({ userText }));
+    expect(built.prompt).toContain(`[사용자 입력]\n${userText}`);
+    expect(built.prompt).not.toContain('[사용자 명시 TODO');
+  });
+
+  it('빈 항목/한 글자만 남는 split 결과는 list 로 보지 않는다', () => {
+    // "A, , B" → trim 후 ["A", "B"] → "A" 가 1자라 min length 미달 → 단일 입력으로 fallback
+    const userText = 'A, , B';
+    const built = builder.build(buildBaseContext({ userText }));
+    expect(built.prompt).toContain(`[사용자 입력]\n${userText}`);
     expect(built.prompt).not.toContain('[사용자 명시 TODO');
   });
 });

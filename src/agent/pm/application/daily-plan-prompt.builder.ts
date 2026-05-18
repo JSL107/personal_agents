@@ -208,19 +208,35 @@ export class DailyPlanPromptBuilder {
   }
 }
 
-// 사용자가 `,` 로 2개 이상 항목을 명시했으면 별도 TODO 섹션으로 분리해 LLM 이
-// morning/afternoon 분배 시 누락하지 않도록 강한 힌트를 준다. 그 외에는 기존 `[사용자 입력]` 유지.
+// ", " (콤마+공백) 으로 명확히 분리된 짧은 TODO 리스트만 별도 섹션으로 분리한다.
+// codex/omc P2: 단일 자유 텍스트 내 자연 콤마 ("결제 API 버그 수정, 특히 카드사 응답") 가
+// 두 TODO 로 잘못 split 되는 false positive 를 줄이기 위한 보수적 휴리스틱:
+//   1) split 기준을 `, ` 로 강화 (그냥 `,` 는 자연 문장에서도 자주 등장)
+//   2) 모든 부분이 trim 후 2자 이상이어야 함
+//   3) 어느 한 부분이라도 50자 초과면 자연 문장 (긴 종속절 / 설명) 으로 간주해 split 안 함
+//   4) 최소 2개 항목 이상이어야 함
+// 위 조건 미충족 시 기존 `[사용자 입력]` 섹션으로 fallback.
+const USER_TODO_MAX_PART_LENGTH = 50;
+const USER_TODO_MIN_PART_LENGTH = 2;
+
 const formatUserTextSection = (userText: string): string | null => {
   if (userText.length === 0) {
     return null;
   }
   const parts = userText
-    .split(',')
+    .split(', ')
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-  if (parts.length >= 2) {
+  const looksLikeTodoList =
+    parts.length >= 2 &&
+    parts.every(
+      (p) =>
+        p.length >= USER_TODO_MIN_PART_LENGTH &&
+        p.length <= USER_TODO_MAX_PART_LENGTH,
+    );
+  if (looksLikeTodoList) {
     const bullets = parts.map((p) => `- ${p}`).join('\n');
-    return `[사용자 명시 TODO — ',' 로 구분된 항목, 반드시 morning/afternoon 에 포함]\n${bullets}`;
+    return `[사용자 명시 TODO — ", " 로 구분된 항목, 반드시 morning/afternoon 에 포함]\n${bullets}`;
   }
   return `[사용자 입력]\n${userText}`;
 };
