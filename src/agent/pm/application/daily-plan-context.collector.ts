@@ -69,12 +69,16 @@ export class DailyPlanContextCollector {
   async collect({
     userText,
     slackUserId,
+    excludeApprovedPullRequests = false,
   }: {
     userText: string;
     slackUserId: string;
+    // Morning Briefing CRON 등 자동 발화 시 true — APPROVED 받은 PR 은 plan 컨텍스트에서 제외.
+    // 수동 /today 에서는 false — APPROVED PR 도 보여 LLM 이 후순위 라벨을 보고 판단.
+    excludeApprovedPullRequests?: boolean;
   }): Promise<DailyPlanContext> {
     const [
-      githubTasks,
+      githubTasksRaw,
       previousPlan,
       previousWorklog,
       slackMentions,
@@ -92,6 +96,16 @@ export class DailyPlanContextCollector {
       this.fetchInboxItemsOrEmpty({ slackUserId }),
       this.fetchSimilarPlansOrEmpty({ userText }),
     ]);
+
+    const githubTasks =
+      excludeApprovedPullRequests && githubTasksRaw
+        ? {
+            issues: githubTasksRaw.issues,
+            pullRequests: githubTasksRaw.pullRequests.filter(
+              (pr) => !pr.isApproved,
+            ),
+          }
+        : githubTasksRaw;
 
     return {
       userText,

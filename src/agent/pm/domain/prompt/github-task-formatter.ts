@@ -45,7 +45,11 @@ export const formatGithubTasksAsPromptSection = (
       continue;
     }
     const draft = pr.draft ? ' [draft]' : '';
-    lines.push(`- PR #${pr.number} (${pr.repo})${draft}: ${pr.title}`);
+    // 리뷰 끝나 머지만 남은 PR — LLM 이 plan 우선순위에서 후순위로 두도록 라벨 노출.
+    const approved = pr.isApproved ? ' [APPROVED]' : '';
+    lines.push(
+      `- PR #${pr.number} (${pr.repo})${draft}${approved}: ${pr.title}`,
+    );
     remaining -= 1;
   }
 

@@ -411,53 +411,6 @@ describe('formatContextSummary (HOTFIX-1)', () => {
   });
 });
 
-describe('formatDailyPlan — 참조 소스 섹션', () => {
-  const plan: DailyPlan = {
-    topPriority: task('최우선'),
-    varianceAnalysis: {
-      rolledOverTasks: [],
-      analysisReasoning: '(이월 없음)',
-    },
-    morning: [task('오전 1')],
-    afternoon: [task('오후 1')],
-    blocker: null,
-    estimatedHours: 5,
-    reasoning: 'r',
-  };
-
-  it('sources 가 비어있으면 참조 소스 섹션 생략', () => {
-    const output = formatDailyPlan(plan, []);
-    expect(output).not.toContain('*참조 소스*');
-  });
-
-  it('sources 가 있으면 맨 위에 섹션 + URL 있는 항목은 링크 표기', () => {
-    const output = formatDailyPlan(plan, [
-      {
-        type: 'github_issue',
-        label: 'foo/bar#12 — 크롤러 버그',
-        url: 'https://github.com/foo/bar/issues/12',
-      },
-      { type: 'notion_task', label: '결제 API 리팩터링' },
-      {
-        type: 'previous_plan',
-        label: '직전 PM 실행 #99 (2026-04-23)',
-      },
-    ]);
-    expect(output).toContain('*참조 소스*');
-    expect(output).toContain(
-      '• foo/bar#12 — 크롤러 버그 (<https://github.com/foo/bar/issues/12|링크>)',
-    );
-    expect(output).toContain('• 결제 API 리팩터링');
-    expect(output).not.toContain('결제 API 리팩터링 (<');
-    expect(output).toContain('• 직전 PM 실행 #99 (2026-04-23)');
-
-    // 맨 위에 오는지 — *오늘의 최우선* 앞에 위치
-    const sourcesIdx = output.indexOf('*참조 소스*');
-    const topPriorityIdx = output.indexOf('*오늘의 최우선');
-    expect(sourcesIdx).toBeLessThan(topPriorityIdx);
-  });
-});
-
 describe('formatQuotaStats (OPS-1)', () => {
   it('rows 가 비어있으면 "기록 없음" 안내 문구', () => {
     const result: QuotaStatsResult = {

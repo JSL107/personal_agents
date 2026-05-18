@@ -90,6 +90,11 @@ export class GenerateDailyPlanUsecase {
     const context = await this.contextCollector.collect({
       userText,
       slackUserId,
+      // Morning Briefing CRON 에서는 APPROVED PR 을 plan 컨텍스트에서 제외 (리뷰 끝나 머지만 남은 PR
+      // 은 매일 자동 브리핑에서 시끄러우니 거름). 수동 /today / FAILURE_REPLAY 에서는 그대로 노출 +
+      // github-task-formatter 가 [APPROVED] 라벨을 붙여 LLM 이 후순위 판단.
+      excludeApprovedPullRequests:
+        effectiveTriggerType === TriggerType.MORNING_BRIEFING_CRON,
     });
 
     this.assertNonEmptyInput(context);
