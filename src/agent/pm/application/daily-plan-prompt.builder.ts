@@ -113,7 +113,7 @@ export class DailyPlanPromptBuilder {
         : null,
       slackMentions: slackResult ? slackResult.content : null,
       inboxItems: inboxSection,
-      userText: userText.length > 0 ? `[사용자 입력]\n${userText}` : null,
+      userText: formatUserTextSection(userText),
       github: githubResult ? githubResult.content : null,
       notion: notionResult ? notionResult.content : null,
       recentPlanSummaries:
@@ -207,6 +207,23 @@ export class DailyPlanPromptBuilder {
     return Buffer.byteLength(joined, 'utf8');
   }
 }
+
+// 사용자가 `,` 로 2개 이상 항목을 명시했으면 별도 TODO 섹션으로 분리해 LLM 이
+// morning/afternoon 분배 시 누락하지 않도록 강한 힌트를 준다. 그 외에는 기존 `[사용자 입력]` 유지.
+const formatUserTextSection = (userText: string): string | null => {
+  if (userText.length === 0) {
+    return null;
+  }
+  const parts = userText
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length >= 2) {
+    const bullets = parts.map((p) => `- ${p}`).join('\n');
+    return `[사용자 명시 TODO — ',' 로 구분된 항목, 반드시 morning/afternoon 에 포함]\n${bullets}`;
+  }
+  return `[사용자 입력]\n${userText}`;
+};
 
 const TRUNCATE_SUFFIX = '\n\n... (생략됨 — prompt size cap)';
 

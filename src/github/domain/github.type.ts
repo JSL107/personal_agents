@@ -16,6 +16,9 @@ export interface GithubPullRequest {
   draft: boolean;
   updatedAt: string;
   requestedReviewers: string[];
+  // 리뷰가 끝나 머지만 남은 PR 표식. reviewer 별 최신 review 가 APPROVED 인 경우 true.
+  // Morning Briefing 에서는 제외하고, 수동 /today 에서는 LLM 후순위 판단용 라벨로 노출한다.
+  isApproved: boolean;
 }
 
 export interface AssignedTasks {

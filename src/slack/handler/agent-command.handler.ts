@@ -1,31 +1,25 @@
 import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
-import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
-import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analyze-pr-convention.usecase';
-import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
-import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
-import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
-import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
-import { formatBackendPlan } from '../format/backend-plan.formatter';
-import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
-import { registerRetryRunHandler } from './retry-run.handler';
 import { runAgentCommand } from './slack-handler.helper';
 
 // AgentRunOutcome<T> 를 반환하는 모델 호출 명령군. 모두 동일 골격:
 // (1) 인자 검증 → (2) 진행 안내 ack → (3) usecase 실행 → (4) format + footer 응답.
 // runAgentCommand 가 (3)+(4)+에러 로깅을 캡슐화해 각 핸들러는 골격만 노출.
+//
+// BE 5종 ( /plan-task /be-schema /be-test /be-sre /be-fix ) 은 be.handler.ts 로 통합,
+// /retry-run 은 retry-run.handler.ts, BE/PM 진단(/ping /quota /sync-context) 은 diagnosis.handler.ts 로 분리.
 export const registerAgentCommandHandlers = (
   app: App,
   deps: {
@@ -35,12 +29,6 @@ export const registerAgentCommandHandlers = (
     saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase;
     generateImpactReportUsecase: GenerateImpactReportUsecase;
     generatePoShadowUsecase: GeneratePoShadowUsecase;
-    generateBackendPlanUsecase: GenerateBackendPlanUsecase;
-    generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
-    generateTestUsecase: GenerateTestUsecase;
-    analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
-    analyzePrConventionUsecase: AnalyzePrConventionUsecase;
-    retryRunUsecase: RetryRunUsecase;
     logger: Logger;
   },
 ): void => {
@@ -63,7 +51,7 @@ export const registerAgentCommandHandlers = (
           tasksText,
           slackUserId: command.user_id,
         }),
-      format: (result) => formatDailyPlan(result.plan, result.sources),
+      format: (result) => formatDailyPlan(result.plan),
     });
   });
 
@@ -91,33 +79,6 @@ export const registerAgentCommandHandlers = (
           slackUserId: command.user_id,
         }),
       format: formatDailyReview,
-    });
-  });
-
-  app.command('/plan-task', async ({ ack, command, respond }) => {
-    const subject = command.text?.trim() ?? '';
-    if (subject.length === 0) {
-      await ack({
-        response_type: 'ephemeral',
-        text: '사용법: `/plan-task <PR URL / 작업 설명>` (예: `/plan-task 결제 검증 API 추가` 또는 `/plan-task foo/bar#34`)',
-      });
-      return;
-    }
-    await ack({
-      response_type: 'ephemeral',
-      text: '이대리(BE 모드) 가 구현 계획을 세우는 중입니다 (15~40초 소요)...',
-    });
-
-    await runAgentCommand({
-      respond,
-      logger: deps.logger,
-      commandLabel: '/plan-task',
-      execute: () =>
-        deps.generateBackendPlanUsecase.execute({
-          subject,
-          slackUserId: command.user_id,
-        }),
-      format: formatBackendPlan,
     });
   });
 
@@ -193,36 +154,6 @@ export const registerAgentCommandHandlers = (
           slackUserId: command.user_id,
         }),
       format: (review) => formatPullRequestReview({ prRef, review }),
-    });
-  });
-
-  // /retry-run 은 분리됨 (LOC 분할) — registerRetryRunHandler 로 위임.
-  registerRetryRunHandler(app, deps);
-
-  app.command('/be-schema', async ({ ack, command, respond }) => {
-    const request = command.text?.trim() ?? '';
-    if (request.length === 0) {
-      await ack({
-        response_type: 'ephemeral',
-        text: '사용법: `/be-schema <자연어 요청>` (예: `/be-schema 주문 취소 내역 테이블 추가`)',
-      });
-      return;
-    }
-    await ack({
-      response_type: 'ephemeral',
-      text: '이대리(BE Schema 모드) 가 schema.prisma 를 읽고 변경 제안을 작성 중입니다 (10~30초 소요)...',
-    });
-
-    await runAgentCommand({
-      respond,
-      logger: deps.logger,
-      commandLabel: '/be-schema',
-      execute: () =>
-        deps.generateSchemaProposalUsecase.execute({
-          request,
-          slackUserId: command.user_id,
-        }),
-      format: formatSchemaProposal,
     });
   });
 

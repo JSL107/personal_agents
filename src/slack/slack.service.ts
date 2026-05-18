@@ -27,11 +27,10 @@ import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview
 import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
-import { registerBeFixHandler } from './handler/be-fix.handler';
-import { registerBeSreHandler } from './handler/be-sre.handler';
-import { registerBeTestHandler } from './handler/be-test.handler';
+import { registerBeHandler } from './handler/be.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerPreviewActionHandlers } from './handler/preview-action.handler';
+import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerWriteBackHandlers } from './handler/write-back.handler';
 
 // 이대리 Slack 어댑터.
@@ -230,27 +229,29 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
-      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
-      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
-      generateTestUsecase: this.generateTestUsecase,
-      analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
-      analyzePrConventionUsecase: this.analyzePrConventionUsecase,
-      retryRunUsecase: this.retryRunUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
       syncPlanUsecase: this.syncPlanUsecase,
       logger: this.logger,
     });
-    registerBeTestHandler(app, {
+    registerBeHandler(app, {
+      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
+      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
       generateTestUsecase: this.generateTestUsecase,
       logger: this.logger,
     });
-    registerBeSreHandler(app, {
+    registerRetryRunHandler(app, {
+      retryRunUsecase: this.retryRunUsecase,
+      generateDailyPlanUsecase: this.generateDailyPlanUsecase,
+      generateWorklogUsecase: this.generateWorklogUsecase,
+      reviewPullRequestUsecase: this.reviewPullRequestUsecase,
+      generateImpactReportUsecase: this.generateImpactReportUsecase,
+      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
+      generatePoShadowUsecase: this.generatePoShadowUsecase,
+      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
+      generateTestUsecase: this.generateTestUsecase,
       analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
-      logger: this.logger,
-    });
-    registerBeFixHandler(app, {
       analyzePrConventionUsecase: this.analyzePrConventionUsecase,
       logger: this.logger,
     });

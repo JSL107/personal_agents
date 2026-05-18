@@ -21,14 +21,11 @@ import { SlackService } from './slack.service';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
+    // /be plan|schema|test|sre|fix — 5종 백엔드 에이전트의 통합 진입점.
     BeAgentModule,
-    // V3 BE-3 /be-schema 슬래시 — Prisma schema 변경 제안.
     BeSchemaModule,
-    // V3 BE-2 /be-test 슬래시 — Tree-sitter AST 분석 + Sandbox self-correction.
     BeTestModule,
-    // V3 BE-1 /be-sre 슬래시 — Stack trace 파싱 + Code Graph 영향 분석.
     BeSreModule,
-    // V3 BE-4 /be-fix 슬래시 — PR diff 컨벤션 위반 식별.
     BeFixModule,
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,

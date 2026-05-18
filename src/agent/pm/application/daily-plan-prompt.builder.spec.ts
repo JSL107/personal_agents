@@ -127,4 +127,23 @@ describe('DailyPlanPromptBuilder', () => {
     }
     expect(built.prompt).not.toContain('## 지난 7일 plan 패턴');
   });
+
+  it("userText 에 ',' 가 2개 이상 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {
+    const built = builder.build(
+      buildBaseContext({ userText: 'PR 리뷰, 회의 준비, 문서 보강' }),
+    );
+
+    expect(built.prompt).toContain('[사용자 명시 TODO');
+    expect(built.prompt).toContain('- PR 리뷰');
+    expect(built.prompt).toContain('- 회의 준비');
+    expect(built.prompt).toContain('- 문서 보강');
+    expect(built.prompt).not.toContain('[사용자 입력]');
+  });
+
+  it("userText 에 ',' 가 없거나 1개 항목만 있으면 기존 [사용자 입력] 섹션 유지", () => {
+    const built = builder.build(buildBaseContext({ userText: '오늘 할 일' }));
+
+    expect(built.prompt).toContain('[사용자 입력]\n오늘 할 일');
+    expect(built.prompt).not.toContain('[사용자 명시 TODO');
+  });
 });

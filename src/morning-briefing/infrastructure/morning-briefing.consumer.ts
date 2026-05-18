@@ -55,8 +55,7 @@ export class MorningBriefingConsumer extends WorkerHost {
       });
 
       const text =
-        formatDailyPlan(outcome.result.plan, outcome.result.sources) +
-        formatModelFooter(outcome);
+        formatDailyPlan(outcome.result.plan) + formatModelFooter(outcome);
 
       await this.slackNotifier.postMessage({ target, text });
       this.logger.log(`Morning Briefing 발송 완료 — target=${target}`);

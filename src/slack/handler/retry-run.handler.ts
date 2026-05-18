@@ -109,7 +109,7 @@ export const registerRetryRunHandler = (
               slackUserId,
               triggerType: TriggerType.FAILURE_REPLAY,
             }),
-          format: (result) => formatDailyPlan(result.plan, result.sources),
+          format: (result) => formatDailyPlan(result.plan),
         });
         break;
       case 'WORK_REVIEWER':

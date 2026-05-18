@@ -53,7 +53,29 @@ export class OctokitGithubClient implements GithubClientPort {
       }
     }
 
+    // PR 별 review 상태 (APPROVED) 채움. assigned PR 수가 보통 ≤30 이라 N+1 부담은 작다.
+    // 실패 시 isApproved=false 로 fallback — 리뷰 조회 실패가 plan 흐름을 막지 않도록 graceful.
+    await Promise.all(
+      pullRequests.map(async (pr) => {
+        pr.isApproved = await this.fetchIsApprovedSafely(pr);
+      }),
+    );
+
     return { issues, pullRequests };
+  }
+
+  private async fetchIsApprovedSafely(pr: GithubPullRequest): Promise<boolean> {
+    try {
+      const [owner, repoName] = parseRepo(pr.repo);
+      const reviews = await this.octokit!.paginate(
+        this.octokit!.rest.pulls.listReviews,
+        { owner, repo: repoName, pull_number: pr.number, per_page: 100 },
+      );
+      return computeIsApprovedFromReviews(reviews);
+    } catch {
+      // graceful — 권한 부족/네트워크 실패 시 isApproved=false 로 두고 plan 흐름 계속.
+      return false;
+    }
   }
 
   async getPullRequest({
@@ -252,9 +274,51 @@ export class OctokitGithubClient implements GithubClientPort {
       draft: item.draft ?? false,
       updatedAt: item.updated_at,
       requestedReviewers: [],
+      isApproved: false, // listMyAssignedTasks 가 reviews 조회 후 덮어씀.
     };
   }
 }
+
+// pulls.listReviews 응답에서 PR 의 approval 여부 계산.
+// 같은 reviewer 가 후속으로 CHANGES_REQUESTED 했을 수 있으니 reviewer 별 최신 review 만 본다.
+// COMMENTED / DISMISSED 는 approval 상태 결정에 영향 주지 않아 제외 (가장 최근 결정적 review 만 본다).
+type PullsReview = {
+  state?: string | null;
+  submitted_at?: string | null;
+  user?: { id?: number; login?: string } | null;
+};
+
+const computeIsApprovedFromReviews = (reviews: PullsReview[]): boolean => {
+  const latestByReviewer = new Map<string, PullsReview>();
+  for (const review of reviews) {
+    const state = review.state ?? '';
+    if (state !== 'APPROVED' && state !== 'CHANGES_REQUESTED') {
+      continue;
+    }
+    const reviewerKey =
+      review.user?.id !== undefined
+        ? `id:${review.user.id}`
+        : `login:${review.user?.login ?? 'unknown'}`;
+    const previous = latestByReviewer.get(reviewerKey);
+    if (
+      !previous ||
+      (review.submitted_at ?? '') > (previous.submitted_at ?? '')
+    ) {
+      latestByReviewer.set(reviewerKey, review);
+    }
+  }
+  if (latestByReviewer.size === 0) {
+    return false;
+  }
+  for (const review of latestByReviewer.values()) {
+    if (review.state === 'CHANGES_REQUESTED') {
+      return false;
+    }
+  }
+  return Array.from(latestByReviewer.values()).some(
+    (review) => review.state === 'APPROVED',
+  );
+};
 
 // search.issuesAndPullRequests 응답 item 의 구조 (필요한 필드만 추출).
 type SearchItem = {

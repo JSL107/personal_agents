@@ -23,6 +23,7 @@ describe('formatGithubTasksAsPromptSection', () => {
           draft: true,
           updatedAt: '2026-04-23T06:00:00Z',
           requestedReviewers: [],
+          isApproved: false,
         },
       ],
     };
@@ -69,6 +70,7 @@ describe('formatGithubTasksAsPromptSection', () => {
           draft: false,
           updatedAt: 'x',
           requestedReviewers: [],
+          isApproved: false,
         },
       ],
     });
@@ -95,6 +97,7 @@ describe('formatGithubTasksAsPromptSection', () => {
       draft: false,
       updatedAt: 'x',
       requestedReviewers: [],
+      isApproved: false,
     }));
 
     const { content, truncatedCount } = formatGithubTasksAsPromptSection(
@@ -109,6 +112,26 @@ describe('formatGithubTasksAsPromptSection', () => {
     expect(content).toContain('- Issue #10 ');
     expect(content).not.toContain('- Issue #11 ');
     expect(content).not.toContain('- PR #100');
+  });
+
+  it('isApproved=true 인 PR 은 [APPROVED] 라벨이 붙는다 (LLM 후순위 판단용)', () => {
+    const { content } = formatGithubTasksAsPromptSection({
+      issues: [],
+      pullRequests: [
+        {
+          number: 99,
+          title: '머지 대기 PR',
+          repo: 'a/b',
+          url: 'u',
+          draft: false,
+          updatedAt: 'x',
+          requestedReviewers: [],
+          isApproved: true,
+        },
+      ],
+    });
+
+    expect(content).toContain('- PR #99 (a/b) [APPROVED]: 머지 대기 PR');
   });
 
   it('default maxItems = 30 적용, 30건 이하면 truncated 0', () => {
