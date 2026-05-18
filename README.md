@@ -154,7 +154,7 @@ pnpm format:check          # Prettier 검사
    - `/worklog` — 오늘 한 일 회고 (Usage hint: `<오늘 한 일을 자유롭게 적어주세요>`)
    - `/review-pr` — PR 리뷰 (Usage hint: `<PR URL 또는 owner/repo#번호>`)
    - `/po-shadow` — 계획 재검토 (Usage hint: `[선택] 추가 컨텍스트`)
-   - `/be` — 백엔드 5종 에이전트 통합 진입점 (Usage hint: `plan|schema|test|sre|fix <인자>`)
+   - `/be` — 백엔드 3종 사용자-트리거 에이전트 통합 진입점 (Usage hint: `plan|schema|test <인자>`) — SRE/FIX 는 webhook 자동 트리거
    - `/impact-report` — 임팩트 보고서 (Usage hint: `<작업 설명 또는 PR URL>`)
    - `/sync-plan` — 외부 시스템 동기화 (Preview Gate 연동)
    - `/sync-context` — 외부 컨텍스트 강제 재수집
