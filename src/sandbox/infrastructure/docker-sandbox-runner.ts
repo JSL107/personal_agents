@@ -6,6 +6,7 @@ import {
   SandboxRunnerPort,
   SandboxRunRequest,
   SandboxRunResult,
+  TmpfsFile,
 } from '../domain/port/sandbox-runner.port';
 import { SandboxException } from '../domain/sandbox.exception';
 import { SandboxErrorCode } from '../domain/sandbox-error-code.enum';
@@ -21,12 +22,23 @@ const OUTPUT_CAP_BYTES = 256_000;
 // 의도치 않은 경로(ex. 심볼릭 링크 우회 시도)를 사전 차단한다.
 const UNSAFE_PATH_CHARS = /[;&|<>$`'"\\]/;
 
+// tmpfs 안 in-memory 파일 주입 (BE-Test self-correction / BE-1 stack trace replay / BE-4 fix 검증 공용).
+// containerPath 는 반드시 이 prefix 하위 — 임의 호스트 경로 지정 차단.
+const TMPFS_MOUNT_PATH = '/work';
+const TMPFS_DEFAULT_SIZE = '16m';
+// HEREDOC 종료 마커. 사용자 content 안에 이 문자열이 나타나면 주입 거부 (UNSAFE_TMPFS_CONTENT).
+// 일반 spec 코드 / 코드 패치 / stack trace 에서는 등장 가능성 0 에 수렴.
+const TMPFS_HEREDOC_MARKER = '__SBX_TMPFS_EOF_BOUNDARY_DO_NOT_USE__';
+
 @Injectable()
 export class DockerSandboxRunner implements SandboxRunnerPort {
   private readonly logger = new Logger(DockerSandboxRunner.name);
 
   async run(req: SandboxRunRequest): Promise<SandboxRunResult> {
     this.validateMountPath(req.hostMountPath);
+    if (req.tmpfsFiles && req.tmpfsFiles.length > 0) {
+      this.validateTmpfsFiles(req.tmpfsFiles);
+    }
 
     const args = this.buildDockerArgs(req);
     const startTime = Date.now();
@@ -139,6 +151,47 @@ export class DockerSandboxRunner implements SandboxRunnerPort {
     }
   }
 
+  private validateTmpfsFiles(files: TmpfsFile[]): void {
+    const requiredPrefix = `${TMPFS_MOUNT_PATH}/`;
+    for (const file of files) {
+      if (!file.containerPath.startsWith(requiredPrefix)) {
+        throw new SandboxException({
+          message: `tmpfs containerPath must start with "${requiredPrefix}": ${file.containerPath}`,
+          code: SandboxErrorCode.INVALID_REQUEST,
+          status: DomainStatus.BAD_REQUEST,
+        });
+      }
+      if (UNSAFE_PATH_CHARS.test(file.containerPath)) {
+        throw new SandboxException({
+          message: `tmpfs containerPath contains unsafe characters: ${file.containerPath}`,
+          code: SandboxErrorCode.INVALID_REQUEST,
+          status: DomainStatus.BAD_REQUEST,
+        });
+      }
+      if (file.content.includes(TMPFS_HEREDOC_MARKER)) {
+        throw new SandboxException({
+          message: 'tmpfs file content contains reserved HEREDOC marker',
+          code: SandboxErrorCode.UNSAFE_TMPFS_CONTENT,
+          status: DomainStatus.BAD_REQUEST,
+        });
+      }
+    }
+  }
+
+  // tmpfs 파일을 HEREDOC 으로 컨테이너 안 fs 에 쓰는 prelude + 사용자 command 를 결합.
+  // 단일 quoted marker(`<<'MARKER'`) 라 변수 확장 / 이스케이프 처리 불필요 — content 그대로 보존.
+  // validateTmpfsFiles 가 marker 충돌과 path 안전을 사전에 보장.
+  private wrapCommandWithTmpfs(files: TmpfsFile[], command: string): string {
+    const lines: string[] = [];
+    for (const file of files) {
+      lines.push(`cat > ${file.containerPath} <<'${TMPFS_HEREDOC_MARKER}'`);
+      lines.push(file.content);
+      lines.push(TMPFS_HEREDOC_MARKER);
+    }
+    lines.push(command);
+    return lines.join('\n');
+  }
+
   private buildDockerArgs(req: SandboxRunRequest): string[] {
     const {
       command,
@@ -148,6 +201,8 @@ export class DockerSandboxRunner implements SandboxRunnerPort {
       networkMode = DEFAULT_NETWORK_MODE,
       env = {},
       readOnlyMounts = [],
+      tmpfsFiles = [],
+      tmpfsSize = TMPFS_DEFAULT_SIZE,
     } = req;
 
     const args: string[] = ['run', '--rm', '--network', networkMode];
@@ -155,6 +210,11 @@ export class DockerSandboxRunner implements SandboxRunnerPort {
     // 주 작업 디렉터리 마운트. default 'ro' — consumer 가 명시 'rw' 한 경우만 변조 허용 (audit codex P1).
     args.push('-v', `${hostMountPath}:/repo:${mountMode}`);
     args.push('-w', '/repo');
+
+    // tmpfs 가 요청된 경우만 추가. exec 옵션은 jest 등 자식 프로세스 실행 허용용.
+    if (tmpfsFiles.length > 0) {
+      args.push('--tmpfs', `${TMPFS_MOUNT_PATH}:size=${tmpfsSize},exec`);
+    }
 
     // 환경변수 주입.
     for (const [key, value] of Object.entries(env)) {
@@ -166,7 +226,12 @@ export class DockerSandboxRunner implements SandboxRunnerPort {
       args.push('-v', `${hostPath}:${containerPath}:ro`);
     }
 
-    args.push(image, '/bin/sh', '-c', command);
+    const finalCommand =
+      tmpfsFiles.length > 0
+        ? this.wrapCommandWithTmpfs(tmpfsFiles, command)
+        : command;
+
+    args.push(image, '/bin/sh', '-c', finalCommand);
 
     return args;
   }

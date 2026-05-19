@@ -216,4 +216,169 @@ describe('DockerSandboxRunner', () => {
       sandboxErrorCode: SandboxErrorCode.DOCKER_SPAWN_FAILED,
     });
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // tmpfs file 주입 (BE-Test self-correction 재도입 plan 단계 1).
+  // 호스트 fs write 없이 컨테이너 in-memory 에 spec/patch/stack-trace 주입.
+  // ────────────────────────────────────────────────────────────────────────
+
+  it('tmpfsFiles 미지정 / 빈 배열 → --tmpfs arg 없음 + command 변경 없음', () => {
+    const child = makeChild({ exitCode: 0 });
+    mockSpawn.mockReturnValue(child as any);
+
+    runner.run({
+      command: 'echo hello',
+      hostMountPath: '/tmp/repo',
+      tmpfsFiles: [],
+    });
+
+    const [, args] = mockSpawn.mock.calls[0];
+    expect((args as string[]).includes('--tmpfs')).toBe(false);
+    // 명령은 그대로 마지막 인자로 전달.
+    expect((args as string[])[(args as string[]).length - 1]).toBe(
+      'echo hello',
+    );
+  });
+
+  it('tmpfsFiles 1개 → --tmpfs /work:size=16m,exec + HEREDOC prelude + 원본 command', () => {
+    const child = makeChild({ exitCode: 0 });
+    mockSpawn.mockReturnValue(child as any);
+
+    const specCode =
+      "describe('x', () => { it('ok', () => expect(1).toBe(1)); });";
+    runner.run({
+      command: 'pnpm jest /work/generated.spec.ts --rootDir=/repo',
+      hostMountPath: '/tmp/repo',
+      tmpfsFiles: [
+        { containerPath: '/work/generated.spec.ts', content: specCode },
+      ],
+    });
+
+    const [, args] = mockSpawn.mock.calls[0];
+    const tmpfsIdx = (args as string[]).indexOf('--tmpfs');
+    expect(tmpfsIdx).toBeGreaterThan(-1);
+    expect((args as string[])[tmpfsIdx + 1]).toBe('/work:size=16m,exec');
+
+    const finalCommand = (args as string[])[(args as string[]).length - 1];
+    expect(finalCommand).toContain(
+      "cat > /work/generated.spec.ts <<'__SBX_TMPFS_EOF_BOUNDARY_DO_NOT_USE__'",
+    );
+    expect(finalCommand).toContain(specCode);
+    expect(finalCommand).toContain(
+      'pnpm jest /work/generated.spec.ts --rootDir=/repo',
+    );
+    // 사용자 명령은 prelude 다음에 와야 함.
+    const heredocEnd = finalCommand.lastIndexOf(
+      '__SBX_TMPFS_EOF_BOUNDARY_DO_NOT_USE__',
+    );
+    const userCmdIdx = finalCommand.indexOf('pnpm jest');
+    expect(userCmdIdx).toBeGreaterThan(heredocEnd);
+  });
+
+  it('tmpfsFiles 여러 개 → 순서대로 HEREDOC 누적 + 사용자 command 마지막', () => {
+    const child = makeChild({ exitCode: 0 });
+    mockSpawn.mockReturnValue(child as any);
+
+    runner.run({
+      command: 'run-tests',
+      hostMountPath: '/tmp/repo',
+      tmpfsFiles: [
+        { containerPath: '/work/a.ts', content: 'A' },
+        { containerPath: '/work/b.ts', content: 'B' },
+      ],
+    });
+
+    const [, args] = mockSpawn.mock.calls[0];
+    const finalCommand = (args as string[])[(args as string[]).length - 1];
+    const aIdx = finalCommand.indexOf('cat > /work/a.ts');
+    const bIdx = finalCommand.indexOf('cat > /work/b.ts');
+    const cmdIdx = finalCommand.lastIndexOf('run-tests');
+    expect(aIdx).toBeGreaterThan(-1);
+    expect(bIdx).toBeGreaterThan(aIdx);
+    expect(cmdIdx).toBeGreaterThan(bIdx);
+  });
+
+  it('tmpfsSize custom → --tmpfs /work:size=32m,exec', () => {
+    const child = makeChild({ exitCode: 0 });
+    mockSpawn.mockReturnValue(child as any);
+
+    runner.run({
+      command: 'cmd',
+      hostMountPath: '/tmp/repo',
+      tmpfsFiles: [{ containerPath: '/work/x', content: 'x' }],
+      tmpfsSize: '32m',
+    });
+
+    const [, args] = mockSpawn.mock.calls[0];
+    const tmpfsIdx = (args as string[]).indexOf('--tmpfs');
+    expect((args as string[])[tmpfsIdx + 1]).toBe('/work:size=32m,exec');
+  });
+
+  it('tmpfs 사용 시 mountMode default ro 그대로 유지 (audit codex P1)', () => {
+    const child = makeChild({ exitCode: 0 });
+    mockSpawn.mockReturnValue(child as any);
+
+    runner.run({
+      command: 'cmd',
+      hostMountPath: '/tmp/repo',
+      tmpfsFiles: [{ containerPath: '/work/x', content: 'x' }],
+    });
+
+    const [, args] = mockSpawn.mock.calls[0];
+    const vArgs = (args as string[]).filter((_, i, a) => a[i - 1] === '-v');
+    expect(vArgs[0]).toBe('/tmp/repo:/repo:ro');
+  });
+
+  it('content 에 HEREDOC marker 포함 → UNSAFE_TMPFS_CONTENT throw', async () => {
+    await expect(
+      runner.run({
+        command: 'cmd',
+        hostMountPath: '/tmp/repo',
+        tmpfsFiles: [
+          {
+            containerPath: '/work/x',
+            content: 'leading\n__SBX_TMPFS_EOF_BOUNDARY_DO_NOT_USE__\ntrailing',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      sandboxErrorCode: SandboxErrorCode.UNSAFE_TMPFS_CONTENT,
+    });
+  });
+
+  it('containerPath 가 /work/ 하위가 아님 → INVALID_REQUEST throw', async () => {
+    await expect(
+      runner.run({
+        command: 'cmd',
+        hostMountPath: '/tmp/repo',
+        tmpfsFiles: [{ containerPath: '/etc/passwd', content: 'x' }],
+      }),
+    ).rejects.toMatchObject({
+      sandboxErrorCode: SandboxErrorCode.INVALID_REQUEST,
+    });
+  });
+
+  it('containerPath 가 /work 정확히 (디렉터리 자체) → INVALID_REQUEST throw', async () => {
+    await expect(
+      runner.run({
+        command: 'cmd',
+        hostMountPath: '/tmp/repo',
+        tmpfsFiles: [{ containerPath: '/work', content: 'x' }],
+      }),
+    ).rejects.toMatchObject({
+      sandboxErrorCode: SandboxErrorCode.INVALID_REQUEST,
+    });
+  });
+
+  it('containerPath 에 셸 메타문자 포함 → INVALID_REQUEST throw', async () => {
+    await expect(
+      runner.run({
+        command: 'cmd',
+        hostMountPath: '/tmp/repo',
+        tmpfsFiles: [{ containerPath: '/work/x;rm -rf /', content: 'x' }],
+      }),
+    ).rejects.toMatchObject({
+      sandboxErrorCode: SandboxErrorCode.INVALID_REQUEST,
+    });
+  });
 });
