@@ -5,4 +5,6 @@ export enum SandboxErrorCode {
   DOCKER_SPAWN_FAILED = 'SANDBOX_DOCKER_SPAWN_FAILED',
   // SandboxRunRequest 필드 유효성 실패.
   INVALID_REQUEST = 'SANDBOX_INVALID_REQUEST',
+  // tmpfs content 안에 HEREDOC 종료 마커가 포함돼 주입이 안전하지 않은 경우.
+  UNSAFE_TMPFS_CONTENT = 'SANDBOX_UNSAFE_TMPFS_CONTENT',
 }
