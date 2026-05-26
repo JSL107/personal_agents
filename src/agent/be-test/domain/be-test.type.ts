@@ -47,10 +47,20 @@ export interface FileAnalysis {
   rawSource: string;
 }
 
-// V3 mid-progress audit (codex P1) — sandbox self-correction 루프는 호스트 fs 위험 때문에 MVP 에서 제거.
-// validated 는 향후 sandbox 디자인이 강화된 후 다시 채워질 자리. 현재는 항상 false 로 사용자가 직접 검증.
+// V3 §8 self-correction revival (2026-05-05 plan) — sandbox tmpfs 주입이 끝나
+// 호스트 fs 변조 위험 없이 spec 검증 + retry 루프 재도입.
+// attempts: 실제 sandbox 호출 횟수 (1 이면 LLM 1차 spec 이 곧바로 통과).
+// stderrTail: validated=false 일 때 마지막 sandbox stderr 의 끝 1KB — formatter 가 사용자에게 노출.
+// nonRetryableReason: stderr 가 assertion fail 등 LLM 재생성으로 회복 불가 패턴일 때 조기 stop 사유.
 export interface GeneratedTest {
   filePath: string;
   specCode: string;
-  validated: false;
+  validated: boolean;
+  selfCorrectionAttempts: number;
+  selfCorrectionStderrTail?: string;
+  selfCorrectionStopReason?:
+    | 'PASSED'
+    | 'MAX_ATTEMPTS_EXHAUSTED'
+    | 'NON_RETRYABLE'
+    | 'SANDBOX_UNAVAILABLE';
 }
