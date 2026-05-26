@@ -23,7 +23,9 @@ const buildPr = (
   ...overrides,
 });
 
-const buildCollector = (githubTasks: AssignedTasks): DailyPlanContextCollector =>
+const buildCollector = (
+  githubTasks: AssignedTasks,
+): DailyPlanContextCollector =>
   new DailyPlanContextCollector(
     {
       findLatestSucceededRun: jest.fn().mockResolvedValue(null),
@@ -33,8 +35,12 @@ const buildCollector = (githubTasks: AssignedTasks): DailyPlanContextCollector =
     {
       execute: jest.fn().mockResolvedValue(githubTasks),
     } as unknown as ListAssignedTasksUsecase,
-    { execute: jest.fn().mockResolvedValue([]) } as unknown as ListMyMentionsUsecase,
-    { execute: jest.fn().mockResolvedValue([]) } as unknown as ListActiveTasksUsecase,
+    {
+      execute: jest.fn().mockResolvedValue([]),
+    } as unknown as ListMyMentionsUsecase,
+    {
+      execute: jest.fn().mockResolvedValue([]),
+    } as unknown as ListActiveTasksUsecase,
     {
       peekPending: jest.fn().mockResolvedValue([]),
       markConsumed: jest.fn().mockResolvedValue(undefined),
@@ -58,9 +64,9 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
     });
 
     expect(context.githubTasks?.pullRequests).toHaveLength(2);
-    expect(
-      context.githubTasks?.pullRequests.some((pr) => pr.isApproved),
-    ).toBe(true);
+    expect(context.githubTasks?.pullRequests.some((pr) => pr.isApproved)).toBe(
+      true,
+    );
   });
 
   it('excludeApprovedPullRequests=true 일 때 isApproved=true 인 PR 은 제외 (Morning Briefing 동작)', async () => {
