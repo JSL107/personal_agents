@@ -18,9 +18,17 @@ import { IntentClassifierUsecase } from './intent-classifier.usecase';
 // Hierarchical Manager Pattern (이대리 비전 봇 쪼개기) 의 manager-agent.
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4)
 //
-// step 4 — Intent classifier 통합. agentTypeHint 미지정 + text 있으면 IntentClassifierUsecase
-// 가 1회 LLM call 로 자연어 → AgentType 분류 후 dispatch. UNKNOWN 분류는 INTENT_CLASSIFY_FAILED.
-// agentTypeHint 도 text 도 없는 케이스만 INTENT_HINT_REQUIRED 로 fail-fast.
+// step 6 — handoff chain 처리. worker 의 DispatchOutcome.followUp 가 채워지면 manager 가
+// cycle (같은 worker 재진입) / depth (≤ MAX_HANDOFF_DEPTH) 가드 후 재 dispatch.
+// 최종 반환은 chain 마지막 worker 의 결과 — 중간 worker 결과는 logger 로만 추적
+// (DispatchResult 의 handoffResults 필드 확장은 follow-up plan 에서 검토).
+const MAX_HANDOFF_DEPTH = 3;
+
+interface HandoffChainState {
+  depth: number;
+  visited: AgentType[];
+}
+
 @Injectable()
 export class IdaeriRouterUsecase implements IdaeriRouterPort {
   private readonly logger = new Logger(IdaeriRouterUsecase.name);
@@ -40,6 +48,13 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   }
 
   async dispatch(input: DispatchInput): Promise<DispatchResult> {
+    return this.dispatchInternal(input, { depth: 0, visited: [] });
+  }
+
+  private async dispatchInternal(
+    input: DispatchInput,
+    chain: HandoffChainState,
+  ): Promise<DispatchResult> {
     const agentType =
       input.agentTypeHint ?? (await this.classifyOrThrow(input));
 
@@ -60,15 +75,53 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       agentTypeHint: agentType,
     });
     this.logger.log(
-      `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed}`,
+      `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
     );
-    return {
+
+    const currentResult: DispatchResult = {
       agentRunId: outcome.agentRunId,
       workerType: agentType,
       output: outcome.output,
       modelUsed: outcome.modelUsed,
       followUp: outcome.followUp,
     };
+
+    if (!outcome.followUp) {
+      return currentResult;
+    }
+
+    const nextWorker = outcome.followUp.toWorker;
+    const nextChain: HandoffChainState = {
+      depth: chain.depth + 1,
+      visited: [...chain.visited, agentType],
+    };
+    if (nextChain.depth > MAX_HANDOFF_DEPTH) {
+      throw new RouterException({
+        code: RouterErrorCode.DEPTH_EXCEEDED,
+        message: `Handoff chain 깊이 ${MAX_HANDOFF_DEPTH} 초과: ${nextChain.visited.join(' → ')} → ${nextWorker}`,
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+    if (nextChain.visited.includes(nextWorker)) {
+      throw new RouterException({
+        code: RouterErrorCode.CYCLE_DETECTED,
+        message: `Handoff chain 안 ${nextWorker} 재진입 — cycle (${nextChain.visited.join(' → ')} → ${nextWorker})`,
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+
+    this.logger.log(
+      `Router handoff — ${agentType} → ${nextWorker} (depth=${nextChain.depth}, reason="${outcome.followUp.reason}")`,
+    );
+
+    const followUpInput: DispatchInput = {
+      source: input.source,
+      slackUserId: input.slackUserId,
+      agentTypeHint: nextWorker,
+      text: extractPassthroughText(outcome.followUp.passthroughInput),
+      contextRefs: { agentRunId: outcome.agentRunId },
+    };
+    return this.dispatchInternal(followUpInput, nextChain);
   }
 
   // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
@@ -101,3 +154,12 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     return classification.agentType;
   }
 }
+
+// HandoffSpec.passthroughInput 안 'text' 필드를 표준 키로 인정 — 다음 worker 가 text 로 받는다.
+// 다른 키가 필요한 경우는 follow-up plan 의 typed Handoff 도입 시 분기.
+const extractPassthroughText = (
+  passthroughInput: Record<string, unknown>,
+): string => {
+  const text = passthroughInput.text;
+  return typeof text === 'string' ? text : '';
+};
