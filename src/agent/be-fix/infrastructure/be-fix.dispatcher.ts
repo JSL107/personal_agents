@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatPrConventionReport } from '../../../slack/format/be-fix.formatter';
 import { AnalyzePrConventionUsecase } from '../application/analyze-pr-convention.usecase';
 
 // BE_FIX worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 prRef 로 매핑.
@@ -26,6 +27,7 @@ export class BeFixDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatPrConventionReport(outcome.result),
     };
   }
 }

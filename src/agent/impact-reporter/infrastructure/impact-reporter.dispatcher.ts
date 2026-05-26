@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatImpactReport } from '../../../slack/format/impact-report.formatter';
 import { GenerateImpactReportUsecase } from '../application/generate-impact-report.usecase';
 
 // IMPACT_REPORTER worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 subject 로 매핑.
@@ -26,6 +27,7 @@ export class ImpactReporterDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatImpactReport(outcome.result),
     };
   }
 }

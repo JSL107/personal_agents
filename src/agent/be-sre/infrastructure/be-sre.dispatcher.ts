@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatSreAnalysis } from '../../../slack/format/be-sre.formatter';
 import { AnalyzeStackTraceUsecase } from '../application/analyze-stack-trace.usecase';
 
 // BE_SRE worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 가 stack trace 본문.
@@ -25,6 +26,7 @@ export class BeSreDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatSreAnalysis(outcome.result),
     };
   }
 }

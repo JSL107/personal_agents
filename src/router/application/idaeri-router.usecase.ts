@@ -83,6 +83,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       workerType: agentType,
       output: outcome.output,
       modelUsed: outcome.modelUsed,
+      formattedText: outcome.formattedText,
       followUp: outcome.followUp,
     };
 

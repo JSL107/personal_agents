@@ -4,10 +4,14 @@ import { DispatchInput } from '../idaeri-router.port';
 
 // agent 별 worker 가 manager 의 dispatch 호출을 처리할 때의 표준 응답.
 // DispatchResult 와의 차이: workerType 은 dispatcher 자체가 알기에 outcome 에 포함하지 않는다.
+//
+// formattedText 는 worker 별 Slack mrkdwn formatter (slack/format/<x>.formatter.ts) 결과 — handler
+// 가 별도 worker 분기 없이 그대로 say. step 7 으로 자연어 → 풍부한 결과 답글이 가능해진다.
 export interface DispatchOutcome {
   agentRunId: number;
   output: unknown;
   modelUsed: string;
+  formattedText: string;
   // worker 가 다른 worker 호출을 manager 에 요청할 때 채워 보낸다.
   followUp?: HandoffSpec;
 }
