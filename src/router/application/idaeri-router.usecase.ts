@@ -13,18 +13,14 @@ import {
 } from '../domain/port/agent-dispatcher.port';
 import { RouterException } from '../domain/router.exception';
 import { RouterErrorCode } from '../domain/router-error-code.enum';
+import { IntentClassifierUsecase } from './intent-classifier.usecase';
 
 // Hierarchical Manager Pattern (이대리 비전 봇 쪼개기) 의 manager-agent.
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4)
 //
-// step 2 — Worker dispatcher registry 활성화. AGENT_DISPATCHER_PORT multi-provider 로 등록된
-// AgentDispatcher 들을 array 로 받아 agentType → dispatcher 매핑을 boot 시 build.
-// agentType=PM 부터 dispatch 실제 동작 (PmDispatcher → GenerateDailyPlanUsecase wrap).
-//
-// 다음 plan 진입 시 추가될 메커니즘:
-//   1. 나머지 9 agent dispatcher 등록 (BE / WORK_REVIEWER / ...).
-//   2. intent classifier — agentTypeHint 미지정 시 자연어 → AgentType 1회 LLM 분류.
-//   3. handoff chain — followUp 응답 → manager 가 cycle / depth 검증 후 재 dispatch.
+// step 4 — Intent classifier 통합. agentTypeHint 미지정 + text 있으면 IntentClassifierUsecase
+// 가 1회 LLM call 로 자연어 → AgentType 분류 후 dispatch. UNKNOWN 분류는 INTENT_CLASSIFY_FAILED.
+// agentTypeHint 도 text 도 없는 케이스만 INTENT_HINT_REQUIRED 로 fail-fast.
 @Injectable()
 export class IdaeriRouterUsecase implements IdaeriRouterPort {
   private readonly logger = new Logger(IdaeriRouterUsecase.name);
@@ -33,6 +29,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   constructor(
     @Inject(AGENT_DISPATCHER_PORT)
     private readonly dispatchers: AgentDispatcher[],
+    private readonly intentClassifier: IntentClassifierUsecase,
   ) {
     this.dispatcherByType = new Map(
       this.dispatchers.map((dispatcher) => [dispatcher.agentType, dispatcher]),
@@ -43,40 +40,64 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   }
 
   async dispatch(input: DispatchInput): Promise<DispatchResult> {
-    if (!input.agentTypeHint) {
-      this.logger.warn(
-        `Router dispatch — agentTypeHint 누락 (source=${input.source}, user=${input.slackUserId}). intent classifier 도입 전 단계.`,
-      );
-      throw new RouterException({
-        code: RouterErrorCode.INTENT_HINT_REQUIRED,
-        message:
-          '자연어 intent 분류 단계가 아직 도입되지 않았습니다. agentTypeHint 를 명시하세요.',
-        status: DomainStatus.BAD_REQUEST,
-      });
-    }
+    const agentType =
+      input.agentTypeHint ?? (await this.classifyOrThrow(input));
 
-    const dispatcher = this.dispatcherByType.get(input.agentTypeHint);
+    const dispatcher = this.dispatcherByType.get(agentType);
     if (!dispatcher) {
       this.logger.warn(
-        `Router dispatch — agentType=${input.agentTypeHint} 미등록 dispatcher (등록된 worker: ${[...this.dispatcherByType.keys()].join(', ') || '(없음)'}).`,
+        `Router dispatch — agentType=${agentType} 미등록 dispatcher (등록된 worker: ${[...this.dispatcherByType.keys()].join(', ') || '(없음)'}).`,
       );
       throw new RouterException({
         code: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
-        message: `Router 가 agentType=${input.agentTypeHint} dispatcher 를 알지 못합니다. 해당 agent module 이 AGENT_DISPATCHER_PORT 에 등록됐는지 확인하세요.`,
+        message: `Router 가 agentType=${agentType} dispatcher 를 알지 못합니다. 해당 agent module 이 AGENT_DISPATCHER_PORT 에 등록됐는지 확인하세요.`,
         status: DomainStatus.BAD_REQUEST,
       });
     }
 
-    const outcome = await dispatcher.dispatch(input);
+    const outcome = await dispatcher.dispatch({
+      ...input,
+      agentTypeHint: agentType,
+    });
     this.logger.log(
-      `Router dispatch 완료 — agentType=${input.agentTypeHint} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed}`,
+      `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed}`,
     );
     return {
       agentRunId: outcome.agentRunId,
-      workerType: input.agentTypeHint,
+      workerType: agentType,
       output: outcome.output,
       modelUsed: outcome.modelUsed,
       followUp: outcome.followUp,
     };
+  }
+
+  // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
+  // classifier 가 UNKNOWN 반환 시 INTENT_CLASSIFY_FAILED — 사용자에게 의도 모호 안내.
+  private async classifyOrThrow(input: DispatchInput): Promise<AgentType> {
+    const text = input.text?.trim() ?? '';
+    if (text.length === 0) {
+      this.logger.warn(
+        `Router dispatch — agentTypeHint 누락 + text 비어 있음 (source=${input.source}, user=${input.slackUserId}).`,
+      );
+      throw new RouterException({
+        code: RouterErrorCode.INTENT_HINT_REQUIRED,
+        message:
+          'agentTypeHint 도 자연어 text 도 없어 intent 분류가 불가합니다.',
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+
+    const classification = await this.intentClassifier.classify(text);
+    if (classification.agentType === 'UNKNOWN') {
+      this.logger.warn(
+        `Router intent classifier UNKNOWN — text="${text.slice(0, 60)}" reason="${classification.reason}"`,
+      );
+      throw new RouterException({
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        message: `사용자 의도를 10개 worker 중 하나로 분류하지 못했습니다. reason: ${classification.reason || '(없음)'}`,
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+    return classification.agentType;
   }
 }
