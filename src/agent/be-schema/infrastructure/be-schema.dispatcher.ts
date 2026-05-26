@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatSchemaProposal } from '../../../slack/format/be-schema.formatter';
 import { GenerateSchemaProposalUsecase } from '../application/generate-schema-proposal.usecase';
 
 // BE_SCHEMA worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 request 로 매핑.
@@ -26,6 +27,7 @@ export class BeSchemaDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatSchemaProposal(outcome.result),
     };
   }
 }

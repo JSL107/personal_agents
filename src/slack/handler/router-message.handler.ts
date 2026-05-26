@@ -47,9 +47,11 @@ export const registerRouterMessageHandler = (
         slackUserId,
         text: cleanText,
       });
+      // dispatcher 가 채운 Slack mrkdwn formatter 결과 + 푸터로 agentRunId/worker 메타 명시.
+      const footer = `_이대리 (${result.workerType}) · agentRunId=${result.agentRunId}_`;
       await say({
         thread_ts: threadTs,
-        text: `이대리 (${result.workerType}) 처리 완료 — agentRunId=${result.agentRunId}.\n자세한 결과는 해당 슬래시 명령으로 다시 호출해 검토해주세요.`,
+        text: `${result.formattedText}\n\n${footer}`,
       });
     } catch (error: unknown) {
       deps.logger.warn(

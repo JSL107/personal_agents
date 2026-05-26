@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatPullRequestReview } from '../../../slack/format/pull-request-review.formatter';
 import { ReviewPullRequestUsecase } from '../application/review-pull-request.usecase';
 
 // CODE_REVIEWER worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 prRef 로 매핑.
@@ -17,14 +18,19 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
   constructor(private readonly reviewPullRequest: ReviewPullRequestUsecase) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
+    const prRef = input.text ?? '';
     const outcome = await this.reviewPullRequest.execute({
-      prRef: input.text ?? '',
+      prRef,
       slackUserId: input.slackUserId,
     });
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatPullRequestReview({
+        prRef,
+        review: outcome.result,
+      }),
     };
   }
 }

@@ -13,10 +13,20 @@ import { IntentClassifierUsecase } from './intent-classifier.usecase';
 
 const buildDispatcher = (
   agentType: AgentType,
-  outcomeFn: (input: DispatchInput) => DispatchOutcome,
+  outcomeFn: (
+    input: DispatchInput,
+  ) => Partial<DispatchOutcome> & { agentRunId: number },
 ): AgentDispatcher => ({
   agentType,
-  dispatch: jest.fn(async (input: DispatchInput) => outcomeFn(input)),
+  dispatch: jest.fn(async (input: DispatchInput) => {
+    const partial = outcomeFn(input);
+    return {
+      output: {},
+      modelUsed: 'mock-model',
+      formattedText: `mock formatted text for ${agentType}`,
+      ...partial,
+    } as DispatchOutcome;
+  }),
 });
 
 const buildClassifierMock = (

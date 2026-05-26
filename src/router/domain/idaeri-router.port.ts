@@ -24,11 +24,13 @@ export type DispatchSource =
 
 // manager 가 worker 호출 결과를 사용자에게 돌려줄 때의 표준 응답.
 // followUp 은 worker 가 추가 worker 호출을 요청한 경우 — manager 가 cycle/depth 검증 후 dispatch.
+// formattedText 는 dispatcher 가 채운 Slack mrkdwn 응답 — 자연어 진입 (app_mention) 의 직접 답글 텍스트.
 export interface DispatchResult {
   agentRunId: number;
   workerType: AgentType;
   output: unknown;
   modelUsed: string;
+  formattedText: string;
   followUp?: HandoffSpec;
 }
 

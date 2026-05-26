@@ -83,6 +83,7 @@ describe('registerRouterMessageHandler', () => {
       workerType: AgentType.PM,
       output: { topPriority: [] },
       modelUsed: 'mock-model',
+      formattedText: '*오늘의 최우선 과제*\nmock body',
     };
     const idaeriRouter: IdaeriRouterPort = {
       dispatch: jest.fn().mockResolvedValue(dispatchResult),
@@ -108,9 +109,13 @@ describe('registerRouterMessageHandler', () => {
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
         thread_ts: '1730000000.000001',
-        text: expect.stringContaining('PM'),
       }),
     );
+    // dispatcher 의 formattedText 가 사용자에게 직접 노출되는지 + footer 에 worker / agentRunId 명시.
+    const sayText = say.mock.calls[0][0].text as string;
+    expect(sayText).toContain('mock body');
+    expect(sayText).toContain('agentRunId=99');
+    expect(sayText).toContain(AgentType.PM);
   });
 
   it('thread_ts 가 있으면 thread 답글 — 새 thread 생성 안 함', async () => {
@@ -121,6 +126,7 @@ describe('registerRouterMessageHandler', () => {
         workerType: AgentType.PM,
         output: {},
         modelUsed: 'mock',
+        formattedText: 'mock daily plan',
       }),
     };
     registerRouterMessageHandler(app, {

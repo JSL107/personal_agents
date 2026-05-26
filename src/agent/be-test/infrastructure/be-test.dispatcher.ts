@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatGeneratedTest } from '../../../slack/format/be-test.formatter';
 import { GenerateTestUsecase } from '../application/generate-test.usecase';
 
 // BE_TEST worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 filePath 로 매핑.
@@ -26,6 +27,7 @@ export class BeTestDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatGeneratedTest(outcome.result),
     };
   }
 }

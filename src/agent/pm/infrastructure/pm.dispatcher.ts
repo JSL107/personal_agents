@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { GenerateDailyPlanUsecase } from '../application/generate-daily-plan.usecase';
 
 // PM worker 의 Router dispatcher — Hierarchical Manager Pattern 의 strategy 구현.
@@ -29,6 +30,7 @@ export class PmDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatDailyPlan(outcome.result.plan),
     };
   }
 }

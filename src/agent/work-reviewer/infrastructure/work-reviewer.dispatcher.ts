@@ -6,6 +6,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
 import { GenerateWorklogUsecase } from '../application/generate-worklog.usecase';
 
 // WORK_REVIEWER worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 workText 로 매핑.
@@ -24,6 +25,7 @@ export class WorkReviewerDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
+      formattedText: formatDailyReview(outcome.result),
     };
   }
 }
