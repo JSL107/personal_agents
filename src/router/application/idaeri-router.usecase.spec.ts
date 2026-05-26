@@ -83,29 +83,6 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).not.toHaveBeenCalled();
   });
 
-  it('dispatcher 가 followUp 반환하면 DispatchResult 에 그대로 전달', async () => {
-    const followUp = {
-      toWorker: AgentType.BE,
-      reason: 'PM 이 BE 검토 요청',
-      passthroughInput: { topic: 'schema 변경' },
-    };
-    const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
-      agentRunId: 7,
-      output: {},
-      modelUsed: 'gpt-5-mock',
-      followUp,
-    }));
-    const { usecase } = buildUsecase([pmDispatcher]);
-
-    const result = await usecase.dispatch({
-      source: 'CRON',
-      slackUserId: 'U1',
-      agentTypeHint: AgentType.PM,
-    });
-
-    expect(result.followUp).toEqual(followUp);
-  });
-
   it('등록되지 않은 agentType 은 UNSUPPORTED_AGENT_TYPE throw (다른 dispatcher 등록 무관)', async () => {
     const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
       agentRunId: 1,
@@ -165,6 +142,146 @@ describe('IdaeriRouterUsecase', () => {
       }),
     ).rejects.toMatchObject({
       routerErrorCode: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+    });
+  });
+
+  describe('Handoff chain (step 6)', () => {
+    it('worker 가 followUp 반환하면 manager 가 다음 worker 로 재 dispatch + 최종 worker 결과 반환', async () => {
+      const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: 1,
+        output: { plan: 'PM result' },
+        modelUsed: 'pm-mock',
+        followUp: {
+          toWorker: AgentType.BE,
+          reason: 'PM 이 BE 검토 요청',
+          passthroughInput: { text: 'user repository 만들어줘' },
+        },
+      }));
+      const beDispatcher = buildDispatcher(AgentType.BE, () => ({
+        agentRunId: 2,
+        output: { plan: 'BE result' },
+        modelUsed: 'be-mock',
+      }));
+      const { usecase } = buildUsecase([pmDispatcher, beDispatcher]);
+
+      const result = await usecase.dispatch({
+        source: 'SLACK_COMMAND',
+        slackUserId: 'U1',
+        agentTypeHint: AgentType.PM,
+        text: 'plan today',
+      });
+
+      // 최종 반환은 chain 의 마지막 worker (BE) 결과.
+      expect(result.agentRunId).toBe(2);
+      expect(result.workerType).toBe(AgentType.BE);
+      expect(result.output).toEqual({ plan: 'BE result' });
+
+      // BE dispatcher 가 passthroughInput.text 와 parent contextRefs 로 호출됐는지.
+      expect(beDispatcher.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'SLACK_COMMAND',
+          agentTypeHint: AgentType.BE,
+          text: 'user repository 만들어줘',
+          contextRefs: { agentRunId: 1 },
+        }),
+      );
+    });
+
+    it('chain 안 같은 worker 가 재진입하면 CYCLE_DETECTED', async () => {
+      const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: 10,
+        output: {},
+        modelUsed: 'pm-mock',
+        followUp: {
+          toWorker: AgentType.BE,
+          reason: 'PM → BE',
+          passthroughInput: {},
+        },
+      }));
+      const beDispatcher = buildDispatcher(AgentType.BE, () => ({
+        agentRunId: 11,
+        output: {},
+        modelUsed: 'be-mock',
+        followUp: {
+          // 같은 PM 으로 다시 — cycle.
+          toWorker: AgentType.PM,
+          reason: 'BE → PM (cycle)',
+          passthroughInput: {},
+        },
+      }));
+      const { usecase } = buildUsecase([pmDispatcher, beDispatcher]);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_COMMAND',
+          slackUserId: 'U1',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.CYCLE_DETECTED,
+      });
+    });
+
+    it('chain 깊이가 MAX_HANDOFF_DEPTH(3) 초과면 DEPTH_EXCEEDED', async () => {
+      // 4 worker 모두 다음 worker 로 followUp — 깊이 4 가 되어 throw 예상.
+      // 본 spec 은 visited 목록이 distinct 이라 cycle 검출 X, 오직 depth 가드만 동작.
+      const chainOrder = [
+        AgentType.PM,
+        AgentType.WORK_REVIEWER,
+        AgentType.IMPACT_REPORTER,
+        AgentType.PO_SHADOW,
+        AgentType.CODE_REVIEWER,
+      ];
+      const dispatchers = chainOrder.map((type, idx) =>
+        buildDispatcher(type, () => ({
+          agentRunId: idx + 1,
+          output: {},
+          modelUsed: 'mock',
+          followUp: chainOrder[idx + 1]
+            ? {
+                toWorker: chainOrder[idx + 1],
+                reason: `${type} → next`,
+                passthroughInput: {},
+              }
+            : undefined,
+        })),
+      );
+      const { usecase } = buildUsecase(dispatchers);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_COMMAND',
+          slackUserId: 'U1',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.DEPTH_EXCEEDED,
+      });
+    });
+
+    it('followUp 의 toWorker 가 미등록 dispatcher 면 UNSUPPORTED_AGENT_TYPE (chain 도중 throw)', async () => {
+      const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: 1,
+        output: {},
+        modelUsed: 'mock',
+        followUp: {
+          toWorker: AgentType.BE_TEST,
+          reason: 'PM → BE_TEST',
+          passthroughInput: {},
+        },
+      }));
+      // BE_TEST dispatcher 미등록.
+      const { usecase } = buildUsecase([pmDispatcher]);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_COMMAND',
+          slackUserId: 'U1',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
+      });
     });
   });
 });
