@@ -81,7 +81,7 @@ export class DailyPlanContextCollector {
       githubTasksRaw,
       previousPlan,
       previousWorklog,
-      slackMentions,
+      slackMentionsRaw,
       notionTasks,
       recentPlanSummaries,
       inboxResult,
@@ -106,6 +106,24 @@ export class DailyPlanContextCollector {
             ),
           }
         : githubTasksRaw;
+
+    // V3 audit B3 D3 — 같은 Slack 메시지가 (a) 자동 멘션 수집 + (b) 사용자가 emoji reaction 으로
+    // 등록한 Inbox 양쪽에서 가져오는 케이스가 가능 (channelId+ts 일치). prompt 토큰 낭비 + LLM 의
+    // 우선순위 중복 산정을 막기 위해 inbox 쪽을 우선 보존하고 mentions 에서 동일 항목을 제거한다.
+    // Inbox 가 명시 신호 (사용자가 직접 reaction) 라 더 풍부한 의도성을 보유.
+    const inboxKeys = new Set(
+      inboxResult.entries.map(
+        ({ channelId, messageTs }) => `${channelId}:${messageTs}`,
+      ),
+    );
+    const slackMentions = slackMentionsRaw.filter(
+      (mention) => !inboxKeys.has(`${mention.channelId}:${mention.ts}`),
+    );
+    if (slackMentions.length < slackMentionsRaw.length) {
+      this.logger.log(
+        `Slack mention dedup — ${slackMentionsRaw.length - slackMentions.length}건 Inbox 와 중복으로 제외`,
+      );
+    }
 
     return {
       userText,
@@ -209,22 +227,31 @@ export class DailyPlanContextCollector {
     }
   }
 
+  // entries 는 dedup 키 (channelId + messageTs) 산출용 — 외부에 노출되지는 않고 collect() 안에서만 사용.
   private async fetchInboxItemsOrEmpty({
     slackUserId,
   }: {
     slackUserId: string;
-  }): Promise<{ texts: string[]; ids: number[] }> {
+  }): Promise<{
+    texts: string[];
+    ids: number[];
+    entries: { channelId: string; messageTs: string }[];
+  }> {
     try {
       const items = await this.slackInboxService.peekPending(slackUserId);
       return {
         texts: items.map((i) => i.text),
         ids: items.map((i) => i.id),
+        entries: items.map((i) => ({
+          channelId: i.channelId,
+          messageTs: i.messageTs,
+        })),
       };
     } catch (error: unknown) {
       this.logger.warn(
         `Slack Inbox 수집 실패 (해당 컨텍스트 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
       );
-      return { texts: [], ids: [] };
+      return { texts: [], ids: [], entries: [] };
     }
   }
 
