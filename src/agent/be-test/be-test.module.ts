@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
+import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
 import { SandboxModule } from '../../sandbox/sandbox.module';
 import { GenerateTestUsecase } from './application/generate-test.usecase';
+import { BeTestDispatcher } from './infrastructure/be-test.dispatcher';
 import { JestMockGenerator } from './infrastructure/jest-mock-generator';
 import { TreeSitterTestAnalyzer } from './infrastructure/tree-sitter-test-analyzer';
 
@@ -12,7 +14,17 @@ import { TreeSitterTestAnalyzer } from './infrastructure/tree-sitter-test-analyz
 // 호스트 fs write 없이 컨테이너 in-memory 검증이 가능해진 시점에 의존 재도입.
 @Module({
   imports: [AgentRunModule, ModelRouterModule, SandboxModule],
-  providers: [GenerateTestUsecase, TreeSitterTestAnalyzer, JestMockGenerator],
-  exports: [GenerateTestUsecase],
+  providers: [
+    GenerateTestUsecase,
+    TreeSitterTestAnalyzer,
+    JestMockGenerator,
+    BeTestDispatcher,
+    {
+      provide: AGENT_DISPATCHER_PORT,
+      useExisting: BeTestDispatcher,
+      multi: true,
+    },
+  ],
+  exports: [GenerateTestUsecase, AGENT_DISPATCHER_PORT],
 })
 export class BeTestModule {}
