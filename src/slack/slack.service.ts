@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -24,6 +25,10 @@ import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.u
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
+import {
+  IDAERI_ROUTER_PORT,
+  IdaeriRouterPort,
+} from '../router/domain/idaeri-router.port';
 import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
@@ -31,6 +36,7 @@ import { registerBeHandler } from './handler/be.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerPreviewActionHandlers } from './handler/preview-action.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
+import { registerRouterMessageHandler } from './handler/router-message.handler';
 import { registerWriteBackHandlers } from './handler/write-back.handler';
 
 // 이대리 Slack 어댑터.
@@ -65,6 +71,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
     private readonly syncPlanUsecase: SyncPlanUsecase,
     private readonly slackInboxService: SlackInboxService,
+    @Inject(IDAERI_ROUTER_PORT)
+    private readonly idaeriRouter: IdaeriRouterPort,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -253,6 +261,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateTestUsecase: this.generateTestUsecase,
       analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
       analyzePrConventionUsecase: this.analyzePrConventionUsecase,
+      logger: this.logger,
+    });
+    // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.
+    registerRouterMessageHandler(app, {
+      idaeriRouter: this.idaeriRouter,
       logger: this.logger,
     });
   }
