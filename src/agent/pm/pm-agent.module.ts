@@ -5,6 +5,7 @@ import { DailyPlanModule } from '../../daily-plan/daily-plan.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
+import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
 import { SlackCollectorModule } from '../../slack-collector/slack-collector.module';
 import { SlackInboxModule } from '../../slack-inbox/slack-inbox.module';
 import { DailyPlanContextCollector } from './application/daily-plan-context.collector';
@@ -13,8 +14,11 @@ import { DailyPlanPromptBuilder } from './application/daily-plan-prompt.builder'
 import { GenerateDailyPlanUsecase } from './application/generate-daily-plan.usecase';
 import { SyncContextUsecase } from './application/sync-context.usecase';
 import { SyncPlanUsecase } from './application/sync-plan.usecase';
+import { PmDispatcher } from './infrastructure/pm.dispatcher';
 
 // PreviewGateModule (global) 가 CreatePreviewUsecase 를 자동 노출 — SyncPlanUsecase 가 그걸 inject.
+// PmDispatcher 는 AGENT_DISPATCHER_PORT multi-provider 로 등록 — RouterModule 의 IdaeriRouterUsecase 가
+// dispatchers array 로 inject 받아 agentType=PM 매핑을 자동 인식.
 @Module({
   imports: [
     ModelRouterModule,
@@ -33,7 +37,14 @@ import { SyncPlanUsecase } from './application/sync-plan.usecase';
     DailyPlanContextCollector,
     DailyPlanPromptBuilder,
     DailyPlanEvidenceBuilder,
+    PmDispatcher,
+    { provide: AGENT_DISPATCHER_PORT, useExisting: PmDispatcher, multi: true },
   ],
-  exports: [GenerateDailyPlanUsecase, SyncContextUsecase, SyncPlanUsecase],
+  exports: [
+    GenerateDailyPlanUsecase,
+    SyncContextUsecase,
+    SyncPlanUsecase,
+    AGENT_DISPATCHER_PORT,
+  ],
 })
 export class PmAgentModule {}
