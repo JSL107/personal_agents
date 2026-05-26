@@ -8,7 +8,7 @@ import { formatQuotaStats } from '../format/quota-stats.formatter';
 import { runEphemeral } from './slack-handler.helper';
 
 // 진단 / 관측용 슬래시 명령 — 모델 호출 없이 DB 조회 또는 외부 API 점검만 수행.
-// /sync-context (HOTFIX-1), /quota (OPS-1).
+// /ping (헬스체크), /sync-context (HOTFIX-1), /quota (OPS-1).
 export const registerDiagnosisHandlers = (
   app: App,
   deps: {
@@ -17,6 +17,16 @@ export const registerDiagnosisHandlers = (
     logger: Logger;
   },
 ): void => {
+  // 봇 health check — 모델 호출 / DB 호출 없이 즉시 ack 만 응답.
+  // Slack Bolt Socket Mode 가 살아있고 워크스페이스에 manifest 가 등록돼 있는지 1초 안에 확인 가능.
+  // (7c70a28 분할 이후 회귀 — 7f07136 의 원본 동작 복원)
+  app.command('/ping', async ({ ack }) => {
+    await ack({
+      response_type: 'ephemeral',
+      text: 'pong 🏓 — 이대리 봇 정상 동작 중',
+    });
+  });
+
   // /sync-context — PM /today 가 보는 5종 컨텍스트 (GitHub/Notion/Slack/직전 plan/직전 worklog)
   // 를 모델 호출 없이 한 번 더 점검. AgentRun 도 만들지 않고 푸터도 없다.
   app.command('/sync-context', async ({ ack, command, respond }) => {
