@@ -2,8 +2,15 @@ import { Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  SandboxRunnerPort,
+  SandboxRunResult,
+} from '../../../sandbox/domain/port/sandbox-runner.port';
+import { SandboxException } from '../../../sandbox/domain/sandbox.exception';
+import { SandboxErrorCode } from '../../../sandbox/domain/sandbox-error-code.enum';
 import { FileAnalysis } from '../domain/be-test.type';
 import { BeTestErrorCode } from '../domain/be-test-error-code.enum';
 import { JestMockGenerator } from '../infrastructure/jest-mock-generator';
@@ -69,6 +76,41 @@ describe('FooService', () => {
 
 const REPO_ROOT = process.cwd();
 
+const passResult = (
+  overrides: Partial<SandboxRunResult> = {},
+): SandboxRunResult => ({
+  exitCode: 0,
+  stdout: '',
+  stderr: '',
+  durationMs: 100,
+  timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+  ...overrides,
+});
+
+const failResult = (
+  stderr: string,
+  overrides: Partial<SandboxRunResult> = {},
+): SandboxRunResult => ({
+  exitCode: 1,
+  stdout: '',
+  stderr,
+  durationMs: 120,
+  timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+  ...overrides,
+});
+
+const TS_ERROR_STDERR =
+  "FooService.test.ts:1:1 - error TS2304: Cannot find name 'unknownSymbol'.";
+const ASSERTION_FAIL_STDERR = `FAIL  /work/generated.spec.ts
+  ● FooService › should work
+    Expected: 'empty'
+    Received: 'something'
+`;
+
 const makeAgentRunServiceMock = (): jest.Mocked<AgentRunService> =>
   ({
     execute: jest.fn().mockImplementation(async ({ run }) => {
@@ -84,14 +126,25 @@ const makeAgentRunServiceMock = (): jest.Mocked<AgentRunService> =>
     findSimilarPlans: jest.fn(),
   }) as unknown as jest.Mocked<AgentRunService>;
 
-const makeModelRouterMock = (): jest.Mocked<ModelRouterUsecase> =>
-  ({
-    route: jest.fn().mockResolvedValue({
-      text: JSON.stringify({ specCode: FAKE_SPEC_CODE }),
+const makeModelRouterMock = (
+  responses: string[] = [JSON.stringify({ specCode: FAKE_SPEC_CODE })],
+): jest.Mocked<ModelRouterUsecase> => {
+  const route = jest.fn();
+  responses.forEach((text) => {
+    route.mockResolvedValueOnce({
+      text,
       modelUsed: 'mock-model',
       provider: 'CLAUDE',
-    }),
-  }) as unknown as jest.Mocked<ModelRouterUsecase>;
+    });
+  });
+  // 추가 호출 fallback — 마지막 응답 반복.
+  route.mockResolvedValue({
+    text: responses[responses.length - 1],
+    modelUsed: 'mock-model',
+    provider: 'CLAUDE',
+  });
+  return { route } as unknown as jest.Mocked<ModelRouterUsecase>;
+};
 
 const makeAnalyzerMock = (): jest.Mocked<TreeSitterTestAnalyzer> =>
   ({
@@ -103,12 +156,34 @@ const makeMockGeneratorMock = (): jest.Mocked<JestMockGenerator> =>
     generateMocks: jest.fn().mockReturnValue('// mock setup'),
   }) as unknown as jest.Mocked<JestMockGenerator>;
 
+const makeSandboxRunnerMock = (
+  results: (SandboxRunResult | Error)[] = [passResult()],
+): jest.Mocked<SandboxRunnerPort> => {
+  const run = jest.fn();
+  results.forEach((result) => {
+    if (result instanceof Error) {
+      run.mockRejectedValueOnce(result);
+    } else {
+      run.mockResolvedValueOnce(result);
+    }
+  });
+  // 마지막 결과 반복 fallback.
+  const last = results[results.length - 1];
+  if (last instanceof Error) {
+    run.mockRejectedValue(last);
+  } else {
+    run.mockResolvedValue(last);
+  }
+  return { run } as unknown as jest.Mocked<SandboxRunnerPort>;
+};
+
 const buildUsecase = (
   overrides: {
     modelRouter?: jest.Mocked<ModelRouterUsecase>;
     agentRunService?: jest.Mocked<AgentRunService>;
     analyzer?: jest.Mocked<TreeSitterTestAnalyzer>;
     mockGenerator?: jest.Mocked<JestMockGenerator>;
+    sandboxRunner?: jest.Mocked<SandboxRunnerPort>;
   } = {},
 ): {
   usecase: GenerateTestUsecase;
@@ -116,118 +191,303 @@ const buildUsecase = (
   agentRunService: jest.Mocked<AgentRunService>;
   analyzer: jest.Mocked<TreeSitterTestAnalyzer>;
   mockGenerator: jest.Mocked<JestMockGenerator>;
+  sandboxRunner: jest.Mocked<SandboxRunnerPort>;
 } => {
   const modelRouter = overrides.modelRouter ?? makeModelRouterMock();
   const agentRunService =
     overrides.agentRunService ?? makeAgentRunServiceMock();
   const analyzer = overrides.analyzer ?? makeAnalyzerMock();
   const mockGenerator = overrides.mockGenerator ?? makeMockGeneratorMock();
+  const sandboxRunner = overrides.sandboxRunner ?? makeSandboxRunnerMock();
 
   const usecase = new GenerateTestUsecase(
     modelRouter,
     agentRunService,
     analyzer,
     mockGenerator,
+    sandboxRunner,
   );
 
   jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
-  return { usecase, modelRouter, agentRunService, analyzer, mockGenerator };
+  return {
+    usecase,
+    modelRouter,
+    agentRunService,
+    analyzer,
+    mockGenerator,
+    sandboxRunner,
+  };
 };
 
 describe('GenerateTestUsecase', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFs.readFile.mockResolvedValue(FAKE_SOURCE as unknown as never);
-    // realpath: process.cwd() / target 모두 동일 경로로 통과시킴 (default).
     mockFs.realpath.mockImplementation(
       async (target) => target as unknown as string,
     );
   });
 
-  it('빈 filePath 이면 BeTestException(EMPTY_PATH) 을 던진다', async () => {
-    const { usecase } = buildUsecase();
+  describe('입력 검증', () => {
+    it('빈 filePath 이면 BeTestException(EMPTY_PATH) 을 던진다', async () => {
+      const { usecase } = buildUsecase();
 
-    await expect(
-      usecase.execute({ filePath: '  ', slackUserId: 'U123' }),
-    ).rejects.toMatchObject({
-      beTestErrorCode: BeTestErrorCode.EMPTY_PATH,
+      await expect(
+        usecase.execute({ filePath: '  ', slackUserId: 'U123' }),
+      ).rejects.toMatchObject({
+        beTestErrorCode: BeTestErrorCode.EMPTY_PATH,
+      });
+    });
+
+    it('filePath 에 .. 가 포함되면 BeTestException(INVALID_PATH) 를 던진다', async () => {
+      const { usecase } = buildUsecase();
+
+      await expect(
+        usecase.execute({ filePath: '../etc/passwd', slackUserId: 'U123' }),
+      ).rejects.toMatchObject({
+        beTestErrorCode: BeTestErrorCode.INVALID_PATH,
+      });
+    });
+
+    it('파일이 존재하지 않으면 BeTestException(FILE_NOT_FOUND) 를 던진다', async () => {
+      mockFs.readFile.mockRejectedValue(new Error('ENOENT'));
+      const { usecase } = buildUsecase();
+
+      await expect(
+        usecase.execute({
+          filePath: 'src/foo/foo.service.ts',
+          slackUserId: 'U123',
+        }),
+      ).rejects.toMatchObject({
+        beTestErrorCode: BeTestErrorCode.FILE_NOT_FOUND,
+      });
+    });
+
+    it('symlink resolution 결과가 repo 밖을 가리키면 INVALID_PATH (codex P2)', async () => {
+      mockFs.realpath.mockImplementation(async (target) => {
+        const t = target as unknown as string;
+        if (t === REPO_ROOT) {
+          return REPO_ROOT;
+        }
+        return '/etc/passwd';
+      });
+      const { usecase } = buildUsecase();
+
+      await expect(
+        usecase.execute({
+          filePath: 'src/foo/foo.service.ts',
+          slackUserId: 'U123',
+        }),
+      ).rejects.toMatchObject({
+        beTestErrorCode: BeTestErrorCode.INVALID_PATH,
+      });
     });
   });
 
-  it('filePath 에 .. 가 포함되면 BeTestException(INVALID_PATH) 를 던진다', async () => {
-    const { usecase } = buildUsecase();
+  describe('Self-correction 루프 (V3 §8 plan 단계 2)', () => {
+    it('1차 sandbox 통과 — attempts=1, validated=true, PASSED', async () => {
+      const { usecase, sandboxRunner, modelRouter } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([passResult()]),
+      });
 
-    await expect(
-      usecase.execute({ filePath: '../etc/passwd', slackUserId: 'U123' }),
-    ).rejects.toMatchObject({
-      beTestErrorCode: BeTestErrorCode.INVALID_PATH,
-    });
-  });
-
-  it('파일이 존재하지 않으면 BeTestException(FILE_NOT_FOUND) 를 던진다', async () => {
-    mockFs.readFile.mockRejectedValue(new Error('ENOENT'));
-    const { usecase } = buildUsecase();
-
-    await expect(
-      usecase.execute({
+      const outcome = await usecase.execute({
         filePath: 'src/foo/foo.service.ts',
         slackUserId: 'U123',
-      }),
-    ).rejects.toMatchObject({
-      beTestErrorCode: BeTestErrorCode.FILE_NOT_FOUND,
-    });
-  });
+      });
 
-  it('symlink resolution 결과가 repo 밖을 가리키면 INVALID_PATH (codex P2)', async () => {
-    mockFs.realpath.mockImplementation(async (target) => {
-      const t = target as unknown as string;
-      if (t === REPO_ROOT) {
-        return REPO_ROOT;
-      }
-      // 대상 파일은 /etc/passwd 로 symlink 됐다고 가정.
-      return '/etc/passwd';
+      expect(outcome.result.validated).toBe(true);
+      expect(outcome.result.selfCorrectionAttempts).toBe(1);
+      expect(outcome.result.selfCorrectionStopReason).toBe('PASSED');
+      expect(outcome.result.selfCorrectionStderrTail).toBeUndefined();
+      expect(sandboxRunner.run).toHaveBeenCalledTimes(1);
+      // fix prompt 미호출 — modelRouter.route 가 초기 1회만.
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
     });
-    const { usecase } = buildUsecase();
 
-    await expect(
-      usecase.execute({
+    it('1차 TS error → 2차 통과 — attempts=2, validated=true', async () => {
+      const { usecase, sandboxRunner, modelRouter } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([
+          failResult(TS_ERROR_STDERR),
+          passResult(),
+        ]),
+        modelRouter: makeModelRouterMock([
+          JSON.stringify({ specCode: FAKE_SPEC_CODE }),
+          JSON.stringify({ specCode: '// fixed spec\n' + FAKE_SPEC_CODE }),
+        ]),
+      });
+
+      const outcome = await usecase.execute({
         filePath: 'src/foo/foo.service.ts',
         slackUserId: 'U123',
-      }),
-    ).rejects.toMatchObject({
-      beTestErrorCode: BeTestErrorCode.INVALID_PATH,
+      });
+
+      expect(outcome.result.validated).toBe(true);
+      expect(outcome.result.selfCorrectionAttempts).toBe(2);
+      expect(outcome.result.selfCorrectionStopReason).toBe('PASSED');
+      expect(outcome.result.specCode).toContain('fixed spec');
+      expect(sandboxRunner.run).toHaveBeenCalledTimes(2);
+      // 초기 + fix prompt 1회.
+      expect(modelRouter.route).toHaveBeenCalledTimes(2);
+    });
+
+    it('3회 모두 TS error — MAX_ATTEMPTS_EXHAUSTED, validated=false, stderrTail 보존', async () => {
+      const { usecase, sandboxRunner } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([
+          failResult(TS_ERROR_STDERR),
+          failResult(TS_ERROR_STDERR),
+          failResult(TS_ERROR_STDERR),
+        ]),
+      });
+
+      const outcome = await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      expect(outcome.result.validated).toBe(false);
+      expect(outcome.result.selfCorrectionAttempts).toBe(3);
+      expect(outcome.result.selfCorrectionStopReason).toBe(
+        'MAX_ATTEMPTS_EXHAUSTED',
+      );
+      expect(outcome.result.selfCorrectionStderrTail).toContain('TS2304');
+      expect(sandboxRunner.run).toHaveBeenCalledTimes(3);
+    });
+
+    it('assertion fail 2회 연속 — NON_RETRYABLE, validated=false, attempts=2', async () => {
+      const { usecase, sandboxRunner } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([
+          failResult(ASSERTION_FAIL_STDERR),
+          failResult(ASSERTION_FAIL_STDERR),
+          // 보호용 — 호출되면 안 됨.
+          passResult(),
+        ]),
+      });
+
+      const outcome = await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      expect(outcome.result.validated).toBe(false);
+      expect(outcome.result.selfCorrectionAttempts).toBe(2);
+      expect(outcome.result.selfCorrectionStopReason).toBe('NON_RETRYABLE');
+      expect(sandboxRunner.run).toHaveBeenCalledTimes(2);
+    });
+
+    it('assertion fail 1회 → TS error → pass — TS retry 는 nonRetryable 카운트 누적 안 함, attempts=3 통과', async () => {
+      const { usecase } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([
+          failResult(ASSERTION_FAIL_STDERR),
+          failResult(TS_ERROR_STDERR),
+          passResult(),
+        ]),
+      });
+
+      const outcome = await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      expect(outcome.result.validated).toBe(true);
+      expect(outcome.result.selfCorrectionAttempts).toBe(3);
+      expect(outcome.result.selfCorrectionStopReason).toBe('PASSED');
+    });
+
+    it('sandbox 자체 에러 (DOCKER_SPAWN_FAILED) — SANDBOX_UNAVAILABLE, retry 없음', async () => {
+      const sandboxRunner = makeSandboxRunnerMock([
+        new SandboxException({
+          code: SandboxErrorCode.DOCKER_SPAWN_FAILED,
+          message: 'docker daemon not reachable',
+          status: DomainStatus.INTERNAL,
+        }),
+      ]);
+      const { usecase } = buildUsecase({ sandboxRunner });
+
+      const outcome = await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      expect(outcome.result.validated).toBe(false);
+      expect(outcome.result.selfCorrectionAttempts).toBe(1);
+      expect(outcome.result.selfCorrectionStopReason).toBe(
+        'SANDBOX_UNAVAILABLE',
+      );
+      expect(outcome.result.selfCorrectionStderrTail).toContain(
+        'docker daemon',
+      );
+      expect(sandboxRunner.run).toHaveBeenCalledTimes(1);
+    });
+
+    it('fix prompt 는 stderr tail 을 포함해 LLM 에 전달된다', async () => {
+      const modelRouter = makeModelRouterMock([
+        JSON.stringify({ specCode: FAKE_SPEC_CODE }),
+        JSON.stringify({ specCode: FAKE_SPEC_CODE }),
+      ]);
+      const { usecase } = buildUsecase({
+        modelRouter,
+        sandboxRunner: makeSandboxRunnerMock([
+          failResult(TS_ERROR_STDERR),
+          passResult(),
+        ]),
+      });
+
+      await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      // 두 번째 route 호출이 fix prompt — stderr 가 prompt 안에 포함되어야 함.
+      const secondCall = modelRouter.route.mock.calls[1];
+      expect(secondCall[0].request.prompt).toContain('TS2304');
+      expect(secondCall[0].request.prompt).toContain('직전 spec');
     });
   });
 
-  it('정상 경로 — LLM 응답을 spec 으로 반환 (validated:false)', async () => {
-    const { usecase } = buildUsecase();
+  describe('Sandbox 호출 contract', () => {
+    it('jest 명령에 --cacheDirectory=/work/.jest-cache --no-coverage 가 포함된다', async () => {
+      const { usecase, sandboxRunner } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([passResult()]),
+      });
 
-    const outcome = await usecase.execute({
-      filePath: 'src/foo/foo.service.ts',
-      slackUserId: 'U123',
+      await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      const call = sandboxRunner.run.mock.calls[0][0];
+      expect(call.command).toContain('--cacheDirectory=/work/.jest-cache');
+      expect(call.command).toContain('--no-coverage');
+      // --passWithNoTests 는 사용하지 않는다 (Codex 지적 — 0 테스트를 통과로 오인 방지).
+      expect(call.command).not.toContain('--passWithNoTests');
+      expect(call.mountMode).toBe('ro');
+      expect(call.networkMode).toBe('none');
+      expect(call.tmpfsFiles).toEqual([
+        {
+          containerPath: '/work/generated.spec.ts',
+          content: expect.any(String),
+        },
+      ]);
     });
 
-    expect(outcome.result.specCode).toContain('describe');
-    expect(outcome.result.validated).toBe(false);
-  });
+    it('agentRunService.execute 에 올바른 agentType/triggerType 이 전달된다', async () => {
+      const agentRunService = makeAgentRunServiceMock();
+      const { usecase } = buildUsecase({ agentRunService });
 
-  it('agentRunService.execute 에 올바른 agentType/triggerType 이 전달된다', async () => {
-    const agentRunService = makeAgentRunServiceMock();
-    const { usecase } = buildUsecase({ agentRunService });
-
-    await usecase.execute({
-      filePath: 'src/foo/foo.service.ts',
-      slackUserId: 'U123',
-      triggerType: TriggerType.SLACK_COMMAND_BE_TEST,
-    });
-
-    expect(agentRunService.execute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentType: AgentType.BE_TEST,
+      await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
         triggerType: TriggerType.SLACK_COMMAND_BE_TEST,
-      }),
-    );
+      });
+
+      expect(agentRunService.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentType: AgentType.BE_TEST,
+          triggerType: TriggerType.SLACK_COMMAND_BE_TEST,
+        }),
+      );
+    });
   });
 });
