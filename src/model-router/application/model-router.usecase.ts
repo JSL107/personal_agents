@@ -29,6 +29,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.BE_FIX]: ModelProviderName.CLAUDE,
   // CTO — PM 의 assignableTaskIds 를 BE worker 5종으로 분류. 코드 도메인 결정 → Claude.
   [AgentType.CTO]: ModelProviderName.CLAUDE,
+  // PO_EVAL — 3 sub-agent output 의 구조적 합성 + careerLog 생성. Claude 강점 (구조화 JSON).
+  [AgentType.PO_EVAL]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 fallback provider.

@@ -23,6 +23,10 @@ export interface AgentRetryInputSnapshot {
   stackTrace?: string; // BE_SRE
   extraContextLength?: number; // PO_SHADOW
   dailyPlanAgentRunId?: number; // CTO — 분배 대상 PM run id
+  range?: 'TODAY' | 'WEEK'; // PO_EVAL — 합성 기간
+  workReviewerRunId?: number; // PO_EVAL — 합성 source
+  poShadowRunId?: number; // PO_EVAL — 합성 source
+  impactReporterRunId?: number; // PO_EVAL — 합성 source
 }
 
 export interface RetryRunPayload {
