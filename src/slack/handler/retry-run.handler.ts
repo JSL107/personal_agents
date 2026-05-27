@@ -7,12 +7,14 @@ import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application
 import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatPrConventionReport } from '../format/be-fix.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
@@ -40,6 +42,7 @@ export interface RetryRunHandlerDeps {
   generateTestUsecase: GenerateTestUsecase;
   analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
   analyzePrConventionUsecase: AnalyzePrConventionUsecase;
+  generateAssignmentUsecase: GenerateAssignmentUsecase;
   logger: Logger;
 }
 
@@ -245,6 +248,21 @@ export const registerRetryRunHandler = (
               triggerType: TriggerType.FAILURE_REPLAY,
             }),
           format: formatPrConventionReport,
+        });
+        break;
+      case 'CTO':
+        // CTO 의 retry — usecase 가 자동 조회 (직전 PM run) 기반. snapshot.dailyPlanAgentRunId
+        // 는 inputSnapshot 에 기록되어 있지만 명시 지정 분배는 본 step 미지원 (warn fallback).
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (CTO)`,
+          execute: () =>
+            deps.generateAssignmentUsecase.execute({
+              slackUserId,
+              dailyPlanAgentRunId: snapshot.dailyPlanAgentRunId,
+            }),
+          format: formatAssignmentOutput,
         });
         break;
       default:

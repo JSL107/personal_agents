@@ -3,10 +3,12 @@ import { App } from '@slack/bolt';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
+import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
+import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
@@ -29,6 +31,7 @@ export const registerAgentCommandHandlers = (
     saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase;
     generateImpactReportUsecase: GenerateImpactReportUsecase;
     generatePoShadowUsecase: GeneratePoShadowUsecase;
+    generateAssignmentUsecase: GenerateAssignmentUsecase;
     logger: Logger;
   },
 ): void => {
@@ -154,6 +157,25 @@ export const registerAgentCommandHandlers = (
           slackUserId: command.user_id,
         }),
       format: (review) => formatPullRequestReview({ prRef, review }),
+    });
+  });
+
+  app.command('/assign', async ({ ack, command, respond }) => {
+    // 인자 미사용 — 직전 PM run 자동 조회. 명시 PM run id 지정은 본 step 미지원 (warn fallback).
+    await ack({
+      response_type: 'ephemeral',
+      text: '이대리 (CTO 모드) 가 직전 plan 의 task 를 BE worker 에 분배 중입니다 (10~30초 소요)...',
+    });
+
+    await runAgentCommand({
+      respond,
+      logger: deps.logger,
+      commandLabel: '/assign',
+      execute: () =>
+        deps.generateAssignmentUsecase.execute({
+          slackUserId: command.user_id,
+        }),
+      format: formatAssignmentOutput,
     });
   });
 

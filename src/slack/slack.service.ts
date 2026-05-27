@@ -15,6 +15,7 @@ import { AnalyzeStackTraceUsecase } from '../agent/be-sre/application/analyze-st
 import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
+import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
 import { SyncContextUsecase } from '../agent/pm/application/sync-context.usecase';
@@ -73,6 +74,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly slackInboxService: SlackInboxService,
     @Inject(IDAERI_ROUTER_PORT)
     private readonly idaeriRouter: IdaeriRouterPort,
+    private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -237,6 +239,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
+      generateAssignmentUsecase: this.generateAssignmentUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
@@ -261,6 +264,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateTestUsecase: this.generateTestUsecase,
       analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
       analyzePrConventionUsecase: this.analyzePrConventionUsecase,
+      generateAssignmentUsecase: this.generateAssignmentUsecase,
       logger: this.logger,
     });
     // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.

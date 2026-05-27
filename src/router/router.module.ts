@@ -12,6 +12,8 @@ import { BeTestModule } from '../agent/be-test/be-test.module';
 import { BeTestDispatcher } from '../agent/be-test/infrastructure/be-test.dispatcher';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { CodeReviewerDispatcher } from '../agent/code-reviewer/infrastructure/code-reviewer.dispatcher';
+import { CtoModule } from '../agent/cto/cto.module';
+import { CtoDispatcher } from '../agent/cto/infrastructure/cto.dispatcher';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { ImpactReporterDispatcher } from '../agent/impact-reporter/infrastructure/impact-reporter.dispatcher';
 import { PmDispatcher } from '../agent/pm/infrastructure/pm.dispatcher';
@@ -54,6 +56,7 @@ import {
     BeTestModule,
     BeSreModule,
     BeFixModule,
+    CtoModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -72,6 +75,7 @@ import {
         BeTestDispatcher,
         BeSreDispatcher,
         BeFixDispatcher,
+        CtoDispatcher,
       ],
     },
   ],
