@@ -1,5 +1,3 @@
-import { Provider, Type } from '@nestjs/common';
-
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { HandoffSpec } from '../handoff-spec.type';
 import { DispatchInput } from '../idaeri-router.port';
@@ -18,31 +16,18 @@ export interface DispatchOutcome {
   followUp?: HandoffSpec;
 }
 
-// 각 agent module 이 자기 agentType 의 dispatch 책임을 register 하는 strategy.
-// RouterModule 의 IdaeriRouterUsecase 가 multi-provider 로 받아 agentType → AgentDispatcher 매핑.
+// 각 agent module 이 자기 agentType 의 dispatch 책임을 구현하는 strategy.
+// agent module 의 providers 에 dispatcher class 를 등록하고 exports 에 노출하면,
+// RouterModule 이 모든 dispatcher 를 한 useFactory 에 inject 해 array 로 합친다.
+//
+// 분산 multi-provider 패턴 (module 별로 각자 multi 등록) 은 NestJS 가 module 경계를 넘어
+// 합치지 않는 동작 때문에 array 가 되지 않는다. 따라서 RouterModule 에서 중앙 inject 하는
+// PreviewGate.forRoot 패턴을 차용 — 본 파일은 토큰 + 인터페이스만 노출.
 export interface AgentDispatcher {
   readonly agentType: AgentType;
   dispatch(input: DispatchInput): Promise<DispatchOutcome>;
 }
 
-// NestJS multi-provider 토큰 — `{ provide: AGENT_DISPATCHER_PORT, useClass: ..., multi: true }`.
-// manager 가 `@Inject(AGENT_DISPATCHER_PORT) dispatchers: AgentDispatcher[]` 로 array 수신.
+// AGENT_DISPATCHER_PORT — RouterModule 의 useFactory 가 채우는 AgentDispatcher[] 토큰.
+// 소비자는 `@Inject(AGENT_DISPATCHER_PORT) dispatchers: AgentDispatcher[]` 로 받는다.
 export const AGENT_DISPATCHER_PORT = Symbol('AGENT_DISPATCHER_PORT');
-
-// NestJS 10 의 Provider type 정의에는 `multi` 필드가 빠져 있어 (runtime 은 지원) inline 으로
-// `{ ..., multi: true }` 를 쓰면 TS2353. 각 agent module 이 동일 cast 를 반복하지 않도록 helper 로
-// 캡슐화 — agent module 은 `provideAgentDispatcher(PmDispatcher)` 한 줄로 multi-provider 등록.
-//
-// 주의 — useExisting + multi 는 NestJS 10 의 DI 에서 작동하지 않는다 (multi 무시되고 single
-// alias 로만 등록 → 소비자가 array 가 아닌 single instance 를 받음, runtime TypeError).
-// useFactory + inject 패턴은 multi 와 정상 호환 — dispatcher 의 기존 provider instance 를
-// inject 받아 identity 그대로 반환하면 stateless 한 dispatcher 들이 array 에 push 된다.
-export const provideAgentDispatcher = (
-  dispatcher: Type<AgentDispatcher>,
-): Provider =>
-  ({
-    provide: AGENT_DISPATCHER_PORT,
-    useFactory: (instance: AgentDispatcher) => instance,
-    inject: [dispatcher],
-    multi: true,
-  }) as unknown as Provider;
