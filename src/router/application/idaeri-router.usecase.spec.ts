@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { DispatchInput } from '../domain/idaeri-router.port';
 import { IntentClassification } from '../domain/intent-classification.type';
@@ -36,6 +37,11 @@ const buildClassifierMock = (
     classify: jest.fn().mockResolvedValue(classification),
   }) as unknown as jest.Mocked<IntentClassifierUsecase>;
 
+const buildAgentRunServiceMock = (): jest.Mocked<AgentRunService> =>
+  ({
+    setParentId: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as jest.Mocked<AgentRunService>;
+
 const buildUsecase = (
   dispatchers: AgentDispatcher[] = [],
   classifier: jest.Mocked<IntentClassifierUsecase> = buildClassifierMock({
@@ -43,15 +49,18 @@ const buildUsecase = (
     confidence: 0,
     reason: 'default mock',
   }),
+  agentRunService: jest.Mocked<AgentRunService> = buildAgentRunServiceMock(),
 ): {
   usecase: IdaeriRouterUsecase;
   classifier: jest.Mocked<IntentClassifierUsecase>;
+  agentRunService: jest.Mocked<AgentRunService>;
 } => {
   jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   return {
-    usecase: new IdaeriRouterUsecase(dispatchers, classifier),
+    usecase: new IdaeriRouterUsecase(dispatchers, classifier, agentRunService),
     classifier,
+    agentRunService,
   };
 };
 
@@ -172,7 +181,10 @@ describe('IdaeriRouterUsecase', () => {
         output: { plan: 'BE result' },
         modelUsed: 'be-mock',
       }));
-      const { usecase } = buildUsecase([pmDispatcher, beDispatcher]);
+      const { usecase, agentRunService } = buildUsecase([
+        pmDispatcher,
+        beDispatcher,
+      ]);
 
       const result = await usecase.dispatch({
         source: 'SLACK_COMMAND',
@@ -195,6 +207,14 @@ describe('IdaeriRouterUsecase', () => {
           contextRefs: { agentRunId: 1 },
         }),
       );
+
+      // step 8 — child run (BE: id=2) 에 parent (PM: id=1) 가 기록됐는지.
+      // root entry (PM) 는 contextRefs 가 없어 setParentId 호출 X — child 만 1회 호출.
+      expect(agentRunService.setParentId).toHaveBeenCalledTimes(1);
+      expect(agentRunService.setParentId).toHaveBeenCalledWith({
+        id: 2,
+        parentId: 1,
+      });
     });
 
     it('chain 안 같은 worker 가 재진입하면 CYCLE_DETECTED', async () => {

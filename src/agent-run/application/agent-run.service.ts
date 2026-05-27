@@ -113,6 +113,20 @@ export class AgentRunService {
     }
   }
 
+  // V3 비전 봇 쪼개기 step 8 — Router 의 handoff chain 안에서 child run 에 parent.id 기록.
+  // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4)
+  // manager 가 dispatcher.dispatch 호출 직후 (child outcome 받은 시점) 에 호출.
+  // FAILED row 에도 안전 — id 만 매칭되면 update.
+  async setParentId({
+    id,
+    parentId,
+  }: {
+    id: number;
+    parentId: number;
+  }): Promise<void> {
+    await this.repository.updateParentId({ id, parentId });
+  }
+
   // 가장 최근 SUCCEEDED AgentRun 1건 조회. slackUserId 옵셔널 — 명시 시 inputSnapshot.slackUserId 매칭.
   async findLatestSucceededRun({
     agentType,

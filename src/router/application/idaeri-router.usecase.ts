@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
@@ -38,6 +39,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     @Inject(AGENT_DISPATCHER_PORT)
     private readonly dispatchers: AgentDispatcher[],
     private readonly intentClassifier: IntentClassifierUsecase,
+    private readonly agentRunService: AgentRunService,
   ) {
     this.dispatcherByType = new Map(
       this.dispatchers.map((dispatcher) => [dispatcher.agentType, dispatcher]),
@@ -77,6 +79,23 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     this.logger.log(
       `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
     );
+
+    // step 8 — handoff chain audit log. parent.id 가 input.contextRefs 에 실려오면 child run 의
+    // parentId 컬럼에 기록. 실패는 audit 누락에 그치므로 chain 진행 자체를 멈추지 않는다.
+    const parentAgentRunId = input.contextRefs?.agentRunId;
+    if (parentAgentRunId !== undefined) {
+      try {
+        await this.agentRunService.setParentId({
+          id: outcome.agentRunId,
+          parentId: parentAgentRunId,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Router parentId 기록 실패 — childRunId=${outcome.agentRunId} parentRunId=${parentAgentRunId}: ${message}`,
+        );
+      }
+    }
 
     const currentResult: DispatchResult = {
       agentRunId: outcome.agentRunId,
