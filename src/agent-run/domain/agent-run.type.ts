@@ -26,6 +26,8 @@ export enum TriggerType {
   SLACK_COMMAND_BE_FIX = 'SLACK_COMMAND_BE_FIX',
   // V3 비전 P2 Assign — CTO worker (/assign 슬래시). PM 직전 plan 의 assignableTaskIds → BE 5종 분배.
   SLACK_COMMAND_ASSIGN = 'SLACK_COMMAND_ASSIGN',
+  // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.
+  SLACK_COMMAND_PO_EVAL = 'SLACK_COMMAND_PO_EVAL',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

@@ -12,6 +12,7 @@ import { CtoModule } from './agent/cto/cto.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
+import { PoEvalModule } from './agent/po-eval/po-eval.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -75,6 +76,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     BeFixModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO). PM 직전 plan 의 assignableTaskIds → BE 3종 분배.
     CtoModule,
+    // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade). 3 sub-agent snapshot 합성 + careerLog.
+    PoEvalModule,
     // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort) 의 scaffold.
     // 현 단계 dispatch() 는 의도적으로 UNSUPPORTED throw — worker dispatcher registry 도입 plan 진입 전.
     RouterModule,

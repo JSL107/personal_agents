@@ -6,12 +6,15 @@ import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
+import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
+import { EvaluationRange } from '../../agent/po-eval/domain/po-eval.type';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
+import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
 import { runAgentCommand } from './slack-handler.helper';
@@ -32,6 +35,7 @@ export const registerAgentCommandHandlers = (
     generateImpactReportUsecase: GenerateImpactReportUsecase;
     generatePoShadowUsecase: GeneratePoShadowUsecase;
     generateAssignmentUsecase: GenerateAssignmentUsecase;
+    generatePoEvaluationUsecase: GeneratePoEvaluationUsecase;
     logger: Logger;
   },
 ): void => {
@@ -176,6 +180,28 @@ export const registerAgentCommandHandlers = (
           slackUserId: command.user_id,
         }),
       format: formatAssignmentOutput,
+    });
+  });
+
+  app.command('/po-eval', async ({ ack, command, respond }) => {
+    // 인자: 'today' | 'week' (default: week). 다른 값이면 week 로 fallback.
+    const arg = command.text?.trim().toLowerCase() ?? '';
+    const range: EvaluationRange = arg === 'today' ? 'TODAY' : 'WEEK';
+    await ack({
+      response_type: 'ephemeral',
+      text: `이대리(PO 통합) 가 ${range === 'WEEK' ? '최근 7일' : '최근 24시간'} sub-agent 결과를 합성 중입니다 (15~30초 소요)...`,
+    });
+
+    await runAgentCommand({
+      respond,
+      logger: deps.logger,
+      commandLabel: '/po-eval',
+      execute: () =>
+        deps.generatePoEvaluationUsecase.execute({
+          slackUserId: command.user_id,
+          range,
+        }),
+      format: formatEvaluationOutput,
     });
   });
 

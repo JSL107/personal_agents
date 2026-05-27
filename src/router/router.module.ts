@@ -18,6 +18,8 @@ import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.m
 import { ImpactReporterDispatcher } from '../agent/impact-reporter/infrastructure/impact-reporter.dispatcher';
 import { PmDispatcher } from '../agent/pm/infrastructure/pm.dispatcher';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
+import { PoEvalDispatcher } from '../agent/po-eval/infrastructure/po-eval.dispatcher';
+import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowDispatcher } from '../agent/po-shadow/infrastructure/po-shadow.dispatcher';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
@@ -57,6 +59,7 @@ import {
     BeSreModule,
     BeFixModule,
     CtoModule,
+    PoEvalModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -76,6 +79,7 @@ import {
         BeSreDispatcher,
         BeFixDispatcher,
         CtoDispatcher,
+        PoEvalDispatcher,
       ],
     },
   ],
