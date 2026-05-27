@@ -32,11 +32,17 @@ export const AGENT_DISPATCHER_PORT = Symbol('AGENT_DISPATCHER_PORT');
 // NestJS 10 의 Provider type 정의에는 `multi` 필드가 빠져 있어 (runtime 은 지원) inline 으로
 // `{ ..., multi: true }` 를 쓰면 TS2353. 각 agent module 이 동일 cast 를 반복하지 않도록 helper 로
 // 캡슐화 — agent module 은 `provideAgentDispatcher(PmDispatcher)` 한 줄로 multi-provider 등록.
+//
+// 주의 — useExisting + multi 는 NestJS 10 의 DI 에서 작동하지 않는다 (multi 무시되고 single
+// alias 로만 등록 → 소비자가 array 가 아닌 single instance 를 받음, runtime TypeError).
+// useFactory + inject 패턴은 multi 와 정상 호환 — dispatcher 의 기존 provider instance 를
+// inject 받아 identity 그대로 반환하면 stateless 한 dispatcher 들이 array 에 push 된다.
 export const provideAgentDispatcher = (
   dispatcher: Type<AgentDispatcher>,
 ): Provider =>
   ({
     provide: AGENT_DISPATCHER_PORT,
-    useExisting: dispatcher,
+    useFactory: (instance: AgentDispatcher) => instance,
+    inject: [dispatcher],
     multi: true,
   }) as unknown as Provider;
