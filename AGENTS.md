@@ -59,7 +59,8 @@ src/
 | `agent/pm/` | PM Agent — `/today` 슬래시 커맨드. 사용자 입력 + GitHub assigned + 전일 plan → DailyPlan | `GenerateDailyPlanUsecase` |
 | `agent/work-reviewer/` | Work Reviewer — `/worklog` 슬래시 커맨드. 정량 근거 강제 | `GenerateWorklogUsecase` |
 | `agent/code-reviewer/` | Code Reviewer — `/review-pr` 슬래시 커맨드. PR diff → Claude 리뷰 | `ReviewPullRequestUsecase` |
-| `slack/` | Slack Bolt Socket Mode 어댑터 + 모든 슬래시 커맨드 핸들러 + 응답 포맷터 | `SlackService` |
+| `slack/` | Slack Bolt Socket Mode 어댑터 + 모든 슬래시 커맨드 핸들러 + `app_mention` (자연어) 진입 + 응답 포맷터 | `SlackService` |
+| `router/` | V3 비전 Hierarchical Manager Pattern — 자연어 멘션 → intent classifier → 10 worker dispatcher → handoff chain (audit log via `AgentRun.parentId`) | `IdaeriRouterUsecase.dispatch({...})` (`IDAERI_ROUTER_PORT`) |
 | `crawler/` | Puppeteer + Cheerio + BullMQ 크롤러 (이대리에 위임 가능성으로 보존) | `POST /v1/crawl-jobs` |
 
 ## 4. 새 에이전트 / 명령 추가 시 체크리스트
@@ -77,6 +78,7 @@ src/
 11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
 12. 새 환경변수가 필요하면 `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표 4곳 동기 갱신 (§5 환경변수 규칙)
 13. Slack manifest 에 슬래시 커맨드 등록 (사용자 액션, README 에 가이드 포함)
+14. **자연어 멘션도 호출 가능해야 하면** `src/agent/{name}/infrastructure/{name}.dispatcher.ts` (AgentDispatcher) 작성 + `src/router/router.module.ts` 의 `AGENT_DISPATCHER_PORT` useFactory `inject` 배열 끝에 등록 + `src/router/domain/prompt/intent-classifier-system.prompt.ts` 의 분류 후보 표에 한 줄 추가. (분산 multi-provider 패턴 X — NestJS multi 가 module 경계를 넘지 않음. 자세한 lesson 은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md) §2.1)
 
 ## 5. 인프라 / 보안 규칙 (절대 위반 금지)
 
