@@ -3,10 +3,6 @@ import { Module } from '@nestjs/common';
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { CodeGraphModule } from '../../code-graph/code-graph.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
-import {
-  AGENT_DISPATCHER_PORT,
-  provideAgentDispatcher,
-} from '../../router/domain/port/agent-dispatcher.port';
 import { GenerateSchemaProposalUsecase } from './application/generate-schema-proposal.usecase';
 import { SCHEMA_FILE_READER_PORT } from './domain/port/schema-file.reader.port';
 import { BeSchemaDispatcher } from './infrastructure/be-schema.dispatcher';
@@ -22,8 +18,7 @@ import { PrismaSchemaFileReader } from './infrastructure/prisma-schema-file.read
       useClass: PrismaSchemaFileReader,
     },
     BeSchemaDispatcher,
-    provideAgentDispatcher(BeSchemaDispatcher),
   ],
-  exports: [GenerateSchemaProposalUsecase, AGENT_DISPATCHER_PORT],
+  exports: [GenerateSchemaProposalUsecase, BeSchemaDispatcher],
 })
 export class BeSchemaModule {}
