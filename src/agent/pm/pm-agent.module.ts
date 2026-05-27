@@ -5,7 +5,10 @@ import { DailyPlanModule } from '../../daily-plan/daily-plan.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
-import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
+import {
+  AGENT_DISPATCHER_PORT,
+  provideAgentDispatcher,
+} from '../../router/domain/port/agent-dispatcher.port';
 import { SlackCollectorModule } from '../../slack-collector/slack-collector.module';
 import { SlackInboxModule } from '../../slack-inbox/slack-inbox.module';
 import { DailyPlanContextCollector } from './application/daily-plan-context.collector';
@@ -38,7 +41,7 @@ import { PmDispatcher } from './infrastructure/pm.dispatcher';
     DailyPlanPromptBuilder,
     DailyPlanEvidenceBuilder,
     PmDispatcher,
-    { provide: AGENT_DISPATCHER_PORT, useExisting: PmDispatcher, multi: true },
+    provideAgentDispatcher(PmDispatcher),
   ],
   exports: [
     GenerateDailyPlanUsecase,

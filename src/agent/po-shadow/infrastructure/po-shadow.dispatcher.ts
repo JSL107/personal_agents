@@ -18,10 +18,11 @@ export class PoShadowDispatcher implements AgentDispatcher {
   constructor(private readonly generatePoShadow: GeneratePoShadowUsecase) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
-    const trimmed = input.text?.trim() ?? '';
     const outcome = await this.generatePoShadow.execute({
       slackUserId: input.slackUserId,
-      extraContext: trimmed.length > 0 ? trimmed : undefined,
+      // GeneratePoShadowInput.extraContext 는 required string — 빈 문자열이면 usecase 가
+      // 직전 PM run 기반 default 동작 (외부 컨텍스트 없이) 으로 처리.
+      extraContext: input.text?.trim() ?? '',
     });
     return {
       agentRunId: outcome.agentRunId,

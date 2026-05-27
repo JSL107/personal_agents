@@ -1,3 +1,5 @@
+import { Provider, Type } from '@nestjs/common';
+
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { HandoffSpec } from '../handoff-spec.type';
 import { DispatchInput } from '../idaeri-router.port';
@@ -26,3 +28,15 @@ export interface AgentDispatcher {
 // NestJS multi-provider 토큰 — `{ provide: AGENT_DISPATCHER_PORT, useClass: ..., multi: true }`.
 // manager 가 `@Inject(AGENT_DISPATCHER_PORT) dispatchers: AgentDispatcher[]` 로 array 수신.
 export const AGENT_DISPATCHER_PORT = Symbol('AGENT_DISPATCHER_PORT');
+
+// NestJS 10 의 Provider type 정의에는 `multi` 필드가 빠져 있어 (runtime 은 지원) inline 으로
+// `{ ..., multi: true }` 를 쓰면 TS2353. 각 agent module 이 동일 cast 를 반복하지 않도록 helper 로
+// 캡슐화 — agent module 은 `provideAgentDispatcher(PmDispatcher)` 한 줄로 multi-provider 등록.
+export const provideAgentDispatcher = (
+  dispatcher: Type<AgentDispatcher>,
+): Provider =>
+  ({
+    provide: AGENT_DISPATCHER_PORT,
+    useExisting: dispatcher,
+    multi: true,
+  }) as unknown as Provider;

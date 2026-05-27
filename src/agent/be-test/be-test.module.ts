@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
-import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
+import {
+  AGENT_DISPATCHER_PORT,
+  provideAgentDispatcher,
+} from '../../router/domain/port/agent-dispatcher.port';
 import { SandboxModule } from '../../sandbox/sandbox.module';
 import { GenerateTestUsecase } from './application/generate-test.usecase';
 import { BeTestDispatcher } from './infrastructure/be-test.dispatcher';
@@ -19,11 +22,7 @@ import { TreeSitterTestAnalyzer } from './infrastructure/tree-sitter-test-analyz
     TreeSitterTestAnalyzer,
     JestMockGenerator,
     BeTestDispatcher,
-    {
-      provide: AGENT_DISPATCHER_PORT,
-      useExisting: BeTestDispatcher,
-      multi: true,
-    },
+    provideAgentDispatcher(BeTestDispatcher),
   ],
   exports: [GenerateTestUsecase, AGENT_DISPATCHER_PORT],
 })
