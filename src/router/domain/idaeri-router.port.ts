@@ -1,0 +1,42 @@
+import { AgentType } from '../../model-router/domain/model-router.type';
+import { HandoffSpec } from './handoff-spec.type';
+
+export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
+
+// dispatch 진입점 — 사용자/cron/webhook 의 발화를 manager 에 전달한다.
+// (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.1)
+export interface DispatchInput {
+  source: DispatchSource;
+  slackUserId: string;
+  // 자연어 진입 시 사용자 메시지 원문 — intent classifier 가 agentTypeHint 추론에 사용.
+  text?: string;
+  // 슬래시 명령 / 명시적 호출 시 worker 지정. 없으면 manager 가 intent classifier 호출.
+  agentTypeHint?: AgentType;
+  // handoff chain 안에서 parent.id 전달 — 신규 AgentRun 의 parentId 컬럼에 기록.
+  contextRefs?: { agentRunId?: number };
+}
+
+export type DispatchSource =
+  | 'SLACK_MESSAGE'
+  | 'SLACK_COMMAND'
+  | 'CRON'
+  | 'WEBHOOK';
+
+// manager 가 worker 호출 결과를 사용자에게 돌려줄 때의 표준 응답.
+// followUp 은 worker 가 추가 worker 호출을 요청한 경우 — manager 가 cycle/depth 검증 후 dispatch.
+// formattedText 는 dispatcher 가 채운 Slack mrkdwn 응답 — 자연어 진입 (app_mention) 의 직접 답글 텍스트.
+export interface DispatchResult {
+  agentRunId: number;
+  workerType: AgentType;
+  output: unknown;
+  modelUsed: string;
+  formattedText: string;
+  followUp?: HandoffSpec;
+}
+
+// Hierarchical Manager Pattern 의 manager-agent.
+// scaffold 단계는 worker dispatcher registry 가 비어 있어 모든 dispatch 가 UNSUPPORTED 로 throw.
+// (다음 plan 진입 시 worker dispatcher 등록 + intent classifier 통합.)
+export interface IdaeriRouterPort {
+  dispatch(input: DispatchInput): Promise<DispatchResult>;
+}

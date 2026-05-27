@@ -4,10 +4,11 @@ import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { AnalyzePrConventionUsecase } from './application/analyze-pr-convention.usecase';
+import { BeFixDispatcher } from './infrastructure/be-fix.dispatcher';
 
 @Module({
   imports: [AgentRunModule, ModelRouterModule, GithubModule],
-  providers: [AnalyzePrConventionUsecase],
-  exports: [AnalyzePrConventionUsecase],
+  providers: [AnalyzePrConventionUsecase, BeFixDispatcher],
+  exports: [AnalyzePrConventionUsecase, BeFixDispatcher],
 })
 export class BeFixModule {}

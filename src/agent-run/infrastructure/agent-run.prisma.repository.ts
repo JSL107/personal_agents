@@ -59,6 +59,19 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
+  async updateParentId({
+    id,
+    parentId,
+  }: {
+    id: number;
+    parentId: number;
+  }): Promise<void> {
+    await this.prisma.agentRun.update({
+      where: { id },
+      data: { parentId },
+    });
+  }
+
   async recordEvidence({
     agentRunId,
     sourceType,

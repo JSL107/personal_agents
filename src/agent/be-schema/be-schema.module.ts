@@ -5,6 +5,7 @@ import { CodeGraphModule } from '../../code-graph/code-graph.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { GenerateSchemaProposalUsecase } from './application/generate-schema-proposal.usecase';
 import { SCHEMA_FILE_READER_PORT } from './domain/port/schema-file.reader.port';
+import { BeSchemaDispatcher } from './infrastructure/be-schema.dispatcher';
 import { PrismaSchemaFileReader } from './infrastructure/prisma-schema-file.reader';
 
 @Module({
@@ -16,7 +17,8 @@ import { PrismaSchemaFileReader } from './infrastructure/prisma-schema-file.read
       provide: SCHEMA_FILE_READER_PORT,
       useClass: PrismaSchemaFileReader,
     },
+    BeSchemaDispatcher,
   ],
-  exports: [GenerateSchemaProposalUsecase],
+  exports: [GenerateSchemaProposalUsecase, BeSchemaDispatcher],
 })
 export class BeSchemaModule {}
