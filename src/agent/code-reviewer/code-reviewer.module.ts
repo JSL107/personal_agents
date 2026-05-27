@@ -4,7 +4,10 @@ import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { PrismaModule } from '../../prisma/prisma.module';
-import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
+import {
+  AGENT_DISPATCHER_PORT,
+  provideAgentDispatcher,
+} from '../../router/domain/port/agent-dispatcher.port';
 import { ReviewPullRequestUsecase } from './application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from './application/save-review-outcome.usecase';
 import { PR_REVIEW_OUTCOME_REPOSITORY_PORT } from './domain/port/pr-review-outcome.repository.port';
@@ -21,11 +24,7 @@ import { PrReviewOutcomePrismaRepository } from './infrastructure/pr-review-outc
       useClass: PrReviewOutcomePrismaRepository,
     },
     CodeReviewerDispatcher,
-    {
-      provide: AGENT_DISPATCHER_PORT,
-      useExisting: CodeReviewerDispatcher,
-      multi: true,
-    },
+    provideAgentDispatcher(CodeReviewerDispatcher),
   ],
   exports: [
     ReviewPullRequestUsecase,
