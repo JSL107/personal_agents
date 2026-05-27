@@ -11,6 +11,8 @@
 - Node 20+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ.
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
 - LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). API key 사용 X — 자식 프로세스 spawn 만. `gemini` CLI 는 primary 실패 시 자동 fallback (AGENTS.md §6).
+- **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류) → 10 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
+- **NestJS multi-provider 는 single module scope** — 분산 등록 X. dispatcher 류는 PreviewGate.forRoot 패턴처럼 한 모듈 (RouterModule) 의 useFactory + inject 로 중앙 등록.
 
 ---
 
@@ -19,13 +21,17 @@
 | 의도 | 파일 |
 |---|---|
 | 슬래시 커맨드 핸들러 (모든 라우팅 진입점) | `src/slack/handler/agent-command.handler.ts` |
+| 자연어 멘션 진입점 (`app_mention` event) | `src/slack/handler/router-message.handler.ts` |
+| Router 본체 (manager + handoff chain) | `src/router/application/idaeri-router.usecase.ts` |
+| Router dispatcher 중앙 등록 (useFactory + inject 10) | `src/router/router.module.ts` |
+| AgentDispatcher 인터페이스 + AGENT_DISPATCHER_PORT | `src/router/domain/port/agent-dispatcher.port.ts` |
 | 에이전트 → 모델 라우팅 | `src/model-router/application/model-router.usecase.ts` (`AGENT_TO_PROVIDER`) |
 | CLI 격리 유틸 (보안 핵심) | `src/model-router/infrastructure/cli-process.util.ts` (`buildSafeChildEnv`) |
 | 모듈 등록 한곳 | `src/app.module.ts` |
 | env 검증 (class-validator) | `src/config/app.config.ts` |
 | Prisma 스키마 (DB 단일 소스) | `prisma/schema.prisma` |
 | 인프라 컨테이너 정의 | `docker-compose.yml` |
-| AgentRun 라이프사이클 | `src/agent-run/application/agent-run.service.ts` |
+| AgentRun 라이프사이클 + setParentId (chain audit) | `src/agent-run/application/agent-run.service.ts` |
 | Preview Gate (외부 부작용 ✅ 게이트) | `src/preview-gate/` |
 
 **모듈 전체 보기**: `Glob src/**/*.module.ts`.
