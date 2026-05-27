@@ -25,6 +25,9 @@ export type DispatchSource =
 // manager 가 worker 호출 결과를 사용자에게 돌려줄 때의 표준 응답.
 // followUp 은 worker 가 추가 worker 호출을 요청한 경우 — manager 가 cycle/depth 검증 후 dispatch.
 // formattedText 는 dispatcher 가 채운 Slack mrkdwn 응답 — 자연어 진입 (app_mention) 의 직접 답글 텍스트.
+// handoffResults — chain 안에서 본 worker 가 호출한 후속 worker 들의 DispatchResult 누적.
+// root (top-level) DispatchResult 는 chain 의 모든 child 를 평탄화해 갖는다. 사용자에게 chain 전체
+// 가시화 + 결과 footer 에 worker 시퀀스 요약 표시 가능.
 export interface DispatchResult {
   agentRunId: number;
   workerType: AgentType;
@@ -32,6 +35,7 @@ export interface DispatchResult {
   modelUsed: string;
   formattedText: string;
   followUp?: HandoffSpec;
+  handoffResults?: DispatchResult[];
 }
 
 // Hierarchical Manager Pattern 의 manager-agent.

@@ -22,6 +22,7 @@ export interface AgentRetryInputSnapshot {
   filePath?: string; // BE_TEST
   stackTrace?: string; // BE_SRE
   extraContextLength?: number; // PO_SHADOW
+  dailyPlanAgentRunId?: number; // CTO — 분배 대상 PM run id
 }
 
 export interface RetryRunPayload {

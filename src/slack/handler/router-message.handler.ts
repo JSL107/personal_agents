@@ -1,18 +1,18 @@
 import { Logger } from '@nestjs/common';
-import { App } from '@slack/bolt';
+import { App, SayFn } from '@slack/bolt';
 
-import { IdaeriRouterPort } from '../../router/domain/idaeri-router.port';
+import {
+  DispatchResult,
+  IdaeriRouterPort,
+} from '../../router/domain/idaeri-router.port';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
-// V3 비전 봇 쪼개기 step 5 — 자연어 진입 surface.
-// Slack 에서 bot 이 멘션된 (`<@BOT_ID> ...`) 메시지를 받아 IdaeriRouterPort.dispatch 로 위임.
-// 슬래시 명령은 기존 핸들러가 그대로 처리 — 본 핸들러는 자연어 진입점만 담당.
-//
-// 한계 (본 step):
-// - DM 진입 X — 본 step 은 app_mention 만. DM 도 받으려면 별도 분기 필요.
-// - 결과 출력은 minimal (workerType + agentRunId) — 각 worker 의 user-facing formatter 통합은
-//   별도 step (followUp / 결과 풍부 표시).
-// - handoff chain 처리 X — followUp 응답은 무시. step 6 plan 에서 manager 가 cycle/depth 검증 후 재 dispatch.
+// V3 비전 봇 쪼개기 — 자연어 진입 surface.
+// 두 종류 trigger:
+//   1. app_mention: 채널/그룹/MPIM 에서 bot 멘션 (`<@BOT_ID> ...`). prefix 제거 후 router.
+//   2. message (channel_type='im'): DM 1:1 메시지. 멘션 prefix 없이 전체 text 가 router 입력.
+// 둘 다 동일 IdaeriRouterPort.dispatch 호출 + handoff chain 의 전체 worker formatter 를
+// `---` 로 결합한 답글 노출.
 export const registerRouterMessageHandler = (
   app: App,
   deps: {
@@ -23,7 +23,6 @@ export const registerRouterMessageHandler = (
   app.event('app_mention', async ({ event, say }) => {
     const rawText =
       'text' in event && typeof event.text === 'string' ? event.text : '';
-    const cleanText = stripMentionPrefix(rawText);
     const slackUserId =
       'user' in event && typeof event.user === 'string'
         ? event.user
@@ -33,39 +32,125 @@ export const registerRouterMessageHandler = (
         ? event.thread_ts
         : event.ts;
 
-    if (cleanText.length === 0) {
-      await say({
-        thread_ts: threadTs,
-        text: '메시지가 비어 있습니다. 어떤 작업이 필요한지 자연어로 적어주세요.',
-      });
+    await processRouterMessage({
+      text: stripMentionPrefix(rawText),
+      slackUserId,
+      threadTs,
+      say,
+      deps,
+      source: 'app_mention',
+    });
+  });
+
+  // DM (channel_type='im') 진입. subtype 없는 user message 만 — bot 자신의 메시지 / edit /
+  // delete event 등은 필터 (무한 루프 방지). 멘션 prefix 처리 X (DM 은 1:1 이라 멘션 없음).
+  app.event('message', async ({ event, say }) => {
+    if (!('channel_type' in event) || event.channel_type !== 'im') {
+      return;
+    }
+    if ('subtype' in event && event.subtype !== undefined) {
+      return;
+    }
+    if ('bot_id' in event && event.bot_id) {
       return;
     }
 
-    try {
-      const result = await deps.idaeriRouter.dispatch({
-        source: 'SLACK_MESSAGE',
-        slackUserId,
-        text: cleanText,
-      });
-      // dispatcher 가 채운 Slack mrkdwn formatter 결과 + 푸터로 agentRunId/worker 메타 명시.
-      const footer = `_이대리 (${result.workerType}) · agentRunId=${result.agentRunId}_`;
-      await say({
-        thread_ts: threadTs,
-        text: `${result.formattedText}\n\n${footer}`,
-      });
-    } catch (error: unknown) {
-      deps.logger.warn(
-        `Router dispatch 실패 — user=${slackUserId} text="${cleanText.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
-      );
-      await say({
-        thread_ts: threadTs,
-        text: `이대리 처리 실패: ${toUserFacingErrorMessage(error)}`,
-      });
-    }
+    const rawText =
+      'text' in event && typeof event.text === 'string' ? event.text : '';
+    const slackUserId =
+      'user' in event && typeof event.user === 'string'
+        ? event.user
+        : 'unknown';
+    const threadTs =
+      'thread_ts' in event && typeof event.thread_ts === 'string'
+        ? event.thread_ts
+        : 'ts' in event && typeof event.ts === 'string'
+          ? event.ts
+          : undefined;
+
+    await processRouterMessage({
+      text: rawText.trim(),
+      slackUserId,
+      threadTs,
+      say,
+      deps,
+      source: 'dm',
+    });
   });
+};
+
+const processRouterMessage = async ({
+  text,
+  slackUserId,
+  threadTs,
+  say,
+  deps,
+  source,
+}: {
+  text: string;
+  slackUserId: string;
+  threadTs: string | undefined;
+  say: SayFn;
+  deps: { idaeriRouter: IdaeriRouterPort; logger: Logger };
+  source: 'app_mention' | 'dm';
+}): Promise<void> => {
+  if (text.length === 0) {
+    await say({
+      thread_ts: threadTs,
+      text: '메시지가 비어 있습니다. 어떤 작업이 필요한지 자연어로 적어주세요.',
+    });
+    return;
+  }
+
+  try {
+    const result = await deps.idaeriRouter.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId,
+      text,
+    });
+    await say({
+      thread_ts: threadTs,
+      text: buildRouterReply(result),
+    });
+  } catch (error: unknown) {
+    deps.logger.warn(
+      `Router dispatch 실패 (${source}) — user=${slackUserId} text="${text.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
+    );
+    await say({
+      thread_ts: threadTs,
+      text: `이대리 처리 실패: ${toUserFacingErrorMessage(error)}`,
+    });
+  }
 };
 
 // Slack 멘션 prefix `<@U....>` 를 모두 제거 + 앞뒤 공백 trim.
 // (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
 const stripMentionPrefix = (text: string): string =>
   text.replace(/<@[A-Z0-9]+>\s*/g, '').trim();
+
+// Router 결과 → Slack 답글 텍스트.
+// - chain 없으면: root.formattedText + footer (worker · agentRunId).
+// - chain 있으면: root.formattedText + child.formattedText 들을 '---' 구분으로 결합 +
+//   footer 에 worker 시퀀스 (PM → BE → BE_TEST 형태) + 모든 agentRunId.
+const buildRouterReply = (result: DispatchResult): string => {
+  const handoffs = result.handoffResults ?? [];
+  if (handoffs.length === 0) {
+    return `${result.formattedText}\n\n_이대리 (${result.workerType}) · agentRunId=${result.agentRunId}_`;
+  }
+  const bodies = [
+    result.formattedText,
+    ...handoffs.map((h) => h.formattedText),
+  ];
+  const workerSequence = [
+    result.workerType,
+    ...handoffs.map((h) => h.workerType),
+  ].join(' → ');
+  const agentRunIds = [
+    result.agentRunId,
+    ...handoffs.map((h) => h.agentRunId),
+  ].join(', ');
+  return [
+    bodies.join('\n\n---\n\n'),
+    `_이대리 chain — ${workerSequence} · agentRunIds=[${agentRunIds}]_`,
+  ].join('\n\n');
+};
