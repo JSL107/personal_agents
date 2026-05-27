@@ -15,6 +15,9 @@ export enum AgentType {
   BE_TEST = 'BE_TEST',
   BE_SRE = 'BE_SRE',
   BE_FIX = 'BE_FIX',
+  // V3 비전 workflow phase plan §4.2 P2 Assign — PM 의 assignableTaskIds 를
+  // BE worker (BE / BE_SCHEMA / BE_TEST) 로 분배 + priority/reasoning + unassigned 표시.
+  CTO = 'CTO',
 }
 
 export interface CompletionRequest {
