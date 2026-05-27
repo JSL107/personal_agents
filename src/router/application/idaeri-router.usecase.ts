@@ -151,7 +151,17 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       text: extractPassthroughText(outcome.followUp.passthroughInput),
       contextRefs: { agentRunId: outcome.agentRunId },
     };
-    return this.dispatchInternal(followUpInput, nextChain);
+    const nestedResult = await this.dispatchInternal(followUpInput, nextChain);
+
+    // chain 전체를 root 의 handoffResults 에 평탄화 — nested 의 handoffResults 는 그대로 합쳐
+    // root 가 chain 시퀀스 전체를 알게 된다 (Slack handler 가 footer / 결합 본문 작성에 활용).
+    return {
+      ...currentResult,
+      handoffResults: [
+        toLeafResult(nestedResult),
+        ...(nestedResult.handoffResults ?? []),
+      ],
+    };
   }
 
   // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
@@ -192,4 +202,12 @@ const extractPassthroughText = (
 ): string => {
   const text = passthroughInput.text;
   return typeof text === 'string' ? text : '';
+};
+
+// chain 평탄화 helper — nested 의 handoffResults 는 root 가 따로 누적하므로 leaf 만 노출.
+// 중첩 chain 시 root 의 handoffResults 가 모든 worker 를 평탄 시퀀스로 가지게 한다.
+const toLeafResult = (result: DispatchResult): DispatchResult => {
+  const { handoffResults: _omit, ...leaf } = result;
+  void _omit;
+  return leaf;
 };

@@ -215,10 +215,18 @@ describe('IdaeriRouterUsecase', () => {
         text: 'plan today',
       });
 
-      // 최종 반환은 chain 의 마지막 worker (BE) 결과.
-      expect(result.agentRunId).toBe(2);
-      expect(result.workerType).toBe(AgentType.BE);
-      expect(result.output).toEqual({ plan: 'BE result' });
+      // step 6 + #5 갱신 — root return 은 chain 의 first worker (PM) 결과, handoffResults 에 BE 누적.
+      expect(result.agentRunId).toBe(1);
+      expect(result.workerType).toBe(AgentType.PM);
+      expect(result.output).toEqual({ plan: 'PM result' });
+      expect(result.handoffResults).toHaveLength(1);
+      expect(result.handoffResults?.[0]).toMatchObject({
+        agentRunId: 2,
+        workerType: AgentType.BE,
+        output: { plan: 'BE result' },
+      });
+      // nested 의 handoffResults 는 root 가 평탄화 → leaf 는 자기 자신 외 child 정보 없음.
+      expect(result.handoffResults?.[0].handoffResults).toBeUndefined();
 
       // BE dispatcher 가 passthroughInput.text 와 parent contextRefs 로 호출됐는지.
       expect(beDispatcher.dispatch).toHaveBeenCalledWith(
