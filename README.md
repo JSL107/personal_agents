@@ -166,9 +166,12 @@ pnpm format:check          # Prettier 검사
    - `/retry-run` — FAILED AgentRun 재실행 (Usage hint: `<AgentRun ID>`)
    - `/review-feedback` — PR 리뷰 accept/reject 피드백 저장 (Usage hint: `<AgentRun ID> accept|reject [이유]`)
    > 또는 좌측 **`App Manifest`** 에서 `slash_commands` 배열에 위 커맨드들을 선언하고 **Save Changes** → **Reinstall your app** 으로 반영.
-6. **Event Subscriptions** → Enable → Subscribe to Bot Events 에 **`app_mention`** 추가 + **OAuth & Permissions** 의 Bot Token Scopes 에 **`app_mentions:read`** 추가 → Reinstall — 자연어 진입 (`@이대리 ...` → Router) 에 필수.
+6. **Event Subscriptions** → Enable → Subscribe to Bot Events 에 **`app_mention`** + **`message.im`** 추가 + **OAuth & Permissions** 의 Bot Token Scopes 에 **`app_mentions:read`** + **`im:history`** 추가 → Reinstall.
+   - `app_mention` + `app_mentions:read` → 채널에서 `@이대리 ...` 자연어 진입.
+   - `message.im` + `im:history` → 봇과의 DM 1:1 자연어 진입.
+   - 둘 다 Router (IdaeriRouterUsecase) 로 위임됨. DM 만 필요하면 `message.im` 만, 채널 멘션만 필요하면 `app_mention` 만 활성화해도 됨.
 7. `.env` 에 세 값 채운 뒤 `pnpm dev` 재기동 → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
-8. Slack 채널에서 `/today` 또는 `/be` 입력해 봇 응답 확인. 추가로 봇을 채널에 초대 후 `@이대리 오늘 plan 짜줘` 형태로 자연어 멘션도 작동하는지 검증
+8. Slack 채널에서 `/today` 또는 `/be` 입력해 봇 응답 확인. 추가로 봇을 채널에 초대 후 `@이대리 오늘 plan 짜줘` 형태로 자연어 멘션 + 봇 DM 으로 `오늘 plan 짜줘` 직접 보내 자연어 진입 둘 다 작동하는지 검증
 
 ## 참고 문서
 
