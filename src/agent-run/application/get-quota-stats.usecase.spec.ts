@@ -9,6 +9,7 @@ const buildRepo = (
 ): jest.Mocked<AgentRunRepositoryPort> => ({
   begin: jest.fn(),
   finish: jest.fn(),
+  updateParentId: jest.fn(),
   recordEvidence: jest.fn(),
   findLatestSucceededRun: jest.fn(),
   findRecentSucceededRuns: jest.fn(),

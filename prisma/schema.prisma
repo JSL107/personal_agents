@@ -25,11 +25,21 @@ model AgentRun {
   startedAt     DateTime  @default(now()) @map("started_at")
   endedAt       DateTime? @map("ended_at")
 
+  // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern 의 handoff chain 추적용 self-relation.
+  // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4 / §6.3)
+  // Router 가 dispatch chain 안에서 worker → worker handoff 를 만들 때 parent.id 를 child 에 기록.
+  // onDelete: SetNull — 부모가 삭제돼도 child 의 audit log 가치는 유지.
+  // @@index([parentId]) 필수 — CEO 의 weekly handoff chain 조회 시 full scan 회피 (OMC architect 권장).
+  parentId Int?       @map("parent_id")
+  parent   AgentRun?  @relation("AgentRunHandoff", fields: [parentId], references: [id], onDelete: SetNull)
+  children AgentRun[] @relation("AgentRunHandoff")
+
   evidenceRecords  EvidenceRecord[]
   dailyPlan        DailyPlan?
   prReviewOutcomes PrReviewOutcome[]
 
   @@index([agentType, startedAt])
+  @@index([parentId])
   @@map("agent_run")
 }
 

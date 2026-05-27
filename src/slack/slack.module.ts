@@ -11,6 +11,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SlackService } from './slack.service';
 
@@ -32,6 +33,8 @@ import { SlackService } from './slack.service';
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
+    // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
+    RouterModule,
   ],
   providers: [SlackService],
   exports: [SlackService],

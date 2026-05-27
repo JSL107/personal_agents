@@ -7,6 +7,7 @@ describe('AgentRunService', () => {
   const createRepoMock = (): jest.Mocked<AgentRunRepositoryPort> => ({
     begin: jest.fn(),
     finish: jest.fn(),
+    updateParentId: jest.fn(),
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
     findRecentSucceededRuns: jest.fn(),

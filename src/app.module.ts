@@ -23,6 +23,7 @@ import { MorningBriefingModule } from './morning-briefing/morning-briefing.modul
 import { NotionModule } from './notion/notion.module';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RouterModule } from './router/router.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
@@ -71,6 +72,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     BeSreModule,
     // V3 §9 BE-4 Auto-Remediation — /be-fix 슬래시. PR diff fetch + LLM 컨벤션 위반 식별.
     BeFixModule,
+    // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort) 의 scaffold.
+    // 현 단계 dispatch() 는 의도적으로 UNSUPPORTED throw — worker dispatcher registry 도입 plan 진입 전.
+    RouterModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({

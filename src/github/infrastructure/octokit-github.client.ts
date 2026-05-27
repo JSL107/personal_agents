@@ -331,10 +331,7 @@ export const computeIsApprovedFromReviews = (
     return false;
   }
   for (const review of latestByReviewer.values()) {
-    if (
-      review.state === 'CHANGES_REQUESTED' ||
-      review.state === 'DISMISSED'
-    ) {
+    if (review.state === 'CHANGES_REQUESTED' || review.state === 'DISMISSED') {
       return false;
     }
   }
