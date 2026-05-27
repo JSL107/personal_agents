@@ -7,6 +7,7 @@ describe('RetryRunUsecase', () => {
     findById: jest.fn(),
     begin: jest.fn(),
     finish: jest.fn(),
+    updateParentId: jest.fn(),
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
     findRecentSucceededRuns: jest.fn(),

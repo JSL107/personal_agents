@@ -10,6 +10,7 @@ import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.m
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { IdaeriRouterUsecase } from './application/idaeri-router.usecase';
 import { IntentClassifierUsecase } from './application/intent-classifier.usecase';
@@ -28,6 +29,8 @@ import { IDAERI_ROUTER_PORT } from './domain/idaeri-router.port';
 @Module({
   imports: [
     ModelRouterModule,
+    // step 8 — handoff chain 안 child run 에 parent.id 기록 (AgentRunService.setParentId).
+    AgentRunModule,
     PmAgentModule,
     WorkReviewerModule,
     CodeReviewerModule,

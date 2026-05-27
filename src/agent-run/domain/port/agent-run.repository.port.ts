@@ -70,6 +70,10 @@ export interface PmContextStats {
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
+  // Router 의 handoff chain 안 child run 에 parent.id 기록 — chain audit log.
+  // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4)
+  // 호출 시점은 child run 의 begin 이후 (finish 와 무관 — 별도 update).
+  updateParentId(input: { id: number; parentId: number }): Promise<void>;
   recordEvidence(input: { agentRunId: number } & EvidenceInput): Promise<void>;
   // slackUserId 명시 시 inputSnapshot.slackUserId 와 매칭되는 run 만 검색.
   // /po-shadow 같은 사용자 한정 명령이 다른 사용자 run 을 잡지 않도록 (codex review b6xkjewd2 P2).
