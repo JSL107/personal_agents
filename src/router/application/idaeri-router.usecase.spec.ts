@@ -65,6 +65,28 @@ const buildUsecase = (
 };
 
 describe('IdaeriRouterUsecase', () => {
+  it('dispatchers 가 array 가 아니면 constructor 가 DISPATCHER_REGISTRY_INVALID throw — NestJS multi-provider 회귀 안전망', () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const notArray = {
+      agentType: AgentType.PM,
+    } as unknown as AgentDispatcher[];
+    const classifier = buildClassifierMock({
+      agentType: 'UNKNOWN',
+      confidence: 0,
+      reason: 'noop',
+    });
+    const agentRunService = buildAgentRunServiceMock();
+
+    expect(
+      () => new IdaeriRouterUsecase(notArray, classifier, agentRunService),
+    ).toThrow(
+      expect.objectContaining({
+        routerErrorCode: RouterErrorCode.DISPATCHER_REGISTRY_INVALID,
+      }),
+    );
+  });
+
   it('agentTypeHint 도 text 도 없으면 INTENT_HINT_REQUIRED throw', async () => {
     const { usecase, classifier } = buildUsecase();
 

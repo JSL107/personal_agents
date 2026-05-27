@@ -41,6 +41,16 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     private readonly intentClassifier: IntentClassifierUsecase,
     private readonly agentRunService: AgentRunService,
   ) {
+    // 회귀 방지 안전망 (commit cbef813 의 root cause 재발 차단) — NestJS 의 multi-provider 가
+    // module 경계를 넘어 합쳐지지 않아 dispatchers 가 single 객체로 inject 된 경우 즉시 명시 에러.
+    // 정상 동작은 RouterModule 의 중앙 useFactory + inject 패턴에서 array 가 보장된다.
+    if (!Array.isArray(this.dispatchers)) {
+      throw new RouterException({
+        code: RouterErrorCode.DISPATCHER_REGISTRY_INVALID,
+        message: `AGENT_DISPATCHER_PORT 가 array 가 아닙니다 (typeof=${typeof this.dispatchers}). RouterModule 의 useFactory + inject 등록을 확인하세요.`,
+        status: DomainStatus.INTERNAL,
+      });
+    }
     this.dispatcherByType = new Map(
       this.dispatchers.map((dispatcher) => [dispatcher.agentType, dispatcher]),
     );

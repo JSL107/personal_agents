@@ -10,4 +10,7 @@ export enum RouterErrorCode {
   DEPTH_EXCEEDED = 'DEPTH_EXCEEDED',
   // intent classifier LLM call 실패 또는 결과 parse 실패.
   INTENT_CLASSIFY_FAILED = 'INTENT_CLASSIFY_FAILED',
+  // AGENT_DISPATCHER_PORT 가 array 가 아닌 형태로 inject 됨 — multi-provider 설정 누락 추정.
+  // 본 turn 의 DI 회귀 (cbef813) 를 spec/runtime 단계에서 즉시 잡기 위한 안전망.
+  DISPATCHER_REGISTRY_INVALID = 'DISPATCHER_REGISTRY_INVALID',
 }
