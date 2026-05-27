@@ -10,6 +10,8 @@ import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
+import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
+import { EvaluationRange } from '../../agent/po-eval/domain/po-eval.type';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -23,6 +25,7 @@ import { formatGeneratedTest } from '../format/be-test.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
+import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
 import { runAgentCommand } from './slack-handler.helper';
@@ -43,6 +46,7 @@ export interface RetryRunHandlerDeps {
   analyzeStackTraceUsecase: AnalyzeStackTraceUsecase;
   analyzePrConventionUsecase: AnalyzePrConventionUsecase;
   generateAssignmentUsecase: GenerateAssignmentUsecase;
+  generatePoEvaluationUsecase: GeneratePoEvaluationUsecase;
   logger: Logger;
 }
 
@@ -265,6 +269,22 @@ export const registerRetryRunHandler = (
           format: formatAssignmentOutput,
         });
         break;
+      case 'PO_EVAL': {
+        const range: EvaluationRange =
+          snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (PO_EVAL)`,
+          execute: () =>
+            deps.generatePoEvaluationUsecase.execute({
+              slackUserId,
+              range,
+            }),
+          format: formatEvaluationOutput,
+        });
+        break;
+      }
       default:
         await respond({
           response_type: 'ephemeral',

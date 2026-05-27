@@ -18,6 +18,9 @@ export enum AgentType {
   // V3 비전 workflow phase plan §4.2 P2 Assign — PM 의 assignableTaskIds 를
   // BE worker (BE / BE_SCHEMA / BE_TEST) 로 분배 + priority/reasoning + unassigned 표시.
   CTO = 'CTO',
+  // V3 비전 workflow phase plan §4.4 P4 Evaluate — Work Reviewer / PO Shadow /
+  // Impact Reporter 3 sub-agent 직전 snapshot 을 합성 → 정성/정량 + 이력서용 careerLog.
+  PO_EVAL = 'PO_EVAL',
 }
 
 export interface CompletionRequest {

@@ -9,6 +9,7 @@ import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module'
 import { CtoModule } from '../agent/cto/cto.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
+import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -31,6 +32,8 @@ import { SlackService } from './slack.service';
     BeFixModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO).
     CtoModule,
+    // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade).
+    PoEvalModule,
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.
