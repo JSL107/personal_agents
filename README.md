@@ -21,6 +21,7 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ PO Shadow (`src/agent/po-shadow/`) — `/po-shadow`. 계획의 비즈니스 가치 및 리스크 재검토
 - ✅ Impact Reporter (`src/agent/impact-reporter/`) — `/impact-report`. 작업 성과 보고서 자동화
 - ✅ Preview Gate (`src/preview-gate/`) — 외부 시스템 전송 전 사용자 승인(✅/❌) 공통 처리
+- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) → intent classifier (자연어→AgentType) → 10 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
 - ✅ Morning Briefing (`src/morning-briefing/`) — BullMQ 스케줄러 기반의 매일 아침 자동 브리핑
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
@@ -142,6 +143,9 @@ pnpm format:check          # Prettier 검사
 > 백엔드 사용자-트리거 에이전트 3종은 `/be <subcommand>` 단일 진입점으로 통합돼 있다. 인자 없이 `/be` 만 입력하면 사용법이 노출된다.
 > **BE-SRE (V3 BE-1) / BE-FIX (V3 BE-4)** 는 GitHub webhook (`check_run.completed` failure / `pull_request.opened`) 으로 **자동 트리거**되며, 수동 재실행은 `/retry-run <AgentRun ID>` 를 사용한다.
 
+### 자연어 멘션 진입 (V3 Router)
+
+슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 10 에이전트 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
 
 ### Slack 봇 설정 (최초 1회)
 
@@ -162,8 +166,9 @@ pnpm format:check          # Prettier 검사
    - `/retry-run` — FAILED AgentRun 재실행 (Usage hint: `<AgentRun ID>`)
    - `/review-feedback` — PR 리뷰 accept/reject 피드백 저장 (Usage hint: `<AgentRun ID> accept|reject [이유]`)
    > 또는 좌측 **`App Manifest`** 에서 `slash_commands` 배열에 위 커맨드들을 선언하고 **Save Changes** → **Reinstall your app** 으로 반영.
-6. `.env` 에 세 값 채운 뒤 `pnpm dev` 재기동 → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
-7. Slack 채널에서 `/today` 또는 `/be` 입력해 봇 응답 확인
+6. **Event Subscriptions** → Enable → Subscribe to Bot Events 에 **`app_mention`** 추가 + **OAuth & Permissions** 의 Bot Token Scopes 에 **`app_mentions:read`** 추가 → Reinstall — 자연어 진입 (`@이대리 ...` → Router) 에 필수.
+7. `.env` 에 세 값 채운 뒤 `pnpm dev` 재기동 → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
+8. Slack 채널에서 `/today` 또는 `/be` 입력해 봇 응답 확인. 추가로 봇을 채널에 초대 후 `@이대리 오늘 plan 짜줘` 형태로 자연어 멘션도 작동하는지 검증
 
 ## 참고 문서
 
