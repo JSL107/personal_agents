@@ -26,25 +26,36 @@ interface AppMentionEvent {
   channel?: string;
 }
 
+interface MessageEvent {
+  type?: string;
+  user?: string;
+  text?: string;
+  ts?: string;
+  thread_ts?: string;
+  channel?: string;
+  channel_type?: 'im' | 'channel' | 'group' | 'mpim';
+  subtype?: string;
+  bot_id?: string;
+}
+
 const buildAppMock = (): {
   app: App;
-  getHandler: () => EventHandler;
+  getHandler: (type: 'app_mention' | 'message') => EventHandler;
 } => {
-  let captured: EventHandler | undefined;
+  const captured = new Map<string, EventHandler>();
   const app = {
     event: jest.fn((type: string, handler: EventHandler) => {
-      if (type === 'app_mention') {
-        captured = handler;
-      }
+      captured.set(type, handler);
     }),
   } as unknown as App;
   return {
     app,
-    getHandler: () => {
-      if (!captured) {
-        throw new Error('app_mention handler 미등록');
+    getHandler: (type) => {
+      const handler = captured.get(type);
+      if (!handler) {
+        throw new Error(`${type} handler 미등록`);
       }
-      return captured;
+      return handler;
     },
   };
 };
@@ -54,19 +65,17 @@ const createSilentLogger = (): Logger =>
 
 const invokeHandler = async (
   handler: EventHandler,
-  event: AppMentionEvent,
+  event: AppMentionEvent | MessageEvent,
 ): Promise<{ say: jest.Mock }> => {
   const say = jest.fn();
   await handler({ event: event as Record<string, unknown>, say });
   return { say };
 };
 
-describe('registerRouterMessageHandler', () => {
-  it('app_mention 이벤트에 핸들러를 등록', () => {
+describe('registerRouterMessageHandler — app_mention', () => {
+  it('app_mention + message 이벤트 둘 다 등록', () => {
     const { app } = buildAppMock();
-    const idaeriRouter: IdaeriRouterPort = {
-      dispatch: jest.fn(),
-    };
+    const idaeriRouter: IdaeriRouterPort = { dispatch: jest.fn() };
 
     registerRouterMessageHandler(app, {
       idaeriRouter,
@@ -74,9 +83,10 @@ describe('registerRouterMessageHandler', () => {
     });
 
     expect(app.event).toHaveBeenCalledWith('app_mention', expect.any(Function));
+    expect(app.event).toHaveBeenCalledWith('message', expect.any(Function));
   });
 
-  it('멘션 prefix 제거 후 router.dispatch 호출 + 성공 메시지 thread 응답', async () => {
+  it('멘션 prefix 제거 후 router.dispatch 호출 + formattedText + footer 응답', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatchResult: DispatchResult = {
       agentRunId: 99,
@@ -93,7 +103,7 @@ describe('registerRouterMessageHandler', () => {
       logger: createSilentLogger(),
     });
 
-    const { say } = await invokeHandler(getHandler(), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
       text: '<@UBOT> 오늘 plan 짜줘',
@@ -107,15 +117,54 @@ describe('registerRouterMessageHandler', () => {
       text: '오늘 plan 짜줘',
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalledWith(
-      expect.objectContaining({
-        thread_ts: '1730000000.000001',
-      }),
+      expect.objectContaining({ thread_ts: '1730000000.000001' }),
     );
-    // dispatcher 의 formattedText 가 사용자에게 직접 노출되는지 + footer 에 worker / agentRunId 명시.
     const sayText = say.mock.calls[0][0].text as string;
     expect(sayText).toContain('mock body');
     expect(sayText).toContain('agentRunId=99');
     expect(sayText).toContain(AgentType.PM);
+  });
+
+  it('handoffResults 가 있으면 chain 본문 결합 + worker 시퀀스 footer', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatchResult: DispatchResult = {
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'pm-mock',
+      formattedText: 'PM body',
+      handoffResults: [
+        {
+          agentRunId: 2,
+          workerType: AgentType.BE,
+          output: {},
+          modelUsed: 'be-mock',
+          formattedText: 'BE body',
+        },
+      ],
+    };
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockResolvedValue(dispatchResult),
+    };
+    registerRouterMessageHandler(app, {
+      idaeriRouter,
+      logger: createSilentLogger(),
+    });
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> plan + impl',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    const sayText = say.mock.calls[0][0].text as string;
+    expect(sayText).toContain('PM body');
+    expect(sayText).toContain('BE body');
+    expect(sayText).toContain('---');
+    expect(sayText).toContain(`${AgentType.PM} → ${AgentType.BE}`);
+    expect(sayText).toContain('agentRunIds=[1, 2]');
   });
 
   it('thread_ts 가 있으면 thread 답글 — 새 thread 생성 안 함', async () => {
@@ -126,7 +175,7 @@ describe('registerRouterMessageHandler', () => {
         workerType: AgentType.PM,
         output: {},
         modelUsed: 'mock',
-        formattedText: 'mock daily plan',
+        formattedText: 'mock body',
       }),
     };
     registerRouterMessageHandler(app, {
@@ -134,7 +183,7 @@ describe('registerRouterMessageHandler', () => {
       logger: createSilentLogger(),
     });
 
-    const { say } = await invokeHandler(getHandler(), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
       text: '<@UBOT> 안녕',
@@ -157,7 +206,7 @@ describe('registerRouterMessageHandler', () => {
       logger: createSilentLogger(),
     });
 
-    const { say } = await invokeHandler(getHandler(), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
       text: '<@UBOT>',
@@ -189,7 +238,7 @@ describe('registerRouterMessageHandler', () => {
       logger: createSilentLogger(),
     });
 
-    const { say } = await invokeHandler(getHandler(), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
       text: '<@UBOT> 랜덤',
@@ -214,7 +263,7 @@ describe('registerRouterMessageHandler', () => {
       logger: createSilentLogger(),
     });
 
-    const { say } = await invokeHandler(getHandler(), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
       text: '<@UBOT> 어쩌고',
@@ -227,5 +276,91 @@ describe('registerRouterMessageHandler', () => {
         text: expect.stringContaining('내부 오류'),
       }),
     );
+  });
+});
+
+describe('registerRouterMessageHandler — message (DM)', () => {
+  const buildWithRouter = (dispatch: jest.Mock = jest.fn()) => {
+    const { app, getHandler } = buildAppMock();
+    const idaeriRouter: IdaeriRouterPort = { dispatch };
+    registerRouterMessageHandler(app, {
+      idaeriRouter,
+      logger: createSilentLogger(),
+    });
+    return { handler: getHandler('message'), dispatch };
+  };
+
+  it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 5,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+
+    const { say } = await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '오늘 plan 짜줘',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U_USER',
+      text: '오늘 plan 짜줘',
+    } satisfies DispatchInput);
+    expect(say).toHaveBeenCalled();
+  });
+
+  it('channel_type=channel (DM 아닌 일반 채널) → skip — dispatch 미호출', async () => {
+    const { handler, dispatch } = buildWithRouter();
+
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '안녕',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+      channel_type: 'channel',
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('subtype 있는 message (edit / delete 등) → skip', async () => {
+    const { handler, dispatch } = buildWithRouter();
+
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '수정된 메시지',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+      subtype: 'message_changed',
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('bot_id 있는 메시지 (봇 자신 발화) → skip — 무한 루프 방지', async () => {
+    const { handler, dispatch } = buildWithRouter();
+
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_BOT',
+      text: '봇이 보낸 메시지',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+      bot_id: 'B_BOTID',
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

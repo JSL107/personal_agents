@@ -8,6 +8,7 @@ import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
+import { CtoModule } from './agent/cto/cto.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
@@ -72,6 +73,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     BeSreModule,
     // V3 §9 BE-4 Auto-Remediation — /be-fix 슬래시. PR diff fetch + LLM 컨벤션 위반 식별.
     BeFixModule,
+    // V3 비전 P2 Assign — /assign 슬래시 (CTO). PM 직전 plan 의 assignableTaskIds → BE 3종 분배.
+    CtoModule,
     // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort) 의 scaffold.
     // 현 단계 dispatch() 는 의도적으로 UNSUPPORTED throw — worker dispatcher registry 도입 plan 진입 전.
     RouterModule,
