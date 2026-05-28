@@ -21,6 +21,10 @@ export enum AgentType {
   // V3 비전 workflow phase plan §4.4 P4 Evaluate — Work Reviewer / PO Shadow /
   // Impact Reporter 3 sub-agent 직전 snapshot 을 합성 → 정성/정량 + 이력서용 careerLog.
   PO_EVAL = 'PO_EVAL',
+  // V3 비전 workflow phase plan §4.5 P5 Meta — PO_EVAL (필수) + PM/CTO (선택) 의 직전 snapshot
+  // 을 합성 → contextDriftReport + docsQualityReport + finalSummary. minimal 단계는 LLM 추론만
+  // (컨텍스트 오염 알고리즘은 별도 R&D plan).
+  CEO = 'CEO',
 }
 
 export interface CompletionRequest {

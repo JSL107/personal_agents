@@ -13,6 +13,7 @@ import { AnalyzePrConventionUsecase } from '../agent/be-fix/application/analyze-
 import { GenerateSchemaProposalUsecase } from '../agent/be-schema/application/generate-schema-proposal.usecase';
 import { AnalyzeStackTraceUsecase } from '../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
+import { GenerateCeoMetaUsecase } from '../agent/ceo/application/generate-ceo-meta.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
@@ -77,6 +78,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly idaeriRouter: IdaeriRouterPort,
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
+    private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -243,6 +245,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generatePoShadowUsecase: this.generatePoShadowUsecase,
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
+      generateCeoMetaUsecase: this.generateCeoMetaUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
@@ -269,6 +272,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       analyzePrConventionUsecase: this.analyzePrConventionUsecase,
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
+      generateCeoMetaUsecase: this.generateCeoMetaUsecase,
       logger: this.logger,
     });
     // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.

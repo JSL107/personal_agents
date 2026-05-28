@@ -28,6 +28,8 @@ export enum TriggerType {
   SLACK_COMMAND_ASSIGN = 'SLACK_COMMAND_ASSIGN',
   // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.
   SLACK_COMMAND_PO_EVAL = 'SLACK_COMMAND_PO_EVAL',
+  // V3 비전 P5 Meta — CEO worker (/ceo-review 슬래시). PO_EVAL + PM/CTO snapshot 합성 → drift/docs review.
+  SLACK_COMMAND_CEO_REVIEW = 'SLACK_COMMAND_CEO_REVIEW',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
