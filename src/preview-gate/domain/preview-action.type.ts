@@ -3,6 +3,10 @@
 export const PREVIEW_KIND = {
   // PM-2: PM Agent 가 만든 DailyPlan 의 task subtasks 를 GitHub Issue 코멘트 / Notion page 로 write-back.
   PM_WRITE_BACK: 'PM_WRITE_BACK',
+  // V3 §P4 careerLog: PoEval output 의 careerLog 섹션을 사용자가 지정한 Notion 페이지에
+  // append 한다. payload = { careerLog, period, notionPageId }. applier 는 NotionClient.appendBlocks
+  // 로 1회 append (이미 APPLIED 면 PreviewAction status 가 차단).
+  PO_EVAL_CAREERLOG: 'PO_EVAL_CAREERLOG',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
