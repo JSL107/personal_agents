@@ -1,13 +1,10 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
 
-// 호환성 alias — 향후 deprecate 예정. 신규 코드는 AgentRunRange 직접 사용 권장.
-export type MetaRange = AgentRunRange;
-
 export interface MetaInput {
   slackUserId: string;
   // 미지정 시 WEEK (CEO 의 자연 단위 — 주간 회고 + drift 점검).
-  range?: MetaRange;
+  range?: AgentRunRange;
   // 미지정 시 SLACK_COMMAND_CEO_REVIEW. CRON 자동 트리거 시 WEEKLY_CEO_META_CRON 으로 구분.
   triggerType?: TriggerType;
 }
@@ -27,7 +24,7 @@ export interface SourcePhaseRunRefs {
 // 본 schema 는 workflow-phase-definition.md §4.5 의 잠정 schema (trim) — 향후 R&D plan
 // 진입 시 contextDriftReport.observations 를 정량 metric 기반으로 보강 예정.
 export interface MetaOutput {
-  range: MetaRange;
+  range: AgentRunRange;
   sourcePhaseRuns: SourcePhaseRunRefs;
   contextDriftReport: {
     // 컨텍스트 오염 / 방향 drift 의 관찰 결과 (LLM 추론). minimal 단계는 정량 metric X.

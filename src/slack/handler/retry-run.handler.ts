@@ -7,17 +7,16 @@ import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application
 import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
-import { MetaRange } from '../../agent/ceo/domain/ceo.type';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
-import { EvaluationRange } from '../../agent/po-eval/domain/po-eval.type';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { AgentRunRange } from '../../common/domain/agent-run-range.type';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatPrConventionReport } from '../format/be-fix.formatter';
@@ -274,7 +273,7 @@ export const registerRetryRunHandler = (
         });
         break;
       case 'PO_EVAL': {
-        const range: EvaluationRange =
+        const range: AgentRunRange =
           snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
         await runAgentCommand({
           respond,
@@ -290,7 +289,8 @@ export const registerRetryRunHandler = (
         break;
       }
       case 'CEO': {
-        const range: MetaRange = snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
+        const range: AgentRunRange =
+          snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
         await runAgentCommand({
           respond,
           logger: deps.logger,
