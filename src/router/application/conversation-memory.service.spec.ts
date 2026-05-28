@@ -216,3 +216,64 @@ describe('ConversationMemoryService — Redis 백엔드 (multi-instance / 재시
     await expect(service.getRecentTurns('U1:C100')).resolves.toEqual([]);
   });
 });
+
+describe('ConversationMemoryService — Redis graceful fallback (다운/timeout 시 Map)', () => {
+  it('getRecentTurns — Redis lrange 가 throw 하면 Map 으로 fallback (정상 응답 유지)', async () => {
+    const lrange = jest.fn().mockRejectedValue(new Error('Connection is closed'));
+    const redis = {
+      multi: jest.fn(() => ({
+        rpush: jest.fn().mockReturnThis(),
+        ltrim: jest.fn().mockReturnThis(),
+        expire: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([]),
+      })),
+      lrange,
+    } as unknown as Redis;
+    const service = new ConversationMemoryService(redis);
+
+    const turns = await service.getRecentTurns('U1:C100');
+
+    expect(lrange).toHaveBeenCalled();
+    expect(turns).toEqual([]);
+  });
+
+  it('appendTurn — Redis 지속 장애 (read/write 모두 throw) 시 동일 instance 내 Map round-trip 으로 회복', async () => {
+    const multi = {
+      rpush: jest.fn().mockReturnThis(),
+      ltrim: jest.fn().mockReturnThis(),
+      expire: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+    };
+    const redis = {
+      multi: jest.fn(() => multi),
+      lrange: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+    } as unknown as Redis;
+    const service = new ConversationMemoryService(redis);
+
+    await expect(
+      service.appendTurn('U1:C100', {
+        text: 'plan?',
+        agentType: AgentType.PM,
+        agentRunId: 42,
+        timestampMs: Date.now(),
+      }),
+    ).resolves.toBeUndefined();
+
+    // Redis read 도 실패하지만 fallback 이 Map 을 읽어 직전 append 가 회복됨.
+    const turns = await service.getRecentTurns('U1:C100');
+    expect(turns).toHaveLength(1);
+    expect(turns[0].agentRunId).toBe(42);
+  });
+
+  it('onModuleDestroy — Redis quit() 가 throw 해도 swallow (process 종료 막지 않음)', async () => {
+    const redis = {
+      multi: jest.fn(),
+      lrange: jest.fn(),
+      quit: jest.fn().mockRejectedValue(new Error('already disconnected')),
+    } as unknown as Redis;
+    const service = new ConversationMemoryService(redis);
+
+    await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    expect(redis.quit).toHaveBeenCalledTimes(1);
+  });
+});
