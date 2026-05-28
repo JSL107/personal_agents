@@ -37,6 +37,9 @@ export enum TriggerType {
   // 사용자 명시 트리거 1회로 P1 (PM plan) → P2 (CTO 분배) → P3 (BE worker) 자동 chain 호출.
   // 본 trigger 는 chain 의 PM step 에만 명시 — CTO/BE step 은 기존 trigger 유지, chain 추적은 parentId.
   SLACK_COMMAND_AUTO_FLOW = 'SLACK_COMMAND_AUTO_FLOW',
+  // workflow-phase-definition §5.2 의 Daily Eval — 매일 19:00 KST PO_EVAL (range=TODAY) 자동 트리거.
+  // 수동 /po-eval (SLACK_COMMAND_PO_EVAL) 와 구분 — 분석 / Failure Replay 시 trigger 출처 명확.
+  DAILY_EVAL_CRON = 'DAILY_EVAL_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

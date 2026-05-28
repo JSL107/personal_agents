@@ -143,6 +143,28 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   WEEKLY_SUMMARY_TIMEZONE?: string;
+
+  // workflow-phase-definition §5.2 Daily Eval CRON.
+  // - DAILY_EVAL_OWNER_SLACK_USER_ID: 일일 PO_EVAL 자동 트리거 대상 사용자. 미설정 시 모듈 비활성화.
+  //   (WEEKLY 와 같은 값 권장 — 단일 사용자, 단 분리 가능.)
+  // - DAILY_EVAL_TARGET: 슬랙 user(U...) / channel(C.../G...) ID. 미설정 시 OWNER DM 으로.
+  // - DAILY_EVAL_CRON: BullMQ repeatable cron pattern (default 매일 19:00 — `0 19 * * *`).
+  // - DAILY_EVAL_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
+  @IsOptional()
+  @IsString()
+  DAILY_EVAL_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  DAILY_EVAL_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  DAILY_EVAL_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  DAILY_EVAL_TIMEZONE?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

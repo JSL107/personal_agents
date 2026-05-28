@@ -54,6 +54,7 @@ export class GeneratePoEvaluationUsecase {
   async execute({
     slackUserId,
     range = 'WEEK',
+    triggerType = TriggerType.SLACK_COMMAND_PO_EVAL,
   }: EvaluationInput): Promise<AgentRunOutcome<EvaluationOutput>> {
     const snapshots = await this.collectSnapshots({ slackUserId, range });
     const refs = this.toRefs(snapshots);
@@ -74,7 +75,7 @@ export class GeneratePoEvaluationUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_EVAL,
-      triggerType: TriggerType.SLACK_COMMAND_PO_EVAL,
+      triggerType,
       inputSnapshot: {
         slackUserId,
         range,

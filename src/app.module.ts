@@ -20,6 +20,7 @@ import { AgentRunModule } from './agent-run/agent-run.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
+import { DailyEvalModule } from './daily-eval/daily-eval.module';
 import { GithubModule } from './github/github.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
@@ -95,6 +96,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     SlackInboxModule,
     MorningBriefingModule,
     WeeklySummaryModule,
+    // workflow-phase-definition §5.2 Daily Eval — 매일 19:00 KST PO_EVAL 자동 트리거.
+    DailyEvalModule,
     CrawlerModule,
     WebhookModule,
   ],
