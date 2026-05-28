@@ -6,6 +6,7 @@ import {
 } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -13,7 +14,6 @@ import { PoEvalException } from '../domain/po-eval.exception';
 import {
   EvaluationInput,
   EvaluationOutput,
-  EvaluationRange,
   SubAgentRunRefs,
 } from '../domain/po-eval.type';
 import { PoEvalErrorCode } from '../domain/po-eval-error-code.enum';
@@ -115,7 +115,7 @@ export class GeneratePoEvaluationUsecase {
     range,
   }: {
     slackUserId: string;
-    range: EvaluationRange;
+    range: AgentRunRange;
   }): Promise<SubAgentSnapshots> {
     const sinceDays = range === 'WEEK' ? WEEK_SINCE_DAYS : TODAY_SINCE_DAYS;
     const fetchLatestInRange = async (
@@ -185,7 +185,7 @@ const buildPrompt = ({
   range,
 }: {
   snapshots: SubAgentSnapshots;
-  range: EvaluationRange;
+  range: AgentRunRange;
 }): string => {
   const lines: string[] = [`[range] ${range}`, ''];
   pushSection(lines, 'Work Reviewer 직전 output', snapshots.workReviewer);
