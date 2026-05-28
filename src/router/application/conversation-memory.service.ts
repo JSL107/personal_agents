@@ -25,9 +25,17 @@ export class ConversationMemoryService implements OnModuleDestroy {
   constructor(private readonly redis?: Redis) {}
 
   // RouterModule useFactory 로 받은 Redis 연결을 본 서비스가 소유. process 종료 시 graceful quit.
+  // 이미 연결이 끊긴 상태라면 quit() 가 throw 가능 — process 종료 흐름을 막지 않도록 swallow.
   async onModuleDestroy(): Promise<void> {
-    if (this.redis) {
+    if (!this.redis) {
+      return;
+    }
+    try {
       await this.redis.quit();
+    } catch (error) {
+      this.logger.warn(
+        `ConversationMemory — Redis quit() 실패 (이미 끊김 가능, swallow): ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -45,20 +53,40 @@ export class ConversationMemoryService implements OnModuleDestroy {
 
   // 만료 turn 제거 후 최대 MAX_TURNS 만 반환. Map 모드는 호출 시 in-place cleanup 부수효과;
   // Redis 모드는 read-only filter 만 (다음 appendTurn 호출 시 LTRIM 으로 정리 — race 회피).
+  // Redis 명령 실패 시 (연결 끊김 / timeout) Map 으로 fallback — 호출자는 정상 응답 받음.
+  // 단 fallback turn 의 데이터 손실 시나리오:
+  //   (a) 다른 instance 의 read: Map 은 process-local 이라 multi-instance 시 미공유.
+  //   (b) 같은 instance 의 Redis 복구 후 read: Redis 분기로 돌아가서 Map 에 쌓인 turn 미참조.
+  // ConversationMemory 는 best-effort hint (5 turn / 30분 TTL) — 위 partial loss 는 수용.
   async getRecentTurns(key: string): Promise<ConversationTurn[]> {
     if (this.redis) {
-      return this.getFromRedis(key);
+      try {
+        return await this.getFromRedis(key);
+      } catch (error) {
+        this.logger.warn(
+          `ConversationMemory — Redis read 실패, Map fallback: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return this.getFromMemory(key);
+      }
     }
     return this.getFromMemory(key);
   }
 
   async appendTurn(key: string, turn: ConversationTurn): Promise<void> {
     if (this.redis) {
-      await this.appendToRedis(key, turn);
-      this.logger.debug(
-        `ConversationMemory append (redis) — key=${key} latest=${turn.agentType ?? 'null'}/${turn.agentRunId ?? '-'}`,
-      );
-      return;
+      try {
+        await this.appendToRedis(key, turn);
+        this.logger.debug(
+          `ConversationMemory append (redis) — key=${key} latest=${turn.agentType ?? 'null'}/${turn.agentRunId ?? '-'}`,
+        );
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `ConversationMemory — Redis write 실패, Map fallback: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.appendToMemory(key, turn);
+        return;
+      }
     }
     this.appendToMemory(key, turn);
     this.logger.debug(
