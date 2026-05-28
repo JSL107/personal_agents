@@ -1,6 +1,8 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
 
-export type MetaRange = 'TODAY' | 'WEEK';
+// 호환성 alias — 향후 deprecate 예정. 신규 코드는 AgentRunRange 직접 사용 권장.
+export type MetaRange = AgentRunRange;
 
 export interface MetaInput {
   slackUserId: string;
