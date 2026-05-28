@@ -1,4 +1,5 @@
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConversationTurn } from './conversation-memory.type';
 import { HandoffSpec } from './handoff-spec.type';
 
 export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
@@ -14,6 +15,10 @@ export interface DispatchInput {
   agentTypeHint?: AgentType;
   // handoff chain 안에서 parent.id 전달 — 신규 AgentRun 의 parentId 컬럼에 기록.
   contextRefs?: { agentRunId?: number };
+  // 자연어 multi-turn 메모리 (Slack message handler 가 주입). intent classifier 가
+  // 지시대명사 ("그거 분배해") 의 prior worker 추론 정확도 ↑. dispatch 자체에는 영향 X —
+  // classifier 호출 시 systemPrompt 컨텍스트로만 사용.
+  priorTurns?: ConversationTurn[];
 }
 
 export type DispatchSource =

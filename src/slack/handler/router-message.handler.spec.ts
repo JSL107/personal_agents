@@ -3,6 +3,7 @@ import { App } from '@slack/bolt';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   DispatchInput,
   DispatchResult,
@@ -79,6 +80,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
 
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -100,6 +102,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -115,6 +118,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
       source: 'SLACK_MESSAGE',
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
+      priorTurns: [],
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({ thread_ts: '1730000000.000001' }),
@@ -148,6 +152,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -180,6 +185,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -203,6 +209,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     const idaeriRouter: IdaeriRouterPort = { dispatch };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -235,6 +242,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -260,6 +268,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
 
@@ -285,6 +294,7 @@ describe('registerRouterMessageHandler — message (DM)', () => {
     const idaeriRouter: IdaeriRouterPort = { dispatch };
     registerRouterMessageHandler(app, {
       idaeriRouter,
+      conversationMemory: new ConversationMemoryService(),
       logger: createSilentLogger(),
     });
     return { handler: getHandler('message'), dispatch };
@@ -313,6 +323,7 @@ describe('registerRouterMessageHandler — message (DM)', () => {
       source: 'SLACK_MESSAGE',
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
+      priorTurns: [],
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalled();
   });
