@@ -1,4 +1,7 @@
-export type EvaluationRange = 'TODAY' | 'WEEK';
+import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
+
+// 호환성 alias — 향후 deprecate 예정. 신규 코드는 AgentRunRange 직접 사용 권장.
+export type EvaluationRange = AgentRunRange;
 
 export interface EvaluationInput {
   slackUserId: string;
