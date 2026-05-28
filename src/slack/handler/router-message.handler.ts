@@ -128,7 +128,7 @@ const processRouterMessage = async ({
     slackUserId,
     channelId,
   });
-  const priorTurns = deps.conversationMemory.getRecentTurns(memoryKey);
+  const priorTurns = await deps.conversationMemory.getRecentTurns(memoryKey);
   // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
   // 가장 최근 (마지막) turn 부터 backward 탐색 — 분류 실패 (agentRunId=null) turn 은 skip.
   const priorAgentRunId = [...priorTurns]
@@ -145,7 +145,7 @@ const processRouterMessage = async ({
         ? { contextRefs: { agentRunId: priorAgentRunId } }
         : {}),
     });
-    deps.conversationMemory.appendTurn(memoryKey, {
+    await deps.conversationMemory.appendTurn(memoryKey, {
       text,
       agentType: result.workerType,
       agentRunId: result.agentRunId,
@@ -160,7 +160,7 @@ const processRouterMessage = async ({
       `Router dispatch 실패 (${source}) — user=${slackUserId} text="${text.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
     );
     // 실패 turn 도 memory 에 남김 — 다음 turn 의 사용자가 "방금 그건 실패" 회복 흐름 인식 가능.
-    deps.conversationMemory.appendTurn(memoryKey, {
+    await deps.conversationMemory.appendTurn(memoryKey, {
       text,
       agentType: null,
       agentRunId: null,
