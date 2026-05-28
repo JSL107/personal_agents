@@ -11,7 +11,7 @@
 - Node 20+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ.
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
 - LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). API key 사용 X — 자식 프로세스 spawn 만. `gemini` CLI 는 primary 실패 시 자동 fallback (AGENTS.md §6).
-- **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류) → 10 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
+- **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 13 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
 - **NestJS multi-provider 는 single module scope** — 분산 등록 X. dispatcher 류는 PreviewGate.forRoot 패턴처럼 한 모듈 (RouterModule) 의 useFactory + inject 로 중앙 등록.
 
 ---
@@ -23,7 +23,10 @@
 | 슬래시 커맨드 핸들러 (모든 라우팅 진입점) | `src/slack/handler/agent-command.handler.ts` |
 | 자연어 멘션 진입점 (`app_mention` event) | `src/slack/handler/router-message.handler.ts` |
 | Router 본체 (manager + handoff chain) | `src/router/application/idaeri-router.usecase.ts` |
-| Router dispatcher 중앙 등록 (useFactory + inject 10) | `src/router/router.module.ts` |
+| Router dispatcher 중앙 등록 (useFactory + inject 13) | `src/router/router.module.ts` |
+| `/auto-flow` PM→CTO→BE 체인 (PreviewGate 버튼 2단) | `src/slack/handler/auto-flow.handler.ts` |
+| Conversation memory (in-memory, key=slackUserId:channelId) | `src/router/application/conversation-memory.service.ts` |
+| Daily Eval cron (19:00 KST PO_EVAL 자동) | `src/daily-eval/` |
 | AgentDispatcher 인터페이스 + AGENT_DISPATCHER_PORT | `src/router/domain/port/agent-dispatcher.port.ts` |
 | 에이전트 → 모델 라우팅 | `src/model-router/application/model-router.usecase.ts` (`AGENT_TO_PROVIDER`) |
 | CLI 격리 유틸 (보안 핵심) | `src/model-router/infrastructure/cli-process.util.ts` (`buildSafeChildEnv`) |
@@ -53,8 +56,12 @@
 | BE Test | `/be-test` | `src/agent/be-test/application/generate-test.usecase.ts` | Claude |
 | BE SRE | `/be-sre` | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | Claude |
 | BE Fix | `/be-fix` | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | Claude |
+| CTO | `/assign` | `src/agent/cto/application/generate-assignment.usecase.ts` | Claude |
+| PO_EVAL | `/po-eval` | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | Claude |
+| CEO | `/ceo-review` | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | Claude |
+| (chain) AUTO_FLOW | `/auto-flow` | `src/slack/handler/auto-flow.handler.ts` (PM → CTO → BE 1-shot, PreviewGate 버튼) | — (chain) |
 
-> `/be-test`, `/be-sre`, `/be-fix` Slack 핸들러는 각각 `src/slack/handler/be-{test,sre,fix}.handler.ts` (agent-command.handler.ts 가 아님).
+> `/be-test`, `/be-sre`, `/be-fix` Slack 핸들러는 각각 `src/slack/handler/be-{test,sre,fix}.handler.ts` (agent-command.handler.ts 가 아님). `/assign` `/po-eval` `/ceo-review` 는 `src/slack/handler/phase-command.handler.ts`, `/auto-flow` 는 `src/slack/handler/auto-flow.handler.ts` (체인 + button action).
 
 ---
 
@@ -105,7 +112,7 @@ if (a) { if (b) { ... } }        // → ts-pattern 의 match 검토
 
 CLI latency 10~40초 → Slack 3초 안 ack 강제 (즉시 `ack` → 모델 호출 → `respond({ replace_original: true })` 로 덮어쓰기).
 
-- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (대부분 슬래시) + 개별 파일 (`be-test.handler.ts`, `be-sre.handler.ts`, `be-fix.handler.ts`, `retry-run.handler.ts`, `write-back.handler.ts`, `diagnosis.handler.ts`)
+- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (단일 워커 슬래시) + 카테고리 핸들러 (`phase-command.handler.ts` — `/assign` `/po-eval` `/ceo-review`, `feedback-command.handler.ts` — `/review-feedback`) + 개별 파일 (`be-test.handler.ts`, `be-sre.handler.ts`, `be-fix.handler.ts`, `auto-flow.handler.ts`, `retry-run.handler.ts`, `write-back.handler.ts`, `diagnosis.handler.ts`)
 - `replace_original: true` 헬퍼: `src/slack/handler/slack-handler.helper.ts:60-74`
 - ephemeral 응답에서 `replace_original` 가끔 안 먹는 건 Slack API 한계, 그대로 둠.
 
