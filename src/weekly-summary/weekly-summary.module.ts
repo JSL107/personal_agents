@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
+import { CeoModule } from '../agent/ceo/ceo.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
@@ -14,6 +15,7 @@ import { WeeklySummaryConsumer } from './infrastructure/weekly-summary.consumer'
   imports: [
     BullModule.registerQueue({ name: WEEKLY_SUMMARY_QUEUE }),
     WorkReviewerModule,
+    CeoModule,
     AgentRunModule,
     SlackModule,
   ],
