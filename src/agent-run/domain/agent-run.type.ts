@@ -33,6 +33,10 @@ export enum TriggerType {
   // PRO-4 Weekly Summary CRON 연계 — 매주 금 17:00 worklog 발송 직후 자동 CEO meta 발화 (range=WEEK).
   // WEEKLY_SUMMARY_CRON (worklog) 과 별도 — 분석/Failure Replay 시 trigger 출처 구분 가능.
   WEEKLY_CEO_META_CRON = 'WEEKLY_CEO_META_CRON',
+  // V3 비전 phase loop chain — `/auto-flow` 슬래시 (PM → CTO → BE chain).
+  // 사용자 명시 트리거 1회로 P1 (PM plan) → P2 (CTO 분배) → P3 (BE worker) 자동 chain 호출.
+  // 본 trigger 는 chain 의 PM step 에만 명시 — CTO/BE step 은 기존 trigger 유지, chain 추적은 parentId.
+  SLACK_COMMAND_AUTO_FLOW = 'SLACK_COMMAND_AUTO_FLOW',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
