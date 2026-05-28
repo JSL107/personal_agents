@@ -130,7 +130,12 @@ describe('ConversationMemoryService — Redis 백엔드 (multi-instance / 재시
   // 만 호출하므로 그 4 method 의 contract 만 검증.
   const buildRedisMock = (): {
     redis: Redis;
-    multi: { rpush: jest.Mock; ltrim: jest.Mock; expire: jest.Mock; exec: jest.Mock };
+    multi: {
+      rpush: jest.Mock;
+      ltrim: jest.Mock;
+      expire: jest.Mock;
+      exec: jest.Mock;
+    };
     lrange: jest.Mock;
   } => {
     const multi = {
@@ -219,7 +224,9 @@ describe('ConversationMemoryService — Redis 백엔드 (multi-instance / 재시
 
 describe('ConversationMemoryService — Redis graceful fallback (다운/timeout 시 Map)', () => {
   it('getRecentTurns — Redis lrange 가 throw 하면 Map 으로 fallback (정상 응답 유지)', async () => {
-    const lrange = jest.fn().mockRejectedValue(new Error('Connection is closed'));
+    const lrange = jest
+      .fn()
+      .mockRejectedValue(new Error('Connection is closed'));
     const redis = {
       multi: jest.fn(() => ({
         rpush: jest.fn().mockReturnThis(),
