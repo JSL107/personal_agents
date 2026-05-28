@@ -1,12 +1,17 @@
+import { CeoException } from '../../agent/ceo/domain/ceo.exception';
+import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { WeeklySummaryConsumer } from './weekly-summary.consumer';
 
 describe('WeeklySummaryConsumer', () => {
   const mockWorklogUsecase = { execute: jest.fn() };
+  const mockCeoMetaUsecase = { execute: jest.fn() };
   const mockAgentRunService = { findRecentSucceededRuns: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
 
   const consumer = new WeeklySummaryConsumer(
     mockWorklogUsecase as any,
+    mockCeoMetaUsecase as any,
     mockAgentRunService as any,
     mockSlackNotifier as any,
   );
@@ -54,6 +59,18 @@ describe('WeeklySummaryConsumer', () => {
       modelUsed: 'test',
       agentRunId: 2,
     });
+    mockCeoMetaUsecase.execute.mockResolvedValue({
+      result: {
+        range: 'WEEK',
+        sourcePhaseRuns: { poEvalRunId: 10 },
+        contextDriftReport: { observations: [] },
+        docsQualityReport: { findings: [] },
+        finalSummary: '이번 주 이상 없음',
+        schemaVersion: 1,
+      },
+      modelUsed: 'claude',
+      agentRunId: 3,
+    });
     await consumer.process({
       data: { ownerSlackUserId: 'U1', target: 'C1' },
     } as any);
@@ -61,5 +78,114 @@ describe('WeeklySummaryConsumer', () => {
       expect.objectContaining({ slackUserId: 'U1' }),
     );
     expect(mockSlackNotifier.postMessage).toHaveBeenCalled();
+  });
+
+  it('PO_EVAL run 있으면 worklog + CEO meta 모두 발송', async () => {
+    const fakeRun = {
+      id: 1,
+      output: {
+        tasks: [
+          {
+            title: '작업1',
+            timeBlock: 'AM',
+            estimatedMinutes: 60,
+            subtasks: [],
+            lineage: 'NEW',
+          },
+        ],
+        date: '2026-04-28',
+        variance: null,
+      },
+      endedAt: new Date('2026-04-28'),
+    };
+    mockAgentRunService.findRecentSucceededRuns.mockResolvedValue([fakeRun]);
+    mockWorklogUsecase.execute.mockResolvedValue({
+      result: {
+        summary: 'ok',
+        impact: { quantitative: [], qualitative: '좋음' },
+        improvementBeforeAfter: null,
+        nextActions: [],
+        oneLineAchievement: '완료',
+      },
+      modelUsed: 'test',
+      agentRunId: 2,
+    });
+    mockCeoMetaUsecase.execute.mockResolvedValue({
+      result: {
+        range: 'WEEK',
+        sourcePhaseRuns: { poEvalRunId: 10 },
+        contextDriftReport: { observations: ['drift 관찰됨'] },
+        docsQualityReport: { findings: [] },
+        finalSummary: '이번 주 요약',
+        schemaVersion: 1,
+      },
+      modelUsed: 'claude',
+      agentRunId: 3,
+    });
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as any);
+
+    expect(mockWorklogUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(mockCeoMetaUsecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slackUserId: 'U1',
+        range: 'WEEK',
+        triggerType: 'WEEKLY_CEO_META_CRON',
+      }),
+    );
+    // worklog 메시지 + CEO meta 메시지 총 2회 postMessage
+    expect(mockSlackNotifier.postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('PO_EVAL run 없으면 worklog 만 발송 + CEO graceful skip 안내 메시지', async () => {
+    const fakeRun = {
+      id: 1,
+      output: {
+        tasks: [
+          {
+            title: '작업1',
+            timeBlock: 'AM',
+            estimatedMinutes: 60,
+            subtasks: [],
+            lineage: 'NEW',
+          },
+        ],
+        date: '2026-04-28',
+        variance: null,
+      },
+      endedAt: new Date('2026-04-28'),
+    };
+    mockAgentRunService.findRecentSucceededRuns.mockResolvedValue([fakeRun]);
+    mockWorklogUsecase.execute.mockResolvedValue({
+      result: {
+        summary: 'ok',
+        impact: { quantitative: [], qualitative: '좋음' },
+        improvementBeforeAfter: null,
+        nextActions: [],
+        oneLineAchievement: '완료',
+      },
+      modelUsed: 'test',
+      agentRunId: 2,
+    });
+    mockCeoMetaUsecase.execute.mockRejectedValue(
+      new CeoException({
+        code: CeoErrorCode.NO_PO_EVAL_RUN,
+        message: '최근 7일 내 PO_EVAL 의 성공 run 이 없습니다.',
+        status: DomainStatus.NOT_FOUND,
+      }),
+    );
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as any);
+
+    expect(mockWorklogUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(mockCeoMetaUsecase.execute).toHaveBeenCalledTimes(1);
+    // worklog 메시지 + CEO skip 안내 메시지 총 2회 postMessage
+    expect(mockSlackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    const skipCall = mockSlackNotifier.postMessage.mock.calls[1][0];
+    expect(skipCall.text).toContain('skip');
   });
 });

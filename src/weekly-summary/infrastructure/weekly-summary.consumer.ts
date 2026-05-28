@@ -2,6 +2,9 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
+import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
+import { CeoException } from '../../agent/ceo/domain/ceo.exception';
+import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
 import { coerceToDailyPlan } from '../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
@@ -11,6 +14,7 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
+import { formatCeoMetaOutput } from '../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../slack/format/daily-review.formatter';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import {
@@ -24,6 +28,7 @@ export class WeeklySummaryConsumer extends WorkerHost {
 
   constructor(
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
+    private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly agentRunService: AgentRunService,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
@@ -72,8 +77,54 @@ export class WeeklySummaryConsumer extends WorkerHost {
       triggerType: TriggerType.WEEKLY_SUMMARY_CRON,
     });
 
-    const text = formatDailyReview(outcome.result) + formatModelFooter(outcome);
-    await this.slackNotifier.postMessage({ target, text });
+    const worklogText =
+      formatDailyReview(outcome.result) + formatModelFooter(outcome);
+    await this.slackNotifier.postMessage({ target, text: worklogText });
     this.logger.log(`Weekly Summary 발송 완료 — target=${target}`);
+
+    await this.triggerCeoMetaGracefully({
+      slackUserId: ownerSlackUserId,
+      target,
+    });
+  }
+
+  // CEO meta (P5) 는 worklog (P4) 직후 자동 트리거. PO_EVAL run 부재 시 graceful skip.
+  // worklog 자체의 성공/실패에 영향을 주지 않는다.
+  private async triggerCeoMetaGracefully({
+    slackUserId,
+    target,
+  }: {
+    slackUserId: string;
+    target: string;
+  }): Promise<void> {
+    try {
+      const ceoOutcome = await this.generateCeoMetaUsecase.execute({
+        slackUserId,
+        range: 'WEEK',
+        triggerType: TriggerType.WEEKLY_CEO_META_CRON,
+      });
+      const ceoText =
+        formatCeoMetaOutput(ceoOutcome.result) + formatModelFooter(ceoOutcome);
+      await this.slackNotifier.postMessage({ target, text: ceoText });
+      this.logger.log(`CEO meta 발송 완료 — target=${target}`);
+    } catch (error) {
+      if (
+        error instanceof CeoException &&
+        error.ceoErrorCode === CeoErrorCode.NO_PO_EVAL_RUN
+      ) {
+        this.logger.warn(
+          `CEO meta skip — PO_EVAL run 없음 (owner=${slackUserId}): ${error.message}`,
+        );
+        await this.slackNotifier.postMessage({
+          target,
+          text: '_CEO meta 는 이번 주 PO_EVAL run 부재로 skip 됩니다. `/po-eval` 을 먼저 실행해주세요._',
+        });
+        return;
+      }
+      this.logger.error(
+        `CEO meta 실패 — 예상 외 에러 (owner=${slackUserId})`,
+        error,
+      );
+    }
   }
 }
