@@ -6,16 +6,12 @@ import {
 } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CeoException } from '../domain/ceo.exception';
-import {
-  MetaInput,
-  MetaOutput,
-  MetaRange,
-  SourcePhaseRunRefs,
-} from '../domain/ceo.type';
+import { MetaInput, MetaOutput, SourcePhaseRunRefs } from '../domain/ceo.type';
 import { CeoErrorCode } from '../domain/ceo-error-code.enum';
 import {
   CEO_META_SYSTEM_PROMPT,
@@ -105,7 +101,7 @@ export class GenerateCeoMetaUsecase {
     range,
   }: {
     slackUserId: string;
-    range: MetaRange;
+    range: AgentRunRange;
   }): Promise<PhaseSnapshots> {
     const sinceDays = range === 'WEEK' ? WEEK_SINCE_DAYS : TODAY_SINCE_DAYS;
     const fetchLatestInRange = async (
@@ -176,7 +172,7 @@ const buildPrompt = ({
   range,
 }: {
   snapshots: PhaseSnapshots;
-  range: MetaRange;
+  range: AgentRunRange;
 }): string => {
   const lines: string[] = [`[range] ${range}`, ''];
   pushSection(lines, 'PO_EVAL 직전 output', snapshots.poEval);
