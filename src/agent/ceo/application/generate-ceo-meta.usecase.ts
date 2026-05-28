@@ -51,6 +51,7 @@ export class GenerateCeoMetaUsecase {
   async execute({
     slackUserId,
     range = 'WEEK',
+    triggerType = TriggerType.SLACK_COMMAND_CEO_REVIEW,
   }: MetaInput): Promise<AgentRunOutcome<MetaOutput>> {
     const snapshots = await this.collectSnapshots({ slackUserId, range });
     const refs: SourcePhaseRunRefs = {
@@ -61,7 +62,7 @@ export class GenerateCeoMetaUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.CEO,
-      triggerType: TriggerType.SLACK_COMMAND_CEO_REVIEW,
+      triggerType,
       inputSnapshot: {
         slackUserId,
         range,
