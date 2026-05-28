@@ -37,6 +37,8 @@ import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerBeHandler } from './handler/be.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
+import { registerFeedbackCommandHandlers } from './handler/feedback-command.handler';
+import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerPreviewActionHandlers } from './handler/preview-action.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
@@ -240,12 +242,18 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateDailyPlanUsecase: this.generateDailyPlanUsecase,
       generateWorklogUsecase: this.generateWorklogUsecase,
       reviewPullRequestUsecase: this.reviewPullRequestUsecase,
-      saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       generateImpactReportUsecase: this.generateImpactReportUsecase,
       generatePoShadowUsecase: this.generatePoShadowUsecase,
+      logger: this.logger,
+    });
+    registerPhaseCommandHandlers(app, {
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
       generateCeoMetaUsecase: this.generateCeoMetaUsecase,
+      logger: this.logger,
+    });
+    registerFeedbackCommandHandlers(app, {
+      saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
