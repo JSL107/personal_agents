@@ -53,6 +53,9 @@ importers:
       class-validator:
         specifier: ^0.15.1
         version: 0.15.1
+      express:
+        specifier: ^4.21.0
+        version: 4.22.1
       puppeteer:
         specifier: ^24.40.0
         version: 24.40.0(typescript@5.9.3)
