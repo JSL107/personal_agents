@@ -483,6 +483,31 @@ const runBeWorker = async ({
 
 // === format ===
 
+// V3 phase loop chain audit 가시화 — PM → CTO → BE 의 AgentRun.id trail 을 한 줄로.
+// 사용자가 한 chain 의 흐름을 한 눈에 파악 + 각 run id 로 /retry-run 또는 DB 조회 가능.
+// status 가 OK 가 아닌 step (SKIPPED / FAILED) 은 괄호로 표시. agentRunId 미존재 (dispatch
+// 실패 등) 는 '—' 로 대체.
+export const buildChainTrail = ({
+  pmAgentRunId,
+  ctoAgentRunId,
+  beOutcomes,
+}: {
+  pmAgentRunId: number;
+  ctoAgentRunId: number;
+  beOutcomes: BeChainOutcome[];
+}): string => {
+  const parts = [`PM #${pmAgentRunId}`, `CTO #${ctoAgentRunId}`];
+  for (const outcome of beOutcomes) {
+    const idSegment =
+      outcome.agentRunId !== undefined ? `#${outcome.agentRunId}` : '#—';
+    const statusSegment = outcome.status === 'OK' ? '' : ` (${outcome.status})`;
+    parts.push(
+      `${outcome.assignment.beAssignment} ${idSegment}${statusSegment}`,
+    );
+  }
+  return parts.join(' → ');
+};
+
 const formatFinalChainResult = ({
   pmAgentRunId,
   ctoAgentRunId,
@@ -516,6 +541,9 @@ const formatFinalChainResult = ({
     );
   }
   lines.push('');
+  lines.push(
+    `*📍 chain trail*: ${buildChainTrail({ pmAgentRunId, ctoAgentRunId, beOutcomes })}`,
+  );
   lines.push(
     '_각 worker run id 로 `/retry-run <id>` 가능. chain audit 은 AgentRun.parentId 로._',
   );
