@@ -1,3 +1,6 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+
 import { Logger } from '@nestjs/common';
 import { App, RespondFn } from '@slack/bolt';
 
@@ -339,6 +342,32 @@ const buildCtoPreviewBlocks = ({
 
 // === BE chain ===
 
+// BE_TEST 분배 시 CTO 가 추론한 targetFilePath 가 실제 repo 에 존재하는지 검증.
+// LLM hallucination 으로 가짜 경로 ("src/example.service.ts" 같은) 가 들어오면 fast-fail.
+// 보안: absolute path 는 무조건 false — process.cwd() 밖 (e.g. /etc/passwd) 접근 차단.
+// path traversal (../) 은 path.resolve 가 normalize 후 cwd prefix 검사로 추가 차단.
+export const fileExistsRelativeToCwd = async (
+  relativePath: string,
+): Promise<boolean> => {
+  if (relativePath.length === 0) {
+    return false;
+  }
+  if (path.isAbsolute(relativePath)) {
+    return false;
+  }
+  const cwd = process.cwd();
+  const resolved = path.resolve(cwd, relativePath);
+  if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) {
+    return false;
+  }
+  try {
+    await fs.access(resolved, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const runBeWorker = async ({
   assignment,
   slackUserId,
@@ -358,6 +387,18 @@ const runBeWorker = async ({
         status: 'SKIPPED',
         message:
           'BE_TEST — CTO 가 task 설명에서 file path 를 식별하지 못함. 사용자가 별도 `/be-test <filePath>` 호출 필요.',
+      };
+    }
+    // PR #19 follow-up — CTO 가 적은 path 가 실제 repo 에 있는지 검증. hallucination fast-fail.
+    const exists = await fileExistsRelativeToCwd(filePath);
+    if (!exists) {
+      deps.logger.warn(
+        `[auto-flow] BE_TEST targetFilePath '${filePath}' 가 repo 에 없음 — CTO hallucination 가능 (taskId=${assignment.taskId}).`,
+      );
+      return {
+        assignment,
+        status: 'SKIPPED',
+        message: `BE_TEST — CTO 가 추론한 path \`${filePath}\` 가 실제 repo 에 없습니다 (LLM 추측 가능). 사용자가 정확한 경로로 \`/be-test <filePath>\` 별도 호출 권장.`,
       };
     }
     try {
