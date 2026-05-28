@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Redis } from 'ioredis';
 
 import { BeAgentModule } from '../agent/be/be.module';
 import { BeDispatcher } from '../agent/be/infrastructure/be.dispatcher';
@@ -67,7 +69,22 @@ import {
   ],
   providers: [
     IntentClassifierUsecase,
-    ConversationMemoryService,
+    // V3 §봇 쪼개기 follow-up — ConversationMemory 는 Redis 백엔드로 multi-instance / 재시작 안전.
+    // REDIS_HOST/PORT 는 BullMQ 와 동일 env 재사용 (별도 connection — bullmq 의 maxRetries=null
+    // 설정과 분리). 서비스가 OnModuleDestroy 에서 quit() 호출하여 graceful close.
+    {
+      provide: ConversationMemoryService,
+      useFactory: (configService: ConfigService) => {
+        const redis = new Redis({
+          host: configService.getOrThrow<string>('REDIS_HOST'),
+          port: configService.getOrThrow<number>('REDIS_PORT'),
+          lazyConnect: false,
+          maxRetriesPerRequest: 3,
+        });
+        return new ConversationMemoryService(redis);
+      },
+      inject: [ConfigService],
+    },
     { provide: IDAERI_ROUTER_PORT, useClass: IdaeriRouterUsecase },
     {
       provide: AGENT_DISPATCHER_PORT,
