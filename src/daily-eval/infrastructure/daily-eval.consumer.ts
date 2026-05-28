@@ -36,14 +36,20 @@ export class DailyEvalConsumer extends WorkerHost {
       `Daily Eval 시작 — owner=${ownerSlackUserId} → target=${target}`,
     );
 
+    const todayKst = getTodayKstDate();
+
     try {
       const outcome = await this.generatePoEvaluationUsecase.execute({
         slackUserId: ownerSlackUserId,
         range: 'TODAY',
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
+      // 자동 회고임을 명시 — 사용자가 manual /po-eval 결과와 구분.
+      const intro = `🌅 *Daily Eval — ${todayKst} (19:00 KST 자동 회고)*\n\n`;
       const text =
-        formatEvaluationOutput(outcome.result) + formatModelFooter(outcome);
+        intro +
+        formatEvaluationOutput(outcome.result) +
+        formatModelFooter(outcome);
       await this.slackNotifier.postMessage({ target, text });
       this.logger.log(`Daily Eval 발송 완료 — target=${target}`);
     } catch (error) {
@@ -56,7 +62,7 @@ export class DailyEvalConsumer extends WorkerHost {
         );
         await this.slackNotifier.postMessage({
           target,
-          text: '_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 Daily Eval skip 됩니다._',
+          text: `🌙 *Daily Eval — ${todayKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
         });
         return;
       }
@@ -68,3 +74,13 @@ export class DailyEvalConsumer extends WorkerHost {
     }
   }
 }
+
+// 서버 timezone (UTC 가능) 과 무관하게 KST 기준 YYYY-MM-DD 반환.
+// en-CA 로케일은 ISO 8601 ("2026-05-28") 형식을 그대로 출력 — 별도 padding 없음.
+const getTodayKstDate = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
