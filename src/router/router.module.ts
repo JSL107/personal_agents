@@ -28,6 +28,7 @@ import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/wo
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
+import { ConversationMemoryService } from './application/conversation-memory.service';
 import { IdaeriRouterUsecase } from './application/idaeri-router.usecase';
 import { IntentClassifierUsecase } from './application/intent-classifier.usecase';
 import { IDAERI_ROUTER_PORT } from './domain/idaeri-router.port';
@@ -66,6 +67,7 @@ import {
   ],
   providers: [
     IntentClassifierUsecase,
+    ConversationMemoryService,
     { provide: IDAERI_ROUTER_PORT, useClass: IdaeriRouterUsecase },
     {
       provide: AGENT_DISPATCHER_PORT,
@@ -87,6 +89,6 @@ import {
       ],
     },
   ],
-  exports: [IDAERI_ROUTER_PORT],
+  exports: [IDAERI_ROUTER_PORT, ConversationMemoryService],
 })
 export class RouterModule {}
