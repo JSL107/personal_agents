@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
+import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
+import { MetaRange } from '../../agent/ceo/domain/ceo.type';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from '../../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
@@ -11,6 +13,7 @@ import { EvaluationRange } from '../../agent/po-eval/domain/po-eval.type';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
+import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
@@ -36,6 +39,7 @@ export const registerAgentCommandHandlers = (
     generatePoShadowUsecase: GeneratePoShadowUsecase;
     generateAssignmentUsecase: GenerateAssignmentUsecase;
     generatePoEvaluationUsecase: GeneratePoEvaluationUsecase;
+    generateCeoMetaUsecase: GenerateCeoMetaUsecase;
     logger: Logger;
   },
 ): void => {
@@ -202,6 +206,28 @@ export const registerAgentCommandHandlers = (
           range,
         }),
       format: formatEvaluationOutput,
+    });
+  });
+
+  app.command('/ceo-review', async ({ ack, command, respond }) => {
+    // 인자: 'today' | 'week' (default: week). 다른 값이면 week 로 fallback.
+    const arg = command.text?.trim().toLowerCase() ?? '';
+    const range: MetaRange = arg === 'today' ? 'TODAY' : 'WEEK';
+    await ack({
+      response_type: 'ephemeral',
+      text: `이대리(CEO 메타) 가 ${range === 'WEEK' ? '최근 7일' : '최근 24시간'} phase 결과를 종합 중입니다 (15~30초 소요)...`,
+    });
+
+    await runAgentCommand({
+      respond,
+      logger: deps.logger,
+      commandLabel: '/ceo-review',
+      execute: () =>
+        deps.generateCeoMetaUsecase.execute({
+          slackUserId: command.user_id,
+          range,
+        }),
+      format: formatCeoMetaOutput,
     });
   });
 

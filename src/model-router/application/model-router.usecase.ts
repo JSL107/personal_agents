@@ -31,6 +31,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.CTO]: ModelProviderName.CLAUDE,
   // PO_EVAL — 3 sub-agent output 의 구조적 합성 + careerLog 생성. Claude 강점 (구조화 JSON).
   [AgentType.PO_EVAL]: ModelProviderName.CLAUDE,
+  // CEO — PO_EVAL + PM/CTO 합성 → 메타 review. PO_EVAL 과 동일 구조 → Claude.
+  [AgentType.CEO]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 fallback provider.

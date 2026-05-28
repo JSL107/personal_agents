@@ -6,6 +6,8 @@ import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analy
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
 import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
+import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
+import { MetaRange } from '../../agent/ceo/domain/ceo.type';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -22,6 +24,7 @@ import { formatPrConventionReport } from '../format/be-fix.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
 import { formatSreAnalysis } from '../format/be-sre.formatter';
 import { formatGeneratedTest } from '../format/be-test.formatter';
+import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
@@ -47,6 +50,7 @@ export interface RetryRunHandlerDeps {
   analyzePrConventionUsecase: AnalyzePrConventionUsecase;
   generateAssignmentUsecase: GenerateAssignmentUsecase;
   generatePoEvaluationUsecase: GeneratePoEvaluationUsecase;
+  generateCeoMetaUsecase: GenerateCeoMetaUsecase;
   logger: Logger;
 }
 
@@ -282,6 +286,21 @@ export const registerRetryRunHandler = (
               range,
             }),
           format: formatEvaluationOutput,
+        });
+        break;
+      }
+      case 'CEO': {
+        const range: MetaRange = snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
+        await runAgentCommand({
+          respond,
+          logger: deps.logger,
+          commandLabel: `/retry-run#${id} (CEO)`,
+          execute: () =>
+            deps.generateCeoMetaUsecase.execute({
+              slackUserId,
+              range,
+            }),
+          format: formatCeoMetaOutput,
         });
         break;
       }
