@@ -45,6 +45,10 @@ describe('DailyEvalConsumer', () => {
     const call = mockSlackNotifier.postMessage.mock.calls[0][0];
     expect(call.target).toBe('C1');
     expect(call.text).toContain('PO 통합 평가');
+    // V3 Daily Eval intro — 자동 회고 헤더 + KST 날짜 ISO 형식 + 19:00 KST 표시.
+    expect(call.text).toMatch(
+      /🌅 \*Daily Eval — \d{4}-\d{2}-\d{2} \(19:00 KST 자동 회고\)\*/,
+    );
   });
 
   it('NO_SUB_AGENT_RUNS 면 graceful skip + 안내 메시지', async () => {
@@ -64,6 +68,9 @@ describe('DailyEvalConsumer', () => {
     expect(mockSlackNotifier.postMessage).toHaveBeenCalledTimes(1);
     const call = mockSlackNotifier.postMessage.mock.calls[0][0];
     expect(call.text).toContain('skip');
+    // 날짜 + 내일 재시도 안내가 포함되어 사용자가 빈 회고 상태를 정확히 인지.
+    expect(call.text).toMatch(/🌙 \*Daily Eval — \d{4}-\d{2}-\d{2} skip\*/);
+    expect(call.text).toContain('내일 19:00 KST');
   });
 
   it('NO_SUB_AGENT_RUNS 외 다른 에러는 그대로 propagate (BullMQ 재시도)', async () => {
