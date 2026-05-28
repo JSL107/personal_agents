@@ -18,6 +18,10 @@ export interface Assignment {
   reasoning: string;
   // 0~1 — LLM 의 분배 확신도. 0.6 미만이면 사용자 confirm 권장 (formatter 에서 ⚠️ 표시).
   confidence: number;
+  // BE_TEST 분배 시 LLM 이 task 설명에서 추론한 spec 대상 파일 경로 (e.g. "src/foo/bar.service.ts").
+  // 다른 worker (BE / BE_SCHEMA) 에는 의미 없음 — optional. auto-flow chain 에서 BE_TEST dispatch
+  // 시 본 필드 있으면 자동 주입, 없으면 SKIPPED (사용자가 /be-test 별도 호출).
+  targetFilePath?: string;
 }
 
 // 자동 분배 불가 한 task — taskId + 사용자에게 결정 요청할 사유.
