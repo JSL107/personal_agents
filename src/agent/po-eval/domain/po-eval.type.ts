@@ -1,9 +1,12 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../../common/domain/agent-run-range.type';
 
 export interface EvaluationInput {
   slackUserId: string;
   // 미지정 시 WEEK (review 권장 — 이력서/careerLog 의 자연 단위).
   range?: AgentRunRange;
+  // 미지정 시 SLACK_COMMAND_PO_EVAL. CRON 자동 트리거 (Daily Eval) 시 DAILY_EVAL_CRON 으로 구분.
+  triggerType?: TriggerType;
 }
 
 // 합성 input 으로 사용된 sub-agent 들의 run id. 일부 만 있을 수 있음 (graceful policy).
