@@ -1,9 +1,13 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 export type MetaRange = 'TODAY' | 'WEEK';
 
 export interface MetaInput {
   slackUserId: string;
   // 미지정 시 WEEK (CEO 의 자연 단위 — 주간 회고 + drift 점검).
   range?: MetaRange;
+  // 미지정 시 SLACK_COMMAND_CEO_REVIEW. CRON 자동 트리거 시 WEEKLY_CEO_META_CRON 으로 구분.
+  triggerType?: TriggerType;
 }
 
 // 합성 input 으로 사용된 phase run 들의 id. PO_EVAL 은 필수, PM/CTO 는 graceful.
