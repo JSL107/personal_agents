@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 
+import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   DispatchResult,
   IdaeriRouterPort,
@@ -13,10 +14,15 @@ import { toUserFacingErrorMessage } from './slack-handler.helper';
 //   2. message (channel_type='im'): DM 1:1 메시지. 멘션 prefix 없이 전체 text 가 router 입력.
 // 둘 다 동일 IdaeriRouterPort.dispatch 호출 + handoff chain 의 전체 worker formatter 를
 // `---` 로 결합한 답글 노출.
+//
+// multi-turn 메모리 — ConversationMemoryService 가 사용자별 (slackUserId+channelId) 최근 5 turn
+// 보존 (TTL 30분). 매 dispatch 전 prior turns 를 가져와 IntentClassifier 의 분류 정확도 ↑ +
+// 직전 worker 의 agentRunId 를 contextRefs.agentRunId 로 자동 전달 (예: PM → CTO 자연어 chain).
 export const registerRouterMessageHandler = (
   app: App,
   deps: {
     idaeriRouter: IdaeriRouterPort;
+    conversationMemory: ConversationMemoryService;
     logger: Logger;
   },
 ): void => {
@@ -27,6 +33,10 @@ export const registerRouterMessageHandler = (
       'user' in event && typeof event.user === 'string'
         ? event.user
         : 'unknown';
+    const channelId =
+      'channel' in event && typeof event.channel === 'string'
+        ? event.channel
+        : 'unknown';
     const threadTs =
       'thread_ts' in event && typeof event.thread_ts === 'string'
         ? event.thread_ts
@@ -35,6 +45,7 @@ export const registerRouterMessageHandler = (
     await processRouterMessage({
       text: stripMentionPrefix(rawText),
       slackUserId,
+      channelId,
       threadTs,
       say,
       deps,
@@ -61,6 +72,10 @@ export const registerRouterMessageHandler = (
       'user' in event && typeof event.user === 'string'
         ? event.user
         : 'unknown';
+    const channelId =
+      'channel' in event && typeof event.channel === 'string'
+        ? event.channel
+        : 'unknown';
     const threadTs =
       'thread_ts' in event && typeof event.thread_ts === 'string'
         ? event.thread_ts
@@ -71,6 +86,7 @@ export const registerRouterMessageHandler = (
     await processRouterMessage({
       text: rawText.trim(),
       slackUserId,
+      channelId,
       threadTs,
       say,
       deps,
@@ -82,6 +98,7 @@ export const registerRouterMessageHandler = (
 const processRouterMessage = async ({
   text,
   slackUserId,
+  channelId,
   threadTs,
   say,
   deps,
@@ -89,9 +106,14 @@ const processRouterMessage = async ({
 }: {
   text: string;
   slackUserId: string;
+  channelId: string;
   threadTs: string | undefined;
   say: SayFn;
-  deps: { idaeriRouter: IdaeriRouterPort; logger: Logger };
+  deps: {
+    idaeriRouter: IdaeriRouterPort;
+    conversationMemory: ConversationMemoryService;
+    logger: Logger;
+  };
   source: 'app_mention' | 'dm';
 }): Promise<void> => {
   if (text.length === 0) {
@@ -102,11 +124,32 @@ const processRouterMessage = async ({
     return;
   }
 
+  const memoryKey = deps.conversationMemory.buildKey({
+    slackUserId,
+    channelId,
+  });
+  const priorTurns = deps.conversationMemory.getRecentTurns(memoryKey);
+  // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
+  // 가장 최근 (마지막) turn 부터 backward 탐색 — 분류 실패 (agentRunId=null) turn 은 skip.
+  const priorAgentRunId = [...priorTurns]
+    .reverse()
+    .find((turn) => turn.agentRunId !== null)?.agentRunId;
+
   try {
     const result = await deps.idaeriRouter.dispatch({
       source: 'SLACK_MESSAGE',
       slackUserId,
       text,
+      priorTurns,
+      ...(priorAgentRunId !== undefined && priorAgentRunId !== null
+        ? { contextRefs: { agentRunId: priorAgentRunId } }
+        : {}),
+    });
+    deps.conversationMemory.appendTurn(memoryKey, {
+      text,
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+      timestampMs: Date.now(),
     });
     await say({
       thread_ts: threadTs,
@@ -116,6 +159,13 @@ const processRouterMessage = async ({
     deps.logger.warn(
       `Router dispatch 실패 (${source}) — user=${slackUserId} text="${text.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
     );
+    // 실패 turn 도 memory 에 남김 — 다음 turn 의 사용자가 "방금 그건 실패" 회복 흐름 인식 가능.
+    deps.conversationMemory.appendTurn(memoryKey, {
+      text,
+      agentType: null,
+      agentRunId: null,
+      timestampMs: Date.now(),
+    });
     await say({
       thread_ts: threadTs,
       text: `이대리 처리 실패: ${toUserFacingErrorMessage(error)}`,

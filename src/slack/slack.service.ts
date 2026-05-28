@@ -29,6 +29,7 @@ import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.u
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
+import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
@@ -84,6 +85,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly conversationMemory: ConversationMemoryService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -296,8 +298,10 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       logger: this.logger,
     });
     // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.
+    // ConversationMemoryService — 사용자별 multi-turn 메모리 (TTL 30분, max 5 turn).
     registerRouterMessageHandler(app, {
       idaeriRouter: this.idaeriRouter,
+      conversationMemory: this.conversationMemory,
       logger: this.logger,
     });
   }

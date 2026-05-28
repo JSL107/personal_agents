@@ -180,7 +180,10 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       });
     }
 
-    const classification = await this.intentClassifier.classify(text);
+    const classification = await this.intentClassifier.classify(
+      text,
+      input.priorTurns,
+    );
     if (classification.agentType === 'UNKNOWN') {
       this.logger.warn(
         `Router intent classifier UNKNOWN — text="${text.slice(0, 60)}" reason="${classification.reason}"`,
