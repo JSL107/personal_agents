@@ -1,29 +1,43 @@
 import { Logger } from '@nestjs/common';
-import { App } from '@slack/bolt';
+import { App, RespondFn } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
-import { Assignment, BeAssignmentType } from '../../agent/cto/domain/cto.type';
+import {
+  Assignment,
+  AssignmentOutput,
+  BeAssignmentType,
+} from '../../agent/cto/domain/cto.type';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
+import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  extractActionUserId,
+  extractActionValue,
+} from '../bolt/action-body.parser';
 
-// V3 비전 phase loop chain — `/auto-flow` 슬래시.
-// 사용자 명시 트리거 1회로 P1 (PM plan) → P2 (CTO 분배) → P3 (BE worker per assignment) chain.
-// 각 step 의 AgentRun 은 parentId 로 chain 추적 (audit log).
+// V3 phase loop chain Phase 2 — PreviewGate 안전판 (사용자 매 step confirm).
+// Phase 1 (1-shot 흐름) 은 deprecated — 본 PR 부터 모든 chain step 사이 confirm 강제.
 //
-// Phase 1 (본 PR): minimal chain — PreviewGate 안전판 없이 사용자 명시 트리거만으로 진행.
-// Phase 2 (후속 plan): 각 step 사이 PreviewGate 사용자 confirm 안전판 도입.
+// 흐름:
+//   1. /auto-flow [tasksText] → PM 만 실행 → 답글 = PM 결과 + "📋 분배 시작" / "❌ 취소" 버튼
+//   2. button '📋 분배 시작' (auto-flow:start-cto, value: {pmAgentRunId}) → CTO 실행
+//      → 답글 갱신 = CTO 결과 + "🚀 BE chain 시작" / "❌ 취소" 버튼
+//   3. button '🚀 BE chain 시작' (auto-flow:start-be, value: {pmAgentRunId, ctoAgentRunId})
+//      → BE chain 실행 → 답글 갱신 = 최종 chain 결과
+//   4. button '❌ 취소' → 답글 갱신 = "chain 중단" 안내
 //
-// chain 범위:
-//   - PM: tasksText 전달 (자유 텍스트 옵션).
-//   - CTO: 직전 PM run 자동 조회 (assignableTaskIds 0 면 chain 중단 + 안내).
-//   - BE worker: assignment 별로 GenerateBackendPlanUsecase / GenerateSchemaProposalUsecase 호출.
-//     BE_TEST 는 filePath 인자 필요라 본 chain 미지원 (skip + 안내).
-//
-// 응답 방식: respond({ replace_original: true }) 로 progress 갱신, 최종 step 의 답글에 전체 결과 요약.
+// state 보존: action button value 에 JSON 직렬화 — 별도 DB X. Slack interactive payload 만 활용.
+// response_url TTL 30분 — PreviewGate 대신 자체 cap. 30분 후 클릭 시 Slack 이 자동 expire.
+
+const ACTION_IDS = {
+  START_CTO: 'auto-flow:start-cto',
+  START_BE: 'auto-flow:start-be',
+  CANCEL: 'auto-flow:cancel',
+} as const;
 
 export interface AutoFlowHandlerDeps {
   generateDailyPlanUsecase: GenerateDailyPlanUsecase;
@@ -34,6 +48,15 @@ export interface AutoFlowHandlerDeps {
   logger: Logger;
 }
 
+interface StartCtoValue {
+  pmAgentRunId: number;
+}
+
+interface StartBeValue {
+  pmAgentRunId: number;
+  ctoAgentRunId: number;
+}
+
 interface BeChainOutcome {
   assignment: Assignment;
   status: 'OK' | 'SKIPPED' | 'FAILED';
@@ -41,24 +64,24 @@ interface BeChainOutcome {
   message: string;
 }
 
+// Slack Block Kit 의 minimal block type — Bolt 의 (Block | KnownBlock)[] 와 호환 위해
+// `as unknown` cast 후 respond 에 전달. KnownBlock 의 strict union 직접 만족시키는 대신
+// runtime payload 만 정확하면 OK (Slack API 가 JSON 으로만 검증).
+type SlackBlock = { type: string; [key: string]: unknown };
+type SlackBlocks = SlackBlock[];
+
 export const registerAutoFlowHandler = (
   app: App,
   deps: AutoFlowHandlerDeps,
 ): void => {
+  // step 1 — slash command (PM 만 실행)
   app.command('/auto-flow', async ({ ack, command, respond }) => {
     const tasksText = command.text?.trim() ?? '';
     await ack({
       response_type: 'ephemeral',
-      text: 'auto-flow 시작 — PM → CTO → BE chain 진행 중입니다 (1~3분 소요)...',
+      text: 'auto-flow PM step 진행 중 (10~20초 소요)...',
     });
-
     try {
-      // step 1: PM plan
-      await respond({
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: '[1/3] PM plan 작성 중...',
-      });
       const pmOutcome = await deps.generateDailyPlanUsecase.execute({
         tasksText,
         slackUserId: command.user_id,
@@ -69,73 +92,250 @@ export const registerAutoFlowHandler = (
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `[1/3] PM plan 완료 (#${pmOutcome.agentRunId}). 그러나 assignableTaskIds 가 비어 있어 분배 대상이 없습니다. chain 중단.`,
+          text: `[1/3] PM plan 완료 (#${pmOutcome.agentRunId}). assignableTaskIds 가 비어 있어 분배 대상이 없습니다. chain 종료.`,
         });
         return;
       }
-
-      // step 2: CTO 분배
       await respond({
         response_type: 'ephemeral',
         replace_original: true,
-        text: `[2/3] PM 완료 (#${pmOutcome.agentRunId}). CTO 분배 (${assignableTaskIds.length} task) 진행 중...`,
+        // Bolt 의 (Block | KnownBlock) strict union 과 우리 minimal SlackBlock 의 차이를
+        // runtime 동등성 기반으로 우회 — Slack API 는 JSON payload 만 검증.
+        blocks: buildPmPreviewBlocks({
+          pmAgentRunId: pmOutcome.agentRunId,
+          plan: pmOutcome.result.plan,
+          assignableCount: assignableTaskIds.length,
+        }) as never,
+        text: `[1/3] PM plan 완료 (#${pmOutcome.agentRunId}). 분배 ${assignableTaskIds.length}개 대기 — 버튼으로 진행/취소.`,
+      });
+    } catch (error: unknown) {
+      await respondError({
+        respond,
+        logger: deps.logger,
+        step: 'PM',
+        error,
+      });
+    }
+  });
+
+  // step 2 — "📋 분배 시작" 클릭 → CTO
+  app.action(ACTION_IDS.START_CTO, async ({ ack, body, respond }) => {
+    await ack();
+    const rawValue = extractActionValue(body);
+    const slackUserId = extractActionUserId(body);
+    if (!rawValue || !slackUserId) {
+      return;
+    }
+    const value = parseStartCtoValue(rawValue);
+    if (!value) {
+      await respondInvalidState(respond);
+      return;
+    }
+    try {
+      await respond({
+        response_type: 'ephemeral',
+        replace_original: true,
+        text: `[2/3] CTO 분배 진행 중 (10~30초 소요)... (PM #${value.pmAgentRunId} 기반)`,
       });
       const ctoOutcome = await deps.generateAssignmentUsecase.execute({
-        slackUserId: command.user_id,
+        slackUserId,
       });
       await deps.agentRunService.setParentId({
         id: ctoOutcome.agentRunId,
-        parentId: pmOutcome.agentRunId,
+        parentId: value.pmAgentRunId,
       });
-
       const assignments = ctoOutcome.result.assignments;
       if (assignments.length === 0) {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 BE chain skip.\n\n${ctoOutcome.result.ctoSummary}`,
+          text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 chain 종료.\n\n${ctoOutcome.result.ctoSummary}`,
         });
         return;
       }
-
-      // step 3: BE worker chain
       await respond({
         response_type: 'ephemeral',
         replace_original: true,
-        text: `[3/3] CTO 완료 (#${ctoOutcome.agentRunId}). BE chain 진행 중 (${assignments.length} worker)...`,
+        blocks: buildCtoPreviewBlocks({
+          pmAgentRunId: value.pmAgentRunId,
+          ctoAgentRunId: ctoOutcome.agentRunId,
+          output: ctoOutcome.result,
+        }) as never,
+        text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}). BE chain ${assignments.length}개 대기 — 버튼으로 진행/취소.`,
       });
+    } catch (error: unknown) {
+      await respondError({
+        respond,
+        logger: deps.logger,
+        step: 'CTO',
+        error,
+      });
+    }
+  });
+
+  // step 3 — "🚀 BE chain 시작" 클릭 → BE chain
+  app.action(ACTION_IDS.START_BE, async ({ ack, body, respond }) => {
+    await ack();
+    const rawValue = extractActionValue(body);
+    const slackUserId = extractActionUserId(body);
+    if (!rawValue || !slackUserId) {
+      return;
+    }
+    const value = parseStartBeValue(rawValue);
+    if (!value) {
+      await respondInvalidState(respond);
+      return;
+    }
+    try {
+      await respond({
+        response_type: 'ephemeral',
+        replace_original: true,
+        text: `[3/3] BE chain 진행 중 (1~3분 소요)... (CTO #${value.ctoAgentRunId} 기반)`,
+      });
+      const ctoRun = await deps.agentRunService.findLatestSucceededRun({
+        agentType: AgentType.CTO,
+        slackUserId,
+      });
+      // 안전 — value.ctoAgentRunId 가 사용자의 직전 SUCCEEDED CTO run 과 일치해야.
+      // 30분 안 사용자가 다른 /assign 호출했다면 (id 불일치) chain 종료 — race condition 회피.
+      if (!ctoRun || ctoRun.id !== value.ctoAgentRunId) {
+        await respond({
+          response_type: 'ephemeral',
+          replace_original: true,
+          text: `auto-flow chain — CTO run #${value.ctoAgentRunId} 가 직전 SUCCEEDED 와 불일치. chain 종료. (다시 \`/auto-flow\` 로 시작)`,
+        });
+        return;
+      }
+      const ctoOutput = ctoRun.output as AssignmentOutput;
+      const assignments = ctoOutput.assignments ?? [];
       const beOutcomes: BeChainOutcome[] = [];
       for (const assignment of assignments) {
         const outcome = await runBeWorker({
           assignment,
-          slackUserId: command.user_id,
-          parentRunId: ctoOutcome.agentRunId,
+          slackUserId,
+          parentRunId: value.ctoAgentRunId,
           deps,
         });
         beOutcomes.push(outcome);
       }
-
-      const finalText = formatChainResult({
-        pmAgentRunId: pmOutcome.agentRunId,
-        ctoOutcome,
-        beOutcomes,
-      });
       await respond({
         response_type: 'ephemeral',
         replace_original: true,
-        text: finalText,
+        text: formatFinalChainResult({
+          pmAgentRunId: value.pmAgentRunId,
+          ctoAgentRunId: value.ctoAgentRunId,
+          ctoSummary: ctoOutput.ctoSummary,
+          beOutcomes,
+        }),
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      deps.logger.error(`/auto-flow chain 실패: ${message}`);
-      await respond({
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `auto-flow chain 실패: ${message}`,
+      await respondError({
+        respond,
+        logger: deps.logger,
+        step: 'BE',
+        error,
       });
     }
   });
+
+  // 취소
+  app.action(ACTION_IDS.CANCEL, async ({ ack, respond }) => {
+    await ack();
+    await respond({
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: '❌ auto-flow 중단 — 부작용 없이 종료되었습니다.',
+    });
+  });
 };
+
+// === blocks ===
+
+const buildPmPreviewBlocks = ({
+  pmAgentRunId,
+  plan,
+  assignableCount,
+}: {
+  pmAgentRunId: number;
+  plan: DailyPlan;
+  assignableCount: number;
+}): SlackBlocks => [
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*[1/3] PM plan 완료 — #${pmAgentRunId}*\n*Top priority*: ${plan.topPriority.title}\n_assignableTaskIds_: ${assignableCount}개`,
+    },
+  },
+  {
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: '📋 분배 시작' },
+        action_id: ACTION_IDS.START_CTO,
+        style: 'primary',
+        value: JSON.stringify({ pmAgentRunId } satisfies StartCtoValue),
+      },
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: '❌ 취소' },
+        action_id: ACTION_IDS.CANCEL,
+        style: 'danger',
+      },
+    ],
+  },
+];
+
+const buildCtoPreviewBlocks = ({
+  pmAgentRunId,
+  ctoAgentRunId,
+  output,
+}: {
+  pmAgentRunId: number;
+  ctoAgentRunId: number;
+  output: AssignmentOutput;
+}): SlackBlocks => {
+  const assignmentLines = output.assignments
+    .map((a) => `• \`[${a.beAssignment}]\` ${a.taskTitle}`)
+    .join('\n');
+  const unassignedLines =
+    output.unassignedTasks.length > 0
+      ? `\n\n*⚠️ 분배 보류*\n${output.unassignedTasks.map((u) => `• ${u.taskTitle} — ${u.reason}`).join('\n')}`
+      : '';
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*[2/3] CTO 분배 완료 — #${ctoAgentRunId}*\n_${output.ctoSummary}_\n\n${assignmentLines}${unassignedLines}`,
+      },
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🚀 BE chain 시작' },
+          action_id: ACTION_IDS.START_BE,
+          style: 'primary',
+          value: JSON.stringify({
+            pmAgentRunId,
+            ctoAgentRunId,
+          } satisfies StartBeValue),
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '❌ 취소' },
+          action_id: ACTION_IDS.CANCEL,
+          style: 'danger',
+        },
+      ],
+    },
+  ];
+};
+
+// === BE chain ===
 
 const runBeWorker = async ({
   assignment,
@@ -190,7 +390,6 @@ const runBeWorker = async ({
         message: `BE_SCHEMA proposal #${outcome.agentRunId} 생성 완료.`,
       };
     }
-    // 미지원 BeAssignmentType — type 상 위 3 종 외 도달 불가지만 graceful.
     const exhaustive: never =
       assignment.beAssignment satisfies BeAssignmentType;
     return {
@@ -211,22 +410,26 @@ const runBeWorker = async ({
   }
 };
 
-const formatChainResult = ({
+// === format ===
+
+const formatFinalChainResult = ({
   pmAgentRunId,
-  ctoOutcome,
+  ctoAgentRunId,
+  ctoSummary,
   beOutcomes,
 }: {
   pmAgentRunId: number;
-  ctoOutcome: { agentRunId: number; result: { ctoSummary: string } };
+  ctoAgentRunId: number;
+  ctoSummary: string;
   beOutcomes: BeChainOutcome[];
 }): string => {
   const lines: string[] = ['*🔁 auto-flow chain 완료*'];
   lines.push('');
-  lines.push(`*[P1 PM plan]* #${pmAgentRunId} — \`/today\` 결과 참조.`);
+  lines.push(`*[P1 PM plan]* #${pmAgentRunId}`);
   lines.push('');
-  lines.push(`*[P2 CTO 분배]* #${ctoOutcome.agentRunId}`);
-  if (ctoOutcome.result.ctoSummary.trim().length > 0) {
-    lines.push(`_${ctoOutcome.result.ctoSummary}_`);
+  lines.push(`*[P2 CTO 분배]* #${ctoAgentRunId}`);
+  if (ctoSummary.trim().length > 0) {
+    lines.push(`_${ctoSummary}_`);
   }
   lines.push('');
   lines.push('*[P3 BE chain]*');
@@ -246,4 +449,73 @@ const formatChainResult = ({
     '_각 worker run id 로 `/retry-run <id>` 가능. chain audit 은 AgentRun.parentId 로._',
   );
   return lines.join('\n');
+};
+
+// === value parsing ===
+
+const parseStartCtoValue = (raw: string): StartCtoValue | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { pmAgentRunId?: unknown }).pmAgentRunId === 'number'
+    ) {
+      return { pmAgentRunId: (parsed as StartCtoValue).pmAgentRunId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const parseStartBeValue = (raw: string): StartBeValue | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { pmAgentRunId?: unknown }).pmAgentRunId === 'number' &&
+      typeof (parsed as { ctoAgentRunId?: unknown }).ctoAgentRunId === 'number'
+    ) {
+      const obj = parsed as StartBeValue;
+      return {
+        pmAgentRunId: obj.pmAgentRunId,
+        ctoAgentRunId: obj.ctoAgentRunId,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+// === error helpers ===
+
+const respondInvalidState = async (respond: RespondFn): Promise<void> => {
+  await respond({
+    response_type: 'ephemeral',
+    replace_original: true,
+    text: 'auto-flow 상태 deserialize 실패 — chain 종료. (다시 `/auto-flow` 로 시작)',
+  });
+};
+
+const respondError = async ({
+  respond,
+  logger,
+  step,
+  error,
+}: {
+  respond: RespondFn;
+  logger: Logger;
+  step: 'PM' | 'CTO' | 'BE';
+  error: unknown;
+}): Promise<void> => {
+  const message = error instanceof Error ? error.message : String(error);
+  logger.error(`/auto-flow ${step} step 실패: ${message}`);
+  await respond({
+    response_type: 'ephemeral',
+    replace_original: true,
+    text: `auto-flow ${step} step 실패: ${message}`,
+  });
 };

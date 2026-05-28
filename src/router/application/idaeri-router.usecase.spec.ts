@@ -162,7 +162,10 @@ describe('IdaeriRouterUsecase', () => {
       text: '오늘 plan 짜줘',
     });
 
-    expect(classifier.classify).toHaveBeenCalledWith('오늘 plan 짜줘');
+    expect(classifier.classify).toHaveBeenCalledWith(
+      '오늘 plan 짜줘',
+      undefined,
+    );
     expect(result.workerType).toBe(AgentType.PM);
     expect(result.output).toEqual({ plan: 'classified' });
   });
