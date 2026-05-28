@@ -294,6 +294,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generateBackendPlanUsecase: this.generateBackendPlanUsecase,
       generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
+      generateTestUsecase: this.generateTestUsecase,
       agentRunService: this.agentRunService,
       logger: this.logger,
     });

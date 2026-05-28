@@ -3,6 +3,7 @@ import { App, RespondFn } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import {
   Assignment,
@@ -44,6 +45,7 @@ export interface AutoFlowHandlerDeps {
   generateAssignmentUsecase: GenerateAssignmentUsecase;
   generateBackendPlanUsecase: GenerateBackendPlanUsecase;
   generateSchemaProposalUsecase: GenerateSchemaProposalUsecase;
+  generateTestUsecase: GenerateTestUsecase;
   agentRunService: AgentRunService;
   logger: Logger;
 }
@@ -349,12 +351,40 @@ const runBeWorker = async ({
   deps: AutoFlowHandlerDeps;
 }): Promise<BeChainOutcome> => {
   if (assignment.beAssignment === AgentType.BE_TEST) {
-    return {
-      assignment,
-      status: 'SKIPPED',
-      message:
-        'BE_TEST 는 filePath 인자 필요라 auto-flow chain 미지원 (사용자가 별도 `/be-test` 호출).',
-    };
+    const filePath = assignment.targetFilePath;
+    if (filePath === undefined) {
+      return {
+        assignment,
+        status: 'SKIPPED',
+        message:
+          'BE_TEST — CTO 가 task 설명에서 file path 를 식별하지 못함. 사용자가 별도 `/be-test <filePath>` 호출 필요.',
+      };
+    }
+    try {
+      const outcome = await deps.generateTestUsecase.execute({
+        filePath,
+        slackUserId,
+      });
+      await deps.agentRunService.setParentId({
+        id: outcome.agentRunId,
+        parentId: parentRunId,
+      });
+      return {
+        assignment,
+        status: 'OK',
+        agentRunId: outcome.agentRunId,
+        message: `BE_TEST spec #${outcome.agentRunId} 생성 완료 — ${filePath}.`,
+      };
+    } catch (error) {
+      deps.logger.warn(
+        `[auto-flow] BE_TEST dispatch failed — taskId=${assignment.taskId} filePath=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        assignment,
+        status: 'FAILED',
+        message: `BE_TEST 실패 — ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
   try {
     if (assignment.beAssignment === AgentType.BE) {

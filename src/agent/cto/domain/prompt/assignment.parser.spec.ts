@@ -141,4 +141,78 @@ describe('parseAssignmentOutput', () => {
 
     expect(result.unassignedTasks).toEqual([]);
   });
+
+  it('BE_TEST + targetFilePath string 이 있으면 trim 해서 보존', () => {
+    const raw = JSON.stringify({
+      assignments: [
+        {
+          taskId: 't',
+          taskTitle: 'user.service spec 보강',
+          beAssignment: 'BE_TEST',
+          priority: 2,
+          reasoning: 'spec 누락',
+          confidence: 0.85,
+          targetFilePath: '  src/user/user.service.ts  ',
+        },
+      ],
+      ctoSummary: '',
+    });
+
+    const result = parseAssignmentOutput(raw);
+
+    expect(result.assignments[0].targetFilePath).toBe(
+      'src/user/user.service.ts',
+    );
+  });
+
+  it('BE_TEST 인데 targetFilePath 미존재 / 빈 문자열이면 undefined', () => {
+    const raw = JSON.stringify({
+      assignments: [
+        {
+          taskId: 't1',
+          taskTitle: 'spec',
+          beAssignment: 'BE_TEST',
+          priority: 2,
+          reasoning: '',
+          confidence: 0.9,
+        },
+        {
+          taskId: 't2',
+          taskTitle: 'spec',
+          beAssignment: 'BE_TEST',
+          priority: 2,
+          reasoning: '',
+          confidence: 0.9,
+          targetFilePath: '   ',
+        },
+      ],
+      ctoSummary: '',
+    });
+
+    const result = parseAssignmentOutput(raw);
+
+    expect(result.assignments[0].targetFilePath).toBeUndefined();
+    expect(result.assignments[1].targetFilePath).toBeUndefined();
+  });
+
+  it('BE / BE_SCHEMA 에 targetFilePath 가 섞여 와도 silent drop', () => {
+    const raw = JSON.stringify({
+      assignments: [
+        {
+          taskId: 't',
+          taskTitle: 'feature',
+          beAssignment: 'BE',
+          priority: 1,
+          reasoning: '',
+          confidence: 0.9,
+          targetFilePath: 'src/foo.ts',
+        },
+      ],
+      ctoSummary: '',
+    });
+
+    const result = parseAssignmentOutput(raw);
+
+    expect(result.assignments[0].targetFilePath).toBeUndefined();
+  });
 });

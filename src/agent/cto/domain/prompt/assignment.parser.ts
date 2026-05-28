@@ -76,8 +76,36 @@ const parseAssignments = (raw: unknown): Assignment[] => {
       obj.confidence,
       `assignments[${idx}].confidence`,
     );
-    return { taskId, taskTitle, beAssignment, priority, reasoning, confidence };
+    const targetFilePath = readOptionalFilePath(
+      obj.targetFilePath,
+      beAssignment,
+    );
+    return {
+      taskId,
+      taskTitle,
+      beAssignment,
+      priority,
+      reasoning,
+      confidence,
+      ...(targetFilePath !== undefined ? { targetFilePath } : {}),
+    };
   });
+};
+
+// LLM 이 BE_TEST 외 worker 에 file path 를 적어도 무시 — schema 위반 아님 (silent drop).
+// BE_TEST 인데 비어 있거나 string 이 아닐 때도 graceful — auto-flow chain 에서 SKIPPED 분기 처리.
+const readOptionalFilePath = (
+  value: unknown,
+  beAssignment: BeAssignmentType,
+): string | undefined => {
+  if (beAssignment !== AgentType.BE_TEST) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 };
 
 const parseUnassignedTasks = (raw: unknown): UnassignedTask[] => {
