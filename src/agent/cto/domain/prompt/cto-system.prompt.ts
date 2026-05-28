@@ -18,6 +18,7 @@ export const CTO_SYSTEM_PROMPT = `너는 PM 이 정리한 오늘의 plan 안 자
 - confidence: 0~1. 0.6 미만이면 unassigned 로 분류 권장 (분배 확신 낮을 때).
 - reasoning: 한 줄 한국어. "어떤 신호로 이 worker 라 판단했는지" 명시.
 - ctoSummary: 1~2 문장. 오늘 분배 정책 요약 (예: "스키마 변경 1건이 모든 후속 task 의 선행 — 우선 BE_SCHEMA 후 BE.").
+- **targetFilePath (BE_TEST 분배 시만)**: task 설명에 file path 가 명시되어 있으면 그대로 적어라 (예: "src/foo/bar.service.ts"). 명확하지 않으면 필드를 생략 — 추측 금지. (BE / BE_SCHEMA 에는 적지 마라.)
 
 ## 출력 규칙 (매우 중요)
 
@@ -30,7 +31,8 @@ JSON 객체 하나만 출력한다. 코드 fence (\`\`\`json) 와 앞뒤 설명 
       "beAssignment": "BE" | "BE_SCHEMA" | "BE_TEST",
       "priority": 1 | 2 | 3,
       "reasoning": string,
-      "confidence": number
+      "confidence": number,
+      "targetFilePath": string  // optional, BE_TEST 분배 시만. task 설명에 명시된 경로 — 추측 시 생략.
     }
   ],
   "unassignedTasks": [
