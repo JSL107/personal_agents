@@ -27,6 +27,10 @@ export interface AgentRetryInputSnapshot {
   workReviewerRunId?: number; // PO_EVAL — 합성 source
   poShadowRunId?: number; // PO_EVAL — 합성 source
   impactReporterRunId?: number; // PO_EVAL — 합성 source
+  // CEO (P5 Meta) — 합성 source. range 는 PO_EVAL 과 공유 (위에 정의됨).
+  poEvalRunId?: number; // CEO — 합성 source (필수)
+  pmRunId?: number; // CEO — 합성 source (선택)
+  ctoRunId?: number; // CEO — 합성 source (선택)
 }
 
 export interface RetryRunPayload {
