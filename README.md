@@ -139,13 +139,19 @@ pnpm format:check          # Prettier 검사
 | `/be test` | Tree-sitter AST 기반 Jest spec 생성 (V3 BE-2) | BE Test / Claude |
 | `/retry-run` | FAILED 된 AgentRun 을 본인 입력으로 재실행 (OPS-5) | (선행 run 의 agent) |
 | `/review-feedback` | 직전 PR 리뷰의 accept / reject 학습 데이터 저장 (QA-1) | — |
+| `/assign` | 직전 PM plan 의 `assignableTaskIds` 를 BE worker 3종으로 자동 분배 (V3 P2) | CTO / Claude |
+| `/po-eval` | Work Reviewer / PO Shadow / Impact Reporter 직전 snapshot 합성 + 이력서용 careerLog (V3 P4) | PO_EVAL / Claude |
+| `/ceo-review` | 직전 PO_EVAL + PM/CTO snapshot 합성 → contextDrift / docsQuality / finalSummary (V3 P5 minimal) | CEO / Claude |
+| `/auto-flow` | PM → CTO → BE chain 자동 진행 (각 step 사이 사용자 confirm 안전판) — V3 비전 phase loop chain | PM + CTO + BE worker |
 
 > 백엔드 사용자-트리거 에이전트 3종은 `/be <subcommand>` 단일 진입점으로 통합돼 있다. 인자 없이 `/be` 만 입력하면 사용법이 노출된다.
 > **BE-SRE (V3 BE-1) / BE-FIX (V3 BE-4)** 는 GitHub webhook (`check_run.completed` failure / `pull_request.opened`) 으로 **자동 트리거**되며, 수동 재실행은 `/retry-run <AgentRun ID>` 를 사용한다.
 
 ### 자연어 멘션 진입 (V3 Router)
 
-슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 10 에이전트 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 11 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 신규 CTO/PO_EVAL/CEO) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+
+**자연어 multi-turn 메모리** — 같은 채널/DM 의 사용자별 대화 컨텍스트가 최대 5 turn / TTL 30분 보존. 지시대명사 ("그거 분배해") 가 직전 worker run 을 자동 참조해 자연어 chain 가능 (예: `@이대리 오늘 plan?` → `@이대리 그거 분배해` → CTO 가 직전 PM run 참조).
 
 ### Slack 봇 설정 (최초 1회)
 
@@ -153,7 +159,7 @@ pnpm format:check          # Prettier 검사
 2. **Socket Mode** 활성화 → App-Level Token 발급 (scope: `connections:write`) → `SLACK_APP_TOKEN`
 3. **OAuth & Permissions** → Bot Token Scopes: `commands`, `chat:write` → 워크스페이스에 install → Bot User OAuth Token → `SLACK_BOT_TOKEN`
 4. **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`
-5. **Slash Commands** → 아래 11개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
+5. **Slash Commands** → 아래 15개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
    - `/today` — 오늘 할 일 우선순위 정리 (Usage hint: `<오늘 할 일을 자유롭게 적어주세요>`)
    - `/worklog` — 오늘 한 일 회고 (Usage hint: `<오늘 한 일을 자유롭게 적어주세요>`)
    - `/review-pr` — PR 리뷰 (Usage hint: `<PR URL 또는 owner/repo#번호>`)
@@ -165,6 +171,10 @@ pnpm format:check          # Prettier 검사
    - `/quota` — 사용량 통계 확인 (Usage hint: `[today|week]`)
    - `/retry-run` — FAILED AgentRun 재실행 (Usage hint: `<AgentRun ID>`)
    - `/review-feedback` — PR 리뷰 accept/reject 피드백 저장 (Usage hint: `<AgentRun ID> accept|reject [이유]`)
+   - `/assign` — 직전 PM plan 의 task 를 BE worker 로 자동 분배 (V3 P2 CTO worker)
+   - `/po-eval` — Work Reviewer / PO Shadow / Impact Reporter 합성 + 이력서 careerLog (V3 P4) (Usage hint: `[today|week]`)
+   - `/ceo-review` — 직전 PO_EVAL + PM/CTO 합성 → drift/docs review (V3 P5 minimal) (Usage hint: `[today|week]`)
+   - `/auto-flow` — PM → CTO → BE chain 자동 (각 step 사용자 confirm 안전판) — V3 phase loop chain (Usage hint: `[선택] 오늘 할 일 자유 텍스트`)
    > 또는 좌측 **`App Manifest`** 에서 `slash_commands` 배열에 위 커맨드들을 선언하고 **Save Changes** → **Reinstall your app** 으로 반영.
 6. **Event Subscriptions** → Enable → Subscribe to Bot Events 에 **`app_mention`** + **`message.im`** 추가 + **OAuth & Permissions** 의 Bot Token Scopes 에 **`app_mentions:read`** + **`im:history`** 추가 → Reinstall.
    - `app_mention` + `app_mentions:read` → 채널에서 `@이대리 ...` 자연어 진입.
@@ -172,6 +182,18 @@ pnpm format:check          # Prettier 검사
    - 둘 다 Router (IdaeriRouterUsecase) 로 위임됨. DM 만 필요하면 `message.im` 만, 채널 멘션만 필요하면 `app_mention` 만 활성화해도 됨.
 7. `.env` 에 세 값 채운 뒤 `pnpm dev` 재기동 → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
 8. Slack 채널에서 `/today` 또는 `/be` 입력해 봇 응답 확인. 추가로 봇을 채널에 초대 후 `@이대리 오늘 plan 짜줘` 형태로 자연어 멘션 + 봇 DM 으로 `오늘 plan 짜줘` 직접 보내 자연어 진입 둘 다 작동하는지 검증
+
+### 자동화 cron (사용자 환경 env 설정 시 활성)
+
+V3 비전 phase loop 의 cron 트리거 — 3종 모두 env 미설정 시 비활성 (graceful).
+
+| Cron | 시간 (KST) | 동작 | 활성화 env |
+|---|---|---|---|
+| Morning Briefing | 매일 09:00 | PM `/today` 자동 발화 + Slack 발송 | `MORNING_BRIEFING_OWNER_SLACK_USER_ID` |
+| **Daily Eval** | 매일 19:00 | PO_EVAL (range=TODAY) 자동 + Slack 발송. sub-agent run 부재 시 graceful skip. | `DAILY_EVAL_OWNER_SLACK_USER_ID` |
+| Weekly Summary | 매주 금 17:00 | Worklog (1주) + CEO meta (range=WEEK) 자동 + Slack 발송. CEO 는 PO_EVAL 부재 시 graceful skip. | `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` |
+
+각 cron 의 세부 옵션 (target/cron pattern/timezone) 은 [`src/config/app.config.ts`](src/config/app.config.ts) 의 `EnvironmentVariables` 클래스 주석 참조.
 
 ## 참고 문서
 
