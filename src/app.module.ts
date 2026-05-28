@@ -13,6 +13,7 @@ import { CtoModule } from './agent/cto/cto.module';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
 import { PmAgentModule } from './agent/pm/pm-agent.module';
+import { PoEvalCareerlogApplier } from './agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { PoEvalModule } from './agent/po-eval/po-eval.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
@@ -86,9 +87,10 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // 현 단계 dispatch() 는 의도적으로 UNSUPPORTED throw — worker dispatcher registry 도입 plan 진입 전.
     RouterModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
+    // V3 §P4: PoEvalCareerlogApplier 도 같은 forRoot 로 등록 — Notion appendBlocks 만 의존.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({
-      appliers: [PmWriteBackApplier],
+      appliers: [PmWriteBackApplier, PoEvalCareerlogApplier],
       imports: [GithubModule, NotionModule],
     }),
     SlackModule,
