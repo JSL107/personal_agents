@@ -7,6 +7,7 @@ import {
   AssignedTasks,
   GithubIssue,
   GithubPullRequest,
+  GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
 } from '../domain/github.type';
@@ -15,6 +16,7 @@ import {
   GetPullRequestDiffOptions,
   GithubClientPort,
   ListAssignedTasksOptions,
+  ListAuthorMergedPullRequestsOptions,
   OCTOKIT_INSTANCE,
   PullRequestRef,
 } from '../domain/port/github-client.port';
@@ -239,6 +241,79 @@ export class OctokitGithubClient implements GithubClientPort {
         `GitHub ${repo}#${number} 코멘트 추가 실패`,
       );
     }
+  }
+
+  // `/impact-report --recent <N>d` — author 가 sinceIsoDate 이후 merge 한 PR summary.
+  // 흐름: search.issuesAndPullRequests 로 PR number 목록 회복 → 각 PR 에 pulls.get 으로
+  // additions/deletions/changed_files/body 보강. N+1 호출이지만 limit 상한 (보통 ≤20) 이라 OK.
+  // body cap 은 caller (usecase) 책임 — 본 client 는 full body 반환.
+  async listAuthorMergedPullRequestsSince({
+    repo,
+    author,
+    sinceIsoDate,
+    limit,
+  }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    const perPage = Math.min(Math.max(1, limit), 100);
+    const q = `repo:${repo} is:pr is:merged author:${author} merged:>=${sinceIsoDate}`;
+    let searchResponse;
+    try {
+      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+        q,
+        per_page: perPage,
+        sort: 'updated',
+        order: 'desc',
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} author=${author} merged PR 검색 실패`,
+      );
+    }
+
+    // search 결과는 PullRequestSummary 의 일부 필드만 반환 — additions/deletions 등은 pulls.get
+    // 으로 별도 회복. Promise.all 로 병렬화 (limit 작아 rate-limit 위험 낮음).
+    const numbers = searchResponse.data.items
+      .slice(0, perPage)
+      .map((item) => item.number);
+
+    const details = await Promise.all(
+      numbers.map(async (number) => {
+        try {
+          const detail = await this.octokit!.rest.pulls.get({
+            owner,
+            repo: repoName,
+            pull_number: number,
+          });
+          if (!detail.data.merged_at) {
+            return null;
+          }
+          return {
+            number,
+            title: detail.data.title,
+            body: detail.data.body ?? '',
+            repo,
+            url: detail.data.html_url,
+            mergedAt: detail.data.merged_at,
+            additions: detail.data.additions,
+            deletions: detail.data.deletions,
+            changedFilesCount: detail.data.changed_files,
+          } satisfies GithubPullRequestSummary;
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `GitHub PR ${repo}#${number} 상세 조회 실패 (skip): ${message}`,
+          );
+          return null;
+        }
+      }),
+    );
+
+    return details
+      .filter((d): d is GithubPullRequestSummary => d !== null)
+      .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
   }
 
   private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
