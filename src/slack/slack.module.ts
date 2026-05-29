@@ -21,6 +21,7 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
+import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
 import { SlackService } from './slack.service';
 
@@ -58,10 +59,11 @@ import { SlackService } from './slack.service';
     // 후속 Phase 에서 나머지 register fn 도 동일 패턴으로 마이그레이션.
     PreviewActionHandler,
     DiagnosisHandler,
+    FeedbackCommandHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
-      inject: [PreviewActionHandler, DiagnosisHandler],
+      inject: [PreviewActionHandler, DiagnosisHandler, FeedbackCommandHandler],
     },
   ],
   exports: [SlackService],
