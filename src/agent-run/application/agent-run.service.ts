@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
+  AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
   TriggerType,
@@ -12,6 +13,12 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
+
+// V3 chain (PM → CTO → BE × N → PO_EVAL → CEO) 의 worst-case 가 5-6 단계 — 16 은 사이클
+// 안전망 + 미래 확장 여유. 본 상수가 변경되면 chain 회복 결과 크기 (Slack message / DB I/O) 도
+// 변동 — production 운영 후 P99 측정 결과 따라 조정 가능. 본 상수가 hard upper bound 도 겸함 —
+// caller 가 더 큰 값 넘겨도 service 가 clamp 하여 DoS (recursive CTE 깊이 폭발) 차단.
+const DEFAULT_CHAIN_MAX_DEPTH = 16;
 
 export interface AgentRunExecutionResult<T> {
   result: T;
@@ -158,6 +165,27 @@ export class AgentRunService {
     return this.repository.findSimilarPlans({
       ...input,
       agentType: input.agentType as string,
+    });
+  }
+
+  // V3 phase loop chain audit walk — rootRunId 로부터 parentId chain 의 children 모두 회복.
+  // 보안: rootRunId/maxDepth 가 NaN/Infinity 면 빈 배열로 short-circuit (recursive CTE 보호).
+  // maxDepth 는 [1, DEFAULT_CHAIN_MAX_DEPTH] 로 clamp — 외부 입력이 비정상적으로 큰 값을 넣어
+  // DB recursive 깊이 폭발시키는 DoS 방지 (security-reviewer MEDIUM).
+  async findChainFromRoot(
+    rootRunId: number,
+    maxDepth = DEFAULT_CHAIN_MAX_DEPTH,
+  ): Promise<AgentRunChainNode[]> {
+    if (!Number.isFinite(rootRunId) || !Number.isFinite(maxDepth)) {
+      return [];
+    }
+    const clampedDepth = Math.min(
+      Math.max(1, Math.trunc(maxDepth)),
+      DEFAULT_CHAIN_MAX_DEPTH,
+    );
+    return this.repository.findChainFromRoot({
+      rootRunId,
+      maxDepth: clampedDepth,
     });
   }
 }

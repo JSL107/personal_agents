@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AgentRunStatus, EvidenceInput } from '../domain/agent-run.type';
+import {
+  AgentRunChainNode,
+  AgentRunStatus,
+  EvidenceInput,
+} from '../domain/agent-run.type';
 import {
   AgentRunRepositoryPort,
   BeginAgentRunInput,
@@ -299,5 +303,69 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       totalSimilarPlans: Number(row.total_similar_plans ?? 0n),
       pmRunsWithSimilar: Number(row.pm_runs_with_similar),
     };
+  }
+
+  // V3 phase loop chain audit — rootRunId 로부터 parent_id 로 연결된 children 을 recursive CTE
+  // 로 회복. depth 가드로 사이클/병리적 깊이 방어 (정상 schema 에서는 사이클 불가능, 안전망).
+  // 정렬: depth 우선 → 같은 depth 내 id 순. Slack chain 메시지 / /retry-run chain replay /
+  // CEO drift R&D 입력의 공통 회복 단위.
+  async findChainFromRoot({
+    rootRunId,
+    maxDepth,
+  }: {
+    rootRunId: number;
+    maxDepth: number;
+  }): Promise<AgentRunChainNode[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: number;
+        parent_id: number | null;
+        agent_type: string;
+        status: string;
+        started_at: Date;
+        ended_at: Date | null;
+        depth: number;
+      }>
+    >`
+      WITH RECURSIVE chain AS (
+        SELECT
+          id,
+          parent_id,
+          agent_type,
+          status,
+          started_at,
+          ended_at,
+          0 AS depth
+        FROM agent_run
+        WHERE id = ${rootRunId}
+
+        UNION ALL
+
+        SELECT
+          a.id,
+          a.parent_id,
+          a.agent_type,
+          a.status,
+          a.started_at,
+          a.ended_at,
+          c.depth + 1 AS depth
+        FROM agent_run a
+        JOIN chain c ON a.parent_id = c.id
+        WHERE c.depth < ${maxDepth}
+      )
+      SELECT id, parent_id, agent_type, status, started_at, ended_at, depth
+      FROM chain
+      ORDER BY depth ASC, id ASC
+    `;
+
+    return rows.map((row) => ({
+      id: row.id,
+      parentId: row.parent_id,
+      agentType: row.agent_type,
+      status: row.status as AgentRunStatus,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      depth: Number(row.depth),
+    }));
   }
 }
