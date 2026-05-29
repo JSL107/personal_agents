@@ -131,7 +131,7 @@ pnpm format:check          # Prettier 검사
 | `/today` | 오늘 할 일 계획 생성 (자동 수집 + Notion 기록) | PM Agent / ChatGPT |
 | `/worklog` | 오늘 한 일 회고 (정량 근거 + Notion 기록) | Work Reviewer / ChatGPT |
 | `/po-shadow` | 직전 계획에 대한 PO 시점의 재검토 및 리스크 분석 | PO Shadow / ChatGPT |
-| `/impact-report` | 특정 작업에 대한 임팩트 보고서 생성 | Impact Reporter / ChatGPT |
+| `/impact-report` | PR 1건 또는 작업 설명 → 단일 임팩트 보고서. `--recent <N>d` (env 활성 시) 는 최근 N일 머지 PR 자동 종합 | Impact Reporter / ChatGPT |
 | `/sync-plan` | 생성된 계획을 외부(GitHub/Notion)로 전송 (승인 게이트) | PM-2 / (System) |
 | `/sync-context` | 외부 컨텍스트(GitHub/Notion/Slack) 강제 재수집 | — |
 | `/quota` | 본인의 에이전트 사용량 통계 확인 | — |
@@ -202,8 +202,10 @@ V3 비전 phase loop 의 cron 트리거 — 3종 모두 env 미설정 시 비활
 | 통합 | 트리거 | 동작 | 활성화 env |
 |---|---|---|---|
 | **careerLog → Notion** | `/po-eval` 결과 화면의 "✅ 적용" 버튼 (30분 안) | PreviewGate 경유 → 지정 Notion 페이지에 careerLog heading + 성과 bullet + 기술 스택 + impact append. 사용자 confirm 후만 부작용 발생. | `CAREER_LOG_NOTION_PAGE_ID` |
+| **`/impact-report --recent <N>d`** | `/impact-report --recent 7d` (또는 임의 N=1~365) | 지정 author/repo 의 최근 N일 머지 PR 을 GitHub 에서 자동 fetch (최대 20건) → 정량 합산 (PR수 / +LOC / -LOC / files) + body summary 종합 → ImpactReport 생성 | `IMPACT_REPORT_GITHUB_AUTHOR` + `IMPACT_REPORT_GITHUB_REPO` |
 
-`CAREER_LOG_NOTION_PAGE_ID` 가 미설정이면 `/po-eval` 응답은 기존 텍스트만 (버튼 미부착) — 회귀 없음.
+- `CAREER_LOG_NOTION_PAGE_ID` 미설정 → `/po-eval` 응답은 기존 텍스트만 (버튼 미부착)
+- `IMPACT_REPORT_GITHUB_AUTHOR` / `IMPACT_REPORT_GITHUB_REPO` 미설정 → `/impact-report --recent ...` 만 `RECENT_MODE_ENV_MISSING` 으로 거절 (기존 단일 PR / 자유 텍스트 모드 영향 없음)
 
 ## 참고 문서
 
