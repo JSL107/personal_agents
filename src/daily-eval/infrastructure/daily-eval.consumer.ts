@@ -6,6 +6,7 @@ import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/gen
 import { PoEvalException } from '../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -74,13 +75,3 @@ export class DailyEvalConsumer extends WorkerHost {
     }
   }
 }
-
-// 서버 timezone (UTC 가능) 과 무관하게 KST 기준 YYYY-MM-DD 반환.
-// en-CA 로케일은 ISO 8601 ("2026-05-28") 형식을 그대로 출력 — 별도 padding 없음.
-const getTodayKstDate = (): string =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());

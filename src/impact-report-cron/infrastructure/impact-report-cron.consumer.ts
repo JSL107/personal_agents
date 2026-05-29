@@ -6,6 +6,7 @@ import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/applica
 import { ImpactReporterException } from '../../agent/impact-reporter/domain/impact-reporter.exception';
 import { ImpactReporterErrorCode } from '../../agent/impact-reporter/domain/impact-reporter-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -91,12 +92,3 @@ export class ImpactReportCronConsumer extends WorkerHost {
     }
   }
 }
-
-// Daily Eval consumer 와 동일 — 서버 timezone 무관 KST YYYY-MM-DD.
-const getTodayKstDate = (): string =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
