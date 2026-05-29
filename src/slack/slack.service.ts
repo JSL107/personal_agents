@@ -18,7 +18,6 @@ import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/rev
 import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
-import { SyncPlanUsecase } from '../agent/pm/application/sync-plan.usecase';
 import { GeneratePoEvaluationUsecase } from '../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
@@ -42,7 +41,6 @@ import { registerBeHandler } from './handler/be.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
-import { registerWriteBackHandlers } from './handler/write-back.handler';
 
 // 이대리 Slack 어댑터.
 // 책임: (1) Bolt App lifecycle (Socket Mode 기동/종료), (2) 명령/액션 핸들러 라우팅,
@@ -72,7 +70,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly createPreviewUsecase: CreatePreviewUsecase,
     @Inject(SLACK_HANDLER_PORT)
     private readonly slackHandlers: SlackHandler[],
-    private readonly syncPlanUsecase: SyncPlanUsecase,
     private readonly slackInboxService: SlackInboxService,
     @Inject(IDAERI_ROUTER_PORT)
     private readonly idaeriRouter: IdaeriRouterPort,
@@ -251,10 +248,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       careerLogNotionPageId: this.configService.get<string>(
         'CAREER_LOG_NOTION_PAGE_ID',
       ),
-      logger: this.logger,
-    });
-    registerWriteBackHandlers(app, {
-      syncPlanUsecase: this.syncPlanUsecase,
       logger: this.logger,
     });
     registerBeHandler(app, {
