@@ -173,12 +173,14 @@ class EnvironmentVariables {
   @IsString()
   CAREER_LOG_NOTION_PAGE_ID?: string;
 
-  // `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo.
-  // - IMPACT_REPORT_GITHUB_AUTHOR: GitHub username (예: "JSL107"). slackUserId → GitHub login
-  //   매핑 인프라 없는 1인 봇 임시 정책.
-  // - IMPACT_REPORT_GITHUB_REPO: "owner/repo" (예: "JSL107/personal_agents"). 단일 repo 만 지원.
-  //   향후 다중 repo 시 콤마 구분으로 확장.
-  // 둘 중 하나라도 미설정 → recent mode 호출 시 명시 에러 (기존 single PR mode 는 영향 없음).
+  // `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo (선택).
+  // - IMPACT_REPORT_GITHUB_AUTHOR: GitHub username (예: "JSL107") — **필수**. slackUserId →
+  //   GitHub login 매핑 인프라 없는 1인 봇 임시 정책.
+  // - IMPACT_REPORT_GITHUB_REPO: "owner/repo" (예: "JSL107/personal_agents") — **선택**.
+  //   - 설정 시: 해당 repo 의 author 머지 PR 한정.
+  //   - 미설정/빈 값 시: author 가 머지한 모든 repo PR (본인 작성 PR 만, contributor 로 다른
+  //     repo 에 머지한 것도 포함). GitHub search query 의 `repo:` qualifier 제거.
+  // AUTHOR 미설정 시 recent mode 호출 → 명시 에러 (기존 single PR mode 는 영향 없음).
   @IsOptional()
   @IsString()
   @Matches(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/, {
