@@ -1,5 +1,10 @@
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { AgentRunStatus, EvidenceInput, TriggerType } from '../agent-run.type';
+import {
+  AgentRunChainNode,
+  AgentRunStatus,
+  EvidenceInput,
+  TriggerType,
+} from '../agent-run.type';
 
 export const AGENT_RUN_REPOSITORY_PORT = Symbol('AGENT_RUN_REPOSITORY_PORT');
 
@@ -101,4 +106,11 @@ export interface AgentRunRepositoryPort {
   }): Promise<SimilarPlanRow[]>;
   // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 합산.
   aggregatePmContextStats(input: QuotaStatsQuery): Promise<PmContextStats>;
+  // V3 phase loop chain audit — rootRunId 로부터 parentId 역방향 children 까지 recursive 회복.
+  // depth 0 (root) → depth N (leaf) 정렬. maxDepth 초과 row 는 결과에서 제외 (사이클 안전망).
+  // root run 이 존재하지 않으면 빈 배열.
+  findChainFromRoot(input: {
+    rootRunId: number;
+    maxDepth: number;
+  }): Promise<AgentRunChainNode[]>;
 }

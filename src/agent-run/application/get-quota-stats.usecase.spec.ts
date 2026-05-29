@@ -23,6 +23,7 @@ const buildRepo = (
     totalSimilarPlans: 0,
     pmRunsWithSimilar: 0,
   }),
+  findChainFromRoot: jest.fn().mockResolvedValue([]),
 });
 
 describe('GetQuotaStatsUsecase', () => {

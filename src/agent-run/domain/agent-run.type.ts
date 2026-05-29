@@ -52,3 +52,18 @@ export interface EvidenceInput {
   excerpt?: string;
   payload: unknown;
 }
+
+// V3 phase loop chain audit — AgentRun.parentId 로 연결된 root → leaf 순회 결과.
+// rootRunId = 0 일 때만 자기 자신. children 이 있으면 depth=1, 2 ... 로 깊이 증가.
+// 사이클은 schema 상 존재 불가 (parentId → id 단방향) 지만 application 안전망으로 maxDepth 가드.
+// Slack chain 메시지 / /retry-run chain replay / CEO drift R&D 입력의 공통 회복 단위.
+export interface AgentRunChainNode {
+  id: number;
+  parentId: number | null;
+  agentType: string;
+  status: AgentRunStatus;
+  startedAt: Date;
+  endedAt: Date | null;
+  // 0 = root, 1 = direct child, 2 = grandchild ... maxDepth 초과 row 는 결과에서 제외.
+  depth: number;
+}
