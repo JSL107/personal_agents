@@ -202,10 +202,10 @@ V3 비전 phase loop 의 cron 트리거 — 3종 모두 env 미설정 시 비활
 | 통합 | 트리거 | 동작 | 활성화 env |
 |---|---|---|---|
 | **careerLog → Notion** | `/po-eval` 결과 화면의 "✅ 적용" 버튼 (30분 안) | PreviewGate 경유 → 지정 Notion 페이지에 careerLog heading + 성과 bullet + 기술 스택 + impact append. 사용자 confirm 후만 부작용 발생. | `CAREER_LOG_NOTION_PAGE_ID` |
-| **`/impact-report --recent <N>d`** | `/impact-report --recent 7d` (또는 임의 N=1~365) | 지정 author/repo 의 최근 N일 머지 PR 을 GitHub 에서 자동 fetch (최대 20건) → 정량 합산 (PR수 / +LOC / -LOC / files) + body summary 종합 → ImpactReport 생성 | `IMPACT_REPORT_GITHUB_AUTHOR` + `IMPACT_REPORT_GITHUB_REPO` |
+| **`/impact-report --recent <N>d`** | `/impact-report --recent 7d` (또는 임의 N=1~365) | 지정 author 의 최근 N일 머지 PR 을 GitHub 에서 자동 fetch (최대 20건) → 정량 합산 (PR수 / +LOC / -LOC / files) + body summary 종합 → ImpactReport 생성. `REPO` 미설정 시 author 의 **모든 repo** 머지 PR (본인 작성, fork merge 포함). | `IMPACT_REPORT_GITHUB_AUTHOR` (필수) + `IMPACT_REPORT_GITHUB_REPO` (선택) |
 
 - `CAREER_LOG_NOTION_PAGE_ID` 미설정 → `/po-eval` 응답은 기존 텍스트만 (버튼 미부착)
-- `IMPACT_REPORT_GITHUB_AUTHOR` / `IMPACT_REPORT_GITHUB_REPO` 미설정 → `/impact-report --recent ...` 만 `RECENT_MODE_ENV_MISSING` 으로 거절 (기존 단일 PR / 자유 텍스트 모드 영향 없음)
+- `IMPACT_REPORT_GITHUB_AUTHOR` 미설정 → `/impact-report --recent ...` 만 `RECENT_MODE_ENV_MISSING` 으로 거절 (기존 단일 PR / 자유 텍스트 모드 영향 없음). `IMPACT_REPORT_GITHUB_REPO` 는 선택 — 미설정 시 author 모든 repo 글로벌 모드.
 
 ## 참고 문서
 

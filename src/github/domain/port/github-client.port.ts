@@ -38,8 +38,10 @@ export interface AddIssueCommentInput {
 
 // `/impact-report --recent <N>d` 다중 PR 종합 조회 옵션.
 export interface ListAuthorMergedPullRequestsOptions {
-  // "owner/repo" — env IMPACT_REPORT_GITHUB_REPO 에서 가져옴.
-  repo: string;
+  // "owner/repo" — env IMPACT_REPORT_GITHUB_REPO 에서 가져옴. null 이면 author 의 모든 repo
+  // 머지 PR (본인이 작성한 PR 만, 다른 contributor repo 포함). owner/repo 는 search 결과
+  // 의 repository_url 에서 per-PR 추출.
+  repo: string | null;
   // GitHub login (username) — env IMPACT_REPORT_GITHUB_AUTHOR 에서 가져옴.
   author: string;
   // ISO date (YYYY-MM-DD). 이 날짜 이후 merged 된 PR 만.
