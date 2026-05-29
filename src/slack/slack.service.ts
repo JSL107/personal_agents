@@ -27,8 +27,6 @@ import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/gener
 import { AgentRunService } from '../agent-run/application/agent-run.service';
 import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.usecase';
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
-import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
-import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
 import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
@@ -36,6 +34,10 @@ import {
   IdaeriRouterPort,
 } from '../router/domain/idaeri-router.port';
 import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
+import {
+  SLACK_HANDLER_PORT,
+  SlackHandler,
+} from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
@@ -43,7 +45,6 @@ import { registerBeHandler } from './handler/be.handler';
 import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerFeedbackCommandHandlers } from './handler/feedback-command.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
-import { registerPreviewActionHandlers } from './handler/preview-action.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
 import { registerWriteBackHandlers } from './handler/write-back.handler';
@@ -76,9 +77,9 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly syncContextUsecase: SyncContextUsecase,
     private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
-    private readonly applyPreviewUsecase: ApplyPreviewUsecase,
-    private readonly cancelPreviewUsecase: CancelPreviewUsecase,
     private readonly createPreviewUsecase: CreatePreviewUsecase,
+    @Inject(SLACK_HANDLER_PORT)
+    private readonly slackHandlers: SlackHandler[],
     private readonly syncPlanUsecase: SyncPlanUsecase,
     private readonly slackInboxService: SlackInboxService,
     @Inject(IDAERI_ROUTER_PORT)
@@ -236,10 +237,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   // 카테고리별 핸들러 모듈로 위임 — 각 핸들러는 ack/respond/usecase 호출만 담당.
   // 추가 명령은 적절한 카테고리에 끼워넣거나 새 register…Handlers 모듈을 만들어 여기에 등록한다.
   private registerCommands(app: App): void {
-    registerPreviewActionHandlers(app, {
-      applyPreviewUsecase: this.applyPreviewUsecase,
-      cancelPreviewUsecase: this.cancelPreviewUsecase,
-    });
+    // C-4 Phase 1 — SLACK_HANDLER_PORT multi-provider 로 등록된 handler 들 일괄 register.
+    // 후속 Phase 에서 나머지 register* fn 들도 SlackHandler 로 클래스화 → 본 forEach 만 남게.
+    for (const handler of this.slackHandlers) {
+      handler.register(app);
+    }
     registerDiagnosisHandlers(app, {
       syncContextUsecase: this.syncContextUsecase,
       getQuotaStatsUsecase: this.getQuotaStatsUsecase,
