@@ -40,6 +40,9 @@ export enum TriggerType {
   // workflow-phase-definition §5.2 의 Daily Eval — 매일 19:00 KST PO_EVAL (range=TODAY) 자동 트리거.
   // 수동 /po-eval (SLACK_COMMAND_PO_EVAL) 와 구분 — 분석 / Failure Replay 시 trigger 출처 명확.
   DAILY_EVAL_CRON = 'DAILY_EVAL_CRON',
+  // 주 1회 자동 /impact-report --recent <N>d 종합 — 본인 작성 머지 PR 종합 보고.
+  // 수동 /impact-report (SLACK_COMMAND_IMPACT_REPORT) 와 구분.
+  IMPACT_REPORT_RECENT_CRON = 'IMPACT_REPORT_RECENT_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
