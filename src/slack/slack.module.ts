@@ -20,6 +20,7 @@ import {
   SLACK_HANDLER_PORT,
   SlackHandler,
 } from './domain/port/slack-handler.port';
+import { AgentCommandHandler } from './handler/agent-command.handler';
 import { BeHandler } from './handler/be.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
@@ -64,6 +65,7 @@ import { SlackService } from './slack.service';
     FeedbackCommandHandler,
     WriteBackHandler,
     BeHandler,
+    AgentCommandHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -73,6 +75,7 @@ import { SlackService } from './slack.service';
         FeedbackCommandHandler,
         WriteBackHandler,
         BeHandler,
+        AgentCommandHandler,
       ],
     },
   ],

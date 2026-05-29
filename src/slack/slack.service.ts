@@ -35,7 +35,6 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
-import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
@@ -230,14 +229,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     for (const handler of this.slackHandlers) {
       handler.register(app);
     }
-    registerAgentCommandHandlers(app, {
-      generateDailyPlanUsecase: this.generateDailyPlanUsecase,
-      generateWorklogUsecase: this.generateWorklogUsecase,
-      reviewPullRequestUsecase: this.reviewPullRequestUsecase,
-      generateImpactReportUsecase: this.generateImpactReportUsecase,
-      generatePoShadowUsecase: this.generatePoShadowUsecase,
-      logger: this.logger,
-    });
     registerPhaseCommandHandlers(app, {
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
