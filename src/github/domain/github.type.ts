@@ -48,3 +48,18 @@ export interface PullRequestDiff {
   truncated: boolean; // maxBytes 초과로 잘렸는지
   bytes: number;
 }
+
+// `/impact-report --recent <N>d` 다중 PR 종합용 lightweight summary.
+// 단일 PR 상세 (PullRequestDetail) 와 분리 — body 는 cap 적용, changedFiles 목록은 count 만.
+// 정량 종합 (additions/deletions/files 합산) + 정성 (title/body summary) 모두 가능한 최소 필드.
+export interface GithubPullRequestSummary {
+  number: number;
+  title: string;
+  body: string; // cap 적용 (caller 결정)
+  repo: string; // "owner/repo"
+  url: string;
+  mergedAt: string; // ISO 8601
+  additions: number;
+  deletions: number;
+  changedFilesCount: number;
+}

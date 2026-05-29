@@ -172,6 +172,27 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CAREER_LOG_NOTION_PAGE_ID?: string;
+
+  // `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo.
+  // - IMPACT_REPORT_GITHUB_AUTHOR: GitHub username (예: "JSL107"). slackUserId → GitHub login
+  //   매핑 인프라 없는 1인 봇 임시 정책.
+  // - IMPACT_REPORT_GITHUB_REPO: "owner/repo" (예: "JSL107/personal_agents"). 단일 repo 만 지원.
+  //   향후 다중 repo 시 콤마 구분으로 확장.
+  // 둘 중 하나라도 미설정 → recent mode 호출 시 명시 에러 (기존 single PR mode 는 영향 없음).
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/, {
+    message:
+      'IMPACT_REPORT_GITHUB_AUTHOR 는 유효한 GitHub 사용자명이어야 합니다 (영숫자+하이픈, 1~39자, GitHub 정책 준수).',
+  })
+  IMPACT_REPORT_GITHUB_AUTHOR?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[^/\s]+\/[^/\s]+$/, {
+    message: 'IMPACT_REPORT_GITHUB_REPO 는 "owner/repo" 형식이어야 합니다.',
+  })
+  IMPACT_REPORT_GITHUB_REPO?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

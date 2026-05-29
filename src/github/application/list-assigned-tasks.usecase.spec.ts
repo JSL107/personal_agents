@@ -15,6 +15,7 @@ const buildClientMock = (
   getPullRequest: jest.fn(),
   getPullRequestDiff: jest.fn(),
   addIssueComment: jest.fn(),
+  listAuthorMergedPullRequestsSince: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {
