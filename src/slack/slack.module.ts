@@ -20,6 +20,7 @@ import {
   SLACK_HANDLER_PORT,
   SlackHandler,
 } from './domain/port/slack-handler.port';
+import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
 import { SlackService } from './slack.service';
 
@@ -56,10 +57,11 @@ import { SlackService } from './slack.service';
     // 등록되면 SlackService 가 부팅 시 handlers.forEach(h => h.register(app)) 만 호출.
     // 후속 Phase 에서 나머지 register fn 도 동일 패턴으로 마이그레이션.
     PreviewActionHandler,
+    DiagnosisHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
-      inject: [PreviewActionHandler],
+      inject: [PreviewActionHandler, DiagnosisHandler],
     },
   ],
   exports: [SlackService],

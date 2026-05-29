@@ -19,13 +19,11 @@ import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/sav
 import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
-import { SyncContextUsecase } from '../agent/pm/application/sync-context.usecase';
 import { SyncPlanUsecase } from '../agent/pm/application/sync-plan.usecase';
 import { GeneratePoEvaluationUsecase } from '../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../agent-run/application/agent-run.service';
-import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.usecase';
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
@@ -42,7 +40,6 @@ import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
 import { registerBeHandler } from './handler/be.handler';
-import { registerDiagnosisHandlers } from './handler/diagnosis.handler';
 import { registerFeedbackCommandHandlers } from './handler/feedback-command.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
@@ -74,8 +71,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateTestUsecase: GenerateTestUsecase,
     private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
     private readonly analyzePrConventionUsecase: AnalyzePrConventionUsecase,
-    private readonly syncContextUsecase: SyncContextUsecase,
-    private readonly getQuotaStatsUsecase: GetQuotaStatsUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
     private readonly createPreviewUsecase: CreatePreviewUsecase,
     @Inject(SLACK_HANDLER_PORT)
@@ -242,11 +237,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     for (const handler of this.slackHandlers) {
       handler.register(app);
     }
-    registerDiagnosisHandlers(app, {
-      syncContextUsecase: this.syncContextUsecase,
-      getQuotaStatsUsecase: this.getQuotaStatsUsecase,
-      logger: this.logger,
-    });
     registerAgentCommandHandlers(app, {
       generateDailyPlanUsecase: this.generateDailyPlanUsecase,
       generateWorklogUsecase: this.generateWorklogUsecase,
