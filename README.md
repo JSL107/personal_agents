@@ -195,6 +195,14 @@ V3 비전 phase loop 의 cron 트리거 — 3종 모두 env 미설정 시 비활
 
 각 cron 의 세부 옵션 (target/cron pattern/timezone) 은 [`src/config/app.config.ts`](src/config/app.config.ts) 의 `EnvironmentVariables` 클래스 주석 참조.
 
+### 선택 외부 적재 (env 설정 시 활성)
+
+| 통합 | 트리거 | 동작 | 활성화 env |
+|---|---|---|---|
+| **careerLog → Notion** | `/po-eval` 결과 화면의 "✅ 적용" 버튼 (30분 안) | PreviewGate 경유 → 지정 Notion 페이지에 careerLog heading + 성과 bullet + 기술 스택 + impact append. 사용자 confirm 후만 부작용 발생. | `CAREER_LOG_NOTION_PAGE_ID` |
+
+`CAREER_LOG_NOTION_PAGE_ID` 가 미설정이면 `/po-eval` 응답은 기존 텍스트만 (버튼 미부착) — 회귀 없음.
+
 ## 참고 문서
 
 - [자동화 규칙 (AGENTS.md)](./AGENTS.md)

@@ -29,6 +29,7 @@ import { GetQuotaStatsUsecase } from '../agent-run/application/get-quota-stats.u
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ApplyPreviewUsecase } from '../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../preview-gate/application/cancel-preview.usecase';
+import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
   IDAERI_ROUTER_PORT,
@@ -77,6 +78,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly retryRunUsecase: RetryRunUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
+    private readonly createPreviewUsecase: CreatePreviewUsecase,
     private readonly syncPlanUsecase: SyncPlanUsecase,
     private readonly slackInboxService: SlackInboxService,
     @Inject(IDAERI_ROUTER_PORT)
@@ -255,6 +257,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
       generateCeoMetaUsecase: this.generateCeoMetaUsecase,
+      createPreviewUsecase: this.createPreviewUsecase,
+      // V3 §P4 careerLog Notion 적재 — env 미설정이면 undefined → /po-eval 기존 텍스트 경로.
+      careerLogNotionPageId: this.configService.get<string>(
+        'CAREER_LOG_NOTION_PAGE_ID',
+      ),
       logger: this.logger,
     });
     registerFeedbackCommandHandlers(app, {
