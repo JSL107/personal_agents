@@ -23,7 +23,6 @@ import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
-import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
   IDAERI_ROUTER_PORT,
@@ -36,7 +35,6 @@ import {
 } from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
-import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
 
@@ -65,7 +63,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
     private readonly analyzePrConventionUsecase: AnalyzePrConventionUsecase,
     private readonly retryRunUsecase: RetryRunUsecase,
-    private readonly createPreviewUsecase: CreatePreviewUsecase,
     @Inject(SLACK_HANDLER_PORT)
     private readonly slackHandlers: SlackHandler[],
     private readonly slackInboxService: SlackInboxService,
@@ -229,17 +226,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     for (const handler of this.slackHandlers) {
       handler.register(app);
     }
-    registerPhaseCommandHandlers(app, {
-      generateAssignmentUsecase: this.generateAssignmentUsecase,
-      generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
-      generateCeoMetaUsecase: this.generateCeoMetaUsecase,
-      createPreviewUsecase: this.createPreviewUsecase,
-      // V3 §P4 careerLog Notion 적재 — env 미설정이면 undefined → /po-eval 기존 텍스트 경로.
-      careerLogNotionPageId: this.configService.get<string>(
-        'CAREER_LOG_NOTION_PAGE_ID',
-      ),
-      logger: this.logger,
-    });
     registerRetryRunHandler(app, {
       retryRunUsecase: this.retryRunUsecase,
       generateDailyPlanUsecase: this.generateDailyPlanUsecase,
