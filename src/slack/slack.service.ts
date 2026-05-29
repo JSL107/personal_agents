@@ -37,7 +37,6 @@ import {
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
-import { registerBeHandler } from './handler/be.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
@@ -248,12 +247,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       careerLogNotionPageId: this.configService.get<string>(
         'CAREER_LOG_NOTION_PAGE_ID',
       ),
-      logger: this.logger,
-    });
-    registerBeHandler(app, {
-      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
-      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
-      generateTestUsecase: this.generateTestUsecase,
       logger: this.logger,
     });
     registerRetryRunHandler(app, {
