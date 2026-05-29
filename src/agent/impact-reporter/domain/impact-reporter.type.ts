@@ -1,7 +1,12 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 // /impact-report 입력: 분석 대상 자유 텍스트 (PR 링크 / task 설명 등).
+// triggerType 은 호출자 (slash / cron) 가 구분 명시 — 미지정 시 SLACK_COMMAND_IMPACT_REPORT
+// (사용자 슬래시 진입). cron 자동 발화는 IMPACT_REPORT_RECENT_CRON.
 export interface GenerateImpactReportInput {
   subject: string;
   slackUserId: string;
+  triggerType?: TriggerType;
 }
 
 export interface ImpactBeforeAfter {
