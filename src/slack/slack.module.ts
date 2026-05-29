@@ -23,6 +23,7 @@ import {
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
+import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';
 
 @Module({
@@ -60,10 +61,16 @@ import { SlackService } from './slack.service';
     PreviewActionHandler,
     DiagnosisHandler,
     FeedbackCommandHandler,
+    WriteBackHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
-      inject: [PreviewActionHandler, DiagnosisHandler, FeedbackCommandHandler],
+      inject: [
+        PreviewActionHandler,
+        DiagnosisHandler,
+        FeedbackCommandHandler,
+        WriteBackHandler,
+      ],
     },
   ],
   exports: [SlackService],
