@@ -51,6 +51,7 @@ export class GenerateImpactReportUsecase {
   async execute({
     subject,
     slackUserId,
+    triggerType,
   }: GenerateImpactReportInput): Promise<AgentRunOutcome<ImpactReport>> {
     const trimmed = subject.trim();
     if (trimmed.length === 0) {
@@ -62,6 +63,9 @@ export class GenerateImpactReportUsecase {
       });
     }
 
+    const effectiveTriggerType =
+      triggerType ?? TriggerType.SLACK_COMMAND_IMPACT_REPORT;
+
     // `/impact-report --recent <N>d` 다중 PR 종합 모드.
     const recentDays = parseRecentDaysFromSubject(trimmed);
     if (recentDays !== null) {
@@ -69,6 +73,7 @@ export class GenerateImpactReportUsecase {
         slackUserId,
         days: recentDays,
         originalSubject: trimmed,
+        triggerType: effectiveTriggerType,
       });
     }
 
@@ -80,7 +85,7 @@ export class GenerateImpactReportUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.IMPACT_REPORTER,
-      triggerType: TriggerType.SLACK_COMMAND_IMPACT_REPORT,
+      triggerType: effectiveTriggerType,
       inputSnapshot: {
         subject: trimmed,
         slackUserId,
@@ -149,10 +154,12 @@ export class GenerateImpactReportUsecase {
     slackUserId,
     days,
     originalSubject,
+    triggerType,
   }: {
     slackUserId: string;
     days: number;
     originalSubject: string;
+    triggerType: TriggerType;
   }): Promise<AgentRunOutcome<ImpactReport>> {
     const author = this.configService.get<string>(
       'IMPACT_REPORT_GITHUB_AUTHOR',
@@ -197,7 +204,7 @@ export class GenerateImpactReportUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.IMPACT_REPORTER,
-      triggerType: TriggerType.SLACK_COMMAND_IMPACT_REPORT,
+      triggerType,
       inputSnapshot: {
         subject: originalSubject,
         slackUserId,
