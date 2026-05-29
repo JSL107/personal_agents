@@ -21,7 +21,9 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ PO Shadow (`src/agent/po-shadow/`) — `/po-shadow`. 계획의 비즈니스 가치 및 리스크 재검토
 - ✅ Impact Reporter (`src/agent/impact-reporter/`) — `/impact-report`. 작업 성과 보고서 자동화
 - ✅ Preview Gate (`src/preview-gate/`) — 외부 시스템 전송 전 사용자 승인(✅/❌) 공통 처리
-- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) → intent classifier (자연어→AgentType) → 10 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
+- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) → intent classifier (자연어→AgentType) → 13 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
+- ✅ V3 phase loop 워커 — CTO (`/assign`) / PO_EVAL (`/po-eval`) / CEO (`/ceo-review`) + `/auto-flow` chain + AgentRun chain audit walk (`findChainFromRoot`)
+- ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
 - ✅ Morning Briefing (`src/morning-briefing/`) — BullMQ 스케줄러 기반의 매일 아침 자동 브리핑
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
@@ -149,7 +151,7 @@ pnpm format:check          # Prettier 검사
 
 ### 자연어 멘션 진입 (V3 Router)
 
-슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 11 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 신규 CTO/PO_EVAL/CEO) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 13 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 신규 CTO/PO_EVAL/CEO) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
 
 **자연어 multi-turn 메모리** — 같은 채널/DM 의 사용자별 대화 컨텍스트가 최대 5 turn / TTL 30분 보존. 지시대명사 ("그거 분배해") 가 직전 worker run 을 자동 참조해 자연어 chain 가능 (예: `@이대리 오늘 plan?` → `@이대리 그거 분배해` → CTO 가 직전 PM run 참조).
 
