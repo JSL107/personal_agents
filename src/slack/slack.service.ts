@@ -15,7 +15,6 @@ import { AnalyzeStackTraceUsecase } from '../agent/be-sre/application/analyze-st
 import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
 import { GenerateCeoMetaUsecase } from '../agent/ceo/application/generate-ceo-meta.usecase';
 import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
-import { SaveReviewOutcomeUsecase } from '../agent/code-reviewer/application/save-review-outcome.usecase';
 import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
@@ -40,7 +39,6 @@ import { buildPreviewBlocks } from './format/preview-message.builder';
 import { registerAgentCommandHandlers } from './handler/agent-command.handler';
 import { registerAutoFlowHandler } from './handler/auto-flow.handler';
 import { registerBeHandler } from './handler/be.handler';
-import { registerFeedbackCommandHandlers } from './handler/feedback-command.handler';
 import { registerPhaseCommandHandlers } from './handler/phase-command.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
@@ -63,7 +61,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
     private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
-    private readonly saveReviewOutcomeUsecase: SaveReviewOutcomeUsecase,
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
@@ -254,10 +251,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       careerLogNotionPageId: this.configService.get<string>(
         'CAREER_LOG_NOTION_PAGE_ID',
       ),
-      logger: this.logger,
-    });
-    registerFeedbackCommandHandlers(app, {
-      saveReviewOutcomeUsecase: this.saveReviewOutcomeUsecase,
       logger: this.logger,
     });
     registerWriteBackHandlers(app, {
