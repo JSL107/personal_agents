@@ -235,7 +235,7 @@ describe('GenerateImpactReportUsecase', () => {
       ...overrides,
     });
 
-    it('env (AUTHOR / REPO) 둘 다 미설정이면 RECENT_MODE_ENV_MISSING', async () => {
+    it('env AUTHOR 미설정 (REPO 무관) 이면 RECENT_MODE_ENV_MISSING', async () => {
       configGet.mockReturnValue(undefined);
 
       await expect(
@@ -249,7 +249,7 @@ describe('GenerateImpactReportUsecase', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('env 양쪽 set 이면 listAuthorMergedPullRequestsSince(author, repo, sinceIsoDate) 호출', async () => {
+    it('AUTHOR + REPO set 이면 repo 한정 호출', async () => {
       configGet.mockImplementation((key: string) => {
         if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
           return 'JSL107';
@@ -273,12 +273,47 @@ describe('GenerateImpactReportUsecase', () => {
           repo: 'JSL107/personal_agents',
           author: 'JSL107',
           limit: 20,
-          // sinceIsoDate: ISO date (지금 기준 -7일). 정확 매칭 어려워 형식만 검증.
         }),
       );
       const callArg =
         githubClient.listAuthorMergedPullRequestsSince.mock.calls[0][0];
       expect(callArg.sinceIsoDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('AUTHOR set + REPO 미설정 이면 repo=null 로 호출 (author 모든 repo 글로벌 모드)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR' ? 'JSL107' : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary({ repo: 'JSL107/personal_agents' }),
+        buildSummary({ repo: 'other-org/contrib', number: 50 }),
+      ]);
+
+      await usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' });
+
+      const callArg =
+        githubClient.listAuthorMergedPullRequestsSince.mock.calls[0][0];
+      expect(callArg.repo).toBeNull();
+      expect(callArg.author).toBe('JSL107');
+    });
+
+    it('AUTHOR set + REPO 빈 문자열도 글로벌 모드 (trim 후 비면 null)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? '   '
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary(),
+      ]);
+
+      await usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' });
+
+      const callArg =
+        githubClient.listAuthorMergedPullRequestsSince.mock.calls[0][0];
+      expect(callArg.repo).toBeNull();
     });
 
     it('PR 0건이면 RECENT_MODE_NO_RESULTS', async () => {
