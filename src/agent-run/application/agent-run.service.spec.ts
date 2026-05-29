@@ -21,6 +21,7 @@ describe('AgentRunService', () => {
       totalSimilarPlans: 0,
       pmRunsWithSimilar: 0,
     }),
+    findChainFromRoot: jest.fn().mockResolvedValue([]),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -147,6 +148,89 @@ describe('AgentRunService', () => {
       status: AgentRunStatus.FAILED,
       output: { error: 'boom' },
       durationMs: expect.any(Number),
+    });
+  });
+
+  describe('findChainFromRoot — V3 chain audit walk facade', () => {
+    it('rootRunId + default maxDepth(16) 으로 repository delegate, 결과 그대로 반환', async () => {
+      const chain = [
+        {
+          id: 1,
+          parentId: null,
+          agentType: 'PM',
+          status: AgentRunStatus.SUCCEEDED,
+          startedAt: new Date('2026-05-28T10:00:00Z'),
+          endedAt: new Date('2026-05-28T10:00:30Z'),
+          depth: 0,
+        },
+        {
+          id: 2,
+          parentId: 1,
+          agentType: 'CTO',
+          status: AgentRunStatus.SUCCEEDED,
+          startedAt: new Date('2026-05-28T10:00:31Z'),
+          endedAt: new Date('2026-05-28T10:01:00Z'),
+          depth: 1,
+        },
+      ];
+      repository.findChainFromRoot.mockResolvedValue(chain);
+
+      const result = await service.findChainFromRoot(1);
+
+      expect(repository.findChainFromRoot).toHaveBeenCalledTimes(1);
+      expect(repository.findChainFromRoot).toHaveBeenCalledWith({
+        rootRunId: 1,
+        maxDepth: 16,
+      });
+      expect(result).toBe(chain);
+    });
+
+    it('명시 maxDepth 전달 시 repository 호출에 그대로 반영', async () => {
+      repository.findChainFromRoot.mockResolvedValue([]);
+
+      await service.findChainFromRoot(99, 3);
+
+      expect(repository.findChainFromRoot).toHaveBeenCalledWith({
+        rootRunId: 99,
+        maxDepth: 3,
+      });
+    });
+
+    it('repository 가 빈 배열 반환 시 (root 존재 X) 그대로 빈 배열', async () => {
+      repository.findChainFromRoot.mockResolvedValue([]);
+
+      await expect(service.findChainFromRoot(404)).resolves.toEqual([]);
+    });
+
+    it('maxDepth 가 default(16) 보다 크면 clamp — DoS 방지 (security MEDIUM)', async () => {
+      repository.findChainFromRoot.mockResolvedValue([]);
+
+      await service.findChainFromRoot(1, 9999);
+
+      expect(repository.findChainFromRoot).toHaveBeenCalledWith({
+        rootRunId: 1,
+        maxDepth: 16,
+      });
+    });
+
+    it('maxDepth 가 음수/0 이면 최소 1 로 clamp', async () => {
+      repository.findChainFromRoot.mockResolvedValue([]);
+
+      await service.findChainFromRoot(1, -5);
+
+      expect(repository.findChainFromRoot).toHaveBeenCalledWith({
+        rootRunId: 1,
+        maxDepth: 1,
+      });
+    });
+
+    it('rootRunId / maxDepth 가 NaN/Infinity 면 repository 호출 X + 빈 배열', async () => {
+      const a = await service.findChainFromRoot(Number.NaN, 5);
+      const b = await service.findChainFromRoot(1, Number.POSITIVE_INFINITY);
+
+      expect(a).toEqual([]);
+      expect(b).toEqual([]);
+      expect(repository.findChainFromRoot).not.toHaveBeenCalled();
     });
   });
 });
