@@ -16,6 +16,11 @@ import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module'
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
+import {
+  SLACK_HANDLER_PORT,
+  SlackHandler,
+} from './domain/port/slack-handler.port';
+import { PreviewActionHandler } from './handler/preview-action.handler';
 import { SlackService } from './slack.service';
 
 @Module({
@@ -45,7 +50,18 @@ import { SlackService } from './slack.service';
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
   ],
-  providers: [SlackService],
+  providers: [
+    SlackService,
+    // C-4 Phase 1 — SlackHandlerRegistry. 각 handler 가 SLACK_HANDLER_PORT multi-provider 로
+    // 등록되면 SlackService 가 부팅 시 handlers.forEach(h => h.register(app)) 만 호출.
+    // 후속 Phase 에서 나머지 register fn 도 동일 패턴으로 마이그레이션.
+    PreviewActionHandler,
+    {
+      provide: SLACK_HANDLER_PORT,
+      useFactory: (...handlers: SlackHandler[]) => handlers,
+      inject: [PreviewActionHandler],
+    },
+  ],
   exports: [SlackService],
 })
 export class SlackModule {}
