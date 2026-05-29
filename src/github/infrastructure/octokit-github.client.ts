@@ -254,9 +254,12 @@ export class OctokitGithubClient implements GithubClientPort {
     limit,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
     this.assertOctokitConfigured();
-    const [owner, repoName] = parseRepo(repo);
     const perPage = Math.min(Math.max(1, limit), 100);
-    const q = `repo:${repo} is:pr is:merged author:${author} merged:>=${sinceIsoDate}`;
+    // repo null/empty → author 의 모든 repo 머지 PR (본인 작성 PR 만). qualifier 없는 search 가
+    // user repo + contributor repo (fork merge 등) 모두 포함. repo 지정 시 해당 repo 한정.
+    const repoQualifier = repo ? `repo:${repo} ` : '';
+    const q = `${repoQualifier}is:pr is:merged author:${author} merged:>=${sinceIsoDate}`;
+    const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
       searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
@@ -268,32 +271,33 @@ export class OctokitGithubClient implements GithubClientPort {
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,
-        `GitHub ${repo} author=${author} merged PR 검색 실패`,
+        `GitHub ${scopeLabel} merged PR 검색 실패`,
       );
     }
 
     // search 결과는 PullRequestSummary 의 일부 필드만 반환 — additions/deletions 등은 pulls.get
     // 으로 별도 회복. Promise.all 로 병렬화 (limit 작아 rate-limit 위험 낮음).
-    const numbers = searchResponse.data.items
-      .slice(0, perPage)
-      .map((item) => item.number);
+    // repo null 모드: per-PR 의 repository_url 에서 owner/repo 추출 (다른 repo 의 PR 포함).
+    const itemsToFetch = searchResponse.data.items.slice(0, perPage);
 
     const details = await Promise.all(
-      numbers.map(async (number) => {
+      itemsToFetch.map(async (item) => {
+        const itemRepo = repo ?? extractRepo(item.repository_url);
+        const [owner, repoName] = parseRepo(itemRepo);
         try {
           const detail = await this.octokit!.rest.pulls.get({
             owner,
             repo: repoName,
-            pull_number: number,
+            pull_number: item.number,
           });
           if (!detail.data.merged_at) {
             return null;
           }
           return {
-            number,
+            number: item.number,
             title: detail.data.title,
             body: detail.data.body ?? '',
-            repo,
+            repo: itemRepo,
             url: detail.data.html_url,
             mergedAt: detail.data.merged_at,
             additions: detail.data.additions,
@@ -304,7 +308,7 @@ export class OctokitGithubClient implements GithubClientPort {
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
-            `GitHub PR ${repo}#${number} 상세 조회 실패 (skip): ${message}`,
+            `GitHub PR ${itemRepo}#${item.number} 상세 조회 실패 (skip): ${message}`,
           );
           return null;
         }
