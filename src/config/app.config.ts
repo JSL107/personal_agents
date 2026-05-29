@@ -193,6 +193,36 @@ class EnvironmentVariables {
     message: 'IMPACT_REPORT_GITHUB_REPO 는 "owner/repo" 형식이어야 합니다.',
   })
   IMPACT_REPORT_GITHUB_REPO?: string;
+
+  // `/impact-report --recent <N>d` 주 1회 자동 cron — Weekly Summary / Daily Eval 과 별도.
+  // - IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID: 자동 발화 대상 사용자. 미설정 시 모듈 비활성화.
+  // - IMPACT_REPORT_RECENT_TARGET: 발송 대상 (Slack user U... / channel C.../G...). 미설정 시 OWNER DM.
+  // - IMPACT_REPORT_RECENT_CRON: BullMQ repeatable cron (default 매주 토 09:00 — `0 9 * * 6`).
+  // - IMPACT_REPORT_RECENT_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
+  // - IMPACT_REPORT_RECENT_DAYS: `--recent <N>d` 의 N (default 7, 범위 1~365).
+  // 추가 필수: IMPACT_REPORT_GITHUB_AUTHOR (recent mode 핵심).
+  @IsOptional()
+  @IsString()
+  IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  IMPACT_REPORT_RECENT_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  IMPACT_REPORT_RECENT_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  IMPACT_REPORT_RECENT_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^([1-9][0-9]?|[12][0-9]{2}|3[0-5][0-9]|36[0-5])$/, {
+    message: 'IMPACT_REPORT_RECENT_DAYS 는 1~365 사이 정수여야 합니다.',
+  })
+  IMPACT_REPORT_RECENT_DAYS?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
