@@ -8,20 +8,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
-import { GenerateBackendPlanUsecase } from '../agent/be/application/generate-backend-plan.usecase';
-import { AnalyzePrConventionUsecase } from '../agent/be-fix/application/analyze-pr-convention.usecase';
-import { GenerateSchemaProposalUsecase } from '../agent/be-schema/application/generate-schema-proposal.usecase';
-import { AnalyzeStackTraceUsecase } from '../agent/be-sre/application/analyze-stack-trace.usecase';
-import { GenerateTestUsecase } from '../agent/be-test/application/generate-test.usecase';
-import { GenerateCeoMetaUsecase } from '../agent/ceo/application/generate-ceo-meta.usecase';
-import { ReviewPullRequestUsecase } from '../agent/code-reviewer/application/review-pull-request.usecase';
-import { GenerateAssignmentUsecase } from '../agent/cto/application/generate-assignment.usecase';
-import { GenerateImpactReportUsecase } from '../agent/impact-reporter/application/generate-impact-report.usecase';
-import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily-plan.usecase';
-import { GeneratePoEvaluationUsecase } from '../agent/po-eval/application/generate-po-evaluation.usecase';
-import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
-import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
-import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
   IDAERI_ROUTER_PORT,
@@ -33,7 +19,6 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
-import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
 
 // 이대리 Slack 어댑터.
@@ -50,25 +35,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
-    private readonly generateWorklogUsecase: GenerateWorklogUsecase,
-    private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
-    private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
-    private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
-    private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
-    private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
-    private readonly generateTestUsecase: GenerateTestUsecase,
-    private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
-    private readonly analyzePrConventionUsecase: AnalyzePrConventionUsecase,
-    private readonly retryRunUsecase: RetryRunUsecase,
     @Inject(SLACK_HANDLER_PORT)
     private readonly slackHandlers: SlackHandler[],
     private readonly slackInboxService: SlackInboxService,
     @Inject(IDAERI_ROUTER_PORT)
     private readonly idaeriRouter: IdaeriRouterPort,
-    private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
-    private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
-    private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly conversationMemory: ConversationMemoryService,
   ) {}
 
@@ -218,28 +189,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   // 카테고리별 핸들러 모듈로 위임 — 각 핸들러는 ack/respond/usecase 호출만 담당.
   // 추가 명령은 적절한 카테고리에 끼워넣거나 새 register…Handlers 모듈을 만들어 여기에 등록한다.
   private registerCommands(app: App): void {
-    // C-4 Phase 1 — SLACK_HANDLER_PORT multi-provider 로 등록된 handler 들 일괄 register.
-    // 후속 Phase 에서 나머지 register* fn 들도 SlackHandler 로 클래스화 → 본 forEach 만 남게.
+    // C-4 Phase 1~9 — SLACK_HANDLER_PORT multi-provider 로 등록된 handler 들 일괄 register.
+    // Phase 10 (RouterMessage) 마이그레이션 후 본 fn 은 forEach 한 줄로 수렴.
     for (const handler of this.slackHandlers) {
       handler.register(app);
     }
-    registerRetryRunHandler(app, {
-      retryRunUsecase: this.retryRunUsecase,
-      generateDailyPlanUsecase: this.generateDailyPlanUsecase,
-      generateWorklogUsecase: this.generateWorklogUsecase,
-      reviewPullRequestUsecase: this.reviewPullRequestUsecase,
-      generateImpactReportUsecase: this.generateImpactReportUsecase,
-      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
-      generatePoShadowUsecase: this.generatePoShadowUsecase,
-      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
-      generateTestUsecase: this.generateTestUsecase,
-      analyzeStackTraceUsecase: this.analyzeStackTraceUsecase,
-      analyzePrConventionUsecase: this.analyzePrConventionUsecase,
-      generateAssignmentUsecase: this.generateAssignmentUsecase,
-      generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
-      generateCeoMetaUsecase: this.generateCeoMetaUsecase,
-      logger: this.logger,
-    });
     // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.
     // ConversationMemoryService — 사용자별 multi-turn 메모리 (TTL 30분, max 5 turn).
     registerRouterMessageHandler(app, {
