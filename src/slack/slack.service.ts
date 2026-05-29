@@ -21,7 +21,6 @@ import { GenerateDailyPlanUsecase } from '../agent/pm/application/generate-daily
 import { GeneratePoEvaluationUsecase } from '../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../agent/work-reviewer/application/generate-worklog.usecase';
-import { AgentRunService } from '../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../agent-run/application/retry-run.usecase';
 import { ConversationMemoryService } from '../router/application/conversation-memory.service';
 import {
@@ -34,7 +33,6 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
-import { registerAutoFlowHandler } from './handler/auto-flow.handler';
 import { registerRetryRunHandler } from './handler/retry-run.handler';
 import { registerRouterMessageHandler } from './handler/router-message.handler';
 
@@ -71,7 +69,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
-    private readonly agentRunService: AgentRunService,
     private readonly conversationMemory: ConversationMemoryService,
   ) {}
 
@@ -241,16 +238,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       generateAssignmentUsecase: this.generateAssignmentUsecase,
       generatePoEvaluationUsecase: this.generatePoEvaluationUsecase,
       generateCeoMetaUsecase: this.generateCeoMetaUsecase,
-      logger: this.logger,
-    });
-    // V3 비전 phase loop chain — /auto-flow 슬래시. PM → CTO → BE chain (사용자 명시 트리거).
-    registerAutoFlowHandler(app, {
-      generateDailyPlanUsecase: this.generateDailyPlanUsecase,
-      generateAssignmentUsecase: this.generateAssignmentUsecase,
-      generateBackendPlanUsecase: this.generateBackendPlanUsecase,
-      generateSchemaProposalUsecase: this.generateSchemaProposalUsecase,
-      generateTestUsecase: this.generateTestUsecase,
-      agentRunService: this.agentRunService,
       logger: this.logger,
     });
     // V3 비전 봇 쪼개기 step 5 — bot 멘션 자연어 메시지 → IdaeriRouterPort.dispatch.
