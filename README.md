@@ -21,10 +21,13 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ PO Shadow (`src/agent/po-shadow/`) — `/po-shadow`. 계획의 비즈니스 가치 및 리스크 재검토
 - ✅ Impact Reporter (`src/agent/impact-reporter/`) — `/impact-report`. 작업 성과 보고서 자동화
 - ✅ Preview Gate (`src/preview-gate/`) — 외부 시스템 전송 전 사용자 승인(✅/❌) 공통 처리
-- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) → intent classifier (자연어→AgentType) → 13 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
+- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) + DM (`message.im`) → intent classifier (자연어→AgentType) → 13 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
 - ✅ V3 phase loop 워커 — CTO (`/assign`) / PO_EVAL (`/po-eval`) / CEO (`/ceo-review`) + `/auto-flow` chain + AgentRun chain audit walk (`findChainFromRoot`)
 - ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
-- ✅ Morning Briefing (`src/morning-briefing/`) — BullMQ 스케줄러 기반의 매일 아침 자동 브리핑
+- ✅ Conversation Memory (`src/router/application/conversation-memory.service.ts`) — Redis 우선 / in-memory Map fallback. 사용자+채널당 최대 5 turn, TTL 30분
+- ✅ GitHub Webhook 자동 트리거 (`src/github/interface/github-webhook.controller.ts`) — `issues.opened` / `pull_request.opened` → Impact Reporter, `pull_request.opened` → BE-FIX, `check_run.completed` (failure) → BE-SRE
+- ✅ Cron 자동 발화 4종 — Morning Briefing (PM `/today`), Daily Eval (PO_EVAL), Weekly Summary (Worklog+CEO), Impact Report `--recent` (env 활성 시)
+- ✅ Notification (`src/notification/`) — claude CLI 인증 의심 침묵 실패 감지 시 owner DM (30분 dedupe)
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
 
@@ -104,17 +107,55 @@ pnpm format:check          # Prettier 검사
 
 ## 환경변수
 
+> 단일 source-of-truth 는 [`src/config/app.config.ts`](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). 아래 표는 가장 자주 만지는 키만 발췌 — cron / webhook / careerLog / impact-report 세부 옵션은 해당 파일의 주석을 참조.
+
+### 인프라 (앱 부팅 필수)
+
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `PORT` | ❌ | HTTP 서버 포트 (기본 3002 권장) |
-| `REDIS_HOST` / `REDIS_PORT` | ✅ | BullMQ 연결용 Redis 정보 (6381) |
+| `REDIS_HOST` / `REDIS_PORT` | ✅ | BullMQ + Router conversation memory (6381) |
 | `DATABASE_URL` | ✅ | PostgreSQL 연결 문자열 (5434) |
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `SLACK_SIGNING_SECRET` | ⭕ | Slack 봇 기동용 (Socket Mode 대응) |
+
+### Slack / 외부 커넥터 (선택)
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `SLACK_SIGNING_SECRET` | ⭕ | Slack 봇 기동용 (Socket Mode). 3개 모두 있어야 SlackService 활성 |
 | `GITHUB_TOKEN` | ⭕ | GitHub PAT (Classic). 미설정 시 GitHub 연동 기능 skip |
 | `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | Notion API 토큰 및 수집 대상 DB ID 리스트 |
-| `NOTION_DAILY_PLAN_DATABASE_ID` | ⭕ | **[V2]** 일일 회고/계획을 자동 기록할 Notion DB ID |
-| `CLAUDE_MODEL` | ❌ | Claude 에이전트가 사용할 모델 (기본: `opus`, 옵션: `sonnet`, `haiku`) |
+| `NOTION_DAILY_PLAN_DATABASE_ID` | ⭕ | 일일 회고/계획을 자동 기록할 Notion DB ID |
+| `CLAUDE_MODEL` | ❌ | Claude 에이전트 모델 (기본: `opus`, 옵션: `sonnet`, `haiku`) |
 
+### Webhook 자동 트리거 (선택)
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `WEBHOOK_SECRET` | ⭕ | 자체 포맷 `/v1/agent/trigger` HMAC-SHA256 키. 미설정 시 모든 요청 거부 |
+| `GITHUB_WEBHOOK_SECRET` | ⭕ | GitHub 표준 `/v1/agent/github` HMAC-SHA256 키. 미설정 시 모든 요청 거부 |
+| `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` | ⭕ | GitHub payload 에는 Slack user 가 없으므로 자동 발화(impact-report / BE-FIX / BE-SRE)의 사용자 컨텍스트 매핑. 미설정 시 200 OK 만 응답하고 자동 발화 skip |
+
+### Cron 자동 발화 (env 미설정 = 해당 cron 비활성)
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `MORNING_BRIEFING_OWNER_SLACK_USER_ID` | ⭕ | 매일 아침 PM `/today` 자동 발화 대상 (+ `_DELIVERY_TARGETS`, `_CRON`, `_TIMEZONE` 부속 키) |
+| `DAILY_EVAL_OWNER_SLACK_USER_ID` | ⭕ | 매일 19:00 KST PO_EVAL 자동 (+ `_TARGET`, `_CRON`, `_TIMEZONE`) |
+| `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` | ⭕ | 매주 금 17:00 KST Worklog + CEO meta (+ `_TARGET`, `_CRON`, `_TIMEZONE`) |
+| `IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID` | ⭕ | 매주 토 09:00 KST `/impact-report --recent <N>d` 자동 (+ `_TARGET`, `_CRON`, `_TIMEZONE`, `_DAYS`) |
+
+### 운영 알람 / careerLog / 다중 PR (선택)
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID` | ⭕ | claude CLI 인증 만료 / 쿼터 소진 침묵 실패 감지 시 owner 에게 DM (30분 dedupe). 미설정 시 stdout warn 만 |
+| `CAREER_LOG_NOTION_PAGE_ID` | ⭕ | `/po-eval` 결과의 "✅ 적용" 버튼으로 careerLog 적재할 Notion 페이지. 미설정 시 버튼 미부착 |
+| `IMPACT_REPORT_GITHUB_AUTHOR` | ⭕ | `/impact-report --recent <N>d` 의 GitHub username (필수: recent mode 핵심) |
+| `IMPACT_REPORT_GITHUB_REPO` | ❌ | `owner/repo` 스코프. 미설정 시 author 의 모든 repo 머지 PR (글로벌 모드) |
+| `STALE_DATA_CUTOFF_DAYS` | ❌ | GitHub assigned / Notion task 의 cutoff (기본 60일) |
+| `SLACK_INBOX_EMOJI` | ❌ | Reaction → Inbox 큐잉 트리거 이모지 (기본 `raised_hand`) |
+
+> CLI 격리 (`buildSafeChildEnv`) 의 allowlist 에는 `GEMINI_CLI_TRUST_WORKSPACE` 가 포함돼 있어, headless 환경에서 gemini fallback 이 untrusted directory (exit=55) 로 실패하는 것을 막는다. 본인 환경에서 gemini 가 거절을 띄우면 `export GEMINI_CLI_TRUST_WORKSPACE=true` 후 재기동.
 
 > 설치와 `.env` 생성 순서는 서로 독립적입니다. `pnpm install` 은 DATABASE_URL 없이도 성공하지만, `pnpm dev` / `pnpm db:push` 이전에는 반드시 `.env` 가 준비돼야 합니다.
 
@@ -123,6 +164,21 @@ pnpm format:check          # Prettier 검사
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/v1/crawl-jobs` | 크롤링 작업 큐 등록 |
+| POST | `/v1/agent/trigger` | 자체 포맷 webhook 진입 — HMAC-SHA256 (`WEBHOOK_SECRET`) 검증 후 지정 에이전트 발화 |
+| POST | `/v1/agent/github` | GitHub 표준 webhook 진입 — `X-Hub-Signature-256` (`GITHUB_WEBHOOK_SECRET`) 검증 후 아래 표대로 자동 발화 |
+
+### GitHub Webhook 자동 트리거
+
+`/v1/agent/github` 에 GitHub App / repo webhook 을 붙이면 다음 이벤트가 사용자 입력 없이 자동 발화된다 (사용자 컨텍스트는 `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` 로 매핑).
+
+| GitHub 이벤트 | 발화 에이전트 | 설명 |
+|---|---|---|
+| `issues.opened` | Impact Reporter | 새 이슈 본문 기반 임팩트 보고서 자동 생성 |
+| `pull_request.opened` | Impact Reporter | 새 PR diff 기반 임팩트 보고서 자동 생성 |
+| `pull_request.opened` | BE-FIX | PR 컨벤션 분석 (네이밍/파일 구조/테스트 누락 등) 자동 |
+| `check_run.completed` (conclusion=failure) | BE-SRE | CI 실패 로그 → stack trace 분석 자동 |
+
+> `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` 미설정 시 webhook 은 200 OK 만 반환하고 자동 발화는 모두 skip — graceful.
 
 ## Slack 슬래시 커맨드
 
@@ -153,7 +209,7 @@ pnpm format:check          # Prettier 검사
 
 슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 13 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 신규 CTO/PO_EVAL/CEO) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
 
-**자연어 multi-turn 메모리** — 같은 채널/DM 의 사용자별 대화 컨텍스트가 최대 5 turn / TTL 30분 보존. 지시대명사 ("그거 분배해") 가 직전 worker run 을 자동 참조해 자연어 chain 가능 (예: `@이대리 오늘 plan?` → `@이대리 그거 분배해` → CTO 가 직전 PM run 참조).
+**자연어 multi-turn 메모리** — 같은 채널/DM 의 사용자별 대화 컨텍스트가 최대 5 turn / TTL 30분 보존. **Redis 백엔드** (REDIS_HOST/REDIS_PORT) 사용 — multi-instance / 재시작 안전. Redis 미주입 또는 read/write 실패 시 in-memory Map 으로 graceful fallback. 지시대명사 ("그거 분배해") 가 직전 worker run 을 자동 참조해 자연어 chain 가능 (예: `@이대리 오늘 plan?` → `@이대리 그거 분배해` → CTO 가 직전 PM run 참조).
 
 ### Slack 봇 설정 (최초 1회)
 
@@ -187,7 +243,7 @@ pnpm format:check          # Prettier 검사
 
 ### 자동화 cron (사용자 환경 env 설정 시 활성)
 
-V3 비전 phase loop 의 cron 트리거 — 3종 모두 env 미설정 시 비활성 (graceful).
+V3 비전 phase loop 의 cron 트리거 — 4종 모두 env 미설정 시 비활성 (graceful).
 
 | Cron | 시간 (KST) | 동작 | 활성화 env |
 |---|---|---|---|
