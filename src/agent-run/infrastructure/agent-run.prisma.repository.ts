@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+// /search-runs 의 ILIKE 패턴 사용자 입력 escape — `%` / `_` / `\` 를 모두 `\` prefix.
+// PostgreSQL 의 LIKE 는 default escape 가 `\` 이라 추가 ESCAPE 절 없이 동작.
+const escapeLikeMetaChars = (text: string): string =>
+  text.replace(/[%_\\]/g, (char) => `\\${char}`);
+
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -16,6 +21,8 @@ import {
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
+  SearchAgentRunRow,
+  SearchAgentRunsQuery,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -230,6 +237,54 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       output: r.output,
       endedAt: r.ended_at,
       rank: Number(r.rank),
+    }));
+  }
+
+  // /search-runs: SUCCEEDED 본인 run 중 output / inputSnapshot 의 텍스트 표현에 keyword 가 포함된 것
+  // 최근순. SQL ILIKE 으로 단순화 — FTS (plainto_tsquery) 는 정확도가 좋지만 짧은 키워드 / 부분 일치에 약함.
+  // % 문자는 raw SQL 의 LIKE 와 충돌하므로 호출자가 escape 처리하지 않고 wildcard 로 padding 만 한다.
+  // slackUserId 매칭은 inputSnapshot 의 JSON path 로 (codex review b6xkjewd2 P2 — quota / po-shadow 와 동일 정책).
+  async searchByKeyword({
+    slackUserId,
+    keyword,
+    limit,
+  }: SearchAgentRunsQuery): Promise<SearchAgentRunRow[]> {
+    // LIKE meta 문자 (`%` `_` `\`) 는 사용자 입력을 literal 로 취급하기 위해 escape.
+    // 미escape 시 사용자가 `/search-runs %` 입력하면 본인 SUCCEEDED run 전체 매칭 — 의도 외 결과 + 경량 DoS.
+    const pattern = `%${escapeLikeMetaChars(keyword)}%`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: number;
+        agent_type: string;
+        ended_at: Date;
+        output: unknown;
+        input_snapshot: unknown;
+      }>
+    >`
+      SELECT
+        id,
+        agent_type,
+        ended_at,
+        output,
+        input_snapshot
+      FROM agent_run
+      WHERE
+        status = 'SUCCEEDED'
+        AND input_snapshot->>'slackUserId' = ${slackUserId}
+        AND (
+          COALESCE(output::text, '') ILIKE ${pattern}
+          OR input_snapshot::text ILIKE ${pattern}
+        )
+      ORDER BY ended_at DESC NULLS LAST
+      LIMIT ${limit}
+    `;
+
+    return rows.map((r) => ({
+      id: r.id,
+      agentType: r.agent_type,
+      endedAt: r.ended_at,
+      output: r.output,
+      inputSnapshot: r.input_snapshot,
     }));
   }
 
