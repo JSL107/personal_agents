@@ -62,6 +62,24 @@ export interface SimilarPlanRow {
   rank: number;
 }
 
+// /search-runs: 사용자의 누적 AgentRun (SUCCEEDED) 의 output / inputSnapshot 를 키워드 ILIKE
+// 검색해 최근순으로 반환. limit 은 호출자 cap (Slack message 길이 제한 대비).
+export interface SearchAgentRunRow {
+  id: number;
+  agentType: string;
+  endedAt: Date;
+  output: unknown;
+  inputSnapshot: unknown;
+}
+
+export interface SearchAgentRunsQuery {
+  // inputSnapshot.slackUserId 매칭 — 다른 사용자 run 노출 방지 (quota / po-shadow 와 동일 정책).
+  slackUserId: string;
+  // ILIKE 대상 키워드. 빈 문자열은 호출자가 거른다 (전체 스캔 회피).
+  keyword: string;
+  limit: number;
+}
+
 // /quota 의 PM 컨텍스트 사용 통계 — input_snapshot 의 inboxItemCount / similarPlanCount 누적.
 // OPS-3 / PM-3' 가 실제로 plan 에 주입됐는지 사용자가 직접 확인할 수 있게 한다.
 export interface PmContextStats {
@@ -106,6 +124,8 @@ export interface AgentRunRepositoryPort {
   }): Promise<SimilarPlanRow[]>;
   // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 합산.
   aggregatePmContextStats(input: QuotaStatsQuery): Promise<PmContextStats>;
+  // /search-runs: SUCCEEDED 본인 run 중 output / inputSnapshot 에 keyword 가 포함된 것 최근순.
+  searchByKeyword(input: SearchAgentRunsQuery): Promise<SearchAgentRunRow[]>;
   // V3 phase loop chain audit — rootRunId 로부터 parentId 역방향 children 까지 recursive 회복.
   // depth 0 (root) → depth N (leaf) 정렬. maxDepth 초과 row 는 결과에서 제외 (사이클 안전망).
   // root run 이 존재하지 않으면 빈 배열.
