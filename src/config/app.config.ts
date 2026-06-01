@@ -274,6 +274,13 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID?: string;
+
+  // pull_request.closed (merged=true) webhook 시 본인 PR 의 메타를 Notion careerLog 페이지에 자동 적재.
+  // `true` (string) 일 때만 활성. 추가 조건: CAREER_LOG_NOTION_PAGE_ID + GITHUB_WEBHOOK_OWNER_LOGIN 모두 설정.
+  // 미설정 / `false` 시 webhook 분기 자체 skip (impact-report / BE-FIX / review 자동은 그대로).
+  @IsOptional()
+  @IsString()
+  PR_CAREERLOG_AUTO_ENABLED?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

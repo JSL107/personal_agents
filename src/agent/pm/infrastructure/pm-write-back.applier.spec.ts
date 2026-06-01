@@ -47,6 +47,7 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
   listActiveTasks: jest.fn(),
   findOrCreateDailyPage: jest.fn(),
+  findOrCreateChildPage: jest.fn(),
   appendBlocks: jest.fn().mockResolvedValue(undefined),
   replaceCheckInSection: jest.fn().mockResolvedValue(undefined),
 });
