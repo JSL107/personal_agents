@@ -1,6 +1,9 @@
 import { PullRequestDetail } from '../../github/domain/github.type';
 import { NotionPlanBlock } from '../../notion/domain/port/notion-client.port';
-import { buildPrCareerLogBlocks } from './pr-careerlog.consumer';
+import {
+  buildDailyChildPageTitle,
+  buildPrCareerLogBlocks,
+} from './pr-careerlog.consumer';
 
 // NotionPlanBlock union 에서 divider 외 모든 block 은 `text` 필드 보유 — narrowing helper.
 type TextBlock = Exclude<NotionPlanBlock, { type: 'divider' }>;
@@ -145,5 +148,25 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
     );
     expect(paragraphs).toHaveLength(1);
     expect(paragraphs[0].text.startsWith('링크')).toBe(true);
+  });
+});
+
+describe('buildDailyChildPageTitle — "YYYY-MM-DD (요일)" KST 변환', () => {
+  it('월요일 (2026-06-01) → "2026-06-01 (월)"', () => {
+    expect(buildDailyChildPageTitle('2026-06-01')).toBe('2026-06-01 (월)');
+  });
+
+  it('수요일 (2026-06-03) → "2026-06-03 (수)"', () => {
+    expect(buildDailyChildPageTitle('2026-06-03')).toBe('2026-06-03 (수)');
+  });
+
+  it('일요일 (2026-06-07) → "2026-06-07 (일)"', () => {
+    expect(buildDailyChildPageTitle('2026-06-07')).toBe('2026-06-07 (일)');
+  });
+
+  it('한 글자 요일 — 짧은 표기 (월/화/수/목/금/토/일)', () => {
+    const title = buildDailyChildPageTitle('2026-06-01');
+    // 형식: 'YYYY-MM-DD (X)' — X 는 한 글자.
+    expect(title).toMatch(/^\d{4}-\d{2}-\d{2} \([월화수목금토일]\)$/);
   });
 });
