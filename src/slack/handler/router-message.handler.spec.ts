@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
@@ -11,7 +10,16 @@ import {
 } from '../../router/domain/idaeri-router.port';
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
-import { registerRouterMessageHandler } from './router-message.handler';
+import { RouterMessageHandler } from './router-message.handler';
+
+// C-4 Phase 10 — fn → class 마이그레이션 이후 spec sync hotfix.
+// `register*Handler(app, deps)` 호출 자리를 `new RouterMessageHandler(...).register(app)` 으로 치환.
+// logger 는 class 가 자체 생성하므로 인자에서 제거 — runtime 노이즈는 spec 검증에 영향 없음.
+const buildHandler = (
+  idaeriRouter: IdaeriRouterPort,
+  conversationMemory: ConversationMemoryService = new ConversationMemoryService(),
+): RouterMessageHandler =>
+  new RouterMessageHandler(idaeriRouter, conversationMemory);
 
 type EventHandler = (args: {
   event: Record<string, unknown>;
@@ -61,9 +69,6 @@ const buildAppMock = (): {
   };
 };
 
-const createSilentLogger = (): Logger =>
-  ({ warn: jest.fn(), log: jest.fn(), error: jest.fn() }) as unknown as Logger;
-
 const invokeHandler = async (
   handler: EventHandler,
   event: AppMentionEvent | MessageEvent,
@@ -73,16 +78,12 @@ const invokeHandler = async (
   return { say };
 };
 
-describe('registerRouterMessageHandler — app_mention', () => {
+describe('RouterMessageHandler — app_mention', () => {
   it('app_mention + message 이벤트 둘 다 등록', () => {
     const { app } = buildAppMock();
     const idaeriRouter: IdaeriRouterPort = { dispatch: jest.fn() };
 
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     expect(app.event).toHaveBeenCalledWith('app_mention', expect.any(Function));
     expect(app.event).toHaveBeenCalledWith('message', expect.any(Function));
@@ -100,11 +101,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     const idaeriRouter: IdaeriRouterPort = {
       dispatch: jest.fn().mockResolvedValue(dispatchResult),
     };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -150,11 +147,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     const idaeriRouter: IdaeriRouterPort = {
       dispatch: jest.fn().mockResolvedValue(dispatchResult),
     };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -183,11 +176,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
         formattedText: 'mock body',
       }),
     };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -207,11 +196,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
     const idaeriRouter: IdaeriRouterPort = { dispatch };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -240,11 +225,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
         }),
       ),
     };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -266,11 +247,7 @@ describe('registerRouterMessageHandler — app_mention', () => {
     const idaeriRouter: IdaeriRouterPort = {
       dispatch: jest.fn().mockRejectedValue(new Error('내부 stack')),
     };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -288,15 +265,11 @@ describe('registerRouterMessageHandler — app_mention', () => {
   });
 });
 
-describe('registerRouterMessageHandler — message (DM)', () => {
+describe('RouterMessageHandler — message (DM)', () => {
   const buildWithRouter = (dispatch: jest.Mock = jest.fn()) => {
     const { app, getHandler } = buildAppMock();
     const idaeriRouter: IdaeriRouterPort = { dispatch };
-    registerRouterMessageHandler(app, {
-      idaeriRouter,
-      conversationMemory: new ConversationMemoryService(),
-      logger: createSilentLogger(),
-    });
+    buildHandler(idaeriRouter).register(app);
     return { handler: getHandler('message'), dispatch };
   };
 
@@ -364,7 +337,7 @@ describe('registerRouterMessageHandler — message (DM)', () => {
 
     await invokeHandler(handler, {
       type: 'message',
-      user: 'U_BOT',
+      user: 'U_USER',
       text: '봇이 보낸 메시지',
       ts: '1730000000.000001',
       channel: 'D_DMCHANNEL',

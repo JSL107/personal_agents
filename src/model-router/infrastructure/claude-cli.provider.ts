@@ -51,6 +51,64 @@ export const buildClaudeArgs = ({
   return args;
 };
 
+// claude CLI 가 exit=1 + 빈 stderr 로 침묵 실패하는 경우는 거의 항상 인증 만료 / 쿼터 소진 패턴이다
+// (2026-05-30 사고 사례). stderr 에 "Please run /login", "credentials", "unauthorized", "rate limit"
+// 키워드가 있을 때도 동일 안내가 유용. 본 fn 은 그 분기를 한 곳에 모아 호출자가 명시적 메시지 +
+// dedicated exception 으로 끊을 수 있게 한다.
+const CLAUDE_AUTH_STDERR_KEYWORDS = [
+  'please run /login',
+  'unauthorized',
+  'credentials',
+  'rate limit',
+  'quota',
+  'expired',
+];
+
+export const isClaudeAuthSuspect = ({
+  code,
+  stderrTail,
+}: {
+  code: number | null;
+  stderrTail: string;
+}): boolean => {
+  if (code !== 1) {
+    return false;
+  }
+  const trimmed = stderrTail.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+  const lowered = trimmed.toLowerCase();
+  return CLAUDE_AUTH_STDERR_KEYWORDS.some((keyword) =>
+    lowered.includes(keyword),
+  );
+};
+
+// CLAUDE.md §6 의 "claude CLI exit=0 인데 빈 응답: 인증 만료/쿼터 소진" 함정과 동일 카테고리의
+// exit≠0 시그널. ModelRouterUsecase 가 fallback chain 전후로 이 type 을 식별해 owner alert /
+// 메트릭 분기 등에 활용할 수 있도록 별도 class 로 분리.
+export class ClaudeAuthSuspectException extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ClaudeAuthSuspectException';
+  }
+}
+
+export const buildClaudeExitErrorMessage = ({
+  code,
+  stderrTail,
+}: {
+  code: number | null;
+  stderrTail: string;
+}): string => {
+  const tail = stderrTail.trim();
+  if (isClaudeAuthSuspect({ code, stderrTail })) {
+    const suffix = tail.length > 0 ? ` stderr=${tail}` : ' (no stderr)';
+    return `claude CLI 인증 만료 / 쿼터 소진 의심 (exit=${code}). \`claude\` 를 한 번 대화형으로 실행해 재인증 또는 쿼터 reset 을 확인해주세요.${suffix}`;
+  }
+  return `claude CLI 비정상 종료 (exit=${code}): ${tail || '(no stderr)'}`;
+};
+
 export const parseClaudeJsonOutput = (
   raw: string,
 ): { text: string; modelUsed: string } => {
@@ -159,14 +217,19 @@ export class ClaudeCliProvider implements ModelProviderPort {
           resolve(stdoutChunks.join(''));
           return;
         }
+        const authSuspect = isClaudeAuthSuspect({ code, stderrTail });
+        const message = buildClaudeExitErrorMessage({ code, stderrTail });
+        if (authSuspect) {
+          this.logger.error(
+            `claude CLI exit=${code} AUTH_SUSPECT stderr=${stderrTail.slice(-200) || '(empty)'}`,
+          );
+          reject(new ClaudeAuthSuspectException(message));
+          return;
+        }
         this.logger.error(
           `claude CLI exit=${code} stderr=${stderrTail.slice(-200)}`,
         );
-        reject(
-          new Error(
-            `claude CLI 비정상 종료 (exit=${code}): ${stderrTail || '(no stderr)'}`,
-          ),
-        );
+        reject(new Error(message));
       });
 
       // prompt 는 argv 가 아니라 stdin 으로 전달 — ps aux 노출 방지 + ARG_MAX 제한 회피.

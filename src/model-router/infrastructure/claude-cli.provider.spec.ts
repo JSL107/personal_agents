@@ -1,4 +1,10 @@
-import { buildClaudeArgs, parseClaudeJsonOutput } from './claude-cli.provider';
+import {
+  buildClaudeArgs,
+  buildClaudeExitErrorMessage,
+  ClaudeAuthSuspectException,
+  isClaudeAuthSuspect,
+  parseClaudeJsonOutput,
+} from './claude-cli.provider';
 
 describe('buildClaudeArgs', () => {
   it('기본 플래그는 print / output-format json / no-session-persistence / model opus 를 포함한다', () => {
@@ -74,5 +80,66 @@ describe('parseClaudeJsonOutput', () => {
 
   it('JSON 이 아니면 예외를 던진다', () => {
     expect(() => parseClaudeJsonOutput('not json')).toThrow();
+  });
+});
+
+describe('isClaudeAuthSuspect — 침묵 실패 / 인증 키워드 감지', () => {
+  it('exit=1 + 빈 stderr 는 인증 만료/쿼터 소진 의심', () => {
+    expect(isClaudeAuthSuspect({ code: 1, stderrTail: '' })).toBe(true);
+  });
+
+  it('exit=1 + 공백만 있는 stderr 도 의심으로 판정', () => {
+    expect(isClaudeAuthSuspect({ code: 1, stderrTail: '   \n  ' })).toBe(true);
+  });
+
+  it('exit=1 + stderr 에 인증 키워드 (Please run /login) 포함 시 의심', () => {
+    expect(
+      isClaudeAuthSuspect({ code: 1, stderrTail: 'Please run /login first' }),
+    ).toBe(true);
+  });
+
+  it('exit=1 + stderr 에 rate limit 포함 시 의심', () => {
+    expect(
+      isClaudeAuthSuspect({ code: 1, stderrTail: 'You hit rate limit (429).' }),
+    ).toBe(true);
+  });
+
+  it('exit=1 이라도 인증 키워드 없는 일반 에러는 의심 아님', () => {
+    expect(
+      isClaudeAuthSuspect({
+        code: 1,
+        stderrTail: 'TypeError: foo is not a function',
+      }),
+    ).toBe(false);
+  });
+
+  it('exit=2 등 다른 비정상 종료는 의심 아님 (오직 exit=1 만)', () => {
+    expect(isClaudeAuthSuspect({ code: 2, stderrTail: '' })).toBe(false);
+  });
+});
+
+describe('buildClaudeExitErrorMessage — 사용자 향 안내', () => {
+  it('인증 의심 케이스는 재인증 가이드 메시지를 포함한다', () => {
+    const message = buildClaudeExitErrorMessage({ code: 1, stderrTail: '' });
+    expect(message).toMatch(/인증 만료 \/ 쿼터 소진 의심/);
+    expect(message).toMatch(/대화형으로 실행해 재인증/);
+  });
+
+  it('일반 에러는 기존 형식 유지 (인증 가이드 없음)', () => {
+    const message = buildClaudeExitErrorMessage({
+      code: 127,
+      stderrTail: 'command not found',
+    });
+    expect(message).toMatch(/claude CLI 비정상 종료 \(exit=127\)/);
+    expect(message).not.toMatch(/인증 만료/);
+  });
+});
+
+describe('ClaudeAuthSuspectException', () => {
+  it('Error 의 sub class 로 name 이 ClaudeAuthSuspectException 이다', () => {
+    const e = new ClaudeAuthSuspectException('test');
+    expect(e).toBeInstanceOf(Error);
+    expect(e.name).toBe('ClaudeAuthSuspectException');
+    expect(e.message).toBe('test');
   });
 });
