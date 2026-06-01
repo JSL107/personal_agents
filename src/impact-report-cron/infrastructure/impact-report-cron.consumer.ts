@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
@@ -11,6 +11,10 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
+import {
+  CRON_FAILURE_ALERT_PORT,
+  CronFailureAlertPort,
+} from '../../notification/domain/port/cron-failure-alert.port';
 import { formatImpactReport } from '../../slack/format/impact-report.formatter';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import {
@@ -30,6 +34,9 @@ export class ImpactReportCronConsumer extends WorkerHost {
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
+    @Optional()
+    @Inject(CRON_FAILURE_ALERT_PORT)
+    private readonly cronFailureAlerter?: CronFailureAlertPort,
   ) {
     super();
   }
@@ -88,7 +95,28 @@ export class ImpactReportCronConsumer extends WorkerHost {
         `Impact Report Cron 실패 — 예상 외 에러 (owner=${ownerSlackUserId})`,
         error,
       );
+      this.notifyOwnerFailure(ownerSlackUserId, error);
       throw error;
     }
+  }
+
+  // fire-and-forget — 알람 자체 실패가 BullMQ 재시도 흐름을 막지 않게.
+  private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {
+    if (!this.cronFailureAlerter) {
+      return;
+    }
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    void this.cronFailureAlerter
+      .notifyCronFailure({
+        cronName: 'Impact Report Cron',
+        ownerSlackUserId,
+        errorMessage,
+      })
+      .catch((alertError: unknown) => {
+        this.logger.warn(
+          `Impact Report Cron 실패 알람 발사 실패: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
+        );
+      });
   }
 }
