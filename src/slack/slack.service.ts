@@ -8,7 +8,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
-import { SlackInboxService } from '../slack-inbox/application/slack-inbox.service';
 import {
   SLACK_HANDLER_PORT,
   SlackHandler,
@@ -16,9 +15,12 @@ import {
 import { buildPreviewBlocks } from './format/preview-message.builder';
 
 // 이대리 Slack 어댑터.
-// 책임: (1) Bolt App lifecycle (Socket Mode 기동/종료), (2) 명령/액션 핸들러 라우팅,
-// (3) 외부 발송 API (postMessage / postPreviewMessage) 노출.
-// 핸들러 본체와 텍스트 포매팅은 src/slack/handler/, src/slack/format/ 로 위임.
+// 책임: (1) Bolt App lifecycle (Socket Mode 기동/종료), (2) 외부 발송 API (postMessage / postPreviewMessage) 노출,
+// (3) 부팅 시 SLACK_HANDLER_PORT multi-provider 의 모든 핸들러 일괄 register.
+//
+// 명령/액션/이벤트 본체와 텍스트 포매팅은 src/slack/handler/, src/slack/format/ 로 위임.
+// C-5 — reaction_added 이벤트 처리도 SlackInboxReactionHandler 로 분리되어 본 service 는
+// lifecycle + sender API 만 남았다.
 //
 // SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET 가 모두 설정된 경우에만 Socket Mode 로 기동.
 // 토큰이 없는 로컬/CI 환경에서는 경고 로그만 남기고 부팅 계속 (멀티 도메인 앱에서 Slack 이 부팅 블로커가 되지 않게).
@@ -31,7 +33,6 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     @Inject(SLACK_HANDLER_PORT)
     private readonly slackHandlers: SlackHandler[],
-    private readonly slackInboxService: SlackInboxService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -64,8 +65,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       logLevel: LogLevel.INFO,
     });
 
-    this.registerCommands(app);
-    this.registerReactionHandlers(app);
+    this.registerHandlers(app);
 
     // Slack 기동 실패(유효하지 않은 토큰, Slack 일시적 장애 등)가 전체 NestJS 앱 부팅을 막지 않도록 격리한다.
     // 앱은 계속 떠 있고 Slack 기능만 비활성화된 상태로 남는다.
@@ -133,53 +133,9 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private registerReactionHandlers(app: App): void {
-    const inboxEmoji =
-      this.configService.get<string>('SLACK_INBOX_EMOJI') ?? 'raised_hand';
-
-    app.event('reaction_added', async ({ event, client }) => {
-      if (event.reaction !== inboxEmoji) {
-        return;
-      }
-      if (event.item.type !== 'message') {
-        return;
-      }
-      if (!event.user) {
-        return;
-      }
-
-      try {
-        const history = await client.conversations.history({
-          channel: event.item.channel,
-          latest: event.item.ts,
-          inclusive: true,
-          limit: 1,
-        });
-        const message = history.messages?.[0];
-        if (!message?.text) {
-          return;
-        }
-
-        await this.slackInboxService.addItem({
-          slackUserId: event.user,
-          channelId: event.item.channel,
-          messageTs: event.item.ts,
-          text: message.text,
-        });
-        this.logger.log(
-          `Slack Inbox 추가 — user=${event.user} channel=${event.item.channel} ts=${event.item.ts}`,
-        );
-      } catch (error: unknown) {
-        this.logger.warn(
-          `Slack Inbox 추가 실패: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    });
-  }
-
-  // C-4 완결 — SLACK_HANDLER_PORT multi-provider 로 등록된 모든 핸들러 일괄 register.
+  // C-4 완결 + C-5 — SLACK_HANDLER_PORT multi-provider 로 등록된 모든 핸들러 (명령/액션/이벤트) 일괄 register.
   // 새 핸들러는 SlackHandler 구현 + SlackModule providers 등록만 하면 자동 합류.
-  private registerCommands(app: App): void {
+  private registerHandlers(app: App): void {
     for (const handler of this.slackHandlers) {
       handler.register(app);
     }

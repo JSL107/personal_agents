@@ -29,6 +29,7 @@ import { PhaseCommandHandler } from './handler/phase-command.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
 import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
+import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';
 
@@ -74,6 +75,7 @@ import { SlackService } from './slack.service';
     AutoFlowHandler,
     RetryRunHandler,
     RouterMessageHandler,
+    SlackInboxReactionHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -88,6 +90,7 @@ import { SlackService } from './slack.service';
         AutoFlowHandler,
         RetryRunHandler,
         RouterMessageHandler,
+        SlackInboxReactionHandler,
       ],
     },
   ],
