@@ -33,6 +33,14 @@ export interface FindOrCreateDailyPageOptions {
   title: string;
 }
 
+// 일반 페이지의 자식 페이지 (child_page) 패턴 — findOrCreateDailyPage 는 database 의 row 가 대상이지만
+// PR careerLog 자동 적재처럼 사용자 지정 페이지 안에 일별 자식 페이지를 만드는 경우 본 method 사용.
+// parentPageId 의 children 중 type='child_page' + title 일치한 것 우선, 없으면 새로 생성.
+export interface FindOrCreateChildPageOptions {
+  parentPageId: string;
+  title: string;
+}
+
 export interface AppendBlocksOptions {
   pageId: string;
   blocks: NotionPlanBlock[];
@@ -58,6 +66,10 @@ export interface NotionClientPort {
   // /today 는 Check-in 섹션, /worklog 는 Check-out 섹션을 같은 day-page 에 append 하는 방식.
   findOrCreateDailyPage(
     options: FindOrCreateDailyPageOptions,
+  ): Promise<NotionDailyPlanPage>;
+  // 일반 페이지의 자식 페이지 조회/생성 — PR careerLog 일별 자동 적재 용도.
+  findOrCreateChildPage(
+    options: FindOrCreateChildPageOptions,
   ): Promise<NotionDailyPlanPage>;
   // 기존 page 에 block 추가. /worklog 의 "Check Out" append 용도 (overwrite 의미 없음).
   appendBlocks(options: AppendBlocksOptions): Promise<void>;

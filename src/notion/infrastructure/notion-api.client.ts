@@ -9,6 +9,7 @@ import { NotionTask } from '../domain/notion.type';
 import { NotionErrorCode } from '../domain/notion-error-code.enum';
 import {
   AppendBlocksOptions,
+  FindOrCreateChildPageOptions,
   FindOrCreateDailyPageOptions,
   ListActiveTasksOptions,
   NOTION_CLIENT_INSTANCE,
@@ -31,6 +32,12 @@ export class NotionApiClient implements NotionClientPort {
   // 동일 (databaseId|title) 에 대한 동시 findOrCreate 를 직렬화하는 in-process mutex.
   // codex review bcpccaqik P2: Slack retry / /today + /worklog 동시 호출 시 중복 page 생성 방지.
   // 멀티-instance 배포 시에는 post-create dedupe 가 추가로 필요하나 현재 싱글 프로세스 전제.
+  // 일반 페이지의 자식 페이지 (PR careerLog 자동 일별 적재) 용 mutex. dayPageLocks 와 별도.
+  private readonly childPageLocks = new Map<
+    string,
+    Promise<NotionDailyPlanPage>
+  >();
+
   private readonly dayPageLocks = new Map<
     string,
     Promise<NotionDailyPlanPage>
@@ -115,6 +122,100 @@ export class NotionApiClient implements NotionClientPort {
         }`,
       );
       return null;
+    }
+  }
+
+  // 일반 페이지의 자식 페이지 (PR careerLog 일별 적재) 패턴.
+  // findOrCreateDailyPage 와 분리 — 본 method 의 parent 는 database 가 아니라 일반 page.
+  // 동일 (parentPageId, title) 동시 호출은 in-process mutex 로 직렬화 — 중복 자식 페이지 생성 회피.
+  async findOrCreateChildPage({
+    parentPageId,
+    title,
+  }: FindOrCreateChildPageOptions): Promise<NotionDailyPlanPage> {
+    this.assertClientConfigured('findOrCreateChildPage');
+    const lockKey = `${parentPageId}|${title}`;
+    const pending = this.childPageLocks.get(lockKey);
+    if (pending) {
+      return pending;
+    }
+    const work = this.resolveChildPage(parentPageId, title).finally(() => {
+      this.childPageLocks.delete(lockKey);
+    });
+    this.childPageLocks.set(lockKey, work);
+    return work;
+  }
+
+  private async resolveChildPage(
+    parentPageId: string,
+    title: string,
+  ): Promise<NotionDailyPlanPage> {
+    const existing = await this.findChildPageByTitle(parentPageId, title);
+    if (existing) {
+      return existing;
+    }
+    try {
+      const response = await this.client!.pages.create({
+        parent: { page_id: parentPageId },
+        properties: {
+          title: { title: [{ text: { content: title } }] },
+        },
+      });
+      const pageId = typeof response.id === 'string' ? response.id : '';
+      const url =
+        'url' in response && typeof response.url === 'string'
+          ? response.url
+          : '';
+      return { pageId, url };
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion 자식 페이지 생성 실패 (parent ${parentPageId}, title "${title}"): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+  }
+
+  // 부모 페이지의 children blocks 페이지네이션 — type='child_page' + title 일치한 것 검색.
+  // 일반적 운영 (~수백 자식) 에서 paginate 3~5번 안. 자식 페이지가 폭증하면 향후 DB 패턴 검토.
+  private async findChildPageByTitle(
+    parentPageId: string,
+    title: string,
+  ): Promise<NotionDailyPlanPage | null> {
+    let cursor: string | undefined;
+    try {
+      do {
+        const response = await this.client!.blocks.children.list({
+          block_id: parentPageId,
+          start_cursor: cursor,
+          page_size: 100,
+        });
+        for (const child of response.results) {
+          if (
+            'type' in child &&
+            child.type === 'child_page' &&
+            'child_page' in child &&
+            (child.child_page as { title?: string } | undefined)?.title === title
+          ) {
+            // child_page block 자체에는 url 없음 — pages.retrieve 로 별도 조회.
+            const page = await this.client!.pages.retrieve({ page_id: child.id });
+            const url =
+              'url' in page && typeof page.url === 'string' ? page.url : '';
+            return { pageId: child.id, url };
+          }
+        }
+        cursor = response.has_more && response.next_cursor ? response.next_cursor : undefined;
+      } while (cursor !== undefined);
+      return null;
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion 부모 페이지 ${parentPageId} children 조회 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
     }
   }
 

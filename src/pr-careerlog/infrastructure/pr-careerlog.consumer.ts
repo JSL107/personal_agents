@@ -57,14 +57,20 @@ export class WebhookPrCareerLogConsumer extends WorkerHost {
 
     try {
       const detail = await this.fetchPullRequestDetail(prRef);
-      const blocks = buildPrCareerLogBlocks({
-        detail,
-        prRef,
-        todayKst: getTodayKstDate(),
+      const todayKst = getTodayKstDate();
+      const dailyTitle = buildDailyChildPageTitle(todayKst);
+      // 부모 페이지 → 일별 자식 페이지 (없으면 생성). 같은 날 여러 PR 머지는 같은 자식 페이지에 누적.
+      const dailyPage = await this.notionClient.findOrCreateChildPage({
+        parentPageId: pageId,
+        title: dailyTitle,
       });
-      await this.notionClient.appendBlocks({ pageId, blocks });
+      const blocks = buildPrCareerLogBlocks({ detail, prRef, todayKst });
+      await this.notionClient.appendBlocks({
+        pageId: dailyPage.pageId,
+        blocks,
+      });
       this.logger.log(
-        `PR careerLog 적재 완료 — pageId=${pageId} prRef=${prRef} blocks=${blocks.length}`,
+        `PR careerLog 적재 완료 — parentPageId=${pageId} dailyChildPageId=${dailyPage.pageId} dailyTitle="${dailyTitle}" prRef=${prRef} blocks=${blocks.length}`,
       );
       await this.notifyOwner({ slackUserId, prRef, detail });
     } catch (error: unknown) {
@@ -116,6 +122,20 @@ export class WebhookPrCareerLogConsumer extends WorkerHost {
     }
   }
 }
+
+// "YYYY-MM-DD (요일)" 형식 자식 페이지 title. KST 기준 — 사용자가 한국 환경.
+// 예: "2026-06-01 (월)". 같은 날 여러 PR 머지는 같은 자식 페이지에 누적.
+export const buildDailyChildPageTitle = (todayKst: string): string => {
+  // todayKst 가 'YYYY-MM-DD' 라 동일 날짜의 weekday 추출 — Intl 의 ko-KR weekday short 사용.
+  const date = new Date(`${todayKst}T00:00:00+09:00`);
+  const weekday = new Intl.DateTimeFormat('ko-KR', {
+    weekday: 'short',
+    timeZone: 'Asia/Seoul',
+  }).format(date);
+  // ko-KR weekday short 는 "월" "화" 등 한 글자. 일부 환경에서 "월요일" 로 떨어질 수 있어 첫 글자만.
+  const weekdayShort = weekday.charAt(0);
+  return `${todayKst} (${weekdayShort})`;
+};
 
 // LLM 없이 PR 메타데이터를 careerLog block 으로 변환.
 // 출력 구조 (Notion appendBlocks):
