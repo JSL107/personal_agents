@@ -12,11 +12,20 @@ export interface GithubIssueLite {
   html_url: string;
 }
 
+// GitHub 페이로드의 user 객체 — type='Bot' 인 경우 자동 review 대상에서 제외하기 위해.
+// (dependabot, copilot 등 봇이 작성한 PR 까지 review 하면 quota 폭주.)
+export interface GithubUserLite {
+  login: string;
+  type: 'User' | 'Bot' | string;
+}
+
 export interface GithubPullRequestLite {
   number: number;
   title: string;
   body: string | null;
   html_url: string;
+  // 일부 환경에서 user 가 누락된 페이로드가 올 수 있어 optional. 가드 함수에서 안전 처리.
+  user?: GithubUserLite;
 }
 
 export interface GithubIssuesEvent {
@@ -60,3 +69,7 @@ export const GITHUB_DELIVERY_HEADER = 'x-github-delivery';
 // 자동 발화될 impact-report 가 어느 사용자 컨텍스트로 실행될지 매핑하는 용도.
 export const GITHUB_WEBHOOK_SECRET_ENV = 'GITHUB_WEBHOOK_SECRET';
 export const GITHUB_WEBHOOK_OWNER_ENV = 'GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID';
+
+// 자동 /review-pr 발화 대상 식별자 — payload.pull_request.user.login 과 일치하는 PR 만 review.
+// 미설정 시 자동 review 비활성 (impact-report / BE-FIX 자동은 그대로 유지).
+export const GITHUB_WEBHOOK_OWNER_LOGIN_ENV = 'GITHUB_WEBHOOK_OWNER_LOGIN';

@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import {
   BE_FIX_QUEUE,
   BE_SRE_QUEUE,
+  CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
 } from '../domain/webhook.type';
 import { WebhookController } from './webhook.controller';
@@ -18,15 +19,19 @@ describe('WebhookController', () => {
   const mockImpactQueue = { add: jest.fn() };
   const mockBeFixQueue = { add: jest.fn() };
   const mockBeSreQueue = { add: jest.fn() };
+  const mockCodeReviewerQueue = { add: jest.fn() };
   const secret = 'test-secret';
   const githubSecret = 'gh-test-secret';
   const defaultSlackUser = 'U-default';
+  // ownerLogin 가드 — 본인 PR 만 자동 review. 미설정 시 review 자체 비활성.
+  let ownerLogin: string | undefined = 'me';
 
-  const configValues: Record<string, string> = {
+  const configValues = (): Record<string, string | undefined> => ({
     WEBHOOK_SECRET: secret,
     GITHUB_WEBHOOK_SECRET: githubSecret,
     GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID: defaultSlackUser,
-  };
+    GITHUB_WEBHOOK_OWNER_LOGIN: ownerLogin,
+  });
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
@@ -39,8 +44,12 @@ describe('WebhookController', () => {
         { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
         { provide: getQueueToken(BE_SRE_QUEUE), useValue: mockBeSreQueue },
         {
+          provide: getQueueToken(CODE_REVIEWER_QUEUE),
+          useValue: mockCodeReviewerQueue,
+        },
+        {
           provide: ConfigService,
-          useValue: { get: (key: string) => configValues[key] },
+          useValue: { get: (key: string) => configValues()[key] },
         },
       ],
     }).compile();
@@ -51,6 +60,9 @@ describe('WebhookController', () => {
     mockBeFixQueue.add.mockResolvedValue(undefined);
     mockBeSreQueue.add.mockReset();
     mockBeSreQueue.add.mockResolvedValue(undefined);
+    mockCodeReviewerQueue.add.mockReset();
+    mockCodeReviewerQueue.add.mockResolvedValue(undefined);
+    ownerLogin = 'me';
   });
 
   const sign = (body: string, signingSecret: string = secret) => {
@@ -315,6 +327,10 @@ describe('WebhookController', () => {
           { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
           { provide: getQueueToken(BE_SRE_QUEUE), useValue: mockBeSreQueue },
           {
+            provide: getQueueToken(CODE_REVIEWER_QUEUE),
+            useValue: mockCodeReviewerQueue,
+          },
+          {
             provide: ConfigService,
             useValue: { get: (key: string) => limitedConfig[key] },
           },
@@ -327,6 +343,8 @@ describe('WebhookController', () => {
       mockBeFixQueue.add.mockResolvedValue(undefined);
       mockBeSreQueue.add.mockReset();
       mockBeSreQueue.add.mockResolvedValue(undefined);
+      mockCodeReviewerQueue.add.mockReset();
+      mockCodeReviewerQueue.add.mockResolvedValue(undefined);
     });
 
     it('issues.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, 모든 자동 발화 X', async () => {
@@ -394,6 +412,100 @@ describe('WebhookController', () => {
       expect(result).toEqual({ accepted: true });
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockBeSreQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pull_request.opened — code-reviewer 자동 발화 가드', () => {
+    const buildPrBody = (user?: { login: string; type: string }) =>
+      JSON.stringify({
+        action: 'opened',
+        pull_request: {
+          number: 99,
+          title: 'fix: handle null',
+          body: 'closes #42',
+          html_url: 'https://github.com/foo/bar/pull/99',
+          ...(user ? { user } : {}),
+        },
+        repository: { full_name: 'foo/bar' },
+      });
+
+    it('owner login 일치 + user type=User → code-reviewer 큐 add', async () => {
+      ownerLogin = 'me';
+      const body = buildPrBody({ login: 'me', type: 'User' });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-cr-1',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockCodeReviewerQueue.add).toHaveBeenCalledWith(
+        'webhook-code-review',
+        expect.objectContaining({
+          prRef: 'foo/bar#99',
+          slackUserId: defaultSlackUser,
+        }),
+        expect.objectContaining({ jobId: 'codereview:foo/bar#99' }),
+      );
+    });
+
+    it('user.type=Bot → code-reviewer skip (dependabot 등)', async () => {
+      ownerLogin = 'me';
+      const body = buildPrBody({ login: 'dependabot[bot]', type: 'Bot' });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-cr-2',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
+      // BE-FIX / impact-report 는 그대로 발화 (가드는 review 만).
+      expect(mockBeFixQueue.add).toHaveBeenCalled();
+      expect(mockImpactQueue.add).toHaveBeenCalled();
+    });
+
+    it('user.login 불일치 → code-reviewer skip (팀 PR)', async () => {
+      ownerLogin = 'me';
+      const body = buildPrBody({ login: 'someone-else', type: 'User' });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-cr-3',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
+      expect(mockBeFixQueue.add).toHaveBeenCalled();
+    });
+
+    it('user 필드 누락 → code-reviewer skip (안전 측 가드)', async () => {
+      ownerLogin = 'me';
+      const body = buildPrBody();
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-cr-4',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('GITHUB_WEBHOOK_OWNER_LOGIN 미설정 → code-reviewer 자동 발화 자체 비활성', async () => {
+      ownerLogin = undefined;
+      const body = buildPrBody({ login: 'me', type: 'User' });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-cr-5',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
+      // BE-FIX / impact-report 는 그대로 — 본 가드는 review 만 비활성화.
+      expect(mockBeFixQueue.add).toHaveBeenCalled();
+      expect(mockImpactQueue.add).toHaveBeenCalled();
     });
   });
 });
