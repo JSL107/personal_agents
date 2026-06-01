@@ -1,5 +1,7 @@
+import { ClaudeAuthAlertPort } from '../../notification/domain/port/claude-auth-alert.port';
 import { AgentType, ModelProviderName } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
+import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
 import { ModelRouterUsecase } from './model-router.usecase';
 
 describe('ModelRouterUsecase', () => {
@@ -140,6 +142,85 @@ describe('ModelRouterUsecase', () => {
 
       // claude 는 fallback 대상이 아니다 — 호출되면 안 됨.
       expect(claudeProvider.complete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('claude 인증 의심 owner 알람', () => {
+    const buildAlerter = (): jest.Mocked<ClaudeAuthAlertPort> => ({
+      notifyAuthSuspect: jest.fn().mockResolvedValue(undefined),
+    });
+
+    it('primary(Claude) 가 ClaudeAuthSuspectException 일 때 alerter.notifyAuthSuspect 호출', async () => {
+      const alerter = buildAlerter();
+      const usecaseWithAlerter = new ModelRouterUsecase(
+        chatgptProvider,
+        claudeProvider,
+        geminiProvider,
+        alerter,
+      );
+      claudeProvider.complete.mockRejectedValue(
+        new ClaudeAuthSuspectException(
+          'claude CLI 인증 만료 / 쿼터 소진 의심 (exit=1). (no stderr)',
+        ),
+      );
+      geminiProvider.complete.mockResolvedValue({
+        text: 'g',
+        modelUsed: 'g',
+        provider: ModelProviderName.GEMINI,
+      });
+
+      await usecaseWithAlerter.route({
+        agentType: AgentType.CODE_REVIEWER,
+        request: { prompt: 'x' },
+      });
+
+      expect(alerter.notifyAuthSuspect).toHaveBeenCalledWith({
+        exitMessage: expect.stringContaining('인증 만료'),
+      });
+    });
+
+    it('primary 가 일반 Error 일 때 alerter 미호출 (인증 의심 케이스만)', async () => {
+      const alerter = buildAlerter();
+      const usecaseWithAlerter = new ModelRouterUsecase(
+        chatgptProvider,
+        claudeProvider,
+        geminiProvider,
+        alerter,
+      );
+      claudeProvider.complete.mockRejectedValue(
+        new Error('일반 timeout 같은 비-인증 에러'),
+      );
+      geminiProvider.complete.mockResolvedValue({
+        text: 'g',
+        modelUsed: 'g',
+        provider: ModelProviderName.GEMINI,
+      });
+
+      await usecaseWithAlerter.route({
+        agentType: AgentType.CODE_REVIEWER,
+        request: { prompt: 'x' },
+      });
+
+      expect(alerter.notifyAuthSuspect).not.toHaveBeenCalled();
+    });
+
+    it('alerter 미주입 (NotificationModule 미연결) 환경에서도 fallback 흐름 정상 동작', async () => {
+      // 기본 usecase 는 alerter 없이 만들어짐 — 인증 의심 에러여도 fallback 진행 + 예외 X.
+      claudeProvider.complete.mockRejectedValue(
+        new ClaudeAuthSuspectException('test'),
+      );
+      geminiProvider.complete.mockResolvedValue({
+        text: 'g',
+        modelUsed: 'g',
+        provider: ModelProviderName.GEMINI,
+      });
+
+      const result = await usecase.route({
+        agentType: AgentType.CODE_REVIEWER,
+        request: { prompt: 'x' },
+      });
+
+      expect(result.provider).toBe(ModelProviderName.GEMINI);
     });
   });
 

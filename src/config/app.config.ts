@@ -225,6 +225,13 @@ class EnvironmentVariables {
     message: 'IMPACT_REPORT_RECENT_DAYS 는 1~365 사이 정수여야 합니다.',
   })
   IMPACT_REPORT_RECENT_DAYS?: string;
+
+  // claude CLI 가 인증 만료 / 쿼터 소진으로 침묵 실패 (exit=1 + 빈/인증 키워드 stderr) 시 owner DM
+  // 으로 즉시 알릴 Slack user ID (`U...`). 미설정 시 NoopClaudeAuthAlerter (stdout warn 만).
+  // 2026-05-30 Daily Eval 실패 사고와 같은 primary 침묵 실패를 5초 안 owner 가 인지하기 위한 surface.
+  @IsOptional()
+  @IsString()
+  CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

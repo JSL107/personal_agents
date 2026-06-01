@@ -1,5 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import {
+  CLAUDE_AUTH_ALERT_PORT,
+  ClaudeAuthAlertPort,
+} from '../../notification/domain/port/claude-auth-alert.port';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
@@ -13,6 +17,7 @@ import {
   MODEL_PROVIDER_TOKENS,
   ModelProviderPort,
 } from '../domain/port/model-provider.port';
+import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
 
 // 기획서 §13 모델 라우팅 전략에 따른 에이전트 → 모델 매핑.
 // 계획/설명/회고 계열은 ChatGPT, 코드 작업은 Claude 중심.
@@ -50,6 +55,10 @@ export class ModelRouterUsecase {
     private readonly claudeProvider: ModelProviderPort,
     @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.GEMINI])
     private readonly geminiProvider: ModelProviderPort,
+    // NotificationModule 미연결 (테스트 / 부분 부팅 등) 환경 대비 — undefined 시 알람 skip.
+    @Optional()
+    @Inject(CLAUDE_AUTH_ALERT_PORT)
+    private readonly claudeAuthAlerter?: ClaudeAuthAlertPort,
   ) {}
 
   async route({
@@ -77,6 +86,10 @@ export class ModelRouterUsecase {
         primaryError instanceof Error
           ? primaryError.message
           : String(primaryError);
+
+      // claude CLI 인증 만료 / 쿼터 소진 의심 — 본 fallback 흐름과 별개로 owner 알람 발사.
+      // (await 하지 않고 fire-and-forget — 알람 자체 실패가 fallback 흐름을 막지 않게.)
+      this.maybeNotifyClaudeAuthSuspect(primaryError);
 
       // 1차가 이미 fallback 모델이면 재시도 의미 없음 — 그대로 전파.
       if (primaryName === FALLBACK_PROVIDER) {
@@ -129,6 +142,24 @@ export class ModelRouterUsecase {
       status: DomainStatus.BAD_GATEWAY,
       cause: primaryError ? { primaryError, lastError } : lastError,
     });
+  }
+
+  // primary 실패가 ClaudeAuthSuspectException 일 때만 alerter 호출 — alerter 내부에서 30분 dedupe.
+  // 알람 자체 실패는 모델 호출 자체에 영향 주지 않게 catch 안에서 stdout 만 남긴다.
+  private maybeNotifyClaudeAuthSuspect(error: unknown): void {
+    if (!(error instanceof ClaudeAuthSuspectException)) {
+      return;
+    }
+    if (!this.claudeAuthAlerter) {
+      return;
+    }
+    void this.claudeAuthAlerter
+      .notifyAuthSuspect({ exitMessage: error.message })
+      .catch((alertError: unknown) => {
+        this.logger.warn(
+          `claude 인증 의심 알람 발사 실패: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
+        );
+      });
   }
 
   private resolveProvider(name: ModelProviderName): ModelProviderPort {
