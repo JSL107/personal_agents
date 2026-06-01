@@ -72,9 +72,14 @@ export const buildSafeChildEnv = ({
   // Gemini CLI 는 GEMINI_API_KEY / GOOGLE_GENAI_USE_* / GOOGLE_APPLICATION_CREDENTIALS 등으로 auth 결정.
   // OAuth 사용 시는 ~/.gemini/settings.json 을 읽으므로 GEMINI_HOME 도 forward.
   // 실제 토큰 값은 parent env 에서만 가져오고 (allowlist) 자식 본 디렉토리(throwaway HOME) 와 분리.
+  //
+  // GEMINI_CLI_TRUST_WORKSPACE — headless 자동화 환경에서 untrusted directory 거부 (exit=55) 회피.
+  // 미설정 시 gemini CLI 가 fallback chain 자체를 끊어버려 PO_EVAL/CTO/CEO 등 Claude 실패 후 복구 불가
+  // (2026-05-30 Daily Eval 실패 사례). 사용자가 .env 에 true 로 명시한 경우만 자식으로 전달.
   const geminiAuthKeys = [
     'GEMINI_API_KEY',
     'GEMINI_HOME',
+    'GEMINI_CLI_TRUST_WORKSPACE',
     'GOOGLE_API_KEY',
     'GOOGLE_GENAI_USE_VERTEXAI',
     'GOOGLE_GENAI_USE_GCA',
