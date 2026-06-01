@@ -9,6 +9,7 @@ import {
   BE_SRE_QUEUE,
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
+  PR_CAREERLOG_QUEUE,
 } from '../domain/webhook.type';
 import { WebhookController } from './webhook.controller';
 
@@ -20,17 +21,23 @@ describe('WebhookController', () => {
   const mockBeFixQueue = { add: jest.fn() };
   const mockBeSreQueue = { add: jest.fn() };
   const mockCodeReviewerQueue = { add: jest.fn() };
+  const mockPrCareerLogQueue = { add: jest.fn() };
   const secret = 'test-secret';
   const githubSecret = 'gh-test-secret';
   const defaultSlackUser = 'U-default';
   // ownerLogin 가드 — 본인 PR 만 자동 review. 미설정 시 review 자체 비활성.
   let ownerLogin: string | undefined = 'me';
+  // PR careerLog 자동 적재 — env gate 두 개 (enabled boolean + Notion page id) 모두 set 일 때만 활성.
+  let careerLogAutoEnabled: string | undefined = 'true';
+  let careerLogNotionPageId: string | undefined = 'page-abc';
 
   const configValues = (): Record<string, string | undefined> => ({
     WEBHOOK_SECRET: secret,
     GITHUB_WEBHOOK_SECRET: githubSecret,
     GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID: defaultSlackUser,
     GITHUB_WEBHOOK_OWNER_LOGIN: ownerLogin,
+    PR_CAREERLOG_AUTO_ENABLED: careerLogAutoEnabled,
+    CAREER_LOG_NOTION_PAGE_ID: careerLogNotionPageId,
   });
 
   beforeEach(async () => {
@@ -48,6 +55,10 @@ describe('WebhookController', () => {
           useValue: mockCodeReviewerQueue,
         },
         {
+          provide: getQueueToken(PR_CAREERLOG_QUEUE),
+          useValue: mockPrCareerLogQueue,
+        },
+        {
           provide: ConfigService,
           useValue: { get: (key: string) => configValues()[key] },
         },
@@ -62,7 +73,11 @@ describe('WebhookController', () => {
     mockBeSreQueue.add.mockResolvedValue(undefined);
     mockCodeReviewerQueue.add.mockReset();
     mockCodeReviewerQueue.add.mockResolvedValue(undefined);
+    mockPrCareerLogQueue.add.mockReset();
+    mockPrCareerLogQueue.add.mockResolvedValue(undefined);
     ownerLogin = 'me';
+    careerLogAutoEnabled = 'true';
+    careerLogNotionPageId = 'page-abc';
   });
 
   const sign = (body: string, signingSecret: string = secret) => {
@@ -331,6 +346,10 @@ describe('WebhookController', () => {
             useValue: mockCodeReviewerQueue,
           },
           {
+            provide: getQueueToken(PR_CAREERLOG_QUEUE),
+            useValue: mockPrCareerLogQueue,
+          },
+          {
             provide: ConfigService,
             useValue: { get: (key: string) => limitedConfig[key] },
           },
@@ -345,6 +364,8 @@ describe('WebhookController', () => {
       mockBeSreQueue.add.mockResolvedValue(undefined);
       mockCodeReviewerQueue.add.mockReset();
       mockCodeReviewerQueue.add.mockResolvedValue(undefined);
+      mockPrCareerLogQueue.add.mockReset();
+      mockPrCareerLogQueue.add.mockResolvedValue(undefined);
     });
 
     it('issues.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, 모든 자동 발화 X', async () => {
@@ -506,6 +527,116 @@ describe('WebhookController', () => {
       // BE-FIX / impact-report 는 그대로 — 본 가드는 review 만 비활성화.
       expect(mockBeFixQueue.add).toHaveBeenCalled();
       expect(mockImpactQueue.add).toHaveBeenCalled();
+    });
+  });
+
+  describe('pull_request.closed (merged=true) — careerLog 자동 적재 가드', () => {
+    const buildMergedBody = ({
+      merged = true,
+      user,
+    }: {
+      merged?: boolean;
+      user?: { login: string; type: string };
+    } = {}) =>
+      JSON.stringify({
+        action: 'closed',
+        pull_request: {
+          number: 99,
+          title: 'feat: payment hooks',
+          body: 'closes #42',
+          html_url: 'https://github.com/foo/bar/pull/99',
+          merged,
+          ...(user ? { user } : {}),
+        },
+        repository: { full_name: 'foo/bar' },
+      });
+
+    it('owner 일치 + merged=true + env 모두 set → PR careerLog 큐 add', async () => {
+      const body = buildMergedBody({ user: { login: 'me', type: 'User' } });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-1',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).toHaveBeenCalledWith(
+        'webhook-pr-careerlog',
+        expect.objectContaining({
+          prRef: 'foo/bar#99',
+          slackUserId: defaultSlackUser,
+        }),
+        expect.objectContaining({ jobId: 'prcareerlog:foo/bar#99' }),
+      );
+    });
+
+    it('action=closed 지만 merged=false → skip (단순 close)', async () => {
+      const body = buildMergedBody({
+        merged: false,
+        user: { login: 'me', type: 'User' },
+      });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-2',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('bot 작성 머지 PR → skip', async () => {
+      const body = buildMergedBody({
+        user: { login: 'dependabot[bot]', type: 'Bot' },
+      });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-3',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('owner 불일치 (팀 PR) → skip', async () => {
+      const body = buildMergedBody({
+        user: { login: 'someone-else', type: 'User' },
+      });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-4',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('PR_CAREERLOG_AUTO_ENABLED 미설정 → 자동 적재 자체 비활성', async () => {
+      careerLogAutoEnabled = undefined;
+      const body = buildMergedBody({ user: { login: 'me', type: 'User' } });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-5',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('CAREER_LOG_NOTION_PAGE_ID 미설정 → 자동 적재 비활성 (Notion 페이지 부재)', async () => {
+      careerLogNotionPageId = undefined;
+      const body = buildMergedBody({ user: { login: 'me', type: 'User' } });
+      await controller.github(
+        body,
+        sign(body, githubSecret),
+        'pull_request',
+        'd-clog-6',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockPrCareerLogQueue.add).not.toHaveBeenCalled();
     });
   });
 });
