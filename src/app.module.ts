@@ -26,6 +26,7 @@ import { GithubModule } from './github/github.module';
 import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
+import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -97,6 +98,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     SlackModule,
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
+    // claude CLI 인증 만료 owner 알람 — @Global, CLAUDE_AUTH_ALERT_PORT 토큰 등록.
+    // env CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID 미설정 시 noop 어댑터로 자동 fallback.
+    NotificationModule,
     MorningBriefingModule,
     WeeklySummaryModule,
     // workflow-phase-definition §5.2 Daily Eval — 매일 19:00 KST PO_EVAL 자동 트리거.
