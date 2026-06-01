@@ -51,3 +51,13 @@ export interface CodeReviewerJobData {
   prRef: string; // 'owner/repo#number'
   slackUserId: string;
 }
+
+// pull_request.closed (merged=true) webhook 트리거 — 본인 PR 머지 시 careerLog 한 줄을 Notion 페이지에 자동 적재.
+// 매일 머지하는 행위가 자산으로 자동 누적 — /po-eval ✅ 수동 적재의 PR 단위 자동화 자매.
+// LLM 호출 X — PR 메타 (title / body / additions / deletions / files) 를 그대로 careerLog block 으로 변환.
+export const PR_CAREERLOG_QUEUE = 'pr-careerlog-webhook';
+
+export interface PrCareerLogJobData {
+  prRef: string; // 'owner/repo#number'
+  slackUserId: string;
+}

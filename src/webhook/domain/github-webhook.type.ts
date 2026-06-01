@@ -26,6 +26,8 @@ export interface GithubPullRequestLite {
   html_url: string;
   // 일부 환경에서 user 가 누락된 페이로드가 올 수 있어 optional. 가드 함수에서 안전 처리.
   user?: GithubUserLite;
+  // pull_request.closed 액션의 머지 여부 식별 — closed 라도 merged=false (단순 close) 면 skip.
+  merged?: boolean;
 }
 
 export interface GithubIssuesEvent {
