@@ -44,13 +44,14 @@ export class ReviewPullRequestUsecase {
   async execute({
     prRef,
     slackUserId,
+    triggerType,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
 
     return this.agentRunService.execute({
       agentType: AgentType.CODE_REVIEWER,
-      triggerType: TriggerType.SLACK_COMMAND_REVIEW_PR,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_REVIEW_PR,
       inputSnapshot: {
         prRef,
         repo: ref.repo,
