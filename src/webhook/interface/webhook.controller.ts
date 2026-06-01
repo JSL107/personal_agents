@@ -18,6 +18,7 @@ import {
   GITHUB_EVENT_HEADER,
   GITHUB_SIGNATURE_HEADER,
   GITHUB_WEBHOOK_OWNER_ENV,
+  GITHUB_WEBHOOK_OWNER_LOGIN_ENV,
   GITHUB_WEBHOOK_SECRET_ENV,
   GithubCheckRunEvent,
   GithubIssuesEvent,
@@ -29,6 +30,8 @@ import {
   BE_SRE_QUEUE,
   BeFixJobData,
   BeSreJobData,
+  CODE_REVIEWER_QUEUE,
+  CodeReviewerJobData,
   IMPACT_REPORT_QUEUE,
   ImpactReportJobData,
   WEBHOOK_SECRET_ENV,
@@ -50,6 +53,8 @@ export class WebhookController {
     private readonly beFixQueue: Queue<BeFixJobData>,
     @InjectQueue(BE_SRE_QUEUE)
     private readonly beSreQueue: Queue<BeSreJobData>,
+    @InjectQueue(CODE_REVIEWER_QUEUE)
+    private readonly codeReviewerQueue: Queue<CodeReviewerJobData>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -149,14 +154,82 @@ export class WebhookController {
 
     this.fireImpactReport({ subject, slackUserId });
 
-    // pull_request.opened → impact-report 와 병렬로 BE-FIX 자동 분석도 발화.
+    // pull_request.opened → impact-report 와 병렬로 BE-FIX 자동 분석 + (조건부) code-reviewer 자동.
     if (event === 'pull_request' && this.isPullRequestOpened(payload)) {
       const pr = payload as GithubPullRequestEvent;
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
       this.fireBeFixAnalysis({ prRef, slackUserId });
+      this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
     }
 
     return { accepted: true };
+  }
+
+  // 본인이 작성한 PR (owner login 일치, bot 제외) 일 때만 자동 /review-pr 발화.
+  // OWNER_LOGIN 미설정 → 자동 review 자체 비활성 (impact-report / BE-FIX 는 그대로).
+  private maybeFireCodeReview({
+    payload,
+    prRef,
+    slackUserId,
+  }: {
+    payload: GithubPullRequestEvent;
+    prRef: string;
+    slackUserId: string;
+  }): void {
+    const ownerLogin = this.configService
+      .get<string>(GITHUB_WEBHOOK_OWNER_LOGIN_ENV)
+      ?.trim();
+    if (!ownerLogin || ownerLogin.length === 0) {
+      return;
+    }
+    const author = payload.pull_request.user;
+    if (!author) {
+      this.logger.warn(
+        `Webhook code-reviewer skip — payload.pull_request.user 누락 (prRef=${prRef}).`,
+      );
+      return;
+    }
+    if (author.type === 'Bot') {
+      this.logger.log(
+        `Webhook code-reviewer skip — bot 작성 PR (login=${author.login}, prRef=${prRef}).`,
+      );
+      return;
+    }
+    if (author.login !== ownerLogin) {
+      this.logger.log(
+        `Webhook code-reviewer skip — owner 불일치 (login=${author.login} vs owner=${ownerLogin}, prRef=${prRef}).`,
+      );
+      return;
+    }
+    this.fireCodeReviewAnalysis({ prRef, slackUserId });
+  }
+
+  private fireCodeReviewAnalysis({
+    prRef,
+    slackUserId,
+  }: {
+    prRef: string;
+    slackUserId: string;
+  }): void {
+    // 동일 PR 의 force-push 등으로 webhook 이 재전달돼도 BullMQ jobId 가 살아있는 동안 dedup.
+    const jobId = `codereview:${prRef}`;
+    void this.codeReviewerQueue
+      .add(
+        'webhook-code-review',
+        { prRef, slackUserId },
+        {
+          jobId,
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Webhook code-reviewer enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   // GitHub event + payload → 자체 포맷의 subject 한 줄.

@@ -232,6 +232,13 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID?: string;
+
+  // pull_request.opened webhook 자동 /review-pr 활성 — payload.pull_request.user.login 과
+  // 일치하는 PR (본인 작성) + bot 작성 제외. 미설정 시 자동 review 비활성 (impact-report / BE-FIX 자동은 그대로).
+  // 결과는 GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID 사용자에게 Slack DM 으로 발송.
+  @IsOptional()
+  @IsString()
+  GITHUB_WEBHOOK_OWNER_LOGIN?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
