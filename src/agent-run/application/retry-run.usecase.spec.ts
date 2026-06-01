@@ -21,6 +21,7 @@ describe('RetryRunUsecase', () => {
       pmRunsWithSimilar: 0,
     }),
     findChainFromRoot: jest.fn().mockResolvedValue([]),
+    searchByKeyword: jest.fn().mockResolvedValue([]),
   });
 
   let mockRepo: jest.Mocked<AgentRunRepositoryPort>;

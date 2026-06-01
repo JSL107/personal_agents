@@ -22,6 +22,7 @@ describe('AgentRunService', () => {
       pmRunsWithSimilar: 0,
     }),
     findChainFromRoot: jest.fn().mockResolvedValue([]),
+    searchByKeyword: jest.fn().mockResolvedValue([]),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
