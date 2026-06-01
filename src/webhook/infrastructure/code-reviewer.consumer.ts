@@ -6,6 +6,7 @@ import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
 import { SlackService } from '../../slack/slack.service';
 import { CODE_REVIEWER_QUEUE, CodeReviewerJobData } from '../domain/webhook.type';
@@ -33,10 +34,13 @@ export class WebhookCodeReviewerConsumer extends WorkerHost {
         slackUserId,
         triggerType: TriggerType.WEBHOOK,
       });
-      const text = formatPullRequestReview({
-        prRef,
-        review: outcome,
-      });
+      // AgentRunOutcome<PullRequestReview>.result 가 review 본체 — formatter 가 받는 type.
+      // model + agentRunId footer 는 별도 helper 로 append (수동 /review-pr 동일 패턴).
+      const text =
+        formatPullRequestReview({
+          prRef,
+          review: outcome.result,
+        }) + formatModelFooter(outcome);
       await this.slackService.postMessage({ target: slackUserId, text });
       this.logger.log(
         `Webhook code-reviewer 완료 — ${prRef} (agentRunId=${outcome.agentRunId})`,
