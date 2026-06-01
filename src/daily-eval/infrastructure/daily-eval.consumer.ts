@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
@@ -11,6 +11,10 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
+import {
+  CRON_FAILURE_ALERT_PORT,
+  CronFailureAlertPort,
+} from '../../notification/domain/port/cron-failure-alert.port';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatEvaluationOutput } from '../../slack/format/po-evaluation.formatter';
 import { DAILY_EVAL_QUEUE, DailyEvalJobData } from '../domain/daily-eval.type';
@@ -27,6 +31,10 @@ export class DailyEvalConsumer extends WorkerHost {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
+    // NotificationModule (@Global) 미연결 환경 대비 — undefined 면 알람 skip.
+    @Optional()
+    @Inject(CRON_FAILURE_ALERT_PORT)
+    private readonly cronFailureAlerter?: CronFailureAlertPort,
   ) {
     super();
   }
@@ -71,7 +79,28 @@ export class DailyEvalConsumer extends WorkerHost {
         `Daily Eval 실패 — 예상 외 에러 (owner=${ownerSlackUserId})`,
         error,
       );
+      this.notifyOwnerFailure(ownerSlackUserId, error);
       throw error;
     }
+  }
+
+  // fire-and-forget — 알람 자체 실패가 BullMQ 재시도 흐름을 막지 않게.
+  private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {
+    if (!this.cronFailureAlerter) {
+      return;
+    }
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    void this.cronFailureAlerter
+      .notifyCronFailure({
+        cronName: 'Daily Eval',
+        ownerSlackUserId,
+        errorMessage,
+      })
+      .catch((alertError: unknown) => {
+        this.logger.warn(
+          `Daily Eval 실패 알람 발사 실패: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
+        );
+      });
   }
 }

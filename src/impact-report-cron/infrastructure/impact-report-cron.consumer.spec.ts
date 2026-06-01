@@ -6,13 +6,18 @@ import { ImpactReportCronConsumer } from './impact-report-cron.consumer';
 describe('ImpactReportCronConsumer', () => {
   const mockImpactUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronAlerter = { notifyCronFailure: jest.fn() };
 
   const consumer = new ImpactReportCronConsumer(
     mockImpactUsecase as never,
     mockSlackNotifier as never,
+    mockCronAlerter as never,
   );
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
+  });
 
   it('정상 — usecase 에 subject="--recent 7d" + triggerType=IMPACT_REPORT_RECENT_CRON 전달 + Slack 발송', async () => {
     mockImpactUsecase.execute.mockResolvedValue({
@@ -96,5 +101,27 @@ describe('ImpactReportCronConsumer', () => {
       } as never),
     ).rejects.toThrow('codex capacity');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
+    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
+    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+      cronName: 'Impact Report Cron',
+      ownerSlackUserId: 'U1',
+      errorMessage: 'codex capacity',
+    });
+  });
+
+  it('graceful skip (RECENT_MODE_NO_RESULTS) 케이스에서는 알람 미발사', async () => {
+    mockImpactUsecase.execute.mockRejectedValue(
+      new ImpactReporterException({
+        code: ImpactReporterErrorCode.RECENT_MODE_NO_RESULTS,
+        message: '최근 7일 머지 PR 0건',
+        status: DomainStatus.NOT_FOUND,
+      }),
+    );
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1', days: 7 },
+    } as never);
+
+    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
   });
 });
