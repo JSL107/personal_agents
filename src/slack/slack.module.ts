@@ -27,6 +27,7 @@ import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
+import { RetryRunHandler } from './handler/retry-run.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';
 
@@ -70,6 +71,7 @@ import { SlackService } from './slack.service';
     AgentCommandHandler,
     PhaseCommandHandler,
     AutoFlowHandler,
+    RetryRunHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -82,6 +84,7 @@ import { SlackService } from './slack.service';
         AgentCommandHandler,
         PhaseCommandHandler,
         AutoFlowHandler,
+        RetryRunHandler,
       ],
     },
   ],
