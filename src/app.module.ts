@@ -22,6 +22,7 @@ import { CodeGraphModule } from './code-graph/code-graph.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { DailyEvalModule } from './daily-eval/daily-eval.module';
+import { CeoMetaCronModule } from './ceo-meta-cron/ceo-meta-cron.module';
 import { GithubModule } from './github/github.module';
 import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
@@ -105,6 +106,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     WeeklySummaryModule,
     // workflow-phase-definition §5.2 Daily Eval — 매일 19:00 KST PO_EVAL 자동 트리거.
     DailyEvalModule,
+    // 주 1회 자동 /ceo-review — Daily Eval (`0 19 * * *`) 가 누적한 PO_EVAL run 들을 CEO worker 가 합성.
+    CeoMetaCronModule,
     // 주 1회 자동 /impact-report --recent <N>d — 본인 머지 PR 자동 종합 (default 토 09:00 KST).
     ImpactReportCronModule,
     CrawlerModule,
