@@ -34,6 +34,8 @@ import {
   CodeReviewerJobData,
   IMPACT_REPORT_QUEUE,
   ImpactReportJobData,
+  PR_CAREERLOG_QUEUE,
+  PrCareerLogJobData,
   WEBHOOK_SECRET_ENV,
   WebhookTriggerPayload,
 } from '../domain/webhook.type';
@@ -55,6 +57,8 @@ export class WebhookController {
     private readonly beSreQueue: Queue<BeSreJobData>,
     @InjectQueue(CODE_REVIEWER_QUEUE)
     private readonly codeReviewerQueue: Queue<CodeReviewerJobData>,
+    @InjectQueue(PR_CAREERLOG_QUEUE)
+    private readonly prCareerLogQueue: Queue<PrCareerLogJobData>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -146,6 +150,16 @@ export class WebhookController {
       return { accepted: true };
     }
 
+    // pull_request.closed + merged=true → 본인 PR 머지 시 careerLog 자동 적재 (LLM X).
+    // closed action 은 toImpactSubject 가 지원하지 않아 그 분기보다 위에서 가드. impact-report /
+    // BE-FIX 와 무관 — 머지 시점은 사후 누적 자산 적재.
+    if (event === 'pull_request' && this.isPullRequestMerged(payload)) {
+      const pr = payload as GithubPullRequestEvent;
+      const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
+      this.maybeFirePrCareerLog({ payload: pr, prRef, slackUserId });
+      return { accepted: true };
+    }
+
     const subject = this.toImpactSubject({ event, payload });
     if (!subject) {
       // 지원하지 않는 event/action — accept 하되 작업 발화 X (재시도 폭주 방지).
@@ -163,6 +177,96 @@ export class WebhookController {
     }
 
     return { accepted: true };
+  }
+
+  // 본인 머지 PR (owner login 일치, bot 제외, env gate 활성) 만 careerLog 자동 적재.
+  // PR_CAREERLOG_AUTO_ENABLED 미설정 → 모듈 자체 비활성 (review / impact-report 자동은 그대로 유지).
+  // CAREER_LOG_NOTION_PAGE_ID 미설정도 비활성 (적재 대상 페이지 부재).
+  private maybeFirePrCareerLog({
+    payload,
+    prRef,
+    slackUserId,
+  }: {
+    payload: GithubPullRequestEvent;
+    prRef: string;
+    slackUserId: string;
+  }): void {
+    const enabled =
+      this.configService.get<string>('PR_CAREERLOG_AUTO_ENABLED')?.trim() ===
+      'true';
+    if (!enabled) {
+      return;
+    }
+    const careerLogPageId = this.configService
+      .get<string>('CAREER_LOG_NOTION_PAGE_ID')
+      ?.trim();
+    if (!careerLogPageId || careerLogPageId.length === 0) {
+      this.logger.warn(
+        `PR careerLog 자동 적재 skip — CAREER_LOG_NOTION_PAGE_ID 미설정 (prRef=${prRef}).`,
+      );
+      return;
+    }
+    const ownerLogin = this.configService
+      .get<string>('GITHUB_WEBHOOK_OWNER_LOGIN')
+      ?.trim();
+    if (!ownerLogin || ownerLogin.length === 0) {
+      return;
+    }
+    const author = payload.pull_request.user;
+    if (!author) {
+      return;
+    }
+    if (author.type === 'Bot') {
+      this.logger.log(
+        `PR careerLog skip — bot 작성 PR (login=${author.login}, prRef=${prRef}).`,
+      );
+      return;
+    }
+    if (author.login !== ownerLogin) {
+      this.logger.log(
+        `PR careerLog skip — owner 불일치 (login=${author.login} vs owner=${ownerLogin}, prRef=${prRef}).`,
+      );
+      return;
+    }
+    this.firePrCareerLog({ prRef, slackUserId });
+  }
+
+  private firePrCareerLog({
+    prRef,
+    slackUserId,
+  }: {
+    prRef: string;
+    slackUserId: string;
+  }): void {
+    // 동일 PR 의 webhook 재전달 / 재머지 (revert 후 re-merge 등) 시 BullMQ jobId dedup.
+    const jobId = `prcareerlog:${prRef}`;
+    void this.prCareerLogQueue
+      .add(
+        'webhook-pr-careerlog',
+        { prRef, slackUserId },
+        {
+          jobId,
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Webhook PR careerLog enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  }
+
+  private isPullRequestMerged(
+    payload: GithubWebhookPayload,
+  ): payload is GithubPullRequestEvent {
+    if (!('pull_request' in payload)) {
+      return false;
+    }
+    const pr = payload as GithubPullRequestEvent;
+    return pr.action === 'closed' && pr.pull_request.merged === true;
   }
 
   // 본인이 작성한 PR (owner login 일치, bot 제외) 일 때만 자동 /review-pr 발화.

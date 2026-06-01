@@ -29,6 +29,7 @@ import { ModelRouterModule } from './model-router/model-router.module';
 import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
 import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
+import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RouterModule } from './router/router.module';
@@ -112,6 +113,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     ImpactReportCronModule,
     CrawlerModule,
     WebhookModule,
+    // pull_request.closed (merged=true) → 본인 PR 머지 시 Notion careerLog 자동 적재.
+    // WebhookModule 이 BullMQ queue 등록 + controller 분기 — 본 module 은 consumer 본체.
+    PrCareerLogModule,
   ],
 })
 export class AppModule {}
