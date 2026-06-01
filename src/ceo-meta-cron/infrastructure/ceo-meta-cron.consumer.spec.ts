@@ -6,13 +6,18 @@ import { CeoMetaCronConsumer } from './ceo-meta-cron.consumer';
 describe('CeoMetaCronConsumer', () => {
   const mockCeoUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronAlerter = { notifyCronFailure: jest.fn() };
 
   const consumer = new CeoMetaCronConsumer(
     mockCeoUsecase as never,
     mockSlackNotifier as never,
+    mockCronAlerter as never,
   );
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
+  });
 
   const sampleOutcome = (range: 'WEEK' | 'TODAY' = 'WEEK') => ({
     result: {
@@ -90,5 +95,27 @@ describe('CeoMetaCronConsumer', () => {
       } as never),
     ).rejects.toThrow('claude rate limit');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
+    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
+    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+      cronName: 'CEO Meta Cron',
+      ownerSlackUserId: 'U1',
+      errorMessage: 'claude rate limit',
+    });
+  });
+
+  it('NO_PO_EVAL_RUN graceful skip 인 경우 알람 미발사 (사용자 활동 없음 = 진단 불필요)', async () => {
+    mockCeoUsecase.execute.mockRejectedValue(
+      new CeoException({
+        code: CeoErrorCode.NO_PO_EVAL_RUN,
+        message: '최근 7일 안 PO_EVAL SUCCEEDED run 없음.',
+        status: DomainStatus.NOT_FOUND,
+      }),
+    );
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1', range: 'WEEK' },
+    } as never);
+
+    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
   });
 });

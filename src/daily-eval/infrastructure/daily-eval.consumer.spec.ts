@@ -6,13 +6,18 @@ import { DailyEvalConsumer } from './daily-eval.consumer';
 describe('DailyEvalConsumer', () => {
   const mockPoEvalUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronAlerter = { notifyCronFailure: jest.fn() };
 
   const consumer = new DailyEvalConsumer(
     mockPoEvalUsecase as never,
     mockSlackNotifier as never,
+    mockCronAlerter as never,
   );
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
+  });
 
   it('PoEval 정상 — Slack 발송 1회 + range=TODAY + DAILY_EVAL_CRON 트리거', async () => {
     mockPoEvalUsecase.execute.mockResolvedValue({
@@ -82,5 +87,27 @@ describe('DailyEvalConsumer', () => {
       } as never),
     ).rejects.toThrow('codex capacity');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
+    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
+    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+      cronName: 'Daily Eval',
+      ownerSlackUserId: 'U1',
+      errorMessage: 'codex capacity',
+    });
+  });
+
+  it('NO_SUB_AGENT_RUNS graceful skip 인 경우 알람 미발사', async () => {
+    mockPoEvalUsecase.execute.mockRejectedValue(
+      new PoEvalException({
+        code: PoEvalErrorCode.NO_SUB_AGENT_RUNS,
+        message: '최근 24시간 내 sub-agent run 없습니다.',
+        status: DomainStatus.NOT_FOUND,
+      }),
+    );
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+
+    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
   });
 });
