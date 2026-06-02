@@ -395,4 +395,119 @@ describe('OctokitGithubClient', () => {
       ).toBe(true);
     });
   });
+
+  describe('listRepoLabels — issues.opened 자동 라벨링 vocab 회복', () => {
+    it('paginate 결과를 RepoLabel[] 로 정규화 (description 누락은 null)', async () => {
+      const paginate = jest
+        .fn()
+        .mockResolvedValue([
+          { name: 'bug', description: '버그 보고서' },
+          { name: 'docs', description: null },
+          { name: 'wontfix' },
+        ]);
+      const octokit = {
+        rest: { issues: { listLabelsForRepo: jest.fn() } },
+        paginate,
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const labels = await client.listRepoLabels('foo/bar');
+
+      expect(labels).toEqual([
+        { name: 'bug', description: '버그 보고서' },
+        { name: 'docs', description: null },
+        { name: 'wontfix', description: null },
+      ]);
+      expect(paginate).toHaveBeenCalledWith(
+        (
+          octokit as unknown as {
+            rest: { issues: { listLabelsForRepo: unknown } };
+          }
+        ).rest.issues.listLabelsForRepo,
+        expect.objectContaining({ owner: 'foo', repo: 'bar', per_page: 100 }),
+      );
+    });
+
+    it('paginate throw 시 REQUEST_FAILED 로 감싼다', async () => {
+      const octokit = {
+        rest: { issues: { listLabelsForRepo: jest.fn() } },
+        paginate: jest.fn().mockRejectedValue(new Error('rate limited')),
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await expect(client.listRepoLabels('foo/bar')).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      });
+    });
+
+    it('Octokit null → TOKEN_NOT_CONFIGURED', async () => {
+      const client = new OctokitGithubClient(null);
+      await expect(client.listRepoLabels('foo/bar')).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
+      });
+    });
+  });
+
+  describe('addLabelsToIssue — issues.opened 자동 라벨링 apply', () => {
+    it('labels 비어 있으면 호출 자체 skip (network noop)', async () => {
+      const addLabels = jest.fn();
+      const octokit = {
+        rest: { issues: { addLabels } },
+        paginate: jest.fn(),
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await client.addLabelsToIssue({
+        repo: 'foo/bar',
+        issueNumber: 42,
+        labels: [],
+      });
+      expect(addLabels).not.toHaveBeenCalled();
+    });
+
+    it('labels 가 있으면 owner/repo/issue_number/labels 전달', async () => {
+      const addLabels = jest.fn().mockResolvedValue(undefined);
+      const octokit = {
+        rest: { issues: { addLabels } },
+        paginate: jest.fn(),
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await client.addLabelsToIssue({
+        repo: 'foo/bar',
+        issueNumber: 42,
+        labels: ['bug', 'docs'],
+      });
+      expect(addLabels).toHaveBeenCalledWith({
+        owner: 'foo',
+        repo: 'bar',
+        issue_number: 42,
+        labels: ['bug', 'docs'],
+      });
+    });
+
+    it('addLabels throw 시 REQUEST_FAILED 로 감싼다', async () => {
+      const addLabels = jest.fn().mockRejectedValue(
+        new GithubException({
+          code: GithubErrorCode.REQUEST_FAILED,
+          message: 'forbidden',
+        }),
+      );
+      const octokit = {
+        rest: { issues: { addLabels } },
+        paginate: jest.fn(),
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await expect(
+        client.addLabelsToIssue({
+          repo: 'foo/bar',
+          issueNumber: 42,
+          labels: ['bug'],
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      });
+    });
+  });
 });

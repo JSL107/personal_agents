@@ -46,6 +46,8 @@ describe('ReviewPullRequestUsecase', () => {
       getPullRequestDiff: jest.fn(),
       addIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
+      listRepoLabels: jest.fn(),
+      addLabelsToIssue: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),

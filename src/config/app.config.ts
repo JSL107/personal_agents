@@ -281,6 +281,19 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PR_CAREERLOG_AUTO_ENABLED?: string;
+
+  // issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성.
+  // 정책: 새 label 생성 X (repo 기존 vocab 안에서 LLM 분류 부분집합 선택).
+  // 추가 조건: GITHUB_TOKEN 이 `Issues: Read+Write` scope 보유.
+  @IsOptional()
+  @IsString()
+  GITHUB_ISSUE_AUTO_LABEL_ENABLED?: string;
+
+  // 자동 라벨링 대상 repo allowlist (콤마 구분 "owner/repo"). 미설정/빈 값 → enable 만으로 모든 repo 적용.
+  // monorepo / 다중 repo 환경에서 일부 repo 만 자동 라벨링 적용하고 싶을 때 사용.
+  @IsOptional()
+  @IsString()
+  GITHUB_ISSUE_AUTO_LABEL_REPOS?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

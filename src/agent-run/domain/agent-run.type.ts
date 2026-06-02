@@ -43,6 +43,9 @@ export enum TriggerType {
   // 주 1회 자동 /impact-report --recent <N>d 종합 — 본인 작성 머지 PR 종합 보고.
   // 수동 /impact-report (SLACK_COMMAND_IMPACT_REPORT) 와 구분.
   IMPACT_REPORT_RECENT_CRON = 'IMPACT_REPORT_RECENT_CRON',
+  // issues.opened webhook 자동 라벨링 — repo label vocab 안에서 LLM 이 적합 label 부분집합 선택 후
+  // octokit issues.addLabels. 수동 라벨링과 구분하기 위한 trigger.
+  WEBHOOK_ISSUE_AUTO_LABEL = 'WEBHOOK_ISSUE_AUTO_LABEL',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

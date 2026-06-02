@@ -42,6 +42,8 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   getPullRequestDiff: jest.fn(),
   addIssueComment: jest.fn().mockResolvedValue(undefined),
   listAuthorMergedPullRequestsSince: jest.fn(),
+  listRepoLabels: jest.fn(),
+  addLabelsToIssue: jest.fn(),
 });
 
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
