@@ -6,17 +6,16 @@ import { ImpactReportCronConsumer } from './impact-report-cron.consumer';
 describe('ImpactReportCronConsumer', () => {
   const mockImpactUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockCronAlerter = { notifyCronFailure: jest.fn() };
+  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
 
   const consumer = new ImpactReportCronConsumer(
     mockImpactUsecase as never,
     mockSlackNotifier as never,
-    mockCronAlerter as never,
+    mockPublisher as never,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
   });
 
   it('정상 — usecase 에 subject="--recent 7d" + triggerType=IMPACT_REPORT_RECENT_CRON 전달 + Slack 발송', async () => {
@@ -101,8 +100,8 @@ describe('ImpactReportCronConsumer', () => {
       } as never),
     ).rejects.toThrow('codex capacity');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
-    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
-    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+    // throw 직전 NotificationQueue 로 publish — cron 운영자가 consumer 측에서 dedupe + Slack DM.
+    expect(mockPublisher.publishCronFailure).toHaveBeenCalledWith({
       cronName: 'Impact Report Cron',
       ownerSlackUserId: 'U1',
       errorMessage: 'codex capacity',
@@ -122,6 +121,6 @@ describe('ImpactReportCronConsumer', () => {
       data: { ownerSlackUserId: 'U1', target: 'C1', days: 7 },
     } as never);
 
-    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
+    expect(mockPublisher.publishCronFailure).not.toHaveBeenCalled();
   });
 });

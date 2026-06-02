@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { ModelRouterUsecase } from './application/model-router.usecase';
 import { ModelProviderName } from './domain/model-router.type';
 import { MODEL_PROVIDER_TOKENS } from './domain/port/model-provider.port';
@@ -11,6 +12,7 @@ import { GeminiCliProvider } from './infrastructure/gemini-cli.provider';
 // Gemini 는 OAuth (gemini 인터랙티브 1회 로그인) 또는 GEMINI_API_KEY 설정 필요.
 // 실패 fallback chain 은 ModelRouterUsecase 에서 수행 — primary 실패 시 Gemini 로 자동 재시도.
 @Module({
+  imports: [NotificationQueueModule],
   providers: [
     {
       provide: MODEL_PROVIDER_TOKENS[ModelProviderName.CHATGPT],

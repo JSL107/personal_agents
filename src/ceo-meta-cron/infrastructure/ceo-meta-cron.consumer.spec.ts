@@ -6,17 +6,16 @@ import { CeoMetaCronConsumer } from './ceo-meta-cron.consumer';
 describe('CeoMetaCronConsumer', () => {
   const mockCeoUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockCronAlerter = { notifyCronFailure: jest.fn() };
+  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
 
   const consumer = new CeoMetaCronConsumer(
     mockCeoUsecase as never,
     mockSlackNotifier as never,
-    mockCronAlerter as never,
+    mockPublisher as never,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
   });
 
   const sampleOutcome = (range: 'WEEK' | 'TODAY' = 'WEEK') => ({
@@ -95,8 +94,8 @@ describe('CeoMetaCronConsumer', () => {
       } as never),
     ).rejects.toThrow('claude rate limit');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
-    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
-    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+    // throw 직전 NotificationQueue 로 publish — cron 운영자가 consumer 측에서 dedupe + Slack DM.
+    expect(mockPublisher.publishCronFailure).toHaveBeenCalledWith({
       cronName: 'CEO Meta Cron',
       ownerSlackUserId: 'U1',
       errorMessage: 'claude rate limit',
@@ -116,6 +115,6 @@ describe('CeoMetaCronConsumer', () => {
       data: { ownerSlackUserId: 'U1', target: 'C1', range: 'WEEK' },
     } as never);
 
-    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
+    expect(mockPublisher.publishCronFailure).not.toHaveBeenCalled();
   });
 });
