@@ -11,10 +11,7 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
-import {
-  CRON_FAILURE_ALERT_PORT,
-  CronFailureAlertPort,
-} from '../../notification/domain/port/cron-failure-alert.port';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { formatCeoMetaOutput } from '../../slack/format/ceo-meta.formatter';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import {
@@ -34,8 +31,7 @@ export class CeoMetaCronConsumer extends WorkerHost {
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     @Optional()
-    @Inject(CRON_FAILURE_ALERT_PORT)
-    private readonly cronFailureAlerter?: CronFailureAlertPort,
+    private readonly notificationPublisher?: NotificationPublisher,
   ) {
     super();
   }
@@ -83,23 +79,17 @@ export class CeoMetaCronConsumer extends WorkerHost {
     }
   }
 
-  // fire-and-forget — 알람 자체 실패가 BullMQ 재시도 흐름을 막지 않게.
+  // fire-and-forget — NotificationQueue 로 enqueue. consumer 측 30분 dedupe + Slack DM.
   private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {
-    if (!this.cronFailureAlerter) {
+    if (!this.notificationPublisher) {
       return;
     }
     const errorMessage =
       error instanceof Error ? error.message : String(error);
-    void this.cronFailureAlerter
-      .notifyCronFailure({
-        cronName: 'CEO Meta Cron',
-        ownerSlackUserId,
-        errorMessage,
-      })
-      .catch((alertError: unknown) => {
-        this.logger.warn(
-          `CEO Meta Cron 실패 알람 발사 실패: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
-        );
-      });
+    this.notificationPublisher.publishCronFailure({
+      cronName: 'CEO Meta Cron',
+      ownerSlackUserId,
+      errorMessage,
+    });
   }
 }

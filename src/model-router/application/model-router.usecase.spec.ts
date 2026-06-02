@@ -1,4 +1,4 @@
-import { ClaudeAuthAlertPort } from '../../notification/domain/port/claude-auth-alert.port';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { AgentType, ModelProviderName } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
@@ -146,17 +146,19 @@ describe('ModelRouterUsecase', () => {
   });
 
   describe('claude 인증 의심 owner 알람', () => {
-    const buildAlerter = (): jest.Mocked<ClaudeAuthAlertPort> => ({
-      notifyAuthSuspect: jest.fn().mockResolvedValue(undefined),
-    });
+    const buildPublisher = (): jest.Mocked<NotificationPublisher> =>
+      ({
+        publishClaudeAuthSuspect: jest.fn(),
+        publishCronFailure: jest.fn(),
+      }) as unknown as jest.Mocked<NotificationPublisher>;
 
-    it('primary(Claude) 가 ClaudeAuthSuspectException 일 때 alerter.notifyAuthSuspect 호출', async () => {
-      const alerter = buildAlerter();
-      const usecaseWithAlerter = new ModelRouterUsecase(
+    it('primary(Claude) 가 ClaudeAuthSuspectException 일 때 publisher.publishClaudeAuthSuspect 호출', async () => {
+      const publisher = buildPublisher();
+      const usecaseWithPublisher = new ModelRouterUsecase(
         chatgptProvider,
         claudeProvider,
         geminiProvider,
-        alerter,
+        publisher,
       );
       claudeProvider.complete.mockRejectedValue(
         new ClaudeAuthSuspectException(
@@ -169,23 +171,23 @@ describe('ModelRouterUsecase', () => {
         provider: ModelProviderName.GEMINI,
       });
 
-      await usecaseWithAlerter.route({
+      await usecaseWithPublisher.route({
         agentType: AgentType.CODE_REVIEWER,
         request: { prompt: 'x' },
       });
 
-      expect(alerter.notifyAuthSuspect).toHaveBeenCalledWith({
+      expect(publisher.publishClaudeAuthSuspect).toHaveBeenCalledWith({
         exitMessage: expect.stringContaining('인증 만료'),
       });
     });
 
-    it('primary 가 일반 Error 일 때 alerter 미호출 (인증 의심 케이스만)', async () => {
-      const alerter = buildAlerter();
-      const usecaseWithAlerter = new ModelRouterUsecase(
+    it('primary 가 일반 Error 일 때 publisher 미호출 (인증 의심 케이스만)', async () => {
+      const publisher = buildPublisher();
+      const usecaseWithPublisher = new ModelRouterUsecase(
         chatgptProvider,
         claudeProvider,
         geminiProvider,
-        alerter,
+        publisher,
       );
       claudeProvider.complete.mockRejectedValue(
         new Error('일반 timeout 같은 비-인증 에러'),
@@ -196,16 +198,16 @@ describe('ModelRouterUsecase', () => {
         provider: ModelProviderName.GEMINI,
       });
 
-      await usecaseWithAlerter.route({
+      await usecaseWithPublisher.route({
         agentType: AgentType.CODE_REVIEWER,
         request: { prompt: 'x' },
       });
 
-      expect(alerter.notifyAuthSuspect).not.toHaveBeenCalled();
+      expect(publisher.publishClaudeAuthSuspect).not.toHaveBeenCalled();
     });
 
-    it('alerter 미주입 (NotificationModule 미연결) 환경에서도 fallback 흐름 정상 동작', async () => {
-      // 기본 usecase 는 alerter 없이 만들어짐 — 인증 의심 에러여도 fallback 진행 + 예외 X.
+    it('publisher 미주입 (NotificationQueueModule 미연결) 환경에서도 fallback 흐름 정상 동작', async () => {
+      // 기본 usecase 는 publisher 없이 만들어짐 — 인증 의심 에러여도 fallback 진행 + 예외 X.
       claudeProvider.complete.mockRejectedValue(
         new ClaudeAuthSuspectException('test'),
       );
