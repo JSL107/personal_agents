@@ -55,6 +55,8 @@ describe('GenerateImpactReportUsecase', () => {
       getPullRequestDiff: jest.fn(),
       addIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
+      listRepoLabels: jest.fn(),
+      addLabelsToIssue: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 

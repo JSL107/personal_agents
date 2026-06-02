@@ -61,3 +61,15 @@ export interface PrCareerLogJobData {
   prRef: string; // 'owner/repo#number'
   slackUserId: string;
 }
+
+// issues.opened webhook 자동 라벨링 — repo label vocab 안에서 LLM 이 적합 label 부분집합을
+// 골라 octokit issues.addLabels 호출. 새 label 생성 X. enable 게이트 + repo allowlist 미설정 시 skip.
+// 동일 issue 의 webhook 재전달 시 BullMQ jobId dedup.
+export const ISSUE_LABEL_QUEUE = 'issue-label-webhook';
+
+export interface IssueLabelJobData {
+  repo: string; // "owner/repo"
+  issueNumber: number;
+  title: string;
+  body: string;
+}

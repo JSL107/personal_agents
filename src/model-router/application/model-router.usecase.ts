@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
-import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
   AgentType,
@@ -35,6 +35,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.PO_EVAL]: ModelProviderName.CLAUDE,
   // CEO — PO_EVAL + PM/CTO 합성 → 메타 review. PO_EVAL 과 동일 구조 → Claude.
   [AgentType.CEO]: ModelProviderName.CLAUDE,
+  // ISSUE_LABELER — issue title/body 를 repo label vocab 안에서 분류. JSON 한 줄 출력 → Claude.
+  [AgentType.ISSUE_LABELER]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 fallback provider.

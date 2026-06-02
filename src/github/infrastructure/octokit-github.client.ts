@@ -13,12 +13,14 @@ import {
 } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
+  AddIssueLabelsInput,
   GetPullRequestDiffOptions,
   GithubClientPort,
   ListAssignedTasksOptions,
   ListAuthorMergedPullRequestsOptions,
   OCTOKIT_INSTANCE,
   PullRequestRef,
+  RepoLabel,
 } from '../domain/port/github-client.port';
 
 const DEFAULT_LIMIT = 30;
@@ -239,6 +241,54 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo}#${number} 코멘트 추가 실패`,
+      );
+    }
+  }
+
+  // issues.opened webhook 자동 라벨링 — repo 의 label vocab 회복 (paginated, 자동 합산).
+  // 정책: 새 label 생성 X — LLM 이 본 vocab 안에서만 선택. 보통 ≤100, monorepo 라도 ≤500 수준.
+  async listRepoLabels(repo: string): Promise<RepoLabel[]> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const labels = await this.octokit!.paginate(
+        this.octokit!.rest.issues.listLabelsForRepo,
+        { owner, repo: repoName, per_page: 100 },
+      );
+      return labels.map((label) => ({
+        name: label.name,
+        description: label.description ?? null,
+      }));
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} label vocab 조회 실패`,
+      );
+    }
+  }
+
+  // issues.opened webhook 자동 라벨링 — 멱등 (이미 붙은 label 은 noop). labels 빈 배열은 caller 가 skip.
+  async addLabelsToIssue({
+    repo,
+    issueNumber,
+    labels,
+  }: AddIssueLabelsInput): Promise<void> {
+    this.assertOctokitConfigured();
+    if (labels.length === 0) {
+      return;
+    }
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      await this.octokit!.rest.issues.addLabels({
+        owner,
+        repo: repoName,
+        issue_number: issueNumber,
+        labels,
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${issueNumber} addLabels 실패`,
       );
     }
   }

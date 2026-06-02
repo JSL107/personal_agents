@@ -50,6 +50,18 @@ export interface ListAuthorMergedPullRequestsOptions {
   limit: number;
 }
 
+// issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 조회 + LLM 이 고른 label 부분집합 적용.
+export interface RepoLabel {
+  name: string;
+  description: string | null;
+}
+
+export interface AddIssueLabelsInput {
+  repo: string; // "owner/repo"
+  issueNumber: number;
+  labels: string[]; // repo vocab 안의 name 배열. octokit 이 멱등 처리 (이미 붙은 label 은 noop).
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
@@ -70,4 +82,11 @@ export interface GithubClientPort {
   listAuthorMergedPullRequestsSince(
     options: ListAuthorMergedPullRequestsOptions,
   ): Promise<GithubPullRequestSummary[]>;
+
+  // issues.opened webhook 자동 라벨링 — repo 의 label vocab (paginated).
+  // 새 label 생성은 정책상 안 함 — LLM 이 vocab 안에서만 선택하도록 prompt 단에서 제한.
+  listRepoLabels(repo: string): Promise<RepoLabel[]>;
+
+  // 멱등 — 이미 붙어 있는 label 은 GitHub 가 noop 처리. labels 가 빈 배열이면 호출 자체 skip.
+  addLabelsToIssue(input: AddIssueLabelsInput): Promise<void>;
 }
