@@ -105,6 +105,19 @@ class EnvironmentVariables {
   @IsString()
   SLACK_INBOX_EMOJI?: string;
 
+  // 📌 reaction → Notion task 자동 적재.
+  // - SLACK_PUSHPIN_REACTION_EMOJI: 트리거 이모지. 미설정 시 default 'pushpin' (📌).
+  //   SLACK_INBOX_EMOJI 와 다른 이모지 권장 (같은 이모지로 두 handler 가 동시 발화하면 의도 혼동).
+  // - SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID: 적재 대상 Notion 부모 페이지 id. 미설정 시 service skip.
+  //   같은 페이지 트리를 CAREER_LOG_NOTION_PAGE_ID 와 공유해도 OK — 일별 자식 페이지 (YYYY-MM-DD) 공통 key.
+  @IsOptional()
+  @IsString()
+  SLACK_PUSHPIN_REACTION_EMOJI?: string;
+
+  @IsOptional()
+  @IsString()
+  SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID?: string;
+
   // OPS-2 Webhook 수신부.
   // - WEBHOOK_SECRET: 자체 포맷(/v1/agent/trigger) HMAC-SHA256 키. 미설정 시 모든 요청 거부.
   // - GITHUB_WEBHOOK_SECRET: GitHub 표준(/v1/agent/github) HMAC-SHA256 키. 미설정 시 모든 요청 거부.
