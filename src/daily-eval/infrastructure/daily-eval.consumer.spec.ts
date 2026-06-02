@@ -6,17 +6,16 @@ import { DailyEvalConsumer } from './daily-eval.consumer';
 describe('DailyEvalConsumer', () => {
   const mockPoEvalUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockCronAlerter = { notifyCronFailure: jest.fn() };
+  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
 
   const consumer = new DailyEvalConsumer(
     mockPoEvalUsecase as never,
     mockSlackNotifier as never,
-    mockCronAlerter as never,
+    mockPublisher as never,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCronAlerter.notifyCronFailure.mockResolvedValue(undefined);
   });
 
   it('PoEval 정상 — Slack 발송 1회 + range=TODAY + DAILY_EVAL_CRON 트리거', async () => {
@@ -87,8 +86,8 @@ describe('DailyEvalConsumer', () => {
       } as never),
     ).rejects.toThrow('codex capacity');
     expect(mockSlackNotifier.postMessage).not.toHaveBeenCalled();
-    // throw 직전 owner DM 알람 발사 — cron 운영자가 즉시 인지.
-    expect(mockCronAlerter.notifyCronFailure).toHaveBeenCalledWith({
+    // throw 직전 NotificationQueue 로 publish — cron 운영자가 consumer 측에서 dedupe + Slack DM.
+    expect(mockPublisher.publishCronFailure).toHaveBeenCalledWith({
       cronName: 'Daily Eval',
       ownerSlackUserId: 'U1',
       errorMessage: 'codex capacity',
@@ -108,6 +107,6 @@ describe('DailyEvalConsumer', () => {
       data: { ownerSlackUserId: 'U1', target: 'C1' },
     } as never);
 
-    expect(mockCronAlerter.notifyCronFailure).not.toHaveBeenCalled();
+    expect(mockPublisher.publishCronFailure).not.toHaveBeenCalled();
   });
 });
