@@ -25,9 +25,13 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ V3 phase loop 워커 — CTO (`/assign`) / PO_EVAL (`/po-eval`) / CEO (`/ceo-review`) + `/auto-flow` chain + AgentRun chain audit walk (`findChainFromRoot`)
 - ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
 - ✅ Conversation Memory (`src/router/application/conversation-memory.service.ts`) — Redis 우선 / in-memory Map fallback. 사용자+채널당 최대 5 turn, TTL 30분
-- ✅ GitHub Webhook 자동 트리거 (`src/github/interface/github-webhook.controller.ts`) — `issues.opened` / `pull_request.opened` → Impact Reporter, `pull_request.opened` → BE-FIX, `check_run.completed` (failure) → BE-SRE
+- ✅ GitHub Webhook 자동 트리거 (`src/webhook/`) — `issues.opened` / `pull_request.opened` → Impact Reporter, `pull_request.opened` → BE-FIX + (조건부) code-reviewer, `check_run.completed` (failure) → BE-SRE, `pull_request.closed` (merged=true) → PR careerLog Notion 자동 적재, `issues.opened` → Issue Auto-Label (vocab 안 LLM 분류)
 - ✅ Cron 자동 발화 4종 — Morning Briefing (PM `/today`), Daily Eval (PO_EVAL), Weekly Summary (Worklog+CEO), Impact Report `--recent` (env 활성 시)
-- ✅ Notification (`src/notification/`) — claude CLI 인증 의심 침묵 실패 감지 시 owner DM (30분 dedupe)
+- ✅ Notification (`src/notification/`) — Producer/Consumer 분리 (BullMQ `notification` queue). claude CLI 인증 의심 침묵 실패 + cron 실패 owner DM (30분 dedupe per kind)
+- ✅ PR careerLog 자동 적재 (`src/pr-careerlog/`) — 본인 PR 머지 시 Notion 부모 페이지 아래 일별 자식 페이지 (`YYYY-MM-DD (요일)`) 에 자동 누적
+- ✅ Issue Auto-Label (`src/agent/issue-labeler/`) — `issues.opened` 시 repo 의 기존 label vocab 안에서 LLM 분류 → octokit `addLabels` (새 label 생성 X, 5개 cap)
+- ✅ Pushpin Task (`src/pushpin-task/`) — Slack 메시지에 📌 reaction → Notion 일별 페이지에 to-do 자동 적재 (Slack permalink 포함)
+- ✅ `/search-runs` (`src/agent-run/application/search-agent-runs.usecase.ts`) — SUCCEEDED AgentRun 의 input/output 본문 ILIKE 키워드 검색
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
 
@@ -134,6 +138,10 @@ pnpm format:check          # Prettier 검사
 | `WEBHOOK_SECRET` | ⭕ | 자체 포맷 `/v1/agent/trigger` HMAC-SHA256 키. 미설정 시 모든 요청 거부 |
 | `GITHUB_WEBHOOK_SECRET` | ⭕ | GitHub 표준 `/v1/agent/github` HMAC-SHA256 키. 미설정 시 모든 요청 거부 |
 | `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` | ⭕ | GitHub payload 에는 Slack user 가 없으므로 자동 발화(impact-report / BE-FIX / BE-SRE)의 사용자 컨텍스트 매핑. 미설정 시 200 OK 만 응답하고 자동 발화 skip |
+| `GITHUB_WEBHOOK_OWNER_LOGIN` | ⭕ | `pull_request.opened` 자동 code-reviewer + `pull_request.closed (merged=true)` PR careerLog 가드. payload `pull_request.user.login` 일치 + bot 제외 시에만 발화 |
+| `GITHUB_ISSUE_AUTO_LABEL_ENABLED` | ❌ | `true` 일 때만 `issues.opened` → Issue Auto-Label 활성. default off |
+| `GITHUB_ISSUE_AUTO_LABEL_REPOS` | ❌ | 콤마 구분 "owner/repo" allowlist. 빈 값/미설정 → 모든 repo 적용 |
+| `PR_CAREERLOG_AUTO_ENABLED` | ❌ | `true` 일 때만 `pull_request.closed (merged=true)` → Notion careerLog 자동 적재 활성 (`CAREER_LOG_NOTION_PAGE_ID` + `GITHUB_WEBHOOK_OWNER_LOGIN` 동시 set 필요) |
 
 ### Cron 자동 발화 (env 미설정 = 해당 cron 비활성)
 
@@ -149,11 +157,14 @@ pnpm format:check          # Prettier 검사
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID` | ⭕ | claude CLI 인증 만료 / 쿼터 소진 침묵 실패 감지 시 owner 에게 DM (30분 dedupe). 미설정 시 stdout warn 만 |
-| `CAREER_LOG_NOTION_PAGE_ID` | ⭕ | `/po-eval` 결과의 "✅ 적용" 버튼으로 careerLog 적재할 Notion 페이지. 미설정 시 버튼 미부착 |
+| `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ⭕ | Daily Eval / Impact Report Cron / CEO Meta Cron 등 cron consumer 가 throw 직전 owner DM (cron 별 30분 dedupe). 미설정 시 stdout warn 만 |
+| `CAREER_LOG_NOTION_PAGE_ID` | ⭕ | `/po-eval` 결과의 "✅ 적용" 버튼 + `pull_request.closed (merged=true)` 자동 PR careerLog 의 적재 대상 Notion 페이지. 미설정 시 버튼 미부착 + PR careerLog 자동 skip |
 | `IMPACT_REPORT_GITHUB_AUTHOR` | ⭕ | `/impact-report --recent <N>d` 의 GitHub username (필수: recent mode 핵심) |
 | `IMPACT_REPORT_GITHUB_REPO` | ❌ | `owner/repo` 스코프. 미설정 시 author 의 모든 repo 머지 PR (글로벌 모드) |
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | GitHub assigned / Notion task 의 cutoff (기본 60일) |
 | `SLACK_INBOX_EMOJI` | ❌ | Reaction → Inbox 큐잉 트리거 이모지 (기본 `raised_hand`) |
+| `SLACK_PUSHPIN_REACTION_EMOJI` | ❌ | 📌 → Notion task 트리거 이모지 (기본 `pushpin`). `SLACK_INBOX_EMOJI` 와 다른 값 권장 |
+| `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | 📌 → Notion task 적재 부모 페이지. 미설정 시 service 가 graceful skip. `CAREER_LOG_NOTION_PAGE_ID` 와 동일 페이지 공유해도 OK (일별 자식 페이지 공통 key) |
 
 > CLI 격리 (`buildSafeChildEnv`) 의 allowlist 에는 `GEMINI_CLI_TRUST_WORKSPACE` 가 포함돼 있어, headless 환경에서 gemini fallback 이 untrusted directory (exit=55) 로 실패하는 것을 막는다. 본인 환경에서 gemini 가 거절을 띄우면 `export GEMINI_CLI_TRUST_WORKSPACE=true` 후 재기동.
 
@@ -171,12 +182,15 @@ pnpm format:check          # Prettier 검사
 
 `/v1/agent/github` 에 GitHub App / repo webhook 을 붙이면 다음 이벤트가 사용자 입력 없이 자동 발화된다 (사용자 컨텍스트는 `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` 로 매핑).
 
-| GitHub 이벤트 | 발화 에이전트 | 설명 |
-|---|---|---|
-| `issues.opened` | Impact Reporter | 새 이슈 본문 기반 임팩트 보고서 자동 생성 |
-| `pull_request.opened` | Impact Reporter | 새 PR diff 기반 임팩트 보고서 자동 생성 |
-| `pull_request.opened` | BE-FIX | PR 컨벤션 분석 (네이밍/파일 구조/테스트 누락 등) 자동 |
-| `check_run.completed` (conclusion=failure) | BE-SRE | CI 실패 로그 → stack trace 분석 자동 |
+| GitHub 이벤트 | 발화 에이전트 | 설명 | 추가 활성화 env |
+|---|---|---|---|
+| `issues.opened` | Impact Reporter | 새 이슈 본문 기반 임팩트 보고서 자동 생성 | — |
+| `issues.opened` | Issue Auto-Label | repo 의 기존 label vocab 안에서 LLM 분류 → `addLabels` (새 label 생성 X) | `GITHUB_ISSUE_AUTO_LABEL_ENABLED=true` (+ 선택 `GITHUB_ISSUE_AUTO_LABEL_REPOS`) |
+| `pull_request.opened` | Impact Reporter | 새 PR diff 기반 임팩트 보고서 자동 생성 | — |
+| `pull_request.opened` | BE-FIX | PR 컨벤션 분석 (네이밍/파일 구조/테스트 누락 등) 자동 | — |
+| `pull_request.opened` | Code Reviewer (조건부) | 본인 PR (owner login 일치 + bot 제외) 만 자동 `/review-pr` → owner DM | `GITHUB_WEBHOOK_OWNER_LOGIN` |
+| `pull_request.closed` (merged=true) | PR careerLog | 본인 머지 PR 메타 (title / body / additions / deletions / files) 를 Notion 일별 자식 페이지에 자동 적재 (LLM 호출 X) | `PR_CAREERLOG_AUTO_ENABLED=true` + `CAREER_LOG_NOTION_PAGE_ID` + `GITHUB_WEBHOOK_OWNER_LOGIN` |
+| `check_run.completed` (conclusion=failure) | BE-SRE | CI 실패 로그 → stack trace 분석 자동 | — |
 
 > `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` 미설정 시 webhook 은 200 OK 만 반환하고 자동 발화는 모두 skip — graceful.
 
@@ -196,6 +210,7 @@ pnpm format:check          # Prettier 검사
 | `/be schema` | 자연어 DB 변경 요청을 Prisma 스키마 제안으로 변환 (V3 BE-3) | BE Schema / Claude |
 | `/be test` | Tree-sitter AST 기반 Jest spec 생성 (V3 BE-2) | BE Test / Claude |
 | `/retry-run` | FAILED 된 AgentRun 을 본인 입력으로 재실행 (OPS-5) | (선행 run 의 agent) |
+| `/search-runs` | SUCCEEDED AgentRun 의 input/output 본문에서 키워드 ILIKE 검색 → 최신 5건 | — |
 | `/review-feedback` | 직전 PR 리뷰의 accept / reject 학습 데이터 저장 (QA-1) | — |
 | `/assign` | 직전 PM plan 의 `assignableTaskIds` 를 BE worker 3종으로 자동 분배 (V3 P2) | CTO / Claude |
 | `/po-eval` | Work Reviewer / PO Shadow / Impact Reporter 직전 snapshot 합성 + 이력서용 careerLog (V3 P4) | PO_EVAL / Claude |
@@ -228,6 +243,7 @@ pnpm format:check          # Prettier 검사
    - `/sync-context` — 외부 컨텍스트 강제 재수집
    - `/quota` — 사용량 통계 확인 (Usage hint: `[today|week]`)
    - `/retry-run` — FAILED AgentRun 재실행 (Usage hint: `<AgentRun ID>`)
+   - `/search-runs` — SUCCEEDED AgentRun input/output ILIKE 검색 (Usage hint: `<키워드>`)
    - `/review-feedback` — PR 리뷰 accept/reject 피드백 저장 (Usage hint: `<AgentRun ID> accept|reject [이유]`)
    - `/assign` — 직전 PM plan 의 task 를 BE worker 로 자동 분배 (V3 P2 CTO worker)
    - `/po-eval` — Work Reviewer / PO Shadow / Impact Reporter 합성 + 이력서 careerLog (V3 P4) (Usage hint: `[today|week]`)
@@ -258,11 +274,16 @@ V3 비전 phase loop 의 cron 트리거 — 4종 모두 env 미설정 시 비활
 
 | 통합 | 트리거 | 동작 | 활성화 env |
 |---|---|---|---|
-| **careerLog → Notion** | `/po-eval` 결과 화면의 "✅ 적용" 버튼 (30분 안) | PreviewGate 경유 → 지정 Notion 페이지에 careerLog heading + 성과 bullet + 기술 스택 + impact append. 사용자 confirm 후만 부작용 발생. | `CAREER_LOG_NOTION_PAGE_ID` |
+| **careerLog → Notion (수동)** | `/po-eval` 결과 화면의 "✅ 적용" 버튼 (30분 안) | PreviewGate 경유 → 지정 Notion 페이지에 careerLog heading + 성과 bullet + 기술 스택 + impact append. 사용자 confirm 후만 부작용 발생. | `CAREER_LOG_NOTION_PAGE_ID` |
+| **PR careerLog → Notion (자동)** | `pull_request.closed` webhook (`merged=true` + owner 본인 PR + bot 제외) | LLM 호출 X. 부모 페이지 아래 일별 자식 페이지 (`YYYY-MM-DD (요일)`) 를 찾거나 만들고 PR 메타 (title / body / additions / deletions / changedFiles) 를 careerLog block 으로 append. BullMQ jobId dedup. | `PR_CAREERLOG_AUTO_ENABLED=true` + `CAREER_LOG_NOTION_PAGE_ID` + `GITHUB_WEBHOOK_OWNER_LOGIN` |
+| **📌 reaction → Notion to-do** | Slack 메시지에 📌 (default `pushpin`) reaction | LLM 호출 X. 부모 페이지 아래 일별 자식 페이지에 todo block append + Slack permalink 부착. | `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` (+ 선택 `SLACK_PUSHPIN_REACTION_EMOJI`) |
+| **Issue Auto-Label** | `issues.opened` webhook | repo 의 기존 label vocab (`listLabelsForRepo`) 조회 → LLM 분류 → `addLabels` (vocab 안 + 5개 cap). 새 label 생성 X. | `GITHUB_ISSUE_AUTO_LABEL_ENABLED=true` (+ 선택 `GITHUB_ISSUE_AUTO_LABEL_REPOS`) |
 | **`/impact-report --recent <N>d`** | `/impact-report --recent 7d` (또는 임의 N=1~365) | 지정 author 의 최근 N일 머지 PR 을 GitHub 에서 자동 fetch (최대 20건) → 정량 합산 (PR수 / +LOC / -LOC / files) + body summary 종합 → ImpactReport 생성. `REPO` 미설정 시 author 의 **모든 repo** 머지 PR (본인 작성, fork merge 포함). | `IMPACT_REPORT_GITHUB_AUTHOR` (필수) + `IMPACT_REPORT_GITHUB_REPO` (선택) |
 
-- `CAREER_LOG_NOTION_PAGE_ID` 미설정 → `/po-eval` 응답은 기존 텍스트만 (버튼 미부착)
+- `CAREER_LOG_NOTION_PAGE_ID` 미설정 → `/po-eval` 응답은 기존 텍스트만 (버튼 미부착), PR careerLog 자동 적재도 skip.
 - `IMPACT_REPORT_GITHUB_AUTHOR` 미설정 → `/impact-report --recent ...` 만 `RECENT_MODE_ENV_MISSING` 으로 거절 (기존 단일 PR / 자유 텍스트 모드 영향 없음). `IMPACT_REPORT_GITHUB_REPO` 는 선택 — 미설정 시 author 모든 repo 글로벌 모드.
+- `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` 와 `CAREER_LOG_NOTION_PAGE_ID` 는 동일 페이지 공유 가능 — 같은 날짜 자식 페이지에 PR careerLog (정량/정성 분리) + 📌 to-do 가 같이 누적된다.
+- `GITHUB_ISSUE_AUTO_LABEL_ENABLED=true` + `GITHUB_TOKEN` 이 `Issues: Read+Write` scope 보유해야 동작. allowlist 미설정 → owner 모든 repo 적용.
 
 ## 참고 문서
 
