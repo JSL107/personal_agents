@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
+import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { ImpactReportCronScheduler } from './application/impact-report-cron.scheduler';
@@ -16,6 +17,7 @@ import { ImpactReportCronConsumer } from './infrastructure/impact-report-cron.co
     BullModule.registerQueue({ name: IMPACT_REPORT_CRON_QUEUE }),
     ImpactReporterModule,
     SlackModule,
+    NotificationQueueModule,
   ],
   providers: [
     ImpactReportCronScheduler,

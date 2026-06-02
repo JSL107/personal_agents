@@ -100,8 +100,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     SlackModule,
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
-    // claude CLI 인증 만료 owner 알람 — @Global, CLAUDE_AUTH_ALERT_PORT 토큰 등록.
-    // env CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID 미설정 시 noop 어댑터로 자동 fallback.
+    // claude CLI 인증 + cron 실패 owner DM 알람 — BullMQ NOTIFICATION_QUEUE 의 consumer.
+    // Producer (NotificationQueueModule) 는 ModelRouterModule / 3 cron consumer module 가 직접 imports.
     NotificationModule,
     MorningBriefingModule,
     WeeklySummaryModule,

@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
+import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { DailyEvalScheduler } from './application/daily-eval.scheduler';
@@ -16,6 +17,7 @@ import { DailyEvalConsumer } from './infrastructure/daily-eval.consumer';
     BullModule.registerQueue({ name: DAILY_EVAL_QUEUE }),
     PoEvalModule,
     SlackModule,
+    NotificationQueueModule,
   ],
   providers: [
     DailyEvalScheduler,

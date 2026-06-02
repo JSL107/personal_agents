@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
+import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { CeoMetaCronScheduler } from './application/ceo-meta-cron.scheduler';
@@ -16,6 +17,7 @@ import { CeoMetaCronConsumer } from './infrastructure/ceo-meta-cron.consumer';
     BullModule.registerQueue({ name: CEO_META_CRON_QUEUE }),
     CeoModule,
     SlackModule,
+    NotificationQueueModule,
   ],
   providers: [
     CeoMetaCronScheduler,

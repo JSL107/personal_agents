@@ -1,9 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
-import {
-  CLAUDE_AUTH_ALERT_PORT,
-  ClaudeAuthAlertPort,
-} from '../../notification/domain/port/claude-auth-alert.port';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
@@ -55,10 +52,9 @@ export class ModelRouterUsecase {
     private readonly claudeProvider: ModelProviderPort,
     @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.GEMINI])
     private readonly geminiProvider: ModelProviderPort,
-    // NotificationModule 미연결 (테스트 / 부분 부팅 등) 환경 대비 — undefined 시 알람 skip.
+    // NotificationQueueModule 미연결 (테스트 / 부분 부팅) 환경 대비 — undefined 시 알람 skip.
     @Optional()
-    @Inject(CLAUDE_AUTH_ALERT_PORT)
-    private readonly claudeAuthAlerter?: ClaudeAuthAlertPort,
+    private readonly notificationPublisher?: NotificationPublisher,
   ) {}
 
   async route({
@@ -144,22 +140,18 @@ export class ModelRouterUsecase {
     });
   }
 
-  // primary 실패가 ClaudeAuthSuspectException 일 때만 alerter 호출 — alerter 내부에서 30분 dedupe.
-  // 알람 자체 실패는 모델 호출 자체에 영향 주지 않게 catch 안에서 stdout 만 남긴다.
+  // primary 실패가 ClaudeAuthSuspectException 일 때만 BullMQ queue 로 publish — consumer 가
+  // 30분 dedupe + SlackService.postMessage 처리. publisher 가 fire-and-forget — 모델 호출 흐름과 분리.
   private maybeNotifyClaudeAuthSuspect(error: unknown): void {
     if (!(error instanceof ClaudeAuthSuspectException)) {
       return;
     }
-    if (!this.claudeAuthAlerter) {
+    if (!this.notificationPublisher) {
       return;
     }
-    void this.claudeAuthAlerter
-      .notifyAuthSuspect({ exitMessage: error.message })
-      .catch((alertError: unknown) => {
-        this.logger.warn(
-          `claude 인증 의심 알람 발사 실패: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
-        );
-      });
+    this.notificationPublisher.publishClaudeAuthSuspect({
+      exitMessage: error.message,
+    });
   }
 
   private resolveProvider(name: ModelProviderName): ModelProviderPort {
