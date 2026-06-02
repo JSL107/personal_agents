@@ -9,6 +9,7 @@ import {
   BE_SRE_QUEUE,
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
+  ISSUE_LABEL_QUEUE,
   PR_CAREERLOG_QUEUE,
 } from '../domain/webhook.type';
 import { WebhookController } from './webhook.controller';
@@ -22,6 +23,7 @@ describe('WebhookController', () => {
   const mockBeSreQueue = { add: jest.fn() };
   const mockCodeReviewerQueue = { add: jest.fn() };
   const mockPrCareerLogQueue = { add: jest.fn() };
+  const mockIssueLabelQueue = { add: jest.fn() };
   const secret = 'test-secret';
   const githubSecret = 'gh-test-secret';
   const defaultSlackUser = 'U-default';
@@ -30,6 +32,9 @@ describe('WebhookController', () => {
   // PR careerLog 자동 적재 — env gate 두 개 (enabled boolean + Notion page id) 모두 set 일 때만 활성.
   let careerLogAutoEnabled: string | undefined = 'true';
   let careerLogNotionPageId: string | undefined = 'page-abc';
+  // issue auto-label — enable gate + (선택) repo allowlist.
+  let issueAutoLabelEnabled: string | undefined = 'true';
+  let issueAutoLabelRepos: string | undefined = undefined;
 
   const configValues = (): Record<string, string | undefined> => ({
     WEBHOOK_SECRET: secret,
@@ -38,6 +43,8 @@ describe('WebhookController', () => {
     GITHUB_WEBHOOK_OWNER_LOGIN: ownerLogin,
     PR_CAREERLOG_AUTO_ENABLED: careerLogAutoEnabled,
     CAREER_LOG_NOTION_PAGE_ID: careerLogNotionPageId,
+    GITHUB_ISSUE_AUTO_LABEL_ENABLED: issueAutoLabelEnabled,
+    GITHUB_ISSUE_AUTO_LABEL_REPOS: issueAutoLabelRepos,
   });
 
   beforeEach(async () => {
@@ -59,6 +66,10 @@ describe('WebhookController', () => {
           useValue: mockPrCareerLogQueue,
         },
         {
+          provide: getQueueToken(ISSUE_LABEL_QUEUE),
+          useValue: mockIssueLabelQueue,
+        },
+        {
           provide: ConfigService,
           useValue: { get: (key: string) => configValues()[key] },
         },
@@ -75,9 +86,13 @@ describe('WebhookController', () => {
     mockCodeReviewerQueue.add.mockResolvedValue(undefined);
     mockPrCareerLogQueue.add.mockReset();
     mockPrCareerLogQueue.add.mockResolvedValue(undefined);
+    mockIssueLabelQueue.add.mockReset();
+    mockIssueLabelQueue.add.mockResolvedValue(undefined);
     ownerLogin = 'me';
     careerLogAutoEnabled = 'true';
     careerLogNotionPageId = 'page-abc';
+    issueAutoLabelEnabled = 'true';
+    issueAutoLabelRepos = undefined;
   });
 
   const sign = (body: string, signingSecret: string = secret) => {
@@ -192,6 +207,68 @@ describe('WebhookController', () => {
           slackUserId: defaultSlackUser,
           subject: expect.stringContaining('foo/bar #42'),
         }),
+        expect.any(Object),
+      );
+    });
+
+    it('issues opened + auto-label enabled → issue-label 큐에도 enqueue (impact-report 와 병렬)', async () => {
+      await controller.github(
+        issuesOpenedBody,
+        sign(issuesOpenedBody, githubSecret),
+        'issues',
+        'delivery-uuid-il-1',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockIssueLabelQueue.add).toHaveBeenCalledWith(
+        'webhook-issue-label',
+        expect.objectContaining({
+          repo: 'foo/bar',
+          issueNumber: 42,
+          title: 'crash on login',
+          body: 'reproduces on staging',
+        }),
+        expect.objectContaining({ jobId: 'issuelabel:foo/bar#42' }),
+      );
+    });
+
+    it('issues opened + GITHUB_ISSUE_AUTO_LABEL_ENABLED!=true → issue-label 큐 호출 X', async () => {
+      issueAutoLabelEnabled = undefined;
+      await controller.github(
+        issuesOpenedBody,
+        sign(issuesOpenedBody, githubSecret),
+        'issues',
+        'delivery-uuid-il-2',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockIssueLabelQueue.add).not.toHaveBeenCalled();
+      // impact-report 등 다른 자동 발화는 그대로 유지.
+      expect(mockImpactQueue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('issues opened + repo allowlist 불일치 → issue-label 큐 호출 X', async () => {
+      issueAutoLabelRepos = 'other/repo, baz/qux';
+      await controller.github(
+        issuesOpenedBody,
+        sign(issuesOpenedBody, githubSecret),
+        'issues',
+        'delivery-uuid-il-3',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockIssueLabelQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('issues opened + repo allowlist 일치 → issue-label 큐 호출', async () => {
+      issueAutoLabelRepos = 'foo/bar, other/repo';
+      await controller.github(
+        issuesOpenedBody,
+        sign(issuesOpenedBody, githubSecret),
+        'issues',
+        'delivery-uuid-il-4',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockIssueLabelQueue.add).toHaveBeenCalledWith(
+        'webhook-issue-label',
+        expect.any(Object),
         expect.any(Object),
       );
     });
@@ -350,6 +427,10 @@ describe('WebhookController', () => {
             useValue: mockPrCareerLogQueue,
           },
           {
+            provide: getQueueToken(ISSUE_LABEL_QUEUE),
+            useValue: mockIssueLabelQueue,
+          },
+          {
             provide: ConfigService,
             useValue: { get: (key: string) => limitedConfig[key] },
           },
@@ -366,6 +447,8 @@ describe('WebhookController', () => {
       mockCodeReviewerQueue.add.mockResolvedValue(undefined);
       mockPrCareerLogQueue.add.mockReset();
       mockPrCareerLogQueue.add.mockResolvedValue(undefined);
+      mockIssueLabelQueue.add.mockReset();
+      mockIssueLabelQueue.add.mockResolvedValue(undefined);
     });
 
     it('issues.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, 모든 자동 발화 X', async () => {

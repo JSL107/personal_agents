@@ -34,6 +34,8 @@ import {
   CodeReviewerJobData,
   IMPACT_REPORT_QUEUE,
   ImpactReportJobData,
+  ISSUE_LABEL_QUEUE,
+  IssueLabelJobData,
   PR_CAREERLOG_QUEUE,
   PrCareerLogJobData,
   WEBHOOK_SECRET_ENV,
@@ -59,6 +61,8 @@ export class WebhookController {
     private readonly codeReviewerQueue: Queue<CodeReviewerJobData>,
     @InjectQueue(PR_CAREERLOG_QUEUE)
     private readonly prCareerLogQueue: Queue<PrCareerLogJobData>,
+    @InjectQueue(ISSUE_LABEL_QUEUE)
+    private readonly issueLabelQueue: Queue<IssueLabelJobData>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -176,7 +180,84 @@ export class WebhookController {
       this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
     }
 
+    // issues.opened → impact-report 와 병렬로 자동 라벨링 (env gate 통과 시).
+    if (event === 'issues' && this.isIssueOpened(payload)) {
+      this.maybeFireIssueAutoLabel({ payload });
+    }
+
     return { accepted: true };
+  }
+
+  // GITHUB_ISSUE_AUTO_LABEL_ENABLED = 'true' 일 때만 활성. repo allowlist (선택) 도 일치해야 fire.
+  // 새 label 생성 X — repo 의 기존 label vocab 안에서 LLM 분류로 부분집합 선택.
+  private maybeFireIssueAutoLabel({
+    payload,
+  }: {
+    payload: GithubIssuesEvent;
+  }): void {
+    const enabled =
+      this.configService
+        .get<string>('GITHUB_ISSUE_AUTO_LABEL_ENABLED')
+        ?.trim() === 'true';
+    if (!enabled) {
+      return;
+    }
+    const repo = payload.repository.full_name;
+    const allowlistRaw = this.configService
+      .get<string>('GITHUB_ISSUE_AUTO_LABEL_REPOS')
+      ?.trim();
+    if (allowlistRaw && allowlistRaw.length > 0) {
+      const allowed = new Set(
+        allowlistRaw
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      );
+      if (!allowed.has(repo)) {
+        this.logger.log(
+          `Webhook issue-label skip — repo allowlist 불일치 (repo=${repo}).`,
+        );
+        return;
+      }
+    }
+    this.fireIssueAutoLabel({
+      repo,
+      issueNumber: payload.issue.number,
+      title: payload.issue.title,
+      body: payload.issue.body ?? '',
+    });
+  }
+
+  private fireIssueAutoLabel({
+    repo,
+    issueNumber,
+    title,
+    body,
+  }: {
+    repo: string;
+    issueNumber: number;
+    title: string;
+    body: string;
+  }): void {
+    // 동일 issue 의 webhook 재전달 (edit/reopen 등) 시 BullMQ jobId dedup.
+    const jobId = `issuelabel:${repo}#${issueNumber}`;
+    void this.issueLabelQueue
+      .add(
+        'webhook-issue-label',
+        { repo, issueNumber, title, body },
+        {
+          jobId,
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 50,
+          removeOnFail: 50,
+        },
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Webhook issue-label enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   // 본인 머지 PR (owner login 일치, bot 제외, env gate 활성) 만 careerLog 자동 적재.
