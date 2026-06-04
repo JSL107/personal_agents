@@ -40,8 +40,10 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
 };
 
 // 1차(primary) 실패 시 자동 재시도할 fallback provider.
-// Gemini 가 무료 tier + Google Pro 구독이라 Codex/Claude 쿼터 소진/capacity 시 효과적인 backup.
-const FALLBACK_PROVIDER = ModelProviderName.GEMINI;
+// CHATGPT (Codex CLI) — CLAUDE primary 실패 시 backup 역할 (구독 cost = ChatGPT Plus 1건).
+// CHATGPT primary 인 경우엔 primary == fallback 이라 wrapCompletionFailed 가 즉시 throw (재시도 X).
+// (이전엔 GEMINI 였으나 사용자 미구독 정책으로 2026-06-04 제거.)
+const FALLBACK_PROVIDER = ModelProviderName.CHATGPT;
 
 @Injectable()
 export class ModelRouterUsecase {
@@ -52,8 +54,6 @@ export class ModelRouterUsecase {
     private readonly chatgptProvider: ModelProviderPort,
     @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.CLAUDE])
     private readonly claudeProvider: ModelProviderPort,
-    @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.GEMINI])
-    private readonly geminiProvider: ModelProviderPort,
     // NotificationQueueModule 미연결 (테스트 / 부분 부팅) 환경 대비 — undefined 시 알람 skip.
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
@@ -162,8 +162,6 @@ export class ModelRouterUsecase {
         return this.chatgptProvider;
       case ModelProviderName.CLAUDE:
         return this.claudeProvider;
-      case ModelProviderName.GEMINI:
-        return this.geminiProvider;
       default: {
         const exhaustive: never = name;
         throw new ModelRouterException({

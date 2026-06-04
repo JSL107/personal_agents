@@ -9,7 +9,6 @@ import {
 export const MODEL_PROVIDER_TOKENS: Record<ModelProviderName, symbol> = {
   [ModelProviderName.CHATGPT]: Symbol('MODEL_PROVIDER_CHATGPT'),
   [ModelProviderName.CLAUDE]: Symbol('MODEL_PROVIDER_CLAUDE'),
-  [ModelProviderName.GEMINI]: Symbol('MODEL_PROVIDER_GEMINI'),
 };
 
 export interface ModelProviderPort {

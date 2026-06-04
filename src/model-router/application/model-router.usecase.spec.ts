@@ -14,19 +14,13 @@ describe('ModelRouterUsecase', () => {
 
   let chatgptProvider: jest.Mocked<ModelProviderPort>;
   let claudeProvider: jest.Mocked<ModelProviderPort>;
-  let geminiProvider: jest.Mocked<ModelProviderPort>;
   let usecase: ModelRouterUsecase;
 
   beforeEach(() => {
     chatgptProvider = createProviderMock(ModelProviderName.CHATGPT);
     claudeProvider = createProviderMock(ModelProviderName.CLAUDE);
-    geminiProvider = createProviderMock(ModelProviderName.GEMINI);
 
-    usecase = new ModelRouterUsecase(
-      chatgptProvider,
-      claudeProvider,
-      geminiProvider,
-    );
+    usecase = new ModelRouterUsecase(chatgptProvider, claudeProvider);
   });
 
   describe('에이전트 → 모델 라우팅 (happy path)', () => {
@@ -39,7 +33,6 @@ describe('ModelRouterUsecase', () => {
       const providers = {
         [ModelProviderName.CHATGPT]: chatgptProvider,
         [ModelProviderName.CLAUDE]: claudeProvider,
-        [ModelProviderName.GEMINI]: geminiProvider,
       };
       providers[expectedProvider].complete.mockResolvedValue({
         text: 'ok',
@@ -56,39 +49,22 @@ describe('ModelRouterUsecase', () => {
         prompt: 'hi',
       });
       expect(result.provider).toBe(expectedProvider);
-      // primary 성공 시 fallback(Gemini) 호출되지 않아야 한다.
-      if (expectedProvider !== ModelProviderName.GEMINI) {
-        expect(geminiProvider.complete).not.toHaveBeenCalled();
-      }
+      // primary 성공 시 반대편 provider 는 호출되지 않아야 한다.
+      const otherProvider =
+        expectedProvider === ModelProviderName.CHATGPT
+          ? claudeProvider
+          : chatgptProvider;
+      expect(otherProvider.complete).not.toHaveBeenCalled();
     });
   });
 
-  describe('Gemini fallback chain', () => {
-    it('primary(Codex) 실패 시 Gemini 로 자동 재시도해 응답 반환', async () => {
-      chatgptProvider.complete.mockRejectedValue(new Error('codex capacity'));
-      geminiProvider.complete.mockResolvedValue({
-        text: 'gemini answer',
-        modelUsed: 'gemini-2.5-pro',
-        provider: ModelProviderName.GEMINI,
-      });
-
-      const result = await usecase.route({
-        agentType: AgentType.PM,
-        request: { prompt: 'hi' },
-      });
-
-      expect(chatgptProvider.complete).toHaveBeenCalledTimes(1);
-      expect(geminiProvider.complete).toHaveBeenCalledTimes(1);
-      expect(result.provider).toBe(ModelProviderName.GEMINI);
-      expect(result.text).toBe('gemini answer');
-    });
-
-    it('primary(Claude) 실패 시도 Gemini fallback', async () => {
+  describe('CHATGPT fallback chain (Gemini 제거 후)', () => {
+    it('primary(CLAUDE) 실패 시 CHATGPT 로 자동 재시도해 응답 반환', async () => {
       claudeProvider.complete.mockRejectedValue(new Error('claude rate limit'));
-      geminiProvider.complete.mockResolvedValue({
-        text: 'g',
-        modelUsed: 'gemini',
-        provider: ModelProviderName.GEMINI,
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'chatgpt answer',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
       });
 
       const result = await usecase.route({
@@ -97,19 +73,37 @@ describe('ModelRouterUsecase', () => {
       });
 
       expect(claudeProvider.complete).toHaveBeenCalledTimes(1);
-      expect(geminiProvider.complete).toHaveBeenCalledTimes(1);
-      expect(result.provider).toBe(ModelProviderName.GEMINI);
+      expect(chatgptProvider.complete).toHaveBeenCalledTimes(1);
+      expect(result.provider).toBe(ModelProviderName.CHATGPT);
+      expect(result.text).toBe('chatgpt answer');
     });
 
-    it('primary 와 fallback(Gemini) 모두 실패 시 COMPLETION_FAILED 예외 + cause 에 둘 다 포함', async () => {
-      const codexError = new Error('codex down');
-      const geminiError = new Error('gemini auth');
-      chatgptProvider.complete.mockRejectedValue(codexError);
-      geminiProvider.complete.mockRejectedValue(geminiError);
+    it('primary 가 CHATGPT (== fallback) 이면 재시도 없이 즉시 COMPLETION_FAILED', async () => {
+      // CHATGPT primary 인 agent (예: PM) 실패 시 fallback 도 같은 provider 라 재시도 무의미.
+      chatgptProvider.complete.mockRejectedValue(new Error('codex capacity'));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.PM,
+          request: { prompt: 'x' },
+        }),
+      ).rejects.toMatchObject({
+        errorCode: 'MODEL_COMPLETION_FAILED',
+      });
+
+      expect(chatgptProvider.complete).toHaveBeenCalledTimes(1);
+      expect(claudeProvider.complete).not.toHaveBeenCalled();
+    });
+
+    it('primary(CLAUDE) + fallback(CHATGPT) 모두 실패 시 COMPLETION_FAILED + cause 에 둘 다 포함', async () => {
+      const claudeError = new Error('claude down');
+      const chatgptError = new Error('codex down');
+      claudeProvider.complete.mockRejectedValue(claudeError);
+      chatgptProvider.complete.mockRejectedValue(chatgptError);
 
       try {
         await usecase.route({
-          agentType: AgentType.PM,
+          agentType: AgentType.CODE_REVIEWER,
           request: { prompt: 'x' },
         });
         fail('should have thrown');
@@ -118,30 +112,10 @@ describe('ModelRouterUsecase', () => {
           errorCode: 'MODEL_COMPLETION_FAILED',
         });
         expect((error as { cause: unknown }).cause).toMatchObject({
-          primaryError: codexError,
-          lastError: geminiError,
+          primaryError: claudeError,
+          lastError: chatgptError,
         });
       }
-    });
-
-    it('Gemini 가 처음부터 primary 인 가상 케이스에는 fallback 재시도 없음 (방어적)', async () => {
-      // 현재 AGENT_TO_PROVIDER 에 GEMINI primary 매핑은 없지만, 향후 추가 시 무한 fallback 방지 보장.
-      // 여기서는 AgentType.PM 의 primary 를 GEMINI 로 바꾸는 대신, primary 가 GEMINI 일 때 동작을
-      // 직접 검증하기 어려우니 — primary 실패 시 chatgpt 가 호출되지 않는지(fallback 시 chatgpt 호출 X)로 우회 보장.
-      chatgptProvider.complete.mockRejectedValue(new Error('boom'));
-      geminiProvider.complete.mockResolvedValue({
-        text: 'g',
-        modelUsed: 'g',
-        provider: ModelProviderName.GEMINI,
-      });
-
-      await usecase.route({
-        agentType: AgentType.PM,
-        request: { prompt: 'x' },
-      });
-
-      // claude 는 fallback 대상이 아니다 — 호출되면 안 됨.
-      expect(claudeProvider.complete).not.toHaveBeenCalled();
     });
   });
 
@@ -157,7 +131,6 @@ describe('ModelRouterUsecase', () => {
       const usecaseWithPublisher = new ModelRouterUsecase(
         chatgptProvider,
         claudeProvider,
-        geminiProvider,
         publisher,
       );
       claudeProvider.complete.mockRejectedValue(
@@ -165,10 +138,10 @@ describe('ModelRouterUsecase', () => {
           'claude CLI 인증 만료 / 쿼터 소진 의심 (exit=1). (no stderr)',
         ),
       );
-      geminiProvider.complete.mockResolvedValue({
+      chatgptProvider.complete.mockResolvedValue({
         text: 'g',
-        modelUsed: 'g',
-        provider: ModelProviderName.GEMINI,
+        modelUsed: 'codex',
+        provider: ModelProviderName.CHATGPT,
       });
 
       await usecaseWithPublisher.route({
@@ -186,16 +159,15 @@ describe('ModelRouterUsecase', () => {
       const usecaseWithPublisher = new ModelRouterUsecase(
         chatgptProvider,
         claudeProvider,
-        geminiProvider,
         publisher,
       );
       claudeProvider.complete.mockRejectedValue(
         new Error('일반 timeout 같은 비-인증 에러'),
       );
-      geminiProvider.complete.mockResolvedValue({
+      chatgptProvider.complete.mockResolvedValue({
         text: 'g',
-        modelUsed: 'g',
-        provider: ModelProviderName.GEMINI,
+        modelUsed: 'codex',
+        provider: ModelProviderName.CHATGPT,
       });
 
       await usecaseWithPublisher.route({
@@ -211,10 +183,10 @@ describe('ModelRouterUsecase', () => {
       claudeProvider.complete.mockRejectedValue(
         new ClaudeAuthSuspectException('test'),
       );
-      geminiProvider.complete.mockResolvedValue({
+      chatgptProvider.complete.mockResolvedValue({
         text: 'g',
-        modelUsed: 'g',
-        provider: ModelProviderName.GEMINI,
+        modelUsed: 'codex',
+        provider: ModelProviderName.CHATGPT,
       });
 
       const result = await usecase.route({
@@ -222,7 +194,7 @@ describe('ModelRouterUsecase', () => {
         request: { prompt: 'x' },
       });
 
-      expect(result.provider).toBe(ModelProviderName.GEMINI);
+      expect(result.provider).toBe(ModelProviderName.CHATGPT);
     });
   });
 
@@ -239,7 +211,6 @@ describe('ModelRouterUsecase', () => {
 
       expect(chatgptProvider.complete).not.toHaveBeenCalled();
       expect(claudeProvider.complete).not.toHaveBeenCalled();
-      expect(geminiProvider.complete).not.toHaveBeenCalled();
     });
   });
 });
