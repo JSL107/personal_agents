@@ -307,6 +307,13 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   GITHUB_ISSUE_AUTO_LABEL_REPOS?: string;
+
+  // BE 자율 개발 Phase 2a-3 — sandbox 안 `git apply --check` 검증 시 host 의 어느 repo 를
+  // /repo 에 read-only 마운트할지. 미설정 시 process.cwd() (봇 자신의 작업 디렉터리) 사용.
+  // 향후 multi-repo 운영 시 자연어 입력에서 추출한 repoLabel → host path mapping 으로 확장.
+  @IsOptional()
+  @IsString()
+  BE_SANDBOX_HOST_REPO_PATH?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
