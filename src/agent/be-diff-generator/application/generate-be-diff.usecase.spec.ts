@@ -1,5 +1,8 @@
-import { ModelProviderName } from '../../../model-router/domain/model-router.type';
-import { ModelProviderPort } from '../../../model-router/domain/port/model-provider.port';
+import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
+import {
+  AgentType,
+  ModelProviderName,
+} from '../../../model-router/domain/model-router.type';
 import { BeDiffGeneratorException } from '../domain/be-diff-generator.exception';
 import { BeDiffGeneratorErrorCode } from '../domain/be-diff-generator-error-code.enum';
 import { GenerateBeDiffUsecase } from './generate-be-diff.usecase';
@@ -18,12 +21,11 @@ const validResponse = JSON.stringify({
 });
 
 describe('GenerateBeDiffUsecase', () => {
-  const claudeProvider: jest.Mocked<ModelProviderPort> = {
-    name: ModelProviderName.CLAUDE,
-    complete: jest.fn(),
-  };
+  const modelRouter = {
+    route: jest.fn(),
+  } as unknown as jest.Mocked<ModelRouterUsecase>;
 
-  const usecase = new GenerateBeDiffUsecase(claudeProvider);
+  const usecase = new GenerateBeDiffUsecase(modelRouter);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -39,11 +41,11 @@ describe('GenerateBeDiffUsecase', () => {
     ).rejects.toMatchObject({
       beDiffGeneratorErrorCode: BeDiffGeneratorErrorCode.EMPTY_PLAN,
     });
-    expect(claudeProvider.complete).not.toHaveBeenCalled();
+    expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
-  it('정상 plan → claude 호출 + parsed BeDiffGenerationResult 반환', async () => {
-    claudeProvider.complete.mockResolvedValue({
+  it('정상 plan → ModelRouter.route(AgentType.BE) 호출 + parsed BeDiffGenerationResult 반환', async () => {
+    modelRouter.route.mockResolvedValue({
       text: validResponse,
       modelUsed: 'claude-cli',
       provider: ModelProviderName.CLAUDE,
@@ -55,18 +57,34 @@ describe('GenerateBeDiffUsecase', () => {
       baseBranch: 'main',
     });
 
-    expect(claudeProvider.complete).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(modelRouter.route).toHaveBeenCalledWith({
+      agentType: AgentType.BE,
+      request: expect.objectContaining({
         prompt: expect.stringContaining('foo 함수 반환값 2로'),
         systemPrompt: expect.stringContaining('unified diff'),
       }),
-    );
+    });
     expect(result.changedFiles).toEqual(['src/foo/foo.ts']);
     expect(result.diff).toContain('@@ -1,3 +1,4 @@');
   });
 
-  it('claude 응답이 invalid JSON → parser 가 INVALID_MODEL_OUTPUT throw', async () => {
-    claudeProvider.complete.mockResolvedValue({
+  it('claude 실패 시 ChatGPT fallback (ModelRouter 가 자동) → 응답 받아 파싱', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: validResponse,
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+
+    const result = await usecase.execute({
+      planText: 'p',
+      repoLabel: 'r',
+      baseBranch: 'main',
+    });
+    expect(result.changedFiles).toEqual(['src/foo/foo.ts']);
+  });
+
+  it('응답이 invalid JSON → parser 가 INVALID_MODEL_OUTPUT throw', async () => {
+    modelRouter.route.mockResolvedValue({
       text: 'not json',
       modelUsed: 'claude-cli',
       provider: ModelProviderName.CLAUDE,
@@ -81,7 +99,7 @@ describe('GenerateBeDiffUsecase', () => {
   });
 
   it('plan 본문이 너무 길면 cap 적용 (생략 표시 부착)', async () => {
-    claudeProvider.complete.mockResolvedValue({
+    modelRouter.route.mockResolvedValue({
       text: validResponse,
       modelUsed: 'claude-cli',
       provider: ModelProviderName.CLAUDE,
@@ -92,7 +110,7 @@ describe('GenerateBeDiffUsecase', () => {
       repoLabel: 'r',
       baseBranch: 'main',
     });
-    const calledPrompt = claudeProvider.complete.mock.calls[0][0].prompt;
+    const calledPrompt = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(calledPrompt).toContain('생략됨');
     expect(calledPrompt.length).toBeLessThan(11_000);
   });
