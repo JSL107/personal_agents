@@ -68,32 +68,53 @@ const buildApplier = (overrides?: {
   return { applier, generateBeDiffUsecase, runSandboxUsecase, configGet };
 };
 
-describe('BeSandboxApplier — Phase 2a-3 git apply --check', () => {
+const happyPathDiff = {
+  diff: sampleDiff,
+  reasoning: 'foo 반환을 2로',
+  changedFiles: ['src/foo/foo.ts'],
+};
+
+const buildSandboxOutput = (overrides: {
+  exitCode: number;
+  stdout: string;
+  stderr?: string;
+  durationMs?: number;
+  timedOut?: boolean;
+}) => ({
+  exitCode: overrides.exitCode,
+  stdout: overrides.stdout,
+  stderr: overrides.stderr ?? '',
+  durationMs: overrides.durationMs ?? 5_000,
+  timedOut: overrides.timedOut ?? false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+});
+
+describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
   it('kind 는 PREVIEW_KIND.BE_SANDBOX_APPLY', () => {
     const { applier } = buildApplier();
     expect(applier.kind).toBe(PREVIEW_KIND.BE_SANDBOX_APPLY);
   });
 
-  it('정상 payload — diff 합성 → sandbox git apply --check 통과 → 성공 응답', async () => {
+  it('정상 흐름 — A/B/C 모두 통과 (exit=0 + PHASE_C_TEST_OK)', async () => {
     const { applier, generateBeDiffUsecase, runSandboxUsecase, configGet } =
       buildApplier();
     configGet.mockImplementation((key: string) =>
       key === 'BE_SANDBOX_HOST_REPO_PATH' ? '/custom/host/repo' : undefined,
     );
-    generateBeDiffUsecase.execute.mockResolvedValue({
-      diff: sampleDiff,
-      reasoning: 'foo 반환을 2로',
-      changedFiles: ['src/foo/foo.ts'],
-    });
-    runSandboxUsecase.execute.mockResolvedValue({
-      exitCode: 0,
-      stdout: 'PATCH_APPLY_CHECK_OK',
-      stderr: '',
-      durationMs: 1500,
-      timedOut: false,
-      stdoutTruncated: false,
-      stderrTruncated: false,
-    });
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 0,
+        stdout: [
+          'PHASE_A_CHECK_OK',
+          'PHASE_B_APPLY_OK',
+          'Tests: 819 passed, 819 total',
+          'PHASE_C_TEST_OK',
+        ].join('\n'),
+        durationMs: 45_000,
+      }),
+    );
 
     const result = await applier.apply(buildPreview());
 
@@ -107,29 +128,84 @@ describe('BeSandboxApplier — Phase 2a-3 git apply --check', () => {
         ],
       }),
     );
-    expect(result).toContain('Phase 2a-3');
-    expect(result).toContain('✅ `git apply --check` 통과');
+    expect(result).toContain('Phase 2a-3b');
+    expect(result).toContain('✅ Sandbox apply + test 통과');
     expect(result).toContain('/custom/host/repo');
     expect(result).toContain('@@ -1,3 +1,4 @@');
+  });
+
+  it('Phase A 실패 (check 도 통과 못 함) — sentinel 없음 + exit non-0', async () => {
+    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
+      buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'error: patch failed: src/foo/foo.ts:1',
+      }),
+    );
+
+    const result = await applier.apply(buildPreview());
+    expect(result).toContain('❌ Phase A 에서 실패');
+    expect(result).toContain('A(check) ❌');
+    expect(result).toContain('B(apply) ❌');
+    expect(result).toContain('C(jest) ❌');
+  });
+
+  it('Phase B 실패 (check OK, apply 실패) — PHASE_A_CHECK_OK 만 출력 + exit non-0', async () => {
+    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
+      buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 1,
+        stdout: 'PHASE_A_CHECK_OK',
+        stderr: 'tar: error during copy',
+      }),
+    );
+
+    const result = await applier.apply(buildPreview());
+    expect(result).toContain('❌ Phase A 에서 실패');
+    expect(result).toContain('A(check) ✅');
+    expect(result).toContain('B(apply) ❌');
+  });
+
+  it('Phase C 실패 (테스트 실패) — A+B sentinel 출력, exit non-0', async () => {
+    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
+      buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 1,
+        stdout: [
+          'PHASE_A_CHECK_OK',
+          'PHASE_B_APPLY_OK',
+          'FAIL src/foo/foo.spec.ts',
+          '  expected 1 but got 2',
+        ].join('\n'),
+        durationMs: 18_000,
+      }),
+    );
+
+    const result = await applier.apply(buildPreview());
+    expect(result).toContain('❌ Phase B 에서 실패');
+    expect(result).toContain('A(check) ✅');
+    expect(result).toContain('B(apply) ✅');
+    expect(result).toContain('C(jest) ❌');
+    expect(result).toContain('FAIL src/foo/foo.spec.ts');
   });
 
   it('BE_SANDBOX_HOST_REPO_PATH 미설정 → process.cwd() 사용', async () => {
     const { applier, generateBeDiffUsecase, runSandboxUsecase } =
       buildApplier();
-    generateBeDiffUsecase.execute.mockResolvedValue({
-      diff: sampleDiff,
-      reasoning: 'r',
-      changedFiles: ['src/foo/foo.ts'],
-    });
-    runSandboxUsecase.execute.mockResolvedValue({
-      exitCode: 0,
-      stdout: 'PATCH_APPLY_CHECK_OK',
-      stderr: '',
-      durationMs: 1500,
-      timedOut: false,
-      stdoutTruncated: false,
-      stderrTruncated: false,
-    });
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 0,
+        stdout: 'PHASE_A_CHECK_OK\nPHASE_B_APPLY_OK\nPHASE_C_TEST_OK',
+      }),
+    );
 
     await applier.apply(buildPreview());
     expect(runSandboxUsecase.execute).toHaveBeenCalledWith(
@@ -137,75 +213,46 @@ describe('BeSandboxApplier — Phase 2a-3 git apply --check', () => {
     );
   });
 
-  it('sandbox exit 비-0 → ❌ apply --check 실패 + stderr 노출', async () => {
-    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
-      buildApplier();
-    generateBeDiffUsecase.execute.mockResolvedValue({
-      diff: sampleDiff,
-      reasoning: 'r',
-      changedFiles: ['src/foo/foo.ts'],
-    });
-    runSandboxUsecase.execute.mockResolvedValue({
-      exitCode: 1,
-      stdout: '',
-      stderr: 'error: patch failed: src/foo/foo.ts:1',
-      durationMs: 800,
-      timedOut: false,
-      stdoutTruncated: false,
-      stderrTruncated: false,
-    });
-
-    const result = await applier.apply(buildPreview());
-    expect(result).toContain('❌ `git apply --check` 실패');
-    expect(result).toContain('exit=1');
-    expect(result).toContain('error: patch failed');
-  });
-
-  it('sandbox exit 0 + sentinel 누락 → 실패 처리 (불완전 stdout 안전망)', async () => {
-    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
-      buildApplier();
-    generateBeDiffUsecase.execute.mockResolvedValue({
-      diff: sampleDiff,
-      reasoning: 'r',
-      changedFiles: ['src/foo/foo.ts'],
-    });
-    runSandboxUsecase.execute.mockResolvedValue({
-      exitCode: 0,
-      stdout: 'partial output without sentinel',
-      stderr: '',
-      durationMs: 800,
-      timedOut: false,
-      stdoutTruncated: false,
-      stderrTruncated: false,
-    });
-
-    const result = await applier.apply(buildPreview());
-    expect(result).toContain('❌ `git apply --check` 실패');
-  });
-
   it('sandbox timedOut=true → ❌ (timed out) 표시', async () => {
     const { applier, generateBeDiffUsecase, runSandboxUsecase } =
       buildApplier();
-    generateBeDiffUsecase.execute.mockResolvedValue({
-      diff: sampleDiff,
-      reasoning: 'r',
-      changedFiles: ['src/foo/foo.ts'],
-    });
-    runSandboxUsecase.execute.mockResolvedValue({
-      exitCode: 137,
-      stdout: '',
-      stderr: '',
-      durationMs: 30_000,
-      timedOut: true,
-      stdoutTruncated: false,
-      stderrTruncated: false,
-    });
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 137,
+        stdout: 'PHASE_A_CHECK_OK\nPHASE_B_APPLY_OK',
+        timedOut: true,
+        durationMs: 180_000,
+      }),
+    );
 
     const result = await applier.apply(buildPreview());
     expect(result).toContain('timed out');
   });
 
-  it('payload 형식 불일치 → PreviewActionException + diff 합성도 skip', async () => {
+  it('sandbox 명령에 ro mount + tmpfs 512m + network=none 그대로 전달', async () => {
+    const { applier, generateBeDiffUsecase, runSandboxUsecase } =
+      buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 0,
+        stdout: 'PHASE_A_CHECK_OK\nPHASE_B_APPLY_OK\nPHASE_C_TEST_OK',
+      }),
+    );
+
+    await applier.apply(buildPreview());
+    expect(runSandboxUsecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mountMode: 'ro',
+        networkMode: 'none',
+        tmpfsSize: '512m',
+        timeoutMs: 180_000,
+      }),
+    );
+  });
+
+  it('payload 형식 불일치 → PreviewActionException + diff/sandbox 둘 다 skip', async () => {
     const { applier, generateBeDiffUsecase, runSandboxUsecase } =
       buildApplier();
     await expect(
