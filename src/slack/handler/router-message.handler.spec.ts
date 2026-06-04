@@ -3,6 +3,7 @@ import { App } from '@slack/bolt';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
+import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import {
   DispatchInput,
   DispatchResult,
@@ -17,13 +18,21 @@ import { RouterMessageHandler } from './router-message.handler';
 // logger 는 class 가 자체 생성하므로 인자에서 제거 — runtime 노이즈는 spec 검증에 영향 없음.
 const buildHandler = (
   idaeriRouter: IdaeriRouterPort,
+  conversationalReply: ConversationalReplyUsecase = {
+    reply: jest.fn().mockResolvedValue('mock 자연어 응답'),
+  } as unknown as ConversationalReplyUsecase,
   conversationMemory: ConversationMemoryService = new ConversationMemoryService(),
 ): RouterMessageHandler =>
-  new RouterMessageHandler(idaeriRouter, conversationMemory);
+  new RouterMessageHandler(
+    idaeriRouter,
+    conversationMemory,
+    conversationalReply,
+  );
 
 type EventHandler = (args: {
   event: Record<string, unknown>;
   say: jest.Mock;
+  client: { reactions: { add: jest.Mock; remove: jest.Mock } };
 }) => Promise<void>;
 
 interface AppMentionEvent {
@@ -72,10 +81,19 @@ const buildAppMock = (): {
 const invokeHandler = async (
   handler: EventHandler,
   event: AppMentionEvent | MessageEvent,
-): Promise<{ say: jest.Mock }> => {
+): Promise<{
+  say: jest.Mock;
+  client: { reactions: { add: jest.Mock; remove: jest.Mock } };
+}> => {
   const say = jest.fn();
-  await handler({ event: event as Record<string, unknown>, say });
-  return { say };
+  const client = {
+    reactions: {
+      add: jest.fn().mockResolvedValue({ ok: true }),
+      remove: jest.fn().mockResolvedValue({ ok: true }),
+    },
+  };
+  await handler({ event: event as Record<string, unknown>, say, client });
+  return { say, client };
 };
 
 describe('RouterMessageHandler — app_mention', () => {
@@ -214,7 +232,7 @@ describe('RouterMessageHandler — app_mention', () => {
     );
   });
 
-  it('router 가 RouterException throw 하면 사용자에게 한국어 메시지로 안내', async () => {
+  it('router 가 INTENT_CLASSIFY_FAILED throw → ConversationalReply fallback 으로 자연어 응답', async () => {
     const { app, getHandler } = buildAppMock();
     const idaeriRouter: IdaeriRouterPort = {
       dispatch: jest.fn().mockRejectedValue(
@@ -225,20 +243,90 @@ describe('RouterMessageHandler — app_mention', () => {
         }),
       ),
     };
-    buildHandler(idaeriRouter).register(app);
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('안녕하세요! 무엇을 도와드릴까요?'),
+    } as unknown as ConversationalReplyUsecase;
+    buildHandler(idaeriRouter, conversationalReply).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
       user: 'U_USER',
-      text: '<@UBOT> 랜덤',
+      text: '<@UBOT> 지금 뭐해?',
       ts: '1730000000.000001',
       channel: 'C_CHANNEL',
     });
 
+    expect(conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '지금 뭐해?' }),
+    );
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining('의도 분류 실패'),
+        text: '안녕하세요! 무엇을 도와드릴까요?',
       }),
+    );
+  });
+
+  it('성공 응답 시 ✅ reaction 부착 (white_check_mark)', async () => {
+    const { app, getHandler } = buildAppMock();
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockResolvedValue({
+        agentRunId: 1,
+        workerType: AgentType.PM,
+        output: {},
+        modelUsed: 'mock',
+        formattedText: 'mock body',
+      }),
+    };
+    buildHandler(idaeriRouter).register(app);
+
+    const { client } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 오늘 plan',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(client.reactions.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'white_check_mark' }),
+    );
+    expect(client.reactions.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'eyes' }),
+    );
+    expect(client.reactions.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'hourglass' }),
+    );
+    expect(client.reactions.remove).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'hourglass' }),
+    );
+  });
+
+  it('Conversational fallback 성공도 ✅ reaction 부착', async () => {
+    const { app, getHandler } = buildAppMock();
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockRejectedValue(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: 'UNKNOWN',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      ),
+    };
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('네 안녕하세요'),
+    } as unknown as ConversationalReplyUsecase;
+    buildHandler(idaeriRouter, conversationalReply).register(app);
+
+    const { client } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 안녕',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(client.reactions.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'white_check_mark' }),
     );
   });
 
