@@ -166,7 +166,7 @@ pnpm format:check          # Prettier 검사
 | `SLACK_PUSHPIN_REACTION_EMOJI` | ❌ | 📌 → Notion task 트리거 이모지 (기본 `pushpin`). `SLACK_INBOX_EMOJI` 와 다른 값 권장 |
 | `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | 📌 → Notion task 적재 부모 페이지. 미설정 시 service 가 graceful skip. `CAREER_LOG_NOTION_PAGE_ID` 와 동일 페이지 공유해도 OK (일별 자식 페이지 공통 key) |
 
-> CLI 격리 (`buildSafeChildEnv`) 의 allowlist 에는 `GEMINI_CLI_TRUST_WORKSPACE` 가 포함돼 있어, headless 환경에서 gemini fallback 이 untrusted directory (exit=55) 로 실패하는 것을 막는다. 본인 환경에서 gemini 가 거절을 띄우면 `export GEMINI_CLI_TRUST_WORKSPACE=true` 후 재기동.
+> Model fallback chain — Claude primary 실패 시 ChatGPT (Codex CLI) 로 자동 재시도. ChatGPT primary (PM / WorkReviewer / ImpactReporter / PoShadow) 는 primary == fallback 이라 재시도 없이 즉시 COMPLETION_FAILED. (이전 Gemini fallback 은 사용자 미구독 정책으로 2026-06-04 제거됨.)
 
 > 설치와 `.env` 생성 순서는 서로 독립적입니다. `pnpm install` 은 DATABASE_URL 없이도 성공하지만, `pnpm dev` / `pnpm db:push` 이전에는 반드시 `.env` 가 준비돼야 합니다.
 

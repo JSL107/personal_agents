@@ -10,7 +10,7 @@
 - **패키지 매니저: `pnpm@9.15.9`** — `npm` / `yarn` 사용 금지 (`packageManager` 필드로 강제).
 - Node 20+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ.
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
-- LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). API key 사용 X — 자식 프로세스 spawn 만. `gemini` CLI 는 primary 실패 시 자동 fallback (AGENTS.md §6).
+- LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). API key 사용 X — 자식 프로세스 spawn 만. Fallback: Claude primary 실패 시 ChatGPT 자동 재시도 (ChatGPT primary 는 fallback 없음 — primary == fallback). 이전 Gemini fallback 은 2026-06-04 제거.
 - **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 13 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
 - **NestJS multi-provider 는 single module scope** — 분산 등록 X. dispatcher 류는 PreviewGate.forRoot 패턴처럼 한 모듈 (RouterModule) 의 useFactory + inject 로 중앙 등록.
 

@@ -54,7 +54,7 @@ src/
 | 도메인 | 책임 | 진입점 |
 |---|---|---|
 | `agent-run/` | 모든 에이전트 실행의 라이프사이클 (begin → run → finish) + EvidenceRecord 기록 | `AgentRunService.execute({...})` |
-| `model-router/` | AgentType → 모델(ChatGPT/Claude/Gemini) 라우팅, CLI provider 어댑터 | `ModelRouterUsecase.route({ agentType, request })` |
+| `model-router/` | AgentType → 모델(ChatGPT/Claude) 라우팅, CLI provider 어댑터 + Claude primary 실패 시 ChatGPT 자동 fallback | `ModelRouterUsecase.route({ agentType, request })` |
 | `github/` | Octokit 기반 read-only GitHub 클라이언트 (assigned issues/PRs, PR detail/diff) | `ListAssignedTasksUsecase`, `OctokitGithubClient` |
 | `agent/pm/` | PM Agent — `/today` 슬래시 커맨드. 사용자 입력 + GitHub assigned + 전일 plan → DailyPlan | `GenerateDailyPlanUsecase` |
 | `agent/work-reviewer/` | Work Reviewer — `/worklog` 슬래시 커맨드. 정량 근거 강제 | `GenerateWorklogUsecase` |
@@ -109,7 +109,7 @@ src/
 현재 매핑 (`src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`):
 - **PM / Work Reviewer / Impact Reporter / PO Shadow** → ChatGPT (`codex` CLI, `codex exec`)
 - **Code Reviewer / BE / BE Schema / BE Test / BE SRE / BE Fix** → Claude (`claude` CLI, `claude -p --output-format json`)
-- **Gemini** → fallback. 모든 primary 호출이 실패하면 `gemini` CLI 로 자동 재시도 (`--approval-mode plan` read-only). primary 매핑 없음 — backup quota 전용.
+- **Fallback** — Claude primary 실패 시 ChatGPT (Codex CLI) 로 자동 재시도. ChatGPT primary 인 경우 (PM / Work Reviewer / Impact Reporter / PO Shadow) 는 primary == fallback 이라 즉시 `MODEL_COMPLETION_FAILED` throw. (이전 Gemini fallback 은 사용자 미구독 정책으로 2026-06-04 제거됨.)
 
 CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_original)` 패턴 강제 (사용자가 19초 침묵 X).
 

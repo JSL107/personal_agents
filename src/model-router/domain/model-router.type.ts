@@ -1,7 +1,6 @@
 export enum ModelProviderName {
   CHATGPT = 'CHATGPT',
   CLAUDE = 'CLAUDE',
-  GEMINI = 'GEMINI',
 }
 
 export enum AgentType {

@@ -54,7 +54,7 @@ export const buildSafeChildEnv = ({
     env.PWD = cwd;
   }
 
-  // CLI 인증 보존: parent 의 CODEX_HOME / CLAUDE_CONFIG_DIR / GEMINI 인증 관련 변수를 명시 전달한다.
+  // CLI 인증 보존: parent 의 CODEX_HOME / CLAUDE_CONFIG_DIR 를 명시 전달한다.
   // (HOME 을 throwaway 로 바꿨기 때문에 CLI 가 기본 추론하면 인증 파일을 못 찾는다)
   const codexHome = process.env.CODEX_HOME ?? buildDefaultAuthDir('.codex');
   if (codexHome) {
@@ -69,38 +69,9 @@ export const buildSafeChildEnv = ({
     env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
 
-  // Gemini CLI 는 GEMINI_API_KEY / GOOGLE_GENAI_USE_* / GOOGLE_APPLICATION_CREDENTIALS 등으로 auth 결정.
-  // OAuth 사용 시는 ~/.gemini/settings.json 을 읽으므로 GEMINI_HOME 도 forward.
-  // 실제 토큰 값은 parent env 에서만 가져오고 (allowlist) 자식 본 디렉토리(throwaway HOME) 와 분리.
-  //
-  // GEMINI_CLI_TRUST_WORKSPACE — headless 자동화 환경에서 untrusted directory 거부 (exit=55) 회피.
-  // 미설정 시 gemini CLI 가 fallback chain 자체를 끊어버려 PO_EVAL/CTO/CEO 등 Claude 실패 후 복구 불가
-  // (2026-05-30 Daily Eval 실패 사례). 사용자가 .env 에 true 로 명시한 경우만 자식으로 전달.
-  const geminiAuthKeys = [
-    'GEMINI_API_KEY',
-    'GEMINI_HOME',
-    'GEMINI_CLI_TRUST_WORKSPACE',
-    'GOOGLE_API_KEY',
-    'GOOGLE_GENAI_USE_VERTEXAI',
-    'GOOGLE_GENAI_USE_GCA',
-    'GOOGLE_APPLICATION_CREDENTIALS',
-    'GOOGLE_CLOUD_PROJECT',
-  ];
-  for (const key of geminiAuthKeys) {
-    const value = process.env[key];
-    if (value !== undefined) {
-      env[key] = value;
-    }
-  }
-  // Gemini CLI 가 OAuth 인증을 ~/.gemini 에서 로드하도록 명시 (HOME override 보완).
-  const geminiHome = process.env.GEMINI_HOME ?? buildDefaultAuthDir('.gemini');
-  if (geminiHome) {
-    env.GEMINI_HOME = geminiHome;
-  }
-
   return env;
 };
 
-// throwaway HOME 메커니즘이 안 되는 CLI(예: Gemini, OAuth 인증을 ~/.gemini 에서 직접 로드) 에 사용자 실제
-// HOME 을 명시 전달할 때 사용. process.env.HOME 직접 참조를 이 파일로 격리.
+// throwaway HOME 메커니즘이 안 되는 CLI 가 사용자 실제 HOME 을 직접 로드해야 할 때를 위해 유지.
+// process.env.HOME 직접 참조를 이 파일로 격리. (이전 Gemini provider 가 사용했음 — 2026-06-04 제거)
 export const getRealHomeDir = (): string => process.env.HOME ?? homedir();
