@@ -12,7 +12,7 @@ import {
   ModelProviderName,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
-import { buildSafeChildEnv } from './cli-process.util';
+import { buildSafeChildEnv, getRealHomeDir } from './cli-process.util';
 import { redactPii } from './pii-redaction.util';
 
 const CLAUDE_EXECUTABLE = 'claude';
@@ -139,12 +139,16 @@ export class ClaudeCliProvider implements ModelProviderPort {
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-claude-'));
-    const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-claude-home-'));
+    // Claude CLI 가 OAuth 토큰을 macOS Keychain 에 저장하면서 throwaway HOME 시 keychain access
+    // context 가 깨져 "키체인 발견할 수 없음" 으로 침묵 exit=1. 이전 Gemini provider 와 같은 이유로
+    // Claude 도 real HOME 사용 — keychain unlock 컨텍스트 보존. cwd 는 throwaway 유지 (file read
+    // 격리는 살아있음).
+    const homeDir = getRealHomeDir();
 
     try {
       const model = this.configService.get<string>('CLAUDE_MODEL')?.trim();
       // OPS-4: stdin (사용자 입력 경로) 뿐 아니라 --system-prompt argv 까지 redact —
-      // 정적 상수만 들어오는 경로지만 codex/gemini 와 동일 정책으로 일관성 유지 (codex P1 지적).
+      // 정적 상수만 들어오는 경로지만 codex 와 동일 정책으로 일관성 유지 (codex P1 지적).
       const args = buildClaudeArgs({
         systemPrompt: request.systemPrompt
           ? redactPii(request.systemPrompt)
@@ -165,10 +169,8 @@ export class ClaudeCliProvider implements ModelProviderPort {
         provider: ModelProviderName.CLAUDE,
       };
     } finally {
-      await Promise.all([
-        rm(workDir, { recursive: true, force: true }),
-        rm(homeDir, { recursive: true, force: true }),
-      ]);
+      // real HOME 은 봇 소유 아님 — rm 금지. workDir 만 정리.
+      await rm(workDir, { recursive: true, force: true });
     }
   }
 
