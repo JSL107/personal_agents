@@ -15,6 +15,9 @@ import { homedir } from 'node:os';
 const SAFE_ENV_KEYS = [
   'PATH',
   'USER',
+  // macOS Keychain access + 일부 POSIX 도구가 LOGNAME 으로 user 식별 — USER 와 함께 forward 필수.
+  // Claude CLI 가 keychain 접근 시 user 식별 실패하면 침묵 exit=1 (no stderr).
+  'LOGNAME',
   'LANG',
   'LC_ALL',
   'SHELL',

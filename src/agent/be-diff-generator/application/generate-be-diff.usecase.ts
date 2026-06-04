@@ -1,11 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
-import { ModelProviderName } from '../../../model-router/domain/model-router.type';
-import {
-  MODEL_PROVIDER_TOKENS,
-  ModelProviderPort,
-} from '../../../model-router/domain/port/model-provider.port';
+import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { BeDiffGeneratorException } from '../domain/be-diff-generator.exception';
 import {
   BeDiffGenerationInput,
@@ -17,19 +14,17 @@ import { BE_DIFF_GENERATOR_SYSTEM_PROMPT } from '../domain/prompt/be-diff-genera
 
 // 입력 plan 본문 cap — prompt 폭주 방지. 평균 BackendPlan 이 1~2KB 라 8KB 면 충분.
 const PLAN_TEXT_MAX_BYTES = 8_000;
+
 // AgentRunService 통하지 않음 — Phase 2a-2 의 첫 step 은 BeSandboxApplier 가 한 turn 안에서 호출.
 // AgentRun row 별도 만들지 않고 PreviewAction 의 일부 처리로 본다 (chain 추적은 Phase 2c 에서 검토).
 //
-// CLAUDE provider 직접 주입 — 코드 변경은 Claude 강점 (BE / Code Reviewer 라우팅과 동일).
-// 향후 BE 워커들의 직접 의존이 늘면 새 AgentType.BE_DIFF_GEN 으로 ModelRouter 통한 라우팅으로 전환.
+// ModelRouterUsecase 경유 — AgentType.BE 매핑 (CLAUDE primary) + Claude 침묵 실패 시 ChatGPT 자동
+// fallback. 이전엔 Claude provider 직접 주입이라 Claude 만 실패하면 PR 흐름 전체가 막혔음.
 @Injectable()
 export class GenerateBeDiffUsecase {
   private readonly logger = new Logger(GenerateBeDiffUsecase.name);
 
-  constructor(
-    @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.CLAUDE])
-    private readonly claudeProvider: ModelProviderPort,
-  ) {}
+  constructor(private readonly modelRouter: ModelRouterUsecase) {}
 
   async execute(input: BeDiffGenerationInput): Promise<BeDiffGenerationResult> {
     const trimmed = input.planText.trim();
@@ -48,9 +43,9 @@ export class GenerateBeDiffUsecase {
       baseBranch: input.baseBranch,
     });
 
-    const response = await this.claudeProvider.complete({
-      prompt,
-      systemPrompt: BE_DIFF_GENERATOR_SYSTEM_PROMPT,
+    const response = await this.modelRouter.route({
+      agentType: AgentType.BE,
+      request: { prompt, systemPrompt: BE_DIFF_GENERATOR_SYSTEM_PROMPT },
     });
     this.logger.log(
       `BeDiff generated — repo=${input.repoLabel} base=${input.baseBranch} planBytes=${trimmed.length} modelUsed=${response.modelUsed}`,
