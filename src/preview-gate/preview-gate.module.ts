@@ -3,6 +3,7 @@ import { DynamicModule, Module, ModuleMetadata, Type } from '@nestjs/common';
 import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
 import { CreatePreviewUsecase } from './application/create-preview.usecase';
+import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
 import {
   PREVIEW_APPLIERS,
@@ -19,6 +20,7 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
     CreatePreviewUsecase,
     ApplyPreviewUsecase,
     CancelPreviewUsecase,
+    FindLatestPendingPreviewUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,
@@ -30,7 +32,12 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
       useValue: [] as PreviewApplier[],
     },
   ],
-  exports: [CreatePreviewUsecase, ApplyPreviewUsecase, CancelPreviewUsecase],
+  exports: [
+    CreatePreviewUsecase,
+    ApplyPreviewUsecase,
+    CancelPreviewUsecase,
+    FindLatestPendingPreviewUsecase,
+  ],
 })
 export class PreviewGateModule {
   static forRoot({

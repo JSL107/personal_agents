@@ -51,6 +51,24 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return row ? toDomain(row) : null;
   }
 
+  async findLatestPendingForUser({
+    slackUserId,
+    now,
+  }: {
+    slackUserId: string;
+    now: Date;
+  }): Promise<PreviewAction | null> {
+    const row = await this.prisma.previewAction.findFirst({
+      where: {
+        slackUserId,
+        status: PREVIEW_STATUS.PENDING,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return row ? toDomain(row) : null;
+  }
+
   async transition({
     id,
     status,
