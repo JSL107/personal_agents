@@ -15,24 +15,32 @@ import { GenerateBeDiffUsecase } from '../../be-diff-generator/application/gener
 import { isBeSandboxApplyPayload } from '../domain/be-sandbox.type';
 
 // Slack 응답 안 diff 표시 cap — Slack 메시지 한도 (40k) 와 멀어지지 않게 보수적으로 cap.
-const DIFF_TAIL_LIMIT = 12_000;
+const DIFF_TAIL_LIMIT = 8_000;
 // sandbox 명령 stdout/stderr 표시 cap — RunSandboxUsecase 자체 cap (256KB) 와 별도로 Slack 응답 폭주 방지.
-const SANDBOX_OUTPUT_TAIL_LIMIT = 1_500;
-// git apply --check 는 가벼움 (수십 KB diff 도 1~2초). Docker spawn + image pull 여유까지 30초.
-const GIT_APPLY_CHECK_TIMEOUT_MS = 30_000;
+const SANDBOX_OUTPUT_TAIL_LIMIT = 2_500;
+// Phase 2a-3b — tar copy + git apply + jest 까지 포함이라 시간 여유 필요. tmpfs 안 jest 가
+// 평균 10~30s, 큰 변경의 경우 60s+. 도커 spawn / image 캐시 첫 호출 여유까지 180s.
+const APPLY_AND_TEST_TIMEOUT_MS = 180_000;
+// tmpfs 안 repo 복사 시 큰 디렉터리 (node_modules / .git / dist) 는 제외하고 ro 마운트의 host
+// node_modules 를 심볼릭 링크로 재사용 — 복사 시간 5~10s 수준 유지.
+const TMPFS_SIZE = '512m';
 // git 이 미리 설치된 base 이미지. node:20-alpine 은 git 누락 → bookworm-slim 으로 격상.
 // network=none 이라 apk/apt 설치 불가, 미리 들어 있는 게 필수.
 const SANDBOX_IMAGE = 'node:20-bookworm-slim';
-// 명령 결과를 명시 sentinel 로 분기 — exit code + 본 sentinel 둘 다 통과해야 OK 로 판정.
-// shell 명령 안 \`echo\` 가 0 인 비정상 종료도 잡기 위한 안전망.
-const APPLY_OK_SENTINEL = 'PATCH_APPLY_CHECK_OK';
+// Phase 별 종료 sentinel — set -e + 본 sentinel 조합으로 사용자에게 어느 단계까지 성공했는지 노출.
+const PHASE_A_SENTINEL = 'PHASE_A_CHECK_OK';
+const PHASE_B_SENTINEL = 'PHASE_B_APPLY_OK';
+const PHASE_C_SENTINEL = 'PHASE_C_TEST_OK';
 
 // PreviewKind.BE_SANDBOX_APPLY 의 strategy.
 // Phase 2a-1: scaffold (sandbox echo).
 // Phase 2a-2: Claude 로 unified diff 합성 + 사용자에게 표시 (실제 apply X).
-// Phase 2a-3 (현 단계): sandbox 안 `git apply --check` 추가 — diff 가 host repo 의 현재
-//   상태에 깨끗하게 적용 가능한지 1차 검증. 실제 변경 / pnpm test 는 Phase 2a-3b 후속.
-// Phase 2a-3b: sandbox 안 실제 git apply + pnpm install + pnpm test + pnpm build.
+// Phase 2a-3: sandbox 안 `git apply --check` (host repo 변경 X, file write 0).
+// Phase 2a-3b (현 단계): sandbox 안 tmpfs 에 repo 스테이지 + 실제 git apply + jest 실행.
+//   - host repo 는 여전히 read-only 마운트. 변경은 sandbox tmpfs 안에만.
+//   - 종료 시 docker --rm 으로 tmpfs 휘발 → 어떤 변경도 host 에 남지 않음.
+// Phase 2b: 테스트 통과 시 octokit 로 branch + commit + PR open.
+// Phase 2c: 테스트 실패 시 LLM self-correction retry.
 @Injectable()
 export class BeSandboxApplier implements PreviewApplier {
   readonly kind: PreviewKind = PREVIEW_KIND.BE_SANDBOX_APPLY;
@@ -66,72 +74,156 @@ export class BeSandboxApplier implements PreviewApplier {
       `BE sandbox diff 합성 — repo=${repoLabel} files=${diffResult.changedFiles.length} diffBytes=${diffResult.diff.length}`,
     );
 
-    // 2) sandbox 안 `git apply --check` — host repo (ro) 대비 diff 가 깨끗히 적용 가능한지 검증.
-    //    실제 file write 없음. `--check` 가 exit=0 + APPLY_OK_SENTINEL 출력이면 valid.
+    // 2) sandbox 안 apply + test — host repo 는 ro, 변경은 tmpfs 안에만.
     const hostRepoPath =
       this.configService.get<string>('BE_SANDBOX_HOST_REPO_PATH')?.trim() ||
       process.cwd();
-    const checkResult = await this.runSandboxUsecase.execute({
-      command: `git -C /repo apply --check /work/patch.diff && echo ${APPLY_OK_SENTINEL}`,
+    const sandboxResult = await this.runSandboxUsecase.execute({
+      command: buildSandboxScript(),
       hostMountPath: hostRepoPath,
       mountMode: 'ro',
       image: SANDBOX_IMAGE,
       networkMode: 'none',
-      timeoutMs: GIT_APPLY_CHECK_TIMEOUT_MS,
+      timeoutMs: APPLY_AND_TEST_TIMEOUT_MS,
+      tmpfsSize: TMPFS_SIZE,
       tmpfsFiles: [
         { containerPath: '/work/patch.diff', content: diffResult.diff },
       ],
     });
-    const checkPassed =
-      checkResult.exitCode === 0 &&
-      !checkResult.timedOut &&
-      checkResult.stdout.includes(APPLY_OK_SENTINEL);
+
+    const phase = classifyPhase(sandboxResult.stdout);
+    const succeeded = sandboxResult.exitCode === 0 && phase === 'C';
     this.logger.log(
-      `BE sandbox git apply --check — exit=${checkResult.exitCode} timedOut=${checkResult.timedOut} duration=${checkResult.durationMs}ms passed=${checkPassed}`,
+      `BE sandbox apply+test — exit=${sandboxResult.exitCode} timedOut=${sandboxResult.timedOut} duration=${sandboxResult.durationMs}ms phase=${phase} succeeded=${succeeded}`,
     );
 
-    const diffSnippet = truncate(diffResult.diff, DIFF_TAIL_LIMIT);
-
-    const checkSection = checkPassed
-      ? [
-          '*✅ `git apply --check` 통과*',
-          `• 실행 시간: ${checkResult.durationMs}ms`,
-          `• base repo (ro mount): \`${hostRepoPath}\``,
-        ].join('\n')
-      : [
-          '*❌ `git apply --check` 실패*',
-          `• exit=${checkResult.exitCode}${checkResult.timedOut ? ' (timed out)' : ''}`,
-          `• 실행 시간: ${checkResult.durationMs}ms`,
-          '',
-          '```',
-          truncate(
-            checkResult.stderr || checkResult.stdout || '(no output)',
-            SANDBOX_OUTPUT_TAIL_LIMIT,
-          ),
-          '```',
-        ].join('\n');
-
-    return [
-      `🧪 *BE Sandbox Apply — Phase 2a-3 (git apply --check)*`,
-      '',
-      `• 대상 repo: ${repoLabel}`,
-      `• 베이스 브랜치: ${baseBranch}`,
-      `• 변경 파일 (${diffResult.changedFiles.length}건): ${diffResult.changedFiles.join(', ')}`,
-      '',
-      `*Reasoning*`,
-      diffResult.reasoning,
-      '',
-      checkSection,
-      '',
-      `*Diff*`,
-      '```diff',
-      diffSnippet,
-      '```',
-      '',
-      '_Phase 2a-3 — `git apply --check` 까지만 (host repo 변경 X). Phase 2a-3b 에서 실제 apply + pnpm test 추가._',
-    ].join('\n');
+    return formatResult({
+      repoLabel,
+      baseBranch,
+      hostRepoPath,
+      diffResult,
+      sandboxResult,
+      phase,
+      succeeded,
+    });
   }
 }
+
+// sandbox 안에서 실행될 bash 스크립트. set -e + sentinel 조합으로 단계별 진행 노출.
+// host /repo 는 ro 마운트. tmpfs /work (512m) 에 repo 스테이지 후 git apply + jest.
+//
+// 보안 / 격리 정리:
+// - /repo: read-only → host 파일 어떤 명령으로도 변경 불가
+// - /work: tmpfs → 컨테이너 종료 (docker --rm) 시 메모리 해제, 흔적 0
+// - network=none → 외부 호출 차단 (악성 diff 가 데이터 exfil 불가)
+// - node_modules: /repo (ro) 의 것을 symlink 로 재사용 → host write 없이 실행 가능
+const buildSandboxScript = (): string =>
+  [
+    'set -e',
+    // Phase A: diff 가 host repo 의 현재 상태에 적용 가능한지 1차 검증 (--check 는 file write 0).
+    'git -C /repo apply --check /work/patch.diff',
+    `echo ${PHASE_A_SENTINEL}`,
+    // Phase B: repo 를 tmpfs 에 스테이지. node_modules / .git / dist 는 제외 (tmpfs 512m 한도 + 속도).
+    //   - node_modules 는 /repo (ro) 의 것을 symlink — host write 0.
+    'mkdir -p /work/checkout',
+    'cd /repo',
+    "tar --exclude='./node_modules' --exclude='./.git' --exclude='./dist' -cf - . | (cd /work/checkout && tar xf -)",
+    'ln -s /repo/node_modules /work/checkout/node_modules',
+    'cd /work/checkout',
+    'git apply /work/patch.diff',
+    `echo ${PHASE_B_SENTINEL}`,
+    // Phase C: jest --bail. node_modules/.bin/jest 는 /repo 의 host bin 을 symlink 통해 호출.
+    //   --bail 로 첫 실패에서 stop, --testPathIgnorePatterns 로 node_modules 안 spec 무시.
+    "./node_modules/.bin/jest --bail --testPathIgnorePatterns='/node_modules/' 2>&1",
+    `echo ${PHASE_C_SENTINEL}`,
+  ].join('\n');
+
+// sandbox stdout 의 sentinel 들을 검사해 어느 phase 까지 통과했는지 분류.
+// 'A' = check 까지만 OK, 'B' = apply 까지 OK, 'C' = test 까지 OK, 'NONE' = check 도 실패.
+const classifyPhase = (stdout: string): 'NONE' | 'A' | 'B' | 'C' => {
+  if (stdout.includes(PHASE_C_SENTINEL)) {
+    return 'C';
+  }
+  if (stdout.includes(PHASE_B_SENTINEL)) {
+    return 'B';
+  }
+  if (stdout.includes(PHASE_A_SENTINEL)) {
+    return 'A';
+  }
+  return 'NONE';
+};
+
+interface FormatInput {
+  repoLabel: string;
+  baseBranch: string;
+  hostRepoPath: string;
+  diffResult: {
+    diff: string;
+    reasoning: string;
+    changedFiles: string[];
+  };
+  sandboxResult: {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+    timedOut: boolean;
+  };
+  phase: 'NONE' | 'A' | 'B' | 'C';
+  succeeded: boolean;
+}
+
+const formatResult = ({
+  repoLabel,
+  baseBranch,
+  hostRepoPath,
+  diffResult,
+  sandboxResult,
+  phase,
+  succeeded,
+}: FormatInput): string => {
+  const diffSnippet = truncate(diffResult.diff, DIFF_TAIL_LIMIT);
+  const outputTail = truncate(
+    sandboxResult.stdout || sandboxResult.stderr || '(no output)',
+    SANDBOX_OUTPUT_TAIL_LIMIT,
+  );
+  const statusSection = succeeded
+    ? [
+        '*✅ Sandbox apply + test 통과*',
+        `• 실행 시간: ${sandboxResult.durationMs}ms`,
+        `• base repo (ro mount): \`${hostRepoPath}\``,
+      ].join('\n')
+    : [
+        `*❌ Phase ${phase === 'NONE' ? 'A' : phase} 에서 실패*`,
+        `• exit=${sandboxResult.exitCode}${sandboxResult.timedOut ? ' (timed out)' : ''}`,
+        `• 실행 시간: ${sandboxResult.durationMs}ms`,
+        `• phase 별 진행 — A(check) ${phase === 'NONE' ? '❌' : '✅'} / B(apply) ${['B', 'C'].includes(phase) ? '✅' : '❌'} / C(jest) ${phase === 'C' ? '✅' : '❌'}`,
+        '',
+        '```',
+        outputTail,
+        '```',
+      ].join('\n');
+
+  return [
+    `🧪 *BE Sandbox Apply — Phase 2a-3b (실제 git apply + jest)*`,
+    '',
+    `• 대상 repo: ${repoLabel}`,
+    `• 베이스 브랜치: ${baseBranch}`,
+    `• 변경 파일 (${diffResult.changedFiles.length}건): ${diffResult.changedFiles.join(', ')}`,
+    '',
+    `*Reasoning*`,
+    diffResult.reasoning,
+    '',
+    statusSection,
+    '',
+    `*Diff*`,
+    '```diff',
+    diffSnippet,
+    '```',
+    '',
+    '_Phase 2a-3b — sandbox tmpfs 안에서만 적용 + test. host repo 변경 0. Phase 2b 에서 GitHub PR auto-open 추가 예정._',
+  ].join('\n');
+};
 
 const truncate = (text: string, maxBytes: number): string =>
   text.length > maxBytes
