@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { BeAgentModule } from './agent/be/be.module';
+import { BeDiffGeneratorModule } from './agent/be-diff-generator/be-diff-generator.module';
 import { BeFixModule } from './agent/be-fix/be-fix.module';
 import { BeSandboxApplier } from './agent/be-sandbox/infrastructure/be-sandbox.applier';
 import { BeSchemaModule } from './agent/be-schema/be-schema.module';
@@ -97,7 +98,12 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({
       appliers: [PmWriteBackApplier, PoEvalCareerlogApplier, BeSandboxApplier],
-      imports: [GithubModule, NotionModule, SandboxModule],
+      imports: [
+        GithubModule,
+        NotionModule,
+        SandboxModule,
+        BeDiffGeneratorModule,
+      ],
     }),
     SlackModule,
     // OPS-3 Slack Reaction → Inbox
