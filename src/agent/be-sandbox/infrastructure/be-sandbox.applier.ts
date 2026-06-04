@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import { PreviewActionException } from '../../../preview-gate/domain/preview-action.exception';
 import {
@@ -12,6 +13,7 @@ import {
 import { PreviewActionErrorCode } from '../../../preview-gate/domain/preview-action-error-code.enum';
 import { RunSandboxUsecase } from '../../../sandbox/application/run-sandbox.usecase';
 import { GenerateBeDiffUsecase } from '../../be-diff-generator/application/generate-be-diff.usecase';
+import { BeSandboxPushPrPayload } from '../domain/be-sandbox-push-pr.type';
 import { isBeSandboxApplyPayload } from '../domain/be-sandbox.type';
 
 // Slack 응답 안 diff 표시 cap — Slack 메시지 한도 (40k) 와 멀어지지 않게 보수적으로 cap.
@@ -50,6 +52,7 @@ export class BeSandboxApplier implements PreviewApplier {
     private readonly generateBeDiffUsecase: GenerateBeDiffUsecase,
     private readonly runSandboxUsecase: RunSandboxUsecase,
     private readonly configService: ConfigService,
+    private readonly createPreviewUsecase: CreatePreviewUsecase,
   ) {}
 
   async apply(preview: PreviewAction): Promise<string> {
@@ -97,6 +100,40 @@ export class BeSandboxApplier implements PreviewApplier {
       `BE sandbox apply+test — exit=${sandboxResult.exitCode} timedOut=${sandboxResult.timedOut} duration=${sandboxResult.durationMs}ms phase=${phase} succeeded=${succeeded}`,
     );
 
+    // succeeded → Phase 2b chain. 새 PreviewAction (BE_SANDBOX_PUSH_PR) 생성 → 사용자의 다음 "응" 응답이
+    // BeSandboxPushPrApplier 로 라우팅 → octokit branch + commit + PR open.
+    // 생성 실패는 graceful — 본 흐름 사용자 응답은 그대로 노출.
+    let nextPreviewNotice: string | null = null;
+    if (succeeded) {
+      try {
+        const pushPrPayload: BeSandboxPushPrPayload = {
+          diff: diffResult.diff,
+          reasoning: diffResult.reasoning,
+          changedFiles: diffResult.changedFiles,
+          repoLabel,
+          baseBranch,
+        };
+        const next = await this.createPreviewUsecase.execute({
+          slackUserId: preview.slackUserId,
+          kind: PREVIEW_KIND.BE_SANDBOX_PUSH_PR,
+          payload: pushPrPayload,
+          previewText: `GitHub PR 자동 생성 (${repoLabel}, ${diffResult.changedFiles.length}건 파일).`,
+          responseUrl: null,
+          ttlMs: 30 * 60 * 1000,
+        });
+        this.logger.log(
+          `BE sandbox Phase 2b chain preview 생성 — previewId=${next.id} repo=${repoLabel} files=${diffResult.changedFiles.length}`,
+        );
+        nextPreviewNotice = `다음 단계 — GitHub PR auto-open 진행할까요? **"응"** 입력하면 새 branch + commit + PR open. ("아니" 면 종료.)`;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `BE sandbox Phase 2b chain preview 생성 실패: ${message}`,
+        );
+        nextPreviewNotice = `_⚠️ Phase 2b chain preview 생성 실패 — PR auto-open 흐름 비활성. 사유: ${message.slice(0, 200)}_`;
+      }
+    }
+
     return formatResult({
       repoLabel,
       baseBranch,
@@ -105,6 +142,7 @@ export class BeSandboxApplier implements PreviewApplier {
       sandboxResult,
       phase,
       succeeded,
+      nextPreviewNotice,
     });
   }
 }
@@ -171,6 +209,7 @@ interface FormatInput {
   };
   phase: 'NONE' | 'A' | 'B' | 'C';
   succeeded: boolean;
+  nextPreviewNotice: string | null;
 }
 
 const formatResult = ({
@@ -181,6 +220,7 @@ const formatResult = ({
   sandboxResult,
   phase,
   succeeded,
+  nextPreviewNotice,
 }: FormatInput): string => {
   const diffSnippet = truncate(diffResult.diff, DIFF_TAIL_LIMIT);
   const outputTail = truncate(
@@ -204,7 +244,7 @@ const formatResult = ({
         '```',
       ].join('\n');
 
-  return [
+  const sections: string[] = [
     `🧪 *BE Sandbox Apply — Phase 2a-3b (실제 git apply + jest)*`,
     '',
     `• 대상 repo: ${repoLabel}`,
@@ -220,9 +260,16 @@ const formatResult = ({
     '```diff',
     diffSnippet,
     '```',
-    '',
-    '_Phase 2a-3b — sandbox tmpfs 안에서만 적용 + test. host repo 변경 0. Phase 2b 에서 GitHub PR auto-open 추가 예정._',
-  ].join('\n');
+  ];
+  if (nextPreviewNotice) {
+    sections.push('', nextPreviewNotice);
+  } else if (!succeeded) {
+    sections.push(
+      '',
+      '_Phase 2a-3b — sandbox tmpfs 안에서만 적용 + test. host repo 변경 0. 통과 시 Phase 2b PR auto-open chain._',
+    );
+  }
+  return sections.join('\n');
 };
 
 const truncate = (text: string, maxBytes: number): string =>
