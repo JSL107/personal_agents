@@ -33,6 +33,7 @@ const buildRepo = (
 ): jest.Mocked<PreviewActionRepositoryPort> => ({
   create: jest.fn(),
   findById: jest.fn().mockResolvedValue(preview),
+  findLatestPendingForUser: jest.fn().mockResolvedValue(null),
   transition: jest
     .fn()
     .mockImplementation(({ id, status }) =>
