@@ -96,4 +96,44 @@ describe('buildSafeChildEnv', () => {
     expect(env.HOME).toBe('/tmp/throwaway');
     expect(env.CODEX_HOME).toBe('/Users/me/.codex');
   });
+
+  it('additionalEnv 를 넘기면 자식 env 에 추가 forward 된다 (provider-specific 시크릿 경로)', () => {
+    const env = buildSafeChildEnv({
+      additionalEnv: { ANTHROPIC_API_KEY: 'sk-test', CLAUDE_CODE_SIMPLE: '1' },
+    });
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-test');
+    expect(env.CLAUDE_CODE_SIMPLE).toBe('1');
+  });
+
+  it('additionalEnv 의 값은 SAFE_ENV_KEYS / 기본 주입을 덮어쓴다 (호출자 의도 우선)', () => {
+    process.env.PATH = '/parent/bin';
+    process.env.HOME = '/Users/me';
+
+    const env = buildSafeChildEnv({
+      homeDir: '/tmp/throwaway',
+      additionalEnv: { PATH: '/override/bin', CLAUDE_CONFIG_DIR: '/custom' },
+    });
+
+    expect(env.PATH).toBe('/override/bin');
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/custom');
+  });
+
+  it('additionalEnv 의 undefined 값은 skip (실수로 secret 을 빈 값으로 덮어쓰지 않음)', () => {
+    process.env.PATH = '/parent/bin';
+
+    const env = buildSafeChildEnv({
+      additionalEnv: { PATH: undefined, NEW_KEY: 'value' },
+    });
+
+    expect(env.PATH).toBe('/parent/bin');
+    expect(env.NEW_KEY).toBe('value');
+  });
+
+  it('additionalEnv 가 없으면 시크릿 키 (ANTHROPIC_API_KEY 등) 가 자식 env 에 절대 들어가지 않는다', () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-parent-secret';
+
+    const env = buildSafeChildEnv();
+
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
 });

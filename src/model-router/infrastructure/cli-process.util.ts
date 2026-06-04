@@ -39,7 +39,15 @@ const buildDefaultAuthDir = (subdir: string): string | undefined => {
 export const buildSafeChildEnv = ({
   cwd,
   homeDir,
-}: { cwd?: string; homeDir?: string } = {}): NodeJS.ProcessEnv => {
+  additionalEnv,
+}: {
+  cwd?: string;
+  homeDir?: string;
+  // 호출 provider 가 추가로 forward 할 env (예: ClaudeCliProvider 의 ANTHROPIC_API_KEY).
+  // SAFE_ENV_KEYS 를 거치지 않으므로 provider-specific 시크릿을 다른 CLI 에 노출하지 않는다.
+  // 같은 key 가 SAFE_ENV_KEYS 에도 있으면 마지막에 덮어쓰므로 호출자 값이 우선.
+  additionalEnv?: NodeJS.ProcessEnv;
+} = {}): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {};
 
   for (const key of SAFE_ENV_KEYS) {
@@ -70,6 +78,14 @@ export const buildSafeChildEnv = ({
     buildDefaultAuthDir('.claude');
   if (claudeConfigDir) {
     env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+  }
+
+  if (additionalEnv) {
+    for (const [key, value] of Object.entries(additionalEnv)) {
+      if (value !== undefined) {
+        env[key] = value;
+      }
+    }
   }
 
   return env;

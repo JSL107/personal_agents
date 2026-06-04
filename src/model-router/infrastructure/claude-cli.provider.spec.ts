@@ -1,4 +1,5 @@
 import {
+  buildClaudeAdditionalEnv,
   buildClaudeArgs,
   buildClaudeExitErrorMessage,
   ClaudeAuthSuspectException,
@@ -141,5 +142,23 @@ describe('ClaudeAuthSuspectException', () => {
     expect(e).toBeInstanceOf(Error);
     expect(e.name).toBe('ClaudeAuthSuspectException');
     expect(e.message).toBe('test');
+  });
+});
+
+describe('buildClaudeAdditionalEnv — SIMPLE 모드 token 인증 env', () => {
+  it('apiKey 가 있으면 ANTHROPIC_API_KEY + CLAUDE_CODE_SIMPLE=1 을 함께 반환 (keychain 우회)', () => {
+    const env = buildClaudeAdditionalEnv('sk-ant-oat01-xxx');
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-xxx');
+    expect(env.CLAUDE_CODE_SIMPLE).toBe('1');
+  });
+
+  it('apiKey 가 undefined 면 빈 객체 (SIMPLE 비활성 — 기존 keychain 경로 fallback)', () => {
+    const env = buildClaudeAdditionalEnv(undefined);
+    expect(env).toEqual({});
+  });
+
+  it('apiKey 가 빈 문자열이면 빈 객체 (token 없으면 SIMPLE 켜지지 않음 — Not logged in 방지)', () => {
+    const env = buildClaudeAdditionalEnv('');
+    expect(env).toEqual({});
   });
 });
