@@ -7,6 +7,11 @@ export const PREVIEW_KIND = {
   // append 한다. payload = { careerLog, period, notionPageId }. applier 는 NotionClient.appendBlocks
   // 로 1회 append (이미 APPLIED 면 PreviewAction status 가 차단).
   PO_EVAL_CAREERLOG: 'PO_EVAL_CAREERLOG',
+  // V3 Phase 2a — BE worker 가 출력한 BackendPlan 을 sandbox 안에서 검증.
+  // payload = { planText, repoLabel, baseBranch } (BeSandboxApplyPayload).
+  // applier 는 (Phase 2a-1 현 단계) sandbox 스모크 테스트만 — 실제 codex patch + pnpm test 는
+  // 후속 PR (Phase 2a-2 / 2a-3).
+  BE_SANDBOX_APPLY: 'BE_SANDBOX_APPLY',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
