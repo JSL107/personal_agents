@@ -314,6 +314,27 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   BE_SANDBOX_HOST_REPO_PATH?: string;
+
+  // BE 자율 개발 자동 chain — BE worker 가 BackendPlan 출력 직후 자동으로 BE_SANDBOX_APPLY preview
+  // 생성 (사용자 "응" → Claude diff + sandbox jest + PR open chain). 'true' 일 때만 활성.
+  // 미설정/false → BE worker 결과는 텍스트만 (기존 동작).
+  @IsOptional()
+  @IsString()
+  BE_AUTONOMOUS_FROM_PLAN?: string;
+
+  // BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 repoLabel 기본값 ("owner/repo").
+  // 미설정 시 "JSL107/personal_agents" (봇 자신 repo 가정).
+  @IsOptional()
+  @IsString()
+  @Matches(/^[^/\s]+\/[^/\s]+$/, {
+    message: 'BE_SANDBOX_DEFAULT_REPO_LABEL 은 "owner/repo" 형식이어야 합니다.',
+  })
+  BE_SANDBOX_DEFAULT_REPO_LABEL?: string;
+
+  // BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 baseBranch 기본값. 미설정 시 "main".
+  @IsOptional()
+  @IsString()
+  BE_SANDBOX_DEFAULT_BASE_BRANCH?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
