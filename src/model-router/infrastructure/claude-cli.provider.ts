@@ -20,15 +20,36 @@ const CLAUDE_DEFAULT_TIMEOUT_MS = 180_000;
 const STREAM_TAIL_LIMIT = 2000;
 
 // Claude Max 구독 기반의 claude CLI 를 print 모드(`-p`)로 호출하는 어댑터.
-// Code Reviewer / BE 에이전트가 사용하는 경로 (기획서 §13). API key 없이 구독 쿼터로 동작한다.
+// Code Reviewer / BE 에이전트가 사용하는 경로 (기획서 §13). Claude Max 구독 쿼터로 동작.
 // - 출력은 --output-format json 으로 stdout 에 단일 JSON 객체 (`{ result: "..." }`) 를 떨어뜨린다.
-// - `--bare` 는 keychain/OAuth 인증을 차단하므로 (Max 구독 인증 안 됨) 사용하지 않는다.
+// - `--bare` 플래그는 안 쓴다. 대신 인증 경로는 두 가지:
+//     A) 기본 (subscription/keychain): parent 의 keychain ACL 에 봇 binary 가 등록돼 OAuth
+//        access 가능할 때. 사용자가 supervisor 로 봇을 실행하면 keychain dialog 가 한 번 떠 ACL
+//        등록되는 케이스가 일반적.
+//     B) SIMPLE 모드 (token): `ANTHROPIC_API_KEY` env 가 있으면 `CLAUDE_CODE_SIMPLE=1` 을 함께
+//        주입해 keychain reads 를 강제 skip 시키고 token 인증으로만 돈다. ACL 미등록 환경
+//        (nest start --watch 같은 child process 변동 환경) 의 침묵 exit=1 우회.
+//        token 발급: `claude setup-token` (Claude Max 구독자 전용 long-lived token).
 // - 프롬프트는 argv 가 아니라 **stdin 으로 전달** — argv 는 `ps aux` 로 유출될 수 있음 + ARG_MAX 회피.
-// - cwd / HOME 모두 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo / ~/.ssh 접근을 차단.
+// - cwd 는 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo 접근을 차단.
+//   HOME 은 real (A 경로 keychain context 보존) — `~/.ssh` 등은 file system 권한으로 보호.
 
 // 이대리가 Claude 를 쓰는 건 개발형 에이전트 (BE, Code Reviewer) 뿐이라 기본 `opus` 로 격상.
 // 구독 quota 소진 우려가 있으면 env 로 `sonnet` / `haiku` override 가능.
 const DEFAULT_CLAUDE_MODEL = 'opus';
+
+// SIMPLE 모드 (token 인증) 활성화 시 자식 env 에 주입할 키 묶음.
+// `CLAUDE_CODE_SIMPLE=1` 은 Claude CLI 의 `--bare` 와 동등 효과 (keychain reads / OAuth skip)
+// 를 env 로 활성화하는 정식 메커니즘 (`claude --help` 참고). token 없이 SIMPLE 만 켜면
+// `Not logged in` 으로 fail 하므로 둘은 항상 함께 set.
+export const buildClaudeAdditionalEnv = (
+  apiKey?: string,
+): NodeJS.ProcessEnv => {
+  if (!apiKey || apiKey.length === 0) {
+    return {};
+  }
+  return { ANTHROPIC_API_KEY: apiKey, CLAUDE_CODE_SIMPLE: '1' };
+};
 
 export const buildClaudeArgs = ({
   systemPrompt,
@@ -139,14 +160,17 @@ export class ClaudeCliProvider implements ModelProviderPort {
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-claude-'));
-    // Claude CLI 가 OAuth 토큰을 macOS Keychain 에 저장하면서 throwaway HOME 시 keychain access
-    // context 가 깨져 "키체인 발견할 수 없음" 으로 침묵 exit=1. 이전 Gemini provider 와 같은 이유로
-    // Claude 도 real HOME 사용 — keychain unlock 컨텍스트 보존. cwd 는 throwaway 유지 (file read
-    // 격리는 살아있음).
+    // keychain 경로 (A) 보존: throwaway HOME 으로 바꾸면 keychain access context 가 깨져
+    // 침묵 exit=1. real HOME 사용 — `~/.ssh` 등은 fs 권한 + cwd 격리로 보호.
     const homeDir = getRealHomeDir();
 
     try {
       const model = this.configService.get<string>('CLAUDE_MODEL')?.trim();
+      // SIMPLE 모드 (B) — ANTHROPIC_API_KEY 가 있으면 CLAUDE_CODE_SIMPLE=1 을 함께 주입.
+      // Claude CLI 가 keychain reads 를 강제 skip 하고 token 인증으로만 돈다.
+      // 봇 child process 가 keychain ACL 에 등록 안 된 환경 (nest start --watch 등) 의
+      // 침묵 exit=1 우회. token 없으면 SIMPLE 비활성 — 기존 keychain 경로 fallback.
+      const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY')?.trim();
       // OPS-4: stdin (사용자 입력 경로) 뿐 아니라 --system-prompt argv 까지 redact —
       // 정적 상수만 들어오는 경로지만 codex 와 동일 정책으로 일관성 유지 (codex P1 지적).
       const args = buildClaudeArgs({
@@ -160,6 +184,7 @@ export class ClaudeCliProvider implements ModelProviderPort {
         cwd: workDir,
         homeDir,
         stdinPayload: redactPii(request.prompt),
+        apiKey: apiKey && apiKey.length > 0 ? apiKey : undefined,
       });
       const { text, modelUsed } = parseClaudeJsonOutput(stdout);
 
@@ -179,17 +204,20 @@ export class ClaudeCliProvider implements ModelProviderPort {
     cwd,
     homeDir,
     stdinPayload,
+    apiKey,
   }: {
     args: string[];
     cwd: string;
     homeDir: string;
     stdinPayload: string;
+    apiKey?: string;
   }): Promise<string> {
     return new Promise((resolve, reject) => {
+      const additionalEnv = buildClaudeAdditionalEnv(apiKey);
       const child = spawn(CLAUDE_EXECUTABLE, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd,
-        env: buildSafeChildEnv({ cwd, homeDir }),
+        env: buildSafeChildEnv({ cwd, homeDir, additionalEnv }),
       });
 
       const stdoutChunks: string[] = [];

@@ -246,6 +246,16 @@ class EnvironmentVariables {
   @IsString()
   CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID?: string;
 
+  // Claude CLI SIMPLE 모드 token. 설정 시 ClaudeCliProvider 가 spawn 시
+  // `CLAUDE_CODE_SIMPLE=1` + 이 token 을 자식 env 로 주입해 keychain reads 를 강제 skip 하고
+  // token 인증으로만 돈다. 봇 child process 가 macOS Keychain ACL 에 등록 안 된 환경
+  // (nest start --watch 등 PID 변동) 의 침묵 exit=1 우회 경로.
+  // 발급: terminal 에서 `claude setup-token` (Claude Max 구독자 전용 long-lived token).
+  // 미설정 시 SIMPLE 모드 비활성 — 기존 keychain 경로 fallback (ACL 등록된 환경만 동작).
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_API_KEY?: string;
+
   // pull_request.opened webhook 자동 /review-pr 활성 — payload.pull_request.user.login 과
   // 일치하는 PR (본인 작성) + bot 작성 제외. 미설정 시 자동 review 비활성 (impact-report / BE-FIX 자동은 그대로).
   // 결과는 GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID 사용자에게 Slack DM 으로 발송.
