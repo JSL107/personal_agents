@@ -6,6 +6,7 @@ import { BeAgentModule } from './agent/be/be.module';
 import { BeDiffGeneratorModule } from './agent/be-diff-generator/be-diff-generator.module';
 import { BeFixModule } from './agent/be-fix/be-fix.module';
 import { BeSandboxApplier } from './agent/be-sandbox/infrastructure/be-sandbox.applier';
+import { BeSandboxPushPrApplier } from './agent/be-sandbox/infrastructure/be-sandbox-push-pr.applier';
 import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
@@ -97,7 +98,12 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // V3 Phase 2a-1: BeSandboxApplier 추가 — 사용자 자연어 Y/N 응답 후 sandbox 안 검증.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({
-      appliers: [PmWriteBackApplier, PoEvalCareerlogApplier, BeSandboxApplier],
+      appliers: [
+        PmWriteBackApplier,
+        PoEvalCareerlogApplier,
+        BeSandboxApplier,
+        BeSandboxPushPrApplier,
+      ],
       imports: [
         GithubModule,
         NotionModule,
