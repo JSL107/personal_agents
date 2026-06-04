@@ -12,6 +12,10 @@ export const PREVIEW_KIND = {
   // applier 는 (Phase 2a-1 현 단계) sandbox 스모크 테스트만 — 실제 codex patch + pnpm test 는
   // 후속 PR (Phase 2a-2 / 2a-3).
   BE_SANDBOX_APPLY: 'BE_SANDBOX_APPLY',
+  // V3 Phase 2b — Phase 2a-3b sandbox 가 jest 통과 후 자동 chain.
+  // payload = { diff, reasoning, changedFiles, repoLabel, baseBranch } (BeSandboxPushPrPayload).
+  // applier 가 octokit 으로 새 branch + commit + PR open. main 직접 push 절대 X.
+  BE_SANDBOX_PUSH_PR: 'BE_SANDBOX_PUSH_PR',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];

@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { PreviewActionException } from '../../../preview-gate/domain/preview-action.exception';
 import {
   PREVIEW_KIND,
@@ -51,6 +52,7 @@ const buildApplier = (overrides?: {
   generateBeDiffUsecase?: jest.Mocked<GenerateBeDiffUsecase>;
   runSandboxUsecase?: jest.Mocked<RunSandboxUsecase>;
   configGet?: jest.Mock;
+  createPreviewUsecase?: jest.Mocked<CreatePreviewUsecase>;
 }) => {
   const generateBeDiffUsecase =
     overrides?.generateBeDiffUsecase ??
@@ -60,12 +62,36 @@ const buildApplier = (overrides?: {
     ({ execute: jest.fn() } as unknown as jest.Mocked<RunSandboxUsecase>);
   const configGet =
     overrides?.configGet ?? jest.fn().mockReturnValue(undefined);
+  const createPreviewUsecase =
+    overrides?.createPreviewUsecase ??
+    ({
+      execute: jest.fn().mockResolvedValue({
+        id: 'next-preview-id',
+        slackUserId: 'U_USER',
+        kind: PREVIEW_KIND.BE_SANDBOX_PUSH_PR,
+        payload: {},
+        status: PREVIEW_STATUS.PENDING,
+        previewText: '',
+        responseUrl: null,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        createdAt: new Date(),
+        appliedAt: null,
+        cancelledAt: null,
+      }),
+    } as unknown as jest.Mocked<CreatePreviewUsecase>);
   const applier = new BeSandboxApplier(
     generateBeDiffUsecase,
     runSandboxUsecase,
     { get: configGet } as unknown as ConfigService,
+    createPreviewUsecase,
   );
-  return { applier, generateBeDiffUsecase, runSandboxUsecase, configGet };
+  return {
+    applier,
+    generateBeDiffUsecase,
+    runSandboxUsecase,
+    configGet,
+    createPreviewUsecase,
+  };
 };
 
 const happyPathDiff = {
@@ -278,5 +304,78 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
       beDiffGeneratorErrorCode: BeDiffGeneratorErrorCode.INVALID_DIFF_FORMAT,
     });
     expect(runSandboxUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('성공 시 Phase 2b chain preview (BE_SANDBOX_PUSH_PR) 자동 생성', async () => {
+    const {
+      applier,
+      generateBeDiffUsecase,
+      runSandboxUsecase,
+      createPreviewUsecase,
+    } = buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 0,
+        stdout: 'PHASE_A_CHECK_OK\nPHASE_B_APPLY_OK\nPHASE_C_TEST_OK',
+      }),
+    );
+
+    const result = await applier.apply(buildPreview());
+
+    expect(createPreviewUsecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slackUserId: 'U_USER',
+        kind: PREVIEW_KIND.BE_SANDBOX_PUSH_PR,
+        payload: expect.objectContaining({
+          diff: happyPathDiff.diff,
+          reasoning: happyPathDiff.reasoning,
+          changedFiles: happyPathDiff.changedFiles,
+          repoLabel: 'JSL107/personal_agents',
+          baseBranch: 'main',
+        }),
+      }),
+    );
+    expect(result).toContain('GitHub PR auto-open');
+  });
+
+  it('실패 시 Phase 2b chain preview 생성 X (createPreview 호출 안 함)', async () => {
+    const {
+      applier,
+      generateBeDiffUsecase,
+      runSandboxUsecase,
+      createPreviewUsecase,
+    } = buildApplier();
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 1,
+        stdout: 'PHASE_A_CHECK_OK',
+        stderr: 'apply failed',
+      }),
+    );
+
+    await applier.apply(buildPreview());
+    expect(createPreviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('Phase 2b chain preview 생성 실패는 graceful — 본 흐름 응답은 정상 노출', async () => {
+    const createPreviewUsecase = {
+      execute: jest.fn().mockRejectedValue(new Error('DB down')),
+    } as unknown as jest.Mocked<CreatePreviewUsecase>;
+    const { applier, generateBeDiffUsecase, runSandboxUsecase } = buildApplier({
+      createPreviewUsecase,
+    });
+    generateBeDiffUsecase.execute.mockResolvedValue(happyPathDiff);
+    runSandboxUsecase.execute.mockResolvedValue(
+      buildSandboxOutput({
+        exitCode: 0,
+        stdout: 'PHASE_A_CHECK_OK\nPHASE_B_APPLY_OK\nPHASE_C_TEST_OK',
+      }),
+    );
+
+    const result = await applier.apply(buildPreview());
+    expect(result).toContain('Sandbox apply + test 통과');
+    expect(result).toContain('Phase 2b chain preview 생성 실패');
   });
 });
