@@ -1,14 +1,26 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
 
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
+import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import {
   DispatchResult,
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
+import { RouterException } from '../../router/domain/router.exception';
+import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
+
+// 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
+//   :eyes:               (수신 직후) — 봇이 메시지를 읽었음
+//   :hourglass:          (dispatch 직전) — LLM 처리 중. 완료 시 제거 (성공/실패 무관).
+//   :white_check_mark:   (성공 직후) — worker dispatch / conversational fallback 모두 OK 인 경우
+const REACTION_ACK = 'eyes';
+const REACTION_PROCESSING = 'hourglass';
+const REACTION_SUCCESS = 'white_check_mark';
 
 // V3 비전 봇 쪼개기 — 자연어 진입 surface.
 // 두 종류 trigger:
@@ -30,10 +42,11 @@ export class RouterMessageHandler implements SlackHandler {
     @Inject(IDAERI_ROUTER_PORT)
     private readonly idaeriRouter: IdaeriRouterPort,
     private readonly conversationMemory: ConversationMemoryService,
+    private readonly conversationalReply: ConversationalReplyUsecase,
   ) {}
 
   register(app: App): void {
-    app.event('app_mention', async ({ event, say }) => {
+    app.event('app_mention', async ({ event, say, client }) => {
       const rawText =
         'text' in event && typeof event.text === 'string' ? event.text : '';
       const slackUserId =
@@ -48,20 +61,23 @@ export class RouterMessageHandler implements SlackHandler {
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
           : event.ts;
+      const messageTs = event.ts;
 
       await this.processRouterMessage({
         text: stripMentionPrefix(rawText),
         slackUserId,
         channelId,
         threadTs,
+        messageTs,
         say,
+        client,
         source: 'app_mention',
       });
     });
 
     // DM (channel_type='im') 진입. subtype 없는 user message 만 — bot 자신의 메시지 / edit /
     // delete event 등은 필터 (무한 루프 방지). 멘션 prefix 처리 X (DM 은 1:1 이라 멘션 없음).
-    app.event('message', async ({ event, say }) => {
+    app.event('message', async ({ event, say, client }) => {
       if (!('channel_type' in event) || event.channel_type !== 'im') {
         return;
       }
@@ -82,19 +98,21 @@ export class RouterMessageHandler implements SlackHandler {
         'channel' in event && typeof event.channel === 'string'
           ? event.channel
           : 'unknown';
+      const messageTs =
+        'ts' in event && typeof event.ts === 'string' ? event.ts : undefined;
       const threadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
-          : 'ts' in event && typeof event.ts === 'string'
-            ? event.ts
-            : undefined;
+          : messageTs;
 
       await this.processRouterMessage({
         text: rawText.trim(),
         slackUserId,
         channelId,
         threadTs,
+        messageTs,
         say,
+        client,
         source: 'dm',
       });
     });
@@ -105,14 +123,18 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId,
     channelId,
     threadTs,
+    messageTs,
     say,
+    client,
     source,
   }: {
     text: string;
     slackUserId: string;
     channelId: string;
     threadTs: string | undefined;
+    messageTs: string | undefined;
     say: SayFn;
+    client: WebClient;
     source: 'app_mention' | 'dm';
   }): Promise<void> {
     if (text.length === 0) {
@@ -121,6 +143,25 @@ export class RouterMessageHandler implements SlackHandler {
         text: '메시지가 비어 있습니다. 어떤 작업이 필요한지 자연어로 적어주세요.',
       });
       return;
+    }
+
+    // 1단계: :eyes: — 봇이 메시지를 인지했음. (실패해도 dispatch 계속 — graceful.)
+    await this.addReaction({
+      client,
+      channelId,
+      messageTs,
+      name: REACTION_ACK,
+    });
+
+    // 2단계: :hourglass: — LLM 처리 중. dispatch 종료 시 finally 에서 제거.
+    let processingReactionAdded = false;
+    if (messageTs) {
+      processingReactionAdded = await this.addReaction({
+        client,
+        channelId,
+        messageTs,
+        name: REACTION_PROCESSING,
+      });
     }
 
     const memoryKey = this.conversationMemory.buildKey({
@@ -134,6 +175,7 @@ export class RouterMessageHandler implements SlackHandler {
       .reverse()
       .find((turn) => turn.agentRunId !== null)?.agentRunId;
 
+    let succeeded = false;
     try {
       const result = await this.idaeriRouter.dispatch({
         source: 'SLACK_MESSAGE',
@@ -154,24 +196,142 @@ export class RouterMessageHandler implements SlackHandler {
         thread_ts: threadTs,
         text: buildRouterReply(result),
       });
+      succeeded = true;
     } catch (error: unknown) {
-      this.logger.warn(
-        `Router dispatch 실패 (${source}) — user=${slackUserId} text="${text.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
+      // INTENT_CLASSIFY_FAILED — 사용자 의도가 worker 분류 어느 것에도 매핑되지 않은 경우.
+      // 단순 인사 / 안부 / 잡담일 가능성 높음 → ConversationalReply 로 자연어 한 마디 답변.
+      // 다른 RouterException (DEPTH_EXCEEDED, CYCLE_DETECTED 등) + 외부 시스템 에러는 기존 에러 분기.
+      if (isIntentClassifyFailed(error)) {
+        this.logger.log(
+          `Router intent UNKNOWN — conversational fallback 으로 응답 (user=${slackUserId} text="${text.slice(0, 60)}")`,
+        );
+        try {
+          const reply = await this.conversationalReply.reply({
+            text,
+            priorTurns,
+          });
+          await this.conversationMemory.appendTurn(memoryKey, {
+            text,
+            agentType: null,
+            agentRunId: null,
+            timestampMs: Date.now(),
+          });
+          await say({ thread_ts: threadTs, text: reply });
+          succeeded = true;
+        } catch (replyError: unknown) {
+          this.logger.warn(
+            `Conversational fallback 도 실패 — user=${slackUserId}: ${replyError instanceof Error ? replyError.message : String(replyError)}`,
+          );
+          await this.conversationMemory.appendTurn(memoryKey, {
+            text,
+            agentType: null,
+            agentRunId: null,
+            timestampMs: Date.now(),
+          });
+          await say({
+            thread_ts: threadTs,
+            text: `이대리 응답 실패: ${toUserFacingErrorMessage(replyError)}`,
+          });
+        }
+      } else {
+        this.logger.warn(
+          `Router dispatch 실패 (${source}) — user=${slackUserId} text="${text.slice(0, 60)}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+        // 실패 turn 도 memory 에 남김 — 다음 turn 의 사용자가 "방금 그건 실패" 회복 흐름 인식 가능.
+        await this.conversationMemory.appendTurn(memoryKey, {
+          text,
+          agentType: null,
+          agentRunId: null,
+          timestampMs: Date.now(),
+        });
+        await say({
+          thread_ts: threadTs,
+          text: `이대리 처리 실패: ${toUserFacingErrorMessage(error)}`,
+        });
+      }
+    } finally {
+      // 성공/실패 무관 처리중 표시 제거. add 가 실패한 경우 (이미 누군가 같은 reaction 부착 등) 는
+      // remove 시도 자체를 skip — 불필요한 Slack API 호출 회피.
+      if (processingReactionAdded && messageTs) {
+        await this.removeReaction({
+          client,
+          channelId,
+          messageTs,
+          name: REACTION_PROCESSING,
+        });
+      }
+      // 성공 시 ✅ 부착 — 사용자가 "이거 처리됐다" 를 한눈에 확인.
+      if (succeeded) {
+        await this.addReaction({
+          client,
+          channelId,
+          messageTs,
+          name: REACTION_SUCCESS,
+        });
+      }
+    }
+  }
+
+  // Slack reactions.add 실패는 graceful — 메시지 너무 오래됨 / scope 부족 / 이미 부착 등
+  // 다양한 사유로 실패 가능. 본 진행 흐름을 막지 않는다. 성공 시 true, 실패 시 false.
+  private async addReaction({
+    client,
+    channelId,
+    messageTs,
+    name,
+  }: {
+    client: WebClient;
+    channelId: string;
+    messageTs: string | undefined;
+    name: string;
+  }): Promise<boolean> {
+    if (!messageTs) {
+      return false;
+    }
+    try {
+      await client.reactions.add({
+        channel: channelId,
+        timestamp: messageTs,
+        name,
+      });
+      return true;
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Slack reactions.add(${name}) 실패 (channel=${channelId} ts=${messageTs}): ${error instanceof Error ? error.message : String(error)}`,
       );
-      // 실패 turn 도 memory 에 남김 — 다음 turn 의 사용자가 "방금 그건 실패" 회복 흐름 인식 가능.
-      await this.conversationMemory.appendTurn(memoryKey, {
-        text,
-        agentType: null,
-        agentRunId: null,
-        timestampMs: Date.now(),
+      return false;
+    }
+  }
+
+  private async removeReaction({
+    client,
+    channelId,
+    messageTs,
+    name,
+  }: {
+    client: WebClient;
+    channelId: string;
+    messageTs: string;
+    name: string;
+  }): Promise<void> {
+    try {
+      await client.reactions.remove({
+        channel: channelId,
+        timestamp: messageTs,
+        name,
       });
-      await say({
-        thread_ts: threadTs,
-        text: `이대리 처리 실패: ${toUserFacingErrorMessage(error)}`,
-      });
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Slack reactions.remove(${name}) 실패 (channel=${channelId} ts=${messageTs}): ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }
+
+// intent classifier 가 어느 worker 에도 매핑 못 한 경우 (자연어 fallback 분기 트리거).
+const isIntentClassifyFailed = (error: unknown): boolean =>
+  error instanceof RouterException &&
+  error.routerErrorCode === RouterErrorCode.INTENT_CLASSIFY_FAILED;
 
 // Slack 멘션 prefix `<@U....>` 를 모두 제거 + 앞뒤 공백 trim.
 // (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
