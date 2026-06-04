@@ -2,6 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
+import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import {
@@ -13,6 +17,7 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
+import { detectYesNoIntent } from './yes-no-detector';
 
 // 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
 //   :eyes:               (수신 직후) — 봇이 메시지를 읽었음
@@ -43,6 +48,9 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly idaeriRouter: IdaeriRouterPort,
     private readonly conversationMemory: ConversationMemoryService,
     private readonly conversationalReply: ConversationalReplyUsecase,
+    private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
+    private readonly applyPreviewUsecase: ApplyPreviewUsecase,
+    private readonly cancelPreviewUsecase: CancelPreviewUsecase,
   ) {}
 
   register(app: App): void {
@@ -177,6 +185,21 @@ export class RouterMessageHandler implements SlackHandler {
 
     let succeeded = false;
     try {
+      // 자연어 Y/N → 사용자의 직전 PreviewGate preview 에 대한 응답 인터셉트.
+      // 응 / ㄱㄱ / yes → ApplyPreviewUsecase. 아니 / ㄴㄴ / no → CancelPreviewUsecase.
+      // ambiguous (긴 메시지 / 모순 / 비매칭) 는 일반 dispatch 로 fall through.
+      const handledByPreview = await this.tryHandlePreviewYesNo({
+        text,
+        slackUserId,
+        threadTs,
+        say,
+        memoryKey,
+      });
+      if (handledByPreview) {
+        succeeded = true;
+        return;
+      }
+
       const result = await this.idaeriRouter.dispatch({
         source: 'SLACK_MESSAGE',
         slackUserId,
@@ -269,6 +292,158 @@ export class RouterMessageHandler implements SlackHandler {
           name: REACTION_SUCCESS,
         });
       }
+    }
+  }
+
+  // 자연어 Y/N 응답 인터셉트 — 사용자가 직전 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
+  // 1) 사용자의 가장 최근 PENDING preview 1건 조회 (없으면 false)
+  // 2) detectYesNoIntent 로 자연어 분류 (ambiguous=null 이면 false)
+  // 3) yes → apply, no → cancel
+  // ConversationMemory 에는 agentType=null + agentRunId=null 로 turn 적재 (worker dispatch 아님).
+  private async tryHandlePreviewYesNo({
+    text,
+    slackUserId,
+    threadTs,
+    say,
+    memoryKey,
+  }: {
+    text: string;
+    slackUserId: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+  }): Promise<boolean> {
+    const pending = await this.findLatestPendingPreview.execute({
+      slackUserId,
+    });
+    if (!pending) {
+      return false;
+    }
+    const intent = detectYesNoIntent(text);
+    if (intent === null) {
+      return false;
+    }
+    if (intent === 'yes') {
+      await this.handlePreviewApply({
+        preview: pending,
+        slackUserId,
+        threadTs,
+        say,
+        memoryKey,
+        userText: text,
+      });
+    } else {
+      await this.handlePreviewCancel({
+        preview: pending,
+        slackUserId,
+        threadTs,
+        say,
+        memoryKey,
+        userText: text,
+      });
+    }
+    return true;
+  }
+
+  private async handlePreviewApply({
+    preview,
+    slackUserId,
+    threadTs,
+    say,
+    memoryKey,
+    userText,
+  }: {
+    preview: PreviewAction;
+    slackUserId: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+    userText: string;
+  }): Promise<void> {
+    try {
+      const { resultText } = await this.applyPreviewUsecase.execute({
+        previewId: preview.id,
+        slackUserId,
+      });
+      this.logger.log(
+        `Preview Y/N apply 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
+      );
+      await this.conversationMemory.appendTurn(memoryKey, {
+        text: userText,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      await say({
+        thread_ts: threadTs,
+        text: `✅ 적용 완료 (${preview.kind})\n\n${resultText}`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Preview Y/N apply 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
+      );
+      await this.conversationMemory.appendTurn(memoryKey, {
+        text: userText,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      await say({
+        thread_ts: threadTs,
+        text: `Preview 적용 실패: ${toUserFacingErrorMessage(error)}`,
+      });
+    }
+  }
+
+  private async handlePreviewCancel({
+    preview,
+    slackUserId,
+    threadTs,
+    say,
+    memoryKey,
+    userText,
+  }: {
+    preview: PreviewAction;
+    slackUserId: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+    userText: string;
+  }): Promise<void> {
+    try {
+      await this.cancelPreviewUsecase.execute({
+        previewId: preview.id,
+        slackUserId,
+      });
+      this.logger.log(
+        `Preview Y/N cancel 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
+      );
+      await this.conversationMemory.appendTurn(memoryKey, {
+        text: userText,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      await say({
+        thread_ts: threadTs,
+        text: `❌ 취소했습니다 (${preview.kind}).`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Preview Y/N cancel 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
+      );
+      await this.conversationMemory.appendTurn(memoryKey, {
+        text: userText,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      await say({
+        thread_ts: threadTs,
+        text: `Preview 취소 실패: ${toUserFacingErrorMessage(error)}`,
+      });
     }
   }
 
