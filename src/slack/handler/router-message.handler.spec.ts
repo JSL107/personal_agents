@@ -2,6 +2,14 @@ import { App } from '@slack/bolt';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
+import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import {
+  PREVIEW_KIND,
+  PREVIEW_STATUS,
+  PreviewAction,
+} from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import {
@@ -18,16 +26,62 @@ import { RouterMessageHandler } from './router-message.handler';
 // logger 는 class 가 자체 생성하므로 인자에서 제거 — runtime 노이즈는 spec 검증에 영향 없음.
 const buildHandler = (
   idaeriRouter: IdaeriRouterPort,
-  conversationalReply: ConversationalReplyUsecase = {
-    reply: jest.fn().mockResolvedValue('mock 자연어 응답'),
-  } as unknown as ConversationalReplyUsecase,
-  conversationMemory: ConversationMemoryService = new ConversationMemoryService(),
-): RouterMessageHandler =>
-  new RouterMessageHandler(
+  options: {
+    conversationalReply?: ConversationalReplyUsecase;
+    conversationMemory?: ConversationMemoryService;
+    findLatestPendingPreview?: FindLatestPendingPreviewUsecase;
+    applyPreviewUsecase?: ApplyPreviewUsecase;
+    cancelPreviewUsecase?: CancelPreviewUsecase;
+  } = {},
+): RouterMessageHandler => {
+  const conversationalReply =
+    options.conversationalReply ??
+    ({
+      reply: jest.fn().mockResolvedValue('mock 자연어 응답'),
+    } as unknown as ConversationalReplyUsecase);
+  const conversationMemory =
+    options.conversationMemory ?? new ConversationMemoryService();
+  const findLatestPendingPreview =
+    options.findLatestPendingPreview ??
+    ({
+      execute: jest.fn().mockResolvedValue(null),
+    } as unknown as FindLatestPendingPreviewUsecase);
+  const applyPreviewUsecase =
+    options.applyPreviewUsecase ??
+    ({
+      execute: jest.fn().mockResolvedValue({ preview: null, resultText: '' }),
+    } as unknown as ApplyPreviewUsecase);
+  const cancelPreviewUsecase =
+    options.cancelPreviewUsecase ??
+    ({
+      execute: jest.fn().mockResolvedValue(null),
+    } as unknown as CancelPreviewUsecase);
+  return new RouterMessageHandler(
     idaeriRouter,
     conversationMemory,
     conversationalReply,
+    findLatestPendingPreview,
+    applyPreviewUsecase,
+    cancelPreviewUsecase,
   );
+};
+
+const buildPendingPreview = (
+  overrides: Partial<PreviewAction> = {},
+): PreviewAction => ({
+  id: 'preview-id-1',
+  slackUserId: 'U_USER',
+  kind: PREVIEW_KIND.PM_WRITE_BACK,
+  payload: {},
+  status: PREVIEW_STATUS.PENDING,
+  previewText: 'mock preview',
+  responseUrl: null,
+  expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  createdAt: new Date(),
+  appliedAt: null,
+  cancelledAt: null,
+  ...overrides,
+});
 
 type EventHandler = (args: {
   event: Record<string, unknown>;
@@ -246,7 +300,7 @@ describe('RouterMessageHandler — app_mention', () => {
     const conversationalReply = {
       reply: jest.fn().mockResolvedValue('안녕하세요! 무엇을 도와드릴까요?'),
     } as unknown as ConversationalReplyUsecase;
-    buildHandler(idaeriRouter, conversationalReply).register(app);
+    buildHandler(idaeriRouter, { conversationalReply }).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -315,7 +369,7 @@ describe('RouterMessageHandler — app_mention', () => {
     const conversationalReply = {
       reply: jest.fn().mockResolvedValue('네 안녕하세요'),
     } as unknown as ConversationalReplyUsecase;
-    buildHandler(idaeriRouter, conversationalReply).register(app);
+    buildHandler(idaeriRouter, { conversationalReply }).register(app);
 
     const { client } = await invokeHandler(getHandler('app_mention'), {
       type: 'app_mention',
@@ -434,5 +488,164 @@ describe('RouterMessageHandler — message (DM)', () => {
     });
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
+  const baseEvent = {
+    type: 'app_mention' as const,
+    user: 'U_USER',
+    ts: '1730000000.000001',
+    channel: 'C_CHANNEL',
+  };
+
+  it('pending preview 있음 + "응" → ApplyPreviewUsecase 호출 (dispatch 미호출)', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const idaeriRouter: IdaeriRouterPort = { dispatch };
+    const pending = buildPendingPreview();
+    const findLatestPendingPreview = {
+      execute: jest.fn().mockResolvedValue(pending),
+    } as unknown as FindLatestPendingPreviewUsecase;
+    const applyPreviewUsecase = {
+      execute: jest.fn().mockResolvedValue({
+        preview: pending,
+        resultText: '✅ Notion 페이지에 적재 완료',
+      }),
+    } as unknown as ApplyPreviewUsecase;
+    const cancelPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as CancelPreviewUsecase;
+
+    buildHandler(idaeriRouter, {
+      findLatestPendingPreview,
+      applyPreviewUsecase,
+      cancelPreviewUsecase,
+    }).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 응',
+    });
+
+    expect(applyPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: pending.id,
+      slackUserId: 'U_USER',
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('적용 완료'),
+      }),
+    );
+  });
+
+  it('pending preview 있음 + "아니" → CancelPreviewUsecase 호출', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const pending = buildPendingPreview();
+    const cancelPreviewUsecase = {
+      execute: jest.fn().mockResolvedValue(pending),
+    } as unknown as CancelPreviewUsecase;
+    const applyPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as ApplyPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest.fn().mockResolvedValue(pending),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        applyPreviewUsecase,
+        cancelPreviewUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 아니',
+    });
+
+    expect(cancelPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: pending.id,
+      slackUserId: 'U_USER',
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('취소'),
+      }),
+    );
+  });
+
+  it('pending preview 없음 → 정상 dispatch 흐름으로 fall through', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'mock body',
+    });
+    const applyPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as ApplyPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest.fn().mockResolvedValue(null),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        applyPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 응',
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('pending preview 있음 + ambiguous 입력 ("오늘 plan 짜줘") → dispatch 로 fall through', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'mock body',
+    });
+    const applyPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as ApplyPreviewUsecase;
+    const cancelPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as CancelPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest.fn().mockResolvedValue(buildPendingPreview()),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        applyPreviewUsecase,
+        cancelPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 오늘 plan 짜줘',
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
   });
 });
