@@ -62,6 +62,27 @@ export interface AddIssueLabelsInput {
   labels: string[]; // repo vocab 안의 name 배열. octokit 이 멱등 처리 (이미 붙은 label 은 noop).
 }
 
+// BE 자율 개발 Phase 2b-2 — 새 branch + single commit + PR open 1-shot.
+// 호출자 (BeSandboxPushPrApplier) 가 변경된 file 의 post-patch content 까지 다 모은 뒤 본 메소드로 전달.
+// Git Data API (createBlob → createTree → createCommit → createRef) + pulls.create chain.
+// main 직접 push 금지 — 항상 새 branch (caller 가 branchName 명시).
+export interface PushBranchAndOpenPrInput {
+  repo: string; // "owner/repo"
+  baseBranch: string;
+  branchName: string; // 예: "feat/idaeri-1717xxxx" — caller 가 충돌 방지 책임
+  commitMessage: string;
+  files: { path: string; content: string }[]; // path = repo root 상대경로
+  prTitle: string;
+  prBody: string;
+}
+
+export interface PushBranchAndOpenPrResult {
+  prUrl: string;
+  prNumber: number;
+  branchRef: string; // "refs/heads/<branchName>"
+  commitSha: string;
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
@@ -89,4 +110,11 @@ export interface GithubClientPort {
 
   // 멱등 — 이미 붙어 있는 label 은 GitHub 가 noop 처리. labels 가 빈 배열이면 호출 자체 skip.
   addLabelsToIssue(input: AddIssueLabelsInput): Promise<void>;
+
+  // BE 자율 개발 Phase 2b-2 — 새 branch + single commit + PR open 1-shot.
+  // Git Data API 조합으로 1 commit (모든 변경 파일 합쳐서) → 새 branch ref → PR.
+  // main 직접 push 절대 X.
+  pushBranchAndOpenPr(
+    input: PushBranchAndOpenPrInput,
+  ): Promise<PushBranchAndOpenPrResult>;
 }

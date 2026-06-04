@@ -13,8 +13,8 @@ import {
 import { PreviewActionErrorCode } from '../../../preview-gate/domain/preview-action-error-code.enum';
 import { RunSandboxUsecase } from '../../../sandbox/application/run-sandbox.usecase';
 import { GenerateBeDiffUsecase } from '../../be-diff-generator/application/generate-be-diff.usecase';
-import { BeSandboxPushPrPayload } from '../domain/be-sandbox-push-pr.type';
 import { isBeSandboxApplyPayload } from '../domain/be-sandbox.type';
+import { BeSandboxPushPrPayload } from '../domain/be-sandbox-push-pr.type';
 
 // Slack 응답 안 diff 표시 cap — Slack 메시지 한도 (40k) 와 멀어지지 않게 보수적으로 cap.
 const DIFF_TAIL_LIMIT = 8_000;
