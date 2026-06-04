@@ -1,7 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
-import { PreviewActionException } from '../../../preview-gate/domain/preview-action.exception';
 import {
   PREVIEW_KIND,
   PREVIEW_STATUS,
