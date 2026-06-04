@@ -20,6 +20,8 @@ import {
   ListAuthorMergedPullRequestsOptions,
   OCTOKIT_INSTANCE,
   PullRequestRef,
+  PushBranchAndOpenPrInput,
+  PushBranchAndOpenPrResult,
   RepoLabel,
 } from '../domain/port/github-client.port';
 
@@ -289,6 +291,121 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo}#${issueNumber} addLabels 실패`,
+      );
+    }
+  }
+
+  // BE 자율 개발 Phase 2b-2 — Git Data API 로 1 commit (모든 변경 파일) + 새 branch ref + PR open.
+  // 흐름:
+  //   1) getRef(base) → base commit SHA
+  //   2) getCommit(baseCommit SHA) → base tree SHA
+  //   3) for each file: createBlob(content, encoding='utf-8') → blob SHA
+  //   4) createTree(base_tree=base tree SHA, tree=[{path, mode='100644', type='blob', sha}]) → new tree SHA
+  //   5) createCommit(message, tree=new tree SHA, parents=[baseCommit SHA]) → new commit SHA
+  //   6) createRef(`refs/heads/<branchName>`, new commit SHA) → 새 branch
+  //   7) pulls.create(head=branchName, base=baseBranch) → PR
+  // 실패 시 즉시 throw — 부분 진행된 branch / blob 은 정리 안 함 (GitHub 가 가비지 collection).
+  async pushBranchAndOpenPr({
+    repo,
+    baseBranch,
+    branchName,
+    commitMessage,
+    files,
+    prTitle,
+    prBody,
+  }: PushBranchAndOpenPrInput): Promise<PushBranchAndOpenPrResult> {
+    this.assertOctokitConfigured();
+    if (files.length === 0) {
+      throw new GithubException({
+        code: GithubErrorCode.REQUEST_FAILED,
+        message:
+          'pushBranchAndOpenPr: files 가 비어 있어 commit 을 생성할 수 없습니다.',
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+    const [owner, repoName] = parseRepo(repo);
+
+    try {
+      // 1) base branch HEAD commit SHA.
+      const baseRef = await this.octokit!.rest.git.getRef({
+        owner,
+        repo: repoName,
+        ref: `heads/${baseBranch}`,
+      });
+      const baseCommitSha = baseRef.data.object.sha;
+
+      // 2) base commit → tree SHA.
+      const baseCommit = await this.octokit!.rest.git.getCommit({
+        owner,
+        repo: repoName,
+        commit_sha: baseCommitSha,
+      });
+      const baseTreeSha = baseCommit.data.tree.sha;
+
+      // 3) 각 파일 → blob.
+      const treeEntries = await Promise.all(
+        files.map(async (file) => {
+          const blob = await this.octokit!.rest.git.createBlob({
+            owner,
+            repo: repoName,
+            content: file.content,
+            encoding: 'utf-8',
+          });
+          return {
+            path: file.path,
+            mode: '100644' as const,
+            type: 'blob' as const,
+            sha: blob.data.sha,
+          };
+        }),
+      );
+
+      // 4) tree.
+      const newTree = await this.octokit!.rest.git.createTree({
+        owner,
+        repo: repoName,
+        base_tree: baseTreeSha,
+        tree: treeEntries,
+      });
+
+      // 5) commit.
+      const newCommit = await this.octokit!.rest.git.createCommit({
+        owner,
+        repo: repoName,
+        message: commitMessage,
+        tree: newTree.data.sha,
+        parents: [baseCommitSha],
+      });
+
+      // 6) new branch ref. force=false — 동일 이름 branch 이미 존재 시 422 throw.
+      const branchRef = `refs/heads/${branchName}`;
+      await this.octokit!.rest.git.createRef({
+        owner,
+        repo: repoName,
+        ref: branchRef,
+        sha: newCommit.data.sha,
+      });
+
+      // 7) PR open.
+      const pr = await this.octokit!.rest.pulls.create({
+        owner,
+        repo: repoName,
+        title: prTitle,
+        body: prBody,
+        head: branchName,
+        base: baseBranch,
+      });
+
+      return {
+        prUrl: pr.data.html_url,
+        prNumber: pr.data.number,
+        branchRef,
+        commitSha: newCommit.data.sha,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} branch+commit+PR 실패 (base=${baseBranch} head=${branchName} files=${files.length})`,
       );
     }
   }
