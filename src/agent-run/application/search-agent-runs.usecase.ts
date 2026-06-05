@@ -73,7 +73,9 @@ const buildSnippet = ({
   keyword: string;
 }): string => {
   const candidates = [row.output, row.inputSnapshot]
-    .map((value) => (value === null || value === undefined ? '' : safeStringify(value)))
+    .map((value) =>
+      value === null || value === undefined ? '' : safeStringify(value),
+    )
     .filter((text) => text.length > 0);
 
   const radius = SearchAgentRunsUsecase.SNIPPET_RADIUS;

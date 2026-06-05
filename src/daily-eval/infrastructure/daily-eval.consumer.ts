@@ -85,8 +85,7 @@ export class DailyEvalConsumer extends WorkerHost {
     if (!this.notificationPublisher) {
       return;
     }
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
       cronName: 'Daily Eval',
       ownerSlackUserId,

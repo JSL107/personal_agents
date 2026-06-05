@@ -3,11 +3,12 @@ import { Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
+import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { PullRequestDetail } from '../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
-import { PullRequestDetail } from '../../github/domain/github.type';
 import {
   NOTION_CLIENT_PORT,
   NotionClientPort,
@@ -18,7 +19,6 @@ import {
   PR_CAREERLOG_QUEUE,
   PrCareerLogJobData,
 } from '../../webhook/domain/webhook.type';
-import { getTodayKstDate } from '../../common/util/kst-date.util';
 
 // pull_request.closed (merged=true) webhook → 본인 PR 머지 시 Notion careerLog 자동 적재.
 // LLM 호출 X — PR 메타 (title / body / additions / deletions / changedFiles) 를 그대로 변환.
@@ -178,7 +178,8 @@ export const buildPrCareerLogBlocks = ({
   blocks.push({ type: 'bullet', text: detail.title });
   const body = detail.body.trim();
   if (body.length > 0) {
-    const capped = body.length > PR_BODY_CAP ? `${body.slice(0, PR_BODY_CAP)}…` : body;
+    const capped =
+      body.length > PR_BODY_CAP ? `${body.slice(0, PR_BODY_CAP)}…` : body;
     blocks.push({ type: 'paragraph', text: capped });
   }
   blocks.push({ type: 'paragraph', text: `링크: ${detail.url}` });

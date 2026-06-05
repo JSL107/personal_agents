@@ -93,9 +93,15 @@ describe('BeDispatcher', () => {
   it('BE_AUTONOMOUS_FROM_PLAN=true → BE_SANDBOX_APPLY preview 자동 생성 + Y/N 안내 부착', async () => {
     const { dispatcher, createPreviewUsecase, configGet } = buildDispatcher();
     configGet.mockImplementation((key: string) => {
-      if (key === 'BE_AUTONOMOUS_FROM_PLAN') return 'true';
-      if (key === 'BE_SANDBOX_DEFAULT_REPO_LABEL') return 'JSL107/my-repo';
-      if (key === 'BE_SANDBOX_DEFAULT_BASE_BRANCH') return 'develop';
+      if (key === 'BE_AUTONOMOUS_FROM_PLAN') {
+        return 'true';
+      }
+      if (key === 'BE_SANDBOX_DEFAULT_REPO_LABEL') {
+        return 'JSL107/my-repo';
+      }
+      if (key === 'BE_SANDBOX_DEFAULT_BASE_BRANCH') {
+        return 'develop';
+      }
       return undefined;
     });
 

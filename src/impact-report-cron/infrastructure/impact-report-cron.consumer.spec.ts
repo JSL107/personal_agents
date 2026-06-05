@@ -6,7 +6,10 @@ import { ImpactReportCronConsumer } from './impact-report-cron.consumer';
 describe('ImpactReportCronConsumer', () => {
   const mockImpactUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
+  const mockPublisher = {
+    publishCronFailure: jest.fn(),
+    publishClaudeAuthSuspect: jest.fn(),
+  };
 
   const consumer = new ImpactReportCronConsumer(
     mockImpactUsecase as never,
