@@ -67,7 +67,8 @@ export const buildSystemPrompt = ({
   ownerLogin?: string;
 }): string => {
   const selfRepo = repoLabel && repoLabel.length > 0 ? repoLabel : undefined;
-  const selfOwner = ownerLogin && ownerLogin.length > 0 ? ownerLogin : undefined;
+  const selfOwner =
+    ownerLogin && ownerLogin.length > 0 ? ownerLogin : undefined;
 
   // self-context block — 사용자가 "이대리 봇" / "이 레포" / "여기" 같은 self-reference 를 쓸 때
   // 봇이 자기 자신 = `${selfRepo}` 임을 인지하지 못해 "어느 repo?" 를 반복 묻는 패턴 (2026-06-05 사례) 차단.
@@ -80,8 +81,9 @@ export const buildSystemPrompt = ({
     selfOwner
       ? `- 주 사용자 (owner): GitHub login \`${selfOwner}\` — 슬랙에서 직접 대화하는 1인 사용자.`
       : undefined,
-    `- 사용자가 "이대리 봇", "이 레포", "여기", "자기 자신", "너" 같은 표현으로 가리키는 대상은 모두 당신 자신 = ${selfRepo ?? '봇이 동작하는 레포'} 입니다. 다시 "어느 repo 인가요?" 처럼 묻지 마세요 — 이미 알고 있습니다.`,
-    `- 이미 알고 있는 정보 (자기 repo, 자기 owner) 는 사용자에게 재확인하지 말고 그대로 사용하세요.`,
+    `- self-reference 매핑: 사용자가 "이대리 봇", "이 레포", "여기", "자기 자신", "너" 같은 표현을 직접 쓰면 그 대상은 당신 자신 = ${selfRepo ?? '봇이 동작하는 레포'} 입니다. 이 경우만 "어느 repo 인가요?" 다시 묻지 말고 그대로 사용.`,
+    `- 다른 repo 가능성: 사용자가 GitHub URL 또는 "owner/name" 형식으로 다른 repo 를 명시하면 그 repo 를 사용하세요 — self 로 우회 X. 봇은 \`/review-pr\` / \`/impact-report\` 등 임의 repo 도 다룹니다.`,
+    `- repo 가 모호한 경우 (self-reference 도 없고 명시 repo 도 없을 때) 짧게 한 번 확인 가능. 단 [이전 대화] 에 이미 사용자가 답한 정보가 있으면 그대로 활용, 같은 질문 반복 X.`,
   ].filter((line): line is string => line !== undefined);
 
   return [
