@@ -10,7 +10,7 @@
 - **패키지 매니저: `pnpm@9.15.9`** — `npm` / `yarn` 사용 금지 (`packageManager` 필드로 강제).
 - Node 20+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ.
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
-- LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). 자식 프로세스 spawn 으로만 호출 — 직접 API SDK 사용 X. 인증: 기본은 각 CLI 의 keychain/OAuth (구독). Claude 는 keychain ACL 미등록 환경에서 침묵 exit=1 회피용 fallback 으로 `ANTHROPIC_API_KEY` (=`claude setup-token` 발급 OAuth token) + `CLAUDE_CODE_SIMPLE=1` env 경로 지원 (§6 참조). Fallback chain: Claude primary 실패 시 ChatGPT 자동 재시도 (ChatGPT primary 는 fallback 없음 — primary == fallback). 이전 Gemini fallback 은 2026-06-04 제거.
+- LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). 자식 프로세스 spawn 으로만 호출 — 직접 API SDK 사용 X. 인증: 기본은 각 CLI 의 keychain/OAuth (구독). Claude 는 keychain ACL 미등록 환경 (nest start --watch child PID 변동 등) 우회용으로 `CLAUDE_CODE_OAUTH_TOKEN` env 경로 지원 — `.env` 에 `claude setup-token` 발급 OAuth token (`sk-ant-oat01-...`) 두면 자식 env 로 forward, docs precedence priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 라 keychain 시도 자체가 안 일어남 (§6 참조). `ANTHROPIC_API_KEY` 도 backward-compat alias 로 동일하게 인식. Fallback chain: Claude primary 실패 시 ChatGPT 자동 재시도 (ChatGPT primary 는 fallback 없음 — primary == fallback). 이전 Gemini fallback 은 2026-06-04 제거.
 - **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 13 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
 - **NestJS multi-provider 는 single module scope** — 분산 등록 X. dispatcher 류는 PreviewGate.forRoot 패턴처럼 한 모듈 (RouterModule) 의 useFactory + inject 로 중앙 등록.
 
@@ -137,7 +137,7 @@ pnpm prisma format  # schema 변경 시
 
 - **`Number` provider not found**: 생성자에 `timeoutMs: number = 180_000` 같은 default 두면 reflection 이 Number 타입으로 잡음. **default 는 클래스 필드로**.
 - **codex CLI exit=0 인데 빈 응답**: 인증 만료/쿼터 소진. `CodexCliProvider` 가 명시 에러로 끊음.
-- **claude `--bare` 플래그 / env `CLAUDE_CODE_SIMPLE=1`**: keychain/OAuth reads 강제 skip. token 없이 켜면 "Not logged in" 실패. ClaudeCliProvider 는 `.env` 의 `ANTHROPIC_API_KEY` 가 있을 때만 `CLAUDE_CODE_SIMPLE=1` + token 을 자식 env 로 함께 주입 — **keychain ACL 미등록 환경 (nest start --watch 같은 PID 변동) 의 침묵 exit=1 우회 경로**. token 발급: `claude setup-token` (Claude Max 구독자 전용 long-lived OAuth token). token 미설정 시 SIMPLE 비활성 = 기존 keychain 경로 fallback.
+- **claude OAuth subscription token 경로** (keychain ACL 우회): `claude setup-token` 으로 발급한 long-lived OAuth token (`sk-ant-oat01-...`) 을 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN` (또는 backward-compat `ANTHROPIC_API_KEY` alias) 에 두면 ClaudeCliProvider 가 자식 env 의 `CLAUDE_CODE_OAUTH_TOKEN` 으로 forward. docs precedence priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 라 keychain 시도 자체가 안 일어남 = **macOS Keychain ACL 미등록 환경 (nest start --watch 의 child PID 변동) 의 침묵 exit=1 자연 우회**. `--bare` / `CLAUDE_CODE_SIMPLE=1` 은 안 씀 (docs 의 Bare/SIMPLE 모드는 `ANTHROPIC_API_KEY` 를 API key `sk-ant-api03-` 형식만 받고 OAuth subscription token 은 "Invalid API key" 로 거부 — 2026-06-05 manual test 확정). token 미설정 시 기존 keychain 경로 fallback (ACL 등록된 환경만 동작).
 - **3000 포트 EADDRINUSE**: 이대리는 `PORT=3002`.
 - **PrismaClient regen 누락**: schema 변경 후 `pnpm db:push` 만 하고 build 하면 type 안 맞을 수 있음 → `pnpm prisma:generate` 후 재빌드.
 
