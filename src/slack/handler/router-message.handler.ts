@@ -210,14 +210,24 @@ export class RouterMessageHandler implements SlackHandler {
           : {}),
       });
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text,
         agentType: result.workerType,
         agentRunId: result.agentRunId,
         timestampMs: Date.now(),
       });
+      const routerReplyText = buildRouterReply(result);
       await say({
         thread_ts: threadTs,
-        text: buildRouterReply(result),
+        text: routerReplyText,
+      });
+      // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'assistant',
+        text: routerReplyText,
+        agentType: result.workerType,
+        agentRunId: result.agentRunId,
+        timestampMs: Date.now(),
       });
       succeeded = true;
     } catch (error: unknown) {
@@ -234,18 +244,27 @@ export class RouterMessageHandler implements SlackHandler {
             priorTurns,
           });
           await this.conversationMemory.appendTurn(memoryKey, {
+            role: 'user',
             text,
             agentType: null,
             agentRunId: null,
             timestampMs: Date.now(),
           });
           await say({ thread_ts: threadTs, text: reply });
+          await this.conversationMemory.appendTurn(memoryKey, {
+            role: 'assistant',
+            text: reply,
+            agentType: null,
+            agentRunId: null,
+            timestampMs: Date.now(),
+          });
           succeeded = true;
         } catch (replyError: unknown) {
           this.logger.warn(
             `Conversational fallback 도 실패 — user=${slackUserId}: ${replyError instanceof Error ? replyError.message : String(replyError)}`,
           );
           await this.conversationMemory.appendTurn(memoryKey, {
+            role: 'user',
             text,
             agentType: null,
             agentRunId: null,
@@ -262,6 +281,7 @@ export class RouterMessageHandler implements SlackHandler {
         );
         // 실패 turn 도 memory 에 남김 — 다음 turn 의 사용자가 "방금 그건 실패" 회복 흐름 인식 가능.
         await this.conversationMemory.appendTurn(memoryKey, {
+          role: 'user',
           text,
           agentType: null,
           agentRunId: null,

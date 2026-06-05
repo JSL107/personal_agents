@@ -128,6 +128,10 @@ export class ConversationMemoryService implements OnModuleDestroy {
       if (typeof parsed.timestampMs !== 'number') {
         return [];
       }
+      // legacy entry (role 도입 이전) 호환 — role 누락 시 'user' 로 해석.
+      if (parsed.role !== 'user' && parsed.role !== 'assistant') {
+        parsed.role = 'user';
+      }
       return [parsed];
     } catch (error) {
       this.logger.warn(
