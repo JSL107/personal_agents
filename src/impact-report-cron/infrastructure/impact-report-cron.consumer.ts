@@ -101,8 +101,7 @@ export class ImpactReportCronConsumer extends WorkerHost {
     if (!this.notificationPublisher) {
       return;
     }
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
       cronName: 'Impact Report Cron',
       ownerSlackUserId,
