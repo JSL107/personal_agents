@@ -220,6 +220,35 @@ describe('ConversationMemoryService — Redis 백엔드 (multi-instance / 재시
 
     await expect(service.getRecentTurns('U1:C100')).resolves.toEqual([]);
   });
+
+  it('getRecentTurns — role 필드 없는 legacy entry 는 user 로 정규화 (backward-compat)', async () => {
+    const { redis, lrange } = buildRedisMock();
+    const service = new ConversationMemoryService(redis);
+    // role 필드가 없는 구버전 stored JSON
+    const legacy = {
+      text: '예전 메시지',
+      agentType: AgentType.PM,
+      agentRunId: 9,
+      timestampMs: Date.now(),
+    };
+    const newEntry = {
+      role: 'assistant' as const,
+      text: '새 봇 응답',
+      agentType: AgentType.PM,
+      agentRunId: 9,
+      timestampMs: Date.now(),
+    };
+    lrange.mockResolvedValue([
+      JSON.stringify(legacy),
+      JSON.stringify(newEntry),
+    ]);
+
+    const turns = await service.getRecentTurns('U1:C100');
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0].role).toBe('user'); // legacy → user 정규화
+    expect(turns[1].role).toBe('assistant'); // 새 entry 는 그대로
+  });
 });
 
 describe('ConversationMemoryService — Redis graceful fallback (다운/timeout 시 Map)', () => {
