@@ -246,12 +246,21 @@ class EnvironmentVariables {
   @IsString()
   CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID?: string;
 
-  // Claude CLI SIMPLE 모드 token. 설정 시 ClaudeCliProvider 가 spawn 시
-  // `CLAUDE_CODE_SIMPLE=1` + 이 token 을 자식 env 로 주입해 keychain reads 를 강제 skip 하고
-  // token 인증으로만 돈다. 봇 child process 가 macOS Keychain ACL 에 등록 안 된 환경
-  // (nest start --watch 등 PID 변동) 의 침묵 exit=1 우회 경로.
-  // 발급: terminal 에서 `claude setup-token` (Claude Max 구독자 전용 long-lived token).
-  // 미설정 시 SIMPLE 모드 비활성 — 기존 keychain 경로 fallback (ACL 등록된 환경만 동작).
+  // `claude setup-token` 발급 OAuth subscription token (`sk-ant-oat01-...`). 설정 시
+  // ClaudeCliProvider 가 spawn 시 자식 env 의 `CLAUDE_CODE_OAUTH_TOKEN` 으로 forward.
+  // docs precedence 의 priority 5 = OAUTH_TOKEN > priority 6 = keychain 이라 keychain 시도
+  // 자체가 안 일어나, ACL 미등록 환경 (nest start --watch 등 PID 변동) 의 침묵 exit=1 자연 우회.
+  // 발급: terminal 에서 `claude setup-token` (Claude Max 구독자 전용 long-lived token, 1년 TTL).
+  // 미설정 시 기존 keychain 경로 fallback (ACL 등록된 환경만 동작).
+  @IsOptional()
+  @IsString()
+  CLAUDE_CODE_OAUTH_TOKEN?: string;
+
+  // CLAUDE_CODE_OAUTH_TOKEN 의 backward-compat alias — PR #71 시점에 (잘못된 가정으로)
+  // `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 호환. CLAUDE_CODE_OAUTH_TOKEN 이 우선이고
+  // 미설정 시 이 값을 OAuth token 으로 forward. 신규 설정은 CLAUDE_CODE_OAUTH_TOKEN 권장.
+  // (참고: docs 의 ANTHROPIC_API_KEY 는 본래 Claude Console 발급 API key sk-ant-api03- 용이지만,
+  // 봇에서는 봇은 항상 OAuth token 으로만 사용하므로 alias 로 활용.)
   @IsOptional()
   @IsString()
   ANTHROPIC_API_KEY?: string;
