@@ -1,9 +1,6 @@
-import {
-  buildPrompt,
-  buildSystemPrompt,
-} from './conversational-reply.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { buildPrompt, buildSystemPrompt } from './conversational-reply.usecase';
 
 describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
   it('repoLabel + ownerLogin 이 모두 있으면 self-identity 블록에 그대로 inject', () => {
@@ -15,7 +12,18 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     expect(prompt).toContain('GitHub login `JSL107`');
     // self-reference 매핑 — 사용자가 "이대리 봇" / "이 레포" 라 할 때 봇이 다시 묻지 않게 명시
     expect(prompt).toMatch(/이대리 봇.*이 레포.*여기.*당신 자신/);
-    expect(prompt).toMatch(/다시 "어느 repo 인가요\?" 처럼 묻지 마세요/);
+    // 단정은 self-reference 케이스에 한정 — "이 경우만" 표현이 들어가 다른 repo 시나리오는 열려 있음
+    expect(prompt).toMatch(/이 경우만 "어느 repo 인가요\?" 다시 묻지 말고/);
+  });
+
+  it('다른 repo 시나리오 (review-pr / impact-report 등 임의 repo) 가 열려 있음을 명시', () => {
+    const prompt = buildSystemPrompt({ repoLabel: 'JSL107/personal_agents' });
+    // self 로 우회하지 않고 사용자가 명시한 다른 repo 를 그대로 사용해야 한다는 규칙
+    expect(prompt).toMatch(/다른 repo 가능성/);
+    expect(prompt).toMatch(/owner\/name.*self 로 우회 X/);
+    // 모호한 케이스 — 짧게 확인 가능하되 이전 turn 의 정보는 재활용
+    expect(prompt).toMatch(/repo 가 모호한 경우.*짧게 한 번 확인 가능/);
+    expect(prompt).toMatch(/같은 질문 반복 X/);
   });
 
   it('repoLabel 만 있으면 ownerLogin 라인은 생략', () => {
@@ -81,7 +89,11 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     const prompt = buildPrompt({
       text: '다시 해줘',
       priorTurns: [
-        baseTurn({ role: 'user', text: '오늘 plan 만들어줘', agentType: AgentType.PM }),
+        baseTurn({
+          role: 'user',
+          text: '오늘 plan 만들어줘',
+          agentType: AgentType.PM,
+        }),
       ],
     });
     expect(prompt).toMatch(/\[user\] \(worker=PM\) 오늘 plan/);
