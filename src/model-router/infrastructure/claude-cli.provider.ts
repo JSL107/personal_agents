@@ -22,14 +22,18 @@ const STREAM_TAIL_LIMIT = 2000;
 // Claude Max 구독 기반의 claude CLI 를 print 모드(`-p`)로 호출하는 어댑터.
 // Code Reviewer / BE 에이전트가 사용하는 경로 (기획서 §13). Claude Max 구독 쿼터로 동작.
 // - 출력은 --output-format json 으로 stdout 에 단일 JSON 객체 (`{ result: "..." }`) 를 떨어뜨린다.
-// - `--bare` 플래그는 안 쓴다. 대신 인증 경로는 두 가지:
+// - `--bare` 플래그 / `CLAUDE_CODE_SIMPLE=1` 환경변수는 안 쓴다. docs 의 Bare/SIMPLE 모드는
+//   `ANTHROPIC_API_KEY` (Claude Console 발급 sk-ant-api03-) 또는 `apiKeyHelper` 만 받음 —
+//   `setup-token` 의 OAuth subscription token (sk-ant-oat01-) 은 "Invalid API key" 로 거부.
+//   2026-06-05 manual test 로 확정 (4개 env 조합 중 `CLAUDE_CODE_OAUTH_TOKEN` 만 동작).
+// - 인증 경로는 두 가지:
 //     A) 기본 (subscription/keychain): parent 의 keychain ACL 에 봇 binary 가 등록돼 OAuth
 //        access 가능할 때. 사용자가 supervisor 로 봇을 실행하면 keychain dialog 가 한 번 떠 ACL
 //        등록되는 케이스가 일반적.
-//     B) SIMPLE 모드 (token): `ANTHROPIC_API_KEY` env 가 있으면 `CLAUDE_CODE_SIMPLE=1` 을 함께
-//        주입해 keychain reads 를 강제 skip 시키고 token 인증으로만 돈다. ACL 미등록 환경
-//        (nest start --watch 같은 child process 변동 환경) 의 침묵 exit=1 우회.
-//        token 발급: `claude setup-token` (Claude Max 구독자 전용 long-lived token).
+//     B) OAuth token (권장 — ACL 우회): `CLAUDE_CODE_OAUTH_TOKEN` (또는 `ANTHROPIC_API_KEY`
+//        alias) env 에 `claude setup-token` 발급 token 을 두면, docs precedence 에서
+//        priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 이라 keychain 시도 자체가 안 일어남.
+//        ACL 미등록 환경 (nest start --watch 같은 child PID 변동) 의 침묵 exit=1 자연 우회.
 // - 프롬프트는 argv 가 아니라 **stdin 으로 전달** — argv 는 `ps aux` 로 유출될 수 있음 + ARG_MAX 회피.
 // - cwd 는 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo 접근을 차단.
 //   HOME 은 real (A 경로 keychain context 보존) — `~/.ssh` 등은 file system 권한으로 보호.
@@ -38,17 +42,23 @@ const STREAM_TAIL_LIMIT = 2000;
 // 구독 quota 소진 우려가 있으면 env 로 `sonnet` / `haiku` override 가능.
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
-// SIMPLE 모드 (token 인증) 활성화 시 자식 env 에 주입할 키 묶음.
-// `CLAUDE_CODE_SIMPLE=1` 은 Claude CLI 의 `--bare` 와 동등 효과 (keychain reads / OAuth skip)
-// 를 env 로 활성화하는 정식 메커니즘 (`claude --help` 참고). token 없이 SIMPLE 만 켜면
-// `Not logged in` 으로 fail 하므로 둘은 항상 함께 set.
+// `claude setup-token` 으로 발급한 OAuth subscription token (`sk-ant-oat01-...`) 을 자식 env 로 forward.
+// docs precedence (code.claude.com/docs/en/iam): priority 5 = `CLAUDE_CODE_OAUTH_TOKEN`,
+// priority 6 = subscription OAuth from keychain. priority 5 가 위라 keychain 시도 자체가 일어나지 않음
+// → keychain ACL 미등록 환경 (nest start --watch 의 PID 변동 child) 의 침묵 exit=1 자연 우회.
+//
+// 이전 시도 (PR #71): `CLAUDE_CODE_SIMPLE=1` + `ANTHROPIC_API_KEY` 조합. docs 의 Bare/SIMPLE mode
+// 안내는 "ANTHROPIC_API_KEY or apiKeyHelper" 만 지원 — OAuth subscription token (sk-ant-oat01-) 을
+// 그 경로로 보내면 server 가 "Invalid API key" 로 거부 (2026-06-05 manual test 확인). API key
+// (`sk-ant-api03-`, Claude Console 발급) 만 받는 경로라 Max 구독자 봇 환경엔 부적합. SIMPLE 안 켜고
+// OAUTH_TOKEN 만 forward 하는 게 정통.
 export const buildClaudeAdditionalEnv = (
-  apiKey?: string,
+  oauthToken?: string,
 ): NodeJS.ProcessEnv => {
-  if (!apiKey || apiKey.length === 0) {
+  if (!oauthToken || oauthToken.length === 0) {
     return {};
   }
-  return { ANTHROPIC_API_KEY: apiKey, CLAUDE_CODE_SIMPLE: '1' };
+  return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken };
 };
 
 export const buildClaudeArgs = ({
@@ -166,11 +176,14 @@ export class ClaudeCliProvider implements ModelProviderPort {
 
     try {
       const model = this.configService.get<string>('CLAUDE_MODEL')?.trim();
-      // SIMPLE 모드 (B) — ANTHROPIC_API_KEY 가 있으면 CLAUDE_CODE_SIMPLE=1 을 함께 주입.
-      // Claude CLI 가 keychain reads 를 강제 skip 하고 token 인증으로만 돈다.
-      // 봇 child process 가 keychain ACL 에 등록 안 된 환경 (nest start --watch 등) 의
-      // 침묵 exit=1 우회. token 없으면 SIMPLE 비활성 — 기존 keychain 경로 fallback.
-      const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY')?.trim();
+      // OAuth token 경로 (B) — `claude setup-token` 으로 발급한 subscription OAuth token.
+      // env 로 직접 주입하면 keychain (priority 6) 보다 위 (priority 5) 라 ACL 우회 자연 성립.
+      // ConfigService 가 두 env name 다 받음 — docs 정통 = `CLAUDE_CODE_OAUTH_TOKEN`,
+      // PR #71 시점에 `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 도 fallback 으로 호환 유지.
+      const oauthToken =
+        this.configService.get<string>('CLAUDE_CODE_OAUTH_TOKEN')?.trim() ||
+        this.configService.get<string>('ANTHROPIC_API_KEY')?.trim() ||
+        undefined;
       // OPS-4: stdin (사용자 입력 경로) 뿐 아니라 --system-prompt argv 까지 redact —
       // 정적 상수만 들어오는 경로지만 codex 와 동일 정책으로 일관성 유지 (codex P1 지적).
       const args = buildClaudeArgs({
@@ -184,7 +197,7 @@ export class ClaudeCliProvider implements ModelProviderPort {
         cwd: workDir,
         homeDir,
         stdinPayload: redactPii(request.prompt),
-        apiKey: apiKey && apiKey.length > 0 ? apiKey : undefined,
+        oauthToken,
       });
       const { text, modelUsed } = parseClaudeJsonOutput(stdout);
 
@@ -204,16 +217,16 @@ export class ClaudeCliProvider implements ModelProviderPort {
     cwd,
     homeDir,
     stdinPayload,
-    apiKey,
+    oauthToken,
   }: {
     args: string[];
     cwd: string;
     homeDir: string;
     stdinPayload: string;
-    apiKey?: string;
+    oauthToken?: string;
   }): Promise<string> {
     return new Promise((resolve, reject) => {
-      const additionalEnv = buildClaudeAdditionalEnv(apiKey);
+      const additionalEnv = buildClaudeAdditionalEnv(oauthToken);
       const child = spawn(CLAUDE_EXECUTABLE, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd,
