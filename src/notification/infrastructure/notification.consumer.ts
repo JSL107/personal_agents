@@ -53,7 +53,9 @@ export class NotificationConsumer extends WorkerHost {
     const name = job.name as NotificationJobName;
     switch (name) {
       case NOTIFICATION_JOB.CLAUDE_AUTH_SUSPECT:
-        await this.handleClaudeAuthSuspect(job.data as ClaudeAuthSuspectJobData);
+        await this.handleClaudeAuthSuspect(
+          job.data as ClaudeAuthSuspectJobData,
+        );
         return;
       case NOTIFICATION_JOB.CRON_FAILURE:
         await this.handleCronFailure(job.data as CronFailureJobData);
@@ -119,7 +121,11 @@ export class NotificationConsumer extends WorkerHost {
       '',
       '_30분 안 동일 cron 의 추가 실패는 dedupe — 진단 후 봇 재기동 또는 cron 트리거 시 알람 다시 발사._',
     ].join('\n');
-    await this.sendOrLog({ ownerId, text, label: `cron-failure:${payload.cronName}` });
+    await this.sendOrLog({
+      ownerId,
+      text,
+      label: `cron-failure:${payload.cronName}`,
+    });
   }
 
   private shouldFire(dedupeKey: string): boolean {

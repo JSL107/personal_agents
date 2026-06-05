@@ -43,7 +43,9 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
     });
     // 정량 subheading + additions/deletions bullet 포함.
     expect(
-      blocks.some((b) => isTextBlock(b) && b.type === 'subheading' && b.text === '정량'),
+      blocks.some(
+        (b) => isTextBlock(b) && b.type === 'subheading' && b.text === '정량',
+      ),
     ).toBe(true);
     const quantBullet = blocks.find(
       (b): b is TextBlock =>
@@ -55,12 +57,16 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
 
     // 정성 subheading + title bullet.
     expect(
-      blocks.some((b) => isTextBlock(b) && b.type === 'subheading' && b.text === '정성'),
+      blocks.some(
+        (b) => isTextBlock(b) && b.type === 'subheading' && b.text === '정성',
+      ),
     ).toBe(true);
     expect(
       blocks.some(
         (b) =>
-          isTextBlock(b) && b.type === 'bullet' && b.text === 'feat: payment hooks',
+          isTextBlock(b) &&
+          b.type === 'bullet' &&
+          b.text === 'feat: payment hooks',
       ),
     ).toBe(true);
 
@@ -112,7 +118,9 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
       todayKst: '2026-06-01',
     });
     expect(
-      blocks.some((b) => b.type !== 'divider' && b.text.startsWith('대표 파일')),
+      blocks.some(
+        (b) => b.type !== 'divider' && b.text.startsWith('대표 파일'),
+      ),
     ).toBe(false);
   });
 

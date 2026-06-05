@@ -40,7 +40,10 @@ describe('SearchAgentRunsUsecase', () => {
     ]);
     const usecase = new SearchAgentRunsUsecase(repo);
 
-    const result = await usecase.execute({ slackUserId: 'U1', keyword: '결제' });
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      keyword: '결제',
+    });
 
     expect(result.keyword).toBe('결제');
     expect(result.rows).toHaveLength(1);

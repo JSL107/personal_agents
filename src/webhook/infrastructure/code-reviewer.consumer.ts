@@ -3,13 +3,16 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
-import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
 import { SlackService } from '../../slack/slack.service';
-import { CODE_REVIEWER_QUEUE, CodeReviewerJobData } from '../domain/webhook.type';
+import {
+  CODE_REVIEWER_QUEUE,
+  CodeReviewerJobData,
+} from '../domain/webhook.type';
 
 // pull_request.opened webhook → 본인 PR 자동 /review-pr.
 // concurrency=1 — LLM 동시 호출 방지 (다른 consumer 와 동일).
@@ -51,9 +54,7 @@ export class WebhookCodeReviewerConsumer extends WorkerHost {
         error instanceof DomainException &&
         error.status === DomainStatus.BAD_REQUEST
       ) {
-        this.logger.warn(
-          `Webhook code-reviewer skip — ${error.message}`,
-        );
+        this.logger.warn(`Webhook code-reviewer skip — ${error.message}`);
         return;
       }
       this.logger.error(

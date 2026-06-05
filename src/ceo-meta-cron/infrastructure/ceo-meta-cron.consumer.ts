@@ -53,7 +53,9 @@ export class CeoMetaCronConsumer extends WorkerHost {
       });
       const intro = `🧭 *CEO Meta — ${todayKst} (${rangeLabel} 자동 회고)*\n\n`;
       const text =
-        intro + formatCeoMetaOutput(outcome.result) + formatModelFooter(outcome);
+        intro +
+        formatCeoMetaOutput(outcome.result) +
+        formatModelFooter(outcome);
       await this.slackNotifier.postMessage({ target, text });
       this.logger.log(`CEO Meta Cron 발송 완료 — target=${target}`);
     } catch (error) {
@@ -84,8 +86,7 @@ export class CeoMetaCronConsumer extends WorkerHost {
     if (!this.notificationPublisher) {
       return;
     }
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
       cronName: 'CEO Meta Cron',
       ownerSlackUserId,

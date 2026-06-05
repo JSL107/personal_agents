@@ -6,7 +6,10 @@ import { DailyEvalConsumer } from './daily-eval.consumer';
 describe('DailyEvalConsumer', () => {
   const mockPoEvalUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
+  const mockPublisher = {
+    publishCronFailure: jest.fn(),
+    publishClaudeAuthSuspect: jest.fn(),
+  };
 
   const consumer = new DailyEvalConsumer(
     mockPoEvalUsecase as never,

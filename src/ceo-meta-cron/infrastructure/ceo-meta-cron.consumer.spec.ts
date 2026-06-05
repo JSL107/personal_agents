@@ -6,7 +6,10 @@ import { CeoMetaCronConsumer } from './ceo-meta-cron.consumer';
 describe('CeoMetaCronConsumer', () => {
   const mockCeoUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
-  const mockPublisher = { publishCronFailure: jest.fn(), publishClaudeAuthSuspect: jest.fn() };
+  const mockPublisher = {
+    publishCronFailure: jest.fn(),
+    publishClaudeAuthSuspect: jest.fn(),
+  };
 
   const consumer = new CeoMetaCronConsumer(
     mockCeoUsecase as never,

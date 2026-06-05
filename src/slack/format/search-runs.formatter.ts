@@ -25,8 +25,8 @@ export const formatSearchRuns = (result: SearchAgentRunsResult): string => {
     return `• \`[${row.agentType} #${row.id}]\` ${date} — _${escapeMrkdwn(row.snippet)}_`;
   });
   const footer = result.truncated
-    ? '_더 좁히려면 키워드 추가 / 또는 \`/retry-run <id>\` 로 재실행._'
-    : '_\`/retry-run <id>\` 로 동일 입력 재실행 가능._';
+    ? '_더 좁히려면 키워드 추가 / 또는 `/retry-run <id>` 로 재실행._'
+    : '_`/retry-run <id>` 로 동일 입력 재실행 가능._';
 
   return [header, '', ...lines, '', footer].join('\n');
 };

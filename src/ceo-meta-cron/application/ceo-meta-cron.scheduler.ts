@@ -36,10 +36,7 @@ export class CeoMetaCronScheduler implements OnApplicationBootstrap {
     }
 
     const target = this.readNonEmpty('CEO_META_CRON_TARGET', owner);
-    const cron = this.readNonEmpty(
-      'CEO_META_CRON_CRON',
-      DEFAULT_CEO_META_CRON,
-    );
+    const cron = this.readNonEmpty('CEO_META_CRON_CRON', DEFAULT_CEO_META_CRON);
     const tz = this.readNonEmpty(
       'CEO_META_CRON_TIMEZONE',
       DEFAULT_CEO_META_CRON_TIMEZONE,
