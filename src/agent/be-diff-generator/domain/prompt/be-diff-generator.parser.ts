@@ -1,9 +1,11 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import {
+  buildJsonParseCauseMessage,
+  extractJsonObjectText,
+} from '../../../../common/util/llm-json-extract.util';
 import { BeDiffGeneratorException } from '../be-diff-generator.exception';
 import { BeDiffGenerationResult } from '../be-diff-generator.type';
 import { BeDiffGeneratorErrorCode } from '../be-diff-generator-error-code.enum';
-
-const CODE_FENCE_PATTERN = /^```(?:json)?\s*([\s\S]*?)\s*```$/;
 
 // 새 파일 / 기존 파일 header 동시 인식.
 // (Phase 2a-3 의 `git apply` 가 정확히 받을 수 있는 형식인지 1차 sanity check 만 — 완벽 validator X.)
@@ -12,9 +14,11 @@ const HUNK_HEADER_PATTERN = /^@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/m;
 const FILE_PATH_FROM_NEW_HEADER = /^\+\+\+\s+b\/(.+)$/gm;
 
 // LLM 응답 → BeDiffGenerationResult. JSON shape + diff 형식 기본 검증 + changedFiles 일치 확인.
+// extractJsonObjectText 가 외부 code fence / mixed content 흡수 — 내부 diff 의 fence 는 JSON
+// string 안이라 영향 없음.
 export const parseBeDiffGeneration = (text: string): BeDiffGenerationResult => {
-  const cleaned = stripCodeFence(text.trim());
-  const parsed = parseJson(cleaned);
+  const cleaned = extractJsonObjectText(text);
+  const parsed = parseJson(cleaned, text);
 
   if (!isShape(parsed)) {
     throw new BeDiffGeneratorException({
@@ -79,12 +83,7 @@ export const parseBeDiffGeneration = (text: string): BeDiffGenerationResult => {
   return parsed;
 };
 
-const stripCodeFence = (text: string): string => {
-  const match = text.match(CODE_FENCE_PATTERN);
-  return match ? match[1].trim() : text;
-};
-
-const parseJson = (text: string): unknown => {
+const parseJson = (text: string, rawText: string): unknown => {
   try {
     return JSON.parse(text);
   } catch (error: unknown) {
@@ -92,7 +91,7 @@ const parseJson = (text: string): unknown => {
       code: BeDiffGeneratorErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답을 JSON 으로 파싱하지 못했습니다.',
       status: DomainStatus.BAD_GATEWAY,
-      cause: error,
+      cause: new Error(buildJsonParseCauseMessage(error, rawText)),
     });
   }
 };
