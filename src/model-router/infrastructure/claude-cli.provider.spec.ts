@@ -145,19 +145,24 @@ describe('ClaudeAuthSuspectException', () => {
   });
 });
 
-describe('buildClaudeAdditionalEnv — SIMPLE 모드 token 인증 env', () => {
-  it('apiKey 가 있으면 ANTHROPIC_API_KEY + CLAUDE_CODE_SIMPLE=1 을 함께 반환 (keychain 우회)', () => {
+describe('buildClaudeAdditionalEnv — OAuth subscription token env', () => {
+  it('oauthToken 이 있으면 CLAUDE_CODE_OAUTH_TOKEN 만 반환 (docs 정통 precedence priority 5)', () => {
     const env = buildClaudeAdditionalEnv('sk-ant-oat01-xxx');
-    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-xxx');
-    expect(env.CLAUDE_CODE_SIMPLE).toBe('1');
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-xxx');
   });
 
-  it('apiKey 가 undefined 면 빈 객체 (SIMPLE 비활성 — 기존 keychain 경로 fallback)', () => {
+  it('SIMPLE/ANTHROPIC_API_KEY 키는 절대 포함하지 않는다 (OAuth token 을 API key 경로로 보내면 server 가 "Invalid API key" 로 거부 — 2026-06-05 manual test)', () => {
+    const env = buildClaudeAdditionalEnv('sk-ant-oat01-xxx');
+    expect(env.CLAUDE_CODE_SIMPLE).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it('oauthToken 이 undefined 면 빈 객체 (기존 keychain 경로 fallback)', () => {
     const env = buildClaudeAdditionalEnv(undefined);
     expect(env).toEqual({});
   });
 
-  it('apiKey 가 빈 문자열이면 빈 객체 (token 없으면 SIMPLE 켜지지 않음 — Not logged in 방지)', () => {
+  it('oauthToken 이 빈 문자열이면 빈 객체 (token 없으면 forward X)', () => {
     const env = buildClaudeAdditionalEnv('');
     expect(env).toEqual({});
   });
