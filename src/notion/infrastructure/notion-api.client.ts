@@ -196,16 +196,22 @@ export class NotionApiClient implements NotionClientPort {
             'type' in child &&
             child.type === 'child_page' &&
             'child_page' in child &&
-            (child.child_page as { title?: string } | undefined)?.title === title
+            (child.child_page as { title?: string } | undefined)?.title ===
+              title
           ) {
             // child_page block 자체에는 url 없음 — pages.retrieve 로 별도 조회.
-            const page = await this.client!.pages.retrieve({ page_id: child.id });
+            const page = await this.client!.pages.retrieve({
+              page_id: child.id,
+            });
             const url =
               'url' in page && typeof page.url === 'string' ? page.url : '';
             return { pageId: child.id, url };
           }
         }
-        cursor = response.has_more && response.next_cursor ? response.next_cursor : undefined;
+        cursor =
+          response.has_more && response.next_cursor
+            ? response.next_cursor
+            : undefined;
       } while (cursor !== undefined);
       return null;
     } catch (error: unknown) {
