@@ -13,6 +13,7 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { parsePrReference } from '../../code-reviewer/domain/pr-reference.parser';
 import { BeAgentException } from '../domain/be-agent.exception';
 import { BackendPlan, GenerateBackendPlanInput } from '../domain/be-agent.type';
@@ -37,6 +38,7 @@ export class GenerateBackendPlanUsecase {
   async execute({
     subject,
     slackUserId,
+    conversationContext,
   }: GenerateBackendPlanInput): Promise<AgentRunOutcome<BackendPlan>> {
     const trimmed = subject.trim();
     if (trimmed.length === 0) {
@@ -61,7 +63,11 @@ export class GenerateBackendPlanUsecase {
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
-    const prompt = buildPrompt({ subject: trimmed, prContext });
+    const prompt = buildPrompt({
+      subject: trimmed,
+      prContext,
+      conversationContext,
+    });
 
     return this.agentRunService.execute({
       agentType: AgentType.BE,
@@ -148,24 +154,35 @@ const tryParsePrReference = (raw: string) => {
 const buildPrompt = ({
   subject,
   prContext,
+  conversationContext,
 }: {
   subject: string;
   prContext: PrContext | null;
+  conversationContext?: ConversationContext;
 }): string => {
-  if (!prContext) {
-    return subject;
+  // userInstruction 이 있으면 prompt 최상단에 최우선 반영 섹션 prepend (PM 워커 동일 패턴).
+  const userInstructionSection = conversationContext?.userInstruction
+    ? `[사용자 지시 — 직전 대화 기반, 최우선 반영]\n${conversationContext.userInstruction}`
+    : null;
+
+  const corePrompt = prContext
+    ? [
+        '[분석 대상]',
+        subject,
+        '',
+        `[GitHub PR ${prContext.repo}#${prContext.number}]`,
+        `URL: ${prContext.url}`,
+        `Title: ${prContext.title}`,
+        '',
+        'Body:',
+        prContext.body.length > 0 ? prContext.body : '(본문 없음)',
+      ].join('\n')
+    : subject;
+
+  if (userInstructionSection) {
+    return `${userInstructionSection}\n\n${corePrompt}`;
   }
-  return [
-    '[분석 대상]',
-    subject,
-    '',
-    `[GitHub PR ${prContext.repo}#${prContext.number}]`,
-    `URL: ${prContext.url}`,
-    `Title: ${prContext.title}`,
-    '',
-    'Body:',
-    prContext.body.length > 0 ? prContext.body : '(본문 없음)',
-  ].join('\n');
+  return corePrompt;
 };
 
 const truncateUtf8 = (text: string, maxBytes: number): string => {

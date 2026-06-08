@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConversationContext } from '../domain/conversation-context.type';
 import {
   DispatchInput,
   DispatchResult,
@@ -67,8 +68,12 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     input: DispatchInput,
     chain: HandoffChainState,
   ): Promise<DispatchResult> {
-    const agentType =
-      input.agentTypeHint ?? (await this.classifyOrThrow(input));
+    // 자연어 진입(agentTypeHint 없음)이면 classify 로 agentType + userInstruction 추출.
+    // 슬래시(agentTypeHint 있음)는 classify 우회 — userInstruction 없음.
+    const classified = input.agentTypeHint
+      ? { agentType: input.agentTypeHint, userInstruction: undefined }
+      : await this.classifyOrThrow(input);
+    const agentType = classified.agentType;
 
     const dispatcher = this.dispatcherByType.get(agentType);
     if (!dispatcher) {
@@ -82,9 +87,22 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       });
     }
 
+    // 대화 맥락을 워커 실행 입력까지 전달 — classifier 가 추출한 사용자 지시(userInstruction)
+    // + 직전 worker run id(contextRefs.agentRunId). 외부에서 conversationContext 를 직접
+    // 주입한 경우는 그 위에 router 추출분을 덮어쓰지 않고 보존(외부 우선).
+    const conversationContext: ConversationContext = {
+      ...(classified.userInstruction !== undefined
+        ? { userInstruction: classified.userInstruction }
+        : {}),
+      ...(input.contextRefs?.agentRunId !== undefined
+        ? { priorAgentRunId: input.contextRefs.agentRunId }
+        : {}),
+      ...input.conversationContext,
+    };
     const outcome = await dispatcher.dispatch({
       ...input,
       agentTypeHint: agentType,
+      conversationContext,
     });
     this.logger.log(
       `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
@@ -166,7 +184,10 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
 
   // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
   // classifier 가 UNKNOWN 반환 시 INTENT_CLASSIFY_FAILED — 사용자에게 의도 모호 안내.
-  private async classifyOrThrow(input: DispatchInput): Promise<AgentType> {
+  // agentType 뿐 아니라 userInstruction(직전 대화 기반 사용자 지시)도 함께 반환 — 워커 전달용.
+  private async classifyOrThrow(
+    input: DispatchInput,
+  ): Promise<{ agentType: AgentType; userInstruction?: string }> {
     const text = input.text?.trim() ?? '';
     if (text.length === 0) {
       this.logger.warn(
@@ -194,7 +215,10 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         status: DomainStatus.BAD_REQUEST,
       });
     }
-    return classification.agentType;
+    return {
+      agentType: classification.agentType,
+      userInstruction: classification.userInstruction,
+    };
   }
 }
 

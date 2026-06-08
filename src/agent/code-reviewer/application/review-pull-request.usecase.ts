@@ -18,6 +18,7 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
   ReviewPullRequestInput,
@@ -45,6 +46,7 @@ export class ReviewPullRequestUsecase {
     prRef,
     slackUserId,
     triggerType,
+    conversationContext,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -82,7 +84,9 @@ export class ReviewPullRequestUsecase {
                 .join('\n')
             : '';
 
-        const prompt = buildReviewPrompt({ detail, diff }) + negativeExamples;
+        const prompt =
+          buildReviewPrompt({ detail, diff, conversationContext }) +
+          negativeExamples;
 
         const completion = await this.modelRouter.route({
           agentType: AgentType.CODE_REVIEWER,
@@ -123,9 +127,11 @@ export class ReviewPullRequestUsecase {
 export const buildReviewPrompt = ({
   detail,
   diff,
+  conversationContext,
 }: {
   detail: PullRequestDetail;
   diff: PullRequestDiff;
+  conversationContext?: ConversationContext;
 }): string => {
   const truncatedNote = detail.changedFilesTruncated
     ? ` (잘림: 전체 ${detail.changedFilesTotalCount}개 중 ${detail.changedFiles.length}개만 노출)`
@@ -134,7 +140,16 @@ export const buildReviewPrompt = ({
     ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${diff.diff.length} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음)`
     : '';
 
-  return [
+  const lines: string[] = [];
+
+  // 사용자 지시가 있으면 prompt 최상단(최우선)에 삽입.
+  if (conversationContext?.userInstruction) {
+    lines.push('[사용자 지시 — 직전 대화 기반, 최우선 반영]');
+    lines.push(conversationContext.userInstruction);
+    lines.push('');
+  }
+
+  lines.push(
     `[PR 메타]`,
     `- repo: ${detail.repo}`,
     `- number: #${detail.number}`,
@@ -152,5 +167,7 @@ export const buildReviewPrompt = ({
     '```diff',
     diff.diff,
     '```',
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 };

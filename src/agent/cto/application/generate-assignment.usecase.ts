@@ -9,6 +9,7 @@ import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import { coerceToDailyPlan } from '../../pm/domain/prompt/previous-plan-formatter';
 import { CtoException } from '../domain/cto.exception';
@@ -40,6 +41,7 @@ export class GenerateAssignmentUsecase {
   async execute({
     slackUserId,
     dailyPlanAgentRunId,
+    conversationContext,
   }: GenerateAssignmentInput): Promise<AgentRunOutcome<AssignmentOutput>> {
     const pmRun = await this.lookupPmRun({ slackUserId, dailyPlanAgentRunId });
     const plan = this.extractPlanOrThrow(pmRun);
@@ -74,7 +76,11 @@ export class GenerateAssignmentUsecase {
         },
       ],
       run: async () => {
-        const prompt = buildPrompt({ candidates, planContext: plan.reasoning });
+        const prompt = buildPrompt({
+          candidates,
+          planContext: plan.reasoning,
+          conversationContext,
+        });
         const completion = await this.modelRouter.route({
           agentType: AgentType.CTO,
           request: { prompt, systemPrompt: CTO_SYSTEM_PROMPT },
@@ -172,16 +178,25 @@ export class GenerateAssignmentUsecase {
 const buildPrompt = ({
   candidates,
   planContext,
+  conversationContext,
 }: {
   candidates: TaskCandidate[];
   planContext: string;
+  conversationContext?: ConversationContext;
 }): string => {
-  const lines: string[] = [
-    '[PM plan reasoning]',
-    planContext.trim().length > 0 ? planContext : '(없음)',
-    '',
-    '[자동 분배 후보 task (assignableTaskIds)]',
-  ];
+  const lines: string[] = [];
+
+  // 사용자 지시가 있으면 prompt 최상단(최우선)에 삽입.
+  if (conversationContext?.userInstruction) {
+    lines.push('[사용자 지시 — 직전 대화 기반, 최우선 반영]');
+    lines.push(conversationContext.userInstruction);
+    lines.push('');
+  }
+
+  lines.push('[PM plan reasoning]');
+  lines.push(planContext.trim().length > 0 ? planContext : '(없음)');
+  lines.push('');
+  lines.push('[자동 분배 후보 task (assignableTaskIds)]');
   for (const candidate of candidates) {
     lines.push(`- id=${candidate.id} title=${candidate.title}`);
   }
