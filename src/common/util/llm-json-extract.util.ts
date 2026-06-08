@@ -13,9 +13,7 @@ export const extractJsonObjectText = (rawText: string): string => {
   const trimmed = rawText.trim();
 
   // 1) 전체가 code fence — 원래 패턴 (anchored)
-  const wholeFenceMatch = trimmed.match(
-    /^```(?:json)?\s*([\s\S]*?)\s*```$/,
-  );
+  const wholeFenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   if (wholeFenceMatch) {
     return wholeFenceMatch[1].trim();
   }
