@@ -9,6 +9,7 @@ import { coerceToDailyPlan } from '../../agent/pm/domain/prompt/previous-plan-fo
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   SLACK_NOTIFIER_PORT,
@@ -22,7 +23,7 @@ import {
   WeeklySummaryJobData,
 } from '../domain/weekly-summary.type';
 
-@Processor(WEEKLY_SUMMARY_QUEUE)
+@Processor(WEEKLY_SUMMARY_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class WeeklySummaryConsumer extends WorkerHost {
   private readonly logger = new Logger(WeeklySummaryConsumer.name);
 

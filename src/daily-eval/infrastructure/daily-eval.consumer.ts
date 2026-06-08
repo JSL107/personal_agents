@@ -6,6 +6,7 @@ import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/gen
 import { PoEvalException } from '../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
   SLACK_NOTIFIER_PORT,
@@ -20,7 +21,7 @@ import { DAILY_EVAL_QUEUE, DailyEvalJobData } from '../domain/daily-eval.type';
 // 매일 19:00 KST job 발화 시 PO_EVAL (range=TODAY) 자동 실행 + Slack 발송.
 // 그날 sub-agent (WORK_REVIEWER / PO_SHADOW / IMPACT_REPORTER) run 없으면 NO_SUB_AGENT_RUNS —
 // graceful skip + Slack 안내 (사용자가 그날 활동 안 한 경우라 회고 불가).
-@Processor(DAILY_EVAL_QUEUE)
+@Processor(DAILY_EVAL_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class DailyEvalConsumer extends WorkerHost {
   private readonly logger = new Logger(DailyEvalConsumer.name);
 
