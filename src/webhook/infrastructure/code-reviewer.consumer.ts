@@ -6,6 +6,7 @@ import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
 import { SlackService } from '../../slack/slack.service';
@@ -17,7 +18,10 @@ import {
 // pull_request.opened webhook → 본인 PR 자동 /review-pr.
 // concurrency=1 — LLM 동시 호출 방지 (다른 consumer 와 동일).
 // 결과는 owner Slack DM 으로 발송 (PR comment X — Slack thread 중심 운영).
-@Processor(CODE_REVIEWER_QUEUE, { concurrency: 1 })
+@Processor(CODE_REVIEWER_QUEUE, {
+  concurrency: 1,
+  ...LONG_RUNNING_WORKER_OPTIONS,
+})
 export class WebhookCodeReviewerConsumer extends WorkerHost {
   private readonly logger = new Logger(WebhookCodeReviewerConsumer.name);
 

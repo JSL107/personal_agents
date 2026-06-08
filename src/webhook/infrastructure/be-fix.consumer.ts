@@ -6,11 +6,12 @@ import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analy
 import { BeFixException } from '../../agent/be-fix/domain/be-fix.exception';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { BE_FIX_QUEUE, BeFixJobData } from '../domain/webhook.type';
 
 // GitHub pull_request.opened webhook 으로 enqueued 된 BE-FIX 작업을 직렬 처리.
 // concurrency=1 로 LLM 동시 호출 방지 — impact-report consumer 와 동일 패턴.
-@Processor(BE_FIX_QUEUE, { concurrency: 1 })
+@Processor(BE_FIX_QUEUE, { concurrency: 1, ...LONG_RUNNING_WORKER_OPTIONS })
 export class WebhookBeFixConsumer extends WorkerHost {
   private readonly logger = new Logger(WebhookBeFixConsumer.name);
 
