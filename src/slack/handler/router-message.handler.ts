@@ -65,10 +65,14 @@ export class RouterMessageHandler implements SlackHandler {
         'channel' in event && typeof event.channel === 'string'
           ? event.channel
           : 'unknown';
-      const threadTs =
+      // memoryThreadTs: 실제 thread_ts 만 (메모리 키 격리용). 스레드 밖 일반 멘션은
+      // undefined → channel 단위 fallback. (event.ts 를 쓰면 매 멘션이 새 키가 돼 맥락이 끊김.)
+      // threadTs: say() 답글 위치용 — 스레드 밖이면 원 메시지에 스레드로 단다 (event.ts).
+      const memoryThreadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
-          : event.ts;
+          : undefined;
+      const threadTs = memoryThreadTs ?? event.ts;
       const messageTs = event.ts;
 
       await this.processRouterMessage({
@@ -76,6 +80,7 @@ export class RouterMessageHandler implements SlackHandler {
         slackUserId,
         channelId,
         threadTs,
+        memoryThreadTs,
         messageTs,
         say,
         client,
@@ -108,16 +113,19 @@ export class RouterMessageHandler implements SlackHandler {
           : 'unknown';
       const messageTs =
         'ts' in event && typeof event.ts === 'string' ? event.ts : undefined;
-      const threadTs =
+      // DM 도 동일 원칙 — 실제 thread_ts 만 메모리 키 격리에 쓰고, 없으면 channel(=DM) 단위.
+      const memoryThreadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
-          : messageTs;
+          : undefined;
+      const threadTs = memoryThreadTs ?? messageTs;
 
       await this.processRouterMessage({
         text: rawText.trim(),
         slackUserId,
         channelId,
         threadTs,
+        memoryThreadTs,
         messageTs,
         say,
         client,
@@ -131,6 +139,7 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId,
     channelId,
     threadTs,
+    memoryThreadTs,
     messageTs,
     say,
     client,
@@ -140,6 +149,7 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId: string;
     channelId: string;
     threadTs: string | undefined;
+    memoryThreadTs: string | undefined;
     messageTs: string | undefined;
     say: SayFn;
     client: WebClient;
@@ -175,6 +185,7 @@ export class RouterMessageHandler implements SlackHandler {
     const memoryKey = this.conversationMemory.buildKey({
       slackUserId,
       channelId,
+      threadTs: memoryThreadTs,
     });
     const priorTurns = await this.conversationMemory.getRecentTurns(memoryKey);
     // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
