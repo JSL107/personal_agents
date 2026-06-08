@@ -39,16 +39,22 @@ export class ConversationMemoryService implements OnModuleDestroy {
     }
   }
 
-  // conversationKey 정의: slackUserId + channelId. thread 단위 분리 X — 같은 채널/DM 안
-  // 사용자 입장에서 한 대화로 본다 (Slack thread 가 비공식 사용 시 혼동 회피).
+  // conversationKey 정의: slackUserId + channelId (+ threadTs).
+  //   - threadTs 있으면 thread 단위 격리 — 같은 채널에서 여러 스레드를 동시에 진행해도
+  //     맥락이 섞이지 않는다 (스레드 안에서 "방금 한 얘기" 를 이어가는 대화 연속성).
+  //   - threadTs 없으면 channel 단위 (slackUserId:channelId) 로 fallback — 스레드 밖
+  //     (DM / 일반 채널 메시지) 의 기존 동작 그대로.
   buildKey({
     slackUserId,
     channelId,
+    threadTs,
   }: {
     slackUserId: string;
     channelId: string;
+    threadTs?: string;
   }): string {
-    return `${slackUserId}:${channelId}`;
+    const base = `${slackUserId}:${channelId}`;
+    return threadTs ? `${base}:${threadTs}` : base;
   }
 
   // 만료 turn 제거 후 최대 MAX_TURNS 만 반환. Map 모드는 호출 시 in-place cleanup 부수효과;
