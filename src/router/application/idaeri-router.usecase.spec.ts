@@ -170,6 +170,58 @@ describe('IdaeriRouterUsecase', () => {
     expect(result.output).toEqual({ plan: 'classified' });
   });
 
+  it('자연어 분류 시 classifier 의 userInstruction + 직전 runId 를 conversationContext 로 dispatcher 에 전달', async () => {
+    const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+      agentRunId: 50,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const classifier = buildClassifierMock({
+      agentType: AgentType.PM,
+      confidence: 0.9,
+      reason: '직전 대화 follow-up',
+      userInstruction: '직전 논의한 개선 항목 우선순위화',
+    });
+    const { usecase } = buildUsecase([pmDispatcher], classifier);
+
+    await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '네 정리해주세요',
+      contextRefs: { agentRunId: 7 },
+    });
+
+    expect(pmDispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentTypeHint: AgentType.PM,
+        conversationContext: {
+          userInstruction: '직전 논의한 개선 항목 우선순위화',
+          priorAgentRunId: 7,
+        },
+      }),
+    );
+  });
+
+  it('agentTypeHint(슬래시) 경로는 userInstruction 없이 conversationContext 전달 (priorAgentRunId 만, 있으면)', async () => {
+    const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+      agentRunId: 60,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const { usecase, classifier } = buildUsecase([pmDispatcher]);
+
+    await usecase.dispatch({
+      source: 'SLACK_COMMAND',
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.PM,
+      text: 'plan today',
+    });
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    const callArg = (pmDispatcher.dispatch as jest.Mock).mock.calls[0][0];
+    expect(callArg.conversationContext?.userInstruction).toBeUndefined();
+  });
+
   it('classifier 가 UNKNOWN 반환하면 INTENT_CLASSIFY_FAILED throw', async () => {
     const classifier = buildClassifierMock({
       agentType: 'UNKNOWN',

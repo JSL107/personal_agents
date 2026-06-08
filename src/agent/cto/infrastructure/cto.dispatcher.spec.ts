@@ -1,4 +1,5 @@
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import { GenerateAssignmentUsecase } from '../application/generate-assignment.usecase';
 import { AssignmentOutput } from '../domain/cto.type';
@@ -79,5 +80,21 @@ describe('CtoDispatcher', () => {
     const error = new Error('boom');
     usecaseExecute.mockRejectedValue(error);
     await expect(dispatcher.dispatch(baseInput)).rejects.toBe(error);
+  });
+
+  it('conversationContext 있으면 usecase.execute 에 그대로 전달', async () => {
+    const conversationContext: ConversationContext = {
+      userInstruction: '백엔드 성능 이슈 우선 배정해줘',
+    };
+    await dispatcher.dispatch({ ...baseInput, conversationContext });
+    expect(usecaseExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationContext }),
+    );
+  });
+
+  it('conversationContext 없으면 usecase.execute 에 conversationContext 키 미포함', async () => {
+    await dispatcher.dispatch(baseInput);
+    const callArg = usecaseExecute.mock.calls[0][0];
+    expect(callArg).not.toHaveProperty('conversationContext');
   });
 });

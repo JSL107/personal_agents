@@ -22,6 +22,9 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     const outcome = await this.reviewPullRequest.execute({
       prRef,
       slackUserId: input.slackUserId,
+      ...(input.conversationContext !== undefined
+        ? { conversationContext: input.conversationContext }
+        : {}),
     });
     return {
       agentRunId: outcome.agentRunId,
