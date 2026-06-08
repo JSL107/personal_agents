@@ -6,6 +6,7 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { PmAgentException } from '../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../agent/pm/domain/pm-agent-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { formatDailyPlan } from '../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import {
@@ -21,7 +22,7 @@ import {
 // 매일 cron 시각에 트리거되어 (1) PM Agent /today 와 동일한 plan 생성 후 (2) target 슬랙 채널/사용자로 발송.
 // AgentRun / EvidenceRecord 흔적은 GenerateDailyPlanUsecase 가 그대로 남기므로 별도 트리거 타입 분리는 일단 보류
 // (수동 /today 와 발송 결과는 동일 구조라 daily_plan 테이블 upsert 가 자연 머지).
-@Processor(MORNING_BRIEFING_QUEUE)
+@Processor(MORNING_BRIEFING_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class MorningBriefingConsumer extends WorkerHost {
   private readonly logger = new Logger(MorningBriefingConsumer.name);
 

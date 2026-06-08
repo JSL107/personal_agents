@@ -6,6 +6,7 @@ import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/applica
 import { ImpactReporterException } from '../../agent/impact-reporter/domain/impact-reporter.exception';
 import { ImpactReporterErrorCode } from '../../agent/impact-reporter/domain/impact-reporter-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
   SLACK_NOTIFIER_PORT,
@@ -23,7 +24,7 @@ import {
 // Daily Eval consumer 패턴 답습 — usecase 직접 호출 + Slack postMessage.
 // usecase 의 RECENT_MODE_ENV_MISSING / NO_RESULTS 는 graceful skip + Slack 안내.
 // 기타 예상 외 에러는 throw 해서 BullMQ 재시도 (attempts=2).
-@Processor(IMPACT_REPORT_CRON_QUEUE)
+@Processor(IMPACT_REPORT_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class ImpactReportCronConsumer extends WorkerHost {
   private readonly logger = new Logger(ImpactReportCronConsumer.name);
 
