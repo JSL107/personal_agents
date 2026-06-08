@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { ProcessCrawlJobUsecase } from '../application/process-crawl-job.usecase';
 import { CrawlSuccessResult, CrawlTarget } from '../domain/crawler.type';
 import {
@@ -10,7 +11,7 @@ import {
   toQueueError,
 } from './crawl-error.util';
 
-@Processor('crawler-queue', { concurrency: 3 })
+@Processor('crawler-queue', { concurrency: 3, ...LONG_RUNNING_WORKER_OPTIONS })
 export class CrawlerConsumer extends WorkerHost {
   private readonly logger = new Logger(CrawlerConsumer.name);
 

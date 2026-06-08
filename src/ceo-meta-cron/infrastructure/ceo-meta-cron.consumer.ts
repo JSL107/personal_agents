@@ -6,6 +6,7 @@ import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo
 import { CeoException } from '../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
   SLACK_NOTIFIER_PORT,
@@ -22,7 +23,7 @@ import {
 // 주 1회 자동 /ceo-review — Daily Eval consumer 패턴 그대로.
 // CEO worker 는 PO_EVAL run 누적 (range=WEEK / TODAY) 을 메타 회고로 합성.
 // PO_EVAL run 0개면 NO_POEVAL_RUNS — graceful skip + Slack 안내.
-@Processor(CEO_META_CRON_QUEUE)
+@Processor(CEO_META_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class CeoMetaCronConsumer extends WorkerHost {
   private readonly logger = new Logger(CeoMetaCronConsumer.name);
 

@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { SlackService } from '../../slack/slack.service';
 import {
   ClaudeAuthSuspectJobData,
@@ -35,7 +36,10 @@ export const shouldFireAlert = ({
 // NotificationModule 의 Consumer — SlackService 의존. Queue 의 job 을 받아 kind 별 분기 + Slack DM.
 // CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID / CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID env 미설정 시 noop.
 @Injectable()
-@Processor(NOTIFICATION_QUEUE, { concurrency: 1 })
+@Processor(NOTIFICATION_QUEUE, {
+  concurrency: 1,
+  ...LONG_RUNNING_WORKER_OPTIONS,
+})
 export class NotificationConsumer extends WorkerHost {
   private readonly logger = new Logger(NotificationConsumer.name);
   // dedupe key → last fire timestamp (ms).

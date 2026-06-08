@@ -6,11 +6,12 @@ import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze
 import { BeSreException } from '../../agent/be-sre/domain/be-sre.exception';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { BE_SRE_QUEUE, BeSreJobData } from '../domain/webhook.type';
 
 // GitHub check_run.completed (conclusion: failure) webhook 으로 enqueued 된 BE-SRE 작업을 직렬 처리.
 // concurrency=1 로 LLM 동시 호출 방지 — impact-report consumer 와 동일 패턴.
-@Processor(BE_SRE_QUEUE, { concurrency: 1 })
+@Processor(BE_SRE_QUEUE, { concurrency: 1, ...LONG_RUNNING_WORKER_OPTIONS })
 export class WebhookBeSreConsumer extends WorkerHost {
   private readonly logger = new Logger(WebhookBeSreConsumer.name);
 

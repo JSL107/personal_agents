@@ -3,6 +3,7 @@ import { Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
+import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { PullRequestDetail } from '../../github/domain/github.type';
 import {
@@ -26,7 +27,10 @@ import {
 // PR 이 re-deliver 되면 적재 2회 가능 (BullMQ removeOnComplete=50 안 이라면 dedup, 그 외엔 신중 운영 책임).
 //
 // 결과 통지: owner 에게 Slack DM 으로 한 줄 — "✅ PR #N careerLog 적재 (Notion)".
-@Processor(PR_CAREERLOG_QUEUE, { concurrency: 1 })
+@Processor(PR_CAREERLOG_QUEUE, {
+  concurrency: 1,
+  ...LONG_RUNNING_WORKER_OPTIONS,
+})
 export class WebhookPrCareerLogConsumer extends WorkerHost {
   private readonly logger = new Logger(WebhookPrCareerLogConsumer.name);
 
