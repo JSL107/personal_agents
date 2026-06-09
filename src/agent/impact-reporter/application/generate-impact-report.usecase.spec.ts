@@ -519,6 +519,51 @@ describe('GenerateImpactReportUsecase', () => {
       expect(prompt).toContain('feat: open pr');
     });
 
+    it('open 조회 실패해도 머지 결과 있으면 추출 (allSettled — open 실패가 merged 를 막지 않음)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary({ number: 10, title: 'fix: merged pr' }),
+      ]);
+      githubClient.listAuthorOpenPullRequests.mockRejectedValue(
+        new Error('GitHub open 조회 장애'),
+      );
+
+      const result = await usecase.execute({
+        subject: '--recent 7d',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result).toEqual(validReport);
+      expect(modelRouter.route).toHaveBeenCalled();
+    });
+
+    it('머지·open 둘 다 조회 실패면 NO_RESULTS 아니라 원본 에러 전파 (GitHub 장애 오인 방지)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockRejectedValue(
+        new Error('GitHub 장애'),
+      );
+      githubClient.listAuthorOpenPullRequests.mockRejectedValue(
+        new Error('GitHub 장애'),
+      );
+
+      await expect(
+        usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' }),
+      ).rejects.toThrow('GitHub 장애');
+      expect(modelRouter.route).not.toHaveBeenCalled();
+    });
+
     it('open PR evidence 도 GITHUB_PR_DETAIL sourceType 으로 기록', async () => {
       configGet.mockImplementation((key: string) =>
         key === 'IMPACT_REPORT_GITHUB_AUTHOR'
