@@ -66,8 +66,8 @@ describe('PoEvalCareerlogApplier', () => {
       'divider',
     ]);
     expect(call.blocks[0].text).toContain('careerLog — 2026-05-28');
-    expect(result).toContain('Notion 페이지에 careerLog');
-    expect(result).toContain('2026-05-28');
+    expect(result.message).toContain('Notion 페이지에 careerLog');
+    expect(result.message).toContain('2026-05-28');
   });
 
   it('정량/정성/기술 모두 비어 있으면 heading + divider 만', async () => {

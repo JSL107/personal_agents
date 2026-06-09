@@ -33,6 +33,7 @@ import { MorningBriefingModule } from './morning-briefing/morning-briefing.modul
 import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
 import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
+import { GithubPrVerifier } from './preview-gate/infrastructure/github-pr.verifier';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RouterModule } from './router/router.module';
@@ -104,6 +105,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
         BeSandboxApplier,
         BeSandboxPushPrApplier,
       ],
+      // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
+      verifiers: [GithubPrVerifier],
       imports: [
         GithubModule,
         NotionModule,
