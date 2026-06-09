@@ -71,8 +71,8 @@ describe('ImpactReportCronConsumer', () => {
     expect(mockSlackNotifier.postMessage).toHaveBeenCalledTimes(1);
     const call = mockSlackNotifier.postMessage.mock.calls[0][0];
     expect(call.text).toMatch(/🪶 \*Impact Report — \d{4}-\d{2}-\d{2} skip\*/);
-    expect(call.text).toContain('최근 7일 머지 PR 0건');
-    expect(call.text).toContain('다음 주에 다시 시도');
+    expect(call.text).toContain('머지·진행 중 PR 0건');
+    expect(call.text).toContain('다음 실행에 다시 시도');
   });
 
   it('RECENT_MODE_ENV_MISSING — env 누락 안내 Slack 발송 + propagate X', async () => {

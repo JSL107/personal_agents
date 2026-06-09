@@ -75,6 +75,7 @@ describe('GenerateBackendPlanUsecase', () => {
       getPullRequestDiff: jest.fn(),
       addIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
+      listAuthorOpenPullRequests: jest.fn(),
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),

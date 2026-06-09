@@ -52,13 +52,18 @@ export interface PullRequestDiff {
 // `/impact-report --recent <N>d` 다중 PR 종합용 lightweight summary.
 // 단일 PR 상세 (PullRequestDetail) 와 분리 — body 는 cap 적용, changedFiles 목록은 count 만.
 // 정량 종합 (additions/deletions/files 합산) + 정성 (title/body summary) 모두 가능한 최소 필드.
+// state: 'merged' | 'open' — open PR 도 포함하도록 확장 (2026-06-09).
+// mergedAt: open PR 이면 null, 머지 PR 이면 ISO 8601 string.
+// updatedAt: merged/open 공통 정렬 키 (ISO 8601).
 export interface GithubPullRequestSummary {
   number: number;
   title: string;
   body: string; // cap 적용 (caller 결정)
   repo: string; // "owner/repo"
   url: string;
-  mergedAt: string; // ISO 8601
+  state: 'merged' | 'open';
+  mergedAt: string | null; // open 이면 null, 머지 완료면 ISO 8601
+  updatedAt: string; // ISO 8601 — merged/open 공통 정렬 키
   additions: number;
   deletions: number;
   changedFilesCount: number;
