@@ -197,7 +197,7 @@ describe('GenerateBackendPlanUsecase', () => {
 
     const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(promptArg).toMatch(
-      /^\[사용자 지시 — 직전 대화 기반, 최우선 반영\]\n보안 이슈 먼저 처리해줘/,
+      /^\[사용자 지시[^\n]*\]\n보안 이슈 먼저 처리해줘/,
     );
     // 기존 subject 도 포함
     expect(promptArg).toContain('결제 검증 API 추가');

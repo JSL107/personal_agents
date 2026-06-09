@@ -47,11 +47,13 @@ export class GithubPrVerifier implements ResultVerifier {
       return { verified: true, detail: `${label} 반영 확인` };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      // raw octokit 메시지(HTTP status / URL / 응답 본문)는 logger 에만 — 사용자 노출 텍스트는
+      // generic 으로 (toUserFacingErrorMessage 의 내부 정보 마스킹 정책과 일관).
       this.logger.warn(`${label} 재조회 검증 실패 (graceful): ${message}`);
       return {
         verified: false,
         detail: `${label} 반영 확인`,
-        unverifiableReason: message.slice(0, 120),
+        unverifiableReason: '재조회 중 일시적 오류 (수동 확인 권장)',
       };
     }
   }

@@ -65,14 +65,15 @@ export class RouterMessageHandler implements SlackHandler {
         'channel' in event && typeof event.channel === 'string'
           ? event.channel
           : 'unknown';
-      // memoryThreadTs: 실제 thread_ts 만 (메모리 키 격리용). 스레드 밖 일반 멘션은
-      // undefined → channel 단위 fallback. (event.ts 를 쓰면 매 멘션이 새 키가 돼 맥락이 끊김.)
-      // threadTs: say() 답글 위치용 — 스레드 밖이면 원 메시지에 스레드로 단다 (event.ts).
-      const memoryThreadTs =
+      // app_mention: 봇은 threadTs(=thread_ts ?? ts)로 답글을 달아 스레드를 생성/이어간다.
+      // 메모리 키도 동일 threadTs 를 써야 한다 — top-level 멘션(thread_ts 없음)에 봇이 답글로
+      // 스레드를 만들면 사용자의 후속 멘션 thread_ts 가 이 첫 메시지 ts 와 같아진다. 키를 실제
+      // thread_ts 만으로 잡으면 첫 턴(channel)·후속 턴(thread) 키가 어긋나 2턴부터 맥락이 끊긴다.
+      const threadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
-          : undefined;
-      const threadTs = memoryThreadTs ?? event.ts;
+          : event.ts;
+      const memoryThreadTs = threadTs;
       const messageTs = event.ts;
 
       await this.processRouterMessage({
@@ -400,6 +401,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N apply 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -415,6 +417,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N apply 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -451,6 +454,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N cancel 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -466,6 +470,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N cancel 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,

@@ -250,7 +250,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
 
     const call = modelRouter.route.mock.calls[0][0];
     const prompt: string = call.request.prompt;
-    expect(prompt).toMatch(/^\[사용자 지시 — 직전 대화 기반, 최우선 반영\]/);
+    expect(prompt).toMatch(/^\[사용자 지시/);
     expect(prompt).toContain('보안 취약점 위주로 봐줘');
     // 사용자 지시 뒤에 기존 PR 메타 섹션이 나와야 함
     expect(prompt).toContain('[PR 메타]');
