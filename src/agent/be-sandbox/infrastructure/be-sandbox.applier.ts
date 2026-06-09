@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
+import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import { PreviewActionException } from '../../../preview-gate/domain/preview-action.exception';
 import {
@@ -55,7 +56,7 @@ export class BeSandboxApplier implements PreviewApplier {
     private readonly createPreviewUsecase: CreatePreviewUsecase,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<string> {
+  async apply(preview: PreviewAction): Promise<ApplyResult> {
     if (!isBeSandboxApplyPayload(preview.payload)) {
       throw new PreviewActionException({
         code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
@@ -134,16 +135,21 @@ export class BeSandboxApplier implements PreviewApplier {
       }
     }
 
-    return formatResult({
-      repoLabel,
-      baseBranch,
-      hostRepoPath,
-      diffResult,
-      sandboxResult,
-      phase,
-      succeeded,
-      nextPreviewNotice,
-    });
+    // BE_SANDBOX_APPLY 는 sandbox tmpfs 안 검증만 (host/외부 부작용 0) — 검증 대상 artifact 없음.
+    // 실제 외부 부작용(PR open)은 후속 BE_SANDBOX_PUSH_PR chain 에서 발생/검증된다.
+    return {
+      message: formatResult({
+        repoLabel,
+        baseBranch,
+        hostRepoPath,
+        diffResult,
+        sandboxResult,
+        phase,
+        succeeded,
+        nextPreviewNotice,
+      }),
+      artifacts: [],
+    };
   }
 }
 

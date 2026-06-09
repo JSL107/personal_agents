@@ -74,8 +74,8 @@ describe('PmWriteBackApplier', () => {
     expect(github.addIssueComment.mock.calls[0][0].body).toContain(
       '🤖 *이대리 PM 동기화',
     );
-    expect(result).toContain('GitHub 1개');
-    expect(result).toContain('Notion 0개');
+    expect(result.message).toContain('GitHub 1개');
+    expect(result.message).toContain('Notion 0개');
   });
 
   it('NOTION task 의 page 에 todo blocks append', async () => {
@@ -104,7 +104,7 @@ describe('PmWriteBackApplier', () => {
         }),
       ]),
     });
-    expect(result).toContain('Notion 1개');
+    expect(result.message).toContain('Notion 1개');
   });
 
   it('subtasks 가 비어있는 task 는 skip', async () => {
@@ -118,7 +118,7 @@ describe('PmWriteBackApplier', () => {
     const result = await applier.apply(preview);
 
     expect(github.addIssueComment).not.toHaveBeenCalled();
-    expect(result).toContain('GitHub 0개');
+    expect(result.message).toContain('GitHub 0개');
   });
 
   it('한 task 의 외부 호출 실패가 다른 task 적용을 막지 않음 (graceful)', async () => {
@@ -138,7 +138,7 @@ describe('PmWriteBackApplier', () => {
 
     expect(github.addIssueComment).toHaveBeenCalledTimes(2);
     // 첫 번째 실패 → 1개만 카운트.
-    expect(result).toContain('GitHub 1개');
+    expect(result.message).toContain('GitHub 1개');
   });
 
   it('payload.tasks 가 누락되면 명시 예외', async () => {
@@ -165,7 +165,7 @@ describe('PmWriteBackApplier', () => {
 
     // 한 task 실패는 graceful 이라 throw 안 함, 카운트만 0.
     const result = await applier.apply(preview);
-    expect(result).toContain('GitHub 0개');
+    expect(result.message).toContain('GitHub 0개');
     expect(github.addIssueComment).not.toHaveBeenCalled();
   });
 });

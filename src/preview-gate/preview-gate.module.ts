@@ -9,6 +9,10 @@ import {
   PREVIEW_APPLIERS,
   PreviewApplier,
 } from './domain/port/preview-applier.port';
+import {
+  RESULT_VERIFIERS,
+  ResultVerifier,
+} from './domain/port/result-verifier.port';
 import { PreviewActionPrismaRepository } from './infrastructure/preview-action.prisma.repository';
 
 // PO-2 Preview Gate 도메인 모듈.
@@ -31,6 +35,11 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
       provide: PREVIEW_APPLIERS,
       useValue: [] as PreviewApplier[],
     },
+    {
+      // ResultVerifier 도 동일 — 미등록 시 ApplyPreviewUsecase 가 빈 배열로 부팅 (검증 skip).
+      provide: RESULT_VERIFIERS,
+      useValue: [] as ResultVerifier[],
+    },
   ],
   exports: [
     CreatePreviewUsecase,
@@ -42,10 +51,13 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
 export class PreviewGateModule {
   static forRoot({
     appliers,
+    verifiers = [],
     imports = [],
   }: {
     appliers: Type<PreviewApplier>[];
-    // applier 가 의존하는 도메인 모듈들 (GithubModule / NotionModule 등) — DynamicModule 안에서 import.
+    // 실행 후 결과 검증 strategy 들 (GithubPrVerifier 등). RESULT_VERIFIERS 로 중앙 등록.
+    verifiers?: Type<ResultVerifier>[];
+    // applier/verifier 가 의존하는 도메인 모듈들 (GithubModule / NotionModule 등) — DynamicModule 안에서 import.
     imports?: ModuleMetadata['imports'];
   }): DynamicModule {
     return {
@@ -56,13 +68,19 @@ export class PreviewGateModule {
       imports,
       providers: [
         ...appliers,
+        ...verifiers,
         {
           provide: PREVIEW_APPLIERS,
           useFactory: (...resolved: PreviewApplier[]) => resolved,
           inject: appliers,
         },
+        {
+          provide: RESULT_VERIFIERS,
+          useFactory: (...resolved: ResultVerifier[]) => resolved,
+          inject: verifiers,
+        },
       ],
-      exports: [...appliers],
+      exports: [...appliers, ...verifiers],
     };
   }
 }
