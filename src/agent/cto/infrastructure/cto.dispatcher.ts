@@ -25,6 +25,9 @@ export class CtoDispatcher implements AgentDispatcher {
     const outcome = await this.generateAssignment.execute({
       slackUserId: input.slackUserId,
       dailyPlanAgentRunId: input.contextRefs?.agentRunId,
+      ...(input.conversationContext !== undefined
+        ? { conversationContext: input.conversationContext }
+        : {}),
     });
     return {
       agentRunId: outcome.agentRunId,

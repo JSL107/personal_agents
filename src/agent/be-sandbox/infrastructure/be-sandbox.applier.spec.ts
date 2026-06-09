@@ -153,10 +153,10 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
         ],
       }),
     );
-    expect(result).toContain('Phase 2a-3b');
-    expect(result).toContain('✅ Sandbox apply + test 통과');
-    expect(result).toContain('/custom/host/repo');
-    expect(result).toContain('@@ -1,3 +1,4 @@');
+    expect(result.message).toContain('Phase 2a-3b');
+    expect(result.message).toContain('✅ Sandbox apply + test 통과');
+    expect(result.message).toContain('/custom/host/repo');
+    expect(result.message).toContain('@@ -1,3 +1,4 @@');
   });
 
   it('Phase A 실패 (check 도 통과 못 함) — sentinel 없음 + exit non-0', async () => {
@@ -172,10 +172,10 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
     );
 
     const result = await applier.apply(buildPreview());
-    expect(result).toContain('❌ Phase A 에서 실패');
-    expect(result).toContain('A(check) ❌');
-    expect(result).toContain('B(apply) ❌');
-    expect(result).toContain('C(jest) ❌');
+    expect(result.message).toContain('❌ Phase A 에서 실패');
+    expect(result.message).toContain('A(check) ❌');
+    expect(result.message).toContain('B(apply) ❌');
+    expect(result.message).toContain('C(jest) ❌');
   });
 
   it('Phase B 실패 (check OK, apply 실패) — PHASE_A_CHECK_OK 만 출력 + exit non-0', async () => {
@@ -191,9 +191,9 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
     );
 
     const result = await applier.apply(buildPreview());
-    expect(result).toContain('❌ Phase A 에서 실패');
-    expect(result).toContain('A(check) ✅');
-    expect(result).toContain('B(apply) ❌');
+    expect(result.message).toContain('❌ Phase A 에서 실패');
+    expect(result.message).toContain('A(check) ✅');
+    expect(result.message).toContain('B(apply) ❌');
   });
 
   it('Phase C 실패 (테스트 실패) — A+B sentinel 출력, exit non-0', async () => {
@@ -214,11 +214,11 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
     );
 
     const result = await applier.apply(buildPreview());
-    expect(result).toContain('❌ Phase B 에서 실패');
-    expect(result).toContain('A(check) ✅');
-    expect(result).toContain('B(apply) ✅');
-    expect(result).toContain('C(jest) ❌');
-    expect(result).toContain('FAIL src/foo/foo.spec.ts');
+    expect(result.message).toContain('❌ Phase B 에서 실패');
+    expect(result.message).toContain('A(check) ✅');
+    expect(result.message).toContain('B(apply) ✅');
+    expect(result.message).toContain('C(jest) ❌');
+    expect(result.message).toContain('FAIL src/foo/foo.spec.ts');
   });
 
   it('BE_SANDBOX_HOST_REPO_PATH 미설정 → process.cwd() 사용', async () => {
@@ -252,7 +252,7 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
     );
 
     const result = await applier.apply(buildPreview());
-    expect(result).toContain('timed out');
+    expect(result.message).toContain('timed out');
   });
 
   it('sandbox 명령에 ro mount + tmpfs 512m + network=none 그대로 전달', async () => {
@@ -335,7 +335,7 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
         }),
       }),
     );
-    expect(result).toContain('GitHub PR auto-open');
+    expect(result.message).toContain('GitHub PR auto-open');
   });
 
   it('실패 시 Phase 2b chain preview 생성 X (createPreview 호출 안 함)', async () => {
@@ -374,7 +374,7 @@ describe('BeSandboxApplier — Phase 2a-3b (실제 git apply + jest)', () => {
     );
 
     const result = await applier.apply(buildPreview());
-    expect(result).toContain('Sandbox apply + test 통과');
-    expect(result).toContain('Phase 2b chain preview 생성 실패');
+    expect(result.message).toContain('Sandbox apply + test 통과');
+    expect(result.message).toContain('Phase 2b chain preview 생성 실패');
   });
 });

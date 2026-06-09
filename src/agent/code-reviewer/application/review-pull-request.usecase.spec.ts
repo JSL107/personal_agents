@@ -166,6 +166,121 @@ describe('ReviewPullRequestUsecase', () => {
   });
 });
 
+describe('ReviewPullRequestUsecase — conversationContext', () => {
+  const validReview: PullRequestReview = {
+    summary: '리뷰 초안',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'approve',
+  };
+
+  let modelRouter: { route: jest.Mock };
+  let agentRunServiceExecute: jest.Mock;
+  let githubClient: jest.Mocked<GithubClientPort>;
+  let usecase: ReviewPullRequestUsecase;
+
+  beforeEach(() => {
+    modelRouter = { route: jest.fn() };
+    agentRunServiceExecute = jest.fn(async (input) => {
+      const execution = await input.run({ agentRunId: 99 });
+      return {
+        result: execution.result,
+        modelUsed: execution.modelUsed,
+        agentRunId: 99,
+      };
+    });
+    githubClient = {
+      listMyAssignedTasks: jest.fn(),
+      getPullRequest: jest.fn(),
+      getPullRequestDiff: jest.fn(),
+      addIssueComment: jest.fn(),
+      listAuthorMergedPullRequestsSince: jest.fn(),
+      listRepoLabels: jest.fn(),
+      addLabelsToIssue: jest.fn(),
+      pushBranchAndOpenPr: jest.fn(),
+    };
+    const outcomeRepoMock = {
+      save: jest.fn(),
+      findRecentRejected: jest.fn().mockResolvedValue([]),
+    };
+
+    usecase = new ReviewPullRequestUsecase(
+      modelRouter as unknown as ModelRouterUsecase,
+      { execute: agentRunServiceExecute } as unknown as AgentRunService,
+      githubClient,
+      outcomeRepoMock as any,
+    );
+
+    githubClient.getPullRequest.mockResolvedValue({
+      number: 7,
+      title: 'feat: bar',
+      body: '',
+      repo: 'foo/bar',
+      url: 'https://github.com/foo/bar/pull/7',
+      baseRef: 'main',
+      headRef: 'feature/bar',
+      authorLogin: 'tester',
+      changedFiles: ['src/x.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+    });
+    githubClient.getPullRequestDiff.mockResolvedValue({
+      diff: '+const x = 1;',
+      truncated: false,
+      bytes: 14,
+    });
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'claude-cli',
+      provider: 'CLAUDE',
+    });
+  });
+
+  it('userInstruction 있으면 프롬프트 맨 앞에 [사용자 지시] 섹션이 삽입된다', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U1',
+      conversationContext: { userInstruction: '보안 취약점 위주로 봐줘' },
+    });
+
+    const call = modelRouter.route.mock.calls[0][0];
+    const prompt: string = call.request.prompt;
+    expect(prompt).toMatch(/^\[사용자 지시/);
+    expect(prompt).toContain('보안 취약점 위주로 봐줘');
+    // 사용자 지시 뒤에 기존 PR 메타 섹션이 나와야 함
+    expect(prompt).toContain('[PR 메타]');
+  });
+
+  it('userInstruction 없으면 [사용자 지시] 섹션이 삽입되지 않는다 (회귀)', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U1',
+    });
+
+    const call = modelRouter.route.mock.calls[0][0];
+    const prompt: string = call.request.prompt;
+    expect(prompt).not.toContain('[사용자 지시');
+    expect(prompt).toMatch(/^\[PR 메타\]/);
+  });
+
+  it('conversationContext 자체가 undefined 이면 기존 동작 동일 (회귀)', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U1',
+      conversationContext: undefined,
+    });
+
+    const call = modelRouter.route.mock.calls[0][0];
+    const prompt: string = call.request.prompt;
+    expect(prompt).not.toContain('[사용자 지시');
+  });
+});
+
 describe('buildReviewPrompt', () => {
   it('PR 메타 / changed files / diff 를 markdown 으로 결합', () => {
     const text = buildReviewPrompt({

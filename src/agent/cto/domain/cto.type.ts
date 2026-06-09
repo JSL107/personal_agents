@@ -1,4 +1,5 @@
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 
 // CTO 의 분배 후보 — review 합의에 따라 BE_SRE / BE_FIX 는 webhook 자동 트리거 영역이라 제외.
 // BE / BE_SCHEMA / BE_TEST 만 사용자 트리거로 분배 가능.
@@ -43,4 +44,7 @@ export interface GenerateAssignmentInput {
   slackUserId: string;
   // 명시 지정 시 해당 PM run 의 assignableTaskIds 분배. 미지정 시 직전 PM run 자동 조회.
   dailyPlanAgentRunId?: number;
+  // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction(직전 대화 기반 사용자 지시)을
+  // prompt [사용자 지시] 섹션으로 반영. 슬래시 /assign 진입은 미주입 (기존 동작).
+  conversationContext?: ConversationContext;
 }

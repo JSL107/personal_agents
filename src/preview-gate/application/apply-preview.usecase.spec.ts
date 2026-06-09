@@ -1,5 +1,7 @@
+import { VerifiableArtifact } from '../domain/apply-result.type';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewApplier } from '../domain/port/preview-applier.port';
+import { ResultVerifier } from '../domain/port/result-verifier.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
 import {
   PREVIEW_KIND,
@@ -43,10 +45,11 @@ const buildRepo = (
 
 const buildApplier = (
   kind: PreviewApplier['kind'],
-  result = 'applied',
+  message = 'applied',
+  artifacts: VerifiableArtifact[] = [],
 ): jest.Mocked<PreviewApplier> => ({
   kind,
-  apply: jest.fn().mockResolvedValue(result),
+  apply: jest.fn().mockResolvedValue({ message, artifacts }),
 });
 
 describe('ApplyPreviewUsecase', () => {
@@ -57,7 +60,7 @@ describe('ApplyPreviewUsecase', () => {
       PREVIEW_KIND.PM_WRITE_BACK,
       'PR #707 코멘트 추가',
     );
-    const usecase = new ApplyPreviewUsecase(repo, [applier]);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], []);
 
     const result = await usecase.execute({
       previewId: 'p-1',
@@ -75,7 +78,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('미존재 previewId 면 NOT_FOUND', async () => {
     const repo = buildRepo(null);
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     await expect(
       usecase.execute({
@@ -90,7 +93,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('owner 매칭 실패 시 WRONG_OWNER 예외 (다른 사용자 preview 보호)', async () => {
     const repo = buildRepo(buildPreview({ slackUserId: 'U-other' }));
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -101,7 +104,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('이미 APPLIED 인 preview 는 ALREADY_RESOLVED 예외', async () => {
     const repo = buildRepo(buildPreview({ status: PREVIEW_STATUS.APPLIED }));
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -114,7 +117,7 @@ describe('ApplyPreviewUsecase', () => {
     const repo = buildRepo(
       buildPreview({ expiresAt: new Date('2026-04-27T11:30:00.000Z') }),
     );
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -130,7 +133,7 @@ describe('ApplyPreviewUsecase', () => {
   it('kind 에 매칭되는 PreviewApplier 가 없으면 NO_APPLIER_FOR_KIND 예외', async () => {
     // PM_WRITE_BACK preview 가 있는데 PREVIEW_APPLIERS multi-provider 가 비어있는 DI 미스 상황을 시뮬레이션.
     const repo = buildRepo(buildPreview());
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -143,7 +146,7 @@ describe('ApplyPreviewUsecase', () => {
     const repo = buildRepo(buildPreview());
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
     applier.apply.mockRejectedValue(new Error('GitHub API down'));
-    const usecase = new ApplyPreviewUsecase(repo, [applier]);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], []);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -154,7 +157,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('PreviewActionException 은 도메인 정책 그대로 throw (Slack handler 가 user-friendly 메시지로 변환)', async () => {
     const repo = buildRepo(buildPreview());
-    const usecase = new ApplyPreviewUsecase(repo, []);
+    const usecase = new ApplyPreviewUsecase(repo, [], []);
 
     const error = await usecase
       .execute({
@@ -165,5 +168,80 @@ describe('ApplyPreviewUsecase', () => {
       .catch((e) => e);
 
     expect(error).toBeInstanceOf(PreviewActionException);
+  });
+
+  it('apply 후 artifacts 를 ResultVerifier 로 검증해 resultText 에 ✅ 합성 (verified)', async () => {
+    const repo = buildRepo(buildPreview());
+    const artifact: VerifiableArtifact = {
+      type: 'github_pr',
+      repo: 'o/r',
+      prNumber: 707,
+    };
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, 'PR open 완료', [
+      artifact,
+    ]);
+    const verifier: jest.Mocked<ResultVerifier> = {
+      supports: jest.fn().mockReturnValue(true),
+      verify: jest
+        .fn()
+        .mockResolvedValue({ verified: true, detail: 'PR o/r#707 반영 확인' }),
+    };
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [verifier]);
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(verifier.verify).toHaveBeenCalledWith(artifact);
+    expect(result.resultText).toContain('PR open 완료');
+    expect(result.resultText).toContain('✅ PR o/r#707 반영 확인');
+  });
+
+  it('검증 실패(verified=false, unverifiableReason 없음)면 수동 확인 안내 합성', async () => {
+    const repo = buildRepo(buildPreview());
+    const artifact: VerifiableArtifact = {
+      type: 'github_pr',
+      repo: 'o/r',
+      prNumber: 7,
+    };
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, 'PR open 완료', [
+      artifact,
+    ]);
+    const verifier: jest.Mocked<ResultVerifier> = {
+      supports: jest.fn().mockReturnValue(true),
+      verify: jest
+        .fn()
+        .mockResolvedValue({ verified: false, detail: 'PR o/r#7 반영 확인' }),
+    };
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [verifier]);
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(result.resultText).toContain('⚠️ 반영 확인 실패');
+  });
+
+  it('artifacts 가 없으면 검증 skip — message 그대로 (기존 동작 회귀)', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '동기화 완료');
+    const verifier: jest.Mocked<ResultVerifier> = {
+      supports: jest.fn(),
+      verify: jest.fn(),
+    };
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [verifier]);
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(verifier.verify).not.toHaveBeenCalled();
+    expect(result.resultText).toBe('동기화 완료');
   });
 });

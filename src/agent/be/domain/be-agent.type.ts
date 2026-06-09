@@ -1,7 +1,12 @@
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
+
 // /plan-task 입력: 분해할 백엔드 작업 자유 텍스트 + (선택) PR/이슈 링크.
 export interface GenerateBackendPlanInput {
   subject: string;
   slackUserId: string;
+  // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction 을 prompt 최상단에 반영.
+  // 슬래시 /plan-task 진입은 미주입 (기존 동작).
+  conversationContext?: ConversationContext;
 }
 
 // 구현 단위 체크리스트 — 에이전트가 WBS 로 쪼갠 item 하나.

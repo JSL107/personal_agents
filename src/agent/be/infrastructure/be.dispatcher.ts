@@ -35,6 +35,9 @@ export class BeDispatcher implements AgentDispatcher {
     const outcome = await this.generateBackendPlan.execute({
       subject: input.text ?? '',
       slackUserId: input.slackUserId,
+      ...(input.conversationContext !== undefined
+        ? { conversationContext: input.conversationContext }
+        : {}),
     });
 
     const planFormatted = formatBackendPlan(outcome.result);

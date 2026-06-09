@@ -62,6 +62,26 @@ describe('DailyPlanPromptBuilder', () => {
     builder = new DailyPlanPromptBuilder();
   });
 
+  it('conversationContext.userInstruction 이 있으면 [사용자 지시] 섹션을 prompt 최우선(맨 앞)에 포함', () => {
+    const built = builder.build(buildBaseContext(), {
+      userInstruction: '직전 논의한 개선 항목을 우선순위화',
+    });
+
+    expect(built.prompt).toContain('[사용자 지시');
+    expect(built.prompt).toContain('직전 논의한 개선 항목을 우선순위화');
+    // 최우선 — prompt 맨 앞에 위치.
+    expect(built.prompt.indexOf('[사용자 지시')).toBe(0);
+  });
+
+  it('conversationContext 가 없거나 userInstruction 이 없으면 [사용자 지시] 섹션 없음 (기존 동작 회귀)', () => {
+    expect(builder.build(buildBaseContext()).prompt).not.toContain(
+      '[사용자 지시',
+    );
+    expect(builder.build(buildBaseContext(), {}).prompt).not.toContain(
+      '[사용자 지시',
+    );
+  });
+
   it('recentPlanSummaries 가 비어 있으면 "지난 7일 plan 패턴" 섹션 자체가 prompt 에 없다', () => {
     const built = builder.build(buildBaseContext());
 

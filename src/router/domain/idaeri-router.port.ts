@@ -1,4 +1,5 @@
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConversationContext } from './conversation-context.type';
 import { ConversationTurn } from './conversation-memory.type';
 import { HandoffSpec } from './handoff-spec.type';
 
@@ -19,6 +20,9 @@ export interface DispatchInput {
   // 지시대명사 ("그거 분배해") 의 prior worker 추론 정확도 ↑. dispatch 자체에는 영향 X —
   // classifier 호출 시 systemPrompt 컨텍스트로만 사용.
   priorTurns?: ConversationTurn[];
+  // 워커 실행 입력까지 전달되는 대화 맥락. 보통 router 가 classify 결과(userInstruction) +
+  // contextRefs.agentRunId 로 직접 구성해 dispatcher 에 넘긴다 (외부 주입 시 그대로 사용).
+  conversationContext?: ConversationContext;
 }
 
 export type DispatchSource =

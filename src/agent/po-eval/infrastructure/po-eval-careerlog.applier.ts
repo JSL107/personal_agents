@@ -5,6 +5,7 @@ import {
   NotionClientPort,
   NotionPlanBlock,
 } from '../../../notion/domain/port/notion-client.port';
+import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import {
   PREVIEW_KIND,
@@ -41,7 +42,7 @@ export class PoEvalCareerlogApplier implements PreviewApplier {
     private readonly notionClient: NotionClientPort,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<string> {
+  async apply(preview: PreviewAction): Promise<ApplyResult> {
     const payload = this.parsePayload(preview.payload);
     const blocks = buildCareerlogBlocks(payload);
     await this.notionClient.appendBlocks({
@@ -51,7 +52,11 @@ export class PoEvalCareerlogApplier implements PreviewApplier {
     this.logger.log(
       `PoEval careerLog Notion append — pageId=${payload.notionPageId} period=${payload.period} blocks=${blocks.length}`,
     );
-    return `Notion 페이지에 careerLog (${payload.period}) ${blocks.length}블록 적재 완료`;
+    // Notion block append 는 재조회로 "방금 추가한 블록" 식별이 본질적으로 부정확해 artifacts 비움.
+    return {
+      message: `Notion 페이지에 careerLog (${payload.period}) ${blocks.length}블록 적재 완료`,
+      artifacts: [],
+    };
   }
 
   // payload narrowing — Prisma JSON 에서 unknown 으로 들어옴.

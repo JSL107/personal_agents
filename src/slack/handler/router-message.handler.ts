@@ -65,10 +65,15 @@ export class RouterMessageHandler implements SlackHandler {
         'channel' in event && typeof event.channel === 'string'
           ? event.channel
           : 'unknown';
+      // app_mention: 봇은 threadTs(=thread_ts ?? ts)로 답글을 달아 스레드를 생성/이어간다.
+      // 메모리 키도 동일 threadTs 를 써야 한다 — top-level 멘션(thread_ts 없음)에 봇이 답글로
+      // 스레드를 만들면 사용자의 후속 멘션 thread_ts 가 이 첫 메시지 ts 와 같아진다. 키를 실제
+      // thread_ts 만으로 잡으면 첫 턴(channel)·후속 턴(thread) 키가 어긋나 2턴부터 맥락이 끊긴다.
       const threadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
           : event.ts;
+      const memoryThreadTs = threadTs;
       const messageTs = event.ts;
 
       await this.processRouterMessage({
@@ -76,6 +81,7 @@ export class RouterMessageHandler implements SlackHandler {
         slackUserId,
         channelId,
         threadTs,
+        memoryThreadTs,
         messageTs,
         say,
         client,
@@ -108,16 +114,19 @@ export class RouterMessageHandler implements SlackHandler {
           : 'unknown';
       const messageTs =
         'ts' in event && typeof event.ts === 'string' ? event.ts : undefined;
-      const threadTs =
+      // DM 도 동일 원칙 — 실제 thread_ts 만 메모리 키 격리에 쓰고, 없으면 channel(=DM) 단위.
+      const memoryThreadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
-          : messageTs;
+          : undefined;
+      const threadTs = memoryThreadTs ?? messageTs;
 
       await this.processRouterMessage({
         text: rawText.trim(),
         slackUserId,
         channelId,
         threadTs,
+        memoryThreadTs,
         messageTs,
         say,
         client,
@@ -131,6 +140,7 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId,
     channelId,
     threadTs,
+    memoryThreadTs,
     messageTs,
     say,
     client,
@@ -140,6 +150,7 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId: string;
     channelId: string;
     threadTs: string | undefined;
+    memoryThreadTs: string | undefined;
     messageTs: string | undefined;
     say: SayFn;
     client: WebClient;
@@ -175,6 +186,7 @@ export class RouterMessageHandler implements SlackHandler {
     const memoryKey = this.conversationMemory.buildKey({
       slackUserId,
       channelId,
+      threadTs: memoryThreadTs,
     });
     const priorTurns = await this.conversationMemory.getRecentTurns(memoryKey);
     // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
@@ -389,6 +401,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N apply 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -404,6 +417,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N apply 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -440,6 +454,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N cancel 성공 — previewId=${preview.id} kind=${preview.kind} user=${slackUserId}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,
@@ -455,6 +470,7 @@ export class RouterMessageHandler implements SlackHandler {
         `Preview Y/N cancel 실패 — previewId=${preview.id} user=${slackUserId}: ${message}`,
       );
       await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
         text: userText,
         agentType: null,
         agentRunId: null,

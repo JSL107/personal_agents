@@ -76,6 +76,7 @@ export class GenerateDailyPlanUsecase {
     tasksText,
     slackUserId,
     triggerType,
+    conversationContext,
   }: GenerateDailyPlanInput): Promise<AgentRunOutcome<DailyPlanResult>> {
     const userText = tasksText.trim();
     // OPS-8: 호출자가 명시한 triggerType 사용 (Morning Briefing CRON 등). 미지정시 수동 /today.
@@ -99,7 +100,10 @@ export class GenerateDailyPlanUsecase {
 
     this.assertNonEmptyInput(context);
 
-    const { prompt, truncated } = this.promptBuilder.build(context);
+    const { prompt, truncated } = this.promptBuilder.build(
+      context,
+      conversationContext,
+    );
     const evidence = this.evidenceBuilder.build(context);
     const inputSnapshot = this.buildInputSnapshot({
       context,
