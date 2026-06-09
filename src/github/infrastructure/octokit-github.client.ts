@@ -502,7 +502,8 @@ export class OctokitGithubClient implements GithubClientPort {
     this.assertOctokitConfigured();
     const perPage = Math.min(Math.max(1, limit), 100);
     const repoQualifier = repo ? `repo:${repo} ` : '';
-    const q = `${repoQualifier}is:pr is:open author:${author} updated:>=${sinceIsoDate}`;
+    // draft:false — draft(미완성) PR 은 임팩트 종합 노이즈라 제외. updated:>= 로 stale open 컷.
+    const q = `${repoQualifier}is:pr is:open draft:false author:${author} updated:>=${sinceIsoDate}`;
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
@@ -531,6 +532,11 @@ export class OctokitGithubClient implements GithubClientPort {
             repo: repoName,
             pull_number: item.number,
           });
+          // 검색-상세 race: is:open 검색 후 상세 조회 사이에 머지된 PR 은 merged 결과셋과
+          // 중복되므로 skip (merged 메서드의 merged_at null-skip 과 대칭).
+          if (detail.data.merged_at) {
+            return null;
+          }
           const summary: GithubPullRequestSummary = {
             number: item.number,
             title: detail.data.title,

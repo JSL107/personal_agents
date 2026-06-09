@@ -182,7 +182,9 @@ export class GenerateImpactReportUsecase {
       .slice(0, 10);
 
     // 머지 PR + open PR 병렬 조회 — 어느 한쪽만 있어도 리포트 생성 가능하도록 확장.
-    const [mergedSummaries, openSummaries] = await Promise.all([
+    // allSettled: 한쪽 조회가 실패해도 다른 쪽 결과로 진행 (open 실패가 merged 리포트를 막지
+    // 않게 — 허들 제거 의도). 단 둘 다 실패(=GitHub 장애)면 NO_RESULTS 오발화 대신 에러 전파.
+    const [mergedResult, openResult] = await Promise.allSettled([
       this.githubClient.listAuthorMergedPullRequestsSince({
         repo,
         author,
@@ -196,6 +198,28 @@ export class GenerateImpactReportUsecase {
         limit: RECENT_MODE_LIMIT,
       }),
     ]);
+
+    if (
+      mergedResult.status === 'rejected' &&
+      openResult.status === 'rejected'
+    ) {
+      // 둘 다 실패 = GitHub 조회 자체 장애 → "결과 없음" 으로 오인하지 않고 에러 전파.
+      throw mergedResult.reason;
+    }
+    if (mergedResult.status === 'rejected') {
+      this.logger.warn(
+        `머지 PR 조회 실패 (open 결과로 진행): ${reasonMessage(mergedResult.reason)}`,
+      );
+    }
+    if (openResult.status === 'rejected') {
+      this.logger.warn(
+        `open PR 조회 실패 (머지 결과로 진행): ${reasonMessage(openResult.reason)}`,
+      );
+    }
+    const mergedSummaries =
+      mergedResult.status === 'fulfilled' ? mergedResult.value : [];
+    const openSummaries =
+      openResult.status === 'fulfilled' ? openResult.value : [];
 
     const scopeLabel = repo ?? '모든 repo';
     // 합산 0건일 때만 NO_RESULTS — open PR 만 있어도 리포트가 나온다.
@@ -295,6 +319,9 @@ interface PrContext {
   body: string;
   url: string;
 }
+
+const reasonMessage = (reason: unknown): string =>
+  reason instanceof Error ? reason.message : String(reason);
 
 const tryParsePrReference = (raw: string) => {
   try {
