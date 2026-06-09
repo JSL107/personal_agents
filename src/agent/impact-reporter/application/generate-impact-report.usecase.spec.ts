@@ -55,6 +55,7 @@ describe('GenerateImpactReportUsecase', () => {
       getPullRequestDiff: jest.fn(),
       addIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
+      listAuthorOpenPullRequests: jest.fn(),
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
@@ -73,6 +74,10 @@ describe('GenerateImpactReportUsecase', () => {
       modelUsed: 'codex-cli',
       provider: ModelProviderName.CHATGPT,
     } satisfies CompletionResponse);
+
+    // --recent 모드 기본 mock: 머지 0건 + open 0건 (개별 테스트에서 override)
+    githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([]);
+    githubClient.listAuthorOpenPullRequests.mockResolvedValue([]);
   });
 
   it('subject 가 비어 있으면 EMPTY_SUBJECT 예외', async () => {
@@ -231,10 +236,29 @@ describe('GenerateImpactReportUsecase', () => {
       body: 'README 와 대칭화.',
       repo: 'JSL107/personal_agents',
       url: 'https://github.com/JSL107/personal_agents/pull/18',
+      state: 'merged',
       mergedAt: '2026-05-28T07:20:29Z',
+      updatedAt: '2026-05-28T07:20:29Z',
       additions: 11,
       deletions: 4,
       changedFilesCount: 1,
+      ...overrides,
+    });
+
+    const buildOpenSummary = (
+      overrides: Partial<GithubPullRequestSummary> = {},
+    ): GithubPullRequestSummary => ({
+      number: 99,
+      title: 'feat: wip feature',
+      body: 'Work in progress.',
+      repo: 'JSL107/personal_agents',
+      url: 'https://github.com/JSL107/personal_agents/pull/99',
+      state: 'open',
+      mergedAt: null,
+      updatedAt: '2026-06-08T10:00:00Z',
+      additions: 50,
+      deletions: 5,
+      changedFilesCount: 3,
       ...overrides,
     });
 
@@ -422,6 +446,131 @@ describe('GenerateImpactReportUsecase', () => {
       ).not.toHaveBeenCalled();
       // 자유 텍스트 모드로 들어가 modelRouter 가 호출된다.
       expect(modelRouter.route).toHaveBeenCalled();
+    });
+
+    // --- 허들 제거 회귀 테스트 ---
+
+    it('머지 0 + open N → RECENT_MODE_NO_RESULTS 없이 추출 성공 (허들 제거 핵심)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      // 머지 PR 0건
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([]);
+      // open PR N건
+      githubClient.listAuthorOpenPullRequests.mockResolvedValue([
+        buildOpenSummary(),
+        buildOpenSummary({ number: 100, title: 'feat: another wip' }),
+      ]);
+
+      const result = await usecase.execute({
+        subject: '--recent 7d',
+        slackUserId: 'U1',
+      });
+
+      // 예외 없이 정상 결과 반환
+      expect(result.result).toEqual(validReport);
+      expect(modelRouter.route).toHaveBeenCalled();
+    });
+
+    it('머지 0 + open 0 → RECENT_MODE_NO_RESULTS (합산 0건만 throw)', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'X'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'X/Y'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([]);
+      githubClient.listAuthorOpenPullRequests.mockResolvedValue([]);
+
+      await expect(
+        usecase.execute({ subject: '--recent 30d', slackUserId: 'U1' }),
+      ).rejects.toMatchObject({
+        impactReporterErrorCode: ImpactReporterErrorCode.RECENT_MODE_NO_RESULTS,
+      });
+      expect(modelRouter.route).not.toHaveBeenCalled();
+    });
+
+    it('머지 M + open N 둘 다 있을 때 prompt 에 두 그룹 모두 포함', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary({ number: 10, title: 'fix: merged pr' }),
+      ]);
+      githubClient.listAuthorOpenPullRequests.mockResolvedValue([
+        buildOpenSummary({ number: 20, title: 'feat: open pr' }),
+      ]);
+
+      await usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' });
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[머지 완료');
+      expect(prompt).toContain('[진행 중(open)');
+      expect(prompt).toContain('fix: merged pr');
+      expect(prompt).toContain('feat: open pr');
+    });
+
+    it('open PR evidence 도 GITHUB_PR_DETAIL sourceType 으로 기록', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary({ number: 10 }),
+      ]);
+      githubClient.listAuthorOpenPullRequests.mockResolvedValue([
+        buildOpenSummary({ number: 20 }),
+      ]);
+
+      await usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' });
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      const prEvidence = call.evidence.filter(
+        (e: { sourceType: string }) => e.sourceType === 'GITHUB_PR_DETAIL',
+      );
+      // merged 1건 + open 1건 = 2건
+      expect(prEvidence).toHaveLength(2);
+      expect(call.inputSnapshot.recentMode.mergedCount).toBe(1);
+      expect(call.inputSnapshot.recentMode.openCount).toBe(1);
+    });
+
+    it('merged + open 병렬 조회 — 두 메서드 모두 동일 옵션(repo/author/sinceIsoDate/limit)으로 호출', async () => {
+      configGet.mockImplementation((key: string) =>
+        key === 'IMPACT_REPORT_GITHUB_AUTHOR'
+          ? 'JSL107'
+          : key === 'IMPACT_REPORT_GITHUB_REPO'
+            ? 'JSL107/personal_agents'
+            : undefined,
+      );
+      githubClient.listAuthorMergedPullRequestsSince.mockResolvedValue([
+        buildSummary(),
+      ]);
+      githubClient.listAuthorOpenPullRequests.mockResolvedValue([]);
+
+      await usecase.execute({ subject: '--recent 14d', slackUserId: 'U1' });
+
+      const mergedArgs =
+        githubClient.listAuthorMergedPullRequestsSince.mock.calls[0][0];
+      const openArgs = githubClient.listAuthorOpenPullRequests.mock.calls[0][0];
+
+      expect(mergedArgs.repo).toBe('JSL107/personal_agents');
+      expect(mergedArgs.author).toBe('JSL107');
+      expect(openArgs.repo).toBe(mergedArgs.repo);
+      expect(openArgs.author).toBe(mergedArgs.author);
+      expect(openArgs.sinceIsoDate).toBe(mergedArgs.sinceIsoDate);
+      expect(openArgs.limit).toBe(mergedArgs.limit);
     });
   });
 });

@@ -460,17 +460,20 @@ export class OctokitGithubClient implements GithubClientPort {
           if (!detail.data.merged_at) {
             return null;
           }
-          return {
+          const summary: GithubPullRequestSummary = {
             number: item.number,
             title: detail.data.title,
             body: detail.data.body ?? '',
             repo: itemRepo,
             url: detail.data.html_url,
+            state: 'merged',
             mergedAt: detail.data.merged_at,
+            updatedAt: detail.data.updated_at,
             additions: detail.data.additions,
             deletions: detail.data.deletions,
             changedFilesCount: detail.data.changed_files,
-          } satisfies GithubPullRequestSummary;
+          };
+          return summary;
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -483,8 +486,79 @@ export class OctokitGithubClient implements GithubClientPort {
     );
 
     return details
-      .filter((d): d is GithubPullRequestSummary => d !== null)
-      .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
+      .filter((d): d is NonNullable<typeof d> => d !== null)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  // `/impact-report --recent <N>d` open PR 확장 — author 의 sinceIsoDate 이후 업데이트된
+  // open PR 목록. listAuthorMergedPullRequestsSince 와 동일 패턴이되 search 쿼리만 다름.
+  // 반환: state='open', mergedAt=null, updatedAt=updated_at (updatedAt DESC 정렬).
+  async listAuthorOpenPullRequests({
+    repo,
+    author,
+    sinceIsoDate,
+    limit,
+  }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
+    this.assertOctokitConfigured();
+    const perPage = Math.min(Math.max(1, limit), 100);
+    const repoQualifier = repo ? `repo:${repo} ` : '';
+    const q = `${repoQualifier}is:pr is:open author:${author} updated:>=${sinceIsoDate}`;
+    const scopeLabel = repo ?? `author=${author} (all repos)`;
+    let searchResponse;
+    try {
+      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+        q,
+        per_page: perPage,
+        sort: 'updated',
+        order: 'desc',
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${scopeLabel} open PR 검색 실패`,
+      );
+    }
+
+    const itemsToFetch = searchResponse.data.items.slice(0, perPage);
+
+    const details = await Promise.all(
+      itemsToFetch.map(async (item) => {
+        const itemRepo = repo ?? extractRepo(item.repository_url);
+        const [owner, repoName] = parseRepo(itemRepo);
+        try {
+          const detail = await this.octokit!.rest.pulls.get({
+            owner,
+            repo: repoName,
+            pull_number: item.number,
+          });
+          const summary: GithubPullRequestSummary = {
+            number: item.number,
+            title: detail.data.title,
+            body: detail.data.body ?? '',
+            repo: itemRepo,
+            url: detail.data.html_url,
+            state: 'open',
+            mergedAt: null,
+            updatedAt: detail.data.updated_at,
+            additions: detail.data.additions,
+            deletions: detail.data.deletions,
+            changedFilesCount: detail.data.changed_files,
+          };
+          return summary;
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `GitHub open PR ${itemRepo}#${item.number} 상세 조회 실패 (skip): ${message}`,
+          );
+          return null;
+        }
+      }),
+    );
+
+    return details
+      .filter((d): d is NonNullable<typeof d> => d !== null)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
