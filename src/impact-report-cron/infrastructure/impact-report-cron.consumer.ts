@@ -66,11 +66,11 @@ export class ImpactReportCronConsumer extends WorkerHost {
           ImpactReporterErrorCode.RECENT_MODE_NO_RESULTS
         ) {
           this.logger.warn(
-            `Impact Report Cron skip — 최근 ${days}일 머지 PR 0건 (owner=${ownerSlackUserId})`,
+            `Impact Report Cron skip — 최근 ${days}일 머지·진행 중 PR 0건 (owner=${ownerSlackUserId})`,
           );
           await this.slackNotifier.postMessage({
             target,
-            text: `🪶 *Impact Report — ${todayKst} skip*\n_최근 ${days}일 머지 PR 0건. 다음 주에 다시 시도합니다._`,
+            text: `🪶 *Impact Report — ${todayKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
           });
           return;
         }

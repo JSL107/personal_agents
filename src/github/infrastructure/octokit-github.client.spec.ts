@@ -448,6 +448,216 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('listAuthorMergedPullRequestsSince — state/updatedAt 필드 확장', () => {
+    it('머지 PR 에 state="merged" + updatedAt + mergedAt 채움', async () => {
+      const search = jest.fn().mockResolvedValue({
+        data: {
+          items: [
+            {
+              number: 10,
+              repository_url: 'https://api.github.com/repos/foo/bar',
+            },
+          ],
+        },
+      });
+      const prGet = jest.fn().mockResolvedValue({
+        data: {
+          title: 'feat: something',
+          body: 'body',
+          html_url: 'https://github.com/foo/bar/pull/10',
+          merged_at: '2026-06-01T10:00:00Z',
+          updated_at: '2026-06-01T11:00:00Z',
+          additions: 5,
+          deletions: 2,
+          changed_files: 1,
+        },
+      });
+      const octokit = {
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: prGet },
+        },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const results = await client.listAuthorMergedPullRequestsSince({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-05-01',
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].state).toBe('merged');
+      expect(results[0].mergedAt).toBe('2026-06-01T10:00:00Z');
+      expect(results[0].updatedAt).toBe('2026-06-01T11:00:00Z');
+    });
+  });
+
+  describe('listAuthorOpenPullRequests — open PR 조회', () => {
+    const buildOpenOctokit = ({
+      searchItems,
+      prData,
+    }: {
+      searchItems: Array<{ number: number; repository_url: string }>;
+      prData: Record<string, unknown>;
+    }): { octokit: Octokit; search: jest.Mock; prGet: jest.Mock } => {
+      const search = jest.fn().mockResolvedValue({
+        data: { items: searchItems },
+      });
+      const prGet = jest.fn().mockResolvedValue({ data: prData });
+      const octokit = {
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: prGet },
+        },
+      } as unknown as Octokit;
+      return { octokit, search, prGet };
+    };
+
+    it('is:open author: 쿼리로 검색하고 state="open" + mergedAt=null + updatedAt 채움', async () => {
+      const { octokit, search } = buildOpenOctokit({
+        searchItems: [
+          {
+            number: 42,
+            repository_url: 'https://api.github.com/repos/foo/bar',
+          },
+        ],
+        prData: {
+          title: 'feat: wip',
+          body: 'WIP body',
+          html_url: 'https://github.com/foo/bar/pull/42',
+          merged_at: null,
+          updated_at: '2026-06-08T09:00:00Z',
+          additions: 30,
+          deletions: 5,
+          changed_files: 3,
+        },
+      });
+      const client = new OctokitGithubClient(octokit);
+
+      const results = await client.listAuthorOpenPullRequests({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-06-01',
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].state).toBe('open');
+      expect(results[0].mergedAt).toBeNull();
+      expect(results[0].updatedAt).toBe('2026-06-08T09:00:00Z');
+      expect(results[0].number).toBe(42);
+      expect(results[0].title).toBe('feat: wip');
+      // search 쿼리에 is:open + draft:false 포함 확인 (draft 노이즈 제외)
+      const queryArg = search.mock.calls[0][0].q as string;
+      expect(queryArg).toContain('is:open');
+      expect(queryArg).toContain('draft:false');
+      expect(queryArg).toContain('author:JSL107');
+    });
+
+    it('repo=null 이면 repo: 한정 없이 author 전체 검색', async () => {
+      const { octokit, search } = buildOpenOctokit({
+        searchItems: [
+          {
+            number: 7,
+            repository_url: 'https://api.github.com/repos/other/repo',
+          },
+        ],
+        prData: {
+          title: 'fix: something',
+          body: '',
+          html_url: 'https://github.com/other/repo/pull/7',
+          merged_at: null,
+          updated_at: '2026-06-07T00:00:00Z',
+          additions: 1,
+          deletions: 0,
+          changed_files: 1,
+        },
+      });
+      const client = new OctokitGithubClient(octokit);
+
+      await client.listAuthorOpenPullRequests({
+        repo: null,
+        author: 'JSL107',
+        sinceIsoDate: '2026-06-01',
+        limit: 10,
+      });
+
+      const queryArg = search.mock.calls[0][0].q as string;
+      expect(queryArg).not.toContain('repo:');
+    });
+
+    it('search 실패 시 REQUEST_FAILED 예외', async () => {
+      const search = jest.fn().mockRejectedValue(new Error('network error'));
+      const octokit = {
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: jest.fn() },
+        },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await expect(
+        client.listAuthorOpenPullRequests({
+          repo: 'foo/bar',
+          author: 'JSL107',
+          sinceIsoDate: '2026-06-01',
+          limit: 10,
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      });
+    });
+
+    it('Octokit null 이면 TOKEN_NOT_CONFIGURED', async () => {
+      const client = new OctokitGithubClient(null);
+
+      await expect(
+        client.listAuthorOpenPullRequests({
+          repo: 'foo/bar',
+          author: 'JSL107',
+          sinceIsoDate: '2026-06-01',
+          limit: 10,
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
+      });
+    });
+
+    it('검색 후 머지된 PR(merged_at 존재)은 결과에서 skip (race 중복 방지)', async () => {
+      const { octokit } = buildOpenOctokit({
+        searchItems: [
+          {
+            number: 42,
+            repository_url: 'https://api.github.com/repos/foo/bar',
+          },
+        ],
+        prData: {
+          title: 'feat: just merged between search and get',
+          body: '',
+          html_url: 'https://github.com/foo/bar/pull/42',
+          merged_at: '2026-06-09T00:00:00Z', // is:open 검색 후 상세 조회 사이 머지됨
+          updated_at: '2026-06-09T00:00:00Z',
+          additions: 1,
+          deletions: 0,
+          changed_files: 1,
+        },
+      });
+      const client = new OctokitGithubClient(octokit);
+
+      const results = await client.listAuthorOpenPullRequests({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-06-01',
+        limit: 10,
+      });
+
+      // merged_at 이 채워지면 merged 결과셋과 중복되므로 open 결과에서 제외.
+      expect(results).toHaveLength(0);
+    });
+  });
+
   describe('addLabelsToIssue — issues.opened 자동 라벨링 apply', () => {
     it('labels 비어 있으면 호출 자체 skip (network noop)', async () => {
       const addLabels = jest.fn();
