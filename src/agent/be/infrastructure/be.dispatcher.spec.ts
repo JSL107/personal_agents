@@ -5,6 +5,7 @@ import {
   PREVIEW_KIND,
   PREVIEW_STATUS,
 } from '../../../preview-gate/domain/preview-action.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { GenerateBackendPlanUsecase } from '../application/generate-backend-plan.usecase';
 import { BackendPlan } from '../domain/be-agent.type';
 import { BeDispatcher } from './be.dispatcher';
@@ -169,6 +170,37 @@ describe('BeDispatcher', () => {
 
     expect(outcome.agentRunId).toBe(42);
     expect(outcome.formattedText).not.toContain('자동 개발 진행');
+  });
+
+  it('conversationContext 가 있으면 generateBackendPlan.execute 에 그대로 전달', async () => {
+    const { dispatcher, generateBackendPlan } = buildDispatcher();
+    const conversationContext: ConversationContext = {
+      userInstruction: '보안 이슈 먼저 처리해줘',
+    };
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '결제 검증 API 추가',
+      conversationContext,
+    });
+
+    expect(generateBackendPlan.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationContext }),
+    );
+  });
+
+  it('conversationContext 없으면 execute 에 conversationContext 키 미포함 (기존 동작 회귀 없음)', async () => {
+    const { dispatcher, generateBackendPlan } = buildDispatcher();
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '결제 검증 API 추가',
+    });
+
+    const callArg = generateBackendPlan.execute.mock.calls[0][0];
+    expect(callArg).not.toHaveProperty('conversationContext');
   });
 
   it('planText 안 implementationChecklist + apiDesign + risks + testPoints 직렬화', async () => {

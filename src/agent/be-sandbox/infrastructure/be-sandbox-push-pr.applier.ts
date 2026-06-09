@@ -6,6 +6,7 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../../github/domain/port/github-client.port';
+import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import { PreviewActionException } from '../../../preview-gate/domain/preview-action.exception';
 import {
@@ -47,7 +48,7 @@ export class BeSandboxPushPrApplier implements PreviewApplier {
     private readonly configService: ConfigService,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<string> {
+  async apply(preview: PreviewAction): Promise<ApplyResult> {
     if (!isBeSandboxPushPrPayload(preview.payload)) {
       throw new PreviewActionException({
         code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
@@ -114,7 +115,7 @@ export class BeSandboxPushPrApplier implements PreviewApplier {
           ? `${diff.slice(0, DIFF_TAIL_LIMIT)}\n... (생략됨 — diff cap ${DIFF_TAIL_LIMIT} bytes)`
           : diff;
 
-      return [
+      const message = [
         `🚀 *BE Sandbox Push PR — Phase 2b-2 완료*`,
         '',
         `• 대상 repo: ${owner}/${repo}`,
@@ -135,6 +136,15 @@ export class BeSandboxPushPrApplier implements PreviewApplier {
         '',
         '_Phase 2b-2 — 새 branch + 1 commit + PR open 완료. main 직접 push 0. 머지는 사용자 수동._',
       ].join('\n');
+
+      // 가장 위험한 외부 부작용(코드 push + PR open) — ResultVerifier 가 getPullRequest 로
+      // PR 이 실제 열렸는지 재조회 검증한다.
+      return {
+        message,
+        artifacts: [
+          { type: 'github_pr', repo: repoLabel, prNumber: result.prNumber },
+        ],
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`BE PR auto-open 실패 — ${owner}/${repo}: ${message}`);

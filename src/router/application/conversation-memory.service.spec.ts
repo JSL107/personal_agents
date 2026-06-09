@@ -13,10 +13,41 @@ describe('ConversationMemoryService — in-memory (Redis 미주입)', () => {
     service = new ConversationMemoryService();
   });
 
-  it('buildKey — slackUserId:channelId 형식', () => {
+  it('buildKey — threadTs 없으면 channel 단위 (slackUserId:channelId, 기존 fallback)', () => {
     expect(service.buildKey({ slackUserId: 'U1', channelId: 'C100' })).toBe(
       'U1:C100',
     );
+  });
+
+  it('buildKey — threadTs 있으면 thread 단위 격리 (slackUserId:channelId:threadTs)', () => {
+    expect(
+      service.buildKey({
+        slackUserId: 'U1',
+        channelId: 'C100',
+        threadTs: 'T9',
+      }),
+    ).toBe('U1:C100:T9');
+  });
+
+  it('같은 channel 의 다른 thread 는 메모리 격리', async () => {
+    const k1 = service.buildKey({
+      slackUserId: 'U1',
+      channelId: 'C100',
+      threadTs: 'T1',
+    });
+    const k2 = service.buildKey({
+      slackUserId: 'U1',
+      channelId: 'C100',
+      threadTs: 'T2',
+    });
+    await service.appendTurn(k1, {
+      text: 'thread 1 발화',
+      agentType: AgentType.PM,
+      agentRunId: 1,
+      timestampMs: Date.now(),
+    });
+    await expect(service.getRecentTurns(k1)).resolves.toHaveLength(1);
+    await expect(service.getRecentTurns(k2)).resolves.toEqual([]);
   });
 
   it('빈 memory 면 getRecentTurns 가 빈 배열 반환', async () => {

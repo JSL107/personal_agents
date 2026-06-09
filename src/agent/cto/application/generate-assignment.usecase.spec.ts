@@ -5,6 +5,7 @@ import {
   CompletionResponse,
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import { CtoException } from '../domain/cto.exception';
 import { AssignmentOutput } from '../domain/cto.type';
@@ -227,5 +228,36 @@ describe('GenerateAssignmentUsecase', () => {
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
       CtoException,
     );
+  });
+
+  it('conversationContext.userInstruction 있으면 prompt 맨 앞에 [사용자 지시] 섹션 포함', async () => {
+    const conversationContext: ConversationContext = {
+      userInstruction: '백엔드 성능 이슈 우선 배정해줘',
+    };
+    await usecase.execute({ slackUserId: 'U1', conversationContext });
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).toContain('[사용자 지시');
+    expect(promptArg).toContain('백엔드 성능 이슈 우선 배정해줘');
+    // prompt 최상단에 위치 — [PM plan reasoning] 보다 앞에 나와야 함.
+    expect(promptArg.indexOf('[사용자 지시')).toBeLessThan(
+      promptArg.indexOf('[PM plan reasoning]'),
+    );
+  });
+
+  it('conversationContext 없으면 prompt 에 [사용자 지시] 섹션 미포함 (회귀)', async () => {
+    await usecase.execute({ slackUserId: 'U1' });
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).not.toContain('[사용자 지시');
+  });
+
+  it('conversationContext 있어도 기존 분배 로직 동일 — 정상 AssignmentOutput 반환', async () => {
+    const conversationContext: ConversationContext = {
+      userInstruction: '성능 이슈 우선',
+    };
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      conversationContext,
+    });
+    expect(outcome.result).toEqual(validAssignment);
   });
 });

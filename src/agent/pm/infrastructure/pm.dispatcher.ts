@@ -25,6 +25,9 @@ export class PmDispatcher implements AgentDispatcher {
     const outcome = await this.generateDailyPlan.execute({
       tasksText: input.text ?? '',
       slackUserId: input.slackUserId,
+      ...(input.conversationContext !== undefined
+        ? { conversationContext: input.conversationContext }
+        : {}),
     });
     return {
       agentRunId: outcome.agentRunId,

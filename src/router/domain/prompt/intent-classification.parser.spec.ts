@@ -91,6 +91,46 @@ describe('parseIntentClassification', () => {
     );
   });
 
+  it('userInstruction 이 비어있지 않은 string 이면 추출', () => {
+    const raw = JSON.stringify({
+      agentType: 'PM',
+      confidence: 0.9,
+      reason: '직전 대화 follow-up',
+      userInstruction: '직전 논의한 개선 항목을 우선순위화',
+    });
+
+    const result = parseIntentClassification(raw);
+
+    expect(result.userInstruction).toBe('직전 논의한 개선 항목을 우선순위화');
+  });
+
+  it('userInstruction 누락 / 빈 문자열 / 공백뿐이면 undefined', () => {
+    const missing = parseIntentClassification(
+      JSON.stringify({ agentType: 'PM', confidence: 0.9, reason: '' }),
+    );
+    expect(missing.userInstruction).toBeUndefined();
+
+    const blank = parseIntentClassification(
+      JSON.stringify({
+        agentType: 'PM',
+        confidence: 0.9,
+        reason: '',
+        userInstruction: '   ',
+      }),
+    );
+    expect(blank.userInstruction).toBeUndefined();
+
+    const nonString = parseIntentClassification(
+      JSON.stringify({
+        agentType: 'PM',
+        confidence: 0.9,
+        reason: '',
+        userInstruction: 123,
+      }),
+    );
+    expect(nonString.userInstruction).toBeUndefined();
+  });
+
   it('객체 아닌 JSON (array / null) 도 INTENT_CLASSIFY_FAILED', () => {
     expect(() => parseIntentClassification('[]')).toThrow(
       expect.objectContaining({

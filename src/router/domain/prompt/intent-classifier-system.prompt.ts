@@ -20,11 +20,20 @@ JSON 객체 하나만 출력한다. 코드 fence (\`\`\`json) 와 앞뒤 설명 
 {
   "agentType": string,
   "confidence": number,
-  "reason": string
+  "reason": string,
+  "userInstruction": string
 }
 - agentType: 위 11 종 중 하나 그대로. 명확히 매핑되지 않으면 "UNKNOWN".
 - confidence: 0~1 사이 — 분류 확신도. "UNKNOWN" 은 0 에 가깝게.
 - reason: 한 문장 분류 근거. 한국어 OK.
+- userInstruction: (선택) 직전 대화를 근거로, 선택된 worker 가 **이번 실행에서 반영해야 할
+  사용자의 구체적 추가 지시/제약** 을 한 문장으로 요약. **직전 대화에 명시적 지시가 있을 때만**
+  채운다 (보수적). 없으면 빈 문자열 "" 또는 생략.
+  - 예) [assistant] "병목을 찾아 우선순위부터 정리해볼까요?" + [user] "네 정리해주세요"
+    → userInstruction: "직전 논의한 개선 항목들을 현재 코드·이슈 기준으로 우선순위화"
+  - 예) [user] "오늘 plan 짜줘" (직전 맥락 없음) → userInstruction: "" (지시 없음)
+  - 지시대명사가 가리키는 대상을 가능한 한 구체적으로 풀어서 적는다 (worker 는 직전 대화를
+    보지 못하고 이 한 문장만 받는다).
 
 ## UNKNOWN 으로 분류할 케이스 (중요)
 다음과 같은 입력은 **UNKNOWN** 으로 분류한다 — 어느 worker 도 적합하지 않다:

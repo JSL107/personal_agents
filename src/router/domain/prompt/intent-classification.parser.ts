@@ -55,11 +55,20 @@ export const parseIntentClassification = (
   const reasonRaw = obj.reason;
   const reason = typeof reasonRaw === 'string' ? reasonRaw : '';
 
+  // userInstruction 은 선택 — 비어있지 않은 string 일 때만 채운다 (공백뿐 / 비-string / 누락은 undefined).
+  const userInstructionRaw = obj.userInstruction;
+  const userInstruction =
+    typeof userInstructionRaw === 'string' &&
+    userInstructionRaw.trim().length > 0
+      ? userInstructionRaw.trim()
+      : undefined;
+
   return {
     agentType:
       agentTypeRaw === 'UNKNOWN' ? 'UNKNOWN' : (agentTypeRaw as AgentType),
     confidence,
     reason,
+    ...(userInstruction !== undefined ? { userInstruction } : {}),
   };
 };
 

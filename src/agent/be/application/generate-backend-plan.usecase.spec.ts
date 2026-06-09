@@ -6,6 +6,7 @@ import {
   CompletionResponse,
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
+import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { BeAgentException } from '../domain/be-agent.exception';
 import { BackendPlan } from '../domain/be-agent.type';
 import { BeAgentErrorCode } from '../domain/be-agent-error-code.enum';
@@ -181,6 +182,51 @@ describe('GenerateBackendPlanUsecase', () => {
     await expect(
       usecase.execute({ subject: '결제 검증 API', slackUserId: 'U1' }),
     ).rejects.toBeInstanceOf(BeAgentException);
+  });
+
+  it('conversationContext.userInstruction 있으면 prompt 맨 앞에 [사용자 지시] 섹션 prepend', async () => {
+    const conversationContext: ConversationContext = {
+      userInstruction: '보안 이슈 먼저 처리해줘',
+    };
+
+    await usecase.execute({
+      subject: '결제 검증 API 추가',
+      slackUserId: 'U1',
+      conversationContext,
+    });
+
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).toMatch(
+      /^\[사용자 지시[^\n]*\]\n보안 이슈 먼저 처리해줘/,
+    );
+    // 기존 subject 도 포함
+    expect(promptArg).toContain('결제 검증 API 추가');
+  });
+
+  it('conversationContext 없으면 prompt 가 subject 그대로 (기존 동작 회귀 없음)', async () => {
+    await usecase.execute({
+      subject: '결제 검증 API 추가',
+      slackUserId: 'U1',
+    });
+
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).toBe('결제 검증 API 추가');
+    expect(promptArg).not.toContain('[사용자 지시');
+  });
+
+  it('conversationContext.userInstruction 이 빈 문자열이면 섹션 미삽입', async () => {
+    const conversationContext: ConversationContext = {
+      userInstruction: '',
+    };
+
+    await usecase.execute({
+      subject: '결제 검증 API 추가',
+      slackUserId: 'U1',
+      conversationContext,
+    });
+
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).not.toContain('[사용자 지시');
   });
 
   it('apiDesign 이 null 인 plan (내부 배치/리팩터링) 도 정상 파싱', async () => {

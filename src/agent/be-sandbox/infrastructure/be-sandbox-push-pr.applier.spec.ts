@@ -110,10 +110,14 @@ describe('BeSandboxPushPrApplier — Phase 2b-2 실제 PR open', () => {
         prBody: expect.stringContaining('자동 생성 — 이대리'),
       }),
     );
-    expect(result).toContain('Phase 2b-2 완료');
-    expect(result).toContain('#100');
-    expect(result).toContain('JSL107/personal_agents');
-    expect(result).toContain('abc123456789');
+    expect(result.message).toContain('Phase 2b-2 완료');
+    expect(result.message).toContain('#100');
+    expect(result.message).toContain('JSL107/personal_agents');
+    expect(result.message).toContain('abc123456789');
+    // 레버 3b: 열린 PR 을 ResultVerifier 가 재조회 검증하도록 artifact 로 노출.
+    expect(result.artifacts).toEqual([
+      { type: 'github_pr', repo: 'JSL107/personal_agents', prNumber: 100 },
+    ]);
   });
 
   it('payload 형식 불일치 → PreviewActionException + apply diff skip', async () => {

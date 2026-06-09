@@ -9,6 +9,7 @@ import {
   NotionClientPort,
   NotionPlanBlock,
 } from '../../../notion/domain/port/notion-client.port';
+import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import {
   PREVIEW_KIND,
@@ -70,7 +71,7 @@ export class PmWriteBackApplier implements PreviewApplier {
     private readonly notionClient: NotionClientPort,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<string> {
+  async apply(preview: PreviewAction): Promise<ApplyResult> {
     const tasks = this.parsePayload(preview.payload);
     let githubCount = 0;
     let notionCount = 0;
@@ -96,7 +97,12 @@ export class PmWriteBackApplier implements PreviewApplier {
       }
     }
 
-    return `GitHub ${githubCount}개, Notion ${notionCount}개 동기화 완료`;
+    // 코멘트/Notion append 는 클라이언트가 생성 리소스 id 를 노출하지 않아 재조회 검증 비용/한계가
+    // 커서 이번 범위에서는 artifacts 비움 (검증 없이 message 만 노출). PR open 검증부터 단계 도입.
+    return {
+      message: `GitHub ${githubCount}개, Notion ${notionCount}개 동기화 완료`,
+      artifacts: [],
+    };
   }
 
   private async writeBackGithub(task: TaskItem): Promise<void> {
