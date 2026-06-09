@@ -104,6 +104,13 @@ export interface GithubClientPort {
     options: ListAuthorMergedPullRequestsOptions,
   ): Promise<GithubPullRequestSummary[]>;
 
+  // `/impact-report --recent <N>d` open PR 확장 — author 의 sinceIsoDate 이후 업데이트된
+  // open PR 목록. `ListAuthorMergedPullRequestsOptions` 재사용 (같은 필드 구조).
+  // 반환: state='open', mergedAt=null, updatedAt=updated_at (updatedAt DESC 정렬).
+  listAuthorOpenPullRequests(
+    options: ListAuthorMergedPullRequestsOptions,
+  ): Promise<GithubPullRequestSummary[]>;
+
   // issues.opened webhook 자동 라벨링 — repo 의 label vocab (paginated).
   // 새 label 생성은 정책상 안 함 — LLM 이 vocab 안에서만 선택하도록 prompt 단에서 제한.
   listRepoLabels(repo: string): Promise<RepoLabel[]>;
