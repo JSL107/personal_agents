@@ -1,6 +1,7 @@
 import { CeoException } from '../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { WeeklySummaryConsumer } from './weekly-summary.consumer';
 
 describe('WeeklySummaryConsumer', () => {
@@ -8,12 +9,16 @@ describe('WeeklySummaryConsumer', () => {
   const mockCeoMetaUsecase = { execute: jest.fn() };
   const mockAgentRunService = { findRecentSucceededRuns: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronIdempotency = {
+    acquireOnce: jest.fn().mockResolvedValue(true),
+  } as unknown as CronIdempotencyService;
 
   const consumer = new WeeklySummaryConsumer(
     mockWorklogUsecase as any,
     mockCeoMetaUsecase as any,
     mockAgentRunService as any,
     mockSlackNotifier as any,
+    mockCronIdempotency,
   );
 
   beforeEach(() => jest.clearAllMocks());

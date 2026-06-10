@@ -9,7 +9,9 @@ import { coerceToDailyPlan } from '../../agent/pm/domain/prompt/previous-plan-fo
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
+import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   SLACK_NOTIFIER_PORT,
@@ -23,6 +25,10 @@ import {
   WeeklySummaryJobData,
 } from '../domain/weekly-summary.type';
 
+// 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
+const SENT_GUARD_TTL_SECONDS = 90_000;
+
+// 중복 발송 차단: BullMQ stalled 재처리로 같은 슬롯 2회 처리 시 deliverOnce 가 skip.
 @Processor(WEEKLY_SUMMARY_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class WeeklySummaryConsumer extends WorkerHost {
   private readonly logger = new Logger(WeeklySummaryConsumer.name);
@@ -33,6 +39,7 @@ export class WeeklySummaryConsumer extends WorkerHost {
     private readonly agentRunService: AgentRunService,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
+    private readonly cronIdempotency: CronIdempotencyService,
   ) {
     super();
   }
@@ -51,10 +58,10 @@ export class WeeklySummaryConsumer extends WorkerHost {
     });
 
     if (runs.length === 0) {
-      await this.slackNotifier.postMessage({
+      await this.deliverOnce(
         target,
-        text: '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
-      });
+        '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
+      );
       return;
     }
 
@@ -80,13 +87,29 @@ export class WeeklySummaryConsumer extends WorkerHost {
 
     const worklogText =
       formatDailyReview(outcome.result) + formatModelFooter(outcome);
-    await this.slackNotifier.postMessage({ target, text: worklogText });
-    this.logger.log(`Weekly Summary 발송 완료 — target=${target}`);
+    await this.deliverOnce(target, worklogText);
 
     await this.triggerCeoMetaGracefully({
       slackUserId: ownerSlackUserId,
       target,
     });
+  }
+
+  // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
+  private async deliverOnce(target: string, text: string): Promise<void> {
+    const dateKey = getTodayKstDate();
+    const firstRun = await this.cronIdempotency.acquireOnce(
+      `cron:${WEEKLY_SUMMARY_QUEUE}:${dateKey}`,
+      SENT_GUARD_TTL_SECONDS,
+    );
+    if (!firstRun) {
+      this.logger.warn(
+        `Weekly Summary 중복 발송 차단 — ${dateKey} 이미 발송됨 (stalled 재처리 추정)`,
+      );
+      return;
+    }
+    await this.slackNotifier.postMessage({ target, text });
+    this.logger.log(`Weekly Summary 발송 완료 — target=${target}`);
   }
 
   // CEO meta (P5) 는 worklog (P4) 직후 자동 트리거. PO_EVAL run 부재 시 graceful skip.
