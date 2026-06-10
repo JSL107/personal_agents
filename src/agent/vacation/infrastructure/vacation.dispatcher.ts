@@ -55,6 +55,7 @@ export class VacationDispatcher implements AgentDispatcher {
           startDate: intent.startDate!,
           endDate: intent.endDate!,
           memo: intent.memo,
+          fraction: intent.fraction,
           asOf,
         });
         return this.toOutcome(
