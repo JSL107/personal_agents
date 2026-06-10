@@ -40,9 +40,10 @@ export const formatRegistered = ({
   balance,
 }: RegisterLeaveResult): string => {
   const lines = [
-    '*✅ 휴가 등록 완료*',
+    `*✅ 휴가 등록 완료* (#${registered.id})`,
     `• 기간: ${rangeText(registered)} (${registered.businessDays}영업일)`,
     registered.memo ? `• 메모: ${registered.memo}` : null,
+    `• 취소하려면: \`/휴가 취소 ${registered.id}\``,
     '',
     ...balanceLines(balance),
   ];

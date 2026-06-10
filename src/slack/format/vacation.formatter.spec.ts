@@ -46,6 +46,9 @@ describe('vacation.formatter', () => {
     const text = formatRegistered({ registered, balance });
     expect(text).toContain('2026-07-01');
     expect(text).toContain('3');
+    // 등록 완료에 번호(#id) + 취소 안내 노출 (바로 취소 가능)
+    expect(text).toContain('#10');
+    expect(text).toContain('/휴가 취소 10');
   });
 
   it('formatUsageList 빈 내역 안내', () => {
