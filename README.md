@@ -162,6 +162,7 @@ pnpm format:check          # Prettier 검사
 | `IMPACT_REPORT_GITHUB_AUTHOR` | ⭕ | `/impact-report --recent <N>d` 의 GitHub username (필수: recent mode 핵심) |
 | `IMPACT_REPORT_GITHUB_REPO` | ❌ | `owner/repo` 스코프. 미설정 시 author 의 모든 repo 머지 PR (글로벌 모드) |
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | GitHub assigned / Notion task 의 cutoff (기본 60일) |
+| `VACATION_HIRE_DATE` | ❌ | `/휴가` 명령 사용자 입사일 (YYYY-MM-DD). 미설정 시 `/휴가` 명령에서 친절한 에러 안내. 1인 봇 단일값 (향후 멀티 사용자 시 테이블로 승격) |
 | `SLACK_INBOX_EMOJI` | ❌ | Reaction → Inbox 큐잉 트리거 이모지 (기본 `raised_hand`) |
 | `SLACK_PUSHPIN_REACTION_EMOJI` | ❌ | 📌 → Notion task 트리거 이모지 (기본 `pushpin`). `SLACK_INBOX_EMOJI` 와 다른 값 권장 |
 | `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | 📌 → Notion task 적재 부모 페이지. 미설정 시 service 가 graceful skip. `CAREER_LOG_NOTION_PAGE_ID` 와 동일 페이지 공유해도 OK (일별 자식 페이지 공통 key) |
@@ -216,6 +217,7 @@ pnpm format:check          # Prettier 검사
 | `/po-eval` | Work Reviewer / PO Shadow / Impact Reporter 직전 snapshot 합성 + 이력서용 careerLog (V3 P4) | PO_EVAL / Claude |
 | `/ceo-review` | 직전 PO_EVAL + PM/CTO snapshot 합성 → contextDrift / docsQuality / finalSummary (V3 P5 minimal) | CEO / Claude |
 | `/auto-flow` | PM → CTO → BE chain 자동 진행 (각 step 사이 사용자 confirm 안전판) — V3 비전 phase loop chain | PM + CTO + BE worker |
+| `/휴가` | 연차 발생/잔여 계산 + 사용 등록/내역/취소 (입사일 기반 결정론적 계산, LLM 미사용) | — (결정론) |
 
 > 백엔드 사용자-트리거 에이전트 3종은 `/be <subcommand>` 단일 진입점으로 통합돼 있다. 인자 없이 `/be` 만 입력하면 사용법이 노출된다.
 > **BE-SRE (V3 BE-1) / BE-FIX (V3 BE-4)** 는 GitHub webhook (`check_run.completed` failure / `pull_request.opened`) 으로 **자동 트리거**되며, 수동 재실행은 `/retry-run <AgentRun ID>` 를 사용한다.
@@ -249,6 +251,7 @@ pnpm format:check          # Prettier 검사
    - `/po-eval` — Work Reviewer / PO Shadow / Impact Reporter 합성 + 이력서 careerLog (V3 P4) (Usage hint: `[today|week]`)
    - `/ceo-review` — 직전 PO_EVAL + PM/CTO 합성 → drift/docs review (V3 P5 minimal) (Usage hint: `[today|week]`)
    - `/auto-flow` — PM → CTO → BE chain 자동 (각 step 사용자 confirm 안전판) — V3 phase loop chain (Usage hint: `[선택] 오늘 할 일 자유 텍스트`)
+   - `/휴가` — 연차 발생/잔여 계산 + 사용 등록/내역/취소 (Usage hint: `[등록|취소|내역|잔여] [날짜]`) ※ 한글 슬래시 커맨드 — Slack 앱 설정에서 `/휴가` 그대로 등록
    > 또는 좌측 **`App Manifest`** 에서 `slash_commands` 배열에 위 커맨드들을 선언하고 **Save Changes** → **Reinstall your app** 으로 반영.
 6. **Event Subscriptions** → Enable → Subscribe to Bot Events 에 **`app_mention`** + **`message.im`** 추가 + **OAuth & Permissions** 의 Bot Token Scopes 에 **`app_mentions:read`** + **`im:history`** 추가 → Reinstall.
    - `app_mention` + `app_mentions:read` → 채널에서 `@이대리 ...` 자연어 진입.
