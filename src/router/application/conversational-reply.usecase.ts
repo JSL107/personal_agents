@@ -1,11 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { ModelProviderName } from '../../model-router/domain/model-router.type';
-import {
-  MODEL_PROVIDER_TOKENS,
-  ModelProviderPort,
-} from '../../model-router/domain/port/model-provider.port';
+import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 
 // prompt 폭증 방지 — 최근 5 turn 정도면 충분한 컨텍스트. 너무 많으면 cost + latency 폭증.
@@ -17,15 +14,16 @@ const PRIOR_TURN_TEXT_CAP = 200;
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
 //
-// AgentRunService 우회 — conversational 응답은 추적 가치 낮음 + AgentRun 통계 오염 회피.
-// CHATGPT provider 직접 호출 (Codex CLI) — 짧은 응답 / 빠른 latency 가 적합.
+// ModelRouterUsecase.route(PM) 경유 — IntentClassifier 와 동일 패턴. PM provider(CHATGPT/codex) 를
+// 1차로 쓰되 codex 쿼터 소진/실패 시 route() 의 양방향 fallback 이 CLAUDE 로 자동 재시도한다.
+// route() 자체는 AgentRun 을 기록하지 않으므로 (provider 선택 + fallback 만 수행) conversational
+// 응답이 AgentRun 통계를 오염시키지 않는다 — 직접 provider 주입을 우회로 쓰던 본래 이유가 그대로 충족.
 @Injectable()
 export class ConversationalReplyUsecase {
   private readonly logger = new Logger(ConversationalReplyUsecase.name);
 
   constructor(
-    @Inject(MODEL_PROVIDER_TOKENS[ModelProviderName.CHATGPT])
-    private readonly chatgptProvider: ModelProviderPort,
+    private readonly modelRouter: ModelRouterUsecase,
     private readonly configService: ConfigService,
   ) {}
 
@@ -46,11 +44,11 @@ export class ConversationalReplyUsecase {
     });
     const prompt = buildPrompt({ text, priorTurns });
     try {
-      const response = await this.chatgptProvider.complete({
-        prompt,
-        systemPrompt,
+      const completion = await this.modelRouter.route({
+        agentType: AgentType.PM,
+        request: { prompt, systemPrompt },
       });
-      return response.text.trim();
+      return completion.text.trim();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Conversational fallback 실패: ${message}`);
