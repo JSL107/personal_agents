@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -31,8 +31,8 @@ export class CancelLeaveUsecase {
     private readonly config: ConfigService,
     private readonly repository: LeaveUsageRepository,
     private readonly agentRunService: AgentRunService,
-    // 테스트에서 시각 고정용 주입 (default: 실제 now). DI 컨텍스트 밖 함수 default.
-    private readonly now: () => Date = () => new Date(),
+    // 테스트에서 시각 고정용 주입 (default: 실제 now). @Optional 로 Nest DI Function 오류 방지.
+    @Optional() private readonly now: () => Date = () => new Date(),
   ) {}
 
   async execute({
