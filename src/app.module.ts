@@ -19,6 +19,7 @@ import { PmAgentModule } from './agent/pm/pm-agent.module';
 import { PoEvalCareerlogApplier } from './agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { PoEvalModule } from './agent/po-eval/po-eval.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
+import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
 import { CeoMetaCronModule } from './ceo-meta-cron/ceo-meta-cron.module';
@@ -136,6 +137,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // pull_request.closed (merged=true) → 본인 PR 머지 시 Notion careerLog 자동 적재.
     // WebhookModule 이 BullMQ queue 등록 + controller 분기 — 본 module 은 consumer 본체.
     PrCareerLogModule,
+    // 휴가 잔여/등록/내역/취소 — 결정론 계산 (LLM 없음). /휴가 슬래시 핸들러 의존.
+    VacationModule,
   ],
 })
 export class AppModule {}

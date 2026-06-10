@@ -12,6 +12,7 @@ import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.m
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
+import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
@@ -32,6 +33,7 @@ import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
 import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.handler';
+import { VacationHandler } from './handler/vacation.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';
 
@@ -63,6 +65,8 @@ import { SlackService } from './slack.service';
     PushpinTaskModule,
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
+    // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
+    VacationModule,
   ],
   providers: [
     SlackService,
@@ -81,6 +85,7 @@ import { SlackService } from './slack.service';
     RouterMessageHandler,
     SlackInboxReactionHandler,
     SlackPushpinReactionHandler,
+    VacationHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -97,6 +102,7 @@ import { SlackService } from './slack.service';
         RouterMessageHandler,
         SlackInboxReactionHandler,
         SlackPushpinReactionHandler,
+        VacationHandler,
       ],
     },
   ],
