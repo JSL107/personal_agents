@@ -1,6 +1,16 @@
-import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConfigService } from '@nestjs/config';
+
+import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
+import {
+  AgentType,
+  ModelProviderName,
+} from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
-import { buildPrompt, buildSystemPrompt } from './conversational-reply.usecase';
+import {
+  buildPrompt,
+  buildSystemPrompt,
+  ConversationalReplyUsecase,
+} from './conversational-reply.usecase';
 
 describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
   it('repoLabel + ownerLogin 이 모두 있으면 self-identity 블록에 그대로 inject', () => {
@@ -156,5 +166,71 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     expect(prompt).toMatch(
       /\[assistant\] 라벨이 붙은 이전 응답은 당신 자신의 발화입니다/,
     );
+  });
+});
+
+// reply() 단위 테스트는 route() 호출 shape / trim / 에러 전파만 검증한다.
+// codex→claude fallback 동작 자체의 커버리지는 model-router.usecase.spec.ts
+// (primary(CHATGPT) 실패 → CLAUDE 재시도) 에 있다 — 여기서 mock route() 로 재검증하면 중복.
+describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
+  const buildConfigService = (): ConfigService =>
+    ({
+      get: jest.fn().mockReturnValue('JSL107/personal_agents'),
+    }) as unknown as ConfigService;
+
+  it('CHATGPT(PM) 으로 route() 를 거쳐 호출한다 — 직접 provider 호출이 아니라 fallback chain 을 탄다', async () => {
+    const route = jest.fn().mockResolvedValue({
+      text: '  안녕하세요, 무엇을 도와드릴까요?  ',
+      modelUsed: 'gpt-x',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const modelRouter = { route } as unknown as ModelRouterUsecase;
+    const usecase = new ConversationalReplyUsecase(
+      modelRouter,
+      buildConfigService(),
+    );
+
+    await usecase.reply({ text: '안녕', priorTurns: [] });
+
+    expect(route).toHaveBeenCalledTimes(1);
+    const arg = route.mock.calls[0][0];
+    // PM provider(CHATGPT) 를 1차로 — codex 쿼터 소진 시 route() 가 CLAUDE 로 자동 fallback.
+    expect(arg.agentType).toBe(AgentType.PM);
+    // 대화용 커스텀 systemPrompt + 사용자 메시지가 그대로 route 로 전달돼야 한다.
+    expect(arg.request.systemPrompt).toContain('이대리');
+    expect(arg.request.prompt).toContain('안녕');
+  });
+
+  it('route() 응답 text 를 trim 해서 반환한다', async () => {
+    const route = jest.fn().mockResolvedValue({
+      text: '  답변입니다  ',
+      modelUsed: 'gpt-x',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const modelRouter = { route } as unknown as ModelRouterUsecase;
+    const usecase = new ConversationalReplyUsecase(
+      modelRouter,
+      buildConfigService(),
+    );
+
+    const result = await usecase.reply({ text: '안녕', priorTurns: [] });
+
+    expect(result).toBe('답변입니다');
+  });
+
+  it('route() 가 throw 하면 (양방향 fallback 까지 실패) 그대로 전파한다 — 에러를 삼키지 않음', async () => {
+    const route = jest
+      .fn()
+      .mockRejectedValue(new Error('모델 호출 실패 (CHATGPT)'));
+    const modelRouter = { route } as unknown as ModelRouterUsecase;
+    const usecase = new ConversationalReplyUsecase(
+      modelRouter,
+      buildConfigService(),
+    );
+
+    // RouterMessageHandler 가 이 throw 를 catch 해 사용자 안내로 처리하므로 전파가 보장돼야 한다.
+    await expect(
+      usecase.reply({ text: '안녕', priorTurns: [] }),
+    ).rejects.toThrow('모델 호출 실패 (CHATGPT)');
   });
 });
