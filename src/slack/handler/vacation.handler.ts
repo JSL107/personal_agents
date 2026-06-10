@@ -80,6 +80,7 @@ export class VacationHandler implements SlackHandler {
           startDate: parsed.startDate,
           endDate: parsed.endDate,
           memo: parsed.memo,
+          fraction: parsed.fraction,
           asOf,
         });
         return formatRegistered(outcome.result);
