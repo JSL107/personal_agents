@@ -75,12 +75,14 @@ export const addDays = (date: PlainDate, days: number): PlainDate => {
 };
 
 // 만 경과 개월 수 (from 이후 to 까지 완전히 채운 개월). to < from 이면 0.
+// 말일 보정: to 가 해당 월의 말일이면 from.day 보다 작더라도 짧은 달에 의한 clamp 이므로 감산 안 함.
 export const monthsElapsed = (from: PlainDate, to: PlainDate): number => {
   if (comparePlainDate(to, from) < 0) {
     return 0;
   }
   let months = (to.year - from.year) * 12 + (to.month - from.month);
-  if (to.day < from.day) {
+  const toIsMonthEnd = to.day === lastDayOfMonth(to.year, to.month);
+  if (to.day < from.day && !toIsMonthEnd) {
     months -= 1;
   }
   return Math.max(0, months);

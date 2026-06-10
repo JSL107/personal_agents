@@ -140,6 +140,18 @@ describe('plain-date', () => {
         ),
       ).toBe(28);
     });
+    it('말일 입사 01-31 → 02-29(윤년 말일)은 만 1개월', () => {
+      expect(monthsElapsed({ year: 2024, month: 1, day: 31 }, { year: 2024, month: 2, day: 29 })).toBe(1);
+    });
+    it('말일 입사 01-31 → 02-28(윤년, 말일 아님)은 만 0개월', () => {
+      expect(monthsElapsed({ year: 2024, month: 1, day: 31 }, { year: 2024, month: 2, day: 28 })).toBe(0);
+    });
+    it('윤년 입사 02-29 → 다음해 02-28(평년 말일)은 만 12개월', () => {
+      expect(monthsElapsed({ year: 2024, month: 2, day: 29 }, { year: 2025, month: 2, day: 28 })).toBe(12);
+    });
+    it('기존 케이스 회귀: 만 28개월 유지', () => {
+      expect(monthsElapsed({ year: 2024, month: 1, day: 15 }, { year: 2026, month: 6, day: 10 })).toBe(28);
+    });
   });
 
   describe('yearsElapsed (만 경과 연수)', () => {
