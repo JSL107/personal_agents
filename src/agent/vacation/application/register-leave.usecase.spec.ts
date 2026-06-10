@@ -49,6 +49,20 @@ describe('RegisterLeaveUsecase', () => {
     expect(findActiveByUser).toHaveBeenCalled();
   });
 
+  it('반차(fraction 0.5) 는 영업일을 0.5 로 저장 (평일 단일일)', async () => {
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      startDate: { year: 2026, month: 6, day: 9 },
+      endDate: { year: 2026, month: 6, day: 9 },
+      asOf: { year: 2026, month: 6, day: 10 },
+      fraction: 0.5,
+    });
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ businessDays: 0.5 }),
+    );
+    expect(result.result.registered.businessDays).toBe(0.5);
+  });
+
   it('범위 역전(start>end)은 VacationException, 저장 안 함', async () => {
     await expect(
       usecase.execute({

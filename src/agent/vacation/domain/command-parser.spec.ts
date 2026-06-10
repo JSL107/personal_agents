@@ -55,4 +55,25 @@ describe('parseVacationCommand', () => {
   it('알 수 없는 서브커맨드 = INVALID', () => {
     expect(parseVacationCommand('헬로')).toEqual({ action: 'INVALID' });
   });
+  it('"반차 2026-06-09" = REGISTER fraction 0.5 단일일', () => {
+    expect(parseVacationCommand('반차 2026-06-09')).toEqual({
+      action: 'REGISTER',
+      startDate: { year: 2026, month: 6, day: 9 },
+      endDate: { year: 2026, month: 6, day: 9 },
+      memo: undefined,
+      fraction: 0.5,
+    });
+  });
+  it('"반차 2026-06-09 오후" = REGISTER fraction 0.5 + memo', () => {
+    expect(parseVacationCommand('반차 2026-06-09 오후')).toMatchObject({
+      action: 'REGISTER',
+      fraction: 0.5,
+      memo: '오후',
+    });
+  });
+  it('"반차 2026/06/09" 잘못된 날짜 = INVALID', () => {
+    expect(parseVacationCommand('반차 2026/06/09')).toEqual({
+      action: 'INVALID',
+    });
+  });
 });

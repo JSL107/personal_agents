@@ -8,6 +8,7 @@ export type VacationCommand =
       startDate: PlainDate;
       endDate: PlainDate;
       memo?: string;
+      fraction?: number;
     }
   | { action: 'CANCEL'; usageId: number }
   | { action: 'INVALID' };
@@ -25,6 +26,21 @@ export const parseVacationCommand = (text: string): VacationCommand => {
   const cancelMatch = /^취소\s+(\d+)$/.exec(trimmed);
   if (cancelMatch) {
     return { action: 'CANCEL', usageId: Number(cancelMatch[1]) };
+  }
+
+  const halfMatch = /^반차\s+([^\s]+)(?:\s+(.+))?$/.exec(trimmed);
+  if (halfMatch) {
+    const date = parsePlainDate(halfMatch[1]);
+    if (!date) {
+      return { action: 'INVALID' };
+    }
+    return {
+      action: 'REGISTER',
+      startDate: date,
+      endDate: date,
+      memo: halfMatch[2]?.trim() || undefined,
+      fraction: 0.5,
+    };
   }
 
   const useMatch = /^사용\s+([^\s~]+)(?:\s*~\s*([^\s]+))?(?:\s+(.+))?$/.exec(
