@@ -46,6 +46,8 @@ export enum TriggerType {
   // issues.opened webhook 자동 라벨링 — repo label vocab 안에서 LLM 이 적합 label 부분집합 선택 후
   // octokit issues.addLabels. 수동 라벨링과 구분하기 위한 trigger.
   WEBHOOK_ISSUE_AUTO_LABEL = 'WEBHOOK_ISSUE_AUTO_LABEL',
+  // 휴가 계산기 슬래시 (/휴가) + 자연어 멘션 공통 trigger. 동작(조회/등록/내역/취소) 구분은 inputSnapshot.action.
+  SLACK_COMMAND_VACATION = 'SLACK_COMMAND_VACATION',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

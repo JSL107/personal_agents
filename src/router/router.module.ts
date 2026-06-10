@@ -26,6 +26,8 @@ import { PoEvalDispatcher } from '../agent/po-eval/infrastructure/po-eval.dispat
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowDispatcher } from '../agent/po-shadow/infrastructure/po-shadow.dispatcher';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
+import { VacationDispatcher } from '../agent/vacation/infrastructure/vacation.dispatcher';
+import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -67,6 +69,7 @@ import {
     CtoModule,
     PoEvalModule,
     CeoModule,
+    VacationModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -106,6 +109,7 @@ import {
         CtoDispatcher,
         PoEvalDispatcher,
         CeoDispatcher,
+        VacationDispatcher,
       ],
     },
   ],

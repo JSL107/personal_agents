@@ -354,6 +354,16 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   BE_SANDBOX_DEFAULT_BASE_BRANCH?: string;
+
+  // 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러.
+  // 1인 봇이라 단일 입사일. 향후 멀티 사용자 시 테이블로 승격.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message:
+      'VACATION_HIRE_DATE 는 YYYY-MM-DD 형식이어야 합니다 (예: "2024-01-15").',
+  })
+  VACATION_HIRE_DATE?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
