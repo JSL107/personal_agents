@@ -18,6 +18,83 @@ const CODEX_EXECUTABLE = 'codex';
 const CODEX_DEFAULT_TIMEOUT_MS = 180_000;
 const STDERR_TAIL_LIMIT = 500;
 
+// codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
+// stdout/stderr 에 "You've hit your usage limit ... try again at <시각>" 류 문구가 찍힌다.
+// 이 신호를 일반 빈 응답과 구분해 상위(model-router)가 친절한 쿼터 안내를 만들 수 있게 한다.
+const CODEX_QUOTA_SIGNAL_REGEX =
+  /usage limit|hit your usage|reached your usage|rate limit|over your usage|quota/i;
+// "try again at Jun 11th, 2026 9:28 AM." / "try again in 2 hours" 등에서 리셋 힌트만 추출 ('.' 직전까지).
+const CODEX_QUOTA_RESET_HINT_REGEX = /try again (?:at|in) ([^\n.]+)/i;
+// resetHint 는 raw stdout 에서 뽑으므로 prose 폭주 / 시크릿 노출을 막기 위해 길이를 cap 한다 (시각 문구는 ~25자).
+const CODEX_RESET_HINT_MAX = 80;
+// 쿼터 마커가 후속 진행 로그에 밀려 tail 밖으로 빠지지 않도록 스캔용 누적 버퍼 한도 (Claude provider 와 동급).
+const CODEX_QUOTA_SCAN_BUFFER_LIMIT = 2000;
+
+export type CodexQuotaDetection = {
+  exhausted: boolean;
+  resetHint?: string;
+};
+
+// codex 출력(stdout+stderr)에서 쿼터 소진 여부 + 리셋 시각 힌트를 뽑는 순수 함수.
+// 부작용 없이 string 만 받으므로 단위 테스트가 쉽고, CodexQuotaScanner 가 청크 누적 버퍼에 대해 재사용한다.
+export const detectCodexQuotaExhaustion = (
+  output: string,
+): CodexQuotaDetection => {
+  if (!CODEX_QUOTA_SIGNAL_REGEX.test(output)) {
+    return { exhausted: false };
+  }
+  const match = output.match(CODEX_QUOTA_RESET_HINT_REGEX);
+  if (match) {
+    const hint = match[1].trim().slice(0, CODEX_RESET_HINT_MAX).trim();
+    if (hint.length > 0) {
+      return { exhausted: true, resetHint: hint };
+    }
+  }
+  return { exhausted: true };
+};
+
+// codex exec 는 stdout 에 진행 로그를 흘리다가 쿼터 소진 시 그 사이 "usage limit ... try again at <시각>" 를 끼워 넣는다.
+// 단순히 마지막 N자(tail)만 보면 마커가 후속 로그에 밀려 사라질 수 있어, 누적 버퍼에서 스캔하고 한 번 감지하면 sticky 하게 고정한다.
+// (버퍼는 메모리 폭주 방지를 위해 마지막 CODEX_QUOTA_SCAN_BUFFER_LIMIT 자만 유지 — 마커가 이 윈도우에 온전히 들어온 순간 잡는다.)
+export class CodexQuotaScanner {
+  private buffer = '';
+  private detection: CodexQuotaDetection = { exhausted: false };
+
+  feed(chunk: string): void {
+    // 신호(exhausted)뿐 아니라 reset 시각 힌트까지 확보하면 고정 — 신호 단어와 "try again at <시각>" 이
+    // 서로 다른 청크에 쪼개져 와도 힌트를 놓치지 않게 한다 (힌트가 끝내 없으면 exhausted 만 sticky 유지).
+    if (this.detection.exhausted && this.detection.resetHint) {
+      return;
+    }
+    this.buffer = (this.buffer + chunk).slice(-CODEX_QUOTA_SCAN_BUFFER_LIMIT);
+    const found = detectCodexQuotaExhaustion(this.buffer);
+    if (found.exhausted) {
+      this.detection = found;
+    }
+  }
+
+  get result(): CodexQuotaDetection {
+    return this.detection;
+  }
+}
+
+// codex(ChatGPT) 사용량 한도 초과를 일반 실패와 구분하기 위한 전용 예외.
+// model-router 가 instanceof 로 식별해 (1) Claude fallback 후 (2) 실패 시 reset 시각을 친절히 안내한다.
+export class CodexQuotaExceededException extends Error {
+  constructor(readonly resetHint?: string) {
+    super(
+      resetHint
+        ? `codex(ChatGPT) 사용량 한도 초과 — ${resetHint} 에 리셋됩니다.`
+        : 'codex(ChatGPT) 사용량 한도 초과.',
+    );
+    this.name = 'CodexQuotaExceededException';
+  }
+}
+
+type CodexSpawnResult = {
+  quotaDetection: CodexQuotaDetection;
+};
+
 // ChatGPT Plus 구독 기반의 codex CLI 를 non-interactive 모드(`codex exec`)로 호출하는 어댑터.
 // API key 없이 개인 구독 쿼터로 PM / Work Reviewer 에이전트를 굴리기 위한 경로다.
 // - 출력은 --output-last-message 로 임시 파일에 떨어뜨려 파싱 안정성을 확보 (stdout 은 진행 로그 섞임).
@@ -69,11 +146,21 @@ export class CodexCliProvider implements ModelProviderPort {
       // OPS-4: 외부 CLI 로 흘려보내기 직전 토큰 류 시크릿을 redact —
       // GitHub issue body / Slack mention / Notion property 가 prompt 에 inline 으로 들어가는 surface 차단.
       const stdinPayload = redactPii(buildCodexPrompt(request));
-      await this.spawnCodex({ args, cwd: workDir, homeDir, stdinPayload });
+      const { quotaDetection } = await this.spawnCodex({
+        args,
+        cwd: workDir,
+        homeDir,
+        stdinPayload,
+      });
       const text = (await readFile(outputFile, 'utf-8')).trim();
 
       if (text.length === 0) {
         // exit=0 이지만 output-last-message 가 비어있는 드문 상태 — 인증 만료/쿼터 소진/프롬프트 필터링 등에서 관찰됨.
+        // 그 중 쿼터 소진은 stdout 에 "usage limit ... try again at <시각>" 가 남으므로 (스캐너가 누적 감지) 전용 예외로 구분한다.
+        // (model-router 가 이 예외를 보고 Claude fallback → 실패 시 reset 시각 친절 안내.)
+        if (quotaDetection.exhausted) {
+          throw new CodexQuotaExceededException(quotaDetection.resetHint);
+        }
         // 빈 문자열을 그대로 전파하면 상위 parser 가 "JSON 파싱 실패" 로 잘못 보고하므로 명확한 진단 메시지로 끊는다.
         throw new Error(
           'codex CLI 가 빈 응답을 반환했습니다 (인증 상태/쿼터/프롬프트 필터를 확인해주세요).',
@@ -103,7 +190,7 @@ export class CodexCliProvider implements ModelProviderPort {
     cwd: string;
     homeDir: string;
     stdinPayload: string;
-  }): Promise<void> {
+  }): Promise<CodexSpawnResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(CODEX_EXECUTABLE, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -113,6 +200,8 @@ export class CodexCliProvider implements ModelProviderPort {
 
       let stdoutTail = '';
       let stderrTail = '';
+      // 쿼터 마커는 후속 진행 로그에 밀려 tail 밖으로 빠질 수 있어, tail 과 별개로 sticky 누적 스캐너로 감지한다.
+      const quotaScanner = new CodexQuotaScanner();
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');
@@ -120,11 +209,15 @@ export class CodexCliProvider implements ModelProviderPort {
       }, this.timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => {
-        stdoutTail = (stdoutTail + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
+        const text = chunk.toString();
+        stdoutTail = (stdoutTail + text).slice(-STDERR_TAIL_LIMIT);
+        quotaScanner.feed(text);
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
-        stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
+        const text = chunk.toString();
+        stderrTail = (stderrTail + text).slice(-STDERR_TAIL_LIMIT);
+        quotaScanner.feed(text);
       });
 
       child.on('error', (error) => {
@@ -135,11 +228,18 @@ export class CodexCliProvider implements ModelProviderPort {
       child.on('close', (code) => {
         clearTimeout(timer);
         if (code === 0) {
-          resolve();
+          resolve({ quotaDetection: quotaScanner.result });
           return;
         }
         const suffix = stderrTail || stdoutTail || '(no output)';
         this.logger.error(`codex CLI exit=${code} tail=${suffix.slice(-200)}`);
+        // exit≠0 이면서 쿼터 신호가 있으면 generic 비정상 종료 대신 전용 예외로 끊는다.
+        if (quotaScanner.result.exhausted) {
+          reject(
+            new CodexQuotaExceededException(quotaScanner.result.resetHint),
+          );
+          return;
+        }
         reject(new Error(`codex CLI 비정상 종료 (exit=${code}): ${suffix}`));
       });
 
