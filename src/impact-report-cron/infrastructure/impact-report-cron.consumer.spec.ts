@@ -1,11 +1,15 @@
 import { ImpactReporterException } from '../../agent/impact-reporter/domain/impact-reporter.exception';
 import { ImpactReporterErrorCode } from '../../agent/impact-reporter/domain/impact-reporter-error-code.enum';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { ImpactReportCronConsumer } from './impact-report-cron.consumer';
 
 describe('ImpactReportCronConsumer', () => {
   const mockImpactUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronIdempotency = {
+    acquireOnce: jest.fn().mockResolvedValue(true),
+  } as unknown as CronIdempotencyService;
   const mockPublisher = {
     publishCronFailure: jest.fn(),
     publishClaudeAuthSuspect: jest.fn(),
@@ -14,6 +18,7 @@ describe('ImpactReportCronConsumer', () => {
   const consumer = new ImpactReportCronConsumer(
     mockImpactUsecase as never,
     mockSlackNotifier as never,
+    mockCronIdempotency,
     mockPublisher as never,
   );
 

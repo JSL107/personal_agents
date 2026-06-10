@@ -6,6 +6,7 @@ import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo
 import { CeoException } from '../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
@@ -20,9 +21,14 @@ import {
   CeoMetaCronJobData,
 } from '../domain/ceo-meta-cron.type';
 
+// 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
+const SENT_GUARD_TTL_SECONDS = 90_000;
+
 // 주 1회 자동 /ceo-review — Daily Eval consumer 패턴 그대로.
 // CEO worker 는 PO_EVAL run 누적 (range=WEEK / TODAY) 을 메타 회고로 합성.
 // PO_EVAL run 0개면 NO_POEVAL_RUNS — graceful skip + Slack 안내.
+//
+// 중복 발송 차단: BullMQ stalled 재처리로 같은 슬롯 2회 처리 시 deliverOnce 가 skip.
 @Processor(CEO_META_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class CeoMetaCronConsumer extends WorkerHost {
   private readonly logger = new Logger(CeoMetaCronConsumer.name);
@@ -31,6 +37,7 @@ export class CeoMetaCronConsumer extends WorkerHost {
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
+    private readonly cronIdempotency: CronIdempotencyService,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -57,8 +64,7 @@ export class CeoMetaCronConsumer extends WorkerHost {
         intro +
         formatCeoMetaOutput(outcome.result) +
         formatModelFooter(outcome);
-      await this.slackNotifier.postMessage({ target, text });
-      this.logger.log(`CEO Meta Cron 발송 완료 — target=${target}`);
+      await this.deliverOnce(target, text);
     } catch (error) {
       if (
         error instanceof CeoException &&
@@ -67,10 +73,10 @@ export class CeoMetaCronConsumer extends WorkerHost {
         this.logger.warn(
           `CEO Meta Cron skip — PO_EVAL run 없음 (owner=${ownerSlackUserId}): ${error.message}`,
         );
-        await this.slackNotifier.postMessage({
+        await this.deliverOnce(
           target,
-          text: `🌙 *CEO Meta — ${todayKst} skip*\n_${rangeLabel} 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
-        });
+          `🌙 *CEO Meta — ${todayKst} skip*\n_${rangeLabel} 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
+        );
         return;
       }
       this.logger.error(
@@ -80,6 +86,23 @@ export class CeoMetaCronConsumer extends WorkerHost {
       this.notifyOwnerFailure(ownerSlackUserId, error);
       throw error;
     }
+  }
+
+  // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
+  private async deliverOnce(target: string, text: string): Promise<void> {
+    const dateKey = getTodayKstDate();
+    const firstRun = await this.cronIdempotency.acquireOnce(
+      `cron:${CEO_META_CRON_QUEUE}:${dateKey}`,
+      SENT_GUARD_TTL_SECONDS,
+    );
+    if (!firstRun) {
+      this.logger.warn(
+        `CEO Meta Cron 중복 발송 차단 — ${dateKey} 이미 발송됨 (stalled 재처리 추정)`,
+      );
+      return;
+    }
+    await this.slackNotifier.postMessage({ target, text });
+    this.logger.log(`CEO Meta Cron 발송 완료 — target=${target}`);
   }
 
   // fire-and-forget — NotificationQueue 로 enqueue. consumer 측 30분 dedupe + Slack DM.

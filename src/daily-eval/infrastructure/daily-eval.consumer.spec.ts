@@ -1,11 +1,15 @@
 import { PoEvalException } from '../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.enum';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { DailyEvalConsumer } from './daily-eval.consumer';
 
 describe('DailyEvalConsumer', () => {
   const mockPoEvalUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronIdempotency = {
+    acquireOnce: jest.fn().mockResolvedValue(true),
+  } as unknown as CronIdempotencyService;
   const mockPublisher = {
     publishCronFailure: jest.fn(),
     publishClaudeAuthSuspect: jest.fn(),
@@ -14,6 +18,7 @@ describe('DailyEvalConsumer', () => {
   const consumer = new DailyEvalConsumer(
     mockPoEvalUsecase as never,
     mockSlackNotifier as never,
+    mockCronIdempotency,
     mockPublisher as never,
   );
 
