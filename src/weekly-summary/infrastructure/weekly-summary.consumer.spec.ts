@@ -193,4 +193,66 @@ describe('WeeklySummaryConsumer', () => {
     const skipCall = mockSlackNotifier.postMessage.mock.calls[1][0];
     expect(skipCall.text).toContain('skip');
   });
+
+  it('stalled 재처리 — CEO meta 키가 이미 발송됨이면 worklog 만 발송하고 CEO 는 별도 키로 skip', async () => {
+    const fakeRun = {
+      id: 1,
+      output: {
+        tasks: [
+          {
+            title: '작업1',
+            timeBlock: 'AM',
+            estimatedMinutes: 60,
+            subtasks: [],
+            lineage: 'NEW',
+          },
+        ],
+        date: '2026-04-28',
+        variance: null,
+      },
+      endedAt: new Date('2026-04-28'),
+    };
+    mockAgentRunService.findRecentSucceededRuns.mockResolvedValue([fakeRun]);
+    mockWorklogUsecase.execute.mockResolvedValue({
+      result: {
+        summary: 'ok',
+        impact: { quantitative: [], qualitative: '좋음' },
+        improvementBeforeAfter: null,
+        nextActions: [],
+        oneLineAchievement: '완료',
+      },
+      modelUsed: 'test',
+      agentRunId: 2,
+    });
+    mockCeoMetaUsecase.execute.mockResolvedValue({
+      result: {
+        range: 'WEEK',
+        sourcePhaseRuns: { poEvalRunId: 10 },
+        contextDriftReport: { observations: [] },
+        docsQualityReport: { findings: [] },
+        finalSummary: '요약',
+        schemaVersion: 1,
+      },
+      modelUsed: 'claude',
+      agentRunId: 3,
+    });
+    // worklog 키는 첫 발송 허용, ceo-meta 키는 이미 발송됨(stalled 재처리 추정) → CEO 발송 skip.
+    (mockCronIdempotency.acquireOnce as jest.Mock).mockImplementation(
+      (key: string) => Promise.resolve(!key.includes('ceo-meta')),
+    );
+
+    await consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as any);
+
+    // CEO meta 는 별도 :ceo-meta: 키로 가드됨 — worklog 와 다른 키.
+    expect(mockCronIdempotency.acquireOnce).toHaveBeenCalledWith(
+      expect.stringContaining('ceo-meta'),
+      expect.any(Number),
+    );
+    // ceo-meta 키가 false 이므로 worklog 만 발송 (CEO meta 는 skip).
+    expect(mockSlackNotifier.postMessage).toHaveBeenCalledTimes(1);
+
+    (mockCronIdempotency.acquireOnce as jest.Mock).mockResolvedValue(true);
+  });
 });

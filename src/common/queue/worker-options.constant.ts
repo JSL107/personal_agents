@@ -22,3 +22,8 @@ export const LONG_RUNNING_WORKER_LOCK_DURATION_MS = 5 * 60 * 1000;
 export const LONG_RUNNING_WORKER_OPTIONS = {
   lockDuration: LONG_RUNNING_WORKER_LOCK_DURATION_MS,
 } as const;
+
+// cron 발송 idempotency 가드 TTL (초). stalled 재처리 중복 발송 차단용 키의 만료 시간.
+// 25h — 하루 슬롯을 넘기되 다음 날 같은 시각 발사 전엔 만료돼 정상 재발송을 막지 않는다.
+// (매일/주1회 cron 모두 "같은 날 중복" 만 차단하면 되므로 25h 로 충분.)
+export const CRON_SENT_GUARD_TTL_SECONDS = 90_000;
