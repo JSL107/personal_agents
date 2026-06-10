@@ -57,4 +57,21 @@ describe('MonthlyThenFixed15Policy', () => {
       policy.accrualFor(hire, { year: 2029, month: 3, day: 1 }).grantedDays,
     ).toBe(15);
   });
+
+  it('윤년 입사(2024-02-29) 의 2025-02-28 은 만 1년 회기 시작 (gap 없음)', () => {
+    const result = new MonthlyThenFixed15Policy().accrualFor(
+      { year: 2024, month: 2, day: 29 },
+      { year: 2025, month: 2, day: 28 },
+    );
+    expect(result.grantedDays).toBe(15);
+    expect(result.periodStart).toEqual({ year: 2025, month: 2, day: 28 });
+  });
+  it('말일 입사(2024-01-31) 만 1개월(2024-02-29) = 1일', () => {
+    expect(
+      new MonthlyThenFixed15Policy().accrualFor(
+        { year: 2024, month: 1, day: 31 },
+        { year: 2024, month: 2, day: 29 },
+      ).grantedDays,
+    ).toBe(1);
+  });
 });
