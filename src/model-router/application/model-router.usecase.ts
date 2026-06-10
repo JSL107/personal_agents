@@ -15,6 +15,7 @@ import {
   ModelProviderPort,
 } from '../domain/port/model-provider.port';
 import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
+import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
 
 // 기획서 §13 모델 라우팅 전략에 따른 에이전트 → 모델 매핑.
 // 계획/설명/회고 계열은 ChatGPT, 코드 작업은 Claude 중심.
@@ -39,11 +40,15 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.ISSUE_LABELER]: ModelProviderName.CLAUDE,
 };
 
-// 1차(primary) 실패 시 자동 재시도할 fallback provider.
-// CHATGPT (Codex CLI) — CLAUDE primary 실패 시 backup 역할 (구독 cost = ChatGPT Plus 1건).
-// CHATGPT primary 인 경우엔 primary == fallback 이라 wrapCompletionFailed 가 즉시 throw (재시도 X).
-// (이전엔 GEMINI 였으나 사용자 미구독 정책으로 2026-06-04 제거.)
-const FALLBACK_PROVIDER = ModelProviderName.CHATGPT;
+// 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
+// CLAUDE 실패 → CHATGPT (codex) 로, CHATGPT 실패(codex 쿼터 소진 등) → CLAUDE 로 fallback.
+// fallback 은 1회만 (primary 1 + fallback 1) 수행하므로 재귀/순환은 발생하지 않는다.
+// (이전엔 CHATGPT 단일 고정 — CHATGPT primary 면 재시도 없이 즉시 throw 였으나, codex 쿼터 소진 시
+//  PM/Work Reviewer/PO/Impact 가 통째로 죽는 문제로 Claude fallback 을 추가했다.)
+const FALLBACK_OF: Record<ModelProviderName, ModelProviderName> = {
+  [ModelProviderName.CLAUDE]: ModelProviderName.CHATGPT,
+  [ModelProviderName.CHATGPT]: ModelProviderName.CLAUDE,
+};
 
 @Injectable()
 export class ModelRouterUsecase {
@@ -89,8 +94,9 @@ export class ModelRouterUsecase {
       // (await 하지 않고 fire-and-forget — 알람 자체 실패가 fallback 흐름을 막지 않게.)
       this.maybeNotifyClaudeAuthSuspect(primaryError);
 
-      // 1차가 이미 fallback 모델이면 재시도 의미 없음 — 그대로 전파.
-      if (primaryName === FALLBACK_PROVIDER) {
+      const fallbackName = FALLBACK_OF[primaryName];
+      // 대칭 매핑이라 정상적으론 발생하지 않지만, 매핑이 깨져 primary == fallback 이면 재시도 무의미 — 즉시 전파.
+      if (!fallbackName || fallbackName === primaryName) {
         throw this.wrapCompletionFailed({
           attempted: [primaryName],
           lastError: primaryError,
@@ -98,10 +104,10 @@ export class ModelRouterUsecase {
       }
 
       this.logger.warn(
-        `primary provider(${primaryName}) 실패, fallback(${FALLBACK_PROVIDER}) 으로 재시도: ${primaryMessage}`,
+        `primary provider(${primaryName}) 실패, fallback(${fallbackName}) 으로 재시도: ${primaryMessage}`,
       );
 
-      const fallback = this.resolveProvider(FALLBACK_PROVIDER);
+      const fallback = this.resolveProvider(fallbackName);
       try {
         return await fallback.complete(request);
       } catch (fallbackError: unknown) {
@@ -110,10 +116,13 @@ export class ModelRouterUsecase {
             ? fallbackError.message
             : String(fallbackError);
         this.logger.error(
-          `fallback provider(${FALLBACK_PROVIDER}) 도 실패: ${fallbackMessage}`,
+          `fallback provider(${fallbackName}) 도 실패: ${fallbackMessage}`,
         );
+        // 양방향 fallback 으로 Claude 가 fallback 슬롯에 올 수 있다 (예: PM codex 쿼터 → Claude).
+        // 이 경우 Claude 인증 의심도 owner 알람 대상 — primary 뿐 아니라 fallback 실패도 검사.
+        this.maybeNotifyClaudeAuthSuspect(fallbackError);
         throw this.wrapCompletionFailed({
-          attempted: [primaryName, FALLBACK_PROVIDER],
+          attempted: [primaryName, fallbackName],
           lastError: fallbackError,
           primaryError,
         });
@@ -134,12 +143,26 @@ export class ModelRouterUsecase {
       attempted.length === 1
         ? `모델 호출 실패 (${attempted[0]})`
         : `모델 호출 실패 — primary ${attempted[0]} → fallback ${attempted[1]} 모두 실패`;
+    // codex 쿼터 소진이 원인이면 "모델 호출 실패" 대신 reset 시각을 친절히 덧붙인다 (Slack 노출용).
+    const quotaNotice = this.describeQuotaExhaustion([primaryError, lastError]);
     return new ModelRouterException({
       code: ModelRouterErrorCode.COMPLETION_FAILED,
-      message: summary,
+      message: quotaNotice ? `${summary}. ${quotaNotice}` : summary,
       status: DomainStatus.BAD_GATEWAY,
       cause: primaryError ? { primaryError, lastError } : lastError,
     });
+  }
+
+  // primary / fallback 에러 중 codex 쿼터 소진(CodexQuotaExceededException) 이 있으면 친절 안내 문구를 만든다.
+  private describeQuotaExhaustion(errors: unknown[]): string | null {
+    for (const error of errors) {
+      if (error instanceof CodexQuotaExceededException) {
+        return error.resetHint
+          ? `ChatGPT(codex) 사용량 한도 초과 — ${error.resetHint} 에 리셋됩니다. 잠시 후 다시 시도해주세요.`
+          : 'ChatGPT(codex) 사용량 한도 초과 — 잠시 후 다시 시도해주세요.';
+      }
+    }
+    return null;
   }
 
   // primary 실패가 ClaudeAuthSuspectException 일 때만 BullMQ queue 로 publish — consumer 가
