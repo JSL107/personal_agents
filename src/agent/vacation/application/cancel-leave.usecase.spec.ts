@@ -1,5 +1,5 @@
-import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { VacationException } from '../domain/vacation.exception';
