@@ -5,6 +5,7 @@ import { PmAgentException } from '../../agent/pm/domain/pm-agent.exception';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { PmAgentErrorCode } from '../../agent/pm/domain/pm-agent-error-code.enum';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { MorningBriefingJobData } from '../domain/morning-briefing.type';
 import { SlackNotifierPort } from '../domain/port/slack-notifier.port';
 import { MorningBriefingConsumer } from './morning-briefing.consumer';
@@ -28,6 +29,7 @@ describe('MorningBriefingConsumer', () => {
 
   let generateDailyPlan: jest.Mock;
   let postMessage: jest.Mock;
+  let acquireOnce: jest.Mock;
   let consumer: MorningBriefingConsumer;
 
   beforeEach(() => {
@@ -37,10 +39,12 @@ describe('MorningBriefingConsumer', () => {
       agentRunId: 99,
     });
     postMessage = jest.fn().mockResolvedValue(undefined);
+    acquireOnce = jest.fn().mockResolvedValue(true);
 
     consumer = new MorningBriefingConsumer(
       { execute: generateDailyPlan } as unknown as GenerateDailyPlanUsecase,
       { postMessage } as unknown as SlackNotifierPort,
+      { acquireOnce } as unknown as CronIdempotencyService,
     );
   });
 
@@ -99,5 +103,18 @@ describe('MorningBriefingConsumer', () => {
     await expect(
       consumer.process(buildJob({ ownerSlackUserId: 'U1', target: 'C99' })),
     ).rejects.toThrow('not_in_channel');
+  });
+
+  it('stalled 2회 처리 — 두 번째 consume 시 postMessage 호출 안 됨 (중복 발송 차단)', async () => {
+    // 첫 번째 acquire: true (발송 허용), 두 번째 acquire: false (중복 차단).
+    acquireOnce.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    // 첫 번째 처리 — 정상 발송.
+    await consumer.process(buildJob({ ownerSlackUserId: 'U1', target: 'C99' }));
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    // 두 번째 처리 (stalled 재처리 시뮬레이션) — 발송 skip.
+    await consumer.process(buildJob({ ownerSlackUserId: 'U1', target: 'C99' }));
+    expect(postMessage).toHaveBeenCalledTimes(1); // 추가 호출 없음.
   });
 });

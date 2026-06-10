@@ -6,6 +6,7 @@ import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/gen
 import { PoEvalException } from '../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.enum';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import {
@@ -17,10 +18,15 @@ import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatEvaluationOutput } from '../../slack/format/po-evaluation.formatter';
 import { DAILY_EVAL_QUEUE, DailyEvalJobData } from '../domain/daily-eval.type';
 
+// 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
+const SENT_GUARD_TTL_SECONDS = 90_000;
+
 // workflow-phase-definition §5.2 Daily Eval consumer.
 // 매일 19:00 KST job 발화 시 PO_EVAL (range=TODAY) 자동 실행 + Slack 발송.
 // 그날 sub-agent (WORK_REVIEWER / PO_SHADOW / IMPACT_REPORTER) run 없으면 NO_SUB_AGENT_RUNS —
 // graceful skip + Slack 안내 (사용자가 그날 활동 안 한 경우라 회고 불가).
+//
+// 중복 발송 차단: BullMQ stalled 재처리로 같은 슬롯 2회 처리 시 deliverOnce 가 skip.
 @Processor(DAILY_EVAL_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class DailyEvalConsumer extends WorkerHost {
   private readonly logger = new Logger(DailyEvalConsumer.name);
@@ -29,6 +35,7 @@ export class DailyEvalConsumer extends WorkerHost {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
+    private readonly cronIdempotency: CronIdempotencyService,
     // NotificationQueueModule 미연결 환경 대비 — undefined 면 알람 skip.
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
@@ -56,8 +63,7 @@ export class DailyEvalConsumer extends WorkerHost {
         intro +
         formatEvaluationOutput(outcome.result) +
         formatModelFooter(outcome);
-      await this.slackNotifier.postMessage({ target, text });
-      this.logger.log(`Daily Eval 발송 완료 — target=${target}`);
+      await this.deliverOnce(target, text);
     } catch (error) {
       if (
         error instanceof PoEvalException &&
@@ -66,10 +72,10 @@ export class DailyEvalConsumer extends WorkerHost {
         this.logger.warn(
           `Daily Eval skip — sub-agent run 없음 (owner=${ownerSlackUserId}): ${error.message}`,
         );
-        await this.slackNotifier.postMessage({
+        await this.deliverOnce(
           target,
-          text: `🌙 *Daily Eval — ${todayKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
-        });
+          `🌙 *Daily Eval — ${todayKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
+        );
         return;
       }
       this.logger.error(
@@ -79,6 +85,23 @@ export class DailyEvalConsumer extends WorkerHost {
       this.notifyOwnerFailure(ownerSlackUserId, error);
       throw error;
     }
+  }
+
+  // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
+  private async deliverOnce(target: string, text: string): Promise<void> {
+    const dateKey = getTodayKstDate();
+    const firstRun = await this.cronIdempotency.acquireOnce(
+      `cron:${DAILY_EVAL_QUEUE}:${dateKey}`,
+      SENT_GUARD_TTL_SECONDS,
+    );
+    if (!firstRun) {
+      this.logger.warn(
+        `Daily Eval 중복 발송 차단 — ${dateKey} 이미 발송됨 (stalled 재처리 추정)`,
+      );
+      return;
+    }
+    await this.slackNotifier.postMessage({ target, text });
+    this.logger.log(`Daily Eval 발송 완료 — target=${target}`);
   }
 
   // fire-and-forget — NotificationQueue 로 enqueue. consumer 측 30분 dedupe + Slack DM.

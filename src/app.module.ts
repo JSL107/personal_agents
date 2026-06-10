@@ -23,6 +23,7 @@ import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
 import { CeoMetaCronModule } from './ceo-meta-cron/ceo-meta-cron.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
+import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { DailyEvalModule } from './daily-eval/daily-eval.module';
@@ -59,6 +60,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
       }),
       inject: [ConfigService],
     }),
+    // cron 중복 발송 차단 (stalled 재처리 idempotency) — @Global, Redis SETNX. 모든 cron consumer 공용.
+    CronIdempotencyModule,
     PrismaModule,
     ModelRouterModule,
     AgentRunModule,
