@@ -307,6 +307,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           break;
         }
+        case 'VACATION': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (VACATION) 은 입력값에 의존하는 계산/기록이라 재실행을 지원하지 않습니다. \`/휴가\` 명령으로 다시 시도해주세요.`,
+          });
+          return;
+        }
         default:
           await respond({
             response_type: 'ephemeral',
