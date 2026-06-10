@@ -27,6 +27,9 @@ export enum AgentType {
   // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 안에서 적합한 label 부분집합
   // 을 LLM 분류 추론으로 골라 issues.addLabels. 새 label 생성 X (vocab 내부 선택).
   ISSUE_LABELER = 'ISSUE_LABELER',
+  // 휴가 계산기 — 결정론적 계산 워커. 계산 자체엔 LLM 미사용.
+  // AGENT_TO_PROVIDER 매핑은 자연어 멘션의 날짜/일수 파라미터 추출(VacationDispatcher) 용도로만 소비된다.
+  VACATION = 'VACATION',
 }
 
 export interface CompletionRequest {

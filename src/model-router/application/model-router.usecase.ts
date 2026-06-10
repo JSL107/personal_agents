@@ -38,6 +38,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.CEO]: ModelProviderName.CLAUDE,
   // ISSUE_LABELER — issue title/body 를 repo label vocab 안에서 분류. JSON 한 줄 출력 → Claude.
   [AgentType.ISSUE_LABELER]: ModelProviderName.CLAUDE,
+  // VACATION — 슬래시 경로는 결정론 계산이라 route() 미호출. 자연어 파라미터 추출 시에만 사용 → ChatGPT.
+  [AgentType.VACATION]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
