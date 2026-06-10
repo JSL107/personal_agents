@@ -1,3 +1,4 @@
+import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
@@ -47,5 +48,19 @@ describe('CancelLeaveUsecase', () => {
     });
     expect(softCancel).toHaveBeenCalled();
     expect(result.result.canceledId).toBe(10);
+  });
+});
+
+describe('CancelLeaveUsecase DI', () => {
+  it('Nest 가 now 파라미터 주입 없이 provider 를 resolve 한다 (@Optional)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CancelLeaveUsecase,
+        { provide: ConfigService, useValue: { get: () => '2024-01-15' } },
+        { provide: LeaveUsageRepository, useValue: {} },
+        { provide: AgentRunService, useValue: {} },
+      ],
+    }).compile();
+    expect(moduleRef.get(CancelLeaveUsecase)).toBeDefined();
   });
 });
