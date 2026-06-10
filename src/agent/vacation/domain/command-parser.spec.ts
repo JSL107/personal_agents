@@ -44,6 +44,14 @@ describe('parseVacationCommand', () => {
       action: 'INVALID',
     });
   });
+  it('"사용 2026-07-01 ~ 2026-07-03" (~ 주변 공백) = REGISTER 범위', () => {
+    expect(parseVacationCommand('사용 2026-07-01 ~ 2026-07-03')).toEqual({
+      action: 'REGISTER',
+      startDate: { year: 2026, month: 7, day: 1 },
+      endDate: { year: 2026, month: 7, day: 3 },
+      memo: undefined,
+    });
+  });
   it('알 수 없는 서브커맨드 = INVALID', () => {
     expect(parseVacationCommand('헬로')).toEqual({ action: 'INVALID' });
   });

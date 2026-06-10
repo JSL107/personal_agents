@@ -27,7 +27,7 @@ export const parseVacationCommand = (text: string): VacationCommand => {
     return { action: 'CANCEL', usageId: Number(cancelMatch[1]) };
   }
 
-  const useMatch = /^사용\s+(\S+?)(?:~(\S+))?(?:\s+(.+))?$/.exec(trimmed);
+  const useMatch = /^사용\s+([^\s~]+)(?:\s*~\s*([^\s]+))?(?:\s+(.+))?$/.exec(trimmed);
   if (useMatch) {
     const startDate = parsePlainDate(useMatch[1]);
     const endDate = useMatch[2] ? parsePlainDate(useMatch[2]) : startDate;
