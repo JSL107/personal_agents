@@ -1,11 +1,15 @@
 import { CeoException } from '../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { CeoMetaCronConsumer } from './ceo-meta-cron.consumer';
 
 describe('CeoMetaCronConsumer', () => {
   const mockCeoUsecase = { execute: jest.fn() };
   const mockSlackNotifier = { postMessage: jest.fn() };
+  const mockCronIdempotency = {
+    acquireOnce: jest.fn().mockResolvedValue(true),
+  } as unknown as CronIdempotencyService;
   const mockPublisher = {
     publishCronFailure: jest.fn(),
     publishClaudeAuthSuspect: jest.fn(),
@@ -14,6 +18,7 @@ describe('CeoMetaCronConsumer', () => {
   const consumer = new CeoMetaCronConsumer(
     mockCeoUsecase as never,
     mockSlackNotifier as never,
+    mockCronIdempotency,
     mockPublisher as never,
   );
 
