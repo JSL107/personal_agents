@@ -36,4 +36,17 @@ describe('parseNlVacationIntent', () => {
       VacationException,
     );
   });
+  it('REGISTER + fraction 0.5 (반차) 파싱', () => {
+    expect(
+      parseNlVacationIntent(
+        '{"action":"REGISTER","startDate":"2026-06-09","endDate":"2026-06-09","fraction":0.5,"memo":"반차"}',
+      ),
+    ).toEqual({
+      action: 'REGISTER',
+      startDate: { year: 2026, month: 6, day: 9 },
+      endDate: { year: 2026, month: 6, day: 9 },
+      fraction: 0.5,
+      memo: '반차',
+    });
+  });
 });

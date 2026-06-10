@@ -21,6 +21,7 @@ interface RegisterLeaveCommand {
   endDate: PlainDate;
   memo?: string;
   asOf: PlainDate;
+  fraction?: number;
 }
 
 const policy = new MonthlyThenFixed15Policy();
@@ -39,10 +40,12 @@ export class RegisterLeaveUsecase {
     endDate,
     memo,
     asOf,
+    fraction,
   }: RegisterLeaveCommand): Promise<AgentRunOutcome<RegisterLeaveResult>> {
     const hireDate = resolveHireDate(this.config);
     // 범위 역전 시 여기서 throw (저장 전).
-    const businessDays = countBusinessDays(startDate, endDate);
+    const businessDays =
+      countBusinessDays(startDate, endDate) * (fraction ?? 1);
 
     return this.agentRunService.execute({
       agentType: AgentType.VACATION,
