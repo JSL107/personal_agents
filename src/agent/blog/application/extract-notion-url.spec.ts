@@ -7,8 +7,11 @@ describe('extractNotionUrl', () => {
   });
 
   it('마커가 없으면 본문의 notion URL 을 추출한다', () => {
-    const out = 'Notion 페이지: https://app.notion.com/p/HTTP-Cache-37c6 입니다.';
-    expect(extractNotionUrl(out)).toBe('https://app.notion.com/p/HTTP-Cache-37c6');
+    const out =
+      'Notion 페이지: https://app.notion.com/p/HTTP-Cache-37c6 입니다.';
+    expect(extractNotionUrl(out)).toBe(
+      'https://app.notion.com/p/HTTP-Cache-37c6',
+    );
   });
 
   it('notion URL 이 없으면 null', () => {
