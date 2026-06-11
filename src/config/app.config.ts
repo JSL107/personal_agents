@@ -265,6 +265,13 @@ class EnvironmentVariables {
   @IsString()
   ANTHROPIC_API_KEY?: string;
 
+  // ClaudeCliProvider 가 spawn 시 사용할 claude 모델 별칭 (예: 'opus', 'sonnet').
+  // 미설정 시 DEFAULT_CLAUDE_MODEL = 'opus' (claude-cli.provider.ts). ConfigService 로 읽으므로
+  // 여기 EnvironmentVariables 에 선언해 검증·문서(.env.example) 동기 대상에 포함시킨다.
+  @IsOptional()
+  @IsString()
+  CLAUDE_MODEL?: string;
+
   // pull_request.opened webhook 자동 /review-pr 활성 — payload.pull_request.user.login 과
   // 일치하는 PR (본인 작성) + bot 작성 제외. 미설정 시 자동 review 비활성 (impact-report / BE-FIX 자동은 그대로).
   // 결과는 GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID 사용자에게 Slack DM 으로 발송.
