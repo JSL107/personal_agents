@@ -10,6 +10,7 @@ import { BeSandboxPushPrApplier } from './agent/be-sandbox/infrastructure/be-san
 import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
+import { BlogModule } from './agent/blog/blog.module';
 import { CeoModule } from './agent/ceo/ceo.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { CtoModule } from './agent/cto/cto.module';
@@ -139,6 +140,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     PrCareerLogModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산 (LLM 없음). /휴가 슬래시 핸들러 의존.
     VacationModule,
+    // BLOG 릴레이 — 자연어 멘션 전용(@이대리 ... 블로그 써줘). Hermes tistory-blog 스킬을 hermes -z 로 호출.
+    // RouterModule 도 BlogModule 을 import 하지만(dispatcher inject), 다른 agent 모듈과 동일하게 여기도 등록.
+    BlogModule,
   ],
 })
 export class AppModule {}
