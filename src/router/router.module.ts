@@ -12,6 +12,8 @@ import { BeSreModule } from '../agent/be-sre/be-sre.module';
 import { BeSreDispatcher } from '../agent/be-sre/infrastructure/be-sre.dispatcher';
 import { BeTestModule } from '../agent/be-test/be-test.module';
 import { BeTestDispatcher } from '../agent/be-test/infrastructure/be-test.dispatcher';
+import { BlogModule } from '../agent/blog/blog.module';
+import { BlogDispatcher } from '../agent/blog/infrastructure/blog.dispatcher';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CeoDispatcher } from '../agent/ceo/infrastructure/ceo.dispatcher';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
@@ -70,6 +72,7 @@ import {
     PoEvalModule,
     CeoModule,
     VacationModule,
+    BlogModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -110,6 +113,7 @@ import {
         PoEvalDispatcher,
         CeoDispatcher,
         VacationDispatcher,
+        BlogDispatcher,
       ],
     },
   ],
