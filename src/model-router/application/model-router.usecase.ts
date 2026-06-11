@@ -40,6 +40,9 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.ISSUE_LABELER]: ModelProviderName.CLAUDE,
   // VACATION — 슬래시 경로는 결정론 계산이라 route() 미호출. 자연어 파라미터 추출 시에만 사용 → ChatGPT.
   [AgentType.VACATION]: ModelProviderName.CHATGPT,
+  // BLOG — Hermes CLI(`hermes -z`)를 직접 spawn 하는 외부 에이전트라 route() 를 거치지 않는다.
+  // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
+  [AgentType.BLOG]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
