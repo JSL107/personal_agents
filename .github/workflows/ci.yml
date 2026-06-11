@@ -50,11 +50,14 @@ jobs:
       - name: Lint
         run: pnpm lint:check
 
-      # code-graph/infrastructure/tree-sitter-*.spec 은 linux CI(x64)에서 tree-sitter 네이티브
-      # 바인딩 이슈로 실패(로컬 macOS 는 통과). 하네스 PR 범위 밖의 pre-existing 이슈라 CI 에서만
-      # 한시 제외한다 — 로컬 `pnpm test` 는 그대로 전부 실행. 추적: #84.
+      # tree-sitter 네이티브 애드온은 jest 의 파일별 모듈 샌드박스에서 한 워커 프로세스에 2번째로
+      # 로드될 때 네이티브 상태가 깨져 parse() 가 rootNode=undefined 를 반환한다(node-tree-sitter +
+      # jest 멀티컨텍스트 이슈). 2-core CI 러너는 워커가 적어 여러 tree-sitter spec 이 한 프로세스에
+      # 몰려 2번째가 실패(macOS 다코어·단일파일은 우연히 통과). --workerIdleMemoryLimit 로 파일마다
+      # 워커를 재시작시켜 네이티브를 매번 fresh 로드하면 해소 — linux/amd64 Docker 전체 스위트
+      # (122 suites/1035 tests)로 검증. 코드는 정상이라 무변경. 근본 원인 규명: #84.
       - name: Test
-        run: pnpm test -- --testPathIgnorePatterns "/node_modules/|code-graph/infrastructure/tree-sitter"
+        run: pnpm test -- --workerIdleMemoryLimit=80MB
 
       - name: Build
         run: pnpm build
