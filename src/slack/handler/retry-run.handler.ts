@@ -315,6 +315,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        case 'BLOG': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (BLOG) 은 Hermes 에이전트 실행이라 retry-run 을 지원하지 않습니다. 같은 요청을 자연어로 다시 멘션해주세요 (예: "@이대리 … 블로그 써줘").`,
+          });
+          return;
+        }
         default:
           await respond({
             response_type: 'ephemeral',

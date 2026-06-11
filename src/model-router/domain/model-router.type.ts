@@ -30,6 +30,9 @@ export enum AgentType {
   // 휴가 계산기 — 결정론적 계산 워커. 계산 자체엔 LLM 미사용.
   // AGENT_TO_PROVIDER 매핑은 자연어 멘션의 날짜/일수 파라미터 추출(VacationDispatcher) 용도로만 소비된다.
   VACATION = 'VACATION',
+  // 블로그 초안 릴레이 — Hermes tistory-blog 스킬을 `hermes -z` 로 호출하는 외부 에이전트 디스패치.
+  // model-router 미경유 (AGENT_TO_PROVIDER 의 BLOG 는 Record exhaustive 충족용 sentinel).
+  BLOG = 'BLOG',
 }
 
 export interface CompletionRequest {
