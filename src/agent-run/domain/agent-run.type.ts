@@ -48,6 +48,9 @@ export enum TriggerType {
   WEBHOOK_ISSUE_AUTO_LABEL = 'WEBHOOK_ISSUE_AUTO_LABEL',
   // 휴가 계산기 슬래시 (/휴가) + 자연어 멘션 공통 trigger. 동작(조회/등록/내역/취소) 구분은 inputSnapshot.action.
   SLACK_COMMAND_VACATION = 'SLACK_COMMAND_VACATION',
+  // 블로그 릴레이 — 자연어 멘션 전용(슬래시 없음)이라 COMMAND 가 아닌 MENTION 명명.
+  // BlogDispatcher → GenerateBlogDraftUsecase 가 Hermes tistory-blog 스킬을 hermes -z 로 호출.
+  SLACK_MENTION_BLOG = 'SLACK_MENTION_BLOG',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

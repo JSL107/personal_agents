@@ -17,6 +17,18 @@ describe('parseIntentClassification', () => {
     expect(result.reason).toBe('일정 키워드');
   });
 
+  it('BLOG agentType 을 허용한다 (화이트리스트에 자동 포함)', () => {
+    const raw = JSON.stringify({
+      agentType: 'BLOG',
+      confidence: 0.9,
+      reason: '블로그 요청',
+    });
+
+    const result = parseIntentClassification(raw);
+
+    expect(result.agentType).toBe(AgentType.BLOG);
+  });
+
   it('```json 코드 fence 로 감싸진 응답도 graceful 처리', () => {
     const raw =
       '```json\n' +
