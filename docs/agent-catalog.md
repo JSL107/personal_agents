@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 15종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
+이대리의 에이전트 16종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -12,6 +12,7 @@
 | BE Schema | `BE_SCHEMA` | `/be schema` | CLAUDE | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Prisma 스키마 변경 제안 |
 | BE SRE | `BE_SRE` | — (webhook/자동) | CLAUDE | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (webhook 자동 트리거) |
 | BE Test | `BE_TEST` | `/be test` | CLAUDE | `src/agent/be-test/application/generate-test.usecase.ts` | Tree-sitter AST 기반 Jest spec 생성 |
+| Blog | `BLOG` | — (webhook/자동) | CLAUDE | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
 | CEO | `CEO` | `/ceo-review` | CLAUDE | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CLAUDE | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | CTO | `CTO` | `/assign` | CLAUDE | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
