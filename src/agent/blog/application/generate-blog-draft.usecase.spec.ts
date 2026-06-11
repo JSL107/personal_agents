@@ -49,6 +49,8 @@ describe('GenerateBlogDraftUsecase', () => {
     const usecase = new GenerateBlogDraftUsecase(agentRunStub, runner);
     await expect(
       usecase.execute({ requestText: 'x', slackUserId: 'U1' }),
-    ).rejects.toMatchObject({ blogErrorCode: BlogErrorCode.NOTION_URL_NOT_FOUND });
+    ).rejects.toMatchObject({
+      blogErrorCode: BlogErrorCode.NOTION_URL_NOT_FOUND,
+    });
   });
 });

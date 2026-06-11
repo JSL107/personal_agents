@@ -8,8 +8,8 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { BlogException } from '../domain/blog.exception';
-import { BlogErrorCode } from '../domain/blog-error-code.enum';
 import { BlogDraftResult, GenerateBlogDraftInput } from '../domain/blog.type';
+import { BlogErrorCode } from '../domain/blog-error-code.enum';
 import {
   HERMES_RUNNER_PORT,
   HermesRunnerPort,
@@ -51,7 +51,9 @@ export class GenerateBlogDraftUsecase {
         },
       ],
       run: async () => {
-        const { stdout } = await this.hermesRunner.run(buildBlogPrompt(trimmed));
+        const { stdout } = await this.hermesRunner.run(
+          buildBlogPrompt(trimmed),
+        );
         const notionUrl = extractNotionUrl(stdout);
         if (!notionUrl) {
           throw new BlogException({
