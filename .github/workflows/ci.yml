@@ -1,0 +1,57 @@
+name: CI
+
+# 이대리 검증 게이트 — CLAUDE.md §2 #2 "3중 green"(lint:check + test + build) +
+# §2 #7 "env 동기"(check:env)를 push/PR 마다 자동 강제한다.
+# 배포는 포함하지 않는다(org 규칙 §9: prod 배포 자동화 금지). 검증 전용.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # PrismaClient 타입 생성 — lint/test/build 가 @prisma/client 타입에 의존하므로 선행.
+      # schema 파싱만 하면 되고 DB 연결은 불필요하다.
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      # env 드리프트 게이트 (.env.example ↔ src/config/app.config.ts).
+      - name: Check env sync
+        run: pnpm check:env
+
+      # docs-as-code 드리프트 게이트 (docs/*-catalog.md ↔ 코드 SoT).
+      - name: Check docs sync
+        run: pnpm docs:check
+
+      - name: Lint
+        run: pnpm lint:check
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
