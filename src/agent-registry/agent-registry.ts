@@ -146,4 +146,11 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     usecasePath: 'src/agent/vacation/application/calculate-balance.usecase.ts',
     description: '휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용)',
   },
+  {
+    agentType: AgentType.BLOG,
+    displayName: 'Blog',
+    slashCommands: [],
+    usecasePath: 'src/agent/blog/application/generate-blog-draft.usecase.ts',
+    description: '블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬)',
+  },
 ];
