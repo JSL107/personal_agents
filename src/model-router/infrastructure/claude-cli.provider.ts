@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { LLM_CLI_TIMEOUT_MS } from '../../common/llm/llm-timeout.constant';
 import {
   CompletionRequest,
   CompletionResponse,
@@ -16,7 +17,8 @@ import { buildSafeChildEnv, getRealHomeDir } from './cli-process.util';
 import { redactPii } from './pii-redaction.util';
 
 const CLAUDE_EXECUTABLE = 'claude';
-const CLAUDE_DEFAULT_TIMEOUT_MS = 180_000;
+// 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
+const CLAUDE_DEFAULT_TIMEOUT_MS = LLM_CLI_TIMEOUT_MS;
 const STREAM_TAIL_LIMIT = 2000;
 
 // Claude Max 구독 기반의 claude CLI 를 print 모드(`-p`)로 호출하는 어댑터.
