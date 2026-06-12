@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
 
+import { LLM_CLI_TIMEOUT_MS } from '../../common/llm/llm-timeout.constant';
 import {
   CompletionRequest,
   CompletionResponse,
@@ -15,7 +16,8 @@ import { buildSafeChildEnv } from './cli-process.util';
 import { redactPii } from './pii-redaction.util';
 
 const CODEX_EXECUTABLE = 'codex';
-const CODEX_DEFAULT_TIMEOUT_MS = 180_000;
+// 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
+const CODEX_DEFAULT_TIMEOUT_MS = LLM_CLI_TIMEOUT_MS;
 const STDERR_TAIL_LIMIT = 500;
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
