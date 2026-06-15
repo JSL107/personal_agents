@@ -4,13 +4,13 @@ import { CareerProfileData } from '../domain/career-mate.type';
 export const formatProfileSummary = (data: CareerProfileData): string => {
   const top = data.accomplishments
     .slice(0, 3)
-    .map((a) => `• ${a.bullet}`)
+    .map((a) => `• ${escapeSlackMrkdwn(a.bullet)}`)
     .join('\n');
   return [
     `*역량 프로필 갱신 완료* ✅`,
     `스킬 ${data.skills.length} · 성과 ${data.accomplishments.length} · 증거 PR ${data.meta.prCount}건`,
     ``,
-    data.summary,
+    escapeSlackMrkdwn(data.summary),
     top ? `\n*상위 성과*\n${top}` : '',
   ]
     .filter(Boolean)
@@ -18,8 +18,10 @@ export const formatProfileSummary = (data: CareerProfileData): string => {
 };
 
 export const formatResume = (data: CareerProfileData): string => {
-  const bullets = data.accomplishments.map((a) => `• ${a.bullet}`).join('\n');
-  const skills = data.skills.map((s) => s.name).join(', ');
+  const bullets = data.accomplishments
+    .map((a) => `• ${escapeSlackMrkdwn(a.bullet)}`)
+    .join('\n');
+  const skills = data.skills.map((s) => escapeSlackMrkdwn(s.name)).join(', ');
   return [
     `*이력서 — 성과*`,
     bullets || '(성과 없음)',
@@ -65,3 +67,8 @@ export const buildPortfolioBlocks = (
   }
   return blocks;
 };
+
+// Slack mrkdwn control 문자 escape — LLM 출력(summary/bullet/skill명)에 의한 메시지 위조 차단.
+// (Notion 미러 경로는 어댑터가 link 를 isSafeHttpUrl 로 가드하므로 Slack mrkdwn 한정.)
+const escapeSlackMrkdwn = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

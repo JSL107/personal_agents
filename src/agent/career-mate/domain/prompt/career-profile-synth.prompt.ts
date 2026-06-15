@@ -65,6 +65,8 @@ export const parseCareerProfileOutput = (text: string): CareerProfileData => {
       '프로필 생성 실패 — skills/accomplishments 가 배열이 아닙니다.',
     );
   }
+  // meta 는 형태(object)만 검증한다 — Build usecase 가 직후 data.meta 를 권위값으로 덮어쓰므로
+  // 하위필드 검증은 불필요. (덮어쓰지 않는 다른 호출자가 생기면 검증 추가 필요 — Phase 2 유의.)
   if (typeof obj.meta !== 'object' || obj.meta === null) {
     return invalid('프로필 생성 실패 — meta 누락.');
   }
