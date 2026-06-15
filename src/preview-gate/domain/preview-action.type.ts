@@ -16,6 +16,9 @@ export const PREVIEW_KIND = {
   // payload = { diff, reasoning, changedFiles, repoLabel, baseBranch } (BeSandboxPushPrPayload).
   // applier 가 octokit 으로 새 branch + commit + PR open. main 직접 push 절대 X.
   BE_SANDBOX_PUSH_PR: 'BE_SANDBOX_PUSH_PR',
+  // Phase 2 — JD 갭 분석 후 주제 선택 대기. applier 없음(ApplyPreview 안 거치고
+  // router-message intercept 가 직접 BLOG 체인 + cancel 로 consume).
+  CAREER_JD_GAP_BLOG: 'CAREER_JD_GAP_BLOG',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
