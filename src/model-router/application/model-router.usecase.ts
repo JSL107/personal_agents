@@ -43,6 +43,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // BLOG — Hermes CLI(`hermes -z`)를 직접 spawn 하는 외부 에이전트라 route() 를 거치지 않는다.
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
   [AgentType.BLOG]: ModelProviderName.CLAUDE,
+  // CAREER_MATE — merged PR → 역량 프로필 구조 합성. 구조화 JSON 강점 → Claude.
+  [AgentType.CAREER_MATE]: ModelProviderName.CLAUDE,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).

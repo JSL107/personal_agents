@@ -33,6 +33,9 @@ export enum AgentType {
   // 블로그 초안 릴레이 — Hermes tistory-blog 스킬을 `hermes -z` 로 호출하는 외부 에이전트 디스패치.
   // model-router 미경유 (AGENT_TO_PROVIDER 의 BLOG 는 Record exhaustive 충족용 sentinel).
   BLOG = 'BLOG',
+  // 이직 메이트 — merged PR 합성 → 역량 프로필 허브 + 이력서/포트폴리오 (자연어 멘션 전용).
+  // 프로필 합성 시 model-router 경유 (구조화 JSON 강점 → Claude).
+  CAREER_MATE = 'CAREER_MATE',
 }
 
 export interface CompletionRequest {
