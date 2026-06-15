@@ -37,11 +37,29 @@ export type CareerMateAction =
   | 'BUILD_PROFILE'
   | 'RENDER_RESUME'
   | 'RENDER_PORTFOLIO'
+  | 'ANALYZE_JD_GAP'
   | 'UNKNOWN';
 
 export interface CareerMateIntent {
   action: CareerMateAction;
   windowMonths?: number;
+}
+
+export interface GapTopic {
+  title: string;
+  rationale: string;
+}
+
+export interface GapAnalysisData {
+  fitSummary: string;
+  have: string[];
+  gaps: string[];
+  topics: GapTopic[];
+}
+
+export interface AnalyzeJdGapInput {
+  slackUserId: string;
+  jdText: string;
 }
 
 export interface BuildCareerProfileInput {
