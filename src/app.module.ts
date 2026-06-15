@@ -67,7 +67,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     PrismaModule,
     ModelRouterModule,
     AgentRunModule,
-    // V3 SOTA Foundation 1.1 — Tree-sitter Code Graph (단계 0: 빈 스캐폴드).
+    // V3 SOTA Foundation 1.1 — Tree-sitter Code Graph. 파서 + 스냅샷 스토어 구현 완료.
+    // BE-SRE (stack trace 영향 분석) / BE-Schema (스키마 제안) usecase 가 소비.
     CodeGraphModule,
     GithubModule,
     NotionModule,
@@ -80,11 +81,11 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,
-    // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-1 / BE-4 self-correction 루프가
-    // 호스트 직접 실행 대신 사용 예정 (현재는 첫 소비자 wiring 전).
+    // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래) +
+    // BeSandboxApplier (PreviewGate) 가 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
     SandboxModule,
-    // V3 §8 BE-2 AST Test Gen — /be-test 슬래시. Tree-sitter AST 분석 + spec 생성.
-    // (sandbox 검증 루프는 P1 보안 점검 후 도입 — 현재 MVP 는 spec 생성/반환만.)
+    // V3 §8 BE-2 AST Test Gen — /be-test 슬래시. Tree-sitter AST 분석 + spec 생성 +
+    // sandbox self-correction 루프 (생성 spec 을 Docker tmpfs 에서 실행 → 실패 시 stderr 로 재생성).
     BeTestModule,
     // V3 §7 BE-1 Auto-SRE — /be-sre 슬래시. Stack trace 파싱 + Code Graph 영향 분석 + LLM patch 제안.
     BeSreModule,
@@ -96,8 +97,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     PoEvalModule,
     // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker). PO_EVAL (필수) + PM/CTO (선택) 합성.
     CeoModule,
-    // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort) 의 scaffold.
-    // 현 단계 dispatch() 는 의도적으로 UNSUPPORTED throw — worker dispatcher registry 도입 plan 진입 전.
+    // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort).
+    // 자연어 멘션 → IntentClassifier → 15 worker dispatcher registry 로 dispatch (동작 완료).
     RouterModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // V3 §P4: PoEvalCareerlogApplier 도 같은 forRoot 로 등록 — Notion appendBlocks 만 의존.
