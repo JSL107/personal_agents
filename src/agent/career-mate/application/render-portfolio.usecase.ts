@@ -7,12 +7,12 @@ import {
   NotionClientPort,
 } from '../../../notion/domain/port/notion-client.port';
 import { CareerMateException } from '../domain/career-mate.exception';
-import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
 import {
   CareerProfileData,
   RenderPortfolioInput,
   RenderPortfolioResult,
 } from '../domain/career-mate.type';
+import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
 import {
   CAREER_PROFILE_REPOSITORY_PORT,
   CareerProfileRepositoryPort,

@@ -27,13 +27,11 @@ const makeDeps = (prs: unknown[]) => {
     listAuthorMergedPullRequestsSince: jest.fn().mockResolvedValue(prs),
   };
   const modelRouter = {
-    route: jest
-      .fn()
-      .mockResolvedValue({
-        text: PROFILE_JSON,
-        modelUsed: 'claude-cli',
-        provider: 'CLAUDE',
-      }),
+    route: jest.fn().mockResolvedValue({
+      text: PROFILE_JSON,
+      modelUsed: 'claude-cli',
+      provider: 'CLAUDE',
+    }),
   };
   const repository = {
     save: jest.fn().mockResolvedValue({ id: 7 }),
