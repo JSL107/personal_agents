@@ -26,7 +26,7 @@ export const CAREER_PROFILE_SYNTH_SYSTEM_PROMPT = `너는 개발자의 merged PR
 export const buildSynthPrompt = (prs: GithubPullRequestSummary[]): string => {
   const lines = prs.map((pr) => {
     const body = (pr.body ?? '').replace(/\s+/g, ' ').slice(0, 400);
-    return `- ${pr.repo}#${pr.number} "${pr.title}" (+${pr.additions}/-${pr.deletions}, files ${pr.changedFilesCount}, merged ${pr.mergedAt}) url=${pr.url}\n  본문: ${body}`;
+    return `- ${pr.repo}#${pr.number} "${pr.title}" (+${pr.additions}/-${pr.deletions}, files ${pr.changedFilesCount}, merged ${pr.mergedAt ?? '미상'}) url=${pr.url}\n  본문: ${body}`;
   });
   return `다음은 합성 대상 merged PR ${prs.length}건이다.\n\n${lines.join('\n')}`;
 };
