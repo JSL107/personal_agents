@@ -50,18 +50,20 @@ export class BuildCareerProfileUsecase {
     slackUserId,
     windowMonths = DEFAULT_WINDOW_MONTHS,
   }: BuildCareerProfileInput): Promise<AgentRunOutcome<CareerProfileData>> {
-    const githubLogin = this.config.get<string>('GITHUB_OWNER_LOGIN');
+    const githubLogin = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     if (!githubLogin) {
       throw new CareerMateException({
         code: CareerMateErrorCode.CONFIG_MISSING,
         message:
-          'GITHUB_OWNER_LOGIN 이 설정되지 않았습니다 (.env 확인). 프로필을 만들 수 없습니다.',
+          'IMPACT_REPORT_GITHUB_AUTHOR (owner GitHub login) 가 설정되지 않았습니다 (.env 확인). 프로필을 만들 수 없습니다.',
         status: DomainStatus.INTERNAL,
       });
     }
 
+    // 비정상 입력 방어: 조회 윈도우 상한 60개월 (clamp).
+    const clampedWindowMonths = Math.min(windowMonths, 60);
     const since = new Date();
-    since.setMonth(since.getMonth() - windowMonths);
+    since.setMonth(since.getMonth() - clampedWindowMonths);
     const sinceIsoDate = since.toISOString().slice(0, 10);
 
     const prs = await this.githubClient.listAuthorMergedPullRequestsSince({

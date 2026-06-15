@@ -111,7 +111,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     // step 8 — handoff chain audit log. parent.id 가 input.contextRefs 에 실려오면 child run 의
     // parentId 컬럼에 기록. 실패는 audit 누락에 그치므로 chain 진행 자체를 멈추지 않는다.
     const parentAgentRunId = input.contextRefs?.agentRunId;
-    if (parentAgentRunId !== undefined) {
+    // agentRunId 0 은 "유효 run 없음" sentinel (deterministic/UNKNOWN 분기) — setParentId(id:0) 가
+    // Prisma P2025 를 던지므로 가드한다 (career-mate UNKNOWN · vacation LIST 등 공통).
+    if (parentAgentRunId !== undefined && outcome.agentRunId > 0) {
       try {
         await this.agentRunService.setParentId({
           id: outcome.agentRunId,
