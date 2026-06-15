@@ -32,13 +32,32 @@ const makeDispatcher = (intentText: string) => {
       agentRunId: 3,
     }),
   };
+  const analyzeJdGap = {
+    execute: jest.fn().mockResolvedValue({
+      result: {
+        fitSummary: 'f',
+        have: [],
+        gaps: ['K8s'],
+        topics: [{ title: 'K8s 회고', rationale: 'r' }],
+      },
+      modelUsed: 'claude-cli',
+      agentRunId: 7,
+    }),
+  };
   const dispatcher = new CareerMateDispatcher(
     modelRouter as never,
     buildProfile as never,
     renderResume as never,
     renderPortfolio as never,
+    analyzeJdGap as never,
   );
-  return { dispatcher, buildProfile, renderResume, renderPortfolio };
+  return {
+    dispatcher,
+    buildProfile,
+    renderResume,
+    renderPortfolio,
+    analyzeJdGap,
+  };
 };
 
 describe('CareerMateDispatcher', () => {
@@ -76,5 +95,19 @@ describe('CareerMateDispatcher', () => {
     } as never);
     expect(d.buildProfile.execute).not.toHaveBeenCalled();
     expect(outcome.formattedText).toContain('프로필');
+  });
+
+  it('ANALYZE_JD_GAP 의도면 analyzeJdGap 을 호출하고 갭 리포트를 반환한다', async () => {
+    const d = makeDispatcher('{"action":"ANALYZE_JD_GAP"}');
+    const outcome = await d.dispatcher.dispatch({
+      slackUserId: 'U1',
+      text: '이 공고 갭 분석 K8s 필수',
+    } as never);
+    expect(d.analyzeJdGap.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      jdText: '이 공고 갭 분석 K8s 필수',
+    });
+    expect(outcome.formattedText).toContain('K8s 회고');
+    expect(outcome.agentRunId).toBe(7);
   });
 });

@@ -649,3 +649,99 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
   });
 });
+
+describe('RouterMessageHandler — 갭 분석 주제선택 인터셉트', () => {
+  const baseEvent = {
+    type: 'app_mention' as const,
+    user: 'U_USER',
+    ts: '1730000000.000001',
+    channel: 'C_CHANNEL',
+  };
+
+  it('pending CAREER_JD_GAP_BLOG + "2번" → preview consume + BLOG 체인(agentTypeHint)', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 50,
+      workerType: AgentType.BLOG,
+      output: {},
+      modelUsed: 'hermes',
+      formattedText: '✅ notion-url',
+    });
+    const pending = buildPendingPreview({
+      id: 'pv1',
+      kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
+      payload: {
+        topics: [
+          { title: 'A', rationale: 'r' },
+          { title: 'B글', rationale: 'r' },
+        ],
+      },
+    });
+    const findLatestPendingPreview = {
+      execute: jest.fn().mockResolvedValue(pending),
+    } as unknown as FindLatestPendingPreviewUsecase;
+    const cancelPreviewUsecase = {
+      execute: jest.fn().mockResolvedValue(pending),
+    } as unknown as CancelPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      { findLatestPendingPreview, cancelPreviewUsecase },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 2번',
+    });
+
+    expect(cancelPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: 'pv1',
+      slackUserId: 'U_USER',
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ agentTypeHint: AgentType.BLOG, text: 'B글' }),
+    );
+  });
+
+  it('pending CAREER_JD_GAP_BLOG + 범위 밖("9번") → 일반 dispatch 로 fall through', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'mock body',
+    });
+    const cancelPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as CancelPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest.fn().mockResolvedValue(
+            buildPendingPreview({
+              kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
+              payload: { topics: [{ title: 'A', rationale: 'r' }] },
+            }),
+          ),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        cancelPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 9번',
+    });
+
+    expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '9번' }),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentTypeHint: AgentType.BLOG }),
+    );
+  });
+});

@@ -10,6 +10,7 @@ action 은 다음 중 하나:
 - "BUILD_PROFILE": 역량 프로필을 새로 만들거나 갱신 ("프로필 정리해줘", "내 역량 정리", "경력 업데이트"). 기간 언급이 있으면 windowMonths(정수 개월)로.
 - "RENDER_RESUME": 이력서/성과 bullet 출력 ("이력서 뽑아줘", "성과 bullet", "resume").
 - "RENDER_PORTFOLIO": 포트폴리오 페이지 생성 ("포트폴리오 정리", "포트폴리오 페이지").
+- "ANALYZE_JD_GAP": 목표 공고(JD)와 내 역량을 대조해 갭/블로그주제 분석 ("이 공고 갭 분석", "이 JD 로 뭐가 부족한지", "이 포지션 분석해줘"). JD 본문이 함께 붙어온다.
 - "UNKNOWN": 위에 해당 없음.
 
 출력 예시:
@@ -20,6 +21,7 @@ const VALID_ACTIONS: CareerMateAction[] = [
   'BUILD_PROFILE',
   'RENDER_RESUME',
   'RENDER_PORTFOLIO',
+  'ANALYZE_JD_GAP',
   'UNKNOWN',
 ];
 
