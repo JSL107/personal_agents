@@ -14,11 +14,11 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerMateException } from '../domain/career-mate.exception';
-import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
 import {
   BuildCareerProfileInput,
   CareerProfileData,
 } from '../domain/career-mate.type';
+import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
 import {
   CAREER_PROFILE_REPOSITORY_PORT,
   CareerProfileRepositoryPort,

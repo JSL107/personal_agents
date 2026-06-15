@@ -26,9 +26,11 @@ const makeDispatcher = (intentText: string) => {
     execute: jest.fn().mockResolvedValue({ profile: PROFILE, agentRunId: 2 }),
   };
   const renderPortfolio = {
-    execute: jest
-      .fn()
-      .mockResolvedValue({ url: 'https://notion/x', pageId: 'x', agentRunId: 3 }),
+    execute: jest.fn().mockResolvedValue({
+      url: 'https://notion/x',
+      pageId: 'x',
+      agentRunId: 3,
+    }),
   };
   const dispatcher = new CareerMateDispatcher(
     modelRouter as never,

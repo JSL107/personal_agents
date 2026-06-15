@@ -23,7 +23,10 @@ export class RenderResumeUsecase {
   }: RenderResumeInput): Promise<RenderResumeResult> {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     if (latest) {
-      return { profile: latest.profileJson, agentRunId: latest.agentRunId ?? 0 };
+      return {
+        profile: latest.profileJson,
+        agentRunId: latest.agentRunId ?? 0,
+      };
     }
     const built = await this.buildProfile.execute({ slackUserId });
     return { profile: built.result, agentRunId: built.agentRunId };
