@@ -1,5 +1,5 @@
 import { NotionPlanBlock } from '../../../notion/domain/port/notion-client.port';
-import { CareerProfileData } from '../domain/career-mate.type';
+import { CareerProfileData, GapAnalysisData } from '../domain/career-mate.type';
 
 export const formatProfileSummary = (data: CareerProfileData): string => {
   const top = data.accomplishments
@@ -36,6 +36,28 @@ export const formatPortfolioLink = ({ url }: { url: string }): string =>
 
 export const formatUnknownCareerMate = (): string =>
   '무엇을 도와드릴까요? "프로필 정리해줘" / "이력서 뽑아줘" / "포트폴리오 정리" 중에 말씀해주세요.';
+
+export const formatGapReport = (data: GapAnalysisData): string => {
+  const have = data.have.map((h) => `• ${escapeSlackMrkdwn(h)}`).join('\n');
+  const gaps = data.gaps.map((g) => `• ${escapeSlackMrkdwn(g)}`).join('\n');
+  const topics = data.topics
+    .map(
+      (t, i) =>
+        `${i + 1}. ${escapeSlackMrkdwn(t.title)} — _${escapeSlackMrkdwn(t.rationale)}_`,
+    )
+    .join('\n');
+  return [
+    `*JD 갭 분석*`,
+    escapeSlackMrkdwn(data.fitSummary),
+    ``,
+    `*보유*\n${have || '(없음)'}`,
+    `*갭*\n${gaps || '(없음)'}`,
+    ``,
+    `*갭을 메우는 블로그 주제*\n${topics}`,
+    ``,
+    `원하는 주제 번호를 말해주세요 (예: "2번"). 취소하려면 "아니".`,
+  ].join('\n');
+};
 
 export const buildPortfolioBlocks = (
   data: CareerProfileData,

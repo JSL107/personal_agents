@@ -4,6 +4,7 @@ import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
+import { AnalyzeJdGapUsecase } from './application/analyze-jd-gap.usecase';
 import { BuildCareerProfileUsecase } from './application/build-career-profile.usecase';
 import { RenderPortfolioUsecase } from './application/render-portfolio.usecase';
 import { RenderResumeUsecase } from './application/render-resume.usecase';
@@ -22,12 +23,14 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
     BuildCareerProfileUsecase,
     RenderResumeUsecase,
     RenderPortfolioUsecase,
+    AnalyzeJdGapUsecase,
     CareerMateDispatcher,
   ],
   exports: [
     BuildCareerProfileUsecase,
     RenderResumeUsecase,
     RenderPortfolioUsecase,
+    AnalyzeJdGapUsecase,
     CareerMateDispatcher,
   ],
 })

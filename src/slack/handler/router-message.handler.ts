@@ -2,10 +2,14 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
-import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
+import {
+  PREVIEW_KIND,
+  PreviewAction,
+} from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import {
@@ -17,6 +21,7 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
+import { parseTopicSelection } from './topic-selection-detector';
 import { detectYesNoIntent } from './yes-no-detector';
 
 // 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
@@ -212,6 +217,19 @@ export class RouterMessageHandler implements SlackHandler {
         return;
       }
 
+      // 갭 분석 후 "N번" 주제 선택 인터셉트 — Y/N intercept 의 형제.
+      const handledByTopic = await this.tryHandleGapTopicSelection({
+        text,
+        slackUserId,
+        threadTs,
+        say,
+        memoryKey,
+      });
+      if (handledByTopic) {
+        succeeded = true;
+        return;
+      }
+
       const result = await this.idaeriRouter.dispatch({
         source: 'SLACK_MESSAGE',
         slackUserId,
@@ -355,6 +373,11 @@ export class RouterMessageHandler implements SlackHandler {
     if (intent === null) {
       return false;
     }
+    // CAREER_JD_GAP_BLOG 은 applier 가 없어 apply 불가 — "응" 류는 번호 선택(tryHandleGapTopicSelection)
+    // 으로 흘려보낸다. "아니"/취소는 applier 불필요한 cancel 경로라 그대로 허용(포매터의 "취소하려면 아니" 유지).
+    if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
+      return false;
+    }
     if (intent === 'yes') {
       await this.handlePreviewApply({
         preview: pending,
@@ -374,6 +397,84 @@ export class RouterMessageHandler implements SlackHandler {
         userText: text,
       });
     }
+    return true;
+  }
+
+  // 갭 분석 후 "N번" 주제 선택 인터셉트 — pending CAREER_JD_GAP_BLOG preview 가 있을 때만.
+  // preview consume(cancel) 후 선택 주제를 BLOG 로 체인(agentTypeHint 로 classify 우회).
+  private async tryHandleGapTopicSelection({
+    text,
+    slackUserId,
+    threadTs,
+    say,
+    memoryKey,
+  }: {
+    text: string;
+    slackUserId: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+  }): Promise<boolean> {
+    const pending = await this.findLatestPendingPreview.execute({
+      slackUserId,
+    });
+    if (!pending || pending.kind !== PREVIEW_KIND.CAREER_JD_GAP_BLOG) {
+      return false;
+    }
+    const payload = pending.payload as { topics?: { title: string }[] };
+    const topics = payload.topics ?? [];
+    const index = parseTopicSelection(text, topics.length);
+    if (index === null) {
+      return false;
+    }
+    const topicTitle = topics[index - 1].title;
+    const gapAgentRunId = (pending.payload as { agentRunId?: number })
+      .agentRunId;
+
+    // BLOG(Hermes) 를 먼저 실행 — 실패 시 preview 를 소비하지 않아 사용자가 같은 번호로 재시도 가능.
+    let result: DispatchResult;
+    try {
+      result = await this.idaeriRouter.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId,
+        text: topicTitle,
+        agentTypeHint: AgentType.BLOG,
+        ...(gapAgentRunId !== undefined
+          ? { contextRefs: { agentRunId: gapAgentRunId } }
+          : {}),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `gap topic → BLOG 체인 실패 — previewId=${pending.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await say({
+        thread_ts: threadTs,
+        text: `블로그 초안 생성 실패: ${toUserFacingErrorMessage(error)}\n"${topicTitle}" 주제 — 잠시 후 번호를 다시 말해 재시도할 수 있어요.`,
+      });
+      return true;
+    }
+
+    // 성공 — 이제 preview 소비(중복 발동 방지).
+    await this.cancelPreviewUsecase.execute({
+      previewId: pending.id,
+      slackUserId,
+    });
+    await this.conversationMemory.appendTurn(memoryKey, {
+      role: 'user',
+      text,
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+      timestampMs: Date.now(),
+    });
+    const replyText = buildRouterReply(result);
+    await say({ thread_ts: threadTs, text: replyText });
+    await this.conversationMemory.appendTurn(memoryKey, {
+      role: 'assistant',
+      text: replyText,
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+      timestampMs: Date.now(),
+    });
     return true;
   }
 
