@@ -1,11 +1,22 @@
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   buildPortfolioBlocks,
+  formatGapReport,
   formatPortfolioLink,
   formatProfileSummary,
   formatResume,
   formatUnknownCareerMate,
 } from './career-mate.formatter';
+
+const GAP = {
+  fitSummary: '핵심 부합 <b>강점</b>',
+  have: ['NestJS'],
+  gaps: ['K8s'],
+  topics: [
+    { title: 'K8s 회고', rationale: 'K8s 갭' },
+    { title: '분산 큐 글', rationale: '트래픽 갭' },
+  ],
+};
 
 const DATA: CareerProfileData = {
   summary: '백엔드 5년차',
@@ -69,5 +80,13 @@ describe('career-mate.formatter', () => {
 
   it('formatUnknownCareerMate 는 사용법을 안내한다', () => {
     expect(formatUnknownCareerMate()).toContain('프로필');
+  });
+
+  it('formatGapReport 는 번호 매긴 주제 + 선택 안내 + escape 를 포함한다', () => {
+    const text = formatGapReport(GAP as never);
+    expect(text).toContain('1.');
+    expect(text).toContain('K8s 회고');
+    expect(text).toContain('번'); // "원하는 번호를 말해주세요" 안내
+    expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
   });
 });
