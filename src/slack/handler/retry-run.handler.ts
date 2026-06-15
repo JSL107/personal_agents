@@ -323,6 +323,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        case 'CAREER_MATE': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (CAREER_MATE) 은 retry-run 대신 자연어로 다시 요청해주세요 (예: "@이대리 프로필 다시 정리해줘").`,
+          });
+          return;
+        }
         default:
           await respond({
             response_type: 'ephemeral',

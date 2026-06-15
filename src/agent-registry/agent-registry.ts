@@ -153,4 +153,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     usecasePath: 'src/agent/blog/application/generate-blog-draft.usecase.ts',
     description: '블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬)',
   },
+  {
+    agentType: AgentType.CAREER_MATE,
+    displayName: 'Career Mate',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/career-mate/application/build-career-profile.usecase.ts',
+    description:
+      '이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션)',
+  },
 ];
