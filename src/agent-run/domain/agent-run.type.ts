@@ -51,6 +51,8 @@ export enum TriggerType {
   // 블로그 릴레이 — 자연어 멘션 전용(슬래시 없음)이라 COMMAND 가 아닌 MENTION 명명.
   // BlogDispatcher → GenerateBlogDraftUsecase 가 Hermes tistory-blog 스킬을 hermes -z 로 호출.
   SLACK_MENTION_BLOG = 'SLACK_MENTION_BLOG',
+  // 이직 메이트 — 자연어 멘션 전용(슬래시 없음). BuildCareerProfile 의 AgentRun 트리거.
+  SLACK_MENTION_CAREER_MATE = 'SLACK_MENTION_CAREER_MATE',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

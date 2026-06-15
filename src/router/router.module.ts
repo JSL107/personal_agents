@@ -14,6 +14,8 @@ import { BeTestModule } from '../agent/be-test/be-test.module';
 import { BeTestDispatcher } from '../agent/be-test/infrastructure/be-test.dispatcher';
 import { BlogModule } from '../agent/blog/blog.module';
 import { BlogDispatcher } from '../agent/blog/infrastructure/blog.dispatcher';
+import { CareerMateModule } from '../agent/career-mate/career-mate.module';
+import { CareerMateDispatcher } from '../agent/career-mate/infrastructure/career-mate.dispatcher';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CeoDispatcher } from '../agent/ceo/infrastructure/ceo.dispatcher';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
@@ -73,6 +75,7 @@ import {
     CeoModule,
     VacationModule,
     BlogModule,
+    CareerMateModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -114,6 +117,7 @@ import {
         CeoDispatcher,
         VacationDispatcher,
         BlogDispatcher,
+        CareerMateDispatcher,
       ],
     },
   ],

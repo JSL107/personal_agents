@@ -186,6 +186,13 @@ class EnvironmentVariables {
   @IsString()
   CAREER_LOG_NOTION_PAGE_ID?: string;
 
+  // Career Mate — 포트폴리오 미러용 Notion 부모 페이지 id (RenderPortfolio 의 자식 페이지 생성 대상).
+  // 미설정 시 "포트폴리오 정리" 요청은 CONFIG_MISSING 으로 친절히 끊긴다. 1인 봇 단일 페이지.
+  // (owner GitHub login 은 기존 IMPACT_REPORT_GITHUB_AUTHOR 재사용 — 별도 env 신설 안 함.)
+  @IsOptional()
+  @IsString()
+  CAREER_PORTFOLIO_NOTION_PAGE_ID?: string;
+
   // `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo (선택).
   // - IMPACT_REPORT_GITHUB_AUTHOR: GitHub username (예: "JSL107") — **필수**. slackUserId →
   //   GitHub login 매핑 인프라 없는 1인 봇 임시 정책.

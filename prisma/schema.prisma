@@ -37,6 +37,7 @@ model AgentRun {
   evidenceRecords  EvidenceRecord[]
   dailyPlan        DailyPlan?
   prReviewOutcomes PrReviewOutcome[]
+  careerProfiles   CareerProfile[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -148,4 +149,21 @@ model LeaveUsage {
 
   @@index([slackUserId, startDate])
   @@map("leave_usage")
+}
+
+model CareerProfile {
+  id          Int       @id @default(autoincrement())
+  agentRunId  Int?      @map("agent_run_id")
+  agentRun    AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  slackUserId String    @map("slack_user_id")
+  githubLogin String    @map("github_login")
+  windowStart DateTime  @map("window_start") @db.Date
+  prCount     Int       @map("pr_count")
+  summary     String    @db.Text
+  profileJson Json      @map("profile_json")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([slackUserId, createdAt])
+  @@map("career_profile")
 }
