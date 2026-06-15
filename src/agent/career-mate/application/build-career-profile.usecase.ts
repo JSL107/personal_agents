@@ -75,7 +75,7 @@ export class BuildCareerProfileUsecase {
     if (prs.length === 0) {
       throw new CareerMateException({
         code: CareerMateErrorCode.NO_EVIDENCE,
-        message: `최근 ${windowMonths}개월 내 merged PR 이 없습니다 — 기간을 늘려 다시 요청하세요.`,
+        message: `최근 ${clampedWindowMonths}개월 내 merged PR 이 없습니다 — 기간을 늘려 다시 요청하세요.`,
         status: DomainStatus.NOT_FOUND,
       });
     }
@@ -85,7 +85,7 @@ export class BuildCareerProfileUsecase {
       triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
       inputSnapshot: {
         slackUserId,
-        windowMonths,
+        windowMonths: clampedWindowMonths,
         sinceIsoDate,
         prCount: prs.length,
       },

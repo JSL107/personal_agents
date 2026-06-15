@@ -42,6 +42,19 @@ describe('career-mate.formatter', () => {
     expect(formatResume(DATA)).toContain('BullMQ lockDuration 재설계');
   });
 
+  it('LLM 텍스트의 mrkdwn control 문자(&<>)를 escape 한다', () => {
+    const injected: CareerProfileData = {
+      ...DATA,
+      summary: 'A & B <script> 위조',
+      accomplishments: [{ ...DATA.accomplishments[0], bullet: '<b> & </b>' }],
+    };
+    const summary = formatProfileSummary(injected);
+    expect(summary).toContain('&amp;');
+    expect(summary).toContain('&lt;');
+    expect(summary).not.toContain('<script>');
+    expect(formatResume(injected)).toContain('&lt;b&gt;');
+  });
+
   it('formatPortfolioLink 는 url 을 포함한다', () => {
     expect(formatPortfolioLink({ url: 'https://notion/abc' })).toContain(
       'https://notion/abc',
