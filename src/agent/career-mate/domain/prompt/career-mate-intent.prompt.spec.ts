@@ -22,6 +22,12 @@ describe('parseCareerMateIntent', () => {
     );
   });
 
+  it('ANALYZE_JD_GAP 를 파싱한다', () => {
+    expect(parseCareerMateIntent('{"action":"ANALYZE_JD_GAP"}').action).toBe(
+      'ANALYZE_JD_GAP',
+    );
+  });
+
   it('알 수 없는 action 은 UNKNOWN 으로 정규화한다', () => {
     expect(parseCareerMateIntent('{"action":"FOO"}').action).toBe('UNKNOWN');
   });
