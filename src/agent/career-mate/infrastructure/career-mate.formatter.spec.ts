@@ -23,7 +23,9 @@ const DATA: CareerProfileData = {
       bullet: 'BullMQ lockDuration 재설계로 stalled 0',
       star: { situation: 's', task: 't', action: 'a', result: 'r' },
       techTags: ['BullMQ'],
-      evidence: [{ repo: 'o/r', pr: 1, url: 'https://x/1', mergedAt: '2026-06-01' }],
+      evidence: [
+        { repo: 'o/r', pr: 1, url: 'https://x/1', mergedAt: '2026-06-01' },
+      ],
     },
   ],
   meta: { githubLogin: 'octo', windowStart: '2025-06-15', prCount: 1 },

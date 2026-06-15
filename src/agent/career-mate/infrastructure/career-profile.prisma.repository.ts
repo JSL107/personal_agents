@@ -10,9 +10,7 @@ import {
 } from '../domain/port/career-profile.repository.port';
 
 @Injectable()
-export class CareerProfilePrismaRepository
-  implements CareerProfileRepositoryPort
-{
+export class CareerProfilePrismaRepository implements CareerProfileRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async save(input: SaveCareerProfileInput): Promise<{ id: number }> {
@@ -37,7 +35,12 @@ export class CareerProfilePrismaRepository
     const row = await this.prisma.careerProfile.findFirst({
       where: { slackUserId },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, agentRunId: true, profileJson: true, createdAt: true },
+      select: {
+        id: true,
+        agentRunId: true,
+        profileJson: true,
+        createdAt: true,
+      },
     });
     if (!row) {
       return null;

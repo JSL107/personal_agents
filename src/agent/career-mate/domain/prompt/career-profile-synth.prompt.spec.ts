@@ -58,14 +58,16 @@ describe('parseCareerProfileOutput', () => {
   });
 
   it('코드펜스를 제거하고 파싱한다', () => {
-    expect(parseCareerProfileOutput('```json\n' + VALID + '\n```').summary).toContain(
-      '백엔드',
-    );
+    expect(
+      parseCareerProfileOutput('```json\n' + VALID + '\n```').summary,
+    ).toContain('백엔드');
   });
 
   it('skills 가 배열이 아니면 INVALID_MODEL_OUTPUT 예외', () => {
     expect(() =>
-      parseCareerProfileOutput('{"summary":"x","skills":"no","accomplishments":[],"meta":{}}'),
+      parseCareerProfileOutput(
+        '{"summary":"x","skills":"no","accomplishments":[],"meta":{}}',
+      ),
     ).toThrow(CareerMateException);
   });
 
