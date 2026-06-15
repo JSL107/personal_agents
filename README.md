@@ -21,7 +21,7 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ PO Shadow (`src/agent/po-shadow/`) — `/po-shadow`. 계획의 비즈니스 가치 및 리스크 재검토
 - ✅ Impact Reporter (`src/agent/impact-reporter/`) — `/impact-report`. 작업 성과 보고서 자동화
 - ✅ Preview Gate (`src/preview-gate/`) — 외부 시스템 전송 전 사용자 승인(✅/❌) 공통 처리
-- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) + DM (`message.im`) → intent classifier (자연어→AgentType) → 13 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
+- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) + DM (`message.im`) → intent classifier (자연어→AgentType) → 15 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
 - ✅ V3 phase loop 워커 — CTO (`/assign`) / PO_EVAL (`/po-eval`) / CEO (`/ceo-review`) + `/auto-flow` chain + AgentRun chain audit walk (`findChainFromRoot`)
 - ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
 - ✅ Conversation Memory (`src/router/application/conversation-memory.service.ts`) — Redis 우선 / in-memory Map fallback. 사용자+채널당 최대 5 turn, TTL 30분
@@ -32,6 +32,8 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ Issue Auto-Label (`src/agent/issue-labeler/`) — `issues.opened` 시 repo 의 기존 label vocab 안에서 LLM 분류 → octokit `addLabels` (새 label 생성 X, 5개 cap)
 - ✅ Pushpin Task (`src/pushpin-task/`) — Slack 메시지에 📌 reaction → Notion 일별 페이지에 to-do 자동 적재 (Slack permalink 포함)
 - ✅ `/search-runs` (`src/agent-run/application/search-agent-runs.usecase.ts`) — SUCCEEDED AgentRun 의 input/output 본문 ILIKE 키워드 검색
+- ✅ Vacation (`src/agent/vacation/`) — `/휴가`. 입사일 기반 연차 발생/잔여 결정론 계산 + 사용 등록/내역/취소 (반차 0.5일 지원, LLM 미사용 — 자연어 멘션 시 파라미터 추출에만 ChatGPT)
+- ✅ BLOG 릴레이 (`src/agent/blog/`) — 자연어 멘션 전용 (`@이대리 ... 블로그 써줘`). `BlogDispatcher` → `GenerateBlogDraftUsecase` → `hermes -z` 로 Hermes `tistory-blog` 스킬 spawn (route() 미경유, 외부 CLI). 리서치 → Notion '블로그 초안' DB 적재 → Slack DM 링크 회신
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
 
@@ -206,6 +208,7 @@ pnpm format:check          # Prettier 검사
 | `/sync-plan` | 생성된 계획을 외부(GitHub/Notion)로 전송 (승인 게이트) | PM-2 / (System) |
 | `/sync-context` | 외부 컨텍스트(GitHub/Notion/Slack) 강제 재수집 | — |
 | `/quota` | 본인의 에이전트 사용량 통계 확인 | — |
+| `/ping` | 봇 헬스체크 (Socket Mode 연결 확인 — 즉시 pong 응답) | — |
 | `/review-pr` | GitHub PR 심층 리뷰 (Must-fix 등 도출) | Code Reviewer / Claude |
 | `/be plan` | 백엔드 구현 계획 및 API 설계 생성 | BE Agent / Claude |
 | `/be schema` | 자연어 DB 변경 요청을 Prisma 스키마 제안으로 변환 (V3 BE-3) | BE Schema / Claude |
@@ -224,7 +227,9 @@ pnpm format:check          # Prettier 검사
 
 ### 자연어 멘션 진입 (V3 Router)
 
-슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 13 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 신규 CTO/PO_EVAL/CEO) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 15 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 CTO/PO_EVAL/CEO + VACATION/BLOG) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+
+> **BLOG 는 자연어 멘션 전용** — 슬래시가 없고, `IdaeriRouterUsecase` 가 분류하면 `BlogDispatcher` 가 ModelRouter `route()` 를 거치지 않고 `hermes -z` (Hermes `tistory-blog` 스킬) 를 직접 spawn 한다 (`AGENT_TO_PROVIDER` 의 BLOG 엔트리는 exhaustive 타입 충족용 sentinel). **VACATION 도 자연어 멘션** (`@이대리 연차 며칠 남았어?`) 으로 진입하면 LLM 으로 파라미터만 추출하고 잔여 계산 자체는 결정론.
 
 **자연어 multi-turn 메모리** — 같은 채널/DM 의 사용자별 대화 컨텍스트가 최대 5 turn / TTL 30분 보존. **Redis 백엔드** (REDIS_HOST/REDIS_PORT) 사용 — multi-instance / 재시작 안전. Redis 미주입 또는 read/write 실패 시 in-memory Map 으로 graceful fallback. 지시대명사 ("그거 분배해") 가 직전 worker run 을 자동 참조해 자연어 chain 가능 (예: `@이대리 오늘 plan?` → `@이대리 그거 분배해` → CTO 가 직전 PM run 참조).
 
@@ -234,7 +239,7 @@ pnpm format:check          # Prettier 검사
 2. **Socket Mode** 활성화 → App-Level Token 발급 (scope: `connections:write`) → `SLACK_APP_TOKEN`
 3. **OAuth & Permissions** → Bot Token Scopes: `commands`, `chat:write` → 워크스페이스에 install → Bot User OAuth Token → `SLACK_BOT_TOKEN`
 4. **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`
-5. **Slash Commands** → 아래 15개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
+5. **Slash Commands** → 아래 18개 등록 (Request URL 은 Socket Mode 라 불필요하지만 UI 가 요구하면 `https://example.com/command` 같은 더미 값 입력):
    - `/today` — 오늘 할 일 우선순위 정리 (Usage hint: `<오늘 할 일을 자유롭게 적어주세요>`)
    - `/worklog` — 오늘 한 일 회고 (Usage hint: `<오늘 한 일을 자유롭게 적어주세요>`)
    - `/review-pr` — PR 리뷰 (Usage hint: `<PR URL 또는 owner/repo#번호>`)
@@ -244,6 +249,7 @@ pnpm format:check          # Prettier 검사
    - `/sync-plan` — 외부 시스템 동기화 (Preview Gate 연동)
    - `/sync-context` — 외부 컨텍스트 강제 재수집
    - `/quota` — 사용량 통계 확인 (Usage hint: `[today|week]`)
+   - `/ping` — 봇 헬스체크 (Socket Mode 연결 확인, Usage hint 불필요)
    - `/retry-run` — FAILED AgentRun 재실행 (Usage hint: `<AgentRun ID>`)
    - `/search-runs` — SUCCEEDED AgentRun input/output ILIKE 검색 (Usage hint: `<키워드>`)
    - `/review-feedback` — PR 리뷰 accept/reject 피드백 저장 (Usage hint: `<AgentRun ID> accept|reject [이유]`)
