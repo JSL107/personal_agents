@@ -1,7 +1,7 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { CareerMateException } from '../career-mate.exception';
-import { CareerMateErrorCode } from '../career-mate-error-code.enum';
 import { CareerMateAction, CareerMateIntent } from '../career-mate.type';
+import { CareerMateErrorCode } from '../career-mate-error-code.enum';
 
 export const CAREER_MATE_INTENT_SYSTEM_PROMPT = `너는 "이직 메이트"의 자연어 의도 분류기다.
 사용자 메시지를 아래 JSON 하나로만 변환한다. 설명/주석 없이 JSON 만 출력한다.

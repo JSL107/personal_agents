@@ -39,13 +39,21 @@ describe('CareerProfilePrismaRepository', () => {
 
   it('findLatestBySlackUser 는 row 를 snapshot 으로 매핑한다', async () => {
     const createdAt = new Date('2026-06-15T00:00:00Z');
-    const findFirst = jest
-      .fn()
-      .mockResolvedValue({ id: 9, agentRunId: 5, profileJson: SAMPLE, createdAt });
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 9,
+      agentRunId: 5,
+      profileJson: SAMPLE,
+      createdAt,
+    });
     const prisma = { careerProfile: { findFirst } } as unknown as PrismaService;
     const repo = new CareerProfilePrismaRepository(prisma);
 
     const snap = await repo.findLatestBySlackUser('U1');
-    expect(snap).toEqual({ id: 9, agentRunId: 5, profileJson: SAMPLE, createdAt });
+    expect(snap).toEqual({
+      id: 9,
+      agentRunId: 5,
+      profileJson: SAMPLE,
+      createdAt,
+    });
   });
 });

@@ -1,8 +1,8 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { GithubPullRequestSummary } from '../../../../github/domain/github.type';
 import { CareerMateException } from '../career-mate.exception';
-import { CareerMateErrorCode } from '../career-mate-error-code.enum';
 import { CareerProfileData } from '../career-mate.type';
+import { CareerMateErrorCode } from '../career-mate-error-code.enum';
 
 export const CAREER_PROFILE_SYNTH_SYSTEM_PROMPT = `너는 개발자의 merged PR 이력을 이직용 "역량 프로필"로 합성하는 전문가다.
 입력으로 PR 목록(제목/본문/저장소/증감 줄수/머지일)을 받는다.
@@ -61,7 +61,9 @@ export const parseCareerProfileOutput = (text: string): CareerProfileData => {
     return invalid('프로필 생성 실패 — summary 누락.');
   }
   if (!Array.isArray(obj.skills) || !Array.isArray(obj.accomplishments)) {
-    return invalid('프로필 생성 실패 — skills/accomplishments 가 배열이 아닙니다.');
+    return invalid(
+      '프로필 생성 실패 — skills/accomplishments 가 배열이 아닙니다.',
+    );
   }
   if (typeof obj.meta !== 'object' || obj.meta === null) {
     return invalid('프로필 생성 실패 — meta 누락.');
