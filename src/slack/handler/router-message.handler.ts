@@ -373,6 +373,11 @@ export class RouterMessageHandler implements SlackHandler {
     if (intent === null) {
       return false;
     }
+    // CAREER_JD_GAP_BLOG 은 applier 가 없어 apply 불가 — "응" 류는 번호 선택(tryHandleGapTopicSelection)
+    // 으로 흘려보낸다. "아니"/취소는 applier 불필요한 cancel 경로라 그대로 허용(포매터의 "취소하려면 아니" 유지).
+    if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
+      return false;
+    }
     if (intent === 'yes') {
       await this.handlePreviewApply({
         preview: pending,
@@ -423,15 +428,36 @@ export class RouterMessageHandler implements SlackHandler {
       return false;
     }
     const topicTitle = topics[index - 1].title;
+    const gapAgentRunId = (pending.payload as { agentRunId?: number })
+      .agentRunId;
+
+    // BLOG(Hermes) 를 먼저 실행 — 실패 시 preview 를 소비하지 않아 사용자가 같은 번호로 재시도 가능.
+    let result: DispatchResult;
+    try {
+      result = await this.idaeriRouter.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId,
+        text: topicTitle,
+        agentTypeHint: AgentType.BLOG,
+        ...(gapAgentRunId !== undefined
+          ? { contextRefs: { agentRunId: gapAgentRunId } }
+          : {}),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `gap topic → BLOG 체인 실패 — previewId=${pending.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await say({
+        thread_ts: threadTs,
+        text: `블로그 초안 생성 실패: ${toUserFacingErrorMessage(error)}\n"${topicTitle}" 주제 — 잠시 후 번호를 다시 말해 재시도할 수 있어요.`,
+      });
+      return true;
+    }
+
+    // 성공 — 이제 preview 소비(중복 발동 방지).
     await this.cancelPreviewUsecase.execute({
       previewId: pending.id,
       slackUserId,
-    });
-    const result = await this.idaeriRouter.dispatch({
-      source: 'SLACK_MESSAGE',
-      slackUserId,
-      text: topicTitle,
-      agentTypeHint: AgentType.BLOG,
     });
     await this.conversationMemory.appendTurn(memoryKey, {
       role: 'user',
@@ -440,7 +466,15 @@ export class RouterMessageHandler implements SlackHandler {
       agentRunId: result.agentRunId,
       timestampMs: Date.now(),
     });
-    await say({ thread_ts: threadTs, text: buildRouterReply(result) });
+    const replyText = buildRouterReply(result);
+    await say({ thread_ts: threadTs, text: replyText });
+    await this.conversationMemory.appendTurn(memoryKey, {
+      role: 'assistant',
+      text: replyText,
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+      timestampMs: Date.now(),
+    });
     return true;
   }
 

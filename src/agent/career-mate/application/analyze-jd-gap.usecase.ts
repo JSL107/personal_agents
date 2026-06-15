@@ -59,7 +59,7 @@ export class AnalyzeJdGapUsecase {
       agentType: AgentType.CAREER_MATE,
       triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
       inputSnapshot: { slackUserId, jdLength: jdText.length },
-      run: async () => {
+      run: async (context) => {
         const profile = await this.resolveProfile(slackUserId);
         const completion = await this.modelRouter.route({
           agentType: AgentType.CAREER_MATE,
@@ -72,7 +72,8 @@ export class AnalyzeJdGapUsecase {
         await this.createPreview.execute({
           slackUserId,
           kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
-          payload: { topics: data.topics },
+          // agentRunId 를 payload 에 실어, 주제 선택 시 BLOG run 의 parentId 로 연결(chain audit).
+          payload: { topics: data.topics, agentRunId: context.agentRunId },
           previewText: 'JD 갭 분석 — 블로그 주제 선택 대기',
           responseUrl: null,
           ttlMs: PREVIEW_TTL_MS,
