@@ -7,6 +7,7 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { AnalyzeJdGapUsecase } from '../application/analyze-jd-gap.usecase';
 import { BuildCareerProfileUsecase } from '../application/build-career-profile.usecase';
 import { RenderPortfolioUsecase } from '../application/render-portfolio.usecase';
 import { RenderResumeUsecase } from '../application/render-resume.usecase';
@@ -15,6 +16,7 @@ import {
   parseCareerMateIntent,
 } from '../domain/prompt/career-mate-intent.prompt';
 import {
+  formatGapReport,
   formatPortfolioLink,
   formatProfileSummary,
   formatResume,
@@ -30,6 +32,7 @@ export class CareerMateDispatcher implements AgentDispatcher {
     private readonly buildProfile: BuildCareerProfileUsecase,
     private readonly renderResume: RenderResumeUsecase,
     private readonly renderPortfolio: RenderPortfolioUsecase,
+    private readonly analyzeJdGap: AnalyzeJdGapUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -72,6 +75,18 @@ export class CareerMateDispatcher implements AgentDispatcher {
           result,
           'deterministic',
           formatPortfolioLink({ url: result.url }),
+        );
+      }
+      case 'ANALYZE_JD_GAP': {
+        const outcome = await this.analyzeJdGap.execute({
+          slackUserId,
+          jdText: input.text ?? '',
+        });
+        return this.toOutcome(
+          outcome.agentRunId,
+          outcome.result,
+          outcome.modelUsed,
+          formatGapReport(outcome.result),
         );
       }
       default:
