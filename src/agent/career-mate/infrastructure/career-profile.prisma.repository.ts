@@ -19,6 +19,8 @@ export class CareerProfilePrismaRepository implements CareerProfileRepositoryPor
         agentRunId: input.agentRunId,
         slackUserId: input.slackUserId,
         githubLogin: input.githubLogin,
+        // windowStart 는 'YYYY-MM-DD' → UTC 자정 Date 로 파싱, @db.Date 가 날짜부만 저장.
+        // write-only 메타라 로컬 타임존 타임스탬프로 다시 읽지 않는다.
         windowStart: new Date(input.windowStart),
         prCount: input.prCount,
         summary: input.summary,
