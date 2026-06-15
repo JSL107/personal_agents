@@ -1,21 +1,27 @@
+import { MODEL_ROUTER_WORST_CASE_MS } from '../llm/llm-timeout.constant';
+
 // BullMQ worker 기본 옵션 모음.
 //
-// 본 프로젝트의 worker 들은 대부분 LLM CLI (codex / claude) 호출을 내부에서 수행한다.
-// codex/claude CLI 의 max timeout = 180_000ms (3분) + context fetch (GitHub / Notion / DB)
-// 추가 시간 → 한 job 처리에 1~3분 걸리는 경우가 흔하다. BullMQ default `lockDuration` (30s)
-// 으론 그 사이 lock 갱신을 못 해 다음 두 가지 에러가 발생:
+// 본 프로젝트의 worker 들은 대부분 내부에서 ModelRouterUsecase.route() 로 LLM CLI(codex/claude)
+// 를 호출한다. route() 는 primary 실패 시 fallback provider 를 "순차" 재시도하므로
+// (await primary.complete() → catch → await fallback.complete()), 한 attempt 의 최악 LLM 시간은
+// 단일 호출(180s)이 아니라 timeout 2회 누적 — codex full timeout(180s) → claude fallback(180s)
+// = 360s (MODEL_ROUTER_WORST_CASE_MS) — 이다. 여기에 context fetch(GitHub/Notion/DB, 수십 초) +
+// slack 발송(수 초)이 더해진다.
+//
+// 과거 lockDuration(5분)은 "가장 긴 LLM 호출 1회(180s)"만 가정해 이 fallback 경로를 흡수하지
+// 못했고, 그 결과 codex full timeout + fallback 이 겹친 날 lock 갱신을 못 해 다음 에러가 났다:
 //
 //   Error: could not renew lock for job <repeat:...>
-//   Error: Missing lock for job <repeat:...>. moveToFinished
+//   Error: Missing lock for job <repeat:...>. moveToFinished  (code -2)
 //
-// 이 상태에서 job 결과는 정상이지만 BullMQ 가 같은 job 을 재시도 trigger 하면서 중복 실행
-// 위험 + 로그 noise 가 증가. lockDuration 을 충분히 늘려 정상 처리 흐름 안에서 lock 이
-// 만료되지 않게 한다 (실제 timeout 은 `Worker.run` 의 job runner 가 자체 관리).
-//
-// 5분 = 가장 긴 LLM 호출 (180s) + context fetch (수십 초) + slack 발송 (수 초) 을 모두
-// 흡수하는 safe upper bound. job 이 hang 한 경우에도 5분 후엔 자동 release 되므로 너무
-// 길지 않다.
-export const LONG_RUNNING_WORKER_LOCK_DURATION_MS = 5 * 60 * 1000;
+// 이 상태가 되면 BullMQ 가 같은 job 을 stalled 로 보고 재처리(중복 LLM 호출 + 발송 시도) 한다.
+// → lockDuration 을 route() worst-case(360s) + context/slack 여유(90s) 를 흡수하도록 둔다.
+//   LLM timeout 이 바뀌면 MODEL_ROUTER_WORST_CASE_MS 를 통해 이 값도 자동으로 따라간다.
+//   (실제 hang 시에도 이 시간이 지나면 lock 이 release 되므로 stalled 복구가 영구 지연되지 않는다.)
+const CONTEXT_AND_DELIVERY_BUDGET_MS = 90 * 1000;
+export const LONG_RUNNING_WORKER_LOCK_DURATION_MS =
+  MODEL_ROUTER_WORST_CASE_MS + CONTEXT_AND_DELIVERY_BUDGET_MS;
 
 // 13 worker consumer 가 spread 로 쓰는 공통 옵션. 추가로 `concurrency` 가 필요한 worker 는
 // 자체 옵션 객체에 spread 후 덧붙인다 — `@Processor(QUEUE, { concurrency: 1, ...LONG_RUNNING_WORKER_OPTIONS })`.
