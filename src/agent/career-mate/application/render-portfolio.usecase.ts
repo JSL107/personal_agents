@@ -62,6 +62,8 @@ export class RenderPortfolioUsecase {
       parentPageId,
       title: `포트폴리오 — ${profile.meta.windowStart}~`,
     });
+    // append-only by design (Phase 1): 같은 기간으로 반복 호출 시 블록이 누적된다.
+    // replace 시맨틱은 Notion 포트에 child-block clear API 가 없어 Phase 2 백로그.
     await this.notionClient.appendBlocks({
       pageId: page.pageId,
       blocks: buildPortfolioBlocks(profile),
