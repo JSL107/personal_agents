@@ -313,6 +313,27 @@ class EnvironmentVariables {
   @IsString()
   CEO_META_CRON_RANGE?: string;
 
+  // ====== Resume Calibration Cron — 주 1회 이력서 보정 점검 (Phase 4) ======
+  // - RESUME_CALIBRATION_OWNER_SLACK_USER_ID: 점검 주체. 미설정 시 모듈 비활성.
+  // - RESUME_CALIBRATION_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
+  // - RESUME_CALIBRATION_CRON: BullMQ cron (default 월 10:00 — `0 10 * * 1`).
+  // - RESUME_CALIBRATION_TIMEZONE: default Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  RESUME_CALIBRATION_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  RESUME_CALIBRATION_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  RESUME_CALIBRATION_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  RESUME_CALIBRATION_TIMEZONE?: string;
+
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.
