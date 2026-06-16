@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 17종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
+이대리의 에이전트 18종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -19,6 +19,7 @@
 | CTO | `CTO` | `/assign` | CLAUDE | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
 | Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CLAUDE | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
+| Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
 | PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
 | PO Eval | `PO_EVAL` | `/po-eval` | CLAUDE | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
