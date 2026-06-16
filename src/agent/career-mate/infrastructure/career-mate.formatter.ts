@@ -1,5 +1,9 @@
 import { NotionPlanBlock } from '../../../notion/domain/port/notion-client.port';
-import { CareerProfileData, GapAnalysisData } from '../domain/career-mate.type';
+import {
+  CalibrationResultData,
+  CareerProfileData,
+  GapAnalysisData,
+} from '../domain/career-mate.type';
 
 export const formatProfileSummary = (data: CareerProfileData): string => {
   const top = data.accomplishments
@@ -57,6 +61,27 @@ export const formatGapReport = (data: GapAnalysisData): string => {
     ``,
     `원하는 주제 번호를 말해주세요 (예: "2번"). 취소하려면 "아니".`,
   ].join('\n');
+};
+
+export const formatCalibrationReport = (
+  data: CalibrationResultData,
+): string => {
+  const section = (title: string, items: string[]): string =>
+    items.length === 0
+      ? ''
+      : `*${title}*\n${items.map((i) => `• ${escapeSlackMrkdwn(i)}`).join('\n')}`;
+  return [
+    `*이력서 보정 점검*`,
+    escapeSlackMrkdwn(data.verdict),
+    ``,
+    section('🤖 AI-slop 위험', data.aiSlopRisks),
+    section('📊 정량 보강 필요', data.underQuantified),
+    section('🕰️ 구식 표현', data.outdatedPhrasing),
+    section('🔑 빠진 키워드', data.missingKeywords),
+    section('✅ 액션', data.actionItems),
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n\n');
 };
 
 export const buildPortfolioBlocks = (
