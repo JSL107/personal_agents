@@ -39,6 +39,7 @@ import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
 import { GithubPrVerifier } from './preview-gate/infrastructure/github-pr.verifier';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
@@ -132,6 +133,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     DailyEvalModule,
     // 주 1회 자동 /ceo-review — Daily Eval (`0 19 * * *`) 가 누적한 PO_EVAL run 들을 CEO worker 가 합성.
     CeoMetaCronModule,
+    // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.
+    ResumeCalibrationCronModule,
     // 주 1회 자동 /impact-report --recent <N>d — 본인 머지 PR 자동 종합 (default 토 09:00 KST).
     ImpactReportCronModule,
     CrawlerModule,
