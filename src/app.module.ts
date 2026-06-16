@@ -31,6 +31,7 @@ import { CrawlerModule } from './crawler/crawler.module';
 import { DailyEvalModule } from './daily-eval/daily-eval.module';
 import { GithubModule } from './github/github.module';
 import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
+import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
 import { NotificationModule } from './notification/notification.module';
@@ -135,6 +136,8 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     CeoMetaCronModule,
     // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.
     ResumeCalibrationCronModule,
+    // Phase 3 — 매일 자동 지원 넛지. 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
+    JobApplicationNudgeCronModule,
     // 주 1회 자동 /impact-report --recent <N>d — 본인 머지 PR 자동 종합 (default 토 09:00 KST).
     ImpactReportCronModule,
     CrawlerModule,

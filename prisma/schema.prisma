@@ -151,6 +151,24 @@ model LeaveUsage {
   @@map("leave_usage")
 }
 
+model JobApplication {
+  id             Int       @id @default(autoincrement())
+  slackUserId    String    @map("slack_user_id")
+  company        String
+  role           String
+  jdUrl          String?   @map("jd_url")
+  status         String
+  appliedAt      DateTime  @map("applied_at") @db.Date
+  deadline       DateTime? @db.Date
+  nextFollowUpAt DateTime? @map("next_follow_up_at") @db.Date
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([slackUserId, status])
+  @@map("job_application")
+}
+
 model CareerProfile {
   id          Int       @id @default(autoincrement())
   agentRunId  Int?      @map("agent_run_id")

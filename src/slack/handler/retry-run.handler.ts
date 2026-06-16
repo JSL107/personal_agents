@@ -331,6 +331,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        case 'JOB_APPLICATION': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (JOB_APPLICATION) 은 입력 의존 기록이라 retry 미지원 — 자연어로 다시 말씀해주세요 (예: "@이대리 토스 서류 합격").`,
+          });
+          return;
+        }
         default:
           await respond({
             response_type: 'ephemeral',

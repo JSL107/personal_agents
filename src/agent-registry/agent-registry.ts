@@ -162,4 +162,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션)',
   },
+  {
+    agentType: AgentType.JOB_APPLICATION,
+    displayName: 'Job Application',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/job-application/application/add-application.usecase.ts',
+    description:
+      '지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron)',
+  },
 ];
