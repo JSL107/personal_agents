@@ -65,10 +65,44 @@ export const parseCareerProfileOutput = (text: string): CareerProfileData => {
       '프로필 생성 실패 — skills/accomplishments 가 배열이 아닙니다.',
     );
   }
+  // 요소 형태까지 검증한다 — formatter/Notion 미러가 skill.name·accomplishment.bullet 을
+  // 무가드로 escape 하고 accomplishment.evidence 를 for-of 로 순회하므로, 형태가 깨지면
+  // 여기서 친화 메시지로 끊지 않으면 렌더 단계에서 TypeError 로 폭사한다.
+  if (obj.skills.some((skill) => !isProfileSkill(skill))) {
+    return invalid('프로필 생성 실패 — skills 요소 형태 오류.');
+  }
+  if (obj.accomplishments.some((item) => !isProfileAccomplishment(item))) {
+    return invalid('프로필 생성 실패 — accomplishments 요소 형태 오류.');
+  }
   // meta 는 형태(object)만 검증한다 — Build usecase 가 직후 data.meta 를 권위값으로 덮어쓰므로
   // 하위필드 검증은 불필요. (덮어쓰지 않는 다른 호출자가 생기면 검증 추가 필요 — Phase 2 유의.)
   if (typeof obj.meta !== 'object' || obj.meta === null) {
     return invalid('프로필 생성 실패 — meta 누락.');
   }
   return parsed as CareerProfileData;
+};
+
+const isProfileSkill = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const skill = value as Record<string, unknown>;
+  return (
+    typeof skill.name === 'string' &&
+    typeof skill.category === 'string' &&
+    typeof skill.proficiency === 'string' &&
+    Array.isArray(skill.evidence)
+  );
+};
+
+const isProfileAccomplishment = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const accomplishment = value as Record<string, unknown>;
+  return (
+    typeof accomplishment.title === 'string' &&
+    typeof accomplishment.bullet === 'string' &&
+    Array.isArray(accomplishment.evidence)
+  );
 };

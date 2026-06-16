@@ -76,4 +76,20 @@ describe('parseCareerProfileOutput', () => {
       CareerMateException,
     );
   });
+
+  it('skill 요소 형태가 깨지면 INVALID_MODEL_OUTPUT (렌더 폭사 방지)', () => {
+    expect(() =>
+      parseCareerProfileOutput(
+        '{"summary":"x","skills":[{"name":"NestJS"}],"accomplishments":[],"meta":{}}',
+      ),
+    ).toThrow(CareerMateException);
+  });
+
+  it('accomplishment 요소 형태가 깨지면 INVALID_MODEL_OUTPUT', () => {
+    expect(() =>
+      parseCareerProfileOutput(
+        '{"summary":"x","skills":[],"accomplishments":[{"title":"제목만"}],"meta":{}}',
+      ),
+    ).toThrow(CareerMateException);
+  });
 });
