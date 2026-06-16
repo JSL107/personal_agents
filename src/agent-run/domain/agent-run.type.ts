@@ -53,6 +53,8 @@ export enum TriggerType {
   SLACK_MENTION_BLOG = 'SLACK_MENTION_BLOG',
   // 이직 메이트 — 자연어 멘션 전용(슬래시 없음). BuildCareerProfile 의 AgentRun 트리거.
   SLACK_MENTION_CAREER_MATE = 'SLACK_MENTION_CAREER_MATE',
+  // 지원 추적 CRM — 자연어 멘션 전용(슬래시 없음). Add/Update 의 AgentRun 트리거 (List 는 비래핑).
+  SLACK_MENTION_JOB_APPLICATION = 'SLACK_MENTION_JOB_APPLICATION',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
