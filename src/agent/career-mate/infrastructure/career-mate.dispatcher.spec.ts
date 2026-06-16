@@ -44,12 +44,27 @@ const makeDispatcher = (intentText: string) => {
       agentRunId: 7,
     }),
   };
+  const calibrateResume = {
+    execute: jest.fn().mockResolvedValue({
+      result: {
+        verdict: 'ok',
+        aiSlopRisks: [],
+        underQuantified: [],
+        outdatedPhrasing: [],
+        missingKeywords: ['IaC'],
+        actionItems: ['정량화'],
+      },
+      modelUsed: 'claude-cli',
+      agentRunId: 11,
+    }),
+  };
   const dispatcher = new CareerMateDispatcher(
     modelRouter as never,
     buildProfile as never,
     renderResume as never,
     renderPortfolio as never,
     analyzeJdGap as never,
+    calibrateResume as never,
   );
   return {
     dispatcher,
@@ -57,6 +72,7 @@ const makeDispatcher = (intentText: string) => {
     renderResume,
     renderPortfolio,
     analyzeJdGap,
+    calibrateResume,
   };
 };
 
@@ -109,5 +125,17 @@ describe('CareerMateDispatcher', () => {
     });
     expect(outcome.formattedText).toContain('K8s 회고');
     expect(outcome.agentRunId).toBe(7);
+  });
+
+  it('CALIBRATE_RESUME 의도면 calibrateResume 을 호출한다', async () => {
+    const d = makeDispatcher('{"action":"CALIBRATE_RESUME"}');
+    const outcome = await d.dispatcher.dispatch({
+      slackUserId: 'U1',
+      text: '이력서 점검',
+    } as never);
+    expect(d.calibrateResume.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+    });
+    expect(outcome.formattedText).toContain('IaC');
   });
 });
