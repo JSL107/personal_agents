@@ -38,6 +38,7 @@ export type CareerMateAction =
   | 'RENDER_RESUME'
   | 'RENDER_PORTFOLIO'
   | 'ANALYZE_JD_GAP'
+  | 'CALIBRATE_RESUME'
   | 'UNKNOWN';
 
 export interface CareerMateIntent {
@@ -84,4 +85,18 @@ export interface RenderPortfolioResult {
   url: string;
   pageId: string;
   agentRunId: number;
+}
+
+export interface CalibrationResultData {
+  verdict: string;
+  aiSlopRisks: string[];
+  underQuantified: string[];
+  outdatedPhrasing: string[];
+  missingKeywords: string[];
+  actionItems: string[];
+}
+
+export interface CalibrateResumeInput {
+  slackUserId: string;
+  webTrendsNote?: string;
 }
