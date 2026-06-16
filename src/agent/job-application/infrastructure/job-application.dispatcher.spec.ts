@@ -93,11 +93,15 @@ describe('JobApplicationDispatcher', () => {
       text: '토스 서류 합격',
     });
 
-    expect(updateExecute).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-      ref: '토스',
-      status: 'SCREENING',
-    });
+    expect(updateExecute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slackUserId: 'U1',
+        ref: '토스',
+        status: 'SCREENING',
+      }),
+    );
+    // dispatcher 가 today 를 주입한다(usecase 가 팔로업 클럭 리셋에 사용).
+    expect(updateExecute.mock.calls[0][0].today).toBeDefined();
     expect(outcome.formattedText).toContain('서류심사');
   });
 

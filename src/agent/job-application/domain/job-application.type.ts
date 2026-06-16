@@ -24,6 +24,10 @@ export const TERMINAL_STATUSES: ApplicationStatus[] = [
   'WITHDRAWN',
 ];
 
+// 팔로업 윈도우 — 지원 등록/상태 변경 시 다음 팔로업 넛지까지의 일수.
+// 마감일 없는 진행 중 지원도 이 주기로 넛지가 동작하게 만든다(없으면 영영 넛지 안 됨).
+export const FOLLOW_UP_AFTER_DAYS = 7;
+
 export type JobApplicationAction = 'ADD' | 'UPDATE_STATUS' | 'LIST' | 'UNKNOWN';
 
 export interface JobApplicationIntent {
@@ -64,6 +68,7 @@ export interface UpdateApplicationInput {
   slackUserId: string;
   ref: string;
   status: ApplicationStatus;
+  today: PlainDate; // dispatcher 가 주입 — 비종료 전환 시 팔로업 클럭 리셋 기준.
 }
 
 export interface ListApplicationsInput {
