@@ -16,12 +16,14 @@ export interface SaveApplicationInput {
   status: ApplicationStatus;
   appliedAt: PlainDate;
   deadline?: PlainDate;
+  nextFollowUpAt?: PlainDate; // 미지정 시 null 저장(usecase 가 정책에 따라 계산해 주입).
 }
 
 export interface UpdateStatusByCompanyInput {
   slackUserId: string;
   companyRef: string;
   status: ApplicationStatus;
+  nextFollowUpAt: PlainDate | null; // 비종료 전환 시 클럭 리셋, 종료 전환 시 null.
 }
 
 export interface FindDueNudgesInput {

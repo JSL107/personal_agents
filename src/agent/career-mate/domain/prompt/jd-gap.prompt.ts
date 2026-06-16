@@ -73,5 +73,24 @@ export const parseGapAnalysisOutput = (text: string): GapAnalysisData => {
   ) {
     return invalid('갭 분석 실패 — have/gaps/topics 가 배열이 아닙니다.');
   }
+  // 요소 형태까지 검증한다 — formatter 가 have/gaps/topic 필드를 무가드로 escape 하므로,
+  // 문자열/필드 누락이면 여기서 친화 메시지로 끊지 않으면 렌더 단계에서 TypeError 로 폭사한다.
+  if (obj.have.some((item) => typeof item !== 'string')) {
+    return invalid('갭 분석 실패 — have 요소가 문자열이 아닙니다.');
+  }
+  if (obj.gaps.some((item) => typeof item !== 'string')) {
+    return invalid('갭 분석 실패 — gaps 요소가 문자열이 아닙니다.');
+  }
+  if (obj.topics.some((topic) => !isGapTopic(topic))) {
+    return invalid('갭 분석 실패 — topics 요소 형태 오류(title/rationale).');
+  }
   return parsed as GapAnalysisData;
+};
+
+const isGapTopic = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const topic = value as Record<string, unknown>;
+  return typeof topic.title === 'string' && typeof topic.rationale === 'string';
 };

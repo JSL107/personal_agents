@@ -70,4 +70,32 @@ describe('AddApplicationUsecase', () => {
 
     expect(repository.save.mock.calls[0][0].status).toBe('APPLIED');
   });
+
+  it('nextFollowUpAt 을 지원일 + 7일로 계산해 저장 (마감 없어도 넛지되도록)', async () => {
+    const repository = {
+      save: jest.fn().mockResolvedValue({
+        id: 3,
+        company: '네이버',
+        role: '백엔드',
+        status: 'APPLIED',
+      }),
+    };
+    const usecase = new AddApplicationUsecase(
+      repository as never,
+      makeAgentRun() as never,
+    );
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      company: '네이버',
+      role: '백엔드',
+      appliedAt: { year: 2026, month: 6, day: 16 },
+    });
+
+    expect(repository.save.mock.calls[0][0].nextFollowUpAt).toEqual({
+      year: 2026,
+      month: 6,
+      day: 23,
+    });
+  });
 });

@@ -58,4 +58,20 @@ describe('parseGapAnalysisOutput', () => {
   it('JSON 아니면 예외', () => {
     expect(() => parseGapAnalysisOutput('nope')).toThrow(CareerMateException);
   });
+
+  it('topic 에 rationale 없으면 INVALID_MODEL_OUTPUT (렌더 폭사 방지)', () => {
+    expect(() =>
+      parseGapAnalysisOutput(
+        '{"fitSummary":"x","have":[],"gaps":[],"topics":[{"title":"제목만"}]}',
+      ),
+    ).toThrow(CareerMateException);
+  });
+
+  it('have 요소가 문자열 아니면 INVALID_MODEL_OUTPUT', () => {
+    expect(() =>
+      parseGapAnalysisOutput(
+        '{"fitSummary":"x","have":[123],"gaps":[],"topics":[]}',
+      ),
+    ).toThrow(CareerMateException);
+  });
 });

@@ -67,6 +67,7 @@ export class JobApplicationDispatcher implements AgentDispatcher {
           slackUserId,
           ref: intent.ref!,
           status: intent.status!,
+          today,
         });
         return this.toOutcome(
           outcome.agentRunId,
