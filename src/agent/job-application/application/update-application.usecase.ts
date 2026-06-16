@@ -8,11 +8,11 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { JobApplicationException } from '../domain/job-application.exception';
-import { JobApplicationErrorCode } from '../domain/job-application-error-code.enum';
 import {
   JobApplicationRecord,
   UpdateApplicationInput,
 } from '../domain/job-application.type';
+import { JobApplicationErrorCode } from '../domain/job-application-error-code.enum';
 import {
   JOB_APPLICATION_REPOSITORY_PORT,
   JobApplicationRepositoryPort,
