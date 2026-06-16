@@ -45,6 +45,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.BLOG]: ModelProviderName.CLAUDE,
   // CAREER_MATE — merged PR → 역량 프로필 구조 합성. 구조화 JSON 강점 → Claude.
   [AgentType.CAREER_MATE]: ModelProviderName.CLAUDE,
+  // JOB_APPLICATION — CRUD 는 결정론. 자연어 ADD/UPDATE 파라미터 추출 경량 → VACATION 동일 ChatGPT.
+  [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).

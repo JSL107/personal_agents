@@ -334,6 +334,28 @@ class EnvironmentVariables {
   @IsString()
   RESUME_CALIBRATION_TIMEZONE?: string;
 
+  // ====== Job Application Nudge Cron — 매일 지원 넛지 (Phase 3) ======
+  // 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
+  // - JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID: 넛지 주체. 미설정 시 모듈 비활성.
+  // - JOB_APPLICATION_NUDGE_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
+  // - JOB_APPLICATION_NUDGE_CRON: BullMQ cron (default 매일 09:00 — `0 9 * * *`).
+  // - JOB_APPLICATION_NUDGE_TIMEZONE: default Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  JOB_APPLICATION_NUDGE_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  JOB_APPLICATION_NUDGE_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  JOB_APPLICATION_NUDGE_TIMEZONE?: string;
+
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.

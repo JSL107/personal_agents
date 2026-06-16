@@ -36,6 +36,9 @@ export enum AgentType {
   // 이직 메이트 — merged PR 합성 → 역량 프로필 허브 + 이력서/포트폴리오 (자연어 멘션 전용).
   // 프로필 합성 시 model-router 경유 (구조화 JSON 강점 → Claude).
   CAREER_MATE = 'CAREER_MATE',
+  // 지원 추적 CRM — 회사/직무 지원 기록·상태변경·조회 (자연어 멘션 전용 + 넛지 cron).
+  // CRUD 는 결정론, 자연어 파라미터 추출 시에만 model-router 경유 (경량 → ChatGPT).
+  JOB_APPLICATION = 'JOB_APPLICATION',
 }
 
 export interface CompletionRequest {

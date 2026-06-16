@@ -24,6 +24,8 @@ import { CtoModule } from '../agent/cto/cto.module';
 import { CtoDispatcher } from '../agent/cto/infrastructure/cto.dispatcher';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { ImpactReporterDispatcher } from '../agent/impact-reporter/infrastructure/impact-reporter.dispatcher';
+import { JobApplicationDispatcher } from '../agent/job-application/infrastructure/job-application.dispatcher';
+import { JobApplicationModule } from '../agent/job-application/job-application.module';
 import { PmDispatcher } from '../agent/pm/infrastructure/pm.dispatcher';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalDispatcher } from '../agent/po-eval/infrastructure/po-eval.dispatcher';
@@ -76,6 +78,7 @@ import {
     VacationModule,
     BlogModule,
     CareerMateModule,
+    JobApplicationModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -118,6 +121,7 @@ import {
         VacationDispatcher,
         BlogDispatcher,
         CareerMateDispatcher,
+        JobApplicationDispatcher,
       ],
     },
   ],
