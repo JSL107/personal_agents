@@ -1,13 +1,13 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { parsePlainDate } from '../../../vacation/domain/plain-date';
 import { JobApplicationException } from '../job-application.exception';
-import { JobApplicationErrorCode } from '../job-application-error-code.enum';
 import {
   APPLICATION_STATUSES,
   ApplicationStatus,
   JobApplicationAction,
   JobApplicationIntent,
 } from '../job-application.type';
+import { JobApplicationErrorCode } from '../job-application-error-code.enum';
 
 export const JOB_APPLICATION_PARSE_SYSTEM_PROMPT = `너는 "지원 추적" 봇의 자연어 의도 분류기다.
 사용자 메시지를 아래 JSON 하나로만 변환한다. 설명/주석 없이 JSON 만.
