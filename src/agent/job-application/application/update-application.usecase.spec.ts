@@ -38,13 +38,45 @@ describe('UpdateApplicationUsecase', () => {
       slackUserId: 'U1',
       ref: '토스',
       status: 'SCREENING',
+      today: { year: 2026, month: 6, day: 16 },
     });
 
     expect(outcome.result.status).toBe('SCREENING');
+    // 비종료 전환 → 팔로업 클럭을 today + 7 로 리셋.
     expect(repository.updateStatusByCompany).toHaveBeenCalledWith({
       slackUserId: 'U1',
       companyRef: '토스',
       status: 'SCREENING',
+      nextFollowUpAt: { year: 2026, month: 6, day: 23 },
+    });
+  });
+
+  it('종료 상태(OFFER)로 전환 시 nextFollowUpAt=null 로 더 넛지하지 않음', async () => {
+    const repository = {
+      updateStatusByCompany: jest.fn().mockResolvedValue({
+        id: 1,
+        company: '토스',
+        role: '백엔드',
+        status: 'OFFER',
+      }),
+    };
+    const usecase = new UpdateApplicationUsecase(
+      repository as never,
+      makeAgentRun() as never,
+    );
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      ref: '토스',
+      status: 'OFFER',
+      today: { year: 2026, month: 6, day: 16 },
+    });
+
+    expect(repository.updateStatusByCompany).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      companyRef: '토스',
+      status: 'OFFER',
+      nextFollowUpAt: null,
     });
   });
 
@@ -58,7 +90,12 @@ describe('UpdateApplicationUsecase', () => {
     );
 
     await expect(
-      usecase.execute({ slackUserId: 'U1', ref: '없는회사', status: 'OFFER' }),
+      usecase.execute({
+        slackUserId: 'U1',
+        ref: '없는회사',
+        status: 'OFFER',
+        today: { year: 2026, month: 6, day: 16 },
+      }),
     ).rejects.toBeInstanceOf(JobApplicationException);
   });
 });
