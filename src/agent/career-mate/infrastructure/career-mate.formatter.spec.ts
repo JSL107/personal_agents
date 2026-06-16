@@ -1,6 +1,7 @@
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   buildPortfolioBlocks,
+  formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
   formatProfileSummary,
@@ -89,4 +90,20 @@ describe('career-mate.formatter', () => {
     expect(text).toContain('번'); // "원하는 번호를 말해주세요" 안내
     expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
   });
+
+  it('formatCalibrationReport 는 섹션 + escape 를 포함한다', () => {
+    const text = formatCalibrationReport(CAL as never);
+    expect(text).toContain('정량 지표 추가');
+    expect(text).toContain('IaC');
+    expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
+  });
 });
+
+const CAL = {
+  verdict: '견고 <b>하나</b> 정량 보강',
+  aiSlopRisks: ['모호한 표현'],
+  underQuantified: ['수치 없음'],
+  outdatedPhrasing: [],
+  missingKeywords: ['IaC'],
+  actionItems: ['정량 지표 추가'],
+};
