@@ -8,6 +8,7 @@ export const buildBlogPrompt = (requestText: string): string =>
     '아래 요청으로 블로그 초안을 스킬 지침(references/voice.md 말투, templates.md 템플릿)대로 작성하고,',
     "반드시 create_notion_draft.py 로 '블로그 초안' Notion DB 에 페이지를 만들어라.",
     "완료 후 생성된 Notion 페이지 URL 을 마지막 줄에 정확히 'NOTION_URL: <url>' 형식으로 출력해라.",
+    "그리고 그 직전 두 줄에 'TAGS: 태그1, 태그2, 태그3' (3~5개 기술 키워드, 콤마 구분) 과 'SUMMARY: <2~3문장 요약>' 도 정확히 한 줄씩 출력해라.",
     '',
     `요청: ${requestText}`,
   ].join('\n');

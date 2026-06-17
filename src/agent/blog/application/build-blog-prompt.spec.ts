@@ -5,6 +5,8 @@ describe('buildBlogPrompt', () => {
     const prompt = buildBlogPrompt('React 서버컴포넌트 블로그 써줘');
     expect(prompt).toContain('tistory-blog 스킬을 사용해라');
     expect(prompt).toContain('NOTION_URL:');
+    expect(prompt).toContain('TAGS:');
+    expect(prompt).toContain('SUMMARY:');
     expect(prompt).toContain('React 서버컴포넌트 블로그 써줘');
   });
 
