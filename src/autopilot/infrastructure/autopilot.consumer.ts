@@ -38,7 +38,12 @@ export class AutopilotConsumer extends WorkerHost {
     }
     const { ownerSlackUserId, target } = job.data;
     try {
-      await this.orchestrator.runGroup(groupKey, entries, ownerSlackUserId, target);
+      await this.orchestrator.runGroup(
+        groupKey,
+        entries,
+        ownerSlackUserId,
+        target,
+      );
     } catch (error) {
       this.logger.error(
         `Autopilot[${groupKey}] 실패 (owner=${ownerSlackUserId})`,

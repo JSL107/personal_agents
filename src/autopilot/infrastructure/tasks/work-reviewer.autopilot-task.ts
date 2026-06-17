@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
+import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
 import { WorkReviewerException } from '../../../agent/work-reviewer/domain/work-reviewer.exception';
 import { WorkReviewerErrorCode } from '../../../agent/work-reviewer/domain/work-reviewer-error-code.enum';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
@@ -74,7 +74,10 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     }
   }
 
-  private buildWorkText(plan: ReturnType<typeof coerceToDailyPlan>, endedAt: Date): string {
+  private buildWorkText(
+    plan: ReturnType<typeof coerceToDailyPlan>,
+    endedAt: Date,
+  ): string {
     if (!plan) {
       return `오늘 plan 요약 (자동 생성, ${endedAt.toISOString().slice(0, 10)}):\n- (plan 파싱 불가 — 오늘 업무를 요약해주세요)`;
     }

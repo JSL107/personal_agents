@@ -7,10 +7,7 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
-import {
-  AUTOPILOT_TASKS,
-  AutopilotTask,
-} from '../domain/autopilot-task.port';
+import { AUTOPILOT_TASKS, AutopilotTask } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
 // 플레이북 그룹을 실행 → 비-skip slackText 수집 → 구분자로 합쳐 멱등 1회 후 다중 타깃 fan-out 발송.
