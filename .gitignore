@@ -74,3 +74,5 @@ Thumbs.db
 .serena/
 jarvis_agents_plan_2026.md
 docs/
+# 심링크 형태 node_modules 도 무시(워크트리)
+node_modules
