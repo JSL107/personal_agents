@@ -162,7 +162,7 @@ pnpm format:check          # Prettier 검사
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID` | ⭕ | claude CLI 인증 만료 / 쿼터 소진 침묵 실패 감지 시 owner 에게 DM (30분 dedupe). 미설정 시 stdout warn 만 |
-| `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ⭕ | Daily Eval / Impact Report Cron / CEO Meta Cron 등 cron consumer 가 throw 직전 owner DM (cron 별 30분 dedupe). 미설정 시 stdout warn 만 |
+| `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ⭕ | Autopilot cron consumer 가 throw 직전 owner DM (`Autopilot:<id>` 별 30분 dedupe). 미설정 시 stdout warn 만 |
 | `CAREER_LOG_NOTION_PAGE_ID` | ⭕ | `/po-eval` 결과의 "✅ 적용" 버튼 + `pull_request.closed (merged=true)` 자동 PR careerLog 의 적재 대상 Notion 페이지. 미설정 시 버튼 미부착 + PR careerLog 자동 skip |
 | `IMPACT_REPORT_GITHUB_AUTHOR` | ⭕ | `/impact-report --recent <N>d` 의 GitHub username (필수: recent mode 핵심) |
 | `IMPACT_REPORT_GITHUB_REPO` | ❌ | `owner/repo` 스코프. 미설정 시 author 의 모든 repo 머지 PR (글로벌 모드) |
