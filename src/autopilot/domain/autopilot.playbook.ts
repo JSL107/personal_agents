@@ -1,14 +1,22 @@
 import {
+  DEFAULT_CEO_META_CRON,
+  DEFAULT_CEO_META_TIMEZONE,
   DEFAULT_DAILY_EVAL_CRON,
   DEFAULT_DAILY_EVAL_TIMEZONE,
+  DEFAULT_IMPACT_REPORT_CRON,
+  DEFAULT_IMPACT_REPORT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
+  DEFAULT_WEEKLY_SUMMARY_CRON,
+  DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
 } from './autopilot.playbook-defaults';
 import { PlaybookEntry } from './playbook.type';
 
 // 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
 // SP1: Daily Eval 1건만(기존 cron 이관). SP2: Morning Briefing 추가(출근 통합).
 // SP3: work-reviewer 추가 + daily-eval digestGroup='evening' → 퇴근 1건 통합.
+// SP4: 주간 cron 3종 이관 — weekly-summary(금 17:00) / ceo-meta(일 18:00) / impact-report(토 09:00).
+//      각각 독립 digestGroup 없음 = 단독 그룹, 서로 다른 스케줄이라 묶지 않음.
 export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'daily-eval',
@@ -42,6 +50,36 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
     digestGroup: 'morning',
+  },
+  {
+    id: 'weekly-summary',
+    taskId: 'weekly-summary',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_WEEKLY_SUMMARY_CRON,
+      timezone: DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'ceo-meta',
+    taskId: 'ceo-meta',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_CEO_META_CRON,
+      timezone: DEFAULT_CEO_META_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'impact-report',
+    taskId: 'impact-report',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_IMPACT_REPORT_CRON,
+      timezone: DEFAULT_IMPACT_REPORT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
   },
 ];
 
