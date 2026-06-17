@@ -26,17 +26,20 @@ describe('AutopilotScheduler', () => {
     const scheduler = new AutopilotScheduler(queue as never, config as never);
     await scheduler.onApplicationBootstrap();
 
-    // 각 그룹당 1번씩 queue.add 호출 — entry 수(3)가 아닌 그룹 수(2: evening + morning).
+    // 각 그룹당 1번씩 queue.add 호출 — entry 수(6)가 아닌 그룹 수.
     const addCalls: string[] = queue.add.mock.calls.map(
       (call: unknown[]) => call[0] as string,
     );
     // 동일 groupKey 로 중복 등록 없음 (그룹당 exactly 1).
     const unique = new Set(addCalls);
     expect(unique.size).toBe(addCalls.length);
-    // SP3: evening + morning = 2그룹.
-    expect(queue.add).toHaveBeenCalledTimes(2);
+    // SP4: evening(daily-eval+work-reviewer) + morning + weekly-summary + ceo-meta + impact-report = 5그룹.
+    expect(queue.add).toHaveBeenCalledTimes(5);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
+    expect(addCalls).toContain('weekly-summary');
+    expect(addCalls).toContain('ceo-meta');
+    expect(addCalls).toContain('impact-report');
   });
 
   it('evening 그룹 스케줄은 첫 항목(daily-eval) env 기반 → 19:00', async () => {
