@@ -256,33 +256,6 @@ class EnvironmentVariables {
   @IsString()
   GITHUB_WEBHOOK_OWNER_LOGIN?: string;
 
-  // ====== CEO Meta Cron — 주 1회 자동 /ceo-review (V3 phase loop 메타 회고) ======
-  // Daily Eval (`0 19 * * *`) 가 누적한 PO_EVAL run 들을 CEO worker 가 합성.
-  // - CEO_META_CRON_OWNER_SLACK_USER_ID: 회고 주체. 미설정 시 모듈 비활성화.
-  // - CEO_META_CRON_TARGET: 발송 대상 (Slack user U... / channel C.../G...). 미설정 시 OWNER DM.
-  // - CEO_META_CRON_CRON: BullMQ repeatable cron (default 일요일 18:00 — `0 18 * * 0`).
-  // - CEO_META_CRON_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
-  // - CEO_META_CRON_RANGE: 'TODAY' | 'WEEK' (default WEEK).
-  @IsOptional()
-  @IsString()
-  CEO_META_CRON_OWNER_SLACK_USER_ID?: string;
-
-  @IsOptional()
-  @IsString()
-  CEO_META_CRON_TARGET?: string;
-
-  @IsOptional()
-  @IsString()
-  CEO_META_CRON_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  CEO_META_CRON_TIMEZONE?: string;
-
-  @IsOptional()
-  @IsString()
-  CEO_META_CRON_RANGE?: string;
-
   // ====== Resume Calibration Cron — 주 1회 이력서 보정 점검 (Phase 4) ======
   // - RESUME_CALIBRATION_OWNER_SLACK_USER_ID: 점검 주체. 미설정 시 모듈 비활성.
   // - RESUME_CALIBRATION_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.

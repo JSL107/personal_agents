@@ -26,7 +26,7 @@
 | Router dispatcher 중앙 등록 (useFactory + inject 13) | `src/router/router.module.ts` |
 | `/auto-flow` PM→CTO→BE 체인 (PreviewGate 버튼 2단) | `src/slack/handler/auto-flow.handler.ts` |
 | Conversation memory (in-memory, key=slackUserId:channelId) | `src/router/application/conversation-memory.service.ts` |
-| Daily Eval cron (19:00 KST PO_EVAL 자동) | `src/daily-eval/` |
+| Autopilot 워크데이 플레이북 (모든 cron 통합 — 출근/퇴근/주간) | `src/autopilot/` (`domain/autopilot.playbook.ts`, `application/autopilot.orchestrator.ts`) |
 | AgentDispatcher 인터페이스 + AGENT_DISPATCHER_PORT | `src/router/domain/port/agent-dispatcher.port.ts` |
 | 에이전트 → 모델 라우팅 | `src/model-router/application/model-router.usecase.ts` (`AGENT_TO_PROVIDER`) |
 | CLI 격리 유틸 (보안 핵심) | `src/model-router/infrastructure/cli-process.util.ts` (`buildSafeChildEnv`) |
