@@ -11,7 +11,7 @@ import {
   AutopilotJobData,
 } from '../domain/autopilot.type';
 
-// 단일 consumer — job.name(=플레이북 entry.id)으로 항목을 찾아 오케스트레이터에 위임.
+// 단일 consumer — job.name(=groupKey)으로 그룹 entries 를 찾아 orchestrator.runGroup 에 위임.
 // 실패 시 owner DM 통지(fire-and-forget) 후 rethrow → BullMQ 재시도.
 @Processor(AUTOPILOT_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
 export class AutopilotConsumer extends WorkerHost {
@@ -26,29 +26,32 @@ export class AutopilotConsumer extends WorkerHost {
   }
 
   async process(job: Job<AutopilotJobData>): Promise<void> {
-    const entry = AUTOPILOT_PLAYBOOK.find(
-      (candidate) => candidate.id === job.name,
+    const groupKey = job.name;
+    const entries = AUTOPILOT_PLAYBOOK.filter(
+      (entry) =>
+        (entry.digestGroup ?? entry.id) === groupKey &&
+        entry.trigger.kind === 'CRON',
     );
-    if (!entry) {
-      this.logger.error(`Autopilot — 미등록 job 무시: ${job.name}`);
+    if (entries.length === 0) {
+      this.logger.error(`Autopilot — 미등록 group 무시: ${groupKey}`);
       return;
     }
     const { ownerSlackUserId, target } = job.data;
     try {
-      await this.orchestrator.run(entry, ownerSlackUserId, target);
+      await this.orchestrator.runGroup(groupKey, entries, ownerSlackUserId, target);
     } catch (error) {
       this.logger.error(
-        `Autopilot[${entry.id}] 실패 (owner=${ownerSlackUserId})`,
+        `Autopilot[${groupKey}] 실패 (owner=${ownerSlackUserId})`,
         error,
       );
-      this.notifyOwnerFailure(ownerSlackUserId, entry.id, error);
+      this.notifyOwnerFailure(ownerSlackUserId, groupKey, error);
       throw error;
     }
   }
 
   private notifyOwnerFailure(
     ownerSlackUserId: string,
-    entryId: string,
+    groupKey: string,
     error: unknown,
   ): void {
     if (!this.notificationPublisher) {
@@ -56,7 +59,7 @@ export class AutopilotConsumer extends WorkerHost {
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
-      cronName: `Autopilot:${entryId}`,
+      cronName: `Autopilot:${groupKey}`,
       ownerSlackUserId,
       errorMessage,
     });
