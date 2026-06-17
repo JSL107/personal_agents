@@ -47,4 +47,44 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     ];
     expect(() => validatePlaybook(dup)).toThrow(/중복/);
   });
+
+  it('같은 digestGroup 인데 schedule 이 다른 항목 → validatePlaybook throw', () => {
+    const mismatch: PlaybookEntry[] = [
+      {
+        id: 'a',
+        taskId: 'a',
+        trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'Asia/Seoul' },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+      },
+      {
+        id: 'b',
+        taskId: 'b',
+        trigger: { kind: 'CRON', schedule: '0 20 * * *', timezone: 'Asia/Seoul' },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+      },
+    ];
+    expect(() => validatePlaybook(mismatch)).toThrow(/그룹.*스케줄|schedule/);
+  });
+
+  it('같은 digestGroup 인데 timezone 이 다른 항목 → validatePlaybook throw', () => {
+    const mismatch: PlaybookEntry[] = [
+      {
+        id: 'c',
+        taskId: 'c',
+        trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'Asia/Seoul' },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+      },
+      {
+        id: 'd',
+        taskId: 'd',
+        trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'UTC' },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+      },
+    ];
+    expect(() => validatePlaybook(mismatch)).toThrow(/그룹.*스케줄|schedule/);
+  });
 });
