@@ -113,35 +113,15 @@ class EnvironmentVariables {
   @IsString()
   GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID?: string;
 
-  // PRO-4 Weekly Summary CRON.
-  // - WEEKLY_SUMMARY_OWNER_SLACK_USER_ID: 주간 요약을 만들 사용자(PM run 7건의 주체). 미설정 시 모듈 비활성화.
-  // - WEEKLY_SUMMARY_TARGET: 슬랙 user(U...) / channel(C.../G...) ID. 미설정 시 OWNER DM 으로.
-  // - WEEKLY_SUMMARY_CRON: BullMQ repeatable cron pattern (default 매주 금요일 17:00).
-  // - WEEKLY_SUMMARY_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
-  @IsOptional()
-  @IsString()
-  WEEKLY_SUMMARY_OWNER_SLACK_USER_ID?: string;
-
-  @IsOptional()
-  @IsString()
-  WEEKLY_SUMMARY_TARGET?: string;
-
-  @IsOptional()
-  @IsString()
-  WEEKLY_SUMMARY_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  WEEKLY_SUMMARY_TIMEZONE?: string;
-
-  // Autopilot SP1/SP2 — 선언적 워크데이 플레이북 엔진.
+  // Autopilot SP1~SP4 — 선언적 워크데이 + 주간 플레이북 엔진.
   // - AUTOPILOT_OWNER_SLACK_USER_ID: Autopilot 전체 게이트. 미설정 시 비활성.
   // - AUTOPILOT_TARGET: 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 콤마로 다중 타깃 지원.
   //   미설정 시 OWNER DM. 예: "C1234567890,U9876543210".
-  // - AUTOPILOT_DAILY_EVAL_SCHEDULE: daily-eval 항목 cron override (default '0 19 * * *').
-  // - AUTOPILOT_DAILY_EVAL_TIMEZONE: 위 cron 해석 기준 (default Asia/Seoul).
-  // - AUTOPILOT_MORNING_BRIEFING_SCHEDULE: morning-briefing 항목 cron override (default '30 8 * * *').
-  // - AUTOPILOT_MORNING_BRIEFING_TIMEZONE: 위 cron 해석 기준 (default Asia/Seoul).
+  // 스케줄 override (각 항목): AUTOPILOT_<ID>_SCHEDULE / _TIMEZONE.
+  //   ID = 플레이북 entry id 대문자 + 언더스코어 변환:
+  //     daily-eval → DAILY_EVAL, morning-briefing → MORNING_BRIEFING,
+  //     weekly-summary → WEEKLY_SUMMARY, ceo-meta → CEO_META, impact-report → IMPACT_REPORT.
+  //   미설정 시 playbook-defaults.ts 의 DEFAULT_* 상수 사용.
   @IsOptional()
   @IsString()
   AUTOPILOT_OWNER_SLACK_USER_ID?: string;
@@ -165,6 +145,30 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_MORNING_BRIEFING_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_WEEKLY_SUMMARY_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_CEO_META_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_CEO_META_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_IMPACT_REPORT_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_IMPACT_REPORT_TIMEZONE?: string;
 
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
@@ -203,29 +207,8 @@ class EnvironmentVariables {
   })
   IMPACT_REPORT_GITHUB_REPO?: string;
 
-  // `/impact-report --recent <N>d` 주 1회 자동 cron — Weekly Summary / Daily Eval 과 별도.
-  // - IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID: 자동 발화 대상 사용자. 미설정 시 모듈 비활성화.
-  // - IMPACT_REPORT_RECENT_TARGET: 발송 대상 (Slack user U... / channel C.../G...). 미설정 시 OWNER DM.
-  // - IMPACT_REPORT_RECENT_CRON: BullMQ repeatable cron (default 매주 토 09:00 — `0 9 * * 6`).
-  // - IMPACT_REPORT_RECENT_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
-  // - IMPACT_REPORT_RECENT_DAYS: `--recent <N>d` 의 N (default 7, 범위 1~365).
-  // 추가 필수: IMPACT_REPORT_GITHUB_AUTHOR (recent mode 핵심).
-  @IsOptional()
-  @IsString()
-  IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID?: string;
-
-  @IsOptional()
-  @IsString()
-  IMPACT_REPORT_RECENT_TARGET?: string;
-
-  @IsOptional()
-  @IsString()
-  IMPACT_REPORT_RECENT_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  IMPACT_REPORT_RECENT_TIMEZONE?: string;
-
+  // IMPACT_REPORT_RECENT_DAYS: Autopilot impact-report task 가 `--recent <N>d` 의 N 으로 사용.
+  // (default 7, 범위 1~365). owner/target/cron/tz 는 AUTOPILOT_* 로 통합.
   @IsOptional()
   @IsString()
   @Matches(/^([1-9][0-9]?|[12][0-9]{2}|3[0-5][0-9]|36[0-5])$/, {

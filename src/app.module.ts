@@ -24,13 +24,11 @@ import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
 import { AutopilotModule } from './autopilot/autopilot.module';
-import { CeoMetaCronModule } from './ceo-meta-cron/ceo-meta-cron.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { GithubModule } from './github/github.module';
-import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { NotificationModule } from './notification/notification.module';
@@ -46,7 +44,6 @@ import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
 import { WebhookModule } from './webhook/webhook.module';
-import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
 
 @Module({
   imports: [
@@ -127,18 +124,14 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // claude CLI 인증 + cron 실패 owner DM 알람 — BullMQ NOTIFICATION_QUEUE 의 consumer.
     // Producer (NotificationQueueModule) 는 ModelRouterModule / 3 cron consumer module 가 직접 imports.
     NotificationModule,
-    WeeklySummaryModule,
     // workflow-phase-definition §5.2 Daily Eval → Autopilot SP1 실이관 (2026-06-17).
     // 플레이북 선언 + 오케스트레이터 엔진으로 통합. 동작(19:00 KST PO_EVAL Slack 게시) 동등 보존.
+    // SP4: 주간 3종(weekly-summary/ceo-meta/impact-report) 도 Autopilot 플레이북으로 통합.
     AutopilotModule,
-    // 주 1회 자동 /ceo-review — Daily Eval (`0 19 * * *`) 가 누적한 PO_EVAL run 들을 CEO worker 가 합성.
-    CeoMetaCronModule,
     // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.
     ResumeCalibrationCronModule,
     // Phase 3 — 매일 자동 지원 넛지. 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
     JobApplicationNudgeCronModule,
-    // 주 1회 자동 /impact-report --recent <N>d — 본인 머지 PR 자동 종합 (default 토 09:00 KST).
-    ImpactReportCronModule,
     CrawlerModule,
     WebhookModule,
     // pull_request.closed (merged=true) → 본인 PR 머지 시 Notion careerLog 자동 적재.
