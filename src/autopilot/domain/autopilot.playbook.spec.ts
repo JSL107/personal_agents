@@ -14,6 +14,14 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(() => validatePlaybook(AUTOPILOT_PLAYBOOK)).not.toThrow();
   });
 
+  it('SP2 플레이북은 morning-briefing 항목을 포함한다', () => {
+    const morning = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'morning-briefing',
+    );
+    expect(morning?.taskId).toBe('morning-briefing');
+    expect(morning?.digestGroup).toBe('morning');
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

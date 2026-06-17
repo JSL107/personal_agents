@@ -76,4 +76,19 @@ describe('AutopilotOrchestrator', () => {
       o.run({ ...T0_ENTRY, riskTier: 'T1_PREVIEW' }, 'U1', 'C1'),
     ).rejects.toThrow(/T1_PREVIEW/);
   });
+
+  it('T0 다중 타깃(콤마) → 각 타깃에 발송, 멱등은 1회', async () => {
+    const task = makeTask('daily-eval', { skip: false, slackText: '본문' });
+    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const o = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce } as never,
+    );
+    await o.run(T0_ENTRY, 'U1', 'C1, C2 ,C3');
+    expect(acquireOnce).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(3);
+    expect(postMessage).toHaveBeenCalledWith({ target: 'C2', text: '본문' });
+  });
 });

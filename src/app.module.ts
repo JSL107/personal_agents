@@ -33,7 +33,6 @@ import { GithubModule } from './github/github.module';
 import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
-import { MorningBriefingModule } from './morning-briefing/morning-briefing.module';
 import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
 import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
@@ -128,7 +127,6 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     // claude CLI 인증 + cron 실패 owner DM 알람 — BullMQ NOTIFICATION_QUEUE 의 consumer.
     // Producer (NotificationQueueModule) 는 ModelRouterModule / 3 cron consumer module 가 직접 imports.
     NotificationModule,
-    MorningBriefingModule,
     WeeklySummaryModule,
     // workflow-phase-definition §5.2 Daily Eval → Autopilot SP1 실이관 (2026-06-17).
     // 플레이북 선언 + 오케스트레이터 엔진으로 통합. 동작(19:00 KST PO_EVAL Slack 게시) 동등 보존.
