@@ -1,0 +1,24 @@
+import { DEFAULT_DAILY_EVAL_CRON, DEFAULT_DAILY_EVAL_TIMEZONE } from './autopilot.playbook-defaults';
+import { PlaybookEntry } from './playbook.type';
+
+// 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
+// SP1: Daily Eval 1건만(기존 cron 이관). SP2~4 가 출근/퇴근/주간·이벤트 항목을 여기에 추가.
+export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
+  {
+    id: 'daily-eval',
+    taskId: 'daily-eval',
+    trigger: { kind: 'CRON', schedule: DEFAULT_DAILY_EVAL_CRON, timezone: DEFAULT_DAILY_EVAL_TIMEZONE },
+    riskTier: 'T0_AUTO',
+  },
+];
+
+// 선언 무결성 — 부팅/테스트 시 빠른 실패. (id/taskId 중복 차단)
+export const validatePlaybook = (entries: PlaybookEntry[]): void => {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (ids.has(entry.id)) {
+      throw new Error(`Autopilot 플레이북 중복 id — ${entry.id}`);
+    }
+    ids.add(entry.id);
+  }
+};
