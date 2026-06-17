@@ -1,7 +1,7 @@
 # personal_agents (이대리)
 
 Slack 기반 멀티 에이전트 업무 자동화 시스템 — 코드명 **이대리**.
-GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · Work Reviewer 역할을 수행하는 개인 비서형 백엔드.
+GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · Work Reviewer · CTO · PO · CEO 등 **회사 롤플레이 역할**과 이직 메이트 · 지원 추적 · 휴가 · 블로그 같은 **개인 업무**를 함께 수행하는 개인 비서형 백엔드. 수동 슬래시와 자동(**Autopilot** 워크데이 플레이북) 발화를 병행한다.
 자동화 규칙은 [AGENTS.md](./AGENTS.md), 코드 컨벤션은 [CODE_RULES.md](./CODE_RULES.md) 참고.
 
 ## 현재 상태
@@ -21,7 +21,7 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ PO Shadow (`src/agent/po-shadow/`) — `/po-shadow`. 계획의 비즈니스 가치 및 리스크 재검토
 - ✅ Impact Reporter (`src/agent/impact-reporter/`) — `/impact-report`. 작업 성과 보고서 자동화
 - ✅ Preview Gate (`src/preview-gate/`) — 외부 시스템 전송 전 사용자 승인(✅/❌) 공통 처리
-- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) + DM (`message.im`) → intent classifier (자연어→AgentType) → 15 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
+- ✅ Router (`src/router/`) — V3 비전 Hierarchical Manager Pattern. 자연어 멘션 (`@이대리 ...`) + DM (`message.im`) → intent classifier (자연어→AgentType) → 17 worker dispatcher → handoff chain (audit via `AgentRun.parentId`)
 - ✅ V3 phase loop 워커 — CTO (`/assign`) / PO_EVAL (`/po-eval`) / CEO (`/ceo-review`) + `/auto-flow` chain + AgentRun chain audit walk (`findChainFromRoot`)
 - ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
 - ✅ Conversation Memory (`src/router/application/conversation-memory.service.ts`) — Redis 우선 / in-memory Map fallback. 사용자+채널당 최대 5 turn, TTL 30분
@@ -34,6 +34,8 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ `/search-runs` (`src/agent-run/application/search-agent-runs.usecase.ts`) — SUCCEEDED AgentRun 의 input/output 본문 ILIKE 키워드 검색
 - ✅ Vacation (`src/agent/vacation/`) — `/휴가`. 입사일 기반 연차 발생/잔여 결정론 계산 + 사용 등록/내역/취소 (반차 0.5일 지원, LLM 미사용 — 자연어 멘션 시 파라미터 추출에만 ChatGPT)
 - ✅ BLOG 릴레이 (`src/agent/blog/`) — 자연어 멘션 전용 (`@이대리 ... 블로그 써줘`). `BlogDispatcher` → `GenerateBlogDraftUsecase` → `hermes -z` 로 Hermes `tistory-blog` 스킬 spawn (route() 미경유, 외부 CLI). 리서치 → Notion '블로그 초안' DB 적재 → Slack DM 링크 회신
+- ✅ 이직 메이트 (`src/agent/career-mate/`) — 자연어 멘션 전용. merged PR 합성 → 증거 기반 **역량 프로필 허브** → 이력서/포트폴리오(Notion) 신디사이즈, **JD 갭 분석** → 블로그 주제 선택 → BLOG 체인, 이력서 보정 점검(주1 cron `CALIBRATE_RESUME`)
+- ✅ 지원 추적 CRM (`src/agent/job-application/`) — 자연어 멘션 전용. 지원 등록/상태 변경/현황 CRUD (LLM 파라미터 추출 → 결정론 CRUD) + 마감·팔로업 **넛지 cron** (overdue 포함)
 - ✅ 크롤러 도메인 (`src/crawler/`) — BullMQ + Puppeteer 기반 아키텍처
 - ⏳ 장기 기억 (Long-term memory), 토론 모드 — 개발 중
 
@@ -228,7 +230,7 @@ pnpm format:check          # Prettier 검사
 
 ### 자연어 멘션 진입 (V3 Router)
 
-슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 15 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 CTO/PO_EVAL/CEO + VACATION/BLOG) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
+슬래시 외에 **`@이대리 ...`** 형태로 자연어 메시지를 보내면 `IdaeriRouterUsecase` 가 intent classifier (1 LLM call) 로 worker 를 분류해 위 17 에이전트 (PM/Work Reviewer/Code Reviewer/Impact Reporter/PO Shadow/BE/BE_SCHEMA/BE_TEST/BE_SRE/BE_FIX + V3 CTO/PO_EVAL/CEO + VACATION/BLOG/**CAREER_MATE(이직 메이트)/JOB_APPLICATION(지원 추적)**) 중 1개로 dispatch. 처리 결과는 thread 답글로 worker formatter 결과 + `agentRunId` 푸터. 자세한 동작 흐름은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md).
 
 > **BLOG 는 자연어 멘션 전용** — 슬래시가 없고, `IdaeriRouterUsecase` 가 분류하면 `BlogDispatcher` 가 ModelRouter `route()` 를 거치지 않고 `hermes -z` (Hermes `tistory-blog` 스킬) 를 직접 spawn 한다 (`AGENT_TO_PROVIDER` 의 BLOG 엔트리는 exhaustive 타입 충족용 sentinel). **VACATION 도 자연어 멘션** (`@이대리 연차 며칠 남았어?`) 으로 진입하면 LLM 으로 파라미터만 추출하고 잔여 계산 자체는 결정론.
 
