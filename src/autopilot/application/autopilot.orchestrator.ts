@@ -73,7 +73,16 @@ export class AutopilotOrchestrator {
       );
       return;
     }
-    await this.slackNotifier.postMessage({ target, text: result.slackText });
-    this.logger.log(`Autopilot[${entry.id}] — 발송 완료 target=${target}`);
+    const targets = target
+      .split(',')
+      .map((entryTarget) => entryTarget.trim())
+      .filter((entryTarget) => entryTarget.length > 0);
+    for (const resolved of targets) {
+      await this.slackNotifier.postMessage({
+        target: resolved,
+        text: result.slackText,
+      });
+    }
+    this.logger.log(`Autopilot[${entry.id}] — 발송 완료 ${targets.length}건`);
   }
 }

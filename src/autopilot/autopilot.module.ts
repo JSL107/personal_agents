@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
+import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
@@ -11,6 +12,7 @@ import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
+import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 
 // Autopilot 골격 — daily-eval.module 패턴(BullMQ repeatable + SlackNotifierPort useExisting).
@@ -19,6 +21,7 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
   imports: [
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     PoEvalModule,
+    PmAgentModule,
     SlackModule,
     NotificationQueueModule,
   ],
@@ -27,11 +30,15 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
     AutopilotConsumer,
     AutopilotOrchestrator,
     PoEvalAutopilotTask,
+    MorningBriefingAutopilotTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
-      useFactory: (poEval: PoEvalAutopilotTask) => [poEval],
-      inject: [PoEvalAutopilotTask],
+      useFactory: (
+        poEval: PoEvalAutopilotTask,
+        morning: MorningBriefingAutopilotTask,
+      ) => [poEval, morning],
+      inject: [PoEvalAutopilotTask, MorningBriefingAutopilotTask],
     },
     {
       provide: SLACK_NOTIFIER_PORT,
