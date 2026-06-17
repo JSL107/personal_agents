@@ -22,6 +22,7 @@ describe('ListActiveTasksUsecase', () => {
     findOrCreateDailyPage: jest.fn(),
     findOrCreateChildPage: jest.fn(),
     appendBlocks: jest.fn(),
+    updatePageProperties: jest.fn(),
     replaceCheckInSection: jest.fn(),
   });
 
