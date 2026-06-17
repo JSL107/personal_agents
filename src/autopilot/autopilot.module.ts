@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
+import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
@@ -14,6 +16,7 @@ import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
+import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
 
 // Autopilot 골격 — daily-eval.module 패턴(BullMQ repeatable + SlackNotifierPort useExisting).
 // CronIdempotencyService 는 @Global(CronIdempotencyModule) 이라 별도 import 불필요.
@@ -22,6 +25,8 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     PoEvalModule,
     PmAgentModule,
+    WorkReviewerModule,
+    AgentRunModule,
     SlackModule,
     NotificationQueueModule,
   ],
@@ -31,14 +36,20 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
     AutopilotOrchestrator,
     PoEvalAutopilotTask,
     MorningBriefingAutopilotTask,
+    WorkReviewerAutopilotTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
       useFactory: (
         poEval: PoEvalAutopilotTask,
         morning: MorningBriefingAutopilotTask,
-      ) => [poEval, morning],
-      inject: [PoEvalAutopilotTask, MorningBriefingAutopilotTask],
+        workReviewer: WorkReviewerAutopilotTask,
+      ) => [poEval, morning, workReviewer],
+      inject: [
+        PoEvalAutopilotTask,
+        MorningBriefingAutopilotTask,
+        WorkReviewerAutopilotTask,
+      ],
     },
     {
       provide: SLACK_NOTIFIER_PORT,

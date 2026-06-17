@@ -7,6 +7,24 @@ const makeJob = (name: string) =>
   }) as never;
 
 describe('AutopilotConsumer', () => {
+  it('job.name = "evening"(groupKey) → runGroup 위임(daily-eval + work-reviewer 2건)', async () => {
+    const runGroup = jest.fn().mockResolvedValue(undefined);
+    const consumer = new AutopilotConsumer({ runGroup } as never, undefined);
+    await consumer.process(makeJob('evening'));
+    expect(runGroup).toHaveBeenCalledWith(
+      'evening',
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'daily-eval' }),
+        expect.objectContaining({ id: 'work-reviewer' }),
+      ]),
+      'U1',
+      'C1',
+    );
+    // entries 는 정확히 2건
+    const entries: unknown[] = runGroup.mock.calls[0][1];
+    expect(entries).toHaveLength(2);
+  });
+
   it('job.name = "morning"(groupKey) → orchestrator.runGroup 위임(entries 포함)', async () => {
     const runGroup = jest.fn().mockResolvedValue(undefined);
     const consumer = new AutopilotConsumer({ runGroup } as never, undefined);
@@ -15,20 +33,6 @@ describe('AutopilotConsumer', () => {
       'morning',
       expect.arrayContaining([
         expect.objectContaining({ id: 'morning-briefing' }),
-      ]),
-      'U1',
-      'C1',
-    );
-  });
-
-  it('job.name = "daily-eval"(groupKey, digestGroup 없음) → runGroup 위임', async () => {
-    const runGroup = jest.fn().mockResolvedValue(undefined);
-    const consumer = new AutopilotConsumer({ runGroup } as never, undefined);
-    await consumer.process(makeJob('daily-eval'));
-    expect(runGroup).toHaveBeenCalledWith(
-      'daily-eval',
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'daily-eval' }),
       ]),
       'U1',
       'C1',

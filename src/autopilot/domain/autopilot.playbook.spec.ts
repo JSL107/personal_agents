@@ -22,6 +22,19 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(morning?.digestGroup).toBe('morning');
   });
 
+  it('SP3 플레이북은 daily-eval + work-reviewer 가 모두 evening 그룹', () => {
+    const eveningEntries = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.digestGroup === 'evening',
+    );
+    expect(eveningEntries).toHaveLength(2);
+    const ids = eveningEntries.map((entry) => entry.id).sort();
+    expect(ids).toEqual(['daily-eval', 'work-reviewer']);
+  });
+
+  it('SP3 플레이북 evening 그룹은 validatePlaybook 통과(스케줄 일치)', () => {
+    expect(() => validatePlaybook(AUTOPILOT_PLAYBOOK)).not.toThrow();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {
@@ -53,14 +66,22 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       {
         id: 'a',
         taskId: 'a',
-        trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'Asia/Seoul' },
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
         riskTier: 'T0_AUTO',
         digestGroup: 'evening',
       },
       {
         id: 'b',
         taskId: 'b',
-        trigger: { kind: 'CRON', schedule: '0 20 * * *', timezone: 'Asia/Seoul' },
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 20 * * *',
+          timezone: 'Asia/Seoul',
+        },
         riskTier: 'T0_AUTO',
         digestGroup: 'evening',
       },
@@ -73,7 +94,11 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       {
         id: 'c',
         taskId: 'c',
-        trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'Asia/Seoul' },
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
         riskTier: 'T0_AUTO',
         digestGroup: 'evening',
       },
