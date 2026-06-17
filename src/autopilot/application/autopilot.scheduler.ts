@@ -4,7 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
-import { AUTOPILOT_CRON_QUEUE, AutopilotJobData } from '../domain/autopilot.type';
+import {
+  AUTOPILOT_CRON_QUEUE,
+  AutopilotJobData,
+} from '../domain/autopilot.type';
 
 // 부팅 시 플레이북의 CRON 항목을 단일 큐에 named repeatable 로 등록(jobName = entry.id).
 // daily-eval.scheduler 패턴 — env 외부화 + cleanup 멱등. owner 미설정이면 전체 비활성.

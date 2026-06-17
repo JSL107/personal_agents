@@ -1,9 +1,10 @@
 import { AutopilotConsumer } from './autopilot.consumer';
 
-const makeJob = (name: string) => ({
-  name,
-  data: { ownerSlackUserId: 'U1', target: 'C1' },
-}) as never;
+const makeJob = (name: string) =>
+  ({
+    name,
+    data: { ownerSlackUserId: 'U1', target: 'C1' },
+  }) as never;
 
 describe('AutopilotConsumer', () => {
   it('job.name = 플레이북 id → orchestrator.run 위임', async () => {
@@ -27,12 +28,20 @@ describe('AutopilotConsumer', () => {
   it('실행 실패 → publishCronFailure + rethrow', async () => {
     const run = jest.fn().mockRejectedValue(new Error('boom'));
     const publishCronFailure = jest.fn();
-    const consumer = new AutopilotConsumer({ run } as never, {
-      publishCronFailure,
-    } as never);
-    await expect(consumer.process(makeJob('daily-eval'))).rejects.toThrow('boom');
+    const consumer = new AutopilotConsumer(
+      { run } as never,
+      {
+        publishCronFailure,
+      } as never,
+    );
+    await expect(consumer.process(makeJob('daily-eval'))).rejects.toThrow(
+      'boom',
+    );
     expect(publishCronFailure).toHaveBeenCalledWith(
-      expect.objectContaining({ cronName: 'Autopilot:daily-eval', ownerSlackUserId: 'U1' }),
+      expect.objectContaining({
+        cronName: 'Autopilot:daily-eval',
+        ownerSlackUserId: 'U1',
+      }),
     );
   });
 });

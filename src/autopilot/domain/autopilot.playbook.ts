@@ -1,4 +1,7 @@
-import { DEFAULT_DAILY_EVAL_CRON, DEFAULT_DAILY_EVAL_TIMEZONE } from './autopilot.playbook-defaults';
+import {
+  DEFAULT_DAILY_EVAL_CRON,
+  DEFAULT_DAILY_EVAL_TIMEZONE,
+} from './autopilot.playbook-defaults';
 import { PlaybookEntry } from './playbook.type';
 
 // 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
@@ -7,7 +10,11 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'daily-eval',
     taskId: 'daily-eval',
-    trigger: { kind: 'CRON', schedule: DEFAULT_DAILY_EVAL_CRON, timezone: DEFAULT_DAILY_EVAL_TIMEZONE },
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_DAILY_EVAL_CRON,
+      timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
+    },
     riskTier: 'T0_AUTO',
   },
 ];

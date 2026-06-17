@@ -16,8 +16,26 @@ describe('AUTOPILOT_PLAYBOOK', () => {
 
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
-      { id: 'x', taskId: 'x', trigger: { kind: 'CRON', schedule: '0 9 * * *', timezone: 'Asia/Seoul' }, riskTier: 'T0_AUTO' },
-      { id: 'x', taskId: 'x', trigger: { kind: 'CRON', schedule: '0 9 * * *', timezone: 'Asia/Seoul' }, riskTier: 'T0_AUTO' },
+      {
+        id: 'x',
+        taskId: 'x',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 9 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+      },
+      {
+        id: 'x',
+        taskId: 'x',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 9 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+      },
     ];
     expect(() => validatePlaybook(dup)).toThrow(/중복/);
   });

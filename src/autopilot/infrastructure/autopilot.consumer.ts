@@ -6,7 +6,10 @@ import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.c
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { AutopilotOrchestrator } from '../application/autopilot.orchestrator';
 import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
-import { AUTOPILOT_CRON_QUEUE, AutopilotJobData } from '../domain/autopilot.type';
+import {
+  AUTOPILOT_CRON_QUEUE,
+  AutopilotJobData,
+} from '../domain/autopilot.type';
 
 // 단일 consumer — job.name(=플레이북 entry.id)으로 항목을 찾아 오케스트레이터에 위임.
 // 실패 시 owner DM 통지(fire-and-forget) 후 rethrow → BullMQ 재시도.
@@ -23,7 +26,9 @@ export class AutopilotConsumer extends WorkerHost {
   }
 
   async process(job: Job<AutopilotJobData>): Promise<void> {
-    const entry = AUTOPILOT_PLAYBOOK.find((candidate) => candidate.id === job.name);
+    const entry = AUTOPILOT_PLAYBOOK.find(
+      (candidate) => candidate.id === job.name,
+    );
     if (!entry) {
       this.logger.error(`Autopilot — 미등록 job 무시: ${job.name}`);
       return;
@@ -32,7 +37,10 @@ export class AutopilotConsumer extends WorkerHost {
     try {
       await this.orchestrator.run(entry, ownerSlackUserId, target);
     } catch (error) {
-      this.logger.error(`Autopilot[${entry.id}] 실패 (owner=${ownerSlackUserId})`, error);
+      this.logger.error(
+        `Autopilot[${entry.id}] 실패 (owner=${ownerSlackUserId})`,
+        error,
+      );
       this.notifyOwnerFailure(ownerSlackUserId, entry.id, error);
       throw error;
     }
