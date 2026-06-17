@@ -1,11 +1,13 @@
 import {
   DEFAULT_DAILY_EVAL_CRON,
   DEFAULT_DAILY_EVAL_TIMEZONE,
+  DEFAULT_MORNING_BRIEFING_CRON,
+  DEFAULT_MORNING_BRIEFING_TIMEZONE,
 } from './autopilot.playbook-defaults';
 import { PlaybookEntry } from './playbook.type';
 
 // 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
-// SP1: Daily Eval 1건만(기존 cron 이관). SP2~4 가 출근/퇴근/주간·이벤트 항목을 여기에 추가.
+// SP1: Daily Eval 1건만(기존 cron 이관). SP2: Morning Briefing 추가(출근 통합).
 export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'daily-eval',
@@ -16,6 +18,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'morning-briefing',
+    taskId: 'morning-briefing',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_MORNING_BRIEFING_CRON,
+      timezone: DEFAULT_MORNING_BRIEFING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'morning',
   },
 ];
 

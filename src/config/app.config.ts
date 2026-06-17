@@ -67,29 +67,6 @@ class EnvironmentVariables {
   @IsString()
   NOTION_DAILY_PLAN_DATABASE_ID?: string;
 
-  // PRO-1 Morning Briefing CRON 설정.
-  // - OWNER_SLACK_USER_ID: PM 컨텍스트의 "누구의 plan 인지" 식별자 (GitHub assigned / Slack 멘션 fetch 기준).
-  //   미설정 = 모듈 자동 비활성화 (graceful, 1인 봇이라 단일 owner).
-  // - DELIVERY_TARGETS: 콤마 구분 발송 대상 — 슬랙 user ID(U...) 또는 채널 ID(C.../G...) 혼용.
-  //   빈 값이면 OWNER 의 DM 으로 발송. private 채널은 봇 invite 필요.
-  // - CRON: BullMQ repeatable cron pattern (default: 매일 08:30).
-  // - TIMEZONE: cron 해석 기준 (default: Asia/Seoul).
-  @IsOptional()
-  @IsString()
-  MORNING_BRIEFING_OWNER_SLACK_USER_ID?: string;
-
-  @IsOptional()
-  @IsString()
-  MORNING_BRIEFING_DELIVERY_TARGETS?: string;
-
-  @IsOptional()
-  @IsString()
-  MORNING_BRIEFING_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  MORNING_BRIEFING_TIMEZONE?: string;
-
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()
@@ -157,11 +134,14 @@ class EnvironmentVariables {
   @IsString()
   WEEKLY_SUMMARY_TIMEZONE?: string;
 
-  // Autopilot SP1 — 선언적 워크데이 플레이북 엔진 (2026-06-17, Daily Eval 실이관).
+  // Autopilot SP1/SP2 — 선언적 워크데이 플레이북 엔진.
   // - AUTOPILOT_OWNER_SLACK_USER_ID: Autopilot 전체 게이트. 미설정 시 비활성.
-  // - AUTOPILOT_TARGET: 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 미설정 시 OWNER DM.
+  // - AUTOPILOT_TARGET: 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 콤마로 다중 타깃 지원.
+  //   미설정 시 OWNER DM. 예: "C1234567890,U9876543210".
   // - AUTOPILOT_DAILY_EVAL_SCHEDULE: daily-eval 항목 cron override (default '0 19 * * *').
   // - AUTOPILOT_DAILY_EVAL_TIMEZONE: 위 cron 해석 기준 (default Asia/Seoul).
+  // - AUTOPILOT_MORNING_BRIEFING_SCHEDULE: morning-briefing 항목 cron override (default '30 8 * * *').
+  // - AUTOPILOT_MORNING_BRIEFING_TIMEZONE: 위 cron 해석 기준 (default Asia/Seoul).
   @IsOptional()
   @IsString()
   AUTOPILOT_OWNER_SLACK_USER_ID?: string;
@@ -177,6 +157,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_DAILY_EVAL_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_MORNING_BRIEFING_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_MORNING_BRIEFING_TIMEZONE?: string;
 
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
