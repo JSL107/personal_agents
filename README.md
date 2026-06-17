@@ -26,7 +26,7 @@ GitHub / Notion / Postman / Slack 등을 연결해 PM · BE · Code Reviewer · 
 - ✅ careerLog → Notion 적재 (`PoEvalCareerlogApplier`, PreviewGate 게이트), `/impact-report --recent <N>d` 다중 PR 종합 (env 활성)
 - ✅ Conversation Memory (`src/router/application/conversation-memory.service.ts`) — Redis 우선 / in-memory Map fallback. 사용자+채널당 최대 5 turn, TTL 30분
 - ✅ GitHub Webhook 자동 트리거 (`src/webhook/`) — `issues.opened` / `pull_request.opened` → Impact Reporter, `pull_request.opened` → BE-FIX + (조건부) code-reviewer, `check_run.completed` (failure) → BE-SRE, `pull_request.closed` (merged=true) → PR careerLog Notion 자동 적재, `issues.opened` → Issue Auto-Label (vocab 안 LLM 분류)
-- ✅ Cron 자동 발화 4종 — Morning Briefing (PM `/today`), Daily Eval (PO_EVAL), Weekly Summary (Worklog+CEO), Impact Report `--recent` (env 활성 시)
+- ✅ **Autopilot 자동화** (`src/autopilot/`) — 수동 슬래시 → 자동 proactive 전환. 선언적 "워크데이 플레이북" + 얇은 오케스트레이터가 출근(아침 PM 계획) / 퇴근(PO_EVAL 회고 + 오늘 plan 기반 worklog 한 건) / 주간(Weekly·CEO·Impact) cron 을 단일 엔진으로 통합. **리스크 티어**(읽기·요약은 자동 발송 T0 / 비가역 외부쓰기는 PreviewGate T1), **다중 타깃**(콤마 fan-out), **digest 그룹**(같은 시각 여러 작업 → 한 메시지). 전체 게이트 `AUTOPILOT_OWNER_SLACK_USER_ID`, 멱등(그룹·일자당 1회) + 활동 0이면 skip
 - ✅ Notification (`src/notification/`) — Producer/Consumer 분리 (BullMQ `notification` queue). claude CLI 인증 의심 침묵 실패 + cron 실패 owner DM (30분 dedupe per kind)
 - ✅ PR careerLog 자동 적재 (`src/pr-careerlog/`) — 본인 PR 머지 시 Notion 부모 페이지 아래 일별 자식 페이지 (`YYYY-MM-DD (요일)`) 에 자동 누적
 - ✅ Issue Auto-Label (`src/agent/issue-labeler/`) — `issues.opened` 시 repo 의 기존 label vocab 안에서 LLM 분류 → octokit `addLabels` (새 label 생성 X, 5개 cap)
@@ -149,9 +149,11 @@ pnpm format:check          # Prettier 검사
 
 | 키 | 필수 | 설명 |
 |---|---|---|
-| `AUTOPILOT_OWNER_SLACK_USER_ID` | ⭕ | Autopilot 전체 게이트 — 워크데이 플레이북 자동 발화 (SP1: Daily Eval 19:00 KST, SP2: Morning Briefing 08:30 KST). 콤마 다중 타깃: `AUTOPILOT_TARGET`. cron override: `AUTOPILOT_DAILY_EVAL_SCHEDULE/_TIMEZONE`, `AUTOPILOT_MORNING_BRIEFING_SCHEDULE/_TIMEZONE` |
-| `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` | ⭕ | 매주 금 17:00 KST Worklog + CEO meta (+ `_TARGET`, `_CRON`, `_TIMEZONE`) |
-| `IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID` | ⭕ | 매주 토 09:00 KST `/impact-report --recent <N>d` 자동 (+ `_TARGET`, `_CRON`, `_TIMEZONE`, `_DAYS`) |
+| `AUTOPILOT_OWNER_SLACK_USER_ID` | ⭕ | **Autopilot 워크데이 플레이북 전체 게이트** — 모든 자동 cron(출근/퇴근/주간)이 이 한 값으로 활성. 미설정 시 전체 비활성(graceful). |
+| `AUTOPILOT_TARGET` | ❌ | 발송 대상 — 슬랙 user(`U...`)/channel(`C.../G...`) ID, **콤마로 다중 발송**. 미설정 시 owner DM. |
+| `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` | ❌ | 항목별 cron/타임존 override. ID: `DAILY_EVAL`(19:00)·`MORNING_BRIEFING`(08:30)·`WEEKLY_SUMMARY`(금 17:00)·`CEO_META`(월 09:00)·`IMPACT_REPORT`(토 09:00). 미설정 시 플레이북 기본값. |
+
+> 구 `DAILY_EVAL_*`·`MORNING_BRIEFING_*`·`WEEKLY_SUMMARY_*`·`CEO_META_CRON_*`·`IMPACT_REPORT_RECENT_*`(owner/target/cron/tz)은 Autopilot 으로 흡수됨 — `AUTOPILOT_OWNER_SLACK_USER_ID` + `AUTOPILOT_TARGET` 로 일원화. impact 의 task 고유 config(`IMPACT_REPORT_GITHUB_AUTHOR`, `_GITHUB_REPO`, `_DAYS`)는 그대로 유지.
 
 ### 운영 알람 / careerLog / 다중 PR (선택)
 
@@ -267,16 +269,17 @@ pnpm format:check          # Prettier 검사
 
 ### 자동화 cron (사용자 환경 env 설정 시 활성)
 
-V3 비전 phase loop 의 cron 트리거 — 4종 모두 env 미설정 시 비활성 (graceful).
+**Autopilot 워크데이 플레이북** (`src/autopilot/`) — 모든 cron 이 단일 엔진/플레이북으로 통합. `AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체 활성, 미설정 시 비활성(graceful). 같은 그룹(예: 퇴근)은 한 메시지로 묶여 발송(digest), 활동 0이면 skip.
 
-| Cron | 시간 (KST) | 동작 | 활성화 env |
+| 그룹 | 항목 | 시간 (KST) | 동작 |
 |---|---|---|---|
-| **Autopilot — Morning Briefing** | 매일 08:30 | PM `/today` 자동 발화 + Slack 발송. 자동 컨텍스트 없으면 안내문 발송. Autopilot 워크데이 플레이북 SP2 항목. | `AUTOPILOT_OWNER_SLACK_USER_ID` |
-| **Autopilot — Daily Eval** | 매일 19:00 | PO_EVAL (range=TODAY) 자동 + Slack 발송. sub-agent run 부재 시 graceful skip. Autopilot 워크데이 플레이북 SP1 항목. | `AUTOPILOT_OWNER_SLACK_USER_ID` |
-| Weekly Summary | 매주 금 17:00 | Worklog (1주) + CEO meta (range=WEEK) 자동 + Slack 발송. CEO 는 PO_EVAL 부재 시 graceful skip. | `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` |
-| **Impact Report Cron** | 매주 토 09:00 | `/impact-report --recent <N>d` (default N=7) 자동 발화 — 본인 머지 PR 종합. 0건 시 graceful skip. | `IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID` (+ `IMPACT_REPORT_GITHUB_AUTHOR`) |
+| 출근 (morning) | Morning Briefing | 매일 08:30 | PM `/today` 자동 계획 + Slack. 자동 컨텍스트 없으면 안내. |
+| 퇴근 (evening) | Daily Eval + Work Reviewer | 매일 19:00 | PO_EVAL(TODAY) 회고 + 오늘 plan 기반 worklog 를 **한 메시지로** 발송. 대상 부재 시 graceful skip. |
+| 주간 | Weekly Summary | 매주 금 17:00 | Worklog(1주) + CEO meta(WEEK). |
+| 주간 | CEO Meta | 매주 월 09:00 | CEO meta 종합. PO_EVAL 부재 시 graceful skip. |
+| 주간 | Impact Report | 매주 토 09:00 | `/impact-report --recent <N>d`(default 7) — 본인 머지 PR 종합. 0건 시 skip. (+ `IMPACT_REPORT_GITHUB_AUTHOR`) |
 
-각 cron 의 세부 옵션 (target/cron pattern/timezone) 은 [`src/config/app.config.ts`](src/config/app.config.ts) 의 `EnvironmentVariables` 클래스 주석 참조.
+세부 스케줄/타임존 override 는 `AUTOPILOT_<ID>_SCHEDULE`/`_TIMEZONE`, 플레이북 선언은 [`src/autopilot/domain/autopilot.playbook.ts`](src/autopilot/domain/autopilot.playbook.ts), env 검증은 [`src/config/app.config.ts`](src/config/app.config.ts) 참조.
 
 ### 선택 외부 적재 (env 설정 시 활성)
 
