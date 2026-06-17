@@ -3,7 +3,10 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
-import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
+import {
+  AUTOPILOT_PLAYBOOK,
+  validatePlaybook,
+} from '../domain/autopilot.playbook';
 import {
   AUTOPILOT_CRON_QUEUE,
   AutopilotJobData,
@@ -22,6 +25,8 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // 플레이북 무결성(중복 id 등) 부팅 시 빠른 실패 — owner 게이트보다 먼저.
+    validatePlaybook(AUTOPILOT_PLAYBOOK);
     const owner = this.readOwnerOrNull();
     if (!owner) {
       this.logger.log(
