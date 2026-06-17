@@ -53,6 +53,7 @@ const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
   findOrCreateDailyPage: jest.fn(),
   findOrCreateChildPage: jest.fn(),
   appendBlocks: jest.fn().mockResolvedValue(undefined),
+  updatePageProperties: jest.fn().mockResolvedValue(undefined),
   replaceCheckInSection: jest.fn().mockResolvedValue(undefined),
 });
 

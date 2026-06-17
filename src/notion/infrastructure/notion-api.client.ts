@@ -17,6 +17,7 @@ import {
   NotionDailyPlanPage,
   NotionPlanBlock,
   ReplaceCheckInSectionOptions,
+  UpdatePagePropertiesOptions,
 } from '../domain/port/notion-client.port';
 
 const DEFAULT_PER_DB_LIMIT = 50;
@@ -452,6 +453,29 @@ export class NotionApiClient implements NotionClientPort {
           cause: error,
         });
       }
+    }
+  }
+
+  async updatePageProperties({
+    pageId,
+    properties,
+  }: UpdatePagePropertiesOptions): Promise<void> {
+    this.assertClientConfigured('updatePageProperties');
+    try {
+      await this.client!.pages.update({
+        page_id: pageId,
+        properties: properties as Parameters<
+          Client['pages']['update']
+        >[0]['properties'],
+      });
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 속성 업데이트 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
     }
   }
 
