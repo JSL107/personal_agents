@@ -23,12 +23,12 @@ import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
 import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
+import { AutopilotModule } from './autopilot/autopilot.module';
 import { CeoMetaCronModule } from './ceo-meta-cron/ceo-meta-cron.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
-import { DailyEvalModule } from './daily-eval/daily-eval.module';
 import { GithubModule } from './github/github.module';
 import { ImpactReportCronModule } from './impact-report-cron/impact-report-cron.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
@@ -130,8 +130,9 @@ import { WeeklySummaryModule } from './weekly-summary/weekly-summary.module';
     NotificationModule,
     MorningBriefingModule,
     WeeklySummaryModule,
-    // workflow-phase-definition §5.2 Daily Eval — 매일 19:00 KST PO_EVAL 자동 트리거.
-    DailyEvalModule,
+    // workflow-phase-definition §5.2 Daily Eval → Autopilot SP1 실이관 (2026-06-17).
+    // 플레이북 선언 + 오케스트레이터 엔진으로 통합. 동작(19:00 KST PO_EVAL Slack 게시) 동등 보존.
+    AutopilotModule,
     // 주 1회 자동 /ceo-review — Daily Eval (`0 19 * * *`) 가 누적한 PO_EVAL run 들을 CEO worker 가 합성.
     CeoMetaCronModule,
     // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.

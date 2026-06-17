@@ -150,7 +150,7 @@ pnpm format:check          # Prettier 검사
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `MORNING_BRIEFING_OWNER_SLACK_USER_ID` | ⭕ | 매일 아침 PM `/today` 자동 발화 대상 (+ `_DELIVERY_TARGETS`, `_CRON`, `_TIMEZONE` 부속 키) |
-| `DAILY_EVAL_OWNER_SLACK_USER_ID` | ⭕ | 매일 19:00 KST PO_EVAL 자동 (+ `_TARGET`, `_CRON`, `_TIMEZONE`) |
+| `AUTOPILOT_OWNER_SLACK_USER_ID` | ⭕ | Autopilot 전체 게이트 — 워크데이 플레이북 자동 발화 (SP1: Daily Eval 19:00 KST PO_EVAL). (+ `AUTOPILOT_TARGET`, `AUTOPILOT_DAILY_EVAL_SCHEDULE`, `AUTOPILOT_DAILY_EVAL_TIMEZONE`) |
 | `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` | ⭕ | 매주 금 17:00 KST Worklog + CEO meta (+ `_TARGET`, `_CRON`, `_TIMEZONE`) |
 | `IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID` | ⭕ | 매주 토 09:00 KST `/impact-report --recent <N>d` 자동 (+ `_TARGET`, `_CRON`, `_TIMEZONE`, `_DAYS`) |
 
@@ -273,7 +273,7 @@ V3 비전 phase loop 의 cron 트리거 — 4종 모두 env 미설정 시 비활
 | Cron | 시간 (KST) | 동작 | 활성화 env |
 |---|---|---|---|
 | Morning Briefing | 매일 09:00 | PM `/today` 자동 발화 + Slack 발송 | `MORNING_BRIEFING_OWNER_SLACK_USER_ID` |
-| **Daily Eval** | 매일 19:00 | PO_EVAL (range=TODAY) 자동 + Slack 발송. sub-agent run 부재 시 graceful skip. | `DAILY_EVAL_OWNER_SLACK_USER_ID` |
+| **Autopilot — Daily Eval** | 매일 19:00 | PO_EVAL (range=TODAY) 자동 + Slack 발송. sub-agent run 부재 시 graceful skip. Autopilot 워크데이 플레이북 SP1 항목. | `AUTOPILOT_OWNER_SLACK_USER_ID` |
 | Weekly Summary | 매주 금 17:00 | Worklog (1주) + CEO meta (range=WEEK) 자동 + Slack 발송. CEO 는 PO_EVAL 부재 시 graceful skip. | `WEEKLY_SUMMARY_OWNER_SLACK_USER_ID` |
 | **Impact Report Cron** | 매주 토 09:00 | `/impact-report --recent <N>d` (default N=7) 자동 발화 — 본인 머지 PR 종합. 0건 시 graceful skip. | `IMPACT_REPORT_RECENT_OWNER_SLACK_USER_ID` (+ `IMPACT_REPORT_GITHUB_AUTHOR`) |
 

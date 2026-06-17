@@ -157,27 +157,26 @@ class EnvironmentVariables {
   @IsString()
   WEEKLY_SUMMARY_TIMEZONE?: string;
 
-  // workflow-phase-definition §5.2 Daily Eval CRON.
-  // - DAILY_EVAL_OWNER_SLACK_USER_ID: 일일 PO_EVAL 자동 트리거 대상 사용자. 미설정 시 모듈 비활성화.
-  //   (WEEKLY 와 같은 값 권장 — 단일 사용자, 단 분리 가능.)
-  // - DAILY_EVAL_TARGET: 슬랙 user(U...) / channel(C.../G...) ID. 미설정 시 OWNER DM 으로.
-  // - DAILY_EVAL_CRON: BullMQ repeatable cron pattern (default 매일 19:00 — `0 19 * * *`).
-  // - DAILY_EVAL_TIMEZONE: cron 해석 기준 (default Asia/Seoul).
+  // Autopilot SP1 — 선언적 워크데이 플레이북 엔진 (2026-06-17, Daily Eval 실이관).
+  // - AUTOPILOT_OWNER_SLACK_USER_ID: Autopilot 전체 게이트. 미설정 시 비활성.
+  // - AUTOPILOT_TARGET: 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 미설정 시 OWNER DM.
+  // - AUTOPILOT_DAILY_EVAL_SCHEDULE: daily-eval 항목 cron override (default '0 19 * * *').
+  // - AUTOPILOT_DAILY_EVAL_TIMEZONE: 위 cron 해석 기준 (default Asia/Seoul).
   @IsOptional()
   @IsString()
-  DAILY_EVAL_OWNER_SLACK_USER_ID?: string;
+  AUTOPILOT_OWNER_SLACK_USER_ID?: string;
 
   @IsOptional()
   @IsString()
-  DAILY_EVAL_TARGET?: string;
+  AUTOPILOT_TARGET?: string;
 
   @IsOptional()
   @IsString()
-  DAILY_EVAL_CRON?: string;
+  AUTOPILOT_DAILY_EVAL_SCHEDULE?: string;
 
   @IsOptional()
   @IsString()
-  DAILY_EVAL_TIMEZONE?: string;
+  AUTOPILOT_DAILY_EVAL_TIMEZONE?: string;
 
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
