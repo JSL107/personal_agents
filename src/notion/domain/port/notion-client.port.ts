@@ -46,6 +46,13 @@ export interface AppendBlocksOptions {
   blocks: NotionPlanBlock[];
 }
 
+// DB page 의 properties 갱신. 블로그 자동 발행(상태/발행일/태그/요약 set) 용도.
+// properties 는 Notion API properties payload 형식 — 호출부가 속성명/타입을 구성한다.
+export interface UpdatePagePropertiesOptions {
+  pageId: string;
+  properties: Record<string, unknown>;
+}
+
 // 같은 day-page 안에서 "Check in *" 으로 시작하는 heading_2 섹션 (해당 heading + 다음 heading_2
 // 직전까지의 모든 block) 을 모두 삭제하고 새 blocks 를 append. /worklog 의 "Check Out" 등
 // 다른 heading_2 섹션은 그대로 보존된다.
@@ -73,6 +80,8 @@ export interface NotionClientPort {
   ): Promise<NotionDailyPlanPage>;
   // 기존 page 에 block 추가. /worklog 의 "Check Out" append 용도 (overwrite 의미 없음).
   appendBlocks(options: AppendBlocksOptions): Promise<void>;
+  // DB page properties 갱신 — 블로그 자동 발행(상태=발행 등) 용도.
+  updatePageProperties(options: UpdatePagePropertiesOptions): Promise<void>;
   // /today 의 "Check in" 섹션 전용 — 매 호출마다 기존 Check in 섹션 삭제 후 새로 입력.
   replaceCheckInSection(options: ReplaceCheckInSectionOptions): Promise<void>;
 }
