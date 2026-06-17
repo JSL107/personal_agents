@@ -10,27 +10,70 @@ describe('AutopilotScheduler', () => {
   it('owner 미설정 → 등록 0 + cleanup 호출', async () => {
     const queue = makeQueue();
     const config = { get: jest.fn().mockReturnValue(undefined) };
-    const s = new AutopilotScheduler(queue as never, config as never);
-    await s.onApplicationBootstrap();
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
     expect(queue.add).not.toHaveBeenCalled();
     expect(queue.getRepeatableJobs).toHaveBeenCalled();
   });
 
-  it('owner 설정 → CRON 항목 등록(daily-eval)', async () => {
+  it('owner 설정 → 그룹당 1 repeatable 등록(jobName=groupKey)', async () => {
     const queue = makeQueue();
     const config = {
       get: jest.fn((key: string) =>
         key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
       ),
     };
-    const s = new AutopilotScheduler(queue as never, config as never);
-    await s.onApplicationBootstrap();
-    expect(queue.add).toHaveBeenCalledWith(
-      'daily-eval',
-      { ownerSlackUserId: 'U1', target: 'U1' },
-      expect.objectContaining({
-        repeat: { pattern: '0 19 * * *', tz: 'Asia/Seoul' },
-      }),
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    // 각 그룹당 1번씩 queue.add 호출 — entry 수(3)가 아닌 그룹 수(2: evening + morning).
+    const addCalls: string[] = queue.add.mock.calls.map(
+      (call: unknown[]) => call[0] as string,
     );
+    // 동일 groupKey 로 중복 등록 없음 (그룹당 exactly 1).
+    const unique = new Set(addCalls);
+    expect(unique.size).toBe(addCalls.length);
+    // SP3: evening + morning = 2그룹.
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(addCalls).toContain('evening');
+    expect(addCalls).toContain('morning');
+  });
+
+  it('evening 그룹 스케줄은 첫 항목(daily-eval) env 기반 → 19:00', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const eveningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'evening',
+    );
+    expect(eveningCall).toBeDefined();
+    expect(eveningCall[2]).toMatchObject({
+      repeat: { pattern: '0 19 * * *', tz: 'Asia/Seoul' },
+    });
+  });
+
+  it('morning 그룹 등록 확인 — jobName="morning", schedule=08:30', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(morningCall).toBeDefined();
+    expect(morningCall[2]).toMatchObject({
+      repeat: { pattern: '30 8 * * *', tz: 'Asia/Seoul' },
+    });
   });
 });

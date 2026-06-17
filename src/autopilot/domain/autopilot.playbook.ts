@@ -8,6 +8,7 @@ import { PlaybookEntry } from './playbook.type';
 
 // 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
 // SP1: Daily Eval 1건만(기존 cron 이관). SP2: Morning Briefing 추가(출근 통합).
+// SP3: work-reviewer 추가 + daily-eval digestGroup='evening' → 퇴근 1건 통합.
 export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'daily-eval',
@@ -18,6 +19,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    digestGroup: 'evening',
+  },
+  {
+    id: 'work-reviewer',
+    taskId: 'work-reviewer',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_DAILY_EVAL_CRON,
+      timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'evening',
   },
   {
     id: 'morning-briefing',
@@ -32,7 +45,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   },
 ];
 
-// 선언 무결성 — 부팅/테스트 시 빠른 실패. (id/taskId 중복 차단)
+// 선언 무결성 — 부팅/테스트 시 빠른 실패. (id/taskId 중복 차단, 그룹 스케줄 일관성 검사)
 export const validatePlaybook = (entries: PlaybookEntry[]): void => {
   const ids = new Set<string>();
   for (const entry of entries) {
@@ -40,5 +53,29 @@ export const validatePlaybook = (entries: PlaybookEntry[]): void => {
       throw new Error(`Autopilot 플레이북 중복 id — ${entry.id}`);
     }
     ids.add(entry.id);
+  }
+
+  // 같은 digestGroup 내 CRON 항목의 schedule + timezone 일치 검사.
+  // 그룹 첫 항목의 스케줄이 그룹 대표 스케줄이므로 모두 동일해야 한다.
+  const groupSchedules = new Map<
+    string,
+    { schedule: string; timezone: string }
+  >();
+  for (const entry of entries) {
+    if (entry.trigger.kind !== 'CRON' || !entry.digestGroup) {
+      continue;
+    }
+    const key = entry.digestGroup;
+    const { schedule, timezone } = entry.trigger;
+    const existing = groupSchedules.get(key);
+    if (!existing) {
+      groupSchedules.set(key, { schedule, timezone });
+      continue;
+    }
+    if (existing.schedule !== schedule || existing.timezone !== timezone) {
+      throw new Error(
+        `Autopilot 그룹 '${key}' 항목들의 스케줄이 불일치 — schedule/timezone 은 그룹 내 모두 동일해야 합니다`,
+      );
+    }
   }
 };
