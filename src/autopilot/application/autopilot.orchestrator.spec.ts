@@ -117,6 +117,65 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledWith({ target: 'C2', text: '본문' });
   });
 
+  it('그룹 내 한 task 가 throw 해도 다른 task 발송 + 그룹 성공 (실패 격리)', async () => {
+    const taskA = makeTask('daily-eval', { skip: false, slackText: 'A 정상' });
+    const taskB = {
+      id: 'work-reviewer',
+      run: jest
+        .fn()
+        .mockRejectedValue(
+          new Error('모델 응답을 JSON 으로 파싱하지 못했습니다.'),
+        ),
+    };
+    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [taskA, taskB] as never,
+      { postMessage } as never,
+      { acquireOnce } as never,
+    );
+
+    const e1 = makeEntry('daily-eval', 'daily-eval');
+    const e2 = makeEntry('work-reviewer', 'work-reviewer');
+
+    // 한 task 실패가 그룹/cron 전체를 죽이지 않는다 (throw 안 함).
+    await expect(
+      orchestrator.runGroup('evening', [e1, e2], 'U1', 'C1'),
+    ).resolves.toBeUndefined();
+
+    // 정상 task 는 발송되고, 실패 task 는 안내로 표기된다 (조용한 실패 방지).
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const sentText: string = postMessage.mock.calls[0][0].text;
+    expect(sentText).toContain('A 정상');
+    expect(sentText).toContain('work-reviewer');
+  });
+
+  it('그룹 내 모든 task 실패 → throw 안 함, 실패 안내만 발송', async () => {
+    const taskA = {
+      id: 'daily-eval',
+      run: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [taskA] as never,
+      { postMessage } as never,
+      { acquireOnce } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [makeEntry('daily-eval', 'daily-eval')],
+        'U1',
+        'C1',
+      ),
+    ).resolves.toBeUndefined();
+    // 실패 안내가 발송되어 owner 가 인지 가능 (조용한 실패 방지).
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0][0].text).toContain('daily-eval');
+  });
+
   it('미등록 taskId → throw', async () => {
     const orchestrator = new AutopilotOrchestrator(
       [] as never,
