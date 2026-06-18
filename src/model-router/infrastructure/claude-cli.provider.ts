@@ -13,7 +13,11 @@ import {
   ModelProviderName,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
-import { buildSafeChildEnv, getRealHomeDir } from './cli-process.util';
+import {
+  buildSafeChildEnv,
+  getRealHomeDir,
+  killProcessTree,
+} from './cli-process.util';
 import { redactPii } from './pii-redaction.util';
 
 const CLAUDE_EXECUTABLE = 'claude';
@@ -233,13 +237,20 @@ export class ClaudeCliProvider implements ModelProviderPort {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd,
         env: buildSafeChildEnv({ cwd, homeDir, additionalEnv }),
+        // 프로세스 그룹 리더로 띄워, timeout 시 claude 가 띄운 MCP 서버/grandchild 까지
+        // killProcessTree 로 한 번에 정리 (자식만 죽으면 grandchild 가 stdio 를 물고
+        // 'close' 를 막아 Promise 가 hang — 단일 호출 16분 지속 관측의 유력 원인).
+        detached: true,
       });
 
       const stdoutChunks: string[] = [];
       let stderrTail = '';
 
       const timer = setTimeout(() => {
-        child.kill('SIGKILL');
+        this.logger.warn(
+          `claude CLI 응답 시간 초과 (${this.timeoutMs}ms) — 프로세스 그룹 강제 종료 (pid=${child.pid})`,
+        );
+        killProcessTree(child.pid);
         reject(new Error(`claude CLI 응답 시간 초과 (${this.timeoutMs}ms)`));
       }, this.timeoutMs);
 

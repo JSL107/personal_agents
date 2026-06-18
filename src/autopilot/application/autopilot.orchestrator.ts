@@ -45,9 +45,25 @@ export class AutopilotOrchestrator {
       if (!task) {
         throw new Error(`Autopilot: task 미등록 — taskId=${entry.taskId}`);
       }
-      const result = await task.run({ ownerSlackUserId, firedAtKst });
-      if (!result.skip && result.slackText) {
-        parts.push(result.slackText);
+      // 한 task 의 런타임 실패(모델 응답 파싱 실패 / LLM hang 등 외부 변동)가 그룹 전체를
+      // 죽여 cron job 을 throw 시키지 않도록 격리한다. (이전엔 work-reviewer 의 JSON 파싱
+      // 실패가 evening 그룹 전체를 실패시켜 daily-eval 보고까지 누락 + cron 실패 알람 발사.)
+      // 설정 오류(riskTier/미등록)는 위에서 여전히 fail-fast — 운영 변동만 격리한다.
+      try {
+        const result = await task.run({ ownerSlackUserId, firedAtKst });
+        if (!result.skip && result.slackText) {
+          parts.push(result.slackText);
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Autopilot[${groupKey}] task '${entry.taskId}' 실패 (그룹은 계속): ${message}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        // 조용한 실패 방지 — owner digest 에 짧게 표기. message 는 길이 cap.
+        parts.push(
+          `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
+        );
       }
     }
 

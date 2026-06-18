@@ -1,4 +1,4 @@
-import { buildSafeChildEnv } from './cli-process.util';
+import { buildSafeChildEnv, killProcessTree } from './cli-process.util';
 
 describe('buildSafeChildEnv', () => {
   const originalEnv = { ...process.env };
@@ -135,5 +135,53 @@ describe('buildSafeChildEnv', () => {
     const env = buildSafeChildEnv();
 
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+});
+
+describe('killProcessTree', () => {
+  it('pid 가 있으면 음수 pid 로 프로세스 그룹 전체에 SIGKILL (detached child 의 grandchild 정리)', () => {
+    const spy = jest
+      .spyOn(process, 'kill')
+      .mockImplementation((() => true) as typeof process.kill);
+
+    killProcessTree(12345);
+
+    expect(spy).toHaveBeenCalledWith(-12345, 'SIGKILL');
+    spy.mockRestore();
+  });
+
+  it('그룹 kill 실패 시 단일 pid 로 fallback', () => {
+    const spy = jest.spyOn(process, 'kill').mockImplementation(((
+      pid: number,
+    ) => {
+      if (pid < 0) {
+        throw new Error('ESRCH');
+      }
+      return true;
+    }) as typeof process.kill);
+
+    killProcessTree(12345);
+
+    expect(spy).toHaveBeenCalledWith(-12345, 'SIGKILL');
+    expect(spy).toHaveBeenCalledWith(12345, 'SIGKILL');
+    spy.mockRestore();
+  });
+
+  it('pid 가 undefined 면 no-op (process.kill 미호출)', () => {
+    const spy = jest.spyOn(process, 'kill');
+
+    killProcessTree(undefined);
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('단일 fallback 도 실패(이미 종료)하면 throw 하지 않는다', () => {
+    const spy = jest.spyOn(process, 'kill').mockImplementation((() => {
+      throw new Error('ESRCH');
+    }) as typeof process.kill);
+
+    expect(() => killProcessTree(999)).not.toThrow();
+    spy.mockRestore();
   });
 });
