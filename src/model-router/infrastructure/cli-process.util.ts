@@ -94,3 +94,30 @@ export const buildSafeChildEnv = ({
 // throwaway HOME 메커니즘이 안 되는 CLI 가 사용자 실제 HOME 을 직접 로드해야 할 때를 위해 유지.
 // process.env.HOME 직접 참조를 이 파일로 격리. (이전 Gemini provider 가 사용했음 — 2026-06-04 제거)
 export const getRealHomeDir = (): string => process.env.HOME ?? homedir();
+
+// LLM CLI 자식 프로세스 + 그 자식들(grandchild)까지 프로세스 그룹 단위로 강제 종료한다.
+//
+// 배경: `child.kill('SIGKILL')` 은 직접 자식(codex/claude CLI)만 죽인다. 그런데 codex 는
+// app-server broker, claude 는 MCP 서버(notion/figma/serena 등) 류의 grandchild 를 띄우는데,
+// 이들이 살아남아 stdio 를 물고 있으면 자식의 `'close'` 이벤트가 오지 않아 provider 의
+// spawn Promise 가 영구 hang 한다 — 단일 LLM 호출이 timeout(180s)·worker lockDuration(7.5m)을
+// 넘겨 16분 넘게 지속되는 관측의 유력 원인. (정확한 메커니즘은 런타임 계측으로 추가 확인 필요.)
+//
+// 해결: provider 가 자식을 `detached: true` 로 spawn 해 프로세스 그룹 리더로 만들고, 음수 pid 로
+// 그룹 전체에 SIGKILL 을 보내 grandchild 까지 한 번에 정리한다. 그룹 kill 이 실패(그룹 없음/이미
+// 종료)하면 단일 pid 로 fallback 하고, 그것도 실패하면(이미 종료) 조용히 무시한다.
+// detached child 는 음수 pid kill 의 전제 — detached 없이 -pid 를 쓰면 부모 그룹(봇 자신)까지 죽을 수 있다.
+export const killProcessTree = (pid: number | undefined): void => {
+  if (pid === undefined) {
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // 이미 종료된 프로세스 — no-op.
+    }
+  }
+};
