@@ -76,4 +76,31 @@ describe('EpisodicMemoryService', () => {
     expect(hits[0].score).toBeGreaterThanOrEqual(hits[1].score); // 내림차순
     expect(hits.every((hit) => hit.score >= 0)).toBe(true);
   });
+
+  it('searchRelevant: agentType/content 를 hit 에 통과시킨다', async () => {
+    const repository = createRepositoryMock();
+    repository.searchByVector.mockResolvedValue([
+      {
+        id: 1,
+        agentRunId: 11,
+        agentType: 'BE',
+        content: '결제 모듈 리팩토링',
+        distance: 0.1,
+        occurredAt: new Date(),
+      },
+    ]);
+    const service = new EpisodicMemoryService(
+      new MockEmbedder(384),
+      repository as never,
+    );
+
+    const hits = await service.searchRelevant({
+      query: 'q',
+      kind: 'agent_run',
+      limit: 1,
+    });
+
+    expect(hits[0].agentType).toBe('BE');
+    expect(hits[0].content).toBe('결제 모듈 리팩토링');
+  });
 });
