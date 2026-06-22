@@ -152,6 +152,43 @@ describe('AgentRunService', () => {
     });
   });
 
+  it('execute 성공 시 episodic recorder.record 를 호출한다 (best-effort 적재)', async () => {
+    const recorder = {
+      record: jest.fn().mockResolvedValue(undefined),
+      searchRelevant: jest.fn().mockResolvedValue([]),
+    };
+    const serviceWithRecorder = new AgentRunService(
+      repository,
+      recorder as never,
+    );
+
+    await serviceWithRecorder.execute({
+      agentType: AgentType.PM,
+      triggerType: TriggerType.SLACK_COMMAND_TODAY,
+      inputSnapshot: { slackUserId: 'U1' },
+      run: async () => ({
+        result: 'r',
+        modelUsed: 'codex-cli',
+        output: { plan: 'x' },
+      }),
+    });
+
+    expect(recorder.record).toHaveBeenCalledTimes(1);
+    expect(recorder.record.mock.calls[0][0].kind).toBe('agent_run');
+    expect(recorder.record.mock.calls[0][0].agentType).toBe(AgentType.PM);
+  });
+
+  it('recorder 미주입(undefined)이어도 execute 는 정상 동작한다', async () => {
+    await expect(
+      service.execute({
+        agentType: AgentType.PM,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: {},
+        run: async () => ({ result: 'r', modelUsed: 'codex-cli', output: {} }),
+      }),
+    ).resolves.toMatchObject({ result: 'r' });
+  });
+
   describe('findChainFromRoot — V3 chain audit walk facade', () => {
     it('rootRunId + default maxDepth(16) 으로 repository delegate, 결과 그대로 반환', async () => {
       const chain = [
