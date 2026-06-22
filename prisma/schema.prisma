@@ -185,3 +185,20 @@ model CareerProfile {
   @@index([slackUserId, createdAt])
   @@map("career_profile")
 }
+
+// Episodic Memory — AgentRun 완료 결과를 로컬 임베딩으로 시간축에 적재(spec 2026-06-18).
+// embedding 은 pgvector 컬럼이라 Prisma 미지원 → Unsupported. 적재/검색은 $queryRaw 로만.
+model EpisodicMemory {
+  id           Int                          @id @default(autoincrement())
+  kind         String // 'agent_run' | 'conversation' | 'manual' (1차는 'agent_run')
+  agentRunId   Int?                         @map("agent_run_id")
+  agentType    String?                      @map("agent_type")
+  content      String                       @db.Text
+  embedding    Unsupported("vector(384)")?
+  occurredAt   DateTime                     @map("occurred_at")
+  supersededAt DateTime?                    @map("superseded_at")
+  createdAt    DateTime                     @default(now()) @map("created_at")
+
+  @@index([kind, agentType, occurredAt])
+  @@map("episodic_memory")
+}

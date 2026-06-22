@@ -1,5 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { EPISODIC_MEMORY_PORT } from '../../episodic-memory/domain/port/episodic-memory.port';
+import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   AgentRunChainNode,
@@ -59,6 +61,11 @@ export class AgentRunService {
   constructor(
     @Inject(AGENT_RUN_REPOSITORY_PORT)
     private readonly repository: AgentRunRepositoryPort,
+    // Episodic Memory 는 옵셔널 — AgentRunModule 이 EpisodicMemoryModule 을 import 하면 주입,
+    // 미주입(테스트 등) 시 finish hook / findSimilarPlans 는 기존 동작으로 fallback.
+    @Optional()
+    @Inject(EPISODIC_MEMORY_PORT)
+    private readonly episodicMemory?: EpisodicMemoryPort,
   ) {}
 
   async execute<T>({
@@ -95,6 +102,10 @@ export class AgentRunService {
         durationMs: Date.now() - startMs,
       });
 
+      // Episodic Memory 적재 — fire-and-forget(await 안 함). 임베딩 모델 로드/추론이 본 흐름을
+      // 지연시키지 않도록 떼어내고, record 내부가 이미 실패 swallow 하지만 unhandled rejection 방지로 catch.
+      this.recordEpisode(id, agentType, execution.output);
+
       return {
         result: execution.result,
         modelUsed: execution.modelUsed,
@@ -118,6 +129,32 @@ export class AgentRunService {
 
       throw error;
     }
+  }
+
+  // SUCCEEDED run 의 output 을 텍스트화해 episodic memory 에 비동기 적재. 미주입 시 noop.
+  private recordEpisode(
+    agentRunId: number,
+    agentType: AgentType,
+    output: unknown,
+  ): void {
+    if (!this.episodicMemory) {
+      return;
+    }
+    const content =
+      typeof output === 'string' ? output : JSON.stringify(output ?? {});
+    void this.episodicMemory
+      .record({
+        kind: 'agent_run',
+        agentRunId,
+        agentType,
+        content,
+        occurredAt: new Date(),
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Episodic 적재 비동기 실패 (swallow): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   // V3 비전 봇 쪼개기 step 8 — Router 의 handoff chain 안에서 child run 에 parent.id 기록.
@@ -155,17 +192,54 @@ export class AgentRunService {
     return this.repository.findRecentSucceededRuns(input);
   }
 
-  // PM-3': FTS top-K 유사 plan 조회.
+  // PM-3': 유사 plan 조회. episodic 주입 시 의미검색(임베딩) → agent_run 재조회로 SimilarPlanRow 복원,
+  // 미주입 시 기존 FTS('simple') fallback. 한국어는 FTS 매칭이 약해 episodic 경로가 우선.
   async findSimilarPlans(input: {
     query: string;
     agentType: AgentType;
     limit: number;
     excludeRunId?: number;
   }): Promise<SimilarPlanRow[]> {
-    return this.repository.findSimilarPlans({
-      ...input,
+    if (!this.episodicMemory) {
+      return await this.repository.findSimilarPlans({
+        ...input,
+        agentType: input.agentType as string,
+      });
+    }
+
+    const hits = await this.episodicMemory.searchRelevant({
+      query: input.query,
+      kind: 'agent_run',
+      agentType: input.agentType as string,
+      limit: input.limit,
+    });
+    const ids = hits
+      .map((hit) => hit.agentRunId)
+      .filter((id): id is number => id != null && id !== input.excludeRunId);
+    if (ids.length === 0) {
+      return [];
+    }
+    const outputs = await this.repository.findSucceededOutputsByIds({
+      ids,
       agentType: input.agentType as string,
     });
+    const scoreById = new Map(hits.map((hit) => [hit.agentRunId, hit.score]));
+    const outputById = new Map(outputs.map((row) => [row.id, row]));
+    // episodic score(관련도) 순서 유지하며 재조회로 살아남은 것만 SimilarPlanRow 로 복원.
+    return ids
+      .map((id) => {
+        const found = outputById.get(id);
+        if (!found) {
+          return null;
+        }
+        return {
+          id: found.id,
+          output: found.output,
+          endedAt: found.endedAt,
+          rank: scoreById.get(id) ?? 0,
+        };
+      })
+      .filter((row): row is SimilarPlanRow => row !== null);
   }
 
   // V3 phase loop chain audit walk — rootRunId 로부터 parentId chain 의 children 모두 회복.

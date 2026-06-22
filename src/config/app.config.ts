@@ -364,6 +364,20 @@ class EnvironmentVariables {
       'VACATION_HIRE_DATE 는 YYYY-MM-DD 형식이어야 합니다 (예: "2024-01-15").',
   })
   VACATION_HIRE_DATE?: string;
+
+  // Episodic Memory — 로컬 임베딩 모델 id + 차원. spec 2026-06-18.
+  // 미설정 시 EpisodicMemoryModule 이 default('Xenova/multilingual-e5-small', 384) 사용.
+  // 모델 변경 시 차원도 함께 변경하고 episodic_memory.embedding 컬럼/인덱스를 재생성해야 한다.
+  @IsOptional()
+  @IsString()
+  EPISODIC_EMBED_MODEL?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'EPISODIC_EMBED_DIM 는 양의 정수여야 합니다 (예: "384").',
+  })
+  EPISODIC_EMBED_DIM?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

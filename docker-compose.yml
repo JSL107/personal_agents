@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: idaeri-postgres
     restart: unless-stopped
     # 자격증명은 .env 에서 interpolation. GitGuardian 등 정적 분석에 하드코딩 credential 을 남기지 않기 위함.
