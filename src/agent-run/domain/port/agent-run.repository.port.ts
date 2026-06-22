@@ -90,6 +90,15 @@ export interface PmContextStats {
   pmRunsWithSimilar: number;
 }
 
+// Run Retro — 최근 N일 agentType 별 실행 통계 단건.
+export interface AgentRunStatRow {
+  agentType: string;
+  total: number;
+  failed: number;
+  failRate: number; // 0~1 (failed/total)
+  avgDurationMs: number;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -138,4 +147,6 @@ export interface AgentRunRepositoryPort {
     ids: number[];
     agentType: string;
   }): Promise<Array<{ id: number; output: unknown; endedAt: Date }>>;
+  // Run Retro — 최근 sinceDays 의 agentType 별 실행 통계(건수/실패/평균 duration). 읽기 전용.
+  aggregateRunStats(input: { sinceDays: number }): Promise<AgentRunStatRow[]>;
 }

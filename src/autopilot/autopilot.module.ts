@@ -20,6 +20,7 @@ import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
+import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
 
@@ -48,6 +49,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     WeeklySummaryAutopilotTask,
     CeoMetaAutopilotTask,
     ImpactReportAutopilotTask,
+    RunRetroAutopilotTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
@@ -58,6 +60,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         weeklySummary: WeeklySummaryAutopilotTask,
         ceoMeta: CeoMetaAutopilotTask,
         impactReport: ImpactReportAutopilotTask,
+        runRetro: RunRetroAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -65,6 +68,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         weeklySummary,
         ceoMeta,
         impactReport,
+        runRetro,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -73,6 +77,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         WeeklySummaryAutopilotTask,
         CeoMetaAutopilotTask,
         ImpactReportAutopilotTask,
+        RunRetroAutopilotTask,
       ],
     },
     {

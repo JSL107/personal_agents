@@ -7,6 +7,8 @@ import {
   DEFAULT_IMPACT_REPORT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
+  DEFAULT_RUN_RETRO_CRON,
+  DEFAULT_RUN_RETRO_TIMEZONE,
   DEFAULT_WEEKLY_SUMMARY_CRON,
   DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
 } from './autopilot.playbook-defaults';
@@ -78,6 +80,16 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_IMPACT_REPORT_CRON,
       timezone: DEFAULT_IMPACT_REPORT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'run-retro',
+    taskId: 'run-retro',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_RUN_RETRO_CRON,
+      timezone: DEFAULT_RUN_RETRO_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },
