@@ -372,6 +372,7 @@ class EnvironmentVariables {
   @IsString()
   EPISODIC_EMBED_MODEL?: string;
 
+  // Episodic Memory 임베딩 차원 (기본 384). 모델 변경 시 함께 갱신 + embedding 컬럼/인덱스 재생성.
   @IsOptional()
   @IsString()
   @Matches(/^\d+$/, {
