@@ -67,6 +67,8 @@ export class EpisodicMemoryService implements EpisodicMemoryPort {
         return {
           id: row.id,
           agentRunId: row.agentRunId,
+          agentType: row.agentType,
+          content: row.content,
           score: similarity * recencyWeight,
           occurredAt: row.occurredAt,
         };

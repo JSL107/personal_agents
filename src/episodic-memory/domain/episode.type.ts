@@ -21,6 +21,9 @@ export interface SearchEpisodesInput {
 export interface EpisodeSearchHit {
   id: number;
   agentRunId: number | null;
+  // few-shot worker 라벨 / 작업 텍스트(원문 — 소비처가 truncate).
+  agentType: string | null;
+  content: string;
   // cosine similarity(0~1)에 recency 가중을 곱한 최종 점수. 클수록 관련.
   score: number;
   occurredAt: Date;
