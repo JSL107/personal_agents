@@ -14,6 +14,7 @@ describe('AgentRunService', () => {
     aggregateQuotaStats: jest.fn(),
     findById: jest.fn(),
     findSimilarPlans: jest.fn().mockResolvedValue([]),
+    findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,
       totalInboxItems: 0,
@@ -187,6 +188,53 @@ describe('AgentRunService', () => {
         run: async () => ({ result: 'r', modelUsed: 'codex-cli', output: {} }),
       }),
     ).resolves.toMatchObject({ result: 'r' });
+  });
+
+  describe('findSimilarPlans — 의미검색 강화 + FTS fallback', () => {
+    it('episodic 주입 시 의미검색 hit 을 agent_run 재조회로 SimilarPlanRow 복원', async () => {
+      const recorder = {
+        record: jest.fn(),
+        searchRelevant: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 10, agentRunId: 42, score: 0.8, occurredAt: new Date() },
+          ]),
+      };
+      repository.findSucceededOutputsByIds.mockResolvedValue([
+        { id: 42, output: { plan: 'p' }, endedAt: new Date() },
+      ]);
+      const serviceWithEpisodic = new AgentRunService(
+        repository,
+        recorder as never,
+      );
+
+      const rows = await serviceWithEpisodic.findSimilarPlans({
+        query: '결제',
+        agentType: AgentType.PM,
+        limit: 3,
+      });
+
+      expect(recorder.searchRelevant).toHaveBeenCalledTimes(1);
+      expect(repository.findSimilarPlans).not.toHaveBeenCalled();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(42);
+      expect(rows[0].rank).toBeCloseTo(0.8);
+    });
+
+    it('episodic 미주입 시 기존 FTS repository.findSimilarPlans 로 fallback', async () => {
+      repository.findSimilarPlans.mockResolvedValue([
+        { id: 1, output: {}, endedAt: new Date(), rank: 0.5 },
+      ]);
+
+      const rows = await service.findSimilarPlans({
+        query: 'q',
+        agentType: AgentType.PM,
+        limit: 3,
+      });
+
+      expect(repository.findSimilarPlans).toHaveBeenCalledTimes(1);
+      expect(rows[0].id).toBe(1);
+    });
   });
 
   describe('findChainFromRoot — V3 chain audit walk facade', () => {

@@ -192,17 +192,54 @@ export class AgentRunService {
     return this.repository.findRecentSucceededRuns(input);
   }
 
-  // PM-3': FTS top-K 유사 plan 조회.
+  // PM-3': 유사 plan 조회. episodic 주입 시 의미검색(임베딩) → agent_run 재조회로 SimilarPlanRow 복원,
+  // 미주입 시 기존 FTS('simple') fallback. 한국어는 FTS 매칭이 약해 episodic 경로가 우선.
   async findSimilarPlans(input: {
     query: string;
     agentType: AgentType;
     limit: number;
     excludeRunId?: number;
   }): Promise<SimilarPlanRow[]> {
-    return this.repository.findSimilarPlans({
-      ...input,
+    if (!this.episodicMemory) {
+      return await this.repository.findSimilarPlans({
+        ...input,
+        agentType: input.agentType as string,
+      });
+    }
+
+    const hits = await this.episodicMemory.searchRelevant({
+      query: input.query,
+      kind: 'agent_run',
+      agentType: input.agentType as string,
+      limit: input.limit,
+    });
+    const ids = hits
+      .map((hit) => hit.agentRunId)
+      .filter((id): id is number => id != null && id !== input.excludeRunId);
+    if (ids.length === 0) {
+      return [];
+    }
+    const outputs = await this.repository.findSucceededOutputsByIds({
+      ids,
       agentType: input.agentType as string,
     });
+    const scoreById = new Map(hits.map((hit) => [hit.agentRunId, hit.score]));
+    const outputById = new Map(outputs.map((row) => [row.id, row]));
+    // episodic score(관련도) 순서 유지하며 재조회로 살아남은 것만 SimilarPlanRow 로 복원.
+    return ids
+      .map((id) => {
+        const found = outputById.get(id);
+        if (!found) {
+          return null;
+        }
+        return {
+          id: found.id,
+          output: found.output,
+          endedAt: found.endedAt,
+          rank: scoreById.get(id) ?? 0,
+        };
+      })
+      .filter((row): row is SimilarPlanRow => row !== null);
   }
 
   // V3 phase loop chain audit walk — rootRunId 로부터 parentId chain 의 children 모두 회복.

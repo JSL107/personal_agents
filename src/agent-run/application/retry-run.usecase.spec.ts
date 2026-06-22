@@ -13,6 +13,7 @@ describe('RetryRunUsecase', () => {
     findRecentSucceededRuns: jest.fn(),
     aggregateQuotaStats: jest.fn(),
     findSimilarPlans: jest.fn().mockResolvedValue([]),
+    findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,
       totalInboxItems: 0,

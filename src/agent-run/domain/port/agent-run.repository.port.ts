@@ -133,4 +133,9 @@ export interface AgentRunRepositoryPort {
     rootRunId: number;
     maxDepth: number;
   }): Promise<AgentRunChainNode[]>;
+  // Episodic 의미검색 결과(agentRunId 목록)로 output/endedAt 재조회 — SimilarPlanRow 복원용.
+  findSucceededOutputsByIds(input: {
+    ids: number[];
+    agentType: string;
+  }): Promise<Array<{ id: number; output: unknown; endedAt: Date }>>;
 }
