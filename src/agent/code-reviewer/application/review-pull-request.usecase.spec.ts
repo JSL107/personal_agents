@@ -355,3 +355,161 @@ describe('buildReviewPrompt', () => {
     expect(text).toContain('잘려서 전달됨');
   });
 });
+
+describe('ReviewPullRequestUsecase × episodic negative examples', () => {
+  const validReview: PullRequestReview = {
+    summary: 's',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'comment',
+  };
+
+  const makeDeps = () => {
+    const modelRouter = {
+      route: jest.fn().mockResolvedValue({
+        text: JSON.stringify(validReview),
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      }),
+    };
+    const agentRunServiceExecute = jest.fn(async (input) => {
+      const execution = await input.run({ agentRunId: 1 });
+      return {
+        result: execution.result,
+        modelUsed: execution.modelUsed,
+        agentRunId: 1,
+      };
+    });
+    const githubClient = {
+      listMyAssignedTasks: jest.fn(),
+      getPullRequest: jest.fn().mockResolvedValue({
+        number: 1,
+        title: 'feat: 결제 PG 연동',
+        body: '',
+        repo: 'foo/bar',
+        url: 'u',
+        baseRef: 'main',
+        headRef: 'h',
+        authorLogin: 'a',
+        changedFiles: ['src/payment.ts'],
+        changedFilesTotalCount: 1,
+        changedFilesTruncated: false,
+        additions: 1,
+        deletions: 0,
+      }),
+      getPullRequestDiff: jest
+        .fn()
+        .mockResolvedValue({ diff: '+x', truncated: false, bytes: 2 }),
+      addIssueComment: jest.fn(),
+      listAuthorMergedPullRequestsSince: jest.fn(),
+      listAuthorOpenPullRequests: jest.fn(),
+      listRepoLabels: jest.fn(),
+      addLabelsToIssue: jest.fn(),
+      pushBranchAndOpenPr: jest.fn(),
+    };
+    const outcomeRepo = {
+      save: jest.fn(),
+      findRecentRejected: jest.fn().mockResolvedValue([]),
+    };
+    return { modelRouter, agentRunServiceExecute, githubClient, outcomeRepo };
+  };
+
+  it('episodic 주입 시 의미 유사 reject 를 negative example 로 주입', async () => {
+    const deps = makeDeps();
+    const episodic = {
+      record: jest.fn(),
+      searchRelevant: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          agentRunId: 9,
+          agentType: 'CODE_REVIEWER',
+          content: 'any 쓰지 마세요',
+          score: 0.9,
+          occurredAt: new Date(),
+        },
+      ]),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      deps.modelRouter as never,
+      { execute: deps.agentRunServiceExecute } as never,
+      deps.githubClient as never,
+      deps.outcomeRepo as never,
+      episodic as never,
+    );
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+
+    expect(episodic.searchRelevant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'pr_review',
+        agentType: 'CODE_REVIEWER',
+        limit: 2,
+      }),
+    );
+    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('과거에 무시한 리뷰 패턴');
+    expect(prompt).toContain('any 쓰지 마세요');
+    expect(deps.outcomeRepo.findRecentRejected).not.toHaveBeenCalled();
+  });
+
+  it('episodic 미주입 시 recency(findRecentRejected) fallback', async () => {
+    const deps = makeDeps();
+    deps.outcomeRepo.findRecentRejected.mockResolvedValue([
+      {
+        id: 1,
+        agentRunId: 9,
+        slackUserId: 'U1',
+        accepted: false,
+        comment: 'console.log 금지',
+        createdAt: new Date(),
+      },
+    ]);
+    const usecase = new ReviewPullRequestUsecase(
+      deps.modelRouter as never,
+      { execute: deps.agentRunServiceExecute } as never,
+      deps.githubClient as never,
+      deps.outcomeRepo as never,
+      undefined,
+    );
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+
+    expect(deps.outcomeRepo.findRecentRejected).toHaveBeenCalled();
+    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('console.log 금지');
+  });
+
+  it('episodic 검색 throw 시 recency fallback (best-effort)', async () => {
+    const deps = makeDeps();
+    deps.outcomeRepo.findRecentRejected.mockResolvedValue([
+      {
+        id: 1,
+        agentRunId: 9,
+        slackUserId: 'U1',
+        accepted: false,
+        comment: 'magic number 금지',
+        createdAt: new Date(),
+      },
+    ]);
+    const episodic = {
+      record: jest.fn(),
+      searchRelevant: jest.fn().mockRejectedValue(new Error('embed down')),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      deps.modelRouter as never,
+      { execute: deps.agentRunServiceExecute } as never,
+      deps.githubClient as never,
+      deps.outcomeRepo as never,
+      episodic as never,
+    );
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+
+    expect(deps.outcomeRepo.findRecentRejected).toHaveBeenCalled();
+    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('magic number 금지');
+  });
+});
