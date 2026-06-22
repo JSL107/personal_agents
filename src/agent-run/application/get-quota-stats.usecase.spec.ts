@@ -17,6 +17,7 @@ const buildRepo = (
   findById: jest.fn(),
   findSimilarPlans: jest.fn().mockResolvedValue([]),
   findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),
+  aggregateRunStats: jest.fn().mockResolvedValue([]),
   aggregatePmContextStats: jest.fn().mockResolvedValue({
     pmRunCount: 0,
     totalInboxItems: 0,
