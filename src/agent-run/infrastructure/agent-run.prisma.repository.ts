@@ -240,6 +240,34 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     }));
   }
 
+  // Episodic 의미검색이 준 agentRunId 목록으로 output/endedAt 재조회(SUCCEEDED + agentType 일치).
+  // SimilarPlanRow.output(JSON)을 content 대체가 아니라 원본 agent_run 에서 복원하기 위함.
+  async findSucceededOutputsByIds({
+    ids,
+    agentType,
+  }: {
+    ids: number[];
+    agentType: string;
+  }): Promise<Array<{ id: number; output: unknown; endedAt: Date }>> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.agentRun.findMany({
+      where: {
+        id: { in: ids },
+        agentType,
+        status: 'SUCCEEDED',
+        endedAt: { not: null },
+      },
+      select: { id: true, output: true, endedAt: true },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      output: row.output as unknown,
+      endedAt: row.endedAt as Date,
+    }));
+  }
+
   // /search-runs: SUCCEEDED 본인 run 중 output / inputSnapshot 의 텍스트 표현에 keyword 가 포함된 것
   // 최근순. SQL ILIKE 으로 단순화 — FTS (plainto_tsquery) 는 정확도가 좋지만 짧은 키워드 / 부분 일치에 약함.
   // % 문자는 raw SQL 의 LIKE 와 충돌하므로 호출자가 escape 처리하지 않고 wildcard 로 padding 만 한다.
