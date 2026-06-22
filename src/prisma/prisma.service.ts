@@ -28,6 +28,13 @@ export class PrismaService
         `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_run_output_fts
          ON agent_run USING GIN (to_tsvector('simple', COALESCE(output::text, '')))`,
       );
+      // Episodic Memory — pgvector extension + HNSW 코사인 인덱스(멱등). spec 2026-06-18.
+      // 운영 DB 가 pgvector 이미지가 아니면 CREATE EXTENSION 이 실패 → catch 로 swallow(메모리 기능만 비활성).
+      await this.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS vector`);
+      await this.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS idx_episodic_memory_embedding
+         ON episodic_memory USING hnsw (embedding vector_cosine_ops)`,
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Prisma 부팅 setup 일부 실패 (lazy 재연결 후 query 시 정상 동작): ${error instanceof Error ? error.message : String(error)}`,
