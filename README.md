@@ -155,7 +155,7 @@ pnpm format:check          # Prettier 검사
 |---|---|---|
 | `AUTOPILOT_OWNER_SLACK_USER_ID` | ⭕ | **Autopilot 워크데이 플레이북 전체 게이트** — 모든 자동 cron(출근/퇴근/주간)이 이 한 값으로 활성. 미설정 시 전체 비활성(graceful). |
 | `AUTOPILOT_TARGET` | ❌ | 발송 대상 — 슬랙 user(`U...`)/channel(`C.../G...`) ID, **콤마로 다중 발송**. 미설정 시 owner DM. |
-| `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` | ❌ | 항목별 cron/타임존 override. ID: `DAILY_EVAL`(19:00)·`MORNING_BRIEFING`(08:30)·`WEEKLY_SUMMARY`(금 17:00)·`CEO_META`(월 09:00)·`IMPACT_REPORT`(토 09:00). 미설정 시 플레이북 기본값. |
+| `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` | ❌ | 항목별 cron/타임존 override. ID: `DAILY_EVAL`(19:00)·`MORNING_BRIEFING`(08:30)·`WEEKLY_SUMMARY`(금 17:00)·`CEO_META`(월 09:00)·`IMPACT_REPORT`(토 09:00)·`RUN_RETRO`(월 09:00, 주간 실행 통계 회고). 미설정 시 플레이북 기본값. |
 
 > 구 `DAILY_EVAL_*`·`MORNING_BRIEFING_*`·`WEEKLY_SUMMARY_*`·`CEO_META_CRON_*`·`IMPACT_REPORT_RECENT_*`(owner/target/cron/tz)은 Autopilot 으로 흡수됨 — `AUTOPILOT_OWNER_SLACK_USER_ID` + `AUTOPILOT_TARGET` 로 일원화. impact 의 task 고유 config(`IMPACT_REPORT_GITHUB_AUTHOR`, `_GITHUB_REPO`, `_DAYS`)는 그대로 유지.
 

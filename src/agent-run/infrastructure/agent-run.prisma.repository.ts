@@ -15,6 +15,7 @@ import {
 } from '../domain/agent-run.type';
 import {
   AgentRunRepositoryPort,
+  AgentRunStatRow,
   BeginAgentRunInput,
   FailedRunSnapshot,
   FinishAgentRunInput,
@@ -339,6 +340,40 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       totalDurationMs: row._sum.durationMs ?? 0,
       avgDurationMs: Math.round(row._avg.durationMs ?? 0),
     }));
+  }
+
+  // Run Retro — agentType 별 total/_avg(1쿼리) + FAILED count(1쿼리) → JS 병합.
+  async aggregateRunStats({
+    sinceDays,
+  }: {
+    sinceDays: number;
+  }): Promise<AgentRunStatRow[]> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const totals = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: { startedAt: { gte: since } },
+      _count: { _all: true },
+      _avg: { durationMs: true },
+    });
+    const failures = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: { startedAt: { gte: since }, status: 'FAILED' },
+      _count: { _all: true },
+    });
+    const failedByType = new Map(
+      failures.map((row) => [row.agentType, row._count._all]),
+    );
+    return totals.map((row) => {
+      const total = row._count._all;
+      const failed = failedByType.get(row.agentType) ?? 0;
+      return {
+        agentType: row.agentType,
+        total,
+        failed,
+        failRate: total > 0 ? failed / total : 0,
+        avgDurationMs: Math.round(row._avg.durationMs ?? 0),
+      };
+    });
   }
 
   // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 누적.

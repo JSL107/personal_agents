@@ -12,6 +12,7 @@ import {
 import {
   AGENT_RUN_REPOSITORY_PORT,
   AgentRunRepositoryPort,
+  AgentRunStatRow,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -190,6 +191,13 @@ export class AgentRunService {
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
     return this.repository.findRecentSucceededRuns(input);
+  }
+
+  // 최근 N일 agentType 별 실행 통계 — Run Retro 회고용.
+  async aggregateRunStats(input: {
+    sinceDays: number;
+  }): Promise<AgentRunStatRow[]> {
+    return await this.repository.aggregateRunStats(input);
   }
 
   // PM-3': 유사 plan 조회. episodic 주입 시 의미검색(임베딩) → agent_run 재조회로 SimilarPlanRow 복원,

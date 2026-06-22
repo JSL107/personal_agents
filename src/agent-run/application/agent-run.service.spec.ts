@@ -15,6 +15,7 @@ describe('AgentRunService', () => {
     findById: jest.fn(),
     findSimilarPlans: jest.fn().mockResolvedValue([]),
     findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),
+    aggregateRunStats: jest.fn().mockResolvedValue([]),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,
       totalInboxItems: 0,
@@ -235,6 +236,24 @@ describe('AgentRunService', () => {
       expect(repository.findSimilarPlans).toHaveBeenCalledTimes(1);
       expect(rows[0].id).toBe(1);
     });
+  });
+
+  it('aggregateRunStats: repository 에 그대로 위임한다', async () => {
+    const rows = [
+      {
+        agentType: 'PM',
+        total: 10,
+        failed: 1,
+        failRate: 0.1,
+        avgDurationMs: 1200,
+      },
+    ];
+    repository.aggregateRunStats.mockResolvedValue(rows);
+
+    const result = await service.aggregateRunStats({ sinceDays: 7 });
+
+    expect(repository.aggregateRunStats).toHaveBeenCalledWith({ sinceDays: 7 });
+    expect(result).toBe(rows);
   });
 
   describe('findChainFromRoot — V3 chain audit walk facade', () => {

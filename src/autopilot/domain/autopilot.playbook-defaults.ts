@@ -20,3 +20,7 @@ export const DEFAULT_CEO_META_TIMEZONE = 'Asia/Seoul';
 // 매주 토요일 09:00 KST — Weekly Summary(금) / Daily Eval(매일) 과 겹치지 않는 시간대.
 export const DEFAULT_IMPACT_REPORT_CRON = '0 9 * * 6';
 export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
+
+// Run Retro 기본 스케줄 — 매주 월 09:00 KST(한 주 시작 시점에 지난 7일 실행 통계 회고).
+export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
+export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';

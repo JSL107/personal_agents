@@ -170,6 +170,14 @@ class EnvironmentVariables {
   @IsString()
   AUTOPILOT_IMPACT_REPORT_TIMEZONE?: string;
 
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_RUN_RETRO_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_RUN_RETRO_TIMEZONE?: string;
+
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
   // 한 사람 = 한 careerLog 페이지 가정 (1인 봇). 향후 멀티 사용자 시 owner→pageId map 으로 확장.
