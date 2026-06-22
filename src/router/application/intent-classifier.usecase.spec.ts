@@ -22,6 +22,7 @@ const makeModelRouterMock = (
 describe('IntentClassifierUsecase', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
   it('LLM 응답을 IntentClassification 으로 반환', async () => {
@@ -73,5 +74,71 @@ describe('IntentClassifierUsecase', () => {
     const result = await usecase.classify('어쩌고 저쩌고');
 
     expect(result.agentType).toBe('UNKNOWN');
+  });
+
+  describe('episodic few-shot 주입', () => {
+    const beResponse = JSON.stringify({
+      agentType: 'BE',
+      confidence: 0.9,
+      reason: 'r',
+    });
+
+    it('episodic 주입 시 [유사 과거 작업] 섹션을 프롬프트에 포함한다', async () => {
+      const modelRouter = makeModelRouterMock(beResponse);
+      const episodic = {
+        record: jest.fn(),
+        searchRelevant: jest.fn().mockResolvedValue([
+          {
+            id: 1,
+            agentRunId: 11,
+            agentType: 'BE',
+            content: '결제 모듈 PG 리팩토링',
+            score: 0.8,
+            occurredAt: new Date(),
+          },
+        ]),
+      };
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        episodic as never,
+      );
+
+      await usecase.classify('PG 연동 손봐줘');
+
+      expect(episodic.searchRelevant).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'agent_run', limit: 3 }),
+      );
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[유사 과거 작업]');
+      expect(prompt).toContain('worker BE');
+    });
+
+    it('episodic 미주입 시 기존 프롬프트(섹션 없음)로 분류한다', async () => {
+      const modelRouter = makeModelRouterMock(beResponse);
+      const usecase = new IntentClassifierUsecase(modelRouter, undefined);
+
+      await usecase.classify('PG 연동 손봐줘');
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).not.toContain('[유사 과거 작업]');
+    });
+
+    it('episodic 검색이 throw 해도 분류는 정상 진행한다 (best-effort)', async () => {
+      const modelRouter = makeModelRouterMock(beResponse);
+      const episodic = {
+        record: jest.fn(),
+        searchRelevant: jest.fn().mockRejectedValue(new Error('embed down')),
+      };
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        episodic as never,
+      );
+
+      const result = await usecase.classify('PG 연동 손봐줘');
+
+      expect(result.agentType).toBe(AgentType.BE);
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).not.toContain('[유사 과거 작업]');
+    });
   });
 });

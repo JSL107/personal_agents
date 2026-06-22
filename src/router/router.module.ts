@@ -37,6 +37,7 @@ import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { ConversationMemoryService } from './application/conversation-memory.service';
 import { ConversationalReplyUsecase } from './application/conversational-reply.usecase';
@@ -62,6 +63,7 @@ import {
   imports: [
     ModelRouterModule,
     AgentRunModule,
+    EpisodicMemoryModule,
     PmAgentModule,
     WorkReviewerModule,
     CodeReviewerModule,

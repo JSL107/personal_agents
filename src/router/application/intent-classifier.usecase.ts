@@ -1,5 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { EpisodeSearchHit } from '../../episodic-memory/domain/episode.type';
+import {
+  EPISODIC_MEMORY_PORT,
+  EpisodicMemoryPort,
+} from '../../episodic-memory/domain/port/episodic-memory.port';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
@@ -11,23 +16,33 @@ import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classif
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §6.1)
 //
 // agentType 매핑: AgentType.PM 의 provider (CHATGPT) 를 분류기로 차용 — 짧은 출력 / 빠른 latency.
-// AgentRunService.execute 를 거치지 않아 quota / agent_run row 영향 없음 (내부 분류 비용은
-// CLI provider 의 호출량으로만 측정 가능 — 향후 별도 metric 도입 시 분리).
 //
-// priorTurns: 자연어 multi-turn 메모리. 있으면 "[직전 대화]" 섹션을 prompt 앞에 prepend 해
-// 지시대명사 ("그거 분배해") 분류 정확도 ↑. ConversationMemoryService 의 응답을 그대로 받는다.
+// priorTurns: 자연어 multi-turn 메모리 (5턴/30분). 있으면 "[직전 대화]" 섹션 prepend.
+// episodicHits: episodic 장기기억의 유사 과거 작업 (옵셔널). 있으면 "[유사 과거 작업]" few-shot
+// 섹션 prepend — "이런 요청은 보통 어느 worker 로 갔는지" 힌트로 분류 정확도 ↑.
+const EPISODIC_FEWSHOT_LIMIT = 3;
+const EPISODIC_CONTENT_MAX_CHARS = 100;
+
 @Injectable()
 export class IntentClassifierUsecase {
   private readonly logger = new Logger(IntentClassifierUsecase.name);
 
-  constructor(private readonly modelRouter: ModelRouterUsecase) {}
+  constructor(
+    private readonly modelRouter: ModelRouterUsecase,
+    // episodic 은 옵셔널 — RouterModule 이 EpisodicMemoryModule 을 import 하면 주입,
+    // 미주입(테스트 등) 시 few-shot 없이 기존 분류.
+    @Optional()
+    @Inject(EPISODIC_MEMORY_PORT)
+    private readonly episodicMemory?: EpisodicMemoryPort,
+  ) {}
 
   async classify(
     text: string,
     priorTurns?: ConversationTurn[],
   ): Promise<IntentClassification> {
     const trimmed = text.trim();
-    const prompt = buildPrompt(trimmed, priorTurns);
+    const episodicHits = await this.recallSimilar(trimmed);
+    const prompt = buildPrompt(trimmed, priorTurns, episodicHits);
     const completion = await this.modelRouter.route({
       agentType: AgentType.PM,
       request: {
@@ -37,29 +52,75 @@ export class IntentClassifierUsecase {
     });
     const classification = parseIntentClassification(completion.text);
     this.logger.log(
-      `Intent classified — text="${trimmed.slice(0, 40)}" priorTurns=${priorTurns?.length ?? 0} → ${classification.agentType} (confidence=${classification.confidence})`,
+      `Intent classified — text="${trimmed.slice(0, 40)}" priorTurns=${priorTurns?.length ?? 0} episodic=${episodicHits.length} → ${classification.agentType} (confidence=${classification.confidence})`,
     );
     return classification;
   }
+
+  // best-effort — episodic 미주입 또는 검색 실패 시 빈 배열(분류 본 흐름 비차단).
+  private async recallSimilar(query: string): Promise<EpisodeSearchHit[]> {
+    if (!this.episodicMemory || query.length === 0) {
+      return [];
+    }
+    try {
+      return await this.episodicMemory.searchRelevant({
+        query,
+        kind: 'agent_run',
+        limit: EPISODIC_FEWSHOT_LIMIT,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Episodic recall 실패 (few-shot 없이 분류 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
 }
 
-const buildPrompt = (text: string, priorTurns?: ConversationTurn[]): string => {
-  if (!priorTurns || priorTurns.length === 0) {
+const buildPrompt = (
+  text: string,
+  priorTurns?: ConversationTurn[],
+  episodicHits?: EpisodeSearchHit[],
+): string => {
+  const sections: string[] = [];
+
+  if (priorTurns && priorTurns.length > 0) {
+    sections.push('[직전 대화]');
+    for (const turn of priorTurns) {
+      const workerLabel = turn.agentType ?? '(분류 실패)';
+      const runLabel = turn.agentRunId !== null ? `#${turn.agentRunId}` : '-';
+      sections.push(
+        `- 사용자: "${truncate(turn.text)}" → worker ${workerLabel} ${runLabel}`,
+      );
+    }
+    sections.push('');
+  }
+
+  const fewshot = (episodicHits ?? []).filter((hit) => hit.agentType !== null);
+  if (fewshot.length > 0) {
+    sections.push('[유사 과거 작업]');
+    for (const hit of fewshot) {
+      sections.push(
+        `- "${truncateContent(hit.content)}" → worker ${hit.agentType}`,
+      );
+    }
+    sections.push('');
+  }
+
+  if (sections.length === 0) {
     return text;
   }
-  const lines: string[] = ['[직전 대화]'];
-  for (const turn of priorTurns) {
-    const workerLabel = turn.agentType ?? '(분류 실패)';
-    const runLabel = turn.agentRunId !== null ? `#${turn.agentRunId}` : '-';
-    lines.push(
-      `- 사용자: "${truncate(turn.text)}" → worker ${workerLabel} ${runLabel}`,
-    );
-  }
-  lines.push('');
-  lines.push('[이번 입력]');
-  lines.push(text);
-  return lines.join('\n');
+  sections.push('[이번 입력]');
+  sections.push(text);
+  return sections.join('\n');
 };
 
 const truncate = (text: string): string =>
   text.length > 60 ? `${text.slice(0, 60)}…` : text;
+
+const truncateContent = (text: string): string => {
+  const flattened = text.replace(/\s+/g, ' ').trim();
+  return flattened.length > EPISODIC_CONTENT_MAX_CHARS
+    ? `${flattened.slice(0, EPISODIC_CONTENT_MAX_CHARS)}…`
+    : flattened;
+};
