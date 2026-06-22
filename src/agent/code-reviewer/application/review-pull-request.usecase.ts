@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import {
   AgentRunOutcome,
@@ -8,6 +8,10 @@ import {
   EvidenceInput,
   TriggerType,
 } from '../../../agent-run/domain/agent-run.type';
+import {
+  EPISODIC_MEMORY_PORT,
+  EpisodicMemoryPort,
+} from '../../../episodic-memory/domain/port/episodic-memory.port';
 import {
   PullRequestDetail,
   PullRequestDiff,
@@ -33,6 +37,8 @@ import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
 
 @Injectable()
 export class ReviewPullRequestUsecase {
+  private readonly logger = new Logger(ReviewPullRequestUsecase.name);
+
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
@@ -40,6 +46,10 @@ export class ReviewPullRequestUsecase {
     private readonly githubClient: GithubClientPort,
     @Inject(PR_REVIEW_OUTCOME_REPOSITORY_PORT)
     private readonly outcomeRepository: PrReviewOutcomeRepositoryPort,
+    // episodic 은 옵셔널 — 주입 시 의미 유사 reject 우선, 미주입/실패 시 recency fallback(회귀 0).
+    @Optional()
+    @Inject(EPISODIC_MEMORY_PORT)
+    private readonly episodicMemory?: EpisodicMemoryPort,
   ) {}
 
   async execute({
@@ -67,22 +77,10 @@ export class ReviewPullRequestUsecase {
           this.githubClient.getPullRequestDiff(ref),
         ]);
 
-        const recentRejected = await this.outcomeRepository
-          .findRecentRejected({ slackUserId, limit: 2 })
-          .catch(
-            () =>
-              [] as Awaited<
-                ReturnType<PrReviewOutcomeRepositoryPort['findRecentRejected']>
-              >,
-          );
-
-        const negativeExamples =
-          recentRejected.length > 0
-            ? `\n\n[이 사용자가 과거에 무시한 리뷰 패턴 — 이런 코멘트는 피하세요]\n` +
-              recentRejected
-                .map((r) => `• ${r.comment ?? '(코멘트 없음)'}`)
-                .join('\n')
-            : '';
+        const negativeExamples = await this.buildNegativeExamples({
+          slackUserId,
+          detail,
+        });
 
         const prompt =
           buildReviewPrompt({ detail, diff, conversationContext }) +
@@ -121,6 +119,63 @@ export class ReviewPullRequestUsecase {
         payload: { prRef },
       },
     ];
+  }
+
+  // negative example — episodic 주입 시 이번 PR 과 의미 유사한 과거 reject 우선,
+  // 미주입/검색실패/빈결과 시 recency(findRecentRejected) fallback. 둘 다 best-effort.
+  private async buildNegativeExamples({
+    slackUserId,
+    detail,
+  }: {
+    slackUserId: string;
+    detail: PullRequestDetail;
+  }): Promise<string> {
+    const comments = await this.recallRejectedComments({ slackUserId, detail });
+    if (comments.length === 0) {
+      return '';
+    }
+    return (
+      `\n\n[이 사용자가 과거에 무시한 리뷰 패턴 — 이런 코멘트는 피하세요]\n` +
+      comments.map((comment) => `• ${comment}`).join('\n')
+    );
+  }
+
+  private async recallRejectedComments({
+    slackUserId,
+    detail,
+  }: {
+    slackUserId: string;
+    detail: PullRequestDetail;
+  }): Promise<string[]> {
+    if (this.episodicMemory) {
+      try {
+        const hits = await this.episodicMemory.searchRelevant({
+          query: `${detail.title} ${detail.changedFiles.join(' ')}`,
+          kind: 'pr_review',
+          agentType: 'CODE_REVIEWER',
+          limit: 2,
+        });
+        const contents = hits
+          .map((hit) => hit.content)
+          .filter((content) => content.trim().length > 0);
+        if (contents.length > 0) {
+          return contents;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `episodic reject 검색 실패, recency fallback: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const recent = await this.outcomeRepository
+      .findRecentRejected({ slackUserId, limit: 2 })
+      .catch(
+        () =>
+          [] as Awaited<
+            ReturnType<PrReviewOutcomeRepositoryPort['findRecentRejected']>
+          >,
+      );
+    return recent.map((row) => row.comment ?? '(코멘트 없음)');
   }
 }
 

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { EpisodicMemoryModule } from '../../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -11,7 +12,13 @@ import { CodeReviewerDispatcher } from './infrastructure/code-reviewer.dispatche
 import { PrReviewOutcomePrismaRepository } from './infrastructure/pr-review-outcome.prisma.repository';
 
 @Module({
-  imports: [ModelRouterModule, AgentRunModule, GithubModule, PrismaModule],
+  imports: [
+    ModelRouterModule,
+    AgentRunModule,
+    EpisodicMemoryModule,
+    GithubModule,
+    PrismaModule,
+  ],
   providers: [
     ReviewPullRequestUsecase,
     SaveReviewOutcomeUsecase,
