@@ -134,6 +134,8 @@ pnpm format:check          # Prettier 검사
 | `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | Notion API 토큰 및 수집 대상 DB ID 리스트 |
 | `NOTION_DAILY_PLAN_DATABASE_ID` | ⭕ | 일일 회고/계획을 자동 기록할 Notion DB ID |
 | `CLAUDE_MODEL` | ❌ | Claude 에이전트 모델 (기본: `opus`, 옵션: `sonnet`, `haiku`) |
+| `EPISODIC_EMBED_MODEL` | ❌ | Episodic Memory 로컬 임베딩 모델 id (기본: `Xenova/multilingual-e5-small`, 한국어 지원 384dim) |
+| `EPISODIC_EMBED_DIM` | ❌ | Episodic Memory 임베딩 차원 (기본: `384`). 모델 변경 시 함께 변경 + `episodic_memory.embedding` 컬럼/인덱스 재생성 |
 
 ### Webhook 자동 트리거 (선택)
 
