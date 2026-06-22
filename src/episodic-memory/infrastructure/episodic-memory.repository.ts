@@ -16,6 +16,8 @@ interface InsertEpisodeRow {
 interface VectorSearchRow {
   id: number;
   agentRunId: number | null;
+  agentType: string | null;
+  content: string;
   distance: number;
   occurredAt: Date;
 }
@@ -52,6 +54,8 @@ export class EpisodicMemoryRepository {
       Array<{
         id: number;
         agent_run_id: number | null;
+        agent_type: string | null;
+        content: string;
         distance: number;
         occurred_at: Date;
       }>
@@ -59,6 +63,8 @@ export class EpisodicMemoryRepository {
       SELECT
         id,
         agent_run_id,
+        agent_type,
+        content,
         embedding <=> ${vector}::vector AS distance,
         occurred_at
       FROM episodic_memory
@@ -73,6 +79,8 @@ export class EpisodicMemoryRepository {
     return rows.map((row) => ({
       id: row.id,
       agentRunId: row.agent_run_id,
+      agentType: row.agent_type,
+      content: row.content,
       distance: Number(row.distance),
       occurredAt: row.occurred_at,
     }));
