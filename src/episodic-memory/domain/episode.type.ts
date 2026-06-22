@@ -1,5 +1,5 @@
 // Episodic Memory 도메인 타입 — spec 2026-06-18.
-export type EpisodeKind = 'agent_run' | 'conversation' | 'manual';
+export type EpisodeKind = 'agent_run' | 'conversation' | 'manual' | 'pr_review';
 
 export interface RecordEpisodeInput {
   kind: EpisodeKind;
