@@ -202,6 +202,27 @@ describe('IdaeriRouterUsecase', () => {
     );
   });
 
+  it('replyContext(비동기 회신 컨텍스트)를 dispatcher 로 통과시킨다', async () => {
+    const blogDispatcher = buildDispatcher(AgentType.BLOG, () => ({
+      agentRunId: 0,
+      output: { async: true },
+      modelUsed: 'hermes-cli',
+    }));
+    const { usecase } = buildUsecase([blogDispatcher]);
+    const replyContext = { channel: 'C1', threadTs: '1730000000.0001' };
+
+    await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.BLOG,
+      replyContext,
+    });
+
+    expect(blogDispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ replyContext }),
+    );
+  });
+
   it('agentTypeHint(슬래시) 경로는 userInstruction 없이 conversationContext 전달 (priorAgentRunId 만, 있으면)', async () => {
     const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
       agentRunId: 60,
