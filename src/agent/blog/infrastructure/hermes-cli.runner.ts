@@ -16,7 +16,11 @@ import {
 } from '../domain/port/hermes-runner.port';
 
 const HERMES_EXECUTABLE = 'hermes';
-const HERMES_TIMEOUT_MS = 300_000;
+// hermes -z 블로그 생성 실측 ≈320s(순차 웹검색 + 긴 글 + 검증 게이트 + 재작성 1회).
+// 5분(300s)은 턱걸이라 SIGKILL 빈발 → 재작성 트리거(≈2배)까지 흡수하도록 12분.
+// (임시 브리지. 후속: 비동기 릴레이로 이 동기 대기 자체를 제거 —
+//  docs/superpowers/plans/2026-06-25-blog-async-relay.md)
+const HERMES_TIMEOUT_MS = 720_000;
 const STDERR_TAIL_LIMIT = 1000;
 
 // 이대리 → Hermes 헤드리스 릴레이. `hermes -z <prompt>` 를 spawn 한다.
