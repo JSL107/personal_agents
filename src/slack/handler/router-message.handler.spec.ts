@@ -188,6 +188,10 @@ describe('RouterMessageHandler — app_mention', () => {
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
       priorTurns: [],
+      replyContext: {
+        channel: 'C_CHANNEL',
+        threadTs: '1730000000.000001',
+      },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({ thread_ts: '1730000000.000001' }),
@@ -235,6 +239,35 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(sayText).toContain('---');
     expect(sayText).toContain(`${AgentType.PM} → ${AgentType.BE}`);
     expect(sayText).toContain('agentRunIds=[1, 2]');
+  });
+
+  it('비동기 ack(agentRunId=0)면 footer 없이 안내 formattedText 만 say', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatchResult: DispatchResult = {
+      agentRunId: 0,
+      workerType: AgentType.BLOG,
+      output: { async: true },
+      modelUsed: 'hermes-cli',
+      formattedText:
+        '📝 블로그 초안 작성을 시작했어요. 몇 분 뒤 이 스레드에 Notion 링크를 올릴게요.',
+    };
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockResolvedValue(dispatchResult),
+    };
+    buildHandler(idaeriRouter).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 루프 엔지니어링 블로그 써줘',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    const sayText = say.mock.calls[0][0].text as string;
+    expect(sayText).toBe(dispatchResult.formattedText);
+    expect(sayText).not.toContain('agentRunId');
+    expect(sayText).not.toContain('이대리 (');
   });
 
   it('thread_ts 가 있으면 thread 답글 — 새 thread 생성 안 함', async () => {
@@ -439,6 +472,10 @@ describe('RouterMessageHandler — message (DM)', () => {
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
       priorTurns: [],
+      replyContext: {
+        channel: 'D_DMCHANNEL',
+        threadTs: '1730000000.000001',
+      },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalled();
   });

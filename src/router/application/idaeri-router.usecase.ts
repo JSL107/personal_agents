@@ -99,6 +99,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         : {}),
       ...input.conversationContext,
     };
+    // input.replyContext(비동기 회신 컨텍스트)는 `...input` spread 로 root dispatch 에만
+    // 통과된다 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장하는 데 쓴다.
+    // handoff chain 자식(followUpInput)에는 의도적으로 미전달(아래 followUpInput 구성부 참조).
     const outcome = await dispatcher.dispatch({
       ...input,
       agentTypeHint: agentType,
