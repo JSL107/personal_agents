@@ -18,8 +18,9 @@ import {
 const HERMES_EXECUTABLE = 'hermes';
 // hermes -z 블로그 생성 실측 ≈320s(순차 웹검색 + 긴 글 + 검증 게이트 + 재작성 1회).
 // 5분(300s)은 턱걸이라 SIGKILL 빈발 → 재작성 트리거(≈2배)까지 흡수하도록 12분.
-// (임시 브리지. 후속: 비동기 릴레이로 이 동기 대기 자체를 제거 —
-//  docs/superpowers/plans/2026-06-25-blog-async-relay.md)
+// 비동기 릴레이(BlogDispatcher.runInBackground) 도입 후에도 유지하는 정식 안전장치 —
+// 백그라운드 spawn 이 무한히 매달리는 것을 막는다(비동기라 사용자 대기엔 영향 없음).
+// (plan: docs/superpowers/plans/2026-06-25-blog-async-relay.md Task 5)
 const HERMES_TIMEOUT_MS = 720_000;
 const STDERR_TAIL_LIMIT = 1000;
 
