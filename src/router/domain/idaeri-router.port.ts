@@ -5,6 +5,14 @@ import { HandoffSpec } from './handoff-spec.type';
 
 export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
 
+// Slack 회신 컨텍스트 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장할 때 사용.
+// 동기 worker 는 무시한다. cron/슬래시/test 경로는 미주입(undefined) → 기존 동기 동작.
+// (plan: docs/superpowers/plans/2026-06-25-blog-async-relay.md Task 1)
+export interface BlogReplyContext {
+  channel: string;
+  threadTs?: string;
+}
+
 // dispatch 진입점 — 사용자/cron/webhook 의 발화를 manager 에 전달한다.
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.1)
 export interface DispatchInput {
@@ -23,6 +31,10 @@ export interface DispatchInput {
   // 워커 실행 입력까지 전달되는 대화 맥락. 보통 router 가 classify 결과(userInstruction) +
   // contextRefs.agentRunId 로 직접 구성해 dispatcher 에 넘긴다 (외부 주입 시 그대로 사용).
   conversationContext?: ConversationContext;
+  // Slack 회신 컨텍스트 — 비동기 worker(BLOG) 가 백그라운드 완료 후 같은 스레드에 답장할 때 사용.
+  // 미주입(undefined) 이면 기존 동기 동작. router 는 root dispatch 에만 통과시키고
+  // handoff chain 자식에는 전달하지 않는다(BLOG 는 chain root 로만 호출됨).
+  replyContext?: BlogReplyContext;
 }
 
 export type DispatchSource =
