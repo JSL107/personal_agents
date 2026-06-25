@@ -91,4 +91,52 @@ describe('parseEvaluationOutput', () => {
       }),
     );
   });
+
+  it('mergedPrReview 를 overall + prs(prNumber/evaluation) 로 파싱', () => {
+    const withPrReview = {
+      ...validResponse,
+      mergedPrReview: {
+        overall: '오늘 PR 2건 모두 인프라 안정화 성격',
+        prs: [
+          { prNumber: 110, evaluation: '타임아웃 상수 조정 — 난이도 낮음' },
+          { prNumber: 109, evaluation: 'episodic 의미검색 강화 — 중간 난이도' },
+        ],
+      },
+    };
+
+    const result = parseEvaluationOutput(JSON.stringify(withPrReview));
+
+    expect(result.mergedPrReview).toEqual({
+      overall: '오늘 PR 2건 모두 인프라 안정화 성격',
+      prs: [
+        { prNumber: 110, evaluation: '타임아웃 상수 조정 — 난이도 낮음' },
+        { prNumber: 109, evaluation: 'episodic 의미검색 강화 — 중간 난이도' },
+      ],
+    });
+  });
+
+  it('mergedPrReview 가 없으면 undefined', () => {
+    const result = parseEvaluationOutput(JSON.stringify(validResponse));
+
+    expect(result.mergedPrReview).toBeUndefined();
+  });
+
+  it('prs 의 잘못된 항목(prNumber 비숫자)은 제외하고 나머지는 유지', () => {
+    const withBrokenPr = {
+      ...validResponse,
+      mergedPrReview: {
+        overall: 'o',
+        prs: [
+          { prNumber: 'x', evaluation: 'a' },
+          { prNumber: 7, evaluation: 'b' },
+        ],
+      },
+    };
+
+    const result = parseEvaluationOutput(JSON.stringify(withBrokenPr));
+
+    expect(result.mergedPrReview?.prs).toEqual([
+      { prNumber: 7, evaluation: 'b' },
+    ]);
+  });
 });

@@ -23,6 +23,10 @@ Work Reviewer (회고), PO Shadow (PRD 재검토), Impact Reporter (영향 분�
 - careerLog.achievements.qualitative: "X 시스템 도입", "Y 기능 출시" 등. 결과 중심.
 - careerLog.technologies: 도구/언어/프레임워크 array (예: ["NestJS", "Prisma", "Slack Bolt"]).
 - careerLog.impact: 1~2 문장. 사용자 / 팀 / 제품 차원의 영향 요약.
+- mergedPrReview (선택): 사용자 prompt 에 [오늘 머지 PR] 섹션이 있을 때만 생성. 없으면 키 자체를 생략.
+  - mergedPrReview.overall: 오늘 머지 PR 전반에 대한 평가 1~2문장.
+  - mergedPrReview.prs[].prNumber: 입력 [오늘 머지 PR] 에 제시된 PR 번호 그대로 (입력에 없는 번호 생성 금지).
+  - mergedPrReview.prs[].evaluation: 그 PR 의 기술적 난이도·의미·임팩트 1~2문장.
 
 ## 출력 규칙 (매우 중요)
 JSON 객체 하나만 출력 — 코드 fence (\`\`\`json) / 앞뒤 설명 금지.
@@ -41,7 +45,9 @@ JSON 객체 하나만 출력 — 코드 fence (\`\`\`json) / 앞뒤 설명 금�
     },
     "technologies": string[],
     "impact": string
-  }
+  },
+  "mergedPrReview": { "overall": string, "prs": [ { "prNumber": number, "evaluation": string } ] }
 }
 
-range / sourceAgentRuns 는 manager 가 채우므로 출력 X.`;
+range / sourceAgentRuns 는 manager 가 채우므로 출력 X.
+[오늘 머지 PR] 섹션이 입력에 없으면 mergedPrReview 키 자체를 출력하지 마라.`;

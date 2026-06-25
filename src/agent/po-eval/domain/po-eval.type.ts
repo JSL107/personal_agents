@@ -38,4 +38,24 @@ export interface EvaluationOutput {
     technologies: string[];
     impact: string; // 1~2 문장
   };
+  // 신규 — range=TODAY 에서 오늘 머지된 PR 이 있을 때만. WEEK / PR 0건이면 undefined.
+  // careerLog schemaVersion(=1) 과 무관 — PR 평가를 careerLog 밖으로 분리해 기존 schema 보존.
+  mergedPrReview?: MergedPrReview;
+}
+
+// 오늘 머지 PR 평가 — LLM 은 prNumber + evaluation 만 생성하고, ref/title/url/stat 메타는
+// usecase 가 GithubPullRequestSummary 에서 prNumber 로 join 한다 (LLM 환각 메타 방지).
+export interface MergedPrEvaluation {
+  prNumber: number;
+  ref: string; // "owner/repo#N"
+  title: string;
+  url: string;
+  additions: number;
+  deletions: number;
+  evaluation: string; // LLM 평가 1~2문장 (없으면 빈 문자열)
+}
+
+export interface MergedPrReview {
+  overall: string;
+  prs: MergedPrEvaluation[];
 }
