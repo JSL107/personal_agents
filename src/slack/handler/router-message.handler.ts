@@ -238,6 +238,12 @@ export class RouterMessageHandler implements SlackHandler {
         ...(priorAgentRunId !== undefined && priorAgentRunId !== null
           ? { contextRefs: { agentRunId: priorAgentRunId } }
           : {}),
+        // 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장할 수 있게 회신 컨텍스트 주입.
+        // 동기 worker 는 무시한다. (갭 주제선택 경로는 preview 소비 시맨틱상 동기 유지 — 미주입.)
+        replyContext: {
+          channel: channelId,
+          ...(threadTs ? { threadTs } : {}),
+        },
       });
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'user',
@@ -656,6 +662,11 @@ const stripMentionPrefix = (text: string): string =>
 //   footer 에 worker 시퀀스 (PM → BE → BE_TEST 형태) + 모든 agentRunId.
 const buildRouterReply = (result: DispatchResult): string => {
   const handoffs = result.handoffResults ?? [];
+  // 비동기 ack(agentRunId=0 sentinel) — "작성 시작" 안내엔 agentRunId footer 가 어색하므로 생략하고
+  // formattedText 만 노출. 실제 결과/agentRunId 는 백그라운드 완료 후 같은 스레드 답장에 담긴다.
+  if (result.agentRunId === 0 && handoffs.length === 0) {
+    return result.formattedText;
+  }
   if (handoffs.length === 0) {
     return `${result.formattedText}\n\n_이대리 (${result.workerType}) · agentRunId=${result.agentRunId}_`;
   }
