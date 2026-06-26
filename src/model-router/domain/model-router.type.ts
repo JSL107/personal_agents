@@ -42,6 +42,9 @@ export enum AgentType {
   // 내부 proactive 게이트 — redacted 상태 변화를 promote/drop 분류. 경량 → ChatGPT.
   // 슬래시 핸들러/ResponseCode/retry-run 체크리스트 비대상 (사용자 비노출 내부 타입).
   SUBCONSCIOUS_GATE = 'SUBCONSCIOUS_GATE',
+  // L4 knowledge-lint — 유사 에피소드 쌍의 의미 충돌 판정. 경량 분류 + claude -p 회피 → ChatGPT.
+  // 슬래시/ResponseCode/retry-run 비대상 (내부 판정 전용).
+  CONTRADICTION_JUDGE = 'CONTRADICTION_JUDGE',
 }
 
 export interface CompletionRequest {
