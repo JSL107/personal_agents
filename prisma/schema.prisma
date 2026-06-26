@@ -38,6 +38,7 @@ model AgentRun {
   dailyPlan        DailyPlan?
   prReviewOutcomes PrReviewOutcome[]
   careerProfiles   CareerProfile[]
+  episodicMemories EpisodicMemory[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -222,6 +223,9 @@ model EpisodicMemory {
   id           Int                         @id @default(autoincrement())
   kind         String // 'agent_run' | 'conversation' | 'manual' (1차는 'agent_run')
   agentRunId   Int?                        @map("agent_run_id")
+  // onDelete: SetNull — AgentRun 삭제 시 dangling 대신 NULL 로(에피소드 audit 가치 유지).
+  // FK 제약이 dangling 을 구조적으로 차단 → knowledge-lint 의 사후 L3 점검이 불요해짐(예방 > 점검).
+  agentRun     AgentRun?                   @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
   agentType    String?                     @map("agent_type")
   content      String                      @db.Text
   embedding    Unsupported("vector(384)")?
