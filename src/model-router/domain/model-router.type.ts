@@ -39,6 +39,9 @@ export enum AgentType {
   // 지원 추적 CRM — 회사/직무 지원 기록·상태변경·조회 (자연어 멘션 전용 + 넛지 cron).
   // CRUD 는 결정론, 자연어 파라미터 추출 시에만 model-router 경유 (경량 → ChatGPT).
   JOB_APPLICATION = 'JOB_APPLICATION',
+  // 내부 proactive 게이트 — redacted 상태 변화를 promote/drop 분류. 경량 → ChatGPT.
+  // 슬래시 핸들러/ResponseCode/retry-run 체크리스트 비대상 (사용자 비노출 내부 타입).
+  SUBCONSCIOUS_GATE = 'SUBCONSCIOUS_GATE',
 }
 
 export interface CompletionRequest {

@@ -13,6 +13,7 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { buildPreviewBlocks } from './format/preview-message.builder';
+import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
 // 이대리 Slack 어댑터.
 // 책임: (1) Bolt App lifecycle (Socket Mode 기동/종료), (2) 외부 발송 API (postMessage / postPreviewMessage) 노출,
@@ -131,6 +132,36 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
       blocks: buildPreviewBlocks({ previewText, previewId }) as never,
     });
+  }
+
+  // Subconscious proposal — proposalId 가 박힌 ✅실행 / ❌무시 버튼 Block Kit DM 발송.
+  // chat.postMessage 반환값의 channel + ts 를 SubconsciousProposalService 가 DB 에 기록.
+  async postProposalMessage({
+    target,
+    proposalText,
+    proposalId,
+  }: {
+    target: string;
+    proposalText: string;
+    proposalId: number;
+  }): Promise<{ channelId: string; messageTs: string }> {
+    if (!this.app) {
+      throw new Error(
+        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
+      );
+    }
+    const response = await this.app.client.chat.postMessage({
+      channel: target,
+      text: proposalText,
+      blocks: buildSubconsciousProposalBlocks({
+        proposalText,
+        proposalId,
+      }) as never,
+    });
+    return {
+      channelId: String(response.channel ?? target),
+      messageTs: String(response.ts ?? ''),
+    };
   }
 
   // C-4 완결 + C-5 — SLACK_HANDLER_PORT multi-provider 로 등록된 모든 핸들러 (명령/액션/이벤트) 일괄 register.

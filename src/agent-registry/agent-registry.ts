@@ -171,4 +171,12 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron)',
   },
+  {
+    agentType: AgentType.SUBCONSCIOUS_GATE,
+    displayName: 'Subconscious Gate',
+    slashCommands: [],
+    usecasePath: 'src/subconscious/infrastructure/llm-subconscious-gate.ts',
+    description:
+      '내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용)',
+  },
 ];
