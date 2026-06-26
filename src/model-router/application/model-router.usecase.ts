@@ -47,6 +47,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.CAREER_MATE]: ModelProviderName.CLAUDE,
   // JOB_APPLICATION — CRUD 는 결정론. 자연어 ADD/UPDATE 파라미터 추출 경량 → VACATION 동일 ChatGPT.
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
+  // SUBCONSCIOUS_GATE — 내부 proactive 게이트. redacted 변화 요약을 promote/drop 분류. 경량 → ChatGPT.
+  [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
