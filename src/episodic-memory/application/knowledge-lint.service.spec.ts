@@ -48,6 +48,43 @@ describe('KnowledgeLintService', () => {
     expect(nulls[0].episodeId).toBe(9);
   });
 
+  it('distance 가 임계값과 정확히 같으면 포함(경계 포함)', async () => {
+    const repository = createRepositoryMock();
+    repository.findNearestNeighbors.mockResolvedValue([
+      { id: 1, relatedId: 2, distance: 0.05, occurredAt },
+    ]);
+    const service = new KnowledgeLintService(repository as never);
+
+    const issues = await service.lintIssues({
+      duplicateMaxDistance: 0.05,
+      limit: 50,
+    });
+
+    expect(
+      issues.filter((issue) => issue.type === 'near_duplicate'),
+    ).toHaveLength(1);
+  });
+
+  it('중복과 임베딩 누락이 함께 있으면 둘 다(중복 먼저) 반환', async () => {
+    const repository = createRepositoryMock();
+    repository.findNearestNeighbors.mockResolvedValue([
+      { id: 1, relatedId: 2, distance: 0.01, occurredAt },
+    ]);
+    repository.findEmbeddingNull.mockResolvedValue([{ id: 9, occurredAt }]);
+    const service = new KnowledgeLintService(repository as never);
+
+    const issues = await service.lintIssues({
+      duplicateMaxDistance: 0.05,
+      limit: 50,
+    });
+
+    expect(issues).toHaveLength(2);
+    expect(issues.map((issue) => issue.type)).toEqual([
+      'near_duplicate',
+      'embedding_null',
+    ]);
+  });
+
   it('이슈 없으면 빈 배열', async () => {
     const service = new KnowledgeLintService(createRepositoryMock() as never);
 
