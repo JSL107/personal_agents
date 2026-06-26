@@ -24,3 +24,8 @@ export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
 // Run Retro 기본 스케줄 — 매주 월 09:00 KST(한 주 시작 시점에 지난 7일 실행 통계 회고).
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
+
+// Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).
+// episodic-memory 규모가 작아 일간은 과함 → 주간 무결성 점검.
+export const DEFAULT_KNOWLEDGE_LINT_CRON = '0 10 * * 0';
+export const DEFAULT_KNOWLEDGE_LINT_TIMEZONE = 'Asia/Seoul';
