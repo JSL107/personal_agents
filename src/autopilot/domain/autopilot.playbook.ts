@@ -5,6 +5,8 @@ import {
   DEFAULT_DAILY_EVAL_TIMEZONE,
   DEFAULT_IMPACT_REPORT_CRON,
   DEFAULT_IMPACT_REPORT_TIMEZONE,
+  DEFAULT_KNOWLEDGE_LINT_CRON,
+  DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
   DEFAULT_RUN_RETRO_CRON,
@@ -90,6 +92,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_RUN_RETRO_CRON,
       timezone: DEFAULT_RUN_RETRO_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락). 읽기 전용이라 T0_AUTO.
+  {
+    id: 'knowledge-lint',
+    taskId: 'knowledge-lint',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_KNOWLEDGE_LINT_CRON,
+      timezone: DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },
