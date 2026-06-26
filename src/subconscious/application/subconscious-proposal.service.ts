@@ -1,23 +1,23 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   DispatchInput,
-  IdaeriRouterPort,
   IDAERI_ROUTER_PORT,
+  IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
 import { SlackService } from '../../slack/slack.service';
-import { GateDecision, StateChange } from '../domain/subconscious.type';
-import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
 import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
+import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
 import {
   SUBCONSCIOUS_PROPOSAL_REPOSITORY,
   SubconsciousProposalRecord,
   SubconsciousProposalRepository,
 } from '../domain/port/subconscious-proposal.repository.port';
+import { GateDecision, StateChange } from '../domain/subconscious.type';
 
 const DEFAULT_TTL_MS = 3_600_000; // 1시간
 
@@ -70,11 +70,12 @@ export class SubconsciousProposalService implements ProposalEmitter {
     });
 
     try {
-      const { channelId, messageTs } = await this.slackService.postProposalMessage({
-        target: ownerUserId,
-        proposalText,
-        proposalId: record.id,
-      });
+      const { channelId, messageTs } =
+        await this.slackService.postProposalMessage({
+          target: ownerUserId,
+          proposalText,
+          proposalId: record.id,
+        });
       await this.repository.attachSlackMessage(record.id, channelId, messageTs);
     } catch (error: unknown) {
       // Slack 발송 실패는 proposal 생성 자체를 롤백하지 않는다 — proposal 은 DB 에 남고,

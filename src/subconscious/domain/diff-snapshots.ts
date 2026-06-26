@@ -26,7 +26,11 @@ export const diffSnapshots = (
   }
 
   for (const removed of previousByKey.values()) {
-    changes.push({ sourceId: current.sourceId, kind: 'removed', item: removed });
+    changes.push({
+      sourceId: current.sourceId,
+      kind: 'removed',
+      item: removed,
+    });
   }
 
   return changes;

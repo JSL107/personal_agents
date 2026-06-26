@@ -10,12 +10,12 @@ import {
 } from '../domain/port/subconscious-proposal.repository.port';
 
 @Injectable()
-export class SubconsciousProposalPrismaRepository
-  implements SubconsciousProposalRepository
-{
+export class SubconsciousProposalPrismaRepository implements SubconsciousProposalRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: CreateProposalInput): Promise<SubconsciousProposalRecord> {
+  async create(
+    input: CreateProposalInput,
+  ): Promise<SubconsciousProposalRecord> {
     const row = await this.prisma.subconsciousProposal.create({
       data: {
         ownerUserId: input.ownerUserId,

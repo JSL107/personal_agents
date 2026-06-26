@@ -6,10 +6,21 @@ describe('parseGateResponse', () => {
 
   it('정상 JSON 배열을 GateDecision 으로 매핑', () => {
     const raw = JSON.stringify([
-      { changeKey: 'github:pr:o/r#1', promote: true, reason: 'review 요청', suggestedAgentType: 'CODE_REVIEWER', proposalText: 'PR #1 리뷰할까요?' },
+      {
+        changeKey: 'github:pr:o/r#1',
+        promote: true,
+        reason: 'review 요청',
+        suggestedAgentType: 'CODE_REVIEWER',
+        proposalText: 'PR #1 리뷰할까요?',
+      },
     ]);
     const result = parseGateResponse(raw, valid);
-    expect(result[0]).toEqual(expect.objectContaining({ promote: true, suggestedAgentType: AgentType.CODE_REVIEWER }));
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        promote: true,
+        suggestedAgentType: AgentType.CODE_REVIEWER,
+      }),
+    );
   });
 
   it('파싱 불가 입력은 빈 배열(fail-closed)', () => {
@@ -23,7 +34,13 @@ describe('parseGateResponse', () => {
   });
 
   it('알 수 없는 suggestedAgentType 은 undefined 로', () => {
-    const raw = JSON.stringify([{ changeKey: 'github:pr:o/r#1', promote: true, suggestedAgentType: 'NOPE' }]);
+    const raw = JSON.stringify([
+      {
+        changeKey: 'github:pr:o/r#1',
+        promote: true,
+        suggestedAgentType: 'NOPE',
+      },
+    ]);
     expect(parseGateResponse(raw, valid)[0].suggestedAgentType).toBeUndefined();
   });
 });

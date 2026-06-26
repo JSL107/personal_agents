@@ -14,6 +14,6 @@ import { SlackInboxPrismaRepository } from './infrastructure/slack-inbox.prisma.
       useClass: SlackInboxPrismaRepository,
     },
   ],
-  exports: [SlackInboxService],
+  exports: [SlackInboxService, SLACK_INBOX_REPOSITORY_PORT],
 })
 export class SlackInboxModule {}

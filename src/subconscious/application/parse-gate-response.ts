@@ -42,7 +42,9 @@ export const parseGateResponse = (
       reason: typeof record.reason === 'string' ? record.reason : '',
       suggestedAgentType: toAgentType(record.suggestedAgentType),
       proposalText:
-        typeof record.proposalText === 'string' ? record.proposalText : undefined,
+        typeof record.proposalText === 'string'
+          ? record.proposalText
+          : undefined,
     });
   }
   return decisions;

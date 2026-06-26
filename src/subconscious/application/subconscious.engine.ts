@@ -1,22 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { redactPii } from '../../model-router/infrastructure/pii-redaction.util';
-import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
-import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
-import { PROMOTION_BUDGET } from '../domain/port/promotion-budget.port';
+import { diffSnapshots } from '../domain/diff-snapshots';
 import type { PromotionBudget } from '../domain/port/promotion-budget.port';
-import { STATE_SOURCES } from '../domain/port/state-source.port';
+import { PROMOTION_BUDGET } from '../domain/port/promotion-budget.port';
+import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
+import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
 import type { StateSource } from '../domain/port/state-source.port';
-import { SUBCONSCIOUS_BASELINE_REPOSITORY } from '../domain/port/subconscious-baseline.repository.port';
+import { STATE_SOURCES } from '../domain/port/state-source.port';
 import type { SubconsciousBaselineRepository } from '../domain/port/subconscious-baseline.repository.port';
-import { SUBCONSCIOUS_GATE } from '../domain/port/subconscious-gate.port';
+import { SUBCONSCIOUS_BASELINE_REPOSITORY } from '../domain/port/subconscious-baseline.repository.port';
 import type { SubconsciousGate } from '../domain/port/subconscious-gate.port';
+import { SUBCONSCIOUS_GATE } from '../domain/port/subconscious-gate.port';
 import {
   RedactedChange,
   StateChange,
   StateSnapshot,
 } from '../domain/subconscious.type';
-import { diffSnapshots } from '../domain/diff-snapshots';
 
 @Injectable()
 export class SubconsciousEngine {
@@ -59,11 +59,17 @@ export class SubconsciousEngine {
 
     // Upsert baseline for all successfully-fetched sources (even if no changes).
     for (const [sourceId, snapshot] of successfulSnapshots) {
-      await this.baselineRepository.upsert(ownerSlackUserId, sourceId, snapshot);
+      await this.baselineRepository.upsert(
+        ownerSlackUserId,
+        sourceId,
+        snapshot,
+      );
     }
 
     if (allChanges.length === 0) {
-      this.logger.log(`runTick(${ownerSlackUserId}): no changes — gate not called`);
+      this.logger.log(
+        `runTick(${ownerSlackUserId}): no changes — gate not called`,
+      );
       return;
     }
 

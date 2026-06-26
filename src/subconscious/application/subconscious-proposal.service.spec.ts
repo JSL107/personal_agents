@@ -4,12 +4,11 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { IdaeriRouterPort } from '../../router/domain/idaeri-router.port';
 import { SlackService } from '../../slack/slack.service';
-import { GateDecision, StateChange } from '../domain/subconscious.type';
 import {
-  CreateProposalInput,
   SubconsciousProposalRecord,
   SubconsciousProposalRepository,
 } from '../domain/port/subconscious-proposal.repository.port';
+import { GateDecision, StateChange } from '../domain/subconscious.type';
 import {
   SubconsciousProposalException,
   SubconsciousProposalService,
@@ -42,10 +41,16 @@ const buildRecord = (
 const buildChange = (): StateChange => ({
   sourceId: 'github:pr',
   kind: 'added',
-  item: { key: 'github:pr:owner/repo#1', fingerprint: 'abc', summary: 'PR #1 opened' },
+  item: {
+    key: 'github:pr:owner/repo#1',
+    fingerprint: 'abc',
+    summary: 'PR #1 opened',
+  },
 });
 
-const buildDecision = (overrides: Partial<GateDecision> = {}): GateDecision => ({
+const buildDecision = (
+  overrides: Partial<GateDecision> = {},
+): GateDecision => ({
   changeKey: 'github:pr:owner/repo#1',
   promote: true,
   reason: 'new PR',
@@ -59,11 +64,7 @@ const buildDecision = (overrides: Partial<GateDecision> = {}): GateDecision => (
 const buildRepository = (
   record: SubconsciousProposalRecord | null = buildRecord(),
 ): jest.Mocked<SubconsciousProposalRepository> => ({
-  create: jest
-    .fn()
-    .mockImplementation((_input: CreateProposalInput) =>
-      Promise.resolve(buildRecord()),
-    ),
+  create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
   markStatus: jest.fn().mockResolvedValue(undefined),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
@@ -203,9 +204,7 @@ describe('SubconsciousProposalService.apply', () => {
   });
 
   it('이미 DISPATCHED 인 proposal → PRECONDITION_FAILED, dispatch 없음', async () => {
-    const repository = buildRepository(
-      buildRecord({ status: 'DISPATCHED' }),
-    );
+    const repository = buildRepository(buildRecord({ status: 'DISPATCHED' }));
     const router = buildRouter();
     const { service } = buildService({ repository, router });
 

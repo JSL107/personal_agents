@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
 import { SubconsciousProposalService } from '../../subconscious/application/subconscious-proposal.service';
-import { SUBCONSCIOUS_PROPOSAL_ACTION_IDS } from '../format/subconscious-proposal-message.builder';
 import {
   extractActionUserId,
   extractActionValue,
 } from '../bolt/action-body.parser';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { SUBCONSCIOUS_PROPOSAL_ACTION_IDS } from '../format/subconscious-proposal-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
 // Subconscious Proposal 버튼 액션 핸들러.

@@ -5,9 +5,7 @@ import { SubconsciousBaselineRepository } from '../domain/port/subconscious-base
 import { StateSnapshot } from '../domain/subconscious.type';
 
 @Injectable()
-export class SubconsciousBaselinePrismaRepository
-  implements SubconsciousBaselineRepository
-{
+export class SubconsciousBaselinePrismaRepository implements SubconsciousBaselineRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findBySource(
