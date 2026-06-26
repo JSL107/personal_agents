@@ -387,6 +387,16 @@ class EnvironmentVariables {
     message: 'EPISODIC_EMBED_DIM 는 양의 정수여야 합니다 (예: "384").',
   })
   EPISODIC_EMBED_DIM?: string;
+
+  // Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms).
+  // 미설정 시 default 3600000 (1시간). 만료 후 apply/dismiss 는 거부된다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message:
+      'SUBCONSCIOUS_PROPOSAL_TTL_MS 는 양의 정수 (밀리초, 예: "3600000") 만 허용합니다.',
+  })
+  SUBCONSCIOUS_PROPOSAL_TTL_MS?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
