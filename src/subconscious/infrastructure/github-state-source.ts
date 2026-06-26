@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { GITHUB_CLIENT_PORT } from '../../github/domain/port/github-client.port';
 import type { GithubClientPort } from '../../github/domain/port/github-client.port';
+import { GITHUB_CLIENT_PORT } from '../../github/domain/port/github-client.port';
 import { StateSource } from '../domain/port/state-source.port';
 import { StateSnapshot } from '../domain/subconscious.type';
 import { buildSnapshot, sha } from './snapshot.util';

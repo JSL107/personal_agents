@@ -1,29 +1,15 @@
 import { Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
-import { PROMOTION_BUDGET } from '../domain/port/promotion-budget.port';
-import { STATE_SOURCES } from '../domain/port/state-source.port';
-import { SUBCONSCIOUS_BASELINE_REPOSITORY } from '../domain/port/subconscious-baseline.repository.port';
-import { SUBCONSCIOUS_GATE } from '../domain/port/subconscious-gate.port';
-import {
-  GateDecision,
-  RedactedChange,
-  StateChange,
-  StateSnapshot,
-} from '../domain/subconscious.type';
+import { GateDecision, StateSnapshot } from '../domain/subconscious.type';
 import { SubconsciousEngine } from './subconscious.engine';
 
 const makeSnapshot = (sourceId: string, tag: string): StateSnapshot => ({
   sourceId,
   contentHash: tag,
-  items: [{ key: `${sourceId}:item-1`, fingerprint: tag, summary: `summary-${tag}` }],
-});
-
-const makeChange = (sourceId: string, tag: string): StateChange => ({
-  sourceId,
-  kind: 'added',
-  item: { key: `${sourceId}:item-1`, fingerprint: tag, summary: `summary-${tag}` },
+  items: [
+    { key: `${sourceId}:item-1`, fingerprint: tag, summary: `summary-${tag}` },
+  ],
 });
 
 describe('SubconsciousEngine', () => {
@@ -64,7 +50,10 @@ describe('SubconsciousEngine', () => {
 
   it('케이스 1: 모든 소스 무변화 → gate.judge 0회, 제안 0건, baseline 갱신', async () => {
     const snapshot = makeSnapshot('github', 'hash-A');
-    const source = { id: 'github', fetchSnapshot: jest.fn().mockResolvedValue(snapshot) };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(snapshot),
+    };
     // baseline returns same hash → diff returns []
     fakeBaselineRepository.findBySource.mockResolvedValue(snapshot);
 
@@ -80,7 +69,10 @@ describe('SubconsciousEngine', () => {
   it('케이스 2: 변화 있고 promote+suggestedAgentType → emit 1회, budget 1회 소비', async () => {
     const prevSnapshot = makeSnapshot('github', 'hash-OLD');
     const currSnapshot = makeSnapshot('github', 'hash-NEW');
-    const source = { id: 'github', fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot) };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
     fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
 
     const decision: GateDecision = {
@@ -106,7 +98,10 @@ describe('SubconsciousEngine', () => {
   it('케이스 3: budget.tryConsume=false → emit 0건', async () => {
     const prevSnapshot = makeSnapshot('github', 'hash-OLD');
     const currSnapshot = makeSnapshot('github', 'hash-NEW');
-    const source = { id: 'github', fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot) };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
     fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
 
     const decision: GateDecision = {
@@ -153,7 +148,10 @@ describe('SubconsciousEngine', () => {
   it('케이스 5: promote=true 이지만 suggestedAgentType 없음 → drop, emit 0건', async () => {
     const prevSnapshot = makeSnapshot('github', 'hash-OLD');
     const currSnapshot = makeSnapshot('github', 'hash-NEW');
-    const source = { id: 'github', fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot) };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
     fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
 
     const decision: GateDecision = {

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { NOTION_CLIENT_PORT } from '../../notion/domain/port/notion-client.port';
 import type { NotionClientPort } from '../../notion/domain/port/notion-client.port';
+import { NOTION_CLIENT_PORT } from '../../notion/domain/port/notion-client.port';
 import { StateSource } from '../domain/port/state-source.port';
 import { StateSnapshot } from '../domain/subconscious.type';
 import { buildSnapshot, sha } from './snapshot.util';
@@ -15,7 +15,7 @@ export class NotionStateSource implements StateSource {
     private readonly notionClient: NotionClientPort,
   ) {}
 
-  async fetchSnapshot(_ownerSlackUserId: string): Promise<StateSnapshot> {
+  async fetchSnapshot(): Promise<StateSnapshot> {
     const tasks = await this.notionClient.listActiveTasks();
 
     const items = tasks.map((task) => {

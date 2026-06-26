@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { BeAgentModule } from '../agent/be/be.module';
 import { BeFixModule } from '../agent/be-fix/be-fix.module';
@@ -30,11 +30,11 @@ import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
-import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
 import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
 import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.handler';
+import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
 import { VacationHandler } from './handler/vacation.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';

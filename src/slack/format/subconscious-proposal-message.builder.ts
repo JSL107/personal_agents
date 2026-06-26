@@ -1,4 +1,7 @@
-import { SECTION_MRKDWN_LIMIT, chunkMrkdwnText } from './preview-message.builder';
+import {
+  chunkMrkdwnText,
+  SECTION_MRKDWN_LIMIT,
+} from './preview-message.builder';
 
 export const SUBCONSCIOUS_PROPOSAL_ACTION_IDS = {
   APPLY: 'subconscious_proposal_apply',
