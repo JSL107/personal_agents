@@ -95,7 +95,17 @@ export class SubconsciousProposalService implements ProposalEmitter {
   ): Promise<string> {
     const record = await this.assertReadyToResolve(proposalId, byUserId, now);
 
-    await this.repository.markStatus(proposalId, 'DISPATCHED', new Date());
+    const moved = await this.repository.transitionFromPending(
+      proposalId,
+      'DISPATCHED',
+      new Date(now),
+    );
+    if (!moved) {
+      throw new SubconsciousProposalException(
+        '이미 처리된 제안입니다.',
+        DomainStatus.PRECONDITION_FAILED,
+      );
+    }
 
     const context = record.contextJson as { change?: StateChange };
     const changeSummary = context.change?.item?.summary ?? record.changeKey;
@@ -143,7 +153,17 @@ export class SubconsciousProposalService implements ProposalEmitter {
         DomainStatus.PRECONDITION_FAILED,
       );
     }
-    await this.repository.markStatus(proposalId, 'DISMISSED', new Date());
+    const moved = await this.repository.transitionFromPending(
+      proposalId,
+      'DISMISSED',
+      new Date(),
+    );
+    if (!moved) {
+      throw new SubconsciousProposalException(
+        '이미 처리된 제안입니다.',
+        DomainStatus.PRECONDITION_FAILED,
+      );
+    }
   }
 
   private async assertReadyToResolve(
