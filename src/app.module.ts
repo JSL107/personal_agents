@@ -43,6 +43,7 @@ import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
+import { SubconsciousModule } from './subconscious/subconscious.module';
 import { WebhookModule } from './webhook/webhook.module';
 
 @Module({
@@ -142,6 +143,9 @@ import { WebhookModule } from './webhook/webhook.module';
     // BLOG 릴레이 — 자연어 멘션 전용(@이대리 ... 블로그 써줘). Hermes tistory-blog 스킬을 hermes -z 로 호출.
     // RouterModule 도 BlogModule 을 import 하지만(dispatcher inject), 다른 agent 모듈과 동일하게 여기도 등록.
     BlogModule,
+    // Subconscious proactive engine — 20분 tick 으로 상태 변화 감지 → LLM gate → proposal DM.
+    // SUBCONSCIOUS_ENABLED='true' + AUTOPILOT_OWNER_SLACK_USER_ID 미설정 시 자동 비활성.
+    SubconsciousModule,
   ],
 })
 export class AppModule {}

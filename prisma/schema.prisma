@@ -187,6 +187,36 @@ model CareerProfile {
   @@map("career_profile")
 }
 
+model SubconsciousBaseline {
+  id          Int      @id @default(autoincrement())
+  ownerUserId String   @map("owner_user_id")
+  sourceId    String   @map("source_id")
+  contentHash String   @map("content_hash")
+  snapshot    Json
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([ownerUserId, sourceId])
+  @@map("subconscious_baseline")
+}
+
+model SubconsciousProposal {
+  id                 Int       @id @default(autoincrement())
+  ownerUserId        String    @map("owner_user_id")
+  sourceId           String    @map("source_id")
+  changeKey          String    @map("change_key")
+  suggestedAgentType String    @map("suggested_agent_type")
+  proposalText       String    @db.Text
+  contextJson        Json      @map("context_json")
+  status             String    @default("PENDING")
+  slackChannelId     String?   @map("slack_channel_id")
+  slackMessageTs     String?   @map("slack_message_ts")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  resolvedAt         DateTime? @map("resolved_at")
+
+  @@index([ownerUserId, status, createdAt])
+  @@map("subconscious_proposal")
+}
+
 // Episodic Memory — AgentRun 완료 결과를 로컬 임베딩으로 시간축에 적재(spec 2026-06-18).
 // embedding 은 pgvector 컬럼이라 Prisma 미지원 → Unsupported. 적재/검색은 $queryRaw 로만.
 model EpisodicMemory {

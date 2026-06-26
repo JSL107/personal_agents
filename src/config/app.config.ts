@@ -387,6 +387,39 @@ class EnvironmentVariables {
     message: 'EPISODIC_EMBED_DIM 는 양의 정수여야 합니다 (예: "384").',
   })
   EPISODIC_EMBED_DIM?: string;
+
+  // Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms).
+  // 미설정 시 default 3600000 (1시간). 만료 후 apply/dismiss 는 거부된다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message:
+      'SUBCONSCIOUS_PROPOSAL_TTL_MS 는 양의 정수 (밀리초, 예: "3600000") 만 허용합니다.',
+  })
+  SUBCONSCIOUS_PROPOSAL_TTL_MS?: string;
+
+  // Subconscious proactive engine 활성 게이트. 'true' 문자열일 때만 활성.
+  // AUTOPILOT_OWNER_SLACK_USER_ID 도 함께 설정해야 실제로 동작한다.
+  // 미설정/false → SubconsciousScheduler 비활성(기존 repeatable 정리 후 로그만).
+  @IsOptional()
+  @IsString()
+  SUBCONSCIOUS_ENABLED?: string;
+
+  // Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준).
+  // 미설정 시 default '*/20 * * * *' (20분마다).
+  @IsOptional()
+  @IsString()
+  SUBCONSCIOUS_SCHEDULE?: string;
+
+  // Subconscious 시간당 최대 proposal 건수 (슬라이딩 1시간 윈도우, Redis ZSET).
+  // 미설정 시 default 4. 양의 정수여야 한다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message:
+      'SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR 는 양의 정수 (예: "4") 만 허용합니다.',
+  })
+  SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

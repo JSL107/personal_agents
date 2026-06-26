@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { BeAgentModule } from '../agent/be/be.module';
 import { BeFixModule } from '../agent/be-fix/be-fix.module';
@@ -18,6 +18,7 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
+import { SubconsciousModule } from '../subconscious/subconscious.module';
 import {
   SLACK_HANDLER_PORT,
   SlackHandler,
@@ -33,6 +34,7 @@ import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
 import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.handler';
+import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
 import { VacationHandler } from './handler/vacation.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
 import { SlackService } from './slack.service';
@@ -67,6 +69,9 @@ import { SlackService } from './slack.service';
     RouterModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
     VacationModule,
+    // Subconscious Proposal — ProposalEmitter 구현체 + 제안 리포지토리.
+    // forwardRef: SubconsciousModule 이 SlackModule(SlackService) 을 import 하므로 순환 해소.
+    forwardRef(() => SubconsciousModule),
   ],
   providers: [
     SlackService,
@@ -86,6 +91,7 @@ import { SlackService } from './slack.service';
     SlackInboxReactionHandler,
     SlackPushpinReactionHandler,
     VacationHandler,
+    SubconsciousProposalActionHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -103,6 +109,7 @@ import { SlackService } from './slack.service';
         SlackInboxReactionHandler,
         SlackPushpinReactionHandler,
         VacationHandler,
+        SubconsciousProposalActionHandler,
       ],
     },
   ],
