@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { ContradictionJudgeModule } from '../agent/contradiction-judge/contradiction-judge.module';
 import { EpisodicMemoryService } from './application/episodic-memory.service';
 import { KnowledgeLintService } from './application/knowledge-lint.service';
 import { EMBEDDER_PORT } from './domain/port/embedder.port';
@@ -15,6 +16,9 @@ import { LocalEmbedder } from './infrastructure/local-embedder.adapter';
 const DEFAULT_EMBED_MODEL = 'Xenova/multilingual-e5-small';
 
 @Module({
+  // ContradictionJudgeModule(CONTRADICTION_JUDGE_PORT export) → KnowledgeLintService 의 옵셔널 judge 주입.
+  // contradiction-judge → model-router 단방향(model-router 는 episodic 미참조) → 순환 없음.
+  imports: [ContradictionJudgeModule],
   providers: [
     EpisodicMemoryRepository,
     EpisodicMemoryService,

@@ -14,6 +14,15 @@ export interface EmbeddingNullRow {
   occurredAt: Date;
 }
 
+export interface BandPairRow {
+  idA: number;
+  idB: number;
+  distance: number;
+  contentA: string;
+  contentB: string;
+  occurredAt: Date;
+}
+
 // Knowledge-Lint 전용 조회 — episodic_memory 무결성 점검용 raw SQL.
 // 판정(임계값 적용/이슈 분류)은 service 책임 — 여기선 후보 행만 반환한다(헥사고날: 비즈니스 규칙을 SQL 로 흘리지 않음).
 // EpisodicMemoryRepository 와 같은 테이블을 보지만 책임(record/search vs lint)이 달라 분리.
@@ -74,5 +83,58 @@ export class KnowledgeLintRepository {
       LIMIT ${limit}
     `;
     return rows.map((row) => ({ id: row.id, occurredAt: row.occurred_at }));
+  }
+
+  // L4 contradiction 후보 — 거리 밴드(minDistance < d <= maxDistance) 내 "유사하나 동일 아님" 쌍.
+  // b.id > a.id 로 쌍을 SQL 단계에서 정규화(역쌍 제거) → service dedup 불필요.
+  // judge 가 두 content 를 비교하므로 content + occurredAt(=a) 도 함께 반환.
+  async findBandPairs(input: {
+    minDistance: number;
+    maxDistance: number;
+    limit: number;
+  }): Promise<BandPairRow[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id_a: number;
+        id_b: number;
+        distance: number;
+        content_a: string;
+        content_b: string;
+        occurred_at: Date;
+      }>
+    >`
+      SELECT
+        a.id AS id_a,
+        n.id AS id_b,
+        n.distance AS distance,
+        a.content AS content_a,
+        n.content AS content_b,
+        a.occurred_at AS occurred_at
+      FROM episodic_memory a
+      CROSS JOIN LATERAL (
+        SELECT b.id, b.content, a.embedding <=> b.embedding AS distance
+        FROM episodic_memory b
+        WHERE b.id > a.id
+          AND b.embedding IS NOT NULL
+          AND b.superseded_at IS NULL
+          AND b.kind = a.kind
+        ORDER BY a.embedding <=> b.embedding
+        LIMIT 1
+      ) n
+      WHERE a.embedding IS NOT NULL
+        AND a.superseded_at IS NULL
+        AND n.distance > ${input.minDistance}
+        AND n.distance <= ${input.maxDistance}
+      ORDER BY n.distance ASC
+      LIMIT ${input.limit}
+    `;
+    return rows.map((row) => ({
+      idA: row.id_a,
+      idB: row.id_b,
+      distance: Number(row.distance),
+      contentA: row.content_a,
+      contentB: row.content_b,
+      occurredAt: row.occurred_at,
+    }));
   }
 }

@@ -179,4 +179,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용)',
   },
+  {
+    agentType: AgentType.CONTRADICTION_JUDGE,
+    displayName: 'Contradiction Judge',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/contradiction-judge/application/judge-contradiction.usecase.ts',
+    description:
+      'knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용)',
+  },
 ];

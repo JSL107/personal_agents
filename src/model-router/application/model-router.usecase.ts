@@ -49,6 +49,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   // SUBCONSCIOUS_GATE — 내부 proactive 게이트. redacted 변화 요약을 promote/drop 분류. 경량 → ChatGPT.
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
+  // CONTRADICTION_JUDGE — L4 knowledge-lint 모순 판정. 경량 분류 + claude -p 회피 → ChatGPT.
+  [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
