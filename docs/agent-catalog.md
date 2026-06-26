@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 19종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
+이대리의 에이전트 20종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -16,6 +16,7 @@
 | Career Mate | `CAREER_MATE` | — (webhook/자동) | CLAUDE | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
 | CEO | `CEO` | `/ceo-review` | CLAUDE | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CLAUDE | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
+| Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
 | CTO | `CTO` | `/assign` | CLAUDE | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
 | Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CLAUDE | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
