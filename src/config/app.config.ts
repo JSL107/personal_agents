@@ -178,6 +178,20 @@ class EnvironmentVariables {
   @IsString()
   AUTOPILOT_RUN_RETRO_TIMEZONE?: string;
 
+  // L4 knowledge-lint contradiction — 주간 codex 모순 판정 가드.
+  // - AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS: 주 1회 LLM 판정 쌍 상한(기본 5). codex 쿼터 보호.
+  // - AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED: 'false' 면 L4 만 끄고 L1/L2(결정론)는 유지. 미설정 시 활성.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS 는 양의 정수여야 합니다.',
+  })
+  AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED?: string;
+
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
   // 한 사람 = 한 careerLog 페이지 가정 (1인 봇). 향후 멀티 사용자 시 owner→pageId map 으로 확장.
