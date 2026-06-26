@@ -63,10 +63,14 @@ const buildDecision = (
 
 const buildRepository = (
   record: SubconsciousProposalRecord | null = buildRecord(),
+  transitionFromPendingResult: boolean = true,
 ): jest.Mocked<SubconsciousProposalRepository> => ({
   create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
   markStatus: jest.fn().mockResolvedValue(undefined),
+  transitionFromPending: jest
+    .fn()
+    .mockResolvedValue(transitionFromPendingResult),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
 });
 
@@ -99,29 +103,33 @@ const buildConfigService = (ttlMs?: number): jest.Mocked<ConfigService> =>
   }) as unknown as jest.Mocked<ConfigService>;
 
 const buildService = ({
-  repository = buildRepository(),
+  repository,
   router = buildRouter(),
   slack = buildSlackService(),
   ttlMs,
+  transitionFromPendingResult,
 }: {
   repository?: jest.Mocked<SubconsciousProposalRepository>;
   router?: jest.Mocked<IdaeriRouterPort>;
   slack?: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
   ttlMs?: number;
+  transitionFromPendingResult?: boolean;
 } = {}): {
   service: SubconsciousProposalService;
   repository: jest.Mocked<SubconsciousProposalRepository>;
   router: jest.Mocked<IdaeriRouterPort>;
   slack: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
 } => {
+  const resolvedRepository =
+    repository ?? buildRepository(buildRecord(), transitionFromPendingResult);
   const configService = buildConfigService(ttlMs);
   const service = new SubconsciousProposalService(
-    repository,
+    resolvedRepository,
     router,
     slack as unknown as SlackService,
     configService,
   );
-  return { service, repository, router, slack };
+  return { service, repository: resolvedRepository, router, slack };
 };
 
 // ── emit ───────────────────────────────────────────────────────────────────
@@ -176,13 +184,13 @@ describe('SubconsciousProposalService.emit', () => {
 
 describe('SubconsciousProposalService.apply', () => {
   it('owner + PENDING + TTL 통과 → DISPATCHED 전이 + router.dispatch 호출', async () => {
-    const repository = buildRepository(buildRecord());
+    const repository = buildRepository(buildRecord(), true);
     const router = buildRouter();
     const { service } = buildService({ repository, router });
 
     const result = await service.apply(1, OWNER, NOW);
 
-    expect(repository.markStatus).toHaveBeenCalledWith(
+    expect(repository.transitionFromPending).toHaveBeenCalledWith(
       1,
       'DISPATCHED',
       expect.any(Date),
@@ -205,6 +213,17 @@ describe('SubconsciousProposalService.apply', () => {
 
   it('이미 DISPATCHED 인 proposal → PRECONDITION_FAILED, dispatch 없음', async () => {
     const repository = buildRepository(buildRecord({ status: 'DISPATCHED' }));
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await expect(service.apply(1, OWNER, NOW)).rejects.toMatchObject({
+      status: DomainStatus.PRECONDITION_FAILED,
+    });
+    expect(router.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('owner + PENDING + TTL 통과이나 transitionFromPending 이 false (경쟁 조건) → PRECONDITION_FAILED, dispatch 없음', async () => {
+    const repository = buildRepository(buildRecord(), false);
     const router = buildRouter();
     const { service } = buildService({ repository, router });
 
@@ -250,12 +269,12 @@ describe('SubconsciousProposalService.apply', () => {
 
 describe('SubconsciousProposalService.dismiss', () => {
   it('owner + PENDING → DISMISSED 전이', async () => {
-    const repository = buildRepository(buildRecord());
+    const repository = buildRepository(buildRecord(), true);
     const { service } = buildService({ repository });
 
     await service.dismiss(1, OWNER);
 
-    expect(repository.markStatus).toHaveBeenCalledWith(
+    expect(repository.transitionFromPending).toHaveBeenCalledWith(
       1,
       'DISMISSED',
       expect.any(Date),

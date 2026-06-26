@@ -51,6 +51,18 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     });
   }
 
+  async transitionFromPending(
+    id: number,
+    toStatus: Exclude<ProposalStatus, 'PENDING'>,
+    resolvedAt: Date,
+  ): Promise<boolean> {
+    const result = await this.prisma.subconsciousProposal.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: toStatus, resolvedAt },
+    });
+    return result.count === 1;
+  }
+
   async attachSlackMessage(
     id: number,
     channelId: string,

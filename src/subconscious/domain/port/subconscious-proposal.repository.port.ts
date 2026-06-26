@@ -36,6 +36,11 @@ export interface SubconsciousProposalRepository {
     status: Exclude<ProposalStatus, 'PENDING'>,
     resolvedAt?: Date,
   ): Promise<void>;
+  transitionFromPending(
+    id: number,
+    toStatus: Exclude<ProposalStatus, 'PENDING'>,
+    resolvedAt: Date,
+  ): Promise<boolean>;
   attachSlackMessage(
     id: number,
     channelId: string,
