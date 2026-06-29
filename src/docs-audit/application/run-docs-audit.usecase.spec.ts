@@ -27,6 +27,7 @@ const build = (d: any) =>
     d.reader,
     d.maxFiles,
     d.maxIterations,
+    d.revisionApplier ?? { buildRevision: jest.fn().mockResolvedValue(null) },
   );
 
 it('(a) green → 확정 제안 1건 (edits 포함)', async () => {

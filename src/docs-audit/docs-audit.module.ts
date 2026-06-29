@@ -16,6 +16,10 @@ import {
   CommandRunner,
   DeterministicDocsChecker,
 } from './infrastructure/deterministic-docs.checker';
+import {
+  DocsRevisionApplier,
+  FullDocReader,
+} from './infrastructure/docs-revision.applier';
 import { GitChangedFilesProvider } from './infrastructure/git-changed-files.provider';
 
 // 모든 자식 프로세스(pnpm/git)를 도는 공유 runner — Checker/Git provider 가 공유(DRY).
@@ -43,6 +47,14 @@ const fileExcerptReader: DocExcerptReader = async (filePath) => {
   }
 };
 
+const fullDocReader: FullDocReader = async (path) => {
+  try {
+    return await readFile(join(process.cwd(), path), 'utf8');
+  } catch {
+    return '';
+  }
+};
+
 @Module({
   imports: [ModelRouterModule],
   providers: [
@@ -56,12 +68,17 @@ const fileExcerptReader: DocExcerptReader = async (filePath) => {
       useValue: new GitChangedFilesProvider(sharedRunner),
     },
     {
+      provide: DocsRevisionApplier,
+      useValue: new DocsRevisionApplier(fullDocReader),
+    },
+    {
       provide: DOCS_AUDIT_PORT,
       useFactory: (
         judge: CodexDocsJudgeAdapter,
         checker: DeterministicDocsChecker,
         gitFiles: GitChangedFilesProvider,
         config: ConfigService,
+        revisionApplier: DocsRevisionApplier,
       ) => {
         const maxFiles = Number(config.get('DOCS_AUDIT_MAX_FILES')) || 5;
         const maxIterations =
@@ -73,6 +90,7 @@ const fileExcerptReader: DocExcerptReader = async (filePath) => {
           fileExcerptReader,
           maxFiles,
           maxIterations,
+          revisionApplier,
         );
       },
       inject: [
@@ -80,6 +98,7 @@ const fileExcerptReader: DocExcerptReader = async (filePath) => {
         DeterministicDocsChecker,
         GitChangedFilesProvider,
         ConfigService,
+        DocsRevisionApplier,
       ],
     },
   ],

@@ -1,3 +1,5 @@
+import { PreviewKind } from '../../preview-gate/domain/preview-action.type';
+
 export const AUTOPILOT_TASKS = Symbol('AUTOPILOT_TASKS');
 
 export interface AutopilotTaskContext {
@@ -5,10 +7,19 @@ export interface AutopilotTaskContext {
   firedAtKst: string; // 오케스트레이터가 getTodayKstDate() 로 1회 계산해 주입.
 }
 
+// T1_PREVIEW task 가 orchestrator 에 올리는 preview 생성 요청. orchestrator 가 CreatePreviewUsecase 로 변환.
+export interface AutopilotPreviewRequest {
+  kind: PreviewKind;
+  payload: unknown;
+  previewText: string;
+}
+
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
   slackText?: string; // T0 전달 본문.
+  // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
+  preview?: AutopilotPreviewRequest;
 }
 
 export interface AutopilotTask {

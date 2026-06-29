@@ -5,6 +5,7 @@ import {
   DOCS_AUDIT_PORT,
   DocsAuditPort,
 } from '../../../docs-audit/domain/port/docs-audit.port';
+import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatDocsAudit } from '../../../slack/format/docs-audit.formatter';
 import {
   AutopilotTask,
@@ -31,6 +32,42 @@ export class DocsSyncAuditTask implements AutopilotTask {
     }
     const result = await this.audit.runAudit();
     const slackText = formatDocsAudit(result, firedAtKst);
+
+    // 완전자동 게이트 ON + 적용 가능한 revision 이 있으면 preview 페이로드.
+    if (
+      this.configService.get<string>('DOCS_AUDIT_PR_ENABLED') === 'true' &&
+      result.revision
+    ) {
+      const repoLabel =
+        this.configService.get<string>('DOCS_AUDIT_PR_REPO')?.trim() ||
+        this.configService
+          .get<string>('BE_SANDBOX_DEFAULT_REPO_LABEL')
+          ?.trim() ||
+        'JSL107/personal_agents';
+      const baseBranch =
+        this.configService.get<string>('DOCS_AUDIT_PR_BASE_BRANCH')?.trim() ||
+        'main';
+      const payload = {
+        files: result.revision.files,
+        changedFiles: result.revision.changedFiles,
+        rationale: result.proposals
+          .filter((proposal) => proposal.confirmed)
+          .map((proposal) => proposal.rationale)
+          .join('\n\n'),
+        repoLabel,
+        baseBranch,
+      };
+      return {
+        skip: false,
+        slackText: slackText.length > 0 ? slackText : undefined,
+        preview: {
+          kind: PREVIEW_KIND.DOCS_AUDIT_PR,
+          payload,
+          previewText: `${slackText}\n\n*적용 미리보기*\n${result.revision.previewText}\n\n✅ 적용 시 docs PR 이 열립니다.`,
+        },
+      };
+    }
+
     if (slackText.length === 0) {
       return { skip: true };
     }
