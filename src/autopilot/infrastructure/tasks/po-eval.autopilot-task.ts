@@ -38,7 +38,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         intro +
         formatEvaluationOutput(outcome.result) +
         formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      return { skip: false, summaryText: text };
     } catch (error) {
       if (
         error instanceof PoEvalException &&
@@ -46,7 +46,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
+          summaryText: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
         };
       }
       throw error;

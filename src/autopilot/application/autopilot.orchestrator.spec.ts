@@ -22,7 +22,7 @@ const makeTask = (id: string, result: unknown) => ({
 
 describe('AutopilotOrchestrator', () => {
   it('단일 항목 그룹 정상 → 1 task 실행, 1 발송', async () => {
-    const task = makeTask('daily-eval', { skip: false, slackText: '본문' });
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn().mockResolvedValue(undefined);
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -41,8 +41,8 @@ describe('AutopilotOrchestrator', () => {
   });
 
   it('2항목 그룹 → task 2개 실행, postMessage 1회(구분자 포함)', async () => {
-    const taskA = makeTask('daily-eval', { skip: false, slackText: 'A' });
-    const taskB = makeTask('work-reviewer', { skip: false, slackText: 'B' });
+    const taskA = makeTask('daily-eval', { skip: false, summaryText: 'A' });
+    const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });
     const postMessage = jest.fn().mockResolvedValue(undefined);
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -65,9 +65,9 @@ describe('AutopilotOrchestrator', () => {
     expect(sentText).toContain('────────');
   });
 
-  it('그룹 내 일부 skip → 비-skip slackText 만 발송', async () => {
+  it('그룹 내 일부 skip → 비-skip summaryText 만 발송', async () => {
     const taskA = makeTask('daily-eval', { skip: true });
-    const taskB = makeTask('work-reviewer', { skip: false, slackText: 'B' });
+    const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });
     const postMessage = jest.fn().mockResolvedValue(undefined);
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -100,7 +100,7 @@ describe('AutopilotOrchestrator', () => {
   });
 
   it('다중 타깃 + 그룹 → 합친 텍스트를 각 타깃에 발송, acquireOnce 1회', async () => {
-    const taskA = makeTask('daily-eval', { skip: false, slackText: '본문' });
+    const taskA = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn().mockResolvedValue(undefined);
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -118,7 +118,10 @@ describe('AutopilotOrchestrator', () => {
   });
 
   it('그룹 내 한 task 가 throw 해도 다른 task 발송 + 그룹 성공 (실패 격리)', async () => {
-    const taskA = makeTask('daily-eval', { skip: false, slackText: 'A 정상' });
+    const taskA = makeTask('daily-eval', {
+      skip: false,
+      summaryText: 'A 정상',
+    });
     const taskB = {
       id: 'work-reviewer',
       run: jest
@@ -188,7 +191,7 @@ describe('AutopilotOrchestrator', () => {
   });
 
   it('T1_PREVIEW 항목 포함 → throw (SP4)', async () => {
-    const task = makeTask('daily-eval', { skip: false, slackText: '본문' });
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage: jest.fn() } as never,
@@ -201,7 +204,7 @@ describe('AutopilotOrchestrator', () => {
   });
 
   it('멱등 2회차(acquireOnce=false) → 발송 skip', async () => {
-    const task = makeTask('daily-eval', { skip: false, slackText: '본문' });
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn();
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,

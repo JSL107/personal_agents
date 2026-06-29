@@ -40,7 +40,7 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
         '\n\n' +
         formatted.detail +
         formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      return { skip: false, summaryText: text };
     } catch (error) {
       if (
         error instanceof CeoException &&
@@ -48,7 +48,7 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText: `🌙 *CEO Meta — ${firedAtKst} skip*\n_최근 7일 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
+          summaryText: `🌙 *CEO Meta — ${firedAtKst} skip*\n_최근 7일 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
         };
       }
       throw error;

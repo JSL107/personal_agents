@@ -22,7 +22,7 @@ describe('CeoMetaAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('skip');
+    expect(out.summaryText).toContain('skip');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'WEEK' }),
     );

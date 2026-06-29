@@ -30,7 +30,7 @@ describe('WorkReviewerAutopilotTask', () => {
     expect(task.id).toBe('work-reviewer');
   });
 
-  it('오늘 PM plan 있음 → GenerateWorklogUsecase 호출 + skip=false slackText 반환', async () => {
+  it('오늘 PM plan 있음 → GenerateWorklogUsecase 호출 + skip=false summaryText 반환', async () => {
     const pmRun = makePmRun('2026-06-17', ['PR 리뷰']);
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([pmRun]);
     const execute = jest.fn().mockResolvedValue({
@@ -56,7 +56,7 @@ describe('WorkReviewerAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.slackText).toBeDefined();
+    expect(result.summaryText).toBeDefined();
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1' }),
     );
@@ -74,7 +74,7 @@ describe('WorkReviewerAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.slackText).toContain('plan');
+    expect(result.summaryText).toContain('plan');
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -97,8 +97,8 @@ describe('WorkReviewerAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.slackText).toBeDefined();
-    expect(result.slackText).toMatch(/worklog|작업|입력/);
+    expect(result.summaryText).toBeDefined();
+    expect(result.summaryText).toMatch(/worklog|작업|입력/);
   });
 
   it('그 외 에러는 throw (consumer 가 실패 통지)', async () => {

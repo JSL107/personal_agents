@@ -53,7 +53,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
         '\n\n' +
         formatted.detail +
         formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      return { skip: false, summaryText: text };
     } catch (error) {
       if (error instanceof ImpactReporterException) {
         if (
@@ -65,7 +65,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           );
           return {
             skip: false,
-            slackText: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
+            summaryText: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
           };
         }
         if (
@@ -77,7 +77,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           );
           return {
             skip: false,
-            slackText: `⚠️ *Impact Report — ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`) — cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
+            summaryText: `⚠️ *Impact Report — ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`) — cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
           };
         }
       }

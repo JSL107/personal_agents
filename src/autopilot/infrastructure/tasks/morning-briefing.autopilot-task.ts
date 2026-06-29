@@ -32,7 +32,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       });
       const text =
         formatDailyPlan(outcome.result.plan) + formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      return { skip: false, summaryText: text };
     } catch (error) {
       if (
         error instanceof PmAgentException &&
@@ -40,7 +40,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText:
+          summaryText:
             '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
         };
       }

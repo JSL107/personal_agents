@@ -10,7 +10,7 @@ import {
 import { AUTOPILOT_TASKS, AutopilotTask } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
-// 플레이북 그룹을 실행 → 비-skip slackText 수집 → 구분자로 합쳐 멱등 1회 후 다중 타깃 fan-out 발송.
+// 플레이북 그룹을 실행 → 비-skip summaryText 수집 → 구분자로 합쳐 멱등 1회 후 다중 타깃 fan-out 발송.
 // 멱등 가드는 "전달 직전"에 둔다 — task 실행이 실패하면 BullMQ 재시도(attempts)가 살아있도록.
 @Injectable()
 export class AutopilotOrchestrator {
@@ -51,8 +51,8 @@ export class AutopilotOrchestrator {
       // 설정 오류(riskTier/미등록)는 위에서 여전히 fail-fast — 운영 변동만 격리한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
-        if (!result.skip && result.slackText) {
-          parts.push(result.slackText);
+        if (!result.skip && result.summaryText) {
+          parts.push(result.summaryText);
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
