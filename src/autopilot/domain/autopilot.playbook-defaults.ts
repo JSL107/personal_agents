@@ -29,3 +29,7 @@ export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 // episodic-memory 규모가 작아 일간은 과함 → 주간 무결성 점검.
 export const DEFAULT_KNOWLEDGE_LINT_CRON = '0 10 * * 0';
 export const DEFAULT_KNOWLEDGE_LINT_TIMEZONE = 'Asia/Seoul';
+
+// docs-sync-audit 기본 스케줄 — 매주 일 11:00 KST (knowledge-lint 일 10:00 과 1시간 분리).
+export const DEFAULT_DOCS_AUDIT_CRON = '0 11 * * 0';
+export const DEFAULT_DOCS_AUDIT_TIMEZONE = 'Asia/Seoul';

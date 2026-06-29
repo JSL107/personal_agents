@@ -30,6 +30,9 @@ describe('ModelRouterUsecase', () => {
       [AgentType.BE, ModelProviderName.CLAUDE],
       [AgentType.CODE_REVIEWER, ModelProviderName.CLAUDE],
       [AgentType.WORK_REVIEWER, ModelProviderName.CHATGPT],
+      // docs-sync-audit Layer 2 — optimizer/evaluator 둘 다 ChatGPT 로 라우팅.
+      [AgentType.DOCS_AUDIT_OPTIMIZER, ModelProviderName.CHATGPT],
+      [AgentType.DOCS_AUDIT_EVALUATOR, ModelProviderName.CHATGPT],
     ])('%s → %s', async (agentType, expectedProvider) => {
       const providers = {
         [ModelProviderName.CHATGPT]: chatgptProvider,

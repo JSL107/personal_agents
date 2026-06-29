@@ -1,0 +1,39 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+
+import {
+  DOCS_AUDIT_PORT,
+  DocsAuditPort,
+} from '../../../docs-audit/domain/port/docs-audit.port';
+import { formatDocsAudit } from '../../../slack/format/docs-audit.formatter';
+import {
+  AutopilotTask,
+  AutopilotTaskContext,
+  AutopilotTaskResult,
+} from '../../domain/autopilot-task.port';
+
+// 주간 문서↔코드 동기화 점검 — Layer1 결정론(docs:check/check:env) + Layer2 codex 자기수정 루프.
+// 읽기 전용(파일 미수정)이라 T0_AUTO. DOCS_AUDIT_ENABLED='false' 면 전체 skip.
+@Injectable()
+export class DocsSyncAuditTask implements AutopilotTask {
+  readonly id = 'docs-sync-audit';
+
+  constructor(
+    @Inject(DOCS_AUDIT_PORT) private readonly audit: DocsAuditPort,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async run({
+    firedAtKst,
+  }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
+    if (this.configService.get<string>('DOCS_AUDIT_ENABLED') === 'false') {
+      return { skip: true };
+    }
+    const result = await this.audit.runAudit();
+    const slackText = formatDocsAudit(result, firedAtKst);
+    if (slackText.length === 0) {
+      return { skip: true };
+    }
+    return { skip: false, slackText };
+  }
+}
