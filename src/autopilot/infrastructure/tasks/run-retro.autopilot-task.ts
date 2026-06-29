@@ -26,6 +26,6 @@ export class RunRetroAutopilotTask implements AutopilotTask {
     if (stats.length === 0) {
       return { skip: true };
     }
-    return { skip: false, slackText: formatRunRetro(stats, firedAtKst) };
+    return { skip: false, summaryText: formatRunRetro(stats, firedAtKst) };
   }
 }

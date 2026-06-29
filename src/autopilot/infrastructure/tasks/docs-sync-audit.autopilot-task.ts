@@ -30,10 +30,10 @@ export class DocsSyncAuditTask implements AutopilotTask {
       return { skip: true };
     }
     const result = await this.audit.runAudit();
-    const slackText = formatDocsAudit(result, firedAtKst);
-    if (slackText.length === 0) {
+    const summaryText = formatDocsAudit(result, firedAtKst);
+    if (summaryText.length === 0) {
       return { skip: true };
     }
-    return { skip: false, slackText };
+    return { skip: false, summaryText };
   }
 }

@@ -1,10 +1,12 @@
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
+import { FormattedReport } from './formatted-report.type';
 
 // CEO worker (P5 Meta) Slack 답글 formatter.
-// 구조:
+// summary:
 //   *🧭 CEO 메타 review — {range}*
 //   _{finalSummary}_
 //
+// detail:
 //   *🌪️ 컨텍스트 드리프트 관찰*
 //   • ...
 //
@@ -12,38 +14,43 @@ import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 //   • ...
 //
 //   _합성 source: poEval=#X, pm=#Y, cto=#Z (missing: ...)_
-export const formatCeoMetaOutput = (output: MetaOutput): string => {
-  const lines: string[] = [];
+export const formatCeoMetaOutput = (output: MetaOutput): FormattedReport => {
   const rangeLabel = output.range === 'WEEK' ? '최근 7일' : '최근 24시간';
-  lines.push(`*🧭 CEO 메타 review — ${rangeLabel}*`);
+
+  const summaryLines: string[] = [];
+  summaryLines.push(`*🧭 CEO 메타 review — ${rangeLabel}*`);
   if (output.finalSummary.trim().length > 0) {
-    lines.push('');
-    lines.push(`_${escapeSlackMrkdwn(output.finalSummary)}_`);
+    summaryLines.push('');
+    summaryLines.push(`_${escapeSlackMrkdwn(output.finalSummary)}_`);
   }
 
-  lines.push('');
-  lines.push('*🌪️ 컨텍스트 드리프트 관찰*');
+  const detailLines: string[] = [];
+  detailLines.push('*🌪️ 컨텍스트 드리프트 관찰*');
   if (output.contextDriftReport.observations.length > 0) {
     for (const item of output.contextDriftReport.observations) {
-      lines.push(`• ${escapeSlackMrkdwn(item)}`);
+      detailLines.push(`• ${escapeSlackMrkdwn(item)}`);
     }
   } else {
-    lines.push('_관찰된 drift 신호 없음._');
+    detailLines.push('_관찰된 drift 신호 없음._');
   }
 
-  lines.push('');
-  lines.push('*📚 문서 품질 관찰*');
+  detailLines.push('');
+  detailLines.push('*📚 문서 품질 관찰*');
   if (output.docsQualityReport.findings.length > 0) {
     for (const item of output.docsQualityReport.findings) {
-      lines.push(`• ${escapeSlackMrkdwn(item)}`);
+      detailLines.push(`• ${escapeSlackMrkdwn(item)}`);
     }
   } else {
-    lines.push('_본 주간 문서 관찰 없음._');
+    detailLines.push('_본 주간 문서 관찰 없음._');
   }
 
-  lines.push('');
-  lines.push(formatSourceFooter(output));
-  return lines.join('\n');
+  detailLines.push('');
+  detailLines.push(formatSourceFooter(output));
+
+  return {
+    summary: summaryLines.join('\n'),
+    detail: detailLines.join('\n'),
+  };
 };
 
 const formatSourceFooter = (output: MetaOutput): string => {

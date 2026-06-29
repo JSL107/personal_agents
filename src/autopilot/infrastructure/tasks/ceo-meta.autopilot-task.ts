@@ -4,6 +4,8 @@ import { GenerateCeoMetaUsecase } from '../../../agent/ceo/application/generate-
 import { CeoException } from '../../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../../agent/ceo/domain/ceo-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeMetaOutput } from '../../../humanize/application/humanize-report.adapter';
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
@@ -21,6 +23,7 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -33,11 +36,16 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
         range: 'WEEK',
         triggerType: TriggerType.WEEKLY_CEO_META_CRON,
       });
-      const text =
+      const humanized = await humanizeMetaOutput(
+        outcome.result,
+        this.humanizeService,
+      );
+      const formatted = formatCeoMetaOutput(humanized);
+      const summaryText =
         `🧭 *CEO Meta — ${firedAtKst} (최근 7일 자동 회고)*\n\n` +
-        formatCeoMetaOutput(outcome.result) +
-        formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+        formatted.summary;
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (
         error instanceof CeoException &&
@@ -45,7 +53,7 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText: `🌙 *CEO Meta — ${firedAtKst} skip*\n_최근 7일 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
+          summaryText: `🌙 *CEO Meta — ${firedAtKst} skip*\n_최근 7일 안 PO_EVAL run 부재로 메타 회고 대상 없음. 다음 주기에 다시 시도합니다._`,
         };
       }
       throw error;

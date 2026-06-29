@@ -23,11 +23,12 @@ export class ImpactReporterDispatcher implements AgentDispatcher {
       subject: input.text ?? '',
       slackUserId: input.slackUserId,
     });
+    const formatted = formatImpactReport(outcome.result);
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatImpactReport(outcome.result),
+      formattedText: `${formatted.summary}\n\n${formatted.detail}`,
     };
   }
 }

@@ -213,6 +213,7 @@ pnpm dev              # watch 모드 기동
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | tick cron 표현식 (기본 `*/20 * * * *`, Asia/Seoul) |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | 시간당 최대 proposal 건수 (기본 `4`) |
 | `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | proposal DM 버튼 유효 시간 ms (기본 `3600000`) |
+| `HUMANIZE_REPORTS_ENABLED` | ❌ | `'false'`면 자동 보고서 윤문 OFF — 기본 ON |
 
 **Model fallback** — Claude primary 실패 시 ChatGPT(Codex CLI) 자동 재시도. ChatGPT primary(PM/WorkReviewer/Impact/PoShadow)는 재시도 없이 즉시 실패. (Gemini fallback 은 2026-06-04 제거.)
 **claude 인증** — keychain ACL 미등록 환경 우회용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원.

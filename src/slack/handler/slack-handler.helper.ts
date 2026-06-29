@@ -3,7 +3,16 @@ import { RespondFn } from '@slack/bolt';
 
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
 import { DomainException } from '../../common/exception/domain.exception';
+import { FormattedReport } from '../format/formatted-report.type';
 import { formatModelFooter } from '../format/model-footer.formatter';
+
+// FormattedReport → summary + '\n\n' + detail 합본 문자열. string 은 그대로 통과.
+const toSlackText = (formatted: FormattedReport | string): string => {
+  if (typeof formatted === 'string') {
+    return formatted;
+  }
+  return `${formatted.summary}\n\n${formatted.detail}`;
+};
 
 // 도메인 예외 message 는 그대로 노출, 그 외 (Prisma/네트워크/내부) 는 generic 으로 가린다.
 // stack trace / Prisma 내부 메시지가 사용자에게 새는 걸 막는 1차 방어선.
@@ -47,12 +56,13 @@ export const runEphemeral = async <T>(args: {
 
 // /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 모델 호출 명령용 — format 결과 끝에
 // `_model: codex-cli · run #N_` 푸터 자동 부착 (PRO-3).
+// format 은 string 또는 FormattedReport 를 반환 가능 — FormattedReport 는 summary+detail 합본으로 렌더.
 export const runAgentCommand = async <T>(args: {
   respond: RespondFn;
   logger: Logger;
   commandLabel: string;
   execute: () => Promise<AgentRunOutcome<T>>;
-  format: (result: T) => string;
+  format: (result: T) => FormattedReport | string;
 }): Promise<void> => {
   const { respond, logger, commandLabel, execute, format } = args;
   try {
@@ -60,7 +70,7 @@ export const runAgentCommand = async <T>(args: {
     await respond({
       response_type: 'ephemeral',
       replace_original: true,
-      text: format(outcome.result) + formatModelFooter(outcome),
+      text: toSlackText(format(outcome.result)) + formatModelFooter(outcome),
     });
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : String(error);
