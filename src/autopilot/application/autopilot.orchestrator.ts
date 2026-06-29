@@ -7,10 +7,18 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../morning-briefing/domain/port/slack-notifier.port';
-import { AUTOPILOT_TASKS, AutopilotTask } from '../domain/autopilot-task.port';
+import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
+import {
+  AUTOPILOT_TASKS,
+  AutopilotPreviewRequest,
+  AutopilotTask,
+} from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
+const PREVIEW_TTL_MS = 60 * 60 * 1000;
+
 // 플레이북 그룹을 실행 → 비-skip slackText 수집 → 구분자로 합쳐 멱등 1회 후 다중 타깃 fan-out 발송.
+// T1_PREVIEW task 는 preview 를 모아 CreatePreviewUsecase → postPreviewMessage 로 버튼 발송.
 // 멱등 가드는 "전달 직전"에 둔다 — task 실행이 실패하면 BullMQ 재시도(attempts)가 살아있도록.
 @Injectable()
 export class AutopilotOrchestrator {
@@ -22,6 +30,7 @@ export class AutopilotOrchestrator {
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
+    private readonly createPreview: CreatePreviewUsecase,
   ) {
     this.tasks = new Map(tasks.map((task) => [task.id, task]));
   }
@@ -34,13 +43,9 @@ export class AutopilotOrchestrator {
   ): Promise<void> {
     const firedAtKst = getTodayKstDate();
     const parts: string[] = [];
+    const previews: AutopilotPreviewRequest[] = [];
 
     for (const entry of entries) {
-      if (entry.riskTier !== 'T0_AUTO') {
-        throw new Error(
-          `Autopilot: T1_PREVIEW 전달은 SP4 — 미지원 (entry=${entry.id})`,
-        );
-      }
       const task = this.tasks.get(entry.taskId);
       if (!task) {
         throw new Error(`Autopilot: task 미등록 — taskId=${entry.taskId}`);
@@ -48,9 +53,12 @@ export class AutopilotOrchestrator {
       // 한 task 의 런타임 실패(모델 응답 파싱 실패 / LLM hang 등 외부 변동)가 그룹 전체를
       // 죽여 cron job 을 throw 시키지 않도록 격리한다. (이전엔 work-reviewer 의 JSON 파싱
       // 실패가 evening 그룹 전체를 실패시켜 daily-eval 보고까지 누락 + cron 실패 알람 발사.)
-      // 설정 오류(riskTier/미등록)는 위에서 여전히 fail-fast — 운영 변동만 격리한다.
+      // 설정 오류(미등록)는 위에서 여전히 fail-fast — 운영 변동만 격리한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
+        if (result.preview) {
+          previews.push(result.preview);
+        }
         if (!result.skip && result.slackText) {
           parts.push(result.slackText);
         }
@@ -67,7 +75,7 @@ export class AutopilotOrchestrator {
       }
     }
 
-    if (parts.length === 0) {
+    if (parts.length === 0 && previews.length === 0) {
       this.logger.log(`Autopilot[${groupKey}] — 보고 내용 없음, 전달 skip`);
       return;
     }
@@ -83,17 +91,39 @@ export class AutopilotOrchestrator {
       return;
     }
 
-    const text = parts.join('\n\n────────\n\n');
     const targets = target
       .split(',')
       .map((resolved) => resolved.trim())
       .filter((resolved) => resolved.length > 0);
 
-    for (const resolved of targets) {
-      await this.slackNotifier.postMessage({ target: resolved, text });
+    if (parts.length > 0) {
+      const text = parts.join('\n\n────────\n\n');
+      for (const resolved of targets) {
+        await this.slackNotifier.postMessage({ target: resolved, text });
+      }
     }
+
+    // T1_PREVIEW — preview 별로 PENDING 생성 + 버튼 메시지(각 타깃).
+    for (const preview of previews) {
+      const created = await this.createPreview.execute({
+        slackUserId: ownerSlackUserId,
+        kind: preview.kind,
+        payload: preview.payload,
+        previewText: preview.previewText,
+        responseUrl: null,
+        ttlMs: PREVIEW_TTL_MS,
+      });
+      for (const resolved of targets) {
+        await this.slackNotifier.postPreviewMessage({
+          target: resolved,
+          previewText: preview.previewText,
+          previewId: created.id,
+        });
+      }
+    }
+
     this.logger.log(
-      `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task)`,
+      `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task, preview ${previews.length})`,
     );
   }
 }

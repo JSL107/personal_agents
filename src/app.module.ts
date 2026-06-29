@@ -28,6 +28,7 @@ import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
+import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.applier';
 import { GithubModule } from './github/github.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
@@ -109,6 +110,7 @@ import { WebhookModule } from './webhook/webhook.module';
         PoEvalCareerlogApplier,
         BeSandboxApplier,
         BeSandboxPushPrApplier,
+        DocsAuditPrApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier],

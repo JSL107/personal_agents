@@ -29,6 +29,7 @@ describe('AutopilotOrchestrator', () => {
       [task] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
@@ -49,6 +50,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA, taskB] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -74,6 +76,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA, taskB] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -93,6 +96,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA] as never,
       { postMessage } as never,
       { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+      { execute: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1');
@@ -107,6 +111,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1, C2');
@@ -133,6 +138,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA, taskB] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -161,6 +167,7 @@ describe('AutopilotOrchestrator', () => {
       [taskA] as never,
       { postMessage } as never,
       { acquireOnce } as never,
+      { execute: jest.fn() } as never,
     );
 
     await expect(
@@ -181,23 +188,11 @@ describe('AutopilotOrchestrator', () => {
       [] as never,
       { postMessage: jest.fn() } as never,
       { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+      { execute: jest.fn() } as never,
     );
     await expect(
       orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1'),
     ).rejects.toThrow(/task 미등록/);
-  });
-
-  it('T1_PREVIEW 항목 포함 → throw (SP4)', async () => {
-    const task = makeTask('daily-eval', { skip: false, slackText: '본문' });
-    const orchestrator = new AutopilotOrchestrator(
-      [task] as never,
-      { postMessage: jest.fn() } as never,
-      { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
-    );
-    const t1Entry: PlaybookEntry = { ...T0_ENTRY, riskTier: 'T1_PREVIEW' };
-    await expect(
-      orchestrator.runGroup('daily-eval', [t1Entry], 'U1', 'C1'),
-    ).rejects.toThrow(/T1_PREVIEW/);
   });
 
   it('멱등 2회차(acquireOnce=false) → 발송 skip', async () => {
@@ -207,9 +202,63 @@ describe('AutopilotOrchestrator', () => {
       [task] as never,
       { postMessage } as never,
       { acquireOnce: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('T1_PREVIEW + preview 페이로드 → CreatePreview + postPreviewMessage(버튼)', async () => {
+    const previewTask = {
+      id: 'docs-sync-audit',
+      run: jest.fn().mockResolvedValue({
+        skip: false,
+        preview: {
+          kind: 'DOCS_AUDIT_PR',
+          payload: { files: [] },
+          previewText: 'pv',
+        },
+      }),
+    };
+    const createPreview = {
+      execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
+    };
+    const slackNotifier = {
+      postMessage: jest.fn(),
+      postPreviewMessage: jest.fn(),
+    };
+    const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const orchestrator = new AutopilotOrchestrator(
+      [previewTask] as any,
+      slackNotifier as any,
+      idempotency as any,
+      createPreview as any,
+    );
+    await orchestrator.runGroup(
+      'docs-sync-audit',
+      [
+        {
+          id: 'docs-sync-audit',
+          taskId: 'docs-sync-audit',
+          riskTier: 'T1_PREVIEW',
+          trigger: {
+            kind: 'CRON',
+            schedule: '0 11 * * 0',
+            timezone: 'Asia/Seoul',
+          },
+        },
+      ] as any,
+      'U1',
+      'U1',
+    );
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
+    expect(createPreview.execute.mock.calls[0][0].kind).toBe('DOCS_AUDIT_PR');
+    expect(createPreview.execute.mock.calls[0][0].slackUserId).toBe('U1');
+    expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith({
+      target: 'U1',
+      previewText: 'pv',
+      previewId: 'PV1',
+    });
   });
 });
