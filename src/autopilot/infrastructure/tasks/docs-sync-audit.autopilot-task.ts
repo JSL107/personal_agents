@@ -31,7 +31,7 @@ export class DocsSyncAuditTask implements AutopilotTask {
       return { skip: true };
     }
     const result = await this.audit.runAudit();
-    const slackText = formatDocsAudit(result, firedAtKst);
+    const summaryText = formatDocsAudit(result, firedAtKst);
 
     // 완전자동 게이트 ON + 적용 가능한 revision 이 있으면 preview 페이로드.
     if (
@@ -59,18 +59,18 @@ export class DocsSyncAuditTask implements AutopilotTask {
       };
       return {
         skip: false,
-        slackText: slackText.length > 0 ? slackText : undefined,
+        summaryText: summaryText.length > 0 ? summaryText : undefined,
         preview: {
           kind: PREVIEW_KIND.DOCS_AUDIT_PR,
           payload,
-          previewText: `${slackText}\n\n*적용 미리보기*\n${result.revision.previewText}\n\n✅ 적용 시 docs PR 이 열립니다.`,
+          previewText: `${summaryText}\n\n*적용 미리보기*\n${result.revision.previewText}\n\n✅ 적용 시 docs PR 이 열립니다.`,
         },
       };
     }
 
-    if (slackText.length === 0) {
+    if (summaryText.length === 0) {
       return { skip: true };
     }
-    return { skip: false, slackText };
+    return { skip: false, summaryText };
   }
 }

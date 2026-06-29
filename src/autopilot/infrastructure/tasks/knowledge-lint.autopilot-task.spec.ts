@@ -7,7 +7,7 @@ function makeConfig(values: Record<string, string | undefined> = {}) {
 describe('KnowledgeLintAutopilotTask', () => {
   const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-28' };
 
-  it('이슈 있으면 slackText 반환 + L4 옵션(기본 활성/상한5) 전달', async () => {
+  it('이슈 있으면 summaryText 반환 + L4 옵션(기본 활성/상한5) 전달', async () => {
     const knowledgeLint = {
       lintIssues: jest.fn().mockResolvedValue([
         {
@@ -38,7 +38,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       }),
     );
     expect(result.skip).toBe(false);
-    expect(result.slackText).toContain('Knowledge Lint');
+    expect(result.summaryText).toContain('Knowledge Lint');
   });
 
   it('L4_ENABLED=false 면 l4.enabled=false 로 전달', async () => {
@@ -83,6 +83,6 @@ describe('KnowledgeLintAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.skip).toBe(true);
-    expect(result.slackText).toBeUndefined();
+    expect(result.summaryText).toBeUndefined();
   });
 });

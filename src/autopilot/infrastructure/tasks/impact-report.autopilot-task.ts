@@ -5,6 +5,8 @@ import { GenerateImpactReportUsecase } from '../../../agent/impact-reporter/appl
 import { ImpactReporterException } from '../../../agent/impact-reporter/domain/impact-reporter.exception';
 import { ImpactReporterErrorCode } from '../../../agent/impact-reporter/domain/impact-reporter-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeImpactReport } from '../../../humanize/application/humanize-report.adapter';
 import { formatImpactReport } from '../../../slack/format/impact-report.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
@@ -32,6 +34,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
   constructor(
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly configService: ConfigService,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -46,11 +49,16 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         triggerType: TriggerType.IMPACT_REPORT_RECENT_CRON,
       });
-      const text =
+      const humanized = await humanizeImpactReport(
+        outcome.result,
+        this.humanizeService,
+      );
+      const formatted = formatImpactReport(humanized);
+      const summaryText =
         `📊 *Impact Report — ${firedAtKst} (최근 ${days}일 자동 종합)*\n\n` +
-        formatImpactReport(outcome.result) +
-        formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+        formatted.summary;
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (error instanceof ImpactReporterException) {
         if (
@@ -62,7 +70,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           );
           return {
             skip: false,
-            slackText: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
+            summaryText: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
           };
         }
         if (
@@ -74,7 +82,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           );
           return {
             skip: false,
-            slackText: `⚠️ *Impact Report — ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`) — cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
+            summaryText: `⚠️ *Impact Report — ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`) — cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
           };
         }
       }

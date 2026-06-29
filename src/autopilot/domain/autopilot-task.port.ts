@@ -17,7 +17,10 @@ export interface AutopilotPreviewRequest {
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
-  slackText?: string; // T0 전달 본문.
+  // 메인 메시지에 합쳐질 요약 본문 (T0 전달).
+  summaryText?: string;
+  // 있으면 메인 메시지의 스레드 댓글로 발송될 상세 본문. 없으면 요약만.
+  detailText?: string;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
 }
