@@ -115,6 +115,15 @@ export class AutopilotOrchestrator {
             }
           }
         }
+      } else {
+        // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
+        // 메인 요약은 이미 발송됐고 detail 만 누락되므로 데이터 손실은 아니나, 관측성 위해 경고.
+        const skippedDetailCount = items.filter((item) => item.detail).length;
+        if (skippedDetailCount > 0) {
+          this.logger.warn(
+            `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 상세 ${skippedDetailCount}건 skip`,
+          );
+        }
       }
     }
     this.logger.log(
