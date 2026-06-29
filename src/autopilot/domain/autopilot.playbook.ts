@@ -108,7 +108,8 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
   },
-  // docs-sync-audit — 주간 문서↔코드 동기화 점검. 읽기 전용이라 T0_AUTO.
+  // docs-sync-audit — 주간 문서↔코드 점검. T1_PREVIEW: 확정 제안은 사용자 승인 후 docs PR.
+  // DOCS_AUDIT_PR_ENABLED 미설정/false 시 preview 없이 텍스트 보고로 폴백(안전).
   {
     id: 'docs-sync-audit',
     taskId: 'docs-sync-audit',
@@ -117,7 +118,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       schedule: DEFAULT_DOCS_AUDIT_CRON,
       timezone: DEFAULT_DOCS_AUDIT_TIMEZONE,
     },
-    riskTier: 'T0_AUTO',
+    riskTier: 'T1_PREVIEW',
   },
 ];
 
