@@ -5,6 +5,8 @@ import { GenerateImpactReportUsecase } from '../../../agent/impact-reporter/appl
 import { ImpactReporterException } from '../../../agent/impact-reporter/domain/impact-reporter.exception';
 import { ImpactReporterErrorCode } from '../../../agent/impact-reporter/domain/impact-reporter-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeImpactReport } from '../../../humanize/application/humanize-report.adapter';
 import { formatImpactReport } from '../../../slack/format/impact-report.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
@@ -32,6 +34,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
   constructor(
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
     private readonly configService: ConfigService,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -46,14 +49,16 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         triggerType: TriggerType.IMPACT_REPORT_RECENT_CRON,
       });
-      const formatted = formatImpactReport(outcome.result);
-      const text =
+      const humanized = await humanizeImpactReport(
+        outcome.result,
+        this.humanizeService,
+      );
+      const formatted = formatImpactReport(humanized);
+      const summaryText =
         `📊 *Impact Report — ${firedAtKst} (최근 ${days}일 자동 종합)*\n\n` +
-        formatted.summary +
-        '\n\n' +
-        formatted.detail +
-        formatModelFooter(outcome);
-      return { skip: false, summaryText: text };
+        formatted.summary;
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (error instanceof ImpactReporterException) {
         if (
