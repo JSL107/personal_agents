@@ -8,6 +8,7 @@ import {
 } from '../domain/port/docs-audit.port';
 import { CodexDocsJudgeAdapter } from '../infrastructure/codex-docs-judge.adapter';
 import { DeterministicDocsChecker } from '../infrastructure/deterministic-docs.checker';
+import { DocsRevisionApplier } from '../infrastructure/docs-revision.applier';
 import { GitChangedFilesProvider } from '../infrastructure/git-changed-files.provider';
 
 const PASS_SCORE = 90;
@@ -38,6 +39,7 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
     private readonly readExcerpt: DocExcerptReader,
     private readonly maxFiles: number = 5,
     private readonly maxIterations: number = 3,
+    private readonly revisionApplier: DocsRevisionApplier,
   ) {}
 
   async runAudit(): Promise<DocsAuditResult> {
@@ -51,7 +53,12 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
         proposals.push(proposal);
       }
     }
-    return { deterministic, proposals, revision: null };
+    const confirmed = proposals.filter((proposal) => proposal.confirmed);
+    const revision =
+      confirmed.length > 0
+        ? await this.revisionApplier.buildRevision(confirmed)
+        : null;
+    return { deterministic, proposals, revision };
   }
 
   // 한 파일에 대한 optimizer↔evaluator 자기수정 루프. 종료조건 3종이 한 함수에 다 보인다:

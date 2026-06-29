@@ -6,4 +6,10 @@ export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 export interface SlackNotifierPort {
   // target: 슬랙 user ID(`U...`) / 채널 ID(`C.../G...`) — chat.postMessage 의 channel 파라미터.
   postMessage(input: { target: string; text: string }): Promise<void>;
+  // T1_PREVIEW preview 버튼 메시지 (SlackService 가 이미 구현 — 인터페이스만 확장).
+  postPreviewMessage(input: {
+    target: string;
+    previewText: string;
+    previewId: string;
+  }): Promise<void>;
 }
