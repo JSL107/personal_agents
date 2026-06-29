@@ -71,9 +71,12 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       triggerType: TriggerType.WEEKLY_SUMMARY_CRON,
     });
 
+    const worklogFormatted = formatDailyReview(worklogOutcome.result);
     const worklogText =
       `📝 *Weekly Summary — ${firedAtKst} (금 17:00 KST 자동 주간 worklog)*\n\n` +
-      formatDailyReview(worklogOutcome.result) +
+      worklogFormatted.summary +
+      '\n\n' +
+      worklogFormatted.detail +
       formatModelFooter(worklogOutcome);
 
     const ceoText = await this.buildCeoMetaText(ownerSlackUserId, firedAtKst);
@@ -94,9 +97,12 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         range: 'WEEK',
         triggerType: TriggerType.WEEKLY_CEO_META_CRON,
       });
+      const ceoFormatted = formatCeoMetaOutput(ceoOutcome.result);
       return (
         `🧭 *CEO Meta — ${firedAtKst} (주간 자동 메타 회고)*\n\n` +
-        formatCeoMetaOutput(ceoOutcome.result) +
+        ceoFormatted.summary +
+        '\n\n' +
+        ceoFormatted.detail +
         formatModelFooter(ceoOutcome)
       );
     } catch (error) {

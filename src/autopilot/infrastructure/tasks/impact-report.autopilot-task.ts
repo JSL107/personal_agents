@@ -46,9 +46,12 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         triggerType: TriggerType.IMPACT_REPORT_RECENT_CRON,
       });
+      const formatted = formatImpactReport(outcome.result);
       const text =
         `📊 *Impact Report — ${firedAtKst} (최근 ${days}일 자동 종합)*\n\n` +
-        formatImpactReport(outcome.result) +
+        formatted.summary +
+        '\n\n' +
+        formatted.detail +
         formatModelFooter(outcome);
       return { skip: false, slackText: text };
     } catch (error) {

@@ -21,11 +21,12 @@ export class WorkReviewerDispatcher implements AgentDispatcher {
       workText: input.text ?? '',
       slackUserId: input.slackUserId,
     });
+    const formatted = formatDailyReview(outcome.result);
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatDailyReview(outcome.result),
+      formattedText: `${formatted.summary}\n\n${formatted.detail}`,
     };
   }
 }

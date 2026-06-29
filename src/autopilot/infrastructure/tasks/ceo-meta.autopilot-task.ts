@@ -33,9 +33,12 @@ export class CeoMetaAutopilotTask implements AutopilotTask {
         range: 'WEEK',
         triggerType: TriggerType.WEEKLY_CEO_META_CRON,
       });
+      const formatted = formatCeoMetaOutput(outcome.result);
       const text =
         `🧭 *CEO Meta — ${firedAtKst} (최근 7일 자동 회고)*\n\n` +
-        formatCeoMetaOutput(outcome.result) +
+        formatted.summary +
+        '\n\n' +
+        formatted.detail +
         formatModelFooter(outcome);
       return { skip: false, slackText: text };
     } catch (error) {
