@@ -51,6 +51,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
   // CONTRADICTION_JUDGE — L4 knowledge-lint 모순 판정. 경량 분류 + claude -p 회피 → ChatGPT.
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
+  // HUMANIZER — 보고서 서술 필드 윤문. 경량 한국어 문체 → ChatGPT(codex). 실패 시 route fallback Claude.
+  [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
