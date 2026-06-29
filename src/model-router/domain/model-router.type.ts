@@ -45,6 +45,12 @@ export enum AgentType {
   // L4 knowledge-lint — 유사 에피소드 쌍의 의미 충돌 판정. 경량 분류 + claude -p 회피 → ChatGPT.
   // 슬래시/ResponseCode/retry-run 비대상 (내부 판정 전용).
   CONTRADICTION_JUDGE = 'CONTRADICTION_JUDGE',
+  // docs-sync-audit Layer 2 — 문서 의미 드리프트 자기수정 루프. 둘 다 경량 판정 → ChatGPT.
+  // optimizer: 코드 변경 기준 문서 수정안 생성 / evaluator: 그 수정안이 코드와 일치하는지 채점.
+  // 슬래시/ResponseCode/retry-run 비대상 (내부 루프 전용 — CONTRADICTION_JUDGE 선례).
+  // AGENT_REGISTRY 에는 등록한다 (agent-registry.spec 이 enum 집합 일치를 강제 — CONTRADICTION_JUDGE 동일).
+  DOCS_AUDIT_OPTIMIZER = 'DOCS_AUDIT_OPTIMIZER',
+  DOCS_AUDIT_EVALUATOR = 'DOCS_AUDIT_EVALUATOR',
 }
 
 export interface CompletionRequest {

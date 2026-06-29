@@ -188,4 +188,20 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       'knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용)',
   },
+  {
+    agentType: AgentType.DOCS_AUDIT_OPTIMIZER,
+    displayName: 'Docs Audit Optimizer',
+    slashCommands: [],
+    usecasePath: 'src/docs-audit/infrastructure/codex-docs-judge.adapter.ts',
+    description:
+      'docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용)',
+  },
+  {
+    agentType: AgentType.DOCS_AUDIT_EVALUATOR,
+    displayName: 'Docs Audit Evaluator',
+    slashCommands: [],
+    usecasePath: 'src/docs-audit/infrastructure/codex-docs-judge.adapter.ts',
+    description:
+      'docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용)',
+  },
 ];
