@@ -23,7 +23,7 @@ const makeTask = (id: string, result: unknown) => ({
 describe('AutopilotOrchestrator', () => {
   it('단일 항목 그룹 정상 → 1 task 실행, 1 발송', async () => {
     const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
@@ -43,7 +43,7 @@ describe('AutopilotOrchestrator', () => {
   it('2항목 그룹 → task 2개 실행, postMessage 1회(구분자 포함)', async () => {
     const taskA = makeTask('daily-eval', { skip: false, summaryText: 'A' });
     const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
@@ -68,7 +68,7 @@ describe('AutopilotOrchestrator', () => {
   it('그룹 내 일부 skip → 비-skip summaryText 만 발송', async () => {
     const taskA = makeTask('daily-eval', { skip: true });
     const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
@@ -101,7 +101,7 @@ describe('AutopilotOrchestrator', () => {
 
   it('다중 타깃 + 그룹 → 합친 텍스트를 각 타깃에 발송, acquireOnce 1회', async () => {
     const taskA = makeTask('daily-eval', { skip: false, summaryText: '본문' });
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [taskA] as never,
@@ -130,7 +130,7 @@ describe('AutopilotOrchestrator', () => {
           new Error('모델 응답을 JSON 으로 파싱하지 못했습니다.'),
         ),
     };
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
@@ -158,7 +158,7 @@ describe('AutopilotOrchestrator', () => {
       id: 'daily-eval',
       run: jest.fn().mockRejectedValue(new Error('boom')),
     };
-    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
       [taskA] as never,
@@ -214,5 +214,59 @@ describe('AutopilotOrchestrator', () => {
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('요약은 메인 메시지로, 상세는 같은 스레드 댓글로 발송한다', async () => {
+    const taskA = {
+      id: 'a',
+      run: jest.fn().mockResolvedValue({
+        skip: false,
+        summaryText: 'SA',
+        detailText: 'DA',
+      }),
+    };
+    const taskB = {
+      id: 'b',
+      run: jest.fn().mockResolvedValue({ skip: false, summaryText: 'SB' }),
+    };
+    const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [taskA, taskB] as never,
+      { postMessage: postMessageMock } as never,
+      { acquireOnce } as never,
+    );
+
+    const entryA = makeEntry('a', 'a');
+    const entryB = makeEntry('b', 'b');
+    await orchestrator.runGroup('g', [entryA, entryB], 'U1', 'C1');
+
+    // 1) 메인: SA + 구분자 + SB
+    expect(postMessageMock).toHaveBeenNthCalledWith(1, {
+      target: 'C1',
+      text: 'SA\n\n────────\n\nSB',
+    });
+    // 2) 스레드: detailText 있는 A 만, threadTs=TS1
+    expect(postMessageMock).toHaveBeenNthCalledWith(2, {
+      target: 'C1',
+      text: 'DA',
+      threadTs: 'TS1',
+    });
+    expect(postMessageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('detail 없는 task만 있으면 메인 1건만 발송', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '요약만' });
+    const postMessage = jest.fn().mockResolvedValue({ ts: 'TS2' });
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '요약만' });
   });
 });

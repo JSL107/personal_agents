@@ -33,7 +33,7 @@ export class AutopilotOrchestrator {
     target: string,
   ): Promise<void> {
     const firedAtKst = getTodayKstDate();
-    const parts: string[] = [];
+    const items: { summary: string; detail?: string }[] = [];
 
     for (const entry of entries) {
       if (entry.riskTier !== 'T0_AUTO') {
@@ -52,7 +52,10 @@ export class AutopilotOrchestrator {
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
         if (!result.skip && result.summaryText) {
-          parts.push(result.summaryText);
+          items.push({
+            summary: result.summaryText,
+            detail: result.detailText,
+          });
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -61,13 +64,13 @@ export class AutopilotOrchestrator {
           error instanceof Error ? error.stack : undefined,
         );
         // 조용한 실패 방지 — owner digest 에 짧게 표기. message 는 길이 cap.
-        parts.push(
-          `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
-        );
+        items.push({
+          summary: `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
+        });
       }
     }
 
-    if (parts.length === 0) {
+    if (items.length === 0) {
       this.logger.log(`Autopilot[${groupKey}] — 보고 내용 없음, 전달 skip`);
       return;
     }
@@ -83,14 +86,36 @@ export class AutopilotOrchestrator {
       return;
     }
 
-    const text = parts.join('\n\n────────\n\n');
+    const mainText = items.map((item) => item.summary).join('\n\n────────\n\n');
     const targets = target
       .split(',')
       .map((resolved) => resolved.trim())
       .filter((resolved) => resolved.length > 0);
 
     for (const resolved of targets) {
-      await this.slackNotifier.postMessage({ target: resolved, text });
+      const { ts } = await this.slackNotifier.postMessage({
+        target: resolved,
+        text: mainText,
+      });
+      if (ts) {
+        for (const item of items) {
+          if (item.detail) {
+            try {
+              await this.slackNotifier.postMessage({
+                target: resolved,
+                text: item.detail,
+                threadTs: ts,
+              });
+            } catch (error: unknown) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              this.logger.warn(
+                `Autopilot[${groupKey}] 스레드 댓글 발송 실패 (메인 발송 유지): ${message}`,
+              );
+            }
+          }
+        }
+      }
     }
     this.logger.log(
       `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task)`,
