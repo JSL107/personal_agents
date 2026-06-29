@@ -78,6 +78,20 @@ it('(b) 미달 → maxIterations 후 미확정', async () => {
   expect(result.proposals[0].confirmed).toBe(false);
 });
 
+it('(c) score 개선 없음 → Circuit Breaker 조기 중단', async () => {
+  const d = makeDeps({ maxIterations: 5 });
+  d.judge.optimize.mockResolvedValue({
+    needsRevision: true,
+    filePath: 'README.md',
+    edits: [{ oldString: 'a', newString: 'b' }],
+    rationale: 'r',
+  });
+  d.judge.evaluate.mockResolvedValue({ pass: false, score: 50, feedback: 'stuck' });
+  await build(d).runAudit();
+  // 1회차(50) + 2회차(50, 개선없음 감지) → 3회차로 안 감.
+  expect(d.judge.optimize).toHaveBeenCalledTimes(2);
+});
+
 it('(d) needsRevision=false → 제안 없음', async () => {
   const d = makeDeps();
   d.judge.optimize.mockResolvedValue({
