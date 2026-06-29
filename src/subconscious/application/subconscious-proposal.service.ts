@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DomainException } from '../../common/exception/domain.exception';
@@ -36,6 +36,11 @@ export class SubconsciousProposalService implements ProposalEmitter {
     private readonly repository: SubconsciousProposalRepository,
     @Inject(IDAERI_ROUTER_PORT)
     private readonly router: IdaeriRouterPort,
+    // 순환 의존성 해소: SubconsciousProposalService → SlackService →
+    // SLACK_HANDLER_PORT(SubconsciousProposalActionHandler) → SubconsciousProposalService.
+    // 모듈 forwardRef 만으로는 provider 생성자 순환이 안 풀려 부팅이 데드락된다.
+    // 이 엣지를 provider-레벨 forwardRef 로 lazy 화해 순환을 끊는다.
+    @Inject(forwardRef(() => SlackService))
     private readonly slackService: SlackService,
     private readonly configService: ConfigService,
   ) {
