@@ -99,7 +99,8 @@ describe('formatDailyReview', () => {
   };
 
   it('모든 섹션(요약/정량/질적/개선/다음/성과) 을 순서대로 출력한다', () => {
-    const output = formatDailyReview(base);
+    const { summary, detail } = formatDailyReview(base);
+    const output = `${summary}\n\n${detail}`;
 
     expect(output).toContain('*오늘 한 일*');
     expect(output).toContain('PM Agent / Work Reviewer 구현');
@@ -117,25 +118,34 @@ describe('formatDailyReview', () => {
   });
 
   it('improvementBeforeAfter 가 null 이면 개선 전/후 섹션이 생략된다', () => {
-    const output = formatDailyReview({ ...base, improvementBeforeAfter: null });
+    const { summary, detail } = formatDailyReview({
+      ...base,
+      improvementBeforeAfter: null,
+    });
+    const output = `${summary}\n\n${detail}`;
     expect(output).not.toContain('*개선 전/후*');
   });
 
   it('impact.quantitative 가 비어있으면 정량 근거 섹션이 생략된다 (근거 부족 케이스)', () => {
-    const output = formatDailyReview({
+    const { summary, detail } = formatDailyReview({
       ...base,
       impact: {
         quantitative: [],
         qualitative: '정량 근거 부족으로 임팩트는 추정 수준',
       },
     });
+    const output = `${summary}\n\n${detail}`;
     expect(output).not.toContain('*정량 근거*');
     expect(output).toContain('*질적 영향*');
     expect(output).toContain('정량 근거 부족으로 임팩트는 추정 수준');
   });
 
   it('nextActions 가 비어있으면 다음 액션 섹션이 생략된다', () => {
-    const output = formatDailyReview({ ...base, nextActions: [] });
+    const { summary, detail } = formatDailyReview({
+      ...base,
+      nextActions: [],
+    });
+    const output = `${summary}\n\n${detail}`;
     expect(output).not.toContain('*다음 액션*');
   });
 });

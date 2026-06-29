@@ -57,8 +57,13 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
       const intro = `📝 *Work Reviewer — ${firedAtKst} (19:00 KST 자동 worklog)*\n\n`;
+      const formatted = formatDailyReview(outcome.result);
       const text =
-        intro + formatDailyReview(outcome.result) + formatModelFooter(outcome);
+        intro +
+        formatted.summary +
+        '\n\n' +
+        formatted.detail +
+        formatModelFooter(outcome);
       return { skip: false, slackText: text };
     } catch (error) {
       if (
