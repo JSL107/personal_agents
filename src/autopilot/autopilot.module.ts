@@ -8,6 +8,7 @@ import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
+import { HumanizeModule } from '../humanize/humanize.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
@@ -39,6 +40,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     ImpactReporterModule,
     AgentRunModule,
     EpisodicMemoryModule,
+    HumanizeModule,
     SlackModule,
     NotificationQueueModule,
   ],
