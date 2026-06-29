@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
+  DocEdit,
   EvaluatorVerdict,
   OptimizerOutput,
 } from '../domain/port/docs-audit.port';
@@ -23,7 +24,7 @@ interface OptimizeInput {
 interface EvaluateInput {
   filePath: string;
   codeContext: string;
-  proposedDiff: string;
+  editsSummary: string;
 }
 
 // Layer 2 LLM — codex(ChatGPT) optimizer/evaluator. model-router 경유(쿼터 소진은 route 가
@@ -41,11 +42,11 @@ export class CodexDocsJudgeAdapter {
       },
     });
     const parsed = this.parseJson(completion.text);
+    const edits = this.parseEdits(parsed?.edits);
     return {
-      needsRevision: parsed?.needsRevision === true,
+      needsRevision: parsed?.needsRevision === true && edits.length > 0,
       filePath: input.filePath,
-      proposedDiff:
-        typeof parsed?.proposedDiff === 'string' ? parsed.proposedDiff : '',
+      edits,
       rationale: typeof parsed?.rationale === 'string' ? parsed.rationale : '',
     };
   }
@@ -77,5 +78,29 @@ export class CodexDocsJudgeAdapter {
     } catch {
       return null;
     }
+  }
+
+  // edits 배열을 안전 파싱 — 각 항목이 string oldString/newString 일 때만 채택.
+  private parseEdits(raw: unknown): DocEdit[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const edits: DocEdit[] = [];
+    for (const item of raw) {
+      if (
+        item !== null &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).oldString === 'string' &&
+        typeof (item as Record<string, unknown>).newString === 'string' &&
+        ((item as Record<string, unknown>).oldString as string).length > 0
+      ) {
+        const record = item as Record<string, unknown>;
+        edits.push({
+          oldString: record.oldString as string,
+          newString: record.newString as string,
+        });
+      }
+    }
+    return edits;
   }
 }
