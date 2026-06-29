@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+
 import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { ContextSummary } from '../agent/pm/application/sync-context.usecase';
 import { DailyPlan, TaskItem } from '../agent/pm/domain/pm-agent.type';
@@ -9,6 +11,7 @@ import { formatDailyReview } from './format/daily-review.formatter';
 import { formatModelFooter } from './format/model-footer.formatter';
 import { formatPullRequestReview } from './format/pull-request-review.formatter';
 import { formatQuotaStats } from './format/quota-stats.formatter';
+import { SlackService } from './slack.service';
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
   id: overrides.id ?? `user:${title}`,
@@ -369,6 +372,43 @@ describe('formatModelFooter — sanitize (codex P1 / omc P2 fix)', () => {
     expect(footer).not.toContain('|name');
     expect(footer).toContain('evilmodelname');
     expect(footer).toContain('run #7');
+  });
+});
+
+describe('SlackService.postMessage', () => {
+  const buildService = (postMessageMock: jest.Mock): SlackService => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+    // private app 주입 (테스트 한정).
+    (service as unknown as { app: unknown }).app = {
+      client: { chat: { postMessage: postMessageMock } },
+    };
+    return service;
+  };
+
+  it('threadTs 지정 시 thread_ts 로 발송하고 ts 를 반환한다', async () => {
+    const postMessageMock = jest.fn(async () => ({ ts: '111.222' }));
+    const service = buildService(postMessageMock);
+    const result = await service.postMessage({
+      target: 'C1',
+      text: '본문',
+      threadTs: '999.000',
+    });
+    expect(postMessageMock).toHaveBeenCalledWith({
+      channel: 'C1',
+      text: '본문',
+      thread_ts: '999.000',
+    });
+    expect(result.ts).toBe('111.222');
+  });
+
+  it('threadTs 없으면 thread_ts 를 넘기지 않는다', async () => {
+    const postMessageMock = jest.fn(async () => ({ ts: '111.222' }));
+    const service = buildService(postMessageMock);
+    await service.postMessage({ target: 'C1', text: '본문' });
+    expect(postMessageMock).toHaveBeenCalledWith({
+      channel: 'C1',
+      text: '본문',
+    });
   });
 });
 
