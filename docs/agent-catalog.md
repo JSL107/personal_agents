@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 21종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
+이대리의 에이전트 23종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -18,6 +18,8 @@
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CLAUDE | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
 | CTO | `CTO` | `/assign` | CLAUDE | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
+| Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
+| Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
 | Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CLAUDE | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |

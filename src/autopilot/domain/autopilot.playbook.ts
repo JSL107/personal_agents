@@ -3,6 +3,8 @@ import {
   DEFAULT_CEO_META_TIMEZONE,
   DEFAULT_DAILY_EVAL_CRON,
   DEFAULT_DAILY_EVAL_TIMEZONE,
+  DEFAULT_DOCS_AUDIT_CRON,
+  DEFAULT_DOCS_AUDIT_TIMEZONE,
   DEFAULT_IMPACT_REPORT_CRON,
   DEFAULT_IMPACT_REPORT_TIMEZONE,
   DEFAULT_KNOWLEDGE_LINT_CRON,
@@ -103,6 +105,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_KNOWLEDGE_LINT_CRON,
       timezone: DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // docs-sync-audit — 주간 문서↔코드 동기화 점검. 읽기 전용이라 T0_AUTO.
+  {
+    id: 'docs-sync-audit',
+    taskId: 'docs-sync-audit',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_DOCS_AUDIT_CRON,
+      timezone: DEFAULT_DOCS_AUDIT_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

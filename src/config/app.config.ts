@@ -192,6 +192,38 @@ class EnvironmentVariables {
   @IsString()
   AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED?: string;
 
+  // docs-sync-audit — 주간 문서↔코드 점검 (Layer1 결정론 docs:check/check:env + Layer2 codex 자기수정 루프).
+  // DOCS_AUDIT_ENABLED: 'false' 면 task 전체 skip. 미설정 시 활성.
+  @IsOptional()
+  @IsString()
+  DOCS_AUDIT_ENABLED?: string;
+
+  // DOCS_AUDIT_MAX_FILES: Layer2 가 점검할 최대 SoT 파일 수(codex 쿼터 가드, 기본 5).
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'DOCS_AUDIT_MAX_FILES 는 양의 정수여야 합니다.',
+  })
+  DOCS_AUDIT_MAX_FILES?: string;
+
+  // DOCS_AUDIT_MAX_ITERATIONS: Layer2 자기수정 반복 캡(기본 3).
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'DOCS_AUDIT_MAX_ITERATIONS 는 양의 정수여야 합니다.',
+  })
+  DOCS_AUDIT_MAX_ITERATIONS?: string;
+
+  // AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE: docs-sync-audit cron override (id=docs-sync-audit → DOCS_SYNC_AUDIT). 미설정 시 playbook-defaults.
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE?: string;
+
+  // AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE: 위 스케줄의 timezone override. 미설정 시 Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE?: string;
+
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
   // 한 사람 = 한 careerLog 페이지 가정 (1인 봇). 향후 멀티 사용자 시 owner→pageId map 으로 확장.

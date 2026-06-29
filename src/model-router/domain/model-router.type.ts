@@ -48,6 +48,12 @@ export enum AgentType {
   // 자동 보고서 윤문(humanize) — 서술 필드를 AI 티 없이 다듬는 내부 후처리. 경량 → ChatGPT(codex).
   // 슬래시/ResponseCode/retry-run 비대상 (내부 전용 — SUBCONSCIOUS_GATE 선례).
   HUMANIZER = 'HUMANIZER',
+  // docs-sync-audit Layer 2 — 문서 의미 드리프트 자기수정 루프. 둘 다 경량 판정 → ChatGPT.
+  // optimizer: 코드 변경 기준 문서 수정안 생성 / evaluator: 그 수정안이 코드와 일치하는지 채점.
+  // 슬래시/ResponseCode/retry-run 비대상 (내부 루프 전용 — CONTRADICTION_JUDGE 선례).
+  // AGENT_REGISTRY 에는 등록한다 (agent-registry.spec 이 enum 집합 일치를 강제 — CONTRADICTION_JUDGE 동일).
+  DOCS_AUDIT_OPTIMIZER = 'DOCS_AUDIT_OPTIMIZER',
+  DOCS_AUDIT_EVALUATOR = 'DOCS_AUDIT_EVALUATOR',
 }
 
 export interface CompletionRequest {
