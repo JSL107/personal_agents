@@ -22,7 +22,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('skip');
+    expect(out.summaryText).toContain('skip');
     expect(worklogExecute).not.toHaveBeenCalled();
     expect(ceoExecute).not.toHaveBeenCalled();
     expect(findRecentSucceededRuns).toHaveBeenCalledWith(

@@ -41,7 +41,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     if (runs.length === 0) {
       return {
         skip: false,
-        slackText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.`,
+        summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.`,
       };
     }
 
@@ -64,7 +64,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
         '\n\n' +
         formatted.detail +
         formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      return { skip: false, summaryText: text };
     } catch (error) {
       if (
         error instanceof WorkReviewerException &&
@@ -72,7 +72,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
+          summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
         };
       }
       throw error;

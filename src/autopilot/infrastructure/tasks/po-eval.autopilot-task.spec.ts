@@ -11,7 +11,7 @@ describe('PoEvalAutopilotTask', () => {
     expect(task.id).toBe('daily-eval');
   });
 
-  it('PO_EVAL 성공 시 slackText 반환(skip=false)', async () => {
+  it('PO_EVAL 성공 시 summaryText 반환(skip=false)', async () => {
     const execute = jest.fn().mockResolvedValue({
       result: {
         range: 'TODAY',
@@ -33,7 +33,7 @@ describe('PoEvalAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('Daily Eval');
+    expect(out.summaryText).toContain('Daily Eval');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'TODAY' }),
     );
@@ -52,7 +52,7 @@ describe('PoEvalAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('skip');
+    expect(out.summaryText).toContain('skip');
   });
 
   it('그 외 에러는 throw (consumer 가 실패 통지)', async () => {

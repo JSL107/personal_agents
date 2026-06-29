@@ -19,7 +19,7 @@ import {
 
 // Weekly Summary 이관 — 매주 금요일 17:00 KST worklog(주간 7일 PM runs) + CEO meta 체인.
 // 기존 src/weekly-summary/infrastructure/weekly-summary.consumer.ts 의 핵심 로직을 task 로 옮김.
-// worklog 텍스트와 CEO meta 텍스트를 구분자로 이어 slackText 로 반환 — 오케스트레이터(T0)가 발송.
+// worklog 텍스트와 CEO meta 텍스트를 구분자로 이어 summaryText 로 반환 — 오케스트레이터(T0)가 발송.
 // CEO meta 실패 시(NO_PO_EVAL_RUN 등) graceful 안내문으로 대체해 worklog 발송은 보장.
 @Injectable()
 export class WeeklySummaryAutopilotTask implements AutopilotTask {
@@ -47,7 +47,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     if (runs.length === 0) {
       return {
         skip: false,
-        slackText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`,
+        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`,
       };
     }
 
@@ -81,9 +81,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
     const ceoText = await this.buildCeoMetaText(ownerSlackUserId, firedAtKst);
 
-    const slackText = `${worklogText}\n\n────────\n\n${ceoText}`;
+    const summaryText = `${worklogText}\n\n────────\n\n${ceoText}`;
 
-    return { skip: false, slackText };
+    return { skip: false, summaryText };
   }
 
   // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 graceful 안내문으로 대체.

@@ -28,7 +28,7 @@ describe('ImpactReportAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('skip');
+    expect(out.summaryText).toContain('skip');
   });
 
   it('RECENT_MODE_ENV_MISSING 면 graceful 안내(skip=false)', async () => {
@@ -47,7 +47,7 @@ describe('ImpactReportAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('IMPACT_REPORT_GITHUB_AUTHOR');
+    expect(out.summaryText).toContain('IMPACT_REPORT_GITHUB_AUTHOR');
   });
 
   it('그 외 에러는 throw', async () => {

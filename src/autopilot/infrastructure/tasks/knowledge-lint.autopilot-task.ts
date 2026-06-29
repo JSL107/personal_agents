@@ -47,7 +47,10 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     if (issues.length === 0) {
       return { skip: true };
     }
-    return { skip: false, slackText: formatKnowledgeLint(issues, firedAtKst) };
+    return {
+      skip: false,
+      summaryText: formatKnowledgeLint(issues, firedAtKst),
+    };
   }
 
   // 미설정 시 활성 — 'false' 일 때만 L4 비활성(L1/L2 는 유지).
