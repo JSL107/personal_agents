@@ -188,4 +188,12 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       'knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용)',
   },
+  {
+    agentType: AgentType.HUMANIZER,
+    displayName: 'Humanizer',
+    slashCommands: [],
+    usecasePath: 'src/humanize/application/humanize.service.ts',
+    description:
+      '자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용)',
+  },
 ];
