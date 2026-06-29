@@ -45,6 +45,9 @@ export enum AgentType {
   // L4 knowledge-lint — 유사 에피소드 쌍의 의미 충돌 판정. 경량 분류 + claude -p 회피 → ChatGPT.
   // 슬래시/ResponseCode/retry-run 비대상 (내부 판정 전용).
   CONTRADICTION_JUDGE = 'CONTRADICTION_JUDGE',
+  // 자동 보고서 윤문(humanize) — 서술 필드를 AI 티 없이 다듬는 내부 후처리. 경량 → ChatGPT(codex).
+  // 슬래시/ResponseCode/retry-run 비대상 (내부 전용 — SUBCONSCIOUS_GATE 선례).
+  HUMANIZER = 'HUMANIZER',
   // docs-sync-audit Layer 2 — 문서 의미 드리프트 자기수정 루프. 둘 다 경량 판정 → ChatGPT.
   // optimizer: 코드 변경 기준 문서 수정안 생성 / evaluator: 그 수정안이 코드와 일치하는지 채점.
   // 슬래시/ResponseCode/retry-run 비대상 (내부 루프 전용 — CONTRADICTION_JUDGE 선례).

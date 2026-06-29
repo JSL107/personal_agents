@@ -97,16 +97,23 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   async postMessage({
     target,
     text,
+    threadTs,
   }: {
     target: string;
     text: string;
-  }): Promise<void> {
+    threadTs?: string;
+  }): Promise<{ ts: string | undefined }> {
     if (!this.app) {
       throw new Error(
         'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
       );
     }
-    await this.app.client.chat.postMessage({ channel: target, text });
+    const response = await this.app.client.chat.postMessage({
+      channel: target,
+      text,
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+    });
+    return { ts: response.ts };
   }
 
   // PO-2: previewId 가 박힌 ✅ apply / ❌ cancel 버튼 Block Kit 메시지 발송.

@@ -24,11 +24,12 @@ export class CeoDispatcher implements AgentDispatcher {
     const outcome = await this.generateCeoMeta.execute({
       slackUserId: input.slackUserId,
     });
+    const formatted = formatCeoMetaOutput(outcome.result);
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatCeoMetaOutput(outcome.result),
+      formattedText: `${formatted.summary}\n\n${formatted.detail}`,
     };
   }
 }

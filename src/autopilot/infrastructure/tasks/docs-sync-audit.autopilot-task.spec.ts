@@ -19,7 +19,7 @@ it('이슈 0건이면 skip=true', async () => {
   expect(await task.run(ctx)).toEqual({ skip: true });
 });
 
-it('이슈 있으면 slackText 포함', async () => {
+it('이슈 있으면 summaryText 포함', async () => {
   const { task } = makeTask({
     result: {
       deterministic: { inSync: false, details: ['docs:check FAIL'] },
@@ -28,7 +28,7 @@ it('이슈 있으면 slackText 포함', async () => {
   });
   const result = await task.run(ctx);
   expect(result.skip).toBe(false);
-  expect(result.slackText).toContain('docs:check');
+  expect(result.summaryText).toContain('docs:check');
 });
 
 it("DOCS_AUDIT_ENABLED='false' 면 runAudit 호출 안 하고 skip", async () => {
