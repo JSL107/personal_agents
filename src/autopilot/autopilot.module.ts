@@ -7,6 +7,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
@@ -19,6 +20,7 @@ import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
+import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
@@ -41,6 +43,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     AgentRunModule,
     EpisodicMemoryModule,
     HumanizeModule,
+    DocsAuditModule,
     SlackModule,
     NotificationQueueModule,
   ],
@@ -56,6 +59,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     KnowledgeLintAutopilotTask,
+    DocsSyncAuditTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
@@ -68,6 +72,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
+        docsSyncAudit: DocsSyncAuditTask,
       ) => [
         poEval,
         morning,
@@ -77,6 +82,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         impactReport,
         runRetro,
         knowledgeLint,
+        docsSyncAudit,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -87,6 +93,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         KnowledgeLintAutopilotTask,
+        DocsSyncAuditTask,
       ],
     },
     {

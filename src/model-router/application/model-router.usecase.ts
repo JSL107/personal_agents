@@ -53,6 +53,9 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
   // HUMANIZER — 보고서 서술 필드 윤문. 경량 한국어 문체 → ChatGPT(codex). 실패 시 route fallback Claude.
   [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
+  // docs-sync-audit Layer 2 — 문서 의미 드리프트 optimizer/evaluator. 경량 → ChatGPT.
+  [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
+  [AgentType.DOCS_AUDIT_EVALUATOR]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).

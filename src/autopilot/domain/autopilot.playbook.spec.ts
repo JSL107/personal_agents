@@ -35,6 +35,16 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(() => validatePlaybook(AUTOPILOT_PLAYBOOK)).not.toThrow();
   });
 
+  it('docs-sync-audit 항목을 포함한다 (주간 CRON, T0_AUTO)', () => {
+    const docsAudit = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'docs-sync-audit',
+    );
+    expect(docsAudit?.taskId).toBe('docs-sync-audit');
+    expect(docsAudit?.trigger.kind).toBe('CRON');
+    expect(docsAudit?.riskTier).toBe('T0_AUTO');
+    expect(docsAudit?.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {
