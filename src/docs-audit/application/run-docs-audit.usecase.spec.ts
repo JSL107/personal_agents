@@ -86,7 +86,11 @@ it('(c) score 개선 없음 → Circuit Breaker 조기 중단', async () => {
     edits: [{ oldString: 'a', newString: 'b' }],
     rationale: 'r',
   });
-  d.judge.evaluate.mockResolvedValue({ pass: false, score: 50, feedback: 'stuck' });
+  d.judge.evaluate.mockResolvedValue({
+    pass: false,
+    score: 50,
+    feedback: 'stuck',
+  });
   await build(d).runAudit();
   // 1회차(50) + 2회차(50, 개선없음 감지) → 3회차로 안 감.
   expect(d.judge.optimize).toHaveBeenCalledTimes(2);
