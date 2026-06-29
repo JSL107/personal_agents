@@ -19,6 +19,10 @@ export const PREVIEW_KIND = {
   // Phase 2 — JD 갭 분석 후 주제 선택 대기. applier 없음(ApplyPreview 안 거치고
   // router-message intercept 가 직접 BLOG 체인 + cancel 로 consume).
   CAREER_JD_GAP_BLOG: 'CAREER_JD_GAP_BLOG',
+  // docs-sync-audit Phase 2 — 확정 문서 수정 제안을 docs PR 로 open.
+  // payload = { files:[{path,content}], changedFiles, rationale, repoLabel, baseBranch } (DocsAuditPrPayload).
+  // applier 가 githubClient.pushBranchAndOpenPr 로 새 branch+commit+PR. main 직접 push X.
+  DOCS_AUDIT_PR: 'DOCS_AUDIT_PR',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
