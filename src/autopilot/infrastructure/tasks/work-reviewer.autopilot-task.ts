@@ -6,6 +6,8 @@ import { WorkReviewerException } from '../../../agent/work-reviewer/domain/work-
 import { WorkReviewerErrorCode } from '../../../agent/work-reviewer/domain/work-reviewer-error-code.enum';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeDailyReview } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
@@ -25,6 +27,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly generateWorklog: GenerateWorklogUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -41,7 +44,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     if (runs.length === 0) {
       return {
         skip: false,
-        slackText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.`,
+        summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.`,
       };
     }
 
@@ -56,10 +59,16 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
-      const intro = `📝 *Work Reviewer — ${firedAtKst} (19:00 KST 자동 worklog)*\n\n`;
-      const text =
-        intro + formatDailyReview(outcome.result) + formatModelFooter(outcome);
-      return { skip: false, slackText: text };
+      const humanized = await humanizeDailyReview(
+        outcome.result,
+        this.humanizeService,
+      );
+      const formatted = formatDailyReview(humanized);
+      const summaryText =
+        `📝 *Work Reviewer — ${firedAtKst} (19:00 KST 자동 worklog)*\n\n` +
+        formatted.summary;
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (
         error instanceof WorkReviewerException &&
@@ -67,7 +76,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          slackText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
+          summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
         };
       }
       throw error;

@@ -5,7 +5,12 @@ export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 // 향후 다른 알림 어댑터 (Telegram / Discord 등) 도입 시 Consumer 변경 없이 모듈 wiring 만 바꾸면 된다.
 export interface SlackNotifierPort {
   // target: 슬랙 user ID(`U...`) / 채널 ID(`C.../G...`) — chat.postMessage 의 channel 파라미터.
-  postMessage(input: { target: string; text: string }): Promise<void>;
+  // threadTs 지정 시 해당 메시지의 스레드 댓글로 발송. 반환 ts 는 후속 스레드 발송용.
+  postMessage(input: {
+    target: string;
+    text: string;
+    threadTs?: string;
+  }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW preview 버튼 메시지 (SlackService 가 이미 구현 — 인터페이스만 확장).
   postPreviewMessage(input: {
     target: string;

@@ -470,6 +470,11 @@ class EnvironmentVariables {
   @IsString()
   SUBCONSCIOUS_ENABLED?: string;
 
+  // HUMANIZE_REPORTS_ENABLED: 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON).
+  @IsOptional()
+  @IsString()
+  HUMANIZE_REPORTS_ENABLED?: string;
+
   // Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준).
   // 미설정 시 default '*/20 * * * *' (20분마다).
   @IsOptional()

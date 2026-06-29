@@ -11,7 +11,7 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(task.id).toBe('morning-briefing');
   });
 
-  it('PM 계획 성공 시 slackText 반환(skip=false)', async () => {
+  it('PM 계획 성공 시 summaryText 반환(skip=false)', async () => {
     const mockTask = {
       id: 'task-1',
       title: '작업1',
@@ -40,7 +40,7 @@ describe('MorningBriefingAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toBeTruthy();
+    expect(out.summaryText).toBeTruthy();
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', tasksText: '' }),
     );
@@ -59,7 +59,7 @@ describe('MorningBriefingAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.slackText).toContain('오늘 자동 수집된 할 일이 없습니다');
+    expect(out.summaryText).toContain('오늘 자동 수집된 할 일이 없습니다');
   });
 
   it('그 외 에러는 throw', async () => {
