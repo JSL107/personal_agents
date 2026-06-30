@@ -1,7 +1,9 @@
+import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { HumanizeService } from './humanize.service';
 import {
+  humanizeCalibrationReport,
   humanizeDailyPlan,
   humanizeDailyReview,
   humanizeImpactReport,
@@ -148,5 +150,42 @@ describe('humanizeDailyPlan', () => {
     const passedFields = (humanizer.humanize as jest.Mock).mock.calls[0][0];
     expect(passedFields).not.toHaveProperty('blocker');
     expect(out.blocker).toBeNull();
+  });
+});
+
+describe('humanizeCalibrationReport', () => {
+  const base: CalibrationResultData = {
+    verdict: '판정 원문',
+    aiSlopRisks: ['risk1', 'risk2'],
+    underQuantified: ['uq1'],
+    outdatedPhrasing: ['구식 표현 원문'],
+    missingKeywords: ['Kafka', 'gRPC'],
+    actionItems: ['action1'],
+  };
+
+  it('verdict·aiSlopRisks·underQuantified·actionItems 만 윤문하고 missingKeywords·outdatedPhrasing 은 보존', async () => {
+    const result = await humanizeCalibrationReport(base, fakeHumanizer());
+    expect(result.verdict).toBe('판정 원문_H');
+    expect(result.aiSlopRisks).toEqual(['risk1_H', 'risk2_H']);
+    expect(result.underQuantified).toEqual(['uq1_H']);
+    expect(result.actionItems).toEqual(['action1_H']);
+    // 보존 — 키워드 목록·구식 표현 원문 인용은 윤문 입력에서 제외.
+    expect(result.missingKeywords).toEqual(['Kafka', 'gRPC']);
+    expect(result.outdatedPhrasing).toEqual(['구식 표현 원문']);
+  });
+
+  it('빈 배열 필드는 빈 배열로 보존한다', async () => {
+    const empty: CalibrationResultData = {
+      verdict: 'v',
+      aiSlopRisks: [],
+      underQuantified: [],
+      outdatedPhrasing: [],
+      missingKeywords: [],
+      actionItems: [],
+    };
+    const result = await humanizeCalibrationReport(empty, fakeHumanizer());
+    expect(result.verdict).toBe('v_H');
+    expect(result.aiSlopRisks).toEqual([]);
+    expect(result.actionItems).toEqual([]);
   });
 });

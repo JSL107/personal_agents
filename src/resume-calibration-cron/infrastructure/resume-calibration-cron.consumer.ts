@@ -13,6 +13,8 @@ import { formatCalibrationReport } from '../../agent/career-mate/infrastructure/
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import { humanizeCalibrationReport } from '../../humanize/application/humanize-report.adapter';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -39,6 +41,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
 
   constructor(
     private readonly calibrateResume: CalibrateResumeUsecase,
+    private readonly humanizeService: HumanizeService,
     @Inject(HERMES_RUNNER_PORT)
     private readonly hermesRunner: HermesRunnerPort,
     @Inject(SLACK_NOTIFIER_PORT)
@@ -63,9 +66,14 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
         slackUserId: ownerSlackUserId,
         webTrendsNote,
       });
+      // 서술 필드(verdict/진단/액션) 윤문 — best-effort. 비활성/실패 시 원본 그대로 재조립된다.
+      const humanizedResult = await humanizeCalibrationReport(
+        outcome.result,
+        this.humanizeService,
+      );
       const text =
         `🔍 *이력서 보정 점검 — ${todayKst} (주간 자동${webTrendsNote ? ' · 웹 트렌드 반영' : ''})*\n\n` +
-        formatCalibrationReport(outcome.result);
+        formatCalibrationReport(humanizedResult);
       await this.deliverOnce(target, text);
     } catch (error) {
       if (
