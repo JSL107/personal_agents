@@ -1,9 +1,11 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import {
   AssignedTasks,
   GithubPullRequest,
 } from '../../../github/domain/github.type';
+import { WaitingItem } from '../../../github/domain/pr-engagement.type';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
 import { ListMyMentionsUsecase } from '../../../slack-collector/application/list-my-mentions.usecase';
 import { SlackMention } from '../../../slack-collector/domain/slack-collector.type';
@@ -25,8 +27,14 @@ const buildPr = (
   ...overrides,
 });
 
+const buildClassifyMock = (
+  split: { activePullRequests: GithubPullRequest[]; waitingItems: WaitingItem[] },
+): ClassifyPullRequestEngagementUsecase =>
+  ({ execute: jest.fn().mockResolvedValue(split) } as unknown as ClassifyPullRequestEngagementUsecase);
+
 const buildCollector = (
   githubTasks: AssignedTasks,
+  classifyEngagement?: ClassifyPullRequestEngagementUsecase,
 ): DailyPlanContextCollector =>
   new DailyPlanContextCollector(
     {
@@ -47,6 +55,8 @@ const buildCollector = (
       peekPending: jest.fn().mockResolvedValue([]),
       markConsumed: jest.fn().mockResolvedValue(undefined),
     } as unknown as SlackInboxService,
+    classifyEngagement ??
+      buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
   );
 
 describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
@@ -138,6 +148,7 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
         peekPending: jest.fn().mockResolvedValue(inbox),
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as SlackInboxService,
+      buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
     );
 
     const context = await collector.collect({
@@ -151,6 +162,49 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
     // Inbox 는 그대로 보존 — 명시 신호이므로 우선.
     expect(context.inboxItems).toHaveLength(1);
     expect(context.inboxItemIds).toEqual([1]);
+  });
+
+  it('classifyWaitingPullRequests=true → WAITING PR 은 waitingItems 로 분리되고 githubTasks 에서 빠짐', async () => {
+    const activePr = buildPr({ number: 2, title: 'Active PR' });
+    const waitingItem: WaitingItem = { title: 'PR1', url: 'u1', reason: '내가 리뷰 완료 후 대기 중' };
+    const classifyMock = buildClassifyMock({ activePullRequests: [activePr], waitingItems: [waitingItem] });
+
+    const tasksWithTwoPrs: AssignedTasks = {
+      issues: [],
+      pullRequests: [
+        buildPr({ number: 1, title: 'PR1', url: 'u1' }),
+        activePr,
+      ],
+    };
+    const collector = buildCollector(tasksWithTwoPrs, classifyMock);
+
+    const context = await collector.collect({
+      userText: '',
+      slackUserId: 'U1',
+      classifyWaitingPullRequests: true,
+    });
+
+    expect(context.githubTasks?.pullRequests).toHaveLength(1);
+    expect(context.githubTasks?.pullRequests[0].number).toBe(2);
+    expect(context.waitingItems).toHaveLength(1);
+    expect(context.waitingItems[0].title).toBe('PR1');
+    expect(classifyMock.execute).toHaveBeenCalledWith(tasksWithTwoPrs.pullRequests);
+  });
+
+  it('classifyWaitingPullRequests=false → 기존 동작(분류 미실행), waitingItems 빈 배열', async () => {
+    const classifyMock = buildClassifyMock({ activePullRequests: [], waitingItems: [] });
+    const collector = buildCollector(githubTasks, classifyMock);
+
+    const context = await collector.collect({
+      userText: '',
+      slackUserId: 'U1',
+      classifyWaitingPullRequests: false,
+    });
+
+    expect(classifyMock.execute).not.toHaveBeenCalled();
+    expect(context.waitingItems).toEqual([]);
+    // 기존 PR 은 그대로 포함 (approved 도 포함 — excludeApprovedPullRequests=false default)
+    expect(context.githubTasks?.pullRequests).toHaveLength(2);
   });
 
   it('githubTasks null (fetch 실패) 일 때는 excludeApprovedPullRequests 무관하게 그대로 null 전달', async () => {
@@ -173,6 +227,7 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
         peekPending: jest.fn().mockResolvedValue([]),
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as SlackInboxService,
+      buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
     );
 
     const context = await collector.collect({

@@ -5,8 +5,10 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { AssignedTasks } from '../../../github/domain/github.type';
+import { WaitingItem } from '../../../github/domain/pr-engagement.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
 import { NotionTask } from '../../../notion/domain/notion.type';
@@ -50,6 +52,8 @@ export interface DailyPlanContext {
   inboxItems: string[];
   inboxItemIds: number[];
   similarPlans: SimilarPlanRow[];
+  // cron + BRIEFING_WAITING_SECTION_ENABLED=true 일 때만 채워짐. 그 외 빈 배열.
+  waitingItems: WaitingItem[];
 }
 
 // PM `/today` 가 필요로 하는 외부 컨텍스트 6종을 병렬 수집. 모두 graceful — 실패해도 null/empty 로 빠진다.
@@ -64,18 +68,23 @@ export class DailyPlanContextCollector {
     private readonly listMyMentionsUsecase: ListMyMentionsUsecase,
     private readonly listActiveTasksUsecase: ListActiveTasksUsecase,
     private readonly slackInboxService: SlackInboxService,
+    private readonly classifyEngagement: ClassifyPullRequestEngagementUsecase,
   ) {}
 
   async collect({
     userText,
     slackUserId,
     excludeApprovedPullRequests = false,
+    classifyWaitingPullRequests = false,
   }: {
     userText: string;
     slackUserId: string;
     // Morning Briefing CRON 등 자동 발화 시 true — APPROVED 받은 PR 은 plan 컨텍스트에서 제외.
     // 수동 /today 에서는 false — APPROVED PR 도 보여 LLM 이 후순위 라벨을 보고 판단.
     excludeApprovedPullRequests?: boolean;
+    // BRIEFING_WAITING_SECTION_ENABLED=true + isCron 일 때 true — PR 을 ACTIVE/WAITING 으로 분류.
+    // true 이면 excludeApprovedPullRequests 분기는 실행되지 않는다 (우선 분기).
+    classifyWaitingPullRequests?: boolean;
   }): Promise<DailyPlanContext> {
     const [
       githubTasksRaw,
@@ -97,15 +106,25 @@ export class DailyPlanContextCollector {
       this.fetchSimilarPlansOrEmpty({ userText }),
     ]);
 
-    const githubTasks =
-      excludeApprovedPullRequests && githubTasksRaw
-        ? {
-            issues: githubTasksRaw.issues,
-            pullRequests: githubTasksRaw.pullRequests.filter(
-              (pr) => !pr.isApproved,
-            ),
-          }
-        : githubTasksRaw;
+    let githubTasks = githubTasksRaw;
+    let waitingItems: WaitingItem[] = [];
+
+    if (classifyWaitingPullRequests && githubTasksRaw) {
+      try {
+        const split = await this.classifyEngagement.execute(githubTasksRaw.pullRequests);
+        githubTasks = { issues: githubTasksRaw.issues, pullRequests: split.activePullRequests };
+        waitingItems = split.waitingItems;
+      } catch (error: unknown) {
+        this.logger.warn(
+          `PR engagement 분류 실패 — waitingItems=[] + 원본 githubTasks 유지: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    } else if (excludeApprovedPullRequests && githubTasksRaw) {
+      githubTasks = {
+        issues: githubTasksRaw.issues,
+        pullRequests: githubTasksRaw.pullRequests.filter((pr) => !pr.isApproved),
+      };
+    }
 
     // V3 audit B3 D3 — 같은 Slack 메시지가 (a) 자동 멘션 수집 + (b) 사용자가 emoji reaction 으로
     // 등록한 Inbox 양쪽에서 가져오는 케이스가 가능 (channelId+ts 일치). prompt 토큰 낭비 + LLM 의
@@ -137,6 +156,7 @@ export class DailyPlanContextCollector {
       inboxItems: inboxResult.texts,
       inboxItemIds: inboxResult.ids,
       similarPlans,
+      waitingItems,
     };
   }
 
