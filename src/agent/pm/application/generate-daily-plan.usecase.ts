@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   AgentRunOutcome,
@@ -70,6 +71,7 @@ export class GenerateDailyPlanUsecase {
     private readonly promptBuilder: DailyPlanPromptBuilder,
     private readonly evidenceBuilder: DailyPlanEvidenceBuilder,
     private readonly slackInboxService: SlackInboxService,
+    private readonly configService: ConfigService,
   ) {}
 
   async execute({
@@ -88,14 +90,18 @@ export class GenerateDailyPlanUsecase {
     // (codex review b1309omm0 P1 → bi531458d P1 재지적).
     const planDate = getKstTodayAsUtcDate();
 
+    const waitingEnabled =
+      this.configService.get<string>('BRIEFING_WAITING_SECTION_ENABLED') !== 'false';
+    const isCron = effectiveTriggerType === TriggerType.MORNING_BRIEFING_CRON;
+
     const context = await this.contextCollector.collect({
       userText,
       slackUserId,
-      // Morning Briefing CRON 에서는 APPROVED PR 을 plan 컨텍스트에서 제외 (리뷰 끝나 머지만 남은 PR
-      // 은 매일 자동 브리핑에서 시끄러우니 거름). 수동 /today / FAILURE_REPLAY 에서는 그대로 노출 +
-      // github-task-formatter 가 [APPROVED] 라벨을 붙여 LLM 이 후순위 판단.
-      excludeApprovedPullRequests:
-        effectiveTriggerType === TriggerType.MORNING_BRIEFING_CRON,
+      classifyWaitingPullRequests: isCron && waitingEnabled,
+      // Morning Briefing CRON 에서 waitingEnabled=false 일 때만 APPROVED PR 제외 (기존 동작 유지).
+      // waitingEnabled=true(기본) 이면 classifyWaitingPullRequests 분기가 우선 처리하므로 false.
+      // 수동 /today / FAILURE_REPLAY 에서는 항상 false.
+      excludeApprovedPullRequests: isCron && !waitingEnabled,
     });
 
     this.assertNonEmptyInput(context);
@@ -152,7 +158,11 @@ export class GenerateDailyPlanUsecase {
     }
 
     return {
-      result: { plan: outcome.result, sources: extractSources(context) },
+      result: {
+        plan: outcome.result,
+        sources: extractSources(context),
+        waitingItems: context.waitingItems,
+      },
       modelUsed: outcome.modelUsed,
       agentRunId: outcome.agentRunId,
     };
