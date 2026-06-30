@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FinLens — 내 Claude Code 토큰/비용</title>
+<style>
+  /* 토스 스타일 디자인 토큰 (Pretendard + 라운드 카드 + 부드러운 그림자) */
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+  :root {
+    --bg: #F2F4F6; --card: #FFF; --ink: #191F28; --gray: #8B95A1; --line: #E5E8EB;
+    --blue: #3182F6; --blue-bg: #E8F3FF; --red: #F04452; --red-bg: #FDECEE;
+    --green: #1BA345; --green-bg: #EAF7EE; --amber: #FF9F1A; --amber-bg: #FFF4E5;
+    --radius: 20px; --shadow: 0 1px 3px rgba(0,0,0,.05);
+    --accent: #3182F6; --muted: #8B95A1; --border: #E5E8EB;
+    --good: #1BA345; --warn: #FF9F1A; --danger: #F04452;
+    --panel: #FFF; --panel-2: #F1F3F5; --text: #191F28;
+    --c-input: #3182F6; --c-output: #F04452; --c-cwrite: #FF9F1A; --c-cread: #1BA345;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; font-size: 14px;
+    font-family: Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 30px 28px 110px; }
+
+  header.hero { margin-bottom: 22px; }
+  .eyebrow { color: var(--blue); font-weight: 800; font-size: 12px; letter-spacing: .04em; }
+  h1 { font-size: 24px; margin: 7px 0 0; font-weight: 800; letter-spacing: -.02em; }
+  h1 .lens { color: var(--blue); }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .periods { display: inline-flex; gap: 6px; margin-right: 4px; }
+  .pbtn { font: inherit; font-size: 12px; font-weight: 700; padding: 6px 13px; border: none; border-radius: 999px;
+    background: var(--card); box-shadow: var(--shadow); color: var(--gray); cursor: pointer; transition: background .12s, color .12s; }
+  .pbtn:hover { color: var(--ink); }
+  .pbtn.on { background: var(--blue-bg); color: var(--blue); }
+  .chip { background: var(--card); box-shadow: var(--shadow); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600; color: var(--gray); }
+  .chip.note { color: var(--red); }
+  .chip.click { cursor: pointer; color: var(--ink); }
+  .chip.click:hover { color: var(--blue); }
+  .range { flex-basis: 100%; font-size: 16px; font-weight: 800; color: var(--ink); letter-spacing: -.01em; margin-top: 2px; }
+
+  h2 { font-size: 17px; margin: 32px 0 13px; font-weight: 800; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  h2 .ic { font-size: 15px; }
+  .sub { color: var(--gray); font-size: 12px; font-weight: 500; }
+
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
+  .kpi { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+  .kpi .label { color: var(--gray); font-size: 13px; font-weight: 600; }
+  .kpi .val { font-size: 28px; font-weight: 800; margin-top: 8px; letter-spacing: -.03em; }
+  .kpi .cap { color: var(--gray); font-size: 11.5px; margin-top: 4px; font-weight: 500; }
+  .kpis .kpi:nth-child(3) .val { color: var(--green); }
+
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+
+  .actions { display: grid; gap: 12px; }
+  button.copy { font: inherit; font-size: 12.5px; font-weight: 700; padding: 8px 13px; border: none;
+    background: var(--blue-bg); color: var(--blue); border-radius: 10px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: background .12s; }
+  button.copy:hover { background: #D8EBFF; }
+  button.copy .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button.copy.ok { background: var(--green-bg); color: var(--green); }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 9px 0; font-size: 13px; }
+  .bar-row .nm { width: 175px; flex: 0 0 175px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .bar-row .track { flex: 1; background: var(--panel-2); border-radius: 5px; height: 16px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: var(--blue); border-radius: 5px; }
+  .bar-row .v { width: 120px; flex: 0 0 120px; text-align: right; color: var(--gray); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cols .card h3 { margin: 0 0 12px; font-size: 13px; color: var(--gray); font-weight: 700; }
+
+  svg { display: block; width: 100%; height: auto; }
+
+  details { margin-top: 14px; border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+  details > summary { cursor: pointer; padding: 17px 20px; font-weight: 800; font-size: 15px; list-style: none; user-select: none;
+    display: flex; align-items: center; justify-content: space-between; color: var(--ink); }
+  details > summary:hover { color: var(--blue); }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::after { content: "▸"; color: var(--gray); font-size: 13px; }
+  details[open] > summary::after { content: "▾"; }
+  .det-body { padding: 0 20px 20px; }
+  .det-body h4 { font-size: 13px; color: var(--blue); margin: 22px 0 8px; font-weight: 700; }
+  .det-body h4:first-child { margin-top: 4px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--gray); font-weight: 600; font-size: 11.5px; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; }
+
+  .composition { display: flex; height: 26px; border-radius: 8px; overflow: hidden; }
+  .composition > div { height: 100%; }
+  .comp-legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .comp-legend .it { font-size: 12px; }
+  .comp-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+  .comp-legend .amt { font-weight: 800; margin-top: 2px; }
+  .comp-legend .tk { color: var(--gray); font-size: 11px; }
+
+  .cols4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 4px; }
+  .panel-title { font-size: 12.5px; font-weight: 800; margin: 0 0 8px; }
+  ul.lst { list-style: none; margin: 0; padding: 0; }
+  ul.lst li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  ul.lst li:last-child { border-bottom: none; }
+  ul.lst .pn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  ul.lst .meta2 { color: var(--gray); font-size: 11.5px; flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .empty { color: var(--gray); font-size: 12px; padding: 5px 0; }
+  .up { color: var(--green); } .down { color: var(--red); }
+  .ins { border-radius: 12px; background: var(--bg); border-left: 3px solid var(--blue); padding: 11px 14px; margin-top: 8px; }
+  .ins.good { border-left-color: var(--green); } .ins.mid { border-left-color: var(--amber); }
+  .ins.danger { border-left-color: var(--red); } .ins.info { border-left-color: var(--blue); }
+  .ins .t { font-weight: 800; font-size: 13px; } .ins .d { color: var(--gray); font-size: 12px; margin-top: 3px; font-weight: 500; }
+
+  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--gray); font-size: 12px; font-weight: 500; }
+  @media (max-width: 760px) {
+    .kpis, .cols { grid-template-columns: 1fr; }
+    .cols4 { grid-template-columns: 1fr; }
+    .bar-row .nm { width: 120px; flex-basis: 120px; }
+  }
+
+  /* ── 임팩트 섹션 ── */
+  .impact-banner { background: linear-gradient(180deg, #FFF, #F8FBFF); border: 1px solid var(--blue-bg);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 14px; }
+  .impact-banner .top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .impact-banner .recent { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .impact-banner .delta { font-size: 14px; font-weight: 800; }
+  .impact-banner .delta.up { color: var(--red); } .impact-banner .delta.down { color: var(--green); }
+  .impact-banner .drivers { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .impact-banner .dchip { background: var(--bg); border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 700; color: var(--gray); }
+  .impact-banner .total { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .impact-banner .total b { color: var(--green); font-size: 19px; font-weight: 800; }
+  .impact-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 17px 20px; }
+  .impact-card .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .impact-card .ct { font-weight: 800; font-size: 15px; }
+  .impact-card .save { font-size: 20px; font-weight: 800; color: var(--green); white-space: nowrap; }
+  .impact-card .save small { font-size: 11px; color: var(--gray); font-weight: 600; }
+  .impact-card .ctx { color: var(--gray); font-size: 12.5px; margin-top: 5px; font-weight: 600; }
+  .impact-card .ibar { height: 6px; background: var(--panel-2); border-radius: 4px; margin: 11px 0; overflow: hidden; }
+  .impact-card .ibar > div { height: 100%; background: var(--green); border-radius: 4px; }
+  .impact-card .assume { color: var(--gray); font-size: 11.5px; margin: 2px 0; font-weight: 500; }
+  .impact-card .assume b { color: var(--ink); font-weight: 700; }
+  .impact-card .btns { margin-top: 11px; }
+  .impact-empty { color: var(--gray); font-size: 13px; padding: 16px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero" id="hero">
+    <div class="eyebrow">Personal LLM FinOps · Claude Code</div>
+    <h1>Fin<span class="lens">Lens</span> — 내 토큰/비용</h1>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div id="body"></div>
+  <footer id="footer"></footer>
+</div>
+
+<script>
+function main(D) {
+  var app = document.getElementById('body');
+
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+  function usd(n){ n=n||0; if(Math.abs(n)>=100) return '$'+n.toFixed(0); if(Math.abs(n)>=1) return '$'+n.toFixed(2); return '$'+n.toFixed(3); }
+  function tk(n){ n=n||0; if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(1)+'K'; return String(n); }
+  function pct(n){ return ((n||0)*100).toFixed(0)+'%'; }
+  function dstr(ts){ if(!ts) return '—'; return new Date(ts).toISOString().slice(0,10); }
+  function addDays(ymd, delta){ var p=ymd.split('-'); var dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+delta); return dt.toISOString().slice(0,10); }
+
+  var WIN = 0; // 0 = 전체
+  var PERIODS = [['전체',0],['최근 30일',30],['최근 14일',14],['최근 7일',7]];
+
+  // ── 헤더 컨트롤 (한 번만 렌더, 이벤트 위임) ──
+  document.getElementById('meta').innerHTML =
+    '<div class="periods">'+PERIODS.map(function(p){return '<button class="pbtn" data-n="'+p[1]+'">'+esc(p[0])+'</button>';}).join('')+'</div>'+
+    '<span class="range" id="rangeChip"></span>'+
+    '<span class="chip click" id="projChip"></span>';
+  document.getElementById('footer').textContent = 'FinLens · 집계 '+D.stats.used.toLocaleString()+' 메시지 (dedupe) · 본문 미수집';
+
+  document.getElementById('hero').addEventListener('click', function(e){
+    var pb = e.target.closest('.pbtn');
+    if (pb) { renderAll(+pb.getAttribute('data-n')); return; }
+    if (e.target.closest('#projChip')) {
+      var det = document.getElementById('detail');
+      if (det) { det.open = true; var ps = document.getElementById('projall'); if (ps) ps.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    }
+  });
+
+  function filterDays(n){
+    if (!n || !D.days.length) return D.days;
+    var cutoff = addDays(D.days[D.days.length-1].day, -(n-1));
+    return D.days.filter(function(d){ return d.day >= cutoff; });
+  }
+
+  function agg(arr){
+    var T={cost:0,input:0,output:0,cacheRead:0,cacheWrite:0,requests:0,inputCost:0,outputCost:0,cacheReadCost:0,cacheWrite5mCost:0,cacheWrite1hCost:0,cacheWrite5mTok:0,cacheWrite1hTok:0};
+    var mm={}, pp={};
+    arr.forEach(function(d){
+      T.cost+=d.cost; T.input+=d.input; T.output+=d.output; T.cacheRead+=d.cacheRead; T.cacheWrite+=d.cacheWrite; T.requests+=d.requests;
+      T.inputCost+=d.ct.i; T.outputCost+=d.ct.o; T.cacheReadCost+=d.ct.r; T.cacheWrite5mCost+=d.ct.w5; T.cacheWrite1hCost+=d.ct.w1;
+      T.cacheWrite5mTok+=d.w5t; T.cacheWrite1hTok+=d.w1t;
+      var k; for (k in d.m){ var x=d.m[k]; var o=mm[k]||(mm[k]={model:k,cost:0,input:0,output:0,cacheRead:0,cacheWrite:0,requests:0}); o.cost+=x.c;o.input+=x.i;o.output+=x.o;o.cacheRead+=x.r;o.cacheWrite+=x.w;o.requests+=x.rq; }
+      for (k in d.p){ var y=d.p[k]; var q=pp[k]||(pp[k]={project:k,cost:0,requests:0}); q.cost+=y.c;q.requests+=y.rq; }
+    });
+    T.cacheSaved=T.cacheReadCost*9;
+    var side=T.input+T.cacheRead+T.cacheWrite;
+    T.cacheHitRatio=side?T.cacheRead/side:0;
+    T.outInRatio=T.input?T.output/T.input:0;
+    T.days=arr.length;
+    var models=Object.keys(mm).map(function(k){return mm[k];}).sort(function(a,b){return b.cost-a.cost;});
+    var projects=Object.keys(pp).map(function(k){return pp[k];}).sort(function(a,b){return b.cost-a.cost;});
+    return {T:T, models:models, projects:projects};
+  }
+
+  function renderAll(n){
+    WIN=n;
+    var arr=filterDays(n);
+    var A=agg(arr), T=A.T;
+
+    var html='';
+    html+='<div class="kpis">'+
+      kpi('총 환산 비용', usd(T.cost), '')+
+      kpi('일평균', usd(T.days?T.cost/T.days:0), T.days+'일 활동 기준')+
+      kpi('캐시 절감', usd(T.cacheSaved), '히트율 '+pct(T.cacheHitRatio))+
+      '</div>';
+
+    html+='<h2><span class="ic">📈</span>일별 비용 추세</h2><div class="card">'+dailyChart(arr)+'</div>';
+
+    html+=impactSection(D.savings);
+
+    html+='<div class="cols" style="margin-top:18px">'+
+      '<div class="card"><h3>모델별 비용</h3>'+simpleBars(A.models.slice(0,4).map(function(m){return {nm:m.model,cost:m.cost};}), A.models[0]?A.models[0].cost:1, T.cost)+'</div>'+
+      '<div class="card" id="projsec"><h3>Top 프로젝트</h3>'+simpleBars(A.projects.slice(0,5).map(function(p){return {nm:p.project,cost:p.cost};}), A.projects[0]?A.projects[0].cost:1, T.cost)+'</div>'+
+      '</div>';
+
+    html+='<details id="detail"><summary>자세히 보기 — 토큰 구성 · 모델 표 · 캐시 · 프로젝트 변화 · 타임라인 · 전체 인사이트</summary><div class="det-body">'+
+      '<h4>🧩 토큰 구성</h4>'+composition(T)+
+      '<h4>🤖 모델 전체</h4>'+modelTable(A.models)+
+      '<h4>⚡ 캐시 상세</h4>'+cacheDetail(T)+
+      '<h4>🔀 프로젝트 변화 <span class="sub">(전체 기간 기준 · 기간 필터와 무관)</span></h4>'+
+        '<div class="cols4">'+
+          changeCol('🆕 신규', D.changes.newProjects, function(p){return '첫 '+dstr(p.first);})+
+          changeCol('📈 급증', D.changes.moversUp, function(p){return '<span class="up">+'+usd(p.delta)+'</span>';})+
+          changeCol('📉 급감', D.changes.moversDown, function(p){return '<span class="down">'+usd(p.delta)+'</span>';})+
+          changeCol('💤 비활성', D.changes.inactive, function(p){return '~'+dstr(p.last);})+
+        '</div>'+
+      '<h4 id="projall">🗓 프로젝트 활동 구간</h4>'+timeline(D.projects)+
+      '<h4>💡 전체 인사이트</h4>'+D.insights.map(function(i){return '<div class="ins '+esc(i.sev)+'"><div class="t">'+esc(i.title)+'</div><div class="d">'+esc(i.detail)+'</div></div>';}).join('')+
+      '</div></details>';
+
+    app.innerHTML=html;
+
+    attachImpactCopy();
+
+    // 칩/버튼 갱신
+    var rc=document.getElementById('rangeChip');
+    rc.textContent = arr.length ? ('📅 '+arr[0].day+' ~ '+arr[arr.length-1].day+' · '+arr.length+'일') : '📅 데이터 없음';
+    document.getElementById('projChip').innerHTML = '📂 '+A.projects.length+'개 프로젝트 ›';
+    var btns=document.querySelectorAll('.pbtn');
+    for (var i=0;i<btns.length;i++){ btns[i].classList.toggle('on', +btns[i].getAttribute('data-n')===n); }
+  }
+
+  // ── builders ──
+  var PROMPTS = {
+    opus: '내 Claude Code 사용에서 Opus 비용 비중이 높아. 앞으로 분류·요약·짧은 편집·반복 작업처럼 가벼운 건 Sonnet이나 Haiku로 처리하고, 정말 어려운 추론·설계일 때만 Opus를 써줘. 지금 작업이 가벼운 편이면 /model sonnet(또는 haiku)으로 바꿔서 진행해줘.',
+    cacheWrite: '세션이 길어져서 토큰 비용이 늘고 있어. 지금까지 한 작업을 핵심만 남기고 요약·정리해줘(관련 없는 맥락은 버려도 돼). 이후 성격이 다른 새 작업은 새 세션에서 시작하라고 알려줘.',
+    output: '이 저장소의 CLAUDE.md에 "응답 스타일" 지침을 추가해줘: 결론부터 1~2문장, 불필요한 서론·요약 반복·중복 설명 생략, 코드는 변경된 핵심만 짧게 설명. 기존 CLAUDE.md 내용은 보존하고 이 섹션만 추가/갱신해줘.'
+  };
+  var DRIVER_LABEL = { cacheWrite:'캐시 쓰기', output:'출력', input:'입력', cacheRead:'캐시 읽기' };
+  function modelLabel(m){
+    var x=/claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d+))?/.exec(m||'');
+    if(!x) return m;
+    return x[1].charAt(0).toUpperCase()+x[1].slice(1)+' '+x[2]+(x[3]?'.'+x[3]:'');
+  }
+
+  function impactSection(S){
+    var h='<h2><span class="ic">🎯</span>비용 줄이기 — 임팩트 <span class="sub">최근 7일 vs 직전 7일 · 가정 기반 추정</span></h2>';
+    if(!S || S.recentCost<=0){
+      return h+'<div class="card impact-empty">최근 7일 활동이 없어 추정할 절감 레버가 없습니다.</div>';
+    }
+    h+=impactBanner(S);
+    if(!S.levers.length){
+      h+='<div class="card impact-empty">현재 뚜렷한 절감 레버가 없습니다 — 사용량이 낮거나 이미 효율적입니다.</div>';
+      return h;
+    }
+    var maxSave=S.levers[0].estSaving||0.0001;
+    h+='<div class="actions" id="impact">'+S.levers.map(function(l){
+      var w=Math.max(3,(l.estSaving/maxSave)*100);
+      var dStr = l.delta>=0 ? '직전 대비 ▲'+usd(l.delta) : '직전 대비 ▼'+usd(Math.abs(l.delta));
+      return '<div class="impact-card">'+
+        '<div class="head"><div class="ct">'+esc(l.title)+'</div>'+
+          '<div class="save">~'+usd(l.estSaving)+'<small> /주</small></div></div>'+
+        '<div class="ctx">최근 7일 '+usd(l.pool7d)+' · '+esc(dStr)+'</div>'+
+        '<div class="ibar"><div style="width:'+w.toFixed(1)+'%"></div></div>'+
+        '<div class="assume">가정: '+esc(l.assumption)+'</div>'+
+        '<div class="assume">근거: '+esc(l.driverHint)+'</div>'+
+        '<div class="btns"><button class="copy" data-k="'+esc(l.promptKey)+'">📋 <span class="cmd">AI에게 요청할 프롬프트 복사</span></button></div>'+
+        '</div>';
+    }).join('')+'</div>';
+    return h;
+  }
+
+  function impactBanner(S){
+    var up=S.delta>=0;
+    var deltaHtml;
+    if(S.hasPrev){
+      var pctPart = S.deltaPct!=null ? ' ('+(up?'+':'−')+(Math.abs(S.deltaPct)>9.995?'>999%':pct(Math.abs(S.deltaPct)))+')' : '';
+      deltaHtml='<span class="delta '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+usd(Math.abs(S.delta))+pctPart+' vs 직전 7일</span>';
+    } else {
+      deltaHtml='<span class="delta">직전 7일 데이터 없음</span>';
+    }
+    var chips='';
+    if(S.topDriver){ var nm=S.topDriver.kind==='model'?modelLabel(S.topDriver.name):(DRIVER_LABEL[S.topDriver.name]||S.topDriver.name); chips+='<span class="dchip">증가 주동인: '+esc(nm)+' +'+usd(S.topDriver.delta)+'</span>'; }
+    if(S.topProjectDelta){ chips+='<span class="dchip">주 프로젝트: '+esc(S.topProjectDelta.project)+' +'+usd(S.topProjectDelta.delta)+'</span>'; }
+    var top = (S.levers && S.levers.length) ? S.levers[0] : null;
+    var totalHtml = top
+      ? '<div class="total">💡 가장 임팩트 큰 레버 하나만으로 <b>~'+usd(top.estSaving)+'/주</b> 절감 가능 <span style="color:var(--gray);font-weight:600">(가정 기반 상한 · 실제 청구 아님)</span></div>'
+      : '';
+    return '<div class="impact-banner">'+
+      '<div class="top"><span class="recent">최근 7일 '+usd(S.recentCost)+'</span>'+deltaHtml+'</div>'+
+      (chips?'<div class="drivers">'+chips+'</div>':'')+
+      totalHtml+
+      '</div>';
+  }
+
+  function attachImpactCopy(){
+    var c=document.getElementById('impact'); if(!c) return;
+    c.addEventListener('click', function(e){
+      var btn=e.target.closest('button.copy'); if(!btn) return;
+      copyText(PROMPTS[btn.getAttribute('data-k')]||'', btn);
+    });
+  }
+
+  function kpi(label,val,cap){ return '<div class="kpi"><div class="label">'+esc(label)+'</div><div class="val">'+esc(val)+'</div>'+(cap?'<div class="cap">'+esc(cap)+'</div>':'')+'</div>'; }
+
+  function copyText(t, btn){
+    function done(){ var inner=btn.innerHTML; btn.classList.add('ok'); btn.innerHTML='복사됨 ✓'; setTimeout(function(){btn.classList.remove('ok');btn.innerHTML=inner;},1500); }
+    function fallback(){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); try{ document.execCommand('copy'); done(); }catch(err){ window.prompt('복사: Cmd+C 후 Enter', t); } document.body.removeChild(ta); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done, fallback); } else { fallback(); }
+  }
+
+  function simpleBars(items, max, total){
+    if(!items.length) return '<div class="empty">데이터 없음</div>';
+    max=max||0.0001;
+    return items.map(function(it){
+      var w=(it.cost/max)*100;
+      return '<div class="bar-row"><div class="nm" title="'+esc(it.nm)+'">'+esc(it.nm)+'</div>'+
+        '<div class="track"><div class="fill" style="width:'+w.toFixed(1)+'%"></div></div>'+
+        '<div class="v">'+usd(it.cost)+' · '+pct(total?it.cost/total:0)+'</div></div>';
+    }).join('');
+  }
+
+  function dailyChart(days){
+    if(!days.length) return '<div class="empty">데이터 없음</div>';
+    var W=920,H=200,padL=48,padR=10,padT=12,padB=30;
+    var max=0; days.forEach(function(d){if(d.cost>max)max=d.cost;}); max=max||0.001;
+    var n=days.length, iw=W-padL-padR, ih=H-padT-padB, bw=Math.max(1.5, iw/n-1.5), bars='';
+    days.forEach(function(d,i){
+      var x=padL+(iw/n)*i+(iw/n-bw)/2, h=(d.cost/max)*ih, y=padT+ih-h;
+      bars+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(0.5,h).toFixed(1)+'" rx="2" fill="var(--accent)"><title>'+esc(d.day)+': '+usd(d.cost)+' · '+d.requests+' req</title></rect>';
+    });
+    var axis='';
+    [0,0.5,1].forEach(function(f){
+      var y=padT+ih-f*ih;
+      axis+='<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+y.toFixed(1)+'" stroke="var(--line)"/>';
+      axis+='<text x="'+(padL-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end" font-size="10" fill="var(--gray)">'+usd(max*f)+'</text>';
+    });
+    var xl=''; [0,Math.floor(n/2),n-1].forEach(function(i){ if(i<0||i>=n)return; var x=padL+(iw/n)*i+(iw/n)/2; xl+='<text x="'+x.toFixed(1)+'" y="'+(H-9)+'" text-anchor="middle" font-size="10" fill="var(--gray)">'+esc(days[i].day.slice(5))+'</text>'; });
+    return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'+axis+bars+xl+'</svg>';
+  }
+
+  function composition(T){
+    var segs=[
+      {label:'입력',cost:T.inputCost,tok:T.input,col:'var(--c-input)'},
+      {label:'출력',cost:T.outputCost,tok:T.output,col:'var(--c-output)'},
+      {label:'캐시 쓰기',cost:(T.cacheWrite5mCost+T.cacheWrite1hCost),tok:T.cacheWrite,col:'var(--c-cwrite)'},
+      {label:'캐시 읽기',cost:T.cacheReadCost,tok:T.cacheRead,col:'var(--c-cread)'}
+    ];
+    var total=segs.reduce(function(s,x){return s+x.cost;},0)||0.0001;
+    var bar='<div class="composition">'+segs.map(function(s){return '<div style="width:'+((s.cost/total)*100).toFixed(2)+'%;background:'+s.col+'" title="'+esc(s.label)+': '+usd(s.cost)+'"></div>';}).join('')+'</div>';
+    var lg='<div class="comp-legend">'+segs.map(function(s){return '<div class="it"><span class="sw" style="background:'+s.col+'"></span>'+esc(s.label)+'<div class="amt">'+usd(s.cost)+' <span style="color:var(--gray);font-weight:600">'+pct(s.cost/total)+'</span></div><div class="tk">'+tk(s.tok)+' tok</div></div>';}).join('')+'</div>';
+    return bar+lg;
+  }
+
+  function modelTable(models){
+    if(!models.length) return '<div class="empty">데이터 없음</div>';
+    return '<table><thead><tr><th>모델</th><th>비용</th><th>input</th><th>output</th><th>cache read</th><th>cache write</th><th>요청</th></tr></thead><tbody>'+
+      models.map(function(m){return '<tr><td>'+esc(m.model)+'</td><td class="num">'+usd(m.cost)+'</td><td class="num">'+tk(m.input)+'</td><td class="num">'+tk(m.output)+'</td><td class="num">'+tk(m.cacheRead)+'</td><td class="num">'+tk(m.cacheWrite)+'</td><td class="num">'+m.requests.toLocaleString()+'</td></tr>';}).join('')+
+      '</tbody></table>';
+  }
+
+  function cacheDetail(T){
+    return '<div class="comp-legend" style="grid-template-columns:repeat(3,1fr)">'+
+      '<div class="it">절감액<div class="amt" style="color:var(--green)">'+usd(T.cacheSaved)+'</div><div class="tk">full input 대비 0.9× 회수</div></div>'+
+      '<div class="it">읽기 비용<div class="amt">'+usd(T.cacheReadCost)+'</div><div class="tk">'+tk(T.cacheRead)+' tok @ 0.1×</div></div>'+
+      '<div class="it">쓰기 비용<div class="amt">'+usd(T.cacheWrite5mCost+T.cacheWrite1hCost)+'</div><div class="tk">5m '+tk(T.cacheWrite5mTok)+' / 1h '+tk(T.cacheWrite1hTok)+' tok</div></div>'+
+      '</div>';
+  }
+
+  function changeCol(title, items, rightFn){
+    var body=(!items||!items.length)?'<div class="empty">해당 없음</div>'
+      :'<ul class="lst">'+items.map(function(p){return '<li><span class="pn" title="'+esc(p.project)+'">'+esc(p.project)+'</span><span class="meta2">'+rightFn(p)+'</span></li>';}).join('')+'</ul>';
+    return '<div><div class="panel-title">'+esc(title)+'</div>'+body+'</div>';
+  }
+
+  function timeline(projects){
+    var list=projects.filter(function(p){return p.first&&p.last;}).slice(0,14);
+    if(!list.length) return '<div class="empty">데이터 없음</div>';
+    var min=Infinity,max=-Infinity; list.forEach(function(p){if(p.first<min)min=p.first;if(p.last>max)max=p.last;});
+    var span=(max-min)||1, W=880, rowH=21, padL=190, padR=56, padT=4, H=padT*2+list.length*rowH, iw=W-padL-padR, rows='';
+    list.forEach(function(p,i){
+      var y=padT+i*rowH, x1=padL+((p.first-min)/span)*iw, x2=padL+((p.last-min)/span)*iw, w=Math.max(3,x2-x1);
+      rows+='<text x="'+(padL-8)+'" y="'+(y+14)+'" text-anchor="end" font-size="10.5" fill="var(--ink)">'+esc(p.project.length>28?'…'+p.project.slice(-27):p.project)+'</text>';
+      rows+='<rect x="'+x1.toFixed(1)+'" y="'+(y+5)+'" width="'+w.toFixed(1)+'" height="11" rx="4" fill="var(--accent)"><title>'+esc(p.project)+': '+dstr(p.first)+' ~ '+dstr(p.last)+' · '+usd(p.cost)+'</title></rect>';
+    });
+    var ax='<text x="'+padL+'" y="'+H+'" font-size="10" fill="var(--gray)">'+dstr(min)+'</text><text x="'+W+'" y="'+H+'" text-anchor="end" font-size="10" fill="var(--gray)">'+dstr(max)+'</text>';
+    return '<svg viewBox="0 0 '+W+' '+(H+12)+'" preserveAspectRatio="xMidYMid meet">'+rows+ax+'</svg>';
+  }
+
+  renderAll(0);
+}
+
+fetch('./data.json', { cache: 'no-store' })
+  .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(main)
+  .catch(function (e) { document.getElementById('body').innerHTML = '<div class="card">data.json 로드 실패: ' + e + ' — analyze.ts 를 먼저 실행하세요.</div>'; });
+</script>
+</body>
+</html>
