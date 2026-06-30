@@ -4,8 +4,11 @@ import { GenerateDailyPlanUsecase } from '../../../agent/pm/application/generate
 import { PmAgentException } from '../../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../../agent/pm/domain/pm-agent-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
+import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -19,7 +22,10 @@ import {
 export class MorningBriefingAutopilotTask implements AutopilotTask {
   readonly id = 'morning-briefing';
 
-  constructor(private readonly generateDailyPlan: GenerateDailyPlanUsecase) {}
+  constructor(
+    private readonly generateDailyPlan: GenerateDailyPlanUsecase,
+    private readonly humanizeService: HumanizeService,
+  ) {}
 
   async run({
     ownerSlackUserId,
@@ -30,8 +36,14 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         triggerType: TriggerType.MORNING_BRIEFING_CRON,
       });
+      const humanizedPlan = await humanizeDailyPlan(
+        outcome.result.plan,
+        this.humanizeService,
+      );
       const text =
-        formatDailyPlan(outcome.result.plan) + formatModelFooter(outcome);
+        formatDailyPlan(humanizedPlan) +
+        formatWaitingSection(outcome.result.waitingItems) +
+        formatModelFooter(outcome);
       return { skip: false, summaryText: text };
     } catch (error) {
       if (

@@ -24,10 +24,24 @@ import {
   PushBranchAndOpenPrResult,
   RepoLabel,
 } from '../domain/port/github-client.port';
+import {
+  MergeableState,
+  PullRequestEngagementSignals,
+} from '../domain/pr-engagement.type';
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
 const DEFAULT_DIFF_MAX_BYTES = 50_000;
+const ENGAGEMENT_ENRICH_MAX = 15;
+const WAITING_LOOKBACK_HOURS = 48;
+const MERGEABLE_STATES: ReadonlySet<string> = new Set([
+  'clean',
+  'dirty',
+  'blocked',
+  'behind',
+  'unstable',
+  'draft',
+]);
 // PR 한 건에서 changedFiles 로 노출할 최대 파일 수.
 // 이 이상은 잘리고 PullRequestDetail.changedFilesTruncated=true 로 호출자에게 알린다.
 const CHANGED_FILES_MAX = 500;
@@ -36,6 +50,7 @@ const CHANGED_FILES_PAGE_SIZE = 100;
 @Injectable()
 export class OctokitGithubClient implements GithubClientPort {
   private readonly logger = new Logger(OctokitGithubClient.name);
+  private cachedLogin: string | null = null;
 
   constructor(
     @Inject(OCTOKIT_INSTANCE) private readonly octokit: Octokit | null,
@@ -567,6 +582,110 @@ export class OctokitGithubClient implements GithubClientPort {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
+  private async resolveLogin(): Promise<string | null> {
+    if (this.cachedLogin) {
+      return this.cachedLogin;
+    }
+    try {
+      const me = await this.octokit!.rest.users.getAuthenticated();
+      this.cachedLogin = me.data.login;
+      return this.cachedLogin;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchPullRequestEngagement(
+    pullRequests: GithubPullRequest[],
+  ): Promise<PullRequestEngagementSignals[]> {
+    this.assertOctokitConfigured();
+    const login = await this.resolveLogin();
+    const cutoffMs = Date.now() - WAITING_LOOKBACK_HOURS * 60 * 60 * 1000;
+
+    return Promise.all(
+      pullRequests.map((pr, index) => {
+        if (index >= ENGAGEMENT_ENRICH_MAX) {
+          if (index === ENGAGEMENT_ENRICH_MAX) {
+            this.logger.log(
+              `engagement 보강 캡(${ENGAGEMENT_ENRICH_MAX}) 초과 — ${pullRequests.length - ENGAGEMENT_ENRICH_MAX}건은 ACTIVE 처리`,
+            );
+          }
+          return Promise.resolve(neutralSignals(pr));
+        }
+        return this.fetchSingleEngagementSafely(pr, login, cutoffMs);
+      }),
+    );
+  }
+
+  private async fetchSingleEngagementSafely(
+    pr: GithubPullRequest,
+    login: string | null,
+    cutoffMs: number,
+  ): Promise<PullRequestEngagementSignals> {
+    try {
+      const [owner, repoName] = parseRepo(pr.repo);
+      const detail = await this.octokit!.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: pr.number,
+      });
+      const reviews = await this.octokit!.paginate(
+        this.octokit!.rest.pulls.listReviews,
+        { owner, repo: repoName, pull_number: pr.number, per_page: 100 },
+      );
+      const comments = await this.octokit!.paginate(
+        this.octokit!.rest.issues.listComments,
+        { owner, repo: repoName, issue_number: pr.number, per_page: 100 },
+      );
+
+      const author = detail.data.user?.login ?? '';
+      const requestedReviewers = (
+        (detail.data.requested_reviewers ?? []) as Array<{ login?: string }>
+      )
+        .map((reviewer) => reviewer.login)
+        .filter((loginValue): loginValue is string => !!loginValue);
+      const rawState = detail.data.mergeable_state ?? 'unknown';
+      const mergeableState: MergeableState = MERGEABLE_STATES.has(rawState)
+        ? (rawState as MergeableState)
+        : 'unknown';
+
+      const myLatestReview = latestReviewBy(reviews, login);
+      const myLastActivityMs = computeMyLastActivityMs(
+        reviews,
+        comments,
+        login,
+      );
+      const latestOtherActivityMs = computeLatestOtherActivityMs(
+        reviews,
+        comments,
+        login,
+      );
+
+      return {
+        repo: pr.repo,
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        isApproved: computeIsApprovedFromReviews(reviews),
+        iAmAuthor: !!login && author === login,
+        iAmRequestedReviewer: !!login && requestedReviewers.includes(login),
+        iRequestedChanges: myLatestReview === 'CHANGES_REQUESTED',
+        iActedRecently:
+          myLastActivityMs !== null &&
+          myLastActivityMs >= cutoffMs &&
+          (latestOtherActivityMs === null ||
+            latestOtherActivityMs <= myLastActivityMs),
+        mergeableState,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `PR ${pr.repo}#${pr.number} engagement 보강 실패 — 중립 신호(ACTIVE)로 fallback: ${message}`,
+      );
+      return neutralSignals(pr);
+    }
+  }
+
   private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
     try {
       // assignee:@me 는 인증된 사용자에게 할당된 모든 open issue/PR 을 한 번에 조회한다.
@@ -722,4 +841,96 @@ const extractLabels = (labels: SearchItem['labels']): string[] => {
     }
   }
   return out;
+};
+
+const neutralSignals = (
+  pr: GithubPullRequest,
+): PullRequestEngagementSignals => ({
+  repo: pr.repo,
+  number: pr.number,
+  title: pr.title,
+  url: pr.url,
+  isApproved: pr.isApproved,
+  iAmAuthor: false,
+  iAmRequestedReviewer: false,
+  iRequestedChanges: false,
+  iActedRecently: false,
+  mergeableState: 'unknown',
+});
+
+// reviews 중 내 최신 결정적 리뷰 state (없으면 null).
+const latestReviewBy = (
+  reviews: PullsReview[],
+  login: string | null,
+): string | null => {
+  if (!login) {
+    return null;
+  }
+  const mine = reviews
+    .filter(
+      (review) => (review.user?.login ?? '') === login && !!review.submitted_at,
+    )
+    .sort((a, b) => (a.submitted_at! > b.submitted_at! ? 1 : -1));
+  return mine.length > 0 ? (mine[mine.length - 1].state ?? null) : null;
+};
+
+type IssueComment = {
+  created_at?: string | null;
+  user?: { login?: string } | null;
+};
+
+const toMs = (iso?: string | null): number | null =>
+  iso ? new Date(iso).getTime() : null;
+
+const computeMyLastActivityMs = (
+  reviews: PullsReview[],
+  comments: IssueComment[],
+  login: string | null,
+): number | null => {
+  if (!login) {
+    return null;
+  }
+  const times: number[] = [];
+  for (const review of reviews) {
+    if ((review.user?.login ?? '') === login) {
+      const ms = toMs(review.submitted_at);
+      if (ms !== null) {
+        times.push(ms);
+      }
+    }
+  }
+  for (const comment of comments) {
+    if ((comment.user?.login ?? '') === login) {
+      const ms = toMs(comment.created_at);
+      if (ms !== null) {
+        times.push(ms);
+      }
+    }
+  }
+  return times.length > 0 ? Math.max(...times) : null;
+};
+
+const computeLatestOtherActivityMs = (
+  reviews: PullsReview[],
+  comments: IssueComment[],
+  login: string | null,
+): number | null => {
+  const times: number[] = [];
+  for (const review of reviews) {
+    if ((review.user?.login ?? '') !== login) {
+      const ms = toMs(review.submitted_at);
+      if (ms !== null) {
+        times.push(ms);
+      }
+    }
+  }
+  for (const comment of comments) {
+    if ((comment.user?.login ?? '') !== login) {
+      const ms = toMs(comment.created_at);
+      if (ms !== null) {
+        times.push(ms);
+      }
+    }
+  }
+  return times.length > 0 ? Math.max(...times) : null;
 };

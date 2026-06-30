@@ -1,6 +1,8 @@
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
+import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { HumanizeService } from './humanize.service';
 import {
+  humanizeDailyPlan,
   humanizeDailyReview,
   humanizeImpactReport,
   humanizeMetaOutput,
@@ -95,5 +97,56 @@ describe('humanizeDailyReview', () => {
       after: '후_H',
     });
     expect(result.impact.quantitative).toEqual(['-3건']);
+  });
+});
+
+const samplePlan = (): DailyPlan => ({
+  topPriority: {
+    id: 'o/r#1',
+    title: 'PR 리뷰',
+    source: 'GITHUB',
+    subtasks: [],
+    isCriticalPath: true,
+  },
+  varianceAnalysis: {
+    rolledOverTasks: ['x'],
+    analysisReasoning: '이월 근거 원문',
+  },
+  morning: [],
+  afternoon: [],
+  blocker: '배너 PR 위치 확인 필요',
+  estimatedHours: 4,
+  reasoning: '판단 근거 원문',
+});
+
+describe('humanizeDailyPlan', () => {
+  const makeHumanizer = (map: Record<string, string>) =>
+    ({ humanize: jest.fn().mockResolvedValue(map) }) as any;
+
+  it('서술 필드만 윤문본으로 교체, 나머지 불변', async () => {
+    const plan = samplePlan();
+    const humanizer = makeHumanizer({
+      reasoning: '판단 근거 윤문',
+      analysisReasoning: '이월 근거 윤문',
+      blocker: '배너 PR 위치 확인 필요',
+    });
+    const out = await humanizeDailyPlan(plan, humanizer);
+    expect(out.reasoning).toBe('판단 근거 윤문');
+    expect(out.varianceAnalysis.analysisReasoning).toBe('이월 근거 윤문');
+    expect(out.varianceAnalysis.rolledOverTasks).toEqual(['x']);
+    expect(out.estimatedHours).toBe(4);
+    expect(out.topPriority.title).toBe('PR 리뷰');
+  });
+
+  it('blocker 가 null 이면 humanize 입력에서 제외하고 null 유지', async () => {
+    const plan = { ...samplePlan(), blocker: null };
+    const humanizer = makeHumanizer({
+      reasoning: 'r',
+      analysisReasoning: 'a',
+    });
+    const out = await humanizeDailyPlan(plan, humanizer);
+    const passedFields = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+    expect(passedFields).not.toHaveProperty('blocker');
+    expect(out.blocker).toBeNull();
   });
 });
