@@ -22,18 +22,21 @@ export const humanizeCareerProfile = async (
 
   const humanized = await humanizer.humanize(fields);
 
+  // 역참조는 `?? 원본` 으로 방어한다 — HumanizeService 가 모든 입력 키를 보존 반환하므로
+  // 현재는 항상 값이 있지만, 그 내부 구현에 결합되지 않도록 누락 시 원본으로 폴백한다.
   return {
     ...profile,
-    summary: humanized.summary,
+    summary: humanized.summary ?? profile.summary,
     accomplishments: profile.accomplishments.map((accomplishment, index) => ({
       ...accomplishment,
-      title: humanized[`acc.${index}.title`],
-      bullet: humanized[`acc.${index}.bullet`],
+      title: humanized[`acc.${index}.title`] ?? accomplishment.title,
+      bullet: humanized[`acc.${index}.bullet`] ?? accomplishment.bullet,
       star: {
-        situation: humanized[`acc.${index}.situation`],
-        task: humanized[`acc.${index}.task`],
-        action: humanized[`acc.${index}.action`],
-        result: humanized[`acc.${index}.result`],
+        situation:
+          humanized[`acc.${index}.situation`] ?? accomplishment.star.situation,
+        task: humanized[`acc.${index}.task`] ?? accomplishment.star.task,
+        action: humanized[`acc.${index}.action`] ?? accomplishment.star.action,
+        result: humanized[`acc.${index}.result`] ?? accomplishment.star.result,
       },
     })),
   };
