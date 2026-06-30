@@ -1,5 +1,6 @@
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
+import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../../agent/work-reviewer/domain/work-reviewer.type';
 import { HumanizeService } from './humanize.service';
 
@@ -119,5 +120,32 @@ export const humanizeDailyReview = async (
           after: humanized['improvement.after'],
         }
       : null,
+  };
+};
+
+// PM 데일리플랜의 서술 문장만 윤문. TaskItem 제목·수치·lineage 등은 보존.
+// blocker 는 null 이면 humanize 입력에서 제외(명시적으로).
+export const humanizeDailyPlan = async (
+  plan: DailyPlan,
+  humanizer: HumanizeService,
+): Promise<DailyPlan> => {
+  const fields: Record<string, string> = {
+    reasoning: plan.reasoning,
+    analysisReasoning: plan.varianceAnalysis.analysisReasoning,
+  };
+  if (plan.blocker) {
+    fields.blocker = plan.blocker;
+  }
+
+  const humanized = await humanizer.humanize(fields);
+
+  return {
+    ...plan,
+    reasoning: humanized.reasoning,
+    varianceAnalysis: {
+      ...plan.varianceAnalysis,
+      analysisReasoning: humanized.analysisReasoning,
+    },
+    blocker: plan.blocker ? humanized.blocker : plan.blocker,
   };
 };

@@ -50,6 +50,7 @@ describe('ReviewPullRequestUsecase', () => {
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
+      fetchPullRequestEngagement: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -203,6 +204,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
+      fetchPullRequestEngagement: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -409,6 +411,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
+      fetchPullRequestEngagement: jest.fn(),
     };
     const outcomeRepo = {
       save: jest.fn(),
