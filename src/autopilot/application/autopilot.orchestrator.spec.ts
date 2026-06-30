@@ -269,4 +269,75 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '요약만' });
   });
+
+  // 회귀 방지 — 멱등 가드가 acquireOnce 단계에서 소비된 채 메인 발송이 실패하면,
+  // BullMQ 재시도가 "이미 발송됨"으로 차단돼 저녁 다이제스트가 영구 미전송되던 버그.
+  // 메인 발송 실패 시 가드 키를 release(롤백)해야 재시도가 다시 발송할 수 있다.
+  it('메인 발송 실패 시 멱등 키를 release 하고 rethrow (재시도가 다시 발송 가능)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const postMessage = jest
+      .fn()
+      .mockRejectedValue(new Error('Slack API 일시 오류'));
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, release } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1'),
+    ).rejects.toThrow('Slack API 일시 오류');
+
+    // 획득했던 바로 그 키를 롤백해야 한다.
+    const acquiredKey: string = acquireOnce.mock.calls[0][0];
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(acquiredKey);
+  });
+
+  it('발송 성공 시 release 호출 안 함 (정상 경로는 가드 유지)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, release } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  // 메인 발송은 성공(ts 반환)했으나 스레드 상세 발송만 실패한 경우 — 이미 자체 try/catch 로
+  // swallow 하므로 가드 롤백/rethrow 대상이 아니다(메인 요약은 전달됨 = 데이터 손실 아님).
+  it('스레드 상세 발송 실패는 swallow — release/throw 없음', async () => {
+    const task = {
+      id: 'daily-eval',
+      run: jest
+        .fn()
+        .mockResolvedValue({ skip: false, summaryText: 'S', detailText: 'D' }),
+    };
+    const postMessage = jest
+      .fn()
+      .mockResolvedValueOnce({ ts: 'TS1' }) // 메인 성공
+      .mockRejectedValueOnce(new Error('thread 실패')); // 스레드 상세 실패
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, release } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1'),
+    ).resolves.toBeUndefined();
+
+    expect(release).not.toHaveBeenCalled();
+  });
 });
