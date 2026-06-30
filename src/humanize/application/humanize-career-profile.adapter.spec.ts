@@ -80,4 +80,23 @@ describe('humanizeCareerProfile', () => {
     expect(result.summary).toBe('다듬은 요약');
     expect(result.accomplishments).toEqual([]);
   });
+
+  it('humanizer 가 일부 키를 누락한 맵을 반환해도 누락분은 원본으로 채운다', async () => {
+    const humanizer = {
+      // summary 만 다듬고 accomplishment 키는 전부 누락한 비정상 응답
+      humanize: jest.fn(async () => ({ summary: '다듬은 요약' })),
+    } as unknown as HumanizeService;
+
+    const result = await humanizeCareerProfile(baseProfile(), humanizer);
+
+    expect(result.summary).toBe('다듬은 요약');
+    expect(result.accomplishments[0].title).toBe('원본 타이틀');
+    expect(result.accomplishments[0].bullet).toBe('원본 불릿');
+    expect(result.accomplishments[0].star).toEqual({
+      situation: 's',
+      task: 't',
+      action: 'a',
+      result: 'r',
+    });
+  });
 });
