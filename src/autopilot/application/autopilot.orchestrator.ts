@@ -98,6 +98,9 @@ export class AutopilotOrchestrator {
     // (가드를 acquireOnce 단계에서 소비한 채 메인 발송이 실패하면 재시도가 영구 차단돼
     //  저녁 다이제스트가 통째로 미전송되던 버그 — 가드는 "발송 성공 시에만" 소비되어야 한다.)
     // 스레드 상세(detail) 발송 실패는 아래 자체 try/catch 로 swallow 하므로 롤백 대상이 아니다.
+    // ⚠️ 가드는 group 단위 단일 키(target 별 아님)다. 다중 target 부분 실패(앞 target 성공 후
+    //    뒤 target 실패) 시 release+rethrow → 재시도가 성공한 target 에도 재발송한다 —
+    //    "전 target 미전송" 보다 작은 해악으로 수용(단일 target 운영 기준). 완전 제거는 target 별 가드.
     try {
       for (const resolved of targets) {
         const { ts } = await this.slackNotifier.postMessage({
