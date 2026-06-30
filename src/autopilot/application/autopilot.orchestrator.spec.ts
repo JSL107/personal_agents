@@ -340,4 +340,39 @@ describe('AutopilotOrchestrator', () => {
 
     expect(release).not.toHaveBeenCalled();
   });
+
+  // 다중 target 부분 실패 — 앞 target 성공 후 뒤 target 발송 실패 시 release 1회 + rethrow.
+  // 가드가 group 단위 단일 키라 재시도는 성공 target 에도 재발송되는 트레이드오프를 고정한다
+  // ("전 target 미전송" 보다 작은 해악으로 수용 — orchestrator 주석 참조).
+  it('다중 target 부분 실패 → release 1회 + rethrow (성공 target 재발송 트레이드오프)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const postMessage = jest
+      .fn()
+      .mockResolvedValueOnce({ ts: undefined }) // C1 메인 성공
+      .mockRejectedValueOnce(new Error('C2 발송 실패')); // C2 메인 실패
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, release } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1, C2'),
+    ).rejects.toThrow('C2 발송 실패');
+
+    const acquiredKey: string = acquireOnce.mock.calls[0][0];
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(acquiredKey);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      target: 'C1',
+      text: '본문',
+    });
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      target: 'C2',
+      text: '본문',
+    });
+  });
 });
