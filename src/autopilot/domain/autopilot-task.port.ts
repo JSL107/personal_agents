@@ -1,8 +1,17 @@
+import { PreviewKind } from '../../preview-gate/domain/preview-action.type';
+
 export const AUTOPILOT_TASKS = Symbol('AUTOPILOT_TASKS');
 
 export interface AutopilotTaskContext {
   ownerSlackUserId: string;
   firedAtKst: string; // 오케스트레이터가 getTodayKstDate() 로 1회 계산해 주입.
+}
+
+// T1_PREVIEW task 가 orchestrator 에 올리는 preview 생성 요청. orchestrator 가 CreatePreviewUsecase 로 변환.
+export interface AutopilotPreviewRequest {
+  kind: PreviewKind;
+  payload: unknown;
+  previewText: string;
 }
 
 export interface AutopilotTaskResult {
@@ -12,6 +21,8 @@ export interface AutopilotTaskResult {
   summaryText?: string;
   // 있으면 메인 메시지의 스레드 댓글로 발송될 상세 본문. 없으면 요약만.
   detailText?: string;
+  // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
+  preview?: AutopilotPreviewRequest;
 }
 
 export interface AutopilotTask {

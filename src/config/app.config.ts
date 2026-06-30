@@ -224,6 +224,25 @@ class EnvironmentVariables {
   @IsString()
   AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE?: string;
 
+  // docs-sync-audit Phase 2 — 확정 제안 docs PR 자동 개설.
+  // DOCS_AUDIT_PR_ENABLED: 'true' 일 때만 preview→PR. 미설정 시 Phase 1 텍스트 보고.
+  @IsOptional()
+  @IsString()
+  DOCS_AUDIT_PR_ENABLED?: string;
+
+  // DOCS_AUDIT_PR_REPO: docs PR 대상 "owner/repo". 미설정 시 BE_SANDBOX_DEFAULT_REPO_LABEL → "JSL107/personal_agents".
+  @IsOptional()
+  @IsString()
+  @Matches(/^[^/\s]+\/[^/\s]+$/, {
+    message: 'DOCS_AUDIT_PR_REPO 는 "owner/repo" 형식이어야 합니다.',
+  })
+  DOCS_AUDIT_PR_REPO?: string;
+
+  // DOCS_AUDIT_PR_BASE_BRANCH: PR base. 미설정 시 main.
+  @IsOptional()
+  @IsString()
+  DOCS_AUDIT_PR_BASE_BRANCH?: string;
+
   // V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼
   // 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X).
   // 한 사람 = 한 careerLog 페이지 가정 (1인 봇). 향후 멀티 사용자 시 owner→pageId map 으로 확장.
