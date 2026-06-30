@@ -27,10 +27,13 @@ const buildPr = (
   ...overrides,
 });
 
-const buildClassifyMock = (
-  split: { activePullRequests: GithubPullRequest[]; waitingItems: WaitingItem[] },
-): ClassifyPullRequestEngagementUsecase =>
-  ({ execute: jest.fn().mockResolvedValue(split) } as unknown as ClassifyPullRequestEngagementUsecase);
+const buildClassifyMock = (split: {
+  activePullRequests: GithubPullRequest[];
+  waitingItems: WaitingItem[];
+}): ClassifyPullRequestEngagementUsecase =>
+  ({
+    execute: jest.fn().mockResolvedValue(split),
+  }) as unknown as ClassifyPullRequestEngagementUsecase;
 
 const buildCollector = (
   githubTasks: AssignedTasks,
@@ -166,15 +169,19 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
 
   it('classifyWaitingPullRequests=true → WAITING PR 은 waitingItems 로 분리되고 githubTasks 에서 빠짐', async () => {
     const activePr = buildPr({ number: 2, title: 'Active PR' });
-    const waitingItem: WaitingItem = { title: 'PR1', url: 'u1', reason: '내가 리뷰 완료 후 대기 중' };
-    const classifyMock = buildClassifyMock({ activePullRequests: [activePr], waitingItems: [waitingItem] });
+    const waitingItem: WaitingItem = {
+      title: 'PR1',
+      url: 'u1',
+      reason: '내가 리뷰 완료 후 대기 중',
+    };
+    const classifyMock = buildClassifyMock({
+      activePullRequests: [activePr],
+      waitingItems: [waitingItem],
+    });
 
     const tasksWithTwoPrs: AssignedTasks = {
       issues: [],
-      pullRequests: [
-        buildPr({ number: 1, title: 'PR1', url: 'u1' }),
-        activePr,
-      ],
+      pullRequests: [buildPr({ number: 1, title: 'PR1', url: 'u1' }), activePr],
     };
     const collector = buildCollector(tasksWithTwoPrs, classifyMock);
 
@@ -188,11 +195,16 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
     expect(context.githubTasks?.pullRequests[0].number).toBe(2);
     expect(context.waitingItems).toHaveLength(1);
     expect(context.waitingItems[0].title).toBe('PR1');
-    expect(classifyMock.execute).toHaveBeenCalledWith(tasksWithTwoPrs.pullRequests);
+    expect(classifyMock.execute).toHaveBeenCalledWith(
+      tasksWithTwoPrs.pullRequests,
+    );
   });
 
   it('classifyWaitingPullRequests=false → 기존 동작(분류 미실행), waitingItems 빈 배열', async () => {
-    const classifyMock = buildClassifyMock({ activePullRequests: [], waitingItems: [] });
+    const classifyMock = buildClassifyMock({
+      activePullRequests: [],
+      waitingItems: [],
+    });
     const collector = buildCollector(githubTasks, classifyMock);
 
     const context = await collector.collect({

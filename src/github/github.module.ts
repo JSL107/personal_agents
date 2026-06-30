@@ -34,6 +34,10 @@ import { OctokitGithubClient } from './infrastructure/octokit-github.client';
   ],
   // ReviewPullRequestUsecase / GenerateImpactReportUsecase 등 외부 모듈이
   // GithubClientPort 를 직접 주입받기 때문에 토큰까지 함께 export.
-  exports: [ListAssignedTasksUsecase, ClassifyPullRequestEngagementUsecase, GITHUB_CLIENT_PORT],
+  exports: [
+    ListAssignedTasksUsecase,
+    ClassifyPullRequestEngagementUsecase,
+    GITHUB_CLIENT_PORT,
+  ],
 })
 export class GithubModule {}

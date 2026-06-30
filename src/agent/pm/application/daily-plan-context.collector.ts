@@ -111,8 +111,13 @@ export class DailyPlanContextCollector {
 
     if (classifyWaitingPullRequests && githubTasksRaw) {
       try {
-        const split = await this.classifyEngagement.execute(githubTasksRaw.pullRequests);
-        githubTasks = { issues: githubTasksRaw.issues, pullRequests: split.activePullRequests };
+        const split = await this.classifyEngagement.execute(
+          githubTasksRaw.pullRequests,
+        );
+        githubTasks = {
+          issues: githubTasksRaw.issues,
+          pullRequests: split.activePullRequests,
+        };
         waitingItems = split.waitingItems;
       } catch (error: unknown) {
         this.logger.warn(
@@ -122,7 +127,9 @@ export class DailyPlanContextCollector {
     } else if (excludeApprovedPullRequests && githubTasksRaw) {
       githubTasks = {
         issues: githubTasksRaw.issues,
-        pullRequests: githubTasksRaw.pullRequests.filter((pr) => !pr.isApproved),
+        pullRequests: githubTasksRaw.pullRequests.filter(
+          (pr) => !pr.isApproved,
+        ),
       };
     }
 

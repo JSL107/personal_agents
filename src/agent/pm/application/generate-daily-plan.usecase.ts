@@ -91,7 +91,8 @@ export class GenerateDailyPlanUsecase {
     const planDate = getKstTodayAsUtcDate();
 
     const waitingEnabled =
-      this.configService.get<string>('BRIEFING_WAITING_SECTION_ENABLED') !== 'false';
+      this.configService.get<string>('BRIEFING_WAITING_SECTION_ENABLED') !==
+      'false';
     const isCron = effectiveTriggerType === TriggerType.MORNING_BRIEFING_CRON;
 
     const context = await this.contextCollector.collect({

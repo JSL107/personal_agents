@@ -1,6 +1,8 @@
+import { GenerateDailyPlanUsecase } from '../../../agent/pm/application/generate-daily-plan.usecase';
 import { PmAgentException } from '../../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../../agent/pm/domain/pm-agent-error-code.enum';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { MorningBriefingAutopilotTask } from './morning-briefing.autopilot-task';
 
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-17' };
@@ -26,7 +28,10 @@ const basePlan = {
 describe('MorningBriefingAutopilotTask', () => {
   it('id 는 morning-briefing', () => {
     const humanizeService = { humanize: jest.fn() };
-    const task = new MorningBriefingAutopilotTask({} as never, humanizeService as any);
+    const task = new MorningBriefingAutopilotTask(
+      {} as never,
+      humanizeService as unknown as HumanizeService,
+    );
     expect(task.id).toBe('morning-briefing');
   });
 
@@ -41,9 +46,14 @@ describe('MorningBriefingAutopilotTask', () => {
       agentRunId: 10,
     });
     const humanizeService = {
-      humanize: jest.fn().mockResolvedValue({ reasoning: '테스트 계획', analysisReasoning: '' }),
+      humanize: jest
+        .fn()
+        .mockResolvedValue({ reasoning: '테스트 계획', analysisReasoning: '' }),
     };
-    const task = new MorningBriefingAutopilotTask({ execute } as never, humanizeService as any);
+    const task = new MorningBriefingAutopilotTask(
+      { execute } as never,
+      humanizeService as unknown as HumanizeService,
+    );
 
     const out = await task.run(CTX);
 
@@ -59,20 +69,27 @@ describe('MorningBriefingAutopilotTask', () => {
       result: {
         plan: basePlan,
         sources: [],
-        waitingItems: [{ title: 'PR1', url: 'https://x/1', reason: '머지만 남음' }],
+        waitingItems: [
+          { title: 'PR1', url: 'https://x/1', reason: '머지만 남음' },
+        ],
       },
       modelUsed: 'chatgpt',
       agentRunId: 1,
     };
     const generateDailyPlan = { execute: jest.fn().mockResolvedValue(outcome) };
     const humanizeService = {
-      humanize: jest.fn().mockResolvedValue({ reasoning: '윤문', analysisReasoning: '윤문' }),
+      humanize: jest
+        .fn()
+        .mockResolvedValue({ reasoning: '윤문', analysisReasoning: '윤문' }),
     };
     const task = new MorningBriefingAutopilotTask(
-      generateDailyPlan as any,
-      humanizeService as any,
+      generateDailyPlan as unknown as GenerateDailyPlanUsecase,
+      humanizeService as unknown as HumanizeService,
     );
-    const result = await task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-06-30' });
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-06-30',
+    });
     expect(result.summaryText).toContain('대기 중');
     expect(result.summaryText).toContain('머지만 남음');
   });
@@ -88,7 +105,7 @@ describe('MorningBriefingAutopilotTask', () => {
     const humanizeService = { humanize: jest.fn() };
     const task = new MorningBriefingAutopilotTask(
       { execute } as never,
-      humanizeService as any,
+      humanizeService as unknown as HumanizeService,
     );
 
     const out = await task.run(CTX);
@@ -102,7 +119,7 @@ describe('MorningBriefingAutopilotTask', () => {
     const humanizeService = { humanize: jest.fn() };
     const task = new MorningBriefingAutopilotTask(
       { execute } as never,
-      humanizeService as any,
+      humanizeService as unknown as HumanizeService,
     );
     await expect(task.run(CTX)).rejects.toThrow('boom');
   });
