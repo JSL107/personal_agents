@@ -59,6 +59,7 @@ describe('GenerateImpactReportUsecase', () => {
       listRepoLabels: jest.fn(),
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
+      fetchPullRequestEngagement: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 

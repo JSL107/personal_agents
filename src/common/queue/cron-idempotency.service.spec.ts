@@ -137,3 +137,41 @@ describe('CronIdempotencyService — Redis 장애 시 in-memory graceful fallbac
     expect(second).toBe(false);
   });
 });
+
+// release — 획득한 가드 키를 롤백한다. 발송 실패 시 BullMQ 재시도가 같은 슬롯을
+// 다시 발송할 수 있도록 "발송 성공 시에만 가드가 소비되게" 만드는 핵심 연산.
+describe('CronIdempotencyService — release (가드 롤백)', () => {
+  it('in-memory: release 후 같은 키를 재획득할 수 있다', async () => {
+    const service = new CronIdempotencyService();
+    await service.acquireOnce('cron:evening:2026-06-10', 90_000);
+
+    await service.release('cron:evening:2026-06-10');
+
+    const result = await service.acquireOnce('cron:evening:2026-06-10', 90_000);
+    expect(result).toBe(true);
+  });
+
+  it('Redis: release 는 DEL 을 호출한다', async () => {
+    const set = jest.fn().mockResolvedValue('OK');
+    const del = jest.fn().mockResolvedValue(1);
+    const redis = { set, del } as unknown as Redis;
+    const service = new CronIdempotencyService(redis);
+    await service.acquireOnce('cron:evening:2026-06-10', 90_000);
+
+    await service.release('cron:evening:2026-06-10');
+
+    expect(del).toHaveBeenCalledWith('cron:evening:2026-06-10');
+  });
+
+  it('Redis del 이 throw 해도 swallow (재시도 흐름 보호)', async () => {
+    const set = jest.fn().mockResolvedValue('OK');
+    const del = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const redis = { set, del } as unknown as Redis;
+    const service = new CronIdempotencyService(redis);
+    await service.acquireOnce('cron:evening:2026-06-10', 90_000);
+
+    await expect(
+      service.release('cron:evening:2026-06-10'),
+    ).resolves.toBeUndefined();
+  });
+});

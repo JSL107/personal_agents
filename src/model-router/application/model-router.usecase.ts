@@ -51,7 +51,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
   // CONTRADICTION_JUDGE — L4 knowledge-lint 모순 판정. 경량 분류 + claude -p 회피 → ChatGPT.
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
-  // HUMANIZER — 보고서 서술 필드 윤문. 경량 한국어 문체 → ChatGPT(codex). 실패 시 route fallback Claude.
+  // HUMANIZER — 보고서/프로필 서술 필드 윤문. 경량 한국어 문체 → ChatGPT(codex) 전용.
+  // HumanizeService 가 noFallback:true 로 호출 — ChatGPT 실패 시 Claude 로 새지 않고 윤문을 건너뛴다(원본 유지).
   [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
   // docs-sync-audit Layer 2 — 문서 의미 드리프트 optimizer/evaluator. 경량 → ChatGPT.
   [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
@@ -85,9 +86,11 @@ export class ModelRouterUsecase {
   async route({
     agentType,
     request,
+    noFallback,
   }: {
     agentType: AgentType;
     request: CompletionRequest;
+    noFallback?: boolean;
   }): Promise<CompletionResponse> {
     const primaryName = AGENT_TO_PROVIDER[agentType];
     if (!primaryName) {
@@ -111,6 +114,15 @@ export class ModelRouterUsecase {
       // claude CLI 인증 만료 / 쿼터 소진 의심 — 본 fallback 흐름과 별개로 owner 알람 발사.
       // (await 하지 않고 fire-and-forget — 알람 자체 실패가 fallback 흐름을 막지 않게.)
       this.maybeNotifyClaudeAuthSuspect(primaryError);
+
+      // noFallback (예: HUMANIZER 윤문) — primary 실패 시 반대편 provider 로 재시도하지 않고 즉시 전파.
+      // best-effort 후처리가 ChatGPT 실패 시 Claude 로 새지 않도록 호출자가 명시 차단한다.
+      if (noFallback) {
+        throw this.wrapCompletionFailed({
+          attempted: [primaryName],
+          lastError: primaryError,
+        });
+      }
 
       const fallbackName = FALLBACK_OF[primaryName];
       // 대칭 매핑이라 정상적으론 발생하지 않지만, 매핑이 깨져 primary == fallback 이면 재시도 무의미 — 즉시 전파.

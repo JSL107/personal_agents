@@ -1,4 +1,5 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { WaitingItem } from '../../../github/domain/pr-engagement.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 
 // 서브 태스크 (WBS) — 에이전트가 큰 태스크를 더 작은 단위로 분할한 결과.
@@ -89,6 +90,8 @@ export interface DailyPlanSource {
 export interface DailyPlanResult {
   plan: DailyPlan;
   sources: DailyPlanSource[];
+  // 아침 브리핑 완료/대기 강등 항목 (cron + 토글 ON 일 때만 채워짐. /today 는 빈 배열).
+  waitingItems: WaitingItem[];
 }
 
 // PM Agent `/today` 한 번 실행에 대해 AgentRun.inputSnapshot 으로 저장되는 메트릭/메타 집합.

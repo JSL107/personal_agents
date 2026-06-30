@@ -1,5 +1,8 @@
+import { ConfigService } from '@nestjs/config';
+
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { DailyPlanService } from '../../../daily-plan/application/daily-plan.service';
+import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -99,6 +102,11 @@ describe('GenerateDailyPlanUsecase', () => {
         peekPending: jest.fn().mockResolvedValue([]),
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
+      {
+        execute: jest
+          .fn()
+          .mockResolvedValue({ activePullRequests: [], waitingItems: [] }),
+      } as unknown as ClassifyPullRequestEngagementUsecase,
     );
     const promptBuilder = new DailyPlanPromptBuilder();
     const evidenceBuilder = new DailyPlanEvidenceBuilder();
@@ -119,6 +127,9 @@ describe('GenerateDailyPlanUsecase', () => {
         peekPending: jest.fn().mockResolvedValue([]),
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
+      {
+        get: jest.fn().mockReturnValue(undefined),
+      } as unknown as ConfigService,
     );
 
     modelRouter.route.mockResolvedValue({
@@ -399,6 +410,111 @@ describe('GenerateDailyPlanUsecase', () => {
 
     const call = agentRunServiceExecute.mock.calls[0][0];
     expect(call.triggerType).toBe('MORNING_BRIEFING_CRON');
+  });
+
+  describe('waitingItems 반환 (Morning Briefing 분류)', () => {
+    it('MORNING_BRIEFING_CRON + BRIEFING_WAITING_SECTION_ENABLED 미설정(기본 ON) → result.waitingItems 빈 배열 (classifyEngagement mock 반환값 통과)', async () => {
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+        triggerType: 'MORNING_BRIEFING_CRON' as never,
+      });
+
+      // classifyEngagement mock 이 { activePullRequests:[], waitingItems:[] } 반환 → 빈 배열 그대로.
+      expect(result.result.waitingItems).toEqual([]);
+    });
+
+    it('SLACK_COMMAND_TODAY (비-cron) → result.waitingItems 빈 배열 (분류 미실행)', async () => {
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+      });
+
+      expect(result.result.waitingItems).toEqual([]);
+    });
+
+    it('MORNING_BRIEFING_CRON + BRIEFING_WAITING_SECTION_ENABLED=false → waitingItems 빈 배열 (분류 미실행)', async () => {
+      // ConfigService.get 이 'false' 반환하도록 usecase 재생성
+      const agentRunServiceLocal = {
+        execute: agentRunServiceExecute,
+        findLatestSucceededRun: agentRunServiceFindLatest,
+        findRecentSucceededRuns: agentRunServiceFindRecent,
+        findSimilarPlans: jest.fn().mockResolvedValue([]),
+      } as unknown as AgentRunService;
+
+      const classifyExecuteMock = jest.fn().mockResolvedValue({
+        activePullRequests: [],
+        waitingItems: [],
+      });
+      const contextCollectorLocal = new DailyPlanContextCollector(
+        agentRunServiceLocal,
+        {
+          execute: listAssignedTasksExecute,
+        } as unknown as ListAssignedTasksUsecase,
+        { execute: listMyMentionsExecute } as unknown as ListMyMentionsUsecase,
+        {
+          execute: listActiveTasksExecute,
+        } as unknown as ListActiveTasksUsecase,
+        {
+          peekPending: jest.fn().mockResolvedValue([]),
+          markConsumed: jest.fn().mockResolvedValue(undefined),
+        } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
+        {
+          execute: classifyExecuteMock,
+        } as unknown as ClassifyPullRequestEngagementUsecase,
+      );
+
+      const usecaseWithFalseToggle = new GenerateDailyPlanUsecase(
+        modelRouter as unknown as ModelRouterUsecase,
+        agentRunServiceLocal,
+        { recordDailyPlan: dailyPlanRecord } as unknown as DailyPlanService,
+        {
+          execute: appendDailyPlanExecute,
+        } as unknown as AppendDailyPlanUsecase,
+        contextCollectorLocal,
+        new DailyPlanPromptBuilder(),
+        new DailyPlanEvidenceBuilder(),
+        {
+          peekPending: jest.fn().mockResolvedValue([]),
+          markConsumed: jest.fn().mockResolvedValue(undefined),
+        } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
+        { get: jest.fn().mockReturnValue('false') } as unknown as ConfigService,
+      );
+
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [
+          {
+            number: 1,
+            title: 't',
+            repo: 'a/b',
+            url: 'u',
+            labels: [],
+            updatedAt: 'x',
+          },
+        ],
+        pullRequests: [],
+      });
+
+      const result = await usecaseWithFalseToggle.execute({
+        tasksText: '',
+        slackUserId: 'U123',
+        triggerType: 'MORNING_BRIEFING_CRON' as never,
+      });
+
+      // waitingEnabled=false 이므로 classifyEngagement 미호출, waitingItems 빈 배열
+      expect(classifyExecuteMock).not.toHaveBeenCalled();
+      expect(result.result.waitingItems).toEqual([]);
+    });
   });
 
   describe('전일 plan 참조 (옵션 C)', () => {
