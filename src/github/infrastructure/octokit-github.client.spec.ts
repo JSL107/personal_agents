@@ -658,6 +658,89 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('fetchPullRequestEngagement', () => {
+    it('clean + 내 승인 리뷰 → isApproved=true, mergeableState=clean', async () => {
+      const octokit = {
+        rest: {
+          users: {
+            getAuthenticated: jest
+              .fn()
+              .mockResolvedValue({ data: { login: 'me' } }),
+          },
+          pulls: {
+            get: jest.fn().mockResolvedValue({
+              data: {
+                user: { login: 'author' },
+                requested_reviewers: [],
+                draft: false,
+                mergeable_state: 'clean',
+              },
+            }),
+            listReviews: jest.fn(),
+          },
+          issues: { listComments: jest.fn().mockResolvedValue({ data: [] }) },
+        },
+        paginate: jest.fn().mockResolvedValue([
+          {
+            state: 'APPROVED',
+            submitted_at: '2026-06-30T00:00:00Z',
+            user: { id: 1, login: 'me' },
+          },
+        ]),
+      };
+      const client = new OctokitGithubClient(octokit as unknown as Octokit);
+      const [s] = await client.fetchPullRequestEngagement([
+        {
+          number: 1,
+          title: 't',
+          repo: 'o/r',
+          url: 'u',
+          draft: false,
+          updatedAt: '',
+          requestedReviewers: [],
+          isApproved: false,
+        },
+      ]);
+      expect(s.isApproved).toBe(true);
+      expect(s.mergeableState).toBe('clean');
+      expect(s.iAmAuthor).toBe(false);
+    });
+
+    it('pulls.get 실패 → 중립 신호(unknown, flag false)로 graceful', async () => {
+      const octokit = {
+        rest: {
+          users: {
+            getAuthenticated: jest
+              .fn()
+              .mockResolvedValue({ data: { login: 'me' } }),
+          },
+          pulls: {
+            get: jest.fn().mockRejectedValue(new Error('boom')),
+            listReviews: jest.fn(),
+          },
+          issues: { listComments: jest.fn() },
+        },
+        paginate: jest.fn().mockResolvedValue([]),
+      };
+      const client = new OctokitGithubClient(octokit as unknown as Octokit);
+      const [s] = await client.fetchPullRequestEngagement([
+        {
+          number: 1,
+          title: 't',
+          repo: 'o/r',
+          url: 'u',
+          draft: false,
+          updatedAt: '',
+          requestedReviewers: [],
+          isApproved: false,
+        },
+      ]);
+      expect(s.mergeableState).toBe('unknown');
+      expect(s.isApproved).toBe(false);
+      expect(s.iActedRecently).toBe(false);
+    });
+  });
+
   describe('addLabelsToIssue — issues.opened 자동 라벨링 apply', () => {
     it('labels 비어 있으면 호출 자체 skip (network noop)', async () => {
       const addLabels = jest.fn();
