@@ -24,8 +24,13 @@ const makeConsumer = (opts: { hermesOk: boolean }) => {
   };
   const slackNotifier = { postMessage: jest.fn().mockResolvedValue(undefined) };
   const cronIdempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+  // 윤문 no-op mock — 입력 필드를 그대로 반환(원본 유지). best-effort 윤문은 발송 흐름과 독립.
+  const humanizeService = {
+    humanize: jest.fn(async (fields: Record<string, string>) => fields),
+  };
   const consumer = new ResumeCalibrationCronConsumer(
     calibrateResume as never,
+    humanizeService as never,
     hermesRunner as never,
     slackNotifier as never,
     cronIdempotency as never,

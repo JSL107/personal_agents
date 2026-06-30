@@ -1,3 +1,4 @@
+import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
@@ -147,5 +148,34 @@ export const humanizeDailyPlan = async (
       analysisReasoning: humanized.analysisReasoning,
     },
     blocker: plan.blocker ? humanized.blocker : plan.blocker,
+  };
+};
+
+// 이력서 보정 점검(CalibrationResultData)의 서술 필드만 윤문한다.
+// verdict + aiSlopRisks/underQuantified/actionItems(문장형 진단·액션)는 윤문 대상.
+// missingKeywords(채용 키워드 목록)·outdatedPhrasing(구식 표현 원문 인용)은 보존 — 윤문 시
+// 키워드/인용 구절이 훼손될 수 있어 입력에서 제외한다.
+// humanizer 가 비활성/실패 시 입력을 그대로 반환하므로(best-effort) 보정 결과도 원본과 동일하게 재조립된다.
+export const humanizeCalibrationReport = async (
+  data: CalibrationResultData,
+  humanizer: HumanizeService,
+): Promise<CalibrationResultData> => {
+  const fields: Record<string, string> = { verdict: data.verdict };
+  flattenArray(fields, 'aiSlopRisks', data.aiSlopRisks);
+  flattenArray(fields, 'underQuantified', data.underQuantified);
+  flattenArray(fields, 'actionItems', data.actionItems);
+
+  const humanized = await humanizer.humanize(fields);
+
+  return {
+    ...data,
+    verdict: humanized.verdict ?? data.verdict,
+    aiSlopRisks: rebuildArray(humanized, 'aiSlopRisks', data.aiSlopRisks),
+    underQuantified: rebuildArray(
+      humanized,
+      'underQuantified',
+      data.underQuantified,
+    ),
+    actionItems: rebuildArray(humanized, 'actionItems', data.actionItems),
   };
 };

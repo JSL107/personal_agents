@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { HERMES_RUNNER_PORT } from '../agent/blog/domain/port/hermes-runner.port';
 import { HermesCliRunner } from '../agent/blog/infrastructure/hermes-cli.runner';
 import { CareerMateModule } from '../agent/career-mate/career-mate.module';
+import { HumanizeModule } from '../humanize/humanize.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { SlackModule } from '../slack/slack.module';
@@ -20,6 +21,7 @@ import { ResumeCalibrationCronConsumer } from './infrastructure/resume-calibrati
   imports: [
     BullModule.registerQueue({ name: RESUME_CALIBRATION_CRON_QUEUE }),
     CareerMateModule,
+    HumanizeModule,
     SlackModule,
     NotificationQueueModule,
   ],
