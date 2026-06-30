@@ -54,6 +54,26 @@ export class CronIdempotencyService implements OnModuleDestroy {
     return this.acquireFromMemory(key, ttlSeconds);
   }
 
+  // 획득한 키를 해제(삭제)한다 — "발송 성공 시에만 가드를 소비" 하기 위한 롤백 연산.
+  // acquireOnce 로 키를 선점한 뒤 발송이 실패하면 이 메서드로 키를 되돌려, BullMQ 재시도가
+  // 같은 슬롯을 "이미 발송됨" 으로 오인해 영구 차단하지 않고 다시 발송하게 한다.
+  //
+  // Redis 모드: DEL. in-memory 모드: Set.delete.
+  // Redis del 실패 시: 경고 로그 + in-memory fallback 삭제도 시도 (release 가 throw 해
+  // 상위 재시도/에러 흐름을 어지럽히지 않도록 swallow — graceful degradation).
+  async release(key: string): Promise<void> {
+    if (this.redis) {
+      try {
+        await this.redis.del(key);
+      } catch (error) {
+        this.logger.warn(
+          `CronIdempotency — Redis del 실패, in-memory fallback 삭제 시도: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    this.inMemoryKeys.delete(key);
+  }
+
   // === Redis 백엔드 ===
 
   private async acquireFromRedis(
