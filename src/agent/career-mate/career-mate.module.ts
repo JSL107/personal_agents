@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { GithubModule } from '../../github/github.module';
+import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { AnalyzeJdGapUsecase } from './application/analyze-jd-gap.usecase';
@@ -15,7 +16,13 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
 
 // PrismaModule(@Global) / ConfigModule(isGlobal) 은 별도 import 불필요.
 @Module({
-  imports: [AgentRunModule, ModelRouterModule, GithubModule, NotionModule],
+  imports: [
+    AgentRunModule,
+    ModelRouterModule,
+    GithubModule,
+    NotionModule,
+    HumanizeModule,
+  ],
   providers: [
     {
       provide: CAREER_PROFILE_REPOSITORY_PORT,
