@@ -7,8 +7,8 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
-import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
+import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,

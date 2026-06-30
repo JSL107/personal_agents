@@ -52,6 +52,7 @@ const buildBaseContext = (
   inboxItems: [],
   inboxItemIds: [],
   similarPlans: [],
+  waitingItems: [],
   ...overrides,
 });
 

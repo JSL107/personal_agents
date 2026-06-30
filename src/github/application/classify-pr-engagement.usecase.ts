@@ -2,8 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { classifyPullRequestEngagement } from '../domain/classify-pr-engagement';
 import { GithubPullRequest } from '../domain/github.type';
+import {
+  GITHUB_CLIENT_PORT,
+  GithubClientPort,
+} from '../domain/port/github-client.port';
 import { WaitingItem } from '../domain/pr-engagement.type';
-import { GITHUB_CLIENT_PORT, GithubClientPort } from '../domain/port/github-client.port';
 
 export interface EngagementSplit {
   activePullRequests: GithubPullRequest[];
@@ -23,8 +26,11 @@ export class ClassifyPullRequestEngagementUsecase {
     if (pullRequests.length === 0) {
       return { activePullRequests: [], waitingItems: [] };
     }
-    const signals = await this.githubClient.fetchPullRequestEngagement(pullRequests);
-    const signalByKey = new Map(signals.map((s) => [`${s.repo}#${s.number}`, s]));
+    const signals =
+      await this.githubClient.fetchPullRequestEngagement(pullRequests);
+    const signalByKey = new Map(
+      signals.map((s) => [`${s.repo}#${s.number}`, s]),
+    );
 
     const activePullRequests: GithubPullRequest[] = [];
     const waitingItems: WaitingItem[] = [];
@@ -37,7 +43,11 @@ export class ClassifyPullRequestEngagementUsecase {
       }
       const classification = classifyPullRequestEngagement(signal);
       if (classification.state === 'WAITING') {
-        waitingItems.push({ title: pr.title, url: pr.url, reason: classification.reason });
+        waitingItems.push({
+          title: pr.title,
+          url: pr.url,
+          reason: classification.reason,
+        });
       } else {
         activePullRequests.push(pr);
       }

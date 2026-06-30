@@ -1,8 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
-import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { DailyPlanService } from '../../../daily-plan/application/daily-plan.service';
+import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -103,7 +103,9 @@ describe('GenerateDailyPlanUsecase', () => {
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
       {
-        execute: jest.fn().mockResolvedValue({ activePullRequests: [], waitingItems: [] }),
+        execute: jest
+          .fn()
+          .mockResolvedValue({ activePullRequests: [], waitingItems: [] }),
       } as unknown as ClassifyPullRequestEngagementUsecase,
     );
     const promptBuilder = new DailyPlanPromptBuilder();
@@ -456,21 +458,29 @@ describe('GenerateDailyPlanUsecase', () => {
       });
       const contextCollectorLocal = new DailyPlanContextCollector(
         agentRunServiceLocal,
-        { execute: listAssignedTasksExecute } as unknown as ListAssignedTasksUsecase,
+        {
+          execute: listAssignedTasksExecute,
+        } as unknown as ListAssignedTasksUsecase,
         { execute: listMyMentionsExecute } as unknown as ListMyMentionsUsecase,
-        { execute: listActiveTasksExecute } as unknown as ListActiveTasksUsecase,
+        {
+          execute: listActiveTasksExecute,
+        } as unknown as ListActiveTasksUsecase,
         {
           peekPending: jest.fn().mockResolvedValue([]),
           markConsumed: jest.fn().mockResolvedValue(undefined),
         } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
-        { execute: classifyExecuteMock } as unknown as ClassifyPullRequestEngagementUsecase,
+        {
+          execute: classifyExecuteMock,
+        } as unknown as ClassifyPullRequestEngagementUsecase,
       );
 
       const usecaseWithFalseToggle = new GenerateDailyPlanUsecase(
         modelRouter as unknown as ModelRouterUsecase,
         agentRunServiceLocal,
         { recordDailyPlan: dailyPlanRecord } as unknown as DailyPlanService,
-        { execute: appendDailyPlanExecute } as unknown as AppendDailyPlanUsecase,
+        {
+          execute: appendDailyPlanExecute,
+        } as unknown as AppendDailyPlanUsecase,
         contextCollectorLocal,
         new DailyPlanPromptBuilder(),
         new DailyPlanEvidenceBuilder(),
@@ -482,7 +492,16 @@ describe('GenerateDailyPlanUsecase', () => {
       );
 
       listAssignedTasksExecute.mockResolvedValue({
-        issues: [{ number: 1, title: 't', repo: 'a/b', url: 'u', labels: [], updatedAt: 'x' }],
+        issues: [
+          {
+            number: 1,
+            title: 't',
+            repo: 'a/b',
+            url: 'u',
+            labels: [],
+            updatedAt: 'x',
+          },
+        ],
         pullRequests: [],
       });
 
