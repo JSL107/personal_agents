@@ -54,7 +54,17 @@ const makeDeps = (prs: unknown[]) => {
     ),
   };
   const config = { get: jest.fn().mockReturnValue('octo') };
-  return { githubClient, modelRouter, repository, agentRunService, config };
+  const humanizer = {
+    humanize: jest.fn(async (fields: Record<string, string>) => fields),
+  };
+  return {
+    githubClient,
+    modelRouter,
+    repository,
+    agentRunService,
+    config,
+    humanizer,
+  };
 };
 
 describe('BuildCareerProfileUsecase', () => {
@@ -66,6 +76,7 @@ describe('BuildCareerProfileUsecase', () => {
       d.repository as never,
       d.agentRunService as never,
       d.config as never,
+      d.humanizer as never,
     );
 
     const outcome = await usecase.execute({ slackUserId: 'U1' });
@@ -84,6 +95,7 @@ describe('BuildCareerProfileUsecase', () => {
       d.repository as never,
       d.agentRunService as never,
       d.config as never,
+      d.humanizer as never,
     );
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
       CareerMateException,
@@ -99,6 +111,7 @@ describe('BuildCareerProfileUsecase', () => {
       d.repository as never,
       d.agentRunService as never,
       d.config as never,
+      d.humanizer as never,
     );
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
       CareerMateException,

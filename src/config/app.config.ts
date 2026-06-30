@@ -475,6 +475,11 @@ class EnvironmentVariables {
   @IsString()
   HUMANIZE_REPORTS_ENABLED?: string;
 
+  // BRIEFING_WAITING_SECTION_ENABLED: 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON).
+  @IsOptional()
+  @IsString()
+  BRIEFING_WAITING_SECTION_ENABLED?: string;
+
   // Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준).
   // 미설정 시 default '*/20 * * * *' (20분마다).
   @IsOptional()

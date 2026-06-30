@@ -48,6 +48,9 @@ export class HumanizeService {
           prompt: JSON.stringify(payload),
           systemPrompt: HUMANIZE_SYSTEM_PROMPT,
         },
+        // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
+        // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).
+        noFallback: true,
       });
       const humanized = parseHumanizeOutput(completion.text, keys);
       return { ...fields, ...humanized };

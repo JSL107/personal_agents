@@ -20,6 +20,7 @@ const buildClientMock = (
   listRepoLabels: jest.fn(),
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
+  fetchPullRequestEngagement: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {

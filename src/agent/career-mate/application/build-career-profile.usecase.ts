@@ -11,6 +11,8 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../../github/domain/port/github-client.port';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeCareerProfile } from '../../../humanize/application/humanize-career-profile.adapter';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerMateException } from '../domain/career-mate.exception';
@@ -44,6 +46,7 @@ export class BuildCareerProfileUsecase {
     private readonly repository: CareerProfileRepositoryPort,
     private readonly agentRunService: AgentRunService,
     private readonly config: ConfigService,
+    private readonly humanizer: HumanizeService,
   ) {}
 
   async execute({
@@ -97,7 +100,9 @@ export class BuildCareerProfileUsecase {
             systemPrompt: CAREER_PROFILE_SYNTH_SYSTEM_PROMPT,
           },
         });
-        const data = parseCareerProfileOutput(completion.text);
+        const parsed = parseCareerProfileOutput(completion.text);
+        // 서술 필드 윤문(ChatGPT 전용, best-effort) — 비활성/실패 시 parsed 를 그대로 돌려준다.
+        const data = await humanizeCareerProfile(parsed, this.humanizer);
         data.meta = {
           githubLogin,
           windowStart: sinceIsoDate,

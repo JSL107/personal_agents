@@ -1,9 +1,11 @@
 import {
   AssignedTasks,
+  GithubPullRequest,
   GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
 } from '../github.type';
+import { PullRequestEngagementSignals } from '../pr-engagement.type';
 
 export const GITHUB_CLIENT_PORT = Symbol('GITHUB_CLIENT_PORT');
 
@@ -124,4 +126,10 @@ export interface GithubClientPort {
   pushBranchAndOpenPr(
     input: PushBranchAndOpenPrInput,
   ): Promise<PushBranchAndOpenPrResult>;
+
+  // 아침 브리핑 완료/대기 분류용 PR 신호 보강. best-effort — 실패/캡 초과 PR 은
+  // 중립 신호(mergeableState='unknown', 모든 flag false)로 채워 분류 시 ACTIVE 로 떨어진다.
+  fetchPullRequestEngagement(
+    pullRequests: GithubPullRequest[],
+  ): Promise<PullRequestEngagementSignals[]>;
 }
