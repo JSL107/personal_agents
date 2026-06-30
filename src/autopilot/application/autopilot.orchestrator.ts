@@ -75,8 +75,9 @@ export class AutopilotOrchestrator {
       return;
     }
 
+    const guardKey = `autopilot:${groupKey}:${firedAtKst}`;
     const firstRun = await this.cronIdempotency.acquireOnce(
-      `autopilot:${groupKey}:${firedAtKst}`,
+      guardKey,
       CRON_SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
@@ -92,39 +93,52 @@ export class AutopilotOrchestrator {
       .map((resolved) => resolved.trim())
       .filter((resolved) => resolved.length > 0);
 
-    for (const resolved of targets) {
-      const { ts } = await this.slackNotifier.postMessage({
-        target: resolved,
-        text: mainText,
-      });
-      if (ts) {
-        for (const item of items) {
-          if (item.detail) {
-            try {
-              await this.slackNotifier.postMessage({
-                target: resolved,
-                text: item.detail,
-                threadTs: ts,
-              });
-            } catch (error: unknown) {
-              const message =
-                error instanceof Error ? error.message : String(error);
-              this.logger.warn(
-                `Autopilot[${groupKey}] 스레드 댓글 발송 실패 (메인 발송 유지): ${message}`,
-              );
+    // 메인 요약 발송이 실패하면 위에서 선점한 멱등 가드를 롤백한 뒤 rethrow 한다.
+    // 그래야 BullMQ 재시도가 같은 슬롯을 "이미 발송됨" 으로 차단하지 않고 다시 발송한다.
+    // (가드를 acquireOnce 단계에서 소비한 채 메인 발송이 실패하면 재시도가 영구 차단돼
+    //  저녁 다이제스트가 통째로 미전송되던 버그 — 가드는 "발송 성공 시에만" 소비되어야 한다.)
+    // 스레드 상세(detail) 발송 실패는 아래 자체 try/catch 로 swallow 하므로 롤백 대상이 아니다.
+    // ⚠️ 가드는 group 단위 단일 키(target 별 아님)다. 다중 target 부분 실패(앞 target 성공 후
+    //    뒤 target 실패) 시 release+rethrow → 재시도가 성공한 target 에도 재발송한다 —
+    //    "전 target 미전송" 보다 작은 해악으로 수용(단일 target 운영 기준). 완전 제거는 target 별 가드.
+    try {
+      for (const resolved of targets) {
+        const { ts } = await this.slackNotifier.postMessage({
+          target: resolved,
+          text: mainText,
+        });
+        if (ts) {
+          for (const item of items) {
+            if (item.detail) {
+              try {
+                await this.slackNotifier.postMessage({
+                  target: resolved,
+                  text: item.detail,
+                  threadTs: ts,
+                });
+              } catch (error: unknown) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                this.logger.warn(
+                  `Autopilot[${groupKey}] 스레드 댓글 발송 실패 (메인 발송 유지): ${message}`,
+                );
+              }
             }
           }
-        }
-      } else {
-        // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
-        // 메인 요약은 이미 발송됐고 detail 만 누락되므로 데이터 손실은 아니나, 관측성 위해 경고.
-        const skippedDetailCount = items.filter((item) => item.detail).length;
-        if (skippedDetailCount > 0) {
-          this.logger.warn(
-            `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 상세 ${skippedDetailCount}건 skip`,
-          );
+        } else {
+          // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
+          // 메인 요약은 이미 발송됐고 detail 만 누락되므로 데이터 손실은 아니나, 관측성 위해 경고.
+          const skippedDetailCount = items.filter((item) => item.detail).length;
+          if (skippedDetailCount > 0) {
+            this.logger.warn(
+              `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 상세 ${skippedDetailCount}건 skip`,
+            );
+          }
         }
       }
+    } catch (error: unknown) {
+      await this.cronIdempotency.release(guardKey);
+      throw error;
     }
     this.logger.log(
       `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task)`,
