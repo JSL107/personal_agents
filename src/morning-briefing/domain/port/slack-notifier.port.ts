@@ -11,4 +11,10 @@ export interface SlackNotifierPort {
     text: string;
     threadTs?: string;
   }): Promise<{ ts: string | undefined }>;
+  // T1_PREVIEW preview 버튼 메시지 (SlackService 가 이미 구현 — 인터페이스만 확장).
+  postPreviewMessage(input: {
+    target: string;
+    previewText: string;
+    previewId: string;
+  }): Promise<void>;
 }

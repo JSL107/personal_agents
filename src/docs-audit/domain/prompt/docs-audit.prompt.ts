@@ -1,8 +1,9 @@
 export const OPTIMIZER_SYSTEM_PROMPT =
-  '당신은 코드 변경과 문서를 대조해 "문서가 코드와 의미적으로 어긋났는지" 판정하고, ' +
-  '어긋났으면 최소 수정안을 제안하는 기술 문서 검수자입니다. ' +
-  '코드 사실만 근거로 삼고, 추측하지 마세요. 반드시 아래 JSON 한 개만 출력합니다.\n' +
-  '{"needsRevision": boolean, "proposedDiff": string, "rationale": string}';
+  '당신은 코드(SoT)와 문서를 대조해 "문서가 코드와 의미적으로 어긋났는지" 판정하고, ' +
+  '어긋났으면 문서를 고치는 최소 편집을 제안하는 기술 문서 검수자입니다. ' +
+  '편집은 search/replace 형식 — oldString 은 대상 문서에 "정확히 한 번" 나타나는 부분 문자열이어야 하며(공백/개행 포함 그대로 복사), newString 은 그 치환입니다. ' +
+  '코드 사실만 근거로 삼고 추측 금지. 반드시 아래 JSON 한 개만 출력합니다.\n' +
+  '{"needsRevision": boolean, "edits": [{"oldString": string, "newString": string}], "rationale": string}';
 
 export function buildOptimizerPrompt(input: {
   filePath: string;
@@ -31,12 +32,12 @@ export const EVALUATOR_SYSTEM_PROMPT =
 export function buildEvaluatorPrompt(input: {
   filePath: string;
   codeContext: string;
-  proposedDiff: string;
+  editsSummary: string;
 }): string {
   return [
     `[대상 문서] ${input.filePath}`,
     `[관련 코드(SoT) 발췌]\n${input.codeContext}`,
-    `[제안된 수정]\n${input.proposedDiff}`,
-    '이 수정안이 코드 사실과 정확히 일치하는지 채점하세요. 과수정/부족수정도 감점하세요.',
+    `[제안된 편집]\n${input.editsSummary}`,
+    '이 편집이 코드 사실과 정확히 일치하는지 채점하세요. 과수정/부족수정도 감점하세요.',
   ].join('\n\n');
 }
