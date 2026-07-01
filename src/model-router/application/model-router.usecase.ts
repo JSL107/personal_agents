@@ -57,6 +57,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // docs-sync-audit Layer 2 — 문서 의미 드리프트 optimizer/evaluator. 경량 → ChatGPT.
   [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
   [AgentType.DOCS_AUDIT_EVALUATOR]: ModelProviderName.CHATGPT,
+  // PREFERENCE_LEARNING — 신호 배치 → 선호 프로필 diff 추론. 경량 판정 → ChatGPT.
+  [AgentType.PREFERENCE_LEARNING]: ModelProviderName.CHATGPT,
 };
 
 // 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).

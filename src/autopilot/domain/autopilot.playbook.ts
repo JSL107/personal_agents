@@ -11,6 +11,8 @@ import {
   DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
+  DEFAULT_PREFERENCE_LEARNING_CRON,
+  DEFAULT_PREFERENCE_LEARNING_TIMEZONE,
   DEFAULT_RUN_RETRO_CRON,
   DEFAULT_RUN_RETRO_TIMEZONE,
   DEFAULT_WEEKLY_SUMMARY_CRON,
@@ -117,6 +119,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_DOCS_AUDIT_CRON,
       timezone: DEFAULT_DOCS_AUDIT_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
+  },
+  // Preference Learning — 주간 선호 학습. T1_PREVIEW: 추론된 프로필 diff 를 사용자 승인 후 적용.
+  // AUTOPILOT_PREFERENCE_LEARNING_ENABLED 미설정/false 시 task 가 skip(안전).
+  {
+    id: 'preference-learning',
+    taskId: 'preference-learning',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PREFERENCE_LEARNING_CRON,
+      timezone: DEFAULT_PREFERENCE_LEARNING_TIMEZONE,
     },
     riskTier: 'T1_PREVIEW',
   },
