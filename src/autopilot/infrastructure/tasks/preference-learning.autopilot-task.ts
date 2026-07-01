@@ -12,6 +12,7 @@ import {
   PREFERENCE_PROPOSAL_REPOSITORY,
   PreferenceProposalRepositoryPort,
 } from '../../../preference-profile/domain/port/preference-proposal.repository.port';
+import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatPreferenceProposal } from '../../../slack/format/preference-proposal.formatter';
 import {
   AutopilotTask,
@@ -71,10 +72,14 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
       diff: inferred.diff,
       rationale: inferred.rationale,
     });
-    const summaryText =
-      formatPreferenceProposal(inferred.diff, inferred.rationale) +
-      `\n\n_제안 #${id} — 승인/거부 버튼으로 반영_`;
-    return { skip: false, summaryText };
+    return {
+      skip: false,
+      preview: {
+        kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+        payload: { proposalId: id },
+        previewText: formatPreferenceProposal(inferred.diff, inferred.rationale),
+      },
+    };
   }
 
   private isEnabled(): boolean {

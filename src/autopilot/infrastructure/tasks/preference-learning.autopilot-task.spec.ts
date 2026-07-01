@@ -45,7 +45,7 @@ describe('PreferenceLearningAutopilotTask', () => {
     expect(infer).not.toHaveBeenCalled();
   });
 
-  it('diff 있으면 PENDING 생성 + summaryText 반환', async () => {
+  it('diff 있으면 PENDING 생성 + preview 반환', async () => {
     const task = new PreferenceLearningAutopilotTask(
       { collect: jest.fn().mockResolvedValue([{ source: 'reaction', evidenceRef: 'r', observedText: 't' }]) } as never,
       { infer: jest.fn().mockResolvedValue({ diff: { tone: { add: ['간결'] } }, rationale: 'r' }) } as never,
@@ -55,8 +55,9 @@ describe('PreferenceLearningAutopilotTask', () => {
     );
     const result = await task.run(ctx);
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('간결');
-    expect(result.summaryText).toContain('#11');
+    expect(result.preview?.kind).toBe('PREFERENCE_PROFILE');
+    expect(result.preview?.previewText).toContain('간결');
+    expect((result.preview?.payload as { proposalId: number }).proposalId).toBe(11);
   });
 
   it('infer 결과가 null 이면 skip', async () => {
