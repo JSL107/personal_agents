@@ -36,6 +36,7 @@ import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
 import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
 import { PreferenceProfilePreviewApplier } from './preference-profile/infrastructure/preference-profile.preview-applier';
+import { PreferenceProfileCanceller } from './preference-profile/infrastructure/preference-profile.preview-canceller';
 import { PreferenceProfileModule } from './preference-profile/preference-profile.module';
 import { GithubPrVerifier } from './preview-gate/infrastructure/github-pr.verifier';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
@@ -117,6 +118,8 @@ import { WebhookModule } from './webhook/webhook.module';
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier],
+      // v2 reject-signal: PREFERENCE_PROFILE 제안 ❌ 거부 시 연결 proposal 을 REJECTED 로 기록.
+      cancellers: [PreferenceProfileCanceller],
       imports: [
         GithubModule,
         NotionModule,
