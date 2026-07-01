@@ -10,6 +10,10 @@ import {
   PreviewApplier,
 } from './domain/port/preview-applier.port';
 import {
+  PREVIEW_CANCELLERS,
+  PreviewCanceller,
+} from './domain/port/preview-canceller.port';
+import {
   RESULT_VERIFIERS,
   ResultVerifier,
 } from './domain/port/result-verifier.port';
@@ -40,6 +44,11 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
       provide: RESULT_VERIFIERS,
       useValue: [] as ResultVerifier[],
     },
+    {
+      // PreviewCanceller 도 동일 — 미등록 시 CancelPreviewUsecase 가 빈 배열로 부팅 (cancel 후처리 skip).
+      provide: PREVIEW_CANCELLERS,
+      useValue: [] as PreviewCanceller[],
+    },
   ],
   exports: [
     CreatePreviewUsecase,
@@ -52,12 +61,15 @@ export class PreviewGateModule {
   static forRoot({
     appliers,
     verifiers = [],
+    cancellers = [],
     imports = [],
   }: {
     appliers: Type<PreviewApplier>[];
     // 실행 후 결과 검증 strategy 들 (GithubPrVerifier 등). RESULT_VERIFIERS 로 중앙 등록.
     verifiers?: Type<ResultVerifier>[];
-    // applier/verifier 가 의존하는 도메인 모듈들 (GithubModule / NotionModule 등) — DynamicModule 안에서 import.
+    // ❌ cancel 후처리 strategy 들 (PreferenceProfileCanceller 등). PREVIEW_CANCELLERS 로 중앙 등록.
+    cancellers?: Type<PreviewCanceller>[];
+    // applier/verifier/canceller 가 의존하는 도메인 모듈들 (GithubModule / NotionModule 등) — DynamicModule 안에서 import.
     imports?: ModuleMetadata['imports'];
   }): DynamicModule {
     return {
@@ -69,6 +81,7 @@ export class PreviewGateModule {
       providers: [
         ...appliers,
         ...verifiers,
+        ...cancellers,
         {
           provide: PREVIEW_APPLIERS,
           useFactory: (...resolved: PreviewApplier[]) => resolved,
@@ -79,8 +92,13 @@ export class PreviewGateModule {
           useFactory: (...resolved: ResultVerifier[]) => resolved,
           inject: verifiers,
         },
+        {
+          provide: PREVIEW_CANCELLERS,
+          useFactory: (...resolved: PreviewCanceller[]) => resolved,
+          inject: cancellers,
+        },
       ],
-      exports: [...appliers, ...verifiers],
+      exports: [...appliers, ...verifiers, ...cancellers],
     };
   }
 }
