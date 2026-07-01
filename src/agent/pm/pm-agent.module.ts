@@ -5,6 +5,7 @@ import { DailyPlanModule } from '../../daily-plan/daily-plan.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
+import { PreferenceProfileModule } from '../../preference-profile/preference-profile.module';
 import { SlackCollectorModule } from '../../slack-collector/slack-collector.module';
 import { SlackInboxModule } from '../../slack-inbox/slack-inbox.module';
 import { DailyPlanContextCollector } from './application/daily-plan-context.collector';
@@ -25,6 +26,8 @@ import { PmDispatcher } from './infrastructure/pm.dispatcher';
     DailyPlanModule,
     GithubModule,
     NotionModule,
+    // 학습된 업무 선호(priorities 등)를 데일리플랜 생성에 주입 — PREFERENCE_PROFILE_PORT export.
+    PreferenceProfileModule,
     SlackCollectorModule,
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
