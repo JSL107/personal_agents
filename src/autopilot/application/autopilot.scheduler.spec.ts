@@ -35,8 +35,8 @@ describe('AutopilotScheduler', () => {
     expect(unique.size).toBe(addCalls.length);
     // SP4: evening(daily-eval+work-reviewer) + morning + weekly-summary + ceo-meta + impact-report
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
-    //   + docs-sync-audit(주간 문서↔코드 점검, 단독 그룹) = 8그룹.
-    expect(queue.add).toHaveBeenCalledTimes(8);
+    //   + docs-sync-audit(주간 문서↔코드 점검, 단독 그룹) + preference-learning(주간 선호 학습) = 9그룹.
+    expect(queue.add).toHaveBeenCalledTimes(9);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('weekly-summary');
@@ -45,6 +45,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('run-retro');
     expect(addCalls).toContain('knowledge-lint');
     expect(addCalls).toContain('docs-sync-audit');
+    expect(addCalls).toContain('preference-learning');
   });
 
   it('evening 그룹 스케줄은 첫 항목(daily-eval) env 기반 → 19:00', async () => {
