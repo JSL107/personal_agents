@@ -54,6 +54,9 @@ export enum AgentType {
   // AGENT_REGISTRY 에는 등록한다 (agent-registry.spec 이 enum 집합 일치를 강제 — CONTRADICTION_JUDGE 동일).
   DOCS_AUDIT_OPTIMIZER = 'DOCS_AUDIT_OPTIMIZER',
   DOCS_AUDIT_EVALUATOR = 'DOCS_AUDIT_EVALUATOR',
+  // 내부 proactive — 주간 선호 학습. 신호 배치 → 프로필 diff 추론. 경량 판정 → ChatGPT.
+  // 슬래시 핸들러/ResponseCode/retry-run 체크리스트 비대상(사용자 비노출 내부 타입).
+  PREFERENCE_LEARNING = 'PREFERENCE_LEARNING',
 }
 
 export interface CompletionRequest {
