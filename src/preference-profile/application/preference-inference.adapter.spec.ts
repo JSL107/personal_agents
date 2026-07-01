@@ -1,7 +1,7 @@
 import { EMPTY_PROFILE } from '../domain/preference-profile.type';
 import {
-  PreferenceInferenceAdapter,
   parsePreferenceDiff,
+  PreferenceInferenceAdapter,
 } from './preference-inference.adapter';
 
 describe('parsePreferenceDiff', () => {
@@ -36,7 +36,9 @@ describe('PreferenceInferenceAdapter.infer', () => {
   });
 
   it('route 가 파싱 불가 응답 → null', async () => {
-    const modelRouter = { route: jest.fn().mockResolvedValue({ text: 'noise' }) };
+    const modelRouter = {
+      route: jest.fn().mockResolvedValue({ text: 'noise' }),
+    };
     const adapter = new PreferenceInferenceAdapter(modelRouter as never);
     expect(
       await adapter.infer(EMPTY_PROFILE, [

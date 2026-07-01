@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { PreferenceDiff, PreferenceProfile } from '../domain/preference-profile.type';
+import {
+  PreferenceDiff,
+  PreferenceProfile,
+} from '../domain/preference-profile.type';
 import { PreferenceSignal } from '../domain/preference-signal.type';
 
 export interface InferenceResult {
@@ -30,8 +33,7 @@ export const parsePreferenceDiff = (raw: string): InferenceResult | null => {
     }
     return {
       diff: parsed.diff as PreferenceDiff,
-      rationale:
-        typeof parsed.rationale === 'string' ? parsed.rationale : '',
+      rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
     };
   } catch {
     return null;

@@ -1,5 +1,5 @@
-import { PreferenceSignalCollector } from './preference-signal.collector';
 import { PreferenceSignal } from '../domain/preference-signal.type';
+import { PreferenceSignalCollector } from './preference-signal.collector';
 
 const source = (name: string, signals: PreferenceSignal[]) => ({
   name,
@@ -21,7 +21,10 @@ describe('PreferenceSignalCollector.collect', () => {
   });
 
   it('한 소스가 throw 해도 나머지 소스는 수집(best-effort)', async () => {
-    const bad = { name: 'bad', fetch: jest.fn().mockRejectedValue(new Error('x')) };
+    const bad = {
+      name: 'bad',
+      fetch: jest.fn().mockRejectedValue(new Error('x')),
+    };
     const good = source('good', [
       { source: 'reaction', evidenceRef: 'r', observedText: 't' },
     ]);

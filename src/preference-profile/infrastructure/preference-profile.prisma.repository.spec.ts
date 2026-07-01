@@ -1,5 +1,5 @@
-import { PreferenceProfilePrismaRepository } from './preference-profile.prisma.repository';
 import { EMPTY_PROFILE } from '../domain/preference-profile.type';
+import { PreferenceProfilePrismaRepository } from './preference-profile.prisma.repository';
 
 describe('PreferenceProfilePrismaRepository', () => {
   const buildPrisma = () => ({
@@ -66,9 +66,8 @@ describe('PreferenceProposalPrismaRepository', () => {
   });
 
   it('countPendingSince 는 PENDING status 와 createdAt gte 필터로 count 반환', async () => {
-    const { PreferenceProposalPrismaRepository } = await import(
-      './preference-proposal.prisma.repository'
-    );
+    const { PreferenceProposalPrismaRepository } =
+      await import('./preference-proposal.prisma.repository');
     const prisma = buildPrisma();
     prisma.preferenceProposal.count.mockResolvedValue(5);
     const repo = new PreferenceProposalPrismaRepository(prisma as never);

@@ -48,7 +48,10 @@ const asRoutingHints = (value: unknown): RoutingHint[] => {
       continue;
     }
     const record = entry as Record<string, unknown>;
-    if (typeof record.phrase === 'string' && typeof record.intent === 'string') {
+    if (
+      typeof record.phrase === 'string' &&
+      typeof record.intent === 'string'
+    ) {
       hints.push({ phrase: record.phrase, intent: record.intent });
     }
   }

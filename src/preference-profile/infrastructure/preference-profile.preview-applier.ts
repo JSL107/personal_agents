@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import { ApplyResult } from '../../preview-gate/domain/apply-result.type';
+import { PreviewApplier } from '../../preview-gate/domain/port/preview-applier.port';
 import {
   PREVIEW_KIND,
   PreviewAction,
 } from '../../preview-gate/domain/preview-action.type';
-import { PreviewApplier } from '../../preview-gate/domain/port/preview-applier.port';
 import { PreferenceProfileApplyService } from '../application/preference-profile-apply.service';
 
 // PreviewGate applier — 사용자가 선호 프로필 갱신 제안을 ✅ 승인하면 diff 를 적용(새 버전).

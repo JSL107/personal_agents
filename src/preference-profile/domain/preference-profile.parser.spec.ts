@@ -1,5 +1,5 @@
-import { EMPTY_PROFILE, PreferenceProfile } from './preference-profile.type';
 import { applyDiff, parseProfile } from './preference-profile.parser';
+import { EMPTY_PROFILE, PreferenceProfile } from './preference-profile.type';
 
 describe('parseProfile', () => {
   it('비객체/누락 필드는 EMPTY_PROFILE 로 안전 복구', () => {

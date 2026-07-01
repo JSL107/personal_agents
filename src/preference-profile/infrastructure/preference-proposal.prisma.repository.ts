@@ -1,17 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { PreferenceDiff } from '../domain/preference-profile.type';
 import {
   CreateProposalInput,
   PreferenceProposalRecord,
   PreferenceProposalRepositoryPort,
 } from '../domain/port/preference-proposal.repository.port';
+import { PreferenceDiff } from '../domain/preference-profile.type';
 
 @Injectable()
-export class PreferenceProposalPrismaRepository
-  implements PreferenceProposalRepositoryPort
-{
+export class PreferenceProposalPrismaRepository implements PreferenceProposalRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async createPending(input: CreateProposalInput): Promise<number> {

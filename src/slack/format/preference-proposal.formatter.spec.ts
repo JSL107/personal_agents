@@ -11,10 +11,7 @@ describe('formatPreferenceProposal', () => {
   });
 
   it('tone add 는 +문체: 로 렌더', () => {
-    const text = formatPreferenceProposal(
-      { tone: { add: ['간결'] } },
-      'test',
-    );
+    const text = formatPreferenceProposal({ tone: { add: ['간결'] } }, 'test');
     expect(text).toContain('+문체: 간결');
   });
 
