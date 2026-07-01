@@ -212,4 +212,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       'docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용)',
   },
+  {
+    agentType: AgentType.PREFERENCE_LEARNING,
+    displayName: 'Preference Learning',
+    slashCommands: [],
+    usecasePath:
+      'src/preference-profile/application/preference-inference.adapter.ts',
+    description:
+      '주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용)',
+  },
 ];

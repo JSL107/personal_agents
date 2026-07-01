@@ -1,8 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  PREFERENCE_PROFILE_PORT,
+  PreferenceProfilePort,
+} from '../../preference-profile/domain/port/preference-profile.port';
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
 import { HUMANIZE_SYSTEM_PROMPT } from '../domain/humanize-system.prompt';
 
@@ -14,6 +18,9 @@ export class HumanizeService {
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly configService: ConfigService,
+    @Optional()
+    @Inject(PREFERENCE_PROFILE_PORT)
+    private readonly preferenceProfile?: PreferenceProfilePort,
   ) {}
 
   isEnabled(): boolean {
@@ -42,11 +49,17 @@ export class HumanizeService {
     }
 
     try {
+      const injection = this.preferenceProfile
+        ? await this.preferenceProfile.getInjectionBlock('humanize')
+        : '';
+      const systemPrompt = injection
+        ? `${HUMANIZE_SYSTEM_PROMPT}\n\n${injection}`
+        : HUMANIZE_SYSTEM_PROMPT;
       const completion = await this.modelRouter.route({
         agentType: AgentType.HUMANIZER,
         request: {
           prompt: JSON.stringify(payload),
-          systemPrompt: HUMANIZE_SYSTEM_PROMPT,
+          systemPrompt,
         },
         // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
         // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).

@@ -12,6 +12,7 @@ import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module'
 import { HumanizeModule } from '../humanize/humanize.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
+import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
@@ -25,6 +26,7 @@ import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
+import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
@@ -44,6 +46,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     EpisodicMemoryModule,
     HumanizeModule,
     DocsAuditModule,
+    PreferenceProfileModule,
     SlackModule,
     NotificationQueueModule,
   ],
@@ -60,6 +63,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     RunRetroAutopilotTask,
     KnowledgeLintAutopilotTask,
     DocsSyncAuditTask,
+    PreferenceLearningAutopilotTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
@@ -73,6 +77,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         runRetro: RunRetroAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
+        preferenceLearning: PreferenceLearningAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -83,6 +88,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         runRetro,
         knowledgeLint,
         docsSyncAudit,
+        preferenceLearning,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -94,6 +100,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         RunRetroAutopilotTask,
         KnowledgeLintAutopilotTask,
         DocsSyncAuditTask,
+        PreferenceLearningAutopilotTask,
       ],
     },
     {
