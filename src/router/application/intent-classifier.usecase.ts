@@ -7,6 +7,10 @@ import {
 } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  PREFERENCE_PROFILE_PORT,
+  PreferenceProfilePort,
+} from '../../preference-profile/domain/port/preference-profile.port';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { IntentClassification } from '../domain/intent-classification.type';
 import { parseIntentClassification } from '../domain/prompt/intent-classification.parser';
@@ -34,6 +38,9 @@ export class IntentClassifierUsecase {
     @Optional()
     @Inject(EPISODIC_MEMORY_PORT)
     private readonly episodicMemory?: EpisodicMemoryPort,
+    @Optional()
+    @Inject(PREFERENCE_PROFILE_PORT)
+    private readonly preferenceProfile?: PreferenceProfilePort,
   ) {}
 
   async classify(
@@ -43,11 +50,17 @@ export class IntentClassifierUsecase {
     const trimmed = text.trim();
     const episodicHits = await this.recallSimilar(trimmed);
     const prompt = buildPrompt(trimmed, priorTurns, episodicHits);
+    const routingBlock = this.preferenceProfile
+      ? await this.preferenceProfile.getInjectionBlock('routing')
+      : '';
+    const systemPrompt = routingBlock
+      ? `${INTENT_CLASSIFIER_SYSTEM_PROMPT}\n\n${routingBlock}`
+      : INTENT_CLASSIFIER_SYSTEM_PROMPT;
     const completion = await this.modelRouter.route({
       agentType: AgentType.PM,
       request: {
         prompt,
-        systemPrompt: INTENT_CLASSIFIER_SYSTEM_PROMPT,
+        systemPrompt,
       },
     });
     const classification = parseIntentClassification(completion.text);

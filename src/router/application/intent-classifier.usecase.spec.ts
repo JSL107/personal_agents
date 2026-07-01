@@ -5,6 +5,7 @@ import {
   AgentType,
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
+import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 import { IntentClassifierUsecase } from './intent-classifier.usecase';
 
@@ -139,6 +140,51 @@ describe('IntentClassifierUsecase', () => {
       expect(result.agentType).toBe(AgentType.BE);
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).not.toContain('[유사 과거 작업]');
+    });
+  });
+
+  describe('preference profile routing 주입', () => {
+    const beResponse = JSON.stringify({
+      agentType: 'BE',
+      confidence: 0.9,
+      reason: 'r',
+    });
+
+    it('프로필 주입 시 systemPrompt 에 라우팅 힌트가 포함된다', async () => {
+      const routingHint = '사용자 지칭 습관 힌트:\n- "그거 분배" → CTO';
+      const preferenceProfile: PreferenceProfilePort = {
+        getInjectionBlock: jest.fn().mockResolvedValue(routingHint),
+      };
+      const modelRouter = makeModelRouterMock(beResponse);
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        undefined,
+        preferenceProfile,
+      );
+
+      await usecase.classify('그거 분배해줘');
+
+      const callArg = modelRouter.route.mock.calls[0][0];
+      expect(callArg.request.systemPrompt).toContain(routingHint);
+      expect(callArg.request.systemPrompt).toContain(
+        INTENT_CLASSIFIER_SYSTEM_PROMPT,
+      );
+    });
+
+    it('프로필 미주입 시 기존 systemPrompt 로 호출된다', async () => {
+      const modelRouter = makeModelRouterMock(beResponse);
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        undefined,
+        undefined,
+      );
+
+      await usecase.classify('그거 분배해줘');
+
+      const callArg = modelRouter.route.mock.calls[0][0];
+      expect(callArg.request.systemPrompt).toBe(
+        INTENT_CLASSIFIER_SYSTEM_PROMPT,
+      );
     });
   });
 });
