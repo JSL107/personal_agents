@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 23종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
+이대리의 에이전트 24종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`model-router.usecase.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -27,6 +27,7 @@
 | PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
 | PO Eval | `PO_EVAL` | `/po-eval` | CLAUDE | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
+| Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
 | Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |
 | Work Reviewer | `WORK_REVIEWER` | `/worklog` | CHATGPT | `src/agent/work-reviewer/application/generate-worklog.usecase.ts` | 업무 로그 / 주간보고 초안 생성 |
