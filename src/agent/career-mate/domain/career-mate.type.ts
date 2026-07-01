@@ -39,6 +39,7 @@ export type CareerMateAction =
   | 'RENDER_PORTFOLIO'
   | 'ANALYZE_JD_GAP'
   | 'CALIBRATE_RESUME'
+  | 'REFLECT_PR'
   | 'UNKNOWN';
 
 export interface CareerMateIntent {
@@ -99,4 +100,28 @@ export interface CalibrationResultData {
 export interface CalibrateResumeInput {
   slackUserId: string;
   webTrendsNote?: string;
+}
+
+// REFLECT_PR — 단일 PR 회고 → 이력서/포트폴리오 반영.
+export interface ParsedPrRef {
+  repo: string; // "owner/repo"
+  number: number;
+}
+
+export interface ReflectPrInput {
+  slackUserId: string;
+  prText: string; // 사용자 원문 (dispatcher 가 input.text 를 그대로 전달)
+}
+
+export interface PrRetroSynth {
+  accomplishment: ProfileAccomplishment;
+  narrative: string;
+}
+
+export interface ReflectPrResult {
+  accomplishment: ProfileAccomplishment;
+  narrative: string;
+  portfolioUrl: string;
+  agentRunId: number;
+  modelUsed: string;
 }

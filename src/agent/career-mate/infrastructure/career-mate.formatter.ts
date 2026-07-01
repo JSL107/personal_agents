@@ -3,6 +3,7 @@ import {
   CalibrationResultData,
   CareerProfileData,
   GapAnalysisData,
+  ReflectPrResult,
 } from '../domain/career-mate.type';
 
 export const formatProfileSummary = (data: CareerProfileData): string => {
@@ -113,6 +114,27 @@ export const buildPortfolioBlocks = (
     });
   }
   return blocks;
+};
+
+// REFLECT_PR — 단일 PR 회고 결과를 Slack mrkdwn 으로. 회고 서술 + 이력서 bullet(STAR) + 포폴 링크.
+export const formatPrRetro = (result: ReflectPrResult): string => {
+  const a = result.accomplishment;
+  const star = a.star;
+  return [
+    `*PR 회고 — ${escapeSlackMrkdwn(a.title)}*`,
+    escapeSlackMrkdwn(result.narrative),
+    ``,
+    `*이력서 bullet*`,
+    `• ${escapeSlackMrkdwn(a.bullet)}`,
+    ``,
+    `*STAR*`,
+    `• S: ${escapeSlackMrkdwn(star.situation)}`,
+    `• T: ${escapeSlackMrkdwn(star.task)}`,
+    `• A: ${escapeSlackMrkdwn(star.action)}`,
+    `• R: ${escapeSlackMrkdwn(star.result)}`,
+    ``,
+    `*포트폴리오 반영 완료* ✅\n${result.portfolioUrl}`,
+  ].join('\n');
 };
 
 // Slack mrkdwn control 문자 escape — LLM 출력(summary/bullet/skill명)에 의한 메시지 위조 차단.

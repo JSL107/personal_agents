@@ -34,6 +34,12 @@ describe('parseCareerMateIntent', () => {
     );
   });
 
+  it('REFLECT_PR 를 파싱한다', () => {
+    expect(parseCareerMateIntent('{"action":"REFLECT_PR"}').action).toBe(
+      'REFLECT_PR',
+    );
+  });
+
   it('알 수 없는 action 은 UNKNOWN 으로 정규화한다', () => {
     expect(parseCareerMateIntent('{"action":"FOO"}').action).toBe('UNKNOWN');
   });

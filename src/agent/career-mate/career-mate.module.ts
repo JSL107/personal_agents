@@ -8,6 +8,7 @@ import { NotionModule } from '../../notion/notion.module';
 import { AnalyzeJdGapUsecase } from './application/analyze-jd-gap.usecase';
 import { BuildCareerProfileUsecase } from './application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from './application/calibrate-resume.usecase';
+import { ReflectPrUsecase } from './application/reflect-pr.usecase';
 import { RenderPortfolioUsecase } from './application/render-portfolio.usecase';
 import { RenderResumeUsecase } from './application/render-resume.usecase';
 import { CAREER_PROFILE_REPOSITORY_PORT } from './domain/port/career-profile.repository.port';
@@ -33,6 +34,7 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
     RenderPortfolioUsecase,
     AnalyzeJdGapUsecase,
     CalibrateResumeUsecase,
+    ReflectPrUsecase,
     CareerMateDispatcher,
   ],
   exports: [
@@ -41,6 +43,7 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
     RenderPortfolioUsecase,
     AnalyzeJdGapUsecase,
     CalibrateResumeUsecase,
+    ReflectPrUsecase,
     CareerMateDispatcher,
   ],
 })
