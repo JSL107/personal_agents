@@ -33,3 +33,7 @@ export const DEFAULT_KNOWLEDGE_LINT_TIMEZONE = 'Asia/Seoul';
 // docs-sync-audit 기본 스케줄 — 매주 일 11:00 KST (knowledge-lint 일 10:00 과 1시간 분리).
 export const DEFAULT_DOCS_AUDIT_CRON = '0 11 * * 0';
 export const DEFAULT_DOCS_AUDIT_TIMEZONE = 'Asia/Seoul';
+
+// Preference Learning 기본 스케줄 — 매주 일 12:00 KST(docs-audit 일 11:00 과 1시간 분리).
+export const DEFAULT_PREFERENCE_LEARNING_CRON = '0 12 * * 0';
+export const DEFAULT_PREFERENCE_LEARNING_TIMEZONE = 'Asia/Seoul';

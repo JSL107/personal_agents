@@ -470,6 +470,18 @@ class EnvironmentVariables {
   @IsString()
   SUBCONSCIOUS_ENABLED?: string;
 
+  // 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF).
+  // 'true' 일 때만 PreferenceLearningAutopilotTask 가 실행되고, 미설정/false 시 task 가 skip.
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_PREFERENCE_LEARNING_ENABLED?: string;
+
+  // 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF).
+  // 'true' 일 때만 PreferenceProfileService 가 프로필 블록을 LLM 프롬프트에 삽입.
+  @IsOptional()
+  @IsString()
+  PREFERENCE_PROFILE_INJECTION_ENABLED?: string;
+
   // HUMANIZE_REPORTS_ENABLED: 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON).
   @IsOptional()
   @IsString()
