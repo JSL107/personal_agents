@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { PreferenceSignal } from '../domain/preference-signal.type';
 import {
   PREFERENCE_SIGNAL_SOURCES,
   PreferenceSignalSource,
 } from '../domain/port/preference-signal-source.port';
+import { PreferenceSignal } from '../domain/preference-signal.type';
 
 @Injectable()
 export class PreferenceSignalCollector {

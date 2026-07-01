@@ -1,17 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { parseProfile } from '../domain/preference-profile.parser';
-import { PreferenceProfile } from '../domain/preference-profile.type';
 import {
   ActiveProfile,
   PreferenceProfileRepositoryPort,
 } from '../domain/port/preference-profile.repository.port';
+import { parseProfile } from '../domain/preference-profile.parser';
+import { PreferenceProfile } from '../domain/preference-profile.type';
 
 @Injectable()
-export class PreferenceProfilePrismaRepository
-  implements PreferenceProfileRepositoryPort
-{
+export class PreferenceProfilePrismaRepository implements PreferenceProfileRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async findActive(ownerUserId: string): Promise<ActiveProfile | null> {

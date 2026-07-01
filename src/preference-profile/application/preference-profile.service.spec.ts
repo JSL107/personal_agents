@@ -11,13 +11,11 @@ describe('PreferenceProfileService.getInjectionBlock', () => {
   const buildConfigWithOwner = (enabled: string | undefined) =>
     ({
       get: jest.fn((key: string) =>
-        key === 'PREFERENCE_PROFILE_INJECTION_ENABLED'
-          ? enabled
-          : ownerUserId,
+        key === 'PREFERENCE_PROFILE_INJECTION_ENABLED' ? enabled : ownerUserId,
       ),
     }) as unknown as ConfigService;
 
-  it('소비 게이트 미설정(\'true\' 아님)이면 repository 조회 없이 빈 문자열', async () => {
+  it("소비 게이트 미설정('true' 아님)이면 repository 조회 없이 빈 문자열", async () => {
     const repo = { findActive: jest.fn() };
     const service = new PreferenceProfileService(
       repo as never,

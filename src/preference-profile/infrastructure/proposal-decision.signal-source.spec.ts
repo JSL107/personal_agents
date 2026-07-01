@@ -1,7 +1,9 @@
-import { ProposalDecisionSignalSource } from './proposal-decision.signal-source';
 import { PreferenceProposalRecord } from '../domain/port/preference-proposal.repository.port';
+import { ProposalDecisionSignalSource } from './proposal-decision.signal-source';
 
-const makeRecord = (overrides: Partial<PreferenceProposalRecord> = {}): PreferenceProposalRecord => ({
+const makeRecord = (
+  overrides: Partial<PreferenceProposalRecord> = {},
+): PreferenceProposalRecord => ({
   id: 1,
   ownerUserId: 'U1',
   baseVersion: 0,

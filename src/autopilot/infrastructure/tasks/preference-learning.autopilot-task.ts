@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 
 import { PreferenceInferenceAdapter } from '../../../preference-profile/application/preference-inference.adapter';
 import { PreferenceSignalCollector } from '../../../preference-profile/application/preference-signal.collector';
-import { EMPTY_PROFILE } from '../../../preference-profile/domain/preference-profile.type';
 import {
   PREFERENCE_PROFILE_REPOSITORY,
   PreferenceProfileRepositoryPort,
@@ -12,6 +11,7 @@ import {
   PREFERENCE_PROPOSAL_REPOSITORY,
   PreferenceProposalRepositoryPort,
 } from '../../../preference-profile/domain/port/preference-proposal.repository.port';
+import { EMPTY_PROFILE } from '../../../preference-profile/domain/preference-profile.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatPreferenceProposal } from '../../../slack/format/preference-proposal.formatter';
 import {
@@ -77,7 +77,10 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
       preview: {
         kind: PREVIEW_KIND.PREFERENCE_PROFILE,
         payload: { proposalId: id },
-        previewText: formatPreferenceProposal(inferred.diff, inferred.rationale),
+        previewText: formatPreferenceProposal(
+          inferred.diff,
+          inferred.rationale,
+        ),
       },
     };
   }

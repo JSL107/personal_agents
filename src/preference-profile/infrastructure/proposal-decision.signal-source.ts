@@ -16,7 +16,10 @@ export class ProposalDecisionSignalSource implements PreferenceSignalSource {
     private readonly proposalRepository: PreferenceProposalRepositoryPort,
   ) {}
 
-  async fetch(ownerUserId: string, sinceMs: number): Promise<PreferenceSignal[]> {
+  async fetch(
+    ownerUserId: string,
+    sinceMs: number,
+  ): Promise<PreferenceSignal[]> {
     const decisions = await this.proposalRepository.recentDecisions(
       ownerUserId,
       sinceMs,

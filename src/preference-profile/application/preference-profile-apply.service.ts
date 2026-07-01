@@ -1,7 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { applyDiff } from '../domain/preference-profile.parser';
-import { EMPTY_PROFILE } from '../domain/preference-profile.type';
 import {
   PREFERENCE_PROFILE_REPOSITORY,
   PreferenceProfileRepositoryPort,
@@ -10,6 +8,8 @@ import {
   PREFERENCE_PROPOSAL_REPOSITORY,
   PreferenceProposalRepositoryPort,
 } from '../domain/port/preference-proposal.repository.port';
+import { applyDiff } from '../domain/preference-profile.parser';
+import { EMPTY_PROFILE } from '../domain/preference-profile.type';
 
 export type ApplyResult = 'APPLIED' | 'STALE' | 'NOT_FOUND';
 
@@ -27,7 +27,9 @@ export class PreferenceProfileApplyService {
     if (!proposal) {
       return 'NOT_FOUND';
     }
-    const active = await this.profileRepository.findActive(proposal.ownerUserId);
+    const active = await this.profileRepository.findActive(
+      proposal.ownerUserId,
+    );
     const activeVersion = active?.version ?? 0;
     if (activeVersion !== proposal.baseVersion) {
       return 'STALE';

@@ -38,7 +38,10 @@ describe('PreferenceLearningAutopilotTask', () => {
       { collect } as never,
       { infer } as never,
       { findActive: jest.fn().mockResolvedValue(null) } as never,
-      { createPending: jest.fn(), countPendingSince: jest.fn().mockResolvedValue(0) } as never,
+      {
+        createPending: jest.fn(),
+        countPendingSince: jest.fn().mockResolvedValue(0),
+      } as never,
       buildConfig('true'),
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
@@ -47,25 +50,52 @@ describe('PreferenceLearningAutopilotTask', () => {
 
   it('diff 있으면 PENDING 생성 + preview 반환', async () => {
     const task = new PreferenceLearningAutopilotTask(
-      { collect: jest.fn().mockResolvedValue([{ source: 'reaction', evidenceRef: 'r', observedText: 't' }]) } as never,
-      { infer: jest.fn().mockResolvedValue({ diff: { tone: { add: ['간결'] } }, rationale: 'r' }) } as never,
-      { findActive: jest.fn().mockResolvedValue({ version: 2, profile: {} }) } as never,
-      { createPending: jest.fn().mockResolvedValue(11), countPendingSince: jest.fn().mockResolvedValue(0) } as never,
+      {
+        collect: jest
+          .fn()
+          .mockResolvedValue([
+            { source: 'reaction', evidenceRef: 'r', observedText: 't' },
+          ]),
+      } as never,
+      {
+        infer: jest.fn().mockResolvedValue({
+          diff: { tone: { add: ['간결'] } },
+          rationale: 'r',
+        }),
+      } as never,
+      {
+        findActive: jest.fn().mockResolvedValue({ version: 2, profile: {} }),
+      } as never,
+      {
+        createPending: jest.fn().mockResolvedValue(11),
+        countPendingSince: jest.fn().mockResolvedValue(0),
+      } as never,
       buildConfig('true'),
     );
     const result = await task.run(ctx);
     expect(result.skip).toBe(false);
     expect(result.preview?.kind).toBe('PREFERENCE_PROFILE');
     expect(result.preview?.previewText).toContain('간결');
-    expect((result.preview?.payload as { proposalId: number }).proposalId).toBe(11);
+    expect((result.preview?.payload as { proposalId: number }).proposalId).toBe(
+      11,
+    );
   });
 
   it('infer 결과가 null 이면 skip', async () => {
     const task = new PreferenceLearningAutopilotTask(
-      { collect: jest.fn().mockResolvedValue([{ source: 'reaction', evidenceRef: 'r', observedText: 't' }]) } as never,
+      {
+        collect: jest
+          .fn()
+          .mockResolvedValue([
+            { source: 'reaction', evidenceRef: 'r', observedText: 't' },
+          ]),
+      } as never,
       { infer: jest.fn().mockResolvedValue(null) } as never,
       { findActive: jest.fn().mockResolvedValue(null) } as never,
-      { createPending: jest.fn(), countPendingSince: jest.fn().mockResolvedValue(0) } as never,
+      {
+        createPending: jest.fn(),
+        countPendingSince: jest.fn().mockResolvedValue(0),
+      } as never,
       buildConfig('true'),
     );
     expect(await task.run(ctx)).toEqual({ skip: true });
@@ -73,10 +103,23 @@ describe('PreferenceLearningAutopilotTask', () => {
 
   it('빈 diff 면 skip', async () => {
     const task = new PreferenceLearningAutopilotTask(
-      { collect: jest.fn().mockResolvedValue([{ source: 'reaction', evidenceRef: 'r', observedText: 't' }]) } as never,
-      { infer: jest.fn().mockResolvedValue({ diff: {}, rationale: '변경 없음' }) } as never,
+      {
+        collect: jest
+          .fn()
+          .mockResolvedValue([
+            { source: 'reaction', evidenceRef: 'r', observedText: 't' },
+          ]),
+      } as never,
+      {
+        infer: jest
+          .fn()
+          .mockResolvedValue({ diff: {}, rationale: '변경 없음' }),
+      } as never,
       { findActive: jest.fn().mockResolvedValue(null) } as never,
-      { createPending: jest.fn(), countPendingSince: jest.fn().mockResolvedValue(0) } as never,
+      {
+        createPending: jest.fn(),
+        countPendingSince: jest.fn().mockResolvedValue(0),
+      } as never,
       buildConfig('true'),
     );
     expect(await task.run(ctx)).toEqual({ skip: true });

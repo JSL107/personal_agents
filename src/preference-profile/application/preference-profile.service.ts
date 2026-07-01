@@ -1,13 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { renderInjectionBlock } from '../domain/preference-injection.renderer';
-import { PreferenceSection } from '../domain/preference-profile.type';
 import { PreferenceProfilePort } from '../domain/port/preference-profile.port';
 import {
   PREFERENCE_PROFILE_REPOSITORY,
   PreferenceProfileRepositoryPort,
 } from '../domain/port/preference-profile.repository.port';
+import { renderInjectionBlock } from '../domain/preference-injection.renderer';
+import { PreferenceSection } from '../domain/preference-profile.type';
 
 @Injectable()
 export class PreferenceProfileService implements PreferenceProfilePort {

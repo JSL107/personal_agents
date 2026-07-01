@@ -1,5 +1,5 @@
-import { EMPTY_PROFILE, PreferenceProfile } from './preference-profile.type';
 import { renderInjectionBlock } from './preference-injection.renderer';
+import { EMPTY_PROFILE, PreferenceProfile } from './preference-profile.type';
 
 describe('renderInjectionBlock', () => {
   it('빈 프로필은 빈 문자열 (동작 변화 0)', () => {

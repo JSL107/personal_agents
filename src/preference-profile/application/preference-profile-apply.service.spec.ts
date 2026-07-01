@@ -25,7 +25,10 @@ describe('PreferenceProfileApplyService.apply', () => {
       status: 'PENDING',
       createdAt: new Date(),
     });
-    profileRepo.findActive.mockResolvedValue({ version: 2, profile: EMPTY_PROFILE });
+    profileRepo.findActive.mockResolvedValue({
+      version: 2,
+      profile: EMPTY_PROFILE,
+    });
 
     const service = new PreferenceProfileApplyService(
       profileRepo as never,
@@ -78,7 +81,10 @@ describe('PreferenceProfileApplyService.apply', () => {
       status: 'PENDING',
       createdAt: new Date(),
     });
-    profileRepo.findActive.mockResolvedValue({ version: 5, profile: EMPTY_PROFILE });
+    profileRepo.findActive.mockResolvedValue({
+      version: 5,
+      profile: EMPTY_PROFILE,
+    });
 
     const service = new PreferenceProfileApplyService(
       profileRepo as never,
