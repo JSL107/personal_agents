@@ -21,8 +21,8 @@ import {
   formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
-  formatPrRetro,
   formatProfileSummary,
+  formatPrRetro,
   formatResume,
   formatUnknownCareerMate,
 } from './career-mate.formatter';
