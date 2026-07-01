@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import {
   AgentRunOutcome,
@@ -13,6 +13,10 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  PREFERENCE_PROFILE_PORT,
+  PreferenceProfilePort,
+} from '../../../preference-profile/domain/port/preference-profile.port';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { parsePrReference } from '../../code-reviewer/domain/pr-reference.parser';
 import { BeAgentException } from '../domain/be-agent.exception';
@@ -33,6 +37,10 @@ export class GenerateBackendPlanUsecase {
     private readonly agentRunService: AgentRunService,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
+    // 학습된 선호 프로필 주입(옵셔널) — PreferenceProfileModule 미주입/게이트 OFF 시 무개인화.
+    @Optional()
+    @Inject(PREFERENCE_PROFILE_PORT)
+    private readonly preferenceProfile?: PreferenceProfilePort,
   ) {}
 
   async execute({
@@ -69,6 +77,14 @@ export class GenerateBackendPlanUsecase {
       conversationContext,
     });
 
+    // 학습된 업무 선호(우선순위·분량 등)를 시스템 프롬프트에 append — 게이트 OFF/빈 프로필이면 ''.
+    const planPreference = this.preferenceProfile
+      ? await this.preferenceProfile.getInjectionBlock('plan')
+      : '';
+    const systemPrompt = planPreference
+      ? `${BE_AGENT_SYSTEM_PROMPT}\n\n${planPreference}`
+      : BE_AGENT_SYSTEM_PROMPT;
+
     return this.agentRunService.execute({
       agentType: AgentType.BE,
       triggerType: TriggerType.SLACK_COMMAND_PLAN_TASK,
@@ -101,7 +117,7 @@ export class GenerateBackendPlanUsecase {
       run: async () => {
         const completion = await this.modelRouter.route({
           agentType: AgentType.BE,
-          request: { prompt, systemPrompt: BE_AGENT_SYSTEM_PROMPT },
+          request: { prompt, systemPrompt },
         });
         const plan = parseBackendPlan(completion.text);
         return {
