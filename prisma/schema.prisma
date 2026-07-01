@@ -236,3 +236,32 @@ model EpisodicMemory {
   @@index([kind, agentType, occurredAt])
   @@map("episodic_memory")
 }
+
+model UserPreferenceProfile {
+  id           Int       @id @default(autoincrement())
+  ownerUserId  String    @map("owner_user_id")
+  version      Int
+  profileJson  Json      @map("profile_json")
+  supersededAt DateTime? @map("superseded_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@unique([ownerUserId, version])
+  @@index([ownerUserId, supersededAt])
+  @@map("user_preference_profile")
+}
+
+model PreferenceProposal {
+  id             Int       @id @default(autoincrement())
+  ownerUserId    String    @map("owner_user_id")
+  baseVersion    Int       @map("base_version")
+  diffJson       Json      @map("diff_json")
+  rationale      String    @db.Text
+  status         String    @default("PENDING")
+  slackChannelId String?   @map("slack_channel_id")
+  slackMessageTs String?   @map("slack_message_ts")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  @@index([ownerUserId, status, createdAt])
+  @@map("preference_proposal")
+}
