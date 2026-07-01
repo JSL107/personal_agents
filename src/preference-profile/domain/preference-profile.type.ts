@@ -45,4 +45,4 @@ export interface PreferenceDiff {
   routingHints?: RoutingHintDiff;
 }
 
-export type PreferenceSection = 'briefing' | 'humanize' | 'routing';
+export type PreferenceSection = 'briefing' | 'humanize' | 'plan' | 'routing';
