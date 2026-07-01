@@ -4,6 +4,7 @@ import {
   formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
+  formatPrRetro,
   formatProfileSummary,
   formatResume,
   formatUnknownCareerMate,
@@ -96,6 +97,26 @@ describe('career-mate.formatter', () => {
     expect(text).toContain('정량 지표 추가');
     expect(text).toContain('IaC');
     expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
+  });
+
+  it('formatPrRetro 는 회고 서술·이력서 bullet·포폴 링크를 담고 escape 한다', () => {
+    const text = formatPrRetro({
+      accomplishment: {
+        title: 'T <b>',
+        bullet: 'B & 결과',
+        star: { situation: 's', task: 't', action: 'a', result: 'r' },
+        techTags: ['NestJS'],
+        evidence: [{ repo: 'o/r', pr: 1692, url: 'u', mergedAt: '2026-06-30' }],
+      },
+      narrative: '회고 서술 <script>',
+      portfolioUrl: 'https://notion/p',
+      agentRunId: 1,
+      modelUsed: 'claude',
+    });
+    expect(text).toContain('회고 서술');
+    expect(text).toContain('B &amp; 결과');
+    expect(text).toContain('https://notion/p');
+    expect(text).not.toContain('<script>');
   });
 });
 
