@@ -58,6 +58,26 @@ const makeDispatcher = (intentText: string) => {
       agentRunId: 11,
     }),
   };
+  const reflectPr = {
+    execute: jest.fn().mockResolvedValue({
+      agentRunId: 21,
+      result: {
+        accomplishment: {
+          title: 'T',
+          bullet: 'B',
+          star: { situation: 's', task: 't', action: 'a', result: 'r' },
+          techTags: [],
+          evidence: [
+            { repo: 'o/r', pr: 1692, url: 'u', mergedAt: '2026-06-30' },
+          ],
+        },
+        narrative: '회고 서술',
+        portfolioUrl: 'https://notion/pr',
+        agentRunId: 21,
+        modelUsed: 'claude-cli',
+      },
+    }),
+  };
   const dispatcher = new CareerMateDispatcher(
     modelRouter as never,
     buildProfile as never,
@@ -65,6 +85,7 @@ const makeDispatcher = (intentText: string) => {
     renderPortfolio as never,
     analyzeJdGap as never,
     calibrateResume as never,
+    reflectPr as never,
   );
   return {
     dispatcher,
@@ -73,6 +94,7 @@ const makeDispatcher = (intentText: string) => {
     renderPortfolio,
     analyzeJdGap,
     calibrateResume,
+    reflectPr,
   };
 };
 
@@ -137,5 +159,18 @@ describe('CareerMateDispatcher', () => {
       slackUserId: 'U1',
     });
     expect(outcome.formattedText).toContain('IaC');
+  });
+
+  it('REFLECT_PR 의도면 reflectPr 를 prText 와 함께 호출한다', async () => {
+    const d = makeDispatcher('{"action":"REFLECT_PR"}');
+    const outcome = await d.dispatcher.dispatch({
+      slackUserId: 'U1',
+      text: 'https://github.com/o/r/pull/1692 회고',
+    } as never);
+    expect(d.reflectPr.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1692 회고',
+    });
+    expect(outcome.formattedText).toContain('https://notion/pr');
   });
 });
