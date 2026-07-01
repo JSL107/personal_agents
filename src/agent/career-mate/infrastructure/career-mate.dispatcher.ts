@@ -10,6 +10,7 @@ import {
 import { AnalyzeJdGapUsecase } from '../application/analyze-jd-gap.usecase';
 import { BuildCareerProfileUsecase } from '../application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from '../application/calibrate-resume.usecase';
+import { ReflectPrUsecase } from '../application/reflect-pr.usecase';
 import { RenderPortfolioUsecase } from '../application/render-portfolio.usecase';
 import { RenderResumeUsecase } from '../application/render-resume.usecase';
 import {
@@ -20,6 +21,7 @@ import {
   formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
+  formatPrRetro,
   formatProfileSummary,
   formatResume,
   formatUnknownCareerMate,
@@ -36,6 +38,7 @@ export class CareerMateDispatcher implements AgentDispatcher {
     private readonly renderPortfolio: RenderPortfolioUsecase,
     private readonly analyzeJdGap: AnalyzeJdGapUsecase,
     private readonly calibrateResume: CalibrateResumeUsecase,
+    private readonly reflectPr: ReflectPrUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -99,6 +102,18 @@ export class CareerMateDispatcher implements AgentDispatcher {
           outcome.result,
           outcome.modelUsed,
           formatCalibrationReport(outcome.result),
+        );
+      }
+      case 'REFLECT_PR': {
+        const outcome = await this.reflectPr.execute({
+          slackUserId,
+          prText: input.text ?? '',
+        });
+        return this.toOutcome(
+          outcome.agentRunId,
+          outcome.result,
+          outcome.result.modelUsed,
+          formatPrRetro(outcome.result),
         );
       }
       default:
