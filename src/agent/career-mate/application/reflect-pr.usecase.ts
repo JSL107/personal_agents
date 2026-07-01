@@ -83,8 +83,7 @@ export class ReflectPrUsecase {
           completion.text,
         );
 
-        const latest =
-          await this.repository.findLatestBySlackUser(slackUserId);
+        const latest = await this.repository.findLatestBySlackUser(slackUserId);
         const todayIsoDate = new Date().toISOString().slice(0, 10);
         const merged = mergeAccomplishment({
           latest: latest?.profileJson ?? null,
