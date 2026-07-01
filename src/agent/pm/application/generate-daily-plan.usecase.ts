@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -11,6 +11,10 @@ import { DailyPlanService } from '../../../daily-plan/application/daily-plan.ser
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { AppendDailyPlanUsecase } from '../../../notion/application/append-daily-plan.usecase';
+import {
+  PREFERENCE_PROFILE_PORT,
+  PreferenceProfilePort,
+} from '../../../preference-profile/domain/port/preference-profile.port';
 import { SlackInboxService } from '../../../slack-inbox/application/slack-inbox.service';
 import { PmAgentException } from '../domain/pm-agent.exception';
 import {
@@ -72,6 +76,10 @@ export class GenerateDailyPlanUsecase {
     private readonly evidenceBuilder: DailyPlanEvidenceBuilder,
     private readonly slackInboxService: SlackInboxService,
     private readonly configService: ConfigService,
+    // 학습된 선호 프로필 주입(옵셔널) — PreferenceProfileModule 미주입/게이트 OFF 시 무개인화.
+    @Optional()
+    @Inject(PREFERENCE_PROFILE_PORT)
+    private readonly preferenceProfile?: PreferenceProfilePort,
   ) {}
 
   async execute({
@@ -118,6 +126,14 @@ export class GenerateDailyPlanUsecase {
       truncated,
     });
 
+    // 학습된 업무 선호(우선순위·분량 등)를 시스템 프롬프트에 append — 게이트 OFF/빈 프로필이면 ''.
+    const planPreference = this.preferenceProfile
+      ? await this.preferenceProfile.getInjectionBlock('plan')
+      : '';
+    const systemPrompt = planPreference
+      ? `${PM_SYSTEM_PROMPT}\n\n${planPreference}`
+      : PM_SYSTEM_PROMPT;
+
     const outcome = await this.agentRunService.execute<DailyPlan>({
       agentType: AgentType.PM,
       triggerType: effectiveTriggerType,
@@ -126,7 +142,7 @@ export class GenerateDailyPlanUsecase {
       run: async ({ agentRunId }) => {
         const completion = await this.modelRouter.route({
           agentType: AgentType.PM,
-          request: { prompt, systemPrompt: PM_SYSTEM_PROMPT },
+          request: { prompt, systemPrompt },
         });
         const innerPlan = parseDailyPlan(completion.text);
         const innerSources = extractSources(context);
