@@ -17,59 +17,42 @@ import {
 import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
 
-// 기획서 §13 모델 라우팅 전략에 따른 에이전트 → 모델 매핑.
-// 계획/설명/회고 계열은 ChatGPT, 코드 작업은 Claude 중심.
+// 에이전트 → 모델 매핑. 2026-07-02 정책: 이대리 전체를 ChatGPT(codex) 단일 provider 로 전환.
+// Claude 는 primary·fallback 어디서도 사용하지 않는다(ClaudeCliProvider 코드는 롤백 대비 보존).
 const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.PM]: ModelProviderName.CHATGPT,
-  [AgentType.BE]: ModelProviderName.CLAUDE,
-  [AgentType.CODE_REVIEWER]: ModelProviderName.CLAUDE,
+  [AgentType.BE]: ModelProviderName.CHATGPT,
+  [AgentType.CODE_REVIEWER]: ModelProviderName.CHATGPT,
   [AgentType.WORK_REVIEWER]: ModelProviderName.CHATGPT,
   [AgentType.IMPACT_REPORTER]: ModelProviderName.CHATGPT,
   [AgentType.PO_SHADOW]: ModelProviderName.CHATGPT,
-  [AgentType.BE_SCHEMA]: ModelProviderName.CLAUDE,
-  [AgentType.BE_TEST]: ModelProviderName.CLAUDE,
-  [AgentType.BE_SRE]: ModelProviderName.CLAUDE,
-  [AgentType.BE_FIX]: ModelProviderName.CLAUDE,
-  // CTO — PM 의 assignableTaskIds 를 BE worker 5종으로 분류. 코드 도메인 결정 → Claude.
-  [AgentType.CTO]: ModelProviderName.CLAUDE,
-  // PO_EVAL — 3 sub-agent output 의 구조적 합성 + careerLog 생성. Claude 강점 (구조화 JSON).
-  [AgentType.PO_EVAL]: ModelProviderName.CLAUDE,
-  // CEO — PO_EVAL + PM/CTO 합성 → 메타 review. PO_EVAL 과 동일 구조 → Claude.
-  [AgentType.CEO]: ModelProviderName.CLAUDE,
-  // ISSUE_LABELER — issue title/body 를 repo label vocab 안에서 분류. JSON 한 줄 출력 → Claude.
-  [AgentType.ISSUE_LABELER]: ModelProviderName.CLAUDE,
-  // VACATION — 슬래시 경로는 결정론 계산이라 route() 미호출. 자연어 파라미터 추출 시에만 사용 → ChatGPT.
+  [AgentType.BE_SCHEMA]: ModelProviderName.CHATGPT,
+  [AgentType.BE_TEST]: ModelProviderName.CHATGPT,
+  [AgentType.BE_SRE]: ModelProviderName.CHATGPT,
+  [AgentType.BE_FIX]: ModelProviderName.CHATGPT,
+  [AgentType.CTO]: ModelProviderName.CHATGPT,
+  [AgentType.PO_EVAL]: ModelProviderName.CHATGPT,
+  [AgentType.CEO]: ModelProviderName.CHATGPT,
+  [AgentType.ISSUE_LABELER]: ModelProviderName.CHATGPT,
   [AgentType.VACATION]: ModelProviderName.CHATGPT,
   // BLOG — Hermes CLI(`hermes -z`)를 직접 spawn 하는 외부 에이전트라 route() 를 거치지 않는다.
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
-  [AgentType.BLOG]: ModelProviderName.CLAUDE,
-  // CAREER_MATE — merged PR → 역량 프로필 구조 합성. 구조화 JSON 강점 → Claude.
-  [AgentType.CAREER_MATE]: ModelProviderName.CLAUDE,
-  // JOB_APPLICATION — CRUD 는 결정론. 자연어 ADD/UPDATE 파라미터 추출 경량 → VACATION 동일 ChatGPT.
+  [AgentType.BLOG]: ModelProviderName.CHATGPT,
+  [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
-  // SUBCONSCIOUS_GATE — 내부 proactive 게이트. redacted 변화 요약을 promote/drop 분류. 경량 → ChatGPT.
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
-  // CONTRADICTION_JUDGE — L4 knowledge-lint 모순 판정. 경량 분류 + claude -p 회피 → ChatGPT.
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
-  // HUMANIZER — 보고서/프로필 서술 필드 윤문. 경량 한국어 문체 → ChatGPT(codex) 전용.
-  // HumanizeService 가 noFallback:true 로 호출 — ChatGPT 실패 시 Claude 로 새지 않고 윤문을 건너뛴다(원본 유지).
+  // HUMANIZER — 보고서/프로필 서술 필드 윤문. HumanizeService 가 noFallback:true 로 호출(원본 유지).
   [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
-  // docs-sync-audit Layer 2 — 문서 의미 드리프트 optimizer/evaluator. 경량 → ChatGPT.
   [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
   [AgentType.DOCS_AUDIT_EVALUATOR]: ModelProviderName.CHATGPT,
-  // PREFERENCE_LEARNING — 신호 배치 → 선호 프로필 diff 추론. 경량 판정 → ChatGPT.
   [AgentType.PREFERENCE_LEARNING]: ModelProviderName.CHATGPT,
 };
 
-// 1차(primary) 실패 시 자동 재시도할 반대편 provider — 양방향(2026-06-10).
-// CLAUDE 실패 → CHATGPT (codex) 로, CHATGPT 실패(codex 쿼터 소진 등) → CLAUDE 로 fallback.
-// fallback 은 1회만 (primary 1 + fallback 1) 수행하므로 재귀/순환은 발생하지 않는다.
-// (이전엔 CHATGPT 단일 고정 — CHATGPT primary 면 재시도 없이 즉시 throw 였으나, codex 쿼터 소진 시
-//  PM/Work Reviewer/PO/Impact 가 통째로 죽는 문제로 Claude fallback 을 추가했다.)
-const FALLBACK_OF: Record<ModelProviderName, ModelProviderName> = {
-  [ModelProviderName.CLAUDE]: ModelProviderName.CHATGPT,
-  [ModelProviderName.CHATGPT]: ModelProviderName.CLAUDE,
-};
+// fallback 테이블 — 2026-07-02 부터 비어 있음(Claude 제거로 ChatGPT 단일 provider).
+// route() 의 `!fallbackName` 가드가 즉시 전파하므로, 모든 provider 는 실패 시 재시도 없이 즉시 throw 한다.
+// (롤백: CLAUDE↔CHATGPT 대칭 매핑을 되살리면 이전 양방향 fallback 으로 복구된다.)
+const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {};
 
 @Injectable()
 export class ModelRouterUsecase {

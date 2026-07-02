@@ -152,8 +152,7 @@ pnpm dev              # watch 모드 기동
 
 | Command | 설명 | 모델 |
 |---|---|:---:|
-| `/today` `/worklog` `/po-shadow` `/impact-report` | 계획 · 회고 · PO 재검토 · 임팩트 보고서 | 🟢 ChatGPT |
-| `/review-pr` `/be <plan\|schema\|test>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | PR 리뷰 · BE · CTO · PO · CEO · 체인 | 🟣 Claude |
+| `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/be <plan\|schema\|test>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · BE · CTO · PO · CEO · 체인) | 🟢 ChatGPT(codex) |
 | `/휴가` | 연차 계산 / 등록 / 취소 (결정론, LLM 미사용) | ⚪ — |
 | `/sync-plan` `/sync-context` `/quota` `/ping` `/retry-run` `/search-runs` `/review-feedback` | 동기화 · 운영 · 검색 · 피드백 | ⚪ — |
 
@@ -218,8 +217,8 @@ pnpm dev              # watch 모드 기동
 | `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | `'true'` 시 주간 선호 학습 cron 활성 — 기본 OFF(미설정 safe) |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | `'true'` 시 학습된 프로필을 브리핑/윤문/라우팅에 주입 — 기본 OFF |
 
-**Model fallback** — Claude primary 실패 시 ChatGPT(Codex CLI) 자동 재시도. ChatGPT primary(PM/WorkReviewer/Impact/PoShadow)는 재시도 없이 즉시 실패. (Gemini fallback 은 2026-06-04 제거.)
-**claude 인증** — keychain ACL 미등록 환경 우회용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원.
+**Model provider** — 2026-07-02 부터 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider. provider 간 fallback 없음 — codex 실패 시 재시도 없이 즉시 실패(쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
+**claude 인증** — provider 코드 보존용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원은 유지(현재 라우팅 경로 없음, 롤백 시 사용).
 
 </details>
 
