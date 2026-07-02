@@ -54,11 +54,11 @@ src/
 | 도메인 | 책임 | 진입점 |
 |---|---|---|
 | `agent-run/` | 모든 에이전트 실행의 라이프사이클 (begin → run → finish) + EvidenceRecord 기록 | `AgentRunService.execute({...})` |
-| `model-router/` | AgentType → 모델(ChatGPT/Claude) 라우팅, CLI provider 어댑터 + Claude primary 실패 시 ChatGPT 자동 fallback | `ModelRouterUsecase.route({ agentType, request })` |
+| `model-router/` | AgentType → 모델 라우팅 (2026-07-02 전체 ChatGPT 단일 provider, fallback 없음), CLI provider 어댑터 | `ModelRouterUsecase.route({ agentType, request })` |
 | `github/` | Octokit 기반 read-only GitHub 클라이언트 (assigned issues/PRs, PR detail/diff) | `ListAssignedTasksUsecase`, `OctokitGithubClient` |
 | `agent/pm/` | PM Agent — `/today` 슬래시 커맨드. 사용자 입력 + GitHub assigned + 전일 plan → DailyPlan | `GenerateDailyPlanUsecase` |
 | `agent/work-reviewer/` | Work Reviewer — `/worklog` 슬래시 커맨드. 정량 근거 강제 | `GenerateWorklogUsecase` |
-| `agent/code-reviewer/` | Code Reviewer — `/review-pr` 슬래시 커맨드. PR diff → Claude 리뷰 | `ReviewPullRequestUsecase` |
+| `agent/code-reviewer/` | Code Reviewer — `/review-pr` 슬래시 커맨드. PR diff → ChatGPT(codex) 리뷰 | `ReviewPullRequestUsecase` |
 | `slack/` | Slack Bolt Socket Mode 어댑터 + 모든 슬래시 커맨드 핸들러 + `app_mention` (자연어) 진입 + 응답 포맷터 | `SlackService` |
 | `router/` | V3 비전 Hierarchical Manager Pattern — 자연어 멘션 → intent classifier → 10 worker dispatcher → handoff chain (audit log via `AgentRun.parentId`) | `IdaeriRouterUsecase.dispatch({...})` (`IDAERI_ROUTER_PORT`) |
 | `crawler/` | Puppeteer + Cheerio + BullMQ 크롤러 (이대리에 위임 가능성으로 보존) | `POST /v1/crawl-jobs` |
@@ -107,9 +107,8 @@ src/
 ## 6. 모델 / CLI 라우팅
 
 현재 매핑 (`src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`):
-- **PM / Work Reviewer / Impact Reporter / PO Shadow** → ChatGPT (`codex` CLI, `codex exec`)
-- **Code Reviewer / BE / BE Schema / BE Test / BE SRE / BE Fix** → Claude (`claude` CLI, `claude -p --output-format json`)
-- **Fallback** — Claude primary 실패 시 ChatGPT (Codex CLI) 로 자동 재시도. ChatGPT primary 인 경우 (PM / Work Reviewer / Impact Reporter / PO Shadow) 는 primary == fallback 이라 즉시 `MODEL_COMPLETION_FAILED` throw. (이전 Gemini fallback 은 사용자 미구독 정책으로 2026-06-04 제거됨.)
+- **전체 에이전트** → ChatGPT (`codex` CLI, `codex exec`). 2026-07-02 정책으로 Claude 라우팅 제거.
+- **Fallback** — 없음. `FALLBACK_OF` 가 비어 있어 primary(ChatGPT) 실패 시 재시도 없이 즉시 `MODEL_COMPLETION_FAILED` throw (쿼터 소진 시 reset 시각 안내). `ClaudeCliProvider` 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 
 CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_original)` 패턴 강제 (사용자가 19초 침묵 X).
 

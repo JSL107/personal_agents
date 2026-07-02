@@ -7,25 +7,25 @@
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
 |---|---|---|---|---|---|
-| Backend | `BE` | `/be plan` | CLAUDE | `src/agent/be/application/generate-backend-plan.usecase.ts` | 백엔드 구현 계획 생성 |
-| BE Fix | `BE_FIX` | — (webhook/자동) | CLAUDE | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | PR 컨벤션 분석 (webhook 자동 트리거) |
-| BE Schema | `BE_SCHEMA` | `/be schema` | CLAUDE | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Prisma 스키마 변경 제안 |
-| BE SRE | `BE_SRE` | — (webhook/자동) | CLAUDE | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (webhook 자동 트리거) |
-| BE Test | `BE_TEST` | `/be test` | CLAUDE | `src/agent/be-test/application/generate-test.usecase.ts` | Tree-sitter AST 기반 Jest spec 생성 |
-| Blog | `BLOG` | — (webhook/자동) | CLAUDE | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
-| Career Mate | `CAREER_MATE` | — (webhook/자동) | CLAUDE | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
-| CEO | `CEO` | `/ceo-review` | CLAUDE | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
-| Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CLAUDE | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
+| Backend | `BE` | `/be plan` | CHATGPT | `src/agent/be/application/generate-backend-plan.usecase.ts` | 백엔드 구현 계획 생성 |
+| BE Fix | `BE_FIX` | — (webhook/자동) | CHATGPT | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | PR 컨벤션 분석 (webhook 자동 트리거) |
+| BE Schema | `BE_SCHEMA` | `/be schema` | CHATGPT | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Prisma 스키마 변경 제안 |
+| BE SRE | `BE_SRE` | — (webhook/자동) | CHATGPT | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (webhook 자동 트리거) |
+| BE Test | `BE_TEST` | `/be test` | CHATGPT | `src/agent/be-test/application/generate-test.usecase.ts` | Tree-sitter AST 기반 Jest spec 생성 |
+| Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
+| Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
+| CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
+| Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
-| CTO | `CTO` | `/assign` | CLAUDE | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
+| CTO | `CTO` | `/assign` | CHATGPT | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
 | Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
-| Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CLAUDE | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
+| Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CHATGPT | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
 | Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
 | PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
-| PO Eval | `PO_EVAL` | `/po-eval` | CLAUDE | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
+| PO Eval | `PO_EVAL` | `/po-eval` | CHATGPT | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
 | Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
