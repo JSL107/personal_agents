@@ -188,3 +188,23 @@ describe('IntentClassifierUsecase', () => {
     });
   });
 });
+
+// 결함 A (맥락 결합 실패, 2026-07-02) — "PR URL + 접근해봐" 처럼 직전 대화에서 합의된 작업의
+// 실행 지시가 재촉으로 오인돼 UNKNOWN 으로 새던 문제. system prompt 상수에 신규 규칙 문구가
+// 유지되는지만 검증한다(문자열 회귀 방지). 실제 분류 정확도는 LLM 런타임이라 유닛으로 보장 불가.
+describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 합의된 작업 실행 지시 인식 (결함 A)', () => {
+  it('직전 합의 작업 + 필요한 입력을 주며 실행 지시하면 UNKNOWN 아닌 해당 worker 로 매핑하는 규칙이 있다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/실행을 지시하면/);
+    // 실제 문제 사례의 지시 표현이 예시로 명시돼 LLM 이 패턴을 인식할 수 있어야 한다.
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('접근해봐');
+    // 이번 입력에 명시 동사가 없어도 직전 대화의 의도로 worker 를 결정하라.
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(
+      /직전 대화의 의도로 worker 를 결정하라/,
+    );
+  });
+
+  it('순수 재촉(새 입력 없이 진행 상태만 물음)은 여전히 UNKNOWN 으로 남긴다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/진행 상태만\s+묻는/);
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('UNKNOWN');
+  });
+});
