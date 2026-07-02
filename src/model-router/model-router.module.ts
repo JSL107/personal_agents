@@ -7,9 +7,9 @@ import { MODEL_PROVIDER_TOKENS } from './domain/port/model-provider.port';
 import { ClaudeCliProvider } from './infrastructure/claude-cli.provider';
 import { CodexCliProvider } from './infrastructure/codex-cli.provider';
 
-// 두 모델 모두 로컬 CLI 구독 어댑터로 바인딩 (개인용, API key 비용 회피).
-// 실패 fallback chain 은 ModelRouterUsecase 에서 수행 — primary 실패 시 반대편 provider 로 양방향 재시도.
-// (Gemini provider 는 사용자 미구독 정책으로 제거 — 2026-06-04.)
+// CHATGPT(codex) 를 전체 provider 로 사용. Claude 어댑터는 롤백 대비 DI 에 등록만 유지(라우팅 경로 없음).
+// provider 간 fallback 없음 — ModelRouterUsecase.route() 가 primary 실패 시 즉시 전파(2026-07-02).
+// (Gemini 제거 2026-06-04, Claude 라우팅 제거 2026-07-02.)
 //
 // provider 토큰은 module 밖으로 export 하지 않는다 — 모든 LLM 호출은 ModelRouterUsecase.route() 를
 // 거쳐 fallback chain 을 타야 하므로, 외부 consumer 가 단일 provider 를 직접 주입하는 우회를 막는다.
