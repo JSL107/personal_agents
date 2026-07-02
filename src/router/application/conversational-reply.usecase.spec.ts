@@ -62,6 +62,28 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
     expect(prompt).toMatch(/명령어 추천 \/ 슬래시 안내 절대 X/);
   });
+
+  // 거짓 약속 차단 (2026-07-02) — fallback 은 순수 대화 경로라 실제 작업(worker dispatch)을
+  // 전혀 실행하지 않는다. LLM 이 "정리해볼게요" 같은 실행 약속을 하면 사용자는 영영 오지 않을
+  // 결과를 기다리게 된다 (원 버그: PR #220 요청이 UNKNOWN → fallback → "정리해볼게요"만 하고 끝).
+  it('거짓 실행 약속 금지 — "해볼게요" 류 미래 실행 약속을 하지 말라는 지침이 포함된다', () => {
+    const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
+    expect(prompt).toContain('실행 약속 금지');
+    expect(prompt).toMatch(/어떤 작업도 실제로 실행하지 않/);
+    // 금지 대상 예시("해볼게요")가 프롬프트에 명시돼 LLM 이 회피 대상을 알 수 있어야 한다.
+    expect(prompt).toContain('해볼게요');
+  });
+
+  it('거짓 진행 보고 금지 — "아직 확인 중" 처럼 진행 중인 척하지 말라는 지침이 포함된다', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toMatch(/진행 중인 것처럼/);
+    expect(prompt).toContain('거짓이 됩니다');
+  });
+
+  it('거짓 자동실행 안내 제거 — 과거 "alias 매칭해 진행합니다" 문구가 더는 없다', () => {
+    const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
+    expect(prompt).not.toContain('alias 매칭해 진행');
+  });
 });
 
 describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
@@ -158,7 +180,7 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     expect(prompt).not.toContain('a'.repeat(250));
   });
 
-  it('직전 [assistant] 발화가 약속이라는 사실을 강조하는 instruction 이 마지막에 등장', () => {
+  it('직전 [assistant] 발화를 자기 발화로 인식시키되 실행 약속 반복은 금지하는 instruction 이 마지막에 등장', () => {
     const prompt = buildPrompt({
       text: '?',
       priorTurns: [baseTurn({ role: 'assistant', text: '확인해볼게요' })],
@@ -166,6 +188,8 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     expect(prompt).toMatch(
       /\[assistant\] 라벨이 붙은 이전 응답은 당신 자신의 발화입니다/,
     );
+    // 거짓 약속 차단 (2026-07-02) — 마지막 지침은 "약속을 이어가라"가 아니라 "반복하지 마라"여야 한다.
+    expect(prompt).toMatch(/실행 약속을 새로 하거나 반복하지 마세요/);
   });
 });
 
