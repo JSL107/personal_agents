@@ -381,7 +381,9 @@ describe('AutopilotOrchestrator', () => {
     };
     const previewTask = {
       id: 'evening-retro-publish',
-      run: jest.fn().mockResolvedValue({ skip: true, previews: [previewA, previewB] }),
+      run: jest
+        .fn()
+        .mockResolvedValue({ skip: true, previews: [previewA, previewB] }),
     };
     const createPreview = {
       execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
@@ -404,7 +406,11 @@ describe('AutopilotOrchestrator', () => {
           id: 'evening-retro-publish',
           taskId: 'evening-retro-publish',
           riskTier: 'T1_PREVIEW',
-          trigger: { kind: 'CRON', schedule: '0 19 * * *', timezone: 'Asia/Seoul' },
+          trigger: {
+            kind: 'CRON',
+            schedule: '0 19 * * *',
+            timezone: 'Asia/Seoul',
+          },
         },
       ] as any,
       'U1',
