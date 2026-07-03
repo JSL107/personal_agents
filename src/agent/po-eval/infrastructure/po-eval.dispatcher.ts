@@ -26,11 +26,12 @@ export class PoEvalDispatcher implements AgentDispatcher {
     const outcome = await this.generatePoEvaluation.execute({
       slackUserId: input.slackUserId,
     });
+    const formatted = formatEvaluationOutput(outcome.result);
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatEvaluationOutput(outcome.result),
+      formattedText: `${formatted.summary}\n\n${formatted.detail}`,
     };
   }
 }
