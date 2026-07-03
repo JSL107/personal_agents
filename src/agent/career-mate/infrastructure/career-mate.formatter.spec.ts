@@ -117,6 +117,29 @@ describe('career-mate.formatter', () => {
     expect(text).toContain('B &amp; 결과');
     expect(text).toContain('https://notion/p');
     expect(text).not.toContain('<script>');
+    expect(text).toContain('반영한 PR');
+    expect(text).toContain('o/r#1692');
+  });
+
+  it('formatPrRetro 는 여러 evidence PR 을 모두 나열한다', () => {
+    const text = formatPrRetro({
+      accomplishment: {
+        title: 'T',
+        bullet: 'B',
+        star: { situation: 's', task: 't', action: 'a', result: 'r' },
+        techTags: ['NestJS'],
+        evidence: [
+          { repo: 'o/r', pr: 1, url: 'u1', mergedAt: '2026-06-29' },
+          { repo: 'o/r', pr: 2, url: 'u2', mergedAt: '2026-06-30' },
+        ],
+      },
+      narrative: '통합 회고',
+      portfolioUrl: 'https://notion/p',
+      agentRunId: 1,
+      modelUsed: 'codex',
+    });
+    expect(text).toContain('o/r#1');
+    expect(text).toContain('o/r#2');
   });
 });
 
