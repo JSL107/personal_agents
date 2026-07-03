@@ -216,6 +216,8 @@ pnpm dev              # watch 모드 기동
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | `'false'`면 아침 브리핑 완료/대기 PR 분류 섹션 OFF — 기본 ON |
 | `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | `'true'` 시 주간 선호 학습 cron 활성 — 기본 OFF(미설정 safe) |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | `'true'` 시 학습된 프로필을 브리핑/윤문/라우팅에 주입 — 기본 OFF |
+| `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | `'false'`면 저녁 회고→발행 후보 task skip — 기본 ON(미설정=활성) |
+| `EVENING_RETRO_BLOG_NOTION_PAGE_ID` | ❌ | 블로그 발행 대상 Notion 부모 페이지 ID — 미설정 시 블로그 카드 승인에서 명시 에러 |
 
 **Model provider** — 2026-07-02 부터 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider. provider 간 fallback 없음 — codex 실패 시 재시도 없이 즉시 실패(쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 **claude 인증** — provider 코드 보존용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원은 유지(현재 라우팅 경로 없음, 롤백 시 사용).
