@@ -26,6 +26,12 @@ export const PREVIEW_KIND = {
   // 선호 프로필 자가학습 — 주간 추론이 만든 프로필 diff 를 승인 시 적용.
   // payload = { proposalId } (PreferenceProfilePreviewApplier 가 applyService.apply 로 반영).
   PREFERENCE_PROFILE: 'PREFERENCE_PROFILE',
+  // 저녁 회고 — 오늘 대표 작업을 codex 로 블로그 본문 생성 후 Notion 발행.
+  // payload = { topPick:{title,keywords[]}, retroContext, slackUserId } (EveningBlogPublishApplier).
+  EVENING_BLOG_PUBLISH: 'EVENING_BLOG_PUBLISH',
+  // 저녁 회고 — 오늘 머지된 PR 전체를 다건 통합 회고로 이력서 프로필 편입 + 포트폴리오 Notion append.
+  // payload = { prRefs:string[], slackUserId } (EveningCareerReflectApplier 가 ReflectPrUsecase 위임).
+  EVENING_CAREER_REFLECT: 'EVENING_CAREER_REFLECT',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
