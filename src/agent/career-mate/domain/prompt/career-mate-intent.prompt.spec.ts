@@ -1,5 +1,8 @@
 import { CareerMateException } from '../career-mate.exception';
-import { parseCareerMateIntent } from './career-mate-intent.prompt';
+import {
+  CAREER_MATE_INTENT_SYSTEM_PROMPT,
+  parseCareerMateIntent,
+} from './career-mate-intent.prompt';
 
 describe('parseCareerMateIntent', () => {
   it('BUILD_PROFILE 를 windowMonths 와 함께 파싱한다', () => {
@@ -46,5 +49,9 @@ describe('parseCareerMateIntent', () => {
 
   it('JSON 이 아니면 CareerMateException 을 던진다', () => {
     expect(() => parseCareerMateIntent('헛소리')).toThrow(CareerMateException);
+  });
+
+  it('REFLECT_PR 설명은 다건(하나 이상) PR 을 허용한다', () => {
+    expect(CAREER_MATE_INTENT_SYSTEM_PROMPT).toContain('하나 이상');
   });
 });

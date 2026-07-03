@@ -116,12 +116,14 @@ export const buildPortfolioBlocks = (
   return blocks;
 };
 
-// REFLECT_PR — 단일 PR 회고 결과를 Slack mrkdwn 으로. 회고 서술 + 이력서 bullet(STAR) + 포폴 링크.
+// REFLECT_PR — PR 회고 결과를 Slack mrkdwn 으로. 반영한 PR 목록 + 회고 서술 + 이력서 bullet(STAR) + 포폴 링크.
 export const formatPrRetro = (result: ReflectPrResult): string => {
   const a = result.accomplishment;
   const star = a.star;
+  const prList = a.evidence.map((e) => `${e.repo}#${e.pr}`).join(', ');
   return [
     `*PR 회고 — ${escapeSlackMrkdwn(a.title)}*`,
+    `_반영한 PR: ${escapeSlackMrkdwn(prList)}_`,
     escapeSlackMrkdwn(result.narrative),
     ``,
     `*이력서 bullet*`,
