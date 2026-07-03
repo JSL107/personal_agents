@@ -101,6 +101,24 @@ describe('ModelRouterUsecase', () => {
     });
   });
 
+  describe('EVENING_RETRO 라우팅', () => {
+    it('EVENING_RETRO 는 ChatGPT(codex) 로 라우팅된다', () => {
+      // AGENT_TO_PROVIDER 는 모듈 내부 const 이므로 route() 가 chatgptProvider 를 호출하는지로 검증.
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      return usecase
+        .route({ agentType: AgentType.EVENING_RETRO, request: { prompt: 'retro' } })
+        .then((result) => {
+          expect(result.provider).toBe(ModelProviderName.CHATGPT);
+          expect(claudeProvider.complete).not.toHaveBeenCalled();
+        });
+    });
+  });
+
   describe('UNKNOWN_AGENT_TYPE', () => {
     it('알 수 없는 agentType 은 즉시 예외 (primary/fallback 호출 X)', async () => {
       await expect(

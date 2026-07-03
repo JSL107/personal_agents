@@ -47,6 +47,8 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
   [AgentType.DOCS_AUDIT_EVALUATOR]: ModelProviderName.CHATGPT,
   [AgentType.PREFERENCE_LEARNING]: ModelProviderName.CHATGPT,
+  // 저녁 회고→발행 후보 — codex 로 회고/후보 선별/블로그 본문 생성. BLOG(Hermes sentinel)와 달리 실제 route() 를 탄다.
+  [AgentType.EVENING_RETRO]: ModelProviderName.CHATGPT,
 };
 
 // fallback 테이블 — 2026-07-02 부터 비어 있음(Claude 제거로 ChatGPT 단일 provider).
