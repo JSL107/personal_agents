@@ -40,11 +40,11 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         outcome.result.plan,
         this.humanizeService,
       );
-      const text =
-        formatDailyPlan(humanizedPlan) +
-        formatWaitingSection(outcome.result.waitingItems) +
-        formatModelFooter(outcome);
-      return { skip: false, summaryText: text };
+      const formatted = formatDailyPlan(humanizedPlan);
+      const summaryText =
+        formatted.summary + formatWaitingSection(outcome.result.waitingItems);
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (
         error instanceof PmAgentException &&

@@ -102,8 +102,10 @@ export class PhaseCommandHandler implements SlackHandler {
           slackUserId: command.user_id,
           range,
         });
+        const formatted = formatEvaluationOutput(outcome.result);
         const text =
-          formatEvaluationOutput(outcome.result) + formatModelFooter(outcome);
+          `${formatted.summary}\n\n${formatted.detail}` +
+          formatModelFooter(outcome);
         const payload: PoEvalCareerlogPayload = {
           notionPageId: this.careerLogNotionPageId,
           period: outcome.result.careerLog.period,

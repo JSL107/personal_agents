@@ -59,6 +59,9 @@ describe('MorningBriefingAutopilotTask', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toBeTruthy();
+    // 판단 근거는 스레드(detailText)로, 메인(summaryText)에는 노출하지 않는다.
+    expect(out.detailText).toContain('판단 근거');
+    expect(out.summaryText).not.toContain('판단 근거');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', tasksText: '' }),
     );
@@ -92,6 +95,7 @@ describe('MorningBriefingAutopilotTask', () => {
     });
     expect(result.summaryText).toContain('대기 중');
     expect(result.summaryText).toContain('머지만 남음');
+    expect(result.detailText).toContain('판단 근거');
   });
 
   it('EMPTY_TASKS_INPUT 면 안내문 반환(skip=false)', async () => {

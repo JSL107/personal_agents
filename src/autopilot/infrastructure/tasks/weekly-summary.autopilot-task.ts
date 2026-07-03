@@ -10,6 +10,7 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
+import { FormattedReport } from '../../../slack/format/formatted-report.type';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
   AutopilotTask,
@@ -19,8 +20,9 @@ import {
 
 // Weekly Summary 이관 — 매주 금요일 17:00 KST worklog(주간 7일 PM runs) + CEO meta 체인.
 // 기존 src/weekly-summary/infrastructure/weekly-summary.consumer.ts 의 핵심 로직을 task 로 옮김.
-// worklog 텍스트와 CEO meta 텍스트를 구분자로 이어 summaryText 로 반환 — 오케스트레이터(T0)가 발송.
-// CEO meta 실패 시(NO_PO_EVAL_RUN 등) graceful 안내문으로 대체해 worklog 발송은 보장.
+// worklog / CEO meta 각각 요약은 summaryText(메인), 근거 detail 은 detailText(스레드)로 분리 반환 —
+// 오케스트레이터(T0)가 메인 발송 후 detailText 를 스레드 댓글로 붙인다.
+// CEO meta 실패 시(NO_PO_EVAL_RUN 등) graceful 안내문(detail 없음)으로 대체해 worklog 발송은 보장.
 @Injectable()
 export class WeeklySummaryAutopilotTask implements AutopilotTask {
   readonly id = 'weekly-summary';
@@ -71,26 +73,32 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       triggerType: TriggerType.WEEKLY_SUMMARY_CRON,
     });
 
+    // worklog / CEO meta 각각 summary(메인) / detail(스레드 = 근거) 로 분리.
+    // 메인 = worklog 요약 + CEO 요약(구분자로 이음), 스레드 = 각 detail(+model 푸터) 을 이어 1개 댓글로.
     const worklogFormatted = formatDailyReview(worklogOutcome.result);
-    const worklogText =
+    const worklogSummary =
       `📝 *Weekly Summary — ${firedAtKst} (금 17:00 KST 자동 주간 worklog)*\n\n` +
-      worklogFormatted.summary +
-      '\n\n' +
-      worklogFormatted.detail +
-      formatModelFooter(worklogOutcome);
+      worklogFormatted.summary;
+    const worklogDetail =
+      worklogFormatted.detail + formatModelFooter(worklogOutcome);
 
-    const ceoText = await this.buildCeoMetaText(ownerSlackUserId, firedAtKst);
+    const ceo = await this.buildCeoMeta(ownerSlackUserId, firedAtKst);
 
-    const summaryText = `${worklogText}\n\n────────\n\n${ceoText}`;
+    const summaryText = `${worklogSummary}\n\n────────\n\n${ceo.summary}`;
+    const detailParts = [worklogDetail];
+    if (ceo.detail.trim().length > 0) {
+      detailParts.push(ceo.detail);
+    }
+    const detailText = detailParts.join('\n\n────────\n\n');
 
-    return { skip: false, summaryText };
+    return { skip: false, summaryText, detailText };
   }
 
-  // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 graceful 안내문으로 대체.
-  private async buildCeoMetaText(
+  // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 graceful 안내문(detail 없음)으로 대체.
+  private async buildCeoMeta(
     ownerSlackUserId: string,
     firedAtKst: string,
-  ): Promise<string> {
+  ): Promise<FormattedReport> {
     try {
       const ceoOutcome = await this.generateCeoMetaUsecase.execute({
         slackUserId: ownerSlackUserId,
@@ -98,13 +106,12 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         triggerType: TriggerType.WEEKLY_CEO_META_CRON,
       });
       const ceoFormatted = formatCeoMetaOutput(ceoOutcome.result);
-      return (
-        `🧭 *CEO Meta — ${firedAtKst} (주간 자동 메타 회고)*\n\n` +
-        ceoFormatted.summary +
-        '\n\n' +
-        ceoFormatted.detail +
-        formatModelFooter(ceoOutcome)
-      );
+      return {
+        summary:
+          `🧭 *CEO Meta — ${firedAtKst} (주간 자동 메타 회고)*\n\n` +
+          ceoFormatted.summary,
+        detail: ceoFormatted.detail + formatModelFooter(ceoOutcome),
+      };
     } catch (error) {
       if (
         error instanceof CeoException &&
@@ -113,13 +120,19 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         this.logger.warn(
           `Weekly Summary CEO meta skip — PO_EVAL run 없음 (owner=${ownerSlackUserId}): ${(error as Error).message}`,
         );
-        return `_🧭 CEO Meta — ${firedAtKst} skip_\n_이번 주 PO_EVAL run 부재로 메타 회고 대상 없음. \`/po-eval\` 을 먼저 실행해주세요._`;
+        return {
+          summary: `_🧭 CEO Meta — ${firedAtKst} skip_\n_이번 주 PO_EVAL run 부재로 메타 회고 대상 없음. \`/po-eval\` 을 먼저 실행해주세요._`,
+          detail: '',
+        };
       }
       this.logger.error(
         `Weekly Summary CEO meta 실패 — 예상 외 에러 (owner=${ownerSlackUserId})`,
         error,
       );
-      return `_🧭 CEO Meta — ${firedAtKst} 실패_\n_예상 외 에러로 CEO 메타 회고를 생성하지 못했습니다. 로그를 확인해주세요._`;
+      return {
+        summary: `_🧭 CEO Meta — ${firedAtKst} 실패_\n_예상 외 에러로 CEO 메타 회고를 생성하지 못했습니다. 로그를 확인해주세요._`,
+        detail: '',
+      };
     }
   }
 }
