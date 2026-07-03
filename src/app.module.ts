@@ -11,6 +11,9 @@ import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
 import { BlogModule } from './agent/blog/blog.module';
+import { EveningBlogPublishApplier } from './agent/blog/infrastructure/evening-blog-publish.applier';
+import { CareerMateModule } from './agent/career-mate/career-mate.module';
+import { EveningCareerReflectApplier } from './agent/career-mate/infrastructure/evening-career-reflect.applier';
 import { CeoModule } from './agent/ceo/ceo.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { CtoModule } from './agent/cto/cto.module';
@@ -115,6 +118,8 @@ import { WebhookModule } from './webhook/webhook.module';
         BeSandboxPushPrApplier,
         DocsAuditPrApplier,
         PreferenceProfilePreviewApplier,
+        EveningBlogPublishApplier,
+        EveningCareerReflectApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier],
@@ -126,6 +131,8 @@ import { WebhookModule } from './webhook/webhook.module';
         SandboxModule,
         BeDiffGeneratorModule,
         PreferenceProfileModule,
+        ModelRouterModule,
+        CareerMateModule,
       ],
     }),
     SlackModule,

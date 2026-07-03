@@ -9,7 +9,9 @@ import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module'
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
+import { GithubModule } from '../github/github.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import { ModelRouterModule } from '../model-router/model-router.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
@@ -22,6 +24,7 @@ import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
+import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
@@ -37,6 +40,8 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
 @Module({
   imports: [
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
+    GithubModule,
+    ModelRouterModule,
     PoEvalModule,
     PmAgentModule,
     WorkReviewerModule,
@@ -64,6 +69,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     KnowledgeLintAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
+    EveningRetroPublishTask,
     {
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
@@ -78,6 +84,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         knowledgeLint: KnowledgeLintAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
+        eveningRetro: EveningRetroPublishTask,
       ) => [
         poEval,
         morning,
@@ -89,6 +96,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         knowledgeLint,
         docsSyncAudit,
         preferenceLearning,
+        eveningRetro,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -101,6 +109,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         KnowledgeLintAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
+        EveningRetroPublishTask,
       ],
     },
     {

@@ -48,6 +48,19 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     riskTier: 'T0_AUTO',
     digestGroup: 'evening',
   },
+  // 저녁 회고→발행 후보 — evening 그룹 마지막(daily-eval/work-reviewer 결과가 AgentRun 에 적재된 뒤 재조회).
+  // T1_PREVIEW: 블로그/경력 카드는 사용자 승인 후 실행. EVENING_RETRO_PUBLISH_ENABLED=false 시 task skip.
+  {
+    id: 'evening-retro-publish',
+    taskId: 'evening-retro-publish',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_DAILY_EVAL_CRON,
+      timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
+    digestGroup: 'evening',
+  },
   {
     id: 'morning-briefing',
     taskId: 'morning-briefing',
