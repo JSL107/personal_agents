@@ -52,12 +52,13 @@ jobs:
 
       # tree-sitter 네이티브 애드온은 jest 의 파일별 모듈 샌드박스에서 한 워커 프로세스에 2번째로
       # 로드될 때 네이티브 상태가 깨져 parse() 가 rootNode=undefined 를 반환한다(node-tree-sitter +
-      # jest 멀티컨텍스트 이슈). 2-core CI 러너는 워커가 적어 여러 tree-sitter spec 이 한 프로세스에
-      # 몰려 2번째가 실패(macOS 다코어·단일파일은 우연히 통과). --workerIdleMemoryLimit 로 파일마다
-      # 워커를 재시작시켜 네이티브를 매번 fresh 로드하면 해소 — linux/amd64 Docker 전체 스위트
-      # (122 suites/1035 tests)로 검증. 코드는 정상이라 무변경. 근본 원인 규명: #84.
+      # jest 멀티컨텍스트 이슈). 워커가 여러 tree-sitter spec 을 한 프로세스에 처리하면 2번째가 실패
+      # (2-core CI·macOS 다코어 병렬 모두 재현). package.json 의 `test` 스크립트가 code-graph 를 제외한
+      # 전체를 고속 병렬로 돌린 뒤, code-graph spec 만 --workerIdleMemoryLimit 로 파일마다 워커를 재시작
+      # (native 매번 fresh 로드)해 해소한다 — 전체 스위트에 재시작 비용을 물리지 않아 로컬·CI 모두 빠름.
+      # 로컬 `pnpm test` 와 CI 가 같은 설정을 공유. 코드는 정상이라 무변경. 근본 원인 규명: #84.
       - name: Test
-        run: pnpm test -- --workerIdleMemoryLimit=80MB
+        run: pnpm test
 
       - name: Build
         run: pnpm build
