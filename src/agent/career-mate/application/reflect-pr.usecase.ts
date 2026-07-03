@@ -18,13 +18,15 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerMateException } from '../domain/career-mate.exception';
 import { ReflectPrInput, ReflectPrResult } from '../domain/career-mate.type';
 import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
-import { extractPrReference } from '../domain/extract-pr-reference';
+import { extractPrReferences } from '../domain/extract-pr-reference';
 import {
   CAREER_PROFILE_REPOSITORY_PORT,
   CareerProfileRepositoryPort,
 } from '../domain/port/career-profile.repository.port';
 import {
+  buildMultiPrRetroPrompt,
   buildPrRetroPrompt,
+  MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT,
   parsePrRetroOutput,
   PR_RETRO_SYNTH_SYSTEM_PROMPT,
 } from '../domain/prompt/pr-retro-synth.prompt';
@@ -34,6 +36,10 @@ import { RenderPortfolioUsecase } from './render-portfolio.usecase';
 @Injectable()
 export class ReflectPrUsecase {
   private readonly logger = new Logger(ReflectPrUsecase.name);
+
+  // 다건 회고 시 프롬프트 폭발 방지용 diff 총예산(bytes)과 per-PR 하한.
+  private static readonly TOTAL_DIFF_BUDGET = 80_000;
+  private static readonly MIN_PER_PR_DIFF_BYTES = 8_000;
 
   constructor(
     @Inject(GITHUB_CLIENT_PORT)
@@ -51,7 +57,7 @@ export class ReflectPrUsecase {
     slackUserId,
     prText,
   }: ReflectPrInput): Promise<AgentRunOutcome<ReflectPrResult>> {
-    const ref = extractPrReference(prText); // 미검출 시 INVALID_PR_REFERENCE
+    const refs = extractPrReferences(prText); // 0건 시 INVALID_PR_REFERENCE
     const githubLogin = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     if (!githubLogin) {
       throw new CareerMateException({
@@ -65,18 +71,48 @@ export class ReflectPrUsecase {
     return this.agentRunService.execute<ReflectPrResult>({
       agentType: AgentType.CAREER_MATE,
       triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
-      inputSnapshot: { slackUserId, repo: ref.repo, prNumber: ref.number },
+      inputSnapshot: {
+        slackUserId,
+        prs: refs.map((ref) => `${ref.repo}#${ref.number}`),
+      },
       run: async (context) => {
-        const [detail, diff] = await Promise.all([
-          this.githubClient.getPullRequest(ref),
-          this.githubClient.getPullRequestDiff(ref),
-        ]);
+        const perPrDiffBytes = Math.max(
+          ReflectPrUsecase.MIN_PER_PR_DIFF_BYTES,
+          Math.floor(ReflectPrUsecase.TOTAL_DIFF_BUDGET / refs.length),
+        );
+        const items = await Promise.all(
+          refs.map(async (ref) => {
+            const diffOptions =
+              refs.length > 1 ? { ...ref, maxBytes: perPrDiffBytes } : ref;
+            try {
+              const [detail, diff] = await Promise.all([
+                this.githubClient.getPullRequest(ref),
+                this.githubClient.getPullRequestDiff(diffOptions),
+              ]);
+              return { detail, diff };
+            } catch (error) {
+              if (refs.length === 1) {
+                throw error; // 단일: 기존 에러 전파 유지(회귀 0)
+              }
+              throw new CareerMateException({
+                code: CareerMateErrorCode.INVALID_PR_REFERENCE,
+                message: `PR ${ref.repo}#${ref.number} 를 가져오지 못했습니다 (없거나 접근 불가).`,
+                status: DomainStatus.BAD_GATEWAY,
+              });
+            }
+          }),
+        );
 
+        const isMulti = items.length > 1;
         const completion = await this.modelRouter.route({
           agentType: AgentType.CAREER_MATE,
           request: {
-            prompt: buildPrRetroPrompt({ detail, diff }),
-            systemPrompt: PR_RETRO_SYNTH_SYSTEM_PROMPT,
+            prompt: isMulti
+              ? buildMultiPrRetroPrompt({ items })
+              : buildPrRetroPrompt(items[0]),
+            systemPrompt: isMulti
+              ? MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT
+              : PR_RETRO_SYNTH_SYSTEM_PROMPT,
           },
         });
         const { accomplishment, narrative } = parsePrRetroOutput(
@@ -108,7 +144,9 @@ export class ReflectPrUsecase {
         const portfolio = await this.renderPortfolio.execute({ slackUserId });
 
         this.logger.log(
-          `CAREER_MATE REFLECT_PR 완료 — ${ref.repo}#${ref.number}, 성과 ${humanized.accomplishments.length}건`,
+          `CAREER_MATE REFLECT_PR 완료 — PR ${refs
+            .map((ref) => `${ref.repo}#${ref.number}`)
+            .join(', ')}, 성과 ${humanized.accomplishments.length}건`,
         );
 
         const result: ReflectPrResult = {
