@@ -111,7 +111,10 @@ describe('ModelRouterUsecase', () => {
       });
 
       return usecase
-        .route({ agentType: AgentType.EVENING_RETRO, request: { prompt: 'retro' } })
+        .route({
+          agentType: AgentType.EVENING_RETRO,
+          request: { prompt: 'retro' },
+        })
         .then((result) => {
           expect(result.provider).toBe(ModelProviderName.CHATGPT);
           expect(claudeProvider.complete).not.toHaveBeenCalled();
