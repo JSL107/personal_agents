@@ -61,6 +61,9 @@ export class AutopilotOrchestrator {
         if (result.preview) {
           previews.push(result.preview);
         }
+        if (result.previews) {
+          previews.push(...result.previews);
+        }
         if (!result.skip && result.summaryText) {
           items.push({
             summary: result.summaryText,
