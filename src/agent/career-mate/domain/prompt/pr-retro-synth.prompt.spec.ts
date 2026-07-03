@@ -1,6 +1,8 @@
 import { CareerMateException } from '../career-mate.exception';
 import {
+  buildMultiPrRetroPrompt,
   buildPrRetroPrompt,
+  MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT,
   parsePrRetroOutput,
 } from './pr-retro-synth.prompt';
 
@@ -68,5 +70,46 @@ describe('pr-retro-synth', () => {
       accomplishment: JSON.parse(VALID).accomplishment,
     });
     expect(() => parsePrRetroOutput(noNarr)).toThrow(CareerMateException);
+  });
+
+  it('buildMultiPrRetroPrompt 는 모든 PR 블록과 통합 지침을 담는다', () => {
+    const makeDetail = (number: number) => ({
+      number,
+      title: `T${number}`,
+      body: `B${number}`,
+      repo: 'o/r',
+      url: `https://github.com/o/r/pull/${number}`,
+      baseRef: 'main',
+      headRef: `feat-${number}`,
+      authorLogin: 'me',
+      changedFiles: ['a.ts'],
+      changedFilesTruncated: false,
+      changedFilesTotalCount: 1,
+      additions: 5,
+      deletions: 1,
+    });
+    const prompt = buildMultiPrRetroPrompt({
+      items: [
+        {
+          detail: makeDetail(1),
+          diff: { diff: 'diff-1', truncated: false, bytes: 6 },
+        },
+        {
+          detail: makeDetail(2),
+          diff: { diff: 'diff-2', truncated: false, bytes: 6 },
+        },
+      ],
+    });
+    expect(prompt).toContain('#1');
+    expect(prompt).toContain('#2');
+    expect(prompt).toContain('diff-1');
+    expect(prompt).toContain('diff-2');
+    expect(prompt).toContain('PR 1/2');
+    expect(prompt).toContain('PR 2/2');
+  });
+
+  it('MULTI 시스템 프롬프트는 하나의 통합 성과 지침을 담는다', () => {
+    expect(MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT).toContain('통합');
+    expect(MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT).toContain('evidence');
   });
 });
