@@ -387,6 +387,18 @@ class EnvironmentVariables {
   @IsString()
   PR_CAREERLOG_AUTO_ENABLED?: string;
 
+  // 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip.
+  // 미설정 = 활성(기본 ON). task 가 내부적으로 `!== 'false'` 로 판정.
+  @IsOptional()
+  @IsString()
+  EVENING_RETRO_PUBLISH_ENABLED?: string;
+
+  // 블로그 발행 대상 Notion 부모 페이지 ID. 미설정 시 블로그 카드 승인은 명시 에러.
+  // EveningBlogPublishApplier 가 이 페이지 아래 자식 페이지를 생성한다.
+  @IsOptional()
+  @IsString()
+  EVENING_RETRO_BLOG_NOTION_PAGE_ID?: string;
+
   // issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성.
   // 정책: 새 label 생성 X (repo 기존 vocab 안에서 LLM 분류 부분집합 선택).
   // 추가 조건: GITHUB_TOKEN 이 `Issues: Read+Write` scope 보유.

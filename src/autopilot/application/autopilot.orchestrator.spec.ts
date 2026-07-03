@@ -368,6 +368,58 @@ describe('AutopilotOrchestrator', () => {
 
   // 메인 발송은 성공(ts 반환)했으나 스레드 상세 발송만 실패한 경우 — 이미 자체 try/catch 로
   // swallow 하므로 가드 롤백/rethrow 대상이 아니다(메인 요약은 전달됨 = 데이터 손실 아님).
+  it('task.result.previews 배열이면 각 항목마다 PreviewGate 카드를 발송한다', async () => {
+    const previewA = {
+      kind: 'EVENING_BLOG_PUBLISH',
+      payload: { a: 1 },
+      previewText: 'A',
+    };
+    const previewB = {
+      kind: 'EVENING_CAREER_REFLECT',
+      payload: { b: 2 },
+      previewText: 'B',
+    };
+    const previewTask = {
+      id: 'evening-retro-publish',
+      run: jest
+        .fn()
+        .mockResolvedValue({ skip: true, previews: [previewA, previewB] }),
+    };
+    const createPreview = {
+      execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
+    };
+    const slackNotifier = {
+      postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
+      postPreviewMessage: jest.fn(),
+    };
+    const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const orchestrator = new AutopilotOrchestrator(
+      [previewTask] as any,
+      slackNotifier as any,
+      idempotency as any,
+      createPreview as any,
+    );
+    await orchestrator.runGroup(
+      'evening',
+      [
+        {
+          id: 'evening-retro-publish',
+          taskId: 'evening-retro-publish',
+          riskTier: 'T1_PREVIEW',
+          trigger: {
+            kind: 'CRON',
+            schedule: '0 19 * * *',
+            timezone: 'Asia/Seoul',
+          },
+        },
+      ] as any,
+      'U1',
+      'C1',
+    );
+    expect(createPreview.execute).toHaveBeenCalledTimes(2);
+    expect(slackNotifier.postPreviewMessage).toHaveBeenCalledTimes(2);
+  });
+
   it('스레드 상세 발송 실패는 swallow — release/throw 없음', async () => {
     const task = {
       id: 'daily-eval',

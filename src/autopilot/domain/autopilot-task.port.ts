@@ -23,6 +23,9 @@ export interface AutopilotTaskResult {
   detailText?: string;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
+  // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.
+  // 단수 preview 와 병행 가능(둘 다 있으면 둘 다 발송). 한 task 가 카드 여러 장을 낼 때 사용.
+  previews?: AutopilotPreviewRequest[];
 }
 
 export interface AutopilotTask {

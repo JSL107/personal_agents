@@ -57,6 +57,10 @@ export enum AgentType {
   // 내부 proactive — 주간 선호 학습. 신호 배치 → 프로필 diff 추론. 경량 판정 → ChatGPT.
   // 슬래시 핸들러/ResponseCode/retry-run 체크리스트 비대상(사용자 비노출 내부 타입).
   PREFERENCE_LEARNING = 'PREFERENCE_LEARNING',
+  // 저녁 회고→발행 후보 — 매일 19:00 KST evening 그룹. codex 로 회고/후보 선별/블로그 본문 생성.
+  // BLOG(Hermes sentinel)와 달리 실제 route() 를 탄다.
+  // 슬래시/ResponseCode/retry-run 비대상 (autopilot task, 사용자 비노출 내부 타입).
+  EVENING_RETRO = 'EVENING_RETRO',
 }
 
 export interface CompletionRequest {

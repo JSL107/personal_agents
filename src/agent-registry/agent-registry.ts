@@ -221,4 +221,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용)',
   },
+  {
+    agentType: AgentType.EVENING_RETRO,
+    displayName: 'Evening Retro Publish',
+    slashCommands: [],
+    usecasePath:
+      'src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts',
+    description:
+      '저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용)',
+  },
 ];

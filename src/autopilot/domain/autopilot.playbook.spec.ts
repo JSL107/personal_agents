@@ -22,13 +22,17 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(morning?.digestGroup).toBe('morning');
   });
 
-  it('SP3 플레이북은 daily-eval + work-reviewer 가 모두 evening 그룹', () => {
+  it('SP3 플레이북은 daily-eval + work-reviewer + evening-retro-publish 가 모두 evening 그룹', () => {
     const eveningEntries = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.digestGroup === 'evening',
     );
-    expect(eveningEntries).toHaveLength(2);
+    expect(eveningEntries).toHaveLength(3);
     const ids = eveningEntries.map((entry) => entry.id).sort();
-    expect(ids).toEqual(['daily-eval', 'work-reviewer']);
+    expect(ids).toEqual([
+      'daily-eval',
+      'evening-retro-publish',
+      'work-reviewer',
+    ]);
   });
 
   it('SP3 플레이북 evening 그룹은 validatePlaybook 통과(스케줄 일치)', () => {
