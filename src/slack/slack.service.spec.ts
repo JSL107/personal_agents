@@ -37,8 +37,15 @@ describe('formatDailyPlan', () => {
     reasoning: 'impact 기준으로 PM Agent 를 오전 최우선으로 배치',
   };
 
+  // formatDailyPlan 은 summary(메인)/detail(스레드=판단 근거) 로 분리 반환 —
+  // 슬래시 경로처럼 합본 문자열로 렌더해 기존 단일 메시지 기준으로 검증한다.
+  const render = (plan: DailyPlan): string => {
+    const { summary, detail } = formatDailyPlan(plan);
+    return `${summary}\n\n${detail}`;
+  };
+
   it('blocker 가 null 이면 Blocker 라인을 출력하지 않는다', () => {
-    const output = formatDailyPlan(base);
+    const output = render(base);
 
     expect(output).toContain('*오늘의 최우선 과제*');
     expect(output).toContain('PM Agent 구현 마무리');
@@ -53,7 +60,7 @@ describe('formatDailyPlan', () => {
   });
 
   it('blocker 가 문자열이면 Blocker 라인을 추가한다', () => {
-    const output = formatDailyPlan({
+    const output = render({
       ...base,
       blocker: '디자인팀 시안 대기',
     });
@@ -62,7 +69,7 @@ describe('formatDailyPlan', () => {
   });
 
   it('morning / afternoon 항목 전체가 bullet 으로 출력된다', () => {
-    const output = formatDailyPlan(base);
+    const output = render(base);
     const bulletLines = output
       .split('\n')
       .filter((line) => line.startsWith('• '));
@@ -73,7 +80,7 @@ describe('formatDailyPlan', () => {
   });
 
   it('morning 배열이 비어 있으면 *오전* 헤더만 남고 bullet 이 없다', () => {
-    const output = formatDailyPlan({ ...base, morning: [] });
+    const output = render({ ...base, morning: [] });
 
     const morningSection = output
       .split('\n\n')
@@ -266,7 +273,7 @@ describe('formatDailyPlan — lineage 라벨 (PRO-2)', () => {
   };
 
   it('NEW / CARRIED / POSTPONED 라벨이 각 task 앞에 prefix 로 붙는다', () => {
-    const output = formatDailyPlan(planWithLineage);
+    const output = formatDailyPlan(planWithLineage).summary;
     expect(output).toContain('🆕');
     expect(output).toContain('🔁');
     expect(output).toContain('⏭');
@@ -279,7 +286,7 @@ describe('formatDailyPlan — lineage 라벨 (PRO-2)', () => {
       morning: [task('legacy morning')],
       afternoon: [task('legacy afternoon')],
     };
-    const output = formatDailyPlan(legacyPlan);
+    const output = formatDailyPlan(legacyPlan).summary;
     expect(output).not.toContain('🆕');
     expect(output).not.toContain('🔁');
     expect(output).not.toContain('⏭');
@@ -303,7 +310,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan);
+    const output = formatDailyPlan(plan).summary;
     expect(output).toContain(
       '<https://github.com/foo/bar/pull/707|PR #707 리뷰>',
     );
@@ -322,7 +329,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan);
+    const output = formatDailyPlan(plan).summary;
     expect(output).toContain('• 자유 텍스트 task');
     expect(output).toContain('• 빈 url');
     expect(output).not.toContain('<|');
@@ -341,7 +348,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan);
+    const output = formatDailyPlan(plan).summary;
     expect(output).not.toContain('</pull/707|');
     expect(output).not.toContain('<javascript:');
     expect(output).toContain('• fragment 만 반환');
@@ -363,7 +370,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan);
+    const output = formatDailyPlan(plan).summary;
     const linkMatch = output.match(/<https:\/\/example\.com[^>]+\|[^>]+>/);
     expect(linkMatch).not.toBeNull();
     expect(linkMatch?.[0]).not.toContain('<bad>');

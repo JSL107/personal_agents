@@ -11,7 +11,7 @@ describe('PoEvalAutopilotTask', () => {
     expect(task.id).toBe('daily-eval');
   });
 
-  it('PO_EVAL 성공 시 summaryText 반환(skip=false)', async () => {
+  it('PO_EVAL 성공 시 요약은 summaryText, 근거(careerLog·합성 source)는 detailText 로 분리(skip=false)', async () => {
     const execute = jest.fn().mockResolvedValue({
       result: {
         range: 'TODAY',
@@ -34,6 +34,13 @@ describe('PoEvalAutopilotTask', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toContain('Daily Eval');
+    expect(out.summaryText).toContain('회고요약');
+    // 근거(합성 source · careerLog · model 푸터)는 스레드(detailText)로 내려가고 메인에는 없다.
+    expect(out.summaryText).not.toContain('합성 source');
+    expect(out.detailText).toContain('합성 source');
+    expect(out.detailText).toContain('workReviewer=#10');
+    expect(out.detailText).toContain('careerLog');
+    expect(out.detailText).toContain('run #50');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'TODAY' }),
     );

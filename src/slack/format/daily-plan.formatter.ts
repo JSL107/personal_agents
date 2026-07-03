@@ -1,4 +1,5 @@
 import { DailyPlan, TaskItem } from '../../agent/pm/domain/pm-agent.type';
+import { FormattedReport } from './formatted-report.type';
 import { isSafeHttpUrl, sanitizeForSlackLink } from './mrkdwn.util';
 
 // lineage 라벨 prefix — PRO-2 의 어제↔오늘 추적성을 한눈에 보여줌. 라벨 없는 구버전 plan 은 prefix 생략.
@@ -31,8 +32,11 @@ const renderTaskLine = (task: TaskItem): string => {
   return `• ${lineage}${critical}${titled}${wbs}`;
 };
 
-export const formatDailyPlan = (plan: DailyPlan): string => {
-  const lines: string[] = [
+// summary(메인) = 과제 목록 + Blocker + 어제 이월 + 예상 소요, detail(스레드) = 판단 근거.
+// 어제 이월의 `_이월 근거_` 는 이월 리스트와 한 블록이라 summary 에 함께 유지하고,
+// 전체 계획의 `판단 근거`(reasoning) 만 스레드로 내린다.
+export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
+  const summaryLines: string[] = [
     '*오늘의 최우선 과제*',
     renderTaskLine(plan.topPriority),
     '',
@@ -44,28 +48,26 @@ export const formatDailyPlan = (plan: DailyPlan): string => {
   ];
 
   if (plan.blocker) {
-    lines.push('', `*Blocker*: ${plan.blocker}`);
+    summaryLines.push('', `*Blocker*: ${plan.blocker}`);
   }
 
   // 이월 항목이 없어도 analysisReasoning 이 있으면 "왜 drop 했는지" 설명을 노출 —
   // Rollover 자율권 (Eisenhower 매트릭스) 판단 근거가 사용자에게 보여야 함 (codex review bi531458d P3).
   const { rolledOverTasks, analysisReasoning } = plan.varianceAnalysis;
   if (rolledOverTasks.length > 0 || analysisReasoning.length > 0) {
-    lines.push('', '*어제 이월*');
+    summaryLines.push('', '*어제 이월*');
     if (rolledOverTasks.length > 0) {
-      lines.push(...rolledOverTasks.map((t) => `• ${t}`));
+      summaryLines.push(...rolledOverTasks.map((t) => `• ${t}`));
     }
     if (analysisReasoning.length > 0) {
-      lines.push(`_이월 근거_: ${analysisReasoning}`);
+      summaryLines.push(`_이월 근거_: ${analysisReasoning}`);
     }
   }
 
-  lines.push(
-    '',
-    `*예상 소요*: ${plan.estimatedHours}시간`,
-    '',
-    `*판단 근거*: ${plan.reasoning}`,
-  );
+  summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
 
-  return lines.join('\n');
+  return {
+    summary: summaryLines.join('\n'),
+    detail: `*판단 근거*: ${plan.reasoning}`,
+  };
 };

@@ -34,11 +34,10 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
       const intro = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)*\n\n`;
-      const text =
-        intro +
-        formatEvaluationOutput(outcome.result) +
-        formatModelFooter(outcome);
-      return { skip: false, summaryText: text };
+      const formatted = formatEvaluationOutput(outcome.result);
+      const summaryText = intro + formatted.summary;
+      const detailText = formatted.detail + formatModelFooter(outcome);
+      return { skip: false, summaryText, detailText };
     } catch (error) {
       if (
         error instanceof PoEvalException &&
