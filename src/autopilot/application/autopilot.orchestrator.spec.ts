@@ -258,6 +258,10 @@ describe('AutopilotOrchestrator', () => {
     expect(createPreview.execute).toHaveBeenCalledTimes(1);
     expect(createPreview.execute.mock.calls[0][0].kind).toBe('DOCS_AUDIT_PR');
     expect(createPreview.execute.mock.calls[0][0].slackUserId).toBe('U1');
+    // autopilot preview 는 하루 1회 cron 발화라 TTL 24h — 당일 승인 놓쳐도 다음 발화 직전까지 유효.
+    expect(createPreview.execute.mock.calls[0][0].ttlMs).toBe(
+      24 * 60 * 60 * 1000,
+    );
     expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith({
       target: 'U1',
       previewText: 'pv',
