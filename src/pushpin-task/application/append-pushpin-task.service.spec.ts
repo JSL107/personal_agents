@@ -20,6 +20,7 @@ describe('AppendPushpinTaskService', () => {
       appendBlocks: jest.fn().mockResolvedValue(undefined),
       updatePageProperties: jest.fn().mockResolvedValue(undefined),
       replaceCheckInSection: jest.fn(),
+      replaceAllBlocks: jest.fn(),
     };
     configGet = jest.fn();
     service = new AppendPushpinTaskService(notionClient, {

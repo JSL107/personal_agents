@@ -176,3 +176,32 @@ describe('NotionApiClient', () => {
     expect(ex.notionErrorCode).toBe(NotionErrorCode.REQUEST_FAILED);
   });
 });
+
+describe('replaceAllBlocks', () => {
+  it('기존 child block 을 모두 archive 하고 신규 blocks 를 append 한다 (append 가 먼저)', async () => {
+    const list = jest.fn().mockResolvedValue({
+      results: [{ id: 'b1' }, { id: 'b2' }],
+      has_more: false,
+      next_cursor: null,
+    });
+    const append = jest.fn().mockResolvedValue({});
+    const del = jest.fn().mockResolvedValue({});
+    const client = {
+      blocks: { children: { list, append }, delete: del },
+    };
+    const adapter = new NotionApiClient(client as never, {} as never);
+
+    await adapter.replaceAllBlocks({
+      pageId: 'PAGE',
+      blocks: [{ type: 'heading', text: 'H' }],
+    });
+
+    expect(append).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith({ block_id: 'b1' });
+    expect(del).toHaveBeenCalledWith({ block_id: 'b2' });
+    // 신규 append 가 기존 archive 보다 먼저 — append 실패 시 기존 보존.
+    expect(append.mock.invocationCallOrder[0]).toBeLessThan(
+      del.mock.invocationCallOrder[0],
+    );
+  });
+});
