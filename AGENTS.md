@@ -116,8 +116,9 @@ CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_origina
 
 **MUST (모든 자동화 에이전트 공통):**
 1. **변경 후 즉시**: `pnpm lint:check && pnpm test && pnpm build` 3중 green
-2. **commit 메시지**: 한국어 OK. `<type>(<scope>): <subject>` 형식 ([CODE_RULES.md](./CODE_RULES.md) §8). subject 50자 이내, 명령형 현재시제.
-3. 사용자가 명시 요청 전엔 commit 하지 않음.
+2. **env / agent-registry / AgentType 변경 시 추가**: `pnpm docs:sync` 후 `pnpm docs:check` green — 생성 문서 `docs/env-catalog.md`·`docs/agent-catalog.md` 가 코드와 어긋나면 CI `verify` 가 실패한다(위 3중 게이트엔 없어 로컬 3중 green 이어도 안 잡힘). `docs/` 는 gitignore 지만 이 카탈로그는 tracked 라 `git add -f docs/env-catalog.md` 로 스테이징. **codex-flow 위임 시 이 단계를 codex 프롬프트와 `.ai/design.md` 검증 항목에도 반드시 명시할 것** (codex 는 명시한 게이트만 실행하므로 누락 시 CI 에서 드리프트로 잡힌다 — 2026-07-06 PR #141 재현).
+3. **commit 메시지**: 한국어 OK. `<type>(<scope>): <subject>` 형식 ([CODE_RULES.md](./CODE_RULES.md) §8). subject 50자 이내, 명령형 현재시제.
+4. 사용자가 명시 요청 전엔 commit 하지 않음.
 
 **Codex CLI 사용자 한정 추가 권장**: 의미 있는 변경마다 `/codex:review` 동반 (owner 의 로컬 oh-my-claudecode 플러그인에 정의된 명령). 다른 에이전트(Claude Code/Cursor/직접 작업)는 자체 코드리뷰 수단으로 대체 가능.
 
@@ -128,7 +129,7 @@ CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_origina
 - **claude --bare 쓰면 인증 실패**: keychain/OAuth 무시되므로 절대 사용 X.
 - **Nest DI 가 `Number` provider 못 찾음**: 생성자에 default-value 파라미터 (`timeoutMs: number = 180_000`) 두면 reflection 이 Number type 으로 해석. **default 는 클래스 필드로 옮길 것**.
 - **Slack ephemeral 응답에서 `replace_original: true` 가 가끔 안 먹음**: Slack API 한계. UX 퇴보는 없으니 그대로 둠.
-- **Codex 가 Korean path (`기타`) 인코딩 에러**: 무시 가능. Codex 내부 텔레메트리 이슈.
+- **Codex 가 Korean path (`기타`) 에서 실행 실패 (무시 불가)**: `codex exec` 는 workspace 절대경로를 HTTP 헤더 (`x-codex-turn-metadata`) 에 싣는데 non-ASCII (`기타`) 면 헤더 변환 실패로 websocket 이 5회 재시도 후 **exit 2 로 죽는다** (텔레메트리 무시가 아니라 실행 자체 차단). → codex 를 쓸 worktree 는 **ASCII 절대경로**에 만들 것. 이미 한글 경로에 만들었으면 `git worktree move <old> <ascii-new>` 로 node_modules·.ai 째 이동 가능. (2026-07-06 실증 — 종전 "무시 가능" 기재는 오류.)
 
 ## 9. 메모리 / 노트
 
