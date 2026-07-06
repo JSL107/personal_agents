@@ -24,7 +24,7 @@ const makeDeps = (latest: unknown) => {
     findOrCreateChildPage: jest
       .fn()
       .mockResolvedValue({ pageId: 'p1', url: 'https://notion/p1' }),
-    appendBlocks: jest.fn().mockResolvedValue(undefined),
+    replaceAllBlocks: jest.fn().mockResolvedValue(undefined),
   };
   const config = { get: jest.fn().mockReturnValue('PARENT_PAGE') };
   return { repository, buildProfile, notionClient, config };
@@ -48,7 +48,7 @@ describe('RenderPortfolioUsecase', () => {
     const result = await usecase.execute({ slackUserId: 'U1' });
 
     expect(d.notionClient.findOrCreateChildPage).toHaveBeenCalledTimes(1);
-    expect(d.notionClient.appendBlocks).toHaveBeenCalledTimes(1);
+    expect(d.notionClient.replaceAllBlocks).toHaveBeenCalledTimes(1);
     expect(result.url).toBe('https://notion/p1');
     expect(result.agentRunId).toBe(5);
   });
