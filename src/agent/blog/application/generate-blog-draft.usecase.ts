@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   AgentRunOutcome,
@@ -15,7 +16,12 @@ import {
 import { BlogException } from '../domain/blog.exception';
 import { BlogDraftResult, GenerateBlogDraftInput } from '../domain/blog.type';
 import { BlogErrorCode } from '../domain/blog-error-code.enum';
-import { buildBlogPublishProperties } from '../domain/blog-publish-properties';
+import {
+  BlogPublishPropertyNames,
+  buildBlogPublishProperties,
+  DEFAULT_BLOG_PROP,
+  DEFAULT_BLOG_STATUS_PUBLISHED,
+} from '../domain/blog-publish-properties';
 import {
   HERMES_RUNNER_PORT,
   HermesRunnerPort,
@@ -39,6 +45,7 @@ export class GenerateBlogDraftUsecase {
     private readonly hermesRunner: HermesRunnerPort,
     @Inject(NOTION_CLIENT_PORT)
     private readonly notionClient: NotionClientPort,
+    private readonly configService: ConfigService,
   ) {}
 
   async execute({
@@ -102,11 +109,15 @@ export class GenerateBlogDraftUsecase {
     try {
       await this.notionClient.updatePageProperties({
         pageId,
-        properties: buildBlogPublishProperties({
-          tags: extractTags(stdout),
-          summary: extractSummary(stdout),
-          publishedAt: getTodayKstDate(),
-        }),
+        properties: buildBlogPublishProperties(
+          {
+            tags: extractTags(stdout),
+            summary: extractSummary(stdout),
+            publishedAt: getTodayKstDate(),
+          },
+          this.getBlogPublishPropertyNames(),
+          this.getBlogStatusPublishedValue(),
+        ),
       });
       return true;
     } catch (error: unknown) {
@@ -117,5 +128,30 @@ export class GenerateBlogDraftUsecase {
       );
       return false;
     }
+  }
+
+  private getBlogPublishPropertyNames(): BlogPublishPropertyNames {
+    return {
+      status:
+        this.configService.get<string>('BLOG_NOTION_PROP_STATUS') ??
+        DEFAULT_BLOG_PROP.status,
+      publishedAt:
+        this.configService.get<string>('BLOG_NOTION_PROP_PUBLISHED_AT') ??
+        DEFAULT_BLOG_PROP.publishedAt,
+      tags:
+        this.configService.get<string>('BLOG_NOTION_PROP_TAGS') ??
+        DEFAULT_BLOG_PROP.tags,
+      summary:
+        this.configService.get<string>('BLOG_NOTION_PROP_SUMMARY') ??
+        DEFAULT_BLOG_PROP.summary,
+    };
+  }
+
+  private getBlogStatusPublishedValue(): string {
+    const statusPublishedValue =
+      this.configService.get<string>('BLOG_NOTION_STATUS_PUBLISHED_VALUE') ??
+      DEFAULT_BLOG_STATUS_PUBLISHED;
+
+    return statusPublishedValue;
   }
 }
