@@ -33,6 +33,7 @@ import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.applier';
 import { GithubModule } from './github/github.module';
+import { HumanizeModule } from './humanize/humanize.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { NotificationModule } from './notification/notification.module';
@@ -131,6 +132,7 @@ import { WebhookModule } from './webhook/webhook.module';
         SandboxModule,
         BeDiffGeneratorModule,
         PreferenceProfileModule,
+        HumanizeModule,
         ModelRouterModule,
         CareerMateModule,
       ],
