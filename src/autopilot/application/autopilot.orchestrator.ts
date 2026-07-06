@@ -15,7 +15,9 @@ import {
 } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
-const PREVIEW_TTL_MS = 60 * 60 * 1000;
+// autopilot preview(저녁 회고→블로그/경력 발행 후보 등)는 하루 1회 cron 발화라, 당일 승인을
+// 놓쳐도 다음 발화 직전까지 유효하도록 24h. (기존 1h 는 저녁 카드를 자주 EXPIRED 로 흘려보냄)
+const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
 // 플레이북 그룹을 실행 → 비-skip summaryText 를 메인 메시지로 합치고 detailText 는 스레드 댓글로,
 // 멱등 1회 후 다중 타깃 fan-out 발송. T1_PREVIEW task 의 preview 는 CreatePreviewUsecase →
