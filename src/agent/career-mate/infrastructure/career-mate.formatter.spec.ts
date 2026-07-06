@@ -1,6 +1,7 @@
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   buildPortfolioBlocks,
+  buildResumeBlocks,
   formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
@@ -151,3 +152,73 @@ const CAL = {
   missingKeywords: ['IaC'],
   actionItems: ['정량 지표 추가'],
 };
+
+describe('buildPortfolioBlocks — repo 그룹핑', () => {
+  const acc = (title: string, repo: string | null, pr: number) => ({
+    title,
+    bullet: `${title}-bullet`,
+    star: { situation: '', task: '', action: '', result: '' },
+    techTags: [],
+    evidence: repo
+      ? [{ repo, pr, url: `https://x/${pr}`, mergedAt: '2026-01-01' }]
+      : [],
+  });
+
+  it('같은 repo 성과는 한 프로젝트 heading 으로 묶는다', () => {
+    const data: CareerProfileData = {
+      summary: 's',
+      skills: [],
+      accomplishments: [acc('A', 'org/api', 1), acc('B', 'org/api', 2)],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 2 },
+    };
+    const headings = buildPortfolioBlocks(data)
+      .filter((b) => b.type === 'heading')
+      .map((b) => (b as { text: string }).text);
+    expect(headings).toContain('프로젝트: org/api');
+    expect(headings.filter((h) => h.startsWith('프로젝트:')).length).toBe(1);
+  });
+
+  it('evidence 없는 성과는 기타 프로젝트로', () => {
+    const data: CareerProfileData = {
+      summary: 's',
+      skills: [],
+      accomplishments: [acc('A', null, 0)],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 0 },
+    };
+    const headings = buildPortfolioBlocks(data)
+      .filter((b) => b.type === 'heading')
+      .map((b) => (b as { text: string }).text);
+    expect(headings).toContain('프로젝트: 기타');
+  });
+});
+
+describe('buildResumeBlocks', () => {
+  it('성과 bullet 과 기술 스택을 담고 STAR 는 넣지 않는다', () => {
+    const data: CareerProfileData = {
+      summary: '요약',
+      skills: [
+        {
+          name: 'NestJS',
+          category: 'FRAMEWORK',
+          proficiency: 'PROFICIENT',
+          evidence: [],
+        },
+      ],
+      accomplishments: [
+        {
+          title: 'T',
+          bullet: '성과불릿',
+          star: { situation: 'S값', task: '', action: '', result: '' },
+          techTags: [],
+          evidence: [],
+        },
+      ],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 1 },
+    };
+    const blocks = buildResumeBlocks(data);
+    const texts = blocks.map((b) => ('text' in b ? b.text : '')).join('\n');
+    expect(texts).toContain('성과불릿');
+    expect(texts).toContain('NestJS (FRAMEWORK · PROFICIENT)');
+    expect(texts).not.toContain('S값'); // STAR situation 미포함
+  });
+});

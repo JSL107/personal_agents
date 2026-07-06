@@ -62,6 +62,13 @@ export interface ReplaceCheckInSectionOptions {
   blocks: NotionPlanBlock[];
 }
 
+// 페이지의 모든 child block 을 archive 한 뒤 blocks 를 append. 이력서 최신본 덮어쓰기 /
+// 포트폴리오 전체 재작성 용도 (append-only 누적 방지). blocks 가 빈 배열이면 clear-only.
+export interface ReplaceAllBlocksOptions {
+  pageId: string;
+  blocks: NotionPlanBlock[];
+}
+
 export interface NotionDailyPlanPage {
   pageId: string;
   url: string;
@@ -84,4 +91,6 @@ export interface NotionClientPort {
   updatePageProperties(options: UpdatePagePropertiesOptions): Promise<void>;
   // /today 의 "Check in" 섹션 전용 — 매 호출마다 기존 Check in 섹션 삭제 후 새로 입력.
   replaceCheckInSection(options: ReplaceCheckInSectionOptions): Promise<void>;
+  // 페이지의 모든 child block 삭제(archive) 후 blocks append — 최신본 덮어쓰기 용도.
+  replaceAllBlocks(options: ReplaceAllBlocksOptions): Promise<void>;
 }

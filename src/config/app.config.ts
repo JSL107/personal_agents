@@ -257,6 +257,12 @@ class EnvironmentVariables {
   @IsString()
   CAREER_PORTFOLIO_NOTION_PAGE_ID?: string;
 
+  // Career Mate — 이력서 미러용 Notion 부모 페이지 id (RenderResume 의 날짜별 자식 페이지 생성 대상).
+  // 미설정 시 이력서는 Slack 렌더만 (Notion 미러 skip). 1인 봇 단일 페이지.
+  @IsOptional()
+  @IsString()
+  CAREER_RESUME_NOTION_PAGE_ID?: string;
+
   // `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo (선택).
   // - IMPACT_REPORT_GITHUB_AUTHOR: GitHub username (예: "JSL107") — **필수**. slackUserId →
   //   GitHub login 매핑 인프라 없는 1인 봇 임시 정책.

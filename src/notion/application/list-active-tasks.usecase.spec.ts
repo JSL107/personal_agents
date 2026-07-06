@@ -24,6 +24,7 @@ describe('ListActiveTasksUsecase', () => {
     appendBlocks: jest.fn(),
     updatePageProperties: jest.fn(),
     replaceCheckInSection: jest.fn(),
+    replaceAllBlocks: jest.fn(),
   });
 
   it('Notion client 호출 결과를 그대로 반환', async () => {
