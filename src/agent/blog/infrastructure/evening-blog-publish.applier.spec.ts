@@ -1,7 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
-import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  AgentType,
+  ModelProviderName,
+} from '../../../model-router/domain/model-router.type';
 import { NotionClientPort } from '../../../notion/domain/port/notion-client.port';
 import {
   PREVIEW_KIND,
@@ -14,6 +18,7 @@ describe('EveningBlogPublishApplier', () => {
   let modelRouter: jest.Mocked<ModelRouterUsecase>;
   let notionClient: jest.Mocked<NotionClientPort>;
   let config: jest.Mocked<ConfigService>;
+  let humanizer: jest.Mocked<HumanizeService>;
 
   const makePreview = (payload: unknown): PreviewAction =>
     ({
@@ -41,7 +46,16 @@ describe('EveningBlogPublishApplier', () => {
       get: jest.fn().mockReturnValue('PARENT'),
     } as unknown as jest.Mocked<ConfigService>;
 
-    applier = new EveningBlogPublishApplier(modelRouter, notionClient, config);
+    humanizer = {
+      humanize: jest.fn(async (fields: Record<string, string>) => fields),
+    } as unknown as jest.Mocked<HumanizeService>;
+
+    applier = new EveningBlogPublishApplier(
+      modelRouter,
+      notionClient,
+      config,
+      humanizer,
+    );
   });
 
   it('(a) NOTION_PAGE_ID 미설정 시 apply 가 throw 한다', async () => {
@@ -80,7 +94,40 @@ describe('EveningBlogPublishApplier', () => {
     expect(result.artifacts).toEqual([]);
   });
 
-  it('(c) payload.topPick 없음 → apply 가 throw 한다', async () => {
+  it('(c) appendBlocks 직전 paragraph 블록만 humanizer 를 거친다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: '# 제목\n첫 문단\n## 소제목\n둘째 문단',
+      modelUsed: 'gpt',
+      provider: ModelProviderName.CHATGPT,
+    });
+    humanizer.humanize.mockResolvedValue({
+      '1': '다듬은 첫 문단',
+      '3': '다듬은 둘째 문단',
+    });
+    const preview = makePreview({
+      topPick: { title: '제목', keywords: ['k1'] },
+      retroContext: '오늘의 회고',
+      slackUserId: 'U1',
+    });
+
+    await applier.apply(preview);
+
+    expect(humanizer.humanize).toHaveBeenCalledWith({
+      '1': '첫 문단',
+      '3': '둘째 문단',
+    });
+    expect(notionClient.appendBlocks).toHaveBeenCalledWith({
+      pageId: 'p1',
+      blocks: [
+        { type: 'heading', text: '제목' },
+        { type: 'paragraph', text: '다듬은 첫 문단' },
+        { type: 'subheading', text: '소제목' },
+        { type: 'paragraph', text: '다듬은 둘째 문단' },
+      ],
+    });
+  });
+
+  it('(d) payload.topPick 없음 → apply 가 throw 한다', async () => {
     const preview = makePreview({ retroContext: '회고', slackUserId: 'U1' });
 
     await expect(applier.apply(preview)).rejects.toThrow(

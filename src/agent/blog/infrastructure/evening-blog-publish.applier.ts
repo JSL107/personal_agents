@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeEveningBlogBlocks } from '../../../humanize/application/humanize-evening-blog.adapter';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -34,6 +36,7 @@ export class EveningBlogPublishApplier implements PreviewApplier {
     @Inject(NOTION_CLIENT_PORT)
     private readonly notionClient: NotionClientPort,
     private readonly config: ConfigService,
+    private readonly humanizer: HumanizeService,
   ) {}
 
   async apply(preview: PreviewAction): Promise<ApplyResult> {
@@ -66,9 +69,14 @@ export class EveningBlogPublishApplier implements PreviewApplier {
       parentPageId,
       title: payload.topPick.title,
     });
+    const blocks = this.toBlocks(completion.text);
+    const humanizedBlocks = await humanizeEveningBlogBlocks(
+      blocks,
+      this.humanizer,
+    );
     await this.notionClient.appendBlocks({
       pageId: child.pageId,
-      blocks: this.toBlocks(completion.text),
+      blocks: humanizedBlocks,
     });
 
     return {
