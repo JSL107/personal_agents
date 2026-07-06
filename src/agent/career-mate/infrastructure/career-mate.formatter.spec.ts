@@ -151,3 +151,42 @@ const CAL = {
   missingKeywords: ['IaC'],
   actionItems: ['정량 지표 추가'],
 };
+
+describe('buildPortfolioBlocks — repo 그룹핑', () => {
+  const acc = (title: string, repo: string | null, pr: number) => ({
+    title,
+    bullet: `${title}-bullet`,
+    star: { situation: '', task: '', action: '', result: '' },
+    techTags: [],
+    evidence: repo
+      ? [{ repo, pr, url: `https://x/${pr}`, mergedAt: '2026-01-01' }]
+      : [],
+  });
+
+  it('같은 repo 성과는 한 프로젝트 heading 으로 묶는다', () => {
+    const data: CareerProfileData = {
+      summary: 's',
+      skills: [],
+      accomplishments: [acc('A', 'org/api', 1), acc('B', 'org/api', 2)],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 2 },
+    };
+    const headings = buildPortfolioBlocks(data)
+      .filter((b) => b.type === 'heading')
+      .map((b) => (b as { text: string }).text);
+    expect(headings).toContain('프로젝트: org/api');
+    expect(headings.filter((h) => h.startsWith('프로젝트:')).length).toBe(1);
+  });
+
+  it('evidence 없는 성과는 기타 프로젝트로', () => {
+    const data: CareerProfileData = {
+      summary: 's',
+      skills: [],
+      accomplishments: [acc('A', null, 0)],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 0 },
+    };
+    const headings = buildPortfolioBlocks(data)
+      .filter((b) => b.type === 'heading')
+      .map((b) => (b as { text: string }).text);
+    expect(headings).toContain('프로젝트: 기타');
+  });
+});
