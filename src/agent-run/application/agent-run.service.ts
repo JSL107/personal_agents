@@ -193,9 +193,10 @@ export class AgentRunService {
     return this.repository.findRecentSucceededRuns(input);
   }
 
-  // 최근 N일 agentType 별 실행 통계 — Run Retro 회고용.
+  // 최근 sinceDays~untilDays 윈도우 agentType 별 실행 통계 — Run Retro 회고용.
   async aggregateRunStats(input: {
     sinceDays: number;
+    untilDays?: number;
   }): Promise<AgentRunStatRow[]> {
     return await this.repository.aggregateRunStats(input);
   }

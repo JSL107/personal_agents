@@ -238,21 +238,27 @@ describe('AgentRunService', () => {
     });
   });
 
-  it('aggregateRunStats: repository 에 그대로 위임한다', async () => {
+  it('aggregateRunStats: repository 에 그대로 위임한다(untilDays 포함)', async () => {
     const rows = [
       {
         agentType: 'PM',
-        total: 10,
-        failed: 1,
-        failRate: 0.1,
-        avgDurationMs: 1200,
+        total: 3,
+        failed: 0,
+        failRate: 0,
+        avgDurationMs: 1000,
       },
     ];
     repository.aggregateRunStats.mockResolvedValue(rows);
 
-    const result = await service.aggregateRunStats({ sinceDays: 7 });
+    const result = await service.aggregateRunStats({
+      sinceDays: 14,
+      untilDays: 7,
+    });
 
-    expect(repository.aggregateRunStats).toHaveBeenCalledWith({ sinceDays: 7 });
+    expect(repository.aggregateRunStats).toHaveBeenCalledWith({
+      sinceDays: 14,
+      untilDays: 7,
+    });
     expect(result).toBe(rows);
   });
 

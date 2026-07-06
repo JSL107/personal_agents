@@ -147,6 +147,9 @@ export interface AgentRunRepositoryPort {
     ids: number[];
     agentType: string;
   }): Promise<Array<{ id: number; output: unknown; endedAt: Date }>>;
-  // Run Retro — 최근 sinceDays 의 agentType 별 실행 통계(건수/실패/평균 duration). 읽기 전용.
-  aggregateRunStats(input: { sinceDays: number }): Promise<AgentRunStatRow[]>;
+  // Run Retro — 최근 sinceDays~untilDays 윈도우의 agentType 별 실행 통계. untilDays 기본 0(now). 읽기 전용.
+  aggregateRunStats(input: {
+    sinceDays: number;
+    untilDays?: number;
+  }): Promise<AgentRunStatRow[]>;
 }

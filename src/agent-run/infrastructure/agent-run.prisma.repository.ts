@@ -343,21 +343,26 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   }
 
   // Run Retro — agentType 별 total/_avg(1쿼리) + FAILED count(1쿼리) → JS 병합.
+  // 윈도우: [now - sinceDays, now - untilDays). untilDays 기본 0 = now(하위호환).
   async aggregateRunStats({
     sinceDays,
+    untilDays = 0,
   }: {
     sinceDays: number;
+    untilDays?: number;
   }): Promise<AgentRunStatRow[]> {
-    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const since = new Date(Date.now() - sinceDays * dayMs);
+    const until = new Date(Date.now() - untilDays * dayMs);
     const totals = await this.prisma.agentRun.groupBy({
       by: ['agentType'],
-      where: { startedAt: { gte: since } },
+      where: { startedAt: { gte: since, lt: until } },
       _count: { _all: true },
       _avg: { durationMs: true },
     });
     const failures = await this.prisma.agentRun.groupBy({
       by: ['agentType'],
-      where: { startedAt: { gte: since }, status: 'FAILED' },
+      where: { startedAt: { gte: since, lt: until }, status: 'FAILED' },
       _count: { _all: true },
     });
     const failedByType = new Map(
