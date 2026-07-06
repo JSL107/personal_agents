@@ -129,7 +129,7 @@ CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_origina
 - **claude --bare 쓰면 인증 실패**: keychain/OAuth 무시되므로 절대 사용 X.
 - **Nest DI 가 `Number` provider 못 찾음**: 생성자에 default-value 파라미터 (`timeoutMs: number = 180_000`) 두면 reflection 이 Number type 으로 해석. **default 는 클래스 필드로 옮길 것**.
 - **Slack ephemeral 응답에서 `replace_original: true` 가 가끔 안 먹음**: Slack API 한계. UX 퇴보는 없으니 그대로 둠.
-- **Codex 가 Korean path (`기타`) 인코딩 에러**: 무시 가능. Codex 내부 텔레메트리 이슈.
+- **Codex 가 Korean path (`기타`) 에서 실행 실패 (무시 불가)**: `codex exec` 는 workspace 절대경로를 HTTP 헤더 (`x-codex-turn-metadata`) 에 싣는데 non-ASCII (`기타`) 면 헤더 변환 실패로 websocket 이 5회 재시도 후 **exit 2 로 죽는다** (텔레메트리 무시가 아니라 실행 자체 차단). → codex 를 쓸 worktree 는 **ASCII 절대경로**에 만들 것. 이미 한글 경로에 만들었으면 `git worktree move <old> <ascii-new>` 로 node_modules·.ai 째 이동 가능. (2026-07-06 실증 — 종전 "무시 가능" 기재는 오류.)
 
 ## 9. 메모리 / 노트
 
