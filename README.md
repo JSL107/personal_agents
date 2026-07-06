@@ -208,6 +208,7 @@ pnpm dev              # watch 모드 기동
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` · `_L4_MAX_PAIRS` | ❌ | knowledge-lint L4 모순 판정(ChatGPT) on/off(기본 활성) · 주간 상한(기본 `5`, codex 쿼터 가드) |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | Notion 적재 대상 페이지 |
+| `CAREER_PORTFOLIO_NOTION_PAGE_ID` · `CAREER_RESUME_NOTION_PAGE_ID` | ⭕ | Career Mate 포트폴리오/이력서 Notion 미러 대상 부모 페이지 |
 | `SUBCONSCIOUS_ENABLED` | ❌ | `'true'` 시 proactive engine 활성 (기본 비활성) |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | tick cron 표현식 (기본 `*/20 * * * *`, Asia/Seoul) |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | 시간당 최대 proposal 건수 (기본 `4`) |

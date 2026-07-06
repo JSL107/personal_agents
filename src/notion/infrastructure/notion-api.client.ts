@@ -16,6 +16,7 @@ import {
   NotionClientPort,
   NotionDailyPlanPage,
   NotionPlanBlock,
+  ReplaceAllBlocksOptions,
   ReplaceCheckInSectionOptions,
   UpdatePagePropertiesOptions,
 } from '../domain/port/notion-client.port';
@@ -48,6 +49,9 @@ export class NotionApiClient implements NotionClientPort {
   // 들어오면 둘 다 동일 초기 state 를 읽고 각자 append 해 Check in 섹션이 두 개 남는 race
   // 방지 (codex review aaed1c2 P2 지적).
   private readonly checkInLocks = new Map<string, Promise<void>>();
+
+  // 같은 pageId 에 대한 동시 replaceAllBlocks 직렬화 — replaceCheckInSection 과 동일 패턴.
+  private readonly replaceAllLocks = new Map<string, Promise<void>>();
 
   constructor(
     @Inject(NOTION_CLIENT_INSTANCE) private readonly client: Client | null,
@@ -347,6 +351,78 @@ export class NotionApiClient implements NotionClientPort {
       });
     this.checkInLocks.set(pageId, work);
     return work;
+  }
+
+  async replaceAllBlocks({
+    pageId,
+    blocks,
+  }: ReplaceAllBlocksOptions): Promise<void> {
+    this.assertClientConfigured('replaceAllBlocks');
+    const previous = this.replaceAllLocks.get(pageId) ?? Promise.resolve();
+    const work: Promise<void> = previous
+      .catch(() => undefined)
+      .then(() => this.runReplaceAllBlocks(pageId, blocks))
+      .finally(() => {
+        if (this.replaceAllLocks.get(pageId) === work) {
+          this.replaceAllLocks.delete(pageId);
+        }
+      });
+    this.replaceAllLocks.set(pageId, work);
+    return work;
+  }
+
+  private async runReplaceAllBlocks(
+    pageId: string,
+    blocks: NotionPlanBlock[],
+  ): Promise<void> {
+    let existingIds: string[];
+    try {
+      existingIds = await this.collectAllBlockIds(pageId);
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 의 기존 block 조회 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+
+    // 신규 append 먼저 — 실패 시 기존이 그대로 남는다 (replaceCheckInSection 과 동일 정책).
+    await this.appendBlocks({ pageId, blocks });
+
+    for (const blockId of existingIds) {
+      try {
+        await this.client!.blocks.delete({ block_id: blockId });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Notion page ${pageId} 기존 block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  private async collectAllBlockIds(pageId: string): Promise<string[]> {
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.client!.blocks.children.list({
+        block_id: pageId,
+        start_cursor: cursor,
+        page_size: 100,
+      });
+      for (const child of response.results) {
+        if ('id' in child && typeof child.id === 'string') {
+          ids.push(child.id);
+        }
+      }
+      cursor = response.has_more
+        ? (response.next_cursor ?? undefined)
+        : undefined;
+    } while (cursor);
+    return ids;
   }
 
   private async runReplaceCheckInSection(

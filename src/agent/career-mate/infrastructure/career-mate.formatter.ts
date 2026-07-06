@@ -3,6 +3,7 @@ import {
   CalibrationResultData,
   CareerProfileData,
   GapAnalysisData,
+  ProfileAccomplishment,
   ReflectPrResult,
 } from '../domain/career-mate.type';
 
@@ -85,6 +86,27 @@ export const formatCalibrationReport = (
     .join('\n\n');
 };
 
+// accomplishment 의 evidence 중 최빈 repo 를 대표 프로젝트로. 동률이면 첫 evidence 의 repo.
+// evidence 없으면 '기타'.
+const primaryRepo = (accomplishment: ProfileAccomplishment): string => {
+  if (accomplishment.evidence.length === 0) {
+    return '기타';
+  }
+  const counts = new Map<string, number>();
+  for (const evidence of accomplishment.evidence) {
+    counts.set(evidence.repo, (counts.get(evidence.repo) ?? 0) + 1);
+  }
+  let top = accomplishment.evidence[0].repo;
+  let topCount = 0;
+  for (const [repo, count] of counts) {
+    if (count > topCount) {
+      top = repo;
+      topCount = count;
+    }
+  }
+  return top;
+};
+
 export const buildPortfolioBlocks = (
   data: CareerProfileData,
 ): NotionPlanBlock[] => {
@@ -92,25 +114,62 @@ export const buildPortfolioBlocks = (
     { type: 'heading', text: '역량 요약' },
     { type: 'paragraph', text: data.summary },
     { type: 'divider' },
-    { type: 'heading', text: '핵심 성과' },
   ];
-  for (const a of data.accomplishments) {
-    blocks.push({ type: 'subheading', text: a.title });
-    blocks.push({ type: 'bullet', text: a.bullet });
-    for (const e of a.evidence) {
-      blocks.push({
-        type: 'bullet',
-        text: `근거: ${e.repo}#${e.pr}`,
-        link: e.url,
-      });
+
+  // 대표 repo(프로젝트) 별로 성과 그룹핑 — Map 삽입 순서 = 최초 등장 프로젝트 순.
+  const groups = new Map<string, ProfileAccomplishment[]>();
+  for (const accomplishment of data.accomplishments) {
+    const repo = primaryRepo(accomplishment);
+    const list = groups.get(repo) ?? [];
+    list.push(accomplishment);
+    groups.set(repo, list);
+  }
+
+  for (const [repo, accomplishments] of groups) {
+    blocks.push({ type: 'heading', text: `프로젝트: ${repo}` });
+    for (const accomplishment of accomplishments) {
+      blocks.push({ type: 'subheading', text: accomplishment.title });
+      blocks.push({ type: 'bullet', text: accomplishment.bullet });
+      for (const evidence of accomplishment.evidence) {
+        blocks.push({
+          type: 'bullet',
+          text: `근거: ${evidence.repo}#${evidence.pr}`,
+          link: evidence.url,
+        });
+      }
     }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({ type: 'heading', text: '기술 스택' });
+  for (const skill of data.skills) {
+    blocks.push({
+      type: 'bullet',
+      text: `${skill.name} (${skill.category} · ${skill.proficiency})`,
+    });
+  }
+  return blocks;
+};
+
+// 이력서 Notion 미러용 — 성과 bullet + 기술 스택 (압축). STAR/근거는 포트폴리오 몫이라 제외.
+export const buildResumeBlocks = (
+  data: CareerProfileData,
+): NotionPlanBlock[] => {
+  const blocks: NotionPlanBlock[] = [
+    { type: 'heading', text: '역량 요약' },
+    { type: 'paragraph', text: data.summary },
+    { type: 'divider' },
+    { type: 'heading', text: '성과' },
+  ];
+  for (const accomplishment of data.accomplishments) {
+    blocks.push({ type: 'bullet', text: accomplishment.bullet });
   }
   blocks.push({ type: 'divider' });
   blocks.push({ type: 'heading', text: '기술 스택' });
-  for (const s of data.skills) {
+  for (const skill of data.skills) {
     blocks.push({
       type: 'bullet',
-      text: `${s.name} (${s.category} · ${s.proficiency})`,
+      text: `${skill.name} (${skill.category} · ${skill.proficiency})`,
     });
   }
   return blocks;
