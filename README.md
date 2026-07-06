@@ -209,6 +209,7 @@ pnpm dev              # watch 모드 기동
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | Notion 적재 대상 페이지 |
 | `CAREER_PORTFOLIO_NOTION_PAGE_ID` · `CAREER_RESUME_NOTION_PAGE_ID` | ⭕ | Career Mate 포트폴리오/이력서 Notion 미러 대상 부모 페이지 |
+| `BLOG_NOTION_PROP_*` · `BLOG_NOTION_STATUS_PUBLISHED_VALUE` | ❌ | 블로그 초안 DB property 이름/발행 상태값 override — 기본 `상태`/`발행일`/`태그`/`요약`/`발행` |
 | `SUBCONSCIOUS_ENABLED` | ❌ | `'true'` 시 proactive engine 활성 (기본 비활성) |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | tick cron 표현식 (기본 `*/20 * * * *`, Asia/Seoul) |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | 시간당 최대 proposal 건수 (기본 `4`) |

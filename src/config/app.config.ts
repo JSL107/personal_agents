@@ -67,6 +67,28 @@ class EnvironmentVariables {
   @IsString()
   NOTION_DAILY_PLAN_DATABASE_ID?: string;
 
+  // BLOG 자연어 초안 발행 enrich — Notion "블로그 초안" DB property 이름.
+  // 미설정 시 기존 기본값(상태/발행일/태그/요약, 상태값 발행)을 사용한다.
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_PROP_STATUS?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_PROP_PUBLISHED_AT?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_PROP_TAGS?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_PROP_SUMMARY?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_STATUS_PUBLISHED_VALUE?: string;
+
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()
