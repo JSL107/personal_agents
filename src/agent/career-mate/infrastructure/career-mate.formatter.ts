@@ -151,6 +151,30 @@ export const buildPortfolioBlocks = (
   return blocks;
 };
 
+// 이력서 Notion 미러용 — 성과 bullet + 기술 스택 (압축). STAR/근거는 포트폴리오 몫이라 제외.
+export const buildResumeBlocks = (
+  data: CareerProfileData,
+): NotionPlanBlock[] => {
+  const blocks: NotionPlanBlock[] = [
+    { type: 'heading', text: '역량 요약' },
+    { type: 'paragraph', text: data.summary },
+    { type: 'divider' },
+    { type: 'heading', text: '성과' },
+  ];
+  for (const accomplishment of data.accomplishments) {
+    blocks.push({ type: 'bullet', text: accomplishment.bullet });
+  }
+  blocks.push({ type: 'divider' });
+  blocks.push({ type: 'heading', text: '기술 스택' });
+  for (const skill of data.skills) {
+    blocks.push({
+      type: 'bullet',
+      text: `${skill.name} (${skill.category} · ${skill.proficiency})`,
+    });
+  }
+  return blocks;
+};
+
 // REFLECT_PR — PR 회고 결과를 Slack mrkdwn 으로. 반영한 PR 목록 + 회고 서술 + 이력서 bullet(STAR) + 포폴 링크.
 export const formatPrRetro = (result: ReflectPrResult): string => {
   const a = result.accomplishment;

@@ -1,6 +1,7 @@
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   buildPortfolioBlocks,
+  buildResumeBlocks,
   formatCalibrationReport,
   formatGapReport,
   formatPortfolioLink,
@@ -188,5 +189,36 @@ describe('buildPortfolioBlocks — repo 그룹핑', () => {
       .filter((b) => b.type === 'heading')
       .map((b) => (b as { text: string }).text);
     expect(headings).toContain('프로젝트: 기타');
+  });
+});
+
+describe('buildResumeBlocks', () => {
+  it('성과 bullet 과 기술 스택을 담고 STAR 는 넣지 않는다', () => {
+    const data: CareerProfileData = {
+      summary: '요약',
+      skills: [
+        {
+          name: 'NestJS',
+          category: 'FRAMEWORK',
+          proficiency: 'PROFICIENT',
+          evidence: [],
+        },
+      ],
+      accomplishments: [
+        {
+          title: 'T',
+          bullet: '성과불릿',
+          star: { situation: 'S값', task: '', action: '', result: '' },
+          techTags: [],
+          evidence: [],
+        },
+      ],
+      meta: { githubLogin: 'o', windowStart: '2026-01-01', prCount: 1 },
+    };
+    const blocks = buildResumeBlocks(data);
+    const texts = blocks.map((b) => ('text' in b ? b.text : '')).join('\n');
+    expect(texts).toContain('성과불릿');
+    expect(texts).toContain('NestJS (FRAMEWORK · PROFICIENT)');
+    expect(texts).not.toContain('S값'); // STAR situation 미포함
   });
 });
