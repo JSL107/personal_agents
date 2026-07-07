@@ -32,3 +32,24 @@
 - Stage/commit 대상은 `README.md`, `CODE_RULES.md`, `.env.example`, `tasks/todo.md`로 제한했다.
 - Verification: `pnpm docs:check` OK, `pnpm check:env` OK, `pnpm lint:check` exit 0, `pnpm test` OK, `pnpm build` OK.
 - `pnpm lint:check`는 기존 spec 파일의 `no-explicit-any` warning 47개를 출력했다.
+
+---
+
+# Lodash 취약점 제거 Todo
+
+## Plan
+
+- [x] 직접 `lodash` import/use 여부와 `pnpm why lodash` 경로를 확인한다.
+- [x] `@nestjs/config`를 vulnerable `lodash@4.17.23`를 끌지 않는 최신 patch로 올린다.
+- [x] lockfile에서 prod `lodash@4.17.23` 경로가 제거됐는지 확인한다.
+- [x] `pnpm audit --prod`에서 lodash advisory가 사라졌는지 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`로 회귀를 확인한다.
+
+## Review
+
+- 앱 코드의 직접 `lodash` import/use 는 없었다. 따라서 `es-toolkit`으로 바꿀 코드 사용처도 없고, unused dependency 로 추가하지 않았다.
+- prod `lodash` 경로는 `@nestjs/config@4.0.3 -> lodash@4.17.23` 하나였고, `@nestjs/config@4.0.4`로 올려 `lodash@4.18.1` 경로로 갱신했다.
+- `pnpm audit --prod`에서 lodash advisory(`GHSA-r5fr-rjxr-66jc`)가 사라졌고, 전체 취약점 수는 22개에서 20개로 줄었다.
+- 남은 audit 항목은 `basic-ftp`, `multer`, `undici`, `file-type`, `uuid`, `qs`, `js-yaml` 계열로 별도 작업 대상이다.
+- Verification: direct lodash rg no match, `pnpm why lodash` shows `4.18.1` only, `pnpm lint:check` exit 0, `pnpm test` OK, `pnpm build` OK.
+- `pnpm lint:check`는 기존 spec 파일의 `no-explicit-any` warning 47개를 계속 출력했다.
