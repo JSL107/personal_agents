@@ -1,6 +1,6 @@
 # CODE RULES
 
-이 문서는 `DDD_BE` 프로젝트의 코드 작성 기준이다.
+이 문서는 `personal_agents` 프로젝트의 코드 작성 기준이다.
 목표는 "가독성", "책임 분리", "일관성"을 최우선으로 유지하는 것이다.
 
 ---
@@ -81,20 +81,18 @@
     - 기본값과 다른 상태 코드를 의도적으로 쓸 때만 `@HttpCode()` 를 붙인다. (예: `POST` 인데 200 으로 응답하는 검색/검증 API, `DELETE` 후 204 명시)
     - 의미 변화 없는 데코레이터 중복은 코드 리뷰에서 제거 대상이다.
 
-14. TypeORM `@Column()`의 `type` 옵션은 생략을 기본으로 한다. TypeScript 필드 타입(`Date`, `string`, `number` 등)으로 자동 추론되며, PostgreSQL 전용 타입이 필요한 경우에만 명시한다.
+14. DB 접근은 Prisma 를 기본으로 한다. TypeORM 데코레이터/Repository 패턴을 새로 도입하지 않는다.
 
     ```ts
-    // ✅ 타입 생략 (TypeScript 타입으로 추론)
-    @Column()
-    recruitStartAt: Date;
+    // ✅ PrismaService 를 주입받아 DB 접근을 인프라 어댑터 안에 격리
+    @Injectable()
+    export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
+      constructor(private readonly prisma: PrismaService) {}
+    }
 
-    // ✅ PostgreSQL 전용 타입이 필요한 경우에만 명시
-    @Column({ type: 'jsonb' })
-    metadata: Record<string, unknown>;
-
-    // ❌ 불필요하게 장황한 타입 명시
-    @Column({ type: 'timestamp with time zone' })
-    recruitStartAt: Date;
+    // ❌ 새 TypeORM 엔티티/데코레이터 도입 금지
+    @Entity()
+    export class AgentRunEntity {}
     ```
 
 ---
@@ -112,40 +110,57 @@
 | NestJS 파일                 | `{name}.{role}.ts`                      | `user.service.ts`, `order.controller.ts` |
 | 테스트 파일                 | `{name}.spec.ts` / `{name}.e2e-spec.ts` | `user.service.spec.ts`                   |
 
-#### Repository 계층 네이밍 규칙
+#### Repository / Port 네이밍 규칙
 
-- **Domain Repository**: 도메인 이름을 포함하여 작성한다.
-  - **파일명**: `[도메인명].repository.ts` (예: `user.repository.ts`)
-  - **클래스명**: `[도메인명]Repository` (예: `UserRepository`)
-- **Write Repository (인프라)**: 도메인 이름 접두사를 생략한다.
-  - **파일명**: `write.repository.ts`
-  - **클래스명**: `WriteRepository`
+- **Domain Port**: 도메인 책임과 계약을 드러내는 이름을 사용한다.
+  - **파일명**: `src/{domain}/domain/port/{name}.port.ts`
+  - **토큰명**: `{DOMAIN}_{NAME}_PORT` 형태의 `Symbol`
+  - **인터페이스명**: `{Name}Port` 또는 `{Domain}RepositoryPort`
+- **Prisma 구현체 (인프라)**: 구현 기술과 도메인 이름을 함께 드러낸다.
+  - **파일명**: `{domain}.prisma.repository.ts`
+  - **클래스명**: `{Domain}PrismaRepository`
 
 #### Repository 계층별 역할 규칙
 
-- **Write Repository (인프라)**: 실제 DB 접근만 담당한다.
-  - 함수명에 비즈니스 의미를 담지 않는다. (`save`, `findOne`, `delete` 등)
-  - 파라미터는 구조분해 할당으로 받아, TypeORM 타입(`FindOneOptions` 등)이 외부로 노출되지 않게 한다.
-  - `where` 조건 조합은 Write Repository 내부에서 처리한다.
+- **Prisma Repository (인프라)**: 실제 DB 접근만 담당한다.
+  - 비즈니스 정책 판단은 Application/Domain 계층에 둔다.
+  - 파라미터는 구조분해 할당으로 받아 Prisma query shape 가 바깥 계층에 새지 않게 한다.
+  - `where` 조건 조합과 raw SQL 은 repository 내부에 격리한다.
   ```ts
   // ✅
-  async findOne({ email }: { email: string }): Promise<User | null> {
-    return this.repository.findOne({ where: { email } });
+  async findLatestSucceededRun({
+    agentType,
+    slackUserId,
+  }: {
+    agentType: AgentType;
+    slackUserId?: string;
+  }): Promise<SucceededAgentRunSnapshot | null> {
+    const where: Prisma.AgentRunWhereInput = {
+      agentType,
+      status: AgentRunStatus.SUCCEEDED,
+    };
+    if (slackUserId) {
+      where.inputSnapshot = {
+        path: ['slackUserId'],
+        equals: slackUserId,
+      };
+    }
+    const row = await this.prisma.agentRun.findFirst({
+      where,
+      select: { id: true, output: true, endedAt: true },
+      orderBy: { endedAt: 'desc' },
+    });
+    if (!row || !row.endedAt) {
+      return null;
+    }
+    return {
+      id: row.id,
+      output: row.output as unknown,
+      endedAt: row.endedAt,
+    };
   }
   ```
-- **Domain Repository**: 비즈니스 의미가 드러나는 함수명을 사용한다. (`findByEmail`, `register` 등)
-  - 파라미터는 구조분해 할당으로 받는다. `where` 객체를 직접 조립하지 않고, 분해된 필드를 그대로 넘긴다.
-
-  ```ts
-  // ✅
-  async findByEmail({ email }: { email: string }): Promise<User | null> {
-    return this.writeRepository.findOne({ email });
-  }
-
-  async register({ email, name, picture }: Pick<User, 'email' | 'name' | 'picture'>): Promise<User> {
-    return this.writeRepository.create({ email, name, picture });
-  }
-  ```
+- **Application Usecase**: repository 를 조합하고 트랜잭션/실행 흐름을 책임진다. Prisma client 를 직접 주입받지 않는다.
 
 ### 변수 네이밍 주의사항
 
@@ -167,17 +182,12 @@ src/
   config/                 # 환경 설정
 ```
 
-### BaseEntity 사용 기준
+### Prisma Schema 사용 기준
 
-프로젝트에는 목적이 다른 두 가지 BaseEntity가 존재한다. 새 도메인 엔티티를 추가할 때 아래 기준으로 선택한다.
-
-| 클래스              | 위치                           | 포함 필드                                                         | 사용 기준                                                           |
-| ------------------- | ------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `BaseEntity`        | `common/entity/base.entity.ts` | `createdAt`, `updatedAt`, `deletedAt`                             | `id`를 도메인 엔티티에서 직접 선언하는 경우                         |
-| `BaseEntity` (확장) | `common/core/base.entity.ts`   | `id`, `uuid`, `createdAt`, `updatedAt`, `deletedAt` + 복합 인덱스 | `id`/`uuid`를 공통으로 관리하고 커서 기반 조회 인덱스가 필요한 경우 |
-
-> 하나의 프로젝트에서 두 BaseEntity가 혼재하면 테이블 컬럼 구성과 소프트 삭제 정책이 도메인마다 달라진다.
-> 새 도메인은 `common/core/base.entity.ts`를 기본으로 사용하고, 기존 도메인(`user`, `user-role`)은 현행 유지한다.
+- 새 영속 모델은 `prisma/schema.prisma` 에 추가하고 `pnpm db:push` 로 로컬 스키마를 동기화한다.
+- 마이그레이션 파일은 생성하지 않는다. 이 repo 의 현재 운영 규칙은 `prisma db push` 기반 synchronize 이다.
+- pgvector 처럼 Prisma 가 직접 지원하지 않는 타입은 `Unsupported(...)` 로 선언하고, 접근은 repository 의 `$queryRaw` / `$executeRaw` 내부에 격리한다.
+- public API / Slack surface / webhook payload 와 DB schema 변경은 함께 검토한다. 특히 AgentRun, PreviewAction, careerLog, preference profile 계열은 audit 가치가 있으므로 삭제/파괴적 변경을 피한다.
 
 ---
 
@@ -318,7 +328,7 @@ type PaginationMeta = {
 ## 9) 환경변수 규칙 (MUST)
 
 1. 시크릿, DB 접속 정보, 외부 API 키 등 모든 환경 의존 값은 환경변수로 관리한다. 코드에 하드코딩하지 않는다.
-2. 환경변수는 NestJS `ConfigModule`을 통해 접근하고, 직접 `process.env`를 참조하지 않는다. 단, TypeORM CLI 등 NestJS DI 컨텍스트 밖에서 실행되는 경우(`data-source.ts`)는 `dotenv` + `process.env` 직접 접근을 허용한다.
+2. 환경변수는 NestJS `ConfigModule`을 통해 접근하고, 직접 `process.env`를 참조하지 않는다. 단, CLI provider 의 자식 프로세스 환경 구성처럼 NestJS DI 컨텍스트 밖에서 실행되는 격리 유틸(`cli-process.util.ts` 등)은 예외로 허용한다.
 3. 환경변수는 `config/` 에서 스키마(`class-validator` 기반)로 검증한다. 앱 구동 시 필수 환경변수가 없으면 즉시 실패한다.
 4. `.env` 파일은 git에 커밋하지 않는다. 필요한 키 목록은 문서에 명시해 관리한다.
 5. 환경변수 이름은 `UPPER_SNAKE_CASE`를 사용한다.

@@ -26,7 +26,7 @@ GitHub · Notion · Slack 을 연결해 **회사 롤플레이 역할**(PM · BE 
 
 | | |
 |---|---|
-| 🗣️ **두 가지 진입** | `/today` 슬래시 18종, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
+| 🗣️ **두 가지 진입** | Slack slash command 18개, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
 | 🎭 **회사 롤플레이** | 한 사람이 PM · BE · 리뷰어 · CTO · PO · CEO 역할을 LLM 워커로 분담 |
 | ⚡ **자동 발화** | 출근/퇴근/주간 cron + GitHub webhook 으로 사용자 입력 없이 proactive 동작 |
 | 🧠 **장기 기억** | 과거 작업을 pgvector 의미검색으로 회상해 분류·리뷰 품질 강화 |
@@ -49,8 +49,8 @@ flowchart TD
     end
 
     R["Router<br/>Intent Classifier"]
-    MR["Model Router<br/>codex · claude CLI · 격리 spawn"]
-    WK["17 Workers<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    MR["Model Router<br/>codex CLI · 격리 spawn"]
+    WK["17 User-facing Workers<br/>25 AgentTypes incl. internal automation<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
     PG{"Preview Gate<br/>✅ / ❌"}
     EXT["Slack · Notion · GitHub"]
     EM[("Episodic Memory<br/>pgvector")]
@@ -76,7 +76,7 @@ src/{domain}/
   infrastructure/ # Port 어댑터 (DB · 큐 · 외부 API)
   interface/      # Controller, DTO, 큐 Provider
 src/common, src/config, src/prisma   # 공통 · env 검증 · PrismaService(Global)
-prisma/schema.prisma                 # DB 단일 소스 (11 models)
+prisma/schema.prisma                 # DB 단일 소스 (14 models)
 ```
 
 ---
@@ -87,46 +87,49 @@ prisma/schema.prisma                 # DB 단일 소스 (11 models)
 <tr><td width="50%" valign="top">
 
 **🏗️ 기반**
-NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode). **Model Router** 가 `codex`(ChatGPT) / `claude`(Claude) CLI 를 격리 환경에서 spawn(프롬프트는 stdin — `ps aux` 노출 방지). **AgentRun** 실행 기록 + EvidenceRecord 자동 추적, **Preview Gate** 가 모든 외부 쓰기를 승인 게이트로 공통 처리.
+NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode). **Model Router** 는 2026-07-02 기준 전체 에이전트를 `codex`(ChatGPT) CLI 단일 provider 로 라우팅하고, 프롬프트는 stdin 으로 전달해 `ps aux` 노출을 피한다. `ClaudeCliProvider` 코드는 롤백 대비로 보존되어 있지만 현재 호출 경로는 없다. **AgentRun** 실행 기록 + EvidenceRecord 자동 추적, **Preview Gate** 가 외부 쓰기를 승인 게이트로 공통 처리한다.
 
 </td><td width="50%" valign="top">
 
 **🧠 장기 기억 (Episodic Memory)**
-pgvector 의미검색 + HNSW 인덱스 + time-decay 점수화(`@huggingface/transformers`, Xenova/multilingual-e5-small 384dim). **Intent Classifier** 가 유사 과거작업을 few-shot 으로 prepend 해 분류 정확도를 강화하고, **Code Reviewer** 는 reject 피드백을 negative example 로 자동 적재·학습한다.
+pgvector 의미검색 + time-decay 점수화(`@huggingface/transformers`, Xenova/multilingual-e5-small 384dim). **Intent Classifier** 가 유사 과거작업을 few-shot 으로 prepend 해 분류 정확도를 강화하고, **Code Reviewer** 는 `/review-feedback ... reject` 피드백을 negative example 로 적재해 다음 리뷰 prompt 에 주입한다.
 
 </td></tr>
 <tr><td width="50%" valign="top">
 
 **⚡ 자동화 (Autopilot)**
-선언적 "워크데이 플레이북" + 얇은 오케스트레이터가 출근(아침 PM 계획)/퇴근(PO_EVAL 회고 + worklog)/주간(Weekly · CEO · Impact · Run-Retro) cron 을 단일 엔진으로 통합. 리스크 티어(읽기 자동 발송 / 외부쓰기 PreviewGate), 다중 타깃 fan-out, digest 그룹, 멱등 + 활동 0이면 skip. 게이트는 `AUTOPILOT_OWNER_SLACK_USER_ID` 한 값.
+선언적 "워크데이 플레이북" + 얇은 오케스트레이터가 출근(아침 PM 계획)/퇴근(PO_EVAL 회고 + worklog + evening retro)/주간(Weekly · CEO · Impact · Run-Retro · Knowledge-Lint · Docs Audit · Preference Learning) cron 을 단일 엔진으로 통합. 리스크 티어(읽기 자동 발송 / 외부쓰기 PreviewGate), 다중 타깃 fan-out, digest 그룹, 멱등 + 활동 0이면 skip. 게이트는 `AUTOPILOT_OWNER_SLACK_USER_ID` 한 값.
 
 </td><td width="50%" valign="top">
 
 **🔀 자연어 라우터 (V3 Hierarchical Manager)**
-`@이대리 …` 멘션 / DM → Intent Classifier(1 LLM call) → 17 worker dispatch → handoff chain(`AgentRun.parentId` audit). 사용자+채널당 multi-turn 메모리 5 turn / TTL 30분(Redis, 실패 시 in-memory fallback). 지시대명사("그거 분배해")로 직전 run 자동 참조해 자연어 체인 가능.
+`@이대리 …` 멘션 / DM → Intent Classifier(1 LLM call) → 17개 사용자-facing worker dispatch → handoff chain(`AgentRun.parentId` audit). 사용자+채널+thread 기준 multi-turn 메모리 5 turn / TTL 30분(Redis, 실패 시 in-memory fallback). 지시대명사("그거 분배해")로 직전 run 자동 참조해 자연어 체인 가능.
 
 </td></tr>
 </table>
 
-**🎭 에이전트 (20종)**
+**🎭 에이전트**
+
+전체 AgentType 은 내부 자동화까지 포함해 25종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · BE `/be plan` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · CTO `/assign` · PO_EVAL `/po-eval` · CEO `/ceo-review`
 - **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · BE-SRE(CI 실패 → stack trace) · BE-FIX(PR 컨벤션) — 뒤 둘은 webhook 자동
-- **체인** — `/auto-flow` PM → CTO → BE 1-shot (step 사이 사용자 confirm 안전판)
+- **체인 / 승인형 실행** — `/auto-flow` PM → CTO → BE 1-shot, BE sandbox apply/test, 성공 후 사용자 승인 기반 branch + commit + PR open preview
 - **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 지원 추적 CRM(등록/상태/넛지 cron) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
+- **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish
 
 **🔌 연동 · 자동 트리거**
 
 - **GitHub Webhook** — issue/PR open → Impact Reporter, PR open → BE-FIX(+조건부 Code Reviewer), CI 실패 → BE-SRE, PR merge → careerLog Notion 적재, issue open → Auto-Label
 - **Notion** — Daily Plan append · PR careerLog 일별 자식 페이지 누적 · 📌 reaction → to-do 적재
-- **운영** — `/search-runs`(성공 run ILIKE 검색) · `/retry-run`(실패 run 재실행) · 인증/cron 실패 owner DM 알림
+- **운영** — `/search-runs`(성공 run ILIKE 검색) · `/retry-run`(실패 run 재실행) · docs-sync-audit · 인증/cron 실패 owner DM 알림
 
 ---
 
 ## 🔭 앞으로 만들 것
 
 - [ ] **토론 모드** — 멀티 에이전트가 한 주제로 의견을 교환·반박하며 합의안을 도출 (현재 단일 워커 dispatch → 다자 debate 로 확장)
-- [ ] **BE 자율 개발 (sandbox)** — BE worker 가 격리 sandbox 에서 `git apply --check` 로 패치를 검증한 뒤 자동 PR 까지 (Phase 2a 골격 착수 — `app.module.ts` 의 `BeSandboxApplier` 주석 참조)
+- [ ] **BE 자율 개발 hardening** — 현재 승인형 sandbox apply/test + PR open preview 는 구현됨. 남은 과제는 실패 시 self-correction retry, 더 넓은 repo/테스트 매트릭스, 운영 가드 강화.
 - [ ] **운영 전환** — `prisma db push`(synchronize) → `prisma migrate dev` 마이그레이션 워크플로우
 
 ---
@@ -141,14 +144,14 @@ pnpm db:push          # 스키마 동기화 (synchronize, 마이그레이션 파
 pnpm dev              # watch 모드 기동
 ```
 
-> **사전 요구사항** — Node 20+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT) · `claude` CLI(Claude Max). 두 CLI 는 prompt-injection 방지를 위해 빈 임시 디렉토리 + env allowlist 로 격리 실행([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
+> **사전 요구사항** — Node 20+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). `claude` CLI 관련 provider/env 는 현재 라우팅에서 호출되지 않으며 롤백 대비 코드로만 보존된다. CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 > **검증** — `pnpm lint:check && pnpm test && pnpm build` 3중 green.
 
 ---
 
 ## 🔌 인터페이스
 
-### 슬래시 커맨드 (18종)
+### 슬래시 커맨드 (18개)
 
 | Command | 설명 | 모델 |
 |---|---|:---:|
@@ -160,7 +163,7 @@ pnpm dev              # watch 모드 기동
 
 ### 자연어 멘션
 
-`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 17 worker 중 1개로 분류·dispatch (결과는 thread 답글 + `agentRunId` 푸터). **BLOG · VACATION · 이직 메이트 · 지원 추적은 자연어 전용**. 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope 에 `app_mentions:read` + `im:history`.
+`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 17개 사용자-facing worker 중 1개로 분류·dispatch (결과는 thread 답글 + `agentRunId` 푸터). **BLOG · 이직 메이트 · 지원 추적은 자연어 전용**이고, **VACATION은 `/휴가`와 자연어 모두 지원**한다. 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope 에 `app_mentions:read` + `im:history`.
 
 ### GitHub Webhook (`POST /v1/agent/github` · `/v1/agent/trigger`)
 
@@ -182,7 +185,9 @@ pnpm dev              # watch 모드 기동
 | 🌅 매일 08:30 | Morning Briefing (PM `/today` 자동 계획) |
 | 🌆 매일 19:00 | Daily Eval(PO_EVAL) + Worklog — digest 1메시지 |
 | 📅 금 17:00 | Weekly Summary (Worklog 1주 + CEO meta) |
-| 📅 월 09:00 | CEO Meta · Run-Retro (주간 실행 통계 회고) |
+| 📅 일 10:00~12:00 | Knowledge-Lint · Docs Audit · Preference Learning |
+| 📅 일 18:00 | CEO Meta |
+| 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
 
 > 스케줄/타임존 override 는 `AUTOPILOT_<ID>_SCHEDULE`/`_TIMEZONE`, 플레이북 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts).
@@ -203,7 +208,7 @@ pnpm dev              # watch 모드 기동
 | `DATABASE_URL` · `REDIS_HOST` / `REDIS_PORT` | ✅ | PostgreSQL(5434) · Redis(6381) |
 | `SLACK_BOT_TOKEN` / `_APP_TOKEN` / `_SIGNING_SECRET` | ⭕ | 3개 모두 있어야 봇 활성 (Socket Mode) |
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
-| `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude 모델(기본 opus) · 임베딩(기본 384dim) |
+| `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` · `_L4_MAX_PAIRS` | ❌ | knowledge-lint L4 모순 판정(ChatGPT) on/off(기본 활성) · 주간 상한(기본 `5`, codex 쿼터 가드) |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
