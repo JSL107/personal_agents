@@ -46,6 +46,8 @@ const PR_ITEM = {
 
 const makeTask = (opts: {
   enabledVal?: string;
+  authorVal?: string;
+  personalRepositoriesVal?: string;
   prs?: (typeof PR_ITEM)[];
   worklogRuns?: { id: number; output: unknown; endedAt: Date }[];
   dailyEvalRuns?: { id: number; output: unknown; endedAt: Date }[];
@@ -57,7 +59,10 @@ const makeTask = (opts: {
         return opts.enabledVal;
       }
       if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
-        return 'me';
+        return opts.authorVal ?? 'me';
+      }
+      if (key === 'PERSONAL_REPOS') {
+        return opts.personalRepositoriesVal;
       }
       return undefined;
     }),
@@ -191,6 +196,7 @@ describe('EveningRetroPublishTask', () => {
       title: '개인 PR',
     };
     const { task, modelRouter } = makeTask({
+      authorVal: 'JSL107',
       prs: [PR_ITEM, personalPr],
       worklogRuns: [],
       dailyEvalRuns: [],
@@ -308,6 +314,7 @@ describe('EveningRetroPublishTask', () => {
       title: '개인 프로젝트 저녁 회고 개선',
     };
     const { task } = makeTask({
+      authorVal: 'JSL107',
       prs: [PR_ITEM, personalPr],
       worklogRuns: [],
       dailyEvalRuns: [],
@@ -340,5 +347,46 @@ describe('EveningRetroPublishTask', () => {
     await task.run(CTX);
 
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
+  });
+
+  it('(j) PERSONAL_REPOS 미설정이어도 author owner repository 를 개인 프로젝트로 표시한다', async () => {
+    const personalPr = {
+      ...PR_ITEM,
+      repo: 'me/personal_agents',
+      number: 142,
+    };
+    const { task } = makeTask({
+      authorVal: 'me',
+      personalRepositoriesVal: undefined,
+      prs: [PR_ITEM, personalPr],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: {
+        ...RETRO_RESPONSE,
+        text: JSON.stringify({
+          retrospective: 'r',
+          candidates: [
+            {
+              title: 'T',
+              keywords: ['k'],
+              blogValueScore: 70,
+              reason: '개인 repo owner 기준으로 분류한다.',
+              sourceRefs: ['me/personal_agents#142'],
+            },
+          ],
+        }),
+      },
+    });
+
+    const result = await task.run(CTX);
+    const careerPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
+    );
+
+    expect(result.summaryText).toContain('개인 프로젝트(이대리)');
+    expect(careerPreview?.previewText).toContain('• 회사 실무:');
+    expect(careerPreview?.previewText).toContain('schoolbell-e/sbe-api-v5#864');
+    expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
+    expect(careerPreview?.previewText).toContain('me/personal_agents#142');
   });
 });

@@ -32,7 +32,6 @@ import {
 } from '../../domain/autopilot-task.port';
 
 const RETRO_PR_LIMIT = 20;
-const DEFAULT_PERSONAL_REPOSITORIES = ['JSL107/personal_agents'];
 const REASON_PREVIEW_MAX_CHARS = 120;
 const PR_NOTE_PREVIEW_MAX_CHARS = 100;
 
@@ -76,13 +75,14 @@ export class EveningRetroPublishTask implements AutopilotTask {
     }
 
     const author = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
+    const authorLogin = author?.trim() ? author.trim() : undefined;
     const sinceIsoDate = `${getTodayKstDate()}T00:00:00+09:00`;
     const personalRepositories = this.getPersonalRepositories();
-    const mergedPrs: EveningPrInput[] = author
+    const mergedPrs: EveningPrInput[] = authorLogin
       ? (
           await this.githubClient.listAuthorMergedPullRequestsSince({
             repo: null,
-            author,
+            author: authorLogin,
             sinceIsoDate,
             limit: RETRO_PR_LIMIT,
           })
@@ -92,7 +92,11 @@ export class EveningRetroPublishTask implements AutopilotTask {
           url: pr.url,
           title: pr.title,
           body: pr.body,
-          source: classifyRepoSource(pr.repo, personalRepositories),
+          source: classifyRepoSource(
+            pr.repo,
+            personalRepositories,
+            authorLogin,
+          ),
         }))
       : [];
 
@@ -124,7 +128,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const parsed = parseEveningRetroOutput(completion.text);
 
       const scoreLines = parsed.candidates
-        .map((candidate) => this.formatCandidateLine(candidate))
+        .map((candidate) => this.formatCandidateLine(candidate, authorLogin))
         .join('\n');
       const summaryText = `🌙 *오늘의 회고 & 발행 후보 — ${firedAtKst}*\n\n${parsed.retrospective}\n\n*발행 후보(가치 점수)*\n${scoreLines || '_후보 없음_'}`;
 
@@ -133,7 +137,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const top = parsed.candidates[0];
       if (top) {
         const sourcePrs = this.resolveSourcePrs(top.sourceRefs, mergedPrs);
-        const sourceLabel = this.formatSourceRefsLabel(top.sourceRefs);
+        const sourceLabel = this.formatSourceRefsLabel(
+          top.sourceRefs,
+          authorLogin,
+        );
         const sourceRefsText = this.formatSourceRefsText(top.sourceRefs);
         const payload: EveningBlogPayload = {
           topPick: {
@@ -211,11 +218,17 @@ export class EveningRetroPublishTask implements AutopilotTask {
     if (repositories.length > 0) {
       return repositories;
     }
-    return DEFAULT_PERSONAL_REPOSITORIES;
+    return [];
   }
 
-  private formatCandidateLine(candidate: EveningRetroCandidate): string {
-    const sourceLabel = this.formatSourceRefsLabel(candidate.sourceRefs);
+  private formatCandidateLine(
+    candidate: EveningRetroCandidate,
+    authorLogin: string | undefined,
+  ): string {
+    const sourceLabel = this.formatSourceRefsLabel(
+      candidate.sourceRefs,
+      authorLogin,
+    );
     const sourceRefsText = this.formatSourceRefsText(candidate.sourceRefs);
     const reason = this.truncateText(
       candidate.reason,
@@ -292,9 +305,14 @@ export class EveningRetroPublishTask implements AutopilotTask {
       }));
   }
 
-  private formatSourceRefsLabel(sourceRefs: string[]): string {
+  private formatSourceRefsLabel(
+    sourceRefs: string[],
+    authorLogin: string | undefined,
+  ): string {
     const sources = new Set<RepoSource>(
-      sourceRefs.map((sourceRef) => this.classifySourceRef(sourceRef)),
+      sourceRefs.map((sourceRef) =>
+        this.classifySourceRef(sourceRef, authorLogin),
+      ),
     );
     if (sources.size > 1) {
       return '회사·개인';
@@ -303,9 +321,16 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return REPO_SOURCE_LABEL[source];
   }
 
-  private classifySourceRef(sourceRef: string): RepoSource {
+  private classifySourceRef(
+    sourceRef: string,
+    authorLogin: string | undefined,
+  ): RepoSource {
     const repositoryName = sourceRef.split('#')[0] ?? '';
-    return classifyRepoSource(repositoryName, this.getPersonalRepositories());
+    return classifyRepoSource(
+      repositoryName,
+      this.getPersonalRepositories(),
+      authorLogin,
+    );
   }
 
   private formatSourceRefsText(sourceRefs: string[]): string {

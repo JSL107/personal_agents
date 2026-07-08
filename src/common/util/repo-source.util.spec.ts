@@ -46,4 +46,34 @@ describe('classifyRepoSource', () => {
 
     expect(result).toBe('company');
   });
+
+  it('owner 가 authorLogin 과 같으면 personal 로 분류한다', () => {
+    const result = classifyRepoSource('JSL107/personal_agents', [], 'JSL107');
+
+    expect(result).toBe('personal');
+  });
+
+  it('owner 와 authorLogin 대소문자 차이는 무시한다', () => {
+    const result = classifyRepoSource('jsl107/personal_agents', [], 'JSL107');
+
+    expect(result).toBe('personal');
+  });
+
+  it('owner 가 authorLogin 과 다르고 personalRepos 에 없으면 company 로 분류한다', () => {
+    const result = classifyRepoSource('schoolbell-e/sbe-api-v5', [], 'JSL107');
+
+    expect(result).toBe('company');
+  });
+
+  it('owner 가 authorLogin 과 달라도 personalRepositories override 가 우선 유지된다', () => {
+    const result = classifyRepoSource('org/private-tool', ['org/*'], 'JSL107');
+
+    expect(result).toBe('personal');
+  });
+
+  it('authorLogin 없이 호출하면 기존 personalRepositories-only 동작을 유지한다', () => {
+    const result = classifyRepoSource('JSL107/personal_agents', []);
+
+    expect(result).toBe('company');
+  });
 });
