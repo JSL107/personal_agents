@@ -40,6 +40,64 @@ describe('AgentRunPrismaRepository.updateParentId', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
+  const buildRepository = (): {
+    repository: AgentRunPrismaRepository;
+    findMany: jest.Mock;
+  } => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    return { repository: new AgentRunPrismaRepository(prismaMock), findMany };
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-07T16:30:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('sinceDays=1 이면 오늘 KST 00:00 이상으로 조회한다', async () => {
+    const { repository, findMany } = buildRepository();
+
+    await repository.findRecentSucceededRuns({
+      agentType: 'WORK_REVIEWER' as never,
+      sinceDays: 1,
+      limit: 5,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          endedAt: { gte: new Date('2026-07-07T15:00:00.000Z') },
+        }),
+      }),
+    );
+  });
+
+  it('sinceDays=7 이면 최근 7 KST 캘린더일의 시작으로 조회한다', async () => {
+    const { repository, findMany } = buildRepository();
+
+    await repository.findRecentSucceededRuns({
+      agentType: 'PO_EVAL' as never,
+      sinceDays: 7,
+      limit: 5,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          endedAt: { gte: new Date('2026-07-01T15:00:00.000Z') },
+        }),
+      }),
+    );
+  });
+});
+
 describe('AgentRunPrismaRepository.findChainFromRoot — V3 chain audit walk', () => {
   const buildRepository = (
     queryResult: Array<{
