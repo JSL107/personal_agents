@@ -73,7 +73,21 @@ describe('EveningBlogPublishApplier', () => {
 
   it('(b) 정상 흐름 — route → findOrCreateChildPage → appendBlocks 순 호출 후 ApplyResult.message 반환', async () => {
     const preview = makePreview({
-      topPick: { title: '제목', keywords: ['k1', 'k2'] },
+      topPick: {
+        title: '제목',
+        keywords: ['k1', 'k2'],
+        reason: 'PR 근거가 구체적이다.',
+        sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+      },
+      sourcePrs: [
+        {
+          repo: 'schoolbell-e/sbe-api-v5',
+          number: 864,
+          url: 'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+          title: '정합성 수정',
+          body: '실제 변경 내용',
+        },
+      ],
       retroContext: '오늘의 회고',
       slackUserId: 'U1',
     });
@@ -81,7 +95,12 @@ describe('EveningBlogPublishApplier', () => {
     const result = await applier.apply(preview);
 
     expect(modelRouter.route).toHaveBeenCalledWith(
-      expect.objectContaining({ agentType: AgentType.EVENING_RETRO }),
+      expect.objectContaining({
+        agentType: AgentType.EVENING_RETRO,
+        request: expect.objectContaining({
+          prompt: expect.stringContaining('실제 변경 내용'),
+        }),
+      }),
     );
     expect(notionClient.findOrCreateChildPage).toHaveBeenCalledWith({
       parentPageId: 'PARENT',

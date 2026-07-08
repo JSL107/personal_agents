@@ -1,4 +1,4 @@
-import { getTodayKstDate } from './kst-date.util';
+import { getKstDayStartAsUtc, getTodayKstDate } from './kst-date.util';
 
 describe('getTodayKstDate', () => {
   it('YYYY-MM-DD ISO 8601 형식 반환', () => {
@@ -15,5 +15,28 @@ describe('getTodayKstDate', () => {
     expect(month).toBeLessThanOrEqual(12);
     expect(day).toBeGreaterThanOrEqual(1);
     expect(day).toBeLessThanOrEqual(31);
+  });
+});
+
+describe('getKstDayStartAsUtc', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-07T16:30:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('daysAgo=0 이면 오늘 KST 00:00 을 UTC instant 로 반환한다', () => {
+    const result = getKstDayStartAsUtc(0);
+
+    expect(result.toISOString()).toBe('2026-07-07T15:00:00.000Z');
+  });
+
+  it('daysAgo=6 이면 6일 전 KST 00:00 을 UTC instant 로 반환한다', () => {
+    const result = getKstDayStartAsUtc(6);
+
+    expect(result.toISOString()).toBe('2026-07-01T15:00:00.000Z');
   });
 });

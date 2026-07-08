@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 // /search-runs 의 ILIKE 패턴 사용자 입력 escape — `%` / `_` / `\` 를 모두 `\` prefix.
 // PostgreSQL 의 LIKE 는 default escape 가 `\` 이라 추가 ESCAPE 절 없이 동작.
 const escapeLikeMetaChars = (text: string): string =>
@@ -152,8 +153,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - sinceDays);
+    const cutoff = getKstDayStartAsUtc(sinceDays - 1);
 
     const where: Prisma.AgentRunWhereInput = {
       agentType,
