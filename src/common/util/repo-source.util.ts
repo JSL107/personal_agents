@@ -8,9 +8,15 @@ export const REPO_SOURCE_LABEL: Record<RepoSource, string> = {
 export const classifyRepoSource = (
   repositoryName: string,
   personalRepositories: string[],
+  authorLogin?: string,
 ): RepoSource => {
   const [owner] = repositoryName.toLowerCase().split('/');
   const normalizedRepositoryName = repositoryName.toLowerCase();
+  const normalizedAuthorLogin = authorLogin?.trim().toLowerCase();
+
+  if (normalizedAuthorLogin && owner === normalizedAuthorLogin) {
+    return 'personal';
+  }
 
   const matched = personalRepositories.some((personalRepository) => {
     const normalizedPersonalRepository = personalRepository
