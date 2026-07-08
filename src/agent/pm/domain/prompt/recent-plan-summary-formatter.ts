@@ -4,6 +4,7 @@ const KST_OFFSET_HOURS = 9;
 
 export interface RecentPlanSummary {
   date: string; // YYYY-MM-DD
+  taskIds: string[];
   topPriorityTitle: string;
   estimatedHours: number;
   criticalPathCount: number;
@@ -42,6 +43,7 @@ export const createRecentPlanSummary = (
   agentRunId: number,
 ): RecentPlanSummary => {
   const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
+  const taskIds = allTasks.map((task) => task.id).filter((id) => id.length > 0);
   const criticalPathCount = allTasks.filter(
     (task) => task.isCriticalPath,
   ).length;
@@ -53,6 +55,7 @@ export const createRecentPlanSummary = (
 
   return {
     date: kstDate,
+    taskIds,
     topPriorityTitle: plan.topPriority.title,
     estimatedHours: plan.estimatedHours,
     criticalPathCount,

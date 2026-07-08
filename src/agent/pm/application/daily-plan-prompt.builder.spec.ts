@@ -32,6 +32,7 @@ const buildDailyReview = (note: string): DailyReview => ({
 
 const buildSummary = (date: string, title: string): RecentPlanSummary => ({
   date,
+  taskIds: [`github/repo#${title}`],
   topPriorityTitle: title,
   estimatedHours: 6,
   criticalPathCount: 1,
@@ -104,6 +105,38 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).toContain('어제 최우선');
     expect(built.prompt).toContain('그제 최우선');
     expect(built.truncated.droppedSections).toEqual([]);
+  });
+
+  it('recentPlanSummaries 기준 stale 후보가 있으면 정체 태스크 섹션을 prompt 에 포함한다', () => {
+    const built = builder.build(
+      buildBaseContext({
+        recentPlanSummaries: [
+          {
+            ...buildSummary('2026-07-07', '학교 채팅방'),
+            taskIds: ['repo/app#1', 'repo/app#2'],
+          },
+          {
+            ...buildSummary('2026-07-06', '학교 채팅방'),
+            taskIds: ['repo/app#1'],
+          },
+          {
+            ...buildSummary('2026-07-05', '학교 채팅방'),
+            taskIds: ['repo/app#1'],
+          },
+          {
+            ...buildSummary('2026-07-04', '학교 채팅방'),
+            taskIds: ['repo/app#1'],
+          },
+        ],
+      }),
+      undefined,
+      5,
+    );
+
+    expect(built.prompt).toContain('## 정체 태스크 (강등 대상)');
+    expect(built.prompt).toContain('repo/app#1 (5일 연속) : 학교 채팅방');
+    expect(built.prompt).toContain('stalledTasks');
+    expect(built.prompt).not.toContain('repo/app#2 (');
   });
 
   it('cap 초과 시 TRIM_ORDER 우선순위대로 drop — recentPlanSummaries 가 previousPlan / previousWorklog 보다 먼저 drop 된다', () => {

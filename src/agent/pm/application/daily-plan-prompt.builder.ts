@@ -11,6 +11,10 @@ import { formatPreviousDailyReviewSection } from '../domain/prompt/previous-work
 import { formatRecentPlanSummariesSection } from '../domain/prompt/recent-plan-summary-formatter';
 import { formatSlackMentionsAsPromptSection } from '../domain/prompt/slack-mention-formatter';
 import {
+  computeConsecutiveDaysById,
+  computeStaleTaskIds,
+} from '../domain/stale-task.util';
+import {
   DailyPlanContext,
   SLACK_MENTION_SINCE_HOURS,
 } from './daily-plan-context.collector';
@@ -46,6 +50,7 @@ interface PromptSections {
   github: string | null;
   notion: string | null;
   recentPlanSummaries: string | null;
+  staleTasks: string | null;
   similarPlans: string | null;
 }
 
@@ -71,6 +76,7 @@ export class DailyPlanPromptBuilder {
   build(
     context: DailyPlanContext,
     conversationContext?: ConversationContext,
+    staleDemoteDays = 5,
   ): BuiltPrompt {
     const { userText, githubTasks, previousPlan, previousWorklog } = context;
     const {
@@ -128,6 +134,10 @@ export class DailyPlanPromptBuilder {
       notion: notionResult ? notionResult.content : null,
       recentPlanSummaries:
         formatRecentPlanSummariesSection(recentPlanSummaries),
+      staleTasks: formatStaleTasksSection({
+        summaries: recentPlanSummaries,
+        thresholdDays: staleDemoteDays,
+      }),
       similarPlans:
         similarPlans && similarPlans.length > 0
           ? `[유사 plan (FTS top ${similarPlans.length})]\n` +
@@ -249,6 +259,48 @@ const formatUserTextSection = (userText: string): string | null => {
     return `[사용자 명시 TODO — ", " 로 구분된 항목, 반드시 morning/afternoon 에 포함]\n${bullets}`;
   }
   return `[사용자 입력]\n${userText}`;
+};
+
+const formatStaleTasksSection = ({
+  summaries,
+  thresholdDays,
+}: {
+  summaries: DailyPlanContext['recentPlanSummaries'];
+  thresholdDays: number;
+}): string | null => {
+  const staleIds = computeStaleTaskIds(summaries, thresholdDays);
+  if (staleIds.size === 0) {
+    return null;
+  }
+
+  const daysById = computeConsecutiveDaysById(summaries);
+  const latestTitleById = buildLatestTitleById(summaries);
+  const lines = [...staleIds].map((id) => {
+    const days = (daysById.get(id) ?? 0) + 1;
+    const title = latestTitleById.get(id) ?? '(최근 제목 없음)';
+    return `- ${id} (${days}일 연속) : ${title}`;
+  });
+
+  return [
+    '## 정체 태스크 (강등 대상)',
+    ...lines,
+    '위 id 는 topPriority/morning/afternoon 에 넣지 말고 stalledTasks 로 배치하십시오. topPriority 는 정체 아닌 신선한 항목에서 고르십시오.',
+  ].join('\n');
+};
+
+const buildLatestTitleById = (
+  summaries: DailyPlanContext['recentPlanSummaries'],
+): Map<string, string> => {
+  const sortedSummaries = [...summaries].sort((left, right) =>
+    right.date.localeCompare(left.date),
+  );
+  const entries = sortedSummaries.flatMap((summary) =>
+    (summary.taskIds ?? []).map((id): [string, string] => [
+      id,
+      summary.topPriorityTitle,
+    ]),
+  );
+  return new Map(entries.reverse());
 };
 
 const TRUNCATE_SUFFIX = '\n\n... (생략됨 — prompt size cap)';

@@ -28,6 +28,10 @@ import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
 import { parseDailyPlan } from '../domain/prompt/daily-plan.parser';
 import { PM_SYSTEM_PROMPT } from '../domain/prompt/pm-system.prompt';
 import {
+  computeConsecutiveDaysById,
+  computeStaleTaskIds,
+} from '../domain/stale-task.util';
+import {
   DailyPlanContext,
   DailyPlanContextCollector,
   RECENT_PLAN_LOOKBACK_DAYS,
@@ -38,8 +42,10 @@ import {
   DailyPlanPromptBuilder,
   TruncationMeta,
 } from './daily-plan-prompt.builder';
+import { applyStaleDemotion } from './stale-demotion.util';
 
 const KST_OFFSET_HOURS = 9;
+const DEFAULT_PM_STALE_DEMOTE_DAYS = 5;
 
 // KST (UTC+9) 기준 "오늘 날짜" 를 UTC 00:00:00 Date 로 반환.
 // @db.Date 컬럼은 날짜만 저장하므로 시간 정보 제거. 한국 사용자 하루 경계 (00:00 KST) 에 맞춤.
@@ -102,6 +108,7 @@ export class GenerateDailyPlanUsecase {
       this.configService.get<string>('BRIEFING_WAITING_SECTION_ENABLED') !==
       'false';
     const isCron = effectiveTriggerType === TriggerType.MORNING_BRIEFING_CRON;
+    const staleDemoteDays = this.resolveStaleDemoteDays();
 
     const context = await this.contextCollector.collect({
       userText,
@@ -118,6 +125,7 @@ export class GenerateDailyPlanUsecase {
     const { prompt, truncated } = this.promptBuilder.build(
       context,
       conversationContext,
+      staleDemoteDays,
     );
     const evidence = this.evidenceBuilder.build(context);
     const inputSnapshot = this.buildInputSnapshot({
@@ -144,7 +152,19 @@ export class GenerateDailyPlanUsecase {
           agentType: AgentType.PM,
           request: { prompt, systemPrompt },
         });
-        const innerPlan = parseDailyPlan(completion.text);
+        const parsedPlan = parseDailyPlan(completion.text);
+        const staleIds = computeStaleTaskIds(
+          context.recentPlanSummaries,
+          staleDemoteDays,
+        );
+        const daysById = computeConsecutiveDaysById(
+          context.recentPlanSummaries,
+        );
+        const innerPlan = applyStaleDemotion({
+          plan: parsedPlan,
+          staleIds,
+          daysById,
+        });
         const innerSources = extractSources(context);
 
         await this.persistPlanGracefully({
@@ -202,6 +222,15 @@ export class GenerateDailyPlanUsecase {
         status: DomainStatus.BAD_REQUEST,
       });
     }
+  }
+
+  private resolveStaleDemoteDays(): number {
+    const configured = this.configService.get<string>('PM_STALE_DEMOTE_DAYS');
+    const parsed = configured ? Number.parseInt(configured, 10) : NaN;
+    if (Number.isInteger(parsed) && parsed >= 2) {
+      return parsed;
+    }
+    return DEFAULT_PM_STALE_DEMOTE_DAYS;
   }
 
   // daily_plan 테이블 upsert + Notion Daily Plan 페이지 append.

@@ -48,11 +48,20 @@ morning + afternoon 의 TaskItem.id 중 다음 조건을 모두 만족하는 tas
 - 완료 판정이 객관적 (테스트 통과 / lint 통과 / PR diff 비교)
 순수 미팅/리뷰/회의/구두 의사결정 task 는 제외. 후보 없으면 빈 배열 [].
 
+## 정체 태스크 강등
+입력에 "정체 태스크 (강등 대상)" 섹션이 주어지면:
+- 해당 id 는 topPriority / morning / afternoon 에 넣지 말고 stalledTasks 에 배치한다.
+- topPriority 는 정체 아닌 신선한 항목에서 다시 고른다.
+- stalledTasks 의 daysStalled 는 입력의 "N일 연속" 숫자를 그대로 사용한다.
+
 ## 출력 규칙 (매우 중요)
 JSON 객체 하나만 출력. 코드 블록 마커(\`\`\`json) 금지, 앞뒤 설명 문장 금지.
 
 TaskItem:
 { "id": string, "title": string, "source": "GITHUB"|"NOTION"|"SLACK"|"USER_INPUT"|"ROLLOVER", "subtasks": [{"title": string, "estimatedMinutes": number}], "isCriticalPath": boolean, "lineage": "NEW"|"CARRIED"|"POSTPONED", "url": string }
+
+StalledTask:
+{ "id": string, "title": string, "daysStalled": number, "url": string }
 
 최종:
 {
@@ -63,7 +72,8 @@ TaskItem:
   "blocker": string | null,
   "estimatedHours": number,
   "reasoning": string,
-  "assignableTaskIds": string[]
+  "assignableTaskIds": string[],
+  "stalledTasks": StalledTask[]
 }
 
-— TaskItem 은 반드시 객체. 문자열/숫자 배열로 대체 금지. subtasks 없으면 빈 배열([]). url 없으면 빈 문자열 "". assignableTaskIds 의 각 id 는 반드시 위 morning 또는 afternoon TaskItem 의 id 와 정확히 일치해야 한다.`;
+— TaskItem 은 반드시 객체. 문자열/숫자 배열로 대체 금지. subtasks 없으면 빈 배열([]). url 없으면 빈 문자열 "". assignableTaskIds 의 각 id 는 반드시 위 morning 또는 afternoon TaskItem 의 id 와 정확히 일치해야 한다. stalledTasks 후보가 없으면 빈 배열([]).`;

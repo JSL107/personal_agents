@@ -17,13 +17,19 @@ import { PmAgentException } from '../domain/pm-agent.exception';
 import { DailyPlan, TaskItem } from '../domain/pm-agent.type';
 import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
 
-const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
-  id: overrides.id ?? `user:${title}`,
-  title,
-  source: overrides.source ?? 'USER_INPUT',
-  subtasks: overrides.subtasks ?? [],
-  isCriticalPath: overrides.isCriticalPath ?? false,
-});
+const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => {
+  const item: TaskItem = {
+    id: overrides.id ?? `user:${title}`,
+    title,
+    source: overrides.source ?? 'USER_INPUT',
+    subtasks: overrides.subtasks ?? [],
+    isCriticalPath: overrides.isCriticalPath ?? false,
+  };
+  if (overrides.url !== undefined) {
+    item.url = overrides.url;
+  }
+  return item;
+};
 import { DailyPlanContextCollector } from './daily-plan-context.collector';
 import { DailyPlanEvidenceBuilder } from './daily-plan-evidence.builder';
 import { DailyPlanPromptBuilder } from './daily-plan-prompt.builder';
@@ -937,8 +943,11 @@ describe('GenerateDailyPlanUsecase', () => {
   });
 
   describe('지난 7일 plan 패턴 참조 (V3-1)', () => {
-    const buildPastPlan = (label: string): DailyPlan => ({
-      topPriority: task(label, { isCriticalPath: true }),
+    const buildPastPlan = (
+      label: string,
+      overrides: Partial<TaskItem> = {},
+    ): DailyPlan => ({
+      topPriority: task(label, { isCriticalPath: true, ...overrides }),
       varianceAnalysis: {
         rolledOverTasks: [],
         analysisReasoning: '(이월 없음)',
@@ -1036,6 +1045,91 @@ describe('GenerateDailyPlanUsecase', () => {
 
       const call = agentRunServiceExecute.mock.calls[0][0];
       expect(call.inputSnapshot.recentPlanSampleCount).toBe(1);
+    });
+
+    it('PM_STALE_DEMOTE_DAYS 기준 stale id 를 결정론적으로 강등하고 신선한 topPriority 를 재선정한다', async () => {
+      const staleTask = task('학교 채팅방', {
+        id: 'repo/app#1',
+        source: 'GITHUB',
+        url: 'https://github.com/repo/app/issues/1',
+        isCriticalPath: true,
+      });
+      const freshTask = task('신규 결제 버그', {
+        id: 'repo/app#2',
+        source: 'GITHUB',
+      });
+      const modelPlan: DailyPlan = {
+        ...validPlan,
+        topPriority: staleTask,
+        morning: [freshTask],
+        afternoon: [task('문서 보강', { id: 'user:1' })],
+      };
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(modelPlan),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+      agentRunServiceFindRecent.mockResolvedValue([
+        {
+          id: 204,
+          output: buildPastPlan('학교 채팅방', {
+            id: 'repo/app#1',
+            source: 'GITHUB',
+          }),
+          endedAt: new Date('2026-07-07T05:00:00Z'),
+        },
+        {
+          id: 203,
+          output: buildPastPlan('학교 채팅방', {
+            id: 'repo/app#1',
+            source: 'GITHUB',
+          }),
+          endedAt: new Date('2026-07-06T05:00:00Z'),
+        },
+        {
+          id: 202,
+          output: buildPastPlan('학교 채팅방', {
+            id: 'repo/app#1',
+            source: 'GITHUB',
+          }),
+          endedAt: new Date('2026-07-05T05:00:00Z'),
+        },
+        {
+          id: 201,
+          output: buildPastPlan('학교 채팅방', {
+            id: 'repo/app#1',
+            source: 'GITHUB',
+          }),
+          endedAt: new Date('2026-07-04T05:00:00Z'),
+        },
+      ]);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U',
+      });
+
+      expect(result.result.plan.topPriority.id).toBe('repo/app#2');
+      expect(result.result.plan.morning).toEqual([]);
+      expect(result.result.plan.afternoon.map((item) => item.id)).toEqual([
+        'user:1',
+      ]);
+      expect(result.result.plan.stalledTasks).toEqual([
+        {
+          id: 'repo/app#1',
+          title: '학교 채팅방',
+          daysStalled: 5,
+          url: 'https://github.com/repo/app/issues/1',
+        },
+      ]);
+      expect(dailyPlanRecord.mock.calls[0][0].plan).toEqual(result.result.plan);
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('## 정체 태스크 (강등 대상)');
+      expect(promptArg).toContain('repo/app#1 (5일 연속)');
     });
   });
 });
