@@ -6,6 +6,7 @@ import {
   EVENING_RETRO_SYSTEM_PROMPT,
   EveningBlogSourcePr,
   EveningPrInput,
+  EveningPrNote,
   EveningRetroCandidate,
   parseEveningRetroOutput,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
@@ -33,12 +34,14 @@ import {
 const RETRO_PR_LIMIT = 20;
 const DEFAULT_PERSONAL_REPOSITORIES = ['JSL107/personal_agents'];
 const REASON_PREVIEW_MAX_CHARS = 120;
+const PR_NOTE_PREVIEW_MAX_CHARS = 100;
 
 interface TopPickPayload {
   title: string;
   keywords: string[];
   reason: string;
   sourceRefs: string[];
+  outline: string[];
 }
 
 interface EveningBlogPayload {
@@ -138,23 +141,31 @@ export class EveningRetroPublishTask implements AutopilotTask {
             keywords: top.keywords,
             reason: top.reason,
             sourceRefs: top.sourceRefs,
+            outline: top.outline,
           },
           sourcePrs,
           retroContext: parsed.retrospective,
           slackUserId: ownerSlackUserId,
         };
+        const outlineText = this.formatOutlineText(top.outline);
+        const applyGuide = top.outline.length
+          ? '✅ 누르면 위 PR 내용과 초안 개요를 근거로 codex 가 본문 생성 후 Notion 발행.'
+          : '✅ 누르면 위 PR 내용을 근거로 codex 가 본문 생성 후 Notion 발행.';
         previews.push({
           kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
           payload,
-          previewText: `📝 *블로그 발행 후보* (${top.blogValueScore}점) · ${sourceLabel}\n제목: ${top.title}\n근거 PR: ${sourceRefsText}\n왜 쓸 가치: ${top.reason}\n✅ 누르면 위 PR 내용을 근거로 codex 가 본문 생성 후 Notion 발행.`,
+          previewText: `📝 *블로그 발행 후보* (${top.blogValueScore}점) · ${sourceLabel}\n제목: ${top.title}\n근거 PR: ${sourceRefsText}\n왜 쓸 가치: ${top.reason}${outlineText}\n${applyGuide}`,
         });
       }
-      // 경력 카드 — 오늘 머지된 PR 전체를 다건 통합 회고로 반영(#134 활용). LLM 무관, 결정론적.
+      // 경력 카드 — 오늘 머지된 PR 전체를 다건 통합 회고로 반영(#134 활용). payload 는 기존 prRefs 그대로 유지.
       if (mergedPrs.length > 0) {
         const prRefs = mergedPrs.map(
           (pullRequest) => `${pullRequest.repo}#${pullRequest.number}`,
         );
-        const groupedRefsText = this.formatGroupedPrRefs(mergedPrs);
+        const groupedRefsText = this.formatGroupedPrRefs(
+          mergedPrs,
+          parsed.prNotes,
+        );
         previews.push({
           kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
           payload: { prRefs, slackUserId: ownerSlackUserId },
@@ -214,20 +225,47 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return `• (${candidate.blogValueScore}점) ${candidate.title} — ${candidate.keywords.join(', ')}\n    ↳ ${sourceLabel} · ${sourceRefsText} · ${reason}`;
   }
 
-  private formatGroupedPrRefs(pullRequests: EveningPrInput[]): string {
+  private formatGroupedPrRefs(
+    pullRequests: EveningPrInput[],
+    prNotes: EveningPrNote[],
+  ): string {
+    const noteByRef = new Map(prNotes.map((note) => [note.ref, note.note]));
     const lines = (['company', 'personal'] as const)
       .map((source) => {
         const refs = pullRequests
           .filter((pullRequest) => pullRequest.source === source)
-          .map((pullRequest) => `${pullRequest.repo}#${pullRequest.number}`);
+          .map((pullRequest) =>
+            this.formatCareerPrLine(pullRequest, noteByRef),
+          );
         if (refs.length === 0) {
           return null;
         }
-        return `• ${REPO_SOURCE_LABEL[source]}: ${refs.join(', ')}`;
+        return `• ${REPO_SOURCE_LABEL[source]}:\n${refs.join('\n')}`;
       })
       .filter((line): line is string => line !== null);
 
     return lines.join('\n');
+  }
+
+  private formatCareerPrLine(
+    pullRequest: EveningPrInput,
+    noteByRef: Map<string, string>,
+  ): string {
+    const ref = `${pullRequest.repo}#${pullRequest.number}`;
+    const note = noteByRef.get(ref)?.trim() || pullRequest.title.trim();
+    if (!note) {
+      return `  • ${ref}`;
+    }
+    const truncatedNote = this.truncateText(note, PR_NOTE_PREVIEW_MAX_CHARS);
+    return `  • ${ref} — ${truncatedNote}`;
+  }
+
+  private formatOutlineText(outline: string[]): string {
+    if (outline.length === 0) {
+      return '';
+    }
+    const bullets = outline.map((line) => `\n • ${line}`).join('');
+    return `\n*초안 개요*${bullets}`;
   }
 
   private resolveSourcePrs(

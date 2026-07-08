@@ -78,6 +78,11 @@ describe('EveningBlogPublishApplier', () => {
         keywords: ['k1', 'k2'],
         reason: 'PR 근거가 구체적이다.',
         sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+        outline: [
+          '문제: 정합성 불일치가 있었다.',
+          '접근: 동기화 경계를 보강했다.',
+          '결과: 재발 가능성을 낮췄다.',
+        ],
       },
       sourcePrs: [
         {
@@ -99,6 +104,20 @@ describe('EveningBlogPublishApplier', () => {
         agentType: AgentType.EVENING_RETRO,
         request: expect.objectContaining({
           prompt: expect.stringContaining('실제 변경 내용'),
+        }),
+      }),
+    );
+    expect(modelRouter.route).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: expect.stringContaining('## 초안 개요'),
+        }),
+      }),
+    );
+    expect(modelRouter.route).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: expect.stringContaining('문제: 정합성 불일치가 있었다.'),
         }),
       }),
     );

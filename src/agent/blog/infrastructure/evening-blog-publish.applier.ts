@@ -28,6 +28,7 @@ interface EveningBlogPayload {
     keywords: string[];
     reason?: string;
     sourceRefs?: string[];
+    outline?: string[];
   };
   sourcePrs?: EveningBlogSourcePr[];
   retroContext: string;
@@ -69,6 +70,7 @@ export class EveningBlogPublishApplier implements PreviewApplier {
           reason: payload.topPick.reason ?? '',
           retroContext: payload.retroContext,
           sourcePrs: payload.sourcePrs ?? [],
+          outline: payload.topPick.outline ?? [],
         }),
         systemPrompt: EVENING_BLOG_BODY_SYSTEM_PROMPT,
       },

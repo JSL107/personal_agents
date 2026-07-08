@@ -14,6 +14,17 @@ const RETRO_RESPONSE = {
         blogValueScore: 70,
         reason: '실제 PR 근거가 충분하다.',
         sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+        outline: [
+          '문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
+          '접근: user_to_group 동기화 경계를 보강했다.',
+          '결과: 유령 학급 재발 가능성을 낮췄다.',
+        ],
+      },
+    ],
+    prNotes: [
+      {
+        ref: 'schoolbell-e/sbe-api-v5#864',
+        note: 'user_to_group 정합성 문제를 트랜잭션 경계로 보강',
       },
     ],
   }),
@@ -215,6 +226,7 @@ describe('EveningRetroPublishTask', () => {
         keywords: string[];
         reason: string;
         sourceRefs: string[];
+        outline: string[];
       };
       sourcePrs: Array<{
         repo: string;
@@ -231,8 +243,17 @@ describe('EveningRetroPublishTask', () => {
     expect(blogPreview?.previewText).toContain(
       '왜 쓸 가치: 실제 PR 근거가 충분하다.',
     );
+    expect(blogPreview?.previewText).toContain('*초안 개요*');
+    expect(blogPreview?.previewText).toContain(
+      '• 문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
+    );
     expect(payload.topPick.reason).toBe('실제 PR 근거가 충분하다.');
     expect(payload.topPick.sourceRefs).toEqual(['schoolbell-e/sbe-api-v5#864']);
+    expect(payload.topPick.outline).toEqual([
+      '문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
+      '접근: user_to_group 동기화 경계를 보강했다.',
+      '결과: 유령 학급 재발 가능성을 낮췄다.',
+    ]);
     expect(payload.sourcePrs).toEqual([
       {
         repo: 'schoolbell-e/sbe-api-v5',
@@ -244,11 +265,47 @@ describe('EveningRetroPublishTask', () => {
     ]);
   });
 
+  it('(g-2) outline 이 비어 있으면 블로그 preview 의 초안 개요 블록을 생략한다', async () => {
+    const routeResult = {
+      ...RETRO_RESPONSE,
+      text: JSON.stringify({
+        retrospective: 'r',
+        candidates: [
+          {
+            title: 'T',
+            keywords: ['k'],
+            blogValueScore: 70,
+            reason: '실제 PR 근거가 충분하다.',
+            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            outline: [],
+          },
+        ],
+        prNotes: [],
+      }),
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult,
+    });
+
+    const result = await task.run(CTX);
+    const blogPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+    );
+
+    expect(blogPreview?.previewText).not.toContain('*초안 개요*');
+    expect(blogPreview?.previewText).not.toContain('초안 개요를 근거로');
+    expect(blogPreview?.previewText).toContain('위 PR 내용을 근거로');
+  });
+
   it('(h) 경력 preview 는 회사/개인 repository 를 그룹화해서 표시한다', async () => {
     const personalPr = {
       ...PR_ITEM,
       repo: 'JSL107/personal_agents',
       number: 142,
+      title: '개인 프로젝트 저녁 회고 개선',
     };
     const { task } = makeTask({
       prs: [PR_ITEM, personalPr],
@@ -262,11 +319,26 @@ describe('EveningRetroPublishTask', () => {
       (preview) => preview.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
     );
 
+    expect(careerPreview?.previewText).toContain('• 회사 실무:');
     expect(careerPreview?.previewText).toContain(
-      '• 회사 실무: schoolbell-e/sbe-api-v5#864',
+      '• schoolbell-e/sbe-api-v5#864 — user_to_group 정합성 문제를 트랜잭션 경계로 보강',
     );
+    expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
     expect(careerPreview?.previewText).toContain(
-      '• 개인 프로젝트(이대리): JSL107/personal_agents#142',
+      '• JSL107/personal_agents#142 — 개인 프로젝트 저녁 회고 개선',
     );
+  });
+
+  it('(i) 저녁 회고 LLM 호출은 기존 1회만 수행한다', async () => {
+    const { task, modelRouter } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    await task.run(CTX);
+
+    expect(modelRouter.route).toHaveBeenCalledTimes(1);
   });
 });
