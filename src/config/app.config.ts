@@ -427,6 +427,12 @@ class EnvironmentVariables {
   @IsString()
   EVENING_RETRO_BLOG_NOTION_PAGE_ID?: string;
 
+  // CSV of owner/repo | owner/* | owner. 저녁 회고에서 개인 프로젝트로 라벨될 repo.
+  // 미설정 시 기본 `JSL107/personal_agents`.
+  @IsOptional()
+  @IsString()
+  PERSONAL_REPOS?: string;
+
   // issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성.
   // 정책: 새 label 생성 X (repo 기존 vocab 안에서 LLM 분류 부분집합 선택).
   // 추가 조건: GITHUB_TOKEN 이 `Issues: Read+Write` scope 보유.

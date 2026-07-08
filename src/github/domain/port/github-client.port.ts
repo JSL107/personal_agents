@@ -46,7 +46,7 @@ export interface ListAuthorMergedPullRequestsOptions {
   repo: string | null;
   // GitHub login (username) — env IMPACT_REPORT_GITHUB_AUTHOR 에서 가져옴.
   author: string;
-  // ISO date (YYYY-MM-DD). 이 날짜 이후 merged 된 PR 만.
+  // ISO date (YYYY-MM-DD) 또는 timezone offset 포함 ISO8601 timestamp. 이 시각 이후 merged 된 PR 만.
   sinceIsoDate: string;
   // 결과 상한. usecase 가 default 20 적용 — prompt 폭발 방지.
   limit: number;
