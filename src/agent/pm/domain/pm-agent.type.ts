@@ -39,6 +39,13 @@ export interface TaskItem {
   url?: string;
 }
 
+export interface StalledTask {
+  id: string;
+  title: string;
+  daysStalled: number;
+  url?: string;
+}
+
 // 이월(Variance) 분석 — 어제 plan 과 실제 결과를 비교해 모델이 판단한 내용.
 // analysisReasoning 은 사용자에게 "왜 이 이월 태스크를 오늘 어느 위치에 배치/드랍했는지" 설명용.
 export interface VarianceAnalysis {
@@ -58,6 +65,7 @@ export interface DailyPlan {
   // 후속 CTO worker 가 BE/BE-* 분배 후보로 사용. optional — 구버전 plan record 와 LLM 이 키를 빠뜨린 경우 호환.
   // 참조 무결성 (id ∈ morning ∪ afternoon) 과 빈 배열 정규화는 P2 (CTO worker) 입력 어댑터 책임.
   assignableTaskIds?: string[];
+  stalledTasks?: StalledTask[];
 }
 
 export interface GenerateDailyPlanInput {

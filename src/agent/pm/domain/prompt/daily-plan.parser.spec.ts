@@ -128,4 +128,46 @@ describe('parseDailyPlan', () => {
     const empty: DailyPlan = { ...validPlan, assignableTaskIds: [] };
     expect(parseDailyPlan(JSON.stringify(empty))).toEqual(empty);
   });
+
+  it('stalledTasks 가 있으면 방어 파싱해 유효 항목만 정규화한다', () => {
+    const payload = {
+      ...validPlan,
+      stalledTasks: [
+        {
+          id: 'repo/app#1',
+          title: '오래된 PR',
+          daysStalled: 5.7,
+          url: 'https://github.com/repo/app/pull/1',
+        },
+        {
+          id: '',
+          title: 'id 없음',
+          daysStalled: 5,
+        },
+        {
+          id: 'repo/app#2',
+          title: '날짜 오류',
+          daysStalled: '5',
+        },
+      ],
+    };
+
+    expect(parseDailyPlan(JSON.stringify(payload)).stalledTasks).toEqual([
+      {
+        id: 'repo/app#1',
+        title: '오래된 PR',
+        daysStalled: 5,
+        url: 'https://github.com/repo/app/pull/1',
+      },
+    ]);
+  });
+
+  it('stalledTasks 가 배열이 아니면 빈 배열로 정규화한다', () => {
+    const payload = {
+      ...validPlan,
+      stalledTasks: 'not-array',
+    };
+
+    expect(parseDailyPlan(JSON.stringify(payload)).stalledTasks).toEqual([]);
+  });
 });
