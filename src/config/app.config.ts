@@ -98,6 +98,15 @@ class EnvironmentVariables {
   })
   STALE_DATA_CUTOFF_DAYS?: string;
 
+  // PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일.
+  // 최근 plan history 에서 같은 TaskItem.id 가 N일 연속 재등장하면 stalledTasks 로 강등한다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'PM_STALE_DEMOTE_DAYS 는 양의 정수 (예: "5") 만 허용합니다.',
+  })
+  PM_STALE_DEMOTE_DAYS?: string;
+
   // OPS-3 Slack Reaction → Inbox 큐잉 시 트리거 이모지. 미설정 시 default 'raised_hand' (✋).
   // 사용자가 다른 이모지로 바꾸고 싶으면 이 env 만 변경 (예: 'pushpin', 'eyes').
   @IsOptional()

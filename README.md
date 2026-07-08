@@ -221,6 +221,7 @@ pnpm dev              # watch 모드 기동
 | `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | proposal DM 버튼 유효 시간 ms (기본 `3600000`) |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | `'false'`면 자동 보고서 윤문 OFF — 기본 ON |
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | `'false'`면 아침 브리핑 완료/대기 PR 분류 섹션 OFF — 기본 ON |
+| `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값 — 기본 `5` |
 | `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | `'true'` 시 주간 선호 학습 cron 활성 — 기본 OFF(미설정 safe) |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | `'true'` 시 학습된 프로필을 브리핑/윤문/라우팅에 주입 — 기본 OFF |
 | `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | `'false'`면 저녁 회고→발행 후보 task skip — 기본 ON(미설정=활성) |

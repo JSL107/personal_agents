@@ -1,4 +1,8 @@
-import { DailyPlan, TaskItem } from '../../agent/pm/domain/pm-agent.type';
+import {
+  DailyPlan,
+  StalledTask,
+  TaskItem,
+} from '../../agent/pm/domain/pm-agent.type';
 import { FormattedReport } from './formatted-report.type';
 import { isSafeHttpUrl, sanitizeForSlackLink } from './mrkdwn.util';
 
@@ -32,11 +36,22 @@ const renderTaskLine = (task: TaskItem): string => {
   return `• ${lineage}${critical}${titled}${wbs}`;
 };
 
-// summary(메인) = 과제 목록 + Blocker + 어제 이월 + 예상 소요, detail(스레드) = 판단 근거.
+const renderStalledTaskLine = (task: StalledTask): string => {
+  const title =
+    task.url && task.url.length > 0 && isSafeHttpUrl(task.url)
+      ? `<${sanitizeForSlackLink(task.url)}|${sanitizeForSlackLink(task.title)}>`
+      : task.title;
+  return `• ${title} (${task.daysStalled}일째) — 종결/위임/보류`;
+};
+
+// summary(메인) = 판단 근거 + 과제 목록 + Blocker + 어제 이월 + 예상 소요, detail(스레드) = 정체 항목.
 // 어제 이월의 `_이월 근거_` 는 이월 리스트와 한 블록이라 summary 에 함께 유지하고,
-// 전체 계획의 `판단 근거`(reasoning) 만 스레드로 내린다.
+// 전체 계획의 `판단 근거`(reasoning) 는 메인 최상단에 둔다.
 export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
   const summaryLines: string[] = [
+    ...(plan.reasoning.trim().length > 0
+      ? [`*판단 근거*: ${plan.reasoning}`, '']
+      : []),
     '*오늘의 최우선 과제*',
     renderTaskLine(plan.topPriority),
     '',
@@ -65,9 +80,17 @@ export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
   }
 
   summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
+  const stalledTasks = plan.stalledTasks ?? [];
+  const detail =
+    stalledTasks.length > 0
+      ? [
+          '*정체 항목 (결정 필요)*',
+          ...stalledTasks.map(renderStalledTaskLine),
+        ].join('\n')
+      : '';
 
   return {
     summary: summaryLines.join('\n'),
-    detail: `*판단 근거*: ${plan.reasoning}`,
+    detail,
   };
 };
