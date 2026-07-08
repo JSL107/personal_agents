@@ -19,10 +19,17 @@ import {
 import {
   buildEveningBlogBodyPrompt,
   EVENING_BLOG_BODY_SYSTEM_PROMPT,
+  EveningBlogSourcePr,
 } from '../domain/prompt/evening-retro.prompt';
 
 interface EveningBlogPayload {
-  topPick: { title: string; keywords: string[] };
+  topPick: {
+    title: string;
+    keywords: string[];
+    reason?: string;
+    sourceRefs?: string[];
+  };
+  sourcePrs?: EveningBlogSourcePr[];
   retroContext: string;
   slackUserId: string;
 }
@@ -59,7 +66,9 @@ export class EveningBlogPublishApplier implements PreviewApplier {
         prompt: buildEveningBlogBodyPrompt({
           title: payload.topPick.title,
           keywords: payload.topPick.keywords,
+          reason: payload.topPick.reason ?? '',
           retroContext: payload.retroContext,
+          sourcePrs: payload.sourcePrs ?? [],
         }),
         systemPrompt: EVENING_BLOG_BODY_SYSTEM_PROMPT,
       },
