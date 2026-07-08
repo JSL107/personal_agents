@@ -27,7 +27,7 @@ export const PREVIEW_KIND = {
   // payload = { proposalId } (PreferenceProfilePreviewApplier 가 applyService.apply 로 반영).
   PREFERENCE_PROFILE: 'PREFERENCE_PROFILE',
   // 저녁 회고 — 오늘 대표 작업을 근거 PR 본문 기반 codex 블로그 초안으로 생성 후 Notion 발행.
-  // payload = { topPick:{title,keywords[],reason,sourceRefs[]}, sourcePrs:[{repo,number,url,title,body}], retroContext, slackUserId } (EveningBlogPublishApplier).
+  // payload = { topPick:{title,keywords[],reason,sourceRefs[],outline[]}, sourcePrs:[{repo,number,url,title,body}], retroContext, slackUserId } (EveningBlogPublishApplier).
   EVENING_BLOG_PUBLISH: 'EVENING_BLOG_PUBLISH',
   // 저녁 회고 — 오늘 머지된 PR 전체를 다건 통합 회고로 이력서 프로필 편입 + 포트폴리오 Notion append.
   // payload = { prRefs:string[], slackUserId } (EveningCareerReflectApplier 가 ReflectPrUsecase 위임).

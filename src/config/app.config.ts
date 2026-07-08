@@ -427,8 +427,7 @@ class EnvironmentVariables {
   @IsString()
   EVENING_RETRO_BLOG_NOTION_PAGE_ID?: string;
 
-  // CSV of owner/repo | owner/* | owner. 저녁 회고에서 개인 프로젝트로 라벨될 repo.
-  // 미설정 시 기본 `JSL107/personal_agents`.
+  // Optional override CSV of owner/repo | owner/* | owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가.
   @IsOptional()
   @IsString()
   PERSONAL_REPOS?: string;
