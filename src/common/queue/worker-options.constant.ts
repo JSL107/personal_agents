@@ -2,15 +2,14 @@ import { MODEL_ROUTER_WORST_CASE_MS } from '../llm/llm-timeout.constant';
 
 // BullMQ worker 기본 옵션 모음.
 //
-// 본 프로젝트의 worker 들은 대부분 내부에서 ModelRouterUsecase.route() 로 LLM CLI(codex/claude)
-// 를 호출한다. route() 는 primary 실패 시 fallback provider 를 "순차" 재시도하므로
-// (await primary.complete() → catch → await fallback.complete()), 한 attempt 의 최악 LLM 시간은
-// 단일 호출(180s)이 아니라 timeout 2회 누적 — codex full timeout(180s) → claude fallback(180s)
+// 본 프로젝트의 worker 들은 대부분 내부에서 ModelRouterUsecase.route() 로 LLM CLI(codex)
+// 를 호출한다. fallback 은 2026-07-02 제거됐고, CodexCliProvider 가 일시성 실패를 bounded retry
+// 하므로 한 attempt 의 최악 LLM 시간은 단일 호출(180s)이 아니라 codex timeout 2회 누적
 // = 360s (MODEL_ROUTER_WORST_CASE_MS) — 이다. 여기에 context fetch(GitHub/Notion/DB, 수십 초) +
 // slack 발송(수 초)이 더해진다.
 //
-// 과거 lockDuration(5분)은 "가장 긴 LLM 호출 1회(180s)"만 가정해 이 fallback 경로를 흡수하지
-// 못했고, 그 결과 codex full timeout + fallback 이 겹친 날 lock 갱신을 못 해 다음 에러가 났다:
+// 과거 lockDuration(5분)은 "가장 긴 LLM 호출 1회(180s)"만 가정해 2회 누적 경로를 흡수하지
+// 못했고, 그 결과 codex full timeout + 후속 시도가 겹친 날 lock 갱신을 못 해 다음 에러가 났다:
 //
 //   Error: could not renew lock for job <repeat:...>
 //   Error: Missing lock for job <repeat:...>. moveToFinished  (code -2)

@@ -18,6 +18,9 @@ import { redactPii } from './pii-redaction.util';
 const CODEX_EXECUTABLE = 'codex';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
 const CODEX_DEFAULT_TIMEOUT_MS = LLM_CLI_TIMEOUT_MS;
+const CODEX_MAX_ATTEMPTS = 2;
+const CODEX_RETRY_BACKOFF_BASE_MS = 1000;
+const CODEX_RETRY_BACKOFF_JITTER_MS = 1000;
 const STDERR_TAIL_LIMIT = 500;
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
@@ -93,9 +96,24 @@ export class CodexQuotaExceededException extends Error {
   }
 }
 
+export const isRetryableCodexError = (error: unknown): boolean => {
+  const retryable = !(error instanceof CodexQuotaExceededException);
+  return retryable;
+};
+
+export const computeCodexRetryBackoffMs = (): number => {
+  const jitterMs = Math.floor(Math.random() * CODEX_RETRY_BACKOFF_JITTER_MS);
+  return CODEX_RETRY_BACKOFF_BASE_MS + jitterMs;
+};
+
 type CodexSpawnResult = {
   quotaDetection: CodexQuotaDetection;
 };
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 // ChatGPT Plus 구독 기반의 codex CLI 를 non-interactive 모드(`codex exec`)로 호출하는 어댑터.
 // API key 없이 개인 구독 쿼터로 PM / Work Reviewer 에이전트를 굴리기 위한 경로다.
@@ -139,6 +157,32 @@ export class CodexCliProvider implements ModelProviderPort {
   private readonly timeoutMs: number = CODEX_DEFAULT_TIMEOUT_MS;
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= CODEX_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.completeOnce(request);
+      } catch (error: unknown) {
+        lastError = error;
+        if (!isRetryableCodexError(error) || attempt >= CODEX_MAX_ATTEMPTS) {
+          throw error;
+        }
+        const backoffMs = computeCodexRetryBackoffMs();
+        const message =
+          error instanceof Error ? error.message.slice(0, 200) : String(error);
+        this.logger.warn(
+          `codex 호출 실패 — 재시도 (attempt ${attempt + 1}/${CODEX_MAX_ATTEMPTS}), ${backoffMs}ms 후: ${message}`,
+        );
+        await delay(backoffMs);
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async completeOnce(
+    request: CompletionRequest,
+  ): Promise<CompletionResponse> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
     const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-home-'));
     const outputFile = join(workDir, 'response.txt');
