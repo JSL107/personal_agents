@@ -15,6 +15,24 @@ import {
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
+const SOCKET_WATCHDOG_INTERVAL_MS = 30_000;
+const SOCKET_DRIFT_THRESHOLD_MS = 90_000;
+
+type SlackSocketConfig = {
+  botToken: string;
+  appToken: string;
+  signingSecret: string;
+};
+
+export const shouldRefreshSocketAfterDrift = (
+  elapsedMs: number,
+  intervalMs: number,
+  driftThresholdMs: number,
+): boolean => {
+  const driftMs = elapsedMs - intervalMs;
+  return driftMs > driftThresholdMs;
+};
+
 // 이대리 Slack 어댑터.
 // 책임: (1) Bolt App lifecycle (Socket Mode 기동/종료), (2) 외부 발송 API (postMessage / postPreviewMessage) 노출,
 // (3) 부팅 시 SLACK_HANDLER_PORT multi-provider 의 모든 핸들러 일괄 register.
@@ -29,6 +47,9 @@ import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-
 export class SlackService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SlackService.name);
   private app?: App;
+  private socketWatchdog?: ReturnType<typeof setInterval>;
+  private lastWatchdogTickAt = 0;
+  private reconnecting = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -37,6 +58,39 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    const config = this.getSlackSocketConfig();
+    if (!config) {
+      return;
+    }
+
+    // Slack 기동 실패(유효하지 않은 토큰, Slack 일시적 장애 등)가 전체 NestJS 앱 부팅을 막지 않도록 격리한다.
+    // 앱은 계속 떠 있고 Slack 기능만 비활성화된 상태로 남는다.
+    try {
+      const app = await this.createStartedSlackApp(config);
+      this.app = app;
+      this.startSocketWatchdog();
+      this.logger.log('이대리 Slack 봇이 Socket Mode 로 기동되었습니다.');
+    } catch (error: unknown) {
+      this.logger.error(
+        '이대리 Slack 봇 기동 실패 — 앱은 계속 부팅되며 Slack 기능만 비활성화됩니다.',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.socketWatchdog) {
+      clearInterval(this.socketWatchdog);
+      this.socketWatchdog = undefined;
+    }
+    if (!this.app) {
+      return;
+    }
+    await this.app.stop();
+    this.logger.log('이대리 Slack 봇이 정상 종료되었습니다.');
+  }
+
+  private getSlackSocketConfig(): SlackSocketConfig | null {
     const botToken = this.configService.get<string>('SLACK_BOT_TOKEN');
     const appToken = this.configService.get<string>('SLACK_APP_TOKEN');
     const signingSecret = this.configService.get<string>(
@@ -55,9 +109,20 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `Slack 토큰 누락: ${missingKeys.join(', ')} — 이대리 Slack 봇을 초기화하지 않습니다.`,
       );
-      return;
+      return null;
+    }
+    if (!botToken || !appToken || !signingSecret) {
+      return null;
     }
 
+    return { botToken, appToken, signingSecret };
+  }
+
+  private async createStartedSlackApp({
+    appToken,
+    botToken,
+    signingSecret,
+  }: SlackSocketConfig): Promise<App> {
     const app = new App({
       token: botToken,
       appToken,
@@ -67,27 +132,68 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.registerHandlers(app);
+    await app.start();
+    return app;
+  }
 
-    // Slack 기동 실패(유효하지 않은 토큰, Slack 일시적 장애 등)가 전체 NestJS 앱 부팅을 막지 않도록 격리한다.
-    // 앱은 계속 떠 있고 Slack 기능만 비활성화된 상태로 남는다.
+  private startSocketWatchdog(): void {
+    if (this.socketWatchdog) {
+      clearInterval(this.socketWatchdog);
+    }
+    this.lastWatchdogTickAt = Date.now();
+    this.socketWatchdog = setInterval(() => {
+      void this.onWatchdogTick();
+    }, SOCKET_WATCHDOG_INTERVAL_MS);
+  }
+
+  private async onWatchdogTick(): Promise<void> {
     try {
-      await app.start();
-      this.app = app;
-      this.logger.log('이대리 Slack 봇이 Socket Mode 로 기동되었습니다.');
+      const now = Date.now();
+      const elapsedMs = now - this.lastWatchdogTickAt;
+      this.lastWatchdogTickAt = now;
+      if (
+        shouldRefreshSocketAfterDrift(
+          elapsedMs,
+          SOCKET_WATCHDOG_INTERVAL_MS,
+          SOCKET_DRIFT_THRESHOLD_MS,
+        )
+      ) {
+        await this.refreshSocketConnection(elapsedMs);
+      }
     } catch (error: unknown) {
       this.logger.error(
-        '이대리 Slack 봇 기동 실패 — 앱은 계속 부팅되며 Slack 기능만 비활성화됩니다.',
+        'Socket Mode 워치독 tick 처리 실패 — 다음 tick 에 재시도합니다.',
         error instanceof Error ? error.stack : String(error),
       );
     }
   }
 
-  async onModuleDestroy(): Promise<void> {
-    if (!this.app) {
+  private async refreshSocketConnection(elapsedMs: number): Promise<void> {
+    if (this.reconnecting || !this.app) {
       return;
     }
-    await this.app.stop();
-    this.logger.log('이대리 Slack 봇이 정상 종료되었습니다.');
+    this.reconnecting = true;
+    try {
+      this.logger.warn(
+        `절전/일시정지 감지 (tick 간격 ${Math.round(elapsedMs / 1000)}s) — Socket Mode 재연결 시도`,
+      );
+      await this.app.stop();
+      const config = this.getSlackSocketConfig();
+      if (!config) {
+        return;
+      }
+      const app = await this.createStartedSlackApp(config);
+      this.app = app;
+      this.logger.log('Socket Mode 재연결 완료');
+    } catch (error: unknown) {
+      this.logger.error(
+        'Socket Mode 재연결 실패 — 다음 tick 에 재시도',
+        error instanceof Error ? error.stack : String(error),
+      );
+    } finally {
+      this.reconnecting = false;
+      this.lastWatchdogTickAt = Date.now();
+    }
   }
 
   // PRO-1: 외부 호출자(MorningBriefingConsumer 등) 가 사용자 DM(`U...`) 또는 채널(`C.../G...`) 로 메시지 발송.
