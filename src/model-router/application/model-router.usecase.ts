@@ -70,6 +70,16 @@ export class ModelRouterUsecase {
     private readonly notificationPublisher?: NotificationPublisher,
   ) {}
 
+  // 절전 직후 autopilot 실행 게이트용 — 현재 primary provider(CHATGPT/codex)가 지금 호출을
+  // 받을 수 있는지 경량 확인한다. provider 가 probeReadiness 를 구현하지 않으면 "준비됨"(true)으로 본다.
+  // (모든 agentType 이 CHATGPT 단일 provider 이므로 chatgptProvider 를 직접 probe 한다.)
+  async probeReadiness(): Promise<boolean> {
+    if (!this.chatgptProvider.probeReadiness) {
+      return true;
+    }
+    return this.chatgptProvider.probeReadiness();
+  }
+
   async route({
     agentType,
     request,

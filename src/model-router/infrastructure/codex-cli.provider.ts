@@ -22,6 +22,10 @@ const CODEX_MAX_ATTEMPTS = 2;
 const CODEX_RETRY_BACKOFF_BASE_MS = 1000;
 const CODEX_RETRY_BACKOFF_JITTER_MS = 1000;
 const STDERR_TAIL_LIMIT = 500;
+// 절전 직후 codex 백엔드 준비 확인용 경량 probe — 짧은 프롬프트 + 짧은 타임아웃으로 성패만 빠르게 본다.
+// (일반 호출의 180s 타임아웃을 그대로 쓰면 백엔드가 죽어 있을 때 probe 한 번에 3분을 낭비한다.)
+const CODEX_PROBE_TIMEOUT_MS = 30_000;
+const CODEX_PROBE_PROMPT = 'Reply with the single word: OK';
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
 // stdout/stderr 에 "You've hit your usage limit ... try again at <시각>" 류 문구가 찍힌다.
@@ -180,8 +184,29 @@ export class CodexCliProvider implements ModelProviderPort {
     throw lastError;
   }
 
+  // 절전에서 깨어난 직후 등, codex 백엔드가 지금 호출을 받을 수 있는지 경량 확인한다.
+  // 짧은 프롬프트를 짧은 타임아웃으로 1회 호출 — 성공하면 준비됨(true), 어떤 실패든 미준비(false).
+  // 재시도는 호출자(SystemWakeGuard 폴링)가 담당하므로 여기선 bounded retry 를 타지 않는다.
+  async probeReadiness(): Promise<boolean> {
+    try {
+      await this.completeOnce(
+        { prompt: CODEX_PROBE_PROMPT },
+        CODEX_PROBE_TIMEOUT_MS,
+      );
+      return true;
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message.slice(0, 200) : String(error);
+      this.logger.warn(
+        `codex readiness probe 실패 (백엔드 미준비 추정): ${message}`,
+      );
+      return false;
+    }
+  }
+
   private async completeOnce(
     request: CompletionRequest,
+    timeoutMs: number = this.timeoutMs,
   ): Promise<CompletionResponse> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
     const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-home-'));
@@ -197,6 +222,7 @@ export class CodexCliProvider implements ModelProviderPort {
         cwd: workDir,
         homeDir,
         stdinPayload,
+        timeoutMs,
       });
       const text = (await readFile(outputFile, 'utf-8')).trim();
 
@@ -231,11 +257,13 @@ export class CodexCliProvider implements ModelProviderPort {
     cwd,
     homeDir,
     stdinPayload,
+    timeoutMs,
   }: {
     args: string[];
     cwd: string;
     homeDir: string;
     stdinPayload: string;
+    timeoutMs: number;
   }): Promise<CodexSpawnResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(CODEX_EXECUTABLE, args, {
@@ -255,11 +283,11 @@ export class CodexCliProvider implements ModelProviderPort {
 
       const timer = setTimeout(() => {
         this.logger.warn(
-          `codex CLI 응답 시간 초과 (${this.timeoutMs}ms) — 프로세스 그룹 강제 종료 (pid=${child.pid})`,
+          `codex CLI 응답 시간 초과 (${timeoutMs}ms) — 프로세스 그룹 강제 종료 (pid=${child.pid})`,
         );
         killProcessTree(child.pid);
-        reject(new Error(`codex CLI 응답 시간 초과 (${this.timeoutMs}ms)`));
-      }, this.timeoutMs);
+        reject(new Error(`codex CLI 응답 시간 초과 (${timeoutMs}ms)`));
+      }, timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => {
         const text = chunk.toString();

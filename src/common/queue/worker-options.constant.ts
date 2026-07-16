@@ -1,4 +1,5 @@
 import { MODEL_ROUTER_WORST_CASE_MS } from '../llm/llm-timeout.constant';
+import { WAKE_PROBE_MAX_WAIT_MS } from '../system/system-wake-guard.service';
 
 // BullMQ worker 기본 옵션 모음.
 //
@@ -26,6 +27,14 @@ export const LONG_RUNNING_WORKER_LOCK_DURATION_MS =
 // 자체 옵션 객체에 spread 후 덧붙인다 — `@Processor(QUEUE, { concurrency: 1, ...LONG_RUNNING_WORKER_OPTIONS })`.
 export const LONG_RUNNING_WORKER_OPTIONS = {
   lockDuration: LONG_RUNNING_WORKER_LOCK_DURATION_MS,
+} as const;
+
+// autopilot consumer 전용 옵션. 절전 직후 SystemWakeGuard.waitUntilReady 가 백엔드 준비를
+// 최대 WAKE_PROBE_MAX_WAIT_MS 폴링한 뒤 runGroup 을 실행하므로, 그 대기가 lock 안에서 소화되도록
+// probe 예산을 lockDuration 에 더한다. (probe 하지 않는 나머지 worker 는 LONG_RUNNING_WORKER_OPTIONS 유지 —
+// 이들의 lock 을 불필요하게 늘려 stalled 복구를 지연시키지 않는다.)
+export const AUTOPILOT_WORKER_OPTIONS = {
+  lockDuration: LONG_RUNNING_WORKER_LOCK_DURATION_MS + WAKE_PROBE_MAX_WAIT_MS,
 } as const;
 
 // cron 발송 idempotency 가드 TTL (초). stalled 재처리 중복 발송 차단용 키의 만료 시간.

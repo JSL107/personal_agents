@@ -15,7 +15,10 @@ import {
 } from './codex-cli.provider';
 
 type ProviderWithCompleteOnce = {
-  completeOnce: (request: CompletionRequest) => Promise<CompletionResponse>;
+  completeOnce: (
+    request: CompletionRequest,
+    timeoutMs?: number,
+  ) => Promise<CompletionResponse>;
 };
 
 const request: CompletionRequest = {
@@ -242,5 +245,45 @@ describe('CodexCliProvider.complete retry loop', () => {
 
     await expect(resultPromise).rejects.toBe(secondError);
     expect(completeOnceSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CodexCliProvider.probeReadiness (절전 직후 준비 확인)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('probe(completeOnce)가 성공하면 true 를 반환한다', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockResolvedValue(response);
+
+    await expect(provider.probeReadiness()).resolves.toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('probe 가 실패하면 false 를 반환하고 bounded retry 를 타지 않는다(호출 1회)', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValue(new Error('backend 503'));
+
+    await expect(provider.probeReadiness()).resolves.toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('일반 호출(180s)보다 짧은 30s 타임아웃으로 probe 한다', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockResolvedValue(response);
+
+    await provider.probeReadiness();
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: expect.any(String) }),
+      30_000,
+    );
   });
 });

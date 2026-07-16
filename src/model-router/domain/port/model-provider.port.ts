@@ -14,4 +14,7 @@ export const MODEL_PROVIDER_TOKENS: Record<ModelProviderName, symbol> = {
 export interface ModelProviderPort {
   readonly name: ModelProviderName;
   complete(request: CompletionRequest): Promise<CompletionResponse>;
+  // 백엔드가 지금 호출을 받을 수 있는지 경량 확인(절전 직후 실행 게이트용). 구현은 선택 —
+  // 미구현 provider 는 "항상 준비됨"으로 간주한다. CodexCliProvider 만 실제 probe 를 제공한다.
+  probeReadiness?(): Promise<boolean>;
 }
