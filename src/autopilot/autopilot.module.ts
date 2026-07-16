@@ -7,6 +7,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
@@ -59,6 +60,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     AutopilotScheduler,
     AutopilotConsumer,
     AutopilotOrchestrator,
+    SystemWakeGuard,
     PoEvalAutopilotTask,
     MorningBriefingAutopilotTask,
     WorkReviewerAutopilotTask,
