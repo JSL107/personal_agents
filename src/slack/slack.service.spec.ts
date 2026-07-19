@@ -1,5 +1,27 @@
 import { ConfigService } from '@nestjs/config';
 
+const mockAppStart = jest.fn(async () => undefined);
+const mockAppStop = jest.fn(async () => undefined);
+const mockAppInstances: Array<{
+  start: jest.Mock;
+  stop: jest.Mock;
+  client: { chat: { postMessage: jest.Mock } };
+}> = [];
+const mockAppConstructor = jest.fn(() => {
+  const app = {
+    start: mockAppStart,
+    stop: mockAppStop,
+    client: { chat: { postMessage: jest.fn() } },
+  };
+  mockAppInstances.push(app);
+  return app;
+});
+
+jest.mock('@slack/bolt', () => ({
+  App: mockAppConstructor,
+  LogLevel: { INFO: 'info' },
+}));
+
 import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { ContextSummary } from '../agent/pm/application/sync-context.usecase';
 import { DailyPlan, TaskItem } from '../agent/pm/domain/pm-agent.type';
@@ -11,7 +33,7 @@ import { formatDailyReview } from './format/daily-review.formatter';
 import { formatModelFooter } from './format/model-footer.formatter';
 import { formatPullRequestReview } from './format/pull-request-review.formatter';
 import { formatQuotaStats } from './format/quota-stats.formatter';
-import { SlackService } from './slack.service';
+import { shouldRefreshSocketAfterDrift, SlackService } from './slack.service';
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
   id: overrides.id ?? `user:${title}`,
@@ -426,6 +448,89 @@ describe('SlackService.postMessage', () => {
       channel: 'C1',
       text: '본문',
     });
+  });
+});
+
+describe('shouldRefreshSocketAfterDrift', () => {
+  it('정상 interval 근처 tick 은 socket refresh 대상이 아니다', () => {
+    expect(shouldRefreshSocketAfterDrift(30_000, 30_000, 90_000)).toBe(false);
+  });
+
+  it('interval + threshold 경계값은 refresh 대상이 아니다', () => {
+    expect(shouldRefreshSocketAfterDrift(120_000, 30_000, 90_000)).toBe(false);
+  });
+
+  it('interval + threshold 를 초과한 drift 는 refresh 대상이다', () => {
+    expect(shouldRefreshSocketAfterDrift(200_000, 30_000, 90_000)).toBe(true);
+  });
+
+  it('interval + threshold 바로 아래 값은 refresh 대상이 아니다', () => {
+    expect(shouldRefreshSocketAfterDrift(119_999, 30_000, 90_000)).toBe(false);
+  });
+});
+
+describe('SlackService Socket Mode watchdog', () => {
+  const buildConfigService = (): ConfigService =>
+    ({
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          SLACK_BOT_TOKEN: 'xoxb-token',
+          SLACK_APP_TOKEN: 'xapp-token',
+          SLACK_SIGNING_SECRET: 'secret',
+        };
+        return values[key];
+      }),
+    }) as unknown as ConfigService;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockAppStart.mockClear();
+    mockAppStop.mockClear();
+    mockAppConstructor.mockClear();
+    mockAppInstances.length = 0;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('Socket Mode 기동 성공 후 watchdog interval 을 시작하고 destroy 때 정리한다', async () => {
+    const handler = { register: jest.fn() };
+    const service = new SlackService(buildConfigService(), [handler] as never);
+
+    await service.onModuleInit();
+
+    expect(mockAppConstructor).toHaveBeenCalledTimes(1);
+    expect(handler.register).toHaveBeenCalledWith(mockAppInstances[0]);
+    expect(mockAppStart).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(1);
+
+    await service.onModuleDestroy();
+
+    expect(mockAppStop).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('watchdog drift 가 threshold 를 넘으면 기존 app 을 멈추고 새 App 으로 재연결한다', async () => {
+    jest.setSystemTime(0);
+    const handler = { register: jest.fn() };
+    const service = new SlackService(buildConfigService(), [handler] as never);
+
+    await service.onModuleInit();
+    handler.register.mockClear();
+    mockAppStart.mockClear();
+    mockAppStop.mockClear();
+
+    jest.setSystemTime(200_000);
+    jest.advanceTimersByTime(30_000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockAppStop).toHaveBeenCalledTimes(1);
+    expect(mockAppConstructor).toHaveBeenCalledTimes(2);
+    expect(handler.register).toHaveBeenCalledWith(mockAppInstances[1]);
+    expect(mockAppStart).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,9 +1,35 @@
 import {
+  CompletionRequest,
+  CompletionResponse,
+  ModelProviderName,
+} from '../domain/model-router.type';
+import {
   buildCodexArgs,
   buildCodexPrompt,
+  CodexCliProvider,
+  CodexQuotaExceededException,
   CodexQuotaScanner,
+  computeCodexRetryBackoffMs,
   detectCodexQuotaExhaustion,
+  isRetryableCodexError,
 } from './codex-cli.provider';
+
+type ProviderWithCompleteOnce = {
+  completeOnce: (
+    request: CompletionRequest,
+    timeoutMs?: number,
+  ) => Promise<CompletionResponse>;
+};
+
+const request: CompletionRequest = {
+  prompt: 'hello',
+};
+
+const response: CompletionResponse = {
+  text: 'world',
+  modelUsed: 'codex-cli',
+  provider: ModelProviderName.CHATGPT,
+};
 
 describe('buildCodexPrompt', () => {
   it('systemPrompt 이 없으면 원본 프롬프트를 그대로 반환한다', () => {
@@ -116,5 +142,148 @@ describe('CodexQuotaScanner', () => {
     scanner.feed('z'.repeat(5000));
     expect(scanner.result.exhausted).toBe(true);
     expect(scanner.result.resetHint).toBe('Jun 11th, 2026 9:28 AM');
+  });
+});
+
+describe('isRetryableCodexError', () => {
+  it('CodexQuotaExceededException 은 즉시 전파 대상으로 본다', () => {
+    expect(isRetryableCodexError(new CodexQuotaExceededException())).toBe(
+      false,
+    );
+  });
+
+  it('일반 Error 는 재시도 대상으로 본다', () => {
+    expect(isRetryableCodexError(new Error('temporary failure'))).toBe(true);
+  });
+
+  it('문자열과 undefined 도 재시도 대상으로 본다', () => {
+    expect(isRetryableCodexError('temporary failure')).toBe(true);
+    expect(isRetryableCodexError(undefined)).toBe(true);
+  });
+});
+
+describe('computeCodexRetryBackoffMs', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('Math.random 이 0 이면 base 값으로 계산한다', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    expect(computeCodexRetryBackoffMs()).toBe(1000);
+  });
+
+  it('Math.random 이 1 바로 아래면 base+jitter 미만 값으로 계산한다', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.999);
+
+    expect(computeCodexRetryBackoffMs()).toBe(1999);
+  });
+});
+
+describe('CodexCliProvider.complete retry loop', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  const resolveRetryDelay = async (): Promise<void> => {
+    await Promise.resolve();
+    jest.runOnlyPendingTimers();
+    await Promise.resolve();
+  };
+
+  it('1회차 성공이면 completeOnce 를 한 번만 호출하고 결과를 반환한다', async () => {
+    const provider = new CodexCliProvider();
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockResolvedValue(response);
+
+    await expect(provider.complete(request)).resolves.toEqual(response);
+    expect(completeOnceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('1회차 일반 실패 후 2회차 성공이면 2회차 결과를 반환한다', async () => {
+    const provider = new CodexCliProvider();
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(response);
+
+    const resultPromise = provider.complete(request);
+    await resolveRetryDelay();
+
+    await expect(resultPromise).resolves.toEqual(response);
+    expect(completeOnceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('1회차 CodexQuotaExceededException 은 재시도하지 않고 즉시 전파한다', async () => {
+    const provider = new CodexCliProvider();
+    const quotaError = new CodexQuotaExceededException('10분 후');
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValueOnce(quotaError);
+
+    await expect(provider.complete(request)).rejects.toBe(quotaError);
+    expect(completeOnceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('2회 모두 일반 실패하면 마지막 error 를 전파한다', async () => {
+    const provider = new CodexCliProvider();
+    const firstError = new Error('first temporary failure');
+    const secondError = new Error('second temporary failure');
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValueOnce(firstError)
+      .mockRejectedValueOnce(secondError);
+
+    const resultPromise = provider.complete(request);
+    await resolveRetryDelay();
+
+    await expect(resultPromise).rejects.toBe(secondError);
+    expect(completeOnceSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CodexCliProvider.probeReadiness (절전 직후 준비 확인)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('probe(completeOnce)가 성공하면 true 를 반환한다', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockResolvedValue(response);
+
+    await expect(provider.probeReadiness()).resolves.toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('probe 가 실패하면 false 를 반환하고 bounded retry 를 타지 않는다(호출 1회)', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValue(new Error('backend 503'));
+
+    await expect(provider.probeReadiness()).resolves.toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('일반 호출(180s)보다 짧은 30s 타임아웃으로 probe 한다', async () => {
+    const provider = new CodexCliProvider();
+    const spy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockResolvedValue(response);
+
+    await provider.probeReadiness();
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: expect.any(String) }),
+      30_000,
+    );
   });
 });
