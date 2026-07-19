@@ -137,4 +137,26 @@ describe('ModelRouterUsecase', () => {
       expect(claudeProvider.complete).not.toHaveBeenCalled();
     });
   });
+
+  describe('probeReadiness (절전 직후 실행 게이트용)', () => {
+    it('primary(CHATGPT) provider 의 probeReadiness 결과를 위임한다 (true)', async () => {
+      chatgptProvider.probeReadiness = jest.fn().mockResolvedValue(true);
+
+      await expect(usecase.probeReadiness()).resolves.toBe(true);
+      expect(chatgptProvider.probeReadiness).toHaveBeenCalledTimes(1);
+    });
+
+    it('probeReadiness 가 false 면 false 를 위임한다', async () => {
+      chatgptProvider.probeReadiness = jest.fn().mockResolvedValue(false);
+
+      await expect(usecase.probeReadiness()).resolves.toBe(false);
+    });
+
+    it('provider 가 probeReadiness 를 구현하지 않으면 준비됨(true)으로 간주한다', async () => {
+      // createProviderMock 은 probeReadiness 를 두지 않음(undefined).
+      expect(chatgptProvider.probeReadiness).toBeUndefined();
+
+      await expect(usecase.probeReadiness()).resolves.toBe(true);
+    });
+  });
 });
