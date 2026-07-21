@@ -47,6 +47,9 @@ export const shouldRefreshSocketAfterDrift = (
 export class SlackService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SlackService.name);
   private app?: App;
+  // 토큰이 설정돼 있는지(=Slack 을 쓰려는 의도인지). app 부재 원인을 "설정 누락"과
+  // "아직 기동 전/기동 실패"로 구분하기 위해 onModuleInit 에서 세팅한다.
+  private isConfigured = false;
   private socketWatchdog?: ReturnType<typeof setInterval>;
   private lastWatchdogTickAt = 0;
   private reconnecting = false;
@@ -62,6 +65,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     if (!config) {
       return;
     }
+    this.isConfigured = true;
 
     // Slack 기동 실패(유효하지 않은 토큰, Slack 일시적 장애 등)가 전체 NestJS 앱 부팅을 막지 않도록 격리한다.
     // 앱은 계속 떠 있고 Slack 기능만 비활성화된 상태로 남는다.
@@ -200,6 +204,23 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   // chat.postMessage 의 `channel` 파라미터는 user/channel/group ID 셋 다 받는다.
   // private 채널이면 봇이 invite 돼 있어야 함 (외부 운영 책임).
   // 봇이 비활성(env 누락) 상태면 graceful — 호출자에게 명확한 예외로 끊는다.
+  // this.app 이 없을 때 원인을 구분해 던진다 — "설정 누락(토큰 미설정)"과 "아직 기동 전/기동 실패
+  // (토큰은 설정됨)"는 완전히 다른 상황이다. 후자를 토큰 문제로 오진하면 부팅 레이스/연결 실패를
+  // 엉뚱하게 진단하게 된다. app 이 있으면 그대로 반환해 호출부에서 non-null 로 쓰게 한다.
+  private assertAppReady(): App {
+    if (this.app) {
+      return this.app;
+    }
+    if (!this.isConfigured) {
+      throw new Error(
+        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
+      );
+    }
+    throw new Error(
+      'Slack 봇이 아직 기동되지 않았습니다 (토큰은 설정됨 — 부팅 완료 전 호출이거나 Socket Mode 연결 실패).',
+    );
+  }
+
   async postMessage({
     target,
     text,
@@ -209,12 +230,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     text: string;
     threadTs?: string;
   }): Promise<{ ts: string | undefined }> {
-    if (!this.app) {
-      throw new Error(
-        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
-      );
-    }
-    const response = await this.app.client.chat.postMessage({
+    const app = this.assertAppReady();
+    const response = await app.client.chat.postMessage({
       channel: target,
       text,
       ...(threadTs ? { thread_ts: threadTs } : {}),
@@ -234,12 +251,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     previewText: string;
     previewId: string;
   }): Promise<void> {
-    if (!this.app) {
-      throw new Error(
-        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
-      );
-    }
-    await this.app.client.chat.postMessage({
+    const app = this.assertAppReady();
+    await app.client.chat.postMessage({
       channel: target,
       text: previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
@@ -258,12 +271,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     proposalText: string;
     proposalId: number;
   }): Promise<{ channelId: string; messageTs: string }> {
-    if (!this.app) {
-      throw new Error(
-        'Slack 봇이 비활성 상태입니다 (SLACK_BOT_TOKEN/APP_TOKEN/SIGNING_SECRET 누락).',
-      );
-    }
-    const response = await this.app.client.chat.postMessage({
+    const app = this.assertAppReady();
+    const response = await app.client.chat.postMessage({
       channel: target,
       text: proposalText,
       blocks: buildSubconsciousProposalBlocks({
