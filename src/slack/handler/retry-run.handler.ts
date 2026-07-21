@@ -14,6 +14,7 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
@@ -57,7 +58,22 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
+    private readonly agentRunService: AgentRunService,
   ) {}
+
+  // 재시도로 만들어진 새 run 을 원본 FAILED run 의 자식으로 연결한다. 이렇게 해야 "이 실행은
+  // 무엇의 재시도인가" 를 DB 만으로 재구성할 수 있다. 방향은 /auto-flow 와 동일 (부모=원본).
+  // 반환 타입의 파라미터를 좁은 구조로 둬서 agentType 별 result 타입과 무관하게 재사용한다.
+  private linkRetryLineage(
+    originalRunId: number,
+  ): (outcome: { agentRunId: number }) => Promise<void> {
+    return async (outcome: { agentRunId: number }): Promise<void> => {
+      await this.agentRunService.setParentId({
+        id: outcome.agentRunId,
+        parentId: originalRunId,
+      });
+    };
+  }
 
   register(app: App): void {
     app.command('/retry-run', async ({ ack, command, respond }) => {
@@ -123,6 +139,7 @@ export class RetryRunHandler implements SlackHandler {
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             format: (result) => formatDailyPlan(result.plan),
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'WORK_REVIEWER':
@@ -136,6 +153,7 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
               }),
             format: formatDailyReview,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'CODE_REVIEWER':
@@ -153,6 +171,7 @@ export class RetryRunHandler implements SlackHandler {
                 prRef: snapshot.prRef ?? '',
                 review,
               }),
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'IMPACT_REPORTER':
@@ -166,6 +185,7 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
               }),
             format: formatImpactReport,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'BE':
@@ -179,6 +199,7 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
               }),
             format: formatBackendPlan,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'PO_SHADOW': {
@@ -201,6 +222,7 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
               }),
             format: formatPoShadowReport,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         }
@@ -216,6 +238,7 @@ export class RetryRunHandler implements SlackHandler {
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             format: formatSchemaProposal,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'BE_TEST':
@@ -230,6 +253,7 @@ export class RetryRunHandler implements SlackHandler {
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             format: formatGeneratedTest,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'BE_SRE':
@@ -244,6 +268,7 @@ export class RetryRunHandler implements SlackHandler {
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             format: formatSreAnalysis,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'BE_FIX':
@@ -258,6 +283,7 @@ export class RetryRunHandler implements SlackHandler {
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             format: formatPrConventionReport,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'CTO':
@@ -273,6 +299,7 @@ export class RetryRunHandler implements SlackHandler {
                 dailyPlanAgentRunId: snapshot.dailyPlanAgentRunId,
               }),
             format: formatAssignmentOutput,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         case 'PO_EVAL': {
@@ -288,6 +315,7 @@ export class RetryRunHandler implements SlackHandler {
                 range,
               }),
             format: formatEvaluationOutput,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         }
@@ -304,6 +332,7 @@ export class RetryRunHandler implements SlackHandler {
                 range,
               }),
             format: formatCeoMetaOutput,
+            onOutcome: this.linkRetryLineage(id),
           });
           break;
         }
