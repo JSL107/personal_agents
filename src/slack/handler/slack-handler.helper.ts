@@ -57,14 +57,18 @@ export const runEphemeral = async <T>(args: {
 // /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 모델 호출 명령용 — format 결과 끝에
 // `_model: codex-cli · run #N_` 푸터 자동 부착 (PRO-3).
 // format 은 string 또는 FormattedReport 를 반환 가능 — FormattedReport 는 summary+detail 합본으로 렌더.
+//
+// onOutcome — 실행 성공 후 부가 처리(재시도 계보 연결 등). 사용자 응답을 보낸 뒤 호출하며,
+// 여기서 난 오류는 warn 으로만 남기고 삼킨다. 부가 관측성이 주 기능(결과 전달)을 막으면 안 되기 때문.
 export const runAgentCommand = async <T>(args: {
   respond: RespondFn;
   logger: Logger;
   commandLabel: string;
   execute: () => Promise<AgentRunOutcome<T>>;
   format: (result: T) => FormattedReport | string;
+  onOutcome?: (outcome: AgentRunOutcome<T>) => Promise<void>;
 }): Promise<void> => {
-  const { respond, logger, commandLabel, execute, format } = args;
+  const { respond, logger, commandLabel, execute, format, onOutcome } = args;
   try {
     const outcome = await execute();
     await respond({
@@ -72,6 +76,15 @@ export const runAgentCommand = async <T>(args: {
       replace_original: true,
       text: toSlackText(format(outcome.result)) + formatModelFooter(outcome),
     });
+    if (onOutcome) {
+      try {
+        await onOutcome(outcome);
+      } catch (error: unknown) {
+        logger.warn(
+          `${commandLabel} 실행 후처리 실패 (응답은 정상 전달됨): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : String(error);
     logger.error(

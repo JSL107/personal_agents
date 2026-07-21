@@ -39,7 +39,7 @@ describe('toUserFacingErrorMessage', () => {
 });
 
 const createSilentLogger = (): Logger =>
-  ({ error: jest.fn() }) as unknown as Logger;
+  ({ error: jest.fn(), warn: jest.fn() }) as unknown as Logger;
 
 describe('runEphemeral', () => {
   it('success — task 결과를 format 으로 통과시켜 ephemeral 응답', async () => {
@@ -171,5 +171,84 @@ describe('runAgentCommand', () => {
       expect.stringContaining('Bad gateway 502'),
       expect.any(String),
     );
+  });
+});
+
+describe('runAgentCommand — onOutcome 후처리', () => {
+  it('성공 시 outcome 을 onOutcome 으로 전달 (재시도 계보 연결 지점)', async () => {
+    const respond = jest.fn() as unknown as RespondFn;
+    const onOutcome = jest.fn().mockResolvedValue(undefined);
+    await runAgentCommand({
+      respond,
+      logger: createSilentLogger(),
+      commandLabel: '/retry-run(PM)',
+      execute: () =>
+        Promise.resolve({
+          result: { plan: '재실행 계획' },
+          modelUsed: 'codex-cli',
+          agentRunId: 77,
+        }),
+      format: (r) => r.plan,
+      onOutcome,
+    });
+    expect(onOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ agentRunId: 77 }),
+    );
+  });
+
+  it('execute 실패 시 onOutcome 미호출 (실패한 실행에 계보를 붙이지 않는다)', async () => {
+    const respond = jest.fn() as unknown as RespondFn;
+    const onOutcome = jest.fn().mockResolvedValue(undefined);
+    await runAgentCommand({
+      respond,
+      logger: createSilentLogger(),
+      commandLabel: '/retry-run(PM)',
+      execute: () => Promise.reject(new Error('codex 호출 실패')),
+      format: () => 'unused',
+      onOutcome,
+    });
+    expect(onOutcome).not.toHaveBeenCalled();
+  });
+
+  it('onOutcome 실패는 사용자 응답을 막지 않고 warn 만 남긴다', async () => {
+    const respond = jest.fn() as unknown as RespondFn;
+    const logger = createSilentLogger();
+    await runAgentCommand({
+      respond,
+      logger,
+      commandLabel: '/retry-run(PM)',
+      execute: () =>
+        Promise.resolve({
+          result: { plan: '재실행 계획' },
+          modelUsed: 'codex-cli',
+          agentRunId: 78,
+        }),
+      format: (r) => r.plan,
+      onOutcome: () => Promise.reject(new Error('DB 연결 끊김')),
+    });
+    const arg = (respond as jest.Mock).mock.calls[0][0] as { text: string };
+    expect(arg.text).toContain('재실행 계획');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('DB 연결 끊김'),
+    );
+  });
+
+  it('onOutcome 미지정이면 기존 동작 그대로 (기존 호출부 무영향)', async () => {
+    const respond = jest.fn() as unknown as RespondFn;
+    await runAgentCommand({
+      respond,
+      logger: createSilentLogger(),
+      commandLabel: '/today',
+      execute: () =>
+        Promise.resolve({
+          result: { plan: '오늘의 계획' },
+          modelUsed: 'codex-cli',
+          agentRunId: 42,
+        }),
+      format: (r) => `📋 ${r.plan}`,
+    });
+    const arg = (respond as jest.Mock).mock.calls[0][0] as { text: string };
+    expect(arg.text).toContain('📋 오늘의 계획');
+    expect(arg.text).toContain('_model: codex-cli · run #42_');
   });
 });
