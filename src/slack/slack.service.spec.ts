@@ -451,6 +451,24 @@ describe('SlackService.postMessage', () => {
   });
 });
 
+describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
+  it('토큰 미설정(isConfigured=false)이면 "설정 누락"으로 던진다', async () => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+    // app 없음 + isConfigured 기본 false
+    await expect(
+      service.postMessage({ target: 'C1', text: 'x' }),
+    ).rejects.toThrow(/SLACK_BOT_TOKEN\/APP_TOKEN\/SIGNING_SECRET 누락/);
+  });
+
+  it('토큰은 설정됐지만 아직 기동 전(isConfigured=true, app 없음)이면 "아직 기동"으로 던진다 — 부팅 레이스를 토큰 문제로 오진하지 않는다', async () => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+    (service as unknown as { isConfigured: boolean }).isConfigured = true;
+    await expect(
+      service.postMessage({ target: 'C1', text: 'x' }),
+    ).rejects.toThrow(/아직 기동되지 않았습니다/);
+  });
+});
+
 describe('shouldRefreshSocketAfterDrift', () => {
   it('정상 interval 근처 tick 은 socket refresh 대상이 아니다', () => {
     expect(shouldRefreshSocketAfterDrift(30_000, 30_000, 90_000)).toBe(false);
