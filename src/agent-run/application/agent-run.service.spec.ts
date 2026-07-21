@@ -16,6 +16,9 @@ describe('AgentRunService', () => {
     findSimilarPlans: jest.fn().mockResolvedValue([]),
     findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),
     aggregateRunStats: jest.fn().mockResolvedValue([]),
+    aggregateRetryCounts: jest.fn().mockResolvedValue([]),
+    aggregateSweptCounts: jest.fn().mockResolvedValue([]),
+    sweepZombies: jest.fn().mockResolvedValue(0),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,
       totalInboxItems: 0,

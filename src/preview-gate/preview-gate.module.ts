@@ -51,6 +51,7 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
     },
   ],
   exports: [
+    PREVIEW_ACTION_REPOSITORY_PORT,
     CreatePreviewUsecase,
     ApplyPreviewUsecase,
     CancelPreviewUsecase,

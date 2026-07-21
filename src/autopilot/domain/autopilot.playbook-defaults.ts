@@ -25,6 +25,10 @@ export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 
+// Run Sweeper 기본 스케줄 — 매주 월 08:50 KST(run-retro 직전).
+export const DEFAULT_RUN_SWEEPER_CRON = '50 8 * * 1';
+export const DEFAULT_RUN_SWEEPER_TIMEZONE = 'Asia/Seoul';
+
 // Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).
 // episodic-memory 규모가 작아 일간은 과함 → 주간 무결성 점검.
 export const DEFAULT_KNOWLEDGE_LINT_CRON = '0 10 * * 0';
@@ -37,3 +41,7 @@ export const DEFAULT_DOCS_AUDIT_TIMEZONE = 'Asia/Seoul';
 // Preference Learning 기본 스케줄 — 매주 일 12:00 KST(docs-audit 일 11:00 과 1시간 분리).
 export const DEFAULT_PREFERENCE_LEARNING_CRON = '0 12 * * 0';
 export const DEFAULT_PREFERENCE_LEARNING_TIMEZONE = 'Asia/Seoul';
+
+// Ops Supervisor 기본 스케줄 — 매월 1일 09:00 KST(지난 30일 품질 리뷰).
+export const DEFAULT_OPS_SUPERVISOR_CRON = '0 9 1 * *';
+export const DEFAULT_OPS_SUPERVISOR_TIMEZONE = 'Asia/Seoul';

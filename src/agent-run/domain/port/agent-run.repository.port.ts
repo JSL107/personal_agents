@@ -99,6 +99,18 @@ export interface AgentRunStatRow {
   avgDurationMs: number;
 }
 
+// Ops Supervisor — agentType 별 재시도(FAILURE_REPLAY) 건수.
+export interface AgentRetryCountRow {
+  agentType: string;
+  retries: number;
+}
+
+// Ops Supervisor — agentType 별 sweep 된 좀비 건수.
+export interface AgentSweptCountRow {
+  agentType: string;
+  swept: number;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -152,4 +164,12 @@ export interface AgentRunRepositoryPort {
     sinceDays: number;
     untilDays?: number;
   }): Promise<AgentRunStatRow[]>;
+  aggregateRetryCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentRetryCountRow[]>;
+  aggregateSweptCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentSweptCountRow[]>;
+  // 좀비 정리 — cutoff 이전 IN_PROGRESS run 을 FAILED 로 일괄 전환. 정리된 건수 반환.
+  sweepZombies(input: { olderThanMinutes: number }): Promise<number>;
 }
