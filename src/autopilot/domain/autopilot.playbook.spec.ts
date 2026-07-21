@@ -49,6 +49,26 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(docsAudit?.digestGroup).toBeUndefined();
   });
 
+  it('run-sweeper와 ops-supervisor 독립 CRON 항목을 포함한다', () => {
+    const runSweeper = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'run-sweeper',
+    );
+    const opsSupervisor = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'ops-supervisor',
+    );
+
+    expect(runSweeper).toMatchObject({
+      taskId: 'run-sweeper',
+      riskTier: 'T0_AUTO',
+      trigger: { kind: 'CRON', schedule: '50 8 * * 1' },
+    });
+    expect(opsSupervisor).toMatchObject({
+      taskId: 'ops-supervisor',
+      riskTier: 'T0_AUTO',
+      trigger: { kind: 'CRON', schedule: '0 9 1 * *' },
+    });
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

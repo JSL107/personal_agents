@@ -8,6 +8,14 @@ export const PREVIEW_ACTION_REPOSITORY_PORT = Symbol(
   'PREVIEW_ACTION_REPOSITORY_PORT',
 );
 
+// Ops Supervisor — kind 별 preview 종결 집계. reject = cancelled + expired.
+export interface PreviewOutcomeRow {
+  kind: string;
+  applied: number;
+  cancelled: number;
+  expired: number;
+}
+
 export interface PreviewActionRepositoryPort {
   // 새 preview 를 PENDING 상태로 생성. id 는 어댑터가 uuid 생성. expiresAt 은 ttlMs 기반 계산.
   create(input: CreatePreviewInput): Promise<PreviewAction>;
@@ -25,4 +33,8 @@ export interface PreviewActionRepositoryPort {
     id: string;
     status: Exclude<PreviewStatus, 'PENDING'>;
   }): Promise<PreviewAction>;
+  countOutcomesByKind(input: {
+    sinceDays: number;
+    now: Date;
+  }): Promise<PreviewOutcomeRow[]>;
 }

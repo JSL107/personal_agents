@@ -31,16 +31,20 @@ export class AutopilotConsumer extends WorkerHost {
 
   async process(job: Job<AutopilotJobData>): Promise<void> {
     const groupKey = job.name;
+    const { ownerSlackUserId, target } = job.data;
     const entries = AUTOPILOT_PLAYBOOK.filter(
       (entry) =>
         (entry.digestGroup ?? entry.id) === groupKey &&
         entry.trigger.kind === 'CRON',
     );
     if (entries.length === 0) {
-      this.logger.error(`Autopilot — 미등록 group 무시: ${groupKey}`);
+      const message = `미등록 cron group '${groupKey}' — 플레이북 등록 누락(구성 오류). 실행 스킵됨.`;
+      this.logger.error(
+        `플레이북에 등록되지 않은 group '${groupKey}' — 실행할 task 없음`,
+      );
+      this.notifyOwnerFailure(ownerSlackUserId, groupKey, message);
       return;
     }
-    const { ownerSlackUserId, target } = job.data;
     // 절전에서 깨어난 직후면 codex 백엔드가 준비될 때까지 확인한 뒤 실행한다 — 미준비 상태로 실행돼
     // "모델 호출 실패 (CHATGPT)" 로 브리핑이 통째로 실패하는 것을 방지. 평상시엔 즉시 통과한다.
     await this.wakeGuard.waitUntilReady(() =>

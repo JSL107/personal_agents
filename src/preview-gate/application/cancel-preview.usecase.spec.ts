@@ -31,6 +31,7 @@ const buildRepo = (
   create: jest.fn(),
   findById: jest.fn().mockResolvedValue(preview),
   findLatestPendingForUser: jest.fn().mockResolvedValue(null),
+  countOutcomesByKind: jest.fn().mockResolvedValue([]),
   transition: jest.fn().mockImplementation(({ id, status }) =>
     // 실제 Prisma repo 는 업데이트된 전체 row 를 반환(kind/payload 보존). mock 도 동일하게.
     Promise.resolve(buildPreview({ ...(preview ?? {}), id, status })),

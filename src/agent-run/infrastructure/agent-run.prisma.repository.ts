@@ -15,8 +15,10 @@ import {
   EvidenceInput,
 } from '../domain/agent-run.type';
 import {
+  AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
+  AgentSweptCountRow,
   BeginAgentRunInput,
   FailedRunSnapshot,
   FinishAgentRunInput,
@@ -379,6 +381,61 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         avgDurationMs: Math.round(row._avg.durationMs ?? 0),
       };
     });
+  }
+
+  async sweepZombies({
+    olderThanMinutes,
+  }: {
+    olderThanMinutes: number;
+  }): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+    const result = await this.prisma.agentRun.updateMany({
+      where: { status: 'IN_PROGRESS', startedAt: { lt: cutoff } },
+      data: {
+        status: 'FAILED',
+        output: { error: 'swept: stale IN_PROGRESS' },
+        endedAt: new Date(),
+      },
+    });
+    return result.count;
+  }
+
+  async aggregateRetryCounts({
+    sinceDays,
+  }: {
+    sinceDays: number;
+  }): Promise<AgentRetryCountRow[]> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const grouped = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: { startedAt: { gte: since }, triggerType: 'FAILURE_REPLAY' },
+      _count: { _all: true },
+    });
+    return grouped.map((row) => ({
+      agentType: row.agentType,
+      retries: row._count._all,
+    }));
+  }
+
+  async aggregateSweptCounts({
+    sinceDays,
+  }: {
+    sinceDays: number;
+  }): Promise<AgentSweptCountRow[]> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const grouped = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: {
+        startedAt: { gte: since },
+        status: 'FAILED',
+        output: { path: ['error'], string_starts_with: 'swept:' },
+      },
+      _count: { _all: true },
+    });
+    return grouped.map((row) => ({
+      agentType: row.agentType,
+      swept: row._count._all,
+    }));
   }
 
   // /quota: PM agent_run.input_snapshot 의 inboxItemCount / similarPlanCount 누적.

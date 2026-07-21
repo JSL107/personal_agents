@@ -230,4 +230,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용)',
   },
+  {
+    agentType: AgentType.OPS_SUPERVISOR,
+    displayName: 'Ops Supervisor',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts',
+    description:
+      '월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용)',
+  },
 ];

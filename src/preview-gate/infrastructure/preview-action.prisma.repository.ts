@@ -5,7 +5,10 @@ import { Prisma } from '@prisma/client';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
+import {
+  PreviewActionRepositoryPort,
+  PreviewOutcomeRow,
+} from '../domain/port/preview-action.repository.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
 import {
   CreatePreviewInput,
@@ -86,6 +89,58 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
       },
     });
     return toDomain(row);
+  }
+
+  async countOutcomesByKind({
+    sinceDays,
+    now,
+  }: {
+    sinceDays: number;
+    now: Date;
+  }): Promise<PreviewOutcomeRow[]> {
+    const since = new Date(now.getTime() - sinceDays * 24 * 60 * 60 * 1000);
+    const byStatus = await this.prisma.previewAction.groupBy({
+      by: ['kind', 'status'],
+      where: {
+        createdAt: { gte: since },
+        status: { in: ['APPLIED', 'CANCELLED', 'EXPIRED'] },
+      },
+      _count: { _all: true },
+    });
+    const staleExpired = await this.prisma.previewAction.groupBy({
+      by: ['kind'],
+      where: {
+        createdAt: { gte: since },
+        status: 'PENDING',
+        expiresAt: { lte: now },
+      },
+      _count: { _all: true },
+    });
+
+    const outcomesByKind = new Map<string, PreviewOutcomeRow>();
+    const ensureOutcome = (kind: string): PreviewOutcomeRow => {
+      const found = outcomesByKind.get(kind);
+      if (found) {
+        return found;
+      }
+      const created = { kind, applied: 0, cancelled: 0, expired: 0 };
+      outcomesByKind.set(kind, created);
+      return created;
+    };
+
+    for (const row of byStatus) {
+      if (row.status === 'APPLIED') {
+        ensureOutcome(row.kind).applied += row._count._all;
+      } else if (row.status === 'CANCELLED') {
+        ensureOutcome(row.kind).cancelled += row._count._all;
+      } else if (row.status === 'EXPIRED') {
+        ensureOutcome(row.kind).expired += row._count._all;
+      }
+    }
+    for (const row of staleExpired) {
+      ensureOutcome(row.kind).expired += row._count._all;
+    }
+    return [...outcomesByKind.values()];
   }
 }
 

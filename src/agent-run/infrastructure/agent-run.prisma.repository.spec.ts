@@ -2,6 +2,67 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AgentRunStatus } from '../domain/agent-run.type';
 import { AgentRunPrismaRepository } from './agent-run.prisma.repository';
 
+describe('AgentRunPrismaRepository.sweepZombies', () => {
+  it('cutoff 이전 IN_PROGRESS 를 FAILED 로 updateMany 하고 count 반환', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-21T00:00:00.000Z'));
+    const updateMany = jest.fn().mockResolvedValue({ count: 3 });
+    const prismaMock = {
+      agentRun: { updateMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.sweepZombies({ olderThanMinutes: 30 });
+
+    expect(result).toBe(3);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        status: 'IN_PROGRESS',
+        startedAt: { lt: new Date('2026-07-20T23:30:00.000Z') },
+      },
+      data: {
+        status: 'FAILED',
+        output: { error: 'swept: stale IN_PROGRESS' },
+        endedAt: new Date('2026-07-21T00:00:00.000Z'),
+      },
+    });
+    jest.useRealTimers();
+  });
+});
+
+describe('AgentRunPrismaRepository Ops Supervisor 집계', () => {
+  it('aggregateRetryCounts: FAILURE_REPLAY 트리거를 agentType 별로 센다', async () => {
+    const groupBy = jest
+      .fn()
+      .mockResolvedValue([{ agentType: 'PM', _count: { _all: 2 } }]);
+    const prismaMock = { agentRun: { groupBy } } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.aggregateRetryCounts({ sinceDays: 30 });
+
+    expect(result).toEqual([{ agentType: 'PM', retries: 2 }]);
+    expect(groupBy.mock.calls[0][0].where.triggerType).toBe('FAILURE_REPLAY');
+  });
+
+  it('aggregateSweptCounts: swept 마커가 붙은 FAILED 를 센다', async () => {
+    const groupBy = jest
+      .fn()
+      .mockResolvedValue([{ agentType: 'BE', _count: { _all: 1 } }]);
+    const prismaMock = { agentRun: { groupBy } } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.aggregateSweptCounts({ sinceDays: 30 });
+
+    expect(result).toEqual([{ agentType: 'BE', swept: 1 }]);
+    const where = groupBy.mock.calls[0][0].where;
+    expect(where.status).toBe('FAILED');
+    expect(where.output).toEqual({
+      path: ['error'],
+      string_starts_with: 'swept:',
+    });
+  });
+});
+
 // V3 비전 봇 쪼개기 step 8 (commit 2c236d7) 의 updateParentId 단위 검증.
 // repository 의 다른 method 들은 다른 의존성 (raw SQL / aggregate / FTS) 이 많아 spec 분리 가치 낮음 —
 // updateParentId 는 단순 update 라 mock 으로 명확히 검증 가능.
