@@ -29,6 +29,7 @@ import { AgentRunModule } from './agent-run/agent-run.module';
 import { AutopilotModule } from './autopilot/autopilot.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
+import { WorkerStartupCoordinator } from './common/queue/worker-startup.coordinator';
 import { validateEnv } from './config/app.config';
 import { CrawlerModule } from './crawler/crawler.module';
 import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.applier';
@@ -68,6 +69,10 @@ import { WebhookModule } from './webhook/webhook.module';
         },
       }),
       inject: [ConfigService],
+      // worker 를 앱 부팅 완료(모든 onModuleInit) 후에만 시작하기 위해 자동 등록을 끈다.
+      // WorkerStartupCoordinator(OnApplicationBootstrap)가 BullRegistrar.register() 로 수동 시작한다.
+      // (부팅 중 밀린 cron job 이 SlackService 등 미준비 의존성을 호출해 실패하던 레이스 방지)
+      extraOptions: { manualRegistration: true },
     }),
     // cron 중복 발송 차단 (stalled 재처리 idempotency) — @Global, Redis SETNX. 모든 cron consumer 공용.
     CronIdempotencyModule,
@@ -165,5 +170,6 @@ import { WebhookModule } from './webhook/webhook.module';
     // SUBCONSCIOUS_ENABLED='true' + AUTOPILOT_OWNER_SLACK_USER_ID 미설정 시 자동 비활성.
     SubconsciousModule,
   ],
+  providers: [WorkerStartupCoordinator],
 })
 export class AppModule {}
