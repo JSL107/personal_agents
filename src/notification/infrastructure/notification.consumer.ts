@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
@@ -33,6 +33,23 @@ export const shouldFireAlert = ({
   return nowMs - lastFiredAtMs >= windowMs;
 };
 
+// 알람 owner 환경변수 키 — 비어 있으면 해당 알람이 조용히 유실된다.
+export const ALERT_OWNER_ENV_KEYS = [
+  'CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID',
+  'CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID',
+] as const;
+
+// 부팅 점검용 순수함수 — 값이 비었거나 공백뿐인 키만 골라낸다.
+// spec 단위 테스트를 위해 module-level export (shouldFireAlert 와 동일 패턴).
+export const findMissingAlertOwnerKeys = (
+  values: Record<string, string | undefined>,
+): string[] => {
+  return ALERT_OWNER_ENV_KEYS.filter((key) => {
+    const value = values[key];
+    return !value || value.trim().length === 0;
+  });
+};
+
 // NotificationModule 의 Consumer — SlackService 의존. Queue 의 job 을 받아 kind 별 분기 + Slack DM.
 // CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID / CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID env 미설정 시 noop.
 @Injectable()
@@ -40,7 +57,10 @@ export const shouldFireAlert = ({
   concurrency: 1,
   ...LONG_RUNNING_WORKER_OPTIONS,
 })
-export class NotificationConsumer extends WorkerHost {
+export class NotificationConsumer
+  extends WorkerHost
+  implements OnApplicationBootstrap
+{
   private readonly logger = new Logger(NotificationConsumer.name);
   // dedupe key → last fire timestamp (ms).
   // claude-auth-suspect 는 단일 key, cron-failure 는 cronName 별 key.
@@ -51,6 +71,25 @@ export class NotificationConsumer extends WorkerHost {
     private readonly configService: ConfigService,
   ) {
     super();
+  }
+
+  // 부팅 시 1회 — owner 미설정이면 그 종류의 알람은 아예 발송되지 않으므로 미리 드러낸다.
+  // 실행 시점 경고(handleClaudeAuthSuspect / handleCronFailure)는 그대로 둔다 — 그쪽은
+  // "어떤 알람이 실제로 유실됐는지" 를 남기는 별개의 정보다.
+  onApplicationBootstrap(): void {
+    const missing = findMissingAlertOwnerKeys({
+      CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID: this.configService.get<string>(
+        'CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID',
+      ),
+      CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID: this.configService.get<string>(
+        'CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID',
+      ),
+    });
+    if (missing.length > 0) {
+      this.logger.warn(
+        `알람 owner 미설정 — 해당 알람은 발송되지 않습니다: ${missing.join(', ')}`,
+      );
+    }
   }
 
   async process(job: Job<NotificationJobData>): Promise<void> {
