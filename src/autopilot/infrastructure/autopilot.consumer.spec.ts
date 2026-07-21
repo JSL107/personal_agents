@@ -65,6 +65,21 @@ describe('AutopilotConsumer', () => {
     expect(runGroup).not.toHaveBeenCalled();
   });
 
+  it('플레이북에 없는 groupKey 면 owner 알람을 발사한다', async () => {
+    const runGroup = jest.fn();
+    const publishCronFailure = jest.fn();
+    const consumer = makeConsumer({ runGroup }, { publishCronFailure });
+
+    await consumer.process(makeJob('nonexistent-group'));
+
+    expect(publishCronFailure).toHaveBeenCalledWith({
+      cronName: 'Autopilot:nonexistent-group',
+      ownerSlackUserId: 'U1',
+      errorMessage:
+        "미등록 cron group 'nonexistent-group' — 플레이북 등록 누락(구성 오류). 실행 스킵됨.",
+    });
+  });
+
   it('실행 실패 → publishCronFailure + rethrow', async () => {
     const runGroup = jest.fn().mockRejectedValue(new Error('boom'));
     const publishCronFailure = jest.fn();

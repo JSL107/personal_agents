@@ -11,8 +11,10 @@ import {
 } from '../domain/agent-run.type';
 import {
   AGENT_RUN_REPOSITORY_PORT,
+  AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
+  AgentSweptCountRow,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -199,6 +201,22 @@ export class AgentRunService {
     untilDays?: number;
   }): Promise<AgentRunStatRow[]> {
     return await this.repository.aggregateRunStats(input);
+  }
+
+  async sweepZombies(input: { olderThanMinutes: number }): Promise<number> {
+    return await this.repository.sweepZombies(input);
+  }
+
+  async aggregateRetryCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentRetryCountRow[]> {
+    return await this.repository.aggregateRetryCounts(input);
+  }
+
+  async aggregateSweptCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentSweptCountRow[]> {
+    return await this.repository.aggregateSweptCounts(input);
   }
 
   // PM-3': 유사 plan 조회. episodic 주입 시 의미검색(임베딩) → agent_run 재조회로 SimilarPlanRow 복원,

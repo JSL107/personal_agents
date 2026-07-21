@@ -61,6 +61,8 @@ export enum AgentType {
   // BLOG(Hermes sentinel)와 달리 실제 route() 를 탄다.
   // 슬래시/ResponseCode/retry-run 비대상 (autopilot task, 사용자 비노출 내부 타입).
   EVENING_RETRO = 'EVENING_RETRO',
+  // 월간 운영 품질 이상 신호의 개선 제안 생성. 슬래시 없음, autopilot 전용.
+  OPS_SUPERVISOR = 'OPS_SUPERVISOR',
 }
 
 export interface CompletionRequest {
