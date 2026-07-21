@@ -33,7 +33,7 @@ export class NotificationPublisher {
         removeOnFail: 50,
       })
       .catch((error: unknown) => {
-        this.logger.warn(
+        this.logger.error(
           `claude 인증 의심 알람 enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
@@ -50,7 +50,7 @@ export class NotificationPublisher {
         removeOnFail: 50,
       })
       .catch((error: unknown) => {
-        this.logger.warn(
+        this.logger.error(
           `cron 실패 알람 enqueue 실패 (cron=${payload.cronName}): ${error instanceof Error ? error.message : String(error)}`,
         );
       });
