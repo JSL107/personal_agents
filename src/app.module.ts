@@ -23,6 +23,7 @@ import { PmAgentModule } from './agent/pm/pm-agent.module';
 import { PoEvalCareerlogApplier } from './agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { PoEvalModule } from './agent/po-eval/po-eval.module';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
+import { StockModule } from './agent/stock/stock.module';
 import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
@@ -90,6 +91,7 @@ import { WebhookModule } from './webhook/webhook.module';
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
+    StockModule,
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,

@@ -8,7 +8,7 @@
 ## 0. 스택 사실 (틀리면 빌드부터 깨짐)
 
 - **패키지 매니저: `pnpm@9.15.9`** — `npm` / `yarn` 사용 금지 (`packageManager` 필드로 강제).
-- Node 20+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ.
+- Node 22+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ. (`package.json` `engines` 로 명시 — 20 은 지원 종료)
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
 - LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). 자식 프로세스 spawn 으로만 호출 — 직접 API SDK 사용 X. 인증: 기본은 각 CLI 의 keychain/OAuth (구독). Claude 는 keychain ACL 미등록 환경 (nest start --watch child PID 변동 등) 우회용으로 `CLAUDE_CODE_OAUTH_TOKEN` env 경로 지원 — `.env` 에 `claude setup-token` 발급 OAuth token (`sk-ant-oat01-...`) 두면 자식 env 로 forward, docs precedence priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 라 keychain 시도 자체가 안 일어남 (§6 참조). `ANTHROPIC_API_KEY` 도 backward-compat alias 로 동일하게 인식. 2026-07-02 부터 전체 에이전트가 ChatGPT(codex) 단일 provider — provider 간 fallback 없음 (codex 실패 시 재시도 없이 즉시 실패, 쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드·인증 경로는 롤백 대비 보존 (라우팅 경로 없음). 이전 Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.
 - **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 13 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).

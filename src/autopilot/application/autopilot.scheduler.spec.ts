@@ -26,7 +26,7 @@ describe('AutopilotScheduler', () => {
     const scheduler = new AutopilotScheduler(queue as never, config as never);
     await scheduler.onApplicationBootstrap();
 
-    // 각 그룹당 1번씩 queue.add 호출 — entry 수(6)가 아닌 그룹 수.
+    // 각 그룹당 1번씩 queue.add 호출 — entry 수가 아닌 그룹 수.
     const addCalls: string[] = queue.add.mock.calls.map(
       (call: unknown[]) => call[0] as string,
     );
@@ -35,8 +35,8 @@ describe('AutopilotScheduler', () => {
     expect(unique.size).toBe(addCalls.length);
     // SP4: evening(daily-eval+work-reviewer) + morning + weekly-summary + ceo-meta + impact-report
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
-    //   + docs-sync-audit + preference-learning + run-sweeper + ops-supervisor = 11그룹.
-    expect(queue.add).toHaveBeenCalledTimes(11);
+    //   + docs-sync-audit + preference-learning + run-sweeper + ops-supervisor + stock-monitor = 12그룹.
+    expect(queue.add).toHaveBeenCalledTimes(12);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('weekly-summary');
@@ -48,6 +48,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('preference-learning');
     expect(addCalls).toContain('run-sweeper');
     expect(addCalls).toContain('ops-supervisor');
+    expect(addCalls).toContain('stock-monitor');
   });
 
   it('evening 그룹 스케줄은 첫 항목(daily-eval) env 기반 → 19:00', async () => {

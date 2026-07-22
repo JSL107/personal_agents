@@ -45,3 +45,7 @@ export const DEFAULT_PREFERENCE_LEARNING_TIMEZONE = 'Asia/Seoul';
 // Ops Supervisor 기본 스케줄 — 매월 1일 09:00 KST(지난 30일 품질 리뷰).
 export const DEFAULT_OPS_SUPERVISOR_CRON = '0 9 1 * *';
 export const DEFAULT_OPS_SUPERVISOR_TIMEZONE = 'Asia/Seoul';
+
+// 주식 모니터링 기본 스케줄 — 국내 장 마감·지연 시세 반영 후 평일 17:10 KST.
+export const DEFAULT_STOCK_MONITOR_CRON = '10 17 * * 1-5';
+export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
