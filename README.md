@@ -144,7 +144,7 @@ pnpm db:push          # 스키마 동기화 (synchronize, 마이그레이션 파
 pnpm dev              # watch 모드 기동
 ```
 
-> **사전 요구사항** — Node 20+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). `claude` CLI 관련 provider/env 는 현재 라우팅에서 호출되지 않으며 롤백 대비 코드로만 보존된다. CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
+> **사전 요구사항** — Node 22+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). `claude` CLI 관련 provider/env 는 현재 라우팅에서 호출되지 않으며 롤백 대비 코드로만 보존된다. CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 > **검증** — `pnpm lint:check && pnpm test && pnpm build` 3중 green.
 
 ---
@@ -210,6 +210,7 @@ pnpm dev              # watch 모드 기동
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 평일 17:10 보유 종목 모니터링 활성 — 기본 OFF |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` · `_L4_MAX_PAIRS` | ❌ | knowledge-lint L4 모순 판정(ChatGPT) on/off(기본 활성) · 주간 상한(기본 `5`, codex 쿼터 가드) |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | Notion 적재 대상 페이지 |
