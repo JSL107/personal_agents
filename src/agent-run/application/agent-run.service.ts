@@ -273,6 +273,14 @@ export class AgentRunService {
   // 보안: rootRunId/maxDepth 가 NaN/Infinity 면 빈 배열로 short-circuit (recursive CTE 보호).
   // maxDepth 는 [1, DEFAULT_CHAIN_MAX_DEPTH] 로 clamp — 외부 입력이 비정상적으로 큰 값을 넣어
   // DB recursive 깊이 폭발시키는 DoS 방지 (security-reviewer MEDIUM).
+  // Run Retro chain 관측 — 최근 window 의 chain 뿌리 id 목록. 판정/집계는 호출자가 한다.
+  async findChainRootsInWindow(input: {
+    sinceDays: number;
+    limit: number;
+  }): Promise<number[]> {
+    return await this.repository.findChainRootsInWindow(input);
+  }
+
   async findChainFromRoot(
     rootRunId: number,
     maxDepth = DEFAULT_CHAIN_MAX_DEPTH,
