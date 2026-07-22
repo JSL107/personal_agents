@@ -267,20 +267,29 @@ model PreferenceProposal {
 }
 
 // 보유 종목 모니터링 — 종목 마스터.
-// 티커(yahooSymbol)는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
+// 티커는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
 // 유니크는 (market, code) — 6자리 코드는 시장이 다르면 중복될 수 있다.
+//
+// market 과 marketCountry 를 함께 두는 이유: 토스증권 API 는 marketCountry(KR/US)
+// 만 주고 코스피/코스닥을 구분하지 않는 반면, Yahoo 는 접미사(.KS/.KQ)로 구분한다.
+// 토스에서 동기화한 종목은 market='KR' marketCountry='KR' 로 들어오고,
+// Yahoo 경로로 등록한 종목은 market='KOSPI'|'KOSDAQ' 이다.
+// yahooSymbol 은 Yahoo 경로에서만 필수라 nullable 로 둔다.
 model Ticker {
-  id          Int          @id @default(autoincrement())
-  code        String
-  market      String
-  yahooSymbol String       @map("yahoo_symbol")
-  name        String
-  currency    String
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-  dailyPrices DailyPrice[]
-  holdings    Holding[]
-  alerts      StockAlert[]
+  id            Int          @id @default(autoincrement())
+  code          String
+  market        String
+  marketCountry String?      @map("market_country")
+  yahooSymbol   String?      @map("yahoo_symbol")
+  tossSymbol    String?      @map("toss_symbol")
+  name          String
+  currency      String
+  source        String       @default("YAHOO")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  dailyPrices   DailyPrice[]
+  holdings      Holding[]
+  alerts        StockAlert[]
 
   @@unique([market, code])
   @@map("ticker")
