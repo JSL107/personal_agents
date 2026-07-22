@@ -1,10 +1,17 @@
 import { Injectable } from '@nestjs/common';
 
+import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
   HoldingSnapshot,
   StoredStockAlert,
 } from '../domain/stock-monitor.type';
+
+interface CurrentBrokerHolding {
+  tickerId: number;
+  avgPrice: DecimalValue;
+  currency: string;
+}
 
 @Injectable()
 export class StockMonitorRepository {
@@ -26,12 +33,91 @@ export class StockMonitorRepository {
         continue;
       }
       seen.add(holding.tickerId);
+      if (!holding.ticker.yahooSymbol || holding.quantity.isZero()) {
+        continue;
+      }
       current.push({
         tickerId: holding.tickerId,
         tickerName: holding.ticker.name,
         yahooSymbol: holding.ticker.yahooSymbol,
         quantity: holding.quantity,
         avgPrice: holding.avgPrice,
+      });
+    }
+    return current;
+  }
+
+  async upsertTickerFromBroker(input: {
+    code: string;
+    market: string;
+    marketCountry: string;
+    tossSymbol: string;
+    name: string;
+    currency: string;
+  }): Promise<number> {
+    const ticker = await this.prisma.ticker.upsert({
+      where: {
+        market_code: { market: input.market, code: input.code },
+      },
+      create: {
+        ...input,
+        source: 'TOSS',
+      },
+      update: {
+        marketCountry: input.marketCountry,
+        tossSymbol: input.tossSymbol,
+        name: input.name,
+        currency: input.currency,
+        source: 'TOSS',
+      },
+      select: { id: true },
+    });
+    return ticker.id;
+  }
+
+  async upsertHolding(input: {
+    tickerId: number;
+    effectiveDate: Date;
+    quantity: string;
+    avgPrice: string;
+    currency: string;
+  }): Promise<void> {
+    await this.prisma.holding.upsert({
+      where: {
+        tickerId_effectiveDate: {
+          tickerId: input.tickerId,
+          effectiveDate: input.effectiveDate,
+        },
+      },
+      create: input,
+      update: {
+        quantity: input.quantity,
+        avgPrice: input.avgPrice,
+        currency: input.currency,
+      },
+    });
+  }
+
+  async findCurrentBrokerHoldings(): Promise<CurrentBrokerHolding[]> {
+    const holdings = await this.prisma.holding.findMany({
+      where: { ticker: { source: 'TOSS' } },
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    const seen = new Set<number>();
+    const current: CurrentBrokerHolding[] = [];
+    for (const holding of holdings) {
+      if (seen.has(holding.tickerId)) {
+        continue;
+      }
+      seen.add(holding.tickerId);
+      if (holding.quantity.isZero()) {
+        continue;
+      }
+      current.push({
+        tickerId: holding.tickerId,
+        avgPrice: holding.avgPrice,
+        currency: holding.currency,
       });
     }
     return current;
