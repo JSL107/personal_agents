@@ -265,3 +265,76 @@ model PreferenceProposal {
   @@index([ownerUserId, status, createdAt])
   @@map("preference_proposal")
 }
+
+// 보유 종목 모니터링 — 종목 마스터.
+// 티커(yahooSymbol)는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
+// 유니크는 (market, code) — 6자리 코드는 시장이 다르면 중복될 수 있다.
+model Ticker {
+  id          Int          @id @default(autoincrement())
+  code        String
+  market      String
+  yahooSymbol String       @map("yahoo_symbol")
+  name        String
+  currency    String
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  dailyPrices DailyPrice[]
+  holdings    Holding[]
+  alerts      StockAlert[]
+
+  @@unique([market, code])
+  @@map("ticker")
+}
+
+// 일별 시세. Yahoo 는 액면분할 시 과거 가격을 소급 재작성하므로
+// raw close 와 조정가(adjClose)를 모두 보관하고 지표 계산은 adjClose 를 쓴다.
+// 재시도·휴장일 재수집으로 같은 거래일이 다시 들어올 수 있어 (tickerId, tradeDate) 로 upsert 한다.
+model DailyPrice {
+  id             Int       @id @default(autoincrement())
+  tickerId       Int       @map("ticker_id")
+  ticker         Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  tradeDate      DateTime  @map("trade_date") @db.Date
+  close          Decimal   @db.Decimal(18, 4)
+  adjClose       Decimal   @map("adj_close") @db.Decimal(18, 4)
+  volume         BigInt
+  fetchedAt      DateTime  @default(now()) @map("fetched_at")
+  lastResyncedAt DateTime? @map("last_resynced_at")
+
+  @@unique([tickerId, tradeDate])
+  @@index([tickerId, tradeDate])
+  @@map("daily_price")
+}
+
+// 보유 상태. 가격 시계열과 달리 소급 복구가 불가능한 데이터라 이력을 남긴다.
+// effectiveDate 로 시점을 구분하고, 최신 행이 현재 보유 상태다.
+model Holding {
+  id            Int      @id @default(autoincrement())
+  tickerId      Int      @map("ticker_id")
+  ticker        Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  quantity      Decimal  @db.Decimal(18, 4)
+  avgPrice      Decimal  @map("avg_price") @db.Decimal(18, 4)
+  currency      String
+  effectiveDate DateTime @map("effective_date") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([tickerId, effectiveDate])
+  @@map("holding")
+}
+
+// 알림 발화 이력. 임계값을 나중에 바꿔도 과거 알림의 발생 이유를 재현할 수 있도록
+// 규칙 버전과 당시 입력값·임계값을 함께 남긴다.
+model StockAlert {
+  id             Int      @id @default(autoincrement())
+  tickerId       Int      @map("ticker_id")
+  ticker         Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  tradeDate      DateTime @map("trade_date") @db.Date
+  ruleId         String   @map("rule_id")
+  ruleVersion    Int      @map("rule_version")
+  triggeredValue Decimal  @map("triggered_value") @db.Decimal(18, 4)
+  threshold      Decimal  @db.Decimal(18, 4)
+  firedAt        DateTime @default(now()) @map("fired_at")
+
+  @@unique([tickerId, tradeDate, ruleId])
+  @@index([tickerId, firedAt])
+  @@map("stock_alert")
+}
