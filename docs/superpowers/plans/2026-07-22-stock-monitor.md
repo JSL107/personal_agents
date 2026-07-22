@@ -26,6 +26,22 @@
 
 ---
 
+## 어느 태스크가 TDD 대상인가
+
+전부는 아니다. 태스크를 일괄로 "테스트 먼저"로 지시하면 선언형 태스크에서 모순이 생긴다.
+
+| 태스크 | TDD | 이유 |
+|---|---|---|
+| 1 (Prisma 스키마) | 아니오 | 스키마 선언. 검증할 동작이 없다. `db:push`와 빌드 성공이 확인 수단이다. |
+| 2 (도메인 타입·포트) | 아니오 | 타입·인터페이스 선언. 컴파일 성공이 확인 수단이다. |
+| 3 (mapper) | **예** | 오염 응답 차단이 핵심 동작이다. 이 테스트가 외부 API 형식 변경을 잡는 유일한 방어선이다. |
+| 4 (판정 함수) | **예** | 임계값·상태 전이 판정이 이 기능의 본체다. |
+| 5 (클라이언트) | 아니오 | 네트워크 호출 위임뿐. 판단 로직은 전부 Task 3에 있다. 수동 스모크로 확인한다. |
+| 6 (등록 스크립트) | 아니오 | 운영 도구. 거부·정상 경로를 수동 실행으로 확인한다. |
+| 7 (포맷터) | **예** | 수집 실패를 침묵시키지 않는 것이 안전장치다. |
+| 8 (cron 배선) | 아니오 | 조립·설정. 전체 게이트 통과가 확인 수단이다. |
+| 9 (휴장일) | **예** | 오탐 방지 판정이라 경계 케이스가 중요하다. |
+
 ## File Structure
 
 **신규 — 시세 수집 계층** (`src/market-data/`)
@@ -180,16 +196,14 @@ git commit -m "feat(stock): 보유 종목 모니터링 스키마 추가"
 - Create: `src/market-data/domain/port/market-data.port.ts`
 
 **Interfaces:**
-- Consumes: Task 1의 Prisma 타입 (`Prisma.Decimal`)
-- Produces: `MarketCode`, `ResolvedInstrument`, `DailyBar`, `MARKET_DATA_PORT`, `MarketDataPort`. Task 3이 구현하고 Task 7이 주입받는다.
+- Consumes: 없음. **도메인은 `@prisma/client`를 import하지 않는다** — `CODE_RULES.md` §2-1이 도메인의 외부 라이브러리 의존을 MUST로 금지한다.
+- Produces: `MarketCode`, `DecimalValue`, `ResolvedInstrument`, `DailyBar`, `MARKET_DATA_PORT`, `MarketDataPort`. Task 3이 구현하고 Task 8이 주입받는다.
 
 - [ ] **Step 1: 도메인 타입 작성**
 
 `src/market-data/domain/market-data.type.ts`:
 
 ```ts
-import { Prisma } from '@prisma/client';
-
 export type MarketCode = 'KOSPI' | 'KOSDAQ';
 
 // Yahoo 심볼 접미사 ↔ 시장 코드. 접미사를 틀리면 조회가 실패하는 게 아니라
@@ -207,10 +221,19 @@ export interface ResolvedInstrument {
   currency: string;
 }
 
+// 도메인은 Prisma 에 의존하지 않는다(CODE_RULES §2-1). 금액을 다루는 데 실제로
+// 필요한 연산만 선언하고, Infrastructure 가 Prisma.Decimal 을 그대로 넘긴다.
+// Prisma.Decimal 은 두 메서드를 모두 가지므로 구조적으로 이 타입을 만족한다.
+// 판정은 toNumber() 로 퍼센트를 계산하고, 저장은 toString() 으로 정밀도를 보존한다.
+export interface DecimalValue {
+  toNumber(): number;
+  toString(): string;
+}
+
 export interface DailyBar {
   tradeDate: Date;
-  close: Prisma.Decimal;
-  adjClose: Prisma.Decimal;
+  close: DecimalValue;
+  adjClose: DecimalValue;
   volume: bigint;
   currency: string;
 }
@@ -544,7 +567,7 @@ git commit -m "feat(market-data): Yahoo 응답 변환·검증 mapper — 오염 
 `src/agent/stock/domain/stock-monitor.type.ts`:
 
 ```ts
-import { Prisma } from '@prisma/client';
+import { DecimalValue } from '../../../market-data/domain/market-data.type';
 
 export type StockAnomalyKind = 'DAILY_CHANGE' | 'AVG_PRICE_BREACH';
 
@@ -564,8 +587,8 @@ export interface StockAnomaly {
 export interface HoldingSnapshot {
   tickerName: string;
   yahooSymbol: string;
-  quantity: Prisma.Decimal;
-  avgPrice: Prisma.Decimal;
+  quantity: DecimalValue;
+  avgPrice: DecimalValue;
 }
 ```
 
@@ -646,6 +669,16 @@ describe('detectAvgPriceBreach', () => {
 
   it('두 구간 모두 밖이면 발화하지 않는다', () => {
     expect(detectAvgPriceBreach(holding, bar(100000), bar(99000))).toBeNull();
+  });
+
+  // 두 규칙의 경계 처리는 의도적으로 다르다.
+  // 전일대비는 "초과"(정확히 8% 는 미발화), 평단대비는 "이상/이하"(정확히 -20% 는 발화).
+  // 평단대비는 구간 진입 여부를 보는 규칙이라 경계를 구간에 포함시킨다.
+  it('경계값(정확히 -20%)에서 발화한다', () => {
+    const result = detectAvgPriceBreach(holding, bar(80000), bar(85000));
+
+    expect(result).not.toBeNull();
+    expect(result?.triggeredValue).toBeCloseTo(-20, 4);
   });
 
   it('전일 봉이 없으면 판정하지 않는다', () => {
