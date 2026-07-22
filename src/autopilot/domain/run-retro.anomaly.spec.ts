@@ -1,5 +1,9 @@
 import { AgentRunStatRow } from '../../agent-run/domain/port/agent-run.repository.port';
-import { detectRunAnomalies } from './run-retro.anomaly';
+import {
+  ChainFailureSummary,
+  detectChainFailureAnomalies,
+  detectRunAnomalies,
+} from './run-retro.anomaly';
 
 const row = (over: Partial<AgentRunStatRow>): AgentRunStatRow => ({
   agentType: 'PM',
@@ -73,5 +77,51 @@ describe('detectRunAnomalies', () => {
 
   it('둘 다 비면 빈 배열(skip 은 호출부가 판단)', () => {
     expect(detectRunAnomalies([], [])).toEqual([]);
+  });
+});
+
+const buildChainSummary = (
+  override: Partial<ChainFailureSummary> = {},
+): ChainFailureSummary => ({
+  rootRunId: 42,
+  rootAgentType: 'PM',
+  nodeCount: 3,
+  failedAgentTypes: ['CTO'],
+  ...override,
+});
+
+describe('detectChainFailureAnomalies — 체인 실패 지목', () => {
+  it('실패 노드 없는 체인은 이상이 아니다', () => {
+    expect(
+      detectChainFailureAnomalies([
+        buildChainSummary({ failedAgentTypes: [] }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('빈 입력이면 빈 배열', () => {
+    expect(detectChainFailureAnomalies([])).toEqual([]);
+  });
+
+  it('실패 노드가 하나라도 있으면 root 와 실패 지점을 지목한다', () => {
+    const anomalies = detectChainFailureAnomalies([buildChainSummary()]);
+
+    expect(anomalies).toHaveLength(1);
+    expect(anomalies[0].kind).toBe('CHAIN_FAILURE');
+    expect(anomalies[0].agentType).toBe('PM');
+    expect(anomalies[0].detail).toContain('#42');
+    expect(anomalies[0].detail).toContain('CTO');
+  });
+
+  it('표기 상한을 넘으면 나머지는 "외 N건" 으로 접는다 (계기판 소음 방지)', () => {
+    const summaries = [1, 2, 3, 4, 5].map((seq) =>
+      buildChainSummary({ rootRunId: seq }),
+    );
+
+    const anomalies = detectChainFailureAnomalies(summaries, 3);
+
+    expect(anomalies).toHaveLength(4);
+    expect(anomalies[3].agentType).toBeNull();
+    expect(anomalies[3].detail).toContain('외 2건');
   });
 });

@@ -4,7 +4,8 @@ export type RunAnomalyKind =
   | 'FAILURE_SPIKE'
   | 'LATENCY_CEILING'
   | 'AGENT_DISAPPEARED'
-  | 'TOTAL_SILENCE';
+  | 'TOTAL_SILENCE'
+  | 'CHAIN_FAILURE';
 
 // TOTAL_SILENCE 는 시스템 전역 신호라 agentType 없음(null).
 export interface RunAnomaly {
@@ -81,5 +82,47 @@ export const detectRunAnomalies = (
     }
   }
 
+  return anomalies;
+};
+
+// 한 chain(뿌리 run 하나로부터 뻗은 계보)의 실패 요약. DB 조회는 태스크가 하고 판정만 여기서 한다.
+export interface ChainFailureSummary {
+  rootRunId: number;
+  rootAgentType: string;
+  // chain 에 포함된 전체 노드 수 (뿌리 포함).
+  nodeCount: number;
+  // 실패한 노드들의 agentType. 비어 있으면 정상 chain.
+  failedAgentTypes: string[];
+}
+
+// 계기판이 시끄러워지지 않도록 개별 표기는 이 건수까지만, 나머지는 "외 N건" 으로 접는다.
+export const MAX_CHAIN_FAILURE_ANOMALIES = 3;
+
+// chain 실패는 통계적 흔들림이 아니라 계보가 끊긴 개별 사건이라 빈도 임계를 두지 않는다.
+// 실패 노드를 하나라도 포함한 chain 은 곧바로 이상으로 본다. 부작용 없는 순수함수.
+export const detectChainFailureAnomalies = (
+  summaries: ChainFailureSummary[],
+  maxItems: number = MAX_CHAIN_FAILURE_ANOMALIES,
+): RunAnomaly[] => {
+  const broken = summaries.filter(
+    (summary) => summary.failedAgentTypes.length > 0,
+  );
+  if (broken.length === 0) {
+    return [];
+  }
+  const shown = broken.slice(0, maxItems);
+  const anomalies: RunAnomaly[] = shown.map((summary) => ({
+    agentType: summary.rootAgentType,
+    kind: 'CHAIN_FAILURE',
+    detail: `root #${summary.rootRunId} — ${summary.failedAgentTypes.join(', ')} 실패 (체인 ${summary.nodeCount}단계)`,
+  }));
+  const hidden = broken.length - shown.length;
+  if (hidden > 0) {
+    anomalies.push({
+      agentType: null,
+      kind: 'CHAIN_FAILURE',
+      detail: `외 ${hidden}건의 체인 실패`,
+    });
+  }
   return anomalies;
 };
