@@ -383,6 +383,31 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
+  // Run Retro chain 관측 — 최근 window 의 chain 뿌리 id 목록.
+  // 조건: 자신은 부모 없음(parentId null = 계보의 뿌리) + 다른 run 이 자신을 부모로 참조(children some).
+  // 기존 @@index([parentId]) 를 그대로 쓰므로 스키마 변경이 없다. take 로 스캔 상한을 둔다.
+  async findChainRootsInWindow({
+    sinceDays,
+    limit,
+  }: {
+    sinceDays: number;
+    limit: number;
+  }): Promise<number[]> {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const since = new Date(Date.now() - sinceDays * dayMs);
+    const roots = await this.prisma.agentRun.findMany({
+      where: {
+        parentId: null,
+        startedAt: { gte: since },
+        children: { some: {} },
+      },
+      select: { id: true },
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+    });
+    return roots.map((row) => row.id);
+  }
+
   async sweepZombies({
     olderThanMinutes,
   }: {

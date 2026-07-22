@@ -154,6 +154,12 @@ export interface AgentRunRepositoryPort {
     rootRunId: number;
     maxDepth: number;
   }): Promise<AgentRunChainNode[]>;
+  // Run Retro chain 관측 — 최근 window 안에서 "자식을 가진 계보의 뿌리" id 목록 (최신순).
+  // findChainFromRoot 가 뿌리 id 를 요구하므로 그 입력을 만들어주는 조회다.
+  findChainRootsInWindow(input: {
+    sinceDays: number;
+    limit: number;
+  }): Promise<number[]>;
   // Episodic 의미검색 결과(agentRunId 목록)로 output/endedAt 재조회 — SimilarPlanRow 복원용.
   findSucceededOutputsByIds(input: {
     ids: number[];
