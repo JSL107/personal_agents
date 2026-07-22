@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client';
 
-import { detectAvgPriceBreach, detectDailyChange } from './stock-anomaly';
+import {
+  detectAvgPriceBreach,
+  detectDailyChange,
+  isMarketClosed,
+} from './stock-anomaly';
 import { HoldingSnapshot } from './stock-monitor.type';
 
 const bar = (adjClose: number) => ({
@@ -86,5 +90,23 @@ describe('detectAvgPriceBreach', () => {
 
   it('전일 봉이 없으면 판정하지 않는다', () => {
     expect(detectAvgPriceBreach(holding, bar(79000), null)).toBeNull();
+  });
+});
+
+describe('isMarketClosed', () => {
+  it('마지막 봉 날짜가 직전 저장분과 같으면 휴장으로 본다', () => {
+    expect(isMarketClosed(new Date('2026-07-21'), new Date('2026-07-21'))).toBe(
+      true,
+    );
+  });
+
+  it('새 거래일이면 휴장이 아니다', () => {
+    expect(isMarketClosed(new Date('2026-07-22'), new Date('2026-07-21'))).toBe(
+      false,
+    );
+  });
+
+  it('직전 저장분이 없으면 휴장이 아니다(최초 실행)', () => {
+    expect(isMarketClosed(new Date('2026-07-21'), null)).toBe(false);
   });
 });

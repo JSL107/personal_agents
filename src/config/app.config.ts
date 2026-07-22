@@ -1,5 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import {
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -160,6 +161,11 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_TARGET?: string;
+
+  // 보유 종목 모니터링. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  STOCK_MONITOR_ENABLED?: string;
 
   @IsOptional()
   @IsString()

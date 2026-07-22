@@ -6,6 +6,7 @@ import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.m
 import { GenerateOpsAdviceUsecase } from '../agent/ops-supervisor/application/generate-ops-advice.usecase';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
+import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
@@ -13,6 +14,7 @@ import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import { MarketDataModule } from '../market-data/market-data.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
@@ -37,6 +39,7 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
 
@@ -49,6 +52,8 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     GithubModule,
     ModelRouterModule,
     PoEvalModule,
+    StockModule,
+    MarketDataModule,
     PmAgentModule,
     WorkReviewerModule,
     CeoModule,
@@ -80,6 +85,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
     OpsSupervisorAutopilotTask,
+    StockMonitorAutopilotTask,
     GenerateOpsAdviceUsecase,
     {
       provide: OPS_SUPERVISOR_ADVISOR_PORT,
@@ -102,6 +108,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         preferenceLearning: PreferenceLearningAutopilotTask,
         eveningRetro: EveningRetroPublishTask,
         opsSupervisor: OpsSupervisorAutopilotTask,
+        stockMonitor: StockMonitorAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -116,6 +123,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         preferenceLearning,
         eveningRetro,
         opsSupervisor,
+        stockMonitor,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -131,6 +139,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,
         OpsSupervisorAutopilotTask,
+        StockMonitorAutopilotTask,
       ],
     },
     {

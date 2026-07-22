@@ -21,3 +21,10 @@ export interface HoldingSnapshot {
   quantity: DecimalValue;
   avgPrice: DecimalValue;
 }
+
+export interface StoredStockAlert {
+  ruleId: string;
+  ruleVersion: number;
+  triggeredValue: number;
+  threshold: number;
+}
