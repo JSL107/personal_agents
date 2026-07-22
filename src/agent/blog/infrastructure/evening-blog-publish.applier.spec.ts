@@ -36,14 +36,15 @@ describe('EveningBlogPublishApplier', () => {
     } as unknown as jest.Mocked<ModelRouterUsecase>;
 
     notionClient = {
-      findOrCreateChildPage: jest
+      findOrCreateDailyPage: jest
         .fn()
         .mockResolvedValue({ pageId: 'p1', url: 'u' }),
       appendBlocks: jest.fn().mockResolvedValue(undefined),
+      updatePageProperties: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<NotionClientPort>;
 
     config = {
-      get: jest.fn().mockReturnValue('PARENT'),
+      get: jest.fn().mockReturnValue('DB_ID'),
     } as unknown as jest.Mocked<ConfigService>;
 
     humanizer = {
@@ -58,7 +59,7 @@ describe('EveningBlogPublishApplier', () => {
     );
   });
 
-  it('(a) NOTION_PAGE_ID 미설정 시 apply 가 throw 한다', async () => {
+  it('(a) NOTION_DATABASE_ID 미설정 시 apply 가 throw 한다', async () => {
     config.get.mockReturnValue(undefined);
     const preview = makePreview({
       topPick: { title: '테스트', keywords: ['k1'] },
@@ -67,11 +68,11 @@ describe('EveningBlogPublishApplier', () => {
     });
 
     await expect(applier.apply(preview)).rejects.toThrow(
-      'EVENING_RETRO_BLOG_NOTION_PAGE_ID 가 설정되지 않았습니다',
+      'EVENING_RETRO_BLOG_NOTION_DATABASE_ID 가 설정되지 않았습니다',
     );
   });
 
-  it('(b) 정상 흐름 — route → findOrCreateChildPage → appendBlocks 순 호출 후 ApplyResult.message 반환', async () => {
+  it('(b) 정상 흐름 — route → findOrCreateDailyPage → appendBlocks 순 호출 후 ApplyResult.message 반환', async () => {
     const preview = makePreview({
       topPick: {
         title: '제목',
@@ -121,8 +122,8 @@ describe('EveningBlogPublishApplier', () => {
         }),
       }),
     );
-    expect(notionClient.findOrCreateChildPage).toHaveBeenCalledWith({
-      parentPageId: 'PARENT',
+    expect(notionClient.findOrCreateDailyPage).toHaveBeenCalledWith({
+      databaseId: 'DB_ID',
       title: '제목',
     });
     expect(notionClient.appendBlocks).toHaveBeenCalledWith(
@@ -130,6 +131,47 @@ describe('EveningBlogPublishApplier', () => {
     );
     expect(result.message).toContain('u');
     expect(result.artifacts).toEqual([]);
+  });
+
+  it('(b-2) DB 행 속성(태그/출처유형/카테고리/상태)을 본문 적재 후 채운다', async () => {
+    const preview = makePreview({
+      topPick: { title: '제목', keywords: ['nestjs', 'notion'] },
+      retroContext: '오늘의 회고',
+      slackUserId: 'U1',
+    });
+
+    await applier.apply(preview);
+
+    expect(notionClient.updatePageProperties).toHaveBeenCalledWith({
+      pageId: 'p1',
+      properties: {
+        출처유형: { select: { name: 'PR' } },
+        카테고리: { select: { name: '개발 회고' } },
+        상태: { select: { name: '초안' } },
+        태그: { multi_select: [{ name: 'nestjs' }, { name: 'notion' }] },
+      },
+    });
+    // 본문이 먼저 저장돼야 속성 실패 시에도 글이 남는다.
+    const appendOrder = notionClient.appendBlocks.mock.invocationCallOrder[0];
+    const propertyOrder =
+      notionClient.updatePageProperties.mock.invocationCallOrder[0];
+    expect(appendOrder).toBeLessThan(propertyOrder);
+  });
+
+  it('(b-3) 속성 설정이 실패해도 throw 하지 않고 안내 문구를 message 에 덧붙인다', async () => {
+    notionClient.updatePageProperties.mockRejectedValue(
+      new Error('property not found'),
+    );
+    const preview = makePreview({
+      topPick: { title: '제목', keywords: ['k1'] },
+      retroContext: '오늘의 회고',
+      slackUserId: 'U1',
+    });
+
+    const result = await applier.apply(preview);
+
+    expect(result.message).toContain('본문은 저장됐지만');
+    expect(result.message).toContain('property not found');
   });
 
   it('(c) appendBlocks 직전 paragraph 블록만 humanizer 를 거친다', async () => {

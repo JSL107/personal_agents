@@ -430,11 +430,12 @@ class EnvironmentVariables {
   @IsString()
   EVENING_RETRO_PUBLISH_ENABLED?: string;
 
-  // 블로그 발행 대상 Notion 부모 페이지 ID. 미설정 시 블로그 카드 승인은 명시 에러.
-  // EveningBlogPublishApplier 가 이 페이지 아래 자식 페이지를 생성한다.
+  // 블로그 발행 대상 Notion "블로그 초안" DB ID. 미설정 시 블로그 카드 승인은 명시 에러.
+  // EveningBlogPublishApplier 가 이 DB 에 행을 생성하고 속성(출처유형/카테고리/상태/태그)을 채운다.
+  // 자연어 블로그 경로와 같은 DB 를 쓰면 두 경로 결과가 한곳에 모인다.
   @IsOptional()
   @IsString()
-  EVENING_RETRO_BLOG_NOTION_PAGE_ID?: string;
+  EVENING_RETRO_BLOG_NOTION_DATABASE_ID?: string;
 
   // Optional override CSV of owner/repo | owner/* | owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가.
   @IsOptional()
