@@ -267,3 +267,45 @@ describe('AgentRunPrismaRepository.findChainFromRoot — V3 chain audit walk', (
     expect(result[1].status).toBe(AgentRunStatus.FAILED);
   });
 });
+
+describe('AgentRunPrismaRepository.findChainRootsInWindow', () => {
+  it('부모 없고 자식 있는 run 만 window 안에서 최신순으로 조회한다', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-22T00:00:00.000Z'));
+    const findMany = jest.fn().mockResolvedValue([{ id: 42 }, { id: 7 }]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findChainRootsInWindow({
+      sinceDays: 7,
+      limit: 20,
+    });
+
+    expect(result).toEqual([42, 7]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        parentId: null,
+        startedAt: { gte: new Date('2026-07-15T00:00:00.000Z') },
+        children: { some: {} },
+      },
+      select: { id: true },
+      orderBy: { startedAt: 'desc' },
+      take: 20,
+    });
+    jest.useRealTimers();
+  });
+
+  it('뿌리가 없으면 빈 배열', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    await expect(
+      repository.findChainRootsInWindow({ sinceDays: 7, limit: 20 }),
+    ).resolves.toEqual([]);
+  });
+});
