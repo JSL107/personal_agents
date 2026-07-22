@@ -110,3 +110,19 @@ export const detectAvgPriceBreach = (
     detail: `평단 대비 ${todayPercent.toFixed(1)}% ${label} 구간 진입`,
   };
 };
+
+// 휴장일에는 새 봉이 생기지 않는다. 별도 휴장일 캘린더를 두지 않고
+// "마지막 봉이 직전 실행 때와 같은 날짜인가" 로 판정한다.
+// 임시공휴일처럼 사전에 알 수 없는 휴장도 이 방식이면 자동으로 처리된다.
+export const isMarketClosed = (
+  latestBarDate: Date,
+  previousStoredDate: Date | null,
+): boolean => {
+  if (!previousStoredDate) {
+    return false;
+  }
+  return (
+    latestBarDate.toISOString().slice(0, 10) ===
+    previousStoredDate.toISOString().slice(0, 10)
+  );
+};
