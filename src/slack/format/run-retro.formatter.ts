@@ -9,6 +9,7 @@ const ICON: Record<RunAnomalyKind, string> = {
   LATENCY_CEILING: '⏱️',
   AGENT_DISAPPEARED: '💀',
   TOTAL_SILENCE: '🚨',
+  CHAIN_FAILURE: '🔗',
 };
 
 // kind 별 사후 해석 힌트(사실은 detail, 해석은 여기 — presentation 책임).
@@ -17,6 +18,7 @@ const HINT: Record<RunAnomalyKind, string> = {
   LATENCY_CEILING: ' — 인증/쿼터 소진 의심',
   AGENT_DISAPPEARED: ' — cron 사망 의심',
   TOTAL_SILENCE: ' — 시스템 전체 점검 필요',
+  CHAIN_FAILURE: ' — 체인 중단 지점 확인',
 };
 
 // 조용한 계기판: 이상 0건이면 1줄 하트비트, 있으면 해당 항목만. LLM 없이 순수 포맷.
