@@ -36,13 +36,13 @@ const isPollutedName = (name: string, yahooSymbol: string): boolean => {
 };
 
 export const mapQuoteToInstrument = (
-  raw: RawQuote | undefined | null,
+  raw: unknown,
   yahooSymbol: string,
 ): ResolvedInstrument | null => {
-  if (!raw) {
+  if (!raw || typeof raw !== 'object') {
     return null;
   }
-  const { shortName, regularMarketPrice, currency } = raw;
+  const { shortName, regularMarketPrice, currency } = raw as RawQuote;
   if (!shortName || regularMarketPrice == null || !currency) {
     return null;
   }
@@ -66,18 +66,22 @@ export const mapQuoteToInstrument = (
 };
 
 export const mapChartQuoteToDailyBar = (
-  raw: RawChartQuote | undefined | null,
+  raw: unknown,
   currency: string,
 ): DailyBar | null => {
-  if (!raw || !raw.date || raw.close == null) {
+  if (!raw || typeof raw !== 'object') {
     return null;
   }
-  const adjClose = raw.adjclose ?? raw.close;
+  const chartQuote = raw as RawChartQuote;
+  if (!chartQuote.date || chartQuote.close == null) {
+    return null;
+  }
+  const adjClose = chartQuote.adjclose ?? chartQuote.close;
   return {
-    tradeDate: raw.date,
-    close: new Prisma.Decimal(raw.close),
+    tradeDate: chartQuote.date,
+    close: new Prisma.Decimal(chartQuote.close),
     adjClose: new Prisma.Decimal(adjClose),
-    volume: BigInt(Math.trunc(raw.volume ?? 0)),
+    volume: BigInt(Math.trunc(chartQuote.volume ?? 0)),
     currency,
   };
 };
