@@ -49,3 +49,7 @@ export const DEFAULT_OPS_SUPERVISOR_TIMEZONE = 'Asia/Seoul';
 // 주식 모니터링 기본 스케줄 — 국내 장 마감·지연 시세 반영 후 평일 17:10 KST.
 export const DEFAULT_STOCK_MONITOR_CRON = '10 17 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
+
+// 미국 주식 모니터링 기본 스케줄 — 미국 정규장 마감 30분 후 평일 16:30 ET.
+export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
+export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
