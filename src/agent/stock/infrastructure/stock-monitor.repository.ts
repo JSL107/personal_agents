@@ -1,20 +1,42 @@
 import { Injectable } from '@nestjs/common';
 
+import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
   HoldingSnapshot,
+  StockMarketCountry,
   StoredStockAlert,
 } from '../domain/stock-monitor.type';
+
+interface CurrentBrokerHolding {
+  tickerId: number;
+  avgPrice: DecimalValue;
+  currency: string;
+}
+
+export interface AlertNeedingOutcome {
+  alertId: number;
+  tickerId: number;
+  tradeDate: Date;
+}
+
+export interface DailyPriceForOutcome {
+  tradeDate: Date;
+  adjClose: DecimalValue;
+}
 
 @Injectable()
 export class StockMonitorRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // 종목마다 가장 최근 effectiveDate 의 보유 행이 현재 상태다.
-  async findCurrentHoldings(): Promise<
-    (HoldingSnapshot & { tickerId: number })[]
-  > {
+  async findCurrentHoldings({
+    marketCountry,
+  }: {
+    marketCountry: StockMarketCountry;
+  }): Promise<(HoldingSnapshot & { tickerId: number })[]> {
     const holdings = await this.prisma.holding.findMany({
+      where: { ticker: { marketCountry } },
       orderBy: { effectiveDate: 'desc' },
       include: { ticker: true },
     });
@@ -26,12 +48,91 @@ export class StockMonitorRepository {
         continue;
       }
       seen.add(holding.tickerId);
+      if (!holding.ticker.yahooSymbol || holding.quantity.isZero()) {
+        continue;
+      }
       current.push({
         tickerId: holding.tickerId,
         tickerName: holding.ticker.name,
         yahooSymbol: holding.ticker.yahooSymbol,
         quantity: holding.quantity,
         avgPrice: holding.avgPrice,
+      });
+    }
+    return current;
+  }
+
+  async upsertTickerFromBroker(input: {
+    code: string;
+    market: string;
+    marketCountry: string;
+    tossSymbol: string;
+    name: string;
+    currency: string;
+  }): Promise<number> {
+    const ticker = await this.prisma.ticker.upsert({
+      where: {
+        market_code: { market: input.market, code: input.code },
+      },
+      create: {
+        ...input,
+        source: 'TOSS',
+      },
+      update: {
+        marketCountry: input.marketCountry,
+        tossSymbol: input.tossSymbol,
+        name: input.name,
+        currency: input.currency,
+        source: 'TOSS',
+      },
+      select: { id: true },
+    });
+    return ticker.id;
+  }
+
+  async upsertHolding(input: {
+    tickerId: number;
+    effectiveDate: Date;
+    quantity: string;
+    avgPrice: string;
+    currency: string;
+  }): Promise<void> {
+    await this.prisma.holding.upsert({
+      where: {
+        tickerId_effectiveDate: {
+          tickerId: input.tickerId,
+          effectiveDate: input.effectiveDate,
+        },
+      },
+      create: input,
+      update: {
+        quantity: input.quantity,
+        avgPrice: input.avgPrice,
+        currency: input.currency,
+      },
+    });
+  }
+
+  async findCurrentBrokerHoldings(): Promise<CurrentBrokerHolding[]> {
+    const holdings = await this.prisma.holding.findMany({
+      where: { ticker: { source: 'TOSS' } },
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    const seen = new Set<number>();
+    const current: CurrentBrokerHolding[] = [];
+    for (const holding of holdings) {
+      if (seen.has(holding.tickerId)) {
+        continue;
+      }
+      seen.add(holding.tickerId);
+      if (holding.quantity.isZero()) {
+        continue;
+      }
+      current.push({
+        tickerId: holding.tickerId,
+        avgPrice: holding.avgPrice,
+        currency: holding.currency,
       });
     }
     return current;
@@ -111,5 +212,86 @@ export class StockMonitorRepository {
       triggeredValue: alert.triggeredValue.toNumber(),
       threshold: alert.threshold.toNumber(),
     }));
+  }
+
+  async findAlertsNeedingOutcome(
+    horizonDays: number,
+  ): Promise<AlertNeedingOutcome[]> {
+    const alerts = await this.prisma.stockAlert.findMany({
+      where: { outcomes: { none: { horizonDays } } },
+      orderBy: { id: 'asc' },
+      select: { id: true, tickerId: true, tradeDate: true },
+    });
+    return alerts.map(({ id, tickerId, tradeDate }) => ({
+      alertId: id,
+      tickerId,
+      tradeDate,
+    }));
+  }
+
+  async findDailyPricesSince(
+    tickerId: number,
+    tradeDate: Date,
+  ): Promise<DailyPriceForOutcome[]> {
+    return await this.prisma.dailyPrice.findMany({
+      where: { tickerId, tradeDate: { gte: tradeDate } },
+      orderBy: { tradeDate: 'asc' },
+      select: { tradeDate: true, adjClose: true },
+    });
+  }
+
+  async upsertAlertOutcome(input: {
+    alertId: number;
+    horizonDays: number;
+    firedPrice: string;
+    horizonPrice: string;
+    returnPct: string;
+  }): Promise<void> {
+    await this.prisma.alertOutcome.upsert({
+      where: {
+        alertId_horizonDays: {
+          alertId: input.alertId,
+          horizonDays: input.horizonDays,
+        },
+      },
+      create: input,
+      update: {},
+    });
+  }
+
+  async upsertFxRate(input: {
+    pair: string;
+    rateDate: Date;
+    rate: string;
+  }): Promise<void> {
+    await this.prisma.dailyFxRate.upsert({
+      where: {
+        pair_rateDate: {
+          pair: input.pair,
+          rateDate: input.rateDate,
+        },
+      },
+      create: input,
+      update: {
+        rate: input.rate,
+        fetchedAt: new Date(),
+      },
+    });
+  }
+
+  async findFxRate(input: {
+    pair: string;
+    rateDate: Date;
+  }): Promise<string | null> {
+    const fxRate = await this.prisma.dailyFxRate.findUnique({
+      where: {
+        pair_rateDate: {
+          pair: input.pair,
+          rateDate: input.rateDate,
+        },
+      },
+      select: { rate: true },
+    });
+    return fxRate?.rate.toString() ?? null;
   }
 }

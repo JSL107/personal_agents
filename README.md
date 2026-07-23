@@ -176,7 +176,7 @@ pnpm dev              # watch 모드 기동
 | `pull_request.closed` (merged) | PR careerLog → Notion | `PR_CAREERLOG_AUTO_ENABLED` + `CAREER_LOG_NOTION_PAGE_ID` |
 | `check_run.completed` (failure) | BE-SRE | — |
 
-### Autopilot cron (KST)
+### Autopilot cron (항목별 timezone)
 
 `AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체 활성, 미설정 시 비활성(graceful).
 
@@ -189,6 +189,8 @@ pnpm dev              # watch 모드 기동
 | 📅 일 18:00 | CEO Meta |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
+| 🇰🇷 평일 17:10 KST | 국내 보유 종목 모니터링 |
+| 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
 
 > 스케줄/타임존 override 는 `AUTOPILOT_<ID>_SCHEDULE`/`_TIMEZONE`, 플레이북 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts).
 
@@ -210,7 +212,9 @@ pnpm dev              # watch 모드 기동
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
-| `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 평일 17:10 보유 종목 모니터링 활성 — 기본 OFF |
+| `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 국내 17:10 KST·미국 16:30 ET 보유 종목 모니터링 활성 — 기본 OFF |
+| `AUTOPILOT_STOCK_MONITOR_US_SCHEDULE` · `_TIMEZONE` | ❌ | 미국 모니터링 cron/timezone override — 기본 `30 16 * * 1-5`, `America/New_York` |
+| `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` · `TOSS_ACCOUNT_SEQ` | ❌ | 토스증권 잔고 동기화. ID/secret 미설정 시 비활성, account seq 미설정 시 첫 BROKERAGE 계좌 자동 선택 |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` · `_L4_MAX_PAIRS` | ❌ | knowledge-lint L4 모순 판정(ChatGPT) on/off(기본 활성) · 주간 상한(기본 `5`, codex 쿼터 가드) |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ⭕ | Notion 적재 대상 페이지 |

@@ -167,6 +167,20 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   STOCK_MONITOR_ENABLED?: string;
 
+  // 토스증권 잔고 동기화. client id/secret 미설정 시 동기화 호출 시점에 명시 오류.
+  // account seq 미설정 시 첫 BROKERAGE 계좌를 자동 선택한다.
+  @IsOptional()
+  @IsString()
+  TOSS_CLIENT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  TOSS_CLIENT_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  TOSS_ACCOUNT_SEQ?: string;
+
   @IsOptional()
   @IsString()
   AUTOPILOT_DAILY_EVAL_SCHEDULE?: string;
@@ -214,6 +228,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_RUN_RETRO_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_STOCK_MONITOR_US_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_STOCK_MONITOR_US_TIMEZONE?: string;
 
   // L4 knowledge-lint contradiction — 주간 codex 모순 판정 가드.
   // - AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS: 주 1회 LLM 판정 쌍 상한(기본 5). codex 쿼터 보호.

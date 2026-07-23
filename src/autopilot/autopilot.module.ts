@@ -1,11 +1,13 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { GenerateOpsAdviceUsecase } from '../agent/ops-supervisor/application/generate-ops-advice.usecase';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
+import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-monitor.repository';
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -14,6 +16,10 @@ import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import {
+  MARKET_DATA_PORT,
+  MarketDataPort,
+} from '../market-data/domain/port/market-data.port';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
@@ -40,9 +46,13 @@ import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preferen
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
+
+const STOCK_MONITOR_KR_TASK = Symbol('STOCK_MONITOR_KR_TASK');
+const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
 
 // Autopilot 골격 — daily-eval.module 패턴(BullMQ repeatable + SlackNotifierPort useExisting).
 // CronIdempotencyService 는 @Global(CronIdempotencyModule) 이라 별도 import 불필요.
@@ -87,7 +97,37 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
     OpsSupervisorAutopilotTask,
-    StockMonitorAutopilotTask,
+    StockAlertScoringAutopilotTask,
+    {
+      provide: STOCK_MONITOR_KR_TASK,
+      useFactory: (
+        marketData: MarketDataPort,
+        repository: StockMonitorRepository,
+        configService: ConfigService,
+      ) =>
+        new StockMonitorAutopilotTask(
+          { id: 'stock-monitor', targetMarketCountry: 'KR' },
+          marketData,
+          repository,
+          configService,
+        ),
+      inject: [MARKET_DATA_PORT, StockMonitorRepository, ConfigService],
+    },
+    {
+      provide: STOCK_MONITOR_US_TASK,
+      useFactory: (
+        marketData: MarketDataPort,
+        repository: StockMonitorRepository,
+        configService: ConfigService,
+      ) =>
+        new StockMonitorAutopilotTask(
+          { id: 'stock-monitor-us', targetMarketCountry: 'US' },
+          marketData,
+          repository,
+          configService,
+        ),
+      inject: [MARKET_DATA_PORT, StockMonitorRepository, ConfigService],
+    },
     GenerateOpsAdviceUsecase,
     {
       provide: OPS_SUPERVISOR_ADVISOR_PORT,
@@ -112,6 +152,8 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         eveningRetro: EveningRetroPublishTask,
         opsSupervisor: OpsSupervisorAutopilotTask,
         stockMonitor: StockMonitorAutopilotTask,
+        stockMonitorUs: StockMonitorAutopilotTask,
+        stockAlertScoring: StockAlertScoringAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -128,6 +170,8 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         eveningRetro,
         opsSupervisor,
         stockMonitor,
+        stockMonitorUs,
+        stockAlertScoring,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -144,7 +188,9 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,
         OpsSupervisorAutopilotTask,
-        StockMonitorAutopilotTask,
+        STOCK_MONITOR_KR_TASK,
+        STOCK_MONITOR_US_TASK,
+        StockAlertScoringAutopilotTask,
       ],
     },
     {

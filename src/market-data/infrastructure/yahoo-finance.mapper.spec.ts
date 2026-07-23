@@ -81,12 +81,80 @@ describe('mapQuoteToInstrument', () => {
     expect(result).toBeNull();
   });
 
-  it('알 수 없는 접미사는 거부한다', () => {
+  it('Nasdaq prefix 미국 종목을 NASDAQ 으로 매핑한다', () => {
     const result = mapQuoteToInstrument(
       {
         shortName: 'Apple',
         regularMarketPrice: 327,
         currency: 'USD',
+        fullExchangeName: 'NasdaqGS',
+      },
+      'AAPL',
+    );
+
+    expect(result).toEqual({
+      yahooSymbol: 'AAPL',
+      code: 'AAPL',
+      market: 'NASDAQ',
+      name: 'Apple',
+      currency: 'USD',
+    });
+  });
+
+  it('NYSE 종목의 하이픈을 보존한다', () => {
+    const result = mapQuoteToInstrument(
+      {
+        shortName: 'Berkshire Hathaway',
+        regularMarketPrice: 500,
+        currency: 'USD',
+        fullExchangeName: 'NYSE',
+      },
+      'BRK-B',
+    );
+
+    expect(result).toEqual({
+      yahooSymbol: 'BRK-B',
+      code: 'BRK-B',
+      market: 'NYSE',
+      name: 'Berkshire Hathaway',
+      currency: 'USD',
+    });
+  });
+
+  it('NYSEArca prefix ETF 를 NYSE 로 매핑한다', () => {
+    const result = mapQuoteToInstrument(
+      {
+        shortName: 'SPDR S&P 500 ETF Trust',
+        regularMarketPrice: 630,
+        currency: 'USD',
+        fullExchangeName: 'NYSEArca',
+      },
+      'SPY',
+    );
+
+    expect(result?.market).toBe('NYSE');
+  });
+
+  it('알 수 없는 미국 거래소 응답을 거부한다', () => {
+    const result = mapQuoteToInstrument(
+      {
+        shortName: 'Apple',
+        regularMarketPrice: 327,
+        currency: 'USD',
+        fullExchangeName: 'OtherExchange',
+      },
+      'AAPL',
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('USD 가 아닌 접미사 없는 종목을 거부한다', () => {
+    const result = mapQuoteToInstrument(
+      {
+        shortName: 'Apple',
+        regularMarketPrice: 327,
+        currency: 'KRW',
         fullExchangeName: 'NasdaqGS',
       },
       'AAPL',
