@@ -1,4 +1,6 @@
 import { DynamicModule, Module, ModuleMetadata, Type } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { WebClient } from '@slack/web-api';
 
 import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
@@ -13,11 +15,16 @@ import {
   PREVIEW_CANCELLERS,
   PreviewCanceller,
 } from './domain/port/preview-canceller.port';
+import { PREVIEW_CARD_PORT } from './domain/port/preview-card.port';
 import {
   RESULT_VERIFIERS,
   ResultVerifier,
 } from './domain/port/result-verifier.port';
 import { PreviewActionPrismaRepository } from './infrastructure/preview-action.prisma.repository';
+import {
+  PREVIEW_CARD_SLACK_CLIENT,
+  SlackPreviewCardUpdater,
+} from './infrastructure/slack-preview-card.updater';
 
 // PO-2 Preview Gate 도메인 모듈.
 // `forRoot` 로 PreviewApplier 구현체 클래스 목록을 받아 PREVIEW_APPLIERS 멀티 프로바이더로 등록.
@@ -32,6 +39,22 @@ import { PreviewActionPrismaRepository } from './infrastructure/preview-action.p
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,
+    },
+    // 카드 갱신 어댑터 — 자체 WebClient. SLACK_BOT_TOKEN 미설정 시 client=null → updater no-op.
+    {
+      provide: PREVIEW_CARD_SLACK_CLIENT,
+      useFactory: (configService: ConfigService): WebClient | null => {
+        const token = configService.get<string>('SLACK_BOT_TOKEN');
+        if (!token) {
+          return null;
+        }
+        return new WebClient(token);
+      },
+      inject: [ConfigService],
+    },
+    {
+      provide: PREVIEW_CARD_PORT,
+      useClass: SlackPreviewCardUpdater,
     },
     {
       // applier 가 등록 안 된 상태에서도 ApplyPreviewUsecase 가 DI 에러 없이 부팅되도록 빈 배열 default.
