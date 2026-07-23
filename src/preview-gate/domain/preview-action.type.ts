@@ -59,6 +59,9 @@ export interface PreviewAction {
   createdAt: Date;
   appliedAt: Date | null;
   cancelledAt: Date | null;
+  // A 경로 카드 좌표 — 없으면(B/C 경로) null. chat.update 대상 판별에 사용.
+  slackChannelId: string | null;
+  slackMessageTs: string | null;
 }
 
 // 새 preview 생성 시 호출자가 채워 넘기는 데이터. id / status / createdAt / appliedAt / cancelledAt 은 시스템이 채움.

@@ -80,6 +80,8 @@ const buildPendingPreview = (
   createdAt: new Date(),
   appliedAt: null,
   cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
   ...overrides,
 });
 

@@ -27,6 +27,8 @@ const buildPreview = (
   createdAt: new Date('2026-04-27T11:00:00.000Z'),
   appliedAt: null,
   cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
   ...overrides,
 });
 
@@ -42,6 +44,8 @@ const buildRepo = (
     .mockImplementation(({ id, status }) =>
       Promise.resolve(buildPreview({ id, status })),
     ),
+  attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+  findExpiredPending: jest.fn().mockResolvedValue([]),
 });
 
 const buildApplier = (

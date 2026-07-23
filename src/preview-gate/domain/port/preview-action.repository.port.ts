@@ -37,4 +37,15 @@ export interface PreviewActionRepositoryPort {
     sinceDays: number;
     now: Date;
   }): Promise<PreviewOutcomeRow[]>;
+  // A 경로 카드 발송 후 좌표 저장. 이후 apply/cancel/만료 시 chat.update 로 이 메시지를 갱신한다.
+  attachSlackMessage(input: {
+    id: string;
+    slackChannelId: string;
+    slackMessageTs: string;
+  }): Promise<void>;
+  // 만료됐지만 아직 PENDING 인 카드 — preview-sweeper 가 EXPIRED 전이 + 카드 갱신 대상으로 소비.
+  findExpiredPending(input: {
+    now: Date;
+    limit: number;
+  }): Promise<PreviewAction[]>;
 }
