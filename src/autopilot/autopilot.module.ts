@@ -45,6 +45,7 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
@@ -94,6 +95,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
     OpsSupervisorAutopilotTask,
+    StockAlertScoringAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -148,6 +150,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         opsSupervisor: OpsSupervisorAutopilotTask,
         stockMonitor: StockMonitorAutopilotTask,
         stockMonitorUs: StockMonitorAutopilotTask,
+        stockAlertScoring: StockAlertScoringAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -164,6 +167,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         opsSupervisor,
         stockMonitor,
         stockMonitorUs,
+        stockAlertScoring,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -181,6 +185,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         OpsSupervisorAutopilotTask,
         STOCK_MONITOR_KR_TASK,
         STOCK_MONITOR_US_TASK,
+        StockAlertScoringAutopilotTask,
       ],
     },
     {

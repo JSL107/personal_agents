@@ -14,6 +14,17 @@ interface CurrentBrokerHolding {
   currency: string;
 }
 
+export interface AlertNeedingOutcome {
+  alertId: number;
+  tickerId: number;
+  tradeDate: Date;
+}
+
+export interface DailyPriceForOutcome {
+  tradeDate: Date;
+  adjClose: DecimalValue;
+}
+
 @Injectable()
 export class StockMonitorRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -201,6 +212,51 @@ export class StockMonitorRepository {
       triggeredValue: alert.triggeredValue.toNumber(),
       threshold: alert.threshold.toNumber(),
     }));
+  }
+
+  async findAlertsNeedingOutcome(
+    horizonDays: number,
+  ): Promise<AlertNeedingOutcome[]> {
+    const alerts = await this.prisma.stockAlert.findMany({
+      where: { outcomes: { none: { horizonDays } } },
+      orderBy: { id: 'asc' },
+      select: { id: true, tickerId: true, tradeDate: true },
+    });
+    return alerts.map(({ id, tickerId, tradeDate }) => ({
+      alertId: id,
+      tickerId,
+      tradeDate,
+    }));
+  }
+
+  async findDailyPricesSince(
+    tickerId: number,
+    tradeDate: Date,
+  ): Promise<DailyPriceForOutcome[]> {
+    return await this.prisma.dailyPrice.findMany({
+      where: { tickerId, tradeDate: { gte: tradeDate } },
+      orderBy: { tradeDate: 'asc' },
+      select: { tradeDate: true, adjClose: true },
+    });
+  }
+
+  async upsertAlertOutcome(input: {
+    alertId: number;
+    horizonDays: number;
+    firedPrice: string;
+    horizonPrice: string;
+    returnPct: string;
+  }): Promise<void> {
+    await this.prisma.alertOutcome.upsert({
+      where: {
+        alertId_horizonDays: {
+          alertId: input.alertId,
+          horizonDays: input.horizonDays,
+        },
+      },
+      create: input,
+      update: {},
+    });
   }
 
   async upsertFxRate(input: {
