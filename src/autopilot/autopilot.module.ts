@@ -39,6 +39,7 @@ import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-ta
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
@@ -86,6 +87,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     EveningRetroPublishTask,
     OpsSupervisorAutopilotTask,
     StockMonitorAutopilotTask,
+    StockAlertScoringAutopilotTask,
     GenerateOpsAdviceUsecase,
     {
       provide: OPS_SUPERVISOR_ADVISOR_PORT,
@@ -109,6 +111,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         eveningRetro: EveningRetroPublishTask,
         opsSupervisor: OpsSupervisorAutopilotTask,
         stockMonitor: StockMonitorAutopilotTask,
+        stockAlertScoring: StockAlertScoringAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -124,6 +127,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         eveningRetro,
         opsSupervisor,
         stockMonitor,
+        stockAlertScoring,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -140,6 +144,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         EveningRetroPublishTask,
         OpsSupervisorAutopilotTask,
         StockMonitorAutopilotTask,
+        StockAlertScoringAutopilotTask,
       ],
     },
     {

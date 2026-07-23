@@ -69,6 +69,23 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     });
   });
 
+  it('주식 알림 사후 채점을 평일 18시 독립 T0 task로 포함한다', () => {
+    const scoring = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'stock-alert-scoring',
+    );
+
+    expect(scoring).toMatchObject({
+      taskId: 'stock-alert-scoring',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '0 18 * * 1-5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(scoring?.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {
