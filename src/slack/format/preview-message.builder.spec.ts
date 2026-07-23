@@ -1,5 +1,6 @@
 import {
   buildPreviewBlocks,
+  buildResolvedPreviewBlocks,
   chunkMrkdwnText,
   SECTION_MRKDWN_LIMIT,
 } from './preview-message.builder';
@@ -101,5 +102,54 @@ describe('buildPreviewBlocks', () => {
     expect(actions.elements[0].value).toBe('prv-42');
     expect(actions.elements[1].action_id).toBe('preview:cancel');
     expect(actions.elements[1].value).toBe('prv-42');
+  });
+});
+
+describe('buildResolvedPreviewBlocks', () => {
+  it('APPLIED 는 버튼(actions) 블록이 없고 ✅ 머리말을 단다', () => {
+    const blocks = buildResolvedPreviewBlocks({
+      state: 'APPLIED',
+      bodyText: '발행 완료',
+      previewId: 'p-1',
+    });
+
+    const hasActions = blocks.some((b) => b.type === 'actions');
+    expect(hasActions).toBe(false);
+    const firstText = JSON.stringify(blocks[0]);
+    expect(firstText).toContain('✅');
+  });
+
+  it('EXPIRED 는 ⌛ 머리말 + 버튼 없음', () => {
+    const blocks = buildResolvedPreviewBlocks({
+      state: 'EXPIRED',
+      bodyText: '만료',
+      previewId: 'p-1',
+    });
+
+    expect(blocks.some((b) => b.type === 'actions')).toBe(false);
+    expect(JSON.stringify(blocks[0])).toContain('⌛');
+  });
+
+  it('APPLY_FAILED 만 버튼(actions)을 되살린다', () => {
+    const blocks = buildResolvedPreviewBlocks({
+      state: 'APPLY_FAILED',
+      bodyText: '실패',
+      previewId: 'p-9',
+    });
+
+    const actions = blocks.find((b) => b.type === 'actions');
+    expect(actions).toBeDefined();
+    expect(JSON.stringify(actions)).toContain('p-9');
+  });
+
+  it('APPLYING 은 ⏳ 머리말 + 버튼 없음', () => {
+    const blocks = buildResolvedPreviewBlocks({
+      state: 'APPLYING',
+      bodyText: '처리 중',
+      previewId: 'p-1',
+    });
+
+    expect(blocks.some((b) => b.type === 'actions')).toBe(false);
+    expect(JSON.stringify(blocks[0])).toContain('⏳');
   });
 });
