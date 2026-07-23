@@ -333,17 +333,36 @@ model Holding {
 // 알림 발화 이력. 임계값을 나중에 바꿔도 과거 알림의 발생 이유를 재현할 수 있도록
 // 규칙 버전과 당시 입력값·임계값을 함께 남긴다.
 model StockAlert {
-  id             Int      @id @default(autoincrement())
-  tickerId       Int      @map("ticker_id")
-  ticker         Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
-  tradeDate      DateTime @map("trade_date") @db.Date
-  ruleId         String   @map("rule_id")
-  ruleVersion    Int      @map("rule_version")
-  triggeredValue Decimal  @map("triggered_value") @db.Decimal(18, 4)
-  threshold      Decimal  @db.Decimal(18, 4)
-  firedAt        DateTime @default(now()) @map("fired_at")
+  id             Int            @id @default(autoincrement())
+  tickerId       Int            @map("ticker_id")
+  ticker         Ticker         @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  tradeDate      DateTime       @map("trade_date") @db.Date
+  ruleId         String         @map("rule_id")
+  ruleVersion    Int            @map("rule_version")
+  triggeredValue Decimal        @map("triggered_value") @db.Decimal(18, 4)
+  threshold      Decimal        @db.Decimal(18, 4)
+  firedAt        DateTime       @default(now()) @map("fired_at")
+  outcomes       AlertOutcome[]
 
   @@unique([tickerId, tradeDate, ruleId])
   @@index([tickerId, firedAt])
   @@map("stock_alert")
+}
+
+// 알림 사후 채점 — 발화 후 N거래일 뒤 실제 등락을 기록한다.
+// StockAlert 를 덮어쓰지 않고 (alertId, horizonDays) 마다 한 행을 남겨,
+// 여러 horizon 채점과 임계값 변경 후 재현을 가능하게 한다.
+// 통계적 유의성 판정은 범위 밖 — 관측 가능한 사실(등락률)만 기록한다.
+model AlertOutcome {
+  id           Int        @id @default(autoincrement())
+  alertId      Int        @map("alert_id")
+  alert        StockAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  horizonDays  Int        @map("horizon_days")
+  firedPrice   Decimal    @map("fired_price") @db.Decimal(18, 4)
+  horizonPrice Decimal    @map("horizon_price") @db.Decimal(18, 4)
+  returnPct    Decimal    @map("return_pct") @db.Decimal(18, 4)
+  evaluatedAt  DateTime   @default(now()) @map("evaluated_at")
+
+  @@unique([alertId, horizonDays])
+  @@map("alert_outcome")
 }
