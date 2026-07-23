@@ -86,6 +86,23 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(scoring?.digestGroup).toBeUndefined();
   });
 
+  it('미국 주식 모니터링을 ET 마감 30분 후 독립 항목으로 포함한다', () => {
+    const stockMonitorUs = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'stock-monitor-us',
+    );
+
+    expect(stockMonitorUs).toMatchObject({
+      taskId: 'stock-monitor-us',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '30 16 * * 1-5',
+        timezone: 'America/New_York',
+      },
+    });
+    expect(stockMonitorUs?.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

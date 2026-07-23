@@ -1,8 +1,11 @@
-export type MarketCode = 'KOSPI' | 'KOSDAQ';
+export type MarketCode = 'KOSPI' | 'KOSDAQ' | 'NASDAQ' | 'NYSE';
 
 // Yahoo 심볼 접미사 ↔ 시장 코드. 접미사를 틀리면 조회가 실패하는 게 아니라
 // 다른 종목의 가격이 돌아오므로(설계 §3.1) 매핑을 한 곳에서만 관리한다.
-export const MARKET_SUFFIX: Record<MarketCode, string> = {
+export const MARKET_SUFFIX: Record<
+  Extract<MarketCode, 'KOSPI' | 'KOSDAQ'>,
+  string
+> = {
   KOSPI: '.KS',
   KOSDAQ: '.KQ',
 };
