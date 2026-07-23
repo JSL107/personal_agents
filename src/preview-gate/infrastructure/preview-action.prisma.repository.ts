@@ -44,6 +44,8 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
         previewText: input.previewText,
         responseUrl: input.responseUrl ?? null,
         expiresAt,
+        slackChannelId: null,
+        slackMessageTs: null,
       },
     });
     return toDomain(row);
@@ -142,6 +144,32 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     }
     return [...outcomesByKind.values()];
   }
+
+  async attachSlackMessage(input: {
+    id: string;
+    slackChannelId: string;
+    slackMessageTs: string;
+  }): Promise<void> {
+    await this.prisma.previewAction.update({
+      where: { id: input.id },
+      data: {
+        slackChannelId: input.slackChannelId,
+        slackMessageTs: input.slackMessageTs,
+      },
+    });
+  }
+
+  async findExpiredPending(input: {
+    now: Date;
+    limit: number;
+  }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: { status: PREVIEW_STATUS.PENDING, expiresAt: { lte: input.now } },
+      take: input.limit,
+      orderBy: { expiresAt: 'asc' },
+    });
+    return rows.map(toDomain);
+  }
 }
 
 // Prisma row → domain. unknown kind/status 는 검증 실패로 끊어 silent corruption 회피.
@@ -157,6 +185,8 @@ const toDomain = (row: {
   createdAt: Date;
   appliedAt: Date | null;
   cancelledAt: Date | null;
+  slackChannelId: string | null;
+  slackMessageTs: string | null;
 }): PreviewAction => {
   if (!PREVIEW_KIND_VALUES.has(row.kind as PreviewKind)) {
     throw new PreviewActionException({
@@ -184,5 +214,7 @@ const toDomain = (row: {
     createdAt: row.createdAt,
     appliedAt: row.appliedAt,
     cancelledAt: row.cancelledAt,
+    slackChannelId: row.slackChannelId,
+    slackMessageTs: row.slackMessageTs,
   };
 };

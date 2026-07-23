@@ -80,8 +80,14 @@ model PreviewAction {
   createdAt   DateTime  @default(now()) @map("created_at")
   appliedAt   DateTime? @map("applied_at")
   cancelledAt DateTime? @map("cancelled_at")
+  // A 경로(chat.postMessage) 카드의 좌표 — apply/cancel/만료 시 chat.update 로 이 메시지를 다시 그린다.
+  // ephemeral(B) / 카드 없음(C) 경로는 null 로 남아 갱신이 조용히 skip 된다.
+  slackChannelId String? @map("slack_channel_id")
+  slackMessageTs String? @map("slack_message_ts")
 
   @@index([slackUserId, status])
+  // preview-sweeper 가 만료된 PENDING 을 훑는 조회용.
+  @@index([status, expiresAt])
   @@map("preview_action")
 }
 

@@ -1,3 +1,4 @@
+import { PreviewCardState } from '../../preview-gate/domain/port/preview-card.port';
 import { PREVIEW_ACTION_IDS } from '../../preview-gate/domain/preview-action.type';
 
 // Slack section.text(mrkdwn) 의 최대 문자 수는 3000. 안전 마진 50 두고 2950 로.
@@ -68,4 +69,42 @@ export const chunkMrkdwnText = (text: string, limit: number): string[] => {
     chunks.push(remaining);
   }
   return chunks;
+};
+
+// 상태별 카드 머리말. APPLY_FAILED 만 버튼을 되살려 재시도를 허용한다.
+const RESOLVED_HEADERS: Record<PreviewCardState, string> = {
+  APPLYING: '⏳ *처리 중* — 완료되면 이 메시지가 결과로 바뀝니다.',
+  APPLIED: '✅ *적용 완료*',
+  CANCELLED: '❌ *취소됨* — 부작용 없이 마감되었습니다.',
+  EXPIRED: '⌛ *만료됨* — 승인 없이 마감되었습니다.',
+  APPLY_FAILED: '⚠️ *적용 실패* — 아래 버튼으로 다시 시도할 수 있습니다.',
+};
+
+// PO-2 카드 갱신 — chat.update 로 다시 그릴 블록. 머리말 + 본문 section.
+// APPLY_FAILED 는 buildPreviewBlocks 의 버튼을 그대로 이어 붙여 재시도 경로를 유지한다.
+export const buildResolvedPreviewBlocks = ({
+  state,
+  bodyText,
+  previewId,
+}: {
+  state: PreviewCardState;
+  bodyText: string;
+  previewId: string;
+}): Array<Record<string, unknown>> => {
+  const header = RESOLVED_HEADERS[state];
+  const bodyChunks = chunkMrkdwnText(bodyText, SECTION_MRKDWN_LIMIT);
+  const sections: Array<Record<string, unknown>> = [
+    { type: 'section', text: { type: 'mrkdwn', text: header } },
+    ...bodyChunks.map((chunk) => ({
+      type: 'section',
+      text: { type: 'mrkdwn', text: chunk },
+    })),
+  ];
+  if (state === 'APPLY_FAILED') {
+    // buildPreviewBlocks 의 마지막 요소가 actions 블록 — 버튼만 이어 붙인다.
+    const withButtons = buildPreviewBlocks({ previewText: '', previewId });
+    const actionsBlock = withButtons[withButtons.length - 1];
+    return [...sections, actionsBlock];
+  }
+  return sections;
 };

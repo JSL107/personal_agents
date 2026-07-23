@@ -35,6 +35,8 @@ const buildPreview = (
   createdAt: new Date(),
   appliedAt: null,
   cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
   ...overrides,
 });
 
@@ -76,6 +78,8 @@ const buildApplier = (overrides?: {
         createdAt: new Date(),
         appliedAt: null,
         cancelledAt: null,
+        slackChannelId: null,
+        slackMessageTs: null,
       }),
     } as unknown as jest.Mocked<CreatePreviewUsecase>);
   const applier = new BeSandboxApplier(

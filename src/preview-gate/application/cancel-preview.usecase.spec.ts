@@ -1,5 +1,6 @@
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewCanceller } from '../domain/port/preview-canceller.port';
+import { PreviewCardPort } from '../domain/port/preview-card.port';
 import {
   PREVIEW_KIND,
   PREVIEW_STATUS,
@@ -22,6 +23,8 @@ const buildPreview = (
   createdAt: new Date('2026-04-27T11:00:00.000Z'),
   appliedAt: null,
   cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
   ...overrides,
 });
 
@@ -36,12 +39,18 @@ const buildRepo = (
     // 실제 Prisma repo 는 업데이트된 전체 row 를 반환(kind/payload 보존). mock 도 동일하게.
     Promise.resolve(buildPreview({ ...(preview ?? {}), id, status })),
   ),
+  attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+  findExpiredPending: jest.fn().mockResolvedValue([]),
+});
+
+const buildCard = (): jest.Mocked<PreviewCardPort> => ({
+  update: jest.fn().mockResolvedValue(undefined),
 });
 
 describe('CancelPreviewUsecase', () => {
   it('PENDING + 소유자 일치하면 CANCELLED 전이', async () => {
     const repo = buildRepo(buildPreview());
-    const usecase = new CancelPreviewUsecase(repo, []);
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
 
     await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
 
@@ -53,7 +62,7 @@ describe('CancelPreviewUsecase', () => {
 
   it('미존재 previewId 는 NOT_FOUND', async () => {
     const repo = buildRepo(null);
-    const usecase = new CancelPreviewUsecase(repo, []);
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'missing', slackUserId: 'U1' }),
@@ -64,7 +73,7 @@ describe('CancelPreviewUsecase', () => {
 
   it('owner 매칭 실패 시 WRONG_OWNER', async () => {
     const repo = buildRepo(buildPreview({ slackUserId: 'U-other' }));
-    const usecase = new CancelPreviewUsecase(repo, []);
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1' }),
@@ -75,7 +84,7 @@ describe('CancelPreviewUsecase', () => {
 
   it('이미 APPLIED 인 preview 는 ALREADY_RESOLVED', async () => {
     const repo = buildRepo(buildPreview({ status: PREVIEW_STATUS.APPLIED }));
-    const usecase = new CancelPreviewUsecase(repo, []);
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1' }),
@@ -92,7 +101,7 @@ describe('CancelPreviewUsecase', () => {
       kind: PREVIEW_KIND.PREFERENCE_PROFILE,
       onCancel: jest.fn().mockResolvedValue(undefined),
     };
-    const usecase = new CancelPreviewUsecase(repo, [canceller]);
+    const usecase = new CancelPreviewUsecase(repo, [canceller], buildCard());
 
     await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
 
@@ -112,7 +121,7 @@ describe('CancelPreviewUsecase', () => {
       kind: PREVIEW_KIND.PREFERENCE_PROFILE,
       onCancel: jest.fn(),
     };
-    const usecase = new CancelPreviewUsecase(repo, [canceller]);
+    const usecase = new CancelPreviewUsecase(repo, [canceller], buildCard());
 
     await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
 
@@ -127,7 +136,33 @@ describe('CancelPreviewUsecase', () => {
       kind: PREVIEW_KIND.PREFERENCE_PROFILE,
       onCancel: jest.fn().mockRejectedValue(new Error('boom')),
     };
-    const usecase = new CancelPreviewUsecase(repo, [canceller]);
+    const usecase = new CancelPreviewUsecase(repo, [canceller], buildCard());
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+    });
+
+    expect(result.status).toBe(PREVIEW_STATUS.CANCELLED);
+  });
+
+  it('cancel 성공 시 카드를 CANCELLED 로 갱신한다', async () => {
+    const repo = buildRepo(buildPreview());
+    const card = buildCard();
+    const usecase = new CancelPreviewUsecase(repo, [], card);
+
+    await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
+
+    expect(card.update).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'CANCELLED' }),
+    );
+  });
+
+  it('카드 갱신이 throw 해도 cancel 자체는 성공(best-effort)', async () => {
+    const repo = buildRepo(buildPreview());
+    const card = buildCard();
+    card.update.mockRejectedValue(new Error('slack down'));
+    const usecase = new CancelPreviewUsecase(repo, [], card);
 
     const result = await usecase.execute({
       previewId: 'p-1',

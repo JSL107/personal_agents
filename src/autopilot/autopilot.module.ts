@@ -43,6 +43,7 @@ import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-bri
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
+import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
@@ -90,6 +91,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
+    PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
@@ -143,6 +145,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
+        previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
@@ -160,6 +163,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport,
         runRetro,
         runSweeper,
+        previewSweeper,
         knowledgeLint,
         docsSyncAudit,
         preferenceLearning,
@@ -178,6 +182,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
+        PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,

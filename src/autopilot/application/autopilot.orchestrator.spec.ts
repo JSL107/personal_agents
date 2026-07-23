@@ -30,6 +30,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
@@ -51,6 +52,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -77,6 +79,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -97,6 +100,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1');
@@ -112,6 +116,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1, C2');
@@ -142,6 +147,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     const e1 = makeEntry('daily-eval', 'daily-eval');
@@ -171,6 +177,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await expect(
@@ -192,6 +199,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage: jest.fn() } as never,
       { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
     await expect(
       orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1'),
@@ -206,6 +214,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
@@ -229,14 +238,20 @@ describe('AutopilotOrchestrator', () => {
     };
     const slackNotifier = {
       postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
-      postPreviewMessage: jest.fn(),
+      postPreviewMessage: jest
+        .fn()
+        .mockResolvedValue({ channelId: 'C1', messageTs: '111.222' }),
     };
     const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const previewRepository = {
+      attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+    };
     const orchestrator = new AutopilotOrchestrator(
       [previewTask] as any,
       slackNotifier as any,
       idempotency as any,
       createPreview as any,
+      previewRepository as any,
     );
     await orchestrator.runGroup(
       'docs-sync-audit',
@@ -267,6 +282,12 @@ describe('AutopilotOrchestrator', () => {
       previewText: 'pv',
       previewId: 'PV1',
     });
+    // preview 발송 후 첫 타깃 좌표(channel/ts)를 저장한다.
+    expect(previewRepository.attachSlackMessage).toHaveBeenCalledWith({
+      id: 'PV1',
+      slackChannelId: 'C1',
+      slackMessageTs: '111.222',
+    });
   });
 
   it('요약은 메인 메시지로, 상세는 같은 스레드 댓글로 발송한다', async () => {
@@ -289,6 +310,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage: postMessageMock } as never,
       { acquireOnce } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     const entryA = makeEntry('a', 'a');
@@ -317,6 +339,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
@@ -340,6 +363,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce, release } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await expect(
@@ -362,6 +386,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce, release } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
@@ -394,14 +419,20 @@ describe('AutopilotOrchestrator', () => {
     };
     const slackNotifier = {
       postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
-      postPreviewMessage: jest.fn(),
+      postPreviewMessage: jest
+        .fn()
+        .mockResolvedValue({ channelId: 'C1', messageTs: '111.222' }),
     };
     const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const previewRepository = {
+      attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+    };
     const orchestrator = new AutopilotOrchestrator(
       [previewTask] as any,
       slackNotifier as any,
       idempotency as any,
       createPreview as any,
+      previewRepository as any,
     );
     await orchestrator.runGroup(
       'evening',
@@ -422,6 +453,8 @@ describe('AutopilotOrchestrator', () => {
     );
     expect(createPreview.execute).toHaveBeenCalledTimes(2);
     expect(slackNotifier.postPreviewMessage).toHaveBeenCalledTimes(2);
+    // preview 별로 좌표 저장 — 각 preview 행은 좌표 하나(첫 타깃)만 가진다.
+    expect(previewRepository.attachSlackMessage).toHaveBeenCalledTimes(2);
   });
 
   it('스레드 상세 발송 실패는 swallow — release/throw 없음', async () => {
@@ -442,6 +475,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce, release } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await expect(
@@ -467,6 +501,7 @@ describe('AutopilotOrchestrator', () => {
       { postMessage } as never,
       { acquireOnce, release } as never,
       { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
     );
 
     await expect(

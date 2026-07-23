@@ -50,6 +50,10 @@ export const DEFAULT_OPS_SUPERVISOR_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_STOCK_MONITOR_CRON = '10 17 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
 
+// Preview Sweeper 기본 스케줄 — 매시간 정각. 만료된 승인 카드의 버튼을 늦어도 1시간 안에 제거.
+export const DEFAULT_PREVIEW_SWEEPER_CRON = '0 * * * *';
+export const DEFAULT_PREVIEW_SWEEPER_TIMEZONE = 'Asia/Seoul';
+
 // 주식 알림 사후 채점 기본 스케줄 — 모니터링 이후 평일 18:00 KST.
 export const DEFAULT_STOCK_ALERT_SCORING_CRON = '0 18 * * 1-5';
 export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
