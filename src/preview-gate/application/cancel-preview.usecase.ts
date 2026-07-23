@@ -9,6 +9,10 @@ import {
   PREVIEW_CANCELLERS,
   PreviewCanceller,
 } from '../domain/port/preview-canceller.port';
+import {
+  PREVIEW_CARD_PORT,
+  PreviewCardPort,
+} from '../domain/port/preview-card.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
 import { PREVIEW_STATUS, PreviewAction } from '../domain/preview-action.type';
 import { PreviewActionErrorCode } from '../domain/preview-action-error-code.enum';
@@ -26,6 +30,8 @@ export class CancelPreviewUsecase {
     private readonly repository: PreviewActionRepositoryPort,
     @Inject(PREVIEW_CANCELLERS)
     private readonly cancellers: PreviewCanceller[],
+    @Inject(PREVIEW_CARD_PORT)
+    private readonly card: PreviewCardPort,
   ) {}
 
   async execute({
@@ -62,6 +68,17 @@ export class CancelPreviewUsecase {
       id: preview.id,
       status: PREVIEW_STATUS.CANCELLED,
     });
+    // 카드를 CANCELLED 로 갱신(버튼 제거). 갱신 실패가 cancel UX 를 막지 않도록 best-effort
+    // (runCanceller 와 동일한 결). runCanceller 앞에 둬 사용자에게 먼저 시각적 마감을 보인다.
+    try {
+      await this.card.update({ preview: cancelled, state: 'CANCELLED' });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `CANCELLED 카드 갱신 실패(무시) preview=${cancelled.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     await this.runCanceller(cancelled);
     return cancelled;
   }
