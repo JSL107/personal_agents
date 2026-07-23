@@ -5,6 +5,7 @@ import { WebClient } from '@slack/web-api';
 import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
 import { CreatePreviewUsecase } from './application/create-preview.usecase';
+import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
 import {
@@ -35,6 +36,7 @@ import {
     CreatePreviewUsecase,
     ApplyPreviewUsecase,
     CancelPreviewUsecase,
+    ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
@@ -78,6 +80,7 @@ import {
     CreatePreviewUsecase,
     ApplyPreviewUsecase,
     CancelPreviewUsecase,
+    ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
   ],
 })

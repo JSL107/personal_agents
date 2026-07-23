@@ -15,6 +15,8 @@ import {
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
   DEFAULT_PREFERENCE_LEARNING_CRON,
   DEFAULT_PREFERENCE_LEARNING_TIMEZONE,
+  DEFAULT_PREVIEW_SWEEPER_CRON,
+  DEFAULT_PREVIEW_SWEEPER_TIMEZONE,
   DEFAULT_RUN_RETRO_CRON,
   DEFAULT_RUN_RETRO_TIMEZONE,
   DEFAULT_RUN_SWEEPER_CRON,
@@ -125,6 +127,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_RUN_SWEEPER_CRON,
       timezone: DEFAULT_RUN_SWEEPER_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // Preview Sweeper — 매시간 만료된 승인 카드(PENDING)를 EXPIRED 로 정리(버튼 제거). 읽고 갱신만이라 T0_AUTO.
+  {
+    id: 'preview-sweeper',
+    taskId: 'preview-sweeper',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PREVIEW_SWEEPER_CRON,
+      timezone: DEFAULT_PREVIEW_SWEEPER_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

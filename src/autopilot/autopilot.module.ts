@@ -37,6 +37,7 @@ import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-bri
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
+import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
@@ -80,6 +81,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
+    PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
@@ -103,6 +105,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
+        previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
@@ -118,6 +121,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         impactReport,
         runRetro,
         runSweeper,
+        previewSweeper,
         knowledgeLint,
         docsSyncAudit,
         preferenceLearning,
@@ -134,6 +138,7 @@ import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
+        PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
