@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 
 import {
   detectAvgPriceBreach,
@@ -9,15 +10,16 @@ import {
 import {
   HoldingSnapshot,
   StockAnomaly,
+  StockMarketCountry,
   StoredStockAlert,
 } from '../../../agent/stock/domain/stock-monitor.type';
-import { formatStockMonitorSummary } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
+import {
+  formatStockMonitorSummary,
+  StockPriceDisplay,
+} from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
 import { DailyBar } from '../../../market-data/domain/market-data.type';
-import {
-  MARKET_DATA_PORT,
-  MarketDataPort,
-} from '../../../market-data/domain/port/market-data.port';
+import { MarketDataPort } from '../../../market-data/domain/port/market-data.port';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -26,6 +28,13 @@ import {
 
 // 판정에 필요한 최소 봉 수(당일 + 전일). 여유를 두고 5거래일을 받는다.
 const REQUIRED_BARS = 5;
+const USD_KRW_PAIR = 'USDKRW';
+
+export interface StockMonitorAutopilotTaskOptions {
+  id: 'stock-monitor' | 'stock-monitor-us';
+  targetMarketCountry: StockMarketCountry;
+  now?: () => Date;
+}
 
 interface CollectedHolding {
   holding: HoldingSnapshot & { tickerId: number };
@@ -61,16 +70,54 @@ const restoreStockAnomaly = (
   return null;
 };
 
-@Injectable()
+const resolveExpectedTradeDate = (
+  firedAtKst: string,
+  targetMarketCountry: StockMarketCountry,
+  now: Date,
+): string => {
+  if (targetMarketCountry === 'KR') {
+    return firedAtKst;
+  }
+  const dateParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const year = dateParts.find((part) => part.type === 'year')?.value;
+  const month = dateParts.find((part) => part.type === 'month')?.value;
+  const day = dateParts.find((part) => part.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+};
+
+const normalizePositiveDecimal = (value: string): string | null => {
+  try {
+    const decimal = new Prisma.Decimal(value);
+    if (!decimal.isFinite() || decimal.lte(0)) {
+      return null;
+    }
+    return decimal.toString();
+  } catch {
+    return null;
+  }
+};
+
 export class StockMonitorAutopilotTask implements AutopilotTask {
-  readonly id = 'stock-monitor';
+  readonly id: string;
   private readonly logger = new Logger(StockMonitorAutopilotTask.name);
+  private readonly targetMarketCountry: StockMarketCountry;
+  private readonly now: () => Date;
 
   constructor(
-    @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
+    options: StockMonitorAutopilotTaskOptions,
+    private readonly marketData: MarketDataPort,
     private readonly repository: StockMonitorRepository,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.id = options.id;
+    this.targetMarketCountry = options.targetMarketCountry;
+    this.now = options.now ?? (() => new Date());
+  }
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const enabled = this.configService.get<string>('STOCK_MONITOR_ENABLED');
@@ -78,7 +125,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
 
-    const holdings = await this.repository.findCurrentHoldings();
+    const holdings = await this.repository.findCurrentHoldings({
+      marketCountry: this.targetMarketCountry,
+    });
     if (holdings.length === 0) {
       return { skip: true };
     }
@@ -122,10 +171,15 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       });
     }
 
+    const expectedTradeDate = resolveExpectedTradeDate(
+      context.firedAtKst,
+      this.targetMarketCountry,
+      this.now(),
+    );
     const hasCurrentDateCheckpoint = collectedHoldings.some(
       ({ today, previousStoredDate }) =>
         isMarketClosed(today.tradeDate, previousStoredDate) &&
-        today.tradeDate.toISOString().slice(0, 10) === context.firedAtKst,
+        today.tradeDate.toISOString().slice(0, 10) === expectedTradeDate,
     );
     const marketClosed =
       collectedHoldings.length > 0 &&
@@ -148,6 +202,15 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       };
     }
 
+    const rateDate = lastTradeDate
+      ? new Date(`${lastTradeDate}T00:00:00.000Z`)
+      : null;
+    const usdKrwRate = rateDate ? await this.resolveUsdKrwRate(rateDate) : null;
+    const priceDisplays = this.createPriceDisplays(
+      collectedHoldings,
+      usdKrwRate,
+    );
+
     let checkedCount = 0;
     for (const {
       holding,
@@ -157,7 +220,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     } of collectedHoldings) {
       if (isMarketClosed(today.tradeDate, previousStoredDate)) {
         const tradeDate = today.tradeDate.toISOString().slice(0, 10);
-        if (tradeDate === context.firedAtKst) {
+        if (tradeDate === expectedTradeDate) {
           try {
             const storedAlerts = await this.repository.findAlertsByTradeDate(
               holding.tickerId,
@@ -230,7 +293,77 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         lastTradeDate: lastTradeDate || '알 수 없음',
         failures,
         marketClosed: false,
+        priceDisplays,
       }),
     };
+  }
+
+  private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
+    if (this.targetMarketCountry !== 'US') {
+      return null;
+    }
+
+    let fetchedRate: string | null = null;
+    try {
+      fetchedRate = await this.marketData.fetchUsdKrwRate();
+    } catch (error) {
+      this.logger.warn(`환율 조회 실패 — ${(error as Error).message}`);
+    }
+
+    const normalizedFetchedRate = fetchedRate
+      ? normalizePositiveDecimal(fetchedRate)
+      : null;
+    if (normalizedFetchedRate) {
+      try {
+        await this.repository.upsertFxRate({
+          pair: USD_KRW_PAIR,
+          rateDate,
+          rate: normalizedFetchedRate,
+        });
+      } catch (error) {
+        this.logger.warn(`환율 저장 실패 — ${(error as Error).message}`);
+      }
+      return normalizedFetchedRate;
+    }
+
+    try {
+      const storedRate = await this.repository.findFxRate({
+        pair: USD_KRW_PAIR,
+        rateDate,
+      });
+      return storedRate ? normalizePositiveDecimal(storedRate) : null;
+    } catch (error) {
+      this.logger.warn(`환율 재조회 실패 — ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  private createPriceDisplays(
+    collectedHoldings: CollectedHolding[],
+    usdKrwRate: string | null,
+  ): StockPriceDisplay[] {
+    if (this.targetMarketCountry !== 'US') {
+      return [];
+    }
+    return collectedHoldings.map(({ holding, today }) => {
+      const currentPrice = today.adjClose.toString();
+      let convertedKrw: string | undefined;
+      try {
+        convertedKrw = usdKrwRate
+          ? new Prisma.Decimal(currentPrice)
+              .mul(usdKrwRate)
+              .toDecimalPlaces(0)
+              .toFixed(0)
+          : undefined;
+      } catch (error) {
+        this.logger.warn(`환율 환산 실패 — ${(error as Error).message}`);
+      }
+      return {
+        yahooSymbol: holding.yahooSymbol,
+        currency: today.currency,
+        currentPrice,
+        convertedKrw,
+      };
+    });
   }
 }

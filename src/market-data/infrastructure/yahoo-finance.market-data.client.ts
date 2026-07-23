@@ -23,7 +23,11 @@ export class YahooFinanceMarketDataClient implements MarketDataPort {
   async resolveSymbol(yahooSymbol: string): Promise<ResolvedInstrument | null> {
     try {
       const quote = await this.client.quote(yahooSymbol);
-      return mapQuoteToInstrument(quote, yahooSymbol);
+      const instrument = mapQuoteToInstrument(quote, yahooSymbol);
+      if (!instrument) {
+        this.logger.warn(`심볼 응답 거부 — ${yahooSymbol}`);
+      }
+      return instrument;
     } catch (error) {
       this.logger.warn(
         `심볼 조회 실패 — ${yahooSymbol}: ${(error as Error).message}`,
@@ -43,11 +47,29 @@ export class YahooFinanceMarketDataClient implements MarketDataPort {
       period1,
       interval: '1d',
     });
-    const currency = chart.meta?.currency ?? 'KRW';
+    const currency = chart.meta?.currency;
+    if (!currency) {
+      throw new Error(`일봉 응답 currency 없음 — ${yahooSymbol}`);
+    }
     const bars = chart.quotes
       .map((quote) => mapChartQuoteToDailyBar(quote, currency))
       .filter((bar): bar is DailyBar => bar !== null);
 
     return bars.slice(-days);
+  }
+
+  async fetchUsdKrwRate(): Promise<string | null> {
+    try {
+      const quote = await this.client.quote('KRW=X');
+      const rate = quote.regularMarketPrice;
+      if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+        this.logger.warn('환율 응답 거부 — KRW=X regularMarketPrice 오염');
+        return null;
+      }
+      return rate.toString();
+    } catch (error) {
+      this.logger.warn(`환율 조회 실패 — KRW=X: ${(error as Error).message}`);
+      return null;
+    }
   }
 }
