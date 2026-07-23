@@ -5,7 +5,31 @@ export interface StockMonitorContext {
   lastTradeDate: string;
   failures: string[];
   marketClosed: boolean;
+  priceDisplays?: StockPriceDisplay[];
 }
+
+export interface StockPriceDisplay {
+  yahooSymbol: string;
+  currency: string;
+  currentPrice: string;
+  convertedKrw?: string;
+}
+
+const formatKrw = (value: string): string => {
+  const integer = value.split('.')[0];
+  return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+const formatPriceDisplay = (priceDisplay?: StockPriceDisplay): string => {
+  if (!priceDisplay || priceDisplay.currency !== 'USD') {
+    return '';
+  }
+  const parts = [`USD ${priceDisplay.currentPrice}`];
+  if (priceDisplay.convertedKrw) {
+    parts.push(`₩${formatKrw(priceDisplay.convertedKrw)} 상당`);
+  }
+  return ` (${parts.join(', ')})`;
+};
 
 export const formatStockMonitorSummary = (
   anomalies: StockAnomaly[],
@@ -38,8 +62,16 @@ export const formatStockMonitorSummary = (
     `📉 *주식 모니터링* — ${anomalies.length}건 발화 (${context.lastTradeDate})`,
   );
   for (const anomaly of anomalies) {
+    const stockPriceDisplay = context.priceDisplays?.find(
+      (candidate) => candidate.yahooSymbol === anomaly.yahooSymbol,
+    );
+    const priceDisplay = formatPriceDisplay(stockPriceDisplay);
+    const tickerLabel =
+      stockPriceDisplay?.currency === 'USD'
+        ? `🇺🇸 *${anomaly.yahooSymbol}*`
+        : `*${anomaly.tickerName}*`;
     lines.push(
-      `• *${anomaly.tickerName}* — ${anomaly.detail} (임계 ${anomaly.threshold}%)`,
+      `• ${tickerLabel} — ${anomaly.detail}${priceDisplay} (임계 ${anomaly.threshold}%)`,
     );
   }
   return lines.join('\n');

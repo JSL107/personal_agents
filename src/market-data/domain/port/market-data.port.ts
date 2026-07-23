@@ -9,4 +9,7 @@ export interface MarketDataPort {
 
   // 최근 거래일부터 역순으로 days 개의 일봉. 휴장일은 애초에 반환되지 않는다.
   fetchDailyBars(yahooSymbol: string, days: number): Promise<DailyBar[]>;
+
+  // Yahoo KRW=X 현재가. 표시용 환율이므로 조회 실패는 null 로 폴백한다.
+  fetchUsdKrwRate(): Promise<string | null>;
 }

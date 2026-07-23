@@ -26,6 +26,22 @@ const SUFFIX_TO_MARKET: Record<string, MarketCode> = {
   '.KQ': 'KOSDAQ',
 };
 
+const resolveUnitedStatesMarket = (
+  currency: string,
+  fullExchangeName?: string,
+): MarketCode | null => {
+  if (currency !== 'USD' || !fullExchangeName) {
+    return null;
+  }
+  if (fullExchangeName.startsWith('Nasdaq')) {
+    return 'NASDAQ';
+  }
+  if (fullExchangeName.startsWith('NYSE')) {
+    return 'NYSE';
+  }
+  return null;
+};
+
 // 잘못된 접미사에 대해 Yahoo 는 예외 대신 shortName 이 "심볼,ID,ID" 형태이거나
 // 심볼 문자열 자체인 응답을 준다. 이 두 가지가 오염의 신호다.
 const isPollutedName = (name: string, yahooSymbol: string): boolean => {
@@ -42,7 +58,8 @@ export const mapQuoteToInstrument = (
   if (!raw || typeof raw !== 'object') {
     return null;
   }
-  const { shortName, regularMarketPrice, currency } = raw as RawQuote;
+  const { shortName, regularMarketPrice, currency, fullExchangeName } =
+    raw as RawQuote;
   if (!shortName || regularMarketPrice == null || !currency) {
     return null;
   }
@@ -50,15 +67,18 @@ export const mapQuoteToInstrument = (
     return null;
   }
 
+  const isUnitedStatesSymbol = !yahooSymbol.includes('.');
   const suffix = yahooSymbol.slice(-3);
-  const market = SUFFIX_TO_MARKET[suffix];
+  const market = isUnitedStatesSymbol
+    ? resolveUnitedStatesMarket(currency, fullExchangeName)
+    : SUFFIX_TO_MARKET[suffix];
   if (!market) {
     return null;
   }
 
   return {
     yahooSymbol,
-    code: yahooSymbol.slice(0, -3),
+    code: isUnitedStatesSymbol ? yahooSymbol : yahooSymbol.slice(0, -3),
     market,
     name: shortName,
     currency,

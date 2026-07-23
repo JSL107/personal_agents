@@ -347,3 +347,17 @@ model StockAlert {
   @@index([tickerId, firedAt])
   @@map("stock_alert")
 }
+
+// 일별 환율 — 미국 종목 손익의 원화 환산 표시에만 쓴다(판정에는 쓰지 않는다).
+// 판정은 종목의 거래 통화(USD) 기준으로 하므로 환율 조회가 실패해도 판정은 정상 동작하고
+// 원화 병기만 생략된다. rate 는 소수 자릿수가 크므로 Decimal(18,6).
+model DailyFxRate {
+  id        Int      @id @default(autoincrement())
+  pair      String
+  rateDate  DateTime @map("rate_date") @db.Date
+  rate      Decimal  @db.Decimal(18, 6)
+  fetchedAt DateTime @default(now()) @map("fetched_at")
+
+  @@unique([pair, rateDate])
+  @@map("daily_fx_rate")
+}

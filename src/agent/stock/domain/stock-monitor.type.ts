@@ -1,6 +1,7 @@
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 
 export type StockAnomalyKind = 'DAILY_CHANGE' | 'AVG_PRICE_BREACH';
+export type StockMarketCountry = 'KR' | 'US';
 
 export interface StockAnomaly {
   tickerName: string;
