@@ -250,14 +250,18 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     target: string;
     previewText: string;
     previewId: string;
-  }): Promise<void> {
+  }): Promise<{ channelId: string; messageTs: string }> {
     const app = this.assertAppReady();
-    await app.client.chat.postMessage({
+    const response = await app.client.chat.postMessage({
       channel: target,
       text: previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
       blocks: buildPreviewBlocks({ previewText, previewId }) as never,
     });
+    return {
+      channelId: String(response.channel ?? target),
+      messageTs: String(response.ts ?? ''),
+    };
   }
 
   // Subconscious proposal — proposalId 가 박힌 ✅실행 / ❌무시 버튼 Block Kit DM 발송.

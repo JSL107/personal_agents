@@ -9,6 +9,10 @@ import {
 } from '../../morning-briefing/domain/port/slack-notifier.port';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import {
+  PREVIEW_ACTION_REPOSITORY_PORT,
+  PreviewActionRepositoryPort,
+} from '../../preview-gate/domain/port/preview-action.repository.port';
+import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
   AutopilotTask,
@@ -34,6 +38,8 @@ export class AutopilotOrchestrator {
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
     private readonly createPreview: CreatePreviewUsecase,
+    @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
+    private readonly previewRepository: PreviewActionRepositoryPort,
   ) {
     this.tasks = new Map(tasks.map((task) => [task.id, task]));
   }
@@ -173,12 +179,23 @@ export class AutopilotOrchestrator {
         responseUrl: null,
         ttlMs: PREVIEW_TTL_MS,
       });
+      let coordinateSaved = false;
       for (const resolved of targets) {
-        await this.slackNotifier.postPreviewMessage({
-          target: resolved,
-          previewText: preview.previewText,
-          previewId: created.id,
-        });
+        const { channelId, messageTs } =
+          await this.slackNotifier.postPreviewMessage({
+            target: resolved,
+            previewText: preview.previewText,
+            previewId: created.id,
+          });
+        // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
+        if (!coordinateSaved && messageTs) {
+          await this.previewRepository.attachSlackMessage({
+            id: created.id,
+            slackChannelId: channelId,
+            slackMessageTs: messageTs,
+          });
+          coordinateSaved = true;
+        }
       }
     }
 

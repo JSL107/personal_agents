@@ -37,6 +37,8 @@ const buildPreview = (payload: unknown): PreviewAction => ({
   createdAt: new Date(),
   appliedAt: null,
   cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
 });
 
 describe('PoEvalCareerlogApplier', () => {
