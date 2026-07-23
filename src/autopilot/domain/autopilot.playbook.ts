@@ -23,6 +23,8 @@ import {
   DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
   DEFAULT_STOCK_MONITOR_CRON,
   DEFAULT_STOCK_MONITOR_TIMEZONE,
+  DEFAULT_STOCK_MONITOR_US_CRON,
+  DEFAULT_STOCK_MONITOR_US_TIMEZONE,
   DEFAULT_WEEKLY_SUMMARY_CRON,
   DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
 } from './autopilot.playbook-defaults';
@@ -157,6 +159,16 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_STOCK_ALERT_SCORING_CRON,
       timezone: DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'stock-monitor-us',
+    taskId: 'stock-monitor-us',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_STOCK_MONITOR_US_CRON,
+      timezone: DEFAULT_STOCK_MONITOR_US_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

@@ -53,3 +53,7 @@ export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
 // 주식 알림 사후 채점 기본 스케줄 — 모니터링 이후 평일 18:00 KST.
 export const DEFAULT_STOCK_ALERT_SCORING_CRON = '0 18 * * 1-5';
 export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
+
+// 미국 주식 모니터링 기본 스케줄 — 미국 정규장 마감 30분 후 평일 16:30 ET.
+export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
+export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';

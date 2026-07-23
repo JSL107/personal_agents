@@ -3,13 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { YahooFinanceMarketDataClient } from '../src/market-data/infrastructure/yahoo-finance.market-data.client';
 
 // 사용법: pnpm exec ts-node scripts/register-holding.ts 005930.KS 68200 10
-// 접미사(.KS/.KQ)를 반드시 붙인다. 없거나 틀리면 Yahoo 가 조용히 다른 값을 주므로
+// 국내는 접미사(.KS/.KQ)를 붙이고, 미국은 Yahoo 심볼(AAPL)을 그대로 쓴다.
 // 등록 전에 조회해 종목명을 사람이 확인한다.
 const main = async (): Promise<void> => {
   const [yahooSymbol, avgPriceRaw, quantityRaw] = process.argv.slice(2);
   if (!yahooSymbol || !avgPriceRaw || !quantityRaw) {
     console.error(
-      '사용법: ts-node scripts/register-holding.ts <심볼> <평단> <수량>\n예: ts-node scripts/register-holding.ts 005930.KS 68200 10',
+      '사용법: ts-node scripts/register-holding.ts <심볼> <평단> <수량>\n국내 예: ts-node scripts/register-holding.ts 005930.KS 68200 10\n미국 예: ts-node scripts/register-holding.ts AAPL 210.50 3',
     );
     process.exit(1);
   }
@@ -18,7 +18,7 @@ const main = async (): Promise<void> => {
   const instrument = await client.resolveSymbol(yahooSymbol);
   if (!instrument) {
     console.error(
-      `[거부] ${yahooSymbol} 를 확인할 수 없습니다. 접미사(.KS/.KQ)가 맞는지 확인하세요.`,
+      `[거부] ${yahooSymbol} 를 확인할 수 없습니다. 국내 접미사(.KS/.KQ) 또는 미국 Yahoo 심볼을 확인하세요.`,
     );
     process.exit(1);
   }
@@ -26,6 +26,10 @@ const main = async (): Promise<void> => {
   console.log(
     `확인 — ${instrument.name} (${instrument.market}, ${instrument.currency})`,
   );
+  const marketCountry =
+    instrument.market === 'NASDAQ' || instrument.market === 'NYSE'
+      ? 'US'
+      : 'KR';
 
   const prisma = new PrismaClient();
   try {
@@ -36,13 +40,16 @@ const main = async (): Promise<void> => {
       create: {
         code: instrument.code,
         market: instrument.market,
+        marketCountry,
         yahooSymbol: instrument.yahooSymbol,
         name: instrument.name,
         currency: instrument.currency,
       },
       update: {
+        marketCountry,
         yahooSymbol: instrument.yahooSymbol,
         name: instrument.name,
+        currency: instrument.currency,
       },
     });
 

@@ -4,6 +4,7 @@ import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
   HoldingSnapshot,
+  StockMarketCountry,
   StoredStockAlert,
 } from '../domain/stock-monitor.type';
 
@@ -29,10 +30,13 @@ export class StockMonitorRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // 종목마다 가장 최근 effectiveDate 의 보유 행이 현재 상태다.
-  async findCurrentHoldings(): Promise<
-    (HoldingSnapshot & { tickerId: number })[]
-  > {
+  async findCurrentHoldings({
+    marketCountry,
+  }: {
+    marketCountry: StockMarketCountry;
+  }): Promise<(HoldingSnapshot & { tickerId: number })[]> {
     const holdings = await this.prisma.holding.findMany({
+      where: { ticker: { marketCountry } },
       orderBy: { effectiveDate: 'desc' },
       include: { ticker: true },
     });
@@ -253,5 +257,41 @@ export class StockMonitorRepository {
       create: input,
       update: {},
     });
+  }
+
+  async upsertFxRate(input: {
+    pair: string;
+    rateDate: Date;
+    rate: string;
+  }): Promise<void> {
+    await this.prisma.dailyFxRate.upsert({
+      where: {
+        pair_rateDate: {
+          pair: input.pair,
+          rateDate: input.rateDate,
+        },
+      },
+      create: input,
+      update: {
+        rate: input.rate,
+        fetchedAt: new Date(),
+      },
+    });
+  }
+
+  async findFxRate(input: {
+    pair: string;
+    rateDate: Date;
+  }): Promise<string | null> {
+    const fxRate = await this.prisma.dailyFxRate.findUnique({
+      where: {
+        pair_rateDate: {
+          pair: input.pair,
+          rateDate: input.rateDate,
+        },
+      },
+      select: { rate: true },
+    });
+    return fxRate?.rate.toString() ?? null;
   }
 }
