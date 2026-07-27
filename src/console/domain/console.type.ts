@@ -49,11 +49,24 @@ export interface ConsoleApproval {
   readonly createdAt: string;
 }
 
+/** 로컬에서 실행 중인 CLI 세션 한 건(관제 뷰 표현). 읽기 전용. */
+export interface ConsoleSession {
+  readonly sessionId: string;
+  readonly pid: number;
+  readonly source: 'claude' | 'codex';
+  readonly name: string;
+  readonly cwd: string;
+  readonly state: 'active' | 'idle';
+  readonly startedAt: string;
+  readonly lastActivityAt: string | null;
+}
+
 /** 앱 부팅 시 1콜로 받는 전체 상태 스냅샷. */
 export interface ConsoleSnapshot {
   readonly agents: ConsoleAgent[];
   readonly runs: ConsoleRun[];
   readonly approvals: ConsoleApproval[];
+  readonly sessions: ConsoleSession[];
   readonly serverTime: string;
 }
 
@@ -68,4 +81,9 @@ export type ConsoleEvent =
       readonly type: 'state.changed';
       readonly agentType: string;
       readonly state: ConsoleAgentState;
-    };
+    }
+  | {
+      readonly type: 'session.opened' | 'session.updated';
+      readonly session: ConsoleSession;
+    }
+  | { readonly type: 'session.closed'; readonly sessionId: string };
