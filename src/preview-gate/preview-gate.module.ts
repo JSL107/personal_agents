@@ -6,6 +6,7 @@ import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
 import { CreatePreviewUsecase } from './application/create-preview.usecase';
 import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
+import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews.usecase';
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
 import {
@@ -38,6 +39,7 @@ import {
     CancelPreviewUsecase,
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
+    FindAllOpenPreviewsUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,
@@ -82,6 +84,7 @@ import {
     CancelPreviewUsecase,
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
+    FindAllOpenPreviewsUsecase,
   ],
 })
 export class PreviewGateModule {

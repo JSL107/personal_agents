@@ -1,3 +1,4 @@
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewCardPort } from '../domain/port/preview-card.port';
 import { PREVIEW_STATUS, PreviewAction } from '../domain/preview-action.type';
@@ -33,6 +34,7 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn(),
   findExpiredPending: jest.fn().mockResolvedValue(expired),
+  findAllOpen: jest.fn().mockResolvedValue([]),
 });
 
 const buildCard = (): jest.Mocked<PreviewCardPort> => ({
@@ -70,6 +72,28 @@ describe('ExpirePreviewsUsecase', () => {
       expect.objectContaining({ state: 'EXPIRED' }),
     );
     expect(card.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('만료 처리한 각 건에 approval.resolved 이벤트를 발행한다', async () => {
+    const repo = buildRepo([buildPreview('p-1'), buildPreview('p-2')]);
+    const bus = {
+      publish: jest.fn(),
+      stream: jest.fn(),
+    } as unknown as ConsoleEventBus;
+    const usecase = new ExpirePreviewsUsecase(repo, buildCard(), bus);
+
+    await usecase.execute({ now });
+
+    const resolved = (bus.publish as jest.Mock).mock.calls
+      .map((call) => call[0])
+      .filter((event) => event.type === 'approval.resolved');
+    expect(resolved).toHaveLength(2);
+    expect(resolved[0].approval).toEqual({
+      id: 'p-1',
+      agentType: null,
+      title: 't',
+      createdAt: '2026-06-30T00:00:00.000Z',
+    });
   });
 
   it('한 건 전이가 throw 해도 나머지는 계속 처리한다', async () => {

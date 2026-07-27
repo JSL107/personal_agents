@@ -15,6 +15,7 @@ import {
   EvidenceInput,
 } from '../domain/agent-run.type';
 import {
+  ActiveRunSnapshot,
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
@@ -406,6 +407,30 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       take: limit,
     });
     return roots.map((row) => row.id);
+  }
+
+  // 콘솔 관제 — 현재 IN_PROGRESS 인 런 전체를 최신 시작순으로 조회. 읽기 전용.
+  async findActiveRuns(): Promise<ActiveRunSnapshot[]> {
+    const rows = await this.prisma.agentRun.findMany({
+      where: { status: AgentRunStatus.IN_PROGRESS },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        agentType: true,
+        status: true,
+        parentId: true,
+        startedAt: true,
+        endedAt: true,
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      agentType: row.agentType,
+      status: row.status,
+      parentId: row.parentId,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+    }));
   }
 
   async sweepZombies({

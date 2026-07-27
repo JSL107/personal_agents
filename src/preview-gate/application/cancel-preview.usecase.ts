@@ -1,6 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { toConsoleApproval } from '../../console/application/console-mappers';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
@@ -32,6 +34,9 @@ export class CancelPreviewUsecase {
     private readonly cancellers: PreviewCanceller[],
     @Inject(PREVIEW_CARD_PORT)
     private readonly card: PreviewCardPort,
+    // 콘솔 관제 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입. 미주입 시 emit no-op.
+    @Optional()
+    private readonly consoleEvents?: ConsoleEventBus,
   ) {}
 
   async execute({
@@ -67,6 +72,11 @@ export class CancelPreviewUsecase {
     const cancelled = await this.repository.transition({
       id: preview.id,
       status: PREVIEW_STATUS.CANCELLED,
+    });
+    // 콘솔 관제 — 승인 종결 알림(카드가 스냅샷/스트림에서 사라지도록).
+    this.consoleEvents?.publish({
+      type: 'approval.resolved',
+      approval: toConsoleApproval(cancelled),
     });
     // 카드를 CANCELLED 로 갱신(버튼 제거). 갱신 실패가 cancel UX 를 막지 않도록 best-effort
     // (runCanceller 와 동일한 결). runCanceller 앞에 둬 사용자에게 먼저 시각적 마감을 보인다.
