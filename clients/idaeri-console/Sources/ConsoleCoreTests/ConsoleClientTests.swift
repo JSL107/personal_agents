@@ -11,7 +11,7 @@ func runConsoleClientTests(_ t: TestRunner) {
     // command: POST + JSON body + 토큰 헤더
     let commandRequest = try! buildCommandRequest(
         baseURL: base,
-        body: CommandRequest(text: "오늘 계획", agentTypeHint: "PM"),
+        body: CommandRequest(text: "오늘 계획", agentTypeHint: "PM", commandId: "command-123"),
         token: "secret"
     )
     t.expectEqual(commandRequest.httpMethod, "POST", "command method")
@@ -36,11 +36,12 @@ func runConsoleClientTests(_ t: TestRunner) {
     )
     t.expectEqual(decoded.text, "오늘 계획", "command body text")
     t.expectEqual(decoded.agentTypeHint, "PM", "command body hint")
+    t.expectEqual(decoded.commandId, "command-123", "command body commandId")
 
     // 토큰 미설정이면 헤더 없음
     let noToken = try! buildCommandRequest(
         baseURL: base,
-        body: CommandRequest(text: "x", agentTypeHint: nil),
+        body: CommandRequest(text: "x", agentTypeHint: nil, commandId: "command-456"),
         token: nil
     )
     t.expectNil(noToken.value(forHTTPHeaderField: "x-console-token"), "토큰 미설정 시 헤더 없음")
@@ -65,4 +66,5 @@ func runConsoleClientTests(_ t: TestRunner) {
 private struct CommandRequestEcho: Decodable {
     let text: String
     let agentTypeHint: String?
+    let commandId: String
 }

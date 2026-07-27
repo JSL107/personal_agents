@@ -76,4 +76,25 @@ func runSSEParserTests(_ t: TestRunner) {
         let events = parseSSELine(&buffer)
         t.expectEqual(events.count, 1, "주석 블록 무시, 데이터만 파싱")
     }
+
+    // command 이벤트도 SSE 프레이밍을 거쳐 payload 를 보존
+    do {
+        var buffer = ""
+        buffer += "data: {\"type\":\"command.rejected\",\"commandId\":\"c1\",\"reason\":\"PR 없음\"}\n\n"
+        buffer += "data: {\"type\":\"command.info\",\"commandId\":\"c2\",\"message\":\"최근 PR 자동 선택\"}\n\n"
+        let events = parseSSELine(&buffer)
+        t.expectEqual(events.count, 2, "command 이벤트 2종 파싱")
+        if case let .commandRejected(commandId, reason) = events.first {
+            t.expectEqual(commandId, "c1", "rejected commandId")
+            t.expectEqual(reason, "PR 없음", "rejected reason")
+        } else {
+            t.fail("첫 이벤트는 commandRejected 여야 함")
+        }
+        if case let .commandInfo(commandId, message) = events.last {
+            t.expectEqual(commandId, "c2", "info commandId")
+            t.expectEqual(message, "최근 PR 자동 선택", "info message")
+        } else {
+            t.fail("두 번째 이벤트는 commandInfo 여야 함")
+        }
+    }
 }

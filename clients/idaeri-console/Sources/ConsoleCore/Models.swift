@@ -117,6 +117,8 @@ public enum ConsoleEvent: Decodable, Sendable {
     case approvalOpened(ConsoleApproval)
     case approvalResolved(ConsoleApproval)
     case stateChanged(agentType: String, state: ConsoleAgentState)
+    case commandRejected(commandId: String, reason: String)
+    case commandInfo(commandId: String, message: String)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -124,6 +126,9 @@ public enum ConsoleEvent: Decodable, Sendable {
         case approval
         case agentType
         case state
+        case commandId
+        case reason
+        case message
     }
 
     public init(from decoder: Decoder) throws {
@@ -143,6 +148,16 @@ public enum ConsoleEvent: Decodable, Sendable {
                 agentType: try container.decode(String.self, forKey: .agentType),
                 state: try container.decode(ConsoleAgentState.self, forKey: .state)
             )
+        case "command.rejected":
+            self = .commandRejected(
+                commandId: try container.decode(String.self, forKey: .commandId),
+                reason: try container.decode(String.self, forKey: .reason)
+            )
+        case "command.info":
+            self = .commandInfo(
+                commandId: try container.decode(String.self, forKey: .commandId),
+                message: try container.decode(String.self, forKey: .message)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -153,14 +168,16 @@ public enum ConsoleEvent: Decodable, Sendable {
     }
 }
 
-/// 리모컨 지시 요청 body. 백엔드 `POST /v1/console/command` 계약(text + 선택 힌트).
+/// 리모컨 지시 요청 body. 백엔드 `POST /v1/console/command` 계약(text + 선택 힌트 + commandId).
 public struct CommandRequest: Encodable, Sendable {
     public let text: String
     public let agentTypeHint: String?
+    public let commandId: String
 
-    public init(text: String, agentTypeHint: String?) {
+    public init(text: String, agentTypeHint: String?, commandId: String) {
         self.text = text
         self.agentTypeHint = agentTypeHint
+        self.commandId = commandId
     }
 }
 
@@ -181,6 +198,7 @@ public struct PendingCommand: Identifiable, Sendable, Equatable {
     public var boundRunId: String?
     public let sentAt: Date
     public var phase: PendingPhase
+    public var reason: String?
 
     public init(
         id: UUID,
@@ -189,7 +207,8 @@ public struct PendingCommand: Identifiable, Sendable, Equatable {
         resolvedAgentType: String? = nil,
         boundRunId: String? = nil,
         sentAt: Date,
-        phase: PendingPhase
+        phase: PendingPhase,
+        reason: String? = nil
     ) {
         self.id = id
         self.text = text
@@ -198,6 +217,7 @@ public struct PendingCommand: Identifiable, Sendable, Equatable {
         self.boundRunId = boundRunId
         self.sentAt = sentAt
         self.phase = phase
+        self.reason = reason
     }
 
     /// 카드 매칭용 — 확정된 agentType 우선, 없으면 최초 힌트.
