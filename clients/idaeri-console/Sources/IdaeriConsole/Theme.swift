@@ -39,3 +39,33 @@ extension ConsoleAgentState {
         }
     }
 }
+
+/// pending 지시(리모컨 명령)의 배지 표현. bubble 과 마찬가지로 상태 자체는
+/// ConsoleStore(도메인) 소유지만, 아이콘·라벨은 앱 표현 계층이 소유한다.
+extension PendingPhase {
+    var badgeIcon: String {
+        switch self {
+        case .sent:
+            return "⏳"
+        case .running:
+            return "🔄"
+        case .done:
+            return "✅"
+        case .failed:
+            return "⚠️"
+        }
+    }
+
+    var badgeLabel: String {
+        switch self {
+        case .sent:
+            return "전송됨"
+        case .running:
+            return "진행 중"
+        case .done:
+            return "완료"
+        case .failed:
+            return "실패"
+        }
+    }
+}

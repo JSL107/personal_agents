@@ -10,6 +10,12 @@ struct DashboardView: View {
     let status: ConnectionStatus
     /// 연결 대상 표시용(빈 상태 안내에 노출). 동작에는 영향 없음.
     let baseURLLabel: String
+    /// 리모컨 write — AppRootView 가 client POST 로 배선한 액션.
+    let onSend: (String, String?) -> Void
+    let onApprove: (String) -> Void
+    let onReject: (String) -> Void
+
+    @State private var commandText = ""
 
     private let columns = [GridItem(.adaptive(minimum: 220), spacing: 14)]
 
@@ -17,6 +23,8 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+
+                commandBar
 
                 if !bottleneckAgents.isEmpty {
                     bottleneckBanner
@@ -27,7 +35,7 @@ struct DashboardView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(store.agents) { agent in
-                            AgentCardView(agent: agent)
+                            AgentCardView(agent: agent, pendingCommands: store.pendingCommands, onSend: onSend)
                         }
                     }
                 }
@@ -39,6 +47,47 @@ struct DashboardView: View {
             .padding(24)
         }
         .frame(minWidth: 720, minHeight: 520)
+    }
+
+    // MARK: - 커맨드바
+
+    private var commandBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                TextField("에이전트에게 지시…", text: $commandText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(sendGlobalCommand)
+                Button("전송", action: sendGlobalCommand)
+                    .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if !globalPendingCommands.isEmpty {
+                pendingBadgeRow
+            }
+        }
+    }
+
+    private func sendGlobalCommand() {
+        onSend(commandText, nil)
+        commandText = ""
+    }
+
+    private var pendingBadgeRow: some View {
+        HStack(spacing: 6) {
+            ForEach(globalPendingCommands) { command in
+                HStack(spacing: 4) {
+                    Text(command.phase.badgeIcon)
+                    Text(command.text)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(Color.primary.opacity(0.06))
+                )
+            }
+        }
     }
 
     // MARK: - 헤더
@@ -126,6 +175,11 @@ struct DashboardView: View {
                     Text(formatTime(approval.createdAt))
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Button("승인") { onApprove(approval.id) }
+                        Button("거절") { onReject(approval.id) }
+                            .tint(.red)
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -184,6 +238,14 @@ struct DashboardView: View {
 
     private var bottleneckAgents: [ConsoleAgent] {
         store.agents.filter { $0.state == .awaitingIntegration }
+    }
+
+    /// 아직 카드로 라우팅되지 않은(힌트 없음 + run.started 로 확정되지 않음) pending 만
+    /// 헤더 커맨드바에 남긴다. `run.started` 로 `resolvedAgentType` 이 채워지면 해당
+    /// AgentCardView 배지로 넘어가므로 여기서는 제외 — 커맨드바·카드 중복 표시 방지.
+    /// 타임아웃 실패(`.failed`, resolvedAgentType 여전히 nil)는 계속 커맨드바에 남아 ⚠️ 로 보인다.
+    private var globalPendingCommands: [PendingCommand] {
+        store.pendingCommands.filter { $0.agentTypeHint == nil && $0.resolvedAgentType == nil }
     }
 
     private func countOf(_ state: ConsoleAgentState) -> Int {

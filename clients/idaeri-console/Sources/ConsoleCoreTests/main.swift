@@ -8,5 +8,6 @@ runModelsTests(runner)
 runConsoleStoreTests(runner)
 runSSEParserTests(runner)
 runOfficeLayoutTests(runner)
+runConsoleClientTests(runner)
 
 runner.finish()

@@ -9,6 +9,7 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var runs: [ConsoleRun] = []
     @Published public private(set) var approvals: [ConsoleApproval] = []
     @Published public private(set) var serverTime: String = ""
+    @Published public private(set) var pendingCommands: [PendingCommand] = []
 
     public init() {}
 
@@ -25,8 +26,10 @@ public final class ConsoleStore: ObservableObject {
         switch event {
         case let .runStarted(run):
             upsertRun(run)
+            bindPendingOnRunStarted(run)
         case let .runFinished(run):
             upsertRun(run)
+            completePendingOnRunFinished(run)
         case let .approvalOpened(approval):
             upsertApproval(approval)
         case let .approvalResolved(approval):
@@ -67,5 +70,64 @@ public final class ConsoleStore: ObservableObject {
             state: state,
             bubble: current.bubble
         )
+    }
+
+    /// 낙관적 지시 추가. 반환한 id 로 뷰가 client POST 후 실패 시 markCommandFailed 를 호출한다.
+    @discardableResult
+    public func enqueueCommand(
+        text: String,
+        agentTypeHint: String?,
+        id: UUID = UUID(),
+        sentAt: Date = Date()
+    ) -> UUID {
+        pendingCommands.append(
+            PendingCommand(id: id, text: text, agentTypeHint: agentTypeHint, sentAt: sentAt, phase: .sent)
+        )
+        return id
+    }
+
+    /// 전송 실패(네트워크/4xx) 처리.
+    public func markCommandFailed(id: UUID) {
+        guard let index = pendingCommands.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        pendingCommands[index].phase = .failed
+    }
+
+    /// pending 제거(완료 후 뷰 타이머 또는 사용자 dismiss).
+    public func removeCommand(id: UUID) {
+        pendingCommands.removeAll { $0.id == id }
+    }
+
+    /// timeout 초 이상 .sent 로 남은 pending 을 .failed 로 강등(codex 무응답 감지). 뷰 타이머가 주기 호출.
+    public func expireStalePendings(now: Date = Date(), timeout: TimeInterval = 60) {
+        for index in pendingCommands.indices where pendingCommands[index].phase == .sent {
+            if now.timeIntervalSince(pendingCommands[index].sentAt) >= timeout {
+                pendingCommands[index].phase = .failed
+            }
+        }
+    }
+
+    /// run.started 를 미매칭 pending 에 바인딩. 힌트 일치 우선, 없으면 힌트 없는(전역) 가장 오래된 .sent.
+    private func bindPendingOnRunStarted(_ run: ConsoleRun) {
+        let unbound = pendingCommands.indices
+            .filter { pendingCommands[$0].phase == .sent && pendingCommands[$0].boundRunId == nil }
+            .sorted { pendingCommands[$0].sentAt < pendingCommands[$1].sentAt }
+        let matched = unbound.first { pendingCommands[$0].agentTypeHint == run.agentType }
+            ?? unbound.first { pendingCommands[$0].agentTypeHint == nil }
+        guard let index = matched else {
+            return
+        }
+        pendingCommands[index].boundRunId = run.id
+        pendingCommands[index].resolvedAgentType = run.agentType
+        pendingCommands[index].phase = .running
+    }
+
+    /// 바인딩된 run 이 끝나면 해당 pending 을 .done 으로. 제거는 뷰가 관장(완료 표시 후 removeCommand).
+    private func completePendingOnRunFinished(_ run: ConsoleRun) {
+        guard let index = pendingCommands.firstIndex(where: { $0.boundRunId == run.id }) else {
+            return
+        }
+        pendingCommands[index].phase = .done
     }
 }
