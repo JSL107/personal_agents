@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import {
+  ConsoleAgentState,
+  ConsoleRun,
+} from '../../console/domain/console.type';
 import { EPISODIC_MEMORY_PORT } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -10,6 +15,7 @@ import {
   TriggerType,
 } from '../domain/agent-run.type';
 import {
+  ActiveRunSnapshot,
   AGENT_RUN_REPOSITORY_PORT,
   AgentRetryCountRow,
   AgentRunRepositoryPort,
@@ -69,7 +75,29 @@ export class AgentRunService {
     @Optional()
     @Inject(EPISODIC_MEMORY_PORT)
     private readonly episodicMemory?: EpisodicMemoryPort,
+    // 콘솔 관제 이벤트 버스 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입.
+    // 미주입(단위 테스트) 시 emit 은 no-op (관제는 부가 기능이라 run 흐름을 막지 않는다).
+    @Optional()
+    private readonly consoleEvents?: ConsoleEventBus,
   ) {}
+
+  // 콘솔 관제용 ConsoleRun 뷰 조립 — id/시각을 뷰 표현(string/ISO)으로 변환.
+  private buildConsoleRun(
+    id: number,
+    agentType: AgentType,
+    status: AgentRunStatus,
+    startedAt: Date,
+    finishedAt: Date | null,
+  ): ConsoleRun {
+    return {
+      id: String(id),
+      agentType,
+      status,
+      parentId: null,
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt === null ? null : finishedAt.toISOString(),
+    };
+  }
 
   async execute<T>({
     agentType,
@@ -87,6 +115,24 @@ export class AgentRunService {
     // OPS-1 Quota Pane — execute 소요 시간을 finish 호출 시 함께 기록.
     // begin 직후 시점부터 측정해 evidence 기록 + run 콜백 + finish 직전까지의 elapsed 가 잡힌다.
     const startMs = Date.now();
+    const startedAt = new Date(startMs);
+
+    // 콘솔 관제 — 런 시작 알림(run.started + IN_PROGRESS). emit 은 부가 기능이라 흐름을 막지 않는다.
+    this.consoleEvents?.publish({
+      type: 'run.started',
+      run: this.buildConsoleRun(
+        id,
+        agentType,
+        AgentRunStatus.IN_PROGRESS,
+        startedAt,
+        null,
+      ),
+    });
+    this.consoleEvents?.publish({
+      type: 'state.changed',
+      agentType,
+      state: ConsoleAgentState.IN_PROGRESS,
+    });
 
     // evidence loop 을 try 안에 둬서 recordEvidence 가 throw 하더라도 AgentRun 이 IN_PROGRESS 에 고착되지 않도록 한다.
     try {
@@ -103,6 +149,23 @@ export class AgentRunService {
         output: execution.output,
         cliProvider: execution.modelUsed,
         durationMs: Date.now() - startMs,
+      });
+
+      // 콘솔 관제 — 성공 종료 알림(run.finished + COMPLETED).
+      this.consoleEvents?.publish({
+        type: 'run.finished',
+        run: this.buildConsoleRun(
+          id,
+          agentType,
+          AgentRunStatus.SUCCEEDED,
+          startedAt,
+          new Date(),
+        ),
+      });
+      this.consoleEvents?.publish({
+        type: 'state.changed',
+        agentType,
+        state: ConsoleAgentState.COMPLETED,
       });
 
       // Episodic Memory 적재 — fire-and-forget(await 안 함). 임베딩 모델 로드/추론이 본 흐름을
@@ -128,6 +191,24 @@ export class AgentRunService {
         // FAILED 시에도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율도 함께 보임.
         // cliProvider 는 run 콜백이 throw 한 경우 모를 수 있어 옵션 (그 경우 'unknown' 으로 집계됨).
         durationMs: Date.now() - startMs,
+      });
+
+      // 콘솔 관제 — 실패 종료 알림(run.finished(FAILED) + WAITING).
+      // 실패는 COMPLETED 가 아니라 deriveAgentState 규칙에 맞춰 WAITING 으로 강등한다.
+      this.consoleEvents?.publish({
+        type: 'run.finished',
+        run: this.buildConsoleRun(
+          id,
+          agentType,
+          AgentRunStatus.FAILED,
+          startedAt,
+          new Date(),
+        ),
+      });
+      this.consoleEvents?.publish({
+        type: 'state.changed',
+        agentType,
+        state: ConsoleAgentState.WAITING,
       });
 
       throw error;
@@ -205,6 +286,11 @@ export class AgentRunService {
 
   async sweepZombies(input: { olderThanMinutes: number }): Promise<number> {
     return await this.repository.sweepZombies(input);
+  }
+
+  // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체. deriveAgentState 의 hasActiveRun 입력 조립용.
+  async findActiveRuns(): Promise<ActiveRunSnapshot[]> {
+    return await this.repository.findActiveRuns();
   }
 
   async aggregateRetryCounts(input: {

@@ -1,6 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { toConsoleApproval } from '../../console/application/console-mappers';
 import { ApplyResult } from '../domain/apply-result.type';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
@@ -41,6 +43,9 @@ export class ApplyPreviewUsecase {
     private readonly verifiers: ResultVerifier[],
     @Inject(PREVIEW_CARD_PORT)
     private readonly card: PreviewCardPort,
+    // 콘솔 관제 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입. 미주입 시 emit no-op.
+    @Optional()
+    private readonly consoleEvents?: ConsoleEventBus,
   ) {}
 
   async execute({
@@ -84,6 +89,11 @@ export class ApplyPreviewUsecase {
         const transitioned = await this.repository.transition({
           id: preview.id,
           status: PREVIEW_STATUS.APPLIED,
+        });
+        // 콘솔 관제 — 승인 종결 알림(카드가 스냅샷/스트림에서 사라지도록).
+        this.consoleEvents?.publish({
+          type: 'approval.resolved',
+          approval: toConsoleApproval(transitioned),
         });
         // apply 성공(APPLIED 전이) 후 외부 부작용이 실제 반영됐는지 재조회 검증해 안내에 합성.
         // 검증은 부가 정보 — verify 가 throw 해도 apply 결과 자체는 그대로 노출 (graceful).

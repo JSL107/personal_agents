@@ -27,9 +27,16 @@
 > 새 세션에서 이 계획을 이어갈 때 여기부터 읽으세요.
 
 - **작업 위치**: worktree `/Users/juneseok/worktrees/idaeri-console`, 브랜치 `feat/macos-console-phase0-1` (main 에서 분기). node_modules 설치 + `prisma:generate` + `rebuild` 완료.
-- **완료**: B1(SwiftPM 빌드 실증, `swift build` green) · A1(뷰 타입) · A2(상태 파생, 8테스트) · A3(이벤트 버스, 3테스트). 총 11테스트 green + eslint clean. WIP 커밋됨.
-- **다음**: A4(활성 런 read — 포트 확장 시 `pnpm test` 전체로 mock 보강) → A5(스냅샷 조립 — preview-gate "열린 승인 전체 조회" 실시그니처 확인 후 `findAllOpen` 추가 여부 결정) → A6(REST+SSE, DB e2e) → A7(emit 배선) + A8(선택 env) → 3중 green → B2~B5(Swift 앱).
-- **주의**: A6 e2e 는 DB 필요(스키마 변경 없음 = 드리프트 위험 없음). 커밋은 사용자 명시 요청 후에만.
+- **완료 (PART A 백엔드 전체)**: B1 · A1 · A2 · A3 (이전 세션) + **A4(활성 런 read) · A5(스냅샷 조립 + preview `findAllOpen`) · A6(REST 4종 + SSE + 모듈 등록 + e2e) · A7(런·승인 라이프사이클 이벤트 emit)** (이번 세션). 백엔드 3중 green: `lint:check` 0 err / `test` 1711+40 pass / `build` OK.
+- **다음 (PART B macOS Swift 앱)**: B2(계약 Codable 모델 + 디코딩 테스트) → B3(ConsoleStore 이벤트 적용) → B4(ConsoleClient + SSE 라인 파서) → B5(대시보드 뷰 배선). `clients/idaeri-console/` 에 B1 스캐폴드(`swift build` green) 존재.
+- **이번 세션 설계 결정 (구현 시 확정한 사항)**:
+  - `AgentRunService.findActiveRuns` / preview `findAllOpen` 은 도메인 표현(number id, `endedAt` Date)을 반환하고, 뷰 변환(string id, ISO, `finishedAt`)은 `ConsoleReadService` 가 담당 — 기존 read 메서드 관례와 일치.
+  - `ConsoleApproval.agentType` 은 v1 에서 **null** (PreviewAction 에 agentType 필드 없음). `title`=`previewText`. kind→agentType 매핑은 Phase 2. `deriveAgentState` 의 `hasOpenApproval` 파생 구조는 미래 대비해 넣어뒀으나 v1 은 항상 false.
+  - `ConsoleEventBus` 는 `ConsoleEventBusModule(@Global)` 로 승격 — agent-run/preview-gate emit 과 SSE 구독의 모듈 순환 회피. usecase 주입은 `@Optional`(기존 episodicMemory 패턴, production 은 global 로 항상 주입).
+  - SSE 는 커스텀 `@RawResponse()` + `ResponseInterceptor` 가 Reflector 로 감지해 `{code,message,data}` 래핑을 건너뛴다(SSE 포맷 보존). `main.ts` 만 Reflector 주입, 기존 `new ResponseInterceptor()` 는 하위호환.
+  - **A8(공유 시크릿 가드)은 보류** — v1 콘솔은 localhost 전용이라 불필요. 외부 노출 시 재검토.
+  - console↔preview-gate 파일 상호 의존으로 백엔드는 **1커밋**(중간 커밋 빌드 보장 불가 → atomic 분리 포기).
+- **주의**: e2e 는 부분 모듈 + mock 의존성으로 구성해 DB 불필요(계획서의 "DB 필요"는 AppModule 전체 부팅 가정이었으나 부분 e2e 가 더 결정론적). 커밋은 사용자 명시 요청 후에만.
 
 ---
 

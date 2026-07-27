@@ -129,3 +129,39 @@ describe('PreviewActionPrismaRepository.findExpiredPending', () => {
     expect(result[0].slackChannelId).toBe('C1');
   });
 });
+
+describe('PreviewActionPrismaRepository.findAllOpen', () => {
+  it('status=PENDING + expiresAt>now 전체를 최신 생성순으로 조회한다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'p-2',
+        slackUserId: 'U9',
+        kind: 'PM_WRITE_BACK',
+        payload: {},
+        status: 'PENDING',
+        previewText: 't2',
+        responseUrl: null,
+        expiresAt: new Date('2026-07-02T00:00:00Z'),
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+        appliedAt: null,
+        cancelledAt: null,
+        slackChannelId: null,
+        slackMessageTs: null,
+      },
+    ]);
+    const prismaMock = {
+      previewAction: { findMany },
+    } as unknown as PrismaService;
+    const repository = new PreviewActionPrismaRepository(prismaMock);
+    const now = new Date('2026-07-01T12:00:00Z');
+
+    const result = await repository.findAllOpen({ now });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { status: 'PENDING', expiresAt: { gt: now } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('p-2');
+  });
+});
