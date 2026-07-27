@@ -240,10 +240,12 @@ struct DashboardView: View {
         store.agents.filter { $0.state == .awaitingIntegration }
     }
 
-    /// 특정 에이전트로 확정되지 않은(힌트 없는) pending — 헤더 커맨드바에 전역 진행 표시로 노출.
-    /// 힌트가 있는 pending 은 해당 AgentCardView 가 자체적으로 배지로 보여준다.
+    /// 아직 카드로 라우팅되지 않은(힌트 없음 + run.started 로 확정되지 않음) pending 만
+    /// 헤더 커맨드바에 남긴다. `run.started` 로 `resolvedAgentType` 이 채워지면 해당
+    /// AgentCardView 배지로 넘어가므로 여기서는 제외 — 커맨드바·카드 중복 표시 방지.
+    /// 타임아웃 실패(`.failed`, resolvedAgentType 여전히 nil)는 계속 커맨드바에 남아 ⚠️ 로 보인다.
     private var globalPendingCommands: [PendingCommand] {
-        store.pendingCommands.filter { $0.agentTypeHint == nil }
+        store.pendingCommands.filter { $0.agentTypeHint == nil && $0.resolvedAgentType == nil }
     }
 
     private func countOf(_ state: ConsoleAgentState) -> Int {
