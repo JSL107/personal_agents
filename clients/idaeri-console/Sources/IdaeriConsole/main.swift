@@ -6,7 +6,8 @@ import SwiftUI
 // 백엔드 주소는 IDAERI_CONSOLE_URL env 로 덮어쓸 수 있고, 기본은 로컬 이대리(PORT=3002).
 let baseURLString = ProcessInfo.processInfo.environment["IDAERI_CONSOLE_URL"] ?? "http://127.0.0.1:3002"
 let baseURL = URL(string: baseURLString) ?? URL(string: "http://127.0.0.1:3002")!
-let client = ConsoleClient(baseURL: baseURL)
+let token = ProcessInfo.processInfo.environment["IDAERI_CONSOLE_TOKEN"]
+let client = ConsoleClient(baseURL: baseURL, token: token)
 
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
