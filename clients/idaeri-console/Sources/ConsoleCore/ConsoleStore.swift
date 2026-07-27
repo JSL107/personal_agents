@@ -36,6 +36,10 @@ public final class ConsoleStore: ObservableObject {
             approvals.removeAll { $0.id == approval.id }
         case let .stateChanged(agentType, state):
             changeAgentState(agentType: agentType, state: state)
+        case let .commandRejected(commandId, reason):
+            markCommand(commandId: commandId, phase: .failed, reason: reason)
+        case let .commandInfo(commandId, message):
+            annotateCommand(commandId: commandId, reason: message)
         }
     }
 
@@ -92,6 +96,29 @@ public final class ConsoleStore: ObservableObject {
             return
         }
         pendingCommands[index].phase = .failed
+    }
+
+    /// 백엔드 command event 의 문자열 UUID와 정확히 일치하는 pending만 상태·이유를 바꾼다.
+    private func markCommand(commandId: String, phase: PendingPhase, reason: String?) {
+        guard
+            let id = UUID(uuidString: commandId),
+            let index = pendingCommands.firstIndex(where: { $0.id == id })
+        else {
+            return
+        }
+        pendingCommands[index].phase = phase
+        pendingCommands[index].reason = reason
+    }
+
+    /// 안내 이벤트는 phase 전이 없이 이유만 기록한다.
+    private func annotateCommand(commandId: String, reason: String) {
+        guard
+            let id = UUID(uuidString: commandId),
+            let index = pendingCommands.firstIndex(where: { $0.id == id })
+        else {
+            return
+        }
+        pendingCommands[index].reason = reason
     }
 
     /// pending 제거(완료 후 뷰 타이머 또는 사용자 dismiss).

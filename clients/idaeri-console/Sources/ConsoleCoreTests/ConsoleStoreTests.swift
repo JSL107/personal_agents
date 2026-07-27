@@ -144,6 +144,53 @@ func runConsoleStoreTests(_ t: TestRunner) {
     _ = noMatchStore.enqueueCommand(text: "z", agentTypeHint: "PM", sentAt: base)
     noMatchStore.apply(event: .runStarted(ConsoleRun(id: "r2", agentType: "BE", status: "IN_PROGRESS", parentId: nil, startedAt: "t", finishedAt: nil)))
     t.expectEqual(noMatchStore.pendingCommands.first?.phase, .sent, "미매칭 시 sent 유지")
+
+    // command.rejected 는 commandId 가 일치하는 pending 만 실패 처리하고 이유를 기록
+    let rejectedStore = ConsoleStore()
+    let rejectedId = rejectedStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    let untouchedId = rejectedStore.enqueueCommand(text: "다른 지시", agentTypeHint: nil, sentAt: base)
+    rejectedStore.apply(
+        event: .commandRejected(commandId: rejectedId.uuidString, reason: "PR 없음")
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == rejectedId })?.phase,
+        .failed,
+        "command.rejected → failed"
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == rejectedId })?.reason,
+        "PR 없음",
+        "command.rejected reason 기록"
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == untouchedId })?.phase,
+        .sent,
+        "다른 pending 불변"
+    )
+
+    // command.info 는 안내만 기록하고 기존 phase 를 유지
+    let infoStore = ConsoleStore()
+    let infoId = infoStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    infoStore.apply(
+        event: .commandInfo(commandId: infoId.uuidString, message: "최근 open PR 자동 선택")
+    )
+    t.expectEqual(infoStore.pendingCommands.first?.phase, .sent, "command.info phase 유지")
+    t.expectEqual(
+        infoStore.pendingCommands.first?.reason,
+        "최근 open PR 자동 선택",
+        "command.info message 기록"
+    )
+
+    // 미지 commandId 는 pending 목록을 변경하지 않음
+    let unknownCommandStore = ConsoleStore()
+    let knownId = unknownCommandStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    unknownCommandStore.apply(
+        event: .commandRejected(commandId: UUID().uuidString, reason: "무시할 실패")
+    )
+    t.expectEqual(unknownCommandStore.pendingCommands.first?.id, knownId, "기존 pending 유지")
+    t.expectEqual(unknownCommandStore.pendingCommands.first?.phase, .sent, "미지 commandId 무시")
+    t.expectNil(unknownCommandStore.pendingCommands.first?.reason, "미지 commandId reason 미기록")
+
     _ = tid
     _ = cmdId
 }
