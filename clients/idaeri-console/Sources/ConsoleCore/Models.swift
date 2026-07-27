@@ -152,3 +152,54 @@ public enum ConsoleEvent: Decodable, Sendable {
         }
     }
 }
+
+/// 리모컨 지시 요청 body. 백엔드 `POST /v1/console/command` 계약(text + 선택 힌트).
+public struct CommandRequest: Encodable, Sendable {
+    public let text: String
+    public let agentTypeHint: String?
+
+    public init(text: String, agentTypeHint: String?) {
+        self.text = text
+        self.agentTypeHint = agentTypeHint
+    }
+}
+
+/// 리모컨 명령의 낙관적 진행 단계.
+public enum PendingPhase: String, Sendable, Equatable {
+    case sent      // 전송·접수(202) — codex 준비 대기
+    case running   // run.started 매칭됨
+    case done      // run.finished 매칭됨(곧 제거)
+    case failed    // 전송 실패 또는 타임아웃
+}
+
+/// 전송한 지시의 로컬 추적 항목. SSE run 이벤트로 phase 를 전이한다.
+public struct PendingCommand: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let text: String
+    public let agentTypeHint: String?
+    public var resolvedAgentType: String?
+    public var boundRunId: String?
+    public let sentAt: Date
+    public var phase: PendingPhase
+
+    public init(
+        id: UUID,
+        text: String,
+        agentTypeHint: String?,
+        resolvedAgentType: String? = nil,
+        boundRunId: String? = nil,
+        sentAt: Date,
+        phase: PendingPhase
+    ) {
+        self.id = id
+        self.text = text
+        self.agentTypeHint = agentTypeHint
+        self.resolvedAgentType = resolvedAgentType
+        self.boundRunId = boundRunId
+        self.sentAt = sentAt
+        self.phase = phase
+    }
+
+    /// 카드 매칭용 — 확정된 agentType 우선, 없으면 최초 힌트.
+    public var effectiveAgentType: String? { resolvedAgentType ?? agentTypeHint }
+}
