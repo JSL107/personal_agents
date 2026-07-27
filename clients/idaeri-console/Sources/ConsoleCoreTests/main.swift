@@ -7,5 +7,6 @@ let runner = TestRunner()
 runModelsTests(runner)
 runConsoleStoreTests(runner)
 runSSEParserTests(runner)
+runOfficeLayoutTests(runner)
 
 runner.finish()

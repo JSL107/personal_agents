@@ -19,7 +19,7 @@ public enum ConsoleAgentState: String, Codable, Sendable {
 }
 
 /// 부서 그리드의 카드 하나. agent-registry 엔트리 + 파생 상태.
-public struct ConsoleAgent: Codable, Identifiable, Sendable {
+public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public let agentType: String
     public let displayName: String
     public let slashCommands: [String]
