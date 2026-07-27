@@ -13,6 +13,13 @@ import {
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
+import { ConsoleEventBus } from './console-event-bus.service';
+
+interface ConsoleCommandInput {
+  text: string;
+  agentTypeHint?: AgentType;
+  commandId?: string;
+}
 
 // 콘솔 리모컨 write 위임 서비스. 새 로직 없이 owner 를 주입해 기존 usecase 로 넘긴다.
 // 지시는 codex 지연(10~40s) 때문에 await 하지 않고 백그라운드 실행 → 진행은 SSE 로 반영.
@@ -26,9 +33,10 @@ export class ConsoleWriteService {
     private readonly router: IdaeriRouterPort,
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
+    private readonly consoleEvents: ConsoleEventBus,
   ) {}
 
-  sendCommand(input: { text: string; agentTypeHint?: AgentType }): void {
+  sendCommand(input: ConsoleCommandInput): void {
     const slackUserId = this.requireOwner();
     void this.router
       .dispatch({
@@ -37,10 +45,25 @@ export class ConsoleWriteService {
         text: input.text,
         agentTypeHint: input.agentTypeHint,
       })
+      .then((result) => {
+        if (input.commandId && result.autoResolvedNotice) {
+          this.consoleEvents.publish({
+            type: 'command.info',
+            commandId: input.commandId,
+            message: result.autoResolvedNotice,
+          });
+        }
+      })
       .catch((error: unknown) => {
-        this.logger.error(
-          `리모컨 지시 실패: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.error(`리모컨 지시 실패: ${reason}`);
+        if (input.commandId) {
+          this.consoleEvents.publish({
+            type: 'command.rejected',
+            commandId: input.commandId,
+            reason,
+          });
+        }
       });
   }
 

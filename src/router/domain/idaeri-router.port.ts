@@ -56,6 +56,7 @@ export interface DispatchResult {
   output: unknown;
   modelUsed: string;
   formattedText: string;
+  autoResolvedNotice?: string;
   followUp?: HandoffSpec;
   handoffResults?: DispatchResult[];
 }

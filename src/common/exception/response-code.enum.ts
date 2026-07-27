@@ -28,6 +28,8 @@ export enum ResponseCode {
   // Code Reviewer — CodeReviewerErrorCode 와 1:1 동기화
   CODE_REVIEWER_INVALID_PR_REFERENCE = 'CODE_REVIEWER_INVALID_PR_REFERENCE',
   CODE_REVIEWER_INVALID_MODEL_OUTPUT = 'CODE_REVIEWER_INVALID_MODEL_OUTPUT',
+  // Code Reviewer와 BE Fix plan 오류가 의도적으로 공유하는 response code.
+  NO_OPEN_PR_FOUND = 'NO_OPEN_PR_FOUND',
 
   // Impact Reporter — ImpactReporterErrorCode 와 1:1 동기화
   IMPACT_REPORTER_EMPTY_SUBJECT = 'IMPACT_REPORTER_EMPTY_SUBJECT',
