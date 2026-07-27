@@ -33,14 +33,61 @@ struct AppRootView: View {
 
             switch tab {
             case .dashboard:
-                DashboardView(store: store, status: status, baseURLLabel: baseURLLabel)
+                DashboardView(
+                    store: store,
+                    status: status,
+                    baseURLLabel: baseURLLabel,
+                    onSend: sendCommand,
+                    onApprove: approve,
+                    onReject: reject
+                )
             case .office:
                 OfficeView(store: store)
             }
         }
         .frame(minWidth: 720, minHeight: 560)
         .task {
+            startPendingJanitor()
             await connect()
+        }
+    }
+
+    // MARK: - 리모컨 write
+
+    /// 지시 전송 — 낙관적 pending 후 POST, 실패 시 롤백 표시.
+    func sendCommand(text: String, agentTypeHint: String?) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        let id = store.enqueueCommand(text: trimmed, agentTypeHint: agentTypeHint)
+        Task {
+            do {
+                try await client.postCommand(text: trimmed, agentTypeHint: agentTypeHint)
+            } catch {
+                await MainActor.run { store.markCommandFailed(id: id) }
+            }
+        }
+    }
+
+    func approve(id: String) {
+        Task { try? await client.applyApproval(id: id) }
+    }
+
+    func reject(id: String) {
+        Task { try? await client.cancelApproval(id: id) }
+    }
+
+    /// pending 유지보수 루프 — 타임아웃 강등 + 완료건 정리. 뷰 lifetime 동안 5초 주기.
+    private func startPendingJanitor() {
+        Task { @MainActor in
+            while !Task.isCancelled {
+                store.expireStalePendings()
+                for command in store.pendingCommands where command.phase == .done {
+                    store.removeCommand(id: command.id)
+                }
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
         }
     }
 

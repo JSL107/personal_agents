@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 95개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 97개.
 설명은 각 변수의 첫 주석 줄 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -149,3 +149,5 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | BRIEFING_WAITING_SECTION_ENABLED: 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | Subconscious 시간당 최대 proposal 건수 (슬라이딩 1시간 윈도우, Redis ZSET). |
+| `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable). |
+| `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증. |
