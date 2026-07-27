@@ -48,4 +48,6 @@ export interface PreviewActionRepositoryPort {
     now: Date;
     limit: number;
   }): Promise<PreviewAction[]>;
+  // 콘솔 관제 — 아직 열려 있는(PENDING & 미만료) preview 전체. 사용자 구분 없이 모두 조회.
+  findAllOpen(input: { now: Date }): Promise<PreviewAction[]>;
 }

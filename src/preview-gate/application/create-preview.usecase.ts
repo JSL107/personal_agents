@@ -1,5 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { toConsoleApproval } from '../../console/application/console-mappers';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
@@ -16,9 +18,18 @@ export class CreatePreviewUsecase {
   constructor(
     @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
     private readonly repository: PreviewActionRepositoryPort,
+    // 콘솔 관제 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입. 미주입 시 emit no-op.
+    @Optional()
+    private readonly consoleEvents?: ConsoleEventBus,
   ) {}
 
   async execute(input: CreatePreviewInput): Promise<PreviewAction> {
-    return this.repository.create(input);
+    const created = await this.repository.create(input);
+    // 콘솔 관제 — 승인 대기 발생 알림.
+    this.consoleEvents?.publish({
+      type: 'approval.opened',
+      approval: toConsoleApproval(created),
+    });
+    return created;
   }
 }

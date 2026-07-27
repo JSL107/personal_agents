@@ -1,3 +1,4 @@
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewCanceller } from '../domain/port/preview-canceller.port';
 import { PreviewCardPort } from '../domain/port/preview-card.port';
@@ -41,6 +42,7 @@ const buildRepo = (
   ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
+  findAllOpen: jest.fn().mockResolvedValue([]),
 });
 
 const buildCard = (): jest.Mocked<PreviewCardPort> => ({
@@ -57,6 +59,27 @@ describe('CancelPreviewUsecase', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 'p-1',
       status: PREVIEW_STATUS.CANCELLED,
+    });
+  });
+
+  it('cancel 성공 시 approval.resolved 이벤트를 발행한다', async () => {
+    const repo = buildRepo(buildPreview());
+    const bus = {
+      publish: jest.fn(),
+      stream: jest.fn(),
+    } as unknown as ConsoleEventBus;
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard(), bus);
+
+    await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
+
+    expect(bus.publish).toHaveBeenCalledWith({
+      type: 'approval.resolved',
+      approval: {
+        id: 'p-1',
+        agentType: null,
+        title: 'preview',
+        createdAt: '2026-04-27T11:00:00.000Z',
+      },
     });
   });
 

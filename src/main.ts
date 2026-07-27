@@ -1,6 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import * as express from 'express';
 
 import { AppModule } from './app.module';
@@ -20,7 +20,8 @@ async function bootstrap() {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  // Reflector 주입 — @RawResponse(SSE) 핸들러는 ResponseInterceptor 래핑을 건너뛴다.
+  app.useGlobalInterceptors(new ResponseInterceptor(app.get(Reflector)));
 
   const port = configService.get<number>('PORT') ?? 3000;
   await app.listen(port);

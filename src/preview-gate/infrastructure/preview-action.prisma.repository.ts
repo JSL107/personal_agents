@@ -170,6 +170,15 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     });
     return rows.map(toDomain);
   }
+
+  // 콘솔 관제 — 아직 열려 있는(PENDING & 미만료) preview 전체. 최신 생성순.
+  async findAllOpen({ now }: { now: Date }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: { status: PREVIEW_STATUS.PENDING, expiresAt: { gt: now } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map(toDomain);
+  }
 }
 
 // Prisma row → domain. unknown kind/status 는 검증 실패로 끊어 silent corruption 회피.
