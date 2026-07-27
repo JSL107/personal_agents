@@ -32,6 +32,8 @@ import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { WorkerStartupCoordinator } from './common/queue/worker-startup.coordinator';
 import { validateEnv } from './config/app.config';
+import { ConsoleModule } from './console/console.module';
+import { ConsoleEventBusModule } from './console/console-event-bus.module';
 import { CrawlerModule } from './crawler/crawler.module';
 import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.applier';
 import { GithubModule } from './github/github.module';
@@ -79,7 +81,11 @@ import { WebhookModule } from './webhook/webhook.module';
     CronIdempotencyModule,
     PrismaModule,
     ModelRouterModule,
+    // ConsoleEventBus 전역 제공 — agent-run/preview-gate emit 과 SSE 구독이 같은 버스를 공유.
+    ConsoleEventBusModule,
     AgentRunModule,
+    // 콘솔 관제 — 읽기(REST) + 실시간(SSE) 표면. AgentRunModule + 전역 PreviewGate 소비, 부작용 0.
+    ConsoleModule,
     // V3 SOTA Foundation 1.1 — Tree-sitter Code Graph. 파서 + 스냅샷 스토어 구현 완료.
     // BE-SRE (stack trace 영향 분석) / BE-Schema (스키마 제안) usecase 가 소비.
     CodeGraphModule,

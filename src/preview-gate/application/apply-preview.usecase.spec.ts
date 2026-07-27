@@ -1,3 +1,4 @@
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { VerifiableArtifact } from '../domain/apply-result.type';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewApplier } from '../domain/port/preview-applier.port';
@@ -47,6 +48,7 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
+  findAllOpen: jest.fn().mockResolvedValue([]),
 });
 
 const buildApplier = (
@@ -84,6 +86,39 @@ describe('ApplyPreviewUsecase', () => {
       status: PREVIEW_STATUS.APPLIED,
     });
     expect(result.resultText).toBe('PR #707 코멘트 추가');
+  });
+
+  it('apply 성공 시 approval.resolved 이벤트를 발행한다', async () => {
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const bus = {
+      publish: jest.fn(),
+      stream: jest.fn(),
+    } as unknown as ConsoleEventBus;
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      buildCard(),
+      bus,
+    );
+
+    await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(bus.publish).toHaveBeenCalledWith({
+      type: 'approval.resolved',
+      approval: {
+        id: 'p-1',
+        agentType: null,
+        title: 'preview',
+        createdAt: '2026-04-27T11:00:00.000Z',
+      },
+    });
   });
 
   it('미존재 previewId 면 NOT_FOUND', async () => {

@@ -1,3 +1,5 @@
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { AgentRunStatus, TriggerType } from '../domain/agent-run.type';
 import { AgentRunRepositoryPort } from '../domain/port/agent-run.repository.port';
@@ -29,6 +31,7 @@ describe('AgentRunService', () => {
     findChainFromRoot: jest.fn().mockResolvedValue([]),
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
+    findActiveRuns: jest.fn().mockResolvedValue([]),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -346,6 +349,112 @@ describe('AgentRunService', () => {
       expect(a).toEqual([]);
       expect(b).toEqual([]);
       expect(repository.findChainFromRoot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('콘솔 이벤트 emit', () => {
+    const buildBus = () =>
+      ({ publish: jest.fn(), stream: jest.fn() }) as unknown as jest.Mocked<
+        Pick<ConsoleEventBus, 'publish' | 'stream'>
+      >;
+
+    it('성공 시 run.started→state.changed(IN_PROGRESS)→run.finished→state.changed(COMPLETED) 순 발행', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      await serviceWithBus.execute({
+        agentType: AgentType.PM,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: {},
+        run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+      });
+
+      const events = bus.publish.mock.calls.map((call) => call[0]);
+      expect(events.map((event) => event.type)).toEqual([
+        'run.started',
+        'state.changed',
+        'run.finished',
+        'state.changed',
+      ]);
+      const started = events[0];
+      expect(started).toMatchObject({
+        type: 'run.started',
+        run: { id: '42', agentType: 'PM', status: 'IN_PROGRESS' },
+      });
+      const stateEvents = events.filter(
+        (event) => event.type === 'state.changed',
+      );
+      expect(stateEvents[0]).toMatchObject({
+        agentType: 'PM',
+        state: ConsoleAgentState.IN_PROGRESS,
+      });
+      expect(stateEvents[1]).toMatchObject({
+        state: ConsoleAgentState.COMPLETED,
+      });
+    });
+
+    it('실패 시 run.finished(FAILED) + state.changed(WAITING) 발행 후 에러 재전파', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      await expect(
+        serviceWithBus.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => {
+            throw new Error('boom');
+          },
+        }),
+      ).rejects.toThrow('boom');
+
+      const events = bus.publish.mock.calls.map((call) => call[0]);
+      const finished = events.find((event) => event.type === 'run.finished');
+      expect(finished).toMatchObject({ run: { status: 'FAILED' } });
+      const lastState = events
+        .filter((event) => event.type === 'state.changed')
+        .pop();
+      expect(lastState).toMatchObject({ state: ConsoleAgentState.WAITING });
+    });
+
+    it('consoleEvents 미주입이어도 execute 는 정상 동작한다', async () => {
+      await expect(
+        service.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+        }),
+      ).resolves.toMatchObject({ result: 'r' });
+    });
+  });
+
+  describe('findActiveRuns — 콘솔 관제용 활성 런 조회', () => {
+    it('repository.findActiveRuns 에 위임하고 결과를 그대로 반환한다', async () => {
+      const active = [
+        {
+          id: 1,
+          agentType: 'PM',
+          status: 'IN_PROGRESS',
+          parentId: null,
+          startedAt: new Date('2026-07-27T00:00:00Z'),
+          endedAt: null,
+        },
+      ];
+      repository.findActiveRuns.mockResolvedValue(active);
+
+      const result = await service.findActiveRuns();
+
+      expect(repository.findActiveRuns).toHaveBeenCalledTimes(1);
+      expect(result).toBe(active);
     });
   });
 });

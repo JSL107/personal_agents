@@ -111,6 +111,18 @@ export interface AgentSweptCountRow {
   swept: number;
 }
 
+// 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의
+// hasActiveRun 신호 소스다. id/endedAt 은 도메인 표현(number/Date)으로 두고,
+// 뷰 변환(id → string, endedAt → ISO finishedAt)은 console 조립 계층이 담당한다.
+export interface ActiveRunSnapshot {
+  id: number;
+  agentType: string;
+  status: string;
+  parentId: number | null;
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -178,4 +190,6 @@ export interface AgentRunRepositoryPort {
   }): Promise<AgentSweptCountRow[]>;
   // 좀비 정리 — cutoff 이전 IN_PROGRESS run 을 FAILED 로 일괄 전환. 정리된 건수 반환.
   sweepZombies(input: { olderThanMinutes: number }): Promise<number>;
+  // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체 조회. 읽기 전용.
+  findActiveRuns(): Promise<ActiveRunSnapshot[]>;
 }

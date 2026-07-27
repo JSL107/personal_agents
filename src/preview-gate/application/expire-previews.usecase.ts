@@ -1,5 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { toConsoleApproval } from '../../console/application/console-mappers';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
@@ -23,6 +25,9 @@ export class ExpirePreviewsUsecase {
     private readonly repository: PreviewActionRepositoryPort,
     @Inject(PREVIEW_CARD_PORT)
     private readonly card: PreviewCardPort,
+    // 콘솔 관제 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입. 미주입 시 emit no-op.
+    @Optional()
+    private readonly consoleEvents?: ConsoleEventBus,
   ) {}
 
   // 정리한 건수를 반환. 한 건 실패가 나머지를 막지 않도록 개별 try/catch.
@@ -43,6 +48,11 @@ export class ExpirePreviewsUsecase {
         const expired = await this.repository.transition({
           id: preview.id,
           status: PREVIEW_STATUS.EXPIRED,
+        });
+        // 콘솔 관제 — 승인 종결 알림(만료된 카드가 스냅샷/스트림에서 사라지도록).
+        this.consoleEvents?.publish({
+          type: 'approval.resolved',
+          approval: toConsoleApproval(expired),
         });
         await this.card.update({ preview: expired, state: 'EXPIRED' });
         sweptCount += 1;
