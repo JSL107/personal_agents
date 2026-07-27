@@ -5,12 +5,11 @@ import SwiftUI
 /// 스트림이 끊기면 지수 백오프로 재연결하고 스냅샷을 재동기화한다.
 /// 읽기·표시 전용 — 여기서 에이전트를 호출하거나 승인을 처리하지 않는다.
 struct DashboardView: View {
-    let client: ConsoleClient
+    /// store·연결은 AppRootView 가 소유하고 주입한다(오피스 탭과 공유).
+    @ObservedObject var store: ConsoleStore
+    let status: ConnectionStatus
     /// 연결 대상 표시용(빈 상태 안내에 노출). 동작에는 영향 없음.
     let baseURLLabel: String
-
-    @StateObject private var store = ConsoleStore()
-    @State private var status: ConnectionStatus = .connecting
 
     private let columns = [GridItem(.adaptive(minimum: 220), spacing: 14)]
 
@@ -40,9 +39,6 @@ struct DashboardView: View {
             .padding(24)
         }
         .frame(minWidth: 720, minHeight: 520)
-        .task {
-            await connect()
-        }
     }
 
     // MARK: - 헤더
@@ -204,31 +200,6 @@ struct DashboardView: View {
         let output = DateFormatter()
         output.dateFormat = "MM-dd HH:mm:ss"
         return output.string(from: date)
-    }
-
-    // MARK: - 연결 배선
-
-    private func connect() async {
-        var backoffSeconds: UInt64 = 1
-        while !Task.isCancelled {
-            do {
-                let snapshot = try await client.fetchSnapshot()
-                store.apply(snapshot: snapshot)
-                status = .live
-                backoffSeconds = 1
-                for await event in await client.events() {
-                    store.apply(event: event)
-                }
-            } catch {
-                // fetch/stream 실패 → 아래 백오프 후 재시도
-            }
-            if Task.isCancelled {
-                return
-            }
-            status = .reconnecting
-            try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
-            backoffSeconds = min(backoffSeconds * 2, 30)
-        }
     }
 }
 

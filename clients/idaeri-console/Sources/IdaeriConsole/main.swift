@@ -20,7 +20,7 @@ let window = NSWindow(
 window.title = "이대리 콘솔"
 window.center()
 window.contentView = NSHostingView(
-    rootView: DashboardView(client: client, baseURLLabel: baseURLString)
+    rootView: AppRootView(client: client, baseURLLabel: baseURLString)
 )
 window.makeKeyAndOrderFront(nil)
 
