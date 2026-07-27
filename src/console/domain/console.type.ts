@@ -68,4 +68,14 @@ export type ConsoleEvent =
       readonly type: 'state.changed';
       readonly agentType: string;
       readonly state: ConsoleAgentState;
+    }
+  | {
+      readonly type: 'command.rejected';
+      readonly commandId: string;
+      readonly reason: string;
+    }
+  | {
+      readonly type: 'command.info';
+      readonly commandId: string;
+      readonly message: string;
     };

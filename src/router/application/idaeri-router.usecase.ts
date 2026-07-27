@@ -136,6 +136,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       output: outcome.output,
       modelUsed: outcome.modelUsed,
       formattedText: outcome.formattedText,
+      ...(outcome.autoResolvedNotice !== undefined
+        ? { autoResolvedNotice: outcome.autoResolvedNotice }
+        : {}),
       followUp: outcome.followUp,
     };
 

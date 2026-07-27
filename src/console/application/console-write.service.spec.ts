@@ -1,9 +1,14 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { ConsoleEventBus } from './console-event-bus.service';
 import { ConsoleWriteService } from './console-write.service';
 
 const OWNER = 'U_OWNER';
+
+function flush(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 function makeService(owner?: string) {
   const config = {
@@ -13,13 +18,15 @@ function makeService(owner?: string) {
   const router = { dispatch: jest.fn() };
   const applyPreview = { execute: jest.fn().mockResolvedValue(undefined) };
   const cancelPreview = { execute: jest.fn().mockResolvedValue(undefined) };
+  const consoleEvents = { publish: jest.fn() };
   const service = new ConsoleWriteService(
     config,
     router as never,
     applyPreview as never,
     cancelPreview as never,
+    consoleEvents as unknown as ConsoleEventBus,
   );
-  return { service, router, applyPreview, cancelPreview };
+  return { service, router, applyPreview, cancelPreview, consoleEvents };
 }
 
 describe('ConsoleWriteService', () => {
@@ -51,6 +58,51 @@ describe('ConsoleWriteService', () => {
     expect(() => service.sendCommand({ text: 'x' })).toThrow(
       ServiceUnavailableException,
     );
+  });
+
+  it('commandId가 있는 dispatch 거절 시 오류 메시지와 함께 command.rejected를 발행한다', async () => {
+    const { service, router, consoleEvents } = makeService(OWNER);
+    router.dispatch.mockRejectedValue(new Error('권한이 없습니다.'));
+
+    service.sendCommand({ text: 'PR 해결', commandId: 'command-1' });
+    await flush();
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.rejected',
+      commandId: 'command-1',
+      reason: '권한이 없습니다.',
+    });
+  });
+
+  it('commandId가 없는 dispatch 거절 시 콘솔 이벤트를 발행하지 않는다', async () => {
+    const { service, router, consoleEvents } = makeService(OWNER);
+    router.dispatch.mockRejectedValue(new Error('권한이 없습니다.'));
+
+    service.sendCommand({ text: 'PR 해결' });
+    await flush();
+
+    expect(consoleEvents.publish).not.toHaveBeenCalled();
+  });
+
+  it('commandId와 autoResolvedNotice가 있는 dispatch 완료 시 command.info를 발행한다', async () => {
+    const { service, router, consoleEvents } = makeService(OWNER);
+    router.dispatch.mockResolvedValue({
+      agentRunId: 1,
+      workerType: 'CODE_REVIEWER',
+      output: {},
+      modelUsed: 'codex',
+      formattedText: '완료',
+      autoResolvedNotice: 'PR #42를 자동 해결 처리했습니다.',
+    });
+
+    service.sendCommand({ text: 'PR 해결', commandId: 'command-1' });
+    await flush();
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.info',
+      commandId: 'command-1',
+      message: 'PR #42를 자동 해결 처리했습니다.',
+    });
   });
 
   it('applyApproval 은 owner 를 slackUserId 로 usecase 에 위임한다', async () => {
