@@ -590,6 +590,18 @@ class EnvironmentVariables {
       'SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR 는 양의 정수 (예: "4") 만 허용합니다.',
   })
   SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR?: string;
+
+  // 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable).
+  // 1인 봇이라 owner 는 항상 본인. ApplyPreviewUsecase 의 owner 매칭에 이 값을 slackUserId 로 주입.
+  @IsOptional()
+  @IsString()
+  CONSOLE_OWNER_SLACK_USER_ID?: string;
+
+  // 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증.
+  // 미설정 시 loopback 바인딩만으로 신뢰(부팅 시 경고). 앱은 env IDAERI_CONSOLE_TOKEN 으로 주입.
+  @IsOptional()
+  @IsString()
+  CONSOLE_REMOTE_TOKEN?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
