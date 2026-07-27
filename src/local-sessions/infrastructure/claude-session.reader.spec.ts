@@ -85,4 +85,16 @@ describe('readClaudeSessions', () => {
       }),
     ).toEqual([]);
   });
+
+  it('JSON 내용이 null 이면 스킵한다(throw 하지 않음)', () => {
+    writeFileSync(join(sessionsDir, '1.json'), 'null');
+
+    expect(
+      readClaudeSessions({
+        sessionsDir,
+        projectsDir,
+        now: () => now,
+      }),
+    ).toEqual([]);
+  });
 });

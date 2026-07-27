@@ -55,4 +55,10 @@ describe('readCodexSessions', () => {
 
     expect(readCodexSessions({ sessionsDir, now: () => now })).toEqual([]);
   });
+
+  it('JSON 내용이 null 이면 스킵한다(throw 하지 않음)', () => {
+    writeFileSync(join(sessionsDir, '1.json'), 'null');
+
+    expect(readCodexSessions({ sessionsDir, now: () => now })).toEqual([]);
+  });
 });

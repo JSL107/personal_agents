@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { ConsoleSession } from '../domain/console.type';
@@ -10,6 +15,7 @@ import { diffSessions } from './session-diff';
 @Injectable()
 export class SessionPollerService implements OnModuleInit, OnModuleDestroy {
   private static readonly POLL_MS = 3_000;
+  private readonly logger = new Logger(SessionPollerService.name);
   private previous: ConsoleSession[] = [];
   private timer: NodeJS.Timeout | null = null;
 
@@ -40,11 +46,15 @@ export class SessionPollerService implements OnModuleInit, OnModuleDestroy {
   }
 
   pollOnce(): void {
-    const next = this.snapshot();
-    for (const event of diffSessions(this.previous, next)) {
-      this.bus.publish(event);
+    try {
+      const next = this.snapshot();
+      for (const event of diffSessions(this.previous, next)) {
+        this.bus.publish(event);
+      }
+      this.previous = next;
+    } catch (error) {
+      this.logger.warn(`세션 폴링 실패 — 이번 tick 건너뜀: ${String(error)}`);
     }
-    this.previous = next;
   }
 
   private snapshot(): ConsoleSession[] {

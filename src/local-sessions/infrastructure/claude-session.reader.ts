@@ -63,25 +63,32 @@ export function readClaudeSessions(
     if (!file.endsWith('.json')) {
       continue;
     }
-    let raw: Record<string, unknown>;
+    let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(join(sessionsDir, file), 'utf8'));
     } catch {
       continue;
     }
-    if (typeof raw.sessionId !== 'string' || typeof raw.pid !== 'number') {
+    if (raw === null || typeof raw !== 'object') {
       continue;
     }
-    const cwd = typeof raw.cwd === 'string' ? raw.cwd : '';
-    const mtime = transcriptMtime.get(raw.sessionId) ?? null;
+    const record = raw as Record<string, unknown>;
+    if (
+      typeof record.sessionId !== 'string' ||
+      typeof record.pid !== 'number'
+    ) {
+      continue;
+    }
+    const cwd = typeof record.cwd === 'string' ? record.cwd : '';
+    const mtime = transcriptMtime.get(record.sessionId) ?? null;
     const lastActivityAt = mtime === null ? null : new Date(mtime);
     sessions.push({
-      sessionId: raw.sessionId,
-      pid: raw.pid,
+      sessionId: record.sessionId,
+      pid: record.pid,
       source: 'claude',
       name:
-        typeof raw.name === 'string' && raw.name.length > 0
-          ? raw.name
+        typeof record.name === 'string' && record.name.length > 0
+          ? record.name
           : basename(cwd),
       cwd,
       state: deriveSessionState({
@@ -90,7 +97,9 @@ export function readClaudeSessions(
         now: nowDate,
       }),
       startedAt:
-        typeof raw.startedAt === 'number' ? new Date(raw.startedAt) : nowDate,
+        typeof record.startedAt === 'number'
+          ? new Date(record.startedAt)
+          : nowDate,
       lastActivityAt,
     });
   }

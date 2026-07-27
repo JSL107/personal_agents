@@ -50,4 +50,25 @@ describe('SessionPollerService', () => {
       },
     ]);
   });
+
+  it('pollOnce 중 list() 가 throw 해도 던지지 않고, baseline 을 유지한 채 발행하지 않는다', () => {
+    list.mockReturnValue([local('s1', 'idle')]);
+    poller.prime();
+    list.mockImplementation(() => {
+      throw new Error('디스크 읽기 실패');
+    });
+
+    expect(() => poller.pollOnce()).not.toThrow();
+    expect(published).toEqual([]);
+
+    // baseline(previous) 이 살아있는지 — 다음 정상 tick 에서 원래 diff 가 그대로 나오는지로 검증한다.
+    list.mockReturnValue([local('s1', 'active')]);
+    poller.pollOnce();
+    expect(published).toEqual([
+      {
+        type: 'session.updated',
+        session: expect.objectContaining({ sessionId: 's1', state: 'active' }),
+      },
+    ]);
+  });
 });
