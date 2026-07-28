@@ -89,22 +89,53 @@ public struct ConsoleApproval: Codable, Identifiable, Sendable {
     }
 }
 
+/// 로컬에서 실행 중인 CLI 세션 한 건. source/state 는 백엔드 문자열과 1:1.
+public struct ConsoleSession: Codable, Identifiable, Sendable {
+    public let sessionId: String
+    public let pid: Int
+    public let source: String
+    public let name: String
+    public let cwd: String
+    public let state: String
+    public let startedAt: String
+    public let lastActivityAt: String?
+
+    public var id: String { sessionId }
+
+    public init(
+        sessionId: String, pid: Int, source: String, name: String,
+        cwd: String, state: String, startedAt: String, lastActivityAt: String?
+    ) {
+        self.sessionId = sessionId
+        self.pid = pid
+        self.source = source
+        self.name = name
+        self.cwd = cwd
+        self.state = state
+        self.startedAt = startedAt
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
 /// 앱 부팅 시 1콜로 받는 전체 상태 스냅샷.
 public struct ConsoleSnapshot: Codable, Sendable {
     public let agents: [ConsoleAgent]
     public let runs: [ConsoleRun]
     public let approvals: [ConsoleApproval]
+    public let sessions: [ConsoleSession]
     public let serverTime: String
 
     public init(
         agents: [ConsoleAgent],
         runs: [ConsoleRun],
         approvals: [ConsoleApproval],
+        sessions: [ConsoleSession],
         serverTime: String
     ) {
         self.agents = agents
         self.runs = runs
         self.approvals = approvals
+        self.sessions = sessions
         self.serverTime = serverTime
     }
 }
@@ -117,6 +148,9 @@ public enum ConsoleEvent: Decodable, Sendable {
     case approvalOpened(ConsoleApproval)
     case approvalResolved(ConsoleApproval)
     case stateChanged(agentType: String, state: ConsoleAgentState)
+    case sessionOpened(ConsoleSession)
+    case sessionUpdated(ConsoleSession)
+    case sessionClosed(sessionId: String)
     case commandRejected(commandId: String, reason: String)
     case commandInfo(commandId: String, message: String)
 
@@ -126,6 +160,8 @@ public enum ConsoleEvent: Decodable, Sendable {
         case approval
         case agentType
         case state
+        case session
+        case sessionId
         case commandId
         case reason
         case message
@@ -148,6 +184,12 @@ public enum ConsoleEvent: Decodable, Sendable {
                 agentType: try container.decode(String.self, forKey: .agentType),
                 state: try container.decode(ConsoleAgentState.self, forKey: .state)
             )
+        case "session.opened":
+            self = .sessionOpened(try container.decode(ConsoleSession.self, forKey: .session))
+        case "session.updated":
+            self = .sessionUpdated(try container.decode(ConsoleSession.self, forKey: .session))
+        case "session.closed":
+            self = .sessionClosed(sessionId: try container.decode(String.self, forKey: .sessionId))
         case "command.rejected":
             self = .commandRejected(
                 commandId: try container.decode(String.self, forKey: .commandId),

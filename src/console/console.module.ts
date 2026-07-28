@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { RouterModule } from '../router/router.module';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
 import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
+import { SessionPollerService } from './application/session-poller.service';
 import { ConsoleController } from './interface/console.controller';
 import { ConsoleStreamController } from './interface/console-stream.controller';
 import { ConsoleWriteController } from './interface/console-write.controller';
@@ -15,7 +17,7 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
 // FindAllOpenPreviewsUsecase·ApplyPreviewUsecase·CancelPreviewUsecase 는 PreviewGateModule.forRoot(global) 가,
 // ConsoleEventBus 는 ConsoleEventBusModule(@Global) 이, IDAERI_ROUTER_PORT 는 RouterModule 이 제공한다.
 @Module({
-  imports: [AgentRunModule, RouterModule],
+  imports: [AgentRunModule, LocalSessionsModule, RouterModule],
   controllers: [
     ConsoleController,
     ConsoleStreamController,
@@ -26,6 +28,7 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
     ConsoleWriteService,
     ConsoleWriteGuard,
     PreconditionChainOrchestrator,
+    SessionPollerService,
   ],
 })
 export class ConsoleModule {}

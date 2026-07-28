@@ -26,6 +26,7 @@ func runConsoleStoreTests(_ t: TestRunner) {
         agents: [pm, be],
         runs: [],
         approvals: [],
+        sessions: [],
         serverTime: "2026-07-27T00:00:00Z"
     )
 

@@ -6,6 +6,7 @@ let runner = TestRunner()
 
 runModelsTests(runner)
 runConsoleStoreTests(runner)
+runSessionStoreTests(runner)
 runSSEParserTests(runner)
 runOfficeLayoutTests(runner)
 runConsoleClientTests(runner)
