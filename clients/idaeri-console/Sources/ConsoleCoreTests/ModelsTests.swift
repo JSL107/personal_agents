@@ -10,7 +10,7 @@ func runModelsTests(_ t: TestRunner) {
     // 스냅샷 전체 디코딩 + 상태 문자열 매핑
     do {
         let json = """
-        {"agents":[{"agentType":"PM","displayName":"PM","slashCommands":["/today"],"description":"","state":"IN_PROGRESS","bubble":"일하는 중…"}],"runs":[],"approvals":[],"serverTime":"2026-07-27T00:00:00Z"}
+        {"agents":[{"agentType":"PM","displayName":"PM","slashCommands":["/today"],"description":"","state":"IN_PROGRESS","bubble":"일하는 중…"}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-07-27T00:00:00Z"}
         """.data(using: .utf8)!
         let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
         t.expectEqual(snapshot.agents.count, 1, "agents 개수")

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
   ConsoleAgent,
@@ -9,7 +10,7 @@ import {
   ConsoleRun,
   ConsoleSnapshot,
 } from '../domain/console.type';
-import { toConsoleApproval } from './console-mappers';
+import { toConsoleApproval, toConsoleSession } from './console-mappers';
 import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
 // 콘솔 관제 스냅샷 조립 — agent-registry(문서 메타) + 활성 런 + 열린 승인을 화면 뷰 타입으로 가공.
@@ -19,6 +20,7 @@ export class ConsoleReadService {
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+    private readonly localSessions: LocalSessionService,
   ) {}
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
@@ -68,10 +70,13 @@ export class ConsoleReadService {
       finishedAt: run.endedAt === null ? null : run.endedAt.toISOString(),
     }));
 
+    const sessions = this.localSessions.list().map(toConsoleSession);
+
     return {
       agents,
       runs,
       approvals,
+      sessions,
       serverTime: now.toISOString(),
     };
   }

@@ -1,5 +1,6 @@
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { ConsoleReadService } from './console-read.service';
 
@@ -8,14 +9,17 @@ describe('ConsoleReadService', () => {
   let findAllOpenPreviews: jest.Mocked<
     Pick<FindAllOpenPreviewsUsecase, 'execute'>
   >;
+  let localSessions: jest.Mocked<Pick<LocalSessionService, 'list'>>;
   let service: ConsoleReadService;
 
   beforeEach(() => {
     agentRunService = { findActiveRuns: jest.fn().mockResolvedValue([]) };
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
+    localSessions = { list: jest.fn().mockReturnValue([]) };
     service = new ConsoleReadService(
       agentRunService as unknown as AgentRunService,
       findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
+      localSessions as unknown as LocalSessionService,
     );
   });
 
@@ -29,6 +33,7 @@ describe('ConsoleReadService', () => {
     expect(typeof snapshot.serverTime).toBe('string');
     expect(snapshot.runs).toEqual([]);
     expect(snapshot.approvals).toEqual([]);
+    expect(snapshot.sessions).toEqual([]);
   });
 
   it('활성 런이 있는 에이전트는 IN_PROGRESS, 런은 뷰 형태(string id/ISO)로 매핑된다', async () => {
@@ -74,6 +79,36 @@ describe('ConsoleReadService', () => {
         agentType: null,
         title: 'PM 계획을 GitHub 에 반영할까요?',
         createdAt: '2026-07-27T01:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('로컬 세션을 뷰 형태(ISO)로 스냅샷에 담는다', async () => {
+    localSessions.list.mockReturnValue([
+      {
+        sessionId: 's1',
+        pid: 42,
+        source: 'claude',
+        name: 'repo-1',
+        cwd: '/repo',
+        state: 'active',
+        startedAt: new Date('2026-07-27T00:00:00Z'),
+        lastActivityAt: null,
+      },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.sessions).toEqual([
+      {
+        sessionId: 's1',
+        pid: 42,
+        source: 'claude',
+        name: 'repo-1',
+        cwd: '/repo',
+        state: 'active',
+        startedAt: '2026-07-27T00:00:00.000Z',
+        lastActivityAt: null,
       },
     ]);
   });

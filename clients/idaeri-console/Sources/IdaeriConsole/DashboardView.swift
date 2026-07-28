@@ -43,6 +43,10 @@ struct DashboardView: View {
                 if !store.approvals.isEmpty {
                     approvalPanel
                 }
+
+                if !store.sessions.isEmpty {
+                    sessionPanel
+                }
             }
             .padding(24)
         }
@@ -115,6 +119,7 @@ struct DashboardView: View {
                 summaryChip(count: store.approvals.count, label: "승인 대기", color: ConsoleAgentState.awaitingApproval.accentColor)
                 summaryChip(count: countOf(.awaitingIntegration), label: "연동 대기", color: ConsoleAgentState.awaitingIntegration.accentColor)
                 summaryChip(count: countOf(.completed), label: "완료", color: ConsoleAgentState.completed.accentColor)
+                summaryChip(count: store.sessions.count, label: "내 세션", color: Color(red: 0.36, green: 0.78, blue: 0.63))
                 Spacer()
                 if !store.serverTime.isEmpty {
                     Text(formatTime(store.serverTime))
@@ -198,6 +203,24 @@ struct DashboardView: View {
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(ConsoleAgentState.awaitingApproval.tintColor)
+        )
+    }
+
+    // MARK: - 내 작업 세션 패널
+
+    private var sessionPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("내 작업 세션 \(store.sessions.count)개 (로컬 CLI)")
+                .font(.headline)
+            ForEach(store.sessions) { session in
+                SessionRowView(session: session)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
         )
     }
 

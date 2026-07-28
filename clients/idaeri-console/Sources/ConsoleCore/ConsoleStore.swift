@@ -8,6 +8,7 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var agents: [ConsoleAgent] = []
     @Published public private(set) var runs: [ConsoleRun] = []
     @Published public private(set) var approvals: [ConsoleApproval] = []
+    @Published public private(set) var sessions: [ConsoleSession] = []
     @Published public private(set) var serverTime: String = ""
     @Published public private(set) var pendingCommands: [PendingCommand] = []
 
@@ -18,6 +19,7 @@ public final class ConsoleStore: ObservableObject {
         agents = snapshot.agents
         runs = snapshot.runs
         approvals = snapshot.approvals
+        sessions = snapshot.sessions
         serverTime = snapshot.serverTime
     }
 
@@ -36,6 +38,12 @@ public final class ConsoleStore: ObservableObject {
             approvals.removeAll { $0.id == approval.id }
         case let .stateChanged(agentType, state):
             changeAgentState(agentType: agentType, state: state)
+        case let .sessionOpened(session):
+            upsertSession(session)
+        case let .sessionUpdated(session):
+            upsertSession(session)
+        case let .sessionClosed(sessionId):
+            sessions.removeAll { $0.sessionId == sessionId }
         case let .commandRejected(commandId, reason):
             markCommand(commandId: commandId, phase: .failed, reason: reason)
         case let .commandInfo(commandId, message):
@@ -57,6 +65,14 @@ public final class ConsoleStore: ObservableObject {
             return
         }
         approvals.append(approval)
+    }
+
+    private func upsertSession(_ session: ConsoleSession) {
+        if let index = sessions.firstIndex(where: { $0.sessionId == session.sessionId }) {
+            sessions[index] = session
+            return
+        }
+        sessions.append(session)
     }
 
     /// 해당 에이전트의 상태만 교체한다. bubble 은 백엔드 소유라 건드리지 않고 다음 스냅샷에서 정정된다.
