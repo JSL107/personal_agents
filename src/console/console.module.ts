@@ -4,6 +4,7 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { RouterModule } from '../router/router.module';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
+import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
 import { ConsoleController } from './interface/console.controller';
 import { ConsoleStreamController } from './interface/console-stream.controller';
 import { ConsoleWriteController } from './interface/console-write.controller';
@@ -20,6 +21,11 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
     ConsoleStreamController,
     ConsoleWriteController,
   ],
-  providers: [ConsoleReadService, ConsoleWriteService, ConsoleWriteGuard],
+  providers: [
+    ConsoleReadService,
+    ConsoleWriteService,
+    ConsoleWriteGuard,
+    PreconditionChainOrchestrator,
+  ],
 })
 export class ConsoleModule {}

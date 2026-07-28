@@ -591,6 +591,11 @@ class EnvironmentVariables {
   })
   SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR?: string;
 
+  // 콘솔 리모컨 2A.2 — PO_EVAL 자동 체이닝 시 IMPACT_REPORTER --recent 조회 일수. 기본 7.
+  @IsOptional()
+  @IsString()
+  CONSOLE_CHAIN_IMPACT_RECENT_DAYS?: string;
+
   // 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable).
   // 1인 봇이라 owner 는 항상 본인. ApplyPreviewUsecase 의 owner 매칭에 이 값을 slackUserId 로 주입.
   @IsOptional()
