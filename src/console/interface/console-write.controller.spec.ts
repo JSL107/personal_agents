@@ -19,10 +19,12 @@ describe('ConsoleWriteController', () => {
     const result = controller.sendCommand({
       text: '분배해줘',
       agentTypeHint: 'CTO',
+      commandId: 'command-1',
     });
     expect(service.sendCommand).toHaveBeenCalledWith({
       text: '분배해줘',
       agentTypeHint: 'CTO',
+      commandId: 'command-1',
     });
     expect(result).toEqual({ accepted: true });
   });

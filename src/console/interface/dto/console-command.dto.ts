@@ -10,4 +10,8 @@ export class ConsoleCommandDto {
   @IsOptional()
   @IsString()
   agentTypeHint?: string;
+
+  @IsOptional()
+  @IsString()
+  commandId?: string;
 }

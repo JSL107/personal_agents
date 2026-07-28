@@ -82,9 +82,17 @@ struct AgentCardView: View {
     private var pendingBadgeRow: some View {
         HStack(spacing: 6) {
             ForEach(matchingPending) { command in
-                Text("\(command.phase.badgeIcon) \(command.phase.badgeLabel)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(command.phase.badgeIcon) \(command.phase.badgeLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let reason = command.reason {
+                        Text(reason)
+                            .font(.caption2)
+                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
         }
     }

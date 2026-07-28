@@ -12,6 +12,7 @@ export interface DispatchOutcome {
   output: unknown;
   modelUsed: string;
   formattedText: string;
+  autoResolvedNotice?: string;
   // worker 가 다른 worker 호출을 manager 에 요청할 때 채워 보낸다.
   followUp?: HandoffSpec;
 }

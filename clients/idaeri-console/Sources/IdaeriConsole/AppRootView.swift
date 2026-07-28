@@ -63,7 +63,11 @@ struct AppRootView: View {
         let id = store.enqueueCommand(text: trimmed, agentTypeHint: agentTypeHint)
         Task {
             do {
-                try await client.postCommand(text: trimmed, agentTypeHint: agentTypeHint)
+                try await client.postCommand(
+                    text: trimmed,
+                    agentTypeHint: agentTypeHint,
+                    commandId: id.uuidString
+                )
             } catch {
                 await MainActor.run { store.markCommandFailed(id: id) }
             }

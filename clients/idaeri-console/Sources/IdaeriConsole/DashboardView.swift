@@ -75,16 +75,25 @@ struct DashboardView: View {
     private var pendingBadgeRow: some View {
         HStack(spacing: 6) {
             ForEach(globalPendingCommands) { command in
-                HStack(spacing: 4) {
-                    Text(command.phase.badgeIcon)
-                    Text(command.text)
-                        .font(.caption)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(command.phase.badgeIcon)
+                        Text(command.text)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    if let reason = command.reason {
+                        Text(reason)
+                            .font(.caption2)
+                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                            .lineLimit(2)
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(
-                    Capsule().fill(Color.primary.opacity(0.06))
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
                 )
             }
         }

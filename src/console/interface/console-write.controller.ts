@@ -25,6 +25,7 @@ export class ConsoleWriteController {
     this.consoleWrite.sendCommand({
       text: dto.text,
       agentTypeHint: dto.agentTypeHint as AgentType | undefined,
+      commandId: dto.commandId,
     });
     return { accepted: true };
   }
