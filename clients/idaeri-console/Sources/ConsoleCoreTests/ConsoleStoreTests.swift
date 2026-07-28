@@ -86,4 +86,112 @@ func runConsoleStoreTests(_ t: TestRunner) {
     t.expectEqual(store.approvals.count, 1, "approval 추가")
     store.apply(event: .approvalResolved(approval))
     t.expectEqual(store.approvals.count, 0, "approval 제거")
+
+    // ===== pending 상태기계 =====
+    let pendingStore = ConsoleStore()
+    pendingStore.apply(snapshot: snapshot) // pm, be
+
+    // enqueue → .sent
+    let base = Date(timeIntervalSince1970: 1_000_000)
+    let cmdId = pendingStore.enqueueCommand(text: "오늘 계획", agentTypeHint: "PM", sentAt: base)
+    t.expectEqual(pendingStore.pendingCommands.count, 1, "pending 추가")
+    t.expectEqual(pendingStore.pendingCommands.first?.phase, .sent, "초기 phase sent")
+
+    // run.started(PM) → 힌트 일치 pending 을 .running 으로 바인딩
+    let pmRun = ConsoleRun(id: "run-pm", agentType: "PM", status: "IN_PROGRESS", parentId: nil, startedAt: "t", finishedAt: nil)
+    pendingStore.apply(event: .runStarted(pmRun))
+    t.expectEqual(pendingStore.pendingCommands.first?.phase, .running, "sent→running")
+    t.expectEqual(pendingStore.pendingCommands.first?.boundRunId, "run-pm", "runId 바인딩")
+    t.expectEqual(pendingStore.pendingCommands.first?.resolvedAgentType, "PM", "resolvedAgentType 확정")
+
+    // run.finished(같은 run) → .done
+    let pmDone = ConsoleRun(id: "run-pm", agentType: "PM", status: "SUCCEEDED", parentId: nil, startedAt: "t", finishedAt: "t2")
+    pendingStore.apply(event: .runFinished(pmDone))
+    t.expectEqual(pendingStore.pendingCommands.first?.phase, .done, "running→done")
+
+    // 힌트 없는 전역 명령 → run.started 의 agentType 으로 카드 확정
+    let globalStore = ConsoleStore()
+    let gid = globalStore.enqueueCommand(text: "리뷰 좀", agentTypeHint: nil, sentAt: base)
+    let beRun = ConsoleRun(id: "run-be", agentType: "BE", status: "IN_PROGRESS", parentId: nil, startedAt: "t", finishedAt: nil)
+    globalStore.apply(event: .runStarted(beRun))
+    t.expectEqual(globalStore.pendingCommands.first?.resolvedAgentType, "BE", "전역→카드 이동")
+    t.expectEqual(globalStore.pendingCommands.first?.effectiveAgentType, "BE", "effectiveAgentType")
+    _ = gid
+
+    // 다발: 힌트 PM 2개 + run.started PM 1개 → 가장 오래된 것만 바인딩
+    let multiStore = ConsoleStore()
+    let older = multiStore.enqueueCommand(text: "a", agentTypeHint: "PM", sentAt: base)
+    let newer = multiStore.enqueueCommand(text: "b", agentTypeHint: "PM", sentAt: base.addingTimeInterval(10))
+    multiStore.apply(event: .runStarted(ConsoleRun(id: "r", agentType: "PM", status: "IN_PROGRESS", parentId: nil, startedAt: "t", finishedAt: nil)))
+    t.expectEqual(multiStore.pendingCommands.first(where: { $0.id == older })?.phase, .running, "오래된 것 바인딩")
+    t.expectEqual(multiStore.pendingCommands.first(where: { $0.id == newer })?.phase, .sent, "새 것 미바인딩 유지")
+
+    // 타임아웃: 60초 이상 .sent → .failed
+    let timeoutStore = ConsoleStore()
+    let tid = timeoutStore.enqueueCommand(text: "x", agentTypeHint: "PM", sentAt: base)
+    timeoutStore.expireStalePendings(now: base.addingTimeInterval(61), timeout: 60)
+    t.expectEqual(timeoutStore.pendingCommands.first?.phase, .failed, "타임아웃 → failed")
+
+    // markCommandFailed / removeCommand
+    let opStore = ConsoleStore()
+    let oid = opStore.enqueueCommand(text: "y", agentTypeHint: nil, sentAt: base)
+    opStore.markCommandFailed(id: oid)
+    t.expectEqual(opStore.pendingCommands.first?.phase, .failed, "markCommandFailed")
+    opStore.removeCommand(id: oid)
+    t.expectEqual(opStore.pendingCommands.count, 0, "removeCommand")
+
+    // 매칭 안 되는 run.started(힌트 다르고 힌트없음 없음) → pending 불변
+    let noMatchStore = ConsoleStore()
+    _ = noMatchStore.enqueueCommand(text: "z", agentTypeHint: "PM", sentAt: base)
+    noMatchStore.apply(event: .runStarted(ConsoleRun(id: "r2", agentType: "BE", status: "IN_PROGRESS", parentId: nil, startedAt: "t", finishedAt: nil)))
+    t.expectEqual(noMatchStore.pendingCommands.first?.phase, .sent, "미매칭 시 sent 유지")
+
+    // command.rejected 는 commandId 가 일치하는 pending 만 실패 처리하고 이유를 기록
+    let rejectedStore = ConsoleStore()
+    let rejectedId = rejectedStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    let untouchedId = rejectedStore.enqueueCommand(text: "다른 지시", agentTypeHint: nil, sentAt: base)
+    rejectedStore.apply(
+        event: .commandRejected(commandId: rejectedId.uuidString, reason: "PR 없음")
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == rejectedId })?.phase,
+        .failed,
+        "command.rejected → failed"
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == rejectedId })?.reason,
+        "PR 없음",
+        "command.rejected reason 기록"
+    )
+    t.expectEqual(
+        rejectedStore.pendingCommands.first(where: { $0.id == untouchedId })?.phase,
+        .sent,
+        "다른 pending 불변"
+    )
+
+    // command.info 는 안내만 기록하고 기존 phase 를 유지
+    let infoStore = ConsoleStore()
+    let infoId = infoStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    infoStore.apply(
+        event: .commandInfo(commandId: infoId.uuidString, message: "최근 open PR 자동 선택")
+    )
+    t.expectEqual(infoStore.pendingCommands.first?.phase, .sent, "command.info phase 유지")
+    t.expectEqual(
+        infoStore.pendingCommands.first?.reason,
+        "최근 open PR 자동 선택",
+        "command.info message 기록"
+    )
+
+    // 미지 commandId 는 pending 목록을 변경하지 않음
+    let unknownCommandStore = ConsoleStore()
+    let knownId = unknownCommandStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)
+    unknownCommandStore.apply(
+        event: .commandRejected(commandId: UUID().uuidString, reason: "무시할 실패")
+    )
+    t.expectEqual(unknownCommandStore.pendingCommands.first?.id, knownId, "기존 pending 유지")
+    t.expectEqual(unknownCommandStore.pendingCommands.first?.phase, .sent, "미지 commandId 무시")
+    t.expectNil(unknownCommandStore.pendingCommands.first?.reason, "미지 commandId reason 미기록")
+
+    _ = tid
+    _ = cmdId
 }

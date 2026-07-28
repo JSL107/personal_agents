@@ -19,7 +19,7 @@ public enum ConsoleAgentState: String, Codable, Sendable {
 }
 
 /// 부서 그리드의 카드 하나. agent-registry 엔트리 + 파생 상태.
-public struct ConsoleAgent: Codable, Identifiable, Sendable {
+public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public let agentType: String
     public let displayName: String
     public let slashCommands: [String]
@@ -151,6 +151,8 @@ public enum ConsoleEvent: Decodable, Sendable {
     case sessionOpened(ConsoleSession)
     case sessionUpdated(ConsoleSession)
     case sessionClosed(sessionId: String)
+    case commandRejected(commandId: String, reason: String)
+    case commandInfo(commandId: String, message: String)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -160,6 +162,9 @@ public enum ConsoleEvent: Decodable, Sendable {
         case state
         case session
         case sessionId
+        case commandId
+        case reason
+        case message
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,6 +190,16 @@ public enum ConsoleEvent: Decodable, Sendable {
             self = .sessionUpdated(try container.decode(ConsoleSession.self, forKey: .session))
         case "session.closed":
             self = .sessionClosed(sessionId: try container.decode(String.self, forKey: .sessionId))
+        case "command.rejected":
+            self = .commandRejected(
+                commandId: try container.decode(String.self, forKey: .commandId),
+                reason: try container.decode(String.self, forKey: .reason)
+            )
+        case "command.info":
+            self = .commandInfo(
+                commandId: try container.decode(String.self, forKey: .commandId),
+                message: try container.decode(String.self, forKey: .message)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -193,4 +208,60 @@ public enum ConsoleEvent: Decodable, Sendable {
             )
         }
     }
+}
+
+/// 리모컨 지시 요청 body. 백엔드 `POST /v1/console/command` 계약(text + 선택 힌트 + commandId).
+public struct CommandRequest: Encodable, Sendable {
+    public let text: String
+    public let agentTypeHint: String?
+    public let commandId: String
+
+    public init(text: String, agentTypeHint: String?, commandId: String) {
+        self.text = text
+        self.agentTypeHint = agentTypeHint
+        self.commandId = commandId
+    }
+}
+
+/// 리모컨 명령의 낙관적 진행 단계.
+public enum PendingPhase: String, Sendable, Equatable {
+    case sent      // 전송·접수(202) — codex 준비 대기
+    case running   // run.started 매칭됨
+    case done      // run.finished 매칭됨(곧 제거)
+    case failed    // 전송 실패 또는 타임아웃
+}
+
+/// 전송한 지시의 로컬 추적 항목. SSE run 이벤트로 phase 를 전이한다.
+public struct PendingCommand: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let text: String
+    public let agentTypeHint: String?
+    public var resolvedAgentType: String?
+    public var boundRunId: String?
+    public let sentAt: Date
+    public var phase: PendingPhase
+    public var reason: String?
+
+    public init(
+        id: UUID,
+        text: String,
+        agentTypeHint: String?,
+        resolvedAgentType: String? = nil,
+        boundRunId: String? = nil,
+        sentAt: Date,
+        phase: PendingPhase,
+        reason: String? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.agentTypeHint = agentTypeHint
+        self.resolvedAgentType = resolvedAgentType
+        self.boundRunId = boundRunId
+        self.sentAt = sentAt
+        self.phase = phase
+        self.reason = reason
+    }
+
+    /// 카드 매칭용 — 확정된 agentType 우선, 없으면 최초 힌트.
+    public var effectiveAgentType: String? { resolvedAgentType ?? agentTypeHint }
 }

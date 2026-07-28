@@ -49,14 +49,52 @@ private func decodeSSEBlock(_ block: String) -> ConsoleEvent? {
     return try? JSONDecoder().decode(ConsoleEvent.self, from: data)
 }
 
-/// 콘솔 백엔드에 대한 얇은 읽기 클라이언트. 부팅 시 스냅샷 1콜, 이후 SSE 구독.
-/// 부작용 없는 read 전용이며, 앱에는 LLM 로직이 없다.
+/// `POST /v1/console/command` 요청을 구성하는 순수 함수(테스트를 위해 actor 밖).
+public func buildCommandRequest(
+    baseURL: URL,
+    body: CommandRequest,
+    token: String?
+) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/command")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
+    request.httpBody = try JSONEncoder().encode(body)
+    return request
+}
+
+/// `POST /v1/console/approvals/:id/:action`(action = apply|cancel) 요청을 구성하는 순수 함수.
+public func buildApprovalRequest(
+    baseURL: URL,
+    previewId: String,
+    action: String,
+    token: String?
+) -> URLRequest {
+    let url = baseURL
+        .appendingPathComponent("v1/console/approvals")
+        .appendingPathComponent(previewId)
+        .appendingPathComponent(action)
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
+    return request
+}
+
+/// 콘솔 백엔드에 대한 얇은 클라이언트. 부팅 시 스냅샷 1콜, 이후 SSE 구독 + 리모컨 write(지시/승인/거절).
+/// 앱에는 LLM 로직이 없다 — write 는 백엔드에 그대로 위임하고 진행은 SSE 로 받는다.
 public actor ConsoleClient {
     private let baseURL: URL
+    private let token: String?
     private let session: URLSession
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(baseURL: URL, token: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
+        self.token = token
         self.session = session
     }
 
@@ -111,6 +149,40 @@ public actor ConsoleClient {
             continuation.onTermination = { _ in
                 task.cancel()
             }
+        }
+    }
+
+    /// `POST /v1/console/command` — 지시. 백엔드는 202 로 접수만 하고 진행은 SSE 로 온다.
+    public func postCommand(text: String, agentTypeHint: String?, commandId: String) async throws {
+        let request = try buildCommandRequest(
+            baseURL: baseURL,
+            body: CommandRequest(text: text, agentTypeHint: agentTypeHint, commandId: commandId),
+            token: token
+        )
+        try await sendExpectingSuccess(request)
+    }
+
+    /// `POST /v1/console/approvals/:id/apply` — 승인.
+    public func applyApproval(id: String) async throws {
+        try await sendExpectingSuccess(
+            buildApprovalRequest(baseURL: baseURL, previewId: id, action: "apply", token: token)
+        )
+    }
+
+    /// `POST /v1/console/approvals/:id/cancel` — 거절.
+    public func cancelApproval(id: String) async throws {
+        try await sendExpectingSuccess(
+            buildApprovalRequest(baseURL: baseURL, previewId: id, action: "cancel", token: token)
+        )
+    }
+
+    private func sendExpectingSuccess(_ request: URLRequest) async throws {
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
         }
     }
 }

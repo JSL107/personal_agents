@@ -86,4 +86,14 @@ export type ConsoleEvent =
       readonly type: 'session.opened' | 'session.updated';
       readonly session: ConsoleSession;
     }
-  | { readonly type: 'session.closed'; readonly sessionId: string };
+  | { readonly type: 'session.closed'; readonly sessionId: string }
+  | {
+      readonly type: 'command.rejected';
+      readonly commandId: string;
+      readonly reason: string;
+    }
+  | {
+      readonly type: 'command.info';
+      readonly commandId: string;
+      readonly message: string;
+    };

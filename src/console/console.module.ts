@@ -2,17 +2,33 @@ import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
+import { RouterModule } from '../router/router.module';
 import { ConsoleReadService } from './application/console-read.service';
+import { ConsoleWriteService } from './application/console-write.service';
+import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
 import { SessionPollerService } from './application/session-poller.service';
 import { ConsoleController } from './interface/console.controller';
 import { ConsoleStreamController } from './interface/console-stream.controller';
+import { ConsoleWriteController } from './interface/console-write.controller';
+import { ConsoleWriteGuard } from './interface/console-write.guard';
 
-// 콘솔 관제 모듈 — 읽기(REST) + 실시간(SSE) 표면. 부작용 0.
-// FindAllOpenPreviewsUsecase 는 PreviewGateModule.forRoot(global) 가, ConsoleEventBus 는
-// ConsoleEventBusModule(@Global) 이 각각 전역 export 하므로 별도 import 없이 주입된다.
+// 콘솔 관제 모듈 — 읽기(REST) + 실시간(SSE) + 리모컨 write(지시/승인).
+// read 경로는 부작용 0. write 경로는 ConsoleWriteGuard 뒤에서 기존 usecase 에 위임한다.
+// FindAllOpenPreviewsUsecase·ApplyPreviewUsecase·CancelPreviewUsecase 는 PreviewGateModule.forRoot(global) 가,
+// ConsoleEventBus 는 ConsoleEventBusModule(@Global) 이, IDAERI_ROUTER_PORT 는 RouterModule 이 제공한다.
 @Module({
-  imports: [AgentRunModule, LocalSessionsModule],
-  controllers: [ConsoleController, ConsoleStreamController],
-  providers: [ConsoleReadService, SessionPollerService],
+  imports: [AgentRunModule, LocalSessionsModule, RouterModule],
+  controllers: [
+    ConsoleController,
+    ConsoleStreamController,
+    ConsoleWriteController,
+  ],
+  providers: [
+    ConsoleReadService,
+    ConsoleWriteService,
+    ConsoleWriteGuard,
+    PreconditionChainOrchestrator,
+    SessionPollerService,
+  ],
 })
 export class ConsoleModule {}

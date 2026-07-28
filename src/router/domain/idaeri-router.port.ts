@@ -41,7 +41,8 @@ export type DispatchSource =
   | 'SLACK_MESSAGE'
   | 'SLACK_COMMAND'
   | 'CRON'
-  | 'WEBHOOK';
+  | 'WEBHOOK'
+  | 'REMOTE_CONSOLE';
 
 // manager 가 worker 호출 결과를 사용자에게 돌려줄 때의 표준 응답.
 // followUp 은 worker 가 추가 worker 호출을 요청한 경우 — manager 가 cycle/depth 검증 후 dispatch.
@@ -55,6 +56,7 @@ export interface DispatchResult {
   output: unknown;
   modelUsed: string;
   formattedText: string;
+  autoResolvedNotice?: string;
   followUp?: HandoffSpec;
   handoffResults?: DispatchResult[];
 }

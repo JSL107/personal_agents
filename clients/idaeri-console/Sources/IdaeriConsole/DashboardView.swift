@@ -5,12 +5,17 @@ import SwiftUI
 /// 스트림이 끊기면 지수 백오프로 재연결하고 스냅샷을 재동기화한다.
 /// 읽기·표시 전용 — 여기서 에이전트를 호출하거나 승인을 처리하지 않는다.
 struct DashboardView: View {
-    let client: ConsoleClient
+    /// store·연결은 AppRootView 가 소유하고 주입한다(오피스 탭과 공유).
+    @ObservedObject var store: ConsoleStore
+    let status: ConnectionStatus
     /// 연결 대상 표시용(빈 상태 안내에 노출). 동작에는 영향 없음.
     let baseURLLabel: String
+    /// 리모컨 write — AppRootView 가 client POST 로 배선한 액션.
+    let onSend: (String, String?) -> Void
+    let onApprove: (String) -> Void
+    let onReject: (String) -> Void
 
-    @StateObject private var store = ConsoleStore()
-    @State private var status: ConnectionStatus = .connecting
+    @State private var commandText = ""
 
     private let columns = [GridItem(.adaptive(minimum: 220), spacing: 14)]
 
@@ -18,6 +23,8 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+
+                commandBar
 
                 if !bottleneckAgents.isEmpty {
                     bottleneckBanner
@@ -28,7 +35,7 @@ struct DashboardView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(store.agents) { agent in
-                            AgentCardView(agent: agent)
+                            AgentCardView(agent: agent, pendingCommands: store.pendingCommands, onSend: onSend)
                         }
                     }
                 }
@@ -44,8 +51,55 @@ struct DashboardView: View {
             .padding(24)
         }
         .frame(minWidth: 720, minHeight: 520)
-        .task {
-            await connect()
+    }
+
+    // MARK: - 커맨드바
+
+    private var commandBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                TextField("에이전트에게 지시…", text: $commandText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(sendGlobalCommand)
+                Button("전송", action: sendGlobalCommand)
+                    .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if !globalPendingCommands.isEmpty {
+                pendingBadgeRow
+            }
+        }
+    }
+
+    private func sendGlobalCommand() {
+        onSend(commandText, nil)
+        commandText = ""
+    }
+
+    private var pendingBadgeRow: some View {
+        HStack(spacing: 6) {
+            ForEach(globalPendingCommands) { command in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(command.phase.badgeIcon)
+                        Text(command.text)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    if let reason = command.reason {
+                        Text(reason)
+                            .font(.caption2)
+                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+            }
         }
     }
 
@@ -135,6 +189,11 @@ struct DashboardView: View {
                     Text(formatTime(approval.createdAt))
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Button("승인") { onApprove(approval.id) }
+                        Button("거절") { onReject(approval.id) }
+                            .tint(.red)
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -213,6 +272,14 @@ struct DashboardView: View {
         store.agents.filter { $0.state == .awaitingIntegration }
     }
 
+    /// 아직 카드로 라우팅되지 않은(힌트 없음 + run.started 로 확정되지 않음) pending 만
+    /// 헤더 커맨드바에 남긴다. `run.started` 로 `resolvedAgentType` 이 채워지면 해당
+    /// AgentCardView 배지로 넘어가므로 여기서는 제외 — 커맨드바·카드 중복 표시 방지.
+    /// 타임아웃 실패(`.failed`, resolvedAgentType 여전히 nil)는 계속 커맨드바에 남아 ⚠️ 로 보인다.
+    private var globalPendingCommands: [PendingCommand] {
+        store.pendingCommands.filter { $0.agentTypeHint == nil && $0.resolvedAgentType == nil }
+    }
+
     private func countOf(_ state: ConsoleAgentState) -> Int {
         store.agents.filter { $0.state == state }.count
     }
@@ -227,31 +294,6 @@ struct DashboardView: View {
         let output = DateFormatter()
         output.dateFormat = "MM-dd HH:mm:ss"
         return output.string(from: date)
-    }
-
-    // MARK: - 연결 배선
-
-    private func connect() async {
-        var backoffSeconds: UInt64 = 1
-        while !Task.isCancelled {
-            do {
-                let snapshot = try await client.fetchSnapshot()
-                store.apply(snapshot: snapshot)
-                status = .live
-                backoffSeconds = 1
-                for await event in await client.events() {
-                    store.apply(event: event)
-                }
-            } catch {
-                // fetch/stream 실패 → 아래 백오프 후 재시도
-            }
-            if Task.isCancelled {
-                return
-            }
-            status = .reconnecting
-            try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
-            backoffSeconds = min(backoffSeconds * 2, 30)
-        }
     }
 }
 
