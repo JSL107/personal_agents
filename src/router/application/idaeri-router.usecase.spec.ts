@@ -124,6 +124,30 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).not.toHaveBeenCalled();
   });
 
+  it('dispatcher 의 autoResolvedNotice 를 root DispatchResult 로 전달한다', async () => {
+    const autoResolvedOutcome = {
+      agentRunId: 43,
+      output: {},
+      modelUsed: 'gpt-5-mock',
+      autoResolvedNotice: 'PR #42 를 자동 해결 처리했습니다.',
+    };
+    const pmDispatcher = buildDispatcher(
+      AgentType.PM,
+      () => autoResolvedOutcome,
+    );
+    const { usecase } = buildUsecase([pmDispatcher]);
+
+    const result = await usecase.dispatch({
+      source: 'REMOTE_CONSOLE',
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.PM,
+    });
+
+    expect(result).toMatchObject({
+      autoResolvedNotice: 'PR #42 를 자동 해결 처리했습니다.',
+    });
+  });
+
   it('등록되지 않은 agentType 은 UNSUPPORTED_AGENT_TYPE throw (다른 dispatcher 등록 무관)', async () => {
     const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
       agentRunId: 1,

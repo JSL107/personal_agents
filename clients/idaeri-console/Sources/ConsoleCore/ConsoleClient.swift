@@ -153,10 +153,10 @@ public actor ConsoleClient {
     }
 
     /// `POST /v1/console/command` — 지시. 백엔드는 202 로 접수만 하고 진행은 SSE 로 온다.
-    public func postCommand(text: String, agentTypeHint: String?) async throws {
+    public func postCommand(text: String, agentTypeHint: String?, commandId: String) async throws {
         let request = try buildCommandRequest(
             baseURL: baseURL,
-            body: CommandRequest(text: text, agentTypeHint: agentTypeHint),
+            body: CommandRequest(text: text, agentTypeHint: agentTypeHint, commandId: commandId),
             token: token
         )
         try await sendExpectingSuccess(request)

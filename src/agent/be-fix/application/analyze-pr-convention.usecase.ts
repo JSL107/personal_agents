@@ -9,7 +9,6 @@ import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
-  PullRequestRef,
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -19,21 +18,12 @@ import {
   PrConventionReport,
 } from '../domain/be-fix.type';
 import { BeFixErrorCode } from '../domain/be-fix-error-code.enum';
+import { parseBeFixPrRef } from '../domain/be-fix-pr-ref.parser';
 import { parsePrConventionReport } from '../domain/prompt/be-fix.parser';
 import { BE_FIX_SYSTEM_PROMPT } from '../domain/prompt/be-fix-system.prompt';
 
 // diff 가 너무 크면 prompt cap 을 넘기므로 head 100KB 만 사용.
 const DIFF_BYTE_CAP = 100_000;
-
-// 지원 형식:
-//   123              → number-only
-//   #123             → hash-prefixed
-//   owner/repo#123   → shorthand
-//   https://github.com/owner/repo/pull/123
-const URL_PATTERN =
-  /^https?:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)\/?$/;
-const SHORTHAND_PATTERN = /^([^/\s]+\/[^/\s#]+)#(\d+)$/;
-const NUMBER_PATTERN = /^#?(\d+)$/;
 
 @Injectable()
 export class AnalyzePrConventionUsecase {
@@ -62,7 +52,7 @@ export class AnalyzePrConventionUsecase {
       });
     }
 
-    const ref = parsePrRef(trimmed);
+    const ref = parseBeFixPrRef(trimmed);
     if (!ref) {
       throw new BeFixException({
         code: BeFixErrorCode.INVALID_PR_REF,
@@ -153,27 +143,6 @@ export class AnalyzePrConventionUsecase {
     });
   }
 }
-
-const parsePrRef = (raw: string): PullRequestRef | null => {
-  const urlMatch = raw.match(URL_PATTERN);
-  if (urlMatch) {
-    return { repo: urlMatch[1], number: Number.parseInt(urlMatch[2], 10) };
-  }
-
-  const shortMatch = raw.match(SHORTHAND_PATTERN);
-  if (shortMatch) {
-    return { repo: shortMatch[1], number: Number.parseInt(shortMatch[2], 10) };
-  }
-
-  const numMatch = raw.match(NUMBER_PATTERN);
-  if (numMatch) {
-    // number-only: repo 는 빈 문자열로 — GithubClientPort 구현이 GITHUB_REPO 환경변수로 채워야 함.
-    // 현재 MVP scope 에서는 owner/repo#N 또는 URL 형식 사용을 권장.
-    return { repo: '', number: Number.parseInt(numMatch[1], 10) };
-  }
-
-  return null;
-};
 
 const buildBeFixPrompt = ({
   prRef,

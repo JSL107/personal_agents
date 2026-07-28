@@ -162,6 +162,25 @@ describe('AnalyzePrConventionUsecase', () => {
     );
   });
 
+  it('공백으로 감싼 PR 참조를 trim한 뒤 처리한다', async () => {
+    const githubClient = makeMockGithubClient();
+
+    const usecase = new AnalyzePrConventionUsecase(
+      makeMockModelRouter() as never,
+      makeMockAgentRunService() as never,
+      githubClient as never,
+    );
+
+    await usecase.execute({
+      prRef: '  octocat/hello-world#7  ',
+      slackUserId: 'U2',
+    });
+
+    expect(githubClient.getPullRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'octocat/hello-world', number: 7 }),
+    );
+  });
+
   it('full URL 형식 파싱', async () => {
     const githubClient = makeMockGithubClient();
 

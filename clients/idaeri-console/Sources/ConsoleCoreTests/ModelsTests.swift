@@ -111,6 +111,38 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("approval.opened 디코딩 실패: \(error)")
     }
 
+    // ConsoleEvent 유니온 — command.rejected
+    do {
+        let json = """
+        {"type":"command.rejected","commandId":"c1","reason":"PR 참조 형식이 잘못되었습니다"}
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
+        if case let .commandRejected(commandId, reason) = event {
+            t.expectEqual(commandId, "c1", "command.rejected commandId")
+            t.expectEqual(reason, "PR 참조 형식이 잘못되었습니다", "command.rejected reason")
+        } else {
+            t.fail("command.rejected 로 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("command.rejected 디코딩 실패: \(error)")
+    }
+
+    // ConsoleEvent 유니온 — command.info
+    do {
+        let json = """
+        {"type":"command.info","commandId":"c2","message":"최근 open PR owner/repo#12 자동 선택"}
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
+        if case let .commandInfo(commandId, message) = event {
+            t.expectEqual(commandId, "c2", "command.info commandId")
+            t.expectEqual(message, "최근 open PR owner/repo#12 자동 선택", "command.info message")
+        } else {
+            t.fail("command.info 로 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("command.info 디코딩 실패: \(error)")
+    }
+
     // 알 수 없는 이벤트 타입은 디코딩 에러
     t.expectThrows("알 수 없는 이벤트 타입은 throw") {
         let json = """
