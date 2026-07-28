@@ -1,5 +1,4 @@
 import {
-  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -9,11 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
-import {
-  IDAERI_ROUTER_PORT,
-  IdaeriRouterPort,
-} from '../../router/domain/idaeri-router.port';
-import { ConsoleEventBus } from './console-event-bus.service';
+import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator';
 
 interface ConsoleCommandInput {
   text: string;
@@ -21,49 +16,32 @@ interface ConsoleCommandInput {
   commandId?: string;
 }
 
-// 콘솔 리모컨 write 위임 서비스. 새 로직 없이 owner 를 주입해 기존 usecase 로 넘긴다.
-// 지시는 codex 지연(10~40s) 때문에 await 하지 않고 백그라운드 실행 → 진행은 SSE 로 반영.
+// 콘솔 리모컨 write 위임 서비스. owner 를 주입해 orchestrator 로 넘긴다.
+// 지시는 codex 지연(10~40s) + 자동 체이닝 때문에 await 하지 않고 백그라운드 실행 → 진행은 SSE 로 반영.
 @Injectable()
 export class ConsoleWriteService {
   private readonly logger = new Logger(ConsoleWriteService.name);
 
   constructor(
     private readonly config: ConfigService,
-    @Inject(IDAERI_ROUTER_PORT)
-    private readonly router: IdaeriRouterPort,
+    private readonly chainOrchestrator: PreconditionChainOrchestrator,
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
-    private readonly consoleEvents: ConsoleEventBus,
   ) {}
 
   sendCommand(input: ConsoleCommandInput): void {
     const slackUserId = this.requireOwner();
-    void this.router
-      .dispatch({
-        source: 'REMOTE_CONSOLE',
+    void this.chainOrchestrator
+      .run({
         slackUserId,
         text: input.text,
         agentTypeHint: input.agentTypeHint,
-      })
-      .then((result) => {
-        if (input.commandId && result.autoResolvedNotice) {
-          this.consoleEvents.publish({
-            type: 'command.info',
-            commandId: input.commandId,
-            message: result.autoResolvedNotice,
-          });
-        }
+        commandId: input.commandId,
       })
       .catch((error: unknown) => {
+        // orchestrator 는 도메인 예외를 SSE 로 처리한다. 여기 도달하면 예기치 못한 내부 오류.
         const reason = error instanceof Error ? error.message : String(error);
-        this.logger.error(`리모컨 지시 실패: ${reason}`);
-        if (input.commandId) {
-          this.consoleEvents.publish({
-            type: 'command.rejected',
-            commandId: input.commandId,
-            reason,
-          });
-        }
+        this.logger.error(`리모컨 지시 처리 중 예기치 못한 오류: ${reason}`);
       });
   }
 
