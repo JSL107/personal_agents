@@ -12,6 +12,7 @@ runOfficeLayoutTests(runner)
 runOfficeChoreographyTests(runner)
 runOfficeInteractionTests(runner)
 runDepartmentTests(runner)
+runAgentTokenInfoTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()
