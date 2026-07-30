@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 
+import { GithubEventBridge } from '../../session-dispatch/application/github-event.bridge';
 import {
   GITHUB_DELIVERY_HEADER,
   GITHUB_EVENT_HEADER,
@@ -64,6 +65,7 @@ export class WebhookController {
     @InjectQueue(ISSUE_LABEL_QUEUE)
     private readonly issueLabelQueue: Queue<IssueLabelJobData>,
     private readonly configService: ConfigService,
+    private readonly githubEventBridge: GithubEventBridge,
   ) {}
 
   @Post('trigger')
@@ -147,10 +149,20 @@ export class WebhookController {
 
     // check_run.completed + failure → BE-SRE 분석.
     if (event === 'check_run' && this.isCheckRunFailure(payload)) {
-      this.fireBeSreAnalysis({
-        payload: payload as GithubCheckRunEvent,
-        slackUserId,
-      });
+      const checkRunEvent = payload as GithubCheckRunEvent;
+      this.fireBeSreAnalysis({ payload: checkRunEvent, slackUserId });
+      void this.githubEventBridge
+        .onCiFailure({
+          repo: checkRunEvent.repository.full_name,
+          checkName: checkRunEvent.check_run.name,
+          headSha: checkRunEvent.check_run.head_sha,
+          htmlUrl: checkRunEvent.check_run.html_url,
+        })
+        .catch((error: unknown) => {
+          this.logger.error(
+            `브릿지 onCiFailure 실패: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
       return { accepted: true };
     }
 
@@ -178,6 +190,17 @@ export class WebhookController {
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
       this.fireBeFixAnalysis({ prRef, slackUserId });
       this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
+      void this.githubEventBridge
+        .onPrOpened({
+          repo: pr.repository.full_name,
+          prNumber: pr.pull_request.number,
+          title: pr.pull_request.title,
+        })
+        .catch((error: unknown) => {
+          this.logger.error(
+            `브릿지 onPrOpened 실패: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
     }
 
     // issues.opened → impact-report 와 병렬로 자동 라벨링 (env gate 통과 시).
