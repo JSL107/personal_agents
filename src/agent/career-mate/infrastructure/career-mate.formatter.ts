@@ -65,25 +65,82 @@ export const formatGapReport = (data: GapAnalysisData): string => {
   ].join('\n');
 };
 
+// 요약 렌더 시 섹션당 노출 불릿 상한. 초과분은 "…외 N개" 로 접고 full(스레드)에서 전부 보여준다.
+const CALIBRATION_SUMMARY_LIMIT = 3;
+
+// 이력서 보정 점검 섹션 정의 — 라벨 + 데이터 추출자. summary/full 이 같은 순서·라벨을 공유한다.
+const CALIBRATION_SECTIONS: ReadonlyArray<{
+  title: string;
+  pick: (data: CalibrationResultData) => string[];
+}> = [
+  { title: '🤖 AI-slop 위험', pick: (data) => data.aiSlopRisks },
+  { title: '📊 정량 보강 필요', pick: (data) => data.underQuantified },
+  { title: '🕰️ 구식 표현', pick: (data) => data.outdatedPhrasing },
+  { title: '🔑 빠진 키워드', pick: (data) => data.missingKeywords },
+  { title: '✅ 액션', pick: (data) => data.actionItems },
+];
+
+// formatCalibrationReport 반환 — Slack 벽 방지용 요약/전체 분리.
+export interface CalibrationRender {
+  // 섹션별 top N + 초과 표시. 비요청 주간 cron 메인 메시지용.
+  summary: string;
+  // 전체 리포트. slash 응답(사용자 요청) / cron 스레드 상세용.
+  full: string;
+  // summary 가 일부 항목을 접었는지 — cron 이 스레드 상세를 붙일지 판단.
+  truncated: boolean;
+}
+
+// 이력서 보정 점검을 요약/전체로 렌더. 43불릿 통짜 발송을 막기 위해 요약은 섹션당 상한을 둔다.
 export const formatCalibrationReport = (
   data: CalibrationResultData,
-): string => {
-  const section = (title: string, items: string[]): string =>
-    items.length === 0
-      ? ''
-      : `*${title}*\n${items.map((i) => `• ${escapeSlackMrkdwn(i)}`).join('\n')}`;
-  return [
-    `*이력서 보정 점검*`,
-    escapeSlackMrkdwn(data.verdict),
-    ``,
-    section('🤖 AI-slop 위험', data.aiSlopRisks),
-    section('📊 정량 보강 필요', data.underQuantified),
-    section('🕰️ 구식 표현', data.outdatedPhrasing),
-    section('🔑 빠진 키워드', data.missingKeywords),
-    section('✅ 액션', data.actionItems),
+): CalibrationRender => {
+  const sections = CALIBRATION_SECTIONS.map((section) => ({
+    title: section.title,
+    items: section.pick(data),
+  }));
+  const truncated = sections.some(
+    (section) => section.items.length > CALIBRATION_SUMMARY_LIMIT,
+  );
+
+  const bulletList = (items: string[]): string[] =>
+    items.map((item) => `• ${escapeSlackMrkdwn(item)}`);
+
+  const summarySection = (title: string, items: string[]): string => {
+    if (items.length === 0) {
+      return '';
+    }
+    const lines = bulletList(items.slice(0, CALIBRATION_SUMMARY_LIMIT));
+    const rest = items.length - CALIBRATION_SUMMARY_LIMIT;
+    if (rest > 0) {
+      lines.push(`• _…외 ${rest}개는 스레드 참고_`);
+    }
+    return `*${title}*\n${lines.join('\n')}`;
+  };
+
+  const fullSection = (title: string, items: string[]): string => {
+    if (items.length === 0) {
+      return '';
+    }
+    return `*${title}*\n${bulletList(items).join('\n')}`;
+  };
+
+  const header = [`*이력서 보정 점검*`, escapeSlackMrkdwn(data.verdict)];
+
+  const summary = [
+    ...header,
+    ...sections.map((section) => summarySection(section.title, section.items)),
   ]
     .filter((line) => line.length > 0)
     .join('\n\n');
+
+  const full = [
+    ...header,
+    ...sections.map((section) => fullSection(section.title, section.items)),
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+
+  return { summary, full, truncated };
 };
 
 // accomplishment 의 evidence 중 최빈 repo 를 대표 프로젝트로. 동률이면 첫 evidence 의 repo.
