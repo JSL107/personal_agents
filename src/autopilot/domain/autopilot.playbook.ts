@@ -38,9 +38,14 @@ import { PlaybookEntry } from './playbook.type';
 // SP4: 주간 cron 3종 이관 — weekly-summary(금 17:00) / ceo-meta(일 18:00) / impact-report(토 09:00).
 //      각각 독립 digestGroup 없음 = 단독 그룹, 서로 다른 스케줄이라 묶지 않음.
 export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
+  // evening 그룹 순서 주의 — work-reviewer 가 daily-eval 보다 먼저여야 한다.
+  // daily-eval(PO_EVAL)은 "오늘(sinceDays=1)" WORK_REVIEWER 성공 run 을 재료로 회고를 합성하는데,
+  // 오케스트레이터가 같은 그룹을 배열 선언 순서대로 순차 실행하므로 work-reviewer 가 먼저 worklog run 을
+  // 적재해야 daily-eval 이 그 run 을 볼 수 있다. 역순이면 daily-eval 이 조회 시점에 오늘 run 이 아직 없어
+  // 항상 NO_SUB_AGENT_RUNS 로 skip 된다(매일 재발하던 순서 버그).
   {
-    id: 'daily-eval',
-    taskId: 'daily-eval',
+    id: 'work-reviewer',
+    taskId: 'work-reviewer',
     trigger: {
       kind: 'CRON',
       schedule: DEFAULT_DAILY_EVAL_CRON,
@@ -50,8 +55,8 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     digestGroup: 'evening',
   },
   {
-    id: 'work-reviewer',
-    taskId: 'work-reviewer',
+    id: 'daily-eval',
+    taskId: 'daily-eval',
     trigger: {
       kind: 'CRON',
       schedule: DEFAULT_DAILY_EVAL_CRON,
