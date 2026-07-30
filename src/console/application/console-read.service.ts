@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { STALE_RUN_THRESHOLD_MINUTES } from '../../agent-run/domain/agent-run.type';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
@@ -30,7 +31,16 @@ export class ConsoleReadService {
       this.findAllOpenPreviews.execute({ now }),
     ]);
 
-    const activeAgentTypes = new Set(activeRuns.map((run) => run.agentType));
+    // run-sweeper(주 1회)가 정리하기 전이라도, 좀비 임계를 넘긴 IN_PROGRESS 는 활성에서 제외한다.
+    // (앱 크래시로 고착된 런이 스윕 주기까지 최대 6일 "일하는 중" 으로 오표시되던 것을 즉시 교정.)
+    const staleCutoffMs = now.getTime() - STALE_RUN_THRESHOLD_MINUTES * 60_000;
+    const freshActiveRuns = activeRuns.filter(
+      (run) => run.startedAt.getTime() >= staleCutoffMs,
+    );
+
+    const activeAgentTypes = new Set(
+      freshActiveRuns.map((run) => run.agentType),
+    );
 
     // kind→agentType 매핑으로 승인 카드를 담당 에이전트에 연결한다(Phase 4 보완).
     const approvals: ConsoleApproval[] = openPreviews.map(toConsoleApproval);
@@ -60,7 +70,7 @@ export class ConsoleReadService {
       };
     });
 
-    const runs: ConsoleRun[] = activeRuns.map((run) => ({
+    const runs: ConsoleRun[] = freshActiveRuns.map((run) => ({
       id: String(run.id),
       agentType: run.agentType,
       status: run.status,

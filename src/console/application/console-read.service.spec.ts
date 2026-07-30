@@ -38,13 +38,14 @@ describe('ConsoleReadService', () => {
   });
 
   it('활성 런이 있는 에이전트는 IN_PROGRESS, 런은 뷰 형태(string id/ISO)로 매핑된다', async () => {
+    const startedAt = new Date(Date.now() - 60_000); // 1분 전 — 좀비 임계(30분) 이내
     agentRunService.findActiveRuns.mockResolvedValue([
       {
         id: 7,
         agentType: 'PM',
         status: 'IN_PROGRESS',
         parentId: null,
-        startedAt: new Date('2026-07-27T00:00:00Z'),
+        startedAt,
         endedAt: null,
       },
     ]);
@@ -58,9 +59,31 @@ describe('ConsoleReadService', () => {
       id: '7',
       agentType: 'PM',
       parentId: null,
-      startedAt: '2026-07-27T00:00:00.000Z',
+      startedAt: startedAt.toISOString(),
       finishedAt: null,
     });
+  });
+
+  it('좀비 임계(30분) 초과 IN_PROGRESS 런은 활성에서 제외한다 (오표시/목록 제거)', async () => {
+    const startedAt = new Date(Date.now() - 40 * 60_000); // 40분 전 — 임계 초과(좀비)
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 9,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt,
+        endedAt: null,
+      },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    const pm = snapshot.agents.find((agent) => agent.agentType === 'PM');
+    // 죽은 런을 "일하는 중" 으로 오표시하지 않는다.
+    expect(pm?.state).not.toBe('IN_PROGRESS');
+    // 좀비 런은 runs 목록에서도 제외된다.
+    expect(snapshot.runs).toEqual([]);
   });
 
   it('열린 승인은 approvals 로 매핑되고 담당 에이전트는 AWAITING_APPROVAL 이 된다', async () => {
