@@ -50,6 +50,14 @@ struct OfficeView: View {
                         pendingCommands: store.pendingCommands, now: Date()
                     )
                 }
+                .onChange(of: store.runs) { _ in
+                    // 재연결 스냅샷은 이벤트를 방출하지 않으므로, agents 불변인데 runs 만 바뀐
+                    // 경우(같은 에이전트의 새 run)에도 경과 오버레이를 갱신한다.
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
+                }
                 .onReceive(store.eventStream) { event in
                     let context = ChoreographyContext(
                         agents: store.agents,

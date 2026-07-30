@@ -85,6 +85,8 @@ final class OfficeScene: SKScene {
             return
         }
         sync(agents: lastSyncedAgents)
+        // sync 는 집결(bandOrder) 토큰의 위치를 건너뛰므로, 새 size 기준으로 밴드 슬롯을 다시 배치한다.
+        layoutBand()
     }
 
     /// 뷰의 선택 상태를 반영한다. 선택 노드에 지속 하이라이트 링을 얹고, 이전 선택은 해제한다.
