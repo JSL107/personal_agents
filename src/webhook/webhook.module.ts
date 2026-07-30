@@ -7,6 +7,7 @@ import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module'
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { IssueLabelerModule } from '../agent/issue-labeler/issue-labeler.module';
 import { GithubModule } from '../github/github.module';
+import { SessionDispatchModule } from '../session-dispatch/session-dispatch.module';
 import { SlackModule } from '../slack/slack.module';
 import {
   BE_FIX_QUEUE,
@@ -43,6 +44,7 @@ import { WebhookController } from './interface/webhook.controller';
     IssueLabelerModule,
     // listRepoLabels / addLabelsToIssue 호출용.
     GithubModule,
+    SessionDispatchModule,
     SlackModule,
   ],
   controllers: [WebhookController],

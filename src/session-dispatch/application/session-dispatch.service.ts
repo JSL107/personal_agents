@@ -20,11 +20,23 @@ import { DispatchCooldown } from './dispatch-cooldown';
 const OPEN_PULL_REQUEST_LOOKBACK_DAYS = 180;
 const SESSION_INJECT_PREVIEW_TTL_MS = 30 * 60 * 1000;
 
-interface IdleSession {
-  sessionId: string;
-  source: 'claude' | 'codex';
-  cwd: string;
-  name: string;
+export interface IdleSession {
+  readonly sessionId: string;
+  readonly source: 'claude' | 'codex';
+  readonly cwd: string;
+  readonly name: string;
+}
+
+interface OfferParams {
+  readonly session: IdleSession;
+  readonly prRef: string;
+  readonly instruction: string;
+  readonly previewText: string;
+}
+
+interface DispatchGate {
+  readonly ownerSlackUserId: string;
+  readonly githubAuthor: string;
 }
 
 @Injectable()
@@ -40,40 +52,75 @@ export class SessionDispatchService {
     private readonly cooldown: DispatchCooldown,
   ) {}
 
+  private resolveGate(): DispatchGate | null {
+    const ownerSlackUserId = this.readNonEmpty('AUTOPILOT_OWNER_SLACK_USER_ID');
+    const githubAuthor = this.readNonEmpty('IMPACT_REPORT_GITHUB_AUTHOR');
+    const enabled = this.config.get<string>('SESSION_DISPATCH_ENABLED');
+    if (enabled !== 'true' || !ownerSlackUserId || !githubAuthor) {
+      return null;
+    }
+    return { ownerSlackUserId, githubAuthor };
+  }
+
+  isEnabled(): boolean {
+    return this.resolveGate() !== null;
+  }
+
+  async offerToIdleSession(params: OfferParams): Promise<boolean> {
+    const gate = this.resolveGate();
+    if (!gate) {
+      return false;
+    }
+    const { session } = params;
+    if (session.source !== 'claude') {
+      return false;
+    }
+    if (this.cooldown.shouldSkip(session.sessionId)) {
+      return false;
+    }
+    const openPreviews = await this.findAllOpenPreviews.execute({});
+    if (this.hasOpenSessionInjectPreview(openPreviews, session.sessionId)) {
+      return false;
+    }
+    const payload: SessionInjectPreviewPayload = {
+      sessionId: session.sessionId,
+      source: session.source,
+      instruction: params.instruction,
+      prRef: params.prRef,
+    };
+    await this.createPreview.execute({
+      slackUserId: gate.ownerSlackUserId,
+      kind: PREVIEW_KIND.SESSION_INJECT,
+      payload,
+      previewText: params.previewText,
+      responseUrl: null,
+      ttlMs: SESSION_INJECT_PREVIEW_TTL_MS,
+    });
+    this.cooldown.mark(session.sessionId);
+    return true;
+  }
+
   async onSessionBecameIdle(session: IdleSession): Promise<void> {
     try {
-      const ownerSlackUserId = this.readNonEmpty(
-        'AUTOPILOT_OWNER_SLACK_USER_ID',
-      );
-      const githubAuthor = this.readNonEmpty('IMPACT_REPORT_GITHUB_AUTHOR');
-      const enabled = this.config.get<string>('SESSION_DISPATCH_ENABLED');
-      if (enabled !== 'true' || !ownerSlackUserId || !githubAuthor) {
+      const gate = this.resolveGate();
+      if (!gate) {
         return;
       }
-
       if (session.source !== 'claude') {
         return;
       }
-
       if (this.cooldown.shouldSkip(session.sessionId)) {
         return;
       }
-
-      const openPreviews = await this.findAllOpenPreviews.execute({});
-      if (this.hasOpenSessionInjectPreview(openPreviews, session.sessionId)) {
-        return;
-      }
-
       const repository = repoFromCwd(session.cwd);
       if (!repository) {
         return;
       }
-      const repositoryRef = `${githubAuthor}/${repository}`;
-
+      const repositoryRef = `${gate.githubAuthor}/${repository}`;
       const resolvedPullRequest = await resolveLatestOpenPrRef(
         this.githubClient,
         {
-          author: githubAuthor,
+          author: gate.githubAuthor,
           repo: repositoryRef,
           sinceIsoDate: this.getOpenPullRequestSinceIsoDate(),
         },
@@ -81,22 +128,12 @@ export class SessionDispatchService {
       if (!resolvedPullRequest) {
         return;
       }
-
-      const payload: SessionInjectPreviewPayload = {
-        sessionId: session.sessionId,
-        source: session.source,
-        instruction: injectInstructionForPr(resolvedPullRequest.prRef),
+      await this.offerToIdleSession({
+        session,
         prRef: resolvedPullRequest.prRef,
-      };
-      await this.createPreview.execute({
-        slackUserId: ownerSlackUserId,
-        kind: PREVIEW_KIND.SESSION_INJECT,
-        payload,
+        instruction: injectInstructionForPr(resolvedPullRequest.prRef),
         previewText: `세션 ${session.name}(${repository})가 유휴 상태입니다. PR ${resolvedPullRequest.prRef} 리뷰를 맡길까요?`,
-        responseUrl: null,
-        ttlMs: SESSION_INJECT_PREVIEW_TTL_MS,
       });
-      this.cooldown.mark(session.sessionId);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(

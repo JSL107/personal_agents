@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 
+import { GithubEventBridge } from '../../session-dispatch/application/github-event.bridge';
 import {
   BE_FIX_QUEUE,
   BE_SRE_QUEUE,
@@ -24,6 +25,10 @@ describe('WebhookController', () => {
   const mockCodeReviewerQueue = { add: jest.fn() };
   const mockPrCareerLogQueue = { add: jest.fn() };
   const mockIssueLabelQueue = { add: jest.fn() };
+  const mockGithubEventBridge = {
+    onCiFailure: jest.fn(),
+    onPrOpened: jest.fn(),
+  };
   const secret = 'test-secret';
   const githubSecret = 'gh-test-secret';
   const defaultSlackUser = 'U-default';
@@ -73,6 +78,10 @@ describe('WebhookController', () => {
           provide: ConfigService,
           useValue: { get: (key: string) => configValues()[key] },
         },
+        {
+          provide: GithubEventBridge,
+          useValue: mockGithubEventBridge,
+        },
       ],
     }).compile();
     controller = module.get(WebhookController);
@@ -88,6 +97,10 @@ describe('WebhookController', () => {
     mockPrCareerLogQueue.add.mockResolvedValue(undefined);
     mockIssueLabelQueue.add.mockReset();
     mockIssueLabelQueue.add.mockResolvedValue(undefined);
+    mockGithubEventBridge.onCiFailure.mockReset();
+    mockGithubEventBridge.onCiFailure.mockResolvedValue(undefined);
+    mockGithubEventBridge.onPrOpened.mockReset();
+    mockGithubEventBridge.onPrOpened.mockResolvedValue(undefined);
     ownerLogin = 'me';
     careerLogAutoEnabled = 'true';
     careerLogNotionPageId = 'page-abc';
@@ -321,6 +334,39 @@ describe('WebhookController', () => {
       expect(mockBeFixQueue.add).not.toHaveBeenCalled();
     });
 
+    it('pull_request.opened → 유휴 세션 브릿지에 PR 정보를 전달한다', async () => {
+      await controller.github(
+        prOpenedBody,
+        sign(prOpenedBody, githubSecret),
+        'pull_request',
+        'delivery-uuid-pr-bridge',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockGithubEventBridge.onPrOpened).toHaveBeenCalledWith({
+        repo: 'foo/bar',
+        prNumber: 99,
+        title: 'fix: handle null',
+      });
+    });
+
+    it('check_run.completed + failure → 유휴 세션 브릿지에 CI 실패 정보를 전달한다', async () => {
+      await controller.github(
+        checkRunFailedBody,
+        sign(checkRunFailedBody, githubSecret),
+        'check_run',
+        'delivery-uuid-ci-bridge',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockGithubEventBridge.onCiFailure).toHaveBeenCalledWith({
+        repo: 'foo/bar',
+        checkName: 'CI / build',
+        headSha: 'abc123',
+        htmlUrl: 'https://github.com/foo/bar/runs/1',
+      });
+    });
+
     it('check_run.completed + success → 모든 큐 add 호출 안 됨 (200 OK 만)', async () => {
       const successBody = JSON.stringify({
         action: 'completed',
@@ -433,6 +479,10 @@ describe('WebhookController', () => {
           {
             provide: ConfigService,
             useValue: { get: (key: string) => limitedConfig[key] },
+          },
+          {
+            provide: GithubEventBridge,
+            useValue: mockGithubEventBridge,
           },
         ],
       }).compile();
