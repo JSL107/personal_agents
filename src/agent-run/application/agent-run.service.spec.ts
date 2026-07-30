@@ -435,6 +435,56 @@ describe('AgentRunService', () => {
         }),
       ).resolves.toMatchObject({ result: 'r' });
     });
+
+    it('sweepZombies 는 좀비 런마다 run.finished(FAILED)+state.changed(WAITING) 발행 후 정리 건수 반환', async () => {
+      const bus = buildBus();
+      const zombie = {
+        id: 55,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: new Date(Date.now() - 40 * 60 * 1000), // 40분 전(좀비)
+        endedAt: null,
+      };
+      const fresh = {
+        id: 56,
+        agentType: 'CTO',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: new Date(Date.now() - 5 * 60 * 1000), // 5분 전(정상)
+        endedAt: null,
+      };
+      repository.findActiveRuns.mockResolvedValue([zombie, fresh]);
+      repository.sweepZombies.mockResolvedValue(1);
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      const count = await serviceWithBus.sweepZombies({ olderThanMinutes: 30 });
+
+      expect(count).toBe(1);
+      const events = bus.publish.mock.calls.map((call) => call[0]);
+      // 좀비(PM)에만 finished+state 이벤트 — 임계 이내 정상 런(CTO)은 제외.
+      const finished = events.find((event) => event.type === 'run.finished');
+      expect(finished).toMatchObject({
+        run: { id: '55', agentType: 'PM', status: 'FAILED' },
+      });
+      const stateChanged = events.find(
+        (event) => event.type === 'state.changed',
+      );
+      expect(stateChanged).toMatchObject({
+        agentType: 'PM',
+        state: ConsoleAgentState.WAITING,
+      });
+      const ctoTouched = events.some(
+        (event) =>
+          event.type === 'state.changed' &&
+          (event as { agentType: string }).agentType === 'CTO',
+      );
+      expect(ctoTouched).toBe(false);
+    });
   });
 
   describe('findActiveRuns — 콘솔 관제용 활성 런 조회', () => {

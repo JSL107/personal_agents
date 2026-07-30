@@ -125,8 +125,6 @@ export class NotificationConsumer
       this.logger.debug(`claude 인증 의심 알람 — dedupe 범위 내 skip.`);
       return;
     }
-    this.markFired(dedupeKey);
-
     const text = [
       '⚠️ *이대리* — claude CLI 인증 의심 실패 감지',
       '',
@@ -134,7 +132,15 @@ export class NotificationConsumer
       '',
       '_조치: `claude` 를 대화형으로 한 번 실행해 재인증하거나 쿼터 reset window 확인. 30분 안 동일 사고는 dedupe._',
     ].join('\n');
-    await this.sendOrLog({ ownerId, text, label: 'claude-auth-suspect' });
+    // 전송 성공 시에만 dedupe 마킹 — 실패를 마킹하면 그 30분간 진짜 반복 실패가 침묵한다.
+    const sent = await this.sendOrLog({
+      ownerId,
+      text,
+      label: 'claude-auth-suspect',
+    });
+    if (sent) {
+      this.markFired(dedupeKey);
+    }
   }
 
   private async handleCronFailure(payload: CronFailureJobData): Promise<void> {
@@ -154,8 +160,6 @@ export class NotificationConsumer
       );
       return;
     }
-    this.markFired(dedupeKey);
-
     const text = [
       `⚠️ *이대리 cron 실패* — ${payload.cronName}`,
       '',
@@ -164,11 +168,15 @@ export class NotificationConsumer
       '',
       '_30분 안 동일 cron 의 추가 실패는 dedupe — 진단 후 봇 재기동 또는 cron 트리거 시 알람 다시 발사._',
     ].join('\n');
-    await this.sendOrLog({
+    // 전송 성공 시에만 dedupe 마킹 — 실패를 마킹하면 그 30분간 진짜 반복 실패가 침묵한다.
+    const sent = await this.sendOrLog({
       ownerId,
       text,
       label: `cron-failure:${payload.cronName}`,
     });
+    if (sent) {
+      this.markFired(dedupeKey);
+    }
   }
 
   private shouldFire(dedupeKey: string): boolean {
@@ -180,6 +188,7 @@ export class NotificationConsumer
     this.lastFiredAtByKey.set(dedupeKey, Date.now());
   }
 
+  // 반환값 = 전송 성공 여부. false(실패)면 caller 가 dedupe 마킹을 건너뛰어 후속 반복 실패가 다시 발사된다.
   private async sendOrLog({
     ownerId,
     text,
@@ -188,14 +197,16 @@ export class NotificationConsumer
     ownerId: string;
     text: string;
     label: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     try {
       await this.slackService.postMessage({ target: ownerId, text });
       this.logger.log(`알람 전송 — ${label} → owner=${ownerId}`);
+      return true;
     } catch (error: unknown) {
       this.logger.error(
         `알람 전송 실패 (${label}): ${error instanceof Error ? error.message : String(error)}`,
       );
+      return false;
     }
   }
 }

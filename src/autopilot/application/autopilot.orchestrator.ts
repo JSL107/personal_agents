@@ -170,37 +170,75 @@ export class AutopilotOrchestrator {
     }
 
     // T1_PREVIEW — preview 별로 PENDING 생성 + 버튼 메시지(각 타깃).
+    // 각 preview 를 독립 격리한다: 한 카드의 생성/발송 실패가 (1) 뒤 preview 를 죽이지 않고
+    // (이전엔 첫 카드 발송 실패가 예외로 루프를 깨 이후 카드까지 통째 유실됐다),
+    // (2) group cron job 을 throw 시켜 이미 성공한 메인 다이제스트·앞 카드의 재시도(중복 발송·
+    //     중복 승인/이중 발행)를 유발하지 않게 한다.
+    // 실패한 카드는 자동 재발송하지 않는 대신(중복 발행 위험 회피) owner 에게 통지해 조용한
+    // 유실을 막는다. (완전 자동 복구는 preview 단위 멱등 가드가 필요 — 후속.)
     for (const preview of previews) {
-      const created = await this.createPreview.execute({
-        slackUserId: ownerSlackUserId,
-        kind: preview.kind,
-        payload: preview.payload,
-        previewText: preview.previewText,
-        responseUrl: null,
-        ttlMs: PREVIEW_TTL_MS,
-      });
-      let coordinateSaved = false;
-      for (const resolved of targets) {
-        const { channelId, messageTs } =
-          await this.slackNotifier.postPreviewMessage({
-            target: resolved,
-            previewText: preview.previewText,
-            previewId: created.id,
-          });
-        // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
-        if (!coordinateSaved && messageTs) {
-          await this.previewRepository.attachSlackMessage({
-            id: created.id,
-            slackChannelId: channelId,
-            slackMessageTs: messageTs,
-          });
-          coordinateSaved = true;
+      try {
+        const created = await this.createPreview.execute({
+          slackUserId: ownerSlackUserId,
+          kind: preview.kind,
+          payload: preview.payload,
+          previewText: preview.previewText,
+          responseUrl: null,
+          ttlMs: PREVIEW_TTL_MS,
+        });
+        let coordinateSaved = false;
+        for (const resolved of targets) {
+          const { channelId, messageTs } =
+            await this.slackNotifier.postPreviewMessage({
+              target: resolved,
+              previewText: preview.previewText,
+              previewId: created.id,
+            });
+          // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
+          if (!coordinateSaved && messageTs) {
+            await this.previewRepository.attachSlackMessage({
+              id: created.id,
+              slackChannelId: channelId,
+              slackMessageTs: messageTs,
+            });
+            coordinateSaved = true;
+          }
         }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Autopilot[${groupKey}] 승인 카드 '${preview.kind}' 생성/발송 실패 (다른 카드는 계속): ${message}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        await this.notifyPreviewFailure(targets, preview.kind, message);
       }
     }
 
     this.logger.log(
       `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task, preview ${previews.length})`,
     );
+  }
+
+  // 승인 카드 발송 실패를 owner digest 채널에 통지 — 조용한 유실 방지(자동 재발송은 안 함).
+  // 통지 자체 실패는 로그만 남긴다(이미 상위에서 error 로그됨) — 재귀적 실패로 번지지 않게.
+  private async notifyPreviewFailure(
+    targets: string[],
+    kind: string,
+    message: string,
+  ): Promise<void> {
+    const text = `_⚠️ 승인 카드 발송 실패 (${kind}) — ${message.slice(0, 200)}. 자동 재발송되지 않으니 필요 시 수동 재실행해주세요._`;
+    for (const resolved of targets) {
+      try {
+        await this.slackNotifier.postMessage({ target: resolved, text });
+      } catch (notifyError: unknown) {
+        const notifyMessage =
+          notifyError instanceof Error
+            ? notifyError.message
+            : String(notifyError);
+        this.logger.warn(
+          `Autopilot 승인 카드 실패 통지마저 실패 (${resolved}): ${notifyMessage}`,
+        );
+      }
+    }
   }
 }
