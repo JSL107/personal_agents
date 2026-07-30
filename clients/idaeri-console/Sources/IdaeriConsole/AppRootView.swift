@@ -43,7 +43,12 @@ struct AppRootView: View {
                     onInject: inject
                 )
             case .office:
-                OfficeView(store: store)
+                OfficeView(
+                    store: store,
+                    onSend: sendCommand,
+                    onApprove: approve,
+                    onReject: reject
+                )
             }
         }
         .frame(minWidth: 720, minHeight: 560)
