@@ -71,10 +71,16 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
         outcome.result,
         this.humanizeService,
       );
-      const text =
+      const rendered = formatCalibrationReport(humanizedResult);
+      const summaryText =
         `🔍 *이력서 보정 점검 — ${todayKst} (주간 자동${webTrendsNote ? ' · 웹 트렌드 반영' : ''})*\n\n` +
-        formatCalibrationReport(humanizedResult);
-      await this.deliverOnce(target, text);
+        rendered.summary;
+      // 잘린 경우에만 전체를 스레드 상세로. 잘린 게 없으면 요약이 곧 전체.
+      await this.deliverOnce(
+        target,
+        summaryText,
+        rendered.truncated ? rendered.full : undefined,
+      );
     } catch (error) {
       if (
         error instanceof CareerMateException &&
@@ -113,7 +119,12 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
   }
 
   // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
-  private async deliverOnce(target: string, text: string): Promise<void> {
+  // detail 이 있으면 요약 메시지의 스레드 댓글로 전체 리포트를 이어 붙인다(요약 벽 방지).
+  private async deliverOnce(
+    target: string,
+    text: string,
+    detail?: string,
+  ): Promise<void> {
     const dateKey = getTodayKstDate();
     const firstRun = await this.cronIdempotency.acquireOnce(
       `cron:${RESUME_CALIBRATION_CRON_QUEUE}:${dateKey}`,
@@ -125,7 +136,21 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
       );
       return;
     }
-    await this.slackNotifier.postMessage({ target, text });
+    const { ts } = await this.slackNotifier.postMessage({ target, text });
+    if (detail && ts) {
+      // 스레드 상세 실패는 요약 발송을 무효화하지 않는다(전체는 DB output 에도 보존).
+      try {
+        await this.slackNotifier.postMessage({
+          target,
+          text: detail,
+          threadTs: ts,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Resume Calibration Cron 상세 스레드 발송 실패 — 요약만 전달됨: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     this.logger.log(`Resume Calibration Cron 발송 완료 — target=${target}`);
   }
 

@@ -1,4 +1,5 @@
 import { PullRequestReview } from '../../agent/code-reviewer/domain/code-reviewer.type';
+import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 const RISK_LEVEL_LABEL: Record<PullRequestReview['riskLevel'], string> = {
   low: '🟢 LOW',
@@ -28,18 +29,22 @@ export const formatPullRequestReview = ({
     `위험도: ${RISK_LEVEL_LABEL[review.riskLevel]} · 권고: ${APPROVAL_LABEL[review.approvalRecommendation]}`,
     '',
     '*요약*',
-    review.summary,
+    escapeSlackMrkdwn(review.summary),
   ];
 
   if (review.mustFix.length > 0) {
-    lines.push('', '*Must-Fix*', ...review.mustFix.map((item) => `• ${item}`));
+    lines.push(
+      '',
+      '*Must-Fix*',
+      ...review.mustFix.map((item) => `• ${escapeSlackMrkdwn(item)}`),
+    );
   }
 
   if (review.niceToHave.length > 0) {
     lines.push(
       '',
       '*Nice-to-have*',
-      ...review.niceToHave.map((item) => `• ${item}`),
+      ...review.niceToHave.map((item) => `• ${escapeSlackMrkdwn(item)}`),
     );
   }
 
@@ -47,7 +52,7 @@ export const formatPullRequestReview = ({
     lines.push(
       '',
       '*누락 테스트*',
-      ...review.missingTests.map((item) => `• ${item}`),
+      ...review.missingTests.map((item) => `• ${escapeSlackMrkdwn(item)}`),
     );
   }
 
@@ -60,7 +65,8 @@ export const formatPullRequestReview = ({
           : draft.file
             ? `\`${draft.file}\` `
             : '';
-      lines.push(`• ${location}${draft.body}`);
+      // location(파일:라인)은 백틱 인라인 코드라 escape 제외, body(자유텍스트)만 escape.
+      lines.push(`• ${location}${escapeSlackMrkdwn(draft.body)}`);
     }
   }
 
