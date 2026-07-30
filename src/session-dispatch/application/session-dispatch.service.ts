@@ -14,7 +14,6 @@ import {
   type SessionInjectPreviewPayload,
 } from '../../preview-gate/domain/preview-action.type';
 import { injectInstructionForPr } from '../domain/inject-instruction';
-import { repoFromCwd } from '../domain/repo-from-cwd';
 import { DispatchCooldown } from './dispatch-cooldown';
 
 const OPEN_PULL_REQUEST_LOOKBACK_DAYS = 180;
@@ -38,6 +37,7 @@ export class SessionDispatchService {
     private readonly createPreview: CreatePreviewUsecase,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
     private readonly cooldown: DispatchCooldown,
+    private readonly resolveRepo: (cwd: string) => string | null,
   ) {}
 
   async onSessionBecameIdle(session: IdleSession): Promise<void> {
@@ -64,7 +64,7 @@ export class SessionDispatchService {
         return;
       }
 
-      const repository = repoFromCwd(session.cwd);
+      const repository = this.resolveRepo(session.cwd);
       if (!repository) {
         return;
       }
