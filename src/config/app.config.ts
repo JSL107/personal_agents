@@ -553,6 +553,21 @@ class EnvironmentVariables {
   @IsString()
   SUBCONSCIOUS_ENABLED?: string;
 
+  // 유휴 Claude 세션에 최신 open PR 리뷰 제안을 만드는 자동 dispatch.
+  // 명시적으로 'true' 일 때만 활성. cooldown 미설정 시 default 1800000ms(30분).
+  @IsOptional()
+  @IsString()
+  SESSION_DISPATCH_ENABLED?: string;
+
+  // 동일 세션 자동 dispatch 사이의 최소 대기 시간(ms).
+  @IsOptional()
+  @IsString()
+  @Matches(/^[1-9]\d*$/, {
+    message:
+      'SESSION_DISPATCH_COOLDOWN_MS 는 양의 정수 (밀리초, 예: "1800000") 만 허용합니다.',
+  })
+  SESSION_DISPATCH_COOLDOWN_MS?: string;
+
   // 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF).
   // 'true' 일 때만 PreferenceLearningAutopilotTask 가 실행되고, 미설정/false 시 task 가 skip.
   @IsOptional()

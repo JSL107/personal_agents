@@ -32,6 +32,8 @@ export const PREVIEW_KIND = {
   // 저녁 회고 — 오늘 머지된 PR 전체를 다건 통합 회고로 이력서 프로필 편입 + 포트폴리오 Notion append.
   // payload = { prRefs:string[], slackUserId } (EveningCareerReflectApplier 가 ReflectPrUsecase 위임).
   EVENING_CAREER_REFLECT: 'EVENING_CAREER_REFLECT',
+  // 자동 분배 — 승인 시 로컬 세션에 작업 지시를 주입.
+  SESSION_INJECT: 'SESSION_INJECT',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];
@@ -80,3 +82,11 @@ export const PREVIEW_ACTION_IDS = {
   APPLY: 'preview:apply',
   CANCEL: 'preview:cancel',
 } as const;
+
+// 자동 분배 — 승인 시 로컬 세션에 주입할 작업. applier(session-dispatch)가 이 payload 로 narrow.
+export interface SessionInjectPreviewPayload {
+  readonly sessionId: string;
+  readonly source: 'claude' | 'codex';
+  readonly instruction: string;
+  readonly prRef: string;
+}
