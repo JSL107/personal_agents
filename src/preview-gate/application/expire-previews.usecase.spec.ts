@@ -90,7 +90,7 @@ describe('ExpirePreviewsUsecase', () => {
     expect(resolved).toHaveLength(2);
     expect(resolved[0].approval).toEqual({
       id: 'p-1',
-      agentType: null,
+      agentType: 'EVENING_RETRO',
       title: 't',
       createdAt: '2026-06-30T00:00:00.000Z',
     });

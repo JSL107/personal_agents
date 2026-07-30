@@ -1,13 +1,32 @@
 import { LocalSession } from '../../local-sessions/domain/local-session.type';
-import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
+import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  PreviewAction,
+  PreviewKind,
+} from '../../preview-gate/domain/preview-action.type';
 import { ConsoleApproval, ConsoleSession } from '../domain/console.type';
 
+// PreviewKind → 담당 에이전트. 승인 카드가 어느 에이전트 소산인지(오피스 집결·핑크·클릭 대상).
+// Record 타입이라 새 kind 추가 시 컴파일 에러로 매핑 누락을 막는다.
+// null 은 특정 에이전트의 승인이 아닌 kind(예: 세션 주입) — 오피스 집결 대상이 아니다.
+export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
+  PM_WRITE_BACK: AgentType.PM,
+  PO_EVAL_CAREERLOG: AgentType.PO_EVAL,
+  BE_SANDBOX_APPLY: AgentType.BE,
+  BE_SANDBOX_PUSH_PR: AgentType.BE,
+  CAREER_JD_GAP_BLOG: AgentType.CAREER_MATE,
+  DOCS_AUDIT_PR: AgentType.DOCS_AUDIT_OPTIMIZER,
+  PREFERENCE_PROFILE: AgentType.PREFERENCE_LEARNING,
+  EVENING_BLOG_PUBLISH: AgentType.EVENING_RETRO,
+  EVENING_CAREER_REFLECT: AgentType.EVENING_RETRO,
+  SESSION_INJECT: null,
+};
+
 // PreviewAction → 콘솔 승인 뷰. 스냅샷 조립(ConsoleReadService)과 승인 이벤트 emit(preview-gate)이 공유.
-// v1: agentType 은 PreviewAction 에 없어 null (Phase 2 에서 kind→agentType 매핑 도입 시 채운다).
 export function toConsoleApproval(preview: PreviewAction): ConsoleApproval {
   return {
     id: preview.id,
-    agentType: null,
+    agentType: PREVIEW_KIND_TO_AGENT[preview.kind],
     title: preview.previewText,
     createdAt: preview.createdAt.toISOString(),
   };
