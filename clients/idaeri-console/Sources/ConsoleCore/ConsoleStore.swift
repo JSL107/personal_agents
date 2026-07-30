@@ -11,6 +11,8 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var sessions: [ConsoleSession] = []
     @Published public private(set) var serverTime: String = ""
     @Published public private(set) var pendingCommands: [PendingCommand] = []
+    /// 처리한 SSE 이벤트를 방출한다(연출 트리거용). 스냅샷 적용은 방출하지 않는다.
+    public let eventStream = PassthroughSubject<ConsoleEvent, Never>()
 
     public init() {}
 
@@ -49,6 +51,7 @@ public final class ConsoleStore: ObservableObject {
         case let .commandInfo(commandId, message):
             annotateCommand(commandId: commandId, reason: message)
         }
+        eventStream.send(event)
     }
 
     private func upsertRun(_ run: ConsoleRun) {
