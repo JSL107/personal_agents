@@ -70,9 +70,14 @@ function defaultArgsOf(pids: number[]): Map<number, string> {
   }
   let output: string;
   try {
-    output = execFileSync('ps', ['-o', 'pid=,args=', '-p', pids.join(',')], {
-      encoding: 'utf8',
-    });
+    // -ww: args 를 폭 제한 없이 조회한다. macOS BSD ps 는 TTY 출력 시
+    // window size 로 args 를 자를 수 있어, 긴 실행 파일 경로의 codex exec 가
+    // exec 토큰 전에 잘리면 실제 CLI 세션이 오검출로 제외될 수 있다.
+    output = execFileSync(
+      'ps',
+      ['-ww', '-o', 'pid=,args=', '-p', pids.join(',')],
+      { encoding: 'utf8' },
+    );
   } catch {
     return new Map();
   }
