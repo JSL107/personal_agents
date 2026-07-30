@@ -11,6 +11,7 @@ runSSEParserTests(runner)
 runOfficeLayoutTests(runner)
 runOfficeChoreographyTests(runner)
 runOfficeInteractionTests(runner)
+runDepartmentTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()
