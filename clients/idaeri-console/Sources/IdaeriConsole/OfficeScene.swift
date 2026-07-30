@@ -1,6 +1,52 @@
 import ConsoleCore
 import SpriteKit
 
+/// 두 색을 sRGB 성분으로 선형 보간한다(SKColor == NSColor, macOS).
+private func lerpColor(_ from: SKColor, _ to: SKColor, _ ratio: CGFloat) -> SKColor {
+    let clamped = max(0, min(1, ratio))
+    guard
+        let start = from.usingColorSpace(.sRGB),
+        let end = to.usingColorSpace(.sRGB)
+    else {
+        return to
+    }
+    let red = start.redComponent + (end.redComponent - start.redComponent) * clamped
+    let green = start.greenComponent + (end.greenComponent - start.greenComponent) * clamped
+    let blue = start.blueComponent + (end.blueComponent - start.blueComponent) * clamped
+    return SKColor(red: red, green: green, blue: blue, alpha: 1)
+}
+
+/// 링(stroke) 색을 duration 동안 부드럽게 전이한다.
+private func animateStroke(_ node: SKShapeNode, to color: SKColor, duration: TimeInterval) {
+    let from = node.strokeColor
+    let action = SKAction.customAction(withDuration: duration) { runningNode, elapsed in
+        guard let shape = runningNode as? SKShapeNode else {
+            return
+        }
+        let ratio = duration > 0 ? CGFloat(elapsed) / CGFloat(duration) : 1
+        shape.strokeColor = lerpColor(from, color, ratio)
+    }
+    node.run(action)
+}
+
+/// 대기 노드의 은은한 숨쉬기(미세 scale 반복). 이미 돌고 있으면 중복 시작 안 함.
+private func startBreathing(_ node: SKShapeNode) {
+    guard node.action(forKey: "breathing") == nil else {
+        return
+    }
+    let breathe = SKAction.sequence([
+        .scale(to: 1.03, duration: 1.6),
+        .scale(to: 1.0, duration: 1.6),
+    ])
+    breathe.timingMode = .easeInEaseOut
+    node.run(.repeatForever(breathe), withKey: "breathing")
+}
+
+private func stopBreathing(_ node: SKShapeNode) {
+    node.removeAction(forKey: "breathing")
+    node.setScale(1.0)
+}
+
 /// 에이전트를 상태색 원 + 이름 라벨로 격자 배치하고, 이벤트 연출(VisualIntent)을 SKAction 으로 실행하는 씬.
 /// - sync(agents:)   : store 상태를 반영(신규 추가·제거·색 갱신). 집 자리를 계산·보관한다.
 /// - perform(_:)     : 이벤트 연출(펄스·집결·핸드오프·복귀·거절·말풍선)을 실행한다.
@@ -11,11 +57,42 @@ final class OfficeScene: SKScene {
     private let columns = 5
     private let bandHeight: Double = 120
     private let nodeRadius: Double = 26
+    private var hoveredAgentType: String?
+    private var selectedAgentType: String?
     /// 원 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
     var onAgentClick: ((String) -> Void)?
 
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(white: 0.12, alpha: 1)
+        view.window?.acceptsMouseMovedEvents = true
+        let tracking = NSTrackingArea(
+            rect: view.bounds,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: view,
+            userInfo: nil
+        )
+        view.addTrackingArea(tracking)
+    }
+
+    /// 뷰의 선택 상태를 반영한다. 선택 노드에 지속 하이라이트 링을 얹고, 이전 선택은 해제한다.
+    func setSelected(_ agentType: String?) {
+        if selectedAgentType == agentType {
+            return
+        }
+        if let previous = selectedAgentType, let node = agentNodes[previous] {
+            node.childNode(withName: "selectionRing")?.removeFromParent()
+        }
+        selectedAgentType = agentType
+        guard let agentType, let node = agentNodes[agentType] else {
+            return
+        }
+        let ring = SKShapeNode(circleOfRadius: nodeRadius + 5)
+        ring.name = "selectionRing"
+        ring.strokeColor = SKColor(white: 1, alpha: 0.9)
+        ring.lineWidth = 2
+        ring.fillColor = .clear
+        ring.zPosition = 4
+        node.addChild(ring)
     }
 
     func sync(agents: [ConsoleAgent]) {
@@ -51,8 +128,14 @@ final class OfficeScene: SKScene {
                     node.position = home
                 }
             }
-            // 색은 sync 가 진실원. 단, working 펄스 중이면 색만 바꾸고 펄스는 유지.
-            node.fillColor = agent.state.skColor
+            // 색은 sync 가 진실원. 상태색은 링(stroke) — 채움은 부서 tint 로 고정.
+            node.strokeColor = agent.state.skColor
+            let isWorking = node.childNode(withName: "progressArc") != nil
+            if agent.state == .waiting, !bandOrder.contains(agent.agentType), !isWorking {
+                startBreathing(node)
+            } else {
+                stopBreathing(node)
+            }
         }
     }
 
@@ -85,7 +168,8 @@ final class OfficeScene: SKScene {
             return
         }
         node.removeAction(forKey: "working")
-        node.fillColor = color
+        stopWorking(node)
+        animateStroke(node, to: color, duration: 0.35)
         node.run(.sequence([.scale(to: 1.15, duration: 0.12), .scale(to: 1.0, duration: 0.12)]))
     }
 
@@ -93,11 +177,31 @@ final class OfficeScene: SKScene {
         guard let node = agentNodes[agentType] else {
             return
         }
-        let pulse = SKAction.sequence([
-            .scaleY(to: 1.12, duration: 0.35),
-            .scaleY(to: 1.0, duration: 0.35),
-        ])
-        node.run(.repeatForever(pulse), withKey: "working")
+        stopBreathing(node)
+        node.childNode(withName: "progressArc")?.removeFromParent()
+
+        let arc = SKShapeNode()
+        arc.name = "progressArc"
+        let path = CGMutablePath()
+        path.addArc(
+            center: .zero,
+            radius: nodeRadius + 6,
+            startAngle: 0,
+            endAngle: .pi * 0.6,
+            clockwise: false
+        )
+        arc.path = path
+        arc.strokeColor = ConsoleAgentState.inProgress.skColor
+        arc.lineWidth = 3
+        arc.fillColor = .clear
+        arc.zPosition = 3
+        node.addChild(arc)
+        arc.run(.repeatForever(.rotate(byAngle: -.pi * 2, duration: 1.4)), withKey: "spin")
+    }
+
+    /// 진행 호 제거(진행 상태를 벗어날 때).
+    private func stopWorking(_ node: SKShapeNode) {
+        node.childNode(withName: "progressArc")?.removeFromParent()
     }
 
     private func handoff(from: String, to: String) {
@@ -122,10 +226,11 @@ final class OfficeScene: SKScene {
         guard let node = agentNodes[agentType] else {
             return
         }
+        stopBreathing(node)
         if !bandOrder.contains(agentType) {
             bandOrder.append(agentType)
         }
-        node.fillColor = ConsoleAgentState.awaitingApproval.skColor
+        node.strokeColor = ConsoleAgentState.awaitingApproval.skColor
         layoutBand()
         let blink = SKAction.sequence([.fadeAlpha(to: 0.4, duration: 0.4), .fadeAlpha(to: 1.0, duration: 0.4)])
         node.run(.repeatForever(blink), withKey: "summon")
@@ -153,10 +258,10 @@ final class OfficeScene: SKScene {
             .moveBy(x: -16, y: 0, duration: 0.1),
             .moveBy(x: 8, y: 0, duration: 0.05),
         ])
-        let original = node.fillColor
+        let original = node.strokeColor
         node.run(.sequence([.repeat(shake, count: 2)]))
-        node.fillColor = SKColor(red: 0.9, green: 0.2, blue: 0.2, alpha: 1)
-        node.run(.sequence([.wait(forDuration: 0.4), .run { node.fillColor = original }]))
+        node.strokeColor = SKColor(red: 0.9, green: 0.2, blue: 0.2, alpha: 1)
+        node.run(.sequence([.wait(forDuration: 0.4), .run { node.strokeColor = original }]))
     }
 
     private func showBubble(_ agentType: String, text: String) {
@@ -207,13 +312,57 @@ final class OfficeScene: SKScene {
         }
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        let location = event.location(in: self)
+        let slots: [(agentType: String, point: OfficePoint)] = agentNodes.map {
+            ($0.key, OfficePoint(x: Double($0.value.position.x), y: Double($0.value.position.y)))
+        }
+        let hit = agentTypeAt(
+            point: OfficePoint(x: Double(location.x), y: Double(location.y)),
+            slots: slots,
+            radius: nodeRadius
+        )
+        if hit == hoveredAgentType {
+            return
+        }
+        if let previous = hoveredAgentType, let node = agentNodes[previous] {
+            node.removeAction(forKey: "hover")
+            node.run(.scale(to: 1.0, duration: 0.12), withKey: "hover")
+        }
+        hoveredAgentType = hit
+        if let hit, let node = agentNodes[hit] {
+            node.removeAction(forKey: "breathing")
+            node.run(.scale(to: 1.12, duration: 0.12), withKey: "hover")
+        }
+    }
+
     private func makeNode(for agent: ConsoleAgent) -> SKShapeNode {
+        let dept = department(for: agent.agentType)
         let node = SKShapeNode(circleOfRadius: nodeRadius)
-        node.strokeColor = SKColor(white: 1, alpha: 0.25)
-        node.lineWidth = 1
-        node.fillColor = agent.state.skColor
+        node.fillColor = dept.fillTintColor
+        node.strokeColor = agent.state.skColor
+        node.lineWidth = 4
+
+        // 부서 아이콘(SF Symbol → SKTexture). 실패 시 이니셜 폴백.
+        if let texture = symbolTexture(systemName: dept.iconSymbolName, pointSize: 22, color: dept.skColor) {
+            let icon = SKSpriteNode(texture: texture)
+            icon.name = "icon"
+            icon.size = CGSize(width: 22, height: 22)
+            icon.position = .zero
+            icon.zPosition = 2
+            node.addChild(icon)
+        } else {
+            let initials = SKLabelNode(text: String(agent.displayName.prefix(2)))
+            initials.name = "icon"
+            initials.fontSize = 14
+            initials.fontColor = dept.skColor
+            initials.verticalAlignmentMode = .center
+            initials.zPosition = 2
+            node.addChild(initials)
+        }
 
         let label = SKLabelNode(text: agent.displayName)
+        label.name = "nameLabel"
         label.fontSize = 11
         label.fontColor = SKColor(white: 0.95, alpha: 1)
         label.verticalAlignmentMode = .center

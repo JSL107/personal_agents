@@ -69,3 +69,42 @@ extension PendingPhase {
         }
     }
 }
+
+/// 부서의 표시 속성(색·아이콘). 색 값은 ConsoleCore 의 부서 팔레트를 단일 소스로 참조한다.
+extension Department {
+    /// 부서 강조색(범례·아이콘 SwiftUI 표시용).
+    var accentColor: Color {
+        let rgb = agentDepartmentPaletteRGBA(self)
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    /// SpriteKit 아이콘 tint 색(accentColor 와 같은 팔레트).
+    var skColor: SKColor {
+        let rgb = agentDepartmentPaletteRGBA(self)
+        return SKColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+
+    /// 토큰 채움 tint(낮은 불투명도 — 상태 링 가독성 보존).
+    var fillTintColor: SKColor {
+        let rgb = agentDepartmentPaletteRGBA(self)
+        return SKColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 0.20)
+    }
+
+    /// 부서 대표 SF Symbol 이름(시스템 제공, macOS 13 존재 확인된 것만).
+    var iconSymbolName: String {
+        switch self {
+        case .planning:
+            return "chart.bar.fill"
+        case .engineering:
+            return "gearshape.fill"
+        case .review:
+            return "magnifyingglass"
+        case .executive:
+            return "building.2.fill"
+        case .growth:
+            return "leaf.fill"
+        case .internalOps:
+            return "cpu"
+        }
+    }
+}

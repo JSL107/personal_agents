@@ -33,6 +33,9 @@ struct OfficeView: View {
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents)
                 }
+                .onChange(of: selectedAgent) { newSelection in
+                    scene.setSelected(newSelection)
+                }
                 .onReceive(store.eventStream) { event in
                     let context = ChoreographyContext(
                         agents: store.agents,
