@@ -76,7 +76,7 @@ describe('CancelPreviewUsecase', () => {
       type: 'approval.resolved',
       approval: {
         id: 'p-1',
-        agentType: null,
+        agentType: 'PM',
         title: 'preview',
         createdAt: '2026-04-27T11:00:00.000Z',
       },

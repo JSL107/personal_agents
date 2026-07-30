@@ -9,6 +9,8 @@ runConsoleStoreTests(runner)
 runSessionStoreTests(runner)
 runSSEParserTests(runner)
 runOfficeLayoutTests(runner)
+runOfficeChoreographyTests(runner)
+runOfficeInteractionTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()

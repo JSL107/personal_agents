@@ -44,4 +44,19 @@ func runOfficeLayoutTests(_ t: TestRunner) {
         seenColors.insert("\(rgb.red),\(rgb.green),\(rgb.blue)")
     }
     t.expectEqual(seenColors.count, 5, "5종 색이 서로 다름")
+
+    // 밴드 반영: 격자 좌표는 모두 밴드 아래(height - bandHeight) 영역 안
+    let banded = officeLayout(count: 26, width: 900, height: 600, columns: 5, bandHeight: 120)
+    t.expectEqual(banded.count, 26, "밴드 반영해도 좌표 개수 == count")
+    t.expect(banded.allSatisfy { $0.y < 600 - 120 }, "모든 격자 좌표가 밴드 아래")
+
+    // bandHeight 기본값 0 이면 기존 동작과 동일(회귀 방지)
+    let plain = officeLayout(count: 26, width: 900, height: 600, columns: 5)
+    let plainBand0 = officeLayout(count: 26, width: 900, height: 600, columns: 5, bandHeight: 0)
+    t.expectEqual(plain, plainBand0, "bandHeight 0 == 무인자 호출")
+
+    // 대표실 밴드 슬롯: N개가 밴드 안(y 동일, x 서로 다름)
+    let slots = (0..<3).map { presidentBandSlot(order: $0, count: 3, width: 900, height: 600, bandHeight: 120) }
+    t.expect(slots.allSatisfy { $0.y > 600 - 120 && $0.y < 600 }, "밴드 슬롯 y 는 밴드 영역 안")
+    t.expectEqual(Set(slots.map { $0.x }).count, 3, "밴드 슬롯 x 는 서로 다름")
 }
