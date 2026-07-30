@@ -177,6 +177,19 @@ describe('formatDailyReview', () => {
     const output = `${summary}\n\n${detail}`;
     expect(output).not.toContain('*다음 액션*');
   });
+
+  it('LLM 자유텍스트의 mrkdwn control 문자(<,&,>)를 escape 한다', () => {
+    const { summary, detail } = formatDailyReview({
+      ...base,
+      summary: 'A & B <tag>',
+      impact: { quantitative: ['x < y'], qualitative: 'p & q' },
+    });
+    const output = `${summary}\n\n${detail}`;
+    expect(output).toContain('A &amp; B &lt;tag&gt;');
+    expect(output).toContain('x &lt; y');
+    expect(output).toContain('p &amp; q');
+    expect(output).not.toContain('<tag>');
+  });
 });
 
 describe('formatPullRequestReview', () => {
@@ -248,6 +261,26 @@ describe('formatPullRequestReview', () => {
     });
     expect(output).toContain('• 단순 코멘트');
     expect(output).not.toContain('``');
+  });
+
+  it('LLM 자유텍스트(요약/코멘트)의 mrkdwn control 문자를 escape 한다', () => {
+    const output = formatPullRequestReview({
+      prRef: 'a/b#1',
+      review: {
+        ...base,
+        summary: 'Promise<T> & <script> 위조',
+        mustFix: ['a && b 처리'],
+        reviewCommentDrafts: [
+          { file: 'src/x.ts', line: 3, body: '<img> 삽입 위험' },
+        ],
+      },
+    });
+    expect(output).toContain('Promise&lt;T&gt; &amp; &lt;script&gt;');
+    expect(output).toContain('a &amp;&amp; b 처리');
+    expect(output).toContain('&lt;img&gt; 삽입 위험');
+    expect(output).not.toContain('<script>');
+    // 파일 경로는 백틱 인라인 코드라 escape 하지 않는다.
+    expect(output).toContain('`src/x.ts:3`');
   });
 });
 
