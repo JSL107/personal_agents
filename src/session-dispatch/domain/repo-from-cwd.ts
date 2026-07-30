@@ -9,3 +9,31 @@ export function repoFromCwd(cwd: string): string | null {
   }
   return segments[segments.length - 1];
 }
+
+export function repoFromRemoteUrl(remoteUrl: string): string | null {
+  const trimmedRemoteUrl = remoteUrl.trim();
+  if (trimmedRemoteUrl.length === 0) {
+    return null;
+  }
+
+  const withoutGitSuffix = trimmedRemoteUrl.replace(/\.git(?=\/*$)/i, '');
+  const withoutTrailingSlash = withoutGitSuffix.replace(/\/+$/, '');
+  const schemeSeparatorIndex = withoutTrailingSlash.indexOf('://');
+  if (
+    schemeSeparatorIndex >= 0 &&
+    !withoutTrailingSlash.includes('/', schemeSeparatorIndex + 3)
+  ) {
+    return null;
+  }
+
+  const lastSeparatorIndex = Math.max(
+    withoutTrailingSlash.lastIndexOf('/'),
+    withoutTrailingSlash.lastIndexOf(':'),
+  );
+  if (lastSeparatorIndex < 0) {
+    return null;
+  }
+
+  const repository = withoutTrailingSlash.slice(lastSeparatorIndex + 1);
+  return repository.length > 0 ? repository : null;
+}
