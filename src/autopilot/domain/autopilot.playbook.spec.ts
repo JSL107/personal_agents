@@ -60,7 +60,7 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(runSweeper).toMatchObject({
       taskId: 'run-sweeper',
       riskTier: 'T0_AUTO',
-      trigger: { kind: 'CRON', schedule: '50 8 * * 1' },
+      trigger: { kind: 'CRON', schedule: '50 * * * *' },
     });
     expect(opsSupervisor).toMatchObject({
       taskId: 'ops-supervisor',

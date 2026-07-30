@@ -25,8 +25,10 @@ export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 
-// Run Sweeper 기본 스케줄 — 매주 월 08:50 KST(run-retro 직전).
-export const DEFAULT_RUN_SWEEPER_CRON = '50 8 * * 1';
+// Run Sweeper 기본 스케줄 — 매시간 :50. 좀비 IN_PROGRESS 를 FAILED 로 정리하고 콘솔에
+// run.finished/state.changed 를 발행한다. 주 1회면 SSE 로만 갱신되는 라이브 콘솔이 최대 6일
+// "일하는 중" 오표시되므로, 매시간으로 지연을 ~1h 로 단축. 좀비 0건이면 skip(무발송)이라 스팸 없음.
+export const DEFAULT_RUN_SWEEPER_CRON = '50 * * * *';
 export const DEFAULT_RUN_SWEEPER_TIMEZONE = 'Asia/Seoul';
 
 // Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).
