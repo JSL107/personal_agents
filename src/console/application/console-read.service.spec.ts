@@ -2,6 +2,7 @@ import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConsoleReadService } from './console-read.service';
 
 describe('ConsoleReadService', () => {
@@ -62,10 +63,11 @@ describe('ConsoleReadService', () => {
     });
   });
 
-  it('열린 승인은 approvals 로 매핑된다(title=previewText, createdAt=ISO, agentType=null)', async () => {
+  it('열린 승인은 approvals 로 매핑되고 담당 에이전트는 AWAITING_APPROVAL 이 된다', async () => {
     findAllOpenPreviews.execute.mockResolvedValue([
       {
         id: 'prev-1',
+        kind: PREVIEW_KIND.PM_WRITE_BACK,
         previewText: 'PM 계획을 GitHub 에 반영할까요?',
         createdAt: new Date('2026-07-27T01:00:00Z'),
       } as never,
@@ -76,11 +78,14 @@ describe('ConsoleReadService', () => {
     expect(snapshot.approvals).toEqual([
       {
         id: 'prev-1',
-        agentType: null,
+        agentType: 'PM',
         title: 'PM 계획을 GitHub 에 반영할까요?',
         createdAt: '2026-07-27T01:00:00.000Z',
       },
     ]);
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
+    ).toBe('AWAITING_APPROVAL');
   });
 
   it('로컬 세션을 뷰 형태(ISO)로 스냅샷에 담는다', async () => {

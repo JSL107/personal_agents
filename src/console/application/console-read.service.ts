@@ -32,10 +32,9 @@ export class ConsoleReadService {
 
     const activeAgentTypes = new Set(activeRuns.map((run) => run.agentType));
 
-    // v1: PreviewAction 에 agentType 필드가 없어 특정 에이전트로 매핑하지 않는다(null).
-    // 개별 카드 AWAITING_APPROVAL 파생은 kind→agentType 매핑 도입 시 활성화(Phase 2).
+    // kind→agentType 매핑으로 승인 카드를 담당 에이전트에 연결한다(Phase 4 보완).
     const approvals: ConsoleApproval[] = openPreviews.map(toConsoleApproval);
-    // approval.agentType 이 채워지는 미래를 대비한 구조 — v1 은 항상 null 이라 빈 집합.
+    // approval.agentType 이 kind→agentType 매핑으로 채워져 AWAITING_APPROVAL 파생에 사용된다.
     const openApprovalAgentTypes = new Set(
       approvals
         .map((approval) => approval.agentType)
