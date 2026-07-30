@@ -93,11 +93,33 @@ describe('career-mate.formatter', () => {
     expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
   });
 
-  it('formatCalibrationReport 는 섹션 + escape 를 포함한다', () => {
-    const text = formatCalibrationReport(CAL as never);
-    expect(text).toContain('정량 지표 추가');
-    expect(text).toContain('IaC');
-    expect(text).toContain('&lt;b&gt;'); // LLM 텍스트 escape
+  it('formatCalibrationReport 는 summary/full 을 분리하고 escape 한다', () => {
+    const rendered = formatCalibrationReport(CAL as never);
+    expect(rendered.truncated).toBe(false); // 섹션당 항목 ≤3
+    expect(rendered.full).toContain('정량 지표 추가');
+    expect(rendered.full).toContain('IaC');
+    expect(rendered.summary).toContain('&lt;b&gt;'); // LLM verdict escape
+    expect(rendered.full).toContain('&lt;b&gt;');
+  });
+
+  it('formatCalibrationReport 는 섹션당 3개 초과분을 요약에서 접고 full 엔 전부 담는다', () => {
+    const rendered = formatCalibrationReport({
+      verdict: 'v',
+      aiSlopRisks: [],
+      underQuantified: ['u1', 'u2', 'u3', 'u4', 'u5'],
+      outdatedPhrasing: [],
+      missingKeywords: [],
+      actionItems: ['a1'],
+    } as never);
+    expect(rendered.truncated).toBe(true);
+    // 요약: 앞 3개 + "…외 2개"; u4/u5 는 접힘
+    expect(rendered.summary).toContain('u1');
+    expect(rendered.summary).toContain('u3');
+    expect(rendered.summary).not.toContain('u4');
+    expect(rendered.summary).toContain('외 2개');
+    // 전체: 전부 노출
+    expect(rendered.full).toContain('u4');
+    expect(rendered.full).toContain('u5');
   });
 
   it('formatPrRetro 는 회고 서술·이력서 bullet·포폴 링크를 담고 escape 한다', () => {

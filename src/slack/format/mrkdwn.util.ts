@@ -8,3 +8,9 @@ export const sanitizeForSlackLink = (text: string): string =>
 // LLM 이 fragment(`/pull/707`) 만 반환하는 사고를 막기 위해 prefix 화이트리스트 (codex P0 지적).
 export const isSafeHttpUrl = (url: string): boolean =>
   url.startsWith('http://') || url.startsWith('https://');
+
+// Slack mrkdwn 제어문자 escape — LLM 자유텍스트(리뷰 요약/코멘트, worklog 등)에 `&`/`<`/`>` 가 섞이면
+// Slack 이 `<...>` 를 링크 태그로, `&...;` 를 엔티티로 오인해 텍스트가 잘리거나 사라진다. 렌더 위조 방지.
+// 주의: 인라인 코드(백틱) 안 텍스트에는 쓰지 말 것 — Slack 이 백틱 내부를 리터럴 렌더해 `&lt;` 가 그대로 노출됨.
+export const escapeSlackMrkdwn = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

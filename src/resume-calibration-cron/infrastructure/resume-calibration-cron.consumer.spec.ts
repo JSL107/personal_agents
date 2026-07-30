@@ -9,10 +9,10 @@ const CAL = {
   actionItems: ['x'],
 };
 
-const makeConsumer = (opts: { hermesOk: boolean }) => {
+const makeConsumer = (opts: { hermesOk: boolean; cal?: unknown }) => {
   const calibrateResume = {
     execute: jest.fn().mockResolvedValue({
-      result: CAL,
+      result: opts.cal ?? CAL,
       modelUsed: 'claude-cli',
       agentRunId: 1,
     }),
@@ -22,7 +22,9 @@ const makeConsumer = (opts: { hermesOk: boolean }) => {
       ? jest.fn().mockResolvedValue({ stdout: '2026 트렌드 요약', stderr: '' })
       : jest.fn().mockRejectedValue(new Error('hermes down')),
   };
-  const slackNotifier = { postMessage: jest.fn().mockResolvedValue(undefined) };
+  const slackNotifier = {
+    postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
+  };
   const cronIdempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
   // 윤문 no-op mock — 입력 필드를 그대로 반환(원본 유지). best-effort 윤문은 발송 흐름과 독립.
   const humanizeService = {
@@ -61,5 +63,25 @@ describe('ResumeCalibrationCronConsumer', () => {
       webTrendsNote: undefined,
     });
     expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('요약이 잘리면 전체를 스레드 상세로 이어 붙인다(2회 발송)', async () => {
+    const bigCal = {
+      verdict: 'ok',
+      aiSlopRisks: [],
+      underQuantified: ['u1', 'u2', 'u3', 'u4', 'u5'],
+      outdatedPhrasing: [],
+      missingKeywords: [],
+      actionItems: ['a1'],
+    };
+    const deps = makeConsumer({ hermesOk: true, cal: bigCal });
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'U1' },
+    } as never);
+    expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    // 두 번째 발송은 첫 메시지 ts 로 스레드 댓글(전체 리포트).
+    const secondCall = deps.slackNotifier.postMessage.mock.calls[1][0];
+    expect(secondCall.threadTs).toBe('T1');
+    expect(secondCall.text).toContain('u5'); // 요약에서 접힌 항목이 전체엔 포함
   });
 });

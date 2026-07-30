@@ -101,7 +101,8 @@ export class CareerMateDispatcher implements AgentDispatcher {
           outcome.agentRunId,
           outcome.result,
           outcome.modelUsed,
-          formatCalibrationReport(outcome.result),
+          // slash 는 사용자가 직접 요청 → 전체 리포트를 그대로 전달(단일 메시지).
+          formatCalibrationReport(outcome.result).full,
         );
       }
       case 'REFLECT_PR': {
