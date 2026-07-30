@@ -4,6 +4,12 @@ export enum AgentRunStatus {
   FAILED = 'FAILED',
 }
 
+// IN_PROGRESS 런이 이 시간을 넘기면 좀비(앱 크래시/재시작으로 고착)로 간주한다.
+// run-sweeper 가 이 임계로 FAILED 정리하고(주 1회), 콘솔은 스윕 전이라도 조회 시점에
+// 이 임계를 넘긴 IN_PROGRESS 를 활성에서 제외한다 — 주간 스윕 주기 vs 임계 간극(최대 6일)만큼
+// 죽은 런이 "일하는 중" 으로 오표시되던 것을 즉시 교정한다. 두 경로가 같은 값을 쓰도록 단일 소스.
+export const STALE_RUN_THRESHOLD_MINUTES = 30;
+
 // 에이전트 실행을 촉발한 트리거 출처. 기획서 §11.1 trigger_type 필드에 대응.
 export enum TriggerType {
   SLACK_COMMAND_TODAY = 'SLACK_COMMAND_TODAY',
