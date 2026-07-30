@@ -8,6 +8,7 @@ import { readCodexSessions } from './codex-session.reader';
 interface ReadSessionsOverrides {
   readonly isAlive?: (pid: number) => boolean;
   readonly procStartsOf?: (pids: number[]) => Map<number, string>;
+  readonly argsOf?: (pids: number[]) => Map<number, string>;
   readonly removeFile?: (path: string) => void;
 }
 
@@ -25,6 +26,9 @@ describe('readCodexSessions', () => {
       now: () => now,
       isAlive: overrides.isAlive ?? (() => true),
       procStartsOf: overrides.procStartsOf ?? (() => new Map()),
+      argsOf:
+        overrides.argsOf ??
+        ((pids) => new Map(pids.map((pid) => [pid, 'codex exec']))),
       removeFile: overrides.removeFile ?? (() => {}),
     };
     return readCodexSessions(params);
@@ -184,6 +188,99 @@ describe('readCodexSessions', () => {
 
     expect(sessions.map((session) => session.sessionId)).toEqual([
       'legacy-codex',
+    ]);
+  });
+
+  it('실제 command 가 codex exec 이면 세션을 유지한다', () => {
+    writeFileSync(
+      join(sessionsDir, '500.json'),
+      JSON.stringify({
+        pid: 500,
+        sessionId: 'codex-exec',
+        cwd: '/repo/codex-exec',
+        source: 'codex',
+      }),
+    );
+
+    const sessions = readSessions({
+      argsOf: () =>
+        new Map([[500, '/Users/test/.local/bin/codex exec --cd /repo']]),
+    });
+
+    expect(sessions.map((session) => session.sessionId)).toEqual([
+      'codex-exec',
+    ]);
+  });
+
+  it('ChatGPT 앱 command 는 파일을 삭제하지 않고 세션에서 제외한다', () => {
+    const sessionPath = join(sessionsDir, '600.json');
+    const removedPaths: string[] = [];
+    writeFileSync(
+      sessionPath,
+      JSON.stringify({
+        pid: 600,
+        sessionId: 'chatgpt-app',
+        cwd: '/repo/chatgpt-app',
+        source: 'codex',
+      }),
+    );
+
+    const sessions = readSessions({
+      argsOf: () =>
+        new Map([
+          [
+            600,
+            '/Applications/ChatGPT.app/Contents/Resources/codex -c features.code_mode_host=true',
+          ],
+        ]),
+      removeFile: (path) => removedPaths.push(path),
+    });
+
+    expect(sessions).toEqual([]);
+    expect(removedPaths).toEqual([]);
+  });
+
+  it('VSCode 확장 command 는 세션에서 제외한다', () => {
+    writeFileSync(
+      join(sessionsDir, '700.json'),
+      JSON.stringify({
+        pid: 700,
+        sessionId: 'vscode-extension',
+        cwd: '/repo/vscode-extension',
+        source: 'codex',
+      }),
+    );
+
+    const sessions = readSessions({
+      argsOf: () =>
+        new Map([
+          [
+            700,
+            '/Users/test/.vscode/extensions/openai.chatgpt-1.2.3/bin/darwin-arm64/codex',
+          ],
+        ]),
+    });
+
+    expect(sessions).toEqual([]);
+  });
+
+  it('현재 command 를 조회하지 못하면 판정을 보류하고 유지한다', () => {
+    writeFileSync(
+      join(sessionsDir, '800.json'),
+      JSON.stringify({
+        pid: 800,
+        sessionId: 'unknown-command',
+        cwd: '/repo/unknown-command',
+        source: 'codex',
+      }),
+    );
+
+    const sessions = readSessions({
+      argsOf: () => new Map(),
+    });
+
+    expect(sessions.map((session) => session.sessionId)).toEqual([
+      'unknown-command',
     ]);
   });
 });
