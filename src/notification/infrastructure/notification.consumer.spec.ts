@@ -1,5 +1,7 @@
+import { NOTIFICATION_JOB } from '../domain/notification.type';
 import {
   findMissingAlertOwnerKeys,
+  NotificationConsumer,
   shouldFireAlert,
 } from './notification.consumer';
 
@@ -71,5 +73,43 @@ describe('findMissingAlertOwnerKeys — 부팅 시 알람 owner 점검', () => {
       'CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID',
       'CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID',
     ]);
+  });
+});
+
+describe('NotificationConsumer — 전송 성공 시에만 dedupe 마킹', () => {
+  const makeConsumer = (postMessage: jest.Mock) => {
+    const slackService = { postMessage };
+    const configService = { get: jest.fn().mockReturnValue('U-owner') };
+    return new NotificationConsumer(
+      slackService as never,
+      configService as never,
+    );
+  };
+
+  const cronFailureJob = (cronName: string) =>
+    ({
+      name: NOTIFICATION_JOB.CRON_FAILURE,
+      data: { cronName, ownerSlackUserId: 'U1', errorMessage: 'boom' },
+    }) as never;
+
+  it('전송 실패 시 markFired 안 함 → 같은 종류 반복 실패가 다시 발사된다', async () => {
+    const postMessage = jest.fn().mockRejectedValue(new Error('Slack 다운'));
+    const consumer = makeConsumer(postMessage);
+
+    await consumer.process(cronFailureJob('morning-briefing'));
+    await consumer.process(cronFailureJob('morning-briefing'));
+
+    // 전송이 실패했으므로 dedupe 되지 않고 두 번 다 발사 시도(침묵 방지).
+    expect(postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('전송 성공 시 markFired → 30분 내 같은 종류는 dedupe(1회만)', async () => {
+    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const consumer = makeConsumer(postMessage);
+
+    await consumer.process(cronFailureJob('morning-briefing'));
+    await consumer.process(cronFailureJob('morning-briefing'));
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 });
