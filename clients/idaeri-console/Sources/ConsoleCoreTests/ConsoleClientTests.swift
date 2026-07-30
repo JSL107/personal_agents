@@ -60,6 +60,43 @@ func runConsoleClientTests(_ t: TestRunner) {
         "http://127.0.0.1:3002/v1/console/approvals/p2/cancel",
         "cancel 경로"
     )
+
+    // inject: POST + JSON body + 경로에 sessionId
+    let injectRequest = try! buildInjectRequest(
+        baseURL: base,
+        sessionId: "sess-1",
+        text: "테스트 고쳐",
+        token: "secret"
+    )
+    t.expectEqual(injectRequest.httpMethod, "POST", "inject method")
+    t.expectEqual(
+        injectRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/sessions/sess-1/inject",
+        "inject 경로"
+    )
+    t.expectEqual(
+        injectRequest.value(forHTTPHeaderField: "x-console-token"),
+        "secret",
+        "inject 토큰 헤더"
+    )
+    let injectEcho = try! JSONDecoder().decode(
+        InjectBodyEcho.self,
+        from: injectRequest.httpBody ?? Data()
+    )
+    t.expectEqual(injectEcho.text, "테스트 고쳐", "inject body text")
+
+    // 상태코드 → 결과 매핑
+    t.expectEqual(injectOutcome(forStatus: 202), .queued, "202 = queued")
+    t.expectEqual(
+        injectOutcome(forStatus: 404),
+        .failed(reason: "세션을 찾을 수 없음"),
+        "404 매핑"
+    )
+    t.expectEqual(
+        injectOutcome(forStatus: 400),
+        .failed(reason: "빈 지시"),
+        "400 매핑"
+    )
 }
 
 /// 테스트 전용 — 인코딩된 body 를 되읽기 위한 미러 타입.
@@ -67,4 +104,8 @@ private struct CommandRequestEcho: Decodable {
     let text: String
     let agentTypeHint: String?
     let commandId: String
+}
+
+private struct InjectBodyEcho: Decodable {
+    let text: String
 }

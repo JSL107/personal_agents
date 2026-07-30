@@ -4,6 +4,7 @@ import SwiftUI
 /// 로컬 CLI 세션 한 줄. 소스 배지(cc/cx)·이름·cwd·활동 상태·경과를 보여준다. 읽기 전용.
 struct SessionRowView: View {
     let session: ConsoleSession
+    let onInject: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -29,9 +30,14 @@ struct SessionRowView: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 0)
-            Text(session.state == "active" ? "활동 중" : "유휴")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(session.state == "active" ? "활동 중" : "유휴")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button("작업 주입", action: onInject)
+                    .buttonStyle(.borderless)
+                    .font(.caption2)
+            }
         }
         .padding(.vertical, 3)
     }
