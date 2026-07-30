@@ -285,7 +285,37 @@ export class AgentRunService {
   }
 
   async sweepZombies(input: { olderThanMinutes: number }): Promise<number> {
-    return await this.repository.sweepZombies(input);
+    // 정리 대상(좀비)을 먼저 식별해 콘솔 이벤트를 낸다 — SSE 로만 갱신되는 라이브 콘솔은
+    // snapshot 을 재조회하지 않으므로(부팅 1회 후 SSE), 스윕이 좀비를 FAILED 로 바꿀 때
+    // run.finished(FAILED)/state.changed(WAITING) 를 발행해야 "일하는 중" 오표시가 즉시 지워진다.
+    // (ConsoleReadService 의 조회 시점 필터는 부팅/재오픈/디버그 경로만 커버한다.)
+    // 식별↔정리 사이 극소 race(막 끝난 런 포함 가능)는 해당 런 자체의 finished 이벤트가 곧
+    // 덮으므로 무시한다.
+    const cutoffMs = Date.now() - input.olderThanMinutes * 60 * 1000;
+    const active = await this.repository.findActiveRuns();
+    const zombies = active.filter((run) => run.startedAt.getTime() < cutoffMs);
+
+    const count = await this.repository.sweepZombies(input);
+
+    const finishedAt = new Date();
+    for (const zombie of zombies) {
+      this.consoleEvents?.publish({
+        type: 'run.finished',
+        run: this.buildConsoleRun(
+          zombie.id,
+          zombie.agentType as AgentType,
+          AgentRunStatus.FAILED,
+          zombie.startedAt,
+          finishedAt,
+        ),
+      });
+      this.consoleEvents?.publish({
+        type: 'state.changed',
+        agentType: zombie.agentType,
+        state: ConsoleAgentState.WAITING,
+      });
+    }
+    return count;
   }
 
   // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체. deriveAgentState 의 hasActiveRun 입력 조립용.
