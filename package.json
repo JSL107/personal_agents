@@ -24,6 +24,8 @@
     "docs:sync": "ts-node scripts/sync-docs.ts",
     "docs:check": "ts-node scripts/sync-docs.ts --check",
     "harness:replay": "ts-node scripts/harness-replay.ts",
+    "console:install-hooks": "ts-node scripts/console-hooks.ts install",
+    "console:uninstall-hooks": "ts-node scripts/console-hooks.ts uninstall",
     "test": "jest --testPathIgnorePatterns '/node_modules/' 'src/code-graph' && jest --workerIdleMemoryLimit=80MB src/code-graph",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --workerIdleMemoryLimit=80MB",

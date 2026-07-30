@@ -14,8 +14,14 @@ struct DashboardView: View {
     let onSend: (String, String?) -> Void
     let onApprove: (String) -> Void
     let onReject: (String) -> Void
+    let onInject: (String, String) async throws -> InjectOutcome
 
     @State private var commandText = ""
+    @State private var injectTarget: ConsoleSession?
+    @State private var injectText = ""
+    @State private var injectNotice: String?
+    @State private var injectNoticeIsFailure = false
+    @State private var isInjecting = false
 
     private let columns = [GridItem(.adaptive(minimum: 220), spacing: 14)]
 
@@ -51,6 +57,9 @@ struct DashboardView: View {
             .padding(24)
         }
         .frame(minWidth: 720, minHeight: 520)
+        .sheet(item: $injectTarget) { target in
+            injectSheet(target: target)
+        }
     }
 
     // MARK: - 커맨드바
@@ -212,8 +221,19 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("내 작업 세션 \(store.sessions.count)개 (로컬 CLI)")
                 .font(.headline)
+            if let injectNotice {
+                Text(injectNotice)
+                    .font(.caption)
+                    .foregroundStyle(injectNoticeIsFailure ? Color.red : Color.secondary)
+            }
             ForEach(store.sessions) { session in
-                SessionRowView(session: session)
+                SessionRowView(
+                    session: session,
+                    onInject: {
+                        injectTarget = session
+                        injectText = ""
+                    }
+                )
             }
         }
         .padding(14)
@@ -222,6 +242,83 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
+    }
+
+    private func injectSheet(target: ConsoleSession) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(target.name)에 작업 주입")
+                .font(.headline)
+            Text(
+                target.state == "active"
+                    ? "현재 작업이 끝나면 다음 턴에 전달됩니다."
+                    : "다음에 이 세션을 이어 쓸 때 전달됩니다"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            TextEditor(text: $injectText)
+                .font(.body)
+                .frame(minHeight: 120)
+                .padding(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.3))
+                )
+
+            HStack {
+                Spacer()
+                Button("취소") {
+                    injectText = ""
+                    injectTarget = nil
+                }
+                .disabled(isInjecting)
+                Button {
+                    submitInject(target: target)
+                } label: {
+                    if isInjecting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("주입")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    injectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || isInjecting
+                )
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 380)
+        .interactiveDismissDisabled(isInjecting)
+    }
+
+    private func submitInject(target: ConsoleSession) {
+        let text = injectText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            return
+        }
+        isInjecting = true
+        Task {
+            do {
+                let outcome = try await onInject(target.sessionId, text)
+                switch outcome {
+                case .queued:
+                    injectNotice = "큐잉됨 · 다음 턴 전달"
+                    injectNoticeIsFailure = false
+                case .failed(let reason):
+                    injectNotice = reason
+                    injectNoticeIsFailure = true
+                }
+            } catch {
+                injectNotice = "주입 요청 실패"
+                injectNoticeIsFailure = true
+            }
+            isInjecting = false
+            injectText = ""
+            injectTarget = nil
+        }
     }
 
     // MARK: - 빈 상태 안내
