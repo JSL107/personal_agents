@@ -521,4 +521,65 @@ describe('AutopilotOrchestrator', () => {
       text: '본문',
     });
   });
+
+  // 회귀 방지 — 한 승인 카드(preview) 의 생성/발송 실패가 (1) 이후 카드를 죽이거나
+  // (2) group 을 throw 시켜 메인 다이제스트·앞 카드를 중복 재발송(이중 발행)하지 않아야 한다.
+  // 실패한 카드는 owner 에게 통지된다(조용한 유실 방지).
+  it('한 preview 발송 실패는 격리 — 다른 preview 발송 + 실패 통지, group throw/release 없음', async () => {
+    const previewA = {
+      kind: 'EVENING_BLOG_PUBLISH',
+      payload: {},
+      previewText: 'A',
+    };
+    const previewB = {
+      kind: 'EVENING_CAREER_REFLECT',
+      payload: {},
+      previewText: 'B',
+    };
+    const previewTask = {
+      id: 'evening-retro-publish',
+      run: jest
+        .fn()
+        .mockResolvedValue({ skip: true, previews: [previewA, previewB] }),
+    };
+    const createPreview = {
+      execute: jest.fn().mockResolvedValue({ id: 'PV' }),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const postPreviewMessage = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Slack 카드 발송 실패')) // A 실패
+      .mockResolvedValueOnce({ channelId: 'C1', messageTs: '1.2' }); // B 성공
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [previewTask] as never,
+      { postMessage, postPreviewMessage } as never,
+      { acquireOnce, release } as never,
+      createPreview as never,
+      { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [makeEntry('evening-retro-publish', 'evening-retro-publish')],
+        'U1',
+        'C1',
+      ),
+    ).resolves.toBeUndefined();
+
+    // A 실패해도 B 는 생성/발송된다(격리).
+    expect(createPreview.execute).toHaveBeenCalledTimes(2);
+    expect(postPreviewMessage).toHaveBeenCalledTimes(2);
+    // 실패 카드는 owner 채널에 통지(조용한 유실 방지).
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: expect.stringContaining('승인 카드 발송 실패'),
+      }),
+    );
+    // 메인 다이제스트 중복 재발송/이중 발행 방지 — throw/release 없음.
+    expect(release).not.toHaveBeenCalled();
+  });
 });
