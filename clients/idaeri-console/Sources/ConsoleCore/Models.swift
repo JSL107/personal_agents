@@ -223,6 +223,15 @@ public struct CommandRequest: Encodable, Sendable {
     }
 }
 
+/// `POST /v1/console/sessions/:id/inject` 요청 바디.
+public struct InjectRequestBody: Codable {
+    public let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
 /// 리모컨 명령의 낙관적 진행 단계.
 public enum PendingPhase: String, Sendable, Equatable {
     case sent      // 전송·접수(202) — codex 준비 대기

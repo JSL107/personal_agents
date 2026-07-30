@@ -39,7 +39,8 @@ struct AppRootView: View {
                     baseURLLabel: baseURLLabel,
                     onSend: sendCommand,
                     onApprove: approve,
-                    onReject: reject
+                    onReject: reject,
+                    onInject: inject
                 )
             case .office:
                 OfficeView(store: store)
@@ -80,6 +81,10 @@ struct AppRootView: View {
 
     func reject(id: String) {
         Task { try? await client.cancelApproval(id: id) }
+    }
+
+    func inject(sessionId: String, text: String) async throws -> InjectOutcome {
+        try await client.postInject(sessionId: sessionId, text: text)
     }
 
     /// pending 유지보수 루프 — 타임아웃 강등 + 완료건 정리. 뷰 lifetime 동안 5초 주기.

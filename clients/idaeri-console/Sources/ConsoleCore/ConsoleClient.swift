@@ -66,6 +66,47 @@ public func buildCommandRequest(
     return request
 }
 
+/// `POST /v1/console/sessions/:sessionId/inject` 요청을 구성하는 순수 함수.
+public func buildInjectRequest(
+    baseURL: URL,
+    sessionId: String,
+    text: String,
+    token: String?
+) throws -> URLRequest {
+    let url = baseURL
+        .appendingPathComponent("v1/console/sessions")
+        .appendingPathComponent(sessionId)
+        .appendingPathComponent("inject")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
+    request.httpBody = try JSONEncoder().encode(InjectRequestBody(text: text))
+    return request
+}
+
+/// 주입 결과. 백엔드는 실제 전달 시점(다음 Stop)을 관측할 수 없어 "큐잉됨"까지만 안다.
+public enum InjectOutcome: Sendable, Equatable {
+    case queued
+    case failed(reason: String)
+}
+
+/// inject 응답 상태코드를 사용자용 결과로 매핑한다(순수).
+public func injectOutcome(forStatus status: Int) -> InjectOutcome {
+    switch status {
+    case 200..<300:
+        return .queued
+    case 404:
+        return .failed(reason: "세션을 찾을 수 없음")
+    case 400:
+        return .failed(reason: "빈 지시")
+    default:
+        return .failed(reason: "주입 실패 (\(status))")
+    }
+}
+
 /// `POST /v1/console/approvals/:id/:action`(action = apply|cancel) 요청을 구성하는 순수 함수.
 public func buildApprovalRequest(
     baseURL: URL,
@@ -160,6 +201,21 @@ public actor ConsoleClient {
             token: token
         )
         try await sendExpectingSuccess(request)
+    }
+
+    /// `POST /v1/console/sessions/:id/inject` — 로컬 세션에 작업 주입. 동기 응답으로 결과 확정.
+    public func postInject(sessionId: String, text: String) async throws -> InjectOutcome {
+        let request = try buildInjectRequest(
+            baseURL: baseURL,
+            sessionId: sessionId,
+            text: text,
+            token: token
+        )
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        return injectOutcome(forStatus: http.statusCode)
     }
 
     /// `POST /v1/console/approvals/:id/apply` — 승인.
