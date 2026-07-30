@@ -35,6 +35,7 @@ describe('LocalSessionService', () => {
       now: () => now,
       isAlive: (pid) => pid === 100, // 200 은 죽은 것으로 취급
       procStartsOf: () => new Map(),
+      argsOf: () => new Map(),
       removeFile: () => {},
     };
   });

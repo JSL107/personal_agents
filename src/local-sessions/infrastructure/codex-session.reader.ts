@@ -9,6 +9,7 @@ interface ReadCodexSessionsParams {
   readonly now: () => Date;
   readonly isAlive: (pid: number) => boolean;
   readonly procStartsOf: (pids: number[]) => Map<number, string>;
+  readonly argsOf: (pids: number[]) => Map<number, string>;
   readonly removeFile: (path: string) => void;
 }
 
@@ -30,10 +31,15 @@ function safeRemove(removeFile: (path: string) => void, path: string): void {
   }
 }
 
+function isCodexExecCommand(command: string): boolean {
+  return /(?:^|\/)codex\s+exec\b/.test(command);
+}
+
 export function readCodexSessions(
   params: ReadCodexSessionsParams,
 ): LocalSession[] {
-  const { sessionsDir, now, isAlive, procStartsOf, removeFile } = params;
+  const { sessionsDir, now, isAlive, procStartsOf, argsOf, removeFile } =
+    params;
   let files: string[];
   try {
     files = readdirSync(sessionsDir);
@@ -93,11 +99,18 @@ export function readCodexSessions(
     });
   }
 
+  const pids = liveRecords.map((record) => record.pid);
   let procStarts: Map<number, string>;
   try {
-    procStarts = procStartsOf(liveRecords.map((record) => record.pid));
+    procStarts = procStartsOf(pids);
   } catch {
     procStarts = new Map();
+  }
+  let argsMap: Map<number, string>;
+  try {
+    argsMap = argsOf(pids);
+  } catch {
+    argsMap = new Map();
   }
 
   const sessions: LocalSession[] = [];
@@ -109,6 +122,10 @@ export function readCodexSessions(
       record.storedProcStart !== currentProcStart
     ) {
       safeRemove(removeFile, record.path);
+      continue;
+    }
+    const command = argsMap.get(record.pid) ?? null;
+    if (command !== null && !isCodexExecCommand(command)) {
       continue;
     }
     let mtime: number | null = null;

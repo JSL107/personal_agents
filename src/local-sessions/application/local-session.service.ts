@@ -16,6 +16,7 @@ export interface LocalSessionConfig {
   readonly now: () => Date;
   readonly isAlive: (pid: number) => boolean;
   readonly procStartsOf: (pids: number[]) => Map<number, string>;
+  readonly argsOf: (pids: number[]) => Map<number, string>;
   readonly removeFile: (path: string) => void;
 }
 
@@ -63,6 +64,43 @@ function defaultProcStartsOf(pids: number[]): Map<number, string> {
   return procStarts;
 }
 
+function defaultArgsOf(pids: number[]): Map<number, string> {
+  if (pids.length === 0) {
+    return new Map();
+  }
+  let output: string;
+  try {
+    // -ww: args 를 폭 제한 없이 조회한다. macOS BSD ps 는 TTY 출력 시
+    // window size 로 args 를 자를 수 있어, 긴 실행 파일 경로의 codex exec 가
+    // exec 토큰 전에 잘리면 실제 CLI 세션이 오검출로 제외될 수 있다.
+    output = execFileSync(
+      'ps',
+      ['-ww', '-o', 'pid=,args=', '-p', pids.join(',')],
+      { encoding: 'utf8' },
+    );
+  } catch {
+    return new Map();
+  }
+  const argsMap = new Map<number, string>();
+  for (const line of output.split('\n')) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0) {
+      continue;
+    }
+    const separatorIndex = trimmedLine.indexOf(' ');
+    if (separatorIndex === -1) {
+      continue;
+    }
+    const pid = Number(trimmedLine.slice(0, separatorIndex));
+    const command = trimmedLine.slice(separatorIndex + 1).trim();
+    if (!Number.isSafeInteger(pid) || command.length === 0) {
+      continue;
+    }
+    argsMap.set(pid, command);
+  }
+  return argsMap;
+}
+
 function defaultRemoveFile(path: string): void {
   unlinkSync(path);
 }
@@ -76,6 +114,7 @@ export function defaultLocalSessionConfig(): LocalSessionConfig {
     now: () => new Date(),
     isAlive: defaultIsAlive,
     procStartsOf: defaultProcStartsOf,
+    argsOf: defaultArgsOf,
     removeFile: defaultRemoveFile,
   };
 }
@@ -96,6 +135,7 @@ export class LocalSessionService {
       now,
       isAlive,
       procStartsOf,
+      argsOf,
       removeFile,
     } = this.config;
     const claudeSessions = readClaudeSessions({
@@ -108,6 +148,7 @@ export class LocalSessionService {
       now,
       isAlive,
       procStartsOf,
+      argsOf,
       removeFile,
     });
     return [...claudeSessions, ...codexSessions];
