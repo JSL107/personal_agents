@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 @testable import ConsoleCore
@@ -194,4 +195,19 @@ func runConsoleStoreTests(_ t: TestRunner) {
 
     _ = tid
     _ = cmdId
+
+    // apply(event:) 는 처리한 이벤트를 eventStream 으로 방출한다
+    let emitStore = ConsoleStore()
+    emitStore.apply(snapshot: ConsoleSnapshot(
+        agents: [ConsoleAgent(agentType: "PM", displayName: "PM", slashCommands: [], description: "", state: .waiting, bubble: "")],
+        runs: [], approvals: [], sessions: [], serverTime: "t"))
+    var receivedStateChange = false
+    let cancellable = emitStore.eventStream.sink { event in
+        if case .stateChanged(let agentType, _) = event, agentType == "PM" {
+            receivedStateChange = true
+        }
+    }
+    emitStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress))
+    t.expect(receivedStateChange, "apply(event:) 가 eventStream 으로 방출")
+    cancellable.cancel()
 }

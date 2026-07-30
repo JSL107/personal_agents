@@ -10,30 +10,50 @@ public struct OfficePoint: Equatable, Sendable {
     }
 }
 
-/// `count` 개를 `width`×`height` 씬에 위→아래·왼→오 격자로 배치한 중심 좌표.
-/// 좌표계는 SpriteKit 기본(원점 좌하단, y 위로 증가)에 맞춘다.
+/// `count` 개를 `width`×`height` 씬의 **하단 격자 영역**(상단 `bandHeight` 는 대표실 밴드로 비움)에
+/// 위→아래·왼→오 격자로 배치한 중심 좌표. 좌표계는 SpriteKit 기본(원점 좌하단, y 위로 증가).
+/// `bandHeight` 기본값 0 이면 씬 전체를 격자로 쓴다(Phase 3 동작).
 public func officeLayout(
     count: Int,
     width: Double,
     height: Double,
-    columns: Int
+    columns: Int,
+    bandHeight: Double = 0
 ) -> [OfficePoint] {
     guard count > 0, columns > 0, width > 0, height > 0 else {
         return []
     }
+    let gridHeight = max(height - max(bandHeight, 0), 1)
     let effectiveColumns = min(columns, count)
     let rows = Int((Double(count) / Double(effectiveColumns)).rounded(.up))
     let cellWidth = width / Double(effectiveColumns)
-    let cellHeight = height / Double(max(rows, 1))
+    let cellHeight = gridHeight / Double(max(rows, 1))
     var points: [OfficePoint] = []
     for index in 0..<count {
         let column = index % effectiveColumns
         let row = index / effectiveColumns
         let x = cellWidth * (Double(column) + 0.5)
-        let y = height - cellHeight * (Double(row) + 0.5)
+        let y = gridHeight - cellHeight * (Double(row) + 0.5)
         points.append(OfficePoint(x: x, y: y))
     }
     return points
+}
+
+/// 대표실 밴드(씬 상단 `bandHeight` 높이) 안에 `order` 순번을 가로 균등 배치한 좌표.
+/// 승인 대기·소집된 원이 자기 자리에서 여기로 직선 이동해 집결한다.
+public func presidentBandSlot(
+    order: Int,
+    count: Int,
+    width: Double,
+    height: Double,
+    bandHeight: Double
+) -> OfficePoint {
+    guard count > 0, bandHeight > 0, width > 0 else {
+        return OfficePoint(x: width / 2, y: height)
+    }
+    let y = height - bandHeight / 2
+    let x = width * (Double(order) + 0.5) / Double(count)
+    return OfficePoint(x: x, y: y)
 }
 
 /// 오피스 노드 동기화 diff. 현재 노드 집합과 새 목록을 비교한다.
