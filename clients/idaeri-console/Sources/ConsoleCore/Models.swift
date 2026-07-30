@@ -49,7 +49,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// 진행/최근 에이전트 실행 한 건. `parentId` 로 체인 계보 추적.
-public struct ConsoleRun: Codable, Identifiable, Sendable {
+public struct ConsoleRun: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public let agentType: String
     public let status: String
