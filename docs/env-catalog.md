@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 98개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 100개.
 설명은 각 변수의 첫 주석 줄 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -143,6 +143,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `EPISODIC_EMBED_DIM` | ❌ | Episodic Memory 임베딩 차원 (기본 384). 모델 변경 시 함께 갱신 + embedding 컬럼/인덱스 재생성. |
 | `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms). |
 | `SUBCONSCIOUS_ENABLED` | ❌ | Subconscious proactive engine 활성 게이트. 'true' 문자열일 때만 활성. |
+| `SESSION_DISPATCH_ENABLED` | ❌ | 유휴 Claude 세션에 최신 open PR 리뷰 제안을 만드는 자동 dispatch. |
+| `SESSION_DISPATCH_COOLDOWN_MS` | ❌ | 동일 세션 자동 dispatch 사이의 최소 대기 시간(ms). |
 | `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF). |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | HUMANIZE_REPORTS_ENABLED: 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
