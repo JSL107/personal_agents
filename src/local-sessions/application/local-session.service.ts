@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +15,8 @@ export interface LocalSessionConfig {
   readonly codexSessionsDir: string;
   readonly now: () => Date;
   readonly isAlive: (pid: number) => boolean;
+  readonly procStartsOf: (pids: number[]) => Map<number, string>;
+  readonly removeFile: (path: string) => void;
 }
 
 export const LOCAL_SESSION_CONFIG = Symbol('LOCAL_SESSION_CONFIG');
@@ -27,6 +31,42 @@ function defaultIsAlive(pid: number): boolean {
   }
 }
 
+function defaultProcStartsOf(pids: number[]): Map<number, string> {
+  if (pids.length === 0) {
+    return new Map();
+  }
+  let output: string;
+  try {
+    output = execFileSync('ps', ['-o', 'pid=,lstart=', '-p', pids.join(',')], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return new Map();
+  }
+  const procStarts = new Map<number, string>();
+  for (const line of output.split('\n')) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0) {
+      continue;
+    }
+    const separatorIndex = trimmedLine.indexOf(' ');
+    if (separatorIndex === -1) {
+      continue;
+    }
+    const pid = Number(trimmedLine.slice(0, separatorIndex));
+    const procStart = trimmedLine.slice(separatorIndex + 1).trim();
+    if (!Number.isSafeInteger(pid) || procStart.length === 0) {
+      continue;
+    }
+    procStarts.set(pid, procStart);
+  }
+  return procStarts;
+}
+
+function defaultRemoveFile(path: string): void {
+  unlinkSync(path);
+}
+
 export function defaultLocalSessionConfig(): LocalSessionConfig {
   const home = homedir();
   return {
@@ -35,6 +75,8 @@ export function defaultLocalSessionConfig(): LocalSessionConfig {
     codexSessionsDir: join(home, '.mds', 'codex-sessions'),
     now: () => new Date(),
     isAlive: defaultIsAlive,
+    procStartsOf: defaultProcStartsOf,
+    removeFile: defaultRemoveFile,
   };
 }
 
@@ -53,15 +95,21 @@ export class LocalSessionService {
       codexSessionsDir,
       now,
       isAlive,
+      procStartsOf,
+      removeFile,
     } = this.config;
-    const sessions: LocalSession[] = [
-      ...readClaudeSessions({
-        sessionsDir: claudeSessionsDir,
-        projectsDir: claudeProjectsDir,
-        now,
-      }),
-      ...readCodexSessions({ sessionsDir: codexSessionsDir, now }),
-    ];
-    return sessions.filter((session) => isAlive(session.pid));
+    const claudeSessions = readClaudeSessions({
+      sessionsDir: claudeSessionsDir,
+      projectsDir: claudeProjectsDir,
+      now,
+    }).filter((session) => isAlive(session.pid));
+    const codexSessions = readCodexSessions({
+      sessionsDir: codexSessionsDir,
+      now,
+      isAlive,
+      procStartsOf,
+      removeFile,
+    });
+    return [...claudeSessions, ...codexSessions];
   }
 }
