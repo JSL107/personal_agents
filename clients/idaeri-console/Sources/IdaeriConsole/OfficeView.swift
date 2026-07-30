@@ -24,6 +24,10 @@ struct OfficeView: View {
                 .frame(minWidth: 640, minHeight: 480)
                 .onAppear {
                     scene.sync(agents: store.agents)
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                     replayInitialChoreography()
                     scene.onAgentClick = { agentType in
                         selectedAgent = agentType
@@ -32,9 +36,19 @@ struct OfficeView: View {
                 }
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents)
+                    scene.refreshOverlays(
+                        agents: newAgents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
                 .onChange(of: selectedAgent) { newSelection in
                     scene.setSelected(newSelection)
+                }
+                .onChange(of: store.pendingCommands) { _ in
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
                 .onReceive(store.eventStream) { event in
                     let context = ChoreographyContext(
@@ -43,6 +57,10 @@ struct OfficeView: View {
                         pendingCommands: store.pendingCommands
                     )
                     scene.perform(visualIntents(for: event, context: context))
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
 
             if let agentType = selectedAgent {

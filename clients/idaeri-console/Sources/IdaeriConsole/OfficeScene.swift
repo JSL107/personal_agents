@@ -58,6 +58,8 @@ final class OfficeScene: SKScene {
     private let bandHeight: Double = 120
     private let nodeRadius: Double = 26
     private var hoveredAgentType: String?
+    private var agentBubbles: [String: String] = [:]
+    private var waitingAgentTypes: Set<String> = []
     private var selectedAgentType: String?
     /// 원 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
     var onAgentClick: ((String) -> Void)?
@@ -98,6 +100,11 @@ final class OfficeScene: SKScene {
     func sync(agents: [ConsoleAgent]) {
         let incoming = agents.map { $0.agentType }
         let diff = officeNodeDiff(existing: Set(agentNodes.keys), incoming: incoming)
+        waitingAgentTypes = Set(
+            agents
+                .filter { $0.state == .waiting }
+                .map(\.agentType)
+        )
 
         for agentType in diff.removed {
             agentNodes[agentType]?.removeFromParent()
@@ -131,11 +138,70 @@ final class OfficeScene: SKScene {
             // 색은 sync 가 진실원. 상태색은 링(stroke) — 채움은 부서 tint 로 고정.
             node.strokeColor = agent.state.skColor
             let isWorking = node.childNode(withName: "progressArc") != nil
-            if agent.state == .waiting, !bandOrder.contains(agent.agentType), !isWorking {
+            if agent.state == .waiting,
+               hoveredAgentType != agent.agentType,
+               !bandOrder.contains(agent.agentType),
+               !isWorking
+            {
                 startBreathing(node)
             } else {
                 stopBreathing(node)
             }
+        }
+    }
+
+    /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다(매 갱신 remove 후 재생성).
+    private func setChildLabel(
+        _ parent: SKShapeNode,
+        name: String,
+        text: String?,
+        position: CGPoint,
+        fontSize: CGFloat,
+        color: SKColor
+    ) {
+        parent.childNode(withName: name)?.removeFromParent()
+        guard let text, !text.isEmpty else {
+            return
+        }
+        let label = SKLabelNode(text: text)
+        label.name = name
+        label.fontSize = fontSize
+        label.fontColor = color
+        label.verticalAlignmentMode = .center
+        label.horizontalAlignmentMode = .center
+        label.position = position
+        label.zPosition = 6
+        parent.addChild(label)
+    }
+
+    /// 토큰 위 정보(상시 말풍선·경과·pending 배지)를 현재 상태로 다시 그린다.
+    func refreshOverlays(
+        agents: [ConsoleAgent],
+        runs: [ConsoleRun],
+        pendingCommands: [PendingCommand],
+        now: Date
+    ) {
+        for agent in agents {
+            guard let node = agentNodes[agent.agentType] else {
+                continue
+            }
+            agentBubbles[agent.agentType] = agent.bubble
+            let info = agentTokenInfo(agent: agent, runs: runs, pendingCommands: pendingCommands, now: now)
+            if info.bubble != nil {
+                node.childNode(withName: "hoverBubble")?.removeFromParent()
+            }
+            setChildLabel(
+                node, name: "infoBubble", text: info.bubble,
+                position: CGPoint(x: 0, y: 46), fontSize: 11, color: SKColor(white: 1, alpha: 0.95)
+            )
+            setChildLabel(
+                node, name: "elapsed", text: info.elapsed,
+                position: CGPoint(x: 0, y: -54), fontSize: 10, color: SKColor(white: 0.7, alpha: 1)
+            )
+            setChildLabel(
+                node, name: "pendingBadge", text: info.badge?.badgeIcon,
+                position: CGPoint(x: 22, y: 22), fontSize: 15, color: SKColor(white: 1, alpha: 1)
+            )
         }
     }
 
@@ -327,12 +393,34 @@ final class OfficeScene: SKScene {
         }
         if let previous = hoveredAgentType, let node = agentNodes[previous] {
             node.removeAction(forKey: "hover")
-            node.run(.scale(to: 1.0, duration: 0.12), withKey: "hover")
+            let restoreBreathing = SKAction.run { [weak self, weak node] in
+                guard
+                    let self,
+                    let node,
+                    self.waitingAgentTypes.contains(previous),
+                    !self.bandOrder.contains(previous),
+                    node.childNode(withName: "progressArc") == nil
+                else {
+                    return
+                }
+                startBreathing(node)
+            }
+            node.run(
+                .sequence([.scale(to: 1.0, duration: 0.12), restoreBreathing]),
+                withKey: "hover"
+            )
+            node.childNode(withName: "hoverBubble")?.removeFromParent()
         }
         hoveredAgentType = hit
         if let hit, let node = agentNodes[hit] {
             node.removeAction(forKey: "breathing")
             node.run(.scale(to: 1.12, duration: 0.12), withKey: "hover")
+            if node.childNode(withName: "infoBubble") == nil, let text = agentBubbles[hit] {
+                setChildLabel(
+                    node, name: "hoverBubble", text: text,
+                    position: CGPoint(x: 0, y: 46), fontSize: 11, color: SKColor(white: 1, alpha: 0.95)
+                )
+            }
         }
     }
 
