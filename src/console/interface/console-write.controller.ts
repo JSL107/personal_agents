@@ -1,23 +1,30 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   HttpCode,
+  NotFoundException,
   Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
 
+import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConsoleWriteService } from '../application/console-write.service';
 import { ConsoleWriteGuard } from './console-write.guard';
 import { ConsoleCommandDto } from './dto/console-command.dto';
+import { SessionInjectDto } from './dto/session-inject.dto';
 
 // 콘솔 리모컨 write 표면 — 지시(fire-and-forget 202) + 승인/거절(await 200).
 // 모든 경로는 ConsoleWriteGuard(loopback+토큰) 뒤에 있다.
 @Controller('v1/console')
 @UseGuards(ConsoleWriteGuard)
 export class ConsoleWriteController {
-  constructor(private readonly consoleWrite: ConsoleWriteService) {}
+  constructor(
+    private readonly consoleWrite: ConsoleWriteService,
+    private readonly sessionInject: SessionInjectService,
+  ) {}
 
   @Post('command')
   @HttpCode(202)
@@ -40,5 +47,21 @@ export class ConsoleWriteController {
   async cancel(@Param('id') id: string): Promise<{ ok: true }> {
     await this.consoleWrite.cancelApproval(id);
     return { ok: true };
+  }
+
+  @Post('sessions/:sessionId/inject')
+  @HttpCode(202)
+  injectToSession(
+    @Param('sessionId') sessionId: string,
+    @Body() dto: SessionInjectDto,
+  ): { ok: true; deliver: 'next-stop' } {
+    const result = this.sessionInject.inject(sessionId, dto.text);
+    if (!result.ok) {
+      if (result.reason === 'EMPTY_INSTRUCTION') {
+        throw new BadRequestException(result.reason);
+      }
+      throw new NotFoundException(result.reason);
+    }
+    return { ok: true, deliver: 'next-stop' };
   }
 }

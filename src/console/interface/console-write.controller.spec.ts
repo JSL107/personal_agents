@@ -1,3 +1,6 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+
+import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { ConsoleWriteService } from '../application/console-write.service';
 import { ConsoleWriteController } from './console-write.controller';
 
@@ -7,10 +10,12 @@ function makeController() {
     applyApproval: jest.fn().mockResolvedValue(undefined),
     cancelApproval: jest.fn().mockResolvedValue(undefined),
   };
+  const sessionInject = { inject: jest.fn() };
   const controller = new ConsoleWriteController(
     service as unknown as ConsoleWriteService,
+    sessionInject as unknown as SessionInjectService,
   );
-  return { controller, service };
+  return { controller, service, sessionInject };
 }
 
 describe('ConsoleWriteController', () => {
@@ -41,5 +46,35 @@ describe('ConsoleWriteController', () => {
     const result = await controller.cancel('p2');
     expect(service.cancelApproval).toHaveBeenCalledWith('p2');
     expect(result).toEqual({ ok: true });
+  });
+
+  it('inject 성공 시 202 바디 반환', () => {
+    const { controller, sessionInject } = makeController();
+    sessionInject.inject.mockReturnValue({ ok: true });
+    const result = controller.injectToSession('s1', { text: '고쳐' });
+    expect(sessionInject.inject).toHaveBeenCalledWith('s1', '고쳐');
+    expect(result).toEqual({ ok: true, deliver: 'next-stop' });
+  });
+
+  it('빈 지시는 BadRequestException', () => {
+    const { controller, sessionInject } = makeController();
+    sessionInject.inject.mockReturnValue({
+      ok: false,
+      reason: 'EMPTY_INSTRUCTION',
+    });
+    expect(() => controller.injectToSession('s1', { text: '  ' })).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('없는 세션은 NotFoundException', () => {
+    const { controller, sessionInject } = makeController();
+    sessionInject.inject.mockReturnValue({
+      ok: false,
+      reason: 'SESSION_NOT_FOUND',
+    });
+    expect(() => controller.injectToSession('nope', { text: '고쳐' })).toThrow(
+      NotFoundException,
+    );
   });
 });
