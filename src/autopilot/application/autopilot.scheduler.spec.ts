@@ -55,7 +55,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('stock-alert-scoring');
   });
 
-  it('evening 그룹 스케줄은 첫 항목(daily-eval) env 기반 → 19:00', async () => {
+  it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:00', async () => {
     const queue = makeQueue();
     const config = {
       get: jest.fn((key: string) =>
