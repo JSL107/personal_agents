@@ -139,3 +139,26 @@ CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_origina
 1. ModelRouter 매핑이 의도한 모델로 가는지 (`AGENT_TO_PROVIDER`)
 2. CLI provider 의 `complete()` 가 `--ephemeral` / `--no-session-persistence` 유지 중인지 (세션 오염 방지)
 3. AgentRun 의 inputSnapshot 에 prompt 가 너무 길어지진 않았는지 (GitHub task 수, 전일 plan 반복)
+
+## Code Review Rules
+
+> Codex GitHub 리뷰(`@codex review` / 자동 리뷰)가 이 섹션을 읽어 리뷰 지침으로 사용한다.
+> 번호를 붙이지 않는 이유는 Codex 가 정확히 `## Code Review Rules` 헤딩을 찾기 때문.
+
+### 리뷰 방식
+
+- 모든 리뷰 댓글과 요약은 한국어로 작성한다.
+- 코드 식별자, 함수명, 타입명, 파일 경로, API 이름, 로그·오류 메시지는 원문을 유지한다.
+- 실제 버그, 회귀, 크래시, 데이터 손상, 동시성·보안 문제를 우선 검토한다.
+- 스타일, 포맷, 명명 취향, 확신이 낮은 추측은 생략한다 (`pnpm lint:check` 가 잡는 영역과 중복 금지).
+- 각 지적은 문제·영향·수정 방향을 담아 간결하게 작성한다.
+- PR diff 와 직접 관련된 코드를 우선하되, 아래 '레포 불변식' 은 diff 밖 파일이어도 정합성을 확인한다.
+
+### 레포 불변식 (Codex 가 모르는 이 레포 관례 — 위반 시 P1)
+
+- CLI 자식 프로세스 env 는 `buildSafeChildEnv` 만 쓰고, 프롬프트는 stdin 으로 넘긴다 (argv 금지 — `ps aux` 노출).
+- ORM 은 Prisma 전용. `@nestjs/typeorm`·TypeORM import 는 금지.
+- `process.env` 직접 참조 금지 → `ConfigService.get(...)` (DI 컨텍스트 밖만 예외).
+- 새 env 추가 시 `.env.example`·`.env`·`src/config/app.config.ts`·README 4곳을 함께 갱신했는지 확인한다.
+- 새 슬래시·에이전트 추가 시 `AGENT_TO_PROVIDER`·`/retry-run` switch·`ResponseCode` enum 이 함께 갱신됐는지 확인한다.
+- NestJS 생성자에 기본값 파라미터를 두지 않는다 (`timeoutMs: number = 180_000` → `Number` provider 오류). 기본값은 클래스 필드로.
