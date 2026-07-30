@@ -224,6 +224,8 @@ pnpm dev              # watch 모드 기동
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | tick cron 표현식 (기본 `*/20 * * * *`, Asia/Seoul) |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | 시간당 최대 proposal 건수 (기본 `4`) |
 | `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | proposal DM 버튼 유효 시간 ms (기본 `3600000`) |
+| `SESSION_DISPATCH_ENABLED` | ❌ | `'true'` 시 유휴 Claude 세션에 최신 open PR 리뷰 제안을 자동 생성 — 기본 OFF |
+| `SESSION_DISPATCH_COOLDOWN_MS` | ❌ | 같은 세션 자동 dispatch 최소 간격 ms — 기본 `1800000`(30분) |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | `'false'`면 자동 보고서 윤문 OFF — 기본 ON |
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | `'false'`면 아침 브리핑 완료/대기 PR 분류 섹션 OFF — 기본 ON |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값 — 기본 `5` |
