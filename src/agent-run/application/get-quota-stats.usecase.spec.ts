@@ -21,6 +21,7 @@ const buildRepo = (
   aggregateRetryCounts: jest.fn().mockResolvedValue([]),
   aggregateSweptCounts: jest.fn().mockResolvedValue([]),
   sweepZombies: jest.fn().mockResolvedValue(0),
+  hasSweepReviewFor: jest.fn().mockResolvedValue(false),
   aggregatePmContextStats: jest.fn().mockResolvedValue({
     pmRunCount: 0,
     totalInboxItems: 0,

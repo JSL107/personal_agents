@@ -32,6 +32,7 @@ describe('AgentRunService', () => {
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
+    hasSweepReviewFor: jest.fn().mockResolvedValue(false),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -505,6 +506,23 @@ describe('AgentRunService', () => {
 
       expect(repository.findActiveRuns).toHaveBeenCalledTimes(1);
       expect(result).toBe(active);
+    });
+  });
+
+  describe('hasSweepReviewFor — PR 리뷰 루프 PR 당 리뷰 1회 판정', () => {
+    it('repository.hasSweepReviewFor 에 그대로 위임한다', async () => {
+      repository.hasSweepReviewFor.mockResolvedValue(true);
+
+      const result = await service.hasSweepReviewFor({
+        prRef: 'JSL107/personal_agents#180',
+        sinceDays: 30,
+      });
+
+      expect(repository.hasSweepReviewFor).toHaveBeenCalledWith({
+        prRef: 'JSL107/personal_agents#180',
+        sinceDays: 30,
+      });
+      expect(result).toBe(true);
     });
   });
 });

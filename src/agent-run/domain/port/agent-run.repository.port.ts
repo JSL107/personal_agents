@@ -111,6 +111,15 @@ export interface AgentSweptCountRow {
   swept: number;
 }
 
+// PR 리뷰 루프 — 이 PR 을 스윕(triggerType=PR_REVIEW_SWEEP)이 최근 sinceDays 이내 시도했는지.
+// 게시 여부·findings 유무와 무관하게 "리뷰 시도" 자체를 원장으로 삼는다 — PrReviewFinding 카드는
+// 연습 모드(dry-run)나 findings 0건일 때 아예 생기지 않으므로 카드 유무로는 PR 당 리뷰 1회
+// 정책을 판정할 수 없다(2026-07-31 리뷰 지적으로 AgentRun 원장 기준으로 교정).
+export interface HasSweepReviewForQuery {
+  prRef: string; // "owner/repo#number" — inputSnapshot.prRef 와 매칭
+  sinceDays: number; // JSON path 필터는 인덱스가 없어 스캔 범위를 이 기간으로 제한
+}
+
 // 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의
 // hasActiveRun 신호 소스다. id/endedAt 은 도메인 표현(number/Date)으로 두고,
 // 뷰 변환(id → string, endedAt → ISO finishedAt)은 console 조립 계층이 담당한다.
@@ -192,4 +201,6 @@ export interface AgentRunRepositoryPort {
   sweepZombies(input: { olderThanMinutes: number }): Promise<number>;
   // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체 조회. 읽기 전용.
   findActiveRuns(): Promise<ActiveRunSnapshot[]>;
+  // PR 리뷰 루프 — PR 당 리뷰 1회 판정. HasSweepReviewForQuery 주석 참고.
+  hasSweepReviewFor(input: HasSweepReviewForQuery): Promise<boolean>;
 }
