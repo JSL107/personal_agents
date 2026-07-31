@@ -80,11 +80,24 @@ export class AutopilotOrchestrator {
     //
     // 읽기 전용(isDone)을 쓰는 이유는 cron-idempotency.service.ts 의 isDone 주석 참조 —
     // 진입 시점에 키를 만들면 실행 중 강제 종료 시 그 슬롯이 TTL 동안 영구 차단된다.
+    //
+    // ⚠️ 알려진 한계: 이 확인은 "완주한 슬롯" 만 끊는다. 앞 실행이 아직 task 를 도는 중에
+    // 들어온 재큐는 표식이 아직 없어 그대로 통과한다 — lockDuration 초과가 곧 "아직 실행 중"
+    // 이므로 원리상 겹칠 수 있다. 실측(2026-07-26)은 앞 실행 종료 30초 뒤 다음이 시작하는
+    // 순차 패턴이라 이 확인으로 끊긴다. 겹침까지 막으려면 진입 잠금이 필요한데, 그건 강제
+    // 종료 시 슬롯이 TTL 동안 영구 차단되는 문제를 다시 부른다(위 문단) — 의도적 절충이다.
     if (slotKey && (await this.cronIdempotency.isDone(slotKey))) {
       this.logger.warn(
         `Autopilot[${groupKey}] — 슬롯 ${slotId} 이미 완주됨, 재진입 차단 (task 실행 skip)`,
       );
       return;
+    }
+    if (slotKey === null) {
+      // 슬롯 식별자가 없으면 재진입 차단이 통째로 꺼진다. 조용히 꺼지지 않게 남긴다
+      // (BullMQ repeatable job 은 항상 id 를 가지므로 정상 경로에서는 나오지 않는다).
+      this.logger.debug(
+        `Autopilot[${groupKey}] — 슬롯 식별자 없음, 재진입 차단 비활성`,
+      );
     }
 
     const items: { summary: string; detail?: string }[] = [];
@@ -140,6 +153,12 @@ export class AutopilotOrchestrator {
       CRON_SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
+      // 발송만 막혔을 뿐 task 는 전부 돌았다 = 이 슬롯은 완주다. 표식을 남기지 않으면
+      // 하루에 여러 번 도는 그룹(preview-sweeper `*/10`, pr-review-sweep `*/15`,
+      // run-sweeper 매시간)은 그날 첫 발송 이후 모든 슬롯이 이 경로로 끝나면서 표식 없이
+      // 종료되고, 그 슬롯이 stalled 로 재큐되면 진입 확인을 통과해 task 를 처음부터 전부
+      // 다시 돈다 — 이 가드가 막으려던 자기 증폭 루프가 그대로 남는다.
+      await this.markSlotDone(slotKey);
       this.logger.warn(
         `Autopilot[${groupKey}] — ${firedAtKst} 이미 발송됨, 중복 차단`,
       );
