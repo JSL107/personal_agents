@@ -199,6 +199,50 @@ describe('SubconsciousProposalService.apply', () => {
     expect(result).toContain('CODE_REVIEWER');
   });
 
+  it('CODE_REVIEWER + github:pr key → dispatch text 는 key 에서 복원한 PR 참조(owner/repo#num)', async () => {
+    const repository = buildRepository(buildRecord(), true);
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, NOW);
+
+    // review-pr 은 text 에서 PR 참조를 파싱한다 — 사람용 요약('PR #1 opened')이 아니라
+    // 안정 키에서 'github:pr:' 접두어를 벗긴 'owner/repo#1' 을 넘겨야 파싱된다.
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'owner/repo#1' }),
+    );
+  });
+
+  it('BE_FIX + github:pr key → dispatch text 는 PR 참조', async () => {
+    const repository = buildRepository(
+      buildRecord({ suggestedAgentType: 'BE_FIX' as AgentType }),
+      true,
+    );
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, NOW);
+
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'owner/repo#1' }),
+    );
+  });
+
+  it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지', async () => {
+    const repository = buildRepository(
+      buildRecord({ suggestedAgentType: 'PM' as AgentType }),
+      true,
+    );
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, NOW);
+
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'PR #1 opened' }),
+    );
+  });
+
   it('다른 사용자가 apply → FORBIDDEN 예외, status 변경 없음, dispatch 없음', async () => {
     const repository = buildRepository(buildRecord({ ownerUserId: OWNER }));
     const router = buildRouter();
