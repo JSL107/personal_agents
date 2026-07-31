@@ -349,6 +349,50 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
     const prompt: string = call.request.prompt;
     expect(prompt).not.toContain('[사용자 지시');
   });
+
+  // 실측 오탐: "PrReviewFinding 모델의 migration 파일이 없다" — 이 레포는 db push 방식이라
+  // 마이그레이션 파일이 애초에 없다. 규약을 프롬프트에 실어 이 유형을 막는다.
+  it('이 레포를 리뷰하면 프롬프트 끝에 [리뷰 대상 레포 규약] 섹션이 붙는다', async () => {
+    githubClient.getPullRequest.mockResolvedValue({
+      number: 189,
+      title: 'feat: pr review loop',
+      body: 'body',
+      repo: 'JSL107/personal_agents',
+      url: 'https://github.com/JSL107/personal_agents/pull/189',
+      baseRef: 'main',
+      headRef: 'feat/loop',
+      authorLogin: 'JSL107',
+      changedFiles: ['prisma/schema.prisma'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 10,
+      deletions: 2,
+      headSha: 'sha',
+    });
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#189',
+      slackUserId: 'U1',
+    });
+
+    const prompt: string = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('[리뷰 대상 레포 규약');
+    expect(prompt).toContain('Prisma 마이그레이션 파일을 만들지 않는다');
+    // diff 를 다 읽은 뒤 읽히도록 diff 뒤에 와야 한다.
+    expect(prompt.indexOf('[리뷰 대상 레포 규약')).toBeGreaterThan(
+      prompt.indexOf('[diff]'),
+    );
+  });
+
+  it('다른 레포를 리뷰하면 레포 규약이 붙지 않는다 (틀린 규약 전파 차단)', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U1',
+    });
+
+    const prompt: string = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).not.toContain('[리뷰 대상 레포 규약');
+  });
 });
 
 describe('buildReviewPrompt', () => {

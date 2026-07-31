@@ -27,6 +27,8 @@ export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Review
   - "approve" — 전부 문제 없을 때
 - reviewCommentDrafts 는 GitHub PR 코멘트로 바로 옮길 수 있는 문장들. 가능하면 file/line 을 채우되 모를 땐 생략. 한 PR 당 5개 이상 만들지 말 것 (사용자 인지 부담).
 - 근거 없는 칭찬/비판 금지. diff 에서 인용 가능한 사실만.
+- **diff 에 보이지 않는 것의 부재를 근거로 지적하지 않는다.** "이 파일이 없다 / 이 설정이 빠졌다" 는 diff 가 잘렸거나 그 레포의 관례일 수 있다 — 변경 파일 목록과 diff 에서 실제로 확인한 사실만 근거로 쓴다.
+- **지적 대상 코드에 의도를 밝힌 주석이 붙어 있으면 그 근거를 먼저 반박한다.** 반박하지 못하면 지적하지 않는다 (의도된 설계 결정을 결함으로 오인하는 흔한 오탐).
 - findings 는 위 mustFix / niceToHave / missingTests 를 **낱개 항목으로 쪼갠 것**이다. 같은 지적을 중복해 넣지 말고, 각 항목에 category 와 severity 를 붙인다.
   - category: CORRECTNESS(정확성·회귀·데이터 유실) / SECURITY / RELIABILITY(동시성·트랜잭션·에러 처리·외부 API) / TEST(커버리지 누락) / ARCHITECTURE(DDD·Port-Adapter 위반) / READABILITY(네이밍·가독성·중복) / STYLE(포맷·주석·lint 영역)
   - severity: MUST_FIX(머지 전 필수) / NICE_TO_HAVE(후속 가능) / MISSING_TEST(테스트 누락)
@@ -50,3 +52,29 @@ export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Review
     { "category": string, "severity": string, "file": string?, "line": number?, "body": string }
   ]
 }`;
+
+// 규약은 레포마다 다르다 — 세대가 다른 레포에 틀린 규약을 실으면 오탐 대신 정탐을 지운다.
+// 그래서 정확히 이 레포일 때만 붙인다. 다른 레포는 규약 없이(현행 그대로) 리뷰한다.
+const SELF_REPO = 'jsl107/personal_agents';
+
+// 실측 오탐만 담는다 — 규약 전문(CODE_RULES.md 385줄)을 넣으면 토큰만 늘고 지적이 희석된다.
+// 근거: 2026-07-31 스윕 표본 7종 중 오탐 3종이 전부 아래 항목이었다.
+// - "PrReviewFinding 모델의 migration 파일이 없다" (2회, prisma/schema.prisma)
+// - "migration 적용 후 DB 통합 시나리오가 검증되지 않았다" (1회)
+const SELF_REPO_CONVENTIONS = `
+
+[리뷰 대상 레포 규약 — 아래는 이 레포에서 정상이므로 지적하지 않는다]
+• **Prisma 마이그레이션 파일을 만들지 않는다.** 스키마 변경은 \`prisma/schema.prisma\` 수정 + \`pnpm db:push\`(synchronize) 로 끝난다 (CODE_RULES §4). 따라서 "migration 파일 누락/미포함", "기존 DB 에 배포하면 테이블이 없어 실패한다", "migration 적용 후 통합 시나리오 미검증" 은 모두 오탐이다.
+• **테스트는 Util 함수 · Parsing 로직 · UseCase 세 영역만 요구한다.** 그 밖(DB 통합 시나리오, 모듈 배선, controller, \`scripts/\`)의 테스트 누락은 지적하지 않는다 (CODE_RULES §5).
+• **LLM 호출은 \`codex\` / \`claude\` CLI 자식 프로세스 spawn 이 정본이다.** 공식 SDK · HTTP API 로 바꾸라는 지적은 하지 않는다 (CLAUDE.md §0).
+
+이 목록에 없는 사항은 평소대로 판단한다. 규약을 이유로 실제 결함을 덮지 말 것.`;
+
+// 리뷰 프롬프트에 덧붙일 레포 규약. 대상 레포가 아니면 빈 문자열(동작 변화 0).
+export const buildRepoConventions = (repo: string): string => {
+  const normalizedRepo = repo.trim().toLowerCase();
+  if (normalizedRepo !== SELF_REPO) {
+    return '';
+  }
+  return SELF_REPO_CONVENTIONS;
+};
