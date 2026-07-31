@@ -52,8 +52,10 @@ export const DEFAULT_OPS_SUPERVISOR_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_STOCK_MONITOR_CRON = '10 17 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
 
-// Preview Sweeper 기본 스케줄 — 매시간 정각. 만료된 승인 카드의 버튼을 늦어도 1시간 안에 제거.
-export const DEFAULT_PREVIEW_SWEEPER_CRON = '0 * * * *';
+// Preview Sweeper 기본 스케줄 — 10분마다. 만료 카드는 목록(findAllOpen)에서는 즉시 빠지지만
+// 콘솔이 구독하는 approval.resolved 는 이 스위퍼가 돌 때만 발행된다. 매시간이면 SESSION_INJECT
+// TTL(30분)이 지난 카드가 최대 1시간 동안 콘솔 화면에 남아, 눌러도 서버가 거절하는 유령 버튼이 됐다.
+export const DEFAULT_PREVIEW_SWEEPER_CRON = '*/10 * * * *';
 export const DEFAULT_PREVIEW_SWEEPER_TIMEZONE = 'Asia/Seoul';
 
 // 주식 알림 사후 채점 기본 스케줄 — 모니터링 이후 평일 18:00 KST.

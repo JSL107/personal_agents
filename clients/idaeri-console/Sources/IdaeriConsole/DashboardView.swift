@@ -186,6 +186,11 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("승인 대기 \(store.approvals.count)건")
                 .font(.headline)
+            if let notice = store.approvalNotice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+            }
             ForEach(store.approvals) { approval in
                 HStack(spacing: 10) {
                     Circle()
