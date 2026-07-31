@@ -6,9 +6,11 @@ import {
   GithubClientPort,
 } from '../github/domain/port/github-client.port';
 import { GithubModule } from '../github/github.module';
+import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../preview-gate/application/find-all-open-previews.usecase';
 import { DispatchCooldown } from './application/dispatch-cooldown';
+import { GithubEventBridge } from './application/github-event.bridge';
 import { IdleTransitionWatcher } from './application/idle-transition.watcher';
 import { defaultResolveRepo } from './application/resolve-repo';
 import { SessionDispatchService } from './application/session-dispatch.service';
@@ -16,7 +18,7 @@ import { SessionDispatchService } from './application/session-dispatch.service';
 const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
 
 @Module({
-  imports: [GithubModule],
+  imports: [GithubModule, LocalSessionsModule],
   providers: [
     {
       provide: SessionDispatchService,
@@ -43,6 +45,7 @@ const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
         DispatchCooldown,
       ],
     },
+    GithubEventBridge,
     IdleTransitionWatcher,
     {
       provide: DispatchCooldown,
@@ -56,5 +59,6 @@ const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
       inject: [ConfigService],
     },
   ],
+  exports: [GithubEventBridge, SessionDispatchService],
 })
 export class SessionDispatchModule {}

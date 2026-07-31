@@ -238,3 +238,65 @@ describe('SessionDispatchService', () => {
     expect(cooldown.mark).not.toHaveBeenCalled();
   });
 });
+
+describe('offerToIdleSession (공유 제안 경로)', () => {
+  it('게이트 통과 시 주어진 지시·previewText로 SESSION_INJECT를 만들고 cooldown 기록', async () => {
+    const { createPreview, cooldown, service } = make();
+
+    const created = await service.offerToIdleSession({
+      session: CLAUDE_SESSION,
+      prRef: 'me/repo@a1b2c3d',
+      instruction: 'CI 고쳐',
+      previewText: 'CI 실패 수정 맡길까요?',
+    });
+
+    expect(created).toBe(true);
+    expect(createPreview.execute).toHaveBeenCalledWith({
+      slackUserId: 'U-owner',
+      kind: PREVIEW_KIND.SESSION_INJECT,
+      payload: {
+        sessionId: 's1',
+        source: 'claude',
+        instruction: 'CI 고쳐',
+        prRef: 'me/repo@a1b2c3d',
+      },
+      previewText: 'CI 실패 수정 맡길까요?',
+      responseUrl: null,
+      ttlMs: 30 * 60 * 1000,
+    });
+    expect(cooldown.mark).toHaveBeenCalledWith('s1');
+  });
+
+  it('비활성(enabled≠true)이면 false 반환, preview 미생성', async () => {
+    const { createPreview, service } = make({
+      config: { SESSION_DISPATCH_ENABLED: 'false' },
+    });
+
+    const created = await service.offerToIdleSession({
+      session: CLAUDE_SESSION,
+      prRef: 'x',
+      instruction: 'y',
+      previewText: 'z',
+    });
+
+    expect(created).toBe(false);
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('같은 세션 열린 SESSION_INJECT가 있으면 false 반환', async () => {
+    const { createPreview, findOpen, service } = make();
+    findOpen.execute.mockResolvedValue([
+      makeOpenPreview({ sessionId: 's1', source: 'claude' }),
+    ]);
+
+    const created = await service.offerToIdleSession({
+      session: CLAUDE_SESSION,
+      prRef: 'x',
+      instruction: 'y',
+      previewText: 'z',
+    });
+
+    expect(created).toBe(false);
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+});
