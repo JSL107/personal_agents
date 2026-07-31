@@ -1,4 +1,3 @@
-import AppKit
 import ConsoleCore
 import SpriteKit
 import SwiftUI
@@ -18,22 +17,16 @@ struct OfficeView: View {
     }()
     @State private var selectedAgent: String?
     @State private var commandText: String = ""
-    /// 창이 화면에 보이는가(occlusionState 기반). 가려지면 렌더를 멈춰 "no drawables" 로그 스팸을 막는다.
-    @State private var isSceneActive = true
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            SpriteView(scene: scene, isPaused: !isSceneActive, shouldRender: { _ in isSceneActive })
+            // SpriteKit 이 "SKView: no drawables available for rendering" 을 간헐적으로 남기지만
+            // 프레임 하나를 건너뛴다는 정보 로그이고 화면·기능에는 영향이 없다.
+            // occlusionState 로 렌더를 멈추는 방식(구 #177)은 실측에서 무효였다 — shouldRender 콜백이
+            // 호출되지 않고, 창이 보이는 상태에서도 로그가 나므로 원천 차단이 안 된다.
+            // 터미널 노이즈는 개발 실행 스크립트(scripts/console-dev.sh)의 필터에서 걷어낸다.
+            SpriteView(scene: scene)
                 .frame(minWidth: 640, minHeight: 480)
-                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
-                    // 창이 가려지거나 최소화되면 occlusionState 에서 .visible 이 사라진다.
-                    // 그때 렌더를 멈추지 않으면, 상시 도는 숨쉬기/회전 애니메이션이 계속 프레임을
-                    // 요청하다가 drawable 을 못 잡아 "no drawables available" 로그를 흘린다.
-                    guard let window = notification.object as? NSWindow else {
-                        return
-                    }
-                    isSceneActive = window.occlusionState.contains(.visible)
-                }
                 .onAppear {
                     scene.sync(agents: store.agents)
                     scene.refreshOverlays(
