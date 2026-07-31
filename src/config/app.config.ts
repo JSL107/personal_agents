@@ -646,6 +646,12 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PR_REVIEW_INLINE_MAX?: string;
+
+  // 게시된 리뷰 카드의 owner 반응 수확 + 상태 전이. `true`일 때만 동작한다.
+  // 자율 기능이므로 미설정/false면 기존 리뷰 생성만 유지한다.
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_HARVEST_ENABLED?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

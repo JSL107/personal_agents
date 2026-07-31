@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
+import { HarvestReviewSignalsUsecase } from '../../../pr-review-loop/application/harvest-review-signals.usecase';
 import { SweepPrReviewsUsecase } from '../../../pr-review-loop/application/sweep-pr-reviews.usecase';
+import { HarvestOutcome } from '../../../pr-review-loop/domain/harvest-outcome.type';
 import { formatPrReviewSweep } from '../../../slack/format/pr-review-sweep.formatter';
 import {
   AutopilotTask,
@@ -14,18 +16,46 @@ import {
 @Injectable()
 export class PrReviewSweepAutopilotTask implements AutopilotTask {
   readonly id = 'pr-review-sweep';
+  private readonly logger = new Logger(PrReviewSweepAutopilotTask.name);
 
-  constructor(private readonly sweepUsecase: SweepPrReviewsUsecase) {}
+  constructor(
+    private readonly harvestUsecase: HarvestReviewSignalsUsecase,
+    private readonly sweepUsecase: SweepPrReviewsUsecase,
+  ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     void context;
+    let harvest = emptyHarvestOutcome();
+    try {
+      harvest = await this.harvestUsecase.execute();
+    } catch (error: unknown) {
+      this.logger.warn(
+        `PR 리뷰 반응 수확 실패 — 신규 리뷰 스윕 계속: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     const results = await this.sweepUsecase.execute();
-    if (results.length === 0) {
+    const hasHarvestResult =
+      harvest.acked > 0 ||
+      harvest.rejected > 0 ||
+      harvest.stale > 0 ||
+      harvest.resolved > 0;
+    if (!hasHarvestResult && results.length === 0) {
       return { skip: true };
     }
     return {
       skip: false,
-      summaryText: formatPrReviewSweep({ results }),
+      summaryText: formatPrReviewSweep({ harvest, results }),
     };
   }
 }
+
+const emptyHarvestOutcome = (): HarvestOutcome => ({
+  acked: 0,
+  rejected: 0,
+  stale: 0,
+  resolved: 0,
+  judged: 0,
+  skipped: 0,
+});

@@ -61,6 +61,8 @@ describe('GenerateImpactReportUsecase', () => {
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
       createReviewComment: jest.fn(),
+      listReviewThreads: jest.fn(),
+      resolveReviewThread: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 

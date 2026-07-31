@@ -52,6 +52,7 @@ export interface PrReviewFindingRecord {
   status: FindingStatus;
   postMode: FindingPostMode;
   githubCommentId: string | null;
+  githubThreadNodeId: string | null;
   createdAt: Date;
 }
 

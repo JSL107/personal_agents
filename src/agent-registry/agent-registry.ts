@@ -189,6 +189,14 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       'knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용)',
   },
   {
+    agentType: AgentType.REVIEW_REPLY_JUDGE,
+    displayName: 'Review Reply Judge',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/review-reply-judge/application/judge-review-reply.usecase.ts',
+    description: 'PR 리뷰 답변 수용 여부 판정',
+  },
+  {
     agentType: AgentType.HUMANIZER,
     displayName: 'Humanizer',
     slashCommands: [],

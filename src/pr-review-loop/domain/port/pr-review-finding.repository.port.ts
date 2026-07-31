@@ -1,5 +1,6 @@
 import {
   CreateFindingInput,
+  FindingStatus,
   MarkPostedInput,
   PrReviewFindingRecord,
 } from '../pr-review-finding.type';
@@ -13,6 +14,13 @@ export interface HasAnyForPullRequestInput {
   pullNumber: number;
 }
 
+export interface MarkDecidedInput {
+  id: number;
+  status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'STALE'>;
+  rejectReason: string | null;
+  githubThreadNodeId: string | null;
+}
+
 export interface PrReviewFindingRepositoryPort {
   // 지문이 이미 있으면 null — 재스윕 시 같은 지적을 다시 만들지 않는다.
   createIfAbsent(
@@ -23,4 +31,10 @@ export interface PrReviewFindingRepositoryPort {
   hasAnyForPullRequest(input: HasAnyForPullRequestInput): Promise<boolean>;
 
   markPosted(input: MarkPostedInput): Promise<void>;
+
+  findOpenPostedCards(): Promise<PrReviewFindingRecord[]>;
+
+  markDecided(input: MarkDecidedInput): Promise<void>;
+
+  markResolved(id: number): Promise<void>;
 }

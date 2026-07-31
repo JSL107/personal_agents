@@ -20,11 +20,13 @@ import {
   GithubClientPort,
   ListAssignedTasksOptions,
   ListAuthorMergedPullRequestsOptions,
+  ListReviewThreadsResult,
   OCTOKIT_INSTANCE,
   PullRequestRef,
   PushBranchAndOpenPrInput,
   PushBranchAndOpenPrResult,
   RepoLabel,
+  ReviewThread,
 } from '../domain/port/github-client.port';
 import {
   MergeableState,
@@ -48,6 +50,84 @@ const MERGEABLE_STATES: ReadonlySet<string> = new Set([
 // 이 이상은 잘리고 PullRequestDetail.changedFilesTruncated=true 로 호출자에게 알린다.
 const CHANGED_FILES_MAX = 500;
 const CHANGED_FILES_PAGE_SIZE = 100;
+const LIST_REVIEW_THREADS_QUERY = `
+  query($owner:String!, $name:String!, $number:Int!) {
+    repository(owner:$owner, name:$name) {
+      pullRequest(number:$number) {
+        state
+        merged
+        reviewThreads(first:50) {
+          nodes {
+            id
+            isResolved
+            comments(first:20) {
+              nodes {
+                databaseId
+                body
+                createdAt
+                author { login }
+                reactions(first:20) {
+                  nodes { content createdAt user { login } }
+                  pageInfo { hasNextPage }
+                }
+              }
+              pageInfo { hasNextPage }
+            }
+          }
+          pageInfo { hasNextPage }
+        }
+      }
+    }
+  }
+`;
+const RESOLVE_REVIEW_THREAD_MUTATION = `
+  mutation($threadId:ID!) {
+    resolveReviewThread(input:{threadId:$threadId}) { thread { id } }
+  }
+`;
+
+interface GraphqlPageInfo {
+  hasNextPage: boolean;
+}
+
+interface ReviewThreadGraphqlReaction {
+  content: string;
+  createdAt: string;
+  user: { login: string } | null;
+}
+
+interface ReviewThreadGraphqlComment {
+  databaseId: number;
+  body: string;
+  createdAt: string;
+  author: { login: string } | null;
+  reactions: {
+    nodes: ReviewThreadGraphqlReaction[];
+    pageInfo: GraphqlPageInfo;
+  };
+}
+
+interface ReviewThreadGraphqlNode {
+  id: string;
+  isResolved: boolean;
+  comments: {
+    nodes: ReviewThreadGraphqlComment[];
+    pageInfo: GraphqlPageInfo;
+  };
+}
+
+interface ListReviewThreadsGraphqlResponse {
+  repository: {
+    pullRequest: {
+      state: 'OPEN' | 'CLOSED';
+      merged: boolean;
+      reviewThreads: {
+        nodes: ReviewThreadGraphqlNode[];
+        pageInfo: GraphqlPageInfo;
+      };
+    };
+  };
+}
 
 @Injectable()
 export class OctokitGithubClient implements GithubClientPort {
@@ -311,6 +391,93 @@ export class OctokitGithubClient implements GithubClientPort {
         `인라인 리뷰 코멘트 게시 실패 (${repo}#${pullNumber} ${filePath}:${line ?? 'file'})`,
       );
     }
+  }
+
+  async listReviewThreads({
+    repo,
+    number,
+  }: PullRequestRef): Promise<ListReviewThreadsResult> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+
+    try {
+      const response =
+        await this.octokit!.graphql<ListReviewThreadsGraphqlResponse>(
+          LIST_REVIEW_THREADS_QUERY,
+          { owner, name: repoName, number },
+        );
+      const pullRequest = response.repository.pullRequest;
+      if (pullRequest.reviewThreads.pageInfo.hasNextPage) {
+        this.logger.warn(
+          `PR ${repo}#${number} 리뷰 스레드가 50건을 초과해 일부만 수확합니다.`,
+        );
+      }
+      const threads = pullRequest.reviewThreads.nodes.map((thread) =>
+        this.toReviewThread({ repo, number, thread }),
+      );
+      return {
+        threads,
+        pullRequestState: pullRequest.merged ? 'MERGED' : pullRequest.state,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} 리뷰 스레드 조회 실패`,
+      );
+    }
+  }
+
+  async resolveReviewThread(threadId: string): Promise<void> {
+    this.assertOctokitConfigured();
+
+    try {
+      await this.octokit!.graphql(RESOLVE_REVIEW_THREAD_MUTATION, {
+        threadId,
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub 리뷰 스레드 resolve 실패 (${threadId})`,
+      );
+    }
+  }
+
+  private toReviewThread({
+    repo,
+    number,
+    thread,
+  }: {
+    repo: string;
+    number: number;
+    thread: ReviewThreadGraphqlNode;
+  }): ReviewThread {
+    if (thread.comments.pageInfo.hasNextPage) {
+      this.logger.warn(
+        `PR ${repo}#${number} 스레드 ${thread.id} 코멘트가 20건을 초과해 일부만 수확합니다.`,
+      );
+    }
+    return {
+      threadId: thread.id,
+      isResolved: thread.isResolved,
+      comments: thread.comments.nodes.map((comment) => {
+        if (comment.reactions.pageInfo.hasNextPage) {
+          this.logger.warn(
+            `PR ${repo}#${number} 코멘트 ${comment.databaseId} 리액션이 20건을 초과해 일부만 수확합니다.`,
+          );
+        }
+        return {
+          databaseId: comment.databaseId,
+          authorLogin: comment.author?.login ?? null,
+          body: comment.body,
+          createdAt: comment.createdAt,
+          reactions: comment.reactions.nodes.map((reaction) => ({
+            content: reaction.content,
+            userLogin: reaction.user?.login ?? null,
+            createdAt: reaction.createdAt,
+          })),
+        };
+      }),
+    };
   }
 
   // issues.opened webhook 자동 라벨링 — repo 의 label vocab 회복 (paginated, 자동 합산).

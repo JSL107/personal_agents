@@ -31,6 +31,9 @@ const buildRepository = () =>
     createIfAbsent: jest.fn(),
     hasAnyForPullRequest: jest.fn(),
     markPosted: jest.fn(),
+    findOpenPostedCards: jest.fn(),
+    markDecided: jest.fn(),
+    markResolved: jest.fn(),
   }) as unknown as jest.Mocked<PrReviewFindingRepositoryPort>;
 
 const baseInput = (findings: ReviewFinding[]) => ({
@@ -68,6 +71,7 @@ describe('PublishFindingsService', () => {
       status: 'OPEN',
       postMode: input.postMode,
       githubCommentId: null,
+      githubThreadNodeId: null,
       createdAt: new Date(),
     }));
     service = new PublishFindingsService(
@@ -85,7 +89,14 @@ describe('PublishFindingsService', () => {
     const outcome = await service.publish(baseInput([finding()]));
 
     expect(github.createReviewComment).toHaveBeenCalledWith(
-      expect.objectContaining({ line: 12, filePath: 'src/foo.service.ts' }),
+      expect.objectContaining({
+        line: 12,
+        filePath: 'src/foo.service.ts',
+        body: '🤖 **이대리 자동 리뷰** · RELIABILITY / MUST_FIX\n\n트랜잭션 밖에서 저장한다',
+      }),
+    );
+    expect(repository.createIfAbsent).toHaveBeenCalledWith(
+      expect.objectContaining({ body: '트랜잭션 밖에서 저장한다' }),
     );
     expect(outcome.inline).toBe(1);
     expect(repository.markPosted).toHaveBeenCalledWith({
@@ -130,7 +141,13 @@ describe('PublishFindingsService', () => {
     const outcome = await service.publish(baseInput([finding()]));
 
     expect(github.addIssueComment).toHaveBeenCalledWith(
-      expect.objectContaining({ repo: 'JSL107/personal_agents', number: 180 }),
+      expect.objectContaining({
+        repo: 'JSL107/personal_agents',
+        number: 180,
+        body: expect.stringContaining(
+          '🤖 **이대리 자동 리뷰** — 줄 앵커를 찾지 못해 묶어서 남깁니다.',
+        ),
+      }),
     );
     expect(outcome.issueComment).toBe(1);
     expect(repository.markPosted).toHaveBeenCalledWith(
