@@ -29,7 +29,7 @@ describe('RetryRunUsecase', () => {
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
-    hasSweepReviewFor: jest.fn().mockResolvedValue(false),
+    findLatestSweepReview: jest.fn().mockResolvedValue(null),
   });
 
   let mockRepo: jest.Mocked<AgentRunRepositoryPort>;

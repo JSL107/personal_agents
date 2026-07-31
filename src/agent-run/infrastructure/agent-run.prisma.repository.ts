@@ -22,8 +22,9 @@ import {
   AgentSweptCountRow,
   BeginAgentRunInput,
   FailedRunSnapshot,
+  FindLatestSweepReviewQuery,
   FinishAgentRunInput,
-  HasSweepReviewForQuery,
+  LatestSweepReview,
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
@@ -434,22 +435,28 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     }));
   }
 
-  // PR 리뷰 루프 — PR 당 리뷰 1회 판정. inputSnapshot.prRef 는 ReviewPullRequestUsecase 가 항상
-  // 채우는 JSON 필드(JSON path 필터, 인덱스 없음)라 startedAt 하한으로 스캔 범위를 제한한다.
-  async hasSweepReviewFor({
+  // PR 리뷰 루프 — PR 당 리뷰 1회(쿨다운 재시도) 판정 근거. inputSnapshot.prRef 는
+  // ReviewPullRequestUsecase 가 항상 채우는 JSON 필드(JSON path 필터, 인덱스 없음)라
+  // startedAt 하한으로 스캔 범위를 제한한다. status 판정(SUCCEEDED/FAILED/쿨다운)은
+  // usecase 몫이므로 여기서는 최신 1건의 사실(status/startedAt)만 반환한다.
+  async findLatestSweepReview({
     prRef,
     sinceDays,
-  }: HasSweepReviewForQuery): Promise<boolean> {
+  }: FindLatestSweepReviewQuery): Promise<LatestSweepReview | null> {
     const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
-    const found = await this.prisma.agentRun.findFirst({
+    const row = await this.prisma.agentRun.findFirst({
       where: {
         triggerType: 'PR_REVIEW_SWEEP',
         startedAt: { gte: since },
         inputSnapshot: { path: ['prRef'], equals: prRef },
       },
-      select: { id: true },
+      orderBy: { startedAt: 'desc' },
+      select: { status: true, startedAt: true },
     });
-    return found !== null;
+    if (!row) {
+      return null;
+    }
+    return { status: row.status, startedAt: row.startedAt };
   }
 
   async sweepZombies({

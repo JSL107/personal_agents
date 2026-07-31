@@ -32,7 +32,7 @@ describe('AgentRunService', () => {
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
-    hasSweepReviewFor: jest.fn().mockResolvedValue(false),
+    findLatestSweepReview: jest.fn().mockResolvedValue(null),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -509,20 +509,35 @@ describe('AgentRunService', () => {
     });
   });
 
-  describe('hasSweepReviewFor — PR 리뷰 루프 PR 당 리뷰 1회 판정', () => {
-    it('repository.hasSweepReviewFor 에 그대로 위임한다', async () => {
-      repository.hasSweepReviewFor.mockResolvedValue(true);
+  describe('findLatestSweepReview — PR 리뷰 루프 PR 당 리뷰 1회(쿨다운 재시도) 판정 근거', () => {
+    it('repository.findLatestSweepReview 에 그대로 위임한다', async () => {
+      const latest = {
+        status: 'FAILED',
+        startedAt: new Date('2026-07-31T00:00:00Z'),
+      };
+      repository.findLatestSweepReview.mockResolvedValue(latest);
 
-      const result = await service.hasSweepReviewFor({
+      const result = await service.findLatestSweepReview({
         prRef: 'JSL107/personal_agents#180',
         sinceDays: 30,
       });
 
-      expect(repository.hasSweepReviewFor).toHaveBeenCalledWith({
+      expect(repository.findLatestSweepReview).toHaveBeenCalledWith({
         prRef: 'JSL107/personal_agents#180',
         sinceDays: 30,
       });
-      expect(result).toBe(true);
+      expect(result).toBe(latest);
+    });
+
+    it('레코드가 없으면 null 을 그대로 반환한다', async () => {
+      repository.findLatestSweepReview.mockResolvedValue(null);
+
+      const result = await service.findLatestSweepReview({
+        prRef: 'JSL107/personal_agents#181',
+        sinceDays: 30,
+      });
+
+      expect(result).toBeNull();
     });
   });
 });
