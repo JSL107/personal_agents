@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import {
   PREVIEW_KIND,
@@ -70,6 +71,15 @@ const buildDispatcher = (overrides?: {
     overrides?.configGet ?? jest.fn().mockReturnValue(undefined);
   const dispatcher = new BeDispatcher(
     generateBackendPlan,
+    {
+      humanize: jest
+        .fn()
+        .mockImplementation(async (fields: Record<string, string>) =>
+          Object.fromEntries(
+            Object.entries(fields).map(([key, value]) => [key, `${value}_H`]),
+          ),
+        ),
+    } as unknown as HumanizeService,
     createPreviewUsecase,
     { get: configGet } as unknown as ConfigService,
   );
@@ -89,6 +99,11 @@ describe('BeDispatcher', () => {
     expect(outcome.agentRunId).toBe(42);
     expect(createPreviewUsecase.execute).not.toHaveBeenCalled();
     expect(outcome.formattedText).not.toContain('자동 개발 진행');
+    expect(outcome.formattedText).toContain(
+      '기존 /payments 하위에 POST /verify 신설_H',
+    );
+    expect(outcome.output).toBe(validPlan);
+    expect((outcome.output as BackendPlan).context).not.toContain('_H');
   });
 
   it('BE_AUTONOMOUS_FROM_PLAN=true → BE_SANDBOX_APPLY preview 자동 생성 + Y/N 안내 부착', async () => {
@@ -124,6 +139,10 @@ describe('BeDispatcher', () => {
         ttlMs: 30 * 60 * 1000,
       }),
     );
+    const previewInput = createPreviewUsecase.execute.mock.calls[0][0];
+    expect(
+      (previewInput.payload as { planText: string }).planText,
+    ).not.toContain('_H');
     expect(outcome.formattedText).toContain('자동 개발 진행');
     expect(outcome.formattedText).toContain('JSL107/my-repo');
     expect(outcome.formattedText).toContain('develop');

@@ -127,6 +127,26 @@ describe('runAgentCommand', () => {
     expect(arg.text).toContain('_model: codex-cli · run #42_');
   });
 
+  it('async format 결과를 기다린 뒤 응답에 사용한다', async () => {
+    const respond = jest.fn() as unknown as RespondFn;
+    await runAgentCommand({
+      respond,
+      logger: createSilentLogger(),
+      commandLabel: '/assign',
+      execute: () =>
+        Promise.resolve({
+          result: { summary: '원본' },
+          modelUsed: 'codex-cli',
+          agentRunId: 43,
+        }),
+      format: async (result) => `윤문: ${result.summary}`,
+    });
+
+    const arg = (respond as jest.Mock).mock.calls[0][0] as { text: string };
+    expect(arg.text).toContain('윤문: 원본');
+    expect(arg.text).not.toContain('[object Promise]');
+  });
+
   it('DomainException — 도메인 메시지 응답 + log.error', async () => {
     const respond = jest.fn() as unknown as RespondFn;
     const logger = createSilentLogger();

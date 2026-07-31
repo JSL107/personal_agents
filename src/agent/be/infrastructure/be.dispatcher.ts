@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeBackendPlan } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
@@ -27,6 +29,7 @@ export class BeDispatcher implements AgentDispatcher {
 
   constructor(
     private readonly generateBackendPlan: GenerateBackendPlanUsecase,
+    private readonly humanizeService: HumanizeService,
     private readonly createPreviewUsecase: CreatePreviewUsecase,
     private readonly configService: ConfigService,
   ) {}
@@ -40,7 +43,11 @@ export class BeDispatcher implements AgentDispatcher {
         : {}),
     });
 
-    const planFormatted = formatBackendPlan(outcome.result);
+    const humanized = await humanizeBackendPlan(
+      outcome.result,
+      this.humanizeService,
+    );
+    const planFormatted = formatBackendPlan(humanized);
     const chainNotice = await this.maybeChainSandboxPreview({
       slackUserId: input.slackUserId,
       plan: outcome.result,
