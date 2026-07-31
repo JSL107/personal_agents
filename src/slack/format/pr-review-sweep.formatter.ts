@@ -1,3 +1,4 @@
+import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
 import {
   PublishOutcome,
   SweepPullRequestResult,
@@ -11,6 +12,7 @@ const RISK_ICON: Record<string, string> = {
 };
 
 export interface FormatPrReviewSweepInput {
+  harvest: HarvestOutcome;
   results: SweepPullRequestResult[];
 }
 
@@ -24,14 +26,31 @@ const COUNT_LABELS: { key: keyof PublishOutcome; label: string }[] = [
   { key: 'duplicate', label: '중복' },
 ];
 
+const HARVEST_COUNT_LABELS: {
+  key: keyof HarvestOutcome;
+  label: string;
+}[] = [
+  { key: 'acked', label: '👍' },
+  { key: 'rejected', label: '👎' },
+  { key: 'stale', label: '종료' },
+  { key: 'resolved', label: '스레드 정리' },
+];
+
 // 스윕 결과 요약. 게시할 게 없으면 빈 문자열 — 호출자가 skip 처리한다.
 export const formatPrReviewSweep = ({
+  harvest,
   results,
 }: FormatPrReviewSweepInput): string => {
-  if (results.length === 0) {
+  const harvestCounts = HARVEST_COUNT_LABELS.filter(
+    ({ key }) => harvest[key] > 0,
+  ).map(({ key, label }) => `${label} ${harvest[key]}`);
+  if (results.length === 0 && harvestCounts.length === 0) {
     return '';
   }
   const lines = ['*🤖 PR 리뷰 스윕*'];
+  if (harvestCounts.length > 0) {
+    lines.push(harvestCounts.join(' · '));
+  }
   for (const result of results) {
     const icon = RISK_ICON[result.riskLevel] ?? '⚪';
     const counts = COUNT_LABELS.filter(

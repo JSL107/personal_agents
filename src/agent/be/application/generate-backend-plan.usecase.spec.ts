@@ -98,6 +98,8 @@ describe('GenerateBackendPlanUsecase', () => {
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
       createReviewComment: jest.fn(),
+      listReviewThreads: jest.fn(),
+      resolveReviewThread: jest.fn(),
     };
 
     usecase = new GenerateBackendPlanUsecase(

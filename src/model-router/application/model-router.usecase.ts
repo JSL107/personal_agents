@@ -43,6 +43,7 @@ const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
+  [AgentType.REVIEW_REPLY_JUDGE]: ModelProviderName.CHATGPT,
   // HUMANIZER — 보고서/프로필 서술 필드 윤문. HumanizeService 가 noFallback:true 로 호출(원본 유지).
   [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
   [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,

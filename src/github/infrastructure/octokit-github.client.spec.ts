@@ -903,4 +903,182 @@ describe('OctokitGithubClient', () => {
       });
     });
   });
+
+  describe('listReviewThreads', () => {
+    it('GraphQL 스레드·코멘트·리액션을 포트 타입으로 매핑한다', async () => {
+      const graphql = jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            state: 'OPEN',
+            merged: false,
+            reviewThreads: {
+              nodes: [
+                {
+                  id: 'PRRT_thread',
+                  isResolved: false,
+                  comments: {
+                    nodes: [
+                      {
+                        databaseId: 555,
+                        body: '리뷰 본문',
+                        createdAt: '2026-07-31T00:00:00Z',
+                        author: { login: 'idaeri-bot' },
+                        reactions: {
+                          nodes: [
+                            {
+                              content: 'THUMBS_UP',
+                              createdAt: '2026-07-31T01:00:00Z',
+                              user: { login: 'owner' },
+                            },
+                          ],
+                          pageInfo: { hasNextPage: false },
+                        },
+                      },
+                    ],
+                    pageInfo: { hasNextPage: false },
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false },
+            },
+          },
+        },
+      });
+      const client = new OctokitGithubClient({
+        graphql,
+      } as unknown as Octokit);
+
+      const result = await client.listReviewThreads({
+        repo: 'JSL107/personal_agents',
+        number: 180,
+      });
+
+      expect(graphql).toHaveBeenCalledWith(
+        expect.stringContaining('reviewThreads(first:50)'),
+        { owner: 'JSL107', name: 'personal_agents', number: 180 },
+      );
+      expect(result).toEqual({
+        pullRequestState: 'OPEN',
+        truncated: false,
+        threads: [
+          {
+            threadId: 'PRRT_thread',
+            isResolved: false,
+            comments: [
+              {
+                databaseId: 555,
+                authorLogin: 'idaeri-bot',
+                body: '리뷰 본문',
+                createdAt: '2026-07-31T00:00:00Z',
+                reactions: [
+                  {
+                    content: 'THUMBS_UP',
+                    userLogin: 'owner',
+                    createdAt: '2026-07-31T01:00:00Z',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    it('merged=true면 GraphQL state보다 MERGED를 우선한다', async () => {
+      const graphql = jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            state: 'CLOSED',
+            merged: true,
+            reviewThreads: {
+              nodes: [],
+              pageInfo: { hasNextPage: false },
+            },
+          },
+        },
+      });
+      const client = new OctokitGithubClient({
+        graphql,
+      } as unknown as Octokit);
+
+      const result = await client.listReviewThreads({
+        repo: 'foo/bar',
+        number: 1,
+      });
+
+      expect(result.pullRequestState).toBe('MERGED');
+    });
+
+    it.each(['threads', 'comments', 'reactions'] as const)(
+      '%s pagination이 남아 있으면 truncated=true를 반환한다',
+      async (truncatedLevel) => {
+        const graphql = jest.fn().mockResolvedValue({
+          repository: {
+            pullRequest: {
+              state: 'OPEN',
+              merged: false,
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'PRRT_thread',
+                    isResolved: false,
+                    comments: {
+                      nodes: [
+                        {
+                          databaseId: 555,
+                          body: '리뷰 본문',
+                          createdAt: '2026-07-31T00:00:00Z',
+                          author: { login: 'idaeri-bot' },
+                          reactions: {
+                            nodes: [],
+                            pageInfo: {
+                              hasNextPage: truncatedLevel === 'reactions',
+                            },
+                          },
+                        },
+                      ],
+                      pageInfo: {
+                        hasNextPage: truncatedLevel === 'comments',
+                      },
+                    },
+                  },
+                ],
+                pageInfo: {
+                  hasNextPage: truncatedLevel === 'threads',
+                },
+              },
+            },
+          },
+        });
+        const client = new OctokitGithubClient({
+          graphql,
+        } as unknown as Octokit);
+
+        const result = await client.listReviewThreads({
+          repo: 'foo/bar',
+          number: 1,
+        });
+
+        expect(result.truncated).toBe(true);
+      },
+    );
+  });
+
+  describe('resolveReviewThread', () => {
+    it('GraphQL mutation에 PRRT thread id를 전달한다', async () => {
+      const graphql = jest.fn().mockResolvedValue({
+        resolveReviewThread: { thread: { id: 'PRRT_thread' } },
+      });
+      const client = new OctokitGithubClient({
+        graphql,
+      } as unknown as Octokit);
+
+      await client.resolveReviewThread('PRRT_thread');
+
+      expect(graphql).toHaveBeenCalledWith(
+        expect.stringContaining('resolveReviewThread'),
+        { threadId: 'PRRT_thread' },
+      );
+    });
+  });
 });
