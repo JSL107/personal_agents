@@ -11,7 +11,7 @@ export interface ReviewCommentDraft {
   body: string;
 }
 
-// 지적 분류 — 시스템 프롬프트의 우선순위 6단과 1:1 정렬.
+// 지적 분류 — 시스템 프롬프트의 우선순위 6단을 펼친 것 (1단 = CORRECTNESS + SECURITY 로 분리).
 // Phase 3 의 카테고리별 채택률 집계와 억제 면제 판정이 이 값에 의존한다.
 export type FindingCategory =
   | 'CORRECTNESS' // 정확성·회귀·데이터 유실
