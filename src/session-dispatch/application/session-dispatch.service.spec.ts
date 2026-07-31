@@ -8,6 +8,7 @@ import {
   PREVIEW_KIND,
   type PreviewAction,
 } from '../../preview-gate/domain/preview-action.type';
+import { repoFromCwd } from '../domain/repo-from-cwd';
 import { DispatchCooldown } from './dispatch-cooldown';
 import { SessionDispatchService } from './session-dispatch.service';
 
@@ -75,12 +76,16 @@ function make(overrides: Partial<Record<string, unknown>> = {}) {
     shouldSkip: jest.fn().mockReturnValue(false),
     mark: jest.fn(),
   };
+  const resolveRepo =
+    (overrides.resolveRepo as ((cwd: string) => string | null) | undefined) ??
+    ((cwd: string) => repoFromCwd(cwd));
   const service = new SessionDispatchService(
     config as unknown as ConfigService,
     githubClient as unknown as GithubClientPort,
     createPreview as unknown as CreatePreviewUsecase,
     findOpen as unknown as FindAllOpenPreviewsUsecase,
     cooldown as unknown as DispatchCooldown,
+    resolveRepo,
   );
 
   return { config, createPreview, cooldown, findOpen, githubClient, service };
@@ -122,6 +127,24 @@ describe('SessionDispatchService', () => {
       limit: 1,
     });
     expect(cooldown.mark).toHaveBeenCalledWith('s1');
+  });
+
+  it('worktree cwd를 실제 repo로 해석해 열린 PR을 조회한다', async () => {
+    const { githubClient, service } = make({
+      resolveRepo: () => 'personal_agents',
+    });
+
+    await service.onSessionBecameIdle({
+      ...CLAUDE_SESSION,
+      cwd: '/worktrees/idaeri-event-bridge',
+    });
+
+    expect(githubClient.listAuthorOpenPullRequests).toHaveBeenCalledWith({
+      repo: 'me/personal_agents',
+      author: 'me',
+      sinceIsoDate: expect.any(String),
+      limit: 1,
+    });
   });
 
   it('SESSION_DISPATCH_ENABLED가 true가 아니면 제안을 만들지 않는다', async () => {
