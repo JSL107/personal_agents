@@ -566,12 +566,17 @@ describe('buildFindingFingerprint', () => {
     expect(buildFindingFingerprint(noFile)).toHaveLength(64);
   });
 
-  it('줄 번호는 지문에 넣지 않는다 — 같은 지적에 모델이 다른 줄을 줄 수 있다', () => {
-    // 시그니처에 line 이 없다는 것 자체가 계약. 컴파일로 보장되므로 문서용 assertion.
-    expect(Object.keys(base)).not.toContain('line');
+  it('파일이 다르면 지문이 다르다', () => {
+    const other = { ...base, filePath: 'src/bar.util.ts' };
+
+    expect(buildFindingFingerprint(other)).not.toBe(
+      buildFindingFingerprint(base),
+    );
   });
 });
 ```
+
+줄 번호를 지문에 넣지 않는다는 계약은 `FindingFingerprintInput` 타입에 `line` 이 없다는 사실로 컴파일 단계에서 보장된다 — 별도 테스트를 쓰지 않는다.
 
 - [ ] **Step 2: 테스트 실패 확인**
 
