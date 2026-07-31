@@ -158,6 +158,11 @@ export class AutopilotOrchestrator {
       // run-sweeper 매시간)은 그날 첫 발송 이후 모든 슬롯이 이 경로로 끝나면서 표식 없이
       // 종료되고, 그 슬롯이 stalled 로 재큐되면 진입 확인을 통과해 task 를 처음부터 전부
       // 다시 돈다 — 이 가드가 막으려던 자기 증폭 루프가 그대로 남는다.
+      //
+      // ⚠️ firstRun=false 는 두 가지를 뜻한다: (1) 앞선 실행이 발송을 마쳤다, (2) 다른 실행이
+      // 가드를 선점한 채 아직 발송 중이다. (2)에서 이 표식을 남긴 뒤 선점한 쪽의 발송이
+      // 실패하면 그쪽은 날짜 가드만 롤백하므로, 표식이 남아 재시도가 진입에서 차단된다.
+      // → 발송 실패 롤백에서 슬롯 표식도 함께 해제한다(같은 job = 같은 slotKey 라 도달 가능).
       await this.markSlotDone(slotKey);
       this.logger.warn(
         `Autopilot[${groupKey}] — ${firedAtKst} 이미 발송됨, 중복 차단`,
@@ -223,6 +228,10 @@ export class AutopilotOrchestrator {
       }
     } catch (error: unknown) {
       await this.cronIdempotency.release(guardKey);
+      // 겹친 재실행(같은 job = 같은 slotKey)이 "이미 발송됨" 으로 판단해 남긴 완주 표식까지
+      // 되돌린다. 날짜 가드만 풀면 표식이 남아 재시도가 진입 확인에서 차단되고, 보고가
+      // 슬롯 키 TTL(25h) 동안 통째로 누락된다.
+      await this.releaseSlot(slotKey);
       throw error;
     }
 
@@ -289,6 +298,24 @@ export class AutopilotOrchestrator {
       slotKey,
       CRON_SENT_GUARD_TTL_SECONDS,
     );
+  }
+
+  // 완주 표식 롤백 — 발송이 실패했으면 이 슬롯은 완주가 아니다. 겹친 재실행이 남겼을 수도
+  // 있는 표식까지 지워 재시도가 진입 확인을 통과하게 한다. 해제 자체의 실패는 로그만 남긴다
+  // (이미 상위에서 원래 예외를 던지는 중이라, 여기서 예외를 바꿔치기하면 원인이 가려진다).
+  private async releaseSlot(slotKey: string | null): Promise<void> {
+    if (!slotKey) {
+      return;
+    }
+    try {
+      await this.cronIdempotency.release(slotKey);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Autopilot — 슬롯 표식 해제 실패 (${slotKey}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   // 승인 카드 발송 실패를 owner digest 채널에 통지 — 조용한 유실 방지(자동 재발송은 안 함).
