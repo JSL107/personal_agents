@@ -1,0 +1,436 @@
+import { ConfigService } from '@nestjs/config';
+
+import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
+import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
+import {
+  GithubClientPort,
+  ReviewThread,
+} from '../../github/domain/port/github-client.port';
+import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
+import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
+import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
+
+const card = (
+  overrides: Partial<PrReviewFindingRecord> = {},
+): PrReviewFindingRecord => ({
+  id: 1,
+  agentRunId: 7,
+  repo: 'JSL107/personal_agents',
+  pullNumber: 180,
+  headSha: 'abc1234',
+  category: 'RELIABILITY',
+  severity: 'MUST_FIX',
+  filePath: 'src/foo.service.ts',
+  line: 42,
+  body: '트랜잭션 밖에서 저장한다',
+  fingerprint: 'fp-1',
+  status: 'OPEN',
+  postMode: 'INLINE',
+  githubCommentId: '555',
+  githubThreadNodeId: 'PRRC_wrong_comment_node',
+  createdAt: new Date('2026-07-31T00:00:00Z'),
+  ...overrides,
+});
+
+const reviewThread = ({
+  databaseId = 555,
+  reactions = [],
+  replies = [],
+  isResolved = false,
+}: {
+  databaseId?: number;
+  reactions?: ReviewThread['comments'][number]['reactions'];
+  replies?: ReviewThread['comments'];
+  isResolved?: boolean;
+} = {}): ReviewThread => ({
+  threadId: `PRRT_${databaseId}`,
+  isResolved,
+  comments: [
+    {
+      databaseId,
+      authorLogin: 'idaeri-bot',
+      body: '리뷰 본문',
+      createdAt: '2026-07-31T00:00:00Z',
+      reactions,
+    },
+    ...replies,
+  ],
+});
+
+const buildDependencies = ({
+  enabled = true,
+  ownerLogin = 'owner',
+}: {
+  enabled?: boolean;
+  ownerLogin?: string | undefined;
+} = {}) => {
+  const config = {
+    get: jest.fn((key: string) => {
+      if (key === 'PR_REVIEW_HARVEST_ENABLED') {
+        return enabled ? 'true' : 'false';
+      }
+      if (key === 'GITHUB_WEBHOOK_OWNER_LOGIN') {
+        return ownerLogin;
+      }
+      return undefined;
+    }),
+  };
+  const github = {
+    listReviewThreads: jest.fn(),
+    resolveReviewThread: jest.fn().mockResolvedValue(undefined),
+  };
+  const repository = {
+    createIfAbsent: jest.fn(),
+    hasAnyForPullRequest: jest.fn(),
+    markPosted: jest.fn(),
+    findOpenPostedCards: jest.fn(),
+    markDecided: jest.fn().mockResolvedValue(undefined),
+    markThreadResolved: jest.fn().mockResolvedValue(undefined),
+  } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
+  const judge = { execute: jest.fn().mockResolvedValue([]) };
+  const episodic = {
+    record: jest.fn().mockResolvedValue(undefined),
+    searchRelevant: jest.fn(),
+  };
+  const usecase = new HarvestReviewSignalsUsecase(
+    config as unknown as ConfigService,
+    github as unknown as GithubClientPort,
+    repository,
+    judge as unknown as JudgeReviewReplyUsecase,
+    episodic as unknown as EpisodicMemoryPort,
+  );
+  return { usecase, github, repository, judge, episodic };
+};
+
+describe('HarvestReviewSignalsUsecase', () => {
+  it('수확이 비활성이면 저장소와 GitHub를 호출하지 않는다', async () => {
+    const { usecase, github, repository } = buildDependencies({
+      enabled: false,
+    });
+
+    await expect(usecase.execute()).resolves.toEqual({
+      acked: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 0,
+      judged: 0,
+      skipped: 0,
+    });
+    expect(repository.findOpenPostedCards).not.toHaveBeenCalled();
+    expect(github.listReviewThreads).not.toHaveBeenCalled();
+  });
+
+  it('ACKED/REJECTED/STALE을 전이하고 PRRC 대신 조회한 PRRT를 저장한다', async () => {
+    const { usecase, github, repository, episodic } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([
+      card(),
+      card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
+      card({ id: 3, githubCommentId: '557', fingerprint: 'fp-3' }),
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+        reviewThread({
+          databaseId: 556,
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+        reviewThread({ databaseId: 557 }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ acked: 1, rejected: 1, stale: 1 });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 2,
+      status: 'REJECTED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_556',
+    });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 3,
+      status: 'STALE',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_557',
+    });
+    expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_555');
+    expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_556');
+    expect(github.resolveReviewThread).not.toHaveBeenCalledWith('PRRT_557');
+    expect(episodic.record).toHaveBeenCalledTimes(1);
+    expect(episodic.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'pr_review',
+        agentType: 'CODE_REVIEWER',
+        agentRunId: 7,
+        content: '트랜잭션 밖에서 저장한다',
+      }),
+    );
+  });
+
+  it('잘린 GraphQL 결과에서 코멘트를 못 찾으면 종료 PR도 STALE 확정을 보류한다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: true,
+      threads: [],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ stale: 0, skipped: 1 });
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
+  });
+
+  it('ACKED 카드는 episodic memory에 절대 적재하지 않는다', async () => {
+    const { usecase, github, repository, episodic } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ACKED' }),
+    );
+    expect(episodic.record).not.toHaveBeenCalled();
+  });
+
+  it('THUMBS_DOWN과 owner 답글을 기각 이유와 episodic content에 보존한다', async () => {
+    const { usecase, github, repository, judge, episodic } =
+      buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '의도된 동작이라 변경하지 않습니다',
+              createdAt: '2026-07-31T02:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: '의도된 동작이라 변경하지 않습니다',
+      githubThreadNodeId: 'PRRT_555',
+    });
+    expect(episodic.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          '트랜잭션 밖에서 저장한다\n(기각 이유: 의도된 동작이라 변경하지 않습니다)',
+      }),
+    );
+  });
+
+  it('이미 resolve된 스레드도 owner 기각 신호를 먼저 반영한다', async () => {
+    const { usecase, github, repository, episodic } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          isResolved: true,
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ rejected: 1, resolved: 1 });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+    expect(episodic.record).toHaveBeenCalledTimes(1);
+    expect(github.resolveReviewThread).not.toHaveBeenCalled();
+  });
+
+  it('owner 답글은 PR 단위 1회 배치 판정하고 기각 이유를 적재한다', async () => {
+    const { usecase, github, repository, judge, episodic } =
+      buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([
+      card(),
+      card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
+    ]);
+    const reply = (databaseId: number, body: string) => ({
+      databaseId,
+      authorLogin: 'owner',
+      body,
+      createdAt: '2026-07-31T01:00:00Z',
+      reactions: [],
+    });
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({ replies: [reply(600, '수정했습니다')] }),
+        reviewThread({
+          databaseId: 556,
+          replies: [reply(601, '이 지적은 틀렸습니다')],
+        }),
+      ],
+    });
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'ACCEPTED', reason: '수정함' },
+      { id: 2, verdict: 'REJECTED', reason: '의도된 동작' },
+    ]);
+
+    const outcome = await usecase.execute();
+
+    expect(judge.execute).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ acked: 1, rejected: 1, judged: 2 });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 2,
+      status: 'REJECTED',
+      rejectReason: '의도된 동작',
+      githubThreadNodeId: 'PRRT_556',
+    });
+    expect(episodic.record).toHaveBeenCalledTimes(1);
+    expect(episodic.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: '트랜잭션 밖에서 저장한다\n(기각 이유: 의도된 동작)',
+      }),
+    );
+  });
+
+  it('resolve 실패해도 결정 상태를 유지하고 markThreadResolved만 생략한다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+    github.resolveReviewThread.mockRejectedValue(new Error('forbidden'));
+
+    const outcome = await usecase.execute();
+
+    expect(outcome.rejected).toBe(1);
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REJECTED' }),
+    );
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
+  });
+
+  it('LLM 실패 시 답글 판정만 건너뛰고 리액션 신호는 반영한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([
+      card(),
+      card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+        reviewThread({
+          databaseId: 556,
+          replies: [
+            {
+              databaseId: 600,
+              authorLogin: 'owner',
+              body: '수정했습니다',
+              createdAt: '2026-07-31T01:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+    judge.execute.mockRejectedValue(new Error('quota'));
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ acked: 1, judged: 0, skipped: 1 });
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, status: 'ACKED' }),
+    );
+    expect(repository.markDecided).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2 }),
+    );
+  });
+});

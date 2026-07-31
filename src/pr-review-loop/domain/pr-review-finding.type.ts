@@ -10,6 +10,7 @@ export type FindingStatus =
   | 'ACKED'
   | 'REJECTED'
   | 'FIXED'
+  // 과거 데이터 호환용. thread 종료를 status에 쓰면 직전 결론이 유실되므로 신규 기록은 resolvedAt을 쓴다.
   | 'RESOLVED'
   | 'STALE'
   | 'SUPPRESSED';
@@ -52,6 +53,7 @@ export interface PrReviewFindingRecord {
   status: FindingStatus;
   postMode: FindingPostMode;
   githubCommentId: string | null;
+  githubThreadNodeId: string | null;
   createdAt: Date;
 }
 
