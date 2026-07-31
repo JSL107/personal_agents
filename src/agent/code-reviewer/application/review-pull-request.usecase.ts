@@ -32,7 +32,10 @@ import {
   PrReviewOutcomeRepositoryPort,
 } from '../domain/port/pr-review-outcome.repository.port';
 import { parsePrReference } from '../domain/pr-reference.parser';
-import { CODE_REVIEWER_SYSTEM_PROMPT } from '../domain/prompt/code-reviewer-system.prompt';
+import {
+  buildRepoConventions,
+  CODE_REVIEWER_SYSTEM_PROMPT,
+} from '../domain/prompt/code-reviewer-system.prompt';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
 
 @Injectable()
@@ -90,8 +93,11 @@ export class ReviewPullRequestUsecase {
           detail,
         });
 
+        // 규약은 diff 뒤(negative example 과 같은 자리)에 붙인다 — "이건 지적하지 말라" 류
+        // 지시는 diff 를 다 읽은 뒤 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다.
         const prompt =
           buildReviewPrompt({ detail, diff, conversationContext }) +
+          buildRepoConventions(detail.repo) +
           negativeExamples;
 
         const completion = await this.modelRouter.route({
