@@ -11,6 +11,9 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var sessions: [ConsoleSession] = []
     @Published public private(set) var serverTime: String = ""
     @Published public private(set) var pendingCommands: [PendingCommand] = []
+    /// 승인/거절 write 결과 안내. 실패 사유를 담고, 성공하면 nil 로 지워진다.
+    /// 대시보드·오피스 어느 탭에서 눌러도 같은 store 를 보므로 안내가 공유된다.
+    @Published public private(set) var approvalNotice: String?
     /// 처리한 SSE 이벤트를 방출한다(연출 트리거용). 스냅샷 적용은 방출하지 않는다.
     public let eventStream = PassthroughSubject<ConsoleEvent, Never>()
 
@@ -143,6 +146,17 @@ public final class ConsoleStore: ObservableObject {
     /// pending 제거(완료 후 뷰 타이머 또는 사용자 dismiss).
     public func removeCommand(id: UUID) {
         pendingCommands.removeAll { $0.id == id }
+    }
+
+    /// 승인/거절 성공을 SSE 도착 전에 낙관적으로 반영한다.
+    /// 뒤이어 오는 `approval.resolved` 는 같은 건을 다시 지우려 하므로 멱등하다.
+    public func resolveApprovalLocally(id: String) {
+        approvals.removeAll { $0.id == id }
+    }
+
+    /// 승인/거절 안내 갱신. 성공 시 nil 을 넣어 이전 실패 문구를 지운다.
+    public func setApprovalNotice(_ message: String?) {
+        approvalNotice = message
     }
 
     /// timeout 초 이상 .sent 로 남은 pending 을 .failed 로 강등(codex 무응답 감지). 뷰 타이머가 주기 호출.

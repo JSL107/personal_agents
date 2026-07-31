@@ -54,6 +54,7 @@ struct AppRootView: View {
         .frame(minWidth: 720, minHeight: 560)
         .task {
             startPendingJanitor()
+            startSnapshotResync()
             await connect()
         }
     }
@@ -81,11 +82,51 @@ struct AppRootView: View {
     }
 
     func approve(id: String) {
-        Task { try? await client.applyApproval(id: id) }
+        resolveApproval(id: id, action: "승인") { try await client.applyApproval(id: id) }
     }
 
     func reject(id: String) {
-        Task { try? await client.cancelApproval(id: id) }
+        resolveApproval(id: id, action: "거절") { try await client.cancelApproval(id: id) }
+    }
+
+    /// 승인/거절 공통 경로. 성공하면 SSE 를 기다리지 않고 카드를 즉시 걷어내고,
+    /// 실패하면 사유를 화면에 남긴 뒤 스냅샷으로 재동기화한다.
+    /// 실패의 상당수는 화면이 낡아 생긴 것(TTL 만료된 카드를 누름)이라 재동기화가 곧 정정이다.
+    private func resolveApproval(
+        id: String,
+        action: String,
+        perform: @escaping () async throws -> Void
+    ) {
+        Task {
+            do {
+                try await perform()
+                await MainActor.run {
+                    store.resolveApprovalLocally(id: id)
+                    store.setApprovalNotice(nil)
+                }
+            } catch {
+                let reason = approvalFailureReason(error)
+                await MainActor.run { store.setApprovalNotice("\(action) 실패 — \(reason)") }
+                await resyncSnapshot()
+            }
+        }
+    }
+
+    /// write 실패를 사용자가 다음에 뭘 해야 할지 아는 문장으로 옮긴다.
+    private func approvalFailureReason(_ error: Error) -> String {
+        guard case let ConsoleClientError.badStatus(status) = error else {
+            return "백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+        }
+        switch status {
+        case 404, 409, 412:
+            return "이미 처리됐거나 만료된 요청입니다. 목록을 새로 고쳤습니다."
+        case 401, 403:
+            return "콘솔 write 권한이 거부됐습니다(토큰/loopback 확인)."
+        case 503:
+            return "백엔드에 CONSOLE_OWNER_SLACK_USER_ID 가 설정되지 않았습니다."
+        default:
+            return "백엔드 오류 (HTTP \(status))."
+        }
     }
 
     func inject(sessionId: String, text: String) async throws -> InjectOutcome {
@@ -103,6 +144,30 @@ struct AppRootView: View {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
+    }
+
+    /// 스냅샷 재동기화 루프.
+    /// 승인 카드는 TTL(30분)이 지나면 서버 목록에서 즉시 빠지지만 `approval.resolved` 는
+    /// preview-sweeper cron 이 돌 때만 발행된다. 그 공백 동안 SSE 만 보는 화면은 이미 죽은
+    /// 카드를 계속 들고 있게 되므로, 주기적으로 서버 상태를 정본으로 다시 싣는다.
+    private func startSnapshotResync() {
+        Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                if Task.isCancelled {
+                    return
+                }
+                await resyncSnapshot()
+            }
+        }
+    }
+
+    /// 서버 스냅샷을 정본으로 화면 상태를 교체한다. 실패하면 다음 주기에 다시 시도한다.
+    private func resyncSnapshot() async {
+        guard let snapshot = try? await client.fetchSnapshot() else {
+            return
+        }
+        await MainActor.run { store.apply(snapshot: snapshot) }
     }
 
     private func connect() async {

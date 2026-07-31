@@ -47,7 +47,7 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("Approval 디코딩 실패: \(error)")
     }
 
-    // 상태 5종이 백엔드 rawValue 로 전부 디코딩되는지
+    // 기존 상태 5종이 백엔드 rawValue 로 전부 디코딩되는지
     let statePairs: [(String, ConsoleAgentState)] = [
         ("COMPLETED", .completed),
         ("IN_PROGRESS", .inProgress),
@@ -65,6 +65,9 @@ func runModelsTests(_ t: TestRunner) {
         }
     }
 
+    // FAILED rawValue 가 .failed 로 디코딩된다.
+    t.expectEqual(ConsoleAgentState(rawValue: "FAILED"), .failed, "FAILED rawValue 디코딩")
+
     // ConsoleEvent 유니온 — state.changed
     do {
         let json = """
@@ -79,6 +82,22 @@ func runModelsTests(_ t: TestRunner) {
         }
     } catch {
         t.fail("state.changed 디코딩 실패: \(error)")
+    }
+
+    // state.changed(FAILED) 이벤트가 .failed 로 디코딩된다.
+    do {
+        let json = """
+        {"type":"state.changed","agentType":"PM","state":"FAILED"}
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
+        if case let .stateChanged(agentType, state) = event {
+            t.expectEqual(agentType, "PM", "state.changed(FAILED) agentType")
+            t.expectEqual(state, .failed, "state.changed(FAILED) state")
+        } else {
+            t.fail("state.changed(FAILED) 로 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("state.changed(FAILED) 디코딩 실패: \(error)")
     }
 
     // ConsoleEvent 유니온 — run.started

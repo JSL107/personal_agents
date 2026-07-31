@@ -22,7 +22,10 @@ describe('ConsoleController (e2e)', () => {
         ConsoleEventBus,
         {
           provide: AgentRunService,
-          useValue: { findActiveRuns: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            findActiveRuns: jest.fn().mockResolvedValue([]),
+            findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
+          },
         },
         {
           provide: FindAllOpenPreviewsUsecase,

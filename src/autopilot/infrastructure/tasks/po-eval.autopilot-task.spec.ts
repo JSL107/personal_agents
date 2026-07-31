@@ -1,13 +1,24 @@
 import { PoEvalException } from '../../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../../agent/po-eval/domain/po-eval-error-code.enum';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { PoEvalAutopilotTask } from './po-eval.autopilot-task';
 
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-17' };
+const makeHumanizeService = (): HumanizeService =>
+  ({
+    humanize: jest
+      .fn()
+      .mockImplementation(async (fields: Record<string, string>) =>
+        Object.fromEntries(
+          Object.entries(fields).map(([key, value]) => [key, `${value}_H`]),
+        ),
+      ),
+  }) as unknown as HumanizeService;
 
 describe('PoEvalAutopilotTask', () => {
   it('id 는 daily-eval', () => {
-    const task = new PoEvalAutopilotTask({} as never);
+    const task = new PoEvalAutopilotTask({} as never, makeHumanizeService());
     expect(task.id).toBe('daily-eval');
   });
 
@@ -28,18 +39,22 @@ describe('PoEvalAutopilotTask', () => {
       modelUsed: 'claude-cli',
       agentRunId: 50,
     });
-    const task = new PoEvalAutopilotTask({ execute } as never);
+    const task = new PoEvalAutopilotTask(
+      { execute } as never,
+      makeHumanizeService(),
+    );
 
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toContain('Daily Eval');
-    expect(out.summaryText).toContain('회고요약');
+    expect(out.summaryText).toContain('회고요약_H');
     // 근거(합성 source · careerLog · model 푸터)는 스레드(detailText)로 내려가고 메인에는 없다.
     expect(out.summaryText).not.toContain('합성 source');
     expect(out.detailText).toContain('합성 source');
     expect(out.detailText).toContain('workReviewer=#10');
     expect(out.detailText).toContain('careerLog');
+    expect(out.detailText).toContain('오늘 핵심 활동._H');
     expect(out.detailText).toContain('run #50');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'TODAY' }),
@@ -54,7 +69,10 @@ describe('PoEvalAutopilotTask', () => {
         status: DomainStatus.NOT_FOUND,
       }),
     );
-    const task = new PoEvalAutopilotTask({ execute } as never);
+    const task = new PoEvalAutopilotTask(
+      { execute } as never,
+      makeHumanizeService(),
+    );
 
     const out = await task.run(CTX);
 
@@ -64,7 +82,10 @@ describe('PoEvalAutopilotTask', () => {
 
   it('그 외 에러는 throw (consumer 가 실패 통지)', async () => {
     const execute = jest.fn().mockRejectedValue(new Error('boom'));
-    const task = new PoEvalAutopilotTask({ execute } as never);
+    const task = new PoEvalAutopilotTask(
+      { execute } as never,
+      makeHumanizeService(),
+    );
     await expect(task.run(CTX)).rejects.toThrow('boom');
   });
 });

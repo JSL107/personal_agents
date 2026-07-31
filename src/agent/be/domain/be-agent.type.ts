@@ -7,6 +7,10 @@ export interface GenerateBackendPlanInput {
   // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction 을 prompt 최상단에 반영.
   // 슬래시 /plan-task 진입은 미주입 (기존 동작).
   conversationContext?: ConversationContext;
+  // 호출자가 이미 알고 있는 PR 참조(owner/repo#N) — subject 에 작업 설명을 남긴 채 GitHub 본문만
+  // 추가로 ground 할 때 사용. subject 자체가 PR 참조인 경우와 달리 조회 실패해도 subject 로
+  // plan 을 세울 수 있으므로 예외 없이 진행한다.
+  prReferenceHint?: string;
 }
 
 // 구현 단위 체크리스트 — 에이전트가 WBS 로 쪼갠 item 하나.

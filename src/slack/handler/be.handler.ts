@@ -4,6 +4,8 @@ import { App } from '@slack/bolt';
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import { humanizeBackendPlan } from '../../humanize/application/humanize-report.adapter';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
@@ -33,6 +35,7 @@ export class BeHandler implements SlackHandler {
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
     private readonly generateTestUsecase: GenerateTestUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   register(app: App): void {
@@ -72,7 +75,13 @@ export class BeHandler implements SlackHandler {
                 subject: body,
                 slackUserId,
               }),
-            format: formatBackendPlan,
+            format: async (result) => {
+              const humanized = await humanizeBackendPlan(
+                result,
+                this.humanizeService,
+              );
+              return formatBackendPlan(humanized);
+            },
           });
           return;
         }

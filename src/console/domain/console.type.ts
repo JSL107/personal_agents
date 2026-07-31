@@ -6,7 +6,7 @@
  * 콘솔 API 는 읽기·알림 전용이라, 이 타입들에는 부작용을 유발하는 필드가 없다.
  */
 
-/** 화면에 표시되는 에이전트 상태 5종. Notion 심화편 팔레트에 대응. */
+/** 화면에 표시되는 에이전트 상태 6종. Notion 심화편 팔레트에 대응. */
 export enum ConsoleAgentState {
   /** 완료 — 민트 */
   COMPLETED = 'COMPLETED',
@@ -18,6 +18,8 @@ export enum ConsoleAgentState {
   AWAITING_INTEGRATION = 'AWAITING_INTEGRATION',
   /** 대기 — 흰색 (앞 단계를 기다림) */
   WAITING = 'WAITING',
+  /** 실패 — 빨강/코랄 (직전 실행이 오류로 종료) */
+  FAILED = 'FAILED',
 }
 
 /** 부서 그리드의 카드 하나. agent-registry 엔트리 + 파생 상태. */

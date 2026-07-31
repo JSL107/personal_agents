@@ -2,7 +2,7 @@ import ConsoleCore
 import SpriteKit
 import SwiftUI
 
-/// 상태 5종의 표시 속성(색·한글 라벨). 색 값은 ConsoleCore 의 팔레트(agentStatePaletteRGBA)를
+/// 상태 6종의 표시 속성(색·한글 라벨). 색 값은 ConsoleCore 의 팔레트(agentStatePaletteRGBA)를
 /// 단일 소스로 참조한다 — SwiftUI Color(대시보드)와 SKColor(오피스 씬)가 같은 색을 쓴다.
 /// 백엔드가 소유하는 말풍선(bubble)과 달리, 색·라벨은 앱 표현 계층의 소유다.
 extension ConsoleAgentState {
@@ -36,6 +36,8 @@ extension ConsoleAgentState {
             return "연동 대기"
         case .waiting:
             return "대기"
+        case .failed:
+            return "실패"
         }
     }
 }

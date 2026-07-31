@@ -75,7 +75,7 @@ public func officeNodeDiff(existing: Set<String>, incoming: [String]) -> OfficeN
     return OfficeNodeDiff(added: added, removed: removed)
 }
 
-/// 상태 5종의 표시 색(0~1 RGB). Notion 심화편 팔레트. SwiftUI Color·SKColor 가 공통으로 참조한다.
+/// 상태 6종의 표시 색(0~1 RGB). Notion 심화편 팔레트. SwiftUI Color·SKColor 가 공통으로 참조한다.
 public func agentStatePaletteRGBA(
     _ state: ConsoleAgentState
 ) -> (red: Double, green: Double, blue: Double) {
@@ -90,5 +90,7 @@ public func agentStatePaletteRGBA(
         return (0.62, 0.55, 0.90)  // 라벤더
     case .waiting:
         return (0.72, 0.72, 0.72)  // 흰색 계열
+    case .failed:
+        return (0.90, 0.30, 0.24)  // 코랄 레드
     }
 }

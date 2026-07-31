@@ -21,6 +21,45 @@ import { GateDecision, StateChange } from '../domain/subconscious.type';
 
 const DEFAULT_TTL_MS = 3_600_000; // 1시간
 
+// review-pr(CODE_REVIEWER)·be-fix(BE_FIX) 워커는 dispatch text 에서 PR 참조(owner/repo#num)를
+// 파싱한다. 사람용 요약(PR 제목)은 파싱되지 않으므로, StateItem.key ('github:pr:owner/repo#num')
+// 에서 'github:pr:' 접두어를 벗긴 참조를 넘긴다. PR 참조가 필요 없는 워커는 요약을 그대로 쓴다.
+const GITHUB_PR_KEY_PREFIX = 'github:pr:';
+const PR_REFERENCE_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
+  AgentType.CODE_REVIEWER,
+  AgentType.BE_FIX,
+]);
+
+// BE(plan-task)는 작업 설명으로 plan 을 세우되 PR 참조가 있으면 GitHub 본문까지 ground 한다.
+// 설명과 참조가 모두 필요하므로 text 를 덮어쓰지 않고 prReferenceHint 로 따로 동봉한다.
+const PR_GROUNDING_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
+  AgentType.BE,
+]);
+
+const extractPrReference = (changeKey: string): string | null =>
+  changeKey.startsWith(GITHUB_PR_KEY_PREFIX)
+    ? changeKey.slice(GITHUB_PR_KEY_PREFIX.length)
+    : null;
+
+const resolveDispatchText = (
+  agentType: AgentType,
+  changeKey: string,
+  summary: string,
+): string => {
+  if (PR_REFERENCE_AGENT_TYPES.has(agentType)) {
+    return extractPrReference(changeKey) ?? summary;
+  }
+  return summary;
+};
+
+const resolvePrReferenceHint = (
+  agentType: AgentType,
+  changeKey: string,
+): string | null =>
+  PR_GROUNDING_AGENT_TYPES.has(agentType)
+    ? extractPrReference(changeKey)
+    : null;
+
 // SubconsciousProposalService — ProposalEmitter 포트 구현체.
 // emit: PENDING proposal 생성 → Slack DM 발송 (✅실행 / ❌무시 버튼) → slackChannelId/ts 기록.
 // apply: owner+PENDING+TTL 검증 → DISPATCHED 전이 → IdaeriRouterUsecase.dispatch 호출.
@@ -114,12 +153,19 @@ export class SubconsciousProposalService implements ProposalEmitter {
 
     const context = record.contextJson as { change?: StateChange };
     const changeSummary = context.change?.item?.summary ?? record.changeKey;
+    const changeKey = context.change?.item?.key ?? record.changeKey;
+
+    const agentType = record.suggestedAgentType as AgentType;
+    const prReferenceHint = resolvePrReferenceHint(agentType, changeKey);
 
     const dispatchInput: DispatchInput = {
       source: 'SLACK_MESSAGE',
       slackUserId: byUserId,
-      agentTypeHint: record.suggestedAgentType as AgentType,
-      text: changeSummary,
+      agentTypeHint: agentType,
+      // PR 참조 워커는 사람용 요약(제목)이 아니라 key 에서 복원한 PR 참조를 받아야 한다.
+      text: resolveDispatchText(agentType, changeKey, changeSummary),
+      // 설명과 참조가 모두 필요한 워커(BE)에는 요약을 유지한 채 참조를 따로 동봉한다.
+      ...(prReferenceHint !== null ? { prReferenceHint } : {}),
     };
 
     try {

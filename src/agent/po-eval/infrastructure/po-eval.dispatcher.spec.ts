@@ -1,3 +1,4 @@
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import { GeneratePoEvaluationUsecase } from '../application/generate-po-evaluation.usecase';
@@ -43,9 +44,20 @@ describe('PoEvalDispatcher', () => {
       modelUsed: 'claude-cli',
       agentRunId: 73,
     });
-    dispatcher = new PoEvalDispatcher({
-      execute: usecaseExecute,
-    } as unknown as GeneratePoEvaluationUsecase);
+    dispatcher = new PoEvalDispatcher(
+      {
+        execute: usecaseExecute,
+      } as unknown as GeneratePoEvaluationUsecase,
+      {
+        humanize: jest
+          .fn()
+          .mockImplementation(async (fields: Record<string, string>) =>
+            Object.fromEntries(
+              Object.entries(fields).map(([key, value]) => [key, `${value}_H`]),
+            ),
+          ),
+      } as unknown as HumanizeService,
+    );
   });
 
   it('agentType 은 PO_EVAL', () => {
@@ -69,6 +81,11 @@ describe('PoEvalDispatcher', () => {
     expect(outcome.formattedText.length).toBeGreaterThan(0);
     // formatEvaluationOutput 출력 — period / 한 주 요약 포함.
     expect(outcome.formattedText).toContain('2026-W21');
+    expect(outcome.formattedText).toContain('한 주를 마무리 — Router 도입._H');
+    expect(outcome.output).toBe(sampleOutput);
+    expect(
+      (outcome.output as EvaluationOutput).qualitative.summary,
+    ).not.toContain('_H');
   });
 
   it('contextRefs / agentTypeHint 등 다른 input 필드는 무시 (slackUserId 만 사용)', async () => {
