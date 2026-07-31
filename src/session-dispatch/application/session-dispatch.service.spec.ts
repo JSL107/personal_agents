@@ -147,6 +147,24 @@ describe('SessionDispatchService', () => {
     });
   });
 
+  it('조직 소유 repo는 owner를 본인 계정으로 덮어쓰지 않는다', async () => {
+    const { githubClient, service } = make({
+      resolveRepo: () => 'schoolbell-e/sbe-api-v5',
+    });
+
+    await service.onSessionBecameIdle({
+      ...CLAUDE_SESSION,
+      cwd: '/work/sbe-api-v5',
+    });
+
+    expect(githubClient.listAuthorOpenPullRequests).toHaveBeenCalledWith({
+      repo: 'schoolbell-e/sbe-api-v5',
+      author: 'me',
+      sinceIsoDate: expect.any(String),
+      limit: 1,
+    });
+  });
+
   it('SESSION_DISPATCH_ENABLED가 true가 아니면 제안을 만들지 않는다', async () => {
     const { createPreview, service } = make({
       config: { SESSION_DISPATCH_ENABLED: 'false' },
