@@ -23,6 +23,7 @@ const buildPrisma = () => ({
   prReviewFinding: {
     create: jest.fn(),
     count: jest.fn(),
+    findMany: jest.fn(),
     update: jest.fn(),
   },
 });
@@ -54,12 +55,14 @@ describe('PrReviewFindingPrismaRepository', () => {
       status: 'OPEN',
       postMode: 'INLINE',
       githubCommentId: BigInt(999),
+      githubThreadNodeId: 'PRRC_comment',
       createdAt: new Date('2026-07-31T00:00:00Z'),
     });
 
     const created = await repository.createIfAbsent(createInput());
 
     expect(created?.githubCommentId).toBe('999');
+    expect(created?.githubThreadNodeId).toBe('PRRC_comment');
     expect(created?.status).toBe('OPEN');
   });
 
@@ -126,6 +129,88 @@ describe('PrReviewFindingPrismaRepository', () => {
         githubCommentId: BigInt(999),
         githubThreadNodeId: 'PRRT_node',
       },
+    });
+  });
+
+  it('게시된 OPEN 카드를 생성 시각 순으로 최대 200건 조회한다', async () => {
+    prisma.prReviewFinding.findMany.mockResolvedValue([
+      {
+        id: 1,
+        agentRunId: 7,
+        repo: 'JSL107/personal_agents',
+        pullNumber: 180,
+        headSha: 'abc1234',
+        category: 'RELIABILITY',
+        severity: 'MUST_FIX',
+        filePath: 'src/foo.service.ts',
+        line: 42,
+        body: '트랜잭션 밖에서 저장한다',
+        fingerprint: 'fp-1',
+        status: 'OPEN',
+        postMode: 'INLINE',
+        githubCommentId: BigInt(999),
+        githubThreadNodeId: 'PRRC_comment',
+        createdAt: new Date('2026-07-31T00:00:00Z'),
+      },
+    ]);
+    prisma.prReviewFinding.count.mockResolvedValue(1);
+
+    const cards = await repository.findOpenPostedCards();
+
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
+      where: { status: 'OPEN', githubCommentId: { not: null } },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+    });
+    expect(cards[0].githubThreadNodeId).toBe('PRRC_comment');
+  });
+
+  it('markDecided는 결정 시각과 교정된 PRRT id를 저장한다', async () => {
+    prisma.prReviewFinding.update.mockResolvedValue({});
+
+    await repository.markDecided({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: '지적이 틀림',
+      githubThreadNodeId: 'PRRT_thread',
+    });
+
+    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: {
+        status: 'REJECTED',
+        rejectReason: '지적이 틀림',
+        githubThreadNodeId: 'PRRT_thread',
+        decidedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('ACKED 결정에는 rejectReason을 저장하지 않는다', async () => {
+    prisma.prReviewFinding.update.mockResolvedValue({});
+
+    await repository.markDecided({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: '잘못 전달된 값',
+      githubThreadNodeId: 'PRRT_thread',
+    });
+
+    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ rejectReason: null }),
+      }),
+    );
+  });
+
+  it('markResolved는 상태와 resolvedAt을 갱신한다', async () => {
+    prisma.prReviewFinding.update.mockResolvedValue({});
+
+    await repository.markResolved(1);
+
+    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { status: 'RESOLVED', resolvedAt: expect.any(Date) },
     });
   });
 });

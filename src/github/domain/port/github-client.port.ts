@@ -27,6 +27,31 @@ export interface PullRequestRef {
   number: number;
 }
 
+export interface ReviewThreadReaction {
+  content: string;
+  userLogin: string | null;
+  createdAt: string;
+}
+
+export interface ReviewThreadComment {
+  databaseId: number;
+  authorLogin: string | null;
+  body: string;
+  createdAt: string;
+  reactions: ReviewThreadReaction[];
+}
+
+export interface ReviewThread {
+  threadId: string;
+  isResolved: boolean;
+  comments: ReviewThreadComment[];
+}
+
+export interface ListReviewThreadsResult {
+  threads: ReviewThread[];
+  pullRequestState: 'OPEN' | 'CLOSED' | 'MERGED';
+}
+
 export interface GetPullRequestDiffOptions extends PullRequestRef {
   maxBytes?: number;
 }
@@ -142,4 +167,8 @@ export interface GithubClientPort {
   createReviewComment(
     input: CreateReviewCommentInput,
   ): Promise<CreateReviewCommentResult>;
+
+  listReviewThreads(ref: PullRequestRef): Promise<ListReviewThreadsResult>;
+
+  resolveReviewThread(threadId: string): Promise<void>;
 }

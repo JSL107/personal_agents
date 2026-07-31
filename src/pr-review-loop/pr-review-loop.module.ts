@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
+import { ReviewReplyJudgeModule } from '../agent/review-reply-judge/review-reply-judge.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { HarvestReviewSignalsUsecase } from './application/harvest-review-signals.usecase';
 import { PublishFindingsService } from './application/publish-findings.service';
 import { SweepPrReviewsUsecase } from './application/sweep-pr-reviews.usecase';
 import { PR_REVIEW_FINDING_REPOSITORY_PORT } from './domain/port/pr-review-finding.repository.port';
@@ -13,15 +16,23 @@ import { PrReviewFindingPrismaRepository } from './infrastructure/pr-review-find
 // 리뷰 생성(LLM)은 CodeReviewerModule 의 ReviewPullRequestUsecase 를 그대로 쓴다.
 // AgentRunModule 은 "PR 당 리뷰 1회" 판정(AgentRunService.hasSweepReviewFor) 때문에 필요하다.
 @Module({
-  imports: [PrismaModule, GithubModule, CodeReviewerModule, AgentRunModule],
+  imports: [
+    PrismaModule,
+    GithubModule,
+    CodeReviewerModule,
+    AgentRunModule,
+    ReviewReplyJudgeModule,
+    EpisodicMemoryModule,
+  ],
   providers: [
     PublishFindingsService,
     SweepPrReviewsUsecase,
+    HarvestReviewSignalsUsecase,
     {
       provide: PR_REVIEW_FINDING_REPOSITORY_PORT,
       useClass: PrReviewFindingPrismaRepository,
     },
   ],
-  exports: [SweepPrReviewsUsecase],
+  exports: [SweepPrReviewsUsecase, HarvestReviewSignalsUsecase],
 })
 export class PrReviewLoopModule {}

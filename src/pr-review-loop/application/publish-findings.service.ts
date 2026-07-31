@@ -12,6 +12,10 @@ import {
   SNAP_MAX_DISTANCE,
   snapToCommentableLine,
 } from '../domain/diff-hunk.parser';
+import {
+  buildFindingCommentBody,
+  IDAERI_REVIEW_MARKER,
+} from '../domain/finding-comment.body';
 import { buildFindingFingerprint } from '../domain/finding-fingerprint';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
@@ -196,7 +200,11 @@ export class PublishFindingsService {
         commitSha: input.headSha,
         filePath,
         line: snapped,
-        body: finding.body,
+        body: buildFindingCommentBody({
+          category: finding.category,
+          severity: finding.severity,
+          body: finding.body,
+        }),
       });
     } catch (error: unknown) {
       this.logger.warn(
@@ -240,7 +248,7 @@ export class PublishFindingsService {
     outcome: PublishOutcome;
   }): Promise<void> {
     const lines = [
-      '이대리 리뷰 — 줄 앵커를 찾지 못해 묶어서 남깁니다.',
+      `${IDAERI_REVIEW_MARKER} — 줄 앵커를 찾지 못해 묶어서 남깁니다.`,
       '',
       ...fallback.map((item) => `- ${item.body}`),
     ];
