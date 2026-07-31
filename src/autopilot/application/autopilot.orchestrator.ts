@@ -23,6 +23,11 @@ import { PlaybookEntry } from '../domain/playbook.type';
 // 놓쳐도 다음 발화 직전까지 유효하도록 24h. (기존 1h 는 저녁 카드를 자주 EXPIRED 로 흘려보냄)
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
+// 그룹 × 발화일 단위 멱등 키. 진입부의 재진입 확인(isDone)과 발송 직전 선점(acquireOnce)이
+// 반드시 같은 키를 봐야 하므로 한 곳에서만 만든다.
+const buildGuardKey = (groupKey: string, firedAtKst: string): string =>
+  `autopilot:${groupKey}:${firedAtKst}`;
+
 // 플레이북 그룹을 실행 → 비-skip summaryText 를 메인 메시지로 합치고 detailText 는 스레드 댓글로,
 // 멱등 1회 후 다중 타깃 fan-out 발송. T1_PREVIEW task 의 preview 는 CreatePreviewUsecase →
 // postPreviewMessage 로 승인 버튼 발송(메인 텍스트와 별개).
@@ -51,6 +56,26 @@ export class AutopilotOrchestrator {
     target: string,
   ): Promise<void> {
     const firedAtKst = getTodayKstDate();
+    const guardKey = buildGuardKey(groupKey, firedAtKst);
+
+    // 재진입 차단 — 이 슬롯이 이미 완주(발송 성공)했으면 task 를 하나도 실행하지 않고 끝낸다.
+    //
+    // 배경: 한 실행이 worker lockDuration 을 넘기면 BullMQ 가 stalled 로 보고 같은 job 을
+    // 재큐한다(stalled 검사 기본 30s 주기). 아래 "발송 직전" 가드만 있으면 그 재실행이 LLM 을
+    // 전부 다시 호출한 뒤에야 "이미 발송됨" 을 알고 발송만 skip 하고, 그 재실행이 또
+    // lockDuration 을 넘겨 다시 stalled 가 되는 자기 증폭 루프가 된다.
+    // 실측(2026-07-26 morning-briefing): 12회 연쇄 재실행, 각 16~33분, LLM 호출 12회 낭비.
+    // → 무거운 작업 앞에서 완주 여부를 먼저 확인해 루프를 끊는다.
+    //
+    // 읽기 전용(isDone)을 쓰는 이유는 cron-idempotency.service.ts 의 isDone 주석 참조 —
+    // 진입 시점에 키를 만들면 실행 중 강제 종료 시 그 슬롯이 TTL 동안 영구 차단된다.
+    if (await this.cronIdempotency.isDone(guardKey)) {
+      this.logger.warn(
+        `Autopilot[${groupKey}] — ${firedAtKst} 이미 완주됨, 재진입 차단 (task 실행 skip)`,
+      );
+      return;
+    }
+
     const items: { summary: string; detail?: string }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
 
@@ -96,7 +121,6 @@ export class AutopilotOrchestrator {
       return;
     }
 
-    const guardKey = `autopilot:${groupKey}:${firedAtKst}`;
     const firstRun = await this.cronIdempotency.acquireOnce(
       guardKey,
       CRON_SENT_GUARD_TTL_SECONDS,

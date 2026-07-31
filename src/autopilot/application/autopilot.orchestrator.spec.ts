@@ -28,7 +28,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -50,7 +50,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -77,7 +77,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -98,7 +98,10 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA] as never,
       { postMessage } as never,
-      { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -114,7 +117,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -145,7 +148,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -175,7 +178,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA] as never,
       { postMessage } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -197,7 +200,10 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [] as never,
       { postMessage: jest.fn() } as never,
-      { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -212,7 +218,10 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce: jest.fn().mockResolvedValue(false) } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(false),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -242,7 +251,10 @@ describe('AutopilotOrchestrator', () => {
         .fn()
         .mockResolvedValue({ channelId: 'C1', messageTs: '111.222' }),
     };
-    const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const idempotency = {
+      acquireOnce: jest.fn().mockResolvedValue(true),
+      isDone: jest.fn().mockResolvedValue(false),
+    };
     const previewRepository = {
       attachSlackMessage: jest.fn().mockResolvedValue(undefined),
     };
@@ -308,7 +320,7 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [taskA, taskB] as never,
       { postMessage: postMessageMock } as never,
-      { acquireOnce } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -337,7 +349,10 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce: jest.fn().mockResolvedValue(true) } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -361,7 +376,11 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce, release } as never,
+      {
+        acquireOnce,
+        release,
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -384,7 +403,11 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce, release } as never,
+      {
+        acquireOnce,
+        release,
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -423,7 +446,10 @@ describe('AutopilotOrchestrator', () => {
         .fn()
         .mockResolvedValue({ channelId: 'C1', messageTs: '111.222' }),
     };
-    const idempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+    const idempotency = {
+      acquireOnce: jest.fn().mockResolvedValue(true),
+      isDone: jest.fn().mockResolvedValue(false),
+    };
     const previewRepository = {
       attachSlackMessage: jest.fn().mockResolvedValue(undefined),
     };
@@ -473,7 +499,11 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce, release } as never,
+      {
+        acquireOnce,
+        release,
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -499,7 +529,11 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [task] as never,
       { postMessage } as never,
-      { acquireOnce, release } as never,
+      {
+        acquireOnce,
+        release,
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
     );
@@ -555,7 +589,11 @@ describe('AutopilotOrchestrator', () => {
     const orchestrator = new AutopilotOrchestrator(
       [previewTask] as never,
       { postMessage, postPreviewMessage } as never,
-      { acquireOnce, release } as never,
+      {
+        acquireOnce,
+        release,
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
       createPreview as never,
       { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
     );
@@ -581,5 +619,53 @@ describe('AutopilotOrchestrator', () => {
     );
     // 메인 다이제스트 중복 재발송/이중 발행 방지 — throw/release 없음.
     expect(release).not.toHaveBeenCalled();
+  });
+
+  // 회귀 방지 — stalled 재처리로 같은 슬롯이 다시 들어오면, 완주 여부를 task 실행 "앞" 에서
+  // 확인해 LLM 을 한 번도 호출하지 않고 끝나야 한다.
+  // (이전엔 확인이 발송 직전에만 있어 재실행이 task 를 전부 다시 돌린 뒤 발송만 skip 했고,
+  //  그 재실행이 또 lockDuration 을 넘겨 stalled 가 되는 자기 증폭 루프가 됐다 —
+  //  2026-07-26 morning-briefing 12회 연쇄 재실행, 각 16~33분, LLM 12회 낭비.)
+  it('완주된 슬롯 재진입(isDone=true) → task 를 한 개도 실행하지 않고 즉시 종료', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const isDone = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+    // 핵심 — LLM 을 태우는 task 가 실행되지 않아야 증폭 루프가 끊긴다.
+    expect(task.run).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+    // 진입에서 끊었으므로 발송 직전 선점까지 가지 않는다.
+    expect(acquireOnce).not.toHaveBeenCalled();
+  });
+
+  // 진입 확인과 발송 선점이 같은 키를 봐야 재진입 차단이 실제로 동작한다 (키가 어긋나면 무효).
+  it('진입 확인(isDone)과 발송 선점(acquireOnce)이 동일 guardKey 를 사용', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const isDone = jest.fn().mockResolvedValue(false);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage: jest.fn().mockResolvedValue({ ts: undefined }) } as never,
+      { acquireOnce, isDone } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+    const checkedKey: string = isDone.mock.calls[0][0];
+    const acquiredKey: string = acquireOnce.mock.calls[0][0];
+    expect(checkedKey).toBe(acquiredKey);
+    expect(checkedKey).toContain('autopilot:daily-eval:');
   });
 });
