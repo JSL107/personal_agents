@@ -44,6 +44,7 @@ import { ModelRouterModule } from './model-router/model-router.module';
 import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
 import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
+import { PrReviewLoopModule } from './pr-review-loop/pr-review-loop.module';
 import { PreferenceProfilePreviewApplier } from './preference-profile/infrastructure/preference-profile.preview-applier';
 import { PreferenceProfileCanceller } from './preference-profile/infrastructure/preference-profile.preview-canceller';
 import { PreferenceProfileModule } from './preference-profile/preference-profile.module';
@@ -183,6 +184,9 @@ import { WebhookModule } from './webhook/webhook.module';
     // Subconscious proactive engine — 20분 tick 으로 상태 변화 감지 → LLM gate → proposal DM.
     // SUBCONSCIOUS_ENABLED='true' + AUTOPILOT_OWNER_SLACK_USER_ID 미설정 시 자동 비활성.
     SubconsciousModule,
+    // PR 리뷰 루프 Phase 1 — autopilot pr-review-sweep task 가 스윕 usecase 를 호출한다.
+    // PR_REVIEW_LOOP_ENABLED 미설정/false 시 스윕이 즉시 skip(기본 OFF).
+    PrReviewLoopModule,
   ],
   providers: [WorkerStartupCoordinator],
 })
