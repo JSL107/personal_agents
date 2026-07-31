@@ -124,6 +124,62 @@ describe('ReviewPullRequestUsecase', () => {
     });
   });
 
+  it('snapshot 이 주입되면 GitHub 을 재조회하지 않고 그 스냅샷으로 리뷰한다', async () => {
+    // 스윕은 게시(headSha·diff)에 쓸 스냅샷을 이미 조회한 상태다. 여기서 다시 조회하면
+    // 그 사이 push 된 커밋 때문에 리뷰 기준과 게시 기준이 갈린다.
+    const detail = {
+      number: 34,
+      title: 'feat: foo',
+      body: 'body',
+      repo: 'foo/bar',
+      url: 'https://github.com/foo/bar/pull/34',
+      baseRef: 'main',
+      headRef: 'feature/foo',
+      authorLogin: 'octocat',
+      changedFiles: ['src/injected.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'injected-sha',
+    };
+
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      snapshot: {
+        detail,
+        diff: { diff: 'injected diff', truncated: false, bytes: 13 },
+      },
+    });
+
+    expect(githubClient.getPullRequest).not.toHaveBeenCalled();
+    expect(githubClient.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      'injected diff',
+    );
+  });
+
+  it('dryRun 을 주면 inputSnapshot 에 남긴다 — 실게시 전환 시 재리뷰 판정 근거', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      dryRun: true,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].inputSnapshot).toEqual(
+      expect.objectContaining({ dryRun: true }),
+    );
+  });
+
+  it('dryRun 미지정(슬래시 경로)이면 inputSnapshot 에 키 자체가 없다', async () => {
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(
+      agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
+    ).not.toHaveProperty('dryRun');
+  });
+
   it('잘못된 PR ref 는 INVALID_PR_REFERENCE 예외 (GitHub/모델 호출 안 함)', async () => {
     await expect(
       usecase.execute({ prRef: 'not a pr', slackUserId: 'U' }),

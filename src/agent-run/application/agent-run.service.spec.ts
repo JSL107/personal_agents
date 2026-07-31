@@ -525,6 +525,7 @@ describe('AgentRunService', () => {
       const latest = {
         status: 'FAILED',
         startedAt: new Date('2026-07-31T00:00:00Z'),
+        dryRun: false,
       };
       repository.findLatestSweepReview.mockResolvedValue(latest);
 
