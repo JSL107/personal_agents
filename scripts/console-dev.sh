@@ -45,12 +45,16 @@ cd "$ROOT/clients/idaeri-console"
 #   cd clients/idaeri-console && swift run IdaeriConsole
 NOISE_PATTERN='SKView: no drawables available for rendering'
 
+# -F: 위 패턴은 정규식이 아니라 고정 문자열이다. 지금 문구엔 메타문자가 없지만 나중에
+#     '.' 이나 '(' 가 섞인 문구로 바꿔도 의도치 않게 매칭되지 않도록 못박는다.
 # --line-buffered: 파이프에 물려도 로그가 즉시 흐르게 한다(없으면 버퍼링돼 늦게 보인다).
-# set +e / PIPESTATUS: 필터가 아무것도 못 지웠을 때의 grep exit 1 이 pipefail 로 스크립트를
-# 실패시키지 않게 하고, 앱의 실제 종료 코드를 보존한다(백엔드 정리는 trap 이 담당).
+# set +e / PIPESTATUS: grep -v 는 걸러낸 뒤 출력할 줄이 없거나(GNU/BSD grep), 패턴이 매칭되면
+#     (ugrep) exit 1 을 낸다 — 앱이 정상이어도 1 이 나오는 게 정상이다. pipefail 이 그 1 을
+#     파이프라인 결과로 올려 errexit 를 터뜨리지 않게 끄고, 앱의 실제 종료 코드는
+#     PIPESTATUS[0] 으로 따로 집는다(백엔드 정리는 trap 이 담당).
 set +e
 IDAERI_CONSOLE_URL="http://127.0.0.1:$PORT" swift run IdaeriConsole 2>&1 \
-  | grep --line-buffered -v "$NOISE_PATTERN"
+  | grep -F --line-buffered -v "$NOISE_PATTERN"
 APP_EXIT=${PIPESTATUS[0]}
 set -e
 
