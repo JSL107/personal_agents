@@ -164,18 +164,30 @@ export class CodexCliProvider implements ModelProviderPort {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= CODEX_MAX_ATTEMPTS; attempt += 1) {
+      // attempt 별 실소요를 남긴다 — timeout(180s)이 실제로 듣는지 확인하는 유일한 단서다.
+      // (2026-07 에 단일 실행이 32분까지 늘어난 원인이 attempt 누적인지 단일 호출 hang 인지
+      //  가릴 수 없었다. 상위 route() 는 총합만 알고 attempt 분해는 여기서만 보인다.)
+      const attemptStartedAtMs = Date.now();
       try {
         return await this.completeOnce(request);
       } catch (error: unknown) {
         lastError = error;
+        const attemptSeconds = Math.max(
+          1,
+          Math.round((Date.now() - attemptStartedAtMs) / 1000),
+        );
+        const message =
+          error instanceof Error ? error.message.slice(0, 200) : String(error);
         if (!isRetryableCodexError(error) || attempt >= CODEX_MAX_ATTEMPTS) {
+          // 예외 객체는 상위(model-router)가 instanceof 로 쿼터/인증을 판별하므로 감싸지 않는다.
+          this.logger.warn(
+            `codex 호출 최종 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요): ${message}`,
+          );
           throw error;
         }
         const backoffMs = computeCodexRetryBackoffMs();
-        const message =
-          error instanceof Error ? error.message.slice(0, 200) : String(error);
         this.logger.warn(
-          `codex 호출 실패 — 재시도 (attempt ${attempt + 1}/${CODEX_MAX_ATTEMPTS}), ${backoffMs}ms 후: ${message}`,
+          `codex 호출 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요) — 재시도 ${backoffMs}ms 후: ${message}`,
         );
         await delay(backoffMs);
       }
