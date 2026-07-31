@@ -1,6 +1,12 @@
 import { Logger } from '@nestjs/common';
 
-import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
+import {
+  LLM_CLI_MAX_ATTEMPTS,
+  LLM_CLI_RETRY_BACKOFF_BASE_MS,
+  LLM_CLI_RETRY_BACKOFF_JITTER_MS,
+  LLM_CLI_TIMEOUT_MS,
+  MODEL_ROUTER_WORST_CASE_MS,
+} from '../../common/llm/llm-timeout.constant';
 import { AgentType, ModelProviderName } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
@@ -230,6 +236,38 @@ describe('ModelRouterUsecase', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('이론상 최대치를 초과'),
       );
+      warnSpy.mockRestore();
+      nowSpy.mockRestore();
+    });
+
+    // PR #182 리뷰 지적 — 임계가 timeout×attempts(360s)뿐이면, 두 attempt 가 모두
+    // 정상 timeout 되고 그 사이 backoff(최대 1,999ms)만 끼어도 임계를 넘겨 "timeout 이
+    // 동작하지 않았을 수 있습니다" 라는 거짓 경고가 난다. 정상 경로는 조용해야 한다.
+    it('두 attempt 가 모두 정상 timeout 되고 backoff 가 끼어도 경고하지 않는다', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      // 모든 timeout·backoff 가 정상 동작한 최악 경로 (backoff 는 base + jitter 상한 직전).
+      const allTimeoutsHonoredMs =
+        LLM_CLI_MAX_ATTEMPTS * LLM_CLI_TIMEOUT_MS +
+        (LLM_CLI_MAX_ATTEMPTS - 1) *
+          (LLM_CLI_RETRY_BACKOFF_BASE_MS + LLM_CLI_RETRY_BACKOFF_JITTER_MS - 1);
+      const nowSpy = jest
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(0)
+        .mockReturnValueOnce(allTimeoutsHonoredMs);
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
       nowSpy.mockRestore();
     });

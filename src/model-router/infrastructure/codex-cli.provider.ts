@@ -5,7 +5,12 @@ import { join } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
 
-import { LLM_CLI_TIMEOUT_MS } from '../../common/llm/llm-timeout.constant';
+import {
+  LLM_CLI_MAX_ATTEMPTS,
+  LLM_CLI_RETRY_BACKOFF_BASE_MS,
+  LLM_CLI_RETRY_BACKOFF_JITTER_MS,
+  LLM_CLI_TIMEOUT_MS,
+} from '../../common/llm/llm-timeout.constant';
 import {
   CompletionRequest,
   CompletionResponse,
@@ -18,9 +23,11 @@ import { redactPii } from './pii-redaction.util';
 const CODEX_EXECUTABLE = 'codex';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
 const CODEX_DEFAULT_TIMEOUT_MS = LLM_CLI_TIMEOUT_MS;
-const CODEX_MAX_ATTEMPTS = 2;
-const CODEX_RETRY_BACKOFF_BASE_MS = 1000;
-const CODEX_RETRY_BACKOFF_JITTER_MS = 1000;
+// 재시도 파라미터는 llm-timeout.constant 가 SoT — MODEL_ROUTER_WORST_CASE_MS 계산이
+// 같은 값을 봐야 하므로 여기서 별도 정의하지 않고 그대로 받아 쓴다.
+const CODEX_MAX_ATTEMPTS = LLM_CLI_MAX_ATTEMPTS;
+const CODEX_RETRY_BACKOFF_BASE_MS = LLM_CLI_RETRY_BACKOFF_BASE_MS;
+const CODEX_RETRY_BACKOFF_JITTER_MS = LLM_CLI_RETRY_BACKOFF_JITTER_MS;
 const STDERR_TAIL_LIMIT = 500;
 // 절전 직후 codex 백엔드 준비 확인용 경량 probe — 짧은 프롬프트 + 짧은 타임아웃으로 성패만 빠르게 본다.
 // (일반 호출의 180s 타임아웃을 그대로 쓰면 백엔드가 죽어 있을 때 probe 한 번에 3분을 낭비한다.)
