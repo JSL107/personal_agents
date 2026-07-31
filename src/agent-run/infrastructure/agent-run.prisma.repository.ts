@@ -442,19 +442,17 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     withinMinutes: number;
   }): Promise<RecentlyFailedRun[]> {
     const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    // cutoff 이후 종료된 런만 DB 에서 좁혀 distinct — 누적 이력을 매 스냅샷마다 전수 스캔/정렬하지 않는다.
+    // cutoff 범위의 최신 종료 = 전체 최신 종료와 동일(cutoff 밖 런이 최신이면 그 agentType 은 어차피 제외)이라
+    // 결과는 애플리케이션 필터와 같고, FAILED 인 것만 남긴다.
     const latestPerAgent = await this.prisma.agentRun.findMany({
-      where: { endedAt: { not: null } },
+      where: { endedAt: { gte: cutoff } },
       orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
       distinct: ['agentType'],
-      select: { agentType: true, status: true, endedAt: true },
+      select: { agentType: true, status: true },
     });
     return latestPerAgent
-      .filter(
-        (row) =>
-          row.status === AgentRunStatus.FAILED &&
-          row.endedAt !== null &&
-          row.endedAt >= cutoff,
-      )
+      .filter((row) => row.status === AgentRunStatus.FAILED)
       .map((row) => ({ agentType: row.agentType }));
   }
 

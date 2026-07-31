@@ -311,25 +311,13 @@ describe('AgentRunPrismaRepository.findChainRootsInWindow', () => {
 });
 
 describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
-  it('agentType별 최신 종료 1건씩(distinct) 조회하고, 최신이 FAILED이며 cutoff 이내인 것만 반환', async () => {
+  it('cutoff(withinMinutes) 를 where 로 좁혀 distinct 하고, 최신 종료가 FAILED 인 agentType 만 반환', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
+    // findMany 는 이미 where(cutoff)+distinct 가 적용된 "agentType별 최신 종료" 를 돌려준다.
     const findMany = jest.fn().mockResolvedValue([
-      {
-        agentType: 'PM',
-        status: 'FAILED',
-        endedAt: new Date('2026-07-30T11:00:00.000Z'),
-      },
-      {
-        agentType: 'BE',
-        status: 'SUCCEEDED',
-        endedAt: new Date('2026-07-30T11:30:00.000Z'),
-      },
-      {
-        agentType: 'CTO',
-        status: 'FAILED',
-        endedAt: new Date('2026-07-30T02:00:00.000Z'),
-      },
+      { agentType: 'PM', status: 'FAILED' },
+      { agentType: 'BE', status: 'SUCCEEDED' },
     ]);
     const prismaMock = {
       agentRun: { findMany },
@@ -340,15 +328,15 @@ describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
       withinMinutes: 360,
     });
 
-    // PM만 남는다: BE는 최신이 성공, CTO는 실패지만 10시간 전(창 밖).
+    // BE 는 최신 종료가 성공이라 제외, PM 만.
     expect(result).toEqual([{ agentType: 'PM' }]);
-    // distinct + orderBy 계약 검증.
+    // cutoff 를 where 로 밀어넣어 오래된 이력을 스캔하지 않는다(360분 전 = 06:00).
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { endedAt: { not: null } },
+        where: { endedAt: { gte: new Date('2026-07-30T06:00:00.000Z') } },
         orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
         distinct: ['agentType'],
-        select: { agentType: true, status: true, endedAt: true },
+        select: { agentType: true, status: true },
       }),
     );
     jest.useRealTimers();
