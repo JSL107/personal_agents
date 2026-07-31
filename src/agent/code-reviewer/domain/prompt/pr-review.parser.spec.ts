@@ -170,14 +170,46 @@ describe('parsePullRequestReview — findings', () => {
   });
 
   it('findings 요소에 body 가 없으면 그 요소를 버린다', () => {
+    // legacy 3배열을 비워 폴백을 배제한다 — 여기서 검증할 것은 "요소 탈락"만이다.
     const text = JSON.stringify({
       ...baseResponse,
+      mustFix: [],
+      niceToHave: [],
+      missingTests: [],
       findings: [{ category: 'STYLE', severity: 'NICE_TO_HAVE' }],
     });
 
     const parsed = parsePullRequestReview(text);
 
     expect(parsed.findings).toEqual([]);
+  });
+
+  it('findings 요소가 정제에서 전부 탈락하면 legacy 3배열에서 파생한다', () => {
+    // 회귀 방지: length > 0 만 보고 findings 를 정본으로 확정하면, 정제 후 빈 배열이 된
+    // 경우에도 legacy 폴백을 타지 않아 mustFix 의 머지 필수 지적이 조용히 유실된다.
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        { category: 'STYLE', severity: 'NICE_TO_HAVE' }, // body 없음 → 탈락
+        { category: 'RELIABILITY', severity: 'MUST_FIX', body: '   ' }, // 공백 → 탈락
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([
+      { category: 'UNCLASSIFIED', severity: 'MUST_FIX', body: '트랜잭션 누락' },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: '변수명 개선',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: '실패 케이스 테스트 없음',
+      },
+    ]);
   });
 
   it('findings 가 빈 배열이면(모델이 필드만 비워 보낸 경우) legacy 3배열에서 파생한다', () => {
