@@ -27,6 +27,7 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
     changedFilesTotalCount: 2,
     additions: 120,
     deletions: 8,
+    headSha: 'sha',
     ...overrides,
   });
 

@@ -80,6 +80,7 @@ describe('GenerateBackendPlanUsecase', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
 
     usecase = new GenerateBackendPlanUsecase(
@@ -130,6 +131,7 @@ describe('GenerateBackendPlanUsecase', () => {
       changedFilesTotalCount: 0,
       additions: 0,
       deletions: 0,
+      headSha: 'sha',
     });
 
     await usecase.execute({ subject: 'foo/bar#34', slackUserId: 'U1' });

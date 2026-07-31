@@ -1,5 +1,7 @@
 import {
   AssignedTasks,
+  CreateReviewCommentInput,
+  CreateReviewCommentResult,
   GithubPullRequest,
   GithubPullRequestSummary,
   PullRequestDetail,
@@ -132,4 +134,12 @@ export interface GithubClientPort {
   fetchPullRequestEngagement(
     pullRequests: GithubPullRequest[],
   ): Promise<PullRequestEngagementSignals[]>;
+
+  // PR 리뷰 루프 Phase 1 — 인라인 리뷰 코멘트 1건 게시.
+  // 낱개 호출인 이유: 여러 건을 pulls.createReview 로 묶어 보내면 한 건이 422(줄 앵커 거부)일 때
+  // 전체가 실패한다. 낱개로 보내 부분 실패를 격리한다.
+  // PAT 에 `pull_requests: write`(fine-grained) 또는 `repo`(classic) 권한이 필요하다.
+  createReviewComment(
+    input: CreateReviewCommentInput,
+  ): Promise<CreateReviewCommentResult>;
 }

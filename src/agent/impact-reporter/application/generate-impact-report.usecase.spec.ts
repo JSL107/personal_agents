@@ -60,6 +60,7 @@ describe('GenerateImpactReportUsecase', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 
@@ -144,6 +145,7 @@ describe('GenerateImpactReportUsecase', () => {
         changedFilesTotalCount: 0,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       });
 
       await usecase.execute({
@@ -176,6 +178,7 @@ describe('GenerateImpactReportUsecase', () => {
         changedFilesTotalCount: 0,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       });
 
       await usecase.execute({ subject: 'a/b#7', slackUserId: 'U1' });

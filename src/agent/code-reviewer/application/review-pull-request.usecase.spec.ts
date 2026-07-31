@@ -56,6 +56,7 @@ describe('ReviewPullRequestUsecase', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -83,6 +84,7 @@ describe('ReviewPullRequestUsecase', () => {
       changedFilesTruncated: false,
       additions: 10,
       deletions: 2,
+      headSha: 'sha',
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: 'diff --git a/src/a.ts ...',
@@ -211,6 +213,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -238,6 +241,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
+      headSha: 'sha',
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: '+const x = 1;',
@@ -308,6 +312,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: false,
         additions: 5,
         deletions: 1,
+        headSha: 'sha',
       },
       diff: { diff: '+hello', truncated: false, bytes: 6 },
     });
@@ -335,6 +340,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: true,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       },
       diff: { diff: '', truncated: false, bytes: 0 },
     });
@@ -357,6 +363,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: false,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       },
       diff: { diff: 'short', truncated: true, bytes: 10000 },
     });
@@ -408,6 +415,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
         changedFilesTruncated: false,
         additions: 1,
         deletions: 0,
+        headSha: 'sha',
       }),
       getPullRequestDiff: jest
         .fn()
@@ -419,6 +427,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepo = {
       save: jest.fn(),
