@@ -49,6 +49,7 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
   fetchPullRequestEngagement: jest.fn(),
+  createReviewComment: jest.fn(),
 });
 
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({

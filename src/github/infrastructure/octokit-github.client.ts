@@ -5,6 +5,8 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
+  CreateReviewCommentInput,
+  CreateReviewCommentResult,
   GithubIssue,
   GithubPullRequest,
   GithubPullRequestSummary,
@@ -143,6 +145,7 @@ export class OctokitGithubClient implements GithubClientPort {
           totalCount > changedFiles.length || totalCount > CHANGED_FILES_MAX,
         additions: prResponse.data.additions,
         deletions: prResponse.data.deletions,
+        headSha: prResponse.data.head.sha,
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} 조회 실패`);
@@ -258,6 +261,54 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo}#${number} 코멘트 추가 실패`,
+      );
+    }
+  }
+
+  // PR 리뷰 루프 Phase 1 — 카드 1장 = 코멘트 1건. 낱개 호출로 부분 실패를 격리한다.
+  async createReviewComment({
+    repo,
+    pullNumber,
+    commitSha,
+    filePath,
+    line,
+    body,
+  }: CreateReviewCommentInput): Promise<CreateReviewCommentResult> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+
+    try {
+      // line 이 있으면 줄 단위(side=RIGHT: 변경 후 파일 기준), 없으면 파일 단위.
+      const response = await this.octokit!.rest.pulls.createReviewComment(
+        line === null
+          ? {
+              owner,
+              repo: repoName,
+              pull_number: pullNumber,
+              commit_id: commitSha,
+              path: filePath,
+              body,
+              subject_type: 'file',
+            }
+          : {
+              owner,
+              repo: repoName,
+              pull_number: pullNumber,
+              commit_id: commitSha,
+              path: filePath,
+              body,
+              line,
+              side: 'RIGHT',
+            },
+      );
+      return {
+        commentId: String(response.data.id),
+        nodeId: response.data.node_id,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `인라인 리뷰 코멘트 게시 실패 (${repo}#${pullNumber} ${filePath}:${line ?? 'file'})`,
       );
     }
   }

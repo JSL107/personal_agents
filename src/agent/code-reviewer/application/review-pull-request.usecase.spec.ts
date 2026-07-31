@@ -23,6 +23,11 @@ describe('ReviewPullRequestUsecase', () => {
     missingTests: [],
     reviewCommentDrafts: [{ body: 'LGTM' }],
     approvalRecommendation: 'comment',
+    // niceToHave 가 비어 있지 않으므로, findings 를 []로 두면 파서의 legacy 폴백이
+    // 이 값에서 파생시켜 round-trip(toEqual) 이 깨진다 — 파생 결과와 미리 일치시킨다.
+    findings: [
+      { category: 'UNCLASSIFIED', severity: 'NICE_TO_HAVE', body: '주석 보강' },
+    ],
   };
 
   let modelRouter: { route: jest.Mock };
@@ -51,6 +56,7 @@ describe('ReviewPullRequestUsecase', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -78,6 +84,7 @@ describe('ReviewPullRequestUsecase', () => {
       changedFilesTruncated: false,
       additions: 10,
       deletions: 2,
+      headSha: 'sha',
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: 'diff --git a/src/a.ts ...',
@@ -115,6 +122,62 @@ describe('ReviewPullRequestUsecase', () => {
         prompt: expect.stringContaining('foo/bar'),
       }),
     });
+  });
+
+  it('snapshot 이 주입되면 GitHub 을 재조회하지 않고 그 스냅샷으로 리뷰한다', async () => {
+    // 스윕은 게시(headSha·diff)에 쓸 스냅샷을 이미 조회한 상태다. 여기서 다시 조회하면
+    // 그 사이 push 된 커밋 때문에 리뷰 기준과 게시 기준이 갈린다.
+    const detail = {
+      number: 34,
+      title: 'feat: foo',
+      body: 'body',
+      repo: 'foo/bar',
+      url: 'https://github.com/foo/bar/pull/34',
+      baseRef: 'main',
+      headRef: 'feature/foo',
+      authorLogin: 'octocat',
+      changedFiles: ['src/injected.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'injected-sha',
+    };
+
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      snapshot: {
+        detail,
+        diff: { diff: 'injected diff', truncated: false, bytes: 13 },
+      },
+    });
+
+    expect(githubClient.getPullRequest).not.toHaveBeenCalled();
+    expect(githubClient.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      'injected diff',
+    );
+  });
+
+  it('dryRun 을 주면 inputSnapshot 에 남긴다 — 실게시 전환 시 재리뷰 판정 근거', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      dryRun: true,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].inputSnapshot).toEqual(
+      expect.objectContaining({ dryRun: true }),
+    );
+  });
+
+  it('dryRun 미지정(슬래시 경로)이면 inputSnapshot 에 키 자체가 없다', async () => {
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(
+      agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
+    ).not.toHaveProperty('dryRun');
   });
 
   it('잘못된 PR ref 는 INVALID_PR_REFERENCE 예외 (GitHub/모델 호출 안 함)', async () => {
@@ -177,6 +240,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
     missingTests: [],
     reviewCommentDrafts: [],
     approvalRecommendation: 'approve',
+    findings: [],
   };
 
   let modelRouter: { route: jest.Mock };
@@ -205,6 +269,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -232,6 +297,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
+      headSha: 'sha',
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: '+const x = 1;',
@@ -302,6 +368,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: false,
         additions: 5,
         deletions: 1,
+        headSha: 'sha',
       },
       diff: { diff: '+hello', truncated: false, bytes: 6 },
     });
@@ -329,6 +396,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: true,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       },
       diff: { diff: '', truncated: false, bytes: 0 },
     });
@@ -351,6 +419,7 @@ describe('buildReviewPrompt', () => {
         changedFilesTruncated: false,
         additions: 0,
         deletions: 0,
+        headSha: 'sha',
       },
       diff: { diff: 'short', truncated: true, bytes: 10000 },
     });
@@ -367,6 +436,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
     missingTests: [],
     reviewCommentDrafts: [],
     approvalRecommendation: 'comment',
+    findings: [],
   };
 
   const makeDeps = () => {
@@ -401,6 +471,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
         changedFilesTruncated: false,
         additions: 1,
         deletions: 0,
+        headSha: 'sha',
       }),
       getPullRequestDiff: jest
         .fn()
@@ -412,6 +483,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     const outcomeRepo = {
       save: jest.fn(),

@@ -803,4 +803,104 @@ describe('OctokitGithubClient', () => {
       });
     });
   });
+
+  describe('createReviewComment', () => {
+    it('line 이 있으면 줄 단위로 게시하고 id·nodeId 를 반환한다', async () => {
+      const createReviewComment = jest.fn().mockResolvedValue({
+        data: { id: 555, node_id: 'PRRC_abc' },
+      });
+      const octokit = {
+        rest: { pulls: { createReviewComment } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.createReviewComment({
+        repo: 'JSL107/personal_agents',
+        pullNumber: 180,
+        commitSha: 'abc1234',
+        filePath: 'src/foo.service.ts',
+        line: 42,
+        body: '트랜잭션 밖에서 저장한다',
+      });
+
+      expect(createReviewComment).toHaveBeenCalledWith({
+        owner: 'JSL107',
+        repo: 'personal_agents',
+        pull_number: 180,
+        commit_id: 'abc1234',
+        path: 'src/foo.service.ts',
+        body: '트랜잭션 밖에서 저장한다',
+        line: 42,
+        side: 'RIGHT',
+      });
+      expect(result).toEqual({ commentId: '555', nodeId: 'PRRC_abc' });
+    });
+
+    it('line 이 null 이면 파일 단위(subject_type=file)로 게시한다', async () => {
+      const createReviewComment = jest.fn().mockResolvedValue({
+        data: { id: 556, node_id: 'PRRC_def' },
+      });
+      const octokit = {
+        rest: { pulls: { createReviewComment } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await client.createReviewComment({
+        repo: 'JSL107/personal_agents',
+        pullNumber: 180,
+        commitSha: 'abc1234',
+        filePath: 'src/foo.service.ts',
+        line: null,
+        body: '본문',
+      });
+
+      expect(createReviewComment).toHaveBeenCalledWith({
+        owner: 'JSL107',
+        repo: 'personal_agents',
+        pull_number: 180,
+        commit_id: 'abc1234',
+        path: 'src/foo.service.ts',
+        body: '본문',
+        subject_type: 'file',
+      });
+    });
+
+    it('API 실패는 GithubException 으로 감싼다', async () => {
+      const createReviewComment = jest
+        .fn()
+        .mockRejectedValue(new Error('422 Unprocessable Entity'));
+      const octokit = {
+        rest: { pulls: { createReviewComment } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      await expect(
+        client.createReviewComment({
+          repo: 'JSL107/personal_agents',
+          pullNumber: 180,
+          commitSha: 'abc1234',
+          filePath: 'src/foo.service.ts',
+          line: 42,
+          body: '본문',
+        }),
+      ).rejects.toThrow('인라인 리뷰 코멘트 게시 실패');
+    });
+
+    it('Octokit 이 없으면 TOKEN_NOT_CONFIGURED 예외', async () => {
+      const client = new OctokitGithubClient(null);
+
+      await expect(
+        client.createReviewComment({
+          repo: 'JSL107/personal_agents',
+          pullNumber: 180,
+          commitSha: 'abc1234',
+          filePath: 'src/foo.service.ts',
+          line: 42,
+          body: '본문',
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
+      });
+    });
+  });
 });

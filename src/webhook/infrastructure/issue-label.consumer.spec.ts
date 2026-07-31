@@ -25,6 +25,7 @@ describe('WebhookIssueLabelConsumer', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
     inferUsecase = { execute: jest.fn() };
     consumer = new WebhookIssueLabelConsumer(

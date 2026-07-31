@@ -18,6 +18,26 @@ describe('parsePullRequestReview', () => {
       { body: '전반적으로 잘 짜여 있습니다.' },
     ],
     approvalRecommendation: 'request_changes',
+    // mustFix/niceToHave/missingTests 를 legacy 변환했을 때 나오는 값과 동일하게 채운다.
+    // findings 를 빈 배열로 두면 파서가 "findings 비어 있음 → legacy 폴백"으로 다시
+    // 이 3배열에서 파생시키므로, round-trip(toEqual) 이 성립하려면 여기도 일치시켜야 한다.
+    findings: [
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MUST_FIX',
+        body: '에러 핸들링에서 token 마스킹 필요',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: 'env allowlist 주석 보강',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: 'paginate truncated 케이스',
+      },
+    ],
   };
 
   it('JSON 문자열을 PullRequestReview 로 파싱', () => {
@@ -64,5 +84,198 @@ describe('parsePullRequestReview', () => {
     expect(() => parsePullRequestReview(JSON.stringify(broken))).toThrow(
       CodeReviewerException,
     );
+  });
+});
+
+describe('parsePullRequestReview — findings', () => {
+  const baseResponse = {
+    summary: '요약',
+    riskLevel: 'medium',
+    mustFix: ['트랜잭션 누락'],
+    niceToHave: ['변수명 개선'],
+    missingTests: ['실패 케이스 테스트 없음'],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'request_changes',
+  };
+
+  it('findings 가 있으면 그대로 정본으로 쓴다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        {
+          category: 'RELIABILITY',
+          severity: 'MUST_FIX',
+          file: 'src/foo.service.ts',
+          line: 42,
+          body: '트랜잭션 밖에서 저장한다',
+        },
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([
+      {
+        category: 'RELIABILITY',
+        severity: 'MUST_FIX',
+        file: 'src/foo.service.ts',
+        line: 42,
+        body: '트랜잭션 밖에서 저장한다',
+      },
+    ]);
+  });
+
+  it('findings 가 없으면 기존 3배열에서 UNCLASSIFIED 로 변환한다', () => {
+    const parsed = parsePullRequestReview(JSON.stringify(baseResponse));
+
+    expect(parsed.findings).toEqual([
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MUST_FIX',
+        body: '트랜잭션 누락',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: '변수명 개선',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: '실패 케이스 테스트 없음',
+      },
+    ]);
+  });
+
+  it('findings 요소의 category 가 목록 밖이면 UNCLASSIFIED 로 강등한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [{ category: 'NONSENSE', severity: 'MUST_FIX', body: '본문' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].category).toBe('UNCLASSIFIED');
+  });
+
+  it('findings 요소의 severity 가 목록 밖이면 NICE_TO_HAVE 로 강등한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [{ category: 'STYLE', severity: 'WHATEVER', body: '본문' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].severity).toBe('NICE_TO_HAVE');
+  });
+
+  it('findings 요소에 body 가 없으면 그 요소를 버린다', () => {
+    // legacy 3배열을 비워 폴백을 배제한다 — 여기서 검증할 것은 "요소 탈락"만이다.
+    const text = JSON.stringify({
+      ...baseResponse,
+      mustFix: [],
+      niceToHave: [],
+      missingTests: [],
+      findings: [{ category: 'STYLE', severity: 'NICE_TO_HAVE' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([]);
+  });
+
+  it('findings 요소가 정제에서 전부 탈락하면 legacy 3배열에서 파생한다', () => {
+    // 회귀 방지: length > 0 만 보고 findings 를 정본으로 확정하면, 정제 후 빈 배열이 된
+    // 경우에도 legacy 폴백을 타지 않아 mustFix 의 머지 필수 지적이 조용히 유실된다.
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        { category: 'STYLE', severity: 'NICE_TO_HAVE' }, // body 없음 → 탈락
+        { category: 'RELIABILITY', severity: 'MUST_FIX', body: '   ' }, // 공백 → 탈락
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([
+      { category: 'UNCLASSIFIED', severity: 'MUST_FIX', body: '트랜잭션 누락' },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: '변수명 개선',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: '실패 케이스 테스트 없음',
+      },
+    ]);
+  });
+
+  it('findings 가 빈 배열이면(모델이 필드만 비워 보낸 경우) legacy 3배열에서 파생한다', () => {
+    // 회귀 방지: Array.isArray([]) 는 true 이므로 "findings 존재 여부"만으로 분기하면
+    // 모델이 findings: [] 를 내고 mustFix 등은 채운 경우 그 값이 조용히 유실된다.
+    const text = JSON.stringify({ ...baseResponse, findings: [] });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([
+      { category: 'UNCLASSIFIED', severity: 'MUST_FIX', body: '트랜잭션 누락' },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: '변수명 개선',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: '실패 케이스 테스트 없음',
+      },
+    ]);
+  });
+
+  it('findings 요소의 line 이 정수가 아니거나 0 이하면 생략한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        { category: 'STYLE', severity: 'MUST_FIX', body: '소수', line: 1.5 },
+        { category: 'STYLE', severity: 'MUST_FIX', body: '영', line: 0 },
+        { category: 'STYLE', severity: 'MUST_FIX', body: '음수', line: -3 },
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings.map((finding) => finding.line)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('findings 요소의 line 이 1 이상 정수면 유지한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        { category: 'STYLE', severity: 'MUST_FIX', body: '본문', line: 12 },
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].line).toBe(12);
+  });
+
+  it('findings 요소의 body 앞뒤 공백을 제거하고 저장한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        { category: 'STYLE', severity: 'NICE_TO_HAVE', body: '  본문 공백  ' },
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].body).toBe('본문 공백');
   });
 });

@@ -17,6 +17,7 @@ const review: PullRequestReview = {
   missingTests: [],
   reviewCommentDrafts: [],
   approvalRecommendation: 'approve',
+  findings: [],
 };
 
 const baseInput: DispatchInput = {

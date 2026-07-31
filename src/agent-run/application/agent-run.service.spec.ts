@@ -32,6 +32,7 @@ describe('AgentRunService', () => {
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
+    findLatestSweepReview: jest.fn().mockResolvedValue(null),
     findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
   });
 
@@ -516,6 +517,39 @@ describe('AgentRunService', () => {
 
       expect(repository.findActiveRuns).toHaveBeenCalledTimes(1);
       expect(result).toBe(active);
+    });
+  });
+
+  describe('findLatestSweepReview — PR 리뷰 루프 PR 당 리뷰 1회(쿨다운 재시도) 판정 근거', () => {
+    it('repository.findLatestSweepReview 에 그대로 위임한다', async () => {
+      const latest = {
+        status: 'FAILED',
+        startedAt: new Date('2026-07-31T00:00:00Z'),
+        dryRun: false,
+      };
+      repository.findLatestSweepReview.mockResolvedValue(latest);
+
+      const result = await service.findLatestSweepReview({
+        prRef: 'JSL107/personal_agents#180',
+        sinceDays: 30,
+      });
+
+      expect(repository.findLatestSweepReview).toHaveBeenCalledWith({
+        prRef: 'JSL107/personal_agents#180',
+        sinceDays: 30,
+      });
+      expect(result).toBe(latest);
+    });
+
+    it('레코드가 없으면 null 을 그대로 반환한다', async () => {
+      repository.findLatestSweepReview.mockResolvedValue(null);
+
+      const result = await service.findLatestSweepReview({
+        prRef: 'JSL107/personal_agents#181',
+        sinceDays: 30,
+      });
+
+      expect(result).toBeNull();
     });
   });
 });

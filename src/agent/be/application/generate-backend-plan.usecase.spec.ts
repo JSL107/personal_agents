@@ -61,6 +61,7 @@ const buildPrDetail = () => ({
   body: 'pg token 기반 검증 흐름 도입',
   baseRef: 'main',
   headRef: 'feat/pay-verify',
+  headSha: 'a'.repeat(40),
   authorLogin: 'JSL107',
   changedFiles: [],
   changedFilesTruncated: false,
@@ -96,6 +97,7 @@ describe('GenerateBackendPlanUsecase', () => {
       addLabelsToIssue: jest.fn(),
       pushBranchAndOpenPr: jest.fn(),
       fetchPullRequestEngagement: jest.fn(),
+      createReviewComment: jest.fn(),
     };
 
     usecase = new GenerateBackendPlanUsecase(
@@ -146,6 +148,7 @@ describe('GenerateBackendPlanUsecase', () => {
       changedFilesTotalCount: 0,
       additions: 0,
       deletions: 0,
+      headSha: 'sha',
     });
 
     await usecase.execute({ subject: 'foo/bar#34', slackUserId: 'U1' });

@@ -57,6 +57,8 @@ export class ReviewPullRequestUsecase {
     slackUserId,
     triggerType,
     conversationContext,
+    snapshot,
+    dryRun,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -69,13 +71,19 @@ export class ReviewPullRequestUsecase {
         repo: ref.repo,
         pullNumber: ref.number,
         slackUserId,
+        // 스윕 경로만 채운다 — findLatestSweepReview 가 읽는 판정 근거.
+        ...(dryRun === undefined ? {} : { dryRun }),
       },
       evidence: this.buildInitialEvidence({ prRef, slackUserId }),
       run: async () => {
-        const [detail, diff] = await Promise.all([
-          this.githubClient.getPullRequest(ref),
-          this.githubClient.getPullRequestDiff(ref),
-        ]);
+        // 호출자가 이미 조회한 스냅샷이 있으면 그대로 쓴다 — 리뷰와 후속 게시가 같은
+        // headSha·diff 를 보게 하고, GitHub API 왕복도 줄인다.
+        const [detail, diff] = snapshot
+          ? [snapshot.detail, snapshot.diff]
+          : await Promise.all([
+              this.githubClient.getPullRequest(ref),
+              this.githubClient.getPullRequestDiff(ref),
+            ]);
 
         const negativeExamples = await this.buildNegativeExamples({
           slackUserId,
