@@ -63,8 +63,16 @@ export class PublishFindingsService {
       findings: input.findings,
       max: input.max,
     });
-    const canPost =
-      !input.dryRun && isRepoAllowed(input.repo, input.allowlistRaw);
+
+    // 연습 모드는 정책 계산(정렬·상한) + 집계만 하는 순수 미리보기다. 지문은 게시 여부를
+    // 포함하지 않아 카드를 만들면 실게시로 전환할 때 "중복"으로 막혀 버린다 — DB 에 아예 쓰지 않는다.
+    if (input.dryRun) {
+      outcome.dryRun = plan.toPost.length;
+      outcome.dropped = plan.dropped.length;
+      return outcome;
+    }
+
+    const canPost = isRepoAllowed(input.repo, input.allowlistRaw);
     const hunks = parseDiffHunks(input.diff);
     const fallback: { record: PrReviewFindingRecord; body: string }[] = [];
 
@@ -73,14 +81,10 @@ export class PublishFindingsService {
         input,
         finding,
         // 게시 성공 시 markPosted 가 INLINE/FILE/ISSUE_COMMENT 로 갱신한다.
-        postMode: input.dryRun ? 'DRY_RUN' : 'NOT_POSTED',
+        postMode: 'NOT_POSTED',
       });
       if (record === null) {
         outcome.duplicate += 1;
-        continue;
-      }
-      if (input.dryRun) {
-        outcome.dryRun += 1;
         continue;
       }
       if (!canPost) {
@@ -181,8 +185,9 @@ export class PublishFindingsService {
             maxDistance: SNAP_MAX_DISTANCE,
           });
 
+    let posted: { commentId: string; nodeId: string };
     try {
-      const posted = await this.githubClient.createReviewComment({
+      posted = await this.githubClient.createReviewComment({
         repo: input.repo,
         pullNumber: input.pullNumber,
         commitSha: input.headSha,
@@ -190,17 +195,6 @@ export class PublishFindingsService {
         line: snapped,
         body: finding.body,
       });
-      await this.repository.markPosted({
-        id: record.id,
-        postMode: snapped === null ? 'FILE' : 'INLINE',
-        githubCommentId: posted.commentId,
-        githubThreadNodeId: posted.nodeId,
-      });
-      if (snapped === null) {
-        outcome.file += 1;
-        return;
-      }
-      outcome.inline += 1;
     } catch (error: unknown) {
       this.logger.warn(
         `인라인 게시 실패, 일반 코멘트로 강등 (${filePath}:${snapped ?? 'file'}): ${
@@ -208,6 +202,28 @@ export class PublishFindingsService {
         }`,
       );
       fallback.push({ record, body: finding.body });
+      return;
+    }
+
+    // 게시는 이미 성공했다 — DB 상태 갱신 실패는 지적 유실이 아니므로 집계·폴백에 영향을 주지 않는다.
+    if (snapped === null) {
+      outcome.file += 1;
+    } else {
+      outcome.inline += 1;
+    }
+    try {
+      await this.repository.markPosted({
+        id: record.id,
+        postMode: snapped === null ? 'FILE' : 'INLINE',
+        githubCommentId: posted.commentId,
+        githubThreadNodeId: posted.nodeId,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `게시 성공, DB 상태 갱신 실패 (${filePath}:${snapped ?? 'file'}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -231,15 +247,6 @@ export class PublishFindingsService {
         number: input.pullNumber,
         body: lines.join('\n'),
       });
-      for (const item of fallback) {
-        await this.repository.markPosted({
-          id: item.record.id,
-          postMode: 'ISSUE_COMMENT',
-          githubCommentId: null,
-          githubThreadNodeId: null,
-        });
-        outcome.issueComment += 1;
-      }
     } catch (error: unknown) {
       this.logger.error(
         `일반 코멘트 강등까지 실패 — 카드는 NOT_POSTED 로 남는다: ${
@@ -247,6 +254,27 @@ export class PublishFindingsService {
         }`,
       );
       outcome.notPosted += fallback.length;
+      return;
+    }
+
+    // 게시는 이미 성공했다(묶음 코멘트 1건). 카드별 DB 상태 갱신 실패는 지적 유실이 아니므로
+    // 집계는 게시 결과만 반영하고, markPosted 실패는 로그만 남긴다.
+    for (const item of fallback) {
+      outcome.issueComment += 1;
+      try {
+        await this.repository.markPosted({
+          id: item.record.id,
+          postMode: 'ISSUE_COMMENT',
+          githubCommentId: null,
+          githubThreadNodeId: null,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `게시 성공, DB 상태 갱신 실패 (id=${item.record.id}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
   }
 }

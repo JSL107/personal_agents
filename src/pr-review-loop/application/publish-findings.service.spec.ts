@@ -149,7 +149,7 @@ describe('PublishFindingsService', () => {
     expect(outcome.issueComment).toBe(1);
   });
 
-  it('연습 모드에서는 GitHub 을 호출하지 않고 DRY_RUN 으로 기록한다', async () => {
+  it('연습 모드에서는 GitHub 도 DB 도 건드리지 않는다', async () => {
     const outcome = await service.publish({
       ...baseInput([finding()]),
       dryRun: true,
@@ -157,10 +157,23 @@ describe('PublishFindingsService', () => {
 
     expect(github.createReviewComment).not.toHaveBeenCalled();
     expect(github.addIssueComment).not.toHaveBeenCalled();
-    expect(repository.createIfAbsent).toHaveBeenCalledWith(
-      expect.objectContaining({ postMode: 'DRY_RUN' }),
-    );
+    expect(repository.createIfAbsent).not.toHaveBeenCalled();
     expect(outcome.dryRun).toBe(1);
+  });
+
+  it('연습 모드에서 상한을 넘으면 dropped 도 집계하되 DB 는 여전히 건드리지 않는다', async () => {
+    const outcome = await service.publish({
+      ...baseInput([
+        finding({ body: 'a' }),
+        finding({ body: 'b', severity: 'NICE_TO_HAVE' }),
+      ]),
+      dryRun: true,
+      max: 1,
+    });
+
+    expect(repository.createIfAbsent).not.toHaveBeenCalled();
+    expect(outcome.dryRun).toBe(1);
+    expect(outcome.dropped).toBe(1);
   });
 
   it('allowlist 밖 레포는 게시하지 않고 NOT_POSTED 로 기록한다', async () => {
@@ -201,5 +214,54 @@ describe('PublishFindingsService', () => {
 
     expect(github.createReviewComment).not.toHaveBeenCalled();
     expect(outcome.duplicate).toBe(1);
+  });
+
+  it('markPosted 가 실패해도 게시 집계는 유지되고 일반 코멘트로 중복 게시되지 않는다', async () => {
+    github.createReviewComment.mockResolvedValue({
+      commentId: '600',
+      nodeId: 'PRRC_e',
+    });
+    repository.markPosted.mockRejectedValueOnce(new Error('DB timeout'));
+
+    const outcome = await service.publish(baseInput([finding()]));
+
+    expect(outcome.inline).toBe(1);
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('묶음 게시 중 카드 하나의 markPosted 가 실패해도 카운터 합은 입력과 일치한다', async () => {
+    github.createReviewComment.mockRejectedValue(new Error('422'));
+    github.addIssueComment.mockResolvedValue(undefined);
+    repository.markPosted
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('DB timeout'))
+      .mockResolvedValueOnce(undefined);
+
+    const findings = [
+      finding({ body: 'a' }),
+      finding({ body: 'b' }),
+      finding({ body: 'c' }),
+    ];
+    const outcome = await service.publish(baseInput(findings));
+
+    expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+    expect(outcome.issueComment).toBe(3);
+    const total = Object.values(outcome).reduce((sum, count) => sum + count, 0);
+    expect(total).toBe(findings.length);
+  });
+
+  it('카드 일부만 게시에 실패해도 성공분은 인라인, 실패분은 묶음으로 격리된다', async () => {
+    github.createReviewComment
+      .mockResolvedValueOnce({ commentId: '700', nodeId: 'PRRC_f' })
+      .mockRejectedValueOnce(new Error('422'));
+    github.addIssueComment.mockResolvedValue(undefined);
+
+    const findings = [finding({ body: 'ok' }), finding({ body: 'fail' })];
+    const outcome = await service.publish(baseInput(findings));
+
+    expect(outcome.inline).toBe(1);
+    expect(outcome.issueComment).toBe(1);
+    const total = Object.values(outcome).reduce((sum, count) => sum + count, 0);
+    expect(total).toBe(findings.length);
   });
 });
