@@ -718,5 +718,48 @@ describe('AutopilotOrchestrator', () => {
 
     expect(task.run).toHaveBeenCalledTimes(1);
     expect(postMessage).not.toHaveBeenCalled();
+    // 발송만 차단됐을 뿐 task 는 다 돌았으므로 이 슬롯도 완주 표식을 남겨야 한다.
+    // 안 남기면 하루에 여러 번 도는 그룹은 첫 슬롯 외 전부가 표식 없이 끝나, stalled
+    // 재큐가 진입 확인을 통과해 task 를 전부 재실행한다(증폭 루프 잔존).
+    expect(acquireOnce).toHaveBeenCalledWith(
+      'autopilot:slot:preview-sweeper:repeat:abc:2',
+      expect.any(Number),
+    );
+  });
+
+  // 실행 도중 강제 종료된 슬롯은 표식이 없어야 재시도가 산다 — 발송 실패 경로에서
+  // 완주 표식이 새지 않는지 고정한다(위 수정이 표식을 과하게 남기지 않도록).
+  it('메인 발송 실패 → 슬롯 완주 표식을 남기지 않는다 (재시도 보존)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '보고' });
+    const postMessage = jest.fn().mockRejectedValue(new Error('slack down'));
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const isDone = jest.fn().mockResolvedValue(false);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone, release } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'morning-briefing',
+        [T0_ENTRY],
+        'U1',
+        'C1',
+        'repeat:abc:1',
+      ),
+    ).rejects.toThrow('slack down');
+
+    // 날짜 가드는 롤백되고(재시도가 다시 발송 가능), 슬롯 표식은 아예 생기지 않아야 한다.
+    expect(release).toHaveBeenCalledTimes(1);
+    const releasedKey = release.mock.calls[0][0] as string;
+    expect(releasedKey).not.toContain('slot');
+    const slotAcquires = acquireOnce.mock.calls.filter(([key]: [string]) =>
+      key.startsWith('autopilot:slot:'),
+    );
+    expect(slotAcquires).toHaveLength(0);
   });
 });
