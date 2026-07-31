@@ -718,5 +718,81 @@ describe('AutopilotOrchestrator', () => {
 
     expect(task.run).toHaveBeenCalledTimes(1);
     expect(postMessage).not.toHaveBeenCalled();
+    // 발송만 차단됐을 뿐 task 는 다 돌았으므로 이 슬롯도 완주 표식을 남겨야 한다.
+    // 안 남기면 하루에 여러 번 도는 그룹은 첫 슬롯 외 전부가 표식 없이 끝나, stalled
+    // 재큐가 진입 확인을 통과해 task 를 전부 재실행한다(증폭 루프 잔존).
+    expect(acquireOnce).toHaveBeenCalledWith(
+      'autopilot:slot:preview-sweeper:repeat:abc:2',
+      expect.any(Number),
+    );
+  });
+
+  // 실행 도중 강제 종료된 슬롯은 표식이 없어야 재시도가 산다 — 발송 실패 경로에서
+  // 완주 표식이 새지 않는지 고정한다(위 수정이 표식을 과하게 남기지 않도록).
+  it('메인 발송 실패 → 슬롯 완주 표식을 남기지 않는다 (재시도 보존)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '보고' });
+    const postMessage = jest.fn().mockRejectedValue(new Error('slack down'));
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const isDone = jest.fn().mockResolvedValue(false);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone, release } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'morning-briefing',
+        [T0_ENTRY],
+        'U1',
+        'C1',
+        'repeat:abc:1',
+      ),
+    ).rejects.toThrow('slack down');
+
+    // 날짜 가드는 롤백되고(재시도가 다시 발송 가능), 이 실행은 슬롯 표식을 남기지 않는다.
+    const releasedKeys = release.mock.calls.map(([key]: [string]) => key);
+    expect(releasedKeys.some((key) => !key.startsWith('autopilot:slot:'))).toBe(
+      true,
+    );
+    const slotAcquires = acquireOnce.mock.calls.filter(([key]: [string]) =>
+      key.startsWith('autopilot:slot:'),
+    );
+    expect(slotAcquires).toHaveLength(0);
+  });
+
+  // 회귀 방지 — 겹친 재실행이 "이미 발송됨" 으로 판단해 슬롯 표식을 남긴 뒤, 선점한 쪽의
+  // 발송이 실패하면 그 표식이 남아 재시도가 진입에서 차단된다(보고가 25h 통째 누락).
+  // 발송 실패 롤백은 날짜 가드뿐 아니라 슬롯 표식도 해제해야 한다.
+  it('메인 발송 실패 → 슬롯 표식도 해제한다 (겹친 재실행이 남긴 표식까지 롤백)', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '보고' });
+    const postMessage = jest.fn().mockRejectedValue(new Error('slack down'));
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const isDone = jest.fn().mockResolvedValue(false);
+    const release = jest.fn().mockResolvedValue(undefined);
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone, release } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'morning-briefing',
+        [T0_ENTRY],
+        'U1',
+        'C1',
+        'repeat:abc:1',
+      ),
+    ).rejects.toThrow('slack down');
+
+    expect(release).toHaveBeenCalledWith(
+      'autopilot:slot:morning-briefing:repeat:abc:1',
+    );
   });
 });
