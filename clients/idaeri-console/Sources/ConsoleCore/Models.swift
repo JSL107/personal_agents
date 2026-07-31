@@ -4,7 +4,7 @@ import Foundation
 /// 콘솔 API 는 읽기·알림 전용이므로 이 타입들에는 부작용을 유발하는 필드가 없다.
 /// 계약이 바뀌면 이 파일과 백엔드 SoT 를 함께 갱신해야 한다.
 
-/// 화면에 표시되는 에이전트 상태 5종. rawValue 는 백엔드 enum 문자열과 1:1.
+/// 화면에 표시되는 에이전트 상태 6종. rawValue 는 백엔드 enum 문자열과 1:1.
 public enum ConsoleAgentState: String, Codable, Sendable {
     /// 완료 — 민트
     case completed = "COMPLETED"
@@ -16,6 +16,8 @@ public enum ConsoleAgentState: String, Codable, Sendable {
     case awaitingIntegration = "AWAITING_INTEGRATION"
     /// 대기 — 흰색
     case waiting = "WAITING"
+    /// 실패 — 빨강/코랄
+    case failed = "FAILED"
 }
 
 /// 부서 그리드의 카드 하나. agent-registry 엔트리 + 파생 상태.

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
@@ -100,9 +101,18 @@ export class ModelRouterUsecase {
     }
 
     const primary = this.resolveProvider(primaryName);
+    // route() 소요시간은 실패 시 예외 메시지로 흘려 AgentRun.output 에 보존한다 —
+    // 로그는 휘발되지만 AgentRun 은 남으므로, 사후에 "지연이 route 안이었는지 밖이었는지" 를 가른다.
+    const startedAtMs = Date.now();
 
     try {
-      return await primary.complete(request);
+      const completion = await primary.complete(request);
+      this.warnIfSlow({
+        agentType,
+        providerName: primaryName,
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return completion;
     } catch (primaryError: unknown) {
       const primaryMessage =
         primaryError instanceof Error
@@ -119,6 +129,7 @@ export class ModelRouterUsecase {
         throw this.wrapCompletionFailed({
           attempted: [primaryName],
           lastError: primaryError,
+          elapsedMs: Date.now() - startedAtMs,
         });
       }
 
@@ -128,6 +139,7 @@ export class ModelRouterUsecase {
         throw this.wrapCompletionFailed({
           attempted: [primaryName],
           lastError: primaryError,
+          elapsedMs: Date.now() - startedAtMs,
         });
       }
 
@@ -137,7 +149,13 @@ export class ModelRouterUsecase {
 
       const fallback = this.resolveProvider(fallbackName);
       try {
-        return await fallback.complete(request);
+        const completion = await fallback.complete(request);
+        this.warnIfSlow({
+          agentType,
+          providerName: fallbackName,
+          elapsedMs: Date.now() - startedAtMs,
+        });
+        return completion;
       } catch (fallbackError: unknown) {
         const fallbackMessage =
           fallbackError instanceof Error
@@ -153,24 +171,52 @@ export class ModelRouterUsecase {
           attempted: [primaryName, fallbackName],
           lastError: fallbackError,
           primaryError,
+          elapsedMs: Date.now() - startedAtMs,
         });
       }
     }
+  }
+
+  // route() 한 번의 이론상 최대치(codex timeout × bounded retry)를 넘겼다면 provider 안에서
+  // timeout 이 듣지 않았다는 신호다. 2026-07-18/26 에 단일 실행이 약 32분(이론상 6분)까지
+  // 늘어나 BullMQ lock 을 넘기고 stalled 중복 실행을 유발했으므로, 성공했더라도 남긴다.
+  private warnIfSlow({
+    agentType,
+    providerName,
+    elapsedMs,
+  }: {
+    agentType: AgentType;
+    providerName: ModelProviderName;
+    elapsedMs: number;
+  }): void {
+    if (elapsedMs <= MODEL_ROUTER_WORST_CASE_MS) {
+      return;
+    }
+    this.logger.warn(
+      `모델 호출이 이론상 최대치를 초과 — agent=${agentType} provider=${providerName} ` +
+        `elapsed=${toElapsedSeconds(elapsedMs)}s (worst-case ${toElapsedSeconds(MODEL_ROUTER_WORST_CASE_MS)}s). ` +
+        `provider timeout 이 동작하지 않았을 수 있습니다.`,
+    );
   }
 
   private wrapCompletionFailed({
     attempted,
     lastError,
     primaryError,
+    elapsedMs,
   }: {
     attempted: ModelProviderName[];
     lastError: unknown;
     primaryError?: unknown;
+    elapsedMs: number;
   }): ModelRouterException {
+    // 소요시간을 사용자 노출 문구에 함께 싣는다 — Slack 에서도 "왜 오래 걸렸나" 가 바로 보이고,
+    // AgentRun.output.error 로 남아 사후 지연 구간 분석의 근거가 된다.
+    const elapsed = `${toElapsedSeconds(elapsedMs)}s 소요`;
     const summary =
       attempted.length === 1
-        ? `모델 호출 실패 (${attempted[0]})`
-        : `모델 호출 실패 — primary ${attempted[0]} → fallback ${attempted[1]} 모두 실패`;
+        ? `모델 호출 실패 (${attempted[0]}, ${elapsed})`
+        : `모델 호출 실패 — primary ${attempted[0]} → fallback ${attempted[1]} 모두 실패 (${elapsed})`;
     // codex 쿼터 소진이 원인이면 "모델 호출 실패" 대신 reset 시각을 친절히 덧붙인다 (Slack 노출용).
     const quotaNotice = this.describeQuotaExhaustion([primaryError, lastError]);
     return new ModelRouterException({
@@ -223,3 +269,7 @@ export class ModelRouterUsecase {
     }
   }
 }
+
+// 지연 분석은 초 단위면 충분하다 (ms 는 노이즈). 1초 미만 실패도 0s 로 뭉개지 않게 올림.
+const toElapsedSeconds = (elapsedMs: number): number =>
+  Math.max(1, Math.round(elapsedMs / 1000));

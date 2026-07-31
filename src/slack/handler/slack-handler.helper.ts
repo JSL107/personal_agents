@@ -65,7 +65,9 @@ export const runAgentCommand = async <T>(args: {
   logger: Logger;
   commandLabel: string;
   execute: () => Promise<AgentRunOutcome<T>>;
-  format: (result: T) => FormattedReport | string;
+  format: (
+    result: T,
+  ) => FormattedReport | string | Promise<FormattedReport | string>;
   onOutcome?: (outcome: AgentRunOutcome<T>) => Promise<void>;
 }): Promise<void> => {
   const { respond, logger, commandLabel, execute, format, onOutcome } = args;
@@ -74,7 +76,8 @@ export const runAgentCommand = async <T>(args: {
     await respond({
       response_type: 'ephemeral',
       replace_original: true,
-      text: toSlackText(format(outcome.result)) + formatModelFooter(outcome),
+      text:
+        toSlackText(await format(outcome.result)) + formatModelFooter(outcome),
     });
     if (onOutcome) {
       try {

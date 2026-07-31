@@ -1,3 +1,4 @@
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
@@ -35,9 +36,20 @@ describe('CtoDispatcher', () => {
       modelUsed: 'claude-cli',
       agentRunId: 42,
     });
-    dispatcher = new CtoDispatcher({
-      execute: usecaseExecute,
-    } as unknown as GenerateAssignmentUsecase);
+    dispatcher = new CtoDispatcher(
+      {
+        execute: usecaseExecute,
+      } as unknown as GenerateAssignmentUsecase,
+      {
+        humanize: jest
+          .fn()
+          .mockImplementation(async (fields: Record<string, string>) =>
+            Object.fromEntries(
+              Object.entries(fields).map(([key, value]) => [key, `${value}_H`]),
+            ),
+          ),
+      } as unknown as HumanizeService,
+    );
   });
 
   it('agentType 은 CTO', () => {
@@ -72,8 +84,9 @@ describe('CtoDispatcher', () => {
     expect(typeof outcome.formattedText).toBe('string');
     // formatAssignmentOutput 결과인지 — header + ctoSummary + assignment 라인 포함 확인.
     expect(outcome.formattedText).toContain('CTO 분배 결과');
-    expect(outcome.formattedText).toContain('1건 분배');
+    expect(outcome.formattedText).toContain('1건 분배_H');
     expect(outcome.formattedText).toContain('Router 마무리');
+    expect((outcome.output as AssignmentOutput).ctoSummary).toBe('1건 분배');
   });
 
   it('usecase 가 throw 하면 dispatcher 도 그대로 propagate', async () => {

@@ -33,6 +33,7 @@ describe('AgentRunService', () => {
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
     findLatestSweepReview: jest.fn().mockResolvedValue(null),
+    findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;
@@ -398,7 +399,7 @@ describe('AgentRunService', () => {
       });
     });
 
-    it('실패 시 run.finished(FAILED) + state.changed(WAITING) 발행 후 에러 재전파', async () => {
+    it('실패 시 run.finished(FAILED) + state.changed(FAILED) 발행 후 에러 재전파', async () => {
       const bus = buildBus();
       const serviceWithBus = new AgentRunService(
         repository,
@@ -418,12 +419,18 @@ describe('AgentRunService', () => {
       ).rejects.toThrow('boom');
 
       const events = bus.publish.mock.calls.map((call) => call[0]);
+      expect(events.map((event) => event.type)).toEqual([
+        'run.started',
+        'state.changed',
+        'run.finished',
+        'state.changed',
+      ]);
       const finished = events.find((event) => event.type === 'run.finished');
       expect(finished).toMatchObject({ run: { status: 'FAILED' } });
       const lastState = events
         .filter((event) => event.type === 'state.changed')
         .pop();
-      expect(lastState).toMatchObject({ state: ConsoleAgentState.WAITING });
+      expect(lastState).toMatchObject({ state: ConsoleAgentState.FAILED });
     });
 
     it('consoleEvents 미주입이어도 execute 는 정상 동작한다', async () => {
@@ -437,7 +444,7 @@ describe('AgentRunService', () => {
       ).resolves.toMatchObject({ result: 'r' });
     });
 
-    it('sweepZombies 는 좀비 런마다 run.finished(FAILED)+state.changed(WAITING) 발행 후 정리 건수 반환', async () => {
+    it('sweepZombies 는 좀비 런마다 run.finished(FAILED)+state.changed(FAILED) 발행 후 정리 건수 반환', async () => {
       const bus = buildBus();
       const zombie = {
         id: 55,
@@ -467,6 +474,10 @@ describe('AgentRunService', () => {
 
       expect(count).toBe(1);
       const events = bus.publish.mock.calls.map((call) => call[0]);
+      expect(events.map((event) => event.type)).toEqual([
+        'run.finished',
+        'state.changed',
+      ]);
       // 좀비(PM)에만 finished+state 이벤트 — 임계 이내 정상 런(CTO)은 제외.
       const finished = events.find((event) => event.type === 'run.finished');
       expect(finished).toMatchObject({
@@ -477,7 +488,7 @@ describe('AgentRunService', () => {
       );
       expect(stateChanged).toMatchObject({
         agentType: 'PM',
-        state: ConsoleAgentState.WAITING,
+        state: ConsoleAgentState.FAILED,
       });
       const ctoTouched = events.some(
         (event) =>

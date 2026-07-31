@@ -139,6 +139,12 @@ export interface ActiveRunSnapshot {
   endedAt: Date | null;
 }
 
+// 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 "최신 종료 런"이 FAILED이며
+// endedAt이 (now - withinMinutes) 이후인 agentType. 실패 후 성공/재시작이 있으면 제외된다.
+export interface RecentlyFailedRun {
+  agentType: string;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -212,4 +218,8 @@ export interface AgentRunRepositoryPort {
   findLatestSweepReview(
     input: FindLatestSweepReviewQuery,
   ): Promise<LatestSweepReview | null>;
+  // 콘솔 관제 — agentType별 최신 종료가 FAILED이고 cutoff 이내인 것.
+  findRecentlyFailedRuns(input: {
+    withinMinutes: number;
+  }): Promise<RecentlyFailedRun[]>;
 }

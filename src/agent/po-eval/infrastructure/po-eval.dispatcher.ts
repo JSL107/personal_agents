@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeEvaluationOutput } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
@@ -20,13 +22,18 @@ export class PoEvalDispatcher implements AgentDispatcher {
 
   constructor(
     private readonly generatePoEvaluation: GeneratePoEvaluationUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
     const outcome = await this.generatePoEvaluation.execute({
       slackUserId: input.slackUserId,
     });
-    const formatted = formatEvaluationOutput(outcome.result);
+    const humanized = await humanizeEvaluationOutput(
+      outcome.result,
+      this.humanizeService,
+    );
+    const formatted = formatEvaluationOutput(humanized);
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,

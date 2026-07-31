@@ -1,3 +1,12 @@
+import { Logger } from '@nestjs/common';
+
+import {
+  LLM_CLI_MAX_ATTEMPTS,
+  LLM_CLI_RETRY_BACKOFF_BASE_MS,
+  LLM_CLI_RETRY_BACKOFF_JITTER_MS,
+  LLM_CLI_TIMEOUT_MS,
+  MODEL_ROUTER_WORST_CASE_MS,
+} from '../../common/llm/llm-timeout.constant';
 import { AgentType, ModelProviderName } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
@@ -157,6 +166,129 @@ describe('ModelRouterUsecase', () => {
       expect(chatgptProvider.probeReadiness).toBeUndefined();
 
       await expect(usecase.probeReadiness()).resolves.toBe(true);
+    });
+  });
+
+  // 2026-07-18 / 07-26 관측 — 단일 실행이 약 32분(이론상 최대 6분)까지 늘어나 BullMQ lock
+  // (450s)을 넘겼고, stalled 재처리로 같은 cron 이 하루 12~21회 중복 실행됐다. 당시 남은 기록은
+  // "모델 호출 실패 (CHATGPT)" 뿐이라 그 32분이 route() 안인지 밖(context 수집·Notion 적재)인지
+  // 가릴 수 없었다. 실패 메시지에 route 소요시간을 실어 AgentRun.output 으로 보존한다.
+  describe('실패 진단 — route 소요시간 보존', () => {
+    it('실패 메시지에 route 소요시간을 남긴다', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new Error('codex CLI 응답 시간 초과 (180000ms)'),
+      );
+
+      let caught: Error | undefined;
+      try {
+        await usecase.route({
+          agentType: AgentType.PM,
+          request: { prompt: 'x' },
+        });
+      } catch (error) {
+        caught = error as Error;
+      }
+
+      expect(caught?.message).toMatch(/모델 호출 실패 \(CHATGPT, \d+s 소요\)/);
+    });
+
+    it('쿼터 안내가 붙어도 소요시간은 함께 남는다', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new CodexQuotaExceededException('2026-07-31 14:00'),
+      );
+
+      let caught: Error | undefined;
+      try {
+        await usecase.route({
+          agentType: AgentType.PM,
+          request: { prompt: 'x' },
+        });
+      } catch (error) {
+        caught = error as Error;
+      }
+
+      expect(caught?.message).toMatch(/\d+s 소요/);
+      expect(caught?.message).toContain('사용량 한도 초과');
+    });
+
+    // 2026-07-26 아침 브리핑 12건은 전부 SUCCEEDED 인데도 건당 약 32분이 걸렸다.
+    // 실패 메시지 경로로는 이런 "성공했지만 비정상적으로 느린" 실행을 잡을 수 없으므로
+    // 성공 경로에도 임계 경고를 둔다 (임계 = route 이론상 최대치).
+    it('성공했더라도 이론상 최대치를 넘기면 경고를 남긴다', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const nowSpy = jest
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(0)
+        .mockReturnValueOnce(MODEL_ROUTER_WORST_CASE_MS + 1_000);
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('이론상 최대치를 초과'),
+      );
+      warnSpy.mockRestore();
+      nowSpy.mockRestore();
+    });
+
+    // PR #182 리뷰 지적 — 임계가 timeout×attempts(360s)뿐이면, 두 attempt 가 모두
+    // 정상 timeout 되고 그 사이 backoff(최대 1,999ms)만 끼어도 임계를 넘겨 "timeout 이
+    // 동작하지 않았을 수 있습니다" 라는 거짓 경고가 난다. 정상 경로는 조용해야 한다.
+    it('두 attempt 가 모두 정상 timeout 되고 backoff 가 끼어도 경고하지 않는다', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      // 모든 timeout·backoff 가 정상 동작한 최악 경로 (backoff 는 base + jitter 상한 직전).
+      const allTimeoutsHonoredMs =
+        LLM_CLI_MAX_ATTEMPTS * LLM_CLI_TIMEOUT_MS +
+        (LLM_CLI_MAX_ATTEMPTS - 1) *
+          (LLM_CLI_RETRY_BACKOFF_BASE_MS + LLM_CLI_RETRY_BACKOFF_JITTER_MS - 1);
+      const nowSpy = jest
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(0)
+        .mockReturnValueOnce(allTimeoutsHonoredMs);
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+      nowSpy.mockRestore();
+    });
+
+    it('정상 속도의 성공 호출은 경고하지 않는다', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 });

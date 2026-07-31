@@ -33,6 +33,7 @@ const buildRepo = (
   findChainRootsInWindow: jest.fn().mockResolvedValue([]),
   searchByKeyword: jest.fn().mockResolvedValue([]),
   findActiveRuns: jest.fn().mockResolvedValue([]),
+  findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
 });
 
 describe('GetQuotaStatsUsecase', () => {
