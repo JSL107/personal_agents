@@ -54,6 +54,31 @@ export class CronIdempotencyService implements OnModuleDestroy {
     return this.acquireFromMemory(key, ttlSeconds);
   }
 
+  // 키가 이미 있는지만 확인한다 (읽기 전용 — 키를 만들지 않는다).
+  //
+  // 용도: 무거운 작업(LLM 호출 등) 앞에서 "이 슬롯은 이미 완주했는가" 를 물어 재진입을 조기
+  // 차단한다. acquireOnce 를 앞으로 옮기지 않고 읽기 전용 확인을 쓰는 이유는, 진입 시점에
+  // 키를 만들면 실행 도중 프로세스가 죽었을 때(예외가 아니라 강제 종료) 키만 남아 그 슬롯이
+  // TTL 동안 영구 차단되기 때문이다. 키는 "완주(발송 성공)" 시점에만 생겨야 재시도가 살아있다.
+  //
+  // Redis 모드: EXISTS. in-memory 모드: Set.has.
+  // Redis 명령 실패 시: 경고 로그 + in-memory 조회로 fallback (acquireOnce 와 동일 철학).
+  // fallback 이 false 를 주면 재진입을 못 막을 뿐 중복 "발송" 은 뒤의 acquireOnce 가 여전히
+  // 차단한다 — 이 확인은 최적화이지 정합성의 마지막 방어선이 아니다.
+  async isDone(key: string): Promise<boolean> {
+    if (this.redis) {
+      try {
+        const found = await this.redis.exists(key);
+        return found > 0;
+      } catch (error) {
+        this.logger.warn(
+          `CronIdempotency — Redis exists 실패, in-memory fallback: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return this.inMemoryKeys.has(key);
+  }
+
   // 획득한 키를 해제(삭제)한다 — "발송 성공 시에만 가드를 소비" 하기 위한 롤백 연산.
   // acquireOnce 로 키를 선점한 뒤 발송이 실패하면 이 메서드로 키를 되돌려, BullMQ 재시도가
   // 같은 슬롯을 "이미 발송됨" 으로 오인해 영구 차단하지 않고 다시 발송하게 한다.

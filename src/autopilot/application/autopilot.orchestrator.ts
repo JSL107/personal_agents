@@ -23,6 +23,20 @@ import { PlaybookEntry } from '../domain/playbook.type';
 // 놓쳐도 다음 발화 직전까지 유효하도록 24h. (기존 1h 는 저녁 카드를 자주 EXPIRED 로 흘려보냄)
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
+// 그룹 × 발화일 단위 발송 가드 키 — "같은 날 두 번 발송하지 않는다".
+const buildGuardKey = (groupKey: string, firedAtKst: string): string =>
+  `autopilot:${groupKey}:${firedAtKst}`;
+
+// 그룹 × 스케줄 슬롯 단위 완주 표식 — 재진입 차단 전용. 슬롯 = BullMQ job id 로,
+// stalled 로 재큐된 같은 job 만 같은 값을 가진다(다음 스케줄 슬롯은 새 job = 새 키).
+//
+// 재진입 확인에 위 발송 가드(날짜 키)를 쓰면 안 된다: 하루에 여러 번 도는 그룹
+// (preview-sweeper `*/10`, pr-review-sweep `*/15`, run-sweeper 매시간)은 그날 첫 발송으로
+// 날짜 키가 생기는 순간 남은 슬롯 전부가 진입에서 끊겨, 알림뿐 아니라 만료 카드 정리·좀비 run
+// 정리 같은 실제 작업까지 하루 종일 멈춘다(날짜 키 TTL 25h).
+const buildSlotKey = (groupKey: string, slotId: string): string =>
+  `autopilot:slot:${groupKey}:${slotId}`;
+
 // 플레이북 그룹을 실행 → 비-skip summaryText 를 메인 메시지로 합치고 detailText 는 스레드 댓글로,
 // 멱등 1회 후 다중 타깃 fan-out 발송. T1_PREVIEW task 의 preview 는 CreatePreviewUsecase →
 // postPreviewMessage 로 승인 버튼 발송(메인 텍스트와 별개).
@@ -49,8 +63,30 @@ export class AutopilotOrchestrator {
     entries: PlaybookEntry[],
     ownerSlackUserId: string,
     target: string,
+    slotId?: string,
   ): Promise<void> {
     const firedAtKst = getTodayKstDate();
+    const guardKey = buildGuardKey(groupKey, firedAtKst);
+    const slotKey = slotId ? buildSlotKey(groupKey, slotId) : null;
+
+    // 재진입 차단 — 이 슬롯이 이미 완주했으면 task 를 하나도 실행하지 않고 끝낸다.
+    //
+    // 배경: 한 실행이 worker lockDuration 을 넘기면 BullMQ 가 stalled 로 보고 같은 job 을
+    // 재큐한다(stalled 검사 기본 30s 주기). 아래 "발송 직전" 가드만 있으면 그 재실행이 LLM 을
+    // 전부 다시 호출한 뒤에야 "이미 발송됨" 을 알고 발송만 skip 하고, 그 재실행이 또
+    // lockDuration 을 넘겨 다시 stalled 가 되는 자기 증폭 루프가 된다.
+    // 실측(2026-07-26 morning-briefing): 12회 연쇄 재실행, 각 16~33분, LLM 호출 12회 낭비.
+    // → 무거운 작업 앞에서 완주 여부를 먼저 확인해 루프를 끊는다.
+    //
+    // 읽기 전용(isDone)을 쓰는 이유는 cron-idempotency.service.ts 의 isDone 주석 참조 —
+    // 진입 시점에 키를 만들면 실행 중 강제 종료 시 그 슬롯이 TTL 동안 영구 차단된다.
+    if (slotKey && (await this.cronIdempotency.isDone(slotKey))) {
+      this.logger.warn(
+        `Autopilot[${groupKey}] — 슬롯 ${slotId} 이미 완주됨, 재진입 차단 (task 실행 skip)`,
+      );
+      return;
+    }
+
     const items: { summary: string; detail?: string }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
 
@@ -92,11 +128,13 @@ export class AutopilotOrchestrator {
     }
 
     if (items.length === 0 && previews.length === 0) {
+      // 보낼 게 없어도 task 는 다 돌았다 = 이 슬롯은 완주. 표식을 남겨야 재큐가 같은 task 를
+      // 또 돌리지 않는다(pr-review-sweep 처럼 결과 없이도 LLM 을 태우는 task 가 있다).
+      await this.markSlotDone(slotKey);
       this.logger.log(`Autopilot[${groupKey}] — 보고 내용 없음, 전달 skip`);
       return;
     }
 
-    const guardKey = `autopilot:${groupKey}:${firedAtKst}`;
     const firstRun = await this.cronIdempotency.acquireOnce(
       guardKey,
       CRON_SENT_GUARD_TTL_SECONDS,
@@ -214,8 +252,23 @@ export class AutopilotOrchestrator {
       }
     }
 
+    await this.markSlotDone(slotKey);
     this.logger.log(
       `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task, preview ${previews.length})`,
+    );
+  }
+
+  // 이 슬롯 완주 표식 — stalled 재큐가 다시 들어와도 진입부에서 끊기게 한다.
+  // 완주 시점에만 남긴다: 실행 도중 강제 종료되면 표식이 없어 재시도가 살아있다.
+  // TTL 은 발송 가드와 같은 값을 재사용한다 — 슬롯 키는 슬롯마다 고유해 다음 슬롯을 막지 않으므로
+  // 길어도 무해하고, 짧게 잡아 재큐 창을 놓치는 편이 더 위험하다.
+  private async markSlotDone(slotKey: string | null): Promise<void> {
+    if (!slotKey) {
+      return;
+    }
+    await this.cronIdempotency.acquireOnce(
+      slotKey,
+      CRON_SENT_GUARD_TTL_SECONDS,
     );
   }
 
