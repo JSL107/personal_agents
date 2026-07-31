@@ -34,11 +34,15 @@ export const parsePullRequestReview = (text: string): PullRequestReview => {
   }
 
   const rawFindings = (parsed as unknown as Record<string, unknown>).findings;
-  const findings = Array.isArray(rawFindings)
-    ? rawFindings
-        .map(toFinding)
-        .filter((finding): finding is ReviewFinding => finding !== null)
-    : findingsFromLegacyArrays(parsed);
+  // 빈 findings([])는 "지적 없음"이 아니라 "모델이 새 필드를 안 채움"으로 취급한다 —
+  // legacy 3배열(mustFix/niceToHave/missingTests)에 값이 있는데 findings 만 비어 있으면
+  // 그 값이 조용히 유실되므로, 실제로 요소가 있을 때만 findings 를 정본으로 쓴다.
+  const findings =
+    Array.isArray(rawFindings) && rawFindings.length > 0
+      ? rawFindings
+          .map(toFinding)
+          .filter((finding): finding is ReviewFinding => finding !== null)
+      : findingsFromLegacyArrays(parsed);
 
   return { ...parsed, findings };
 };
@@ -135,7 +139,11 @@ const toFinding = (value: unknown): ReviewFinding | null => {
     return null;
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.body !== 'string' || record.body.trim().length === 0) {
+  if (typeof record.body !== 'string') {
+    return null;
+  }
+  const body = record.body.trim();
+  if (body.length === 0) {
     return null;
   }
   const category = FINDING_CATEGORIES.has(record.category as FindingCategory)
@@ -144,12 +152,13 @@ const toFinding = (value: unknown): ReviewFinding | null => {
   const severity = FINDING_SEVERITIES.has(record.severity as FindingSeverity)
     ? (record.severity as FindingSeverity)
     : 'NICE_TO_HAVE';
-  const finding: ReviewFinding = { category, severity, body: record.body };
+  const finding: ReviewFinding = { category, severity, body };
   if (typeof record.file === 'string') {
     finding.file = record.file;
   }
-  if (typeof record.line === 'number') {
-    finding.line = record.line;
+  // GitHub 는 diff 에 없는 줄 번호로 코멘트를 남기면 거부한다 — 정수·양수만 받는다.
+  if (Number.isInteger(record.line) && (record.line as number) > 0) {
+    finding.line = record.line as number;
   }
   return finding;
 };

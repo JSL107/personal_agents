@@ -23,7 +23,11 @@ describe('ReviewPullRequestUsecase', () => {
     missingTests: [],
     reviewCommentDrafts: [{ body: 'LGTM' }],
     approvalRecommendation: 'comment',
-    findings: [],
+    // niceToHave 가 비어 있지 않으므로, findings 를 []로 두면 파서의 legacy 폴백이
+    // 이 값에서 파생시켜 round-trip(toEqual) 이 깨진다 — 파생 결과와 미리 일치시킨다.
+    findings: [
+      { category: 'UNCLASSIFIED', severity: 'NICE_TO_HAVE', body: '주석 보강' },
+    ],
   };
 
   let modelRouter: { route: jest.Mock };
