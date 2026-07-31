@@ -80,11 +80,24 @@ export class AutopilotOrchestrator {
     //
     // 읽기 전용(isDone)을 쓰는 이유는 cron-idempotency.service.ts 의 isDone 주석 참조 —
     // 진입 시점에 키를 만들면 실행 중 강제 종료 시 그 슬롯이 TTL 동안 영구 차단된다.
+    //
+    // ⚠️ 알려진 한계: 이 확인은 "완주한 슬롯" 만 끊는다. 앞 실행이 아직 task 를 도는 중에
+    // 들어온 재큐는 표식이 아직 없어 그대로 통과한다 — lockDuration 초과가 곧 "아직 실행 중"
+    // 이므로 원리상 겹칠 수 있다. 실측(2026-07-26)은 앞 실행 종료 30초 뒤 다음이 시작하는
+    // 순차 패턴이라 이 확인으로 끊긴다. 겹침까지 막으려면 진입 잠금이 필요한데, 그건 강제
+    // 종료 시 슬롯이 TTL 동안 영구 차단되는 문제를 다시 부른다(위 문단) — 의도적 절충이다.
     if (slotKey && (await this.cronIdempotency.isDone(slotKey))) {
       this.logger.warn(
         `Autopilot[${groupKey}] — 슬롯 ${slotId} 이미 완주됨, 재진입 차단 (task 실행 skip)`,
       );
       return;
+    }
+    if (slotKey === null) {
+      // 슬롯 식별자가 없으면 재진입 차단이 통째로 꺼진다. 조용히 꺼지지 않게 남긴다
+      // (BullMQ repeatable job 은 항상 id 를 가지므로 정상 경로에서는 나오지 않는다).
+      this.logger.debug(
+        `Autopilot[${groupKey}] — 슬롯 식별자 없음, 재진입 차단 비활성`,
+      );
     }
 
     const items: { summary: string; detail?: string }[] = [];
@@ -140,6 +153,17 @@ export class AutopilotOrchestrator {
       CRON_SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
+      // 발송만 막혔을 뿐 task 는 전부 돌았다 = 이 슬롯은 완주다. 표식을 남기지 않으면
+      // 하루에 여러 번 도는 그룹(preview-sweeper `*/10`, pr-review-sweep `*/15`,
+      // run-sweeper 매시간)은 그날 첫 발송 이후 모든 슬롯이 이 경로로 끝나면서 표식 없이
+      // 종료되고, 그 슬롯이 stalled 로 재큐되면 진입 확인을 통과해 task 를 처음부터 전부
+      // 다시 돈다 — 이 가드가 막으려던 자기 증폭 루프가 그대로 남는다.
+      //
+      // ⚠️ firstRun=false 는 두 가지를 뜻한다: (1) 앞선 실행이 발송을 마쳤다, (2) 다른 실행이
+      // 가드를 선점한 채 아직 발송 중이다. (2)에서 이 표식을 남긴 뒤 선점한 쪽의 발송이
+      // 실패하면 그쪽은 날짜 가드만 롤백하므로, 표식이 남아 재시도가 진입에서 차단된다.
+      // → 발송 실패 롤백에서 슬롯 표식도 함께 해제한다(같은 job = 같은 slotKey 라 도달 가능).
+      await this.markSlotDone(slotKey);
       this.logger.warn(
         `Autopilot[${groupKey}] — ${firedAtKst} 이미 발송됨, 중복 차단`,
       );
@@ -204,6 +228,10 @@ export class AutopilotOrchestrator {
       }
     } catch (error: unknown) {
       await this.cronIdempotency.release(guardKey);
+      // 겹친 재실행(같은 job = 같은 slotKey)이 "이미 발송됨" 으로 판단해 남긴 완주 표식까지
+      // 되돌린다. 날짜 가드만 풀면 표식이 남아 재시도가 진입 확인에서 차단되고, 보고가
+      // 슬롯 키 TTL(25h) 동안 통째로 누락된다.
+      await this.releaseSlot(slotKey);
       throw error;
     }
 
@@ -270,6 +298,24 @@ export class AutopilotOrchestrator {
       slotKey,
       CRON_SENT_GUARD_TTL_SECONDS,
     );
+  }
+
+  // 완주 표식 롤백 — 발송이 실패했으면 이 슬롯은 완주가 아니다. 겹친 재실행이 남겼을 수도
+  // 있는 표식까지 지워 재시도가 진입 확인을 통과하게 한다. 해제 자체의 실패는 로그만 남긴다
+  // (이미 상위에서 원래 예외를 던지는 중이라, 여기서 예외를 바꿔치기하면 원인이 가려진다).
+  private async releaseSlot(slotKey: string | null): Promise<void> {
+    if (!slotKey) {
+      return;
+    }
+    try {
+      await this.cronIdempotency.release(slotKey);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Autopilot — 슬롯 표식 해제 실패 (${slotKey}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   // 승인 카드 발송 실패를 owner digest 채널에 통지 — 조용한 유실 방지(자동 재발송은 안 함).
