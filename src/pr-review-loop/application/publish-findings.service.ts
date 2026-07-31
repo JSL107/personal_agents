@@ -7,6 +7,7 @@ import {
 } from '../../github/domain/port/github-client.port';
 import {
   FileHunkRanges,
+  firstCommentableLine,
   parseDiffHunks,
   SNAP_MAX_DISTANCE,
   snapToCommentableLine,
@@ -175,9 +176,11 @@ export class PublishFindingsService {
       return;
     }
 
+    // line 이 없어도 파일 단위로 강등하지 않는다 — 파일 헤더에 붙은 코멘트는 어느 줄에 대한
+    // 지적인지 보이지 않아 리뷰로서 쓸모가 없다. 그 파일 첫 변경 줄에 인라인으로 붙인다.
     const snapped =
       finding.line === undefined
-        ? null
+        ? firstCommentableLine({ hunks, filePath })
         : snapToCommentableLine({
             hunks,
             filePath,

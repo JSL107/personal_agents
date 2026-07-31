@@ -1,4 +1,5 @@
 import {
+  firstCommentableLine,
   parseDiffHunks,
   SNAP_MAX_DISTANCE,
   snapToCommentableLine,
@@ -111,5 +112,35 @@ describe('snapToCommentableLine', () => {
     });
 
     expect(snapped).toBeNull();
+  });
+});
+
+describe('firstCommentableLine', () => {
+  const hunks = parseDiffHunks(DIFF);
+
+  // 모델이 line 을 비워 보내도 파일 단위로 강등하지 않고 인라인으로 붙이기 위한 폴백.
+  // 파일 헤더에 달린 코멘트는 어느 줄에 대한 지적인지 보이지 않아 리뷰 가치가 크게 떨어진다.
+  it('그 파일 첫 변경 hunk 의 시작 줄을 반환한다', () => {
+    expect(
+      firstCommentableLine({ hunks, filePath: 'src/foo.service.ts' }),
+    ).toBe(10);
+    expect(firstCommentableLine({ hunks, filePath: 'src/bar.util.ts' })).toBe(
+      1,
+    );
+  });
+
+  it('diff 에 없는 파일이면 null — 변경되지 않은 파일엔 인라인을 달 수 없다', () => {
+    expect(
+      firstCommentableLine({ hunks, filePath: 'src/unknown.ts' }),
+    ).toBeNull();
+  });
+
+  it('범위가 비어 있으면 null 을 반환한다', () => {
+    expect(
+      firstCommentableLine({
+        hunks: [{ filePath: 'src/empty.ts', ranges: [] }],
+        filePath: 'src/empty.ts',
+      }),
+    ).toBeNull();
   });
 });

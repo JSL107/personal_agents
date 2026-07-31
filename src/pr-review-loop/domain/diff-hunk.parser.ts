@@ -15,6 +15,11 @@ export interface SnapInput {
   maxDistance: number;
 }
 
+export interface FirstCommentableLineInput {
+  hunks: FileHunkRanges[];
+  filePath: string;
+}
+
 // 스냅 허용 거리. 이보다 멀면 다른 코드에 엉뚱하게 붙는 편보다 파일 단위 강등이 낫다.
 export const SNAP_MAX_DISTANCE = 20;
 
@@ -86,4 +91,15 @@ export const snapToCommentableLine = ({
     return null;
   }
   return best;
+};
+
+// 모델이 line 을 비워 보낸 경우의 폴백 — 그 파일 첫 변경 줄. 파일 단위(subject_type=file)
+// 코멘트는 파일 헤더에 붙어 어느 줄에 대한 지적인지 보이지 않으므로, 인라인을 우선한다.
+// diff 에 없는 파일이면 애초에 인라인이 불가하므로 null (호출부가 파일 단위로 강등).
+export const firstCommentableLine = ({
+  hunks,
+  filePath,
+}: FirstCommentableLineInput): number | null => {
+  const found = hunks.find((file) => file.filePath === filePath);
+  return found?.ranges[0]?.start ?? null;
 };
