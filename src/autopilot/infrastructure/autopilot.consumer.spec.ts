@@ -3,6 +3,8 @@ import { AutopilotConsumer } from './autopilot.consumer';
 const makeJob = (name: string) =>
   ({
     name,
+    // 슬롯 식별자 — orchestrator 의 재진입 차단이 이 값으로 슬롯을 구분한다.
+    id: `repeat:${name}:1`,
     data: { ownerSlackUserId: 'U1', target: 'C1' },
   }) as never;
 
@@ -38,6 +40,7 @@ describe('AutopilotConsumer', () => {
       ]),
       'U1',
       'C1',
+      'repeat:evening:1',
     );
     // entries 는 정확히 3건 (daily-eval + work-reviewer + evening-retro-publish)
     const entries: unknown[] = runGroup.mock.calls[0][1];
@@ -55,6 +58,7 @@ describe('AutopilotConsumer', () => {
       ]),
       'U1',
       'C1',
+      'repeat:morning:1',
     );
   });
 
