@@ -47,6 +47,7 @@ export class GenerateBackendPlanUsecase {
     subject,
     slackUserId,
     conversationContext,
+    prReferenceHint,
   }: GenerateBackendPlanInput): Promise<AgentRunOutcome<BackendPlan>> {
     const trimmed = subject.trim();
     if (trimmed.length === 0) {
@@ -60,14 +61,19 @@ export class GenerateBackendPlanUsecase {
 
     // PR URL / owner/repo#N 패턴이면 GitHub detail 을 prompt 에 ground (Impact Reporter 와 동일 전략).
     // parsePrReference 는 "PR ref 만" 들어온 입력에만 매칭 — 자유 텍스트 혼합이면 throw → null.
-    // 따라서 prRef !== null 이면 subject 에 task 설명이 없다는 뜻. fetch 실패 시 model 은
+    // 따라서 subjectPrRef !== null 이면 subject 에 task 설명이 없다는 뜻. fetch 실패 시 model 은
     // 근거 없이 plan 을 만들 수밖에 없으므로 (codex review bha25i79n P2) 명시 예외로 사용자에게 재입력 요청.
-    const prRef = tryParsePrReference(trimmed);
+    // prReferenceHint 는 subject 에 설명이 남아 있는 상태의 보강 참조라, 조회 실패해도 설명 기반
+    // plan 이 가능하므로 예외 없이 진행한다 (subconscious 제안 실행이 실패로 끊기지 않게).
+    const subjectPrRef = tryParsePrReference(trimmed);
+    const prRef =
+      subjectPrRef ??
+      (prReferenceHint ? tryParsePrReference(prReferenceHint) : null);
     const prContext = prRef ? await this.fetchPrContextOrNull(prRef) : null;
-    if (prRef && !prContext) {
+    if (subjectPrRef && !prContext) {
       throw new BeAgentException({
         code: BeAgentErrorCode.PR_GROUNDING_REQUIRED,
-        message: `PR (${prRef.repo}#${prRef.number}) 정보를 가져오지 못해 작업 내용을 알 수 없습니다. GITHUB_TOKEN 이 설정돼 있는지 / 해당 PR 에 접근 권한이 있는지 확인하거나, 작업 설명을 자유 텍스트로 입력해주세요.`,
+        message: `PR (${subjectPrRef.repo}#${subjectPrRef.number}) 정보를 가져오지 못해 작업 내용을 알 수 없습니다. GITHUB_TOKEN 이 설정돼 있는지 / 해당 PR 에 접근 권한이 있는지 확인하거나, 작업 설명을 자유 텍스트로 입력해주세요.`,
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
