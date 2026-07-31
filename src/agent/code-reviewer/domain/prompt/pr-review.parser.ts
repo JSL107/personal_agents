@@ -37,11 +37,16 @@ export const parsePullRequestReview = (text: string): PullRequestReview => {
   // 빈 findings([])는 "지적 없음"이 아니라 "모델이 새 필드를 안 채움"으로 취급한다 —
   // legacy 3배열(mustFix/niceToHave/missingTests)에 값이 있는데 findings 만 비어 있으면
   // 그 값이 조용히 유실되므로, 실제로 요소가 있을 때만 findings 를 정본으로 쓴다.
+  // 정제 후에 판정한다 — 요소가 있어도 전부 탈락(body 누락·공백 등)하면 결과는 빈 배열이고,
+  // 그 상태로 확정하면 legacy 3배열에 남은 머지 필수 지적이 카드·게시 경로에서 조용히 유실된다.
+  const cleanedFindings = Array.isArray(rawFindings)
+    ? rawFindings
+        .map(toFinding)
+        .filter((finding): finding is ReviewFinding => finding !== null)
+    : [];
   const findings =
-    Array.isArray(rawFindings) && rawFindings.length > 0
-      ? rawFindings
-          .map(toFinding)
-          .filter((finding): finding is ReviewFinding => finding !== null)
+    cleanedFindings.length > 0
+      ? cleanedFindings
       : findingsFromLegacyArrays(parsed);
 
   return { ...parsed, findings };
