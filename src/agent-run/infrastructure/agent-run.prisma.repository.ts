@@ -23,6 +23,7 @@ import {
   BeginAgentRunInput,
   FailedRunSnapshot,
   FinishAgentRunInput,
+  HasSweepReviewForQuery,
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
@@ -431,6 +432,24 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       startedAt: row.startedAt,
       endedAt: row.endedAt,
     }));
+  }
+
+  // PR 리뷰 루프 — PR 당 리뷰 1회 판정. inputSnapshot.prRef 는 ReviewPullRequestUsecase 가 항상
+  // 채우는 JSON 필드(JSON path 필터, 인덱스 없음)라 startedAt 하한으로 스캔 범위를 제한한다.
+  async hasSweepReviewFor({
+    prRef,
+    sinceDays,
+  }: HasSweepReviewForQuery): Promise<boolean> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const found = await this.prisma.agentRun.findFirst({
+      where: {
+        triggerType: 'PR_REVIEW_SWEEP',
+        startedAt: { gte: since },
+        inputSnapshot: { path: ['prRef'], equals: prRef },
+      },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async sweepZombies({

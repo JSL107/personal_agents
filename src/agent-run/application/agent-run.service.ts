@@ -21,6 +21,7 @@ import {
   AgentRunRepositoryPort,
   AgentRunStatRow,
   AgentSweptCountRow,
+  HasSweepReviewForQuery,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -321,6 +322,11 @@ export class AgentRunService {
   // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체. deriveAgentState 의 hasActiveRun 입력 조립용.
   async findActiveRuns(): Promise<ActiveRunSnapshot[]> {
     return await this.repository.findActiveRuns();
+  }
+
+  // PR 리뷰 루프 — PR 당 리뷰 1회 판정. repository 위임.
+  async hasSweepReviewFor(input: HasSweepReviewForQuery): Promise<boolean> {
+    return await this.repository.hasSweepReviewFor(input);
   }
 
   async aggregateRetryCounts(input: {
