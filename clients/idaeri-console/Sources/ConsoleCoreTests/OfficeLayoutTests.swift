@@ -35,15 +35,15 @@ func runOfficeLayoutTests(_ t: TestRunner) {
     let noChange = officeNodeDiff(existing: ["PM"], incoming: ["PM"])
     t.expect(noChange.added.isEmpty && noChange.removed.isEmpty, "변화 없으면 빈 diff")
 
-    // 팔레트: 상태 5종 모두 0~1 범위 RGB, 서로 다른 색
+    // 팔레트: 상태 6종 모두 0~1 범위 RGB, 서로 다른 색
     var seenColors = Set<String>()
-    for state in [ConsoleAgentState.completed, .inProgress, .awaitingApproval, .awaitingIntegration, .waiting] {
+    for state in [ConsoleAgentState.completed, .inProgress, .awaitingApproval, .awaitingIntegration, .waiting, .failed] {
         let rgb = agentStatePaletteRGBA(state)
         let inRange = (0...1).contains(rgb.red) && (0...1).contains(rgb.green) && (0...1).contains(rgb.blue)
         t.expect(inRange, "\(state) RGB 는 0~1 범위")
         seenColors.insert("\(rgb.red),\(rgb.green),\(rgb.blue)")
     }
-    t.expectEqual(seenColors.count, 5, "5종 색이 서로 다름")
+    t.expectEqual(seenColors.count, 6, "6종 색이 서로 다름")
 
     // 밴드 반영: 격자 좌표는 모두 밴드 아래(height - bandHeight) 영역 안
     let banded = officeLayout(count: 26, width: 900, height: 600, columns: 5, bandHeight: 120)
