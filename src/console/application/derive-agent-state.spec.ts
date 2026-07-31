@@ -48,10 +48,20 @@ describe('deriveAgentState', () => {
     ).toBe(ConsoleAgentState.COMPLETED);
   });
 
-  it('실패 종료만 있고 다른 신호 없으면 대기(과표시 방지)', () => {
+  it('실패 종료 후 다른 신호 없으면 FAILED', () => {
     expect(deriveAgentState({ ...base, latestFinishedStatus: 'FAILED' })).toBe(
-      ConsoleAgentState.WAITING,
+      ConsoleAgentState.FAILED,
     );
+  });
+
+  it('실패 직전이라도 활성 런이 있으면 진행중이 우선', () => {
+    expect(
+      deriveAgentState({
+        ...base,
+        hasActiveRun: true,
+        latestFinishedStatus: 'FAILED',
+      }),
+    ).toBe(ConsoleAgentState.IN_PROGRESS);
   });
 
   it('아무 신호 없으면 대기(기본 안전값)', () => {
