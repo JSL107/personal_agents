@@ -13,6 +13,8 @@ import {
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
   DEFAULT_OPS_SUPERVISOR_CRON,
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
+  DEFAULT_PR_REVIEW_SWEEP_CRON,
+  DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
   DEFAULT_PREFERENCE_LEARNING_CRON,
   DEFAULT_PREFERENCE_LEARNING_TIMEZONE,
   DEFAULT_PREVIEW_SWEEPER_CRON,
@@ -224,6 +226,19 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PREFERENCE_LEARNING_TIMEZONE,
     },
     riskTier: 'T1_PREVIEW',
+  },
+  // PR 리뷰 스윕 — 열린 PR 리뷰 + 지적 카드 게시. T0_AUTO:
+  // 게시는 외부 부작용이지만 레포 allowlist + 건수 상한 + 연습 모드 기본값으로 통제한다.
+  // PR_REVIEW_LOOP_ENABLED 미설정/false 시 usecase 가 즉시 skip(안전).
+  {
+    id: 'pr-review-sweep',
+    taskId: 'pr-review-sweep',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PR_REVIEW_SWEEP_CRON,
+      timezone: DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
   },
 ];
 

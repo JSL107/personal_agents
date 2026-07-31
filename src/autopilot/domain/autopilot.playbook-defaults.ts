@@ -63,3 +63,7 @@ export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
 // 미국 주식 모니터링 기본 스케줄 — 미국 정규장 마감 30분 후 평일 16:30 ET.
 export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
+
+// PR 리뷰 루프 스윕 — 15분 주기. 할 일 없으면 skip 하므로 알림 스팸은 없다.
+export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/15 * * * *';
+export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';

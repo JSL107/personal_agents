@@ -25,6 +25,7 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
+import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
 import { SlackModule } from '../slack/slack.module';
@@ -42,6 +43,7 @@ import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lin
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
+import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
@@ -75,6 +77,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     DocsAuditModule,
     PreferenceProfileModule,
     PreviewGateModule,
+    PrReviewLoopModule,
     SlackModule,
     NotificationQueueModule,
   ],
@@ -98,6 +101,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     EveningRetroPublishTask,
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
+    PrReviewSweepAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -154,6 +158,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitor: StockMonitorAutopilotTask,
         stockMonitorUs: StockMonitorAutopilotTask,
         stockAlertScoring: StockAlertScoringAutopilotTask,
+        prReviewSweep: PrReviewSweepAutopilotTask,
       ) => [
         poEval,
         morning,
@@ -172,6 +177,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitor,
         stockMonitorUs,
         stockAlertScoring,
+        prReviewSweep,
       ],
       inject: [
         PoEvalAutopilotTask,
@@ -191,6 +197,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         STOCK_MONITOR_KR_TASK,
         STOCK_MONITOR_US_TASK,
         StockAlertScoringAutopilotTask,
+        PrReviewSweepAutopilotTask,
       ],
     },
     {
