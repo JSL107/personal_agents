@@ -7,6 +7,11 @@ import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { PoEvalCareerlogPayload } from '../../agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import {
+  humanizeAssignmentOutput,
+  humanizeEvaluationOutput,
+} from '../../humanize/application/humanize-report.adapter';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { SlackHandler } from '../domain/port/slack-handler.port';
@@ -42,6 +47,7 @@ export class PhaseCommandHandler implements SlackHandler {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly createPreviewUsecase: CreatePreviewUsecase,
+    private readonly humanizeService: HumanizeService,
     configService: ConfigService,
   ) {
     // V3 §P4 careerLog Notion 적재 — env 미설정이면 undefined → /po-eval 기존 텍스트 경로.
@@ -66,7 +72,13 @@ export class PhaseCommandHandler implements SlackHandler {
           this.generateAssignmentUsecase.execute({
             slackUserId: command.user_id,
           }),
-        format: formatAssignmentOutput,
+        format: async (result) => {
+          const humanized = await humanizeAssignmentOutput(
+            result,
+            this.humanizeService,
+          );
+          return formatAssignmentOutput(humanized);
+        },
       });
     });
 
@@ -90,7 +102,13 @@ export class PhaseCommandHandler implements SlackHandler {
               slackUserId: command.user_id,
               range,
             }),
-          format: formatEvaluationOutput,
+          format: async (result) => {
+            const humanized = await humanizeEvaluationOutput(
+              result,
+              this.humanizeService,
+            );
+            return formatEvaluationOutput(humanized);
+          },
         });
         return;
       }
@@ -102,7 +120,11 @@ export class PhaseCommandHandler implements SlackHandler {
           slackUserId: command.user_id,
           range,
         });
-        const formatted = formatEvaluationOutput(outcome.result);
+        const humanized = await humanizeEvaluationOutput(
+          outcome.result,
+          this.humanizeService,
+        );
+        const formatted = formatEvaluationOutput(humanized);
         const text =
           `${formatted.summary}\n\n${formatted.detail}` +
           formatModelFooter(outcome);

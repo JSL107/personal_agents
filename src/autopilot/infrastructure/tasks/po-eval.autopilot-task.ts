@@ -4,6 +4,8 @@ import { GeneratePoEvaluationUsecase } from '../../../agent/po-eval/application/
 import { PoEvalException } from '../../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../../agent/po-eval/domain/po-eval-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeEvaluationOutput } from '../../../humanize/application/humanize-report.adapter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import { formatEvaluationOutput } from '../../../slack/format/po-evaluation.formatter';
 import {
@@ -21,6 +23,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly generatePoEvaluation: GeneratePoEvaluationUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -34,7 +37,11 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
       const intro = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)*\n\n`;
-      const formatted = formatEvaluationOutput(outcome.result);
+      const humanized = await humanizeEvaluationOutput(
+        outcome.result,
+        this.humanizeService,
+      );
+      const formatted = formatEvaluationOutput(humanized);
       const summaryText = intro + formatted.summary;
       const detailText = formatted.detail + formatModelFooter(outcome);
       return { skip: false, summaryText, detailText };

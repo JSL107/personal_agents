@@ -18,6 +18,12 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import {
+  humanizeAssignmentOutput,
+  humanizeBackendPlan,
+  humanizeEvaluationOutput,
+} from '../../humanize/application/humanize-report.adapter';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
@@ -59,6 +65,7 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   // 재시도로 만들어진 새 run 을 원본 FAILED run 의 자식으로 연결한다. 이렇게 해야 "이 실행은
@@ -198,7 +205,13 @@ export class RetryRunHandler implements SlackHandler {
                 subject: snapshot.subject ?? '',
                 slackUserId,
               }),
-            format: formatBackendPlan,
+            format: async (result) => {
+              const humanized = await humanizeBackendPlan(
+                result,
+                this.humanizeService,
+              );
+              return formatBackendPlan(humanized);
+            },
             onOutcome: this.linkRetryLineage(id),
           });
           break;
@@ -298,7 +311,13 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
                 dailyPlanAgentRunId: snapshot.dailyPlanAgentRunId,
               }),
-            format: formatAssignmentOutput,
+            format: async (result) => {
+              const humanized = await humanizeAssignmentOutput(
+                result,
+                this.humanizeService,
+              );
+              return formatAssignmentOutput(humanized);
+            },
             onOutcome: this.linkRetryLineage(id),
           });
           break;
@@ -314,7 +333,13 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
                 range,
               }),
-            format: formatEvaluationOutput,
+            format: async (result) => {
+              const humanized = await humanizeEvaluationOutput(
+                result,
+                this.humanizeService,
+              );
+              return formatEvaluationOutput(humanized);
+            },
             onOutcome: this.linkRetryLineage(id),
           });
           break;
