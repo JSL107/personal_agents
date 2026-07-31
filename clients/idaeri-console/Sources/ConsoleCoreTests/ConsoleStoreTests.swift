@@ -88,6 +88,43 @@ func runConsoleStoreTests(_ t: TestRunner) {
     store.apply(event: .approvalResolved(approval))
     t.expectEqual(store.approvals.count, 0, "approval 제거")
 
+    // ===== 승인 write 결과 반영 (SSE 도착 전 낙관적 처리 + 실패 안내) =====
+    let writeStore = ConsoleStore()
+    writeStore.apply(event: .approvalOpened(approval))
+    t.expectNil(writeStore.approvalNotice, "초기 안내 없음")
+
+    // 성공: SSE 를 기다리지 않고 즉시 사라진다.
+    writeStore.resolveApprovalLocally(id: "p1")
+    t.expectEqual(writeStore.approvals.count, 0, "승인 성공 시 낙관적 제거")
+
+    // 뒤늦게 도착한 approval.resolved 가 같은 건을 또 지워도 안전해야 한다.
+    writeStore.apply(event: .approvalResolved(approval))
+    t.expectEqual(writeStore.approvals.count, 0, "SSE 중복 도착 멱등")
+
+    // 없는 id 로 호출해도 다른 카드를 건드리지 않는다.
+    writeStore.apply(event: .approvalOpened(approval))
+    writeStore.resolveApprovalLocally(id: "does-not-exist")
+    t.expectEqual(writeStore.approvals.count, 1, "미매칭 id 는 무해")
+
+    // 실패: 사유가 남고, 다음 성공에서 지워진다.
+    writeStore.setApprovalNotice("승인 실패 — 이미 처리됐거나 만료된 요청입니다.")
+    t.expectEqual(
+        writeStore.approvalNotice,
+        "승인 실패 — 이미 처리됐거나 만료된 요청입니다.",
+        "실패 사유 노출"
+    )
+    writeStore.setApprovalNotice(nil)
+    t.expectNil(writeStore.approvalNotice, "성공 시 안내 해제")
+
+    // 재동기화 스냅샷이 서버에서 사라진(만료) 카드를 화면에서 걷어낸다.
+    let resyncStore = ConsoleStore()
+    resyncStore.apply(event: .approvalOpened(approval))
+    t.expectEqual(resyncStore.approvals.count, 1, "재동기화 전 카드 보유")
+    resyncStore.apply(snapshot: ConsoleSnapshot(
+        agents: [], runs: [], approvals: [], sessions: [], serverTime: "t"
+    ))
+    t.expectEqual(resyncStore.approvals.count, 0, "스냅샷 재동기화로 만료 카드 제거")
+
     // ===== pending 상태기계 =====
     let pendingStore = ConsoleStore()
     pendingStore.apply(snapshot: snapshot) // pm, be
