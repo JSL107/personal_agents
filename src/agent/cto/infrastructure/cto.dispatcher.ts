@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeAssignmentOutput } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
@@ -19,7 +21,10 @@ import { GenerateAssignmentUsecase } from '../application/generate-assignment.us
 export class CtoDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.CTO;
 
-  constructor(private readonly generateAssignment: GenerateAssignmentUsecase) {}
+  constructor(
+    private readonly generateAssignment: GenerateAssignmentUsecase,
+    private readonly humanizeService: HumanizeService,
+  ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
     const outcome = await this.generateAssignment.execute({
@@ -29,11 +34,15 @@ export class CtoDispatcher implements AgentDispatcher {
         ? { conversationContext: input.conversationContext }
         : {}),
     });
+    const humanized = await humanizeAssignmentOutput(
+      outcome.result,
+      this.humanizeService,
+    );
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatAssignmentOutput(outcome.result),
+      formattedText: formatAssignmentOutput(humanized),
     };
   }
 }
