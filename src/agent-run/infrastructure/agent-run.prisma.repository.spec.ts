@@ -342,3 +342,49 @@ describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
     jest.useRealTimers();
   });
 });
+
+describe('AgentRunPrismaRepository.findLatestSweepReview', () => {
+  const buildRepository = (
+    row: unknown,
+  ): { repository: AgentRunPrismaRepository } => {
+    const findFirst = jest.fn().mockResolvedValue(row);
+    const prismaMock = {
+      agentRun: { findFirst },
+    } as unknown as PrismaService;
+    return { repository: new AgentRunPrismaRepository(prismaMock) };
+  };
+
+  const query = { prRef: 'JSL107/personal_agents#189', sinceDays: 30 };
+
+  it('inputSnapshot.dryRun 이 true 면 연습 모드 리뷰로 읽는다', async () => {
+    const { repository } = buildRepository({
+      status: 'SUCCEEDED',
+      startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      inputSnapshot: { prRef: query.prRef, dryRun: true },
+    });
+
+    const result = await repository.findLatestSweepReview(query);
+
+    expect(result?.dryRun).toBe(true);
+  });
+
+  it('dryRun 누락·비 boolean 은 실게시(false)로 본다 — 판정이 재리뷰 쪽으로 새지 않게', async () => {
+    const { repository } = buildRepository({
+      status: 'SUCCEEDED',
+      startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      inputSnapshot: { prRef: query.prRef, dryRun: 'true' },
+    });
+
+    const result = await repository.findLatestSweepReview(query);
+
+    expect(result?.dryRun).toBe(false);
+  });
+
+  it('레코드가 없으면 null', async () => {
+    const { repository } = buildRepository(null);
+
+    const result = await repository.findLatestSweepReview(query);
+
+    expect(result).toBeNull();
+  });
+});

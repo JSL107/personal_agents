@@ -136,8 +136,9 @@ export class SweepPrReviewsUsecase {
 
   // PR 당 리뷰 1회(쿨다운 재시도) 판정 — AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준.
   // 게시 여부·findings 유무와 무관하게 "리뷰 시도" 자체가 근거이므로 연습 모드(카드 미생성)에서도
-  // 정확히 동작한다. 레코드가 없으면 REVIEW, SUCCEEDED 면 SKIP, 그 외(FAILED/IN_PROGRESS)는
-  // 쿨다운이 지났는지로 재시도 여부를 가른다(순수 로직 — 조회는 조회대로, 판정은 판정대로 분리).
+  // 정확히 동작한다. 레코드가 없으면 REVIEW, SUCCEEDED 면 SKIP(단 연습 모드로 끝난 리뷰는
+  // 실게시 전환 시 한 번 더 REVIEW), 그 외(FAILED/IN_PROGRESS)는 쿨다운이 지났는지로 재시도
+  // 여부를 가른다(순수 로직 — 조회는 조회대로, 판정은 판정대로 분리).
   // 조회 자체가 실패하면 오판으로 중복 리뷰하느니 SKIP — 이번 스윕에서 이 PR 만 건너뛴다.
   private async decideSweepAction(prRef: string): Promise<SweepDecision> {
     let latest: LatestSweepReview | null;
@@ -152,15 +153,22 @@ export class SweepPrReviewsUsecase {
       );
       return 'SKIP';
     }
-    return this.judgeLatestReview(latest);
+    return this.judgeLatestReview(latest, this.isDryRun());
   }
 
-  private judgeLatestReview(latest: LatestSweepReview | null): SweepDecision {
+  private judgeLatestReview(
+    latest: LatestSweepReview | null,
+    currentDryRun: boolean,
+  ): SweepDecision {
     if (latest === null) {
       return 'REVIEW';
     }
     if (latest.status === AgentRunStatus.SUCCEEDED) {
-      return 'SKIP';
+      // 연습 모드로 끝난 리뷰는 GitHub 에 아무것도 남기지 않았다. 그 상태를 "리뷰 완료"로
+      // 굳히면 실게시로 전환한 뒤에도 같은 PR 이 SWEEP_REVIEW_LOOKBACK_DAYS(30일)간
+      // SKIP 되어 영영 게시되지 않는다 — 연습 → 실게시 전환은 기본값이 연습 모드인
+      // 이 기능에서 반드시 밟는 경로이므로, 그 한 번은 다시 리뷰해 게시한다.
+      return latest.dryRun && !currentDryRun ? 'REVIEW' : 'SKIP';
     }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_HOURS * 60 * 60 * 1000;
     const elapsedMs = Date.now() - latest.startedAt.getTime();
@@ -178,15 +186,21 @@ export class SweepPrReviewsUsecase {
     slackUserId: string;
   }): Promise<SweepPullRequestResult | null> {
     const prRef = `${repo}#${pullNumber}`;
+    const dryRun = this.isDryRun();
     try {
       const [detail, diff] = await Promise.all([
         this.githubClient.getPullRequest({ repo, number: pullNumber }),
         this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
       ]);
+      // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
+      // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
+      // 앵커가 어긋난다(2026-07-31 리뷰 지적).
       const outcome = await this.reviewPullRequestUsecase.execute({
         prRef,
         slackUserId,
         triggerType: TriggerType.PR_REVIEW_SWEEP,
+        snapshot: { detail, diff },
+        dryRun,
       });
       if (outcome.result.findings.length === 0) {
         return null;
@@ -199,7 +213,7 @@ export class SweepPrReviewsUsecase {
         diff: diff.diff,
         findings: outcome.result.findings,
         max: this.inlineMax(),
-        dryRun: this.isDryRun(),
+        dryRun,
         allowlistRaw: this.configService.get<string>('PR_REVIEW_INLINE_REPOS'),
       });
       return {

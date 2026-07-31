@@ -1,4 +1,8 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  PullRequestDetail,
+  PullRequestDiff,
+} from '../../../github/domain/github.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -55,4 +59,14 @@ export interface ReviewPullRequestInput {
   // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction(직전 대화 기반 사용자 지시)을
   // prompt [사용자 지시] 섹션으로 반영. 슬래시 /review-pr 진입은 미주입 (기존 동작).
   conversationContext?: ConversationContext;
+  // PR 리뷰 스윕 전용 — 호출자가 이미 조회한 PR 스냅샷. 주입되면 usecase 는 재조회하지 않는다.
+  // 스윕은 게시(인라인 앵커)에 detail.headSha 와 diff 를 쓰므로, 리뷰가 본 스냅샷과 게시가 쓰는
+  // 스냅샷이 갈리면 앵커가 어긋난다 — 같은 조회 결과를 공유해 그 틈을 없앤다.
+  snapshot?: {
+    detail: PullRequestDetail;
+    diff: PullRequestDiff;
+  };
+  // PR 리뷰 스윕 전용 — 이 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot 에 남아
+  // "연습 모드로 끝난 리뷰"를 실게시 전환 후 다시 리뷰할지 판정하는 근거가 된다.
+  dryRun?: boolean;
 }

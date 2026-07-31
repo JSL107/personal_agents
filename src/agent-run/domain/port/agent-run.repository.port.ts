@@ -125,6 +125,9 @@ export interface FindLatestSweepReviewQuery {
 export interface LatestSweepReview {
   status: string; // AgentRunStatus 값 그대로('SUCCEEDED' | 'FAILED' | 'IN_PROGRESS')
   startedAt: Date;
+  // 그 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot.dryRun 이 없으면(구 레코드·
+  // 스윕 외 경로) false. 실게시 전환 후 "연습으로만 끝난 PR"을 다시 리뷰할 근거다.
+  dryRun: boolean;
 }
 
 // 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의

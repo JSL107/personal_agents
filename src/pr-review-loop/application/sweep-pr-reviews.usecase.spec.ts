@@ -177,6 +177,13 @@ describe('SweepPrReviewsUsecase', () => {
         triggerType: 'PR_REVIEW_SWEEP',
       }),
     );
+    // 게시(headSha·diff)와 리뷰가 같은 스냅샷을 보게 조회 결과를 그대로 넘긴다 —
+    // 리뷰가 재조회하면 그 사이 push 된 커밋으로 앵커 기준이 갈린다.
+    const reviewArg = reviewUsecase.execute.mock.calls[0][0];
+    expect(reviewArg.snapshot?.detail.headSha).toBe('abc1234');
+    expect(reviewArg.snapshot?.diff.diff).toBe('diff');
+    expect(reviewArg.dryRun).toBe(true);
+    expect(github.getPullRequest).toHaveBeenCalledTimes(1);
     expect(publishService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         agentRunId: 7,
@@ -197,6 +204,7 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
+      dryRun: false,
     });
 
     const results = await buildUsecase(ENABLED).execute();
@@ -211,6 +219,7 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
+      dryRun: true,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -222,6 +231,7 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
+      dryRun: false,
     });
 
     await buildUsecase({
@@ -232,10 +242,42 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
   });
 
+  it('연습 모드로 끝난 SUCCEEDED 는 실게시로 전환하면 다시 리뷰한다 — 연습분이 영영 미게시로 남지 않게', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: true,
+    });
+
+    const results = await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(publishService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: false }),
+    );
+    expect(results).toHaveLength(1);
+  });
+
+  it('연습 모드로 끝난 SUCCEEDED 라도 여전히 연습 모드면 재리뷰하지 않는다 — 15분마다 재리뷰 방지', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: true,
+    });
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
   it('직전이 FAILED + 쿨다운(6h) 안이면 재리뷰하지 않는다', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
       startedAt: hoursAgo(1),
+      dryRun: false,
     });
 
     const results = await buildUsecase(ENABLED).execute();
@@ -248,6 +290,7 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
       startedAt: hoursAgo(7),
+      dryRun: false,
     });
 
     const results = await buildUsecase(ENABLED).execute();
@@ -260,6 +303,7 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'IN_PROGRESS',
       startedAt: hoursAgo(1),
+      dryRun: false,
     });
 
     const results = await buildUsecase(ENABLED).execute();

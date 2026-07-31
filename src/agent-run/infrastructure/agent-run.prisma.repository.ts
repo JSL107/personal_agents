@@ -439,7 +439,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   // PR 리뷰 루프 — PR 당 리뷰 1회(쿨다운 재시도) 판정 근거. inputSnapshot.prRef 는
   // ReviewPullRequestUsecase 가 항상 채우는 JSON 필드(JSON path 필터, 인덱스 없음)라
   // startedAt 하한으로 스캔 범위를 제한한다. status 판정(SUCCEEDED/FAILED/쿨다운)은
-  // usecase 몫이므로 여기서는 최신 1건의 사실(status/startedAt)만 반환한다.
+  // usecase 몫이므로 여기서는 최신 1건의 사실(status/startedAt/dryRun)만 반환한다.
   async findLatestSweepReview({
     prRef,
     sinceDays,
@@ -452,12 +452,19 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         inputSnapshot: { path: ['prRef'], equals: prRef },
       },
       orderBy: { startedAt: 'desc' },
-      select: { status: true, startedAt: true },
+      select: { status: true, startedAt: true, inputSnapshot: true },
     });
     if (!row) {
       return null;
     }
-    return { status: row.status, startedAt: row.startedAt };
+    // inputSnapshot 은 임의 JSON — dryRun 이 실제 true 일 때만 연습 모드로 본다(누락·타입
+    // 불일치는 전부 false = 실게시로 간주해, 판정이 재리뷰 쪽으로 새지 않게 한다).
+    const snapshot = row.inputSnapshot as { dryRun?: unknown } | null;
+    return {
+      status: row.status,
+      startedAt: row.startedAt,
+      dryRun: snapshot?.dryRun === true,
+    };
   }
 
   // 콘솔 관제 — agentType별 최신 종료 런을 distinct(=DISTINCT ON)로 1건씩 뽑아,
