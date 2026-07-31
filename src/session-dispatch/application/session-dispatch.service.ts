@@ -116,7 +116,11 @@ export class SessionDispatchService {
       if (!repository) {
         return;
       }
-      const repositoryRef = `${gate.githubAuthor}/${repository}`;
+      // repository 가 git remote 에서 온 경우 `owner/repo` (조직 repo 포함) — 그대로 사용.
+      // cwd basename fallback 은 owner 를 모르므로 본인 계정을 붙인다.
+      const repositoryRef = repository.includes('/')
+        ? repository
+        : `${gate.githubAuthor}/${repository}`;
       const resolvedPullRequest = await resolveLatestOpenPrRef(
         this.githubClient,
         {

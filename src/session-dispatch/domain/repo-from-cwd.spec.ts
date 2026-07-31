@@ -19,16 +19,28 @@ describe('repoFromCwd', () => {
 
 describe('repoFromRemoteUrl', () => {
   it.each([
-    ['https://github.com/JSL107/personal_agents.git', 'personal_agents'],
-    ['https://github.com/JSL107/personal_agents.git/', 'personal_agents'],
-    ['https://github.com/JSL107/personal_agents', 'personal_agents'],
-    ['git@github.com:JSL107/personal_agents.git', 'personal_agents'],
-    ['ssh://git@github.com/JSL107/personal_agents.git', 'personal_agents'],
+    ['https://github.com/JSL107/personal_agents.git', 'JSL107/personal_agents'],
+    [
+      'https://github.com/JSL107/personal_agents.git/',
+      'JSL107/personal_agents',
+    ],
+    ['https://github.com/JSL107/personal_agents', 'JSL107/personal_agents'],
+    ['git@github.com:JSL107/personal_agents.git', 'JSL107/personal_agents'],
+    [
+      'ssh://git@github.com/JSL107/personal_agents.git',
+      'JSL107/personal_agents',
+    ],
     [
       'https://x-access-token:TOKEN@github.com/JSL107/personal_agents.git',
-      'personal_agents',
+      'JSL107/personal_agents',
     ],
-  ])('%s에서 repo 이름만 반환한다', (remoteUrl, expectedRepository) => {
+    // 조직 소유 repo — owner 가 본인 계정이 아니어도 보존해야 GitHub 검색이 유효하다.
+    [
+      'https://github.com/schoolbell-e/sbe-api-v5.git',
+      'schoolbell-e/sbe-api-v5',
+    ],
+    ['git@github.com:schoolbell-e/sbe-api-v5.git', 'schoolbell-e/sbe-api-v5'],
+  ])('%s에서 owner/repo 를 반환한다', (remoteUrl, expectedRepository) => {
     expect(repoFromRemoteUrl(remoteUrl)).toBe(expectedRepository);
   });
 
