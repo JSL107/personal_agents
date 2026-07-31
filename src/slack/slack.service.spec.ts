@@ -204,6 +204,7 @@ describe('formatPullRequestReview', () => {
       { body: '전반적으로 OK' },
     ],
     approvalRecommendation: 'request_changes',
+    findings: [],
   };
 
   it('PR ref / 위험도 / 권고 / 모든 섹션 출력', () => {

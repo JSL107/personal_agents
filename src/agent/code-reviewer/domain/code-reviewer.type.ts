@@ -11,6 +11,28 @@ export interface ReviewCommentDraft {
   body: string;
 }
 
+// 지적 분류 — 시스템 프롬프트의 우선순위 6단과 1:1 정렬.
+// Phase 3 의 카테고리별 채택률 집계와 억제 면제 판정이 이 값에 의존한다.
+export type FindingCategory =
+  | 'CORRECTNESS' // 정확성·회귀·데이터 유실
+  | 'SECURITY'
+  | 'RELIABILITY' // 동시성·트랜잭션·에러 처리·외부 API graceful
+  | 'TEST' // 커버리지 누락
+  | 'ARCHITECTURE' // DDD / Port-Adapter 위반, 의존 방향
+  | 'READABILITY' // 네이밍·가독성·중복
+  | 'STYLE' // 포맷·주석·lint 영역
+  | 'UNCLASSIFIED'; // 구버전 응답 호환 / 라벨 강등
+
+export type FindingSeverity = 'MUST_FIX' | 'NICE_TO_HAVE' | 'MISSING_TEST';
+
+export interface ReviewFinding {
+  category: FindingCategory;
+  severity: FindingSeverity;
+  file?: string;
+  line?: number;
+  body: string;
+}
+
 export interface PullRequestReview {
   summary: string;
   riskLevel: RiskLevel;
@@ -19,6 +41,9 @@ export interface PullRequestReview {
   missingTests: string[];
   reviewCommentDrafts: ReviewCommentDraft[];
   approvalRecommendation: ApprovalRecommendation;
+  // 지적 낱개 목록 — 카드(PrReviewFinding)의 원본. 파서가 항상 채운다.
+  // 구버전 모델 응답(findings 없음)은 mustFix/niceToHave/missingTests 에서 변환된다.
+  findings: ReviewFinding[];
 }
 
 export interface ReviewPullRequestInput {

@@ -23,6 +23,7 @@ describe('ReviewPullRequestUsecase', () => {
     missingTests: [],
     reviewCommentDrafts: [{ body: 'LGTM' }],
     approvalRecommendation: 'comment',
+    findings: [],
   };
 
   let modelRouter: { route: jest.Mock };
@@ -177,6 +178,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
     missingTests: [],
     reviewCommentDrafts: [],
     approvalRecommendation: 'approve',
+    findings: [],
   };
 
   let modelRouter: { route: jest.Mock };
@@ -367,6 +369,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
     missingTests: [],
     reviewCommentDrafts: [],
     approvalRecommendation: 'comment',
+    findings: [],
   };
 
   const makeDeps = () => {
