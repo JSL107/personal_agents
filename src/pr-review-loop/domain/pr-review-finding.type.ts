@@ -15,11 +15,11 @@ export type FindingStatus =
   | 'SUPPRESSED';
 
 // 어떤 형태로 게시됐는지. 3단 폴백의 결과가 여기 남는다.
+// 연습 모드는 DB 에 카드를 만들지 않으므로(정책 계산 + 집계만) 이 유니온에 값이 없다.
 export type FindingPostMode =
   | 'INLINE'
   | 'FILE'
   | 'ISSUE_COMMENT'
-  | 'DRY_RUN'
   | 'NOT_POSTED';
 
 export interface CreateFindingInput {

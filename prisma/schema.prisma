@@ -163,7 +163,7 @@ model PrReviewFinding {
   fingerprint        String    @unique
   // OPEN | ACKED | REJECTED | FIXED | RESOLVED | STALE | SUPPRESSED
   status             String    @default("OPEN")
-  // INLINE | FILE | ISSUE_COMMENT | DRY_RUN | NOT_POSTED
+  // INLINE | FILE | ISSUE_COMMENT | NOT_POSTED (연습 모드는 카드를 만들지 않음)
   postMode           String    @map("post_mode")
   githubCommentId    BigInt?   @map("github_comment_id")
   githubThreadNodeId String?   @map("github_thread_node_id")
