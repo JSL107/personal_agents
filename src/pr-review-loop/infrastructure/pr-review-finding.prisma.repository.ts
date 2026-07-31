@@ -20,6 +20,7 @@ import {
 } from '../domain/pr-review-finding.type';
 
 const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
+const OPEN_CARD_PULL_REQUEST_LIMIT = 20;
 
 @Injectable()
 export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositoryPort {
@@ -71,20 +72,48 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
   }
 
   async findOpenPostedCards(): Promise<PrReviewFindingRecord[]> {
-    const where = { status: 'OPEN', githubCommentId: { not: null } } as const;
-    const [rows, totalCount] = await Promise.all([
-      this.prisma.prReviewFinding.findMany({
+    const where = {
+      status: 'OPEN',
+      resolvedAt: null,
+      githubCommentId: { not: null },
+    } as const;
+    const [pullRequests, allPullRequests] = await Promise.all([
+      this.prisma.prReviewFinding.groupBy({
+        by: ['repo', 'pullNumber'],
         where,
-        orderBy: { createdAt: 'asc' },
-        take: 200,
+        _max: { createdAt: true },
+        orderBy: [
+          { _max: { createdAt: 'desc' } },
+          { repo: 'asc' },
+          { pullNumber: 'asc' },
+        ],
+        take: OPEN_CARD_PULL_REQUEST_LIMIT,
       }),
-      this.prisma.prReviewFinding.count({ where }),
+      this.prisma.prReviewFinding.groupBy({
+        by: ['repo', 'pullNumber'],
+        where,
+      }),
     ]);
-    if (totalCount > rows.length) {
+    if (allPullRequests.length > pullRequests.length) {
       this.logger.warn(
-        `PR 리뷰 수확 대상이 ${totalCount}건이라 오래된 200건만 처리합니다.`,
+        `PR 리뷰 수확 대상 PR ${allPullRequests.length}건 중 최근 ${OPEN_CARD_PULL_REQUEST_LIMIT}건만 처리합니다. 이번 회차 제외: ${
+          allPullRequests.length - pullRequests.length
+        }건.`,
       );
     }
+    if (pullRequests.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: {
+        ...where,
+        OR: pullRequests.map(({ repo, pullNumber }) => ({
+          repo,
+          pullNumber,
+        })),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
     return rows.map((row) => this.toRecord(row));
   }
 
@@ -105,10 +134,10 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     });
   }
 
-  async markResolved(id: number): Promise<void> {
+  async markThreadResolved(id: number): Promise<void> {
     await this.prisma.prReviewFinding.update({
       where: { id },
-      data: { status: 'RESOLVED', resolvedAt: new Date() },
+      data: { resolvedAt: new Date() },
     });
   }
 

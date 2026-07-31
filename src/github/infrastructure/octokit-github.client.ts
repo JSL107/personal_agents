@@ -412,12 +412,22 @@ export class OctokitGithubClient implements GithubClientPort {
           `PR ${repo}#${number} 리뷰 스레드가 50건을 초과해 일부만 수확합니다.`,
         );
       }
+      const truncated =
+        pullRequest.reviewThreads.pageInfo.hasNextPage ||
+        pullRequest.reviewThreads.nodes.some(
+          (thread) =>
+            thread.comments.pageInfo.hasNextPage ||
+            thread.comments.nodes.some(
+              (comment) => comment.reactions.pageInfo.hasNextPage,
+            ),
+        );
       const threads = pullRequest.reviewThreads.nodes.map((thread) =>
         this.toReviewThread({ repo, number, thread }),
       );
       return {
         threads,
         pullRequestState: pullRequest.merged ? 'MERGED' : pullRequest.state,
+        truncated,
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(

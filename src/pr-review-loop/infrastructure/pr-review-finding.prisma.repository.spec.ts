@@ -23,6 +23,7 @@ const buildPrisma = () => ({
   prReviewFinding: {
     create: jest.fn(),
     count: jest.fn(),
+    groupBy: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
   },
@@ -132,7 +133,18 @@ describe('PrReviewFindingPrismaRepository', () => {
     });
   });
 
-  it('게시된 OPEN 카드를 생성 시각 순으로 최대 200건 조회한다', async () => {
+  it('최근 미결 PR 20개를 고르고 선택한 PR의 OPEN 카드를 상한 없이 조회한다', async () => {
+    prisma.prReviewFinding.groupBy
+      .mockResolvedValueOnce([
+        {
+          repo: 'JSL107/personal_agents',
+          pullNumber: 180,
+          _max: { createdAt: new Date('2026-07-31T00:00:00Z') },
+        },
+      ])
+      .mockResolvedValueOnce([
+        { repo: 'JSL107/personal_agents', pullNumber: 180 },
+      ]);
     prisma.prReviewFinding.findMany.mockResolvedValue([
       {
         id: 1,
@@ -152,17 +164,83 @@ describe('PrReviewFindingPrismaRepository', () => {
         githubThreadNodeId: 'PRRC_comment',
         createdAt: new Date('2026-07-31T00:00:00Z'),
       },
+      {
+        id: 2,
+        agentRunId: 8,
+        repo: 'JSL107/personal_agents',
+        pullNumber: 180,
+        headSha: 'def5678',
+        category: 'CORRECTNESS',
+        severity: 'SHOULD_FIX',
+        filePath: 'src/bar.service.ts',
+        line: 10,
+        body: '두 번째 카드',
+        fingerprint: 'fp-2',
+        status: 'OPEN',
+        postMode: 'INLINE',
+        githubCommentId: BigInt(1000),
+        githubThreadNodeId: 'PRRC_comment_2',
+        createdAt: new Date('2026-07-31T01:00:00Z'),
+      },
     ]);
-    prisma.prReviewFinding.count.mockResolvedValue(1);
 
     const cards = await repository.findOpenPostedCards();
 
-    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
-      where: { status: 'OPEN', githubCommentId: { not: null } },
-      orderBy: { createdAt: 'asc' },
-      take: 200,
+    const openThreadWhere = {
+      status: 'OPEN',
+      resolvedAt: null,
+      githubCommentId: { not: null },
+    };
+    expect(prisma.prReviewFinding.groupBy).toHaveBeenNthCalledWith(1, {
+      by: ['repo', 'pullNumber'],
+      where: openThreadWhere,
+      _max: { createdAt: true },
+      orderBy: [
+        { _max: { createdAt: 'desc' } },
+        { repo: 'asc' },
+        { pullNumber: 'asc' },
+      ],
+      take: 20,
     });
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
+      where: {
+        ...openThreadWhere,
+        OR: [{ repo: 'JSL107/personal_agents', pullNumber: 180 }],
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(cards).toHaveLength(2);
     expect(cards[0].githubThreadNodeId).toBe('PRRC_comment');
+  });
+
+  it('미결 PR이 20개를 넘으면 이번 회차에서 빠진 PR 수를 경고한다', async () => {
+    const selectedPullRequests = Array.from({ length: 20 }, (_, index) => ({
+      repo: 'JSL107/personal_agents',
+      pullNumber: index + 1,
+      _max: { createdAt: new Date(`2026-07-${30 - index}T00:00:00Z`) },
+    }));
+    const allPullRequests = Array.from({ length: 23 }, (_, index) => ({
+      repo: 'JSL107/personal_agents',
+      pullNumber: index + 1,
+    }));
+    prisma.prReviewFinding.groupBy
+      .mockResolvedValueOnce(selectedPullRequests)
+      .mockResolvedValueOnce(allPullRequests);
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+    const warn = jest.spyOn(
+      (
+        repository as unknown as {
+          logger: { warn: (message: string) => void };
+        }
+      ).logger,
+      'warn',
+    );
+
+    await repository.findOpenPostedCards();
+
+    expect(warn).toHaveBeenCalledWith(
+      'PR 리뷰 수확 대상 PR 23건 중 최근 20건만 처리합니다. 이번 회차 제외: 3건.',
+    );
   });
 
   it('markDecided는 결정 시각과 교정된 PRRT id를 저장한다', async () => {
@@ -203,14 +281,30 @@ describe('PrReviewFindingPrismaRepository', () => {
     );
   });
 
-  it('markResolved는 상태와 resolvedAt을 갱신한다', async () => {
-    prisma.prReviewFinding.update.mockResolvedValue({});
+  it.each(['ACKED', 'REJECTED'] as const)(
+    'markThreadResolved 후에도 %s 결론을 덮어쓰지 않는다',
+    async (status) => {
+      prisma.prReviewFinding.update.mockResolvedValue({});
 
-    await repository.markResolved(1);
+      await repository.markDecided({
+        id: 1,
+        status,
+        rejectReason: status === 'REJECTED' ? '지적이 틀림' : null,
+        githubThreadNodeId: 'PRRT_thread',
+      });
+      await repository.markThreadResolved(1);
 
-    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { status: 'RESOLVED', resolvedAt: expect.any(Date) },
-    });
-  });
+      expect(prisma.prReviewFinding.update).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: { id: 1 },
+          data: expect.objectContaining({ status }),
+        }),
+      );
+      expect(prisma.prReviewFinding.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 1 },
+        data: { resolvedAt: expect.any(Date) },
+      });
+    },
+  );
 });

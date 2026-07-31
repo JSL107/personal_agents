@@ -85,7 +85,7 @@ const buildDependencies = ({
     markPosted: jest.fn(),
     findOpenPostedCards: jest.fn(),
     markDecided: jest.fn().mockResolvedValue(undefined),
-    markResolved: jest.fn().mockResolvedValue(undefined),
+    markThreadResolved: jest.fn().mockResolvedValue(undefined),
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
   const episodic = {
@@ -129,6 +129,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'MERGED',
+      truncated: false,
       threads: [
         reviewThread({
           reactions: [
@@ -188,11 +189,28 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
+  it('잘린 GraphQL 결과에서 코멘트를 못 찾으면 종료 PR도 STALE 확정을 보류한다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: true,
+      threads: [],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ stale: 0, skipped: 1 });
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
+  });
+
   it('ACKED 카드는 episodic memory에 절대 적재하지 않는다', async () => {
     const { usecase, github, repository, episodic } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({
           reactions: [
@@ -220,6 +238,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({
           reactions: [
@@ -264,6 +283,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({
           isResolved: true,
@@ -307,6 +327,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     });
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({ replies: [reply(600, '수정했습니다')] }),
         reviewThread({
@@ -338,11 +359,12 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
-  it('resolve 실패해도 결정 상태를 유지하고 markResolved만 생략한다', async () => {
+  it('resolve 실패해도 결정 상태를 유지하고 markThreadResolved만 생략한다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({
           reactions: [
@@ -363,7 +385,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(repository.markDecided).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'REJECTED' }),
     );
-    expect(repository.markResolved).not.toHaveBeenCalled();
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
   });
 
   it('LLM 실패 시 답글 판정만 건너뛰고 리액션 신호는 반영한다', async () => {
@@ -374,6 +396,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
+      truncated: false,
       threads: [
         reviewThread({
           reactions: [
