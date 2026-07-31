@@ -14,6 +14,9 @@ import {
 import { toConsoleApproval, toConsoleSession } from './console-mappers';
 import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
+// 재접속 스냅샷 복원 시 "최근 실패"로 되살릴 시간 창(분). SSE 라이브는 이 창과 무관하게 즉시 반영된다.
+const FAILED_SNAPSHOT_WINDOW_MINUTES = 360;
+
 // 콘솔 관제 스냅샷 조립 — agent-registry(문서 메타) + 활성 런 + 열린 승인을 화면 뷰 타입으로 가공.
 // 읽기 전용. 도메인 표현(number id, Date)을 여기서만 뷰 표현(string id, ISO 문자열)으로 변환한다.
 @Injectable()
@@ -26,9 +29,12 @@ export class ConsoleReadService {
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
     const now = new Date();
-    const [activeRuns, openPreviews] = await Promise.all([
+    const [activeRuns, openPreviews, recentlyFailed] = await Promise.all([
       this.agentRunService.findActiveRuns(),
       this.findAllOpenPreviews.execute({ now }),
+      this.agentRunService.findRecentlyFailedRuns({
+        withinMinutes: FAILED_SNAPSHOT_WINDOW_MINUTES,
+      }),
     ]);
 
     // run-sweeper(주 1회)가 정리하기 전이라도, 좀비 임계를 넘긴 IN_PROGRESS 는 활성에서 제외한다.
@@ -50,13 +56,17 @@ export class ConsoleReadService {
         .map((approval) => approval.agentType)
         .filter((agentType): agentType is string => agentType !== null),
     );
+    const recentlyFailedAgentTypes = new Set(
+      recentlyFailed.map((run) => run.agentType),
+    );
 
     const agents: ConsoleAgent[] = AGENT_REGISTRY.map((entry) => {
       const state = deriveAgentState({
         hasOpenApproval: openApprovalAgentTypes.has(entry.agentType),
         hasActiveRun: activeAgentTypes.has(entry.agentType),
-        // v1 은 활성 런만 조회한다 — 최근 종료/큐/연동 신호는 SSE 이벤트로 실시간 갱신(A7).
-        latestFinishedStatus: null,
+        latestFinishedStatus: recentlyFailedAgentTypes.has(entry.agentType)
+          ? 'FAILED'
+          : null,
         isIntegrationBlocked: false,
         isQueuedWaiting: false,
       });

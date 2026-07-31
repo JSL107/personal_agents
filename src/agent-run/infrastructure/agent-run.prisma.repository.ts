@@ -26,6 +26,7 @@ import {
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
+  RecentlyFailedRun,
   SearchAgentRunRow,
   SearchAgentRunsQuery,
   SimilarPlanRow,
@@ -431,6 +432,30 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       startedAt: row.startedAt,
       endedAt: row.endedAt,
     }));
+  }
+
+  // 콘솔 관제 — agentType별 최신 종료 런을 distinct(=DISTINCT ON)로 1건씩 뽑아,
+  // 그것이 FAILED이며 cutoff 이후 종료된 agentType만 반환한다(실패 후 성공/재시작은 자동 제외).
+  async findRecentlyFailedRuns({
+    withinMinutes,
+  }: {
+    withinMinutes: number;
+  }): Promise<RecentlyFailedRun[]> {
+    const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    const latestPerAgent = await this.prisma.agentRun.findMany({
+      where: { endedAt: { not: null } },
+      orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
+      distinct: ['agentType'],
+      select: { agentType: true, status: true, endedAt: true },
+    });
+    return latestPerAgent
+      .filter(
+        (row) =>
+          row.status === AgentRunStatus.FAILED &&
+          row.endedAt !== null &&
+          row.endedAt >= cutoff,
+      )
+      .map((row) => ({ agentType: row.agentType }));
   }
 
   async sweepZombies({

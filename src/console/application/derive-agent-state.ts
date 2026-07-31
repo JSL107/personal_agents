@@ -1,10 +1,10 @@
 import { ConsoleAgentState } from '../domain/console.type';
 
 /**
- * 상태 5종 파생의 입력 신호.
+ * 상태 6종 파생의 입력 신호.
  *
  * 백엔드 `AgentRunStatus` 는 3종(IN_PROGRESS/SUCCEEDED/FAILED)뿐이라, 화면이 요구하는
- * 5종은 승인 대기·연동 차단·큐 대기 신호를 합쳐 파생한다. 순수 함수로 유지해 규칙과
+ * 6종은 승인 대기·연동 차단·큐 대기 신호를 합쳐 파생한다. 순수 함수로 유지해 규칙과
  * 우선순위를 유닛 테스트로 고정한다.
  */
 export interface DeriveInput {
@@ -21,9 +21,9 @@ export interface DeriveInput {
 }
 
 /**
- * 우선순위: 승인대기 > 연동대기 > 진행중 > 대기 > 완료.
+ * 우선순위: 승인대기 > 연동대기 > 진행중 > 대기 > 실패 > 완료.
  *
- * 애매하면 `WAITING` 으로 강등해 과표시를 막는다(실패 종료만 있는 경우 등).
+ * 애매하면 `WAITING` 으로 강등해 과표시를 막는다.
  */
 export function deriveAgentState(input: DeriveInput): ConsoleAgentState {
   if (input.hasOpenApproval) {
@@ -38,6 +38,9 @@ export function deriveAgentState(input: DeriveInput): ConsoleAgentState {
   if (input.isQueuedWaiting) {
     return ConsoleAgentState.WAITING;
   }
+  if (input.latestFinishedStatus === 'FAILED') {
+    return ConsoleAgentState.FAILED;
+  }
   if (input.latestFinishedStatus === 'SUCCEEDED') {
     return ConsoleAgentState.COMPLETED;
   }
@@ -50,6 +53,7 @@ const BUBBLES: Record<ConsoleAgentState, string> = {
   [ConsoleAgentState.AWAITING_APPROVAL]: '확인해주세요',
   [ConsoleAgentState.AWAITING_INTEGRATION]: '연결 기다려요',
   [ConsoleAgentState.WAITING]: '업무 대기중',
+  [ConsoleAgentState.FAILED]: '문제가 생겼어요',
 };
 
 /** 상태별 말풍선 문구. 앱은 이 문구를 그대로 표시한다. */

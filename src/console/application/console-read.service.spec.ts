@@ -6,7 +6,9 @@ import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConsoleReadService } from './console-read.service';
 
 describe('ConsoleReadService', () => {
-  let agentRunService: jest.Mocked<Pick<AgentRunService, 'findActiveRuns'>>;
+  let agentRunService: jest.Mocked<
+    Pick<AgentRunService, 'findActiveRuns' | 'findRecentlyFailedRuns'>
+  >;
   let findAllOpenPreviews: jest.Mocked<
     Pick<FindAllOpenPreviewsUsecase, 'execute'>
   >;
@@ -14,7 +16,10 @@ describe('ConsoleReadService', () => {
   let service: ConsoleReadService;
 
   beforeEach(() => {
-    agentRunService = { findActiveRuns: jest.fn().mockResolvedValue([]) };
+    agentRunService = {
+      findActiveRuns: jest.fn().mockResolvedValue([]),
+      findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
+    };
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     localSessions = { list: jest.fn().mockReturnValue([]) };
     service = new ConsoleReadService(
@@ -62,6 +67,44 @@ describe('ConsoleReadService', () => {
       startedAt: startedAt.toISOString(),
       finishedAt: null,
     });
+  });
+
+  it('최근 실패한 에이전트는 FAILED 로 복원된다', async () => {
+    agentRunService.findRecentlyFailedRuns.mockResolvedValue([
+      { agentType: 'PM' },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
+    ).toBe('FAILED');
+    expect(agentRunService.findRecentlyFailedRuns).toHaveBeenCalledWith({
+      withinMinutes: 360,
+    });
+  });
+
+  it('실패 복원보다 활성 런(IN_PROGRESS)이 우선한다', async () => {
+    const startedAt = new Date(Date.now() - 60_000);
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 1,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt,
+        endedAt: null,
+      },
+    ]);
+    agentRunService.findRecentlyFailedRuns.mockResolvedValue([
+      { agentType: 'PM' },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
+    ).toBe('IN_PROGRESS');
   });
 
   it('좀비 임계(30분) 초과 IN_PROGRESS 런은 활성에서 제외한다 (오표시/목록 제거)', async () => {

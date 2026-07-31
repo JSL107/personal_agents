@@ -309,3 +309,48 @@ describe('AgentRunPrismaRepository.findChainRootsInWindow', () => {
     ).resolves.toEqual([]);
   });
 });
+
+describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
+  it('agentType별 최신 종료 1건씩(distinct) 조회하고, 최신이 FAILED이며 cutoff 이내인 것만 반환', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        agentType: 'PM',
+        status: 'FAILED',
+        endedAt: new Date('2026-07-30T11:00:00.000Z'),
+      },
+      {
+        agentType: 'BE',
+        status: 'SUCCEEDED',
+        endedAt: new Date('2026-07-30T11:30:00.000Z'),
+      },
+      {
+        agentType: 'CTO',
+        status: 'FAILED',
+        endedAt: new Date('2026-07-30T02:00:00.000Z'),
+      },
+    ]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findRecentlyFailedRuns({
+      withinMinutes: 360,
+    });
+
+    // PM만 남는다: BE는 최신이 성공, CTO는 실패지만 10시간 전(창 밖).
+    expect(result).toEqual([{ agentType: 'PM' }]);
+    // distinct + orderBy 계약 검증.
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { endedAt: { not: null } },
+        orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
+        distinct: ['agentType'],
+        select: { agentType: true, status: true, endedAt: true },
+      }),
+    );
+    jest.useRealTimers();
+  });
+});
