@@ -18,6 +18,7 @@ describe('parsePullRequestReview', () => {
       { body: '전반적으로 잘 짜여 있습니다.' },
     ],
     approvalRecommendation: 'request_changes',
+    findings: [],
   };
 
   it('JSON 문자열을 PullRequestReview 로 파싱', () => {
@@ -64,5 +65,99 @@ describe('parsePullRequestReview', () => {
     expect(() => parsePullRequestReview(JSON.stringify(broken))).toThrow(
       CodeReviewerException,
     );
+  });
+});
+
+describe('parsePullRequestReview — findings', () => {
+  const baseResponse = {
+    summary: '요약',
+    riskLevel: 'medium',
+    mustFix: ['트랜잭션 누락'],
+    niceToHave: ['변수명 개선'],
+    missingTests: ['실패 케이스 테스트 없음'],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'request_changes',
+  };
+
+  it('findings 가 있으면 그대로 정본으로 쓴다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [
+        {
+          category: 'RELIABILITY',
+          severity: 'MUST_FIX',
+          file: 'src/foo.service.ts',
+          line: 42,
+          body: '트랜잭션 밖에서 저장한다',
+        },
+      ],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([
+      {
+        category: 'RELIABILITY',
+        severity: 'MUST_FIX',
+        file: 'src/foo.service.ts',
+        line: 42,
+        body: '트랜잭션 밖에서 저장한다',
+      },
+    ]);
+  });
+
+  it('findings 가 없으면 기존 3배열에서 UNCLASSIFIED 로 변환한다', () => {
+    const parsed = parsePullRequestReview(JSON.stringify(baseResponse));
+
+    expect(parsed.findings).toEqual([
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MUST_FIX',
+        body: '트랜잭션 누락',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'NICE_TO_HAVE',
+        body: '변수명 개선',
+      },
+      {
+        category: 'UNCLASSIFIED',
+        severity: 'MISSING_TEST',
+        body: '실패 케이스 테스트 없음',
+      },
+    ]);
+  });
+
+  it('findings 요소의 category 가 목록 밖이면 UNCLASSIFIED 로 강등한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [{ category: 'NONSENSE', severity: 'MUST_FIX', body: '본문' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].category).toBe('UNCLASSIFIED');
+  });
+
+  it('findings 요소의 severity 가 목록 밖이면 NICE_TO_HAVE 로 강등한다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [{ category: 'STYLE', severity: 'WHATEVER', body: '본문' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings[0].severity).toBe('NICE_TO_HAVE');
+  });
+
+  it('findings 요소에 body 가 없으면 그 요소를 버린다', () => {
+    const text = JSON.stringify({
+      ...baseResponse,
+      findings: [{ category: 'STYLE', severity: 'NICE_TO_HAVE' }],
+    });
+
+    const parsed = parsePullRequestReview(text);
+
+    expect(parsed.findings).toEqual([]);
   });
 });
