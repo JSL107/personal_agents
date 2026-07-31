@@ -51,11 +51,14 @@ export class AutopilotConsumer extends WorkerHost {
       this.modelRouter.probeReadiness(),
     );
     try {
+      // job.id 를 슬롯 식별자로 넘긴다 — stalled 재큐는 같은 job 을 다시 처리하므로 id 가
+      // 같고, 다음 스케줄 슬롯은 새 job = 새 id 라 재진입 차단이 슬롯 밖으로 번지지 않는다.
       await this.orchestrator.runGroup(
         groupKey,
         entries,
         ownerSlackUserId,
         target,
+        job.id,
       );
     } catch (error) {
       this.logger.error(

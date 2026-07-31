@@ -175,3 +175,46 @@ describe('CronIdempotencyService — release (가드 롤백)', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+// isDone 은 "무거운 작업(LLM) 앞에서 완주 여부만 묻는" 읽기 전용 확인이다.
+// 키를 만들지 않는 것이 핵심 — 진입 시점에 키를 만들면 실행 중 강제 종료 시 그 슬롯이
+// TTL 동안 영구 차단된다.
+describe('CronIdempotencyService — isDone (읽기 전용 완주 확인)', () => {
+  it('in-memory: 획득 전엔 false, 획득 후엔 true', async () => {
+    const service = new CronIdempotencyService();
+    const key = 'autopilot:morning:2026-07-26';
+
+    expect(await service.isDone(key)).toBe(false);
+    await service.acquireOnce(key, 90_000);
+    expect(await service.isDone(key)).toBe(true);
+  });
+
+  it('in-memory: isDone 은 키를 만들지 않는다 (이후 acquireOnce 가 여전히 첫 실행)', async () => {
+    const service = new CronIdempotencyService();
+    const key = 'autopilot:morning:2026-07-26';
+
+    await service.isDone(key);
+
+    expect(await service.acquireOnce(key, 90_000)).toBe(true);
+  });
+
+  it('Redis: EXISTS 가 1 이면 true, 0 이면 false', async () => {
+    const exists = jest.fn().mockResolvedValue(1);
+    const service = new CronIdempotencyService({ exists } as unknown as Redis);
+
+    expect(await service.isDone('autopilot:morning:2026-07-26')).toBe(true);
+    expect(exists).toHaveBeenCalledWith('autopilot:morning:2026-07-26');
+
+    exists.mockResolvedValue(0);
+    expect(await service.isDone('autopilot:morning:2026-07-26')).toBe(false);
+  });
+
+  it('Redis exists 가 throw 하면 in-memory 조회로 fallback (throw 하지 않음)', async () => {
+    const exists = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const service = new CronIdempotencyService({ exists } as unknown as Redis);
+
+    await expect(service.isDone('autopilot:morning:2026-07-26')).resolves.toBe(
+      false,
+    );
+  });
+});
