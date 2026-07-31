@@ -38,6 +38,11 @@ interface DispatchGate {
   readonly githubAuthor: string;
 }
 
+interface OpenPreviewTarget {
+  readonly sessionId: string;
+  readonly prRef: string;
+}
+
 @Injectable()
 export class SessionDispatchService {
   private readonly logger = new Logger(SessionDispatchService.name);
@@ -79,7 +84,12 @@ export class SessionDispatchService {
       return false;
     }
     const openPreviews = await this.findAllOpenPreviews.execute({});
-    if (this.hasOpenSessionInjectPreview(openPreviews, session.sessionId)) {
+    if (
+      this.hasBlockingOpenPreview(openPreviews, {
+        sessionId: session.sessionId,
+        prRef: params.prRef,
+      })
+    ) {
       return false;
     }
     const payload: SessionInjectPreviewPayload = {
@@ -153,9 +163,11 @@ export class SessionDispatchService {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private hasOpenSessionInjectPreview(
+  // 같은 세션에 대한 중복 제안뿐 아니라, 같은 작업(prRef)을 여러 유휴 세션에 동시 제안하는
+  // fan-out 도 막는다 — 작업 하나당 승인/거절 카드 한 장이 되도록.
+  private hasBlockingOpenPreview(
     previews: PreviewAction[],
-    sessionId: string,
+    target: OpenPreviewTarget,
   ): boolean {
     return previews.some((preview) => {
       if (preview.kind !== PREVIEW_KIND.SESSION_INJECT) {
@@ -167,7 +179,9 @@ export class SessionDispatchService {
       }
 
       const payload = preview.payload as Partial<SessionInjectPreviewPayload>;
-      return payload.sessionId === sessionId;
+      return (
+        payload.sessionId === target.sessionId || payload.prRef === target.prRef
+      );
     });
   }
 

@@ -206,6 +206,36 @@ describe('SessionDispatchService', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
+  it('다른 세션이 같은 PR 제안을 열어두면 중복 생성하지 않는다', async () => {
+    const { createPreview, findOpen, service } = make();
+    findOpen.execute.mockResolvedValue([
+      makeOpenPreview({
+        sessionId: 's-other',
+        source: 'claude',
+        prRef: 'me/career-mate#7',
+      }),
+    ]);
+
+    await service.onSessionBecameIdle(CLAUDE_SESSION);
+
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('다른 세션의 다른 PR 제안은 새 제안을 막지 않는다', async () => {
+    const { createPreview, findOpen, service } = make();
+    findOpen.execute.mockResolvedValue([
+      makeOpenPreview({
+        sessionId: 's-other',
+        source: 'claude',
+        prRef: 'me/career-mate#6',
+      }),
+    ]);
+
+    await service.onSessionBecameIdle(CLAUDE_SESSION);
+
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('잘못된 열린 SESSION_INJECT payload는 정상 제안 생성을 막지 않는다', async () => {
     const { createPreview, findOpen, service } = make();
     findOpen.execute.mockResolvedValue([
