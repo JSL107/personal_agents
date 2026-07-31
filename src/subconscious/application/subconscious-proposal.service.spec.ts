@@ -228,7 +228,27 @@ describe('SubconsciousProposalService.apply', () => {
     );
   });
 
-  it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지', async () => {
+  it('BE + github:pr key → text 는 요약 유지 + prReferenceHint 로 PR 참조 동봉', async () => {
+    const repository = buildRepository(
+      buildRecord({ suggestedAgentType: 'BE' as AgentType }),
+      true,
+    );
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, NOW);
+
+    // BE 는 작업 설명(요약)으로 plan 을 세우되 PR 참조가 있으면 GitHub 본문을 ground 한다.
+    // 둘을 각각 넘겨야 fetch 실패 시에도 요약으로 계속 진행할 수 있다.
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'PR #1 opened',
+        prReferenceHint: 'owner/repo#1',
+      }),
+    );
+  });
+
+  it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지 + hint 미전파', async () => {
     const repository = buildRepository(
       buildRecord({ suggestedAgentType: 'PM' as AgentType }),
       true,
@@ -240,6 +260,40 @@ describe('SubconsciousProposalService.apply', () => {
 
     expect(router.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'PR #1 opened' }),
+    );
+    expect(router.dispatch.mock.calls[0][0]).not.toHaveProperty(
+      'prReferenceHint',
+    );
+  });
+
+  it('BE + 비 github:pr key(notion) → hint 없이 요약만 전달', async () => {
+    const notionChange: StateChange = {
+      sourceId: 'notion',
+      kind: 'added',
+      item: {
+        key: 'notion:page-abc',
+        fingerprint: 'def',
+        summary: '스프린트 회고 준비',
+      },
+    };
+    const repository = buildRepository(
+      buildRecord({
+        suggestedAgentType: 'BE' as AgentType,
+        changeKey: 'notion:page-abc',
+        contextJson: { change: notionChange },
+      }),
+      true,
+    );
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, NOW);
+
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '스프린트 회고 준비' }),
+    );
+    expect(router.dispatch.mock.calls[0][0]).not.toHaveProperty(
+      'prReferenceHint',
     );
   });
 

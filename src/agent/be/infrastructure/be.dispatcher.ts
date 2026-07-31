@@ -41,6 +41,9 @@ export class BeDispatcher implements AgentDispatcher {
       ...(input.conversationContext !== undefined
         ? { conversationContext: input.conversationContext }
         : {}),
+      ...(input.prReferenceHint !== undefined
+        ? { prReferenceHint: input.prReferenceHint }
+        : {}),
     });
 
     const humanized = await humanizeBackendPlan(

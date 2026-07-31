@@ -35,6 +35,10 @@ export interface DispatchInput {
   // 미주입(undefined) 이면 기존 동기 동작. router 는 root dispatch 에만 통과시키고
   // handoff chain 자식에는 전달하지 않는다(BLOG 는 chain root 로만 호출됨).
   replyContext?: BlogReplyContext;
+  // 호출자가 이미 알고 있는 PR 참조(owner/repo#N) — text 에는 사람용 설명을 남긴 채 참조만
+  // 따로 실어 보낼 때 사용한다 (subconscious 제안 → BE). text 를 참조로 덮어쓰는 워커
+  // (CODE_REVIEWER·BE_FIX) 와 달리 설명과 참조가 모두 필요한 워커용. 미주입이면 기존 동작.
+  prReferenceHint?: string;
 }
 
 export type DispatchSource =
