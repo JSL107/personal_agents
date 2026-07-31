@@ -72,7 +72,12 @@ Thumbs.db
 .omc/
 .claude
 .serena/
+# Claude/Codex handoff 산출물(design·implementation-summary 등). 개인 workflow 용.
+.ai/
 jarvis_agents_plan_2026.md
 docs/
 # 심링크 형태 node_modules 도 무시(워크트리)
 node_modules
+
+# graphify 코드그래프 산출물(AST/graph/report). 로컬 분석용, 커밋 대상 아님.
+graphify-out/
