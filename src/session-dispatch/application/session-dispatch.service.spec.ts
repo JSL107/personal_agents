@@ -206,6 +206,36 @@ describe('SessionDispatchService', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
+  it('다른 세션이 같은 PR 제안을 열어두면 중복 생성하지 않는다', async () => {
+    const { createPreview, findOpen, service } = make();
+    findOpen.execute.mockResolvedValue([
+      makeOpenPreview({
+        sessionId: 's-other',
+        source: 'claude',
+        prRef: 'me/career-mate#7',
+      }),
+    ]);
+
+    await service.onSessionBecameIdle(CLAUDE_SESSION);
+
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('다른 세션의 다른 PR 제안은 새 제안을 막지 않는다', async () => {
+    const { createPreview, findOpen, service } = make();
+    findOpen.execute.mockResolvedValue([
+      makeOpenPreview({
+        sessionId: 's-other',
+        source: 'claude',
+        prRef: 'me/career-mate#6',
+      }),
+    ]);
+
+    await service.onSessionBecameIdle(CLAUDE_SESSION);
+
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('잘못된 열린 SESSION_INJECT payload는 정상 제안 생성을 막지 않는다', async () => {
     const { createPreview, findOpen, service } = make();
     findOpen.execute.mockResolvedValue([
@@ -298,5 +328,45 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
 
     expect(created).toBe(false);
     expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // 열린 preview 조회는 아직 아무것도 반환하지 않는 상태 = 두 호출이 조회를 함께 통과하는
+  // check-then-act 경쟁. prRef 임계 구역이 없으면 카드가 2장 생긴다.
+  it('같은 PR을 두 세션이 동시에 제안해도 preview는 한 건만 생성한다', async () => {
+    const { createPreview, service } = make();
+
+    const results = await Promise.all([
+      service.offerToIdleSession({
+        session: CLAUDE_SESSION,
+        prRef: 'me/career-mate#7',
+        instruction: 'y',
+        previewText: 'z',
+      }),
+      service.offerToIdleSession({
+        session: { ...CLAUDE_SESSION, sessionId: 's2' },
+        prRef: 'me/career-mate#7',
+        instruction: 'y',
+        previewText: 'z',
+      }),
+    ]);
+
+    expect(results).toEqual([true, false]);
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('제안이 끝나면 임계 구역을 해제해 이후 같은 PR 제안을 영구 차단하지 않는다', async () => {
+    const { createPreview, service } = make();
+    const offer = {
+      session: CLAUDE_SESSION,
+      prRef: 'me/career-mate#7',
+      instruction: 'y',
+      previewText: 'z',
+    };
+
+    const first = await service.offerToIdleSession(offer);
+    const second = await service.offerToIdleSession(offer);
+
+    expect([first, second]).toEqual([true, true]);
+    expect(createPreview.execute).toHaveBeenCalledTimes(2);
   });
 });
