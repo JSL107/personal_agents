@@ -959,6 +959,7 @@ describe('OctokitGithubClient', () => {
       );
       expect(result).toEqual({
         pullRequestState: 'OPEN',
+        truncated: false,
         threads: [
           {
             threadId: 'PRRT_thread',
@@ -1007,6 +1008,60 @@ describe('OctokitGithubClient', () => {
 
       expect(result.pullRequestState).toBe('MERGED');
     });
+
+    it.each(['threads', 'comments', 'reactions'] as const)(
+      '%s pagination이 남아 있으면 truncated=true를 반환한다',
+      async (truncatedLevel) => {
+        const graphql = jest.fn().mockResolvedValue({
+          repository: {
+            pullRequest: {
+              state: 'OPEN',
+              merged: false,
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'PRRT_thread',
+                    isResolved: false,
+                    comments: {
+                      nodes: [
+                        {
+                          databaseId: 555,
+                          body: '리뷰 본문',
+                          createdAt: '2026-07-31T00:00:00Z',
+                          author: { login: 'idaeri-bot' },
+                          reactions: {
+                            nodes: [],
+                            pageInfo: {
+                              hasNextPage: truncatedLevel === 'reactions',
+                            },
+                          },
+                        },
+                      ],
+                      pageInfo: {
+                        hasNextPage: truncatedLevel === 'comments',
+                      },
+                    },
+                  },
+                ],
+                pageInfo: {
+                  hasNextPage: truncatedLevel === 'threads',
+                },
+              },
+            },
+          },
+        });
+        const client = new OctokitGithubClient({
+          graphql,
+        } as unknown as Octokit);
+
+        const result = await client.listReviewThreads({
+          repo: 'foo/bar',
+          number: 1,
+        });
+
+        expect(result.truncated).toBe(true);
+      },
+    );
   });
 
   describe('resolveReviewThread', () => {

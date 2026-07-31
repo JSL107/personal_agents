@@ -15,6 +15,7 @@ export interface ResolveHarvestSignalInput {
   thread: ReviewThread | null;
   ownerLogin: string;
   pullRequestState: 'OPEN' | 'CLOSED' | 'MERGED';
+  truncated: boolean;
 }
 
 export const resolveHarvestSignal = ({
@@ -22,6 +23,7 @@ export const resolveHarvestSignal = ({
   thread,
   ownerLogin,
   pullRequestState,
+  truncated,
 }: ResolveHarvestSignalInput): HarvestSignal => {
   const botCommentId = Number(card.githubCommentId);
   const botComment = thread?.comments.find(
@@ -68,6 +70,9 @@ export const resolveHarvestSignal = ({
     }
   }
 
+  if (truncated && !botComment) {
+    return { kind: 'NONE' };
+  }
   if (pullRequestState !== 'OPEN') {
     return { kind: 'STALE' };
   }

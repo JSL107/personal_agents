@@ -19,15 +19,18 @@ const thread = (overrides: Partial<ReviewThread> = {}): ReviewThread => ({
 const resolve = ({
   targetThread = thread(),
   pullRequestState = 'OPEN',
+  truncated = false,
 }: {
   targetThread?: ReviewThread | null;
   pullRequestState?: 'OPEN' | 'CLOSED' | 'MERGED';
+  truncated?: boolean;
 } = {}) =>
   resolveHarvestSignal({
     card: { githubCommentId: '555' },
     thread: targetThread,
     ownerLogin: 'owner',
     pullRequestState,
+    truncated,
   });
 
 describe('findThreadForComment', () => {
@@ -254,5 +257,38 @@ describe('resolveHarvestSignal', () => {
     expect(resolve({ targetThread: null, pullRequestState: 'CLOSED' })).toEqual(
       { kind: 'STALE' },
     );
+  });
+
+  it('잘린 결과에서 봇 코멘트를 못 찾으면 종료 PR도 NONE으로 보류한다', () => {
+    expect(
+      resolve({
+        targetThread: null,
+        pullRequestState: 'MERGED',
+        truncated: true,
+      }),
+    ).toEqual({ kind: 'NONE' });
+  });
+
+  it('잘린 결과여도 봇 코멘트를 찾았으면 기존 리액션 판정을 유지한다', () => {
+    const targetThread = thread({
+      comments: [
+        {
+          ...thread().comments[0],
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(resolve({ targetThread, truncated: true })).toEqual({
+      kind: 'REJECTED',
+      source: 'REACTION',
+      replyBody: null,
+    });
   });
 });

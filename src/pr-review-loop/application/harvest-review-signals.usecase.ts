@@ -140,12 +140,13 @@ export class HarvestReviewSignalsUsecase {
         thread,
         ownerLogin,
         pullRequestState: reviewThreads.pullRequestState,
+        truncated: reviewThreads.truncated,
       });
       if (
         thread?.isResolved &&
         (signal.kind === 'NONE' || signal.kind === 'STALE')
       ) {
-        await this.repository.markResolved(card.id);
+        await this.repository.markThreadResolved(card.id);
         outcome.resolved += 1;
         continue;
       }
@@ -292,7 +293,7 @@ export class HarvestReviewSignalsUsecase {
         return;
       }
     }
-    await this.repository.markResolved(card.id);
+    await this.repository.markThreadResolved(card.id);
     outcome.resolved += 1;
   }
 

@@ -36,5 +36,5 @@ export interface PrReviewFindingRepositoryPort {
 
   markDecided(input: MarkDecidedInput): Promise<void>;
 
-  markResolved(id: number): Promise<void>;
+  markThreadResolved(id: number): Promise<void>;
 }
