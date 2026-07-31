@@ -883,7 +883,7 @@ export const snapToCommentableLine = ({
 pnpm exec jest src/pr-review-loop/domain/diff-hunk.parser.spec.ts
 ```
 
-Expected: PASS (9건).
+Expected: PASS (8건 — `parseDiffHunks` 4 + `snapToCommentableLine` 4).
 
 - [ ] **Step 5: 커밋**
 
@@ -933,11 +933,11 @@ export type FindingStatus =
   | 'SUPPRESSED';
 
 // 어떤 형태로 게시됐는지. 3단 폴백의 결과가 여기 남는다.
+// (Task 7 fix 라운드에서 `DRY_RUN` 제거 — 연습 모드는 카드를 저장하지 않게 바뀌었다. 아래 Task 7 상단 노트 참조.)
 export type FindingPostMode =
   | 'INLINE'
   | 'FILE'
   | 'ISSUE_COMMENT'
-  | 'DRY_RUN'
   | 'NOT_POSTED';
 
 export interface CreateFindingInput {
@@ -1571,6 +1571,12 @@ git commit -m "feat(github): 인라인 리뷰 코멘트 게시 + PullRequestDeta
 ---
 
 ### Task 7: 게시 정책(순수) + 게시 서비스(3단 폴백)
+
+> **실행 중 확정된 정책 변경 (Task 7 fix 라운드, 사용자 결정)**
+> 아래 코드 블록은 초안이며, 리뷰에서 드러난 세 가지가 fix 라운드에서 바뀌었다.
+> 1. **연습 모드는 카드를 DB 에 저장하지 않는다.** 지문이 `repo+pullNumber+filePath+body` 로만 만들어져 게시 여부를 포함하지 않기 때문에, 연습 카드가 지문을 선점하면 실게시 전환 후에도 전부 중복으로 걸러져 **영원히 게시되지 않는다**. 연습 모드는 정책 계산 + 집계만 하고 조기 반환한다. `FindingPostMode` 에서 `DRY_RUN` 제거.
+> 2. **`markPosted` 를 게시 try 밖으로 분리한다.** 같은 try 안에 있으면 게시 성공 + DB 갱신 실패 시 그 카드가 폴백으로 흘러 **같은 지적이 GitHub 에 두 번** 올라간다.
+> 3. **묶음 게시의 카운터 이중 계상 수정.** `markPosted` 루프 중간 실패 시 `issueComment` 와 `notPosted` 가 동시에 더해져 집계 합이 입력 카드 수와 어긋났다.
 
 **Files:**
 - Create: `src/pr-review-loop/domain/publish-outcome.type.ts`
@@ -3250,15 +3256,17 @@ PR_REVIEW_INLINE_DRYRUN=true
 
 Expected:
 - Slack DM 에 `🤖 PR 리뷰 스윕` 요약이 오고, 건수가 `연습 N` 으로 표기된다
-- DB 확인: 카드가 `DRY_RUN` 으로 쌓였다
+- **DB 에는 카드가 쌓이지 않는다** — 연습 모드는 순수 미리보기다(Task 7 fix 라운드에서 확정된 정책). 지문을 선점하지 않으므로 실게시 전환 시 전부 정상 게시된다.
 
 ```bash
-docker exec idaeri-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT id, repo, pull_number, category, severity, file_path, line, status, post_mode FROM pr_review_finding ORDER BY id DESC LIMIT 10;"'
+docker exec idaeri-postgres psql -U idaeri -d idaeri -c "SELECT count(*) FROM pr_review_finding;"
 ```
+
+Expected: `0` (연습 모드에서는 저장 안 함). 0 이 아니면 연습 모드가 DB 를 건드리고 있다는 뜻이므로 멈추고 보고한다.
 
 - [ ] **Step 3: 게시 페이로드 검토**
 
-Slack 요약과 DB 의 `file_path` / `line` 을 실제 PR diff 와 대조한다. 줄 번호가 diff 안에 있는지, 스냅이 엉뚱한 위치로 당기지 않았는지 확인한다.
+Slack 요약에 나온 건수·심각도 구성을 실제 PR diff 와 대조한다. 이 단계에서 볼 수 있는 것은 Slack 요약뿐이므로(카드가 DB 에 없음), 줄 번호·스냅 정확성은 Step 4 실게시 후 GitHub 에서 확인한다.
 
 - [ ] **Step 4: 실게시 1건 확인**
 
