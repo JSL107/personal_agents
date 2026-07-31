@@ -53,6 +53,22 @@ const validPlan: BackendPlan = {
     'DB → domain → handler 순 분해로 의존성 역전. idempotency 는 domain layer 에 두고 handler 는 얇게.',
 };
 
+const buildPrDetail = () => ({
+  number: 34,
+  title: '결제 검증 API',
+  repo: 'foo/bar',
+  url: 'https://github.com/foo/bar/pull/34',
+  body: 'pg token 기반 검증 흐름 도입',
+  baseRef: 'main',
+  headRef: 'feat/pay-verify',
+  authorLogin: 'JSL107',
+  changedFiles: [],
+  changedFilesTruncated: false,
+  changedFilesTotalCount: 0,
+  additions: 0,
+  deletions: 0,
+});
+
 describe('GenerateBackendPlanUsecase', () => {
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
@@ -158,6 +174,62 @@ describe('GenerateBackendPlanUsecase', () => {
       beAgentErrorCode: BeAgentErrorCode.PR_GROUNDING_REQUIRED,
     });
     // 모델 호출 자체가 막혀야 함 — ungrounded plan regression 방지
+    expect(modelRouter.route).not.toHaveBeenCalled();
+  });
+
+  it('prReferenceHint 로 PR 참조가 오면 subject(작업 설명) 를 유지한 채 GitHub 본문을 ground', async () => {
+    githubClient.getPullRequest.mockResolvedValue(buildPrDetail());
+
+    await usecase.execute({
+      subject: '[TSK-1371] 설문 soft delete — ES 반영',
+      slackUserId: 'U1',
+      prReferenceHint: 'foo/bar#34',
+    });
+
+    expect(githubClient.getPullRequest).toHaveBeenCalledWith({
+      repo: 'foo/bar',
+      number: 34,
+    });
+    const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(promptArg).toContain('[TSK-1371] 설문 soft delete — ES 반영');
+    expect(promptArg).toContain('[GitHub PR foo/bar#34]');
+  });
+
+  it('prReferenceHint 경로는 GitHub fetch 실패해도 예외 없이 subject 로 plan 생성', async () => {
+    githubClient.getPullRequest.mockRejectedValue(
+      new Error('GITHUB_TOKEN not set'),
+    );
+
+    // subject 에 작업 설명이 남아 있으므로 ungrounded plan 이 아니다 —
+    // PR ref 만 온 경우(PR_GROUNDING_REQUIRED)와 달리 실패로 끊지 않는다.
+    await expect(
+      usecase.execute({
+        subject: '[TSK-1371] 설문 soft delete — ES 반영',
+        slackUserId: 'U1',
+        prReferenceHint: 'foo/bar#34',
+      }),
+    ).resolves.toBeDefined();
+
+    expect(modelRouter.route).toHaveBeenCalled();
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      '[TSK-1371] 설문 soft delete — ES 반영',
+    );
+  });
+
+  it('subject 가 PR ref 뿐이면 prReferenceHint 가 있어도 fetch 실패 시 PR_GROUNDING_REQUIRED 유지', async () => {
+    githubClient.getPullRequest.mockRejectedValue(
+      new Error('GITHUB_TOKEN not set'),
+    );
+
+    await expect(
+      usecase.execute({
+        subject: 'foo/bar#34',
+        slackUserId: 'U1',
+        prReferenceHint: 'foo/bar#34',
+      }),
+    ).rejects.toMatchObject({
+      beAgentErrorCode: BeAgentErrorCode.PR_GROUNDING_REQUIRED,
+    });
     expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
