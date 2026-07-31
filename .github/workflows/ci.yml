@@ -47,6 +47,10 @@ jobs:
       - name: Check docs sync
         run: pnpm docs:check
 
+      # 프로젝트 불변식 게이트 (TypeORM/unsafe raw SQL/.env 커밋/자율 플래그 default-OFF).
+      - name: Check invariants
+        run: pnpm check:invariants
+
       - name: Lint
         run: pnpm lint:check
 

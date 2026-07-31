@@ -24,6 +24,10 @@ struct OfficeView: View {
                 .frame(minWidth: 640, minHeight: 480)
                 .onAppear {
                     scene.sync(agents: store.agents)
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                     replayInitialChoreography()
                     scene.onAgentClick = { agentType in
                         selectedAgent = agentType
@@ -32,9 +36,27 @@ struct OfficeView: View {
                 }
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents)
+                    scene.refreshOverlays(
+                        agents: newAgents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
                 .onChange(of: selectedAgent) { newSelection in
                     scene.setSelected(newSelection)
+                }
+                .onChange(of: store.pendingCommands) { _ in
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
+                }
+                .onChange(of: store.runs) { _ in
+                    // 재연결 스냅샷은 이벤트를 방출하지 않으므로, agents 불변인데 runs 만 바뀐
+                    // 경우(같은 에이전트의 새 run)에도 경과 오버레이를 갱신한다.
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
                 .onReceive(store.eventStream) { event in
                     let context = ChoreographyContext(
@@ -43,6 +65,10 @@ struct OfficeView: View {
                         pendingCommands: store.pendingCommands
                     )
                     scene.perform(visualIntents(for: event, context: context))
+                    scene.refreshOverlays(
+                        agents: store.agents, runs: store.runs,
+                        pendingCommands: store.pendingCommands, now: Date()
+                    )
                 }
 
             if let agentType = selectedAgent {
