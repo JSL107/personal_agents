@@ -17,6 +17,8 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import { humanizeAssignmentOutput } from '../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   extractActionUserId,
@@ -79,6 +81,7 @@ export class AutoFlowHandler implements SlackHandler {
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
     private readonly generateTestUsecase: GenerateTestUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   register(app: App): void {
@@ -152,12 +155,18 @@ export class AutoFlowHandler implements SlackHandler {
           id: ctoOutcome.agentRunId,
           parentId: value.pmAgentRunId,
         });
+        // 표시용 복사본만 윤문 — 식별자·수치는 humanizeAssignmentOutput 이 보존하므로
+        // BE chain 버튼 value(taskId/targetFilePath 등)도 안전하다. 다른 표시 경로(/assign·dispatcher)와 일관.
+        const displayResult = await humanizeAssignmentOutput(
+          ctoOutcome.result,
+          this.humanizeService,
+        );
         const assignments = ctoOutcome.result.assignments;
         if (assignments.length === 0) {
           await respond({
             response_type: 'ephemeral',
             replace_original: true,
-            text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 chain 종료.\n\n${ctoOutcome.result.ctoSummary}`,
+            text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 chain 종료.\n\n${displayResult.ctoSummary}`,
           });
           return;
         }
@@ -167,7 +176,7 @@ export class AutoFlowHandler implements SlackHandler {
           blocks: buildCtoPreviewBlocks({
             pmAgentRunId: value.pmAgentRunId,
             ctoAgentRunId: ctoOutcome.agentRunId,
-            output: ctoOutcome.result,
+            output: displayResult,
           }) as never,
           text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}). BE chain ${assignments.length}개 대기 — 버튼으로 진행/취소.`,
         });

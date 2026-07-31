@@ -329,7 +329,7 @@ describe('humanizeBackendPlan', () => {
     reasoning: '도메인 서비스부터 구현해야 의존 방향이 유지됨',
   };
 
-  it('BE 서사 필드만 윤문하고 title·dependsOn 참조와 API 식별자·수치를 보존한다', async () => {
+  it('BE 서사 필드(notes 포함)만 윤문하고 title·dependsOn·API 계약(request/response·method/path)·수치를 보존한다', async () => {
     const result = await humanizeBackendPlan(base, fakeHumanizer());
 
     expect(result.context).toBe('기존 결제 도메인에 검증 흐름이 없음_H');
@@ -339,11 +339,12 @@ describe('humanizeBackendPlan', () => {
     expect(result.implementationChecklist[0].description).toBe(
       '결제 토큰 검증 로직을 구현함_H',
     );
+    // request/response 는 스키마 조각일 수 있어 원본 보존, notes 만 윤문.
     expect(result.apiDesign?.[0]).toEqual({
       method: 'POST',
       path: '/payments/verify',
-      request: 'orderId와 token을 받음_H',
-      response: '검증 상태를 반환함_H',
+      request: 'orderId와 token을 받음',
+      response: '검증 상태를 반환함',
       notes: '중복 요청을 멱등 처리함_H',
     });
     expect(result.risks).toEqual(['PG 재시도 시 중복 요청 위험이 있음_H']);

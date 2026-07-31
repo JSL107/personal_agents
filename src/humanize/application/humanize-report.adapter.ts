@@ -282,16 +282,8 @@ export const humanizeBackendPlan = async (
     plan.implementationChecklist.map((item) => item.description),
   );
   if (plan.apiDesign) {
-    flattenArray(
-      fields,
-      'apiDesign.request',
-      plan.apiDesign.map((api) => api.request),
-    );
-    flattenArray(
-      fields,
-      'apiDesign.response',
-      plan.apiDesign.map((api) => api.response),
-    );
+    // request/response 는 스키마 조각(예: {orderId: string})일 수 있어 윤문 시 API 계약이 훼손된다.
+    // method/path 와 함께 원본을 보존하고, 서술 필드인 notes 만 윤문한다.
     flattenArray(
       fields,
       'apiDesign.notes',
@@ -318,8 +310,6 @@ export const humanizeBackendPlan = async (
     apiDesign: plan.apiDesign
       ? plan.apiDesign.map((api, index) => ({
           ...api,
-          request: humanized[`apiDesign.request.${index}`] ?? api.request,
-          response: humanized[`apiDesign.response.${index}`] ?? api.response,
           notes: humanized[`apiDesign.notes.${index}`] ?? api.notes,
         }))
       : null,
