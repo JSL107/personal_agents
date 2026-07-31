@@ -156,7 +156,7 @@ model PrReviewFinding {
   status             String   @default("OPEN")
   githubCommentId    BigInt?  @map("github_comment_id")      // null = 미게시 또는 강등
   githubThreadNodeId String?  @map("github_thread_node_id")  // GraphQL resolve 대상
-  postMode           String   @map("post_mode")    // 'INLINE' | 'FILE' | 'ISSUE_COMMENT' | 'DRY_RUN' | 'NOT_POSTED'
+  postMode           String   @map("post_mode")    // 'INLINE' | 'FILE' | 'ISSUE_COMMENT' | 'NOT_POSTED'
   rejectReason       String?  @db.Text
   decidedAt          DateTime? @map("decided_at")  // ACKED/REJECTED/FIXED 전이 시각
   resolvedAt         DateTime? @map("resolved_at")
@@ -322,7 +322,7 @@ Phase 3에서 채택 사례(`ACKED`/`FIXED`)도 적재하되 본문 앞에 `[채
 |---|---|---|
 | `PR_REVIEW_LOOP_ENABLED` | `false` | 마스터 스위치. 꺼져 있으면 스윕 task가 즉시 `skip` |
 | `PR_REVIEW_INLINE_REPOS` | 빈 값 | 게시 허용 레포 allowlist (`owner/repo` 쉼표 구분). 목록 밖 레포는 Slack 요약만 |
-| `PR_REVIEW_INLINE_DRYRUN` | `true` | 연습 모드 — GitHub 게시 없이 Slack에 게시 예정 페이로드만 보여줌 |
+| `PR_REVIEW_INLINE_DRYRUN` | `true` | 연습 모드 — GitHub 게시도 카드 저장도 하지 않고 Slack에 게시 예정 페이로드만 보여줌 |
 | `PR_REVIEW_INLINE_MAX` | `4` | PR당 게시 상한. `MUST_FIX` 우선 정렬 후 절단 |
 | `PR_REVIEW_SUPPRESSION_ENABLED` | `false` | 억제 게이트 (Phase 3, 표본 확보 후 켬) |
 

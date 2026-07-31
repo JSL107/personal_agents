@@ -27,6 +27,11 @@ export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Review
   - "approve" — 전부 문제 없을 때
 - reviewCommentDrafts 는 GitHub PR 코멘트로 바로 옮길 수 있는 문장들. 가능하면 file/line 을 채우되 모를 땐 생략. 한 PR 당 5개 이상 만들지 말 것 (사용자 인지 부담).
 - 근거 없는 칭찬/비판 금지. diff 에서 인용 가능한 사실만.
+- findings 는 위 mustFix / niceToHave / missingTests 를 **낱개 항목으로 쪼갠 것**이다. 같은 지적을 중복해 넣지 말고, 각 항목에 category 와 severity 를 붙인다.
+  - category: CORRECTNESS(정확성·회귀·데이터 유실) / SECURITY / RELIABILITY(동시성·트랜잭션·에러 처리·외부 API) / TEST(커버리지 누락) / ARCHITECTURE(DDD·Port-Adapter 위반) / READABILITY(네이밍·가독성·중복) / STYLE(포맷·주석·lint 영역)
+  - severity: MUST_FIX(머지 전 필수) / NICE_TO_HAVE(후속 가능) / MISSING_TEST(테스트 누락)
+- **findings 의 각 항목에는 file 과 line 을 반드시 채운다.** 지적 대상 코드가 있는 diff 의 줄 번호(신규 파일 기준)를 쓴다. 줄 번호가 없으면 코멘트가 파일 이름 밑에 달려 어느 코드에 대한 지적인지 읽는 사람이 알 수 없다.
+- **정확히 맞추지 못해도 생략하지 말고 가장 가까운 줄을 쓴다.** 게시 단계가 diff 범위 안으로 보정하므로(범위를 벗어나면 가까운 경계로 당김) 줄이 조금 어긋나도 거부되지 않는다. 파일 전체에 해당하는 지적이라면 그 파일에서 관련된 변경이 처음 나오는 줄을 쓴다.
 
 ## 출력 규칙 (매우 중요)
 반드시 아래 JSON 스키마에 정확히 맞춰 JSON 객체 하나만 출력한다. 코드 블록 마커(\`\`\`json)나 설명 문장을 앞뒤에 붙이지 않는다.
@@ -40,5 +45,8 @@ export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Review
   "reviewCommentDrafts": [
     { "file": string?, "line": number?, "body": string }
   ],
-  "approvalRecommendation": "approve" | "request_changes" | "comment"
+  "approvalRecommendation": "approve" | "request_changes" | "comment",
+  "findings": [
+    { "category": string, "severity": string, "file": string?, "line": number?, "body": string }
+  ]
 }`;

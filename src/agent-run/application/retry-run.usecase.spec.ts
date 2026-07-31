@@ -29,6 +29,7 @@ describe('RetryRunUsecase', () => {
     findChainRootsInWindow: jest.fn().mockResolvedValue([]),
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
+    findLatestSweepReview: jest.fn().mockResolvedValue(null),
     findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
   });
 

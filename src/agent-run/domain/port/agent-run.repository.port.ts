@@ -111,6 +111,25 @@ export interface AgentSweptCountRow {
   swept: number;
 }
 
+// PR 리뷰 루프 — 이 PR 을 스윕(triggerType=PR_REVIEW_SWEEP)이 최근 sinceDays 이내 시도한 적
+// 있는지 최신 1건. 게시 여부·findings 유무와 무관하게 "리뷰 시도" 자체를 원장으로 삼는다 —
+// PrReviewFinding 카드는 연습 모드(dry-run)나 findings 0건일 때 아예 생기지 않으므로 카드
+// 유무로는 PR 당 리뷰 1회 정책을 판정할 수 없다(2026-07-31 리뷰 지적으로 AgentRun 원장 기준
+// 으로 교정). 리포지토리는 status/startedAt 사실만 반환하고, SUCCEEDED/FAILED/IN_PROGRESS
+// 에 따른 재시도 판정(쿨다운)은 usecase 가 순수 로직으로 수행한다(2차 리뷰 지적 반영).
+export interface FindLatestSweepReviewQuery {
+  prRef: string; // "owner/repo#number" — inputSnapshot.prRef 와 매칭
+  sinceDays: number; // JSON path 필터는 인덱스가 없어 스캔 범위를 이 기간으로 제한
+}
+
+export interface LatestSweepReview {
+  status: string; // AgentRunStatus 값 그대로('SUCCEEDED' | 'FAILED' | 'IN_PROGRESS')
+  startedAt: Date;
+  // 그 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot.dryRun 이 없으면(구 레코드·
+  // 스윕 외 경로) false. 실게시 전환 후 "연습으로만 끝난 PR"을 다시 리뷰할 근거다.
+  dryRun: boolean;
+}
+
 // 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의
 // hasActiveRun 신호 소스다. id/endedAt 은 도메인 표현(number/Date)으로 두고,
 // 뷰 변환(id → string, endedAt → ISO finishedAt)은 console 조립 계층이 담당한다.
@@ -198,6 +217,10 @@ export interface AgentRunRepositoryPort {
   sweepZombies(input: { olderThanMinutes: number }): Promise<number>;
   // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체 조회. 읽기 전용.
   findActiveRuns(): Promise<ActiveRunSnapshot[]>;
+  // PR 리뷰 루프 — PR 당 리뷰 1회(쿨다운 재시도) 판정 근거. FindLatestSweepReviewQuery 주석 참고.
+  findLatestSweepReview(
+    input: FindLatestSweepReviewQuery,
+  ): Promise<LatestSweepReview | null>;
   // 콘솔 관제 — agentType별 최신 종료가 FAILED이고 cutoff 이내인 것.
   findRecentlyFailedRuns(input: {
     withinMinutes: number;

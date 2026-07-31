@@ -37,6 +37,7 @@ model AgentRun {
   evidenceRecords  EvidenceRecord[]
   dailyPlan        DailyPlan?
   prReviewOutcomes PrReviewOutcome[]
+  prReviewFindings PrReviewFinding[]
   careerProfiles   CareerProfile[]
   episodicMemories EpisodicMemory[]
 
@@ -67,23 +68,23 @@ model EvidenceRecord {
 // kind 별 strategy (PreviewApplier) 가 payload 를 해석해 실제 부작용 (Notion/GitHub write 등) 을 수행.
 // expiresAt 이후 PENDING 인 row 는 EXPIRED 로 자연 만료 (별도 cron 스윕 가능 — 현재는 in-place 검증).
 model PreviewAction {
-  id          String    @id
-  slackUserId String    @map("slack_user_id")
-  kind        String
-  payload     Json
-  status      String
+  id             String    @id
+  slackUserId    String    @map("slack_user_id")
+  kind           String
+  payload        Json
+  status         String
   // Slack interactivity payload 의 response_url — apply/cancel 후 원본 메시지를 update 하기 위해 보관.
-  responseUrl String?   @map("response_url")
+  responseUrl    String?   @map("response_url")
   // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
-  previewText String    @map("preview_text") @db.Text
-  expiresAt   DateTime  @map("expires_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  appliedAt   DateTime? @map("applied_at")
-  cancelledAt DateTime? @map("cancelled_at")
+  previewText    String    @map("preview_text") @db.Text
+  expiresAt      DateTime  @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  appliedAt      DateTime? @map("applied_at")
+  cancelledAt    DateTime? @map("cancelled_at")
   // A 경로(chat.postMessage) 카드의 좌표 — apply/cancel/만료 시 chat.update 로 이 메시지를 다시 그린다.
   // ephemeral(B) / 카드 없음(C) 경로는 null 로 남아 갱신이 조용히 skip 된다.
-  slackChannelId String? @map("slack_channel_id")
-  slackMessageTs String? @map("slack_message_ts")
+  slackChannelId String?   @map("slack_channel_id")
+  slackMessageTs String?   @map("slack_message_ts")
 
   @@index([slackUserId, status])
   // preview-sweeper 가 만료된 PENDING 을 훑는 조회용.
@@ -139,6 +140,41 @@ model PrReviewOutcome {
 
   @@index([slackUserId, accepted, createdAt])
   @@map("pr_review_outcome")
+}
+
+// PR 리뷰 루프 Phase 1 — 지적 1건 = 카드 1행. 리뷰 전체 평가인 PrReviewOutcome 과 다른 개념이다.
+// status 가 카드 생애의 정본이고, GitHub 은 동기화 대상이다(스펙 §4-6).
+model PrReviewFinding {
+  id                 Int       @id @default(autoincrement())
+  agentRunId         Int       @map("agent_run_id")
+  agentRun           AgentRun  @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  // 'CODE_REVIEWER' — BE_FIX 등 다른 에이전트 지적 편입 대비.
+  agentType          String    @map("agent_type")
+  repo               String
+  pullNumber         Int       @map("pull_number")
+  // 리뷰 시점 head sha — Phase 2 커밋 대조의 기준선.
+  headSha            String    @map("head_sha")
+  category           String
+  severity           String
+  filePath           String?   @map("file_path")
+  line               Int?
+  body               String    @db.Text
+  // sha256(repo, pullNumber, filePath, 정규화 body) — 재스윕 시 중복 게시 차단.
+  fingerprint        String    @unique
+  // OPEN | ACKED | REJECTED | FIXED | RESOLVED | STALE | SUPPRESSED
+  status             String    @default("OPEN")
+  // INLINE | FILE | ISSUE_COMMENT | NOT_POSTED (연습 모드는 카드를 만들지 않음)
+  postMode           String    @map("post_mode")
+  githubCommentId    BigInt?   @map("github_comment_id")
+  githubThreadNodeId String?   @map("github_thread_node_id")
+  rejectReason       String?   @db.Text
+  decidedAt          DateTime? @map("decided_at")
+  resolvedAt         DateTime? @map("resolved_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  @@index([repo, pullNumber, status])
+  @@index([category, severity, status])
+  @@map("pr_review_finding")
 }
 
 // 휴가 사용 내역 — 기간별 누적. slackUserId 는 확장키(현재 본인 1명).

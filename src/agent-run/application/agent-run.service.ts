@@ -21,6 +21,8 @@ import {
   AgentRunRepositoryPort,
   AgentRunStatRow,
   AgentSweptCountRow,
+  FindLatestSweepReviewQuery,
+  LatestSweepReview,
   RecentlyFailedRun,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
@@ -322,6 +324,14 @@ export class AgentRunService {
   // 콘솔 관제 — 현재 진행 중(IN_PROGRESS) 런 전체. deriveAgentState 의 hasActiveRun 입력 조립용.
   async findActiveRuns(): Promise<ActiveRunSnapshot[]> {
     return await this.repository.findActiveRuns();
+  }
+
+  // PR 리뷰 루프 — PR 당 리뷰 1회(쿨다운 재시도) 판정 근거. status 기반 재시도 판정은
+  // usecase 몫이라 여기서는 repository 위임(최신 1건 사실 조회)만 한다.
+  async findLatestSweepReview(
+    input: FindLatestSweepReviewQuery,
+  ): Promise<LatestSweepReview | null> {
+    return await this.repository.findLatestSweepReview(input);
   }
 
   // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료가 FAILED인 것.

@@ -622,6 +622,30 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CONSOLE_REMOTE_TOKEN?: string;
+
+  // PR 리뷰 루프 마스터 스위치. `true` (string) 일 때만 스윕이 동작한다.
+  // 미설정/false → autopilot task 가 즉시 skip (기존 동작 그대로).
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_LOOP_ENABLED?: string;
+
+  // 인라인 코멘트 게시를 허용할 repo allowlist (콤마 구분 "owner/repo").
+  // 미설정/빈 값 → 게시 안 함 + 스윕 자체 skip. 게시는 외부에 보이는 행위라
+  // 명시적 옵트인만 인정한다 (issue 자동 라벨링의 allowlist 와 기본값 방향이 반대).
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_INLINE_REPOS?: string;
+
+  // 연습 모드. `false` (string) 일 때만 실제로 GitHub 에 게시한다.
+  // 미설정 시 연습 모드 — 카드는 저장하지 않고 Slack 요약만 나간다.
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_INLINE_DRYRUN?: string;
+
+  // PR 당 게시 상한. MUST_FIX 우선 정렬 후 절단. 미설정/비정상 값 → 4.
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_INLINE_MAX?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
