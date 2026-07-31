@@ -27,6 +27,10 @@ describe('formatPrReviewSweep', () => {
     expect(text).toContain('🔴');
     expect(text).toContain('인라인 3');
     expect(text).toContain('상한 초과 1');
+    // 0인 카운터는 숨겨진다
+    expect(text).not.toContain('파일 0');
+    expect(text).not.toContain('연습 0');
+    expect(text).not.toContain('중복 0');
   });
 
   it('연습 모드 건수는 별도로 표기한다', () => {
@@ -74,5 +78,20 @@ describe('formatPrReviewSweep', () => {
     });
 
     expect(text).not.toContain('<script>');
+  });
+
+  it('모든 카운터가 0이면 게시 없음으로 표기한다', () => {
+    const text = formatPrReviewSweep({
+      results: [
+        {
+          prRef: 'a/b#1',
+          riskLevel: 'low',
+          outcome: outcome(),
+        },
+      ],
+    });
+
+    expect(text).toContain('게시 없음');
+    expect(text).toContain('🟢 `a/b#1` —');
   });
 });
