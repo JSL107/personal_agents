@@ -78,6 +78,17 @@ struct OfficeView: View {
 
             if let agentType = selectedAgent {
                 interactionBar(for: agentType)
+            } else if let notice = store.approvalNotice {
+                // 승인/거절을 누르면 상호작용 바가 닫히므로, 실패 사유는 바 자리에서 이어 보여준다.
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    )
+                    .padding(.bottom, 12)
             }
         }
     }
