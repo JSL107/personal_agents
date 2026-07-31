@@ -46,6 +46,7 @@ describe('pr-retro-synth', () => {
         changedFilesTotalCount: 1,
         additions: 10,
         deletions: 2,
+        headSha: 'sha',
       },
       diff: { diff: 'diff-body', truncated: false, bytes: 9 },
     });
@@ -87,6 +88,7 @@ describe('pr-retro-synth', () => {
       changedFilesTotalCount: 1,
       additions: 5,
       deletions: 1,
+      headSha: 'sha',
     });
     const prompt = buildMultiPrRetroPrompt({
       items: [

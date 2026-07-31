@@ -21,6 +21,7 @@ const buildClientMock = (
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
   fetchPullRequestEngagement: jest.fn(),
+  createReviewComment: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {
