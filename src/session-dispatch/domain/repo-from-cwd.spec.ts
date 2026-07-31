@@ -44,6 +44,24 @@ describe('repoFromRemoteUrl', () => {
     expect(repoFromRemoteUrl(remoteUrl)).toBe(expectedRepository);
   });
 
+  // GitHub 이 아닌 remote 는 owner 를 알 수 없다 — 상위 디렉터리를 owner 로 오인하면
+  // 호출측이 `mirrors/repo` 를 완성된 GitHub 참조로 믿어 검색이 422 로 깨진다.
+  it.each([
+    ['/srv/mirrors/personal_agents.git', 'personal_agents'],
+    ['file:///srv/mirrors/personal_agents.git', 'personal_agents'],
+    ['../mirrors/personal_agents', 'personal_agents'],
+    [
+      'git@git.internal.example.com:team/personal_agents.git',
+      'personal_agents',
+    ],
+    ['https://gitlab.com/JSL107/personal_agents.git', 'personal_agents'],
+  ])(
+    '%s는 owner 없이 repo 이름만 반환한다',
+    (remoteUrl, expectedRepository) => {
+      expect(repoFromRemoteUrl(remoteUrl)).toBe(expectedRepository);
+    },
+  );
+
   it.each(['', '   ', 'https://github.com/', 'git@github.com:'])(
     'repo 세그먼트가 없는 %p는 null을 반환한다',
     (remoteUrl) => {
