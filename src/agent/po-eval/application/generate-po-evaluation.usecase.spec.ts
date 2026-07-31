@@ -1,4 +1,9 @@
+import { ConfigService } from '@nestjs/config';
+
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { getTodayKstDate } from '../../../common/util/kst-date.util';
+import { GithubPullRequestSummary } from '../../../github/domain/github.type';
+import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -9,6 +14,25 @@ import { PoEvalException } from '../domain/po-eval.exception';
 import { PoEvalErrorCode } from '../domain/po-eval-error-code.enum';
 import { MAX_SUB_AGENT_OUTPUT_BYTES } from '../domain/prompt/po-eval-system.prompt';
 import { GeneratePoEvaluationUsecase } from './generate-po-evaluation.usecase';
+
+// 오늘(KST) 머지로 인식되도록 mergedAt 을 오늘 KST 정오 부근(UTC 03:00)으로. 과거는 명백히 다른 날.
+const TODAY_KST = getTodayKstDate();
+const prSummary = (
+  override: Partial<GithubPullRequestSummary> = {},
+): GithubPullRequestSummary => ({
+  number: 110,
+  title: 'fix(blog): Hermes 타임아웃 조정',
+  body: 'PR 본문',
+  repo: 'JSL107/personal_agents',
+  url: 'https://github.com/JSL107/personal_agents/pull/110',
+  state: 'merged',
+  mergedAt: `${TODAY_KST}T03:00:00.000Z`,
+  updatedAt: `${TODAY_KST}T03:00:00.000Z`,
+  additions: 12,
+  deletions: 3,
+  changedFilesCount: 2,
+  ...override,
+});
 
 const validLlmJson = JSON.stringify({
   qualitative: {
@@ -45,10 +69,15 @@ describe('GeneratePoEvaluationUsecase', () => {
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
   let agentRunServiceFindRecent: jest.Mock;
+  let githubListMerged: jest.Mock;
+  let configGet: jest.Mock;
   let usecase: GeneratePoEvaluationUsecase;
 
   beforeEach(() => {
     modelRouter = { route: jest.fn() };
+    // 기본: GitHub 빈 결과 + author env 미설정 → 기존 테스트는 PR 수집 경로를 타지 않음.
+    githubListMerged = jest.fn(async () => [] as GithubPullRequestSummary[]);
+    configGet = jest.fn(() => undefined);
     agentRunServiceExecute = jest.fn(async (input) => {
       const execution = await input.run({ agentRunId: 51 });
       return {
@@ -76,6 +105,10 @@ describe('GeneratePoEvaluationUsecase', () => {
         execute: agentRunServiceExecute,
         findRecentSucceededRuns: agentRunServiceFindRecent,
       } as unknown as AgentRunService,
+      {
+        listAuthorMergedPullRequestsSince: githubListMerged,
+      } as unknown as GithubClientPort,
+      { get: configGet } as unknown as ConfigService,
     );
 
     modelRouter.route.mockResolvedValue({
