@@ -17,7 +17,7 @@ export const parseEvaluationOutput = (raw: string): EvaluationLlmOutput => {
   } catch (error) {
     throw new PoEvalException({
       code: PoEvalErrorCode.PARSE_FAILED,
-      message: `PO_EVAL 응답 JSON parse 실패: ${cleaned.slice(0, 120)}`,
+      message: `PO_EVAL 응답 JSON parse 실패 — ${describeUnparsable(cleaned, error)}`,
       status: DomainStatus.INTERNAL,
       cause: error,
     });
@@ -113,3 +113,22 @@ const stripCodeFence = (text: string): string =>
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/```\s*$/, '')
     .trim();
+
+// 파싱 실패 진단 — AgentRun.output.error 에는 error.message 만 보관되므로(agent-run.service),
+// 사후 원인 규명에 필요한 최소 정보를 메시지 자체에 담는다.
+// head 만 남기면 "응답이 중간에 잘렸는지" 를 알 수 없다 — 잘림은 tail 에서만 드러난다.
+// (2026-07-23 AgentRun #247 이 앞 120자만 남겨 원인 판별 불가였던 사례.)
+const DIAGNOSTIC_EXCERPT_LENGTH = 200;
+const DIAGNOSTIC_CAUSE_LENGTH = 200;
+
+const describeUnparsable = (cleaned: string, cause: unknown): string => {
+  const causeText = cause instanceof Error ? cause.message : String(cause);
+  const causeMessage = causeText.slice(0, DIAGNOSTIC_CAUSE_LENGTH);
+  const prefix = `len=${cleaned.length} cause=${causeMessage}`;
+  if (cleaned.length <= DIAGNOSTIC_EXCERPT_LENGTH * 2) {
+    return `${prefix} body=${cleaned}`;
+  }
+  const head = cleaned.slice(0, DIAGNOSTIC_EXCERPT_LENGTH);
+  const tail = cleaned.slice(-DIAGNOSTIC_EXCERPT_LENGTH);
+  return `${prefix} head=${head} …(생략)… tail=${tail}`;
+};
