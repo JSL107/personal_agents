@@ -91,4 +91,47 @@ describe('parseEvaluationOutput', () => {
       }),
     );
   });
+
+  // 2026-07-23 daily-eval 실패(AgentRun #247) 재발 대비 — 당시 진단 메시지가 앞 120자로
+  // 잘려 저장돼(AgentRun.output.error 는 error.message 만 보관) 원인이 "응답 잘림" 인지
+  // "문자열 내 제어문자" 인지 사후에 가릴 수 없었다. 길이 + 끝부분 + 원인을 남긴다.
+  describe('파싱 실패 진단', () => {
+    const catchMessage = (raw: string): string => {
+      let caught: Error | undefined;
+      try {
+        parseEvaluationOutput(raw);
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught).toBeDefined();
+      return caught?.message ?? '';
+    };
+
+    it('응답이 중간에 잘린 경우 길이·끝부분·원인을 메시지에 남긴다', () => {
+      const truncated = `{"qualitative":{"summary":"${'가'.repeat(400)}여기서_끊김`;
+
+      const message = catchMessage(truncated);
+
+      expect(message).toContain(`len=${truncated.length}`);
+      expect(message).toContain('여기서_끊김');
+      expect(message).toMatch(/cause=/);
+    });
+
+    it('앞부분도 함께 남겨 어떤 응답이었는지 식별할 수 있다', () => {
+      const truncated = `{"qualitative":{"summary":"시작_표식${'나'.repeat(400)}끝_표식`;
+
+      const message = catchMessage(truncated);
+
+      expect(message).toContain('시작_표식');
+      expect(message).toContain('끝_표식');
+    });
+
+    it('진단 메시지가 무한히 길어지지 않는다 (로그·DB 보호)', () => {
+      const huge = `{"qualitative":"${'다'.repeat(50_000)}`;
+
+      const message = catchMessage(huge);
+
+      expect(message.length).toBeLessThan(1_200);
+    });
+  });
 });
