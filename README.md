@@ -237,6 +237,10 @@ pnpm dev              # watch 모드 기동
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 지시/승인 주체 — 미설정 시 콘솔 write 비활성(503) |
 | `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 write 인증 토큰(선택) — 설정 시 `x-console-token` 헤더 검증 |
 | `CONSOLE_CHAIN_IMPACT_RECENT_DAYS` | ❌ | 콘솔 자동 체이닝의 IMPACT_REPORTER recent 조회 일수, 기본 `7` |
+| `PR_REVIEW_LOOP_ENABLED` | ❌ | `'true'` 시 PR 리뷰 스윕(15분 주기) 활성 — 기본 OFF(미설정 시 task 즉시 skip) |
+| `PR_REVIEW_INLINE_REPOS` | ❌ | 리뷰·게시 허용 repo allowlist CSV (`owner/repo`) — 미설정/빈 값이면 스윕 자체 skip(명시적 옵트인만 인정) |
+| `PR_REVIEW_INLINE_DRYRUN` | ❌ | `'false'` 일 때만 GitHub 실게시 — 기본 연습 모드(카드 미저장 + Slack 요약만) |
+| `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 인라인 게시 상한(MUST_FIX 우선 절단) — 기본 `4` |
 
 **Model provider** — 2026-07-02 부터 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider. provider 간 fallback 없음 — codex 실패 시 재시도 없이 즉시 실패(쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 **claude 인증** — provider 코드 보존용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원은 유지(현재 라우팅 경로 없음, 롤백 시 사용).

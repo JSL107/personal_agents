@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 100개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 104개.
 설명은 각 변수의 첫 주석 줄 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -154,3 +154,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `CONSOLE_CHAIN_IMPACT_RECENT_DAYS` | ❌ | 콘솔 리모컨 2A.2 — PO_EVAL 자동 체이닝 시 IMPACT_REPORTER --recent 조회 일수. 기본 7. |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable). |
 | `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증. |
+| `PR_REVIEW_LOOP_ENABLED` | ❌ | PR 리뷰 루프 마스터 스위치. `true` (string) 일 때만 스윕이 동작한다. |
+| `PR_REVIEW_INLINE_REPOS` | ❌ | 인라인 코멘트 게시를 허용할 repo allowlist (콤마 구분 "owner/repo"). |
+| `PR_REVIEW_INLINE_DRYRUN` | ❌ | 연습 모드. `false` (string) 일 때만 실제로 GitHub 에 게시한다. |
+| `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 게시 상한. MUST_FIX 우선 정렬 후 절단. 미설정/비정상 값 → 4. |
