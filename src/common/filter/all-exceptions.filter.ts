@@ -28,6 +28,16 @@ const DOMAIN_TO_HTTP_STATUS: Readonly<Record<DomainStatus, HttpStatus>> = {
   [DomainStatus.GATEWAY_TIMEOUT]: HttpStatus.GATEWAY_TIMEOUT,
 };
 
+/// 4xx 로그에 요청자를 남긴다. UA 는 신뢰 경계 밖 입력이므로 개행을 지워 로그 위조를 막고
+/// 길이를 잘라 한 줄을 유지한다.
+function resolveUserAgent(request: Request): string {
+  const raw = request.headers['user-agent'];
+  if (raw === undefined) {
+    return '-';
+  }
+  return raw.replace(/[\r\n]+/g, ' ').slice(0, 80);
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -42,7 +52,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const message = this.resolveMessage(exception);
 
     if (exception instanceof Error) {
-      this.logger.error(`[${request.method}] ${request.url}`, exception.stack);
+      const isServerError = status >= HttpStatus.INTERNAL_SERVER_ERROR;
+      if (isServerError) {
+        this.logger.error(
+          `[${request.method}] ${request.url}`,
+          exception.stack,
+        );
+      } else {
+        this.logger.warn(
+          `[${request.method}] ${request.url} ${status} ${message} ua=${resolveUserAgent(request)}`,
+        );
+      }
     }
 
     const body: ApiResponse<null> = { code, message, data: null };
