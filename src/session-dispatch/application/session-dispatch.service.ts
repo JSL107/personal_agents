@@ -46,6 +46,11 @@ interface OpenPreviewTarget {
 @Injectable()
 export class SessionDispatchService {
   private readonly logger = new Logger(SessionDispatchService.name);
+  // 제안 생성이 진행 중인 prRef — 열린 preview 조회와 생성 사이의 check-then-act 경쟁을 막는다.
+  // SessionPoller 는 한 tick 의 idle 전이를 연속 발행하고 watcher 는 await 없이 발사하므로,
+  // 같은 작업에 대한 호출이 동시에 조회를 통과할 수 있다. 단일 프로세스 전제 —
+  // 멀티 인스턴스로 가면 DB 수준 제약이 필요하다.
+  private readonly inFlightPrRefs = new Set<string>();
 
   constructor(
     private readonly config: ConfigService,
@@ -83,31 +88,40 @@ export class SessionDispatchService {
     if (this.cooldown.shouldSkip(session.sessionId)) {
       return false;
     }
-    const openPreviews = await this.findAllOpenPreviews.execute({});
-    if (
-      this.hasBlockingOpenPreview(openPreviews, {
-        sessionId: session.sessionId,
-        prRef: params.prRef,
-      })
-    ) {
+    if (this.inFlightPrRefs.has(params.prRef)) {
       return false;
     }
-    const payload: SessionInjectPreviewPayload = {
-      sessionId: session.sessionId,
-      source: session.source,
-      instruction: params.instruction,
-      prRef: params.prRef,
-    };
-    await this.createPreview.execute({
-      slackUserId: gate.ownerSlackUserId,
-      kind: PREVIEW_KIND.SESSION_INJECT,
-      payload,
-      previewText: params.previewText,
-      responseUrl: null,
-      ttlMs: SESSION_INJECT_PREVIEW_TTL_MS,
-    });
-    this.cooldown.mark(session.sessionId);
-    return true;
+    // 검사와 등록 사이에 await 가 없어 단일 스레드에서 원자적이다.
+    this.inFlightPrRefs.add(params.prRef);
+    try {
+      const openPreviews = await this.findAllOpenPreviews.execute({});
+      if (
+        this.hasBlockingOpenPreview(openPreviews, {
+          sessionId: session.sessionId,
+          prRef: params.prRef,
+        })
+      ) {
+        return false;
+      }
+      const payload: SessionInjectPreviewPayload = {
+        sessionId: session.sessionId,
+        source: session.source,
+        instruction: params.instruction,
+        prRef: params.prRef,
+      };
+      await this.createPreview.execute({
+        slackUserId: gate.ownerSlackUserId,
+        kind: PREVIEW_KIND.SESSION_INJECT,
+        payload,
+        previewText: params.previewText,
+        responseUrl: null,
+        ttlMs: SESSION_INJECT_PREVIEW_TTL_MS,
+      });
+      this.cooldown.mark(session.sessionId);
+      return true;
+    } finally {
+      this.inFlightPrRefs.delete(params.prRef);
+    }
   }
 
   async onSessionBecameIdle(session: IdleSession): Promise<void> {
