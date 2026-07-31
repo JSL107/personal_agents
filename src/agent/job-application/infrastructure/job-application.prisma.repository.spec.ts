@@ -67,6 +67,29 @@ describe('JobApplicationPrismaRepository', () => {
     expect(record.deadline).toEqual({ year: 2026, month: 6, day: 30 });
   });
 
+  it('save 는 nextFollowUpAt 이 있으면 UTC Date 로 매핑', async () => {
+    const create = jest.fn().mockResolvedValue({
+      ...baseRow,
+      nextFollowUpAt: new Date(Date.UTC(2026, 5, 23)),
+    });
+    const prisma = { jobApplication: { create } } as unknown as PrismaService;
+    const repository = new JobApplicationPrismaRepository(prisma);
+
+    const record = await repository.save({
+      slackUserId: 'U1',
+      company: '토스',
+      role: '백엔드',
+      status: 'APPLIED',
+      appliedAt: { year: 2026, month: 6, day: 16 },
+      nextFollowUpAt: { year: 2026, month: 6, day: 23 },
+    });
+
+    expect(create.mock.calls[0][0].data.nextFollowUpAt).toEqual(
+      new Date(Date.UTC(2026, 5, 23)),
+    );
+    expect(record.nextFollowUpAt).toEqual({ year: 2026, month: 6, day: 23 });
+  });
+
   it('updateStatusByCompany — 없으면 null', async () => {
     const findFirst = jest.fn().mockResolvedValue(null);
     const prisma = {
@@ -79,6 +102,7 @@ describe('JobApplicationPrismaRepository', () => {
         slackUserId: 'U1',
         companyRef: 'X',
         status: 'SCREENING',
+        nextFollowUpAt: null,
       }),
     ).toBeNull();
     expect(findFirst.mock.calls[0][0].where.status.notIn).toContain('OFFER');
@@ -101,11 +125,15 @@ describe('JobApplicationPrismaRepository', () => {
       slackUserId: 'U1',
       companyRef: '토스',
       status: 'SCREENING',
+      nextFollowUpAt: { year: 2026, month: 6, day: 23 },
     });
 
     expect(update).toHaveBeenCalledWith({
       where: { id: 42 },
-      data: { status: 'SCREENING' },
+      data: {
+        status: 'SCREENING',
+        nextFollowUpAt: new Date(Date.UTC(2026, 5, 23)),
+      },
     });
     expect(record?.status).toBe('SCREENING');
   });
@@ -135,7 +163,8 @@ describe('JobApplicationPrismaRepository', () => {
 
     const where = findMany.mock.calls[0][0].where;
     expect(where.status.notIn).toContain('REJECTED');
-    expect(where.OR[0].deadline.gte).toEqual(new Date(Date.UTC(2026, 5, 16)));
+    // overdue 포함: 하한(gte) 없이 horizon 까지 — 지난 마감도 잡는다.
+    expect(where.OR[0].deadline.gte).toBeUndefined();
     expect(where.OR[0].deadline.lte).toEqual(new Date(Date.UTC(2026, 5, 19)));
     expect(where.OR[1].nextFollowUpAt.lte).toEqual(
       new Date(Date.UTC(2026, 5, 16)),

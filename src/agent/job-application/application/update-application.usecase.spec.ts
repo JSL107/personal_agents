@@ -41,11 +41,38 @@ describe('UpdateApplicationUsecase', () => {
     });
 
     expect(outcome.result.status).toBe('SCREENING');
-    expect(repository.updateStatusByCompany).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-      companyRef: '토스',
-      status: 'SCREENING',
-    });
+    expect(repository.updateStatusByCompany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slackUserId: 'U1',
+        companyRef: '토스',
+        status: 'SCREENING',
+      }),
+    );
+    // 비종료 상태 → 팔로업 시계 리셋(미래 PlainDate, null 아님)
+    const updateArg = repository.updateStatusByCompany.mock.calls[0][0];
+    expect(updateArg.nextFollowUpAt).not.toBeNull();
+    expect(typeof updateArg.nextFollowUpAt.year).toBe('number');
+  });
+
+  it('종료 상태(OFFER)로 변경 시 nextFollowUpAt 을 null 로 세팅', async () => {
+    const repository = {
+      updateStatusByCompany: jest.fn().mockResolvedValue({
+        id: 1,
+        company: '토스',
+        role: '백엔드',
+        status: 'OFFER',
+      }),
+    };
+    const usecase = new UpdateApplicationUsecase(
+      repository as never,
+      makeAgentRun() as never,
+    );
+
+    await usecase.execute({ slackUserId: 'U1', ref: '토스', status: 'OFFER' });
+
+    const updateArg = repository.updateStatusByCompany.mock.calls[0][0];
+    expect(updateArg.status).toBe('OFFER');
+    expect(updateArg.nextFollowUpAt).toBeNull();
   });
 
   it('매칭 없으면 NOT_FOUND 예외', async () => {

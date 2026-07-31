@@ -73,5 +73,29 @@ export const parseGapAnalysisOutput = (text: string): GapAnalysisData => {
   ) {
     return invalid('갭 분석 실패 — have/gaps/topics 가 배열이 아닙니다.');
   }
+  // 요소 형태까지 검증 — 모델이 배열은 주되 요소가 비-문자열/필드 누락이면
+  // 포맷 단계에서 TypeError 로 터지므로(친화 메시지 대신 INTERNAL) 여기서 막는다.
+  const allStrings = (items: unknown[]): boolean =>
+    items.every((item) => typeof item === 'string');
+  if (
+    !allStrings(obj.have as unknown[]) ||
+    !allStrings(obj.gaps as unknown[])
+  ) {
+    return invalid('갭 분석 실패 — have/gaps 항목은 문자열이어야 합니다.');
+  }
+  const topicsValid = (obj.topics as unknown[]).every((topic) => {
+    if (typeof topic !== 'object' || topic === null) {
+      return false;
+    }
+    const record = topic as Record<string, unknown>;
+    return (
+      typeof record.title === 'string' && typeof record.rationale === 'string'
+    );
+  });
+  if (!topicsValid) {
+    return invalid(
+      '갭 분석 실패 — topics 항목은 title/rationale 문자열이어야 합니다.',
+    );
+  }
   return parsed as GapAnalysisData;
 };

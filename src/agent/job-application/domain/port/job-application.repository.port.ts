@@ -16,12 +16,14 @@ export interface SaveApplicationInput {
   status: ApplicationStatus;
   appliedAt: PlainDate;
   deadline?: PlainDate;
+  nextFollowUpAt?: PlainDate | null;
 }
 
 export interface UpdateStatusByCompanyInput {
   slackUserId: string;
   companyRef: string;
   status: ApplicationStatus;
+  nextFollowUpAt: PlainDate | null;
 }
 
 export interface FindDueNudgesInput {

@@ -24,6 +24,9 @@ export const TERMINAL_STATUSES: ApplicationStatus[] = [
   'WITHDRAWN',
 ];
 
+// 팔로업 넛지 주기(일) — 마지막 활동(등록/상태변경) 이후 이 일수가 지나면 넛지 대상이 된다.
+export const FOLLOW_UP_INTERVAL_DAYS = 7;
+
 export type JobApplicationAction = 'ADD' | 'UPDATE_STATUS' | 'LIST' | 'UNKNOWN';
 
 export interface JobApplicationIntent {

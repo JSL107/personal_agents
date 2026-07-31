@@ -66,7 +66,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
       const text =
         `🔍 *이력서 보정 점검 — ${todayKst} (주간 자동${webTrendsNote ? ' · 웹 트렌드 반영' : ''})*\n\n` +
         formatCalibrationReport(outcome.result);
-      await this.deliverOnce(target, text);
+      await this.deliverOnce(ownerSlackUserId, target, text);
     } catch (error) {
       if (
         error instanceof CareerMateException &&
@@ -76,6 +76,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
           `Resume Calibration Cron skip — 역량 프로필/증거 없음 (owner=${ownerSlackUserId})`,
         );
         await this.deliverOnce(
+          ownerSlackUserId,
           target,
           `🌙 *이력서 보정 점검 — ${todayKst} skip*\n_역량 프로필이 없어 점검을 건너뜁니다. "@이대리 프로필 정리해줘" 먼저 실행해주세요._`,
         );
@@ -105,10 +106,15 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
   }
 
   // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
-  private async deliverOnce(target: string, text: string): Promise<void> {
+  private async deliverOnce(
+    ownerSlackUserId: string,
+    target: string,
+    text: string,
+  ): Promise<void> {
     const dateKey = getTodayKstDate();
     const firstRun = await this.cronIdempotency.acquireOnce(
-      `cron:${RESUME_CALIBRATION_CRON_QUEUE}:${dateKey}`,
+      // owner 를 키에 포함 — 멀티 owner 확장 시 한 owner 발송이 다른 owner 를 막지 않게.
+      `cron:${RESUME_CALIBRATION_CRON_QUEUE}:${ownerSlackUserId}:${dateKey}`,
       SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {

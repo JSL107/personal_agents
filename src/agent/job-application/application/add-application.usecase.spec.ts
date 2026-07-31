@@ -45,6 +45,12 @@ describe('AddApplicationUsecase', () => {
     expect(outcome.result.company).toBe('토스');
     expect(outcome.agentRunId).toBe(7);
     expect(repository.save).toHaveBeenCalledTimes(1);
+    // 등록 시 팔로업 예정일 = 지원일 + 7일 (넛지 OR 둘째 절을 살리는 핵심)
+    expect(repository.save.mock.calls[0][0].nextFollowUpAt).toEqual({
+      year: 2026,
+      month: 6,
+      day: 23,
+    });
   });
 
   it('status 미지정 시 APPLIED 기본값으로 저장', async () => {

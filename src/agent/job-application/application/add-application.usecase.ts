@@ -6,8 +6,10 @@ import {
 } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { addDays } from '../../vacation/domain/plain-date';
 import {
   AddApplicationInput,
+  FOLLOW_UP_INTERVAL_DAYS,
   JobApplicationRecord,
 } from '../domain/job-application.type';
 import {
@@ -44,6 +46,8 @@ export class AddApplicationUsecase {
           status: input.status ?? 'APPLIED',
           appliedAt: input.appliedAt,
           deadline: input.deadline,
+          // 등록 시점 기준 팔로업 예정일 — 지원일 + 주기. (과거 지원이면 즉시 넛지 대상이 된다.)
+          nextFollowUpAt: addDays(input.appliedAt, FOLLOW_UP_INTERVAL_DAYS),
         });
         return { result: record, modelUsed: 'deterministic', output: record };
       },

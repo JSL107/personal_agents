@@ -28,7 +28,13 @@ const makeConsumer = (due: JobApplicationRecord[]) => {
     cronIdempotency as never,
     notificationPublisher as never,
   );
-  return { consumer, repository, slackNotifier, notificationPublisher };
+  return {
+    consumer,
+    repository,
+    slackNotifier,
+    notificationPublisher,
+    cronIdempotency,
+  };
 };
 
 describe('JobApplicationNudgeCronConsumer', () => {
@@ -47,6 +53,11 @@ describe('JobApplicationNudgeCronConsumer', () => {
     expect(call.target).toBe('C1');
     expect(call.text).toMatch(/📌 \*지원 넛지 — \d{4}-\d{2}-\d{2}\*/);
     expect(call.text).toContain('토스');
+    // idempotency 키에 owner 포함 — 멀티 owner 무음 차단 방지
+    expect(deps.cronIdempotency.acquireOnce).toHaveBeenCalledWith(
+      expect.stringContaining(':U1:'),
+      expect.any(Number),
+    );
   });
 
   it('due 0건 — Slack 발송 미호출 (조용히 skip)', async () => {

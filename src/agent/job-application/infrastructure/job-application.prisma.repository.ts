@@ -63,16 +63,20 @@ export class JobApplicationPrismaRepository implements JobApplicationRepositoryP
         status: input.status,
         appliedAt: plainDateToUtcDate(input.appliedAt),
         deadline: input.deadline ? plainDateToUtcDate(input.deadline) : null,
+        nextFollowUpAt: input.nextFollowUpAt
+          ? plainDateToUtcDate(input.nextFollowUpAt)
+          : null,
       },
     });
     return mapRow(row);
   }
 
-  // 회사명 부분일치 + 비종료 상태 중 최신 1건의 status 갱신.
+  // 회사명 부분일치 + 비종료 상태 중 최신 1건의 status 갱신. 팔로업 예정일도 함께 세팅.
   async updateStatusByCompany({
     slackUserId,
     companyRef,
     status,
+    nextFollowUpAt,
   }: UpdateStatusByCompanyInput): Promise<JobApplicationRecord | null> {
     const target = await this.prisma.jobApplication.findFirst({
       where: {
@@ -87,7 +91,12 @@ export class JobApplicationPrismaRepository implements JobApplicationRepositoryP
     }
     const row = await this.prisma.jobApplication.update({
       where: { id: target.id },
-      data: { status },
+      data: {
+        status,
+        nextFollowUpAt: nextFollowUpAt
+          ? plainDateToUtcDate(nextFollowUpAt)
+          : null,
+      },
     });
     return mapRow(row);
   }
@@ -100,7 +109,7 @@ export class JobApplicationPrismaRepository implements JobApplicationRepositoryP
     return rows.map(mapRow);
   }
 
-  // (마감 today~+N일 & 비종료) OR (nextFollowUpAt ≤ today & 비종료)
+  // (마감 ≤ +N일 & 비종료) OR (팔로업 예정일 ≤ today & 비종료). 마감은 overdue 도 포함한다.
   async findDueNudges({
     slackUserId,
     today,
@@ -113,7 +122,8 @@ export class JobApplicationPrismaRepository implements JobApplicationRepositoryP
         slackUserId,
         status: { notIn: TERMINAL_STATUSES },
         OR: [
-          { deadline: { gte: todayUtc, lte: horizonUtc } },
+          // 하한(gte) 없음 — 지난 마감도 포함해, 하루 넛지를 놓쳐도 그 건이 영영 누락되지 않게 한다.
+          { deadline: { lte: horizonUtc } },
           { nextFollowUpAt: { lte: todayUtc } },
         ],
       },

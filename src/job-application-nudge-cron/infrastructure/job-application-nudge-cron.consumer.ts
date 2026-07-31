@@ -7,7 +7,10 @@ import {
   JobApplicationRepositoryPort,
 } from '../../agent/job-application/domain/port/job-application.repository.port';
 import { formatNudge } from '../../agent/job-application/infrastructure/job-application.formatter';
-import { todayInKst } from '../../agent/vacation/domain/plain-date';
+import {
+  plainDateToIso,
+  todayInKst,
+} from '../../agent/vacation/domain/plain-date';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
@@ -48,7 +51,8 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
 
   async process(job: Job<JobApplicationNudgeCronJobData>): Promise<void> {
     const { ownerSlackUserId, target } = job.data;
-    const todayKst = getTodayKstDate();
+    // "오늘"은 한 번만 계산해 헤더·쿼리에 동일 값을 쓴다(단일 소스).
+    const today = todayInKst(new Date());
     this.logger.log(
       `Job Application Nudge Cron 시작 — owner=${ownerSlackUserId} → target=${target}`,
     );
@@ -56,7 +60,7 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
     try {
       const due = await this.repository.findDueNudges({
         slackUserId: ownerSlackUserId,
-        today: todayInKst(new Date()),
+        today,
         deadlineWithinDays: NUDGE_DEADLINE_WITHIN_DAYS,
       });
       if (due.length === 0) {
@@ -66,8 +70,9 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
         // 조용히 skip — 매일 빈 DM 방지.
         return;
       }
-      const text = `📌 *지원 넛지 — ${todayKst}*\n\n` + formatNudge(due);
-      await this.deliverOnce(target, text);
+      const text =
+        `📌 *지원 넛지 — ${plainDateToIso(today)}*\n\n` + formatNudge(due);
+      await this.deliverOnce(ownerSlackUserId, target, text);
     } catch (error) {
       this.logger.error(
         `Job Application Nudge Cron 실패 (owner=${ownerSlackUserId})`,
@@ -79,10 +84,15 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
   }
 
   // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
-  private async deliverOnce(target: string, text: string): Promise<void> {
+  private async deliverOnce(
+    ownerSlackUserId: string,
+    target: string,
+    text: string,
+  ): Promise<void> {
     const dateKey = getTodayKstDate();
     const firstRun = await this.cronIdempotency.acquireOnce(
-      `cron:${JOB_APPLICATION_NUDGE_CRON_QUEUE}:${dateKey}`,
+      // owner 를 키에 포함 — 멀티 owner 확장 시 한 owner 발송이 다른 owner 를 막지 않게.
+      `cron:${JOB_APPLICATION_NUDGE_CRON_QUEUE}:${ownerSlackUserId}:${dateKey}`,
       SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {

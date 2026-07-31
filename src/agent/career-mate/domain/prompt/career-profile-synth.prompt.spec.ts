@@ -71,6 +71,14 @@ describe('parseCareerProfileOutput', () => {
     ).toThrow(CareerMateException);
   });
 
+  it('skills 요소에 category/proficiency 누락 시 INVALID_MODEL_OUTPUT 예외', () => {
+    expect(() =>
+      parseCareerProfileOutput(
+        '{"summary":"x","skills":[{"name":"NestJS"}],"accomplishments":[],"meta":{}}',
+      ),
+    ).toThrow(CareerMateException);
+  });
+
   it('JSON 이 아니면 예외', () => {
     expect(() => parseCareerProfileOutput('not json')).toThrow(
       CareerMateException,

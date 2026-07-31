@@ -65,6 +65,37 @@ export const parseCareerProfileOutput = (text: string): CareerProfileData => {
       '프로필 생성 실패 — skills/accomplishments 가 배열이 아닙니다.',
     );
   }
+  // 요소 형태 검증 — 포맷터/Notion 미러가 deref 하는 필드가 누락되면 렌더 단계에서 터지므로 차단.
+  const skillsValid = (obj.skills as unknown[]).every((skill) => {
+    if (typeof skill !== 'object' || skill === null) {
+      return false;
+    }
+    const record = skill as Record<string, unknown>;
+    return (
+      typeof record.name === 'string' &&
+      typeof record.category === 'string' &&
+      typeof record.proficiency === 'string'
+    );
+  });
+  if (!skillsValid) {
+    return invalid('프로필 생성 실패 — skills 항목 형태 오류.');
+  }
+  const accomplishmentsValid = (obj.accomplishments as unknown[]).every(
+    (item) => {
+      if (typeof item !== 'object' || item === null) {
+        return false;
+      }
+      const record = item as Record<string, unknown>;
+      return (
+        typeof record.title === 'string' &&
+        typeof record.bullet === 'string' &&
+        Array.isArray(record.evidence)
+      );
+    },
+  );
+  if (!accomplishmentsValid) {
+    return invalid('프로필 생성 실패 — accomplishments 항목 형태 오류.');
+  }
   // meta 는 형태(object)만 검증한다 — Build usecase 가 직후 data.meta 를 권위값으로 덮어쓰므로
   // 하위필드 검증은 불필요. (덮어쓰지 않는 다른 호출자가 생기면 검증 추가 필요 — Phase 2 유의.)
   if (typeof obj.meta !== 'object' || obj.meta === null) {

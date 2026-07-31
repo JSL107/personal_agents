@@ -118,4 +118,8 @@ export const buildPortfolioBlocks = (
 // Slack mrkdwn control 문자 escape — LLM 출력(summary/bullet/skill명)에 의한 메시지 위조 차단.
 // (Notion 미러 경로는 어댑터가 link 를 isSafeHttpUrl 로 가드하므로 Slack mrkdwn 한정.)
 const escapeSlackMrkdwn = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // null/undefined/비-문자열이 흘러와도 터지지 않게 방어(defense-in-depth). 파서가 1차 차단.
+  String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
