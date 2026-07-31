@@ -54,8 +54,15 @@ describe('SweepPrReviewsUsecase', () => {
     >
   >;
   let reviewUsecase: jest.Mocked<Pick<ReviewPullRequestUsecase, 'execute'>>;
-  let agentRunService: jest.Mocked<Pick<AgentRunService, 'hasSweepReviewFor'>>;
+  let agentRunService: jest.Mocked<
+    Pick<AgentRunService, 'findLatestSweepReview'>
+  >;
   let publishService: jest.Mocked<Pick<PublishFindingsService, 'publish'>>;
+
+  // 쿨다운(6h) 판정 테스트용 — 절대 시각이 아닌 "현재로부터 N시간 전"으로 만들어 시간 흐름에
+  // 영향받지 않게 한다.
+  const hoursAgo = (hours: number): Date =>
+    new Date(Date.now() - hours * 60 * 60 * 1000);
 
   const buildUsecase = (values: Record<string, string | undefined>) =>
     new SweepPrReviewsUsecase(
@@ -101,8 +108,9 @@ describe('SweepPrReviewsUsecase', () => {
     reviewUsecase = { execute: jest.fn().mockResolvedValue(REVIEW_OUTCOME) };
     // 판정은 AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준 — 카드(PrReviewFinding) 유무와
     // 무관하다(연습 모드·findings 0건에서도 카드는 안 생기지만 이 판정은 정상 동작해야 한다).
+    // 기본값 null = 이전 스윕 리뷰 레코드 없음 → 리뷰 대상.
     agentRunService = {
-      hasSweepReviewFor: jest.fn().mockResolvedValue(false),
+      findLatestSweepReview: jest.fn().mockResolvedValue(null),
     };
     publishService = {
       publish: jest.fn().mockResolvedValue({
@@ -156,10 +164,10 @@ describe('SweepPrReviewsUsecase', () => {
     expect(github.listAuthorOpenPullRequests).not.toHaveBeenCalled();
   });
 
-  it('allowlist 레포의 열린 PR 을 리뷰하고 게시 서비스에 넘긴다', async () => {
+  it('allowlist 레포의 열린 PR 을 리뷰하고 게시 서비스에 넘긴다 (레코드 없음 → 리뷰함)', async () => {
     const results = await buildUsecase(ENABLED).execute();
 
-    expect(agentRunService.hasSweepReviewFor).toHaveBeenCalledWith({
+    expect(agentRunService.findLatestSweepReview).toHaveBeenCalledWith({
       prRef: 'JSL107/personal_agents#180',
       sinceDays: 30,
     });
@@ -185,8 +193,11 @@ describe('SweepPrReviewsUsecase', () => {
     ]);
   });
 
-  it('이미 스윕 리뷰한 PR 은 다시 리뷰하지 않는다 — PR 당 리뷰 1회 (AgentRun 원장 기준)', async () => {
-    agentRunService.hasSweepReviewFor.mockResolvedValue(true);
+  it('직전 스윕 리뷰가 SUCCEEDED 면 다시 리뷰하지 않는다 — PR 당 리뷰 1회', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+    });
 
     const results = await buildUsecase(ENABLED).execute();
 
@@ -194,18 +205,24 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toEqual([]);
   });
 
-  it('연습 모드(dry-run 기본값)에서도 이미 스윕 리뷰한 PR 은 판정된다 — 카드 유무와 무관', async () => {
+  it('연습 모드(dry-run 기본값)에서도 SUCCEEDED 판정은 동일하게 skip 된다 — 카드 유무와 무관', async () => {
     // ENABLED 는 PR_REVIEW_INLINE_DRYRUN: 'true' — 카드가 절대 생기지 않는 경로.
-    // hasSweepReviewFor 만으로 재리뷰가 막히는지 확인한다(카드 조회에 의존하지 않음을 증명).
-    agentRunService.hasSweepReviewFor.mockResolvedValue(true);
+    // findLatestSweepReview 만으로 재리뷰가 막히는지 확인한다(카드 조회에 의존하지 않음을 증명).
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+    });
 
     await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
   });
 
-  it('실게시 모드에서도 이미 스윕 리뷰한 PR 은 판정된다', async () => {
-    agentRunService.hasSweepReviewFor.mockResolvedValue(true);
+  it('실게시 모드에서도 SUCCEEDED 판정은 동일하게 skip 된다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+    });
 
     await buildUsecase({
       ...ENABLED,
@@ -213,6 +230,42 @@ describe('SweepPrReviewsUsecase', () => {
     }).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('직전이 FAILED + 쿨다운(6h) 안이면 재리뷰하지 않는다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: hoursAgo(1),
+    });
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('직전이 FAILED + 쿨다운(6h) 지나면 재리뷰한다 — 일시적 codex 실패가 30일간 제외되지 않는다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: hoursAgo(7),
+    });
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('직전이 IN_PROGRESS + 쿨다운 안이면 재리뷰하지 않는다 — 진행 중 중복 리뷰 방지', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'IN_PROGRESS',
+      startedAt: hoursAgo(1),
+    });
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
   });
 
   it('스윕 1회의 신규 리뷰는 상한(5건)까지만', async () => {
@@ -266,9 +319,9 @@ describe('SweepPrReviewsUsecase', () => {
       OPEN_PR,
       { ...OPEN_PR, number: 181 },
     ]);
-    agentRunService.hasSweepReviewFor
+    agentRunService.findLatestSweepReview
       .mockRejectedValueOnce(new Error('DB 순간 오류'))
-      .mockResolvedValueOnce(false);
+      .mockResolvedValueOnce(null);
 
     const results = await buildUsecase(ENABLED).execute();
 

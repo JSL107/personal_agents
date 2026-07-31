@@ -21,7 +21,8 @@ import {
   AgentRunRepositoryPort,
   AgentRunStatRow,
   AgentSweptCountRow,
-  HasSweepReviewForQuery,
+  FindLatestSweepReviewQuery,
+  LatestSweepReview,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -324,9 +325,12 @@ export class AgentRunService {
     return await this.repository.findActiveRuns();
   }
 
-  // PR 리뷰 루프 — PR 당 리뷰 1회 판정. repository 위임.
-  async hasSweepReviewFor(input: HasSweepReviewForQuery): Promise<boolean> {
-    return await this.repository.hasSweepReviewFor(input);
+  // PR 리뷰 루프 — PR 당 리뷰 1회(쿨다운 재시도) 판정 근거. status 기반 재시도 판정은
+  // usecase 몫이라 여기서는 repository 위임(최신 1건 사실 조회)만 한다.
+  async findLatestSweepReview(
+    input: FindLatestSweepReviewQuery,
+  ): Promise<LatestSweepReview | null> {
+    return await this.repository.findLatestSweepReview(input);
   }
 
   async aggregateRetryCounts(input: {

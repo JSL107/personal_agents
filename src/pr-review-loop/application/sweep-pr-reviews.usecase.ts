@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
-import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import {
+  AgentRunStatus,
+  TriggerType,
+} from '../../agent-run/domain/agent-run.type';
+import { LatestSweepReview } from '../../agent-run/domain/port/agent-run.repository.port';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -17,10 +21,21 @@ const NEW_REVIEW_LIMIT_PER_SWEEP = 5;
 const OPEN_PR_LOOKBACK_DAYS = 14;
 const OPEN_PR_FETCH_LIMIT = 20;
 const DEFAULT_INLINE_MAX = 4;
-// PR 당 리뷰 1회 판정(hasSweepReviewFor) 조회 기간. AgentRun.inputSnapshot 의 JSON path 필터는
-// 인덱스가 없어 무기한 스캔을 피하려 최근 N일로 제한한다 — 열린 PR 조회 기간(14일)보다 여유를
-// 둬 그 사이 재오픈/재조회되는 케이스를 놓치지 않는다.
+// PR 당 리뷰 1회(쿨다운 재시도) 판정(findLatestSweepReview) 조회 기간. AgentRun.inputSnapshot 의
+// JSON path 필터는 인덱스가 없어 무기한 스캔을 피하려 최근 N일로 제한한다. 단, 열린 PR 조회의
+// sinceIsoDate 는 GitHub `updated:>=`(갱신 시각) 기준이라 — 이 lookback(30일) 보다 오래 전에
+// 열렸어도 계속 활동(commit/코멘트)이 있는 PR 은 open-PR 조회에는 계속 걸리는데 이 판정 lookback
+// 밖으로 나가 약 30일마다 재리뷰될 수 있다. 실사용 영향은 작다고 보고(월 1회 수준) 받아들이는
+// 절충이다 — "두 lookback 이 정합적이라 문제 없음"이 아니라 의도적 트레이드오프임을 밝혀둔다.
 const SWEEP_REVIEW_LOOKBACK_DAYS = 30;
+// 실패(FAILED)/고착(IN_PROGRESS) 리뷰의 재시도 쿨다운. 실패를 영구 제외하면 일시적 codex
+// 오류(쿼터 소진, 절전 복귀 직후 미준비 등 이 레포에서 실제로 나는 유형) 하나로 PR 이
+// SWEEP_REVIEW_LOOKBACK_DAYS(30일)간 빠지고, 무조건 재시도하면 15분마다 실패를 반복해
+// 무한 루프가 실패 경로로 되살아난다 — 쿨다운으로 둘 사이를 잡는다. 하루 최대 4회 재시도.
+const SWEEP_RETRY_COOLDOWN_HOURS = 6;
+
+// 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
+type SweepDecision = 'REVIEW' | 'SKIP';
 
 @Injectable()
 export class SweepPrReviewsUsecase {
@@ -73,9 +88,8 @@ export class SweepPrReviewsUsecase {
           break;
         }
         const prRef = `${pullRequest.repo}#${pullRequest.number}`;
-        const alreadyReviewed = await this.hasAlreadySweptReview(prRef);
-        // null = 판정 실패 — 오판으로 중복 리뷰하느니 이번 스윕에서 이 PR 만 건너뛴다(토큰 안전 방향).
-        if (alreadyReviewed === null || alreadyReviewed) {
+        const decision = await this.decideSweepAction(prRef);
+        if (decision === 'SKIP') {
           continue;
         }
         reviewed += 1;
@@ -120,12 +134,15 @@ export class SweepPrReviewsUsecase {
     }
   }
 
-  // PR 당 리뷰 1회 판정 — AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준. 게시 여부·findings
-  // 유무와 무관하게 "리뷰 시도" 자체가 근거이므로 연습 모드(카드 미생성)에서도 정확히 동작한다.
-  // 조회 자체가 실패하면 null 을 반환해 호출부가 그 PR 만 skip 하게 한다.
-  private async hasAlreadySweptReview(prRef: string): Promise<boolean | null> {
+  // PR 당 리뷰 1회(쿨다운 재시도) 판정 — AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준.
+  // 게시 여부·findings 유무와 무관하게 "리뷰 시도" 자체가 근거이므로 연습 모드(카드 미생성)에서도
+  // 정확히 동작한다. 레코드가 없으면 REVIEW, SUCCEEDED 면 SKIP, 그 외(FAILED/IN_PROGRESS)는
+  // 쿨다운이 지났는지로 재시도 여부를 가른다(순수 로직 — 조회는 조회대로, 판정은 판정대로 분리).
+  // 조회 자체가 실패하면 오판으로 중복 리뷰하느니 SKIP — 이번 스윕에서 이 PR 만 건너뛴다.
+  private async decideSweepAction(prRef: string): Promise<SweepDecision> {
+    let latest: LatestSweepReview | null;
     try {
-      return await this.agentRunService.hasSweepReviewFor({
+      latest = await this.agentRunService.findLatestSweepReview({
         prRef,
         sinceDays: SWEEP_REVIEW_LOOKBACK_DAYS,
       });
@@ -133,8 +150,21 @@ export class SweepPrReviewsUsecase {
       this.logger.warn(
         `스윕 판정 조회 실패, 이번 스윕에서 skip (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
       );
-      return null;
+      return 'SKIP';
     }
+    return this.judgeLatestReview(latest);
+  }
+
+  private judgeLatestReview(latest: LatestSweepReview | null): SweepDecision {
+    if (latest === null) {
+      return 'REVIEW';
+    }
+    if (latest.status === AgentRunStatus.SUCCEEDED) {
+      return 'SKIP';
+    }
+    const cooldownMs = SWEEP_RETRY_COOLDOWN_HOURS * 60 * 60 * 1000;
+    const elapsedMs = Date.now() - latest.startedAt.getTime();
+    return elapsedMs >= cooldownMs ? 'REVIEW' : 'SKIP';
   }
 
   // 한 PR 의 실패가 스윕 전체를 멈추지 않게 격리한다.
