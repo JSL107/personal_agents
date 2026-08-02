@@ -8,7 +8,17 @@
 // BullMQ worker lockDuration 계산(common/queue/worker-options.constant.ts) 이 함께 참조한다.
 // → timeout 을 바꾸면 worker lockDuration 도 자동으로 일관되게 따라간다 (이전엔 주석으로만
 //   결합돼 있어 lockDuration 이 단일 호출 180s 만 가정 → fallback 경로 미흡수 → stalled 발생).
-export const LLM_CLI_TIMEOUT_MS = 180_000;
+//
+// 값 근거 (2026-07-31 실측). 180s 는 지적이 많은 PR 리뷰 1건을 못 담아 CODE_REVIEWER 가
+// timeout 2회로 실패했다 (AgentRun #321, PR #196). 실 파이프라인과 동일 조건 —
+// 프롬프트는 코드에서 뽑고 cwd/HOME 을 임시 디렉토리로 격리 — 으로 재측정한 결과:
+//   PR #196 (41파일, 프롬프트 71KB, 리뷰 출력 3.3KB) → 156s
+//   PR #189 (59파일, 프롬프트 76KB, 리뷰 출력 0.5KB) →  28s
+// 소요를 가르는 것은 입력 크기가 아니라 **생성 출력량(지적 개수)** 이고, 지적이 많은 PR 은
+// 한가한 상태에서도 156s 가 걸려 180s 대비 마진이 13% 뿐이었다. 같은 시각 다른 cron 이
+// 겹치면 그대로 초과한다 (#321 은 17:00 정각 4개 작업과 겹쳤다).
+// → 실측 최댓값(156s)의 약 2배를 마진으로 두고 300s 로 올린다.
+export const LLM_CLI_TIMEOUT_MS = 300_000;
 
 // CLI provider 의 bounded retry 파라미터. worst-case 계산이 이 값들을 함께 봐야 하므로
 // provider 안에 두지 않고 timeout 과 같은 파일에 모은다 (CodexCliProvider 가 그대로 import).
