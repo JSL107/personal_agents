@@ -1,4 +1,5 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -133,6 +134,18 @@ describe('GeneratePoShadowUsecase', () => {
       sourcePlanAgentRunId: 99,
       extraContextLength: 'v1.2 release 직전'.length,
     });
+  });
+
+  it('triggerType을 지정하면 AgentRunService에 그대로 전달한다', async () => {
+    await usecase.execute({
+      extraContext: '',
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].triggerType).toBe(
+      TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+    );
   });
 
   it('extraContext 비어있으면 evidence 에 SLACK_COMMAND_PO_SHADOW 포함되지 않음 (PRIOR_DAILY_PLAN 단독)', async () => {

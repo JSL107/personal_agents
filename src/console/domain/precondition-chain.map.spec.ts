@@ -46,6 +46,12 @@ describe('precondition-chain.map', () => {
     });
   });
 
+  it('CTO PM output 형식 오류는 자동해소 불가로 분류한다', () => {
+    expect(resolveChain(CtoErrorCode.INVALID_PLAN_OUTPUT)).toEqual({
+      kind: 'UNRESOLVABLE',
+    });
+  });
+
   it('매핑에 없는 errorCode 는 undefined', () => {
     expect(resolveChain('PARSE_FAILED')).toBeUndefined();
     expect(

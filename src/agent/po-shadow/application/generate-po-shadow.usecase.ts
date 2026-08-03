@@ -30,6 +30,7 @@ export class GeneratePoShadowUsecase {
   async execute({
     extraContext,
     slackUserId,
+    triggerType,
   }: GeneratePoShadowInput): Promise<AgentRunOutcome<PoShadowReport>> {
     // slackUserId 한정 검색 — 다른 사용자의 PM run 을 검토하지 않게 (codex review b6xkjewd2 P2).
     const snapshot = await this.agentRunService.findLatestSucceededRun({
@@ -64,7 +65,7 @@ export class GeneratePoShadowUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
-      triggerType: TriggerType.SLACK_COMMAND_PO_SHADOW,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_PO_SHADOW,
       inputSnapshot: {
         slackUserId,
         sourcePlanAgentRunId: snapshot.id,

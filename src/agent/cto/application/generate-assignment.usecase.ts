@@ -40,6 +40,7 @@ export class GenerateAssignmentUsecase {
 
   async execute({
     slackUserId,
+    triggerType,
     dailyPlanAgentRunId,
     conversationContext,
   }: GenerateAssignmentInput): Promise<AgentRunOutcome<AssignmentOutput>> {
@@ -59,7 +60,7 @@ export class GenerateAssignmentUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.CTO,
-      triggerType: TriggerType.SLACK_COMMAND_ASSIGN,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_ASSIGN,
       inputSnapshot: {
         slackUserId,
         dailyPlanAgentRunId: pmRun.id,
@@ -138,17 +139,17 @@ export class GenerateAssignmentUsecase {
       Array.isArray(snapshot.output)
     ) {
       throw new CtoException({
-        code: CtoErrorCode.NO_ASSIGNABLE_TASKS,
+        code: CtoErrorCode.INVALID_PLAN_OUTPUT,
         message: `직전 PM run #${snapshot.id} 의 output 형식이 올바르지 않습니다.`,
         status: DomainStatus.INTERNAL,
       });
     }
     const obj = snapshot.output as Record<string, unknown>;
-    const plan = coerceToDailyPlan(obj.plan);
+    const plan = coerceToDailyPlan(obj);
     if (!plan) {
       throw new CtoException({
-        code: CtoErrorCode.NO_ASSIGNABLE_TASKS,
-        message: `직전 PM run #${snapshot.id} 의 output.plan 이 DailyPlan 스키마에 안 맞습니다.`,
+        code: CtoErrorCode.INVALID_PLAN_OUTPUT,
+        message: `직전 PM run #${snapshot.id} 의 output 이 DailyPlan 스키마에 안 맞습니다.`,
         status: DomainStatus.INTERNAL,
       });
     }

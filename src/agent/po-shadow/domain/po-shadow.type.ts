@@ -1,8 +1,11 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 // /po-shadow 입력: 직전 PM `/today` 결과 위에 얹어서 PO 시각으로 재검토.
 // extraContext 는 사용자가 추가로 주는 상황 (예: "v1.2 릴리즈 직전").
 export interface GeneratePoShadowInput {
   extraContext: string;
   slackUserId: string;
+  triggerType?: TriggerType;
 }
 
 // PO Shadow 분석 결과 — 기획서 §7.5 PO Shadow Mode 의 4가지 책임에 1:1 매핑.
