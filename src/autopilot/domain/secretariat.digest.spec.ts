@@ -1,6 +1,5 @@
 import {
   ActiveRunSnapshot,
-  AgentRunStatRow,
   FailedRunDetail,
 } from '../../agent-run/domain/port/agent-run.repository.port';
 import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
@@ -11,16 +10,9 @@ import {
 
 const NOW = new Date('2026-08-03T00:00:00.000Z');
 
-const stat = (
-  agentType: string,
-  total: number,
-  failed = 0,
-): AgentRunStatRow => ({
+const done = (agentType: string, succeeded: number) => ({
   agentType,
-  total,
-  failed,
-  failRate: total === 0 ? 0 : failed / total,
-  avgDurationMs: 1000,
+  succeeded,
 });
 
 const activeRun = (agentType: string, startedAt: Date): ActiveRunSnapshot => ({
@@ -54,19 +46,21 @@ const build = (
   overrides: Partial<Parameters<typeof buildSecretariatDigest>[0]> = {},
 ) =>
   buildSecretariatDigest({
-    stats: [],
+    succeeded: [],
     activeRuns: [],
     openPreviews: [],
     failedRuns: [],
+    // 기본은 "실패한 것은 전부 미복구" — 복구 필터를 따로 검증하는 테스트에서만 좁힌다.
+    unresolvedAgentTypes: ['PM', 'CEO', 'CODE_REVIEWER'],
     now: NOW,
     ...overrides,
   });
 
 describe('buildSecretariatDigest', () => {
   describe('① 완료', () => {
-    it('성공 건수(총계 - 실패)만 세고 많은 순으로 정렬한다', () => {
+    it('성공 건수만 세고 많은 순으로 정렬한다', () => {
       const digest = build({
-        stats: [stat('PM', 1), stat('WORK_REVIEWER', 3)],
+        succeeded: [done('PM', 1), done('WORK_REVIEWER', 3)],
       });
 
       expect(digest.completed).toEqual([
@@ -75,10 +69,23 @@ describe('buildSecretariatDigest', () => {
       ]);
     });
 
-    it('전부 실패한 에이전트는 완료에 넣지 않는다', () => {
-      const digest = build({ stats: [stat('PM', 2, 2)] });
+    it('성공이 0건인 에이전트는 완료에 넣지 않는다', () => {
+      const digest = build({ succeeded: [done('PM', 0)] });
 
       expect(digest.completed).toEqual([]);
+    });
+
+    it('진행 중인 실행은 완료로 세지 않는다', () => {
+      // aggregateRunStats.total 은 상태를 가리지 않고 세므로 `total - failed` 로 계산하면
+      // 지금 돌고 있는 런이 ① 완료와 ② 진행 중에 동시에 나타났다. 성공만 세는 별도
+      // 집계(aggregateSucceededCounts)를 쓰는 이유다.
+      const digest = build({
+        succeeded: [done('PM', 1)],
+        activeRuns: [activeRun('PM', NOW), activeRun('PM', NOW)],
+      });
+
+      expect(digest.completed).toEqual([{ agentType: 'PM', count: 1 }]);
+      expect(digest.inProgress).toEqual(['PM']);
     });
   });
 
@@ -105,6 +112,37 @@ describe('buildSecretariatDigest', () => {
       });
 
       expect(digest.inProgress).toEqual(['CTO', 'PM']);
+    });
+  });
+
+  describe('④ 막힌 것 — 복구 필터', () => {
+    it('이후 성공으로 복구된 에이전트는 막힌 것에서 뺀다', () => {
+      // 실패 목록에는 재시도가 성공해 이미 해결된 건도 남아 있다. 그것까지 보고하면
+      // 대표가 이미 끝난 문제를 다시 들여다보게 된다.
+      const digest = build({
+        failedRuns: [
+          failedRun('PM', '복구됨', new Date('2026-08-02T09:00:00.000Z')),
+          failedRun('CEO', '미복구', new Date('2026-08-02T08:00:00.000Z')),
+        ],
+        unresolvedAgentTypes: ['CEO'],
+      });
+
+      expect(digest.blocked).toEqual([
+        { agentType: 'CEO', reason: '미복구', count: 1 },
+      ]);
+    });
+
+    it('사이에 성공이 있어 복구된 반복 실패는 결정거리로 올리지 않는다', () => {
+      const digest = build({
+        failedRuns: [
+          failedRun('PM', '실패', new Date('2026-08-02T09:00:00.000Z')),
+          failedRun('PM', '실패', new Date('2026-08-02T07:00:00.000Z')),
+        ],
+        unresolvedAgentTypes: [],
+      });
+
+      expect(digest.blocked).toEqual([]);
+      expect(digest.decision).toBeNull();
     });
   });
 
@@ -175,7 +213,7 @@ describe('buildSecretariatDigest', () => {
       });
     });
 
-    it('승인 카드가 없으면 2회 이상 반복 실패를 올린다', () => {
+    it('승인 카드가 없으면 2건 이상 미복구 실패를 올린다', () => {
       const digest = build({
         failedRuns: [
           failedRun(
@@ -192,7 +230,7 @@ describe('buildSecretariatDigest', () => {
       });
 
       expect(digest.decision).toEqual({
-        kind: 'REPEATED_FAILURE',
+        kind: 'UNRESOLVED_FAILURE',
         agentType: 'PM',
         reason: '모델 호출 실패',
         count: 2,
@@ -244,8 +282,8 @@ describe('isSecretariatDigestEmpty', () => {
   });
 
   it('하나라도 있으면 보고한다', () => {
-    expect(isSecretariatDigestEmpty(build({ stats: [stat('PM', 1)] }))).toBe(
-      false,
-    );
+    expect(
+      isSecretariatDigestEmpty(build({ succeeded: [done('PM', 1)] })),
+    ).toBe(false);
   });
 });

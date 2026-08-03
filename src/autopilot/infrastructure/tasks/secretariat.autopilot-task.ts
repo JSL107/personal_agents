@@ -30,23 +30,39 @@ export class SecretariatAutopilotTask implements AutopilotTask {
   ) {}
 
   async run({
+    ownerSlackUserId,
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const now = new Date();
-    const [stats, activeRuns, openPreviews, failedRuns] = await Promise.all([
-      this.agentRunService.aggregateRunStats({ sinceDays: WINDOW_DAYS }),
-      this.agentRunService.findActiveRuns(),
-      this.findAllOpenPreviews.execute({ now }),
-      this.agentRunService.findFailedRunsSince({
-        withinMinutes: WINDOW_MINUTES,
-      }),
-    ]);
+    const [succeeded, activeRuns, allOpenPreviews, failedRuns, recentlyFailed] =
+      await Promise.all([
+        this.agentRunService.aggregateSucceededCounts({
+          sinceDays: WINDOW_DAYS,
+        }),
+        this.agentRunService.findActiveRuns(),
+        this.findAllOpenPreviews.execute({ now }),
+        this.agentRunService.findFailedRunsSince({
+          withinMinutes: WINDOW_MINUTES,
+        }),
+        this.agentRunService.findRecentlyFailedRuns({
+          withinMinutes: WINDOW_MINUTES,
+        }),
+      ]);
+
+    // 승인 카드는 owner 것만 남긴다. FindAllOpenPreviewsUsecase 는 콘솔 관제용이라
+    // 사용자 구분 없이 전부 돌려주는데, 이 보고는 owner 에게 가고 owner 만 승인할 수 있다
+    // (승인 경로가 slackUserId 를 검사한다). 남의 카드를 실으면 제목이 노출되는 데다
+    // 대표가 처리할 수도 없는 항목이 결정거리로 올라간다.
+    const openPreviews = allOpenPreviews.filter(
+      (preview) => preview.slackUserId === ownerSlackUserId,
+    );
 
     const digest = buildSecretariatDigest({
-      stats,
+      succeeded,
       activeRuns,
       openPreviews,
       failedRuns,
+      unresolvedAgentTypes: recentlyFailed.map((run) => run.agentType),
       now,
     });
     if (isSecretariatDigestEmpty(digest)) {

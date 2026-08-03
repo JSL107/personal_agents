@@ -10,7 +10,7 @@ const escapeLikeMetaChars = (text: string): string =>
 // 실패 런의 output 은 `{ error: '모델 호출 실패 (CHATGPT, 362s 소요)' }` 형태로 저장된다
 // (usecase 의 실패 경로와 run-sweeper 의 좀비 정리가 같은 형태로 쓴다). 그 외 형태이거나
 // 기록이 없으면 비서실 브리핑에 빈칸이 남지 않도록 고정 문구로 대체한다.
-const extractFailureReason = (output: unknown): string => {
+export const extractFailureReason = (output: unknown): string => {
   if (typeof output !== 'object' || output === null) {
     return '이유 미기록';
   }
@@ -33,6 +33,7 @@ import {
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
+  AgentSucceededCountRow,
   AgentSweptCountRow,
   BeginAgentRunInput,
   CountUnsuccessfulSweepReviewsQuery,
@@ -523,6 +524,26 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     return latestPerAgent
       .filter((row) => row.status === AgentRunStatus.FAILED)
       .map((row) => ({ agentType: row.agentType }));
+  }
+
+  async aggregateSucceededCounts({
+    sinceDays,
+  }: {
+    sinceDays: number;
+  }): Promise<AgentSucceededCountRow[]> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: {
+        startedAt: { gte: since },
+        status: AgentRunStatus.SUCCEEDED,
+      },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({
+      agentType: row.agentType,
+      succeeded: row._count._all,
+    }));
   }
 
   async findFailedRunsSince({

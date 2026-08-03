@@ -102,6 +102,14 @@ export interface AgentRunStatRow {
   avgDurationMs: number;
 }
 
+// 비서실 브리핑 — agentType 별 성공 건수.
+// `AgentRunStatRow` 의 `total - failed` 로 대신하면 안 된다. total 은 상태를 가리지 않고
+// 세므로 그 뺄셈은 `성공 + 진행 중`이 되어, 지금 돌고 있는 런이 "완료" 로도 집계된다.
+export interface AgentSucceededCountRow {
+  agentType: string;
+  succeeded: number;
+}
+
 // Ops Supervisor — agentType 별 재시도(FAILURE_REPLAY) 건수.
 export interface AgentRetryCountRow {
   agentType: string;
@@ -252,4 +260,8 @@ export interface AgentRunRepositoryPort {
   findFailedRunsSince(input: {
     withinMinutes: number;
   }): Promise<FailedRunDetail[]>;
+  // 비서실 브리핑 — agentType 별 성공 건수(진행 중 제외).
+  aggregateSucceededCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentSucceededCountRow[]>;
 }

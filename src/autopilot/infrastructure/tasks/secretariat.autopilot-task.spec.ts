@@ -2,19 +2,27 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { SecretariatAutopilotTask } from './secretariat.autopilot-task';
 
+const OWNER = 'U_OWNER';
+
 describe('SecretariatAutopilotTask', () => {
   const buildTask = (overrides: {
-    stats?: unknown[];
+    succeeded?: unknown[];
     activeRuns?: unknown[];
     openPreviews?: unknown[];
     failedRuns?: unknown[];
+    recentlyFailed?: unknown[];
   }) => {
     const agentRunService = {
-      aggregateRunStats: jest.fn().mockResolvedValue(overrides.stats ?? []),
+      aggregateSucceededCounts: jest
+        .fn()
+        .mockResolvedValue(overrides.succeeded ?? []),
       findActiveRuns: jest.fn().mockResolvedValue(overrides.activeRuns ?? []),
       findFailedRunsSince: jest
         .fn()
         .mockResolvedValue(overrides.failedRuns ?? []),
+      findRecentlyFailedRuns: jest
+        .fn()
+        .mockResolvedValue(overrides.recentlyFailed ?? []),
     } as unknown as AgentRunService;
     const findAllOpenPreviews = {
       execute: jest.fn().mockResolvedValue(overrides.openPreviews ?? []),
@@ -25,28 +33,18 @@ describe('SecretariatAutopilotTask', () => {
     };
   };
 
+  const run = (task: SecretariatAutopilotTask) =>
+    task.run({ ownerSlackUserId: OWNER, firedAtKst: '2026-08-03' });
+
   it('보고할 것이 하나도 없으면 skip 한다 (앱이 멈춰 있던 날)', async () => {
     const { task } = buildTask({});
 
-    const result = await task.run({
-      ownerSlackUserId: 'U1',
-      firedAtKst: '2026-08-03',
-    });
-
-    expect(result).toEqual({ skip: true });
+    expect(await run(task)).toEqual({ skip: true });
   });
 
   it('다섯 항목을 고정 순서로 한 장에 담는다', async () => {
     const { task } = buildTask({
-      stats: [
-        {
-          agentType: 'PM',
-          total: 2,
-          failed: 1,
-          failRate: 0.5,
-          avgDurationMs: 1,
-        },
-      ],
+      succeeded: [{ agentType: 'PM', succeeded: 1 }],
       failedRuns: [
         {
           agentType: 'CODE_REVIEWER',
@@ -54,12 +52,10 @@ describe('SecretariatAutopilotTask', () => {
           endedAt: new Date('2026-08-02T09:00:00.000Z'),
         },
       ],
+      recentlyFailed: [{ agentType: 'CODE_REVIEWER' }],
     });
 
-    const result = await task.run({
-      ownerSlackUserId: 'U1',
-      firedAtKst: '2026-08-03',
-    });
+    const result = await run(task);
 
     expect(result.skip).toBe(false);
     const text = result.summaryText ?? '';
@@ -70,19 +66,47 @@ describe('SecretariatAutopilotTask', () => {
     expect(text).toContain(
       '*④ 막힌 것* — 1종\n   • CODE_REVIEWER 1건 — 모델 호출 실패 (CHATGPT)',
     );
-    // 실패 1회는 결정거리가 아니다 — 다음 슬롯이 재시도한다.
+    // 실패 1건은 결정거리가 아니다 — 다음 슬롯이 재시도한다.
     expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');
+  });
+
+  it('owner 가 아닌 사용자의 승인 카드는 싣지 않는다', async () => {
+    // FindAllOpenPreviewsUsecase 는 콘솔 관제용이라 사용자 구분 없이 전부 돌려준다.
+    // 이 보고는 owner 에게 가고 owner 만 승인할 수 있으므로 여기서 좁힌다.
+    const { task } = buildTask({
+      openPreviews: [
+        {
+          slackUserId: 'U_OTHER',
+          previewText: '남의 카드',
+          expiresAt: new Date(Date.now() + 5 * 3600_000),
+        },
+        {
+          slackUserId: OWNER,
+          previewText: '내 카드',
+          expiresAt: new Date(Date.now() + 5 * 3600_000),
+        },
+      ],
+    });
+
+    const text = (await run(task)).summaryText ?? '';
+
+    expect(text).toContain('*③ 대표 승인 대기* — 1건');
+    expect(text).toContain('내 카드');
+    expect(text).not.toContain('남의 카드');
   });
 
   it('LLM 을 부르지 않고 24시간 창으로만 조회한다', async () => {
     const { task, agentRunService } = buildTask({});
 
-    await task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-08-03' });
+    await run(task);
 
-    expect(agentRunService.aggregateRunStats).toHaveBeenCalledWith({
+    expect(agentRunService.aggregateSucceededCounts).toHaveBeenCalledWith({
       sinceDays: 1,
     });
     expect(agentRunService.findFailedRunsSince).toHaveBeenCalledWith({
+      withinMinutes: 1440,
+    });
+    expect(agentRunService.findRecentlyFailedRuns).toHaveBeenCalledWith({
       withinMinutes: 1440,
     });
   });

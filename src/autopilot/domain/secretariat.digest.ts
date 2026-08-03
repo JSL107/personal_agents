@@ -1,7 +1,7 @@
 import { STALE_RUN_THRESHOLD_MINUTES } from '../../agent-run/domain/agent-run.type';
 import {
   ActiveRunSnapshot,
-  AgentRunStatRow,
+  AgentSucceededCountRow,
   FailedRunDetail,
 } from '../../agent-run/domain/port/agent-run.repository.port';
 import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
@@ -18,7 +18,7 @@ import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
  */
 
 /** 같은 에이전트가 이만큼 실패하면 사람이 볼 일로 올린다. 1회는 다음 슬롯 재시도로 풀린다. */
-const REPEATED_FAILURE_THRESHOLD = 2;
+const UNRESOLVED_FAILURE_THRESHOLD = 2;
 
 /**
  * 결정 후보로 올리려면 최소 이만큼은 남아 있어야 한다.
@@ -50,6 +50,7 @@ export interface SecretariatBlockedRow {
   agentType: string;
   /** 같은 에이전트의 실패 중 가장 최근 것의 이유. */
   reason: string;
+  /** 관측 창 안의 실패 **건수**. 연속 실패 횟수가 아니다 — 사이에 성공이 있었을 수 있다. */
   count: number;
 }
 
@@ -57,7 +58,7 @@ export interface SecretariatBlockedRow {
 export type SecretariatDecision =
   | { kind: 'APPROVAL'; label: string; expiresAt: Date }
   | {
-      kind: 'REPEATED_FAILURE';
+      kind: 'UNRESOLVED_FAILURE';
       agentType: string;
       reason: string;
       count: number;
@@ -73,10 +74,19 @@ export interface SecretariatDigest {
 }
 
 export interface BuildSecretariatDigestInput {
-  stats: AgentRunStatRow[];
+  /** agentType 별 성공 건수. 진행 중인 런은 여기 들어오지 않는다. */
+  succeeded: AgentSucceededCountRow[];
   activeRuns: ActiveRunSnapshot[];
   openPreviews: PreviewAction[];
   failedRuns: FailedRunDetail[];
+  /**
+   * 마지막 종료가 실패인 에이전트 — 즉 **아직 복구되지 않은** 것.
+   *
+   * `failedRuns` 만으로는 복구 여부를 알 수 없다. 실패 목록에는 이후 재시도가 성공해
+   * 이미 해결된 건도 그대로 남아 있어서, 그것까지 "막힌 것" 으로 보고하면 대표가 이미
+   * 끝난 문제를 다시 들여다보게 된다.
+   */
+  unresolvedAgentTypes: string[];
   now: Date;
 }
 
@@ -91,12 +101,11 @@ const toApprovalLabel = (previewText: string): string => {
   return `${firstLine.slice(0, APPROVAL_LABEL_MAX_LENGTH)}…`;
 };
 
-const buildCompleted = (stats: AgentRunStatRow[]): SecretariatCompletedRow[] =>
-  stats
-    .map((row) => ({
-      agentType: row.agentType,
-      count: row.total - row.failed,
-    }))
+const buildCompleted = (
+  succeeded: AgentSucceededCountRow[],
+): SecretariatCompletedRow[] =>
+  succeeded
+    .map((row) => ({ agentType: row.agentType, count: row.succeeded }))
     .filter((row) => row.count > 0)
     .sort((left, right) => right.count - left.count);
 
@@ -128,12 +137,18 @@ const buildApprovals = (
 
 const buildBlocked = (
   failedRuns: FailedRunDetail[],
+  unresolvedAgentTypes: string[],
 ): SecretariatBlockedRow[] => {
+  const unresolved = new Set(unresolvedAgentTypes);
   const grouped = new Map<string, SecretariatBlockedRow>();
   // 입력이 최신순이므로 각 agentType 의 첫 등장이 가장 최근 실패다.
   for (const run of [...failedRuns].sort(
     (left, right) => right.endedAt.getTime() - left.endedAt.getTime(),
   )) {
+    // 이후 성공으로 복구된 에이전트는 빼낸다 — 이미 끝난 문제다.
+    if (unresolved.has(run.agentType) === false) {
+      continue;
+    }
     const found = grouped.get(run.agentType);
     if (found) {
       found.count += 1;
@@ -153,7 +168,7 @@ const buildBlocked = (
  *
  * 승인 카드가 먼저다 — 만료되면 그날 일이 통째로 유실되므로 시한이 붙은 유일한 항목이다.
  * 단 읽고 반응할 시간이 남은 카드만 고른다(`DECISION_MIN_LEAD_MS`).
- * 카드가 없을 때만 반복 실패를 올린다. 1회 실패는 다음 슬롯이 알아서 재시도하니
+ * 카드가 없을 때만 미복구 실패를 올린다. 1회 실패는 다음 슬롯이 알아서 재시도하니
  * 대표가 볼 일이 아니다.
  */
 const pickDecision = (
@@ -172,31 +187,32 @@ const pickDecision = (
       expiresAt: soonest.expiresAt,
     };
   }
-  const repeated = blocked.find(
-    (row) => row.count >= REPEATED_FAILURE_THRESHOLD,
+  const unresolved = blocked.find(
+    (row) => row.count >= UNRESOLVED_FAILURE_THRESHOLD,
   );
-  if (repeated) {
+  if (unresolved) {
     return {
-      kind: 'REPEATED_FAILURE',
-      agentType: repeated.agentType,
-      reason: repeated.reason,
-      count: repeated.count,
+      kind: 'UNRESOLVED_FAILURE',
+      agentType: unresolved.agentType,
+      reason: unresolved.reason,
+      count: unresolved.count,
     };
   }
   return null;
 };
 
 export const buildSecretariatDigest = ({
-  stats,
+  succeeded,
   activeRuns,
   openPreviews,
   failedRuns,
+  unresolvedAgentTypes,
   now,
 }: BuildSecretariatDigestInput): SecretariatDigest => {
   const approvals = buildApprovals(openPreviews);
-  const blocked = buildBlocked(failedRuns);
+  const blocked = buildBlocked(failedRuns, unresolvedAgentTypes);
   return {
-    completed: buildCompleted(stats),
+    completed: buildCompleted(succeeded),
     inProgress: buildInProgress(activeRuns, now),
     approvals,
     blocked,

@@ -21,6 +21,7 @@ import {
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
+  AgentSucceededCountRow,
   AgentSweptCountRow,
   CountUnsuccessfulSweepReviewsQuery,
   FailedRunDetail,
@@ -373,6 +374,14 @@ export class AgentRunService {
     withinMinutes: number;
   }): Promise<FailedRunDetail[]> {
     return await this.repository.findFailedRunsSince(input);
+  }
+
+  // 비서실 브리핑 — agentType 별 성공 건수. aggregateRunStats 의 total 은 진행 중인 런까지
+  // 포함하므로 "완료" 를 세는 데 쓸 수 없다.
+  async aggregateSucceededCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentSucceededCountRow[]> {
+    return await this.repository.aggregateSucceededCounts(input);
   }
 
   async aggregateRetryCounts(input: {

@@ -55,7 +55,9 @@ const formatDecision = (
   if (decision.kind === 'APPROVAL') {
     return `${escapeSlackMrkdwn(decision.label)} 승인 (${formatRemaining(decision.expiresAt, now)})`;
   }
-  return `${decision.agentType} ${decision.count}회 연속 실패 — ${escapeSlackMrkdwn(decision.reason)}`;
+  // "연속" 이라고 쓰지 않는다 — 관측 창 안의 실패 건수일 뿐, 사이에 성공이 있었는지는
+  // 이 숫자로 알 수 없다. 다만 마지막 종료가 실패인 것만 여기까지 오므로 미복구는 확실하다.
+  return `${decision.agentType} ${decision.count}건 실패, 아직 복구 안 됨 — ${escapeSlackMrkdwn(decision.reason)}`;
 };
 
 /**
