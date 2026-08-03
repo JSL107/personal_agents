@@ -388,3 +388,34 @@ describe('AgentRunPrismaRepository.findLatestSweepReview', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('AgentRunPrismaRepository.countUnsuccessfulSweepReviews', () => {
+  it('최근 24시간 FAILED/IN_PROGRESS 스윕 리뷰를 prRef 기준으로 세고 count를 반환한다', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-03T01:00:00.000Z'));
+    const count = jest.fn().mockResolvedValue(2);
+    const prismaMock = {
+      agentRun: { count },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.countUnsuccessfulSweepReviews({
+      prRef: 'JSL107/personal_agents#189',
+      sinceHours: 24,
+    });
+
+    expect(result).toBe(2);
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        triggerType: 'PR_REVIEW_SWEEP',
+        status: { not: AgentRunStatus.SUCCEEDED },
+        startedAt: { gte: new Date('2026-08-02T01:00:00.000Z') },
+        inputSnapshot: {
+          path: ['prRef'],
+          equals: 'JSL107/personal_agents#189',
+        },
+      },
+    });
+    jest.useRealTimers();
+  });
+});

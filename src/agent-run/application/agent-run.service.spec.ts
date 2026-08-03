@@ -33,6 +33,7 @@ describe('AgentRunService', () => {
     searchByKeyword: jest.fn().mockResolvedValue([]),
     findActiveRuns: jest.fn().mockResolvedValue([]),
     findLatestSweepReview: jest.fn().mockResolvedValue(null),
+    countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
     findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
   });
 
@@ -550,6 +551,23 @@ describe('AgentRunService', () => {
       });
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('countUnsuccessfulSweepReviews — PR 리뷰 스윕 재시도 예산 판정 근거', () => {
+    it('repository.countUnsuccessfulSweepReviews 에 그대로 위임한다', async () => {
+      repository.countUnsuccessfulSweepReviews.mockResolvedValue(2);
+
+      const result = await service.countUnsuccessfulSweepReviews({
+        prRef: 'JSL107/personal_agents#180',
+        sinceHours: 24,
+      });
+
+      expect(repository.countUnsuccessfulSweepReviews).toHaveBeenCalledWith({
+        prRef: 'JSL107/personal_agents#180',
+        sinceHours: 24,
+      });
+      expect(result).toBe(2);
     });
   });
 });

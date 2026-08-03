@@ -33,11 +33,16 @@ const DEFAULT_INLINE_MAX = 4;
 // 밖으로 나가 약 30일마다 재리뷰될 수 있다. 실사용 영향은 작다고 보고(월 1회 수준) 받아들이는
 // 절충이다 — "두 lookback 이 정합적이라 문제 없음"이 아니라 의도적 트레이드오프임을 밝혀둔다.
 const SWEEP_REVIEW_LOOKBACK_DAYS = 30;
-// 실패(FAILED)/고착(IN_PROGRESS) 리뷰의 재시도 쿨다운. 실패를 영구 제외하면 일시적 codex
-// 오류(쿼터 소진, 절전 복귀 직후 미준비 등 이 레포에서 실제로 나는 유형) 하나로 PR 이
-// SWEEP_REVIEW_LOOKBACK_DAYS(30일)간 빠지고, 무조건 재시도하면 15분마다 실패를 반복해
-// 무한 루프가 실패 경로로 되살아난다 — 쿨다운으로 둘 사이를 잡는다. 하루 최대 4회 재시도.
-const SWEEP_RETRY_COOLDOWN_HOURS = 6;
+// 실패(FAILED)/고착(IN_PROGRESS) 리뷰의 재시도 쿨다운. 이 레포의 PR 은 약 30분 안에
+// merge 되므로 6시간 쿨다운은 첫 리뷰 실패를 merge 전까지 한 번도 재시도하지 못하게 해,
+// `*/5` 스윕이 고치려던 바로 그 실패 시나리오를 남겼다. 10분이면 PR 수명 안에 2번 더
+// 기회를 주고, CLI 타임아웃 300초(#198)보다 충분히 길어 아직 실행 중인 리뷰의 중복도 막는다.
+const SWEEP_RETRY_COOLDOWN_MINUTES = 10;
+// 짧은 쿨다운이 쿼터 소진 같은 지속 실패를 5분마다 영구 반복하지 않도록 24시간 실패/고착
+// 시도를 3회로 제한한다. 기존 6시간 쿨다운의 하루 약 4회와 비슷한 총량을 유지하되,
+// PR 이 아직 열려 있는 앞쪽에 시도를 모은다.
+const SWEEP_RETRY_BUDGET_WINDOW_HOURS = 24;
+const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -158,7 +163,15 @@ export class SweepPrReviewsUsecase {
       );
       return 'SKIP';
     }
-    return this.judgeLatestReview(latest, this.isDryRun());
+    const decision = this.judgeLatestReview(latest, this.isDryRun());
+    if (
+      decision === 'REVIEW' &&
+      latest !== null &&
+      latest.status !== AgentRunStatus.SUCCEEDED
+    ) {
+      return await this.judgeRetryBudget(prRef);
+    }
+    return decision;
   }
 
   private judgeLatestReview(
@@ -175,9 +188,34 @@ export class SweepPrReviewsUsecase {
       // 이 기능에서 반드시 밟는 경로이므로, 그 한 번은 다시 리뷰해 게시한다.
       return latest.dryRun && !currentDryRun ? 'REVIEW' : 'SKIP';
     }
-    const cooldownMs = SWEEP_RETRY_COOLDOWN_HOURS * 60 * 60 * 1000;
+    const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;
     const elapsedMs = Date.now() - latest.startedAt.getTime();
     return elapsedMs >= cooldownMs ? 'REVIEW' : 'SKIP';
+  }
+
+  // inputSnapshot.prRef JSON path 는 인덱스가 없으므로 common path 에서는 호출하지 않고,
+  // 실패/고착 리뷰가 쿨다운을 지나 실제 재시도 직전일 때만 예산을 조회한다.
+  private async judgeRetryBudget(prRef: string): Promise<SweepDecision> {
+    try {
+      const attempts = await this.agentRunService.countUnsuccessfulSweepReviews(
+        {
+          prRef,
+          sinceHours: SWEEP_RETRY_BUDGET_WINDOW_HOURS,
+        },
+      );
+      if (attempts >= SWEEP_RETRY_BUDGET_MAX_ATTEMPTS) {
+        this.logger.warn(
+          `스윕 재시도 예산 소진, 이번 스윕에서 skip (${prRef}, count=${attempts})`,
+        );
+        return 'SKIP';
+      }
+      return 'REVIEW';
+    } catch (error: unknown) {
+      this.logger.warn(
+        `스윕 재시도 예산 조회 실패, 이번 스윕에서 skip (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 'SKIP';
+    }
   }
 
   // 한 PR 의 실패가 스윕 전체를 멈추지 않게 격리한다.

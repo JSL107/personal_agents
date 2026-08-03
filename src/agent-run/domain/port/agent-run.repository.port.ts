@@ -122,6 +122,11 @@ export interface FindLatestSweepReviewQuery {
   sinceDays: number; // JSON path 필터는 인덱스가 없어 스캔 범위를 이 기간으로 제한
 }
 
+export interface CountUnsuccessfulSweepReviewsQuery {
+  prRef: string;
+  sinceHours: number;
+}
+
 export interface LatestSweepReview {
   status: string; // AgentRunStatus 값 그대로('SUCCEEDED' | 'FAILED' | 'IN_PROGRESS')
   startedAt: Date;
@@ -221,6 +226,10 @@ export interface AgentRunRepositoryPort {
   findLatestSweepReview(
     input: FindLatestSweepReviewQuery,
   ): Promise<LatestSweepReview | null>;
+  // PR 리뷰 스윕 — FAILED/IN_PROGRESS 재시도 예산 판정용. 성공하지 못한 시도 수만 반환한다.
+  countUnsuccessfulSweepReviews(
+    input: CountUnsuccessfulSweepReviewsQuery,
+  ): Promise<number>;
   // 콘솔 관제 — agentType별 최신 종료가 FAILED이고 cutoff 이내인 것.
   findRecentlyFailedRuns(input: {
     withinMinutes: number;
