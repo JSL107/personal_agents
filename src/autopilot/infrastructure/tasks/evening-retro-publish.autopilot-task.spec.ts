@@ -171,7 +171,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.previews?.[0].kind).toBe(PREVIEW_KIND.EVENING_BLOG_PUBLISH);
   });
 
-  it('(e) GitHub merged 조회는 오늘 KST 00:00 offset timestamp 를 sinceIsoDate 로 사용한다', async () => {
+  it('(e) GitHub merged 조회는 오늘 KST 00:00 을 UTC(Z) 표기로 sinceIsoDate 에 넘긴다', async () => {
     const { task, githubClient } = makeTask({
       prs: [PR_ITEM],
       worklogRuns: [],
@@ -181,11 +181,30 @@ describe('EveningRetroPublishTask', () => {
 
     await task.run(CTX);
 
+    // KST 2026-07-08 00:00 == UTC 2026-07-07 15:00. 가리키는 순간은 같지만 표기가 다르다.
     expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
       expect.objectContaining({
-        sinceIsoDate: '2026-07-08T00:00:00+09:00',
+        sinceIsoDate: '2026-07-07T15:00:00.000Z',
       }),
     );
+  });
+
+  // 회귀 방지 — 이전엔 `2026-07-08T00:00:00+09:00` 을 넘겼고, 이 값이 GitHub search 쿼리에
+  // 들어가면 octokit 이 `+` 를 escape 하지 않아 GitHub 이 날짜를 못 읽고 조용히 0건을 반환했다.
+  // 에러가 아니라 "머지된 PR 없음" 으로 위장돼 두 주 가까이 발행 후보가 사라졌다.
+  it('(e-2) sinceIsoDate 에 URL 인코딩을 깨뜨리는 `+` offset 을 넣지 않는다', async () => {
+    const { task, githubClient } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    await task.run(CTX);
+
+    const [call] = (githubClient.listAuthorMergedPullRequestsSince as jest.Mock)
+      .mock.calls;
+    expect(call[0].sinceIsoDate).not.toContain('+');
   });
 
   it('(f) 회고 prompt 에 회사/개인 소스 라벨을 포함한다', async () => {
@@ -388,5 +407,48 @@ describe('EveningRetroPublishTask', () => {
     expect(careerPreview?.previewText).toContain('schoolbell-e/sbe-api-v5#864');
     expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
     expect(careerPreview?.previewText).toContain('me/personal_agents#142');
+  });
+
+  it('(k) 근거 PR 0건이면 요약에 그 사실을 남긴다 (조용한 0건 방지)', async () => {
+    const { task } = makeTask({
+      prs: [],
+      worklogRuns: [{ id: 1, output: 'worklog text', endedAt: new Date() }],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain('0건으로 조회됐습니다');
+  });
+
+  it('(l) author env 미설정이면 조회를 건너뛴 사실을 요약에 남긴다', async () => {
+    const { task, githubClient } = makeTask({
+      authorVal: '',
+      prs: [],
+      worklogRuns: [{ id: 1, output: 'worklog text', endedAt: new Date() }],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
+    expect(result.summaryText).toContain('IMPACT_REPORT_GITHUB_AUTHOR');
+  });
+
+  it('(m) 근거 PR 이 있으면 경고를 붙이지 않는다', async () => {
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).not.toContain('⚠️');
   });
 });
