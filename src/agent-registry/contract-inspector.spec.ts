@@ -118,6 +118,46 @@ describe('inspectContract', () => {
       expect(violations).toEqual([]);
     });
 
+    it('목록형 산출물이 전부 비어 있으면 근거를 요구하지 않는다', () => {
+      // 지적 0건으로 승인한 리뷰 — 근거를 붙일 대상 자체가 없다.
+      // 2026-08-03 실측에서 CODE_REVIEWER noEvidence 4건이 전부 이 형태였다.
+      const violations = inspectContract(AgentType.CODE_REVIEWER, {
+        summary: '머지를 막을 문제는 확인되지 않았습니다',
+        findings: [],
+        mustFix: [],
+        approvalRecommendation: 'approve',
+      });
+
+      expect(violations).toEqual([]);
+    });
+
+    it('목록이 하나라도 차 있으면 근거를 요구한다', () => {
+      const violations = inspectContract(AgentType.CODE_REVIEWER, {
+        summary: '리뷰 요약',
+        findings: [{ body: '어딘가 이상하다' }],
+        mustFix: [],
+        approvalRecommendation: 'REQUEST_CHANGES',
+      });
+
+      expect(violations).toEqual([
+        { rule: 'noEvidence', detail: 'CODE_REVIEWER' },
+      ]);
+    });
+
+    it('계약과 무관한 부수 배열이 비어 있어도 면제되지 않는다', () => {
+      // PM 계약의 topPriority/morning/afternoon 은 전부 문자열이다. 계약이 목록으로
+      // 내라고 한 것이 없으므로 "주장 없음" 을 판정할 근거가 없고, 산출물에 딸린
+      // 부수 배열(notes)이 비었다는 이유로 근거 요구가 꺼져서는 안 된다.
+      const violations = inspectContract(AgentType.PM, {
+        topPriority: '근거 없는 최우선 과제',
+        morning: '오전',
+        afternoon: '오후',
+        notes: [],
+      });
+
+      expect(violations).toEqual([{ rule: 'noEvidence', detail: 'PM' }]);
+    });
+
     it('근거를 요구하지 않는 계약이면 근거가 없어도 통과한다', () => {
       const violations = inspectContract(AgentType.WORK_REVIEWER, {
         summary: '요약',

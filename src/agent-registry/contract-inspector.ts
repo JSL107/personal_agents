@@ -67,6 +67,30 @@ function isEmptyValue(value: unknown): boolean {
   return false;
 }
 
+/**
+ * "주장이 없으면 근거도 없다" — 목록형 산출물이 전부 비어 있는지 판정한다.
+ *
+ * CODE_REVIEWER 가 지적 없이 승인한 리뷰(`findings: []` · `mustFix: []`)는 근거를
+ * 붙일 대상 자체가 없는 정상 산출물인데, 근거 패턴만 보면 통째로 위반으로 잡힌다.
+ * 2026-08-03 실측에서 CODE_REVIEWER `noEvidence` 4건이 **전부** 이 경우였다
+ * (성공 실행 14건 중 4건 = 29%, 정탐 0건).
+ *
+ * 보는 대상은 **계약이 요구한 필드(`deliverableFields`) 중 배열인 것**뿐이다.
+ * 산출물 전체의 배열을 훑으면 계약과 무관한 부수 배열 하나가 비어 있다는 이유로
+ * 근거 요구가 통째로 꺼진다. 계약이 목록으로 내라고 한 것이 하나도 없는 산출물
+ * (BLOG 의 `notionUrl`·`published`)은 면제 대상이 아니다 — 비어 있음을 판정할
+ * 목록이 없는데 면제하면 근거 요구가 무력해진다.
+ */
+function hasNoClaims(
+  output: PlainObject,
+  deliverableFields: readonly string[],
+): boolean {
+  const lists = deliverableFields
+    .map((field) => output[field])
+    .filter(Array.isArray);
+  return lists.length > 0 && lists.every((list) => list.length === 0);
+}
+
 export function inspectContract(
   agentType: AgentType,
   output: unknown,
@@ -98,7 +122,11 @@ export function inspectContract(
     }
   }
 
-  if (contract.requireEvidence && EVIDENCE_PATTERN.test(serialized) === false) {
+  if (
+    contract.requireEvidence &&
+    hasNoClaims(output, contract.deliverableFields) === false &&
+    EVIDENCE_PATTERN.test(serialized) === false
+  ) {
     violations.push({ rule: 'noEvidence', detail: agentType });
   }
 
