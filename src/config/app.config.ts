@@ -189,6 +189,18 @@ class EnvironmentVariables {
   @IsString()
   AUTOPILOT_DAILY_EVAL_TIMEZONE?: string;
 
+  // morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를
+  // 만들므로 이 그룹의 대표 키는 secretariat 이다.
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SECRETARIAT_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SECRETARIAT_TIMEZONE?: string;
+
+  // deprecated — morning 그룹 첫 항목이 secretariat 으로 바뀌면서 더 이상 읽히지 않는다.
+  // 기존 .env 에 남아 있어도 부팅이 막히지 않도록 선언만 유지한다(값은 무시된다).
   @IsOptional()
   @IsString()
   AUTOPILOT_MORNING_BRIEFING_SCHEDULE?: string;

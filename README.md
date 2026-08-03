@@ -182,7 +182,7 @@ pnpm dev              # watch 모드 기동
 
 | 시간 | 동작 |
 |---|---|
-| 🌅 매일 08:30 | Morning Briefing (PM `/today` 자동 계획) |
+| 🌅 매일 08:30 | 비서실(하루 한 장 결산) + Morning Briefing (PM `/today` 자동 계획) — digest 1메시지 |
 | 🌆 매일 19:00 | Daily Eval(PO_EVAL) + Worklog — digest 1메시지 |
 | 📅 금 17:00 | Weekly Summary (Worklog 1주 + CEO meta) |
 | 📅 일 10:00~12:00 | Knowledge-Lint · Docs Audit · Preference Learning |
@@ -212,6 +212,7 @@ pnpm dev              # watch 모드 기동
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `AUTOPILOT_SECRETARIAT_SCHEDULE` · `_TIMEZONE` | ❌ | morning(비서실 + 아침 브리핑) cron/timezone override — 기본 `30 8 * * *`, `Asia/Seoul`. 그룹 첫 항목이 `secretariat` 으로 바뀌어, 이전 `AUTOPILOT_MORNING_BRIEFING_*` 은 더 이상 읽히지 않는다 |
 | `AUTOPILOT_ASSIGN_SCHEDULE` · `_TIMEZONE` | ❌ | noon(CTO 배정 + PO Shadow) cron/timezone override — 기본 `0 13 * * *`, `Asia/Seoul`. 키는 그룹명이 아닌 그룹 첫 항목 id(`assign`) 기준 |
 | `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 국내 17:10 KST·미국 16:30 ET 보유 종목 모니터링 활성 — 기본 OFF |
 | `AUTOPILOT_STOCK_MONITOR_US_SCHEDULE` · `_TIMEZONE` | ❌ | 미국 모니터링 cron/timezone override — 기본 `30 16 * * 1-5`, `America/New_York` |

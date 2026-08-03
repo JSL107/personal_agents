@@ -1,6 +1,34 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentRunStatus } from '../domain/agent-run.type';
-import { AgentRunPrismaRepository } from './agent-run.prisma.repository';
+import {
+  AgentRunPrismaRepository,
+  extractFailureReason,
+} from './agent-run.prisma.repository';
+
+describe('extractFailureReason', () => {
+  it('output.error 문자열을 그대로 쓴다', () => {
+    expect(
+      extractFailureReason({ error: '모델 호출 실패 (CHATGPT, 362s 소요)' }),
+    ).toBe('모델 호출 실패 (CHATGPT, 362s 소요)');
+  });
+
+  it('앞뒤 공백을 다듬는다', () => {
+    expect(
+      extractFailureReason({ error: '  swept: stale IN_PROGRESS  ' }),
+    ).toBe('swept: stale IN_PROGRESS');
+  });
+
+  it.each([
+    ['error 키 없음', { message: '다른 형태' }],
+    ['error 가 빈 문자열', { error: '   ' }],
+    ['error 가 문자열이 아님', { error: { nested: true } }],
+    ['output 이 null', null],
+    ['output 이 객체가 아님', '문자열 output'],
+  ])('%s 이면 고정 문구로 대체한다', (_label, output) => {
+    // 비서실 브리핑의 "막힌 이유" 칸이 빈 채로 나가지 않게 한다.
+    expect(extractFailureReason(output)).toBe('이유 미기록');
+  });
+});
 
 describe('AgentRunPrismaRepository.sweepZombies', () => {
   it('cutoff 이전 IN_PROGRESS 를 FAILED 로 updateMany 하고 count 반환', async () => {
