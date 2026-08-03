@@ -94,9 +94,23 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     )
 
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
+    // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
     let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
-    let verticalWalls = (0..<zoneAreaRows).filter { plan.floor[$0][0] == .wall }
-    t.expectEqual(verticalWalls.count, zoneAreaRows, "구역 왼쪽 열은 전 구간이 벽")
+    let wallColumns = Set(plan.zones.flatMap { [$0.origin.x, $0.origin.x + $0.width - 1] })
+    for column in wallColumns.sorted() {
+        let walls = (0..<zoneAreaRows).filter { plan.floor[$0][column] == .wall }
+        t.expectEqual(walls.count, zoneAreaRows, "x=\(column) 세로 칸막이가 전 구간 벽")
+    }
+
+    // 아래 구역 천장은 문 한 칸만 열려 있어야 한다. 문이 아예 없으면 구역이 고립되고(도달성
+    // 테스트가 잡는다), 여러 칸이면 벽이 무의미해지는데 그건 여기서만 잡힌다.
+    let bottomOriginY = plan.zones.map { $0.origin.y }.min() ?? 0
+    for zone in plan.zones where zone.origin.y == bottomOriginY {
+        let ceilingY = zone.origin.y + zone.height - 1
+        let doors = (zone.origin.x..<(zone.origin.x + zone.width))
+            .filter { plan.floor[ceilingY][$0] != .wall }
+        t.expectEqual(doors.count, 1, "\(zone.department.label) 구역 천장에 문 한 칸")
+    }
 
     // 대표 자리·줄서기·휴식 자리가 비어 있지 않다.
     t.expect(!plan.queueTiles.isEmpty, "승인 대기 줄 자리 존재")
@@ -241,13 +255,17 @@ func runOfficePathfindingTests(_ t: TestRunner) {
 
     // 휴식 자리도 전 좌석에서 닿아야 한다 — 밴드에 가구를 놓다 가로 통로를 막으면
     // 완료 후 탕비실에 가지 못하고 제자리에 머문다(walk 가 빈 경로를 받아 조용히 반환).
+    //
+    // 첫 자리만 보면 안 된다: visitLounge 는 비어 있는 자리를 순서대로 고르므로 둘째·셋째
+    // 자리도 실제로 쓰이고, 그 자리만 끊겨도 그 사람은 조용히 제자리에 남는다.
     for lounge in plan.loungeTiles {
         t.expect(plan.walkable.contains(lounge), "휴식 자리 \(lounge.x),\(lounge.y) 통행 가능")
-    }
-    if let lounge = plan.loungeTiles.first {
         let unreachableSeats = plan.desks.filter {
             officePath(from: $0.seat, to: lounge, walkable: plan.walkable).isEmpty
         }
-        t.expectEqual(unreachableSeats.count, 0, "휴식 자리에 못 가는 좌석 없음")
+        t.expectEqual(
+            unreachableSeats.count, 0,
+            "휴식 자리 \(lounge.x),\(lounge.y) 에 못 가는 좌석 없음"
+        )
     }
 }
