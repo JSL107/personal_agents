@@ -15,6 +15,7 @@ runDepartmentTests(runner)
 runAgentTokenInfoTests(runner)
 runOfficeRoomLayoutTests(runner)
 runOfficeFloorPlanTests(runner)
+runAgentRoleTests(runner)
 runOfficePathfindingTests(runner)
 runConsoleClientTests(runner)
 

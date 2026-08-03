@@ -361,10 +361,16 @@ final class OfficeScene: SKScene {
             actions.append(move)
             cursor = step
         }
-        actions.append(.run { [weak node] in
+        actions.append(.run { [weak self, weak node] in
             node?.sprite.run(.rotate(toAngle: 0, duration: 0.1))
             node?.isWalking = false
             completion?()
+            // 걷는 동안 들어온 상태 변화는 보류됐다(applyMotion 이 걷는 사람을 건드리지 않는다).
+            // 도착했으니 최신 상태를 다시 적용한다 — 안 하면 승인 줄에 도착해도 다음 동기화까지
+            // 발 구르기가 안 걸리고, 복귀 중 실패한 작업이 완료 콜백의 타이핑에 덮인다.
+            if let agentType = node?.name {
+                self?.reapplyMotion(agentType)
+            }
         })
         node.run(.sequence(actions), withKey: "walk")
     }
@@ -569,8 +575,19 @@ final class OfficeScene: SKScene {
 
     // MARK: - 상태 → 몸짓
 
+    /// 마지막으로 받은 스냅샷과 phase 로 몸짓을 다시 건다. 걸음이 끝난 직후에 쓴다.
+    private func reapplyMotion(_ agentType: String) {
+        guard let agent = lastSyncedAgents.first(where: { $0.agentType == agentType }) else {
+            return
+        }
+        applyMotion(for: agent, phase: lastPhases[agentType])
+    }
+
     /// 상태와 pending 진행 단계를 몸짓으로 옮긴다.
     /// 내가 방금 보낸 지시(phase)가 있으면 그쪽이 우선한다 — 지금 눈으로 좇는 대상이라서.
+    ///
+    /// 걷는 중인 사람은 건너뛴다(걸음 자체가 지금의 동작이다). 대신 도착 시점에 walk 가
+    /// `reapplyMotion` 으로 최신 상태를 다시 걸어, 걷는 동안의 변화가 유실되지 않게 한다.
     private func applyMotion(for agent: ConsoleAgent, phase: PendingPhase?) {
         guard let node = characters[agent.agentType], !node.isWalking else {
             return

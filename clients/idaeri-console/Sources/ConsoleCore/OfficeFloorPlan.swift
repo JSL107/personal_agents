@@ -119,12 +119,18 @@ public struct OfficeFloorPlan: Sendable {
 }
 
 // 격자 규격 — 부서 구역 3열×2행 + 상단 공용 밴드.
-// 부서당 최대 9명(3열×3행)이라 가장 큰 내부(9명)까지 한 구역에 들어간다.
 private let zoneWidth = 10
 private let zoneHeight = 7
 private let bandHeight = 4
 private let planColumns = zoneWidth * 3
 private let planRows = zoneHeight * 2 + bandHeight
+
+// 한 부서 구역의 자리 배치 — 4열 × 3행 = 12석.
+// 실제 내부 부서가 10명이라 9석(3열)으로는 한 명이 자리를 못 받아 화면에서 사라진다.
+// 책상 간격을 3→2 로 좁혀 열을 늘렸다(구역 폭 10 안에 x = +1,+3,+5,+7).
+// 여유 2석은 완충이며, 정원을 넘기는 순간을 테스트가 잡는다(전원 배정 검증).
+private let deskColumns = 4
+private let deskColumnStride = 2
 
 /// 부서 배치 순서(왼→오, 위→아래). 방 배치·범례가 공유하는 canonical 순서.
 private let zoneOrder: [Department] = [
@@ -243,12 +249,14 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
             .map(\.agentType)
             .sorted()
         for (seatIndex, agentType) in members.enumerated() {
-            let deskColumn = seatIndex % 3
-            let deskRow = seatIndex / 3
-            let deskX = originX + 1 + deskColumn * 3
+            let deskColumn = seatIndex % deskColumns
+            let deskRow = seatIndex / deskColumns
+            let deskX = originX + 1 + deskColumn * deskColumnStride
             let deskY = originY + zoneHeight - 2 - deskRow * 2
             guard deskY > originY, deskX < originX + zoneWidth else {
-                continue  // 구역 정원(9)을 넘는 인원은 배치하지 않는다
+                // 구역 정원을 넘으면 자리를 못 받아 화면에서 사라진다. 전원 배정을 고정한
+                // 테스트가 있으므로, 여기 걸리면 정원(deskColumns × 행 수)을 늘려야 한다.
+                continue
             }
             place(.desk, deskX, deskY)
             desks.append(

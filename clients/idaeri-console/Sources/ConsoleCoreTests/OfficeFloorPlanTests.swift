@@ -9,7 +9,11 @@ private func planAgent(_ type: String) -> ConsoleAgent {
     )
 }
 
-// 실제 운영 구성(26명)에 가까운 표본 — 부서별 인원 편차(내부 9명)를 그대로 담는다.
+// 운영 스냅샷(GET /v1/console/snapshot)의 실제 27종을 그대로 옮긴 표본.
+// 부서별 인원 편차(내부 10명)가 정원 경계를 밟으므로 임의로 줄이면 안 된다 —
+// 26명짜리 표본을 쓰던 동안 "내부 10번째(SUBCONSCIOUS_GATE)가 자리를 못 받아 화면에서
+// 사라지는" 결함이 테스트를 통과했다.
+// agentType 은 displayName 과 다르다: EVENING_RETRO(타입) ↔ "Evening Retro Publish"(표시명).
 private let sampleAgents: [ConsoleAgent] = [
     "PM", "PO_SHADOW", "PO_EVAL",
     "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX",
@@ -17,8 +21,9 @@ private let sampleAgents: [ConsoleAgent] = [
     "CTO", "CEO",
     "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION",
     "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
-    "HUMANIZER", "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR",
-    "PREFERENCE_LEARNING", "EVENING_RETRO_PUBLISH", "OPS_SUPERVISOR",
+    "REVIEW_REPLY_JUDGE", "HUMANIZER", "DOCS_AUDIT_OPTIMIZER",
+    "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING", "EVENING_RETRO",
+    "OPS_SUPERVISOR",
 ].map(planAgent)
 
 func runOfficeFloorPlanTests(_ t: TestRunner) {
@@ -27,7 +32,21 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let plan = officeFloorPlan(agents: sampleAgents)
 
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
-    t.expectEqual(plan.desks.count, sampleAgents.count, "26명 전원 자리 배정")
+    t.expectEqual(plan.desks.count, sampleAgents.count, "27명 전원 자리 배정")
+
+    // 인원이 가장 많은 부서도 정원 안에 들어가야 한다. 부서별 인원은 언제든 늘 수 있으므로,
+    // "가장 큰 부서 전원이 자리를 받았는가" 를 부서 단위로 못 박는다.
+    for zoneDepartment in Department.allCases {
+        let members = sampleAgents.filter { department(for: $0.agentType) == zoneDepartment }
+        guard !members.isEmpty else {
+            continue
+        }
+        let seated = plan.desks.filter { department(for: $0.agentType) == zoneDepartment }
+        t.expectEqual(
+            seated.count, members.count,
+            "\(zoneDepartment.label) 부서 \(members.count)명 전원 배정(정원 초과 시 실패)"
+        )
+    }
 
     // 책상은 서로 겹치지 않는다.
     let deskTiles = Set(plan.desks.map(\.desk))
@@ -90,6 +109,40 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         .map { "\($0.agentType)@\($0.desk.x),\($0.desk.y)" }
         .sorted()
     t.expectEqual(firstAssignment, shuffledAssignment, "입력 순서 무관 → 동일 배치")
+}
+
+func runAgentRoleTests(_ t: TestRunner) {
+    t.suite("AgentRole")
+
+    // 운영 27종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
+    // 폴백해 이름표가 뒤섞인다(agentType 과 displayName 을 혼동하면 조용히 빠진다).
+    let missing = sampleAgents
+        .map(\.agentType)
+        .filter { agentRoleLabel(for: $0) == nil }
+    t.expectEqual(missing.count, 0, "직책 미매핑: \(missing.sorted())")
+
+    // 이름표가 겹치지 않도록 짧게 유지한다.
+    let tooLong = sampleAgents
+        .compactMap { agentRoleLabel(for: $0.agentType) }
+        .filter { $0.count > 7 }
+    t.expectEqual(tooLong.count, 0, "직책이 너무 김(7자 초과): \(tooLong)")
+
+    // 미등록 타입은 nil — 호출자가 displayName 으로 폴백한다.
+    t.expect(agentRoleLabel(for: "NOT_A_REAL_AGENT") == nil, "미등록 타입은 nil")
+
+    // 외형 배정은 결정론적이어야 한다 — 실행마다 머리색이 바뀌면 사람을 외울 수 없다.
+    let first = characterLook(for: "OPS_SUPERVISOR")
+    let second = characterLook(for: "OPS_SUPERVISOR")
+    t.expectEqual(first, second, "같은 agentType → 같은 외형")
+    t.expect(
+        (0..<characterSheetCount).contains(first.sheetIndex),
+        "시트 인덱스가 준비된 범위 안"
+    )
+    t.expect(hairPalette.indices.contains(first.hairIndex), "머리색 인덱스가 팔레트 범위 안")
+
+    // 27명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
+    let sheets = Set(sampleAgents.map { characterLook(for: $0.agentType).sheetIndex })
+    t.expect(sheets.count >= 3, "캐릭터 시트가 최소 3종으로 분산 (실제 \(sheets.count)종)")
 }
 
 func runOfficePathfindingTests(_ t: TestRunner) {
