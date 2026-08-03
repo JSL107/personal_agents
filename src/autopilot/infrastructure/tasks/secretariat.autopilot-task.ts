@@ -34,20 +34,25 @@ export class SecretariatAutopilotTask implements AutopilotTask {
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const now = new Date();
-    const [succeeded, activeRuns, allOpenPreviews, failedRuns, recentlyFailed] =
-      await Promise.all([
-        this.agentRunService.aggregateSucceededCounts({
-          sinceDays: WINDOW_DAYS,
-        }),
-        this.agentRunService.findActiveRuns(),
-        this.findAllOpenPreviews.execute({ now }),
-        this.agentRunService.findFailedRunsSince({
-          withinMinutes: WINDOW_MINUTES,
-        }),
-        this.agentRunService.findRecentlyFailedRuns({
-          withinMinutes: WINDOW_MINUTES,
-        }),
-      ]);
+    const [
+      succeeded,
+      activeRuns,
+      allOpenPreviews,
+      failedRuns,
+      recentlyFinished,
+    ] = await Promise.all([
+      this.agentRunService.aggregateSucceededCounts({
+        sinceDays: WINDOW_DAYS,
+      }),
+      this.agentRunService.findActiveRuns(),
+      this.findAllOpenPreviews.execute({ now }),
+      this.agentRunService.findFailedRunsSince({
+        withinMinutes: WINDOW_MINUTES,
+      }),
+      this.agentRunService.findRecentlyFinishedRuns({
+        withinMinutes: WINDOW_MINUTES,
+      }),
+    ]);
 
     // 승인 카드는 owner 것만 남긴다. FindAllOpenPreviewsUsecase 는 콘솔 관제용이라
     // 사용자 구분 없이 전부 돌려주는데, 이 보고는 owner 에게 가고 owner 만 승인할 수 있다
@@ -62,7 +67,11 @@ export class SecretariatAutopilotTask implements AutopilotTask {
       activeRuns,
       openPreviews,
       failedRuns,
-      unresolvedAgentTypes: recentlyFailed.map((run) => run.agentType),
+      // 최신 종료가 실패인 것만 "아직 안 풀린 것" 이다. 조회가 성공/실패를 함께 주므로
+      // 여기서 걸러낸다(성공으로 뒤집힌 에이전트는 목록에서 빠진다).
+      unresolvedAgentTypes: recentlyFinished
+        .filter((run) => run.status === 'FAILED')
+        .map((run) => run.agentType),
       now,
     });
     if (isSecretariatDigestEmpty(digest)) {

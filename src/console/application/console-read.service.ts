@@ -18,8 +18,9 @@ import {
 import { toConsoleApproval, toConsoleSession } from './console-mappers';
 import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
-// 재접속 스냅샷 복원 시 "최근 실패"로 되살릴 시간 창(분). SSE 라이브는 이 창과 무관하게 즉시 반영된다.
-const FAILED_SNAPSHOT_WINDOW_MINUTES = 360;
+// 재접속 스냅샷 복원 시 "최근 종료 결과"(완료/실패)로 되살릴 시간 창(분).
+// SSE 라이브는 이 창과 무관하게 즉시 반영된다.
+const FINISHED_SNAPSHOT_WINDOW_MINUTES = 360;
 
 // 콘솔 관제 스냅샷 조립 — agent-registry(문서 메타) + 활성 런 + 열린 승인을 화면 뷰 타입으로 가공.
 // 읽기 전용. 도메인 표현(number id, Date)을 여기서만 뷰 표현(string id, ISO 문자열)으로 변환한다.
@@ -33,11 +34,11 @@ export class ConsoleReadService {
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
     const now = new Date();
-    const [activeRuns, openPreviews, recentlyFailed] = await Promise.all([
+    const [activeRuns, openPreviews, recentlyFinished] = await Promise.all([
       this.agentRunService.findActiveRuns(),
       this.findAllOpenPreviews.execute({ now }),
-      this.agentRunService.findRecentlyFailedRuns({
-        withinMinutes: FAILED_SNAPSHOT_WINDOW_MINUTES,
+      this.agentRunService.findRecentlyFinishedRuns({
+        withinMinutes: FINISHED_SNAPSHOT_WINDOW_MINUTES,
       }),
     ]);
 
@@ -60,17 +61,21 @@ export class ConsoleReadService {
         .map((approval) => approval.agentType)
         .filter((agentType): agentType is string => agentType !== null),
     );
-    const recentlyFailedAgentTypes = new Set(
-      recentlyFailed.map((run) => run.agentType),
+    // agentType → 최신 종료 결과. 예전에는 실패 여부만 Set 으로 들고 있어 성공을 표현할
+    // 방법이 없었고, 그래서 이 경로는 COMPLETED 를 한 번도 만들지 못했다(deriveAgentState 의
+    // 완료 분기가 도달 불가였다). 결과적으로 앱을 껐다 켜면 방금 완료한 에이전트가
+    // "대기중" 으로 되살아나고 요약의 완료 수가 늘 0 이었다 — SSE 로는 완료가 오는데
+    // 스냅샷으로 덮이면 사라지던 불일치.
+    const latestFinishedByAgentType = new Map(
+      recentlyFinished.map((run) => [run.agentType, run.status] as const),
     );
 
     const agents: ConsoleAgent[] = AGENT_REGISTRY.map((entry) => {
       const state = deriveAgentState({
         hasOpenApproval: openApprovalAgentTypes.has(entry.agentType),
         hasActiveRun: activeAgentTypes.has(entry.agentType),
-        latestFinishedStatus: recentlyFailedAgentTypes.has(entry.agentType)
-          ? 'FAILED'
-          : null,
+        latestFinishedStatus:
+          latestFinishedByAgentType.get(entry.agentType) ?? null,
         isIntegrationBlocked: false,
         isQueuedWaiting: false,
       });
