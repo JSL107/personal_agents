@@ -39,6 +39,38 @@ describe('rewriteSpecImportsForSandbox', () => {
     ).toBe('jest.mock("/repo/src/agent/be-test/domain/x");');
   });
 
+  it('주석 줄의 상대 import 형태는 변경하지 않는다', () => {
+    const specCode = [
+      "// import { x } from './line-comment';",
+      "/* import { y } from './block-start';",
+      " * import { z } from './block-body';",
+      ' */',
+    ].join('\n');
+
+    expect(
+      rewriteSpecImportsForSandbox({ specCode, targetDirInContainer }),
+    ).toBe(specCode);
+  });
+
+  it('멀티라인 import 의 from 상대 경로를 재작성한다', () => {
+    const specCode = [
+      'import {',
+      '  first,',
+      '  second,',
+      "} from './x';",
+    ].join('\n');
+    const expected = [
+      'import {',
+      '  first,',
+      '  second,',
+      "} from '/repo/src/agent/be-test/domain/x';",
+    ].join('\n');
+
+    expect(
+      rewriteSpecImportsForSandbox({ specCode, targetDirInContainer }),
+    ).toBe(expected);
+  });
+
   it('상대 경로가 없으면 원본을 그대로 반환한다', () => {
     const specCode = "import { join } from 'node:path';";
 

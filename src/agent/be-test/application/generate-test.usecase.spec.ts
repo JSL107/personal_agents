@@ -423,9 +423,10 @@ describe('GenerateTestUsecase', () => {
 
     it.each([
       ['셸 명령 부재', '/bin/sh: pnpm: not found'],
+      ['dash 셸 명령 부재', 'sh: 1: pnpm: not found'],
       [
         'Jest 설정 오류',
-        'Validation Error: Module <rootDir>/jest.polyfills.js was not found.',
+        '● Validation Error:\n  Module <rootDir>/jest.polyfills.js was not found.',
       ],
     ])(
       'sandbox 환경 결함(%s)은 1회 실패 후 SANDBOX_UNAVAILABLE 로 즉시 중단한다',
@@ -449,6 +450,32 @@ describe('GenerateTestUsecase', () => {
         );
         expect(sandboxRunner.run).toHaveBeenCalledTimes(1);
         expect(modelRouter.route).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([
+      ['jest assertion 실패', '  Expected: not found\n  Received: undefined'],
+      ['일반 Error', 'Error: not found'],
+    ])(
+      '환경 결함이 아닌 not found stderr(%s)는 self-correction 을 재시도한다',
+      async (_case, stderr) => {
+        const { usecase, sandboxRunner, modelRouter } = buildUsecase({
+          sandboxRunner: makeSandboxRunnerMock([
+            failResult(stderr),
+            passResult(),
+          ]),
+        });
+
+        const outcome = await usecase.execute({
+          filePath: 'src/foo/foo.service.ts',
+          slackUserId: 'U123',
+        });
+
+        expect(outcome.result.validated).toBe(true);
+        expect(outcome.result.selfCorrectionAttempts).toBe(2);
+        expect(outcome.result.selfCorrectionStopReason).toBe('PASSED');
+        expect(sandboxRunner.run).toHaveBeenCalledTimes(2);
+        expect(modelRouter.route).toHaveBeenCalledTimes(2);
       },
     );
 

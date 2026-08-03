@@ -97,9 +97,9 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.BE_SRE,
     displayName: 'BE SRE',
-    slashCommands: [],
+    slashCommands: ['/be sre'],
     usecasePath: 'src/agent/be-sre/application/analyze-stack-trace.usecase.ts',
-    description: '스택트레이스 분석 (수동 /be-sre)',
+    description: '스택트레이스 분석 (수동 /be sre)',
   },
   {
     agentType: AgentType.BE_FIX,

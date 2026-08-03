@@ -310,8 +310,12 @@ const isInsideRepo = (target: string, repoRoot: string): boolean =>
   target === repoRoot || target.startsWith(repoRoot + sep);
 
 const ENVIRONMENT_FAILURE_STDERR_PATTERNS: RegExp[] = [
-  /:\s*not found/,
-  /Validation Error/,
+  // 셸이 명령을 못 찾은 경우만. alpine `/bin/sh: pnpm: not found`, dash `sh: 1: pnpm: not found`.
+  // `Expected: not found` 같은 jest assertion 출력을 삼키지 않도록 `sh: ` 접두에 앵커한다.
+  /\bsh: .*not found/,
+  // jest 설정 오류. jest 는 `● Validation Error:` 형식으로 출력하므로 불릿에 앵커해
+  // spec 이 "Validation Error" 문자열을 assert 하는 경우와 구분한다.
+  /●\s*Validation Error/,
 ];
 const isEnvironmentFailureStderr = (stderr: string): boolean =>
   ENVIRONMENT_FAILURE_STDERR_PATTERNS.some((pattern) => pattern.test(stderr));
