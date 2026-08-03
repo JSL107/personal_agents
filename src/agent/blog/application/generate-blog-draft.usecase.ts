@@ -34,6 +34,17 @@ import {
 } from './extract-blog-metadata';
 import { extractNotionUrl } from './extract-notion-url';
 
+/**
+ * 발행 상태 전환 시도의 결과.
+ *
+ * 실패(`published: false`)면 이유가 **반드시** 있다는 걸 타입으로 강제한다.
+ * 이유 없는 false 는 formatter 에서 정상 초안 안내로 렌더돼 실패가 위장되므로,
+ * 런타임 방어가 아니라 컴파일 단계에서 막는다.
+ */
+type PublishAttempt =
+  | { published: true; error?: undefined }
+  | { published: false; error: string };
+
 // 자연어 멘션 → Hermes tistory-blog 스킬 릴레이. model-router 미경유(Hermes 가 모델 자체 선택).
 @Injectable()
 export class GenerateBlogDraftUsecase {
@@ -90,7 +101,8 @@ export class GenerateBlogDraftUsecase {
           notionUrl,
           rawOutput: stdout,
           published: publish.published,
-          ...(publish.error ? { publishError: publish.error } : {}),
+          // 실패면 이유가 반드시 붙는다(PublishAttempt 가 타입으로 보장).
+          ...(publish.published ? {} : { publishError: publish.error }),
         };
         return { result, modelUsed: 'hermes-cli', output: result };
       },
@@ -104,7 +116,7 @@ export class GenerateBlogDraftUsecase {
   private async publishToNotion(
     notionUrl: string,
     stdout: string,
-  ): Promise<{ published: boolean; error?: string }> {
+  ): Promise<PublishAttempt> {
     const pageId = notionPageIdFromUrl(notionUrl);
     if (!pageId) {
       return {
@@ -127,7 +139,12 @@ export class GenerateBlogDraftUsecase {
       });
       return { published: true };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const raw = error instanceof Error ? error.message : String(error);
+      // 메시지가 빈 에러(`new Error('')` 등)를 그대로 흘리면 호출부의 `error ? ... : {}`
+      // 에서 필드가 통째로 사라져, 실패가 다시 "이유 없는 published:false" = 정상 초안
+      // 안내로 위장된다. 이 PR 이 없애려던 바로 그 구멍이라 여기서 반드시 채운다.
+      const message =
+        raw.trim().length > 0 ? raw : '알 수 없는 오류 (에러 메시지 없음)';
       this.logger.warn(
         `블로그 Notion 발행 enrich 실패 (초안은 생성됨, 수동 발행 가능): ${message}`,
       );

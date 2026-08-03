@@ -177,6 +177,35 @@ describe('GenerateBlogDraftUsecase', () => {
 
     expect(outcome.result.notionUrl).toBe(VALID_NOTION_URL);
     expect(outcome.result.published).toBe(false);
+    // 실패 이유가 결과까지 실려야 formatter 가 정상 초안 안내로 위장하지 않는다.
+    expect(outcome.result.publishError).toBe('boom');
+  });
+
+  it('메시지가 빈 에러여도 publishError 를 비우지 않는다 (조용한 실패 재발 방지)', async () => {
+    const runner: HermesRunnerPort = {
+      run: jest.fn().mockResolvedValue({
+        stdout: `NOTION_URL: ${VALID_NOTION_URL}`,
+        stderr: '',
+      }),
+    };
+    // `new Error('')` 를 그대로 흘리면 falsy 라 publishError 필드가 통째로 사라지고,
+    // 이유 없는 published=false 가 되어 "초안만 생성됨" 으로 다시 위장된다.
+    const updatePageProperties = jest.fn().mockRejectedValue(new Error(''));
+    const client = { updatePageProperties } as unknown as NotionClientPort;
+    const usecase = new GenerateBlogDraftUsecase(
+      agentRunStub,
+      runner,
+      client,
+      makeConfigService(),
+    );
+
+    const outcome = await usecase.execute({
+      requestText: 'x',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.published).toBe(false);
+    expect(outcome.result.publishError).toBeTruthy();
   });
 
   it('page id 파싱 실패(non-hex URL) 시 enrich skip, published=false', async () => {
@@ -200,6 +229,31 @@ describe('GenerateBlogDraftUsecase', () => {
     });
 
     expect(outcome.result.published).toBe(false);
+    expect(outcome.result.publishError).toContain('페이지 id');
     expect(updatePageProperties).not.toHaveBeenCalled();
+  });
+
+  it('발행 성공이면 publishError 를 붙이지 않는다', async () => {
+    const runner: HermesRunnerPort = {
+      run: jest.fn().mockResolvedValue({
+        stdout: `NOTION_URL: ${VALID_NOTION_URL}`,
+        stderr: '',
+      }),
+    };
+    const { client } = makeNotion();
+    const usecase = new GenerateBlogDraftUsecase(
+      agentRunStub,
+      runner,
+      client,
+      makeConfigService(),
+    );
+
+    const outcome = await usecase.execute({
+      requestText: 'x',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.published).toBe(true);
+    expect(outcome.result.publishError).toBeUndefined();
   });
 });
