@@ -24,6 +24,44 @@ public func parseSSELine(_ buffer: inout String) -> [ConsoleEvent] {
     return events
 }
 
+/// SSE 바이트 스트림 누적기 — 줄 구분자를 LF 로 정규화해 버퍼에 쌓고, 완성된 이벤트를 뽑는다.
+///
+/// 스트림을 `bytes.lines` 로 읽으면 안 된다. AsyncLineSequence 는 연속 개행 사이의 빈 줄을
+/// 방출하지 않아 SSE 의 이벤트 구분자(`\n\n`)가 통째로 사라지고, 라인만 이어붙이면 버퍼에
+/// 구분자가 영영 만들어지지 않아 파서가 한 건도 못 뽑는다(실측).
+///
+/// 그래서 바이트를 직접 받는데, 그 대가로 `lines` 가 해주던 줄바꿈 정규화도 잃는다.
+/// SSE 는 CRLF·CR·LF 를 모두 줄 구분자로 허용하지만 파서는 LF 하나만 보므로 여기서 맞춘다.
+/// 네트워크 없이 검증할 수 있도록 순수 상태로 둔다(SSEParserTests).
+public struct SSEByteAccumulator {
+    private static let lineFeed: UInt8 = 0x0A
+    private static let carriageReturn: UInt8 = 0x0D
+
+    private var buffer = ""
+    private var line: [UInt8] = []
+    private var previousByte: UInt8 = 0
+
+    public init() {}
+
+    /// 바이트 하나를 먹고, 그것으로 완성된 이벤트가 있으면 돌려준다(없으면 빈 배열).
+    public mutating func consume(_ byte: UInt8) -> [ConsoleEvent] {
+        // CRLF 의 뒤따르는 LF — 앞선 CR 이 이미 줄바꿈으로 처리됐으므로 버린다.
+        if byte == Self.lineFeed, previousByte == Self.carriageReturn {
+            previousByte = byte
+            return []
+        }
+        previousByte = byte
+        let normalized = byte == Self.carriageReturn ? Self.lineFeed : byte
+        line.append(normalized)
+        guard normalized == Self.lineFeed else {
+            return []
+        }
+        buffer += String(decoding: line, as: UTF8.self)
+        line.removeAll(keepingCapacity: true)
+        return parseSSELine(&buffer)
+    }
+}
+
 /// 한 이벤트 블록(빈 줄로 구분된 라인 묶음)에서 `data:` 라인들의 값을 이어붙여 디코딩한다.
 private func decodeSSEBlock(_ block: String) -> ConsoleEvent? {
     var dataLines: [String] = []
@@ -173,20 +211,10 @@ public actor ConsoleClient {
                         continuation.finish()
                         return
                     }
-                    // 바이트를 그대로 누적한다. `bytes.lines` 를 쓰면 안 된다 —
-                    // AsyncLineSequence 는 연속 개행 사이의 빈 줄을 방출하지 않아
-                    // SSE 의 이벤트 구분자(`\n\n`)가 통째로 사라진다. 라인만 이어붙이면
-                    // 버퍼에 `\n\n` 이 영영 만들어지지 않고 파서가 한 건도 못 뽑는다(실측).
-                    var buffer = ""
-                    var line: [UInt8] = []
+                    // 바이트를 그대로 넘긴다(이유는 SSEByteAccumulator 주석 참조).
+                    var accumulator = SSEByteAccumulator()
                     for try await byte in bytes {
-                        line.append(byte)
-                        guard byte == 0x0A else {
-                            continue
-                        }
-                        buffer += String(decoding: line, as: UTF8.self)
-                        line.removeAll(keepingCapacity: true)
-                        for event in parseSSELine(&buffer) {
+                        for event in accumulator.consume(byte) {
                             continuation.yield(event)
                         }
                     }

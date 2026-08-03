@@ -112,7 +112,7 @@ func runSSEParserTests(_ t: TestRunner) {
     // 구분자(빈 줄)가 사라진 입력은 한 건도 못 뽑는다 — 스트림을 `bytes.lines` 로 읽으면
     // 안 되는 이유다. AsyncLineSequence 는 연속 개행 사이의 빈 줄을 방출하지 않으므로,
     // 라인만 이어붙이면 정확히 아래 모양이 되고 이벤트가 영영 만들어지지 않는다.
-    // 스트림은 바이트로 누적해 원본 개행을 보존해야 한다(ConsoleClient.events).
+    // 스트림은 바이트로 누적해 원본 개행을 보존해야 한다(SSEByteAccumulator).
     do {
         var buffer = ""
         buffer += "id: 1\ndata: {\"type\":\"state.changed\",\"agentType\":\"PM\",\"state\":\"IN_PROGRESS\"}\n"
@@ -120,5 +120,72 @@ func runSSEParserTests(_ t: TestRunner) {
         let events = parseSSELine(&buffer)
         t.expectEqual(events.count, 0, "빈 줄이 없으면 이벤트가 나오지 않는다")
         t.expect(!buffer.isEmpty, "구분자를 못 만나 전부 버퍼에 잔류")
+    }
+
+    runSSEByteAccumulatorTests(t)
+}
+
+/// 스트림 조립기(바이트 → 이벤트) 검증. 실제 앱이 SSE 를 읽는 경로와 같은 코드다.
+/// 여기서 막지 못하면 "이벤트가 한 건도 안 온다" 가 조용히 재발한다.
+private func runSSEByteAccumulatorTests(_ t: TestRunner) {
+    t.suite("SSEByteAccumulator")
+
+    let payload = "{\"type\":\"state.changed\",\"agentType\":\"PM\",\"state\":\"IN_PROGRESS\"}"
+    let second = "{\"type\":\"state.changed\",\"agentType\":\"BE\",\"state\":\"COMPLETED\"}"
+
+    /// 문자열을 바이트로 흘려넣고 누적된 이벤트를 모은다(실제 스트림과 같은 순서).
+    func feed(_ chunks: [String], into accumulator: inout SSEByteAccumulator) -> [ConsoleEvent] {
+        var events: [ConsoleEvent] = []
+        for chunk in chunks {
+            for byte in Array(chunk.utf8) {
+                events.append(contentsOf: accumulator.consume(byte))
+            }
+        }
+        return events
+    }
+
+    // LF 프레이밍 — 현재 백엔드(NestJS @Sse)가 실제로 보내는 형태.
+    do {
+        var accumulator = SSEByteAccumulator()
+        let events = feed(["id: 1\ndata: \(payload)\n\nid: 2\ndata: \(second)\n\n"], into: &accumulator)
+        t.expectEqual(events.count, 2, "LF 프레이밍 2건 수신")
+    }
+
+    // CRLF 프레이밍 — SSE 스펙이 허용하고 프록시가 끼면 나올 수 있다.
+    do {
+        var accumulator = SSEByteAccumulator()
+        let events = feed(
+            ["id: 1\r\ndata: \(payload)\r\n\r\nid: 2\r\ndata: \(second)\r\n\r\n"], into: &accumulator
+        )
+        t.expectEqual(events.count, 2, "CRLF 프레이밍도 2건 수신")
+        if case let .stateChanged(agentType, state) = events.first {
+            t.expectEqual(agentType, "PM", "CRLF payload 보존 — agentType")
+            t.expectEqual(state, .inProgress, "CRLF payload 보존 — state")
+        } else {
+            t.fail("CRLF 첫 이벤트는 stateChanged 여야 함")
+        }
+    }
+
+    // CR 단독 프레이밍 — 스펙상 유효한 세 번째 구분자.
+    do {
+        var accumulator = SSEByteAccumulator()
+        let events = feed(["data: \(payload)\r\r"], into: &accumulator)
+        t.expectEqual(events.count, 1, "CR 단독 프레이밍도 수신")
+    }
+
+    // 청크 경계가 이벤트 한가운데를 갈라도 손실 없이 재조립된다(TCP 는 경계를 보장하지 않는다).
+    do {
+        var accumulator = SSEByteAccumulator()
+        let whole = "data: \(payload)\n\n"
+        let cut = whole.index(whole.startIndex, offsetBy: 11)
+        let events = feed([String(whole[..<cut]), String(whole[cut...])], into: &accumulator)
+        t.expectEqual(events.count, 1, "청크가 쪼개져도 1건으로 재조립")
+    }
+
+    // 구분자 없이 라인만 이어지면 한 건도 안 나온다 — `bytes.lines` 회귀의 시그니처.
+    do {
+        var accumulator = SSEByteAccumulator()
+        let events = feed(["id: 1\ndata: \(payload)\nid: 2\ndata: \(second)\n"], into: &accumulator)
+        t.expectEqual(events.count, 0, "빈 줄 없는 스트림은 이벤트 0건")
     }
 }
