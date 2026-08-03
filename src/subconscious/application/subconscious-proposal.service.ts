@@ -41,6 +41,16 @@ const extractPrReference = (changeKey: string): string | null =>
     ? changeKey.slice(GITHUB_PR_KEY_PREFIX.length)
     : null;
 
+// 'github:pr:owner/repo#123' → 'owner/repo'. PR key 가 아니면 null.
+const extractRepoFromPrKey = (changeKey: string): string | null => {
+  const reference = extractPrReference(changeKey);
+  if (reference === null) {
+    return null;
+  }
+  const [repo] = reference.split('#');
+  return repo !== undefined && repo.length > 0 ? repo : null;
+};
+
 const resolveDispatchText = (
   agentType: AgentType,
   changeKey: string,
@@ -101,6 +111,30 @@ export class SubconsciousProposalService implements ProposalEmitter {
     change: StateChange;
     decision: GateDecision;
   }): Promise<void> {
+    // 스윕(PR_REVIEW_SWEEP)이 이미 자동으로 리뷰·게시하는 레포는 카드를 만들지 않는다.
+    // 눌러도 같은 리뷰를 한 번 더 돌릴 뿐이고, 안 누르면 만료 카드만 슬랙에 쌓인다.
+    if (
+      this.isAutoReviewedRepo(decision.suggestedAgentType!, decision.changeKey)
+    ) {
+      this.logger.log(
+        `changeKey="${decision.changeKey}" 는 PR 리뷰 스윕이 자동 처리하는 레포 — 제안 카드 생략`,
+      );
+      return;
+    }
+
+    // 같은 대상에 아직 응답하지 않은 카드가 있으면 새로 만들지 않는다. PR 이 갱신될 때마다
+    // 카드가 하나씩 늘어 만료 카드가 쌓이던 문제 (2026-08-03: #961 한 건에 카드 4장).
+    const pending = await this.repository.hasPending(
+      ownerUserId,
+      decision.changeKey,
+    );
+    if (pending) {
+      this.logger.log(
+        `changeKey="${decision.changeKey}" 에 미응답 제안 카드가 이미 있음 — 중복 생성 생략`,
+      );
+      return;
+    }
+
     const proposalText =
       decision.proposalText ?? `${change.kind} ${change.item.summary}`;
 
@@ -215,6 +249,30 @@ export class SubconsciousProposalService implements ProposalEmitter {
         DomainStatus.PRECONDITION_FAILED,
       );
     }
+  }
+
+  // 스윕이 실제로 도는 레포인지 — 기능이 꺼져 있으면(PR_REVIEW_LOOP_ENABLED != true)
+  // 자동 리뷰가 없으므로 카드가 유일한 통로다. 그때는 막지 않는다.
+  private isAutoReviewedRepo(agentType: AgentType, changeKey: string): boolean {
+    if (agentType !== AgentType.CODE_REVIEWER) {
+      return false;
+    }
+    if (this.configService.get<string>('PR_REVIEW_LOOP_ENABLED') !== 'true') {
+      return false;
+    }
+    const repo = extractRepoFromPrKey(changeKey);
+    if (repo === null) {
+      return false;
+    }
+    return this.sweepRepos().includes(repo);
+  }
+
+  private sweepRepos(): string[] {
+    const raw = this.configService.get<string>('PR_REVIEW_INLINE_REPOS') ?? '';
+    return raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   }
 
   private async assertReadyToResolve(

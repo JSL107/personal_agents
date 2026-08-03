@@ -67,6 +67,7 @@ const buildRepository = (
 ): jest.Mocked<SubconsciousProposalRepository> => ({
   create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
+  hasPending: jest.fn().mockResolvedValue(false),
   markStatus: jest.fn().mockResolvedValue(undefined),
   transitionFromPending: jest
     .fn()
@@ -92,13 +93,16 @@ const buildSlackService = (): jest.Mocked<
     .mockResolvedValue({ channelId: 'C-dm', messageTs: '1234.5678' }),
 });
 
-const buildConfigService = (ttlMs?: number): jest.Mocked<ConfigService> =>
+const buildConfigService = (
+  ttlMs?: number,
+  env: Record<string, string> = {},
+): jest.Mocked<ConfigService> =>
   ({
     get: jest.fn().mockImplementation((key: string) => {
       if (key === 'SUBCONSCIOUS_PROPOSAL_TTL_MS') {
         return ttlMs !== undefined ? String(ttlMs) : undefined;
       }
-      return undefined;
+      return env[key];
     }),
   }) as unknown as jest.Mocked<ConfigService>;
 
@@ -108,12 +112,14 @@ const buildService = ({
   slack = buildSlackService(),
   ttlMs,
   transitionFromPendingResult,
+  env,
 }: {
   repository?: jest.Mocked<SubconsciousProposalRepository>;
   router?: jest.Mocked<IdaeriRouterPort>;
   slack?: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
   ttlMs?: number;
   transitionFromPendingResult?: boolean;
+  env?: Record<string, string>;
 } = {}): {
   service: SubconsciousProposalService;
   repository: jest.Mocked<SubconsciousProposalRepository>;
@@ -122,7 +128,7 @@ const buildService = ({
 } => {
   const resolvedRepository =
     repository ?? buildRepository(buildRecord(), transitionFromPendingResult);
-  const configService = buildConfigService(ttlMs);
+  const configService = buildConfigService(ttlMs, env);
   const service = new SubconsciousProposalService(
     resolvedRepository,
     router,
@@ -157,6 +163,74 @@ describe('SubconsciousProposalService.emit', () => {
       'C-dm',
       '1234.5678',
     );
+  });
+
+  it('PR 리뷰 스윕이 자동 처리하는 레포면 카드를 만들지 않는다', async () => {
+    const { service, repository, slack } = buildService({
+      env: {
+        PR_REVIEW_LOOP_ENABLED: 'true',
+        PR_REVIEW_INLINE_REPOS: 'other/x, owner/repo',
+      },
+    });
+
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+    });
+
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(slack.postProposalMessage).not.toHaveBeenCalled();
+  });
+
+  it('스윕이 꺼져 있으면 allowlist 레포라도 카드를 만든다 (카드가 유일한 통로)', async () => {
+    const { service, repository } = buildService({
+      env: { PR_REVIEW_INLINE_REPOS: 'owner/repo' },
+    });
+
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+    });
+
+    expect(repository.create).toHaveBeenCalled();
+  });
+
+  it('스윕 allowlist 밖 레포면 카드를 만든다', async () => {
+    const { service, repository } = buildService({
+      env: {
+        PR_REVIEW_LOOP_ENABLED: 'true',
+        PR_REVIEW_INLINE_REPOS: 'other/x',
+      },
+    });
+
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+    });
+
+    expect(repository.create).toHaveBeenCalled();
+  });
+
+  it('같은 대상에 미응답 카드가 있으면 중복 생성하지 않는다', async () => {
+    const repository = buildRepository();
+    repository.hasPending.mockResolvedValue(true);
+    const { service, slack } = buildService({ repository });
+
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+    });
+
+    expect(repository.hasPending).toHaveBeenCalledWith(
+      OWNER,
+      'github:pr:owner/repo#1',
+    );
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(slack.postProposalMessage).not.toHaveBeenCalled();
   });
 
   it('Slack 발송 실패해도 proposal DB row 는 살아남는다 (graceful)', async () => {
