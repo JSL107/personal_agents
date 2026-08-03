@@ -311,6 +311,44 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(github.resolveReviewThread).not.toHaveBeenCalled();
   });
 
+  it('PR이 종료된 채 스레드만 resolve된 카드는 STALE로 남긴다', async () => {
+    // OPEN 인 채 resolvedAt 만 채우면 다음 회차 조회(status='OPEN' AND resolvedAt IS NULL)
+    // 에서 빠져 "아직 안 봄" 과 "결론 없이 끝남" 이 영원히 구분되지 않는다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: false,
+      threads: [reviewThread({ isResolved: true })],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ stale: 1, resolved: 1 });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'STALE',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
+  it('열린 PR에서 스레드만 resolve되면 상태를 바꾸지 않고 닫힘만 기록한다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [reviewThread({ isResolved: true })],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ stale: 0, resolved: 1 });
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(repository.markThreadResolved).toHaveBeenCalledWith(1);
+  });
+
   it('owner 답글은 PR 단위 1회 배치 판정하고 기각 이유를 적재한다', async () => {
     const { usecase, github, repository, judge, episodic } =
       buildDependencies();
@@ -357,6 +395,44 @@ describe('HarvestReviewSignalsUsecase', () => {
         content: '트랜잭션 밖에서 저장한다\n(기각 이유: 의도된 동작)',
       }),
     );
+  });
+
+  it('UNCLEAR 판정은 judged 가 아니라 skipped 로만 센다', async () => {
+    // 판정기는 입력 전건에 결과를 돌려주므로(실패분은 UNCLEAR) 판정 결과 개수를
+    // 그대로 judged 에 더하면 시도 건수가 되고, UNCLEAR 가 skipped 로도 세어져
+    // 같은 카드가 두 번 집계된다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([
+      card(),
+      card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
+    ]);
+    const reply = (databaseId: number, body: string) => ({
+      databaseId,
+      authorLogin: 'owner',
+      body,
+      createdAt: '2026-07-31T01:00:00Z',
+      reactions: [],
+    });
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({ replies: [reply(600, '수정했습니다')] }),
+        reviewThread({
+          databaseId: 556,
+          replies: [reply(601, '이건 무슨 뜻인가요?')],
+        }),
+      ],
+    });
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'ACCEPTED', reason: '수정함' },
+      { id: 2, verdict: 'UNCLEAR', reason: '' },
+    ]);
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ acked: 1, judged: 1, skipped: 1 });
+    expect(repository.markDecided).toHaveBeenCalledTimes(1);
   });
 
   it('resolve 실패해도 결정 상태를 유지하고 markThreadResolved만 생략한다', async () => {

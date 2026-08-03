@@ -1,4 +1,5 @@
 import { ReviewThread } from '../../github/domain/port/github-client.port';
+import { IDAERI_REVIEW_MARKER } from './finding-comment.body';
 import { findThreadForComment, resolveHarvestSignal } from './harvest-signal';
 
 const thread = (overrides: Partial<ReviewThread> = {}): ReviewThread => ({
@@ -212,6 +213,45 @@ describe('resolveHarvestSignal', () => {
     expect(resolve({ targetThread })).toEqual({
       kind: 'NEEDS_JUDGE',
       replyBody: '첫 답글\n둘째 답글',
+    });
+  });
+
+  it('봇이 같은 스레드에 단 후속 코멘트는 사람 답글로 보지 않는다', () => {
+    // 이대리는 owner 토큰으로 코멘트를 달아 authorLogin 이 owner 와 같다.
+    // 표식으로 거르지 않으면 자기 글을 사람 답글로 읽어 LLM 에게 판정시킨다.
+    const targetThread = thread({
+      comments: [
+        thread().comments[0],
+        {
+          databaseId: 556,
+          authorLogin: 'owner',
+          body: `${IDAERI_REVIEW_MARKER} · CORRECTNESS / MUST_FIX\n\n같은 스레드 추가 지적`,
+          createdAt: '2026-07-31T01:00:00Z',
+          reactions: [],
+        },
+      ],
+    });
+
+    expect(resolve({ targetThread })).toEqual({ kind: 'NONE' });
+  });
+
+  it('표식 없는 owner 코멘트는 사람 답글로 본다', () => {
+    const targetThread = thread({
+      comments: [
+        thread().comments[0],
+        {
+          databaseId: 556,
+          authorLogin: 'owner',
+          body: '이건 의도된 동작입니다',
+          createdAt: '2026-07-31T01:00:00Z',
+          reactions: [],
+        },
+      ],
+    });
+
+    expect(resolve({ targetThread })).toEqual({
+      kind: 'NEEDS_JUDGE',
+      replyBody: '이건 의도된 동작입니다',
     });
   });
 
