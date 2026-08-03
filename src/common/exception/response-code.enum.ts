@@ -37,6 +37,7 @@ export enum ResponseCode {
 
   // PO Shadow — PoShadowErrorCode 와 1:1 동기화
   PO_SHADOW_NO_RECENT_PLAN = 'PO_SHADOW_NO_RECENT_PLAN',
+  PO_SHADOW_STALE_PLAN = 'PO_SHADOW_STALE_PLAN',
   PO_SHADOW_INVALID_MODEL_OUTPUT = 'PO_SHADOW_INVALID_MODEL_OUTPUT',
 
   // Vacation — VacationErrorCode 와 1:1 동기화

@@ -46,6 +46,7 @@ describe('PoShadowAutopilotTask', () => {
       slackUserId: 'U123',
       extraContext: '',
       triggerType: TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+      enforcePlanFreshness: true,
     });
   });
 
@@ -61,7 +62,19 @@ describe('PoShadowAutopilotTask', () => {
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
   });
 
-  it('NO_RECENT_PLAN이 아닌 PoShadowException은 다시 던진다', async () => {
+  it('STALE_PLAN이면 정상 미실행으로 skip한다', async () => {
+    usecase.execute.mockRejectedValue(
+      new PoShadowException({
+        code: PoShadowErrorCode.STALE_PLAN,
+        message: '검토할 PM plan이 오래됨',
+        status: DomainStatus.PRECONDITION_FAILED,
+      }),
+    );
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+  });
+
+  it('skip 대상이 아닌 PoShadowException은 다시 던진다', async () => {
     const error = new PoShadowException({
       code: PoShadowErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 출력 오류',

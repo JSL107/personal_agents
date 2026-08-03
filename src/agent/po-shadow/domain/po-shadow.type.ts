@@ -6,6 +6,7 @@ export interface GeneratePoShadowInput {
   extraContext: string;
   slackUserId: string;
   triggerType?: TriggerType;
+  enforcePlanFreshness?: boolean;
 }
 
 // PO Shadow 분석 결과 — 기획서 §7.5 PO Shadow Mode 의 4가지 책임에 1:1 매핑.

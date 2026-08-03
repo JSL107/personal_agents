@@ -30,11 +30,13 @@ export class PoShadowAutopilotTask implements AutopilotTask {
         slackUserId: ownerSlackUserId,
         extraContext: '',
         triggerType: TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+        enforcePlanFreshness: true,
       });
     } catch (error) {
       if (
         error instanceof PoShadowException &&
-        error.poShadowErrorCode === PoShadowErrorCode.NO_RECENT_PLAN
+        (error.poShadowErrorCode === PoShadowErrorCode.NO_RECENT_PLAN ||
+          error.poShadowErrorCode === PoShadowErrorCode.STALE_PLAN)
       ) {
         return { skip: true };
       }
