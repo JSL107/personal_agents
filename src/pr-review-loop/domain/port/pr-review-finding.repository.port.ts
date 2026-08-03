@@ -19,6 +19,10 @@ export interface MarkDecidedInput {
   status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'STALE'>;
   rejectReason: string | null;
   githubThreadNodeId: string | null;
+  // 스레드가 이미 닫혀 있어 결론과 닫힘을 함께 확정할 때 true.
+  // 두 번의 쓰기로 나누면 첫 쓰기 뒤 실패했을 때 status 가 OPEN 이 아니게 되어
+  // 다음 회차 조회(status='OPEN' AND resolvedAt IS NULL)에서 빠지고 재시도가 사라진다.
+  resolveThread?: boolean;
 }
 
 export interface PrReviewFindingRepositoryPort {
