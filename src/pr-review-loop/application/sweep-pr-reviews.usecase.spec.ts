@@ -312,7 +312,7 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toEqual([]);
   });
 
-  it('스윕 1회의 신규 리뷰는 상한(5건)까지만', async () => {
+  it('스윕 1회의 신규 리뷰는 상한(3건)까지만', async () => {
     const many = Array.from({ length: 8 }, (_, index) => ({
       ...OPEN_PR,
       number: 200 + index,
@@ -321,10 +321,10 @@ describe('SweepPrReviewsUsecase', () => {
 
     await buildUsecase(ENABLED).execute();
 
-    expect(reviewUsecase.execute).toHaveBeenCalledTimes(5);
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
-  it('레포 간 상한(5건)은 합산으로 적용된다', async () => {
+  it('레포 간 상한(3건)은 합산으로 적용된다', async () => {
     const buildPrsForRepo = (repo: string) =>
       Array.from({ length: 3 }, (_, index) => ({
         ...OPEN_PR,
@@ -341,7 +341,7 @@ describe('SweepPrReviewsUsecase', () => {
       PR_REVIEW_INLINE_REPOS: 'org/repo-a,org/repo-b,org/repo-c',
     }).execute();
 
-    expect(reviewUsecase.execute).toHaveBeenCalledTimes(5);
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
   it('한 PR 의 실패가 다른 PR 을 막지 않는다', async () => {

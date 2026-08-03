@@ -31,7 +31,7 @@ const buildGuardKey = (groupKey: string, firedAtKst: string): string =>
 // stalled 로 재큐된 같은 job 만 같은 값을 가진다(다음 스케줄 슬롯은 새 job = 새 키).
 //
 // 재진입 확인에 위 발송 가드(날짜 키)를 쓰면 안 된다: 하루에 여러 번 도는 그룹
-// (preview-sweeper `*/10`, pr-review-sweep `*/15`, run-sweeper 매시간)은 그날 첫 발송으로
+// (preview-sweeper `*/10`, pr-review-sweep `*/5`, run-sweeper 매시간)은 그날 첫 발송으로
 // 날짜 키가 생기는 순간 남은 슬롯 전부가 진입에서 끊겨, 알림뿐 아니라 만료 카드 정리·좀비 run
 // 정리 같은 실제 작업까지 하루 종일 멈춘다(날짜 키 TTL 25h).
 const buildSlotKey = (groupKey: string, slotId: string): string =>
@@ -154,7 +154,7 @@ export class AutopilotOrchestrator {
     );
     if (!firstRun) {
       // 발송만 막혔을 뿐 task 는 전부 돌았다 = 이 슬롯은 완주다. 표식을 남기지 않으면
-      // 하루에 여러 번 도는 그룹(preview-sweeper `*/10`, pr-review-sweep `*/15`,
+      // 하루에 여러 번 도는 그룹(preview-sweeper `*/10`, pr-review-sweep `*/5`,
       // run-sweeper 매시간)은 그날 첫 발송 이후 모든 슬롯이 이 경로로 끝나면서 표식 없이
       // 종료되고, 그 슬롯이 stalled 로 재큐되면 진입 확인을 통과해 task 를 처음부터 전부
       // 다시 돈다 — 이 가드가 막으려던 자기 증폭 루프가 그대로 남는다.

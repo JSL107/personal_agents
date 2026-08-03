@@ -688,7 +688,7 @@ describe('AutopilotOrchestrator', () => {
     );
   });
 
-  // 회귀 방지 — preview-sweeper(*/10) / pr-review-sweep(*/15) / run-sweeper(매시간) 처럼 하루에
+  // 회귀 방지 — preview-sweeper(*/10) / pr-review-sweep(*/5) / run-sweeper(매시간) 처럼 하루에
   // 여러 번 도는 그룹은, 그날 이미 한 번 발송해 날짜 가드가 소비된 뒤에도 다음 슬롯의 실제
   // 작업(만료 카드 정리·좀비 run 정리)이 계속 실행돼야 한다. 발송만 중복 차단된다.
   it('같은 날 다음 슬롯 → 날짜 가드가 소진돼도 task 는 실행된다 (발송만 차단)', async () => {

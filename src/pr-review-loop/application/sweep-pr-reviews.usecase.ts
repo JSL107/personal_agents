@@ -16,7 +16,12 @@ import { SweepPullRequestResult } from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
 
 // 스윕 1회에 새로 리뷰할 PR 최대 개수. LLM 호출 폭주를 막는 상한.
-const NEW_REVIEW_LIMIT_PER_SWEEP = 5;
+//
+// 5 → 3: 스윕 주기를 15분에서 5분으로 줄이면서 함께 낮춘다. CLI 타임아웃이 300초(#198)라
+// 최악 5건이면 1500초가 걸려 worker lockDuration(450초)을 크게 넘기고, 그러면 BullMQ 가
+// stalled 로 보고 재큐하는 상황을 스스로 만든다. 3건이면 실측 리뷰 시간(30~80초) 기준
+// 240초로 여유가 있다. 주기가 3배 짧아졌으므로 처리량은 시간당 20건 → 36건으로 오히려 는다.
+const NEW_REVIEW_LIMIT_PER_SWEEP = 3;
 // 열린 PR 조회 기간. 오래 방치된 PR 까지 매번 훑지 않는다.
 const OPEN_PR_LOOKBACK_DAYS = 14;
 const OPEN_PR_FETCH_LIMIT = 20;
