@@ -7,7 +7,7 @@ import { ConsoleReadService } from './console-read.service';
 
 describe('ConsoleReadService', () => {
   let agentRunService: jest.Mocked<
-    Pick<AgentRunService, 'findActiveRuns' | 'findRecentlyFailedRuns'>
+    Pick<AgentRunService, 'findActiveRuns' | 'findRecentlyFinishedRuns'>
   >;
   let findAllOpenPreviews: jest.Mocked<
     Pick<FindAllOpenPreviewsUsecase, 'execute'>
@@ -18,7 +18,7 @@ describe('ConsoleReadService', () => {
   beforeEach(() => {
     agentRunService = {
       findActiveRuns: jest.fn().mockResolvedValue([]),
-      findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
+      findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
     };
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     localSessions = { list: jest.fn().mockReturnValue([]) };
@@ -70,8 +70,8 @@ describe('ConsoleReadService', () => {
   });
 
   it('최근 실패한 에이전트는 FAILED 로 복원된다', async () => {
-    agentRunService.findRecentlyFailedRuns.mockResolvedValue([
-      { agentType: 'PM' },
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PM', status: 'FAILED' },
     ]);
 
     const snapshot = await service.getSnapshot();
@@ -79,9 +79,44 @@ describe('ConsoleReadService', () => {
     expect(
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('FAILED');
-    expect(agentRunService.findRecentlyFailedRuns).toHaveBeenCalledWith({
+    expect(agentRunService.findRecentlyFinishedRuns).toHaveBeenCalledWith({
       withinMinutes: 360,
     });
+  });
+
+  // 이 경로가 예전에는 COMPLETED 를 한 번도 만들지 못했다(조회가 실패만 줘서
+  // latestFinishedStatus 에 'SUCCEEDED' 를 넘길 방법이 없었다). 그래서 SSE 로 완료를 받은
+  // 뒤 앱을 껐다 켜면 그 에이전트가 "대기중" 으로 되살아났고 요약의 완료 수는 늘 0 이었다.
+  it('최근 완료한 에이전트는 COMPLETED 로 복원된다', async () => {
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PM', status: 'SUCCEEDED' },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
+    ).toBe('COMPLETED');
+  });
+
+  it('같은 창 안에서 성공·실패가 섞여도 각자 자기 결과로 복원된다', async () => {
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PM', status: 'SUCCEEDED' },
+      { agentType: 'BE', status: 'FAILED' },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
+    ).toBe('COMPLETED');
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'BE')?.state,
+    ).toBe('FAILED');
+    // 창 안에 종료 기록이 없는 에이전트는 대기로 남는다(과표시 방지).
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'CTO')?.state,
+    ).toBe('WAITING');
   });
 
   it('실패 복원보다 활성 런(IN_PROGRESS)이 우선한다', async () => {
@@ -96,8 +131,8 @@ describe('ConsoleReadService', () => {
         endedAt: null,
       },
     ]);
-    agentRunService.findRecentlyFailedRuns.mockResolvedValue([
-      { agentType: 'PM' },
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PM', status: 'FAILED' },
     ]);
 
     const snapshot = await service.getSnapshot();

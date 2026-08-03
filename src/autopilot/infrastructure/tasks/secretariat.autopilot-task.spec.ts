@@ -10,7 +10,7 @@ describe('SecretariatAutopilotTask', () => {
     activeRuns?: unknown[];
     openPreviews?: unknown[];
     failedRuns?: unknown[];
-    recentlyFailed?: unknown[];
+    recentlyFinished?: unknown[];
   }) => {
     const agentRunService = {
       aggregateSucceededCounts: jest
@@ -20,9 +20,9 @@ describe('SecretariatAutopilotTask', () => {
       findFailedRunsSince: jest
         .fn()
         .mockResolvedValue(overrides.failedRuns ?? []),
-      findRecentlyFailedRuns: jest
+      findRecentlyFinishedRuns: jest
         .fn()
-        .mockResolvedValue(overrides.recentlyFailed ?? []),
+        .mockResolvedValue(overrides.recentlyFinished ?? []),
     } as unknown as AgentRunService;
     const findAllOpenPreviews = {
       execute: jest.fn().mockResolvedValue(overrides.openPreviews ?? []),
@@ -52,7 +52,7 @@ describe('SecretariatAutopilotTask', () => {
           endedAt: new Date('2026-08-02T09:00:00.000Z'),
         },
       ],
-      recentlyFailed: [{ agentType: 'CODE_REVIEWER' }],
+      recentlyFinished: [{ agentType: 'CODE_REVIEWER', status: 'FAILED' }],
     });
 
     const result = await run(task);
@@ -68,6 +68,28 @@ describe('SecretariatAutopilotTask', () => {
     );
     // 실패 1건은 결정거리가 아니다 — 다음 슬롯이 재시도한다.
     expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');
+  });
+
+  // `unresolvedAgentTypes` 는 "실패 이력이 있어도 최신 종료가 성공이면 막힌 것에서 뺀다" 는
+  // 화이트리스트다. 조회(findRecentlyFinishedRuns)가 성공까지 함께 주게 됐으므로, 여기서
+  // FAILED 만 걸러내지 않으면 복구된 에이전트가 다시 "막힌 것" 으로 올라온다.
+  it('실패 후 성공으로 복구된 에이전트는 막힌 것에서 빠진다', async () => {
+    const { task } = buildTask({
+      // 완료 한 줄을 함께 둔다 — 막힌 것까지 비면 보고 자체가 skip 되어 검증할 텍스트가 없다.
+      succeeded: [{ agentType: 'PM', succeeded: 1 }],
+      failedRuns: [
+        {
+          agentType: 'CODE_REVIEWER',
+          reason: '모델 호출 실패 (CHATGPT)',
+          endedAt: new Date('2026-08-02T09:00:00.000Z'),
+        },
+      ],
+      recentlyFinished: [{ agentType: 'CODE_REVIEWER', status: 'SUCCEEDED' }],
+    });
+
+    const text = (await run(task)).summaryText ?? '';
+
+    expect(text).toContain('*④ 막힌 것* — 없음');
   });
 
   it('owner 가 아닌 사용자의 승인 카드는 싣지 않는다', async () => {
@@ -106,7 +128,7 @@ describe('SecretariatAutopilotTask', () => {
     expect(agentRunService.findFailedRunsSince).toHaveBeenCalledWith({
       withinMinutes: 1440,
     });
-    expect(agentRunService.findRecentlyFailedRuns).toHaveBeenCalledWith({
+    expect(agentRunService.findRecentlyFinishedRuns).toHaveBeenCalledWith({
       withinMinutes: 1440,
     });
   });
