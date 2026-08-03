@@ -22,6 +22,11 @@ model AgentRun {
   durationMs    Int?      @map("duration_ms")
   inputSnapshot Json      @map("input_snapshot")
   output        Json?
+  // 직무 계약(src/agent-registry/agent-contract.ts) 검수 결과. 위반이 없으면 null.
+  // output 안에 섞지 않는 이유: 기존 output 소비자(콘솔 read API, 리포트 포매터)가
+  // 예상하지 못한 키를 만나 깨지는 것을 피한다.
+  // 1단계는 관측 모드 — 위반이 있어도 status 는 SUCCEEDED 그대로 둔다.
+  contractViolations Json? @map("contract_violations")
   startedAt     DateTime  @default(now()) @map("started_at")
   endedAt       DateTime? @map("ended_at")
 

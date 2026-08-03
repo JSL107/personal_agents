@@ -65,6 +65,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     output,
     cliProvider,
     durationMs,
+    contractViolations,
   }: FinishAgentRunInput): Promise<void> {
     await this.prisma.agentRun.update({
       where: { id },
@@ -74,6 +75,8 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         cliProvider,
         durationMs,
         output: (output ?? null) as unknown as Prisma.InputJsonValue,
+        contractViolations: (contractViolations ??
+          null) as unknown as Prisma.InputJsonValue,
         endedAt: new Date(),
       },
     });

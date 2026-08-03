@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
+import {
+  AGENT_CONTRACTS,
+  DEPARTMENT_LABEL,
+} from '../../agent-registry/agent-contract';
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { STALE_RUN_THRESHOLD_MINUTES } from '../../agent-run/domain/agent-run.type';
@@ -70,6 +74,7 @@ export class ConsoleReadService {
         isIntegrationBlocked: false,
         isQueuedWaiting: false,
       });
+      const contract = AGENT_CONTRACTS[entry.agentType];
       return {
         agentType: entry.agentType,
         displayName: entry.displayName,
@@ -77,6 +82,9 @@ export class ConsoleReadService {
         description: entry.description,
         state,
         bubble: bubbleForState(state),
+        department: contract.department,
+        departmentLabel: DEPARTMENT_LABEL[contract.department],
+        job: contract.job,
       };
     });
 

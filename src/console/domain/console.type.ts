@@ -31,6 +31,16 @@ export interface ConsoleAgent {
   readonly state: ConsoleAgentState;
   /** 상태별 말풍선 문구(백엔드가 소유, 앱은 표시만). */
   readonly bubble: string;
+  /**
+   * 소속 부서(`agent-contract.ts` 가 단일 소스) 와 한글 표시명, 그리고 맡은 일 한 줄.
+   *
+   * 콘솔(Swift)은 아직 자체 하드코딩 매핑(`Department.swift`)을 쓴다. 이 필드를
+   * 소비하도록 전환하는 작업은 4단계이며, 그때까지 부서 정의가 두 곳에 존재하는 것은
+   * 의도된 일시적 중복이다.
+   */
+  readonly department: string;
+  readonly departmentLabel: string;
+  readonly job: string;
 }
 
 /** 진행/최근 에이전트 실행 한 건. `parentId` 로 체인 계보 추적. */
