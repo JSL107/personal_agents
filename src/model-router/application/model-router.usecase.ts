@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { buildContractPreamble } from '../../agent-registry/agent-contract';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
@@ -102,12 +103,20 @@ export class ModelRouterUsecase {
     }
 
     const primary = this.resolveProvider(primaryName);
+
+    // 직무 계약 머리말 주입 — 모델이 소속·산출물 규격·근거 요구를 모른 채 답하는 것을 막는다.
+    // 스텁 계약은 null 을 돌려 주입하지 않으므로 기존 프롬프트가 그대로 간다.
+    const preamble = buildContractPreamble(agentType);
+    const routedRequest: CompletionRequest =
+      preamble === null
+        ? request
+        : { ...request, prompt: `${preamble}\n\n${request.prompt}` };
     // route() 소요시간은 실패 시 예외 메시지로 흘려 AgentRun.output 에 보존한다 —
     // 로그는 휘발되지만 AgentRun 은 남으므로, 사후에 "지연이 route 안이었는지 밖이었는지" 를 가른다.
     const startedAtMs = Date.now();
 
     try {
-      const completion = await primary.complete(request);
+      const completion = await primary.complete(routedRequest);
       this.warnIfSlow({
         agentType,
         providerName: primaryName,
@@ -150,7 +159,7 @@ export class ModelRouterUsecase {
 
       const fallback = this.resolveProvider(fallbackName);
       try {
-        const completion = await fallback.complete(request);
+        const completion = await fallback.complete(routedRequest);
         this.warnIfSlow({
           agentType,
           providerName: fallbackName,

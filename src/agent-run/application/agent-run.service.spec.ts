@@ -72,15 +72,62 @@ describe('AgentRunService', () => {
       triggerType: TriggerType.SLACK_COMMAND_TODAY,
       inputSnapshot: { text: 'hi' },
     });
-    expect(repository.finish).toHaveBeenCalledWith({
-      id: 42,
-      status: AgentRunStatus.SUCCEEDED,
-      modelUsed: 'mock-chatgpt',
-      output: plan,
-      // OPS-1 Quota Pane — cliProvider 는 modelUsed 와 동일 값으로 기록, durationMs 는 측정값.
-      cliProvider: 'mock-chatgpt',
-      durationMs: expect.any(Number),
+    // contractViolations 는 직무 계약 검수 결과라 계약이 바뀌면 값도 바뀐다.
+    // 이 테스트의 관심사는 라이프사이클 순서이므로 나머지 인자만 고정한다.
+    // (검수 결과 전달 자체는 아래 두 테스트가 검증한다.)
+    expect(repository.finish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 42,
+        status: AgentRunStatus.SUCCEEDED,
+        modelUsed: 'mock-chatgpt',
+        output: plan,
+        // OPS-1 Quota Pane — cliProvider 는 modelUsed 와 동일 값으로 기록, durationMs 는 측정값.
+        cliProvider: 'mock-chatgpt',
+        durationMs: expect.any(Number),
+      }),
+    );
+  });
+
+  it('계약을 지킨 산출물은 contractViolations 없이 마감한다', async () => {
+    // PM 계약: topPriority / morning / afternoon + 근거 요구.
+    const plan = {
+      topPriority: 'PR #195 마감',
+      morning: '오전 계획',
+      afternoon: '오후 계획',
+    };
+
+    await service.execute({
+      agentType: AgentType.PM,
+      triggerType: TriggerType.SLACK_COMMAND_TODAY,
+      inputSnapshot: { text: 'hi' },
+      run: async () => ({ result: plan, modelUsed: 'mock', output: plan }),
     });
+
+    expect(repository.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ contractViolations: undefined }),
+    );
+  });
+
+  it('계약 위반은 기록하되 실행 상태는 SUCCEEDED 로 둔다 (관측 모드)', async () => {
+    // afternoon 누락 + 근거 없음.
+    const plan = { topPriority: '근거 없는 과제', morning: '오전' };
+
+    await service.execute({
+      agentType: AgentType.PM,
+      triggerType: TriggerType.SLACK_COMMAND_TODAY,
+      inputSnapshot: { text: 'hi' },
+      run: async () => ({ result: plan, modelUsed: 'mock', output: plan }),
+    });
+
+    expect(repository.finish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: AgentRunStatus.SUCCEEDED,
+        contractViolations: [
+          { rule: 'missingField', detail: 'afternoon' },
+          { rule: 'noEvidence', detail: AgentType.PM },
+        ],
+      }),
+    );
   });
 
   it('evidence 입력은 각각 recordEvidence 로 저장된다', async () => {

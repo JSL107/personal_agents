@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { inspectContract } from '../../agent-registry/contract-inspector';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import {
   ConsoleAgentState,
@@ -145,6 +146,19 @@ export class AgentRunService {
 
       const execution = await run({ agentRunId: id });
 
+      // 직무 계약 검수 — LLM 을 쓰지 않는 결정론 검사라 비용·지연이 없다.
+      // 1단계는 관측 모드다: 위반이 있어도 SUCCEEDED 를 유지하고 기록만 남긴다.
+      // 기존 산출물이 새 계약을 얼마나 지키는지 모르는 상태에서 반려를 걸면
+      // 매일 도는 cron 이 무더기로 막히기 때문이다.
+      const contractViolations = inspectContract(agentType, execution.output);
+      if (contractViolations.length > 0) {
+        this.logger.warn(
+          `[계약 위반] ${agentType} run#${id} — ${contractViolations
+            .map((violation) => `${violation.rule}(${violation.detail})`)
+            .join(', ')}`,
+        );
+      }
+
       await this.repository.finish({
         id,
         status: AgentRunStatus.SUCCEEDED,
@@ -152,6 +166,8 @@ export class AgentRunService {
         output: execution.output,
         cliProvider: execution.modelUsed,
         durationMs: Date.now() - startMs,
+        contractViolations:
+          contractViolations.length > 0 ? contractViolations : undefined,
       });
 
       // 콘솔 관제 — 성공 종료 알림(run.finished + COMPLETED).

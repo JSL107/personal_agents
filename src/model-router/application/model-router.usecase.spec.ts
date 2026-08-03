@@ -56,7 +56,11 @@ describe('ModelRouterUsecase', () => {
         request: { prompt: 'hi' },
       });
 
-      expect(chatgptProvider.complete).toHaveBeenCalledWith({ prompt: 'hi' });
+      // 계약이 있는 에이전트는 프롬프트 앞에 사규 머리말이 붙는다(buildContractPreamble).
+      // 이 테스트의 목적은 라우팅 대상 provider 확인이므로 원본 프롬프트 보존만 본다.
+      expect(chatgptProvider.complete).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: expect.stringContaining('hi') }),
+      );
       expect(result.provider).toBe(ModelProviderName.CHATGPT);
       // Claude 는 primary·fallback 어디서도 불리지 않는다.
       expect(claudeProvider.complete).not.toHaveBeenCalled();
