@@ -32,6 +32,7 @@ const HARVEST_COUNT_LABELS: {
 }[] = [
   { key: 'acked', label: '👍' },
   { key: 'rejected', label: '👎' },
+  { key: 'fixed', label: '🔧 해소' },
   { key: 'stale', label: '종료' },
   { key: 'resolved', label: '스레드 정리' },
 ];

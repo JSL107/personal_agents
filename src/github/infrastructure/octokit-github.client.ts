@@ -16,6 +16,7 @@ import {
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
   AddIssueLabelsInput,
+  CompareCommitsOptions,
   GetPullRequestDiffOptions,
   GithubClientPort,
   ListAssignedTasksOptions,
@@ -294,6 +295,38 @@ export class OctokitGithubClient implements GithubClientPort {
       return { diff, truncated: false, bytes };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} diff 조회 실패`);
+    }
+  }
+
+  async compareCommits({
+    repo,
+    baseSha,
+    headSha,
+    maxBytes = DEFAULT_DIFF_MAX_BYTES,
+  }: CompareCommitsOptions): Promise<PullRequestDiff> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+
+    try {
+      const response = await this.octokit!.rest.repos.compareCommits({
+        owner,
+        repo: repoName,
+        base: baseSha,
+        head: headSha,
+        mediaType: { format: 'diff' },
+      });
+      const diff = response.data as unknown as string;
+      const bytes = Buffer.byteLength(diff, 'utf-8');
+
+      if (bytes > maxBytes) {
+        return { diff: diff.slice(0, maxBytes), truncated: true, bytes };
+      }
+      return { diff, truncated: false, bytes };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `커밋 비교 실패 (${baseSha.slice(0, 7)}..${headSha.slice(0, 7)})`,
+      );
     }
   }
 

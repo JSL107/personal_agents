@@ -16,7 +16,7 @@ export interface HasAnyForPullRequestInput {
 
 export interface MarkDecidedInput {
   id: number;
-  status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'STALE'>;
+  status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'FIXED' | 'STALE'>;
   rejectReason: string | null;
   githubThreadNodeId: string | null;
   // 스레드가 이미 닫혀 있어 결론과 닫힘을 함께 확정할 때 true.
