@@ -218,6 +218,12 @@ final class OfficeScene: SKScene {
                 let node = SKSpriteNode(texture: texture)
                 node.size = CGSize(width: tileSize, height: tileSize)
                 node.position = centerPoint(tile)
+                // 벽 원본은 밝은 회색이다. 칸막이로 깔면 흰 격자가 바닥보다 앞으로 튀어나와
+                // 사무실이 아니라 도면처럼 보이므로, 어둡게 눌러 배경으로 물러나게 한다.
+                if plan.floor[row][column] == .wall {
+                    node.color = SKColor(red: 0.26, green: 0.22, blue: 0.20, alpha: 1)
+                    node.colorBlendFactor = 0.66
+                }
                 // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
                 // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
                 // 뒤집어 깔면 그 불일치가 원리적으로 사라진다.
@@ -234,22 +240,40 @@ final class OfficeScene: SKScene {
             .filter { $0.name?.hasPrefix("zone:") == true }
             .forEach { $0.removeFromParent() }
         for zone in plan.zones {
-            let label = SKLabelNode(text: zone.department.label)
-            label.name = "zone:\(zone.department.rawValue)"
-            label.fontName = "Menlo-Bold"
-            label.fontSize = max(9, tileSize * 0.34)
             let palette = agentDepartmentPaletteRGBA(zone.department)
+            // 구역 위쪽 경계 줄(칸막이 벽 또는 통로)에 문패처럼 얹는다. 자리 묶음이 구역
+            // 맨 아래 줄부터 쌓이므로 아래쪽은 책상·사람과 겹친다.
+            let holder = SKNode()
+            holder.name = "zone:\(zone.department.rawValue)"
+            holder.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
+                y: gridOrigin.y + CGFloat(zone.origin.y + zone.height - 1) * tileSize
+                    + tileSize * 0.22
+            )
+
+            let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
+            label.fontName = "Menlo-Bold"
+            label.fontSize = max(10, tileSize * 0.36)
             label.fontColor = SKColor(
                 red: palette.red, green: palette.green, blue: palette.blue, alpha: 1
             )
-            // 구역 아래쪽 빈 통로에 놓는다. 위쪽은 첫 줄 자리라 사람·책상과 겹친다.
             label.horizontalAlignmentMode = .center
             label.verticalAlignmentMode = .bottom
-            label.position = CGPoint(
-                x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
-                y: gridOrigin.y + CGFloat(zone.origin.y) * tileSize + 3
+            label.zPosition = 1
+
+            // 문패 판 — 벽돌·나무 무늬 위에 글자가 그냥 놓이면 읽히지 않는다.
+            let plate = SKShapeNode(
+                rect: label.frame.insetBy(dx: -6, dy: -3), cornerRadius: 3
             )
-            overlayLayer.addChild(label)
+            plate.fillColor = SKColor(white: 0.07, alpha: 0.78)
+            plate.strokeColor = SKColor(
+                red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.55
+            )
+            plate.lineWidth = 1
+
+            holder.addChild(plate)
+            holder.addChild(label)
+            overlayLayer.addChild(holder)
         }
     }
 
@@ -331,11 +355,13 @@ final class OfficeScene: SKScene {
         var actions: [SKAction] = []
         var cursor = node.tile
         let stepDuration = 0.16
-        let bobHeight = tileSize * 0.06
+        // bob·기울기는 걷기 프레임을 대신하는 유일한 신호라, 도트 캐릭터에서 눈에 보일
+        // 만큼은 커야 한다(예전 0.06·0.05 는 32px 타일에서 2px·2.9° 로 거의 안 보였다).
+        let bobHeight = tileSize * 0.11
         for (index, step) in path.enumerated() {
             let direction = facing(from: cursor, to: step)
             let target = floorPoint(step)
-            let lean: CGFloat = index % 2 == 0 ? 0.05 : -0.05
+            let lean: CGFloat = index % 2 == 0 ? 0.09 : -0.09
             let stepAction = SKAction.run { [weak self, weak node] in
                 guard let self, let node else {
                     return
@@ -346,12 +372,20 @@ final class OfficeScene: SKScene {
                 node.tile = step
                 node.zPosition = self.depth(of: step)
                 // 걷기 프레임이 없으니 한 걸음마다 위로 튀고 좌우로 살짝 기울여 발걸음을 만든다.
+                // 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58) 해서 발을 떼는 쪽에 힘이 실리고,
+                // 착지에서 세로로 눌러 발이 바닥에 닿는 순간을 만든다 — 이게 없으면 캐릭터가
+                // 미끄러지듯 떠서 이동한다.
                 let stride = SKAction.group([
                     .sequence([
-                        .moveBy(x: 0, y: bobHeight, duration: stepDuration / 2),
-                        .moveBy(x: 0, y: -bobHeight, duration: stepDuration / 2),
+                        .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
+                        .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
                     ]),
                     .rotate(toAngle: lean, duration: stepDuration / 2),
+                    .sequence([
+                        .wait(forDuration: stepDuration * 0.7),
+                        .scaleY(to: 0.93, duration: stepDuration * 0.15),
+                        .scaleY(to: 1.0, duration: stepDuration * 0.15),
+                    ]),
                 ])
                 node.sprite.run(stride)
             }
@@ -363,6 +397,8 @@ final class OfficeScene: SKScene {
         }
         actions.append(.run { [weak self, weak node] in
             node?.sprite.run(.rotate(toAngle: 0, duration: 0.1))
+            // 착지 squash 가 걸린 채 걸음이 끊기면 눌린 몸으로 남는다. 도착 시 원래대로.
+            node?.sprite.yScale = 1
             node?.isWalking = false
             completion?()
             // 걷는 동안 들어온 상태 변화는 보류됐다(applyMotion 이 걷는 사람을 건드리지 않는다).

@@ -33,6 +33,10 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
 
+    /// 화면에서 사람으로 부를 이름 — 한글 직책이 있으면 그것, 없으면 백엔드 표시명.
+    /// 오피스 이름표와 대시보드 카드가 같은 사람을 같은 이름으로 부르게 하는 단일 출처다.
+    public var roleName: String { agentRoleLabel(for: agentType) ?? displayName }
+
     public init(
         agentType: String,
         displayName: String,

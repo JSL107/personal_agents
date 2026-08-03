@@ -10,6 +10,25 @@ public enum Department: String, CaseIterable, Sendable {
     case growth
     case internalOps
 
+    /// 방 문패·카드에 붙는 부서 아이콘. 글자만으로는 구역을 훑을 때 어느 팀인지 안 잡힌다
+    /// — 모양은 색·글자보다 먼저 읽히므로 부서를 구분하는 1차 신호로 쓴다.
+    public var icon: String {
+        switch self {
+        case .planning:
+            return "📋"
+        case .engineering:
+            return "💻"
+        case .review:
+            return "🔍"
+        case .executive:
+            return "👔"
+        case .growth:
+            return "🌱"
+        case .internalOps:
+            return "⚙️"
+        }
+    }
+
     /// 방 라벨·범례용 한글 부서명.
     public var label: String {
         switch self {

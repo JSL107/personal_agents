@@ -80,6 +80,24 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 부서 구역은 등장 부서 수만큼.
     t.expectEqual(plan.zones.count, 6, "부서 구역 6개")
 
+    // 책상·좌석은 부서 카펫 위에 있어야 한다. 예전에는 맨 윗줄 좌석이 카펫 밖 나무 바닥에
+    // 놓여 화면에서 사람이 사무실 밖에 걸터앉은 것처럼 보였다(테스트가 없어 못 잡았다).
+    let offCarpet = plan.desks.filter { assignment in
+        let deskTile = plan.floor[assignment.desk.y][assignment.desk.x]
+        let seatTile = plan.floor[assignment.seat.y][assignment.seat.x]
+        let carpets: Set<FloorTile> = [.carpetLight, .carpetDark]
+        return !carpets.contains(deskTile) || !carpets.contains(seatTile)
+    }
+    t.expectEqual(
+        offCarpet.count, 0,
+        "카펫 밖 자리: \(offCarpet.map { "\($0.agentType)@\($0.seat.x),\($0.seat.y)" }.sorted())"
+    )
+
+    // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
+    let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
+    let verticalWalls = (0..<zoneAreaRows).filter { plan.floor[$0][0] == .wall }
+    t.expectEqual(verticalWalls.count, zoneAreaRows, "구역 왼쪽 열은 전 구간이 벽")
+
     // 대표 자리·줄서기·휴식 자리가 비어 있지 않다.
     t.expect(!plan.queueTiles.isEmpty, "승인 대기 줄 자리 존재")
     t.expect(!plan.loungeTiles.isEmpty, "휴식 자리 존재")
@@ -219,5 +237,17 @@ func runOfficePathfindingTests(_ t: TestRunner) {
             officePath(from: $0.seat, to: queue, walkable: plan.walkable).isEmpty
         }
         t.expectEqual(isolatedSeats.count, 0, "고립된 좌석 없음")
+    }
+
+    // 휴식 자리도 전 좌석에서 닿아야 한다 — 밴드에 가구를 놓다 가로 통로를 막으면
+    // 완료 후 탕비실에 가지 못하고 제자리에 머문다(walk 가 빈 경로를 받아 조용히 반환).
+    for lounge in plan.loungeTiles {
+        t.expect(plan.walkable.contains(lounge), "휴식 자리 \(lounge.x),\(lounge.y) 통행 가능")
+    }
+    if let lounge = plan.loungeTiles.first {
+        let unreachableSeats = plan.desks.filter {
+            officePath(from: $0.seat, to: lounge, walkable: plan.walkable).isEmpty
+        }
+        t.expectEqual(unreachableSeats.count, 0, "휴식 자리에 못 가는 좌석 없음")
     }
 }

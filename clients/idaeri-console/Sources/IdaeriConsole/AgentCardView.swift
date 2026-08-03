@@ -17,12 +17,22 @@ struct AgentCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(agent.displayName)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                statusBadge
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8) {
+                    Text(agent.roleName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    statusBadge
+                }
+                // 직책으로 바꿔 부르는 대신 백엔드 식별명을 캡션으로 남긴다. 슬래시가 없는
+                // 내부 에이전트는 이 줄이 유일한 식별 단서다(로그·슬랙과 이름을 맞출 때 필요).
+                if agent.roleName != agent.displayName {
+                    Text(agent.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
 
             // 말풍선 — 백엔드가 소유한 상태 문구
@@ -62,7 +72,7 @@ struct AgentCardView: View {
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: 1.5)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(agent.displayName), \(agent.state.label), \(agent.bubble)")
+        .accessibilityLabel("\(agent.roleName), \(agent.state.label), \(agent.bubble)")
         .sheet(isPresented: $showSheet) {
             commandSheet
         }
@@ -100,7 +110,7 @@ struct AgentCardView: View {
     /// "지시" 버튼으로 여는 텍스트 입력 시트 — 이 카드의 agentType 을 힌트로 고정해 전송한다.
     private var commandSheet: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("\(agent.displayName)에 지시")
+            Text("\(agent.roleName)에 지시")
                 .font(.headline)
             TextField("지시 내용…", text: $inputText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
