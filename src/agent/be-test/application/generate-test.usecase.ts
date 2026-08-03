@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { posix, relative, resolve, sep } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
@@ -26,6 +26,7 @@ import {
 import { BeTestErrorCode } from '../domain/be-test-error-code.enum';
 import { parseSpecCode } from '../domain/prompt/be-test.parser';
 import { BE_TEST_SYSTEM_PROMPT } from '../domain/prompt/be-test-system.prompt';
+import { rewriteSpecImportsForSandbox } from '../domain/spec-import.rewriter';
 import { JestMockGenerator } from '../infrastructure/jest-mock-generator';
 import { TreeSitterTestAnalyzer } from '../infrastructure/tree-sitter-test-analyzer';
 
@@ -34,8 +35,8 @@ import { TreeSitterTestAnalyzer } from '../infrastructure/tree-sitter-test-analy
 // 끝나 그 위험 없이 in-memory 로 spec 을 검증할 수 있게 된 시점에 재도입.
 //
 // 보강 (omc:critic / codex 지적 반영):
-// - jest 옵션: `--cacheDirectory=/work/.jest-cache --no-coverage` 하드코딩.
-//   `--rootDir=/repo` 가 `:ro` 라 jest cache write 시도 시 EROFS 로 즉사. cache 만 tmpfs 분리.
+// - jest 옵션: repo 설정은 `--rootDir=/repo/src`, spec 탐색은 `--roots=/work` 로 분리.
+//   `/repo` 가 `:ro` 라 jest cache write 시도 시 EROFS 로 즉사하므로 cache 는 tmpfs 로 분리.
 //   `--passWithNoTests` 는 의도적으로 미설정 — spec 자체가 없으면 fail 로 잡혀야 retry 가치.
 // - stderr 패턴 기반 retryable 분류 — TS compile / import 에러는 retry 가치, jest assertion fail 은
 //   구조적 오해라 동일 spec 재생산 확률이 높아 1 회만 추가 retry 후 NON_RETRYABLE stop.
@@ -83,7 +84,7 @@ export class GenerateTestUsecase {
     }
 
     const repoRoot = await fs.realpath(process.cwd());
-    const absPath = path.resolve(repoRoot, trimmed);
+    const absPath = resolve(repoRoot, trimmed);
 
     if (!isInsideRepo(absPath, repoRoot)) {
       throw new BeTestException({
@@ -200,6 +201,9 @@ export class GenerateTestUsecase {
     let stopReason: GeneratedTest['selfCorrectionStopReason'] = undefined;
     let nonRetryableHits = 0;
     let attempts = 0;
+    const containerTargetDir = posix.dirname(
+      posix.join('/repo', relative(repoRoot, resolvedPath)),
+    );
 
     for (
       let attempt = 1;
@@ -211,13 +215,21 @@ export class GenerateTestUsecase {
       try {
         runResult = await this.sandboxRunner.run({
           command:
-            `pnpm jest ${TMPFS_SPEC_PATH} --rootDir=/repo ` +
+            `node node_modules/jest/bin/jest.js --rootDir=/repo/src --roots=/work ` +
             `--cacheDirectory=/work/.jest-cache --no-coverage`,
           hostMountPath: repoRoot,
           mountMode: 'ro',
           networkMode: 'none',
           timeoutMs: SANDBOX_TIMEOUT_MS,
-          tmpfsFiles: [{ containerPath: TMPFS_SPEC_PATH, content: specCode }],
+          tmpfsFiles: [
+            {
+              containerPath: TMPFS_SPEC_PATH,
+              content: rewriteSpecImportsForSandbox({
+                specCode,
+                targetDirInContainer: containerTargetDir,
+              }),
+            },
+          ],
         });
       } catch (error) {
         // sandbox 자체 실패 (DOCKER_SPAWN_FAILED 등) — retry 가치 없음, validated:false 로 즉시 종료.
@@ -238,6 +250,11 @@ export class GenerateTestUsecase {
       }
 
       lastStderr = runResult.stderr;
+
+      if (isEnvironmentFailureStderr(runResult.stderr)) {
+        stopReason = 'SANDBOX_UNAVAILABLE';
+        break;
+      }
 
       // jest assertion fail 처럼 동일 구조 LLM 재생성으로 회복 가능성 낮은 패턴은 1 회 retry 후 stop.
       if (isNonRetryableStderr(runResult.stderr)) {
@@ -290,7 +307,14 @@ export class GenerateTestUsecase {
 }
 
 const isInsideRepo = (target: string, repoRoot: string): boolean =>
-  target === repoRoot || target.startsWith(repoRoot + path.sep);
+  target === repoRoot || target.startsWith(repoRoot + sep);
+
+const ENVIRONMENT_FAILURE_STDERR_PATTERNS: RegExp[] = [
+  /:\s*not found/,
+  /Validation Error/,
+];
+const isEnvironmentFailureStderr = (stderr: string): boolean =>
+  ENVIRONMENT_FAILURE_STDERR_PATTERNS.some((pattern) => pattern.test(stderr));
 
 // stderr 에 jest assertion fail 표지 (`Expected:` / `Received:` 또는 `expect(...).<matcher>(`) 가 보이면
 // LLM 재생성으로 회복 가능성이 낮다 (논리 오해이므로 동일 spec 재생산 확률 높음).

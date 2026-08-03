@@ -421,6 +421,37 @@ describe('GenerateTestUsecase', () => {
       expect(sandboxRunner.run).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+      ['셸 명령 부재', '/bin/sh: pnpm: not found'],
+      [
+        'Jest 설정 오류',
+        'Validation Error: Module <rootDir>/jest.polyfills.js was not found.',
+      ],
+    ])(
+      'sandbox 환경 결함(%s)은 1회 실패 후 SANDBOX_UNAVAILABLE 로 즉시 중단한다',
+      async (_case, stderr) => {
+        const { usecase, sandboxRunner, modelRouter } = buildUsecase({
+          sandboxRunner: makeSandboxRunnerMock([
+            failResult(stderr),
+            passResult(),
+          ]),
+        });
+
+        const outcome = await usecase.execute({
+          filePath: 'src/foo/foo.service.ts',
+          slackUserId: 'U123',
+        });
+
+        expect(outcome.result.validated).toBe(false);
+        expect(outcome.result.selfCorrectionAttempts).toBe(1);
+        expect(outcome.result.selfCorrectionStopReason).toBe(
+          'SANDBOX_UNAVAILABLE',
+        );
+        expect(sandboxRunner.run).toHaveBeenCalledTimes(1);
+        expect(modelRouter.route).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('fix prompt 는 stderr tail 을 포함해 LLM 에 전달된다', async () => {
       const modelRouter = makeModelRouterMock([
         JSON.stringify({ specCode: FAKE_SPEC_CODE }),
@@ -447,7 +478,7 @@ describe('GenerateTestUsecase', () => {
   });
 
   describe('Sandbox 호출 contract', () => {
-    it('jest 명령에 --cacheDirectory=/work/.jest-cache --no-coverage 가 포함된다', async () => {
+    it('node 로 repo 설정과 tmpfs roots 를 지정해 jest 를 실행한다', async () => {
       const { usecase, sandboxRunner } = buildUsecase({
         sandboxRunner: makeSandboxRunnerMock([passResult()]),
       });
@@ -458,8 +489,12 @@ describe('GenerateTestUsecase', () => {
       });
 
       const call = sandboxRunner.run.mock.calls[0][0];
+      expect(call.command).toContain('node node_modules/jest/bin/jest.js');
+      expect(call.command).toContain('--rootDir=/repo/src');
+      expect(call.command).toContain('--roots=/work');
       expect(call.command).toContain('--cacheDirectory=/work/.jest-cache');
       expect(call.command).toContain('--no-coverage');
+      expect(call.command).not.toContain('pnpm');
       // --passWithNoTests 는 사용하지 않는다 (Codex 지적 — 0 테스트를 통과로 오인 방지).
       expect(call.command).not.toContain('--passWithNoTests');
       expect(call.mountMode).toBe('ro');
@@ -470,6 +505,28 @@ describe('GenerateTestUsecase', () => {
           content: expect.any(String),
         },
       ]);
+    });
+
+    it('tmpfs 에만 절대경로 import 를 쓰고 반환 specCode 는 LLM 원본을 보존한다', async () => {
+      const { usecase, sandboxRunner } = buildUsecase({
+        sandboxRunner: makeSandboxRunnerMock([passResult()]),
+      });
+
+      const outcome = await usecase.execute({
+        filePath: 'src/foo/foo.service.ts',
+        slackUserId: 'U123',
+      });
+
+      const call = sandboxRunner.run.mock.calls[0][0];
+      expect(call.tmpfsFiles).toEqual([
+        {
+          containerPath: '/work/generated.spec.ts',
+          content: expect.stringContaining("from '/repo/src/foo/foo.service'"),
+        },
+      ]);
+      expect(outcome.result.specCode).toBe(FAKE_SPEC_CODE);
+      expect(outcome.result.specCode).toContain("from './foo.service'");
+      expect(outcome.result.specCode).not.toContain('/repo/src/foo');
     });
 
     it('agentRunService.execute 에 올바른 agentType/triggerType 이 전달된다', async () => {
