@@ -278,6 +278,36 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
+  it('기각 학습 신호 적재가 실패하면 카드를 확정하지 않고 스레드도 닫지 않는다', async () => {
+    // REJECTED 로 먼저 확정하면 다음 회차 조회(OPEN 만)에서 빠져 재시도가 불가능하다.
+    // 확정을 미뤄야 다음 스윕이 같은 반응을 다시 읽어 적재를 재시도할 수 있다.
+    const { usecase, github, repository, episodic } = buildDependencies();
+    episodic.record.mockRejectedValue(new Error('DB 연결 끊김'));
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ rejected: 0, skipped: 1, resolved: 0 });
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(github.resolveReviewThread).not.toHaveBeenCalled();
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
+  });
+
   it('이미 resolve된 스레드도 owner 기각 신호를 먼저 반영한다', async () => {
     const { usecase, github, repository, episodic } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
@@ -330,7 +360,25 @@ describe('HarvestReviewSignalsUsecase', () => {
       status: 'STALE',
       rejectReason: null,
       githubThreadNodeId: 'PRRT_555',
+      resolveThread: true,
     });
+  });
+
+  it('STALE 확정은 단일 쓰기다 — 상태와 닫힘을 나눠 쓰지 않는다', async () => {
+    // 나눠 쓰면 첫 쓰기 직후 실패했을 때 status 가 STALE 이라 다음 회차 조회(OPEN 만)
+    // 에서 빠지고, 남은 갱신을 재시도할 길이 없어 부분 상태가 고착된다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: false,
+      threads: [reviewThread({ isResolved: true })],
+    });
+
+    await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledTimes(1);
+    expect(repository.markThreadResolved).not.toHaveBeenCalled();
   });
 
   it('열린 PR에서 스레드만 resolve되면 상태를 바꾸지 않고 닫힘만 기록한다', async () => {
