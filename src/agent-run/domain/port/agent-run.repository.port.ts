@@ -156,6 +156,17 @@ export interface RecentlyFailedRun {
   agentType: string;
 }
 
+// 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.
+// `RecentlyFailedRun` 과 둘 다 필요한 이유: 저쪽은 agentType 별 "최신 1건" 이라
+// (1) 같은 에이전트가 몇 번 실패했는지 셀 수 없고 (2) 실패 이유를 담지 않는다.
+// 비서실은 "막힌 것 + 막힌 이유" 를 적고 반복 실패를 결정 후보로 올려야 해서 둘 다 쓴다.
+export interface FailedRunDetail {
+  agentType: string;
+  /** `output.error` 문자열. 기록이 없으면 '이유 미기록'. */
+  reason: string;
+  endedAt: Date;
+}
+
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   finish(input: FinishAgentRunInput): Promise<void>;
@@ -237,4 +248,8 @@ export interface AgentRunRepositoryPort {
   findRecentlyFailedRuns(input: {
     withinMinutes: number;
   }): Promise<RecentlyFailedRun[]>;
+  // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
+  findFailedRunsSince(input: {
+    withinMinutes: number;
+  }): Promise<FailedRunDetail[]>;
 }

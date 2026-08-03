@@ -23,6 +23,7 @@ import {
   AgentRunStatRow,
   AgentSweptCountRow,
   CountUnsuccessfulSweepReviewsQuery,
+  FailedRunDetail,
   FindLatestSweepReviewQuery,
   LatestSweepReview,
   RecentlyFailedRun,
@@ -364,6 +365,14 @@ export class AgentRunService {
     withinMinutes: number;
   }): Promise<RecentlyFailedRun[]> {
     return await this.repository.findRecentlyFailedRuns(input);
+  }
+
+  // 비서실 브리핑 — cutoff 이내 실패 런 전건 + 이유. 반복 실패 판정에 건수가 필요해
+  // agentType 별 최신 1건만 주는 findRecentlyFailedRuns 로는 대체할 수 없다.
+  async findFailedRunsSince(input: {
+    withinMinutes: number;
+  }): Promise<FailedRunDetail[]> {
+    return await this.repository.findFailedRunsSince(input);
   }
 
   async aggregateRetryCounts(input: {

@@ -82,6 +82,27 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     riskTier: 'T1_PREVIEW',
     digestGroup: 'evening',
   },
+  // 비서실 — 하루 한 장 결산(완료 / 진행 중 / 승인 대기 / 막힌 것 / 오늘 결정할 것 1건).
+  // morning 그룹 맨 앞에 둔다: 오케스트레이터가 배열 순서대로 요약을 이어 붙이므로
+  // 이 자리가 곧 메시지 맨 위다. 어제까지 적재된 기록만 보기 때문에 같은 슬롯의
+  // morning-briefing 보다 먼저 실행돼도 결과가 달라지지 않는다.
+  //
+  // ⚠️ 이 그룹의 스케줄 env 키가 바뀐다. 스케줄러는 그룹 **첫 항목의 id** 로 키를 만들어
+  //    읽으므로(autopilot.scheduler.ts), 지금까지 `AUTOPILOT_MORNING_BRIEFING_SCHEDULE`
+  //    이던 것이 `AUTOPILOT_SECRETARIAT_SCHEDULE` 이 된다. 기본 스케줄 상수는 그대로
+  //    재사용하므로 env 오버라이드를 쓰지 않는 환경은 동작이 같다.
+  {
+    id: 'secretariat',
+    taskId: 'secretariat',
+    trigger: {
+      kind: 'CRON',
+      // 그룹 내 스케줄이 다르면 validatePlaybook 이 부팅을 막는다 — 같은 상수를 쓴다.
+      schedule: DEFAULT_MORNING_BRIEFING_CRON,
+      timezone: DEFAULT_MORNING_BRIEFING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'morning',
+  },
   {
     id: 'morning-briefing',
     taskId: 'morning-briefing',
