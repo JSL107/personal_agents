@@ -338,8 +338,8 @@ describe('AgentRunPrismaRepository.findChainRootsInWindow', () => {
   });
 });
 
-describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
-  it('cutoff(withinMinutes) 를 where 로 좁혀 distinct 하고, 최신 종료가 FAILED 인 agentType 만 반환', async () => {
+describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
+  it('cutoff(withinMinutes) 를 where 로 좁혀 distinct 하고, 최신 종료 결과를 성공·실패 모두 반환', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
     // findMany 는 이미 where(cutoff)+distinct 가 적용된 "agentType별 최신 종료" 를 돌려준다.
@@ -352,12 +352,15 @@ describe('AgentRunPrismaRepository.findRecentlyFailedRuns', () => {
     } as unknown as PrismaService;
     const repository = new AgentRunPrismaRepository(prismaMock);
 
-    const result = await repository.findRecentlyFailedRuns({
+    const result = await repository.findRecentlyFinishedRuns({
       withinMinutes: 360,
     });
 
-    // BE 는 최신 종료가 성공이라 제외, PM 만.
-    expect(result).toEqual([{ agentType: 'PM' }]);
+    // 성공도 그대로 실어 보낸다 — 콘솔 스냅샷이 COMPLETED 를 만들려면 이 값이 필요하다.
+    expect(result).toEqual([
+      { agentType: 'PM', status: 'FAILED' },
+      { agentType: 'BE', status: 'SUCCEEDED' },
+    ]);
     // cutoff 를 where 로 밀어넣어 오래된 이력을 스캔하지 않는다(360분 전 = 06:00).
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
