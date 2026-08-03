@@ -64,6 +64,8 @@ export enum TriggerType {
   // PR 리뷰 루프 — cron 스윕이 발사한 리뷰. 수동 /review-pr(SLACK_COMMAND_REVIEW_PR),
   // webhook(WEBHOOK) 과 구분해 집계·감사한다.
   PR_REVIEW_SWEEP = 'PR_REVIEW_SWEEP',
+  AUTOPILOT_ASSIGN_CRON = 'AUTOPILOT_ASSIGN_CRON',
+  AUTOPILOT_PO_SHADOW_CRON = 'AUTOPILOT_PO_SHADOW_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

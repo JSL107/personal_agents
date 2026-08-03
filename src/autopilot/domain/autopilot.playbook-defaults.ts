@@ -6,6 +6,10 @@ export const DEFAULT_DAILY_EVAL_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_MORNING_BRIEFING_CRON = '30 8 * * *';
 export const DEFAULT_MORNING_BRIEFING_TIMEZONE = 'Asia/Seoul';
 
+// CTO 배정 + PO Shadow 검토 기본 스케줄 — 매일 13:00 KST(점심 직후, 아침 plan 의 오후 태스크 대상).
+export const DEFAULT_NOON_REVIEW_CRON = '0 13 * * *';
+export const DEFAULT_NOON_REVIEW_TIMEZONE = 'Asia/Seoul';
+
 // Weekly Summary 기본 스케줄 — 기존 src/weekly-summary/domain/weekly-summary.type.ts 승계.
 // 매주 금요일 17:00 KST — worklog(주간) + CEO meta 체인.
 export const DEFAULT_WEEKLY_SUMMARY_CRON = '0 17 * * 5';

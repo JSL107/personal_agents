@@ -11,6 +11,8 @@ import {
   DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
+  DEFAULT_NOON_REVIEW_CRON,
+  DEFAULT_NOON_REVIEW_TIMEZONE,
   DEFAULT_OPS_SUPERVISOR_CRON,
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
@@ -90,6 +92,28 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
     digestGroup: 'morning',
+  },
+  {
+    id: 'assign',
+    taskId: 'assign',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_NOON_REVIEW_CRON,
+      timezone: DEFAULT_NOON_REVIEW_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'noon',
+  },
+  {
+    id: 'po-shadow',
+    taskId: 'po-shadow',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_NOON_REVIEW_CRON,
+      timezone: DEFAULT_NOON_REVIEW_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'noon',
   },
   {
     id: 'weekly-summary',

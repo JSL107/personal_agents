@@ -33,13 +33,15 @@ describe('AutopilotScheduler', () => {
     // 동일 groupKey 로 중복 등록 없음 (그룹당 exactly 1).
     const unique = new Set(addCalls);
     expect(unique.size).toBe(addCalls.length);
-    // SP4: evening(daily-eval+work-reviewer) + morning + weekly-summary + ceo-meta + impact-report
+    // SP4: evening(daily-eval+work-reviewer) + morning + noon(assign+po-shadow)
+    //   + weekly-summary + ceo-meta + impact-report
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
-    //   + stock-monitor + stock-monitor-us + stock-alert-scoring + pr-review-sweep = 16그룹.
-    expect(queue.add).toHaveBeenCalledTimes(16);
+    //   + stock-monitor + stock-monitor-us + stock-alert-scoring + pr-review-sweep = 17그룹.
+    expect(queue.add).toHaveBeenCalledTimes(17);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
+    expect(addCalls).toContain('noon');
     expect(addCalls).toContain('weekly-summary');
     expect(addCalls).toContain('ceo-meta');
     expect(addCalls).toContain('impact-report');

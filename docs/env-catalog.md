@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 105개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 107개.
 설명은 각 변수의 첫 주석 줄 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -104,6 +104,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_DAILY_EVAL_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_TIMEZONE` | ❌ | — |
+| `AUTOPILOT_ASSIGN_SCHEDULE` | ❌ | — |
+| `AUTOPILOT_ASSIGN_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_WEEKLY_SUMMARY_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_CEO_META_SCHEDULE` | ❌ | — |

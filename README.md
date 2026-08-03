@@ -212,6 +212,7 @@ pnpm dev              # watch 모드 기동
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `AUTOPILOT_ASSIGN_SCHEDULE` · `_TIMEZONE` | ❌ | noon(CTO 배정 + PO Shadow) cron/timezone override — 기본 `0 13 * * *`, `Asia/Seoul`. 키는 그룹명이 아닌 그룹 첫 항목 id(`assign`) 기준 |
 | `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 국내 17:10 KST·미국 16:30 ET 보유 종목 모니터링 활성 — 기본 OFF |
 | `AUTOPILOT_STOCK_MONITOR_US_SCHEDULE` · `_TIMEZONE` | ❌ | 미국 모니터링 cron/timezone override — 기본 `30 16 * * 1-5`, `America/New_York` |
 | `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` · `TOSS_ACCOUNT_SEQ` | ❌ | 토스증권 잔고 동기화. ID/secret 미설정 시 비활성, account seq 미설정 시 첫 BROKERAGE 계좌 자동 선택 |

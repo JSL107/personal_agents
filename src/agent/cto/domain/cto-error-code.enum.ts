@@ -5,6 +5,8 @@ export enum CtoErrorCode {
   STALE_PM_RUN = 'STALE_PM_RUN',
   // 직전 PM run output 의 assignableTaskIds 가 빈 array 또는 미정의 — 자동 분배 후보 없음.
   NO_ASSIGNABLE_TASKS = 'NO_ASSIGNABLE_TASKS',
+  // 직전 PM run output 이 DailyPlan schema 와 안 맞음.
+  INVALID_PLAN_OUTPUT = 'INVALID_PLAN_OUTPUT',
   // LLM 출력이 AssignmentOutput schema 와 안 맞음.
   PARSE_FAILED = 'PARSE_FAILED',
 }

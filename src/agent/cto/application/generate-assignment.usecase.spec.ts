@@ -1,4 +1,5 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -84,7 +85,7 @@ describe('GenerateAssignmentUsecase', () => {
     });
     agentRunServiceFindLatest = jest.fn().mockResolvedValue({
       id: 99,
-      output: { plan: pmPlan },
+      output: pmPlan,
       endedAt: new Date(Date.now() - 60_000),
     });
 
@@ -114,7 +115,7 @@ describe('GenerateAssignmentUsecase', () => {
   it('직전 PM run 이 staleness threshold (18h) 초과면 STALE_PM_RUN 예외', async () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,
-      output: { plan: pmPlan },
+      output: pmPlan,
       endedAt: new Date(Date.now() - STALENESS_THRESHOLD_MS - 60_000),
     });
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toMatchObject({
@@ -123,32 +124,32 @@ describe('GenerateAssignmentUsecase', () => {
     expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
-  it('직전 PM output 형식이 객체 아니면 NO_ASSIGNABLE_TASKS 예외', async () => {
+  it('직전 PM output 형식이 객체 아니면 INVALID_PLAN_OUTPUT 예외', async () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,
       output: 'not-an-object',
       endedAt: new Date(),
     });
-    await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
-      CtoException,
-    );
+    await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toMatchObject({
+      ctoErrorCode: CtoErrorCode.INVALID_PLAN_OUTPUT,
+    });
   });
 
-  it('PM output.plan 이 DailyPlan 스키마 안 맞으면 NO_ASSIGNABLE_TASKS 예외', async () => {
+  it('PM output이 DailyPlan 스키마에 맞지 않으면 INVALID_PLAN_OUTPUT 예외', async () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,
-      output: { plan: { not: 'a plan' } },
+      output: { not: 'a plan' },
       endedAt: new Date(),
     });
-    await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
-      CtoException,
-    );
+    await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toMatchObject({
+      ctoErrorCode: CtoErrorCode.INVALID_PLAN_OUTPUT,
+    });
   });
 
   it('assignableTaskIds 비어있으면 NO_ASSIGNABLE_TASKS 예외', async () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,
-      output: { plan: { ...pmPlan, assignableTaskIds: [] } },
+      output: { ...pmPlan, assignableTaskIds: [] },
       endedAt: new Date(),
     });
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toMatchObject({
@@ -183,6 +184,17 @@ describe('GenerateAssignmentUsecase', () => {
     ]);
   });
 
+  it('triggerType을 지정하면 AgentRunService에 그대로 전달한다', async () => {
+    await usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_ASSIGN_CRON,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].triggerType).toBe(
+      TriggerType.AUTOPILOT_ASSIGN_CRON,
+    );
+  });
+
   it('prompt 에 PM reasoning + 후보 task id/title 모두 포함', async () => {
     await usecase.execute({ slackUserId: 'U1' });
     const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
@@ -199,7 +211,8 @@ describe('GenerateAssignmentUsecase', () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,
       output: {
-        plan: { ...pmPlan, assignableTaskIds: ['t:morning-1', 't:ghost'] },
+        ...pmPlan,
+        assignableTaskIds: ['t:morning-1', 't:ghost'],
       },
       endedAt: new Date(),
     });

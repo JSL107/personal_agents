@@ -199,6 +199,14 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  AUTOPILOT_ASSIGN_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_ASSIGN_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
   AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE?: string;
 
   @IsOptional()

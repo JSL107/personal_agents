@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 
@@ -42,6 +43,7 @@ export interface AssignmentOutput {
 
 export interface GenerateAssignmentInput {
   slackUserId: string;
+  triggerType?: TriggerType;
   // 명시 지정 시 해당 PM run 의 assignableTaskIds 분배. 미지정 시 직전 PM run 자동 조회.
   dailyPlanAgentRunId?: number;
   // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction(직전 대화 기반 사용자 지시)을

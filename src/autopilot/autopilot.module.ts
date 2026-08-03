@@ -3,10 +3,12 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { CeoModule } from '../agent/ceo/ceo.module';
+import { CtoModule } from '../agent/cto/cto.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { GenerateOpsAdviceUsecase } from '../agent/ops-supervisor/application/generate-ops-advice.usecase';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
+import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-monitor.repository';
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
@@ -35,6 +37,7 @@ import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
+import { AssignAutopilotTask } from './infrastructure/tasks/assign.autopilot-task';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
@@ -43,6 +46,7 @@ import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lin
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
+import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
@@ -70,7 +74,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PmAgentModule,
     WorkReviewerModule,
     CeoModule,
+    CtoModule,
     ImpactReporterModule,
+    PoShadowModule,
     AgentRunModule,
     EpisodicMemoryModule,
     HumanizeModule,
@@ -86,7 +92,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AutopilotConsumer,
     AutopilotOrchestrator,
     SystemWakeGuard,
+    AssignAutopilotTask,
     PoEvalAutopilotTask,
+    PoShadowAutopilotTask,
     MorningBriefingAutopilotTask,
     WorkReviewerAutopilotTask,
     WeeklySummaryAutopilotTask,
@@ -141,6 +149,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
       provide: AUTOPILOT_TASKS,
       useFactory: (
+        assign: AssignAutopilotTask,
+        poShadow: PoShadowAutopilotTask,
         poEval: PoEvalAutopilotTask,
         morning: MorningBriefingAutopilotTask,
         workReviewer: WorkReviewerAutopilotTask,
@@ -160,6 +170,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockAlertScoring: StockAlertScoringAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
       ) => [
+        assign,
+        poShadow,
         poEval,
         morning,
         workReviewer,
@@ -180,6 +192,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         prReviewSweep,
       ],
       inject: [
+        AssignAutopilotTask,
+        PoShadowAutopilotTask,
         PoEvalAutopilotTask,
         MorningBriefingAutopilotTask,
         WorkReviewerAutopilotTask,
