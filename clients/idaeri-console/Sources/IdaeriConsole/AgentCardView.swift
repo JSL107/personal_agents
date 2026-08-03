@@ -17,12 +17,22 @@ struct AgentCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(agent.displayName)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                statusBadge
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8) {
+                    Text(agent.roleName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    statusBadge
+                }
+                // 직책으로 바꿔 부르는 대신 백엔드 식별명을 캡션으로 남긴다. 슬래시가 없는
+                // 내부 에이전트는 이 줄이 유일한 식별 단서다(로그·슬랙과 이름을 맞출 때 필요).
+                if agent.roleName != agent.displayName {
+                    Text(agent.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
 
             // 말풍선 — 백엔드가 소유한 상태 문구
@@ -62,10 +72,21 @@ struct AgentCardView: View {
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: 1.5)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(agent.displayName), \(agent.state.label), \(agent.bubble)")
+        .accessibilityLabel(accessibilityDescription)
         .sheet(isPresented: $showSheet) {
             commandSheet
         }
+    }
+
+    /// VoiceOver 라벨. `accessibilityElement(children: .combine)` 이 자식 라벨을 이 문자열로
+    /// 대체하므로, 화면에 캡션으로 보이는 백엔드 식별명을 여기에 직접 넣어야 스크린리더에서도
+    /// 읽힌다 — 넣지 않으면 시각 UI 에만 있는 정보가 된다.
+    private var accessibilityDescription: String {
+        let name =
+            agent.roleName == agent.displayName
+            ? agent.roleName
+            : "\(agent.roleName), \(agent.displayName)"
+        return "\(name), \(agent.state.label), \(agent.bubble)"
     }
 
     private var statusBadge: some View {
@@ -100,7 +121,7 @@ struct AgentCardView: View {
     /// "지시" 버튼으로 여는 텍스트 입력 시트 — 이 카드의 agentType 을 힌트로 고정해 전송한다.
     private var commandSheet: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("\(agent.displayName)에 지시")
+            Text("\(agent.roleName)에 지시")
                 .font(.headline)
             TextField("지시 내용…", text: $inputText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)

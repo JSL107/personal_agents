@@ -186,19 +186,34 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         blocked.insert(TilePoint(x: x, y: planRows - 1))
     }
 
-    // 회의실 — 긴 테이블(세로 2칸)과 벽 화이트보드.
+    // 밴드 안쪽 두 줄(bandY+1, bandY+2)에만 가구를 놓는다. 맨 아래 줄(bandY)은 부서에서
+    // 대표실 줄까지 올라오는 가로 통로이므로 비워 두고, 맨 위 줄은 벽이다.
+    //
+    // 회의실 — 회의 테이블·화이트보드에 자료 코너(책장·복합기)를 붙였다. 테이블 하나만
+    // 두면 10칸 폭에서 왼쪽 절반이 빈 바닥으로 남는다.
     place(.meetingTable, 4, bandY + 1)
     place(.whiteboard, 2, planRows - 1)
+    place(.whiteboard, 6, planRows - 1)
+    place(.bookshelf, 0, bandY + 2)
+    place(.bookshelf, 1, bandY + 2)
+    place(.plantTall, 3, bandY + 2)
+    place(.printer, 9, bandY + 2)
     place(.plantSmall, 8, bandY + 1)
 
     // 대표실 — 대표는 밴드 가운데 서 있고, 그 앞줄이 승인 대기 줄이 된다.
+    // 대표 앞 칸(bandY+1)은 비워 둔다: 줄 선 사람과 대표 사이의 면담 공간이고,
+    // 여기 책상을 놓으면 서 있는 대표와 겹치지 않아 가구가 붕 떠 보인다.
     let presidentTile = TilePoint(x: zoneWidth + zoneWidth / 2, y: bandY + 2)
     place(.plantTall, zoneWidth + 1, bandY + 2)
+    place(.sofa2, zoneWidth + 2, bandY + 2)
+    place(.coffeeTable, zoneWidth + 3, bandY + 2)
     place(.clock, zoneWidth + zoneWidth / 2, planRows - 1)
     place(.bookshelf, zoneWidth + zoneWidth - 2, bandY + 2)
+    place(.bookshelf, zoneWidth + zoneWidth - 1, bandY + 2)
 
     // 탕비실 겸 라운지 — 커피·정수기·소파.
     let pantryX = zoneWidth * 2
+    place(.plantTall, pantryX, bandY + 2)
     place(.coffeeMachine, pantryX + 1, bandY + 2)
     place(.waterCooler, pantryX + 3, bandY + 2)
     place(.sofa3, pantryX + 5, bandY + 2)
@@ -252,8 +267,11 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
             let deskColumn = seatIndex % deskColumns
             let deskRow = seatIndex / deskColumns
             let deskX = originX + 1 + deskColumn * deskColumnStride
-            let deskY = originY + zoneHeight - 2 - deskRow * 2
-            guard deskY > originY, deskX < originX + zoneWidth else {
+            // 자리 묶음을 구역 맨 아래 줄부터 쌓는다. 예전에는 한 칸 위(zoneHeight - 2)에서
+            // 시작해 맨 윗줄 좌석이 카펫 밖 나무 바닥에 놓였다 — 화면에서 사람이 사무실
+            // 밖에 걸터앉은 것처럼 보였다. 이제 책상·좌석이 전부 카펫 안에 들어간다.
+            let deskY = originY + zoneHeight - 3 - deskRow * 2
+            guard deskY >= originY, deskX < originX + zoneWidth else {
                 // 구역 정원을 넘으면 자리를 못 받아 화면에서 사라진다. 전원 배정을 고정한
                 // 테스트가 있으므로, 여기 걸리면 정원(deskColumns × 행 수)을 늘려야 한다.
                 continue
@@ -270,6 +288,49 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         // 구역 구석 장식 — 통로를 막지 않는 자리에만.
         if members.count <= 6 {
             place(.plantSmall, originX + zoneWidth - 2, originY + 1)
+        }
+
+        // 자리 묶음이 닿지 않는 아래쪽 줄에 사무 집기를 세운다. 인원이 적은 부서(기획 3명 등)는
+        // 구역의 절반 이상이 빈 카펫으로 남아 "사무실" 이 아니라 "빈 방" 으로 보인다.
+        // 자리가 꽉 찬 부서(내부 10명)는 최하단 줄까지 책상이 내려오므로 이 블록을 건너뛴다.
+        //
+        // 오른쪽 두 열(originX + 7, + 8)은 비워 둔다 — 특히 originX + 8 은 아래 구역 문과
+        // 이어지는 수직 동선이라, 여기를 막으면 아래 구역 전원이 고립된다(문 위 칸을
+        // 쓰레기통으로 막았다가 좌석 16개가 갇히는 것을 도달성 테스트가 잡았다).
+        let usedDeskRows = (members.count + deskColumns - 1) / deskColumns
+        let lowestDeskY = originY + zoneHeight - 3 - (usedDeskRows - 1) * 2
+        if lowestDeskY > originY {
+            place(.bookshelf, originX + 1, originY)
+            place(.printer, originX + 3, originY)
+            place(.waterCooler, originX + 5, originY)
+        }
+    }
+
+    // === 부서 구역 칸막이 벽 ===
+    // 구역 사이 여백(카펫 밖 한 칸)을 벽으로 세운다. 여백은 원래 통로였지만 폭이 한 칸뿐이라
+    // 화면에서는 이미 벽처럼 보였고, 바닥 재질만 나무여서 "방이 나뉘었다" 로 읽히지 않았다.
+    //
+    // 세로 여백은 전부 벽. 가로 여백은 아래 구역 천장(zoneHeight - 1)만 벽으로 막고 문 한 칸을
+    // 남긴다 — 위 구역 천장은 밴드로 나가는 통로라 열어 둔다. 즉 아래 구역 → 문 → 위 구역 →
+    // 밴드 순으로 이어지며, 이 연결은 좌석·줄·휴식 자리 도달성 테스트가 지킨다.
+    let zoneAreaRows = zoneHeight * 2
+    func raiseWall(_ x: Int, _ y: Int) {
+        guard x >= 0, y >= 0, x < planColumns, y < zoneAreaRows else {
+            return
+        }
+        floor[y][x] = .wall
+        blocked.insert(TilePoint(x: x, y: y))
+    }
+    for column in 0..<3 {
+        let originX = column * zoneWidth
+        for y in 0..<zoneAreaRows {
+            raiseWall(originX, y)
+            raiseWall(originX + zoneWidth - 1, y)
+        }
+        // 문은 책상 열(originX + 1, 3, 5, 7)을 피해 오른쪽 끝 빈 열에 낸다.
+        let doorX = originX + zoneWidth - 2
+        for x in originX..<(originX + zoneWidth) where x != doorX {
+            raiseWall(x, zoneHeight - 1)
         }
     }
 
