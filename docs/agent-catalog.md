@@ -10,7 +10,7 @@
 | Backend | `BE` | `/be plan` | CHATGPT | `src/agent/be/application/generate-backend-plan.usecase.ts` | 백엔드 구현 계획 생성 |
 | BE Fix | `BE_FIX` | — (webhook/자동) | CHATGPT | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | PR 컨벤션 분석 (webhook 자동 트리거) |
 | BE Schema | `BE_SCHEMA` | `/be schema` | CHATGPT | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Prisma 스키마 변경 제안 |
-| BE SRE | `BE_SRE` | — (webhook/자동) | CHATGPT | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (webhook 자동 트리거) |
+| BE SRE | `BE_SRE` | `/be sre` | CHATGPT | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (수동 /be sre) |
 | BE Test | `BE_TEST` | `/be test` | CHATGPT | `src/agent/be-test/application/generate-test.usecase.ts` | Tree-sitter AST 기반 Jest spec 생성 |
 | Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
 | Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
