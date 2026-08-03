@@ -31,6 +31,8 @@ export interface CreateProposalInput {
 export interface SubconsciousProposalRepository {
   create(input: CreateProposalInput): Promise<SubconsciousProposalRecord>;
   findById(id: number): Promise<SubconsciousProposalRecord | null>;
+  // 같은 대상에 아직 응답하지 않은 카드가 있는지 — 중복 카드 생성을 막는 판정 근거.
+  hasPending(ownerUserId: string, changeKey: string): Promise<boolean>;
   markStatus(
     id: number,
     status: Exclude<ProposalStatus, 'PENDING'>,
