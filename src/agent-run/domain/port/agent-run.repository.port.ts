@@ -24,6 +24,9 @@ export interface FinishAgentRunInput {
   // SUCCEEDED 든 FAILED 든 가능한 만큼 채워 보내고, FAILED 시 누락돼도 OK (status 만으로 분기 가능).
   cliProvider?: string;
   durationMs?: number;
+  // 직무 계약 검수 결과(ContractViolation[]). 위반이 없으면 미지정.
+  // 관측 전용이라 status 판정에는 영향을 주지 않는다.
+  contractViolations?: unknown;
 }
 
 export interface SucceededAgentRunSnapshot {
