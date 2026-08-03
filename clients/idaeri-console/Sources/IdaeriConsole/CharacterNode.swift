@@ -195,15 +195,18 @@ final class CharacterNode: SKNode {
         sprite.run(.repeatForever(breathe), withKey: "breathing")
     }
 
-    /// 실패 — 책상에 엎드린다. 기울인 채 아래로 내려앉는다.
+    /// 실패 — 어깨가 축 처진다. 세로로 눌러 낮아지고 살짝 내려앉는다.
+    ///
+    /// 예전에는 몸을 -0.18 rad 기울였는데, 탑다운에서 앉은 캐릭터를 회전시키면 "엎드림" 이
+    /// 아니라 "의자에서 미끄러져 기우뚱한 사람" 으로 읽혔다. 회전 대신 압축을 쓴다.
     func startSlump() {
         guard sprite.action(forKey: "slump") == nil else {
             return
         }
         clearMotion()
         let fall = SKAction.group([
-            .rotate(toAngle: -0.18, duration: 0.35),
-            .moveBy(x: 0, y: -3, duration: 0.35),
+            .scaleY(to: 0.86, duration: 0.35),
+            .moveBy(x: 0, y: -2, duration: 0.35),
         ])
         fall.timingMode = .easeOut
         sprite.run(fall, withKey: "slump")
