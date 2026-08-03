@@ -7,6 +7,7 @@ import {
   GithubClientPort,
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
+import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
 import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
@@ -477,6 +478,77 @@ describe('HarvestReviewSignalsUsecase', () => {
 
       expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
       expect(repository.markDecided).not.toHaveBeenCalled();
+    });
+
+    it('같은 head 는 두 번 묻지 않는다 — 5분 스윕이 같은 판정을 반복하면 쿼터가 마른다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: false,
+        bytes: 100,
+      });
+      // 결론이 안 나 카드가 OPEN 으로 남는 경우가 문제다.
+      resolutionJudge.execute.mockResolvedValue([
+        { id: 1, verdict: 'UNCLEAR', reason: '' },
+      ]);
+
+      await usecase.execute();
+      await usecase.execute();
+
+      expect(resolutionJudge.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('비교 diff 가 잘렸으면 판정을 보류한다 — 일부 증거로 카드를 닫지 않는다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: true,
+        bytes: 999999,
+      });
+
+      const outcome = await usecase.execute();
+
+      expect(resolutionJudge.execute).not.toHaveBeenCalled();
+      expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
+      expect(repository.markDecided).not.toHaveBeenCalled();
+    });
+
+    it('쿼터가 소진되면 남은 PR 을 계속 시도하지 않고 회차를 끊는다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([
+        card({ line: 42 }),
+        card({
+          id: 2,
+          line: 42,
+          pullNumber: 181,
+          githubCommentId: '556',
+          fingerprint: 'fp-2',
+        }),
+      ]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: false,
+        bytes: 100,
+      });
+      resolutionJudge.execute.mockRejectedValue(
+        new CodexQuotaExceededException('내일 09:00'),
+      );
+
+      await usecase.execute();
+
+      // 첫 PR 에서 끊는다. 두 번째 PR 까지 부르면 쿼터만 더 태운다.
+      expect(resolutionJudge.execute).toHaveBeenCalledTimes(1);
     });
 
     it('PR 이 닫혀 있으면 해소 판정을 하지 않는다', async () => {

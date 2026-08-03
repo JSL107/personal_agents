@@ -2,6 +2,7 @@ import {
   extractFileDiff,
   firstCommentableLine,
   isTouchedByChanges,
+  parseDiffBaseHunks,
   parseDiffHunks,
   SNAP_MAX_DISTANCE,
   snapToCommentableLine,
@@ -144,6 +145,59 @@ describe('firstCommentableLine', () => {
         filePath: 'src/empty.ts',
       }),
     ).toBeNull();
+  });
+});
+
+describe('parseDiffBaseHunks', () => {
+  it('이전(base) 파일 기준으로 범위를 뽑는다 — 카드 line 과 좌표계를 맞추기 위해', () => {
+    // 같은 diff 라도 신규 기준은 +42, base 기준은 -40 이다. 카드 line 은 카드가
+    // 게시된 시점(=base) 기준이므로 이쪽으로 봐야 한다.
+    const base = parseDiffBaseHunks(DIFF);
+    const found = base.find((file) => file.filePath === 'src/foo.service.ts');
+
+    expect(found?.ranges).toEqual([
+      { start: 10, end: 12 },
+      { start: 40, end: 41 },
+    ]);
+  });
+
+  it('삭제된 파일도 잡는다 — 파일째 지우는 것도 정상적인 해소 방식이다', () => {
+    const deletion = `diff --git a/src/gone.ts b/src/gone.ts
+--- a/src/gone.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-const gone = 1;
+`;
+
+    expect(parseDiffBaseHunks(deletion)).toEqual([
+      { filePath: 'src/gone.ts', ranges: [{ start: 1, end: 5 }] },
+    ]);
+    // 신규 기준 파서는 +++ /dev/null 이라 통째로 버린다 — 그래서 base 파서가 필요하다.
+    expect(parseDiffHunks(deletion)).toEqual([]);
+  });
+
+  it('신규 파일은 제외한다 — 카드가 가리킬 이전 줄이 없다', () => {
+    const creation = `diff --git a/src/new.ts b/src/new.ts
+--- /dev/null
++++ b/src/new.ts
+@@ -0,0 +1,3 @@
++const fresh = 1;
+`;
+
+    expect(parseDiffBaseHunks(creation)).toEqual([]);
+  });
+
+  it('순수 삽입(count 0)은 그 지점을 바뀐 것으로 본다', () => {
+    const insertion = `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -10,0 +11,3 @@
++const added = 1;
+`;
+
+    expect(parseDiffBaseHunks(insertion)).toEqual([
+      { filePath: 'src/foo.ts', ranges: [{ start: 10, end: 10 }] },
+    ]);
   });
 });
 

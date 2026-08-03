@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
 import { FindingResolutionItem } from '../../agent/review-reply-judge/domain/finding-resolution.type';
@@ -17,7 +18,7 @@ import {
 import {
   extractFileDiff,
   isTouchedByChanges,
-  parseDiffHunks,
+  parseDiffBaseHunks,
   SNAP_MAX_DISTANCE,
 } from '../domain/diff-hunk.parser';
 import { HarvestOutcome } from '../domain/harvest-outcome.type';
@@ -65,6 +66,15 @@ const emptyOutcome = (): HarvestOutcome => ({
 export class HarvestReviewSignalsUsecase {
   private readonly logger = new Logger(HarvestReviewSignalsUsecase.name);
 
+  // 카드 id → 해소 판정을 마지막으로 물어본 PR head sha.
+  // 없으면 NOT_FIXED/UNCLEAR 카드가 5분마다 같은 diff 로 재판정된다 — 반응도 새 커밋도
+  // 없는 열린 PR 하나가 하루 288회 CLI 호출을 태우고, 이 레포는 쿼터 소진 시 fallback 이
+  // 없다.
+  // ponytail: 프로세스 메모리라 재시작하면 카드당 1회 더 물어본다. 완전히 막으려면
+  // pr_review_finding 에 checked_sha 컬럼을 두면 되지만, 공유 DB 에 db:push 를 거는
+  // 비용 대비 이득이 작아 보류했다. 재시작이 잦아지면 컬럼으로 올릴 것.
+  private readonly resolutionCheckpoints = new Map<number, string>();
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(GITHUB_CLIENT_PORT)
@@ -97,10 +107,22 @@ export class HarvestReviewSignalsUsecase {
 
     const cards = await this.repository.findOpenPostedCards();
     const groups = this.groupCards(cards);
-    for (const group of groups) {
+    for (const [index, group] of groups.entries()) {
       try {
         await this.harvestGroup({ group, ownerLogin, outcome });
       } catch (error: unknown) {
+        // 쿼터가 소진되면 남은 PR 도 전부 같은 이유로 실패한다. 이 레포는 codex 단일
+        // provider 라 fallback 이 없으므로 회차를 끊는다 — 계속 돌면 낭비만 쌓인다.
+        if (extractCodexQuota(error)) {
+          const remaining = groups
+            .slice(index)
+            .reduce((sum, rest) => sum + rest.cards.length, 0);
+          outcome.skipped += remaining;
+          this.logger.warn(
+            `PR 리뷰 수확 중단 — 모델 쿼터 소진 (남은 카드 ${remaining}건은 다음 회차에 재시도).`,
+          );
+          break;
+        }
         outcome.skipped += group.cards.length;
         this.logger.warn(
           `PR 리뷰 수확 실패 (${group.repo}#${group.pullNumber}) — 다음 PR 계속: ${
@@ -268,7 +290,7 @@ export class HarvestReviewSignalsUsecase {
       return;
     }
 
-    const items = await this.collectResolutionCandidates({
+    const { items, headSha } = await this.collectResolutionCandidates({
       group,
       pendingResolutions,
     });
@@ -283,6 +305,11 @@ export class HarvestReviewSignalsUsecase {
     try {
       judgments = await this.judgeFindingResolution.execute({ items });
     } catch (error: unknown) {
+      // 쿼터 소진은 이 PR 만의 문제가 아니라 회차 전체가 못 도는 상황이다. 삼키면
+      // 호출부가 그 사실을 모르고 남은 PR 에 계속 시도한다 → execute 가 끊게 올린다.
+      if (extractCodexQuota(error)) {
+        throw error;
+      }
       outcome.skipped += items.length;
       this.logger.warn(
         `PR 리뷰 해소 판정 실패 — 카드 ${items.length}건 미결 유지: ${
@@ -290,6 +317,11 @@ export class HarvestReviewSignalsUsecase {
         }`,
       );
       return;
+    }
+
+    // 물어본 건 기록한다. 실패했을 때는 여기 오지 않으므로 다음 회차에 재시도된다.
+    for (const item of items) {
+      this.resolutionCheckpoints.set(item.id, headSha);
     }
 
     const byId = new Map(judgments.map((judgment) => [judgment.id, judgment]));
@@ -322,7 +354,7 @@ export class HarvestReviewSignalsUsecase {
   }: {
     group: PullRequestCardGroup;
     pendingResolutions: PendingResolution[];
-  }): Promise<FindingResolutionItem[]> {
+  }): Promise<{ items: FindingResolutionItem[]; headSha: string }> {
     const detail = await this.githubClient.getPullRequest({
       repo: group.repo,
       number: group.pullNumber,
@@ -335,6 +367,9 @@ export class HarvestReviewSignalsUsecase {
     for (const pending of pendingResolutions) {
       if (pending.card.headSha === detail.headSha) {
         continue; // 카드 게시 후 새 커밋이 없다.
+      }
+      if (this.resolutionCheckpoints.get(pending.card.id) === detail.headSha) {
+        continue; // 이 head 는 이미 물어봤다. 새 커밋이 오기 전까진 답이 같다.
       }
       const found = byBaseSha.get(pending.card.headSha);
       if (found) {
@@ -351,7 +386,17 @@ export class HarvestReviewSignalsUsecase {
         baseSha,
         headSha: detail.headSha,
       });
-      const hunks = parseDiffHunks(compared.diff);
+      if (compared.truncated) {
+        // 잘린 뒷부분이 판정을 뒤집을 수 있다. 불완전한 근거로 카드를 닫는 것보다
+        // 미결로 두는 편이 안전하다(resolveHarvestSignal 의 truncated 처리와 같은 정신).
+        this.logger.warn(
+          `해소 판정 보류 — 비교 diff 가 잘렸다 (${group.repo}#${group.pullNumber}, ${baseSha.slice(0, 7)}, 카드 ${cards.length}건).`,
+        );
+        continue;
+      }
+      // base 기준으로 읽는다. 카드의 line 은 카드 게시 시점(=비교 base) 파일 기준이라
+      // 신규 기준 범위와 대조하면 그 사이 삽입·삭제만큼 좌표가 밀린다.
+      const hunks = parseDiffBaseHunks(compared.diff);
       for (const { card } of cards) {
         if (card.filePath === null || card.line === null) {
           continue;
@@ -378,7 +423,7 @@ export class HarvestReviewSignalsUsecase {
         });
       }
     }
-    return items;
+    return { items, headSha: detail.headSha };
   }
 
   private async judgeReplies({
@@ -402,6 +447,9 @@ export class HarvestReviewSignalsUsecase {
         })),
       });
     } catch (error: unknown) {
+      if (extractCodexQuota(error)) {
+        throw error; // 위와 같은 이유 — 회차를 끊는다.
+      }
       outcome.skipped += pendingJudgments.length;
       this.logger.warn(
         `PR 리뷰 답글 판정 실패 — 답글 ${pendingJudgments.length}건 미결 유지: ${

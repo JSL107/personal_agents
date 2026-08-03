@@ -39,6 +39,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
     const hasHarvestResult =
       harvest.acked > 0 ||
       harvest.rejected > 0 ||
+      harvest.fixed > 0 ||
       harvest.stale > 0 ||
       harvest.resolved > 0;
     if (!hasHarvestResult && results.length === 0) {
