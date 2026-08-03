@@ -11,7 +11,7 @@ import {
   parseEveningRetroOutput,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
-import { getTodayKstDate } from '../../../common/util/kst-date.util';
+import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
   REPO_SOURCE_LABEL,
@@ -76,7 +76,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
 
     const author = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     const authorLogin = author?.trim() ? author.trim() : undefined;
-    const sinceIsoDate = `${getTodayKstDate()}T00:00:00+09:00`;
+    // ⚠️ 이 값은 GitHub search 쿼리(`merged:>=<값>`)에 그대로 박힌다. `+09:00` 같은 offset
+    // 표기를 쓰면 octokit 이 `+` 를 escape 하지 않아 GitHub 이 공백으로 읽고, 에러 대신
+    // **조용히 0건**을 돌려준다("오늘 머지된 PR 없음"으로 위장됨). 항상 UTC(Z) 표기로 넘긴다.
+    const sinceIsoDate = getKstDayStartAsUtc().toISOString();
     const personalRepositories = this.getPersonalRepositories();
     const mergedPrs: EveningPrInput[] = authorLogin
       ? (
@@ -130,7 +133,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const scoreLines = parsed.candidates
         .map((candidate) => this.formatCandidateLine(candidate, authorLogin))
         .join('\n');
-      const summaryText = `🌙 *오늘의 회고 & 발행 후보 — ${firedAtKst}*\n\n${parsed.retrospective}\n\n*발행 후보(가치 점수)*\n${scoreLines || '_후보 없음_'}`;
+      const summaryText = `🌙 *오늘의 회고 & 발행 후보 — ${firedAtKst}*\n\n${parsed.retrospective}\n\n*발행 후보(가치 점수)*\n${scoreLines || '_후보 없음_'}${this.buildEvidenceNotice(
+        authorLogin,
+        mergedPrs.length,
+      )}`;
 
       const previews: AutopilotPreviewRequest[] = [];
       // 블로그 카드 — 대표(최고점) 후보 기준. candidates 있을 때만.
@@ -189,6 +195,30 @@ export class EveningRetroPublishTask implements AutopilotTask {
         summaryText: `🌙 *오늘의 회고 — ${firedAtKst}*\n_회고 자동 생성에 실패했습니다(${message.slice(0, 120)}). 내일 다시 시도합니다._`,
       };
     }
+  }
+
+  /**
+   * 근거 PR 이 0건이라는 사실 자체를 보고에 남긴다.
+   *
+   * 근거가 없으면 후보도 따라서 사라지는데, "정말 PR 이 없던 날" 과 "조회가 깨진 날" 은
+   * 결과가 똑같이 "후보 없음" 이라 구분되지 않는다. 후자는 에러도 알림도 남기지 않아
+   * 조용히 몇 주씩 방치된다 — 실제로 `sinceIsoDate` 의 `+09:00` 이 GitHub 검색을
+   * 깨뜨려 두 주 가까이 0건이었고, 회고 본문은 그걸 "오늘 머지된 PR이 없고" 라고
+   * 자연스럽게 서술해 아무도 이상하게 여기지 않았다.
+   *
+   * 막지는 않는다. 사실을 한 줄 남겨 사람이 며칠 연속인지 눈치챌 수 있게만 한다.
+   */
+  private buildEvidenceNotice(
+    authorLogin: string | undefined,
+    mergedCount: number,
+  ): string {
+    if (!authorLogin) {
+      return '\n\n_⚠️ `IMPACT_REPORT_GITHUB_AUTHOR` 가 없어 머지 PR 을 조회하지 않았습니다 — 근거 없이 쓴 회고입니다._';
+    }
+    if (mergedCount === 0) {
+      return '\n\n_⚠️ 오늘 머지된 PR 이 0건으로 조회됐습니다. 실제로 없었다면 정상이지만, 며칠 연속이면 GitHub 조회 경로를 확인하세요._';
+    }
+    return '';
   }
 
   private async readRunText(
