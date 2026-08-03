@@ -23,6 +23,31 @@ describe('formatBlogDraft', () => {
     expect(text).toContain('https://www.notion.so/abc');
   });
 
+  it('publishError 가 있으면 실패 사실과 이유를 노출한다 (조용한 실패 방지)', () => {
+    const text = formatBlogDraft({
+      notionUrl: 'https://www.notion.so/abc',
+      rawOutput: '',
+      published: false,
+      publishError: 'property "상태" does not exist',
+    });
+    expect(text).toContain('발행 상태 전환에 실패');
+    expect(text).toContain('property "상태" does not exist');
+    // 실패인데 정상 초안 생성처럼 읽히면 안 된다.
+    expect(text).not.toContain('초안만 생성');
+  });
+
+  it('publishError 가 길거나 mrkdwn 제어문자를 포함해도 안전하게 자른다', () => {
+    const text = formatBlogDraft({
+      notionUrl: 'https://www.notion.so/abc',
+      rawOutput: '',
+      published: false,
+      publishError: `<script>&${'x'.repeat(300)}`,
+    });
+    expect(text).toContain('&lt;script&gt;&amp;');
+    expect(text).not.toContain('<script>');
+    expect(text).toContain('…');
+  });
+
   it('안전하지 않은(http/https 아닌) URL 은 링크로 노출하지 않는다', () => {
     const text = formatBlogDraft({
       notionUrl: 'javascript:alert(1)',

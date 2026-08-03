@@ -85,11 +85,12 @@ export class GenerateBlogDraftUsecase {
             status: DomainStatus.INTERNAL,
           });
         }
-        const published = await this.publishToNotion(notionUrl, stdout);
+        const publish = await this.publishToNotion(notionUrl, stdout);
         const result: BlogDraftResult = {
           notionUrl,
           rawOutput: stdout,
-          published,
+          published: publish.published,
+          ...(publish.error ? { publishError: publish.error } : {}),
         };
         return { result, modelUsed: 'hermes-cli', output: result };
       },
@@ -97,14 +98,19 @@ export class GenerateBlogDraftUsecase {
   }
 
   // 생성된 Notion 페이지를 발행 상태(상태=발행 + 발행일/태그/요약)로 보강한다.
-  // best-effort — 속성 미설정/권한 등으로 실패해도 throw 하지 않고 false 반환(초안 URL 은 회신).
+  // best-effort — 속성 미설정/권한 등으로 실패해도 throw 하지 않는다(초안 URL 은 회신).
+  // 다만 실패 **이유**는 함께 돌려준다. warn 로그로만 남기면 사용자에게는 정상 초안
+  // 생성과 구분되지 않아, 실측(2026-06)에서 4회 연속 실패를 아무도 눈치채지 못했다.
   private async publishToNotion(
     notionUrl: string,
     stdout: string,
-  ): Promise<boolean> {
+  ): Promise<{ published: boolean; error?: string }> {
     const pageId = notionPageIdFromUrl(notionUrl);
     if (!pageId) {
-      return false;
+      return {
+        published: false,
+        error: 'Notion 링크에서 페이지 id 를 추출하지 못했습니다.',
+      };
     }
     try {
       await this.notionClient.updatePageProperties({
@@ -119,14 +125,13 @@ export class GenerateBlogDraftUsecase {
           this.getBlogStatusPublishedValue(),
         ),
       });
-      return true;
+      return { published: true };
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `블로그 Notion 발행 enrich 실패 (초안은 생성됨, 수동 발행 가능): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `블로그 Notion 발행 enrich 실패 (초안은 생성됨, 수동 발행 가능): ${message}`,
       );
-      return false;
+      return { published: false, error: message };
     }
   }
 
