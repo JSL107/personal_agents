@@ -70,6 +70,11 @@ export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 
-// PR 리뷰 루프 스윕 — 15분 주기. 할 일 없으면 skip 하므로 알림 스팸은 없다.
-export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/15 * * * *';
+// PR 리뷰 루프 스윕 — 5분 주기. 할 일 없으면 skip 하므로 알림 스팸은 없다.
+//
+// 15분에서 줄인 이유: 이 레포의 PR 수명이 30분 남짓이라(#196 34분, #197 35분) 15분 주기면
+// 리뷰 기회가 1~2회뿐이고, 그중 한 번이라도 모델 호출이 실패하면 그 PR 은 리뷰 없이 머지된다
+// (2026-07-31 실측: 08:01 스윕 실패 → 다음 기회 08:45 에는 두 PR 다 이미 머지됨).
+// 열린 PR 이 없으면 GitHub 조회만 하고 끝나므로(실측 14~47초, LLM 미호출) 주기를 줄이는 비용은 작다.
+export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/5 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';

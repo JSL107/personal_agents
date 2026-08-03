@@ -55,14 +55,19 @@ describe('SweepPrReviewsUsecase', () => {
   >;
   let reviewUsecase: jest.Mocked<Pick<ReviewPullRequestUsecase, 'execute'>>;
   let agentRunService: jest.Mocked<
-    Pick<AgentRunService, 'findLatestSweepReview'>
+    Pick<
+      AgentRunService,
+      'findLatestSweepReview' | 'countUnsuccessfulSweepReviews'
+    >
   >;
   let publishService: jest.Mocked<Pick<PublishFindingsService, 'publish'>>;
 
-  // 쿨다운(6h) 판정 테스트용 — 절대 시각이 아닌 "현재로부터 N시간 전"으로 만들어 시간 흐름에
+  // 판정 테스트용 — 절대 시각이 아닌 "현재로부터 N시간/분 전"으로 만들어 시간 흐름에
   // 영향받지 않게 한다.
   const hoursAgo = (hours: number): Date =>
     new Date(Date.now() - hours * 60 * 60 * 1000);
+  const minutesAgo = (minutes: number): Date =>
+    new Date(Date.now() - minutes * 60 * 1000);
 
   const buildUsecase = (values: Record<string, string | undefined>) =>
     new SweepPrReviewsUsecase(
@@ -111,6 +116,7 @@ describe('SweepPrReviewsUsecase', () => {
     // 기본값 null = 이전 스윕 리뷰 레코드 없음 → 리뷰 대상.
     agentRunService = {
       findLatestSweepReview: jest.fn().mockResolvedValue(null),
+      countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
     };
     publishService = {
       publish: jest.fn().mockResolvedValue({
@@ -171,6 +177,9 @@ describe('SweepPrReviewsUsecase', () => {
       prRef: 'JSL107/personal_agents#180',
       sinceDays: 30,
     });
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
     expect(reviewUsecase.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         prRef: 'JSL107/personal_agents#180',
@@ -210,6 +219,9 @@ describe('SweepPrReviewsUsecase', () => {
     const results = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
     expect(results).toEqual([]);
   });
 
@@ -254,6 +266,9 @@ describe('SweepPrReviewsUsecase', () => {
       PR_REVIEW_INLINE_DRYRUN: 'false',
     }).execute();
 
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     expect(publishService.publish).toHaveBeenCalledWith(
       expect.objectContaining({ dryRun: false }),
@@ -261,7 +276,7 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toHaveLength(1);
   });
 
-  it('연습 모드로 끝난 SUCCEEDED 라도 여전히 연습 모드면 재리뷰하지 않는다 — 15분마다 재리뷰 방지', async () => {
+  it('연습 모드로 끝난 SUCCEEDED 라도 여전히 연습 모드면 재리뷰하지 않는다 — 5분마다 재리뷰 방지', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
@@ -273,10 +288,10 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
   });
 
-  it('직전이 FAILED + 쿨다운(6h) 안이면 재리뷰하지 않는다', async () => {
+  it('직전이 FAILED + 쿨다운(10분) 안이면 재리뷰하지 않는다', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
-      startedAt: hoursAgo(1),
+      startedAt: minutesAgo(5),
       dryRun: false,
     });
 
@@ -286,10 +301,10 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toEqual([]);
   });
 
-  it('직전이 FAILED + 쿨다운(6h) 지나면 재리뷰한다 — 일시적 codex 실패가 30일간 제외되지 않는다', async () => {
+  it('직전이 FAILED + 쿨다운(10분) 지나면 재리뷰한다 — 일시적 codex 실패가 PR 수명 동안 제외되지 않는다', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
-      startedAt: hoursAgo(7),
+      startedAt: minutesAgo(15),
       dryRun: false,
     });
 
@@ -299,20 +314,75 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toHaveLength(1);
   });
 
-  it('직전이 IN_PROGRESS + 쿨다운 안이면 재리뷰하지 않는다 — 진행 중 중복 리뷰 방지', async () => {
+  it('직전이 IN_PROGRESS + 쿨다운(10분) 안이면 재리뷰하지 않는다 — 진행 중 중복 리뷰 방지', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'IN_PROGRESS',
-      startedAt: hoursAgo(1),
+      startedAt: minutesAgo(5),
       dryRun: false,
     });
 
     const results = await buildUsecase(ENABLED).execute();
 
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
   });
 
-  it('스윕 1회의 신규 리뷰는 상한(5건)까지만', async () => {
+  it('쿨다운은 지났어도 24시간 재시도 예산(3회)을 다 쓰면 재리뷰하지 않는다 — 쿼터 소진 시 5분마다 실패 반복 방지', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+    });
+    agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(3);
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(agentRunService.countUnsuccessfulSweepReviews).toHaveBeenCalledWith({
+      prRef: 'JSL107/personal_agents#180',
+      sinceHours: 24,
+    });
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('쿨다운이 지났고 24시간 재시도 예산이 남으면 한 번 재리뷰한다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'IN_PROGRESS',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+    });
+    agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(2);
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('재시도 예산 조회가 실패하면 보수적으로 재리뷰하지 않는다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+    });
+    agentRunService.countUnsuccessfulSweepReviews.mockRejectedValue(
+      new Error('DB 순간 오류'),
+    );
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    expect(agentRunService.countUnsuccessfulSweepReviews).toHaveBeenCalledWith({
+      prRef: 'JSL107/personal_agents#180',
+      sinceHours: 24,
+    });
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('스윕 1회의 신규 리뷰는 상한(3건)까지만', async () => {
     const many = Array.from({ length: 8 }, (_, index) => ({
       ...OPEN_PR,
       number: 200 + index,
@@ -321,10 +391,10 @@ describe('SweepPrReviewsUsecase', () => {
 
     await buildUsecase(ENABLED).execute();
 
-    expect(reviewUsecase.execute).toHaveBeenCalledTimes(5);
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
-  it('레포 간 상한(5건)은 합산으로 적용된다', async () => {
+  it('레포 간 상한(3건)은 합산으로 적용된다', async () => {
     const buildPrsForRepo = (repo: string) =>
       Array.from({ length: 3 }, (_, index) => ({
         ...OPEN_PR,
@@ -341,7 +411,7 @@ describe('SweepPrReviewsUsecase', () => {
       PR_REVIEW_INLINE_REPOS: 'org/repo-a,org/repo-b,org/repo-c',
     }).execute();
 
-    expect(reviewUsecase.execute).toHaveBeenCalledTimes(5);
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
   it('한 PR 의 실패가 다른 PR 을 막지 않는다', async () => {

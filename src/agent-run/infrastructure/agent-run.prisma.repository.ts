@@ -21,6 +21,7 @@ import {
   AgentRunStatRow,
   AgentSweptCountRow,
   BeginAgentRunInput,
+  CountUnsuccessfulSweepReviewsQuery,
   FailedRunSnapshot,
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
@@ -465,6 +466,23 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       startedAt: row.startedAt,
       dryRun: snapshot?.dryRun === true,
     };
+  }
+
+  // PR 리뷰 스윕 — 짧아진 쿨다운이 실패 무한 루프를 되살리지 않도록 최근 실패/고착 시도 수를 센다.
+  // inputSnapshot.prRef JSON path 는 인덱스가 없으므로 호출자가 retry 직전에만 이 조회를 사용한다.
+  async countUnsuccessfulSweepReviews({
+    prRef,
+    sinceHours,
+  }: CountUnsuccessfulSweepReviewsQuery): Promise<number> {
+    const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+    return await this.prisma.agentRun.count({
+      where: {
+        triggerType: 'PR_REVIEW_SWEEP',
+        status: { not: AgentRunStatus.SUCCEEDED },
+        startedAt: { gte: since },
+        inputSnapshot: { path: ['prRef'], equals: prRef },
+      },
+    });
   }
 
   // 콘솔 관제 — agentType별 최신 종료 런을 distinct(=DISTINCT ON)로 1건씩 뽑아,

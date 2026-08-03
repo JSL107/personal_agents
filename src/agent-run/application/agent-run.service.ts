@@ -21,6 +21,7 @@ import {
   AgentRunRepositoryPort,
   AgentRunStatRow,
   AgentSweptCountRow,
+  CountUnsuccessfulSweepReviewsQuery,
   FindLatestSweepReviewQuery,
   LatestSweepReview,
   RecentlyFailedRun,
@@ -332,6 +333,14 @@ export class AgentRunService {
     input: FindLatestSweepReviewQuery,
   ): Promise<LatestSweepReview | null> {
     return await this.repository.findLatestSweepReview(input);
+  }
+
+  // PR 리뷰 루프 — 짧은 쿨다운 재시도의 24시간 예산 판정 근거. usecase 가 필요할 때만
+  // 조회하도록 여기서는 repository 위임(실패/고착 시도 수 조회)만 한다.
+  async countUnsuccessfulSweepReviews(
+    input: CountUnsuccessfulSweepReviewsQuery,
+  ): Promise<number> {
+    return await this.repository.countUnsuccessfulSweepReviews(input);
   }
 
   // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료가 FAILED인 것.
