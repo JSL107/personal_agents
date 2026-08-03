@@ -164,7 +164,7 @@ struct DashboardView: View {
     // MARK: - 병목 배너
 
     private var bottleneckBanner: some View {
-        let names = bottleneckAgents.map(\.displayName).joined(separator: ", ")
+        let names = bottleneckAgents.map(\.roleName).joined(separator: ", ")
         return HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(ConsoleAgentState.awaitingIntegration.accentColor)
