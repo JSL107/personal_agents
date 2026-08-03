@@ -93,6 +93,30 @@ export const snapToCommentableLine = ({
   return best;
 };
 
+// 지적한 줄 근처가 실제로 바뀌었나. 해소 판정(FIXED)의 1차 결정론 필터로, 안 겹치면
+// LLM 에게 묻지 않는다. 스냅과 판정 규칙이 같아(같은 파일 · maxDistance 안) 재사용한다.
+export const isTouchedByChanges = (input: SnapInput): boolean =>
+  snapToCommentableLine(input) !== null;
+
+// unified diff 에서 한 파일의 섹션만 잘라낸다. 판정 프롬프트에 전체 diff 를 넣으면
+// 무관한 변경이 섞여 판단이 흐려지므로 지적한 파일만 보여준다.
+export const extractFileDiff = (
+  diff: string,
+  filePath: string,
+): string | null => {
+  const sections = diff.split(/^diff --git /m);
+  for (const section of sections) {
+    if (section.trim().length === 0) {
+      continue;
+    }
+    const hunks = parseDiffHunks(`diff --git ${section}`);
+    if (hunks.some((file) => file.filePath === filePath)) {
+      return `diff --git ${section}`.trimEnd();
+    }
+  }
+  return null;
+};
+
 // 모델이 line 을 비워 보낸 경우의 폴백 — 그 파일 첫 변경 줄. 파일 단위(subject_type=file)
 // 코멘트는 파일 헤더에 붙어 어느 줄에 대한 지적인지 보이지 않으므로, 인라인을 우선한다.
 // diff 에 없는 파일이면 애초에 인라인이 불가하므로 null (호출부가 파일 단위로 강등).

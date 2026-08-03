@@ -57,6 +57,16 @@ export interface GetPullRequestDiffOptions extends PullRequestRef {
   maxBytes?: number;
 }
 
+// 두 커밋 사이의 변경만 본다. PR 전체 diff 는 base 부터라 카드가 게시되기 *전* 변경까지
+// 포함해 "지적이 해소됐다" 를 오판하게 만든다. 카드의 headSha → 현재 headSha 구간만 본다.
+export interface CompareCommitsOptions {
+  // "owner/repo" 형식.
+  repo: string;
+  baseSha: string;
+  headSha: string;
+  maxBytes?: number;
+}
+
 // PM-2 Write-back: GitHub Issue 또는 PR 의 코멘트 영역에 외부 게시 가능한 텍스트를 append.
 export interface AddIssueCommentInput {
   // "owner/repo" 형식.
@@ -123,6 +133,8 @@ export interface GithubClientPort {
   getPullRequestDiff(
     options: GetPullRequestDiffOptions,
   ): Promise<PullRequestDiff>;
+
+  compareCommits(options: CompareCommitsOptions): Promise<PullRequestDiff>;
 
   // PM-2: 사용자 ✅ apply 후 Issue/PR 코멘트로 WBS subtask checklist 등을 append.
   // GitHub PAT 가 `repo` 또는 fine-grained `Issues: Read+Write` scope 가 있어야 동작.

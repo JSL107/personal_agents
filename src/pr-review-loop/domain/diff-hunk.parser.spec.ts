@@ -1,5 +1,7 @@
 import {
+  extractFileDiff,
   firstCommentableLine,
+  isTouchedByChanges,
   parseDiffHunks,
   SNAP_MAX_DISTANCE,
   snapToCommentableLine,
@@ -142,5 +144,56 @@ describe('firstCommentableLine', () => {
         filePath: 'src/empty.ts',
       }),
     ).toBeNull();
+  });
+});
+
+describe('isTouchedByChanges', () => {
+  const hunks = parseDiffHunks(DIFF);
+
+  it('지적한 줄이 변경 범위 안이면 true', () => {
+    expect(
+      isTouchedByChanges({
+        hunks,
+        filePath: 'src/foo.service.ts',
+        line: 11,
+        maxDistance: SNAP_MAX_DISTANCE,
+      }),
+    ).toBe(true);
+  });
+
+  it('변경이 지적한 줄에서 멀면 false — LLM 에게 묻지 않는다', () => {
+    expect(
+      isTouchedByChanges({
+        hunks,
+        filePath: 'src/foo.service.ts',
+        line: 500,
+        maxDistance: SNAP_MAX_DISTANCE,
+      }),
+    ).toBe(false);
+  });
+
+  it('그 파일이 아예 안 바뀌었으면 false', () => {
+    expect(
+      isTouchedByChanges({
+        hunks,
+        filePath: 'src/untouched.ts',
+        line: 10,
+        maxDistance: SNAP_MAX_DISTANCE,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('extractFileDiff', () => {
+  it('해당 파일 섹션만 잘라낸다 — 다른 파일 변경은 섞이지 않는다', () => {
+    const section = extractFileDiff(DIFF, 'src/bar.util.ts');
+
+    expect(section).toContain('src/bar.util.ts');
+    expect(section).toContain('+export const bar = 1;');
+    expect(section).not.toContain('src/foo.service.ts');
+  });
+
+  it('diff 에 없는 파일이면 null', () => {
+    expect(extractFileDiff(DIFF, 'src/unknown.ts')).toBeNull();
   });
 });

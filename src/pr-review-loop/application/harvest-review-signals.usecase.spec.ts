@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
 import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import {
@@ -78,6 +79,12 @@ const buildDependencies = ({
   const github = {
     listReviewThreads: jest.fn(),
     resolveReviewThread: jest.fn().mockResolvedValue(undefined),
+    getPullRequest: jest.fn().mockResolvedValue({ headSha: 'abc1234' }),
+    compareCommits: jest.fn().mockResolvedValue({
+      diff: '',
+      truncated: false,
+      bytes: 0,
+    }),
   };
   const repository = {
     createIfAbsent: jest.fn(),
@@ -88,6 +95,7 @@ const buildDependencies = ({
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
+  const resolutionJudge = { execute: jest.fn().mockResolvedValue([]) };
   const episodic = {
     record: jest.fn().mockResolvedValue(undefined),
     searchRelevant: jest.fn(),
@@ -97,9 +105,10 @@ const buildDependencies = ({
     github as unknown as GithubClientPort,
     repository,
     judge as unknown as JudgeReviewReplyUsecase,
+    resolutionJudge as unknown as JudgeFindingResolutionUsecase,
     episodic as unknown as EpisodicMemoryPort,
   );
-  return { usecase, github, repository, judge, episodic };
+  return { usecase, github, repository, judge, resolutionJudge, episodic };
 };
 
 describe('HarvestReviewSignalsUsecase', () => {
@@ -111,6 +120,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     await expect(usecase.execute()).resolves.toEqual({
       acked: 0,
       rejected: 0,
+      fixed: 0,
       stale: 0,
       resolved: 0,
       judged: 0,
@@ -339,6 +349,151 @@ describe('HarvestReviewSignalsUsecase', () => {
     });
     expect(episodic.record).toHaveBeenCalledTimes(1);
     expect(github.resolveReviewThread).not.toHaveBeenCalled();
+  });
+
+  describe('후속 커밋 해소 판정 (FIXED)', () => {
+    const CHANGED_DIFF = `diff --git a/src/foo.service.ts b/src/foo.service.ts
+--- a/src/foo.service.ts
++++ b/src/foo.service.ts
+@@ -40,2 +42,3 @@
+-  await save();
++  await this.prisma.$transaction(async (tx) => save(tx));
+`;
+
+    const buildNoReactionThread = () => ({
+      pullRequestState: 'OPEN' as const,
+      truncated: false,
+      threads: [reviewThread()],
+    });
+
+    it('지적한 줄이 안 바뀌었으면 LLM 을 부르지 않고 미결로 둔다', async () => {
+      // 1차 결정론 필터. 변경과 안 겹치는 카드까지 물으면 PR 마다 쓸데없이 비싸진다.
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card()]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: `diff --git a/src/other.ts b/src/other.ts
+--- a/src/other.ts
++++ b/src/other.ts
+@@ -1 +1,2 @@
++const x = 1;
+`,
+        truncated: false,
+        bytes: 10,
+      });
+
+      const outcome = await usecase.execute();
+
+      expect(resolutionJudge.execute).not.toHaveBeenCalled();
+      expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
+      expect(repository.markDecided).not.toHaveBeenCalled();
+    });
+
+    it('카드 게시 후 새 커밋이 없으면 비교조차 하지 않는다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card()]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      // 카드 fixture 의 headSha 와 같다.
+      github.getPullRequest.mockResolvedValue({ headSha: 'abc1234' });
+
+      const outcome = await usecase.execute();
+
+      expect(github.compareCommits).not.toHaveBeenCalled();
+      expect(resolutionJudge.execute).not.toHaveBeenCalled();
+      expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
+    });
+
+    it('겹치고 FIXED 판정이면 확정하고 스레드를 닫는다 — episodic 은 적재하지 않는다', async () => {
+      // FIXED 는 채택 쪽이다. 적재하면 좋은 지적을 피하도록 역학습한다.
+      const { usecase, github, repository, resolutionJudge, episodic } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: false,
+        bytes: 100,
+      });
+      resolutionJudge.execute.mockResolvedValue([
+        { id: 1, verdict: 'FIXED', reason: '트랜잭션으로 감쌈' },
+      ]);
+
+      const outcome = await usecase.execute();
+
+      expect(github.compareCommits).toHaveBeenCalledWith({
+        repo: 'JSL107/personal_agents',
+        baseSha: 'abc1234',
+        headSha: 'def5678',
+      });
+      expect(outcome).toMatchObject({ fixed: 1, judged: 1, resolved: 1 });
+      expect(repository.markDecided).toHaveBeenCalledWith({
+        id: 1,
+        status: 'FIXED',
+        rejectReason: null,
+        githubThreadNodeId: 'PRRT_555',
+      });
+      expect(episodic.record).not.toHaveBeenCalled();
+    });
+
+    it('UNCLEAR 면 OPEN 을 유지한다 — 억지 판정보다 미결이 안전하다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: false,
+        bytes: 100,
+      });
+      resolutionJudge.execute.mockResolvedValue([
+        { id: 1, verdict: 'UNCLEAR', reason: '' },
+      ]);
+
+      const outcome = await usecase.execute();
+
+      expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
+      expect(repository.markDecided).not.toHaveBeenCalled();
+    });
+
+    it('판정 호출이 실패해도 카드를 확정하지 않고 다음 PR 을 계속한다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
+      github.getPullRequest.mockResolvedValue({ headSha: 'def5678' });
+      github.compareCommits.mockResolvedValue({
+        diff: CHANGED_DIFF,
+        truncated: false,
+        bytes: 100,
+      });
+      resolutionJudge.execute.mockRejectedValue(new Error('quota'));
+
+      const outcome = await usecase.execute();
+
+      expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
+      expect(repository.markDecided).not.toHaveBeenCalled();
+    });
+
+    it('PR 이 닫혀 있으면 해소 판정을 하지 않는다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
+        buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
+      github.listReviewThreads.mockResolvedValue({
+        pullRequestState: 'MERGED',
+        truncated: false,
+        threads: [reviewThread()],
+      });
+
+      await usecase.execute();
+
+      expect(resolutionJudge.execute).not.toHaveBeenCalled();
+      expect(github.compareCommits).not.toHaveBeenCalled();
+    });
   });
 
   it('PR이 종료된 채 스레드만 resolve된 카드는 STALE로 남긴다', async () => {

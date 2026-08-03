@@ -13,6 +13,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     harvestUsecase = {
       execute: jest.fn().mockResolvedValue({
         acked: 0,
+        fixed: 0,
         rejected: 0,
         stale: 0,
         resolved: 0,
@@ -67,6 +68,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       callOrder.push('harvest');
       return {
         acked: 0,
+        fixed: 0,
         rejected: 0,
         stale: 0,
         resolved: 0,
@@ -88,6 +90,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     harvestUsecase.execute.mockResolvedValue({
       acked: 2,
       rejected: 1,
+      fixed: 1,
       stale: 0,
       resolved: 3,
       judged: 0,
@@ -130,6 +133,7 @@ describe('PrReviewSweepAutopilotTask', () => {
   it('판정·미결 카운터만 있으면 상태 전이가 아니므로 알림을 생략한다', async () => {
     harvestUsecase.execute.mockResolvedValue({
       acked: 0,
+      fixed: 0,
       rejected: 0,
       stale: 0,
       resolved: 0,

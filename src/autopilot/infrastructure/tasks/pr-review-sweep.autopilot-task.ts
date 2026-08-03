@@ -54,6 +54,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
 const emptyHarvestOutcome = (): HarvestOutcome => ({
   acked: 0,
   rejected: 0,
+  fixed: 0,
   stale: 0,
   resolved: 0,
   judged: 0,

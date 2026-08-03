@@ -14,6 +14,7 @@ const outcome = (overrides = {}) => ({
 const harvest = (overrides = {}) => ({
   acked: 0,
   rejected: 0,
+  fixed: 0,
   stale: 0,
   resolved: 0,
   judged: 0,

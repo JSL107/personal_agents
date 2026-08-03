@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
+import { FindingResolutionItem } from '../../agent/review-reply-judge/domain/finding-resolution.type';
 import { ReviewReplyJudgment } from '../../agent/review-reply-judge/domain/review-reply-judge.type';
 import {
   EPISODIC_MEMORY_PORT,
@@ -12,6 +14,12 @@ import {
   GithubClientPort,
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
+import {
+  extractFileDiff,
+  isTouchedByChanges,
+  parseDiffHunks,
+  SNAP_MAX_DISTANCE,
+} from '../domain/diff-hunk.parser';
 import { HarvestOutcome } from '../domain/harvest-outcome.type';
 import {
   findThreadForComment,
@@ -38,9 +46,15 @@ interface PendingJudgment {
   replyBody: string;
 }
 
+interface PendingResolution {
+  card: PrReviewFindingRecord;
+  thread: ReviewThread;
+}
+
 const emptyOutcome = (): HarvestOutcome => ({
   acked: 0,
   rejected: 0,
+  fixed: 0,
   stale: 0,
   resolved: 0,
   judged: 0,
@@ -58,6 +72,7 @@ export class HarvestReviewSignalsUsecase {
     @Inject(PR_REVIEW_FINDING_REPOSITORY_PORT)
     private readonly repository: PrReviewFindingRepositoryPort,
     private readonly judgeReviewReply: JudgeReviewReplyUsecase,
+    private readonly judgeFindingResolution: JudgeFindingResolutionUsecase,
     @Optional()
     @Inject(EPISODIC_MEMORY_PORT)
     private readonly episodicMemory?: EpisodicMemoryPort,
@@ -129,6 +144,7 @@ export class HarvestReviewSignalsUsecase {
       number: group.pullNumber,
     });
     const pendingJudgments: PendingJudgment[] = [];
+    const pendingResolutions: PendingResolution[] = [];
 
     for (const card of group.cards) {
       const thread =
@@ -216,12 +232,153 @@ export class HarvestReviewSignalsUsecase {
           });
           break;
         case 'NONE':
+          // 반응이 없어도 지적을 말없이 고쳤을 수 있다. 열린 PR 의 인라인 카드만
+          // 후속 커밋 해소 판정 후보로 모은다(위치가 없으면 겹침을 계산할 수 없다).
+          if (
+            thread !== null &&
+            card.filePath !== null &&
+            card.line !== null &&
+            reviewThreads.pullRequestState === 'OPEN'
+          ) {
+            pendingResolutions.push({ card, thread });
+            break;
+          }
           outcome.skipped += 1;
           break;
       }
     }
 
     await this.judgeReplies({ pendingJudgments, outcome });
+    await this.judgeResolutions({ group, pendingResolutions, outcome });
+  }
+
+  // 반응이 없는 카드가 후속 커밋으로 해소됐는지 본다. 1차로 "지적한 줄 근처가 실제로
+  // 바뀌었나" 를 순수 계산으로 거르고(안 겹치면 LLM 을 부르지 않는다), 남은 것만 PR 당
+  // 1회 배치로 묻는다. 애매하면 OPEN 을 유지한다 — 억지 판정보다 미결이 안전하다.
+  private async judgeResolutions({
+    group,
+    pendingResolutions,
+    outcome,
+  }: {
+    group: PullRequestCardGroup;
+    pendingResolutions: PendingResolution[];
+    outcome: HarvestOutcome;
+  }): Promise<void> {
+    if (pendingResolutions.length === 0) {
+      return;
+    }
+
+    const items = await this.collectResolutionCandidates({
+      group,
+      pendingResolutions,
+    });
+    if (items.length === 0) {
+      outcome.skipped += pendingResolutions.length;
+      return;
+    }
+    // 변경과 안 겹쳐 후보에서 빠진 카드는 그대로 미결이다.
+    outcome.skipped += pendingResolutions.length - items.length;
+
+    let judgments;
+    try {
+      judgments = await this.judgeFindingResolution.execute({ items });
+    } catch (error: unknown) {
+      outcome.skipped += items.length;
+      this.logger.warn(
+        `PR 리뷰 해소 판정 실패 — 카드 ${items.length}건 미결 유지: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+
+    const byId = new Map(judgments.map((judgment) => [judgment.id, judgment]));
+    const byCardId = new Map(
+      pendingResolutions.map((pending) => [pending.card.id, pending]),
+    );
+    for (const item of items) {
+      const judgment = byId.get(item.id);
+      const pending = byCardId.get(item.id);
+      if (!pending || judgment?.verdict !== 'FIXED') {
+        outcome.skipped += 1;
+        continue;
+      }
+      outcome.judged += 1;
+      // FIXED 는 채택 쪽이라 episodic 에 적재하지 않는다(적재는 REJECTED 만).
+      // fixed 카운터는 markDecisionAndResolve 가 올린다 — 여기서 또 올리면 이중 계상.
+      await this.markDecisionAndResolve({
+        card: pending.card,
+        thread: pending.thread,
+        status: 'FIXED',
+        rejectReason: null,
+        outcome,
+      });
+    }
+  }
+
+  private async collectResolutionCandidates({
+    group,
+    pendingResolutions,
+  }: {
+    group: PullRequestCardGroup;
+    pendingResolutions: PendingResolution[];
+  }): Promise<FindingResolutionItem[]> {
+    const detail = await this.githubClient.getPullRequest({
+      repo: group.repo,
+      number: group.pullNumber,
+    });
+
+    // 카드가 게시된 시점(headSha)별로 묶는다. 같은 스윕에서 난 카드는 sha 가 같아
+    // 보통 1회 호출로 끝난다. PR 전체 diff 를 쓰면 카드 게시 *전* 변경까지 섞여
+    // "해소됐다" 를 오판한다.
+    const byBaseSha = new Map<string, PendingResolution[]>();
+    for (const pending of pendingResolutions) {
+      if (pending.card.headSha === detail.headSha) {
+        continue; // 카드 게시 후 새 커밋이 없다.
+      }
+      const found = byBaseSha.get(pending.card.headSha);
+      if (found) {
+        found.push(pending);
+        continue;
+      }
+      byBaseSha.set(pending.card.headSha, [pending]);
+    }
+
+    const items: FindingResolutionItem[] = [];
+    for (const [baseSha, cards] of byBaseSha) {
+      const compared = await this.githubClient.compareCommits({
+        repo: group.repo,
+        baseSha,
+        headSha: detail.headSha,
+      });
+      const hunks = parseDiffHunks(compared.diff);
+      for (const { card } of cards) {
+        if (card.filePath === null || card.line === null) {
+          continue;
+        }
+        const touched = isTouchedByChanges({
+          hunks,
+          filePath: card.filePath,
+          line: card.line,
+          maxDistance: SNAP_MAX_DISTANCE,
+        });
+        if (!touched) {
+          continue;
+        }
+        const changedDiff = extractFileDiff(compared.diff, card.filePath);
+        if (changedDiff === null) {
+          continue;
+        }
+        items.push({
+          id: card.id,
+          body: card.body,
+          filePath: card.filePath,
+          line: card.line,
+          changedDiff,
+        });
+      }
+    }
+    return items;
   }
 
   private async judgeReplies({
@@ -284,7 +441,7 @@ export class HarvestReviewSignalsUsecase {
   }: {
     card: PrReviewFindingRecord;
     thread: ReviewThread;
-    status: Extract<FindingStatus, 'ACKED' | 'REJECTED'>;
+    status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'FIXED'>;
     rejectReason: string | null;
     outcome: HarvestOutcome;
   }): Promise<void> {
@@ -310,6 +467,8 @@ export class HarvestReviewSignalsUsecase {
     });
     if (status === 'ACKED') {
       outcome.acked += 1;
+    } else if (status === 'FIXED') {
+      outcome.fixed += 1;
     } else {
       outcome.rejected += 1;
     }
