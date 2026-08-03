@@ -52,18 +52,54 @@ describe('rewriteSpecImportsForSandbox', () => {
     ).toBe(specCode);
   });
 
+  it.each([
+    [
+      '정적 import',
+      "import x from './y';",
+      "import x from '/repo/src/agent/be-test/domain/y';",
+    ],
+    [
+      're-export',
+      "export { a } from './y';",
+      "export { a } from '/repo/src/agent/be-test/domain/y';",
+    ],
+    [
+      'require 할당',
+      "const { a } = require('./y');",
+      "const { a } = require('/repo/src/agent/be-test/domain/y');",
+    ],
+    [
+      'jest.mock',
+      "jest.mock('./y');",
+      "jest.mock('/repo/src/agent/be-test/domain/y');",
+    ],
+  ])('%s 문장의 상대 경로를 재작성한다', (_case, specCode, expected) => {
+    expect(
+      rewriteSpecImportsForSandbox({ specCode, targetDirInContainer }),
+    ).toBe(expected);
+  });
+
+  it.each([
+    ['import 형태 문자열', `const input = "import { x } from './x'";`],
+    ['require 형태 문자열', `const expected = "require('./y')";`],
+  ])('%s은 변경하지 않는다', (_case, specCode) => {
+    expect(
+      rewriteSpecImportsForSandbox({ specCode, targetDirInContainer }),
+    ).toBe(specCode);
+  });
+
   it('멀티라인 import 의 from 상대 경로를 재작성한다', () => {
     const specCode = [
       'import {',
       '  first,',
       '  second,',
-      "} from './x';",
+      "} from './y';",
     ].join('\n');
     const expected = [
       'import {',
       '  first,',
       '  second,',
-      "} from '/repo/src/agent/be-test/domain/x';",
+      "} from '/repo/src/agent/be-test/domain/y';",
     ].join('\n');
 
     expect(
