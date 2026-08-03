@@ -67,6 +67,54 @@ describe('ModelRouterUsecase', () => {
     });
   });
 
+  describe('직무 계약 머리말 주입', () => {
+    beforeEach(() => {
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+    });
+
+    const sentPrompt = (): string =>
+      (chatgptProvider.complete.mock.calls[0][0] as { prompt: string }).prompt;
+
+    it('정밀 계약 에이전트는 산출물 규격과 근거 요구가 프롬프트 앞에 붙는다', async () => {
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'hi' },
+      });
+
+      const prompt = sentPrompt();
+      expect(prompt).toContain('[사규]');
+      expect(prompt).toContain('topPriority');
+      expect(prompt).toContain('근거');
+      // 머리말은 앞에 붙고 원문은 그대로 뒤에 남는다.
+      expect(prompt.endsWith('hi')).toBe(true);
+    });
+
+    it('스텁 계약 에이전트는 아무것도 붙이지 않는다', async () => {
+      await usecase.route({
+        agentType: AgentType.PO_SHADOW,
+        request: { prompt: 'hi' },
+      });
+
+      expect(sentPrompt()).toBe('hi');
+    });
+
+    it('noContractPreamble 이면 계약이 있어도 붙이지 않는다', async () => {
+      // IntentClassifier·ConversationalReply 가 provider 선택을 위해 PM 을 빌려 쓰는 경로 —
+      // 계약의 산출물 규격이 붙으면 고정 JSON 스키마·대화 응답 지시와 충돌한다.
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'hi' },
+        noContractPreamble: true,
+      });
+
+      expect(sentPrompt()).toBe('hi');
+    });
+  });
+
   describe('fallback 없음 — primary(CHATGPT) 실패 시 즉시 실패', () => {
     it('CHATGPT 실패 시 Claude 로 넘어가지 않고 COMPLETION_FAILED', async () => {
       chatgptProvider.complete.mockRejectedValue(new Error('codex down'));

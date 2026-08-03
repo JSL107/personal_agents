@@ -47,6 +47,9 @@ export class ConversationalReplyUsecase {
       const completion = await this.modelRouter.route({
         agentType: AgentType.PM,
         request: { prompt, systemPrompt },
+        // PM provider 를 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말의 산출물 규격이
+        // 붙으면 이 usecase 가 요구하는 1~3문장 대화 응답과 충돌한다.
+        noContractPreamble: true,
       });
       return completion.text.trim();
     } catch (error: unknown) {

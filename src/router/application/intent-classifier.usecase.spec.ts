@@ -59,6 +59,9 @@ describe('IntentClassifierUsecase', () => {
         prompt: '오늘 plan',
         systemPrompt: INTENT_CLASSIFIER_SYSTEM_PROMPT,
       },
+      // PM 은 provider 선택용 차용이라 계약 머리말을 끈다 — 붙으면 분류기가 기대하는
+      // 고정 JSON 스키마와 충돌한다.
+      noContractPreamble: true,
     });
   });
 

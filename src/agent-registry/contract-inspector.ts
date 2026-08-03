@@ -34,9 +34,27 @@ export interface ContractViolation {
  * 까지 본다. CODE_REVIEWER 는 근거를 본문 텍스트가 아니라 `findings[].file` /
  * `line` 으로 담기 때문에, 텍스트 패턴만 보면 근거가 충실한 산출물을 통째로
  * 위반으로 잡는다(2026-07-31 실측에서 확인).
+ *
+ * 구조화 필드는 **값까지** 본다. 키 존재만 보면 `{"file": ""}` 이나 `{"url": null}`
+ * 처럼 값이 빈 산출물이 근거가 있는 것으로 통과해 관측 통계에 false negative 가 쌓인다
+ * (`pr-review.parser.ts` 는 빈 문자열 `file` 을 허용한다).
+ *
+ * `taskId` 는 근거 목록에서 뺐다 — 내부 식별자일 뿐 사람이 따라가 확인할 수 있는
+ * 출처가 아니다.
  */
-const EVIDENCE_PATTERN =
-  /https?:\/\/|#\d+|[\w./-]+\.(?:ts|tsx|js|md|prisma|json):\d+|"(?:file|url|link|notionUrl|htmlUrl|permalink|prNumber|taskId)"\s*:/;
+const EVIDENCE_PATTERN = new RegExp(
+  [
+    'https?://', // URL
+    '#\\d+', // PR / 이슈 참조
+    '[\\w./-]+\\.(?:ts|tsx|js|md|prisma|json):\\d+', // 파일:라인
+    // 구조화 문자열 근거 — 비어 있지 않은 값만 인정(공백뿐인 값도 배제).
+    // 비공백 문자 클래스에서 따옴표를 빼는 게 중요하다. `\S` 로 두면 그것이 닫는 따옴표를
+    // 먹고 다음 키까지 넘어가, `"file":""` 같은 빈 값이 `"","` 로 매치돼 통과한다.
+    '"(?:file|url|link|notionUrl|htmlUrl|permalink)"\\s*:\\s*"[^"]*[^"\\s][^"]*"',
+    // 구조화 숫자 근거 — 1 이상만. 줄 번호와 PR 번호는 1부터라 0 은 "값 없음" 의 표현이다.
+    '"(?:prNumber|line)"\\s*:\\s*[1-9]\\d*',
+  ].join('|'),
+);
 
 interface PlainObject {
   [key: string]: unknown;

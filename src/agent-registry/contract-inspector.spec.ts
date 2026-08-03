@@ -107,6 +107,20 @@ describe('inspectContract', () => {
       expect(violations).toEqual([]);
     });
 
+    it('구조화 근거 필드의 값이 비어 있으면 근거로 인정하지 않는다', () => {
+      // pr-review.parser.ts 는 빈 문자열 file 을 허용한다. 키 존재만 보면
+      // 근거 없는 산출물이 통과해 관측 통계에 false negative 가 쌓인다.
+      const violations = inspectContract(AgentType.CODE_REVIEWER, {
+        summary: '리뷰 요약',
+        findings: [{ body: '지적 내용', file: '', line: 0 }],
+        approvalRecommendation: 'REQUEST_CHANGES',
+      });
+
+      expect(violations).toEqual([
+        { rule: 'noEvidence', detail: 'CODE_REVIEWER' },
+      ]);
+    });
+
     it('구조화된 근거 필드(file/line)를 인식한다', () => {
       // CODE_REVIEWER 는 근거를 텍스트가 아니라 findings[].file 로 담는다.
       const violations = inspectContract(AgentType.CODE_REVIEWER, {

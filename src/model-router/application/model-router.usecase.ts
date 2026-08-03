@@ -88,10 +88,14 @@ export class ModelRouterUsecase {
     agentType,
     request,
     noFallback,
+    noContractPreamble,
   }: {
     agentType: AgentType;
     request: CompletionRequest;
     noFallback?: boolean;
+    // 직무 계약 머리말을 붙이지 않는다. provider 선택만을 위해 남의 agentType 을 빌려 쓰는
+    // 호출자가 명시적으로 끈다 — 아래 주입 지점 주석 참조.
+    noContractPreamble?: boolean;
   }): Promise<CompletionResponse> {
     const primaryName = AGENT_TO_PROVIDER[agentType];
     if (!primaryName) {
@@ -106,7 +110,15 @@ export class ModelRouterUsecase {
 
     // 직무 계약 머리말 주입 — 모델이 소속·산출물 규격·근거 요구를 모른 채 답하는 것을 막는다.
     // 스텁 계약은 null 을 돌려 주입하지 않으므로 기존 프롬프트가 그대로 간다.
-    const preamble = buildContractPreamble(agentType);
+    //
+    // ⚠️ agentType 은 "누가 일하는가" 이자 "어느 provider 를 쓰는가" 두 뜻으로 쓰인다.
+    //    IntentClassifier·ConversationalReply 는 실제 PM 업무가 아니라 provider 선택을 위해
+    //    PM 을 차용하는데, 여기에 PM 계약(topPriority·morning·afternoon 을 내라)이 붙으면
+    //    분류기의 고정 JSON 스키마·대화 응답의 1~3문장 지시와 충돌한다. 그 호출자들은
+    //    noContractPreamble 로 끈다.
+    const preamble = noContractPreamble
+      ? null
+      : buildContractPreamble(agentType);
     const routedRequest: CompletionRequest =
       preamble === null
         ? request

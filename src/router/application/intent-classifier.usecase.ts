@@ -62,6 +62,9 @@ export class IntentClassifierUsecase {
         prompt,
         systemPrompt,
       },
+      // PM 은 provider 선택용으로 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말이 붙으면
+      // 바로 아래 parseIntentClassification 이 기대하는 고정 JSON 스키마와 충돌한다.
+      noContractPreamble: true,
     });
     const classification = parseIntentClassification(completion.text);
     this.logger.log(
