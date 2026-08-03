@@ -72,10 +72,21 @@ struct AgentCardView: View {
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: 1.5)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(agent.roleName), \(agent.state.label), \(agent.bubble)")
+        .accessibilityLabel(accessibilityDescription)
         .sheet(isPresented: $showSheet) {
             commandSheet
         }
+    }
+
+    /// VoiceOver 라벨. `accessibilityElement(children: .combine)` 이 자식 라벨을 이 문자열로
+    /// 대체하므로, 화면에 캡션으로 보이는 백엔드 식별명을 여기에 직접 넣어야 스크린리더에서도
+    /// 읽힌다 — 넣지 않으면 시각 UI 에만 있는 정보가 된다.
+    private var accessibilityDescription: String {
+        let name =
+            agent.roleName == agent.displayName
+            ? agent.roleName
+            : "\(agent.roleName), \(agent.displayName)"
+        return "\(name), \(agent.state.label), \(agent.bubble)"
     }
 
     private var statusBadge: some View {
