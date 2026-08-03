@@ -113,14 +113,14 @@ pgvector 의미검색 + time-decay 점수화(`@huggingface/transformers`, Xenova
 전체 AgentType 은 내부 자동화까지 포함해 25종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · BE `/be plan` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · CTO `/assign` · PO_EVAL `/po-eval` · CEO `/ceo-review`
-- **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · BE-SRE(CI 실패 → stack trace) · BE-FIX(PR 컨벤션) — 뒤 둘은 webhook 자동
+- **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · `/be sre`(스택트레이스 분석) · BE-FIX(PR 컨벤션) — BE-FIX 는 webhook 자동
 - **체인 / 승인형 실행** — `/auto-flow` PM → CTO → BE 1-shot, BE sandbox apply/test, 성공 후 사용자 승인 기반 branch + commit + PR open preview
 - **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 지원 추적 CRM(등록/상태/넛지 cron) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
 - **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish
 
 **🔌 연동 · 자동 트리거**
 
-- **GitHub Webhook** — issue/PR open → Impact Reporter, PR open → BE-FIX(+조건부 Code Reviewer), CI 실패 → BE-SRE, PR merge → careerLog Notion 적재, issue open → Auto-Label
+- **GitHub Webhook** — issue/PR open → Impact Reporter, PR open → BE-FIX(+조건부 Code Reviewer), PR merge → careerLog Notion 적재, issue open → Auto-Label
 - **Notion** — Daily Plan append · PR careerLog 일별 자식 페이지 누적 · 📌 reaction → to-do 적재
 - **운영** — `/search-runs`(성공 run ILIKE 검색) · `/retry-run`(실패 run 재실행) · docs-sync-audit · 인증/cron 실패 owner DM 알림
 
@@ -155,11 +155,11 @@ pnpm dev              # watch 모드 기동
 
 | Command | 설명 | 모델 |
 |---|---|:---:|
-| `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/be <plan\|schema\|test>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · BE · CTO · PO · CEO · 체인) | 🟢 ChatGPT(codex) |
+| `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/be <plan\|schema\|test\|sre>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · BE · CTO · PO · CEO · 체인) | 🟢 ChatGPT(codex) |
 | `/휴가` | 연차 계산 / 등록 / 취소 (결정론, LLM 미사용) | ⚪ — |
 | `/sync-plan` `/sync-context` `/quota` `/ping` `/retry-run` `/search-runs` `/review-feedback` | 동기화 · 운영 · 검색 · 피드백 | ⚪ — |
 
-> BE-SRE / BE-FIX 는 슬래시 없이 GitHub webhook 자동 트리거. 수동 재실행은 `/retry-run <AgentRun ID>`.
+> BE-FIX 는 슬래시 없이 GitHub webhook 자동 트리거. 수동 재실행은 `/retry-run <AgentRun ID>`.
 
 ### 자연어 멘션
 
@@ -174,7 +174,7 @@ pnpm dev              # watch 모드 기동
 | `issues.opened` | Impact Reporter / Auto-Label | `GITHUB_ISSUE_AUTO_LABEL_ENABLED` |
 | `pull_request.opened` | Impact Reporter / BE-FIX / (조건부) Code Reviewer | `GITHUB_WEBHOOK_OWNER_LOGIN` |
 | `pull_request.closed` (merged) | PR careerLog → Notion | `PR_CAREERLOG_AUTO_ENABLED` + `CAREER_LOG_NOTION_PAGE_ID` |
-| `check_run.completed` (failure) | BE-SRE | — |
+| `check_run.completed` (failure) | 유휴 Claude 세션 수정 제안 (GithubEventBridge) | `SESSION_DISPATCH_ENABLED` |
 
 ### Autopilot cron (항목별 timezone)
 

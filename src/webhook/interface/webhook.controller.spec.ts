@@ -7,7 +7,6 @@ import * as crypto from 'crypto';
 import { GithubEventBridge } from '../../session-dispatch/application/github-event.bridge';
 import {
   BE_FIX_QUEUE,
-  BE_SRE_QUEUE,
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
   ISSUE_LABEL_QUEUE,
@@ -21,7 +20,6 @@ describe('WebhookController', () => {
   // controller 가 직접 호출하던 GenerateImpactReportUsecase 대신 queue.add 만 검증.
   const mockImpactQueue = { add: jest.fn() };
   const mockBeFixQueue = { add: jest.fn() };
-  const mockBeSreQueue = { add: jest.fn() };
   const mockCodeReviewerQueue = { add: jest.fn() };
   const mockPrCareerLogQueue = { add: jest.fn() };
   const mockIssueLabelQueue = { add: jest.fn() };
@@ -61,7 +59,6 @@ describe('WebhookController', () => {
           useValue: mockImpactQueue,
         },
         { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
-        { provide: getQueueToken(BE_SRE_QUEUE), useValue: mockBeSreQueue },
         {
           provide: getQueueToken(CODE_REVIEWER_QUEUE),
           useValue: mockCodeReviewerQueue,
@@ -89,8 +86,6 @@ describe('WebhookController', () => {
     mockImpactQueue.add.mockResolvedValue(undefined);
     mockBeFixQueue.add.mockReset();
     mockBeFixQueue.add.mockResolvedValue(undefined);
-    mockBeSreQueue.add.mockReset();
-    mockBeSreQueue.add.mockResolvedValue(undefined);
     mockCodeReviewerQueue.add.mockReset();
     mockCodeReviewerQueue.add.mockResolvedValue(undefined);
     mockPrCareerLogQueue.add.mockReset();
@@ -313,27 +308,6 @@ describe('WebhookController', () => {
       );
     });
 
-    it('check_run.completed + failure → BE-SRE 큐에 add 호출', async () => {
-      const result = await controller.github(
-        checkRunFailedBody,
-        sign(checkRunFailedBody, githubSecret),
-        'check_run',
-        'delivery-uuid-cr-fail',
-      );
-      expect(result).toEqual({ accepted: true });
-      await new Promise((resolve) => setImmediate(resolve));
-      expect(mockBeSreQueue.add).toHaveBeenCalledWith(
-        'webhook-be-sre',
-        expect.objectContaining({
-          slackUserId: defaultSlackUser,
-          stackTrace: expect.stringContaining('CI / build'),
-        }),
-        expect.any(Object),
-      );
-      expect(mockImpactQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).not.toHaveBeenCalled();
-    });
-
     it('pull_request.opened → 유휴 세션 브릿지에 PR 정보를 전달한다', async () => {
       await controller.github(
         prOpenedBody,
@@ -390,7 +364,6 @@ describe('WebhookController', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
       expect(mockBeFixQueue.add).not.toHaveBeenCalled();
-      expect(mockBeSreQueue.add).not.toHaveBeenCalled();
     });
 
     it('잘못된 시그니처 → 401', async () => {
@@ -463,7 +436,6 @@ describe('WebhookController', () => {
             useValue: mockImpactQueue,
           },
           { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
-          { provide: getQueueToken(BE_SRE_QUEUE), useValue: mockBeSreQueue },
           {
             provide: getQueueToken(CODE_REVIEWER_QUEUE),
             useValue: mockCodeReviewerQueue,
@@ -491,8 +463,6 @@ describe('WebhookController', () => {
       mockImpactQueue.add.mockResolvedValue(undefined);
       mockBeFixQueue.add.mockReset();
       mockBeFixQueue.add.mockResolvedValue(undefined);
-      mockBeSreQueue.add.mockReset();
-      mockBeSreQueue.add.mockResolvedValue(undefined);
       mockCodeReviewerQueue.add.mockReset();
       mockCodeReviewerQueue.add.mockResolvedValue(undefined);
       mockPrCareerLogQueue.add.mockReset();
@@ -517,7 +487,6 @@ describe('WebhookController', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
       expect(mockBeFixQueue.add).not.toHaveBeenCalled();
-      expect(mockBeSreQueue.add).not.toHaveBeenCalled();
     });
 
     it('pull_request.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, 모든 자동 발화 X', async () => {
@@ -541,10 +510,9 @@ describe('WebhookController', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
       expect(mockBeFixQueue.add).not.toHaveBeenCalled();
-      expect(mockBeSreQueue.add).not.toHaveBeenCalled();
     });
 
-    it('check_run.failure 수신했지만 DEFAULT slackUser 없음 → 200 accepted, BE-SRE 발화 X', async () => {
+    it('check_run.failure 수신했지만 DEFAULT slackUser 없음 → 200 accepted', async () => {
       const body = JSON.stringify({
         action: 'completed',
         check_run: {
@@ -564,8 +532,6 @@ describe('WebhookController', () => {
         'd-no-owner-cr',
       );
       expect(result).toEqual({ accepted: true });
-      await new Promise((resolve) => setImmediate(resolve));
-      expect(mockBeSreQueue.add).not.toHaveBeenCalled();
     });
   });
 

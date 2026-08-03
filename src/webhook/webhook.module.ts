@@ -2,7 +2,6 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
 import { BeFixModule } from '../agent/be-fix/be-fix.module';
-import { BeSreModule } from '../agent/be-sre/be-sre.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { IssueLabelerModule } from '../agent/issue-labeler/issue-labeler.module';
@@ -11,14 +10,12 @@ import { SessionDispatchModule } from '../session-dispatch/session-dispatch.modu
 import { SlackModule } from '../slack/slack.module';
 import {
   BE_FIX_QUEUE,
-  BE_SRE_QUEUE,
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
   ISSUE_LABEL_QUEUE,
   PR_CAREERLOG_QUEUE,
 } from './domain/webhook.type';
 import { WebhookBeFixConsumer } from './infrastructure/be-fix.consumer';
-import { WebhookBeSreConsumer } from './infrastructure/be-sre.consumer';
 import { WebhookCodeReviewerConsumer } from './infrastructure/code-reviewer.consumer';
 import { WebhookImpactReportConsumer } from './infrastructure/impact-report.consumer';
 import { WebhookIssueLabelConsumer } from './infrastructure/issue-label.consumer';
@@ -28,7 +25,6 @@ import { WebhookController } from './interface/webhook.controller';
   imports: [
     BullModule.registerQueue({ name: IMPACT_REPORT_QUEUE }),
     BullModule.registerQueue({ name: BE_FIX_QUEUE }),
-    BullModule.registerQueue({ name: BE_SRE_QUEUE }),
     BullModule.registerQueue({ name: CODE_REVIEWER_QUEUE }),
     // pull_request.closed (merged=true) → 본인 PR careerLog 자동 적재 (Notion).
     // consumer 본체는 PrCareerLogModule 의 책임 — webhook 은 큐 등록 + controller 에서 enqueue 만.
@@ -37,7 +33,6 @@ import { WebhookController } from './interface/webhook.controller';
     BullModule.registerQueue({ name: ISSUE_LABEL_QUEUE }),
     ImpactReporterModule,
     BeFixModule,
-    BeSreModule,
     // pull_request.opened webhook 자동 review — ReviewPullRequestUsecase + SlackService.postMessage.
     CodeReviewerModule,
     // issues.opened webhook 자동 라벨링 — InferIssueLabelsUsecase.
@@ -51,7 +46,6 @@ import { WebhookController } from './interface/webhook.controller';
   providers: [
     WebhookImpactReportConsumer,
     WebhookBeFixConsumer,
-    WebhookBeSreConsumer,
     WebhookCodeReviewerConsumer,
     WebhookIssueLabelConsumer,
   ],

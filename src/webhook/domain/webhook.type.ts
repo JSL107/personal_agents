@@ -33,16 +33,6 @@ export interface BeFixJobData {
   slackUserId: string;
 }
 
-// check_run.completed (conclusion: failure) webhook 트리거. workflow 메타로 stack trace 합성.
-export const BE_SRE_QUEUE = 'be-sre-webhook';
-
-export interface BeSreJobData {
-  // BE-SRE usecase 가 stackTrace string 을 받으므로, webhook payload 의 핵심 메타를
-  // 구조화된 텍스트로 합성해 전달한다 (실제 stack 은 workflow log 에 있어 별도 fetch 필요 — MVP 보류).
-  stackTrace: string;
-  slackUserId: string;
-}
-
 // pull_request.opened webhook 트리거 — 본인 PR (owner login 일치, bot 제외) 일 때만 자동 /review-pr.
 // 결과는 Slack DM 으로 owner 에게 발송. 동일 PR (force-push / re-deliver) 은 BullMQ jobId 로 dedup.
 export const CODE_REVIEWER_QUEUE = 'code-reviewer-webhook';

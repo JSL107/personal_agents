@@ -3,12 +3,14 @@ import { App } from '@slack/bolt';
 
 import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
+import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeBackendPlan } from '../../humanize/application/humanize-report.adapter';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
 import { formatSchemaProposal } from '../format/be-schema.formatter';
+import { formatSreAnalysis } from '../format/be-sre.formatter';
 import { formatGeneratedTest } from '../format/be-test.formatter';
 import { runAgentCommand } from './slack-handler.helper';
 
@@ -18,13 +20,15 @@ const HELP_TEXT = [
   '• `/be plan <PR URL / 작업 설명>` — 구현 계획 생성 (Claude)',
   '• `/be schema <자연어 요청>` — Prisma 스키마 변경 제안 (Claude)',
   '• `/be test <파일경로>` — Tree-sitter AST 기반 Jest spec 생성 (Claude)',
+  '• `/be sre <stack trace>` — 스택트레이스 원인 분석',
   '',
-  '_BE-SRE (stack trace) / BE-FIX (PR 컨벤션) 은 GitHub webhook (`check_run.completed` failure / `pull_request.opened`) 으로 자동 트리거됩니다. 수동 재실행은 `/retry-run <AgentRun ID>` 를 사용하세요._',
+  '_BE-FIX (PR 컨벤션) 은 GitHub webhook (`pull_request.opened`) 으로 자동 트리거됩니다. 수동 재실행은 `/retry-run <AgentRun ID>` 를 사용하세요._',
 ].join('\n');
 
-// /be — 사용자가 손으로 트리거하는 백엔드 에이전트 3종의 단일 진입점.
-// BE-SRE / BE-FIX 는 GitHub webhook 자동 트리거가 본진이라 슬래시 노출을 제거했다 (수동 재실행은 /retry-run).
-// 입력별 의도가 다른 5종 usecase 를 하나의 슬래시로 합쳐 자동완성 목록을 줄이는 게 목적.
+// /be — 사용자가 손으로 트리거하는 백엔드 에이전트 4종의 단일 진입점.
+// BE-SRE 는 /be sre 로 수동 호출한다. CI 실패 자동 대응은 GithubEventBridge 로 일원화했다.
+// BE-FIX 는 GitHub webhook 자동 트리거를 유지한다 (수동 재실행은 /retry-run).
+// 입력별 의도가 다른 백엔드 usecase 를 하나의 슬래시로 합쳐 자동완성 목록을 줄이는 게 목적.
 //
 // C-4 Phase 5 — registerBeHandler fn → @Injectable() class.
 @Injectable()
@@ -34,6 +38,7 @@ export class BeHandler implements SlackHandler {
   constructor(
     private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
+    private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
     private readonly generateTestUsecase: GenerateTestUsecase,
     private readonly humanizeService: HumanizeService,
   ) {}
@@ -135,8 +140,33 @@ export class BeHandler implements SlackHandler {
           });
           return;
         }
-        // sre / fix subcommand 는 의도적으로 노출하지 않음.
-        // 두 흐름은 webhook (V3 §7/§9) 으로 자동 트리거되며, 수동 재실행은 /retry-run <id> 로 처리.
+        case 'sre': {
+          if (body.length === 0) {
+            await ack({
+              response_type: 'ephemeral',
+              text: '사용법: `/be sre <stack trace 전체 paste>`',
+            });
+            return;
+          }
+          await ack({
+            response_type: 'ephemeral',
+            text: '이대리(BE-SRE 모드) 가 stack trace 를 분석 중입니다 (30~60초 소요)...',
+          });
+          await runAgentCommand({
+            respond,
+            logger: this.logger,
+            commandLabel: '/be sre',
+            execute: () =>
+              this.analyzeStackTraceUsecase.execute({
+                stackTrace: body,
+                slackUserId,
+              }),
+            format: formatSreAnalysis,
+          });
+          return;
+        }
+        // BE-FIX subcommand 는 의도적으로 노출하지 않음. pull_request.opened webhook 자동
+        // 트리거를 유지하며, 기존 FAILED run 의 수동 재실행은 /retry-run <id> 로 처리.
         default:
           await ack({
             response_type: 'ephemeral',
