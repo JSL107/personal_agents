@@ -27,7 +27,7 @@ import {
   FailedRunDetail,
   FindLatestSweepReviewQuery,
   LatestSweepReview,
-  RecentlyFailedRun,
+  RecentlyFinishedRun,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
@@ -361,15 +361,15 @@ export class AgentRunService {
     return await this.repository.countUnsuccessfulSweepReviews(input);
   }
 
-  // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료가 FAILED인 것.
-  async findRecentlyFailedRuns(input: {
+  // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료 런의 결과(성공/실패).
+  async findRecentlyFinishedRuns(input: {
     withinMinutes: number;
-  }): Promise<RecentlyFailedRun[]> {
-    return await this.repository.findRecentlyFailedRuns(input);
+  }): Promise<RecentlyFinishedRun[]> {
+    return await this.repository.findRecentlyFinishedRuns(input);
   }
 
   // 비서실 브리핑 — cutoff 이내 실패 런 전건 + 이유. 반복 실패 판정에 건수가 필요해
-  // agentType 별 최신 1건만 주는 findRecentlyFailedRuns 로는 대체할 수 없다.
+  // agentType 별 최신 1건만 주는 findRecentlyFinishedRuns 로는 대체할 수 없다.
   async findFailedRunsSince(input: {
     withinMinutes: number;
   }): Promise<FailedRunDetail[]> {

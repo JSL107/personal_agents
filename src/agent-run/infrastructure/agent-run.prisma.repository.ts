@@ -45,7 +45,7 @@ import {
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
-  RecentlyFailedRun,
+  RecentlyFinishedRun,
   SearchAgentRunRow,
   SearchAgentRunsQuery,
   SimilarPlanRow,
@@ -505,25 +505,34 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   }
 
   // 콘솔 관제 — agentType별 최신 종료 런을 distinct(=DISTINCT ON)로 1건씩 뽑아,
-  // 그것이 FAILED이며 cutoff 이후 종료된 agentType만 반환한다(실패 후 성공/재시작은 자동 제외).
-  async findRecentlyFailedRuns({
+  // cutoff 이후 종료된 agentType의 결과(성공/실패)를 반환한다. 재시작으로 결과가 뒤집히면
+  // 최신 것만 남으므로 "실패 후 성공" 은 SUCCEEDED 가 된다.
+  async findRecentlyFinishedRuns({
     withinMinutes,
   }: {
     withinMinutes: number;
-  }): Promise<RecentlyFailedRun[]> {
+  }): Promise<RecentlyFinishedRun[]> {
     const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
     // cutoff 이후 종료된 런만 DB 에서 좁혀 distinct — 누적 이력을 매 스냅샷마다 전수 스캔/정렬하지 않는다.
     // cutoff 범위의 최신 종료 = 전체 최신 종료와 동일(cutoff 밖 런이 최신이면 그 agentType 은 어차피 제외)이라
-    // 결과는 애플리케이션 필터와 같고, FAILED 인 것만 남긴다.
+    // 결과는 애플리케이션 필터와 같다.
     const latestPerAgent = await this.prisma.agentRun.findMany({
       where: { endedAt: { gte: cutoff } },
       orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
       distinct: ['agentType'],
       select: { agentType: true, status: true },
     });
-    return latestPerAgent
-      .filter((row) => row.status === AgentRunStatus.FAILED)
-      .map((row) => ({ agentType: row.agentType }));
+    // 종료 상태는 SUCCEEDED/FAILED 둘뿐이지만, endedAt 이 채워진 IN_PROGRESS 행이 섞이면
+    // 화면이 완료로 오표시된다. 두 값만 통과시켜 그 경로를 막는다.
+    return latestPerAgent.flatMap((row): RecentlyFinishedRun[] => {
+      if (row.status === AgentRunStatus.SUCCEEDED) {
+        return [{ agentType: row.agentType, status: 'SUCCEEDED' }];
+      }
+      if (row.status === AgentRunStatus.FAILED) {
+        return [{ agentType: row.agentType, status: 'FAILED' }];
+      }
+      return [];
+    });
   }
 
   async aggregateSucceededCounts({

@@ -158,14 +158,19 @@ export interface ActiveRunSnapshot {
   endedAt: Date | null;
 }
 
-// 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 "최신 종료 런"이 FAILED이며
-// endedAt이 (now - withinMinutes) 이후인 agentType. 실패 후 성공/재시작이 있으면 제외된다.
-export interface RecentlyFailedRun {
+// 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 "최신 종료 런"의 결과와
+// endedAt이 (now - withinMinutes) 이후인 agentType.
+//
+// 실패만 주던 시절에는 스냅샷이 COMPLETED 를 만들 수 없어, 앱을 껐다 켜면 방금 완료한
+// 에이전트가 "대기중" 으로 되살아났다(SSE 라이브로는 완료가 오는데 스냅샷 경로에만 없었다).
+// 최신 종료 판정은 어차피 성공/실패를 함께 계산하므로 결과를 그대로 실어 보낸다.
+export interface RecentlyFinishedRun {
   agentType: string;
+  status: 'SUCCEEDED' | 'FAILED';
 }
 
 // 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.
-// `RecentlyFailedRun` 과 둘 다 필요한 이유: 저쪽은 agentType 별 "최신 1건" 이라
+// `RecentlyFinishedRun` 과 둘 다 필요한 이유: 저쪽은 agentType 별 "최신 1건" 이라
 // (1) 같은 에이전트가 몇 번 실패했는지 셀 수 없고 (2) 실패 이유를 담지 않는다.
 // 비서실은 "막힌 것 + 막힌 이유" 를 적고 반복 실패를 결정 후보로 올려야 해서 둘 다 쓴다.
 export interface FailedRunDetail {
@@ -252,10 +257,10 @@ export interface AgentRunRepositoryPort {
   countUnsuccessfulSweepReviews(
     input: CountUnsuccessfulSweepReviewsQuery,
   ): Promise<number>;
-  // 콘솔 관제 — agentType별 최신 종료가 FAILED이고 cutoff 이내인 것.
-  findRecentlyFailedRuns(input: {
+  // 콘솔 관제 — agentType별 최신 종료 런의 결과(성공/실패)와 cutoff 이내인 것.
+  findRecentlyFinishedRuns(input: {
     withinMinutes: number;
-  }): Promise<RecentlyFailedRun[]>;
+  }): Promise<RecentlyFinishedRun[]>;
   // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
   findFailedRunsSince(input: {
     withinMinutes: number;

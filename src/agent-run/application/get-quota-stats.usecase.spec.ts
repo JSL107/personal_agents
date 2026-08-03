@@ -34,7 +34,7 @@ const buildRepo = (
   findChainRootsInWindow: jest.fn().mockResolvedValue([]),
   searchByKeyword: jest.fn().mockResolvedValue([]),
   findActiveRuns: jest.fn().mockResolvedValue([]),
-  findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
+  findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
   findFailedRunsSince: jest.fn().mockResolvedValue([]),
   aggregateSucceededCounts: jest.fn().mockResolvedValue([]),
 });
