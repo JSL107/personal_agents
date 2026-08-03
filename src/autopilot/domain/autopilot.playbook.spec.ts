@@ -22,6 +22,29 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(morning?.digestGroup).toBe('morning');
   });
 
+  it('noon 그룹은 매일 13:00 KST에 assign, po-shadow 순서로 실행한다', () => {
+    const noonEntries = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.digestGroup === 'noon',
+    );
+
+    expect(noonEntries.map((entry) => entry.id)).toEqual([
+      'assign',
+      'po-shadow',
+    ]);
+    expect(noonEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          riskTier: 'T0_AUTO',
+          trigger: {
+            kind: 'CRON',
+            schedule: '0 13 * * *',
+            timezone: 'Asia/Seoul',
+          },
+        }),
+      ]),
+    );
+  });
+
   it('SP3 플레이북은 daily-eval + work-reviewer + evening-retro-publish 가 모두 evening 그룹', () => {
     const eveningEntries = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.digestGroup === 'evening',

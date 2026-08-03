@@ -20,6 +20,9 @@ import { PO_SHADOW_SYSTEM_PROMPT } from '../domain/prompt/po-shadow-system.promp
 
 // /po-shadow — 직전 PM `/today` plan 위에 PO 시각으로 비판적 검토.
 // 직전 PM run 이 없으면 NO_RECENT_PLAN 예외 (PO 모드는 항상 plan 을 전제로 함).
+// cron 진입 전용 staleness guard — CTO(generate-assignment.usecase.ts:25)와 동일한 18h 기준.
+const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
+
 @Injectable()
 export class GeneratePoShadowUsecase {
   constructor(
@@ -30,6 +33,8 @@ export class GeneratePoShadowUsecase {
   async execute({
     extraContext,
     slackUserId,
+    triggerType,
+    enforcePlanFreshness,
   }: GeneratePoShadowInput): Promise<AgentRunOutcome<PoShadowReport>> {
     // slackUserId 한정 검색 — 다른 사용자의 PM run 을 검토하지 않게 (codex review b6xkjewd2 P2).
     const snapshot = await this.agentRunService.findLatestSucceededRun({
@@ -41,6 +46,17 @@ export class GeneratePoShadowUsecase {
         code: PoShadowErrorCode.NO_RECENT_PLAN,
         message:
           '검토할 직전 PM 실행이 없습니다. 먼저 `/today` 로 plan 을 생성한 뒤 다시 시도해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
+    const planAgeMilliseconds = Date.now() - snapshot.endedAt.getTime();
+    if (
+      enforcePlanFreshness === true &&
+      planAgeMilliseconds > STALENESS_THRESHOLD_MS
+    ) {
+      throw new PoShadowException({
+        code: PoShadowErrorCode.STALE_PLAN,
+        message: `직전 PM plan이 ${Math.round(planAgeMilliseconds / 3_600_000)}시간 전입니다. 최신 plan이 없어 PO Shadow 자동 검토를 건너뜁니다.`,
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
@@ -64,7 +80,7 @@ export class GeneratePoShadowUsecase {
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
-      triggerType: TriggerType.SLACK_COMMAND_PO_SHADOW,
+      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_PO_SHADOW,
       inputSnapshot: {
         slackUserId,
         sourcePlanAgentRunId: snapshot.id,

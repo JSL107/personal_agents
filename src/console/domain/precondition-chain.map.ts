@@ -46,6 +46,7 @@ export const PRECONDITION_CHAIN_MAP: Readonly<Record<string, ChainResolution>> =
       needsRecentArg: true,
     },
     [CtoErrorCode.NO_ASSIGNABLE_TASKS]: { kind: 'UNRESOLVABLE' },
+    [CtoErrorCode.INVALID_PLAN_OUTPUT]: { kind: 'UNRESOLVABLE' },
   };
 
 export function resolveChain(errorCode: string): ChainResolution | undefined {

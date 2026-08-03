@@ -1,4 +1,5 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -98,6 +99,56 @@ describe('GeneratePoShadowUsecase', () => {
     ).rejects.toBeInstanceOf(PoShadowException);
   });
 
+  it('freshness를 강제하면 18시간 초과 PM plan은 STALE_PLAN 예외', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: yesterdayPlan,
+      endedAt: new Date(Date.now() - 19 * 60 * 60 * 1000),
+    });
+
+    await expect(
+      usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        enforcePlanFreshness: true,
+      }),
+    ).rejects.toMatchObject({
+      poShadowErrorCode: PoShadowErrorCode.STALE_PLAN,
+    });
+    expect(agentRunServiceExecute).not.toHaveBeenCalled();
+  });
+
+  it('freshness를 강제해도 18시간 이내 PM plan은 정상 진행', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: yesterdayPlan,
+      endedAt: new Date(Date.now() - 17 * 60 * 60 * 1000),
+    });
+
+    const result = await usecase.execute({
+      extraContext: '',
+      slackUserId: 'U1',
+      enforcePlanFreshness: true,
+    });
+
+    expect(result.result).toEqual(validReport);
+  });
+
+  it('freshness 미지정이면 18시간 초과 PM plan도 정상 진행', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: yesterdayPlan,
+      endedAt: new Date(Date.now() - 19 * 60 * 60 * 1000),
+    });
+
+    const result = await usecase.execute({
+      extraContext: '',
+      slackUserId: 'U1',
+    });
+
+    expect(result.result).toEqual(validReport);
+  });
+
   it('모델 응답을 PoShadowReport 로 파싱해 반환', async () => {
     const result = await usecase.execute({
       extraContext: 'v1.2 release 직전',
@@ -133,6 +184,18 @@ describe('GeneratePoShadowUsecase', () => {
       sourcePlanAgentRunId: 99,
       extraContextLength: 'v1.2 release 직전'.length,
     });
+  });
+
+  it('triggerType을 지정하면 AgentRunService에 그대로 전달한다', async () => {
+    await usecase.execute({
+      extraContext: '',
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].triggerType).toBe(
+      TriggerType.AUTOPILOT_PO_SHADOW_CRON,
+    );
   });
 
   it('extraContext 비어있으면 evidence 에 SLACK_COMMAND_PO_SHADOW 포함되지 않음 (PRIOR_DAILY_PLAN 단독)', async () => {
