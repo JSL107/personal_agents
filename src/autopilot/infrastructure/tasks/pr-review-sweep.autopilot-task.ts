@@ -39,6 +39,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
     const hasHarvestResult =
       harvest.acked > 0 ||
       harvest.rejected > 0 ||
+      harvest.fixed > 0 ||
       harvest.stale > 0 ||
       harvest.resolved > 0;
     if (!hasHarvestResult && results.length === 0) {
@@ -54,6 +55,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
 const emptyHarvestOutcome = (): HarvestOutcome => ({
   acked: 0,
   rejected: 0,
+  fixed: 0,
   stale: 0,
   resolved: 0,
   judged: 0,

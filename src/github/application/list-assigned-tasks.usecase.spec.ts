@@ -14,6 +14,7 @@ const buildClientMock = (
   listMyAssignedTasks: jest.fn().mockResolvedValue(fixture),
   getPullRequest: jest.fn(),
   getPullRequestDiff: jest.fn(),
+  compareCommits: jest.fn(),
   addIssueComment: jest.fn(),
   listAuthorMergedPullRequestsSince: jest.fn(),
   listAuthorOpenPullRequests: jest.fn(),
