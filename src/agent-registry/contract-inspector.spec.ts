@@ -158,15 +158,13 @@ describe('inspectContract', () => {
       ]);
     });
 
-    it('계약과 무관한 부수 배열이 비어 있어도 면제되지 않는다', () => {
-      // PM 계약의 topPriority/morning/afternoon 은 전부 문자열이다. 계약이 목록으로
-      // 내라고 한 것이 없으므로 "주장 없음" 을 판정할 근거가 없고, 산출물에 딸린
-      // 부수 배열(notes)이 비었다는 이유로 근거 요구가 꺼져서는 안 된다.
+    it('claimFields 가 없는 계약은 빈 배열이 있어도 면제되지 않는다', () => {
+      // PM 은 morning·afternoon 이 빈 배열이어도 topPriority 라는 주장이 남는다.
+      // 배열이 비었다는 이유로 면제하면 근거 없는 최우선 과제가 통과한다.
       const violations = inspectContract(AgentType.PM, {
         topPriority: '근거 없는 최우선 과제',
-        morning: '오전',
-        afternoon: '오후',
-        notes: [],
+        morning: [],
+        afternoon: [],
       });
 
       expect(violations).toEqual([{ rule: 'noEvidence', detail: 'PM' }]);

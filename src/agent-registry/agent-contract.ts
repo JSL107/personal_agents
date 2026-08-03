@@ -79,6 +79,21 @@ export interface AgentContract {
    * 정작 봐야 할 신호가 묻힌다.
    */
   readonly requireEvidence: boolean;
+  /**
+   * "주장" 을 담는 목록 필드. 여기 적힌 목록이 **전부 비면** 근거 요구를 면제한다.
+   *
+   * 지적 없이 승인한 리뷰(`findings: []`)처럼 근거를 붙일 대상 자체가 없는 산출물을
+   * 위반으로 잡지 않기 위한 장치다.
+   *
+   * `deliverableFields` 중 배열인 것을 자동으로 쓰지 않고 따로 적는 이유: PM 은
+   * `morning`·`afternoon` 이 빈 배열이어도 `topPriority` 라는 주장이 남는다. 배열만
+   * 보고 면제하면 근거 없는 최우선 과제가 통과한다. 반대로 "비배열 필수 필드에 값이
+   * 있으면 면제 안 함" 규칙을 쓰면 CODE_REVIEWER 의 `summary`(요약문은 늘 채워진다)가
+   * 걸려 원래 잡으려던 오탐이 되살아난다. 어느 필드가 주장인지는 계약이 정한다.
+   *
+   * 미지정이면 면제하지 않는다 — 근거 요구가 그대로 걸린다.
+   */
+  readonly claimFields?: readonly string[];
   /** 이 에이전트 고유 금칙어. 회사 공통 금칙어(COMPANY_FORBIDDEN_PHRASES) 에 더해진다. */
   readonly forbidPhrases?: readonly string[];
   /** 산출물을 넘겨받는 다음 부서. 체인 끝이면 null. */
@@ -159,6 +174,8 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: 'PR 을 리뷰하고 머지 가부를 판단한다',
     deliverableFields: ['summary', 'findings', 'approvalRecommendation'],
     requireEvidence: true,
+    // 지적이 곧 주장이다. 둘 다 비면 승인 리뷰라 근거를 붙일 대상이 없다.
+    claimFields: ['findings', 'mustFix'],
     nextAgent: null,
   },
   [AgentType.WORK_REVIEWER]: {
