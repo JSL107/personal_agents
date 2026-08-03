@@ -102,6 +102,14 @@ export interface AgentRunStatRow {
   avgDurationMs: number;
 }
 
+// 비서실 브리핑 — agentType 별 성공 건수.
+// `AgentRunStatRow` 의 `total - failed` 로 대신하면 안 된다. total 은 상태를 가리지 않고
+// 세므로 그 뺄셈은 `성공 + 진행 중`이 되어, 지금 돌고 있는 런이 "완료" 로도 집계된다.
+export interface AgentSucceededCountRow {
+  agentType: string;
+  succeeded: number;
+}
+
 // Ops Supervisor — agentType 별 재시도(FAILURE_REPLAY) 건수.
 export interface AgentRetryCountRow {
   agentType: string;
@@ -154,6 +162,17 @@ export interface ActiveRunSnapshot {
 // endedAt이 (now - withinMinutes) 이후인 agentType. 실패 후 성공/재시작이 있으면 제외된다.
 export interface RecentlyFailedRun {
   agentType: string;
+}
+
+// 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.
+// `RecentlyFailedRun` 과 둘 다 필요한 이유: 저쪽은 agentType 별 "최신 1건" 이라
+// (1) 같은 에이전트가 몇 번 실패했는지 셀 수 없고 (2) 실패 이유를 담지 않는다.
+// 비서실은 "막힌 것 + 막힌 이유" 를 적고 반복 실패를 결정 후보로 올려야 해서 둘 다 쓴다.
+export interface FailedRunDetail {
+  agentType: string;
+  /** `output.error` 문자열. 기록이 없으면 '이유 미기록'. */
+  reason: string;
+  endedAt: Date;
 }
 
 export interface AgentRunRepositoryPort {
@@ -237,4 +256,12 @@ export interface AgentRunRepositoryPort {
   findRecentlyFailedRuns(input: {
     withinMinutes: number;
   }): Promise<RecentlyFailedRun[]>;
+  // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
+  findFailedRunsSince(input: {
+    withinMinutes: number;
+  }): Promise<FailedRunDetail[]>;
+  // 비서실 브리핑 — agentType 별 성공 건수(진행 중 제외). **완료 시각** 기준으로 자른다.
+  aggregateSucceededCounts(input: {
+    sinceDays: number;
+  }): Promise<AgentSucceededCountRow[]>;
 }

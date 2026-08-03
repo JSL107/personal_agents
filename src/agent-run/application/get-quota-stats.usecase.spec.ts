@@ -35,6 +35,8 @@ const buildRepo = (
   searchByKeyword: jest.fn().mockResolvedValue([]),
   findActiveRuns: jest.fn().mockResolvedValue([]),
   findRecentlyFailedRuns: jest.fn().mockResolvedValue([]),
+  findFailedRunsSince: jest.fn().mockResolvedValue([]),
+  aggregateSucceededCounts: jest.fn().mockResolvedValue([]),
 });
 
 describe('GetQuotaStatsUsecase', () => {

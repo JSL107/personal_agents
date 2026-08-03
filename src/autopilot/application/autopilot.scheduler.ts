@@ -68,6 +68,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         `AUTOPILOT_${envKey}_TIMEZONE`,
         primary.trigger.timezone,
       );
+      this.warnIgnoredScheduleOverrides(groupKey, entries);
       const payload: AutopilotJobData = { ownerSlackUserId: owner, target };
       await this.queue.add(groupKey, payload, {
         repeat: { pattern: schedule, tz },
@@ -80,6 +81,33 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       this.logger.log(
         `Autopilot 그룹 활성화 — ${groupKey}(${entries.length} task), cron="${schedule}" (${tz})`,
       );
+    }
+  }
+
+  /**
+   * 무시되는 스케줄 override 를 경고한다.
+   *
+   * 그룹 스케줄은 **첫 항목 id** 로 된 키 하나만 읽는다. 그래서 플레이북 배열에서 항목
+   * 순서가 바뀌면(그룹에 새 task 가 맨 앞에 들어오는 등) 그전까지 쓰던 키가 조용히
+   * 무시되고 코드 기본값으로 되돌아간다. 발화 시각이 저 혼자 바뀌는데 코드 어디에도
+   * 그 키 이름이 없어 원인을 찾기 어렵다 — 부팅 때 한 번 짚어 준다.
+   */
+  private warnIgnoredScheduleOverrides(
+    groupKey: string,
+    entries: PlaybookEntry[],
+  ): void {
+    for (const entry of entries.slice(1)) {
+      const envKey = entry.id.toUpperCase().replace(/-/g, '_');
+      for (const suffix of ['SCHEDULE', 'TIMEZONE']) {
+        const key = `AUTOPILOT_${envKey}_${suffix}`;
+        const raw = this.configService.get<string>(key);
+        if (raw && raw.trim().length > 0) {
+          this.logger.warn(
+            `Autopilot[${groupKey}] — ${key} 는 무시됩니다. 그룹 스케줄은 첫 항목 id 기준이라 ` +
+              `AUTOPILOT_${entries[0].id.toUpperCase().replace(/-/g, '_')}_${suffix} 로 옮겨야 적용됩니다.`,
+          );
+        }
+      }
     }
   }
 

@@ -52,6 +52,7 @@ import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preferen
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
@@ -95,6 +96,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AssignAutopilotTask,
     PoEvalAutopilotTask,
     PoShadowAutopilotTask,
+    SecretariatAutopilotTask,
     MorningBriefingAutopilotTask,
     WorkReviewerAutopilotTask,
     WeeklySummaryAutopilotTask,
@@ -152,6 +154,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         assign: AssignAutopilotTask,
         poShadow: PoShadowAutopilotTask,
         poEval: PoEvalAutopilotTask,
+        secretariat: SecretariatAutopilotTask,
         morning: MorningBriefingAutopilotTask,
         workReviewer: WorkReviewerAutopilotTask,
         weeklySummary: WeeklySummaryAutopilotTask,
@@ -173,6 +176,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         assign,
         poShadow,
         poEval,
+        secretariat,
         morning,
         workReviewer,
         weeklySummary,
@@ -195,6 +199,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         AssignAutopilotTask,
         PoShadowAutopilotTask,
         PoEvalAutopilotTask,
+        SecretariatAutopilotTask,
         MorningBriefingAutopilotTask,
         WorkReviewerAutopilotTask,
         WeeklySummaryAutopilotTask,

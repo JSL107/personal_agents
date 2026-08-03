@@ -7,6 +7,20 @@ import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 const escapeLikeMetaChars = (text: string): string =>
   text.replace(/[%_\\]/g, (char) => `\\${char}`);
 
+// 실패 런의 output 은 `{ error: '모델 호출 실패 (CHATGPT, 362s 소요)' }` 형태로 저장된다
+// (usecase 의 실패 경로와 run-sweeper 의 좀비 정리가 같은 형태로 쓴다). 그 외 형태이거나
+// 기록이 없으면 비서실 브리핑에 빈칸이 남지 않도록 고정 문구로 대체한다.
+export const extractFailureReason = (output: unknown): string => {
+  if (typeof output !== 'object' || output === null) {
+    return '이유 미기록';
+  }
+  const { error } = output as { error?: unknown };
+  if (typeof error !== 'string' || error.trim() === '') {
+    return '이유 미기록';
+  }
+  return error.trim();
+};
+
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -19,9 +33,11 @@ import {
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
+  AgentSucceededCountRow,
   AgentSweptCountRow,
   BeginAgentRunInput,
   CountUnsuccessfulSweepReviewsQuery,
+  FailedRunDetail,
   FailedRunSnapshot,
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
@@ -508,6 +524,49 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     return latestPerAgent
       .filter((row) => row.status === AgentRunStatus.FAILED)
       .map((row) => ({ agentType: row.agentType }));
+  }
+
+  async aggregateSucceededCounts({
+    sinceDays,
+  }: {
+    sinceDays: number;
+  }): Promise<AgentSucceededCountRow[]> {
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: {
+        // 시작이 아니라 **완료** 시각으로 자른다. 비서실이 "지난 24시간에 완료된 것" 을
+        // 보고하는 데다, 같은 보고의 실패 집계(findFailedRunsSince)도 endedAt 기준이라
+        // 시작 시각으로 자르면 두 숫자의 기준이 어긋난다. 창 직전에 시작해 창 안에서
+        // 끝난 실행(느린 LLM 호출은 흔하다)이 완료에서 통째로 빠지는 문제도 같이 사라진다.
+        endedAt: { gte: since },
+        status: AgentRunStatus.SUCCEEDED,
+      },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({
+      agentType: row.agentType,
+      succeeded: row._count._all,
+    }));
+  }
+
+  async findFailedRunsSince({
+    withinMinutes,
+  }: {
+    withinMinutes: number;
+  }): Promise<FailedRunDetail[]> {
+    const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    const rows = await this.prisma.agentRun.findMany({
+      where: { status: AgentRunStatus.FAILED, endedAt: { gte: cutoff } },
+      orderBy: { endedAt: 'desc' },
+      select: { agentType: true, output: true, endedAt: true },
+    });
+    return rows.map((row) => ({
+      agentType: row.agentType,
+      reason: extractFailureReason(row.output),
+      // where 절이 endedAt >= cutoff 로 좁혔으니 null 이 나올 수 없다. 타입만 좁힌다.
+      endedAt: row.endedAt ?? cutoff,
+    }));
   }
 
   async sweepZombies({
