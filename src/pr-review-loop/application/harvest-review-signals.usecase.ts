@@ -146,6 +146,19 @@ export class HarvestReviewSignalsUsecase {
         thread?.isResolved &&
         (signal.kind === 'NONE' || signal.kind === 'STALE')
       ) {
+        // PR 이 종료된 채 결론 없이 끝난 카드는 STALE 로 남긴다. OPEN 인 채 resolvedAt 만
+        // 채우면 다음 회차부터 조회 대상에서 빠지므로(status='OPEN' AND resolvedAt IS NULL)
+        // "아직 안 봄" 과 "결론 없이 끝남" 이 영원히 구분되지 않는다.
+        // 채택/기각 결론이 난 카드는 이 분기에 오지 않아 결론을 덮을 위험이 없다.
+        if (signal.kind === 'STALE') {
+          await this.repository.markDecided({
+            id: card.id,
+            status: 'STALE',
+            rejectReason: null,
+            githubThreadNodeId: thread.threadId,
+          });
+          outcome.stale += 1;
+        }
         await this.repository.markThreadResolved(card.id);
         outcome.resolved += 1;
         continue;
@@ -237,7 +250,9 @@ export class HarvestReviewSignalsUsecase {
       return;
     }
 
-    outcome.judged += judgments.length;
+    // judged 는 "LLM 판정으로 실제 결정된 건수" 다. 판정기는 입력 전건에 대해 결과를
+    // 돌려주므로(실패분은 UNCLEAR) judgments.length 를 그대로 더하면 시도 건수가 되고,
+    // UNCLEAR 는 아래에서 skipped 로도 세어져 같은 카드가 두 번 집계된다.
     const byId = new Map(judgments.map((judgment) => [judgment.id, judgment]));
     for (const pending of pendingJudgments) {
       const judgment = byId.get(pending.card.id);
@@ -245,6 +260,7 @@ export class HarvestReviewSignalsUsecase {
         outcome.skipped += 1;
         continue;
       }
+      outcome.judged += 1;
       await this.markDecisionAndResolve({
         card: pending.card,
         thread: pending.thread,
@@ -320,8 +336,11 @@ export class HarvestReviewSignalsUsecase {
         occurredAt: new Date(),
       })
       .catch((error: unknown) => {
-        this.logger.warn(
-          `PR 리뷰 reject episodic 적재 실패 (swallow): ${
+        // 카드는 이미 REJECTED 로 확정돼 다음 회차 조회 대상에서 빠진다(OPEN 만 조회).
+        // 즉 여기서 실패한 학습 신호는 재시도 없이 영구 유실된다 — 이 루프가 존재하는
+        // 이유가 바로 그 신호이므로 warn 이 아니라 error 로 남겨 눈에 띄게 한다.
+        this.logger.error(
+          `PR 리뷰 기각 학습 신호 유실 (카드 ${card.id}, 재시도 없음): ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
