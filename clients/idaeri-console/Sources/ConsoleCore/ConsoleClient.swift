@@ -173,11 +173,19 @@ public actor ConsoleClient {
                         continuation.finish()
                         return
                     }
+                    // 바이트를 그대로 누적한다. `bytes.lines` 를 쓰면 안 된다 —
+                    // AsyncLineSequence 는 연속 개행 사이의 빈 줄을 방출하지 않아
+                    // SSE 의 이벤트 구분자(`\n\n`)가 통째로 사라진다. 라인만 이어붙이면
+                    // 버퍼에 `\n\n` 이 영영 만들어지지 않고 파서가 한 건도 못 뽑는다(실측).
                     var buffer = ""
-                    for try await line in bytes.lines {
-                        // bytes.lines 는 개행을 제거하므로 구분자 복원을 위해 다시 붙인다.
-                        buffer += line
-                        buffer += "\n"
+                    var line: [UInt8] = []
+                    for try await byte in bytes {
+                        line.append(byte)
+                        guard byte == 0x0A else {
+                            continue
+                        }
+                        buffer += String(decoding: line, as: UTF8.self)
+                        line.removeAll(keepingCapacity: true)
                         for event in parseSSELine(&buffer) {
                             continuation.yield(event)
                         }

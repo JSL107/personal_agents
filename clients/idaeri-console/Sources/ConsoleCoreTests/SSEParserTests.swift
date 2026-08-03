@@ -97,4 +97,28 @@ func runSSEParserTests(_ t: TestRunner) {
             t.fail("두 번째 이벤트는 commandInfo 여야 함")
         }
     }
+
+    // 백엔드가 실제로 흘려보내는 프레이밍 그대로(`id:` 줄 + `data:` 줄 + 빈 줄).
+    // NestJS @Sse 는 이벤트마다 `id:` 를 붙이므로 파서가 그 줄을 건너뛰고도 뽑아야 한다.
+    do {
+        var buffer = ""
+        buffer += "id: 1\ndata: {\"type\":\"state.changed\",\"agentType\":\"PM\",\"state\":\"IN_PROGRESS\"}\n\n"
+        buffer += "id: 2\ndata: {\"type\":\"state.changed\",\"agentType\":\"BE\",\"state\":\"COMPLETED\"}\n\n"
+        let events = parseSSELine(&buffer)
+        t.expectEqual(events.count, 2, "id 줄이 붙은 실제 프레이밍도 2건 파싱")
+        t.expectEqual(buffer, "", "버퍼 소진")
+    }
+
+    // 구분자(빈 줄)가 사라진 입력은 한 건도 못 뽑는다 — 스트림을 `bytes.lines` 로 읽으면
+    // 안 되는 이유다. AsyncLineSequence 는 연속 개행 사이의 빈 줄을 방출하지 않으므로,
+    // 라인만 이어붙이면 정확히 아래 모양이 되고 이벤트가 영영 만들어지지 않는다.
+    // 스트림은 바이트로 누적해 원본 개행을 보존해야 한다(ConsoleClient.events).
+    do {
+        var buffer = ""
+        buffer += "id: 1\ndata: {\"type\":\"state.changed\",\"agentType\":\"PM\",\"state\":\"IN_PROGRESS\"}\n"
+        buffer += "id: 2\ndata: {\"type\":\"state.changed\",\"agentType\":\"BE\",\"state\":\"COMPLETED\"}\n"
+        let events = parseSSELine(&buffer)
+        t.expectEqual(events.count, 0, "빈 줄이 없으면 이벤트가 나오지 않는다")
+        t.expect(!buffer.isEmpty, "구분자를 못 만나 전부 버퍼에 잔류")
+    }
 }
