@@ -260,7 +260,7 @@ export interface AgentRunRepositoryPort {
   findFailedRunsSince(input: {
     withinMinutes: number;
   }): Promise<FailedRunDetail[]>;
-  // 비서실 브리핑 — agentType 별 성공 건수(진행 중 제외).
+  // 비서실 브리핑 — agentType 별 성공 건수(진행 중 제외). **완료 시각** 기준으로 자른다.
   aggregateSucceededCounts(input: {
     sinceDays: number;
   }): Promise<AgentSucceededCountRow[]>;

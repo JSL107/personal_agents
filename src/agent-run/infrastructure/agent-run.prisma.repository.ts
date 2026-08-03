@@ -535,7 +535,11 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     const rows = await this.prisma.agentRun.groupBy({
       by: ['agentType'],
       where: {
-        startedAt: { gte: since },
+        // 시작이 아니라 **완료** 시각으로 자른다. 비서실이 "지난 24시간에 완료된 것" 을
+        // 보고하는 데다, 같은 보고의 실패 집계(findFailedRunsSince)도 endedAt 기준이라
+        // 시작 시각으로 자르면 두 숫자의 기준이 어긋난다. 창 직전에 시작해 창 안에서
+        // 끝난 실행(느린 LLM 호출은 흔하다)이 완료에서 통째로 빠지는 문제도 같이 사라진다.
+        endedAt: { gte: since },
         status: AgentRunStatus.SUCCEEDED,
       },
       _count: { _all: true },
