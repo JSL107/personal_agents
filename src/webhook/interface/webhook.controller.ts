@@ -28,9 +28,7 @@ import {
 } from '../domain/github-webhook.type';
 import {
   BE_FIX_QUEUE,
-  BE_SRE_QUEUE,
   BeFixJobData,
-  BeSreJobData,
   CODE_REVIEWER_QUEUE,
   CodeReviewerJobData,
   IMPACT_REPORT_QUEUE,
@@ -56,8 +54,6 @@ export class WebhookController {
     private readonly impactReportQueue: Queue<ImpactReportJobData>,
     @InjectQueue(BE_FIX_QUEUE)
     private readonly beFixQueue: Queue<BeFixJobData>,
-    @InjectQueue(BE_SRE_QUEUE)
-    private readonly beSreQueue: Queue<BeSreJobData>,
     @InjectQueue(CODE_REVIEWER_QUEUE)
     private readonly codeReviewerQueue: Queue<CodeReviewerJobData>,
     @InjectQueue(PR_CAREERLOG_QUEUE)
@@ -147,10 +143,9 @@ export class WebhookController {
       return { accepted: true };
     }
 
-    // check_run.completed + failure → BE-SRE 분석.
+    // check_run.completed + failure → 유휴 세션 브릿지에 전달.
     if (event === 'check_run' && this.isCheckRunFailure(payload)) {
       const checkRunEvent = payload as GithubCheckRunEvent;
-      this.fireBeSreAnalysis({ payload: checkRunEvent, slackUserId });
       void this.githubEventBridge
         .onCiFailure({
           repo: checkRunEvent.repository.full_name,
@@ -510,46 +505,6 @@ export class WebhookController {
       .catch((error: unknown) => {
         this.logger.error(
           `Webhook BE-Fix enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
-  }
-
-  private fireBeSreAnalysis({
-    payload,
-    slackUserId,
-  }: {
-    payload: GithubCheckRunEvent;
-    slackUserId: string;
-  }): void {
-    const { name, conclusion, head_sha, html_url, output } = payload.check_run;
-    const repo = payload.repository.full_name;
-    const title = output?.title ?? '(없음)';
-    const summary = output?.summary ?? '';
-    // 실제 workflow log 는 별도 API fetch 필요 — MVP 는 핵심 메타만 합성해 BE-SRE 에 전달.
-    const stackTrace = [
-      `Workflow ${name} 실패 (${conclusion ?? 'unknown'})`,
-      `repo=${repo} sha=${head_sha}`,
-      `url=${html_url}`,
-      `output=${title}: ${summary.slice(0, 1000)}`,
-    ].join('\n');
-
-    // codex P1 — CI re-run 으로 같은 head_sha + check_run.id 가 다시 도착해도 BullMQ 가 dedup.
-    const jobId = `besre:${repo}:${head_sha}:${payload.check_run.id}`;
-    void this.beSreQueue
-      .add(
-        'webhook-be-sre',
-        { stackTrace, slackUserId },
-        {
-          jobId,
-          attempts: 2,
-          backoff: { type: 'exponential', delay: 30_000 },
-          removeOnComplete: 50,
-          removeOnFail: 50,
-        },
-      )
-      .catch((error: unknown) => {
-        this.logger.error(
-          `Webhook BE-SRE enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
   }
