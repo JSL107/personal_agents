@@ -12,6 +12,7 @@ import { PREFERENCE_PROPOSAL_REPOSITORY } from './domain/port/preference-proposa
 import { PREFERENCE_SIGNAL_SOURCES } from './domain/port/preference-signal-source.port';
 import { PreferenceProfilePrismaRepository } from './infrastructure/preference-profile.prisma.repository';
 import { PreferenceProposalPrismaRepository } from './infrastructure/preference-proposal.prisma.repository';
+import { PreviewDecisionSignalSource } from './infrastructure/preview-decision.signal-source';
 import { ProposalDecisionSignalSource } from './infrastructure/proposal-decision.signal-source';
 
 // 선호 프로필 자가학습 모듈 — 저장(버전형)+학습(주간 추론)+소비(주입 블록).
@@ -27,12 +28,16 @@ import { ProposalDecisionSignalSource } from './infrastructure/proposal-decision
       useClass: PreferenceProposalPrismaRepository,
     },
     ProposalDecisionSignalSource,
+    PreviewDecisionSignalSource,
     {
       provide: PREFERENCE_SIGNAL_SOURCES,
-      useFactory: (proposalSource: ProposalDecisionSignalSource) => [
-        proposalSource,
-      ],
-      inject: [ProposalDecisionSignalSource],
+      // proposalSource 를 먼저 둔다 — collector 가 순서대로 모아 cap 으로 자르므로
+      // 선호 카드 직결 신호가 일반 PreviewGate 결정보다 우선 살아남는다.
+      useFactory: (
+        proposalSource: ProposalDecisionSignalSource,
+        previewSource: PreviewDecisionSignalSource,
+      ) => [proposalSource, previewSource],
+      inject: [ProposalDecisionSignalSource, PreviewDecisionSignalSource],
     },
     PreferenceSignalCollector,
     PreferenceInferenceAdapter,
