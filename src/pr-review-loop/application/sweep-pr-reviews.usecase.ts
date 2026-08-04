@@ -45,8 +45,9 @@ const SWEEP_RETRY_COOLDOWN_MINUTES = 10;
 const SWEEP_RETRY_BUDGET_WINDOW_HOURS = 24;
 const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
 // GitHub 이 unified diff 를 내주는 상한. 넘으면 `pulls.get(mediaType: diff)` 가 406
-// (`code: too_large`) 로 거절한다 — 재시도해도 PR 이 작아지지 않는 한 결과가 같으므로,
-// diff 를 요청하기 전에 PR 상세의 additions+deletions 로 미리 걸러 호출 자체를 아낀다.
+// (`code: too_large`) 로 거절한다. 재시도해도 PR 이 작아지지 않는 한 결과가 같으므로,
+// 실패 원인을 PR 상세의 additions+deletions 로 판별해 로그에 명시한다 — "diff 조회 실패"
+// 만으로는 일시적 장애인지 구조적 한계인지 구분되지 않아 진단이 매번 처음부터 시작된다.
 const GITHUB_DIFF_MAX_LINES = 20_000;
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
@@ -240,22 +241,29 @@ export class SweepPrReviewsUsecase {
     // 속도로 닳는다. 원장에 기록될 주체가 아직 없는 구간(조회 단계)만 이 usecase 가 책임진다.
     let reviewUsecaseEntered = false;
     try {
-      // 상세를 먼저 받아 변경량부터 확인한다 — diff 와 병렬로 던지면 "받을 수 없는 크기"임을
-      // 알기 전에 이미 406 이 될 요청을 보내게 된다.
-      const detail = await this.githubClient.getPullRequest({
-        repo,
-        number: pullNumber,
-      });
-      const changedLines = detail.additions + detail.deletions;
-      if (changedLines > GITHUB_DIFF_MAX_LINES) {
-        throw new Error(
-          `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
-        );
+      // 상세와 diff 는 병렬로 조회한다. 두 요청은 어차피 원자적이지 않아 그 사이 push 가
+      // 들어오면 "옛 headSha + 새 diff" 스냅샷이 만들어지는데, 순차로 바꾸면 그 창이
+      // 첫 요청의 왕복 시간만큼 넓어진다 — 창을 없앨 수는 없으므로 넓히지 않는 쪽을 택한다
+      // (완전 해소는 headSha 에 고정된 diff 를 받는 별도 설계, 2026-08-04 리뷰 지적).
+      // diff 는 실패할 수 있어 allSettled 로 받고, 원인은 상세의 변경량으로 판별한다.
+      const [detailResult, diffResult] = await Promise.allSettled([
+        this.githubClient.getPullRequest({ repo, number: pullNumber }),
+        this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
+      ]);
+      if (detailResult.status === 'rejected') {
+        throw detailResult.reason;
       }
-      const diff = await this.githubClient.getPullRequestDiff({
-        repo,
-        number: pullNumber,
-      });
+      const detail = detailResult.value;
+      if (diffResult.status === 'rejected') {
+        const changedLines = detail.additions + detail.deletions;
+        if (changedLines > GITHUB_DIFF_MAX_LINES) {
+          throw new Error(
+            `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
+          );
+        }
+        throw diffResult.reason;
+      }
+      const diff = diffResult.value;
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
       // 앵커가 어긋난다(2026-07-31 리뷰 지적).

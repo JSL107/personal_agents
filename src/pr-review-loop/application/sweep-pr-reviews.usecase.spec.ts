@@ -433,7 +433,7 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toHaveLength(1);
   });
 
-  it('변경량이 GitHub diff 한도를 넘으면 diff 를 요청하지 않는다', async () => {
+  it('변경량이 GitHub diff 한도를 넘으면 리뷰하지 않고 원인을 변경량으로 밝힌다', async () => {
     github.getPullRequest.mockResolvedValue({
       number: 180,
       title: 'feat: 아주 큰 PR',
@@ -450,13 +450,60 @@ describe('SweepPrReviewsUsecase', () => {
       additions: 27_778,
       deletions: 4_696,
     });
+    github.getPullRequestDiff.mockRejectedValue(
+      new Error('PR #180 diff 조회 실패: too_large'),
+    );
 
     const results = await buildUsecase(ENABLED).execute();
 
-    // 406(too_large)이 될 요청을 아예 보내지 않는다 — 재시도해도 PR 이 작아지지 않는다.
-    expect(github.getPullRequestDiff).not.toHaveBeenCalled();
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
+    // "diff 조회 실패" 만으로는 일시 장애인지 구조적 한계인지 안 갈린다 — 원장에 남는
+    // 실패 사유가 변경량을 짚어야 다음 진단이 처음부터 시작되지 않는다.
+    const recordedError = agentRunService.execute.mock.calls[0]?.[0];
+    await expect(
+      (recordedError as { run: (context: unknown) => Promise<unknown> }).run({
+        agentRunId: 1,
+      }),
+    ).rejects.toThrow(/변경량 32474줄/);
+  });
+
+  it('상세와 diff 는 병렬로 조회한다 — 두 응답 사이의 push 창을 넓히지 않는다', async () => {
+    let detailSettled = false;
+    let diffStartedBeforeDetailSettled = false;
+    github.getPullRequest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            detailSettled = true;
+            resolve({
+              number: 180,
+              title: 'feat: 무언가',
+              body: '',
+              repo: 'JSL107/personal_agents',
+              url: OPEN_PR.url,
+              baseRef: 'main',
+              headRef: 'feat/x',
+              headSha: 'abc1234',
+              authorLogin: 'JSL107',
+              changedFiles: ['src/foo.service.ts'],
+              changedFilesTruncated: false,
+              changedFilesTotalCount: 1,
+              additions: 10,
+              deletions: 2,
+            } as never);
+          }, 5);
+        }),
+    );
+    github.getPullRequestDiff.mockImplementation(() => {
+      diffStartedBeforeDetailSettled = !detailSettled;
+      return Promise.resolve({ diff: 'diff', truncated: false, bytes: 4 });
+    });
+
+    await buildUsecase(ENABLED).execute();
+
+    // 순차로 되돌아가면 diff 는 detail 이 끝난 뒤에 시작되어 이 값이 false 가 된다.
+    expect(diffStartedBeforeDetailSettled).toBe(true);
   });
 
   it('조회 단계 실패도 AgentRun 원장에 남겨 재시도 판정이 볼 수 있게 한다', async () => {
@@ -496,6 +543,9 @@ describe('SweepPrReviewsUsecase', () => {
       additions: 20_001,
       deletions: 0,
     });
+    github.getPullRequestDiff.mockRejectedValue(
+      new Error('PR #180 diff 조회 실패: too_large'),
+    );
 
     await buildUsecase(ENABLED).execute();
 
