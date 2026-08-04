@@ -27,14 +27,19 @@ const adoption = (
   category: string,
   total: number,
   ratePercent: number | null,
-) => ({
-  category,
-  adopted:
-    ratePercent === null ? total : Math.round((total * ratePercent) / 100),
-  rejected: 0,
-  total,
-  ratePercent,
-});
+) => {
+  // adopted + rejected === total 을 지킨다. 깨진 조합으로 검증하면 실제로는 나올 수 없는
+  // 입력을 통과시키게 된다.
+  const adopted =
+    ratePercent === null ? total : Math.round((total * ratePercent) / 100);
+  return {
+    category,
+    adopted,
+    rejected: total - adopted,
+    total,
+    ratePercent,
+  };
+};
 
 describe('formatPrReviewSweep', () => {
   it('PR 별 게시 결과를 한 줄씩 렌더한다', () => {

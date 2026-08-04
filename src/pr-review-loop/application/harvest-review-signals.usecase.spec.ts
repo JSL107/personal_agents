@@ -825,9 +825,16 @@ describe('HarvestReviewSignalsUsecase', () => {
     ]);
   });
 
-  it('상태 전이가 없으면 채택률을 조회하지 않는다', async () => {
+  // 이 회차에 반응이 없어도 누적 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
+  // (autopilot.orchestrator buildGuardKey), 반응이 있던 회차가 그날 첫 발송이 아니면 그대로
+  // 차단된다 — 조회를 반응 있는 회차로 아끼면 그 값이 영영 안 나온다.
+  it('반응이 없는 회차에도 누적 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
+    repository.countAdoptionByCategory.mockResolvedValue([
+      { category: 'TEST', status: 'ACKED', count: 12 },
+      { category: 'TEST', status: 'REJECTED', count: 3 },
+    ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'OPEN',
       truncated: false,
@@ -836,13 +843,24 @@ describe('HarvestReviewSignalsUsecase', () => {
 
     const outcome = await usecase.execute();
 
-    expect(outcome.adoption).toEqual([]);
-    expect(repository.countAdoptionByCategory).not.toHaveBeenCalled();
+    expect(outcome.acked).toBe(0);
+    expect(outcome.adoption).toEqual([
+      {
+        category: 'TEST',
+        adopted: 12,
+        rejected: 3,
+        total: 15,
+        ratePercent: 80,
+      },
+    ]);
   });
 
-  it('STALE 확정만 있으면 채택률이 변하지 않으므로 조회하지 않는다', async () => {
+  it('STALE 확정만 있는 회차에도 누적 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
+    repository.countAdoptionByCategory.mockResolvedValue([
+      { category: 'TEST', status: 'ACKED', count: 10 },
+    ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestState: 'MERGED',
       truncated: false,
@@ -852,7 +870,15 @@ describe('HarvestReviewSignalsUsecase', () => {
     const outcome = await usecase.execute();
 
     expect(outcome.stale).toBe(1);
-    expect(repository.countAdoptionByCategory).not.toHaveBeenCalled();
+    expect(outcome.adoption).toEqual([
+      {
+        category: 'TEST',
+        adopted: 10,
+        rejected: 0,
+        total: 10,
+        ratePercent: 100,
+      },
+    ]);
   });
 
   it('채택률 집계가 실패해도 수확 결과는 그대로 낸다', async () => {
