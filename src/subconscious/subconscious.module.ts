@@ -3,6 +3,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { GithubModule } from '../github/github.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { NotionModule } from '../notion/notion.module';
@@ -52,6 +53,8 @@ import { SubconsciousProposalPrismaRepository } from './infrastructure/subconsci
     // forwardRef: SlackModule → SubconsciousModule → SlackModule 순환 방지.
     forwardRef(() => SlackModule),
     PrismaModule,
+    // AGENT_RUN_REPOSITORY_PORT — 스윕이 이미 리뷰·게시한 PR 인지 판정.
+    AgentRunModule,
   ],
   providers: [
     // ── StateSource adapters ──────────────────────────────────────────────────
