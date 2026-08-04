@@ -179,14 +179,24 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         "배회 중이어도 대기 상태면 유지"
     )
 
-    let nonWaitingStates: [(String, ConsoleAgentState)] = [
+    // 완료는 탕비실 이동(visitLounge)이 같은 배회 집합을 쓰므로 중단 대상이 아니다.
+    // 여기서 잡으면 다른 에이전트의 상태 변경으로 스냅샷이 갱신될 때마다 완료 연출이 끊긴다.
+    t.expectEqual(
+        strollersToStop(
+            strolling: ["COMPLETED"],
+            agents: [makeInteractionAgent("COMPLETED", .completed)]
+        ),
+        [],
+        "배회 중이어도 완료 상태면 유지(탕비실 연출 보호)"
+    )
+
+    let stopStates: [(String, ConsoleAgentState)] = [
         ("IN_PROGRESS", .inProgress),
         ("AWAITING_APPROVAL", .awaitingApproval),
         ("FAILED", .failed),
-        ("COMPLETED", .completed),
         ("AWAITING_INTEGRATION", .awaitingIntegration),
     ]
-    for (agentType, state) in nonWaitingStates {
+    for (agentType, state) in stopStates {
         t.expectEqual(
             strollersToStop(
                 strolling: [agentType],
@@ -219,7 +229,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     t.expectEqual(
         strollersToStop(
             strolling: [],
-            agents: nonWaitingStates.map { makeInteractionAgent($0.0, $0.1) }
+            agents: stopStates.map { makeInteractionAgent($0.0, $0.1) }
         ),
         [],
         "배회자가 없으면 중단 대상도 없음"
