@@ -53,7 +53,10 @@ export class GithubEventBridge {
       return;
     }
     const shortSha = event.headSha.slice(0, 7);
-    const prRef = `${event.repo}@${shortSha}`;
+    // checkName 을 키에 넣는다 — prRef 는 중복 제안 차단 키로도 쓰이므로, 같은 커밋의
+    // 서로 다른 체크 실패는 서로 다른 작업으로 구분돼야 한다. 커밋만으로 묶으면
+    // 첫 체크 실패 카드가 나머지 체크의 제안을 영구히 막는다.
+    const prRef = `${event.repo}@${shortSha}#${event.checkName}`;
     const params: CiFailureInstructionParams = {
       repo: event.repo,
       checkName: event.checkName,

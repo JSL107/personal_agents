@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 import type { GithubClientPort } from '../../github/domain/port/github-client.port';
+import type { CountPreviewsByPayloadUsecase } from '../../preview-gate/application/count-previews-by-payload.usecase';
 import type { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import type { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
@@ -72,6 +73,7 @@ function make(overrides: Partial<Record<string, unknown>> = {}) {
     execute: jest.fn().mockResolvedValue(makeOpenPreview({})),
   };
   const findOpen = { execute: jest.fn().mockResolvedValue([]) };
+  const countPreviewsByPayload = { execute: jest.fn().mockResolvedValue(0) };
   const cooldown = {
     shouldSkip: jest.fn().mockReturnValue(false),
     mark: jest.fn(),
@@ -84,11 +86,20 @@ function make(overrides: Partial<Record<string, unknown>> = {}) {
     githubClient as unknown as GithubClientPort,
     createPreview as unknown as CreatePreviewUsecase,
     findOpen as unknown as FindAllOpenPreviewsUsecase,
+    countPreviewsByPayload as unknown as CountPreviewsByPayloadUsecase,
     cooldown as unknown as DispatchCooldown,
     resolveRepo,
   );
 
-  return { config, createPreview, cooldown, findOpen, githubClient, service };
+  return {
+    config,
+    countPreviewsByPayload,
+    createPreview,
+    cooldown,
+    findOpen,
+    githubClient,
+    service,
+  };
 }
 
 describe('SessionDispatchService', () => {
@@ -118,7 +129,7 @@ describe('SessionDispatchService', () => {
       previewText:
         '세션 career-mate(career-mate)가 유휴 상태입니다. PR me/career-mate#7 리뷰를 맡길까요?',
       responseUrl: null,
-      ttlMs: 30 * 60 * 1000,
+      ttlMs: 8 * 60 * 60 * 1000,
     });
     expect(githubClient.listAuthorOpenPullRequests).toHaveBeenCalledWith({
       repo: 'me/career-mate',
@@ -310,7 +321,7 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
       },
       previewText: 'CI 실패 수정 맡길까요?',
       responseUrl: null,
-      ttlMs: 30 * 60 * 1000,
+      ttlMs: 8 * 60 * 60 * 1000,
     });
     expect(cooldown.mark).toHaveBeenCalledWith('s1');
   });
@@ -332,7 +343,7 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
   });
 
   it('같은 세션 열린 SESSION_INJECT가 있으면 false 반환', async () => {
-    const { createPreview, findOpen, service } = make();
+    const { countPreviewsByPayload, createPreview, findOpen, service } = make();
     findOpen.execute.mockResolvedValue([
       makeOpenPreview({ sessionId: 's1', source: 'claude' }),
     ]);
@@ -345,7 +356,47 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
     });
 
     expect(created).toBe(false);
+    expect(countPreviewsByPayload.execute).not.toHaveBeenCalled();
     expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('같은 prRef 이력이 있으면 false 반환하고 preview를 생성하지 않는다', async () => {
+    const { countPreviewsByPayload, createPreview, service } = make();
+    countPreviewsByPayload.execute.mockResolvedValue(1);
+
+    const created = await service.offerToIdleSession({
+      session: CLAUDE_SESSION,
+      prRef: 'me/career-mate#7',
+      instruction: 'y',
+      previewText: 'z',
+    });
+
+    expect(created).toBe(false);
+    expect(countPreviewsByPayload.execute).toHaveBeenCalledWith({
+      kind: PREVIEW_KIND.SESSION_INJECT,
+      payloadPath: ['prRef'],
+      payloadValue: 'me/career-mate#7',
+    });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('같은 prRef 이력이 없으면 기존대로 preview를 생성한다', async () => {
+    const { countPreviewsByPayload, createPreview, service } = make();
+
+    const created = await service.offerToIdleSession({
+      session: CLAUDE_SESSION,
+      prRef: 'me/career-mate#7',
+      instruction: 'y',
+      previewText: 'z',
+    });
+
+    expect(created).toBe(true);
+    expect(countPreviewsByPayload.execute).toHaveBeenCalledWith({
+      kind: PREVIEW_KIND.SESSION_INJECT,
+      payloadPath: ['prRef'],
+      payloadValue: 'me/career-mate#7',
+    });
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
   });
 
   // 열린 preview 조회는 아직 아무것도 반환하지 않는 상태 = 두 호출이 조회를 함께 통과하는
@@ -372,8 +423,11 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
     expect(createPreview.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('제안이 끝나면 임계 구역을 해제해 이후 같은 PR 제안을 영구 차단하지 않는다', async () => {
-    const { createPreview, service } = make();
+  it('제안이 끝나면 임계 구역을 해제하고 이후 호출은 영속 이력으로 차단한다', async () => {
+    const { countPreviewsByPayload, createPreview, service } = make();
+    countPreviewsByPayload.execute
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
     const offer = {
       session: CLAUDE_SESSION,
       prRef: 'me/career-mate#7',
@@ -384,7 +438,8 @@ describe('offerToIdleSession (공유 제안 경로)', () => {
     const first = await service.offerToIdleSession(offer);
     const second = await service.offerToIdleSession(offer);
 
-    expect([first, second]).toEqual([true, true]);
-    expect(createPreview.execute).toHaveBeenCalledTimes(2);
+    expect([first, second]).toEqual([true, false]);
+    expect(countPreviewsByPayload.execute).toHaveBeenCalledTimes(2);
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
   });
 });

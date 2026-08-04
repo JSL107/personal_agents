@@ -1,6 +1,30 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { PreviewActionPrismaRepository } from './preview-action.prisma.repository';
 
+describe('PreviewActionPrismaRepository.countByPayloadValue', () => {
+  it('kind와 JSON path equals 조건으로 count를 위임한다', async () => {
+    const count = jest.fn().mockResolvedValue(2);
+    const prismaMock = {
+      previewAction: { count },
+    } as unknown as PrismaService;
+    const repository = new PreviewActionPrismaRepository(prismaMock);
+
+    const result = await repository.countByPayloadValue({
+      kind: 'SESSION_INJECT',
+      payloadPath: ['prRef'],
+      payloadValue: 'me/repo#7',
+    });
+
+    expect(result).toBe(2);
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        kind: 'SESSION_INJECT',
+        payload: { path: ['prRef'], equals: 'me/repo#7' },
+      },
+    });
+  });
+});
+
 describe('PreviewActionPrismaRepository.countOutcomesByKind', () => {
   it('상태별 count와 PENDING 사실상 만료를 expired로 합산한다', async () => {
     const groupBy = jest

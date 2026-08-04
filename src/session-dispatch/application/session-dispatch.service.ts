@@ -6,6 +6,7 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
+import { CountPreviewsByPayloadUsecase } from '../../preview-gate/application/count-previews-by-payload.usecase';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
@@ -17,7 +18,7 @@ import { injectInstructionForPr } from '../domain/inject-instruction';
 import { DispatchCooldown } from './dispatch-cooldown';
 
 const OPEN_PULL_REQUEST_LOOKBACK_DAYS = 180;
-const SESSION_INJECT_PREVIEW_TTL_MS = 30 * 60 * 1000;
+const SESSION_INJECT_PREVIEW_TTL_MS = 8 * 60 * 60 * 1000;
 
 export interface IdleSession {
   readonly sessionId: string;
@@ -58,6 +59,7 @@ export class SessionDispatchService {
     private readonly githubClient: GithubClientPort,
     private readonly createPreview: CreatePreviewUsecase,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+    private readonly countPreviewsByPayload: CountPreviewsByPayloadUsecase,
     private readonly cooldown: DispatchCooldown,
     private readonly resolveRepo: (cwd: string) => string | null,
   ) {}
@@ -101,6 +103,14 @@ export class SessionDispatchService {
           prRef: params.prRef,
         })
       ) {
+        return false;
+      }
+      const alreadyOffered = await this.countPreviewsByPayload.execute({
+        kind: PREVIEW_KIND.SESSION_INJECT,
+        payloadPath: ['prRef'],
+        payloadValue: params.prRef,
+      });
+      if (alreadyOffered > 0) {
         return false;
       }
       const payload: SessionInjectPreviewPayload = {
