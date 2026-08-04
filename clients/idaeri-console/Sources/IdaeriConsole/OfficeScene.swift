@@ -205,6 +205,9 @@ final class OfficeScene: SKScene {
                 node.sit()
             }
             node.resize(tileSize: tileSize, spriteScale: characterScale)
+            // 부서는 스냅샷마다 확인한다. 노드는 재사용되므로 여기서 갱신하지 않으면 사규가
+            // 사람을 옮겼을 때 방만 바뀌고 옷은 옛 부서색으로 남는다.
+            node.apply(department: agent.resolvedDepartment)
             node.apply(state: agent.state)
 
             // 줄 서 있거나 걷는 중인 사람은 건드리지 않고, 나머지는 자기 자리에 둔다.
@@ -266,7 +269,8 @@ final class OfficeScene: SKScene {
 
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
         let node = CharacterNode(
-            agentType: agent.agentType, displayName: agent.displayName, tile: seat
+            agentType: agent.agentType, displayName: agent.displayName,
+            department: agent.resolvedDepartment, tile: seat
         )
         node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)
@@ -1038,7 +1042,10 @@ final class OfficeScene: SKScene {
             text: "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
         )
         label.name = "summaryHUD"
-        label.fontSize = 13
+        // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
+        // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
+        label.fontName = officeLabelFontName
+        label.fontSize = max(officeHudMinFontSize, tileSize * 0.30)
         label.fontColor = SKColor(white: 0.88, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top

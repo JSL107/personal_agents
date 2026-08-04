@@ -48,23 +48,40 @@ public enum Department: String, CaseIterable, Sendable {
     }
 }
 
-/// agentType(백엔드 AgentType enum 문자열) → 부서 매핑.
-/// 미지 타입(향후 추가될 에이전트 포함)은 .internalOps 로 폴백해 크래시 없이 흡수한다.
-public func department(for agentType: String) -> Department {
-    switch agentType {
-    case "PM", "PO_SHADOW", "PO_EVAL":
-        return .planning
-    case "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX":
-        return .engineering
-    case "CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER":
-        return .review
-    case "CTO", "CEO":
-        return .executive
-    case "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION":
-        return .growth
-    default:
+/// 백엔드가 보낸 부서 문자열을 앱 enum 으로 옮긴다. **판정이 아니라 변환이다.**
+///
+/// 예전에는 이 자리에 agentType → 부서 매핑 표가 있었다. 백엔드 사규(`agent-contract.ts`)에
+/// 같은 표가 이미 있었으므로 정본이 둘이었고, 실제로 어긋나 있었다 — 백엔드가 리뷰로 배정한
+/// `REVIEW_REPLY_JUDGE` 가 앱 표에는 없어 폴백을 타고 내부방에 앉았다. 부서 편성은 사규의
+/// 소관이므로 앱은 그 값을 받아 쓴다.
+///
+/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 백엔드가 부서를 새로 추가해 앱이 모르는 값이
+/// 오는 경우인데, 크래시보다 한 방에 몰리는 편이 낫다 — 화면에서 바로 보이므로 조용히 틀리지 않는다.
+public func departmentFromRaw(_ raw: String?) -> Department {
+    guard let raw, let department = Department(rawValue: raw) else {
         return .internalOps
     }
+    return department
+}
+
+/// 캐릭터 셔츠색(0~1 RGB). 부서색을 흰색 쪽으로 끌어와 파스텔로 만든다.
+///
+/// 원색을 그대로 입히면 작업복이 아니라 코스튬처럼 보이고, 얼굴·머리보다 옷이 먼저 눈에 띈다.
+/// `shift` 는 사람마다 조금씩 다른 톤을 주는 값이라 같은 부서 안에서도 옷이 완전히 같지 않다.
+///
+/// 씬(`CharacterNode`)이 아니라 여기 있는 이유는 **부서가 바뀌면 옷도 바뀌어야 한다**는 규칙을
+/// 테스트가 확인할 수 있게 하기 위해서다. SpriteKit 타깃에 두면 검증 러너가 닿지 못한다.
+public func officeShirtColorRGB(
+    department: Department,
+    shift: Double
+) -> (red: Double, green: Double, blue: Double) {
+    let palette = agentDepartmentPaletteRGBA(department)
+    let blend = 0.42 + shift
+    return (
+        red: 1.0 - (1.0 - palette.red) * blend,
+        green: 1.0 - (1.0 - palette.green) * blend,
+        blue: 1.0 - (1.0 - palette.blue) * blend
+    )
 }
 
 /// 부서 6종의 표시 색(0~1 RGB). 부서색은 토큰의 아이콘·채움 tint 로 쓰인다(상태색과 역할 분리).

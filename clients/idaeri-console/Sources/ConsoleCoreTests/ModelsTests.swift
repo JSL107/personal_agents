@@ -22,6 +22,39 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("스냅샷 디코딩 실패: \(error)")
     }
 
+    // 백엔드가 보내는 department 필드가 실제로 디코딩돼 화면 부서로 이어지는지.
+    //
+    // 필드명이 어긋나면 조용히 nil 이 되고 전원이 내부방으로 몰린다 — 에러가 아니라 빈 값으로
+    // 나타나는 종류의 실패라, 응답 형태 그대로의 픽스처로 못 박는다.
+    do {
+        let json = """
+        {"agents":[{"agentType":"REVIEW_REPLY_JUDGE","displayName":"Review Reply Judge","slashCommands":[],"description":"","state":"WAITING","bubble":"업무 대기중","department":"review","departmentLabel":"리뷰","job":"리뷰 답변을 판정한다","lastFinishedRunId":null}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-08-04T00:00:00Z"}
+        """.data(using: .utf8)!
+        let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
+        t.expectEqual(snapshot.agents.first?.department, "review", "department 문자열 디코딩")
+        t.expectEqual(
+            snapshot.agents.first?.resolvedDepartment, .review,
+            "department 가 화면 부서로 이어진다"
+        )
+    } catch {
+        t.fail("department 포함 스냅샷 디코딩 실패: \(error)")
+    }
+
+    // 부서가 빠진 응답도 디코딩은 성공해야 한다(앱이 빈 화면이 되면 원인을 알 수 없다).
+    do {
+        let json = """
+        {"agents":[{"agentType":"PM","displayName":"PM","slashCommands":[],"description":"","state":"WAITING","bubble":""}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-08-04T00:00:00Z"}
+        """.data(using: .utf8)!
+        let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
+        t.expectNil(snapshot.agents.first?.department, "department 없는 응답도 디코딩된다")
+        t.expectEqual(
+            snapshot.agents.first?.resolvedDepartment, .internalOps,
+            "부서가 없으면 내부 폴백"
+        )
+    } catch {
+        t.fail("department 누락 스냅샷 디코딩 실패: \(error)")
+    }
+
     // Run 의 nullable 필드(parentId / finishedAt)가 null 이면 nil
     do {
         let json = """
