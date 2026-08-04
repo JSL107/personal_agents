@@ -241,9 +241,15 @@ final class OfficeScene: SKScene {
             return
         }
         let leaving = queueOrder.filter { !reconciled.contains($0) }
+        let joining = reconciled.filter { !queueOrder.contains($0) }
         queueOrder = reconciled
         for agentType in leaving {
             goHome(agentType)
+        }
+        // 새로 줄에 들어온 사람이 배회 중이면 끊는다 — 승인 대기는 관제 신호이고 배회는 연출이다.
+        // 끊지 않으면 머무름 콜백이 나중에 깨어나 줄에서 자리로 끌고 간다.
+        for agentType in joining {
+            cancelStroll(agentType)
         }
         // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
         layoutQueue()

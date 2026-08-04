@@ -35,19 +35,36 @@ public func approvalFor(agentType: String, in approvals: [ConsoleApproval]) -> C
 /// 서 있고, 자리로 돌아가지도 배회하지도 못한다.
 ///
 /// 상태와 승인 목록을 함께 보는 이유는 백엔드가 승인 건을 먼저 만들고 에이전트 상태를 한 박자
-/// 뒤에 반영할 수 있기 때문이다. 결과는 현재 줄을 filter 해서 도착 순서를 그대로 보존한다.
+/// 뒤에 반영할 수 있기 때문이다. 기존 줄은 filter 해서 도착 순서를 보존하고, 새 대기자는
+/// 스냅샷 순서대로 뒤에 붙인다.
+///
+/// 제거만 하면 재연결 중 `approval.opened`를 놓친 대기자가 자리에 남는다. 상태 반영까지 늦으면
+/// `officeIsIdle`이 waiting으로 보고 배회 후보로도 뽑아, 스냅샷과 다른 관제 신호가 된다.
 public func reconciledQueueOrder(
     current: [String],
     agents: [ConsoleAgent],
     approvals: [ConsoleApproval]
 ) -> [String] {
     let approvalAgentTypes = Set(approvals.compactMap(\.agentType))
-    return current.filter { agentType in
+    var reconciled = current.filter { agentType in
         guard let agent = agents.first(where: { $0.agentType == agentType }) else {
             return false
         }
         return agent.state == .awaitingApproval || approvalAgentTypes.contains(agentType)
     }
+    var queuedAgentTypes = Set(reconciled)
+    for agent in agents {
+        guard agent.state == .awaitingApproval
+            || approvalAgentTypes.contains(agent.agentType)
+        else {
+            continue
+        }
+        guard queuedAgentTypes.insert(agent.agentType).inserted else {
+            continue
+        }
+        reconciled.append(agent.agentType)
+    }
+    return reconciled
 }
 
 /// 이름표를 진하게 보일지 판정한다(순수).
