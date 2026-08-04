@@ -8,6 +8,24 @@ import { PreferenceSignal } from '../domain/preference-signal.type';
 const TEXT_CAP = 200;
 const ROW_CAP = 50;
 
+const EXCLUDED_KINDS = [
+  // ProposalDecisionSignalSource 가 이미 읽는다 — 이중 계상 방지.
+  PREVIEW_KIND.PREFERENCE_PROFILE,
+  // applier 가 없어 "주제 선택 성공" 도 cancel 로 preview 를 소비한다
+  // (router-message.handler.ts:463 "성공 — 이제 preview 소비"). CANCELLED 가 거절을
+  // 뜻하지 않으므로 그대로 읽으면 사용자의 선택을 반대 선호로 학습한다.
+  PREVIEW_KIND.CAREER_JD_GAP_BLOG,
+];
+
+// 결정 시각 — status 에 따라 채워지는 컬럼이 다르다(포트 계약: transition 이 status 에 맞춰 채움).
+// 실측(2026-08-04)상 APPLIED 15/15 · CANCELLED 12/12 모두 채워져 있으나 스키마가 nullable 이라
+// createdAt 으로 방어한다.
+const decidedAtMs = (row: {
+  appliedAt: Date | null;
+  cancelledAt: Date | null;
+  createdAt: Date;
+}): number => (row.appliedAt ?? row.cancelledAt ?? row.createdAt).getTime();
+
 // 두 번째 신호원 — PreviewGate 승인/거절 이력.
 //
 // ProposalDecisionSignalSource 가 읽는 preference_proposal 의 APPROVED/REJECTED 는 사실
@@ -31,21 +49,31 @@ export class PreviewDecisionSignalSource implements PreferenceSignalSource {
     ownerUserId: string,
     sinceMs: number,
   ): Promise<PreferenceSignal[]> {
+    const since = new Date(sinceMs);
     const rows = await this.prisma.previewAction.findMany({
       where: {
         slackUserId: ownerUserId,
-        status: { in: ['APPLIED', 'CANCELLED'] },
-        createdAt: { gte: new Date(sinceMs) },
-        // PREFERENCE_PROFILE 카드는 ProposalDecisionSignalSource 가 이미 읽는다 — 이중 계상 방지.
-        kind: { not: PREVIEW_KIND.PREFERENCE_PROFILE },
+        kind: { notIn: EXCLUDED_KINDS },
+        // 창은 생성 시각이 아니라 결정 시각 기준. createdAt 으로 자르면 카드가 창 직전에
+        // 생성되고 창 안에서 결정된 경우 어느 회차에서도 잡히지 않는다 — 지난 회차에는 아직
+        // PENDING 이라 status 필터에 걸리고, 이번 회차에는 createdAt 이 창 밖이다.
+        OR: [
+          { status: 'APPLIED', appliedAt: { gte: since } },
+          { status: 'CANCELLED', cancelledAt: { gte: since } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
       take: ROW_CAP,
     });
-    return rows.map((row) => ({
-      source: 'preview_decision' as const,
-      evidenceRef: `previewAction:${row.id}`,
-      observedText: `[${row.status}] ${row.kind} — ${row.previewText.slice(0, TEXT_CAP)}`,
-    }));
+    // 결정 시각 desc 로 재정렬 — appliedAt/cancelledAt 이 두 컬럼으로 나뉘어 있어 단일
+    // orderBy 로 표현되지 않는다. 조회는 createdAt 순(결정 순서의 근사)으로 cap 을 걸고,
+    // 정렬만 여기서 바로잡는다.
+    return rows
+      .sort((a, b) => decidedAtMs(b) - decidedAtMs(a))
+      .map((row) => ({
+        source: 'preview_decision' as const,
+        evidenceRef: `previewAction:${row.id}`,
+        observedText: `[${row.status}] ${row.kind} — ${row.previewText.slice(0, TEXT_CAP)}`,
+      }));
   }
 }
