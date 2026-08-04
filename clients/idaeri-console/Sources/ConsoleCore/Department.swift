@@ -64,6 +64,26 @@ public func departmentFromRaw(_ raw: String?) -> Department {
     return department
 }
 
+/// 캐릭터 셔츠색(0~1 RGB). 부서색을 흰색 쪽으로 끌어와 파스텔로 만든다.
+///
+/// 원색을 그대로 입히면 작업복이 아니라 코스튬처럼 보이고, 얼굴·머리보다 옷이 먼저 눈에 띈다.
+/// `shift` 는 사람마다 조금씩 다른 톤을 주는 값이라 같은 부서 안에서도 옷이 완전히 같지 않다.
+///
+/// 씬(`CharacterNode`)이 아니라 여기 있는 이유는 **부서가 바뀌면 옷도 바뀌어야 한다**는 규칙을
+/// 테스트가 확인할 수 있게 하기 위해서다. SpriteKit 타깃에 두면 검증 러너가 닿지 못한다.
+public func officeShirtColorRGB(
+    department: Department,
+    shift: Double
+) -> (red: Double, green: Double, blue: Double) {
+    let palette = agentDepartmentPaletteRGBA(department)
+    let blend = 0.42 + shift
+    return (
+        red: 1.0 - (1.0 - palette.red) * blend,
+        green: 1.0 - (1.0 - palette.green) * blend,
+        blue: 1.0 - (1.0 - palette.blue) * blend
+    )
+}
+
 /// 부서 6종의 표시 색(0~1 RGB). 부서색은 토큰의 아이콘·채움 tint 로 쓰인다(상태색과 역할 분리).
 /// 제약: 6색 서로 구분 + 5개 상태색과 색상 충돌 회피. 채움 불투명도는 표현 계층(Theme)에서 낮춘다.
 public func agentDepartmentPaletteRGBA(
