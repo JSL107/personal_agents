@@ -12,6 +12,34 @@ public enum VisualIntent: Equatable, Sendable {
     case bubble(agentType: String, text: String)
 }
 
+// MARK: - 걸음 프레임
+
+/// 걸음 프레임 장수. 에셋은 정지 그림에서 파생된 두 장(`-walk1` · `-walk2`)뿐이다.
+public let officeWalkFrameCount = 2
+
+/// 걷는 중 `step` 번째 걸음에 쓸 포즈 이름.
+///
+/// 두 프레임을 번갈아 쓰는 것이 "한 칸 = 한 걸음" 과 맞다. 사이에 정지 그림을 끼우는
+/// 네 프레임 사이클(정지→1→정지→2)은 두 칸에 한 번만 다리가 교차해, 한 칸 0.16초인
+/// 지금 속도에서는 걷는다기보다 미끄러지는 것으로 보인다.
+public func officeWalkPose(_ pose: String, step: Int) -> String {
+    // 음수 걸음 인덱스가 들어와도 프레임 번호가 0 이나 음수로 떨어지지 않게 한 번 더 감는다.
+    let frame = ((step % officeWalkFrameCount) + officeWalkFrameCount) % officeWalkFrameCount
+    return "\(pose)-walk\(frame + 1)"
+}
+
+/// 걸음 프레임 이름에서 정지 포즈를 되돌린다(`down-walk1` → `down`).
+///
+/// 에셋 파이프라인은 다리 영역을 못 찾으면 걸음 프레임 파생을 건너뛴다(측면처럼 두 다리가
+/// 한 덩어리인 그림이 새로 들어오는 경우). 그때 로더가 정지 그림으로 내려가기 위한 것 —
+/// 없는 파일을 그대로 요청하면 그 사람만 화면에서 사라진다.
+public func officeStillPose(_ pose: String) -> String {
+    guard let marker = pose.range(of: "-walk") else {
+        return pose
+    }
+    return String(pose[pose.startIndex..<marker.lowerBound])
+}
+
 /// 이벤트 번역에 필요한 주변 상태(부모 run·pending 조회용). 스냅샷 파생, 부작용 없음.
 public struct ChoreographyContext: Sendable {
     public let agents: [ConsoleAgent]

@@ -88,7 +88,7 @@ final class OfficeScene: SKScene {
     private func repositionEveryone() {
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
-            node.isWalking = false
+            node.endWalk()
             // 걷던 중이었다면 node.tile 은 경로 중간이라 자리로 못 쓴다.
             // 줄 선 사람은 자기 순번 칸으로, 나머지는 자기 책상으로 확정해 되돌린다.
             if let order = queueOrder.firstIndex(of: agentType), !plan.queueTiles.isEmpty {
@@ -407,6 +407,10 @@ final class OfficeScene: SKScene {
         node.removeAction(forKey: "walk")
         let path = officePath(from: node.tile, to: goal, walkable: plan.walkable)
         guard !path.isEmpty else {
+            // 위에서 진행 중이던 걸음을 끊었으므로 상태 표식도 함께 되돌린다. 안 그러면
+            // 이 사람만 영구히 "걷는 중" 으로 남아 상태 갱신에서 통째로 빠지고(sync·applyMotion 이
+            // 걷는 사람을 건드리지 않는다), 걸음 프레임이 붙은 뒤로는 짝다리로 굳는다.
+            node.endWalk()
             completion?()
             return
         }
@@ -434,7 +438,10 @@ final class OfficeScene: SKScene {
                 }
                 node.tile = step
                 node.zPosition = self.depth(of: step)
-                // 걷기 프레임이 없으니 한 걸음마다 위로 튀고 좌우로 살짝 기울여 발걸음을 만든다.
+                // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
+                // 와야 한다(apply(facing:) 이 포즈를 다시 고르므로).
+                node.stepWalkFrame()
+                // 프레임 교체 위에 얹는 보조 신호. 한 걸음마다 위로 튀고 좌우로 살짝 기울인다.
                 // 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58) 해서 발을 떼는 쪽에 힘이 실리고,
                 // 착지에서 세로로 눌러 발이 바닥에 닿는 순간을 만든다 — 이게 없으면 캐릭터가
                 // 미끄러지듯 떠서 이동한다.
@@ -462,7 +469,9 @@ final class OfficeScene: SKScene {
             node?.sprite.run(.rotate(toAngle: 0, duration: 0.1))
             // 착지 squash 가 걸린 채 걸음이 끊기면 눌린 몸으로 남는다. 도착 시 원래대로.
             node?.sprite.yScale = 1
-            node?.isWalking = false
+            // 걸음 프레임(한쪽 발이 들린 그림)도 함께 되돌린다 — 안 하면 도착한 사람이
+            // 계속 짝다리로 서 있다. completion 보다 먼저 와야 앉기가 최종 자세를 이긴다.
+            node?.endWalk()
             completion?()
             // 걷는 동안 들어온 상태 변화는 보류됐다(applyMotion 이 걷는 사람을 건드리지 않는다).
             // 도착했으니 최신 상태를 다시 적용한다 — 안 하면 승인 줄에 도착해도 다음 동기화까지

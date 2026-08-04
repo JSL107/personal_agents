@@ -45,22 +45,33 @@ enum SpriteLoader {
     ///  - 바지 rgb(5~17)     — 밝기 15 이하라 머리 범위 밖
     ///  - 셔츠 rgb(255)      — 밝기 최대, 무채색
     ///  - 얼굴 rgb(254,225,191) — 밝지만 채도가 있어 셔츠와 갈린다
-    /// 캐릭터 시트 접두어. 0 = 기본, 1~3 = 추가로 넣을 수 있는 선택 시트.
-    private static let sheetPrefixes = ["char", "charb", "charc", "chard"]
-
     static func characterTexture(
         pose: String,
         sheet: Int,
         hair: (red: Double, green: Double, blue: Double),
         shirt: (red: Double, green: Double, blue: Double)
     ) -> SKTexture? {
-        let prefix = sheetPrefixes[min(max(sheet, 0), sheetPrefixes.count - 1)]
-        var name = "\(prefix)-\(pose)"
-        // 선택 시트를 아직 안 넣었으면 기본 시트로 돌아간다 — 사람이 사라지지 않게.
-        if Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites")
-            == nil
-        {
-            name = "char-\(pose)"
+        let prefix = characterSheetPrefixes[
+            min(max(sheet, 0), characterSheetPrefixes.count - 1)
+        ]
+        // 폴백 두 단계. 선택 시트를 아직 안 넣었으면 기본 시트로, 걸음 프레임 자체가 없으면
+        // 같은 포즈의 정지 그림으로 내려간다 — 어느 쪽이든 사람이 사라지지 않게.
+        //
+        // 걸음 프레임은 에셋 파이프라인이 다리를 못 찾으면 만들어지지 않는다(측면처럼 두 다리가
+        // 한 덩어리인 그림이 새로 들어오는 경우). 파일 유무를 안 보고 이름만 조립하면
+        // 그 사람만 걷는 동안 통째로 안 그려진다.
+        let still = officeStillPose(pose)
+        var candidates = ["\(prefix)-\(pose)", "char-\(pose)"]
+        if still != pose {
+            candidates += ["\(prefix)-\(still)", "char-\(still)"]
+        }
+        guard
+            let name = candidates.first(where: {
+                Bundle.module.url(forResource: $0, withExtension: "png", subdirectory: "sprites")
+                    != nil
+            })
+        else {
+            return nil
         }
         let key = String(
             format: "%@#%02X%02X%02X#%02X%02X%02X",
