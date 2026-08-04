@@ -136,3 +136,57 @@
 - `ConsoleApproval: Equatable`은 SwiftUI approvals `onChange`의 compile 제약을 만족하기 위한 최소 보완이다.
 - Verification: 호환 Swift 게이트 build/test exit 0, `ConsoleCoreTests` 417건, 실패 0, `git diff --check` exit 0.
 - 원문 Swift 명령은 관리 sandbox의 `sandbox-exec` 제한으로 exit 1이며, pnpm 3중 게이트는 `node_modules` 미설치로 실행 불가했다. 상세는 `.ai/implementation-summary-fixups.md`에 기록했다.
+
+---
+
+# PR #222 승인 줄 신규 합류 보정 계획
+
+**Goal:** 재연결 중 승인 이벤트를 놓쳐도 snapshot의 승인 대기자를 기존 줄 뒤에 결정론적으로 합류시키고 배회를 즉시 중단한다.
+
+**Architecture:** `ConsoleCore.reconciledQueueOrder`가 줄 유지·제거·신규 추가 판정을 모두 소유한다. `OfficeScene`은 이전·새 줄의 차이에서 이탈자와 합류자를 구해 각각 `goHome`, `cancelStroll`로 실행한 뒤 기존 `layoutQueue`를 재사용한다.
+
+**Constraints:** `OfficeIdle.swift`, `src/**`는 변경하지 않는다. `ConsoleApproval.agentType == nil`은 누구도 합류시키지 않는다. 결과 순서는 `current` 유지분 뒤에 `agents` 순서 신규분을 붙인다. commit·push하지 않는다.
+
+- [x] 지정 코드·최근 변경·기존 테스트를 읽고 root cause와 변경 범위를 확정한다.
+- [x] `OfficeInteractionTests.swift`에 신규 합류 계약 6건을 추가한다.
+- [x] 기존 구현에서 신규 테스트가 누락 동작 때문에 실패하는 RED를 확인한다.
+- [x] `OfficeInteraction.swift`가 기존 순서를 보존하며 snapshot 신규 대기자를 중복 없이 추가하게 한다.
+- [x] `OfficeScene.reconcileQueue`가 신규 합류자의 배회를 취소한 뒤 `layoutQueue`로 줄 칸에 배치하게 한다.
+- [x] 관련 테스트 GREEN과 독립 요구사항 검토를 확인한다.
+- [ ] 사용자 지정 `swift build`, `swift run ConsoleCoreTests` 게이트가 각각 exit 0인지 확인한다.
+- [x] 최종 diff에서 `OfficeIdle.swift`, `src/**`, commit·push가 없고 테스트 수가 417건보다 늘었는지 확인한다.
+
+## Review
+
+- `reconciledQueueOrder`가 기존 줄 유지분 뒤에 snapshot 신규 대기자를 `agents` 순서로 추가한다. `Set`은 membership에만 쓰며 결과 순회 순서는 배열이 정한다.
+- 신규 합류자는 `cancelStroll` 후 최종 `layoutQueue`로 자기 순번 칸에 이동한다. 독립 리뷰 verdict는 APPROVE, P1/P2 없음이다.
+- TDD RED는 신규 추가 누락 4건 실패를 확인했다. GREEN은 호환 `MacOSX15.4.sdk`와 `--disable-sandbox` 환경에서 build/test exit 0, 423건 통과, 실패 0이다.
+- 사용자 원문 게이트는 코드 compile 전 환경 문제로 build/test 모두 exit 1이다. 활성 compiler Swift 6.3.3과 SDK Swift 6.3.2가 불일치하고, 호환 SDK 지정만으로는 관리 sandbox의 `sandbox-exec: sandbox_apply: Operation not permitted`가 발생한다.
+- `git diff --check` exit 0. `OfficeIdle.swift`, `src/**` 변경 없음. commit·push 없음.
+
+---
+
+# PR #222 snapshot-only 배회 취소 보정 계획
+
+**Goal:** 재연결 snapshot에서 배회 중인 직원의 상태가 대기 이외로 바뀌면 기존 배회를 끊고 자리로 걸어서 복귀시킨다.
+
+**Architecture:** `ConsoleCore.strollersToStop`이 snapshot과 배회 집합을 받아 중단 대상을 순수·결정론적으로 판정한다. `OfficeScene.sync`는 승인 줄 정합화 직후 그 결과를 `cancelStroll`과 `goHome`으로 실행한다.
+
+**Constraints:** `OfficeIdle.swift`, `src/**`, 직전 `reconciledQueueOrder`와 joining 배회 취소 로직은 변경하지 않는다. 없는 agentType도 중단 대상이다. 반환 순서는 `sorted()`다. commit·push하지 않는다.
+
+- [x] 지정 코드·최근 변경·dirty 상태를 읽고 snapshot-only 경로의 root cause를 확인한다.
+- [x] `OfficeInteractionTests.swift`에 waiting 유지, 비-waiting 전 상태 중단, snapshot 누락, 정렬, 빈 Set 회귀 테스트를 추가한다.
+- [x] 신규 테스트가 `strollersToStop` 미구현 때문에 실패하는 RED를 확인한다.
+- [x] `OfficeInteraction.swift`에 `strollersToStop(strolling:agents:)`를 최소 구현한다.
+- [x] `OfficeScene.sync`가 `reconcileQueue` 직후 중단 대상을 취소하고 `goHome`으로 복귀시키게 연결한다.
+- [ ] 관련 테스트 GREEN 뒤 사용자 지정 `swift build`, `swift run ConsoleCoreTests` 게이트를 각각 실행한다.
+- [x] 최종 diff에서 금지 경로·직전 로직 보존·정렬·테스트 증가·HEAD 불변을 확인한다.
+
+## Review
+
+- `strollersToStop`이 waiting 배회자는 유지하고, 나머지 상태와 snapshot 누락 배회자는 중단 대상으로 정렬해 반환한다.
+- `OfficeScene.sync`가 승인 줄 정합화 직후 중단 대상의 action을 취소하고 `goHome`으로 복귀시킨다. 완료 전이는 뒤의 `visitLounge`가 새 `walk`로 덮는다.
+- TDD RED는 `strollersToStop` 부재 compile error를 확인했다. 호환 flag 환경에서 build/test exit 0, `ConsoleCoreTests` 432건, 실패 0이다(기존 423건 대비 +9).
+- 사용자 원문 gate는 build/test 모두 exit 1이다. 설치된 compiler Swift 6.3.3과 SDK Swift 6.3.2가 불일치하며, matching toolchain이 설치돼 있지 않다.
+- 독립 review는 Critical/Important/Minor 모두 없음, verdict `Ready: 예`다.
+- `git diff --check` exit 0. `OfficeIdle.swift`, `src/**` 변경 없음. HEAD `0a69d35`, commit·push 없음.
