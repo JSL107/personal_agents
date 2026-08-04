@@ -26,7 +26,10 @@ final class CharacterNode: SKNode {
     /// 자리에 앉아 있는가(앉은 스프라이트는 방향 교체를 하지 않는다).
     var isSeated = false
     /// 걷는 중인가 — 새 지시가 오면 기존 걸음을 끊어야 해서 필요하다.
+    /// 걸음 프레임을 쓸지 정지 그림을 쓸지도 이 값이 가른다(`currentPose`).
     var isWalking = false
+    /// 몇 번째 걸음인가 — 좌우 다리가 번갈아 나가도록 한 칸마다 늘린다.
+    private var walkStep = 0
 
     private var spriteScale: CGFloat = 1
     private var currentTileSize: CGFloat = 32
@@ -222,7 +225,40 @@ final class CharacterNode: SKNode {
         guard !isSeated else {
             return
         }
-        setTexture(characterSprite(for: newFacing).pose)
+        setTexture(currentPose())
+    }
+
+    /// 지금 써야 할 포즈 — 걷는 중이면 현재 걸음의 프레임, 서 있으면 정지 그림.
+    ///
+    /// 방향 전환도 이 함수를 지나야 한다. 걷다가 코너를 돌 때 정지 그림으로 되돌리면
+    /// 그 한 칸만 다리가 모아져 걸음이 끊겨 보인다.
+    private func currentPose() -> String {
+        let pose = characterSprite(for: facing).pose
+        return isWalking ? officeWalkPose(pose, step: walkStep) : pose
+    }
+
+    /// 한 걸음 내디딘다 — 다음 걸음 프레임으로 갈아끼운다.
+    ///
+    /// 한 칸마다 한 번 불린다. 두 프레임을 번갈아 쓰므로 한 걸음에 다리가 한 번 교차한다.
+    func stepWalkFrame() {
+        guard !isSeated else {
+            return
+        }
+        walkStep += 1
+        setTexture(currentPose())
+    }
+
+    /// 걸음을 마치고 정지 자세로 돌아온다.
+    ///
+    /// 걸음 프레임은 한쪽 발이 들린 그림이라, 도착해서 그대로 두면 그 사람만 계속 짝다리로
+    /// 서 있다. 걸음이 끊기는 모든 경로(도착·창 크기 변경으로 인한 강제 재배치)가 이걸 부른다.
+    func endWalk() {
+        isWalking = false
+        walkStep = 0
+        guard !isSeated else {
+            return
+        }
+        setTexture(characterSprite(for: facing).pose)
     }
 
     func sit() {
