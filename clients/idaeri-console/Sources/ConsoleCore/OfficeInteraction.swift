@@ -67,6 +67,22 @@ public func reconciledQueueOrder(
     return reconciled
 }
 
+/// 스냅샷 상태가 배회와 모순되는 사람을 찾는다(순수).
+///
+/// 배회는 대기 상태에서만 시작하지만, 이벤트 없이 스냅샷만 갱신되는 경로(재연결)에서는 배회 중에
+/// 상태가 진행·승인 대기·실패로 바뀔 수 있다. 그 경로에는 이벤트 훅이 없어 색만 바뀌고 배회가
+/// 계속되므로, 커피머신 앞에 서서 타이핑하는 "진행 중" 직원이 생긴다 — 관제 신호가 거짓이 된다.
+///
+/// 판정 기준은 한가함(`officeIsIdle`)의 상태 조건과 같다. 대기가 아니면 배회를 유지할 근거가 없다.
+/// 결과를 정렬해 돌려주는 이유는 입력이 Set 이라 순회 순서가 실행마다 달라지기 때문이다.
+public func strollersToStop(
+    strolling: Set<String>,
+    agents: [ConsoleAgent]
+) -> [String] {
+    let states = Dictionary(uniqueKeysWithValues: agents.map { ($0.agentType, $0.state) })
+    return strolling.filter { states[$0] != .waiting }.sorted()
+}
+
 /// 이름표를 진하게 보일지 판정한다(순수).
 ///
 /// 27명 전원의 이름표가 늘 같은 세기로 켜져 있으면 방 하나에 검은 딱지가 4~8개씩 붙어,
