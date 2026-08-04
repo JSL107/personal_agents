@@ -46,6 +46,87 @@ public let officeReferenceTileSize: Double = 40
 /// 서 있거나 걷는 캐릭터는 발이 바닥에 닿아야 하므로 오프셋 0 을 유지한다.
 public let officeSeatedSpriteDrop: Double = 0.28
 
+// MARK: - 이름표·문패가 서로를 가리지 않게 하는 기준
+//
+// 이름표(캐릭터가 그린다)와 부서 문패(씬이 그린다)는 파일이 달라서, 각자 자기 숫자를 들고
+// 있으면 어느 쪽을 옮겨도 상대가 모른다. 실제로 그렇게 어긋나 **각 부서 세 번째 좌석**의
+// 이름표가 문패에 통째로 가려져 있었다(문패는 구역 정중앙 = 칸 5.5, 좌석은 1·3·5·7).
+// 세로도 0.1칸이 겹쳤다. 두 값을 여기 모아 회귀 테스트가 겹침을 직접 계산하게 한다.
+
+/// 앉은 캐릭터 스프라이트의 높이(타일 배수). `char-*-sit.png` 실측 57px ÷ 기준 타일.
+/// 서 있는 그림(54px)보다 높다 — 의자 등받이까지 그려져 있다.
+public let officeSeatedSpriteTiles: Double =
+    57.0 / officeReferenceTileSize * officeCharacterScaleFactor
+
+/// 이름표를 머리 위로 띄우는 간격(타일 배수). `CharacterNode.layoutNameplate` 가 쓴다.
+public let officeNameplateGapTiles: Double = 0.06
+
+/// 이름표 글자 크기(타일 배수). `CharacterNode.refreshNameplate` 가 쓴다.
+public let officeNameplateFontTiles: Double = 0.30
+
+/// 한글이 뭉개지지 않는 최소 글자 크기(px). 라틴 문자보다 획이 많아 하한이 높다.
+///
+/// **이 하한이 겹침 계산을 창 크기에 의존하게 만든다.** 큰 창에서는 글자가 타일에 비례하지만
+/// 작은 창에서는 하한이 걸려 타일 대비 이름표가 커진다 — 최소 창(타일 20.6px)에서는 0.68칸으로
+/// 기준 크기(0.375칸)의 두 배 가까이 된다. 문패를 "타일의 몇 배" 같은 고정값으로 띄우면
+/// 큰 창에서만 안 겹치고 작은 창에서 다시 덮인다.
+public let officeNameplateMinFontSizeValue: Double = 11
+public let officeZoneLabelMinFontSizeValue: Double = 13
+
+/// 라벨 박스 높이 ÷ 글자 크기. `AppleSDGothicNeo-Bold` 한글 실측(11·12·18.3·24pt에서 1.15~1.27).
+/// 상한 쪽인 1.3 을 쓴다 — 모자라게 잡으면 문패가 이름표를 다시 덮는다.
+public let officeLabelBoxRatio: Double = 1.3
+
+/// 문패 아래끝과 이름표 위끝 사이에 두는 최소 간격(타일 배수).
+/// 두 라벨의 판(plate)이 각각 바깥으로 3px·1px 넓어지는 몫이다.
+public let officeZoneLabelGapTiles: Double = 0.14
+
+/// 이름표 글자 크기(px). 타일에 비례하되 한글 하한이 걸린다.
+public func officeNameplateFontSize(tileSize: Double) -> Double {
+    max(officeNameplateMinFontSizeValue, tileSize * officeNameplateFontTiles)
+}
+
+/// 좌석에 앉은 사람의 이름표 위끝이 격자에서 몇 칸 높이에 오는가.
+public func officeSeatedNameplateTopTiles(seatY: Int, tileSize: Double) -> Double {
+    let boxTiles = officeNameplateFontSize(tileSize: tileSize) * officeLabelBoxRatio / tileSize
+    return Double(seatY) - officeSeatedSpriteDrop + officeSeatedSpriteTiles
+        + officeNameplateGapTiles + boxTiles
+}
+
+/// 부서 문패 아래끝을 놓을 높이(격자 칸).
+///
+/// 구역 경계 줄이 아니라 **그 방 첫 좌석 행 이름표 위끝**에서 파생한다. 문패는
+/// 오버레이(z=1000)라 겹치면 가리는 쪽이 늘 문패이고, 문패가 구역 정중앙(칸 5.5)·좌석이
+/// 1·3·5·7 이라 겹치는 순간 매번 같은 사람(세 번째 좌석)의 이름이 통째로 사라진다.
+///
+/// `topSeatY` 가 nil(좌석 없는 구역)이면 경계 줄 바로 위에 둔다.
+public func officeZoneLabelBottomTiles(
+    zone: DepartmentZone,
+    topSeatY: Int?,
+    tileSize: Double
+) -> Double {
+    let boundary = Double(zone.origin.y + zone.height - 1) + officeZoneLabelGapTiles
+    guard let topSeatY else {
+        return boundary
+    }
+    let aboveNameplate =
+        officeSeatedNameplateTopTiles(seatY: topSeatY, tileSize: tileSize)
+        + officeZoneLabelGapTiles
+    return max(boundary, aboveNameplate)
+}
+
+/// 구역 안에서 가장 위쪽 좌석의 y. 문패를 그 위로 올리기 위한 기준이다.
+public func officeTopSeatY(zone: DepartmentZone, desks: [DeskAssignment]) -> Int? {
+    desks
+        .map(\.seat)
+        .filter { seat in
+            seat.x >= zone.origin.x && seat.x < zone.origin.x + zone.width
+                && seat.y >= zone.origin.y && seat.y < zone.origin.y + zone.height
+        }
+        .map(\.y)
+        .max()
+}
+
 /// 바닥·벽 타일 종류. 스프라이트 파일명(tile-*.png)과 1:1.
 public enum FloorTile: String, Sendable, CaseIterable {
     case woodA

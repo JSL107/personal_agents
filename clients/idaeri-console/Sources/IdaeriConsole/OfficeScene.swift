@@ -32,7 +32,8 @@ final class OfficeScene: SKScene {
     /// 머리 위 표시(말풍선·경과·생각 점)를 이름표보다 더 위에 띄우기 위한 여유 높이.
     /// 이름표가 발밑에서 머리 위로 올라왔으므로, 이 값이 작으면 둘이 겹쳐 둘 다 못 읽는다.
     private var nameplateClearance: CGFloat {
-        max(officeNameplateMinFontSize, tileSize * 0.30) + tileSize * 0.06 + 6
+        CGFloat(officeNameplateFontSize(tileSize: Double(tileSize)))
+            + tileSize * CGFloat(officeNameplateGapTiles) + 6
     }
 
     private var characters: [String: CharacterNode] = [:]
@@ -369,11 +370,19 @@ final class OfficeScene: SKScene {
             holder.name = "zone:\(zone.department.rawValue)"
             holder.position = CGPoint(
                 x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
-                // 구역 위쪽 경계 줄 위로 확실히 띄운다. 이름표가 발밑에서 머리 위로 올라오면서
-                // 첫 좌석 행의 이름표가 문패와 같은 높이대로 올라왔다 — 0.22 로는 겹친다.
-                // 문패는 overlayLayer(z=1000) 라 겹치더라도 캐릭터 라벨보다 앞에 그려진다.
-                y: gridOrigin.y + CGFloat(zone.origin.y + zone.height - 1) * tileSize
-                    + tileSize * 0.52
+                // 높이는 구역 경계가 아니라 **그 방 첫 좌석 행 이름표 위끝**에서 파생한다.
+                // 문패는 overlayLayer(z=1000) 라 겹치면 캐릭터 라벨을 덮는데, 문패가 구역
+                // 정중앙(칸 5.5)이고 좌석이 1·3·5·7 이라 겹치는 순간 매번 같은 사람
+                // (세 번째 좌석)의 이름이 통째로 사라진다. 한글 글자 크기에 하한이 있어
+                // 작은 창일수록 타일 대비 이름표가 커지므로, 고정 배수로는 큰 창에서만 맞는다.
+                y: gridOrigin.y
+                    + CGFloat(
+                        officeZoneLabelBottomTiles(
+                            zone: zone,
+                            topSeatY: officeTopSeatY(zone: zone, desks: plan.desks),
+                            tileSize: Double(tileSize)
+                        )
+                    ) * tileSize
             )
 
             let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
@@ -585,18 +594,23 @@ final class OfficeScene: SKScene {
         node.stand()
         node.isWalking = true
 
-        // 한 칸당 이동 + 방향 전환 + 살짝 튀는 상하 움직임. 걷기 프레임이 없어도
-        // 이 bob 만으로 "걸어간다" 로 읽힌다.
+        // 한 칸당 이동 + 방향 전환 + 걸음 그림 교체. 다리 교차는 그림이 보여준다.
         var actions: [SKAction] = []
         var cursor = node.tile
-        let stepDuration = 0.16
-        // bob·기울기는 걷기 프레임을 대신하는 유일한 신호라, 도트 캐릭터에서 눈에 보일
-        // 만큼은 커야 한다(예전 0.06·0.05 는 32px 타일에서 2px·2.9° 로 거의 안 보였다).
-        let bobHeight = tileSize * 0.11
-        for (index, step) in path.enumerated() {
+        // 한 칸 0.16초는 초당 6칸이라, 다리가 교차하는 것보다 몸이 먼저 지나가 종종거려 보였다.
+        // 픽셀 게임의 보통 걸음 속도(초당 4~5칸)로 늦춘다.
+        let stepDuration = 0.20
+        // 상하 흔들림은 **보조 신호로만** 남긴다.
+        //
+        // 예전에는 이 bob(0.11칸)과 좌우 기울임(±5°)·착지 눌림이 걸음 그림을 대신하는
+        // 유일한 신호였다. 3단계에서 걸음 그림 2장이 들어왔는데 이 셋을 걷어내지 않아,
+        // 다리가 교차하는 위에 몸이 튀고 기울고 눌리는 것이 겹쳐 걷는 게 아니라 옆으로
+        // 통통 뛰는 것으로 보였다. 기울임·눌림은 걸음 그림과 역할이 정확히 겹치므로 뺐고,
+        // bob 만 그림에 없는 성분(상하 성분은 다리만 옮긴 파생 프레임에 없다)이라 남긴다.
+        let bobHeight = tileSize * 0.035
+        for step in path {
             let direction = facing(from: cursor, to: step)
             let target = floorPoint(step)
-            let lean: CGFloat = index % 2 == 0 ? 0.09 : -0.09
             let stepAction = SKAction.run { [weak self, weak node] in
                 guard let self, let node else {
                     return
@@ -609,21 +623,12 @@ final class OfficeScene: SKScene {
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
                 // 와야 한다(apply(facing:) 이 포즈를 다시 고르므로).
                 node.stepWalkFrame()
-                // 프레임 교체 위에 얹는 보조 신호. 한 걸음마다 위로 튀고 좌우로 살짝 기울인다.
-                // 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58) 해서 발을 떼는 쪽에 힘이 실리고,
-                // 착지에서 세로로 눌러 발이 바닥에 닿는 순간을 만든다 — 이게 없으면 캐릭터가
-                // 미끄러지듯 떠서 이동한다.
-                let stride = SKAction.group([
-                    .sequence([
-                        .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
-                        .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
-                    ]),
-                    .rotate(toAngle: lean, duration: stepDuration / 2),
-                    .sequence([
-                        .wait(forDuration: stepDuration * 0.7),
-                        .scaleY(to: 0.93, duration: stepDuration * 0.15),
-                        .scaleY(to: 1.0, duration: stepDuration * 0.15),
-                    ]),
+                // 그림 교체 위에 얹는 보조 신호. 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58)
+                // 해서 발을 떼는 쪽에 힘이 실린다. 진폭이 작아 "튄다" 가 아니라 걸음의 무게로만
+                // 읽힌다 — 크게 주면 다시 뛰는 것처럼 보인다.
+                let stride = SKAction.sequence([
+                    .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
+                    .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
                 ])
                 node.sprite.run(stride)
             }
@@ -634,8 +639,10 @@ final class OfficeScene: SKScene {
             cursor = step
         }
         actions.append(.run { [weak self, weak node] in
+            // 걸음 자체는 회전·눌림을 쓰지 않지만, 실패 몸짓(startSlump 의 scaleY 0.86)이
+            // 걸린 채 걷기 시작했을 수 있다. 도착 자세를 기본값으로 되돌린다 —
+            // 이어지는 reapplyMotion 이 필요하면 다시 건다.
             node?.sprite.run(.rotate(toAngle: 0, duration: 0.1))
-            // 착지 squash 가 걸린 채 걸음이 끊기면 눌린 몸으로 남는다. 도착 시 원래대로.
             node?.sprite.yScale = 1
             // 걸음 프레임(한쪽 발이 들린 그림)도 함께 되돌린다 — 안 하면 도착한 사람이
             // 계속 짝다리로 서 있다. completion 보다 먼저 와야 앉기가 최종 자세를 이긴다.

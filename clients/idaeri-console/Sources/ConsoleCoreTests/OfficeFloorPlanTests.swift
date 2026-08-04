@@ -342,6 +342,50 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expectEqual(doors.count, 1, "\(zone.department.label) 구역 천장에 문 한 칸")
     }
 
+    // 부서 문패가 첫 좌석 행의 이름표를 덮지 않는다.
+    //
+    // 문패는 오버레이(z=1000)라 겹치면 가리는 쪽이 늘 문패다. 게다가 문패는 구역 정중앙
+    // (칸 5.5)에 놓이고 좌석은 1·3·5·7 이라, 세로가 겹치는 순간 **매번 같은 사람**
+    // (세 번째 좌석)의 이름이 통째로 사라진다. 무작위가 아니라 구조적이어서, 화면에서는
+    // "저 사람만 이름이 없네" 로 보이지 고장으로 보이지 않았다.
+    // 창 크기 전 구간을 훑는다. 한글 글자에 하한(11px)이 있어 **작은 창일수록 타일 대비
+    // 이름표가 커지므로**(최소 창 0.68칸 vs 기준 0.375칸), 큰 창만 확인하면 이 구간을 놓친다.
+    // 20.6 은 최소 창(640×560)에서의 타일 크기다.
+    for tileSize in [20.6, 32.0, 40.0, 61.0, 90.0] {
+        for zone in plan.zones {
+            guard let topSeatY = officeTopSeatY(zone: zone, desks: plan.desks) else {
+                continue
+            }
+            let nameplateTop = officeSeatedNameplateTopTiles(
+                seatY: topSeatY, tileSize: tileSize
+            )
+            let labelBottom = officeZoneLabelBottomTiles(
+                zone: zone, topSeatY: topSeatY, tileSize: tileSize
+            )
+            t.expect(
+                labelBottom >= nameplateTop + officeZoneLabelGapTiles - 0.0001,
+                "타일 \(tileSize) · \(zone.department.label) 문패 아래끝(\(labelBottom))이 이름표 위끝(\(nameplateTop)) 위"
+            )
+        }
+    }
+
+    // 문패 높이가 실제로 창 크기를 따라 움직이는가. 위 단언만으로는 계산식이 다시 고정
+    // 배수로 굳어도(그리고 큰 창에서만 맞아도) 통과할 수 있다. 작은 창에서는 이름표가
+    // 커진 만큼 문패가 구역 경계 줄보다 확실히 더 올라가야 한다.
+    for zone in plan.zones {
+        guard let topSeatY = officeTopSeatY(zone: zone, desks: plan.desks) else {
+            continue
+        }
+        let boundary = Double(zone.origin.y + zone.height - 1)
+        let small = officeZoneLabelBottomTiles(zone: zone, topSeatY: topSeatY, tileSize: 20.6)
+        let large = officeZoneLabelBottomTiles(zone: zone, topSeatY: topSeatY, tileSize: 90.0)
+        t.expect(
+            small > boundary + 0.3,
+            "\(zone.department.label) 작은 창에서 문패가 경계 줄보다 올라감(\(small) vs \(boundary))"
+        )
+        t.expect(small > large, "\(zone.department.label) 작은 창 문패가 큰 창보다 더 높이 뜬다")
+    }
+
     // 대표 자리·줄서기·휴식 자리가 비어 있지 않다.
     t.expect(!plan.queueTiles.isEmpty, "승인 대기 줄 자리 존재")
     t.expect(!plan.loungeTiles.isEmpty, "휴식 자리 존재")
