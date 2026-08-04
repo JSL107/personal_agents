@@ -1,3 +1,4 @@
+import AppKit
 import ConsoleCore
 import SpriteKit
 import SwiftUI
@@ -21,13 +22,45 @@ struct OfficeView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // SpriteKit 이 "SKView: no drawables available for rendering" 을 간헐적으로 남기지만
-            // 프레임 하나를 건너뛴다는 정보 로그이고 화면·기능에는 영향이 없다.
-            // occlusionState 로 렌더를 멈추는 방식(구 #177)은 실측에서 무효였다 — shouldRender 콜백이
-            // 호출되지 않고, 창이 보이는 상태에서도 로그가 나므로 원천 차단이 안 된다.
-            // 터미널 노이즈는 개발 실행 스크립트(scripts/console-dev.sh)의 필터에서 걷어낸다.
+            // 프레임 하나를 건너뛴다는 정보 로그이고 화면·기능에는 영향이 없다. 터미널 노이즈는
+            // 개발 실행 스크립트(scripts/console-dev.sh)의 필터에서 걷어낸다(#183).
+            //
+            // 아래 절전은 그 로그와 무관하다. #177 은 로그를 없애려고 `shouldRender` 로 렌더를
+            // 막으려 했지만 그 콜백은 90초에 0~2회만 불려 게이트가 되지 못했다(#183). 여기서
+            // 쓰는 것은 다른 레버(`scene.isPaused`)이고, 판정도 로그가 아니라 CPU 로 한다 —
+            // 그 로그는 같은 조건에서도 90초당 0~7회로 요동쳐 효과 판정에 쓸 수 없다.
             SpriteView(scene: scene)
                 .frame(minWidth: Layout.officeMinWidth, minHeight: 480)
+                // 씬은 보조기술 트리에 이름 없는 이미지 덩어리로만 잡힌다(실측). 자식을 덮고
+                // 한 문장으로 대신 읽게 한다 — 그림 안의 몸짓·자리로만 전하던 정보를
+                // 소리로 듣는 유일한 통로다.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    officeAccessibilitySummary(
+                        agents: store.agents, approvals: store.approvals
+                    )
+                )
+                // 창이 가려지거나 최소화되면 씬을 재운다. macOS 는 대신 멈춰주지 않는다(실측).
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: NSWindow.didChangeOcclusionStateNotification)
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
+                }
                 .onAppear {
+                    // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
+                    // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
+                    applySceneSleep()
                     scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
@@ -139,6 +172,35 @@ struct OfficeView: View {
         onSend(trimmed, agentType)
         commandText = ""
         selectedAgent = nil
+    }
+
+    /// 창이 화면에 보이지 않는 동안 씬을 재운다.
+    ///
+    /// 유휴 상태(대기 24명)에서도 오피스 씬은 CPU 9~11% 를 쓴다. 같은 앱의 대시보드 탭이
+    /// 0.5% 미만이므로 그 비용은 전부 씬 몫이고, **창을 최소화해도 macOS 가 대신 멈춰주지
+    /// 않는다**(실측: 최소화 상태에서 7.9~10.8%).
+    ///
+    /// 씬 시계를 세우는 것만으로 9.3% → 1.9% 가 된다 — 비용의 대부분이 24명의 몸짓과 배회
+    /// 경로 계산이라서다. 렌더 루프 자체까지 끄려면 `SKView` 를 직접 소유해야 하지만
+    /// (`SpriteView` 로는 닿지 않는다, #183), 남는 1.9% 를 위해 렌더 경로를 바꿀 이유가 없다.
+    /// - Parameter notifying: 통지를 보낸 창. 창이 여럿일 때 남의 창 상태로 판정하지 않도록
+    ///   통지 발생 객체를 우선 본다. 시트는 어느 쪽에서든 제외한다 — 대시보드 탭이 띄우는
+    ///   주입 시트가 `NSApp.windows` 앞에 올 수 있고, 시트의 가시성은 이 씬과 무관하다.
+    private func applySceneSleep(notifying: NSWindow? = nil) {
+        var target = NSApp.windows.first { !$0.isSheet }
+        if let notifying, !notifying.isSheet {
+            target = notifying
+        }
+        guard let window = target else {
+            return
+        }
+        // 최소화는 occlusion 과 별개로 확인한다 — 둘 중 하나만 보면 사각지대가 생긴다.
+        //
+        // 비활성(다른 앱을 쓰는 중이지만 창은 보임)은 일부러 재우지 않는다. 보조 모니터에
+        // 띄워두고 흘끗 보는 것이 이 화면의 주 용도라, 멈추면 관제 가치가 사라진다.
+        // 그 대가로 아끼는 것은 기계 전체 CPU 의 1% 미만이다.
+        let visible = window.occlusionState.contains(.visible) && !window.isMiniaturized
+        scene.isPaused = !visible
     }
 
     /// 탭이 처음 나타날 때 현재 상태로 연출을 재구성한다(닫혀 있던 동안 놓친 이벤트 보완).
