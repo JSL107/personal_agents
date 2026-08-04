@@ -6,6 +6,8 @@ import {
 import {
   buildCodexArgs,
   buildCodexPrompt,
+  CODEX_MODEL,
+  CODEX_REASONING_EFFORT,
   CodexCliProvider,
   CodexQuotaExceededException,
   CodexQuotaScanner,
@@ -58,11 +60,23 @@ describe('buildCodexArgs', () => {
     expect(args).toContain('/tmp/out.txt');
   });
 
-  it('사용자 codex 설정의 MCP 서버·플러그인·hook 을 차단한다 (프롬프트 밖 탐색 수단 제거)', () => {
+  it('사용자 config.toml 을 읽지 않는다 (config 유래 MCP 서버·플러그인·hook 차단)', () => {
     const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
-    expect(args).toContain('mcp_servers={}');
-    expect(args).toContain('plugins={}');
-    expect(args[args.indexOf('--disable') + 1]).toBe('hooks');
+    expect(args).toContain('--ignore-user-config');
+  });
+
+  it('config 를 무시해도 모델 설정은 -c 와 짝지어 재주입한다 (effort 가 none 으로 떨어지지 않게)', () => {
+    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    // 값만 배열에 있어도 앞에 `-c` 가 없으면 override 가 먹지 않으므로 짝까지 확인한다.
+    const modelIndex = args.indexOf(`model="${CODEX_MODEL}"`);
+    expect(modelIndex).toBeGreaterThan(0);
+    expect(args[modelIndex - 1]).toBe('-c');
+
+    const effortIndex = args.indexOf(
+      `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
+    );
+    expect(effortIndex).toBeGreaterThan(0);
+    expect(args[effortIndex - 1]).toBe('-c');
   });
 
   it('positional prompt 를 argv 로 넘기지 않는다 (stdin 전달이라 `--` 등 terminator 불필요)', () => {
