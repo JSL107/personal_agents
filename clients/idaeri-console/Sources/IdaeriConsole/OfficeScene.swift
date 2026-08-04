@@ -834,29 +834,14 @@ final class OfficeScene: SKScene {
             return
         }
         if let previous = selectedAgentType, let node = characters[previous] {
-            node.childNode(withName: "selectionRing")?.removeFromParent()
             node.setSelected(false)
         }
         selectedAgentType = agentType
-        guard let agentType, let node = characters[agentType] else {
-            return
+        // 테두리를 그리는 일은 캐릭터가 한다. 씬이 만들어 붙이면 앉기·서기·창 크기 변경 때
+        // 다시 잡아줄 경로가 없어 테두리만 몸에서 떨어진다.
+        if let agentType {
+            characters[agentType]?.setSelected(true)
         }
-        node.setSelected(true)
-        // 앉은 캐릭터는 책상과 겹치도록 내려가 있다(CharacterNode.spriteBaseY). 테두리가 그
-        // 오프셋을 무시하면 앉은 사람만 테두리가 몸에서 한 뼘 위로 떠오른다.
-        let ring = SKShapeNode(
-            rect: CGRect(
-                x: -tileSize * 0.42, y: node.spriteBaseY - tileSize * 0.16,
-                width: tileSize * 0.84, height: node.sprite.size.height + tileSize * 0.24
-            ),
-            cornerRadius: 4
-        )
-        ring.name = "selectionRing"
-        ring.strokeColor = SKColor(white: 1, alpha: 0.85)
-        ring.lineWidth = 1.5
-        ring.fillColor = .clear
-        ring.zPosition = 15
-        node.addChild(ring)
     }
 
     // MARK: - 마우스
