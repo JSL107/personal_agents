@@ -1,5 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 
+import {
+  AgentRunRepositoryPort,
+  LatestSweepReview,
+} from '../../agent-run/domain/port/agent-run.repository.port';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { IdaeriRouterPort } from '../../router/domain/idaeri-router.port';
@@ -75,6 +79,17 @@ const buildRepository = (
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
 });
 
+// 서비스가 쓰는 것은 findLatestSweepReview 하나뿐이라 그 표면만 가짜로 만든다.
+type SweepReviewLedger = jest.Mocked<
+  Pick<AgentRunRepositoryPort, 'findLatestSweepReview'>
+>;
+
+const buildAgentRunRepository = (
+  latest: LatestSweepReview | null = null,
+): SweepReviewLedger => ({
+  findLatestSweepReview: jest.fn().mockResolvedValue(latest),
+});
+
 const buildRouter = (): jest.Mocked<IdaeriRouterPort> => ({
   dispatch: jest.fn().mockResolvedValue({
     agentRunId: 42,
@@ -113,6 +128,7 @@ const buildService = ({
   ttlMs,
   transitionFromPendingResult,
   env,
+  agentRunRepository,
 }: {
   repository?: jest.Mocked<SubconsciousProposalRepository>;
   router?: jest.Mocked<IdaeriRouterPort>;
@@ -120,23 +136,148 @@ const buildService = ({
   ttlMs?: number;
   transitionFromPendingResult?: boolean;
   env?: Record<string, string>;
+  agentRunRepository?: SweepReviewLedger;
 } = {}): {
   service: SubconsciousProposalService;
   repository: jest.Mocked<SubconsciousProposalRepository>;
   router: jest.Mocked<IdaeriRouterPort>;
   slack: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
+  agentRunRepository: SweepReviewLedger;
 } => {
   const resolvedRepository =
     repository ?? buildRepository(buildRecord(), transitionFromPendingResult);
   const configService = buildConfigService(ttlMs, env);
+  const resolvedAgentRunRepository =
+    agentRunRepository ?? buildAgentRunRepository();
   const service = new SubconsciousProposalService(
     resolvedRepository,
     router,
     slack as unknown as SlackService,
     configService,
+    resolvedAgentRunRepository as unknown as AgentRunRepositoryPort,
   );
-  return { service, repository: resolvedRepository, router, slack };
+  return {
+    service,
+    repository: resolvedRepository,
+    router,
+    slack,
+    agentRunRepository: resolvedAgentRunRepository,
+  };
 };
+
+// ── shouldEmit ─────────────────────────────────────────────────────────────
+
+describe('SubconsciousProposalService.shouldEmit', () => {
+  const SUCCEEDED_PUBLISHED: LatestSweepReview = {
+    status: 'SUCCEEDED',
+    startedAt: new Date('2026-06-26T08:00:00.000Z'),
+    dryRun: false,
+  };
+
+  it('스윕이 이미 리뷰·게시한 PR 이면 false', async () => {
+    const { service, repository } = buildService({
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    expect(result).toBe(false);
+    // 스윕 판정에서 걸렸으면 중복 조회까지 갈 필요가 없다.
+    expect(repository.hasPending).not.toHaveBeenCalled();
+  });
+
+  it('스윕이 연습 모드(dryRun)로 끝난 PR 이면 게시가 없었으므로 true', async () => {
+    const { service } = buildService({
+      agentRunRepository: buildAgentRunRepository({
+        ...SUCCEEDED_PUBLISHED,
+        dryRun: true,
+      }),
+    });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    expect(result).toBe(true);
+  });
+
+  it('스윕 리뷰가 실패로 끝났으면 true', async () => {
+    const { service } = buildService({
+      agentRunRepository: buildAgentRunRepository({
+        ...SUCCEEDED_PUBLISHED,
+        status: 'FAILED',
+      }),
+    });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    expect(result).toBe(true);
+  });
+
+  it('스윕이 리뷰한 적 없는 PR 이면 true (스윕 대상 밖 PR 의 리뷰 경로 보존)', async () => {
+    const { service } = buildService({
+      agentRunRepository: buildAgentRunRepository(null),
+    });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    expect(result).toBe(true);
+  });
+
+  it('CODE_REVIEWER 가 아니면 스윕 원장을 조회하지 않는다', async () => {
+    const agentRunRepository = buildAgentRunRepository(SUCCEEDED_PUBLISHED);
+    const { service } = buildService({ agentRunRepository });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision({
+        suggestedAgentType: 'PM' as AgentType,
+        changeKey: 'notion:page:abc',
+      }),
+    });
+
+    expect(result).toBe(true);
+    expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
+  });
+
+  it('같은 대상에 미응답 카드가 있으면 false', async () => {
+    const repository = buildRepository();
+    repository.hasPending.mockResolvedValue(true);
+    const { service } = buildService({ repository });
+
+    const result = await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    expect(result).toBe(false);
+  });
+
+  it('중복 판정은 TTL 안쪽 카드만 센다 — 만료 카드가 제안을 영구히 막지 않게', async () => {
+    const repository = buildRepository();
+    const { service } = buildService({ repository, ttlMs: 3_600_000 });
+
+    await service.shouldEmit({
+      ownerUserId: OWNER,
+      decision: buildDecision(),
+    });
+
+    const [, , createdAfter] = repository.hasPending.mock.calls[0]!;
+    const elapsedMs = Date.now() - (createdAfter as Date).getTime();
+    expect(elapsedMs).toBeGreaterThanOrEqual(3_600_000);
+    expect(elapsedMs).toBeLessThan(3_600_000 + 5_000);
+  });
+});
 
 // ── emit ───────────────────────────────────────────────────────────────────
 
@@ -163,74 +304,6 @@ describe('SubconsciousProposalService.emit', () => {
       'C-dm',
       '1234.5678',
     );
-  });
-
-  it('PR 리뷰 스윕이 자동 처리하는 레포면 카드를 만들지 않는다', async () => {
-    const { service, repository, slack } = buildService({
-      env: {
-        PR_REVIEW_LOOP_ENABLED: 'true',
-        PR_REVIEW_INLINE_REPOS: 'other/x, owner/repo',
-      },
-    });
-
-    await service.emit({
-      ownerUserId: OWNER,
-      change: buildChange(),
-      decision: buildDecision(),
-    });
-
-    expect(repository.create).not.toHaveBeenCalled();
-    expect(slack.postProposalMessage).not.toHaveBeenCalled();
-  });
-
-  it('스윕이 꺼져 있으면 allowlist 레포라도 카드를 만든다 (카드가 유일한 통로)', async () => {
-    const { service, repository } = buildService({
-      env: { PR_REVIEW_INLINE_REPOS: 'owner/repo' },
-    });
-
-    await service.emit({
-      ownerUserId: OWNER,
-      change: buildChange(),
-      decision: buildDecision(),
-    });
-
-    expect(repository.create).toHaveBeenCalled();
-  });
-
-  it('스윕 allowlist 밖 레포면 카드를 만든다', async () => {
-    const { service, repository } = buildService({
-      env: {
-        PR_REVIEW_LOOP_ENABLED: 'true',
-        PR_REVIEW_INLINE_REPOS: 'other/x',
-      },
-    });
-
-    await service.emit({
-      ownerUserId: OWNER,
-      change: buildChange(),
-      decision: buildDecision(),
-    });
-
-    expect(repository.create).toHaveBeenCalled();
-  });
-
-  it('같은 대상에 미응답 카드가 있으면 중복 생성하지 않는다', async () => {
-    const repository = buildRepository();
-    repository.hasPending.mockResolvedValue(true);
-    const { service, slack } = buildService({ repository });
-
-    await service.emit({
-      ownerUserId: OWNER,
-      change: buildChange(),
-      decision: buildDecision(),
-    });
-
-    expect(repository.hasPending).toHaveBeenCalledWith(
-      OWNER,
-      'github:pr:owner/repo#1',
-    );
-    expect(repository.create).not.toHaveBeenCalled();
-    expect(slack.postProposalMessage).not.toHaveBeenCalled();
   });
 
   it('Slack 발송 실패해도 proposal DB row 는 살아남는다 (graceful)', async () => {

@@ -37,9 +37,18 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     return found ? toDomain(found) : null;
   }
 
-  async hasPending(ownerUserId: string, changeKey: string): Promise<boolean> {
+  async hasPending(
+    ownerUserId: string,
+    changeKey: string,
+    createdAfter: Date,
+  ): Promise<boolean> {
     const count = await this.prisma.subconsciousProposal.count({
-      where: { ownerUserId, changeKey, status: 'PENDING' },
+      where: {
+        ownerUserId,
+        changeKey,
+        status: 'PENDING',
+        createdAt: { gt: createdAfter },
+      },
     });
     return count > 0;
   }
