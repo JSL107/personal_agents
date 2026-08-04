@@ -25,6 +25,8 @@ import { AgentRunPrismaRepository } from './infrastructure/agent-run.prisma.repo
     GetQuotaStatsUsecase,
     RetryRunUsecase,
     SearchAgentRunsUsecase,
+    // 실행 원장 직접 조회 — subconscious 가 "스윕이 이 PR 을 이미 리뷰했는지" 판정에 쓴다.
+    AGENT_RUN_REPOSITORY_PORT,
   ],
 })
 export class AgentRunModule {}
