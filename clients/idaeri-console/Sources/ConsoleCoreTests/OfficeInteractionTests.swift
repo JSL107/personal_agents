@@ -288,4 +288,51 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         officeBreathPhaseSeconds(agentType: "PM"),
         "같은 사람은 실행마다 같은 위상"
     )
+
+    // MARK: - 내 작업 세션
+
+    func makeSession(_ id: String, _ state: String) -> ConsoleSession {
+        ConsoleSession(
+            sessionId: id, pid: 1, source: "claude", name: id, cwd: "/tmp",
+            state: state, startedAt: "t", lastActivityAt: nil
+        )
+    }
+
+    let sessionPlan = officeFloorPlan(
+        agents: [
+            makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
+        ]
+    )
+    let sessionTiles = officeSessionTiles(plan: sessionPlan)
+    t.expect(!sessionTiles.isEmpty, "세션 자리 존재")
+    // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 세션이 늘어난 순간 줄 선 사람과
+    // 겹쳐 승인이 몇 건인지 세지 못한다.
+    let queued = Set(sessionPlan.queueTiles)
+    for tile in sessionTiles {
+        t.expect(sessionPlan.walkable.contains(tile), "세션 자리 통행 가능")
+        t.expect(!queued.contains(tile), "세션 자리가 승인 대기 줄과 겹치지 않음")
+    }
+
+    // 돌고 있는 세션이 먼저 선다. 자리가 모자랄 때 쉬는 세션이 앞자리를 차지하면,
+    // 정작 지금 무엇이 도는지 화면에서 사라진다.
+    let mixedSessions = [
+        makeSession("z-idle", "idle"), makeSession("a-idle", "idle"),
+        makeSession("m-active", officeSessionActiveState),
+    ]
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
+        ["m-active", "a-idle"],
+        "도는 세션 먼저, 그다음 id 순"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 0).count, 0, "자리가 없으면 아무도 안 세운다"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 99).count, 3, "자리가 남으면 전부 세운다"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
+        officeVisibleSessions(mixedSessions.reversed(), limit: 2).map(\.sessionId),
+        "입력 순서가 달라도 같은 결과"
+    )
 }

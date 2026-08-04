@@ -50,6 +50,9 @@ final class OfficeScene: SKScene {
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
+    /// 내가 직접 돌리는 CLI 세션. 에이전트와 달리 사규가 배정한 자리가 없어 대표 앞줄에 선다.
+    private var sessionNodes: [String: SKNode] = [:]
+    private var lastSyncedSessions: [ConsoleSession] = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -231,7 +234,8 @@ final class OfficeScene: SKScene {
         }
 
         layoutQueue()
-        updateCompanySummary(agents)
+        // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
+        syncSessions(lastSyncedSessions)
         updateAmbience()
     }
 
@@ -846,6 +850,82 @@ final class OfficeScene: SKScene {
         }
     }
 
+    // MARK: - 내 작업 세션
+
+    /// 내가 돌리는 CLI 세션을 대표 앞줄에 세운다.
+    ///
+    /// 에이전트와 **다르게 보여야 한다.** 사규가 배정한 일이 아니라 내가 직접 띄운 작업이라,
+    /// 같은 사람 그림을 쓰되 청록으로 물들이고 부서 방이 아닌 대표 앞에 둔다. 대시보드 탭
+    /// 아래쪽 목록에만 있던 정보를 사무실에서도 한눈에 보게 하는 것이 목적이다.
+    func syncSessions(_ sessions: [ConsoleSession]) {
+        lastSyncedSessions = sessions
+        let tiles = officeSessionTiles(plan: plan)
+        let visible = officeVisibleSessions(sessions, limit: tiles.count)
+        let incoming = Set(visible.map(\.sessionId))
+        for (sessionId, node) in sessionNodes where !incoming.contains(sessionId) {
+            node.removeFromParent()
+            sessionNodes[sessionId] = nil
+        }
+        for (index, session) in visible.enumerated() {
+            let node = sessionNodes[session.sessionId] ?? makeSessionNode()
+            if sessionNodes[session.sessionId] == nil {
+                sessionNodes[session.sessionId] = node
+                objectLayer.addChild(node)
+            }
+            layoutSessionNode(node, session: session, tile: tiles[index])
+        }
+        updateCompanySummary(lastSyncedAgents)
+    }
+
+    private func makeSessionNode() -> SKNode {
+        let holder = SKNode()
+        let sprite = SKSpriteNode(texture: SpriteLoader.texture("char-down"))
+        sprite.name = "sessionSprite"
+        sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
+        sprite.zPosition = 1
+        // 청록 tint — 에이전트(부서색 셔츠)와 대표(금색)에 이미 쓰지 않은 색이라, 물들이는
+        // 것만으로 "이건 사람이 아니라 내가 돌리는 작업" 이 읽힌다.
+        sprite.color = SKColor(red: 0.36, green: 0.78, blue: 0.72, alpha: 1)
+        sprite.colorBlendFactor = 0.55
+        holder.addChild(sprite)
+        return holder
+    }
+
+    private func layoutSessionNode(_ node: SKNode, session: ConsoleSession, tile: TilePoint) {
+        node.position = floorPoint(tile)
+        node.zPosition = depth(of: tile)
+        guard let sprite = node.childNode(withName: "sessionSprite") as? SKSpriteNode,
+              let texture = sprite.texture
+        else {
+            return
+        }
+        let base = texture.size()
+        sprite.size = CGSize(
+            width: base.width * characterScale, height: base.height * characterScale
+        )
+        let isActive = session.state == officeSessionActiveState
+        // 쉬는 세션은 옅게. 화면에 여덟 개가 늘어서도 지금 돌고 있는 것이 먼저 읽힌다.
+        sprite.alpha = isActive ? 1.0 : 0.45
+        setChildLabel(
+            node, name: "sessionName", text: session.name,
+            position: CGPoint(x: 0, y: sprite.size.height + tileSize * 0.10),
+            fontSize: tileSize * 0.24,
+            color: SKColor(white: isActive ? 0.95 : 0.66, alpha: 1)
+        )
+        sprite.removeAction(forKey: "sessionTyping")
+        guard isActive else {
+            sprite.position = .zero
+            return
+        }
+        // 돌고 있는 세션은 사람이 자리에서 두드리는 것과 같은 몸짓을 쓴다.
+        let beat = SKAction.sequence([
+            .moveBy(x: 0, y: 1.4, duration: 0.09),
+            .moveBy(x: 0, y: -1.4, duration: 0.09),
+            .wait(forDuration: 0.06),
+        ])
+        sprite.run(.repeatForever(beat), withKey: "sessionTyping")
+    }
+
     /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.
     ///
     /// 배회와 같은 추적 집합(`strollingAgents`)에 넣는다. 그래야 회의 도중 실제 이벤트가 오면
@@ -1175,9 +1255,15 @@ final class OfficeScene: SKScene {
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
         let summary = companySummary(agents: agents)
-        let label = SKLabelNode(
-            text: "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
-        )
+        var text =
+            "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
+        if !lastSyncedSessions.isEmpty {
+            // 대표 앞줄에 설 수 있는 세션은 여덟 남짓이라, 그 수가 곧 전체라고 오해하지 않게
+            // 총계를 여기 적는다.
+            let active = lastSyncedSessions.filter { $0.state == officeSessionActiveState }.count
+            text += "  ·  내 세션 \(lastSyncedSessions.count)(도는 중 \(active))"
+        }
+        let label = SKLabelNode(text: text)
         label.name = "summaryHUD"
         // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
         // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
