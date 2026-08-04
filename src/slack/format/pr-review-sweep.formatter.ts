@@ -26,8 +26,10 @@ const COUNT_LABELS: { key: keyof PublishOutcome; label: string }[] = [
   { key: 'duplicate', label: '중복' },
 ];
 
+// 키를 숫자 카운터로 한정한다 — HarvestOutcome 에는 누적 채택률(배열)도 들어 있어
+// `keyof` 를 그대로 쓰면 `> 0` 비교가 타입에서 깨진다.
 const HARVEST_COUNT_LABELS: {
-  key: keyof HarvestOutcome;
+  key: 'acked' | 'rejected' | 'fixed' | 'stale' | 'resolved';
   label: string;
 }[] = [
   { key: 'acked', label: '👍' },
@@ -51,6 +53,19 @@ export const formatPrReviewSweep = ({
   const lines = ['*🤖 PR 리뷰 스윕*'];
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
+  }
+  // 누적 채택률은 카드 상태가 바뀐 회차에만 채워진다. 표본이 미달인 카테고리는 비율을
+  // 감추고 표본 수만 보여준다 — 4건으로 낸 비율이 판단 근거로 쓰이는 것을 막는다.
+  if (harvest.adoption.length > 0) {
+    lines.push(
+      `📊 채택률 ${harvest.adoption
+        .map(({ category, total, ratePercent }) =>
+          ratePercent === null
+            ? `${escapeSlackMrkdwn(category)} 표본 ${total}`
+            : `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})`,
+        )
+        .join(' · ')}`,
+    );
   }
   for (const result of results) {
     const icon = RISK_ICON[result.riskLevel] ?? '⚪';
