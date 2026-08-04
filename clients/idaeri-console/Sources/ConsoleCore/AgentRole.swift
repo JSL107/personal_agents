@@ -35,11 +35,12 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "업무 리뷰"
     case "IMPACT_REPORTER":
         return "성과 분석"
-    // 경영
+    // 경영 — 이 둘만 영문 약칭. 한국 회사에서도 CEO·CTO 는 그대로 직함으로 읽히고,
+    // "기술이사"·"경영 리뷰" 로는 옆자리 둘의 관계(대표 / 기술 총괄)가 이름표에서 안 드러났다.
     case "CTO":
-        return "기술이사"
+        return "CTO"
     case "CEO":
-        return "경영 리뷰"
+        return "CEO"
     // 성장
     case "CAREER_MATE":
         return "커리어"
