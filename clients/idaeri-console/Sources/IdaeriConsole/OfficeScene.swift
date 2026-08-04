@@ -660,12 +660,12 @@ final class OfficeScene: SKScene {
             setChildLabel(
                 node, name: "infoBubble", text: info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
-                fontSize: max(8, tileSize * 0.24), color: SKColor(white: 1, alpha: 0.95)
+                fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
             )
             setChildLabel(
                 node, name: "elapsed", text: info.elapsed,
                 position: CGPoint(x: 0, y: -tileSize * 0.42),
-                fontSize: max(7, tileSize * 0.21), color: SKColor(white: 0.7, alpha: 1)
+                fontSize: tileSize * 0.21, color: SKColor(white: 0.7, alpha: 1)
             )
             // 진행 표시는 머리 위 이모지(⏳🔄✅⚠️) 대신 몸짓으로 낸다 — 사람이 일하는 화면에서
             // 아이콘이 떠 있는 것보다 타이핑·엎드림이 무슨 일인지 더 빨리 읽힌다.
@@ -801,7 +801,9 @@ final class OfficeScene: SKScene {
         }
         let label = SKLabelNode(text: text)
         label.name = name
-        label.fontSize = fontSize
+        // 말풍선·경과 표시도 한글이므로 이름표와 같은 폰트·하한을 쓴다.
+        label.fontName = officeLabelFontName
+        label.fontSize = max(officeNameplateMinFontSize, fontSize)
         label.fontColor = color
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
@@ -883,7 +885,7 @@ final class OfficeScene: SKScene {
             setChildLabel(
                 node, name: "hoverBubble", text: text,
                 position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
-                fontSize: max(8, tileSize * 0.24), color: SKColor(white: 1, alpha: 0.95)
+                fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
             )
         }
     }
