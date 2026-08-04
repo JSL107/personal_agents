@@ -556,7 +556,9 @@ final class OfficeScene: SKScene {
         node.sprite.zRotation = 0
         // bob 중간 프레임에서 끊기면 y가 떠 있는 값으로 남으므로 서 있는 자세의 기준점도 복원한다.
         node.clearMotion()
-        node.isWalking = false
+        // 걸음 프레임까지 되돌린다. isWalking 만 내리면 다리가 엇갈린 그림이 그대로 남아
+        // 배회를 끊긴 사람만 짝다리로 굳는다(3단계에서 walkStep 이 붙은 뒤 생긴 조건).
+        node.endWalk()
     }
 
     /// 목적지까지 걸어간다. 경로가 없으면 그 자리에 둔다(순간이동시키지 않는다 —
