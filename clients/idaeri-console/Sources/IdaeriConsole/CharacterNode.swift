@@ -45,6 +45,7 @@ final class CharacterNode: SKNode {
     private let sheetIndex: Int
     private let hairColor: (red: Double, green: Double, blue: Double)
     private let shirtColor: (red: Double, green: Double, blue: Double)
+    private let pantsColor: (red: Double, green: Double, blue: Double)
 
     init(agentType: String, displayName: String, tile: TilePoint) {
         self.tile = tile
@@ -63,6 +64,9 @@ final class CharacterNode: SKNode {
             green: 1.0 - (1.0 - palette.green) * blend,
             blue: 1.0 - (1.0 - palette.blue) * blend
         )
+        // 바지는 부서색과 엮지 않는다. 셔츠가 이미 부서를 나타내므로 같은 축을 두 번 쓰면
+        // 구별 수단이 늘지 않는다 — 사람을 가르는 축으로만 쓴다.
+        pantsColor = pantsPalette[look.pantsIndex]
         super.init()
         name = agentType
 
@@ -236,7 +240,7 @@ final class CharacterNode: SKNode {
 
     private func setTexture(_ pose: String) {
         sprite.texture = SpriteLoader.characterTexture(
-            pose: pose, sheet: sheetIndex, hair: hairColor, shirt: shirtColor
+            pose: pose, sheet: sheetIndex, hair: hairColor, shirt: shirtColor, pants: pantsColor
         )
         applySpriteSize()
     }
