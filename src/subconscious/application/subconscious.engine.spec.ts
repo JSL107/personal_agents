@@ -19,7 +19,7 @@ describe('SubconsciousEngine', () => {
   };
   let fakeGate: { judge: jest.Mock };
   let fakeBudget: { tryConsume: jest.Mock };
-  let fakeProposalEmitter: { emit: jest.Mock };
+  let fakeProposalEmitter: { shouldEmit: jest.Mock; emit: jest.Mock };
   let engine: SubconsciousEngine;
 
   const NOW = 1_000_000;
@@ -32,7 +32,10 @@ describe('SubconsciousEngine', () => {
     };
     fakeGate = { judge: jest.fn().mockResolvedValue([]) };
     fakeBudget = { tryConsume: jest.fn().mockResolvedValue(true) };
-    fakeProposalEmitter = { emit: jest.fn().mockResolvedValue(undefined) };
+    fakeProposalEmitter = {
+      shouldEmit: jest.fn().mockResolvedValue(true),
+      emit: jest.fn().mockResolvedValue(undefined),
+    };
 
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
@@ -117,6 +120,31 @@ describe('SubconsciousEngine', () => {
     await engine.runTick(OWNER, NOW);
 
     expect(fakeBudget.tryConsume).toHaveBeenCalledTimes(1);
+    expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+  });
+
+  it('케이스 3-1: shouldEmit=false → 예산을 소비하지 않는다 (생략된 카드가 제한량을 먹지 않게)', async () => {
+    const prevSnapshot = makeSnapshot('github', 'hash-OLD');
+    const currSnapshot = makeSnapshot('github', 'hash-NEW');
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
+    fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
+
+    const decision: GateDecision = {
+      changeKey: 'github:item-1',
+      promote: true,
+      reason: 'new PR',
+      suggestedAgentType: AgentType.CODE_REVIEWER,
+    };
+    fakeGate.judge.mockResolvedValue([decision]);
+    fakeProposalEmitter.shouldEmit.mockResolvedValue(false);
+
+    engine = buildEngine([source]);
+    await engine.runTick(OWNER, NOW);
+
+    expect(fakeBudget.tryConsume).not.toHaveBeenCalled();
     expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,10 @@
 import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import {
+  AGENT_RUN_REPOSITORY_PORT,
+  AgentRunRepositoryPort,
+} from '../../agent-run/domain/port/agent-run.repository.port';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -40,6 +44,10 @@ const extractPrReference = (changeKey: string): string | null =>
   changeKey.startsWith(GITHUB_PR_KEY_PREFIX)
     ? changeKey.slice(GITHUB_PR_KEY_PREFIX.length)
     : null;
+
+// 스윕 리뷰 원장을 되짚는 범위. sweep-pr-reviews.usecase 의 동명 상수와 같은 값 —
+// 스윕이 "이미 리뷰함"으로 판정하는 창과 카드 생략 창을 어긋나지 않게 맞춘다.
+const SWEEP_REVIEW_LOOKBACK_DAYS = 30;
 
 const resolveDispatchText = (
   agentType: AgentType,
@@ -82,6 +90,9 @@ export class SubconsciousProposalService implements ProposalEmitter {
     @Inject(forwardRef(() => SlackService))
     private readonly slackService: SlackService,
     private readonly configService: ConfigService,
+    // 스윕이 이 PR 을 이미 리뷰·게시했는지 판정하는 원장.
+    @Inject(AGENT_RUN_REPOSITORY_PORT)
+    private readonly agentRunRepository: AgentRunRepositoryPort,
   ) {
     const raw = this.configService.get<string>('SUBCONSCIOUS_PROPOSAL_TTL_MS');
     if (raw !== undefined) {
@@ -90,6 +101,53 @@ export class SubconsciousProposalService implements ProposalEmitter {
         this.ttlMs = parsed;
       }
     }
+  }
+
+  // 카드를 만들 이유가 있는지 — 엔진이 예산을 소비하기 전에 호출한다.
+  async shouldEmit({
+    ownerUserId,
+    decision,
+  }: {
+    ownerUserId: string;
+    decision: GateDecision;
+  }): Promise<boolean> {
+    const agentType = decision.suggestedAgentType;
+    if (agentType === undefined) {
+      return false;
+    }
+
+    // 스윕(PR_REVIEW_SWEEP)이 이미 리뷰를 게시한 PR 은 카드를 만들지 않는다. 눌러도 같은
+    // 리뷰를 한 번 더 돌릴 뿐이다. allowlist 가 아니라 "실제로 리뷰됐다"는 원장 기록을 근거로
+    // 삼는다 — 카드 소스(assignee:@me)와 스윕 대상(author:owner)이 다른 집합이라, allowlist
+    // 만 보고 생략하면 스윕이 조회하지 않는 PR(남이 작성해 나에게 할당 등)의 리뷰 경로가
+    // 통째로 사라진다.
+    const swept = await this.isAlreadySweptPullRequest(
+      agentType,
+      decision.changeKey,
+    );
+    if (swept) {
+      this.logger.log(
+        `changeKey="${decision.changeKey}" 는 PR 리뷰 스윕이 이미 게시함 — 제안 카드 생략`,
+      );
+      return false;
+    }
+
+    // 같은 대상에 아직 응답하지 않은 카드가 있으면 새로 만들지 않는다. PR 이 갱신될 때마다
+    // 카드가 하나씩 늘어 만료 카드가 쌓이던 문제 (2026-08-03: #961 한 건에 카드 4장).
+    // 만료된 카드는 눌러도 실행되지 않으므로 TTL 안쪽만 센다.
+    const pending = await this.repository.hasPending(
+      ownerUserId,
+      decision.changeKey,
+      new Date(Date.now() - this.ttlMs),
+    );
+    if (pending) {
+      this.logger.log(
+        `changeKey="${decision.changeKey}" 에 미응답 제안 카드가 이미 있음 — 중복 생성 생략`,
+      );
+      return false;
+    }
+
+    return true;
   }
 
   async emit({
@@ -215,6 +273,26 @@ export class SubconsciousProposalService implements ProposalEmitter {
         DomainStatus.PRECONDITION_FAILED,
       );
     }
+  }
+
+  // 스윕이 이 PR 을 실제로 리뷰·게시했는지. 연습 모드(dryRun)로 끝났거나 실패한 리뷰는
+  // 게시가 없었으므로 카드를 유지한다.
+  private async isAlreadySweptPullRequest(
+    agentType: AgentType,
+    changeKey: string,
+  ): Promise<boolean> {
+    if (agentType !== AgentType.CODE_REVIEWER) {
+      return false;
+    }
+    const prRef = extractPrReference(changeKey);
+    if (prRef === null) {
+      return false;
+    }
+    const latest = await this.agentRunRepository.findLatestSweepReview({
+      prRef,
+      sinceDays: SWEEP_REVIEW_LOOKBACK_DAYS,
+    });
+    return latest !== null && latest.status === 'SUCCEEDED' && !latest.dryRun;
   }
 
   private async assertReadyToResolve(

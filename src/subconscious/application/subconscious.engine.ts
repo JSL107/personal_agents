@@ -107,6 +107,17 @@ export class SubconsciousEngine {
         continue;
       }
 
+      // 예산 소비 전에 카드를 만들 이유가 있는지 먼저 묻는다 — 생략될 변경(이미 스윕이
+      // 리뷰한 PR, 미응답 카드가 남은 대상)이 시간당 제한량을 먹으면 정작 유효한 제안이
+      // Budget exhausted 로 버려진다.
+      const shouldEmit = await this.proposalEmitter.shouldEmit({
+        ownerUserId: ownerSlackUserId,
+        decision,
+      });
+      if (!shouldEmit) {
+        continue;
+      }
+
       const consumed = await this.budget.tryConsume(ownerSlackUserId, now);
       if (!consumed) {
         this.logger.warn(
