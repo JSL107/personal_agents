@@ -172,4 +172,56 @@ func runOfficeInteractionTests(_ t: TestRunner) {
             && secondReconciliation == firstReconciliation,
         "같은 입력은 같은 줄 순서를 반환"
     )
+
+    t.expectEqual(
+        strollersToStop(strolling: ["PM"], agents: [waitingPM]),
+        [],
+        "배회 중이어도 대기 상태면 유지"
+    )
+
+    let nonWaitingStates: [(String, ConsoleAgentState)] = [
+        ("IN_PROGRESS", .inProgress),
+        ("AWAITING_APPROVAL", .awaitingApproval),
+        ("FAILED", .failed),
+        ("COMPLETED", .completed),
+        ("AWAITING_INTEGRATION", .awaitingIntegration),
+    ]
+    for (agentType, state) in nonWaitingStates {
+        t.expectEqual(
+            strollersToStop(
+                strolling: [agentType],
+                agents: [makeInteractionAgent(agentType, state)]
+            ),
+            [agentType],
+            "배회 중인 \(state.rawValue) 상태는 중단"
+        )
+    }
+
+    t.expectEqual(
+        strollersToStop(strolling: ["MISSING"], agents: []),
+        ["MISSING"],
+        "스냅샷에서 사라진 배회자는 중단"
+    )
+
+    t.expectEqual(
+        strollersToStop(
+            strolling: ["ZETA", "WAITING", "ALPHA", "MISSING"],
+            agents: [
+                makeInteractionAgent("WAITING", .waiting),
+                makeInteractionAgent("ZETA", .failed),
+                makeInteractionAgent("ALPHA", .inProgress),
+            ]
+        ),
+        ["ALPHA", "MISSING", "ZETA"],
+        "여러 배회 중단 대상은 agentType 사전순"
+    )
+
+    t.expectEqual(
+        strollersToStop(
+            strolling: [],
+            agents: nonWaitingStates.map { makeInteractionAgent($0.0, $0.1) }
+        ),
+        [],
+        "배회자가 없으면 중단 대상도 없음"
+    )
 }

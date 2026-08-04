@@ -186,6 +186,13 @@ final class OfficeScene: SKScene {
 
         reconcileQueue(agents: agents, approvals: approvals)
 
+        // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
+        // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
+        for agentType in strollersToStop(strolling: strollingAgents, agents: agents) {
+            cancelStroll(agentType)
+            goHome(agentType)
+        }
+
         for agent in agents {
             guard let seat = homeSeats[agent.agentType] else {
                 continue  // 구역 정원을 넘어 자리를 못 받은 인원(현재 구성에서는 발생하지 않음)
