@@ -520,16 +520,18 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       where: { endedAt: { gte: cutoff } },
       orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
       distinct: ['agentType'],
-      select: { agentType: true, status: true },
+      select: { agentType: true, status: true, id: true },
     });
     // 종료 상태는 SUCCEEDED/FAILED 둘뿐이지만, endedAt 이 채워진 IN_PROGRESS 행이 섞이면
     // 화면이 완료로 오표시된다. 두 값만 통과시켜 그 경로를 막는다.
     return latestPerAgent.flatMap((row): RecentlyFinishedRun[] => {
       if (row.status === AgentRunStatus.SUCCEEDED) {
-        return [{ agentType: row.agentType, status: 'SUCCEEDED' }];
+        return [
+          { agentType: row.agentType, status: 'SUCCEEDED', runId: row.id },
+        ];
       }
       if (row.status === AgentRunStatus.FAILED) {
-        return [{ agentType: row.agentType, status: 'FAILED' }];
+        return [{ agentType: row.agentType, status: 'FAILED', runId: row.id }];
       }
       return [];
     });

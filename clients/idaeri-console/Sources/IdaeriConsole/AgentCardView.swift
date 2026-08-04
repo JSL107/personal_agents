@@ -7,12 +7,20 @@ struct AgentCardView: View {
     /// 전체 pending 목록 — 카드는 자신의 agentType 에 매칭되는 항목만 걸러 배지로 보여준다.
     let pendingCommands: [PendingCommand]
     let onSend: (String, String?) -> Void
+    /// 완료를 눈으로 확인했다는 표시. 서버 창이 만료되기를 기다리지 않고 카드를 대기로 내린다.
+    let onAcknowledge: () -> Void
 
     @State private var showSheet = false
     @State private var inputText = ""
 
     private var matchingPending: [PendingCommand] {
         pendingCommands.filter { $0.effectiveAgentType == agent.agentType }
+    }
+
+    /// 확인 버튼 노출 조건 — 완료 상태이고, 어떤 런의 완료인지 식별할 id 가 있을 때만.
+    /// id 가 없으면 확인해도 다음 스냅샷에서 되살아나므로 버튼을 숨긴다.
+    private var canAcknowledge: Bool {
+        agent.state == .completed && agent.lastFinishedRunId != nil
     }
 
     var body: some View {
@@ -58,8 +66,14 @@ struct AgentCardView: View {
                     .lineLimit(1)
             }
 
-            Button("지시") { showSheet = true }
-                .font(.caption)
+            HStack(spacing: 8) {
+                Button("지시") { showSheet = true }
+                // 완료는 최근 종료 창(60분) 동안 유지되므로, 다 본 결과를 손으로 내려둘 수 있게 한다.
+                if canAcknowledge {
+                    Button("확인", action: onAcknowledge)
+                }
+            }
+            .font(.caption)
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
