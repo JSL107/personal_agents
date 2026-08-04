@@ -25,7 +25,18 @@ public let officeCharacterScaleFactor: Double = 1.0
 /// 스프라이트 픽셀 ↔ 실물 치수 환산 기준. 서 있는 캐릭터 54px 을 키 170cm 로 본다.
 ///
 /// 3/4 시점이라 정밀한 값은 아니다. 쓸모는 절대 크기가 아니라 **가구끼리의 편차**를 재는 데 있다.
-private let officePixelsPerCentimeter = 54.0 / 170.0
+///
+/// **캐릭터 배율을 함께 곱해야 한다.** 캐릭터는 `officeCharacterScaleFactor` 를 추가로 받는데
+/// 가구는 받지 않으므로, 이 값을 빼면 배율을 0.85 로 내리는 순간 기준은 그대로인 채 캐릭터만
+/// 작아져 가구가 사람보다 커진다. 지금은 계수가 1.0 이라 드러나지 않지만 조정 여지를 남긴 값이라
+/// 여기서 묶어 둔다.
+private let officePixelsPerCentimeter = 54.0 * officeCharacterScaleFactor / 170.0
+
+/// 스프라이트 원본이 그려진 기준 타일 크기(px). 창이 이 크기일 때 배율 1 이 원본 픽셀이다.
+///
+/// 렌더 쪽(`OfficeScene`)과 배율 계산(`FurnitureKind.sizeBoost`)이 같은 값을 봐야 한다 —
+/// 두 곳에 따로 두면 한쪽만 바뀌었을 때 폭 상한이 조용히 어긋난다.
+public let officeReferenceTileSize: Double = 40
 
 /// 앉은 캐릭터를 책상 쪽으로 내리는 양(타일 크기 배수).
 ///
@@ -108,42 +119,61 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
-    /// 스프라이트 원본 세로 픽셀(실측). `sips -g pixelHeight Resources/sprites/furn-*.png`
+    /// 스프라이트 원본 크기(실측 px). `sips -g pixelWidth -g pixelHeight Resources/sprites/furn-*.png`
     ///
     /// 에셋을 다시 뽑으면 이 값도 함께 갱신해야 한다 — 어긋나면 배율이 조용히 틀어진다.
     /// ConsoleCore 는 SpriteKit 비의존이라 이미지를 읽어 자동 검증할 수 없다.
-    public var nativeHeight: Double {
+    public var nativeSize: (width: Double, height: Double) {
         switch self {
         case .desk:
-            return 32
+            return (37, 32)
         case .chairDown:
-            return 26
+            return (16, 26)
         case .chairUp:
-            return 24
+            return (17, 24)
         case .meetingTable:
-            return 56
-        case .sofa2, .sofa3:
-            return 21
+            return (37, 56)
+        case .sofa2:
+            return (30, 21)
+        case .sofa3:
+            return (39, 21)
         case .coffeeTable:
-            return 17
+            return (18, 17)
         case .coffeeMachine:
-            return 31
+            return (27, 31)
         case .waterCooler:
-            return 30
+            return (12, 30)
         case .whiteboard:
-            return 22
+            return (39, 22)
         case .printer:
-            return 28
+            return (24, 28)
         case .plantTall:
-            return 32
+            return (18, 32)
         case .plantSmall:
-            return 20
+            return (17, 20)
         case .bookshelf:
-            return 35
+            return (37, 35)
         case .clock:
-            return 19
+            return (20, 19)
         case .trash:
-            return 17
+            return (13, 17)
+        }
+    }
+
+    /// 원본 세로 픽셀. 높이 환산의 분모다.
+    public var nativeHeight: Double {
+        nativeSize.height
+    }
+
+    /// 폭 상한을 함께 계산하는 계열. 같은 종류 가구가 서로 다른 배율을 받으면 나란히 놓였을 때
+    /// 2인 소파가 3인 소파보다 높아 보인다 — 탕비실 밴드에 둘이 3칸 간격으로 함께 놓인다.
+    /// 3인 소파가 폭 39px 로 더 넓어 상한이 먼저 걸리므로, 2인 소파도 그 값을 따른다.
+    private var scaleGroup: [FurnitureKind] {
+        switch self {
+        case .sofa2, .sofa3:
+            return [.sofa2, .sofa3]
+        default:
+            return [self]
         }
     }
 
@@ -191,11 +221,30 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
     /// 환산 대상이 아닌 세 종(`targetHeightCm == nil`)은 1.0 을 유지하되, 회의 테이블만
     /// 예외로 기존 확대값을 잇는다 — 2칸(footprint)을 차지하는데 원본이 1.4칸이라 칸을 덜 채운다.
     /// 정확한 값은 실앱에서 눈으로 확정할 항목이다.
+    ///
+    /// **높이 환산값은 폭 상한에 걸려 깎일 수 있다.** 렌더는 배율을 가로·세로에 같이 곱하므로
+    /// (`OfficeScene` 의 `node.size`) 높이만 보고 키우면 폭이 자기 칸을 넘어 옆 칸을 침범한다.
+    /// 책장은 개발·리뷰 부서와 상단 밴드에서 **두 개가 인접 배치**되므로 넘친 폭이 곧 겹침이다.
+    /// 관제 화면에서 가구가 사람이나 상태 링을 가리는 것은 정보 손실이라, 시각 축척보다
+    /// 겹침 방지가 우선한다(관통 제약 6번).
+    ///
+    /// 그래서 폭이 큰 가구는 목표 높이를 다 채우지 못한다 — 책장이 대표적이다(88% → 70%).
+    /// 원인은 에셋의 가로세로비가 실물과 다른 것(37×35 로 거의 정사각형인데 실물 3단 책장은
+    /// 세로로 길다)이므로, 배율로는 여기까지가 한계다. 해소는 에셋 재제작(3단계) 몫이다.
     public var sizeBoost: Double {
-        guard let targetHeightCm else {
-            return self == .meetingTable ? 1.15 : 1.0
+        let byHeight: Double
+        if let targetHeightCm {
+            byHeight = targetHeightCm * officePixelsPerCentimeter / nativeHeight
+        } else if self == .meetingTable {
+            byHeight = 1.15
+        } else {
+            byHeight = 1.0
         }
-        return targetHeightCm * officePixelsPerCentimeter / nativeHeight
+        let widthCap =
+            scaleGroup
+            .map { Double(footprint.width) * officeReferenceTileSize / $0.nativeSize.width }
+            .min() ?? 1
+        return min(byHeight, widthCap)
     }
 }
 

@@ -11,7 +11,8 @@ import SpriteKit
 /// 관제 화면에서 의미 없는 움직임은 "지금 뭐가 돌고 있나" 를 읽는 것을 방해한다.
 final class OfficeScene: SKScene {
     // 원본 타일 스프라이트의 기준 폭. 화면 타일 크기를 이 값으로 나눈 비율이 도트 크기의 기준이다.
-    private let referenceTileSize: CGFloat = 40
+    // 가구 폭 상한(`FurnitureKind.sizeBoost`)이 같은 값을 봐야 하므로 ConsoleCore 가 단일 소스다.
+    private let referenceTileSize = CGFloat(officeReferenceTileSize)
 
     // 캐릭터·가구 배율 계수는 `ConsoleCore`(순수)가 단일 소스로 갖는다 — 씬에 숫자를 박으면
     // 테스트가 닿지 않는다.
