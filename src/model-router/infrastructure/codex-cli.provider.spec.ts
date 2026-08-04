@@ -58,6 +58,13 @@ describe('buildCodexArgs', () => {
     expect(args).toContain('/tmp/out.txt');
   });
 
+  it('사용자 codex 설정의 MCP 서버·플러그인·hook 을 차단한다 (프롬프트 밖 탐색 수단 제거)', () => {
+    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    expect(args).toContain('mcp_servers={}');
+    expect(args).toContain('plugins={}');
+    expect(args[args.indexOf('--disable') + 1]).toBe('hooks');
+  });
+
   it('positional prompt 를 argv 로 넘기지 않는다 (stdin 전달이라 `--` 등 terminator 불필요)', () => {
     const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
     // 마지막 항목은 -o 뒤의 outputFile 이어야 한다.
