@@ -116,6 +116,24 @@ func runOfficeWalkFrameTests(_ t: TestRunner) {
     t.expectEqual(officeStillPose("sit"), "sit", "정지 포즈는 그대로")
     t.expectEqual(officeStillPose("side"), "side", "정지 포즈는 그대로")
 
+    // 폴백 순서 — **같은 시트를 다 소진한 뒤** 기본 시트로 내려가야 한다. 기본 시트의 걸음
+    // 프레임이 같은 시트의 정지 그림보다 앞에 오면, 걸음 프레임이 없는 시트의 사람이 걷는 순간
+    // 얼굴·체형이 기본 캐릭터로 바뀐다. 순서만 뒤집혀도 화면에서는 "걸으면 딴 사람이 된다" 로
+    // 나타나고 파일은 전부 존재하므로, 존재 검사로는 절대 안 잡힌다.
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 1, pose: "down-walk1"),
+        ["charb-down-walk1", "charb-down", "char-down-walk1", "char-down"],
+        "걸음 프레임 폴백은 같은 시트 정지 그림이 기본 시트보다 먼저")
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 2, pose: "sit"),
+        ["charc-sit", "char-sit"],
+        "정지 포즈는 걸음 프레임 후보를 만들지 않는다")
+    // 시트 인덱스가 범위를 넘어도 이름이 조립돼야 한다 — 못 만들면 그 사람이 사라진다.
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 99, pose: "up").first, "chard-up", "시트 인덱스 상한 클램프")
+    t.expectEqual(
+        characterSpriteCandidates(sheet: -1, pose: "up").first, "char-up", "시트 인덱스 하한 클램프")
+
     // 에셋이 실제로 있어야 이름 조립이 의미를 갖는다. 이름만 맞고 파일이 없으면 로더가
     // 정지 그림으로 조용히 폴백해서, "걷는데 다리가 안 움직인다" 를 아무도 못 잡는다.
     // 소스 파일 위치에서 경로를 잡으므로 실행 디렉터리와 무관하다.

@@ -350,7 +350,14 @@ def save_walk_frames(sprite: Image.Image, name: str, sheet_name: str) -> int:
         return 0
     frames = walk_frames(sprite, pose)
     if frames is None:
-        print(f"  ⚠️ {name}: 다리를 못 찾아 걸음 프레임 생략 (코드가 정지 그림으로 폴백)")
+        # 이전 실행이 남긴 프레임을 지운다. 정지 그림만 새로 바뀌고 걸음 프레임이 옛것으로
+        # 남으면 로더도 테스트도 "파일이 있으니 정상" 으로 보고, 걷는 순간 다른 사람이 된다.
+        # 경고만 남기고 지나가면 이 불일치가 조용히 커밋된다.
+        stale = sorted(OUT.glob(f"{name}-walk*.png"))
+        for path in stale:
+            path.unlink()
+        removed = f" · 낡은 프레임 {len(stale)}장 제거" if stale else ""
+        print(f"  ⚠️ {name}: 다리를 못 찾아 걸음 프레임 생략{removed} — 코드가 정지 그림으로 폴백")
         return 0
     base = solid_count(sprite)
     saved = 0

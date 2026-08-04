@@ -51,20 +51,11 @@ enum SpriteLoader {
         hair: (red: Double, green: Double, blue: Double),
         shirt: (red: Double, green: Double, blue: Double)
     ) -> SKTexture? {
-        let prefix = characterSheetPrefixes[
-            min(max(sheet, 0), characterSheetPrefixes.count - 1)
-        ]
-        // 폴백 두 단계. 선택 시트를 아직 안 넣었으면 기본 시트로, 걸음 프레임 자체가 없으면
-        // 같은 포즈의 정지 그림으로 내려간다 — 어느 쪽이든 사람이 사라지지 않게.
-        //
-        // 걸음 프레임은 에셋 파이프라인이 다리를 못 찾으면 만들어지지 않는다(측면처럼 두 다리가
-        // 한 덩어리인 그림이 새로 들어오는 경우). 파일 유무를 안 보고 이름만 조립하면
-        // 그 사람만 걷는 동안 통째로 안 그려진다.
-        let still = officeStillPose(pose)
-        var candidates = ["\(prefix)-\(pose)", "char-\(pose)"]
-        if still != pose {
-            candidates += ["\(prefix)-\(still)", "char-\(still)"]
-        }
+        // 후보 순서는 규약이라 코어(`characterSpriteCandidates`)가 정하고, 여기서는 실제로
+        // 번들에 있는 첫 파일을 고른다. 걸음 프레임은 에셋 파이프라인이 다리를 못 찾으면
+        // 만들어지지 않으므로, 파일 유무를 안 보고 이름만 조립하면 그 사람이 걷는 동안
+        // 통째로 안 그려진다.
+        let candidates = characterSpriteCandidates(sheet: sheet, pose: pose)
         guard
             let name = candidates.first(where: {
                 Bundle.module.url(forResource: $0, withExtension: "png", subdirectory: "sprites")
