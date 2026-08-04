@@ -24,11 +24,11 @@ struct AgentCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.tight) {
+                HStack(spacing: Spacing.sm) {
                     Text(agent.roleName)
-                        .font(.headline)
+                        .font(Typography.sectionTitle)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     statusBadge
@@ -37,7 +37,7 @@ struct AgentCardView: View {
                 // 내부 에이전트는 이 줄이 유일한 식별 단서다(로그·슬랙과 이름을 맞출 때 필요).
                 if agent.roleName != agent.displayName {
                     Text(agent.displayName)
-                        .font(.caption2)
+                        .font(Typography.captionSmall)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -45,13 +45,13 @@ struct AgentCardView: View {
 
             // 말풍선 — 백엔드가 소유한 상태 문구
             Text(agent.bubble)
-                .font(.callout)
+                .font(Typography.body)
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                         .fill(Color.primary.opacity(0.05))
                 )
 
@@ -61,29 +61,29 @@ struct AgentCardView: View {
 
             if !agent.slashCommands.isEmpty {
                 Text(agent.slashCommands.joined(separator: "  "))
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Typography.metricMono)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.sm) {
                 Button("지시") { showSheet = true }
                 // 완료는 최근 종료 창(60분) 동안 유지되므로, 다 본 결과를 손으로 내려둘 수 있게 한다.
                 if canAcknowledge {
                     Button("확인", action: onAcknowledge)
                 }
             }
-            .font(.caption)
+            .font(Typography.caption)
         }
-        .padding(14)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(agent.state.tintColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
+                .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: Stroke.emphasis)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
@@ -104,26 +104,26 @@ struct AgentCardView: View {
     }
 
     private var statusBadge: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: Spacing.xs) {
             Circle()
                 .fill(agent.state.accentColor)
-                .frame(width: 8, height: 8)
+                .frame(width: Stroke.dot, height: Stroke.dot)
             Text(agent.state.label)
-                .font(.caption.weight(.medium))
+                .font(Typography.captionEmphasis)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var pendingBadgeRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.sm) {
             ForEach(matchingPending) { command in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.tight) {
                     Text("\(command.phase.badgeIcon) \(command.phase.badgeLabel)")
-                        .font(.caption2)
+                        .font(Typography.captionSmall)
                         .foregroundStyle(.secondary)
                     if let reason = command.reason {
                         Text(reason)
-                            .font(.caption2)
+                            .font(Typography.captionSmall)
                             .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
                             .lineLimit(2)
                     }
@@ -134,9 +134,9 @@ struct AgentCardView: View {
 
     /// "지시" 버튼으로 여는 텍스트 입력 시트 — 이 카드의 agentType 을 힌트로 고정해 전송한다.
     private var commandSheet: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("\(agent.roleName)에 지시")
-                .font(.headline)
+                .font(Typography.sectionTitle)
             TextField("지시 내용…", text: $inputText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
@@ -155,7 +155,7 @@ struct AgentCardView: View {
                 .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(20)
-        .frame(minWidth: 320)
+        .padding(Spacing.xl)
+        .frame(minWidth: Layout.sheetMinWidth)
     }
 }

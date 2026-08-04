@@ -26,7 +26,7 @@ struct OfficeView: View {
             // 호출되지 않고, 창이 보이는 상태에서도 로그가 나므로 원천 차단이 안 된다.
             // 터미널 노이즈는 개발 실행 스크립트(scripts/console-dev.sh)의 필터에서 걷어낸다.
             SpriteView(scene: scene)
-                .frame(minWidth: 640, minHeight: 480)
+                .frame(minWidth: Layout.officeMinWidth, minHeight: 480)
                 .onAppear {
                     scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.refreshOverlays(
@@ -86,14 +86,14 @@ struct OfficeView: View {
             } else if let notice = store.approvalNotice {
                 // 승인/거절을 누르면 상호작용 바가 닫히므로, 실패 사유는 바 자리에서 이어 보여준다.
                 Text(notice)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(Color.red)
-                    .padding(10)
+                    .padding(Spacing.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                             .fill(Color.primary.opacity(0.08))
                     )
-                    .padding(.bottom, 12)
+                    .padding(.bottom, Spacing.md)
             }
         }
     }
@@ -101,9 +101,9 @@ struct OfficeView: View {
     @ViewBuilder
     private func interactionBar(for agentType: String) -> some View {
         let approval = approvalFor(agentType: agentType, in: store.approvals)
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.sm) {
             HStack {
-                Text(agentType).font(.headline)
+                Text(agentType).font(Typography.sectionTitle)
                 Spacer()
                 Button("닫기") { selectedAgent = nil }
             }
@@ -125,10 +125,10 @@ struct OfficeView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Spacing.md)
         .background(.thinMaterial)
         .cornerRadius(10)
-        .padding(12)
+        .padding(Spacing.md)
     }
 
     private func send(to agentType: String) {

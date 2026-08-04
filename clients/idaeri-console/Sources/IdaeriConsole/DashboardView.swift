@@ -23,11 +23,11 @@ struct DashboardView: View {
     @State private var injectNoticeIsFailure = false
     @State private var isInjecting = false
 
-    private let columns = [GridItem(.adaptive(minimum: 220), spacing: 14)]
+    private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.md)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
 
                 commandBar
@@ -39,7 +39,7 @@ struct DashboardView: View {
                 if store.agents.isEmpty {
                     emptyState
                 } else {
-                    LazyVGrid(columns: columns, spacing: 14) {
+                    LazyVGrid(columns: columns, spacing: Spacing.md) {
                         ForEach(store.agents) { agent in
                             AgentCardView(
                                 agent: agent,
@@ -61,9 +61,9 @@ struct DashboardView: View {
                     sessionPanel
                 }
             }
-            .padding(24)
+            .padding(Spacing.xl)
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
         .sheet(item: $injectTarget) { target in
             injectSheet(target: target)
         }
@@ -72,8 +72,8 @@ struct DashboardView: View {
     // MARK: - 커맨드바
 
     private var commandBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
                 TextField("에이전트에게 지시…", text: $commandText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(sendGlobalCommand)
@@ -93,26 +93,26 @@ struct DashboardView: View {
     }
 
     private var pendingBadgeRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.sm) {
             ForEach(globalPendingCommands) { command in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.tight) {
+                    HStack(spacing: Spacing.xs) {
                         Text(command.phase.badgeIcon)
                         Text(command.text)
-                            .font(.caption)
+                            .font(Typography.caption)
                             .lineLimit(1)
                     }
                     if let reason = command.reason {
                         Text(reason)
-                            .font(.caption2)
+                            .font(Typography.captionSmall)
                             .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
                             .lineLimit(2)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                         .fill(Color.primary.opacity(0.06))
                 )
             }
@@ -122,15 +122,15 @@ struct DashboardView: View {
     // MARK: - 헤더
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(alignment: .firstTextBaseline) {
                 Text("이대리 주식회사")
-                    .font(.title.bold())
+                    .font(Typography.screenTitle)
                 Spacer()
                 connectionIndicator
             }
 
-            HStack(spacing: 16) {
+            HStack(spacing: Spacing.lg) {
                 summaryChip(count: countOf(.inProgress), label: "진행 중", color: ConsoleAgentState.inProgress.accentColor)
                 summaryChip(count: store.approvals.count, label: "승인 대기", color: ConsoleAgentState.awaitingApproval.accentColor)
                 summaryChip(count: countOf(.awaitingIntegration), label: "연동 대기", color: ConsoleAgentState.awaitingIntegration.accentColor)
@@ -139,7 +139,7 @@ struct DashboardView: View {
                 Spacer()
                 if !store.serverTime.isEmpty {
                     Text(formatTime(store.serverTime))
-                        .font(.system(.caption, design: .monospaced))
+                        .font(Typography.metricMono)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -147,23 +147,23 @@ struct DashboardView: View {
     }
 
     private var connectionIndicator: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.sm) {
             Circle()
                 .fill(status.color)
-                .frame(width: 9, height: 9)
+                .frame(width: Stroke.dot, height: Stroke.dot)
             Text(status.label)
-                .font(.caption.weight(.medium))
+                .font(Typography.captionEmphasis)
                 .foregroundStyle(.secondary)
         }
     }
 
     private func summaryChip(count: Int, label: String, color: Color) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.sm) {
             Text("\(count)")
-                .font(.title3.bold())
+                .font(Typography.metric)
                 .foregroundStyle(color)
             Text(label)
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -172,17 +172,17 @@ struct DashboardView: View {
 
     private var bottleneckBanner: some View {
         let names = bottleneckAgents.map(\.roleName).joined(separator: ", ")
-        return HStack(spacing: 10) {
+        return HStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(ConsoleAgentState.awaitingIntegration.accentColor)
             Text("연동 대기로 멈춘 부서: \(names)")
-                .font(.callout.weight(.medium))
+                .font(Typography.bodyEmphasis)
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(ConsoleAgentState.awaitingIntegration.tintColor)
         )
     }
@@ -190,39 +190,39 @@ struct DashboardView: View {
     // MARK: - 승인 대기 패널
 
     private var approvalPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("승인 대기 \(store.approvals.count)건")
-                .font(.headline)
+                .font(Typography.sectionTitle)
             if let notice = store.approvalNotice {
                 Text(notice)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(Color.red)
             }
             ForEach(store.approvals) { approval in
-                HStack(spacing: 10) {
+                HStack(spacing: Spacing.sm) {
                     Circle()
                         .fill(ConsoleAgentState.awaitingApproval.accentColor)
-                        .frame(width: 7, height: 7)
+                        .frame(width: Stroke.dot, height: Stroke.dot)
                     Text(approval.title)
-                        .font(.callout)
+                        .font(Typography.body)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     Text(formatTime(approval.createdAt))
-                        .font(.system(.caption2, design: .monospaced))
+                        .font(Typography.metricMonoSmall)
                         .foregroundStyle(.secondary)
-                    HStack(spacing: 6) {
+                    HStack(spacing: Spacing.sm) {
                         Button("승인") { onApprove(approval.id) }
                         Button("거절") { onReject(approval.id) }
                             .tint(.red)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, Spacing.tight)
             }
         }
-        .padding(14)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(ConsoleAgentState.awaitingApproval.tintColor)
         )
     }
@@ -230,12 +230,12 @@ struct DashboardView: View {
     // MARK: - 내 작업 세션 패널
 
     private var sessionPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("내 작업 세션 \(store.sessions.count)개 (로컬 CLI)")
-                .font(.headline)
+                .font(Typography.sectionTitle)
             if let injectNotice {
                 Text(injectNotice)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(injectNoticeIsFailure ? Color.red : Color.secondary)
             }
             ForEach(store.sessions) { session in
@@ -248,32 +248,32 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(14)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
     }
 
     private func injectSheet(target: ConsoleSession) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("\(target.name)에 작업 주입")
-                .font(.headline)
+                .font(Typography.sectionTitle)
             Text(
                 target.state == "active"
                     ? "현재 작업이 끝나면 다음 턴에 전달됩니다."
                     : "다음에 이 세션을 이어 쓸 때 전달됩니다"
             )
-            .font(.caption)
+            .font(Typography.caption)
             .foregroundStyle(.secondary)
 
             TextEditor(text: $injectText)
-                .font(.body)
-                .frame(minHeight: 120)
-                .padding(6)
+                .font(Typography.editorBody)
+                .frame(minHeight: Layout.editorMinHeight)
+                .padding(Spacing.sm)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                         .strokeBorder(Color.secondary.opacity(0.3))
                 )
 
@@ -301,8 +301,8 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(20)
-        .frame(minWidth: 380)
+        .padding(Spacing.xl)
+        .frame(minWidth: Layout.sheetMinWidth)
         .interactiveDismissDisabled(isInjecting)
     }
 
@@ -336,21 +336,21 @@ struct DashboardView: View {
     // MARK: - 빈 상태 안내
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Spacing.md) {
             Image(systemName: status == .live ? "tray" : "bolt.horizontal.circle")
-                .font(.system(size: 40, weight: .light))
+                .font(Typography.emptyStateIcon)
                 .foregroundStyle(.secondary)
             Text(emptyStateTitle)
-                .font(.title3.weight(.semibold))
+                .font(Typography.emptyStateTitle)
             Text(emptyStateMessage)
-                .font(.callout)
+                .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 80)
-        .padding(.horizontal, 40)
+        .padding(.vertical, Spacing.xxl * 2)
+        .padding(.horizontal, Spacing.xxl)
     }
 
     private var emptyStateTitle: String {
