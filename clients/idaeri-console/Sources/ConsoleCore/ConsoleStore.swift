@@ -22,11 +22,14 @@ public final class ConsoleStore: ObservableObject {
     /// 처리한 SSE 이벤트를 방출한다(연출 트리거용). 스냅샷 적용은 방출하지 않는다.
     public let eventStream = PassthroughSubject<ConsoleEvent, Never>()
 
-    /// 사람이 눈으로 확인한 완료. agentType → 확인 당시의 `lastFinishedAt`.
+    /// 사람이 눈으로 확인한 완료. agentType → 확인 당시의 `lastFinishedRunId`.
     ///
     /// 서버는 최근 종료 창 안이면 계속 완료로 보내주므로, 확인한 뒤에도 스냅샷마다 초록이
-    /// 되살아난다. 확인한 종료 시각을 기억해 같은 값이면 대기로 내려두고, 새 런이 끝나
+    /// 되살아난다. 확인한 런 id 를 기억해 같은 런이면 대기로 내려두고, 새 런이 끝나
     /// 값이 바뀌면 다시 완료로 보이게 한다.
+    ///
+    /// 종료 시각이 아니라 런 id 를 키로 쓴다 — 시각은 DB 기록과 SSE 발행이 각각 생성해 같은
+    /// 런에서도 어긋나므로, 라이브로 확인한 완료가 다음 스냅샷에서 되살아난다.
     private var acknowledgedFinishes: [String: String] = [:]
 
     public init() {}
@@ -41,25 +44,25 @@ public final class ConsoleStore: ObservableObject {
     }
 
     /// 이 에이전트의 현재 완료를 "확인했다" 로 표시해 대기로 내린다.
-    /// 완료 상태가 아니거나 종료 시각을 모르면 아무것도 하지 않는다(확인할 대상이 없다).
+    /// 완료 상태가 아니거나 어떤 런의 완료인지 모르면 아무것도 하지 않는다(확인할 대상이 없다).
     public func acknowledgeCompletion(agentType: String) {
         guard
             let index = agents.firstIndex(where: { $0.agentType == agentType }),
             agents[index].state == .completed,
-            let finishedAt = agents[index].lastFinishedAt
+            let runId = agents[index].lastFinishedRunId
         else {
             return
         }
-        acknowledgedFinishes[agentType] = finishedAt
+        acknowledgedFinishes[agentType] = runId
         agents[index] = demoteIfAcknowledged(agents[index])
     }
 
-    /// 확인한 종료와 같은 완료면 대기로 내린다. 그 밖에는 서버 상태를 그대로 쓴다.
+    /// 확인한 런과 같은 완료면 대기로 내린다. 그 밖에는 서버 상태를 그대로 쓴다.
     private func demoteIfAcknowledged(_ agent: ConsoleAgent) -> ConsoleAgent {
         guard
             agent.state == .completed,
-            let finishedAt = agent.lastFinishedAt,
-            acknowledgedFinishes[agent.agentType] == finishedAt
+            let runId = agent.lastFinishedRunId,
+            acknowledgedFinishes[agent.agentType] == runId
         else {
             return agent
         }
@@ -70,7 +73,7 @@ public final class ConsoleStore: ObservableObject {
             description: agent.description,
             state: .waiting,
             bubble: waitingBubble,
-            lastFinishedAt: agent.lastFinishedAt
+            lastFinishedRunId: agent.lastFinishedRunId
         )
     }
 
@@ -82,7 +85,7 @@ public final class ConsoleStore: ObservableObject {
             bindPendingOnRunStarted(run)
         case let .runFinished(run):
             upsertRun(run)
-            recordFinishedAt(run)
+            recordFinishedRun(run)
             completePendingOnRunFinished(run)
         case let .approvalOpened(approval):
             upsertApproval(approval)
@@ -132,8 +135,8 @@ public final class ConsoleStore: ObservableObject {
     /// 미지의 agentType 이면 아무것도 하지 않는다.
     ///
     /// 이미 확인한 완료로 되돌아가는 것은 막는다. 백엔드는 `run.finished` 를 항상 `state.changed`
-    /// 바로 앞에 발행하므로, 이 시점의 `lastFinishedAt` 은 방금 끝난 런의 것이다 — 새 완료는
-    /// 확인 기록과 시각이 달라 그대로 통과한다.
+    /// 바로 앞에 발행하므로, 이 시점의 `lastFinishedRunId` 는 방금 끝난 런의 것이다 — 새 완료는
+    /// 확인 기록과 런 id 가 달라 그대로 통과한다.
     private func changeAgentState(agentType: String, state: ConsoleAgentState) {
         guard let index = agents.firstIndex(where: { $0.agentType == agentType }) else {
             return
@@ -147,16 +150,19 @@ public final class ConsoleStore: ObservableObject {
                 description: current.description,
                 state: state,
                 bubble: current.bubble,
-                lastFinishedAt: current.lastFinishedAt
+                lastFinishedRunId: current.lastFinishedRunId
             )
         )
     }
 
-    /// `run.finished` 의 종료 시각을 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고
+    /// `run.finished` 가 알려준 런 id 를 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고
     /// 확인 판정의 키를 최신으로 만들어, 새 완료가 이전 확인 때문에 가려지는 것을 막는다.
-    private func recordFinishedAt(_ run: ConsoleRun) {
+    ///
+    /// 이 id 는 스냅샷이 주는 `lastFinishedRunId` 와 같은 값이라(둘 다 AgentRun 레코드 id)
+    /// 라이브로 확인한 완료가 다음 스냅샷에서 "다른 완료" 로 오인되지 않는다.
+    private func recordFinishedRun(_ run: ConsoleRun) {
         guard
-            let finishedAt = run.finishedAt,
+            run.finishedAt != nil,
             let index = agents.firstIndex(where: { $0.agentType == run.agentType })
         else {
             return
@@ -169,7 +175,7 @@ public final class ConsoleStore: ObservableObject {
             description: current.description,
             state: current.state,
             bubble: current.bubble,
-            lastFinishedAt: finishedAt
+            lastFinishedRunId: run.id
         )
     }
 

@@ -56,7 +56,7 @@ describe('SecretariatAutopilotTask', () => {
         {
           agentType: 'CODE_REVIEWER',
           status: 'FAILED',
-          endedAt: new Date('2026-08-04T05:00:00.000Z'),
+          runId: 501,
         },
       ],
     });
@@ -94,7 +94,7 @@ describe('SecretariatAutopilotTask', () => {
         {
           agentType: 'CODE_REVIEWER',
           status: 'SUCCEEDED',
-          endedAt: new Date('2026-08-04T05:00:00.000Z'),
+          runId: 502,
         },
       ],
     });

@@ -169,7 +169,12 @@ export interface RecentlyFinishedRun {
   status: 'SUCCEEDED' | 'FAILED';
   // 이 종료를 식별하는 키. 콘솔이 "이 완료는 사람이 이미 확인했다" 를 기억할 때 쓴다
   // (같은 값이면 확인한 그 완료, 값이 바뀌면 새 완료라 다시 표시해야 한다).
-  endedAt: Date;
+  //
+  // 종료 시각이 아니라 런 id 인 이유: 종료 시각은 DB 기록(`finish` 의 endedAt)과 SSE 발행
+  // (`run.finished` 의 finishedAt)에서 각각 따로 생성돼 같은 런인데도 값이 어긋난다. 그러면
+  // 라이브로 확인한 완료가 다음 스냅샷에서 "다른 완료" 로 오인돼 되살아난다. 런 id 는 양쪽이
+  // 같은 값을 실어 보내는 유일한 불변 식별자다.
+  runId: number;
 }
 
 // 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.

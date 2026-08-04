@@ -95,7 +95,8 @@ export class ConsoleReadService {
         department: contract.department,
         departmentLabel: DEPARTMENT_LABEL[contract.department],
         job: contract.job,
-        lastFinishedAt: latestFinished?.endedAt.toISOString() ?? null,
+        lastFinishedRunId:
+          latestFinished === null ? null : String(latestFinished.runId),
       };
     });
 
