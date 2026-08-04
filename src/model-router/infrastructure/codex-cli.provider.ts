@@ -155,6 +155,22 @@ export const buildCodexArgs = ({
   '--sandbox',
   'read-only',
   '--ephemeral',
+  // 사용자 `~/.codex/config.toml` 의 MCP 서버·hook 을 자식 codex 에서 차단한다.
+  // buildSafeChildEnv 가 구독 인증을 살리려고 CODEX_HOME 을 실경로로 넘기는데, 그 대가로
+  // 설정 전체(MCP 서버·플러그인·hook)가 같이 따라온다. 그 중 github MCP 가 붙으면 codex 가
+  // 프롬프트에 이미 담긴 diff 를 원격에서 다시 긁어오며 도구 왕복을 반복해 타임아웃을 넘긴다
+  // (CODE_REVIEWER run 393: 300s × 2 attempt = 601s 실패, 동시에 docker 컨테이너 누수).
+  // 이대리 프롬프트는 필요한 정보를 전부 담아 보내므로 탐색 수단을 뺏어도 잃는 게 없다.
+  '-c',
+  'mcp_servers={}',
+  // 플러그인 20종의 스킬 설명도 프롬프트 앞에 붙어 호출마다 낭비된다
+  // (실측: "1+1은?" 한 줄에 26.7k → 차단 후 17.5k 토큰).
+  // 이대리는 자체 프롬프트로 지시하므로 codex 쪽 스킬을 쓸 일이 없다.
+  '-c',
+  'plugins={}',
+  // hook 13종(pre/post_tool_use 등)은 도구 호출마다 실행돼 왕복 비용을 더한다.
+  '--disable',
+  'hooks',
   '--color',
   'never',
   '-o',
