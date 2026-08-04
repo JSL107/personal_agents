@@ -48,23 +48,20 @@ public enum Department: String, CaseIterable, Sendable {
     }
 }
 
-/// agentType(백엔드 AgentType enum 문자열) → 부서 매핑.
-/// 미지 타입(향후 추가될 에이전트 포함)은 .internalOps 로 폴백해 크래시 없이 흡수한다.
-public func department(for agentType: String) -> Department {
-    switch agentType {
-    case "PM", "PO_SHADOW", "PO_EVAL":
-        return .planning
-    case "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX":
-        return .engineering
-    case "CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER":
-        return .review
-    case "CTO", "CEO":
-        return .executive
-    case "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION":
-        return .growth
-    default:
+/// 백엔드가 보낸 부서 문자열을 앱 enum 으로 옮긴다. **판정이 아니라 변환이다.**
+///
+/// 예전에는 이 자리에 agentType → 부서 매핑 표가 있었다. 백엔드 사규(`agent-contract.ts`)에
+/// 같은 표가 이미 있었으므로 정본이 둘이었고, 실제로 어긋나 있었다 — 백엔드가 리뷰로 배정한
+/// `REVIEW_REPLY_JUDGE` 가 앱 표에는 없어 폴백을 타고 내부방에 앉았다. 부서 편성은 사규의
+/// 소관이므로 앱은 그 값을 받아 쓴다.
+///
+/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 백엔드가 부서를 새로 추가해 앱이 모르는 값이
+/// 오는 경우인데, 크래시보다 한 방에 몰리는 편이 낫다 — 화면에서 바로 보이므로 조용히 틀리지 않는다.
+public func departmentFromRaw(_ raw: String?) -> Department {
+    guard let raw, let department = Department(rawValue: raw) else {
         return .internalOps
     }
+    return department
 }
 
 /// 부서 6종의 표시 색(0~1 RGB). 부서색은 토큰의 아이콘·채움 tint 로 쓰인다(상태색과 역할 분리).

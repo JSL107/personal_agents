@@ -53,6 +53,16 @@ public enum FloorTile: String, Sendable, CaseIterable {
     case carpetLight
     case carpetDark
     case ceramic
+    /// 방 밖의 통로 — 그리고 **격자의 기본값**. 방·밴드·벽이 덮지 않은 칸이 여기 남는다.
+    ///
+    /// 기본값은 예전에 `woodA` 였다. 통로 색을 정한 것이 아니라 "안 덮인 자리" 였고, 마침 그
+    /// 값이 리뷰 부서의 바닥재여서 칠하기가 빠진 칸이 생기면 리뷰방 바닥으로 위장했다.
+    ///
+    /// 지금 평면도는 모든 칸을 명시적으로 칠하므로 이 값이 화면에 나오지 않는다(회귀 테스트가
+    /// 0을 확인한다). 그래도 전용 종류로 두는 이유는 **누락 감지**다 — 나중에 구역 높이를
+    /// 줄이거나 방 사이를 벌려 덮이지 않은 칸이 생기면, 방과 확실히 다른 어두운 바닥으로
+    /// 나타나 화면에서 바로 보인다. 값이 우연이 아니라 결정이어야 하는 이유가 여기 있다.
+    case corridor
     case wall
 
     /// 바닥을 배경으로 물릴 때 어두운 색을 섞는 정도(0~1).
@@ -72,8 +82,24 @@ public enum FloorTile: String, Sendable, CaseIterable {
             return 0.56
         case .woodB:
             return 0.60
+        // 통로는 방보다 확실히 어둡다. 텍스처는 우드를 그대로 쓰고 밝기만 눌러
+        // 에셋 추가 없이 구분한다 — 방이 앞으로 나오고 통로가 배경으로 물러난다.
+        case .corridor:
+            return 0.78
         case .carpetDark, .wall:
             return 0.40
+        }
+    }
+
+    /// 부서 방의 바닥으로 쓸 수 있는 종류인가. 통로·벽은 방 바닥이 될 수 없다.
+    ///
+    /// 통로가 어느 부서 바닥재와도 겹치지 않는 것이 이 구분의 존재 이유다(회귀 테스트가 잡는다).
+    public var isRoomFloor: Bool {
+        switch self {
+        case .corridor, .wall:
+            return false
+        default:
+            return true
         }
     }
 }
@@ -409,7 +435,7 @@ private let zoneOrder: [Department] = [
 /// 남은 사람의 자리가 흔들리지 않게(스냅샷마다 자리가 바뀌면 화면이 요동친다).
 public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     var floor = Array(
-        repeating: Array(repeating: FloorTile.woodA, count: planColumns),
+        repeating: Array(repeating: FloorTile.corridor, count: planColumns),
         count: planRows
     )
     var furniture: [FurniturePlacement] = []
@@ -502,7 +528,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
 
     // === 부서 구역 ===
     let presentDepartments = zoneOrder.filter { candidate in
-        agents.contains { department(for: $0.agentType) == candidate }
+        agents.contains { $0.resolvedDepartment == candidate }
     }
     for (index, zoneDepartment) in presentDepartments.enumerated() {
         let column = index % 3
@@ -533,7 +559,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         )
 
         let members = agents
-            .filter { department(for: $0.agentType) == zoneDepartment }
+            .filter { $0.resolvedDepartment == zoneDepartment }
             .map(\.agentType)
             .sorted()
         for (seatIndex, agentType) in members.enumerated() {

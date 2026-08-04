@@ -50,7 +50,9 @@ final class CharacterNode: SKNode {
     private let shirtColor: (red: Double, green: Double, blue: Double)
     private let pantsColor: (red: Double, green: Double, blue: Double)
 
-    init(agentType: String, displayName: String, tile: TilePoint) {
+    /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
+    /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
+    init(agentType: String, displayName: String, department: Department, tile: TilePoint) {
         self.tile = tile
         // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
         nameText = agentRoleLabel(for: agentType) ?? displayName
@@ -59,7 +61,6 @@ final class CharacterNode: SKNode {
         hairColor = hairPalette[look.hairIndex]
         // 셔츠는 부서색을 흰색 쪽으로 끌어와 파스텔로 만든다. 원색을 그대로 입히면
         // 작업복이 아니라 코스튬처럼 보이고, 얼굴·머리보다 옷이 먼저 눈에 띈다.
-        let department = ConsoleCore.department(for: agentType)
         let palette = agentDepartmentPaletteRGBA(department)
         let blend = 0.42 + look.shirtShift
         shirtColor = (
