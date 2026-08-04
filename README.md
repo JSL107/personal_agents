@@ -110,7 +110,7 @@ pgvector 의미검색 + time-decay 점수화(`@huggingface/transformers`, Xenova
 
 **🎭 에이전트**
 
-전체 AgentType 은 내부 자동화까지 포함해 25종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
+전체 AgentType 은 내부 자동화까지 포함해 27종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · BE `/be plan` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · CTO `/assign` · PO_EVAL `/po-eval` · CEO `/ceo-review`
 - **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · `/be sre`(스택트레이스 분석) · BE-FIX(PR 컨벤션) — BE-FIX 는 webhook 자동
@@ -193,6 +193,29 @@ pnpm dev              # watch 모드 기동
 | 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
 
 > 스케줄/타임존 override 는 `AUTOPILOT_<ID>_SCHEDULE`/`_TIMEZONE`, 플레이북 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts).
+
+### macOS 콘솔 앱 ([clients/idaeri-console](clients/idaeri-console))
+
+Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 앱(Swift ~5.8k 줄, SwiftUI + SpriteKit).
+Xcode 프로젝트 없이 Swift Package 로 빌드한다.
+
+| 탭 | 내용 |
+|---|---|
+| 대시보드 | 에이전트 27종 상태 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
+| 오피스 | 부서 6개 방으로 나뉜 픽셀 사무실 — 상태는 발밑 링, 진행은 몸짓(타이핑·엎드림·줄서기)으로 |
+
+- **read** — `GET /v1/console/{snapshot,agents,runs,approvals}` + `GET /v1/console/stream`(SSE) 로 실시간 반영
+- **write** — `POST /v1/console/command`(지시) · `approvals/:id/{apply,cancel}`(승인·거절) · `sessions/:sessionId/inject`(유휴 CLI 세션에 작업 주입).
+  기존 dispatch·PreviewGate usecase 에 위임하므로 Slack 경로와 판정이 갈리지 않는다.
+  `CONSOLE_OWNER_SLACK_USER_ID` 미설정 시 write 는 503 으로 비활성.
+- 앱 안에 지능 로직을 두지 않는다 — 상태 판정은 전부 백엔드 소유이고 앱은 표시·조작만 한다.
+
+```bash
+cd clients/idaeri-console
+swift build
+IDAERI_CONSOLE_URL=http://127.0.0.1:3002 swift run IdaeriConsole
+swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러너
+```
 
 ---
 
