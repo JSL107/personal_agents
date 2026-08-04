@@ -27,3 +27,24 @@ public func agentTypeAt(
 public func approvalFor(agentType: String, in approvals: [ConsoleApproval]) -> ConsoleApproval? {
     approvals.first { $0.agentType == agentType }
 }
+
+/// 이름표를 진하게 보일지 판정한다(순수).
+///
+/// 27명 전원의 이름표가 늘 같은 세기로 켜져 있으면 방 하나에 검은 딱지가 4~8개씩 붙어,
+/// 먼저 읽혀야 할 상태 링을 덮는다. 기본은 옅게 두고 두 경우만 올린다 —
+/// **손이 필요한 대상**(승인 대기·실패)과 **지금 보고 있는 대상**(마우스·선택).
+public func nameplateIsEmphasized(
+    state: ConsoleAgentState,
+    isHovered: Bool,
+    isSelected: Bool
+) -> Bool {
+    if isHovered || isSelected {
+        return true
+    }
+    switch state {
+    case .awaitingApproval, .failed:
+        return true
+    case .completed, .inProgress, .waiting, .awaitingIntegration:
+        return false
+    }
+}
