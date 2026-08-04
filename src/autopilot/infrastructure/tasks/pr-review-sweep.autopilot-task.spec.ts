@@ -19,6 +19,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         resolved: 0,
         judged: 0,
         skipped: 0,
+        adoption: [],
       }),
     };
     sweepUsecase = { execute: jest.fn() };
@@ -74,6 +75,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         resolved: 0,
         judged: 0,
         skipped: 0,
+        adoption: [],
       };
     });
     sweepUsecase.execute.mockImplementation(async () => {
@@ -95,6 +97,15 @@ describe('PrReviewSweepAutopilotTask', () => {
       resolved: 3,
       judged: 0,
       skipped: 0,
+      adoption: [
+        {
+          category: 'TEST',
+          adopted: 16,
+          rejected: 1,
+          total: 17,
+          ratePercent: 94,
+        },
+      ],
     });
     sweepUsecase.execute.mockResolvedValue([]);
 
@@ -103,6 +114,8 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('👍 2');
     expect(result.summaryText).toContain('👎 1');
+    // 수확 결과와 함께 누적 채택률도 요약에 실린다.
+    expect(result.summaryText).toContain('TEST 94%(17)');
   });
 
   it('수확 실패는 경고만 남기고 리뷰 스윕을 계속한다', async () => {
@@ -139,6 +152,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       resolved: 0,
       judged: 2,
       skipped: 1,
+      adoption: [],
     });
     sweepUsecase.execute.mockResolvedValue([]);
 

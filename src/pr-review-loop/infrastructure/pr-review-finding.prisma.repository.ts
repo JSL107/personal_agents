@@ -6,6 +6,7 @@ import {
   FindingSeverity,
 } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CategoryStatusCount } from '../domain/adoption-rate';
 import {
   HasAnyForPullRequestInput,
   MarkDecidedInput,
@@ -143,6 +144,21 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       where: { id },
       data: { resolvedAt: new Date() },
     });
+  }
+
+  // ponytail: 기간 제한 없이 전체 누적. 카테고리×상태 조합이라 행 수가 작아(현재 4×5 미만)
+  // 비용이 무시할 수준이고, 원장의 계측 쿼리와 같은 범위라 대조가 쉽다. 카드가 수천 건
+  // 쌓여 옛 데이터가 현재 품질을 가리기 시작하면 createdAt 하한을 넣는다.
+  async countAdoptionByCategory(): Promise<CategoryStatusCount[]> {
+    const rows = await this.prisma.prReviewFinding.groupBy({
+      by: ['category', 'status'],
+      _count: { _all: true },
+    });
+    return rows.map(({ category, status, _count }) => ({
+      category,
+      status,
+      count: _count._all,
+    }));
   }
 
   private isDuplicateFingerprint(error: unknown): boolean {

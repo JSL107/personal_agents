@@ -19,8 +19,27 @@ const harvest = (overrides = {}) => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  adoption: [],
   ...overrides,
 });
+
+const adoption = (
+  category: string,
+  total: number,
+  ratePercent: number | null,
+) => {
+  // adopted + rejected === total 을 지킨다. 깨진 조합으로 검증하면 실제로는 나올 수 없는
+  // 입력을 통과시키게 된다.
+  const adopted =
+    ratePercent === null ? total : Math.round((total * ratePercent) / 100);
+  return {
+    category,
+    adopted,
+    rejected: total - adopted,
+    total,
+    ratePercent,
+  };
+};
 
 describe('formatPrReviewSweep', () => {
   it('PR 별 게시 결과를 한 줄씩 렌더한다', () => {
@@ -148,6 +167,50 @@ describe('formatPrReviewSweep', () => {
     expect(
       formatPrReviewSweep({
         harvest: harvest({ judged: 2, skipped: 1 }),
+        results: [],
+      }),
+    ).toBe('');
+  });
+
+  it('누적 채택률을 카테고리별로 한 줄에 렌더한다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('CORRECTNESS', 17, 94), adoption('TEST', 15, 100)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('CORRECTNESS 94%(17)');
+    expect(text).toContain('TEST 100%(15)');
+  });
+
+  it('표본이 미달인 카테고리는 비율 대신 표본 수를 보여준다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('RELIABILITY', 7, null)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('RELIABILITY 표본 7');
+    expect(text).not.toContain('%');
+  });
+
+  it('집계가 비면 채택률 줄을 생략한다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({ acked: 1 }),
+      results: [],
+    });
+
+    expect(text).not.toContain('채택률');
+  });
+
+  it('채택률만 있고 수확·게시가 없으면 보낼 것이 없다', () => {
+    expect(
+      formatPrReviewSweep({
+        harvest: harvest({ adoption: [adoption('TEST', 15, 100)] }),
         results: [],
       }),
     ).toBe('');
