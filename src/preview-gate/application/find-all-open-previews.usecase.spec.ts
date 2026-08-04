@@ -6,6 +6,7 @@ describe('FindAllOpenPreviewsUsecase', () => {
     const rows = [{ id: 'p-1' }];
     const repository = {
       findAllOpen: jest.fn().mockResolvedValue(rows),
+      countByPayloadValue: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<PreviewActionRepositoryPort>;
     const usecase = new FindAllOpenPreviewsUsecase(repository);
     const now = new Date('2026-07-27T00:00:00Z');
@@ -19,6 +20,7 @@ describe('FindAllOpenPreviewsUsecase', () => {
   it('now 미지정 시 현재 시각(Date)으로 조회한다', async () => {
     const repository = {
       findAllOpen: jest.fn().mockResolvedValue([]),
+      countByPayloadValue: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<PreviewActionRepositoryPort>;
     const usecase = new FindAllOpenPreviewsUsecase(repository);
 

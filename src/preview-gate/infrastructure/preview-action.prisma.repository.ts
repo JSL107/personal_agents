@@ -145,6 +145,23 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return [...outcomesByKind.values()];
   }
 
+  async countByPayloadValue({
+    kind,
+    payloadPath,
+    payloadValue,
+  }: {
+    kind: string;
+    payloadPath: string[];
+    payloadValue: string;
+  }): Promise<number> {
+    return this.prisma.previewAction.count({
+      where: {
+        kind,
+        payload: { path: payloadPath, equals: payloadValue },
+      },
+    });
+  }
+
   async attachSlackMessage(input: {
     id: string;
     slackChannelId: string;

@@ -57,10 +57,30 @@ describe('GithubEventBridge', () => {
 
     expect(dispatch.offerToIdleSession).toHaveBeenCalledWith(
       expect.objectContaining({
-        prRef: 'me/repo@a1b2c3d',
+        prRef: 'me/repo@a1b2c3d#verify',
         instruction: expect.stringContaining('verify'),
       }),
     );
+  });
+
+  it('같은 커밋이라도 체크가 다르면 다른 ref 로 제안한다', async () => {
+    const { bridge, dispatch } = make([makeSession()]);
+    const base = {
+      repo: 'me/repo',
+      headSha: 'a1b2c3d4e5',
+      htmlUrl: 'https://x',
+    };
+
+    await bridge.onCiFailure({ ...base, checkName: 'verify' });
+    await bridge.onCiFailure({ ...base, checkName: 'gitguardian' });
+
+    const refs = dispatch.offerToIdleSession.mock.calls.map(
+      (call) => (call[0] as { prRef: string }).prRef,
+    );
+    expect(refs).toEqual([
+      'me/repo@a1b2c3d#verify',
+      'me/repo@a1b2c3d#gitguardian',
+    ]);
   });
 
   it('비활성이면 세션을 조회하지도, 제안하지도 않는다', async () => {

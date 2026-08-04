@@ -37,6 +37,13 @@ export interface PreviewActionRepositoryPort {
     sinceDays: number;
     now: Date;
   }): Promise<PreviewOutcomeRow[]>;
+  // 같은 작업(payload 특정 키)에 이미 카드를 낸 적이 있는지 — status 무관.
+  // 어떤 결말이든 이미 물어본 사실은 같으므로 무응답 만료 후 같은 제안을 반복하지 않는다.
+  countByPayloadValue(input: {
+    kind: string;
+    payloadPath: string[];
+    payloadValue: string;
+  }): Promise<number>;
   // A 경로 카드 발송 후 좌표 저장. 이후 apply/cancel/만료 시 chat.update 로 이 메시지를 갱신한다.
   attachSlackMessage(input: {
     id: string;
