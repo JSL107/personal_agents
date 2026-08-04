@@ -12,6 +12,7 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { SweepPullRequestResult } from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
 
@@ -43,6 +44,11 @@ const SWEEP_RETRY_COOLDOWN_MINUTES = 10;
 // PR 이 아직 열려 있는 앞쪽에 시도를 모은다.
 const SWEEP_RETRY_BUDGET_WINDOW_HOURS = 24;
 const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
+// GitHub 이 unified diff 를 내주는 상한. 넘으면 `pulls.get(mediaType: diff)` 가 406
+// (`code: too_large`) 로 거절한다. 재시도해도 PR 이 작아지지 않는 한 결과가 같으므로,
+// 실패 원인을 PR 상세의 additions+deletions 로 판별해 로그에 명시한다 — "diff 조회 실패"
+// 만으로는 일시적 장애인지 구조적 한계인지 구분되지 않아 진단이 매번 처음부터 시작된다.
+const GITHUB_DIFF_MAX_LINES = 20_000;
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -230,14 +236,38 @@ export class SweepPrReviewsUsecase {
   }): Promise<SweepPullRequestResult | null> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
+    // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 그 지점을 넘은
+    // 뒤의 실패까지 여기서 또 기록하면 한 번의 실패가 원장에 2건으로 남아 재시도 예산이 두 배
+    // 속도로 닳는다. 원장에 기록될 주체가 아직 없는 구간(조회 단계)만 이 usecase 가 책임진다.
+    let reviewUsecaseEntered = false;
     try {
-      const [detail, diff] = await Promise.all([
+      // 상세와 diff 는 병렬로 조회한다. 두 요청은 어차피 원자적이지 않아 그 사이 push 가
+      // 들어오면 "옛 headSha + 새 diff" 스냅샷이 만들어지는데, 순차로 바꾸면 그 창이
+      // 첫 요청의 왕복 시간만큼 넓어진다 — 창을 없앨 수는 없으므로 넓히지 않는 쪽을 택한다
+      // (완전 해소는 headSha 에 고정된 diff 를 받는 별도 설계, 2026-08-04 리뷰 지적).
+      // diff 는 실패할 수 있어 allSettled 로 받고, 원인은 상세의 변경량으로 판별한다.
+      const [detailResult, diffResult] = await Promise.allSettled([
         this.githubClient.getPullRequest({ repo, number: pullNumber }),
         this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
       ]);
+      if (detailResult.status === 'rejected') {
+        throw detailResult.reason;
+      }
+      const detail = detailResult.value;
+      if (diffResult.status === 'rejected') {
+        const changedLines = detail.additions + detail.deletions;
+        if (changedLines > GITHUB_DIFF_MAX_LINES) {
+          throw new Error(
+            `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
+          );
+        }
+        throw diffResult.reason;
+      }
+      const diff = diffResult.value;
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
       // 앵커가 어긋난다(2026-07-31 리뷰 지적).
+      reviewUsecaseEntered = true;
       const outcome = await this.reviewPullRequestUsecase.execute({
         prRef,
         slackUserId,
@@ -268,7 +298,58 @@ export class SweepPrReviewsUsecase {
       this.logger.error(
         `PR 리뷰 스윕 실패 (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (!reviewUsecaseEntered) {
+        await this.recordFailedSweepRun({
+          prRef,
+          repo,
+          pullNumber,
+          dryRun,
+          error,
+        });
+      }
       return null;
+    }
+  }
+
+  // 리뷰 usecase 에 닿기 전(GitHub 조회 단계)에 실패하면 AgentRun 이 아예 생기지 않는다.
+  // 그러면 다음 스윕의 decideSweepAction 이 "한 번도 시도한 적 없는 PR" 로 판정해, 쿨다운과
+  // 재시도 예산이 근거로 삼을 기록이 없어 `*/5` 스윕이 같은 실패를 영구 반복한다
+  // (실측: diff 한도를 넘는 PR 하나가 하루 288회). 실패도 원장에 남겨 두 장치를 되살린다.
+  //
+  // 판정 질의가 inputSnapshot 의 `prRef` 로 조회하므로 리뷰 usecase 가 남기는 스냅샷과
+  // 같은 키를 채워야 한다 — 키가 어긋나면 기록은 쌓이는데 판정은 여전히 못 찾는다.
+  private async recordFailedSweepRun({
+    prRef,
+    repo,
+    pullNumber,
+    dryRun,
+    error,
+  }: {
+    prRef: string;
+    repo: string;
+    pullNumber: number;
+    dryRun: boolean;
+    error: unknown;
+  }): Promise<void> {
+    try {
+      await this.agentRunService.execute({
+        agentType: AgentType.CODE_REVIEWER,
+        triggerType: TriggerType.PR_REVIEW_SWEEP,
+        inputSnapshot: { prRef, repo, pullNumber, dryRun },
+        run: () => Promise.reject(error),
+      });
+    } catch (recordError: unknown) {
+      // execute 는 FAILED 로 마감한 뒤 원인 오류를 그대로 다시 throw 한다. 기록이 목적이므로
+      // 여기서 멈추되, 기록 자체가 실패(DB 장애 등)한 경우는 조용히 넘기지 않고 남긴다.
+      if (recordError !== error) {
+        this.logger.warn(
+          `스윕 실패 기록 실패 (${prRef}): ${
+            recordError instanceof Error
+              ? recordError.message
+              : String(recordError)
+          }`,
+        );
+      }
     }
   }
 
