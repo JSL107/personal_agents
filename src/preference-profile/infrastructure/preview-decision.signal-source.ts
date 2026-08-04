@@ -7,6 +7,12 @@ import { PreferenceSignal } from '../domain/preference-signal.type';
 
 const TEXT_CAP = 200;
 const ROW_CAP = 50;
+// 조회 상한 — 결정 시각 정렬을 DB 에서 할 수 없어(appliedAt/cancelledAt 두 컬럼 분리 +
+// COALESCE raw SQL 금지) 창 안의 결정을 넉넉히 받아 코드에서 정렬한 뒤 ROW_CAP 으로 자른다.
+// ROW_CAP 을 조회에 걸면 "생성은 오래됐지만 최근에 결정된" 카드가 정렬 전에 잘려나간다.
+// 7일 창 + owner 단일이라 실측 규모는 결정 22건 / 전체 카드 108건(2026-08-04) — 500 은 여유.
+// 이 상한을 넘는 주가 생기면 그때는 결정 시각 인덱스를 별도로 두는 편이 낫다.
+const FETCH_LIMIT = 500;
 
 const EXCLUDED_KINDS = [
   // ProposalDecisionSignalSource 가 이미 읽는다 — 이중 계상 방지.
@@ -63,13 +69,13 @@ export class PreviewDecisionSignalSource implements PreferenceSignalSource {
         ],
       },
       orderBy: { createdAt: 'desc' },
-      take: ROW_CAP,
+      take: FETCH_LIMIT,
     });
-    // 결정 시각 desc 로 재정렬 — appliedAt/cancelledAt 이 두 컬럼으로 나뉘어 있어 단일
-    // orderBy 로 표현되지 않는다. 조회는 createdAt 순(결정 순서의 근사)으로 cap 을 걸고,
-    // 정렬만 여기서 바로잡는다.
+    // 결정 시각 desc 로 정렬한 뒤 자른다 — 순서를 뒤집으면(조회에 ROW_CAP) 생성이 오래된
+    // 최신 결정이 정렬 전에 탈락해 "결정 시각 기준 수집" 이 깨진다.
     return rows
       .sort((a, b) => decidedAtMs(b) - decidedAtMs(a))
+      .slice(0, ROW_CAP)
       .map((row) => ({
         source: 'preview_decision' as const,
         evidenceRef: `previewAction:${row.id}`,

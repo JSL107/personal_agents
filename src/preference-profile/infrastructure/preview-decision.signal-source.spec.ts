@@ -99,6 +99,34 @@ describe('PreviewDecisionSignalSource', () => {
     ]);
   });
 
+  it('ROW_CAP 을 결정 시각 정렬 뒤에 적용한다 (생성 기준 사전 절단 금지)', async () => {
+    // 생성이 최신이지만 결정이 오래된 카드 50건 + 생성이 가장 오래됐지만 결정이 가장 최신인 1건.
+    // cap 을 정렬 전에 걸면 마지막 1건이 탈락해 최신 사용자 결정이 유실된다.
+    const { prisma, findMany } = buildPrisma([
+      ...Array.from({ length: 50 }, (unused, index) =>
+        makeRow({
+          id: `new-created-old-decided-${index}`,
+          createdAt: new Date('2026-08-03T00:00:00Z'),
+          appliedAt: new Date('2026-08-03T00:00:00Z'),
+        }),
+      ),
+      makeRow({
+        id: 'oldest-created-newest-decided',
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+        appliedAt: new Date('2026-08-04T00:00:00Z'),
+      }),
+    ]);
+    const source = new PreviewDecisionSignalSource(prisma);
+    const signals = await source.fetch('U1', 0);
+
+    // 조회 단계는 ROW_CAP(50) 이 아니라 넉넉한 상한이어야 한다.
+    expect(findMany.mock.calls[0][0].take).toBe(500);
+    expect(signals).toHaveLength(50);
+    expect(signals[0].evidenceRef).toBe(
+      'previewAction:oldest-created-newest-decided',
+    );
+  });
+
   it('결정 시각이 비어 있으면 createdAt 으로 방어한다', async () => {
     const { prisma } = buildPrisma([
       makeRow({ id: 'no-decided-at', appliedAt: null, cancelledAt: null }),
