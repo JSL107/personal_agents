@@ -14,6 +14,9 @@ describe('ConsoleReadService', () => {
   >;
   let localSessions: jest.Mocked<Pick<LocalSessionService, 'list'>>;
   let service: ConsoleReadService;
+  // 최근 종료 창(60분) 안에 끝난 런의 id. 콘솔이 "이 완료는 확인했다" 를 식별하는 키로
+  // 실려 나간다. 종료 시각이 아닌 이유 — DB 기록과 SSE 발행이 시각을 각각 생성해 어긋난다.
+  const finishedRunId = 77;
 
   beforeEach(() => {
     agentRunService = {
@@ -71,7 +74,7 @@ describe('ConsoleReadService', () => {
 
   it('최근 실패한 에이전트는 FAILED 로 복원된다', async () => {
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
-      { agentType: 'PM', status: 'FAILED' },
+      { agentType: 'PM', status: 'FAILED', runId: finishedRunId },
     ]);
 
     const snapshot = await service.getSnapshot();
@@ -80,29 +83,41 @@ describe('ConsoleReadService', () => {
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('FAILED');
     expect(agentRunService.findRecentlyFinishedRuns).toHaveBeenCalledWith({
-      withinMinutes: 360,
+      withinMinutes: 60,
     });
   });
 
   // 이 경로가 예전에는 COMPLETED 를 한 번도 만들지 못했다(조회가 실패만 줘서
   // latestFinishedStatus 에 'SUCCEEDED' 를 넘길 방법이 없었다). 그래서 SSE 로 완료를 받은
   // 뒤 앱을 껐다 켜면 그 에이전트가 "대기중" 으로 되살아났고 요약의 완료 수는 늘 0 이었다.
-  it('최근 완료한 에이전트는 COMPLETED 로 복원된다', async () => {
+  it('최근 완료한 에이전트는 COMPLETED 로 복원되고, 런 id 를 함께 실어 보낸다', async () => {
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
-      { agentType: 'PM', status: 'SUCCEEDED' },
+      { agentType: 'PM', status: 'SUCCEEDED', runId: finishedRunId },
     ]);
 
     const snapshot = await service.getSnapshot();
 
+    const pm = snapshot.agents.find((agent) => agent.agentType === 'PM');
+    expect(pm?.state).toBe('COMPLETED');
+    // 앱이 확인 여부를 판정하려면 "어떤 완료인지" 를 알아야 한다 — 활성 런 목록에는
+    // 종료된 런이 없으므로 이 필드가 유일한 식별 수단이다. SSE 의 run.finished 가 싣는
+    // run id 와 같은 값이라, 라이브로 확인한 완료가 스냅샷에서 되살아나지 않는다.
+    expect(pm?.lastFinishedRunId).toBe(String(finishedRunId));
+  });
+
+  it('창 안에 종료 기록이 없으면 lastFinishedRunId 는 null 이다', async () => {
+    const snapshot = await service.getSnapshot();
+
     expect(
-      snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
-    ).toBe('COMPLETED');
+      snapshot.agents.find((agent) => agent.agentType === 'PM')
+        ?.lastFinishedRunId,
+    ).toBeNull();
   });
 
   it('같은 창 안에서 성공·실패가 섞여도 각자 자기 결과로 복원된다', async () => {
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
-      { agentType: 'PM', status: 'SUCCEEDED' },
-      { agentType: 'BE', status: 'FAILED' },
+      { agentType: 'PM', status: 'SUCCEEDED', runId: finishedRunId },
+      { agentType: 'BE', status: 'FAILED', runId: finishedRunId },
     ]);
 
     const snapshot = await service.getSnapshot();
@@ -132,7 +147,7 @@ describe('ConsoleReadService', () => {
       },
     ]);
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
-      { agentType: 'PM', status: 'FAILED' },
+      { agentType: 'PM', status: 'FAILED', runId: finishedRunId },
     ]);
 
     const snapshot = await service.getSnapshot();

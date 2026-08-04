@@ -29,6 +29,10 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public let state: ConsoleAgentState
     /// 상태별 말풍선 문구(백엔드가 소유, 앱은 표시만).
     public let bubble: String
+    /// 최근 종료 창 안에 끝난 런의 id. 창 밖이거나 기록이 없으면 nil.
+    /// "이 완료는 이미 확인했다" 를 기억하는 키로 쓴다(`ConsoleStore.acknowledgeCompletion`).
+    /// 종료 시각이 아니라 런 id 인 이유 — 시각은 DB 기록과 SSE 발행이 각각 만들어 어긋난다.
+    public let lastFinishedRunId: String?
 
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
@@ -43,7 +47,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         slashCommands: [String],
         description: String,
         state: ConsoleAgentState,
-        bubble: String
+        bubble: String,
+        lastFinishedRunId: String? = nil
     ) {
         self.agentType = agentType
         self.displayName = displayName
@@ -51,6 +56,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         self.description = description
         self.state = state
         self.bubble = bubble
+        self.lastFinishedRunId = lastFinishedRunId
     }
 }
 
