@@ -2,6 +2,18 @@ import ConsoleCore
 import SpriteKit
 import SwiftUI
 
+/// 오피스 씬의 모든 한글 라벨(이름표·부서 문패·말풍선·대표 표시)이 쓰는 폰트.
+///
+/// 예전에는 `Menlo` 를 썼는데 이 폰트에 한글 글리프가 없다. 시스템이 대체 폰트로 넘어가고
+/// 그 결과가 힌팅 없이 텍스처로 구워져, 9~10px 한글은 획 사이가 1픽셀도 안 나와 서로 붙었다.
+/// 굵은 고딕이라 작은 크기에서 획이 버틴다. 폰트 이름을 씬·노드에 흩뿌리면 픽셀 한글 폰트
+/// 에셋이 들어올 때 교체가 누락되므로 여기 한 곳에 둔다.
+let officeLabelFontName = "AppleSDGothicNeo-Bold"
+
+/// 한글이 뭉개지지 않는 최소 크기. 라틴 문자보다 획이 많아 하한이 높다.
+let officeNameplateMinFontSize: CGFloat = 11
+let officeZoneLabelMinFontSize: CGFloat = 13
+
 /// 상태 6종의 표시 속성(색·한글 라벨). 색 값은 ConsoleCore 의 팔레트(agentStatePaletteRGBA)를
 /// 단일 소스로 참조한다 — SwiftUI Color(대시보드)와 SKColor(오피스 씬)가 같은 색을 쓴다.
 /// 백엔드가 소유하는 말풍선(bubble)과 달리, 색·라벨은 앱 표현 계층의 소유다.

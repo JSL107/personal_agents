@@ -10,9 +10,12 @@ import SpriteKit
 /// 화면에서 일어나는 모든 움직임은 실제 상태의 번역이다. 장식용 배회는 넣지 않는다 —
 /// 관제 화면에서 의미 없는 움직임은 "지금 뭐가 돌고 있나" 를 읽는 것을 방해한다.
 final class OfficeScene: SKScene {
-    // 원본 타일 스프라이트의 기준 폭. 화면 타일 크기를 이 값으로 나눈 비율을 모든
-    // 스프라이트에 똑같이 적용해야 캐릭터·가구·바닥의 도트 크기가 서로 맞는다.
+    // 원본 타일 스프라이트의 기준 폭. 화면 타일 크기를 이 값으로 나눈 비율이 도트 크기의 기준이다.
     private let referenceTileSize: CGFloat = 40
+
+    // 캐릭터·가구 배율 계수는 `ConsoleCore`(순수)가 단일 소스로 갖는다 — 씬에 숫자를 박으면
+    // 테스트가 닿지 않는다.
+    private let characterScaleFactor = CGFloat(officeCharacterScaleFactor)
 
     private let floorLayer = SKNode()
     private let objectLayer = SKNode()
@@ -22,6 +25,14 @@ final class OfficeScene: SKScene {
     private var tileSize: CGFloat = 32
     private var gridOrigin: CGPoint = .zero
     private var spriteScale: CGFloat = 1
+    /// 캐릭터 전용 배율(= spriteScale × characterScaleFactor).
+    private var characterScale: CGFloat = 1
+
+    /// 머리 위 표시(말풍선·경과·생각 점)를 이름표보다 더 위에 띄우기 위한 여유 높이.
+    /// 이름표가 발밑에서 머리 위로 올라왔으므로, 이 값이 작으면 둘이 겹쳐 둘 다 못 읽는다.
+    private var nameplateClearance: CGFloat {
+        max(officeNameplateMinFontSize, tileSize * 0.30) + tileSize * 0.06 + 6
+    }
 
     private var characters: [String: CharacterNode] = [:]
     private var deskNodes: [String: SKSpriteNode] = [:]
@@ -101,6 +112,7 @@ final class OfficeScene: SKScene {
         }
         tileSize = min(size.width / CGFloat(plan.columns), size.height / CGFloat(plan.rows))
         spriteScale = tileSize / referenceTileSize
+        characterScale = spriteScale * characterScaleFactor
         let usedWidth = tileSize * CGFloat(plan.columns)
         let usedHeight = tileSize * CGFloat(plan.rows)
         gridOrigin = CGPoint(
@@ -165,7 +177,7 @@ final class OfficeScene: SKScene {
                 place(node, at: seat)
                 node.sit()
             }
-            node.resize(tileSize: tileSize, spriteScale: spriteScale)
+            node.resize(tileSize: tileSize, spriteScale: characterScale)
             node.apply(state: agent.state)
 
             // 줄 서 있거나 걷는 중인 사람은 건드리지 않고, 나머지는 자기 자리에 둔다.
@@ -193,7 +205,7 @@ final class OfficeScene: SKScene {
         let node = CharacterNode(
             agentType: agent.agentType, displayName: agent.displayName, tile: seat
         )
-        node.resize(tileSize: tileSize, spriteScale: spriteScale)
+        node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)
         return node
     }
@@ -212,26 +224,69 @@ final class OfficeScene: SKScene {
         for row in 0..<plan.rows {
             for column in 0..<plan.columns {
                 let tile = TilePoint(x: column, y: row)
-                guard let texture = SpriteLoader.floorTexture(plan.floor[row][column]) else {
+                let kind = plan.floor[row][column]
+                guard let texture = SpriteLoader.floorTexture(kind) else {
                     continue
                 }
                 let node = SKSpriteNode(texture: texture)
                 node.size = CGSize(width: tileSize, height: tileSize)
                 node.position = centerPoint(tile)
-                // 벽 원본은 밝은 회색이다. 칸막이로 깔면 흰 격자가 바닥보다 앞으로 튀어나와
-                // 사무실이 아니라 도면처럼 보이므로, 어둡게 눌러 배경으로 물러나게 한다.
-                if plan.floor[row][column] == .wall {
-                    node.color = SKColor(red: 0.26, green: 0.22, blue: 0.20, alpha: 1)
-                    node.colorBlendFactor = 0.66
+                if kind == .wall {
+                    applyWallShading(node, column: column, row: row)
+                } else {
+                    // 바닥은 배경으로 물러나야 한다. 어두운 회색을 섞어 대비·채도를 함께 누른다
+                    // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
+                    node.color = floorMuteColor
+                    node.colorBlendFactor = CGFloat(kind.muteStrength)
+                    // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
+                    // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
+                    // 뒤집어 깔면 그 불일치가 원리적으로 사라진다.
+                    node.xScale = column % 2 == 0 ? 1 : -1
+                    node.yScale = row % 2 == 0 ? 1 : -1
                 }
-                // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
-                // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
-                // 뒤집어 깔면 그 불일치가 원리적으로 사라진다.
-                node.xScale = column % 2 == 0 ? 1 : -1
-                node.yScale = row % 2 == 0 ? 1 : -1
                 floorLayer.addChild(node)
             }
         }
+    }
+
+    /// 바닥 노이즈를 누를 때 섞는 색(배경보다 살짝 밝은 중성 회색).
+    private let floorMuteColor = SKColor(red: 0.17, green: 0.16, blue: 0.18, alpha: 1)
+    /// 눌러 놓은 벽의 기본색. 벽 원본이 밝은 크림이라 그대로 깔면 도면처럼 보인다.
+    private let wallBaseColor = (red: 0.26, green: 0.22, blue: 0.20)
+
+    /// 벽 한 칸의 색·명암을 정한다.
+    ///
+    /// 세 가지를 함께 처리한다.
+    ///  - **뒤집지 않는다.** 뒤집기는 바닥 이음선 대책인데, 벽 원본은 아래쪽에 어두운 걸레받이
+    ///    띠가 있어서 한 칸 걸러 뒤집으면 그 띠가 위아래로 오가며 가로 줄무늬가 된다.
+    ///  - **세그먼트 맨 위 칸만 밝게.** 위가 벽이 아닌 칸이 벽면의 윗면이다. 여기만 덜 누르면
+    ///    평평한 사각형에 "위가 밝고 아래가 어두운" 최소한의 높이감이 생긴다.
+    ///  - **부서색을 아주 옅게.** 방마다 벽 색조가 미세하게 달라 문패 없이도 구별된다.
+    private func applyWallShading(_ node: SKSpriteNode, column: Int, row: Int) {
+        // 벽면의 "윗면" = 위쪽이 벽이 아니면서 아래쪽으로는 벽이 이어지는 칸. 두 조건을 함께
+        // 봐야 한다 — 위쪽만 보면 아래 구역 천장처럼 한 칸짜리 가로 벽이 전 구간 밝아져,
+        // 방과 방 사이에 밝은 띠가 가로로 길게 눕는다.
+        let openAbove = row + 1 >= plan.rows || plan.floor[row + 1][column] != .wall
+        let wallBelow = row > 0 && plan.floor[row - 1][column] == .wall
+        let isTopOfWall = openAbove && wallBelow
+        var color = wallBaseColor
+        if let department = wallDepartment(x: column, y: row, zones: plan.zones) {
+            let tint = agentDepartmentPaletteRGBA(department)
+            let mix = 0.34
+            // 부서색을 그대로 섞으면 골드·코랄처럼 밝은 색을 쓰는 방의 벽이 통째로 밝아져,
+            // 방 사이가 다시 눈에 띄는 띠가 된다. 밝기는 벽 기본색에 맡기고 색조만 가져온다.
+            let dim = 0.5
+            color = (
+                red: color.red * (1 - mix) + tint.red * dim * mix,
+                green: color.green * (1 - mix) + tint.green * dim * mix,
+                blue: color.blue * (1 - mix) + tint.blue * dim * mix
+            )
+        }
+        node.color = SKColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
+        // 벽 원본이 밝은 크림이라 덜 누르면 눌러 놓은 색이 원본에 씻긴다.
+        node.colorBlendFactor = isTopOfWall ? 0.60 : 0.84
+        node.xScale = 1
+        node.yScale = 1
     }
 
     /// 부서 이름을 구역 왼쪽 위에 얹는다. 바닥 재질만으로는 어느 팀 구역인지 알 수 없다.
@@ -247,13 +302,16 @@ final class OfficeScene: SKScene {
             holder.name = "zone:\(zone.department.rawValue)"
             holder.position = CGPoint(
                 x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
+                // 구역 위쪽 경계 줄 위로 확실히 띄운다. 이름표가 발밑에서 머리 위로 올라오면서
+                // 첫 좌석 행의 이름표가 문패와 같은 높이대로 올라왔다 — 0.22 로는 겹친다.
+                // 문패는 overlayLayer(z=1000) 라 겹치더라도 캐릭터 라벨보다 앞에 그려진다.
                 y: gridOrigin.y + CGFloat(zone.origin.y + zone.height - 1) * tileSize
-                    + tileSize * 0.22
+                    + tileSize * 0.52
             )
 
             let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
-            label.fontName = "Menlo-Bold"
-            label.fontSize = max(10, tileSize * 0.36)
+            label.fontName = officeLabelFontName
+            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.38)
             label.fontColor = SKColor(
                 red: palette.red, green: palette.green, blue: palette.blue, alpha: 1
             )
@@ -297,9 +355,10 @@ final class OfficeScene: SKScene {
             }
             node.anchorPoint = CGPoint(x: 0.5, y: 0)
             let base = texture.size()
-            node.size = CGSize(
-                width: base.width * spriteScale, height: base.height * spriteScale
-            )
+            // 큰 가구만 sizeBoost 로 키운다 — 캐릭터를 한 칸으로 줄인 만큼 책상·소파가
+            // 상대적으로 작아 보이는 것을 되돌린다(배율의 근거는 FurnitureKind.sizeBoost).
+            let scale = spriteScale * CGFloat(placement.kind.sizeBoost)
+            node.size = CGSize(width: base.width * scale, height: base.height * scale)
             node.position = floorPoint(placement.tile)
             node.zPosition = depth(of: placement.tile)
             objectLayer.addChild(node)
@@ -315,7 +374,10 @@ final class OfficeScene: SKScene {
         let node = SKSpriteNode(texture: texture)
         node.anchorPoint = CGPoint(x: 0.5, y: 0)
         let base = texture.size()
-        node.size = CGSize(width: base.width * spriteScale, height: base.height * spriteScale)
+        // 대표도 사람이므로 캐릭터 배율을 따른다 — 여기만 빠지면 대표만 거인이 된다.
+        node.size = CGSize(
+            width: base.width * characterScale, height: base.height * characterScale
+        )
         node.position = floorPoint(plan.presidentTile)
         node.zPosition = depth(of: plan.presidentTile)
         node.color = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 1)
@@ -324,7 +386,8 @@ final class OfficeScene: SKScene {
         president = node
 
         let crown = SKLabelNode(text: "👑 나 (대표)")
-        crown.fontSize = max(8, tileSize * 0.26)
+        crown.fontName = officeLabelFontName
+        crown.fontSize = max(officeNameplateMinFontSize, tileSize * 0.30)
         crown.fontColor = SKColor(white: 0.95, alpha: 1)
         crown.verticalAlignmentMode = .bottom
         crown.position = CGPoint(x: 0, y: node.size.height + 2)
@@ -561,10 +624,11 @@ final class OfficeScene: SKScene {
         node.childNode(withName: "bubble")?.removeFromParent()
         let label = SKLabelNode(text: text)
         label.name = "bubble"
-        label.fontSize = max(8, tileSize * 0.26)
+        label.fontName = officeLabelFontName
+        label.fontSize = max(officeNameplateMinFontSize, tileSize * 0.28)
         label.fontColor = SKColor(white: 1, alpha: 1)
         label.verticalAlignmentMode = .bottom
-        label.position = CGPoint(x: 0, y: node.sprite.size.height + 12)
+        label.position = CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance)
         label.zPosition = 20
         node.addChild(label)
         label.run(
@@ -595,7 +659,7 @@ final class OfficeScene: SKScene {
             let top = node.sprite.size.height
             setChildLabel(
                 node, name: "infoBubble", text: info.bubble,
-                position: CGPoint(x: 0, y: top + 12),
+                position: CGPoint(x: 0, y: top + nameplateClearance),
                 fontSize: max(8, tileSize * 0.24), color: SKColor(white: 1, alpha: 0.95)
             )
             setChildLabel(
@@ -681,12 +745,12 @@ final class OfficeScene: SKScene {
         }
         let label = SKLabelNode(text: "·")
         label.name = "dots"
-        label.fontName = "Menlo-Bold"
+        label.fontName = officeLabelFontName
         label.fontSize = max(10, tileSize * 0.4)
         label.fontColor = SKColor(white: 0.95, alpha: 0.9)
         label.verticalAlignmentMode = .bottom
         label.horizontalAlignmentMode = .center
-        label.position = CGPoint(x: 0, y: node.sprite.size.height + 2)
+        label.position = CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance)
         label.zPosition = 20
         node.addChild(label)
         let cycle = SKAction.sequence([
@@ -767,13 +831,15 @@ final class OfficeScene: SKScene {
         if selectedAgentType == agentType {
             return
         }
-        if let previous = selectedAgentType {
-            characters[previous]?.childNode(withName: "selectionRing")?.removeFromParent()
+        if let previous = selectedAgentType, let node = characters[previous] {
+            node.childNode(withName: "selectionRing")?.removeFromParent()
+            node.setSelected(false)
         }
         selectedAgentType = agentType
         guard let agentType, let node = characters[agentType] else {
             return
         }
+        node.setSelected(true)
         let ring = SKShapeNode(
             rect: CGRect(
                 x: -tileSize * 0.42, y: -tileSize * 0.16,
@@ -805,16 +871,18 @@ final class OfficeScene: SKScene {
         if let previous = hoveredAgentType, let node = characters[previous] {
             node.sprite.run(.scale(to: 1.0, duration: 0.1))
             node.childNode(withName: "hoverBubble")?.removeFromParent()
+            node.setHovered(false)
         }
         hoveredAgentType = hit
         guard let hit, let node = characters[hit] else {
             return
         }
+        node.setHovered(true)
         node.sprite.run(.scale(to: 1.12, duration: 0.1))
         if node.childNode(withName: "infoBubble") == nil, let text = agentBubbles[hit] {
             setChildLabel(
                 node, name: "hoverBubble", text: text,
-                position: CGPoint(x: 0, y: node.sprite.size.height + 12),
+                position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
                 fontSize: max(8, tileSize * 0.24), color: SKColor(white: 1, alpha: 0.95)
             )
         }
