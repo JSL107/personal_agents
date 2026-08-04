@@ -80,22 +80,128 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 부서 구역은 등장 부서 수만큼.
     t.expectEqual(plan.zones.count, 6, "부서 구역 6개")
 
-    // 책상·좌석은 부서 카펫 위에 있어야 한다. 예전에는 맨 윗줄 좌석이 카펫 밖 나무 바닥에
-    // 놓여 화면에서 사람이 사무실 밖에 걸터앉은 것처럼 보였다(테스트가 없어 못 잡았다).
-    let offCarpet = plan.desks.filter { assignment in
-        let deskTile = plan.floor[assignment.desk.y][assignment.desk.x]
-        let seatTile = plan.floor[assignment.seat.y][assignment.seat.x]
-        let carpets: Set<FloorTile> = [.carpetLight, .carpetDark]
-        return !carpets.contains(deskTile) || !carpets.contains(seatTile)
+    // 책상·좌석은 **자기 부서 바닥재 위**에 있어야 한다. "통행 가능한가" 만 보면 통로나 옆
+    // 부서 바닥에 놓인 자리를 놓친다 — 실제로 맨 윗줄 좌석이 카펫 밖 나무 바닥에 놓여
+    // 사람이 사무실 밖에 걸터앉은 것처럼 보이던 결함이 6주간 통과했다.
+    // 부서마다 바닥재가 달라진 뒤로는 "무엇 위에 있는가" 를 부서 바닥재와 직접 대조한다.
+    let offZoneFloor = plan.desks.filter { assignment in
+        let expected = departmentFloor(department(for: assignment.agentType))
+        return plan.floor[assignment.desk.y][assignment.desk.x] != expected
+            || plan.floor[assignment.seat.y][assignment.seat.x] != expected
     }
     t.expectEqual(
-        offCarpet.count, 0,
-        "카펫 밖 자리: \(offCarpet.map { "\($0.agentType)@\($0.seat.x),\($0.seat.y)" }.sorted())"
+        offZoneFloor.count, 0,
+        "자기 부서 바닥재 밖 자리: "
+            + "\(offZoneFloor.map { "\($0.agentType)@\($0.seat.x),\($0.seat.y)" }.sorted())"
     )
+
+    // 맞닿은 두 구역은 벽 한 칸을 공유한다. 예전에는 구역마다 좌우 여백을 따로 세워
+    // 경계가 2칸(80px) 두께 회색 띠가 됐다. 세로 칸막이는 어느 행에서도 1칸이어야 한다
+    // (아래 구역 천장은 가로로 이어지는 벽이라 이 검사에서 뺀다).
+    let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
+    let bottomZoneY = plan.zones.map { $0.origin.y }.min() ?? 0
+    let ceilingRow = bottomZoneY + (plan.zones.first?.height ?? 0) - 1
+    var thickWallRuns: [String] = []
+    for y in 0..<zoneAreaRows where y != ceilingRow {
+        var run = 0
+        for x in 0..<plan.columns {
+            run = plan.floor[y][x] == .wall ? run + 1 : 0
+            if run > 1 {
+                thickWallRuns.append("(\(x),\(y))")
+            }
+        }
+    }
+    t.expectEqual(thickWallRuns.count, 0, "가로로 겹친 벽 칸: \(thickWallRuns)")
+
+    // 부서마다 다른 가구 세트가 실제로 놓여 있어야 한다. 인원이 꽉 찬 부서(내부 10명)에서도
+    // 빠지면 안 된다 — 예전 배치는 아래쪽 줄만 후보로 써서, 정원이 찬 부서는 집기가
+    // 통째로 사라졌다(빈 방으로 보이는 원인).
+    for zone in plan.zones {
+        let inZone = plan.furniture
+            .filter { placement in
+                placement.kind != .desk
+                    && placement.tile.x > zone.origin.x
+                    && placement.tile.x < zone.origin.x + zone.width - 1
+                    && placement.tile.y >= zone.origin.y
+                    && placement.tile.y < zone.origin.y + zone.height
+            }
+            .map(\.kind)
+        for kind in departmentFurniture(zone.department) {
+            t.expect(
+                inZone.contains(kind),
+                "\(zone.department.label) 방에 \(kind.rawValue) 가 놓였다 (실제: \(inZone))"
+            )
+        }
+    }
+
+    // 여섯 부서의 가구 세트가 서로 달라야 방이 구별된다.
+    let furnitureSets = Department.allCases.map { candidate in
+        departmentFurniture(candidate).map(\.rawValue).joined(separator: "+")
+    }
+    t.expectEqual(Set(furnitureSets).count, Department.allCases.count, "부서별 가구 세트가 전부 다름")
+
+    // 맞닿은 구역끼리는 바닥재가 달라야 한다(가로 이웃 = index 차 1, 세로 이웃 = 같은 열 위아래).
+    for zone in plan.zones {
+        for other in plan.zones where other.department != zone.department {
+            let horizontallyAdjacent =
+                zone.origin.y == other.origin.y
+                && abs(zone.origin.x - other.origin.x) == zone.width - 1
+            let verticallyAdjacent =
+                zone.origin.x == other.origin.x && zone.origin.y != other.origin.y
+            guard horizontallyAdjacent || verticallyAdjacent else {
+                continue
+            }
+            t.expect(
+                departmentFloor(zone.department) != departmentFloor(other.department),
+                "\(zone.department.label)–\(other.department.label) 이웃 구역 바닥재가 같다"
+            )
+        }
+    }
+
+    // 벽 색조 판정 — 구역 안쪽 벽은 그 부서 색을, 밴드 위 바깥 벽은 색 없음(nil).
+    if let firstZone = plan.zones.first {
+        t.expectEqual(
+            wallDepartment(x: firstZone.origin.x, y: firstZone.origin.y, zones: plan.zones),
+            firstZone.department,
+            "구역 왼쪽 벽은 그 부서 색"
+        )
+    }
+    t.expectNil(
+        wallDepartment(x: 0, y: plan.rows - 1, zones: plan.zones),
+        "밴드 위 바깥 벽은 부서 색 없음"
+    )
+
+    // 벽 공유로 열이 한 칸 늘었으므로 밴드 오른쪽 끝까지 바닥이 칠해져야 한다
+    // (안 칠하면 격자 끝 한 열만 기본 나무 바닥으로 남아 복도가 잘려 보인다).
+    t.expectEqual(plan.floor[zoneAreaRows][plan.columns - 1], .ceramic, "밴드 오른쪽 끝 열도 바닥")
+
+    // 부서별 바닥재 매핑이 6개 부서를 전부 덮는다 — 누락되면 조용히 기본 나무 바닥으로 떨어져
+    // 그 방만 통로처럼 보인다.
+    let floorKinds = Department.allCases.map { departmentFloor($0) }
+    t.expectEqual(floorKinds.count, 6, "부서 6개 전부 바닥재 매핑")
+    t.expect(!floorKinds.contains(.wall), "부서 바닥재로 벽 타일을 쓰지 않는다")
+
+    // 앉은 캐릭터를 책상 쪽으로 내리는 양. 0 이면 사람이 책상 위 허공에 뜨고, 너무 크면
+    // 상반신까지 책상에 잠긴다(책상 상단이 0.8칸, 좌석이 1칸 위라 그 사이가 유효 범위).
+    t.expect(
+        officeSeatedSpriteDrop > 0.1 && officeSeatedSpriteDrop < 0.5,
+        "앉은 자세 오프셋이 유효 범위 (실제 \(officeSeatedSpriteDrop))"
+    )
+    // 캐릭터 배율은 앉은 원본 57px 을 한 칸(40px) 안팎으로 내리는 값이어야 한다.
+    let seatedTiles = 57.0 * officeCharacterScaleFactor / 40.0
+    t.expect(
+        seatedTiles >= 1.0 && seatedTiles <= 1.1,
+        "앉은 캐릭터 키가 1.0~1.1칸 (실제 \(seatedTiles))"
+    )
+
+    // 큰 가구만 배율 보정을 받는다 — 소품까지 키우면 방이 잡동사니로 찬 것처럼 보인다.
+    t.expect(FurnitureKind.desk.sizeBoost > 1, "책상은 확대 보정")
+    t.expect(FurnitureKind.meetingTable.sizeBoost > 1, "회의 테이블은 확대 보정")
+    t.expectEqual(FurnitureKind.plantSmall.sizeBoost, 1.0, "소품은 원본 크기")
+    t.expectEqual(FurnitureKind.clock.sizeBoost, 1.0, "벽시계는 원본 크기")
 
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
-    let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
     let wallColumns = Set(plan.zones.flatMap { [$0.origin.x, $0.origin.x + $0.width - 1] })
     for column in wallColumns.sorted() {
         let walls = (0..<zoneAreaRows).filter { plan.floor[$0][column] == .wall }
