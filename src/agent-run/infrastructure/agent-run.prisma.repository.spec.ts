@@ -344,8 +344,8 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
     jest.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
     // findMany 는 이미 where(cutoff)+distinct 가 적용된 "agentType별 최신 종료" 를 돌려준다.
     const findMany = jest.fn().mockResolvedValue([
-      { agentType: 'PM', status: 'FAILED' },
-      { agentType: 'BE', status: 'SUCCEEDED' },
+      { agentType: 'PM', status: 'FAILED', id: 11 },
+      { agentType: 'BE', status: 'SUCCEEDED', id: 12 },
     ]);
     const prismaMock = {
       agentRun: { findMany },
@@ -357,9 +357,10 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
     });
 
     // 성공도 그대로 실어 보낸다 — 콘솔 스냅샷이 COMPLETED 를 만들려면 이 값이 필요하다.
+    // runId 도 함께 — 콘솔이 "이 완료는 확인했다" 를 식별하는 키다.
     expect(result).toEqual([
-      { agentType: 'PM', status: 'FAILED' },
-      { agentType: 'BE', status: 'SUCCEEDED' },
+      { agentType: 'PM', status: 'FAILED', runId: 11 },
+      { agentType: 'BE', status: 'SUCCEEDED', runId: 12 },
     ]);
     // cutoff 를 where 로 밀어넣어 오래된 이력을 스캔하지 않는다(360분 전 = 06:00).
     expect(findMany).toHaveBeenCalledWith(
@@ -367,10 +368,29 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
         where: { endedAt: { gte: new Date('2026-07-30T06:00:00.000Z') } },
         orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
         distinct: ['agentType'],
-        select: { agentType: true, status: true },
+        select: { agentType: true, status: true, id: true },
       }),
     );
     jest.useRealTimers();
+  });
+
+  it('종료가 아닌 상태(IN_PROGRESS)는 제외한다 — endedAt 이 채워진 행이 섞여도 완료로 오표시하지 않는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { agentType: 'PM', status: 'IN_PROGRESS', id: 21 },
+      { agentType: 'BE', status: 'SUCCEEDED', id: 22 },
+    ]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findRecentlyFinishedRuns({
+      withinMinutes: 60,
+    });
+
+    expect(result).toEqual([
+      { agentType: 'BE', status: 'SUCCEEDED', runId: 22 },
+    ]);
   });
 });
 

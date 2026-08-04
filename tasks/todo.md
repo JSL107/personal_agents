@@ -84,3 +84,55 @@
 - 포트·Prisma repository·service 위임과 관련 테스트·full repository mock 3곳을 동기화했다.
 - Verification: `pnpm lint:check` exit 0 (기존 warning 53건), `pnpm test` exit 0 (288+5 suites, 2112+40 tests), `pnpm build` exit 0.
 - 설계 이탈 없음. cron `*/5`와 `NEW_REVIEW_LIMIT_PER_SWEEP = 3`은 변경하지 않았다.
+
+---
+
+# 이대리 콘솔 오피스 2단계 구현 계획
+
+- [x] `.ai/design.md`와 지정 기존 파일을 전부 읽고 통합 지점·불변식을 확인한다.
+- [x] `OfficeIdleTests.swift`에 설계 §5 전체 표와 §2 튜닝 상수 검증을 먼저 작성하고 `main.swift`에 등록한다.
+- [x] 신규 테스트가 미구현 API 때문에 실패하는 RED 상태를 확인한다.
+- [x] `OfficeIdle.swift`에 후보 판정, 선발, 평면도 기반 목적지, 결정론적 배정, 시간대 분위기 순수 로직을 구현한다.
+- [x] `FurnitureKind.strollDwellSeconds`와 `affectedAgentTypes(of:)`를 정확한 계약대로 추가한다.
+- [x] 순수 로직 테스트가 GREEN인지 확인하고 필요한 최소 리팩터링만 한다.
+- [x] `OfficeScene`에 반복 감독관, 배회 실행·취소, 기존 `visitLounge` 편입, resize 정리, 분위기 색 막을 연결한다.
+- [x] `.ai/implementation-summary.md`에 설계 일치 여부·이탈 사유·재검증 필요 여부를 기록한다.
+- [x] 최종 diff를 범위·결정론·주석·이벤트 우선순위 관점에서 검토한다.
+- [x] 원문 게이트의 toolchain 실패를 분리하고 호환 SDK·관리 sandbox 옵션으로 build/test exit 0, 354건 초과, 실패 0을 확인한다.
+
+## Review
+
+- Core 판정과 SpriteKit 실행 경계를 분리하고, 실제 이벤트가 배회를 먼저 취소하도록 연결했다.
+- 운영 27종 표본을 포함한 `ConsoleCoreTests` 408건이 통과했다(기존 354건 대비 +54).
+- Verification: 호환 SDK와 `--disable-sandbox`를 적용한 `swift build` 및 `swift run ConsoleCoreTests` 모두 exit 0.
+- 로컬 활성 compiler 6.3.3과 SDK 6.3.2 불일치로 사용자 원문 명령은 코드 컴파일 전 exit 1이다. 상세는 `.ai/implementation-summary.md`에 기록했다.
+- `zPosition = 500` 계약은 따랐지만 기존 `CharacterNode` 글자 계층과 충돌해 시각 재검증이 필요하다.
+
+---
+
+# 오피스 2단계 잔존 결함 2건 구현 계획
+
+**Goal:** 승인 오픈 색을 이벤트 순서와 무관하게 확정하고, 재연결 snapshot을 정본으로 승인 줄을 정리한다.
+
+**Architecture:** 이벤트 번역과 줄 판정은 `ConsoleCore` 순수 함수가 소유한다. `OfficeScene`은 승인 snapshot을 받아 순수 판정 결과를 이동으로 실행하고, `OfficeView`는 agents·approvals 어느 쪽이 바뀌어도 동기화한다.
+
+**Constraints:** `stateChanged(.inProgress) -> .working`, `replayInitialChoreography()`, `OfficeIdle.swift`, `src/**`는 변경하지 않는다. `ConsoleApproval.agentType == nil`은 누구도 매칭하지 않는다. 줄 입력 순서를 보존한다. commit·push하지 않는다.
+
+- [x] `OfficeChoreographyTests.swift`에 approval opened recolor·nil·미지 agentType 회귀 테스트를 추가한다.
+- [x] `OfficeInteractionTests.swift`에 `reconciledQueueOrder` 계약 표 7건을 추가한다.
+- [x] 신규 테스트를 실행해 누락 동작 때문에 실패하는 RED를 확인한다.
+- [x] `OfficeChoreography.swift`의 `approvalOpened`에 이동-색-말풍선 순서로 recolor를 최소 추가한다.
+- [x] `OfficeInteraction.swift`에 입력 순서를 보존하는 `reconciledQueueOrder` 순수 함수를 구현한다.
+- [x] `OfficeScene.sync(agents:approvals:)`와 `lastSyncedApprovals`, `didChangeSize`, 줄 이탈 `goHome` 배선을 구현한다.
+- [x] `OfficeView`의 sync 호출 2곳과 approvals 전용 `onChange`를 연결한다.
+- [x] 관련 테스트 GREEN 뒤 전체 build/test 게이트를 실행하고 sandbox 제약을 분리 기록한다.
+- [x] final diff에서 금지 경로·기존 미커밋 변경 보존·테스트 수 408 초과를 확인한다.
+- [x] `.ai/implementation-summary-fixups.md`에 설계 이탈·이유·재검증 필요 여부와 게이트 결과를 기록한다.
+
+## Review
+
+- `approval.opened`가 이동 직후 승인 대기색을 직접 확정하도록 바꿨다. nil·미지 agentType은 기존처럼 연출이 없다.
+- snapshot agents·approvals를 정본으로 줄을 맞추고, 승인 해소자를 같은 sync에서 자리로 복귀시킨다. 결과는 `current.filter`라 도착 순서를 보존한다.
+- `ConsoleApproval: Equatable`은 SwiftUI approvals `onChange`의 compile 제약을 만족하기 위한 최소 보완이다.
+- Verification: 호환 Swift 게이트 build/test exit 0, `ConsoleCoreTests` 417건, 실패 0, `git diff --check` exit 0.
+- 원문 Swift 명령은 관리 sandbox의 `sandbox-exec` 제한으로 exit 1이며, pnpm 3중 게이트는 `node_modules` 미설치로 실행 불가했다. 상세는 `.ai/implementation-summary-fixups.md`에 기록했다.
