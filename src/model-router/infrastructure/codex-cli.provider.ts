@@ -33,6 +33,11 @@ const STDERR_TAIL_LIMIT = 500;
 // (일반 호출의 180s 타임아웃을 그대로 쓰면 백엔드가 죽어 있을 때 probe 한 번에 3분을 낭비한다.)
 const CODEX_PROBE_TIMEOUT_MS = 30_000;
 const CODEX_PROBE_PROMPT = 'Reply with the single word: OK';
+// `--ignore-user-config` 로 사용자 config.toml 을 안 읽으면 모델 설정도 함께 사라진다.
+// (미지정 시 reasoning effort 가 none 으로 떨어져 리뷰 품질이 조용히 바뀜 — 실측 확인)
+// 사용자의 대화형 codex 설정과 분리해 이대리 워커가 쓰는 모델을 여기서 고정한다.
+export const CODEX_MODEL = 'gpt-5.6-sol';
+export const CODEX_REASONING_EFFORT = 'high';
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
 // stdout/stderr 에 "You've hit your usage limit ... try again at <시각>" 류 문구가 찍힌다.
@@ -155,6 +160,20 @@ export const buildCodexArgs = ({
   '--sandbox',
   'read-only',
   '--ephemeral',
+  // 사용자 `~/.codex/config.toml` 을 자식 codex 에서 아예 읽지 않는다 (auth 는 CODEX_HOME 유지).
+  // buildSafeChildEnv 가 구독 인증을 살리려고 CODEX_HOME 을 실경로로 넘기는 대가로 설정 전체가
+  // 따라오는데, 거기엔 MCP 서버(github=docker run, node_repl)·플러그인 20종·hook 13종이 활성이다.
+  // MCP 서버는 도구 사용 여부와 무관하게 startup 에 기동되므로 호출마다 docker 컨테이너가 생기고,
+  // 타임아웃 시 프로세스 그룹을 SIGKILL 하므로 `--rm` 이 돌지 못해 그대로 쌓인다(관측: 62개).
+  //
+  // `-c mcp_servers={}` 로는 못 막는다 — 빈 table 은 기존 table 을 교체하지 않고 병합하므로
+  // `codex -c 'mcp_servers={}' mcp list` 에 서버가 그대로 남는다(실측 확인).
+  '--ignore-user-config',
+  // config 를 안 읽으면 모델 설정도 사라지므로 명시 재주입한다.
+  '-c',
+  `model="${CODEX_MODEL}"`,
+  '-c',
+  `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
   '--color',
   'never',
   '-o',
