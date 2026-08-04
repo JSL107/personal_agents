@@ -28,7 +28,7 @@ struct OfficeView: View {
             SpriteView(scene: scene)
                 .frame(minWidth: 640, minHeight: 480)
                 .onAppear {
-                    scene.sync(agents: store.agents)
+                    scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
@@ -40,11 +40,16 @@ struct OfficeView: View {
                     }
                 }
                 .onChange(of: store.agents) { newAgents in
-                    scene.sync(agents: newAgents)
+                    scene.sync(agents: newAgents, approvals: store.approvals)
                     scene.refreshOverlays(
                         agents: newAgents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
                     )
+                }
+                .onChange(of: store.approvals) { newApprovals in
+                    // 승인만 바뀐 경우는 줄만 맞춘다. 여기서 sync 를 부르면 승인 알림이 오갈
+                    // 때마다 바닥·가구·사람이 통째로 다시 그려진다.
+                    scene.reconcileQueue(agents: store.agents, approvals: newApprovals)
                 }
                 .onChange(of: selectedAgent) { newSelection in
                     scene.setSelected(newSelection)

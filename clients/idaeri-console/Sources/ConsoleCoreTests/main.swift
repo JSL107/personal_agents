@@ -17,6 +17,7 @@ runOfficeRoomLayoutTests(runner)
 runOfficeFloorPlanTests(runner)
 runAgentRoleTests(runner)
 runOfficePathfindingTests(runner)
+runOfficeIdleTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()

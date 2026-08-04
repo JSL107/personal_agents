@@ -119,6 +119,32 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
+    /// 자기 자리인 책상·의자와 사람이 찾을 이유가 없는 시계·쓰레기통을 목적지에서 뺀다.
+    public var strollDwellSeconds: Double? {
+        switch self {
+        case .coffeeMachine:
+            return 4
+        case .waterCooler:
+            return 3
+        case .printer:
+            return 3
+        case .sofa2, .sofa3:
+            return 8
+        case .coffeeTable:
+            return 5
+        case .meetingTable:
+            return 5
+        case .whiteboard:
+            return 4
+        case .bookshelf:
+            return 4
+        case .plantTall, .plantSmall:
+            return 2
+        case .desk, .chairDown, .chairUp, .clock, .trash:
+            return nil
+        }
+    }
+
     /// 스프라이트 원본 크기(실측 px). `sips -g pixelWidth -g pixelHeight Resources/sprites/furn-*.png`
     ///
     /// 에셋을 다시 뽑으면 이 값도 함께 갱신해야 한다 — 어긋나면 배율이 조용히 틀어진다.
