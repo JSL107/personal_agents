@@ -17,10 +17,10 @@ struct AgentCardView: View {
         pendingCommands.filter { $0.effectiveAgentType == agent.agentType }
     }
 
-    /// 확인 버튼 노출 조건 — 완료 상태이고, 어떤 완료인지 식별할 종료 시각이 있을 때만.
-    /// 종료 시각이 없으면 확인해도 다음 스냅샷에서 되살아나므로 버튼을 숨긴다.
+    /// 확인 버튼 노출 조건 — 완료 상태이고, 어떤 런의 완료인지 식별할 id 가 있을 때만.
+    /// id 가 없으면 확인해도 다음 스냅샷에서 되살아나므로 버튼을 숨긴다.
     private var canAcknowledge: Bool {
-        agent.state == .completed && agent.lastFinishedAt != nil
+        agent.state == .completed && agent.lastFinishedRunId != nil
     }
 
     var body: some View {

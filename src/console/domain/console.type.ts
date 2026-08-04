@@ -42,13 +42,16 @@ export interface ConsoleAgent {
   readonly departmentLabel: string;
   readonly job: string;
   /**
-   * 최근 종료 창 안에 끝난 런의 종료 시각(ISO). 창 밖이거나 기록이 없으면 null.
+   * 최근 종료 창 안에 끝난 런의 id. 창 밖이거나 기록이 없으면 null.
    *
    * 앱이 "이 완료는 이미 눈으로 확인했다" 를 기억하는 키다. 같은 값이면 확인한 그 완료라
    * 대기로 내려두고, 새 런이 끝나 값이 바뀌면 다시 완료로 표시한다. 활성 런 목록(`runs`)에는
    * 종료된 런이 담기지 않아 앱이 완료를 식별할 방법이 없었고, 그래서 이 필드가 필요하다.
+   *
+   * 종료 시각을 쓰지 않는 이유는 `RecentlyFinishedRun.runId` 주석에 있다 — DB 기록과 SSE
+   * 발행이 시각을 각각 생성해 같은 런에서도 값이 어긋난다.
    */
-  readonly lastFinishedAt: string | null;
+  readonly lastFinishedRunId: string | null;
 }
 
 /** 진행/최근 에이전트 실행 한 건. `parentId` 로 체인 계보 추적. */
