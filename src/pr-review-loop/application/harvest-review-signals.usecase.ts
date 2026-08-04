@@ -137,14 +137,14 @@ export class HarvestReviewSignalsUsecase {
     return outcome;
   }
 
-  // 누적 채택률은 분모(ACKED·FIXED·REJECTED)가 늘어난 회차에만 다시 센다. STALE 확정과
-  // 스레드 정리는 분모에 들지 않으므로 비율이 변하지 않고, 반응이 없던 회차도 마찬가지다
-  // — 5분마다 도는 스윕에서 같은 값을 반복 조회할 이유가 없다.
+  // 회차마다 다시 센다. "분모가 늘어난 회차에만" 으로 아끼면 값이 조용히 유실된다 —
+  // 이 그룹의 Slack 발송은 날짜 키 하나로 하루 1회만 허용되는데(autopilot.orchestrator.ts
+  // buildGuardKey), 그날 첫 발송은 보통 카드 *게시* 가 가져간다. 사용자 반응은 그 뒤에
+  // 오므로 반응 회차의 요약은 "이미 발송됨" 으로 차단되고, 다음 회차는 카운터가 0 이라
+  // 조회조차 안 해 그 값이 영영 안 나온다. 대상 테이블은 카테고리×상태 조합이라 행이
+  // 수십 개 수준이고 조회는 밀리초라, 아끼는 비용보다 유실이 비싸다.
   // 집계는 요약에 곁들이는 정보이므로 실패하면 수확 결과만 그대로 보고한다.
   private async attachAdoption(outcome: HarvestOutcome): Promise<void> {
-    if (outcome.acked + outcome.fixed + outcome.rejected === 0) {
-      return;
-    }
     try {
       const rows = await this.repository.countAdoptionByCategory();
       outcome.adoption = summarizeAdoption(rows);
