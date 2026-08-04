@@ -205,6 +205,9 @@ final class OfficeScene: SKScene {
                 node.sit()
             }
             node.resize(tileSize: tileSize, spriteScale: characterScale)
+            // 부서는 스냅샷마다 확인한다. 노드는 재사용되므로 여기서 갱신하지 않으면 사규가
+            // 사람을 옮겼을 때 방만 바뀌고 옷은 옛 부서색으로 남는다.
+            node.apply(department: agent.resolvedDepartment)
             node.apply(state: agent.state)
 
             // 줄 서 있거나 걷는 중인 사람은 건드리지 않고, 나머지는 자기 자리에 둔다.
