@@ -166,6 +166,9 @@ func floorSpriteName(_ tile: FloorTile) -> String {
         return "tile-carpet-dark"
     case .ceramic:
         return "tile-ceramic"
+    // 통로는 전용 에셋 없이 우드 텍스처를 재사용하고 밝기(muteStrength 0.78)로만 갈린다.
+    case .corridor:
+        return "tile-wood-a"
     case .wall:
         return "tile-wall"
     }

@@ -7,39 +7,39 @@ struct SessionRowView: View {
     let onInject: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.sm) {
             Text(sourceBadge)
-                .font(.system(.caption2, design: .monospaced).weight(.bold))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
+                .font(Typography.badgeMono)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.tight)
                 .background(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.badge, style: .continuous)
                         .fill(Color.primary.opacity(0.08))
                 )
             Circle()
                 .fill(stateColor)
-                .frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: Stroke.dot, height: Stroke.dot)
+            VStack(alignment: .leading, spacing: Spacing.tight) {
                 Text(session.name)
-                    .font(.callout.weight(.medium))
+                    .font(Typography.bodyEmphasis)
                     .lineLimit(1)
                 Text(session.cwd)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(Typography.metricMonoSmall)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
             }
             Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: Spacing.tight) {
                 Text(session.state == "active" ? "활동 중" : "유휴")
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
                     .foregroundStyle(.secondary)
                 Button("작업 주입", action: onInject)
                     .buttonStyle(.borderless)
-                    .font(.caption2)
+                    .font(Typography.captionSmall)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, Spacing.xs)
     }
 
     private var sourceBadge: String {

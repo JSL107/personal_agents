@@ -24,10 +24,10 @@ struct AppRootView: View {
                     Text("오피스").tag(Tab.office)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 240)
+                .frame(width: Layout.sidebarWidth)
                 Spacer()
             }
-            .padding(10)
+            .padding(Spacing.sm)
 
             Divider()
 
@@ -51,7 +51,7 @@ struct AppRootView: View {
                 )
             }
         }
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.windowMinHeight)
         .task {
             startPendingJanitor()
             startSnapshotResync()

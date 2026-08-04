@@ -33,6 +33,14 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// "이 완료는 이미 확인했다" 를 기억하는 키로 쓴다(`ConsoleStore.acknowledgeCompletion`).
     /// 종료 시각이 아니라 런 id 인 이유 — 시각은 DB 기록과 SSE 발행이 각각 만들어 어긋난다.
     public let lastFinishedRunId: String?
+    /// 소속 부서. 백엔드 사규(`agent-registry/agent-contract.ts` 의 `Department`)가 소유하는
+    /// rawValue 문자열이고, 앱은 그 값을 옮겨 담을 뿐 스스로 분류하지 않는다.
+    ///
+    /// 앱에도 같은 매핑이 하드코딩돼 있었는데, 두 곳이 어긋나면 사람이 조용히 다른 방에 앉는다
+    /// — 실제로 백엔드가 리뷰로 배정한 `REVIEW_REPLY_JUDGE` 가 앱에서는 매핑에 없어 내부방에
+    /// 앉아 있었다. 응답에 값이 없으면 `.internalOps` 로 떨어지는데, 그때는 전원이 한 방에
+    /// 몰려 화면에서 바로 드러난다(조용한 실패가 아니다).
+    public let department: String?
 
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
@@ -41,6 +49,32 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// 오피스 이름표와 대시보드 카드가 같은 사람을 같은 이름으로 부르게 하는 단일 출처다.
     public var roleName: String { agentRoleLabel(for: agentType) ?? displayName }
 
+    /// 화면이 쓰는 부서. 백엔드 문자열을 앱 enum 으로 옮긴 것뿐이다(판정 아님).
+    public var resolvedDepartment: Department { departmentFromRaw(department) }
+
+    /// 일부 값만 바꾼 사본. 지정하지 않은 필드는 그대로 이어진다.
+    ///
+    /// 이 메서드가 있는 이유는 편의가 아니라 **누락 방지**다. `ConsoleStore` 가 상태를 바꿀 때
+    /// 필드를 손으로 다시 나열하고 있었는데, 그러면 새 필드가 늘어날 때 컴파일러가 침묵한 채
+    /// 조용히 빠진다(기본값이 있으므로). 부서를 추가할 때 세 곳에서 빠질 수 있었고, 그 경우
+    /// 상태가 바뀐 사람이 자기 방에서 내부방으로 순간이동한다.
+    public func replacing(
+        state: ConsoleAgentState? = nil,
+        bubble: String? = nil,
+        lastFinishedRunId: String? = nil
+    ) -> ConsoleAgent {
+        ConsoleAgent(
+            agentType: agentType,
+            displayName: displayName,
+            slashCommands: slashCommands,
+            description: description,
+            state: state ?? self.state,
+            bubble: bubble ?? self.bubble,
+            lastFinishedRunId: lastFinishedRunId ?? self.lastFinishedRunId,
+            department: department
+        )
+    }
+
     public init(
         agentType: String,
         displayName: String,
@@ -48,7 +82,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         description: String,
         state: ConsoleAgentState,
         bubble: String,
-        lastFinishedRunId: String? = nil
+        lastFinishedRunId: String? = nil,
+        department: String? = nil
     ) {
         self.agentType = agentType
         self.displayName = displayName
@@ -57,6 +92,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         self.state = state
         self.bubble = bubble
         self.lastFinishedRunId = lastFinishedRunId
+        self.department = department
     }
 }
 

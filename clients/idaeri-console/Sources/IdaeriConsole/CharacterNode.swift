@@ -47,26 +47,26 @@ final class CharacterNode: SKNode {
     private let nameText: String
     private let sheetIndex: Int
     private let hairColor: (red: Double, green: Double, blue: Double)
-    private let shirtColor: (red: Double, green: Double, blue: Double)
+    /// 셔츠색은 부서에서 파생하므로 부서가 바뀌면 함께 바뀐다(`apply(department:)`).
+    private var shirtColor: (red: Double, green: Double, blue: Double)
     private let pantsColor: (red: Double, green: Double, blue: Double)
+    /// 지금 입고 있는 옷이 어느 부서 것인지. 스냅샷 부서와 비교해 갱신 여부를 정한다.
+    private var department: Department
+    /// 사람마다 다른 셔츠 톤 보정. 부서가 바뀌어도 이 사람의 개성은 유지해야 한다.
+    private let shirtShift: Double
 
-    init(agentType: String, displayName: String, tile: TilePoint) {
+    /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
+    /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
+    init(agentType: String, displayName: String, department: Department, tile: TilePoint) {
         self.tile = tile
         // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
         nameText = agentRoleLabel(for: agentType) ?? displayName
         let look = characterLook(for: agentType)
         sheetIndex = look.sheetIndex
         hairColor = hairPalette[look.hairIndex]
-        // 셔츠는 부서색을 흰색 쪽으로 끌어와 파스텔로 만든다. 원색을 그대로 입히면
-        // 작업복이 아니라 코스튬처럼 보이고, 얼굴·머리보다 옷이 먼저 눈에 띈다.
-        let department = ConsoleCore.department(for: agentType)
-        let palette = agentDepartmentPaletteRGBA(department)
-        let blend = 0.42 + look.shirtShift
-        shirtColor = (
-            red: 1.0 - (1.0 - palette.red) * blend,
-            green: 1.0 - (1.0 - palette.green) * blend,
-            blue: 1.0 - (1.0 - palette.blue) * blend
-        )
+        self.department = department
+        shirtShift = look.shirtShift
+        shirtColor = officeShirtColorRGB(department: department, shift: look.shirtShift)
         // 바지는 부서색과 엮지 않는다. 셔츠가 이미 부서를 나타내므로 같은 축을 두 번 쓰면
         // 구별 수단이 늘지 않는다 — 사람을 가르는 축으로만 쓴다.
         pantsColor = pantsPalette[look.pantsIndex]
@@ -259,6 +259,25 @@ final class CharacterNode: SKNode {
             return
         }
         setTexture(characterSprite(for: facing).pose)
+    }
+
+    /// 스냅샷 부서를 반영한다. 바뀌었으면 셔츠를 새 부서색으로 갈아입힌다.
+    ///
+    /// 노드는 한 번 만들면 계속 재사용되므로(`sync` 가 `characters[agentType]` 를 다시 쓴다),
+    /// 부서만 바뀐 경우 방은 새 구역으로 옮겨 가는데 옷은 옛 부서색으로 남는다 — 이 PR 이
+    /// 닫으려던 "방과 옷이 다른 부서를 가리키는" 상태가 재동기화 경로에서 되살아난다.
+    func apply(department newDepartment: Department) {
+        guard newDepartment != department else {
+            return
+        }
+        department = newDepartment
+        shirtColor = officeShirtColorRGB(department: newDepartment, shift: shirtShift)
+        // 새 색으로 다시 굽는다. 걷는 중이면 다음 걸음 프레임이 자연히 새 색으로 그려진다.
+        if isSeated {
+            setTexture("sit")
+        } else {
+            apply(facing: facing)
+        }
     }
 
     func sit() {

@@ -13,7 +13,8 @@ func runConsoleStoreTests(_ t: TestRunner) {
         slashCommands: ["/today"],
         description: "",
         state: .waiting,
-        bubble: "업무 대기중"
+        bubble: "업무 대기중",
+        department: Department.planning.rawValue
     )
     let be = ConsoleAgent(
         agentType: "BE",
@@ -21,7 +22,8 @@ func runConsoleStoreTests(_ t: TestRunner) {
         slashCommands: ["/plan-task"],
         description: "",
         state: .waiting,
-        bubble: "업무 대기중"
+        bubble: "업무 대기중",
+        department: Department.engineering.rawValue
     )
     let snapshot = ConsoleSnapshot(
         agents: [pm, be],
@@ -44,6 +46,14 @@ func runConsoleStoreTests(_ t: TestRunner) {
 
     // state.changed 시 bubble 은 백엔드 소유라 클라이언트가 임의 변경하지 않는다(스냅샷 정정 대기)
     t.expectEqual(store.agents.first(where: { $0.agentType == "PM" })?.bubble, "업무 대기중", "bubble 유지")
+
+    // 부서도 유지된다. 상태 변경은 에이전트를 새로 만들어 갈아 끼우는데, 그때 필드를 손으로
+    // 나열하면 새 필드가 조용히 빠진다 — 부서가 빠지면 상태가 바뀐 사람이 자기 방에서
+    // 내부방으로 순간이동한다. 기본값이 있어서 컴파일러가 잡아 주지 않으므로 여기서 못 박는다.
+    t.expectEqual(
+        store.agents.first(where: { $0.agentType == "PM" })?.resolvedDepartment, .planning,
+        "상태 변경 후에도 부서 유지"
+    )
 
     // 존재하지 않는 agentType 은 무시(크래시·추가 없음)
     store.apply(event: .stateChanged(agentType: "GHOST", state: .completed))
