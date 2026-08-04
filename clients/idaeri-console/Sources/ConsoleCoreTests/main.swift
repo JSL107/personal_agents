@@ -18,6 +18,7 @@ runOfficeFloorPlanTests(runner)
 runAgentRoleTests(runner)
 runOfficePathfindingTests(runner)
 runOfficeIdleTests(runner)
+runOfficeAccessibilityTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()
