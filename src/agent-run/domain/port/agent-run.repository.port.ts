@@ -167,6 +167,9 @@ export interface ActiveRunSnapshot {
 export interface RecentlyFinishedRun {
   agentType: string;
   status: 'SUCCEEDED' | 'FAILED';
+  // 이 종료를 식별하는 키. 콘솔이 "이 완료는 사람이 이미 확인했다" 를 기억할 때 쓴다
+  // (같은 값이면 확인한 그 완료, 값이 바뀌면 새 완료라 다시 표시해야 한다).
+  endedAt: Date;
 }
 
 // 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.

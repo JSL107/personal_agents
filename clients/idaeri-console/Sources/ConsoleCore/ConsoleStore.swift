@@ -1,6 +1,11 @@
 import Combine
 import Foundation
 
+/// 확인 처리로 대기로 내릴 때 쓰는 말풍선. 말풍선 문구는 백엔드가 소유하지만
+/// (`derive-agent-state.ts` 의 `BUBBLES`), 이 전이는 앱 안에서만 일어나 서버에 물어볼 수 없다.
+/// 백엔드의 WAITING 문구가 바뀌면 여기도 함께 바꿔야 한다.
+private let waitingBubble = "업무 대기중"
+
 /// 부팅 스냅샷을 초기 상태로 싣고, SSE 증분 이벤트를 그 위에 적용하는 관측 가능한 상태 스토어.
 /// SwiftUI 뷰가 `@Published` 프로퍼티를 바인딩한다. 이벤트 적용은 UI 갱신을 유발하므로
 /// 호출자(B5 배선)가 메인 스레드에서 `apply(...)` 를 호출해야 한다.
@@ -17,15 +22,56 @@ public final class ConsoleStore: ObservableObject {
     /// 처리한 SSE 이벤트를 방출한다(연출 트리거용). 스냅샷 적용은 방출하지 않는다.
     public let eventStream = PassthroughSubject<ConsoleEvent, Never>()
 
+    /// 사람이 눈으로 확인한 완료. agentType → 확인 당시의 `lastFinishedAt`.
+    ///
+    /// 서버는 최근 종료 창 안이면 계속 완료로 보내주므로, 확인한 뒤에도 스냅샷마다 초록이
+    /// 되살아난다. 확인한 종료 시각을 기억해 같은 값이면 대기로 내려두고, 새 런이 끝나
+    /// 값이 바뀌면 다시 완료로 보이게 한다.
+    private var acknowledgedFinishes: [String: String] = [:]
+
     public init() {}
 
     /// 부팅 시(또는 재연결 후 재동기화) 전체 상태를 교체한다.
     public func apply(snapshot: ConsoleSnapshot) {
-        agents = snapshot.agents
+        agents = snapshot.agents.map(demoteIfAcknowledged)
         runs = snapshot.runs
         approvals = snapshot.approvals
         sessions = snapshot.sessions
         serverTime = snapshot.serverTime
+    }
+
+    /// 이 에이전트의 현재 완료를 "확인했다" 로 표시해 대기로 내린다.
+    /// 완료 상태가 아니거나 종료 시각을 모르면 아무것도 하지 않는다(확인할 대상이 없다).
+    public func acknowledgeCompletion(agentType: String) {
+        guard
+            let index = agents.firstIndex(where: { $0.agentType == agentType }),
+            agents[index].state == .completed,
+            let finishedAt = agents[index].lastFinishedAt
+        else {
+            return
+        }
+        acknowledgedFinishes[agentType] = finishedAt
+        agents[index] = demoteIfAcknowledged(agents[index])
+    }
+
+    /// 확인한 종료와 같은 완료면 대기로 내린다. 그 밖에는 서버 상태를 그대로 쓴다.
+    private func demoteIfAcknowledged(_ agent: ConsoleAgent) -> ConsoleAgent {
+        guard
+            agent.state == .completed,
+            let finishedAt = agent.lastFinishedAt,
+            acknowledgedFinishes[agent.agentType] == finishedAt
+        else {
+            return agent
+        }
+        return ConsoleAgent(
+            agentType: agent.agentType,
+            displayName: agent.displayName,
+            slashCommands: agent.slashCommands,
+            description: agent.description,
+            state: .waiting,
+            bubble: waitingBubble,
+            lastFinishedAt: agent.lastFinishedAt
+        )
     }
 
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
@@ -36,6 +82,7 @@ public final class ConsoleStore: ObservableObject {
             bindPendingOnRunStarted(run)
         case let .runFinished(run):
             upsertRun(run)
+            recordFinishedAt(run)
             completePendingOnRunFinished(run)
         case let .approvalOpened(approval):
             upsertApproval(approval)
@@ -83,8 +130,35 @@ public final class ConsoleStore: ObservableObject {
 
     /// 해당 에이전트의 상태만 교체한다. bubble 은 백엔드 소유라 건드리지 않고 다음 스냅샷에서 정정된다.
     /// 미지의 agentType 이면 아무것도 하지 않는다.
+    ///
+    /// 이미 확인한 완료로 되돌아가는 것은 막는다. 백엔드는 `run.finished` 를 항상 `state.changed`
+    /// 바로 앞에 발행하므로, 이 시점의 `lastFinishedAt` 은 방금 끝난 런의 것이다 — 새 완료는
+    /// 확인 기록과 시각이 달라 그대로 통과한다.
     private func changeAgentState(agentType: String, state: ConsoleAgentState) {
         guard let index = agents.firstIndex(where: { $0.agentType == agentType }) else {
+            return
+        }
+        let current = agents[index]
+        agents[index] = demoteIfAcknowledged(
+            ConsoleAgent(
+                agentType: current.agentType,
+                displayName: current.displayName,
+                slashCommands: current.slashCommands,
+                description: current.description,
+                state: state,
+                bubble: current.bubble,
+                lastFinishedAt: current.lastFinishedAt
+            )
+        )
+    }
+
+    /// `run.finished` 의 종료 시각을 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고
+    /// 확인 판정의 키를 최신으로 만들어, 새 완료가 이전 확인 때문에 가려지는 것을 막는다.
+    private func recordFinishedAt(_ run: ConsoleRun) {
+        guard
+            let finishedAt = run.finishedAt,
+            let index = agents.firstIndex(where: { $0.agentType == run.agentType })
+        else {
             return
         }
         let current = agents[index]
@@ -93,8 +167,9 @@ public final class ConsoleStore: ObservableObject {
             displayName: current.displayName,
             slashCommands: current.slashCommands,
             description: current.description,
-            state: state,
-            bubble: current.bubble
+            state: current.state,
+            bubble: current.bubble,
+            lastFinishedAt: finishedAt
         )
     }
 
