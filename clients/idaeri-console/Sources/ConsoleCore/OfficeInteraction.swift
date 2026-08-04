@@ -108,3 +108,33 @@ public func nameplateIsEmphasized(
         return false
     }
 }
+
+/// 이름표가 이웃과 겹치지 않는 최소 타일 크기(px).
+///
+/// 이름표 폭은 실측 최대 1.38칸인데, 한글 글자 크기에 하한(11px)이 있어 타일이 작아지면
+/// **타일 대비** 폭이 커진다 — 최소 창(타일 20.6)에서는 2.45칸이 되어 자리 간격 2칸을
+/// 넘어선다. 자리를 더 벌려서는 못 푼다(내부 부서 10명이 간격 3칸에 안 들어간다).
+///
+/// 경계값은 "이름표 폭이 자리 간격 2칸을 넘지 않는 타일 크기" 다:
+/// `11 × 1.38 / 0.30 ≈ 25.3` → 여유를 두어 27.
+public let officeNameplateCrowdedTileSize: Double = 27
+
+/// 이름표를 아예 보여줄지 판정한다(순수).
+///
+/// 창이 작아 이름표가 서로 겹치는 구간에서는, 겹친 글자 27개보다 **읽히는 몇 개**가 낫다.
+/// 강조 대상(손이 필요한 사람·지금 보고 있는 사람)과 일이 도는 사람만 남기고 나머지는 숨긴다
+/// — 창을 키우면 전부 돌아온다.
+public func nameplateIsVisible(
+    tileSize: Double,
+    state: ConsoleAgentState,
+    isHovered: Bool,
+    isSelected: Bool
+) -> Bool {
+    guard tileSize < officeNameplateCrowdedTileSize else {
+        return true
+    }
+    if nameplateIsEmphasized(state: state, isHovered: isHovered, isSelected: isSelected) {
+        return true
+    }
+    return state == .inProgress
+}

@@ -302,9 +302,17 @@ final class OfficeScene: SKScene {
                 if kind == .wall {
                     applyWallShading(node, column: column, row: row)
                 } else {
-                    // 바닥은 배경으로 물러나야 한다. 어두운 회색을 섞어 대비·채도를 함께 누른다
+                    // 바닥은 배경으로 물러나야 한다. 어두운 색을 섞어 대비·채도를 함께 누른다
                     // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
-                    node.color = floorMuteColor
+                    //
+                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 0.54~0.78 로 높아 원본 바닥재의
+                    // 차이가 거의 지워지는데, 시간대 색막까지 얹히면 여섯 방이 한 가지 색으로
+                    // 보였다("어디가 어느 부서인지 문패를 읽어야 안다"). 벽이 이미 같은 방식으로
+                    // 부서 색조를 띠므로(applyWallShading), 바닥도 같은 규칙을 따르게 해 방 전체가
+                    // 한 색조로 묶이게 한다.
+                    node.color = floorMuteColor(
+                        department: wallDepartment(x: column, y: row, zones: plan.zones)
+                    )
                     node.colorBlendFactor = CGFloat(kind.muteStrength)
                     // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
                     // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
@@ -317,8 +325,26 @@ final class OfficeScene: SKScene {
         }
     }
 
-    /// 바닥 노이즈를 누를 때 섞는 색(배경보다 살짝 밝은 중성 회색).
-    private let floorMuteColor = SKColor(red: 0.17, green: 0.16, blue: 0.18, alpha: 1)
+    /// 바닥 노이즈를 누를 때 섞는 색. 부서 구역 안이면 그 부서 색조를 옅게 태운다.
+    ///
+    /// 밝기는 중성 회색에 맡기고 **색조만** 가져온다. 부서색을 그대로 섞으면 골드·코랄처럼
+    /// 밝은 색을 쓰는 방의 바닥이 통째로 밝아져, 방이 아니라 조명이 다른 것처럼 보인다
+    /// (벽에서 이미 겪은 문제 — applyWallShading 의 같은 근거).
+    private func floorMuteColor(department: Department?) -> SKColor {
+        let base = (red: 0.17, green: 0.16, blue: 0.18)
+        guard let department else {
+            return SKColor(red: base.red, green: base.green, blue: base.blue, alpha: 1)
+        }
+        let tint = agentDepartmentPaletteRGBA(department)
+        let mix = 0.32
+        let dim = 0.55
+        return SKColor(
+            red: base.red * (1 - mix) + tint.red * dim * mix,
+            green: base.green * (1 - mix) + tint.green * dim * mix,
+            blue: base.blue * (1 - mix) + tint.blue * dim * mix,
+            alpha: 1
+        )
+    }
     /// 눌러 놓은 벽의 기본색. 벽 원본이 밝은 크림이라 그대로 깔면 도면처럼 보인다.
     private let wallBaseColor = (red: 0.26, green: 0.22, blue: 0.20)
 
@@ -1043,7 +1069,6 @@ final class OfficeScene: SKScene {
             overlay = SKSpriteNode(color: .clear, size: size)
             overlay.zPosition = 500
             overlay.anchorPoint = CGPoint(x: 0, y: 0)
-            overlay.position = .zero
             addChild(overlay)
             ambienceOverlay = overlay
         }
@@ -1054,7 +1079,14 @@ final class OfficeScene: SKScene {
             alpha: 1
         )
         overlay.alpha = CGFloat(tint.alpha)
-        overlay.size = size
+        // **격자 영역에만** 씌운다. 씬 전체(size)를 덮으면 사무실이 다 안 들어가고 남는
+        // 레터박스 여백까지 물든다 — 창 비율과 격자 비율(31:18)이 어긋나는 만큼 위아래로
+        // 생기는 띠라, 저녁·밤에는 화면 위아래가 통째로 갈색·남색 판이 됐다. 사무실 바깥은
+        // 어두운 배경으로 남아야 사무실이 화면에서 또렷하게 떠오른다.
+        overlay.position = gridOrigin
+        overlay.size = CGSize(
+            width: tileSize * CGFloat(plan.columns), height: tileSize * CGFloat(plan.rows)
+        )
     }
 
     /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다.

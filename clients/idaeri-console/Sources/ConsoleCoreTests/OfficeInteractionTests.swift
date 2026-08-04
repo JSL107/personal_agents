@@ -234,4 +234,58 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         [],
         "배회자가 없으면 중단 대상도 없음"
     )
+
+    // 창이 좁아 이름표가 겹치는 구간에서만 숨긴다.
+    //
+    // 경계 위(넉넉한 창)에서는 상태와 무관하게 전부 보여야 한다 — 여기서 숨기기 시작하면
+    // 평소 화면에서 사람 이름이 사라진다.
+    let roomy = officeNameplateCrowdedTileSize + 1
+    for state in [
+        ConsoleAgentState.waiting, .completed, .inProgress, .awaitingApproval, .failed,
+        .awaitingIntegration,
+    ] {
+        t.expect(
+            nameplateIsVisible(tileSize: roomy, state: state, isHovered: false, isSelected: false),
+            "넓은 창에서는 \(state.rawValue) 이름표도 보인다"
+        )
+    }
+
+    // 좁은 창에서는 손이 필요한 사람·일이 도는 사람·보고 있는 사람만 남는다.
+    let cramped = officeNameplateCrowdedTileSize - 1
+    let keptWhenCramped: [(ConsoleAgentState, Bool, Bool, Bool)] = [
+        (.awaitingApproval, false, false, true),
+        (.failed, false, false, true),
+        (.inProgress, false, false, true),
+        (.waiting, true, false, true),
+        (.waiting, false, true, true),
+        (.waiting, false, false, false),
+        (.completed, false, false, false),
+        (.awaitingIntegration, false, false, false),
+    ]
+    for (state, hovered, selected, expected) in keptWhenCramped {
+        t.expectEqual(
+            nameplateIsVisible(
+                tileSize: cramped, state: state, isHovered: hovered, isSelected: selected
+            ),
+            expected,
+            "좁은 창 \(state.rawValue)(hover=\(hovered), select=\(selected)) 표시=\(expected)"
+        )
+    }
+
+    // 숨쉬기 위상은 사람마다 다르고 한 주기 안에 들어간다.
+    // 전원이 같은 위상이면(=이 단언이 깨지면) 27명이 한 몸처럼 오르내린다.
+    let phases = ["PM", "BACKEND", "CODE_REVIEWER", "CEO", "CTO", "PO_EVAL"]
+        .map { officeBreathPhaseSeconds(agentType: $0) }
+    for phase in phases {
+        t.expect(
+            phase >= 0 && phase < officeBreathCycleSeconds,
+            "숨쉬기 위상이 한 주기 안(\(phase))"
+        )
+    }
+    t.expect(Set(phases).count > 1, "숨쉬기 위상이 사람마다 다르다")
+    t.expectEqual(
+        officeBreathPhaseSeconds(agentType: "PM"),
+        officeBreathPhaseSeconds(agentType: "PM"),
+        "같은 사람은 실행마다 같은 위상"
+    )
 }

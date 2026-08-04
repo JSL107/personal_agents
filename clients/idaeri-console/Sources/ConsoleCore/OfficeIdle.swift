@@ -144,6 +144,23 @@ public func officeStrollSpot(
     return candidates[index]
 }
 
+/// 대기 중 숨쉬기의 한 주기(초). 위상 계산과 씬의 동작 길이가 같은 값을 봐야 한다.
+public let officeBreathCycleSeconds: Double = 3.4
+
+/// 사람마다 다른 숨쉬기 시작 위상(초).
+///
+/// 27명이 같은 순간에 같은 주기로 오르내리면 사람이 아니라 군무로 보인다 — 스프라이트가
+/// 한 장뿐이라 "다 똑같아 보인다" 는 인상을 숨쉬기가 한 번 더 강화한다. 위상만 어긋내도
+/// 같은 그림이 서로 다른 순간에 움직여 개체로 읽힌다.
+///
+/// 프로세스마다 달라지는 Swift `Hasher` 대신 유니코드 스칼라 합을 쓴다(배회 목적지 선택과
+/// 같은 이유) — 실행마다 같은 사람이 같은 위상을 갖는다.
+public func officeBreathPhaseSeconds(agentType: String) -> Double {
+    let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+    let steps = 17
+    return Double(scalarSum % steps) / Double(steps) * officeBreathCycleSeconds
+}
+
 /// 시각 경계를 네 구간으로만 유지해 씬이 달력 판정을 중복하지 않게 한다.
 public enum OfficeAmbience: String, Equatable, Sendable {
     case morning
