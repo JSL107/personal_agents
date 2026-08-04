@@ -15,6 +15,7 @@ import {
   GithubClientPort,
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
+import { summarizeAdoption } from '../domain/adoption-rate';
 import {
   extractFileDiff,
   isTouchedByChanges,
@@ -60,6 +61,7 @@ const emptyOutcome = (): HarvestOutcome => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  adoption: [],
 });
 
 @Injectable()
@@ -131,7 +133,28 @@ export class HarvestReviewSignalsUsecase {
         );
       }
     }
+    await this.attachAdoption(outcome);
     return outcome;
+  }
+
+  // 누적 채택률은 분모(ACKED·FIXED·REJECTED)가 늘어난 회차에만 다시 센다. STALE 확정과
+  // 스레드 정리는 분모에 들지 않으므로 비율이 변하지 않고, 반응이 없던 회차도 마찬가지다
+  // — 5분마다 도는 스윕에서 같은 값을 반복 조회할 이유가 없다.
+  // 집계는 요약에 곁들이는 정보이므로 실패하면 수확 결과만 그대로 보고한다.
+  private async attachAdoption(outcome: HarvestOutcome): Promise<void> {
+    if (outcome.acked + outcome.fixed + outcome.rejected === 0) {
+      return;
+    }
+    try {
+      const rows = await this.repository.countAdoptionByCategory();
+      outcome.adoption = summarizeAdoption(rows);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `채택률 집계 실패 — 수확 결과만 보고합니다: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private groupCards(cards: PrReviewFindingRecord[]): PullRequestCardGroup[] {

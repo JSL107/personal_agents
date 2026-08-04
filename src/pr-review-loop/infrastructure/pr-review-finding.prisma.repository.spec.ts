@@ -307,4 +307,23 @@ describe('PrReviewFindingPrismaRepository', () => {
       });
     },
   );
+
+  it('카테고리·상태별 카드 수를 집계해 반환한다', async () => {
+    prisma.prReviewFinding.groupBy.mockResolvedValue([
+      { category: 'CORRECTNESS', status: 'ACKED', _count: { _all: 14 } },
+      { category: 'CORRECTNESS', status: 'REJECTED', _count: { _all: 1 } },
+    ]);
+
+    const rows = await repository.countAdoptionByCategory();
+
+    // 상태 필터는 순수 함수(summarizeAdoption)가 맡는다 — 여기서는 조합을 그대로 넘긴다.
+    expect(prisma.prReviewFinding.groupBy).toHaveBeenCalledWith({
+      by: ['category', 'status'],
+      _count: { _all: true },
+    });
+    expect(rows).toEqual([
+      { category: 'CORRECTNESS', status: 'ACKED', count: 14 },
+      { category: 'CORRECTNESS', status: 'REJECTED', count: 1 },
+    ]);
+  });
 });

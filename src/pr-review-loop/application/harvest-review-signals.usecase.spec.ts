@@ -94,6 +94,7 @@ const buildDependencies = ({
     findOpenPostedCards: jest.fn(),
     markDecided: jest.fn().mockResolvedValue(undefined),
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
+    countAdoptionByCategory: jest.fn().mockResolvedValue([]),
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
   const resolutionJudge = { execute: jest.fn().mockResolvedValue([]) };
@@ -126,6 +127,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       resolved: 0,
       judged: 0,
       skipped: 0,
+      adoption: [],
     });
     expect(repository.findOpenPostedCards).not.toHaveBeenCalled();
     expect(github.listReviewThreads).not.toHaveBeenCalled();
@@ -783,5 +785,101 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(repository.markDecided).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 2 }),
     );
+  });
+
+  it('카드 상태가 바뀌면 누적 채택률을 함께 낸다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    repository.countAdoptionByCategory.mockResolvedValue([
+      { category: 'TEST', status: 'ACKED', count: 12 },
+      { category: 'TEST', status: 'REJECTED', count: 3 },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome.acked).toBe(1);
+    // 12/15 = 80%
+    expect(outcome.adoption).toEqual([
+      {
+        category: 'TEST',
+        adopted: 12,
+        rejected: 3,
+        total: 15,
+        ratePercent: 80,
+      },
+    ]);
+  });
+
+  it('상태 전이가 없으면 채택률을 조회하지 않는다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [reviewThread()],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome.adoption).toEqual([]);
+    expect(repository.countAdoptionByCategory).not.toHaveBeenCalled();
+  });
+
+  it('STALE 확정만 있으면 채택률이 변하지 않으므로 조회하지 않는다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'MERGED',
+      truncated: false,
+      threads: [reviewThread()],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome.stale).toBe(1);
+    expect(repository.countAdoptionByCategory).not.toHaveBeenCalled();
+  });
+
+  it('채택률 집계가 실패해도 수확 결과는 그대로 낸다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    repository.countAdoptionByCategory.mockRejectedValue(
+      new Error('집계 조회 실패'),
+    );
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome.acked).toBe(1);
+    expect(outcome.adoption).toEqual([]);
   });
 });

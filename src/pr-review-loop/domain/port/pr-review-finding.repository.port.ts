@@ -1,3 +1,4 @@
+import { CategoryStatusCount } from '../adoption-rate';
 import {
   CreateFindingInput,
   FindingStatus,
@@ -41,4 +42,8 @@ export interface PrReviewFindingRepositoryPort {
   markDecided(input: MarkDecidedInput): Promise<void>;
 
   markThreadResolved(id: number): Promise<void>;
+
+  // 카테고리·상태별 카드 수. 채택률 분모 판정은 summarizeAdoption 이 하므로 여기서는
+  // 상태를 걸러내지 않고 조합을 그대로 넘긴다.
+  countAdoptionByCategory(): Promise<CategoryStatusCount[]>;
 }
