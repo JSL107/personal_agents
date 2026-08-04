@@ -2,35 +2,49 @@ import Foundation
 
 @testable import ConsoleCore
 
-/// 부서 매핑·부서 팔레트(순수)의 검증.
+/// 부서 값 변환·부서 팔레트(순수)의 검증.
+///
+/// 예전에는 이 파일이 "agentType 26종이 어느 부서인가" 를 고정했다. 그 매핑은 백엔드 사규로
+/// 넘어갔으므로(앱은 값을 옮겨 담을 뿐) 여기서 검증할 것은 **변환과 폴백**이다. 편성 자체는
+/// `agent-registry` 의 소관이고, 앱 테스트가 그것을 다시 고정하면 정본이 둘로 돌아간다.
 func runDepartmentTests(_ t: TestRunner) {
     t.suite("Department")
 
-    // 26개 실제 agentType 이 기대 부서로 매핑됨
-    let planning = ["PM", "PO_SHADOW", "PO_EVAL"]
-    let engineering = ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX"]
-    let review = ["CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER"]
-    let executive = ["CTO", "CEO"]
-    let growth = ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION"]
-    let internalOps = [
-        "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE", "HUMANIZER",
-        "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
-        "EVENING_RETRO", "OPS_SUPERVISOR",
-    ]
-    for agentType in planning { t.expectEqual(department(for: agentType), .planning, "\(agentType) → 기획") }
-    for agentType in engineering { t.expectEqual(department(for: agentType), .engineering, "\(agentType) → 개발") }
-    for agentType in review { t.expectEqual(department(for: agentType), .review, "\(agentType) → 리뷰") }
-    for agentType in executive { t.expectEqual(department(for: agentType), .executive, "\(agentType) → 경영") }
-    for agentType in growth { t.expectEqual(department(for: agentType), .growth, "\(agentType) → 성장") }
-    for agentType in internalOps { t.expectEqual(department(for: agentType), .internalOps, "\(agentType) → 내부") }
+    // 백엔드가 보내는 rawValue 6종이 전부 앱 enum 으로 옮겨진다.
+    // 문자열이 어긋나면 전원이 폴백으로 몰리므로, 왕복(enum → raw → enum)으로 못 박는다.
+    for department in Department.allCases {
+        t.expectEqual(
+            departmentFromRaw(department.rawValue), department,
+            "\(department.rawValue) 왕복 변환"
+        )
+    }
 
-    let total = planning.count + engineering.count + review.count
-        + executive.count + growth.count + internalOps.count
-    t.expectEqual(total, 26, "매핑 커버 26개")
+    // 백엔드 계약(`Department` enum)이 쓰는 실제 문자열. 한쪽만 이름을 바꾸면 여기서 걸린다.
+    t.expectEqual(departmentFromRaw("planning"), .planning, "planning")
+    t.expectEqual(departmentFromRaw("engineering"), .engineering, "engineering")
+    t.expectEqual(departmentFromRaw("review"), .review, "review")
+    t.expectEqual(departmentFromRaw("executive"), .executive, "executive")
+    t.expectEqual(departmentFromRaw("growth"), .growth, "growth")
+    t.expectEqual(departmentFromRaw("internalOps"), .internalOps, "internalOps")
 
-    // 미지 타입 → 내부 폴백(크래시 없이 흡수)
-    t.expectEqual(department(for: "UNKNOWN_FUTURE"), .internalOps, "미지 타입 → 내부 폴백")
-    t.expectEqual(department(for: ""), .internalOps, "빈 문자열 → 내부 폴백")
+    // 값이 없거나 앱이 모르는 부서 → 내부 폴백(크래시 없이 흡수).
+    t.expectEqual(departmentFromRaw(nil), .internalOps, "nil → 내부 폴백")
+    t.expectEqual(departmentFromRaw(""), .internalOps, "빈 문자열 → 내부 폴백")
+    t.expectEqual(departmentFromRaw("FUTURE_DEPT"), .internalOps, "미지 부서 → 내부 폴백")
+    // 대소문자·표기 차이도 폴백이다 — 백엔드가 SCREAMING_CASE 로 바꾸면 조용히 통과하지 않는다.
+    t.expectEqual(departmentFromRaw("PLANNING"), .internalOps, "대문자 표기 → 폴백(관용 파싱 안 함)")
+
+    // 에이전트가 들고 온 값이 그대로 화면 부서가 된다.
+    let agent = ConsoleAgent(
+        agentType: "REVIEW_REPLY_JUDGE", displayName: "Review Reply Judge", slashCommands: [],
+        description: "", state: .waiting, bubble: "", department: Department.review.rawValue
+    )
+    t.expectEqual(agent.resolvedDepartment, .review, "스냅샷 값이 화면 부서로 쓰인다")
+    let noDepartment = ConsoleAgent(
+        agentType: "PM", displayName: "PM", slashCommands: [],
+        description: "", state: .waiting, bubble: ""
+    )
+    t.expectEqual(noDepartment.resolvedDepartment, .internalOps, "부서 없는 응답 → 내부 폴백")
 
     // 팔레트: 6종 모두 0~1 범위, 서로 다른 색
     var seen = Set<String>()

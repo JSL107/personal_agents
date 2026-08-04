@@ -2,29 +2,49 @@ import Foundation
 
 @testable import ConsoleCore
 
-private func planAgent(_ type: String) -> ConsoleAgent {
+private func planAgent(_ type: String, _ department: Department) -> ConsoleAgent {
     ConsoleAgent(
         agentType: type, displayName: type, slashCommands: [],
-        description: "", state: .waiting, bubble: ""
+        description: "", state: .waiting, bubble: "",
+        department: department.rawValue
     )
 }
 
+private func planAgents(_ department: Department, _ types: [String]) -> [ConsoleAgent] {
+    types.map { planAgent($0, department) }
+}
+
 // 운영 스냅샷(GET /v1/console/snapshot)의 실제 27종을 그대로 옮긴 표본.
-// 부서별 인원 편차(내부 10명)가 정원 경계를 밟으므로 임의로 줄이면 안 된다 —
-// 26명짜리 표본을 쓰던 동안 "내부 10번째(SUBCONSCIOUS_GATE)가 자리를 못 받아 화면에서
-// 사라지는" 결함이 테스트를 통과했다.
+//
+// **부서는 백엔드 사규(`agent-registry/agent-contract.ts` 의 `AGENT_CONTRACTS`)가 정본이다.**
+// 예전에는 agentType 만 적고 앱의 하드코딩 매핑이 부서를 유도했는데, 그 매핑이 사규와 어긋나
+// `REVIEW_REPLY_JUDGE` 가 리뷰가 아니라 내부방에 앉아 있었다. 이제 표본이 사규 값을 그대로
+// 들고 있으므로, 사규에서 부서를 옮기면 여기도 함께 갱신해야 한다.
+//
+// 인원을 임의로 줄이면 안 된다 — 26명짜리 표본을 쓰던 동안 "내부 부서 마지막 한 명이 자리를
+// 못 받아 화면에서 사라지는" 결함이 통과했다. 구역 정원은 12석이고 지금 가장 큰 부서가 9명이다.
 // agentType 은 displayName 과 다르다: EVENING_RETRO(타입) ↔ "Evening Retro Publish"(표시명).
-private let sampleAgents: [ConsoleAgent] = [
-    "PM", "PO_SHADOW", "PO_EVAL",
-    "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX",
-    "CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER",
-    "CTO", "CEO",
-    "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION",
-    "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
-    "REVIEW_REPLY_JUDGE", "HUMANIZER", "DOCS_AUDIT_OPTIMIZER",
-    "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING", "EVENING_RETRO",
-    "OPS_SUPERVISOR",
-].map(planAgent)
+private let sampleAgents: [ConsoleAgent] =
+    planAgents(.planning, ["PM", "PO_SHADOW", "PO_EVAL"])
+    + planAgents(.engineering, ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX"])
+    + planAgents(
+        .review, ["CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE"]
+    )
+    + planAgents(.executive, ["CTO", "CEO"])
+    + planAgents(.growth, ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION"])
+    + planAgents(
+        .internalOps,
+        [
+            "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE", "HUMANIZER",
+            "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
+            "EVENING_RETRO", "OPS_SUPERVISOR",
+        ]
+    )
+
+/// 자리 배정에는 agentType 만 담기므로, 표본에서 부서를 되찾는다(표본 = 사규 값).
+private let sampleDepartments: [String: Department] = Dictionary(
+    uniqueKeysWithValues: sampleAgents.map { ($0.agentType, $0.resolvedDepartment) }
+)
 
 func runOfficeFloorPlanTests(_ t: TestRunner) {
     t.suite("OfficeFloorPlan")
@@ -37,11 +57,11 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 인원이 가장 많은 부서도 정원 안에 들어가야 한다. 부서별 인원은 언제든 늘 수 있으므로,
     // "가장 큰 부서 전원이 자리를 받았는가" 를 부서 단위로 못 박는다.
     for zoneDepartment in Department.allCases {
-        let members = sampleAgents.filter { department(for: $0.agentType) == zoneDepartment }
+        let members = sampleAgents.filter { $0.resolvedDepartment == zoneDepartment }
         guard !members.isEmpty else {
             continue
         }
-        let seated = plan.desks.filter { department(for: $0.agentType) == zoneDepartment }
+        let seated = plan.desks.filter { sampleDepartments[$0.agentType] == zoneDepartment }
         t.expectEqual(
             seated.count, members.count,
             "\(zoneDepartment.label) 부서 \(members.count)명 전원 배정(정원 초과 시 실패)"
@@ -85,7 +105,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 사람이 사무실 밖에 걸터앉은 것처럼 보이던 결함이 6주간 통과했다.
     // 부서마다 바닥재가 달라진 뒤로는 "무엇 위에 있는가" 를 부서 바닥재와 직접 대조한다.
     let offZoneFloor = plan.desks.filter { assignment in
-        let expected = departmentFloor(department(for: assignment.agentType))
+        let expected = departmentFloor(sampleDepartments[assignment.agentType] ?? .internalOps)
         return plan.floor[assignment.desk.y][assignment.desk.x] != expected
             || plan.floor[assignment.seat.y][assignment.seat.x] != expected
     }
@@ -113,7 +133,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     }
     t.expectEqual(thickWallRuns.count, 0, "가로로 겹친 벽 칸: \(thickWallRuns)")
 
-    // 부서마다 다른 가구 세트가 실제로 놓여 있어야 한다. 인원이 꽉 찬 부서(내부 10명)에서도
+    // 부서마다 다른 가구 세트가 실제로 놓여 있어야 한다. 인원이 가장 많은 부서(내부 9명)에서도
     // 빠지면 안 된다 — 예전 배치는 아래쪽 줄만 후보로 써서, 정원이 찬 부서는 집기가
     // 통째로 사라졌다(빈 방으로 보이는 원인).
     for zone in plan.zones {
@@ -139,6 +159,40 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         departmentFurniture(candidate).map(\.rawValue).joined(separator: "+")
     }
     t.expectEqual(Set(furnitureSets).count, Department.allCases.count, "부서별 가구 세트가 전부 다름")
+
+    // 격자 기본값이 화면에 남지 않아야 한다.
+    //
+    // 기본값은 예전에 `woodA` 였다. 그것은 리뷰 부서의 바닥재이기도 해서, 칠하기가 빠진 칸이
+    // 생기면 "리뷰방 바닥" 으로 위장한 채 아무도 눈치채지 못했다. 기본값을 전용 종류로 바꿔
+    // 이 검사가 성립하게 만든 것이 이 변경의 요점이다 — 지금 평면도는 방·밴드·벽이 모든 칸을
+    // 덮으므로 남는 칸이 0이고, 0이 아니게 되는 순간이 곧 칠하기 누락이다.
+    var unpaintedTiles: [String] = []
+    for y in 0..<plan.rows {
+        for x in 0..<plan.columns where plan.floor[y][x] == .corridor {
+            unpaintedTiles.append("(\(x),\(y))")
+        }
+    }
+    t.expectEqual(unpaintedTiles.count, 0, "칠하기가 빠진 칸: \(unpaintedTiles)")
+
+    for department in Department.allCases {
+        t.expect(
+            departmentFloor(department) != .corridor,
+            "\(department.label) 부서 바닥재가 통로와 같다 — 방 경계가 사라진다"
+        )
+        t.expect(
+            departmentFloor(department).isRoomFloor,
+            "\(department.label) 부서 바닥재는 방 바닥으로 쓸 수 있는 종류다"
+        )
+    }
+    t.expect(!FloorTile.corridor.isRoomFloor, "통로는 방 바닥이 아니다")
+    t.expect(!FloorTile.wall.isRoomFloor, "벽은 방 바닥이 아니다")
+    // 통로는 방보다 어둡게 눌러 배경으로 물러난다 — 사람·가구가 앞서야 한다.
+    for tile in FloorTile.allCases where tile.isRoomFloor {
+        t.expect(
+            FloorTile.corridor.muteStrength > tile.muteStrength,
+            "통로가 \(tile.rawValue) 보다 어둡다"
+        )
+    }
 
     // 맞닿은 구역끼리는 바닥재가 달라야 한다(가로 이웃 = index 차 1, 세로 이웃 = 같은 열 위아래).
     for zone in plan.zones {

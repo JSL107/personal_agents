@@ -266,7 +266,8 @@ final class OfficeScene: SKScene {
 
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
         let node = CharacterNode(
-            agentType: agent.agentType, displayName: agent.displayName, tile: seat
+            agentType: agent.agentType, displayName: agent.displayName,
+            department: agent.resolvedDepartment, tile: seat
         )
         node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)

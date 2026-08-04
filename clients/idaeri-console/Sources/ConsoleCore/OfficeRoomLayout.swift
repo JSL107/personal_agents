@@ -56,7 +56,7 @@ public func departmentRoomLayout(
     }
 
     let present = departmentOrder.filter { dept in
-        agents.contains { department(for: $0.agentType) == dept }
+        agents.contains { $0.resolvedDepartment == dept }
     }
     let gridHeight = max(height - max(bandHeight, 0), 1)
     let roomRows = Int((Double(present.count) / Double(roomColumns)).rounded(.up))
@@ -82,7 +82,7 @@ public func departmentRoomLayout(
         let labelPoint = OfficePoint(x: rectX + 8, y: topY - pad - 8)
         rooms.append(OfficeRoom(department: dept, rect: rect, labelPoint: labelPoint))
 
-        let deptAgents = agents.filter { department(for: $0.agentType) == dept }
+        let deptAgents = agents.filter { $0.resolvedDepartment == dept }
         let rowCount = Int((Double(deptAgents.count) / Double(agentColumns)).rounded(.up))
         let cellWidth = rectWidth / Double(agentColumns)
         let usableHeight = rectHeight - labelHeight

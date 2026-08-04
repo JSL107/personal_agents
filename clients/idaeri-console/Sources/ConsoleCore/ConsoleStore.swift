@@ -66,15 +66,7 @@ public final class ConsoleStore: ObservableObject {
         else {
             return agent
         }
-        return ConsoleAgent(
-            agentType: agent.agentType,
-            displayName: agent.displayName,
-            slashCommands: agent.slashCommands,
-            description: agent.description,
-            state: .waiting,
-            bubble: waitingBubble,
-            lastFinishedRunId: agent.lastFinishedRunId
-        )
+        return agent.replacing(state: .waiting, bubble: waitingBubble)
     }
 
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
@@ -141,18 +133,7 @@ public final class ConsoleStore: ObservableObject {
         guard let index = agents.firstIndex(where: { $0.agentType == agentType }) else {
             return
         }
-        let current = agents[index]
-        agents[index] = demoteIfAcknowledged(
-            ConsoleAgent(
-                agentType: current.agentType,
-                displayName: current.displayName,
-                slashCommands: current.slashCommands,
-                description: current.description,
-                state: state,
-                bubble: current.bubble,
-                lastFinishedRunId: current.lastFinishedRunId
-            )
-        )
+        agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state))
     }
 
     /// `run.finished` 가 알려준 런 id 를 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고
@@ -167,16 +148,7 @@ public final class ConsoleStore: ObservableObject {
         else {
             return
         }
-        let current = agents[index]
-        agents[index] = ConsoleAgent(
-            agentType: current.agentType,
-            displayName: current.displayName,
-            slashCommands: current.slashCommands,
-            description: current.description,
-            state: current.state,
-            bubble: current.bubble,
-            lastFinishedRunId: run.id
-        )
+        agents[index] = agents[index].replacing(lastFinishedRunId: run.id)
     }
 
     /// 낙관적 지시 추가. 반환한 id 로 뷰가 client POST 후 실패 시 markCommandFailed 를 호출한다.
