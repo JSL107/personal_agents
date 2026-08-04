@@ -7,6 +7,7 @@ import {
 } from '../github/domain/port/github-client.port';
 import { GithubModule } from '../github/github.module';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
+import { CountPreviewsByPayloadUsecase } from '../preview-gate/application/count-previews-by-payload.usecase';
 import { CreatePreviewUsecase } from '../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../preview-gate/application/find-all-open-previews.usecase';
 import { DispatchCooldown } from './application/dispatch-cooldown';
@@ -27,6 +28,7 @@ const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
         githubClient: GithubClientPort,
         createPreview: CreatePreviewUsecase,
         findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+        countPreviewsByPayload: CountPreviewsByPayloadUsecase,
         cooldown: DispatchCooldown,
       ): SessionDispatchService =>
         new SessionDispatchService(
@@ -34,6 +36,7 @@ const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
           githubClient,
           createPreview,
           findAllOpenPreviews,
+          countPreviewsByPayload,
           cooldown,
           defaultResolveRepo,
         ),
@@ -42,6 +45,7 @@ const DEFAULT_SESSION_DISPATCH_COOLDOWN_MS = 1_800_000;
         GITHUB_CLIENT_PORT,
         CreatePreviewUsecase,
         FindAllOpenPreviewsUsecase,
+        CountPreviewsByPayloadUsecase,
         DispatchCooldown,
       ],
     },

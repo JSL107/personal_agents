@@ -10,7 +10,10 @@ const makePreviewRepository = (
   outcomes: Awaited<
     ReturnType<PreviewActionRepositoryPort['countOutcomesByKind']>
   > = [],
-) => ({ countOutcomesByKind: jest.fn().mockResolvedValue(outcomes) });
+) => ({
+  countOutcomesByKind: jest.fn().mockResolvedValue(outcomes),
+  countByPayloadValue: jest.fn().mockResolvedValue(0),
+});
 
 describe('OpsSupervisorAutopilotTask', () => {
   it('이상 없으면 하트비트 요약을 내고 제안기는 호출하지 않는다', async () => {

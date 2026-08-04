@@ -27,6 +27,7 @@ const buildRepo = (
   findById: jest.fn(),
   findLatestPendingForUser: jest.fn(),
   countOutcomesByKind: jest.fn(),
+  countByPayloadValue: jest.fn().mockResolvedValue(0),
   transition: jest
     .fn()
     .mockImplementation(({ id, status }) =>

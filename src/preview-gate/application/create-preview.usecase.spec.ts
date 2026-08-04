@@ -33,6 +33,7 @@ describe('CreatePreviewUsecase', () => {
     const created = buildCreated();
     const repository = {
       create: jest.fn().mockResolvedValue(created),
+      countByPayloadValue: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<PreviewActionRepositoryPort>;
     const bus = {
       publish: jest.fn(),
@@ -58,6 +59,7 @@ describe('CreatePreviewUsecase', () => {
     const created = buildCreated();
     const repository = {
       create: jest.fn().mockResolvedValue(created),
+      countByPayloadValue: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<PreviewActionRepositoryPort>;
     const usecase = new CreatePreviewUsecase(repository);
 
