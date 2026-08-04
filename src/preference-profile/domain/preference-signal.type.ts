@@ -1,5 +1,6 @@
 export type SignalSource =
   | 'proposal_decision'
+  | 'preview_decision'
   | 'episodic_correction'
   | 'reaction';
 
