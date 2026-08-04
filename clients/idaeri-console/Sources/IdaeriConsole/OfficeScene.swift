@@ -842,9 +842,11 @@ final class OfficeScene: SKScene {
             return
         }
         node.setSelected(true)
+        // 앉은 캐릭터는 책상과 겹치도록 내려가 있다(CharacterNode.spriteBaseY). 테두리가 그
+        // 오프셋을 무시하면 앉은 사람만 테두리가 몸에서 한 뼘 위로 떠오른다.
         let ring = SKShapeNode(
             rect: CGRect(
-                x: -tileSize * 0.42, y: -tileSize * 0.16,
+                x: -tileSize * 0.42, y: node.spriteBaseY - tileSize * 0.16,
                 width: tileSize * 0.84, height: node.sprite.size.height + tileSize * 0.24
             ),
             cornerRadius: 4
