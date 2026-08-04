@@ -303,3 +303,37 @@
 
 **후속으로 남긴 것** — 창 높이가 줄면 부서 문패가 바로 아래 이름표를 덮는다(960×820 에서 재현,
 960×1050 에서는 정상). 화면 회귀 캡처를 처음 돌리자마자 드러난 조판 결함이며 이번 범위 밖이다.
+
+---
+
+# 백엔드 서버 프로세스 종료
+
+## Plan
+
+- [x] 이 레포와 연결된 `pnpm dev` 프로세스의 PID, 부모, TTY, cwd를 확인한다.
+- [x] 확인된 백엔드 프로세스 트리만 정상 종료한다.
+- [x] 프로세스와 애플리케이션 포트가 내려갔는지 검증한다.
+
+## Review
+
+- PID `10935` (`node --enable-source-maps dist/src/main`)가 TTY 없이 PPID `1`로 실행되며 `3099`를 listen 중인 백엔드임을 확인했다.
+- `SIGTERM`으로 정상 종료했다. `SIGKILL`은 필요하지 않았다.
+- 종료 직후 PID `10935`가 사라졌고 `3099` listener도 없어졌다. 콘솔 앱과 Postgres/Redis 컨테이너는 유지했다.
+
+---
+
+# `contractViolations` Prisma 타입 오류 수정
+
+## Plan
+
+- [x] Prisma schema, repository 코드, generated client 타입을 대조해 root cause를 확인한다.
+- [x] Prisma client를 현재 schema 기준으로 재생성하고 focused build로 오류 해소를 확인한다.
+- [x] 실제 DB의 `contract_violations` column 유무를 확인하고 필요하면 schema를 동기화한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 각각 실행해 회귀를 검증한다.
+
+## Review
+
+- Root cause: `prisma/schema.prisma`와 실제 DB에는 필드/column이 있었지만, 로컬 generated Prisma client가 이전 schema 상태였다.
+- `pnpm prisma:generate`로 Prisma Client v6.19.3을 재생성했다. 코드와 DB schema 변경은 필요하지 않았다.
+- Verification: generated client에 `contractViolations` 타입 존재, focused `pnpm build` exit 0.
+- Full gates: `pnpm lint:check` exit 0 (기존 warning 53건), `pnpm test` exit 0 (294+5 suites, 2221+40 tests), `pnpm build` exit 0.
