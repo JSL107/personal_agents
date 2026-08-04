@@ -20,7 +20,11 @@ import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
 // 재접속 스냅샷 복원 시 "최근 종료 결과"(완료/실패)로 되살릴 시간 창(분).
 // SSE 라이브는 이 창과 무관하게 즉시 반영된다.
-const FINISHED_SNAPSHOT_WINDOW_MINUTES = 360;
+//
+// 이 창은 재접속·재시작으로 방금 끝난 일이 "대기중" 으로 되살아나는 것을 막는 용도라 짧아야
+// 한다. 6시간이었을 때는 하루 한 번 도는 에이전트의 그 한 번이 반나절을 완료로 칠하고,
+// 5분 주기로 도는 리뷰 스윕은 창이 끊길 틈이 없어 사실상 상시 완료로 보였다.
+const FINISHED_SNAPSHOT_WINDOW_MINUTES = 60;
 
 // 콘솔 관제 스냅샷 조립 — agent-registry(문서 메타) + 활성 런 + 열린 승인을 화면 뷰 타입으로 가공.
 // 읽기 전용. 도메인 표현(number id, Date)을 여기서만 뷰 표현(string id, ISO 문자열)으로 변환한다.
@@ -67,15 +71,16 @@ export class ConsoleReadService {
     // "대기중" 으로 되살아나고 요약의 완료 수가 늘 0 이었다 — SSE 로는 완료가 오는데
     // 스냅샷으로 덮이면 사라지던 불일치.
     const latestFinishedByAgentType = new Map(
-      recentlyFinished.map((run) => [run.agentType, run.status] as const),
+      recentlyFinished.map((run) => [run.agentType, run] as const),
     );
 
     const agents: ConsoleAgent[] = AGENT_REGISTRY.map((entry) => {
+      const latestFinished =
+        latestFinishedByAgentType.get(entry.agentType) ?? null;
       const state = deriveAgentState({
         hasOpenApproval: openApprovalAgentTypes.has(entry.agentType),
         hasActiveRun: activeAgentTypes.has(entry.agentType),
-        latestFinishedStatus:
-          latestFinishedByAgentType.get(entry.agentType) ?? null,
+        latestFinishedStatus: latestFinished?.status ?? null,
         isIntegrationBlocked: false,
         isQueuedWaiting: false,
       });
@@ -90,6 +95,7 @@ export class ConsoleReadService {
         department: contract.department,
         departmentLabel: DEPARTMENT_LABEL[contract.department],
         job: contract.job,
+        lastFinishedAt: latestFinished?.endedAt.toISOString() ?? null,
       };
     });
 

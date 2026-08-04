@@ -41,7 +41,14 @@ struct DashboardView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(store.agents) { agent in
-                            AgentCardView(agent: agent, pendingCommands: store.pendingCommands, onSend: onSend)
+                            AgentCardView(
+                                agent: agent,
+                                pendingCommands: store.pendingCommands,
+                                onSend: onSend,
+                                onAcknowledge: {
+                                    store.acknowledgeCompletion(agentType: agent.agentType)
+                                }
+                            )
                         }
                     }
                 }

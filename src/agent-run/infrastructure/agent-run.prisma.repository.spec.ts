@@ -344,8 +344,16 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
     jest.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
     // findMany 는 이미 where(cutoff)+distinct 가 적용된 "agentType별 최신 종료" 를 돌려준다.
     const findMany = jest.fn().mockResolvedValue([
-      { agentType: 'PM', status: 'FAILED' },
-      { agentType: 'BE', status: 'SUCCEEDED' },
+      {
+        agentType: 'PM',
+        status: 'FAILED',
+        endedAt: new Date('2026-07-30T11:00:00.000Z'),
+      },
+      {
+        agentType: 'BE',
+        status: 'SUCCEEDED',
+        endedAt: new Date('2026-07-30T11:30:00.000Z'),
+      },
     ]);
     const prismaMock = {
       agentRun: { findMany },
@@ -357,9 +365,18 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
     });
 
     // 성공도 그대로 실어 보낸다 — 콘솔 스냅샷이 COMPLETED 를 만들려면 이 값이 필요하다.
+    // endedAt 도 함께 — 콘솔이 "이 완료는 확인했다" 를 식별하는 키다.
     expect(result).toEqual([
-      { agentType: 'PM', status: 'FAILED' },
-      { agentType: 'BE', status: 'SUCCEEDED' },
+      {
+        agentType: 'PM',
+        status: 'FAILED',
+        endedAt: new Date('2026-07-30T11:00:00.000Z'),
+      },
+      {
+        agentType: 'BE',
+        status: 'SUCCEEDED',
+        endedAt: new Date('2026-07-30T11:30:00.000Z'),
+      },
     ]);
     // cutoff 를 where 로 밀어넣어 오래된 이력을 스캔하지 않는다(360분 전 = 06:00).
     expect(findMany).toHaveBeenCalledWith(
@@ -367,10 +384,37 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
         where: { endedAt: { gte: new Date('2026-07-30T06:00:00.000Z') } },
         orderBy: [{ agentType: 'asc' }, { endedAt: 'desc' }],
         distinct: ['agentType'],
-        select: { agentType: true, status: true },
+        select: { agentType: true, status: true, endedAt: true },
       }),
     );
     jest.useRealTimers();
+  });
+
+  it('endedAt 이 비어 있는 행은 제외한다 — 완료 식별 키가 없으면 화면이 확인 여부를 판정할 수 없다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { agentType: 'PM', status: 'SUCCEEDED', endedAt: null },
+      {
+        agentType: 'BE',
+        status: 'SUCCEEDED',
+        endedAt: new Date('2026-07-30T11:30:00.000Z'),
+      },
+    ]);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findRecentlyFinishedRuns({
+      withinMinutes: 60,
+    });
+
+    expect(result).toEqual([
+      {
+        agentType: 'BE',
+        status: 'SUCCEEDED',
+        endedAt: new Date('2026-07-30T11:30:00.000Z'),
+      },
+    ]);
   });
 });
 

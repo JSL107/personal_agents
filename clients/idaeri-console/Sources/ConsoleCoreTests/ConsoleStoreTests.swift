@@ -247,4 +247,105 @@ func runConsoleStoreTests(_ t: TestRunner) {
     emitStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress))
     t.expect(receivedStateChange, "apply(event:) 가 eventStream 으로 방출")
     cancellable.cancel()
+
+    runAcknowledgeCompletionTests(t)
+}
+
+/// 완료 수기 확인 — 서버는 최근 종료 창(60분) 동안 계속 완료를 보내주므로, 확인한 완료가
+/// 스냅샷마다 되살아나지 않아야 한다. 반대로 새 완료는 확인 기록에 가려지지 않아야 한다.
+private func runAcknowledgeCompletionTests(_ t: TestRunner) {
+    t.suite("ConsoleStore.acknowledgeCompletion")
+
+    let firstFinish = "2026-08-04T04:00:00Z"
+    let secondFinish = "2026-08-04T05:00:00Z"
+
+    func completedSnapshot(finishedAt: String?) -> ConsoleSnapshot {
+        ConsoleSnapshot(
+            agents: [
+                ConsoleAgent(
+                    agentType: "CTO",
+                    displayName: "CTO",
+                    slashCommands: ["/assign"],
+                    description: "",
+                    state: .completed,
+                    bubble: "완료했어요!",
+                    lastFinishedAt: finishedAt
+                )
+            ],
+            runs: [],
+            approvals: [],
+            sessions: [],
+            serverTime: "2026-08-04T05:30:00Z"
+        )
+    }
+
+    // 확인하면 즉시 대기로 내려가고 말풍선도 대기 문구로 바뀐다
+    let store = ConsoleStore()
+    store.apply(snapshot: completedSnapshot(finishedAt: firstFinish))
+    t.expectEqual(store.agents.first?.state, .completed, "확인 전에는 완료")
+    store.acknowledgeCompletion(agentType: "CTO")
+    t.expectEqual(store.agents.first?.state, .waiting, "확인하면 대기로 내려감")
+    t.expectEqual(store.agents.first?.bubble, "업무 대기중", "확인 후 말풍선도 대기 문구")
+
+    // 서버가 같은 완료를 다시 보내도(창 안이라 계속 온다) 되살아나지 않는다
+    store.apply(snapshot: completedSnapshot(finishedAt: firstFinish))
+    t.expectEqual(store.agents.first?.state, .waiting, "같은 완료는 스냅샷에서도 대기 유지")
+
+    // 새 런이 끝나 종료 시각이 바뀌면 다시 완료로 보인다
+    store.apply(snapshot: completedSnapshot(finishedAt: secondFinish))
+    t.expectEqual(store.agents.first?.state, .completed, "새 완료는 다시 표시")
+
+    // run.finished 가 종료 시각을 갱신하므로, 뒤따르는 state.changed 는 확인 기록에 가려지지 않는다
+    // (백엔드는 두 이벤트를 항상 이 순서로 쌍 발행한다. 스냅샷 30초를 기다리지 않아야 한다.)
+    let liveStore = ConsoleStore()
+    liveStore.apply(snapshot: completedSnapshot(finishedAt: firstFinish))
+    liveStore.acknowledgeCompletion(agentType: "CTO")
+    t.expectEqual(liveStore.agents.first?.state, .waiting, "확인 직후 대기")
+    liveStore.apply(
+        event: .runFinished(
+            ConsoleRun(
+                id: "r9",
+                agentType: "CTO",
+                status: "SUCCEEDED",
+                parentId: nil,
+                startedAt: "2026-08-04T04:59:00Z",
+                finishedAt: secondFinish
+            )
+        )
+    )
+    liveStore.apply(event: .stateChanged(agentType: "CTO", state: .completed))
+    t.expectEqual(liveStore.agents.first?.state, .completed, "SSE 로 온 새 완료는 즉시 표시")
+
+    // 종료 시각을 모르는 완료는 확인해도 판정 키가 없어 그대로 둔다(확인 버튼도 숨는 조건)
+    let unknownStore = ConsoleStore()
+    unknownStore.apply(snapshot: completedSnapshot(finishedAt: nil))
+    unknownStore.acknowledgeCompletion(agentType: "CTO")
+    t.expectEqual(unknownStore.agents.first?.state, .completed, "종료 시각 없으면 확인 무시")
+
+    // 완료가 아닌 상태는 확인 대상이 아니다
+    let waitingStore = ConsoleStore()
+    waitingStore.apply(
+        snapshot: ConsoleSnapshot(
+            agents: [
+                ConsoleAgent(
+                    agentType: "CTO",
+                    displayName: "CTO",
+                    slashCommands: [],
+                    description: "",
+                    state: .inProgress,
+                    bubble: "일하는 중…",
+                    lastFinishedAt: firstFinish
+                )
+            ],
+            runs: [], approvals: [], sessions: [], serverTime: "t"
+        )
+    )
+    waitingStore.acknowledgeCompletion(agentType: "CTO")
+    t.expectEqual(waitingStore.agents.first?.state, .inProgress, "진행 중은 확인 무시")
+
+    // 미지의 agentType 은 무시(크래시 없음)
+    let ghostStore = ConsoleStore()
+    ghostStore.apply(snapshot: completedSnapshot(finishedAt: firstFinish))
+    ghostStore.acknowledgeCompletion(agentType: "GHOST")
+    t.expectEqual(ghostStore.agents.first?.state, .completed, "미지 agentType 무시")
 }

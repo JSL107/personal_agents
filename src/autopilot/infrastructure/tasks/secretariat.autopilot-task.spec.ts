@@ -52,7 +52,13 @@ describe('SecretariatAutopilotTask', () => {
           endedAt: new Date('2026-08-02T09:00:00.000Z'),
         },
       ],
-      recentlyFinished: [{ agentType: 'CODE_REVIEWER', status: 'FAILED' }],
+      recentlyFinished: [
+        {
+          agentType: 'CODE_REVIEWER',
+          status: 'FAILED',
+          endedAt: new Date('2026-08-04T05:00:00.000Z'),
+        },
+      ],
     });
 
     const result = await run(task);
@@ -84,7 +90,13 @@ describe('SecretariatAutopilotTask', () => {
           endedAt: new Date('2026-08-02T09:00:00.000Z'),
         },
       ],
-      recentlyFinished: [{ agentType: 'CODE_REVIEWER', status: 'SUCCEEDED' }],
+      recentlyFinished: [
+        {
+          agentType: 'CODE_REVIEWER',
+          status: 'SUCCEEDED',
+          endedAt: new Date('2026-08-04T05:00:00.000Z'),
+        },
+      ],
     });
 
     const text = (await run(task)).summaryText ?? '';
