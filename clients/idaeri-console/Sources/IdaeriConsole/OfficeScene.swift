@@ -409,6 +409,48 @@ final class OfficeScene: SKScene {
             holder.addChild(label)
             overlayLayer.addChild(holder)
         }
+        renderCommonAreaLabels()
+    }
+
+    /// 상단 밴드(회의실·대표실·탕비실)에 이름을 단다.
+    ///
+    /// 화면 위쪽 1/4 을 차지하는데 이름이 없어 "가구만 놓인 빈 띠" 로 보였다. 부서 문패와 달리
+    /// **왼쪽 끝에 붙인다** — 밴드 맨 아래 줄과 위 구역 문패가 같은 높이대라, 둘 다 가운데
+    /// 정렬하면 x 까지 겹쳐 서로를 덮는다.
+    ///
+    /// 색은 부서색을 쓰지 않고 중성 회색이다. 사람이 상주하지 않는 방이라 부서 문패보다
+    /// 뒤로 물러나야 관제 신호(사람·상태 링)가 먼저 읽힌다.
+    private func renderCommonAreaLabels() {
+        overlayLayer.children
+            .filter { $0.name?.hasPrefix("common:") == true }
+            .forEach { $0.removeFromParent() }
+        for area in plan.commonAreas {
+            let holder = SKNode()
+            holder.name = "common:\(area.label)"
+            holder.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(area.originX) + 0.5) * tileSize,
+                y: gridOrigin.y + (CGFloat(area.labelY) + 0.2) * tileSize
+            )
+
+            let label = SKLabelNode(text: "\(area.icon) \(area.label)")
+            label.fontName = officeLabelFontName
+            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.32)
+            label.fontColor = SKColor(white: 0.72, alpha: 1)
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .bottom
+            label.zPosition = 1
+
+            let plate = SKShapeNode(
+                rect: label.frame.insetBy(dx: -5, dy: -3), cornerRadius: 3
+            )
+            plate.fillColor = SKColor(white: 0.07, alpha: 0.62)
+            plate.strokeColor = SKColor(white: 0.45, alpha: 0.4)
+            plate.lineWidth = 1
+
+            holder.addChild(plate)
+            holder.addChild(label)
+            overlayLayer.addChild(holder)
+        }
     }
 
     private func renderFurniture() {

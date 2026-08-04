@@ -386,6 +386,80 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expect(small > large, "\(zone.department.label) 작은 창 문패가 큰 창보다 더 높이 뜬다")
     }
 
+    // 부서마다 자리 모양이 실제로 다르다.
+    //
+    // 여섯 방이 전부 같은 4열 격자였던 것이 "복사 붙여넣기 같다" 의 실체다. 배치표가 다시
+    // 하나로 수렴하면(또는 새 부서가 남의 배치를 그대로 복사하면) 여기서 잡힌다.
+    let layouts = Department.allCases.map { departmentDeskSpots($0) }
+    for (index, layout) in layouts.enumerated() {
+        for other in layouts[(index + 1)...] where layout == other {
+            t.expect(false, "부서 자리 배치가 서로 같다(복사 붙여넣기 회귀)")
+        }
+        t.expect(!layout.isEmpty, "\(Department.allCases[index].label) 자리 배치 비어 있지 않음")
+    }
+
+    // 문 열(x = 8)에는 자리를 놓지 않는다 — 아래 구역과 이어지는 세로 동선이다.
+    // 도달성 테스트가 결과적으로 잡기는 하지만, 원인을 바로 가리키는 단언을 따로 둔다.
+    for department in Department.allCases {
+        let onDoorColumn = departmentDeskSpots(department).filter { $0.x == officeZoneDoorColumn }
+        t.expectEqual(onDoorColumn.count, 0, "\(department.label) 자리가 문 열을 막지 않음")
+    }
+
+    // 아래 행 사람의 이름표가 위 행 책상을 침범하지 않는다.
+    //
+    // 예전 3행 배치는 행 간격이 2 칸이라, 아래 행 이름표가 위 행 책상 상판에 얹혀 글자가
+    // 나뭇결에 묻혔다(사진에서 내부 부서의 "윤문"·"이슈 분류"). 간격 3 칸이면 닿지 않는데,
+    // 여유가 0.1칸뿐이라 배치를 손볼 때 쉽게 되돌아간다 — 최소 창 기준으로 고정해 둔다.
+    let smallestTile = 20.6
+    for zone in plan.zones {
+        let zoneDesks = plan.desks.filter { desk in
+            desk.desk.x >= zone.origin.x && desk.desk.x < zone.origin.x + zone.width
+                && desk.desk.y >= zone.origin.y && desk.desk.y < zone.origin.y + zone.height
+        }
+        for desk in zoneDesks {
+            let nameplateTop = officeSeatedNameplateTopTiles(
+                seatY: desk.seat.y, tileSize: smallestTile
+            )
+            // 같은 열에서 이 사람보다 위에 있는 가장 가까운 책상.
+            guard let above = zoneDesks
+                .filter({ $0.desk.x == desk.desk.x && $0.desk.y > desk.desk.y })
+                .map(\.desk.y)
+                .min()
+            else {
+                continue
+            }
+            t.expect(
+                nameplateTop <= Double(above),
+                "\(zone.department.label) x=\(desk.desk.x) 아래 행 이름표(\(nameplateTop))가 위 행 책상(\(above))을 침범"
+            )
+        }
+    }
+
+    // 같은 줄에 앉은 이웃끼리 이름표가 겹치지 않는다.
+    //
+    // 개발 부서를 "책상 둘을 가로로 붙인 섬" 으로 만들었다가 이름표가 서로를 덮었다
+    // ("백엔드규약 점검"). 이름표 폭은 기준 타일(40px)에서 최대 1.38칸이므로 가로 간격
+    // 2칸이 하한이다 — 세로 겹침만 보던 앞의 단언은 이걸 놓친다.
+    //
+    // 최소 창(타일 20.6)에서는 글자 하한 때문에 이름표가 2.45칸까지 커져 간격 2칸으로도
+    // 겹친다. 그건 배치로는 못 풀고(내부 10명이 간격 3칸에 안 들어간다) 이름표를 상황에 따라
+    // 줄이는 쪽이 답이라, 여기서는 기준 타일을 기준으로 고정한다.
+    for zone in plan.zones {
+        let seatsByRow = Dictionary(grouping: plan.desks.map(\.seat).filter { seat in
+            seat.x >= zone.origin.x && seat.x < zone.origin.x + zone.width
+                && seat.y >= zone.origin.y && seat.y < zone.origin.y + zone.height
+        }, by: \.y)
+        for (row, seats) in seatsByRow {
+            let columns = seats.map(\.x).sorted()
+            for (index, column) in columns.enumerated().dropFirst() {
+                t.expect(
+                    column - columns[index - 1] >= 2,
+                    "\(zone.department.label) y=\(row) 이웃 자리 간격이 2칸 미만(\(columns))"
+                )
+            }
+        }
+    }
+
     // 대표 자리·줄서기·휴식 자리가 비어 있지 않다.
     t.expect(!plan.queueTiles.isEmpty, "승인 대기 줄 자리 존재")
     t.expect(!plan.loungeTiles.isEmpty, "휴식 자리 존재")
