@@ -1,3 +1,4 @@
+import AppKit
 import ConsoleCore
 import SpriteKit
 
@@ -25,12 +26,23 @@ final class CharacterNode: SKNode {
     var isWalking = false
 
     private var spriteScale: CGFloat = 1
+    private var currentTileSize: CGFloat = 32
+    /// 스프라이트의 기준 y. 앉으면 책상과 겹치도록 내려가고, 서면 0 으로 돌아온다.
+    /// 몸짓 애니메이션은 전부 이 기준 위에서 상대 이동한다.
+    private var spriteBaseY: CGFloat = 0
+    /// 이름표 세기 판정에 쓰는 현재 상태·주목 여부.
+    private var currentState: ConsoleAgentState = .waiting
+    private var isHovered = false
+    private var isSelected = false
+    private let nameText: String
     private let sheetIndex: Int
     private let hairColor: (red: Double, green: Double, blue: Double)
     private let shirtColor: (red: Double, green: Double, blue: Double)
 
     init(agentType: String, displayName: String, tile: TilePoint) {
         self.tile = tile
+        // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
+        nameText = agentRoleLabel(for: agentType) ?? displayName
         let look = characterLook(for: agentType)
         sheetIndex = look.sheetIndex
         hairColor = hairPalette[look.hairIndex]
@@ -48,9 +60,13 @@ final class CharacterNode: SKNode {
         name = agentType
 
         // 발밑 링 — 상태색. 바닥에 눕힌 타원이라 캐릭터를 가리지 않는다.
+        //
+        // z 는 스프라이트(1)보다 앞이어야 한다. 좌석은 책상보다 한 칸 위라 책상 노드가 더 앞에
+        // 그려지는데, 링이 캐릭터 뒤(-1)에 있으면 책상이 링의 아래쪽 절반을 덮어 상태색이
+        // 반만 보였다. 관제 화면에서 가장 먼저 읽혀야 할 신호라 책상보다 앞으로 올린다.
         ring.fillColor = .clear
         ring.lineWidth = 2
-        ring.zPosition = -1
+        ring.zPosition = 1.5
         addChild(ring)
 
         // 캐릭터 — 발이 칸 바닥에 닿도록 아래쪽을 기준점으로.
@@ -58,20 +74,15 @@ final class CharacterNode: SKNode {
         sprite.zPosition = 1
         addChild(sprite)
 
-        namePlate.fillColor = SKColor(white: 0.05, alpha: 0.62)
         namePlate.strokeColor = .clear
         namePlate.zPosition = 2
         addChild(namePlate)
 
-        // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
-        nameLabel.text = agentRoleLabel(for: agentType) ?? displayName
-        nameLabel.fontSize = 9
-        nameLabel.fontName = "Menlo"
-        nameLabel.fontColor = SKColor(white: 0.94, alpha: 1)
-        nameLabel.verticalAlignmentMode = .top
+        nameLabel.verticalAlignmentMode = .bottom
         nameLabel.horizontalAlignmentMode = .center
         nameLabel.zPosition = 3
         addChild(nameLabel)
+        refreshNameplate()
 
         apply(facing: .down)
     }
@@ -84,6 +95,7 @@ final class CharacterNode: SKNode {
     /// 타일 크기가 바뀌면(창 크기 변경) 스프라이트·링·이름표를 함께 다시 잰다.
     func resize(tileSize: CGFloat, spriteScale: CGFloat) {
         self.spriteScale = spriteScale
+        currentTileSize = tileSize
         applySpriteSize()
         let radiusX = tileSize * 0.34
         let radiusY = tileSize * 0.17
@@ -93,18 +105,78 @@ final class CharacterNode: SKNode {
             ),
             transform: nil
         )
-        nameLabel.fontSize = max(7, tileSize * 0.24)
-        nameLabel.position = CGPoint(x: 0, y: -tileSize * 0.14)
-        let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
-        namePlate.path = CGPath(
-            roundedRect: box, cornerWidth: 2, cornerHeight: 2, transform: nil
-        )
+        refreshNameplate()
     }
 
     func apply(state: ConsoleAgentState) {
+        currentState = state
         let palette = agentStatePaletteRGBA(state)
         ring.strokeColor = SKColor(
             red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.95
+        )
+        // 상태 링이 이름표보다 먼저 읽혀야 한다. 손이 필요한 두 상태는 선을 더 굵게 준다.
+        ring.lineWidth = (state == .awaitingApproval || state == .failed) ? 3.2 : 2.2
+        refreshNameplate()
+    }
+
+    /// 마우스가 올라갔는가 / 선택됐는가 — 이름표 세기에만 쓴다.
+    func setHovered(_ hovered: Bool) {
+        guard isHovered != hovered else {
+            return
+        }
+        isHovered = hovered
+        refreshNameplate()
+    }
+
+    func setSelected(_ selected: Bool) {
+        guard isSelected != selected else {
+            return
+        }
+        isSelected = selected
+        refreshNameplate()
+    }
+
+    /// 이름표를 현재 세기로 다시 그린다.
+    ///
+    /// 판을 옅게 깔고 글자에 어두운 외곽선을 줘, 판 없이도 읽히게 한다. 27명 전원이 늘
+    /// 진한 검은 딱지를 달고 있으면 방이 라벨로 덮여 상태 링을 볼 수 없다.
+    private func refreshNameplate() {
+        let emphasized = nameplateIsEmphasized(
+            state: currentState, isHovered: isHovered, isSelected: isSelected
+        )
+        let fontSize = max(officeNameplateMinFontSize, currentTileSize * 0.30)
+        let font = NSFont(name: officeLabelFontName, size: fontSize)
+            ?? NSFont.boldSystemFont(ofSize: fontSize)
+        nameLabel.attributedText = NSAttributedString(
+            string: nameText,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor(white: emphasized ? 1.0 : 0.84, alpha: 1),
+                // 음수 두께 = 채움 + 외곽선. 바닥·가구 무늬 위에서도 글자가 뭉개지지 않는다.
+                .strokeColor: NSColor(white: 0.03, alpha: 0.95),
+                .strokeWidth: -3.5,
+            ]
+        )
+        // 아래 행 사람의 이름표는 위 행 책상 위에 얹힌다(좌석 행 간격이 2칸이라 구조적으로 그렇다).
+        // 판이 너무 옅으면 나뭇결에 묻히므로, 기본값도 글자가 버틸 만큼은 남긴다.
+        namePlate.fillColor = SKColor(white: 0.05, alpha: emphasized ? 0.72 : 0.38)
+        layoutNameplate()
+    }
+
+    /// 이름표를 머리 위에 올린다.
+    ///
+    /// 예전에는 발밑(`-tileSize × 0.14`)에 뒀는데, 캐릭터를 한 칸 크기로 줄이고 책상을 키우자
+    /// 이름표가 책상 상판과 정확히 겹쳐 글자가 나뭇결에 묻혔다. 좌석 위쪽은 늘 비어 있으므로
+    /// 머리 위가 겹칠 일이 없는 유일한 자리다(말풍선·점 표시는 그보다 더 위에 붙는다).
+    private func layoutNameplate() {
+        // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
+        // 라벨이 머리에서 한 뼘 떠 있다.
+        nameLabel.position = CGPoint(
+            x: 0, y: spriteBaseY + sprite.size.height + currentTileSize * 0.06
+        )
+        let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
+        namePlate.path = CGPath(
+            roundedRect: box, cornerWidth: 2, cornerHeight: 2, transform: nil
         )
     }
 
@@ -148,6 +220,13 @@ final class CharacterNode: SKNode {
         )
         let flipped = !isSeated && characterSprite(for: facing).flipped
         sprite.xScale = flipped ? -1 : 1
+        // 앉으면 책상 쪽으로 내려 하반신이 책상에 가리게 한다. 안 내리면 좌석이 책상 바로 위 칸이라
+        // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
+        spriteBaseY = isSeated ? -currentTileSize * CGFloat(officeSeatedSpriteDrop) : 0
+        sprite.position = CGPoint(x: 0, y: spriteBaseY)
+        // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
+        // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
+        layoutNameplate()
     }
 
     // MARK: - 몸짓 애니메이션
@@ -164,7 +243,8 @@ final class CharacterNode: SKNode {
         }
         sprite.zRotation = 0
         sprite.yScale = 1
-        sprite.position = .zero
+        // 기준 y 로 돌린다 — `.zero` 로 되돌리면 앉은 사람이 몸짓을 멈출 때마다 책상 위로 튀어오른다.
+        sprite.position = CGPoint(x: 0, y: spriteBaseY)
     }
 
     /// 작업 중 — 키보드를 두드리듯 짧고 빠르게 위아래로.
