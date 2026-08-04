@@ -35,25 +35,32 @@ struct OfficeView: View {
                 // 한 문장으로 대신 읽게 한다 — 그림 안의 몸짓·자리로만 전하던 정보를
                 // 소리로 듣는 유일한 통로다.
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(officeAccessibilitySummary(agents: store.agents))
+                .accessibilityLabel(
+                    officeAccessibilitySummary(
+                        agents: store.agents, approvals: store.approvals
+                    )
+                )
                 // 창이 가려지거나 최소화되면 씬을 재운다. macOS 는 대신 멈춰주지 않는다(실측).
                 .onReceive(
                     NotificationCenter.default.publisher(
                         for: NSWindow.didChangeOcclusionStateNotification)
-                ) { _ in
-                    applySceneSleep()
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)
-                ) { _ in
-                    applySceneSleep()
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)
-                ) { _ in
-                    applySceneSleep()
+                ) { notification in
+                    applySceneSleep(notifying: notification.object as? NSWindow)
                 }
                 .onAppear {
+                    // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
+                    // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
+                    applySceneSleep()
                     scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
@@ -176,8 +183,15 @@ struct OfficeView: View {
     /// 씬 시계를 세우는 것만으로 9.3% → 1.9% 가 된다 — 비용의 대부분이 24명의 몸짓과 배회
     /// 경로 계산이라서다. 렌더 루프 자체까지 끄려면 `SKView` 를 직접 소유해야 하지만
     /// (`SpriteView` 로는 닿지 않는다, #183), 남는 1.9% 를 위해 렌더 경로를 바꿀 이유가 없다.
-    private func applySceneSleep() {
-        guard let window = NSApp.windows.first else {
+    /// - Parameter notifying: 통지를 보낸 창. 창이 여럿일 때 남의 창 상태로 판정하지 않도록
+    ///   통지 발생 객체를 우선 본다. 시트는 어느 쪽에서든 제외한다 — 대시보드 탭이 띄우는
+    ///   주입 시트가 `NSApp.windows` 앞에 올 수 있고, 시트의 가시성은 이 씬과 무관하다.
+    private func applySceneSleep(notifying: NSWindow? = nil) {
+        var target = NSApp.windows.first { !$0.isSheet }
+        if let notifying, !notifying.isSheet {
+            target = notifying
+        }
+        guard let window = target else {
             return
         }
         // 최소화는 occlusion 과 별개로 확인한다 — 둘 중 하나만 보면 사각지대가 생긴다.
