@@ -12,6 +12,7 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { SweepPullRequestResult } from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
 
@@ -43,6 +44,10 @@ const SWEEP_RETRY_COOLDOWN_MINUTES = 10;
 // PR 이 아직 열려 있는 앞쪽에 시도를 모은다.
 const SWEEP_RETRY_BUDGET_WINDOW_HOURS = 24;
 const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
+// GitHub 이 unified diff 를 내주는 상한. 넘으면 `pulls.get(mediaType: diff)` 가 406
+// (`code: too_large`) 로 거절한다 — 재시도해도 PR 이 작아지지 않는 한 결과가 같으므로,
+// diff 를 요청하기 전에 PR 상세의 additions+deletions 로 미리 걸러 호출 자체를 아낀다.
+const GITHUB_DIFF_MAX_LINES = 20_000;
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -230,14 +235,31 @@ export class SweepPrReviewsUsecase {
   }): Promise<SweepPullRequestResult | null> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
+    // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 그 지점을 넘은
+    // 뒤의 실패까지 여기서 또 기록하면 한 번의 실패가 원장에 2건으로 남아 재시도 예산이 두 배
+    // 속도로 닳는다. 원장에 기록될 주체가 아직 없는 구간(조회 단계)만 이 usecase 가 책임진다.
+    let reviewUsecaseEntered = false;
     try {
-      const [detail, diff] = await Promise.all([
-        this.githubClient.getPullRequest({ repo, number: pullNumber }),
-        this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
-      ]);
+      // 상세를 먼저 받아 변경량부터 확인한다 — diff 와 병렬로 던지면 "받을 수 없는 크기"임을
+      // 알기 전에 이미 406 이 될 요청을 보내게 된다.
+      const detail = await this.githubClient.getPullRequest({
+        repo,
+        number: pullNumber,
+      });
+      const changedLines = detail.additions + detail.deletions;
+      if (changedLines > GITHUB_DIFF_MAX_LINES) {
+        throw new Error(
+          `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
+        );
+      }
+      const diff = await this.githubClient.getPullRequestDiff({
+        repo,
+        number: pullNumber,
+      });
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
       // 앵커가 어긋난다(2026-07-31 리뷰 지적).
+      reviewUsecaseEntered = true;
       const outcome = await this.reviewPullRequestUsecase.execute({
         prRef,
         slackUserId,
@@ -268,7 +290,58 @@ export class SweepPrReviewsUsecase {
       this.logger.error(
         `PR 리뷰 스윕 실패 (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (!reviewUsecaseEntered) {
+        await this.recordFailedSweepRun({
+          prRef,
+          repo,
+          pullNumber,
+          dryRun,
+          error,
+        });
+      }
       return null;
+    }
+  }
+
+  // 리뷰 usecase 에 닿기 전(GitHub 조회 단계)에 실패하면 AgentRun 이 아예 생기지 않는다.
+  // 그러면 다음 스윕의 decideSweepAction 이 "한 번도 시도한 적 없는 PR" 로 판정해, 쿨다운과
+  // 재시도 예산이 근거로 삼을 기록이 없어 `*/5` 스윕이 같은 실패를 영구 반복한다
+  // (실측: diff 한도를 넘는 PR 하나가 하루 288회). 실패도 원장에 남겨 두 장치를 되살린다.
+  //
+  // 판정 질의가 inputSnapshot 의 `prRef` 로 조회하므로 리뷰 usecase 가 남기는 스냅샷과
+  // 같은 키를 채워야 한다 — 키가 어긋나면 기록은 쌓이는데 판정은 여전히 못 찾는다.
+  private async recordFailedSweepRun({
+    prRef,
+    repo,
+    pullNumber,
+    dryRun,
+    error,
+  }: {
+    prRef: string;
+    repo: string;
+    pullNumber: number;
+    dryRun: boolean;
+    error: unknown;
+  }): Promise<void> {
+    try {
+      await this.agentRunService.execute({
+        agentType: AgentType.CODE_REVIEWER,
+        triggerType: TriggerType.PR_REVIEW_SWEEP,
+        inputSnapshot: { prRef, repo, pullNumber, dryRun },
+        run: () => Promise.reject(error),
+      });
+    } catch (recordError: unknown) {
+      // execute 는 FAILED 로 마감한 뒤 원인 오류를 그대로 다시 throw 한다. 기록이 목적이므로
+      // 여기서 멈추되, 기록 자체가 실패(DB 장애 등)한 경우는 조용히 넘기지 않고 남긴다.
+      if (recordError !== error) {
+        this.logger.warn(
+          `스윕 실패 기록 실패 (${prRef}): ${
+            recordError instanceof Error
+              ? recordError.message
+              : String(recordError)
+          }`,
+        );
+      }
     }
   }
 
