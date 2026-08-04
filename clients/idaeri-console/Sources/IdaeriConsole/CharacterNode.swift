@@ -13,6 +13,9 @@ import SpriteKit
 final class CharacterNode: SKNode {
     let sprite = SKSpriteNode()
     private let ring = SKShapeNode()
+    /// 선택 하이라이트 — 몸을 감싸는 흰 테두리. 자세·타일 크기가 바뀌면 함께 다시 잡아야 해서
+    /// 씬이 아니라 캐릭터가 들고 있는다(씬이 한 번 만들어 붙이면 갱신 경로가 없다).
+    private let selectionRing = SKShapeNode()
     private let nameLabel = SKLabelNode()
     /// 이름표 뒤 어두운 판. 책상·바닥 무늬 위에 글자가 그냥 놓이면 읽히지 않는다.
     private let namePlate = SKShapeNode()
@@ -29,6 +32,10 @@ final class CharacterNode: SKNode {
     private var currentTileSize: CGFloat = 32
     /// 스프라이트의 기준 y. 앉으면 책상과 겹치도록 내려가고, 서면 0 으로 돌아온다.
     /// 몸짓 애니메이션은 전부 이 기준 위에서 상대 이동한다.
+    ///
+    /// 몸에 붙는 장식(이름표·선택 테두리)은 전부 이 값을 더해 놓아야 한다 — 안 그러면
+    /// 앉은 사람에게만 장식이 몸에서 한 뼘 떠오른다. 값이 바뀌는 곳은 `applySpriteSize` 하나이므로
+    /// 새 장식을 붙일 때는 거기서 함께 다시 잡을 것.
     private var spriteBaseY: CGFloat = 0
     /// 이름표 세기 판정에 쓰는 현재 상태·주목 여부.
     private var currentState: ConsoleAgentState = .waiting
@@ -84,6 +91,15 @@ final class CharacterNode: SKNode {
         addChild(nameLabel)
         refreshNameplate()
 
+        // 선택했을 때만 보인다. 노드를 붙였다 뗐다 하지 않고 숨김만 토글해, 위치 갱신 경로를
+        // "선택 중인지" 와 무관하게 한 곳(layoutSelectionRing)으로 유지한다.
+        selectionRing.strokeColor = SKColor(white: 1, alpha: 0.85)
+        selectionRing.lineWidth = 1.5
+        selectionRing.fillColor = .clear
+        selectionRing.zPosition = 15
+        selectionRing.isHidden = true
+        addChild(selectionRing)
+
         apply(facing: .down)
     }
 
@@ -133,7 +149,23 @@ final class CharacterNode: SKNode {
             return
         }
         isSelected = selected
+        selectionRing.isHidden = !selected
         refreshNameplate()
+    }
+
+    /// 선택 테두리를 현재 자세·타일 크기에 맞춘다.
+    ///
+    /// 앉으면 스프라이트가 `spriteBaseY` 만큼 내려가고 창 크기가 바뀌면 키까지 달라진다.
+    /// 그래서 이름표와 같은 자리(`applySpriteSize`)에서 함께 다시 잡는다 — 한 번 만들고 두면
+    /// 앉았다 서는 것만으로 테두리가 몸에서 한 뼘 떨어진다.
+    private func layoutSelectionRing() {
+        selectionRing.path = CGPath(
+            roundedRect: CGRect(
+                x: -currentTileSize * 0.42, y: spriteBaseY - currentTileSize * 0.16,
+                width: currentTileSize * 0.84, height: sprite.size.height + currentTileSize * 0.24
+            ),
+            cornerWidth: 4, cornerHeight: 4, transform: nil
+        )
     }
 
     /// 이름표를 현재 세기로 다시 그린다.
@@ -227,6 +259,7 @@ final class CharacterNode: SKNode {
         // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
+        layoutSelectionRing()
     }
 
     // MARK: - 몸짓 애니메이션
