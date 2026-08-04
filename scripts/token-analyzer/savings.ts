@@ -64,8 +64,17 @@ interface WindowAgg {
 
 function emptyWindow(): WindowAgg {
   return {
-    cost: 0, inputCost: 0, outputCost: 0, cacheReadCost: 0, cacheWriteCost: 0,
-    cacheWrite1hCost: 0, opusCost: 0, inputTok: 0, outputTok: 0, byModel: {}, byProject: {},
+    cost: 0,
+    inputCost: 0,
+    outputCost: 0,
+    cacheReadCost: 0,
+    cacheWriteCost: 0,
+    cacheWrite1hCost: 0,
+    opusCost: 0,
+    inputTok: 0,
+    outputTok: 0,
+    byModel: {},
+    byProject: {},
   };
 }
 
@@ -88,7 +97,8 @@ function addTo(w: WindowAgg, r: SavingsRecord): void {
 
 const round = (n: number): number => Math.round(n * 10000) / 10000;
 const pctStr = (n: number): string => `${(n * 100).toFixed(0)}%`;
-const usd = (n: number): string => (Math.abs(n) >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(3)}`);
+const usd = (n: number): string =>
+  Math.abs(n) >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(3)}`;
 
 export function computeSavings(
   records: SavingsRecord[],
@@ -118,9 +128,16 @@ export function computeSavings(
   for (const [name, rc, pc] of types) {
     drivers.push({ kind: 'type', name, delta: round(rc - pc) });
   }
-  const modelNames = new Set([...Object.keys(recent.byModel), ...Object.keys(prev.byModel)]);
+  const modelNames = new Set([
+    ...Object.keys(recent.byModel),
+    ...Object.keys(prev.byModel),
+  ]);
   for (const name of modelNames) {
-    drivers.push({ kind: 'model', name, delta: round((recent.byModel[name] || 0) - (prev.byModel[name] || 0)) });
+    drivers.push({
+      kind: 'model',
+      name,
+      delta: round((recent.byModel[name] || 0) - (prev.byModel[name] || 0)),
+    });
   }
   let topDriver: SavingsBlock['topDriver'] = null;
   for (const d of drivers) {
@@ -130,10 +147,15 @@ export function computeSavings(
   }
 
   // topProjectDelta
-  const projNames = new Set([...Object.keys(recent.byProject), ...Object.keys(prev.byProject)]);
+  const projNames = new Set([
+    ...Object.keys(recent.byProject),
+    ...Object.keys(prev.byProject),
+  ]);
   let topProjectDelta: SavingsBlock['topProjectDelta'] = null;
   for (const name of projNames) {
-    const d = round((recent.byProject[name] || 0) - (prev.byProject[name] || 0));
+    const d = round(
+      (recent.byProject[name] || 0) - (prev.byProject[name] || 0),
+    );
     if (d > 0 && (!topProjectDelta || d > topProjectDelta.delta)) {
       topProjectDelta = { project: name, delta: d };
     }
@@ -142,7 +164,8 @@ export function computeSavings(
   // 레버 후보
   const opusShare = recent.cost > 0 ? recent.opusCost / recent.cost : 0;
   const cwShare = recent.cost > 0 ? recent.cacheWriteCost / recent.cost : 0;
-  const outInRatio = recent.inputTok > 0 ? recent.outputTok / recent.inputTok : 0;
+  const outInRatio =
+    recent.inputTok > 0 ? recent.outputTok / recent.inputTok : 0;
 
   const candidates: Lever[] = [
     {
@@ -152,7 +175,8 @@ export function computeSavings(
       prev7d: round(prev.cacheWriteCost),
       delta: round(recent.cacheWriteCost - prev.cacheWriteCost),
       estSaving: round(recent.cacheWriteCost * ASSUME.cacheWriteReducible),
-      assumption: '세션 단축·프리픽스(MCP·커넥터) 축소로 캐시 쓰기 20% 절감 가정',
+      assumption:
+        '세션 단축·프리픽스(MCP·커넥터) 축소로 캐시 쓰기 20% 절감 가정',
       driverHint: `캐시 쓰기가 최근 비용의 ${pctStr(cwShare)} · 1h쓰기 ${usd(recent.cacheWrite1hCost)}`,
       promptKey: 'cacheWrite',
     },
@@ -162,8 +186,13 @@ export function computeSavings(
       pool7d: round(recent.opusCost),
       prev7d: round(prev.opusCost),
       delta: round(recent.opusCost - prev.opusCost),
-      estSaving: round(recent.opusCost * ASSUME.opusDowngradeFraction * ASSUME.sonnetSavingRate),
-      assumption: 'Opus 작업의 30%를 Sonnet으로 전환, Sonnet=Opus 단가의 60% 가정',
+      estSaving: round(
+        recent.opusCost *
+          ASSUME.opusDowngradeFraction *
+          ASSUME.sonnetSavingRate,
+      ),
+      assumption:
+        'Opus 작업의 30%를 Sonnet으로 전환, Sonnet=Opus 단가의 60% 가정',
       driverHint: `최근 Opus 비중 ${pctStr(opusShare)} · 직전 대비 ${usd(recent.opusCost - prev.opusCost)}`,
       promptKey: 'opus',
     },
