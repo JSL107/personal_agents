@@ -29,7 +29,10 @@ final class CharacterNode: SKNode {
     private var currentTileSize: CGFloat = 32
     /// 스프라이트의 기준 y. 앉으면 책상과 겹치도록 내려가고, 서면 0 으로 돌아온다.
     /// 몸짓 애니메이션은 전부 이 기준 위에서 상대 이동한다.
-    private var spriteBaseY: CGFloat = 0
+    ///
+    /// 캐릭터에 무언가를 덧붙이는 쪽(선택 테두리 등)은 이 값을 함께 봐야 한다 —
+    /// 안 보면 앉은 사람에게만 장식이 몸에서 떨어져 뜬다.
+    private(set) var spriteBaseY: CGFloat = 0
     /// 이름표 세기 판정에 쓰는 현재 상태·주목 여부.
     private var currentState: ConsoleAgentState = .waiting
     private var isHovered = false
