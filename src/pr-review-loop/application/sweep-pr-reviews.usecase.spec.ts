@@ -57,7 +57,7 @@ describe('SweepPrReviewsUsecase', () => {
   let agentRunService: jest.Mocked<
     Pick<
       AgentRunService,
-      'findLatestSweepReview' | 'countUnsuccessfulSweepReviews'
+      'findLatestSweepReview' | 'countUnsuccessfulSweepReviews' | 'execute'
     >
   >;
   let publishService: jest.Mocked<Pick<PublishFindingsService, 'publish'>>;
@@ -117,7 +117,12 @@ describe('SweepPrReviewsUsecase', () => {
     agentRunService = {
       findLatestSweepReview: jest.fn().mockResolvedValue(null),
       countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
-    };
+      // 실제 execute 는 run 콜백이 throw 하면 FAILED 로 마감한 뒤 원인 오류를 그대로 다시
+      // throw 한다. 실패 기록 경로가 그 계약 위에서 동작하므로 mock 도 run 을 실행해 흉내낸다.
+      execute: jest
+        .fn()
+        .mockImplementation(({ run }) => run({ agentRunId: 99 })),
+    } as never;
     publishService = {
       publish: jest.fn().mockResolvedValue({
         inline: 0,
@@ -426,6 +431,91 @@ describe('SweepPrReviewsUsecase', () => {
     const results = await buildUsecase(ENABLED).execute();
 
     expect(results).toHaveLength(1);
+  });
+
+  it('변경량이 GitHub diff 한도를 넘으면 diff 를 요청하지 않는다', async () => {
+    github.getPullRequest.mockResolvedValue({
+      number: 180,
+      title: 'feat: 아주 큰 PR',
+      body: '',
+      repo: 'JSL107/personal_agents',
+      url: OPEN_PR.url,
+      baseRef: 'main',
+      headRef: 'feat/x',
+      headSha: 'abc1234',
+      authorLogin: 'JSL107',
+      changedFiles: ['src/foo.service.ts'],
+      changedFilesTruncated: false,
+      changedFilesTotalCount: 127,
+      additions: 27_778,
+      deletions: 4_696,
+    });
+
+    const results = await buildUsecase(ENABLED).execute();
+
+    // 406(too_large)이 될 요청을 아예 보내지 않는다 — 재시도해도 PR 이 작아지지 않는다.
+    expect(github.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('조회 단계 실패도 AgentRun 원장에 남겨 재시도 판정이 볼 수 있게 한다', async () => {
+    github.getPullRequestDiff.mockRejectedValue(
+      new Error('PR #180 diff 조회 실패: too_large'),
+    );
+
+    await buildUsecase(ENABLED).execute();
+
+    // 판정 질의(findLatestSweepReview / countUnsuccessfulSweepReviews)가 inputSnapshot 의
+    // prRef 로 조회하므로, 그 키가 없으면 기록이 쌓여도 판정은 여전히 못 찾는다.
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: expect.objectContaining({
+          prRef: 'JSL107/personal_agents#180',
+        }),
+      }),
+    );
+  });
+
+  it('변경량 초과 스킵도 원장에 남는다 (다음 스윕이 무한 반복하지 않도록)', async () => {
+    github.getPullRequest.mockResolvedValue({
+      number: 180,
+      title: 'feat: 경계값',
+      body: '',
+      repo: 'JSL107/personal_agents',
+      url: OPEN_PR.url,
+      baseRef: 'main',
+      headRef: 'feat/x',
+      headSha: 'abc1234',
+      authorLogin: 'JSL107',
+      changedFiles: [],
+      changedFilesTruncated: false,
+      changedFilesTotalCount: 127,
+      // 경계 바로 위 — 20,000 은 통과, 20,001 부터 컷.
+      additions: 20_001,
+      deletions: 0,
+    });
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputSnapshot: expect.objectContaining({
+          prRef: 'JSL107/personal_agents#180',
+        }),
+      }),
+    );
+  });
+
+  it('리뷰 usecase 가 실패한 경우는 원장을 중복으로 남기지 않는다', async () => {
+    // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 여기서 또
+    // 기록하면 한 번의 실패가 2건이 되어 24시간 재시도 예산(3회)이 두 배 속도로 닳는다.
+    reviewUsecase.execute.mockRejectedValue(new Error('모델 호출 실패'));
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
   it('스윕 판정 조회 실패는 해당 PR 만 skip 하고 다른 PR 은 막지 않는다', async () => {
