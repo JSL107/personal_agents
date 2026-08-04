@@ -521,8 +521,16 @@ public struct OfficeFloorPlan: Sendable {
     public let commonAreas: [CommonArea]
 }
 
+/// 공용 구역의 종류. 라벨 문자열로 구역을 찾으면 이름을 다듬는 순간 조용히 어긋난다.
+public enum CommonAreaKind: String, Equatable, Sendable {
+    case meeting
+    case president
+    case pantry
+}
+
 /// 상단 공용 밴드의 한 구역. 문패를 달기 위한 이름과 가로 범위.
 public struct CommonArea: Equatable, Sendable {
+    public let kind: CommonAreaKind
     public let label: String
     public let icon: String
     /// 시작 열과 폭(칸). 문패는 이 범위의 가운데에 놓인다.
@@ -531,7 +539,10 @@ public struct CommonArea: Equatable, Sendable {
     /// 문패를 놓을 줄(격자 y). 밴드 안이라 부서 문패와 달리 좌석을 피할 필요가 없다.
     public let labelY: Int
 
-    public init(label: String, icon: String, originX: Int, width: Int, labelY: Int) {
+    public init(
+        kind: CommonAreaKind, label: String, icon: String, originX: Int, width: Int, labelY: Int
+    ) {
+        self.kind = kind
         self.label = label
         self.icon = icon
         self.originX = originX
@@ -721,11 +732,17 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 상단 밴드 세 구역의 문패. 부서 문패는 구역 **중앙**에 놓이므로, 이쪽은 **왼쪽 끝**에
     // 붙여 x 가 겹치지 않게 한다(밴드 맨 아래 줄과 위 구역 문패가 같은 높이대에 있다).
     let commonAreas = [
-        CommonArea(label: "회의실", icon: "🗣", originX: 0, width: zoneWidth, labelY: bandY),
-        CommonArea(label: "대표실", icon: "👑", originX: zoneWidth, width: zoneWidth, labelY: bandY),
         CommonArea(
-            label: "탕비실", icon: "☕", originX: zoneWidth * 2, width: zoneWidth + 1,
+            kind: .meeting, label: "회의실", icon: "🗣", originX: 0, width: zoneWidth,
             labelY: bandY
+        ),
+        CommonArea(
+            kind: .president, label: "대표실", icon: "👑", originX: zoneWidth, width: zoneWidth,
+            labelY: bandY
+        ),
+        CommonArea(
+            kind: .pantry, label: "탕비실", icon: "☕", originX: zoneWidth * 2,
+            width: zoneWidth + 1, labelY: bandY
         ),
     ]
 

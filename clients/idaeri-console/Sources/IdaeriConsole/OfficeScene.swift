@@ -817,6 +817,8 @@ final class OfficeScene: SKScene {
                 startWorking(agentType)
             case let .handoff(from, to):
                 handoff(from: from, to: to)
+            case let .meeting(agentTypes, thenWorking):
+                holdMeeting(agentTypes, thenWorking: thenWorking)
             case let .summonToBand(agentType):
                 joinQueue(agentType)
             case let .returnHome(agentType):
@@ -842,6 +844,60 @@ final class OfficeScene: SKScene {
         if let agentType = node.name {
             stopMonitorGlow(agentType)
         }
+    }
+
+    /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.
+    ///
+    /// 배회와 같은 추적 집합(`strollingAgents`)에 넣는다. 그래야 회의 도중 실제 이벤트가 오면
+    /// 기존 취소 경로가 그대로 회의를 끊는다 — 관제 신호가 연출을 이긴다는 규칙은 여기서도 같다.
+    ///
+    /// 회의를 열지 못하는 경우(자리가 없거나 참석자를 아무도 못 찾음)에도 **일은 시작해야 한다.**
+    /// 연출이 실패했다고 "일이 돌기 시작했다" 는 신호까지 사라지면, 화면이 조용히 거짓말을 한다.
+    private func holdMeeting(_ agentTypes: [String], thenWorking: String) {
+        let seats = officeMeetingSeats(plan: plan)
+        let tableTile = plan.furniture.first { $0.kind == .meetingTable }?.tile
+        var assigned = 0
+        for agentType in agentTypes {
+            guard assigned < seats.count,
+                  let node = characters[agentType],
+                  !queueOrder.contains(agentType)
+            else {
+                continue
+            }
+            let seat = seats[assigned]
+            assigned += 1
+            cancelStroll(agentType)
+            strollingAgents.insert(agentType)
+            stopWorking(node)
+            walk(node, to: seat) { [weak self, weak node] in
+                if let tableTile, let direction = facing(from: seat, to: tableTile) {
+                    node?.apply(facing: direction)
+                }
+                node?.run(.sequence([
+                    .wait(forDuration: officeMeetingDwellSeconds),
+                    .run { [weak self] in
+                        self?.endMeeting(agentType, thenWorking: thenWorking)
+                    },
+                ]), withKey: "stroll")
+            }
+        }
+        guard assigned > 0 else {
+            startWorking(thenWorking)
+            return
+        }
+    }
+
+    /// 회의가 끝나면 각자 자리로. 이 일을 이어받은 사람은 자리에 앉아 곧바로 일을 시작한다.
+    private func endMeeting(_ agentType: String, thenWorking: String) {
+        guard strollingAgents.contains(agentType) else {
+            return
+        }
+        guard agentType == thenWorking else {
+            endStroll(agentType)
+            return
+        }
+        strollingAgents.remove(agentType)
+        startWorking(agentType)
     }
 
     /// 결과를 넘겨주는 연출 — 보내는 사람이 받는 사람 자리 앞까지 걸어갔다 돌아온다.
