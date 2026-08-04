@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
+
 import { computeSavings } from './savings';
 
 // ── 단가표 (per 1M tokens) [input, output]. cache read=×0.1, write5m=×1.25, write1h=×2.0 ──
@@ -83,7 +84,14 @@ interface Bucket {
 }
 
 function emptyBucket(): Bucket {
-  return { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0 };
+  return {
+    cost: 0,
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    requests: 0,
+  };
 }
 
 function addTo(b: Bucket, rec: Parsed): void {
@@ -134,7 +142,9 @@ function projectLabel(cwd: string): string {
     label = '(scratch)';
   } else {
     // 워크트리 경로(<repo>/.claude/worktrees/<name>, <repo>/.worktrees/<name>)는 본체 repo 로 접는다.
-    const base = cwd.replace(/\/\.claude\/worktrees\/.*$/, '').replace(/\/\.worktrees\/.*$/, '');
+    const base = cwd
+      .replace(/\/\.claude\/worktrees\/.*$/, '')
+      .replace(/\/\.worktrees\/.*$/, '');
     try {
       // .git 을 상향 탐색해 repo 루트를 찾는다 (하위폴더 cwd 도 repo 로 모음).
       let dir = base;
@@ -201,7 +211,10 @@ async function main(): Promise<void> {
   const byProject: Record<string, Bucket> = {};
   const dayMap: Record<string, any> = {};
   // 프로젝트별 first/last 활동 + 최근/직전 7일 비용 (변화 패널용)
-  const projMeta: Record<string, { first: number; last: number; recent: number; prev: number }> = {};
+  const projMeta: Record<
+    string,
+    { first: number; last: number; recent: number; prev: number }
+  > = {};
 
   let minTs = Infinity;
   let maxTs = -Infinity;
@@ -260,9 +273,10 @@ async function main(): Promise<void> {
       const output = usage.output_tokens || 0;
       const cacheRead = usage.cache_read_input_tokens || 0;
       const cc = usage.cache_creation || {};
-      const w5 = cc.ephemeral_5m_input_tokens != null
-        ? cc.ephemeral_5m_input_tokens
-        : usage.cache_creation_input_tokens || 0;
+      const w5 =
+        cc.ephemeral_5m_input_tokens != null
+          ? cc.ephemeral_5m_input_tokens
+          : usage.cache_creation_input_tokens || 0;
       const w1 = cc.ephemeral_1h_input_tokens || 0;
 
       if (input + output + cacheRead + w5 + w1 === 0) {
@@ -330,22 +344,55 @@ async function main(): Promise<void> {
 
   for (const rec of records) {
     addTo(totals, rec);
-    (byModel[rec.model] ||= emptyBucket());
+    byModel[rec.model] ||= emptyBucket();
     addTo(byModel[rec.model], rec);
-    (byProject[rec.project] ||= emptyBucket());
+    byProject[rec.project] ||= emptyBucket();
     addTo(byProject[rec.project], rec);
     if (rec.day !== 'unknown') {
-      const dm = (dayMap[rec.day] ||= { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0, ct: { i: 0, o: 0, r: 0, w5: 0, w1: 0 }, w5t: 0, w1t: 0, m: {}, p: {} });
-      dm.cost += rec.cost; dm.input += rec.input; dm.output += rec.output; dm.cacheRead += rec.cacheRead; dm.cacheWrite += rec.cacheWrite5m + rec.cacheWrite1h; dm.requests += 1;
-      dm.ct.i += rec.costIn; dm.ct.o += rec.costOut; dm.ct.r += rec.costRead; dm.ct.w5 += rec.costW5; dm.ct.w1 += rec.costW1;
-      dm.w5t += rec.cacheWrite5m; dm.w1t += rec.cacheWrite1h;
+      const dm = (dayMap[rec.day] ||= {
+        cost: 0,
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        requests: 0,
+        ct: { i: 0, o: 0, r: 0, w5: 0, w1: 0 },
+        w5t: 0,
+        w1t: 0,
+        m: {},
+        p: {},
+      });
+      dm.cost += rec.cost;
+      dm.input += rec.input;
+      dm.output += rec.output;
+      dm.cacheRead += rec.cacheRead;
+      dm.cacheWrite += rec.cacheWrite5m + rec.cacheWrite1h;
+      dm.requests += 1;
+      dm.ct.i += rec.costIn;
+      dm.ct.o += rec.costOut;
+      dm.ct.r += rec.costRead;
+      dm.ct.w5 += rec.costW5;
+      dm.ct.w1 += rec.costW1;
+      dm.w5t += rec.cacheWrite5m;
+      dm.w1t += rec.cacheWrite1h;
       const mm = (dm.m[rec.model] ||= { c: 0, i: 0, o: 0, r: 0, w: 0, rq: 0 });
-      mm.c += rec.cost; mm.i += rec.input; mm.o += rec.output; mm.r += rec.cacheRead; mm.w += rec.cacheWrite5m + rec.cacheWrite1h; mm.rq += 1;
+      mm.c += rec.cost;
+      mm.i += rec.input;
+      mm.o += rec.output;
+      mm.r += rec.cacheRead;
+      mm.w += rec.cacheWrite5m + rec.cacheWrite1h;
+      mm.rq += 1;
       const pp = (dm.p[rec.project] ||= { c: 0, rq: 0 });
-      pp.c += rec.cost; pp.rq += 1;
+      pp.c += rec.cost;
+      pp.rq += 1;
     }
 
-    const pm = (projMeta[rec.project] ||= { first: Infinity, last: -Infinity, recent: 0, prev: 0 });
+    const pm = (projMeta[rec.project] ||= {
+      first: Infinity,
+      last: -Infinity,
+      recent: 0,
+      prev: 0,
+    });
     if (rec.ts) {
       if (rec.ts < pm.first) {
         pm.first = rec.ts;
@@ -394,7 +441,13 @@ async function main(): Promise<void> {
         cacheRead: dm.cacheRead,
         cacheWrite: dm.cacheWrite,
         requests: dm.requests,
-        ct: { i: round(dm.ct.i), o: round(dm.ct.o), r: round(dm.ct.r), w5: round(dm.ct.w5), w1: round(dm.ct.w1) },
+        ct: {
+          i: round(dm.ct.i),
+          o: round(dm.ct.o),
+          r: round(dm.ct.r),
+          w5: round(dm.ct.w5),
+          w1: round(dm.ct.w1),
+        },
         w5t: dm.w5t,
         w1t: dm.w1t,
         m: m,
@@ -444,13 +497,12 @@ async function main(): Promise<void> {
 
   // 캐시 절감 = cacheRead 토큰을 full input 으로 냈을 때 대비 (0.1× 만 냄 → 0.9× 절감)
   let cacheSaved = 0;
-  let cacheReadInputEquivalent = 0;
   for (const rec of records) {
     cacheSaved += (rec.cacheRead * rec.inPriceMTok * 0.9) / 1e6;
-    cacheReadInputEquivalent += rec.cacheRead;
   }
   const inputSideTokens = totals.input + totals.cacheRead + totals.cacheWrite;
-  const cacheHitRatio = inputSideTokens > 0 ? totals.cacheRead / inputSideTokens : 0;
+  const cacheHitRatio =
+    inputSideTokens > 0 ? totals.cacheRead / inputSideTokens : 0;
   const outInRatio = totals.input > 0 ? totals.output / totals.input : 0;
 
   insights.push({
@@ -459,7 +511,9 @@ async function main(): Promise<void> {
     detail: `cache read ${(totals.cacheRead / 1e6).toFixed(1)}M 토큰을 full input 대신 0.1× 로 처리. 히트율이 낮으면 prompt prefix 안정성을 점검.`,
   });
 
-  const opusCost = models.filter((m) => m.model.includes('opus')).reduce((s, m) => s + m.cost, 0);
+  const opusCost = models
+    .filter((m) => m.model.includes('opus'))
+    .reduce((s, m) => s + m.cost, 0);
   if (totals.cost > 0 && opusCost / totals.cost > 0.5) {
     insights.push({
       sev: 'mid',
@@ -488,7 +542,11 @@ async function main(): Promise<void> {
     insights.push({
       sev: 'info',
       title: `최근 7일 신규 프로젝트 ${newProjects.length}개`,
-      detail: newProjects.slice(0, 4).map((p) => p.project).join(', ') + (newProjects.length > 4 ? ' …' : ''),
+      detail:
+        newProjects
+          .slice(0, 4)
+          .map((p) => p.project)
+          .join(', ') + (newProjects.length > 4 ? ' …' : ''),
     });
   }
 
@@ -517,7 +575,9 @@ async function main(): Promise<void> {
     insights.push({
       sev: 'mid',
       title: `단가 미매핑 모델 ${unknownModels.size}종 (비용 0 처리)`,
-      detail: Array.from(unknownModels).slice(0, 6).join(', ') + ' — analyze.ts PRICES 에 추가하면 반영됨.',
+      detail:
+        Array.from(unknownModels).slice(0, 6).join(', ') +
+        ' — analyze.ts PRICES 에 추가하면 반영됨.',
     });
   }
 
@@ -570,16 +630,24 @@ async function main(): Promise<void> {
 
   // 요약 출력
   console.log('─'.repeat(60));
-  console.log(`파일 ${files.length} · 라인 ${lineCount.toLocaleString()} · 집계 메시지 ${usedCount.toLocaleString()}`);
+  console.log(
+    `파일 ${files.length} · 라인 ${lineCount.toLocaleString()} · 집계 메시지 ${usedCount.toLocaleString()}`,
+  );
   console.log(`기간: ${data.rangeStart} ~ ${data.rangeEnd} (${days.length}일)`);
-  console.log(`총 환산 비용: ${fmt$(totals.cost)}  (input ${fmt$(inputCost)} / output ${fmt$(outputCost)} / cacheWrite ${fmt$(cacheWrite5mCost + cacheWrite1hCost)} / cacheRead ${fmt$(cacheReadCost)})`);
-  console.log(`캐시 절감: ${fmt$(cacheSaved)} · 히트율 ${pct(cacheHitRatio)} · output:input ${outInRatio.toFixed(2)}`);
+  console.log(
+    `총 환산 비용: ${fmt$(totals.cost)}  (input ${fmt$(inputCost)} / output ${fmt$(outputCost)} / cacheWrite ${fmt$(cacheWrite5mCost + cacheWrite1hCost)} / cacheRead ${fmt$(cacheReadCost)})`,
+  );
+  console.log(
+    `캐시 절감: ${fmt$(cacheSaved)} · 히트율 ${pct(cacheHitRatio)} · output:input ${outInRatio.toFixed(2)}`,
+  );
   console.log(`모델 ${models.length}종 · 프로젝트 ${projects.length}개`);
   if (unknownModels.size > 0) {
     console.log(`⚠️  단가 미매핑: ${Array.from(unknownModels).join(', ')}`);
   }
   if (data.savings.levers.length) {
-    console.log(`절감 임팩트(최근7 vs 직전7): 최대 레버 ${fmt$(data.savings.levers[0].estSaving)}/주 · 레버 ${data.savings.levers.map((l) => l.key).join(', ')}`);
+    console.log(
+      `절감 임팩트(최근7 vs 직전7): 최대 레버 ${fmt$(data.savings.levers[0].estSaving)}/주 · 레버 ${data.savings.levers.map((l) => l.key).join(', ')}`,
+    );
   }
   console.log(`✅ 생성: ${outPath}`);
   console.log('─'.repeat(60));
