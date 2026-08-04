@@ -7,8 +7,8 @@ import SpriteKit
 ///  - **배치**는 `officeFloorPlan`(순수)이 정한다. 이 씬은 타일 좌표를 화면 좌표로 옮겨 그리기만 한다.
 ///  - **연출**은 `VisualIntent`(순수)가 정한다. 이 씬은 그것을 걸음·앉기·줄서기로 실행한다.
 ///
-/// 화면에서 일어나는 모든 움직임은 실제 상태의 번역이다. 장식용 배회는 넣지 않는다 —
-/// 관제 화면에서 의미 없는 움직임은 "지금 뭐가 돌고 있나" 를 읽는 것을 방해한다.
+/// 자율 배회는 Core가 선발한 waiting 직원에게만 허용하고 실제 이벤트가 오면 즉시 끊는다 —
+/// 정지 화면을 피하되 관제 신호와 충돌하는 순간에는 정보가 연출보다 먼저 보여야 한다.
 final class OfficeScene: SKScene {
     // 원본 타일 스프라이트의 기준 폭. 화면 타일 크기를 이 값으로 나눈 비율이 도트 크기의 기준이다.
     private let referenceTileSize: CGFloat = 40
@@ -43,10 +43,18 @@ final class OfficeScene: SKScene {
     private var queueOrder: [String] = []
     private var lastStates: [String: ConsoleAgentState] = [:]
     private var lastSyncedAgents: [ConsoleAgent] = []
+    private var lastSyncedApprovals: [ConsoleApproval] = []
     private var agentBubbles: [String: String] = [:]
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
+    /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
+    private var strollingAgents: Set<String> = []
+    /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
+    private var lastStrollAt: [String: Double] = [:]
+    /// 사람별 목적지를 회차마다 바꾸되 실행마다 같은 순서가 나오게 정수 회차만 섞는다.
+    private var strollRound = 0
+    private var ambienceOverlay: SKSpriteNode?
 
     /// 캐릭터 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
     var onAgentClick: ((String) -> Void)?
@@ -68,6 +76,7 @@ final class OfficeScene: SKScene {
         addChild(floorLayer)
         addChild(objectLayer)
         addChild(overlayLayer)
+        startIdleLoop()
     }
 
     /// 창 크기가 바뀌면 타일 크기와 격자 원점이 통째로 달라진다. 전부 다시 배치한다.
@@ -76,18 +85,22 @@ final class OfficeScene: SKScene {
         guard !lastSyncedAgents.isEmpty else {
             return
         }
-        sync(agents: lastSyncedAgents)
+        sync(agents: lastSyncedAgents, approvals: lastSyncedApprovals)
         // sync 는 줄 선 사람·걷는 사람의 자리를 일부러 건드리지 않는다(연출 유지).
         // 그런데 좌표계가 바뀐 지금은 그 배려가 독이 된다 — 옛 화면 좌표에 남아
         // 사무실 밖 허공에 서 있게 된다. 새 좌표계로 강제로 다시 앉힌다.
         repositionEveryone()
+        updateAmbience()
     }
 
     /// 모든 캐릭터를 현재 타일 기준으로 다시 놓는다(진행 중인 걸음은 끊는다).
     /// 좌표계가 바뀐 뒤에는 목적지까지의 남은 경로도 옛 좌표라 이어서 갈 수 없다.
     private func repositionEveryone() {
+        // 옛 좌표계 목적지와 머무름 콜백은 새 격자에서 의미가 없으므로 추적을 먼저 비운다.
+        strollingAgents.removeAll()
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
+            node.removeAction(forKey: "stroll")
             node.isWalking = false
             // 걷던 중이었다면 node.tile 은 경로 중간이라 자리로 못 쓴다.
             // 줄 선 사람은 자기 순번 칸으로, 나머지는 자기 책상으로 확정해 되돌린다.
@@ -145,8 +158,9 @@ final class OfficeScene: SKScene {
 
     // MARK: - 동기화
 
-    func sync(agents: [ConsoleAgent]) {
+    func sync(agents: [ConsoleAgent], approvals: [ConsoleApproval]) {
         lastSyncedAgents = agents
+        lastSyncedApprovals = approvals
         plan = officeFloorPlan(agents: agents)
         recalculateMetrics()
         renderFloor()
@@ -164,7 +178,11 @@ final class OfficeScene: SKScene {
             characters[agentType] = nil
             queueOrder.removeAll { $0 == agentType }
             lastStates[agentType] = nil
+            strollingAgents.remove(agentType)
+            lastStrollAt[agentType] = nil
         }
+
+        reconcileQueue(agents: agents, approvals: approvals)
 
         for agent in agents {
             guard let seat = homeSeats[agent.agentType] else {
@@ -181,7 +199,9 @@ final class OfficeScene: SKScene {
             node.apply(state: agent.state)
 
             // 줄 서 있거나 걷는 중인 사람은 건드리지 않고, 나머지는 자기 자리에 둔다.
-            if !queueOrder.contains(agent.agentType), !node.isWalking {
+            if !queueOrder.contains(agent.agentType),
+               !node.isWalking,
+               !strollingAgents.contains(agent.agentType) {
                 place(node, at: seat)
                 node.sit()
             }
@@ -199,6 +219,34 @@ final class OfficeScene: SKScene {
 
         layoutQueue()
         updateCompanySummary(agents)
+        updateAmbience()
+    }
+
+    /// 스냅샷을 정본으로 승인 줄을 맞춘다.
+    ///
+    /// 재연결 경로에는 `approval.resolved` 가 오지 않아, 승인이 끝난 사람이 대표실 앞에 영영
+    /// 남는다(`sync` 는 줄 선 사람을 일부러 건드리지 않는다). 그 사람은 자리로 돌아가지도
+    /// 배회하지도 못한다 — 유휴 감독관이 줄 선 사람을 후보에서 빼기 때문이다.
+    ///
+    /// `sync` 와 분리해 둔 이유는 비용이다. 승인 알림은 수 분 간격으로 오가는데, 그때마다
+    /// 씬 전체(바닥 500여 타일·가구·27명)를 다시 만들 이유가 없다.
+    func reconcileQueue(agents: [ConsoleAgent], approvals: [ConsoleApproval]) {
+        lastSyncedApprovals = approvals
+        let reconciled = reconciledQueueOrder(
+            current: queueOrder,
+            agents: agents,
+            approvals: approvals
+        )
+        guard reconciled != queueOrder else {
+            return
+        }
+        let leaving = queueOrder.filter { !reconciled.contains($0) }
+        queueOrder = reconciled
+        for agentType in leaving {
+            goHome(agentType)
+        }
+        // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
+        layoutQueue()
     }
 
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
@@ -397,6 +445,105 @@ final class OfficeScene: SKScene {
 
     // MARK: - 걸음
 
+    /// 틱 단위 반복 하나면 충분해 프레임마다 같은 판정을 되풀이하지 않는다.
+    private func startIdleLoop() {
+        removeAction(forKey: "idleLoop")
+        let cycle = SKAction.sequence([
+            .wait(forDuration: officeStrollTickSeconds),
+            .run { [weak self] in self?.runIdleSupervisor() },
+        ])
+        run(.repeatForever(cycle), withKey: "idleLoop")
+    }
+
+    /// 씬 상태를 순수 후보 값으로 옮긴 뒤 선발·배정 판단은 전부 ConsoleCore에 맡긴다.
+    private func runIdleSupervisor() {
+        guard !lastSyncedAgents.isEmpty else {
+            return
+        }
+        let now = Date().timeIntervalSinceReferenceDate
+        let candidates = lastSyncedAgents.map { agent in
+            OfficeIdleCandidate(
+                agentType: agent.agentType,
+                state: agent.state,
+                isQueued: queueOrder.contains(agent.agentType),
+                isWalking: characters[agent.agentType]?.isWalking ?? true,
+                hasPendingWork: lastPhases[agent.agentType] != nil,
+                lastStrollAt: lastStrollAt[agent.agentType]
+            )
+        }
+        let picks = officeStrollPicks(
+            candidates: candidates,
+            activeStrollCount: strollingAgents.count,
+            now: now
+        )
+
+        strollRound += 1
+        let spots = officeStrollSpots(plan: plan)
+        var occupied = Set(characters.values.map(\.tile))
+        for agentType in picks {
+            guard let spot = officeStrollSpot(
+                for: agentType,
+                round: strollRound,
+                spots: spots,
+                occupied: occupied
+            ) else {
+                continue
+            }
+            occupied.insert(spot.tile)
+            stroll(agentType, to: spot)
+        }
+        updateAmbience()
+    }
+
+    /// 목적지에 머무는 action을 따로 이름 붙여 실제 이벤트가 걸음과 대기를 모두 끊게 한다.
+    private func stroll(_ agentType: String, to spot: OfficeStrollSpot) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        strollingAgents.insert(agentType)
+        lastStrollAt[agentType] = Date().timeIntervalSinceReferenceDate
+        stopWorking(node)
+        walk(node, to: spot.tile) { [weak self, weak node] in
+            node?.apply(facing: .up)
+            node?.run(.sequence([
+                .wait(forDuration: spot.dwellSeconds),
+                .run { [weak self] in self?.endStroll(agentType) },
+            ]), withKey: "stroll")
+        }
+    }
+
+    /// 이벤트가 이미 배회를 취소했다면 늦게 도착한 콜백이 사람을 다시 움직이지 못하게 한다.
+    ///
+    /// **자리로 다 돌아온 뒤에** 배회 인원에서 뺀다. 머무름이 끝나는 순간 빼 버리면 복귀하는
+    /// 걸음이 상한 계산에서 빠져, 다음 틱이 곧바로 두 명을 더 내보낸다 — 화면에서 동시에
+    /// 움직이는 사람이 상한(2명)을 넘어 넷까지 늘어난다. 복귀도 배회의 일부다.
+    private func endStroll(_ agentType: String) {
+        guard strollingAgents.contains(agentType) else {
+            return
+        }
+        goHome(agentType) { [weak self] in
+            self?.strollingAgents.remove(agentType)
+        }
+    }
+
+    /// 관제 이벤트가 장식 연출보다 우선하므로 이동 중간 위치에서라도 즉시 제어권을 넘긴다.
+    private func cancelStroll(_ agentType: String) {
+        guard strollingAgents.remove(agentType) != nil else {
+            return
+        }
+        guard let node = characters[agentType] else {
+            return
+        }
+        node.removeAction(forKey: "stroll")
+        node.removeAction(forKey: "walk")
+        node.sprite.removeAllActions()
+        node.sprite.yScale = 1
+        node.sprite.zRotation = 0
+        // bob 중간 프레임에서 끊기면 y가 떠 있는 값으로 남으므로 서 있는 자세의 기준점도 복원한다.
+        node.clearMotion()
+        node.isWalking = false
+    }
+
     /// 목적지까지 걸어간다. 경로가 없으면 그 자리에 둔다(순간이동시키지 않는다 —
     /// 갑자기 사라졌다 나타나면 무슨 일이 일어났는지 읽을 수 없다).
     private func walk(
@@ -520,27 +667,38 @@ final class OfficeScene: SKScene {
     }
 
     /// 완료 직후 탕비실에 잠깐 다녀온다. 비어 있는 휴식 자리를 고른다.
+    ///
+    /// 배회 중이던 사람이 완료로 바뀔 수 있다(이벤트 없이 스냅샷만 갱신되는 경로). 그때 앞선
+    /// 배회의 머무름 콜백이 살아 있으면, 탕비실에 도착한 뒤 그 콜백이 깨어나 자리로 끌고 간다.
+    /// 먼저 끊고 시작한다 — 완료 축하가 배회를 이긴다.
     private func visitLounge(_ agentType: String) {
         guard let node = characters[agentType], !queueOrder.contains(agentType) else {
             return
         }
+        cancelStroll(agentType)
         let occupied = Set(characters.values.map(\.tile))
         guard let spot = plan.loungeTiles.first(where: { !occupied.contains($0) }) else {
             return
         }
+        strollingAgents.insert(agentType)
         stopWorking(node)
         walk(node, to: spot) { [weak self, weak node] in
             node?.apply(facing: .down)
             node?.run(.sequence([
                 .wait(forDuration: 3.5),
-                .run { self?.goHome(agentType) },
-            ]))
+                .run { [weak self] in self?.endStroll(agentType) },
+            ]), withKey: "stroll")
         }
     }
 
     // MARK: - 연출 실행
 
     func perform(_ intents: [VisualIntent]) {
+        for intent in intents {
+            for agentType in affectedAgentTypes(of: intent) {
+                cancelStroll(agentType)
+            }
+        }
         for intent in intents {
             switch intent {
             case let .recolor(agentType, state):
@@ -784,6 +942,40 @@ final class OfficeScene: SKScene {
         }
         desk.removeAction(forKey: "monitor")
         desk.colorBlendFactor = 0
+    }
+
+    /// 색 막은 오브젝트만 물들이고 이름표·문패·요약 아래에 둬 관제 정보의 대비를 보존한다.
+    private func updateAmbience() {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let activeCount = lastSyncedAgents.filter {
+            $0.state == .inProgress || $0.state == .awaitingApproval
+        }.count
+        let tint = officeAmbienceTint(hour: hour, activeCount: activeCount)
+        guard tint.alpha > 0 else {
+            ambienceOverlay?.removeFromParent()
+            ambienceOverlay = nil
+            return
+        }
+
+        let overlay: SKSpriteNode
+        if let ambienceOverlay {
+            overlay = ambienceOverlay
+        } else {
+            overlay = SKSpriteNode(color: .clear, size: size)
+            overlay.zPosition = 500
+            overlay.anchorPoint = CGPoint(x: 0, y: 0)
+            overlay.position = .zero
+            addChild(overlay)
+            ambienceOverlay = overlay
+        }
+        overlay.color = SKColor(
+            red: CGFloat(tint.red),
+            green: CGFloat(tint.green),
+            blue: CGFloat(tint.blue),
+            alpha: 1
+        )
+        overlay.alpha = CGFloat(tint.alpha)
+        overlay.size = size
     }
 
     /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다.

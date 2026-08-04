@@ -96,6 +96,32 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
+    /// 자기 자리인 책상·의자와 사람이 찾을 이유가 없는 시계·쓰레기통을 목적지에서 뺀다.
+    public var strollDwellSeconds: Double? {
+        switch self {
+        case .coffeeMachine:
+            return 4
+        case .waterCooler:
+            return 3
+        case .printer:
+            return 3
+        case .sofa2, .sofa3:
+            return 8
+        case .coffeeTable:
+            return 5
+        case .meetingTable:
+            return 5
+        case .whiteboard:
+            return 4
+        case .bookshelf:
+            return 4
+        case .plantTall, .plantSmall:
+            return 2
+        case .desk, .chairDown, .chairUp, .clock, .trash:
+            return nil
+        }
+    }
+
     /// 렌더 배율 보정. 캐릭터를 한 칸 크기로 줄이면 사람이 쓰는 큰 가구가 상대적으로
     /// 작아 보인다. 책상·회의 테이블·소파만 키워 "사람 폭 : 책상 폭 ≈ 1 : 2" 를 만든다.
     /// 화분·시계 같은 소품까지 키우면 방이 잡동사니로 찬 것처럼 보인다.

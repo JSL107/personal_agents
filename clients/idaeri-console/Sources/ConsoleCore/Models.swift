@@ -81,7 +81,7 @@ public struct ConsoleRun: Codable, Identifiable, Sendable, Equatable {
 }
 
 /// PreviewGate 승인 대기 한 건.
-public struct ConsoleApproval: Codable, Identifiable, Sendable {
+public struct ConsoleApproval: Codable, Identifiable, Equatable, Sendable {
     public let id: String
     public let agentType: String?
     public let title: String
