@@ -187,18 +187,88 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         officeSeatedSpriteDrop > 0.1 && officeSeatedSpriteDrop < 0.5,
         "앉은 자세 오프셋이 유효 범위 (실제 \(officeSeatedSpriteDrop))"
     )
-    // 캐릭터 배율은 앉은 원본 57px 을 한 칸(40px) 안팎으로 내리는 값이어야 한다.
-    let seatedTiles = 57.0 * officeCharacterScaleFactor / 40.0
+    // 캐릭터는 원본 크기를 쓴다. 탑다운 픽셀아트에서 사람이 타일보다 높은 것은 표준이라
+    // (Gather 0.94~1.13칸 · RPG Maker XP 1.5칸 · 스타듀밸리 2.0칸) 1칸까지 줄이면 계보를
+    // 벗어난다. 하한 0.85 는 조정 여지로 남긴 값이고, 그 아래는 27명 구별도 어려워진다.
     t.expect(
-        seatedTiles >= 1.0 && seatedTiles <= 1.1,
-        "앉은 캐릭터 키가 1.0~1.1칸 (실제 \(seatedTiles))"
+        officeCharacterScaleFactor >= 0.85 && officeCharacterScaleFactor <= 1.0,
+        "캐릭터 배율이 0.85~1.0 (실제 \(officeCharacterScaleFactor))"
+    )
+    let characterHeight = 54.0 * officeCharacterScaleFactor
+    t.expect(
+        characterHeight / 40.0 >= 1.1 && characterHeight / 40.0 <= 1.4,
+        "서 있는 키가 장르 범위 1.1~1.4칸 (실제 \(characterHeight / 40.0))"
     )
 
-    // 큰 가구만 배율 보정을 받는다 — 소품까지 키우면 방이 잡동사니로 찬 것처럼 보인다.
-    t.expect(FurnitureKind.desk.sizeBoost > 1, "책상은 확대 보정")
-    t.expect(FurnitureKind.meetingTable.sizeBoost > 1, "회의 테이블은 확대 보정")
-    t.expectEqual(FurnitureKind.plantSmall.sizeBoost, 1.0, "소품은 원본 크기")
+    // 축척 환산 데이터가 빠지지 않았는지 — 새 가구를 넣고 실측값을 안 채우면 배율이
+    // 조용히 1.0 으로 떨어져 그 가구만 다시 작아진다.
+    for kind in FurnitureKind.allCases {
+        t.expect(kind.nativeSize.width > 0, "\(kind.rawValue) 원본 폭 실측값 존재")
+        t.expect(kind.nativeHeight > 0, "\(kind.rawValue) 원본 높이 실측값 존재")
+    }
+
+    // **보정 후 폭이 점유 칸을 넘지 않는다.** 렌더가 배율을 가로·세로에 같이 곱하므로
+    // 높이만 보고 키우면 폭이 옆 칸을 침범한다. 책장은 개발·리뷰 부서와 상단 밴드에서
+    // 두 개가 인접 배치되므로 넘친 폭이 곧 겹침이고, 옆 칸 사람과 상태 링을 가린다.
+    // (실제로 겪었다 — 높이 환산만 적용한 첫 구현에서 책장이 50.4px 로 10px 겹쳤다.)
+    for kind in FurnitureKind.allCases {
+        let renderedWidth = kind.nativeSize.width * kind.sizeBoost
+        let allowed = Double(kind.footprint.width) * officeReferenceTileSize
+        t.expect(
+            renderedWidth <= allowed,
+            "\(kind.rawValue) 보정 후 폭이 점유 칸 이하 (실제 \(renderedWidth) vs \(allowed))"
+        )
+    }
+
+    // 같은 계열 가구는 같은 배율을 받는다 — 탕비실에 2인·3인 소파가 3칸 간격으로 함께 놓이는데
+    // 폭 상한을 각자 계산하면 2인 소파가 3인 소파보다 높아 보인다.
+    t.expectEqual(
+        FurnitureKind.sofa2.sizeBoost,
+        FurnitureKind.sofa3.sizeBoost,
+        "2인·3인 소파가 같은 배율"
+    )
+
+    // 세로 픽셀이 높이가 아닌 세 종은 환산에서 빠져야 한다 — 벽시계를 지름 30cm 로 환산하면
+    // 절반으로 줄어 보이지 않게 되고, 회의 테이블의 세로는 깊이(원근)다.
+    t.expectNil(FurnitureKind.clock.targetHeightCm, "벽시계는 높이 환산 제외")
+    t.expectNil(FurnitureKind.whiteboard.targetHeightCm, "화이트보드는 높이 환산 제외")
+    t.expectNil(FurnitureKind.meetingTable.targetHeightCm, "회의 테이블은 높이 환산 제외")
     t.expectEqual(FurnitureKind.clock.sizeBoost, 1.0, "벽시계는 원본 크기")
+    t.expectEqual(FurnitureKind.whiteboard.sizeBoost, 1.0, "화이트보드는 원본 크기")
+
+    // 3단 책장은 이전 일괄 보정(책상·회의테이블·소파만)에서 빠져 원본 크기로 방치돼 있었다.
+    // 지금은 보정을 받지만 **폭 상한에 걸려 목표 높이를 다 채우지 못한다** — 환산 목표는
+    // 사람 키의 88% 인데 실제로는 70% 다. 에셋이 37×35 로 거의 정사각형인데 실물 3단 책장은
+    // 세로로 길어서, 높이를 맞추면 폭이 1칸을 넘어 인접 책장·옆 칸 사람과 겹친다.
+    // 배율로는 여기까지가 한계이고 해소는 에셋 재제작(3단계) 몫이다.
+    //
+    // 기준을 68% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65% 로 떨어져 걸린다.
+    let bookshelf = FurnitureKind.bookshelf
+    let bookshelfHeight = bookshelf.nativeHeight * bookshelf.sizeBoost
+    t.expect(
+        bookshelfHeight >= characterHeight * 0.68,
+        "책장이 사람 키의 68% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
+    )
+    // 폭 상한이 결정한 배율을 그대로 쓴다 — 상한 안에서 최대한 키운 상태여야 한다.
+    // 누가 배율을 임의값으로 되돌리면 여기서 걸린다.
+    t.expectEqual(
+        bookshelf.sizeBoost,
+        officeReferenceTileSize / bookshelf.nativeSize.width,
+        "책장 배율이 폭 상한값과 일치"
+    )
+
+    // 어떤 가구도 사람보다 높지 않다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을 본다.
+    // 회의 테이블은 세로가 깊이라 이 비교가 성립하지 않아 제외한다.
+    for kind in FurnitureKind.allCases where kind != .meetingTable {
+        let height = kind.nativeHeight * kind.sizeBoost
+        t.expect(
+            height <= characterHeight,
+            "\(kind.rawValue) 높이가 사람 키 이하 (실제 \(height) vs \(characterHeight))"
+        )
+    }
+
+    // 책상은 여전히 확대 보정 대상이다(원본이 환산값의 90%).
+    t.expect(FurnitureKind.desk.sizeBoost > 1, "책상은 확대 보정")
 
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
@@ -277,10 +347,39 @@ func runAgentRoleTests(_ t: TestRunner) {
         "시트 인덱스가 준비된 범위 안"
     )
     t.expect(hairPalette.indices.contains(first.hairIndex), "머리색 인덱스가 팔레트 범위 안")
+    t.expect(pantsPalette.indices.contains(first.pantsIndex), "바지색 인덱스가 팔레트 범위 안")
 
     // 27명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
     let sheets = Set(sampleAgents.map { characterLook(for: $0.agentType).sheetIndex })
     t.expect(sheets.count >= 3, "캐릭터 시트가 최소 3종으로 분산 (실제 \(sheets.count)종)")
+
+    // 바지색도 한 색에 몰리지 않아야 한다. 이름표를 약하게 만든 만큼 사람을 구별하는 몫이
+    // 모습으로 옮겨왔으므로, 축을 늘려 놓고 실제로는 갈리지 않으면 의미가 없다.
+    let pants = Set(sampleAgents.map { characterLook(for: $0.agentType).pantsIndex })
+    t.expect(pants.count >= 3, "바지색이 최소 3종으로 분산 (실제 \(pants.count)종)")
+
+    // 바지 팔레트는 어두운 계열이어야 한다 — 면적이 넓어서 밝거나 채도 높은 색을 쓰면
+    // 발밑 상태 링보다 옷이 먼저 눈에 들어온다(관제 정확성이 연출보다 우선).
+    for (index, color) in pantsPalette.enumerated() {
+        let brightness = (color.red + color.green + color.blue) / 3
+        let saturation = max(color.red, color.green, color.blue)
+            - min(color.red, color.green, color.blue)
+        t.expect(brightness <= 0.35, "바지색 \(index) 이 어둡다 (밝기 \(brightness))")
+        t.expect(saturation <= 0.2, "바지색 \(index) 이 저채도 (채도 \(saturation))")
+    }
+
+    // 머리색과 바지색이 같이 움직이지 않는지 — 같은 나눗셈으로 뽑으면 조합이 고정돼
+    // 축을 늘린 효과가 사라진다(시트·머리색에서 이미 겪은 함정).
+    let pairs = Set(
+        sampleAgents.map { agent -> String in
+            let look = characterLook(for: agent.agentType)
+            return "\(look.hairIndex)-\(look.pantsIndex)"
+        }
+    )
+    t.expect(
+        pairs.count > max(sheets.count, pants.count),
+        "머리색·바지색 조합이 각 축보다 다양 (실제 \(pairs.count)종)"
+    )
 }
 
 func runOfficePathfindingTests(_ t: TestRunner) {
