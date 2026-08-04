@@ -4,6 +4,7 @@ import { WebClient } from '@slack/web-api';
 
 import { ApplyPreviewUsecase } from './application/apply-preview.usecase';
 import { CancelPreviewUsecase } from './application/cancel-preview.usecase';
+import { CountPreviewsByPayloadUsecase } from './application/count-previews-by-payload.usecase';
 import { CreatePreviewUsecase } from './application/create-preview.usecase';
 import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
 import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews.usecase';
@@ -40,6 +41,7 @@ import {
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
     FindAllOpenPreviewsUsecase,
+    CountPreviewsByPayloadUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,
@@ -85,6 +87,7 @@ import {
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
     FindAllOpenPreviewsUsecase,
+    CountPreviewsByPayloadUsecase,
   ],
 })
 export class PreviewGateModule {
