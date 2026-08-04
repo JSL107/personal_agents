@@ -183,6 +183,13 @@ final class CharacterNode: SKNode {
         let emphasized = nameplateIsEmphasized(
             state: currentState, isHovered: isHovered, isSelected: isSelected
         )
+        // 창이 작아 이름표가 서로 겹치는 구간에서는 읽히는 몇 개만 남긴다.
+        let visible = nameplateIsVisible(
+            tileSize: Double(currentTileSize), state: currentState,
+            isHovered: isHovered, isSelected: isSelected
+        )
+        nameLabel.isHidden = !visible
+        namePlate.isHidden = !visible
         // 문패를 이 글자 위로 올리는 계산이 Core 에 있으므로, 크기도 같은 함수에서 받는다.
         let fontSize = CGFloat(officeNameplateFontSize(tileSize: Double(currentTileSize)))
         let font = NSFont(name: officeLabelFontName, size: fontSize)
@@ -357,17 +364,28 @@ final class CharacterNode: SKNode {
     }
 
     /// 대기 — 느린 숨쉬기. 멈춰 있어도 살아 있다는 신호.
+    ///
+    /// 시작 위상을 사람마다 어긋낸다. 전원이 같은 순간에 같은 주기로 오르내리면 사람이 아니라
+    /// 군무로 보이고, 스프라이트가 한 장뿐인 이 화면에서는 "다 똑같아 보인다" 는 인상을
+    /// 한 번 더 굳힌다.
     func startBreathing() {
         guard sprite.action(forKey: "breathing") == nil else {
             return
         }
         clearMotion()
+        let half = officeBreathCycleSeconds / 2
         let breathe = SKAction.sequence([
-            .scaleY(to: 1.02, duration: 1.7),
-            .scaleY(to: 1.0, duration: 1.7),
+            .scaleY(to: 1.02, duration: half),
+            .scaleY(to: 1.0, duration: half),
         ])
         breathe.timingMode = .easeInEaseOut
-        sprite.run(.repeatForever(breathe), withKey: "breathing")
+        sprite.run(
+            .sequence([
+                .wait(forDuration: officeBreathPhaseSeconds(agentType: name ?? nameText)),
+                .repeatForever(breathe),
+            ]),
+            withKey: "breathing"
+        )
     }
 
     /// 실패 — 어깨가 축 처진다. 세로로 눌러 낮아지고 살짝 내려앉는다.
