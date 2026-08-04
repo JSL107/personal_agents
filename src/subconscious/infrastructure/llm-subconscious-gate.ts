@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -16,6 +16,8 @@ const SYSTEM_PROMPT = [
 
 @Injectable()
 export class LlmSubconsciousGate implements SubconsciousGate {
+  private readonly logger = new Logger(LlmSubconsciousGate.name);
+
   constructor(
     @Inject(ModelRouterUsecase)
     private readonly modelRouter: ModelRouterUsecase,
@@ -40,8 +42,15 @@ export class LlmSubconsciousGate implements SubconsciousGate {
         request: { prompt: userPrompt, systemPrompt: SYSTEM_PROMPT },
       });
       return parseGateResponse(response.text, validKeys);
-    } catch {
-      return []; // gate 실패 → fail-closed(제안 0건)
+    } catch (error) {
+      // fail-closed(제안 0건)는 그대로 두되, 조용히 삼키지는 않는다.
+      // 게이트가 죽으면 제안이 0건이 되는데 로그가 없으면 "노이즈가 없어서 0건"인지
+      // "고장나서 0건"인지 구분할 수 없다 — 침묵하는 자동화가 가장 늦게 발견된다.
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `잠재의식 게이트 판정 실패 — 변화 ${changes.length}건을 제안 0건으로 처리: ${reason}`,
+      );
+      return [];
     }
   }
 }
