@@ -35,10 +35,10 @@ enum SpriteLoader {
         return texture
     }
 
-    /// 머리색·셔츠색을 바꿔 찍어낸 캐릭터 텍스처.
+    /// 머리색·셔츠색·바지색을 바꿔 찍어낸 캐릭터 텍스처.
     ///
     /// 캐릭터 스프라이트가 한 장뿐이라 26명이 전부 같은 사람으로 보인다. 실루엣은 그대로 두고
-    /// 머리와 셔츠 색만 갈아끼우면, 도트 그림에서는 충분히 다른 사람으로 읽힌다.
+    /// 머리·셔츠·바지 색만 갈아끼우면, 도트 그림에서는 충분히 다른 사람으로 읽힌다.
     ///
     /// 색 구분은 밝기로 한다(실측):
     ///  - 머리 rgb(59,59,58) — 밝기 55 근처, 무채색
@@ -52,7 +52,8 @@ enum SpriteLoader {
         pose: String,
         sheet: Int,
         hair: (red: Double, green: Double, blue: Double),
-        shirt: (red: Double, green: Double, blue: Double)
+        shirt: (red: Double, green: Double, blue: Double),
+        pants: (red: Double, green: Double, blue: Double)
     ) -> SKTexture? {
         let prefix = sheetPrefixes[min(max(sheet, 0), sheetPrefixes.count - 1)]
         var name = "\(prefix)-\(pose)"
@@ -63,10 +64,11 @@ enum SpriteLoader {
             name = "char-\(pose)"
         }
         let key = String(
-            format: "%@#%02X%02X%02X#%02X%02X%02X",
+            format: "%@#%02X%02X%02X#%02X%02X%02X#%02X%02X%02X",
             name,
             Int(hair.red * 255), Int(hair.green * 255), Int(hair.blue * 255),
-            Int(shirt.red * 255), Int(shirt.green * 255), Int(shirt.blue * 255)
+            Int(shirt.red * 255), Int(shirt.green * 255), Int(shirt.blue * 255),
+            Int(pants.red * 255), Int(pants.green * 255), Int(pants.blue * 255)
         )
         if let cached = cache[key] {
             return cached
@@ -103,18 +105,29 @@ enum SpriteLoader {
                     continue  // 얼굴·소품처럼 색이 있는 부분은 건드리지 않는다
                 }
                 let replacement: (red: Double, green: Double, blue: Double)?
+                // 명암 단계를 정규화할 기준값. 부위마다 원본 밝기 대역이 달라 하나로 나누면
+                // 어두운 부위가 통째로 검게 눌린다(바지 밝기 상한이 17 인데 60 으로 나누면 0.28).
+                let shadeDivisor: Double
                 if brightness >= 40, brightness <= 110, y < hairZoneBottom {
                     replacement = hair
+                    shadeDivisor = 60
                 } else if brightness >= 228 {
                     replacement = shirt
+                    shadeDivisor = 255
+                } else if brightness <= 24, y >= hairZoneBottom {
+                    // 바지. 위치 조건이 함께 걸려야 한다 — 밝기만 보면 머리 윤곽선까지 잡힌다.
+                    // 상한 24 는 원본 실측(5~17)에 여유를 둔 값이다.
+                    replacement = pants
+                    shadeDivisor = 17
                 } else {
                     replacement = nil
+                    shadeDivisor = 1
                 }
                 guard let replacement else {
                     continue
                 }
                 // 원본의 명암 단계를 유지한 채 색만 갈아끼운다 — 통짜로 칠하면 입체감이 사라진다.
-                let shade = Double(brightness) / (brightness >= 228 ? 255.0 : 60.0)
+                let shade = Double(brightness) / shadeDivisor
                 pixels[offset] = clampByte(replacement.red * 255 * shade)
                 pixels[offset + 1] = clampByte(replacement.green * 255 * shade)
                 pixels[offset + 2] = clampByte(replacement.blue * 255 * shade)

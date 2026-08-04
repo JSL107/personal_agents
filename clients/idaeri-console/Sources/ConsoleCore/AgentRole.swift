@@ -88,10 +88,13 @@ public struct CharacterLook: Equatable, Sendable {
     public let hairIndex: Int
     /// 셔츠 색조를 부서색에서 얼마나 밀어낼지(같은 부서 안에서도 미세하게 다르도록).
     public let shirtShift: Double
-    public init(sheetIndex: Int, hairIndex: Int, shirtShift: Double) {
+    /// 바지색 팔레트 인덱스.
+    public let pantsIndex: Int
+    public init(sheetIndex: Int, hairIndex: Int, shirtShift: Double, pantsIndex: Int) {
         self.sheetIndex = sheetIndex
         self.hairIndex = hairIndex
         self.shirtShift = shirtShift
+        self.pantsIndex = pantsIndex
     }
 }
 
@@ -107,6 +110,23 @@ public let hairPalette: [(red: Double, green: Double, blue: Double)] = [
     (0.55, 0.55, 0.58),  // 회색
 ]
 
+/// 바지색 팔레트(0~1 RGB). **어두운 계열로 좁게** 잡는다.
+///
+/// 이름표를 약하게 만든 만큼(가시성 정리) 사람을 구별하는 몫이 모습으로 옮겨와야 해서 넣은 축이다.
+/// 바지는 면적이 넓어 밝거나 채도 높은 색을 쓰면 발밑 상태 링보다 먼저 눈에 들어온다 —
+/// 관제 도구에서 가장 먼저 읽혀야 하는 신호가 상태색이므로 옷이 그 앞을 서면 안 된다.
+///
+/// 원본 바지는 rgb(5~17)의 거의 검정이고 렌더가 원본 명암 단계를 곱해 쓰므로, 여기 값이
+/// 그 색조의 상한이 된다. 같은 밝기 대역에 신발이 포함될 수 있으나 어두운 계열이라 함께
+/// 물들어도 어색하지 않다.
+public let pantsPalette: [(red: Double, green: Double, blue: Double)] = [
+    (0.16, 0.16, 0.18),  // 검정 (원본에 가까움)
+    (0.18, 0.22, 0.34),  // 남색
+    (0.28, 0.24, 0.20),  // 갈색
+    (0.24, 0.26, 0.28),  // 짙은 회색
+    (0.20, 0.28, 0.26),  // 짙은 청록
+]
+
 /// agentType 으로 외형을 정한다(순수·결정론적).
 public func characterLook(for agentType: String) -> CharacterLook {
     // 문자열 해시는 프로세스마다 값이 달라질 수 있어(Swift Hasher 시드) 직접 합산한다.
@@ -115,10 +135,16 @@ public func characterLook(for agentType: String) -> CharacterLook {
     for byte in agentType.utf8 {
         sum = (sum &* 31 &+ Int(byte)) % 100_003
     }
-    // 시트·머리색을 서로 다른 자릿수에서 뽑아 둘이 같이 움직이지 않게 한다
+    // 시트·머리색·바지색을 서로 다른 자릿수에서 뽑아 축들이 같이 움직이지 않게 한다
     // (같은 나눗셈을 쓰면 시트 A 는 항상 검은 머리처럼 조합이 고정된다).
     let sheetIndex = (sum / 13) % characterSheetCount
     let hairIndex = sum % hairPalette.count
     let shirtShift = Double((sum / 7) % 5) * 0.05
-    return CharacterLook(sheetIndex: sheetIndex, hairIndex: hairIndex, shirtShift: shirtShift)
+    let pantsIndex = (sum / 17) % pantsPalette.count
+    return CharacterLook(
+        sheetIndex: sheetIndex,
+        hairIndex: hairIndex,
+        shirtShift: shirtShift,
+        pantsIndex: pantsIndex
+    )
 }

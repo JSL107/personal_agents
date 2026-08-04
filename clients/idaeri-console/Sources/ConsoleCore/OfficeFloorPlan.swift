@@ -10,10 +10,33 @@ public struct TilePoint: Hashable, Sendable {
     }
 }
 
-/// 캐릭터 전용 배율 계수. 원본이 앉기 57px·서기 54px 이라 계수 1 이면 사람이 1.35~1.43칸을
-/// 차지해 책상(0.8칸 깊이)보다 커진다. 0.75 를 곱하면 앉은 자세가 1.07칸으로 내려온다.
-/// 가구 쪽 보정은 `FurnitureKind.sizeBoost` 가 갖는다 — 둘을 한 값으로 묶으면 한쪽만 조정할 수 없다.
-public let officeCharacterScaleFactor: Double = 0.75
+/// 캐릭터 전용 배율 계수. 원본 크기를 그대로 쓴다(1.0).
+///
+/// 한때 0.75 였다. "사람이 가구보다 크다" 를 사람 쪽 문제로 진단했기 때문인데, 탑다운
+/// 픽셀아트에서 캐릭터가 타일보다 높은 것은 표준이다 — Gather.town 0.94~1.13칸,
+/// RPG Maker XP 1.5칸, 스타듀밸리 2.0칸이고 이 앱은 1.35칸으로 그 범위 중간에 있다.
+/// 1칸까지 줄이면 오히려 계보를 벗어나고, 27명을 머리색으로 구별하기도 어려워진다.
+/// 사람이 위 칸에 걸치는 것도 이 시점의 정상 동작이다(Gather 공식 문서가 명시).
+///
+/// 실제 원인은 가구마다 축척이 달랐던 것이라 보정은 `FurnitureKind.sizeBoost` 가 전담한다.
+/// 계수를 상수로 남겨 두는 이유는 하한 0.85(→1.15칸)까지 조정 여지를 두기 위함이다.
+public let officeCharacterScaleFactor: Double = 1.0
+
+/// 스프라이트 픽셀 ↔ 실물 치수 환산 기준. 서 있는 캐릭터 54px 을 키 170cm 로 본다.
+///
+/// 3/4 시점이라 정밀한 값은 아니다. 쓸모는 절대 크기가 아니라 **가구끼리의 편차**를 재는 데 있다.
+///
+/// **캐릭터 배율을 함께 곱해야 한다.** 캐릭터는 `officeCharacterScaleFactor` 를 추가로 받는데
+/// 가구는 받지 않으므로, 이 값을 빼면 배율을 0.85 로 내리는 순간 기준은 그대로인 채 캐릭터만
+/// 작아져 가구가 사람보다 커진다. 지금은 계수가 1.0 이라 드러나지 않지만 조정 여지를 남긴 값이라
+/// 여기서 묶어 둔다.
+private let officePixelsPerCentimeter = 54.0 * officeCharacterScaleFactor / 170.0
+
+/// 스프라이트 원본이 그려진 기준 타일 크기(px). 창이 이 크기일 때 배율 1 이 원본 픽셀이다.
+///
+/// 렌더 쪽(`OfficeScene`)과 배율 계산(`FurnitureKind.sizeBoost`)이 같은 값을 봐야 한다 —
+/// 두 곳에 따로 두면 한쪽만 바뀌었을 때 폭 상한이 조용히 어긋난다.
+public let officeReferenceTileSize: Double = 40
 
 /// 앉은 캐릭터를 책상 쪽으로 내리는 양(타일 크기 배수).
 ///
@@ -96,16 +119,132 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
-    /// 렌더 배율 보정. 캐릭터를 한 칸 크기로 줄이면 사람이 쓰는 큰 가구가 상대적으로
-    /// 작아 보인다. 책상·회의 테이블·소파만 키워 "사람 폭 : 책상 폭 ≈ 1 : 2" 를 만든다.
-    /// 화분·시계 같은 소품까지 키우면 방이 잡동사니로 찬 것처럼 보인다.
-    public var sizeBoost: Double {
+    /// 스프라이트 원본 크기(실측 px). `sips -g pixelWidth -g pixelHeight Resources/sprites/furn-*.png`
+    ///
+    /// 에셋을 다시 뽑으면 이 값도 함께 갱신해야 한다 — 어긋나면 배율이 조용히 틀어진다.
+    /// ConsoleCore 는 SpriteKit 비의존이라 이미지를 읽어 자동 검증할 수 없다.
+    public var nativeSize: (width: Double, height: Double) {
         switch self {
-        case .desk, .meetingTable, .sofa2, .sofa3:
-            return 1.15
-        default:
-            return 1.0
+        case .desk:
+            return (37, 32)
+        case .chairDown:
+            return (16, 26)
+        case .chairUp:
+            return (17, 24)
+        case .meetingTable:
+            return (37, 56)
+        case .sofa2:
+            return (30, 21)
+        case .sofa3:
+            return (39, 21)
+        case .coffeeTable:
+            return (18, 17)
+        case .coffeeMachine:
+            return (27, 31)
+        case .waterCooler:
+            return (12, 30)
+        case .whiteboard:
+            return (39, 22)
+        case .printer:
+            return (24, 28)
+        case .plantTall:
+            return (18, 32)
+        case .plantSmall:
+            return (17, 20)
+        case .bookshelf:
+            return (37, 35)
+        case .clock:
+            return (20, 19)
+        case .trash:
+            return (13, 17)
         }
+    }
+
+    /// 원본 세로 픽셀. 높이 환산의 분모다.
+    public var nativeHeight: Double {
+        nativeSize.height
+    }
+
+    /// 폭 상한을 함께 계산하는 계열. 같은 종류 가구가 서로 다른 배율을 받으면 나란히 놓였을 때
+    /// 2인 소파가 3인 소파보다 높아 보인다 — 탕비실 밴드에 둘이 3칸 간격으로 함께 놓인다.
+    /// 3인 소파가 폭 39px 로 더 넓어 상한이 먼저 걸리므로, 2인 소파도 그 값을 따른다.
+    private var scaleGroup: [FurnitureKind] {
+        switch self {
+        case .sofa2, .sofa3:
+            return [.sofa2, .sofa3]
+        default:
+            return [self]
+        }
+    }
+
+    /// 실물 높이(cm). 이 값으로 배율을 환산한다. nil 이면 환산하지 않는다.
+    ///
+    /// **벽걸이(시계·화이트보드)와 탑다운 시점(회의 테이블)은 nil 이다.** 세로 픽셀이 높이가
+    /// 아니라서 환산이 성립하지 않는다 — 벽시계를 지름 30cm 로 환산하면 절반으로 줄어 보이지
+    /// 않게 되고, 회의 테이블의 세로는 깊이(원근)다. 이 세 종은 화면에서 읽히는 크기로 판단한다.
+    public var targetHeightCm: Double? {
+        switch self {
+        case .desk:
+            return 112  // 책상 상판 + 모니터
+        case .chairDown, .chairUp:
+            return 85  // 등받이까지
+        case .sofa2, .sofa3:
+            return 80
+        case .coffeeTable:
+            return 45
+        case .coffeeMachine:
+            return 95  // 캐비닛형
+        case .waterCooler:
+            return 100
+        case .printer:
+            return 100
+        case .plantTall:
+            return 150
+        case .plantSmall:
+            return 45
+        case .bookshelf:
+            return 150  // 3단
+        case .trash:
+            return 55
+        case .clock, .whiteboard, .meetingTable:
+            return nil
+        }
+    }
+
+    /// 렌더 배율 보정. 가구 높이를 캐릭터 키(170cm 기준) 축척에 맞춘다.
+    ///
+    /// 한때 "책상·회의 테이블·소파만 1.15배" 였다. 실측해 보니 가구마다 축척이 달랐다 —
+    /// 정수기만 94% 로 맞고 책상 90%, 소파 83%, 3단 책장은 **73%** 였다. 책장이 사람 키의
+    /// 65% 라 150cm 책장이 아니라 허리 높이 수납장으로 읽혔는데, 일괄 보정에서는 빠져 있었다.
+    /// 그래서 종류별로 환산한다. 되돌아가면 같은 편차가 다시 생긴다.
+    ///
+    /// 환산 대상이 아닌 세 종(`targetHeightCm == nil`)은 1.0 을 유지하되, 회의 테이블만
+    /// 예외로 기존 확대값을 잇는다 — 2칸(footprint)을 차지하는데 원본이 1.4칸이라 칸을 덜 채운다.
+    /// 정확한 값은 실앱에서 눈으로 확정할 항목이다.
+    ///
+    /// **높이 환산값은 폭 상한에 걸려 깎일 수 있다.** 렌더는 배율을 가로·세로에 같이 곱하므로
+    /// (`OfficeScene` 의 `node.size`) 높이만 보고 키우면 폭이 자기 칸을 넘어 옆 칸을 침범한다.
+    /// 책장은 개발·리뷰 부서와 상단 밴드에서 **두 개가 인접 배치**되므로 넘친 폭이 곧 겹침이다.
+    /// 관제 화면에서 가구가 사람이나 상태 링을 가리는 것은 정보 손실이라, 시각 축척보다
+    /// 겹침 방지가 우선한다(관통 제약 6번).
+    ///
+    /// 그래서 폭이 큰 가구는 목표 높이를 다 채우지 못한다 — 책장이 대표적이다(88% → 70%).
+    /// 원인은 에셋의 가로세로비가 실물과 다른 것(37×35 로 거의 정사각형인데 실물 3단 책장은
+    /// 세로로 길다)이므로, 배율로는 여기까지가 한계다. 해소는 에셋 재제작(3단계) 몫이다.
+    public var sizeBoost: Double {
+        let byHeight: Double
+        if let targetHeightCm {
+            byHeight = targetHeightCm * officePixelsPerCentimeter / nativeHeight
+        } else if self == .meetingTable {
+            byHeight = 1.15
+        } else {
+            byHeight = 1.0
+        }
+        let widthCap =
+            scaleGroup
+            .map { Double(footprint.width) * officeReferenceTileSize / $0.nativeSize.width }
+            .min() ?? 1
+        return min(byHeight, widthCap)
     }
 }
 
