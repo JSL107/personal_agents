@@ -219,6 +219,49 @@ public func officeChainParticipants(run: ConsoleRun, runs: [ConsoleRun]) -> [Str
     return ancestors.reversed().filter { seenAgents.insert($0).inserted }
 }
 
+// MARK: - 내 작업 세션
+
+/// 세션이 "돌고 있다" 로 취급되는 백엔드 상태 문자열.
+public let officeSessionActiveState = "active"
+
+/// 오피스에 세션을 세울 자리(대표실 앞줄). 대표가 직접 돌리는 작업이므로 부서 방이 아니라
+/// 대표 앞에 둔다 — 에이전트와 같은 줄에 섞으면 사규가 배정한 일과 구분되지 않는다.
+///
+/// 승인 대기 줄(`queueTiles`)과는 다른 줄을 쓴다. 같은 줄에 두면 세션이 늘어난 순간 줄 선
+/// 사람과 겹쳐, 승인이 몇 건인지 세지 못한다.
+public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
+    guard let room = plan.commonAreas.first(where: { $0.kind == .president }) else {
+        return []
+    }
+    let row = plan.presidentTile.y - 1
+    let queued = Set(plan.queueTiles)
+    return (room.originX..<(room.originX + room.width))
+        .map { TilePoint(x: $0, y: row) }
+        .filter { plan.walkable.contains($0) && !queued.contains($0) }
+}
+
+/// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
+///
+/// 자리가 한정돼 있어 전부는 못 세운다. 13개가 떠 있어도 대표실 앞줄은 여덟 자리 남짓이라,
+/// 넘치는 몫은 좌상단 요약의 숫자가 맡는다 — 화면에 보이는 사람 수가 곧 전체라고 오해하지
+/// 않게 요약이 총계를 함께 적는다.
+public func officeVisibleSessions(_ sessions: [ConsoleSession], limit: Int) -> [ConsoleSession] {
+    guard limit > 0 else {
+        return []
+    }
+    return sessions
+        .sorted { left, right in
+            let leftActive = left.state == officeSessionActiveState
+            let rightActive = right.state == officeSessionActiveState
+            if leftActive != rightActive {
+                return leftActive
+            }
+            return left.sessionId < right.sessionId
+        }
+        .prefix(limit)
+        .map { $0 }
+}
+
 /// 대기 중 숨쉬기의 한 주기(초). 위상 계산과 씬의 동작 길이가 같은 값을 봐야 한다.
 public let officeBreathCycleSeconds: Double = 3.4
 

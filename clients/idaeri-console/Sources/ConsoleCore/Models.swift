@@ -138,7 +138,10 @@ public struct ConsoleApproval: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// 로컬에서 실행 중인 CLI 세션 한 건. source/state 는 백엔드 문자열과 1:1.
-public struct ConsoleSession: Codable, Identifiable, Sendable {
+///
+/// `Equatable` 인 이유는 화면 갱신 조건이다 — 오피스 씬이 세션 목록이 **바뀌었을 때만**
+/// 다시 그리려면 같은지 비교할 수 있어야 한다. 없으면 폴링이 돌 때마다 값이 같아도 다시 그린다.
+public struct ConsoleSession: Codable, Identifiable, Equatable, Sendable {
     public let sessionId: String
     public let pid: Int
     public let source: String
