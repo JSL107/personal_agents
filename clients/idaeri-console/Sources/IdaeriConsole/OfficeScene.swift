@@ -1039,7 +1039,10 @@ final class OfficeScene: SKScene {
             text: "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
         )
         label.name = "summaryHUD"
-        label.fontSize = 13
+        // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
+        // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
+        label.fontName = officeLabelFontName
+        label.fontSize = max(officeHudMinFontSize, tileSize * 0.30)
         label.fontColor = SKColor(white: 0.88, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top
