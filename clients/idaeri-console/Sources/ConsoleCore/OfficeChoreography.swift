@@ -12,6 +12,21 @@ public enum VisualIntent: Equatable, Sendable {
     case bubble(agentType: String, text: String)
 }
 
+/// 실제 이벤트가 자율 배회를 즉시 끊을 대상을 연출 종류와 같은 순수 경계에서 확정한다.
+public func affectedAgentTypes(of intent: VisualIntent) -> [String] {
+    switch intent {
+    case let .handoff(from, to):
+        return [from, to]
+    case let .recolor(agentType, _),
+         let .working(agentType),
+         let .summonToBand(agentType),
+         let .returnHome(agentType),
+         let .reject(agentType),
+         let .bubble(agentType, _):
+        return [agentType]
+    }
+}
+
 /// 이벤트 번역에 필요한 주변 상태(부모 run·pending 조회용). 스냅샷 파생, 부작용 없음.
 public struct ChoreographyContext: Sendable {
     public let agents: [ConsoleAgent]
@@ -57,7 +72,12 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         guard let agentType = approval.agentType, knows(agentType) else {
             return []
         }
-        var intents: [VisualIntent] = [.summonToBand(agentType: agentType)]
+        // 색을 여기서 함께 확정한다. 뒤따라올 state.changed(AWAITING_APPROVAL) 에 기대면
+        // 그 이벤트가 누락된 경우 줄에 선 사람만 대기색으로 남는다.
+        var intents: [VisualIntent] = [
+            .summonToBand(agentType: agentType),
+            .recolor(agentType: agentType, state: .awaitingApproval),
+        ]
         if let found = agent(agentType) {
             intents.append(.bubble(agentType: agentType, text: found.bubble))
         }

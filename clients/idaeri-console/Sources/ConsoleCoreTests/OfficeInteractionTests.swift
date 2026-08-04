@@ -2,6 +2,17 @@ import Foundation
 
 @testable import ConsoleCore
 
+private func makeInteractionAgent(_ type: String, _ state: ConsoleAgentState) -> ConsoleAgent {
+    ConsoleAgent(
+        agentType: type,
+        displayName: type,
+        slashCommands: [],
+        description: "",
+        state: state,
+        bubble: ""
+    )
+}
+
 func runOfficeInteractionTests(_ t: TestRunner) {
     t.suite("OfficeInteraction")
 
@@ -51,4 +62,114 @@ func runOfficeInteractionTests(_ t: TestRunner) {
             "\(quiet.rawValue) 는 기본 세기"
         )
     }
+
+    let waitingPM = makeInteractionAgent("PM", .waiting)
+    let awaitingCTO = makeInteractionAgent("CTO", .awaitingApproval)
+    let waitingBE = makeInteractionAgent("BE", .waiting)
+    let ctoApproval = ConsoleApproval(id: "queue-a1", agentType: "CTO", title: "PR", createdAt: "t")
+    let pmApproval = ConsoleApproval(id: "queue-a2", agentType: "PM", title: "PR", createdAt: "t")
+    let beApproval = ConsoleApproval(id: "queue-a4", agentType: "BE", title: "PR", createdAt: "t")
+
+    t.expectEqual(
+        reconciledQueueOrder(current: ["CTO"], agents: [awaitingCTO], approvals: []),
+        ["CTO"],
+        "승인 대기 상태면 줄 유지"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: ["PM"], agents: [waitingPM], approvals: [pmApproval]),
+        ["PM"],
+        "상태 반영 전이라도 승인 건이 있으면 줄 유지"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: ["PM"], agents: [waitingPM], approvals: []),
+        [],
+        "대기 상태이고 승인 건도 없으면 줄 제거"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: ["PM"], agents: [], approvals: [pmApproval]),
+        [],
+        "스냅샷에서 사라진 사람은 승인 건이 있어도 줄 제거"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(
+            current: ["BE", "CTO", "PM"],
+            agents: [waitingPM, awaitingCTO, waitingBE],
+            approvals: [pmApproval]
+        ),
+        ["CTO", "PM"],
+        "섞인 줄에서 남는 사람의 도착 순서 보존"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(
+            current: ["PM", "CTO"],
+            agents: [waitingPM, awaitingCTO],
+            approvals: [pmApproval, ctoApproval]
+        ),
+        ["PM", "CTO"],
+        "전원 유효하면 기존 줄 배열 그대로 유지"
+    )
+
+    let nilAgentApproval = ConsoleApproval(
+        id: "queue-a3",
+        agentType: nil,
+        title: "세션 유휴",
+        createdAt: "t"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(
+            current: ["BE"],
+            agents: [waitingBE],
+            approvals: [nilAgentApproval]
+        ),
+        [],
+        "agentType nil 승인은 누구도 줄에 유지하지 않음"
+    )
+
+    t.expectEqual(
+        reconciledQueueOrder(current: [], agents: [awaitingCTO], approvals: []),
+        ["CTO"],
+        "빈 줄에도 승인 대기 상태인 사람 추가"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: [], agents: [waitingPM], approvals: [pmApproval]),
+        ["PM"],
+        "상태 반영 전이라도 승인 건이 있으면 빈 줄에 추가"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(
+            current: ["PM"],
+            agents: [waitingBE, waitingPM, awaitingCTO],
+            approvals: [beApproval, pmApproval]
+        ),
+        ["PM", "BE", "CTO"],
+        "기존 줄 순서 뒤에 신규 대기자를 스냅샷 순서로 추가"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: ["CTO"], agents: [awaitingCTO], approvals: []),
+        ["CTO"],
+        "이미 줄에 있는 사람은 중복 추가하지 않음"
+    )
+    t.expectEqual(
+        reconciledQueueOrder(current: [], agents: [waitingBE], approvals: [nilAgentApproval]),
+        [],
+        "agentType nil 승인만으로는 빈 줄에 누구도 추가하지 않음"
+    )
+
+    let deterministicAgents = [awaitingCTO, waitingPM, waitingBE]
+    let deterministicApprovals = [pmApproval, beApproval]
+    let firstReconciliation = reconciledQueueOrder(
+        current: ["PM"],
+        agents: deterministicAgents,
+        approvals: deterministicApprovals
+    )
+    let secondReconciliation = reconciledQueueOrder(
+        current: ["PM"],
+        agents: deterministicAgents,
+        approvals: deterministicApprovals
+    )
+    t.expect(
+        firstReconciliation == ["PM", "CTO", "BE"]
+            && secondReconciliation == firstReconciliation,
+        "같은 입력은 같은 줄 순서를 반환"
+    )
 }
