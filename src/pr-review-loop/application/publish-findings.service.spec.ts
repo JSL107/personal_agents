@@ -34,6 +34,7 @@ const buildRepository = () =>
     findOpenPostedCards: jest.fn(),
     markDecided: jest.fn(),
     markThreadResolved: jest.fn(),
+    countAdoptionByCategory: jest.fn().mockResolvedValue([]),
   }) as unknown as jest.Mocked<PrReviewFindingRepositoryPort>;
 
 const baseInput = (findings: ReviewFinding[]) => ({

@@ -60,4 +60,5 @@ const emptyHarvestOutcome = (): HarvestOutcome => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  adoption: [],
 });
