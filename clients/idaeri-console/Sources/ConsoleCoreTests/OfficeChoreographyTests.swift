@@ -108,4 +108,70 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         visualIntents(for: .stateChanged(agentType: "PM", state: .completed), context: ctx),
         [.recolor(agentType: "PM", state: .completed)],
         "state.changed(COMPLETED) → recolor")
+
+    runOfficeWalkFrameTests(t)
+}
+
+/// 걸음 프레임 — 이름 조립과 에셋 실물이 서로 맞는지.
+func runOfficeWalkFrameTests(_ t: TestRunner) {
+    t.suite("OfficeWalkFrame")
+
+    // 한 칸마다 프레임이 번갈아야 한 걸음에 다리가 한 번 교차한다. 같은 프레임이 두 칸
+    // 연속으로 나오면 걷는 게 아니라 한쪽 발만 든 채 미끄러진다.
+    t.expectEqual(officeWalkPose("down", step: 0), "down-walk1", "0번째 걸음 → walk1")
+    t.expectEqual(officeWalkPose("down", step: 1), "down-walk2", "1번째 걸음 → walk2")
+    t.expectEqual(officeWalkPose("down", step: 2), "down-walk1", "2번째 걸음 → 다시 walk1")
+
+    // 걸음 인덱스가 음수로 들어와도 프레임 번호는 1·2 안에 있어야 한다 — 0 이나 음수가 나오면
+    // 존재하지 않는 파일명이 조립돼 그 사람만 화면에서 사라진다.
+    t.expectEqual(officeWalkPose("side", step: -1), "side-walk2", "음수 걸음도 유효 프레임")
+    t.expectEqual(officeWalkPose("side", step: -2), "side-walk1", "음수 걸음도 유효 프레임")
+
+    // 정지 포즈 복원 — 로더가 걸음 프레임이 없을 때 내려갈 곳.
+    t.expectEqual(officeStillPose("down-walk1"), "down", "걸음 프레임 → 정지 포즈")
+    t.expectEqual(officeStillPose("up-walk2"), "up", "걸음 프레임 → 정지 포즈")
+    t.expectEqual(officeStillPose("sit"), "sit", "정지 포즈는 그대로")
+    t.expectEqual(officeStillPose("side"), "side", "정지 포즈는 그대로")
+
+    // 폴백 순서 — **같은 시트를 다 소진한 뒤** 기본 시트로 내려가야 한다. 기본 시트의 걸음
+    // 프레임이 같은 시트의 정지 그림보다 앞에 오면, 걸음 프레임이 없는 시트의 사람이 걷는 순간
+    // 얼굴·체형이 기본 캐릭터로 바뀐다. 순서만 뒤집혀도 화면에서는 "걸으면 딴 사람이 된다" 로
+    // 나타나고 파일은 전부 존재하므로, 존재 검사로는 절대 안 잡힌다.
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 1, pose: "down-walk1"),
+        ["charb-down-walk1", "charb-down", "char-down-walk1", "char-down"],
+        "걸음 프레임 폴백은 같은 시트 정지 그림이 기본 시트보다 먼저")
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 2, pose: "sit"),
+        ["charc-sit", "char-sit"],
+        "정지 포즈는 걸음 프레임 후보를 만들지 않는다")
+    // 시트 인덱스가 범위를 넘어도 이름이 조립돼야 한다 — 못 만들면 그 사람이 사라진다.
+    t.expectEqual(
+        characterSpriteCandidates(sheet: 99, pose: "up").first, "chard-up", "시트 인덱스 상한 클램프")
+    t.expectEqual(
+        characterSpriteCandidates(sheet: -1, pose: "up").first, "char-up", "시트 인덱스 하한 클램프")
+
+    // 에셋이 실제로 있어야 이름 조립이 의미를 갖는다. 이름만 맞고 파일이 없으면 로더가
+    // 정지 그림으로 조용히 폴백해서, "걷는데 다리가 안 움직인다" 를 아무도 못 잡는다.
+    // 소스 파일 위치에서 경로를 잡으므로 실행 디렉터리와 무관하다.
+    let sprites = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // ConsoleCoreTests
+        .deletingLastPathComponent()  // Sources
+        .deletingLastPathComponent()  // 패키지 루트
+        .appendingPathComponent("Sources/IdaeriConsole/Resources/sprites")
+    // 앉은 자세는 걷지 않으므로 걸음 프레임이 없다.
+    let walkPoses = ["down", "up", "side"]
+    let expectedFrames = characterSheetPrefixes.flatMap { prefix in
+        walkPoses.flatMap { pose in
+            (0..<officeWalkFrameCount).map { step in
+                "\(prefix)-\(officeWalkPose(pose, step: step)).png"
+            }
+        }
+    }
+    let missing = expectedFrames.filter {
+        !FileManager.default.fileExists(atPath: sprites.appendingPathComponent($0).path)
+    }
+    t.expectEqual(missing.count, 0, "빠진 걸음 프레임: \(missing)")
+    // 시트 4종 × 3포즈 × 2프레임. 시트를 늘리고 에셋을 안 만들면 위 검사가 잡는다.
+    t.expectEqual(expectedFrames.count, 24, "걸음 프레임 24장 (실제 \(expectedFrames.count))")
 }

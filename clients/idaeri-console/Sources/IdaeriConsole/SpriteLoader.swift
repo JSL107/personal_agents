@@ -45,9 +45,6 @@ enum SpriteLoader {
     ///  - 바지 rgb(5~17)     — 밝기 15 이하라 머리 범위 밖
     ///  - 셔츠 rgb(255)      — 밝기 최대, 무채색
     ///  - 얼굴 rgb(254,225,191) — 밝지만 채도가 있어 셔츠와 갈린다
-    /// 캐릭터 시트 접두어. 0 = 기본, 1~3 = 추가로 넣을 수 있는 선택 시트.
-    private static let sheetPrefixes = ["char", "charb", "charc", "chard"]
-
     static func characterTexture(
         pose: String,
         sheet: Int,
@@ -55,13 +52,18 @@ enum SpriteLoader {
         shirt: (red: Double, green: Double, blue: Double),
         pants: (red: Double, green: Double, blue: Double)
     ) -> SKTexture? {
-        let prefix = sheetPrefixes[min(max(sheet, 0), sheetPrefixes.count - 1)]
-        var name = "\(prefix)-\(pose)"
-        // 선택 시트를 아직 안 넣었으면 기본 시트로 돌아간다 — 사람이 사라지지 않게.
-        if Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites")
-            == nil
-        {
-            name = "char-\(pose)"
+        // 후보 순서는 규약이라 코어(`characterSpriteCandidates`)가 정하고, 여기서는 실제로
+        // 번들에 있는 첫 파일을 고른다. 걸음 프레임은 에셋 파이프라인이 다리를 못 찾으면
+        // 만들어지지 않으므로, 파일 유무를 안 보고 이름만 조립하면 그 사람이 걷는 동안
+        // 통째로 안 그려진다.
+        let candidates = characterSpriteCandidates(sheet: sheet, pose: pose)
+        guard
+            let name = candidates.first(where: {
+                Bundle.module.url(forResource: $0, withExtension: "png", subdirectory: "sprites")
+                    != nil
+            })
+        else {
+            return nil
         }
         let key = String(
             format: "%@#%02X%02X%02X#%02X%02X%02X#%02X%02X%02X",
