@@ -431,6 +431,37 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     }
 }
 
+/// 부서 집기를 놓을 자리 후보(구역 원점 기준 상대). 앞에서부터 쓰고, 자리·다른 집기와
+/// 겹치면 다음 후보로 넘어간다.
+///
+/// 자리 배치(`departmentDeskSpots`)와 짝이다 — 배치를 바꾸면 여기도 함께 봐야 한다.
+/// 문 열(x = 8)은 아래 구역과 이어지는 세로 동선이라 후보에서 뺀다.
+public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
+    func spots(_ pairs: [(Int, Int)]) -> [TilePoint] {
+        pairs.map { TilePoint(x: $0.0, y: $0.1) }
+    }
+    switch department {
+    case .planning:
+        // 회의 테이블은 세 자리 바로 앞. 세로 2칸이라 (4,2)~(4,3) 을 차지한다.
+        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0)])
+    case .engineering:
+        // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
+        return spots([(9, 5), (9, 3), (9, 1), (2, 0), (6, 0)])
+    case .review:
+        // 자리와 자리 사이를 책장으로 막아 부스처럼 나눈다.
+        return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
+    case .executive:
+        // 응접 세트를 방 가운데에 — 두 사람이 멀찍이 앉고 가운데서 손님을 맞는 모양.
+        return spots([(4, 4), (4, 3), (8, 1), (9, 4), (9, 1)])
+    case .growth:
+        // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
+        return spots([(3, 4), (5, 1), (9, 3), (1, 1), (9, 1)])
+    case .internalOps:
+        // 10명이 x=1~9 를 다 쓰므로 설비는 맨 아래 줄로 내려간다.
+        return spots([(2, 0), (4, 0), (6, 0), (8, 0), (9, 5)])
+    }
+}
+
 /// 배치된 가구 하나.
 public struct FurniturePlacement: Equatable, Sendable {
     public let kind: FurnitureKind
@@ -485,6 +516,28 @@ public struct OfficeFloorPlan: Sendable {
     public let loungeTiles: [TilePoint]
     public let presidentTile: TilePoint
     public let zones: [DepartmentZone]
+    /// 상단 공용 밴드의 세 구역(회의실·대표실·탕비실). 부서 구역과 달리 사람이 상주하지 않아
+    /// 이름이 없으면 "가구만 놓인 빈 띠" 로 읽힌다 — 화면 위쪽 1/4 을 차지하는데도.
+    public let commonAreas: [CommonArea]
+}
+
+/// 상단 공용 밴드의 한 구역. 문패를 달기 위한 이름과 가로 범위.
+public struct CommonArea: Equatable, Sendable {
+    public let label: String
+    public let icon: String
+    /// 시작 열과 폭(칸). 문패는 이 범위의 가운데에 놓인다.
+    public let originX: Int
+    public let width: Int
+    /// 문패를 놓을 줄(격자 y). 밴드 안이라 부서 문패와 달리 좌석을 피할 필요가 없다.
+    public let labelY: Int
+
+    public init(label: String, icon: String, originX: Int, width: Int, labelY: Int) {
+        self.label = label
+        self.icon = icon
+        self.originX = originX
+        self.width = width
+        self.labelY = labelY
+    }
 }
 
 // 격자 규격 — 부서 구역 3열×2행 + 상단 공용 밴드.
@@ -498,12 +551,81 @@ private let bandHeight = 4
 private let planColumns = zoneWidth * 3 + 1
 private let planRows = zoneHeight * 2 + bandHeight
 
-// 한 부서 구역의 자리 배치 — 4열 × 3행 = 12석.
-// 실제 내부 부서가 10명이라 9석(3열)으로는 한 명이 자리를 못 받아 화면에서 사라진다.
-// 책상 간격을 3→2 로 좁혀 열을 늘렸다(구역 폭 10 안에 x = +1,+3,+5,+7).
-// 여유 2석은 완충이며, 정원을 넘기는 순간을 테스트가 잡는다(전원 배정 검증).
+// 부서별 자리 배치를 다 쓴 뒤의 예비 격자 — 4열 × 3행 = 12석.
+// 에이전트가 늘어 부서 배치표를 넘겼을 때 사람이 화면에서 사라지지 않게 하는 안전망이다.
 private let deskColumns = 4
 private let deskColumnStride = 2
+
+/// 예비 격자(구역 상대 좌표). 부서 배치표를 다 쓴 뒤 이어서 채운다.
+private let fallbackDeskSpots: [TilePoint] = (0..<12).map { index in
+    TilePoint(
+        x: 1 + (index % deskColumns) * deskColumnStride,
+        y: zoneHeight - 3 - (index / deskColumns) * 2
+    )
+}
+
+// 한 부서 구역에서 자리로 쓸 수 있는 범위 — 구역 원점 기준 상대 좌표.
+//
+//   x: 1~9 (0 과 10 은 좌우 벽). 다만 x=8 은 아래 구역 문과 이어지는 세로 동선이라
+//      막으면 아래 구역 전원이 고립된다. y=0 줄과 x=9 열은 부서 집기 자리다.
+//   y: 0~5 (6 은 천장 벽). 좌석은 책상 **바로 위 칸**이므로 책상 y 는 최대 4.
+//
+// **행 간격은 3 칸을 유지한다(책상 y = 1 과 4).** 예전 3행 배치는 간격이 2 여서, 아래 행
+// 사람의 이름표가 위 행 책상 위에 얹혀 글자가 나뭇결에 묻혔다 — 사진에서 내부 부서의
+// "윤문"·"이슈 분류" 가 그렇게 읽히지 않았다. 간격 3 이면 이름표(좌석 위 약 1.5~1.8칸)가
+// 위 행 책상(1.1칸 높이)에 닿지 않는다.
+
+/// 구역 안에서 문과 이어지는 세로 동선 열(구역 원점 기준 상대). 여기를 막으면 아래 구역이
+/// 고립된다. 배치표가 이 열을 피했는지 테스트가 직접 확인한다.
+public let officeZoneDoorColumn = zoneWidth - 2
+
+/// 부서마다 다른 자리 배치(책상 칸, 구역 원점 기준 상대 좌표). 순서대로 채운다.
+///
+/// 여섯 방이 전부 같은 4열 격자였다. 바닥재와 집기 3종만 다르고 자리는 복사한 듯 같아서,
+/// 방이 "무엇을 하는 곳" 이 아니라 "몇 명 있는 곳" 으로만 읽혔다. 인원과 일하는 방식에 맞춰
+/// 자리 모양을 다르게 준다 — 문패를 읽지 않아도 방의 성격이 배치에서 드러나게.
+///
+/// **마주보기(책상 아래 칸 착석)는 넣지 않았다.** 앉은 그림이 정면 한 장뿐(`char-*-sit.png`)이라
+/// 아래쪽 사람도 정면을 보게 되어, 마주보는 게 아니라 등을 돌린 두 줄로 보인다. 짝 배치는
+/// 대신 책상 두 개를 가로로 붙인 "섬" 으로 표현한다.
+public func departmentDeskSpots(_ department: Department) -> [TilePoint] {
+    func spots(_ pairs: [(Int, Int)]) -> [TilePoint] {
+        pairs.map { TilePoint(x: $0.0, y: $0.1) }
+    }
+    switch department {
+    case .planning:
+        // 셋이 늘 함께 정하는 팀 — 회의 테이블을 앞에 두고 한 줄로 마주 본다.
+        //
+        // 처음에는 테이블을 가운데 두고 위아래로 둘러앉혔는데, 테이블 **아래** 사람의 이름표가
+        // 머리 위로 떠올라 테이블 상판에 얹혔다. 이름표가 머리 위에 붙는 한 구조적으로 그렇게
+        // 되므로, 사람을 전부 테이블 위쪽에 둔다.
+        return spots([(2, 4), (4, 4), (6, 4), (1, 1), (7, 1)])
+    case .engineering:
+        // 짝지어 일하는 자리 — 같은 열에 위아래로 앉은 2열 종대.
+        //
+        // 책상 둘을 **가로로** 붙였더니 이름표가 서로 덮었다("백엔드규약 점검"). 이름표 폭이
+        // 1.4칸쯤이라 가로 간격은 2칸 아래로 못 내려간다. 세로로 짝지으면 행 간격 3칸이
+        // 그대로 살아 겹치지 않는다.
+        return spots([(1, 4), (1, 1), (4, 4), (4, 1), (7, 4), (7, 1)])
+    case .review:
+        // 혼자 집중해 읽는 자리 — 위 줄은 끝까지 벌리고 아래 줄은 그 사이로 어긋나게.
+        // 사이를 책장으로 막아 부스처럼 나눈다.
+        return spots([(1, 4), (5, 4), (9, 4), (3, 1), (7, 1)])
+    case .executive:
+        // 둘뿐이고 손님을 맞는 방 — 멀찍이 떨어뜨려 각자 방을 쓰는 것처럼 보이게.
+        return spots([(2, 4), (6, 4), (2, 1), (6, 1)])
+    case .growth:
+        // 밝고 트인 방 — 줄을 맞추지 않고 어긋나게 놓아 자유석으로 읽히게 한다.
+        return spots([(1, 4), (5, 4), (3, 1), (7, 1), (7, 4)])
+    case .internalOps:
+        // 설비가 모인 운영실 — 10명이 들어가야 해서 가장 조밀하다(5열 × 2행).
+        // x=9 까지 쓰므로 집기는 y=0 줄로 밀려난다(자리·집기 충돌 회피가 자동으로 처리).
+        return spots([
+            (1, 4), (3, 4), (5, 4), (7, 4), (9, 4),
+            (1, 1), (3, 1), (5, 1), (7, 1), (9, 1),
+        ])
+    }
+}
 
 /// 부서 배치 순서(왼→오, 위→아래). 방 배치·범례가 공유하는 canonical 순서.
 private let zoneOrder: [Department] = [
@@ -596,6 +718,17 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     place(.sofa2, pantryX + 8, bandY + 2)
     place(.trash, pantryX + 9, bandY + 1)
 
+    // 상단 밴드 세 구역의 문패. 부서 문패는 구역 **중앙**에 놓이므로, 이쪽은 **왼쪽 끝**에
+    // 붙여 x 가 겹치지 않게 한다(밴드 맨 아래 줄과 위 구역 문패가 같은 높이대에 있다).
+    let commonAreas = [
+        CommonArea(label: "회의실", icon: "🗣", originX: 0, width: zoneWidth, labelY: bandY),
+        CommonArea(label: "대표실", icon: "👑", originX: zoneWidth, width: zoneWidth, labelY: bandY),
+        CommonArea(
+            label: "탕비실", icon: "☕", originX: zoneWidth * 2, width: zoneWidth + 1,
+            labelY: bandY
+        ),
+    ]
+
     // 승인 대기 줄 — 대표 바로 아래 가로 한 줄(왼쪽부터 채운다).
     let queueTiles = (0..<6).map { index in
         TilePoint(x: zoneWidth + 2 + index, y: bandY)
@@ -643,48 +776,41 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
             .filter { $0.resolvedDepartment == zoneDepartment }
             .map(\.agentType)
             .sorted()
-        for (seatIndex, agentType) in members.enumerated() {
-            let deskColumn = seatIndex % deskColumns
-            let deskRow = seatIndex / deskColumns
-            let deskX = originX + 1 + deskColumn * deskColumnStride
-            // 자리 묶음을 구역 맨 아래 줄부터 쌓는다. 예전에는 한 칸 위(zoneHeight - 2)에서
-            // 시작해 맨 윗줄 좌석이 카펫 밖 나무 바닥에 놓였다 — 화면에서 사람이 사무실
-            // 밖에 걸터앉은 것처럼 보였다. 이제 책상·좌석이 전부 카펫 안에 들어간다.
-            let deskY = originY + zoneHeight - 3 - deskRow * 2
-            guard deskY >= originY, deskX < originX + zoneWidth else {
-                // 구역 정원을 넘으면 자리를 못 받아 화면에서 사라진다. 전원 배정을 고정한
-                // 테스트가 있으므로, 여기 걸리면 정원(deskColumns × 행 수)을 늘려야 한다.
+        // 부서 배치표를 먼저 쓰고, 다 쓰면 예비 격자로 이어 채운다. 배치표만 두면 에이전트가
+        // 늘었을 때 자리를 못 받은 사람이 화면에서 조용히 사라진다.
+        let spotCandidates = departmentDeskSpots(zoneDepartment) + fallbackDeskSpots
+        var usedLocals: Set<TilePoint> = []
+        for agentType in members {
+            // 좌석은 책상 바로 위 칸이므로 책상 y 는 천장 벽 아래(zoneHeight - 2)까지만 유효하다.
+            guard let local = spotCandidates.first(where: { candidate in
+                !usedLocals.contains(candidate)
+                    && candidate.x >= 1 && candidate.x < zoneWidth
+                    && candidate.y >= 0 && candidate.y <= zoneHeight - 3
+            }) else {
+                // 배치표와 예비 격자를 모두 소진한 경우. 전원 배정을 고정한 테스트가 있으므로,
+                // 여기 걸리면 그 부서의 배치표를 늘려야 한다.
                 continue
             }
-            place(.desk, deskX, deskY)
+            usedLocals.insert(local)
+            let deskTile = TilePoint(x: originX + local.x, y: originY + local.y)
+            place(.desk, deskTile.x, deskTile.y)
             desks.append(
                 DeskAssignment(
                     agentType: agentType,
-                    desk: TilePoint(x: deskX, y: deskY),
-                    seat: TilePoint(x: deskX, y: deskY + 1)
+                    desk: deskTile,
+                    seat: TilePoint(x: deskTile.x, y: deskTile.y + 1)
                 )
             )
         }
-        // 부서 특색 가구 — 방마다 다른 세트를 놓아 문패 없이도 어느 팀 방인지 읽히게 한다.
-        //
-        // 자리 후보는 오른쪽 끝 열(originX + zoneWidth - 1)이 먼저다. 이 열은 책상 열(1·3·5·7)
-        // 밖이라 인원이 꽉 찬 부서(내부 10명)에서도 남는다 — 예전에는 아래쪽 줄에만 놓아
-        // 정원이 찬 부서는 집기가 통째로 사라졌다.
+        // 부서 특색 가구 — 자리 배치와 짝을 이뤄야 방의 성격이 산다. 기획방의 회의 테이블이
+        // 구석에 있으면 "둘러앉은 팀" 이 아니라 "책상 셋과 남는 테이블" 이 된다.
         //
         // 문 열(originX + zoneWidth - 2)은 후보에서 뺀다. 아래 구역 문과 이어지는 수직 동선이라
         // 막으면 아래 구역 전원이 고립된다(쓰레기통으로 막았다가 좌석 16개가 갇힌 적이 있다).
-        // 세로 2칸짜리 회의 테이블이 천장·통로 줄을 침범하지 않도록 아래쪽 자리부터 채운다.
         let seatTiles = Set(desks.map(\.seat))
-        // 오른쪽 열과 아래쪽 줄을 번갈아 후보로 둔다 — 한쪽에 몰아 놓으면 인원이 적은 방은
-        // 가구가 한 줄로 늘어서고 나머지 절반이 빈 바닥으로 남는다.
-        let furnitureSpots = [
-            TilePoint(x: originX + zoneWidth - 1, y: originY + 1),
-            TilePoint(x: originX + 1, y: originY),
-            TilePoint(x: originX + zoneWidth - 1, y: originY + 3),
-            TilePoint(x: originX + 3, y: originY),
-            TilePoint(x: originX + zoneWidth - 1, y: originY + 5),
-            TilePoint(x: originX + 5, y: originY),
-        ]
+        let furnitureSpots = departmentFurnitureSpots(zoneDepartment).map {
+            TilePoint(x: originX + $0.x, y: originY + $0.y)
+        }
         var spotCursor = 0
         for kind in departmentFurniture(zoneDepartment) {
             while spotCursor < furnitureSpots.count {
@@ -750,6 +876,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         queueTiles: queueTiles,
         loungeTiles: loungeTiles,
         presidentTile: presidentTile,
-        zones: zones
+        zones: zones,
+        commonAreas: commonAreas
     )
 }
