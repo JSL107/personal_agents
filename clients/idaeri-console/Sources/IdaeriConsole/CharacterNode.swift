@@ -183,7 +183,8 @@ final class CharacterNode: SKNode {
         let emphasized = nameplateIsEmphasized(
             state: currentState, isHovered: isHovered, isSelected: isSelected
         )
-        let fontSize = max(officeNameplateMinFontSize, currentTileSize * 0.30)
+        // 문패를 이 글자 위로 올리는 계산이 Core 에 있으므로, 크기도 같은 함수에서 받는다.
+        let fontSize = CGFloat(officeNameplateFontSize(tileSize: Double(currentTileSize)))
         let font = NSFont(name: officeLabelFontName, size: fontSize)
             ?? NSFont.boldSystemFont(ofSize: fontSize)
         nameLabel.attributedText = NSAttributedString(
@@ -211,7 +212,9 @@ final class CharacterNode: SKNode {
         // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
         // 라벨이 머리에서 한 뼘 떠 있다.
         nameLabel.position = CGPoint(
-            x: 0, y: spriteBaseY + sprite.size.height + currentTileSize * 0.06
+            x: 0,
+            y: spriteBaseY + sprite.size.height
+                + currentTileSize * CGFloat(officeNameplateGapTiles)
         )
         let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
         namePlate.path = CGPath(
