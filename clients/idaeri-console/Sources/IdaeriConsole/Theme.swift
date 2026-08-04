@@ -13,6 +13,8 @@ let officeLabelFontName = "AppleSDGothicNeo-Bold"
 /// 한글이 뭉개지지 않는 최소 크기. 라틴 문자보다 획이 많아 하한이 높다.
 let officeNameplateMinFontSize: CGFloat = 11
 let officeZoneLabelMinFontSize: CGFloat = 13
+/// 좌상단 전사 요약(HUD)의 최소 크기. 씬 안의 이름표가 아니라 화면에 얹는 글이라 따로 둔다.
+let officeHudMinFontSize: CGFloat = 13
 
 // MARK: - 간격
 
