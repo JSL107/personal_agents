@@ -284,6 +284,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.INTERNAL_OPS,
     '대표의 취향을 관찰해 선호 프로필을 갱신한다',
   ),
+  [AgentType.CTO_STUDY]: stub(
+    Department.GROWTH,
+    '딥다이브 주제를 대표의 현재 일과 연결해 학습 필요성을 판정한다',
+  ),
 };
 
 /**

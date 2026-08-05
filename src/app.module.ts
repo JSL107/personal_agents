@@ -57,6 +57,7 @@ import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
+import { StudyBriefCronModule } from './study-brief-cron/study-brief-cron.module';
 import { SubconsciousModule } from './subconscious/subconscious.module';
 import { WebhookModule } from './webhook/webhook.module';
 
@@ -183,6 +184,7 @@ import { WebhookModule } from './webhook/webhook.module';
     // PR 리뷰 루프 Phase 1 — autopilot pr-review-sweep task 가 스윕 usecase 를 호출한다.
     // PR_REVIEW_LOOP_ENABLED 미설정/false 시 스윕이 즉시 skip(기본 OFF).
     PrReviewLoopModule,
+    StudyBriefCronModule,
   ],
   providers: [WorkerStartupCoordinator],
 })

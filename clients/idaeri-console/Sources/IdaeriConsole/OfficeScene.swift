@@ -307,7 +307,7 @@ final class OfficeScene: SKScene {
     /// 배회하지도 못한다 — 유휴 감독관이 줄 선 사람을 후보에서 빼기 때문이다.
     ///
     /// `sync` 와 분리해 둔 이유는 비용이다. 승인 알림은 수 분 간격으로 오가는데, 그때마다
-    /// 씬 전체(바닥 500여 타일·가구·27명)를 다시 만들 이유가 없다.
+    /// 씬 전체(바닥 500여 타일·가구·29명)를 다시 만들 이유가 없다.
     func reconcileQueue(agents: [ConsoleAgent], approvals: [ConsoleApproval]) {
         lastSyncedApprovals = approvals
         let reconciled = reconciledQueueOrder(

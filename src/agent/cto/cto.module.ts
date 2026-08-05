@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
+import { EvaluateStudyTopicUsecase } from './application/evaluate-study-topic.usecase';
 import { GenerateAssignmentUsecase } from './application/generate-assignment.usecase';
 import { CtoDispatcher } from './infrastructure/cto.dispatcher';
 
@@ -11,7 +12,15 @@ import { CtoDispatcher } from './infrastructure/cto.dispatcher';
 // 만 노출하면 됨 (NestJS multi-provider 의 single module scope 회피 패턴, commit cbef813 참고).
 @Module({
   imports: [ModelRouterModule, AgentRunModule, HumanizeModule],
-  providers: [GenerateAssignmentUsecase, CtoDispatcher],
-  exports: [GenerateAssignmentUsecase, CtoDispatcher],
+  providers: [
+    GenerateAssignmentUsecase,
+    CtoDispatcher,
+    EvaluateStudyTopicUsecase,
+  ],
+  exports: [
+    GenerateAssignmentUsecase,
+    CtoDispatcher,
+    EvaluateStudyTopicUsecase,
+  ],
 })
 export class CtoModule {}

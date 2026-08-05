@@ -1,3 +1,28 @@
+# 리베이스 후 콘솔 총원·성장 좌석 정리 (2026-08-05)
+
+**Goal:** INVEST와 CTO_STUDY가 함께 들어온 운영 29명 상태에 현재 총원 표기를 맞추고, 성장 부서 6명이 기존 좌석·경계·통행 불변식을 만족하는지 확인한다.
+
+**Root cause:** 양쪽 브랜치가 같은 총원 문구를 27에서 28로 독립 수정해 3-way merge가 충돌 없이 28을 유지했다. 운영 registry는 리베이스 결과 29개다.
+
+**Constraints:** 과거 결함 기록의 26/27은 보존한다. 좌석 실패 시 단언을 완화하지 않고 배치만 고친다. `.env`, DB push, git index/commit/push는 건드리지 않는다.
+
+- [x] registry 29개와 console의 26~29명/종 문구를 전수 조사해 현재 상태와 과거 기록을 분류한다.
+- [x] 현재 총원을 뜻하는 28명/종 문구를 29명/종으로 바꾼다.
+- [x] `swift build && swift run ConsoleCoreTests`로 전원 배정과 성장 방 좌석·경계·통행을 확인한다.
+- [x] 실패 시 기존 배치 규칙에 맞춰 성장 좌석을 늘리고 focused/full Swift 검증을 다시 실행한다. (통과해 배치 변경 불필요)
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 "리베이스 후 정리" 절과 실제 결과를 기록한다.
+- [x] 최종 diff와 금지 작업 미실행을 확인하고 Review를 작성한다.
+
+## Review
+
+- 현재 상태의 28명/종 20건을 29명/종으로 갱신했다. 사용자 목록 밖 `scripts/build-sprites.py` 1건을 포함하고, 과거 26/27 기록 5건은 보존했다.
+- 성장 방은 현재 6석 배정이며 기존 배치로 7명까지 안전 수용 가능해 여유는 1석이다. 전원 배정·경계·문·벽·통행 검사가 통과해 좌석 배치는 수정하지 않았다.
+- 원문 Swift 게이트는 compiler/SDK 불일치로 코드 compile 전 exit 1. 호환 SDK 게이트는 build/test exit 0, 1,016건 통과했다.
+- 백엔드 lint/test/build exit 0. `.env`, DB push, git add/commit/push는 실행하지 않았다.
+
+---
+
 # 콘솔 오피스 — 세션을 사람에서 "대표 책상 위 화면"으로 (2026-08-05)
 
 ## 문제
@@ -566,3 +591,132 @@
   건드리지 않았다.
 - 메인 트리의 미커밋 벽걸이 작업(`/private/tmp/idaeri-wall-balance`)과 같은 파일의 인접한 부분을
   고쳤다. 논리는 양립하지만(벽걸이는 구역 상대 x=0 벽, 복도는 구역 사이 열) 텍스트 충돌이 예상된다.
+# Daily Study Brief 구현 계획 (2026-08-05)
+
+**Goal:** 매일 09:30 KST에 Hermes 딥다이브와 CTO 판정을 거쳐 CONCEPT/TOOL 학습 브리핑을 DB에 기록하고 Slack 카드·스레드로 발송한다.
+
+**Contract:** `.ai/design.md`를 source of truth로 사용한다. `.env`, DB push, git index/commit/push는 건드리지 않는다. 공용 목록·enum은 끝에만 추가한다.
+
+- [x] `.ai/design.md`, 복사 본보기, CTO usecase/parser, JD gap parser, repo 규칙을 전부 읽는다.
+- [x] parser·prompt·usecase·scheduler·consumer·collector·formatter 필수 spec을 먼저 작성한다.
+- [x] 신규 spec이 미구현 동작 때문에 실패하는 RED를 확인한다.
+- [x] domain 타입·포트·parser·prompt·CTO usecase를 최소 구현한다.
+- [x] scheduler·consumer·repository·collector·formatter·module을 최소 구현한다.
+- [x] 공용 enum/목록/schema/app/env/README를 계약대로 끝에 추가하고 Prisma client를 생성한다.
+- [x] focused spec을 GREEN으로 만들고 최소 리팩터링한다.
+- [x] `pnpm docs:sync`, `pnpm docs:check`, `pnpm lint:check`, `pnpm test`, `pnpm build`를 실제 실행한다.
+- [x] 최종 diff와 계약을 대조하고 `.ai/implementation-summary.md` 및 Review를 작성한다.
+
+## Review
+
+- Hermes 자유 출력 parser의 계약상 모든 거부 사유를 오류 메시지까지 검증하는 spec으로 고정했다.
+- 09:30 KST scheduler, CTO_STUDY routing/AgentRun, StudyBrief 원장, Slack 카드·스레드 발송을 연결했다.
+- 완료 guard와 별도 in-flight guard로 완료 후·동시 중복의 LLM 호출과 저장을 막고, Slack 실패 시 guard를 해제해 재시도를 살렸다.
+- `pnpm prisma:generate`, `pnpm docs:check`, `pnpm check:env`, `pnpm lint:check`, `pnpm test`, `pnpm build` 모두 exit 0. 전체 303 suites, 2303 tests 통과.
+- 독립 재리뷰 결과 Blocker·Should Fix 0건. `.env`, DB push, git index/commit/push는 건드리지 않았다.
+
+---
+
+# Daily Study Brief 발송 결함 수정 계획 (2026-08-05)
+
+**Goal:** Slack 발송 실패가 저장된 브리핑의 재조사·중복 저장을 유발하지 않게 하고, 상세 스레드 실패를 요약 발송 성공과 분리한다.
+
+**Contract:** `.ai/design.md` §5·§6과 `ResumeCalibrationCronConsumer.deliverOnce`를 따른다. `.env`, DB push, git index/commit/push는 건드리지 않고 공용 파일은 append-only로 갱신한다.
+
+- [x] 설계 계약, 현재 consumer/spec, 유사 consumer, dirty worktree를 대조해 root cause를 확정한다.
+- [x] stateful idempotency fake로 요약 발송 실패 후 재시도 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 완료 guard를 유지하는 최소 수정 후 focused spec GREEN을 확인한다.
+- [x] 상세 스레드만 실패하는 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 상세 스레드 실패를 `logger.warn`으로 격리하고 focused spec GREEN을 확인한다.
+- [x] 최종 diff를 설계 계약과 대조한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 순서대로 실행해 exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`에 "검증 후 수정" 절과 실제 검증 결과를 추가한다.
+
+## Review
+
+- 완료 guard 해제를 제거해 요약 발송 실패 뒤 BullMQ 재시도가 `isDone`에서 끝나게 했다. processing guard는 기존대로 `finally`에서 해제한다.
+- 요약 발송 실패만 주제명 포함 `StudyBriefException`으로 올리고, 상세 스레드 실패는 DB의 `reportMd` 정본을 근거로 `logger.warn` 후 정상 종료한다.
+- stateful `Set<string>` fake가 실제 `acquireOnce`/`isDone`/`release` 의미를 재현한다. 회귀 spec은 재시도 시 Hermes·CTO·save 각 1회와 스레드 실패 시 failure DM 0회를 고정한다.
+- TDD RED에서 완료/processing guard release 2회와 재시도 재실행, 스레드 실패 throw를 각각 확인했다. 수정 후 focused spec 9건 통과.
+- Verification: `pnpm lint:check` exit 0 (오류 0, 기존 warning 57), `pnpm test` exit 0 (일반 298 suites/2265 tests + code-graph 5 suites/40 tests), `pnpm build` exit 0.
+- 설계 이탈 없음. `.env`, `pnpm db:push`, git add/commit/push는 건드리지 않았다.
+- 독립 최종 리뷰: Critical·Important·Minor 0건, Ready.
+
+---
+
+# CTO Study macOS 오피스 편입 계획 (2026-08-05)
+
+**Goal:** Swift 픽셀 오피스에 `CTO_STUDY` 성장 부서 좌석과 7자 이하 한글 직책을 추가한다.
+
+**Contract:** 백엔드 `src/`는 무변경. `.env`, `pnpm db:push`, git index/commit/push는 건드리지 않는다. 기존 case 순서·서식을 유지한다.
+
+- [x] `sampleAgents` 성장 부서에 `CTO_STUDY`를 추가하고 `ConsoleCoreTests`의 직책 미매핑 RED를 확인한다.
+- [x] `AgentRole.swift` 성장 섹션에 `CTO_STUDY = "학습 코치"`를 추가해 GREEN을 확인한다.
+- [x] Swift 콘솔의 현재 총원 숫자 주석·메시지를 28명/종으로 맞추되, 과거 결함을 설명하는 역사적 숫자는 보존한다.
+- [x] `swift build && swift run ConsoleCoreTests`로 직책·좌석·카펫·벽·통행 불변식을 검증한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 실행해 백엔드 3중 게이트를 확인한다.
+- [x] 최종 diff를 요구와 대조하고 `.ai/implementation-summary.md`에 "오피스 편입" 절과 Review를 추가한다.
+
+## Review
+
+- fixture 선행 RED에서 `CTO_STUDY` 직책 누락 1건만 실패했고, case 추가 후 1014건 전부 통과했다.
+- 성장 방 기존 5좌석이 5명을 수용했다. 28명 전원 배정과 카펫·벽·통행 불변식이 동적 fixture로 통과해 배치 로직 수정은 없었다.
+- 현재 총원 표기만 28로 갱신했다. 과거 결함 기록과 generic 경계 테스트 숫자는 유지했다.
+- Swift build와 executable tests exit 0. 로컬 Swift 6.3.3/기본 SDK 6.3.2 불일치 때문에 `MacOSX15.4.sdk`와 `--disable-sandbox`를 사용했다.
+- 백엔드 lint/test/build exit 0. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+- 독립 최종 리뷰: Critical·Important·Minor 0건, Ready.
+
+---
+
+# Daily Study Brief Slack 카드 가독성 수정 계획 (2026-08-05)
+
+**Goal:** CONCEPT 카드의 중복 서두를 없애고, CONCEPT/TOOL 필드를 Slack 비고정폭 렌더에 맞는 단일 공백 형식으로 통일한다.
+
+**Contract:** formatter와 관련 spec만 최소 수정한다. `caution` 생략 동작을 보존한다. `.env`, `pnpm db:push`, git index/commit/push는 건드리지 않는다.
+
+- [x] 현재 formatter/spec과 `.ai/design.md` §5의 잘못된 서두 계약을 대조한다.
+- [x] 두 kind의 새 전체 출력 기대값과 필드 값 1회 출현 회귀 spec을 먼저 추가한다.
+- [x] focused spec에서 기존 구현이 실패하는 RED를 확인한다.
+- [x] 중복 서두와 라벨 정렬용 연속 공백을 제거하는 최소 수정을 한다.
+- [x] focused spec GREEN을 확인한다.
+- [x] formatter를 직접 호출해 stdout 실제 출력을 눈으로 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build` exit 0을 확인한다.
+- [x] 최종 diff·작업 트리·금지 작업을 확인하고 Review를 작성한다.
+
+## Review
+
+- CONCEPT 서두 문단을 제거하고 CONCEPT/TOOL의 모든 필드 라벨 뒤 공백을 1칸으로 통일했다.
+- 두 kind의 summary 전체 문자열을 고정하고, `whyNow`와 `whereItLands`가 각각 정확히 1회만 나오는 회귀 spec을 추가했다. 기존 `caution` 미출력 단언은 유지했다.
+- TDD RED에서 CONCEPT 2건과 TOOL 1건이 기존 중복·공백 때문에 실패했고, 수정 후 focused spec 5건이 통과했다.
+- formatter 직접 호출은 임시 파일 없이 exit 0이었고 CONCEPT/TOOL stdout을 확인했다.
+- Verification: `pnpm lint:check && pnpm test && pnpm build` exit 0. lint 오류 0(기존 warning 57), 일반 298 suites/2271 tests와 code-graph 5 suites/40 tests 통과.
+- `git diff --check` exit 0. 임시 스크립트 없음. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+
+---
+
+# PR #243 봇 리뷰 대응 계획 (2026-08-05)
+
+**Goal:** CTO와 Study Brief Cron의 역방향 도메인 의존을 끊고, Hermes argv에서 프로필 서술문을 제거하며, 날짜 경계 뒤에도 consumer spec이 안정적으로 동작하게 한다.
+
+**Constraints:** 기존 미커밋 formatter 수정은 보존한다. Hermes runner의 `-z` argv 계약은 바꾸지 않는다. CTO의 `profileSummary` 입력은 유지한다. `.env`, `pnpm db:push`, git index/commit/push는 건드리지 않는다.
+
+- [x] 기존 diff와 설계 결함, 실제 import·prompt·guard key 경로를 확인한다.
+- [x] Hermes prompt에서 프로필 서술문이 빠지는 회귀 spec을 먼저 추가하고 RED를 확인한다.
+- [x] CTO 도메인에 자체 kind/research 입력 타입을 정의하고 consumer가 parser 결과를 매핑한다.
+- [x] Hermes prompt 입력을 스킬 이름·숙련도만 받도록 축소하고 CTO `profileSummary` 경로는 보존한다.
+- [x] 날짜 하드코딩을 제거하되 queue/date/`:processing` 구조를 계속 단언한다.
+- [x] `grep -rn "study-brief-cron" src/agent/` 0건과 focused spec GREEN을 확인한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 실행한다.
+- [x] `pnpm docs:check && pnpm check:env && pnpm check:invariants`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 "봇 리뷰 대응" 절과 검증 결과를 기록한다.
+- [x] 최종 diff, 기존 formatter 변경 보존, 금지 작업 미실행을 확인하고 Review를 작성한다.
+
+## Review
+
+- CTO 도메인의 `StudyTopicKind`/`StudyTopicResearch`로 parser 타입 의존 2건을 제거했다. consumer가 필요한 4개 필드만 명시 매핑하며 의존 grep은 0건이다.
+- Hermes prompt 입력을 `profileSkills`로 축소했다. `profileJson.summary`는 제외되고 `TypeScript(EXPERT)` 형식만 들어간다. CTO `profileSummary` 전달은 유지했다.
+- 날짜 하드코딩 1건을 queue/date/`:processing` 전체 구조 정규식으로 교체했다. 같은 파일의 guard 날짜 하드코딩은 더 없다.
+- TDD RED 2건을 확인했고 focused 4 suites/27 tests가 통과했다.
+- 전체 lint/test/build와 docs/env/invariants 게이트가 exit 0이다. lint 기존 warning 57건, 일반 298 suites/2,272 tests, code-graph 5 suites/40 tests가 통과했다.
+- 기존 formatter 미커밋 변경은 보존했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+- 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.
