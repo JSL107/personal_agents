@@ -38,13 +38,18 @@ export class ConsoleReadService {
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
     const now = new Date();
-    const [activeRuns, openPreviews, recentlyFinished] = await Promise.all([
-      this.agentRunService.findActiveRuns(),
-      this.findAllOpenPreviews.execute({ now }),
-      this.agentRunService.findRecentlyFinishedRuns({
-        withinMinutes: FINISHED_SNAPSHOT_WINDOW_MINUTES,
-      }),
-    ]);
+    // 오늘의 시작(서버 로컬 자정) — 오피스 책상의 서류 더미가 하루 단위로 쌓였다 비워지는 기준.
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const [activeRuns, openPreviews, recentlyFinished, succeededToday] =
+      await Promise.all([
+        this.agentRunService.findActiveRuns(),
+        this.findAllOpenPreviews.execute({ now }),
+        this.agentRunService.findRecentlyFinishedRuns({
+          withinMinutes: FINISHED_SNAPSHOT_WINDOW_MINUTES,
+        }),
+        this.agentRunService.countSucceededSince({ since: midnight }),
+      ]);
 
     // run-sweeper(주 1회)가 정리하기 전이라도, 좀비 임계를 넘긴 IN_PROGRESS 는 활성에서 제외한다.
     // (앱 크래시로 고착된 런이 스윕 주기까지 최대 6일 "일하는 중" 으로 오표시되던 것을 즉시 교정.)
@@ -73,6 +78,10 @@ export class ConsoleReadService {
     const latestFinishedByAgentType = new Map(
       recentlyFinished.map((run) => [run.agentType, run] as const),
     );
+    // 오늘 성공 건수. 집계에 없는 agentType 은 오늘 한 건도 못 끝냈다는 뜻이라 0 이다.
+    const succeededTodayByAgentType = new Map(
+      succeededToday.map((row) => [row.agentType, row.succeeded] as const),
+    );
 
     const agents: ConsoleAgent[] = AGENT_REGISTRY.map((entry) => {
       const latestFinished =
@@ -97,6 +106,7 @@ export class ConsoleReadService {
         job: contract.job,
         lastFinishedRunId:
           latestFinished === null ? null : String(latestFinished.runId),
+        doneToday: succeededTodayByAgentType.get(entry.agentType) ?? 0,
       };
     });
 

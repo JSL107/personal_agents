@@ -674,4 +674,85 @@ func runOfficePathfindingTests(_ t: TestRunner) {
             "휴식 자리 \(lounge.x),\(lounge.y) 에 못 가는 좌석 없음"
         )
     }
+
+    runDeskPaperTests(t)
+}
+
+/// 책상 위 서류 더미 — 오늘 끝낸 일 건수를 장수로 바꾸는 눈금.
+private func runDeskPaperTests(_ t: TestRunner) {
+    t.suite("DeskPaperStack")
+
+    // 눈금을 값으로 못 박는다. 두 배마다 한 장이라는 규칙은 화면에서 눈으로 검산할 수 없고
+    // (사람이 22와 16을 구별하지 못한다), 경계에서 한 장 어긋나도 그럴듯해 보인다.
+    let expected: [(done: Int, papers: Int)] = [
+        (0, 0), (1, 1), (2, 2), (3, 2), (4, 3), (7, 3),
+        (8, 4), (15, 4), (16, 5), (100, 5),
+    ]
+    for (done, papers) in expected {
+        t.expectEqual(
+            officeDeskPaperCount(doneToday: done), papers, "\(done)건 → \(papers)장"
+        )
+    }
+
+    // 이 필드를 모르는 구버전 서버 응답. 아무것도 그리지 않는다 — "모른다" 와 "0건" 을 화면에서
+    // 구별할 수 없으므로 없는 정보를 그리지 않는 쪽을 고른다.
+    t.expectEqual(officeDeskPaperCount(doneToday: nil), 0, "값 없음 → 0장")
+
+    // 음수는 나올 수 없는 값이지만, 들어오면 루프가 끝나지 않을 자리다(remaining /= 2 가
+    // -1 에서 0 으로 떨어지긴 하나 상한 판정에 의존하게 된다). 0장으로 끊는 것을 못 박는다.
+    t.expectEqual(officeDeskPaperCount(doneToday: -3), 0, "음수 → 0장")
+
+    // 상한을 넘지 않는다. 상한이 뚫리면 서류가 책상을 넘어 위 칸 사람의 이름표를 덮는다.
+    for done in [1, 2, 5, 17, 1_000, Int.max] {
+        t.expect(
+            officeDeskPaperCount(doneToday: done) <= officeDeskPaperMaxCount,
+            "\(done)건에서도 상한 \(officeDeskPaperMaxCount)장 이내"
+        )
+    }
+
+    // 단조 증가 — 일을 더 했는데 서류가 줄어들면 화면이 거짓말을 한다.
+    var previous = 0
+    for done in 0...64 {
+        let papers = officeDeskPaperCount(doneToday: done)
+        t.expect(papers >= previous, "\(done)건에서 장수가 줄지 않음")
+        previous = papers
+    }
+
+    // 최대치로 쌓은 더미가 책상 상판 안에 머무는지. 책상보다 높이 쌓이면 위 칸(좌석) 사람의
+    // 발밑·이름표 영역으로 올라간다 — 관제 신호를 장식이 덮는 것은 정보 손실이다.
+    let deskHeightTiles =
+        FurnitureKind.desk.nativeSize.height * FurnitureKind.desk.sizeBoost
+        / officeReferenceTileSize
+    let stackTopTiles =
+        officeDeskPaperOriginTiles.y
+        + Double(officeDeskPaperMaxCount - 1) * officeDeskPaperStepTiles
+    t.expect(
+        stackTopTiles < deskHeightTiles,
+        "5장 더미 위끝 \(stackTopTiles) 이 책상 높이 \(deskHeightTiles) 안"
+    )
+
+    // 가로도 같이 봐야 한다. 더미는 위로 갈수록 좌우로 벌어지므로(officeDeskPaperSpreadGrowth)
+    // 장수가 늘면 세로보다 **가로**가 먼저 책상을 넘는다 — 넘으면 서류가 상판을 벗어나 옆 칸
+    // 허공에 뜬 물체로 보인다. 눈으로는 "책상 끝에 놓인 것" 과 구별이 어려워 테스트가 필요하다.
+    let deskHalfWidthTiles =
+        FurnitureKind.desk.nativeSize.width * FurnitureKind.desk.sizeBoost
+        / officeReferenceTileSize / 2
+    for count in 1...officeDeskPaperMaxCount {
+        let reach = officeDeskPaperMaxReachTiles(count: count)
+        t.expect(
+            reach < deskHalfWidthTiles,
+            "\(count)장 더미 오른쪽 끝 \(reach) 이 책상 반폭 \(deskHalfWidthTiles) 안"
+        )
+    }
+    t.expectEqual(officeDeskPaperMaxReachTiles(count: 0), 0, "0장은 자리를 차지하지 않음")
+
+    // 장수가 늘면 더미가 반드시 넓어져야 한다 — 이게 화면에서 양을 읽는 신호다.
+    // 넓어지지 않으면(성장률 0) 1장과 5장이 같은 그림이 되어 기능이 조용히 사라진다.
+    for count in 2...officeDeskPaperMaxCount {
+        t.expect(
+            officeDeskPaperMaxReachTiles(count: count)
+                > officeDeskPaperMaxReachTiles(count: count - 1),
+            "\(count)장이 \(count - 1)장보다 넓다"
+        )
+    }
 }

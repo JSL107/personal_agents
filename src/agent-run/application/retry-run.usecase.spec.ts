@@ -34,6 +34,7 @@ describe('RetryRunUsecase', () => {
     findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
     findFailedRunsSince: jest.fn().mockResolvedValue([]),
     aggregateSucceededCounts: jest.fn().mockResolvedValue([]),
+    countSucceededSince: jest.fn().mockResolvedValue([]),
   });
 
   let mockRepo: jest.Mocked<AgentRunRepositoryPort>;
