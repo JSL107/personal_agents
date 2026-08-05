@@ -291,10 +291,19 @@ func runOfficeInteractionTests(_ t: TestRunner) {
 
     // MARK: - 내 작업 세션
 
-    func makeSession(_ id: String, _ state: String) -> ConsoleSession {
+    let sessionNow = Date(timeIntervalSince1970: 1_800_000_000)
+    func sessionStamp(minutesAgo: Double) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: sessionNow.addingTimeInterval(-minutesAgo * 60))
+    }
+    func makeSession(
+        _ id: String, _ state: String, quietMinutes: Double = 0
+    ) -> ConsoleSession {
         ConsoleSession(
             sessionId: id, pid: 1, source: "claude", name: id, cwd: "/tmp",
-            state: state, startedAt: "t", lastActivityAt: nil
+            state: state, startedAt: sessionStamp(minutesAgo: quietMinutes),
+            lastActivityAt: sessionStamp(minutesAgo: quietMinutes)
         )
     }
 
@@ -311,29 +320,116 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     for tile in sessionTiles {
         t.expect(sessionPlan.walkable.contains(tile), "세션 자리 통행 가능")
         t.expect(!queued.contains(tile), "세션 자리가 승인 대기 줄과 겹치지 않음")
+        t.expect(tile.x != sessionPlan.presidentTile.x, "대표가 선 칸은 비운다")
+        // 앞줄이 아니라 안쪽 줄에 앉아야 앞줄이 드나드는 통로로 남는다.
+        t.expectEqual(tile.y, sessionPlan.presidentTile.y, "세션은 대표실 안쪽 줄에 앉는다")
+    }
+    // 이름표가 설 폭을 확보한다. 한 칸씩 붙여 앉혔더니 이름표 열 개가 이어 붙어 한 줄짜리
+    // 글자 뭉치가 됐고, 그 줄은 어느 것도 읽을 수 없었다.
+    let sessionXs = sessionTiles.map(\.x).sorted()
+    for (left, right) in zip(sessionXs, sessionXs.dropFirst()) {
+        t.expect(right - left >= 2, "세션끼리 최소 두 칸 간격")
+    }
+    // 대표실 가구가 짝수 칸을 물면 앉을 데가 조용히 줄어든다. 자리 수를 고정해 그걸 잡는다.
+    t.expect(
+        sessionTiles.count >= 5, "대표실에 최소 다섯 자리 (지금 \(sessionTiles.count))"
+    )
+
+    // 드나드는 문 — 출근·퇴근 경로의 양 끝.
+    guard let sessionDoor = officeSessionDoorTile(plan: sessionPlan) else {
+        t.expect(false, "세션이 드나들 문 앞 칸이 있어야 한다")
+        return
+    }
+    t.expect(sessionPlan.walkable.contains(sessionDoor), "문 앞 칸은 통행 가능")
+    t.expect(
+        !sessionTiles.contains(sessionDoor), "문 앞 칸은 앉는 자리와 달라야 한다"
+    )
+    // 문에서 모든 자리까지 실제로 걸어갈 수 있어야 한다 — 길이 없으면 출근하다 멈춘 사람이
+    // 문 앞에 굳는다.
+    for tile in sessionTiles {
+        t.expect(
+            !officePath(from: sessionDoor, to: tile, walkable: sessionPlan.walkable).isEmpty,
+            "문에서 자리 \(tile.x) 까지 걸어갈 수 있다"
+        )
     }
 
-    // 돌고 있는 세션이 먼저 선다. 자리가 모자랄 때 쉬는 세션이 앞자리를 차지하면,
-    // 정작 지금 무엇이 도는지 화면에서 사라진다.
+    // 잠깐 쉬는 사람은 자리를 지키고, 오래 조용한 사람만 퇴근한다.
+    //
+    // 백엔드의 `idle` 은 60초짜리라 그것으로 사람을 지우면 답변을 기다리는 사이 사라졌다
+    // 나타나기를 반복한다 — 지적받은 "귀신" 이 정확히 그 현상이었다.
     let mixedSessions = [
-        makeSession("z-idle", "idle"), makeSession("a-idle", "idle"),
+        makeSession("z-quiet", "idle", quietMinutes: 60),
+        makeSession("a-resting", "idle", quietMinutes: 3),
         makeSession("m-active", officeSessionActiveState),
     ]
     t.expectEqual(
-        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
-        ["m-active", "a-idle"],
-        "도는 세션 먼저, 그다음 id 순"
+        officeVisibleSessions(mixedSessions, limit: 99, now: sessionNow).map(\.sessionId),
+        ["m-active", "a-resting"],
+        "오래 조용한 사람만 퇴근하고, 잠깐 쉬는 사람은 남는다"
     )
     t.expectEqual(
-        officeVisibleSessions(mixedSessions, limit: 0).count, 0, "자리가 없으면 아무도 안 세운다"
+        officeVisibleSessions(mixedSessions, limit: 0, now: sessionNow).count, 0,
+        "자리가 없으면 아무도 안 앉힌다"
     )
     t.expectEqual(
-        officeVisibleSessions(mixedSessions, limit: 99).count, 3, "자리가 남으면 전부 세운다"
+        officeVisibleSessions(mixedSessions, limit: 1, now: sessionNow).map(\.sessionId),
+        ["m-active"],
+        "자리가 모자라면 도는 사람이 먼저 앉는다"
     )
     t.expectEqual(
-        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
-        officeVisibleSessions(mixedSessions.reversed(), limit: 2).map(\.sessionId),
+        officeVisibleSessions(mixedSessions, limit: 2, now: sessionNow).map(\.sessionId),
+        officeVisibleSessions(mixedSessions.reversed(), limit: 2, now: sessionNow)
+            .map(\.sessionId),
         "입력 순서가 달라도 같은 결과"
+    )
+    // 시각을 못 읽으면 남긴다 — 읽기 실패로 사람을 지우면 그게 바로 없애려던 현상이다.
+    let unreadable = ConsoleSession(
+        sessionId: "broken", pid: 1, source: "claude", name: "broken", cwd: "/tmp",
+        state: "idle", startedAt: "언제인지 모름", lastActivityAt: nil
+    )
+    t.expect(
+        officeSessionIsPresent(unreadable, now: sessionNow),
+        "시각을 못 읽는 세션은 지우지 않는다"
+    )
+
+    // === 자리 배정 — 한 번 앉으면 지킨다 ===
+    // 매번 순서대로 다시 나눠 주면, 하나 퇴근할 때마다 남은 전원이 옆으로 옮겨 앉아
+    // 아무 일도 없었는데 사무실이 통째로 움직인다.
+    let seatA = sessionTiles[0]
+    let seatB = sessionTiles[1]
+    let staying = [makeSession("keeps", officeSessionActiveState)]
+    t.expectEqual(
+        officeAssignSessionSeats(
+            sessions: staying, tiles: sessionTiles, previous: ["keeps": seatB]
+        )["keeps"],
+        seatB,
+        "앉아 있던 사람은 앞자리가 비어도 자기 자리를 지킨다"
+    )
+    let joined = officeAssignSessionSeats(
+        sessions: [
+            makeSession("keeps", officeSessionActiveState),
+            makeSession("newcomer", officeSessionActiveState),
+        ],
+        tiles: sessionTiles,
+        previous: ["keeps": seatB]
+    )
+    t.expectEqual(joined["keeps"], seatB, "새 사람이 와도 기존 자리는 그대로")
+    t.expectEqual(joined["newcomer"], seatA, "새 사람은 남은 자리 중 앞에서부터")
+    // 자리보다 사람이 많으면 남는 사람은 배정에서 빠진다(총계는 요약이 맡는다).
+    let crowd = (0..<(sessionTiles.count + 3)).map {
+        makeSession("s\($0)", officeSessionActiveState)
+    }
+    t.expectEqual(
+        officeAssignSessionSeats(sessions: crowd, tiles: sessionTiles, previous: [:]).count,
+        sessionTiles.count,
+        "자리 수를 넘겨 앉히지 않는다"
+    )
+    t.expectEqual(
+        Set(
+            officeAssignSessionSeats(sessions: crowd, tiles: sessionTiles, previous: [:]).values
+        ).count,
+        sessionTiles.count,
+        "두 사람이 한 자리에 겹쳐 앉지 않는다"
     )
 
     // === 세션 구분 ===

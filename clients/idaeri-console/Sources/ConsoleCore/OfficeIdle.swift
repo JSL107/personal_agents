@@ -224,20 +224,83 @@ public func officeChainParticipants(run: ConsoleRun, runs: [ConsoleRun]) -> [Str
 /// 세션이 "돌고 있다" 로 취급되는 백엔드 상태 문자열.
 public let officeSessionActiveState = "active"
 
-/// 오피스에 세션을 세울 자리(대표실 앞줄). 대표가 직접 돌리는 작업이므로 부서 방이 아니라
-/// 대표 앞에 둔다 — 에이전트와 같은 줄에 섞으면 사규가 배정한 일과 구분되지 않는다.
+/// 세션이 **앉을** 자리(대표실 안쪽 줄). 대표가 직접 돌리는 작업이므로 부서 방이 아니라
+/// 대표와 같은 방에 둔다 — 에이전트 방에 섞으면 사규가 배정한 일과 구분되지 않는다.
+///
+/// 앞줄(`presidentTile.y - 1`)이 아니라 **안쪽 줄**을 쓴다. 앞줄에 세웠더니 대표 앞에 나란히
+/// 선 사람들이 되어 면담 대기 줄처럼 보였고, 앞줄은 방을 가로지르는 통로라 앉히면 길이 막힌다.
+/// 안쪽 줄에 앉히면 앞줄이 통로로 남아 드나드는 길이 살아 있다.
 ///
 /// 승인 대기 줄(`queueTiles`)과는 다른 줄을 쓴다. 같은 줄에 두면 세션이 늘어난 순간 줄 선
 /// 사람과 겹쳐, 승인이 몇 건인지 세지 못한다.
+///
+/// **두 칸씩 띄운다.** 한 칸 간격으로 붙여 앉히면 사람은 겨우 구분돼도 머리 위 이름표가
+/// 옆 사람 것과 이어 붙어 한 줄짜리 글자 뭉치가 된다 — 열 개가 겹치면 어느 것도 못 읽는다.
+/// 이름표가 설 자리를 확보하는 쪽이 한 명 더 앉히는 것보다 중요하다.
+///
+/// 대표가 선 칸은 당연히 뺀다.
 public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
     guard let room = plan.commonAreas.first(where: { $0.kind == .president }) else {
         return []
     }
-    let row = plan.presidentTile.y - 1
+    let row = plan.presidentTile.y
     let queued = Set(plan.queueTiles)
-    return (room.originX..<(room.originX + room.width))
+    return stride(from: room.originX, to: room.originX + room.width, by: 2)
         .map { TilePoint(x: $0, y: row) }
-        .filter { plan.walkable.contains($0) && !queued.contains($0) }
+        .filter {
+            plan.walkable.contains($0) && !queued.contains($0)
+                && $0.x != plan.presidentTile.x
+        }
+}
+
+/// 세션이 드나드는 문 앞 칸 — 사무실 왼쪽 끝, 자리와 같은 층의 통로.
+///
+/// 출근·퇴근을 여기서 시작하고 끝낸다. 사람이 자리에 **뿅 나타났다 뿅 사라지면** 관제 화면이
+/// 아니라 심령 사진이 된다. 걸어 들어오고 걸어 나가면 "새 작업이 시작됐다 / 저건 끝났다" 가
+/// 설명 없이 읽힌다.
+public func officeSessionDoorTile(plan: OfficeFloorPlan) -> TilePoint? {
+    let row = plan.presidentTile.y - 1
+    return (0..<plan.columns)
+        .map { TilePoint(x: $0, y: row) }
+        .first { plan.walkable.contains($0) }
+}
+
+/// 이보다 오래 조용한 세션은 **퇴근한 것으로 본다**(화면에서 걸어 나간다).
+///
+/// 백엔드의 `active` 판정은 60초짜리라 잠깐 생각하는 동안에도 꺼진다. 그 기준으로 사람을
+/// 내보내면 답변 한 번 기다리는 사이에 사라졌다 나타나기를 반복한다 — 60초보다 훨씬 길게 잡아,
+/// 자리를 비운 것과 일을 마친 것을 가른다.
+public let officeSessionLeaveAfterSeconds: Double = 900
+
+/// 퇴근 판정을 다시 따지는 간격.
+///
+/// 이 판정은 **시간이 흐르기만 해도 결과가 바뀐다** — 세션 목록이 그대로여도 조용한 시간이
+/// 자라 15분을 넘긴다. 그런데 화면 갱신은 세션 이벤트에 걸려 있어서, 조용한 세션은 목록이
+/// 바뀌지 않아 이벤트가 오지 않는다. 시간축으로도 한 번씩 훑지 않으면 퇴근할 사람이 다음
+/// 무관한 이벤트가 올 때까지 자리에 남는다.
+///
+/// 15분 기준에 견줘 30초는 무시할 만한 지연이고, 훑는 일 자체는 세션 몇 개를 다시 배치하는
+/// 정도라 프레임에 부담이 되지 않는다.
+public let officeSessionSweepIntervalSeconds: Double = 30
+
+/// 세션이 마지막으로 뭔가 한 뒤 흐른 시간. 활동 기록이 없으면 띄운 시각부터 잰다.
+public func officeSessionQuietSeconds(_ session: ConsoleSession, now: Date) -> Double? {
+    let stamp = session.lastActivityAt ?? session.startedAt
+    guard let last = parseISODate(stamp) else {
+        return nil
+    }
+    return max(0, now.timeIntervalSince(last))
+}
+
+/// 아직 사무실에 남아 있는 세션인가. 조용한 지 오래면 퇴근한 것으로 본다.
+///
+/// 시각을 못 읽는 경우는 **남긴다.** 읽기 실패로 사람을 지우면 화면에서 조용히 사라지는데,
+/// 그건 정확히 이 기능이 없애려는 현상이다.
+public func officeSessionIsPresent(_ session: ConsoleSession, now: Date) -> Bool {
+    guard let quiet = officeSessionQuietSeconds(session, now: now) else {
+        return true
+    }
+    return quiet < officeSessionLeaveAfterSeconds
 }
 
 /// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
@@ -275,14 +338,27 @@ public func officeSessionShortName(_ name: String, limit: Int = 12) -> String {
     return "…" + String(trimmed.suffix(limit - 1))
 }
 
-/// 자리가 한정돼 있어 전부는 못 세운다. 13개가 떠 있어도 대표실 앞줄은 여덟 자리 남짓이라,
-/// 넘치는 몫은 좌상단 요약의 숫자가 맡는다 — 화면에 보이는 사람 수가 곧 전체라고 오해하지
-/// 않게 요약이 총계를 함께 적는다.
-public func officeVisibleSessions(_ sessions: [ConsoleSession], limit: Int) -> [ConsoleSession] {
+/// 아직 사무실에 남아 있는 세션만 자리에 앉힌다.
+///
+/// 예전에는 잡히는 세션을 전부 세웠다. 며칠 전 열어 둔 편집기 창이 그대로 세션으로 남기 때문에
+/// 실제로 열세 개가 잡혔고, 그중 도는 것은 셋뿐인데 나머지 열이 옅은 몸으로 대표실 앞줄을
+/// 가득 메웠다 — 이름표까지 서로 겹쳐 **유령 무리**처럼 보였다.
+///
+/// 그렇다고 "지금 도는 것" 만 남기면 반대쪽 문제가 생긴다. 도는 판정이 60초짜리라 잠깐
+/// 생각하는 사이 사람이 소리 없이 사라진다. 그래서 기준을 **오래 조용했는가**로 잡는다 —
+/// 잠깐 쉬는 사람은 자리를 지키고, 일을 마친 사람은 퇴근한다.
+///
+/// 자리보다 많으면 넘치는 몫은 좌상단 요약의 숫자가 맡는다("내 세션 13(도는 중 3)").
+public func officeVisibleSessions(
+    _ sessions: [ConsoleSession], limit: Int, now: Date
+) -> [ConsoleSession] {
     guard limit > 0 else {
         return []
     }
     return sessions
+        .filter { officeSessionIsPresent($0, now: now) }
+        // 도는 것이 먼저 자리를 잡는다. 자리가 모자랄 때 조는 사람이 앞자리를 차지하면,
+        // 정작 지금 무엇이 돌고 있는지가 화면에서 밀려난다.
         .sorted { left, right in
             let leftActive = left.state == officeSessionActiveState
             let rightActive = right.state == officeSessionActiveState
@@ -293,6 +369,40 @@ public func officeVisibleSessions(_ sessions: [ConsoleSession], limit: Int) -> [
         }
         .prefix(limit)
         .map { $0 }
+}
+
+/// 세션을 자리에 배정한다(순수).
+///
+/// **이미 앉아 있던 사람은 그 자리를 지킨다.** 자리를 매번 순서대로 다시 나눠 주면, 누가 하나
+/// 퇴근할 때마다 남은 사람 전원이 한 칸씩 옮겨 앉는다 — 아무 일도 없었는데 사무실이 통째로
+/// 움직이는 것처럼 보인다.
+///
+/// 앉을 자리가 없는 세션은 배정에서 빠진다. 그 몫은 좌상단 요약의 총계가 맡는다.
+public func officeAssignSessionSeats(
+    sessions: [ConsoleSession],
+    tiles: [TilePoint],
+    previous: [String: TilePoint]
+) -> [String: TilePoint] {
+    let available = Set(tiles)
+    var taken: Set<TilePoint> = []
+    var assigned: [String: TilePoint] = [:]
+    for session in sessions {
+        guard let seat = previous[session.sessionId], available.contains(seat),
+              !taken.contains(seat)
+        else {
+            continue
+        }
+        assigned[session.sessionId] = seat
+        taken.insert(seat)
+    }
+    for session in sessions where assigned[session.sessionId] == nil {
+        guard let free = tiles.first(where: { !taken.contains($0) }) else {
+            break
+        }
+        assigned[session.sessionId] = free
+        taken.insert(free)
+    }
+    return assigned
 }
 
 /// 대기 중 숨쉬기의 한 주기(초). 위상 계산과 씬의 동작 길이가 같은 값을 봐야 한다.
