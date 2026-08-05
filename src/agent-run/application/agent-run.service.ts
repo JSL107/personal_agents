@@ -384,6 +384,14 @@ export class AgentRunService {
     return await this.repository.aggregateSucceededCounts(input);
   }
 
+  // 콘솔 오피스 서류 더미 — "오늘 자정 이후" 처럼 절대 시각으로 창을 자를 때 쓴다.
+  // 롤링 창(sinceDays)으로는 하루가 바뀌어도 어제 새벽 실행이 계속 남아 책상이 안 비워진다.
+  async countSucceededSince(input: {
+    since: Date;
+  }): Promise<AgentSucceededCountRow[]> {
+    return await this.repository.countSucceededSince(input);
+  }
+
   async aggregateRetryCounts(input: {
     sinceDays: number;
   }): Promise<AgentRetryCountRow[]> {

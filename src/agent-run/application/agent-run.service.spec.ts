@@ -37,6 +37,7 @@ describe('AgentRunService', () => {
     findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
     findFailedRunsSince: jest.fn().mockResolvedValue([]),
     aggregateSucceededCounts: jest.fn().mockResolvedValue([]),
+    countSucceededSince: jest.fn().mockResolvedValue([]),
   });
 
   let repository: jest.Mocked<AgentRunRepositoryPort>;

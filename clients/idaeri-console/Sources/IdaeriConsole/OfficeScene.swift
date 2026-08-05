@@ -218,6 +218,8 @@ final class OfficeScene: SKScene {
         renderFloor()
         renderZoneLabels()
         renderFurniture()
+        // 책상이 새로 만들어진 뒤여야 한다 — 서류는 책상 노드의 자식으로 붙는다.
+        renderDeskPapers(agents: agents)
         renderPresident()
 
         homeSeats = Dictionary(
@@ -558,6 +560,65 @@ final class OfficeScene: SKScene {
             node.position = floorPoint(placement.tile)
             node.zPosition = depth(of: placement.tile)
             objectLayer.addChild(node)
+        }
+    }
+
+    /// 오늘 끝낸 일이 많은 사람의 책상에 서류를 높이 쌓는다.
+    ///
+    /// 승인 대기처럼 "손이 필요한" 신호가 아니라 하루의 흐름을 보여주는 배경 정보다. 그래서
+    /// 상태 링·이름표보다 뒤로 물러나야 하고, 사람이나 라벨을 가리면 안 된다.
+    ///
+    /// **책상 노드의 자식으로 붙인다.** 창 크기가 바뀌면 `renderFurniture` 가 책상을 통째로
+    /// 다시 만드는데, 씬에 직접 붙이면 그때마다 위치와 앞뒤 순서를 손으로 다시 맞춰야 한다.
+    /// 자식이면 둘 다 저절로 따라온다. 모니터 깜빡임이 책상 노드의 색을 물들이지만
+    /// (`startMonitorGlow`) 자식은 그 색을 물려받지 않으므로 서류가 함께 파래지지 않는다.
+    private func renderDeskPapers(agents: [ConsoleAgent]) {
+        guard let texture = SpriteLoader.texture("desk-paper") else {
+            return  // 에셋이 없으면 아무것도 그리지 않는다(빈 책상 = 0건과 같은 그림)
+        }
+        let base = texture.size()
+        for agent in agents {
+            guard let desk = deskNodes[agent.agentType] else {
+                continue
+            }
+            // 책상이 다시 만들어진 직후라 자식이 없는 것이 정상이지만, 갱신 경로가 하나로
+            // 유지되도록 지우고 다시 쌓는다 — 나중에 이 함수만 따로 부르게 되어도 장수가 누적되지 않는다.
+            desk.childNode(withName: "papers")?.removeFromParent()
+            let count = officeDeskPaperCount(doneToday: agent.doneToday)
+            guard count > 0 else {
+                continue
+            }
+            let holder = SKNode()
+            holder.name = "papers"
+            // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다.
+            holder.position = CGPoint(
+                x: tileSize * CGFloat(officeDeskPaperOriginTiles.x),
+                y: tileSize * CGFloat(officeDeskPaperOriginTiles.y)
+            )
+            for index in 0..<count {
+                let sheet = SKSpriteNode(texture: texture)
+                sheet.anchorPoint = CGPoint(x: 0.5, y: 0)
+                sheet.size = CGSize(
+                    width: base.width * spriteScale, height: base.height * spriteScale
+                )
+                // 한 장씩 위로 쌓고 좌우로 번갈아 어긋낸다 — 자로 맞춰 쌓으면 한 장처럼 보인다.
+                //
+                // 어긋내는 폭을 위로 갈수록 넓힌다. 고정 폭으로 쌓으면 낱장이 16×9픽셀밖에 안 돼
+                // 층이 뭉개지고, 1장과 5장이 "흰 뭉치" 하나로 같아 보인다(실측). 위가 벌어지면
+                // 더미의 **가로 폭**이 장수에 따라 자라, 확대하지 않아도 양이 읽힌다.
+                let jitter = index % 2 == 0 ? 1.0 : -1.0
+                let spread =
+                    officeDeskPaperJitterTiles
+                    * (1.0 + Double(index) * officeDeskPaperSpreadGrowth)
+                sheet.position = CGPoint(
+                    x: tileSize * CGFloat(spread * jitter),
+                    y: tileSize * CGFloat(Double(index) * officeDeskPaperStepTiles)
+                )
+                // 위 장이 아래 장을 덮어야 층이 읽힌다.
+                sheet.zPosition = CGFloat(index) * 0.01
+                holder.addChild(sheet)
+            }
+            desk.addChild(holder)
         }
     }
 
