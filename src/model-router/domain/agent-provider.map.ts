@@ -41,4 +41,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // 저녁 회고→발행 후보 — codex 로 회고/후보 선별/블로그 본문 생성. BLOG(Hermes sentinel)와 달리 실제 route() 를 탄다.
   [AgentType.EVENING_RETRO]: ModelProviderName.CHATGPT,
   [AgentType.OPS_SUPERVISOR]: ModelProviderName.CHATGPT,
+  // INVEST — 보유 종목 감시는 순수 계산이라 route() 를 거치지 않는다(modelUsed='deterministic').
+  // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (BLOG 선례).
+  [AgentType.INVEST]: ModelProviderName.CHATGPT,
 };

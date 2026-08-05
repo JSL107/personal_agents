@@ -18,8 +18,11 @@ import {
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DailyBar } from '../../../market-data/domain/market-data.type';
 import { MarketDataPort } from '../../../market-data/domain/port/market-data.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -29,6 +32,25 @@ import {
 // 판정에 필요한 최소 봉 수(당일 + 전일). 여유를 두고 5거래일을 받는다.
 const REQUIRED_BARS = 5;
 const USD_KRW_PAIR = 'USDKRW';
+
+// 원장(`agent_run.output`)에 남길 실행 요약. 화면에 보내는 summaryText 와 달리
+// **일이 없었던 실행도** 남긴다 — holdingCount=0 이 기록되지 않으면 "감시는 켜져 있는데
+// 대상이 한 종목도 없다"는 상태가 시스템 어디에도 나타나지 않는다. 실제로 그 상태로
+// 방치되어 있었고, 그 사실이 관측되지 않은 것이 이 타입을 만든 이유다.
+interface StockMonitorAudit {
+  marketCountry: StockMarketCountry;
+  holdingCount: number;
+  checkedCount: number;
+  anomalyCount: number;
+  failureCount: number;
+  lastTradeDate: string | null;
+  marketClosed: boolean;
+}
+
+interface StockMonitorRunResult {
+  taskResult: AutopilotTaskResult;
+  audit: StockMonitorAudit;
+}
 
 export interface StockMonitorAutopilotTaskOptions {
   id: 'stock-monitor' | 'stock-monitor-us';
@@ -113,6 +135,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     private readonly marketData: MarketDataPort,
     private readonly repository: StockMonitorRepository,
     private readonly configService: ConfigService,
+    private readonly agentRunService: AgentRunService,
   ) {
     this.id = options.id;
     this.targetMarketCountry = options.targetMarketCountry;
@@ -121,15 +144,53 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const enabled = this.configService.get<string>('STOCK_MONITOR_ENABLED');
+    // 게이트는 원장 **밖**에 둔다. 꺼둔 것은 의도된 상태이므로 매일 "안 했다"를 남기면
+    // 원장이 의미 없는 행으로 채워진다. 켠 뒤부터가 관측 대상이다.
     if (enabled !== 'true') {
       return { skip: true };
     }
 
+    const outcome = await this.agentRunService.execute<StockMonitorRunResult>({
+      agentType: AgentType.INVEST,
+      triggerType: TriggerType.AUTOPILOT_INVEST_CRON,
+      inputSnapshot: {
+        taskId: this.id,
+        marketCountry: this.targetMarketCountry,
+        firedAtKst: context.firedAtKst,
+      },
+      run: async () => {
+        const runResult = await this.monitor(context);
+        // 판정은 순수 계산이라 LLM 을 거치지 않는다(VACATION 선례).
+        return {
+          result: runResult,
+          modelUsed: 'deterministic',
+          output: runResult.audit,
+        };
+      },
+    });
+    return outcome.result.taskResult;
+  }
+
+  private async monitor(
+    context: AutopilotTaskContext,
+  ): Promise<StockMonitorRunResult> {
     const holdings = await this.repository.findCurrentHoldings({
       marketCountry: this.targetMarketCountry,
     });
     if (holdings.length === 0) {
-      return { skip: true };
+      // 화면에는 보내지 않되(빈 알림 방지) 원장에는 남긴다.
+      return {
+        taskResult: { skip: true },
+        audit: {
+          marketCountry: this.targetMarketCountry,
+          holdingCount: 0,
+          checkedCount: 0,
+          anomalyCount: 0,
+          failureCount: 0,
+          lastTradeDate: null,
+          marketClosed: false,
+        },
+      };
     }
 
     const anomalies: StockAnomaly[] = [];
@@ -192,13 +253,24 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
       return {
-        skip: false,
-        summaryText: formatStockMonitorSummary([], {
+        taskResult: {
+          skip: false,
+          summaryText: formatStockMonitorSummary([], {
+            checkedCount: collectedHoldings.length,
+            lastTradeDate,
+            failures,
+            marketClosed: true,
+          }),
+        },
+        audit: {
+          marketCountry: this.targetMarketCountry,
+          holdingCount: holdings.length,
           checkedCount: collectedHoldings.length,
-          lastTradeDate,
-          failures,
+          anomalyCount: 0,
+          failureCount: failures.length,
+          lastTradeDate: lastTradeDate || null,
           marketClosed: true,
-        }),
+        },
       };
     }
 
@@ -286,15 +358,42 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       `주식 모니터링 — ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건`,
     );
 
+    // 한 종목도 점검하지 못했는데 실패만 쌓였다면 그 실행은 실패다. 여기서 정상 반환하면
+    // 원장에 SUCCEEDED 로 남아 "감시가 돌았다"로 집계되고 /retry-run 대상에서도 빠진다
+    // — 실패를 보이게 하려고 원장에 편입한 것이므로 그 자체가 자기모순이다.
+    //
+    // 부분 실패(checkedCount > 0)는 던지지 않는다. 한 종목이 막혀도 나머지를 처리하도록
+    // 만든 설계를 유지해야 하고, 그 경우 실패 목록은 요약에 담겨 화면으로 나간다.
+    //
+    // 던진 예외는 AgentRunService 가 FAILED 로 기록하고 콘솔에 FAILED 상태를 발행한 뒤
+    // 다시 던지며, orchestrator 가 그것을 잡아 그룹을 계속 돌리면서 owner 요약에
+    // "⚠️ … 자동 생성 실패" 한 줄을 남긴다. 알림이 사라지지 않는다.
+    if (checkedCount === 0 && failures.length > 0) {
+      throw new Error(
+        `보유 ${holdings.length}종목을 한 건도 점검하지 못했습니다 — ${failures.slice(0, 3).join(' / ')}`,
+      );
+    }
+
     return {
-      skip: false,
-      summaryText: formatStockMonitorSummary(anomalies, {
+      taskResult: {
+        skip: false,
+        summaryText: formatStockMonitorSummary(anomalies, {
+          checkedCount,
+          lastTradeDate: lastTradeDate || '알 수 없음',
+          failures,
+          marketClosed: false,
+          priceDisplays,
+        }),
+      },
+      audit: {
+        marketCountry: this.targetMarketCountry,
+        holdingCount: holdings.length,
         checkedCount,
-        lastTradeDate: lastTradeDate || '알 수 없음',
-        failures,
+        anomalyCount: anomalies.length,
+        failureCount: failures.length,
+        lastTradeDate: lastTradeDate || null,
         marketClosed: false,
-        priceDisplays,
-      }),
+      },
     };
   }
 

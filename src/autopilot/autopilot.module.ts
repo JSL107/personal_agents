@@ -13,6 +13,7 @@ import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-moni
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { AgentRunService } from '../agent-run/application/agent-run.service';
 import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
@@ -118,14 +119,21 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         marketData: MarketDataPort,
         repository: StockMonitorRepository,
         configService: ConfigService,
+        agentRunService: AgentRunService,
       ) =>
         new StockMonitorAutopilotTask(
           { id: 'stock-monitor', targetMarketCountry: 'KR' },
           marketData,
           repository,
           configService,
+          agentRunService,
         ),
-      inject: [MARKET_DATA_PORT, StockMonitorRepository, ConfigService],
+      inject: [
+        MARKET_DATA_PORT,
+        StockMonitorRepository,
+        ConfigService,
+        AgentRunService,
+      ],
     },
     {
       provide: STOCK_MONITOR_US_TASK,
@@ -133,14 +141,21 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         marketData: MarketDataPort,
         repository: StockMonitorRepository,
         configService: ConfigService,
+        agentRunService: AgentRunService,
       ) =>
         new StockMonitorAutopilotTask(
           { id: 'stock-monitor-us', targetMarketCountry: 'US' },
           marketData,
           repository,
           configService,
+          agentRunService,
         ),
-      inject: [MARKET_DATA_PORT, StockMonitorRepository, ConfigService],
+      inject: [
+        MARKET_DATA_PORT,
+        StockMonitorRepository,
+        ConfigService,
+        AgentRunService,
+      ],
     },
     GenerateOpsAdviceUsecase,
     {

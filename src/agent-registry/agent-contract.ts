@@ -239,6 +239,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.GROWTH,
     '연차 잔여일을 계산하고 사용을 기록한다',
   ),
+  [AgentType.INVEST]: stub(
+    Department.GROWTH,
+    '보유 종목의 시세 이상을 장 마감 후 점검한다',
+  ),
 
   // ──────────────────────────────── 내부 ────────────────────────────────
   [AgentType.OPS_SUPERVISOR]: {

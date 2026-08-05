@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 27종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -23,6 +23,7 @@
 | Evening Retro Publish | `EVENING_RETRO` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts` | 저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용) |
 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
+| Invest Monitor | `INVEST` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts` | 보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용) |
 | Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CHATGPT | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
 | Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
 | Ops Supervisor | `OPS_SUPERVISOR` | — (webhook/자동) | CHATGPT | `src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts` | 월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용) |
