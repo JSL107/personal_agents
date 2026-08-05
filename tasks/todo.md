@@ -665,3 +665,58 @@
 - Swift build와 executable tests exit 0. 로컬 Swift 6.3.3/기본 SDK 6.3.2 불일치 때문에 `MacOSX15.4.sdk`와 `--disable-sandbox`를 사용했다.
 - 백엔드 lint/test/build exit 0. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
 - 독립 최종 리뷰: Critical·Important·Minor 0건, Ready.
+
+---
+
+# Daily Study Brief Slack 카드 가독성 수정 계획 (2026-08-05)
+
+**Goal:** CONCEPT 카드의 중복 서두를 없애고, CONCEPT/TOOL 필드를 Slack 비고정폭 렌더에 맞는 단일 공백 형식으로 통일한다.
+
+**Contract:** formatter와 관련 spec만 최소 수정한다. `caution` 생략 동작을 보존한다. `.env`, `pnpm db:push`, git index/commit/push는 건드리지 않는다.
+
+- [x] 현재 formatter/spec과 `.ai/design.md` §5의 잘못된 서두 계약을 대조한다.
+- [x] 두 kind의 새 전체 출력 기대값과 필드 값 1회 출현 회귀 spec을 먼저 추가한다.
+- [x] focused spec에서 기존 구현이 실패하는 RED를 확인한다.
+- [x] 중복 서두와 라벨 정렬용 연속 공백을 제거하는 최소 수정을 한다.
+- [x] focused spec GREEN을 확인한다.
+- [x] formatter를 직접 호출해 stdout 실제 출력을 눈으로 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build` exit 0을 확인한다.
+- [x] 최종 diff·작업 트리·금지 작업을 확인하고 Review를 작성한다.
+
+## Review
+
+- CONCEPT 서두 문단을 제거하고 CONCEPT/TOOL의 모든 필드 라벨 뒤 공백을 1칸으로 통일했다.
+- 두 kind의 summary 전체 문자열을 고정하고, `whyNow`와 `whereItLands`가 각각 정확히 1회만 나오는 회귀 spec을 추가했다. 기존 `caution` 미출력 단언은 유지했다.
+- TDD RED에서 CONCEPT 2건과 TOOL 1건이 기존 중복·공백 때문에 실패했고, 수정 후 focused spec 5건이 통과했다.
+- formatter 직접 호출은 임시 파일 없이 exit 0이었고 CONCEPT/TOOL stdout을 확인했다.
+- Verification: `pnpm lint:check && pnpm test && pnpm build` exit 0. lint 오류 0(기존 warning 57), 일반 298 suites/2271 tests와 code-graph 5 suites/40 tests 통과.
+- `git diff --check` exit 0. 임시 스크립트 없음. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+
+---
+
+# PR #243 봇 리뷰 대응 계획 (2026-08-05)
+
+**Goal:** CTO와 Study Brief Cron의 역방향 도메인 의존을 끊고, Hermes argv에서 프로필 서술문을 제거하며, 날짜 경계 뒤에도 consumer spec이 안정적으로 동작하게 한다.
+
+**Constraints:** 기존 미커밋 formatter 수정은 보존한다. Hermes runner의 `-z` argv 계약은 바꾸지 않는다. CTO의 `profileSummary` 입력은 유지한다. `.env`, `pnpm db:push`, git index/commit/push는 건드리지 않는다.
+
+- [x] 기존 diff와 설계 결함, 실제 import·prompt·guard key 경로를 확인한다.
+- [x] Hermes prompt에서 프로필 서술문이 빠지는 회귀 spec을 먼저 추가하고 RED를 확인한다.
+- [x] CTO 도메인에 자체 kind/research 입력 타입을 정의하고 consumer가 parser 결과를 매핑한다.
+- [x] Hermes prompt 입력을 스킬 이름·숙련도만 받도록 축소하고 CTO `profileSummary` 경로는 보존한다.
+- [x] 날짜 하드코딩을 제거하되 queue/date/`:processing` 구조를 계속 단언한다.
+- [x] `grep -rn "study-brief-cron" src/agent/` 0건과 focused spec GREEN을 확인한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 실행한다.
+- [x] `pnpm docs:check && pnpm check:env && pnpm check:invariants`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 "봇 리뷰 대응" 절과 검증 결과를 기록한다.
+- [x] 최종 diff, 기존 formatter 변경 보존, 금지 작업 미실행을 확인하고 Review를 작성한다.
+
+## Review
+
+- CTO 도메인의 `StudyTopicKind`/`StudyTopicResearch`로 parser 타입 의존 2건을 제거했다. consumer가 필요한 4개 필드만 명시 매핑하며 의존 grep은 0건이다.
+- Hermes prompt 입력을 `profileSkills`로 축소했다. `profileJson.summary`는 제외되고 `TypeScript(EXPERT)` 형식만 들어간다. CTO `profileSummary` 전달은 유지했다.
+- 날짜 하드코딩 1건을 queue/date/`:processing` 전체 구조 정규식으로 교체했다. 같은 파일의 guard 날짜 하드코딩은 더 없다.
+- TDD RED 2건을 확인했고 focused 4 suites/27 tests가 통과했다.
+- 전체 lint/test/build와 docs/env/invariants 게이트가 exit 0이다. lint 기존 warning 57건, 일반 298 suites/2,272 tests, code-graph 5 suites/40 tests가 통과했다.
+- 기존 formatter 미커밋 변경은 보존했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+- 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.

@@ -1,4 +1,3 @@
-import { CareerProfileData } from '../../agent/career-mate/domain/career-mate.type';
 import { StudyResearchKind } from './study-research.parser';
 
 export const STUDY_BRIEF_CRON_QUEUE = 'study-brief-cron';
@@ -13,26 +12,22 @@ export interface StudyBriefCronJobData {
 export type StudyKindBalance = Record<StudyResearchKind, number>;
 
 export interface BuildStudyResearchPromptInput {
-  profile: CareerProfileData | undefined;
+  profileSkills: readonly string[] | undefined;
   recentTopics: readonly string[];
   kindBalance: StudyKindBalance;
   installedTools: readonly string[];
 }
 
 export const buildStudyResearchPrompt = ({
-  profile,
+  profileSkills,
   recentTopics,
   kindBalance,
   installedTools,
 }: BuildStudyResearchPromptInput): string => {
-  const identity = profile
-    ? [
-        profile.summary,
-        ...profile.skills.map(
-          (skill) => `- ${skill.name} (${skill.proficiency})`,
-        ),
-      ].join('\n')
-    : 'TypeScript·NestJS 백엔드 개발자, LLM 에이전트 시스템을 만든다';
+  const identity =
+    profileSkills !== undefined && profileSkills.length > 0
+      ? profileSkills.map((skill) => `- ${skill}`).join('\n')
+      : 'TypeScript·NestJS 백엔드 개발자, LLM 에이전트 시스템을 만든다';
   const balanceInstruction = buildBalanceInstruction(kindBalance);
 
   return [

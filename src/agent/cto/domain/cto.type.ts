@@ -1,7 +1,6 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
-import { StudyResearchResult } from '../../../study-brief-cron/domain/study-research.parser';
 
 // CTO 의 분배 후보 — review 합의에 따라 BE_SRE / BE_FIX 는 webhook 자동 트리거 영역이라 제외.
 // BE / BE_SCHEMA / BE_TEST 만 사용자 트리거로 분배 가능.
@@ -71,9 +70,18 @@ export interface StudyToolVerdict {
 
 export type StudyTopicVerdict = StudyConceptVerdict | StudyToolVerdict;
 
+export type StudyTopicKind = 'CONCEPT' | 'TOOL';
+
+export interface StudyTopicResearch {
+  kind: StudyTopicKind;
+  topic: string;
+  reportMd: string;
+  sourceUrls: readonly string[];
+}
+
 export interface EvaluateStudyTopicInput {
   slackUserId: string;
-  research: StudyResearchResult;
+  research: StudyTopicResearch;
   profileSummary?: string;
   profileSkills?: readonly string[];
 }

@@ -1,10 +1,10 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
-import { StudyResearchKind } from '../../../../study-brief-cron/domain/study-research.parser';
 import { CtoException } from '../cto.exception';
 import {
   EvaluateStudyTopicInput,
   StudyConceptVerdict,
   StudyToolVerdict,
+  StudyTopicKind,
   StudyTopicVerdict,
 } from '../cto.type';
 import { CtoErrorCode } from '../cto-error-code.enum';
@@ -44,7 +44,7 @@ export const buildStudyTopicPrompt = ({
 
 export const parseStudyVerdict = (
   text: string,
-  kind: StudyResearchKind,
+  kind: StudyTopicKind,
 ): StudyTopicVerdict => {
   const root = parseRoot(text);
   if (kind === 'CONCEPT') {
