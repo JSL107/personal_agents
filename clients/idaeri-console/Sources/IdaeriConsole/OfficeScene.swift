@@ -417,6 +417,11 @@ final class OfficeScene: SKScene {
         let openAbove = row + 1 >= plan.rows || plan.floor[row + 1][column] != .wall
         let wallBelow = row > 0 && plan.floor[row - 1][column] == .wall
         let isTopOfWall = openAbove && wallBelow
+        // 위아래 어느 쪽으로도 벽이 이어지지 않는 한 칸짜리 가로 벽 — 아래 구역 천장이다.
+        // 여기는 벽면과 윗면이 **한 칸에 겹쳐** 있어서 어느 한쪽으로 칠하면 둘 다 틀린다:
+        // 벽면(가장 어둡게)으로 두면 바닥과 구별되지 않아 방 사이가 벽이 아니라 어두운 띠로
+        // 눕고, 윗면(가장 밝게)으로 올리면 밝은 띠가 가로로 길게 눕는다. 그 사이 값을 준다.
+        let isFlatWall = openAbove && !wallBelow
         var color = wallBaseColor
         if let department = wallDepartment(x: column, y: row, zones: plan.zones) {
             let tint = agentDepartmentPaletteRGBA(department)
@@ -432,7 +437,13 @@ final class OfficeScene: SKScene {
         }
         node.color = SKColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
         // 벽 원본이 밝은 크림이라 덜 누르면 눌러 놓은 색이 원본에 씻긴다.
-        node.colorBlendFactor = isTopOfWall ? 0.60 : 0.84
+        if isTopOfWall {
+            node.colorBlendFactor = 0.60
+        } else if isFlatWall {
+            node.colorBlendFactor = 0.72
+        } else {
+            node.colorBlendFactor = 0.84
+        }
         node.xScale = 1
         node.yScale = 1
     }
@@ -557,7 +568,15 @@ final class OfficeScene: SKScene {
             // 상대적으로 작아 보이는 것을 되돌린다(배율의 근거는 FurnitureKind.sizeBoost).
             let scale = spriteScale * CGFloat(placement.kind.sizeBoost)
             node.size = CGSize(width: base.width * scale, height: base.height * scale)
-            node.position = floorPoint(placement.tile)
+            // 벽에 거는 물건은 벽면 중턱에 걸린다. 다른 가구와 같은 발밑 기준(anchor y = 0)을
+            // 그대로 쓰면 타일 바닥선에 붙어 **벽 앞에 세워 둔 것**처럼 보인다 — 벽시계가
+            // 탁상시계가 되고 화이트보드가 이젤이 된다. 창문이 벽 두 줄을 꽉 채워 걸리는 것과
+            // 같은 눈높이로 올린다.
+            var position = floorPoint(placement.tile)
+            if placement.kind.isWallMounted {
+                position.y += tileSize * 0.32
+            }
+            node.position = position
             node.zPosition = depth(of: placement.tile)
             objectLayer.addChild(node)
         }
