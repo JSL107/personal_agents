@@ -28,23 +28,21 @@ export const formatStudyBrief = ({
       [
         `📚 *오늘의 공부 — ${safeTopic}*   ·  ${concept.minutes}분`,
         '',
-        `이 주제는 ${escapeStudyMrkdwn(concept.whereItLands)}에 닿는다. ${escapeStudyMrkdwn(concept.whyNow)}`,
-        '',
-        `*왜 지금 나한테*  ${escapeStudyMrkdwn(concept.whyNow)}`,
-        `*어디에 닿나*      ${escapeStudyMrkdwn(concept.whereItLands)}`,
-        `*읽을 것*          ${escapeStudyMrkdwn(concept.readingPlan)}`,
+        `*왜 지금 나한테* ${escapeStudyMrkdwn(concept.whyNow)}`,
+        `*어디에 닿나* ${escapeStudyMrkdwn(concept.whereItLands)}`,
+        `*읽을 것* ${escapeStudyMrkdwn(concept.readingPlan)}`,
       ].join('\n'),
     )
     .with({ kind: 'TOOL' }, (tool) => {
       const lines = [
         `🔧 *오늘의 도구 — ${safeTopic}*   ·  설치 ${tool.minutes}분`,
         '',
-        `*뭐가 좋아지나*  ${escapeStudyMrkdwn(tool.whatImproves)}`,
-        `*붙이는 비용*    ${escapeStudyMrkdwn(tool.adoptionCost)}`,
-        `*설치*           ${escapeStudyMrkdwn(tool.installHint)}`,
+        `*뭐가 좋아지나* ${escapeStudyMrkdwn(tool.whatImproves)}`,
+        `*붙이는 비용* ${escapeStudyMrkdwn(tool.adoptionCost)}`,
+        `*설치* ${escapeStudyMrkdwn(tool.installHint)}`,
       ];
       if (tool.caution !== undefined) {
-        lines.push(`*주의*           ${escapeStudyMrkdwn(tool.caution)}`);
+        lines.push(`*주의* ${escapeStudyMrkdwn(tool.caution)}`);
       }
       return lines.join('\n');
     })
