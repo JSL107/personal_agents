@@ -331,8 +331,13 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         t.expect(right - left >= 2, "세션끼리 최소 두 칸 간격")
     }
     // 대표실 가구가 짝수 칸을 물면 앉을 데가 조용히 줄어든다. 자리 수를 고정해 그걸 잡는다.
+    //
+    // 기준이 다섯에서 넷으로 내려온 것은 복도를 내면서 방 왼쪽 한 칸이 칸막이 벽이 됐기
+    // 때문이다. 자리는 방 왼쪽 끝부터 두 칸 간격으로 잡는데 그 첫 칸이 벽이 되어 짝수 칸이
+    // 다섯에서 넷으로 줄었다 — 가구를 빼도 늘지 않는다(비는 것은 홀수 칸이다).
+    // 넘치는 세션은 원래 설계대로 좌상단 요약의 총계가 맡는다.
     t.expect(
-        sessionTiles.count >= 5, "대표실에 최소 다섯 자리 (지금 \(sessionTiles.count))"
+        sessionTiles.count >= 4, "대표실에 최소 네 자리 (지금 \(sessionTiles.count))"
     )
 
     // 드나드는 문 — 출근·퇴근 경로의 양 끝.

@@ -27,11 +27,29 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         }
         return Int(CommandLine.arguments[index + 1])
     }
+    // 창 크기를 넘길 수 있다 — `--size 980x680`.
+    //
+    // 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서
+    // 세로로 옮겨 간다.** 그래서 격자 규격을 바꾸면 어떤 창에서는 타일이 그대로이고 어떤
+    // 창에서는 작아지는데, 렌더 크기가 한 값으로 고정돼 있으면 그 차이를 확인할 방법이 없다.
+    // 기본값은 기존 회귀 캡처와 비교되도록 그대로 둔다.
+    // 값을 읽는 규칙 자체는 `officeParseRenderSize`(ConsoleCore) 가 갖는다 — 여기 두면
+    // 실행 파일 안이라 테스트로 고정할 수가 없다.
+    let sizeIndex = CommandLine.arguments.firstIndex(of: "--size")
+    let renderSize =
+        sizeIndex.flatMap { index -> CGSize? in
+            guard index + 1 < CommandLine.arguments.count,
+                let parsed = officeParseRenderSize(CommandLine.arguments[index + 1])
+            else {
+                return nil
+            }
+            return CGSize(width: parsed.width, height: parsed.height)
+        } ?? CGSize(width: 1400, height: 820)
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
         hour: hour,
-        size: CGSize(width: 1400, height: 820)
+        size: renderSize
     )
     exit(succeeded ? 0 : 1)
 }
