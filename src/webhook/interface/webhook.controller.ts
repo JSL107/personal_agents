@@ -13,7 +13,6 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 
-import { GithubEventBridge } from '../../session-dispatch/application/github-event.bridge';
 import {
   GITHUB_DELIVERY_HEADER,
   GITHUB_EVENT_HEADER,
@@ -21,7 +20,6 @@ import {
   GITHUB_WEBHOOK_OWNER_ENV,
   GITHUB_WEBHOOK_OWNER_LOGIN_ENV,
   GITHUB_WEBHOOK_SECRET_ENV,
-  GithubCheckRunEvent,
   GithubIssuesEvent,
   GithubPullRequestEvent,
   GithubWebhookPayload,
@@ -61,7 +59,6 @@ export class WebhookController {
     @InjectQueue(ISSUE_LABEL_QUEUE)
     private readonly issueLabelQueue: Queue<IssueLabelJobData>,
     private readonly configService: ConfigService,
-    private readonly githubEventBridge: GithubEventBridge,
   ) {}
 
   @Post('trigger')
@@ -143,24 +140,6 @@ export class WebhookController {
       return { accepted: true };
     }
 
-    // check_run.completed + failure → 유휴 세션 브릿지에 전달.
-    if (event === 'check_run' && this.isCheckRunFailure(payload)) {
-      const checkRunEvent = payload as GithubCheckRunEvent;
-      void this.githubEventBridge
-        .onCiFailure({
-          repo: checkRunEvent.repository.full_name,
-          checkName: checkRunEvent.check_run.name,
-          headSha: checkRunEvent.check_run.head_sha,
-          htmlUrl: checkRunEvent.check_run.html_url,
-        })
-        .catch((error: unknown) => {
-          this.logger.error(
-            `브릿지 onCiFailure 실패: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
-      return { accepted: true };
-    }
-
     // pull_request.closed + merged=true → 본인 PR 머지 시 careerLog 자동 적재 (LLM X).
     // closed action 은 toImpactSubject 가 지원하지 않아 그 분기보다 위에서 가드. impact-report /
     // BE-FIX 와 무관 — 머지 시점은 사후 누적 자산 적재.
@@ -185,17 +164,6 @@ export class WebhookController {
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
       this.fireBeFixAnalysis({ prRef, slackUserId });
       this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
-      void this.githubEventBridge
-        .onPrOpened({
-          repo: pr.repository.full_name,
-          prNumber: pr.pull_request.number,
-          title: pr.pull_request.title,
-        })
-        .catch((error: unknown) => {
-          this.logger.error(
-            `브릿지 onPrOpened 실패: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
     }
 
     // issues.opened → impact-report 와 병렬로 자동 라벨링 (env gate 통과 시).
@@ -468,16 +436,6 @@ export class WebhookController {
       'pull_request' in payload &&
       (payload as GithubPullRequestEvent).action === 'opened'
     );
-  }
-
-  private isCheckRunFailure(
-    payload: GithubWebhookPayload,
-  ): payload is GithubCheckRunEvent {
-    if (!('check_run' in payload)) {
-      return false;
-    }
-    const cr = payload as GithubCheckRunEvent;
-    return cr.action === 'completed' && cr.check_run.conclusion === 'failure';
   }
 
   private fireBeFixAnalysis({
