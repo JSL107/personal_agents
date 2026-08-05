@@ -272,6 +272,17 @@ public func officeSessionDoorTile(plan: OfficeFloorPlan) -> TilePoint? {
 /// 자리를 비운 것과 일을 마친 것을 가른다.
 public let officeSessionLeaveAfterSeconds: Double = 900
 
+/// 퇴근 판정을 다시 따지는 간격.
+///
+/// 이 판정은 **시간이 흐르기만 해도 결과가 바뀐다** — 세션 목록이 그대로여도 조용한 시간이
+/// 자라 15분을 넘긴다. 그런데 화면 갱신은 세션 이벤트에 걸려 있어서, 조용한 세션은 목록이
+/// 바뀌지 않아 이벤트가 오지 않는다. 시간축으로도 한 번씩 훑지 않으면 퇴근할 사람이 다음
+/// 무관한 이벤트가 올 때까지 자리에 남는다.
+///
+/// 15분 기준에 견줘 30초는 무시할 만한 지연이고, 훑는 일 자체는 세션 몇 개를 다시 배치하는
+/// 정도라 프레임에 부담이 되지 않는다.
+public let officeSessionSweepIntervalSeconds: Double = 30
+
 /// 세션이 마지막으로 뭔가 한 뒤 흐른 시간. 활동 기록이 없으면 띄운 시각부터 잰다.
 public func officeSessionQuietSeconds(_ session: ConsoleSession, now: Date) -> Double? {
     let stamp = session.lastActivityAt ?? session.startedAt
