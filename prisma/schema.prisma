@@ -45,6 +45,7 @@ model AgentRun {
   prReviewFindings PrReviewFinding[]
   careerProfiles   CareerProfile[]
   episodicMemories EpisodicMemory[]
+  studyBriefs      StudyBrief[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -426,4 +427,22 @@ model DailyFxRate {
 
   @@unique([pair, rateDate])
   @@map("daily_fx_rate")
+}
+
+// 매일 학습 브리핑 — 보낸 주제의 원장. 다음 회차의 "제외 목록"이자 kind 균형 재료.
+// reportMd 는 Hermes 조사 전문(Slack 스레드로도 보내지만 여기가 정본).
+model StudyBrief {
+  id          Int       @id @default(autoincrement())
+  agentRunId  Int?      @map("agent_run_id")
+  agentRun    AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  ownerUserId String    @map("owner_user_id")
+  kind        String
+  topic       String
+  verdictJson Json      @map("verdict_json")
+  reportMd    String    @map("report_md") @db.Text
+  sourceUrls  Json      @map("source_urls")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([ownerUserId, createdAt])
+  @@map("study_brief")
 }

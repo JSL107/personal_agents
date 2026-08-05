@@ -72,6 +72,7 @@ export enum AgentType {
   // agent_run 에 한 줄도 남기지 않아, 보유 종목 0건으로 아무 일도 안 하는 상태가 관측되지 않았다.
   // 슬래시/ResponseCode/retry-run 비대상 (autopilot 전용 — EVENING_RETRO 선례).
   INVEST = 'INVEST',
+  CTO_STUDY = 'CTO_STUDY',
 }
 
 export interface CompletionRequest {

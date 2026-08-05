@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 107개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 111개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -196,3 +196,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |
+| `STUDY_BRIEF_OWNER_SLACK_USER_ID` | ❌ | 학습 주체. 미설정 시 모듈 비활성. |
+| `STUDY_BRIEF_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
+| `STUDY_BRIEF_CRON` | ❌ | BullMQ cron (default 매일 09:30 — `30 9 * * *`). |
+| `STUDY_BRIEF_TIMEZONE` | ❌ | default Asia/Seoul. |

@@ -90,7 +90,7 @@ struct OfficeView: View {
                 }
                 .onChange(of: store.sessions) { newSessions in
                     // 세션은 사규가 배정한 자리가 없어 사무실을 다시 그릴 필요가 없다.
-                    // sync 를 부르면 세션 하나 뜰 때마다 바닥·가구·27명이 통째로 다시 그려진다.
+                    // sync 를 부르면 세션 하나 뜰 때마다 바닥·가구·29명이 통째로 다시 그려진다.
                     scene.syncSessions(newSessions)
                 }
                 .onChange(of: store.pendingCommands) { _ in

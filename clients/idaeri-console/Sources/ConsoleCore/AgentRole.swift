@@ -52,6 +52,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "휴가 관리"
     case "INVEST":
         return "투자 관리"
+    case "CTO_STUDY":
+        return "학습 코치"
     // 내부
     case "ISSUE_LABELER":
         return "이슈 분류"
@@ -80,7 +82,7 @@ public func agentRoleLabel(for agentType: String) -> String? {
 
 /// 캐릭터 외형 변주 — 같은 스프라이트 한 장으로 서로 다른 사람처럼 보이게 하는 배정.
 ///
-/// 26명이 전부 같은 얼굴이면 이름표를 읽기 전엔 누가 누군지 구분되지 않는다.
+/// 29명이 전부 같은 얼굴이면 이름표를 읽기 전엔 누가 누군지 구분되지 않는다.
 /// 머리색·피부톤을 agentType 에서 결정론적으로 뽑아, 스냅샷이 갱신돼도 같은 사람이
 /// 같은 외모를 유지하게 한다.
 public struct CharacterLook: Equatable, Sendable {

@@ -155,7 +155,7 @@ func runOfficeIdleTests(_ t: TestRunner) {
 
     let plan = officeFloorPlan(agents: sampleAgents)
     let spots = officeStrollSpots(plan: plan)
-    t.expect(!spots.isEmpty, "운영 27명 평면도에 배회 목적지가 있다")
+    t.expect(!spots.isEmpty, "운영 29명 평면도에 배회 목적지가 있다")
     t.expect(spots.allSatisfy { plan.walkable.contains($0.tile) }, "모든 목적지는 통행 가능")
     let seatTiles = Set(plan.desks.map(\.seat))
     t.expect(spots.allSatisfy { !seatTiles.contains($0.tile) }, "좌석 칸은 목적지에서 제외")

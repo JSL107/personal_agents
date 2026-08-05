@@ -264,6 +264,10 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `PR_REVIEW_INLINE_DRYRUN` | ❌ | `'false'` 일 때만 GitHub 실게시 — 기본 연습 모드(카드 미저장 + Slack 요약만) |
 | `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 인라인 게시 상한(MUST_FIX 우선 절단) — 기본 `4` |
 | `PR_REVIEW_HARVEST_ENABLED` | ❌ | `'true'` 시 게시된 리뷰 카드의 owner 반응 수확·상태 전이 활성 — 기본 OFF |
+| `STUDY_BRIEF_OWNER_SLACK_USER_ID` | ⭕ | 매일 학습 브리핑 owner. 미설정 시 모듈 비활성 |
+| `STUDY_BRIEF_TARGET` | ❌ | Slack 발송 대상. 미설정 시 owner DM |
+| `STUDY_BRIEF_CRON` | ❌ | BullMQ cron. 기본 `30 9 * * *` (매일 09:30) |
+| `STUDY_BRIEF_TIMEZONE` | ❌ | 학습 브리핑 timezone. 기본 `Asia/Seoul` |
 
 **Model provider** — 2026-07-02 부터 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider. provider 간 fallback 없음 — codex 실패 시 재시도 없이 즉시 실패(쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 **claude 인증** — provider 코드 보존용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원은 유지(현재 라우팅 경로 없음, 롤백 시 사용).
