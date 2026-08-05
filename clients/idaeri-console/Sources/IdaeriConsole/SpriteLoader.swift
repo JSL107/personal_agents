@@ -166,9 +166,15 @@ func floorSpriteName(_ tile: FloorTile) -> String {
         return "tile-carpet-dark"
     case .ceramic:
         return "tile-ceramic"
-    // 통로는 전용 에셋 없이 우드 텍스처를 재사용하고 밝기(muteStrength 0.78)로만 갈린다.
+    // 통로는 전용 에셋이 없어 세라믹(타일) 텍스처를 재사용하고 밝기로 갈린다.
+    //
+    // 한때 우드를 재사용했다. 그런데 우드는 리뷰·경영 두 방의 바닥재이기도 해서, 렌더 픽셀을
+    // 재 보니 복도 RGB (80,39,17) 이 리뷰방 (71,34,16) · 경영방 (69,33,12) 과 거의 같았다 —
+    // 복도가 그 두 방의 바닥과 이어져 보였다. "부서 바닥재가 통로와 같으면 안 된다" 는 회귀
+    // 테스트가 있었지만 `FloorTile` 값만 비교해서, 값이 다르고 **텍스처가 같은** 이 경우를
+    // 놓쳤다. 다섯 텍스처가 여섯 방에 모두 쓰여 안 겹치는 선택지가 없으므로 밝기로 가른다.
     case .corridor:
-        return "tile-wood-a"
+        return "tile-ceramic"
     case .wall:
         return "tile-wall"
     }

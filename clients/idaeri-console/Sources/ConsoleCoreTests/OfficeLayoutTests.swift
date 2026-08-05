@@ -59,4 +59,20 @@ func runOfficeLayoutTests(_ t: TestRunner) {
     let slots = (0..<3).map { presidentBandSlot(order: $0, count: 3, width: 900, height: 600, bandHeight: 120) }
     t.expect(slots.allSatisfy { $0.y > 600 - 120 && $0.y < 600 }, "밴드 슬롯 y 는 밴드 영역 안")
     t.expectEqual(Set(slots.map { $0.x }).count, 3, "밴드 슬롯 x 는 서로 다름")
+
+    // 렌더 크기 인자(`--size 980x680`).
+    //
+    // 못 읽는 값을 nil 로 돌려보내는 것이 이 함수의 핵심이다. 0 이나 음수를 통과시키면 씬은
+    // 만들어지는데 타일 크기가 0 이하가 되어, 아무것도 안 그려진 그림이 정상 결과처럼 저장된다.
+    let parsed = officeParseRenderSize("980x680")
+    t.expectEqual(parsed?.width, 980, "가로를 읽는다")
+    t.expectEqual(parsed?.height, 680, "세로를 읽는다")
+    t.expectEqual(officeParseRenderSize("1400X820")?.width, 1400, "구분자 X 는 대소문자를 가리지 않는다")
+    t.expect(officeParseRenderSize("980") == nil, "구분자가 없으면 거부")
+    t.expect(officeParseRenderSize("980x") == nil, "한쪽 값이 비면 거부")
+    t.expect(officeParseRenderSize("980x680x2") == nil, "값이 셋이면 거부")
+    t.expect(officeParseRenderSize("가로x세로") == nil, "숫자가 아니면 거부")
+    t.expect(officeParseRenderSize("0x680") == nil, "0 은 거부 — 타일 크기가 0 이 된다")
+    t.expect(officeParseRenderSize("980x-680") == nil, "음수는 거부")
+    t.expect(officeParseRenderSize("") == nil, "빈 문자열은 거부")
 }

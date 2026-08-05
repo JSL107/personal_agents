@@ -94,3 +94,25 @@ public func agentStatePaletteRGBA(
         return (0.90, 0.30, 0.24)  // 코랄 레드
     }
 }
+
+/// 렌더 크기 인자(`--size 980x680`)를 읽는다.
+///
+/// 타일 한 칸은 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서 세로로 옮겨
+/// 간다.** 그래서 격자 규격을 바꾸면 어떤 창에서는 타일이 그대로이고 어떤 창에서는 작아지는데,
+/// 렌더 크기가 한 값으로 고정돼 있으면 그 차이를 확인할 방법이 없다.
+///
+/// 못 읽는 값은 **nil 로 돌려보내 기본 크기를 쓰게 한다.** 여기서 0 이나 음수를 통과시키면
+/// 씬이 만들어지긴 하는데 타일 크기가 0 이나 음수가 되어, 아무것도 안 그려진 그림이 정상
+/// 결과처럼 저장된다 — 회귀 확인이 조용히 눈멀게 된다.
+public func officeParseRenderSize(_ raw: String) -> (width: Double, height: Double)? {
+    let parts = raw.lowercased().split(separator: "x")
+    guard parts.count == 2,
+        let width = Double(parts[0]),
+        let height = Double(parts[1]),
+        width > 0,
+        height > 0
+    else {
+        return nil
+    }
+    return (width, height)
+}
