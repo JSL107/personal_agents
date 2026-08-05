@@ -312,49 +312,42 @@ func runOfficeInteractionTests(_ t: TestRunner) {
             makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
         ]
     )
-    let sessionTiles = officeSessionTiles(plan: sessionPlan)
-    t.expect(!sessionTiles.isEmpty, "세션 자리 존재")
-    // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 세션이 늘어난 순간 줄 선 사람과
-    // 겹쳐 승인이 몇 건인지 세지 못한다.
+    let sessionTiles = officeSessionDesks(plan: sessionPlan)
+    t.expect(!sessionTiles.isEmpty, "세션 작업 책상 존재")
+    // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 줄 선 사람과 겹쳐 승인이 몇 건인지
+    // 세지 못한다.
     let queued = Set(sessionPlan.queueTiles)
     for tile in sessionTiles {
-        t.expect(sessionPlan.walkable.contains(tile), "세션 자리 통행 가능")
-        t.expect(!queued.contains(tile), "세션 자리가 승인 대기 줄과 겹치지 않음")
+        t.expect(!queued.contains(tile), "세션 책상이 승인 대기 줄과 겹치지 않음")
         t.expect(tile.x != sessionPlan.presidentTile.x, "대표가 선 칸은 비운다")
-        // 앞줄이 아니라 안쪽 줄에 앉아야 앞줄이 드나드는 통로로 남는다.
-        t.expectEqual(tile.y, sessionPlan.presidentTile.y, "세션은 대표실 안쪽 줄에 앉는다")
+        t.expectEqual(tile.y, sessionPlan.presidentTile.y, "세션 책상은 대표실 안쪽 줄")
+        // 좌표를 따로 계산하지 않고 평면도에 실제로 놓인 책상만 쓴다. 아니면 화면에 없는
+        // 책상 위에 이름표만 뜬다.
+        t.expect(
+            sessionPlan.furniture.contains { $0.kind == .desk && $0.tile == tile },
+            "평면도에 실제로 놓인 책상"
+        )
     }
-    // 이름표가 설 폭을 확보한다. 한 칸씩 붙여 앉혔더니 이름표 열 개가 이어 붙어 한 줄짜리
-    // 글자 뭉치가 됐고, 그 줄은 어느 것도 읽을 수 없었다.
+    // 이름표가 설 폭을 확보한다. 붙여 놓으면 이름표가 이어 붙어 한 줄짜리 글자 뭉치가 되고,
+    // 그 줄은 어느 것도 읽을 수 없다(실제로 그랬다).
     let sessionXs = sessionTiles.map(\.x).sorted()
     for (left, right) in zip(sessionXs, sessionXs.dropFirst()) {
-        t.expect(right - left >= 2, "세션끼리 최소 두 칸 간격")
+        t.expect(right - left >= 2, "책상끼리 최소 두 칸 간격")
     }
-    // 대표실 가구가 짝수 칸을 물면 앉을 데가 조용히 줄어든다. 자리 수를 고정해 그걸 잡는다.
+    // 응접 가구가 짝수 칸을 물면 책상이 조용히 줄어든다. 개수를 고정해 그걸 잡는다.
     //
     // 기준이 다섯에서 넷으로 내려온 것은 복도를 내면서 방 왼쪽 한 칸이 칸막이 벽이 됐기
-    // 때문이다. 자리는 방 왼쪽 끝부터 두 칸 간격으로 잡는데 그 첫 칸이 벽이 되어 짝수 칸이
-    // 다섯에서 넷으로 줄었다 — 가구를 빼도 늘지 않는다(비는 것은 홀수 칸이다).
+    // 때문이다. 책상은 그 벽을 피해 한 칸 안쪽부터 두 칸 간격으로 놓이므로 넷이 된다 —
+    // 가구를 빼도 늘지 않는다(비는 것은 홀수 칸이다).
     // 넘치는 세션은 원래 설계대로 좌상단 요약의 총계가 맡는다.
     t.expect(
-        sessionTiles.count >= 4, "대표실에 최소 네 자리 (지금 \(sessionTiles.count))"
+        sessionTiles.count >= 4, "대표실에 작업 책상 최소 4개 (지금 \(sessionTiles.count))"
     )
-
-    // 드나드는 문 — 출근·퇴근 경로의 양 끝.
-    guard let sessionDoor = officeSessionDoorTile(plan: sessionPlan) else {
-        t.expect(false, "세션이 드나들 문 앞 칸이 있어야 한다")
-        return
-    }
-    t.expect(sessionPlan.walkable.contains(sessionDoor), "문 앞 칸은 통행 가능")
-    t.expect(
-        !sessionTiles.contains(sessionDoor), "문 앞 칸은 앉는 자리와 달라야 한다"
-    )
-    // 문에서 모든 자리까지 실제로 걸어갈 수 있어야 한다 — 길이 없으면 출근하다 멈춘 사람이
-    // 문 앞에 굳는다.
+    // 책상 앞줄은 통로로 남아야 한다 — 여기까지 막으면 탕비실 가는 사람이 밴드를 못 건넌다.
     for tile in sessionTiles {
         t.expect(
-            !officePath(from: sessionDoor, to: tile, walkable: sessionPlan.walkable).isEmpty,
-            "문에서 자리 \(tile.x) 까지 걸어갈 수 있다"
+            sessionPlan.walkable.contains(TilePoint(x: tile.x, y: tile.y - 1)),
+            "책상 \(tile.x) 앞줄은 통행 가능"
         )
     }
 
@@ -437,27 +430,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         "두 사람이 한 자리에 겹쳐 앉지 않는다"
     )
 
-    // === 세션 구분 ===
-    // 여럿이 서면 서로 다른 사람으로 보여야 한다. 예전에는 스프라이트 한 장에 같은 색이라
-    // 여덟이 늘어서면 한 사람을 복제해 붙인 것처럼 보였다.
-    let sessionIds = ["s-alpha", "s-beta", "s-gamma", "s-delta", "s-epsilon"]
-    let looks = sessionIds.map { characterLook(for: $0) }
-    t.expect(
-        Set(looks.map { "\($0.sheetIndex)-\($0.hairIndex)-\($0.pantsIndex)" }).count > 1,
-        "세션마다 외형이 갈린다"
-    )
-    t.expectEqual(
-        characterLook(for: "s-alpha").sheetIndex,
-        characterLook(for: "s-alpha").sheetIndex,
-        "같은 세션은 늘 같은 모습"
-    )
-    // 셔츠는 청록 계열에 묶여 있어야 한다 — 색상까지 흩으면 부서 사람과 구별되지 않는다.
-    for look in looks {
-        let shirt = officeSessionShirtRGB(shift: look.shirtShift)
-        t.expect(shirt.green > shirt.red && shirt.blue > shirt.red, "세션 셔츠는 청록 계열")
-    }
-
-    // 이름표는 옆 세션과 겹치지 않게 자른다. 자르되 뒤쪽(구분되는 정보)을 남긴다 —
+    // 이름표는 옆 책상과 겹치지 않게 자른다. 자르되 뒤쪽(구분되는 정보)을 남긴다 —
     // 워크트리 이름은 앞이 대개 같은 저장소 이름이라 앞을 남기면 전부 같은 글자가 된다.
     t.expectEqual(officeSessionShortName("idaeri"), "idaeri", "상한 안이면 그대로")
     let fullName = "personal_agents-office-window-light"

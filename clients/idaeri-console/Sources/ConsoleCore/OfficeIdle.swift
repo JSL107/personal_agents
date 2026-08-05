@@ -224,52 +224,35 @@ public func officeChainParticipants(run: ConsoleRun, runs: [ConsoleRun]) -> [Str
 /// 세션이 "돌고 있다" 로 취급되는 백엔드 상태 문자열.
 public let officeSessionActiveState = "active"
 
-/// 세션이 **앉을** 자리(대표실 안쪽 줄). 대표가 직접 돌리는 작업이므로 부서 방이 아니라
-/// 대표와 같은 방에 둔다 — 에이전트 방에 섞으면 사규가 배정한 일과 구분되지 않는다.
+/// 대표실 안쪽 줄의 **작업 책상** 자리(왼쪽부터).
 ///
-/// 앞줄(`presidentTile.y - 1`)이 아니라 **안쪽 줄**을 쓴다. 앞줄에 세웠더니 대표 앞에 나란히
-/// 선 사람들이 되어 면담 대기 줄처럼 보였고, 앞줄은 방을 가로지르는 통로라 앉히면 길이 막힌다.
-/// 안쪽 줄에 앉히면 앞줄이 통로로 남아 드나드는 길이 살아 있다.
+/// 세션은 대표가 직접 띄운 편집기 창이다. 사규가 배정한 일이 아니라 **대표 본인의 작업**이므로
+/// 사람으로 세우지 않는다 — 창 하나당 사람 하나를 세웠더니 없던 직원이 갑자기 생겼다 사라지는
+/// 화면이 됐고, 다섯이 한 줄로 앉으면 사무실이 아니라 대기실로 보였다. 대신 대표 책상 위에서
+/// 화면이 켜진다.
 ///
-/// 승인 대기 줄(`queueTiles`)과는 다른 줄을 쓴다. 같은 줄에 두면 세션이 늘어난 순간 줄 선
-/// 사람과 겹쳐, 승인이 몇 건인지 세지 못한다.
-///
-/// **두 칸씩 띄운다.** 한 칸 간격으로 붙여 앉히면 사람은 겨우 구분돼도 머리 위 이름표가
-/// 옆 사람 것과 이어 붙어 한 줄짜리 글자 뭉치가 된다 — 열 개가 겹치면 어느 것도 못 읽는다.
-/// 이름표가 설 자리를 확보하는 쪽이 한 명 더 앉히는 것보다 중요하다.
-///
-/// 대표가 선 칸은 당연히 뺀다.
-public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
+/// 평면도에 실제로 놓인 책상을 읽는다. 좌표를 여기서 다시 계산하면 평면도가 바뀌었을 때
+/// 조용히 어긋나 — 화면에 없는 책상 위에 이름표만 뜬다.
+public func officeSessionDesks(plan: OfficeFloorPlan) -> [TilePoint] {
     guard let room = plan.commonAreas.first(where: { $0.kind == .president }) else {
         return []
     }
     let row = plan.presidentTile.y
-    let queued = Set(plan.queueTiles)
-    return stride(from: room.originX, to: room.originX + room.width, by: 2)
-        .map { TilePoint(x: $0, y: row) }
-        .filter {
-            plan.walkable.contains($0) && !queued.contains($0)
-                && $0.x != plan.presidentTile.x
+    return plan.furniture
+        .filter { placement in
+            placement.kind == .desk && placement.tile.y == row
+                && placement.tile.x >= room.originX
+                && placement.tile.x < room.originX + room.width
         }
+        .map(\.tile)
+        .sorted { $0.x < $1.x }
 }
 
-/// 세션이 드나드는 문 앞 칸 — 사무실 왼쪽 끝, 자리와 같은 층의 통로.
+/// 이보다 오래 조용한 세션은 **일이 끝난 것으로 본다**(화면에서 내린다).
 ///
-/// 출근·퇴근을 여기서 시작하고 끝낸다. 사람이 자리에 **뿅 나타났다 뿅 사라지면** 관제 화면이
-/// 아니라 심령 사진이 된다. 걸어 들어오고 걸어 나가면 "새 작업이 시작됐다 / 저건 끝났다" 가
-/// 설명 없이 읽힌다.
-public func officeSessionDoorTile(plan: OfficeFloorPlan) -> TilePoint? {
-    let row = plan.presidentTile.y - 1
-    return (0..<plan.columns)
-        .map { TilePoint(x: $0, y: row) }
-        .first { plan.walkable.contains($0) }
-}
-
-/// 이보다 오래 조용한 세션은 **퇴근한 것으로 본다**(화면에서 걸어 나간다).
-///
-/// 백엔드의 `active` 판정은 60초짜리라 잠깐 생각하는 동안에도 꺼진다. 그 기준으로 사람을
-/// 내보내면 답변 한 번 기다리는 사이에 사라졌다 나타나기를 반복한다 — 60초보다 훨씬 길게 잡아,
-/// 자리를 비운 것과 일을 마친 것을 가른다.
+/// 백엔드의 `active` 판정은 60초짜리라 잠깐 생각하는 동안에도 꺼진다. 그 기준으로 화면에서
+/// 지우면 답변 한 번 기다리는 사이에 사라졌다 나타나기를 반복한다 — 60초보다 훨씬 길게 잡아,
+/// 잠시 멈춘 것과 끝난 것을 가른다.
 public let officeSessionLeaveAfterSeconds: Double = 900
 
 /// 퇴근 판정을 다시 따지는 간격.
@@ -303,27 +286,7 @@ public func officeSessionIsPresent(_ session: ConsoleSession, now: Date) -> Bool
     return quiet < officeSessionLeaveAfterSeconds
 }
 
-/// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
-///
-/// 세션 캐릭터의 셔츠색. 청록 계열 안에서 세션마다 조금씩 어긋난 값을 준다.
-///
-/// 세션은 부서가 없어 `officeShirtColorRGB` 를 쓸 수 없다. 그렇다고 전원 같은 스프라이트에
-/// 같은 색으로 두면 여덟이 늘어섰을 때 **한 사람이 복제된 것처럼** 보인다 — 실제로 그렇게
-/// 보였고, 구분 수단이 이름표 하나뿐인데 그 이름표마저 서로 겹쳤다.
-///
-/// 색조를 청록에 묶어 두는 것은 유지한다. "부서 사람이 아니라 내가 돌리는 작업" 이라는
-/// 표식이라, 여기서 색상까지 흩으면 에이전트와 구별되지 않는다.
-public func officeSessionShirtRGB(shift: Double) -> (red: Double, green: Double, blue: Double) {
-    let base = (red: 0.20, green: 0.64, blue: 0.60)
-    let blend = 0.42 + shift
-    return (
-        red: 1.0 - (1.0 - base.red) * blend,
-        green: 1.0 - (1.0 - base.green) * blend,
-        blue: 1.0 - (1.0 - base.blue) * blend
-    )
-}
-
-/// 세션 이름표에 쓸 짧은 이름.
+/// 책상 이름표에 쓸 짧은 이름.
 ///
 /// 세션 이름은 실행 디렉터리에서 오므로 `personal_agents-office-window-light` 처럼 길다.
 /// 자리 간격이 한 칸이라 그대로 쓰면 옆 세션 이름표와 겹쳐 **둘 다** 못 읽는다.
