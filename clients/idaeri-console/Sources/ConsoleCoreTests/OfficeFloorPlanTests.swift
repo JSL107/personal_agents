@@ -139,11 +139,19 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     for zone in plan.zones {
         let inZone = plan.furniture
             .filter { placement in
-                placement.kind != .desk
-                    && placement.tile.x > zone.origin.x
+                guard placement.kind != .desk,
+                    placement.tile.y >= zone.origin.y,
+                    placement.tile.y < zone.origin.y + zone.height
+                else {
+                    return false
+                }
+                // 벽걸이는 방 안이 아니라 **왼쪽 칸막이 벽 열**에 걸린다. 방 안만 훑으면
+                // 제자리에 걸린 시계·화이트보드를 "빠졌다" 고 잡는다.
+                if placement.kind.isWallMounted {
+                    return placement.tile.x == zone.origin.x
+                }
+                return placement.tile.x > zone.origin.x
                     && placement.tile.x < zone.origin.x + zone.width - 1
-                    && placement.tile.y >= zone.origin.y
-                    && placement.tile.y < zone.origin.y + zone.height
             }
             .map(\.kind)
         for kind in departmentFurniture(zone.department) {
@@ -658,6 +666,41 @@ func runOfficePathfindingTests(_ t: TestRunner) {
     let furnitureTiles = Set(plan.furniture.map(\.tile))
     let collidedFixtures = fixtureTiles.filter { furnitureTiles.contains($0) }
     t.expectEqual(collidedFixtures.count, 0, "창·벽등이 벽 가구와 겹치지 않음")
+
+    // 벽에 거는 물건은 **벽 칸 위에만** 있어야 한다.
+    //
+    // 상단 밴드는 벽 줄에 명시적으로 걸었지만 부서 방은 일반 바닥 후보를 그대로 써서, 개발실
+    // 시계가 카펫 한가운데 떠 있고 리뷰실 화이트보드가 바닥에 누워 있었다. "관통 가능한가"
+    // 만 검사하면 이 결함이 통과한다 — 벽걸이는 어디에 놓든 바닥을 막지 않기 때문이다.
+    // 무엇 위에 놓였는지를 바닥 타일과 직접 대조한다.
+    let offWallMounts = plan.furniture.filter { placement in
+        placement.kind.isWallMounted
+            && plan.floor[placement.tile.y][placement.tile.x] != .wall
+    }
+    t.expectEqual(
+        offWallMounts.count, 0,
+        "벽 밖에 놓인 벽걸이: "
+            + "\(offWallMounts.map { "\($0.kind.rawValue)@\($0.tile.x),\($0.tile.y)" }.sorted())"
+    )
+
+    // 여섯 방 모두 벽에 걸린 물건을 하나 이상 가진다. 위 세 방만 들고 있으면 창·등·시계가
+    // 전부 몰린 상단과 벽이 텅 빈 아래로 화면이 갈린다.
+    //
+    // 벽 한 칸을 이웃 방과 공유하므로 `wallDepartment`(먼저 나온 구역을 반환) 로 세면 개발실
+    // 벽걸이가 기획실 것으로 잡힌다. 각 방이 자기 왼쪽 벽만 쓰는 규칙을 그대로 검사한다.
+    for zone in plan.zones {
+        let mounted = plan.furniture.filter { placement in
+            placement.kind.isWallMounted
+                && placement.tile.x == zone.origin.x
+                && placement.tile.y >= zone.origin.y
+                && placement.tile.y < zone.origin.y + zone.height
+        }
+        t.expect(!mounted.isEmpty, "\(zone.department.label) 방 벽에 걸린 물건 1개 이상")
+    }
+
+    // 벽걸이끼리 같은 칸을 나눠 쓰면 나중에 그린 쪽만 보인다.
+    let mountTiles = plan.furniture.filter(\.kind.isWallMounted).map(\.tile)
+    t.expectEqual(Set(mountTiles).count, mountTiles.count, "벽걸이끼리 겹치지 않음")
 
     // 휴식 자리도 전 좌석에서 닿아야 한다 — 밴드에 가구를 놓다 가로 통로를 막으면
     // 완료 후 탕비실에 가지 못하고 제자리에 머문다(walk 가 빈 경로를 받아 조용히 반환).
