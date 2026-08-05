@@ -35,7 +35,9 @@ let sampleAgents: [ConsoleAgent] =
         .review, ["CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE"]
     )
     + planAgents(.executive, ["CTO", "CEO"])
-    + planAgents(.growth, ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION"])
+    + planAgents(
+        .growth, ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST"]
+    )
     + planAgents(
         .internalOps,
         [
@@ -653,7 +655,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
 func runAgentRoleTests(_ t: TestRunner) {
     t.suite("AgentRole")
 
-    // 운영 27종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
+    // 운영 28종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
     // 폴백해 이름표가 뒤섞인다(agentType 과 displayName 을 혼동하면 조용히 빠진다).
     let missing = sampleAgents
         .map(\.agentType)

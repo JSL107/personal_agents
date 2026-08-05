@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
   DailyBar,
   DecimalValue,
@@ -54,6 +55,47 @@ const makeRepository = () => ({
   findFxRate: jest.fn().mockResolvedValue(null),
 });
 
+// 원장에 실제로 남은 실행. AgentRunService 를 mock 하되 run() 을 그대로 통과시켜
+// 본 로직은 손대지 않고, 무엇이 output 으로 적재됐는지만 관찰한다.
+interface RecordedAgentRun {
+  agentType: string;
+  triggerType: string;
+  modelUsed: string;
+  inputSnapshot: unknown;
+  output: unknown;
+}
+let recordedRuns: RecordedAgentRun[] = [];
+
+const makeAgentRunService = (): AgentRunService =>
+  ({
+    execute: jest.fn(
+      async (input: {
+        agentType: string;
+        triggerType: string;
+        inputSnapshot: unknown;
+        run: (context: unknown) => Promise<{
+          result: unknown;
+          modelUsed: string;
+          output: unknown;
+        }>;
+      }) => {
+        const executed = await input.run({});
+        recordedRuns.push({
+          agentType: input.agentType,
+          triggerType: input.triggerType,
+          modelUsed: executed.modelUsed,
+          inputSnapshot: input.inputSnapshot,
+          output: executed.output,
+        });
+        return {
+          result: executed.result,
+          modelUsed: executed.modelUsed,
+          agentRunId: 1,
+        };
+      },
+    ),
+  }) as unknown as AgentRunService;
+
 const makeTask = (
   marketData: Pick<MarketDataPort, 'fetchDailyBars'> &
     Partial<Pick<MarketDataPort, 'fetchUsdKrwRate'>>,
@@ -63,6 +105,7 @@ const makeTask = (
     targetMarketCountry: 'KR' | 'US';
     now?: () => Date;
   } = { id: 'stock-monitor', targetMarketCountry: 'KR' },
+  monitorEnabled = 'true',
 ): StockMonitorAutopilotTask =>
   new StockMonitorAutopilotTask(
     {
@@ -78,10 +121,17 @@ const makeTask = (
       ...marketData,
     } as MarketDataPort,
     repository as unknown as StockMonitorRepository,
-    { get: jest.fn().mockReturnValue('true') } as unknown as ConfigService,
+    {
+      get: jest.fn().mockReturnValue(monitorEnabled),
+    } as unknown as ConfigService,
+    makeAgentRunService(),
   );
 
 describe('StockMonitorAutopilotTask', () => {
+  beforeEach(() => {
+    recordedRuns = [];
+  });
+
   it('대상 marketCountry 보유 종목만 조회한다', async () => {
     const marketData = {
       fetchDailyBars: jest
@@ -463,5 +513,73 @@ describe('StockMonitorAutopilotTask', () => {
 
     expect(result.summaryText).toContain('₩160,917 상당');
     expect(repository.recordAlert).toHaveBeenCalled();
+  });
+
+  // ── 원장 편입 (INVEST) ──────────────────────────────────────────────
+  // 이 셋이 이 태스크의 관측 계약이다. 감시가 켜져 있는 한 실행은 화면에 아무것도
+  // 보내지 않는 날에도 원장에 남아야 하고, 꺼져 있으면 남지 않아야 한다.
+
+  it('보유 종목이 0건이어도 원장에는 남긴다 — 화면엔 안 보내도 실행 사실은 관측돼야 한다', async () => {
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([]);
+
+    const result = await makeTask(
+      { fetchDailyBars: jest.fn() },
+      repository,
+    ).run(context);
+
+    // 화면: 빈 알림을 보내지 않는다(기존 동작 유지)
+    expect(result.skip).toBe(true);
+    // 원장: 그래도 남는다 — 이 한 줄이 없어서 "켜둔 채 대상 0건" 상태가 방치됐다
+    expect(recordedRuns).toHaveLength(1);
+    expect(recordedRuns[0].agentType).toBe('INVEST');
+    expect(recordedRuns[0].triggerType).toBe('AUTOPILOT_INVEST_CRON');
+    expect(recordedRuns[0].output).toMatchObject({
+      marketCountry: 'KR',
+      holdingCount: 0,
+      checkedCount: 0,
+      anomalyCount: 0,
+    });
+  });
+
+  it('감시가 꺼져 있으면 원장에도 남기지 않는다', async () => {
+    const repository = makeRepository();
+
+    const result = await makeTask(
+      { fetchDailyBars: jest.fn() },
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'false',
+    ).run(context);
+
+    expect(result.skip).toBe(true);
+    expect(recordedRuns).toHaveLength(0);
+    // 게이트가 조회보다 앞이어야 한다 — 꺼둔 기능이 DB 를 건드리면 안 된다
+    expect(repository.findCurrentHoldings).not.toHaveBeenCalled();
+  });
+
+  it('정상 실행은 LLM 없이 deterministic 으로 기록되고 시장 구분이 남는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    await makeTask(marketData, repository).run(context);
+
+    expect(recordedRuns).toHaveLength(1);
+    expect(recordedRuns[0].modelUsed).toBe('deterministic');
+    expect(recordedRuns[0].inputSnapshot).toMatchObject({
+      taskId: 'stock-monitor',
+      marketCountry: 'KR',
+    });
+    expect(recordedRuns[0].output).toMatchObject({
+      holdingCount: 2,
+      checkedCount: 2,
+    });
   });
 });
