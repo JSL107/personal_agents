@@ -90,7 +90,12 @@ final class OfficeScene: SKScene {
     /// 세션이 앉은 자리. 한 번 앉으면 지킨다 — 매번 다시 나눠 주면 누가 퇴근할 때마다
     /// 남은 사람 전원이 옆으로 옮겨 앉아, 아무 일도 없었는데 사무실이 통째로 움직인다.
     private var sessionSeats: [String: TilePoint] = [:]
+    /// 지금 문으로 걸어 나가는 중인 세션. 걷는 동안에도 `sessionNodes` 에 남아 있어야
+    /// 같은 세션이 되살아났을 때 두 번째 사람이 생기지 않는다(`leaveOffice`).
+    private var leavingSessions: Set<String> = []
     private var lastSyncedSessions: [ConsoleSession] = []
+    /// 마지막으로 퇴근 판정을 다시 훑은 씬 시각(`update(_:)`).
+    private var lastSessionSweepAt: TimeInterval = 0
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -976,6 +981,23 @@ final class OfficeScene: SKScene {
     /// 없던 직원이 갑자기 생기고 소리 없이 지워지는 것으로 읽혔다 — 관제 화면이 아니라 심령
     /// 사진이었다. 지금은 문에서 걸어 들어와 자리에 앉고, 일을 마치면 일어나 문으로 걸어 나간다.
     /// 등장과 퇴장에 **경로**가 있으면 "새 작업이 시작됐다 / 저건 끝났다" 가 설명 없이 읽힌다.
+    /// 퇴근 판정을 시간축으로도 훑는다.
+    ///
+    /// `syncSessions` 는 세션 목록이 바뀔 때만 불린다. 그런데 퇴근 판정은 **얼마나 조용했는가**라
+    /// 목록이 그대로여도 시간이 흐르면 결과가 바뀐다 — 조용한 세션은 상태도 활동 시각도 그대로라
+    /// 갱신 이벤트 자체가 오지 않아, 15분을 넘겨도 다음 무관한 이벤트가 올 때까지 자리에 남았다.
+    ///
+    /// 절전으로 씬이 멈춘 동안에는 이 호출도 멈추지만 `currentTime` 은 계속 흐르므로, 다시
+    /// 깨어난 첫 프레임에서 간격을 넘겨 즉시 한 번 훑는다.
+    override func update(_ currentTime: TimeInterval) {
+        super.update(currentTime)
+        guard currentTime - lastSessionSweepAt >= officeSessionSweepIntervalSeconds else {
+            return
+        }
+        lastSessionSweepAt = currentTime
+        syncSessions(lastSyncedSessions)
+    }
+
     func syncSessions(_ sessions: [ConsoleSession]) {
         lastSyncedSessions = sessions
         let tiles = officeSessionTiles(plan: plan)
@@ -985,7 +1007,9 @@ final class OfficeScene: SKScene {
         )
         sessionSeats = seats
         // 자리를 잃은 사람 = 오래 조용했거나 창을 닫은 사람. 걸어서 퇴근시킨다.
-        for (sessionId, node) in sessionNodes where seats[sessionId] == nil {
+        // 이미 문으로 가는 중인 사람은 건너뛴다 — 다시 부르면 걸음이 매번 처음부터 되감긴다.
+        for (sessionId, node) in sessionNodes
+        where seats[sessionId] == nil && !leavingSessions.contains(sessionId) {
             leaveOffice(sessionId: sessionId, node: node)
         }
         for session in visible {
@@ -1034,11 +1058,11 @@ final class OfficeScene: SKScene {
             node.tile = seat
             node.position = floorPoint(seat)
             node.zPosition = depth(of: seat)
-            seatSession(node, session: session)
+            seatSession(node, sessionId: session.sessionId)
             return
         }
         walk(node, to: seat) { [weak self, weak node] in
-            self?.seatSession(node, session: session)
+            self?.seatSession(node, sessionId: session.sessionId)
         }
     }
 
@@ -1051,7 +1075,7 @@ final class OfficeScene: SKScene {
         guard node.tile == seat else {
             node.stand()
             walk(node, to: seat) { [weak self, weak node] in
-                self?.seatSession(node, session: session)
+                self?.seatSession(node, sessionId: session.sessionId)
             }
             return
         }
@@ -1059,12 +1083,19 @@ final class OfficeScene: SKScene {
     }
 
     /// 자리에 앉히고 지금 상태에 맞는 몸짓을 준다.
-    private func seatSession(_ node: CharacterNode?, session: ConsoleSession) {
+    ///
+    /// 상태는 **도착한 시점에 다시 읽는다.** 걷는 동안 온 갱신은 `updateSession` 이 건너뛰므로
+    /// (걸음을 끊으면 짝다리로 굳는다), 출발할 때 손에 쥔 값을 그대로 쓰면 걷는 사이 일을 마친
+    /// 사람이 자리에 앉아서까지 두드리고 있게 된다. 여기가 그 갱신을 반영할 마지막 자리다.
+    private func seatSession(_ node: CharacterNode?, sessionId: String) {
         guard let node else {
             return
         }
         node.sit()
-        applySessionState(node, session: session)
+        guard let latest = lastSyncedSessions.first(where: { $0.sessionId == sessionId }) else {
+            return
+        }
+        applySessionState(node, session: latest)
     }
 
     /// 도는 세션은 두드리고, 잠깐 쉬는 세션은 숨만 쉰다.
@@ -1086,17 +1117,35 @@ final class OfficeScene: SKScene {
     }
 
     /// 세션 한 명이 퇴근한다 — 일어나 문까지 걸어간 뒤 화면에서 빠진다.
+    ///
+    /// **문에 닿기 전까지는 `sessionNodes` 에서 빼지 않는다.** 걸어 나가는 데 몇 초가 걸리는데,
+    /// 그 사이에 사전에서 빼 두면 같은 세션이 활동을 재개했을 때 `syncSessions` 가 "아직 출근
+    /// 안 한 사람" 으로 보고 두 번째 사람을 만든다 — 나가는 사람과 들어오는 사람이 같은 얼굴로
+    /// 동시에 선다.
     private func leaveOffice(sessionId: String, node: CharacterNode) {
-        sessionNodes[sessionId] = nil
+        leavingSessions.insert(sessionId)
         sessionSeats[sessionId] = nil
         node.stand()
         guard let door = officeSessionDoorTile(plan: plan) else {
-            node.removeFromParent()
+            finishLeaving(sessionId: sessionId, node: node)
             return
         }
-        walk(node, to: door) { [weak node] in
-            node?.removeFromParent()
+        walk(node, to: door) { [weak self, weak node] in
+            self?.finishLeaving(sessionId: sessionId, node: node)
         }
+    }
+
+    /// 문에 닿았다. 여기서 마지막으로 한 번 더 확인하고 지운다.
+    ///
+    /// 걷는 사이에 그 세션이 다시 활동했으면 자리가 도로 배정돼 있다. 그때 지우면 방금 돌아온
+    /// 사람을 지우는 셈이라, 자리가 없을 때만 화면에서 뺀다.
+    private func finishLeaving(sessionId: String, node: CharacterNode?) {
+        leavingSessions.remove(sessionId)
+        guard sessionSeats[sessionId] == nil else {
+            return
+        }
+        sessionNodes[sessionId] = nil
+        node?.removeFromParent()
     }
 
     /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.
