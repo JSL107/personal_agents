@@ -1,3 +1,28 @@
+# 리베이스 후 콘솔 총원·성장 좌석 정리 (2026-08-05)
+
+**Goal:** INVEST와 CTO_STUDY가 함께 들어온 운영 29명 상태에 현재 총원 표기를 맞추고, 성장 부서 6명이 기존 좌석·경계·통행 불변식을 만족하는지 확인한다.
+
+**Root cause:** 양쪽 브랜치가 같은 총원 문구를 27에서 28로 독립 수정해 3-way merge가 충돌 없이 28을 유지했다. 운영 registry는 리베이스 결과 29개다.
+
+**Constraints:** 과거 결함 기록의 26/27은 보존한다. 좌석 실패 시 단언을 완화하지 않고 배치만 고친다. `.env`, DB push, git index/commit/push는 건드리지 않는다.
+
+- [x] registry 29개와 console의 26~29명/종 문구를 전수 조사해 현재 상태와 과거 기록을 분류한다.
+- [x] 현재 총원을 뜻하는 28명/종 문구를 29명/종으로 바꾼다.
+- [x] `swift build && swift run ConsoleCoreTests`로 전원 배정과 성장 방 좌석·경계·통행을 확인한다.
+- [x] 실패 시 기존 배치 규칙에 맞춰 성장 좌석을 늘리고 focused/full Swift 검증을 다시 실행한다. (통과해 배치 변경 불필요)
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 "리베이스 후 정리" 절과 실제 결과를 기록한다.
+- [x] 최종 diff와 금지 작업 미실행을 확인하고 Review를 작성한다.
+
+## Review
+
+- 현재 상태의 28명/종 20건을 29명/종으로 갱신했다. 사용자 목록 밖 `scripts/build-sprites.py` 1건을 포함하고, 과거 26/27 기록 5건은 보존했다.
+- 성장 방은 현재 6석 배정이며 기존 배치로 7명까지 안전 수용 가능해 여유는 1석이다. 전원 배정·경계·문·벽·통행 검사가 통과해 좌석 배치는 수정하지 않았다.
+- 원문 Swift 게이트는 compiler/SDK 불일치로 코드 compile 전 exit 1. 호환 SDK 게이트는 build/test exit 0, 1,016건 통과했다.
+- 백엔드 lint/test/build exit 0. `.env`, DB push, git add/commit/push는 실행하지 않았다.
+
+---
+
 # 콘솔 오피스 — 세션을 사람에서 "대표 책상 위 화면"으로 (2026-08-05)
 
 ## 문제
