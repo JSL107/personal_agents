@@ -2,7 +2,7 @@ import Foundation
 
 /// 감독관 호출 주기(초). 프레임 루프가 아니라 "기다림 → 감독관 → 재생" 반복이다.
 public let officeStrollTickSeconds: Double = 8
-/// 동시 배회 인원 기본값. 27명이 한꺼번에 움직이면 사무실이 아니라 난장판이다.
+/// 동시 배회 인원 기본값. 29명이 한꺼번에 움직이면 사무실이 아니라 난장판이다.
 public let officeStrollDefaultConcurrency: Int = 2
 /// 동시 배회 인원 상한. 이 값을 넘겨 요청해도 여기서 잘린다.
 public let officeStrollMaxConcurrency: Int = 3
@@ -382,7 +382,7 @@ public let officeBreathCycleSeconds: Double = 3.4
 
 /// 사람마다 다른 숨쉬기 시작 위상(초).
 ///
-/// 27명이 같은 순간에 같은 주기로 오르내리면 사람이 아니라 군무로 보인다 — 스프라이트가
+/// 29명이 같은 순간에 같은 주기로 오르내리면 사람이 아니라 군무로 보인다 — 스프라이트가
 /// 한 장뿐이라 "다 똑같아 보인다" 는 인상을 숨쉬기가 한 번 더 강화한다. 위상만 어긋내도
 /// 같은 그림이 서로 다른 순간에 움직여 개체로 읽힌다.
 ///

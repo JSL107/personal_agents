@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 29종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |

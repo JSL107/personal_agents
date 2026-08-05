@@ -39,7 +39,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     t.expectNil(approvalFor(agentType: "BE", in: approvals), "승인 없는 에이전트 → nil")
 
     // 이름표 세기 — 기본은 옅게, 손이 필요한 상태와 지금 보고 있는 대상만 진하게.
-    // 27명 전원이 늘 진한 딱지를 달면 상태 링이 라벨에 덮인다.
+    // 29명 전원이 늘 진한 딱지를 달면 상태 링이 라벨에 덮인다.
     t.expect(
         nameplateIsEmphasized(state: .awaitingApproval, isHovered: false, isSelected: false),
         "승인 대기는 강조"
@@ -273,7 +273,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     }
 
     // 숨쉬기 위상은 사람마다 다르고 한 주기 안에 들어간다.
-    // 전원이 같은 위상이면(=이 단언이 깨지면) 27명이 한 몸처럼 오르내린다.
+    // 전원이 같은 위상이면(=이 단언이 깨지면) 29명이 한 몸처럼 오르내린다.
     let phases = ["PM", "BACKEND", "CODE_REVIEWER", "CEO", "CTO", "PO_EVAL"]
         .map { officeBreathPhaseSeconds(agentType: $0) }
     for phase in phases {

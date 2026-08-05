@@ -14,7 +14,7 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
     types.map { planAgent($0, department) }
 }
 
-// 운영 스냅샷(GET /v1/console/snapshot)의 실제 27종을 그대로 옮긴 표본.
+// 운영 스냅샷(GET /v1/console/snapshot)의 실제 29종을 그대로 옮긴 표본.
 //
 // **부서는 백엔드 사규(`agent-registry/agent-contract.ts` 의 `AGENT_CONTRACTS`)가 정본이다.**
 // 예전에는 agentType 만 적고 앱의 하드코딩 매핑이 부서를 유도했는데, 그 매핑이 사규와 어긋나
@@ -36,7 +36,8 @@ let sampleAgents: [ConsoleAgent] =
     )
     + planAgents(.executive, ["CTO", "CEO"])
     + planAgents(
-        .growth, ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST"]
+        .growth,
+        ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST", "CTO_STUDY"]
     )
     + planAgents(
         .internalOps,
@@ -59,7 +60,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let plan = officeFloorPlan(agents: sampleAgents)
 
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
-    t.expectEqual(plan.desks.count, sampleAgents.count, "27명 전원 자리 배정")
+    t.expectEqual(plan.desks.count, sampleAgents.count, "29명 전원 자리 배정")
 
     // 인원이 가장 많은 부서도 정원 안에 들어가야 한다. 부서별 인원은 언제든 늘 수 있으므로,
     // "가장 큰 부서 전원이 자리를 받았는가" 를 부서 단위로 못 박는다.
@@ -304,7 +305,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     )
     // 캐릭터는 원본 크기를 쓴다. 탑다운 픽셀아트에서 사람이 타일보다 높은 것은 표준이라
     // (Gather 0.94~1.13칸 · RPG Maker XP 1.5칸 · 스타듀밸리 2.0칸) 1칸까지 줄이면 계보를
-    // 벗어난다. 하한 0.85 는 조정 여지로 남긴 값이고, 그 아래는 27명 구별도 어려워진다.
+    // 벗어난다. 하한 0.85 는 조정 여지로 남긴 값이고, 그 아래는 29명 구별도 어려워진다.
     t.expect(
         officeCharacterScaleFactor >= 0.85 && officeCharacterScaleFactor <= 1.0,
         "캐릭터 배율이 0.85~1.0 (실제 \(officeCharacterScaleFactor))"
@@ -655,7 +656,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
 func runAgentRoleTests(_ t: TestRunner) {
     t.suite("AgentRole")
 
-    // 운영 28종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
+    // 운영 29종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
     // 폴백해 이름표가 뒤섞인다(agentType 과 displayName 을 혼동하면 조용히 빠진다).
     let missing = sampleAgents
         .map(\.agentType)
@@ -682,7 +683,7 @@ func runAgentRoleTests(_ t: TestRunner) {
     t.expect(hairPalette.indices.contains(first.hairIndex), "머리색 인덱스가 팔레트 범위 안")
     t.expect(pantsPalette.indices.contains(first.pantsIndex), "바지색 인덱스가 팔레트 범위 안")
 
-    // 27명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
+    // 29명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
     let sheets = Set(sampleAgents.map { characterLook(for: $0.agentType).sheetIndex })
     t.expect(sheets.count >= 3, "캐릭터 시트가 최소 3종으로 분산 (실제 \(sheets.count)종)")
 
