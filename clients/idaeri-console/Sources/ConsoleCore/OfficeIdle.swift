@@ -242,6 +242,39 @@ public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
 
 /// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
 ///
+/// 세션 캐릭터의 셔츠색. 청록 계열 안에서 세션마다 조금씩 어긋난 값을 준다.
+///
+/// 세션은 부서가 없어 `officeShirtColorRGB` 를 쓸 수 없다. 그렇다고 전원 같은 스프라이트에
+/// 같은 색으로 두면 여덟이 늘어섰을 때 **한 사람이 복제된 것처럼** 보인다 — 실제로 그렇게
+/// 보였고, 구분 수단이 이름표 하나뿐인데 그 이름표마저 서로 겹쳤다.
+///
+/// 색조를 청록에 묶어 두는 것은 유지한다. "부서 사람이 아니라 내가 돌리는 작업" 이라는
+/// 표식이라, 여기서 색상까지 흩으면 에이전트와 구별되지 않는다.
+public func officeSessionShirtRGB(shift: Double) -> (red: Double, green: Double, blue: Double) {
+    let base = (red: 0.20, green: 0.64, blue: 0.60)
+    let blend = 0.42 + shift
+    return (
+        red: 1.0 - (1.0 - base.red) * blend,
+        green: 1.0 - (1.0 - base.green) * blend,
+        blue: 1.0 - (1.0 - base.blue) * blend
+    )
+}
+
+/// 세션 이름표에 쓸 짧은 이름.
+///
+/// 세션 이름은 실행 디렉터리에서 오므로 `personal_agents-office-window-light` 처럼 길다.
+/// 자리 간격이 한 칸이라 그대로 쓰면 옆 세션 이름표와 겹쳐 **둘 다** 못 읽는다.
+///
+/// 뒤쪽을 남기는 이유는 앞이 대개 같은 저장소 이름이기 때문이다 — 여러 세션을 가르는 정보는
+/// 뒤(워크트리·브랜치 이름)에 있다.
+public func officeSessionShortName(_ name: String, limit: Int = 12) -> String {
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    guard trimmed.count > limit, limit > 1 else {
+        return trimmed
+    }
+    return "…" + String(trimmed.suffix(limit - 1))
+}
+
 /// 자리가 한정돼 있어 전부는 못 세운다. 13개가 떠 있어도 대표실 앞줄은 여덟 자리 남짓이라,
 /// 넘치는 몫은 좌상단 요약의 숫자가 맡는다 — 화면에 보이는 사람 수가 곧 전체라고 오해하지
 /// 않게 요약이 총계를 함께 적는다.
@@ -277,66 +310,4 @@ public func officeBreathPhaseSeconds(agentType: String) -> Double {
     let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
     let steps = 17
     return Double(scalarSum % steps) / Double(steps) * officeBreathCycleSeconds
-}
-
-/// 시각 경계를 네 구간으로만 유지해 씬이 달력 판정을 중복하지 않게 한다.
-public enum OfficeAmbience: String, Equatable, Sendable {
-    case morning
-    case day
-    case evening
-    case night
-}
-
-/// SpriteKit 색 타입을 Core로 끌어들이지 않으면서 색 막 계약을 전달한다.
-public struct OfficeAmbienceTint: Equatable, Sendable {
-    public let red: Double
-    public let green: Double
-    public let blue: Double
-    public let alpha: Double
-
-    public init(red: Double, green: Double, blue: Double, alpha: Double) {
-        self.red = red
-        self.green = green
-        self.blue = blue
-        self.alpha = alpha
-    }
-}
-
-/// 음수와 24시 밖 입력도 같은 24시간 시계로 접어 경계 판정이 흔들리지 않게 한다.
-public func officeAmbience(hour: Int) -> OfficeAmbience {
-    let normalizedHour = ((hour % 24) + 24) % 24
-    switch normalizedHour {
-    case 6...8:
-        return .morning
-    case 9...17:
-        return .day
-    case 18...21:
-        return .evening
-    default:
-        return .night
-    }
-}
-
-/// 활동 인원이 없으면 구간색을 바꾸지 않고 알파만 올려 빈 사무실 신호를 보존한다.
-public func officeAmbienceTint(hour: Int, activeCount: Int) -> OfficeAmbienceTint {
-    let base: OfficeAmbienceTint
-    switch officeAmbience(hour: hour) {
-    case .morning:
-        base = OfficeAmbienceTint(red: 1.00, green: 0.86, blue: 0.55, alpha: 0.10)
-    case .day:
-        base = OfficeAmbienceTint(red: 0.20, green: 0.22, blue: 0.30, alpha: 0.00)
-    case .evening:
-        base = OfficeAmbienceTint(red: 1.00, green: 0.55, blue: 0.25, alpha: 0.14)
-    case .night:
-        base = OfficeAmbienceTint(red: 0.20, green: 0.28, blue: 0.62, alpha: 0.26)
-    }
-    guard activeCount == 0 else {
-        return base
-    }
-    return OfficeAmbienceTint(
-        red: base.red,
-        green: base.green,
-        blue: base.blue,
-        alpha: base.alpha + 0.08
-    )
 }
