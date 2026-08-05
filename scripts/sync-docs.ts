@@ -25,7 +25,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { getMetadataStorage } from 'class-validator';
+
 import { AGENT_REGISTRY } from '../src/agent-registry/agent-registry';
+import { EnvironmentVariables } from '../src/config/app.config';
 import { AGENT_TO_PROVIDER } from '../src/model-router/domain/agent-provider.map';
 
 const REPO_ROOT = resolve(__dirname, '..');
@@ -41,9 +44,6 @@ const MAX_DESCRIPTION_LINES = 3;
 
 /** 이 길이를 넘으면 첫 문장만 남긴다(표 셀이라 문단 전체는 못 담는다). */
 const MAX_DESCRIPTION_LENGTH = 160;
-
-/** 파서가 최소한 이만큼은 찾아야 정상 — 서식 변화로 인한 대량 누락 탐지용. */
-const MIN_EXPECTED_ENV_COUNT = 50;
 
 /** 필수로 파싱돼야 하는 앵커 키 — required 판정이 통째로 뒤집히는 회귀 탐지용. */
 const REQUIRED_ANCHOR_KEYS = ['DATABASE_URL', 'REDIS_HOST'] as const;
@@ -170,16 +170,39 @@ function parseEnvEntries(): EnvEntry[] {
 }
 
 /**
+ * class-validator 메타데이터에 등록된 env 속성 이름.
+ * 텍스트 파싱과 독립된 진짜 SoT — 데코레이터가 런타임에 실제로 등록한 것만 나온다.
+ */
+function readDeclaredEnvNames(): Set<string> {
+  const metadatas = getMetadataStorage().getTargetValidationMetadatas(
+    EnvironmentVariables,
+    '',
+    false,
+    false,
+  );
+  return new Set(metadatas.map((metadata) => metadata.propertyName));
+}
+
+/**
  * 파서 계약 검증.
  * `--check` 는 "렌더 결과 == 파일 내용" 만 비교하므로, 파서가 SoT 를 잘못 읽어도
  * `docs:sync` 한 번이면 그 잘못된 결과가 정본이 되고 게이트는 통과한다.
  * 파싱 실패는 조용한 빈칸이 아니라 게이트 실패여야 한다.
+ *
+ * 개수 하한 같은 느슨한 기준이 아니라 선언된 이름 집합과 정확히 대조한다 —
+ * 하한만 보면 107개 중 일부만 사라진 부분 누락이 그대로 통과한다.
  */
 function assertEnvEntries(entries: readonly EnvEntry[]): void {
-  if (entries.length < MIN_EXPECTED_ENV_COUNT) {
+  const declared = readDeclaredEnvNames();
+  const parsed = new Set(entries.map((entry) => entry.name));
+  const missing = [...declared].filter((name) => !parsed.has(name));
+  const unexpected = [...parsed].filter((name) => !declared.has(name));
+  if (missing.length > 0 || unexpected.length > 0) {
     throw new Error(
-      `[sync-docs] env 파싱 결과가 ${entries.length}개뿐입니다(기대 ${MIN_EXPECTED_ENV_COUNT}개 이상). ` +
-        'app.config.ts 의 속성 선언 서식이 바뀌었는지 확인하세요.',
+      `[sync-docs] 파싱 결과가 EnvironmentVariables 선언과 다릅니다(선언 ${declared.size} / 파싱 ${parsed.size}).\n` +
+        `  누락: ${missing.join(', ') || '없음'}\n` +
+        `  초과: ${unexpected.join(', ') || '없음'}\n` +
+        '  app.config.ts 의 속성 선언 서식이 바뀌었는지 확인하세요.',
     );
   }
 
