@@ -23,6 +23,39 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
+# 포트를 실제로 점유한 프로세스를 종료한다.
+#
+# 아래 백엔드는 `서브셸 → pnpm → nest CLI → node dist/src/main` 4단 트리로 뜨는데,
+# listen 하는 건 맨 끝의 node 다. cleanup 이 서브셸(BACKEND_PID)만 죽이면 그 손자가
+# 고아(PPID=1)로 살아남아 포트를 계속 쥐고, 다음 `pnpm dev` 가 EADDRINUSE 로 즉사한다.
+# PID 를 따라가는 대신 "포트를 쥔 놈"을 기준으로 잡아, 이전 세션이 남긴 좀비와
+# 다른 터미널에서 띄운 인스턴스까지 같은 코드로 정리한다.
+release_port() {
+  local pids
+  # set -e 하에서 lsof 는 매칭이 없으면 exit 1 이므로 || true 로 삼킨다.
+  pids="$(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+
+  echo "▶ 포트 $PORT 를 점유 중인 기존 프로세스 종료: $(echo "$pids" | tr '\n' ' ')"
+  kill $pids 2>/dev/null || true
+
+  # SIGTERM 후 포트가 실제로 풀릴 때까지 최대 5초 대기 — 바로 listen 하면 아직 안 풀려 있다.
+  for _ in $(seq 20); do
+    if ! lsof -ti "tcp:$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  echo "  … 정상 종료에 응답하지 않아 강제 종료(SIGKILL)"
+  kill -9 $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null || true) 2>/dev/null || true
+  sleep 0.5
+}
+
+release_port
+
 echo "▶ 콘솔 백엔드 기동 (PORT=$PORT) …"
 (cd "$ROOT" && PORT="$PORT" pnpm exec nest start) &
 BACKEND_PID=$!
@@ -31,6 +64,8 @@ cleanup() {
   echo ""
   echo "▶ 백엔드 정리 (PID $BACKEND_PID) …"
   kill "$BACKEND_PID" 2>/dev/null || true
+  # 서브셸만 죽으면 실제 listen 하던 손자가 남는다 — 포트 기준으로 한 번 더 훑는다.
+  release_port
 }
 trap cleanup EXIT INT TERM
 

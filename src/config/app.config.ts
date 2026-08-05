@@ -10,7 +10,7 @@ import {
   validateSync,
 } from 'class-validator';
 
-class EnvironmentVariables {
+export class EnvironmentVariables {
   @IsNumber()
   @Min(1)
   @Max(65535)
