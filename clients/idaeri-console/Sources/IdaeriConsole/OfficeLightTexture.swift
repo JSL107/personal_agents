@@ -57,12 +57,14 @@ enum OfficeLightTexture {
         let height = 128
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         for row in 0..<height {
-            // row 0 이 아래(빛의 끝), 마지막 줄이 창 쪽.
-            let heightRatio = Double(row) / Double(height - 1)
-            // 위쪽에 밝기를 몰아 준다 — 선형으로 깔면 바닥 끝까지 허옇게 남는다.
-            let verticalFade = pow(heightRatio, 1.7)
-            // 창에서 멀어질수록 넓게 퍼진다(위 0.5 → 아래 1.0 폭).
-            let spread = 1.0 - heightRatio * 0.5
+            // 이 버퍼는 CGBitmapContext 로 그대로 넘어간다 — **row 0 이 이미지 맨 위**,
+            // 즉 창 쪽이다. 여기를 아래로 착각해 세로가 통째로 뒤집히면 창 바로 아래는
+            // 어둡고 세 칸 내려간 바닥이 가장 밝아져, 광원이 방 한가운데 있는 것처럼 보인다.
+            let nearWindow = Double(height - 1 - row) / Double(height - 1)
+            // 창 쪽에 밝기를 몰아 준다 — 선형으로 깔면 바닥 끝까지 허옇게 남는다.
+            let verticalFade = pow(nearWindow, 1.7)
+            // 창에서 멀어질수록 넓게 퍼진다(창 쪽 0.5 → 끝 1.0 폭).
+            let spread = 1.0 - nearWindow * 0.5
             for column in 0..<width {
                 let offset = abs(Double(column) - Double(width - 1) / 2) / (Double(width) / 2)
                 let edge = max(0, 1 - pow(min(offset / spread, 1), 2.0))
