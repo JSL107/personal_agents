@@ -62,6 +62,7 @@ SHEETS: dict[str, list[str | None]] = {
     "character-b": ["charb-down", "charb-up", "charb-side", None, "charb-sit"],
     "character-c": ["charc-down", "charc-up", "charc-side", None, "charc-sit"],
     "character-d": ["chard-down", "chard-up", "chard-side", None, "chard-sit"],
+    "character-e": ["chare-down", "chare-up", "chare-side", None, "chare-sit"],
     "tiles-floor": [
         "tile-wood-a",
         "tile-wood-b",
@@ -88,6 +89,34 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-clock",
         "furn-trash",
     ],
+    "furniture-wall": [
+        "furn-wall-landscape",
+        "furn-wall-abstract",
+        "furn-wall-calendar",
+        "furn-wall-certificate",
+        "furn-wall-pinboard",
+        "furn-wall-whiteboard",
+        "furn-wall-shelf",
+        "furn-wall-monitor",
+        "furn-wall-poster",
+        "furn-wall-plant-hanging",
+    ],
+    "furniture-door": [
+        "furn-door-closed",
+        "furn-door-open",
+        "furn-filing-cabinet",
+        "furn-lockers-2",
+        "furn-partition-low",
+    ],
+    "furniture-2": [
+        "furn-vending-machine",
+        "furn-refrigerator",
+        "furn-sink-counter",
+        "furn-partition-glass",
+    ],
+    # 이 세 종은 draw-props.py의 임시 도트 그림을 AI 에셋으로 교체한다.
+    "props-2": ["prop-papers", "prop-desk-lamp", "prop-plant-desk"],
+    "rugs": ["furn-rug-green", "furn-rug-beige", "furn-rug-navy"],
 }
 
 
