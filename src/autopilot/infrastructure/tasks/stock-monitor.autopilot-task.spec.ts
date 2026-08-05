@@ -197,7 +197,7 @@ describe('StockMonitorAutopilotTask', () => {
     );
   });
 
-  it('알림 기록이 실패하면 가격 checkpoint를 저장하지 않는다', async () => {
+  it('알림 기록이 실패하면 가격 checkpoint를 저장하지 않고, 전부 실패라 예외로 전파한다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -210,10 +210,11 @@ describe('StockMonitorAutopilotTask', () => {
     );
     repository.recordAlert.mockRejectedValue(new Error('DB down'));
 
-    const result = await makeTask(marketData, repository).run(context);
-
-    expect(result.summaryText).toContain('수집 실패');
-    expect(result.summaryText).toContain('005930.KS');
+    // 보유 1종목이 곧 전부다. 여기서 정상 반환하면 원장에 SUCCEEDED 로 남아
+    // "감시가 돌았다"로 집계된다 — 실패를 보이게 하려던 목적과 반대가 된다.
+    await expect(makeTask(marketData, repository).run(context)).rejects.toThrow(
+      '한 건도 점검하지 못했습니다',
+    );
     expect(repository.upsertDailyPrice).not.toHaveBeenCalled();
   });
 
@@ -581,5 +582,45 @@ describe('StockMonitorAutopilotTask', () => {
       holdingCount: 2,
       checkedCount: 2,
     });
+  });
+
+  it('일부만 실패하면 예외로 올리지 않는다 — 나머지를 처리했으므로 실행은 성공이다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValueOnce([bar('2026-07-21', 100), bar('2026-07-22', 100)])
+        .mockRejectedValueOnce(new Error('timeout')),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    // 전체 실패와의 경계 — 한 종목이라도 점검했으면 SUCCEEDED 로 남고 실패는 요약에 실린다.
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('수집 실패');
+    expect(recordedRuns).toHaveLength(1);
+    expect(recordedRuns[0].output).toMatchObject({
+      holdingCount: 2,
+      checkedCount: 1,
+      failureCount: 1,
+    });
+  });
+
+  it('전부 실패하면 예외를 올려 원장이 FAILED 로 기록되게 한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest.fn().mockRejectedValue(new Error('timeout')),
+    };
+    const repository = makeRepository();
+
+    await expect(makeTask(marketData, repository).run(context)).rejects.toThrow(
+      '보유 2종목을 한 건도 점검하지 못했습니다',
+    );
+    // 실패 종목이 메시지에 실려야 orchestrator 요약("⚠️ … 자동 생성 실패")에서 원인이 보인다.
+    await expect(makeTask(marketData, repository).run(context)).rejects.toThrow(
+      '005930.KS',
+    );
   });
 });

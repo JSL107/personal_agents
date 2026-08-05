@@ -358,6 +358,22 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       `주식 모니터링 — ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건`,
     );
 
+    // 한 종목도 점검하지 못했는데 실패만 쌓였다면 그 실행은 실패다. 여기서 정상 반환하면
+    // 원장에 SUCCEEDED 로 남아 "감시가 돌았다"로 집계되고 /retry-run 대상에서도 빠진다
+    // — 실패를 보이게 하려고 원장에 편입한 것이므로 그 자체가 자기모순이다.
+    //
+    // 부분 실패(checkedCount > 0)는 던지지 않는다. 한 종목이 막혀도 나머지를 처리하도록
+    // 만든 설계를 유지해야 하고, 그 경우 실패 목록은 요약에 담겨 화면으로 나간다.
+    //
+    // 던진 예외는 AgentRunService 가 FAILED 로 기록하고 콘솔에 FAILED 상태를 발행한 뒤
+    // 다시 던지며, orchestrator 가 그것을 잡아 그룹을 계속 돌리면서 owner 요약에
+    // "⚠️ … 자동 생성 실패" 한 줄을 남긴다. 알림이 사라지지 않는다.
+    if (checkedCount === 0 && failures.length > 0) {
+      throw new Error(
+        `보유 ${holdings.length}종목을 한 건도 점검하지 못했습니다 — ${failures.slice(0, 3).join(' / ')}`,
+      );
+    }
+
     return {
       taskResult: {
         skip: false,
