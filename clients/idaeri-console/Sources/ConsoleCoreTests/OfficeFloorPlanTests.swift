@@ -448,6 +448,40 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         )
     }
 
+    // 벽에 난 구멍마다 문이 서 있어야 한다.
+    //
+    // 구멍을 내는 자리(`raiseWall` 을 건너뛰는 분기)와 문을 세우는 자리가 어긋나면 두 가지로
+    // 깨진다 — 출입구가 문 없는 맨바닥으로 남거나, 문이 구멍 아닌 벽 한가운데 선다. 둘 다
+    // **화면에서만** 드러난다: 통행은 `isWalkThrough` 가 따로 열어 두므로 도달성 테스트는
+    // 그대로 통과한다.
+    let doorTiles = Set(
+        plan.furniture
+            .filter { $0.kind == .doorOpen || $0.kind == .doorClosed }
+            .map(\.tile)
+    )
+    let blockedDoors = doorTiles.filter { !plan.walkable.contains($0) }
+    t.expectEqual(
+        blockedDoors.count, 0,
+        "문이 통행을 막는다: \(blockedDoors.map { "(\($0.x),\($0.y))" }.sorted())"
+    )
+    for zone in plan.zones {
+        let ceilingY = zone.origin.y + zone.height - 1
+        var openings = (zone.origin.x..<(zone.origin.x + zone.width))
+            .filter { plan.floor[ceilingY][$0] != .wall }
+            .map { TilePoint(x: $0, y: ceilingY) }
+        for wallX in [zone.origin.x, zone.origin.x + zone.width - 1] {
+            openings += (zone.origin.y..<(zone.origin.y + zone.height))
+                .filter { plan.floor[$0][wallX] != .wall }
+                .map { TilePoint(x: wallX, y: $0) }
+        }
+        let bare = openings.filter { !doorTiles.contains($0) }
+        t.expectEqual(
+            bare.count, 0,
+            "\(zone.department.label) 방의 문 없는 구멍: "
+                + "\(bare.map { "(\($0.x),\($0.y))" }.sorted())"
+        )
+    }
+
     // 밴드 세 방도 벽으로 갈려야 한다 — 바닥재만으로 나누면 화면 위쪽이 "가구 놓인 띠 하나"
     // 로 읽힌다. 방 바닥 줄(가로 복도 위)에서 좌우 경계가 벽인지 본다.
     for area in plan.commonAreas {
