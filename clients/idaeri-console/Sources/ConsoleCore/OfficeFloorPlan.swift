@@ -519,6 +519,10 @@ public struct OfficeFloorPlan: Sendable {
     /// 상단 공용 밴드의 세 구역(회의실·대표실·탕비실). 부서 구역과 달리 사람이 상주하지 않아
     /// 이름이 없으면 "가구만 놓인 빈 띠" 로 읽힌다 — 화면 위쪽 1/4 을 차지하는데도.
     public let commonAreas: [CommonArea]
+    /// 바깥과 접한 벽에 낸 창문 칸. 시간대에 따라 유리 색이 바뀌고 아래로 빛이 떨어진다.
+    public let windowTiles: [TilePoint]
+    /// 벽등을 건 칸. 해가 낮은 시간대에만 켜진다.
+    public let wallLampTiles: [TilePoint]
 }
 
 /// 공용 구역의 종류. 라벨 문자열로 구역을 찾으면 이름을 다듬는 순간 조용히 어긋난다.
@@ -558,9 +562,15 @@ public struct CommonArea: Equatable, Sendable {
 // 그래서 열 개수는 10×3 이 아니라 10×3 + 1 — 마지막 구역의 오른쪽 벽 한 열만 더 붙인다.
 private let zoneWidth = 10
 private let zoneHeight = 7
-private let bandHeight = 4
+// 통로 1줄 + 가구 2줄 + 바깥벽 2줄. 벽을 두 줄로 세우면서 4 에서 늘렸다.
+private let bandHeight = 5
 private let planColumns = zoneWidth * 3 + 1
 private let planRows = zoneHeight * 2 + bandHeight
+
+/// 바깥벽(격자 맨 위) 두께. 아래 칸이 벽면, 위 칸이 벽 윗면이 되어 높이감을 만든다.
+/// 창을 세로로 몇 칸에 걸쳐 그릴지 렌더 쪽이 같은 값을 봐야 한다.
+public let officeOuterWallRows = 2
+private let outerWallRows = officeOuterWallRows
 
 // 부서별 자리 배치를 다 쓴 뒤의 예비 격자 — 4열 × 3행 = 12석.
 // 에이전트가 늘어 부서 배치표를 넘겼을 때 사람이 화면에서 사라지지 않게 하는 안전망이다.
@@ -687,11 +697,20 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     paint(.carpetLight, x0: zoneWidth, y0: bandY, width: zoneWidth, height: bandHeight)
     // 마지막 구간만 한 칸 넓다 — 벽 공유로 늘어난 오른쪽 끝 열(planColumns - 1)까지 덮는다.
     paint(.ceramic, x0: zoneWidth * 2, y0: bandY, width: zoneWidth + 1, height: bandHeight)
-    // 최상단 한 줄은 벽 — 화면 위쪽에 사무실 경계를 만든다.
-    paint(.wall, x0: 0, y0: planRows - 1, width: planColumns, height: 1)
-    for x in 0..<planColumns {
-        blocked.insert(TilePoint(x: x, y: planRows - 1))
+    // 최상단 두 줄은 벽 — 화면 위쪽에 사무실 경계를 만든다.
+    //
+    // 한 줄이었을 때는 벽에 건 물건(창·등·시계)이 **바닥에 놓인 것처럼** 보였다. 3/4 탑다운에서
+    // 벽면 높이가 한 칸이면 그 칸이 바닥과 구별되지 않기 때문이다. 두 줄로 세우면 위 칸이
+    // 벽 윗면(밝게), 아래 칸이 벽면(어둡게)으로 갈려 물건이 벽에 걸린 것으로 읽힌다.
+    paint(.wall, x0: 0, y0: planRows - outerWallRows, width: planColumns, height: outerWallRows)
+    for y in (planRows - outerWallRows)..<planRows {
+        for x in 0..<planColumns {
+            blocked.insert(TilePoint(x: x, y: y))
+        }
     }
+    // 벽에 거는 물건은 전부 아래 줄(사람 눈높이)에 건다 — 위 줄은 벽 윗면이라 물건을 걸면
+    // 천장에 붙은 것처럼 보인다.
+    let wallHangY = planRows - outerWallRows
 
     // 밴드 안쪽 두 줄(bandY+1, bandY+2)에만 가구를 놓는다. 맨 아래 줄(bandY)은 부서에서
     // 대표실 줄까지 올라오는 가로 통로이므로 비워 두고, 맨 위 줄은 벽이다.
@@ -699,11 +718,15 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 회의실 — 회의 테이블·화이트보드에 자료 코너(책장·복합기)를 붙였다. 테이블 하나만
     // 두면 10칸 폭에서 왼쪽 절반이 빈 바닥으로 남는다.
     place(.meetingTable, 4, bandY + 1)
-    place(.whiteboard, 2, planRows - 1)
-    place(.whiteboard, 6, planRows - 1)
+    // 화이트보드는 왼쪽 끝 두 칸 — 벽 가운데는 창이 쓴다. 아래가 책장이어도 가려지지 않는다
+    // (책장 윗면이 벽 줄에 닿지 않는다). 반면 키 큰 화분은 벽까지 올라와 덮으므로 아래 참조.
+    place(.whiteboard, 0, wallHangY)
+    place(.whiteboard, 1, wallHangY)
     place(.bookshelf, 0, bandY + 2)
     place(.bookshelf, 1, bandY + 2)
-    place(.plantTall, 3, bandY + 2)
+    // 큰 화분을 3번 칸에서 옮겼다 — 그 위가 벽등 자리인데, 화분 잎이 벽 줄까지 올라와
+    // 등을 덮는다(대표실 시계가 같은 이유로 안 보였다).
+    place(.plantTall, 2, bandY + 2)
     place(.printer, 9, bandY + 2)
     place(.plantSmall, 8, bandY + 1)
 
@@ -715,7 +738,12 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     place(.sofa2, zoneWidth + 2, bandY + 2)
     place(.coffeeTable, zoneWidth + 3, bandY + 2)
     // 시계는 대표 머리 위를 피한다 — 같은 열에 두면 "나 (대표)" 라벨과 겹쳐 둘 다 안 읽힌다.
-    place(.clock, zoneWidth + 2, planRows - 1)
+    //
+    // 창·벽등이 벽 가운데를 쓰면서 오른쪽 끝으로 옮겼다. 왼쪽 끝(zoneWidth + 1)에 뒀더니
+    // 바로 아래 큰 화분의 잎이 시계를 덮어 시간이 안 보였다 — 벽에 거는 물건은 자기 칸만
+    // 비어 있어서는 안 되고 **아래 칸의 키 큰 가구**까지 봐야 한다.
+    place(.clock, zoneWidth + 8, wallHangY)
+
     place(.bookshelf, zoneWidth + zoneWidth - 2, bandY + 2)
     place(.bookshelf, zoneWidth + zoneWidth - 1, bandY + 2)
 
@@ -723,7 +751,8 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     let pantryX = zoneWidth * 2
     place(.plantTall, pantryX, bandY + 2)
     place(.coffeeMachine, pantryX + 1, bandY + 2)
-    place(.waterCooler, pantryX + 3, bandY + 2)
+    // 정수기를 한 칸 왼쪽으로 — 원래 자리 위가 벽등 자리다.
+    place(.waterCooler, pantryX + 2, bandY + 2)
     place(.sofa3, pantryX + 5, bandY + 2)
     place(.coffeeTable, pantryX + 6, bandY + 1)
     place(.sofa2, pantryX + 8, bandY + 2)
@@ -745,6 +774,26 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
             width: zoneWidth + 1, labelY: bandY
         ),
     ]
+
+    // === 상단 밴드 창·벽등 ===
+    // 세 방 모두 바깥벽에 접해 있다. 대표실에만 창을 내면 위쪽 줄이 한 곳만 밝고 좌우가
+    // 휑하게 남는다. 방마다 가운데 네 칸을 통창처럼 이어 붙이고 양옆 한 칸씩에 등을 건다.
+    // 창을 한 칸만 내면 40픽셀짜리 점이 되어 창인지 액자인지 구별되지 않는다.
+    let windowRanges = [
+        4...7,
+        (zoneWidth + 3)...(zoneWidth + 6),
+        (pantryX + 3)...(pantryX + 6),
+    ]
+    let windowTiles = windowRanges.flatMap { range in
+        range.map { TilePoint(x: $0, y: wallHangY) }
+    }
+    // 등은 창 무리 양옆 — 창에서 떨어뜨리면 두 광원이 따로 놀아 벽이 산만해진다.
+    let wallLampTiles = windowRanges.flatMap { range in
+        [
+            TilePoint(x: range.lowerBound - 1, y: wallHangY),
+            TilePoint(x: range.upperBound + 1, y: wallHangY),
+        ]
+    }
 
     // 승인 대기 줄 — 대표 바로 아래 가로 한 줄(왼쪽부터 채운다).
     let queueTiles = (0..<6).map { index in
@@ -894,6 +943,8 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         loungeTiles: loungeTiles,
         presidentTile: presidentTile,
         zones: zones,
-        commonAreas: commonAreas
+        commonAreas: commonAreas,
+        windowTiles: windowTiles,
+        wallLampTiles: wallLampTiles
     )
 }

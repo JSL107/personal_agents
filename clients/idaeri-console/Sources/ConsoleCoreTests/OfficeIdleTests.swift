@@ -210,27 +210,48 @@ func runOfficeIdleTests(_ t: TestRunner) {
         t.fail("round 변화 검증에는 목적지가 두 곳 이상 필요")
     }
 
-    let ambienceCases: [(hour: Int, expected: OfficeAmbience)] = [
-        (5, .night), (6, .morning), (8, .morning), (9, .day), (17, .day),
-        (18, .evening), (21, .evening), (22, .night), (0, .night),
+    let daylightCases: [(hour: Int, expected: OfficeDaylight)] = [
+        (4, .night), (5, .dawn), (7, .dawn), (8, .morning), (10, .morning),
+        (11, .day), (16, .day), (17, .evening), (19, .evening), (20, .night), (0, .night),
     ]
-    for sample in ambienceCases {
+    for sample in daylightCases {
         t.expectEqual(
-            officeAmbience(hour: sample.hour),
+            officeDaylight(hour: sample.hour),
             sample.expected,
-            "\(sample.hour)시 분위기 경계"
+            "\(sample.hour)시 시간대 경계"
         )
     }
-    t.expectEqual(officeAmbience(hour: 24), officeAmbience(hour: 0), "24시는 0시로 정규화")
-    t.expectEqual(officeAmbience(hour: -1), officeAmbience(hour: 23), "-1시는 23시로 정규화")
+    t.expectEqual(officeDaylight(hour: 24), officeDaylight(hour: 0), "24시는 0시로 정규화")
+    t.expectEqual(officeDaylight(hour: -1), officeDaylight(hour: 23), "-1시는 23시로 정규화")
 
-    for hour in [6, 9, 18, 22] {
-        let emptyTint = officeAmbienceTint(hour: hour, activeCount: 0)
-        let activeTint = officeAmbienceTint(hour: hour, activeCount: 1)
-        t.expect(emptyTint.alpha > activeTint.alpha, "\(hour)시 활동 0이면 더 어두움")
+    // 바닥 빛 세기가 낮 > 아침 > 저녁 > 새벽 > 밤 순으로 단조로워야 시간이 읽힌다.
+    // 순서가 뒤집히면 화면만 보고 아침인지 밤인지 가릴 근거가 사라진다.
+    let strengthOrder = [11, 8, 17, 5, 22].map { officeWindowLight(hour: $0).glowStrength }
+    for index in 1..<strengthOrder.count {
+        t.expect(
+            strengthOrder[index] < strengthOrder[index - 1],
+            "빛 세기 \(index)번째 구간이 앞 구간보다 약함"
+        )
     }
-    t.expectEqual(officeAmbienceTint(hour: 9, activeCount: 1).alpha, 0, "낮 활동 중은 막 없음")
-    t.expectEqual(officeAmbienceTint(hour: 9, activeCount: 0).alpha, 0.08, "낮 활동 0은 0.08")
+
+    // 벽등은 해가 낮은 시간에만 켠다 — 낮에 켜면 광원이 둘이 되어 어느 쪽이 빛인지 안 읽힌다.
+    for hour in [5, 17, 22] {
+        t.expect(officeWindowLight(hour: hour).lampLit, "\(hour)시 벽등 켜짐")
+    }
+    for hour in [8, 13] {
+        t.expect(!officeWindowLight(hour: hour).lampLit, "\(hour)시 벽등 꺼짐")
+    }
+
+    // 새벽과 저녁은 아래쪽 하늘이 둘 다 붉다. 위쪽 색까지 같으면 유리만 보고는 구별할 수 없다.
+    t.expect(
+        officeWindowLight(hour: 5).skyHigh != officeWindowLight(hour: 18).skyHigh,
+        "새벽과 저녁의 하늘 위쪽 색이 다름"
+    )
+    // 유리는 위아래가 갈려야 노을이 노을로 보인다 — 한 색으로 채우면 그냥 색유리다.
+    for hour in [5, 13, 18, 22] {
+        let light = officeWindowLight(hour: hour)
+        t.expect(light.skyHigh != light.skyLow, "\(hour)시 유리 위아래 색이 다름")
+    }
 
     let visualCases: [(intent: VisualIntent, expected: [String])] = [
         (.recolor(agentType: "A", state: .waiting), ["A"]),

@@ -1,6 +1,41 @@
 import ConsoleCore
 import SpriteKit
 
+/// 창·벽등에서 나온 빛 한 겹.
+///
+/// 노드만 들고 있으면 시각이 바뀌었을 때 그 겹이 창 빛인지 등 빛인지 알 수 없어 세기를
+/// 되살릴 수 없다. 출처와 감쇠율을 함께 들고 있는 이유다.
+struct OfficeLightLayer {
+    enum Source {
+        case window
+        case lamp
+    }
+
+    let node: SKSpriteNode
+    let fade: CGFloat
+    let source: Source
+
+    /// 벽등은 실내 조명이라 창밖 색을 따르지 않는다 — 밤에 창이 푸르다고 등까지 푸르면 전구가 아니다.
+    private static let lampColor = SKColor(red: 1.00, green: 0.80, blue: 0.48, alpha: 1)
+    private static let lampStrength: CGFloat = 0.26
+
+    func apply(_ light: OfficeWindowLight) {
+        switch source {
+        case .window:
+            node.color = SKColor(
+                red: CGFloat(light.glow.red),
+                green: CGFloat(light.glow.green),
+                blue: CGFloat(light.glow.blue),
+                alpha: 1
+            )
+            node.alpha = CGFloat(light.glowStrength) * fade
+        case .lamp:
+            node.color = Self.lampColor
+            node.alpha = light.lampLit ? Self.lampStrength * fade : 0
+        }
+    }
+}
+
 /// 픽셀 사무실 씬 — 에이전트를 타일 평면도 위의 사람으로 그리고, 상태 변화를 몸짓으로 옮긴다.
 ///
 /// 두 축이 분리돼 있다:
@@ -59,10 +94,21 @@ final class OfficeScene: SKScene {
     private var lastStrollAt: [String: Double] = [:]
     /// 사람별 목적지를 회차마다 바꾸되 실행마다 같은 순서가 나오게 정수 회차만 섞는다.
     private var strollRound = 0
-    private var ambienceOverlay: SKSpriteNode?
+    private var windowNodes: [SKSpriteNode] = []
+    private var wallLampNodes: [SKSpriteNode] = []
+    private var lightLayers: [OfficeLightLayer] = []
 
     /// 캐릭터 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
     var onAgentClick: ((String) -> Void)?
+
+    /// 시각을 고정한다(화면 회귀 렌더 전용, 평소엔 nil).
+    /// 밤 화면을 확인하려고 밤까지 기다릴 수는 없어서 둔 주입점이다.
+    var hourOverride: Int?
+
+    /// 조명이 볼 시각. 주입값이 있으면 그것을, 없으면 실제 시계를 본다.
+    private func currentHour() -> Int {
+        hourOverride ?? Calendar.current.component(.hour, from: Date())
+    }
 
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1)
@@ -95,7 +141,7 @@ final class OfficeScene: SKScene {
         // 그런데 좌표계가 바뀐 지금은 그 배려가 독이 된다 — 옛 화면 좌표에 남아
         // 사무실 밖 허공에 서 있게 된다. 새 좌표계로 강제로 다시 앉힌다.
         repositionEveryone()
-        updateAmbience()
+        updateDaylight()
     }
 
     /// 모든 캐릭터를 현재 타일 기준으로 다시 놓는다(진행 중인 걸음은 끊는다).
@@ -236,7 +282,7 @@ final class OfficeScene: SKScene {
         layoutQueue()
         // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
         syncSessions(lastSyncedSessions)
-        updateAmbience()
+        updateDaylight()
     }
 
     /// 스냅샷을 정본으로 승인 줄을 맞춘다.
@@ -327,6 +373,8 @@ final class OfficeScene: SKScene {
                 floorLayer.addChild(node)
             }
         }
+        // 벽 타일을 다 깐 뒤에 얹는다 — 먼저 그리면 같은 레이어의 벽이 창을 덮는다.
+        renderWallFixtures()
     }
 
     /// 바닥 노이즈를 누를 때 섞는 색. 부서 구역 안이면 그 부서 색조를 옅게 태운다.
@@ -592,7 +640,7 @@ final class OfficeScene: SKScene {
             occupied.insert(spot.tile)
             stroll(agentType, to: spot)
         }
-        updateAmbience()
+        updateDaylight()
     }
 
     /// 목적지에 머무는 action을 따로 이름 붙여 실제 이벤트가 걸음과 대기를 모두 끊게 한다.
@@ -1185,45 +1233,151 @@ final class OfficeScene: SKScene {
         desk.colorBlendFactor = 0
     }
 
-    /// 색 막은 오브젝트만 물들이고 이름표·문패·요약 아래에 둬 관제 정보의 대비를 보존한다.
-    private func updateAmbience() {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let activeCount = lastSyncedAgents.filter {
-            $0.state == .inProgress || $0.state == .awaitingApproval
-        }.count
-        let tint = officeAmbienceTint(hour: hour, activeCount: activeCount)
-        guard tint.alpha > 0 else {
-            ambienceOverlay?.removeFromParent()
-            ambienceOverlay = nil
+    /// 시간대에 따라 창유리 색과 빛 세기만 갈아 끼운다(노드는 그대로 둔다).
+    ///
+    /// 시각이 바뀌었다고 바닥을 통째로 다시 깔 이유가 없다 — 31×18 칸을 새로 만드는 비용이
+    /// 창 네 칸 텍스처 교체보다 훨씬 크고, 사람이 걷는 중에 씬을 갈면 걸음이 끊긴다.
+    private func updateDaylight() {
+        let hour = currentHour()
+        let light = officeWindowLight(hour: hour)
+        let daylight = officeDaylight(hour: hour)
+        if let texture = OfficeLightTexture.window(light, daylight: daylight) {
+            windowNodes.forEach { $0.texture = texture }
+        }
+        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
+            wallLampNodes.forEach { $0.texture = texture }
+        }
+        for layer in lightLayers {
+            layer.apply(light)
+        }
+    }
+
+    /// 벽에 붙는 것들(창문·벽등)과 거기서 나오는 빛을 그린다.
+    ///
+    /// 바닥과 함께 다시 그린다 — 창 위치는 평면도가 정하고, 평면도는 인원이 바뀌면 새로
+    /// 계산되기 때문이다. 노드 참조를 들고 있는 이유는 시각만 바뀌었을 때(`updateDaylight`)
+    /// 색만 갈아 끼우기 위해서다.
+    private func renderWallFixtures() {
+        windowNodes.removeAll()
+        wallLampNodes.removeAll()
+        lightLayers.removeAll()
+
+        let hour = currentHour()
+        let light = officeWindowLight(hour: hour)
+        let daylight = officeDaylight(hour: hour)
+
+        if let texture = OfficeLightTexture.window(light, daylight: daylight) {
+            for tile in plan.windowTiles {
+                // 창은 벽 두 줄에 걸친다 — 아래 칸 바닥을 기준으로 위로 두 칸을 채운다.
+                windowNodes.append(
+                    addWallFixture(texture: texture, at: tile, tileHeight: officeOuterWallRows)
+                )
+            }
+        }
+        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
+            for tile in plan.wallLampTiles {
+                wallLampNodes.append(addWallFixture(texture: texture, at: tile))
+            }
+        }
+        addWindowShaft(light)
+        addLampHalos(light)
+        for layer in lightLayers {
+            layer.apply(light)
+        }
+    }
+
+    /// 벽 타일 위에 얹는 설치물(창문·벽등 공통). 세로로 여러 칸을 쓰면 위로 자란다.
+    private func addWallFixture(
+        texture: SKTexture,
+        at tile: TilePoint,
+        tileHeight: Int = 1
+    ) -> SKSpriteNode {
+        let node = SKSpriteNode(texture: texture)
+        node.size = CGSize(width: tileSize, height: tileSize * CGFloat(tileHeight))
+        // 가구와 같은 발밑 기준 — 위로 자라야 벽 위 칸을 덮는다.
+        node.anchorPoint = CGPoint(x: 0.5, y: 0)
+        node.position = floorPoint(tile)
+        // 바닥 레이어 안에서 벽 타일보다만 앞이면 된다. 가구·사람(objectLayer)보다는 뒤다 —
+        // 벽에 붙은 물건이 방 안 물건을 가리면 앞뒤가 뒤집혀 보인다.
+        node.zPosition = 1
+        floorLayer.addChild(node)
+        return node
+    }
+
+    /// 창에서 바닥으로 떨어지는 빛. 아래로 갈수록 넓어지고 옅어지는 세 단.
+    ///
+    /// 밝은 쪽에 더하는 합성(`.add`)이라 **어두운 곳은 어두운 채로 남는다** — 예전 색막이
+    /// 어두운 배경까지 들어 올려 화면을 세피아로 만들었던 것과 정반대다.
+    private func addWindowShaft(_ light: OfficeWindowLight) {
+        guard let texture = OfficeLightTexture.windowShaft() else {
             return
         }
-
-        let overlay: SKSpriteNode
-        if let ambienceOverlay {
-            overlay = ambienceOverlay
-        } else {
-            overlay = SKSpriteNode(color: .clear, size: size)
-            overlay.zPosition = 500
-            overlay.anchorPoint = CGPoint(x: 0, y: 0)
-            addChild(overlay)
-            ambienceOverlay = overlay
+        for cluster in windowClusters() {
+            guard let first = cluster.first, let last = cluster.last else {
+                continue
+            }
+            let spanWidth = CGFloat(last.x - first.x + 1)
+            let node = SKSpriteNode(texture: texture)
+            // 창 폭보다 좌우로 한 칸씩 넓게, 아래로 세 칸 반 — 방 안쪽 두 줄까지만 닿고
+            // 아래 가로 통로를 넘지 않는다(넘으면 옆 부서 방까지 밝아져 광원이 흐려진다).
+            node.size = CGSize(width: (spanWidth + 2) * tileSize, height: tileSize * 3.5)
+            // 창 아래에 매다는 그림이라 위쪽 변을 기준점으로 잡는다.
+            node.anchorPoint = CGPoint(x: 0.5, y: 1)
+            node.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(first.x) + spanWidth / 2) * tileSize,
+                y: gridOrigin.y + CGFloat(first.y) * tileSize
+            )
+            node.zPosition = 0.5
+            node.blendMode = .add
+            node.colorBlendFactor = 1
+            floorLayer.addChild(node)
+            lightLayers.append(OfficeLightLayer(node: node, fade: 1, source: .window))
         }
-        overlay.color = SKColor(
-            red: CGFloat(tint.red),
-            green: CGFloat(tint.green),
-            blue: CGFloat(tint.blue),
-            alpha: 1
-        )
-        overlay.alpha = CGFloat(tint.alpha)
-        // **격자 영역에만** 씌운다. 씬 전체(size)를 덮으면 사무실이 다 안 들어가고 남는
-        // 레터박스 여백까지 물든다 — 창 비율과 격자 비율(31:18)이 어긋나는 만큼 위아래로
-        // 생기는 띠라, 저녁·밤에는 화면 위아래가 통째로 갈색·남색 판이 됐다. 사무실 바깥은
-        // 어두운 배경으로 남아야 사무실이 화면에서 또렷하게 떠오른다.
-        overlay.position = gridOrigin
-        overlay.size = CGSize(
-            width: tileSize * CGFloat(plan.columns), height: tileSize * CGFloat(plan.rows)
-        )
     }
+
+    /// 가로로 이어 붙은 창을 한 무리로 묶는다.
+    ///
+    /// 빛기둥은 **창 무리마다 하나씩** 떨어져야 한다. 전체 창의 최소·최대 x 로 하나만 만들면
+    /// 회의실 창부터 탕비실 창까지 걸친 거대한 기둥이 되어, 창이 없는 벽 앞까지 밝아진다.
+    private func windowClusters() -> [[TilePoint]] {
+        var clusters: [[TilePoint]] = []
+        for tile in plan.windowTiles.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
+            if let previous = clusters.last?.last, previous.y == tile.y, previous.x + 1 == tile.x {
+                clusters[clusters.count - 1].append(tile)
+            } else {
+                clusters.append([tile])
+            }
+        }
+        return clusters
+    }
+
+    /// 벽등 아래로 퍼지는 빛무리. 꺼진 시간대에는 세기 0 이라 보이지 않는다.
+    private func addLampHalos(_ light: OfficeWindowLight) {
+        guard let texture = OfficeLightTexture.glowHalo() else {
+            return
+        }
+        for tile in plan.wallLampTiles {
+            let node = SKSpriteNode(texture: texture)
+            node.size = CGSize(width: tileSize * 2.6, height: tileSize * 2.6)
+            let anchor = centerPoint(tile)
+            // 빛 중심을 등보다 아래로 내린다 — 등 높이에 두면 빛이 벽 위쪽 절반을 데우고
+            // 정작 사람이 서 있는 바닥은 어둡게 남는다.
+            node.position = CGPoint(x: anchor.x, y: anchor.y - tileSize * 0.7)
+            node.zPosition = 0.5
+            node.blendMode = .add
+            node.colorBlendFactor = 1
+            floorLayer.addChild(node)
+            lightLayers.append(OfficeLightLayer(node: node, fade: 1, source: .lamp))
+        }
+    }
+
+    /// 창 빛의 단 — (아래로 몇 칸, 좌우로 얼마나 벌어지나, 세기 감쇠).
+    /// 세 단이면 사다리꼴로 읽히고, 더 늘리면 밴드 안쪽 두 줄을 넘어 통로까지 밝아진다.
+    private static let windowShaftSteps: [(drop: Int, spread: CGFloat, fade: CGFloat)] = [
+        (1, 0.25, 1.0),
+        (2, 0.75, 0.55),
+        (3, 1.35, 0.25),
+    ]
 
     /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다.
     private func setChildLabel(
