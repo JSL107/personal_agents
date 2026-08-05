@@ -9,4 +9,5 @@ export enum CtoErrorCode {
   INVALID_PLAN_OUTPUT = 'INVALID_PLAN_OUTPUT',
   // LLM 출력이 AssignmentOutput schema 와 안 맞음.
   PARSE_FAILED = 'PARSE_FAILED',
+  INVALID_STUDY_VERDICT = 'INVALID_STUDY_VERDICT',
 }
