@@ -102,6 +102,15 @@ public struct OfficeStrollSpot: Equatable, Sendable {
 /// 평면도 가구 순서를 보존해 목적지 카탈로그도 실행마다 같은 순서를 유지한다.
 public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     let seatTiles = Set(plan.desks.map(\.seat))
+    // 문 칸은 통행 가능하지만 **머물 수는 없다.**
+    //
+    // 문 자신을 목적지에서 뺀 것(`strollDwellSeconds == nil`)만으로는 부족하다. 목적지는
+    // 가구가 놓인 칸이 아니라 그 **앞 칸**이라, 문 바로 위 벽에 걸린 물건이 자기 앞자리로
+    // 문 칸을 고른다 — 첫 이웃 후보가 (x, y-1) 이고 문 칸은 통행 가능하기 때문이다.
+    // 리뷰방 화이트보드(24,11)가 (24,10) 을, 성장방 화이트보드(12,4)가 (12,3) 을 그렇게
+    // 잡았다. 방의 유일한 출입구라, 거기 서서 4초를 보내면 그동안 드나드는 사람이 전부
+    // 그 사람을 통과해 지나가는 그림이 된다.
+    let doorTiles = Set(plan.furniture.filter { $0.kind.isDoorway }.map(\.tile))
     var usedTiles: Set<TilePoint> = []
     var spots: [OfficeStrollSpot] = []
 
@@ -116,7 +125,7 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
             TilePoint(x: placement.tile.x, y: placement.tile.y + 1),
         ]
         guard let tile = neighbors.first(where: {
-            plan.walkable.contains($0) && !seatTiles.contains($0)
+            plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
         }), usedTiles.insert(tile).inserted else {
             continue
         }
