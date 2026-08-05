@@ -46,6 +46,82 @@ public let officeReferenceTileSize: Double = 40
 /// 서 있거나 걷는 캐릭터는 발이 바닥에 닿아야 하므로 오프셋 0 을 유지한다.
 public let officeSeatedSpriteDrop: Double = 0.28
 
+// MARK: - 책상 위 서류 더미 (오늘 처리한 일의 양)
+
+/// 한 책상에 쌓을 수 있는 서류의 최대 장수.
+///
+/// 상한이 필요한 이유는 책상이 좁은 것이다 — 책상 상판이 세로 32픽셀인데 한 장 올릴 때마다
+/// 위로 올라가므로, 상한이 없으면 하루 100건 도는 사람의 서류가 책상을 넘어 위 칸 사람의
+/// 이름표까지 뚫는다.
+public let officeDeskPaperMaxCount: Int = 5
+
+/// 서류 더미를 놓을 자리(책상 발밑 기준, 타일 배수). 오른쪽으로 치우쳐 앉은 사람을 피한다.
+///
+/// 좌석은 책상 **바로 위 칸**이고 앉은 사람은 `officeSeatedSpriteDrop` 만큼 내려와 책상에
+/// 걸치므로, 책상 가운데에 놓으면 서류가 사람 몸통에 파묻힌다. 오른쪽으로 밀어야 하는데,
+/// **너무 밀면 상판 밖으로 삐져나와 공중에 뜬 물체로 보인다** — 책상 스프라이트는 폭 37도트
+/// 안에 좌우 여백이 있어 실제 상판은 그보다 좁다(0.30 에서 상판 경계에 걸쳤다, 실측).
+public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.22, 0.46)
+
+/// 한 장 쌓을 때마다 위로 올리는 간격(타일 배수)과 좌우로 어긋내는 폭.
+///
+/// 낱장이 세로 4도트라 딱 4도트씩 올리면 아래 장이 완전히 가려져 한 장처럼 보인다. 절반쯤만
+/// 올려 아래 장의 외곽선이 남게 하고, 좌우로도 번갈아 밀어 손으로 쌓은 더미처럼 만든다.
+///
+/// **간격이 어긋냄보다 크면 더미가 아니라 세로 막대로 보인다.** 낱장 폭(7도트)이 높이(4도트)의
+/// 두 배쯤이라, 위로 쌓는 양을 억제해 더미의 가로가 세로보다 길게 유지되어야 종이로 읽힌다.
+public let officeDeskPaperStepTiles: Double = 0.022
+public let officeDeskPaperJitterTiles: Double = 0.028
+
+/// 위로 갈수록 어긋냄을 넓히는 비율(장당). 더미의 **가로 폭**이 장수에 따라 자라게 하는 값이다.
+///
+/// 고정 폭으로 쌓았을 때 1장과 5장이 같은 "흰 뭉치" 로 보였다 — 낱장이 화면에서 16×9픽셀밖에
+/// 안 되어 1~2픽셀 층 차이가 뭉개진다. 세로로 더 높이 쌓는 것은 답이 아니다(세로 막대가 되고
+/// 위 칸 좌석까지 올라간다). 가로로 퍼뜨리는 쪽이 같은 면적에서 양을 더 잘 보여준다.
+///
+/// 씬에 박아 두면 테스트가 닿지 않아 서류가 책상 밖으로 넘치는지 확인할 방법이 없어진다.
+public let officeDeskPaperSpreadGrowth: Double = 0.6
+
+/// 서류 더미가 책상 스프라이트 좌우 절반을 넘는지 판정할 때 쓰는 낱장 반폭(타일 배수).
+/// 에셋(`desk-paper.png`) 실측 폭 7도트를 기준 타일로 환산한 값의 절반이다.
+public let officeDeskPaperHalfWidthTiles: Double = 7.0 / 2.0 / officeReferenceTileSize
+
+/// `count` 장을 쌓았을 때 더미가 책상 중심에서 좌우로 가장 멀리 벗어나는 거리(타일 배수).
+///
+/// 이 값이 책상 반폭을 넘으면 서류가 상판을 벗어나 옆 칸 위 허공에 뜬 물체로 보인다.
+public func officeDeskPaperMaxReachTiles(count: Int) -> Double {
+    guard count > 0 else {
+        return 0
+    }
+    let widestSpread =
+        officeDeskPaperJitterTiles
+        * (1.0 + Double(count - 1) * officeDeskPaperSpreadGrowth)
+    return officeDeskPaperOriginTiles.x + widestSpread + officeDeskPaperHalfWidthTiles
+}
+
+/// 오늘 끝낸 일 건수를 서류 장수로 바꾼다. 건수가 두 배로 늘 때마다 한 장 올라간다.
+///
+/// 선형(1건=1장)이 아닌 이유는 실측 편차다 — 리뷰 담당이 하루 20건 넘게 도는데 나머지는
+/// 0~1건이라, 선형이면 그 한 명만 늘 최대치에 붙어 "조금 바쁨" 과 "매우 바쁨" 이 같은 그림이 된다.
+///
+/// `nil` 은 이 필드를 모르는 구버전 서버의 응답이다. 0장으로 두어 아무것도 그리지 않는다 —
+/// 숫자를 모르는 것과 "오늘 한 건도 안 했다" 를 화면에서 구별할 방법이 없으므로, 없는 정보를
+/// 그리지 않는 쪽을 고른다.
+public func officeDeskPaperCount(doneToday: Int?) -> Int {
+    guard let doneToday, doneToday > 0 else {
+        return 0
+    }
+    // 2로 계속 나누며 세면 정확히 "두 배마다 한 장" 이 된다. log2 를 쓰지 않는 이유는
+    // 경계값(4·8·16)에서 부동소수점 오차가 한 장을 깎을 수 있기 때문이다.
+    var papers = 0
+    var remaining = doneToday
+    while remaining > 0, papers < officeDeskPaperMaxCount {
+        papers += 1
+        remaining /= 2
+    }
+    return papers
+}
+
 // MARK: - 이름표·문패가 서로를 가리지 않게 하는 기준
 //
 // 이름표(캐릭터가 그린다)와 부서 문패(씬이 그린다)는 파일이 달라서, 각자 자기 숫자를 들고

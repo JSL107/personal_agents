@@ -7,7 +7,10 @@ import { ConsoleReadService } from './console-read.service';
 
 describe('ConsoleReadService', () => {
   let agentRunService: jest.Mocked<
-    Pick<AgentRunService, 'findActiveRuns' | 'findRecentlyFinishedRuns'>
+    Pick<
+      AgentRunService,
+      'findActiveRuns' | 'findRecentlyFinishedRuns' | 'countSucceededSince'
+    >
   >;
   let findAllOpenPreviews: jest.Mocked<
     Pick<FindAllOpenPreviewsUsecase, 'execute'>
@@ -22,6 +25,7 @@ describe('ConsoleReadService', () => {
     agentRunService = {
       findActiveRuns: jest.fn().mockResolvedValue([]),
       findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+      countSucceededSince: jest.fn().mockResolvedValue([]),
     };
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     localSessions = { list: jest.fn().mockReturnValue([]) };
@@ -202,6 +206,33 @@ describe('ConsoleReadService', () => {
     expect(
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('AWAITING_APPROVAL');
+  });
+
+  // 오피스 책상의 서류 더미 높이가 이 값에서 나온다. 창의 시작이 자정이어야 하는 이유는
+  // 화면이 하루 단위로 읽히게 하기 위함이다 — 롤링 24시간이면 날이 바뀌어도 어제 새벽
+  // 실행이 계속 남아 아침에도 책상이 비지 않는다.
+  it('오늘 성공 건수를 doneToday 로 싣고, 창은 자정부터다', async () => {
+    agentRunService.countSucceededSince.mockResolvedValue([
+      { agentType: 'CODE_REVIEWER', succeeded: 22 },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
+        ?.doneToday,
+    ).toBe(22);
+    // 집계에 없는 사람은 오늘 한 건도 못 끝냈다는 뜻이라 0 이다(undefined 가 아니다 —
+    // 앱이 옵셔널로 받으므로 undefined 면 "구버전 서버" 와 구별되지 않는다).
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.doneToday,
+    ).toBe(0);
+
+    const [call] = agentRunService.countSucceededSince.mock.calls;
+    expect(call[0].since.getHours()).toBe(0);
+    expect(call[0].since.getMinutes()).toBe(0);
+    expect(call[0].since.getSeconds()).toBe(0);
+    expect(call[0].since.getMilliseconds()).toBe(0);
   });
 
   it('로컬 세션을 뷰 형태(ISO)로 스냅샷에 담는다', async () => {

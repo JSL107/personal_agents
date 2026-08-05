@@ -542,7 +542,16 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   }: {
     sinceDays: number;
   }): Promise<AgentSucceededCountRow[]> {
-    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    return await this.countSucceededSince({
+      since: new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  async countSucceededSince({
+    since,
+  }: {
+    since: Date;
+  }): Promise<AgentSucceededCountRow[]> {
     const rows = await this.prisma.agentRun.groupBy({
       by: ['agentType'],
       where: {
