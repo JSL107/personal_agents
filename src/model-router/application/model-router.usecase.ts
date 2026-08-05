@@ -4,6 +4,7 @@ import { buildContractPreamble } from '../../agent-registry/agent-contract';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { AGENT_TO_PROVIDER } from '../domain/agent-provider.map';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
   AgentType,
@@ -18,42 +19,6 @@ import {
 } from '../domain/port/model-provider.port';
 import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
-
-// 에이전트 → 모델 매핑. 2026-07-02 정책: 이대리 전체를 ChatGPT(codex) 단일 provider 로 전환.
-// Claude 는 primary·fallback 어디서도 사용하지 않는다(ClaudeCliProvider 코드는 롤백 대비 보존).
-const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
-  [AgentType.PM]: ModelProviderName.CHATGPT,
-  [AgentType.BE]: ModelProviderName.CHATGPT,
-  [AgentType.CODE_REVIEWER]: ModelProviderName.CHATGPT,
-  [AgentType.WORK_REVIEWER]: ModelProviderName.CHATGPT,
-  [AgentType.IMPACT_REPORTER]: ModelProviderName.CHATGPT,
-  [AgentType.PO_SHADOW]: ModelProviderName.CHATGPT,
-  [AgentType.BE_SCHEMA]: ModelProviderName.CHATGPT,
-  [AgentType.BE_TEST]: ModelProviderName.CHATGPT,
-  [AgentType.BE_SRE]: ModelProviderName.CHATGPT,
-  [AgentType.BE_FIX]: ModelProviderName.CHATGPT,
-  [AgentType.CTO]: ModelProviderName.CHATGPT,
-  [AgentType.PO_EVAL]: ModelProviderName.CHATGPT,
-  [AgentType.CEO]: ModelProviderName.CHATGPT,
-  [AgentType.ISSUE_LABELER]: ModelProviderName.CHATGPT,
-  [AgentType.VACATION]: ModelProviderName.CHATGPT,
-  // BLOG — Hermes CLI(`hermes -z`)를 직접 spawn 하는 외부 에이전트라 route() 를 거치지 않는다.
-  // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
-  [AgentType.BLOG]: ModelProviderName.CHATGPT,
-  [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
-  [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
-  [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
-  [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
-  [AgentType.REVIEW_REPLY_JUDGE]: ModelProviderName.CHATGPT,
-  // HUMANIZER — 보고서/프로필 서술 필드 윤문. HumanizeService 가 noFallback:true 로 호출(원본 유지).
-  [AgentType.HUMANIZER]: ModelProviderName.CHATGPT,
-  [AgentType.DOCS_AUDIT_OPTIMIZER]: ModelProviderName.CHATGPT,
-  [AgentType.DOCS_AUDIT_EVALUATOR]: ModelProviderName.CHATGPT,
-  [AgentType.PREFERENCE_LEARNING]: ModelProviderName.CHATGPT,
-  // 저녁 회고→발행 후보 — codex 로 회고/후보 선별/블로그 본문 생성. BLOG(Hermes sentinel)와 달리 실제 route() 를 탄다.
-  [AgentType.EVENING_RETRO]: ModelProviderName.CHATGPT,
-  [AgentType.OPS_SUPERVISOR]: ModelProviderName.CHATGPT,
-};
 
 // fallback 테이블 — 2026-07-02 부터 비어 있음(Claude 제거로 ChatGPT 단일 provider).
 // route() 의 `!fallbackName` 가드가 즉시 전파하므로, 모든 provider 는 실패 시 재시도 없이 즉시 throw 한다.
