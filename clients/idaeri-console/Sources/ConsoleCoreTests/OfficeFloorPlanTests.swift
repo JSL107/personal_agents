@@ -49,6 +49,7 @@ private let sampleDepartments: [String: Department] = Dictionary(
 func runOfficeFloorPlanTests(_ t: TestRunner) {
     t.suite("OfficeFloorPlan")
 
+
     let plan = officeFloorPlan(agents: sampleAgents)
 
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
@@ -115,14 +116,17 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             + "\(offZoneFloor.map { "\($0.agentType)@\($0.seat.x),\($0.seat.y)" }.sorted())"
     )
 
-    // 맞닿은 두 구역은 벽 한 칸을 공유한다. 예전에는 구역마다 좌우 여백을 따로 세워
-    // 경계가 2칸(80px) 두께 회색 띠가 됐다. 세로 칸막이는 어느 행에서도 1칸이어야 한다
-    // (아래 구역 천장은 가로로 이어지는 벽이라 이 검사에서 뺀다).
+    // 세로 칸막이는 어느 행에서도 1칸이어야 한다. 예전에는 구역마다 좌우 여백을 따로 세워
+    // 경계가 2칸(80px) 두께 회색 띠가 됐다 — 그때는 벽 한 칸을 두 방이 **공유**해 해결했고,
+    // 지금은 두 벽 사이를 복도로 벌려 해결한다. 벽 사이에 복도가 끼므로 여전히 연속 2칸이 아니다.
+    // (구역 천장은 가로로 이어지는 벽이라 이 검사에서 뺀다.)
     let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
-    let bottomZoneY = plan.zones.map { $0.origin.y }.min() ?? 0
-    let ceilingRow = bottomZoneY + (plan.zones.first?.height ?? 0) - 1
+    let zoneHeight = plan.zones.first?.height ?? 0
+    // 위·아래 구역 각각의 천장 줄. 위 구역 천장도 벽이 된 뒤로 둘 다 빼야 한다 —
+    // 한쪽만 빼면 그 줄의 가로 벽이 "겹친 벽" 으로 잡혀 통째로 거짓 실패한다.
+    let ceilingRows = Set(plan.zones.map { $0.origin.y + $0.height - 1 })
     var thickWallRuns: [String] = []
-    for y in 0..<zoneAreaRows where y != ceilingRow {
+    for y in 0..<zoneAreaRows where !ceilingRows.contains(y) {
         var run = 0
         for x in 0..<plan.columns {
             run = plan.floor[y][x] == .wall ? run + 1 : 0
@@ -160,19 +164,45 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     }
     t.expectEqual(Set(furnitureSets).count, Department.allCases.count, "부서별 가구 세트가 전부 다름")
 
-    // 격자 기본값이 화면에 남지 않아야 한다.
+    // 통로 타일은 **의도한 복도 자리에만** 나와야 한다. 이 검사가 칠하기 누락을 잡는다.
     //
     // 기본값은 예전에 `woodA` 였다. 그것은 리뷰 부서의 바닥재이기도 해서, 칠하기가 빠진 칸이
     // 생기면 "리뷰방 바닥" 으로 위장한 채 아무도 눈치채지 못했다. 기본값을 전용 종류로 바꿔
-    // 이 검사가 성립하게 만든 것이 이 변경의 요점이다 — 지금 평면도는 방·밴드·벽이 모든 칸을
-    // 덮으므로 남는 칸이 0이고, 0이 아니게 되는 순간이 곧 칠하기 누락이다.
-    var unpaintedTiles: [String] = []
+    // 이 검사가 성립하게 만든 것이 그 변경의 요점이었고, 한동안 "통로 타일 0개" 로 확인했다.
+    //
+    // 이제는 복도가 실제로 있으므로 0 을 셀 수 없다. 대신 **복도 칸 집합과 정확히 일치**하는지
+    // 본다 — 더 강한 검사다. 안 칠한 칸이 생기면 복도 집합 밖에서 통로 타일로 나타나 잡히고,
+    // 반대로 복도를 칠하는 것을 빠뜨리면 집합 안에 통로가 아닌 칸이 생겨 잡힌다.
+    let expectedCorridor = Set(
+        (0..<plan.rows).flatMap { y -> [TilePoint] in
+            (0..<plan.columns).compactMap { x -> TilePoint? in
+                // 격자 좌우 최외곽·최상단은 바깥벽이 덮으므로 복도가 아니다.
+                guard x > 0, x < plan.columns - 1, y < plan.rows - officeOuterWallRows else {
+                    return nil
+                }
+                let onCorridorColumn = officeCorridorColumns.contains(x)
+                let onCorridorRow = y == officeCorridorRow
+                return (onCorridorColumn || onCorridorRow) ? TilePoint(x: x, y: y) : nil
+            }
+        }
+    )
+    var strayCorridor: [String] = []
+    var missingCorridor: [String] = []
     for y in 0..<plan.rows {
-        for x in 0..<plan.columns where plan.floor[y][x] == .corridor {
-            unpaintedTiles.append("(\(x),\(y))")
+        for x in 0..<plan.columns {
+            let tile = TilePoint(x: x, y: y)
+            let isCorridor = plan.floor[y][x] == .corridor
+            if isCorridor, !expectedCorridor.contains(tile) {
+                strayCorridor.append("(\(x),\(y))")
+            }
+            if !isCorridor, expectedCorridor.contains(tile) {
+                missingCorridor.append("(\(x),\(y))")
+            }
         }
     }
-    t.expectEqual(unpaintedTiles.count, 0, "칠하기가 빠진 칸: \(unpaintedTiles)")
+    t.expectEqual(strayCorridor.count, 0, "칠하기가 빠진 칸(통로로 남음): \(strayCorridor)")
+    t.expectEqual(missingCorridor.count, 0, "복도인데 통로 타일이 아닌 칸: \(missingCorridor)")
+    t.expect(!expectedCorridor.isEmpty, "복도가 실제로 존재")
 
     for department in Department.allCases {
         t.expect(
@@ -186,13 +216,24 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     }
     t.expect(!FloorTile.corridor.isRoomFloor, "통로는 방 바닥이 아니다")
     t.expect(!FloorTile.wall.isRoomFloor, "벽은 방 바닥이 아니다")
-    // 통로는 방보다 어둡게 눌러 배경으로 물러난다 — 사람·가구가 앞서야 한다.
-    for tile in FloorTile.allCases where tile.isRoomFloor {
-        t.expect(
-            FloorTile.corridor.muteStrength > tile.muteStrength,
-            "통로가 \(tile.rawValue) 보다 어둡다"
-        )
-    }
+    // 통로 밝기는 **타일끼리 비교해서 판정할 수 없다.** 원본 텍스처 밝기가 종류마다 달라
+    // (우드 계열이 카펫보다 훨씬 어둡다) 누르는 양의 순서가 결과 밝기의 순서와 다르기 때문이다
+    // — 어두운 카펫은 이 값이 통로보다 작은데 화면 밝기는 66 대 160 이다.
+    //
+    // 예전에는 "통로가 모든 방 바닥재보다 크다" 를 요구했다. 그 단언을 만족시키다 값이 0.78 까지
+    // 올라가 복도가 벽보다도 어두워졌고(렌더 실측 26.9 vs 벽 87.0), 그래도 테스트는 초록이었다.
+    // 화면을 검증하지 못하는 단언이 잘못된 값을 지켜 주고 있었던 셈이다.
+    //
+    // 그래서 여기서는 **값이 임의로 되돌아가는 것만** 막는다. 실제 밝기 판정은 오프스크린
+    // 렌더(`swift run IdaeriConsole --render`) 픽셀 실측으로 한다 — 현재 실측 기준은
+    // 복도 160 · 가장 밝은 방(세라믹) 115 · 셔츠 186 · 벽 87 이고, 복도는 방과 사람 사이에 있다.
+    // 벽과도 비교하지 않는다 — 벽은 이 값 위에 `wallBaseColor` 물들임을 따로 받으므로
+    // (실측 벽 87 vs 복도 160) 같은 축의 값이 아니다. 실제로 두 값은 0.43 대 0.40 으로
+    // 거의 같은데 화면에서는 두 배 차이가 난다.
+    t.expect(
+        FloorTile.corridor.muteStrength > 0.35 && FloorTile.corridor.muteStrength < 0.55,
+        "통로 밝기가 방(아래)과 사람(위) 사이 대역 (실제 \(FloorTile.corridor.muteStrength))"
+    )
 
     // 맞닿은 구역끼리는 바닥재가 달라야 한다(가로 이웃 = index 차 1, 세로 이웃 = 같은 열 위아래).
     for zone in plan.zones {
@@ -225,9 +266,15 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "밴드 위 바깥 벽은 부서 색 없음"
     )
 
-    // 벽 공유로 열이 한 칸 늘었으므로 밴드 오른쪽 끝까지 바닥이 칠해져야 한다
-    // (안 칠하면 격자 끝 한 열만 기본 나무 바닥으로 남아 복도가 잘려 보인다).
-    t.expectEqual(plan.floor[zoneAreaRows][plan.columns - 1], .ceramic, "밴드 오른쪽 끝 열도 바닥")
+    // 밴드 맨 오른쪽 방(탕비실)의 바닥이 끝 벽 앞까지 칠해져야 한다 — 마지막 구간만 폭이
+    // 한 칸 넓은데 그 몫을 빠뜨리면 벽 바로 앞 한 열이 통로색으로 남아 방이 잘려 보인다.
+    // 격자 맨 끝 열은 바깥벽이므로 그 **안쪽** 칸을 본다.
+    t.expectEqual(
+        plan.floor[officeCorridorRow + 1][plan.columns - 2], .ceramic, "탕비실 오른쪽 끝 열도 바닥"
+    )
+    t.expectEqual(
+        plan.floor[officeCorridorRow + 1][plan.columns - 1], .wall, "격자 맨 끝 열은 바깥벽"
+    )
 
     // 부서별 바닥재 매핑이 6개 부서를 전부 덮는다 — 누락되면 조용히 기본 나무 바닥으로 떨어져
     // 그 방만 통로처럼 보인다.
@@ -326,20 +373,86 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
 
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
+    //
+    // 복도에 면한 벽에는 방마다 문 한 칸이 뚫려 있으므로, 그 몫을 뺀 나머지가 전부 벽이어야
+    // 한다. 문 개수까지 함께 고정하지 않으면 벽이 뭉텅이로 빠져도 "문이 좀 많네" 로 통과한다.
     let wallColumns = Set(plan.zones.flatMap { [$0.origin.x, $0.origin.x + $0.width - 1] })
     for column in wallColumns.sorted() {
         let walls = (0..<zoneAreaRows).filter { plan.floor[$0][column] == .wall }
-        t.expectEqual(walls.count, zoneAreaRows, "x=\(column) 세로 칸막이가 전 구간 벽")
+        let facesCorridor =
+            officeCorridorColumns.contains(column - 1) || officeCorridorColumns.contains(column + 1)
+        // 복도에 면한 벽이면 위·아래 구역이 문 하나씩(= 구역 수 ÷ 3 열 만큼)을 낸다.
+        let doorCount = facesCorridor ? 2 : 0
+        t.expectEqual(
+            walls.count, zoneAreaRows - doorCount,
+            "x=\(column) 세로 칸막이가 문(\(doorCount)칸)을 뺀 전 구간 벽"
+        )
     }
 
-    // 아래 구역 천장은 문 한 칸만 열려 있어야 한다. 문이 아예 없으면 구역이 고립되고(도달성
+    // 구역 천장은 문 한 칸만 열려 있어야 한다. 문이 아예 없으면 구역이 고립되고(도달성
     // 테스트가 잡는다), 여러 칸이면 벽이 무의미해지는데 그건 여기서만 잡힌다.
-    let bottomOriginY = plan.zones.map { $0.origin.y }.min() ?? 0
-    for zone in plan.zones where zone.origin.y == bottomOriginY {
+    //
+    // **위 구역도 함께 본다.** 한때 위 구역 천장은 통째로 열려 있었다 — 그 줄이 밴드로 나가는
+    // 유일한 출구였기 때문인데, 복도가 생겨 막을 수 있게 됐다. 위·아래를 갈라 검사하면
+    // 한쪽 천장이 조용히 사라져도 통과한다.
+    for zone in plan.zones {
         let ceilingY = zone.origin.y + zone.height - 1
         let doors = (zone.origin.x..<(zone.origin.x + zone.width))
             .filter { plan.floor[ceilingY][$0] != .wall }
         t.expectEqual(doors.count, 1, "\(zone.department.label) 구역 천장에 문 한 칸")
+    }
+
+    // === 복도 ===
+    // 복도가 실제로 이어져 있어야 한다. 한 칸이라도 벽·가구에 막히면 그 위·아래 방들이
+    // 통째로 고립되고, 그때 화면에는 "사람이 자기 자리에 못 앉는" 증상으로만 나타난다.
+    for column in officeCorridorColumns {
+        let blockedTiles = (0..<(plan.rows - officeOuterWallRows))
+            .filter { !plan.walkable.contains(TilePoint(x: column, y: $0)) }
+        t.expectEqual(blockedTiles.count, 0, "세로 복도 x=\(column) 막힌 줄: \(blockedTiles)")
+    }
+    let blockedCorridorRow = (1..<(plan.columns - 1))
+        .filter { !plan.walkable.contains(TilePoint(x: $0, y: officeCorridorRow)) }
+    t.expectEqual(blockedCorridorRow.count, 0, "가로 복도 막힌 열: \(blockedCorridorRow)")
+
+    // 세로 복도와 가로 복도가 실제로 만나는가 — 만나지 않으면 두 복도가 각각 막다른 길이 된다.
+    for column in officeCorridorColumns {
+        t.expect(
+            plan.floor[officeCorridorRow][column] == .corridor,
+            "세로 복도 x=\(column) 가 가로 복도와 교차"
+        )
+    }
+
+    // 방마다 복도로 나가는 문이 있어야 한다. 천장 문만으로도 도달은 되므로(아래 방 → 위 방 →
+    // 밴드) 도달성 테스트는 이 문이 통째로 빠져도 통과한다 — 그러면 복도를 새로 낸 의미가
+    // 사라지고 예전처럼 방을 관통해 다니게 되는데, 그걸 잡는 단언은 여기뿐이다.
+    for zone in plan.zones {
+        let sideWalls = [zone.origin.x, zone.origin.x + zone.width - 1]
+        let corridorDoors = sideWalls.flatMap { wallX in
+            (zone.origin.y..<(zone.origin.y + zone.height))
+                .filter { y in
+                    plan.floor[y][wallX] != .wall && plan.walkable.contains(TilePoint(x: wallX, y: y))
+                }
+                .map { "(\(wallX),\($0))" }
+        }
+        t.expect(
+            !corridorDoors.isEmpty,
+            "\(zone.department.label) 방에서 복도로 나가는 문이 없다"
+        )
+    }
+
+    // 밴드 세 방도 벽으로 갈려야 한다 — 바닥재만으로 나누면 화면 위쪽이 "가구 놓인 띠 하나"
+    // 로 읽힌다. 방 바닥 줄(가로 복도 위)에서 좌우 경계가 벽인지 본다.
+    for area in plan.commonAreas {
+        let leftWall = plan.floor[officeCorridorRow + 1][area.originX]
+        let rightWall = plan.floor[officeCorridorRow + 1][area.originX + area.width - 1]
+        t.expectEqual(leftWall, .wall, "\(area.label) 왼쪽 칸막이")
+        t.expectEqual(rightWall, .wall, "\(area.label) 오른쪽 칸막이")
+    }
+    // 그리고 그 벽이 방 높이 전체를 덮어야 한다(한 줄만 서 있으면 위가 뚫려 보인다).
+    for area in plan.commonAreas {
+        for y in (officeCorridorRow + 1)..<(plan.rows - officeOuterWallRows) {
+            t.expectEqual(plan.floor[y][area.originX], .wall, "\(area.label) 왼쪽 벽 y=\(y)")
+        }
     }
 
     // 부서 문패가 첫 좌석 행의 이름표를 덮지 않는다.
