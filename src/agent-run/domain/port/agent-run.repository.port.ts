@@ -277,4 +277,9 @@ export interface AgentRunRepositoryPort {
   aggregateSucceededCounts(input: {
     sinceDays: number;
   }): Promise<AgentSucceededCountRow[]>;
+  // 콘솔 오피스 — 특정 시각 이후에 끝난 성공 런을 agentType 별로 센다.
+  // `aggregateSucceededCounts` 와 조건은 같고 창의 시작점만 호출자가 정한다(자정 등 절대 시각).
+  countSucceededSince(input: {
+    since: Date;
+  }): Promise<AgentSucceededCountRow[]>;
 }

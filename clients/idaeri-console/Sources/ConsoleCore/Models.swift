@@ -41,6 +41,13 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// 앉아 있었다. 응답에 값이 없으면 `.internalOps` 로 떨어지는데, 그때는 전원이 한 방에
     /// 몰려 화면에서 바로 드러난다(조용한 실패가 아니다).
     public let department: String?
+    /// 오늘(KST 자정 이후) 성공으로 끝낸 실행 건수. 책상 위 서류 더미 높이가 된다.
+    ///
+    /// **옵셔널인 이유는 버전 스큐다.** 앱은 한 번 빌드해 두고 쓰는데 서버는 따로 재시작하므로,
+    /// 이 필드를 모르는 서버가 응답을 내려도 스냅샷 디코딩 전체가 실패해서는 안 된다. 필수로
+    /// 두면 화면이 통째로 안 뜬다 — 서류 더미 하나 때문에 관제 화면을 잃는 것은 균형이 안 맞는다.
+    /// 값이 없으면 서류를 안 놓는다(0장).
+    public let doneToday: Int?
 
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
@@ -71,7 +78,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
             state: state ?? self.state,
             bubble: bubble ?? self.bubble,
             lastFinishedRunId: lastFinishedRunId ?? self.lastFinishedRunId,
-            department: department
+            department: department,
+            doneToday: doneToday
         )
     }
 
@@ -83,7 +91,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         state: ConsoleAgentState,
         bubble: String,
         lastFinishedRunId: String? = nil,
-        department: String? = nil
+        department: String? = nil,
+        doneToday: Int? = nil
     ) {
         self.agentType = agentType
         self.displayName = displayName
@@ -93,6 +102,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         self.bubble = bubble
         self.lastFinishedRunId = lastFinishedRunId
         self.department = department
+        self.doneToday = doneToday
     }
 }
 
