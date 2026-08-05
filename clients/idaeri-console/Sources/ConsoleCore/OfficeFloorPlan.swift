@@ -239,10 +239,29 @@ public enum FloorTile: String, Sendable, CaseIterable {
             return 0.56
         case .woodB:
             return 0.60
-        // 통로는 방보다 확실히 어둡다. 텍스처는 우드를 그대로 쓰고 밝기만 눌러
-        // 에셋 추가 없이 구분한다 — 방이 앞으로 나오고 통로가 배경으로 물러난다.
+        // 통로는 **모든 방보다 밝다.** 전용 텍스처가 없어(다섯 텍스처가 여섯 방에 이미 쓰인다)
+        // 세라믹을 재사용하므로, 겹치지 않는 축은 밝기뿐이다. 거의 누르지 않아 화면에서 가장
+        // 밝은 면이 되게 한다 — 어느 방과도 혼동되지 않는 유일한 자리다.
+        //
+        // 한때 0.78 이었다. "방보다 확실히 어둡게" 를 노린 값인데, 그때는 복도가 화면에 한 칸도
+        // 없어서(모든 칸을 방·밴드·벽이 덮었다) **실제로 어떻게 보이는지 확인된 적이 없었다.**
+        // 복도를 실제로 낸 뒤 렌더 픽셀을 재 보니 밝기 26.9 로 벽(87.0)의 3분의 1, 바깥벽
+        // (33.4)보다도 어두워 통로가 아니라 바닥에 뚫린 구멍으로 읽혔다.
+        //
+        // 방향을 뒤집은 근거는 **복도에 사람이 지나간다**는 것이다. 누가 어디로 가는지가 이
+        // 화면의 핵심 정보인데, 배경이 사람보다 어두우면 지나가는 사람이 실루엣이 되어 셔츠의
+        // 부서 색이 죽는다. 실제 사무실 복도가 방보다 밝은 것도 같은 이유다.
+        //
+        // 다만 위로 끝까지 밀면 안 된다. 0.30(밝기 184) 에서는 셔츠(실측 185.7)와 밝기가 겹쳐
+        // 같은 문제가 반대편에서 되돌아왔다. 복도는 **방과 사람 사이**에 있어야 한다 —
+        // 0.43 → 밝기 약 160 으로, 가장 밝은 방(세라믹 115)과 45, 셔츠와 25 만큼 떨어진다.
+        //
+        // **다른 타일의 이 값과 비교해서 밝기 순서를 추론하면 안 된다.** 원본 텍스처 밝기가
+        // 종류마다 달라(우드 계열이 카펫보다 훨씬 어둡다) 누르는 양의 순서가 결과 밝기의
+        // 순서와 다르다. 실제로 어두운 카펫은 이 값이 0.40 으로 복도보다 작은데 화면 밝기는
+        // 66 대 160 이다. 밝기 판정은 `--render` 픽셀 실측으로만 한다.
         case .corridor:
-            return 0.78
+            return 0.43
         case .carpetDark, .wall:
             return 0.40
         }
@@ -633,14 +652,37 @@ public struct CommonArea: Equatable, Sendable {
 
 // 격자 규격 — 부서 구역 3열×2행 + 상단 공용 밴드.
 //
-// 구역 하나는 "왼쪽 벽 1칸 + 내부 9칸" 이고 오른쪽 벽은 다음 구역의 왼쪽 벽과 **같은 칸**이다.
-// 예전에는 구역마다 좌우 여백을 따로 벽으로 세워 맞닿는 자리가 2칸(80px)짜리 회색 띠가 됐다.
-// 그래서 열 개수는 10×3 이 아니라 10×3 + 1 — 마지막 구역의 오른쪽 벽 한 열만 더 붙인다.
+// 구역 하나는 "왼쪽 벽 1칸 + 내부 9칸 + 오른쪽 벽 1칸" 이고, 구역과 구역 사이에 복도 한 열이
+// 지나간다. 그래서 원점 간 거리(`zoneStride`)가 구역 폭보다 두 칸 넓다.
+//
+// 한때 인접 구역이 벽 한 칸을 **공유**했다(원점 간 거리 = 10). 벽을 따로 세우면 맞닿는 자리가
+// 2칸짜리 회색 띠가 되기 때문인데, 그 대가로 방끼리 문 하나를 두고 바로 붙어 복도가 설 자리가
+// 없었다. 실제로 왼쪽 아래 방에서 오른쪽 아래 방까지 가려면 다른 방 넷을 관통해야 했다.
+// 지금은 벽 사이를 복도로 벌려, 회색 띠 대신 사람이 지나다니는 통로가 들어간다.
 private let zoneWidth = 10
 private let zoneHeight = 7
 // 통로 1줄 + 가구 2줄 + 바깥벽 2줄. 벽을 두 줄로 세우면서 4 에서 늘렸다.
 private let bandHeight = 5
-private let planColumns = zoneWidth * 3 + 1
+
+/// 구역 원점 사이 거리 — 구역 폭(벽 포함 11칸)에서 마지막 벽이 다음 구역과 겹치지 않게
+/// 한 칸, 그 사이 복도로 한 칸을 더 쓴다.
+private let zoneStride = zoneWidth + 2
+
+/// 세로 복도 열(격자 절대 좌표). 구역 사이를 남북으로 관통해 가로 복도와 만난다.
+///
+/// **줄이 아니라 열로 낸 이유는 타일 크기다.** 화면에 맞추는 배율이
+/// `min(창너비 / 열, 창높이 / 줄)` 이고 창이 가로로 길어 늘 세로가 병목이라(창 1440×760 에서
+/// 가로 여백 200px), 열을 늘리면 남는 가로를 쓰고 타일 크기는 그대로다. 반대로 줄을 늘리면
+/// 사람과 이름표가 그만큼 작아진다. 그래서 남북 복도는 새로 열을 내고, 동서 복도는 줄을
+/// 늘리는 대신 밴드 맨 아래 줄(`officeCorridorRow`)을 전환해 쓴다.
+public let officeCorridorColumns = [zoneWidth + 1, zoneStride + zoneWidth + 1]
+
+/// 가로 복도 줄. 밴드 맨 아래 줄이자 부서 구역 바로 위 줄이다.
+///
+/// 원래도 이 줄만 비워 가로 이동에 썼지만 방 바닥재로 칠해져 있어 통로로 읽히지 않았다.
+public let officeCorridorRow = zoneHeight * 2
+
+private let planColumns = zoneStride * 2 + zoneWidth + 1
 private let planRows = zoneHeight * 2 + bandHeight
 
 /// 바깥벽(격자 맨 위) 두께. 아래 칸이 벽면, 위 칸이 벽 윗면이 되어 높이감을 만든다.
@@ -768,11 +810,19 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     }
 
     // === 상단 공용 밴드: 회의실 | 대표실 | 탕비실 ===
-    let bandY = zoneHeight * 2
-    paint(.carpetDark, x0: 0, y0: bandY, width: zoneWidth, height: bandHeight)
-    paint(.carpetLight, x0: zoneWidth, y0: bandY, width: zoneWidth, height: bandHeight)
-    // 마지막 구간만 한 칸 넓다 — 벽 공유로 늘어난 오른쪽 끝 열(planColumns - 1)까지 덮는다.
-    paint(.ceramic, x0: zoneWidth * 2, y0: bandY, width: zoneWidth + 1, height: bandHeight)
+    //
+    // 방 바닥은 맨 아래 줄을 **비워 두고** 그 위부터 칠한다 — 그 줄이 가로 복도이고, 세 방은
+    // 거기서 각자 안으로 들어가는 구조다. 예전에는 밴드 전체를 방 바닥재로 칠해, 유일한 가로
+    // 동선이 방 안을 관통하는 모양이었다(대표실 앞에 늘어선 줄이 어색해 보인 원인).
+    let bandY = officeCorridorRow
+    let bandRoomY = bandY + 1
+    let bandRoomHeight = bandHeight - 1
+    paint(.carpetDark, x0: 0, y0: bandRoomY, width: zoneStride, height: bandRoomHeight)
+    paint(.carpetLight, x0: zoneStride, y0: bandRoomY, width: zoneStride, height: bandRoomHeight)
+    // 마지막 구간만 한 칸 넓다 — 오른쪽 끝 벽 열(planColumns - 1)까지 덮는다.
+    paint(.ceramic, x0: zoneStride * 2, y0: bandRoomY, width: zoneWidth + 1, height: bandRoomHeight)
+    // 가로 복도 — 격자 폭 전체. 좌우 끝은 뒤에서 바깥벽이 덮는다.
+    paint(.corridor, x0: 0, y0: bandY, width: planColumns, height: 1)
     // 최상단 두 줄은 벽 — 화면 위쪽에 사무실 경계를 만든다.
     //
     // 한 줄이었을 때는 벽에 건 물건(창·등·시계)이 **바닥에 놓인 것처럼** 보였다. 3/4 탑다운에서
@@ -793,60 +843,72 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     //
     // 회의실 — 회의 테이블·화이트보드에 자료 코너(책장·복합기)를 붙였다. 테이블 하나만
     // 두면 10칸 폭에서 왼쪽 절반이 빈 바닥으로 남는다.
-    place(.meetingTable, 4, bandY + 1)
-    // 화이트보드는 왼쪽 끝 두 칸 — 벽 가운데는 창이 쓴다. 아래가 책장이어도 가려지지 않는다
+    //
+    // 왼쪽 끝 칸(x = 0)이 칸막이 벽이 되면서 전체가 한 칸씩 안으로 들어왔다. 예전에는 그 칸도
+    // 방 바닥이라 책장과 화이트보드가 거기 놓여 있었다.
+    place(.meetingTable, 4, bandRoomY)
+    // 화이트보드는 왼쪽 두 칸 — 벽 가운데는 창이 쓴다. 아래가 책장이어도 가려지지 않는다
     // (책장 윗면이 벽 줄에 닿지 않는다). 반면 키 큰 화분은 벽까지 올라와 덮으므로 아래 참조.
-    place(.whiteboard, 0, wallHangY)
     place(.whiteboard, 1, wallHangY)
-    place(.bookshelf, 0, bandY + 2)
-    place(.bookshelf, 1, bandY + 2)
-    // 큰 화분을 3번 칸에서 옮겼다 — 그 위가 벽등 자리인데, 화분 잎이 벽 줄까지 올라와
-    // 등을 덮는다(대표실 시계가 같은 이유로 안 보였다).
-    place(.plantTall, 2, bandY + 2)
-    place(.printer, 9, bandY + 2)
-    place(.plantSmall, 8, bandY + 1)
+    place(.whiteboard, 2, wallHangY)
+    place(.bookshelf, 1, bandRoomY + 1)
+    place(.bookshelf, 2, bandRoomY + 1)
+    place(.printer, 8, bandRoomY + 1)
+    // 큰 화분은 벽걸이가 없는 열에만 둔다 — 잎이 벽 줄까지 올라와 창이든 등이든 덮는다
+    // (대표실 시계가 같은 이유로 안 보였다). 창 4~7 · 등 3·8 을 뺀 자리가 9 뿐이다.
+    place(.plantTall, 9, bandRoomY + 1)
+    // 작은 화분은 방 **아래 줄**에 두므로 자리를 신중히 골라야 한다. 이 줄이 복도에서 가구
+    // 줄로 올라가는 유일한 통로여서, 막으면 그 위 칸이 통째로 고립된다 — 3번 칸에 뒀다가
+    // 회의 테이블 옆 자리(3, 가구줄) 로 아무도 못 가게 만들었다(테이블·책장이 이미 4·2를
+    // 막고 있어 3 이 유일한 진입로였다). 회의 자리에서 먼 8번 칸에 둔다.
+    place(.plantSmall, 8, bandRoomY)
 
     // 대표실 — 대표는 밴드 가운데 서 있고, 그 앞줄이 승인 대기 줄이 된다.
     // 대표 앞 칸(bandY+1)은 비워 둔다: 줄 선 사람과 대표 사이의 면담 공간이고,
     // 여기 책상을 놓으면 서 있는 대표와 겹치지 않아 가구가 붕 떠 보인다.
-    let presidentTile = TilePoint(x: zoneWidth + zoneWidth / 2, y: bandY + 2)
-    place(.plantTall, zoneWidth + 1, bandY + 2)
-    place(.sofa2, zoneWidth + 2, bandY + 2)
-    place(.coffeeTable, zoneWidth + 3, bandY + 2)
+    let presidentTile = TilePoint(x: zoneStride + zoneWidth / 2, y: bandRoomY + 1)
+    place(.plantTall, zoneStride + 1, bandRoomY + 1)
+    place(.sofa2, zoneStride + 2, bandRoomY + 1)
+    place(.coffeeTable, zoneStride + 3, bandRoomY + 1)
     // 시계는 대표 머리 위를 피한다 — 같은 열에 두면 "나 (대표)" 라벨과 겹쳐 둘 다 안 읽힌다.
     //
-    // 창·벽등이 벽 가운데를 쓰면서 오른쪽 끝으로 옮겼다. 왼쪽 끝(zoneWidth + 1)에 뒀더니
-    // 바로 아래 큰 화분의 잎이 시계를 덮어 시간이 안 보였다 — 벽에 거는 물건은 자기 칸만
-    // 비어 있어서는 안 되고 **아래 칸의 키 큰 가구**까지 봐야 한다.
-    place(.clock, zoneWidth + 8, wallHangY)
+    // 창·벽등이 벽 가운데를 쓰면서 오른쪽 끝으로 옮겼다. 왼쪽 끝에 뒀더니 바로 아래 큰 화분의
+    // 잎이 시계를 덮어 시간이 안 보였다 — 벽에 거는 물건은 자기 칸만 비어 있어서는 안 되고
+    // **아래 칸의 키 큰 가구**까지 봐야 한다.
+    place(.clock, zoneStride + 8, wallHangY)
 
-    place(.bookshelf, zoneWidth + zoneWidth - 2, bandY + 2)
-    place(.bookshelf, zoneWidth + zoneWidth - 1, bandY + 2)
+    place(.bookshelf, zoneStride + zoneWidth - 2, bandRoomY + 1)
+    place(.bookshelf, zoneStride + zoneWidth - 1, bandRoomY + 1)
 
     // 탕비실 겸 라운지 — 커피·정수기·소파.
-    let pantryX = zoneWidth * 2
-    place(.plantTall, pantryX, bandY + 2)
-    place(.coffeeMachine, pantryX + 1, bandY + 2)
+    //
+    // `pantryX` 는 이제 **왼쪽 칸막이 벽**이라 가구를 놓을 수 없다(예전에는 방 바닥이었다).
+    // 그래서 맨 앞에 있던 큰 화분이 자리를 잃었다. 벽걸이가 없는 열(창 +3~+6 · 등 +2·+7 을
+    // 뺀 +9)로 내려보내고, 나머지는 원래 오프셋을 지킨다 — 휴식 자리(`loungeTiles`)가
+    // 커피 머신·소파 앞 칸을 오프셋으로 가리키므로 여기서 밀면 사람이 가구 앞이 아닌 곳에 선다.
+    let pantryX = zoneStride * 2
+    place(.coffeeMachine, pantryX + 1, bandRoomY + 1)
     // 정수기를 한 칸 왼쪽으로 — 원래 자리 위가 벽등 자리다.
-    place(.waterCooler, pantryX + 2, bandY + 2)
-    place(.sofa3, pantryX + 5, bandY + 2)
-    place(.coffeeTable, pantryX + 6, bandY + 1)
-    place(.sofa2, pantryX + 8, bandY + 2)
-    place(.trash, pantryX + 9, bandY + 1)
+    place(.waterCooler, pantryX + 2, bandRoomY + 1)
+    place(.sofa3, pantryX + 5, bandRoomY + 1)
+    place(.coffeeTable, pantryX + 6, bandRoomY)
+    place(.sofa2, pantryX + 8, bandRoomY + 1)
+    place(.trash, pantryX + 9, bandRoomY)
+    place(.plantTall, pantryX + 9, bandRoomY + 1)
 
     // 상단 밴드 세 구역의 문패. 부서 문패는 구역 **중앙**에 놓이므로, 이쪽은 **왼쪽 끝**에
     // 붙여 x 가 겹치지 않게 한다(밴드 맨 아래 줄과 위 구역 문패가 같은 높이대에 있다).
     let commonAreas = [
         CommonArea(
-            kind: .meeting, label: "회의실", icon: "🗣", originX: 0, width: zoneWidth,
+            kind: .meeting, label: "회의실", icon: "🗣", originX: 0, width: zoneWidth + 1,
             labelY: bandY
         ),
         CommonArea(
-            kind: .president, label: "대표실", icon: "👑", originX: zoneWidth, width: zoneWidth,
-            labelY: bandY
+            kind: .president, label: "대표실", icon: "👑", originX: zoneStride,
+            width: zoneWidth + 1, labelY: bandY
         ),
         CommonArea(
-            kind: .pantry, label: "탕비실", icon: "☕", originX: zoneWidth * 2,
+            kind: .pantry, label: "탕비실", icon: "☕", originX: zoneStride * 2,
             width: zoneWidth + 1, labelY: bandY
         ),
     ]
@@ -857,7 +919,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 창을 한 칸만 내면 40픽셀짜리 점이 되어 창인지 액자인지 구별되지 않는다.
     let windowRanges = [
         4...7,
-        (zoneWidth + 3)...(zoneWidth + 6),
+        (zoneStride + 3)...(zoneStride + 6),
         (pantryX + 3)...(pantryX + 6),
     ]
     let windowTiles = windowRanges.flatMap { range in
@@ -872,14 +934,15 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     }
 
     // 승인 대기 줄 — 대표 바로 아래 가로 한 줄(왼쪽부터 채운다).
+    // 그 줄이 가로 복도이므로, 줄은 대표실 안이 아니라 **문 앞 복도**에 선다.
     let queueTiles = (0..<6).map { index in
-        TilePoint(x: zoneWidth + 2 + index, y: bandY)
+        TilePoint(x: zoneStride + 2 + index, y: bandY)
     }
     // 휴식 자리 — 소파·커피 앞 칸.
     let loungeTiles = [
-        TilePoint(x: pantryX + 5, y: bandY + 1),
-        TilePoint(x: pantryX + 8, y: bandY + 1),
-        TilePoint(x: pantryX + 1, y: bandY + 1),
+        TilePoint(x: pantryX + 5, y: bandRoomY),
+        TilePoint(x: pantryX + 8, y: bandRoomY),
+        TilePoint(x: pantryX + 1, y: bandRoomY),
     ]
 
     // === 부서 구역 ===
@@ -889,15 +952,16 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     for (index, zoneDepartment) in presentDepartments.enumerated() {
         let column = index % 3
         let row = index / 3
-        let originX = column * zoneWidth
+        let originX = column * zoneStride
         // row 0 이 위(밴드 바로 아래), row 1 이 아래.
         let originY = row == 0 ? zoneHeight : 0
         zones.append(
             DepartmentZone(
                 department: zoneDepartment,
                 origin: TilePoint(x: originX, y: originY),
-                // 좌우 벽을 모두 포함한 폭. 인접 구역과 벽 한 칸을 공유하므로 구역 사각형은
-                // 벽에서 겹친다 — 문패 중앙 계산과 벽 열 판정이 이 값을 본다.
+                // 좌우 벽을 모두 포함한 폭. 구역과 구역 사이에는 복도가 한 열 더 있으므로
+                // (`zoneStride`) 이 사각형끼리는 겹치지 않는다 — 문패 중앙 계산과 벽 열 판정이
+                // 이 값을 본다.
                 width: zoneWidth + 1,
                 height: zoneHeight
             )
@@ -906,11 +970,15 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         // 예전에는 `index % 2` 로 밝은/어두운 카펫을 번갈아 써서 여섯 방이 두 종류로만 보였다.
         // 세로는 구역 전체 높이를 칠한다 — 천장 줄은 뒤에서 벽이 덮고, 벽이 없는 위 구역
         // 맨 윗줄은 방 바닥으로 남아 통로가 방 안을 갈라 보이게 하지 않는다.
+        //
+        // **가로는 좌우 벽 칸까지 칠한다.** 벽은 뒤에서 덮으므로 결과가 달라지는 칸은 딱
+        // 하나 — 복도로 낸 문이다. 문턱이 방 바닥재로 남아 방이 복도까지 이어져 보인다.
+        // 내부만 칠하면 그 칸이 격자 기본값으로 남아 문이 통로색 점으로 찍힌다.
         paint(
             departmentFloor(zoneDepartment),
-            x0: originX + 1,
+            x0: originX,
             y0: originY,
-            width: zoneWidth - 1,
+            width: zoneWidth + 1,
             height: zoneHeight
         )
 
@@ -967,33 +1035,79 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         }
     }
 
-    // === 부서 구역 칸막이 벽 ===
-    // 구역 사이 벽은 **한 칸을 두 방이 공유한다.** 구역마다 자기 좌우 여백을 따로 세우면
-    // 맞닿는 자리가 2칸이 되어, 화면에서 방 사이가 80픽셀짜리 회색 띠로 벌어진다.
+    // === 칸막이 벽과 복도 ===
+    // 구역 사이는 **벽 · 복도 · 벽** 세 칸이다. 예전에는 벽 한 칸을 두 방이 공유해 방끼리 바로
+    // 붙어 있었고, 그래서 가로로 이동하는 길이 밴드 맨 아래 줄 하나뿐이었다 — 왼쪽 아래 방에서
+    // 오른쪽 아래 방으로 가려면 다른 방 넷을 관통해야 했다.
     //
-    // 세로 여백은 전부 벽. 가로 여백은 아래 구역 천장(zoneHeight - 1)만 벽으로 막고 문 한 칸을
-    // 남긴다 — 위 구역 천장은 밴드로 나가는 통로라 열어 둔다. 즉 아래 구역 → 문 → 위 구역 →
-    // 밴드 순으로 이어지며, 이 연결은 좌석·줄·휴식 자리 도달성 테스트가 지킨다.
+    // 세로 여백은 복도 쪽 문 한 칸을 빼고 전부 벽. 가로 여백은 아래 구역 천장(zoneHeight - 1)만
+    // 벽으로 막고 문 한 칸을 남긴다 — 위 구역 천장은 밴드로 나가는 통로라 열어 둔다. 그래서
+    // 방에서 나가는 길이 둘이다: 복도로 바로, 또는 천장 문으로 위 구역을 거쳐.
+    // 이 연결은 좌석·줄·휴식 자리 도달성 테스트가 지킨다.
     let zoneAreaRows = zoneHeight * 2
+    // 벽을 세울 수 있는 범위 — 바깥벽 아래 전부. 밴드도 포함한다(공용 세 방을 갈라야 한다).
+    let wallableRows = planRows - outerWallRows
     func raiseWall(_ x: Int, _ y: Int) {
-        guard x >= 0, y >= 0, x < planColumns, y < zoneAreaRows else {
+        guard x >= 0, y >= 0, x < planColumns, y < wallableRows else {
             return
         }
         floor[y][x] = .wall
         blocked.insert(TilePoint(x: x, y: y))
     }
+
+    let corridorColumnSet = Set(officeCorridorColumns)
+    // 복도에 면한 벽인가 — 좌우 이웃 중 하나가 복도 열이면 그 벽에 문을 낸다.
+    // 격자 좌우 최외곽 벽은 바깥과 접해 있어 여기 걸리지 않는다.
+    func facesCorridor(_ x: Int) -> Bool {
+        corridorColumnSet.contains(x - 1) || corridorColumnSet.contains(x + 1)
+    }
+    // 방마다 복도로 나가는 문 한 칸. 자리 배치가 쓰는 줄(책상 y = 1·4, 좌석 y = 2·5)을 피해
+    // 구역 원점에서 세 칸 위에 낸다 — 위·아래 구역이 같은 상대 위치를 쓴다.
+    let corridorDoorRows: Set<Int> = [3, zoneHeight + 3]
+
     for column in 0..<3 {
-        let originX = column * zoneWidth
-        for y in 0..<zoneAreaRows {
+        let originX = column * zoneStride
+        for wallX in [originX, originX + zoneWidth] {
+            let doorRows = facesCorridor(wallX) ? corridorDoorRows : []
+            for y in 0..<zoneAreaRows where !doorRows.contains(y) {
+                raiseWall(wallX, y)
+            }
+        }
+        // 위·아래 구역 모두 천장을 막고 문 한 칸을 남긴다. 문은 책상 열(originX + 1, 3, 5, 7)을
+        // 피해 오른쪽 끝 빈 열에 낸다.
+        //
+        // 위 구역 천장은 한때 통째로 열려 있었다. 그 줄이 밴드로 나가는 **유일한** 출구여서
+        // 막으면 그 방 전원이 고립됐기 때문이다. 이제는 복도 쪽 문이 따로 있어 막을 수 있고,
+        // 막아야 한다 — 열어 두면 방 위쪽 경계가 없어 복도와 방이 한 덩어리로 보인다.
+        let doorX = originX + zoneWidth - 2
+        for ceilingY in [zoneHeight - 1, zoneAreaRows - 1] {
+            for x in originX...(originX + zoneWidth) where x != doorX {
+                raiseWall(x, ceilingY)
+            }
+        }
+    }
+
+    // 밴드 세 방도 벽으로 닫는다. 바닥재만으로 갈라 두면 화면 위쪽 1/4 이 "가구 놓인 띠 하나"
+    // 로 읽힌다 — 문패가 셋 붙어 있어도 어디까지가 회의실인지 보이지 않았다.
+    // 맨 아래 줄(가로 복도)에는 세우지 않는다: 그 줄이 세 방의 공통 입구다.
+    for column in 0..<3 {
+        let originX = column * zoneStride
+        for y in bandRoomY..<wallableRows {
             raiseWall(originX, y)
-            // 오른쪽 벽은 다음 구역의 왼쪽 벽과 같은 칸이다(마지막 구역은 격자 끝 열).
             raiseWall(originX + zoneWidth, y)
         }
-        // 문은 책상 열(originX + 1, 3, 5, 7)을 피해 오른쪽 끝 빈 열에 낸다.
-        let doorX = originX + zoneWidth - 2
-        for x in originX...(originX + zoneWidth) where x != doorX {
-            raiseWall(x, zoneHeight - 1)
-        }
+    }
+
+    // 좌우 최외곽은 세로로 전 구간이 벽 — 가로 복도가 격자 끝에서 밖으로 뚫려 보이지 않게 한다.
+    for y in 0..<wallableRows {
+        raiseWall(0, y)
+        raiseWall(planColumns - 1, y)
+    }
+
+    // 세로 복도는 벽을 세운 **뒤에** 칠한다. 지금은 벽 루프가 복도 열을 건드리지 않지만,
+    // 순서를 뒤집으면 나중에 벽 범위가 넓어졌을 때 복도가 조용히 벽에 먹힌다.
+    for x in officeCorridorColumns {
+        paint(.corridor, x0: x, y0: 0, width: 1, height: wallableRows)
     }
 
     // 앉는 칸은 통로에서 도달 가능해야 하므로 막지 않는다.
