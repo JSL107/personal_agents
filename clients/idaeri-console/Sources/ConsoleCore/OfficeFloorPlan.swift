@@ -347,19 +347,27 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
-    /// 사람이 통과할 수 있는가. 벽에 걸린 물건은 바닥을 막지 않는다.
+    /// 벽에 낸 구멍에 세우는 문인가.
     ///
-    /// **문은 벽걸이가 아닌데도 관통한다.** 문은 벽에 뚫린 구멍 위에 서 있는 바닥 가구이고,
-    /// 그 구멍이 아래 구역의 유일한 출입구다 — 막으면 그 방 전원이 고립된다(도달성 테스트가
-    /// 잡는다). 두 값이 같은 집합이던 시절의 위임(`isWalkThrough = isWallMounted`)을 여기서
-    /// 갈랐다.
-    public var isWalkThrough: Bool {
+    /// 문 칸에는 두 규칙이 함께 걸린다 — **통행은 열어 두고**(`isWalkThrough`) **사람은
+    /// 머물지 않는다**(`officeStrollSpots`). 방의 유일한 출입구라, 막으면 그 방이 고립되고
+    /// 누가 서 있으면 드나드는 사람이 그 사람을 통과해 지나가는 그림이 된다.
+    public var isDoorway: Bool {
         switch self {
         case .doorClosed, .doorOpen:
             return true
         default:
-            return isWallMounted
+            return false
         }
+    }
+
+    /// 사람이 통과할 수 있는가. 벽에 걸린 물건은 바닥을 막지 않는다.
+    ///
+    /// **문은 벽걸이가 아닌데도 관통한다.** 문은 벽에 뚫린 구멍 위에 서 있는 바닥 가구이고,
+    /// 그 구멍이 방의 유일한 출입구다 — 막으면 그 방 전원이 고립된다(도달성 테스트가 잡는다).
+    /// 두 값이 같은 집합이던 시절의 위임(`isWalkThrough = isWallMounted`)을 여기서 갈랐다.
+    public var isWalkThrough: Bool {
+        isDoorway || isWallMounted
     }
 
     /// 자기 자리인 책상·의자와 사람이 찾을 이유가 없는 시계·쓰레기통을 목적지에서 뺀다.
