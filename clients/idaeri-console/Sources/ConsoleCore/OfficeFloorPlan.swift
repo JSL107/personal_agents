@@ -298,6 +298,23 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
     case bookshelf
     case clock
     case trash
+    // 벽걸이 10종. 방마다 성격이 다른 벽면을 만든다 — 전부 `isWallMounted`.
+    case wallLandscape
+    case wallAbstract
+    case wallCalendar
+    case wallCertificate
+    case wallPinboard
+    case wallWhiteboard
+    case wallShelf
+    case wallMonitor
+    case wallPoster
+    case wallPlantHanging
+    // 문·수납 5종. 바닥에 놓는다.
+    case doorClosed
+    case doorOpen
+    case filingCabinet
+    case lockers2
+    case partitionLow
 
     /// 이 가구가 차지하는 타일 크기. 통로 계산(walkable)과 렌더 크기의 공통 기준.
     public var footprint: (width: Int, height: Int) {
@@ -322,6 +339,9 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         switch self {
         case .clock, .whiteboard:
             return true
+        case .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPinboard,
+            .wallWhiteboard, .wallShelf, .wallMonitor, .wallPoster, .wallPlantHanging:
+            return true
         default:
             return false
         }
@@ -329,10 +349,17 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
 
     /// 사람이 통과할 수 있는가. 벽에 걸린 물건은 바닥을 막지 않는다.
     ///
-    /// 지금은 벽걸이와 정확히 같은 집합이다. 바닥에 깔리는 관통 가구(러그 등)가 들어오면
-    /// 그때 갈라야 한다 — 미리 나눠 두면 값이 같은 두 목록을 함께 관리하게 된다.
+    /// **문은 벽걸이가 아닌데도 관통한다.** 문은 벽에 뚫린 구멍 위에 서 있는 바닥 가구이고,
+    /// 그 구멍이 아래 구역의 유일한 출입구다 — 막으면 그 방 전원이 고립된다(도달성 테스트가
+    /// 잡는다). 두 값이 같은 집합이던 시절의 위임(`isWalkThrough = isWallMounted`)을 여기서
+    /// 갈랐다.
     public var isWalkThrough: Bool {
-        isWallMounted
+        switch self {
+        case .doorClosed, .doorOpen:
+            return true
+        default:
+            return isWallMounted
+        }
     }
 
     /// 자기 자리인 책상·의자와 사람이 찾을 이유가 없는 시계·쓰레기통을 목적지에서 뺀다.
@@ -356,7 +383,20 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
             return 4
         case .plantTall, .plantSmall:
             return 2
-        case .desk, .chairDown, .chairUp, .clock, .trash:
+        // 벽걸이 중 **읽을 것이 있는 것만** 목적지다. 게시판·선반·설계 화이트보드·지표 모니터는
+        // 사람이 앞에 서서 볼 이유가 있고, 액자·포스터·달력·상장·행잉플랜트는 배경이다.
+        case .wallPinboard, .wallWhiteboard:
+            return 4
+        case .wallShelf, .wallMonitor:
+            return 3
+        // 서류를 꺼내러·짐을 넣으러 간다.
+        case .filingCabinet, .lockers2:
+            return 3
+        // **문은 목적지가 될 수 없다.** 아래 구역의 유일한 출입구라, 누가 문 앞에 4초 서 있으면
+        // 그동안 그 방을 드나드는 사람이 전부 막힌다.
+        case .desk, .chairDown, .chairUp, .clock, .trash,
+            .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPoster,
+            .wallPlantHanging, .doorClosed, .doorOpen, .partitionLow:
             return nil
         }
     }
@@ -399,6 +439,34 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
             return (20, 19)
         case .trash:
             return (13, 17)
+        case .wallLandscape:
+            return (20, 16)
+        case .wallAbstract:
+            return (14, 18)
+        case .wallCalendar:
+            return (16, 18)
+        case .wallCertificate:
+            return (16, 16)
+        case .wallPinboard:
+            return (36, 24)
+        case .wallWhiteboard:
+            return (39, 24)
+        case .wallShelf:
+            return (34, 22)
+        case .wallMonitor:
+            return (30, 22)
+        case .wallPoster:
+            return (22, 32)
+        case .wallPlantHanging:
+            return (18, 30)
+        case .doorClosed, .doorOpen:
+            return (40, 45)
+        case .filingCabinet:
+            return (30, 34)
+        case .lockers2:
+            return (30, 35)
+        case .partitionLow:
+            return (40, 25)
         }
     }
 
@@ -448,7 +516,22 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
             return 150  // 3단
         case .trash:
             return 55
-        case .clock, .whiteboard, .meetingTable:
+        case .filingCabinet:
+            return 105  // 3단 서랍
+        case .lockers2:
+            // 2연 사물함. 폭 상한(30px → 1.33배)에 먼저 걸려 목표를 다 채우지 못한다 —
+            // 책장과 같은 이유(에셋 가로세로비가 실물보다 정사각형에 가깝다).
+            return 180
+        case .partitionLow:
+            // 낮은 파티션. 폭이 이미 1칸(40px)이라 상한 1.0 에 걸려 원본 크기로 렌더된다.
+            // 값을 남겨 두는 것은 에셋을 다시 뽑았을 때 환산이 되살아나게 하기 위해서다.
+            return 120
+        // 벽걸이와 문은 세로 픽셀이 높이가 아니다. 벽걸이는 벽면에 걸린 정면 그림이고,
+        // 문은 문틀까지 그려진 정면도라 실물 높이(200cm)로 환산하면 한 칸을 크게 넘는다.
+        case .clock, .whiteboard, .meetingTable,
+            .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPinboard,
+            .wallWhiteboard, .wallShelf, .wallMonitor, .wallPoster, .wallPlantHanging,
+            .doorClosed, .doorOpen:
             return nil
         }
     }
@@ -524,23 +607,38 @@ public func wallDepartment(x: Int, y: Int, zones: [DepartmentZone]) -> Departmen
 
 /// 부서별 대표 가구(방의 성격). 에셋을 새로 만들지 않고 "어디에 무엇을 놓는지" 만 바꾼다.
 ///
-/// **방마다 벽걸이를 하나씩 둔다.** 예전에는 위 세 방(기획·개발·리뷰)만 시계나 화이트보드를
+/// **방마다 벽걸이를 세 종 둔다.** 예전에는 위 세 방(기획·개발·리뷰)만 시계나 화이트보드를
 /// 들고 있어서, 창·등·시계가 전부 몰린 상단 밴드와 벽이 텅 빈 아래 세 방으로 화면이 갈렸다.
 /// 벽걸이는 바닥 후보를 쓰지 않으므로(`isWallMounted`) 기존 바닥 배치와 경합하지 않는다.
+///
+/// **벽 자리는 방당 정확히 세 칸이다(`zoneWallMountSpots`).** 네 번째부터는 걸 자리가 없어
+/// 조용히 버려지므로, 방마다 벽걸이가 셋을 넘지 않아야 한다.
+///
+/// 무엇을 거는지가 방의 성격을 말한다 — 리뷰방 게시판, 성장방 지표 모니터, 경영방 상장처럼
+/// 문패를 읽지 않아도 무슨 일을 하는 방인지 벽이 먼저 알려주게.
 public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     switch department {
     case .planning:
-        return [.meetingTable, .whiteboard, .plantSmall]  // 모여서 논의하는 방
+        // 모여서 논의하는 방 — 일정과 아이디어를 붙여 두는 벽.
+        return [.meetingTable, .whiteboard, .plantSmall, .wallPinboard, .wallCalendar]
     case .engineering:
-        return [.bookshelf, .bookshelf, .clock]  // 자료 벽을 세운 집중하는 방
+        // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
+        return [.bookshelf, .bookshelf, .clock, .wallWhiteboard, .wallShelf]
     case .review:
-        return [.whiteboard, .bookshelf, .bookshelf]  // 검토하는 방
+        // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
+        return [.whiteboard, .bookshelf, .bookshelf, .filingCabinet, .wallPinboard, .wallPoster]
     case .executive:
-        return [.sofa2, .coffeeTable, .plantTall, .clock]  // 손님을 맞는 방
+        // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
+        return [.sofa2, .coffeeTable, .plantTall, .clock, .wallCertificate, .wallLandscape]
     case .growth:
-        return [.plantTall, .plantSmall, .sofa2, .whiteboard]  // 밝고 트인 방
+        // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
+        return [
+            .plantTall, .plantSmall, .sofa2, .whiteboard, .partitionLow,
+            .wallMonitor, .wallPlantHanging,
+        ]
     case .internalOps:
-        return [.printer, .waterCooler, .trash, .clock]  // 설비가 모인 방
+        // 설비가 모인 방 — 사물함과 비품 선반.
+        return [.printer, .waterCooler, .trash, .lockers2, .clock, .wallShelf, .wallAbstract]
     }
 }
 
@@ -584,7 +682,11 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         return spots([(3, 4), (5, 1), (9, 3), (1, 1), (9, 1)])
     case .internalOps:
         // 10명이 x=1~9 를 다 쓰므로 설비는 맨 아래 줄로 내려간다.
-        return spots([(2, 0), (4, 0), (6, 0), (8, 0), (9, 5)])
+        //
+        // 예전 목록의 뒤 두 자리는 둘 다 못 쓰는 자리였다 — (8,0) 은 위 규칙이 금지한 문 열이고
+        // (9,5) 는 (9,4) 책상의 좌석이라 배치 루프가 건너뛴다. 설비가 셋뿐이라 거기까지 커서가
+        // 가지 않아 드러나지 않았을 뿐이다. 실제로 쓸 수 있는 양 끝 칸으로 바꾼다.
+        return spots([(2, 0), (4, 0), (6, 0), (9, 0), (1, 0)])
     }
 }
 
@@ -1119,12 +1221,29 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 구역 원점에서 세 칸 위에 낸다 — 위·아래 구역이 같은 상대 위치를 쓴다.
     let corridorDoorRows: Set<Int> = [3, zoneHeight + 3]
 
+    // 벽에 낸 구멍마다 문을 세운다. 지금까지 출입구는 **벽을 안 세운 빈 칸**이라, 방을 닫아
+    // 놓고도 어디가 문인지 바닥과 구별되지 않았다.
+    //
+    // **열린 문이어야 한다.** 이 칸들은 실제로 사람이 지나다니는 유일한 통로다 — 닫힌 문을
+    // 그리면 사람이 문짝을 통과해 걸어 나온다. 통행 자체는 `isWalkThrough` 가 열어 두므로
+    // 스프라이트를 닫힌 것으로 바꿔도 막히지는 않지만, 그림과 동작이 어긋난다.
+    //
+    // 구멍을 내는 자리와 문을 세우는 자리가 **같은 분기**여야 한다. 따로 적으면 한쪽만 옮겼을
+    // 때 문이 벽 한가운데 서거나 구멍이 문 없이 남는다.
+    func openDoor(_ x: Int, _ y: Int) {
+        place(.doorOpen, x, y)
+    }
+
     for column in 0..<3 {
         let originX = column * zoneStride
         for wallX in [originX, originX + zoneWidth] {
             let doorRows = facesCorridor(wallX) ? corridorDoorRows : []
-            for y in 0..<zoneAreaRows where !doorRows.contains(y) {
-                raiseWall(wallX, y)
+            for y in 0..<zoneAreaRows {
+                if doorRows.contains(y) {
+                    openDoor(wallX, y)
+                } else {
+                    raiseWall(wallX, y)
+                }
             }
         }
         // 위·아래 구역 모두 천장을 막고 문 한 칸을 남긴다. 문은 책상 열(originX + 1, 3, 5, 7)을
@@ -1138,6 +1257,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
             for x in originX...(originX + zoneWidth) where x != doorX {
                 raiseWall(x, ceilingY)
             }
+            openDoor(doorX, ceilingY)
         }
     }
 

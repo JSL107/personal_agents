@@ -215,6 +215,36 @@ func furnitureSpriteName(_ kind: FurnitureKind) -> String {
         return "furn-clock"
     case .trash:
         return "furn-trash"
+    case .wallLandscape:
+        return "furn-wall-landscape"
+    case .wallAbstract:
+        return "furn-wall-abstract"
+    case .wallCalendar:
+        return "furn-wall-calendar"
+    case .wallCertificate:
+        return "furn-wall-certificate"
+    case .wallPinboard:
+        return "furn-wall-pinboard"
+    case .wallWhiteboard:
+        return "furn-wall-whiteboard"
+    case .wallShelf:
+        return "furn-wall-shelf"
+    case .wallMonitor:
+        return "furn-wall-monitor"
+    case .wallPoster:
+        return "furn-wall-poster"
+    case .wallPlantHanging:
+        return "furn-wall-plant-hanging"
+    case .doorClosed:
+        return "furn-door-closed"
+    case .doorOpen:
+        return "furn-door-open"
+    case .filingCabinet:
+        return "furn-filing-cabinet"
+    case .lockers2:
+        return "furn-lockers-2"
+    case .partitionLow:
+        return "furn-partition-low"
     }
 }
 
