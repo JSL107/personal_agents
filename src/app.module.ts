@@ -54,8 +54,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
 import { SandboxModule } from './sandbox/sandbox.module';
-import { SessionInjectPreviewApplier } from './session-dispatch/application/session-inject.applier';
-import { SessionDispatchModule } from './session-dispatch/session-dispatch.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
@@ -138,7 +136,6 @@ import { WebhookModule } from './webhook/webhook.module';
         PreferenceProfilePreviewApplier,
         EveningBlogPublishApplier,
         EveningCareerReflectApplier,
-        SessionInjectPreviewApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier],
@@ -156,7 +153,6 @@ import { WebhookModule } from './webhook/webhook.module';
         LocalSessionsModule,
       ],
     }),
-    SessionDispatchModule,
     SlackModule,
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
