@@ -18,6 +18,7 @@
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
 | CTO | `CTO` | `/assign` | CHATGPT | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
+| CTO Study | `CTO_STUDY` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용) |
 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
 | Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
 | Evening Retro Publish | `EVENING_RETRO` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts` | 저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용) |

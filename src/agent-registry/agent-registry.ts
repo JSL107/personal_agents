@@ -256,4 +256,12 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용)',
   },
+  {
+    agentType: AgentType.CTO_STUDY,
+    displayName: 'CTO Study',
+    slashCommands: [],
+    usecasePath: 'src/agent/cto/application/evaluate-study-topic.usecase.ts',
+    description:
+      'Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용)',
+  },
 ];

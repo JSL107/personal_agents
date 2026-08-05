@@ -657,6 +657,27 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PR_REVIEW_HARVEST_ENABLED?: string;
+
+  // ====== Daily Study Brief Cron — 매일 AI·에이전트 딥다이브 ======
+  // - STUDY_BRIEF_OWNER_SLACK_USER_ID: 학습 주체. 미설정 시 모듈 비활성.
+  // - STUDY_BRIEF_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
+  // - STUDY_BRIEF_CRON: BullMQ cron (default 매일 09:30 — `30 9 * * *`).
+  // - STUDY_BRIEF_TIMEZONE: default Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  STUDY_BRIEF_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  STUDY_BRIEF_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  STUDY_BRIEF_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  STUDY_BRIEF_TIMEZONE?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

@@ -1,6 +1,7 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
+import { StudyResearchResult } from '../../../study-brief-cron/domain/study-research.parser';
 
 // CTO 의 분배 후보 — review 합의에 따라 BE_SRE / BE_FIX 는 webhook 자동 트리거 영역이라 제외.
 // BE / BE_SCHEMA / BE_TEST 만 사용자 트리거로 분배 가능.
@@ -49,4 +50,30 @@ export interface GenerateAssignmentInput {
   // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction(직전 대화 기반 사용자 지시)을
   // prompt [사용자 지시] 섹션으로 반영. 슬래시 /assign 진입은 미주입 (기존 동작).
   conversationContext?: ConversationContext;
+}
+
+export interface StudyConceptVerdict {
+  kind: 'CONCEPT';
+  whyNow: string;
+  whereItLands: string;
+  readingPlan: string;
+  minutes: number;
+}
+
+export interface StudyToolVerdict {
+  kind: 'TOOL';
+  whatImproves: string;
+  adoptionCost: string;
+  installHint: string;
+  caution?: string;
+  minutes: number;
+}
+
+export type StudyTopicVerdict = StudyConceptVerdict | StudyToolVerdict;
+
+export interface EvaluateStudyTopicInput {
+  slackUserId: string;
+  research: StudyResearchResult;
+  profileSummary?: string;
+  profileSkills?: readonly string[];
 }

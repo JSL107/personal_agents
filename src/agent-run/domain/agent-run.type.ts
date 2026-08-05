@@ -69,6 +69,7 @@ export enum TriggerType {
   // 보유 종목 감시 — 국내/미국 두 cron 이 같은 트리거를 공유하고, 시장 구분은
   // inputSnapshot.marketCountry 로 남긴다(트리거를 시장별로 쪼개면 집계가 흩어진다).
   AUTOPILOT_INVEST_CRON = 'AUTOPILOT_INVEST_CRON',
+  STUDY_BRIEF_CRON = 'STUDY_BRIEF_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
