@@ -247,4 +247,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용)',
   },
+  {
+    agentType: AgentType.INVEST,
+    displayName: 'Invest Monitor',
+    slashCommands: [],
+    usecasePath:
+      'src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts',
+    description:
+      '보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용)',
+  },
 ];

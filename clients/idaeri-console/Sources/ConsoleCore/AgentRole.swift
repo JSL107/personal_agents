@@ -50,6 +50,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "블로그"
     case "VACATION":
         return "휴가 관리"
+    case "INVEST":
+        return "투자 관리"
     // 내부
     case "ISSUE_LABELER":
         return "이슈 분류"
