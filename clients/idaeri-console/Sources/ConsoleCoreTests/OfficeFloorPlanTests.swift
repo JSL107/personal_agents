@@ -24,7 +24,11 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 인원을 임의로 줄이면 안 된다 — 26명짜리 표본을 쓰던 동안 "내부 부서 마지막 한 명이 자리를
 // 못 받아 화면에서 사라지는" 결함이 통과했다. 구역 정원은 12석이고 지금 가장 큰 부서가 9명이다.
 // agentType 은 displayName 과 다르다: EVENING_RETRO(타입) ↔ "Evening Retro Publish"(표시명).
-private let sampleAgents: [ConsoleAgent] =
+//
+// **배회 목적지 테스트(`OfficeIdleTests`)도 이 표본을 쓴다.** 거기서 따로 만들던 표본은
+// 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
+// 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
+let sampleAgents: [ConsoleAgent] =
     planAgents(.planning, ["PM", "PO_SHADOW", "PO_EVAL"])
     + planAgents(.engineering, ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX"])
     + planAgents(

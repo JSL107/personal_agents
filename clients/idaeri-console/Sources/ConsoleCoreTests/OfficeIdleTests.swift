@@ -20,29 +20,12 @@ private func idleCandidate(
     )
 }
 
-private func idlePlanAgent(_ agentType: String) -> ConsoleAgent {
-    ConsoleAgent(
-        agentType: agentType,
-        displayName: agentType,
-        slashCommands: [],
-        description: "",
-        state: .waiting,
-        bubble: ""
-    )
-}
-
-// 운영 표본의 부서별 정원 경계를 그대로 밟아야 목적지 검증이 실제 배치와 어긋나지 않는다.
-private let idleSampleAgents: [ConsoleAgent] = [
-    "PM", "PO_SHADOW", "PO_EVAL",
-    "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX",
-    "CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER",
-    "CTO", "CEO",
-    "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION",
-    "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
-    "REVIEW_REPLY_JUDGE", "HUMANIZER", "DOCS_AUDIT_OPTIMIZER",
-    "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING", "EVENING_RETRO",
-    "OPS_SUPERVISOR",
-].map(idlePlanAgent)
+// 목적지 검증은 `OfficeFloorPlanTests` 의 `sampleAgents` 를 그대로 쓴다.
+//
+// 예전에는 같은 27명을 여기서 따로 만들면서 **부서를 안 넘겼다.** 그래서 전원이 기본 부서로
+// 떨어져 방이 하나뿐인 평면도가 나왔고, "운영 27명 평면도" 라는 이름과 달리 방이 여섯일 때만
+// 드러나는 결함을 전부 통과시켰다 — 문 칸이 배회 목적지가 되는 결함이 그렇게 빠져나갔다.
+// 표본을 하나로 합쳐 두 검증이 같은 배치를 본다.
 
 func runOfficeIdleTests(_ t: TestRunner) {
     t.suite("OfficeIdle")
@@ -170,7 +153,7 @@ func runOfficeIdleTests(_ t: TestRunner) {
     )
     t.expectEqual(firstPicks, secondPicks, "동일 선발 입력은 동일 결과")
 
-    let plan = officeFloorPlan(agents: idleSampleAgents)
+    let plan = officeFloorPlan(agents: sampleAgents)
     let spots = officeStrollSpots(plan: plan)
     t.expect(!spots.isEmpty, "운영 27명 평면도에 배회 목적지가 있다")
     t.expect(spots.allSatisfy { plan.walkable.contains($0.tile) }, "모든 목적지는 통행 가능")
@@ -183,6 +166,19 @@ func runOfficeIdleTests(_ t: TestRunner) {
         "책상·의자·시계·쓰레기통은 목적지에서 제외"
     )
     t.expectEqual(Set(spots.map(\.tile)).count, spots.count, "목적지 칸 중복 없음")
+
+    // 문 칸은 목적지가 될 수 없다. 방의 유일한 출입구라, 누가 몇 초 서 있으면 그동안 드나드는
+    // 사람이 전부 그 사람을 통과해 지나가는 그림이 된다.
+    //
+    // **문 자신의 `strollDwellSeconds` 를 nil 로 둔 것만으로는 못 막는다.** 목적지는 가구 앞
+    // **이웃 칸**이라, 문 바로 위 벽에 걸린 물건(리뷰방·성장방 화이트보드)이 자기 목적지로
+    // 아래 문 칸을 고른다 — 첫 이웃 후보가 (x, y-1) 이고 문 칸은 통행 가능하기 때문이다.
+    let doorTiles = Set(plan.furniture.filter { $0.kind.isDoorway }.map(\.tile))
+    let onDoor = spots.filter { doorTiles.contains($0.tile) }
+    t.expectEqual(
+        onDoor.count, 0,
+        "문 칸에 놓인 목적지: \(onDoor.map { "\($0.kind.rawValue)@(\($0.tile.x),\($0.tile.y))" }.sorted())"
+    )
 
     let firstSpot = officeStrollSpot(
         for: "PM", round: 7, spots: spots, occupied: []
