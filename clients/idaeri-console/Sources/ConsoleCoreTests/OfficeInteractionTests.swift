@@ -335,4 +335,40 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         officeVisibleSessions(mixedSessions.reversed(), limit: 2).map(\.sessionId),
         "입력 순서가 달라도 같은 결과"
     )
+
+    // === 세션 구분 ===
+    // 여럿이 서면 서로 다른 사람으로 보여야 한다. 예전에는 스프라이트 한 장에 같은 색이라
+    // 여덟이 늘어서면 한 사람을 복제해 붙인 것처럼 보였다.
+    let sessionIds = ["s-alpha", "s-beta", "s-gamma", "s-delta", "s-epsilon"]
+    let looks = sessionIds.map { characterLook(for: $0) }
+    t.expect(
+        Set(looks.map { "\($0.sheetIndex)-\($0.hairIndex)-\($0.pantsIndex)" }).count > 1,
+        "세션마다 외형이 갈린다"
+    )
+    t.expectEqual(
+        characterLook(for: "s-alpha").sheetIndex,
+        characterLook(for: "s-alpha").sheetIndex,
+        "같은 세션은 늘 같은 모습"
+    )
+    // 셔츠는 청록 계열에 묶여 있어야 한다 — 색상까지 흩으면 부서 사람과 구별되지 않는다.
+    for look in looks {
+        let shirt = officeSessionShirtRGB(shift: look.shirtShift)
+        t.expect(shirt.green > shirt.red && shirt.blue > shirt.red, "세션 셔츠는 청록 계열")
+    }
+
+    // 이름표는 옆 세션과 겹치지 않게 자른다. 자르되 뒤쪽(구분되는 정보)을 남긴다 —
+    // 워크트리 이름은 앞이 대개 같은 저장소 이름이라 앞을 남기면 전부 같은 글자가 된다.
+    t.expectEqual(officeSessionShortName("idaeri"), "idaeri", "상한 안이면 그대로")
+    let fullName = "personal_agents-office-window-light"
+    let shortened = officeSessionShortName(fullName)
+    t.expectEqual(shortened.count, 12, "긴 이름은 상한까지 자른다")
+    t.expect(shortened.hasPrefix("…"), "잘렸음을 표시한다")
+    t.expect(fullName.hasSuffix(shortened.dropFirst()), "남긴 부분은 원래 이름의 꼬리")
+    // 같은 저장소의 다른 워크트리 둘이 서로 다른 이름표를 받아야 한다 — 앞을 남겼다면
+    // 둘 다 "personal_ag…" 가 되어 이름표가 있어도 구분이 안 된다.
+    t.expect(
+        officeSessionShortName("personal_agents-window-light")
+            != officeSessionShortName("personal_agents-selection-ring"),
+        "같은 저장소의 다른 워크트리가 서로 다른 이름표"
+    )
 }
