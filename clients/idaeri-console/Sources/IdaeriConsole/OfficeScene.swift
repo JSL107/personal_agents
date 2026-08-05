@@ -915,7 +915,7 @@ final class OfficeScene: SKScene {
             sessionNodes[sessionId] = nil
         }
         for (index, session) in visible.enumerated() {
-            let node = sessionNodes[session.sessionId] ?? makeSessionNode()
+            let node = sessionNodes[session.sessionId] ?? makeSessionNode(for: session)
             if sessionNodes[session.sessionId] == nil {
                 sessionNodes[session.sessionId] = node
                 objectLayer.addChild(node)
@@ -925,16 +925,27 @@ final class OfficeScene: SKScene {
         updateCompanySummary(lastSyncedAgents)
     }
 
-    private func makeSessionNode() -> SKNode {
+    /// 세션 캐릭터 한 명. 외형은 세션 id 로 정해 실행마다 같은 세션이 같은 모습을 갖는다.
+    ///
+    /// 예전에는 전원이 `char-down` 한 장에 같은 청록 tint 였다. 화면에 여덟이 늘어서면
+    /// **한 사람을 복제해 붙여 놓은 것처럼** 보였고, 구분은 이름표에만 걸려 있었는데 그
+    /// 이름표마저 서로 겹쳤다. 에이전트가 쓰는 외형 결정(`characterLook`)을 그대로 태워
+    /// 시트·머리·바지를 흩고, 셔츠만 청록 계열에 묶어 "내가 돌리는 작업" 표식을 남긴다.
+    private func makeSessionNode(for session: ConsoleSession) -> SKNode {
         let holder = SKNode()
-        let sprite = SKSpriteNode(texture: SpriteLoader.texture("char-down"))
+        let look = characterLook(for: session.sessionId)
+        let texture =
+            SpriteLoader.characterTexture(
+                pose: "down",
+                sheet: look.sheetIndex,
+                hair: hairPalette[look.hairIndex],
+                shirt: officeSessionShirtRGB(shift: look.shirtShift),
+                pants: pantsPalette[look.pantsIndex]
+            ) ?? SpriteLoader.texture("char-down")
+        let sprite = SKSpriteNode(texture: texture)
         sprite.name = "sessionSprite"
         sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
         sprite.zPosition = 1
-        // 청록 tint — 에이전트(부서색 셔츠)와 대표(금색)에 이미 쓰지 않은 색이라, 물들이는
-        // 것만으로 "이건 사람이 아니라 내가 돌리는 작업" 이 읽힌다.
-        sprite.color = SKColor(red: 0.36, green: 0.78, blue: 0.72, alpha: 1)
-        sprite.colorBlendFactor = 0.55
         holder.addChild(sprite)
         return holder
     }
@@ -955,7 +966,7 @@ final class OfficeScene: SKScene {
         // 쉬는 세션은 옅게. 화면에 여덟 개가 늘어서도 지금 돌고 있는 것이 먼저 읽힌다.
         sprite.alpha = isActive ? 1.0 : 0.45
         setChildLabel(
-            node, name: "sessionName", text: session.name,
+            node, name: "sessionName", text: officeSessionShortName(session.name),
             position: CGPoint(x: 0, y: sprite.size.height + tileSize * 0.10),
             fontSize: tileSize * 0.24,
             color: SKColor(white: isActive ? 0.95 : 0.66, alpha: 1)

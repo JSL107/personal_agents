@@ -242,6 +242,39 @@ public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
 
 /// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
 ///
+/// 세션 캐릭터의 셔츠색. 청록 계열 안에서 세션마다 조금씩 어긋난 값을 준다.
+///
+/// 세션은 부서가 없어 `officeShirtColorRGB` 를 쓸 수 없다. 그렇다고 전원 같은 스프라이트에
+/// 같은 색으로 두면 여덟이 늘어섰을 때 **한 사람이 복제된 것처럼** 보인다 — 실제로 그렇게
+/// 보였고, 구분 수단이 이름표 하나뿐인데 그 이름표마저 서로 겹쳤다.
+///
+/// 색조를 청록에 묶어 두는 것은 유지한다. "부서 사람이 아니라 내가 돌리는 작업" 이라는
+/// 표식이라, 여기서 색상까지 흩으면 에이전트와 구별되지 않는다.
+public func officeSessionShirtRGB(shift: Double) -> (red: Double, green: Double, blue: Double) {
+    let base = (red: 0.20, green: 0.64, blue: 0.60)
+    let blend = 0.42 + shift
+    return (
+        red: 1.0 - (1.0 - base.red) * blend,
+        green: 1.0 - (1.0 - base.green) * blend,
+        blue: 1.0 - (1.0 - base.blue) * blend
+    )
+}
+
+/// 세션 이름표에 쓸 짧은 이름.
+///
+/// 세션 이름은 실행 디렉터리에서 오므로 `personal_agents-office-window-light` 처럼 길다.
+/// 자리 간격이 한 칸이라 그대로 쓰면 옆 세션 이름표와 겹쳐 **둘 다** 못 읽는다.
+///
+/// 뒤쪽을 남기는 이유는 앞이 대개 같은 저장소 이름이기 때문이다 — 여러 세션을 가르는 정보는
+/// 뒤(워크트리·브랜치 이름)에 있다.
+public func officeSessionShortName(_ name: String, limit: Int = 12) -> String {
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    guard trimmed.count > limit, limit > 1 else {
+        return trimmed
+    }
+    return "…" + String(trimmed.suffix(limit - 1))
+}
+
 /// 자리가 한정돼 있어 전부는 못 세운다. 13개가 떠 있어도 대표실 앞줄은 여덟 자리 남짓이라,
 /// 넘치는 몫은 좌상단 요약의 숫자가 맡는다 — 화면에 보이는 사람 수가 곧 전체라고 오해하지
 /// 않게 요약이 총계를 함께 적는다.
