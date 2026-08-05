@@ -174,4 +174,105 @@ func runOfficeWalkFrameTests(_ t: TestRunner) {
     t.expectEqual(missing.count, 0, "빠진 걸음 프레임: \(missing)")
     // 시트 4종 × 3포즈 × 2프레임. 시트를 늘리고 에셋을 안 만들면 위 검사가 잡는다.
     t.expectEqual(expectedFrames.count, 24, "걸음 프레임 24장 (실제 \(expectedFrames.count))")
+
+    // MARK: - 회의 소집
+
+    // 체인 참여자가 셋이면 1:1 전달 대신 회의를 연다.
+    let chainAgents = [
+        makeAgent("PM", .completed), makeAgent("CTO", .completed),
+        makeAgent("BACKEND", .inProgress),
+    ]
+    let threeStepRuns = [makeRun("r0", "PM"), makeRun("r1", "CTO", parentId: "r0")]
+    let threeStepContext = ChoreographyContext(
+        agents: chainAgents, runs: threeStepRuns, pendingCommands: []
+    )
+    t.expectEqual(
+        visualIntents(
+            for: .runStarted(makeRun("r2", "BACKEND", parentId: "r1")), context: threeStepContext
+        ),
+        [.meeting(agentTypes: ["PM", "CTO", "BACKEND"], thenWorking: "BACKEND")],
+        "3단 체인 → 회의 소집(조상부터 순서 보존)"
+    )
+
+    // 회의 intent 는 참석자 전원의 배회를 끊어야 한다 — 한 명이라도 빠지면 그 사람의
+    // 머무름 콜백이 나중에 깨어나 회의 도중 자리로 끌고 간다.
+    t.expectEqual(
+        affectedAgentTypes(
+            of: .meeting(agentTypes: ["PM", "CTO", "BACKEND"], thenWorking: "BACKEND")
+        ),
+        ["PM", "CTO", "BACKEND"],
+        "회의 참석자 전원이 배회 취소 대상"
+    )
+    t.expectEqual(
+        affectedAgentTypes(of: .meeting(agentTypes: ["PM", "CTO"], thenWorking: "BACKEND")),
+        ["PM", "CTO", "BACKEND"],
+        "참석자 목록에 없는 후속 작업자도 취소 대상"
+    )
+
+    // 모르는 에이전트가 낀 체인은 그 사람을 빼고 센다 — 화면에 없는 사람은 회의에 못 온다.
+    let unknownChainRuns = [makeRun("r0", "GHOST"), makeRun("r1", "PM", parentId: "r0")]
+    let unknownChainContext = ChoreographyContext(
+        agents: chainAgents, runs: unknownChainRuns, pendingCommands: []
+    )
+    t.expectEqual(
+        visualIntents(
+            for: .runStarted(makeRun("r2", "CTO", parentId: "r1")), context: unknownChainContext
+        ),
+        [.handoff(from: "PM", to: "CTO"), .working(agentType: "CTO")],
+        "미지의 조상을 뺀 참여자가 둘이면 회의 대신 1:1 전달"
+    )
+
+    // 체인 추적: 조상 → 자신 순, 같은 사람이 두 번 나오면 처음 자리만.
+    let repeatRuns = [makeRun("c0", "PM"), makeRun("c1", "CTO", parentId: "c0")]
+    t.expectEqual(
+        officeChainParticipants(run: makeRun("c2", "PM", parentId: "c1"), runs: repeatRuns),
+        ["PM", "CTO"],
+        "같은 사람이 체인에 두 번 나와도 한 번만"
+    )
+
+    // 순환 parentId 에서 멈춘다. 여기서 무한 루프에 빠지면 스냅샷 적용이 멈춰
+    // 관제 화면 전체가 얼어붙는다.
+    let cyclic = [
+        ConsoleRun(
+            id: "x0", agentType: "PM", status: "RUNNING", parentId: "x1",
+            startedAt: "t", finishedAt: nil
+        ),
+        ConsoleRun(
+            id: "x1", agentType: "CTO", status: "RUNNING", parentId: "x0",
+            startedAt: "t", finishedAt: nil
+        ),
+    ]
+    t.expect(
+        officeChainParticipants(run: cyclic[0], runs: cyclic).count <= 16,
+        "순환 체인에서도 상한 안에서 멈춘다"
+    )
+
+    // 회의 자리는 테이블 둘레의 통행 칸이어야 한다.
+    let meetingPlan = officeFloorPlan(agents: chainAgents)
+    let meetingSeats = officeMeetingSeats(plan: meetingPlan)
+    t.expect(!meetingSeats.isEmpty, "회의 자리 존재")
+    t.expect(
+        meetingSeats.count >= officeMeetingMinimumParticipants,
+        "회의 자리가 최소 참여 인원(\(officeMeetingMinimumParticipants))만큼 있다"
+    )
+    let tableTiles = Set(
+        meetingPlan.furniture
+            .filter { $0.kind == .meetingTable }
+            .flatMap { table in
+                (0..<table.kind.footprint.height).map {
+                    TilePoint(x: table.tile.x, y: table.tile.y + $0)
+                }
+            }
+    )
+    for seat in meetingSeats {
+        t.expect(meetingPlan.walkable.contains(seat), "회의 자리 \(seat.x),\(seat.y) 통행 가능")
+        t.expect(!tableTiles.contains(seat), "회의 자리가 테이블 칸 위가 아님")
+    }
+    // 전 좌석에서 회의실까지 갈 수 있어야 한다 — 못 가면 그 사람만 조용히 제자리에 남는다.
+    for seat in meetingSeats {
+        let stranded = meetingPlan.desks.filter {
+            officePath(from: $0.seat, to: seat, walkable: meetingPlan.walkable).isEmpty
+        }
+        t.expectEqual(stranded.count, 0, "회의 자리 \(seat.x),\(seat.y) 에 못 가는 좌석 없음")
+    }
 }

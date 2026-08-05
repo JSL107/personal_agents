@@ -144,6 +144,141 @@ public func officeStrollSpot(
     return candidates[index]
 }
 
+// MARK: - 회의
+
+/// 회의실에 모였을 때 머무는 시간(초). 배회 머무름(3~8초)보다 길다 — 여럿이 모이는 데
+/// 걸리는 시간(먼 부서에서 20칸 넘게 걸어온다)을 감안하지 않으면, 늦게 온 사람이 도착하는
+/// 순간 이미 회의가 끝나 있다.
+public let officeMeetingDwellSeconds: Double = 9
+
+/// 회의를 열 최소 참여 인원. 둘뿐이면 기존 1:1 전달 연출이 더 읽기 쉽다 —
+/// 두 사람이 각자 자리에서 회의실까지 왕복하는 동안 화면에는 아무 일도 일어나지 않는다.
+public let officeMeetingMinimumParticipants = 3
+
+/// 회의실 테이블 둘레의 설 자리(순수). 테이블 칸 자체는 막혀 있으므로 인접한 통행 칸을 쓴다.
+///
+/// 좌표 순서를 고정해(y 내림차순 → x 오름차순) 같은 참여자 목록이면 늘 같은 자리에 선다.
+/// 실행마다 자리가 바뀌면 회의가 열릴 때마다 사람들이 다른 모양으로 흩어져, 같은 사건인지
+/// 알아보기 어렵다.
+public func officeMeetingSeats(plan: OfficeFloorPlan) -> [TilePoint] {
+    guard let room = plan.commonAreas.first(where: { $0.kind == .meeting }) else {
+        return []
+    }
+    let tables = plan.furniture.filter { placement in
+        placement.kind == .meetingTable
+            && placement.tile.x >= room.originX
+            && placement.tile.x < room.originX + room.width
+            && placement.tile.y >= room.labelY
+    }
+    guard !tables.isEmpty else {
+        return []
+    }
+    var seats: Set<TilePoint> = []
+    for table in tables {
+        let size = table.kind.footprint
+        for offsetY in 0..<size.height {
+            let row = table.tile.y + offsetY
+            seats.insert(TilePoint(x: table.tile.x - 1, y: row))
+            seats.insert(TilePoint(x: table.tile.x + 1, y: row))
+        }
+        seats.insert(TilePoint(x: table.tile.x, y: table.tile.y - 1))
+        seats.insert(TilePoint(x: table.tile.x, y: table.tile.y + size.height))
+    }
+    let tableTiles = Set(
+        tables.flatMap { table in
+            (0..<table.kind.footprint.height).map {
+                TilePoint(x: table.tile.x, y: table.tile.y + $0)
+            }
+        }
+    )
+    return seats
+        .filter { plan.walkable.contains($0) && !tableTiles.contains($0) }
+        .sorted { left, right in
+            left.y == right.y ? left.x < right.x : left.y > right.y
+        }
+}
+
+/// 이 실행이 속한 체인의 참여자(조상부터 자신까지, 중복 제거).
+///
+/// `parentId` 를 거슬러 올라간다. 순환하거나 비정상적으로 긴 체인에서 멈추도록 상한을 둔다 —
+/// 화면 연출 하나 때문에 스냅샷 적용이 멈추면 관제 화면 전체가 얼어붙는다.
+public func officeChainParticipants(run: ConsoleRun, runs: [ConsoleRun]) -> [String] {
+    let runsById = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var ancestors: [String] = []
+    var visitedRunIds: Set<String> = [run.id]
+    var cursor: ConsoleRun? = run
+    while let current = cursor, ancestors.count < 16 {
+        ancestors.append(current.agentType)
+        guard let parentId = current.parentId, visitedRunIds.insert(parentId).inserted else {
+            break
+        }
+        cursor = runsById[parentId]
+    }
+    // 조상 → 자신 순으로 뒤집고, 같은 사람이 체인에 두 번 나오면 처음 자리만 남긴다.
+    var seenAgents: Set<String> = []
+    return ancestors.reversed().filter { seenAgents.insert($0).inserted }
+}
+
+// MARK: - 내 작업 세션
+
+/// 세션이 "돌고 있다" 로 취급되는 백엔드 상태 문자열.
+public let officeSessionActiveState = "active"
+
+/// 오피스에 세션을 세울 자리(대표실 앞줄). 대표가 직접 돌리는 작업이므로 부서 방이 아니라
+/// 대표 앞에 둔다 — 에이전트와 같은 줄에 섞으면 사규가 배정한 일과 구분되지 않는다.
+///
+/// 승인 대기 줄(`queueTiles`)과는 다른 줄을 쓴다. 같은 줄에 두면 세션이 늘어난 순간 줄 선
+/// 사람과 겹쳐, 승인이 몇 건인지 세지 못한다.
+public func officeSessionTiles(plan: OfficeFloorPlan) -> [TilePoint] {
+    guard let room = plan.commonAreas.first(where: { $0.kind == .president }) else {
+        return []
+    }
+    let row = plan.presidentTile.y - 1
+    let queued = Set(plan.queueTiles)
+    return (room.originX..<(room.originX + room.width))
+        .map { TilePoint(x: $0, y: row) }
+        .filter { plan.walkable.contains($0) && !queued.contains($0) }
+}
+
+/// 화면에 세울 세션을 고른다(순수). 돌고 있는 것 먼저, 그다음 세션 id 순.
+///
+/// 자리가 한정돼 있어 전부는 못 세운다. 13개가 떠 있어도 대표실 앞줄은 여덟 자리 남짓이라,
+/// 넘치는 몫은 좌상단 요약의 숫자가 맡는다 — 화면에 보이는 사람 수가 곧 전체라고 오해하지
+/// 않게 요약이 총계를 함께 적는다.
+public func officeVisibleSessions(_ sessions: [ConsoleSession], limit: Int) -> [ConsoleSession] {
+    guard limit > 0 else {
+        return []
+    }
+    return sessions
+        .sorted { left, right in
+            let leftActive = left.state == officeSessionActiveState
+            let rightActive = right.state == officeSessionActiveState
+            if leftActive != rightActive {
+                return leftActive
+            }
+            return left.sessionId < right.sessionId
+        }
+        .prefix(limit)
+        .map { $0 }
+}
+
+/// 대기 중 숨쉬기의 한 주기(초). 위상 계산과 씬의 동작 길이가 같은 값을 봐야 한다.
+public let officeBreathCycleSeconds: Double = 3.4
+
+/// 사람마다 다른 숨쉬기 시작 위상(초).
+///
+/// 27명이 같은 순간에 같은 주기로 오르내리면 사람이 아니라 군무로 보인다 — 스프라이트가
+/// 한 장뿐이라 "다 똑같아 보인다" 는 인상을 숨쉬기가 한 번 더 강화한다. 위상만 어긋내도
+/// 같은 그림이 서로 다른 순간에 움직여 개체로 읽힌다.
+///
+/// 프로세스마다 달라지는 Swift `Hasher` 대신 유니코드 스칼라 합을 쓴다(배회 목적지 선택과
+/// 같은 이유) — 실행마다 같은 사람이 같은 위상을 갖는다.
+public func officeBreathPhaseSeconds(agentType: String) -> Double {
+    let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+    let steps = 17
+    return Double(scalarSum % steps) / Double(steps) * officeBreathCycleSeconds
+}
+
 /// 시각 경계를 네 구간으로만 유지해 씬이 달력 판정을 중복하지 않게 한다.
 public enum OfficeAmbience: String, Equatable, Sendable {
     case morning

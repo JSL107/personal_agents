@@ -6,6 +6,12 @@ public enum VisualIntent: Equatable, Sendable {
     case recolor(agentType: String, state: ConsoleAgentState)
     case working(agentType: String)
     case handoff(from: String, to: String)
+    /// 일이 여럿에 걸쳐 이어지면 회의실에 모인다.
+    ///
+    /// `thenWorking` 은 회의가 끝난 뒤 자기 자리로 가서 일을 시작할 사람이다. 회의와
+    /// `working` 을 따로 보내면 뒤따르는 `working` 이 회의를 시작하자마자 취소한다 —
+    /// 둘 다 같은 사람을 걷게 하는 지시라서 나중 것이 이긴다.
+    case meeting(agentTypes: [String], thenWorking: String)
     case summonToBand(agentType: String)
     case returnHome(agentType: String)
     case reject(agentType: String)
@@ -17,6 +23,8 @@ public func affectedAgentTypes(of intent: VisualIntent) -> [String] {
     switch intent {
     case let .handoff(from, to):
         return [from, to]
+    case let .meeting(agentTypes, thenWorking):
+        return agentTypes.contains(thenWorking) ? agentTypes : agentTypes + [thenWorking]
     case let .recolor(agentType, _),
          let .working(agentType),
          let .summonToBand(agentType),
@@ -98,6 +106,12 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
     case let .runStarted(run):
         guard knows(run.agentType) else {
             return []
+        }
+        // 체인에 여럿이 얽혔으면 회의실로 모은다. 화면에서 자리를 뜨는 사람이 여럿이라
+        // "지금 이 일에 누가 관여하는지" 가 한눈에 보인다 — 1:1 전달로는 두 사람만 보인다.
+        let participants = officeChainParticipants(run: run, runs: context.runs).filter(knows)
+        if participants.count >= officeMeetingMinimumParticipants {
+            return [.meeting(agentTypes: participants, thenWorking: run.agentType)]
         }
         if let parentId = run.parentId,
            let parent = context.runs.first(where: { $0.id == parentId }),

@@ -11,8 +11,11 @@ import SwiftUI
 let officeLabelFontName = "AppleSDGothicNeo-Bold"
 
 /// 한글이 뭉개지지 않는 최소 크기. 라틴 문자보다 획이 많아 하한이 높다.
-let officeNameplateMinFontSize: CGFloat = 11
-let officeZoneLabelMinFontSize: CGFloat = 13
+///
+/// 값은 `ConsoleCore` 가 단일 소스로 갖는다 — 문패가 이름표를 덮지 않을 높이를 계산하려면
+/// 순수 경계(회귀 테스트가 닿는 곳)가 이 하한을 알아야 하기 때문이다.
+let officeNameplateMinFontSize = CGFloat(officeNameplateMinFontSizeValue)
+let officeZoneLabelMinFontSize = CGFloat(officeZoneLabelMinFontSizeValue)
 /// 좌상단 전사 요약(HUD)의 최소 크기. 씬 안의 이름표가 아니라 화면에 얹는 글이라 따로 둔다.
 let officeHudMinFontSize: CGFloat = 13
 

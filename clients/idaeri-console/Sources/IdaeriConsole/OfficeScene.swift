@@ -32,7 +32,8 @@ final class OfficeScene: SKScene {
     /// 머리 위 표시(말풍선·경과·생각 점)를 이름표보다 더 위에 띄우기 위한 여유 높이.
     /// 이름표가 발밑에서 머리 위로 올라왔으므로, 이 값이 작으면 둘이 겹쳐 둘 다 못 읽는다.
     private var nameplateClearance: CGFloat {
-        max(officeNameplateMinFontSize, tileSize * 0.30) + tileSize * 0.06 + 6
+        CGFloat(officeNameplateFontSize(tileSize: Double(tileSize)))
+            + tileSize * CGFloat(officeNameplateGapTiles) + 6
     }
 
     private var characters: [String: CharacterNode] = [:]
@@ -49,6 +50,9 @@ final class OfficeScene: SKScene {
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
+    /// 내가 직접 돌리는 CLI 세션. 에이전트와 달리 사규가 배정한 자리가 없어 대표 앞줄에 선다.
+    private var sessionNodes: [String: SKNode] = [:]
+    private var lastSyncedSessions: [ConsoleSession] = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -230,7 +234,8 @@ final class OfficeScene: SKScene {
         }
 
         layoutQueue()
-        updateCompanySummary(agents)
+        // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
+        syncSessions(lastSyncedSessions)
         updateAmbience()
     }
 
@@ -301,9 +306,17 @@ final class OfficeScene: SKScene {
                 if kind == .wall {
                     applyWallShading(node, column: column, row: row)
                 } else {
-                    // 바닥은 배경으로 물러나야 한다. 어두운 회색을 섞어 대비·채도를 함께 누른다
+                    // 바닥은 배경으로 물러나야 한다. 어두운 색을 섞어 대비·채도를 함께 누른다
                     // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
-                    node.color = floorMuteColor
+                    //
+                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 0.54~0.78 로 높아 원본 바닥재의
+                    // 차이가 거의 지워지는데, 시간대 색막까지 얹히면 여섯 방이 한 가지 색으로
+                    // 보였다("어디가 어느 부서인지 문패를 읽어야 안다"). 벽이 이미 같은 방식으로
+                    // 부서 색조를 띠므로(applyWallShading), 바닥도 같은 규칙을 따르게 해 방 전체가
+                    // 한 색조로 묶이게 한다.
+                    node.color = floorMuteColor(
+                        department: wallDepartment(x: column, y: row, zones: plan.zones)
+                    )
                     node.colorBlendFactor = CGFloat(kind.muteStrength)
                     // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
                     // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
@@ -316,8 +329,26 @@ final class OfficeScene: SKScene {
         }
     }
 
-    /// 바닥 노이즈를 누를 때 섞는 색(배경보다 살짝 밝은 중성 회색).
-    private let floorMuteColor = SKColor(red: 0.17, green: 0.16, blue: 0.18, alpha: 1)
+    /// 바닥 노이즈를 누를 때 섞는 색. 부서 구역 안이면 그 부서 색조를 옅게 태운다.
+    ///
+    /// 밝기는 중성 회색에 맡기고 **색조만** 가져온다. 부서색을 그대로 섞으면 골드·코랄처럼
+    /// 밝은 색을 쓰는 방의 바닥이 통째로 밝아져, 방이 아니라 조명이 다른 것처럼 보인다
+    /// (벽에서 이미 겪은 문제 — applyWallShading 의 같은 근거).
+    private func floorMuteColor(department: Department?) -> SKColor {
+        let base = (red: 0.17, green: 0.16, blue: 0.18)
+        guard let department else {
+            return SKColor(red: base.red, green: base.green, blue: base.blue, alpha: 1)
+        }
+        let tint = agentDepartmentPaletteRGBA(department)
+        let mix = 0.32
+        let dim = 0.55
+        return SKColor(
+            red: base.red * (1 - mix) + tint.red * dim * mix,
+            green: base.green * (1 - mix) + tint.green * dim * mix,
+            blue: base.blue * (1 - mix) + tint.blue * dim * mix,
+            alpha: 1
+        )
+    }
     /// 눌러 놓은 벽의 기본색. 벽 원본이 밝은 크림이라 그대로 깔면 도면처럼 보인다.
     private let wallBaseColor = (red: 0.26, green: 0.22, blue: 0.20)
 
@@ -369,11 +400,19 @@ final class OfficeScene: SKScene {
             holder.name = "zone:\(zone.department.rawValue)"
             holder.position = CGPoint(
                 x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
-                // 구역 위쪽 경계 줄 위로 확실히 띄운다. 이름표가 발밑에서 머리 위로 올라오면서
-                // 첫 좌석 행의 이름표가 문패와 같은 높이대로 올라왔다 — 0.22 로는 겹친다.
-                // 문패는 overlayLayer(z=1000) 라 겹치더라도 캐릭터 라벨보다 앞에 그려진다.
-                y: gridOrigin.y + CGFloat(zone.origin.y + zone.height - 1) * tileSize
-                    + tileSize * 0.52
+                // 높이는 구역 경계가 아니라 **그 방 첫 좌석 행 이름표 위끝**에서 파생한다.
+                // 문패는 overlayLayer(z=1000) 라 겹치면 캐릭터 라벨을 덮는데, 문패가 구역
+                // 정중앙(칸 5.5)이고 좌석이 1·3·5·7 이라 겹치는 순간 매번 같은 사람
+                // (세 번째 좌석)의 이름이 통째로 사라진다. 한글 글자 크기에 하한이 있어
+                // 작은 창일수록 타일 대비 이름표가 커지므로, 고정 배수로는 큰 창에서만 맞는다.
+                y: gridOrigin.y
+                    + CGFloat(
+                        officeZoneLabelBottomTiles(
+                            zone: zone,
+                            topSeatY: officeTopSeatY(zone: zone, desks: plan.desks),
+                            tileSize: Double(tileSize)
+                        )
+                    ) * tileSize
             )
 
             let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
@@ -394,6 +433,48 @@ final class OfficeScene: SKScene {
             plate.strokeColor = SKColor(
                 red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.55
             )
+            plate.lineWidth = 1
+
+            holder.addChild(plate)
+            holder.addChild(label)
+            overlayLayer.addChild(holder)
+        }
+        renderCommonAreaLabels()
+    }
+
+    /// 상단 밴드(회의실·대표실·탕비실)에 이름을 단다.
+    ///
+    /// 화면 위쪽 1/4 을 차지하는데 이름이 없어 "가구만 놓인 빈 띠" 로 보였다. 부서 문패와 달리
+    /// **왼쪽 끝에 붙인다** — 밴드 맨 아래 줄과 위 구역 문패가 같은 높이대라, 둘 다 가운데
+    /// 정렬하면 x 까지 겹쳐 서로를 덮는다.
+    ///
+    /// 색은 부서색을 쓰지 않고 중성 회색이다. 사람이 상주하지 않는 방이라 부서 문패보다
+    /// 뒤로 물러나야 관제 신호(사람·상태 링)가 먼저 읽힌다.
+    private func renderCommonAreaLabels() {
+        overlayLayer.children
+            .filter { $0.name?.hasPrefix("common:") == true }
+            .forEach { $0.removeFromParent() }
+        for area in plan.commonAreas {
+            let holder = SKNode()
+            holder.name = "common:\(area.label)"
+            holder.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(area.originX) + 0.5) * tileSize,
+                y: gridOrigin.y + (CGFloat(area.labelY) + 0.2) * tileSize
+            )
+
+            let label = SKLabelNode(text: "\(area.icon) \(area.label)")
+            label.fontName = officeLabelFontName
+            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.32)
+            label.fontColor = SKColor(white: 0.72, alpha: 1)
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .bottom
+            label.zPosition = 1
+
+            let plate = SKShapeNode(
+                rect: label.frame.insetBy(dx: -5, dy: -3), cornerRadius: 3
+            )
+            plate.fillColor = SKColor(white: 0.07, alpha: 0.62)
+            plate.strokeColor = SKColor(white: 0.45, alpha: 0.4)
             plate.lineWidth = 1
 
             holder.addChild(plate)
@@ -585,18 +666,23 @@ final class OfficeScene: SKScene {
         node.stand()
         node.isWalking = true
 
-        // 한 칸당 이동 + 방향 전환 + 살짝 튀는 상하 움직임. 걷기 프레임이 없어도
-        // 이 bob 만으로 "걸어간다" 로 읽힌다.
+        // 한 칸당 이동 + 방향 전환 + 걸음 그림 교체. 다리 교차는 그림이 보여준다.
         var actions: [SKAction] = []
         var cursor = node.tile
-        let stepDuration = 0.16
-        // bob·기울기는 걷기 프레임을 대신하는 유일한 신호라, 도트 캐릭터에서 눈에 보일
-        // 만큼은 커야 한다(예전 0.06·0.05 는 32px 타일에서 2px·2.9° 로 거의 안 보였다).
-        let bobHeight = tileSize * 0.11
-        for (index, step) in path.enumerated() {
+        // 한 칸 0.16초는 초당 6칸이라, 다리가 교차하는 것보다 몸이 먼저 지나가 종종거려 보였다.
+        // 픽셀 게임의 보통 걸음 속도(초당 4~5칸)로 늦춘다.
+        let stepDuration = 0.20
+        // 상하 흔들림은 **보조 신호로만** 남긴다.
+        //
+        // 예전에는 이 bob(0.11칸)과 좌우 기울임(±5°)·착지 눌림이 걸음 그림을 대신하는
+        // 유일한 신호였다. 3단계에서 걸음 그림 2장이 들어왔는데 이 셋을 걷어내지 않아,
+        // 다리가 교차하는 위에 몸이 튀고 기울고 눌리는 것이 겹쳐 걷는 게 아니라 옆으로
+        // 통통 뛰는 것으로 보였다. 기울임·눌림은 걸음 그림과 역할이 정확히 겹치므로 뺐고,
+        // bob 만 그림에 없는 성분(상하 성분은 다리만 옮긴 파생 프레임에 없다)이라 남긴다.
+        let bobHeight = tileSize * 0.035
+        for step in path {
             let direction = facing(from: cursor, to: step)
             let target = floorPoint(step)
-            let lean: CGFloat = index % 2 == 0 ? 0.09 : -0.09
             let stepAction = SKAction.run { [weak self, weak node] in
                 guard let self, let node else {
                     return
@@ -609,21 +695,12 @@ final class OfficeScene: SKScene {
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
                 // 와야 한다(apply(facing:) 이 포즈를 다시 고르므로).
                 node.stepWalkFrame()
-                // 프레임 교체 위에 얹는 보조 신호. 한 걸음마다 위로 튀고 좌우로 살짝 기울인다.
-                // 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58) 해서 발을 떼는 쪽에 힘이 실리고,
-                // 착지에서 세로로 눌러 발이 바닥에 닿는 순간을 만든다 — 이게 없으면 캐릭터가
-                // 미끄러지듯 떠서 이동한다.
-                let stride = SKAction.group([
-                    .sequence([
-                        .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
-                        .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
-                    ]),
-                    .rotate(toAngle: lean, duration: stepDuration / 2),
-                    .sequence([
-                        .wait(forDuration: stepDuration * 0.7),
-                        .scaleY(to: 0.93, duration: stepDuration * 0.15),
-                        .scaleY(to: 1.0, duration: stepDuration * 0.15),
-                    ]),
+                // 그림 교체 위에 얹는 보조 신호. 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58)
+                // 해서 발을 떼는 쪽에 힘이 실린다. 진폭이 작아 "튄다" 가 아니라 걸음의 무게로만
+                // 읽힌다 — 크게 주면 다시 뛰는 것처럼 보인다.
+                let stride = SKAction.sequence([
+                    .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
+                    .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
                 ])
                 node.sprite.run(stride)
             }
@@ -634,8 +711,10 @@ final class OfficeScene: SKScene {
             cursor = step
         }
         actions.append(.run { [weak self, weak node] in
+            // 걸음 자체는 회전·눌림을 쓰지 않지만, 실패 몸짓(startSlump 의 scaleY 0.86)이
+            // 걸린 채 걷기 시작했을 수 있다. 도착 자세를 기본값으로 되돌린다 —
+            // 이어지는 reapplyMotion 이 필요하면 다시 건다.
             node?.sprite.run(.rotate(toAngle: 0, duration: 0.1))
-            // 착지 squash 가 걸린 채 걸음이 끊기면 눌린 몸으로 남는다. 도착 시 원래대로.
             node?.sprite.yScale = 1
             // 걸음 프레임(한쪽 발이 들린 그림)도 함께 되돌린다 — 안 하면 도착한 사람이
             // 계속 짝다리로 서 있다. completion 보다 먼저 와야 앉기가 최종 자세를 이긴다.
@@ -742,6 +821,8 @@ final class OfficeScene: SKScene {
                 startWorking(agentType)
             case let .handoff(from, to):
                 handoff(from: from, to: to)
+            case let .meeting(agentTypes, thenWorking):
+                holdMeeting(agentTypes, thenWorking: thenWorking)
             case let .summonToBand(agentType):
                 joinQueue(agentType)
             case let .returnHome(agentType):
@@ -767,6 +848,136 @@ final class OfficeScene: SKScene {
         if let agentType = node.name {
             stopMonitorGlow(agentType)
         }
+    }
+
+    // MARK: - 내 작업 세션
+
+    /// 내가 돌리는 CLI 세션을 대표 앞줄에 세운다.
+    ///
+    /// 에이전트와 **다르게 보여야 한다.** 사규가 배정한 일이 아니라 내가 직접 띄운 작업이라,
+    /// 같은 사람 그림을 쓰되 청록으로 물들이고 부서 방이 아닌 대표 앞에 둔다. 대시보드 탭
+    /// 아래쪽 목록에만 있던 정보를 사무실에서도 한눈에 보게 하는 것이 목적이다.
+    func syncSessions(_ sessions: [ConsoleSession]) {
+        lastSyncedSessions = sessions
+        let tiles = officeSessionTiles(plan: plan)
+        let visible = officeVisibleSessions(sessions, limit: tiles.count)
+        let incoming = Set(visible.map(\.sessionId))
+        for (sessionId, node) in sessionNodes where !incoming.contains(sessionId) {
+            node.removeFromParent()
+            sessionNodes[sessionId] = nil
+        }
+        for (index, session) in visible.enumerated() {
+            let node = sessionNodes[session.sessionId] ?? makeSessionNode()
+            if sessionNodes[session.sessionId] == nil {
+                sessionNodes[session.sessionId] = node
+                objectLayer.addChild(node)
+            }
+            layoutSessionNode(node, session: session, tile: tiles[index])
+        }
+        updateCompanySummary(lastSyncedAgents)
+    }
+
+    private func makeSessionNode() -> SKNode {
+        let holder = SKNode()
+        let sprite = SKSpriteNode(texture: SpriteLoader.texture("char-down"))
+        sprite.name = "sessionSprite"
+        sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
+        sprite.zPosition = 1
+        // 청록 tint — 에이전트(부서색 셔츠)와 대표(금색)에 이미 쓰지 않은 색이라, 물들이는
+        // 것만으로 "이건 사람이 아니라 내가 돌리는 작업" 이 읽힌다.
+        sprite.color = SKColor(red: 0.36, green: 0.78, blue: 0.72, alpha: 1)
+        sprite.colorBlendFactor = 0.55
+        holder.addChild(sprite)
+        return holder
+    }
+
+    private func layoutSessionNode(_ node: SKNode, session: ConsoleSession, tile: TilePoint) {
+        node.position = floorPoint(tile)
+        node.zPosition = depth(of: tile)
+        guard let sprite = node.childNode(withName: "sessionSprite") as? SKSpriteNode,
+              let texture = sprite.texture
+        else {
+            return
+        }
+        let base = texture.size()
+        sprite.size = CGSize(
+            width: base.width * characterScale, height: base.height * characterScale
+        )
+        let isActive = session.state == officeSessionActiveState
+        // 쉬는 세션은 옅게. 화면에 여덟 개가 늘어서도 지금 돌고 있는 것이 먼저 읽힌다.
+        sprite.alpha = isActive ? 1.0 : 0.45
+        setChildLabel(
+            node, name: "sessionName", text: session.name,
+            position: CGPoint(x: 0, y: sprite.size.height + tileSize * 0.10),
+            fontSize: tileSize * 0.24,
+            color: SKColor(white: isActive ? 0.95 : 0.66, alpha: 1)
+        )
+        sprite.removeAction(forKey: "sessionTyping")
+        guard isActive else {
+            sprite.position = .zero
+            return
+        }
+        // 돌고 있는 세션은 사람이 자리에서 두드리는 것과 같은 몸짓을 쓴다.
+        let beat = SKAction.sequence([
+            .moveBy(x: 0, y: 1.4, duration: 0.09),
+            .moveBy(x: 0, y: -1.4, duration: 0.09),
+            .wait(forDuration: 0.06),
+        ])
+        sprite.run(.repeatForever(beat), withKey: "sessionTyping")
+    }
+
+    /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.
+    ///
+    /// 배회와 같은 추적 집합(`strollingAgents`)에 넣는다. 그래야 회의 도중 실제 이벤트가 오면
+    /// 기존 취소 경로가 그대로 회의를 끊는다 — 관제 신호가 연출을 이긴다는 규칙은 여기서도 같다.
+    ///
+    /// 회의를 열지 못하는 경우(자리가 없거나 참석자를 아무도 못 찾음)에도 **일은 시작해야 한다.**
+    /// 연출이 실패했다고 "일이 돌기 시작했다" 는 신호까지 사라지면, 화면이 조용히 거짓말을 한다.
+    private func holdMeeting(_ agentTypes: [String], thenWorking: String) {
+        let seats = officeMeetingSeats(plan: plan)
+        let tableTile = plan.furniture.first { $0.kind == .meetingTable }?.tile
+        var assigned = 0
+        for agentType in agentTypes {
+            guard assigned < seats.count,
+                  let node = characters[agentType],
+                  !queueOrder.contains(agentType)
+            else {
+                continue
+            }
+            let seat = seats[assigned]
+            assigned += 1
+            cancelStroll(agentType)
+            strollingAgents.insert(agentType)
+            stopWorking(node)
+            walk(node, to: seat) { [weak self, weak node] in
+                if let tableTile, let direction = facing(from: seat, to: tableTile) {
+                    node?.apply(facing: direction)
+                }
+                node?.run(.sequence([
+                    .wait(forDuration: officeMeetingDwellSeconds),
+                    .run { [weak self] in
+                        self?.endMeeting(agentType, thenWorking: thenWorking)
+                    },
+                ]), withKey: "stroll")
+            }
+        }
+        guard assigned > 0 else {
+            startWorking(thenWorking)
+            return
+        }
+    }
+
+    /// 회의가 끝나면 각자 자리로. 이 일을 이어받은 사람은 자리에 앉아 곧바로 일을 시작한다.
+    private func endMeeting(_ agentType: String, thenWorking: String) {
+        guard strollingAgents.contains(agentType) else {
+            return
+        }
+        guard agentType == thenWorking else {
+            endStroll(agentType)
+            return
+        }
+        strollingAgents.remove(agentType)
+        startWorking(agentType)
     }
 
     /// 결과를 넘겨주는 연출 — 보내는 사람이 받는 사람 자리 앞까지 걸어갔다 돌아온다.
@@ -994,7 +1205,6 @@ final class OfficeScene: SKScene {
             overlay = SKSpriteNode(color: .clear, size: size)
             overlay.zPosition = 500
             overlay.anchorPoint = CGPoint(x: 0, y: 0)
-            overlay.position = .zero
             addChild(overlay)
             ambienceOverlay = overlay
         }
@@ -1005,7 +1215,14 @@ final class OfficeScene: SKScene {
             alpha: 1
         )
         overlay.alpha = CGFloat(tint.alpha)
-        overlay.size = size
+        // **격자 영역에만** 씌운다. 씬 전체(size)를 덮으면 사무실이 다 안 들어가고 남는
+        // 레터박스 여백까지 물든다 — 창 비율과 격자 비율(31:18)이 어긋나는 만큼 위아래로
+        // 생기는 띠라, 저녁·밤에는 화면 위아래가 통째로 갈색·남색 판이 됐다. 사무실 바깥은
+        // 어두운 배경으로 남아야 사무실이 화면에서 또렷하게 떠오른다.
+        overlay.position = gridOrigin
+        overlay.size = CGSize(
+            width: tileSize * CGFloat(plan.columns), height: tileSize * CGFloat(plan.rows)
+        )
     }
 
     /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다.
@@ -1038,9 +1255,15 @@ final class OfficeScene: SKScene {
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
         let summary = companySummary(agents: agents)
-        let label = SKLabelNode(
-            text: "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
-        )
+        var text =
+            "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
+        if !lastSyncedSessions.isEmpty {
+            // 대표 앞줄에 설 수 있는 세션은 여덟 남짓이라, 그 수가 곧 전체라고 오해하지 않게
+            // 총계를 여기 적는다.
+            let active = lastSyncedSessions.filter { $0.state == officeSessionActiveState }.count
+            text += "  ·  내 세션 \(lastSyncedSessions.count)(도는 중 \(active))"
+        }
+        let label = SKLabelNode(text: text)
         label.name = "summaryHUD"
         // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
         // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
