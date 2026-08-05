@@ -810,9 +810,12 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 대표 앞 칸(bandY+1)은 비워 둔다: 줄 선 사람과 대표 사이의 면담 공간이고,
     // 여기 책상을 놓으면 서 있는 대표와 겹치지 않아 가구가 붕 떠 보인다.
     let presidentTile = TilePoint(x: zoneWidth + zoneWidth / 2, y: bandY + 2)
-    place(.plantTall, zoneWidth + 1, bandY + 2)
-    place(.sofa2, zoneWidth + 2, bandY + 2)
-    place(.coffeeTable, zoneWidth + 3, bandY + 2)
+    // 대표실 안쪽 줄의 가구는 **홀수 칸에만** 둔다. 이 줄의 짝수 칸이 세션(대표가 직접 띄운
+    // 작업) 이 앉는 자리라, 가구가 짝수 칸을 차지하면 그만큼 앉을 데가 사라진다.
+    // 자리 계산은 `officeSessionTiles` 가 두 칸 간격으로 잡으므로 여기서 어긋나면
+    // 사람 수가 조용히 줄어든다.
+    place(.sofa2, zoneWidth + 1, bandY + 2)
+    place(.plantTall, zoneWidth + 3, bandY + 2)
     // 시계는 대표 머리 위를 피한다 — 같은 열에 두면 "나 (대표)" 라벨과 겹쳐 둘 다 안 읽힌다.
     //
     // 창·벽등이 벽 가운데를 쓰면서 오른쪽 끝으로 옮겼다. 왼쪽 끝(zoneWidth + 1)에 뒀더니
@@ -820,7 +823,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 비어 있어서는 안 되고 **아래 칸의 키 큰 가구**까지 봐야 한다.
     place(.clock, zoneWidth + 8, wallHangY)
 
-    place(.bookshelf, zoneWidth + zoneWidth - 2, bandY + 2)
+    place(.bookshelf, zoneWidth + 7, bandY + 2)
     place(.bookshelf, zoneWidth + zoneWidth - 1, bandY + 2)
 
     // 탕비실 겸 라운지 — 커피·정수기·소파.

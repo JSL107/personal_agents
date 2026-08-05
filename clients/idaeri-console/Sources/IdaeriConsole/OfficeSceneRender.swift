@@ -16,11 +16,15 @@ func renderOfficeScene(client: ConsoleClient, path: String, hour: Int?, size: CG
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
     scene.hourOverride = hour
+    scene.skipsChoreography = true
     let view = SKView(frame: CGRect(origin: .zero, size: size))
     view.presentScene(scene)
 
     let snapshot = fetchSnapshotSynchronously(client: client)
     scene.sync(agents: snapshot?.agents ?? [], approvals: snapshot?.approvals ?? [])
+    // 세션도 함께 그린다 — 빠뜨리면 실제 앱에만 있는 사람들이 회귀 확인에서 통째로 빠진다
+    // (세션 이름표가 서로 겹쳐 못 읽던 문제가 이 구멍으로 렌더 점검을 빠져나갔다).
+    scene.syncSessions(snapshot?.sessions ?? [])
     scene.updateCompanySummary(snapshot?.agents ?? [])
 
     guard
