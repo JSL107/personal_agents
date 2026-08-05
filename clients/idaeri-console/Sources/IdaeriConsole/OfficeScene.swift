@@ -86,8 +86,16 @@ final class OfficeScene: SKScene {
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
     /// 내가 직접 돌리는 CLI 세션. 에이전트와 달리 사규가 배정한 자리가 없어 대표 앞줄에 선다.
-    private var sessionNodes: [String: SKNode] = [:]
+    private var sessionNodes: [String: CharacterNode] = [:]
+    /// 세션이 앉은 자리. 한 번 앉으면 지킨다 — 매번 다시 나눠 주면 누가 퇴근할 때마다
+    /// 남은 사람 전원이 옆으로 옮겨 앉아, 아무 일도 없었는데 사무실이 통째로 움직인다.
+    private var sessionSeats: [String: TilePoint] = [:]
+    /// 지금 문으로 걸어 나가는 중인 세션. 걷는 동안에도 `sessionNodes` 에 남아 있어야
+    /// 같은 세션이 되살아났을 때 두 번째 사람이 생기지 않는다(`leaveOffice`).
+    private var leavingSessions: Set<String> = []
     private var lastSyncedSessions: [ConsoleSession] = []
+    /// 마지막으로 퇴근 판정을 다시 훑은 씬 시각(`update(_:)`).
+    private var lastSessionSweepAt: TimeInterval = 0
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -104,6 +112,9 @@ final class OfficeScene: SKScene {
     /// 시각을 고정한다(화면 회귀 렌더 전용, 평소엔 nil).
     /// 밤 화면을 확인하려고 밤까지 기다릴 수는 없어서 둔 주입점이다.
     var hourOverride: Int?
+    /// 걸음·등장 연출을 건너뛰고 최종 상태로 그린다(오프스크린 렌더 전용).
+    /// 정지 화면에서는 걷는 도중이 찍혀, 도착해 있어야 할 사람들이 문 앞에 뭉쳐 보인다.
+    var skipsChoreography = false
 
     /// 조명이 볼 시각. 주입값이 있으면 그것을, 없으면 실제 시계를 본다.
     private func currentHour() -> Int {
@@ -417,6 +428,11 @@ final class OfficeScene: SKScene {
         let openAbove = row + 1 >= plan.rows || plan.floor[row + 1][column] != .wall
         let wallBelow = row > 0 && plan.floor[row - 1][column] == .wall
         let isTopOfWall = openAbove && wallBelow
+        // 위아래 어느 쪽으로도 벽이 이어지지 않는 한 칸짜리 가로 벽 — 아래 구역 천장이다.
+        // 여기는 벽면과 윗면이 **한 칸에 겹쳐** 있어서 어느 한쪽으로 칠하면 둘 다 틀린다:
+        // 벽면(가장 어둡게)으로 두면 바닥과 구별되지 않아 방 사이가 벽이 아니라 어두운 띠로
+        // 눕고, 윗면(가장 밝게)으로 올리면 밝은 띠가 가로로 길게 눕는다. 그 사이 값을 준다.
+        let isFlatWall = openAbove && !wallBelow
         var color = wallBaseColor
         if let department = wallDepartment(x: column, y: row, zones: plan.zones) {
             let tint = agentDepartmentPaletteRGBA(department)
@@ -432,7 +448,13 @@ final class OfficeScene: SKScene {
         }
         node.color = SKColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
         // 벽 원본이 밝은 크림이라 덜 누르면 눌러 놓은 색이 원본에 씻긴다.
-        node.colorBlendFactor = isTopOfWall ? 0.60 : 0.84
+        if isTopOfWall {
+            node.colorBlendFactor = 0.60
+        } else if isFlatWall {
+            node.colorBlendFactor = 0.72
+        } else {
+            node.colorBlendFactor = 0.84
+        }
         node.xScale = 1
         node.yScale = 1
     }
@@ -557,7 +579,15 @@ final class OfficeScene: SKScene {
             // 상대적으로 작아 보이는 것을 되돌린다(배율의 근거는 FurnitureKind.sizeBoost).
             let scale = spriteScale * CGFloat(placement.kind.sizeBoost)
             node.size = CGSize(width: base.width * scale, height: base.height * scale)
-            node.position = floorPoint(placement.tile)
+            // 벽에 거는 물건은 벽면 중턱에 걸린다. 다른 가구와 같은 발밑 기준(anchor y = 0)을
+            // 그대로 쓰면 타일 바닥선에 붙어 **벽 앞에 세워 둔 것**처럼 보인다 — 벽시계가
+            // 탁상시계가 되고 화이트보드가 이젤이 된다. 창문이 벽 두 줄을 꽉 채워 걸리는 것과
+            // 같은 눈높이로 올린다.
+            var position = floorPoint(placement.tile)
+            if placement.kind.isWallMounted {
+                position.y += tileSize * 0.32
+            }
+            node.position = position
             node.zPosition = depth(of: placement.tile)
             objectLayer.addChild(node)
         }
@@ -961,89 +991,180 @@ final class OfficeScene: SKScene {
 
     // MARK: - 내 작업 세션
 
-    /// 내가 돌리는 CLI 세션을 대표 앞줄에 세운다.
+    /// 내가 돌리는 CLI 세션을 대표실에 **출근시킨다**.
     ///
     /// 에이전트와 **다르게 보여야 한다.** 사규가 배정한 일이 아니라 내가 직접 띄운 작업이라,
-    /// 같은 사람 그림을 쓰되 청록으로 물들이고 부서 방이 아닌 대표 앞에 둔다. 대시보드 탭
-    /// 아래쪽 목록에만 있던 정보를 사무실에서도 한눈에 보게 하는 것이 목적이다.
+    /// 같은 사람 그림을 쓰되 셔츠를 청록으로 묶고 부서 방이 아닌 대표실에 앉힌다.
+    ///
+    /// 예전에는 자리에 **그냥 나타났다 그냥 사라졌다.** 그래서 화면을 보는 사람 입장에서는
+    /// 없던 직원이 갑자기 생기고 소리 없이 지워지는 것으로 읽혔다 — 관제 화면이 아니라 심령
+    /// 사진이었다. 지금은 문에서 걸어 들어와 자리에 앉고, 일을 마치면 일어나 문으로 걸어 나간다.
+    /// 등장과 퇴장에 **경로**가 있으면 "새 작업이 시작됐다 / 저건 끝났다" 가 설명 없이 읽힌다.
+    /// 퇴근 판정을 시간축으로도 훑는다.
+    ///
+    /// `syncSessions` 는 세션 목록이 바뀔 때만 불린다. 그런데 퇴근 판정은 **얼마나 조용했는가**라
+    /// 목록이 그대로여도 시간이 흐르면 결과가 바뀐다 — 조용한 세션은 상태도 활동 시각도 그대로라
+    /// 갱신 이벤트 자체가 오지 않아, 15분을 넘겨도 다음 무관한 이벤트가 올 때까지 자리에 남았다.
+    ///
+    /// 절전으로 씬이 멈춘 동안에는 이 호출도 멈추지만 `currentTime` 은 계속 흐르므로, 다시
+    /// 깨어난 첫 프레임에서 간격을 넘겨 즉시 한 번 훑는다.
+    override func update(_ currentTime: TimeInterval) {
+        super.update(currentTime)
+        guard currentTime - lastSessionSweepAt >= officeSessionSweepIntervalSeconds else {
+            return
+        }
+        lastSessionSweepAt = currentTime
+        syncSessions(lastSyncedSessions)
+    }
+
     func syncSessions(_ sessions: [ConsoleSession]) {
         lastSyncedSessions = sessions
         let tiles = officeSessionTiles(plan: plan)
-        let visible = officeVisibleSessions(sessions, limit: tiles.count)
-        let incoming = Set(visible.map(\.sessionId))
-        for (sessionId, node) in sessionNodes where !incoming.contains(sessionId) {
-            node.removeFromParent()
-            sessionNodes[sessionId] = nil
+        let visible = officeVisibleSessions(sessions, limit: tiles.count, now: Date())
+        let seats = officeAssignSessionSeats(
+            sessions: visible, tiles: tiles, previous: sessionSeats
+        )
+        sessionSeats = seats
+        // 자리를 잃은 사람 = 오래 조용했거나 창을 닫은 사람. 걸어서 퇴근시킨다.
+        // 이미 문으로 가는 중인 사람은 건너뛴다 — 다시 부르면 걸음이 매번 처음부터 되감긴다.
+        for (sessionId, node) in sessionNodes
+        where seats[sessionId] == nil && !leavingSessions.contains(sessionId) {
+            leaveOffice(sessionId: sessionId, node: node)
         }
-        for (index, session) in visible.enumerated() {
-            let node = sessionNodes[session.sessionId] ?? makeSessionNode(for: session)
-            if sessionNodes[session.sessionId] == nil {
-                sessionNodes[session.sessionId] = node
-                objectLayer.addChild(node)
+        for session in visible {
+            guard let seat = seats[session.sessionId] else {
+                continue
             }
-            layoutSessionNode(node, session: session, tile: tiles[index])
+            if let node = sessionNodes[session.sessionId] {
+                updateSession(node, session: session, seat: seat)
+            } else {
+                enterOffice(session, seat: seat)
+            }
         }
         updateCompanySummary(lastSyncedAgents)
     }
 
-    /// 세션 캐릭터 한 명. 외형은 세션 id 로 정해 실행마다 같은 세션이 같은 모습을 갖는다.
+    /// 세션 한 명이 출근한다 — 문 앞에서 만들어 자리까지 걸려 보낸 뒤 앉힌다.
     ///
-    /// 예전에는 전원이 `char-down` 한 장에 같은 청록 tint 였다. 화면에 여덟이 늘어서면
-    /// **한 사람을 복제해 붙여 놓은 것처럼** 보였고, 구분은 이름표에만 걸려 있었는데 그
-    /// 이름표마저 서로 겹쳤다. 에이전트가 쓰는 외형 결정(`characterLook`)을 그대로 태워
-    /// 시트·머리·바지를 흩고, 셔츠만 청록 계열에 묶어 "내가 돌리는 작업" 표식을 남긴다.
-    private func makeSessionNode(for session: ConsoleSession) -> SKNode {
-        let holder = SKNode()
+    /// 외형은 세션 id 로 정해 실행마다 같은 세션이 같은 모습을 갖는다. 에이전트가 쓰는 외형
+    /// 결정(`characterLook`)을 그대로 태워 시트·머리·바지를 흩고, 셔츠만 청록 계열에 묶어
+    /// "내가 돌리는 작업" 표식을 남긴다 — 전원 같은 그림에 같은 색이면 여럿이 늘어섰을 때
+    /// 한 사람을 복제해 붙여 놓은 것처럼 보인다.
+    private func enterOffice(_ session: ConsoleSession, seat: TilePoint) {
+        let door = officeSessionDoorTile(plan: plan) ?? seat
         let look = characterLook(for: session.sessionId)
-        let texture =
-            SpriteLoader.characterTexture(
-                pose: "down",
-                sheet: look.sheetIndex,
-                hair: hairPalette[look.hairIndex],
-                shirt: officeSessionShirtRGB(shift: look.shirtShift),
-                pants: pantsPalette[look.pantsIndex]
-            ) ?? SpriteLoader.texture("char-down")
-        let sprite = SKSpriteNode(texture: texture)
-        sprite.name = "sessionSprite"
-        sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
-        sprite.zPosition = 1
-        holder.addChild(sprite)
-        return holder
+        let node = CharacterNode(
+            agentType: session.sessionId,
+            displayName: officeSessionShortName(session.name),
+            // 세션은 어느 부서도 아니다. 셔츠를 직접 넘기므로 이 값은 색에 쓰이지 않지만,
+            // 부서 갱신 경로가 세션을 건드리지 않게 자리 배치와 무관한 값을 준다.
+            department: .executive,
+            tile: door,
+            shirtOverride: officeSessionShirtRGB(shift: look.shirtShift)
+        )
+        // 대표실 안쪽 줄은 위가 바깥벽이고 그 높이에 대표 이름표가 있다. 머리 위에 두면
+        // 세션 이름표 다섯이 "나 (대표)" 를 덮는다.
+        node.nameplateBelow = true
+        node.resize(tileSize: tileSize, spriteScale: spriteScale)
+        node.position = floorPoint(door)
+        node.zPosition = depth(of: door)
+        sessionNodes[session.sessionId] = node
+        objectLayer.addChild(node)
+        applySessionState(node, session: session)
+        // 정지 화면(오프스크린 렌더)에서는 걷는 도중이 찍혀 전원이 문 앞에 뭉친 그림이 나온다.
+        // 회귀 확인이 봐야 하는 것은 자리에 앉은 최종 모습이다.
+        guard !skipsChoreography else {
+            node.tile = seat
+            node.position = floorPoint(seat)
+            node.zPosition = depth(of: seat)
+            seatSession(node, sessionId: session.sessionId)
+            return
+        }
+        walk(node, to: seat) { [weak self, weak node] in
+            self?.seatSession(node, sessionId: session.sessionId)
+        }
     }
 
-    private func layoutSessionNode(_ node: SKNode, session: ConsoleSession, tile: TilePoint) {
-        node.position = floorPoint(tile)
-        node.zPosition = depth(of: tile)
-        guard let sprite = node.childNode(withName: "sessionSprite") as? SKSpriteNode,
-              let texture = sprite.texture
-        else {
+    /// 이미 출근해 있는 세션의 상태를 갱신한다. 자리가 바뀌었으면 걸어서 옮긴다.
+    private func updateSession(_ node: CharacterNode, session: ConsoleSession, seat: TilePoint) {
+        guard !node.isWalking else {
+            // 걷는 중에 끼어들면 걸음이 끊겨 짝다리로 굳는다. 다음 갱신에서 따라잡는다.
             return
         }
-        let base = texture.size()
-        sprite.size = CGSize(
-            width: base.width * characterScale, height: base.height * characterScale
-        )
+        guard node.tile == seat else {
+            node.stand()
+            walk(node, to: seat) { [weak self, weak node] in
+                self?.seatSession(node, sessionId: session.sessionId)
+            }
+            return
+        }
+        applySessionState(node, session: session)
+    }
+
+    /// 자리에 앉히고 지금 상태에 맞는 몸짓을 준다.
+    ///
+    /// 상태는 **도착한 시점에 다시 읽는다.** 걷는 동안 온 갱신은 `updateSession` 이 건너뛰므로
+    /// (걸음을 끊으면 짝다리로 굳는다), 출발할 때 손에 쥔 값을 그대로 쓰면 걷는 사이 일을 마친
+    /// 사람이 자리에 앉아서까지 두드리고 있게 된다. 여기가 그 갱신을 반영할 마지막 자리다.
+    private func seatSession(_ node: CharacterNode?, sessionId: String) {
+        guard let node else {
+            return
+        }
+        node.sit()
+        guard let latest = lastSyncedSessions.first(where: { $0.sessionId == sessionId }) else {
+            return
+        }
+        applySessionState(node, session: latest)
+    }
+
+    /// 도는 세션은 두드리고, 잠깐 쉬는 세션은 숨만 쉰다.
+    ///
+    /// 쉰다고 화면에서 지우지는 않는다 — 60초만 조용해도 `idle` 이 되므로, 그것으로 사람을
+    /// 지우면 답변 한 번 기다리는 사이에 사라졌다 나타나기를 반복한다. 자리를 뜨는 판정은
+    /// 훨씬 긴 기준(`officeSessionLeaveAfterSeconds`)이 따로 맡는다.
+    private func applySessionState(_ node: CharacterNode, session: ConsoleSession) {
         let isActive = session.state == officeSessionActiveState
-        // 쉬는 세션은 옅게. 화면에 여덟 개가 늘어서도 지금 돌고 있는 것이 먼저 읽힌다.
-        sprite.alpha = isActive ? 1.0 : 0.45
-        setChildLabel(
-            node, name: "sessionName", text: officeSessionShortName(session.name),
-            position: CGPoint(x: 0, y: sprite.size.height + tileSize * 0.10),
-            fontSize: tileSize * 0.24,
-            color: SKColor(white: isActive ? 0.95 : 0.66, alpha: 1)
-        )
-        sprite.removeAction(forKey: "sessionTyping")
-        guard isActive else {
-            sprite.position = .zero
+        node.apply(state: isActive ? .inProgress : .waiting)
+        guard !node.isWalking else {
             return
         }
-        // 돌고 있는 세션은 사람이 자리에서 두드리는 것과 같은 몸짓을 쓴다.
-        let beat = SKAction.sequence([
-            .moveBy(x: 0, y: 1.4, duration: 0.09),
-            .moveBy(x: 0, y: -1.4, duration: 0.09),
-            .wait(forDuration: 0.06),
-        ])
-        sprite.run(.repeatForever(beat), withKey: "sessionTyping")
+        if isActive {
+            node.startTyping()
+        } else {
+            node.startBreathing()
+        }
+    }
+
+    /// 세션 한 명이 퇴근한다 — 일어나 문까지 걸어간 뒤 화면에서 빠진다.
+    ///
+    /// **문에 닿기 전까지는 `sessionNodes` 에서 빼지 않는다.** 걸어 나가는 데 몇 초가 걸리는데,
+    /// 그 사이에 사전에서 빼 두면 같은 세션이 활동을 재개했을 때 `syncSessions` 가 "아직 출근
+    /// 안 한 사람" 으로 보고 두 번째 사람을 만든다 — 나가는 사람과 들어오는 사람이 같은 얼굴로
+    /// 동시에 선다.
+    private func leaveOffice(sessionId: String, node: CharacterNode) {
+        leavingSessions.insert(sessionId)
+        sessionSeats[sessionId] = nil
+        node.stand()
+        guard let door = officeSessionDoorTile(plan: plan) else {
+            finishLeaving(sessionId: sessionId, node: node)
+            return
+        }
+        walk(node, to: door) { [weak self, weak node] in
+            self?.finishLeaving(sessionId: sessionId, node: node)
+        }
+    }
+
+    /// 문에 닿았다. 여기서 마지막으로 한 번 더 확인하고 지운다.
+    ///
+    /// 걷는 사이에 그 세션이 다시 활동했으면 자리가 도로 배정돼 있다. 그때 지우면 방금 돌아온
+    /// 사람을 지우는 셈이라, 자리가 없을 때만 화면에서 뺀다.
+    private func finishLeaving(sessionId: String, node: CharacterNode?) {
+        leavingSessions.remove(sessionId)
+        guard sessionSeats[sessionId] == nil else {
+            return
+        }
+        sessionNodes[sessionId] = nil
+        node?.removeFromParent()
     }
 
     /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.
@@ -1464,12 +1585,23 @@ final class OfficeScene: SKScene {
         guard let text, !text.isEmpty else {
             return
         }
-        let label = SKLabelNode(text: text)
+        let label = SKLabelNode()
         label.name = name
         // 말풍선·경과 표시도 한글이므로 이름표와 같은 폰트·하한을 쓴다.
-        label.fontName = officeLabelFontName
-        label.fontSize = max(officeNameplateMinFontSize, fontSize)
-        label.fontColor = color
+        let resolvedSize = max(officeNameplateMinFontSize, fontSize)
+        let font = NSFont(name: officeLabelFontName, size: resolvedSize)
+            ?? NSFont.boldSystemFont(ofSize: resolvedSize)
+        // 음수 두께 = 채움 + 외곽선. 여기 오는 글자는 전부 바닥·가구 위에 떠서, 외곽선이
+        // 없으면 책장·프린터 무늬에 묻혀 읽히지 않는다(에이전트 이름표와 같은 처리).
+        label.attributedText = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: color,
+                .strokeColor: NSColor(white: 0.03, alpha: 0.95),
+                .strokeWidth: -3.5,
+            ]
+        )
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
         label.position = position

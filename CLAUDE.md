@@ -28,7 +28,7 @@
 | Conversation memory (in-memory, key=slackUserId:channelId) | `src/router/application/conversation-memory.service.ts` |
 | Autopilot 워크데이 플레이북 (모든 cron 통합 — 출근/퇴근/주간) | `src/autopilot/` (`domain/autopilot.playbook.ts`, `application/autopilot.orchestrator.ts`) |
 | AgentDispatcher 인터페이스 + AGENT_DISPATCHER_PORT | `src/router/domain/port/agent-dispatcher.port.ts` |
-| 에이전트 → 모델 라우팅 | `src/model-router/application/model-router.usecase.ts` (`AGENT_TO_PROVIDER`) |
+| 에이전트 → 모델 라우팅 | `src/model-router/domain/agent-provider.map.ts` (`AGENT_TO_PROVIDER`) |
 | CLI 격리 유틸 (보안 핵심) | `src/model-router/infrastructure/cli-process.util.ts` (`buildSafeChildEnv`) |
 | 모듈 등록 한곳 | `src/app.module.ts` |
 | env 검증 (class-validator) | `src/config/app.config.ts` |
@@ -42,7 +42,7 @@
 
 ### 에이전트 → 슬래시 → 진입 usecase 매핑
 
-> 모델 매핑 source-of-truth: `src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`. 아래 표는 슬래시명 + usecase 경로 (코드에 분산) 까지 한 번에 보기 위한 집약 인덱스.
+> 모델 매핑 source-of-truth: `src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER`. 아래 표는 슬래시명 + usecase 경로 (코드에 분산) 까지 한 번에 보기 위한 집약 인덱스.
 
 | 에이전트 | 슬래시 | Usecase | 모델 |
 |---|---|---|---|

@@ -146,8 +146,11 @@ func runOfficeWalkFrameTests(_ t: TestRunner) {
         ["charc-sit", "char-sit"],
         "정지 포즈는 걸음 프레임 후보를 만들지 않는다")
     // 시트 인덱스가 범위를 넘어도 이름이 조립돼야 한다 — 못 만들면 그 사람이 사라진다.
+    // 검증 대상은 클램프 동작이지 특정 시트명이 아니므로 마지막 시트를 참조한다 —
+    // 시트명을 못박으면 시트를 늘릴 때마다 이 검사가 깨진다.
     t.expectEqual(
-        characterSpriteCandidates(sheet: 99, pose: "up").first, "chard-up", "시트 인덱스 상한 클램프")
+        characterSpriteCandidates(sheet: 99, pose: "up").first,
+        "\(characterSheetPrefixes.last ?? "")-up", "시트 인덱스 상한 클램프")
     t.expectEqual(
         characterSpriteCandidates(sheet: -1, pose: "up").first, "char-up", "시트 인덱스 하한 클램프")
 
@@ -172,8 +175,9 @@ func runOfficeWalkFrameTests(_ t: TestRunner) {
         !FileManager.default.fileExists(atPath: sprites.appendingPathComponent($0).path)
     }
     t.expectEqual(missing.count, 0, "빠진 걸음 프레임: \(missing)")
-    // 시트 4종 × 3포즈 × 2프레임. 시트를 늘리고 에셋을 안 만들면 위 검사가 잡는다.
-    t.expectEqual(expectedFrames.count, 24, "걸음 프레임 24장 (실제 \(expectedFrames.count))")
+    // 시트 5종 × 3포즈 × 2프레임. 이 숫자는 일부러 못박는다 — 시트를 늘리면 여기서 걸리고,
+    // 그때 위 존재 검사가 "에셋을 실제로 만들었는지" 를 함께 확인하게 된다.
+    t.expectEqual(expectedFrames.count, 30, "걸음 프레임 30장 (실제 \(expectedFrames.count))")
 
     // MARK: - 회의 소집
 
