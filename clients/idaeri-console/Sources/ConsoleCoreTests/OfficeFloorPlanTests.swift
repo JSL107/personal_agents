@@ -630,6 +630,35 @@ func runOfficePathfindingTests(_ t: TestRunner) {
         t.expectEqual(isolatedSeats.count, 0, "고립된 좌석 없음")
     }
 
+    // === 창문·벽등 ===
+    // 창은 바깥과 접한 벽에만 낼 수 있다. 바닥 칸에 얹히면 허공에 뜬 액자가 된다.
+    let fixtureTiles = plan.windowTiles + plan.wallLampTiles
+    t.expect(!plan.windowTiles.isEmpty, "대표실 창이 하나 이상 있다")
+    t.expect(!plan.wallLampTiles.isEmpty, "벽등이 하나 이상 있다")
+    for tile in fixtureTiles {
+        t.expectEqual(
+            plan.floor[tile.y][tile.x],
+            .wall,
+            "벽 설치물 \(tile.x),\(tile.y) 는 벽 칸 위"
+        )
+    }
+    // 바깥벽은 두 줄이어야 한다. 한 줄이면 벽면 높이가 없어 벽에 건 물건이 바닥에 놓인
+    // 것처럼 보인다(실제로 그렇게 보였다). 설치물은 전부 아래 줄 — 위 줄은 벽 윗면이다.
+    for row in (plan.rows - officeOuterWallRows)..<plan.rows {
+        let nonWall = (0..<plan.columns).filter { plan.floor[row][$0] != .wall }
+        t.expectEqual(nonWall.count, 0, "\(row)행은 전부 바깥벽")
+    }
+    for tile in fixtureTiles {
+        t.expectEqual(tile.y, plan.rows - officeOuterWallRows, "벽 설치물은 벽 아래 줄에 건다")
+    }
+
+    // 같은 칸을 두 설치물이 나눠 쓰면 나중에 그린 쪽만 보인다.
+    t.expectEqual(Set(fixtureTiles).count, fixtureTiles.count, "창·벽등이 서로 겹치지 않음")
+    // 벽에 걸린 가구(시계·화이트보드)와도 겹치면 안 된다 — 가구는 objectLayer 라 창을 덮는다.
+    let furnitureTiles = Set(plan.furniture.map(\.tile))
+    let collidedFixtures = fixtureTiles.filter { furnitureTiles.contains($0) }
+    t.expectEqual(collidedFixtures.count, 0, "창·벽등이 벽 가구와 겹치지 않음")
+
     // 휴식 자리도 전 좌석에서 닿아야 한다 — 밴드에 가구를 놓다 가로 통로를 막으면
     // 완료 후 탕비실에 가지 못하고 제자리에 머문다(walk 가 빈 경로를 받아 조용히 반환).
     //
