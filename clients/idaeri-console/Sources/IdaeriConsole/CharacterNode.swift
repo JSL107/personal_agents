@@ -25,6 +25,12 @@ final class CharacterNode: SKNode {
     private(set) var facing: Facing = .down
     /// 자리에 앉아 있는가(앉은 스프라이트는 방향 교체를 하지 않는다).
     var isSeated = false
+    /// 이름표를 머리 위가 아니라 발치에 둘 것인가(`layoutNameplate` 참조).
+    var nameplateBelow = false {
+        didSet {
+            layoutNameplate()
+        }
+    }
     /// 걷는 중인가 — 새 지시가 오면 기존 걸음을 끊어야 해서 필요하다.
     /// 걸음 프레임을 쓸지 정지 그림을 쓸지도 이 값이 가른다(`currentPose`).
     var isWalking = false
@@ -57,7 +63,17 @@ final class CharacterNode: SKNode {
 
     /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
     /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
-    init(agentType: String, displayName: String, department: Department, tile: TilePoint) {
+    ///
+    /// `shirtOverride` 는 부서가 없는 사람(대표가 직접 띄운 작업 세션)을 위한 통로다. 세션은
+    /// 어느 부서 소속도 아니라 부서색 규칙을 적용할 수 없고, 그렇다고 아무 부서색이나 입히면
+    /// 화면에서 그 부서 직원으로 읽힌다.
+    init(
+        agentType: String,
+        displayName: String,
+        department: Department,
+        tile: TilePoint,
+        shirtOverride: (red: Double, green: Double, blue: Double)? = nil
+    ) {
         self.tile = tile
         // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
         nameText = agentRoleLabel(for: agentType) ?? displayName
@@ -66,7 +82,8 @@ final class CharacterNode: SKNode {
         hairColor = hairPalette[look.hairIndex]
         self.department = department
         shirtShift = look.shirtShift
-        shirtColor = officeShirtColorRGB(department: department, shift: look.shirtShift)
+        shirtColor =
+            shirtOverride ?? officeShirtColorRGB(department: department, shift: look.shirtShift)
         // 바지는 부서색과 엮지 않는다. 셔츠가 이미 부서를 나타내므로 같은 축을 두 번 쓰면
         // 구별 수단이 늘지 않는다 — 사람을 가르는 축으로만 쓴다.
         pantsColor = pantsPalette[look.pantsIndex]
@@ -215,14 +232,18 @@ final class CharacterNode: SKNode {
     /// 예전에는 발밑(`-tileSize × 0.14`)에 뒀는데, 캐릭터를 한 칸 크기로 줄이고 책상을 키우자
     /// 이름표가 책상 상판과 정확히 겹쳐 글자가 나뭇결에 묻혔다. 좌석 위쪽은 늘 비어 있으므로
     /// 머리 위가 겹칠 일이 없는 유일한 자리다(말풍선·점 표시는 그보다 더 위에 붙는다).
+    ///
+    /// `nameplateBelow` 는 그 규칙이 통하지 않는 자리를 위한 예외다. 대표실 안쪽 줄은 위가
+    /// 바깥벽이고 그 높이에 대표 이름표가 이미 있어서, 거기 앉은 사람들의 이름표가 대표
+    /// 이름표를 덮는다. 이 줄은 책상이 없어 발치가 비어 있으므로 아래로 내려 높이를 가른다.
     private func layoutNameplate() {
         // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
         // 라벨이 머리에서 한 뼘 떠 있다.
-        nameLabel.position = CGPoint(
-            x: 0,
-            y: spriteBaseY + sprite.size.height
-                + currentTileSize * CGFloat(officeNameplateGapTiles)
-        )
+        let above =
+            spriteBaseY + sprite.size.height
+            + currentTileSize * CGFloat(officeNameplateGapTiles)
+        let below = spriteBaseY - currentTileSize * 0.30
+        nameLabel.position = CGPoint(x: 0, y: nameplateBelow ? below : above)
         let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
         namePlate.path = CGPath(
             roundedRect: box, cornerWidth: 2, cornerHeight: 2, transform: nil

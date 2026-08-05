@@ -1,0 +1,265 @@
+# 오피스 스프라이트 시트 제작 규격
+
+외부 이미지 생성 AI로 새 에셋 시트를 받을 때 지켜야 할 규격과, 받은 뒤 앱에 붙이는 절차.
+
+## 전체 흐름
+
+```
+raw/<시트이름>.png  →  scripts/build-sprites.py  →  sprites/<스프라이트>.png  →  앱 번들
+   (생성 AI 산출물)         (셀 분리·축소·배경제거)         (커밋 대상)
+```
+
+`raw/`는 재생성 입력이라 앱 번들에서 제외됩니다. 시트를 새로 받으면 `raw/`에 넣고 스크립트를
+한 번 돌리면 됩니다.
+
+```bash
+cd clients/idaeri-console
+python3 scripts/build-sprites.py     # 의존성: pip install pillow
+```
+
+---
+
+## 모든 시트가 지켜야 할 공통 규격
+
+| 항목 | 값 | 안 지키면 |
+|---|---|---|
+| 배경색 | 순수 마젠타 `#FF00FF` 단색 | 배경이 안 지워지고 오브젝트에 분홍 테두리가 남습니다 |
+| 배경 그라데이션·그림자 | **금지** | 배경 판정(`R>200, B>200, G<90`)을 빠져나가 얼룩으로 남습니다 |
+| 도트 크기 | 1 도트 = **정확히 8 픽셀** | 8의 배수가 아니면 축소 후 도트 폭이 들쭉날쭉해져 픽셀아트 질감이 깨집니다 |
+| 안티에일리어싱 | **금지** (하드 엣지) | 경계가 뭉개집니다 |
+| 오브젝트 간격 | 최소 40 픽셀 이상 마젠타로 완전 분리 | 두 물건이 한 덩어리로 검출돼 하나의 스프라이트로 잘립니다 |
+| 화풍 | 굵은 어두운 외곽선 + 셀 셰이딩(재질당 2~3단계) | 기존 가구와 이질적으로 보입니다 |
+| 시점 | 위에서 비스듬히 내려다보는 탑다운 | — |
+
+### 셀이 잘리는 순서 (중요)
+
+스크립트는 오브젝트를 **위→아래 행, 행 안에서는 왼→오른쪽** 순으로 읽어 이름을 붙입니다.
+행 구분은 "평균 오브젝트 높이의 60%" 를 기준으로 묶기 때문에, **한 행 안의 오브젝트 높이가
+들쑥날쑥하면 행 판정이 흔들려 순서가 뒤바뀝니다.**
+
+- 행마다 비슷한 높이의 물건을 모아 주세요.
+- 행과 행 사이는 넉넉히 띄워 주세요.
+- 검출된 셀 개수와 이름 개수가 다르면 스크립트가 경고를 내고 멈춥니다(조용히 어긋나지 않음).
+
+---
+
+## 1. 캐릭터 시트
+
+### 파일명
+
+`raw/character-e.png`, `raw/character-f.png` … (`character-` 뒤에 알파벳 순서로)
+
+현재 `character-base`, `character-b`, `character-c`, `character-d` 4장이 있습니다.
+
+### 캔버스
+
+**1983 × 793 픽셀**, 가로 한 줄에 포즈 5개.
+
+### 포즈 순서 (왼쪽부터)
+
+1. 정면 — 보는 사람 쪽을 향해 서 있음
+2. 후면 — 등을 보이고 서 있음
+3. 좌측면 — 왼쪽을 보고 서 있음
+4. 우측면 — 오른쪽을 보고 서 있음 *(잘라내지만 자리는 채워야 순서가 맞습니다)*
+5. 앉은 자세 — 사무용 의자에 앉아 정면을 봄 (의자 포함)
+
+### 색 규약 — 이걸 어기면 리컬러가 깨집니다
+
+앱은 사람마다 머리·셔츠·바지 색을 **코드에서 갈아끼워** 26명을 서로 다른 사람으로 보이게 합니다.
+부위 구분을 **밝기와 채도로** 하기 때문에 아래 조건이 지켜져야 합니다.
+
+| 부위 | 요구 조건 | 근거 |
+|---|---|---|
+| 셔츠 | 순백에 가까운 무채색 (RGB 각 235 이상) | 밝기 228 이상을 셔츠로 판정 |
+| 바지 | 거의 검정인 무채색 (RGB 각 20 이하) | 밝기 24 이하를 바지로 판정 |
+| 머리 | 중간~어두운 회색 무채색 (RGB 각 45~105), **키의 위쪽 45% 안에만** | 밝기 40~110 + 위치 조건 |
+| 피부 | 채도가 뚜렷한 살색 | 채도 26 이상이면 색을 안 바꿉니다 |
+| 신발·소품 | 채도가 있는 색 (회색·흰색·검정 금지) | 위와 같음 |
+
+**핵심**: 캐릭터 몸에 위 세 가지(흰색·검정·회색) 외의 무채색을 쓰지 마세요. 회색 넥타이나
+흰 운동화를 넣으면 그게 셔츠나 바지로 인식돼 엉뚱한 곳의 색이 바뀝니다.
+
+### 걸음 애니메이션 조건
+
+걷는 그림은 따로 그리지 않고 **정지 그림의 다리를 코드가 변형해** 만듭니다. 그러려면:
+
+- **정면·후면 포즈는 두 다리 사이에 배경이 비치는 틈이 반드시 있어야 합니다.** 다리가 붙어
+  있으면 걸음 프레임이 만들어지지 않고, 그 사람은 걷는 동안 기본 캐릭터로 바뀝니다.
+- 측면은 다리가 겹쳐도 됩니다(다른 방식으로 처리).
+
+### 프롬프트 (그대로 복사해 쓰세요)
+
+```
+Pixel art character sheet for a cozy office simulation game, top-down-ish front view.
+
+Background: solid pure magenta #FF00FF, completely flat, no gradient, no shadow, no
+vignette. Characters must never touch each other — leave wide magenta gaps between poses.
+
+Canvas: 1983 x 793 pixels. Five poses in ONE horizontal row, evenly spaced, in this
+exact order, left to right:
+1. standing, facing the viewer (front view)
+2. standing, seen from behind (back view)
+3. standing in profile, facing LEFT
+4. standing in profile, facing RIGHT
+5. sitting on a dark office chair, facing the viewer (chair included)
+
+Character design: chibi office worker, oversized head, small body, roughly 3.5 heads
+tall, friendly simple face, standing height about 430 pixels.
+
+Rendering: clean pixel art where 1 logical pixel equals exactly 8 screen pixels. Hard
+edges only, absolutely no anti-aliasing, no blur, no dithering. Bold dark outline around
+every shape. Simple cel shading with 2-3 flat shades per material.
+
+STRICT COLOR RULES — an automated recolor script depends on these, do not deviate:
+- Shirt / top: pure white or near-white, fully desaturated (each RGB channel >= 235)
+- Trousers / lower body: near-black, fully desaturated (each RGB channel <= 20)
+- Hair: neutral mid-to-dark gray, fully desaturated (each RGB channel between 45 and
+  105), and hair must exist ONLY in the top 45% of the character's height
+- Skin: clearly saturated warm skin tone (never gray)
+- Shoes: saturated brown (never gray, white or black)
+- Do NOT use any other white, black or gray material anywhere on the character —
+  no gray tie, no white sneakers, no black bag, no gray glasses frame.
+
+In the front and back poses, the two legs MUST be separated by a visible gap of
+magenta background between them.
+```
+
+### 사람마다 다르게 만들려면
+
+같은 프롬프트에 아래 한 줄만 바꿔 넣으면 다른 사람이 나옵니다. **색 규약은 그대로 두세요** —
+바뀌는 건 얼굴·체형·헤어스타일이고, 색은 어차피 코드가 갈아끼웁니다.
+
+```
+Character variation: young woman with a long ponytail, slim build
+Character variation: middle-aged man with short spiky hair, stocky build, glasses
+Character variation: woman with a short bob cut, average build
+Character variation: tall thin man with wavy hair
+```
+
+### 받은 뒤 코드 변경 (3곳)
+
+**1)** `scripts/build-sprites.py` 의 `SHEETS` 에 한 줄 추가
+
+```python
+"character-e": ["chare-down", "chare-up", "chare-side", None, "chare-sit"],
+```
+
+**2)** `Sources/ConsoleCore/AgentRole.swift` 의 `characterSheetPrefixes` 에 접두어 추가
+
+```swift
+public let characterSheetPrefixes = ["char", "charb", "charc", "chard", "chare"]
+```
+
+**3)** `Sources/ConsoleCoreTests/OfficeChoreographyTests.swift` 의 걸음 프레임 개수 갱신
+
+```swift
+// 시트 수 × 3포즈 × 2프레임
+t.expectEqual(expectedFrames.count, 30, "걸음 프레임 30장 ...")
+```
+
+이 숫자는 일부러 못박아 둔 것입니다 — 시트를 늘리면 테스트가 걸리고, 그 김에 "에셋을
+실제로 다 만들었는지" 검사가 함께 돌아갑니다. 시트 하나당 6장(3포즈 × 2프레임)씩 늘립니다.
+
+**1)·2) 중 하나만 고치면 조용히 어긋납니다** — 2)를 빼먹으면 스프라이트 파일은 만들어지는데
+아무도 그 시트를 배정받지 않아, 에러 없이 새 캐릭터가 화면에 안 나옵니다. 실제로 한 번
+겪은 함정입니다.
+
+---
+
+## 2. 가구·소품 시트
+
+### 파일명
+
+`raw/furniture-2.png` (기존 `furniture.png` 는 그대로 두고 새 시트로 추가)
+
+### 크기 기준
+
+바닥 타일 한 칸이 약 **40 도트 = 320 픽셀**입니다. 이걸 기준으로:
+
+| 물건 | 도트 크기 | 캔버스 픽셀 |
+|---|---|---|
+| 책상 (기존) | 37 × 32 | 296 × 256 |
+| 책장 (기존) | 37 × 35 | 296 × 280 |
+| 시계 (기존) | 20 × 19 | 160 × 152 |
+| 러그 (2×2 칸) | 80 × 80 | 640 × 640 |
+| 문 (1칸 폭) | 40 × 45 | 320 × 360 |
+| 액자·포스터 | 20 × 16 | 160 × 128 |
+| 서류 캐비닛 | 30 × 34 | 240 × 272 |
+
+### 추천 품목
+
+지금 화면에 가장 아쉬운 순서입니다.
+
+1. **문** — 방 출입구가 지금은 그냥 뚫린 구멍입니다
+2. **러그 2~3종** — 방마다 다른 러그를 깔면 부서 개성이 생깁니다
+3. **액자·포스터·화이트보드(글씨 있는 버전)** — 벽이 비어 있습니다
+4. **서류 캐비닛, 사물함** — 벽면을 채우는 큰 가구
+5. **자판기, 냉장고, 싱크대** — 탕비실이 커피머신·정수기뿐입니다
+6. **소파 코너 조각, 낮은 파티션** — 공간을 나누는 요소
+
+### 프롬프트
+
+```
+Pixel art office furniture sprite sheet, top-down-ish view, for a cozy office
+simulation game.
+
+Background: solid pure magenta #FF00FF, completely flat, no gradient, no shadow.
+Every object fully surrounded by magenta, with at least 60 pixels of empty magenta
+between neighbouring objects.
+
+Layout: arrange objects in clean horizontal rows. Objects in the SAME row must have
+similar heights. Leave generous vertical space between rows.
+
+Rendering: clean pixel art where 1 logical pixel equals exactly 8 screen pixels. Hard
+edges only, no anti-aliasing, no blur, no dithering. Bold dark outline around every
+object. Simple cel shading with 2-3 flat shades per material. Muted, slightly desaturated
+office palette — warm wood browns, cool grays, muted purple upholstery.
+
+Objects, in this exact order, left to right then top to bottom:
+[여기에 품목을 순서대로 나열]
+
+Scale reference: a desk is 296 pixels wide, a wall clock is 160 pixels wide, one floor
+tile is 320 pixels.
+```
+
+`[여기에 품목을 순서대로 나열]` 자리에 예를 들면:
+
+```
+Row 1: a closed wooden office door seen from the front, a rolled-up floor rug (dark
+       green with a pattern), a floor rug (warm beige with a pattern)
+Row 2: a tall gray filing cabinet, a red vending machine, a small office refrigerator
+Row 3: a framed picture for the wall, a motivational poster, a small wall shelf
+```
+
+### 받은 뒤 코드 변경 (2곳)
+
+**1)** `scripts/build-sprites.py` 의 `SHEETS` 에 시트와 순서 추가
+
+```python
+"furniture-2": ["furn-door", "furn-rug-a", "furn-rug-b", "furn-cabinet", ...],
+```
+
+**2)** `Sources/ConsoleCore/OfficeFloorPlan.swift` 의 `FurnitureKind` 에 항목 추가 +
+`Sources/IdaeriConsole/SpriteLoader.swift` 의 `furnitureSpriteName` 에 매핑 추가.
+
+새 가구는 배치까지 해야 화면에 나옵니다(평면도 코드에서 어디에 놓을지 지정).
+
+---
+
+## 검수 체크리스트
+
+시트를 받으면 스크립트를 돌리기 전에 눈으로 확인하세요.
+
+- [ ] 배경이 단색 마젠타인가 (그라데이션·그림자 없음)
+- [ ] 물건끼리 붙어 있지 않은가
+- [ ] 같은 행의 물건 높이가 비슷한가
+- [ ] 도트가 균일한가 (확대해서 계단이 일정한 폭인지)
+- [ ] (캐릭터) 셔츠가 흰색, 바지가 검정, 머리가 회색인가
+- [ ] (캐릭터) 몸에 다른 무채색 소품이 없는가
+- [ ] (캐릭터) 정면·후면에서 두 다리 사이가 벌어져 있는가
+
+스크립트를 돌린 뒤:
+
+- [ ] 경고 없이 끝났는가 (`⚠️ 셀 N개 검출` 이 뜨면 셀 개수가 안 맞는 것)
+- [ ] `sprites/` 에 생긴 파일의 크기가 위 표와 비슷한가
+- [ ] (캐릭터) `-walk1`, `-walk2` 파일이 생겼는가 (없으면 다리 틈이 없다는 뜻)
