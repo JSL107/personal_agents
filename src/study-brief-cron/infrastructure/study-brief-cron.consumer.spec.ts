@@ -170,6 +170,19 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.hermesRunner.run).toHaveBeenCalledTimes(1);
   });
 
+  it('Hermes 프롬프트에는 프로필 서술문을 빼고 스킬과 숙련도만 넣는다', async () => {
+    const dependencies = makeConsumer();
+
+    await dependencies.consumer.process(JOB as never);
+
+    const prompt = dependencies.hermesRunner.run.mock.calls[0][0];
+    expect(prompt).not.toContain(PROFILE.profileJson.summary);
+    expect(prompt).toContain('TypeScript(EXPERT)');
+    expect(dependencies.evaluateStudyTopic.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ profileSummary: PROFILE.profileJson.summary }),
+    );
+  });
+
   it('같은 날 두 번째 처리에서는 발송을 건너뛴다', async () => {
     const dependencies = makeConsumer();
 
@@ -214,7 +227,9 @@ describe('StudyBriefCronConsumer', () => {
     ).toContain('durable execution');
     expect(dependencies.cronIdempotency.release).toHaveBeenCalledTimes(1);
     expect(dependencies.cronIdempotency.release).toHaveBeenCalledWith(
-      expect.stringMatching(/:2026-08-05:processing$/),
+      expect.stringMatching(
+        /^cron:study-brief-cron:\d{4}-\d{2}-\d{2}:processing$/,
+      ),
     );
   });
 

@@ -125,7 +125,12 @@ export class StudyBriefCronConsumer extends WorkerHost {
 
       const outcome = await this.evaluateStudyTopic.execute({
         slackUserId: ownerSlackUserId,
-        research,
+        research: {
+          kind: research.kind,
+          topic: research.topic,
+          reportMd: research.reportMd,
+          sourceUrls: research.sourceUrls,
+        },
         profileSummary: materials.profile?.profileJson.summary,
         profileSkills: materials.profile?.profileJson.skills.map(
           (skill) => `${skill.name}(${skill.proficiency})`,
@@ -233,7 +238,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
     materials: StudyMaterials,
   ): Promise<StudyResearchResult | StudyResearchSkipped> {
     const promptInput: BuildStudyResearchPromptInput = {
-      profile: materials.profile?.profileJson,
+      profileSkills: materials.profile?.profileJson.skills.map(
+        (skill) => `${skill.name}(${skill.proficiency})`,
+      ),
       recentTopics: materials.recentBriefs.map((brief) => brief.topic),
       kindBalance: calculateKindBalance(materials.recentBriefs),
       installedTools: materials.installedTools,
