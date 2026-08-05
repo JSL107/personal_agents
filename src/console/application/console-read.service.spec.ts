@@ -1,5 +1,6 @@
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
@@ -228,11 +229,28 @@ describe('ConsoleReadService', () => {
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.doneToday,
     ).toBe(0);
 
+    // **KST 자정이어야 한다.** 로컬 시각 필드(getHours 등)로 확인하면 안 된다 — 그러면 TZ 가
+    // KST 인 개발 기계에서만 통과하고, TZ 가 UTC 인 환경에서는 KST 00:00~08:59 에 끝난 실행이
+    // 오늘 집계에서 빠지는 것을 못 잡는다. 경계 자체를 KST 유틸과 대조한다.
     const [call] = agentRunService.countSucceededSince.mock.calls;
-    expect(call[0].since.getHours()).toBe(0);
-    expect(call[0].since.getMinutes()).toBe(0);
-    expect(call[0].since.getSeconds()).toBe(0);
-    expect(call[0].since.getMilliseconds()).toBe(0);
+    expect(call[0].since.getTime()).toBe(getKstDayStartAsUtc().getTime());
+  });
+
+  // 서류 더미는 장식이고 진행 중인 런·승인 대기는 관제 정보다. Promise.all 은 하나가 reject 하면
+  // 전체가 reject 하므로, 이 집계를 그냥 끼워 넣으면 장식용 쿼리 한 번의 실패가 관제 화면을
+  // 통째로 못 쓰게 만든다(앱은 스냅샷 실패를 nil 로 받아 화면을 갱신하지 않는다).
+  it('오늘 성공 집계가 실패해도 스냅샷은 나오고 doneToday 는 0 이 된다', async () => {
+    agentRunService.countSucceededSince.mockRejectedValue(
+      new Error('DB 연결 끊김'),
+    );
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.agents).toHaveLength(AGENT_REGISTRY.length);
+    expect(snapshot.agents.every((agent) => agent.doneToday === 0)).toBe(true);
+    // 관제 정보는 집계 실패와 무관하게 그대로 실려야 한다.
+    expect(snapshot.serverTime.length).toBeGreaterThan(0);
+    expect(snapshot.approvals).toEqual([]);
   });
 
   it('로컬 세션을 뷰 형태(ISO)로 스냅샷에 담는다', async () => {
