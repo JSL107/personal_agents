@@ -292,14 +292,28 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
     }
 
-    /// 사람이 통과할 수 있는가. 벽시계처럼 벽에 붙는 것은 바닥을 막지 않는다.
-    public var isWalkThrough: Bool {
+    /// 벽에 거는 물건인가. 바닥 자리가 아니라 **벽 칸**에 걸어야 한다.
+    ///
+    /// 상단 밴드는 처음부터 벽 줄(`wallHangY`)에 명시적으로 걸었는데, 부서 방 배치에는 그
+    /// 개념 자체가 없어 일반 바닥 후보(`departmentFurnitureSpots`)를 그대로 썼다. 개발실
+    /// 시계가 카펫 한가운데 떠 있고 리뷰실 화이트보드가 바닥에 누워 있던 원인이다 —
+    /// "벽에 붙는 것이라 바닥을 막지 않는다" 는 판정만 있고 **어디에 붙는지** 가 없었다.
+    /// 배치 루프가 이 값을 보고 바닥 후보와 벽 후보를 갈라 쓴다.
+    public var isWallMounted: Bool {
         switch self {
         case .clock, .whiteboard:
             return true
         default:
             return false
         }
+    }
+
+    /// 사람이 통과할 수 있는가. 벽에 걸린 물건은 바닥을 막지 않는다.
+    ///
+    /// 지금은 벽걸이와 정확히 같은 집합이다. 바닥에 깔리는 관통 가구(러그 등)가 들어오면
+    /// 그때 갈라야 한다 — 미리 나눠 두면 값이 같은 두 목록을 함께 관리하게 된다.
+    public var isWalkThrough: Bool {
+        isWallMounted
     }
 
     /// 자기 자리인 책상·의자와 사람이 찾을 이유가 없는 시계·쓰레기통을 목적지에서 뺀다.
@@ -489,7 +503,11 @@ public func wallDepartment(x: Int, y: Int, zones: [DepartmentZone]) -> Departmen
     }?.department
 }
 
-/// 부서별 대표 가구 3종(방의 성격). 에셋을 새로 만들지 않고 "어디에 무엇을 놓는지" 만 바꾼다.
+/// 부서별 대표 가구(방의 성격). 에셋을 새로 만들지 않고 "어디에 무엇을 놓는지" 만 바꾼다.
+///
+/// **방마다 벽걸이를 하나씩 둔다.** 예전에는 위 세 방(기획·개발·리뷰)만 시계나 화이트보드를
+/// 들고 있어서, 창·등·시계가 전부 몰린 상단 밴드와 벽이 텅 빈 아래 세 방으로 화면이 갈렸다.
+/// 벽걸이는 바닥 후보를 쓰지 않으므로(`isWallMounted`) 기존 바닥 배치와 경합하지 않는다.
 public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     switch department {
     case .planning:
@@ -499,13 +517,26 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     case .review:
         return [.whiteboard, .bookshelf, .bookshelf]  // 검토하는 방
     case .executive:
-        return [.sofa2, .coffeeTable, .plantTall]  // 손님을 맞는 방
+        return [.sofa2, .coffeeTable, .plantTall, .clock]  // 손님을 맞는 방
     case .growth:
-        return [.plantTall, .plantSmall, .sofa2]  // 밝고 트인 방
+        return [.plantTall, .plantSmall, .sofa2, .whiteboard]  // 밝고 트인 방
     case .internalOps:
-        return [.printer, .waterCooler, .trash]  // 설비가 모인 방
+        return [.printer, .waterCooler, .trash, .clock]  // 설비가 모인 방
     }
 }
+
+/// 벽걸이를 걸 벽 칸(구역 원점 기준 상대). 위에서부터 쓴다.
+///
+/// **왼쪽 칸막이 벽 열(x = 0)만 쓴다.** 아래 구역은 천장(y = zoneHeight - 1)도 벽이라 정면
+/// 벽에 걸 수 있지만, 위 구역 천장은 밴드로 나가는 통로여서 벽이 아니다. 여섯 방이 같은
+/// 규칙을 쓰려면 어느 구역에나 있는 세로 벽뿐이다 — 위·아래를 갈라 쓰면 규칙이 둘이 된다.
+///
+/// 각 방이 **자기 왼쪽 벽만** 쓰므로 벽 한 칸을 공유하는 이웃 방과도 겹치지 않는다.
+private let zoneWallMountSpots: [TilePoint] = [
+    TilePoint(x: 0, y: 4),
+    TilePoint(x: 0, y: 2),
+    TilePoint(x: 0, y: 0),
+]
 
 /// 부서 집기를 놓을 자리 후보(구역 원점 기준 상대). 앞에서부터 쓰고, 자리·다른 집기와
 /// 겹치면 다음 후보로 넘어간다.
@@ -953,8 +984,23 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         let furnitureSpots = departmentFurnitureSpots(zoneDepartment).map {
             TilePoint(x: originX + $0.x, y: originY + $0.y)
         }
+        // 벽걸이 자리는 바닥 후보와 별개다. 같은 목록에서 뽑으면 시계가 방 한가운데 바닥에
+        // 놓인다 — 벽 칸은 바닥 후보(x = 1~9)에 아예 들어 있지 않기 때문이다.
+        let wallSpots = zoneWallMountSpots.map {
+            TilePoint(x: originX + $0.x, y: originY + $0.y)
+        }
         var spotCursor = 0
+        var wallCursor = 0
         for kind in departmentFurniture(zoneDepartment) {
+            if kind.isWallMounted {
+                guard wallCursor < wallSpots.count else {
+                    continue
+                }
+                let spot = wallSpots[wallCursor]
+                wallCursor += 1
+                place(kind, spot.x, spot.y)
+                continue
+            }
             while spotCursor < furnitureSpots.count {
                 let spot = furnitureSpots[spotCursor]
                 spotCursor += 1
