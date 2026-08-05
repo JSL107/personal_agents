@@ -24,7 +24,11 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 인원을 임의로 줄이면 안 된다 — 26명짜리 표본을 쓰던 동안 "내부 부서 마지막 한 명이 자리를
 // 못 받아 화면에서 사라지는" 결함이 통과했다. 구역 정원은 12석이고 지금 가장 큰 부서가 9명이다.
 // agentType 은 displayName 과 다르다: EVENING_RETRO(타입) ↔ "Evening Retro Publish"(표시명).
-private let sampleAgents: [ConsoleAgent] =
+//
+// **배회 목적지 테스트(`OfficeIdleTests`)도 이 표본을 쓴다.** 거기서 따로 만들던 표본은
+// 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
+// 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
+let sampleAgents: [ConsoleAgent] =
     planAgents(.planning, ["PM", "PO_SHADOW", "PO_EVAL"])
     + planAgents(.engineering, ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX"])
     + planAgents(
@@ -445,6 +449,40 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expect(
             !corridorDoors.isEmpty,
             "\(zone.department.label) 방에서 복도로 나가는 문이 없다"
+        )
+    }
+
+    // 벽에 난 구멍마다 문이 서 있어야 한다.
+    //
+    // 구멍을 내는 자리(`raiseWall` 을 건너뛰는 분기)와 문을 세우는 자리가 어긋나면 두 가지로
+    // 깨진다 — 출입구가 문 없는 맨바닥으로 남거나, 문이 구멍 아닌 벽 한가운데 선다. 둘 다
+    // **화면에서만** 드러난다: 통행은 `isWalkThrough` 가 따로 열어 두므로 도달성 테스트는
+    // 그대로 통과한다.
+    let doorTiles = Set(
+        plan.furniture
+            .filter { $0.kind == .doorOpen || $0.kind == .doorClosed }
+            .map(\.tile)
+    )
+    let blockedDoors = doorTiles.filter { !plan.walkable.contains($0) }
+    t.expectEqual(
+        blockedDoors.count, 0,
+        "문이 통행을 막는다: \(blockedDoors.map { "(\($0.x),\($0.y))" }.sorted())"
+    )
+    for zone in plan.zones {
+        let ceilingY = zone.origin.y + zone.height - 1
+        var openings = (zone.origin.x..<(zone.origin.x + zone.width))
+            .filter { plan.floor[ceilingY][$0] != .wall }
+            .map { TilePoint(x: $0, y: ceilingY) }
+        for wallX in [zone.origin.x, zone.origin.x + zone.width - 1] {
+            openings += (zone.origin.y..<(zone.origin.y + zone.height))
+                .filter { plan.floor[$0][wallX] != .wall }
+                .map { TilePoint(x: wallX, y: $0) }
+        }
+        let bare = openings.filter { !doorTiles.contains($0) }
+        t.expectEqual(
+            bare.count, 0,
+            "\(zone.department.label) 방의 문 없는 구멍: "
+                + "\(bare.map { "(\($0.x),\($0.y))" }.sorted())"
         )
     }
 
