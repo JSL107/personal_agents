@@ -3,7 +3,7 @@
 # 환경변수 카탈로그
 
 SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 107개.
-설명은 각 변수의 첫 주석 줄 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
+설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
 
@@ -22,8 +22,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `SLACK_APP_TOKEN` | ❌ | — |
 | `SLACK_SIGNING_SECRET` | ❌ | — |
 | `SLACK_INBOX_EMOJI` | ❌ | OPS-3 Slack Reaction → Inbox 큐잉 시 트리거 이모지. 미설정 시 default 'raised_hand' (✋). |
-| `SLACK_PUSHPIN_REACTION_EMOJI` | ❌ | 📌 reaction → Notion task 자동 적재. |
-| `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ❌ | — |
+| `SLACK_PUSHPIN_REACTION_EMOJI` | ❌ | 트리거 이모지. 미설정 시 default 'pushpin' (📌). SLACK_INBOX_EMOJI 와 다른 이모지 권장 (같은 이모지로 두 handler 가 동시 발화하면 의도 혼동). |
+| `SLACK_PUSHPIN_REACTION_NOTION_PAGE_ID` | ❌ | 적재 대상 Notion 부모 페이지 id. 미설정 시 service skip. 같은 페이지 트리를 CAREER_LOG_NOTION_PAGE_ID 와 공유해도 OK — 일별 자식 페이지 (YYYY-MM-DD) 공통 key. |
 
 ## Notion
 
@@ -37,25 +37,10 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 
 | 키 | 필수 | 설명 |
 |---|---|---|
-| `WEBHOOK_SECRET` | ❌ | OPS-2 Webhook 수신부. |
-| `GITHUB_WEBHOOK_SECRET` | ❌ | — |
-| `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` | ❌ | — |
-| `GITHUB_WEBHOOK_OWNER_LOGIN` | ❌ | pull_request.opened webhook 자동 /review-pr 활성 — payload.pull_request.user.login 과 |
-
-## Cron 자동 발화
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `IMPACT_REPORT_RECENT_DAYS` | ❌ | IMPACT_REPORT_RECENT_DAYS: Autopilot impact-report task 가 `--recent <N>d` 의 N 으로 사용. |
-
-## Claude / LLM
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID` | ❌ | claude CLI 가 인증 만료 / 쿼터 소진으로 침묵 실패 (exit=1 + 빈/인증 키워드 stderr) 시 owner DM |
-| `CLAUDE_CODE_OAUTH_TOKEN` | ❌ | `claude setup-token` 발급 OAuth subscription token (`sk-ant-oat01-...`). 설정 시 |
-| `ANTHROPIC_API_KEY` | ❌ | CLAUDE_CODE_OAUTH_TOKEN 의 backward-compat alias — PR #71 시점에 (잘못된 가정으로) |
-| `CLAUDE_MODEL` | ❌ | ClaudeCliProvider 가 spawn 시 사용할 claude 모델 별칭 (예: 'opus', 'sonnet'). |
+| `WEBHOOK_SECRET` | ❌ | 자체 포맷(/v1/agent/trigger) HMAC-SHA256 키. 미설정 시 모든 요청 거부. |
+| `GITHUB_WEBHOOK_SECRET` | ❌ | GitHub 표준(/v1/agent/github) HMAC-SHA256 키. 미설정 시 모든 요청 거부. |
+| `GITHUB_WEBHOOK_DEFAULT_SLACK_USER_ID` | ❌ | GitHub payload 에 slackUserId 가 없으므로 자동 발화될 impact-report 의 사용자 컨텍스트 매핑. 미설정 시 GitHub webhook 수신은 200 OK 지만 impact-report 자동 발화는 skip. |
+| `GITHUB_WEBHOOK_OWNER_LOGIN` | ❌ | pull_request.opened webhook 자동 /review-pr 활성 — payload.pull_request.user.login 과 일치하는 PR (본인 작성) + bot 작성 제외. |
 
 ## GitHub
 
@@ -65,44 +50,15 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `GITHUB_ISSUE_AUTO_LABEL_ENABLED` | ❌ | issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성. |
 | `GITHUB_ISSUE_AUTO_LABEL_REPOS` | ❌ | 자동 라벨링 대상 repo allowlist (콤마 구분 "owner/repo"). 미설정/빈 값 → enable 만으로 모든 repo 적용. |
 
-## careerLog / Impact
+## Autopilot cron
 
 | 키 | 필수 | 설명 |
 |---|---|---|
-| `CAREER_LOG_NOTION_PAGE_ID` | ❌ | V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼 |
-| `IMPACT_REPORT_GITHUB_AUTHOR` | ❌ | `/impact-report --recent <N>d` — 다중 PR 종합 조회 시 author(GitHub login) + repo (선택). |
-| `IMPACT_REPORT_GITHUB_REPO` | ❌ | — |
-| `PR_CAREERLOG_AUTO_ENABLED` | ❌ | pull_request.closed (merged=true) webhook 시 본인 PR 의 메타를 Notion careerLog 페이지에 자동 적재. |
-
-## BE 자율개발
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `BE_SANDBOX_HOST_REPO_PATH` | ❌ | BE 자율 개발 Phase 2a-3 — sandbox 안 `git apply --check` 검증 시 host 의 어느 repo 를 |
-| `BE_AUTONOMOUS_FROM_PLAN` | ❌ | BE 자율 개발 자동 chain — BE worker 가 BackendPlan 출력 직후 자동으로 BE_SANDBOX_APPLY preview |
-| `BE_SANDBOX_DEFAULT_REPO_LABEL` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 repoLabel 기본값 ("owner/repo"). |
-| `BE_SANDBOX_DEFAULT_BASE_BRANCH` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 baseBranch 기본값. 미설정 시 "main". |
-
-## 기타
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `BLOG_NOTION_PROP_STATUS` | ❌ | BLOG 자연어 초안 발행 enrich — Notion "블로그 초안" DB property 이름. |
-| `BLOG_NOTION_PROP_PUBLISHED_AT` | ❌ | — |
-| `BLOG_NOTION_PROP_TAGS` | ❌ | — |
-| `BLOG_NOTION_PROP_SUMMARY` | ❌ | — |
-| `BLOG_NOTION_STATUS_PUBLISHED_VALUE` | ❌ | — |
-| `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
-| `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
-| `AUTOPILOT_OWNER_SLACK_USER_ID` | ❌ | Autopilot SP1~SP4 — 선언적 워크데이 + 주간 플레이북 엔진. |
-| `AUTOPILOT_TARGET` | ❌ | — |
-| `STOCK_MONITOR_ENABLED` | ❌ | 보유 종목 모니터링. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다. |
-| `TOSS_CLIENT_ID` | ❌ | 토스증권 잔고 동기화. client id/secret 미설정 시 동기화 호출 시점에 명시 오류. |
-| `TOSS_CLIENT_SECRET` | ❌ | — |
-| `TOSS_ACCOUNT_SEQ` | ❌ | — |
+| `AUTOPILOT_OWNER_SLACK_USER_ID` | ❌ | Autopilot 전체 게이트. 미설정 시 비활성. |
+| `AUTOPILOT_TARGET` | ❌ | 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 콤마로 다중 타깃 지원. 미설정 시 OWNER DM. 예: "C1234567890,U9876543210". |
 | `AUTOPILOT_DAILY_EVAL_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_DAILY_EVAL_TIMEZONE` | ❌ | — |
-| `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 |
+| `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 만들므로 이 그룹의 대표 키는 secretariat 이다. |
 | `AUTOPILOT_SECRETARIAT_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_SCHEDULE` | ❌ | deprecated — morning 그룹 첫 항목이 secretariat 으로 바뀌면서 더 이상 읽히지 않는다. |
 | `AUTOPILOT_MORNING_BRIEFING_TIMEZONE` | ❌ | — |
@@ -118,46 +74,125 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_RUN_RETRO_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_STOCK_MONITOR_US_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_STOCK_MONITOR_US_TIMEZONE` | ❌ | — |
-| `AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS` | ❌ | L4 knowledge-lint contradiction — 주간 codex 모순 판정 가드. |
-| `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` | ❌ | — |
-| `DOCS_AUDIT_ENABLED` | ❌ | docs-sync-audit — 주간 문서↔코드 점검 (Layer1 결정론 docs:check/check:env + Layer2 codex 자기수정 루프). |
-| `DOCS_AUDIT_MAX_FILES` | ❌ | DOCS_AUDIT_MAX_FILES: Layer2 가 점검할 최대 SoT 파일 수(codex 쿼터 가드, 기본 5). |
-| `DOCS_AUDIT_MAX_ITERATIONS` | ❌ | DOCS_AUDIT_MAX_ITERATIONS: Layer2 자기수정 반복 캡(기본 3). |
-| `AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE` | ❌ | AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE: docs-sync-audit cron override (id=docs-sync-audit → DOCS_SYNC_AUDIT). 미설정 시 playbook-defaults. |
-| `AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE` | ❌ | AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE: 위 스케줄의 timezone override. 미설정 시 Asia/Seoul. |
-| `DOCS_AUDIT_PR_ENABLED` | ❌ | docs-sync-audit Phase 2 — 확정 제안 docs PR 자동 개설. |
-| `DOCS_AUDIT_PR_REPO` | ❌ | DOCS_AUDIT_PR_REPO: docs PR 대상 "owner/repo". 미설정 시 BE_SANDBOX_DEFAULT_REPO_LABEL → "JSL107/personal_agents". |
-| `DOCS_AUDIT_PR_BASE_BRANCH` | ❌ | DOCS_AUDIT_PR_BASE_BRANCH: PR base. 미설정 시 main. |
+| `AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS` | ❌ | 주 1회 LLM 판정 쌍 상한(기본 5). codex 쿼터 보호. |
+| `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` | ❌ | 'false' 면 L4 만 끄고 L1/L2(결정론)는 유지. 미설정 시 활성. |
+| `AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE` | ❌ | docs-sync-audit cron override (id=docs-sync-audit → DOCS_SYNC_AUDIT). 미설정 시 playbook-defaults. |
+| `AUTOPILOT_DOCS_SYNC_AUDIT_TIMEZONE` | ❌ | 위 스케줄의 timezone override. 미설정 시 Asia/Seoul. |
+| `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF). |
+
+## LLM CLI 인증
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID` | ❌ | claude CLI 가 인증 만료 / 쿼터 소진으로 침묵 실패 (exit=1 + 빈/인증 키워드 stderr) 시 owner DM 으로 즉시 알릴 Slack user ID (`U...`). 미설정 시 NoopClaudeAuthAlerter (stdout warn 만). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | ❌ | `claude setup-token` 발급 OAuth subscription token (`sk-ant-oat01-...`). 설정 시 ClaudeCliProvider 가 spawn 시 자식 env 의 `CLAUDE_CODE_OAUTH_TOKEN` 으로 forward. |
+| `ANTHROPIC_API_KEY` | ❌ | CLAUDE_CODE_OAUTH_TOKEN 의 backward-compat alias — PR #71 시점에 (잘못된 가정으로) `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 호환. |
+| `CLAUDE_MODEL` | ❌ | ClaudeCliProvider 가 spawn 시 사용할 claude 모델 별칭 (예: 'opus', 'sonnet'). |
+
+## BE 자율개발
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `BE_SANDBOX_HOST_REPO_PATH` | ❌ | BE 자율 개발 Phase 2a-3 — sandbox 안 `git apply --check` 검증 시 host 의 어느 repo 를 /repo 에 read-only 마운트할지. 미설정 시 process.cwd() (봇 자신의 작업 디렉터리) 사용. |
+| `BE_AUTONOMOUS_FROM_PLAN` | ❌ | BE 자율 개발 자동 chain — BE worker 가 BackendPlan 출력 직후 자동으로 BE_SANDBOX_APPLY preview 생성 (사용자 "응" → Claude diff + sandbox jest + PR open chain). 'true' 일 때만 활성. |
+| `BE_SANDBOX_DEFAULT_REPO_LABEL` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 repoLabel 기본값 ("owner/repo"). |
+| `BE_SANDBOX_DEFAULT_BASE_BRANCH` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 baseBranch 기본값. 미설정 시 "main". |
+
+## careerLog / Impact
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `CAREER_LOG_NOTION_PAGE_ID` | ❌ | V3 §P4 careerLog Notion 적재 — /po-eval 결과 후 사용자가 "📝 Notion 적재" 버튼 누를 때 append 대상 Notion 페이지 id. 미설정 시 /po-eval 응답은 기존 텍스트만 (버튼 X). |
+| `IMPACT_REPORT_GITHUB_AUTHOR` | ❌ | GitHub username (예: "JSL107") — **필수**. slackUserId → GitHub login 매핑 인프라 없는 1인 봇 임시 정책. |
+| `IMPACT_REPORT_GITHUB_REPO` | ❌ | "owner/repo" (예: "JSL107/personal_agents") — **선택**. |
+| `IMPACT_REPORT_RECENT_DAYS` | ❌ | Autopilot impact-report task 가 `--recent <N>d` 의 N 으로 사용. |
+| `PR_CAREERLOG_AUTO_ENABLED` | ❌ | pull_request.closed (merged=true) webhook 시 본인 PR 의 메타를 Notion careerLog 페이지에 자동 적재. |
+
+## Career Mate
+
+| 키 | 필수 | 설명 |
+|---|---|---|
 | `CAREER_PORTFOLIO_NOTION_PAGE_ID` | ❌ | Career Mate — 포트폴리오 미러용 Notion 부모 페이지 id (RenderPortfolio 의 자식 페이지 생성 대상). |
 | `CAREER_RESUME_NOTION_PAGE_ID` | ❌ | Career Mate — 이력서 미러용 Notion 부모 페이지 id (RenderResume 의 날짜별 자식 페이지 생성 대상). |
-| `RESUME_CALIBRATION_OWNER_SLACK_USER_ID` | ❌ | ====== Resume Calibration Cron — 주 1회 이력서 보정 점검 (Phase 4) ====== |
-| `RESUME_CALIBRATION_TARGET` | ❌ | — |
-| `RESUME_CALIBRATION_CRON` | ❌ | — |
-| `RESUME_CALIBRATION_TIMEZONE` | ❌ | — |
-| `JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID` | ❌ | ====== Job Application Nudge Cron — 매일 지원 넛지 (Phase 3) ====== |
-| `JOB_APPLICATION_NUDGE_TARGET` | ❌ | — |
-| `JOB_APPLICATION_NUDGE_CRON` | ❌ | — |
-| `JOB_APPLICATION_NUDGE_TIMEZONE` | ❌ | — |
-| `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 |
-| `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip. |
-| `EVENING_RETRO_BLOG_NOTION_DATABASE_ID` | ❌ | 블로그 발행 대상 Notion "블로그 초안" DB ID. 미설정 시 블로그 카드 승인은 명시 에러. |
-| `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
-| `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
-| `EPISODIC_EMBED_MODEL` | ❌ | Episodic Memory — 로컬 임베딩 모델 id + 차원. spec 2026-06-18. |
-| `EPISODIC_EMBED_DIM` | ❌ | Episodic Memory 임베딩 차원 (기본 384). 모델 변경 시 함께 갱신 + embedding 컬럼/인덱스 재생성. |
-| `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms). |
-| `SUBCONSCIOUS_ENABLED` | ❌ | Subconscious proactive engine 활성 게이트. 'true' 문자열일 때만 활성. |
-| `AUTOPILOT_PREFERENCE_LEARNING_ENABLED` | ❌ | 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF). |
-| `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
-| `HUMANIZE_REPORTS_ENABLED` | ❌ | HUMANIZE_REPORTS_ENABLED: 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
-| `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | BRIEFING_WAITING_SECTION_ENABLED: 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |
-| `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |
-| `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | Subconscious 시간당 최대 proposal 건수 (슬라이딩 1시간 윈도우, Redis ZSET). |
-| `CONSOLE_CHAIN_IMPACT_RECENT_DAYS` | ❌ | 콘솔 리모컨 2A.2 — PO_EVAL 자동 체이닝 시 IMPACT_REPORTER --recent 조회 일수. 기본 7. |
-| `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable). |
-| `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증. |
+| `RESUME_CALIBRATION_OWNER_SLACK_USER_ID` | ❌ | 점검 주체. 미설정 시 모듈 비활성. |
+| `RESUME_CALIBRATION_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
+| `RESUME_CALIBRATION_CRON` | ❌ | BullMQ cron (default 월 10:00 — `0 10 * * 1`). |
+| `RESUME_CALIBRATION_TIMEZONE` | ❌ | default Asia/Seoul. |
+| `JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID` | ❌ | 넛지 주체. 미설정 시 모듈 비활성. |
+| `JOB_APPLICATION_NUDGE_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
+| `JOB_APPLICATION_NUDGE_CRON` | ❌ | BullMQ cron (default 매일 09:00 — `0 9 * * *`). |
+| `JOB_APPLICATION_NUDGE_TIMEZONE` | ❌ | default Asia/Seoul. |
+
+## PR 리뷰 루프
+
+| 키 | 필수 | 설명 |
+|---|---|---|
 | `PR_REVIEW_LOOP_ENABLED` | ❌ | PR 리뷰 루프 마스터 스위치. `true` (string) 일 때만 스윕이 동작한다. |
 | `PR_REVIEW_INLINE_REPOS` | ❌ | 인라인 코멘트 게시를 허용할 repo allowlist (콤마 구분 "owner/repo"). |
 | `PR_REVIEW_INLINE_DRYRUN` | ❌ | 연습 모드. `false` (string) 일 때만 실제로 GitHub 에 게시한다. |
 | `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 게시 상한. MUST_FIX 우선 정렬 후 절단. 미설정/비정상 값 → 4. |
 | `PR_REVIEW_HARVEST_ENABLED` | ❌ | 게시된 리뷰 카드의 owner 반응 수확 + 상태 전이. `true`일 때만 동작한다. |
+
+## docs-sync-audit
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `DOCS_AUDIT_ENABLED` | ❌ | docs-sync-audit — 주간 문서↔코드 점검 (Layer1 결정론 docs:check/check:env + Layer2 codex 자기수정 루프). |
+| `DOCS_AUDIT_MAX_FILES` | ❌ | Layer2 가 점검할 최대 SoT 파일 수(codex 쿼터 가드, 기본 5). |
+| `DOCS_AUDIT_MAX_ITERATIONS` | ❌ | Layer2 자기수정 반복 캡(기본 3). |
+| `DOCS_AUDIT_PR_ENABLED` | ❌ | docs-sync-audit Phase 2 — 확정 제안 docs PR 자동 개설. |
+| `DOCS_AUDIT_PR_REPO` | ❌ | docs PR 대상 "owner/repo". 미설정 시 BE_SANDBOX_DEFAULT_REPO_LABEL → "JSL107/personal_agents". |
+| `DOCS_AUDIT_PR_BASE_BRANCH` | ❌ | PR base. 미설정 시 main. |
+
+## 블로그 / 저녁 발행
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `BLOG_NOTION_PROP_STATUS` | ❌ | BLOG 자연어 초안 발행 enrich — Notion "블로그 초안" DB property 이름. |
+| `BLOG_NOTION_PROP_PUBLISHED_AT` | ❌ | — |
+| `BLOG_NOTION_PROP_TAGS` | ❌ | — |
+| `BLOG_NOTION_PROP_SUMMARY` | ❌ | — |
+| `BLOG_NOTION_STATUS_PUBLISHED_VALUE` | ❌ | — |
+| `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip. |
+| `EVENING_RETRO_BLOG_NOTION_DATABASE_ID` | ❌ | 블로그 발행 대상 Notion "블로그 초안" DB ID. 미설정 시 블로그 카드 승인은 명시 에러. |
+
+## proactive / 메모리 / 윤문
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `EPISODIC_EMBED_MODEL` | ❌ | Episodic Memory — 로컬 임베딩 모델 id + 차원. spec 2026-06-18. |
+| `EPISODIC_EMBED_DIM` | ❌ | Episodic Memory 임베딩 차원 (기본 384). 모델 변경 시 함께 갱신 + embedding 컬럼/인덱스 재생성. |
+| `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms). |
+| `SUBCONSCIOUS_ENABLED` | ❌ | Subconscious proactive engine 활성 게이트. 'true' 문자열일 때만 활성. |
+| `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
+| `HUMANIZE_REPORTS_ENABLED` | ❌ | 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
+| `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |
+| `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | Subconscious 시간당 최대 proposal 건수 (슬라이딩 1시간 윈도우, Redis ZSET). |
+
+## 콘솔 리모컨
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `CONSOLE_CHAIN_IMPACT_RECENT_DAYS` | ❌ | 콘솔 리모컨 2A.2 — PO_EVAL 자동 체이닝 시 IMPACT_REPORTER --recent 조회 일수. 기본 7. |
+| `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable). |
+| `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증. |
+
+## 주식 모니터링
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `STOCK_MONITOR_ENABLED` | ❌ | 보유 종목 모니터링. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다. |
+| `TOSS_CLIENT_ID` | ❌ | 토스증권 잔고 동기화. client id/secret 미설정 시 동기화 호출 시점에 명시 오류. |
+| `TOSS_CLIENT_SECRET` | ❌ | — |
+| `TOSS_ACCOUNT_SEQ` | ❌ | — |
+
+## 기타
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
+| `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
+| `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |
+| `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
+| `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
+| `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |

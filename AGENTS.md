@@ -72,7 +72,7 @@ src/
 5. `AppModule` / `SlackModule` 에 모듈 등록
 6. `ResponseCode` enum 에 도메인 ErrorCode 와 1:1 동기화 항목 추가 (AllExceptionsFilter 가 매칭에 씀)
 7. `src/agent-run/domain/agent-run.type.ts` 의 `TriggerType` enum 에 `SLACK_COMMAND_*` 추가
-8. `src/model-router/domain/model-router.type.ts` 의 `AgentType` enum + `model-router.usecase.ts` 의 `AGENT_TO_PROVIDER` 매핑 추가
+8. `src/model-router/domain/model-router.type.ts` 의 `AgentType` enum + `src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER` 매핑 추가
 9. `src/slack/handler/agent-command.handler.ts` 의 `/retry-run` switch 에 새 `case '{AGENT_TYPE}'` 추가 (FAILURE_REPLAY 라우팅) — 새 에이전트가 FAILED 되면 재실행 가능해야 함
 10. spec: parser / usecase / formatter 단위 테스트 (CODE_RULES §5)
 11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
@@ -106,7 +106,7 @@ src/
 
 ## 6. 모델 / CLI 라우팅
 
-현재 매핑 (`src/model-router/application/model-router.usecase.ts` 의 `AGENT_TO_PROVIDER`):
+현재 매핑 (`src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER`):
 - **전체 에이전트** → ChatGPT (`codex` CLI, `codex exec`). 2026-07-02 정책으로 Claude 라우팅 제거.
 - **Fallback** — 없음. `FALLBACK_OF` 가 비어 있어 primary(ChatGPT) 실패 시 재시도 없이 즉시 `MODEL_COMPLETION_FAILED` throw (쿼터 소진 시 reset 시각 안내). `ClaudeCliProvider` 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 
