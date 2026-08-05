@@ -53,6 +53,12 @@ private func fetchSnapshotSynchronously(client: ConsoleClient) -> ConsoleSnapsho
         semaphore.signal()
     }
     // 렌더가 백엔드 응답에 매달려 멈추지 않게 상한을 둔다.
-    _ = semaphore.wait(timeout: .now() + 5)
+    //
+    // **신호를 받았을 때만 결과를 읽는다.** 타임아웃으로 빠져나온 뒤 읽으면, 아직 살아 있는
+    // 작업의 쓰기와 여기의 읽기가 같은 변수에서 겹쳐 데이터 경합이 된다. `signal()` 을 받은
+    // 경우에는 쓰기가 그보다 먼저 끝난 것이 보장되므로 안전하다.
+    guard semaphore.wait(timeout: .now() + 5) == .success else {
+        return nil
+    }
     return result
 }
