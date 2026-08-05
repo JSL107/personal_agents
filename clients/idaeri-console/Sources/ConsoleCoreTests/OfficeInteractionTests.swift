@@ -234,4 +234,105 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         [],
         "배회자가 없으면 중단 대상도 없음"
     )
+
+    // 창이 좁아 이름표가 겹치는 구간에서만 숨긴다.
+    //
+    // 경계 위(넉넉한 창)에서는 상태와 무관하게 전부 보여야 한다 — 여기서 숨기기 시작하면
+    // 평소 화면에서 사람 이름이 사라진다.
+    let roomy = officeNameplateCrowdedTileSize + 1
+    for state in [
+        ConsoleAgentState.waiting, .completed, .inProgress, .awaitingApproval, .failed,
+        .awaitingIntegration,
+    ] {
+        t.expect(
+            nameplateIsVisible(tileSize: roomy, state: state, isHovered: false, isSelected: false),
+            "넓은 창에서는 \(state.rawValue) 이름표도 보인다"
+        )
+    }
+
+    // 좁은 창에서는 손이 필요한 사람·일이 도는 사람·보고 있는 사람만 남는다.
+    let cramped = officeNameplateCrowdedTileSize - 1
+    let keptWhenCramped: [(ConsoleAgentState, Bool, Bool, Bool)] = [
+        (.awaitingApproval, false, false, true),
+        (.failed, false, false, true),
+        (.inProgress, false, false, true),
+        (.waiting, true, false, true),
+        (.waiting, false, true, true),
+        (.waiting, false, false, false),
+        (.completed, false, false, false),
+        (.awaitingIntegration, false, false, false),
+    ]
+    for (state, hovered, selected, expected) in keptWhenCramped {
+        t.expectEqual(
+            nameplateIsVisible(
+                tileSize: cramped, state: state, isHovered: hovered, isSelected: selected
+            ),
+            expected,
+            "좁은 창 \(state.rawValue)(hover=\(hovered), select=\(selected)) 표시=\(expected)"
+        )
+    }
+
+    // 숨쉬기 위상은 사람마다 다르고 한 주기 안에 들어간다.
+    // 전원이 같은 위상이면(=이 단언이 깨지면) 27명이 한 몸처럼 오르내린다.
+    let phases = ["PM", "BACKEND", "CODE_REVIEWER", "CEO", "CTO", "PO_EVAL"]
+        .map { officeBreathPhaseSeconds(agentType: $0) }
+    for phase in phases {
+        t.expect(
+            phase >= 0 && phase < officeBreathCycleSeconds,
+            "숨쉬기 위상이 한 주기 안(\(phase))"
+        )
+    }
+    t.expect(Set(phases).count > 1, "숨쉬기 위상이 사람마다 다르다")
+    t.expectEqual(
+        officeBreathPhaseSeconds(agentType: "PM"),
+        officeBreathPhaseSeconds(agentType: "PM"),
+        "같은 사람은 실행마다 같은 위상"
+    )
+
+    // MARK: - 내 작업 세션
+
+    func makeSession(_ id: String, _ state: String) -> ConsoleSession {
+        ConsoleSession(
+            sessionId: id, pid: 1, source: "claude", name: id, cwd: "/tmp",
+            state: state, startedAt: "t", lastActivityAt: nil
+        )
+    }
+
+    let sessionPlan = officeFloorPlan(
+        agents: [
+            makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
+        ]
+    )
+    let sessionTiles = officeSessionTiles(plan: sessionPlan)
+    t.expect(!sessionTiles.isEmpty, "세션 자리 존재")
+    // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 세션이 늘어난 순간 줄 선 사람과
+    // 겹쳐 승인이 몇 건인지 세지 못한다.
+    let queued = Set(sessionPlan.queueTiles)
+    for tile in sessionTiles {
+        t.expect(sessionPlan.walkable.contains(tile), "세션 자리 통행 가능")
+        t.expect(!queued.contains(tile), "세션 자리가 승인 대기 줄과 겹치지 않음")
+    }
+
+    // 돌고 있는 세션이 먼저 선다. 자리가 모자랄 때 쉬는 세션이 앞자리를 차지하면,
+    // 정작 지금 무엇이 도는지 화면에서 사라진다.
+    let mixedSessions = [
+        makeSession("z-idle", "idle"), makeSession("a-idle", "idle"),
+        makeSession("m-active", officeSessionActiveState),
+    ]
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
+        ["m-active", "a-idle"],
+        "도는 세션 먼저, 그다음 id 순"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 0).count, 0, "자리가 없으면 아무도 안 세운다"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 99).count, 3, "자리가 남으면 전부 세운다"
+    )
+    t.expectEqual(
+        officeVisibleSessions(mixedSessions, limit: 2).map(\.sessionId),
+        officeVisibleSessions(mixedSessions.reversed(), limit: 2).map(\.sessionId),
+        "입력 순서가 달라도 같은 결과"
+    )
 }
