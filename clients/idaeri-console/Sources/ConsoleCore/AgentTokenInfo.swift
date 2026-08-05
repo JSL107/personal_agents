@@ -16,14 +16,19 @@ public struct AgentTokenInfo: Equatable, Sendable {
     }
 }
 
-/// ISO8601 startedAt 과 now 로 경과 라벨을 만든다. 미래·파싱 불가는 nil.
-public func elapsedLabel(fromISO startedAt: String, now: Date) -> String? {
+/// 백엔드가 주는 ISO8601 시각 문자열을 읽는다. 소수점 초가 붙는 경우와 안 붙는 경우가
+/// 섞여 오므로 두 형식을 모두 시도한다.
+public func parseISODate(_ text: String) -> Date? {
     let withFractional = ISO8601DateFormatter()
     withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let plain = ISO8601DateFormatter()
     plain.formatOptions = [.withInternetDateTime]
+    return withFractional.date(from: text) ?? plain.date(from: text)
+}
 
-    guard let started = withFractional.date(from: startedAt) ?? plain.date(from: startedAt) else {
+/// ISO8601 startedAt 과 now 로 경과 라벨을 만든다. 미래·파싱 불가는 nil.
+public func elapsedLabel(fromISO startedAt: String, now: Date) -> String? {
+    guard let started = parseISODate(startedAt) else {
         return nil
     }
     let seconds = now.timeIntervalSince(started)

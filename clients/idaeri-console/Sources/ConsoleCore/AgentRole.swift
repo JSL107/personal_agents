@@ -104,9 +104,9 @@ public struct CharacterLook: Equatable, Sendable {
 ///
 /// 로더가 파일명을 조립할 때와 에셋이 다 있는지 검사할 때가 같은 값을 봐야 한다 —
 /// 예전에는 로더가 배열을 따로 들고 코어는 개수만 알아서, 시트를 늘려도 한쪽만 고쳐질 수 있었다.
-public let characterSheetPrefixes = ["char", "charb", "charc", "chard"]
+public let characterSheetPrefixes = ["char", "charb", "charc", "chard", "chare"]
 
-/// 준비된 캐릭터 시트 수(기본 + 선택 3종).
+/// 준비된 캐릭터 시트 수(기본 + 선택 4종).
 public let characterSheetCount = characterSheetPrefixes.count
 
 /// 머리색 팔레트(0~1 RGB). 검정·짙은 갈색·밝은 갈색·적갈색·회색.
