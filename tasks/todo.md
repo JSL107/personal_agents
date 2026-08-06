@@ -1001,3 +1001,25 @@
 - `pnpm db:push`, commit은 실행하지 않았다.
 
 ---
+# 포트폴리오 현재 포지션 소스 필터 수정 (2026-08-06)
+
+**Goal:** 과거 등록 경로의 `Holding`이 현재 포지션과 시세 완전성 판정에 섞이지 않게 한다.
+
+**Constraints:** `.ai/design.md` §0을 지킨다. 지정된 repository와 spec만 변경한다. `pnpm db:push`, commit은 실행하지 않는다.
+
+- [x] 기존 쿼리 계약을 `TOSS` source로 제한하는 회귀 spec을 추가하고 RED를 확인한다.
+- [x] mock 반환값을 필터 적용 후 형태로 둔 결과 회귀 spec을 추가한다.
+- [x] `findPortfolioPositions()` 쿼리에 source 필터와 전환 이력 설명 주석을 최소 추가한다.
+- [x] focused stock spec을 GREEN으로 확인하고 변경 범위를 검토한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build && pnpm docs:check && pnpm check:invariants`를 모두 검증한다.
+- [x] 아래 Review에 실제 RED/GREEN 및 최종 게이트 결과를 기록한다.
+
+## Review
+
+- `findPortfolioPositions()`의 Prisma 쿼리를 `Ticker.source = TOSS`로 제한해 과거 등록 경로 행을 시세 완전성 판정 전에 배제했다.
+- TDD RED는 새·갱신 query 단언 2건이 누락된 `where`로 실패함을 확인했다. 구현 후 stock focused 7 suites/87 tests가 통과했다.
+- mock 반환값은 Prisma 필터 이후 현재 경로 행만 포함하고, 쿼리 인자 단언으로 필터 삭제 시 실패하게 했다.
+- 최종 gate는 lint exit 0(기존 warning 57), 일반 test 306 suites/2,419 tests, code-graph 5 suites/40 tests, build/docs/invariants 모두 exit 0이다.
+- 실제 보유 종목·상품명은 추가하지 않았다. `pnpm db:push`, commit은 실행하지 않았다.
+
+---

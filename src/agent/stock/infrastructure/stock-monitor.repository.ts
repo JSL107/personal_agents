@@ -39,6 +39,8 @@ export class StockMonitorRepository {
 
   async findPortfolioPositions(): Promise<ExposurePosition[]> {
     const holdings = await this.prisma.holding.findMany({
+      // 전환 이력이 있는 DB의 과거 등록 경로 행이 현재 포지션에 섞이면 노출 비중이 틀어진다.
+      where: { ticker: { source: 'TOSS' } },
       orderBy: { effectiveDate: 'desc' },
       include: {
         ticker: {

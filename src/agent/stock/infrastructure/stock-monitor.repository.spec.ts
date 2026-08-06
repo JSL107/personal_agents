@@ -75,7 +75,7 @@ const makePrisma = () => ({
 });
 
 describe('StockMonitorRepository', () => {
-  it('시장 구분 없이 최신 보유와 각 종목의 최신 종가를 조회한다', async () => {
+  it('TOSS 현재 보유를 시장 구분 없이 최신 종가와 조회한다', async () => {
     const prisma = makePrisma();
     const repository = new StockMonitorRepository(
       prisma as unknown as PrismaService,
@@ -84,6 +84,7 @@ describe('StockMonitorRepository', () => {
     await repository.findPortfolioPositions();
 
     expect(prisma.holding.findMany).toHaveBeenCalledWith({
+      where: { ticker: { source: 'TOSS' } },
       orderBy: { effectiveDate: 'desc' },
       include: {
         ticker: {
@@ -96,6 +97,58 @@ describe('StockMonitorRepository', () => {
         },
       },
     });
+  });
+
+  it('전환 이력이 있어도 현재 등록 경로의 보유만 포지션으로 반환한다', async () => {
+    const prisma = makePrisma();
+    const currentQuantity = { isZero: () => false };
+    const currentClose = { toString: () => '200' };
+    const databaseHoldings = [
+      {
+        tickerId: 1,
+        quantity: currentQuantity,
+        currency: 'KRW',
+        ticker: {
+          source: 'TOSS',
+          exposureRegion: 'KR',
+          exposureDirection: 'LONG',
+          dailyPrices: [{ close: currentClose }],
+        },
+      },
+      {
+        tickerId: 2,
+        quantity: { isZero: () => false },
+        currency: 'KRW',
+        ticker: {
+          source: 'YAHOO',
+          exposureRegion: 'KR',
+          exposureDirection: 'LONG',
+          dailyPrices: [],
+        },
+      },
+    ];
+    // Prisma mock은 where를 실행하지 않으므로 DB 필터 이후 반환 모양을 직접 지정한다.
+    prisma.holding.findMany.mockResolvedValue([databaseHoldings[0]]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findPortfolioPositions();
+
+    expect(prisma.holding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ticker: { source: 'TOSS' } },
+      }),
+    );
+    expect(result).toEqual([
+      {
+        region: 'KR',
+        direction: 'LONG',
+        currency: 'KRW',
+        quantity: currentQuantity,
+        close: currentClose,
+      },
+    ]);
   });
 
   it('최신 수량이 남은 가상 보유만 노출 분류와 최신 종가로 반환한다', async () => {
