@@ -204,13 +204,55 @@ t.expectEqual(expectedFrames.count, 30, "걸음 프레임 30장 ...")
 새로 뽑으면 `FurnitureKind.nativeSize`의 실측값도 함께 갱신해야 합니다 — 어긋나면 배율이
 조용히 틀어집니다.
 
+#### 주문서 — `raw/furniture-3.png`
+
+기존 시트는 그대로 두고 새 시트로 받습니다. 셀 넷을 두 행으로 나눕니다(문 두 장이 훨씬 높아
+같은 행에 두면 행 판정이 흔들립니다).
+
+| 셀 | 물건 | 도트 | 캔버스 픽셀 |
+|---|---|---|---|
+| Row 1 좌 | 닫힌 문 | 40 × 80 | 320 × 640 |
+| Row 1 우 | 열린 문(안쪽으로 열려 통로가 보임) | 40 × 80 | 320 × 640 |
+| Row 2 좌 | 3단 책장 | 30 × 45 | 240 × 360 |
+| Row 2 우 | 이동식 화이트보드 | 34 × 34 | 272 × 272 |
+
+아래 프롬프트를 공통 규격(§모든 시트가 지켜야 할 공통 규격)과 함께 그대로 씁니다.
+
+```
+Objects, in this exact order, left to right then top to bottom:
+
+Row 1: a CLOSED wooden office door seen straight from the front, including the frame —
+       tall and narrow, roughly 320 pixels wide by 640 pixels tall, with a small frosted
+       glass window in the upper half and a metal handle on the right;
+       the SAME door OPEN, swung inward so a dark empty doorway is visible beside the
+       door leaf, same overall footprint of 320 x 640 pixels
+Row 2: a three-shelf wooden bookcase seen from the front, clearly TALLER than wide
+       (240 pixels wide by 360 pixels tall), books of muted colours on every shelf;
+       a mobile whiteboard on a metal stand seen from the front, the board itself nearly
+       square (272 x 272 pixels), white surface with a thin marker tray at the bottom
+
+The two doors in Row 1 must be the same height as each other. The bookcase and the
+whiteboard in Row 2 must be similar in height to each other.
+```
+
+받은 뒤 코드 변경:
+
+1. `scripts/build-sprites.py` 의 `SHEETS` 에 추가
+   ```python
+   "furniture-3": ["furn-door-closed", "furn-door-open", "furn-bookshelf", "furn-whiteboard"],
+   ```
+   이름이 기존과 같으므로 **기존 스프라이트를 덮어씁니다.** `furniture` · `furniture-door`
+   시트의 해당 셀 이름을 `None` 으로 바꿔 두 시트가 같은 파일을 다투지 않게 하세요.
+2. `Sources/ConsoleCore/OfficeFloorPlan.swift` 의 `nativeSize` 실측값을 새 크기로 갱신
+   (문 40×80, 책장 30×45, 화이트보드 34×34)
+3. 테스트를 돌려 폭 상한에 안 걸리는지 확인 — 문은 목표 배율 1.41 이 그대로 반영돼야 합니다
+   (`swift run ConsoleCoreTests`)
+
 ### 그 밖의 추천 품목
 
-1. **러그 2~3종** — 방마다 다른 러그를 깔면 부서 개성이 생깁니다
-2. **액자·포스터·화이트보드(글씨 있는 버전)** — 벽이 비어 있습니다
-3. **서류 캐비닛, 사물함** — 벽면을 채우는 큰 가구
-4. **자판기, 냉장고, 싱크대** — 탕비실이 커피머신·정수기뿐입니다
-5. **소파 코너 조각, 낮은 파티션** — 공간을 나누는 요소
+1. **액자·포스터·화이트보드(글씨 있는 버전)** — 벽이 비어 있습니다
+2. **소파 코너 조각** — 응접 세트를 L자로 놓을 수 있게
+3. **회의 테이블 의자 세트** — 지금 회의실 테이블은 의자가 붙어 있는 한 장입니다
 
 ### 프롬프트
 

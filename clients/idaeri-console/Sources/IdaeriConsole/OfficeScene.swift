@@ -583,9 +583,13 @@ final class OfficeScene: SKScene {
     }
 
     private func renderFurniture() {
-        objectLayer.children
-            .filter { $0.name?.hasPrefix("furn:") == true }
-            .forEach { $0.removeFromParent() }
+        // 깔개는 바닥 레이어에 붙으므로 두 레이어를 함께 훑는다. 한쪽만 지우면 창 크기가
+        // 바뀔 때마다 깔개가 겹겹이 쌓인다(`renderFloor` 를 거치지 않는 호출 경로가 있다).
+        for layer in [objectLayer, floorLayer] {
+            layer.children
+                .filter { $0.name?.hasPrefix("furn:") == true }
+                .forEach { $0.removeFromParent() }
+        }
         deskNodes.removeAll()
         doorNodes.removeAll()
         // 책상 칸 → 주인. 작업 중일 때 그 사람의 모니터만 깜빡이게 하려면 짝을 알아야 한다.
@@ -618,9 +622,20 @@ final class OfficeScene: SKScene {
             if placement.kind.isWallMounted {
                 position.y += tileSize * 0.32
             }
+            // 두 칸 이상을 차지하는 가구는 기준 칸 중앙이 아니라 **점유 범위 중앙**에 놓는다.
+            // 발밑 기준(anchor x = 0.5)을 그대로 쓰면 2칸 폭 깔개가 좌우로 반 칸씩 삐져나가
+            // 옆 칸 바닥까지 물든다.
+            position.x += tileSize * CGFloat(placement.kind.footprint.width - 1) / 2
             node.position = position
             node.zPosition = depth(of: placement.tile)
-            objectLayer.addChild(node)
+            // 깔개는 바닥 레이어로 내린다. 앞뒤 순서를 y 로 정하는 구조에서는(아래쪽이 앞)
+            // 깔개가 자기보다 위 칸의 소파·테이블을 덮어 버린다 — 깔개 위에 놓인 가구가
+            // 깔개 밑으로 사라지는 그림이 된다.
+            if placement.kind.isFloorDecor {
+                floorLayer.addChild(node)
+            } else {
+                objectLayer.addChild(node)
+            }
         }
     }
 

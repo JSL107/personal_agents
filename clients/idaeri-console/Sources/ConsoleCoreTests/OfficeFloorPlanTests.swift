@@ -359,19 +359,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "2인·3인 소파가 같은 배율"
     )
 
-    // **환산 예외는 회의 테이블 하나뿐이다.** 위에서 내려다본 테이블만 세로 픽셀이 높이가
-    // 아니라 깊이(원근)다. 벽에 걸린 정면도는 세로가 곧 높이라 환산이 성립한다.
+    // **환산 예외는 "세로가 높이가 아닌 것" 뿐이다** — 위에서 내려다본 회의 테이블(세로가
+    // 깊이)과 바닥 깔개(애초에 높이가 없다). 벽에 걸린 정면도는 세로가 곧 높이라 성립한다.
     //
     // 한때 벽걸이 10종과 시계·화이트보드·문까지 13종이 예외였다. 그 결과 그것들만 원본
     // 픽셀로 남아 **시계가 실물 축척의 2배, 화이트보드는 40% 크기**로 그려졌다. 예외를
     // 늘리면 같은 일이 반복되므로 목록으로 못박는다 — 새 가구에 실측값을 안 채우면 여기서 걸린다.
-    for kind in FurnitureKind.allCases where kind != .meetingTable {
+    let heightExempt: Set<FurnitureKind> = [.meetingTable, .rugGreen, .rugBeige, .rugNavy]
+    for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
         t.expect(
             kind.targetHeightCm != nil,
-            "\(kind.rawValue) 실물 높이 실측값 존재 (환산 예외는 회의 테이블뿐)"
+            "\(kind.rawValue) 실물 높이 실측값 존재 (예외는 회의 테이블·깔개뿐)"
         )
     }
-    t.expectNil(FurnitureKind.meetingTable.targetHeightCm, "회의 테이블은 높이 환산 제외")
+    for kind in heightExempt {
+        t.expectNil(kind.targetHeightCm, "\(kind.rawValue) 은 높이 환산 제외")
+    }
+    // 깔개는 바닥 장식이라 밟고 지나갈 수 있어야 한다 — 막으면 소파 앞이 통째로 고립된다.
+    for kind in FurnitureKind.allCases where kind.isFloorDecor {
+        t.expect(kind.isWalkThrough, "\(kind.rawValue) 은 밟고 지나갈 수 있다")
+    }
     // 시계는 환산에 들어오면서 **작아진다**. 되돌아가면(예외로 빼면) 1.0 이 되어 걸린다.
     t.expect(
         FurnitureKind.clock.sizeBoost < 1.0,
@@ -400,13 +407,19 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "책장 배율이 폭 상한값과 일치"
     )
 
-    // 어떤 가구도 사람보다 높지 않다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을 본다.
-    // 회의 테이블은 세로가 깊이라 이 비교가 성립하지 않아 제외한다.
-    for kind in FurnitureKind.allCases where kind != .meetingTable {
+    // 가구가 사람보다 크게 솟지 않는다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을
+    // 본다. 관제 화면에서 가구가 옆 칸 사람과 상태 링을 덮으면 정보가 사라진다.
+    //
+    // 제외 대상은 두 부류다. 세로가 높이가 아닌 것(회의 테이블·깔개)은 비교 자체가 성립하지
+    // 않는다. 자판기(180cm)는 **실물이 사람보다 높은 물건**이라 사람 키로 자르면 실측 환산을
+    // 되돌리는 셈이 되므로, 대신 1.2배까지만 허용해 무제한으로 커지는 것을 막는다.
+    let tallerThanPeople: Set<FurnitureKind> = [.vendingMachine]
+    for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
         let height = kind.nativeHeight * kind.sizeBoost
+        let allowed = characterHeight * (tallerThanPeople.contains(kind) ? 1.2 : 1.0)
         t.expect(
-            height <= characterHeight,
-            "\(kind.rawValue) 높이가 사람 키 이하 (실제 \(height) vs \(characterHeight))"
+            height <= allowed,
+            "\(kind.rawValue) 높이가 상한 이하 (실제 \(height) vs \(allowed))"
         )
     }
 
