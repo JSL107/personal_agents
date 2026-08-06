@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
+import { HoldingChange } from '../../../agent/stock/domain/holding-change';
 import {
   detectAvgPriceBreach,
   detectDailyChange,
@@ -15,6 +16,7 @@ import {
   StoredStockAlert,
 } from '../../../agent/stock/domain/stock-monitor.type';
 import {
+  formatHoldingChanges,
   formatStockMonitorSummary,
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
@@ -48,6 +50,10 @@ interface StockMonitorAudit {
   marketClosed: boolean;
   syncedHoldings: number | null;
   zeroedHoldings: number | null;
+  // 감지한 매매 건수. 0 은 "변화가 없었다", null 은 "동기화가 실패해 판정 자체를 못 했다" —
+  // 둘 다 화면에는 아무 줄도 남기지 않으므로, 여기서 구분하지 않으면 감지가 죽어도 조용하다.
+  // 사건의 상세는 holding_change 표에 있고 여기에는 건수만 둔다.
+  holdingChangeCount: number | null;
   syncError: string | null;
 }
 
@@ -59,6 +65,7 @@ interface StockMonitorRunResult {
 interface HoldingsSyncResult {
   synced: number | null;
   zeroed: number | null;
+  changes: HoldingChange[];
   error: string | null;
 }
 
@@ -161,50 +168,77 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
 
-    const outcome = await this.agentRunService.execute<StockMonitorRunResult>({
-      agentType: AgentType.INVEST,
-      triggerType: TriggerType.AUTOPILOT_INVEST_CRON,
-      inputSnapshot: {
-        taskId: this.id,
-        marketCountry: this.targetMarketCountry,
-        firedAtKst: context.firedAtKst,
-      },
-      run: async () => {
-        const runResult = await this.monitor(context);
-        // 판정은 순수 계산이라 LLM 을 거치지 않는다(VACATION 선례).
-        return {
-          result: runResult,
-          modelUsed: 'deterministic',
-          output: runResult.audit,
-        };
-      },
-    });
-    return outcome.result.taskResult;
+    // 동기화 결과를 execute 밖에서 잡아둔다. 감시가 실패해 예외로 빠져나가도 이미 감지된 매매를
+    // 알릴 수 있어야 하기 때문이다(아래 catch).
+    let detectedChanges: HoldingChange[] = [];
+    try {
+      const outcome = await this.agentRunService.execute<StockMonitorRunResult>(
+        {
+          agentType: AgentType.INVEST,
+          triggerType: TriggerType.AUTOPILOT_INVEST_CRON,
+          inputSnapshot: {
+            taskId: this.id,
+            marketCountry: this.targetMarketCountry,
+            firedAtKst: context.firedAtKst,
+          },
+          run: async () => {
+            const sync = await this.syncCurrentHoldings();
+            detectedChanges = sync.changes;
+            const runResult = await this.monitor(context, sync);
+            // 판정은 순수 계산이라 LLM 을 거치지 않는다(VACATION 선례).
+            return {
+              result: runResult,
+              modelUsed: 'deterministic',
+              output: runResult.audit,
+            };
+          },
+        },
+      );
+      return outcome.result.taskResult;
+    } catch (error) {
+      // 감시 판정이 실패했지만 매매는 이미 감지·적재됐다. 여기서 그대로 던지면 그 알림이
+      // 영구히 사라진다 — 스냅샷은 이미 새 잔고라서 다음 실행은 "변화 없음"으로 판정하고,
+      // orchestrator 가 남기는 실패 한 줄에는 매매 내용이 없다.
+      //
+      // 원장은 이미 FAILED 로 기록됐다(예외가 execute 안에서 났으므로) — /retry-run 대상에서
+      // 빠지지 않는다. 알릴 매매가 없으면 그대로 던져 기존 실패 처리에 맡긴다.
+      const changeText = formatHoldingChanges(detectedChanges);
+      if (!changeText) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `주식 모니터링 실패 — 감지된 매매 ${detectedChanges.length}건은 그대로 알린다: ${message}`,
+      );
+      return {
+        skip: false,
+        summaryText: `_⚠️ 주식 모니터링 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._\n\n${changeText}`,
+      };
+    }
   }
 
   private async monitor(
     context: AutopilotTaskContext,
+    sync: HoldingsSyncResult,
   ): Promise<StockMonitorRunResult> {
-    const sync = await this.syncCurrentHoldings();
     const holdings = await this.repository.findCurrentHoldings({
       marketCountry: this.targetMarketCountry,
     });
     if (holdings.length === 0) {
       // 화면에는 보내지 않되(빈 알림 방지) 원장에는 남긴다.
       return {
-        taskResult: this.withSyncWarning({ skip: true }, sync.error),
-        audit: {
-          marketCountry: this.targetMarketCountry,
+        taskResult: this.withSyncWarning(
+          this.withHoldingChanges({ skip: true }, sync.changes),
+          sync.error,
+        ),
+        audit: this.createAudit(sync, {
           holdingCount: 0,
           checkedCount: 0,
           anomalyCount: 0,
           failureCount: 0,
           lastTradeDate: null,
           marketClosed: false,
-          syncedHoldings: sync.synced,
-          zeroedHoldings: sync.zeroed,
-          syncError: sync.error,
-        },
+        }),
       };
     }
 
@@ -269,29 +303,28 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       );
       return {
         taskResult: this.withSyncWarning(
-          {
-            skip: false,
-            summaryText: formatStockMonitorSummary([], {
-              checkedCount: collectedHoldings.length,
-              lastTradeDate,
-              failures,
-              marketClosed: true,
-            }),
-          },
+          this.withHoldingChanges(
+            {
+              skip: false,
+              summaryText: formatStockMonitorSummary([], {
+                checkedCount: collectedHoldings.length,
+                lastTradeDate,
+                failures,
+                marketClosed: true,
+              }),
+            },
+            sync.changes,
+          ),
           sync.error,
         ),
-        audit: {
-          marketCountry: this.targetMarketCountry,
+        audit: this.createAudit(sync, {
           holdingCount: holdings.length,
           checkedCount: collectedHoldings.length,
           anomalyCount: 0,
           failureCount: failures.length,
           lastTradeDate: lastTradeDate || null,
           marketClosed: true,
-          syncedHoldings: sync.synced,
-          zeroedHoldings: sync.zeroed,
-          syncError: sync.error,
-        },
+        }),
       };
     }
 
@@ -397,43 +430,89 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
     return {
       taskResult: this.withSyncWarning(
-        {
-          skip: false,
-          summaryText: formatStockMonitorSummary(anomalies, {
-            checkedCount,
-            lastTradeDate: lastTradeDate || '알 수 없음',
-            failures,
-            marketClosed: false,
-            priceDisplays,
-          }),
-        },
+        this.withHoldingChanges(
+          {
+            skip: false,
+            summaryText: formatStockMonitorSummary(anomalies, {
+              checkedCount,
+              lastTradeDate: lastTradeDate || '알 수 없음',
+              failures,
+              marketClosed: false,
+              priceDisplays,
+            }),
+          },
+          sync.changes,
+        ),
         sync.error,
       ),
-      audit: {
-        marketCountry: this.targetMarketCountry,
+      audit: this.createAudit(sync, {
         holdingCount: holdings.length,
         checkedCount,
         anomalyCount: anomalies.length,
         failureCount: failures.length,
         lastTradeDate: lastTradeDate || null,
         marketClosed: false,
-        syncedHoldings: sync.synced,
-        zeroedHoldings: sync.zeroed,
-        syncError: sync.error,
-      },
+      }),
+    };
+  }
+
+  private createAudit(
+    sync: HoldingsSyncResult,
+    monitored: Omit<
+      StockMonitorAudit,
+      | 'marketCountry'
+      | 'syncedHoldings'
+      | 'zeroedHoldings'
+      | 'holdingChangeCount'
+      | 'syncError'
+    >,
+  ): StockMonitorAudit {
+    return {
+      marketCountry: this.targetMarketCountry,
+      ...monitored,
+      syncedHoldings: sync.synced,
+      zeroedHoldings: sync.zeroed,
+      holdingChangeCount: sync.error ? null : sync.changes.length,
+      syncError: sync.error,
     };
   }
 
   private async syncCurrentHoldings(): Promise<HoldingsSyncResult> {
     try {
       const result = await this.syncHoldings.execute();
-      return { synced: result.synced, zeroed: result.zeroed, error: null };
+      return {
+        synced: result.synced,
+        zeroed: result.zeroed,
+        changes: result.changes,
+        error: null,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cappedMessage = message.slice(0, 200);
       this.logger.warn(`잔고 동기화 실패 — ${cappedMessage}`);
-      return { synced: null, zeroed: null, error: cappedMessage };
+      return {
+        synced: null,
+        zeroed: null,
+        changes: [],
+        error: cappedMessage,
+      };
     }
+  }
+
+  // 매매 사건은 감시 판정과 독립이다. 보유 종목이 없어 판정을 건너뛰는 실행에도(전량 매도 직후가
+  // 그렇다) 사건은 알려야 하므로 skip 을 풀고 블록을 덧붙인다.
+  private withHoldingChanges(
+    result: AutopilotTaskResult,
+    changes: HoldingChange[],
+  ): AutopilotTaskResult {
+    const changeText = formatHoldingChanges(changes);
+    if (!changeText) {
+      return result;
+    }
+    const summaryText = result.summaryText
+      ? `${result.summaryText}\n\n${changeText}`
+      : changeText;
+    return { ...result, skip: false, summaryText };
   }
 
   private withSyncWarning(

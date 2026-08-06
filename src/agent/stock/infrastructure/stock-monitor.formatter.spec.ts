@@ -1,5 +1,22 @@
+import { HoldingChange } from '../domain/holding-change';
 import { StockAnomaly } from '../domain/stock-monitor.type';
-import { formatStockMonitorSummary } from './stock-monitor.formatter';
+import {
+  formatHoldingChanges,
+  formatStockMonitorSummary,
+} from './stock-monitor.formatter';
+
+const change = (overrides: Partial<HoldingChange> = {}): HoldingChange => ({
+  tickerId: 1,
+  tickerName: 'KODEX 인버스',
+  symbol: '114800',
+  kind: 'INCREASED',
+  previousQuantity: '50',
+  quantity: '80',
+  previousAvgPrice: '11044.7',
+  avgPrice: '10800',
+  currency: 'KRW',
+  ...overrides,
+});
 
 const anomaly: StockAnomaly = {
   tickerName: 'SamsungElec',
@@ -132,5 +149,124 @@ describe('formatStockMonitorSummary', () => {
 
     expect(result).toContain('수집 실패');
     expect(result).toContain('247540.KQ');
+  });
+});
+
+describe('formatHoldingChanges', () => {
+  // 매일 "변화 없음"을 보내면 소음이 된다. 0 건이 관측되어야 하는 곳은 화면이 아니라 원장이다.
+  it('변화가 없으면 빈 문자열을 돌려 줄을 만들지 않는다', () => {
+    expect(formatHoldingChanges([])).toBe('');
+  });
+
+  it('추가 매수를 수량과 평단 이동으로 보여준다', () => {
+    const result = formatHoldingChanges([change()]);
+
+    expect(result).toBe(
+      '💼 *잔고 변화 1건*\n' +
+        '• *KODEX 인버스* — 추가 매수 50주 → 80주, 평단 11,044.7원 → 10,800원',
+    );
+  });
+
+  it('일부 매도를 추가 매수와 다른 말로 보여준다', () => {
+    const result = formatHoldingChanges([
+      change({
+        kind: 'DECREASED',
+        previousQuantity: '80',
+        quantity: '50',
+        previousAvgPrice: '10800',
+        avgPrice: '10800',
+      }),
+    ]);
+
+    expect(result).toContain('일부 매도 80주 → 50주, 평단 10,800원');
+    expect(result).not.toContain('→ 10,800원');
+  });
+
+  it('신규 매수는 직전 값 없이 수량과 평단만 보여준다', () => {
+    const result = formatHoldingChanges([
+      change({
+        kind: 'BOUGHT',
+        previousQuantity: null,
+        previousAvgPrice: null,
+        quantity: '50',
+        avgPrice: '11044.7',
+      }),
+    ]);
+
+    expect(result).toContain('신규 매수 50주 (평단 11,044.7원)');
+  });
+
+  it('전량 매도는 팔기 전 수량을 보여준다', () => {
+    const result = formatHoldingChanges([
+      change({ kind: 'SOLD_ALL', previousQuantity: '50', quantity: '0' }),
+    ]);
+
+    expect(result).toContain('전량 매도 (50주)');
+  });
+
+  it('평단 변동은 수량이 유지됨을 함께 보여준다', () => {
+    const result = formatHoldingChanges([
+      change({
+        kind: 'AVG_PRICE_CHANGED',
+        previousQuantity: '50',
+        quantity: '50',
+      }),
+    ]);
+
+    expect(result).toContain('평단 변동 11,044.7원 → 10,800원 (50주 유지)');
+  });
+
+  it('미국 종목은 심볼과 통화를 그대로 보여준다', () => {
+    const result = formatHoldingChanges([
+      change({
+        tickerName: '화이자',
+        symbol: 'PFE',
+        currency: 'USD',
+        kind: 'BOUGHT',
+        previousQuantity: null,
+        previousAvgPrice: null,
+        quantity: '62.0845',
+        avgPrice: '26.8245',
+      }),
+    ]);
+
+    expect(result).toContain(
+      '🇺🇸 *PFE* — 신규 매수 62.0845주 (평단 USD 26.8245)',
+    );
+  });
+
+  // 토스 실측값. 판정은 저장 정밀도(4자리)로 보므로 평단이 "안 움직였다"고 본 건인데,
+  // 원본을 그대로 찍으면 화면만 "26.8245 → 26.824493" 으로 달라 보인다.
+  it('브로커의 저장 정밀도 밖 자릿수는 잘라 화살표를 만들지 않는다', () => {
+    const result = formatHoldingChanges([
+      change({
+        tickerName: '화이자',
+        symbol: 'PFE',
+        currency: 'USD',
+        kind: 'DECREASED',
+        previousQuantity: '70.5',
+        quantity: '62.08454',
+        previousAvgPrice: '26.8245',
+        avgPrice: '26.824493',
+      }),
+    ]);
+
+    expect(result).toContain('일부 매도 70.5주 → 62.0845주, 평단 USD 26.8245');
+    expect(result).not.toContain('26.824493');
+    expect(result).not.toContain('→ USD 26.8245');
+  });
+
+  it('원 미만에서 갈리는 평단을 같은 값으로 뭉개지 않는다', () => {
+    const result = formatHoldingChanges([
+      change({
+        kind: 'AVG_PRICE_CHANGED',
+        previousQuantity: '247',
+        quantity: '247',
+        previousAvgPrice: '1757.0445',
+        avgPrice: '1757.9',
+      }),
+    ]);
+
+    expect(result).toContain('평단 변동 1,757.0445원 → 1,757.9원');
   });
 });
