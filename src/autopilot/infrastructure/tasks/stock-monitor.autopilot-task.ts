@@ -73,7 +73,7 @@ const restoreStockAnomaly = (
     const direction = alert.triggeredValue > 0 ? '급등' : '급락';
     return {
       tickerName: holding.tickerName,
-      yahooSymbol: holding.yahooSymbol,
+      symbol: holding.symbol,
       kind: 'DAILY_CHANGE',
       ...alert,
       detail: `전일 대비 ${alert.triggeredValue.toFixed(1)}% ${direction}`,
@@ -83,7 +83,7 @@ const restoreStockAnomaly = (
     const label = alert.triggeredValue < 0 ? '손실' : '수익';
     return {
       tickerName: holding.tickerName,
-      yahooSymbol: holding.yahooSymbol,
+      symbol: holding.symbol,
       kind: 'AVG_PRICE_BREACH',
       ...alert,
       detail: `평단 대비 ${alert.triggeredValue.toFixed(1)}% ${label} 구간 진입`,
@@ -202,18 +202,18 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       let bars: DailyBar[] = [];
       try {
         bars = await this.marketData.fetchDailyBars(
-          holding.yahooSymbol,
+          holding.symbol,
           REQUIRED_BARS,
         );
       } catch (error) {
-        failures.push(`${holding.yahooSymbol}: ${(error as Error).message}`);
+        failures.push(`${holding.symbol}: ${(error as Error).message}`);
         continue;
       }
 
       const today = bars.at(-1);
       const yesterday = bars.at(-2) ?? null;
       if (!today) {
-        failures.push(`${holding.yahooSymbol}: 봉 없음`);
+        failures.push(`${holding.symbol}: 봉 없음`);
         continue;
       }
 
@@ -307,12 +307,12 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
             checkedCount += 1;
           } catch (error) {
             failures.push(
-              `${holding.yahooSymbol}: 알림 복구 실패 — ${(error as Error).message}`,
+              `${holding.symbol}: 알림 복구 실패 — ${(error as Error).message}`,
             );
           }
           continue;
         }
-        failures.push(`${holding.yahooSymbol}: 신규 거래일 봉 없음`);
+        failures.push(`${holding.symbol}: 신규 거래일 봉 없음`);
         continue;
       }
 
@@ -345,7 +345,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         });
       } catch (error) {
         failures.push(
-          `${holding.yahooSymbol}: 저장 실패 — ${(error as Error).message}`,
+          `${holding.symbol}: 저장 실패 — ${(error as Error).message}`,
         );
         continue;
       }
@@ -458,7 +458,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         this.logger.warn(`환율 환산 실패 — ${(error as Error).message}`);
       }
       return {
-        yahooSymbol: holding.yahooSymbol,
+        symbol: holding.symbol,
         currency: today.currency,
         currentPrice,
         convertedKrw,

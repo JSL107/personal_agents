@@ -720,3 +720,38 @@
 - 전체 lint/test/build와 docs/env/invariants 게이트가 exit 0이다. lint 기존 warning 57건, 일반 298 suites/2,272 tests, code-graph 5 suites/40 tests가 통과했다.
 - 기존 formatter 미커밋 변경은 보존했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
 - 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.
+# 토스증권 시세 소스 전환 구현 계획 (2026-08-06)
+
+**Source of truth:** `.ai/design.md`. 실측 응답 외 필드·봉투를 유추하지 않는다.
+
+**Constraints:** Node 22 + pnpm. `stock-anomaly.ts` 판정 로직과 `STOCK_THRESHOLDS`, Yahoo 클라이언트·매퍼, `ResolvedInstrument`, `scripts/register-holding.ts`, `prisma/schema.prisma`는 변경하지 않는다. git commit/push 금지.
+
+- [x] 현재 Toss/Yahoo client·mapper·module·감시 경로와 기존 테스트 패턴을 확인한다.
+- [x] 실측 fixture 기반 `toss-market-data.mapper.spec.ts`를 먼저 작성하고 RED를 확인한다.
+- [x] `TossApiClient`, candle mapper, `TossInvestClient` 공통 HTTP 위임을 최소 구현하고 관련 테스트를 GREEN으로 만든다.
+- [x] `toss-market-data.client.spec.ts`를 먼저 작성하고 count clamp, 429 전파, mapper 오류, 220ms 간격, Yahoo 환율 위임의 RED를 확인한다.
+- [x] `TossMarketDataClient`, port/module DI 변경을 최소 구현하고 관련 테스트를 GREEN으로 만든다.
+- [x] 감시 경로의 `yahooSymbol`을 `symbol`로 제한 리네임하고 repository가 `tossSymbol`을 사용하게 바꾼다.
+- [x] `grep -rn "yahooSymbol" src scripts` 결과가 허용된 제외 파일뿐인지 확인하고 금지 파일 diff가 없는지 확인한다.
+- [x] 전체 diff를 design.md 계약·코드 규칙·보안·rate limit·날짜/정렬 불변식 관점에서 리뷰한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 각각 실행해 실제 exit code를 확인한다.
+- [x] 실호출로 6종목 일봉 적재와 감시 대상 0→6 전환을 확인한다.
+
+## Review
+
+- 감시 대상이 0 → 6종목(KR 4 + US 2)으로 바뀌었다. 직접 원인은 `findCurrentHoldings` 가
+  비어 있는 `ticker.yahooSymbol` 로 종목을 건너뛰던 조건이었고, 이를 `tossSymbol` 로 바꿨다.
+- 실호출로 6종목 일봉을 받아 `daily_price` 에 6행이 적재됐고 `close` 와 `adj_close` 가 같다.
+  일봉 순서는 `2026-07-31 → … → 2026-08-06` 오름차순으로 확인했다.
+- 국내·미국이 같은 경로(`/candles?symbol=`)로 처리된다. 미국 봉의 `timestamp` 는 KST 표기지만
+  ET 자정 기준이라 앞 10자를 거래일로 쓴다(여름 13:00 / 겨울 14:00 양쪽 확인).
+- 환율은 토스에 API 가 없어(`/exchange-rates` 404, `/prices?symbols=USDKRW` 빈 배열)
+  Yahoo 위임으로 남겼다. 실호출 값 1417.74 확인.
+- 레이트리밋은 220ms 간격으로 7종목 연속 호출이 전부 200 이었지만, 6종목 조회 중 한 번 429 를
+  맞은 적이 있어 공통 HTTP 계층에 1초 후 1회 재시도를 넣었다.
+- 판정 로직(`stock-anomaly.ts`, `STOCK_THRESHOLDS`)은 변경하지 않았다. 수정주가 부재의 영향은
+  200거래일 실측으로 배당락 하락폭이 임계값의 1/4 수준임을 확인해 규칙을 유지했다.
+- 4중 게이트 exit 0. `.ai/implementation-summary.md` 는 구현 세션이 요약 작성 전에 끊겨
+  남기지 못했고, 그 내용을 이 Review 와 PR 본문으로 대체했다.
+
+---

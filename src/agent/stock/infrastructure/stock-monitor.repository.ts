@@ -48,13 +48,13 @@ export class StockMonitorRepository {
         continue;
       }
       seen.add(holding.tickerId);
-      if (!holding.ticker.yahooSymbol || holding.quantity.isZero()) {
+      if (!holding.ticker.tossSymbol || holding.quantity.isZero()) {
         continue;
       }
       current.push({
         tickerId: holding.tickerId,
         tickerName: holding.ticker.name,
-        yahooSymbol: holding.ticker.yahooSymbol,
+        symbol: holding.ticker.tossSymbol,
         quantity: holding.quantity,
         avgPrice: holding.avgPrice,
       });
