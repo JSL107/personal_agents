@@ -44,4 +44,11 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
     });
     return { id: row.id };
   }
+
+  async updateNotionUrl(id: number, notionUrl: string): Promise<void> {
+    await this.prisma.studyBrief.update({
+      where: { id },
+      data: { notionUrl },
+    });
+  }
 }

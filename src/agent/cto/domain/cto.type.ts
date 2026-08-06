@@ -79,9 +79,15 @@ export interface StudyTopicResearch {
   sourceUrls: readonly string[];
 }
 
+export interface RepoModuleSummary {
+  name: string;
+  description: string;
+}
+
 export interface EvaluateStudyTopicInput {
   slackUserId: string;
   research: StudyTopicResearch;
   profileSummary?: string;
   profileSkills?: readonly string[];
+  repoModules?: readonly RepoModuleSummary[];
 }

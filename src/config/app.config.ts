@@ -663,6 +663,7 @@ export class EnvironmentVariables {
   // - STUDY_BRIEF_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
   // - STUDY_BRIEF_CRON: BullMQ cron (default 매일 09:30 — `30 9 * * *`).
   // - STUDY_BRIEF_TIMEZONE: default Asia/Seoul.
+  // - STUDY_BRIEF_NOTION_DATABASE_ID: 발행 대상 DB. 미설정 시 Slack 전체 카드 fallback.
   @IsOptional()
   @IsString()
   STUDY_BRIEF_OWNER_SLACK_USER_ID?: string;
@@ -678,6 +679,10 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   STUDY_BRIEF_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  STUDY_BRIEF_NOTION_DATABASE_ID?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

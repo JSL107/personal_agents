@@ -430,7 +430,7 @@ model DailyFxRate {
 }
 
 // 매일 학습 브리핑 — 보낸 주제의 원장. 다음 회차의 "제외 목록"이자 kind 균형 재료.
-// reportMd 는 Hermes 조사 전문(Slack 스레드로도 보내지만 여기가 정본).
+// reportMd 는 Hermes 조사 전문. Notion 발행 성공 여부와 무관하게 DB가 원문 정본이다.
 model StudyBrief {
   id          Int       @id @default(autoincrement())
   agentRunId  Int?      @map("agent_run_id")
@@ -441,6 +441,7 @@ model StudyBrief {
   verdictJson Json      @map("verdict_json")
   reportMd    String    @map("report_md") @db.Text
   sourceUrls  Json      @map("source_urls")
+  notionUrl   String?   @map("notion_url")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([ownerUserId, createdAt])

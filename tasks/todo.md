@@ -1,3 +1,38 @@
+# PR #246 봇 리뷰 대응 2차 (2026-08-06)
+
+**Goal:** Study Brief 도메인 포트에서 CTO 타입 의존을 제거하고, Notion 페이지 생성 후 URL 저장만 실패한 부분 성공을 링크 발송으로 보존한다.
+
+**Architecture:** `study-brief-cron` 도메인에 로컬 verdict DTO를 두고 consumer가 CTO 결과를 명시 변환한다. Notion `publish`와 `updateNotionUrl`의 실패 경계를 분리한다.
+
+**Constraints:** `.env`, `pnpm db:push`, git add/commit/push를 실행하지 않는다. 기존 fallback·멱등·발송 실패 가드 단언을 약화하지 않는다.
+
+- [x] 100블록 초과 발행의 후속 append 실패·보상 실패 회귀 spec을 먼저 추가하고 RED를 확인한다.
+- [x] `NotionClientPort`에 기존 시그니처를 보존한 `archivePage`를 추가하고 `NotionApiClient`에서 `pages.update({ page_id, archived: true })`를 구현한다.
+- [x] publisher가 append 실패 시 page URL/id를 포함해 아카이브 성패를 로그로 남기고 원래 append 오류를 다시 던지게 한다.
+- [x] publisher·Notion adapter focused spec을 GREEN으로 만들고 정상 100블록 이하/초과 경로를 확인한다.
+- [x] `.ai/implementation-summary.md`의 "봇 리뷰 대응 2차" 절에 보상 처리·TDD·검증 결과를 덧붙인다.
+- [x] 최종 diff와 `pnpm lint:check && pnpm test && pnpm build`, `pnpm docs:check && pnpm check:env && pnpm check:invariants`를 검증한다.
+- [x] 지침·설계·기존 포트·consumer·spec·작업 트리를 확인한다.
+- [x] `publish` 성공 + `updateNotionUrl` 실패 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 로컬 verdict DTO와 CTO 결과 변환을 추가하고 두 포트의 CTO import를 제거한다.
+- [x] Notion 발행 실패와 URL 저장 실패 경계를 분리하고 구분 가능한 warn을 남긴다.
+- [x] focused spec을 GREEN으로 만들고 기존 Notion fallback·성공·미설정·멱등·발송 실패 가드를 확인한다.
+- [x] `.ai/implementation-summary.md`에 "봇 리뷰 대응 2차" 절을 추가한다.
+- [x] 요청된 전체 게이트, CTO import grep, final diff를 검증한다.
+
+## Review
+
+- `StudyBriefVerdict` 로컬 union을 추가하고 두 도메인 포트, formatter, Notion publisher가 자기 도메인 타입만 사용하게 했다. consumer만 CTO 결과를 받아 kind별 필드를 명시 복사한다.
+- Notion 페이지 발행 실패는 전체 카드 fallback, URL 저장 실패는 warn 후 이미 생성된 페이지 링크 발송으로 분리했다. 두 warn 문구도 페이지 발행/URL 저장으로 구분한다.
+- 100블록 초과 발행의 후속 append 실패 시 생성 페이지를 best-effort archive한다. 시도·성공·실패 로그에 page URL/id를 남기며, archive 실패는 삼키고 원래 append 오류를 다시 던진다.
+- `NotionClientPort.archivePage`와 `NotionApiClient`의 `pages.update({ page_id, archived: true })` adapter를 추가했다. 기존 메서드 시그니처는 바꾸지 않았다.
+- TDD RED는 URL 저장 실패 케이스가 링크 1회 대신 fallback 2회를 발송해 실패함을 확인했다. GREEN은 consumer 15건, 영향 spec 4 suites/28건 통과다.
+- 후속 P2 TDD RED는 archive 호출 0회와 adapter 메서드 부재를 각각 확인했다. GREEN은 publisher·adapter 2 suites/15 tests 통과다.
+- Verification: lint/test/build와 docs/env/invariants 모두 exit 0. 일반 304 suites/2,328 tests, code-graph 5 suites/40 tests 통과. lint는 기존 warning 57건, 오류 0건이다.
+- `src/study-brief-cron/domain/`의 `agent/cto` grep은 0건이다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+
+---
+
 # 리베이스 후 콘솔 총원·성장 좌석 정리 (2026-08-05)
 
 **Goal:** INVEST와 CTO_STUDY가 함께 들어온 운영 29명 상태에 현재 총원 표기를 맞추고, 성장 부서 6명이 기존 좌석·경계·통행 불변식을 만족하는지 확인한다.
@@ -748,3 +783,33 @@
 - Verification: lint/test/build/docs:check 모두 exit 0. commit/push, Prisma/Yahoo 제외 파일 변경 없음. 상세는 `.ai/implementation-summary.md`에 기록했다.
 
 ---
+
+---
+
+# 학습 브리핑 2차 개선 구현 계획
+
+구현 계약: `.ai/design.md` A·B·C. `parseStudyResearch`, `.env`, 기존 Notion 메서드 시그니처는 변경하지 않는다. `pnpm db:push`와 git 쓰기 작업은 실행하지 않는다.
+
+## 계획
+
+- [x] `.ai/design.md`, `CODE_RULES.md`, `tasks/lessons.md`, `src/notion/`, `src/study-brief-cron/`, CTO 프롬프트·usecase·registry·config·schema를 읽고 재사용 경계를 확인한다.
+- [x] A: `buildStudyResearchPrompt` spec에 1,200~1,800자와 세 고정 섹션을 먼저 단언해 RED를 확인하고 프롬프트만 수정한다.
+- [x] B: `RepoContextPort`와 `RepoContextCollector` spec을 먼저 추가해 `src/` 디렉터리, `AGENT_REGISTRY` 설명 매칭, 누락 경로 fallback, 100개 상한을 검증한다.
+- [x] B: CTO 내부에 구조적으로 같은 repo module 타입을 두고 `EvaluateStudyTopicInput`·`buildStudyTopicPrompt`에 모듈 목록을 주입한다. `src/agent/`에서 `study-brief-cron` import 0건을 유지한다.
+- [x] C1: `NotionClientPort`에 `createDatabasePage`만 추가하고 `NotionApiClient`의 기존 block 변환·rich text·100개 chunk 패턴을 확장 재사용한다. 기존 메서드 시그니처는 보존한다.
+- [x] C1: 외부 의존성 없는 `markdown-to-blocks` spec을 먼저 작성한다. heading, bullet, numbered, code fence/language fallback, quote, divider, paragraph, bold/code annotation, 유니코드 안전 2,000자 분할, 빈 입력을 검증한다.
+- [x] C2: `StudyBriefPublisherPort`와 `StudyBriefNotionPublisher` spec을 먼저 작성한다. verdict callout, 속성 payload, KST 날짜, 100블록 단위 create/append, TOOL caution 생략, 링크 출처를 검증한다.
+- [x] C2: Prisma `StudyBrief.notionUrl` 및 repository 갱신 메서드를 추가하고 spec으로 저장 후 URL 갱신을 검증한다. `db:push`는 실행하지 않는다.
+- [x] C3: formatter를 링크/폴백 두 모드로 분리하고 `## 세 줄 요약` 추출 및 첫 문단 fallback을 spec으로 검증한다. 기존 전체 카드와 3,000자 절단은 폴백에 보존한다.
+- [x] C3: consumer spec을 먼저 보강한다. repo context 전달, 본문 초과 warn, Notion 성공 시 URL 저장+Slack 1회/스레드 0회, 실패·비활성 시 기존 카드+스레드, 발행 실패 비전파를 검증한다.
+- [x] C3: consumer 흐름을 `CTO 판정 → DB 저장 → Notion 발행/URL 갱신 → Slack`으로 변경한다. 기존 완료 guard와 상세 스레드 실패 경계를 유지한다.
+- [x] DI/env/docs: `NotionModule` 재사용, cron module provider 연결, `.env.example`·`app.config.ts`·README에 `STUDY_BRIEF_NOTION_DATABASE_ID`를 동기화한다. `.env`는 건드리지 않는다.
+- [x] 관련 focused spec마다 RED를 확인한 뒤 최소 구현, GREEN, refactor 순서로 진행한다.
+- [x] 최종 diff에서 `parseStudyResearch` 무변경, `grep -rn "study-brief-cron" src/agent/` 0건, secrets/debug/우발 파일/금지 명령 미실행을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, `pnpm check:env`, `pnpm check:invariants`를 순서대로 새로 실행하고 exit code를 기록한다.
+- [x] `.ai/implementation-summary.md`에 파일 역할, 게이트 실제 결과, 계약 이탈, Claude 재검증 지점을 작성한다.
+
+## Review
+
+- 구현 계약 A·B·C 완료. 6개 게이트 exit 0, 독립 리뷰 Blocker 0/Should Fix 0.
+- 기존 멱등·Slack 상세 실패 회귀를 유지했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.

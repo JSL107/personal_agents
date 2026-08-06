@@ -59,4 +59,18 @@ describe('StudyBriefPrismaRepository', () => {
       orderBy: { createdAt: 'desc' },
     });
   });
+
+  it('발행된 Notion URL을 저장한다', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 7 });
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { update },
+    } as unknown as PrismaService);
+
+    await repository.updateNotionUrl(7, 'https://notion.so/PAGE');
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { notionUrl: 'https://notion.so/PAGE' },
+    });
+  });
 });
