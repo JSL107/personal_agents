@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import {
   detectAvgPriceBreach,
   detectDailyChange,
+  inspectAvgPriceStatus,
   isMarketClosed,
 } from './stock-anomaly';
 import { HoldingSnapshot } from './stock-monitor.type';
@@ -90,6 +91,31 @@ describe('detectAvgPriceBreach', () => {
 
   it('전일 봉이 없으면 판정하지 않는다', () => {
     expect(detectAvgPriceBreach(holding, bar(79000), null)).toBeNull();
+  });
+});
+
+describe('inspectAvgPriceStatus', () => {
+  it('임계 안이면 아무 상태도 만들지 않는다', () => {
+    expect(inspectAvgPriceStatus(holding, bar(105000))).toBeNull();
+  });
+
+  // detectAvgPriceBreach 는 최초 진입만 발화하므로 어제도 밖이던 종목은 영원히 침묵한다.
+  // 그 종목이 여기서는 반드시 잡혀야 화면에서 사라지지 않는다.
+  it('발화가 억제되는 종목도 상태로는 잡는다', () => {
+    expect(detectAvgPriceBreach(holding, bar(64000), bar(60000))).toBeNull();
+
+    expect(inspectAvgPriceStatus(holding, bar(64000))).toEqual({
+      tickerName: 'SamsungElec',
+      symbol: '005930',
+      percent: -36,
+      threshold: -20,
+    });
+  });
+
+  it('상한 밖이면 기준을 상한으로 돌려준다', () => {
+    expect(inspectAvgPriceStatus(holding, bar(140000))).toEqual(
+      expect.objectContaining({ percent: 40, threshold: 30 }),
+    );
   });
 });
 

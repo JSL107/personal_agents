@@ -29,10 +29,18 @@ export class TossMarketDataClient implements MarketDataPort {
     await this.waitForRequestInterval();
     const count = Math.min(days, MAXIMUM_CANDLE_COUNT);
     // 심볼은 DB(`ticker.toss_symbol`) 에서 온 값이라 쿼리에 그대로 이어붙이지 않는다.
+    //
+    // adjusted 는 토스 기본값도 true 지만 명시한다. 판정이 이 값에 직접 의존하는데(전일 대비는
+    // 연속 두 봉의 비율이라 조정 계열이 아니면 배당락이 가짜 급락으로 잡힌다), 문서화된 기본값에
+    // 기대면 토스가 그것을 바꾸는 날 모든 가격이 조용히 달라진다.
+    //
+    // 실측(2026-08-06 직접 호출): 월배당 종목 441640 은 adjusted true/false 가 200봉 중 183봉에서
+    // 갈리고, 무배당 종목 114800(KODEX 인버스)은 0봉이 갈린다 — 현금배당까지 조정된다는 뜻이다.
     const query = new URLSearchParams({
       symbol,
       interval: '1d',
       count: String(count),
+      adjusted: 'true',
     });
     const response = await this.tossApi.requestJson(
       '일봉 조회',
