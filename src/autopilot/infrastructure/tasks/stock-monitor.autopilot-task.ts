@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 
+import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import {
   detectAvgPriceBreach,
   detectDailyChange,
@@ -45,11 +46,20 @@ interface StockMonitorAudit {
   failureCount: number;
   lastTradeDate: string | null;
   marketClosed: boolean;
+  syncedHoldings: number | null;
+  zeroedHoldings: number | null;
+  syncError: string | null;
 }
 
 interface StockMonitorRunResult {
   taskResult: AutopilotTaskResult;
   audit: StockMonitorAudit;
+}
+
+interface HoldingsSyncResult {
+  synced: number | null;
+  zeroed: number | null;
+  error: string | null;
 }
 
 export interface StockMonitorAutopilotTaskOptions {
@@ -136,6 +146,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     private readonly repository: StockMonitorRepository,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
+    private readonly syncHoldings: SyncHoldingsUsecase,
   ) {
     this.id = options.id;
     this.targetMarketCountry = options.targetMarketCountry;
@@ -174,13 +185,14 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
   private async monitor(
     context: AutopilotTaskContext,
   ): Promise<StockMonitorRunResult> {
+    const sync = await this.syncCurrentHoldings();
     const holdings = await this.repository.findCurrentHoldings({
       marketCountry: this.targetMarketCountry,
     });
     if (holdings.length === 0) {
       // 화면에는 보내지 않되(빈 알림 방지) 원장에는 남긴다.
       return {
-        taskResult: { skip: true },
+        taskResult: this.withSyncWarning({ skip: true }, sync.error),
         audit: {
           marketCountry: this.targetMarketCountry,
           holdingCount: 0,
@@ -189,6 +201,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           failureCount: 0,
           lastTradeDate: null,
           marketClosed: false,
+          syncedHoldings: sync.synced,
+          zeroedHoldings: sync.zeroed,
+          syncError: sync.error,
         },
       };
     }
@@ -253,15 +268,18 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
       return {
-        taskResult: {
-          skip: false,
-          summaryText: formatStockMonitorSummary([], {
-            checkedCount: collectedHoldings.length,
-            lastTradeDate,
-            failures,
-            marketClosed: true,
-          }),
-        },
+        taskResult: this.withSyncWarning(
+          {
+            skip: false,
+            summaryText: formatStockMonitorSummary([], {
+              checkedCount: collectedHoldings.length,
+              lastTradeDate,
+              failures,
+              marketClosed: true,
+            }),
+          },
+          sync.error,
+        ),
         audit: {
           marketCountry: this.targetMarketCountry,
           holdingCount: holdings.length,
@@ -270,6 +288,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           failureCount: failures.length,
           lastTradeDate: lastTradeDate || null,
           marketClosed: true,
+          syncedHoldings: sync.synced,
+          zeroedHoldings: sync.zeroed,
+          syncError: sync.error,
         },
       };
     }
@@ -375,16 +396,19 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     }
 
     return {
-      taskResult: {
-        skip: false,
-        summaryText: formatStockMonitorSummary(anomalies, {
-          checkedCount,
-          lastTradeDate: lastTradeDate || '알 수 없음',
-          failures,
-          marketClosed: false,
-          priceDisplays,
-        }),
-      },
+      taskResult: this.withSyncWarning(
+        {
+          skip: false,
+          summaryText: formatStockMonitorSummary(anomalies, {
+            checkedCount,
+            lastTradeDate: lastTradeDate || '알 수 없음',
+            failures,
+            marketClosed: false,
+            priceDisplays,
+          }),
+        },
+        sync.error,
+      ),
       audit: {
         marketCountry: this.targetMarketCountry,
         holdingCount: holdings.length,
@@ -393,8 +417,41 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         failureCount: failures.length,
         lastTradeDate: lastTradeDate || null,
         marketClosed: false,
+        syncedHoldings: sync.synced,
+        zeroedHoldings: sync.zeroed,
+        syncError: sync.error,
       },
     };
+  }
+
+  private async syncCurrentHoldings(): Promise<HoldingsSyncResult> {
+    try {
+      const result = await this.syncHoldings.execute();
+      return { synced: result.synced, zeroed: result.zeroed, error: null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cappedMessage = message.slice(0, 200);
+      this.logger.warn(`잔고 동기화 실패 — ${cappedMessage}`);
+      return { synced: null, zeroed: null, error: cappedMessage };
+    }
+  }
+
+  private withSyncWarning(
+    result: AutopilotTaskResult,
+    syncError: string | null,
+  ): AutopilotTaskResult {
+    if (!syncError) {
+      return result;
+    }
+    // 문구가 "이전 잔고 기준" 이면 사실과 다르다. SyncHoldingsUsecase 는 종목별로 개별
+    // 커밋하므로(트랜잭션 없음), 중간 실패 시 앞 종목만 갱신된 혼합 상태가 된다.
+    // 종목 간 참조 무결성이 없어 각 종목은 옛 값 아니면 새 값 — 어느 쪽도 유효했던 값이라
+    // 데이터 문제는 아니지만, 무엇이 갱신됐는지 단정할 수 없다는 사실은 그대로 알려야 한다.
+    const warning = `⚠️ 잔고 동기화 실패 — ${syncError}. 일부 종목의 평단·보유수량이 갱신되지 않았을 수 있습니다.`;
+    const summaryText = result.summaryText
+      ? `${warning}\n\n${result.summaryText}`
+      : warning;
+    return { ...result, skip: false, summaryText };
   }
 
   private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
