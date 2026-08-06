@@ -44,11 +44,16 @@ const resolveUnitedStatesMarket = (
 
 // 잘못된 접미사에 대해 Yahoo 는 예외 대신 shortName 이 "심볼,ID,ID" 형태이거나
 // 심볼 문자열 자체인 응답을 준다. 이 두 가지가 오염의 신호다.
+//
+// 판정 기준은 "쉼표가 있는가" 가 아니라 **첫 조각이 요청한 심볼인가** 다.
+// 쉼표만 보면 `Pfizer, Inc.` 처럼 상호에 쉼표를 쓰는 정상 종목이 통째로 거부된다.
+// 실제로 보유 종목 PFE 가 이 조건에 걸려 시세 조회 대상에서 조용히 빠졌다.
 const isPollutedName = (name: string, yahooSymbol: string): boolean => {
   if (name === yahooSymbol) {
     return true;
   }
-  return name.includes(',');
+  const [firstSegment] = name.split(',');
+  return firstSegment.trim() === yahooSymbol;
 };
 
 export const mapQuoteToInstrument = (
