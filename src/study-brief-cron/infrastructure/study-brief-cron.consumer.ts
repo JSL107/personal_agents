@@ -1,5 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
 import {
@@ -12,6 +13,7 @@ import {
   CareerProfileSnapshot,
 } from '../../agent/career-mate/domain/port/career-profile.repository.port';
 import { EvaluateStudyTopicUsecase } from '../../agent/cto/application/evaluate-study-topic.usecase';
+import { StudyTopicVerdict } from '../../agent/cto/domain/cto.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
@@ -26,10 +28,20 @@ import {
   InstalledToolsPort,
 } from '../domain/port/installed-tools.port';
 import {
+  REPO_CONTEXT_PORT,
+  RepoContextPort,
+  RepoModuleSummary,
+} from '../domain/port/repo-context.port';
+import {
   RecentStudyBrief,
   STUDY_BRIEF_REPOSITORY_PORT,
   StudyBriefRepositoryPort,
 } from '../domain/port/study-brief.repository.port';
+import {
+  PublishedStudyBrief,
+  STUDY_BRIEF_PUBLISHER_PORT,
+  StudyBriefPublisherPort,
+} from '../domain/port/study-brief-publisher.port';
 import { StudyBriefException } from '../domain/study-brief.exception';
 import {
   buildStudyResearchPrompt,
@@ -51,19 +63,27 @@ const SENT_GUARD_TTL_SECONDS = 90_000;
 const PROCESSING_GUARD_TTL_SECONDS = 30 * 60;
 const RECENT_TOPIC_DAYS = 30;
 const KIND_BALANCE_LIMIT = 5;
+const REPORT_WARNING_LENGTH = 3_000;
 
 interface StudyMaterials {
   profile: CareerProfileSnapshot | undefined;
   recentBriefs: RecentStudyBrief[];
   installedTools: string[];
+  repoModules: RepoModuleSummary[];
 }
 
 interface DeliverStudyBriefInput {
   target: string;
   topic: string;
   summary: string;
-  detail: string;
+  detail?: string;
   guardKey: string;
+}
+
+interface PublishToNotionInput {
+  briefId: number;
+  research: StudyResearchResult;
+  verdict: StudyTopicVerdict;
 }
 
 @Processor(STUDY_BRIEF_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
@@ -80,9 +100,14 @@ export class StudyBriefCronConsumer extends WorkerHost {
     private readonly studyBriefRepository: StudyBriefRepositoryPort,
     @Inject(INSTALLED_TOOLS_PORT)
     private readonly installedTools: InstalledToolsPort,
+    @Inject(REPO_CONTEXT_PORT)
+    private readonly repoContext: RepoContextPort,
+    @Inject(STUDY_BRIEF_PUBLISHER_PORT)
+    private readonly studyBriefPublisher: StudyBriefPublisherPort,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
+    private readonly configService: ConfigService,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -122,6 +147,11 @@ export class StudyBriefCronConsumer extends WorkerHost {
         );
         return;
       }
+      if (research.reportMd.length > REPORT_WARNING_LENGTH) {
+        this.logger.warn(
+          `Study Brief 조사 본문 3,000자 초과 — prompt 분량 계약 확인 필요: ${research.reportMd.length}자`,
+        );
+      }
 
       const outcome = await this.evaluateStudyTopic.execute({
         slackUserId: ownerSlackUserId,
@@ -135,8 +165,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
         profileSkills: materials.profile?.profileJson.skills.map(
           (skill) => `${skill.name}(${skill.proficiency})`,
         ),
+        repoModules: materials.repoModules.map((module) => ({ ...module })),
       });
-      await this.studyBriefRepository.save({
+      const saved = await this.studyBriefRepository.save({
         agentRunId: outcome.agentRunId,
         ownerUserId: ownerSlackUserId,
         kind: research.kind,
@@ -145,17 +176,29 @@ export class StudyBriefCronConsumer extends WorkerHost {
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
       });
+      const published = await this.publishToNotionOrNull({
+        briefId: saved.id,
+        research,
+        verdict: outcome.result,
+      });
 
       const rendered = formatStudyBrief({
+        mode: published ? 'link' : 'fallback',
+        notionUrl: published?.url,
         topic: research.topic,
         verdict: outcome.result,
         reportMd: research.reportMd,
       });
+      if (rendered.summaryFallback) {
+        this.logger.warn(
+          'Study Brief 세 줄 요약 heading 없음 — 본문 첫 문단으로 대체',
+        );
+      }
       await this.deliverOnce({
         target,
         topic: research.topic,
         summary: rendered.summary,
-        detail: rendered.full,
+        ...(published ? {} : { detail: rendered.full }),
         guardKey,
       });
     } catch (error) {
@@ -175,12 +218,14 @@ export class StudyBriefCronConsumer extends WorkerHost {
   private async collectMaterials(
     ownerSlackUserId: string,
   ): Promise<StudyMaterials> {
-    const [profile, recentBriefs, installedTools] = await Promise.all([
-      this.collectProfile(ownerSlackUserId),
-      this.collectRecentBriefs(ownerSlackUserId),
-      this.collectInstalledTools(),
-    ]);
-    return { profile, recentBriefs, installedTools };
+    const [profile, recentBriefs, installedTools, repoModules] =
+      await Promise.all([
+        this.collectProfile(ownerSlackUserId),
+        this.collectRecentBriefs(ownerSlackUserId),
+        this.collectInstalledTools(),
+        this.collectRepoModules(),
+      ]);
+    return { profile, recentBriefs, installedTools, repoModules };
   }
 
   private async collectProfile(
@@ -231,6 +276,47 @@ export class StudyBriefCronConsumer extends WorkerHost {
         `Study Brief 설치 도구 수집 실패 — 빈 목록으로 진행: ${formatError(error)}`,
       );
       return [];
+    }
+  }
+
+  private async collectRepoModules(): Promise<RepoModuleSummary[]> {
+    try {
+      return await this.repoContext.collect();
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief 레포 모듈 수집 실패 — 빈 목록으로 진행: ${formatError(error)}`,
+      );
+      return [];
+    }
+  }
+
+  private async publishToNotionOrNull({
+    briefId,
+    research,
+    verdict,
+  }: PublishToNotionInput): Promise<PublishedStudyBrief | null> {
+    const databaseId = this.configService
+      .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
+      ?.trim();
+    if (!databaseId) {
+      return null;
+    }
+    try {
+      const published = await this.studyBriefPublisher.publish({
+        kind: research.kind,
+        topic: research.topic,
+        verdict,
+        reportMd: research.reportMd,
+        sourceUrls: research.sourceUrls,
+        createdAt: new Date(),
+      });
+      await this.studyBriefRepository.updateNotionUrl(briefId, published.url);
+      return published;
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief Notion 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
+      );
+      return null;
     }
   }
 
@@ -285,7 +371,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
       });
     }
 
-    if (threadTs) {
+    if (threadTs && detail !== undefined) {
       // 상세 스레드 실패는 요약 발송을 무효화하지 않는다. reportMd는 DB에 정본으로 보존된다.
       try {
         await this.slackNotifier.postMessage({

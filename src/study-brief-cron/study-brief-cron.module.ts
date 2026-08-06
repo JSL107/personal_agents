@@ -8,15 +8,20 @@ import { CareerProfilePrismaRepository } from '../agent/career-mate/infrastructu
 import { CtoModule } from '../agent/cto/cto.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
+import { NotionModule } from '../notion/notion.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { StudyBriefCronScheduler } from './application/study-brief-cron.scheduler';
 import { INSTALLED_TOOLS_PORT } from './domain/port/installed-tools.port';
+import { REPO_CONTEXT_PORT } from './domain/port/repo-context.port';
 import { STUDY_BRIEF_REPOSITORY_PORT } from './domain/port/study-brief.repository.port';
+import { STUDY_BRIEF_PUBLISHER_PORT } from './domain/port/study-brief-publisher.port';
 import { STUDY_BRIEF_CRON_QUEUE } from './domain/study-brief-cron.type';
 import { InstalledToolsCollector } from './infrastructure/installed-tools.collector';
+import { RepoContextCollector } from './infrastructure/repo-context.collector';
 import { StudyBriefPrismaRepository } from './infrastructure/study-brief.prisma.repository';
 import { StudyBriefCronConsumer } from './infrastructure/study-brief-cron.consumer';
+import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.publisher';
 
 @Module({
   imports: [
@@ -24,6 +29,7 @@ import { StudyBriefCronConsumer } from './infrastructure/study-brief-cron.consum
     CtoModule,
     SlackModule,
     NotificationQueueModule,
+    NotionModule,
   ],
   providers: [
     StudyBriefCronScheduler,
@@ -38,6 +44,11 @@ import { StudyBriefCronConsumer } from './infrastructure/study-brief-cron.consum
       useClass: StudyBriefPrismaRepository,
     },
     { provide: INSTALLED_TOOLS_PORT, useClass: InstalledToolsCollector },
+    { provide: REPO_CONTEXT_PORT, useClass: RepoContextCollector },
+    {
+      provide: STUDY_BRIEF_PUBLISHER_PORT,
+      useClass: StudyBriefNotionPublisher,
+    },
     { provide: SLACK_NOTIFIER_PORT, useExisting: SlackService },
   ],
 })

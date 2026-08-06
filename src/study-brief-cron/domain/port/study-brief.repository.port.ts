@@ -27,4 +27,5 @@ export interface StudyBriefRepositoryPort {
     since: Date,
   ): Promise<RecentStudyBrief[]>;
   save(input: SaveStudyBriefInput): Promise<{ id: number }>;
+  updateNotionUrl(id: number, notionUrl: string): Promise<void>;
 }

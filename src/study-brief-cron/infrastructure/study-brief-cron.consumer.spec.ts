@@ -45,11 +45,15 @@ const makeConsumer = ({
   hermesOutput = RESEARCH,
   hermesError,
   cronIdempotency = makeCronIdempotencyFake(),
+  notionDatabaseId,
+  notionError,
 }: {
   profile?: typeof PROFILE | null;
   hermesOutput?: string;
   hermesError?: Error;
   cronIdempotency?: ReturnType<typeof makeCronIdempotencyFake>;
+  notionDatabaseId?: string;
+  notionError?: Error;
 } = {}) => {
   const evaluateStudyTopic = {
     execute: jest.fn().mockResolvedValue({
@@ -75,20 +79,44 @@ const makeConsumer = ({
   const studyBriefRepository = {
     findRecentSince: jest.fn().mockResolvedValue([]),
     save: jest.fn().mockResolvedValue({ id: 7 }),
+    updateNotionUrl: jest.fn().mockResolvedValue(undefined),
   };
   const installedTools = { collect: jest.fn().mockResolvedValue(['serena']) };
+  const repoContext = {
+    collect: jest
+      .fn()
+      .mockResolvedValue([
+        { name: 'agent-run', description: '에이전트 실행 수명주기' },
+      ]),
+  };
+  const studyBriefPublisher = {
+    publish: notionError
+      ? jest.fn().mockRejectedValue(notionError)
+      : jest.fn().mockResolvedValue({
+          pageId: 'PAGE',
+          url: 'https://notion.so/PAGE',
+        }),
+  };
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
   };
   const notificationPublisher = { publishCronFailure: jest.fn() };
+  const configService = {
+    get: jest.fn((key: string) =>
+      key === 'STUDY_BRIEF_NOTION_DATABASE_ID' ? notionDatabaseId : undefined,
+    ),
+  };
   const consumer = new StudyBriefCronConsumer(
     evaluateStudyTopic as never,
     profileRepository as never,
     hermesRunner as never,
     studyBriefRepository as never,
     installedTools as never,
+    repoContext as never,
+    studyBriefPublisher as never,
     slackNotifier as never,
     cronIdempotency as never,
+    configService as never,
     notificationPublisher as never,
   );
 
@@ -99,9 +127,12 @@ const makeConsumer = ({
     hermesRunner,
     studyBriefRepository,
     installedTools,
+    repoContext,
+    studyBriefPublisher,
     slackNotifier,
     notificationPublisher,
     cronIdempotency,
+    configService,
   };
 };
 
@@ -179,8 +210,81 @@ describe('StudyBriefCronConsumer', () => {
     expect(prompt).not.toContain(PROFILE.profileJson.summary);
     expect(prompt).toContain('TypeScript(EXPERT)');
     expect(dependencies.evaluateStudyTopic.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ profileSummary: PROFILE.profileJson.summary }),
+      expect.objectContaining({
+        profileSummary: PROFILE.profileJson.summary,
+        repoModules: [
+          { name: 'agent-run', description: '에이전트 실행 수명주기' },
+        ],
+      }),
     );
+  });
+
+  it('Notion 성공 시 URL을 저장하고 링크형 Slack 카드만 한 번 발송한다', async () => {
+    const dependencies = makeConsumer({
+      notionDatabaseId: 'DATABASE',
+      hermesOutput:
+        'KIND: CONCEPT\nTOPIC: durable execution\n---\n## 세 줄 요약\n첫 문장\n둘째 문장\n셋째 문장',
+    });
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(1);
+    expect(
+      dependencies.studyBriefRepository.updateNotionUrl,
+    ).toHaveBeenCalledWith(7, 'https://notion.so/PAGE');
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: expect.stringContaining(
+        '<https://notion.so/PAGE|Notion에서 전체 읽기>',
+      ),
+    });
+  });
+
+  it('Notion 실패는 throw하지 않고 전체 카드와 스레드로 fallback한다', async () => {
+    const dependencies = makeConsumer({
+      notionDatabaseId: 'DATABASE',
+      notionError: new Error('notion down'),
+    });
+
+    await expect(
+      dependencies.consumer.process(JOB as never),
+    ).resolves.toBeUndefined();
+
+    expect(
+      dependencies.studyBriefRepository.updateNotionUrl,
+    ).not.toHaveBeenCalled();
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    expect(dependencies.slackNotifier.postMessage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ threadTs: 'T1' }),
+    );
+  });
+
+  it('Notion DB가 미설정이면 발행하지 않고 기존 전체 카드와 스레드를 보낸다', async () => {
+    const dependencies = makeConsumer();
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).not.toHaveBeenCalled();
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('조사 본문이 3,000자를 넘으면 차단하지 않고 warn한다', async () => {
+    const dependencies = makeConsumer({
+      hermesOutput: `KIND: CONCEPT\nTOPIC: long report\n---\n${'가'.repeat(3_001)}`,
+    });
+    const warn = jest
+      .spyOn(dependencies.consumer['logger'], 'warn')
+      .mockImplementation();
+
+    try {
+      await dependencies.consumer.process(JOB as never);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('조사 본문 3,000자 초과'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('같은 날 두 번째 처리에서는 발송을 건너뛴다', async () => {

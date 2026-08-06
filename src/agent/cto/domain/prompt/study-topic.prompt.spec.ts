@@ -25,12 +25,22 @@ describe('study topic prompt', () => {
       },
       profileSummary: '백엔드 개발자',
       profileSkills: ['TypeScript(EXPERT)'],
+      repoModules: [
+        {
+          name: 'agent/cto',
+          description: '학습 필요성 판정',
+        },
+      ],
     });
 
     expect(prompt).toContain('durable execution');
     expect(prompt).toContain('조사 전문');
     expect(prompt).toContain('백엔드 개발자');
     expect(prompt).toContain('TypeScript(EXPERT)');
+    expect(prompt).toContain('agent/cto');
+    expect(prompt).toContain('학습 필요성 판정');
+    expect(STUDY_CONCEPT_SYSTEM_PROMPT).toContain('주어진 모듈 목록 안에서');
+    expect(STUDY_CONCEPT_SYSTEM_PROMPT).toContain('목록에 없는 경로');
   });
 });
 
