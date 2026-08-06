@@ -853,3 +853,32 @@
 - Verification: `pnpm exec tsc --noEmit` exit 0.
 
 ---
+
+# 토스 잔고 동기화 감시 편입 구현 계획 (2026-08-06)
+
+**Source of truth:** `.ai/design.md`. 동기화는 기존 `StockMonitorAutopilotTask.monitor()` 판정 직전에 수행한다.
+
+**Constraints:** 새 task·playbook entry·env 금지. `SyncHoldingsUsecase` 내부 및 `formatStockMonitorSummary` 시그니처 변경 금지. Node 22 사용. git commit 금지.
+
+- [x] 관련 task/spec/module/usecase/repository와 현재 DI·audit·최신 보유 필터 경로를 확인한다.
+- [x] `StockMonitorAutopilotTask` spec에 성공 mock을 연결하고 호출 순서, audit 성공값, 실패 계속·경고, 실패+0건 발송 회귀 테스트를 먼저 추가한다.
+- [x] 신규 task spec을 실행해 기존 생성자 계약 및 누락 동작 때문에 RED가 발생하는지 확인한다.
+- [x] repository spec에 최신 quantity=0 제외와 최신 quantity=10 포함 대조군을 먼저 추가하고 현재 구현에서 GREEN임을 확인한다.
+- [x] `StockMonitorAutopilotTask`에 `SyncHoldingsUsecase`, 별도 sync 결과 interface, audit 3필드, 동기화 오류 경고 helper를 계약대로 최소 구현한다.
+- [x] 보유 0건·휴장·정상 반환 모두 sync audit을 적재하고 비-skip 결과에만 warning helper를 적용한다.
+- [x] `AutopilotModule`의 KR/US factory 마지막 인자와 inject 배열 끝에 `SyncHoldingsUsecase`를 연결한다.
+- [x] focused spec을 GREEN으로 만들고 변경 diff를 설계 계약·코드 규칙 관점에서 리뷰한다.
+- [x] 가드 1: `withSyncWarning` prefix를 임시 제거하고 경고 관련 테스트 실패 메시지를 기록한 뒤 원복·GREEN 확인한다.
+- [x] 가드 2: `findCurrentHoldings`의 `quantity.isZero()` 조건을 임시 제거하고 전량 매도 테스트 실패 메시지를 기록한 뒤 원복·GREEN 확인한다.
+- [x] `nvm use 22` 후 `pnpm lint:check && pnpm test && pnpm build && pnpm docs:check`를 실행해 4개 exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`를 변경 파일, 설계 이탈, 4중 검증, 가드 깨뜨리기 실제 결과로 덮어쓴다.
+- [x] 최종 diff와 git status에서 금지 변경·우발 파일·commit 없음 및 계약 충족을 확인하고 Review를 작성한다.
+
+## Review
+
+- `StockMonitorAutopilotTask` enabled 경로 첫 단계에 잔고 동기화를 편입했다. 성공/실패 audit과 실패 경고를 세 반환 경로에 남긴다.
+- KR/US factory 모두 기존 인자 뒤에 `SyncHoldingsUsecase`를 연결했다. 새 task·playbook entry·env는 없다.
+- 신규 task regression 4건과 전량 매도/대조군 2건을 추가했다. focused 2 suites/30 tests 통과.
+- mutation 2건은 각각 경고 관련 2 tests, 전량 매도 1 test를 실제 실패시켰고 모두 원복했다.
+- stale Prisma Client를 `pnpm exec prisma generate`로 갱신한 뒤 4중 게이트 전체 exit 0. commit/push, DB/schema 변경 없음.
+- 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.

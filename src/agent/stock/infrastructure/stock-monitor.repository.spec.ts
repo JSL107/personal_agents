@@ -122,6 +122,77 @@ describe('StockMonitorRepository', () => {
     ]);
   });
 
+  it('최신 보유 행이 전량 매도면 이전 보유 행이 있어도 감시에서 제외한다', async () => {
+    const prisma = makePrisma();
+    const avgPrice = { toString: () => '100000' };
+    const ticker = { name: '삼성전자', tossSymbol: '005930' };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 1,
+        effectiveDate: new Date('2026-08-06T00:00:00.000Z'),
+        quantity: { isZero: () => true },
+        avgPrice,
+        ticker,
+      },
+      {
+        tickerId: 1,
+        effectiveDate: new Date('2026-08-05T00:00:00.000Z'),
+        quantity: { isZero: () => false },
+        avgPrice,
+        ticker,
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findCurrentHoldings({
+      marketCountry: 'KR',
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('최신 보유 행의 수량이 남아 있으면 감시 대상에 포함한다', async () => {
+    const prisma = makePrisma();
+    const latestQuantity = { isZero: () => false };
+    const avgPrice = { toString: () => '100000' };
+    const ticker = { name: '삼성전자', tossSymbol: '005930' };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 1,
+        effectiveDate: new Date('2026-08-06T00:00:00.000Z'),
+        quantity: latestQuantity,
+        avgPrice,
+        ticker,
+      },
+      {
+        tickerId: 1,
+        effectiveDate: new Date('2026-08-05T00:00:00.000Z'),
+        quantity: { isZero: () => false },
+        avgPrice,
+        ticker,
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findCurrentHoldings({
+      marketCountry: 'KR',
+    });
+
+    expect(result).toEqual([
+      {
+        tickerId: 1,
+        tickerName: '삼성전자',
+        symbol: '005930',
+        quantity: latestQuantity,
+        avgPrice,
+      },
+    ]);
+  });
+
   it('일별 환율을 pair 와 rateDate 기준으로 upsert 한다', async () => {
     const prisma = makePrisma();
     const repository = new StockMonitorRepository(
