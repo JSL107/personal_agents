@@ -1,6 +1,52 @@
 import { formatStudyBrief } from './study-brief.formatter';
 
 describe('formatStudyBrief', () => {
+  it('link 모드는 제목, 세 줄 요약, Notion 링크만 렌더한다', () => {
+    const rendered = formatStudyBrief({
+      mode: 'link',
+      notionUrl: 'https://notion.so/PAGE',
+      topic: 'Durable execution',
+      verdict: {
+        kind: 'CONCEPT',
+        whyNow: '재시도 설계에 필요',
+        whereItLands: 'src/agent-run 모듈',
+        readingPlan: '공식 문서부터',
+        minutes: 30,
+      },
+      reportMd:
+        '## 세 줄 요약\n첫 문장\n둘째 문장\n셋째 문장\n\n## 알아야 할 것\n- 상세',
+    });
+
+    expect(rendered.summary).toContain('오늘의 공부 — Durable execution');
+    expect(rendered.summary).toContain('첫 문장\n둘째 문장\n셋째 문장');
+    expect(rendered.summary).toContain(
+      '<https://notion.so/PAGE|Notion에서 전체 읽기>',
+    );
+    expect(rendered.summary).not.toContain('왜 지금 나한테');
+    expect(rendered.summary).not.toContain('상세');
+    expect(rendered.summaryFallback).toBe(false);
+  });
+
+  it('세 줄 요약 heading이 없으면 첫 문단 3줄과 fallback 신호를 반환한다', () => {
+    const rendered = formatStudyBrief({
+      mode: 'link',
+      notionUrl: 'https://notion.so/PAGE',
+      topic: 'Topic',
+      verdict: {
+        kind: 'CONCEPT',
+        whyNow: 'why',
+        whereItLands: 'where',
+        readingPlan: 'read',
+        minutes: 10,
+      },
+      reportMd: '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄\n\n다음 문단',
+    });
+
+    expect(rendered.summary).toContain('첫 줄\n둘째 줄\n셋째 줄');
+    expect(rendered.summary).not.toContain('넷째 줄');
+    expect(rendered.summaryFallback).toBe(true);
+  });
+
   it('CONCEPT 카드를 필드 목록으로 렌더한다', () => {
     const rendered = formatStudyBrief({
       topic: 'Durable execution',

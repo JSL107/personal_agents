@@ -16,6 +16,10 @@ describe('buildStudyResearchPrompt', () => {
     expect(prompt).toContain('TOOL');
     expect(prompt).toContain('KIND: CONCEPT');
     expect(prompt).toContain('NO_TOPIC:');
+    expect(prompt).toContain('1,200~1,800자');
+    expect(prompt).toContain('## 세 줄 요약');
+    expect(prompt).toContain('## 알아야 할 것');
+    expect(prompt).toContain('## 오늘 할 일');
   });
 
   it('프로필이 없으면 기본 개발자 설명을 사용한다', () => {

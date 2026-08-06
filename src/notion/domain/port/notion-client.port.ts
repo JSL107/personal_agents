@@ -20,12 +20,33 @@ export interface ListActiveTasksOptions {
 // 어댑터가 Notion block 형식 (heading_2 / heading_3 / bulleted_list_item / paragraph / to_do / divider) 으로 변환.
 // PRO-2++: bullet / paragraph / todo 3종에 optional `link?: string` — 있으면 전체 text 가 클릭 가능한 링크가 된다.
 // http(s) 가 아닌 url 은 어댑터가 plain text 로 fallback 처리 (broken link 회피).
+export interface NotionRichText {
+  type: 'text';
+  text: {
+    content: string;
+    link?: { url: string };
+  };
+  annotations?: {
+    bold?: boolean;
+    code?: boolean;
+  };
+}
+
+interface NotionTextBlock {
+  text: string;
+  richText?: NotionRichText[];
+}
+
 export type NotionPlanBlock =
-  | { type: 'heading'; text: string } // heading_2 — "Check in HH:MM" 등
-  | { type: 'subheading'; text: string } // heading_3 — "오늘의 할 일" 등
-  | { type: 'bullet'; text: string; link?: string }
-  | { type: 'paragraph'; text: string; link?: string }
-  | { type: 'todo'; text: string; checked?: boolean; link?: string }
+  | ({ type: 'heading' } & NotionTextBlock) // heading_2 — "Check in HH:MM" 등
+  | ({ type: 'subheading' } & NotionTextBlock) // heading_3 — "오늘의 할 일" 등
+  | ({ type: 'bullet'; link?: string } & NotionTextBlock)
+  | ({ type: 'numbered' } & NotionTextBlock)
+  | ({ type: 'paragraph'; link?: string } & NotionTextBlock)
+  | ({ type: 'quote' } & NotionTextBlock)
+  | ({ type: 'code'; language: string } & NotionTextBlock)
+  | ({ type: 'callout'; icon: string } & NotionTextBlock)
+  | ({ type: 'todo'; checked?: boolean; link?: string } & NotionTextBlock)
   | { type: 'divider' };
 
 export interface FindOrCreateDailyPageOptions {
@@ -44,6 +65,17 @@ export interface FindOrCreateChildPageOptions {
 export interface AppendBlocksOptions {
   pageId: string;
   blocks: NotionPlanBlock[];
+}
+
+export interface CreateDatabasePageOptions {
+  databaseId: string;
+  properties: Record<string, unknown>;
+  blocks: unknown[];
+}
+
+export interface CreatedDatabasePage {
+  pageId: string;
+  url: string;
 }
 
 // DB page 의 properties 갱신. 블로그 자동 발행(상태/발행일/태그/요약 set) 용도.
@@ -76,6 +108,9 @@ export interface NotionDailyPlanPage {
 
 export interface NotionClientPort {
   listActiveTasks(options?: ListActiveTasksOptions): Promise<NotionTask[]>;
+  createDatabasePage(
+    options: CreateDatabasePageOptions,
+  ): Promise<CreatedDatabasePage>;
   // Day-page 조회: title 과 일치하는 기존 page 가 있으면 반환, 없으면 생성 (properties: title 만).
   // /today 는 Check-in 섹션, /worklog 는 Check-out 섹션을 같은 day-page 에 append 하는 방식.
   findOrCreateDailyPage(

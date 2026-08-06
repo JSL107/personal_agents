@@ -14,7 +14,7 @@ const COMMON_SYSTEM_PROMPT = `너는 개발자의 사수(멘토)다. 회사가 �
 minutes는 0 이상의 정수다.`;
 
 export const STUDY_CONCEPT_SYSTEM_PROMPT = `${COMMON_SYSTEM_PROMPT}
-whereItLands는 실제 파일/모듈 경로를 근거로 쓴다. 확인하지 못하면 "레포에서 확인 못 함"이라고 쓰고 경로를 지어내지 않는다.
+whereItLands는 주어진 모듈 목록 안에서 고른다. 목록에 닿는 것이 없을 때만 "레포에서 확인 못 함"이라고 쓴다. 목록에 없는 경로를 지어내지 않는다.
 minutes는 읽기 예상 시간이다.
 스키마: {"whyNow":"프로필 근거","whereItLands":"실제 파일/모듈","readingPlan":"읽는 순서","minutes":30}`;
 
@@ -27,6 +27,7 @@ export const buildStudyTopicPrompt = ({
   research,
   profileSummary,
   profileSkills,
+  repoModules,
 }: EvaluateStudyTopicInput): string =>
   [
     '[조사 주제]',
@@ -40,6 +41,15 @@ export const buildStudyTopicPrompt = ({
     '[개발자 프로필]',
     `summary: ${profileSummary ?? '(없음)'}`,
     `skills: ${profileSkills?.join(', ') || '(없음)'}`,
+    '',
+    '[레포 모듈 목록]',
+    repoModules !== undefined && repoModules.length > 0
+      ? repoModules
+          .map(({ name, description }) =>
+            description.length > 0 ? `- ${name}: ${description}` : `- ${name}`,
+          )
+          .join('\n')
+      : '(없음)',
   ].join('\n');
 
 export const parseStudyVerdict = (

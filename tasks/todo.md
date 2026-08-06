@@ -748,3 +748,33 @@
 - Verification: lint/test/build/docs:check 모두 exit 0. commit/push, Prisma/Yahoo 제외 파일 변경 없음. 상세는 `.ai/implementation-summary.md`에 기록했다.
 
 ---
+
+---
+
+# 학습 브리핑 2차 개선 구현 계획
+
+구현 계약: `.ai/design.md` A·B·C. `parseStudyResearch`, `.env`, 기존 Notion 메서드 시그니처는 변경하지 않는다. `pnpm db:push`와 git 쓰기 작업은 실행하지 않는다.
+
+## 계획
+
+- [x] `.ai/design.md`, `CODE_RULES.md`, `tasks/lessons.md`, `src/notion/`, `src/study-brief-cron/`, CTO 프롬프트·usecase·registry·config·schema를 읽고 재사용 경계를 확인한다.
+- [x] A: `buildStudyResearchPrompt` spec에 1,200~1,800자와 세 고정 섹션을 먼저 단언해 RED를 확인하고 프롬프트만 수정한다.
+- [x] B: `RepoContextPort`와 `RepoContextCollector` spec을 먼저 추가해 `src/` 디렉터리, `AGENT_REGISTRY` 설명 매칭, 누락 경로 fallback, 100개 상한을 검증한다.
+- [x] B: CTO 내부에 구조적으로 같은 repo module 타입을 두고 `EvaluateStudyTopicInput`·`buildStudyTopicPrompt`에 모듈 목록을 주입한다. `src/agent/`에서 `study-brief-cron` import 0건을 유지한다.
+- [x] C1: `NotionClientPort`에 `createDatabasePage`만 추가하고 `NotionApiClient`의 기존 block 변환·rich text·100개 chunk 패턴을 확장 재사용한다. 기존 메서드 시그니처는 보존한다.
+- [x] C1: 외부 의존성 없는 `markdown-to-blocks` spec을 먼저 작성한다. heading, bullet, numbered, code fence/language fallback, quote, divider, paragraph, bold/code annotation, 유니코드 안전 2,000자 분할, 빈 입력을 검증한다.
+- [x] C2: `StudyBriefPublisherPort`와 `StudyBriefNotionPublisher` spec을 먼저 작성한다. verdict callout, 속성 payload, KST 날짜, 100블록 단위 create/append, TOOL caution 생략, 링크 출처를 검증한다.
+- [x] C2: Prisma `StudyBrief.notionUrl` 및 repository 갱신 메서드를 추가하고 spec으로 저장 후 URL 갱신을 검증한다. `db:push`는 실행하지 않는다.
+- [x] C3: formatter를 링크/폴백 두 모드로 분리하고 `## 세 줄 요약` 추출 및 첫 문단 fallback을 spec으로 검증한다. 기존 전체 카드와 3,000자 절단은 폴백에 보존한다.
+- [x] C3: consumer spec을 먼저 보강한다. repo context 전달, 본문 초과 warn, Notion 성공 시 URL 저장+Slack 1회/스레드 0회, 실패·비활성 시 기존 카드+스레드, 발행 실패 비전파를 검증한다.
+- [x] C3: consumer 흐름을 `CTO 판정 → DB 저장 → Notion 발행/URL 갱신 → Slack`으로 변경한다. 기존 완료 guard와 상세 스레드 실패 경계를 유지한다.
+- [x] DI/env/docs: `NotionModule` 재사용, cron module provider 연결, `.env.example`·`app.config.ts`·README에 `STUDY_BRIEF_NOTION_DATABASE_ID`를 동기화한다. `.env`는 건드리지 않는다.
+- [x] 관련 focused spec마다 RED를 확인한 뒤 최소 구현, GREEN, refactor 순서로 진행한다.
+- [x] 최종 diff에서 `parseStudyResearch` 무변경, `grep -rn "study-brief-cron" src/agent/` 0건, secrets/debug/우발 파일/금지 명령 미실행을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, `pnpm check:env`, `pnpm check:invariants`를 순서대로 새로 실행하고 exit code를 기록한다.
+- [x] `.ai/implementation-summary.md`에 파일 역할, 게이트 실제 결과, 계약 이탈, Claude 재검증 지점을 작성한다.
+
+## Review
+
+- 구현 계약 A·B·C 완료. 6개 게이트 exit 0, 독립 리뷰 Blocker 0/Should Fix 0.
+- 기존 멱등·Slack 상세 실패 회귀를 유지했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
