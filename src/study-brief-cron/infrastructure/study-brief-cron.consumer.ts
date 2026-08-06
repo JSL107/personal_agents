@@ -43,6 +43,7 @@ import {
   StudyBriefPublisherPort,
 } from '../domain/port/study-brief-publisher.port';
 import { StudyBriefException } from '../domain/study-brief.exception';
+import { StudyBriefVerdict } from '../domain/study-brief.type';
 import {
   buildStudyResearchPrompt,
   BuildStudyResearchPromptInput,
@@ -83,7 +84,7 @@ interface DeliverStudyBriefInput {
 interface PublishToNotionInput {
   briefId: number;
   research: StudyResearchResult;
-  verdict: StudyTopicVerdict;
+  verdict: StudyBriefVerdict;
 }
 
 @Processor(STUDY_BRIEF_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
@@ -167,26 +168,27 @@ export class StudyBriefCronConsumer extends WorkerHost {
         ),
         repoModules: materials.repoModules.map((module) => ({ ...module })),
       });
+      const verdict = toStudyBriefVerdict(outcome.result);
       const saved = await this.studyBriefRepository.save({
         agentRunId: outcome.agentRunId,
         ownerUserId: ownerSlackUserId,
         kind: research.kind,
         topic: research.topic,
-        verdict: outcome.result,
+        verdict,
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
       });
       const published = await this.publishToNotionOrNull({
         briefId: saved.id,
         research,
-        verdict: outcome.result,
+        verdict,
       });
 
       const rendered = formatStudyBrief({
         mode: published ? 'link' : 'fallback',
         notionUrl: published?.url,
         topic: research.topic,
-        verdict: outcome.result,
+        verdict,
         reportMd: research.reportMd,
       });
       if (rendered.summaryFallback) {
@@ -301,8 +303,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
     if (!databaseId) {
       return null;
     }
+    let published: PublishedStudyBrief;
     try {
-      const published = await this.studyBriefPublisher.publish({
+      published = await this.studyBriefPublisher.publish({
         kind: research.kind,
         topic: research.topic,
         verdict,
@@ -310,14 +313,21 @@ export class StudyBriefCronConsumer extends WorkerHost {
         sourceUrls: research.sourceUrls,
         createdAt: new Date(),
       });
-      await this.studyBriefRepository.updateNotionUrl(briefId, published.url);
-      return published;
     } catch (error) {
       this.logger.warn(
-        `Study Brief Notion 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
+        `Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
       );
       return null;
     }
+
+    try {
+      await this.studyBriefRepository.updateNotionUrl(briefId, published.url);
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief Notion URL 저장 실패 — 링크 발송은 유지: ${formatError(error)}`,
+      );
+    }
+    return published;
   }
 
   private async research(
@@ -399,6 +409,26 @@ export class StudyBriefCronConsumer extends WorkerHost {
     });
   }
 }
+
+const toStudyBriefVerdict = (verdict: StudyTopicVerdict): StudyBriefVerdict => {
+  if (verdict.kind === 'CONCEPT') {
+    return {
+      kind: verdict.kind,
+      whyNow: verdict.whyNow,
+      whereItLands: verdict.whereItLands,
+      readingPlan: verdict.readingPlan,
+      minutes: verdict.minutes,
+    };
+  }
+  return {
+    kind: verdict.kind,
+    whatImproves: verdict.whatImproves,
+    adoptionCost: verdict.adoptionCost,
+    installHint: verdict.installHint,
+    ...(verdict.caution === undefined ? {} : { caution: verdict.caution }),
+    minutes: verdict.minutes,
+  };
+};
 
 const calculateKindBalance = (
   recentBriefs: readonly RecentStudyBrief[],

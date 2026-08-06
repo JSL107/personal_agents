@@ -78,6 +78,10 @@ export interface CreatedDatabasePage {
   url: string;
 }
 
+export interface ArchivePageOptions {
+  pageId: string;
+}
+
 // DB page 의 properties 갱신. 블로그 자동 발행(상태/발행일/태그/요약 set) 용도.
 // properties 는 Notion API properties payload 형식 — 호출부가 속성명/타입을 구성한다.
 export interface UpdatePagePropertiesOptions {
@@ -111,6 +115,7 @@ export interface NotionClientPort {
   createDatabasePage(
     options: CreateDatabasePageOptions,
   ): Promise<CreatedDatabasePage>;
+  archivePage(options: ArchivePageOptions): Promise<void>;
   // Day-page 조회: title 과 일치하는 기존 page 가 있으면 반환, 없으면 생성 (properties: title 만).
   // /today 는 Check-in 섹션, /worklog 는 Check-out 섹션을 같은 day-page 에 append 하는 방식.
   findOrCreateDailyPage(

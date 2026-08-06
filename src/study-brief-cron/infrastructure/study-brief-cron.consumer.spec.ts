@@ -47,6 +47,7 @@ const makeConsumer = ({
   cronIdempotency = makeCronIdempotencyFake(),
   notionDatabaseId,
   notionError,
+  notionUrlUpdateError,
 }: {
   profile?: typeof PROFILE | null;
   hermesOutput?: string;
@@ -54,6 +55,7 @@ const makeConsumer = ({
   cronIdempotency?: ReturnType<typeof makeCronIdempotencyFake>;
   notionDatabaseId?: string;
   notionError?: Error;
+  notionUrlUpdateError?: Error;
 } = {}) => {
   const evaluateStudyTopic = {
     execute: jest.fn().mockResolvedValue({
@@ -79,7 +81,9 @@ const makeConsumer = ({
   const studyBriefRepository = {
     findRecentSince: jest.fn().mockResolvedValue([]),
     save: jest.fn().mockResolvedValue({ id: 7 }),
-    updateNotionUrl: jest.fn().mockResolvedValue(undefined),
+    updateNotionUrl: notionUrlUpdateError
+      ? jest.fn().mockRejectedValue(notionUrlUpdateError)
+      : jest.fn().mockResolvedValue(undefined),
   };
   const installedTools = { collect: jest.fn().mockResolvedValue(['serena']) };
   const repoContext = {
@@ -241,23 +245,71 @@ describe('StudyBriefCronConsumer', () => {
     });
   });
 
+  it('Notion URL 저장만 실패하면 warn 후 링크형 Slack 카드를 발송한다', async () => {
+    const dependencies = makeConsumer({
+      notionDatabaseId: 'DATABASE',
+      notionUrlUpdateError: new Error('database down'),
+      hermesOutput:
+        'KIND: CONCEPT\nTOPIC: durable execution\n---\n## 세 줄 요약\n첫 문장\n둘째 문장\n셋째 문장',
+    });
+    const warn = jest
+      .spyOn(dependencies.consumer['logger'], 'warn')
+      .mockImplementation();
+
+    try {
+      await expect(
+        dependencies.consumer.process(JOB as never),
+      ).resolves.toBeUndefined();
+      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(1);
+      expect(
+        dependencies.studyBriefRepository.updateNotionUrl,
+      ).toHaveBeenCalledWith(7, 'https://notion.so/PAGE');
+      expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+      expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledWith({
+        target: 'C1',
+        text: expect.stringContaining(
+          '<https://notion.so/PAGE|Notion에서 전체 읽기>',
+        ),
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Study Brief Notion URL 저장 실패 — 링크 발송은 유지: database down',
+        ),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('Notion 실패는 throw하지 않고 전체 카드와 스레드로 fallback한다', async () => {
     const dependencies = makeConsumer({
       notionDatabaseId: 'DATABASE',
       notionError: new Error('notion down'),
     });
+    const warn = jest
+      .spyOn(dependencies.consumer['logger'], 'warn')
+      .mockImplementation();
 
-    await expect(
-      dependencies.consumer.process(JOB as never),
-    ).resolves.toBeUndefined();
+    try {
+      await expect(
+        dependencies.consumer.process(JOB as never),
+      ).resolves.toBeUndefined();
 
-    expect(
-      dependencies.studyBriefRepository.updateNotionUrl,
-    ).not.toHaveBeenCalled();
-    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
-    expect(dependencies.slackNotifier.postMessage.mock.calls[1][0]).toEqual(
-      expect.objectContaining({ threadTs: 'T1' }),
-    );
+      expect(
+        dependencies.studyBriefRepository.updateNotionUrl,
+      ).not.toHaveBeenCalled();
+      expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+      expect(dependencies.slackNotifier.postMessage.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ threadTs: 'T1' }),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: notion down',
+        ),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('Notion DB가 미설정이면 발행하지 않고 기존 전체 카드와 스레드를 보낸다', async () => {

@@ -9,6 +9,7 @@ import { NotionTask } from '../domain/notion.type';
 import { NotionErrorCode } from '../domain/notion-error-code.enum';
 import {
   AppendBlocksOptions,
+  ArchivePageOptions,
   CreateDatabasePageOptions,
   CreatedDatabasePage,
   FindOrCreateChildPageOptions,
@@ -131,6 +132,24 @@ export class NotionApiClient implements NotionClientPort {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,
         message: `Notion DB ${databaseId} page 생성 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+  }
+
+  async archivePage({ pageId }: ArchivePageOptions): Promise<void> {
+    this.assertClientConfigured('archivePage');
+    try {
+      await this.client!.pages.update({
+        page_id: pageId,
+        archived: true,
+      });
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} archive 실패: ${
           error instanceof Error ? error.message : String(error)
         }`,
         cause: error,

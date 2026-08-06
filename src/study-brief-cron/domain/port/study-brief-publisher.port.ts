@@ -1,4 +1,4 @@
-import { StudyTopicVerdict } from '../../../agent/cto/domain/cto.type';
+import { StudyBriefVerdict } from '../study-brief.type';
 import { StudyResearchKind } from '../study-research.parser';
 
 export const STUDY_BRIEF_PUBLISHER_PORT = Symbol('STUDY_BRIEF_PUBLISHER_PORT');
@@ -11,7 +11,7 @@ export interface PublishedStudyBrief {
 export interface PublishStudyBriefInput {
   kind: StudyResearchKind;
   topic: string;
-  verdict: StudyTopicVerdict;
+  verdict: StudyBriefVerdict;
   reportMd: string;
   sourceUrls: readonly string[];
   createdAt: Date;

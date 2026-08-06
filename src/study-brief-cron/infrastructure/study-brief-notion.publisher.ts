@@ -1,8 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { match } from 'ts-pattern';
 
-import { StudyTopicVerdict } from '../../agent/cto/domain/cto.type';
 import {
   NOTION_CLIENT_PORT,
   NotionClientPort,
@@ -17,6 +16,7 @@ import {
   PublishStudyBriefInput,
   StudyBriefPublisherPort,
 } from '../domain/port/study-brief-publisher.port';
+import { StudyBriefVerdict } from '../domain/study-brief.type';
 
 const NOTION_BLOCK_LIMIT = 100;
 const PROPERTY_NAME_TITLE = '이름';
@@ -27,6 +27,8 @@ const PROPERTY_NAME_SOURCE_COUNT = '출처 수';
 
 @Injectable()
 export class StudyBriefNotionPublisher implements StudyBriefPublisherPort {
+  private readonly logger = new Logger(StudyBriefNotionPublisher.name);
+
   constructor(
     @Inject(NOTION_CLIENT_PORT)
     private readonly notionClient: NotionClientPort,
@@ -48,19 +50,40 @@ export class StudyBriefNotionPublisher implements StudyBriefPublisherPort {
       properties: buildProperties(input),
       blocks: firstBlocks,
     });
-    for (
-      let index = NOTION_BLOCK_LIMIT;
-      index < blocks.length;
-      index += NOTION_BLOCK_LIMIT
-    ) {
-      await this.notionClient.appendBlocks({
-        pageId: page.pageId,
-        blocks: blocks.slice(index, index + NOTION_BLOCK_LIMIT),
-      });
+    try {
+      for (
+        let index = NOTION_BLOCK_LIMIT;
+        index < blocks.length;
+        index += NOTION_BLOCK_LIMIT
+      ) {
+        await this.notionClient.appendBlocks({
+          pageId: page.pageId,
+          blocks: blocks.slice(index, index + NOTION_BLOCK_LIMIT),
+        });
+      }
+    } catch (appendError: unknown) {
+      const pageReference = page.url || page.pageId;
+      this.logger.warn(
+        `Study Brief Notion 후속 block append 실패 — 생성 페이지 archive 시도 (page=${pageReference}, id=${page.pageId}): ${formatError(appendError)}`,
+      );
+      try {
+        await this.notionClient.archivePage({ pageId: page.pageId });
+        this.logger.log(
+          `Study Brief Notion 불완전 페이지 archive 완료 (page=${pageReference}, id=${page.pageId})`,
+        );
+      } catch (archiveError: unknown) {
+        this.logger.warn(
+          `Study Brief Notion 불완전 페이지 archive 실패 — 수동 정리 필요 (page=${pageReference}, id=${page.pageId}): ${formatError(archiveError)}`,
+        );
+      }
+      throw appendError;
     }
     return page;
   }
 }
+
+const formatError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 const buildPageBlocks = (input: PublishStudyBriefInput): NotionPlanBlock[] => {
   const blocks: NotionPlanBlock[] = [
@@ -76,7 +99,7 @@ const buildPageBlocks = (input: PublishStudyBriefInput): NotionPlanBlock[] => {
   return blocks;
 };
 
-const buildCallout = (verdict: StudyTopicVerdict): NotionPlanBlock => {
+const buildCallout = (verdict: StudyBriefVerdict): NotionPlanBlock => {
   const callout = match(verdict)
     .with({ kind: 'CONCEPT' }, (concept) => ({
       icon: '📚',
