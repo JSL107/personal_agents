@@ -324,21 +324,27 @@ model PreferenceProposal {
 // Yahoo 경로로 등록한 종목은 market='KOSPI'|'KOSDAQ' 이다.
 // yahooSymbol 은 Yahoo 경로에서만 필수라 nullable 로 둔다.
 model Ticker {
-  id             Int             @id @default(autoincrement())
-  code           String
-  market         String
-  marketCountry  String?         @map("market_country")
-  yahooSymbol    String?         @map("yahoo_symbol")
-  tossSymbol     String?         @map("toss_symbol")
-  name           String
-  currency       String
-  source         String          @default("YAHOO")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  dailyPrices    DailyPrice[]
-  holdings       Holding[]
-  holdingChanges HoldingChange[]
-  alerts         StockAlert[]
+  id                Int             @id @default(autoincrement())
+  code              String
+  market            String
+  marketCountry     String?         @map("market_country")
+  yahooSymbol       String?         @map("yahoo_symbol")
+  tossSymbol        String?         @map("toss_symbol")
+  name              String
+  currency          String
+  // 실질 노출 분류. 표시 통화가 아니라 "기초자산이 어느 시장에 걸려 있는가"를 담는다.
+  // 원화 표시 ETF 라도 기초자산이 해외면 해외로 분류한다 — 통화만으로는 구분이 안 된다.
+  // null 은 미분류. 집계에서 별도 버킷으로 정직하게 드러낸다(임의로 어느 쪽에 넣지 않는다).
+  exposureRegion    String?         @map("exposure_region")
+  // LONG | SHORT. 인버스·곱버스 상품을 같은 지역의 롱과 상쇄해서 읽지 않기 위한 축.
+  exposureDirection String          @default("LONG") @map("exposure_direction")
+  source            String          @default("YAHOO")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  dailyPrices       DailyPrice[]
+  holdings          Holding[]
+  holdingChanges    HoldingChange[]
+  alerts            StockAlert[]
 
   @@unique([market, code])
   @@map("ticker")

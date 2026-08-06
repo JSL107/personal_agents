@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import { HoldingChange } from '../../../agent/stock/domain/holding-change';
+import { calculatePortfolioExposure } from '../../../agent/stock/domain/portfolio-exposure';
 import {
   detectAvgPriceBreach,
   detectDailyChange,
@@ -17,6 +18,7 @@ import {
 } from '../../../agent/stock/domain/stock-monitor.type';
 import {
   formatHoldingChanges,
+  formatPortfolioExposure,
   formatStockMonitorSummary,
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
@@ -301,22 +303,28 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       this.logger.log(
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
+      const rateDate = lastTradeDate
+        ? new Date(`${lastTradeDate}T00:00:00.000Z`)
+        : null;
+      const usdKrwRate = rateDate
+        ? await this.resolveUsdKrwRate(rateDate)
+        : null;
+      const summaryText = formatStockMonitorSummary([], {
+        checkedCount: collectedHoldings.length,
+        lastTradeDate,
+        failures,
+        marketClosed: true,
+      });
+      const resultWithExposure = await this.withPortfolioExposure(
+        { skip: false, summaryText },
+        usdKrwRate,
+      );
+      const taskResult = this.withSyncWarning(
+        this.withHoldingChanges(resultWithExposure, sync.changes),
+        sync.error,
+      );
       return {
-        taskResult: this.withSyncWarning(
-          this.withHoldingChanges(
-            {
-              skip: false,
-              summaryText: formatStockMonitorSummary([], {
-                checkedCount: collectedHoldings.length,
-                lastTradeDate,
-                failures,
-                marketClosed: true,
-              }),
-            },
-            sync.changes,
-          ),
-          sync.error,
-        ),
+        taskResult,
         audit: this.createAudit(sync, {
           holdingCount: holdings.length,
           checkedCount: collectedHoldings.length,
@@ -428,23 +436,24 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       );
     }
 
+    const summaryText = formatStockMonitorSummary(anomalies, {
+      checkedCount,
+      lastTradeDate: lastTradeDate || '알 수 없음',
+      failures,
+      marketClosed: false,
+      priceDisplays,
+    });
+    const resultWithExposure = await this.withPortfolioExposure(
+      { skip: false, summaryText },
+      usdKrwRate,
+    );
+    const taskResult = this.withSyncWarning(
+      this.withHoldingChanges(resultWithExposure, sync.changes),
+      sync.error,
+    );
+
     return {
-      taskResult: this.withSyncWarning(
-        this.withHoldingChanges(
-          {
-            skip: false,
-            summaryText: formatStockMonitorSummary(anomalies, {
-              checkedCount,
-              lastTradeDate: lastTradeDate || '알 수 없음',
-              failures,
-              marketClosed: false,
-              priceDisplays,
-            }),
-          },
-          sync.changes,
-        ),
-        sync.error,
-      ),
+      taskResult,
       audit: this.createAudit(sync, {
         holdingCount: holdings.length,
         checkedCount,
@@ -533,11 +542,34 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     return { ...result, skip: false, summaryText };
   }
 
-  private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
-    if (this.targetMarketCountry !== 'US') {
-      return null;
+  private async withPortfolioExposure(
+    result: AutopilotTaskResult,
+    usdKrwRate: string | null,
+  ): Promise<AutopilotTaskResult> {
+    if (!result.summaryText) {
+      return result;
     }
 
+    // ponytail: 장식 한 줄이 관제 본체를 죽이면 안 된다.
+    try {
+      const positions = await this.repository.findPortfolioPositions();
+      const rate = usdKrwRate ? new Prisma.Decimal(usdKrwRate) : null;
+      const exposure = calculatePortfolioExposure(positions, rate);
+      const exposureText = formatPortfolioExposure(exposure);
+      if (!exposureText) {
+        return result;
+      }
+      const summaryText = `${result.summaryText}\n${exposureText}`;
+      return { ...result, summaryText };
+    } catch (error) {
+      this.logger.warn(
+        `포트폴리오 노출 계산 실패 — ${(error as Error).message}`,
+      );
+      return result;
+    }
+  }
+
+  private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
     let fetchedRate: string | null = null;
     try {
       fetchedRate = await this.marketData.fetchUsdKrwRate();

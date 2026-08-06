@@ -1,4 +1,5 @@
 import { HoldingChange } from '../domain/holding-change';
+import { PortfolioExposure } from '../domain/portfolio-exposure';
 import { StockAnomaly } from '../domain/stock-monitor.type';
 
 export interface StockMonitorContext {
@@ -109,6 +110,21 @@ export const formatHoldingChanges = (changes: HoldingChange[]): string => {
     lines.push(`• ${tickerLabel} — ${describeHoldingChange(change)}`);
   }
   return lines.join('\n');
+};
+
+export const formatPortfolioExposure = (
+  exposure: PortfolioExposure | null,
+): string => {
+  if (!exposure) {
+    return '';
+  }
+
+  const bucketText = exposure.buckets
+    .map((bucket) => `${bucket.label} ${bucket.ratio}%`)
+    .join(' · ');
+  const fxUsdText =
+    exposure.fxUsdRatio === 0 ? '' : ` (달러 환노출 ${exposure.fxUsdRatio}%)`;
+  return `🌎 ${bucketText}${fxUsdText}`;
 };
 
 export const formatStockMonitorSummary = (
