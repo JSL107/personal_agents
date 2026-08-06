@@ -30,6 +30,53 @@ describe('NotionApiClient', () => {
     });
   });
 
+  it('DB page를 properties와 최대 100개 children으로 생성한다', async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: 'PAGE',
+      url: 'https://notion.so/PAGE',
+    });
+    const adapter = new NotionApiClient(
+      { pages: { create } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const page = await adapter.createDatabasePage({
+      databaseId: 'DATABASE',
+      properties: { 이름: { title: [] } },
+      blocks: Array.from({ length: 101 }, (_, index) => ({
+        type: 'paragraph',
+        text: `block ${index}`,
+        richText: [],
+      })),
+    });
+
+    expect(page).toEqual({
+      pageId: 'PAGE',
+      url: 'https://notion.so/PAGE',
+    });
+    expect(create).toHaveBeenCalledWith({
+      parent: { database_id: 'DATABASE' },
+      properties: { 이름: { title: [] } },
+      children: expect.any(Array),
+    });
+    expect(create.mock.calls[0][0].children).toHaveLength(100);
+  });
+
+  it('page를 archived 상태로 갱신한다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const adapter = new NotionApiClient(
+      { pages: { update } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await adapter.archivePage({ pageId: 'PAGE' });
+
+    expect(update).toHaveBeenCalledWith({
+      page_id: 'PAGE',
+      archived: true,
+    });
+  });
+
   it('NOTION_TASK_DB_IDS env 가 없고 인자도 없으면 빈 배열 반환 (graceful)', async () => {
     const client = buildClient({});
     const adapter = new NotionApiClient(client, buildConfig({}));

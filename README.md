@@ -268,6 +268,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `STUDY_BRIEF_TARGET` | ❌ | Slack 발송 대상. 미설정 시 owner DM |
 | `STUDY_BRIEF_CRON` | ❌ | BullMQ cron. 기본 `30 9 * * *` (매일 09:30) |
 | `STUDY_BRIEF_TIMEZONE` | ❌ | 학습 브리핑 timezone. 기본 `Asia/Seoul` |
+| `STUDY_BRIEF_NOTION_DATABASE_ID` | ❌ | 학습 브리핑 발행 대상 Notion DB. 미설정 시 Slack 전체 카드 + 스레드로 fallback |
 
 **Model provider** — 2026-07-02 부터 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider. provider 간 fallback 없음 — codex 실패 시 재시도 없이 즉시 실패(쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
 **claude 인증** — provider 코드 보존용으로 `.env` 의 `CLAUDE_CODE_OAUTH_TOKEN`(`claude setup-token` 발급) 지원은 유지(현재 라우팅 경로 없음, 롤백 시 사용).

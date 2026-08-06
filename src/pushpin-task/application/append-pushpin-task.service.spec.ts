@@ -15,6 +15,8 @@ describe('AppendPushpinTaskService', () => {
   beforeEach(() => {
     notionClient = {
       listActiveTasks: jest.fn(),
+      createDatabasePage: jest.fn(),
+      archivePage: jest.fn(),
       findOrCreateDailyPage: jest.fn(),
       findOrCreateChildPage: jest.fn(),
       appendBlocks: jest.fn().mockResolvedValue(undefined),

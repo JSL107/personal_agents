@@ -1,4 +1,4 @@
-import { StudyTopicVerdict } from '../../../agent/cto/domain/cto.type';
+import { StudyBriefVerdict } from '../study-brief.type';
 import { StudyResearchKind } from '../study-research.parser';
 
 export const STUDY_BRIEF_REPOSITORY_PORT = Symbol(
@@ -16,7 +16,7 @@ export interface SaveStudyBriefInput {
   ownerUserId: string;
   kind: StudyResearchKind;
   topic: string;
-  verdict: StudyTopicVerdict;
+  verdict: StudyBriefVerdict;
   reportMd: string;
   sourceUrls: string[];
 }
@@ -27,4 +27,5 @@ export interface StudyBriefRepositoryPort {
     since: Date,
   ): Promise<RecentStudyBrief[]>;
   save(input: SaveStudyBriefInput): Promise<{ id: number }>;
+  updateNotionUrl(id: number, notionUrl: string): Promise<void>;
 }

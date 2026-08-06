@@ -9,6 +9,9 @@ import { NotionTask } from '../domain/notion.type';
 import { NotionErrorCode } from '../domain/notion-error-code.enum';
 import {
   AppendBlocksOptions,
+  ArchivePageOptions,
+  CreateDatabasePageOptions,
+  CreatedDatabasePage,
   FindOrCreateChildPageOptions,
   FindOrCreateDailyPageOptions,
   ListActiveTasksOptions,
@@ -16,6 +19,7 @@ import {
   NotionClientPort,
   NotionDailyPlanPage,
   NotionPlanBlock,
+  NotionRichText,
   ReplaceAllBlocksOptions,
   ReplaceCheckInSectionOptions,
   UpdatePagePropertiesOptions,
@@ -97,6 +101,60 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     return tasks;
+  }
+
+  async createDatabasePage({
+    databaseId,
+    properties,
+    blocks,
+  }: CreateDatabasePageOptions): Promise<CreatedDatabasePage> {
+    this.assertClientConfigured('createDatabasePage');
+    try {
+      const children = blocks
+        .slice(0, APPEND_BLOCKS_CHUNK_SIZE)
+        .map((block) => toNotionBlock(block as NotionPlanBlock));
+      const response = await this.client!.pages.create({
+        parent: { database_id: databaseId },
+        properties: properties as Parameters<
+          Client['pages']['create']
+        >[0]['properties'],
+        children: children as Parameters<
+          Client['pages']['create']
+        >[0]['children'],
+      });
+      const pageId = typeof response.id === 'string' ? response.id : '';
+      const url =
+        'url' in response && typeof response.url === 'string'
+          ? response.url
+          : '';
+      return { pageId, url };
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion DB ${databaseId} page 생성 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+  }
+
+  async archivePage({ pageId }: ArchivePageOptions): Promise<void> {
+    this.assertClientConfigured('archivePage');
+    try {
+      await this.client!.pages.update({
+        page_id: pageId,
+        archived: true,
+      });
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} archive 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
   }
 
   // 한 DB 가 권한 미부여 / not_found 면 null 반환 — 다른 DB 는 계속 (listActiveTasks 안에서 skip).
@@ -632,18 +690,33 @@ export class NotionApiClient implements NotionClientPort {
 const isSafeHttpUrl = (url: string): boolean =>
   url.startsWith('http://') || url.startsWith('https://');
 
-const buildRichText = (
-  text: string,
-  link?: string,
-): Array<Record<string, unknown>> => {
+const buildRichText = (text: string, link?: string): NotionRichText[] => {
+  const characters = Array.from(text);
+  const chunks = Array.from(
+    { length: Math.ceil(characters.length / 2_000) },
+    (_, index) => characters.slice(index * 2_000, (index + 1) * 2_000).join(''),
+  );
   if (link && link.length > 0 && isSafeHttpUrl(link)) {
-    return [{ type: 'text', text: { content: text, link: { url: link } } }];
+    return chunks.map((content) => ({
+      type: 'text',
+      text: { content, link: { url: link } },
+    }));
   }
-  return [{ type: 'text', text: { content: text } }];
+  return chunks.map((content) => ({ type: 'text', text: { content } }));
 };
 
+const resolveRichText = ({
+  text,
+  richText,
+  link,
+}: {
+  text: string;
+  richText?: NotionRichText[];
+  link?: string;
+}): NotionRichText[] => richText ?? buildRichText(text, link);
+
 // NotionPlanBlock → Notion API block 형식.
-// discriminated union 6종 — ts-pattern 으로 exhaustive 매칭.
+// semantic discriminated union — ts-pattern 으로 exhaustive 매칭.
 const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
   return match(block)
     .with({ type: 'divider' }, () => ({
@@ -651,33 +724,61 @@ const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
       type: 'divider',
       divider: {},
     }))
-    .with({ type: 'heading' }, ({ text }) => ({
+    .with({ type: 'heading' }, ({ text, richText }) => ({
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: buildRichText(text) },
+      heading_2: { rich_text: resolveRichText({ text, richText }) },
     }))
-    .with({ type: 'subheading' }, ({ text }) => ({
+    .with({ type: 'subheading' }, ({ text, richText }) => ({
       object: 'block',
       type: 'heading_3',
-      heading_3: { rich_text: buildRichText(text) },
+      heading_3: { rich_text: resolveRichText({ text, richText }) },
     }))
-    .with({ type: 'bullet' }, ({ text, link }) => ({
+    .with({ type: 'bullet' }, ({ text, richText, link }) => ({
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: buildRichText(text, link) },
+      bulleted_list_item: {
+        rich_text: resolveRichText({ text, richText, link }),
+      },
     }))
-    .with({ type: 'todo' }, ({ text, checked, link }) => ({
+    .with({ type: 'numbered' }, ({ text, richText }) => ({
+      object: 'block',
+      type: 'numbered_list_item',
+      numbered_list_item: { rich_text: resolveRichText({ text, richText }) },
+    }))
+    .with({ type: 'quote' }, ({ text, richText }) => ({
+      object: 'block',
+      type: 'quote',
+      quote: { rich_text: resolveRichText({ text, richText }) },
+    }))
+    .with({ type: 'code' }, ({ text, richText, language }) => ({
+      object: 'block',
+      type: 'code',
+      code: {
+        rich_text: resolveRichText({ text, richText }),
+        language,
+      },
+    }))
+    .with({ type: 'callout' }, ({ text, richText, icon }) => ({
+      object: 'block',
+      type: 'callout',
+      callout: {
+        rich_text: resolveRichText({ text, richText }),
+        icon: { type: 'emoji', emoji: icon },
+      },
+    }))
+    .with({ type: 'todo' }, ({ text, richText, checked, link }) => ({
       object: 'block',
       type: 'to_do',
       to_do: {
-        rich_text: buildRichText(text, link),
+        rich_text: resolveRichText({ text, richText, link }),
         checked: checked === true,
       },
     }))
-    .with({ type: 'paragraph' }, ({ text, link }) => ({
+    .with({ type: 'paragraph' }, ({ text, richText, link }) => ({
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: buildRichText(text, link) },
+      paragraph: { rich_text: resolveRichText({ text, richText, link }) },
     }))
     .exhaustive();
 };
