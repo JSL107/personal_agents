@@ -10,7 +10,6 @@ describe('formatStudyBrief', () => {
         kind: 'CONCEPT',
         whyNow: '재시도 설계에 필요',
         whereItLands: 'src/agent-run 모듈',
-        readingPlan: '공식 문서부터',
         minutes: 30,
       },
       reportMd:
@@ -36,7 +35,6 @@ describe('formatStudyBrief', () => {
         kind: 'CONCEPT',
         whyNow: 'why',
         whereItLands: 'where',
-        readingPlan: 'read',
         minutes: 10,
       },
       reportMd: '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄\n\n다음 문단',
@@ -54,7 +52,6 @@ describe('formatStudyBrief', () => {
         kind: 'CONCEPT',
         whyNow: '재시도 설계에 필요',
         whereItLands: 'src/agent-run 모듈',
-        readingPlan: '공식 문서부터',
         minutes: 30,
       },
       reportMd: '조사 전문',
@@ -66,9 +63,9 @@ describe('formatStudyBrief', () => {
         '',
         '*왜 지금 나한테* 재시도 설계에 필요',
         '*어디에 닿나* src/agent-run 모듈',
-        '*읽을 것* 공식 문서부터',
       ].join('\n'),
     );
+    expect(rendered.summary).not.toContain('*읽을 것*');
     expect(rendered.full).toBe('조사 전문');
   });
 
@@ -81,7 +78,6 @@ describe('formatStudyBrief', () => {
         kind: 'CONCEPT',
         whyNow,
         whereItLands,
-        readingPlan: '공식 Persistence 문서',
         minutes: 20,
       },
       reportMd: '조사 전문',
@@ -98,7 +94,6 @@ describe('formatStudyBrief', () => {
         kind: 'TOOL',
         whatImproves: '문서 검색 개선',
         adoptionCost: '낮음',
-        installHint: 'codex mcp add context7',
         minutes: 10,
       },
       reportMd: '조사 전문',
@@ -110,9 +105,9 @@ describe('formatStudyBrief', () => {
         '',
         '*뭐가 좋아지나* 문서 검색 개선',
         '*붙이는 비용* 낮음',
-        '*설치* codex mcp add context7',
       ].join('\n'),
     );
+    expect(rendered.summary).not.toContain('*설치*');
     expect(rendered.summary).not.toContain('*주의*');
   });
 
@@ -123,7 +118,6 @@ describe('formatStudyBrief', () => {
         kind: 'TOOL',
         whatImproves: '*bold* & <tag>',
         adoptionCost: '_cost_',
-        installHint: '`command`',
         caution: '~warn~',
         minutes: 10,
       },
@@ -142,7 +136,6 @@ describe('formatStudyBrief', () => {
         kind: 'CONCEPT',
         whyNow: 'why',
         whereItLands: 'where',
-        readingPlan: 'read',
         minutes: 1,
       },
       reportMd: 'a'.repeat(4000),

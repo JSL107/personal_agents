@@ -1,3 +1,30 @@
+# 학습 브리핑 3차 개선 구현 계획
+
+**Goal:** CTO verdict 중복 필드를 제거하고 Notion 콜아웃을 400자 이하로 방어하며 Markdown 들여쓰기 연속 줄을 직전 블록에 유지한다.
+
+**Architecture:** 축소된 verdict 계약을 CTO→Study Brief DTO→formatter/publisher까지 동기화한다. Notion publisher는 초과 항목을 paragraph로 내리고, Markdown 변환기는 code fence 밖의 들여쓰기 연속 줄만 직전 rich_text에 합친다.
+
+**Constraints:** `.ai/design.md` A–D 준수. `.env`, DB schema, `parseStudyResearch`, `buildStudyResearchPrompt` 수정 금지. `pnpm db:push`, git add/commit/push 금지.
+
+- [x] 계약·관련 코드·전체 참조·회귀 경계를 조사한다.
+- [x] A/B verdict 타입·프롬프트·파서 실패 spec을 확인한 뒤 최소 구현한다.
+- [x] Study Brief 로컬 DTO·consumer mapping·Slack formatter를 새 계약에 맞춘다.
+- [x] C Notion callout 축소와 400자 overflow paragraph를 TDD로 구현한다.
+- [x] D Markdown 들여쓰기 연속 줄 필수 5개 spec을 RED→GREEN으로 구현한다.
+- [x] 제거 필드 prompt/production 참조 0건과 Study Brief domain의 CTO import 0건을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, `pnpm check:env`, `pnpm check:invariants`를 순서대로 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- CTO verdict와 Study Brief 로컬 DTO에서 중복 필드 2개를 제거하고, prompt schema·parser·consumer mapping·Slack·Notion·fixture를 끝까지 동기화했다.
+- callout은 표시 text 400자까지 유지하고 초과 항목은 paragraph로 내린다. 첫 항목 자체가 초과하면 빈 callout 없이 전체 항목을 paragraph로 내린다.
+- Markdown 들여쓰기 연속 줄을 code fence 밖에서 직전 block에 붙이고, 새 block 문법·첫 줄·code·Unicode 2,000자 경계를 spec으로 고정했다.
+- 최종 검증: lint exit 0(기존 warning 57), test 304 suites/2,347 + code-graph 5 suites/40, build/docs/env/invariants 모두 exit 0.
+- 최종 독립 review: Critical/Important/Minor 0건, `Ready: Yes`. 설계 방어 경계와 실제 Notion 재검증 지점은 `.ai/implementation-summary.md`에 기록했다.
+
+---
+
 # PR #246 봇 리뷰 대응 2차 (2026-08-06)
 
 **Goal:** Study Brief 도메인 포트에서 CTO 타입 의존을 제거하고, Notion 페이지 생성 후 URL 저장만 실패한 부분 성공을 링크 발송으로 보존한다.

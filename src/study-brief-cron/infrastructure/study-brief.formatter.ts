@@ -55,7 +55,6 @@ export const formatStudyBrief = ({
         '',
         `*왜 지금 나한테* ${escapeStudyMrkdwn(concept.whyNow)}`,
         `*어디에 닿나* ${escapeStudyMrkdwn(concept.whereItLands)}`,
-        `*읽을 것* ${escapeStudyMrkdwn(concept.readingPlan)}`,
       ].join('\n'),
     )
     .with({ kind: 'TOOL' }, (tool) => {
@@ -64,7 +63,6 @@ export const formatStudyBrief = ({
         '',
         `*뭐가 좋아지나* ${escapeStudyMrkdwn(tool.whatImproves)}`,
         `*붙이는 비용* ${escapeStudyMrkdwn(tool.adoptionCost)}`,
-        `*설치* ${escapeStudyMrkdwn(tool.installHint)}`,
       ];
       if (tool.caution !== undefined) {
         lines.push(`*주의* ${escapeStudyMrkdwn(tool.caution)}`);
