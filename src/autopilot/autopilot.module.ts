@@ -9,6 +9,7 @@ import { GenerateOpsAdviceUsecase } from '../agent/ops-supervisor/application/ge
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
+import { SyncHoldingsUsecase } from '../agent/stock/application/sync-holdings.usecase';
 import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-monitor.repository';
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
@@ -120,6 +121,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         repository: StockMonitorRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
+        syncHoldings: SyncHoldingsUsecase,
       ) =>
         new StockMonitorAutopilotTask(
           { id: 'stock-monitor', targetMarketCountry: 'KR' },
@@ -127,12 +129,14 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
           repository,
           configService,
           agentRunService,
+          syncHoldings,
         ),
       inject: [
         MARKET_DATA_PORT,
         StockMonitorRepository,
         ConfigService,
         AgentRunService,
+        SyncHoldingsUsecase,
       ],
     },
     {
@@ -142,6 +146,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         repository: StockMonitorRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
+        syncHoldings: SyncHoldingsUsecase,
       ) =>
         new StockMonitorAutopilotTask(
           { id: 'stock-monitor-us', targetMarketCountry: 'US' },
@@ -149,12 +154,14 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
           repository,
           configService,
           agentRunService,
+          syncHoldings,
         ),
       inject: [
         MARKET_DATA_PORT,
         StockMonitorRepository,
         ConfigService,
         AgentRunService,
+        SyncHoldingsUsecase,
       ],
     },
     GenerateOpsAdviceUsecase,
