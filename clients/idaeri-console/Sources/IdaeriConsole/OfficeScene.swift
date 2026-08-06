@@ -370,10 +370,20 @@ final class OfficeScene: SKScene {
     }
 
     /// 노드를 타일 위에 놓는다(즉시 이동 — 걸음 연출은 walk 가 담당).
+    ///
+    /// **순간이동도 문 여닫이의 입력이다.** 걸음은 한 칸마다 문을 다시 보지만(`walk`), 자리로
+    /// 되돌리는 경로들은 사람을 한 번에 옮긴다. 그래서 문 앞에 있던 사람이 사라진 것을 문이
+    /// 모른 채 열린 상태로 굳는다 — 창 크기를 바꾸면 `sync` 가 문을 갱신한 **뒤** 에
+    /// `repositionEveryone` 이 걷던 사람을 좌석으로 끌고 가므로 정확히 그 일이 벌어진다.
+    ///
+    /// 호출처마다 뒤에 한 줄씩 붙이지 않고 여기에 둔 이유는 그 지점이 넷이고(줄 서기·좌석
+    /// 복귀·신규 배치·리사이즈) 앞으로 늘기 때문이다. 문 열둘 × 사람 서른이라 매번 다시 세도
+    /// 한 번이 수백 번 비교로 끝난다.
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
         node.position = floorPoint(tile)
         node.zPosition = depth(of: tile)
+        refreshDoors()
     }
 
     // MARK: - 바닥·가구
