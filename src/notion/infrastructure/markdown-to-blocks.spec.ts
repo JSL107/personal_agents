@@ -101,6 +101,25 @@ describe('markdownToBlocks', () => {
     });
   });
 
+  it('빈 줄 이후의 들여쓴 줄은 불릿과 별도 paragraph로 변환한다', () => {
+    const blocks = markdownToBlocks(
+      ['- 불릿 A', '  설명 A', '', '  들여쓴 별개 문단'].join('\n'),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: 'bullet',
+      text: '불릿 A\n설명 A',
+    });
+    expect(blocks[0]).not.toMatchObject({
+      text: expect.stringContaining('들여쓴 별개 문단'),
+    });
+    expect(blocks[1]).toMatchObject({
+      type: 'paragraph',
+      text: '  들여쓴 별개 문단',
+    });
+  });
+
   it('번호 목록의 들여쓰기 연속 줄을 같은 블록에 이어 붙인다', () => {
     const blocks = markdownToBlocks(
       ['1. 첫 번째 단계', '  세부 설명'].join('\n'),
@@ -112,6 +131,55 @@ describe('markdownToBlocks', () => {
       text: '첫 번째 단계\n세부 설명',
     });
   });
+
+  it('들여쓴 divider를 paragraph와 분리한다', () => {
+    const blocks = markdownToBlocks('문단\n  ---');
+
+    expect(blocks).toEqual([
+      expect.objectContaining({ type: 'paragraph', text: '문단' }),
+      { type: 'divider' },
+    ]);
+    expect(blocks[0]).not.toMatchObject({
+      text: expect.stringContaining('---'),
+    });
+  });
+
+  it('들여쓰지 않은 divider를 divider block으로 변환한다', () => {
+    expect(markdownToBlocks('---')).toEqual([{ type: 'divider' }]);
+  });
+
+  it('code fence 안의 들여쓴 divider를 code 내용으로 보존한다', () => {
+    const [block] = markdownToBlocks(['```text', '  ---', '```'].join('\n'));
+
+    expect(block).toMatchObject({ type: 'code', text: '  ---' });
+  });
+
+  it('bullet 뒤의 들여쓴 divider를 bullet continuation으로 합치지 않는다', () => {
+    const blocks = markdownToBlocks('- 항목\n  ---');
+
+    expect(blocks).toEqual([
+      expect.objectContaining({ type: 'bullet', text: '항목' }),
+      { type: 'divider' },
+    ]);
+  });
+
+  it.each([
+    ['----', [{ type: 'divider' }]],
+    [
+      '--- text',
+      [
+        expect.objectContaining({
+          type: 'paragraph',
+          text: '--- text',
+        }),
+      ],
+    ],
+  ])(
+    'divider 문법 경계 %s을 literal block으로 변환한다',
+    (markdown, expected) => {
+      expect(markdownToBlocks(markdown)).toEqual(expected);
+    },
+  );
 
   it.each([
     '- 하위 불릿',
@@ -152,6 +220,23 @@ describe('markdownToBlocks', () => {
     expect(block).toMatchObject({
       type: 'code',
       text: '  const value = 1;',
+    });
+  });
+
+  it('code fence 안의 빈 줄을 코드 내용으로 보존한다', () => {
+    const [block] = markdownToBlocks(
+      [
+        '```typescript',
+        'const first = 1;',
+        '',
+        'const second = 2;',
+        '```',
+      ].join('\n'),
+    );
+
+    expect(block).toMatchObject({
+      type: 'code',
+      text: 'const first = 1;\n\nconst second = 2;',
     });
   });
 

@@ -1,3 +1,46 @@
+# Markdown continuation 빈 줄 경계 수정 (2026-08-06)
+
+**Goal:** 빈 줄 이후의 들여쓴 줄을 빈 줄 이전 블록에 병합하지 않고 별도 paragraph로 변환한다.
+
+**Constraints:** 기존 미커밋 divider 수정과 code fence 내부 빈 줄 보존을 유지한다. `.env`, `pnpm db:push`, git add/commit/push를 실행하지 않는다.
+
+- [x] 최신 `origin/main` 기반 브랜치와 기존 divider diff를 확인한다.
+- [x] 불릿 continuation의 빈 줄 경계 및 요구 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 직전 원본 줄의 continuation 가능 상태를 루프에 추가해 빈 줄에서 병합 대상을 끊는다.
+- [x] focused spec에서 빈 줄 경계·무경계 병합·code fence 빈 줄·divider 회귀를 확인한다.
+- [x] 요청된 6개 게이트와 `git diff --check`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 이번 수정 절과 실제 결과를 기록한다.
+
+## Review
+
+- `continuationAllowed`로 원본 줄 경계를 관리해 빈 줄·code fence 종료 후에는 이전 block 병합을 차단했다.
+- TDD: 빈 줄 후 들여쓴 문단이 불릿에 합쳐져 1 failed / 25 passed를 확인한 뒤 focused spec 26/26 GREEN을 확인했다.
+- divider 미커밋 수정과 code fence 내부 `\n\n` 보존 회귀를 같은 spec에서 확인했다.
+- 최종 gate: `pnpm lint:check` exit 0(기존 warning 57건), `pnpm test` exit 0(304 suites / 2,361 tests + code-graph 5 suites / 40 tests), `pnpm build`, `pnpm docs:check`, `pnpm check:env`, `pnpm check:invariants` 모두 exit 0.
+
+---
+
+# PR #249 봇 리뷰 대응 (2026-08-06)
+
+**Goal:** 들여쓴 divider를 continuation에서 제외해 Notion divider block으로 보존한다.
+
+**Constraints:** bullet 문법과 code fence 동작을 보존한다. `.env`, `pnpm db:push`, git add/commit/push를 실행하지 않는다.
+
+- [x] 기존 divider·continuation·code fence 흐름과 작업 트리를 확인한다.
+- [x] 들여쓴 divider 및 요구된 회귀 spec을 추가하고 RED를 확인한다.
+- [x] divider 문법을 bullet과 분리해 continuation 차단과 block 변환에 같은 기준을 적용한다.
+- [x] focused spec GREEN과 최종 diff를 검토한다.
+- [x] 요청된 6개 게이트와 `git diff --check`를 실행한다.
+- [x] `.ai/implementation-summary.md`에 `봇 리뷰 대응` 절과 실제 결과를 기록한다.
+
+## Review
+
+- 들여쓴 divider를 continuation에서 제외하고 `divider` block으로 변환했다. code fence 순서는 유지했다.
+- TDD: 새 회귀 3건 RED(들여쓴 divider의 paragraph/bullet 병합, `----` paragraph 변환) 후 GREEN.
+- PR #249 gate: `pnpm lint:check` exit 0 (기존 warning 57건), `pnpm test` exit 0 (304 suites / 2,353 tests + code-graph 5 suites / 40 tests), `pnpm build` exit 0, `pnpm docs:check` exit 0, `pnpm check:env` exit 0, `pnpm check:invariants` exit 0, `git diff --check` exit 0.
+
+---
+
 # 학습 브리핑 3차 개선 구현 계획
 
 **Goal:** CTO verdict 중복 필드를 제거하고 Notion 콜아웃을 400자 이하로 방어하며 Markdown 들여쓰기 연속 줄을 직전 블록에 유지한다.
