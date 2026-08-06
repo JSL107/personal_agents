@@ -11,24 +11,24 @@ datasource db {
 }
 
 model AgentRun {
-  id            Int       @id @default(autoincrement())
-  agentType     String    @map("agent_type")
-  triggerType   String    @map("trigger_type")
-  status        String
-  modelUsed     String?   @map("model_used")
+  id                 Int       @id @default(autoincrement())
+  agentType          String    @map("agent_type")
+  triggerType        String    @map("trigger_type")
+  status             String
+  modelUsed          String?   @map("model_used")
   // OPS-1 Quota Pane — 어떤 CLI provider 가 호출됐는지 (codex-cli / claude-cli / gemini-cli / mock)
   // 와 execute 시작~종료 elapsed 시간을 기록. /quota 슬래시가 provider 별 count + 평균 duration 산출.
-  cliProvider   String?   @map("cli_provider")
-  durationMs    Int?      @map("duration_ms")
-  inputSnapshot Json      @map("input_snapshot")
-  output        Json?
+  cliProvider        String?   @map("cli_provider")
+  durationMs         Int?      @map("duration_ms")
+  inputSnapshot      Json      @map("input_snapshot")
+  output             Json?
   // 직무 계약(src/agent-registry/agent-contract.ts) 검수 결과. 위반이 없으면 null.
   // output 안에 섞지 않는 이유: 기존 output 소비자(콘솔 read API, 리포트 포매터)가
   // 예상하지 못한 키를 만나 깨지는 것을 피한다.
   // 1단계는 관측 모드 — 위반이 있어도 status 는 SUCCEEDED 그대로 둔다.
-  contractViolations Json? @map("contract_violations")
-  startedAt     DateTime  @default(now()) @map("started_at")
-  endedAt       DateTime? @map("ended_at")
+  contractViolations Json?     @map("contract_violations")
+  startedAt          DateTime  @default(now()) @map("started_at")
+  endedAt            DateTime? @map("ended_at")
 
   // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern 의 handoff chain 추적용 self-relation.
   // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4 / §6.3)
@@ -324,20 +324,21 @@ model PreferenceProposal {
 // Yahoo 경로로 등록한 종목은 market='KOSPI'|'KOSDAQ' 이다.
 // yahooSymbol 은 Yahoo 경로에서만 필수라 nullable 로 둔다.
 model Ticker {
-  id            Int          @id @default(autoincrement())
-  code          String
-  market        String
-  marketCountry String?      @map("market_country")
-  yahooSymbol   String?      @map("yahoo_symbol")
-  tossSymbol    String?      @map("toss_symbol")
-  name          String
-  currency      String
-  source        String       @default("YAHOO")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  dailyPrices   DailyPrice[]
-  holdings      Holding[]
-  alerts        StockAlert[]
+  id             Int             @id @default(autoincrement())
+  code           String
+  market         String
+  marketCountry  String?         @map("market_country")
+  yahooSymbol    String?         @map("yahoo_symbol")
+  tossSymbol     String?         @map("toss_symbol")
+  name           String
+  currency       String
+  source         String          @default("YAHOO")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  dailyPrices    DailyPrice[]
+  holdings       Holding[]
+  holdingChanges HoldingChange[]
+  alerts         StockAlert[]
 
   @@unique([market, code])
   @@map("ticker")
@@ -376,6 +377,30 @@ model Holding {
 
   @@unique([tickerId, effectiveDate])
   @@map("holding")
+}
+
+// 매매 사건 이력. Holding 은 "지금 무엇을 들고 있는가"(상태)만 담아서 "어제 무엇을 샀는가"(사건)를
+// 알 수 없다. 동기화가 직전 스냅샷과 새로 읽은 잔고를 비교해 그 차이를 여기에 사건으로 남긴다.
+//
+// 유니크 제약을 두지 않는다 — 잔고는 하루에 두 번(국내 감시·미국 감시) 갱신되므로 같은 종목이
+// 같은 effectiveDate 에 두 번 변할 수 있다(오전에 +30, 오후에 +20). (tickerId, effectiveDate, kind)
+// 를 유니크로 잡으면 뒤에 온 실제 매매가 앞의 것을 덮어써 사라진다.
+model HoldingChange {
+  id               Int      @id @default(autoincrement())
+  tickerId         Int      @map("ticker_id")
+  ticker           Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  kind             String
+  previousQuantity Decimal? @map("previous_quantity") @db.Decimal(18, 4)
+  quantity         Decimal  @db.Decimal(18, 4)
+  previousAvgPrice Decimal? @map("previous_avg_price") @db.Decimal(18, 4)
+  avgPrice         Decimal  @map("avg_price") @db.Decimal(18, 4)
+  currency         String
+  effectiveDate    DateTime @map("effective_date") @db.Date
+  detectedAt       DateTime @default(now()) @map("detected_at")
+
+  @@index([effectiveDate])
+  @@index([tickerId, detectedAt])
+  @@map("holding_change")
 }
 
 // 알림 발화 이력. 임계값을 나중에 바꿔도 과거 알림의 발생 이유를 재현할 수 있도록
