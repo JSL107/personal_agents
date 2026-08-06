@@ -47,8 +47,22 @@ describe('TossMarketDataClient', () => {
     expect(bars).toHaveLength(1);
     expect(tossApi.requestJson).toHaveBeenCalledWith(
       '일봉 조회',
-      '/api/v1/candles?symbol=483280&interval=1d&count=200',
+      '/api/v1/candles?symbol=483280&interval=1d&count=200&adjusted=true',
     );
+  });
+
+  // 판정이 조정 계열에 의존한다. 이 값을 토스 기본값에 맡기면 토스가 기본값을 바꾸는 날
+  // 배당락이 가짜 급락으로 잡히기 시작하는데, 어디에도 오류가 남지 않는다.
+  it('수정주가 적용을 쿼리에 명시한다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    tossApi.requestJson.mockResolvedValue(CANDLES_RESPONSE);
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    await client.fetchDailyBars('114800', 5);
+
+    const [, path] = tossApi.requestJson.mock.calls[0];
+    expect(path).toContain('adjusted=true');
   });
 
   it('토스 HTTP 429 오류를 호출자에게 전파한다', async () => {
