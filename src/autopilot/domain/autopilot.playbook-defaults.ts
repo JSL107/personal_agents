@@ -70,11 +70,17 @@ export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 
-// PR 리뷰 루프 스윕 — 5분 주기. 할 일 없으면 skip 하므로 알림 스팸은 없다.
+// PR 리뷰 루프 스윕 — 3분 주기. 할 일 없으면 skip 하므로 알림 스팸은 없다.
 //
-// 15분에서 줄인 이유: 이 레포의 PR 수명이 30분 남짓이라(#196 34분, #197 35분) 15분 주기면
-// 리뷰 기회가 1~2회뿐이고, 그중 한 번이라도 모델 호출이 실패하면 그 PR 은 리뷰 없이 머지된다
+// 15분 → 5분: 이 레포의 PR 수명이 30분 남짓이라(#196 34분, #197 35분) 15분 주기면 리뷰 기회가
+// 1~2회뿐이고, 그중 한 번이라도 모델 호출이 실패하면 그 PR 은 리뷰 없이 머지된다
 // (2026-07-31 실측: 08:01 스윕 실패 → 다음 기회 08:45 에는 두 PR 다 이미 머지됨).
+//
+// 5분 → 3분: PR 수명이 더 짧아졌다 — 2026-08-06 실측 8건 중 #250 이 4분(05:29 열림 → 05:33
+// 머지), #249 가 8분. 5분 주기는 착수 대기만 27초~4분이라(실측) 리뷰가 머지를 못 따라간다.
+// 3분을 하한으로 잡은 근거는 스윕 1회 실측 소요 28~142초 — autopilot-cron 큐는 concurrency=1
+// 직렬이라 주기가 소요를 밑돌면 tick 이 큐에 밀려 실효 주기가 오히려 흔들린다. 2분은 실측
+// 8건 중 2건(130·142초)이 주기를 넘겨 그 상태가 상시화되므로, 최대 소요를 덮는 3분을 쓴다.
 // 열린 PR 이 없으면 GitHub 조회만 하고 끝나므로(실측 14~47초, LLM 미호출) 주기를 줄이는 비용은 작다.
-export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/5 * * * *';
+export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/3 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
