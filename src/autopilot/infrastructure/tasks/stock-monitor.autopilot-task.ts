@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import { HoldingChange } from '../../../agent/stock/domain/holding-change';
+import { calculatePortfolioExposure } from '../../../agent/stock/domain/portfolio-exposure';
 import {
   detectAvgPriceBreach,
   detectDailyChange,
@@ -20,6 +21,7 @@ import {
 import {
   formatAvgPriceStatuses,
   formatHoldingChanges,
+  formatPortfolioExposure,
   formatStockMonitorSummary,
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
@@ -313,25 +315,33 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       this.logger.log(
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
-      return {
-        taskResult: this.withSyncWarning(
-          this.withHoldingChanges(
-            this.withAvgPriceStatuses(
-              {
-                skip: false,
-                summaryText: formatStockMonitorSummary([], {
-                  checkedCount: collectedHoldings.length,
-                  lastTradeDate,
-                  failures,
-                  marketClosed: true,
-                }),
-              },
-              closedDayStatuses,
-            ),
-            sync.changes,
-          ),
-          sync.error,
+      const rateDate = lastTradeDate
+        ? new Date(`${lastTradeDate}T00:00:00.000Z`)
+        : null;
+      const usdKrwRate = rateDate
+        ? await this.resolveUsdKrwRate(rateDate)
+        : null;
+      const summaryText = formatStockMonitorSummary([], {
+        checkedCount: collectedHoldings.length,
+        lastTradeDate,
+        failures,
+        marketClosed: true,
+      });
+      const resultWithExposure = await this.withPortfolioExposure(
+        this.withAvgPriceStatuses(
+          { skip: false, summaryText },
+          closedDayStatuses,
         ),
+        usdKrwRate,
+        failures,
+        sync.error,
+      );
+      const taskResult = this.withSyncWarning(
+        this.withHoldingChanges(resultWithExposure, sync.changes),
+        sync.error,
+      );
+      return {
+        taskResult,
         audit: this.createAudit(sync, {
           holdingCount: holdings.length,
           checkedCount: collectedHoldings.length,
@@ -459,26 +469,26 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       );
     }
 
+    const summaryText = formatStockMonitorSummary(anomalies, {
+      checkedCount,
+      lastTradeDate: lastTradeDate || '알 수 없음',
+      failures,
+      marketClosed: false,
+      priceDisplays,
+    });
+    const resultWithExposure = await this.withPortfolioExposure(
+      this.withAvgPriceStatuses({ skip: false, summaryText }, avgPriceStatuses),
+      usdKrwRate,
+      failures,
+      sync.error,
+    );
+    const taskResult = this.withSyncWarning(
+      this.withHoldingChanges(resultWithExposure, sync.changes),
+      sync.error,
+    );
+
     return {
-      taskResult: this.withSyncWarning(
-        this.withHoldingChanges(
-          this.withAvgPriceStatuses(
-            {
-              skip: false,
-              summaryText: formatStockMonitorSummary(anomalies, {
-                checkedCount,
-                lastTradeDate: lastTradeDate || '알 수 없음',
-                failures,
-                marketClosed: false,
-                priceDisplays,
-              }),
-            },
-            avgPriceStatuses,
-          ),
-          sync.changes,
-        ),
-        sync.error,
-      ),
+      taskResult,
       audit: this.createAudit(sync, {
         holdingCount: holdings.length,
         checkedCount,
@@ -584,11 +594,48 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     return { ...result, skip: false, summaryText };
   }
 
-  private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
-    if (this.targetMarketCountry !== 'US') {
-      return null;
+  private async withPortfolioExposure(
+    result: AutopilotTaskResult,
+    usdKrwRate: string | null,
+    failures: string[],
+    syncError: string | null,
+  ): Promise<AutopilotTaskResult> {
+    if (!result.summaryText) {
+      return result;
     }
 
+    // 수집·저장 실패 종목은 오늘 시세가 없어 직전 거래일 값이 섞일 수 있다. 잔고 동기화는
+    // 종목별로 반영되므로 실패하면 수량·평단이 일부만 갱신된 상태다. 어느 쪽이든 부분 계산보다
+    // 노출 줄을 생략한다. 시장별 감시 간 가격 시점 차이는 정상 상태이므로 여기서 비교하지 않는다.
+    if (failures.length > 0 || syncError) {
+      const reasons = [
+        failures.length > 0 ? `종목 처리 실패 ${failures.length}건` : null,
+        syncError ? '잔고 동기화 실패' : null,
+      ].filter((reason): reason is string => reason !== null);
+      this.logger.log(`포트폴리오 노출 생략 — ${reasons.join(', ')}`);
+      return result;
+    }
+
+    // ponytail: 장식 한 줄이 관제 본체를 죽이면 안 된다.
+    try {
+      const positions = await this.repository.findPortfolioPositions();
+      const rate = usdKrwRate ? new Prisma.Decimal(usdKrwRate) : null;
+      const exposure = calculatePortfolioExposure(positions, rate);
+      const exposureText = formatPortfolioExposure(exposure);
+      if (!exposureText) {
+        return result;
+      }
+      const summaryText = `${result.summaryText}\n${exposureText}`;
+      return { ...result, summaryText };
+    } catch (error) {
+      this.logger.warn(
+        `포트폴리오 노출 계산 실패 — ${(error as Error).message}`,
+      );
+      return result;
+    }
+  }
+
+  private async resolveUsdKrwRate(rateDate: Date): Promise<string | null> {
     let fetchedRate: string | null = null;
     try {
       fetchedRate = await this.marketData.fetchUsdKrwRate();
