@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 
 const API_BASE_URL = 'https://openapi.tossinvest.com';
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
+// Node 내장 fetch 는 응답이 오지 않아도 자체 기본값(수 분)까지 매달린다. 감시는 보유 종목을
+// 순차 호출하므로 종목 수만큼 그 시간이 누적되고, 그러면 autopilot worker 의 lockDuration
+// (`common/queue/worker-options.constant.ts`) 을 넘겨 BullMQ 가 같은 job 을 stalled 로 보고
+// 재처리한다 — 이 레포가 이미 겪은 중복 실행 경로다.
+// 실측 왕복이 83~118ms 라 15초는 정상 응답을 자르지 않는다.
+const REQUEST_TIMEOUT_MS = 15_000;
 
 interface CachedToken {
   accessToken: string;
@@ -107,7 +113,10 @@ export class TossApiClient {
   ): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(`${API_BASE_URL}${path}`, init);
+      response = await fetch(`${API_BASE_URL}${path}`, {
+        ...init,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
     } catch (error) {
       throw new Error(
         `토스증권 ${operation} 요청 실패: ${errorMessage(error)}`,
