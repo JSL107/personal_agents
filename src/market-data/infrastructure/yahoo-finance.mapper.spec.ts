@@ -58,6 +58,24 @@ describe('mapQuoteToInstrument', () => {
     expect(result).toBeNull();
   });
 
+  // 오염 판정이 "쉼표 유무" 였을 때 `Pfizer, Inc.` 가 거부돼 보유 종목 PFE 가
+  // 시세 조회에서 조용히 빠졌다. 상호의 쉼표는 오염이 아니다.
+  it('상호에 쉼표가 있는 정상 종목은 거부하지 않는다', () => {
+    const result = mapQuoteToInstrument(
+      {
+        shortName: 'Pfizer, Inc.',
+        regularMarketPrice: 25.4,
+        currency: 'USD',
+        fullExchangeName: 'NYSE',
+      },
+      'PFE',
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe('Pfizer, Inc.');
+    expect(result?.market).toBe('NYSE');
+  });
+
   it('shortName 이 심볼 문자열과 같으면 거부한다', () => {
     const result = mapQuoteToInstrument(
       {

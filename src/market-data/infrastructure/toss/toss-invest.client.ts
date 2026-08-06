@@ -142,16 +142,18 @@ export class TossInvestClient implements BrokerHoldingsPort {
     return String(brokerageAccount.accountSeq);
   }
 
+  // 실측(2026-08-06 첫 실호출) — `/accounts` 는 `result` 가 **배열 그 자체**다.
+  //   { "result": [ { accountNo, accountSeq, accountType } ] }
+  //
+  // 같은 API 의 `/holdings` 는 `result` 가 객체이고 그 안에 `items` 배열이 있다.
+  // 엔드포인트마다 형태가 다르므로 한쪽 규약을 다른 쪽에 유추해 적용하면 안 된다 —
+  // 이 파서가 `result.items` 를 기대하고 있어 첫 실호출이 통째로 실패했다.
   private parseAccounts(raw: unknown): AccountResponseItem[] {
     if (Array.isArray(raw)) {
       return raw.filter(isRecord) as AccountResponseItem[];
     }
-    if (
-      isRecord(raw) &&
-      isRecord(raw.result) &&
-      Array.isArray(raw.result.items)
-    ) {
-      return raw.result.items.filter(isRecord) as AccountResponseItem[];
+    if (isRecord(raw) && Array.isArray(raw.result)) {
+      return raw.result.filter(isRecord) as AccountResponseItem[];
     }
     throw new Error('토스증권 계좌 목록 응답 형식이 올바르지 않습니다.');
   }
