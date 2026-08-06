@@ -131,7 +131,9 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let zoneHeight = plan.zones.first?.height ?? 0
     // 위·아래 구역 각각의 천장 줄. 위 구역 천장도 벽이 된 뒤로 둘 다 빼야 한다 —
     // 한쪽만 빼면 그 줄의 가로 벽이 "겹친 벽" 으로 잡혀 통째로 거짓 실패한다.
+    // 격자 맨 아래 벽 줄도 가로로 이어지는 벽이라 같이 뺀다.
     let ceilingRows = Set(plan.zones.map { $0.origin.y + $0.height - 1 })
+        .union(0..<officeFloorWallRows)
     var thickWallRuns: [String] = []
     for y in 0..<zoneAreaRows where !ceilingRows.contains(y) {
         var run = 0
@@ -156,10 +158,11 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
                 else {
                     return false
                 }
-                // 벽걸이는 방 안이 아니라 **왼쪽 칸막이 벽 열**에 걸린다. 방 안만 훑으면
-                // 제자리에 걸린 시계·화이트보드를 "빠졌다" 고 잡는다.
+                // 벽걸이는 방 안이 아니라 **칸막이 벽 열**에 걸린다. 방 안만 훑으면
+                // 제자리에 걸린 시계·화이트보드를 "빠졌다" 고 잡는다. 어느 쪽 벽인지는
+                // 배치와 같은 함수로 물어본다 — 여기에 x 를 하드코딩하면 규칙이 둘이 된다.
                 if placement.kind.isWallMounted {
-                    return placement.tile.x == zone.origin.x
+                    return placement.tile.x == officeWallMountColumn(zoneOriginX: zone.origin.x)
                 }
                 return placement.tile.x > zone.origin.x
                     && placement.tile.x < zone.origin.x + zone.width - 1
@@ -191,8 +194,10 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let expectedCorridor = Set(
         (0..<plan.rows).flatMap { y -> [TilePoint] in
             (0..<plan.columns).compactMap { x -> TilePoint? in
-                // 격자 좌우 최외곽·최상단은 바깥벽이 덮으므로 복도가 아니다.
-                guard x > 0, x < plan.columns - 1, y < plan.rows - officeOuterWallRows else {
+                // 격자 좌우 최외곽·최상단·최하단은 바깥벽이 덮으므로 복도가 아니다.
+                guard x > 0, x < plan.columns - 1,
+                    y >= officeFloorWallRows, y < plan.rows - officeOuterWallRows
+                else {
                     return nil
                 }
                 let onCorridorColumn = officeCorridorColumns.contains(x)
@@ -323,16 +328,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expect(kind.nativeHeight > 0, "\(kind.rawValue) 원본 높이 실측값 존재")
     }
 
-    // **보정 후 폭이 점유 칸을 넘지 않는다.** 렌더가 배율을 가로·세로에 같이 곱하므로
+    // **보정 후 폭이 허용 상한을 넘지 않는다.** 렌더가 배율을 가로·세로에 같이 곱하므로
     // 높이만 보고 키우면 폭이 옆 칸을 침범한다. 책장은 개발·리뷰 부서와 상단 밴드에서
     // 두 개가 인접 배치되므로 넘친 폭이 곧 겹침이고, 옆 칸 사람과 상태 링을 가린다.
     // (실제로 겪었다 — 높이 환산만 적용한 첫 구현에서 책장이 50.4px 로 10px 겹쳤다.)
+    //
+    // 상한은 딱 1칸이었다가 `officeFurnitureWidthCapTiles`(1.15) 로 완화됐다 — 1칸이면
+    // 폭 넓은 에셋의 **높이까지** 눌러 책상 97%·소파 85%·책장 79% 만 반영됐다. 상한 자체를
+    // 없애지는 않는다. 여기서 상수를 곱해 읽는 이유는 정책이 바뀌면 이 검사도 따라오게 하되
+    // 상한이 사라지는 것은 막기 위해서다.
+    t.expect(
+        officeFurnitureWidthCapTiles >= 1.0 && officeFurnitureWidthCapTiles <= 1.25,
+        "가구 폭 상한이 1.0~1.25칸 (실제 \(officeFurnitureWidthCapTiles))"
+    )
     for kind in FurnitureKind.allCases {
         let renderedWidth = kind.nativeSize.width * kind.sizeBoost
-        let allowed = Double(kind.footprint.width) * officeReferenceTileSize
+        let allowed =
+            Double(kind.footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
         t.expect(
             renderedWidth <= allowed,
-            "\(kind.rawValue) 보정 후 폭이 점유 칸 이하 (실제 \(renderedWidth) vs \(allowed))"
+            "\(kind.rawValue) 보정 후 폭이 상한 이하 (실제 \(renderedWidth) vs \(allowed))"
         )
     }
 
@@ -344,13 +359,31 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "2인·3인 소파가 같은 배율"
     )
 
-    // 세로 픽셀이 높이가 아닌 세 종은 환산에서 빠져야 한다 — 벽시계를 지름 30cm 로 환산하면
-    // 절반으로 줄어 보이지 않게 되고, 회의 테이블의 세로는 깊이(원근)다.
-    t.expectNil(FurnitureKind.clock.targetHeightCm, "벽시계는 높이 환산 제외")
-    t.expectNil(FurnitureKind.whiteboard.targetHeightCm, "화이트보드는 높이 환산 제외")
-    t.expectNil(FurnitureKind.meetingTable.targetHeightCm, "회의 테이블은 높이 환산 제외")
-    t.expectEqual(FurnitureKind.clock.sizeBoost, 1.0, "벽시계는 원본 크기")
-    t.expectEqual(FurnitureKind.whiteboard.sizeBoost, 1.0, "화이트보드는 원본 크기")
+    // **환산 예외는 "세로가 높이가 아닌 것" 뿐이다** — 위에서 내려다본 회의 테이블(세로가
+    // 깊이)과 바닥 깔개(애초에 높이가 없다). 벽에 걸린 정면도는 세로가 곧 높이라 성립한다.
+    //
+    // 한때 벽걸이 10종과 시계·화이트보드·문까지 13종이 예외였다. 그 결과 그것들만 원본
+    // 픽셀로 남아 **시계가 실물 축척의 2배, 화이트보드는 40% 크기**로 그려졌다. 예외를
+    // 늘리면 같은 일이 반복되므로 목록으로 못박는다 — 새 가구에 실측값을 안 채우면 여기서 걸린다.
+    let heightExempt: Set<FurnitureKind> = [.meetingTable, .rugGreen, .rugBeige, .rugNavy]
+    for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
+        t.expect(
+            kind.targetHeightCm != nil,
+            "\(kind.rawValue) 실물 높이 실측값 존재 (예외는 회의 테이블·깔개뿐)"
+        )
+    }
+    for kind in heightExempt {
+        t.expectNil(kind.targetHeightCm, "\(kind.rawValue) 은 높이 환산 제외")
+    }
+    // 깔개는 바닥 장식이라 밟고 지나갈 수 있어야 한다 — 막으면 소파 앞이 통째로 고립된다.
+    for kind in FurnitureKind.allCases where kind.isFloorDecor {
+        t.expect(kind.isWalkThrough, "\(kind.rawValue) 은 밟고 지나갈 수 있다")
+    }
+    // 시계는 환산에 들어오면서 **작아진다**. 되돌아가면(예외로 빼면) 1.0 이 되어 걸린다.
+    t.expect(
+        FurnitureKind.clock.sizeBoost < 1.0,
+        "벽시계가 원본보다 작아짐 (실제 \(FurnitureKind.clock.sizeBoost))"
+    )
 
     // 3단 책장은 이전 일괄 보정(책상·회의테이블·소파만)에서 빠져 원본 크기로 방치돼 있었다.
     // 지금은 보정을 받지만 **폭 상한에 걸려 목표 높이를 다 채우지 못한다** — 환산 목표는
@@ -358,28 +391,35 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 세로로 길어서, 높이를 맞추면 폭이 1칸을 넘어 인접 책장·옆 칸 사람과 겹친다.
     // 배율로는 여기까지가 한계이고 해소는 에셋 재제작(3단계) 몫이다.
     //
-    // 기준을 68% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65% 로 떨어져 걸린다.
+    // 기준을 78% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65%, 폭 상한을 1칸으로
+    // 되돌리면 70% 로 떨어져 둘 다 걸린다.
     let bookshelf = FurnitureKind.bookshelf
     let bookshelfHeight = bookshelf.nativeHeight * bookshelf.sizeBoost
     t.expect(
-        bookshelfHeight >= characterHeight * 0.68,
-        "책장이 사람 키의 68% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
+        bookshelfHeight >= characterHeight * 0.78,
+        "책장이 사람 키의 78% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
     )
     // 폭 상한이 결정한 배율을 그대로 쓴다 — 상한 안에서 최대한 키운 상태여야 한다.
     // 누가 배율을 임의값으로 되돌리면 여기서 걸린다.
     t.expectEqual(
         bookshelf.sizeBoost,
-        officeReferenceTileSize / bookshelf.nativeSize.width,
+        officeFurnitureWidthCapTiles * officeReferenceTileSize / bookshelf.nativeSize.width,
         "책장 배율이 폭 상한값과 일치"
     )
 
-    // 어떤 가구도 사람보다 높지 않다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을 본다.
-    // 회의 테이블은 세로가 깊이라 이 비교가 성립하지 않아 제외한다.
-    for kind in FurnitureKind.allCases where kind != .meetingTable {
+    // 가구가 사람보다 크게 솟지 않는다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을
+    // 본다. 관제 화면에서 가구가 옆 칸 사람과 상태 링을 덮으면 정보가 사라진다.
+    //
+    // 제외 대상은 두 부류다. 세로가 높이가 아닌 것(회의 테이블·깔개)은 비교 자체가 성립하지
+    // 않는다. 자판기(180cm)는 **실물이 사람보다 높은 물건**이라 사람 키로 자르면 실측 환산을
+    // 되돌리는 셈이 되므로, 대신 1.2배까지만 허용해 무제한으로 커지는 것을 막는다.
+    let tallerThanPeople: Set<FurnitureKind> = [.vendingMachine]
+    for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
         let height = kind.nativeHeight * kind.sizeBoost
+        let allowed = characterHeight * (tallerThanPeople.contains(kind) ? 1.2 : 1.0)
         t.expect(
-            height <= characterHeight,
-            "\(kind.rawValue) 높이가 사람 키 이하 (실제 \(height) vs \(characterHeight))"
+            height <= allowed,
+            "\(kind.rawValue) 높이가 상한 이하 (실제 \(height) vs \(allowed))"
         )
     }
 
@@ -420,8 +460,9 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // === 복도 ===
     // 복도가 실제로 이어져 있어야 한다. 한 칸이라도 벽·가구에 막히면 그 위·아래 방들이
     // 통째로 고립되고, 그때 화면에는 "사람이 자기 자리에 못 앉는" 증상으로만 나타난다.
+    // 아래 끝은 하단 바깥벽이라 복도가 거기서 끊기는 것이 정상이다 — 격자 맨 아래 줄부터 센다.
     for column in officeCorridorColumns {
-        let blockedTiles = (0..<(plan.rows - officeOuterWallRows))
+        let blockedTiles = (officeFloorWallRows..<(plan.rows - officeOuterWallRows))
             .filter { !plan.walkable.contains(TilePoint(x: column, y: $0)) }
         t.expectEqual(blockedTiles.count, 0, "세로 복도 x=\(column) 막힌 줄: \(blockedTiles)")
     }
@@ -487,6 +528,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             "\(zone.department.label) 방의 문 없는 구멍: "
                 + "\(bare.map { "(\($0.x),\($0.y))" }.sorted())"
         )
+    }
+
+    // === 문 여닫이 ===
+    // 평면도는 **닫힌 문만** 놓는다. 여는 판정은 렌더가 사람 위치를 보고 매 걸음 내린다
+    // (`officeDoorIsOpen`). 여기서 열린 문이 하나라도 놓이면 그 짝은 사람이 없어도 영영
+    // 열린 채로 남는다 — 열두 짝이 전부 그랬던 것이 이 변경의 출발점이다.
+    let alwaysOpen = plan.furniture.filter { $0.kind == .doorOpen }
+    t.expectEqual(
+        alwaysOpen.count, 0,
+        "평면도에 열린 문이 고정 배치됨: \(alwaysOpen.map { "(\($0.tile.x),\($0.tile.y))" })"
+    )
+    t.expect(!doorTiles.isEmpty, "문이 하나 이상 배치됐다")
+    // 판정 자체 — 근처 판정이 무력해지면(늘 참/늘 거짓) 문이 계속 열려 있거나 아예 안 열린다.
+    if let door = doorTiles.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }).first {
+        let front = TilePoint(x: door.x, y: door.y + 1)
+        let far = TilePoint(x: door.x, y: door.y + 2)
+        t.expect(!officeDoorIsOpen(door: door, occupied: []), "아무도 없으면 닫힌다")
+        t.expect(officeDoorIsOpen(door: door, occupied: [door]), "문 칸에 서면 열린다")
+        t.expect(officeDoorIsOpen(door: door, occupied: [front]), "문 바로 앞에 서면 열린다")
+        t.expect(!officeDoorIsOpen(door: door, occupied: [far]), "두 칸 떨어지면 닫힌다")
     }
 
     // 밴드 세 방도 벽으로 갈려야 한다 — 바닥재만으로 나누면 화면 위쪽이 "가구 놓인 띠 하나"
@@ -841,15 +902,21 @@ func runOfficePathfindingTests(_ t: TestRunner) {
     // 전부 몰린 상단과 벽이 텅 빈 아래로 화면이 갈린다.
     //
     // 벽 한 칸을 이웃 방과 공유하므로 `wallDepartment`(먼저 나온 구역을 반환) 로 세면 개발실
-    // 벽걸이가 기획실 것으로 잡힌다. 각 방이 자기 왼쪽 벽만 쓰는 규칙을 그대로 검사한다.
+    // 벽걸이가 기획실 것으로 잡힌다. 각 방이 자기 벽 한 열만 쓰는 규칙을 그대로 검사한다.
     for zone in plan.zones {
+        let mountColumn = officeWallMountColumn(zoneOriginX: zone.origin.x)
         let mounted = plan.furniture.filter { placement in
             placement.kind.isWallMounted
-                && placement.tile.x == zone.origin.x
+                && placement.tile.x == mountColumn
                 && placement.tile.y >= zone.origin.y
                 && placement.tile.y < zone.origin.y + zone.height
         }
         t.expect(!mounted.isEmpty, "\(zone.department.label) 방 벽에 걸린 물건 1개 이상")
+        // 걸린 자리가 건물 바깥벽(격자 좌우 최외곽)이면 화면 가장자리에 반쯤 걸린 그림이 된다.
+        t.expect(
+            mountColumn > 0 && mountColumn < plan.columns - 1,
+            "\(zone.department.label) 벽걸이가 바깥벽이 아닌 칸막이에 걸림 (열 \(mountColumn))"
+        )
     }
 
     // 벽걸이끼리 같은 칸을 나눠 쓰면 나중에 그린 쪽만 보인다.
@@ -952,4 +1019,42 @@ private func runDeskPaperTests(_ t: TestRunner) {
             "\(count)장이 \(count - 1)장보다 넓다"
         )
     }
+
+    // === 책상 위 개인 소품 ===
+    let plan = officeFloorPlan(agents: sampleAgents)
+    // 같은 사람에게는 늘 같은 물건이어야 한다. 무작위로 고르면 폴링(5초)마다 서른 개 책상의
+    // 물건이 한꺼번에 갈려 화면이 깜빡이는 것으로 보인다.
+    for desk in plan.desks {
+        t.expectEqual(
+            officeDeskProp(agentType: desk.agentType),
+            officeDeskProp(agentType: desk.agentType),
+            "\(desk.agentType) 소품이 호출마다 같다"
+        )
+        t.expect(
+            officeDeskPropSprites.contains(officeDeskProp(agentType: desk.agentType)),
+            "\(desk.agentType) 소품이 후보 목록 안"
+        )
+    }
+    // 한 종으로 쏠리면 책상이 전부 같아 보여 소품을 넣은 목적이 사라진다 — 해시가 특정 값에
+    // 몰리는 것을 실제 에이전트 목록으로 잡는다.
+    let propVariety = Set(plan.desks.map { officeDeskProp(agentType: $0.agentType) })
+    t.expect(
+        propVariety.count >= 4,
+        "책상 소품이 최소 4종 쓰인다 (실제 \(propVariety.count)종 / 후보 \(officeDeskPropSprites.count))"
+    )
+
+    // 소품이 책상 상판을 벗어나지 않는지 — 서류 더미와 같은 이유(옆 칸 허공에 뜬 물체로 보인다).
+    // 서류는 오른쪽, 소품은 왼쪽이라 부호가 반대다.
+    t.expect(
+        officeDeskPropOriginTiles.x < 0 && officeDeskPaperOriginTiles.x > 0,
+        "소품과 서류가 책상 좌우로 갈렸다"
+    )
+    t.expect(
+        abs(officeDeskPropOriginTiles.x) < deskHalfWidthTiles,
+        "소품 자리 \(abs(officeDeskPropOriginTiles.x)) 가 책상 반폭 \(deskHalfWidthTiles) 안"
+    )
+    t.expect(
+        officeDeskPropOriginTiles.y < deskHeightTiles,
+        "소품 자리 높이 \(officeDeskPropOriginTiles.y) 가 책상 높이 \(deskHeightTiles) 안"
+    )
 }
