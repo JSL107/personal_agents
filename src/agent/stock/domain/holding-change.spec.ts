@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client';
 
-import { detectHoldingChanges, HoldingPosition } from './holding-change';
+import {
+  buildHoldingChangeFingerprint,
+  detectHoldingChanges,
+  HoldingPosition,
+} from './holding-change';
 
 const createPosition = (
   overrides: Partial<HoldingPosition> = {},
@@ -218,5 +222,98 @@ describe('detectHoldingChanges', () => {
 
     expect(detectHoldingChanges([createPosition()], afterSync)).toHaveLength(1);
     expect(detectHoldingChanges(afterSync, afterSync)).toEqual([]);
+  });
+
+  it('저장 정밀도 다섯째 자리는 DB 와 같은 방향(half-up)으로 반올림한다', () => {
+    const changes = detectHoldingChanges(
+      [createPosition({ avgPrice: new Prisma.Decimal('11044.7000') })],
+      [createPosition({ avgPrice: new Prisma.Decimal('11044.70005') })],
+    );
+
+    expect(changes).toEqual([
+      expect.objectContaining({
+        kind: 'AVG_PRICE_CHANGED',
+        avgPrice: '11044.7001',
+      }),
+    ]);
+  });
+
+  // toNumber() 로 비교하면 두 값이 같은 double 로 뭉개져(1e14 부근 double 간격은 0.015625)
+  // 실제 수량 변화가 조용히 누락된다. Decimal(18,4) 가 허용하는 값이므로 경계를 남기지 않는다.
+  it('안전 정수 범위를 넘는 값도 넷째 자리 차이를 구분한다', () => {
+    const previous = new Prisma.Decimal('99999999999999.9998');
+    const current = new Prisma.Decimal('99999999999999.9999');
+    expect(previous.toNumber() * 10_000).toBe(current.toNumber() * 10_000);
+
+    const changes = detectHoldingChanges(
+      [createPosition({ quantity: previous })],
+      [createPosition({ quantity: current })],
+    );
+
+    expect(changes).toEqual([
+      expect.objectContaining({
+        kind: 'INCREASED',
+        previousQuantity: '99999999999999.9998',
+        quantity: '99999999999999.9999',
+      }),
+    ]);
+  });
+});
+
+describe('buildHoldingChangeFingerprint', () => {
+  const effectiveDate = new Date('2026-08-06T00:00:00.000Z');
+  const [change] = detectHoldingChanges(
+    [createPosition()],
+    [createPosition({ quantity: new Prisma.Decimal('80') })],
+  );
+
+  it('같은 사건은 같은 지문이 된다', () => {
+    const [again] = detectHoldingChanges(
+      [createPosition()],
+      [createPosition({ quantity: new Prisma.Decimal('80') })],
+    );
+
+    expect(buildHoldingChangeFingerprint({ change, effectiveDate })).toBe(
+      buildHoldingChangeFingerprint({ change: again, effectiveDate }),
+    );
+  });
+
+  // 겹친 두 실행은 브로커를 각각 호출하므로 원본 정밀도가 다를 수 있다. 지문이 그것 때문에
+  // 갈리면 중복 차단이 정작 필요한 순간에 무력해진다.
+  it('브로커 원본 정밀도가 달라도 저장 정밀도가 같으면 같은 지문이 된다', () => {
+    const [noisy] = detectHoldingChanges(
+      [createPosition({ avgPrice: new Prisma.Decimal('11044.70001') })],
+      [
+        createPosition({
+          quantity: new Prisma.Decimal('80.00002'),
+          avgPrice: new Prisma.Decimal('11044.699996'),
+        }),
+      ],
+    );
+
+    expect(
+      buildHoldingChangeFingerprint({ change: noisy, effectiveDate }),
+    ).toBe(buildHoldingChangeFingerprint({ change, effectiveDate }));
+  });
+
+  // 하루에 두 번 변한 종목이 중복으로 오인돼 사라지면 안 된다.
+  it('같은 날 같은 종목의 두 번째 매매는 다른 지문이 된다', () => {
+    const [second] = detectHoldingChanges(
+      [createPosition({ quantity: new Prisma.Decimal('80') })],
+      [createPosition({ quantity: new Prisma.Decimal('120') })],
+    );
+
+    expect(
+      buildHoldingChangeFingerprint({ change: second, effectiveDate }),
+    ).not.toBe(buildHoldingChangeFingerprint({ change, effectiveDate }));
+  });
+
+  it('날짜가 다르면 같은 수량 변화라도 다른 지문이 된다', () => {
+    expect(
+      buildHoldingChangeFingerprint({
+        change,
+        effectiveDate: new Date('2026-08-07T00:00:00.000Z'),
+      }),
+    ).not.toBe(buildHoldingChangeFingerprint({ change, effectiveDate }));
   });
 });

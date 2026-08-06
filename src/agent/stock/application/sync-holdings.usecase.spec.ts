@@ -134,6 +134,33 @@ describe('SyncHoldingsUsecase', () => {
       currency: 'KRW',
     });
     expect(result).toMatchObject({ synced: 0, zeroed: 1 });
+    // 이 시나리오의 핵심 산출물. 배선이 빠져도 synced·zeroed 만 보면 통과한다.
+    expect(result.changes).toEqual([
+      {
+        tickerId: 99,
+        tickerName: '삼성전자',
+        symbol: '005930',
+        kind: 'SOLD_ALL',
+        previousQuantity: '100',
+        quantity: '0',
+        previousAvgPrice: '65000',
+        avgPrice: '65000',
+        currency: 'KRW',
+      },
+    ]);
+    expect(recordHoldingChanges).toHaveBeenCalledWith([
+      {
+        tickerId: 99,
+        kind: 'SOLD_ALL',
+        previousQuantity: '100',
+        quantity: '0',
+        previousAvgPrice: '65000',
+        avgPrice: '65000',
+        currency: 'KRW',
+        effectiveDate: new Date('2026-07-22T00:00:00.000Z'),
+        fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    ]);
   });
 
   it('직전 잔고를 새 값으로 덮어쓰기 전에 읽어 비교 기준선으로 쓴다', async () => {
@@ -177,13 +204,14 @@ describe('SyncHoldingsUsecase', () => {
         avgPrice: '65000',
         currency: 'KRW',
         effectiveDate: new Date('2026-07-22T00:00:00.000Z'),
+        fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
       },
     ]);
   });
 
-  // 사건 적재는 스냅샷 갱신 뒤에 온다. 뒤집으면 중간 실패 시 스냅샷에 없는 매매가 이력에 남고
-  // 다음 실행이 같은 사건을 다시 적재한다.
-  it('스냅샷을 모두 갱신한 뒤에 사건을 적재한다', async () => {
+  // 사건이 스냅샷보다 먼저 남아야 한다. 스냅샷을 먼저 덮어쓰면 그 뒤 적재가 실패했을 때
+  // 재실행이 "변화 없음"으로 판정해 그 매매가 영구히 사라진다.
+  it('스냅샷을 덮어쓰기 전에 사건을 적재한다', async () => {
     fetchHoldings.mockResolvedValue([
       createHolding({ quantity: new Prisma.Decimal('180') }),
     ]);
@@ -195,10 +223,29 @@ describe('SyncHoldingsUsecase', () => {
 
     await usecase.execute();
 
-    const lastUpsertOrder = Math.max(...upsertHolding.mock.invocationCallOrder);
-    expect(recordHoldingChanges.mock.invocationCallOrder[0]).toBeGreaterThan(
-      lastUpsertOrder,
+    const firstUpsertOrder = Math.min(
+      ...upsertHolding.mock.invocationCallOrder,
     );
+    expect(recordHoldingChanges.mock.invocationCallOrder[0]).toBeLessThan(
+      firstUpsertOrder,
+    );
+  });
+
+  // 적재가 실패하면 스냅샷은 그대로여야 한다 — 그래야 재실행이 같은 사건을 다시 계산해 복구한다.
+  it('사건 적재가 실패하면 스냅샷을 갱신하지 않고 실패를 올린다', async () => {
+    fetchHoldings.mockResolvedValue([
+      createHolding({ quantity: new Prisma.Decimal('180') }),
+    ]);
+    upsertTickerFromBroker.mockResolvedValue(11);
+    findCurrentBrokerHoldings.mockResolvedValue([
+      createPosition({ tickerId: 11 }),
+    ]);
+    // Once — clearAllMocks 는 호출 기록만 지우고 구현은 남기므로, 이 거부가 다음 테스트로 샌다.
+    recordHoldingChanges.mockRejectedValueOnce(new Error('DB down'));
+
+    await expect(usecase.execute()).rejects.toThrow('DB down');
+
+    expect(upsertHolding).not.toHaveBeenCalled();
   });
 
   it('변화가 없으면 결과에 빈 목록을 담고 적재를 호출하되 아무 행도 넘기지 않는다', async () => {

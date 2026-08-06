@@ -382,9 +382,10 @@ model Holding {
 // 매매 사건 이력. Holding 은 "지금 무엇을 들고 있는가"(상태)만 담아서 "어제 무엇을 샀는가"(사건)를
 // 알 수 없다. 동기화가 직전 스냅샷과 새로 읽은 잔고를 비교해 그 차이를 여기에 사건으로 남긴다.
 //
-// 유니크 제약을 두지 않는다 — 잔고는 하루에 두 번(국내 감시·미국 감시) 갱신되므로 같은 종목이
-// 같은 effectiveDate 에 두 번 변할 수 있다(오전에 +30, 오후에 +20). (tickerId, effectiveDate, kind)
-// 를 유니크로 잡으면 뒤에 온 실제 매매가 앞의 것을 덮어써 사라진다.
+// 중복 차단은 (tickerId, effectiveDate, kind) 가 아니라 fingerprint 로 한다. 잔고는 하루에 두 번
+// (국내 감시·미국 감시) 갱신되므로 같은 종목이 같은 날 두 번 변할 수 있어(오전 200→230,
+// 오후 230→250) 그 조합을 유니크로 잡으면 뒤에 온 실제 매매가 사라진다. 지문은 수량·평단까지
+// 포함하므로 두 번째 매매는 살아남고, 겹친 실행이 계산한 똑같은 사건만 걸러진다.
 model HoldingChange {
   id               Int      @id @default(autoincrement())
   tickerId         Int      @map("ticker_id")
@@ -396,6 +397,8 @@ model HoldingChange {
   avgPrice         Decimal  @map("avg_price") @db.Decimal(18, 4)
   currency         String
   effectiveDate    DateTime @map("effective_date") @db.Date
+  // sha256(tickerId, effectiveDate, kind, 저장 정밀도로 정규화한 수량·평단) — 겹친 실행의 중복 적재 차단.
+  fingerprint      String   @unique
   detectedAt       DateTime @default(now()) @map("detected_at")
 
   @@index([effectiveDate])
