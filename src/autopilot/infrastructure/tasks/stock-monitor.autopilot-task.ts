@@ -304,13 +304,12 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       collectedHoldings.every(({ today, previousStoredDate }) =>
         isMarketClosed(today.tradeDate, previousStoredDate),
       );
-    // 상태는 사건과 달리 판정·저장 분기와 무관하다 — 봉만 있으면 계산된다. 그래서 휴장 추정
-    // 경로에서도 그대로 보여준다(임계 밖이라는 사실은 휴장이라고 사라지지 않는다).
-    const avgPriceStatuses = collectedHoldings
-      .map(({ holding, today }) => inspectAvgPriceStatus(holding, today))
-      .filter((status): status is AvgPriceStatus => status !== null);
-
     if (marketClosed) {
+      // 전 종목이 같은 이유로 새 봉이 없는 날이다. 임계 밖이라는 사실은 휴장이라고 사라지지
+      // 않으므로 판정을 건너뛰는 이 경로에서도 상태는 그대로 보여준다.
+      const closedDayStatuses = collectedHoldings
+        .map(({ holding, today }) => inspectAvgPriceStatus(holding, today))
+        .filter((status): status is AvgPriceStatus => status !== null);
       this.logger.log(
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
@@ -327,7 +326,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
                   marketClosed: true,
                 }),
               },
-              avgPriceStatuses,
+              closedDayStatuses,
             ),
             sync.changes,
           ),
@@ -340,7 +339,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           failureCount: failures.length,
           lastTradeDate: lastTradeDate || null,
           marketClosed: true,
-          avgPriceBreachCount: avgPriceStatuses.length,
+          avgPriceBreachCount: closedDayStatuses.length,
         }),
       };
     }
@@ -355,6 +354,19 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     );
 
     let checkedCount = 0;
+    // 점검에 성공한 종목만 담는다. `collectedHoldings` 전체를 훑으면 오늘 봉을 못 받아
+    // "신규 거래일 봉 없음" 으로 실패 처리될 종목(거래정지·종목별 지연)까지 **전날 가격으로**
+    // 섞여 들어와, 최신 거래일 아래에 지금 상태인 것처럼 표시되고 건수도 부풀려진다.
+    const avgPriceStatuses: AvgPriceStatus[] = [];
+    const collectStatus = (
+      entry: HoldingSnapshot & { tickerId: number },
+      bar: DailyBar,
+    ): void => {
+      const status = inspectAvgPriceStatus(entry, bar);
+      if (status) {
+        avgPriceStatuses.push(status);
+      }
+    };
     for (const {
       holding,
       today,
@@ -376,6 +388,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
               }
             }
             checkedCount += 1;
+            collectStatus(holding, today);
           } catch (error) {
             failures.push(
               `${holding.symbol}: 알림 복구 실패 — ${(error as Error).message}`,
@@ -423,6 +436,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
       anomalies.push(...holdingAnomalies);
       checkedCount += 1;
+      collectStatus(holding, today);
     }
 
     this.logger.log(
