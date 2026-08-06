@@ -233,8 +233,9 @@ final class OfficeScene: SKScene {
         renderFloor()
         renderZoneLabels()
         renderFurniture()
-        // 책상이 새로 만들어진 뒤여야 한다 — 서류는 책상 노드의 자식으로 붙는다.
+        // 책상이 새로 만들어진 뒤여야 한다 — 서류·소품은 책상 노드의 자식으로 붙는다.
         renderDeskPapers(agents: agents)
+        renderDeskProps()
         renderPresident()
 
         homeSeats = Dictionary(
@@ -695,6 +696,34 @@ final class OfficeScene: SKScene {
                 holder.addChild(sheet)
             }
             desk.addChild(holder)
+        }
+    }
+
+    /// 책상마다 개인 소품 하나를 얹는다 — 노트북·머그·책더미·스탠드·펜꽂이·화분·서류 중 하나.
+    ///
+    /// 서류 더미(`renderDeskPapers`)와 같은 이유로 책상 노드의 자식으로 붙인다. 창 크기가
+    /// 바뀌면 책상이 통째로 다시 만들어지므로, 씬에 직접 붙이면 위치를 손으로 다시 맞춰야 한다.
+    ///
+    /// 무엇을 놓을지는 코어가 agentType 으로 정한다(`officeDeskProp`) — 여기서 고르면
+    /// 스냅샷마다 바뀌어 책상 위가 깜빡인다.
+    private func renderDeskProps() {
+        for (agentType, desk) in deskNodes {
+            desk.childNode(withName: "prop")?.removeFromParent()
+            guard let texture = SpriteLoader.texture(officeDeskProp(agentType: agentType)) else {
+                continue  // 에셋이 없으면 빈 책상으로 둔다
+            }
+            let node = SKSpriteNode(texture: texture)
+            node.name = "prop"
+            node.anchorPoint = CGPoint(x: 0.5, y: 0)
+            let base = texture.size()
+            node.size = CGSize(width: base.width * spriteScale, height: base.height * spriteScale)
+            node.position = CGPoint(
+                x: tileSize * CGFloat(officeDeskPropOriginTiles.x),
+                y: tileSize * CGFloat(officeDeskPropOriginTiles.y)
+            )
+            // 책상 상판보다 위에. 서류(0.01~)와 겹치지 않는 반대편이라 순서 다툼은 없다.
+            node.zPosition = 0.01
+            desk.addChild(node)
         }
     }
 

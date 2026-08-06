@@ -1019,4 +1019,42 @@ private func runDeskPaperTests(_ t: TestRunner) {
             "\(count)장이 \(count - 1)장보다 넓다"
         )
     }
+
+    // === 책상 위 개인 소품 ===
+    let plan = officeFloorPlan(agents: sampleAgents)
+    // 같은 사람에게는 늘 같은 물건이어야 한다. 무작위로 고르면 폴링(5초)마다 서른 개 책상의
+    // 물건이 한꺼번에 갈려 화면이 깜빡이는 것으로 보인다.
+    for desk in plan.desks {
+        t.expectEqual(
+            officeDeskProp(agentType: desk.agentType),
+            officeDeskProp(agentType: desk.agentType),
+            "\(desk.agentType) 소품이 호출마다 같다"
+        )
+        t.expect(
+            officeDeskPropSprites.contains(officeDeskProp(agentType: desk.agentType)),
+            "\(desk.agentType) 소품이 후보 목록 안"
+        )
+    }
+    // 한 종으로 쏠리면 책상이 전부 같아 보여 소품을 넣은 목적이 사라진다 — 해시가 특정 값에
+    // 몰리는 것을 실제 에이전트 목록으로 잡는다.
+    let propVariety = Set(plan.desks.map { officeDeskProp(agentType: $0.agentType) })
+    t.expect(
+        propVariety.count >= 4,
+        "책상 소품이 최소 4종 쓰인다 (실제 \(propVariety.count)종 / 후보 \(officeDeskPropSprites.count))"
+    )
+
+    // 소품이 책상 상판을 벗어나지 않는지 — 서류 더미와 같은 이유(옆 칸 허공에 뜬 물체로 보인다).
+    // 서류는 오른쪽, 소품은 왼쪽이라 부호가 반대다.
+    t.expect(
+        officeDeskPropOriginTiles.x < 0 && officeDeskPaperOriginTiles.x > 0,
+        "소품과 서류가 책상 좌우로 갈렸다"
+    )
+    t.expect(
+        abs(officeDeskPropOriginTiles.x) < deskHalfWidthTiles,
+        "소품 자리 \(abs(officeDeskPropOriginTiles.x)) 가 책상 반폭 \(deskHalfWidthTiles) 안"
+    )
+    t.expect(
+        officeDeskPropOriginTiles.y < deskHeightTiles,
+        "소품 자리 높이 \(officeDeskPropOriginTiles.y) 가 책상 높이 \(deskHeightTiles) 안"
+    )
 }

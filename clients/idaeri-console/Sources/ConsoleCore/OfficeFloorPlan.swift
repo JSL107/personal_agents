@@ -74,6 +74,45 @@ public let officeDeskPaperMaxCount: Int = 5
 /// 안에 좌우 여백이 있어 실제 상판은 그보다 좁다(0.30 에서 상판 경계에 걸쳤다, 실측).
 public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.22, 0.46)
 
+// MARK: - 책상 위 개인 소품
+
+/// 책상마다 하나씩 얹는 개인 소품. 사람이 스물아홉인데 책상이 전부 똑같아서, 앉은 사람의
+/// 머리색만 다르고 자리는 복사한 듯 같아 보였다.
+///
+/// 에셋 일곱 장은 진작 만들어져 있었는데(`prop-*.png`) 아무도 그리지 않았다 —
+/// `draw-props.py` 가 파일만 뽑고 배선이 없었다.
+public let officeDeskPropSprites = [
+    "prop-laptop",
+    "prop-mug",
+    "prop-book-stack",
+    "prop-desk-lamp",
+    "prop-pen-holder",
+    "prop-plant-desk",
+    "prop-papers",
+]
+
+/// 그 사람의 책상에 놓을 소품 하나를 고른다(순수·결정론).
+///
+/// **스냅샷마다 바뀌면 안 된다.** 무작위로 고르면 5초 폴링마다 책상 위 물건이 갈리고,
+/// 서른 개 책상에서 한꺼번에 일어나 화면이 깜빡이는 것으로 보인다. agentType 은 사람마다
+/// 고정이므로 거기서 유도한다.
+public func officeDeskProp(agentType: String) -> String {
+    let hash = agentType.unicodeScalars.reduce(0) { accumulated, scalar in
+        (accumulated * 31 + Int(scalar.value)) % 1_000_003
+    }
+    return officeDeskPropSprites[hash % officeDeskPropSprites.count]
+}
+
+/// 소품을 놓을 자리(책상 발밑 기준, 타일 배수).
+///
+/// 서류 더미가 오른쪽(`officeDeskPaperOriginTiles.x` = 0.22)을 쓰므로 왼쪽에 둔다 — 같은 쪽에
+/// 두면 처리량이 많은 사람의 서류가 소품을 덮는다.
+///
+/// **책상 반폭(0.51칸)보다 훨씬 안쪽이어야 한다.** -0.24 로 뒀다가 렌더를 보니 소품이 상판
+/// 왼쪽 모서리에 걸쳐 책상 밖으로 반쯤 나갔다. 스프라이트 폭(37도트) 안에서 실제 상판이
+/// 차지하는 범위가 그보다 좁아서다 — 오른쪽 아래는 서류함이 물고 있다. 눈으로 확정한 값.
+public let officeDeskPropOriginTiles: (x: Double, y: Double) = (-0.15, 0.52)
+
 /// 한 장 쌓을 때마다 위로 올리는 간격(타일 배수)과 좌우로 어긋내는 폭.
 ///
 /// 낱장이 세로 4도트라 딱 4도트씩 올리면 아래 장이 완전히 가려져 한 장처럼 보인다. 절반쯤만
