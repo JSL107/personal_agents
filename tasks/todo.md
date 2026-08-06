@@ -33,6 +33,25 @@
 
 ---
 
+# 학습 브리핑 Notion 실발행 확인 스크립트 (2026-08-06)
+
+**Goal:** `/tmp/hermes2.txt`를 머지된 조사 파서, CTO 판정, DB 원장, Notion publisher에 순서대로 태우는 1회성 확인 스크립트를 작성한다.
+
+**Constraints:** 스크립트는 실행하지 않는다. `AppModule`, `StudyBriefCronModule`, `CronIdempotencyService`를 사용하지 않는다. `.env`, DB schema, git index/commit/push는 건드리지 않는다. 검증은 `pnpm exec tsc --noEmit`만 수행한다.
+
+- [x] 유사 스크립트와 parser/prompt/provider/repo collector/Prisma/Notion 실제 시그니처를 확인한다.
+- [x] `scripts/tmp-notion-publish-check.ts`에 단계별 파싱, CTO 판정, `agentRunId: null` 저장을 구현한다.
+- [x] 실제 `StudyBriefNotionPublisher.publish()`와 repository `updateNotionUrl()` 호출을 연결한다.
+- [x] 오류 메시지의 token·connection string 마스킹과 요청된 최종 출력값을 구현한다.
+- [x] `pnpm exec tsc --noEmit`로 타입만 검증하고 실행 금지·금지 작업 미실행을 diff로 확인한다.
+
+## Review
+
+- `/tmp/hermes2.txt`를 머지된 parser로 읽고, 최신 CareerProfile과 `RepoContextCollector` 결과를 CTO prompt에 넣는다.
+- `CodexCliProvider`를 직접 호출하며 AgentRun은 만들지 않는다. 원장은 Prisma로 `agentRunId: null` 저장한다.
+- `StudyBriefNotionPublisher.publish()` 결과 URL을 `StudyBriefPrismaRepository.updateNotionUrl()`로 연결한다.
+- 실행하지 않았다. `pnpm exec tsc --noEmit` exit 0. `.env`, DB schema, git index/commit/push도 건드리지 않았다.
+
 # 리베이스 후 콘솔 총원·성장 좌석 정리 (2026-08-05)
 
 **Goal:** INVEST와 CTO_STUDY가 함께 들어온 운영 29명 상태에 현재 총원 표기를 맞추고, 성장 부서 6명이 기존 좌석·경계·통행 불변식을 만족하는지 확인한다.
@@ -813,3 +832,24 @@
 
 - 구현 계약 A·B·C 완료. 6개 게이트 exit 0, 독립 리뷰 Blocker 0/Should Fix 0.
 - 기존 멱등·Slack 상세 실패 회귀를 유지했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+
+# 학습 브리핑 Notion 1회성 적재 스크립트 (2026-08-06)
+
+**Goal:** `study_brief` 최신 1건을 Notion DB 속성과 읽기 좋은 본문 블록으로 적재하는 1회성 스크립트를 작성한다.
+
+**Constraints:** 스크립트는 실행하지 않는다. `AppModule`, `.env`, DB schema, git index/commit/push는 건드리지 않는다. 검증은 `pnpm exec tsc --noEmit`만 수행한다.
+
+- [x] 기존 Notion 스크립트, Prisma `study_brief` 모델, TypeScript 관례를 확인한다.
+- [x] 멱등 DB 속성 보강과 최신 `study_brief` 조회를 구현한다.
+- [x] Markdown 블록/인라인 변환과 2,000자 `rich_text` 제한을 구현한다.
+- [x] Notion page 속성/본문 조립과 100개 단위 append를 구현한다.
+- [x] 민감정보 마스킹, 진행 로그, 최종 URL 출력을 구현한다.
+- [x] `pnpm exec tsc --noEmit`와 최종 diff로 타입/범위를 확인한다.
+
+## Review
+
+- `scripts/tmp-study-brief-to-notion.ts` 하나에 Prisma/Notion 직접 client, JSON guard, Markdown 변환, API 제한 분할, 민감정보 마스킹을 구현했다.
+- 스크립트를 실행하지 않았다. `AppModule`, `.env`, DB schema, git index/commit/push도 건드리지 않았다.
+- Verification: `pnpm exec tsc --noEmit` exit 0.
+
+---
