@@ -495,6 +495,84 @@ describe('StockMonitorAutopilotTask', () => {
     );
   });
 
+  it('종목 수집이 일부 실패하면 실패 요약은 남기고 포트폴리오 노출을 생략한다', async () => {
+    const testHoldings = [
+      { ...holdings[0], tickerName: 'TEST-1', symbol: 'AAA' },
+      { ...holdings[1], tickerName: 'TEST-2', symbol: 'BBB' },
+    ];
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValueOnce([bar('2026-07-21', 100), bar('2026-07-22', 100)])
+        .mockRejectedValueOnce(new Error('timeout')),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue(testHoldings);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result = await makeTask(marketData, repository).run(context);
+
+      expect(result.summaryText).toContain('수집 실패');
+      expect(result.summaryText).toContain('BBB');
+      expect(result.summaryText).not.toContain('🌎');
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('포트폴리오 노출 생략'),
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('잔고 동기화가 실패하면 경고는 남기고 포트폴리오 노출을 생략한다', async () => {
+    const testHoldings = [
+      { ...holdings[0], tickerName: 'TEST-1', symbol: 'AAA' },
+      { ...holdings[1], tickerName: 'TEST-2', symbol: 'BBB' },
+    ];
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue(testHoldings);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockRejectedValue(new Error('sync timeout'));
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result = await makeTask(
+        marketData,
+        repository,
+        { id: 'stock-monitor', targetMarketCountry: 'KR' },
+        'true',
+        syncHoldings,
+      ).run(context);
+
+      expect(result.summaryText).toContain('⚠️ 잔고 동기화 실패');
+      expect(result.summaryText).not.toContain('🌎');
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('포트폴리오 노출 생략'),
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('포트폴리오 노출을 잔고 변화 블록보다 먼저 표시한다', async () => {
     const marketData = {
       fetchDailyBars: jest
