@@ -443,7 +443,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     if (!syncError) {
       return result;
     }
-    const warning = `⚠️ 잔고 동기화 실패 — ${syncError}. 평단 판정은 이전 잔고 기준입니다.`;
+    // 문구가 "이전 잔고 기준" 이면 사실과 다르다. SyncHoldingsUsecase 는 종목별로 개별
+    // 커밋하므로(트랜잭션 없음), 중간 실패 시 앞 종목만 갱신된 혼합 상태가 된다.
+    // 종목 간 참조 무결성이 없어 각 종목은 옛 값 아니면 새 값 — 어느 쪽도 유효했던 값이라
+    // 데이터 문제는 아니지만, 무엇이 갱신됐는지 단정할 수 없다는 사실은 그대로 알려야 한다.
+    const warning = `⚠️ 잔고 동기화 실패 — ${syncError}. 일부 종목의 평단·보유수량이 갱신되지 않았을 수 있습니다.`;
     const summaryText = result.summaryText
       ? `${warning}\n\n${result.summaryText}`
       : warning;
