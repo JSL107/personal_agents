@@ -83,6 +83,107 @@ describe('markdownToBlocks', () => {
     expect(block.richText.map((item) => item.text.content).join('')).toBe(text);
   });
 
+  it('불릿의 들여쓰기 연속 줄을 같은 블록에 이어 붙인다', () => {
+    const blocks = markdownToBlocks(
+      [
+        '- 핵심 단위는 Agent Card다.',
+        '  원격 에이전트의 이름, endpoint, capabilities 를 JSON 으로 공개한다.',
+      ].join('\n'),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'bullet',
+      text: [
+        '핵심 단위는 Agent Card다.',
+        '원격 에이전트의 이름, endpoint, capabilities 를 JSON 으로 공개한다.',
+      ].join('\n'),
+    });
+  });
+
+  it('번호 목록의 들여쓰기 연속 줄을 같은 블록에 이어 붙인다', () => {
+    const blocks = markdownToBlocks(
+      ['1. 첫 번째 단계', '  세부 설명'].join('\n'),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'numbered',
+      text: '첫 번째 단계\n세부 설명',
+    });
+  });
+
+  it.each([
+    '- 하위 불릿',
+    '* 하위 불릿',
+    '1. 하위 번호',
+    '# 제목',
+    '> 인용',
+    '```',
+  ])('들여쓴 새 블록 문법 %s은 직전 블록에 이어 붙이지 않는다', (syntax) => {
+    const blocks = markdownToBlocks(`- 첫 블록\n  ${syntax}`);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: 'bullet', text: '첫 블록' });
+  });
+
+  it('들여쓰기 연속 줄의 inline annotation을 보존한다', () => {
+    const [block] = markdownToBlocks('- 시작\n  **굵게**와 `코드`');
+
+    if (block.type !== 'bullet' || !block.richText) {
+      throw new Error('bullet rich text expected');
+    }
+    expect(block.richText.map((item) => item.text.content).join('')).toBe(
+      '시작\n굵게와 코드',
+    );
+    expect(block.richText).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ annotations: { bold: true } }),
+        expect.objectContaining({ annotations: { code: true } }),
+      ]),
+    );
+  });
+
+  it('code fence 안의 들여쓰기를 코드 내용으로 그대로 보존한다', () => {
+    const [block] = markdownToBlocks(
+      ['```typescript', '  const value = 1;', '```'].join('\n'),
+    );
+
+    expect(block).toMatchObject({
+      type: 'code',
+      text: '  const value = 1;',
+    });
+  });
+
+  it('첫 줄이 들여쓰기면 paragraph로 처리한다', () => {
+    const [block] = markdownToBlocks('  첫 줄은 연속 줄이 아니다');
+
+    expect(block).toMatchObject({
+      type: 'paragraph',
+      text: '  첫 줄은 연속 줄이 아니다',
+    });
+  });
+
+  it('연속 줄을 이어 붙여도 rich_text 조각은 유니코드 code point 2,000자 이하다', () => {
+    const continuation = '😀'.repeat(2_001);
+    const [block] = markdownToBlocks(`- 시작\n  ${continuation}`);
+
+    if (block.type !== 'bullet') {
+      throw new Error('bullet block expected');
+    }
+    if (!block.richText) {
+      throw new Error('rich text expected');
+    }
+    expect(block.richText.map((item) => item.text.content).join('')).toBe(
+      `시작\n${continuation}`,
+    );
+    expect(
+      block.richText.every(
+        (item) => Array.from(item.text.content).length <= 2_000,
+      ),
+    ).toBe(true);
+  });
+
   it('100개를 넘는 입력 블록을 누락하지 않는다', () => {
     const markdown = Array.from(
       { length: 101 },

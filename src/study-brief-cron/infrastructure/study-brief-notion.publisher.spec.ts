@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 
-import { NotionClientPort } from '../../notion/domain/port/notion-client.port';
+import {
+  NotionClientPort,
+  NotionPlanBlock,
+} from '../../notion/domain/port/notion-client.port';
 import { PublishStudyBriefInput } from '../domain/port/study-brief-publisher.port';
 import { StudyBriefNotionPublisher } from './study-brief-notion.publisher';
 
@@ -33,7 +36,6 @@ const buildLargeInput = (): PublishStudyBriefInput => ({
     kind: 'CONCEPT',
     whyNow: 'why',
     whereItLands: 'where',
-    readingPlan: 'read',
     minutes: 10,
   },
   reportMd: Array.from(
@@ -60,7 +62,6 @@ describe('StudyBriefNotionPublisher', () => {
           kind: 'CONCEPT',
           whyNow: '재시도 설계에 필요',
           whereItLands: 'agent-run',
-          readingPlan: '공식 문서',
           minutes: 20,
         },
         reportMd: '## 세 줄 요약\n첫 문장',
@@ -84,6 +85,11 @@ describe('StudyBriefNotionPublisher', () => {
       '출처 수': { number: 1 },
     });
     expect(options.blocks[0]).toMatchObject({ type: 'callout', icon: '📚' });
+    expect(options.blocks[0]).toMatchObject({
+      text: ['왜 지금 나한테 재시도 설계에 필요', '어디에 닿나 agent-run'].join(
+        '\n',
+      ),
+    });
     expect(options.blocks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'heading', text: '출처' }),
@@ -96,7 +102,92 @@ describe('StudyBriefNotionPublisher', () => {
     );
     expect(JSON.stringify(options.blocks[0])).not.toContain('**');
     expect(JSON.stringify(options.blocks[0])).toContain('"bold":true');
+    expect(JSON.stringify(options.blocks[0])).not.toContain('읽을 것');
+    const callout = options.blocks[0] as NotionPlanBlock;
+    if (callout.type !== 'callout' || !callout.richText) {
+      throw new Error('callout rich text expected');
+    }
+    expect(callout.richText[0]).toMatchObject({ annotations: { bold: true } });
+    expect(
+      callout.richText.find((item) =>
+        item.text.content.includes('재시도 설계에 필요'),
+      )?.annotations,
+    ).toBeUndefined();
     expect(notionClient.archivePage).not.toHaveBeenCalled();
+  });
+
+  it('callout이 400자를 넘으면 넘치는 항목을 바로 뒤 paragraph로 내린다', async () => {
+    const notionClient = buildNotionClient();
+    const publisher = new StudyBriefNotionPublisher(
+      notionClient,
+      buildConfig(),
+    );
+
+    const label = '왜 지금 나한테 ';
+    const whyNow = '가'.repeat(400 - Array.from(label).length);
+    await publisher.publish({
+      kind: 'CONCEPT',
+      topic: 'long verdict',
+      verdict: {
+        kind: 'CONCEPT',
+        whyNow,
+        whereItLands: 'agent-run, router',
+        minutes: 20,
+      },
+      reportMd: '본문',
+      sourceUrls: [],
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+
+    const blocks = notionClient.createDatabasePage.mock.calls[0][0]
+      .blocks as NotionPlanBlock[];
+    expect(blocks[0]).toMatchObject({ type: 'callout', icon: '📚' });
+    if (blocks[0].type !== 'callout') {
+      throw new Error('callout block expected');
+    }
+    expect(Array.from(blocks[0].text).length).toBe(400);
+    expect(blocks[0].text).toContain('왜 지금 나한테');
+    expect(blocks[0].text).not.toContain('어디에 닿나');
+    expect(blocks[1]).toMatchObject({
+      type: 'paragraph',
+      text: '어디에 닿나 agent-run, router',
+    });
+    expect(JSON.stringify(blocks[1])).toContain('"bold":true');
+    expect(blocks[2]).toEqual({ type: 'divider' });
+  });
+
+  it('첫 항목 자체가 400자를 넘으면 빈 callout 없이 모든 항목을 paragraph로 내린다', async () => {
+    const notionClient = buildNotionClient();
+    const publisher = new StudyBriefNotionPublisher(
+      notionClient,
+      buildConfig(),
+    );
+
+    await publisher.publish({
+      kind: 'CONCEPT',
+      topic: 'oversized verdict',
+      verdict: {
+        kind: 'CONCEPT',
+        whyNow: '가'.repeat(401),
+        whereItLands: 'agent-run',
+        minutes: 20,
+      },
+      reportMd: '본문',
+      sourceUrls: [],
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+
+    const blocks = notionClient.createDatabasePage.mock.calls[0][0]
+      .blocks as NotionPlanBlock[];
+    expect(blocks[0]).toMatchObject({
+      type: 'paragraph',
+      text: `왜 지금 나한테 ${'가'.repeat(401)}`,
+    });
+    expect(blocks[1]).toMatchObject({
+      type: 'paragraph',
+      text: '어디에 닿나 agent-run',
+    });
+    expect(blocks[2]).toEqual({ type: 'divider' });
   });
 
   it('첫 100개 뒤 블록을 appendBlocks로 100개씩 이어 붙인다', async () => {
@@ -169,7 +260,6 @@ describe('StudyBriefNotionPublisher', () => {
         kind: 'TOOL',
         whatImproves: '검색 개선',
         adoptionCost: '낮음',
-        installHint: 'codex mcp add',
         minutes: 10,
       },
       reportMd: '본문',
@@ -179,5 +269,40 @@ describe('StudyBriefNotionPublisher', () => {
 
     const callout = notionClient.createDatabasePage.mock.calls[0][0].blocks[0];
     expect(JSON.stringify(callout)).not.toContain('주의');
+    expect(JSON.stringify(callout)).not.toContain('설치');
+  });
+
+  it('TOOL caution이 있으면 세 번째 줄로 렌더한다', async () => {
+    const notionClient = buildNotionClient();
+    const publisher = new StudyBriefNotionPublisher(
+      notionClient,
+      buildConfig(),
+    );
+
+    await publisher.publish({
+      kind: 'TOOL',
+      topic: 'context tool',
+      verdict: {
+        kind: 'TOOL',
+        whatImproves: '검색 개선',
+        adoptionCost: '낮음',
+        caution: '중복 연결 확인',
+        minutes: 10,
+      },
+      reportMd: '본문',
+      sourceUrls: [],
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+
+    const callout = notionClient.createDatabasePage.mock.calls[0][0].blocks[0];
+    expect(callout).toMatchObject({
+      type: 'callout',
+      icon: '🔧',
+      text: [
+        '뭐가 좋아지나 검색 개선',
+        '붙이는 비용 낮음',
+        '주의 중복 연결 확인',
+      ].join('\n'),
+    });
   });
 });

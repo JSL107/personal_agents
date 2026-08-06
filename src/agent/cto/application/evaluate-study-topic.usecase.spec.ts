@@ -34,7 +34,6 @@ describe('EvaluateStudyTopicUsecase', () => {
       {
         whyNow: '지금 필요',
         whereItLands: 'src/agent-run/',
-        readingPlan: '공식 문서',
         minutes: 20,
       },
     ],
@@ -44,7 +43,6 @@ describe('EvaluateStudyTopicUsecase', () => {
       {
         whatImproves: '검색 개선',
         adoptionCost: '낮음',
-        installHint: 'codex mcp add',
         minutes: 10,
       },
     ],

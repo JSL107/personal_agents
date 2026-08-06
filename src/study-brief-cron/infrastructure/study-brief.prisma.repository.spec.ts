@@ -18,7 +18,6 @@ describe('StudyBriefPrismaRepository', () => {
           kind: 'CONCEPT',
           whyNow: '지금 필요',
           whereItLands: 'src/agent-run/',
-          readingPlan: '공식 문서',
           minutes: 10,
         },
         reportMd: 'report',
