@@ -73,6 +73,8 @@ final class OfficeScene: SKScene {
 
     private var characters: [String: CharacterNode] = [:]
     private var deskNodes: [String: SKSpriteNode] = [:]
+    /// 문 칸 → 문 스프라이트. 사람이 앞에 오면 열린 그림으로 갈아끼운다(`refreshDoors`).
+    private var doorNodes: [TilePoint: SKSpriteNode] = [:]
     private var homeSeats: [String: TilePoint] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
     private var lastPhases: [String: PendingPhase] = [:]
@@ -231,8 +233,9 @@ final class OfficeScene: SKScene {
         renderFloor()
         renderZoneLabels()
         renderFurniture()
-        // 책상이 새로 만들어진 뒤여야 한다 — 서류는 책상 노드의 자식으로 붙는다.
+        // 책상이 새로 만들어진 뒤여야 한다 — 서류·소품은 책상 노드의 자식으로 붙는다.
         renderDeskPapers(agents: agents)
+        renderDeskProps()
         renderPresident()
 
         homeSeats = Dictionary(
@@ -298,6 +301,29 @@ final class OfficeScene: SKScene {
         // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
         syncSessions(lastSyncedSessions)
         updateDaylight()
+        // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
+        refreshDoors()
+    }
+
+    /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
+    ///
+    /// 문마다 "누가 근처인지" 를 따로 들고 있지 않고 **매번 다시 센다.** 걸음을 중간에 끊고
+    /// 자리로 순간이동시키는 경로(`sync`·`cancelStroll`)가 여럿이라, 상태를 들고 있으면
+    /// 그중 하나가 정리를 빠뜨렸을 때 문 한 짝이 영영 열린 채로 남는다. 문 열둘 × 사람 서른이라
+    /// 매번 세도 한 번이 수백 번 비교로 끝난다.
+    private func refreshDoors() {
+        guard !doorNodes.isEmpty else {
+            return
+        }
+        let occupied = Set(characters.values.map(\.tile))
+        for (tile, node) in doorNodes {
+            let kind: FurnitureKind =
+                officeDoorIsOpen(door: tile, occupied: occupied) ? .doorOpen : .doorClosed
+            guard let texture = SpriteLoader.furnitureTexture(kind), node.texture !== texture else {
+                continue
+            }
+            node.texture = texture
+        }
     }
 
     /// 스냅샷을 정본으로 승인 줄을 맞춘다.
@@ -344,10 +370,20 @@ final class OfficeScene: SKScene {
     }
 
     /// 노드를 타일 위에 놓는다(즉시 이동 — 걸음 연출은 walk 가 담당).
+    ///
+    /// **순간이동도 문 여닫이의 입력이다.** 걸음은 한 칸마다 문을 다시 보지만(`walk`), 자리로
+    /// 되돌리는 경로들은 사람을 한 번에 옮긴다. 그래서 문 앞에 있던 사람이 사라진 것을 문이
+    /// 모른 채 열린 상태로 굳는다 — 창 크기를 바꾸면 `sync` 가 문을 갱신한 **뒤** 에
+    /// `repositionEveryone` 이 걷던 사람을 좌석으로 끌고 가므로 정확히 그 일이 벌어진다.
+    ///
+    /// 호출처마다 뒤에 한 줄씩 붙이지 않고 여기에 둔 이유는 그 지점이 넷이고(줄 서기·좌석
+    /// 복귀·신규 배치·리사이즈) 앞으로 늘기 때문이다. 문 열둘 × 사람 서른이라 매번 다시 세도
+    /// 한 번이 수백 번 비교로 끝난다.
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
         node.position = floorPoint(tile)
         node.zPosition = depth(of: tile)
+        refreshDoors()
     }
 
     // MARK: - 바닥·가구
@@ -558,10 +594,15 @@ final class OfficeScene: SKScene {
     }
 
     private func renderFurniture() {
-        objectLayer.children
-            .filter { $0.name?.hasPrefix("furn:") == true }
-            .forEach { $0.removeFromParent() }
+        // 깔개는 바닥 레이어에 붙으므로 두 레이어를 함께 훑는다. 한쪽만 지우면 창 크기가
+        // 바뀔 때마다 깔개가 겹겹이 쌓인다(`renderFloor` 를 거치지 않는 호출 경로가 있다).
+        for layer in [objectLayer, floorLayer] {
+            layer.children
+                .filter { $0.name?.hasPrefix("furn:") == true }
+                .forEach { $0.removeFromParent() }
+        }
         deskNodes.removeAll()
+        doorNodes.removeAll()
         // 책상 칸 → 주인. 작업 중일 때 그 사람의 모니터만 깜빡이게 하려면 짝을 알아야 한다.
         let deskOwners = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.desk, $0.agentType) }
@@ -574,6 +615,9 @@ final class OfficeScene: SKScene {
             node.name = "furn:\(placement.kind.rawValue)"
             if placement.kind == .desk, let owner = deskOwners[placement.tile] {
                 deskNodes[owner] = node
+            }
+            if placement.kind.isDoorway {
+                doorNodes[placement.tile] = node
             }
             node.anchorPoint = CGPoint(x: 0.5, y: 0)
             let base = texture.size()
@@ -589,9 +633,20 @@ final class OfficeScene: SKScene {
             if placement.kind.isWallMounted {
                 position.y += tileSize * 0.32
             }
+            // 두 칸 이상을 차지하는 가구는 기준 칸 중앙이 아니라 **점유 범위 중앙**에 놓는다.
+            // 발밑 기준(anchor x = 0.5)을 그대로 쓰면 2칸 폭 깔개가 좌우로 반 칸씩 삐져나가
+            // 옆 칸 바닥까지 물든다.
+            position.x += tileSize * CGFloat(placement.kind.footprint.width - 1) / 2
             node.position = position
             node.zPosition = depth(of: placement.tile)
-            objectLayer.addChild(node)
+            // 깔개는 바닥 레이어로 내린다. 앞뒤 순서를 y 로 정하는 구조에서는(아래쪽이 앞)
+            // 깔개가 자기보다 위 칸의 소파·테이블을 덮어 버린다 — 깔개 위에 놓인 가구가
+            // 깔개 밑으로 사라지는 그림이 된다.
+            if placement.kind.isFloorDecor {
+                floorLayer.addChild(node)
+            } else {
+                objectLayer.addChild(node)
+            }
         }
     }
 
@@ -651,6 +706,34 @@ final class OfficeScene: SKScene {
                 holder.addChild(sheet)
             }
             desk.addChild(holder)
+        }
+    }
+
+    /// 책상마다 개인 소품 하나를 얹는다 — 노트북·머그·책더미·스탠드·펜꽂이·화분·서류 중 하나.
+    ///
+    /// 서류 더미(`renderDeskPapers`)와 같은 이유로 책상 노드의 자식으로 붙인다. 창 크기가
+    /// 바뀌면 책상이 통째로 다시 만들어지므로, 씬에 직접 붙이면 위치를 손으로 다시 맞춰야 한다.
+    ///
+    /// 무엇을 놓을지는 코어가 agentType 으로 정한다(`officeDeskProp`) — 여기서 고르면
+    /// 스냅샷마다 바뀌어 책상 위가 깜빡인다.
+    private func renderDeskProps() {
+        for (agentType, desk) in deskNodes {
+            desk.childNode(withName: "prop")?.removeFromParent()
+            guard let texture = SpriteLoader.texture(officeDeskProp(agentType: agentType)) else {
+                continue  // 에셋이 없으면 빈 책상으로 둔다
+            }
+            let node = SKSpriteNode(texture: texture)
+            node.name = "prop"
+            node.anchorPoint = CGPoint(x: 0.5, y: 0)
+            let base = texture.size()
+            node.size = CGSize(width: base.width * spriteScale, height: base.height * spriteScale)
+            node.position = CGPoint(
+                x: tileSize * CGFloat(officeDeskPropOriginTiles.x),
+                y: tileSize * CGFloat(officeDeskPropOriginTiles.y)
+            )
+            // 책상 상판보다 위에. 서류(0.01~)와 겹치지 않는 반대편이라 순서 다툼은 없다.
+            node.zPosition = 0.01
+            desk.addChild(node)
         }
     }
 
@@ -833,6 +916,8 @@ final class OfficeScene: SKScene {
                 }
                 node.tile = step
                 node.zPosition = self.depth(of: step)
+                // 한 칸 옮길 때마다 문을 다시 본다 — 다가서면 열리고 지나가면 닫힌다.
+                self.refreshDoors()
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
                 // 와야 한다(apply(facing:) 이 포즈를 다시 고르므로).
                 node.stepWalkFrame()

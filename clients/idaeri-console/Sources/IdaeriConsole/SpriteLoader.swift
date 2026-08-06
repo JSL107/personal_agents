@@ -245,6 +245,20 @@ func furnitureSpriteName(_ kind: FurnitureKind) -> String {
         return "furn-lockers-2"
     case .partitionLow:
         return "furn-partition-low"
+    case .vendingMachine:
+        return "furn-vending-machine"
+    case .refrigerator:
+        return "furn-refrigerator"
+    case .sinkCounter:
+        return "furn-sink-counter"
+    case .partitionGlass:
+        return "furn-partition-glass"
+    case .rugGreen:
+        return "furn-rug-green"
+    case .rugBeige:
+        return "furn-rug-beige"
+    case .rugNavy:
+        return "furn-rug-navy"
     }
 }
 
