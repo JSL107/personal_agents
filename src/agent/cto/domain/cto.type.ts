@@ -55,7 +55,6 @@ export interface StudyConceptVerdict {
   kind: 'CONCEPT';
   whyNow: string;
   whereItLands: string;
-  readingPlan: string;
   minutes: number;
 }
 
@@ -63,7 +62,6 @@ export interface StudyToolVerdict {
   kind: 'TOOL';
   whatImproves: string;
   adoptionCost: string;
-  installHint: string;
   caution?: string;
   minutes: number;
 }

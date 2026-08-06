@@ -41,6 +41,8 @@ const CODE_LANGUAGE_ALIASES: Record<string, string> = {
   ts: 'typescript',
   txt: 'plain text',
 };
+const CONTINUATION_INDENTATION = /^ {2,}/;
+const BLOCK_SYNTAX = /^(?:[-*]\s+|\d+\.\s+|#+(?:\s|$)|>\s*|```)/;
 
 export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
   const blocks: NotionPlanBlock[] = [];
@@ -70,6 +72,12 @@ export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
       continue;
     }
 
+    const continuation = getContinuation(line);
+    if (continuation !== null && appendContinuation(blocks, continuation)) {
+      lineIndex += 1;
+      continue;
+    }
+
     const block = toBlock(line);
     if (block) {
       blocks.push(block);
@@ -78,6 +86,42 @@ export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
   }
 
   return blocks;
+};
+
+const getContinuation = (line: string): string | null => {
+  if (!CONTINUATION_INDENTATION.test(line)) {
+    return null;
+  }
+
+  const content = line.trimStart();
+  if (content.length === 0 || BLOCK_SYNTAX.test(content)) {
+    return null;
+  }
+
+  return content;
+};
+
+const appendContinuation = (
+  blocks: NotionPlanBlock[],
+  continuation: string,
+): boolean => {
+  const previousBlock = blocks.at(-1);
+  if (
+    !previousBlock ||
+    previousBlock.type === 'code' ||
+    !('text' in previousBlock) ||
+    !previousBlock.richText
+  ) {
+    return false;
+  }
+
+  const text = `${previousBlock.text}\n${stripInlineMarkers(continuation)}`;
+  const richText = [
+    ...previousBlock.richText,
+    ...buildAnnotatedRichText(`\n${continuation}`),
+  ];
+  Object.assign(previousBlock, { text, richText });
+  return true;
 };
 
 export const buildAnnotatedRichText = (text: string): NotionRichText[] => {
