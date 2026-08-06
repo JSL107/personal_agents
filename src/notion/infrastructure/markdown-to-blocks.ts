@@ -42,12 +42,14 @@ const CODE_LANGUAGE_ALIASES: Record<string, string> = {
   txt: 'plain text',
 };
 const CONTINUATION_INDENTATION = /^ {2,}/;
-const BLOCK_SYNTAX = /^(?:[-*]\s+|\d+\.\s+|#+(?:\s|$)|>\s*|```)/;
+const DIVIDER_SYNTAX = /^-{3,}\s*$/;
+const BLOCK_SYNTAX = /^(?:[-*]\s+|-{3,}\s*$|\d+\.\s+|#+(?:\s|$)|>\s*|```)/;
 
 export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
   const blocks: NotionPlanBlock[] = [];
   const lines = markdown.split(/\r?\n/);
   let lineIndex = 0;
+  let continuationAllowed = false;
 
   while (lineIndex < lines.length) {
     const line = lines[lineIndex];
@@ -69,10 +71,11 @@ export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
         richText: buildPlainRichText(text, { code: true }),
         language: resolveCodeLanguage(fence[1]),
       });
+      continuationAllowed = false;
       continue;
     }
 
-    const continuation = getContinuation(line);
+    const continuation = continuationAllowed ? getContinuation(line) : null;
     if (continuation !== null && appendContinuation(blocks, continuation)) {
       lineIndex += 1;
       continue;
@@ -82,6 +85,7 @@ export const markdownToBlocks = (markdown: string): NotionPlanBlock[] => {
     if (block) {
       blocks.push(block);
     }
+    continuationAllowed = block !== null;
     lineIndex += 1;
   }
 
@@ -161,7 +165,7 @@ const toBlock = (line: string): NotionPlanBlock | null => {
   if (line.trim().length === 0) {
     return null;
   }
-  if (line.trim() === '---') {
+  if (DIVIDER_SYNTAX.test(line.trimStart())) {
     return { type: 'divider' };
   }
 
