@@ -43,7 +43,8 @@ public func officePath(
 }
 
 /// 상하좌우 4방향. 대각선을 빼는 이유는 캐릭터가 책상 모서리를 가로지르지 않게 하기 위함이다.
-private func orthogonalNeighbors(of tile: TilePoint) -> [TilePoint] {
+/// 상하좌우 네 칸. 길찾기와 문 여닫이 판정(`officeDoorIsOpen`)이 같은 정의를 쓴다.
+func orthogonalNeighbors(of tile: TilePoint) -> [TilePoint] {
     [
         TilePoint(x: tile.x + 1, y: tile.y),
         TilePoint(x: tile.x - 1, y: tile.y),

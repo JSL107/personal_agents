@@ -8,15 +8,18 @@ import { calculatePortfolioExposure } from '../../../agent/stock/domain/portfoli
 import {
   detectAvgPriceBreach,
   detectDailyChange,
+  inspectAvgPriceStatus,
   isMarketClosed,
 } from '../../../agent/stock/domain/stock-anomaly';
 import {
+  AvgPriceStatus,
   HoldingSnapshot,
   StockAnomaly,
   StockMarketCountry,
   StoredStockAlert,
 } from '../../../agent/stock/domain/stock-monitor.type';
 import {
+  formatAvgPriceStatuses,
   formatHoldingChanges,
   formatPortfolioExposure,
   formatStockMonitorSummary,
@@ -56,6 +59,9 @@ interface StockMonitorAudit {
   // 둘 다 화면에는 아무 줄도 남기지 않으므로, 여기서 구분하지 않으면 감지가 죽어도 조용하다.
   // 사건의 상세는 holding_change 표에 있고 여기에는 건수만 둔다.
   holdingChangeCount: number | null;
+  // 평단 대비 임계 밖 종목 수. anomalyCount(발화)와 다르다 — 발화는 최초 진입 때만 1회지만
+  // 이 값은 회복할 때까지 계속 1 이상이라, 0 이 아닌 날이 이어지면 손실이 지속된다는 뜻이다.
+  avgPriceBreachCount: number;
   syncError: string | null;
 }
 
@@ -240,6 +246,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           failureCount: 0,
           lastTradeDate: null,
           marketClosed: false,
+          avgPriceBreachCount: 0,
         }),
       };
     }
@@ -300,6 +307,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         isMarketClosed(today.tradeDate, previousStoredDate),
       );
     if (marketClosed) {
+      // 전 종목이 같은 이유로 새 봉이 없는 날이다. 임계 밖이라는 사실은 휴장이라고 사라지지
+      // 않으므로 판정을 건너뛰는 이 경로에서도 상태는 그대로 보여준다.
+      const closedDayStatuses = collectedHoldings
+        .map(({ holding, today }) => inspectAvgPriceStatus(holding, today))
+        .filter((status): status is AvgPriceStatus => status !== null);
       this.logger.log(
         `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
@@ -316,7 +328,10 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         marketClosed: true,
       });
       const resultWithExposure = await this.withPortfolioExposure(
-        { skip: false, summaryText },
+        this.withAvgPriceStatuses(
+          { skip: false, summaryText },
+          closedDayStatuses,
+        ),
         usdKrwRate,
         failures,
         sync.error,
@@ -334,6 +349,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           failureCount: failures.length,
           lastTradeDate: lastTradeDate || null,
           marketClosed: true,
+          avgPriceBreachCount: closedDayStatuses.length,
         }),
       };
     }
@@ -348,6 +364,19 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     );
 
     let checkedCount = 0;
+    // 점검에 성공한 종목만 담는다. `collectedHoldings` 전체를 훑으면 오늘 봉을 못 받아
+    // "신규 거래일 봉 없음" 으로 실패 처리될 종목(거래정지·종목별 지연)까지 **전날 가격으로**
+    // 섞여 들어와, 최신 거래일 아래에 지금 상태인 것처럼 표시되고 건수도 부풀려진다.
+    const avgPriceStatuses: AvgPriceStatus[] = [];
+    const collectStatus = (
+      entry: HoldingSnapshot & { tickerId: number },
+      bar: DailyBar,
+    ): void => {
+      const status = inspectAvgPriceStatus(entry, bar);
+      if (status) {
+        avgPriceStatuses.push(status);
+      }
+    };
     for (const {
       holding,
       today,
@@ -369,6 +398,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
               }
             }
             checkedCount += 1;
+            collectStatus(holding, today);
           } catch (error) {
             failures.push(
               `${holding.symbol}: 알림 복구 실패 — ${(error as Error).message}`,
@@ -416,6 +446,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
       anomalies.push(...holdingAnomalies);
       checkedCount += 1;
+      collectStatus(holding, today);
     }
 
     this.logger.log(
@@ -446,7 +477,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       priceDisplays,
     });
     const resultWithExposure = await this.withPortfolioExposure(
-      { skip: false, summaryText },
+      this.withAvgPriceStatuses({ skip: false, summaryText }, avgPriceStatuses),
       usdKrwRate,
       failures,
       sync.error,
@@ -465,8 +496,25 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         failureCount: failures.length,
         lastTradeDate: lastTradeDate || null,
         marketClosed: false,
+        avgPriceBreachCount: avgPriceStatuses.length,
       }),
     };
+  }
+
+  // 평단 대비 임계 밖 상태를 요약 뒤에 붙인다. 발화가 최초 진입 때만이라 이 줄이 없으면
+  // 이미 손실 구간인 종목이 "이상 없음" 뒤에 영구히 가려진다.
+  private withAvgPriceStatuses(
+    result: AutopilotTaskResult,
+    statuses: AvgPriceStatus[],
+  ): AutopilotTaskResult {
+    const statusText = formatAvgPriceStatuses(statuses);
+    if (!statusText) {
+      return result;
+    }
+    const summaryText = result.summaryText
+      ? `${result.summaryText}\n\n${statusText}`
+      : statusText;
+    return { ...result, skip: false, summaryText };
   }
 
   private createAudit(

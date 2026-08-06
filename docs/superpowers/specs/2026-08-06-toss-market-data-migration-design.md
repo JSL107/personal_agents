@@ -72,6 +72,10 @@ ticker=6  holding=6  yahoo_symbol 채워진 것=0  →  감시 대상 0
 
 ## 3. 가장 큰 트레이드오프 — 수정주가가 없다
 
+> ⚠️ **이 절의 전제는 사실이 아니다.** 토스 `/candles` 에는 `adjusted` 파라미터가 있고 기본값이
+> `true` 이며, 실측 결과 현금배당까지 조정한다. 아래 선택지 4종과 "2주 관찰" 보류는 모두 철회됐다.
+> → [전제 정정 (2026-08-06)](../plans/2026-08-06-toss-market-data-premise-correction.md)
+
 현재 판정은 `DailyBar.adjClose`(수정주가)를 쓴다. **토스 캔들에는 `closePrice` 만 있고
 배당·액면분할을 반영한 조정가가 없다.**
 

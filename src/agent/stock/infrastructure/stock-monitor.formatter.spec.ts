@@ -2,6 +2,7 @@ import { HoldingChange } from '../domain/holding-change';
 import { PortfolioExposure } from '../domain/portfolio-exposure';
 import { StockAnomaly } from '../domain/stock-monitor.type';
 import {
+  formatAvgPriceStatuses,
   formatHoldingChanges,
   formatPortfolioExposure,
   formatStockMonitorSummary,
@@ -181,6 +182,36 @@ describe('formatStockMonitorSummary', () => {
 
     expect(result).toContain('수집 실패');
     expect(result).toContain('247540.KQ');
+  });
+});
+
+describe('formatAvgPriceStatuses', () => {
+  it('임계 밖 종목이 없으면 줄을 만들지 않는다', () => {
+    expect(formatAvgPriceStatuses([])).toBe('');
+  });
+
+  it('손실 구간 유지를 기준값과 함께 보여준다', () => {
+    const result = formatAvgPriceStatuses([
+      {
+        tickerName: 'KODEX 인버스',
+        symbol: '114800',
+        percent: -35.68,
+        threshold: -20,
+      },
+    ]);
+
+    expect(result).toBe(
+      '📌 *평단 대비 임계 밖 1종목*\n' +
+        '• *KODEX 인버스* — 평단 대비 -35.7% 손실 구간 유지 (기준 -20%)',
+    );
+  });
+
+  it('상한 밖은 수익 구간으로 보여준다', () => {
+    const result = formatAvgPriceStatuses([
+      { tickerName: 'SPYM', symbol: 'SPYM', percent: 41.2, threshold: 30 },
+    ]);
+
+    expect(result).toContain('41.2% 수익 구간 유지 (기준 30%)');
   });
 });
 

@@ -1,6 +1,6 @@
 import { HoldingChange } from '../domain/holding-change';
 import { PortfolioExposure } from '../domain/portfolio-exposure';
-import { StockAnomaly } from '../domain/stock-monitor.type';
+import { AvgPriceStatus, StockAnomaly } from '../domain/stock-monitor.type';
 
 export interface StockMonitorContext {
   checkedCount: number;
@@ -125,6 +125,23 @@ export const formatPortfolioExposure = (
   const fxUsdText =
     exposure.fxUsdRatio === 0 ? '' : ` (달러 환노출 ${exposure.fxUsdRatio}%)`;
   return `🌎 ${bucketText}${fxUsdText}`;
+};
+
+// 평단 대비 임계 밖 종목의 **지속 상태**. 발화(사건)는 최초 진입 때만이라, 감시를 시작한 시점에
+// 이미 구간 밖이던 종목은 알림이 영원히 안 뜬다 — 그 손실이 "이상 없음" 뒤에 가려지는 것을 막는다.
+// 임계 안이면 빈 문자열이라 평상시에는 줄이 생기지 않는다.
+export const formatAvgPriceStatuses = (statuses: AvgPriceStatus[]): string => {
+  if (statuses.length === 0) {
+    return '';
+  }
+  const lines = [`📌 *평단 대비 임계 밖 ${statuses.length}종목*`];
+  for (const status of statuses) {
+    const label = status.percent < 0 ? '손실' : '수익';
+    lines.push(
+      `• *${status.tickerName}* — 평단 대비 ${status.percent.toFixed(1)}% ${label} 구간 유지 (기준 ${status.threshold}%)`,
+    );
+  }
+  return lines.join('\n');
 };
 
 export const formatStockMonitorSummary = (

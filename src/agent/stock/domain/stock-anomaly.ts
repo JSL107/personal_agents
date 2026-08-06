@@ -1,5 +1,9 @@
 import { DailyBar } from '../../../market-data/domain/market-data.type';
-import { HoldingSnapshot, StockAnomaly } from './stock-monitor.type';
+import {
+  AvgPriceStatus,
+  HoldingSnapshot,
+  StockAnomaly,
+} from './stock-monitor.type';
 
 // 임계값 근거는 설계 문서 §5.4 — 최근 250거래일 등락 분포 실측.
 // ±5% 는 주 1회 이상 울려 소음이 되고, ±8% 는 월 1.5~2.7회 수준이다.
@@ -108,6 +112,32 @@ export const detectAvgPriceBreach = (
     triggeredValue: todayPercent,
     threshold,
     detail: `평단 대비 ${todayPercent.toFixed(1)}% ${label} 구간 진입`,
+  };
+};
+
+// 발화는 "구간에 처음 들어올 때" 만 한다(위 detectAvgPriceBreach). 그 결과 **감시를 시작한
+// 시점에 이미 구간 밖인 종목은 한 번도 알림이 뜨지 않는다** — 어제도 밖이었으므로 매일 억제된다.
+// 다시 울리려면 임계 안으로 회복한 뒤 재진입해야 하는데, 그동안 화면에는 "이상 없음" 만 남는다.
+//
+// 이 함수는 사건이 아니라 **지금 상태**를 돌려준다. 요약에 한 줄로 붙여 그 침묵을 없앤다.
+// 임계 안이면 null 이므로 평상시에는 아무 줄도 생기지 않는다.
+export const inspectAvgPriceStatus = (
+  holding: HoldingSnapshot,
+  today: DailyBar,
+  thresholds: Thresholds = STOCK_THRESHOLDS,
+): AvgPriceStatus | null => {
+  const percent = percentAgainstAvgPrice(today, holding);
+  if (!isBreached(percent, thresholds)) {
+    return null;
+  }
+  const isLower = percent <= thresholds.avgPriceLowerPercent;
+  return {
+    tickerName: holding.tickerName,
+    symbol: holding.symbol,
+    percent,
+    threshold: isLower
+      ? thresholds.avgPriceLowerPercent
+      : thresholds.avgPriceUpperPercent,
   };
 };
 
