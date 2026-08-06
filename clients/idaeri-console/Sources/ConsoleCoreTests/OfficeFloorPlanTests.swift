@@ -517,6 +517,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         )
     }
 
+    // === 문 여닫이 ===
+    // 평면도는 **닫힌 문만** 놓는다. 여는 판정은 렌더가 사람 위치를 보고 매 걸음 내린다
+    // (`officeDoorIsOpen`). 여기서 열린 문이 하나라도 놓이면 그 짝은 사람이 없어도 영영
+    // 열린 채로 남는다 — 열두 짝이 전부 그랬던 것이 이 변경의 출발점이다.
+    let alwaysOpen = plan.furniture.filter { $0.kind == .doorOpen }
+    t.expectEqual(
+        alwaysOpen.count, 0,
+        "평면도에 열린 문이 고정 배치됨: \(alwaysOpen.map { "(\($0.tile.x),\($0.tile.y))" })"
+    )
+    t.expect(!doorTiles.isEmpty, "문이 하나 이상 배치됐다")
+    // 판정 자체 — 근처 판정이 무력해지면(늘 참/늘 거짓) 문이 계속 열려 있거나 아예 안 열린다.
+    if let door = doorTiles.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }).first {
+        let front = TilePoint(x: door.x, y: door.y + 1)
+        let far = TilePoint(x: door.x, y: door.y + 2)
+        t.expect(!officeDoorIsOpen(door: door, occupied: []), "아무도 없으면 닫힌다")
+        t.expect(officeDoorIsOpen(door: door, occupied: [door]), "문 칸에 서면 열린다")
+        t.expect(officeDoorIsOpen(door: door, occupied: [front]), "문 바로 앞에 서면 열린다")
+        t.expect(!officeDoorIsOpen(door: door, occupied: [far]), "두 칸 떨어지면 닫힌다")
+    }
+
     // 밴드 세 방도 벽으로 갈려야 한다 — 바닥재만으로 나누면 화면 위쪽이 "가구 놓인 띠 하나"
     // 로 읽힌다. 방 바닥 줄(가로 복도 위)에서 좌우 경계가 벽인지 본다.
     for area in plan.commonAreas {

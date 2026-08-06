@@ -73,6 +73,8 @@ final class OfficeScene: SKScene {
 
     private var characters: [String: CharacterNode] = [:]
     private var deskNodes: [String: SKSpriteNode] = [:]
+    /// 문 칸 → 문 스프라이트. 사람이 앞에 오면 열린 그림으로 갈아끼운다(`refreshDoors`).
+    private var doorNodes: [TilePoint: SKSpriteNode] = [:]
     private var homeSeats: [String: TilePoint] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
     private var lastPhases: [String: PendingPhase] = [:]
@@ -298,6 +300,29 @@ final class OfficeScene: SKScene {
         // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
         syncSessions(lastSyncedSessions)
         updateDaylight()
+        // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
+        refreshDoors()
+    }
+
+    /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
+    ///
+    /// 문마다 "누가 근처인지" 를 따로 들고 있지 않고 **매번 다시 센다.** 걸음을 중간에 끊고
+    /// 자리로 순간이동시키는 경로(`sync`·`cancelStroll`)가 여럿이라, 상태를 들고 있으면
+    /// 그중 하나가 정리를 빠뜨렸을 때 문 한 짝이 영영 열린 채로 남는다. 문 열둘 × 사람 서른이라
+    /// 매번 세도 한 번이 수백 번 비교로 끝난다.
+    private func refreshDoors() {
+        guard !doorNodes.isEmpty else {
+            return
+        }
+        let occupied = Set(characters.values.map(\.tile))
+        for (tile, node) in doorNodes {
+            let kind: FurnitureKind =
+                officeDoorIsOpen(door: tile, occupied: occupied) ? .doorOpen : .doorClosed
+            guard let texture = SpriteLoader.furnitureTexture(kind), node.texture !== texture else {
+                continue
+            }
+            node.texture = texture
+        }
     }
 
     /// 스냅샷을 정본으로 승인 줄을 맞춘다.
@@ -562,6 +587,7 @@ final class OfficeScene: SKScene {
             .filter { $0.name?.hasPrefix("furn:") == true }
             .forEach { $0.removeFromParent() }
         deskNodes.removeAll()
+        doorNodes.removeAll()
         // 책상 칸 → 주인. 작업 중일 때 그 사람의 모니터만 깜빡이게 하려면 짝을 알아야 한다.
         let deskOwners = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.desk, $0.agentType) }
@@ -574,6 +600,9 @@ final class OfficeScene: SKScene {
             node.name = "furn:\(placement.kind.rawValue)"
             if placement.kind == .desk, let owner = deskOwners[placement.tile] {
                 deskNodes[owner] = node
+            }
+            if placement.kind.isDoorway {
+                doorNodes[placement.tile] = node
             }
             node.anchorPoint = CGPoint(x: 0.5, y: 0)
             let base = texture.size()
@@ -833,6 +862,8 @@ final class OfficeScene: SKScene {
                 }
                 node.tile = step
                 node.zPosition = self.depth(of: step)
+                // 한 칸 옮길 때마다 문을 다시 본다 — 다가서면 열리고 지나가면 닫힌다.
+                self.refreshDoors()
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
                 // 와야 한다(apply(facing:) 이 포즈를 다시 고르므로).
                 node.stepWalkFrame()
