@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
@@ -55,6 +56,10 @@ const makeRepository = () => ({
   findFxRate: jest.fn().mockResolvedValue(null),
 });
 
+const makeSyncHoldings = () => ({
+  execute: jest.fn().mockResolvedValue({ synced: 2, zeroed: 0 }),
+});
+
 // 원장에 실제로 남은 실행. AgentRunService 를 mock 하되 run() 을 그대로 통과시켜
 // 본 로직은 손대지 않고, 무엇이 output 으로 적재됐는지만 관찰한다.
 interface RecordedAgentRun {
@@ -106,6 +111,7 @@ const makeTask = (
     now?: () => Date;
   } = { id: 'stock-monitor', targetMarketCountry: 'KR' },
   monitorEnabled = 'true',
+  syncHoldings = makeSyncHoldings(),
 ): StockMonitorAutopilotTask =>
   new StockMonitorAutopilotTask(
     {
@@ -125,11 +131,114 @@ const makeTask = (
       get: jest.fn().mockReturnValue(monitorEnabled),
     } as unknown as ConfigService,
     makeAgentRunService(),
+    syncHoldings as unknown as SyncHoldingsUsecase,
   );
 
 describe('StockMonitorAutopilotTask', () => {
   beforeEach(() => {
     recordedRuns = [];
+  });
+
+  it('잔고 동기화를 보유 종목 판정보다 먼저 1회 수행한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    const syncHoldings = makeSyncHoldings();
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(syncHoldings.execute).toHaveBeenCalledTimes(1);
+    expect(syncHoldings.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      repository.findCurrentHoldings.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('잔고 동기화 성공 건수를 원장 audit에 남긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({ synced: 6, zeroed: 2 });
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(recordedRuns[0].output).toMatchObject({
+      syncedHoldings: 6,
+      zeroedHoldings: 2,
+      syncError: null,
+    });
+  });
+
+  it('잔고 동기화 실패를 경고하되 기존 잔고 감시를 계속한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockRejectedValue(new Error('Toss timeout'));
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(repository.findCurrentHoldings).toHaveBeenCalled();
+    expect(result.summaryText).toMatch(/^⚠️ 잔고 동기화 실패/);
+    expect(recordedRuns[0].output).toMatchObject({
+      syncedHoldings: null,
+      zeroedHoldings: null,
+      syncError: 'Toss timeout',
+    });
+  });
+
+  it('잔고 동기화 실패 후 보유 종목이 0건이어도 경고를 발송한다', async () => {
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([]);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockRejectedValue(new Error('Toss timeout'));
+
+    const result = await makeTask(
+      { fetchDailyBars: jest.fn() },
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('⚠️ 잔고 동기화 실패');
   });
 
   it('대상 marketCountry 보유 종목만 조회한다', async () => {
@@ -169,6 +278,11 @@ describe('StockMonitorAutopilotTask', () => {
     expect(result.summaryText).toContain('수집 실패');
     expect(result.summaryText).toContain('000660');
     expect(repository.upsertDailyPrice).not.toHaveBeenCalled();
+    expect(recordedRuns[0].output).toMatchObject({
+      syncedHoldings: 2,
+      zeroedHoldings: 0,
+      syncError: null,
+    });
   });
 
   it('한 종목이라도 새 거래일이면 전체 시장을 휴장으로 보지 않는다', async () => {
@@ -540,23 +654,29 @@ describe('StockMonitorAutopilotTask', () => {
       holdingCount: 0,
       checkedCount: 0,
       anomalyCount: 0,
+      syncedHoldings: 2,
+      zeroedHoldings: 0,
+      syncError: null,
     });
   });
 
   it('감시가 꺼져 있으면 원장에도 남기지 않는다', async () => {
     const repository = makeRepository();
+    const syncHoldings = makeSyncHoldings();
 
     const result = await makeTask(
       { fetchDailyBars: jest.fn() },
       repository,
       { id: 'stock-monitor', targetMarketCountry: 'KR' },
       'false',
+      syncHoldings,
     ).run(context);
 
     expect(result.skip).toBe(true);
     expect(recordedRuns).toHaveLength(0);
     // 게이트가 조회보다 앞이어야 한다 — 꺼둔 기능이 DB 를 건드리면 안 된다
     expect(repository.findCurrentHoldings).not.toHaveBeenCalled();
+    expect(syncHoldings.execute).not.toHaveBeenCalled();
   });
 
   it('정상 실행은 LLM 없이 deterministic 으로 기록되고 시장 구분이 남는다', async () => {
