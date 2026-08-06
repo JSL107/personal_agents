@@ -17,7 +17,7 @@ const main = async (): Promise<void> => {
           tradeDate: true,
           ruleId: true,
           ticker: {
-            select: { name: true, yahooSymbol: true },
+            select: { name: true, tossSymbol: true },
           },
         },
       },
@@ -28,7 +28,7 @@ const main = async (): Promise<void> => {
     outcomes.map((outcome) => ({
       alertId: outcome.alertId,
       ticker: outcome.alert.ticker.name,
-      yahooSymbol: outcome.alert.ticker.yahooSymbol ?? '-',
+      symbol: outcome.alert.ticker.tossSymbol ?? '-',
       ruleId: outcome.alert.ruleId,
       tradeDate: outcome.alert.tradeDate.toISOString().slice(0, 10),
       horizonDays: outcome.horizonDays,

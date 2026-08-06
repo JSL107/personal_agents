@@ -9,7 +9,7 @@ export interface StockMonitorContext {
 }
 
 export interface StockPriceDisplay {
-  yahooSymbol: string;
+  symbol: string;
   currency: string;
   currentPrice: string;
   convertedKrw?: string;
@@ -63,12 +63,12 @@ export const formatStockMonitorSummary = (
   );
   for (const anomaly of anomalies) {
     const stockPriceDisplay = context.priceDisplays?.find(
-      (candidate) => candidate.yahooSymbol === anomaly.yahooSymbol,
+      (candidate) => candidate.symbol === anomaly.symbol,
     );
     const priceDisplay = formatPriceDisplay(stockPriceDisplay);
     const tickerLabel =
       stockPriceDisplay?.currency === 'USD'
-        ? `🇺🇸 *${anomaly.yahooSymbol}*`
+        ? `🇺🇸 *${anomaly.symbol}*`
         : `*${anomaly.tickerName}*`;
     lines.push(
       `• ${tickerLabel} — ${anomaly.detail}${priceDisplay} (임계 ${anomaly.threshold}%)`,

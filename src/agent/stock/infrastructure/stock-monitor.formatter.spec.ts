@@ -3,7 +3,7 @@ import { formatStockMonitorSummary } from './stock-monitor.formatter';
 
 const anomaly: StockAnomaly = {
   tickerName: 'SamsungElec',
-  yahooSymbol: '005930.KS',
+  symbol: '005930',
   kind: 'DAILY_CHANGE',
   ruleId: 'daily-change',
   ruleVersion: 1,
@@ -53,7 +53,7 @@ describe('formatStockMonitorSummary', () => {
     const unitedStatesAnomaly: StockAnomaly = {
       ...anomaly,
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
 
     const result = formatStockMonitorSummary([unitedStatesAnomaly], {
@@ -63,7 +63,7 @@ describe('formatStockMonitorSummary', () => {
       marketClosed: false,
       priceDisplays: [
         {
-          yahooSymbol: 'AAPL',
+          symbol: 'AAPL',
           currency: 'USD',
           currentPrice: '327.74',
           convertedKrw: '483839',
@@ -80,7 +80,7 @@ describe('formatStockMonitorSummary', () => {
     const unitedStatesAnomaly: StockAnomaly = {
       ...anomaly,
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
 
     const result = formatStockMonitorSummary([unitedStatesAnomaly], {
@@ -90,7 +90,7 @@ describe('formatStockMonitorSummary', () => {
       marketClosed: false,
       priceDisplays: [
         {
-          yahooSymbol: 'AAPL',
+          symbol: 'AAPL',
           currency: 'USD',
           currentPrice: '327.74',
         },
@@ -109,7 +109,7 @@ describe('formatStockMonitorSummary', () => {
       marketClosed: false,
       priceDisplays: [
         {
-          yahooSymbol: '005930.KS',
+          symbol: '005930',
           currency: 'KRW',
           currentPrice: '273500',
           convertedKrw: '273500',
