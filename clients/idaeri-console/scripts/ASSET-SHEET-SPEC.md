@@ -186,16 +186,73 @@ t.expectEqual(expectedFrames.count, 30, "걸음 프레임 30장 ...")
 | 액자·포스터 | 20 × 16 | 160 × 128 |
 | 서류 캐비닛 | 30 × 34 | 240 × 272 |
 
-### 추천 품목
+### 다시 뽑아야 하는 것 — 가로세로비가 실물과 다른 에셋
 
-지금 화면에 가장 아쉬운 순서입니다.
+가구 크기는 코드가 "실물 높이(cm) → 픽셀"로 환산해 맞춥니다(`FurnitureKind.targetHeightCm`).
+그런데 배율은 가로·세로에 함께 곱해지므로, **그림 자체가 실물보다 납작하면 높이를 맞추는 순간
+폭이 옆 칸을 침범합니다.** 그래서 폭 상한(`officeFurnitureWidthCapTiles`, 1.15칸)에 걸려
+목표 높이를 다 못 채우는 물건이 남습니다. 배율로는 여기까지가 한계이고, 아래는 그림을 다시
+뽑아야만 해결됩니다.
 
-1. **문** — 방 출입구가 지금은 그냥 뚫린 구멍입니다
-2. **러그 2~3종** — 방마다 다른 러그를 깔면 부서 개성이 생깁니다
-3. **액자·포스터·화이트보드(글씨 있는 버전)** — 벽이 비어 있습니다
-4. **서류 캐비닛, 사물함** — 벽면을 채우는 큰 가구
-5. **자판기, 냉장고, 싱크대** — 탕비실이 커피머신·정수기뿐입니다
-6. **소파 코너 조각, 낮은 파티션** — 공간을 나누는 요소
+| 물건 | 지금 크기 | 문제 | 필요한 비율 |
+|---|---|---|---|
+| **문** | 40 × 45 | 목표의 91%. 사람(1.35칸)보다 낮아 **사람이 문보다 큽니다** | 실제 문은 폭:높이 ≈ 1:2 → 40 × 80 |
+| **화이트보드** | 39 × 22 | 목표의 70%. 보드가 이젤 상판처럼 납작합니다 | 판 높이가 폭과 비슷해야 → 34 × 34 |
+| **책장** | 37 × 35 | 목표의 91%. 3단 책장인데 거의 정사각형입니다 | 세로로 길게 → 30 × 45 |
+
+문은 열림·닫힘 두 장이 짝이어야 합니다(코드가 사람 위치를 보고 갈아끼웁니다).
+새로 뽑으면 `FurnitureKind.nativeSize`의 실측값도 함께 갱신해야 합니다 — 어긋나면 배율이
+조용히 틀어집니다.
+
+#### 주문서 — `raw/furniture-3.png`
+
+기존 시트는 그대로 두고 새 시트로 받습니다. 셀 넷을 두 행으로 나눕니다(문 두 장이 훨씬 높아
+같은 행에 두면 행 판정이 흔들립니다).
+
+| 셀 | 물건 | 도트 | 캔버스 픽셀 |
+|---|---|---|---|
+| Row 1 좌 | 닫힌 문 | 40 × 80 | 320 × 640 |
+| Row 1 우 | 열린 문(안쪽으로 열려 통로가 보임) | 40 × 80 | 320 × 640 |
+| Row 2 좌 | 3단 책장 | 30 × 45 | 240 × 360 |
+| Row 2 우 | 이동식 화이트보드 | 34 × 34 | 272 × 272 |
+
+아래 프롬프트를 공통 규격(§모든 시트가 지켜야 할 공통 규격)과 함께 그대로 씁니다.
+
+```
+Objects, in this exact order, left to right then top to bottom:
+
+Row 1: a CLOSED wooden office door seen straight from the front, including the frame —
+       tall and narrow, roughly 320 pixels wide by 640 pixels tall, with a small frosted
+       glass window in the upper half and a metal handle on the right;
+       the SAME door OPEN, swung inward so a dark empty doorway is visible beside the
+       door leaf, same overall footprint of 320 x 640 pixels
+Row 2: a three-shelf wooden bookcase seen from the front, clearly TALLER than wide
+       (240 pixels wide by 360 pixels tall), books of muted colours on every shelf;
+       a mobile whiteboard on a metal stand seen from the front, the board itself nearly
+       square (272 x 272 pixels), white surface with a thin marker tray at the bottom
+
+The two doors in Row 1 must be the same height as each other. The bookcase and the
+whiteboard in Row 2 must be similar in height to each other.
+```
+
+받은 뒤 코드 변경:
+
+1. `scripts/build-sprites.py` 의 `SHEETS` 에 추가
+   ```python
+   "furniture-3": ["furn-door-closed", "furn-door-open", "furn-bookshelf", "furn-whiteboard"],
+   ```
+   이름이 기존과 같으므로 **기존 스프라이트를 덮어씁니다.** `furniture` · `furniture-door`
+   시트의 해당 셀 이름을 `None` 으로 바꿔 두 시트가 같은 파일을 다투지 않게 하세요.
+2. `Sources/ConsoleCore/OfficeFloorPlan.swift` 의 `nativeSize` 실측값을 새 크기로 갱신
+   (문 40×80, 책장 30×45, 화이트보드 34×34)
+3. 테스트를 돌려 폭 상한에 안 걸리는지 확인 — 문은 목표 배율 1.41 이 그대로 반영돼야 합니다
+   (`swift run ConsoleCoreTests`)
+
+### 그 밖의 추천 품목
+
+1. **액자·포스터·화이트보드(글씨 있는 버전)** — 벽이 비어 있습니다
+2. **소파 코너 조각** — 응접 세트를 L자로 놓을 수 있게
+3. **회의 테이블 의자 세트** — 지금 회의실 테이블은 의자가 붙어 있는 한 장입니다
 
 ### 프롬프트
 

@@ -316,6 +316,77 @@ describe('StockMonitorAutopilotTask', () => {
     expect(recordedRuns[0].output).toMatchObject({ holdingChangeCount: 2 });
   });
 
+  // 발화는 최초 진입 때만이라, 어제도 하한 밖이던 종목은 알림이 영원히 안 뜬다.
+  // 그 손실이 "이상 없음" 뒤에 가려지지 않는지 확인한다.
+  it('발화가 억제되는 손실 종목도 상태 줄로 드러낸다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 60), bar('2026-07-22', 64)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).toContain('이상 없음');
+    expect(result.summaryText).toContain('📌 *평단 대비 임계 밖 1종목*');
+    expect(result.summaryText).toContain(
+      '• *SamsungElec* — 평단 대비 -36.0% 손실 구간 유지 (기준 -20%)',
+    );
+    expect(recordedRuns[0].output).toMatchObject({
+      anomalyCount: 0,
+      avgPriceBreachCount: 1,
+    });
+  });
+
+  // 일부 종목만 새 봉을 받은 날. 봉이 없어 "신규 거래일 봉 없음" 으로 실패 처리되는 종목이
+  // 전날 가격으로 상태에 섞이면, 최신 거래일 아래에 지금 상태인 것처럼 표시되고 건수도 틀어진다.
+  it('오늘 봉을 못 받은 종목은 상태에서 제외한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        // 005930 — 새 거래일 봉 있음(점검됨), 임계 안
+        .mockResolvedValueOnce([bar('2026-07-21', 100), bar('2026-07-22', 100)])
+        // 000660 — 전날 봉이 마지막(신규 거래일 봉 없음), 임계 밖이지만 제외돼야 한다
+        .mockResolvedValueOnce([bar('2026-07-20', 60), bar('2026-07-21', 64)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).not.toContain('휴장');
+    expect(result.summaryText).toContain('수집 실패');
+    expect(result.summaryText).not.toContain('평단 대비 임계 밖');
+    expect(recordedRuns[0].output).toMatchObject({
+      checkedCount: 1,
+      avgPriceBreachCount: 0,
+    });
+  });
+
+  it('평단 대비가 임계 안이면 상태 줄을 넣지 않는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).not.toContain('평단 대비 임계 밖');
+    expect(recordedRuns[0].output).toMatchObject({ avgPriceBreachCount: 0 });
+  });
+
   it('매매가 없으면 요약에 잔고 변화 줄을 넣지 않는다', async () => {
     const marketData = {
       fetchDailyBars: jest
@@ -685,6 +756,33 @@ describe('StockMonitorAutopilotTask', () => {
     expect(recordedRuns[0].output).not.toHaveProperty('buckets');
     expect(recordedRuns[0].output).not.toHaveProperty('fxUsdRatio');
     expect(recordedRuns[0].output).not.toHaveProperty('portfolioExposure');
+  });
+  // 휴장 추정은 별도 return 이라 배선을 빼먹기 쉽다. 임계 밖이라는 사실은 휴장이라고 사라지지
+  // 않으므로, 판정을 건너뛰는 이 경로에서도 상태와 건수가 남아야 한다.
+  it('휴장 추정이어도 평단 대비 임계 밖 상태와 건수를 남긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-18', 60), bar('2026-07-21', 64)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).toContain('휴장');
+    expect(result.summaryText).toContain('📌 *평단 대비 임계 밖 1종목*');
+    expect(result.summaryText).toContain(
+      '• *SamsungElec* — 평단 대비 -36.0% 손실 구간 유지 (기준 -20%)',
+    );
+    expect(recordedRuns[0].output).toMatchObject({
+      marketClosed: true,
+      anomalyCount: 0,
+      avgPriceBreachCount: 1,
+    });
   });
 
   it('한 종목이라도 새 거래일이면 전체 시장을 휴장으로 보지 않는다', async () => {
