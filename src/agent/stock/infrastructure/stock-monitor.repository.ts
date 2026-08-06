@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
+import { ExposurePosition } from '../domain/portfolio-exposure';
 import {
   HoldingSnapshot,
   StockMarketCountry,
@@ -35,6 +36,51 @@ export interface DailyPriceForOutcome {
 @Injectable()
 export class StockMonitorRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findPortfolioPositions(): Promise<ExposurePosition[]> {
+    const holdings = await this.prisma.holding.findMany({
+      // 전환 이력이 있는 DB의 과거 등록 경로 행이 현재 포지션에 섞이면 노출 비중이 틀어진다.
+      where: { ticker: { source: 'TOSS' } },
+      orderBy: { effectiveDate: 'desc' },
+      include: {
+        ticker: {
+          include: {
+            dailyPrices: {
+              orderBy: { tradeDate: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    const seen = new Set<number>();
+    const positions: ExposurePosition[] = [];
+    for (const holding of holdings) {
+      if (seen.has(holding.tickerId)) {
+        continue;
+      }
+      seen.add(holding.tickerId);
+      if (holding.quantity.isZero()) {
+        continue;
+      }
+
+      const price = holding.ticker.dailyPrices[0];
+      if (!price) {
+        // ponytail: 일부 종목이 빠진 비중은 틀린 숫자다. 전량 조회되지 않으면 줄 자체를 생략한다.
+        return [];
+      }
+      positions.push({
+        region: holding.ticker.exposureRegion,
+        direction: holding.ticker.exposureDirection,
+        currency: holding.currency,
+        quantity: holding.quantity,
+        close: price.close,
+      });
+    }
+
+    return positions;
+  }
 
   // 종목마다 가장 최근 effectiveDate 의 보유 행이 현재 상태다.
   async findCurrentHoldings({

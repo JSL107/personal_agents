@@ -1,8 +1,10 @@
 import { HoldingChange } from '../domain/holding-change';
+import { PortfolioExposure } from '../domain/portfolio-exposure';
 import { StockAnomaly } from '../domain/stock-monitor.type';
 import {
   formatAvgPriceStatuses,
   formatHoldingChanges,
+  formatPortfolioExposure,
   formatStockMonitorSummary,
 } from './stock-monitor.formatter';
 
@@ -29,6 +31,36 @@ const anomaly: StockAnomaly = {
   threshold: 8,
   detail: '전일 대비 -9.2% 급락',
 };
+
+describe('formatPortfolioExposure', () => {
+  it('계산할 노출이 없으면 줄을 만들지 않는다', () => {
+    expect(formatPortfolioExposure(null)).toBe('');
+  });
+
+  it('계산된 버킷 순서대로 비중과 달러 환노출을 한 줄로 표시한다', () => {
+    const exposure: PortfolioExposure = {
+      buckets: [
+        { label: '미국 주식', ratio: 84 },
+        { label: '코스피 숏', ratio: 15 },
+        { label: '미분류', ratio: 1 },
+      ],
+      fxUsdRatio: 84,
+    };
+
+    expect(formatPortfolioExposure(exposure)).toBe(
+      '🌎 미국 주식 84% · 코스피 숏 15% · 미분류 1% (달러 환노출 84%)',
+    );
+  });
+
+  it('달러 환노출이 0이면 보조 괄호를 생략한다', () => {
+    expect(
+      formatPortfolioExposure({
+        buckets: [{ label: '한국 주식', ratio: 100 }],
+        fxUsdRatio: 0,
+      }),
+    ).toBe('🌎 한국 주식 100%');
+  });
+});
 
 describe('formatStockMonitorSummary', () => {
   it('이상이 없으면 한 줄 하트비트를 만든다', () => {

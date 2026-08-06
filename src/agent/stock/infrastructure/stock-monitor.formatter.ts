@@ -1,4 +1,5 @@
 import { HoldingChange } from '../domain/holding-change';
+import { PortfolioExposure } from '../domain/portfolio-exposure';
 import { AvgPriceStatus, StockAnomaly } from '../domain/stock-monitor.type';
 
 export interface StockMonitorContext {
@@ -109,6 +110,21 @@ export const formatHoldingChanges = (changes: HoldingChange[]): string => {
     lines.push(`• ${tickerLabel} — ${describeHoldingChange(change)}`);
   }
   return lines.join('\n');
+};
+
+export const formatPortfolioExposure = (
+  exposure: PortfolioExposure | null,
+): string => {
+  if (!exposure) {
+    return '';
+  }
+
+  const bucketText = exposure.buckets
+    .map((bucket) => `${bucket.label} ${bucket.ratio}%`)
+    .join(' · ');
+  const fxUsdText =
+    exposure.fxUsdRatio === 0 ? '' : ` (달러 환노출 ${exposure.fxUsdRatio}%)`;
+  return `🌎 ${bucketText}${fxUsdText}`;
 };
 
 // 평단 대비 임계 밖 종목의 **지속 상태**. 발화(사건)는 최초 진입 때만이라, 감시를 시작한 시점에

@@ -75,6 +75,167 @@ const makePrisma = () => ({
 });
 
 describe('StockMonitorRepository', () => {
+  it('TOSS 현재 보유를 시장 구분 없이 최신 종가와 조회한다', async () => {
+    const prisma = makePrisma();
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await repository.findPortfolioPositions();
+
+    expect(prisma.holding.findMany).toHaveBeenCalledWith({
+      where: { ticker: { source: 'TOSS' } },
+      orderBy: { effectiveDate: 'desc' },
+      include: {
+        ticker: {
+          include: {
+            dailyPrices: {
+              orderBy: { tradeDate: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('전환 이력이 있어도 현재 등록 경로의 보유만 포지션으로 반환한다', async () => {
+    const prisma = makePrisma();
+    const currentQuantity = { isZero: () => false };
+    const currentClose = { toString: () => '200' };
+    const databaseHoldings = [
+      {
+        tickerId: 1,
+        quantity: currentQuantity,
+        currency: 'KRW',
+        ticker: {
+          source: 'TOSS',
+          exposureRegion: 'KR',
+          exposureDirection: 'LONG',
+          dailyPrices: [{ close: currentClose }],
+        },
+      },
+      {
+        tickerId: 2,
+        quantity: { isZero: () => false },
+        currency: 'KRW',
+        ticker: {
+          source: 'YAHOO',
+          exposureRegion: 'KR',
+          exposureDirection: 'LONG',
+          dailyPrices: [],
+        },
+      },
+    ];
+    // Prisma mock은 where를 실행하지 않으므로 DB 필터 이후 반환 모양을 직접 지정한다.
+    prisma.holding.findMany.mockResolvedValue([databaseHoldings[0]]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findPortfolioPositions();
+
+    expect(prisma.holding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ticker: { source: 'TOSS' } },
+      }),
+    );
+    expect(result).toEqual([
+      {
+        region: 'KR',
+        direction: 'LONG',
+        currency: 'KRW',
+        quantity: currentQuantity,
+        close: currentClose,
+      },
+    ]);
+  });
+
+  it('최신 수량이 남은 가상 보유만 노출 분류와 최신 종가로 반환한다', async () => {
+    const prisma = makePrisma();
+    const quantity = { isZero: () => false };
+    const close = { toString: () => '123.45' };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 1,
+        quantity,
+        currency: 'USD',
+        ticker: {
+          exposureRegion: 'US',
+          exposureDirection: 'LONG',
+          dailyPrices: [{ close }],
+        },
+      },
+      {
+        tickerId: 2,
+        quantity: { isZero: () => true },
+        currency: 'KRW',
+        ticker: {
+          exposureRegion: 'KR',
+          exposureDirection: 'SHORT',
+          dailyPrices: [{ close }],
+        },
+      },
+      {
+        tickerId: 2,
+        quantity,
+        currency: 'KRW',
+        ticker: {
+          exposureRegion: 'KR',
+          exposureDirection: 'SHORT',
+          dailyPrices: [{ close }],
+        },
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findPortfolioPositions();
+
+    expect(result).toEqual([
+      {
+        region: 'US',
+        direction: 'LONG',
+        currency: 'USD',
+        quantity,
+        close,
+      },
+    ]);
+  });
+
+  it('현재 가상 보유 중 하나라도 종가가 없으면 부분 비중을 반환하지 않는다', async () => {
+    const prisma = makePrisma();
+    const quantity = { isZero: () => false };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 1,
+        quantity,
+        currency: 'KRW',
+        ticker: {
+          exposureRegion: 'KR',
+          exposureDirection: 'LONG',
+          dailyPrices: [{ close: { toString: () => '100' } }],
+        },
+      },
+      {
+        tickerId: 2,
+        quantity,
+        currency: 'USD',
+        ticker: {
+          exposureRegion: 'US',
+          exposureDirection: 'LONG',
+          dailyPrices: [],
+        },
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await expect(repository.findPortfolioPositions()).resolves.toEqual([]);
+  });
+
   it('현재 보유 종목을 marketCountry 로 필터한다', async () => {
     const prisma = makePrisma();
     const repository = new StockMonitorRepository(
