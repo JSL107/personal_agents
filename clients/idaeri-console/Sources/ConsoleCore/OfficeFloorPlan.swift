@@ -38,6 +38,17 @@ private let officePixelsPerCentimeter = 54.0 * officeCharacterScaleFactor / 170.
 /// 두 곳에 따로 두면 한쪽만 바뀌었을 때 폭 상한이 조용히 어긋난다.
 public let officeReferenceTileSize: Double = 40
 
+/// 가구가 차지해도 되는 최대 가로폭(타일 배수). 높이 환산이 여기에 걸려 깎인다.
+///
+/// 1.0(자기 칸을 절대 안 넘음)이었다. 그런데 배율은 가로·세로에 함께 곱해지므로, 폭이 넓은
+/// 에셋은 이 상한이 **높이까지 눌렀다** — 실측하면 책상은 목표의 97%, 소파 85%, 책장 79%만
+/// 반영됐고, 그래서 사람 옆에 놓인 가구가 일제히 작아 보였다.
+///
+/// 1.15 는 "옆 칸을 7.5% 씩 침범"이다. 가구가 사람이나 상태 링을 가리면 관제 정보가 손실되므로
+/// 상한 자체는 남기되, 이 정도는 나란히 놓인 책장 둘이 서로 맞닿아 보이는 수준이라 오히려
+/// 벽면 가구답게 읽힌다. 더 키우려면 렌더로 겹침을 먼저 확인할 것.
+public let officeFurnitureWidthCapTiles: Double = 1.15
+
 /// 앉은 캐릭터를 책상 쪽으로 내리는 양(타일 크기 배수).
 ///
 /// 좌석이 책상 **바로 위 칸**이고 캐릭터·가구 모두 발밑 기준(anchor y = 0)이라, 그냥 두면
@@ -497,9 +508,15 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
 
     /// 실물 높이(cm). 이 값으로 배율을 환산한다. nil 이면 환산하지 않는다.
     ///
-    /// **벽걸이(시계·화이트보드)와 탑다운 시점(회의 테이블)은 nil 이다.** 세로 픽셀이 높이가
-    /// 아니라서 환산이 성립하지 않는다 — 벽시계를 지름 30cm 로 환산하면 절반으로 줄어 보이지
-    /// 않게 되고, 회의 테이블의 세로는 깊이(원근)다. 이 세 종은 화면에서 읽히는 크기로 판단한다.
+    /// **한때 벽걸이 10종과 시계·화이트보드·문이 전부 nil 이었다.** "정면 그림이라 세로 픽셀이
+    /// 높이가 아니다" 라는 이유였는데, 벽에 걸린 정면도야말로 세로 픽셀이 곧 높이다 — 성립하지
+    /// 않는 것은 위에서 내려다본 회의 테이블뿐이다(세로가 깊이라서). 예외로 빼 둔 결과 그 13종만
+    /// 원본 픽셀로 남아 자기들끼리도 축척이 어긋났다: 실측 cm/px 이 액자·포스터류는 2.5 로 고른데
+    /// **시계만 1.58(2배 크게), 화이트보드는 5.0(40% 작게)** 이었다. 기준(캐릭터 54px = 170cm)은
+    /// 3.15 cm/px 이므로 액자류도 21% 크다.
+    ///
+    /// 그래서 회의 테이블만 남기고 전부 환산 안으로 넣는다. 예외가 적을수록 다음에 에셋을
+    /// 늘렸을 때 조용히 어긋나는 자리도 줄어든다.
     public var targetHeightCm: Double? {
         switch self {
         case .desk:
@@ -531,15 +548,38 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
             // 책장과 같은 이유(에셋 가로세로비가 실물보다 정사각형에 가깝다).
             return 180
         case .partitionLow:
-            // 낮은 파티션. 폭이 이미 1칸(40px)이라 상한 1.0 에 걸려 원본 크기로 렌더된다.
-            // 값을 남겨 두는 것은 에셋을 다시 뽑았을 때 환산이 되살아나게 하기 위해서다.
+            // 낮은 파티션. 폭이 이미 1칸(40px)이라 상한에 먼저 걸려 목표를 다 채우지 못한다.
             return 120
-        // 벽걸이와 문은 세로 픽셀이 높이가 아니다. 벽걸이는 벽면에 걸린 정면 그림이고,
-        // 문은 문틀까지 그려진 정면도라 실물 높이(200cm)로 환산하면 한 칸을 크게 넘는다.
-        case .clock, .whiteboard, .meetingTable,
-            .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPinboard,
-            .wallWhiteboard, .wallShelf, .wallMonitor, .wallPoster, .wallPlantHanging,
-            .doorClosed, .doorOpen:
+        // --- 벽에 거는 것들. 벽면 정면도라 세로 픽셀이 그대로 높이다. ---
+        case .clock:
+            // 사무실 벽시계 지름. 실물 표준은 30cm 인데 40 을 쓴다 — 30 이면 9.5px(타일의 1/4)라
+            // 문자판이 뭉개져 시계로 안 읽힌다. 가독 하한을 값으로 흡수한 자리다.
+            return 40
+        case .whiteboard, .wallWhiteboard:
+            // 보드 판 높이(스탠드 제외). 폭이 39px 라 상한에 걸려 목표의 70% 선에서 멈춘다 —
+            // 에셋이 39×22 로 가로로 납작해서다(재제작 목록).
+            return 120
+        case .wallPinboard:
+            return 90
+        case .wallPoster:
+            return 84  // A1 세로
+        case .wallPlantHanging:
+            return 75
+        case .wallMonitor:
+            return 55  // 32인치 세로
+        case .wallShelf:
+            return 50
+        case .wallAbstract, .wallCalendar:
+            return 45
+        case .wallLandscape, .wallCertificate:
+            return 40
+        case .doorClosed, .doorOpen:
+            // 문틀까지 포함한 정면도. 200cm 면 배율 1.41 이지만 폭 상한에 걸려 1.29칸까지만
+            // 큰다 — 여전히 사람(1.35칸)보다 낮다. 에셋이 40×45 로 실제 문 비율(1:2)과
+            // 다른 것이 원인이라 배율로는 여기까지다(재제작 목록).
+            return 200
+        // 위에서 내려다본 테이블만 환산이 성립하지 않는다 — 세로 픽셀이 높이가 아니라 깊이(원근)다.
+        case .meetingTable:
             return nil
         }
     }
@@ -551,19 +591,16 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
     /// 65% 라 150cm 책장이 아니라 허리 높이 수납장으로 읽혔는데, 일괄 보정에서는 빠져 있었다.
     /// 그래서 종류별로 환산한다. 되돌아가면 같은 편차가 다시 생긴다.
     ///
-    /// 환산 대상이 아닌 세 종(`targetHeightCm == nil`)은 1.0 을 유지하되, 회의 테이블만
-    /// 예외로 기존 확대값을 잇는다 — 2칸(footprint)을 차지하는데 원본이 1.4칸이라 칸을 덜 채운다.
-    /// 정확한 값은 실앱에서 눈으로 확정할 항목이다.
+    /// 환산 대상이 아닌 회의 테이블만 기존 확대값을 잇는다 — 2칸(footprint)을 차지하는데
+    /// 원본이 1.4칸이라 칸을 덜 채운다.
     ///
     /// **높이 환산값은 폭 상한에 걸려 깎일 수 있다.** 렌더는 배율을 가로·세로에 같이 곱하므로
     /// (`OfficeScene` 의 `node.size`) 높이만 보고 키우면 폭이 자기 칸을 넘어 옆 칸을 침범한다.
-    /// 책장은 개발·리뷰 부서와 상단 밴드에서 **두 개가 인접 배치**되므로 넘친 폭이 곧 겹침이다.
-    /// 관제 화면에서 가구가 사람이나 상태 링을 가리는 것은 정보 손실이라, 시각 축척보다
-    /// 겹침 방지가 우선한다(관통 제약 6번).
+    /// 상한 자체는 `officeFurnitureWidthCapTiles` 가 정하고, 여기서는 그 값을 곱해 쓴다.
     ///
-    /// 그래서 폭이 큰 가구는 목표 높이를 다 채우지 못한다 — 책장이 대표적이다(88% → 70%).
-    /// 원인은 에셋의 가로세로비가 실물과 다른 것(37×35 로 거의 정사각형인데 실물 3단 책장은
-    /// 세로로 길다)이므로, 배율로는 여기까지가 한계다. 해소는 에셋 재제작(3단계) 몫이다.
+    /// 상한에 걸린 가구는 목표 높이를 다 채우지 못한다 — 화이트보드(70%)와 문(91%)이 그렇다.
+    /// 원인은 에셋의 가로세로비가 실물과 다른 것(화이트보드 39×22 로 납작, 문 40×45 인데 실제
+    /// 문은 1:2)이므로 배율로는 여기까지가 한계다. 해소는 에셋 재제작 몫이다.
     public var sizeBoost: Double {
         let byHeight: Double
         if let targetHeightCm {
@@ -575,7 +612,10 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         }
         let widthCap =
             scaleGroup
-            .map { Double(footprint.width) * officeReferenceTileSize / $0.nativeSize.width }
+            .map {
+                Double(footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
+                    / $0.nativeSize.width
+            }
             .min() ?? 1
         return min(byHeight, widthCap)
     }

@@ -323,16 +323,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expect(kind.nativeHeight > 0, "\(kind.rawValue) 원본 높이 실측값 존재")
     }
 
-    // **보정 후 폭이 점유 칸을 넘지 않는다.** 렌더가 배율을 가로·세로에 같이 곱하므로
+    // **보정 후 폭이 허용 상한을 넘지 않는다.** 렌더가 배율을 가로·세로에 같이 곱하므로
     // 높이만 보고 키우면 폭이 옆 칸을 침범한다. 책장은 개발·리뷰 부서와 상단 밴드에서
     // 두 개가 인접 배치되므로 넘친 폭이 곧 겹침이고, 옆 칸 사람과 상태 링을 가린다.
     // (실제로 겪었다 — 높이 환산만 적용한 첫 구현에서 책장이 50.4px 로 10px 겹쳤다.)
+    //
+    // 상한은 딱 1칸이었다가 `officeFurnitureWidthCapTiles`(1.15) 로 완화됐다 — 1칸이면
+    // 폭 넓은 에셋의 **높이까지** 눌러 책상 97%·소파 85%·책장 79% 만 반영됐다. 상한 자체를
+    // 없애지는 않는다. 여기서 상수를 곱해 읽는 이유는 정책이 바뀌면 이 검사도 따라오게 하되
+    // 상한이 사라지는 것은 막기 위해서다.
+    t.expect(
+        officeFurnitureWidthCapTiles >= 1.0 && officeFurnitureWidthCapTiles <= 1.25,
+        "가구 폭 상한이 1.0~1.25칸 (실제 \(officeFurnitureWidthCapTiles))"
+    )
     for kind in FurnitureKind.allCases {
         let renderedWidth = kind.nativeSize.width * kind.sizeBoost
-        let allowed = Double(kind.footprint.width) * officeReferenceTileSize
+        let allowed =
+            Double(kind.footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
         t.expect(
             renderedWidth <= allowed,
-            "\(kind.rawValue) 보정 후 폭이 점유 칸 이하 (실제 \(renderedWidth) vs \(allowed))"
+            "\(kind.rawValue) 보정 후 폭이 상한 이하 (실제 \(renderedWidth) vs \(allowed))"
         )
     }
 
@@ -344,13 +354,24 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "2인·3인 소파가 같은 배율"
     )
 
-    // 세로 픽셀이 높이가 아닌 세 종은 환산에서 빠져야 한다 — 벽시계를 지름 30cm 로 환산하면
-    // 절반으로 줄어 보이지 않게 되고, 회의 테이블의 세로는 깊이(원근)다.
-    t.expectNil(FurnitureKind.clock.targetHeightCm, "벽시계는 높이 환산 제외")
-    t.expectNil(FurnitureKind.whiteboard.targetHeightCm, "화이트보드는 높이 환산 제외")
+    // **환산 예외는 회의 테이블 하나뿐이다.** 위에서 내려다본 테이블만 세로 픽셀이 높이가
+    // 아니라 깊이(원근)다. 벽에 걸린 정면도는 세로가 곧 높이라 환산이 성립한다.
+    //
+    // 한때 벽걸이 10종과 시계·화이트보드·문까지 13종이 예외였다. 그 결과 그것들만 원본
+    // 픽셀로 남아 **시계가 실물 축척의 2배, 화이트보드는 40% 크기**로 그려졌다. 예외를
+    // 늘리면 같은 일이 반복되므로 목록으로 못박는다 — 새 가구에 실측값을 안 채우면 여기서 걸린다.
+    for kind in FurnitureKind.allCases where kind != .meetingTable {
+        t.expect(
+            kind.targetHeightCm != nil,
+            "\(kind.rawValue) 실물 높이 실측값 존재 (환산 예외는 회의 테이블뿐)"
+        )
+    }
     t.expectNil(FurnitureKind.meetingTable.targetHeightCm, "회의 테이블은 높이 환산 제외")
-    t.expectEqual(FurnitureKind.clock.sizeBoost, 1.0, "벽시계는 원본 크기")
-    t.expectEqual(FurnitureKind.whiteboard.sizeBoost, 1.0, "화이트보드는 원본 크기")
+    // 시계는 환산에 들어오면서 **작아진다**. 되돌아가면(예외로 빼면) 1.0 이 되어 걸린다.
+    t.expect(
+        FurnitureKind.clock.sizeBoost < 1.0,
+        "벽시계가 원본보다 작아짐 (실제 \(FurnitureKind.clock.sizeBoost))"
+    )
 
     // 3단 책장은 이전 일괄 보정(책상·회의테이블·소파만)에서 빠져 원본 크기로 방치돼 있었다.
     // 지금은 보정을 받지만 **폭 상한에 걸려 목표 높이를 다 채우지 못한다** — 환산 목표는
@@ -358,18 +379,19 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 세로로 길어서, 높이를 맞추면 폭이 1칸을 넘어 인접 책장·옆 칸 사람과 겹친다.
     // 배율로는 여기까지가 한계이고 해소는 에셋 재제작(3단계) 몫이다.
     //
-    // 기준을 68% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65% 로 떨어져 걸린다.
+    // 기준을 78% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65%, 폭 상한을 1칸으로
+    // 되돌리면 70% 로 떨어져 둘 다 걸린다.
     let bookshelf = FurnitureKind.bookshelf
     let bookshelfHeight = bookshelf.nativeHeight * bookshelf.sizeBoost
     t.expect(
-        bookshelfHeight >= characterHeight * 0.68,
-        "책장이 사람 키의 68% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
+        bookshelfHeight >= characterHeight * 0.78,
+        "책장이 사람 키의 78% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
     )
     // 폭 상한이 결정한 배율을 그대로 쓴다 — 상한 안에서 최대한 키운 상태여야 한다.
     // 누가 배율을 임의값으로 되돌리면 여기서 걸린다.
     t.expectEqual(
         bookshelf.sizeBoost,
-        officeReferenceTileSize / bookshelf.nativeSize.width,
+        officeFurnitureWidthCapTiles * officeReferenceTileSize / bookshelf.nativeSize.width,
         "책장 배율이 폭 상한값과 일치"
     )
 
