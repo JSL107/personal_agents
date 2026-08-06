@@ -51,7 +51,7 @@ export const detectDailyChange = (
   const direction = change > 0 ? '급등' : '급락';
   return {
     tickerName: holding.tickerName,
-    yahooSymbol: holding.yahooSymbol,
+    symbol: holding.symbol,
     kind: 'DAILY_CHANGE',
     ruleId: 'daily-change',
     ruleVersion: DAILY_CHANGE_RULE_VERSION,
@@ -101,7 +101,7 @@ export const detectAvgPriceBreach = (
   const label = isLower ? '손실' : '수익';
   return {
     tickerName: holding.tickerName,
-    yahooSymbol: holding.yahooSymbol,
+    symbol: holding.symbol,
     kind: 'AVG_PRICE_BREACH',
     ruleId: 'avg-price-breach',
     ruleVersion: AVG_PRICE_BREACH_RULE_VERSION,

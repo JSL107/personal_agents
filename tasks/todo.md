@@ -720,3 +720,31 @@
 - 전체 lint/test/build와 docs/env/invariants 게이트가 exit 0이다. lint 기존 warning 57건, 일반 298 suites/2,272 tests, code-graph 5 suites/40 tests가 통과했다.
 - 기존 formatter 미커밋 변경은 보존했다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
 - 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.
+# 토스증권 시세 소스 전환 구현 계획 (2026-08-06)
+
+**Source of truth:** `.ai/design.md`. 실측 응답 외 필드·봉투를 유추하지 않는다.
+
+**Constraints:** Node 22 + pnpm. `stock-anomaly.ts` 판정 로직과 `STOCK_THRESHOLDS`, Yahoo 클라이언트·매퍼, `ResolvedInstrument`, `scripts/register-holding.ts`, `prisma/schema.prisma`는 변경하지 않는다. git commit/push 금지.
+
+- [x] 현재 Toss/Yahoo client·mapper·module·감시 경로와 기존 테스트 패턴을 확인한다.
+- [x] 실측 fixture 기반 `toss-market-data.mapper.spec.ts`를 먼저 작성하고 RED를 확인한다.
+- [x] `TossApiClient`, candle mapper, `TossInvestClient` 공통 HTTP 위임을 최소 구현하고 관련 테스트를 GREEN으로 만든다.
+- [x] `toss-market-data.client.spec.ts`를 먼저 작성하고 count clamp, 429 전파, mapper 오류, 220ms 간격, Yahoo 환율 위임의 RED를 확인한다.
+- [x] `TossMarketDataClient`, port/module DI 변경을 최소 구현하고 관련 테스트를 GREEN으로 만든다.
+- [x] 감시 경로의 `yahooSymbol`을 `symbol`로 제한 리네임하고 repository가 `tossSymbol`을 사용하게 바꾼다.
+- [x] `grep -rn "yahooSymbol" src scripts` 결과가 허용된 제외 파일뿐인지 확인하고 금지 파일 diff가 없는지 확인한다.
+- [x] 전체 diff를 design.md 계약·코드 규칙·보안·rate limit·날짜/정렬 불변식 관점에서 리뷰한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 각각 실행해 실제 exit code를 확인한다.
+- [x] 실호출로 6종목 일봉 적재와 감시 대상 0→6 전환을 확인한다.
+- [x] `.ai/implementation-summary.md`에 파일 목록, 설계 이탈, 4중 게이트 결과, Claude 재검증 지점을 기록한다.
+
+## Review
+
+- `TossApiClient`로 token cache와 HTTP 처리를 공유하고, 일봉은 Toss `/candles`로 전환했다. 환율만 Yahoo 위임으로 남겼다.
+- mapper는 `timestamp` 앞 10자를 UTC 자정 거래일로 만들고 오름차순 정렬한다. 전체 candle 검증, Decimal finite, 정수 volume을 강제한다.
+- `findCurrentHoldings`는 `ticker.tossSymbol`을 사용한다. 감시 경로 필드는 `symbol`로 중립화했고 판정 상수·수식·기대값은 불변이다.
+- rate limit은 설계대로 호출 시작 간 최소 220ms 고정 간격이다. 429 retry는 추가하지 않았으며 HTTP 오류를 그대로 전파한다.
+- 최종 리뷰의 credential 에러 문구 회귀 1건은 regression RED 후 기존 문구로 복원했고 scoped re-review `ADDRESSED`다.
+- Verification: lint/test/build/docs:check 모두 exit 0. commit/push, Prisma/Yahoo 제외 파일 변경 없음. 상세는 `.ai/implementation-summary.md`에 기록했다.
+
+---

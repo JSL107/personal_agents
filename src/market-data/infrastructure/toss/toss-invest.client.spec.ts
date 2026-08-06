@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { TossApiClient } from './toss-api.client';
 import { TossInvestClient } from './toss-invest.client';
 
 const createJsonResponse = (body: unknown): Response => {
@@ -57,7 +58,10 @@ describe('TossInvestClient token cache', () => {
     const configService = {
       get: jest.fn((key: keyof typeof config) => config[key]),
     } as unknown as ConfigService;
-    client = new TossInvestClient(configService);
+    client = new TossInvestClient(
+      new TossApiClient(configService),
+      configService,
+    );
   });
 
   afterEach(() => {
@@ -118,6 +122,21 @@ describe('TossInvestClient token cache', () => {
     expect(tokenRequests).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+
+  it('credential 미설정이면 기존 잔고 동기화 오류 문구를 보존한다', async () => {
+    const configService = {
+      get: jest.fn(() => undefined),
+    } as unknown as ConfigService;
+    const clientWithoutCredential = new TossInvestClient(
+      new TossApiClient(configService),
+      configService,
+    );
+
+    await expect(clientWithoutCredential.fetchHoldings()).rejects.toThrow(
+      '토스증권 잔고 동기화가 비활성 상태입니다. TOSS_CLIENT_ID와 TOSS_CLIENT_SECRET을 설정하세요.',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 // 위 describe 는 TOSS_ACCOUNT_SEQ 를 항상 설정해 `/accounts` 경로를 한 번도 타지 않았다.
@@ -137,7 +156,10 @@ describe('TossInvestClient 계좌 자동 선택', () => {
     const configService = {
       get: jest.fn((key: string) => config[key]),
     } as unknown as ConfigService;
-    client = new TossInvestClient(configService);
+    client = new TossInvestClient(
+      new TossApiClient(configService),
+      configService,
+    );
   });
 
   afterEach(() => {
@@ -156,11 +178,8 @@ describe('TossInvestClient 계좌 자동 선택', () => {
     const holdingsCall = fetchMock.mock.calls.find(([url]) =>
       String(url).endsWith('/api/v1/holdings'),
     );
-    const headers = (holdingsCall?.[1]?.headers ?? {}) as Record<
-      string,
-      string
-    >;
-    expect(headers['X-Tossinvest-Account']).toBe('1');
+    const headers = new Headers(holdingsCall?.[1]?.headers);
+    expect(headers.get('X-Tossinvest-Account')).toBe('1');
   });
 
   it('BROKERAGE 계좌가 없으면 명시 오류로 끊는다', async () => {
@@ -186,6 +205,21 @@ describe('TossInvestClient 계좌 자동 선택', () => {
           result: { items: [{ accountSeq: 1, accountType: 'BROKERAGE' }] },
         }),
       );
+
+    await expect(client.fetchHoldings()).rejects.toThrow(
+      '계좌 목록 응답 형식이 올바르지 않습니다',
+    );
+  });
+
+  it('result 봉투 밖의 계좌 배열은 받지 않는다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+      .mockResolvedValueOnce(
+        createJsonResponse([
+          { accountNo: '12345678901', accountSeq: 1, accountType: 'BROKERAGE' },
+        ]),
+      )
+      .mockResolvedValueOnce(createJsonResponse(HOLDINGS_RESPONSE));
 
     await expect(client.fetchHoldings()).rejects.toThrow(
       '계좌 목록 응답 형식이 올바르지 않습니다',
