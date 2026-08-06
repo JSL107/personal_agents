@@ -65,6 +65,9 @@ const makePrisma = () => ({
   holding: {
     findMany: jest.fn().mockResolvedValue([]),
   },
+  holdingChange: {
+    createMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
   dailyFxRate: {
     upsert: jest.fn().mockResolvedValue(undefined),
     findUnique: jest.fn(),
@@ -233,5 +236,86 @@ describe('StockMonitorRepository', () => {
       select: { rate: true },
     });
     expect(result).toBe('1476.300000');
+  });
+
+  // 매매 판정의 기준선. 수량이나 종목명이 빠지면 판정이 조용히 무력화되므로 반환 모양을 고정한다.
+  it('직전 브로커 잔고를 수량·종목명까지 담아 반환한다', async () => {
+    const prisma = makePrisma();
+    const quantity = { isZero: () => false };
+    const avgPrice = { toString: () => '11044.7' };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 7,
+        quantity,
+        avgPrice,
+        currency: 'KRW',
+        ticker: {
+          name: 'KODEX 인버스',
+          tossSymbol: '114800',
+          code: '114800',
+        },
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findCurrentBrokerHoldings();
+
+    expect(prisma.holding.findMany).toHaveBeenCalledWith({
+      where: { ticker: { source: 'TOSS' } },
+      orderBy: { effectiveDate: 'desc' },
+      include: { ticker: true },
+    });
+    expect(result).toEqual([
+      {
+        tickerId: 7,
+        tickerName: 'KODEX 인버스',
+        symbol: '114800',
+        quantity,
+        avgPrice,
+        currency: 'KRW',
+      },
+    ]);
+  });
+
+  it('매매 사건을 한 번에 적재한다', async () => {
+    const prisma = makePrisma();
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+    const effectiveDate = new Date('2026-08-06T00:00:00.000Z');
+    const changes = [
+      {
+        tickerId: 7,
+        kind: 'INCREASED' as const,
+        previousQuantity: '50',
+        quantity: '80',
+        previousAvgPrice: '11044.7',
+        avgPrice: '10800',
+        currency: 'KRW',
+        effectiveDate,
+        fingerprint: 'a'.repeat(64),
+      },
+    ];
+
+    await repository.recordHoldingChanges(changes);
+
+    // skipDuplicates 가 빠지면 겹친 실행이 같은 지문으로 삽입을 시도해 동기화 전체가 throw 한다.
+    expect(prisma.holdingChange.createMany).toHaveBeenCalledWith({
+      data: changes,
+      skipDuplicates: true,
+    });
+  });
+
+  it('적재할 사건이 없으면 DB 를 건드리지 않는다', async () => {
+    const prisma = makePrisma();
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await repository.recordHoldingChanges([]);
+
+    expect(prisma.holdingChange.createMany).not.toHaveBeenCalled();
   });
 });

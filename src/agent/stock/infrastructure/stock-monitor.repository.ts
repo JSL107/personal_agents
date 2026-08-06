@@ -2,16 +2,23 @@ import { Injectable } from '@nestjs/common';
 
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
 import {
   HoldingSnapshot,
   StockMarketCountry,
   StoredStockAlert,
 } from '../domain/stock-monitor.type';
 
-interface CurrentBrokerHolding {
+export interface RecordedHoldingChange {
   tickerId: number;
-  avgPrice: DecimalValue;
+  kind: HoldingChangeKind;
+  previousQuantity: string | null;
+  quantity: string;
+  previousAvgPrice: string | null;
+  avgPrice: string;
   currency: string;
+  effectiveDate: Date;
+  fingerprint: string;
 }
 
 export interface AlertNeedingOutcome {
@@ -113,14 +120,17 @@ export class StockMonitorRepository {
     });
   }
 
-  async findCurrentBrokerHoldings(): Promise<CurrentBrokerHolding[]> {
+  // 동기화 직전의 잔고 상태. 새 값을 덮어쓰기 전에 읽어야 매매 판정의 기준선이 된다.
+  // 수량 0 행을 걸러 "보유 중인 것"만 돌려주므로, 전량 매도된 종목은 여기 나타나지 않는다.
+  async findCurrentBrokerHoldings(): Promise<HoldingPosition[]> {
     const holdings = await this.prisma.holding.findMany({
       where: { ticker: { source: 'TOSS' } },
       orderBy: { effectiveDate: 'desc' },
+      include: { ticker: true },
     });
 
     const seen = new Set<number>();
-    const current: CurrentBrokerHolding[] = [];
+    const current: HoldingPosition[] = [];
     for (const holding of holdings) {
       if (seen.has(holding.tickerId)) {
         continue;
@@ -131,11 +141,27 @@ export class StockMonitorRepository {
       }
       current.push({
         tickerId: holding.tickerId,
+        tickerName: holding.ticker.name,
+        symbol: holding.ticker.tossSymbol ?? holding.ticker.code,
+        quantity: holding.quantity,
         avgPrice: holding.avgPrice,
         currency: holding.currency,
       });
     }
     return current;
+  }
+
+  // skipDuplicates — 겹친 실행이 계산한 같은 사건은 fingerprint 유니크에서 조용히 걸러진다.
+  // 차단을 DB 에 맡기는 이유: 앞서 조회해 걸러내는 방식은 두 실행이 동시에 조회하면 둘 다
+  // "없다"를 보고 둘 다 넣는다. 겹침이 정확히 그 상황이라 애플리케이션 검사로는 못 막는다.
+  async recordHoldingChanges(changes: RecordedHoldingChange[]): Promise<void> {
+    if (changes.length === 0) {
+      return;
+    }
+    await this.prisma.holdingChange.createMany({
+      data: changes,
+      skipDuplicates: true,
+    });
   }
 
   async upsertDailyPrice(input: {
