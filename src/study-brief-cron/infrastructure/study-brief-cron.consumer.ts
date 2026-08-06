@@ -416,7 +416,6 @@ const toStudyBriefVerdict = (verdict: StudyTopicVerdict): StudyBriefVerdict => {
       kind: verdict.kind,
       whyNow: verdict.whyNow,
       whereItLands: verdict.whereItLands,
-      readingPlan: verdict.readingPlan,
       minutes: verdict.minutes,
     };
   }
@@ -424,7 +423,6 @@ const toStudyBriefVerdict = (verdict: StudyTopicVerdict): StudyBriefVerdict => {
     kind: verdict.kind,
     whatImproves: verdict.whatImproves,
     adoptionCost: verdict.adoptionCost,
-    installHint: verdict.installHint,
     ...(verdict.caution === undefined ? {} : { caution: verdict.caution }),
     minutes: verdict.minutes,
   };

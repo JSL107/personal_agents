@@ -14,14 +14,19 @@ const COMMON_SYSTEM_PROMPT = `너는 개발자의 사수(멘토)다. 회사가 �
 minutes는 0 이상의 정수다.`;
 
 export const STUDY_CONCEPT_SYSTEM_PROMPT = `${COMMON_SYSTEM_PROMPT}
-whereItLands는 주어진 모듈 목록 안에서 고른다. 목록에 닿는 것이 없을 때만 "레포에서 확인 못 함"이라고 쓴다. 목록에 없는 경로를 지어내지 않는다.
+whyNow는 2문장 이내다. 이 사람의 역량·현재 작업과 연결되는 이유만 쓴다.
+whereItLands는 한 줄이다. 주어진 모듈 목록 안에서 고른 이름을 쉼표로 쓴다. 설명 문장을 붙이지 마라. 목록에 닿는 것이 없을 때만 "레포에서 확인 못 함"이라고 쓴다. 목록에 없는 경로를 지어내지 않는다.
+번호 목록(\`1. … 2. …\`)이나 여러 단계 나열을 어느 필드에도 넣지 마라 — 그건 본문 \`## 오늘 할 일\`의 몫이다.
 minutes는 읽기 예상 시간이다.
-스키마: {"whyNow":"프로필 근거","whereItLands":"실제 파일/모듈","readingPlan":"읽는 순서","minutes":30}`;
+스키마: {"whyNow":"프로필 근거","whereItLands":"모듈 이름","minutes":30}`;
 
 export const STUDY_TOOL_SYSTEM_PROMPT = `${COMMON_SYSTEM_PROMPT}
-installHint에는 자격증명·토큰 값을 넣지 않는다. 발급이 필요하면 "토큰 발급 필요"라고만 쓴다.
+whatImproves는 2문장 이내다.
+adoptionCost는 한 줄이다.
+caution은 한 줄. 없으면 필드를 생략한다.
+번호 목록(\`1. … 2. …\`)이나 여러 단계 나열을 어느 필드에도 넣지 마라 — 그건 본문 \`## 오늘 할 일\`의 몫이다.
 minutes는 설치·연결 예상 시간이다. caution이 없으면 생략한다.
-스키마: {"whatImproves":"현재 방식 대비 개선","adoptionCost":"설치·인증·중복 비용","installHint":"명령어 수준 경로","caution":"선택 주의점","minutes":15}`;
+스키마: {"whatImproves":"현재 방식 대비 개선","adoptionCost":"설치·인증·중복 비용","caution":"선택 주의점","minutes":15}`;
 
 export const buildStudyTopicPrompt = ({
   research,
@@ -82,7 +87,6 @@ const parseConceptVerdict = (
   kind: 'CONCEPT',
   whyNow: readString(root.whyNow, 'whyNow'),
   whereItLands: readString(root.whereItLands, 'whereItLands'),
-  readingPlan: readString(root.readingPlan, 'readingPlan'),
   minutes: readMinutes(root.minutes),
 });
 
@@ -92,7 +96,6 @@ const parseToolVerdict = (root: Record<string, unknown>): StudyToolVerdict => {
     kind: 'TOOL',
     whatImproves: readString(root.whatImproves, 'whatImproves'),
     adoptionCost: readString(root.adoptionCost, 'adoptionCost'),
-    installHint: readString(root.installHint, 'installHint'),
     ...(caution !== undefined ? { caution } : {}),
     minutes: readMinutes(root.minutes),
   };

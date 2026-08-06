@@ -6,6 +6,7 @@ import {
   NOTION_CLIENT_PORT,
   NotionClientPort,
   NotionPlanBlock,
+  NotionRichText,
 } from '../../notion/domain/port/notion-client.port';
 import {
   buildAnnotatedRichText,
@@ -19,6 +20,7 @@ import {
 import { StudyBriefVerdict } from '../domain/study-brief.type';
 
 const NOTION_BLOCK_LIMIT = 100;
+const CALLOUT_TEXT_LIMIT = 400;
 const PROPERTY_NAME_TITLE = '이름';
 const PROPERTY_NAME_KIND = '종류';
 const PROPERTY_NAME_DATE = '날짜';
@@ -87,7 +89,7 @@ const formatError = (error: unknown): string =>
 
 const buildPageBlocks = (input: PublishStudyBriefInput): NotionPlanBlock[] => {
   const blocks: NotionPlanBlock[] = [
-    buildCallout(input.verdict),
+    ...buildCalloutBlocks(input.verdict),
     { type: 'divider' },
     ...markdownToBlocks(input.reportMd),
     { type: 'divider' },
@@ -99,36 +101,77 @@ const buildPageBlocks = (input: PublishStudyBriefInput): NotionPlanBlock[] => {
   return blocks;
 };
 
-const buildCallout = (verdict: StudyBriefVerdict): NotionPlanBlock => {
-  const callout = match(verdict)
+interface CalloutDefinition {
+  icon: string;
+  lines: string[];
+}
+
+interface CalloutPartition {
+  calloutLines: string[];
+  overflowLines: string[];
+}
+
+interface TextContent {
+  text: string;
+  richText: NotionRichText[];
+}
+
+const buildCalloutBlocks = (verdict: StudyBriefVerdict): NotionPlanBlock[] => {
+  const definition = match(verdict)
     .with({ kind: 'CONCEPT' }, (concept) => ({
       icon: '📚',
-      text: [
+      lines: [
         `**왜 지금 나한테** ${concept.whyNow}`,
         `**어디에 닿나** ${concept.whereItLands}`,
-        `**읽을 것** ${concept.readingPlan}`,
-      ].join('\n'),
+      ],
     }))
     .with({ kind: 'TOOL' }, (tool) => {
       const lines = [
         `**뭐가 좋아지나** ${tool.whatImproves}`,
         `**붙이는 비용** ${tool.adoptionCost}`,
-        `**설치** ${tool.installHint}`,
       ];
       if (tool.caution !== undefined) {
         lines.push(`**주의** ${tool.caution}`);
       }
-      return { icon: '🔧', text: lines.join('\n') };
+      return { icon: '🔧', lines };
     })
-    .exhaustive();
-  return {
-    type: 'callout',
-    icon: callout.icon,
-    text: buildAnnotatedRichText(callout.text)
-      .map((item) => item.text.content)
-      .join(''),
-    richText: buildAnnotatedRichText(callout.text),
-  };
+    .exhaustive() satisfies CalloutDefinition;
+  const { calloutLines, overflowLines } = partitionCalloutLines(
+    definition.lines,
+  );
+  const blocks: NotionPlanBlock[] = [];
+  if (calloutLines.length > 0) {
+    blocks.push({
+      type: 'callout',
+      icon: definition.icon,
+      ...buildTextContent(calloutLines.join('\n')),
+    });
+  }
+  for (const overflowLine of overflowLines) {
+    blocks.push({ type: 'paragraph', ...buildTextContent(overflowLine) });
+  }
+  return blocks;
+};
+
+const partitionCalloutLines = (lines: string[]): CalloutPartition => {
+  const calloutLines: string[] = [];
+  const overflowLines: string[] = [];
+  for (const line of lines) {
+    const candidate = [...calloutLines, line].join('\n');
+    const candidateLength = Array.from(buildTextContent(candidate).text).length;
+    if (overflowLines.length === 0 && candidateLength <= CALLOUT_TEXT_LIMIT) {
+      calloutLines.push(line);
+      continue;
+    }
+    overflowLines.push(line);
+  }
+  return { calloutLines, overflowLines };
+};
+
+const buildTextContent = (markdown: string): TextContent => {
+  const richText = buildAnnotatedRichText(markdown);
+  const text = richText.map((item) => item.text.content).join('');
+  return { text, richText };
 };
 
 const buildProperties = (
