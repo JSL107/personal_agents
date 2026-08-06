@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
+import { HoldingChange } from '../../../agent/stock/domain/holding-change';
 import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
@@ -57,7 +58,22 @@ const makeRepository = () => ({
 });
 
 const makeSyncHoldings = () => ({
-  execute: jest.fn().mockResolvedValue({ synced: 2, zeroed: 0 }),
+  execute: jest.fn().mockResolvedValue({ synced: 2, zeroed: 0, changes: [] }),
+});
+
+const holdingChange = (
+  overrides: Partial<HoldingChange> = {},
+): HoldingChange => ({
+  tickerId: 1,
+  tickerName: 'SamsungElec',
+  symbol: '005930',
+  kind: 'INCREASED',
+  previousQuantity: '10',
+  quantity: '20',
+  previousAvgPrice: '100',
+  avgPrice: '95',
+  currency: 'KRW',
+  ...overrides,
 });
 
 // 원장에 실제로 남은 실행. AgentRunService 를 mock 하되 run() 을 그대로 통과시켜
@@ -176,7 +192,11 @@ describe('StockMonitorAutopilotTask', () => {
       new Date('2026-07-21T00:00:00.000Z'),
     );
     const syncHoldings = makeSyncHoldings();
-    syncHoldings.execute.mockResolvedValue({ synced: 6, zeroed: 2 });
+    syncHoldings.execute.mockResolvedValue({
+      synced: 6,
+      zeroed: 2,
+      changes: [],
+    });
 
     await makeTask(
       marketData,
@@ -189,6 +209,7 @@ describe('StockMonitorAutopilotTask', () => {
     expect(recordedRuns[0].output).toMatchObject({
       syncedHoldings: 6,
       zeroedHoldings: 2,
+      holdingChangeCount: 0,
       syncError: null,
     });
   });
@@ -219,7 +240,110 @@ describe('StockMonitorAutopilotTask', () => {
     expect(recordedRuns[0].output).toMatchObject({
       syncedHoldings: null,
       zeroedHoldings: null,
+      // 변화 0건(감지가 돌았고 매매가 없었다)과 구분되어야 한다.
+      holdingChangeCount: null,
       syncError: 'Toss timeout',
+    });
+  });
+
+  it('감지한 매매를 요약에 덧붙이고 원장에 건수를 남긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 2,
+      zeroed: 0,
+      changes: [
+        holdingChange(),
+        holdingChange({
+          tickerId: 2,
+          symbol: 'PFE',
+          tickerName: '화이자',
+          currency: 'USD',
+          kind: 'BOUGHT',
+          previousQuantity: null,
+          previousAvgPrice: null,
+          quantity: '62.0845',
+          avgPrice: '26.8245',
+        }),
+      ],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.summaryText).toContain('💼 *잔고 변화 2건*');
+    expect(result.summaryText).toContain(
+      '• *SamsungElec* — 추가 매수 10주 → 20주, 평단 100원 → 95원',
+    );
+    expect(result.summaryText).toContain(
+      '• 🇺🇸 *PFE* — 신규 매수 62.0845주 (평단 USD 26.8245)',
+    );
+    // 감시 판정 요약을 밀어내지 않고 그 뒤에 붙는다.
+    expect(result.summaryText).toMatch(/주식 모니터링[\s\S]*잔고 변화/);
+    expect(recordedRuns[0].output).toMatchObject({ holdingChangeCount: 2 });
+  });
+
+  it('매매가 없으면 요약에 잔고 변화 줄을 넣지 않는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).not.toContain('잔고 변화');
+  });
+
+  // 전량 매도 직후가 이 경로다. 보유가 0건이라 판정은 건너뛰지만 "다 팔았다"는 알려야 한다.
+  it('보유 종목이 0건이어도 감지한 매매는 발송한다', async () => {
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([]);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 0,
+      zeroed: 1,
+      changes: [
+        holdingChange({
+          kind: 'SOLD_ALL',
+          previousQuantity: '10',
+          quantity: '0',
+          previousAvgPrice: '100',
+          avgPrice: '100',
+        }),
+      ],
+    });
+
+    const result = await makeTask(
+      { fetchDailyBars: jest.fn() },
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('• *SamsungElec* — 전량 매도 (10주)');
+    expect(recordedRuns[0].output).toMatchObject({
+      holdingCount: 0,
+      holdingChangeCount: 1,
     });
   });
 
