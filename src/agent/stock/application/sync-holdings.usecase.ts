@@ -5,6 +5,7 @@ import {
   BrokerHoldingsPort,
 } from '../../../market-data/domain/port/broker-holdings.port';
 import {
+  buildHoldingChangeFingerprint,
   detectHoldingChanges,
   HoldingChange,
   HoldingPosition,
@@ -34,7 +35,7 @@ export class SyncHoldingsUsecase {
     const effectiveDate = new Date();
     effectiveDate.setUTCHours(0, 0, 0, 0);
 
-    const syncedTickerIds = new Set<number>();
+    // 종목 등록만 먼저 한다. 사건도 스냅샷도 tickerId 를 참조하므로 이건 어느 쪽보다 앞이어야 한다.
     const positions: HoldingPosition[] = [];
     for (const holding of holdings) {
       const tickerId = await this.repository.upsertTickerFromBroker({
@@ -45,7 +46,6 @@ export class SyncHoldingsUsecase {
         name: holding.name,
         currency: holding.currency,
       });
-      syncedTickerIds.add(tickerId);
       positions.push({
         tickerId,
         tickerName: holding.name,
@@ -54,12 +54,42 @@ export class SyncHoldingsUsecase {
         avgPrice: holding.averagePurchasePrice,
         currency: holding.currency,
       });
-      await this.repository.upsertHolding({
-        tickerId,
+    }
+
+    // 사건을 스냅샷 갱신보다 **먼저** 적재한다.
+    //
+    // 이 usecase 는 트랜잭션 없이 종목별로 개별 커밋한다(호출부 withSyncWarning 주석 참조).
+    // 스냅샷을 먼저 갱신하면 그 뒤 적재가 실패했을 때 사건이 영구히 사라진다 — 스냅샷은 이미
+    // 새 잔고라서 재실행이 "변화 없음"으로 판정하기 때문이다. 경고가 화면에 떠도 유실된 사건은
+    // 돌아오지 않는다.
+    //
+    // 순서를 뒤집으면 스냅샷 갱신이 중간에 실패해도 사건은 이미 남아 있고, 재실행은 아직 갱신되지
+    // 않은 종목의 같은 변화를 다시 계산해 스냅샷을 따라잡는다. 그때 사건이 두 번 쌓이지 않는 것은
+    // fingerprint 유니크가 보장한다(그 지문이 없으면 이 순서는 중복을 부른다).
+    const changes = detectHoldingChanges(currentHoldings, positions);
+    await this.repository.recordHoldingChanges(
+      changes.map((change) => ({
+        tickerId: change.tickerId,
+        kind: change.kind,
+        previousQuantity: change.previousQuantity,
+        quantity: change.quantity,
+        previousAvgPrice: change.previousAvgPrice,
+        avgPrice: change.avgPrice,
+        currency: change.currency,
         effectiveDate,
-        quantity: holding.quantity.toString(),
-        avgPrice: holding.averagePurchasePrice.toString(),
-        currency: holding.currency,
+        fingerprint: buildHoldingChangeFingerprint({ change, effectiveDate }),
+      })),
+    );
+
+    const syncedTickerIds = new Set<number>();
+    for (const position of positions) {
+      syncedTickerIds.add(position.tickerId);
+      await this.repository.upsertHolding({
+        tickerId: position.tickerId,
+        effectiveDate,
+        quantity: position.quantity.toString(),
+        avgPrice: position.avgPrice.toString(),
+        currency: position.currency,
       });
     }
 
@@ -77,25 +107,6 @@ export class SyncHoldingsUsecase {
       });
       zeroed += 1;
     }
-
-    // 스냅샷을 먼저 갱신하고 사건을 적재한다. 순서를 뒤집으면 중간 실패 때 스냅샷에 반영되지
-    // 않은 매매가 사건으로 남아 이력이 사실과 어긋나고, 다음 실행이 같은 사건을 다시 적재한다.
-    // 대신 적재 자체가 실패하면 그 실행분 사건은 복구되지 않는다 — 이 usecase 는 트랜잭션 없이
-    // 종목별로 개별 커밋하는 구조라(호출부 withSyncWarning 주석 참조) 둘을 하나로 묶을 수 없다.
-    // 그 경우 예외가 호출부로 올라가 "잔고 동기화 실패" 경고로 화면에 드러난다.
-    const changes = detectHoldingChanges(currentHoldings, positions);
-    await this.repository.recordHoldingChanges(
-      changes.map((change) => ({
-        tickerId: change.tickerId,
-        kind: change.kind,
-        previousQuantity: change.previousQuantity,
-        quantity: change.quantity,
-        previousAvgPrice: change.previousAvgPrice,
-        avgPrice: change.avgPrice,
-        currency: change.currency,
-        effectiveDate,
-      })),
-    );
 
     return { synced: holdings.length, zeroed, changes };
   }

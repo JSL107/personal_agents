@@ -18,6 +18,7 @@ export interface RecordedHoldingChange {
   avgPrice: string;
   currency: string;
   effectiveDate: Date;
+  fingerprint: string;
 }
 
 export interface AlertNeedingOutcome {
@@ -150,11 +151,17 @@ export class StockMonitorRepository {
     return current;
   }
 
+  // skipDuplicates — 겹친 실행이 계산한 같은 사건은 fingerprint 유니크에서 조용히 걸러진다.
+  // 차단을 DB 에 맡기는 이유: 앞서 조회해 걸러내는 방식은 두 실행이 동시에 조회하면 둘 다
+  // "없다"를 보고 둘 다 넣는다. 겹침이 정확히 그 상황이라 애플리케이션 검사로는 못 막는다.
   async recordHoldingChanges(changes: RecordedHoldingChange[]): Promise<void> {
     if (changes.length === 0) {
       return;
     }
-    await this.prisma.holdingChange.createMany({ data: changes });
+    await this.prisma.holdingChange.createMany({
+      data: changes,
+      skipDuplicates: true,
+    });
   }
 
   async upsertDailyPrice(input: {

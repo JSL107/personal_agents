@@ -168,31 +168,59 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
 
-    const outcome = await this.agentRunService.execute<StockMonitorRunResult>({
-      agentType: AgentType.INVEST,
-      triggerType: TriggerType.AUTOPILOT_INVEST_CRON,
-      inputSnapshot: {
-        taskId: this.id,
-        marketCountry: this.targetMarketCountry,
-        firedAtKst: context.firedAtKst,
-      },
-      run: async () => {
-        const runResult = await this.monitor(context);
-        // 판정은 순수 계산이라 LLM 을 거치지 않는다(VACATION 선례).
-        return {
-          result: runResult,
-          modelUsed: 'deterministic',
-          output: runResult.audit,
-        };
-      },
-    });
-    return outcome.result.taskResult;
+    // 동기화 결과를 execute 밖에서 잡아둔다. 감시가 실패해 예외로 빠져나가도 이미 감지된 매매를
+    // 알릴 수 있어야 하기 때문이다(아래 catch).
+    let detectedChanges: HoldingChange[] = [];
+    try {
+      const outcome = await this.agentRunService.execute<StockMonitorRunResult>(
+        {
+          agentType: AgentType.INVEST,
+          triggerType: TriggerType.AUTOPILOT_INVEST_CRON,
+          inputSnapshot: {
+            taskId: this.id,
+            marketCountry: this.targetMarketCountry,
+            firedAtKst: context.firedAtKst,
+          },
+          run: async () => {
+            const sync = await this.syncCurrentHoldings();
+            detectedChanges = sync.changes;
+            const runResult = await this.monitor(context, sync);
+            // 판정은 순수 계산이라 LLM 을 거치지 않는다(VACATION 선례).
+            return {
+              result: runResult,
+              modelUsed: 'deterministic',
+              output: runResult.audit,
+            };
+          },
+        },
+      );
+      return outcome.result.taskResult;
+    } catch (error) {
+      // 감시 판정이 실패했지만 매매는 이미 감지·적재됐다. 여기서 그대로 던지면 그 알림이
+      // 영구히 사라진다 — 스냅샷은 이미 새 잔고라서 다음 실행은 "변화 없음"으로 판정하고,
+      // orchestrator 가 남기는 실패 한 줄에는 매매 내용이 없다.
+      //
+      // 원장은 이미 FAILED 로 기록됐다(예외가 execute 안에서 났으므로) — /retry-run 대상에서
+      // 빠지지 않는다. 알릴 매매가 없으면 그대로 던져 기존 실패 처리에 맡긴다.
+      const changeText = formatHoldingChanges(detectedChanges);
+      if (!changeText) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `주식 모니터링 실패 — 감지된 매매 ${detectedChanges.length}건은 그대로 알린다: ${message}`,
+      );
+      return {
+        skip: false,
+        summaryText: `_⚠️ 주식 모니터링 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._\n\n${changeText}`,
+      };
+    }
   }
 
   private async monitor(
     context: AutopilotTaskContext,
+    sync: HoldingsSyncResult,
   ): Promise<StockMonitorRunResult> {
-    const sync = await this.syncCurrentHoldings();
     const holdings = await this.repository.findCurrentHoldings({
       marketCountry: this.targetMarketCountry,
     });

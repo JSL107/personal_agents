@@ -295,13 +295,16 @@ describe('StockMonitorRepository', () => {
         avgPrice: '10800',
         currency: 'KRW',
         effectiveDate,
+        fingerprint: 'a'.repeat(64),
       },
     ];
 
     await repository.recordHoldingChanges(changes);
 
+    // skipDuplicates 가 빠지면 겹친 실행이 같은 지문으로 삽입을 시도해 동기화 전체가 throw 한다.
     expect(prisma.holdingChange.createMany).toHaveBeenCalledWith({
       data: changes,
+      skipDuplicates: true,
     });
   });
 

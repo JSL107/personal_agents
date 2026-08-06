@@ -312,6 +312,50 @@ describe('StockMonitorAutopilotTask', () => {
     expect(result.summaryText).not.toContain('잔고 변화');
   });
 
+  // 감시가 통째로 실패해도 매매는 이미 감지·적재됐다. 여기서 알림을 버리면 스냅샷이 이미
+  // 갱신돼 다음 실행은 0건으로 보고, 사용자는 그 매매를 영구히 듣지 못한다.
+  it('모든 종목 점검이 실패해도 감지한 매매는 알린다', async () => {
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(null);
+    const marketData = {
+      fetchDailyBars: jest.fn().mockRejectedValue(new Error('Yahoo 503')),
+    };
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 2,
+      zeroed: 0,
+      changes: [holdingChange()],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('주식 모니터링 실패');
+    expect(result.summaryText).toContain('추가 매수 10주 → 20주');
+    // 예외는 AgentRunService.execute 안에서 났으므로 원장에는 성공으로 남지 않는다.
+    // FAILED 기록 자체는 AgentRunService 의 책임이라 여기서 단언하지 않는다(mock 이 그 경로를
+    // 모사하지 않으므로, 단언하면 mock 동작을 검증하는 셈이 된다).
+    expect(recordedRuns).toHaveLength(0);
+  });
+
+  it('점검이 모두 실패하고 매매도 없으면 기존대로 실패를 올린다', async () => {
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(null);
+    const marketData = {
+      fetchDailyBars: jest.fn().mockRejectedValue(new Error('Yahoo 503')),
+    };
+
+    await expect(makeTask(marketData, repository).run(context)).rejects.toThrow(
+      /한 건도 점검하지 못했습니다/,
+    );
+  });
+
   // 전량 매도 직후가 이 경로다. 보유가 0건이라 판정은 건너뛰지만 "다 팔았다"는 알려야 한다.
   it('보유 종목이 0건이어도 감지한 매매는 발송한다', async () => {
     const repository = makeRepository();

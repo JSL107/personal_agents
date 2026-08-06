@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 
 export type HoldingChangeKind =
@@ -33,35 +35,69 @@ export interface HoldingChange {
 
 // 스냅샷은 Decimal(18,4) 로 저장된다. 브로커 원본 정밀도와 직접 비교하면 5자리 밖 자릿수
 // 때문에 아무 매매가 없어도 매일 "평단 변동"이 잡히므로, 저장 정밀도로 맞춰 비교한다.
-// 정수로 환산해 비교하니 부동소수 동등 비교 문제도 함께 사라진다.
-const STORED_SCALE = 10_000;
+const STORED_DECIMALS = 4;
+const STORED_SCALE = 10n ** BigInt(STORED_DECIMALS);
 
-const atStoredScale = (value: DecimalValue): number =>
-  Math.round(value.toNumber() * STORED_SCALE);
+// 저장 정밀도로 반올림한 값을 1e-4 단위 정수로 돌려준다.
+//
+// toNumber() 를 쓰지 않는다: Decimal(18,4) 가 허용하는 최대값에 10^4 를 곱하면 약 1e18 로
+// Number.MAX_SAFE_INTEGER(9.0e15) 를 넘어, 서로 다른 저장 가능 값이 같은 double 로 뭉개져
+// 실제 수량·평단 변화가 조용히 누락될 수 있다. 금액을 다루는 비교라 그 경계를 남기지 않고
+// 문자열을 그대로 BigInt 로 옮긴다(자릿수 제한 없음, 부동소수 동등 비교 문제도 함께 사라진다).
+//
+// DB 가 반올림 저장하므로 판정도 half-up 반올림이어야 스냅샷과 어긋나지 않는다.
+const toStoredUnits = (value: DecimalValue): bigint => {
+  const text = value.toString().trim();
+  const negative = text.startsWith('-');
+  const unsigned = negative || text.startsWith('+') ? text.slice(1) : text;
+  const [integer, fraction] = unsigned.split('.');
+  // 반올림 판단에 쓸 다섯째 자리까지 확보한다.
+  const padded = (fraction ?? '').padEnd(STORED_DECIMALS + 1, '0');
+  const truncated = BigInt(
+    `${integer || '0'}${padded.slice(0, STORED_DECIMALS)}`,
+  );
+  const rounded = padded[STORED_DECIMALS] >= '5' ? truncated + 1n : truncated;
+  return negative ? -rounded : rounded;
+};
+
+const fromStoredUnits = (units: bigint): string => {
+  const negative = units < 0n;
+  const absolute = negative ? -units : units;
+  const fraction = (absolute % STORED_SCALE)
+    .toString()
+    .padStart(STORED_DECIMALS, '0')
+    .replace(/0+$/, '');
+  const integer = (absolute / STORED_SCALE).toString();
+  const sign = negative ? '-' : '';
+  return fraction ? `${sign}${integer}.${fraction}` : `${sign}${integer}`;
+};
+
+// 기록에 담는 값도 저장 정밀도로 맞춘다. 브로커 원본을 그대로 담으면 같은 사건인데도 조회
+// 시점마다 문자열이 달라져(26.824493 vs 26.8245) 지문이 갈리고 중복 차단이 무력해진다.
+const toStoredString = (value: DecimalValue): string =>
+  fromStoredUnits(toStoredUnits(value));
 
 const compare = (
   before: HoldingPosition,
   after: HoldingPosition,
 ): HoldingChange | null => {
-  const beforeQuantity = atStoredScale(before.quantity);
-  const afterQuantity = atStoredScale(after.quantity);
-  const beforeAvgPrice = atStoredScale(before.avgPrice);
-  const afterAvgPrice = atStoredScale(after.avgPrice);
+  const beforeQuantity = toStoredUnits(before.quantity);
+  const afterQuantity = toStoredUnits(after.quantity);
 
   const base = {
     tickerId: after.tickerId,
     tickerName: after.tickerName,
     symbol: after.symbol,
-    previousQuantity: before.quantity.toString(),
-    quantity: after.quantity.toString(),
-    previousAvgPrice: before.avgPrice.toString(),
-    avgPrice: after.avgPrice.toString(),
+    previousQuantity: toStoredString(before.quantity),
+    quantity: toStoredString(after.quantity),
+    previousAvgPrice: toStoredString(before.avgPrice),
+    avgPrice: toStoredString(after.avgPrice),
     currency: after.currency,
   };
 
-  if (afterQuantity === 0) {
+  if (afterQuantity === 0n) {
     // 브로커가 0 수량 종목을 그대로 실어 보내는 경우. 응답에서 빠지는 경로와 같은 사건이다.
-    return beforeQuantity === 0 ? null : { ...base, kind: 'SOLD_ALL' };
+    return beforeQuantity === 0n ? null : { ...base, kind: 'SOLD_ALL' };
   }
   if (afterQuantity > beforeQuantity) {
     return { ...base, kind: 'INCREASED' };
@@ -71,7 +107,7 @@ const compare = (
   }
   // 수량이 같은데 평단이 움직였다 — 같은 날 사고팔아 수량이 되돌아왔거나 브로커가 재계산했다.
   // 수량 변화에 딸린 평단 변화는 INCREASED/DECREASED 안에 이미 담겨 있으므로 여기서 다루지 않는다.
-  if (afterAvgPrice !== beforeAvgPrice) {
+  if (toStoredUnits(after.avgPrice) !== toStoredUnits(before.avgPrice)) {
     return { ...base, kind: 'AVG_PRICE_CHANGED' };
   }
   return null;
@@ -98,7 +134,7 @@ export const detectHoldingChanges = (
     const before = remaining.get(position.tickerId);
     remaining.delete(position.tickerId);
     if (!before) {
-      if (atStoredScale(position.quantity) === 0) {
+      if (toStoredUnits(position.quantity) === 0n) {
         continue;
       }
       changes.push({
@@ -107,9 +143,9 @@ export const detectHoldingChanges = (
         symbol: position.symbol,
         kind: 'BOUGHT',
         previousQuantity: null,
-        quantity: position.quantity.toString(),
+        quantity: toStoredString(position.quantity),
         previousAvgPrice: null,
-        avgPrice: position.avgPrice.toString(),
+        avgPrice: toStoredString(position.avgPrice),
         currency: position.currency,
       });
       continue;
@@ -131,13 +167,43 @@ export const detectHoldingChanges = (
       tickerName: before.tickerName,
       symbol: before.symbol,
       kind: 'SOLD_ALL',
-      previousQuantity: before.quantity.toString(),
+      previousQuantity: toStoredString(before.quantity),
       quantity: '0',
-      previousAvgPrice: before.avgPrice.toString(),
-      avgPrice: before.avgPrice.toString(),
+      previousAvgPrice: toStoredString(before.avgPrice),
+      avgPrice: toStoredString(before.avgPrice),
       currency: before.currency,
     });
   }
 
   return changes;
+};
+
+// 같은 사건을 두 번 적재하지 않기 위한 유일 키 (PrReviewFinding.fingerprint 선례와 같은 방식).
+//
+// 필요한 이유: autopilot 은 앞 실행이 도는 중에 들어온 재큐를 막지 않는다 — 완주 표식만 보므로
+// 겹침이 원리상 가능하고, 그것은 의도적 절충이다(autopilot.orchestrator.ts 의 "알려진 한계").
+// 겹친 두 실행은 같은 직전 스냅샷을 읽어 같은 변화를 계산하므로, 지문이 없으면 append-only 인
+// 이 표에 같은 매매가 두 줄로 쌓여 회고·통계를 부풀린다.
+//
+// 하루에 두 번 변한 같은 종목은 수량이 다르므로(오전 200→230, 오후 230→250) 지문도 다르다 —
+// 진짜 두 번째 매매가 중복으로 오인돼 사라지지는 않는다.
+export interface HoldingChangeFingerprintInput {
+  change: HoldingChange;
+  effectiveDate: Date;
+}
+
+export const buildHoldingChangeFingerprint = ({
+  change,
+  effectiveDate,
+}: HoldingChangeFingerprintInput): string => {
+  const source = [
+    String(change.tickerId),
+    effectiveDate.toISOString().slice(0, 10),
+    change.kind,
+    change.previousQuantity ?? '',
+    change.quantity,
+    change.previousAvgPrice ?? '',
+    change.avgPrice,
+  ].join('\n');
+  return createHash('sha256').update(source).digest('hex');
 };
