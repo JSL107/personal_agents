@@ -1,4 +1,6 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import { HoldingChange } from '../../../agent/stock/domain/holding-change';
@@ -49,6 +51,7 @@ const holdings = [
 
 const makeRepository = () => ({
   findCurrentHoldings: jest.fn().mockResolvedValue(holdings),
+  findPortfolioPositions: jest.fn().mockResolvedValue([]),
   findLatestStoredTradeDate: jest.fn(),
   upsertDailyPrice: jest.fn().mockResolvedValue(undefined),
   recordAlert: jest.fn().mockResolvedValue(undefined),
@@ -56,6 +59,23 @@ const makeRepository = () => ({
   upsertFxRate: jest.fn().mockResolvedValue(undefined),
   findFxRate: jest.fn().mockResolvedValue(null),
 });
+
+const portfolioPositions = [
+  {
+    region: 'US',
+    direction: 'LONG',
+    currency: 'USD',
+    quantity: new Prisma.Decimal(1),
+    close: new Prisma.Decimal(1),
+  },
+  {
+    region: 'KR',
+    direction: 'SHORT',
+    currency: 'KRW',
+    quantity: new Prisma.Decimal(1),
+    close: new Prisma.Decimal(2),
+  },
+];
 
 const makeSyncHoldings = () => ({
   execute: jest.fn().mockResolvedValue({ synced: 2, zeroed: 0, changes: [] }),
@@ -451,6 +471,142 @@ describe('StockMonitorAutopilotTask', () => {
       zeroedHoldings: 0,
       syncError: null,
     });
+  });
+
+  it('국내 감시도 환율을 한 번 조회해 정상 요약 끝에 포트폴리오 노출을 덧붙인다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(marketData.fetchUsdKrwRate).toHaveBeenCalledTimes(1);
+    expect(result.summaryText).toContain('📉 *주식 모니터링*');
+    expect(result.summaryText).toContain(
+      '🌎 미국 주식 50% · 코스피 숏 50% (달러 환노출 50%)',
+    );
+  });
+
+  it('포트폴리오 노출을 잔고 변화 블록보다 먼저 표시한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 1,
+      zeroed: 0,
+      changes: [
+        holdingChange({
+          tickerName: 'TEST-1',
+          symbol: 'AAA',
+          kind: 'BOUGHT',
+          previousQuantity: null,
+          previousAvgPrice: null,
+          quantity: '1',
+          avgPrice: '1',
+        }),
+      ],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    const exposureIndex = result.summaryText!.indexOf('🌎 ');
+    const holdingChangesIndex = result.summaryText!.indexOf('💼 *잔고 변화');
+    expect(exposureIndex).toBeGreaterThanOrEqual(0);
+    expect(holdingChangesIndex).toBeGreaterThanOrEqual(0);
+    expect(exposureIndex).toBeLessThan(holdingChangesIndex);
+  });
+
+  it('휴장 요약에도 포트폴리오 노출을 덧붙인다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-18', 100), bar('2026-07-21', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).toContain('휴장');
+    expect(result.summaryText).toContain(
+      '🌎 미국 주식 50% · 코스피 숏 50% (달러 환노출 50%)',
+    );
+  });
+
+  it('포트폴리오 노출 계산 실패는 기존 요약을 보존하고 경고한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockRejectedValue(new Error('DB down'));
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      const result = await makeTask(marketData, repository).run(context);
+
+      expect(result.summaryText).toContain('📉 *주식 모니터링*');
+      expect(result.summaryText).not.toContain('🌎');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('포트폴리오 노출 계산 실패'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('포트폴리오 노출은 화면 전용이며 원장 audit에 남기지 않는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      fetchUsdKrwRate: jest.fn().mockResolvedValue('2'),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findPortfolioPositions.mockResolvedValue(portfolioPositions);
+
+    await makeTask(marketData, repository).run(context);
+
+    expect(recordedRuns[0].output).not.toHaveProperty('buckets');
+    expect(recordedRuns[0].output).not.toHaveProperty('fxUsdRatio');
+    expect(recordedRuns[0].output).not.toHaveProperty('portfolioExposure');
   });
 
   it('한 종목이라도 새 거래일이면 전체 시장을 휴장으로 보지 않는다', async () => {

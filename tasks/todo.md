@@ -952,3 +952,52 @@
 - mutation 2건은 각각 경고 관련 2 tests, 전량 매도 1 test를 실제 실패시켰고 모두 원복했다.
 - stale Prisma Client를 `pnpm exec prisma generate`로 갱신한 뒤 4중 게이트 전체 exit 0. commit/push, DB/schema 변경 없음.
 - 독립 최종 리뷰 결과 Blocker 0, Should Fix 0이다.
+# 포트폴리오 노출 한 줄 (2026-08-06)
+
+**Goal:** 저녁 주식 감시 Slack 요약에 전체 보유 기준 포트폴리오 노출을 안전하게 계산해 한 줄로 표시한다.
+
+**Contract:** `.ai/design.md`를 source of truth로 따른다. 실제 보유 종목 정보는 어떤 tracked/untracked 산출물에도 기록하지 않고 가상 종목만 사용한다. `pnpm db:push`, commit/push는 실행하지 않는다.
+
+- [x] 현재 worktree와 baseline 전체 테스트를 확인한다.
+- [x] Prisma `Ticker` 노출 컬럼과 순수 노출 계산을 테스트 우선으로 구현하고 `pnpm prisma:generate`를 실행한다.
+- [x] 전체 보유·최신 시세 조회 repository와 노출 formatter를 테스트 우선으로 구현한다.
+- [x] 국내 감시 환율 조회와 휴장·정상 요약 양쪽의 best-effort 노출 줄 통합을 회귀 테스트로 구현한다.
+- [x] 실제 종목 정보·종목별 매핑·원장 노출 수치가 추가되지 않았는지 검토한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, `pnpm check:invariants`를 모두 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- `Ticker` 노출 컬럼, 순수 Decimal 계산, 전체 보유·최신 종가 repository, Slack formatter를 구현했다.
+- 국내/미국 감시 모두 환율을 해석하며 정상·휴장 요약 끝에 best-effort 노출 줄을 붙인다. 실패는 warn 후 줄만 생략하고 audit은 바꾸지 않는다.
+- 신규 fixture와 diff 추가 줄에서 실제 보유 종목 정보·종목별 mapping은 0건이다.
+- TDD focused 결과는 Domain 5/5, repository·formatter 34/34, autopilot 30/30이다.
+- 최종 검증은 lint exit 0(기존 warning 57), test 306 suites/2,416 + code-graph 5 suites/40, build/docs/invariants 모두 exit 0이다.
+- 독립 최종 리뷰는 Critical/Important/Minor 0건이다. DB push와 실제 Slack/운영 데이터 검증은 사용자 지시대로 수행하지 않았다.
+
+---
+# 포트폴리오 노출 리뷰 결함 2건 수정 (2026-08-06)
+
+**Goal:** 미분류 USD 포지션을 달러 환노출에 포함하고, 노출 줄을 잔고 변화 블록 앞에 배치한다.
+
+**Root cause:** 환노출 누적 조건이 지역만 검사한다. 정상·휴장 분기 모두 노출 wrapper가 잔고 변화 wrapper 바깥에 있어 노출 줄이 마지막에 붙는다.
+
+**Constraints:** `.ai/design.md` §0을 지킨다. 지정된 두 결함 외 리팩토링, `pnpm db:push`, commit을 하지 않는다.
+
+- [x] `region: null, currency: 'USD'`와 `region: 'US', currency: 'USD'`가 반반인 회귀 spec을 추가하고 수정 전 50% 실패를 확인한다.
+- [x] 잔고 변화가 있을 때 노출 줄 인덱스가 잔고 변화 블록 인덱스보다 앞서는 회귀 spec을 추가하고 수정 전 실패를 확인한다.
+- [x] 환노출 판정을 지역 또는 USD 통화로 넓히고 두 조건의 서로 다른 이유를 주석으로 남긴다.
+- [x] 정상·휴장 분기에서 포트폴리오 노출을 base 결과에 먼저 적용한 뒤 잔고 변화를 붙인다.
+- [x] focused spec을 GREEN으로 만들고 최종 diff를 검토한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build && pnpm docs:check && pnpm check:invariants`를 모두 exit 0으로 확인한다.
+- [x] `.ai/implementation-summary.md`에 두 수정과 실제 게이트 결과를 기록한다.
+
+## Review
+
+- `region`이 `US`이거나 `currency`가 `USD`인 평가액을 달러 환노출에 포함한다. 원화 표시 해외 ETF와 미분류 USD 포지션의 서로 다른 판정 이유를 production 주석에 남겼다.
+- 정상·휴장 분기 모두 노출을 base 요약에 먼저 붙이고, 그 결과 뒤에 잔고 변화 블록을 붙인다.
+- TDD RED: 미분류 USD 회귀는 기대 100%/실제 50%, 배치 회귀는 노출 인덱스 83/잔고 변화 인덱스 39로 실패했다. 구현 후 focused 2 suites / 37 tests가 통과했다.
+- 최종 gate: lint exit 0(기존 warning 57), test 306 suites/2,418 tests + code-graph 5 suites/40 tests, build/docs/invariants 모두 exit 0.
+- `pnpm db:push`, commit은 실행하지 않았다.
+
+---
