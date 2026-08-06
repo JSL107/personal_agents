@@ -1,6 +1,6 @@
 import { match } from 'ts-pattern';
 
-import { StudyTopicVerdict } from '../../agent/cto/domain/cto.type';
+import { StudyBriefVerdict } from '../domain/study-brief.type';
 
 const SLACK_TEXT_LIMIT = 3000;
 const TRUNCATION_SUFFIX = '\n\n_(Slack 길이 제한으로 일부 생략)_';
@@ -9,7 +9,7 @@ export interface FormatStudyBriefInput {
   mode?: 'fallback' | 'link';
   notionUrl?: string;
   topic: string;
-  verdict: StudyTopicVerdict;
+  verdict: StudyBriefVerdict;
   reportMd: string;
 }
 

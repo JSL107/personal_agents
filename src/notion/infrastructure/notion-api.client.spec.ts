@@ -62,6 +62,21 @@ describe('NotionApiClient', () => {
     expect(create.mock.calls[0][0].children).toHaveLength(100);
   });
 
+  it('page를 archived 상태로 갱신한다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const adapter = new NotionApiClient(
+      { pages: { update } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await adapter.archivePage({ pageId: 'PAGE' });
+
+    expect(update).toHaveBeenCalledWith({
+      page_id: 'PAGE',
+      archived: true,
+    });
+  });
+
   it('NOTION_TASK_DB_IDS env 가 없고 인자도 없으면 빈 배열 반환 (graceful)', async () => {
     const client = buildClient({});
     const adapter = new NotionApiClient(client, buildConfig({}));

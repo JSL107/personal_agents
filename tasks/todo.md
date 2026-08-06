@@ -1,3 +1,38 @@
+# PR #246 봇 리뷰 대응 2차 (2026-08-06)
+
+**Goal:** Study Brief 도메인 포트에서 CTO 타입 의존을 제거하고, Notion 페이지 생성 후 URL 저장만 실패한 부분 성공을 링크 발송으로 보존한다.
+
+**Architecture:** `study-brief-cron` 도메인에 로컬 verdict DTO를 두고 consumer가 CTO 결과를 명시 변환한다. Notion `publish`와 `updateNotionUrl`의 실패 경계를 분리한다.
+
+**Constraints:** `.env`, `pnpm db:push`, git add/commit/push를 실행하지 않는다. 기존 fallback·멱등·발송 실패 가드 단언을 약화하지 않는다.
+
+- [x] 100블록 초과 발행의 후속 append 실패·보상 실패 회귀 spec을 먼저 추가하고 RED를 확인한다.
+- [x] `NotionClientPort`에 기존 시그니처를 보존한 `archivePage`를 추가하고 `NotionApiClient`에서 `pages.update({ page_id, archived: true })`를 구현한다.
+- [x] publisher가 append 실패 시 page URL/id를 포함해 아카이브 성패를 로그로 남기고 원래 append 오류를 다시 던지게 한다.
+- [x] publisher·Notion adapter focused spec을 GREEN으로 만들고 정상 100블록 이하/초과 경로를 확인한다.
+- [x] `.ai/implementation-summary.md`의 "봇 리뷰 대응 2차" 절에 보상 처리·TDD·검증 결과를 덧붙인다.
+- [x] 최종 diff와 `pnpm lint:check && pnpm test && pnpm build`, `pnpm docs:check && pnpm check:env && pnpm check:invariants`를 검증한다.
+- [x] 지침·설계·기존 포트·consumer·spec·작업 트리를 확인한다.
+- [x] `publish` 성공 + `updateNotionUrl` 실패 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 로컬 verdict DTO와 CTO 결과 변환을 추가하고 두 포트의 CTO import를 제거한다.
+- [x] Notion 발행 실패와 URL 저장 실패 경계를 분리하고 구분 가능한 warn을 남긴다.
+- [x] focused spec을 GREEN으로 만들고 기존 Notion fallback·성공·미설정·멱등·발송 실패 가드를 확인한다.
+- [x] `.ai/implementation-summary.md`에 "봇 리뷰 대응 2차" 절을 추가한다.
+- [x] 요청된 전체 게이트, CTO import grep, final diff를 검증한다.
+
+## Review
+
+- `StudyBriefVerdict` 로컬 union을 추가하고 두 도메인 포트, formatter, Notion publisher가 자기 도메인 타입만 사용하게 했다. consumer만 CTO 결과를 받아 kind별 필드를 명시 복사한다.
+- Notion 페이지 발행 실패는 전체 카드 fallback, URL 저장 실패는 warn 후 이미 생성된 페이지 링크 발송으로 분리했다. 두 warn 문구도 페이지 발행/URL 저장으로 구분한다.
+- 100블록 초과 발행의 후속 append 실패 시 생성 페이지를 best-effort archive한다. 시도·성공·실패 로그에 page URL/id를 남기며, archive 실패는 삼키고 원래 append 오류를 다시 던진다.
+- `NotionClientPort.archivePage`와 `NotionApiClient`의 `pages.update({ page_id, archived: true })` adapter를 추가했다. 기존 메서드 시그니처는 바꾸지 않았다.
+- TDD RED는 URL 저장 실패 케이스가 링크 1회 대신 fallback 2회를 발송해 실패함을 확인했다. GREEN은 consumer 15건, 영향 spec 4 suites/28건 통과다.
+- 후속 P2 TDD RED는 archive 호출 0회와 adapter 메서드 부재를 각각 확인했다. GREEN은 publisher·adapter 2 suites/15 tests 통과다.
+- Verification: lint/test/build와 docs/env/invariants 모두 exit 0. 일반 304 suites/2,328 tests, code-graph 5 suites/40 tests 통과. lint는 기존 warning 57건, 오류 0건이다.
+- `src/study-brief-cron/domain/`의 `agent/cto` grep은 0건이다. `.env`, `pnpm db:push`, git add/commit/push는 실행하지 않았다.
+
+---
+
 # 리베이스 후 콘솔 총원·성장 좌석 정리 (2026-08-05)
 
 **Goal:** INVEST와 CTO_STUDY가 함께 들어온 운영 29명 상태에 현재 총원 표기를 맞추고, 성장 부서 6명이 기존 좌석·경계·통행 불변식을 만족하는지 확인한다.
