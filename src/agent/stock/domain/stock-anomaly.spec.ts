@@ -17,7 +17,7 @@ const bar = (adjClose: number) => ({
 
 const holding: HoldingSnapshot = {
   tickerName: 'SamsungElec',
-  yahooSymbol: '005930.KS',
+  symbol: '005930',
   quantity: new Prisma.Decimal(10),
   avgPrice: new Prisma.Decimal(100000),
 };

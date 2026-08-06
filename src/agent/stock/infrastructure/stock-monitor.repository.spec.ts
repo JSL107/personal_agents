@@ -87,6 +87,41 @@ describe('StockMonitorRepository', () => {
     });
   });
 
+  it('Yahoo symbol이 비어 있어도 tossSymbol이 있는 현재 보유 종목을 반환한다', async () => {
+    const prisma = makePrisma();
+    const quantity = { isZero: () => false };
+    const avgPrice = { toString: () => '100000' };
+    prisma.holding.findMany.mockResolvedValue([
+      {
+        tickerId: 1,
+        effectiveDate: new Date('2026-08-06T00:00:00.000Z'),
+        quantity,
+        avgPrice,
+        ticker: {
+          name: 'KODEX 미국AI테크커버드콜',
+          tossSymbol: '483280',
+        },
+      },
+    ]);
+    const repository = new StockMonitorRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.findCurrentHoldings({
+      marketCountry: 'KR',
+    });
+
+    expect(result).toEqual([
+      {
+        tickerId: 1,
+        tickerName: 'KODEX 미국AI테크커버드콜',
+        symbol: '483280',
+        quantity,
+        avgPrice,
+      },
+    ]);
+  });
+
   it('일별 환율을 pair 와 rateDate 기준으로 upsert 한다', async () => {
     const prisma = makePrisma();
     const repository = new StockMonitorRepository(

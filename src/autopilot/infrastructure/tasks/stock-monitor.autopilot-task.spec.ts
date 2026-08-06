@@ -32,14 +32,14 @@ const holdings = [
   {
     tickerId: 1,
     tickerName: 'SamsungElec',
-    yahooSymbol: '005930.KS',
+    symbol: '005930',
     quantity: decimal(10),
     avgPrice: decimal(100),
   },
   {
     tickerId: 2,
     tickerName: 'SKHynix',
-    yahooSymbol: '000660.KS',
+    symbol: '000660',
     quantity: decimal(5),
     avgPrice: decimal(100),
   },
@@ -167,7 +167,7 @@ describe('StockMonitorAutopilotTask', () => {
     expect(marketData.fetchDailyBars).toHaveBeenCalledTimes(2);
     expect(result.summaryText).toContain('휴장');
     expect(result.summaryText).toContain('수집 실패');
-    expect(result.summaryText).toContain('000660.KS');
+    expect(result.summaryText).toContain('000660');
     expect(repository.upsertDailyPrice).not.toHaveBeenCalled();
   });
 
@@ -190,7 +190,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     expect(result.summaryText).not.toContain('휴장');
     expect(result.summaryText).toContain('수집 실패');
-    expect(result.summaryText).toContain('005930.KS');
+    expect(result.summaryText).toContain('005930');
     expect(repository.upsertDailyPrice).toHaveBeenCalledTimes(1);
     expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
       expect.objectContaining({ tickerId: 2 }),
@@ -236,7 +236,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     expect(result.summaryText).toContain('SamsungElec');
     expect(result.summaryText).toContain('수집 실패');
-    expect(result.summaryText).toContain('000660.KS');
+    expect(result.summaryText).toContain('000660');
     expect(repository.upsertDailyPrice).toHaveBeenCalledTimes(1);
   });
 
@@ -277,7 +277,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
       avgPrice: decimal(100),
     };
     const marketData = {
@@ -323,7 +323,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
     const marketData = {
       fetchDailyBars: jest
@@ -363,7 +363,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
     const marketData = {
       fetchDailyBars: jest
@@ -406,7 +406,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
     const marketData = {
       fetchDailyBars: jest
@@ -449,7 +449,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
     const marketData = {
       fetchDailyBars: jest
@@ -485,7 +485,7 @@ describe('StockMonitorAutopilotTask', () => {
     const unitedStatesHolding = {
       ...holdings[0],
       tickerName: 'Apple',
-      yahooSymbol: 'AAPL',
+      symbol: 'AAPL',
     };
     const marketData = {
       fetchDailyBars: jest
@@ -620,7 +620,7 @@ describe('StockMonitorAutopilotTask', () => {
     );
     // 실패 종목이 메시지에 실려야 orchestrator 요약("⚠️ … 자동 생성 실패")에서 원인이 보인다.
     await expect(makeTask(marketData, repository).run(context)).rejects.toThrow(
-      '005930.KS',
+      '005930',
     );
   });
 });

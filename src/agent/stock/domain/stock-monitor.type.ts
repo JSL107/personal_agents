@@ -5,7 +5,7 @@ export type StockMarketCountry = 'KR' | 'US';
 
 export interface StockAnomaly {
   tickerName: string;
-  yahooSymbol: string;
+  symbol: string;
   kind: StockAnomalyKind;
   ruleId: string;
   ruleVersion: number;
@@ -18,7 +18,7 @@ export interface StockAnomaly {
 
 export interface HoldingSnapshot {
   tickerName: string;
-  yahooSymbol: string;
+  symbol: string;
   quantity: DecimalValue;
   avgPrice: DecimalValue;
 }
