@@ -100,7 +100,7 @@
   0건**이고, 학습 루프의 나머지 절반이 미검증이다.
 
 **할 일**
-1. 다음 스윕 후 `pr_review_finding` 에서 해당 카드가 `status='REJECTED'`, `reject_reason` 채워짐,
+1. 다음 스윕 후 `pr_review_finding` 에서 해당 카드가 `status='REJECTED'`, `"rejectReason"` 채워짐,
    `resolved_at` 채워짐(스레드 닫힘)인지 확인
 2. `episodic_memory` 에 `kind='pr_review'`, `agent_type='CODE_REVIEWER'` 행이 생겼는지 확인
    — **이게 핵심이다.** 여기가 비면 학습이 안 도는 것
@@ -113,7 +113,7 @@
   세션 중에 오탐이 자연 발생했다(PR #201, 오피스 픽셀).
   - **① 카드 상태**: `pr_review_finding` id **16** (#201, `CORRECTNESS`,
     `clients/idaeri-console/Sources/ConsoleCore/AgentRole.swift:68`) →
-    `status='REJECTED'`, `reject_reason='매핑 오류 주장 반박'`, `resolved_at=01:15:13`.
+    `status='REJECTED'`, `"rejectReason"='매핑 오류 주장 반박'`, `resolved_at=01:15:13`.
     지적 내용은 "직책 매핑 키 `EVENING_RETRO` 가 운영 표본의 `EVENING_RETRO_PUBLISH` 와
     다르다" 였고 사람이 반박했다.
   - **② episodic 적재 (핵심)**: `episodic_memory` id **315**, `kind='pr_review'`,
