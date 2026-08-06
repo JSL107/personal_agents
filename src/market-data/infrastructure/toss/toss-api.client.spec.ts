@@ -23,6 +23,8 @@ const TOKEN_RESPONSE = {
   expires_in: 120,
 };
 
+const CANDLES_RESPONSE = { result: { candles: [] } };
+
 describe('TossApiClient HTTP 오류', () => {
   let fetchMock: jest.SpiedFunction<typeof fetch>;
   let client: TossApiClient;
@@ -67,5 +69,20 @@ describe('TossApiClient HTTP 오류', () => {
       client.requestJson('일봉 조회', '/api/v1/candles'),
     ).rejects.toThrow('HTTP 500');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // 타임아웃이 없으면 응답을 주지 않는 서버에 매달려 autopilot worker 의 lockDuration 을
+  // 넘기고, BullMQ 가 같은 job 을 stalled 로 보고 재처리한다.
+  it('토큰 발급과 본 요청 모두에 타임아웃 signal 을 붙인다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse(CANDLES_RESPONSE));
+
+    await client.requestJson('일봉 조회', '/api/v1/candles');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
   });
 });

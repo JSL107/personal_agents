@@ -129,6 +129,27 @@ describe('mapTossCandlesResponse', () => {
     },
   );
 
+  // `new Date('2026-02-30T…')` 는 Invalid 가 아니라 2026-03-02 로 자동 보정된다.
+  // NaN 검사만으로는 존재하지 않는 날짜가 다른 날짜로 바뀐 채 통과한다.
+  it.each(['2026-02-30', '2025-02-29', '2026-04-31'])(
+    '존재하지 않는 날짜(%s)는 보정되지 않고 전체 null 을 반환한다',
+    (invalidDate) => {
+      const result = mapTossCandlesResponse({
+        result: {
+          candles: [
+            {
+              ...DOMESTIC_CANDLES_RESPONSE.result.candles[0],
+              timestamp: `${invalidDate}T00:00:00.000+09:00`,
+            },
+          ],
+          nextBefore: '2026-08-03T00:00:00.000+09:00',
+        },
+      });
+
+      expect(result).toBeNull();
+    },
+  );
+
   it('소수점 거래량이 있으면 전체 null 을 반환한다', () => {
     const result = mapTossCandlesResponse({
       result: {
