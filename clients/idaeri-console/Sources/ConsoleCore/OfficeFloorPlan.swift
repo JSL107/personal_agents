@@ -692,11 +692,22 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
 
 /// 벽걸이를 걸 벽 칸(구역 원점 기준 상대). 위에서부터 쓴다.
 ///
-/// **왼쪽 칸막이 벽 열(x = 0)만 쓴다.** 아래 구역은 천장(y = zoneHeight - 1)도 벽이라 정면
-/// 벽에 걸 수 있지만, 위 구역 천장은 밴드로 나가는 통로여서 벽이 아니다. 여섯 방이 같은
-/// 규칙을 쓰려면 어느 구역에나 있는 세로 벽뿐이다 — 위·아래를 갈라 쓰면 규칙이 둘이 된다.
+/// **세로 벽 한 열만 쓴다(여기서는 상대 x = 0).** 아래 구역은 천장(y = zoneHeight - 1)도
+/// 벽이라 정면 벽에 걸 수 있지만, 위 구역 천장은 밴드로 나가는 통로여서 벽이 아니다. 여섯 방이
+/// 같은 규칙을 쓰려면 어느 구역에나 있는 세로 벽뿐이다 — 위·아래를 갈라 쓰면 규칙이 둘이 된다.
 ///
-/// 각 방이 **자기 왼쪽 벽만** 쓰므로 벽 한 칸을 공유하는 이웃 방과도 겹치지 않는다.
+/// 어느 쪽 세로 벽을 쓸지는 배치 루프가 정한다(`wallMountColumn`) — 맨 왼쪽 열의 방은 왼쪽
+/// 벽이 건물 바깥벽이라 오른쪽으로 옮겨 건다. 각 방이 자기 벽 하나만 쓰므로 이웃 방과 겹치지
+/// 않는 성질은 그대로다.
+/// 이 구역의 벽걸이를 걸 벽 열(격자 절대 x). 배치와 검증이 같은 값을 봐야 한다 —
+/// 한쪽만 바꾸면 벽걸이는 옮겨졌는데 검사는 옛 자리를 훑어 "빠졌다" 고 잡는다.
+///
+/// 맨 왼쪽 열의 방(원점 x = 0)만 오른쪽 벽을 쓴다. 그 방들의 왼쪽 벽은 칸막이가 아니라
+/// 격자 최외곽, 즉 건물 바깥벽이라 거기 건 액자는 사무실 밖에 걸린 그림이 된다.
+public func officeWallMountColumn(zoneOriginX: Int) -> Int {
+    zoneOriginX == 0 ? zoneOriginX + zoneWidth : zoneOriginX
+}
+
 private let zoneWallMountSpots: [TilePoint] = [
     TilePoint(x: 0, y: 4),
     TilePoint(x: 0, y: 2),
@@ -858,13 +869,23 @@ private let zoneStride = zoneWidth + 2
 /// 늘리는 대신 밴드 맨 아래 줄(`officeCorridorRow`)을 전환해 쓴다.
 public let officeCorridorColumns = [zoneWidth + 1, zoneStride + zoneWidth + 1]
 
+/// 격자 맨 아래 벽 줄의 두께. 아래 구역은 여기서부터 시작한다.
+///
+/// **한때 없었다.** 좌·우·위는 바깥벽으로 닫혀 있는데 아래만 열려 있어, 사무실이 화면 아래로
+/// 뚫린 모양이었다. 그 줄에 놓인 운영실 설비(프린터·정수기·쓰레기통·사물함)가 등을 댈 벽 없이
+/// 허공에서 끝나 바닥 한가운데 놓인 것처럼 보인 원인이다.
+///
+/// 위쪽 바깥벽(`officeOuterWallRows` = 2)과 달리 한 줄인 것은 여기에 물건을 걸지 않기
+/// 때문이다 — 두 줄이 필요했던 이유가 "벽에 건 물건이 바닥에 놓인 것처럼 보인다" 였다.
+public let officeFloorWallRows = 1
+
 /// 가로 복도 줄. 밴드 맨 아래 줄이자 부서 구역 바로 위 줄이다.
 ///
 /// 원래도 이 줄만 비워 가로 이동에 썼지만 방 바닥재로 칠해져 있어 통로로 읽히지 않았다.
-public let officeCorridorRow = zoneHeight * 2
+public let officeCorridorRow = zoneHeight * 2 + officeFloorWallRows
 
 private let planColumns = zoneStride * 2 + zoneWidth + 1
-private let planRows = zoneHeight * 2 + bandHeight
+private let planRows = zoneHeight * 2 + bandHeight + officeFloorWallRows
 
 /// 바깥벽(격자 맨 위) 두께. 아래 칸이 벽면, 위 칸이 벽 윗면이 되어 높이감을 만든다.
 /// 창을 세로로 몇 칸에 걸쳐 그릴지 렌더 쪽이 같은 값을 봐야 한다.
@@ -1150,8 +1171,10 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         let column = index % 3
         let row = index / 3
         let originX = column * zoneStride
-        // row 0 이 위(밴드 바로 아래), row 1 이 아래.
-        let originY = row == 0 ? zoneHeight : 0
+        // row 0 이 위(밴드 바로 아래), row 1 이 아래. 아래 구역은 격자 바닥이 아니라
+        // 하단 벽 바로 위에서 시작한다 — 배치가 전부 원점 기준 상대좌표라 여기만 올리면
+        // 책상·가구·벽걸이가 통째로 따라온다.
+        let originY = (row == 0 ? zoneHeight : 0) + officeFloorWallRows
         zones.append(
             DepartmentZone(
                 department: zoneDepartment,
@@ -1220,8 +1243,14 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         }
         // 벽걸이 자리는 바닥 후보와 별개다. 같은 목록에서 뽑으면 시계가 방 한가운데 바닥에
         // 놓인다 — 벽 칸은 바닥 후보(x = 1~9)에 아예 들어 있지 않기 때문이다.
+        //
+        // **맨 왼쪽 열의 방은 오른쪽 벽에 건다.** 그 방들(기획·경영)의 왼쪽 벽은 칸막이가 아니라
+        // 격자 최외곽, 즉 건물 **바깥벽**이다. 거기 걸면 화면 맨 가장자리에 액자·게시판·시계가
+        // 세로로 줄줄이 붙어 사무실 밖에 건 그림이 된다. 오른쪽 벽은 복도에 면해 있지만 문 줄
+        // (`corridorDoorRows`, 상대 y = 3)과 벽걸이 줄(4·2·0)이 겹치지 않는다.
+        let wallMountColumn = officeWallMountColumn(zoneOriginX: originX)
         let wallSpots = zoneWallMountSpots.map {
-            TilePoint(x: originX + $0.x, y: originY + $0.y)
+            TilePoint(x: wallMountColumn + $0.x, y: originY + $0.y)
         }
         var spotCursor = 0
         var wallCursor = 0
@@ -1256,6 +1285,8 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 벽으로 막고 문 한 칸을 남긴다 — 위 구역 천장은 밴드로 나가는 통로라 열어 둔다. 그래서
     // 방에서 나가는 길이 둘이다: 복도로 바로, 또는 천장 문으로 위 구역을 거쳐.
     // 이 연결은 좌석·줄·휴식 자리 도달성 테스트가 지킨다.
+    // 부서 구역이 차지하는 줄 범위(하단 벽 위 ~ 가로 복도 아래). 칸막이 벽 루프가 쓴다.
+    let zoneAreaFirstRow = officeFloorWallRows
     let zoneAreaRows = zoneHeight * 2
     // 벽을 세울 수 있는 범위 — 바깥벽 아래 전부. 밴드도 포함한다(공용 세 방을 갈라야 한다).
     let wallableRows = planRows - outerWallRows
@@ -1275,7 +1306,9 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     }
     // 방마다 복도로 나가는 문 한 칸. 자리 배치가 쓰는 줄(책상 y = 1·4, 좌석 y = 2·5)을 피해
     // 구역 원점에서 세 칸 위에 낸다 — 위·아래 구역이 같은 상대 위치를 쓴다.
-    let corridorDoorRows: Set<Int> = [3, zoneHeight + 3]
+    let corridorDoorRows: Set<Int> = [
+        zoneAreaFirstRow + 3, zoneAreaFirstRow + zoneHeight + 3,
+    ]
 
     // 벽에 낸 구멍마다 문을 세운다. 지금까지 출입구는 **벽을 안 세운 빈 칸**이라, 방을 닫아
     // 놓고도 어디가 문인지 바닥과 구별되지 않았다.
@@ -1294,7 +1327,7 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         let originX = column * zoneStride
         for wallX in [originX, originX + zoneWidth] {
             let doorRows = facesCorridor(wallX) ? corridorDoorRows : []
-            for y in 0..<zoneAreaRows {
+            for y in zoneAreaFirstRow..<(zoneAreaFirstRow + zoneAreaRows) {
                 if doorRows.contains(y) {
                     openDoor(wallX, y)
                 } else {
@@ -1309,7 +1342,9 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         // 막으면 그 방 전원이 고립됐기 때문이다. 이제는 복도 쪽 문이 따로 있어 막을 수 있고,
         // 막아야 한다 — 열어 두면 방 위쪽 경계가 없어 복도와 방이 한 덩어리로 보인다.
         let doorX = originX + zoneWidth - 2
-        for ceilingY in [zoneHeight - 1, zoneAreaRows - 1] {
+        for ceilingY in [
+            zoneAreaFirstRow + zoneHeight - 1, zoneAreaFirstRow + zoneAreaRows - 1,
+        ] {
             for x in originX...(originX + zoneWidth) where x != doorX {
                 raiseWall(x, ceilingY)
             }
@@ -1334,10 +1369,27 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
         raiseWall(planColumns - 1, y)
     }
 
+    // 격자 맨 아래 줄도 벽. 좌·우·위만 닫혀 있어 사무실이 아래로 뚫려 있었다 —
+    // 그 줄에 놓인 운영실 설비가 등 댈 벽 없이 허공에서 끝났다(`officeFloorWallRows`).
+    for y in 0..<officeFloorWallRows {
+        for x in 0..<planColumns {
+            raiseWall(x, y)
+        }
+    }
+
     // 세로 복도는 벽을 세운 **뒤에** 칠한다. 지금은 벽 루프가 복도 열을 건드리지 않지만,
     // 순서를 뒤집으면 나중에 벽 범위가 넓어졌을 때 복도가 조용히 벽에 먹힌다.
+    //
+    // **하단 벽 줄은 건너뛴다.** 여기서 0 부터 칠하면 방금 세운 아래 벽이 복도색으로 덮여
+    // 다시 뚫린다 — 벽을 세운 뒤에 칠하는 순서가 그대로 함정이 되는 자리다.
     for x in officeCorridorColumns {
-        paint(.corridor, x0: x, y0: 0, width: 1, height: wallableRows)
+        paint(
+            .corridor,
+            x0: x,
+            y0: officeFloorWallRows,
+            width: 1,
+            height: wallableRows - officeFloorWallRows
+        )
     }
 
     // 앉는 칸은 통로에서 도달 가능해야 하므로 막지 않는다.

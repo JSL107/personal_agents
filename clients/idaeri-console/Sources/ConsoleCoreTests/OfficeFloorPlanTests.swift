@@ -131,7 +131,9 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let zoneHeight = plan.zones.first?.height ?? 0
     // 위·아래 구역 각각의 천장 줄. 위 구역 천장도 벽이 된 뒤로 둘 다 빼야 한다 —
     // 한쪽만 빼면 그 줄의 가로 벽이 "겹친 벽" 으로 잡혀 통째로 거짓 실패한다.
+    // 격자 맨 아래 벽 줄도 가로로 이어지는 벽이라 같이 뺀다.
     let ceilingRows = Set(plan.zones.map { $0.origin.y + $0.height - 1 })
+        .union(0..<officeFloorWallRows)
     var thickWallRuns: [String] = []
     for y in 0..<zoneAreaRows where !ceilingRows.contains(y) {
         var run = 0
@@ -156,10 +158,11 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
                 else {
                     return false
                 }
-                // 벽걸이는 방 안이 아니라 **왼쪽 칸막이 벽 열**에 걸린다. 방 안만 훑으면
-                // 제자리에 걸린 시계·화이트보드를 "빠졌다" 고 잡는다.
+                // 벽걸이는 방 안이 아니라 **칸막이 벽 열**에 걸린다. 방 안만 훑으면
+                // 제자리에 걸린 시계·화이트보드를 "빠졌다" 고 잡는다. 어느 쪽 벽인지는
+                // 배치와 같은 함수로 물어본다 — 여기에 x 를 하드코딩하면 규칙이 둘이 된다.
                 if placement.kind.isWallMounted {
-                    return placement.tile.x == zone.origin.x
+                    return placement.tile.x == officeWallMountColumn(zoneOriginX: zone.origin.x)
                 }
                 return placement.tile.x > zone.origin.x
                     && placement.tile.x < zone.origin.x + zone.width - 1
@@ -191,8 +194,10 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let expectedCorridor = Set(
         (0..<plan.rows).flatMap { y -> [TilePoint] in
             (0..<plan.columns).compactMap { x -> TilePoint? in
-                // 격자 좌우 최외곽·최상단은 바깥벽이 덮으므로 복도가 아니다.
-                guard x > 0, x < plan.columns - 1, y < plan.rows - officeOuterWallRows else {
+                // 격자 좌우 최외곽·최상단·최하단은 바깥벽이 덮으므로 복도가 아니다.
+                guard x > 0, x < plan.columns - 1,
+                    y >= officeFloorWallRows, y < plan.rows - officeOuterWallRows
+                else {
                     return nil
                 }
                 let onCorridorColumn = officeCorridorColumns.contains(x)
@@ -442,8 +447,9 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // === 복도 ===
     // 복도가 실제로 이어져 있어야 한다. 한 칸이라도 벽·가구에 막히면 그 위·아래 방들이
     // 통째로 고립되고, 그때 화면에는 "사람이 자기 자리에 못 앉는" 증상으로만 나타난다.
+    // 아래 끝은 하단 바깥벽이라 복도가 거기서 끊기는 것이 정상이다 — 격자 맨 아래 줄부터 센다.
     for column in officeCorridorColumns {
-        let blockedTiles = (0..<(plan.rows - officeOuterWallRows))
+        let blockedTiles = (officeFloorWallRows..<(plan.rows - officeOuterWallRows))
             .filter { !plan.walkable.contains(TilePoint(x: column, y: $0)) }
         t.expectEqual(blockedTiles.count, 0, "세로 복도 x=\(column) 막힌 줄: \(blockedTiles)")
     }
@@ -863,15 +869,21 @@ func runOfficePathfindingTests(_ t: TestRunner) {
     // 전부 몰린 상단과 벽이 텅 빈 아래로 화면이 갈린다.
     //
     // 벽 한 칸을 이웃 방과 공유하므로 `wallDepartment`(먼저 나온 구역을 반환) 로 세면 개발실
-    // 벽걸이가 기획실 것으로 잡힌다. 각 방이 자기 왼쪽 벽만 쓰는 규칙을 그대로 검사한다.
+    // 벽걸이가 기획실 것으로 잡힌다. 각 방이 자기 벽 한 열만 쓰는 규칙을 그대로 검사한다.
     for zone in plan.zones {
+        let mountColumn = officeWallMountColumn(zoneOriginX: zone.origin.x)
         let mounted = plan.furniture.filter { placement in
             placement.kind.isWallMounted
-                && placement.tile.x == zone.origin.x
+                && placement.tile.x == mountColumn
                 && placement.tile.y >= zone.origin.y
                 && placement.tile.y < zone.origin.y + zone.height
         }
         t.expect(!mounted.isEmpty, "\(zone.department.label) 방 벽에 걸린 물건 1개 이상")
+        // 걸린 자리가 건물 바깥벽(격자 좌우 최외곽)이면 화면 가장자리에 반쯤 걸린 그림이 된다.
+        t.expect(
+            mountColumn > 0 && mountColumn < plan.columns - 1,
+            "\(zone.department.label) 벽걸이가 바깥벽이 아닌 칸막이에 걸림 (열 \(mountColumn))"
+        )
     }
 
     // 벽걸이끼리 같은 칸을 나눠 쓰면 나중에 그린 쪽만 보인다.
