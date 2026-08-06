@@ -3,11 +3,6 @@ import { ConfigService } from '@nestjs/config';
 
 const API_BASE_URL = 'https://openapi.tossinvest.com';
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
-// 실측(2026-08-06) — 한도는 초 단위 윈도우다(MARKET_DATA_CHART 5회/초). 1초 쉬면 리셋된다.
-// 보유 6종목 조회 중 한 번 429 를 맞았고, 그때 그 종목은 그날 감시에서 통째로 빠졌다.
-// 잔고 동기화 cron 이 붙으면 같은 계정을 두 워커가 쓰게 되어 경쟁이 더 늘어난다.
-const RATE_LIMIT_RETRY_DELAY_MS = 1_000;
-const RATE_LIMIT_STATUS = 429;
 
 interface CachedToken {
   accessToken: string;
@@ -109,7 +104,6 @@ export class TossApiClient {
     operation: string,
     path: string,
     init: RequestInit,
-    retryOnRateLimit = true,
   ): Promise<unknown> {
     let response: Response;
     try {
@@ -117,19 +111,6 @@ export class TossApiClient {
     } catch (error) {
       throw new Error(
         `토스증권 ${operation} 요청 실패: ${errorMessage(error)}`,
-      );
-    }
-    // 재시도는 여기 한 곳에만 둔다. 모든 토스 호출이 이 경로를 지나므로
-    // 호출부마다 같은 대응을 반복하지 않는다.
-    if (response.status === RATE_LIMIT_STATUS && retryOnRateLimit) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS);
-      });
-      return await this.requestJsonWithoutAuthentication(
-        operation,
-        path,
-        init,
-        false,
       );
     }
     if (!response.ok) {

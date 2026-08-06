@@ -736,22 +736,15 @@
 - [x] 전체 diff를 design.md 계약·코드 규칙·보안·rate limit·날짜/정렬 불변식 관점에서 리뷰한다.
 - [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 각각 실행해 실제 exit code를 확인한다.
 - [x] 실호출로 6종목 일봉 적재와 감시 대상 0→6 전환을 확인한다.
+- [x] `.ai/implementation-summary.md`에 파일 목록, 설계 이탈, 4중 게이트 결과, Claude 재검증 지점을 기록한다.
 
 ## Review
 
-- 감시 대상이 0 → 6종목(KR 4 + US 2)으로 바뀌었다. 직접 원인은 `findCurrentHoldings` 가
-  비어 있는 `ticker.yahooSymbol` 로 종목을 건너뛰던 조건이었고, 이를 `tossSymbol` 로 바꿨다.
-- 실호출로 6종목 일봉을 받아 `daily_price` 에 6행이 적재됐고 `close` 와 `adj_close` 가 같다.
-  일봉 순서는 `2026-07-31 → … → 2026-08-06` 오름차순으로 확인했다.
-- 국내·미국이 같은 경로(`/candles?symbol=`)로 처리된다. 미국 봉의 `timestamp` 는 KST 표기지만
-  ET 자정 기준이라 앞 10자를 거래일로 쓴다(여름 13:00 / 겨울 14:00 양쪽 확인).
-- 환율은 토스에 API 가 없어(`/exchange-rates` 404, `/prices?symbols=USDKRW` 빈 배열)
-  Yahoo 위임으로 남겼다. 실호출 값 1417.74 확인.
-- 레이트리밋은 220ms 간격으로 7종목 연속 호출이 전부 200 이었지만, 6종목 조회 중 한 번 429 를
-  맞은 적이 있어 공통 HTTP 계층에 1초 후 1회 재시도를 넣었다.
-- 판정 로직(`stock-anomaly.ts`, `STOCK_THRESHOLDS`)은 변경하지 않았다. 수정주가 부재의 영향은
-  200거래일 실측으로 배당락 하락폭이 임계값의 1/4 수준임을 확인해 규칙을 유지했다.
-- 4중 게이트 exit 0. `.ai/implementation-summary.md` 는 구현 세션이 요약 작성 전에 끊겨
-  남기지 못했고, 그 내용을 이 Review 와 PR 본문으로 대체했다.
+- `TossApiClient`로 token cache와 HTTP 처리를 공유하고, 일봉은 Toss `/candles`로 전환했다. 환율만 Yahoo 위임으로 남겼다.
+- mapper는 `timestamp` 앞 10자를 UTC 자정 거래일로 만들고 오름차순 정렬한다. 전체 candle 검증, Decimal finite, 정수 volume을 강제한다.
+- `findCurrentHoldings`는 `ticker.tossSymbol`을 사용한다. 감시 경로 필드는 `symbol`로 중립화했고 판정 상수·수식·기대값은 불변이다.
+- rate limit은 설계대로 호출 시작 간 최소 220ms 고정 간격이다. 429 retry는 추가하지 않았으며 HTTP 오류를 그대로 전파한다.
+- 최종 리뷰의 credential 에러 문구 회귀 1건은 regression RED 후 기존 문구로 복원했고 scoped re-review `ADDRESSED`다.
+- Verification: lint/test/build/docs:check 모두 exit 0. commit/push, Prisma/Yahoo 제외 파일 변경 없음. 상세는 `.ai/implementation-summary.md`에 기록했다.
 
 ---
