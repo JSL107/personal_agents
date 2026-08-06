@@ -318,6 +318,8 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       const resultWithExposure = await this.withPortfolioExposure(
         { skip: false, summaryText },
         usdKrwRate,
+        failures,
+        sync.error,
       );
       const taskResult = this.withSyncWarning(
         this.withHoldingChanges(resultWithExposure, sync.changes),
@@ -446,6 +448,8 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     const resultWithExposure = await this.withPortfolioExposure(
       { skip: false, summaryText },
       usdKrwRate,
+      failures,
+      sync.error,
     );
     const taskResult = this.withSyncWarning(
       this.withHoldingChanges(resultWithExposure, sync.changes),
@@ -545,8 +549,22 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
   private async withPortfolioExposure(
     result: AutopilotTaskResult,
     usdKrwRate: string | null,
+    failures: string[],
+    syncError: string | null,
   ): Promise<AutopilotTaskResult> {
     if (!result.summaryText) {
+      return result;
+    }
+
+    // 수집·저장 실패 종목은 오늘 시세가 없어 직전 거래일 값이 섞일 수 있다. 잔고 동기화는
+    // 종목별로 반영되므로 실패하면 수량·평단이 일부만 갱신된 상태다. 어느 쪽이든 부분 계산보다
+    // 노출 줄을 생략한다. 시장별 감시 간 가격 시점 차이는 정상 상태이므로 여기서 비교하지 않는다.
+    if (failures.length > 0 || syncError) {
+      const reasons = [
+        failures.length > 0 ? `종목 처리 실패 ${failures.length}건` : null,
+        syncError ? '잔고 동기화 실패' : null,
+      ].filter((reason): reason is string => reason !== null);
+      this.logger.log(`포트폴리오 노출 생략 — ${reasons.join(', ')}`);
       return result;
     }
 

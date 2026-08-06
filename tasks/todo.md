@@ -1,3 +1,27 @@
+# 포트폴리오 노출 부분 실패 차단 (2026-08-06)
+
+**Goal:** 종목 수집·저장 또는 잔고 동기화가 일부라도 실패하면 혼합된 값으로 포트폴리오 노출을 게시하지 않는다.
+
+**Constraints:** 정상·휴장 분기 모두 적용한다. 시장 간 가격 시점 일치는 검사하지 않는다. 실제 보유 종목 정보, `.env`, DB, git index/commit/push는 건드리지 않는다.
+
+- [x] 작업 트리·설계·기존 호출 흐름을 확인한다.
+- [x] 부분 수집 실패와 잔고 동기화 실패 회귀 spec 2건을 추가한다.
+- [x] focused Jest에서 두 spec의 RED를 확인한다.
+- [x] `withPortfolioExposure`에 실패 입력·생략 로그·근거 주석을 최소 구현한다.
+- [x] focused Jest GREEN과 최종 diff를 검토한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build && pnpm docs:check && pnpm check:invariants`를 실행한다.
+- [x] 아래 Review에 실제 결과를 기록한다.
+
+## Review
+
+- 정상·휴장 분기 모두 `failures`와 `sync.error`를 노출 계산에 전달한다. 하나라도 있으면 포트폴리오 조회 전 생략하고 원인을 `logger.log`에 남긴다.
+- 수집·저장 실패의 직전 거래일 시세 혼합과 동기화 실패의 일부 수량·평단 갱신 위험을 주석으로 기록했다. 시장별 가격 시점 일치 검사는 추가하지 않았다.
+- TDD RED: 새 회귀 2건이 노출 줄 포함으로 실패하고 기존 31건은 통과했다. GREEN: focused spec 33/33 통과.
+- 최종 gate: `lint:check` exit 0(기존 warning 57건), 일반 test 306 suites/2,421 tests, code-graph 5 suites/40 tests, build/docs/invariants 모두 exit 0.
+- `.env`, DB, git index/commit/push는 건드리지 않았다.
+
+---
+
 # Markdown continuation 빈 줄 경계 수정 (2026-08-06)
 
 **Goal:** 빈 줄 이후의 들여쓴 줄을 빈 줄 이전 블록에 병합하지 않고 별도 paragraph로 변환한다.
