@@ -22,6 +22,28 @@
 
 ---
 
+# 학습 브리핑 3차 최종 Notion 실발행 확인 스크립트 (2026-08-06)
+
+**Goal:** `548d2c4`의 최신 파서·CTO 판정·Notion publisher로 새 `study_brief`를 1회 저장·발행해 콜아웃 줄 수와 불릿 병합을 육안 확인할 일회성 스크립트를 작성한다.
+
+**Constraints:** 스크립트는 실행하지 않는다. `AppModule`, `StudyBriefCronModule`, `CronIdempotencyService`를 사용하지 않는다. `.env`, DB schema, git index/commit/push를 건드리지 않는다. 검증은 `pnpm exec tsc --noEmit`만 수행한다.
+
+- [x] HEAD `548d2c4`와 직전 실발행 계약, production 생성자·입출력 타입을 확인한다.
+- [x] `scripts/tmp-notion-final-check.ts`에 Hermes 파싱, 새 CTO 판정, Prisma 저장을 연결한다.
+- [x] `NotionApiClient` + `StudyBriefNotionPublisher.publish()` + `updateNotionUrl()`로 실발행 경로를 연결한다.
+- [x] 단계별 stdout, URL/brief id, verdict 문자 수, 콜아웃 전문, 실패 메시지 시크릿 마스킹을 구현한다.
+- [x] 금지 구성요소·부수효과를 정적 점검하고 `pnpm exec tsc --noEmit`로 타입만 검증한다.
+- [x] 아래 Review에 실제 검증 결과와 미실행 범위를 기록한다.
+
+## Review
+
+- `/tmp/hermes2.txt` 파싱부터 새 CTO verdict, `agentRunId: null` 원장 저장, production Notion publisher, URL 연결까지 7단계로 연결했다.
+- 최종 출력에 Notion URL, `study_brief.id`, kind별 verdict 텍스트 필드의 Unicode 글자 수, publisher와 동일한 label의 콜아웃 전문을 남긴다.
+- `AppModule`, `StudyBriefCronModule`, `CronIdempotencyService`, `PrismaService.onModuleInit()` 사용 없음을 정적 확인했다. 오류는 env secret 실값과 DB connection string/token 패턴을 마스킹한 메시지만 출력한다.
+- 스크립트는 실행하지 않았다. `pnpm exec tsc --noEmit` exit 0. `.env`, DB schema, git index/commit/push는 건드리지 않았다.
+
+---
+
 # Markdown continuation 빈 줄 경계 수정 (2026-08-06)
 
 **Goal:** 빈 줄 이후의 들여쓴 줄을 빈 줄 이전 블록에 병합하지 않고 별도 paragraph로 변환한다.
