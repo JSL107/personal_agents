@@ -411,9 +411,14 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
     /// 시계가 카펫 한가운데 떠 있고 리뷰실 화이트보드가 바닥에 누워 있던 원인이다 —
     /// "벽에 붙는 것이라 바닥을 막지 않는다" 는 판정만 있고 **어디에 붙는지** 가 없었다.
     /// 배치 루프가 이 값을 보고 바닥 후보와 벽 후보를 갈라 쓴다.
+    ///
+    /// **이동식 화이트보드(`whiteboard`)는 여기 들어오지 않는다.** 한때 벽걸이였는데, 재제작본이
+    /// 스탠드와 바퀴까지 담은 그림(55×56)이라 벽에 걸 수 있는 물건이 아니다. 그대로 두었더니
+    /// 벽 줄에 걸린 채 세로로 자라 **화면 위쪽 바깥벽을 뚫고 잘렸다.** 벽에 거는 판은
+    /// `wallWhiteboard`(39×24) 가 따로 있다.
     public var isWallMounted: Bool {
         switch self {
-        case .clock, .whiteboard:
+        case .clock:
             return true
         case .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPinboard,
             .wallWhiteboard, .wallShelf, .wallMonitor, .wallPoster, .wallPlantHanging:
@@ -516,7 +521,9 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         case .waterCooler:
             return (12, 30)
         case .whiteboard:
-            return (39, 22)
+            // 재제작본(furniture-3). 39×22 로 납작하던 것을 스탠드까지 담은 정사각형에 가깝게
+            // 다시 뽑았다 — 폭 상한에 걸려 목표의 70% 에서 멈추던 것이 100% 로 올라간다.
+            return (55, 56)
         case .printer:
             return (24, 28)
         case .plantTall:
@@ -524,7 +531,8 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         case .plantSmall:
             return (17, 20)
         case .bookshelf:
-            return (37, 35)
+            // 재제작본. 37×35(거의 정사각형)에서 세로로 늘려 3단 책장 비율을 되찾았다.
+            return (37, 59)
         case .clock:
             return (20, 19)
         case .trash:
@@ -550,7 +558,14 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
         case .wallPlantHanging:
             return (18, 30)
         case .doorClosed, .doorOpen:
-            return (40, 45)
+            // 재제작본. 40×45(폭:높이 1:1.13)라 실물 문 비율(1:2)과 어긋나 사람보다 낮게
+            // 그려졌다 — 이제 1:1.83 이라 환산이 폭 상한에 걸리지 않고 1.59칸까지 선다.
+            //
+            // **열린 문 원본은 세로 67 로 3도트 더 높다.** 렌더는 실제 텍스처 크기를 쓰므로
+            // (`OfficeScene` 의 `texture.size()`) 문이 열릴 때 5% 커진다. 배율 계산에 쓰는
+            // 이 값은 닫힌 문 기준 하나로 둔다 — 두 값을 따로 두면 열림·닫힘이 서로 다른
+            // 배율을 받아 차이가 오히려 커진다.
+            return (35, 64)
         case .filingCabinet:
             return (30, 34)
         case .lockers2:
@@ -853,7 +868,11 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         return spots([(4, 4), (4, 3), (8, 1), (9, 4), (9, 1)])
     case .growth:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
-        return spots([(3, 4), (5, 1), (9, 3), (1, 1), (9, 1)])
+        //
+        // 후보가 여섯인 것은 이 방의 바닥 가구가 다섯인데 **후보가 좌석·기존 가구에 막히면
+        // 건너뛰기 때문**이다. 화이트보드가 벽걸이에서 바닥 가구로 바뀌면서 다섯 번째가 됐고,
+        // 딱 다섯 자리로는 마지막 파티션이 자리를 못 받아 조용히 사라졌다.
+        return spots([(3, 4), (5, 1), (9, 3), (1, 1), (9, 1), (9, 5)])
     case .internalOps:
         // 10명이 x=1~9 를 다 쓰므로 설비는 맨 아래 줄로 내려간다.
         //
@@ -1164,10 +1183,13 @@ public func officeFloorPlan(agents: [ConsoleAgent]) -> OfficeFloorPlan {
     // 왼쪽 끝 칸(x = 0)이 칸막이 벽이 되면서 전체가 한 칸씩 안으로 들어왔다. 예전에는 그 칸도
     // 방 바닥이라 책장과 화이트보드가 거기 놓여 있었다.
     place(.meetingTable, 4, bandRoomY)
-    // 화이트보드는 왼쪽 두 칸 — 벽 가운데는 창이 쓴다. 아래가 책장이어도 가려지지 않는다
-    // (책장 윗면이 벽 줄에 닿지 않는다). 반면 키 큰 화분은 벽까지 올라와 덮으므로 아래 참조.
-    place(.whiteboard, 1, wallHangY)
-    place(.whiteboard, 2, wallHangY)
+    // 화이트보드는 회의 테이블 옆 바닥에 **한 대만** 세운다.
+    //
+    // 예전에는 벽 줄(`wallHangY`)에 두 개를 걸었다. 벽에 거는 판이라고 보았기 때문인데,
+    // 재제작본이 스탠드·바퀴까지 담은 이동식이라 걸 수 있는 물건이 아니고, 세로로 2.5배
+    // 자라면서 바깥벽을 뚫고 화면 밖으로 잘렸다. 크기가 커진 만큼 두 대는 회의실을 꽉 채워
+    // 한 대로 줄인다. 벽면은 게시판·달력이 대신 채운다.
+    place(.whiteboard, 2, bandRoomY)
     place(.bookshelf, 1, bandRoomY + 1)
     place(.bookshelf, 2, bandRoomY + 1)
     place(.printer, 8, bandRoomY + 1)
