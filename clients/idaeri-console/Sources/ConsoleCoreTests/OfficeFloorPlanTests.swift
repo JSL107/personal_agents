@@ -385,35 +385,41 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "벽시계가 원본보다 작아짐 (실제 \(FurnitureKind.clock.sizeBoost))"
     )
 
-    // 3단 책장은 이전 일괄 보정(책상·회의테이블·소파만)에서 빠져 원본 크기로 방치돼 있었다.
-    // 지금은 보정을 받지만 **폭 상한에 걸려 목표 높이를 다 채우지 못한다** — 환산 목표는
-    // 사람 키의 88% 인데 실제로는 70% 다. 에셋이 37×35 로 거의 정사각형인데 실물 3단 책장은
-    // 세로로 길어서, 높이를 맞추면 폭이 1칸을 넘어 인접 책장·옆 칸 사람과 겹친다.
-    // 배율로는 여기까지가 한계이고 해소는 에셋 재제작(3단계) 몫이다.
+    // **재제작한 세 종은 환산 목표를 그대로 채운다.** 문·책장·화이트보드는 에셋의 가로세로비가
+    // 실물과 달라(문 1:1.13, 책장 1:0.95, 화이트보드 1:0.56) 높이를 맞추면 폭이 상한을 넘었고,
+    // 그래서 목표의 81%·91%·68% 에서 멈췄다. 세로로 긴 비율로 다시 뽑아 상한에서 풀려났다.
     //
-    // 기준을 78% 로 둔 것은 회귀 방지용이다. 배율을 1.0 으로 되돌리면 65%, 폭 상한을 1칸으로
-    // 되돌리면 70% 로 떨어져 둘 다 걸린다.
+    // 이 검사는 **에셋이 다시 납작해지는 것**을 잡는다. 시트를 새로 받으면서 비율이 무너지면
+    // 폭 상한이 다시 배율을 깎아 여기서 걸린다 — 화면을 보지 않고도 드러난다.
+    for kind in [FurnitureKind.doorClosed, .bookshelf, .whiteboard] {
+        guard let targetCm = kind.targetHeightCm else {
+            continue
+        }
+        let rendered = kind.nativeHeight * kind.sizeBoost
+        let target = targetCm * characterHeight / 170.0
+        t.expect(
+            rendered >= target * 0.99,
+            "\(kind.rawValue) 가 환산 목표를 채운다 (실제 \(Int(rendered / target * 100))%)"
+        )
+    }
+    // 책장이 사람 키에 대해 갖는 비율. 3단 책장(150cm)이 사람(170cm)의 88% 다.
     let bookshelf = FurnitureKind.bookshelf
     let bookshelfHeight = bookshelf.nativeHeight * bookshelf.sizeBoost
     t.expect(
-        bookshelfHeight >= characterHeight * 0.78,
-        "책장이 사람 키의 78% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
-    )
-    // 폭 상한이 결정한 배율을 그대로 쓴다 — 상한 안에서 최대한 키운 상태여야 한다.
-    // 누가 배율을 임의값으로 되돌리면 여기서 걸린다.
-    t.expectEqual(
-        bookshelf.sizeBoost,
-        officeFurnitureWidthCapTiles * officeReferenceTileSize / bookshelf.nativeSize.width,
-        "책장 배율이 폭 상한값과 일치"
+        bookshelfHeight >= characterHeight * 0.85,
+        "책장이 사람 키의 85% 이상 (실제 \(Int(bookshelfHeight / characterHeight * 100))%)"
     )
 
     // 가구가 사람보다 크게 솟지 않는다 — 키 큰 화분·책장이 1.4~1.5배 보정을 받으므로 상한을
     // 본다. 관제 화면에서 가구가 옆 칸 사람과 상태 링을 덮으면 정보가 사라진다.
     //
     // 제외 대상은 두 부류다. 세로가 높이가 아닌 것(회의 테이블·깔개)은 비교 자체가 성립하지
-    // 않는다. 자판기(180cm)는 **실물이 사람보다 높은 물건**이라 사람 키로 자르면 실측 환산을
-    // 되돌리는 셈이 되므로, 대신 1.2배까지만 허용해 무제한으로 커지는 것을 막는다.
-    let tallerThanPeople: Set<FurnitureKind> = [.vendingMachine]
+    // 않는다. 자판기(180cm)와 **문(200cm)** 은 실물이 사람보다 높은 물건이라 사람 키로 자르면
+    // 실측 환산을 되돌리는 셈이 되므로, 대신 1.2배까지만 허용해 무제한으로 커지는 것을 막는다.
+    //
+    // 문이 여기 들어온 것이 재제작의 요점이다 — 예전 에셋(40×45)은 폭 상한에 걸려 1.29칸까지만
+    // 서서 **사람이 문보다 컸다.** 지금은 1.59칸으로 사람을 넘어선다.
+    let tallerThanPeople: Set<FurnitureKind> = [.vendingMachine, .doorClosed, .doorOpen]
     for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
         let height = kind.nativeHeight * kind.sizeBoost
         let allowed = characterHeight * (tallerThanPeople.contains(kind) ? 1.2 : 1.0)

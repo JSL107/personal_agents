@@ -81,10 +81,10 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-coffee-table",
         "furn-coffee-machine",
         "furn-water-cooler",
-        "furn-whiteboard",
+        None,  # furniture-3 이 정본(세로로 긴 재제작본)
         "furn-printer",
         "furn-plant-tall",
-        "furn-bookshelf",
+        None,  # furniture-3 이 정본
         "furn-plant-small",
         "furn-clock",
         "furn-trash",
@@ -102,8 +102,8 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-wall-plant-hanging",
     ],
     "furniture-door": [
-        "furn-door-closed",
-        "furn-door-open",
+        None,  # furniture-3 이 정본
+        None,  # furniture-3 이 정본
         "furn-filing-cabinet",
         "furn-lockers-2",
         "furn-partition-low",
@@ -117,6 +117,14 @@ SHEETS: dict[str, list[str | None]] = {
     # 이 세 종은 draw-props.py의 임시 도트 그림을 AI 에셋으로 교체한다.
     "props-2": ["prop-papers", "prop-desk-lamp", "prop-plant-desk"],
     "rugs": ["furn-rug-green", "furn-rug-beige", "furn-rug-navy"],
+    # 문·책장·화이트보드 재제작본. 기존 시트의 같은 이름 셀은 None 으로 비웠다 —
+    # 두 시트가 같은 파일을 만들면 SHEETS 순서에 따라 승자가 갈려 조용히 어긋난다.
+    "furniture-3": [
+        "furn-door-closed",
+        "furn-door-open",
+        "furn-bookshelf",
+        "furn-whiteboard",
+    ],
 }
 
 
