@@ -190,6 +190,66 @@ describe('IntentClassifierUsecase', () => {
       );
     });
   });
+
+  // 시스템 프롬프트는 "[assistant] 는 봇 자신의 직전 응답" 을 계약으로 두고 「합의된 작업의 실행
+  // 지시」/「순수 재촉」 규칙을 분기시킨다. 렌더링이 그 라벨을 실제로 붙이지 않으면 두 규칙이
+  // 통째로 죽는다 — 봇 발화가 사용자 발화로 둔갑해 대화 맥락이 반대로 읽히기 때문.
+  describe('[직전 대화] role 라벨 렌더링', () => {
+    const unknownResponse = JSON.stringify({
+      agentType: 'UNKNOWN',
+      confidence: 0,
+      reason: 'r',
+    });
+
+    it('assistant turn 은 [assistant] 로, user turn 은 [user] + worker 태그로 렌더링된다', async () => {
+      const modelRouter = makeModelRouterMock(unknownResponse);
+      const usecase = new IntentClassifierUsecase(modelRouter);
+
+      await usecase.classify('프롬프트 RAG', [
+        {
+          role: 'user',
+          text: '더 딥다이브 가능해?',
+          agentType: AgentType.BE,
+          agentRunId: 42,
+          timestampMs: Date.now(),
+        },
+        {
+          role: 'assistant',
+          text: '가능해요. 어떤 주제인지 한 문장으로 짚어주세요.',
+          agentType: AgentType.BE,
+          agentRunId: 42,
+          timestampMs: Date.now(),
+        },
+      ]);
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[user] "더 딥다이브 가능해?" → worker BE #42');
+      expect(prompt).toContain(
+        '[assistant] "가능해요. 어떤 주제인지 한 문장으로 짚어주세요."',
+      );
+      // 회귀 방지 — 봇 발화가 "사용자:" 로 렌더링되면 분류기가 화자를 반대로 읽는다.
+      expect(prompt).not.toContain('사용자: "가능해요');
+      // assistant turn 의 agentType 은 직전 user turn 의 미러 — worker 태그를 붙이지 않는다.
+      expect(prompt).not.toMatch(/\[assistant\][^\n]*worker BE/);
+    });
+
+    it('role 미설정(legacy turn)은 user 로 해석한다', async () => {
+      const modelRouter = makeModelRouterMock(unknownResponse);
+      const usecase = new IntentClassifierUsecase(modelRouter);
+
+      await usecase.classify('그거 분배해', [
+        {
+          text: '오늘 plan 짜줘',
+          agentType: AgentType.PM,
+          agentRunId: 7,
+          timestampMs: Date.now(),
+        },
+      ]);
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[user] "오늘 plan 짜줘" → worker PM #7');
+    });
+  });
 });
 
 // 결함 A (맥락 결합 실패, 2026-07-02) — "PR URL + 접근해봐" 처럼 직전 대화에서 합의된 작업의
