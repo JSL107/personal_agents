@@ -21,6 +21,28 @@
 - `.env`, DB, git index/commit/push는 건드리지 않았다.
 
 ---
+# T4 재구현 — 대화 fallback 2연속 제동 (2026-08-10)
+
+**Goal:** `unresolvedStreak >= 2`에서 되묻기 유도 규칙을 제거·치환해 실제 모델이 질문/선택지로 끝내지 않고 실행 불가와 가능한 방향 1~2개를 진술하게 한다.
+
+**Constraints:** T1~T3 변경 금지. streak 0~1의 `buildSystemPrompt` 결과는 기존 경로와 byte-for-byte 동일하게 유지한다. 커밋하지 않는다.
+
+- [x] 기존 T4 구현·테스트를 조사하고 충돌하는 4개 규칙 및 회귀 공백을 확인한다.
+- [x] streak 2 이상에서 4개 기존 문구 부재, 관측 가능한 방향 전환 지시 존재, streak 0~1 exact equality를 검증하는 spec을 추가해 RED를 확인한다.
+- [x] `buildSystemPrompt`만 최소 수정해 streak 조건에서 되묻기 규칙과 분량 규칙을 제거·치환한다.
+- [x] focused spec을 GREEN으로 만들고 T1~T3 diff가 바뀌지 않았는지 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 각각 실행해 exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`에 `T4 재구현` 절을 덧붙이고 Review를 작성한다.
+
+## Review
+
+- streak 2·3 prompt에서 기존 되묻기 유도 4문구를 제거하고, 질문 종결·선택지 금지와 진술형 방향 제안을 명시했다. repo 확인 예외도 질문 금지로 치환해 모순을 남기지 않았다.
+- streak 0·1은 no-streak prompt와 exact equality이며 기존 prompt SHA-256까지 고정했다.
+- TDD RED는 기존 `follow-up 질문으로 끌어주세요.` 잔존으로 신규 2 tests가 실패했고, 수정 후 focused 25/25 통과했다.
+- 최종 gate는 lint exit 0(기존 warning 57), 일반 test 306 suites/2,450 tests, code-graph 5 suites/40 tests, build exit 0이다.
+- untracked `scripts/_dump2.ts`는 lint 중 임시 분리 후 같은 SHA-256으로 복원했다. T1~T3 production code와 commit은 건드리지 않았다.
+
+---
 
 # 학습 브리핑 3차 최종 Notion 실발행 확인 스크립트 (2026-08-06)
 
@@ -1067,5 +1089,29 @@
 - mock 반환값은 Prisma 필터 이후 현재 경로 행만 포함하고, 쿼리 인자 단언으로 필터 삭제 시 실패하게 했다.
 - 최종 gate는 lint exit 0(기존 warning 57), 일반 test 306 suites/2,419 tests, code-graph 5 suites/40 tests, build/docs/invariants 모두 exit 0이다.
 - 실제 보유 종목·상품명은 추가하지 않았다. `pnpm db:push`, commit은 실행하지 않았다.
+
+---
+# Router 대화 맥락 BLOG 착지 및 fallback 제동 (2026-08-10)
+
+**Goal:** `.ai/design.md`의 T1~T4를 그대로 구현해 기술 학습 요청을 BLOG로 연결하고, 대화 맥락·요약을 보존하며, conversational fallback 2연속 시 방향을 전환한다.
+
+**Constraints:** `8001a2b`의 분류기 화자 라벨 수정은 건드리지 않는다. 각 작업은 focused spec RED를 먼저 확인한 뒤 최소 구현으로 GREEN을 만든다. 커밋하지 않는다.
+
+- [x] T1 분류기 prompt 회귀 spec을 RED로 만들고 BLOG/UNKNOWN 경계와 합의된 주제 선택 규칙을 구현한다.
+- [x] T2 BlogDispatcher의 동기·비동기 요청문 조립 spec을 RED로 만들고 단일 순수 조립 함수를 구현한다.
+- [x] T3 BlogDraftResult summary 전달·Slack escape spec을 RED로 만들고 usecase/formatter를 구현한다.
+- [x] T4 정확한 assistant/null 연속 판정과 streak prompt 분기 spec을 RED로 만들고 handler/usecase를 구현한다.
+- [x] focused spec 전체와 mutation 관점의 결함 검출력을 확인한다.
+- [x] final diff를 설계·선행 커밋 대비 검토한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 각각 실행해 exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 실제 변경·검증·설계 편차를 기록한다.
+
+## Review
+
+- T1~T4를 설계대로 구현했다. `8001a2b`의 화자 라벨 렌더링 production 코드는 건드리지 않았다.
+- TDD RED는 T1 3건, T2 2건, T3 3건, T4 4건에서 요구 동작 부재를 확인했다. T4 `reply()` wiring은 전달선을 잠시 제거하는 mutation으로 실패를 재확인했다.
+- focused 6 suites/83 tests 통과 후 wiring 회귀 1건을 추가했다. 독립 리뷰는 Blocker/Should Fix/Minor 0건이었다.
+- 최종 gate 결과와 기존 warning 수는 `.ai/implementation-summary.md`에 기록한다.
+- 설계 편차 없음. LLM 분류·문구 품질은 Slack 실환경 확인이 가능한 잔여 런타임 리스크다.
 
 ---

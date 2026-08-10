@@ -12,6 +12,7 @@ import {
 } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
+import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import {
   DispatchInput,
   DispatchResult,
@@ -82,6 +83,17 @@ const buildPendingPreview = (
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  ...overrides,
+});
+
+const buildConversationTurn = (
+  overrides: Partial<ConversationTurn>,
+): ConversationTurn => ({
+  role: 'assistant',
+  text: 'fallback 응답',
+  agentType: null,
+  agentRunId: null,
+  timestampMs: Date.now(),
   ...overrides,
 });
 
@@ -352,6 +364,158 @@ describe('RouterMessageHandler — app_mention', () => {
       expect.objectContaining({
         text: '안녕하세요! 무엇을 도와드릴까요?',
       }),
+    );
+  });
+
+  it('직전 assistant/null turn 이 2회 연속이면 unresolvedStreak=2를 전달한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const conversationMemory = new ConversationMemoryService();
+    const memoryKey = conversationMemory.buildKey({
+      slackUserId: 'U_USER',
+      channelId: 'C_CHANNEL',
+      threadTs: '1730000000.000001',
+    });
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({ role: 'user', text: '첫 질문' }),
+    );
+    await conversationMemory.appendTurn(memoryKey, buildConversationTurn({}));
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({ role: 'user', text: '둘째 질문' }),
+    );
+    await conversationMemory.appendTurn(memoryKey, buildConversationTurn({}));
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockRejectedValue(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: 'UNKNOWN',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      ),
+    };
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('방향을 바꿔볼게요.'),
+    } as unknown as ConversationalReplyUsecase;
+    buildHandler(idaeriRouter, {
+      conversationMemory,
+      conversationalReply,
+    }).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 그럼 어떻게 해?',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ unresolvedStreak: 2 }),
+    );
+  });
+
+  it('중간 worker assistant turn 이 있으면 그 뒤의 연속 fallback만 센다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const conversationMemory = new ConversationMemoryService();
+    const memoryKey = conversationMemory.buildKey({
+      slackUserId: 'U_USER',
+      channelId: 'C_CHANNEL',
+      threadTs: '1730000000.000001',
+    });
+    await conversationMemory.appendTurn(memoryKey, buildConversationTurn({}));
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({
+        role: 'user',
+        text: 'worker 요청',
+        agentType: AgentType.PM,
+        agentRunId: 41,
+      }),
+    );
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({ agentType: AgentType.PM, agentRunId: 41 }),
+    );
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({ role: 'user', text: 'fallback 질문' }),
+    );
+    await conversationMemory.appendTurn(memoryKey, buildConversationTurn({}));
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockRejectedValue(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: 'UNKNOWN',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      ),
+    };
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('한 번 더 확인할게요.'),
+    } as unknown as ConversationalReplyUsecase;
+    buildHandler(idaeriRouter, {
+      conversationMemory,
+      conversationalReply,
+    }).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 다음은?',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ unresolvedStreak: 1 }),
+    );
+  });
+
+  it('preview·실패 형태의 user/null turn 은 fallback streak로 세지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const conversationMemory = new ConversationMemoryService();
+    const memoryKey = conversationMemory.buildKey({
+      slackUserId: 'U_USER',
+      channelId: 'C_CHANNEL',
+      threadTs: '1730000000.000001',
+    });
+    await conversationMemory.appendTurn(memoryKey, buildConversationTurn({}));
+    await conversationMemory.appendTurn(
+      memoryKey,
+      buildConversationTurn({
+        role: 'user',
+        text: 'preview 선택',
+        agentType: null,
+      }),
+    );
+    const idaeriRouter: IdaeriRouterPort = {
+      dispatch: jest.fn().mockRejectedValue(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: 'UNKNOWN',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      ),
+    };
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('원하는 걸 알려주세요.'),
+    } as unknown as ConversationalReplyUsecase;
+    buildHandler(idaeriRouter, {
+      conversationMemory,
+      conversationalReply,
+    }).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 다시',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ unresolvedStreak: 1 }),
     );
   });
 

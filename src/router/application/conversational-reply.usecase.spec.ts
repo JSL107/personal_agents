@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
@@ -84,6 +86,50 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
     expect(prompt).not.toContain('alias 매칭해 진행');
   });
+
+  it.each([2, 3])(
+    'conversational fallback streak=%i이면 되묻기 규칙을 제거하고 관측 가능한 방향 전환을 지시한다',
+    (unresolvedStreak) => {
+      const prompt = buildSystemPrompt({ unresolvedStreak });
+
+      const removedQuestionLines = [
+        'follow-up 질문으로 끌어주세요.',
+        '무엇을 원하는지 한 문장으로 짚어달라고 자연스럽게 되물으세요.',
+        '한 문장으로 또렷이 말해달라고 자연스럽게 되물어 주세요',
+        '핵심 한 문장 + 후속 질문 한 문장 정도.',
+      ];
+      removedQuestionLines.forEach((line) => {
+        expect(prompt).not.toContain(line);
+      });
+
+      expect(prompt).toContain('질문으로 끝나는 문장을 쓰지 마세요');
+      expect(prompt).toContain('선택지를 제시하지 마세요');
+      expect(prompt).toMatch(/실제로 실행할 수 없는 요청.*솔직히/);
+      expect(prompt).toMatch(/실제로 가능한 일.*1~2개.*제안/);
+      expect(prompt).toContain('2~4문장');
+      expect(prompt).not.toContain('친근하고 짧게 (1~3문장)');
+      expect(prompt).toMatch(/명령어 추천 \/ 슬래시 안내 절대 X/);
+      expect(prompt).toContain('실행 약속 금지');
+      expect(prompt).toMatch(/worker.*분류기.*LLM.*노출하지 마세요/);
+    },
+  );
+
+  it.each([0, 1])(
+    'streak=%i이면 기존 no-streak system prompt 와 완전히 동일하다',
+    (unresolvedStreak) => {
+      const context = {
+        repoLabel: 'JSL107/personal_agents',
+        ownerLogin: 'JSL107',
+      };
+      const baselinePrompt = buildSystemPrompt(context);
+      const prompt = buildSystemPrompt({ ...context, unresolvedStreak });
+
+      expect(prompt).toBe(baselinePrompt);
+      expect(createHash('sha256').update(prompt).digest('hex')).toBe(
+        '59be4ed1977e5313df1847ff7a3055e9b6525bdd127a69d7834f2f04296d06ac',
+      );
+    },
+  );
 });
 
 describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
@@ -223,6 +269,29 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     // 대화용 커스텀 systemPrompt + 사용자 메시지가 그대로 route 로 전달돼야 한다.
     expect(arg.request.systemPrompt).toContain('이대리');
     expect(arg.request.prompt).toContain('안녕');
+  });
+
+  it('unresolvedStreak=2이면 방향 전환 system prompt 로 route 한다', async () => {
+    const route = jest.fn().mockResolvedValue({
+      text: '실행 가능한 방향을 제안할게요.',
+      modelUsed: 'gpt-x',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+    );
+
+    await usecase.reply({
+      text: '그럼 뭘 할 수 있어?',
+      priorTurns: [],
+      unresolvedStreak: 2,
+    });
+
+    const systemPrompt = route.mock.calls[0][0].request.systemPrompt as string;
+    expect(systemPrompt).toContain('방향 전환 (최우선)');
+    expect(systemPrompt).toContain('질문으로 끝나는 문장을 쓰지 마세요');
+    expect(systemPrompt).not.toContain('follow-up 질문으로 끌어주세요');
   });
 
   it('route() 응답 text 를 trim 해서 반환한다', async () => {

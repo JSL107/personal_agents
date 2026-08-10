@@ -194,6 +194,18 @@ export class RouterMessageHandler implements SlackHandler {
       threadTs: memoryThreadTs,
     });
     const priorTurns = await this.conversationMemory.getRecentTurns(memoryKey);
+    let unresolvedStreak = 0;
+    for (const turn of [...priorTurns].reverse()) {
+      if (turn.role !== 'assistant') {
+        continue;
+      }
+      // conversational fallback 의 직접 표식만 센다. agentType=null 단독이면 preview·실패
+      // user turn 까지 섞이며, worker assistant 가 끼면 연속 fallback 흐름이 끝난다.
+      if (turn.agentType !== null) {
+        break;
+      }
+      unresolvedStreak += 1;
+    }
     // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
     // 가장 최근 (마지막) turn 부터 backward 탐색 — 분류 실패 (agentRunId=null) turn 은 skip.
     const priorAgentRunId = [...priorTurns]
@@ -278,6 +290,7 @@ export class RouterMessageHandler implements SlackHandler {
           const reply = await this.conversationalReply.reply({
             text,
             priorTurns,
+            unresolvedStreak,
           });
           await this.conversationMemory.appendTurn(memoryKey, {
             role: 'user',
