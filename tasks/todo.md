@@ -1,3 +1,23 @@
+# PR #261 자동 리뷰 반영
+
+- [x] 현재 `unresolvedStreak` 계산과 기존 회귀 테스트를 확인하고 원인을 기록한다.
+- [x] 질문이 아닌 assistant/null 2회가 방향 전환을 잘못 발동하는 회귀 테스트를 추가한다.
+- [x] 되묻기 2회 연속과 되묻기-정상종결-되묻기 경계 테스트를 정리한다.
+- [x] 수정 전 구현에서 신규 테스트가 의도한 이유로 실패하는지 RED를 확인한다.
+- [x] `?`/`？` + trailing whitespace만 인정하는 최소 판정 로직과 `ponytail:` 한계 주석을 추가한다.
+- [x] focused spec을 GREEN으로 만든다.
+- [x] streak 0~1 시스템 프롬프트 해시 고정 테스트를 포함한 focused 테스트를 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build` exit 0을 확인한다.
+- [x] 최종 diff를 검토하고 `.ai/implementation-summary.md`에 `리뷰 반영` 절을 추가한다.
+
+## Review
+
+- 결과: 질문 종결 fallback만 streak에 포함하고 정상 종결에서 연속을 끊었다.
+- 검증: RED 2건 확인, handler 25/25, prompt 25/25, lint/test/build exit 0.
+- 설계 이탈: 없음. 되묻기 양성 경로는 기존 동작 보존 테스트라 수정 전에도 통과한다.
+
+---
+
 # 포트폴리오 노출 부분 실패 차단 (2026-08-06)
 
 **Goal:** 종목 수집·저장 또는 잔고 동기화가 일부라도 실패하면 혼합된 값으로 포트폴리오 노출을 게시하지 않는다.
