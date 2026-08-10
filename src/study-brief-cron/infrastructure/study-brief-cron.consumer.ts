@@ -14,10 +14,13 @@ import {
 } from '../../agent/career-mate/domain/port/career-profile.repository.port';
 import { EvaluateStudyTopicUsecase } from '../../agent/cto/application/evaluate-study-topic.usecase';
 import { StudyTopicVerdict } from '../../agent/cto/domain/cto.type';
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -109,6 +112,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
     private readonly configService: ConfigService,
+    private readonly agentRunService: AgentRunService,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -121,6 +125,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
     const guardKey = `cron:${STUDY_BRIEF_CRON_QUEUE}:${dateKey}`;
     const processingGuardKey = `${guardKey}:processing`;
     let ownsProcessingGuard = false;
+    // CTO 판정(EvaluateStudyTopicUsecase)이 자체 AgentRun 을 남기므로, 그 지점을 지났는지
+    // 기억해 실패 기록이 겹치지 않게 한다. 판정 전 실패만 여기서 원장에 남긴다.
+    let verdictRunId: number | null = null;
     this.logger.log(
       `Study Brief Cron 시작 — owner=${ownerSlackUserId} → target=${target}`,
     );
@@ -168,6 +175,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
         ),
         repoModules: materials.repoModules.map((module) => ({ ...module })),
       });
+      verdictRunId = outcome.agentRunId;
       const verdict = toStudyBriefVerdict(outcome.result);
       const saved = await this.studyBriefRepository.save({
         agentRunId: outcome.agentRunId,
@@ -208,6 +216,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
         `Study Brief Cron 실패 (owner=${ownerSlackUserId})`,
         error,
       );
+      if (verdictRunId === null) {
+        await this.recordPreVerdictFailure(ownerSlackUserId, error);
+      }
       this.notifyOwnerFailure(ownerSlackUserId, error);
       throw error;
     } finally {
@@ -396,6 +407,32 @@ export class StudyBriefCronConsumer extends WorkerHost {
       }
     }
     this.logger.log(`Study Brief Cron 발송 완료 — target=${target}`);
+  }
+
+  /**
+   * CTO 판정 전(소재 수집·Hermes 리서치)에 죽은 실행을 원장에 FAILED 한 줄로 남긴다.
+   *
+   * 이 구간의 실패는 `EvaluateStudyTopicUsecase` 가 AgentRun 을 만들기 **전에** 일어나
+   * 지금까지 원장에 아무 흔적도 남기지 않았다. Slack 통지는 가지만, 실패율·소요시간·재시도를
+   * 보는 유일한 원장에서는 "그날 실패한 것" 과 "아예 발화하지 않은 것" 이 똑같이 빈칸이라
+   * 며칠 연속 죽어도 계측에 잡히지 않는다(실제로 Hermes 인증 만료로 이틀치가 그렇게 사라졌다).
+   *
+   * 기록 자체가 목적이므로 여기서 다시 던지지 않는다 — 호출부가 원래 에러를 그대로 던진다.
+   */
+  private async recordPreVerdictFailure(
+    ownerSlackUserId: string,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.agentRunService.execute({
+        agentType: AgentType.CTO_STUDY,
+        triggerType: TriggerType.STUDY_BRIEF_CRON,
+        inputSnapshot: { ownerSlackUserId, stage: 'research' },
+        run: () => Promise.reject(error),
+      });
+    } catch {
+      // execute 는 FAILED 로 마감한 뒤 같은 에러를 다시 던진다. 원장에 남기는 것이 목적이라 삼킨다.
+    }
   }
 
   private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {

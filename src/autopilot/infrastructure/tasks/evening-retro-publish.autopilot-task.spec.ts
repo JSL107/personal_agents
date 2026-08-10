@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { EveningRetroPublishTask } from './evening-retro-publish.autopilot-task';
@@ -86,6 +87,26 @@ const makeTask = (opts: {
         }
         return Promise.resolve([]);
       }),
+    // 실제 execute 와 같은 계약으로 흉내낸다 — run 을 실행하고 결과를 outcome 으로 감싼다.
+    // 그냥 값을 돌려주면 회고 생성이 실제로 호출되는지가 테스트에서 사라진다.
+    execute: jest
+      .fn()
+      .mockImplementation(
+        async ({
+          run,
+        }: {
+          run: (context: {
+            agentRunId: number;
+          }) => Promise<{ result: unknown; modelUsed: string }>;
+        }) => {
+          const execution = await run({ agentRunId: 1 });
+          return {
+            result: execution.result,
+            modelUsed: execution.modelUsed,
+            agentRunId: 1,
+          };
+        },
+      ),
   };
 
   const modelRouter = {
@@ -154,6 +175,41 @@ describe('EveningRetroPublishTask', () => {
     expect((careerPreview?.payload as { prRefs: string[] }).prRefs).toContain(
       'schoolbell-e/sbe-api-v5#864',
     );
+  });
+
+  it('(c-2) 회고 생성을 EVENING_RETRO 실행 원장으로 감싼다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    await task.run(CTX);
+
+    // 원장을 거치지 않으면 카드가 안 온 날 실패인지 후보 0건인지 구분할 근거가 없다.
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentType: AgentType.EVENING_RETRO,
+        triggerType: TriggerType.AUTOPILOT_EVENING_RETRO_CRON,
+      }),
+    );
+  });
+
+  it('(c-3) 회고 생성이 실패하면 원장에 남기고 카드 없이 fallback 한다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+    });
+    agentRunService.execute.mockRejectedValue(new Error('codex down'));
+
+    const result = await task.run(CTX);
+
+    expect(agentRunService.execute).toHaveBeenCalledTimes(1);
+    expect(result.skip).toBe(false);
+    expect(result.previews).toBeUndefined();
+    expect(result.summaryText).toContain('codex down');
   });
 
   it('(d) PR 없음 + worklog run 1건 있음 → previews.length === 1 (블로그만)', async () => {
