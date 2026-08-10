@@ -92,7 +92,7 @@ describe('AutopilotOrchestrator', () => {
     expect(sentText).toContain('B');
   });
 
-  it('전부 skip → postMessage 0회', async () => {
+  it('전부 skip → 정상 종료하고 postMessage 0회', async () => {
     const taskA = makeTask('daily-eval', { skip: true });
     const postMessage = jest.fn();
     const orchestrator = new AutopilotOrchestrator(
@@ -106,7 +106,9 @@ describe('AutopilotOrchestrator', () => {
       { attachSlackMessage: jest.fn() } as never,
     );
 
-    await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1');
+    await expect(
+      orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1'),
+    ).resolves.toBeUndefined();
     expect(postMessage).not.toHaveBeenCalled();
   });
 
@@ -168,7 +170,7 @@ describe('AutopilotOrchestrator', () => {
     expect(sentText).toContain('work-reviewer');
   });
 
-  it('그룹 내 모든 task 실패 → throw 안 함, 실패 안내만 발송', async () => {
+  it('그룹 내 모든 task 실패 → 모든 target에 실패 안내 후 재시도를 위해 throw', async () => {
     const taskA = {
       id: 'daily-eval',
       run: jest.fn().mockRejectedValue(new Error('boom')),
@@ -188,12 +190,56 @@ describe('AutopilotOrchestrator', () => {
         'evening',
         [makeEntry('daily-eval', 'daily-eval')],
         'U1',
-        'C1',
+        ' C1, , C2 ',
+        'repeat:evening:1',
       ),
-    ).resolves.toBeUndefined();
-    // 실패 안내가 발송되어 owner 가 인지 가능 (조용한 실패 방지).
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage.mock.calls[0][0].text).toContain('daily-eval');
+    ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      target: 'C1',
+      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+    });
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      target: 'C2',
+      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+    });
+    expect(acquireOnce).not.toHaveBeenCalled();
+  });
+
+  it('전멸 실패 안내 발송도 실패하면 원래 전멸 오류로 throw하고 가드를 소비하지 않는다', async () => {
+    const taskA = {
+      id: 'daily-eval',
+      run: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const postMessage = jest
+      .fn()
+      .mockRejectedValue(new Error('Slack API 일시 오류'));
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [taskA] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [makeEntry('daily-eval', 'daily-eval')],
+        'U1',
+        'C1',
+        'repeat:evening:2',
+      ),
+    ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: expect.stringContaining('daily-eval 자동 생성 실패'),
+      }),
+    );
+    expect(acquireOnce).not.toHaveBeenCalled();
   });
 
   it('미등록 taskId → throw', async () => {
