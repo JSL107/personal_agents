@@ -657,8 +657,7 @@ final class OfficeScene: SKScene {
     ///
     /// **책상 노드의 자식으로 붙인다.** 창 크기가 바뀌면 `renderFurniture` 가 책상을 통째로
     /// 다시 만드는데, 씬에 직접 붙이면 그때마다 위치와 앞뒤 순서를 손으로 다시 맞춰야 한다.
-    /// 자식이면 둘 다 저절로 따라온다. 모니터 깜빡임이 책상 노드의 색을 물들이지만
-    /// (`startMonitorGlow`) 자식은 그 색을 물려받지 않으므로 서류가 함께 파래지지 않는다.
+    /// 자식이면 둘 다 저절로 따라온다(켜진 모니터 화면도 같은 이유로 자식이다).
     private func renderDeskPapers(agents: [ConsoleAgent]) {
         guard let texture = SpriteLoader.texture("desk-paper") else {
             return  // 에셋이 없으면 아무것도 그리지 않는다(빈 책상 = 0건과 같은 그림)
@@ -1413,25 +1412,47 @@ final class OfficeScene: SKScene {
         characters[agentType]?.childNode(withName: "dots")?.removeFromParent()
     }
 
-    /// 작업 중인 사람의 책상 모니터가 은은하게 깜빡인다 — 자리에서 뭔가 돌고 있다는 신호.
+    /// 작업 중인 사람의 책상 모니터에 불이 들어온다 — 자리에서 뭔가 돌고 있다는 신호.
+    ///
+    /// 꺼진 화면(검정)이 그려져 있는 자리에 밝은 판을 덮는다. 예전에는 책상 스프라이트
+    /// **통째**를 파랗게 22% 물들였는데, 화면에서는 전혀 읽히지 않았다 — 한 칸이 32픽셀로
+    /// 줄어든 그림에서 나무 상판까지 함께 옅게 변하는 것은 색이 흔들린 것으로도 안 보인다
+    /// (진행 중인 자리와 대기 자리를 나란히 렌더해 확인). 어두운 실내에 **밝은 점** 하나가
+    /// 같은 면적에서 대비가 가장 크다.
+    ///
+    /// 시작을 켜진 상태(alpha 1)로 두고 낮췄다 올린다. 반대로 두면 정지 화면을 굽는
+    /// 회귀 렌더(`--render`)가 늘 꺼진 순간을 잡아, 켜지는지 확인할 방법이 없어진다.
     private func startMonitorGlow(_ agentType: String) {
-        guard let desk = deskNodes[agentType], desk.action(forKey: "monitor") == nil else {
+        guard let desk = deskNodes[agentType], desk.childNode(withName: "monitor") == nil else {
             return
         }
-        desk.color = SKColor(red: 0.55, green: 0.85, blue: 1.0, alpha: 1)
-        let pulse = SKAction.sequence([
-            .colorize(withColorBlendFactor: 0.22, duration: 0.7),
-            .colorize(withColorBlendFactor: 0.0, duration: 0.7),
-        ])
-        desk.run(.repeatForever(pulse), withKey: "monitor")
+        let screen = SKSpriteNode(
+            color: SKColor(red: 0.42, green: 0.80, blue: 1.0, alpha: 1),
+            size: CGSize(
+                width: desk.size.width * CGFloat(officeDeskScreenWidthRatio),
+                height: desk.size.height * CGFloat(officeDeskScreenHeightRatio)
+            )
+        )
+        screen.name = "monitor"
+        // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다.
+        screen.anchorPoint = CGPoint(x: 0.5, y: 0)
+        screen.position = CGPoint(
+            x: 0, y: desk.size.height * CGFloat(officeDeskScreenBottomRatio)
+        )
+        screen.zPosition = 0.1
+        desk.addChild(screen)
+        screen.run(
+            .repeatForever(
+                .sequence([
+                    .fadeAlpha(to: 0.72, duration: 0.7),
+                    .fadeAlpha(to: 1.0, duration: 0.7),
+                ])
+            )
+        )
     }
 
     private func stopMonitorGlow(_ agentType: String) {
-        guard let desk = deskNodes[agentType] else {
-            return
-        }
-        desk.removeAction(forKey: "monitor")
-        desk.colorBlendFactor = 0
+        deskNodes[agentType]?.childNode(withName: "monitor")?.removeFromParent()
     }
 
     /// 시간대에 따라 창유리 색과 빛 세기만 갈아 끼운다(노드는 그대로 둔다).
