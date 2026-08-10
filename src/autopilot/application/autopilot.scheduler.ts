@@ -13,6 +13,33 @@ import {
 } from '../domain/autopilot.type';
 import { PlaybookEntry } from '../domain/playbook.type';
 
+const LOW_FREQUENCY_RETRY_OPTIONS = {
+  attempts: 4,
+  backoff: { type: 'exponential' as const, delay: 1_800_000 },
+};
+
+const DEFAULT_RETRY_OPTIONS = {
+  attempts: 2,
+  backoff: { type: 'exponential' as const, delay: 60_000 },
+};
+
+const isFixedCronField = (field: string): boolean => {
+  const hasSpecialSyntax = /[*\-/,]/.test(field);
+  return !hasSpecialSyntax;
+};
+
+export const isLowFrequencyCron = (pattern: string): boolean => {
+  const fields = pattern.trim().split(/\s+/);
+  if (fields.length !== 5 && fields.length !== 6) {
+    return false;
+  }
+
+  const normalizedFields = fields.length === 6 ? fields.slice(1) : fields;
+  const dayOfMonth = normalizedFields[2];
+  const dayOfWeek = normalizedFields[4];
+  return isFixedCronField(dayOfMonth) || isFixedCronField(dayOfWeek);
+};
+
 // 부팅 시 플레이북의 CRON 항목을 digestGroup ?? id 로 묶어 그룹당 1 repeatable 로 등록.
 // 그룹 스케줄은 그룹 첫 항목의 env(AUTOPILOT_<firstId>_SCHEDULE/TIMEZONE)로 해석 — env 무변경.
 // EVENT 항목은 등록 skip(실행은 SP4). owner 미설정이면 전체 비활성.
@@ -70,13 +97,15 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       );
       this.warnIgnoredScheduleOverrides(groupKey, entries);
       const payload: AutopilotJobData = { ownerSlackUserId: owner, target };
+      const retryOptions = isLowFrequencyCron(schedule)
+        ? LOW_FREQUENCY_RETRY_OPTIONS
+        : DEFAULT_RETRY_OPTIONS;
       await this.queue.add(groupKey, payload, {
         repeat: { pattern: schedule, tz },
         jobId: `autopilot:${groupKey}:${owner}`,
         removeOnComplete: 20,
         removeOnFail: 20,
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 60_000 },
+        ...retryOptions,
       });
       this.logger.log(
         `Autopilot 그룹 활성화 — ${groupKey}(${entries.length} task), cron="${schedule}" (${tz})`,

@@ -71,6 +71,74 @@ describe('TossApiClient HTTP 오류', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('조회가 401이면 토큰을 한 번 재발급한 뒤 같은 조회를 다시 시도한다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse({}, 401))
+      .mockResolvedValueOnce(
+        createJsonResponse({ ...TOKEN_RESPONSE, access_token: 'token-2' }),
+      )
+      .mockResolvedValueOnce(createJsonResponse(CANDLES_RESPONSE));
+
+    await expect(
+      client.requestJson('일봉 조회', '/api/v1/candles'),
+    ).resolves.toEqual(CANDLES_RESPONSE);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://openapi.tossinvest.com/oauth2/token',
+      'https://openapi.tossinvest.com/api/v1/candles',
+      'https://openapi.tossinvest.com/oauth2/token',
+      'https://openapi.tossinvest.com/api/v1/candles',
+    ]);
+    expect(
+      new Headers(fetchMock.mock.calls[1][1]?.headers).get('Authorization'),
+    ).toBe('Bearer token-1');
+    expect(
+      new Headers(fetchMock.mock.calls[3][1]?.headers).get('Authorization'),
+    ).toBe('Bearer token-2');
+  });
+
+  it('재시도한 조회도 401이면 토큰을 두 번만 발급하고 오류를 던진다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse({}, 401))
+      .mockResolvedValueOnce(
+        createJsonResponse({ ...TOKEN_RESPONSE, access_token: 'token-2' }),
+      )
+      .mockResolvedValueOnce(createJsonResponse({}, 401));
+
+    await expect(
+      client.requestJson('일봉 조회', '/api/v1/candles'),
+    ).rejects.toThrow('토스증권 일봉 조회 실패: HTTP 401');
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith('/oauth2/token'),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it.each([403, 500])(
+    '조회가 HTTP %i이면 토큰 재발급 없이 오류를 던진다',
+    async (status: number) => {
+      fetchMock
+        .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+        .mockResolvedValueOnce(createJsonResponse({}, status));
+
+      await expect(
+        client.requestJson('일봉 조회', '/api/v1/candles'),
+      ).rejects.toThrow(`토스증권 일봉 조회 실패: HTTP ${status}`);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        fetchMock.mock.calls.filter(([url]) =>
+          String(url).endsWith('/oauth2/token'),
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
   // 타임아웃이 없으면 응답을 주지 않는 서버에 매달려 autopilot worker 의 lockDuration 을
   // 넘기고, BullMQ 가 같은 job 을 stalled 로 보고 재처리한다.
   it('토큰 발급과 본 요청 모두에 타임아웃 signal 을 붙인다', async () => {
