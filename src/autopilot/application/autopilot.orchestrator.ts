@@ -68,6 +68,10 @@ export class AutopilotOrchestrator {
     const firedAtKst = getTodayKstDate();
     const guardKey = buildGuardKey(groupKey, firedAtKst);
     const slotKey = slotId ? buildSlotKey(groupKey, slotId) : null;
+    const targets = target
+      .split(',')
+      .map((resolved) => resolved.trim())
+      .filter((resolved) => resolved.length > 0);
 
     // 재진입 차단 — 이 슬롯이 이미 완주했으면 task 를 하나도 실행하지 않고 끝낸다.
     //
@@ -102,6 +106,8 @@ export class AutopilotOrchestrator {
 
     const items: { summary: string; detail?: string }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
+    let hasDeliverableSummary = false;
+    let failedTaskCount = 0;
 
     for (const entry of entries) {
       const task = this.tasks.get(entry.taskId);
@@ -122,12 +128,14 @@ export class AutopilotOrchestrator {
           previews.push(...result.previews);
         }
         if (!result.skip && result.summaryText) {
+          hasDeliverableSummary = true;
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
           });
         }
       } catch (error: unknown) {
+        failedTaskCount += 1;
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(
           `Autopilot[${groupKey}] task '${entry.taskId}' 실패 (그룹은 계속): ${message}`,
@@ -138,6 +146,37 @@ export class AutopilotOrchestrator {
           summary: `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
         });
       }
+    }
+
+    // 전달할 summary/preview 산출물이 없고 실패가 하나라도 있는데 실패 안내만 발송하면 cron 이
+    // 성공 처리된다. 그러면 발송 가드와 슬롯 완주 표식까지 남아 BullMQ 재시도가 막히고, 실제
+    // 보고가 다음 슬롯까지 유실된다. skip 은 정상 종료지만 전달 산출물은 아니며, preview 생성은
+    // 전달 산출물이므로 재시도 조건에서 제외한다.
+    if (
+      failedTaskCount > 0 &&
+      !hasDeliverableSummary &&
+      previews.length === 0
+    ) {
+      const failureNotice = items
+        .map((item) => item.summary)
+        .join('\n\n────────\n\n');
+      for (const resolved of targets) {
+        try {
+          await this.slackNotifier.postMessage({
+            target: resolved,
+            text: failureNotice,
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Autopilot[${groupKey}] 전멸 실패 안내 발송 실패 (${resolved}): ${message}`,
+          );
+        }
+      }
+      // 여기서 가드를 쓰면 BullMQ retry가 이미 전송된 실행으로 오인해 죽는다. 전멸은 저빈도
+      // 그룹에서 드물고 재시도마다 안내가 재발송돼도, 조용한 유실보다 확실히 낫다는 tradeoff다.
+      throw new Error('Autopilot: 실행한 모든 task 가 실패했습니다.');
     }
 
     if (items.length === 0 && previews.length === 0) {
@@ -169,11 +208,6 @@ export class AutopilotOrchestrator {
       );
       return;
     }
-
-    const targets = target
-      .split(',')
-      .map((resolved) => resolved.trim())
-      .filter((resolved) => resolved.length > 0);
 
     // 메인 요약(합침) + 각 항목 detail 을 스레드 댓글로.
     // 메인 요약 발송이 실패하면 위에서 선점한 멱등 가드를 롤백한 뒤 rethrow 한다.

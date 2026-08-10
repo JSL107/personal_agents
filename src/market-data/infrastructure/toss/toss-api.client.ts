@@ -21,6 +21,16 @@ interface TokenResponse {
   expires_in?: unknown;
 }
 
+class TossApiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'TossApiHttpError';
+  }
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 };
@@ -41,6 +51,37 @@ export class TossApiClient {
     init?: RequestInit,
   ): Promise<unknown> {
     const accessToken = await this.getAccessToken();
+    try {
+      return await this.requestJsonWithAccessToken(
+        operation,
+        path,
+        init,
+        accessToken,
+      );
+    } catch (error) {
+      if (!(error instanceof TossApiHttpError) || error.status !== 401) {
+        throw error;
+      }
+
+      this.cachedToken = null;
+      const refreshedAccessToken = await this.getAccessToken();
+      // 현재 호출부는 모두 GET 이라 init 을 그대로 재사용해도 안전하다. stream body 는 한 번
+      // 소비하면 재사용할 수 없으므로, POST 등 body 가 있는 요청을 지원할 때는 별도 처리해야 한다.
+      return await this.requestJsonWithAccessToken(
+        operation,
+        path,
+        init,
+        refreshedAccessToken,
+      );
+    }
+  }
+
+  private async requestJsonWithAccessToken(
+    operation: string,
+    path: string,
+    init: RequestInit | undefined,
+    accessToken: string,
+  ): Promise<unknown> {
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${accessToken}`);
     return await this.requestJsonWithoutAuthentication(operation, path, {
@@ -123,8 +164,9 @@ export class TossApiClient {
       );
     }
     if (!response.ok) {
-      throw new Error(
+      throw new TossApiHttpError(
         `토스증권 ${operation} 실패: HTTP ${response.status} ${response.statusText}`,
+        response.status,
       );
     }
     try {

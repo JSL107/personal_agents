@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-08-10 — task 진입 수를 성공 산출물로 오인해 skip+실패 재시도를 막음
+
+- `executedTaskCount`는 `skip`도 세므로 전달 가능한 결과가 하나도 없는 `skip + throw`를 부분 성공처럼 만들었다. 재시도 판단은 실행 횟수가 아니라 외부에 전달할 실제 산출물(`summaryText` 또는 preview)과 실패 존재 여부로 표현한다.
+- cron 파서를 둘러싼 정책 함수는 현재 기본값 모양만 가정하지 않는다. BullMQ가 허용하는 5필드·6필드 입력을 모두 정규화한 뒤 같은 의미 필드에 정책을 적용하고, 지원하지 않는 필드 수만 보수적으로 거부한다.
+- 리뷰 회귀 테스트는 지적된 조합을 그대로 만들고 수정 전 RED를 실제 확인한다. 인접한 all-skip·partial success·preview-only 경계도 함께 고정한다.
+
 ## 2026-08-05 — 같은 값으로 수정된 총원은 리베이스 충돌이 나지 않는다
 
 - 두 브랜치가 같은 집계 문구를 같은 중간값으로 바꾸면 3-way merge는 충돌 없이 낡은 값을 보존한다. 리베이스 뒤에는 충돌 유무와 별개로 정본 registry에서 수치를 다시 계산한다.
@@ -176,3 +182,15 @@ T4에서 `unresolvedStreak >= 2` 방향 전환 지시를 prompt 끝에 추가했
 - **적용:** 모델 prompt의 동작을 뒤집을 때는 반대 지시를 append하지 않는다. 기존 충돌 규칙을 조건부 제거·치환한다.
 - **테스트:** 새 지시의 존재뿐 아니라 충돌하는 기존 지시의 부재를 함께 검증한다. 비활성 경로는 기준 prompt와 전체 문자열 exact equality로 고정한다.
 - **실측:** prompt unit green은 모델 행동의 충분조건이 아니다. 실제 모델 실측 실패가 나오면 문구 강도보다 먼저 모순·반복·배치 구조를 점검한다.
+
+---
+
+# 2026-08-10 — 대체 알림 경로의 운영 전제를 확인하지 않고 "사용자 통지 유지"로 판정
+
+C1에서 전멸 그룹의 digest 발송을 제거하고 `AutopilotConsumer`의 `publishCronFailure`를 대체 통지로 간주했다. 그러나 실제 경로는 `NotificationPublisher`가 optional이고, `NotificationConsumer`가 `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` 미설정 시 즉시 return하며, `.env.example`도 해당 키를 기본 미설정으로 둔다. 코드 경로가 존재한다는 사실만 확인하고 기본 배포에서 끝까지 발송되는지 확인하지 않아 silent failure 회귀를 만들었다.
+
+- **적용**: 기존 사용자-visible fallback을 제거할 때 대체 경로의 DI optional 여부, env 기본값, feature gate, dedupe, enqueue 실패, 최종 send target까지 전부 추적한다. 어느 하나라도 조건부면 기존 fallback과 동등하다고 판정하지 않는다.
+- **적용**: "사용자가 계속 통지받는다"는 결론은 happy-path 호출 연결이 아니라 **기본 설정에서 최종 side effect가 발생하는지**로 증명한다. 설정값을 확인할 수 없으면 미설정을 안전 기준으로 삼는다.
+- **적용**: retry를 살리기 위해 idempotency guard를 건너뛰는 실패 알림은 retry마다 중복될 수 있다. 이 tradeoff를 코드 주석과 테스트에 명시하고, silent loss와 중복 알림 중 어느 쪽을 선택했는지 운영 근거를 남긴다.
+
+---
