@@ -99,6 +99,7 @@ describe('GenerateBlogDraftUsecase', () => {
 
     expect(outcome.result.notionUrl).toBe(VALID_NOTION_URL);
     expect(outcome.result.published).toBe(true);
+    expect(outcome.result).toMatchObject({ summary: '요약 문장.' });
     expect(updatePageProperties).toHaveBeenCalledTimes(1);
     const argument = updatePageProperties.mock.calls[0][0];
     expect(argument.pageId).toBe(PAGE_ID);
@@ -255,5 +256,6 @@ describe('GenerateBlogDraftUsecase', () => {
 
     expect(outcome.result.published).toBe(true);
     expect(outcome.result.publishError).toBeUndefined();
+    expect(outcome.result).not.toHaveProperty('summary');
   });
 });

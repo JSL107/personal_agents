@@ -103,11 +103,17 @@ const buildPrompt = (
   if (priorTurns && priorTurns.length > 0) {
     sections.push('[직전 대화]');
     for (const turn of priorTurns) {
-      const workerLabel = turn.agentType ?? '(분류 실패)';
-      const runLabel = turn.agentRunId !== null ? `#${turn.agentRunId}` : '-';
-      sections.push(
-        `- 사용자: "${truncate(turn.text)}" → worker ${workerLabel} ${runLabel}`,
-      );
+      // role 라벨은 시스템 프롬프트의 계약이다 — "[assistant] 는 봇 자신의 직전 응답" 을 전제로
+      // 「합의된 작업의 실행 지시」/「순수 재촉」 두 규칙이 분기한다. 라벨 없이 전부 "사용자:" 로
+      // 렌더링하면 봇 발화가 사용자 발화로 둔갑해 두 규칙 모두 판별 근거를 잃는다.
+      const role = turn.role === 'assistant' ? 'assistant' : 'user';
+      // worker 태그는 user turn 에만 — assistant turn 의 agentType 은 직전 user turn 의 미러라
+      // 그대로 붙이면 봇이 스스로 worker 를 호출한 것처럼 읽힌다.
+      const workerTag =
+        role === 'user'
+          ? ` → worker ${turn.agentType ?? '(분류 실패)'} ${turn.agentRunId !== null ? `#${turn.agentRunId}` : '-'}`
+          : '';
+      sections.push(`- [${role}] "${truncate(turn.text)}"${workerTag}`);
     }
     sections.push('');
   }

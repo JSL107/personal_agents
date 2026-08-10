@@ -1,6 +1,44 @@
 import { formatBlogDraft } from './blog.formatter';
 
 describe('formatBlogDraft', () => {
+  it('summary 가 있으면 제목 줄 바로 아래에 노출한다', () => {
+    const text = formatBlogDraft({
+      notionUrl: 'https://www.notion.so/abc',
+      rawOutput: '',
+      published: true,
+      summary: '프롬프트와 RAG의 연결 지점을 정리했습니다.',
+    });
+
+    expect(text.split('\n').slice(0, 2)).toEqual([
+      '🚀 *블로그 발행 완료*',
+      '프롬프트와 RAG의 연결 지점을 정리했습니다.',
+    ]);
+  });
+
+  it('summary 가 없으면 기존 출력이 유지된다', () => {
+    const text = formatBlogDraft({
+      notionUrl: 'https://www.notion.so/abc',
+      rawOutput: '',
+      published: true,
+    });
+
+    expect(text).toBe(
+      '🚀 *블로그 발행 완료*\n발행된 글 보기: https://www.notion.so/abc\n_상태=발행 으로 자동 게시됐습니다. 공개 뷰에서 바로 확인하세요._',
+    );
+  });
+
+  it('summary 의 Slack mrkdwn 제어문자를 escape 한다', () => {
+    const text = formatBlogDraft({
+      notionUrl: 'https://www.notion.so/abc',
+      rawOutput: '',
+      published: true,
+      summary: '<RAG> & 프롬프트',
+    });
+
+    expect(text).toContain('&lt;RAG&gt; &amp; 프롬프트');
+    expect(text).not.toContain('<RAG> & 프롬프트');
+  });
+
   it('published=true 면 발행 완료 메시지 + 링크를 노출한다', () => {
     const text = formatBlogDraft({
       notionUrl: 'https://www.notion.so/abc',
