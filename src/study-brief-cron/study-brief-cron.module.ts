@@ -6,6 +6,7 @@ import { HermesCliRunner } from '../agent/blog/infrastructure/hermes-cli.runner'
 import { CAREER_PROFILE_REPOSITORY_PORT } from '../agent/career-mate/domain/port/career-profile.repository.port';
 import { CareerProfilePrismaRepository } from '../agent/career-mate/infrastructure/career-profile.prisma.repository';
 import { CtoModule } from '../agent/cto/cto.module';
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { NotionModule } from '../notion/notion.module';
@@ -26,6 +27,8 @@ import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.p
 @Module({
   imports: [
     BullModule.registerQueue({ name: STUDY_BRIEF_CRON_QUEUE }),
+    // CTO 판정 전(리서치) 실패를 실행 원장에 남기기 위해 AgentRunService 를 받는다.
+    AgentRunModule,
     CtoModule,
     SlackModule,
     NotificationQueueModule,

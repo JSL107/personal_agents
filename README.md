@@ -110,7 +110,7 @@ pgvector 의미검색 + time-decay 점수화(`@huggingface/transformers`, Xenova
 
 **🎭 에이전트**
 
-전체 AgentType 은 내부 자동화까지 포함해 27종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
+전체 AgentType 은 내부 자동화까지 포함해 29종이며, 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md)를 기준으로 한다. 아래는 사용자가 직접 체감하는 주요 surface 요약이다.
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · BE `/be plan` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · CTO `/assign` · PO_EVAL `/po-eval` · CEO `/ceo-review`
 - **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · `/be sre`(스택트레이스 분석) · BE-FIX(PR 컨벤션) — BE-FIX 는 webhook 자동

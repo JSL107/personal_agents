@@ -1,3 +1,5 @@
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { StudyBriefCronConsumer } from './study-brief-cron.consumer';
 
 const PROFILE = {
@@ -109,6 +111,21 @@ const makeConsumer = ({
       key === 'STUDY_BRIEF_NOTION_DATABASE_ID' ? notionDatabaseId : undefined,
     ),
   };
+  // 판정 전 실패를 원장에 남기는 경로. 실제 execute 처럼 run 을 실행해 실패면 그대로 던진다.
+  const agentRunService = {
+    execute: jest
+      .fn()
+      .mockImplementation(
+        async ({
+          run,
+        }: {
+          run: (context: { agentRunId: number }) => Promise<unknown>;
+        }) => {
+          await run({ agentRunId: 99 });
+          return { result: null, modelUsed: 'stub', agentRunId: 99 };
+        },
+      ),
+  };
   const consumer = new StudyBriefCronConsumer(
     evaluateStudyTopic as never,
     profileRepository as never,
@@ -120,11 +137,13 @@ const makeConsumer = ({
     slackNotifier as never,
     cronIdempotency as never,
     configService as never,
+    agentRunService as never,
     notificationPublisher as never,
   );
 
   return {
     consumer,
+    agentRunService,
     evaluateStudyTopic,
     profileRepository,
     hermesRunner,
@@ -194,6 +213,51 @@ describe('StudyBriefCronConsumer', () => {
       dependencies.notificationPublisher.publishCronFailure,
     ).toHaveBeenCalledTimes(1);
     expect(dependencies.slackNotifier.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('Hermes 실패를 실행 원장에 CTO_STUDY 실패로 남긴다', async () => {
+    const dependencies = makeConsumer({
+      hermesError: new Error('hermes down'),
+    });
+
+    await expect(dependencies.consumer.process(JOB as never)).rejects.toThrow(
+      'hermes down',
+    );
+    // 통지만 가고 원장이 비면 "실패한 날" 과 "발화하지 않은 날" 이 구분되지 않는다.
+    expect(dependencies.agentRunService.execute).toHaveBeenCalledTimes(1);
+    expect(dependencies.agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentType: AgentType.CTO_STUDY,
+        triggerType: TriggerType.STUDY_BRIEF_CRON,
+      }),
+    );
+  });
+
+  it('CTO 판정 뒤 실패는 원장에 중복 기록하지 않는다', async () => {
+    const dependencies = makeConsumer({});
+    dependencies.studyBriefRepository.save.mockRejectedValue(
+      new Error('save down'),
+    );
+
+    await expect(dependencies.consumer.process(JOB as never)).rejects.toThrow(
+      'save down',
+    );
+    // 판정 usecase 가 이미 AgentRun 을 남겼으므로 여기서 또 남기면 실패가 두 번 세어진다.
+    expect(dependencies.agentRunService.execute).not.toHaveBeenCalled();
+  });
+
+  it('CTO 판정 자체가 실패해도 원장에 중복 기록하지 않는다', async () => {
+    const dependencies = makeConsumer({});
+    dependencies.evaluateStudyTopic.execute.mockRejectedValue(
+      new Error('verdict down'),
+    );
+
+    await expect(dependencies.consumer.process(JOB as never)).rejects.toThrow(
+      'verdict down',
+    );
+    // 판정 usecase 는 자기 AgentRun 을 FAILED 로 마감한 뒤 던진다. 성공 시점에만 표시하면
+    // 이 경로가 판정 전 실패로 잘못 분류돼 같은 실패가 두 건으로 남는다.
+    expect(dependencies.agentRunService.execute).not.toHaveBeenCalled();
   });
 
   it('프로필이 없어도 기본 개인화로 Hermes를 호출한다', async () => {
