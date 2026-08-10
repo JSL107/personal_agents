@@ -1,4 +1,4 @@
-import { AutopilotScheduler } from './autopilot.scheduler';
+import { AutopilotScheduler, isLowFrequencyCron } from './autopilot.scheduler';
 
 const makeQueue = () => ({
   add: jest.fn().mockResolvedValue(undefined),
@@ -7,6 +7,28 @@ const makeQueue = () => ({
 });
 
 describe('AutopilotScheduler', () => {
+  it.each([
+    ['0 17 * * 5', true],
+    ['0 18 * * 0', true],
+    ['0 9 * * 6', true],
+    ['0 9 * * 1', true],
+    ['0 10 * * 0', true],
+    ['0 11 * * 0', true],
+    ['0 12 * * 0', true],
+    ['0 9 1 * *', true],
+    ['30 8 * * *', false],
+    ['0 19 * * *', false],
+    ['0 13 * * *', false],
+    ['10 17 * * 1-5', false],
+    ['0 18 * * 1-5', false],
+    ['30 16 * * 1-5', false],
+    ['*/3 * * * *', false],
+    ['*/10 * * * *', false],
+    ['50 * * * *', false],
+  ])('cron "%s"의 저빈도 판별값은 %s이다', (pattern, expected) => {
+    expect(isLowFrequencyCron(pattern)).toBe(expected);
+  });
+
   it('owner 미설정 → 등록 0 + cleanup 호출', async () => {
     const queue = makeQueue();
     const config = { get: jest.fn().mockReturnValue(undefined) };
@@ -93,6 +115,73 @@ describe('AutopilotScheduler', () => {
     expect(morningCall).toBeDefined();
     expect(morningCall[2]).toMatchObject({
       repeat: { pattern: '30 8 * * *', tz: 'Asia/Seoul' },
+    });
+  });
+
+  it('주간 그룹은 시간 단위 재시도 옵션으로 등록한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const weeklySummaryCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'weekly-summary',
+    );
+    expect(weeklySummaryCall).toBeDefined();
+    expect(weeklySummaryCall[2]).toMatchObject({
+      attempts: 4,
+      backoff: { type: 'exponential', delay: 1_800_000 },
+    });
+  });
+
+  it('일간 그룹은 기존 재시도 옵션으로 등록한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(morningCall).toBeDefined();
+    expect(morningCall[2]).toMatchObject({
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 60_000 },
+    });
+  });
+
+  it('첫 항목 schedule override의 resolved cron으로 repeat와 재시도 정책을 등록한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE') {
+          return '0 17 * * *';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const weeklySummaryCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'weekly-summary',
+    );
+    expect(weeklySummaryCall).toBeDefined();
+    expect(weeklySummaryCall[2]).toMatchObject({
+      repeat: { pattern: '0 17 * * *', tz: 'Asia/Seoul' },
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 60_000 },
     });
   });
 });
