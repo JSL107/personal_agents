@@ -232,6 +232,34 @@ describe('StockMonitorAutopilotTask', () => {
     );
   });
 
+  it('전량 매도로 보유가 0건이어도 미채점 알림 종목의 시세는 보강한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    // 알림이 울린 종목까지 전부 팔아 이 시장의 보유가 비었다 — 이 보강이 겨냥하는 상황.
+    repository.findCurrentHoldings.mockResolvedValue([]);
+    repository.findTickersWithUnscoredAlerts.mockResolvedValue([
+      { tickerId: 99, symbol: 'SOLD', tickerName: '매도한 종목' },
+    ]);
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      makeSyncHoldings(),
+    ).run(context);
+
+    // 보유 0건 조기 반환에 가려 보강이 실행되지 않으면 이 PR 이 막으려던 결함이 그대로 남는다.
+    expect(marketData.fetchDailyBars).toHaveBeenCalledWith('SOLD', 5);
+    expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
+      expect.objectContaining({ tickerId: 99 }),
+    );
+  });
+
   it('미채점 알림 종목을 보유 중이면 시세를 두 번 조회하지 않는다', async () => {
     const marketData = {
       fetchDailyBars: jest
