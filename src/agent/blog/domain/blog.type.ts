@@ -10,6 +10,8 @@ export interface BlogDraftResult {
   rawOutput: string;
   // Notion 페이지를 발행 상태(상태=발행 등)로 enrich 성공했는지. 실패해도 초안 URL 은 회신.
   published: boolean;
+  /** Hermes 가 낸 2~3문장 요약. 마커가 없으면 미설정. */
+  summary?: string;
   /**
    * `published === false` 인 **이유**. 발행을 시도했다가 실패한 경우에만 채워진다.
    *

@@ -21,6 +21,15 @@ import {
 // 실제 agentRunId 는 백그라운드 완료 후 notify 메시지(formatBlogDraft)로 전달된다.
 const ASYNC_ACK_AGENT_RUN_ID = 0;
 
+const buildBlogRequestText = (input: DispatchInput): string => {
+  const text = input.text ?? '';
+  const userInstruction = input.conversationContext?.userInstruction?.trim();
+  if (!userInstruction) {
+    return text;
+  }
+  return `${text}\n\n[대화 맥락] ${userInstruction}`;
+};
+
 // BLOG worker 의 Router dispatcher — 자연어 멘션(input.text)을 Hermes 블로그 스킬 요청으로 릴레이.
 // - replyContext 없음(cron/슬래시/test): 기존 동기 — execute 완료까지 await 후 결과 반환.
 // - replyContext 있음(Slack 자연어): Hermes 가 5분+ 걸리므로 즉시 "작성 시작" ack 를 반환하고
@@ -41,7 +50,7 @@ export class BlogDispatcher implements AgentDispatcher {
     if (!reply) {
       // 동기 경로 (cron/슬래시/test) — 기존 그대로.
       const outcome = await this.generateBlogDraft.execute({
-        requestText: input.text ?? '',
+        requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
       });
       return {
@@ -72,7 +81,7 @@ export class BlogDispatcher implements AgentDispatcher {
   ): Promise<void> {
     try {
       const outcome = await this.generateBlogDraft.execute({
-        requestText: input.text ?? '',
+        requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
       });
       await this.notifier.notify({

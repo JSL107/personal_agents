@@ -168,3 +168,11 @@ PreviewGate 카드 수명 PR(#157) 구현 중, 계획서에 "완전한 코드"�
 - Slack 봇 정상 여부를 단정하기 전에 `SLACK_*` token presence, `auth.test`, `apps.connections.open`, active `443` socket, 그리고 가능하면 Slack `/ping` 응답까지 확인한다.
 - `Cannot GET /` 같은 probe-induced 404 로그와 `SlackWebSocket pong timeout` warning 은 심각도가 다르므로 같은 "문제 없음" 범주로 묶지 않는다.
 - PR 제목/본문, 작업 문서, 결과 요약은 repo 언어 정책에 따라 한국어로 작성한다. 코드 식별자, 명령어, package 이름, commit type/scope 같은 기술 표기는 영어 원문을 유지한다.
+
+# 2026-08-10 — 충돌 지시를 끝에 덧붙여 실제 모델 제동 실패
+
+T4에서 `unresolvedStreak >= 2` 방향 전환 지시를 prompt 끝에 추가했지만, 앞쪽의 구체적·반복된 되묻기 지시 4개를 남겼다. unit test도 새 지시의 존재만 검사해 모순 공존을 놓쳤고, 실제 codex는 계속 선택지를 되물었다.
+
+- **적용:** 모델 prompt의 동작을 뒤집을 때는 반대 지시를 append하지 않는다. 기존 충돌 규칙을 조건부 제거·치환한다.
+- **테스트:** 새 지시의 존재뿐 아니라 충돌하는 기존 지시의 부재를 함께 검증한다. 비활성 경로는 기준 prompt와 전체 문자열 exact equality로 고정한다.
+- **실측:** prompt unit green은 모델 행동의 충분조건이 아니다. 실제 모델 실측 실패가 나오면 문구 강도보다 먼저 모순·반복·배치 구조를 점검한다.

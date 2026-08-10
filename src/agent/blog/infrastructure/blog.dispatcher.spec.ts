@@ -38,6 +38,29 @@ describe('BlogDispatcher', () => {
   });
 
   describe('동기 경로 (replyContext 없음)', () => {
+    it('userInstruction 을 원문 뒤 대화 맥락으로 결합한다', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome());
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        buildNotifier(),
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '프롬프트 RAG',
+        conversationContext: {
+          userInstruction: 'LLM 학습 목적으로 프롬프트와 RAG를 깊게 조사한다',
+        },
+      });
+
+      expect(execute).toHaveBeenCalledWith({
+        requestText:
+          '프롬프트 RAG\n\n[대화 맥락] LLM 학습 목적으로 프롬프트와 RAG를 깊게 조사한다',
+        slackUserId: 'U1',
+      });
+    });
+
     it('자연어 text 를 requestText 로 전달하고 outcome 을 DispatchOutcome 으로 매핑한다', async () => {
       const execute = jest.fn().mockResolvedValue(buildSuccessOutcome(42));
       const notifier = buildNotifier();
@@ -83,6 +106,26 @@ describe('BlogDispatcher', () => {
         slackUserId: 'U2',
       });
     });
+
+    it('userInstruction 이 공백뿐이면 기존 requestText 를 그대로 전달한다', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome());
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        buildNotifier(),
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '프롬프트 RAG',
+        conversationContext: { userInstruction: '   ' },
+      });
+
+      expect(execute).toHaveBeenCalledWith({
+        requestText: '프롬프트 RAG',
+        slackUserId: 'U1',
+      });
+    });
   });
 
   describe('비동기 경로 (replyContext 있음)', () => {
@@ -103,11 +146,19 @@ describe('BlogDispatcher', () => {
         source: 'SLACK_MESSAGE',
         slackUserId: 'U1',
         text: '루프 엔지니어링',
+        conversationContext: {
+          userInstruction: '직전 논의를 토대로 실패 패턴을 분석한다',
+        },
         replyContext: { channel: 'C1', threadTs: 'T1' },
       });
 
       expect(outcome.agentRunId).toBe(0);
       expect(outcome.formattedText).toContain('작성을 시작');
+      expect(execute).toHaveBeenCalledWith({
+        requestText:
+          '루프 엔지니어링\n\n[대화 맥락] 직전 논의를 토대로 실패 패턴을 분석한다',
+        slackUserId: 'U1',
+      });
       // 아직 백그라운드 미완 → notify 호출 X.
       expect(notifier.notify).not.toHaveBeenCalled();
 

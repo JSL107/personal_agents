@@ -12,6 +12,7 @@ import {
 } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
+import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import {
   DispatchResult,
   IDAERI_ROUTER_PORT,
@@ -31,6 +32,12 @@ import { detectYesNoIntent } from './yes-no-detector';
 const REACTION_ACK = 'eyes';
 const REACTION_PROCESSING = 'hourglass';
 const REACTION_SUCCESS = 'white_check_mark';
+
+// ponytail: 질문 종결 휴리스틱은 되묻지 않고 미해결로 끝낸 응답을 놓친다; 명시적 turn metadata가 대안이다.
+const isUnresolvedFollowUpTurn = (turn: ConversationTurn): boolean =>
+  turn.role === 'assistant' &&
+  turn.agentType === null &&
+  /[?？]$/.test(turn.text.trim());
 
 // V3 비전 봇 쪼개기 — 자연어 진입 surface.
 // 두 종류 trigger:
@@ -194,6 +201,18 @@ export class RouterMessageHandler implements SlackHandler {
       threadTs: memoryThreadTs,
     });
     const priorTurns = await this.conversationMemory.getRecentTurns(memoryKey);
+    let unresolvedStreak = 0;
+    for (const turn of [...priorTurns].reverse()) {
+      if (turn.role !== 'assistant') {
+        continue;
+      }
+      // conversational fallback 의 직접 표식 중 되묻기로 끝난 응답만 센다.
+      // worker assistant 또는 정상 종결된 fallback assistant 가 끼면 연속 흐름이 끝난다.
+      if (!isUnresolvedFollowUpTurn(turn)) {
+        break;
+      }
+      unresolvedStreak += 1;
+    }
     // 직전 turn 의 worker run id — 있으면 dispatch 의 contextRefs.agentRunId 로 전달.
     // 가장 최근 (마지막) turn 부터 backward 탐색 — 분류 실패 (agentRunId=null) turn 은 skip.
     const priorAgentRunId = [...priorTurns]
@@ -278,6 +297,7 @@ export class RouterMessageHandler implements SlackHandler {
           const reply = await this.conversationalReply.reply({
             text,
             priorTurns,
+            unresolvedStreak,
           });
           await this.conversationMemory.appendTurn(memoryKey, {
             role: 'user',

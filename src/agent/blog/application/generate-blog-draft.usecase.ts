@@ -96,11 +96,13 @@ export class GenerateBlogDraftUsecase {
             status: DomainStatus.INTERNAL,
           });
         }
-        const publish = await this.publishToNotion(notionUrl, stdout);
+        const summary = extractSummary(stdout);
+        const publish = await this.publishToNotion(notionUrl, stdout, summary);
         const result: BlogDraftResult = {
           notionUrl,
           rawOutput: stdout,
           published: publish.published,
+          ...(summary !== null ? { summary } : {}),
           // 실패면 이유가 반드시 붙는다(PublishAttempt 가 타입으로 보장).
           ...(publish.published ? {} : { publishError: publish.error }),
         };
@@ -116,6 +118,7 @@ export class GenerateBlogDraftUsecase {
   private async publishToNotion(
     notionUrl: string,
     stdout: string,
+    summary: string | null,
   ): Promise<PublishAttempt> {
     const pageId = notionPageIdFromUrl(notionUrl);
     if (!pageId) {
@@ -130,7 +133,7 @@ export class GenerateBlogDraftUsecase {
         properties: buildBlogPublishProperties(
           {
             tags: extractTags(stdout),
-            summary: extractSummary(stdout),
+            summary,
             publishedAt: getTodayKstDate(),
           },
           this.getBlogPublishPropertyNames(),
