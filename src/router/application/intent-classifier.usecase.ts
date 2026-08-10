@@ -13,6 +13,10 @@ import {
 } from '../../preference-profile/domain/port/preference-profile.port';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { IntentClassification } from '../domain/intent-classification.type';
+import {
+  AGENT_DISPATCHER_PORT,
+  AgentDispatcher,
+} from '../domain/port/agent-dispatcher.port';
 import { parseIntentClassification } from '../domain/prompt/intent-classification.parser';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 
@@ -26,6 +30,8 @@ import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classif
 // 섹션 prepend — "이런 요청은 보통 어느 worker 로 갔는지" 힌트로 분류 정확도 ↑.
 const EPISODIC_FEWSHOT_LIMIT = 3;
 const EPISODIC_CONTENT_MAX_CHARS = 100;
+// 라우팅 불가 타입을 걸러낸 뒤에도 few-shot 을 채울 수 있도록 여유를 두고 뽑는다.
+const EPISODIC_SEARCH_LIMIT = EPISODIC_FEWSHOT_LIMIT * 3;
 
 @Injectable()
 export class IntentClassifierUsecase {
@@ -33,6 +39,14 @@ export class IntentClassifierUsecase {
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
+    // few-shot 후보를 "실제로 라우팅 가능한 worker" 로 한정하기 위한 등록 목록.
+    // AgentRunService 는 성공한 run 의 output 을 전부 episodic 에 적재하는데, 그 안에는
+    // 사용자가 부를 수 없는 내부 계측 실행(HUMANIZER · SUBCONSCIOUS_GATE 등)도 섞인다.
+    // 그것이 few-shot 예시로 들어가면 classifier 가 미등록 agentType 을 답할 수 있고,
+    // parser 는 AgentType 전체를 허용하므로 그대로 통과해 IdaeriRouterUsecase 가
+    // UNSUPPORTED_AGENT_TYPE 으로 **사용자 요청을 실패시킨다.**
+    @Inject(AGENT_DISPATCHER_PORT)
+    private readonly dispatchers: AgentDispatcher[],
     // episodic 은 옵셔널 — RouterModule 이 EpisodicMemoryModule 을 import 하면 주입,
     // 미주입(테스트 등) 시 few-shot 없이 기존 분류.
     @Optional()
@@ -74,16 +88,33 @@ export class IntentClassifierUsecase {
   }
 
   // best-effort — episodic 미주입 또는 검색 실패 시 빈 배열(분류 본 흐름 비차단).
+  /**
+   * few-shot 후보에서 라우팅할 수 없는 실행을 걷어낸다.
+   *
+   * dispatcher 등록 여부라는 구조적 사실로 판정하므로, 내부 워커가 새로 원장에 편입돼도
+   * 목록을 손댈 필요가 없다. agentType 이 비어 있는 기록은 worker 라벨이 없어 예시로
+   * 쓰이지 않으므로 그대로 통과시킨다.
+   */
+  private keepRoutableHits(hits: EpisodeSearchHit[]): EpisodeSearchHit[] {
+    const routable = new Set<string>(
+      this.dispatchers.map((dispatcher) => dispatcher.agentType),
+    );
+    return hits.filter(
+      (hit) => hit.agentType === null || routable.has(hit.agentType),
+    );
+  }
+
   private async recallSimilar(query: string): Promise<EpisodeSearchHit[]> {
     if (!this.episodicMemory || query.length === 0) {
       return [];
     }
     try {
-      return await this.episodicMemory.searchRelevant({
+      const hits = await this.episodicMemory.searchRelevant({
         query,
         kind: 'agent_run',
-        limit: EPISODIC_FEWSHOT_LIMIT,
+        limit: EPISODIC_SEARCH_LIMIT,
       });
+      return this.keepRoutableHits(hits).slice(0, EPISODIC_FEWSHOT_LIMIT);
     } catch (error) {
       this.logger.warn(
         `Episodic recall 실패 (few-shot 없이 분류 계속): ${error instanceof Error ? error.message : String(error)}`,

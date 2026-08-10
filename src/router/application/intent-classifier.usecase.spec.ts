@@ -20,6 +20,12 @@ const makeModelRouterMock = (
     }),
   }) as unknown as jest.Mocked<ModelRouterUsecase>;
 
+// few-shot 필터 기준이 되는 등록 dispatcher — 사용자가 실제로 부를 수 있는 worker 만 담는다.
+const dispatchers = [
+  { agentType: AgentType.BE, dispatch: jest.fn() },
+  { agentType: AgentType.PM, dispatch: jest.fn() },
+] as never;
+
 describe('IntentClassifierUsecase', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -34,7 +40,7 @@ describe('IntentClassifierUsecase', () => {
         reason: '구현 요청',
       }),
     );
-    const usecase = new IntentClassifierUsecase(modelRouter);
+    const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
     const result = await usecase.classify(
       '백엔드에서 user repository 만들어줘',
@@ -49,7 +55,7 @@ describe('IntentClassifierUsecase', () => {
     const modelRouter = makeModelRouterMock(
       JSON.stringify({ agentType: 'PM', confidence: 0.9, reason: '' }),
     );
-    const usecase = new IntentClassifierUsecase(modelRouter);
+    const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
     await usecase.classify('  오늘 plan  ');
 
@@ -73,7 +79,7 @@ describe('IntentClassifierUsecase', () => {
         reason: '의도 모호',
       }),
     );
-    const usecase = new IntentClassifierUsecase(modelRouter);
+    const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
     const result = await usecase.classify('어쩌고 저쩌고');
 
@@ -104,22 +110,67 @@ describe('IntentClassifierUsecase', () => {
       };
       const usecase = new IntentClassifierUsecase(
         modelRouter,
+        dispatchers,
         episodic as never,
       );
 
       await usecase.classify('PG 연동 손봐줘');
 
       expect(episodic.searchRelevant).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: 'agent_run', limit: 3 }),
+        expect.objectContaining({ kind: 'agent_run', limit: 9 }),
       );
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[유사 과거 작업]');
       expect(prompt).toContain('worker BE');
     });
 
+    // AgentRunService 는 성공한 run 의 output 을 전부 episodic 에 적재한다. 그 안에는 사용자가
+    // 부를 수 없는 내부 계측 실행도 섞이는데, 예시로 들어가면 classifier 가 미등록 agentType 을
+    // 답하고 라우터가 UNSUPPORTED_AGENT_TYPE 으로 사용자 요청을 실패시킨다.
+    it('dispatcher 미등록 worker 의 과거 실행은 few-shot 에서 제외한다', async () => {
+      const modelRouter = makeModelRouterMock(beResponse);
+      const episodic = {
+        record: jest.fn(),
+        searchRelevant: jest.fn().mockResolvedValue([
+          {
+            id: 1,
+            agentRunId: 11,
+            agentType: 'HUMANIZER',
+            content: '{"humanizedKeys":["summary"]}',
+            score: 0.9,
+            occurredAt: new Date(),
+          },
+          {
+            id: 2,
+            agentRunId: 12,
+            agentType: 'BE',
+            content: '결제 모듈 PG 리팩토링',
+            score: 0.7,
+            occurredAt: new Date(),
+          },
+        ]),
+      };
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        dispatchers,
+        episodic as never,
+      );
+
+      await usecase.classify('PG 연동 손봐줘');
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('worker BE');
+      expect(prompt).not.toContain('HUMANIZER');
+      expect(prompt).not.toContain('humanizedKeys');
+    });
+
     it('episodic 미주입 시 기존 프롬프트(섹션 없음)로 분류한다', async () => {
       const modelRouter = makeModelRouterMock(beResponse);
-      const usecase = new IntentClassifierUsecase(modelRouter, undefined);
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        dispatchers,
+        undefined,
+      );
 
       await usecase.classify('PG 연동 손봐줘');
 
@@ -135,6 +186,7 @@ describe('IntentClassifierUsecase', () => {
       };
       const usecase = new IntentClassifierUsecase(
         modelRouter,
+        dispatchers,
         episodic as never,
       );
 
@@ -161,6 +213,7 @@ describe('IntentClassifierUsecase', () => {
       const modelRouter = makeModelRouterMock(beResponse);
       const usecase = new IntentClassifierUsecase(
         modelRouter,
+        dispatchers,
         undefined,
         preferenceProfile,
       );
@@ -178,6 +231,7 @@ describe('IntentClassifierUsecase', () => {
       const modelRouter = makeModelRouterMock(beResponse);
       const usecase = new IntentClassifierUsecase(
         modelRouter,
+        dispatchers,
         undefined,
         undefined,
       );
@@ -203,7 +257,7 @@ describe('IntentClassifierUsecase', () => {
 
     it('assistant turn 은 [assistant] 로, user turn 은 [user] + worker 태그로 렌더링된다', async () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
-      const usecase = new IntentClassifierUsecase(modelRouter);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
       await usecase.classify('프롬프트 RAG', [
         {
@@ -235,7 +289,7 @@ describe('IntentClassifierUsecase', () => {
 
     it('role 미설정(legacy turn)은 user 로 해석한다', async () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
-      const usecase = new IntentClassifierUsecase(modelRouter);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
       await usecase.classify('그거 분배해', [
         {
