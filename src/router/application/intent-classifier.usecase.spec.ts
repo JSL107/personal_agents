@@ -257,7 +257,7 @@ describe('IntentClassifierUsecase', () => {
 
     it('assistant turn 은 [assistant] 로, user turn 은 [user] + worker 태그로 렌더링된다', async () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
-      const usecase = new IntentClassifierUsecase(modelRouter);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
       await usecase.classify('프롬프트 RAG', [
         {
@@ -289,7 +289,7 @@ describe('IntentClassifierUsecase', () => {
 
     it('role 미설정(legacy turn)은 user 로 해석한다', async () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
-      const usecase = new IntentClassifierUsecase(modelRouter);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
       await usecase.classify('그거 분배해', [
         {
