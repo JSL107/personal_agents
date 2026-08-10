@@ -14,6 +14,9 @@ export const formatBlogDraft = (result: BlogDraftResult): string => {
   const lines = [
     result.published ? '🚀 *블로그 발행 완료*' : '📝 *블로그 초안 완성*',
   ];
+  if (result.summary) {
+    lines.push(escapeSlackMrkdwn(result.summary));
+  }
   if (isSafeHttpUrl(result.notionUrl)) {
     const linkLabel = result.published ? '발행된 글 보기' : 'Notion 에서 검토';
     lines.push(`${linkLabel}: ${sanitizeForSlackLink(result.notionUrl)}`);
