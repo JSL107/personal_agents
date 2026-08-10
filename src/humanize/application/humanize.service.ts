@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
@@ -18,6 +20,7 @@ export class HumanizeService {
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly configService: ConfigService,
+    private readonly agentRunService: AgentRunService,
     @Optional()
     @Inject(PREFERENCE_PROFILE_PORT)
     private readonly preferenceProfile?: PreferenceProfilePort,
@@ -49,24 +52,43 @@ export class HumanizeService {
     }
 
     try {
-      const injection = this.preferenceProfile
-        ? await this.preferenceProfile.getInjectionBlock('humanize')
-        : '';
-      const systemPrompt = injection
-        ? `${HUMANIZE_SYSTEM_PROMPT}\n\n${injection}`
-        : HUMANIZE_SYSTEM_PROMPT;
-      const completion = await this.modelRouter.route({
+      // 실행 원장에 남긴다. 윤문은 실패해도 원본을 그대로 내보내는 best-effort 경로라
+      // (아래 catch), 원장이 없으면 "윤문이 며칠째 안 먹고 있다" 가 겉으로 드러나지 않는다.
+      // execute 는 FAILED 로 마감한 뒤 같은 에러를 다시 던지고 아래 catch 가 기존처럼 받는다
+      // — 바깥 동작은 그대로 두고 기록만 추가한다.
+      const outcome = await this.agentRunService.execute<
+        Record<string, string>
+      >({
         agentType: AgentType.HUMANIZER,
-        request: {
-          prompt: JSON.stringify(payload),
-          systemPrompt,
+        triggerType: TriggerType.REPORT_HUMANIZE,
+        inputSnapshot: { fieldKeys: keys },
+        run: async () => {
+          const injection = this.preferenceProfile
+            ? await this.preferenceProfile.getInjectionBlock('humanize')
+            : '';
+          const systemPrompt = injection
+            ? `${HUMANIZE_SYSTEM_PROMPT}\n\n${injection}`
+            : HUMANIZE_SYSTEM_PROMPT;
+          const completion = await this.modelRouter.route({
+            agentType: AgentType.HUMANIZER,
+            request: {
+              prompt: JSON.stringify(payload),
+              systemPrompt,
+            },
+            // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
+            // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).
+            noFallback: true,
+          });
+          const humanized = parseHumanizeOutput(completion.text, keys);
+          return {
+            result: { ...fields, ...humanized },
+            modelUsed: completion.modelUsed,
+            // 윤문 본문은 원장에 담지 않는다 — 보고서 전문이 그대로 복제된다.
+            output: { humanizedKeys: Object.keys(humanized) },
+          };
         },
-        // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
-        // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).
-        noFallback: true,
       });
-      const humanized = parseHumanizeOutput(completion.text, keys);
-      return { ...fields, ...humanized };
+      return outcome.result;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`윤문 실패 — 원본 유지: ${message}`);
