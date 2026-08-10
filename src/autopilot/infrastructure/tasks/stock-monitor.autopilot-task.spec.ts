@@ -58,6 +58,7 @@ const makeRepository = () => ({
   findAlertsByTradeDate: jest.fn().mockResolvedValue([]),
   upsertFxRate: jest.fn().mockResolvedValue(undefined),
   findFxRate: jest.fn().mockResolvedValue(null),
+  findTickersWithUnscoredAlerts: jest.fn().mockResolvedValue([]),
 });
 
 const portfolioPositions = [
@@ -199,6 +200,64 @@ describe('StockMonitorAutopilotTask', () => {
     expect(syncHoldings.execute.mock.invocationCallOrder[0]).toBeLessThan(
       repository.findCurrentHoldings.mock.invocationCallOrder[0],
     );
+  });
+
+  it('보유하지 않는 종목이라도 미채점 알림이 남아 있으면 시세를 이어서 저장한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    // 알림이 울린 뒤 전량 매도된 종목 — 보유 목록(holdings)에는 없다.
+    repository.findTickersWithUnscoredAlerts.mockResolvedValue([
+      { tickerId: 99, symbol: 'SOLD', tickerName: '매도한 종목' },
+    ]);
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      makeSyncHoldings(),
+    ).run(context);
+
+    // 여기서 봉이 끊기면 채점이 영원히 봉 부족으로 건너뛰어 그 알림만 성적표에서 빠진다.
+    expect(marketData.fetchDailyBars).toHaveBeenCalledWith('SOLD', 5);
+    expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
+      expect.objectContaining({ tickerId: 99 }),
+    );
+  });
+
+  it('미채점 알림 종목을 보유 중이면 시세를 두 번 조회하지 않는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findTickersWithUnscoredAlerts.mockResolvedValue([
+      { tickerId: holdings[0].tickerId, symbol: holdings[0].symbol },
+    ]);
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      makeSyncHoldings(),
+    ).run(context);
+
+    const calls = marketData.fetchDailyBars.mock.calls.filter(
+      ([symbol]: [string]) => symbol === holdings[0].symbol,
+    );
+    expect(calls).toHaveLength(1);
   });
 
   it('잔고 동기화 성공 건수를 원장 audit에 남긴다', async () => {
