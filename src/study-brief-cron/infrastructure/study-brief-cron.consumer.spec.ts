@@ -246,6 +246,20 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.agentRunService.execute).not.toHaveBeenCalled();
   });
 
+  it('CTO 판정 자체가 실패해도 원장에 중복 기록하지 않는다', async () => {
+    const dependencies = makeConsumer({});
+    dependencies.evaluateStudyTopic.execute.mockRejectedValue(
+      new Error('verdict down'),
+    );
+
+    await expect(dependencies.consumer.process(JOB as never)).rejects.toThrow(
+      'verdict down',
+    );
+    // 판정 usecase 는 자기 AgentRun 을 FAILED 로 마감한 뒤 던진다. 성공 시점에만 표시하면
+    // 이 경로가 판정 전 실패로 잘못 분류돼 같은 실패가 두 건으로 남는다.
+    expect(dependencies.agentRunService.execute).not.toHaveBeenCalled();
+  });
+
   it('프로필이 없어도 기본 개인화로 Hermes를 호출한다', async () => {
     const dependencies = makeConsumer({ profile: null });
 

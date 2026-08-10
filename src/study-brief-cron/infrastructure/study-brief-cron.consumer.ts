@@ -125,9 +125,10 @@ export class StudyBriefCronConsumer extends WorkerHost {
     const guardKey = `cron:${STUDY_BRIEF_CRON_QUEUE}:${dateKey}`;
     const processingGuardKey = `${guardKey}:processing`;
     let ownsProcessingGuard = false;
-    // CTO 판정(EvaluateStudyTopicUsecase)이 자체 AgentRun 을 남기므로, 그 지점을 지났는지
-    // 기억해 실패 기록이 겹치지 않게 한다. 판정 전 실패만 여기서 원장에 남긴다.
-    let verdictRunId: number | null = null;
+    // CTO 판정(EvaluateStudyTopicUsecase)이 자체 AgentRun 을 남기므로, 그 지점에 **진입했는지**
+    // 기억해 실패 기록이 겹치지 않게 한다. 성공 시점에 표시하면 판정 자체가 실패했을 때
+    // (판정 usecase 가 이미 FAILED 로 마감한 뒤 throw) 여기서 또 남겨 실패가 두 번 세어진다.
+    let verdictAttempted = false;
     this.logger.log(
       `Study Brief Cron 시작 — owner=${ownerSlackUserId} → target=${target}`,
     );
@@ -161,6 +162,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
         );
       }
 
+      verdictAttempted = true;
       const outcome = await this.evaluateStudyTopic.execute({
         slackUserId: ownerSlackUserId,
         research: {
@@ -175,7 +177,6 @@ export class StudyBriefCronConsumer extends WorkerHost {
         ),
         repoModules: materials.repoModules.map((module) => ({ ...module })),
       });
-      verdictRunId = outcome.agentRunId;
       const verdict = toStudyBriefVerdict(outcome.result);
       const saved = await this.studyBriefRepository.save({
         agentRunId: outcome.agentRunId,
@@ -216,7 +217,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
         `Study Brief Cron 실패 (owner=${ownerSlackUserId})`,
         error,
       );
-      if (verdictRunId === null) {
+      if (!verdictAttempted) {
         await this.recordPreVerdictFailure(ownerSlackUserId, error);
       }
       this.notifyOwnerFailure(ownerSlackUserId, error);
@@ -427,7 +428,10 @@ export class StudyBriefCronConsumer extends WorkerHost {
       await this.agentRunService.execute({
         agentType: AgentType.CTO_STUDY,
         triggerType: TriggerType.STUDY_BRIEF_CRON,
-        inputSnapshot: { ownerSlackUserId, stage: 'research' },
+        // 키 이름은 slackUserId 로 고정한다 — 사용자 한정 원장 집계가 이 JSON path 만 본다.
+        // ownerSlackUserId 로 남기면 전역 실패율에는 잡히면서 `/quota` 같은 사용자별
+        // 표면에서만 빠져, 같은 CTO_STUDY 실행끼리 집계 범위가 달라진다.
+        inputSnapshot: { slackUserId: ownerSlackUserId, stage: 'research' },
         run: () => Promise.reject(error),
       });
     } catch {
