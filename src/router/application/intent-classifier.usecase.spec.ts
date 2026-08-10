@@ -271,3 +271,24 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 합의된 작업 실행 지시 인
     expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('UNKNOWN');
   });
 });
+
+describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 착지', () => {
+  it('구체적 기술 주제의 공부·조사·딥다이브 요청을 BLOG 로 분류하는 규칙이 있다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(
+      /특정 기술 주제.*공부.*조사.*딥다이브.*BLOG/s,
+    );
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('프롬프트 RAG 공부할래');
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('서버 컴포넌트 딥다이브');
+  });
+
+  it('기술 주제가 구체적이면 BLOG, 주제가 없으면 UNKNOWN 인 경계를 명시한다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/구체적 기술 주제.*BLOG/s);
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('공부하고 싶어');
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('뭐 좀 알려줘');
+  });
+
+  it('봇이 제안한 선택지에서 사용자가 기술 주제를 고르면 BLOG 착수 지시로 분류한다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('[user] "프롬프트 RAG"');
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/선택.*착수 지시.*BLOG/s);
+  });
+});
