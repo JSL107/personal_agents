@@ -1063,4 +1063,23 @@ private func runDeskPaperTests(_ t: TestRunner) {
         officeDeskPropOriginTiles.y < deskHeightTiles,
         "소품 자리 높이 \(officeDeskPropOriginTiles.y) 가 책상 높이 \(deskHeightTiles) 안"
     )
+
+    // === 켜진 모니터 화면 ===
+    // 화면은 스프라이트에 이미 그려진 검은 모니터 위에 **정확히** 겹쳐야 한다. 벗어나면
+    // 켜진 화면이 아니라 책상에 붙은 파란 판이 된다 — 비율을 잘못 적으면 그렇게 된다.
+    t.expect(
+        officeDeskScreenBottomRatio + officeDeskScreenHeightRatio < 1.0,
+        "화면 위끝이 책상 스프라이트 안"
+            + " (\(officeDeskScreenBottomRatio + officeDeskScreenHeightRatio))"
+    )
+    t.expect(officeDeskScreenWidthRatio < 1.0, "화면 폭이 책상 폭 안")
+
+    // **서류 더미가 화면을 덮으면 안 된다.** 둘 다 책상 자식이고 서류는 처리량에 따라
+    // 위로 자라므로(최대 5장), 자라다 화면 아래를 파고들면 정작 일하는 사람의 켜짐 신호가
+    // 제일 바쁜 자리에서 먼저 가려진다. 가로가 겹치는 것은 무방하고 세로 관계만 지키면 된다.
+    let screenBottomTiles = officeDeskScreenBottomRatio * deskHeightTiles
+    t.expect(
+        stackTopTiles < screenBottomTiles,
+        "5장 더미 위끝 \(stackTopTiles) 이 모니터 화면 아래끝 \(screenBottomTiles) 밑"
+    )
 }
