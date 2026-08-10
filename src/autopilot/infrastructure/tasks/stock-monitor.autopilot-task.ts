@@ -237,6 +237,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       marketCountry: this.targetMarketCountry,
     });
     if (holdings.length === 0) {
+      // 보유가 0이어도 채점을 기다리는 알림은 남아 있을 수 있다 — 알림이 울린 종목을
+      // 포함해 전량 매도한 경우가 바로 그것이고, 이 보강이 겨냥하는 핵심 시나리오다.
+      // 여기서 건너뛰면 시세가 그대로 끊겨 영구 미채점이 재현된다.
+      const backfillFailures: string[] = [];
+      await this.backfillUnscoredAlertPrices(new Set(), backfillFailures);
       // 화면에는 보내지 않되(빈 알림 방지) 원장에는 남긴다.
       return {
         taskResult: this.withSyncWarning(
@@ -247,7 +252,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           holdingCount: 0,
           checkedCount: 0,
           anomalyCount: 0,
-          failureCount: 0,
+          failureCount: backfillFailures.length,
           lastTradeDate: null,
           marketClosed: false,
           avgPriceBreachCount: 0,
