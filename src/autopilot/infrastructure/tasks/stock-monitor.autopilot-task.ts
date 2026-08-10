@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
+import { DEFAULT_HORIZON_DAYS } from '../../../agent/stock/domain/alert-outcome';
 import { HoldingChange } from '../../../agent/stock/domain/holding-change';
 import { calculatePortfolioExposure } from '../../../agent/stock/domain/portfolio-exposure';
 import {
@@ -25,7 +26,10 @@ import {
   formatStockMonitorSummary,
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
-import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import {
+  StockMonitorRepository,
+  UnscoredAlertTicker,
+} from '../../../agent/stock/infrastructure/stock-monitor.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DailyBar } from '../../../market-data/domain/market-data.type';
@@ -233,6 +237,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       marketCountry: this.targetMarketCountry,
     });
     if (holdings.length === 0) {
+      // 보유가 0이어도 채점을 기다리는 알림은 남아 있을 수 있다 — 알림이 울린 종목을
+      // 포함해 전량 매도한 경우가 바로 그것이고, 이 보강이 겨냥하는 핵심 시나리오다.
+      // 여기서 건너뛰면 시세가 그대로 끊겨 영구 미채점이 재현된다.
+      const backfillFailures: string[] = [];
+      await this.backfillUnscoredAlertPrices(new Set(), backfillFailures);
       // 화면에는 보내지 않되(빈 알림 방지) 원장에는 남긴다.
       return {
         taskResult: this.withSyncWarning(
@@ -243,7 +252,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           holdingCount: 0,
           checkedCount: 0,
           anomalyCount: 0,
-          failureCount: 0,
+          failureCount: backfillFailures.length,
           lastTradeDate: null,
           marketClosed: false,
           avgPriceBreachCount: 0,
@@ -449,8 +458,13 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       collectStatus(holding, today);
     }
 
+    const backfilledCount = await this.backfillUnscoredAlertPrices(
+      new Set(holdings.map((holding) => holding.tickerId)),
+      failures,
+    );
+
     this.logger.log(
-      `주식 모니터링 — ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건`,
+      `주식 모니터링 — ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건, 채점용 시세 보강 ${backfilledCount}종목`,
     );
 
     // 한 종목도 점검하지 못했는데 실패만 쌓였다면 그 실행은 실패다. 여기서 정상 반환하면
@@ -499,6 +513,65 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         avgPriceBreachCount: avgPriceStatuses.length,
       }),
     };
+  }
+
+  /**
+   * 채점을 기다리는 알림이 달렸는데 지금은 보유하지 않는 종목의 시세를 이어서 저장한다.
+   *
+   * 시세를 적재하는 곳은 위 판정 루프 하나뿐이고 그 대상은 보유 종목이므로, 알림이 울린 뒤
+   * 5거래일 안에 전량 매도하면 봉이 그날로 끊긴다. 채점은 저장된 시세만 읽고 봉이 모자라면
+   * 조용히 건너뛰기 때문에 그 알림은 영구히 채점되지 않는다. 크게 움직여 매도까지 이어진
+   * 알림이 성적표에서만 빠지면 남는 평균은 이미 편향된 숫자다.
+   *
+   * 판정과 분리해 뒤에 둔다 — 여기서 무엇이 실패해도 그날 감시 자체는 이미 끝나 있다.
+   * 실패는 요약의 실패 목록에 담아 조용히 사라지지 않게 한다.
+   */
+  private async backfillUnscoredAlertPrices(
+    monitoredTickerIds: Set<number>,
+    failures: string[],
+  ): Promise<number> {
+    let targets: UnscoredAlertTicker[];
+    try {
+      targets = await this.repository.findTickersWithUnscoredAlerts({
+        marketCountry: this.targetMarketCountry,
+        horizonDays: DEFAULT_HORIZON_DAYS,
+      });
+    } catch (error) {
+      failures.push(`채점용 시세 보강 조회 실패 — ${(error as Error).message}`);
+      return 0;
+    }
+
+    let backfilledCount = 0;
+    for (const target of targets) {
+      if (monitoredTickerIds.has(target.tickerId)) {
+        // 보유 중이라 판정 루프가 이미 오늘 봉을 저장했다. 다시 부르면 호출만 낭비한다.
+        continue;
+      }
+      try {
+        const bars = await this.marketData.fetchDailyBars(
+          target.symbol,
+          REQUIRED_BARS,
+        );
+        const today = bars.at(-1);
+        if (!today) {
+          failures.push(`${target.symbol}: 채점용 시세 보강 — 봉 없음`);
+          continue;
+        }
+        await this.repository.upsertDailyPrice({
+          tickerId: target.tickerId,
+          tradeDate: today.tradeDate,
+          close: today.close.toString(),
+          adjClose: today.adjClose.toString(),
+          volume: today.volume,
+        });
+        backfilledCount += 1;
+      } catch (error) {
+        failures.push(
+          `${target.symbol}: 채점용 시세 보강 실패 — ${(error as Error).message}`,
+        );
+      }
+    }
+    return backfilledCount;
   }
 
   // 평단 대비 임계 밖 상태를 요약 뒤에 붙인다. 발화가 최초 진입 때만이라 이 줄이 없으면
