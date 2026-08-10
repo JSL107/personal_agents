@@ -73,6 +73,12 @@ export enum TriggerType {
   // "회고 생성이 실패했는지, 후보가 없었는지" 를 원장에서 가른다.
   AUTOPILOT_EVENING_RETRO_CRON = 'AUTOPILOT_EVENING_RETRO_CRON',
   STUDY_BRIEF_CRON = 'STUDY_BRIEF_CRON',
+  // 잠재의식 변화 감지 tick — 게이트가 죽으면 제안이 0건이 되는데, 그것이 "노이즈가 없어서"
+  // 인지 "고장나서" 인지 원장 없이는 구분되지 않는다(fail-closed 라 예외도 안 올라온다).
+  SUBCONSCIOUS_TICK = 'SUBCONSCIOUS_TICK',
+  // 자동 보고서 윤문 — 실패해도 원본을 그대로 내보내는 best-effort 경로라,
+  // 원장이 없으면 "윤문이 안 먹은 날" 이 겉으로 드러나지 않는다.
+  REPORT_HUMANIZE = 'REPORT_HUMANIZE',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).

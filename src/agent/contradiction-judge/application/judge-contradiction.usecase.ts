@@ -15,6 +15,14 @@ import {
 // L4 — 두 에피소드 기록의 의미 충돌을 ChatGPT(codex) 로 판정. model-router 경유(API/claude -p 미사용).
 // 쿼터 소진은 route() 가 ModelRouterException 으로 감싸고 cause 에 원본을 넣으므로, 체인에서
 // CodexQuotaExceededException 을 추출해 re-throw → service 가 circuit break 한다.
+//
+// ⚠️ 이 usecase 만 실행 원장(AgentRun) 밖에 남아 있다 — 같은 세대의 다른 내부 워커
+// (SUBCONSCIOUS_GATE · REVIEW_REPLY_JUDGE · HUMANIZER)는 전부 편입했지만 여기는 **모듈 순환**에
+// 막힌다: AgentRunModule → EpisodicMemoryModule → ContradictionJudgeModule 이 이미 있어서,
+// 여기서 AgentRunModule 을 import 하면 순환이 닫힌다(EpisodicMemoryModule 주석의 "순환 없음" 이
+// 성립하는 이유이기도 하다). forwardRef 로 뚫는 대신 그대로 두었다 —
+// L4 는 주간 1회·기본 최대 5쌍(DEFAULT_L4_MAX_PAIRS)이라 계측 이득이 순환을 감수할 만큼 크지 않다.
+// 편입하려면 EpisodicMemoryModule 에서 ContradictionJudgeModule 의존을 걷어내는 것이 먼저다.
 @Injectable()
 export class JudgeContradictionUsecase implements ContradictionJudgePort {
   private readonly logger = new Logger(JudgeContradictionUsecase.name);
