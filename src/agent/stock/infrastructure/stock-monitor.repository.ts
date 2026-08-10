@@ -28,6 +28,12 @@ export interface AlertNeedingOutcome {
   tradeDate: Date;
 }
 
+export interface UnscoredAlertTicker {
+  tickerId: number;
+  symbol: string;
+  tickerName: string;
+}
+
 export interface DailyPriceForOutcome {
   tradeDate: Date;
   adjClose: DecimalValue;
@@ -299,6 +305,50 @@ export class StockMonitorRepository {
       tickerId,
       tradeDate,
     }));
+  }
+
+  /**
+   * 아직 채점되지 않은 알림이 달린 종목 — 시세를 계속 모아야 할 대상.
+   *
+   * 시세는 감시가 보유 종목(수량 > 0)만 훑으며 저장하므로, 알림이 울린 뒤 horizon 안에
+   * 전량 매도하면 그날부터 봉이 끊긴다. 채점은 저장된 시세만 읽고 봉이 모자라면 조용히
+   * 건너뛰므로, 그 알림은 **영구히 채점되지 않는다.** 크게 움직여 매도까지 이어진 알림이
+   * 성적표에서 선택적으로 빠지면 평균 자체가 왜곡되기 때문에, 보유 여부와 무관하게
+   * 채점이 끝날 때까지는 시세를 계속 모은다.
+   */
+  async findTickersWithUnscoredAlerts({
+    marketCountry,
+    horizonDays,
+  }: {
+    marketCountry: StockMarketCountry;
+    horizonDays: number;
+  }): Promise<UnscoredAlertTicker[]> {
+    const alerts = await this.prisma.stockAlert.findMany({
+      where: {
+        outcomes: { none: { horizonDays } },
+        ticker: { marketCountry, tossSymbol: { not: null } },
+      },
+      orderBy: { tickerId: 'asc' },
+      distinct: ['tickerId'],
+      select: {
+        tickerId: true,
+        ticker: { select: { tossSymbol: true, name: true } },
+      },
+    });
+
+    const targets: UnscoredAlertTicker[] = [];
+    for (const alert of alerts) {
+      const symbol = alert.ticker.tossSymbol;
+      if (!symbol) {
+        continue;
+      }
+      targets.push({
+        tickerId: alert.tickerId,
+        symbol,
+        tickerName: alert.ticker.name,
+      });
+    }
+    return targets;
   }
 
   async findDailyPricesSince(

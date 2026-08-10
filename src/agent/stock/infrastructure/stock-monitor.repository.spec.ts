@@ -20,6 +20,38 @@ describe('StockMonitorRepository alert outcome', () => {
     expect(result).toEqual([{ alertId: 11, tickerId: 3, tradeDate }]);
   });
 
+  it('미채점 알림이 남은 종목을 시장별로 중복 없이 조회한다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { tickerId: 3, ticker: { tossSymbol: 'A3', name: '가나다' } },
+      // tossSymbol 이 없으면 시세를 부를 방법이 없다 — 대상에서 빠져야 한다.
+      { tickerId: 4, ticker: { tossSymbol: null, name: '심볼없음' } },
+    ]);
+    const prisma = { stockAlert: { findMany } } as unknown as PrismaService;
+    const repository = new StockMonitorRepository(prisma);
+
+    const result = await repository.findTickersWithUnscoredAlerts({
+      marketCountry: 'KR',
+      horizonDays: 5,
+    });
+
+    // distinct 가 빠지면 한 종목에 알림이 여러 건 남았을 때 같은 종목을 몇 번이고 다시 부른다.
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        outcomes: { none: { horizonDays: 5 } },
+        ticker: { marketCountry: 'KR', tossSymbol: { not: null } },
+      },
+      orderBy: { tickerId: 'asc' },
+      distinct: ['tickerId'],
+      select: {
+        tickerId: true,
+        ticker: { select: { tossSymbol: true, name: true } },
+      },
+    });
+    expect(result).toEqual([
+      { tickerId: 3, symbol: 'A3', tickerName: '가나다' },
+    ]);
+  });
+
   it('발화일 이후 가격을 거래일 오름차순으로 조회한다', async () => {
     const tradeDate = new Date('2026-07-16T00:00:00.000Z');
     const prices = [{ tradeDate, adjClose: { toString: () => '100' } }];
