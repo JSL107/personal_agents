@@ -128,6 +128,9 @@ export class EveningRetroPublishTask implements AutopilotTask {
         triggerType: TriggerType.AUTOPILOT_EVENING_RETRO_CRON,
         inputSnapshot: {
           taskId: this.id,
+          // 사용자 한정 원장 집계(`/quota` 등)는 inputSnapshot.slackUserId JSON path 로만
+          // 필터하므로, 이 키가 없으면 새로 남긴 실행이 그 표면에서 통째로 빠진다.
+          slackUserId: ownerSlackUserId,
           firedAtKst,
           mergedPrCount: mergedPrs.length,
           hasWorklog: worklogText !== null,
