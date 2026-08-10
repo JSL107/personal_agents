@@ -172,6 +172,21 @@ public func officeDeskPaperCount(doneToday: Int?) -> Int {
     return papers
 }
 
+// MARK: - 책상 모니터 화면 (지금 일하는 중인가)
+
+/// 책상 스프라이트(`furn-desk.png`, 37×32도트) 안에서 **모니터 화면**이 차지하는 자리.
+/// 책상 노드 크기에 대한 비율이고, 좌우 중앙·발밑(anchor y = 0) 기준이다.
+///
+/// 비율로 두는 이유는 책상만 `sizeBoost` 로 따로 키우기 때문이다(`FurnitureKind.sizeBoost`).
+/// 서류·소품처럼 타일 배수로 잡으면 배율이 바뀔 때 화면이 모니터 밖으로 밀려난다 —
+/// 저 둘은 상판 위 아무 데나 놓여도 되지만, 이건 **정확히 겹쳐야** 켜진 화면으로 읽힌다.
+///
+/// 실측: 화면은 x 9~27, 위에서 y 4~8도트다(그 위 y 0~2 는 모니터 윗면, y 9 는 받침).
+/// 좌우로 1도트씩 물려 검은 테두리를 남긴다 — 테두리까지 덮으면 화면이 아니라 파란 판이 된다.
+public let officeDeskScreenWidthRatio: Double = 17.0 / 37.0
+public let officeDeskScreenHeightRatio: Double = 5.0 / 32.0
+public let officeDeskScreenBottomRatio: Double = 23.0 / 32.0
+
 // MARK: - 이름표·문패가 서로를 가리지 않게 하는 기준
 //
 // 이름표(캐릭터가 그린다)와 부서 문패(씬이 그린다)는 파일이 달라서, 각자 자기 숫자를 들고
