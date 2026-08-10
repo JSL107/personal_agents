@@ -30,12 +30,13 @@ const isFixedCronField = (field: string): boolean => {
 
 export const isLowFrequencyCron = (pattern: string): boolean => {
   const fields = pattern.trim().split(/\s+/);
-  if (fields.length !== 5) {
+  if (fields.length !== 5 && fields.length !== 6) {
     return false;
   }
 
-  const dayOfMonth = fields[2];
-  const dayOfWeek = fields[4];
+  const normalizedFields = fields.length === 6 ? fields.slice(1) : fields;
+  const dayOfMonth = normalizedFields[2];
+  const dayOfWeek = normalizedFields[4];
   return isFixedCronField(dayOfMonth) || isFixedCronField(dayOfWeek);
 };
 

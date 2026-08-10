@@ -25,6 +25,9 @@ describe('AutopilotScheduler', () => {
     ['*/3 * * * *', false],
     ['*/10 * * * *', false],
     ['50 * * * *', false],
+    ['0 0 17 * * 5', true],
+    ['0 */3 * * * *', false],
+    ['0 17 * *', false],
   ])('cron "%s"의 저빈도 판별값은 %s이다', (pattern, expected) => {
     expect(isLowFrequencyCron(pattern)).toBe(expected);
   });

@@ -1,3 +1,26 @@
+# PR #262 리뷰 반영 (2026-08-10)
+
+**Goal:** 전달 산출물이 없고 실패가 있는 그룹의 BullMQ 재시도를 보존하고, BullMQ가 허용하는 6필드 cron도 저빈도 정책으로 정확히 분류한다.
+
+**Constraints:** orchestrator·scheduler와 인접 spec만 최소 수정한다. 기존 all-skip·partial success·preview-only 동작을 보존한다. 신규 env, DB, commit, push, PR 없음.
+
+- [x] skip+throw 및 6필드 cron 회귀 spec을 추가하고 수정 전 RED를 확인한다.
+- [x] fully-failed 조건을 실패 존재 + summary 산출물 없음 + preview 없음으로 바꾼다.
+- [x] 5/6필드 cron을 정규화하고 나머지 필드 수는 false로 유지한다.
+- [x] focused spec과 최종 diff review를 완료한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 파이프 없이 실행한다.
+- [x] `.ai/implementation-summary.md`에 `리뷰 반영`과 fresh gate 출력을 기록한다.
+
+## Review
+
+- `executedTaskCount`를 제거하고 실제 summary/preview 산출물 기준으로 재시도 조건을 표현했다. skip+throw는 가드/슬롯 표식 전에 reject하고, all-skip·partial summary·preview-only는 기존 성공 동작을 유지한다.
+- 6필드 cron은 seconds 필드를 제거한 뒤 기존 저빈도 판별을 재사용하며, 지원하지 않는 필드 수는 false다.
+- TDD RED에서 skip+throw가 reject 대신 resolve됨과 6필드 주간 cron이 false로 분류됨을 각각 확인했다. focused 2 suites/53 tests 통과.
+- fresh gate: lint/test/build 모두 exit 0. 일반 306 suites/2,495 tests, code-graph 5 suites/40 tests 통과.
+- 독립 review는 Critical/Important/Minor 0건, merge-ready다. 설계 이탈과 commit/push/PR/DB/env 변경은 없다.
+
+---
+
 # PR #261 자동 리뷰 반영
 
 - [x] 현재 `unresolvedStreak` 계산과 기존 회귀 테스트를 확인하고 원인을 기록한다.

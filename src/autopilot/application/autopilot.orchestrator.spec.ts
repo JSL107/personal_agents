@@ -206,6 +206,90 @@ describe('AutopilotOrchestrator', () => {
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
+  it('skip + task 실패로 전달 산출물이 없으면 재시도를 위해 throw하고 가드를 소비하지 않는다', async () => {
+    const skippedTask = makeTask('evening-retro-publish', { skip: true });
+    const failedTask = {
+      id: 'daily-eval',
+      run: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [skippedTask, failedTask] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [
+          makeEntry('evening-retro-publish', 'evening-retro-publish'),
+          makeEntry('daily-eval', 'daily-eval'),
+        ],
+        'U1',
+        'C1',
+      ),
+    ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
+
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+    });
+    expect(acquireOnce).not.toHaveBeenCalled();
+  });
+
+  it('preview 산출물 + task 실패 → preview를 전달하고 그룹은 성공한다', async () => {
+    const previewTask = {
+      id: 'evening-retro-publish',
+      run: jest.fn().mockResolvedValue({
+        skip: true,
+        preview: {
+          kind: 'EVENING_BLOG_PUBLISH',
+          payload: {},
+          previewText: '발행 후보',
+        },
+      }),
+    };
+    const failedTask = {
+      id: 'daily-eval',
+      run: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const postPreviewMessage = jest
+      .fn()
+      .mockResolvedValue({ channelId: 'C1', messageTs: '1.2' });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [previewTask, failedTask] as never,
+      { postMessage, postPreviewMessage } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn().mockResolvedValue({ id: 'PV1' }) } as never,
+      { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [
+          makeEntry('evening-retro-publish', 'evening-retro-publish'),
+          makeEntry('daily-eval', 'daily-eval'),
+        ],
+        'U1',
+        'C1',
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(postPreviewMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      previewText: '발행 후보',
+      previewId: 'PV1',
+    });
+    expect(acquireOnce).toHaveBeenCalledTimes(1);
+  });
+
   it('전멸 실패 안내 발송도 실패하면 원래 전멸 오류로 throw하고 가드를 소비하지 않는다', async () => {
     const taskA = {
       id: 'daily-eval',

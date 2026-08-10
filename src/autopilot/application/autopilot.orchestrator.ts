@@ -106,7 +106,7 @@ export class AutopilotOrchestrator {
 
     const items: { summary: string; detail?: string }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
-    let executedTaskCount = 0;
+    let hasDeliverableSummary = false;
     let failedTaskCount = 0;
 
     for (const entry of entries) {
@@ -120,7 +120,6 @@ export class AutopilotOrchestrator {
       // 설정 오류(미등록)는 위에서 여전히 fail-fast — 운영 변동만 격리한다.
       // T1_PREVIEW entry 는 preview 가 없으면(게이트 OFF) 자연히 텍스트 경로로 폴백한다.
       try {
-        executedTaskCount += 1;
         const result = await task.run({ ownerSlackUserId, firedAtKst });
         if (result.preview) {
           previews.push(result.preview);
@@ -129,6 +128,7 @@ export class AutopilotOrchestrator {
           previews.push(...result.previews);
         }
         if (!result.skip && result.summaryText) {
+          hasDeliverableSummary = true;
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
@@ -148,12 +148,13 @@ export class AutopilotOrchestrator {
       }
     }
 
-    // 실행한 task 가 모두 실패했는데 실패 안내만 발송하면 cron 이 성공 처리된다. 그러면 발송
-    // 가드와 슬롯 완주 표식까지 남아 BullMQ 재시도가 막히고, 실제 보고가 다음 슬롯까지 유실된다.
-    // skip 과 preview 생성은 정상 결과이므로 전멸 실패로 보지 않는다.
+    // 전달할 summary/preview 산출물이 없고 실패가 하나라도 있는데 실패 안내만 발송하면 cron 이
+    // 성공 처리된다. 그러면 발송 가드와 슬롯 완주 표식까지 남아 BullMQ 재시도가 막히고, 실제
+    // 보고가 다음 슬롯까지 유실된다. skip 은 정상 종료지만 전달 산출물은 아니며, preview 생성은
+    // 전달 산출물이므로 재시도 조건에서 제외한다.
     if (
-      executedTaskCount > 0 &&
-      executedTaskCount === failedTaskCount &&
+      failedTaskCount > 0 &&
+      !hasDeliverableSummary &&
       previews.length === 0
     ) {
       const failureNotice = items
