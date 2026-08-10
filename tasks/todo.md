@@ -18,6 +18,55 @@
 
 ---
 
+# C1 전멸 그룹 silent failure 회귀 수정 (2026-08-10)
+
+**Goal:** 전멸 그룹의 per-task 실패 안내를 발송 가드 없이 Slack에 직접 보내고, 알림 발송 성패와 무관하게 원래 전멸 오류를 throw해 BullMQ retry를 유지한다.
+
+**Constraints:** `targets` 파싱은 한 번만 수행한다. `acquireOnce`/`markSlotDone`을 소비하지 않는다. 부분 실패·전부 skip 동작은 보존한다. 신규 env, DB, commit, push, PR 없음.
+
+- [x] notification fallback의 optional DI·env 기본값·early return을 확인한다.
+- [x] 전멸 안내 발송 및 안내 발송 실패 회귀 spec을 추가하고 RED를 확인한다.
+- [x] 공통 targets 계산과 best-effort 전멸 안내 발송을 최소 구현한다.
+- [x] focused spec GREEN과 독립 review를 완료한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 파이프 없이 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 fresh 결과로 갱신한다.
+
+## Review
+
+- 전멸 시 기존 per-task 실패 item을 정규화된 모든 target에 가드 없이 best-effort 발송하고 원래 전멸 오류를 throw한다.
+- Slack 안내 실패는 target별 warn으로 격리돼 BullMQ retry와 원래 오류를 가리지 않는다.
+- production과 같은 non-null `slotId` spec으로 발송 가드와 슬롯 완주 표식 모두 미소비를 고정했다.
+- 부분 실패와 전부 skip 회귀는 유지했다. focused 24/24, 최종 review Critical/Important/Minor 0.
+- fresh gate: lint/test/build 모두 exit 0. 일반 306 suites/2,457 tests, code-graph 5 suites/40 tests 통과.
+
+---
+
+# Autopilot 저빈도 cron 재시도 + Toss 401 복구 (2026-08-10)
+
+**Goal:** `.ai/design.md`의 C1/C2/C3 계약대로 전멸 그룹은 BullMQ 재시도를 살리고, 저빈도 cron은 시간 단위 backoff를 쓰며, Toss 401은 토큰을 1회 재발급한다.
+
+**Constraints:** 세 결함을 별도 atomic commit으로 만든다. 부분 실패·skip·preview 동작은 보존한다. 신규 env, DB/schema, 스케줄 시각, model-router 정책은 건드리지 않는다.
+
+- [x] `.ai/design.md`, repo 규칙, 세 production 대상 파일 전체를 읽는다.
+- [x] 변경 전 `pnpm lint:check`, `pnpm test`, `pnpm build` baseline exit 0을 확인한다.
+- [x] C1 회귀 spec RED 후 전멸 그룹 throw를 최소 구현하고 focused GREEN·review한다. (Git metadata EPERM으로 commit 보류)
+- [x] C2 판별/queue option spec RED 후 저빈도 retry 정책을 최소 구현하고 focused GREEN·review한다. (Git metadata EPERM으로 commit 보류)
+- [x] C3 HTTP 상태/error와 401 1회 재발급 spec RED 후 최소 구현하고 focused GREEN·review한다. (Git metadata EPERM으로 commit 보류)
+- [x] consumer 실패 통지 경로와 final diff를 검토한다.
+- [x] 최종 `pnpm lint:check`, `pnpm test`, `pnpm build` exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- C1은 전멸 그룹을 발송 가드·슬롯 완주 표식 전에 실패시켜 BullMQ retry를 살렸다. 부분 실패·skip·preview 동작은 유지했다.
+- C2는 resolved cron의 일/요일 단일 고정값을 기준으로 주간·월간 그룹에만 4 attempts / 30분 exponential backoff를 적용했다.
+- C3는 구조적 HTTP status로 401만 구분해 토큰 캐시를 비우고 1회 재발급한다. 두 번째 401과 403/500/429는 추가 재시도하지 않는다.
+- TDD RED/GREEN과 task별 review, 최종 2-lane review를 완료했다. 최종 gate는 lint/test/build 모두 exit 0이다.
+- fully-failed group은 consumer catch에서 `publishCronFailure` 후 rethrow되므로 설정된 alert owner에게 통지되고 BullMQ retry도 유지된다.
+- Git metadata `index.lock` 쓰기가 sandbox에서 거부돼 요청된 atomic commit 3개는 생성하지 못했다. 변경은 working tree에 미커밋 상태로 남아 있다.
+
+---
+
 # 포트폴리오 노출 부분 실패 차단 (2026-08-06)
 
 **Goal:** 종목 수집·저장 또는 잔고 동기화가 일부라도 실패하면 혼합된 값으로 포트폴리오 노출을 게시하지 않는다.
