@@ -8,9 +8,11 @@ import {
   EveningPrInput,
   EveningPrNote,
   EveningRetroCandidate,
+  EveningRetroResult,
   parseEveningRetroOutput,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
@@ -117,18 +119,41 @@ export class EveningRetroPublishTask implements AutopilotTask {
     }
 
     try {
-      const completion = await this.modelRouter.route({
+      // 실행 원장에 남긴다. 이 task 는 블로그·경력 카드를 만드는 유일한 경로인데, 원장을
+      // 거치지 않으면 카드가 안 온 날 "회고 생성이 실패했는지 / 후보가 0건이었는지 / 아예
+      // 돌지 않았는지" 가 전부 똑같이 '기록 없음' 으로 보인다. 실패율·소요시간을 보는 도구는
+      // agent_run 하나뿐이라, 여기 없으면 무엇이 느려지거나 깨져도 계측에 잡히지 않는다.
+      const outcome = await this.agentRunService.execute<EveningRetroResult>({
         agentType: AgentType.EVENING_RETRO,
-        request: {
-          prompt: buildEveningRetroPrompt({
-            mergedPrs,
-            worklogText,
-            dailyEvalText,
-          }),
-          systemPrompt: EVENING_RETRO_SYSTEM_PROMPT,
+        triggerType: TriggerType.AUTOPILOT_EVENING_RETRO_CRON,
+        inputSnapshot: {
+          taskId: this.id,
+          firedAtKst,
+          mergedPrCount: mergedPrs.length,
+          hasWorklog: worklogText !== null,
+          hasDailyEval: dailyEvalText !== null,
+        },
+        run: async () => {
+          const completion = await this.modelRouter.route({
+            agentType: AgentType.EVENING_RETRO,
+            request: {
+              prompt: buildEveningRetroPrompt({
+                mergedPrs,
+                worklogText,
+                dailyEvalText,
+              }),
+              systemPrompt: EVENING_RETRO_SYSTEM_PROMPT,
+            },
+          });
+          const parsedOutput = parseEveningRetroOutput(completion.text);
+          return {
+            result: parsedOutput,
+            modelUsed: completion.modelUsed,
+            output: parsedOutput,
+          };
         },
       });
-      const parsed = parseEveningRetroOutput(completion.text);
+      const parsed = outcome.result;
 
       const scoreLines = parsed.candidates
         .map((candidate) => this.formatCandidateLine(candidate, authorLogin))
