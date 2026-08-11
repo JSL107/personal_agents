@@ -71,24 +71,24 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       limit: 7,
     });
 
-    if (runs.length === 0) {
-      return {
-        skip: false,
-        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`,
-      };
-    }
-
-    const plannedLines = runs.flatMap((run) => {
-      const plan = coerceToDailyPlan(run.output);
-      if (!plan) {
-        return [];
-      }
-      const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
-      return [
-        `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
-        ...allTasks.map((task) => `- ${task.title}`),
-      ];
-    });
+    const plannedLines =
+      runs.length === 0
+        ? ['- (이번 주 PM plan 없음)']
+        : runs.flatMap((run) => {
+            const plan = coerceToDailyPlan(run.output);
+            if (!plan) {
+              return [];
+            }
+            const allTasks = [
+              plan.topPriority,
+              ...plan.morning,
+              ...plan.afternoon,
+            ];
+            return [
+              `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
+              ...allTasks.map((task) => `- ${task.title}`),
+            ];
+          });
 
     // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
     const periodEnd = new Date(`${firedAtKst}T00:00:00+09:00`);
@@ -100,6 +100,16 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       since.toISOString(),
       until.toISOString(),
     );
+    if (runs.length === 0 && evidence.mergedPullRequests.length === 0) {
+      const evidenceReason = evidence.evidenceUnavailableReason
+        ? ` ${evidence.evidenceUnavailableReason}`
+        : '';
+      return {
+        skip: false,
+        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.${evidenceReason}`,
+      };
+    }
+
     const sinceLabel = KST_DATE_FORMATTER.format(since);
     const workText = buildWorklogInput({
       periodLabel: `${sinceLabel} ~ ${firedAtKst}`,
