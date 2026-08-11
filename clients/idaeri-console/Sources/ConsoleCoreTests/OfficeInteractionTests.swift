@@ -475,7 +475,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     //
     // 다만 이 검사가 보는 것은 **1차 추정이 자기 예산 안에 있는가** 까지다. 폭을 상한 계산과
     // 같은 평균 비율로 되계산하므로, 실제 폰트가 그보다 넓은 경우(대문자가 이어지는 이름)는
-    // 여기서 잡히지 않는다 — 그 몫은 그려 본 폭으로 누르는 `officeSessionLabelSqueeze` 가 맡는다.
+    // 여기서 잡히지 않는다 — 그 몫은 그려 본 폭으로 누르는 `officeLabelSqueeze` 가 맡는다.
     // 한글이 섞인 이름도 함께 본다. 세션 이름은 실행 디렉터리에서 오므로 경로에 한글이 있으면
     // 그대로 들어온다 — 글자 수로만 세면 여섯 자가 자리 두 칸이 아니라 세 칸을 차지한다.
     for tileSize in [20.6, 27.4, 40.0, 61.0, 90.0] {
@@ -509,20 +509,20 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     // 맞춘 상한으로는 옆 세션 이름표를 다시 덮는다.
     let seatWidth = 54.8  // 최소 창(타일 27.4)의 자리 폭
     t.expect(
-        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: seatWidth) == 1,
+        officeLabelSqueeze(renderedWidth: 40, availableWidth: seatWidth) == 1,
         "자리 안에 들어오면 누르지 않는다"
     )
     let overflow = 89.0  // 대문자 아홉 자 실측 근사
-    let squeeze = officeSessionLabelSqueeze(renderedWidth: overflow, availableWidth: seatWidth)
+    let squeeze = officeLabelSqueeze(renderedWidth: overflow, availableWidth: seatWidth)
     t.expect(squeeze < 1, "넘치면 눌린다(배율 \(squeeze))")
     t.expect(overflow * squeeze <= seatWidth + 0.0001, "누른 뒤 폭이 자리 안")
     // 폭을 못 잰 경우(0)에 0 배율을 돌려주면 이름표가 화면에서 사라진다 — 눌리는 것보다 나쁘다.
     t.expect(
-        officeSessionLabelSqueeze(renderedWidth: 0, availableWidth: seatWidth) == 1,
+        officeLabelSqueeze(renderedWidth: 0, availableWidth: seatWidth) == 1,
         "그려진 폭이 0 이면 원래 크기"
     )
     t.expect(
-        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: 0) == 1,
+        officeLabelSqueeze(renderedWidth: 40, availableWidth: 0) == 1,
         "자리 폭이 0 이면 원래 크기"
     )
 }

@@ -273,6 +273,9 @@ final class OfficeScene: SKScene {
                 node.sit()
             }
             node.resize(tileSize: tileSize, spriteScale: characterScale)
+            // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
+            // 창 크기가 바뀌면 이 경로를 다시 지나므로 갱신도 여기 한 곳에 둔다.
+            node.setNameplateSpan(nameplateSpan(for: seat))
             // 부서는 스냅샷마다 확인한다. 노드는 재사용되므로 여기서 갱신하지 않으면 사규가
             // 사람을 옮겼을 때 방만 바뀌고 옷은 옛 부서색으로 남는다.
             node.apply(department: agent.resolvedDepartment)
@@ -357,6 +360,20 @@ final class OfficeScene: SKScene {
         }
         // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
         layoutQueue()
+    }
+
+    /// 그 자리의 이름표가 좌우로 쓸 수 있는 여유(칸). 같은 방 같은 행 이웃과 방 벽이 정한다.
+    /// 방에 속하지 않은 자리는 제한을 두지 않는다.
+    private func nameplateSpan(for seat: TilePoint) -> (left: Double, right: Double)? {
+        guard let zone = plan.zones.first(where: { officeZoneContains($0, seat) }) else {
+            return nil
+        }
+        return officeNameplateSpanTiles(
+            seat: seat,
+            seatsInZone: plan.desks.map(\.seat).filter { officeZoneContains(zone, $0) },
+            zone: zone,
+            tileSize: Double(tileSize)
+        )
     }
 
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
@@ -1202,7 +1219,7 @@ final class OfficeScene: SKScene {
         if let label = node.childNode(withName: "sessionName") {
             label.xScale = 1
             label.xScale = CGFloat(
-                officeSessionLabelSqueeze(
+                officeLabelSqueeze(
                     renderedWidth: Double(label.calculateAccumulatedFrame().width),
                     availableWidth: Double(tileSize) * officeSessionDeskStrideTiles
                 )

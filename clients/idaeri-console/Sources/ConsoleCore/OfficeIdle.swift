@@ -285,21 +285,22 @@ public let officeSessionDeskStrideTiles: Double = 2
 /// **평균이지 상한이 아니다.** 세션 이름은 실행 디렉터리에서 오므로 대개 소문자·숫자·하이픈이지만
 /// (`personal-agents-74`), 넓은 글자가 이어지는 이름(`WWWW…`)은 같은 글자 수로도 이 값을 크게
 /// 넘는다. 그래서 이 비율은 **몇 글자를 남길지 정하는 1차 추정**으로만 쓰고, 실제로 자리를
-/// 넘었는지는 그려 본 폭으로 판정한다(`officeSessionLabelSqueeze`).
+/// 넘었는지는 그려 본 폭으로 판정한다(`officeLabelSqueeze`).
 public let officeLatinGlyphWidthRatio: Double = 0.55
 
 /// 이름표에 남기는 최소 글자 수. 이 밑으로는 "…" 만 남아 자리 표시조차 안 된다.
 public let officeSessionLabelMinLimit: Int = 3
 
-/// 그려 본 이름표가 자리를 넘을 때 눌러 넣을 가로 배율.
+/// 그려 본 라벨이 자리를 넘을 때 눌러 넣을 가로 배율.
 ///
-/// 글자 수 상한(`officeSessionLabelLimit`)은 평균 글자 폭에서 나오므로 **넘치는 이름이 있다.**
-/// 평균으로 잡은 예산을 실제 글자가 초과하면 옆 세션 이름표를 다시 덮는데, 그건 이 변경이
-/// 없애려는 현상 그 자체다. 마지막에 실제 폭으로 한 번 더 눌러 어떤 이름이 와도 자리를 넘지
-/// 않게 한다 — 눌린 글자는 좁아 보이지만, 겹쳐서 둘 다 못 읽는 것보다는 낫다.
+/// 글자 수나 자리 폭을 미리 계산해 두는 방식은 **평균**에서 나오므로 넘치는 이름이 늘 있다
+/// (세션 이름표는 평균 글자 폭에서, 좌석 이름표는 기준 타일에서). 예산을 실제 글자가
+/// 초과하면 옆자리를 다시 덮는데, 그건 이 계산들이 없애려는 현상 그 자체다. 마지막에 실제
+/// 폭으로 한 번 더 눌러 어떤 이름이 와도 자리를 넘지 않게 한다 — 눌린 글자는 좁아 보이지만,
+/// 겹쳐서 둘 다 못 읽는 것보다는 낫다.
 ///
 /// 넘치지 않으면 1(원래 크기)이다. 눌림은 예외적인 이름에서만 일어난다.
-public func officeSessionLabelSqueeze(renderedWidth: Double, availableWidth: Double) -> Double {
+public func officeLabelSqueeze(renderedWidth: Double, availableWidth: Double) -> Double {
     guard renderedWidth > availableWidth, renderedWidth > 0, availableWidth > 0 else {
         return 1
     }

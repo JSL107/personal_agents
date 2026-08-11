@@ -40,6 +40,9 @@ final class CharacterNode: SKNode {
     /// 앉은 사람에게만 장식이 몸에서 한 뼘 떠오른다. 값이 바뀌는 곳은 `applySpriteSize` 하나이므로
     /// 새 장식을 붙일 때는 거기서 함께 다시 잡을 것.
     private var spriteBaseY: CGFloat = 0
+    /// 이름표가 좌우로 쓸 수 있는 여유(칸). 씬이 좌석·방에서 계산해 넘긴다(`officeNameplateSpanTiles`).
+    /// nil 이면 제한 없음 — 방에 속하지 않은 자리다.
+    private var nameplateSpan: (left: Double, right: Double)?
     /// 이름표 세기 판정에 쓰는 현재 상태·주목 여부.
     private var currentState: ConsoleAgentState = .waiting
     private var isHovered = false
@@ -132,6 +135,12 @@ final class CharacterNode: SKNode {
         refreshNameplate()
     }
 
+    /// 이 사람 자리의 이름표 몫을 정한다. 자리·방이 바뀌면 다시 넘어온다.
+    func setNameplateSpan(_ span: (left: Double, right: Double)?) {
+        nameplateSpan = span
+        layoutNameplate()
+    }
+
     func apply(state: ConsoleAgentState) {
         currentState = state
         let palette = agentStatePaletteRGBA(state)
@@ -217,6 +226,9 @@ final class CharacterNode: SKNode {
     /// 이름표가 책상 상판과 정확히 겹쳐 글자가 나뭇결에 묻혔다. 좌석 위쪽은 늘 비어 있으므로
     /// 머리 위가 겹칠 일이 없는 유일한 자리다(말풍선·점 표시는 그보다 더 위에 붙는다).
     private func layoutNameplate() {
+        // 눌린 폭이 아니라 원래 폭을 재야 한다 — 배율을 안 되돌리면 갱신될 때마다 이미
+        // 좁아진 폭을 다시 재서 스냅샷마다 조금씩 더 눌린다.
+        nameLabel.xScale = 1
         // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
         // 라벨이 머리에서 한 뼘 떠 있다.
         nameLabel.position = CGPoint(
@@ -224,10 +236,40 @@ final class CharacterNode: SKNode {
             y: spriteBaseY + sprite.size.height
                 + currentTileSize * CGFloat(officeNameplateGapTiles)
         )
-        let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
+        fitNameplateToSeat()
+        // 판 여백은 Core 가 배치 계산에 쓰는 값과 같아야 한다 — 여기만 넓히면 판이 자리 몫을
+        // 그만큼 넘는다(배율은 글자에만 걸리므로 이 여백은 눌리지 않는다).
+        let box = nameLabel.frame.insetBy(
+            dx: -CGFloat(officeNameplatePlatePadding) / 2, dy: -1
+        )
         namePlate.path = CGPath(
             roundedRect: box, cornerWidth: 2, cornerHeight: 2, transform: nil
         )
+    }
+
+    /// 이름표를 자기 자리 몫 안에 넣는다 — 넘치면 옆으로 밀고, 그래도 넘치면 눌러 넣는다.
+    ///
+    /// 이름표는 캐릭터의 자식이라 늘 좌석 중앙에 놓이는데, 폭은 이름 길이와 창 크기가 정한다.
+    /// 그래서 몫보다 넓어지는 순간 갈 곳이 없어 밖으로 샜다 — 벽 옆자리(구역 상대 x=9)는
+    /// 오른쪽 여유가 반 칸뿐이라 `답변 판정`·`윤문` 의 판이 벽과 문 위로 올라탔고, 이웃이 있는
+    /// 쪽은 중간선을 넘어 옆 사람 이름을 덮었다.
+    ///
+    /// **서 있을 때는 적용하지 않는다.** 자리를 떠난 사람에게 그 자리 몫을 계속 물리면,
+    /// 복도로 나가서도 이름표가 한쪽으로 치우친 채 눌려 따라다닌다.
+    private func fitNameplateToSeat() {
+        guard isSeated, let span = nameplateSpan else {
+            return
+        }
+        // 이웃과의 여백은 몫을 계산할 때 이미 빠져 있다(`officeNameplateSpanTiles`).
+        // 배율·이동량 산술은 Core 가 갖는다 — 판 여백은 눌리지 않는다는 규칙까지 포함해서
+        // 회귀 테스트가 실제 글꼴 폭으로 검산할 수 있어야 하기 때문이다.
+        let layout = officeNameplateLayout(
+            glyphWidth: Double(nameLabel.frame.width),
+            spanLeft: span.left * Double(currentTileSize),
+            spanRight: span.right * Double(currentTileSize)
+        )
+        nameLabel.xScale = CGFloat(layout.scaleX)
+        nameLabel.position.x = CGFloat(layout.offsetX)
     }
 
     /// 방향을 바꾼다. 앉아 있는 동안은 앉은 자세를 유지한다.
