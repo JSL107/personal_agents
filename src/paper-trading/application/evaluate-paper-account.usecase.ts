@@ -8,7 +8,10 @@ import {
 } from '../../market-data/domain/port/market-data.port';
 import { detectSuspiciousPriceJump } from '../domain/corporate-action-guard';
 import { verifyPaperInvariants } from '../domain/paper-invariant';
-import { calculateAccountValuation } from '../domain/paper-valuation';
+import {
+  calculateAccountValuation,
+  calculatePositionValuation,
+} from '../domain/paper-valuation';
 import {
   PaperPositionWithTicker,
   PaperTradingRepository,
@@ -19,12 +22,39 @@ export interface EvaluateAccountCommand {
   executedAt: Date;
 }
 
+export interface EvaluatedPositionRow {
+  tickerId: number;
+  tickerCode: string;
+  tickerName: string;
+  quantity: string;
+  avgPrice: string;
+  price: string;
+  priceDate: string;
+  marketValue: string;
+  unrealizedPnl: string;
+  returnRate: string;
+  isStale: boolean;
+}
+
+export interface UnpricedPositionRow {
+  tickerId: number;
+  tickerCode: string;
+  tickerName: string;
+  quantity: string;
+  avgPrice: string;
+}
+
 export interface EvaluateAccountResult {
   skipped: boolean;
   skipReason?: string;
   tradeDate: string | null;
+  cashBalance: string;
+  positionValue: string | null;
   totalValue: string | null;
   returnRate: string | null;
+  benchmarkClose: string | null;
+  positions: EvaluatedPositionRow[];
+  unpricedPositions: UnpricedPositionRow[];
   positionCount: number;
   staleTickerCount: number;
   invariantViolations: string[];
@@ -36,6 +66,36 @@ interface PositionPrice {
   bars: DailyBar[];
   latest: DailyBar;
 }
+
+const buildEvaluatedPositionRows = (
+  pricedPositions: PositionPrice[],
+  tradeDate: Date,
+): EvaluatedPositionRow[] =>
+  pricedPositions.map(({ position, latest }) => {
+    const valuation = calculatePositionValuation(
+      {
+        tickerId: position.tickerId,
+        quantity: position.quantity,
+        avgPrice: position.avgPrice,
+        price: new Prisma.Decimal(latest.close.toString()),
+        priceDate: latest.tradeDate,
+      },
+      tradeDate,
+    );
+    return {
+      tickerId: position.tickerId,
+      tickerCode: position.ticker.code,
+      tickerName: position.ticker.name,
+      quantity: position.quantity.toString(),
+      avgPrice: position.avgPrice.toString(),
+      price: latest.close.toString(),
+      priceDate: dateText(latest.tradeDate),
+      marketValue: valuation.marketValue,
+      unrealizedPnl: valuation.unrealizedPnl,
+      returnRate: valuation.returnRate,
+      isStale: valuation.isStale,
+    };
+  });
 
 const KST_OFFSET_MILLISECONDS = 9 * 60 * 60 * 1000;
 
@@ -73,27 +133,54 @@ export class EvaluatePaperAccountUsecase {
     const tradeDate = toDateOnly(tradeDateText);
     const positions = await this.repository.findPositionsWithTicker(account.id);
     const priceResults = await Promise.all(
-      positions.map(async (position) => ({
-        position,
-        bars: sortBars(
-          await this.marketData.fetchDailyBars(position.ticker.tossSymbol, 2, {
-            adjusted: false,
-          }),
-        ),
-      })),
+      positions.map(async (position) => {
+        let bars: DailyBar[] = [];
+        try {
+          bars = sortBars(
+            await this.marketData.fetchDailyBars(
+              position.ticker.tossSymbol,
+              2,
+              { adjusted: false },
+            ),
+          );
+        } catch {
+          // 종목 하나의 조회 실패로 전체 실행을 예외 처리하면 어떤 종목이 빠졌는지 audit과
+          // Slack에 남지 않는다. 빈 봉과 같은 unpriced 근거로 변환하고 아래에서 적재를 막는다.
+          bars = [];
+        }
+        return { position, bars };
+      }),
     );
-    const missingPriceCount = priceResults.filter(
-      (result) => result.bars.length === 0,
-    ).length;
+    const unpricedPositions = priceResults.flatMap(
+      ({ position, bars }): UnpricedPositionRow[] => {
+        if (bars.length > 0) {
+          return [];
+        }
+        return [
+          {
+            tickerId: position.tickerId,
+            tickerCode: position.ticker.code,
+            tickerName: position.ticker.name,
+            quantity: position.quantity.toString(),
+            avgPrice: position.avgPrice.toString(),
+          },
+        ];
+      },
+    );
     const pricedPositions: PositionPrice[] = priceResults.flatMap((result) => {
       const latest = result.bars.at(-1);
       return latest ? [{ ...result, latest }] : [];
     });
-    const staleTickerCount =
-      missingPriceCount +
-      pricedPositions.filter(
-        (result) => dateText(result.latest.tradeDate) !== tradeDateText,
-      ).length;
+    const staleTickerCount = pricedPositions.filter(
+      (result) => dateText(result.latest.tradeDate) !== tradeDateText,
+    ).length;
+    const cashBalance = account.cashBalance.toString();
+    // 시세 자체가 없는 종목은 필수 가격 필드를 만들 수 없으므로 positions에는 가격 근거가
+    // 있는 행만 싣는다. positionCount와의 차이 및 skipReason이 미확보 종목의 존재를 드러낸다.
+    const evaluatedPositions = buildEvaluatedPositionRows(
+      pricedPositions,
+      tradeDate,
+    );
 
     // 실행일을 봉들의 다수결로 바꾸면 휴장일에도 다수 그룹이 non-stale이 된다.
     // KST 실행일과 직접 비교하고 전 종목이 오래된 날은 어떤 후속 검증·쓰기보다 먼저 막는다.
@@ -102,21 +189,34 @@ export class EvaluatePaperAccountUsecase {
         skipped: true,
         skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
         tradeDate: tradeDateText,
+        cashBalance,
+        positionValue: null,
         totalValue: null,
         returnRate: null,
+        benchmarkClose: null,
+        positions: evaluatedPositions,
+        unpricedPositions,
         positionCount: positions.length,
         staleTickerCount,
         invariantViolations: [],
         suspiciousJumps: [],
       };
     }
-    if (missingPriceCount > 0) {
+    if (unpricedPositions.length > 0) {
+      const missingCodes = unpricedPositions
+        .map((position) => position.tickerCode)
+        .join(', ');
       return {
         skipped: true,
-        skipReason: '일부 보유 종목의 평가 시세를 찾을 수 없습니다.',
+        skipReason: `${unpricedPositions.length}개 보유 종목의 평가 시세를 찾을 수 없습니다: ${missingCodes}`,
         tradeDate: tradeDateText,
+        cashBalance,
+        positionValue: null,
         totalValue: null,
         returnRate: null,
+        benchmarkClose: null,
+        positions: evaluatedPositions,
+        unpricedPositions,
         positionCount: positions.length,
         staleTickerCount,
         invariantViolations: [],
@@ -146,8 +246,13 @@ export class EvaluatePaperAccountUsecase {
         skipped: true,
         skipReason: '분할 등 기업행동이 의심되는 가격 변동을 발견했습니다.',
         tradeDate: tradeDateText,
+        cashBalance,
+        positionValue: null,
         totalValue: null,
         returnRate: null,
+        benchmarkClose: null,
+        positions: evaluatedPositions,
+        unpricedPositions,
         positionCount: positions.length,
         staleTickerCount,
         invariantViolations: [],
@@ -170,8 +275,13 @@ export class EvaluatePaperAccountUsecase {
         skipped: true,
         skipReason: '거래 원장과 계좌 상태의 불변식이 일치하지 않습니다.',
         tradeDate: tradeDateText,
+        cashBalance,
+        positionValue: null,
         totalValue: null,
         returnRate: null,
+        benchmarkClose: null,
+        positions: evaluatedPositions,
+        unpricedPositions,
         positionCount: positions.length,
         staleTickerCount,
         invariantViolations,
@@ -212,8 +322,13 @@ export class EvaluatePaperAccountUsecase {
     return {
       skipped: false,
       tradeDate: tradeDateText,
+      cashBalance,
+      positionValue: valuation.positionValue,
       totalValue: valuation.totalValue,
       returnRate: valuation.returnRate,
+      benchmarkClose: null,
+      positions: evaluatedPositions,
+      unpricedPositions,
       positionCount: positions.length,
       staleTickerCount: valuation.staleTickerCount,
       invariantViolations: [],
