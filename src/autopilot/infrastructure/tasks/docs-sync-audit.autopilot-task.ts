@@ -27,8 +27,13 @@ export class DocsSyncAuditTask implements AutopilotTask {
   async run({
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
+    // 게이트 OFF 도 1줄 남긴다 — skip 으로 끊으면 "꺼둬서 안 했다" 와 "점검이 죽어서 안 돌았다"
+    // 가 구분되지 않는다. 주 1회 발화라 문구 1줄의 비용이 그 구분보다 작다.
     if (this.configService.get<string>('DOCS_AUDIT_ENABLED') === 'false') {
-      return { skip: true };
+      return {
+        skip: false,
+        summaryText: `⏸️ *문서 점검* — ${firedAtKst} · 건너뜀 (\`DOCS_AUDIT_ENABLED=false\`)`,
+      };
     }
     const result = await this.audit.runAudit();
     const summaryText = formatDocsAudit(result, firedAtKst);
@@ -68,9 +73,14 @@ export class DocsSyncAuditTask implements AutopilotTask {
       };
     }
 
-    if (summaryText.length === 0) {
-      return { skip: true };
-    }
-    return { skip: false, summaryText };
+    // 드리프트 0건에도 skip 하지 않는다 — 주 1회(일 11:00) 발화라 skip 으로 끊으면 그 주에
+    // 점검이 돌았는지 자체가 아무 데도 안 남는다(LLM 을 안 쓰는 구간은 agent_run 에도 없다).
+    return {
+      skip: false,
+      summaryText:
+        summaryText.length > 0
+          ? summaryText
+          : `✅ *문서 점검* — ${firedAtKst} · 문서↔코드 드리프트 없음 (결정론·의미 점검)`,
+    };
   }
 }

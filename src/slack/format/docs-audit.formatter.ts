@@ -23,5 +23,8 @@ export function formatDocsAudit(
       );
     }
   }
+  // 드리프트 0건이면 빈 문자열 — 0건 하트비트는 호출자(docs-sync-audit task)가 만든다.
+  // preview 경로가 이 반환값을 승인 카드 본문에 그대로 재사용하므로, 여기서 하트비트를
+  // 돌려주면 "드리프트 없음" 과 "적용 미리보기" 가 한 카드에 함께 붙는다.
   return lines.join('\n');
 }

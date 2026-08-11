@@ -21,6 +21,7 @@ describe('formatKnowledgeLint', () => {
         },
       ],
       '2026-06-28',
+      true,
     );
 
     expect(text).toContain('Knowledge Lint');
@@ -41,6 +42,7 @@ describe('formatKnowledgeLint', () => {
         },
       ],
       '2026-06-28',
+      true,
     );
 
     expect(text).toContain('임베딩 누락 1건');
@@ -59,6 +61,7 @@ describe('formatKnowledgeLint', () => {
         },
       ],
       '2026-06-28',
+      true,
     );
 
     expect(text).toContain('모순 후보 1건');
@@ -78,10 +81,29 @@ describe('formatKnowledgeLint', () => {
         },
       ],
       '2026-06-28',
+      true,
     );
 
     expect(text).not.toContain('*강조*');
     expect(text).not.toContain('`코드`');
     expect(text).toContain('강조');
+  });
+
+  // 이 두 건이 하트비트의 존재 이유다 — 0건에 빈 문자열/skip 을 돌려주면 "점검했고 깨끗하다" 가
+  // "점검이 안 돌았다" 와 구분되지 않는다.
+  it('이상 0건이면 1줄 하트비트 (점검 범위 포함)', () => {
+    const text = formatKnowledgeLint([], '2026-06-28', true);
+
+    expect(text).toContain('이상 없음');
+    expect(text).toContain('2026-06-28');
+    expect(text).toContain('중복·임베딩·모순 점검');
+    expect(text.split('\n')).toHaveLength(1);
+  });
+
+  it('L4 꺼진 채 0건이면 모순을 안 봤다고 표시한다', () => {
+    const text = formatKnowledgeLint([], '2026-06-28', false);
+
+    expect(text).toContain('이상 없음');
+    expect(text).toContain('모순 판정 꺼짐');
   });
 });
