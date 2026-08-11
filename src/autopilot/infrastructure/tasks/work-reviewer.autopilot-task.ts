@@ -1,11 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
+import { buildWorklogInput } from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
 import { WorkReviewerException } from '../../../agent/work-reviewer/domain/work-reviewer.exception';
 import { WorkReviewerErrorCode } from '../../../agent/work-reviewer/domain/work-reviewer-error-code.enum';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { GithubPullRequestSummary } from '../../../github/domain/github.type';
+import {
+  GITHUB_CLIENT_PORT,
+  GithubClientPort,
+} from '../../../github/domain/port/github-client.port';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyReview } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -17,17 +24,28 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
+const DAILY_MERGED_PULL_REQUEST_LIMIT = 30;
+
+interface WorklogEvidenceQueryResult {
+  mergedPullRequests: GithubPullRequestSummary[];
+  evidenceUnavailableReason: string | null;
+}
+
 // 퇴근 자동 worklog — 오늘 PM plan(AgentRun SUCCEEDED)을 소스로 WorkReviewer 를 자동 실행.
 // 오늘 plan 없거나 EMPTY_WORK_INPUT 이면 graceful 안내문 반환(skip=false).
 // 발송은 오케스트레이터(T0)가 담당 — 여기선 텍스트만 만든다.
 @Injectable()
 export class WorkReviewerAutopilotTask implements AutopilotTask {
   readonly id = 'work-reviewer';
+  private readonly logger = new Logger(WorkReviewerAutopilotTask.name);
 
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly generateWorklog: GenerateWorklogUsecase,
     private readonly humanizeService: HumanizeService,
+    @Inject(GITHUB_CLIENT_PORT)
+    private readonly githubClient: GithubClientPort,
+    private readonly configService: ConfigService,
   ) {}
 
   async run({
@@ -50,8 +68,11 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
 
     const latestRun = runs[0];
     const plan = coerceToDailyPlan(latestRun.output);
+    // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
+    const sinceIsoDate = new Date(`${firedAtKst}T00:00:00+09:00`).toISOString();
+    const evidence = await this.loadEvidence(sinceIsoDate);
 
-    const workText = this.buildWorkText(plan, latestRun.endedAt);
+    const workText = this.buildWorkText(plan, firedAtKst, evidence);
 
     try {
       const outcome = await this.generateWorklog.execute({
@@ -85,13 +106,55 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
 
   private buildWorkText(
     plan: ReturnType<typeof coerceToDailyPlan>,
-    endedAt: Date,
+    periodLabel: string,
+    evidence: WorklogEvidenceQueryResult,
   ): string {
-    if (!plan) {
-      return `오늘 plan 요약 (자동 생성, ${endedAt.toISOString().slice(0, 10)}):\n- (plan 파싱 불가 — 오늘 업무를 요약해주세요)`;
+    const plannedLines = plan
+      ? [plan.topPriority, ...plan.morning, ...plan.afternoon].map(
+          (task) => `- ${task.title}`,
+        )
+      : [];
+    return buildWorklogInput({
+      periodLabel,
+      plannedLines,
+      mergedPullRequestLimit: DAILY_MERGED_PULL_REQUEST_LIMIT,
+      ...evidence,
+    });
+  }
+
+  private async loadEvidence(
+    sinceIsoDate: string,
+  ): Promise<WorklogEvidenceQueryResult> {
+    // Impact Report 와 동일 사용자의 동일 GitHub 활동을 조회하므로 기존 env 를 재사용한다.
+    const author = this.configService
+      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
+      ?.trim();
+    if (!author) {
+      return {
+        mergedPullRequests: [],
+        evidenceUnavailableReason: 'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+      };
     }
-    const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
-    const taskTitles = allTasks.map((task) => `- ${task.title}`).join('\n');
-    return `오늘 plan 요약 (자동 생성, ${endedAt.toISOString().slice(0, 10)}):\n\n${taskTitles}`;
+
+    const repository =
+      this.configService.get<string>('IMPACT_REPORT_GITHUB_REPO')?.trim() ||
+      null;
+    try {
+      const mergedPullRequests =
+        await this.githubClient.listAuthorMergedPullRequestsSince({
+          repo: repository,
+          author,
+          sinceIsoDate,
+          limit: DAILY_MERGED_PULL_REQUEST_LIMIT,
+        });
+      return { mergedPullRequests, evidenceUnavailableReason: null };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Work Reviewer GitHub 실적 조회 실패: ${message}`);
+      return {
+        mergedPullRequests: [],
+        evidenceUnavailableReason: `GitHub 조회 실패: ${message}`,
+      };
+    }
   }
 }

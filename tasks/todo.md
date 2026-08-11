@@ -1230,3 +1230,26 @@
 - 설계 편차 없음. LLM 분류·문구 품질은 Slack 실환경 확인이 가능한 잔여 런타임 리스크다.
 
 ---
+# WORK_REVIEWER 실제 머지 PR 근거 주입 (2026-08-11)
+
+**Goal:** 자동 회고 입력을 PM 계획과 실제 머지 PR 실적으로 분리해 정량 근거 없는 완료 단정을 막는다.
+
+**Contract:** `.ai/design.md` 준수. 기존 `IMPACT_REPORT_GITHUB_AUTHOR` / `IMPACT_REPORT_GITHUB_REPO`만 재사용. `/worklog` 수동 경로, DB/schema, env, commit/push/PR은 건드리지 않는다.
+
+- [x] 설계와 기존 daily/weekly task, GitHub port, 날짜 helper, spec 패턴을 확인한다.
+- [x] formatter 5케이스와 daily/weekly task 회귀 spec을 추가해 RED를 확인한다.
+- [x] 순수 formatter, system prompt 치환, daily/weekly best-effort 조회를 최소 구현한다.
+- [x] focused spec GREEN과 최종 diff·설계 준수 review를 완료한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 변경 파일, 설계 이탈, 실제 게이트 결과를 기록한다.
+
+## Review
+
+- 자동 일일·주간 worklog 입력을 PM 계획과 실제 머지 PR 실적으로 분리했다. 0건·조회 실패·env 누락도 명시하며 회고는 계속한다.
+- `firedAtKst` 기준 KST 조회 창, 주간 KST plan 날짜, 일일 30·주간 60 limit을 고정했다.
+- port가 total count를 노출하지 않는 제약 때문에 formatter source에 limit을 추가하고, limit 도달 시 정확한 미상 건수를 단정하지 않는 경고로 설계를 보완했다. Claude 재검증 필요.
+- TDD RED·역변이 확인 후 focused 3 suites/19 tests 통과. 독립 재리뷰 Critical/Important/Minor 0건.
+- 최종 gate: lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,523 tests + code-graph 5 suites/40 tests 통과.
+- commit, push, PR 생성 없음.
+
+---

@@ -5,6 +5,20 @@ import { WorkReviewerAutopilotTask } from './work-reviewer.autopilot-task';
 
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-17' };
 
+const MERGED_PULL_REQUEST = {
+  number: 971,
+  title: '급식 룰 저장',
+  body: '',
+  repo: 'schoolbell-e/sbe-server',
+  url: 'https://github.com/schoolbell-e/sbe-server/pull/971',
+  state: 'merged' as const,
+  mergedAt: '2026-06-17T04:00:00.000Z',
+  updatedAt: '2026-06-17T04:00:00.000Z',
+  additions: 412,
+  deletions: 88,
+  changedFilesCount: 14,
+};
+
 const makePmRun = (date: string, tasks: string[]) => ({
   endedAt: new Date(date),
   output: {
@@ -47,9 +61,31 @@ const makeHumanizeService = () => ({
     ),
 });
 
+const makeConfig = (author: string | null = 'idaeri') => ({
+  get: jest.fn().mockImplementation((key: string) => {
+    if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
+      return author ?? undefined;
+    }
+    if (key === 'IMPACT_REPORT_GITHUB_REPO') {
+      return 'schoolbell-e/sbe-server';
+    }
+    return undefined;
+  }),
+});
+
 describe('WorkReviewerAutopilotTask', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-17T10:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('id 는 work-reviewer', () => {
     const task = new WorkReviewerAutopilotTask(
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -58,16 +94,24 @@ describe('WorkReviewerAutopilotTask', () => {
   });
 
   it('정상 경로: summaryText=헤더+summary, detailText=detail+footer, 윤문 호출됨', async () => {
+    jest.setSystemTime(new Date('2026-06-18T10:00:00.000Z'));
     const pmRun = makePmRun('2026-06-17', ['PR 리뷰']);
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([pmRun]);
     const outcome = makeOutcome();
     const execute = jest.fn().mockResolvedValue(outcome);
     const humanizeService = makeHumanizeService();
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockResolvedValue([MERGED_PULL_REQUEST]),
+    };
 
     const task = new WorkReviewerAutopilotTask(
       { findRecentSucceededRuns } as never,
       { execute } as never,
       humanizeService as never,
+      githubClient as never,
+      makeConfig() as never,
     );
 
     const result = await task.run(CTX);
@@ -83,6 +127,17 @@ describe('WorkReviewerAutopilotTask', () => {
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1' }),
     );
+    expect(execute.mock.calls[0][0].workText).toContain(
+      'schoolbell-e/sbe-server#971',
+    );
+    expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
+      {
+        repo: 'schoolbell-e/sbe-server',
+        author: 'idaeri',
+        sinceIsoDate: '2026-06-16T15:00:00.000Z',
+        limit: 30,
+      },
+    );
   });
 
   it('오늘 PM plan 없음 → GenerateWorklog 미호출, skip=false 안내문 반환, detailText 없음', async () => {
@@ -94,6 +149,8 @@ describe('WorkReviewerAutopilotTask', () => {
       { findRecentSucceededRuns } as never,
       { execute } as never,
       humanizeService as never,
+      {} as never,
+      makeConfig() as never,
     );
 
     const result = await task.run(CTX);
@@ -120,6 +177,10 @@ describe('WorkReviewerAutopilotTask', () => {
       { findRecentSucceededRuns } as never,
       { execute } as never,
       humanizeService as never,
+      {
+        listAuthorMergedPullRequestsSince: jest.fn().mockResolvedValue([]),
+      } as never,
+      makeConfig() as never,
     );
 
     const result = await task.run(CTX);
@@ -141,8 +202,65 @@ describe('WorkReviewerAutopilotTask', () => {
       { findRecentSucceededRuns } as never,
       { execute } as never,
       humanizeService as never,
+      {} as never,
+      makeConfig() as never,
     );
 
     await expect(task.run(CTX)).rejects.toThrow('db down');
+  });
+
+  it('GitHub 조회 실패도 worklog 생성을 계속하고 조회 불가 사유를 입력한다', async () => {
+    const findRecentSucceededRuns = jest
+      .fn()
+      .mockResolvedValue([makePmRun('2026-06-17', ['PR 리뷰'])]);
+    const execute = jest.fn().mockResolvedValue(makeOutcome());
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockRejectedValue(new Error('rate limit')),
+    };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig() as never,
+    );
+
+    await task.run(CTX);
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workText: expect.stringContaining('GitHub 조회 실패: rate limit'),
+      }),
+    );
+  });
+
+  it('GitHub author env 미설정이면 조회하지 않고 조회 불가 사유를 입력한다', async () => {
+    const findRecentSucceededRuns = jest
+      .fn()
+      .mockResolvedValue([makePmRun('2026-06-17', ['PR 리뷰'])]);
+    const execute = jest.fn().mockResolvedValue(makeOutcome());
+    const githubClient = { listAuthorMergedPullRequestsSince: jest.fn() };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig(null) as never,
+    );
+
+    await task.run(CTX);
+
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workText: expect.stringContaining(
+          'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+        ),
+      }),
+    );
   });
 });

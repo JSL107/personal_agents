@@ -1,12 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { GenerateCeoMetaUsecase } from '../../../agent/ceo/application/generate-ceo-meta.usecase';
 import { CeoException } from '../../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../../agent/ceo/domain/ceo-error-code.enum';
 import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
+import { buildWorklogInput } from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { GithubPullRequestSummary } from '../../../github/domain/github.type';
+import {
+  GITHUB_CLIENT_PORT,
+  GithubClientPort,
+} from '../../../github/domain/port/github-client.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
@@ -17,6 +24,21 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+
+const WEEKLY_MERGED_PULL_REQUEST_LIMIT = 60;
+const WEEKLY_LOOKBACK_DAYS_AGO = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const KST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+interface WorklogEvidenceQueryResult {
+  mergedPullRequests: GithubPullRequestSummary[];
+  evidenceUnavailableReason: string | null;
+}
 
 // Weekly Summary 이관 — 매주 금요일 17:00 KST worklog(주간 7일 PM runs) + CEO meta 체인.
 // 기존 src/weekly-summary/infrastructure/weekly-summary.consumer.ts 의 핵심 로직을 task 로 옮김.
@@ -33,6 +55,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     private readonly agentRunService: AgentRunService,
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
+    @Inject(GITHUB_CLIENT_PORT)
+    private readonly githubClient: GithubClientPort,
+    private readonly configService: ConfigService,
   ) {}
 
   async run({
@@ -53,19 +78,31 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       };
     }
 
-    const planLines = runs
-      .map((run) => {
-        const plan = coerceToDailyPlan(run.output);
-        if (!plan) {
-          return null;
-        }
-        const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
-        const taskTitles = allTasks.map((task) => `- ${task.title}`).join('\n');
-        return `[${run.endedAt.toISOString().slice(0, 10)}]\n${taskTitles}`;
-      })
-      .filter((line): line is string => line !== null);
+    const plannedLines = runs.flatMap((run) => {
+      const plan = coerceToDailyPlan(run.output);
+      if (!plan) {
+        return [];
+      }
+      const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
+      return [
+        `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
+        ...allTasks.map((task) => `- ${task.title}`),
+      ];
+    });
 
-    const workText = `이번 주 일일 plan 요약 (자동 생성):\n\n${planLines.join('\n\n')}`;
+    // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
+    const periodEnd = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const since = new Date(
+      periodEnd.getTime() - WEEKLY_LOOKBACK_DAYS_AGO * DAY_MS,
+    );
+    const evidence = await this.loadEvidence(since.toISOString());
+    const sinceLabel = KST_DATE_FORMATTER.format(since);
+    const workText = buildWorklogInput({
+      periodLabel: `${sinceLabel} ~ ${firedAtKst}`,
+      plannedLines,
+      mergedPullRequestLimit: WEEKLY_MERGED_PULL_REQUEST_LIMIT,
+      ...evidence,
+    });
 
     const worklogOutcome = await this.generateWorklogUsecase.execute({
       workText,
@@ -92,6 +129,42 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const detailText = detailParts.join('\n\n────────\n\n');
 
     return { skip: false, summaryText, detailText };
+  }
+
+  private async loadEvidence(
+    sinceIsoDate: string,
+  ): Promise<WorklogEvidenceQueryResult> {
+    // Impact Report 와 동일 사용자의 동일 GitHub 활동을 조회하므로 기존 env 를 재사용한다.
+    const author = this.configService
+      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
+      ?.trim();
+    if (!author) {
+      return {
+        mergedPullRequests: [],
+        evidenceUnavailableReason: 'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+      };
+    }
+
+    const repository =
+      this.configService.get<string>('IMPACT_REPORT_GITHUB_REPO')?.trim() ||
+      null;
+    try {
+      const mergedPullRequests =
+        await this.githubClient.listAuthorMergedPullRequestsSince({
+          repo: repository,
+          author,
+          sinceIsoDate,
+          limit: WEEKLY_MERGED_PULL_REQUEST_LIMIT,
+        });
+      return { mergedPullRequests, evidenceUnavailableReason: null };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Weekly Summary GitHub 실적 조회 실패: ${message}`);
+      return {
+        mergedPullRequests: [],
+        evidenceUnavailableReason: `GitHub 조회 실패: ${message}`,
+      };
+    }
   }
 
   // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 graceful 안내문(detail 없음)으로 대체.
