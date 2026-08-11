@@ -50,10 +50,55 @@ const CODEX_QUOTA_RESET_HINT_REGEX = /try again (?:at|in) ([^\n.]+)/i;
 const CODEX_RESET_HINT_MAX = 80;
 // 쿼터 마커가 후속 진행 로그에 밀려 tail 밖으로 빠지지 않도록 스캔용 누적 버퍼 한도 (Claude provider 와 동급).
 const CODEX_QUOTA_SCAN_BUFFER_LIMIT = 2000;
+const QUOTA_BLOCK_FALLBACK_MS = 30 * 60 * 1000;
+const QUOTA_BLOCK_MAX_MS = 24 * 60 * 60 * 1000;
+const TIME_ONLY_RESET_HINT_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 
 export type CodexQuotaDetection = {
   exhausted: boolean;
   resetHint?: string;
+};
+
+export const computeQuotaBlockUntilMs = (
+  resetHint: string | undefined,
+  nowMs: number,
+): number => {
+  const fallbackUntilMs = nowMs + QUOTA_BLOCK_FALLBACK_MS;
+  const normalizedResetHint = resetHint
+    ?.trim()
+    .replace(/(\d)(?:st|nd|rd|th)\b/gi, '$1');
+
+  if (!normalizedResetHint) {
+    return fallbackUntilMs;
+  }
+
+  const timeOnlyMatch = normalizedResetHint.match(TIME_ONLY_RESET_HINT_REGEX);
+  let parsedResetMs: number;
+
+  if (timeOnlyMatch) {
+    const hour = Number(timeOnlyMatch[1]);
+    const minute = Number(timeOnlyMatch[2]);
+    if (hour < 1 || hour > 12 || minute > 59) {
+      return fallbackUntilMs;
+    }
+
+    const period = timeOnlyMatch[3].toUpperCase();
+    const hour24 = (hour % 12) + (period === 'PM' ? 12 : 0);
+    const resetDate = new Date(nowMs);
+    resetDate.setHours(hour24, minute, 0, 0);
+    if (resetDate.getTime() < nowMs) {
+      resetDate.setDate(resetDate.getDate() + 1);
+    }
+    parsedResetMs = resetDate.getTime();
+  } else {
+    parsedResetMs = Date.parse(normalizedResetHint);
+  }
+
+  if (Number.isNaN(parsedResetMs) || parsedResetMs < nowMs) {
+    return fallbackUntilMs;
+  }
+
+  return Math.min(parsedResetMs, nowMs + QUOTA_BLOCK_MAX_MS);
 };
 
 // codex 출력(stdout+stderr)에서 쿼터 소진 여부 + 리셋 시각 힌트를 뽑는 순수 함수.
@@ -185,6 +230,8 @@ export class CodexCliProvider implements ModelProviderPort {
   readonly name = ModelProviderName.CHATGPT;
   private readonly logger = new Logger(CodexCliProvider.name);
   private readonly timeoutMs: number = CODEX_DEFAULT_TIMEOUT_MS;
+  private quotaBlockedUntilMs: number | null = null;
+  private quotaBlockedResetHint: string | undefined;
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     let lastError: unknown;
@@ -246,6 +293,8 @@ export class CodexCliProvider implements ModelProviderPort {
     request: CompletionRequest,
     timeoutMs: number = this.timeoutMs,
   ): Promise<CompletionResponse> {
+    this.throwIfQuotaBlocked();
+
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
     const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-home-'));
     const outputFile = join(workDir, 'response.txt');
@@ -269,6 +318,7 @@ export class CodexCliProvider implements ModelProviderPort {
         // 그 중 쿼터 소진은 stdout 에 "usage limit ... try again at <시각>" 가 남으므로 (스캐너가 누적 감지) 전용 예외로 구분한다.
         // (model-router 가 이 예외를 보고 Claude fallback → 실패 시 reset 시각 친절 안내.)
         if (quotaDetection.exhausted) {
+          this.blockQuotaUntilReset(quotaDetection.resetHint);
           throw new CodexQuotaExceededException(quotaDetection.resetHint);
         }
         // 빈 문자열을 그대로 전파하면 상위 parser 가 "JSON 파싱 실패" 로 잘못 보고하므로 명확한 진단 메시지로 끊는다.
@@ -277,6 +327,7 @@ export class CodexCliProvider implements ModelProviderPort {
         );
       }
 
+      this.clearQuotaBlock();
       return {
         text,
         modelUsed: 'codex-cli',
@@ -354,6 +405,7 @@ export class CodexCliProvider implements ModelProviderPort {
         this.logger.error(`codex CLI exit=${code} tail=${suffix.slice(-200)}`);
         // exit≠0 이면서 쿼터 신호가 있으면 generic 비정상 종료 대신 전용 예외로 끊는다.
         if (quotaScanner.result.exhausted) {
+          this.blockQuotaUntilReset(quotaScanner.result.resetHint);
           reject(
             new CodexQuotaExceededException(quotaScanner.result.resetHint),
           );
@@ -367,5 +419,35 @@ export class CodexCliProvider implements ModelProviderPort {
       child.stdin?.write(stdinPayload);
       child.stdin?.end();
     });
+  }
+
+  private throwIfQuotaBlocked(): void {
+    if (this.quotaBlockedUntilMs === null) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (nowMs >= this.quotaBlockedUntilMs) {
+      this.clearQuotaBlock();
+      return;
+    }
+
+    const remainingMinutes = Math.ceil(
+      (this.quotaBlockedUntilMs - nowMs) / 60_000,
+    );
+    this.logger.warn(
+      `쿼터 리셋 대기 중 — codex 호출 건너뜀 (남은 ${remainingMinutes}분)`,
+    );
+    throw new CodexQuotaExceededException(this.quotaBlockedResetHint);
+  }
+
+  private blockQuotaUntilReset(resetHint: string | undefined): void {
+    this.quotaBlockedUntilMs = computeQuotaBlockUntilMs(resetHint, Date.now());
+    this.quotaBlockedResetHint = resetHint;
+  }
+
+  private clearQuotaBlock(): void {
+    this.quotaBlockedUntilMs = null;
+    this.quotaBlockedResetHint = undefined;
   }
 }
