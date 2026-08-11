@@ -1,3 +1,29 @@
+# 계획 없는 기간 worklog 생성 (#270 후속 C, 2026-08-11)
+
+**Goal:** PM plan run이 없어도 머지 실적이 있으면 daily/weekly 회고를 생성하고, plan과 실적이 모두 없을 때만 기존 안내문으로 skip한다.
+
+**Contract:** `.ai/design.md`. `WorklogInputSource` 시그니처와 `buildWorklogInput()` 본문, 프롬프트, DB/schema, env는 수정하지 않는다. commit/push/PR 없음.
+
+- [x] 설계·대상 production/spec·formatter·`CODE_RULES.md`·관련 lessons를 읽고 linked worktree/baseline을 확인한다.
+- [x] Task 1의 plan 0건 + 실적 있음/없음/조회 실패 spec을 추가하고 RED를 실제 확인한다.
+- [x] Task 1을 최소 구현하고 focused GREEN을 확인한다.
+- [x] Task 2의 대응 3개 spec을 추가하고 RED를 실제 확인한다.
+- [x] Task 2를 최소 구현하고 focused GREEN을 확인한다.
+- [x] skip 조건 역변이로 plan 0건 + 실적 있음 회귀 spec 실패를 확인하고 원복한다.
+- [x] 설계의 5개 게이트를 각각 파이프 없이 실행해 exit code와 테스트 집계를 기록한다.
+- [x] final diff·금지 범위·설계 정합성을 검토하고 `.ai/implementation-summary.md`와 아래 Review를 갱신한다.
+
+## Review
+
+- daily/weekly 모두 plan run이 없어도 GitHub 실적을 먼저 조회하고, 실적이 있으면 no-plan 표식과 함께 worklog를 생성한다. plan과 실적이 모두 없을 때만 기존 skip 문구를 유지한다.
+- Task 1 RED 2 failures → 26 suites/252 tests GREEN, Task 2 RED 2 failures → 26 suites/254 tests GREEN을 확인했다.
+- skip 조건 역변이는 대상 회귀 spec 1건을 실패시켰고 원복했다.
+- 독립 리뷰 Critical/Important 0건. Minor 1건(파싱 실패 폴백 직접 assertion 부재)은 기존 spec을 보강해 해소했다.
+- 최종 gate: lint/tsc/focused/full/build 모두 exit 0. focused 26 suites/254 tests, 전체 일반 307 suites/2,544 tests + code-graph 5 suites/40 tests 통과.
+- 설계 이탈, 금지 파일 변경, commit/push/PR은 없다.
+
+---
+
 # PR #270 리뷰 반영 A·B·D (2026-08-11)
 
 **Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
@@ -1300,26 +1326,5 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - TDD RED·역변이 확인 후 focused 3 suites/19 tests 통과. 독립 재리뷰 Critical/Important/Minor 0건.
 - 최종 gate: lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,523 tests + code-graph 5 suites/40 tests 통과.
 - commit, push, PR 생성 없음.
-
----
-# PR #270 리뷰 반영 A·B·D (2026-08-11)
-
-**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
-
-**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
-
-- [ ] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
-- [ ] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
-- [ ] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
-- [ ] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
-- [ ] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
-- [ ] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
-- [ ] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
-- [ ] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
-- [ ] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
-
-## Review
-
-- 진행 중.
 
 ---
