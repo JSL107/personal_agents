@@ -4,7 +4,8 @@ import SpriteKit
 import SwiftUI
 
 /// 오피스 탭. store.agents 를 씬에 반영하고, SSE 이벤트를 연출(VisualIntent)로 잇는다.
-/// 원 클릭 시 지시 입력 바(일반) 또는 승인/거절 팝오버(승인 대기)를 띄운다.
+/// 원 클릭 시 지시 입력 바(일반) 또는 승인/거절 팝오버(승인 대기)를 띄우고,
+/// 대표(나) 클릭 시 담당자를 정하지 않는 지시 바를 띄운다.
 struct OfficeView: View {
     @ObservedObject var store: ConsoleStore
     let onSend: (String, String?) -> Void
@@ -17,6 +18,8 @@ struct OfficeView: View {
         return scene
     }()
     @State private var selectedAgent: String?
+    /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
+    @State private var isPresidentBarOpen = false
     @State private var commandText: String = ""
 
     var body: some View {
@@ -70,6 +73,12 @@ struct OfficeView: View {
                     replayInitialChoreography()
                     scene.onAgentClick = { agentType in
                         selectedAgent = agentType
+                        isPresidentBarOpen = false
+                        commandText = ""
+                    }
+                    scene.onPresidentClick = {
+                        selectedAgent = nil
+                        isPresidentBarOpen = true
                         commandText = ""
                     }
                 }
@@ -122,6 +131,13 @@ struct OfficeView: View {
 
             if let agentType = selectedAgent {
                 interactionBar(for: agentType)
+            } else if isPresidentBarOpen {
+                presidentBar
+            } else if !globalPendingCommands.isEmpty {
+                // 바를 닫아도 담당자 미확정 지시의 진행·실패는 남긴다 — 이 지시는 아직 자기 사람이
+                // 없어서 씬의 사람 위 오버레이로 갈 자리가 없다. 여기서 지우면 어디에도 안 보인다.
+                pendingBadgeRow
+                    .padding(.bottom, Spacing.md)
             } else if let notice = store.approvalNotice {
                 // 승인/거절을 누르면 상호작용 바가 닫히므로, 실패 사유는 바 자리에서 이어 보여준다.
                 Text(notice)
@@ -168,6 +184,77 @@ struct OfficeView: View {
         .background(.thinMaterial)
         .cornerRadius(10)
         .padding(Spacing.md)
+    }
+
+    /// 대표에게 지시 — 담당자를 지정하지 않는다. 라우터가 자연어를 보고 워커를 고르고,
+    /// 선행 조건이 빠졌으면 그 앞 워커까지 알아서 돌린다.
+    private var presidentBar: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Text("👑 나 (대표)").font(Typography.sectionTitle)
+                Spacer()
+                Button("닫기") { isPresidentBarOpen = false }
+            }
+            HStack {
+                TextField("지시… 담당자는 이대리가 고릅니다", text: $commandText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(sendToPresident)
+                Button("전송", action: sendToPresident)
+                    .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if !globalPendingCommands.isEmpty {
+                pendingBadgeRow
+            }
+        }
+        .padding(Spacing.md)
+        .background(.thinMaterial)
+        .cornerRadius(10)
+        .padding(Spacing.md)
+    }
+
+    private func sendToPresident() {
+        let trimmed = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        onSend(trimmed, nil)
+        commandText = ""
+        // 에이전트 지시와 달리 바를 닫지 않는다 — 담당자가 정해지기까지의 진행·실패가 이 자리에
+        // 뜨는데, 닫아버리면 방금 보낸 지시가 어디로 갔는지 볼 데가 없다.
+    }
+
+    /// 아직 담당자가 정해지지 않은 지시의 진행 배지. `run.started` 로 담당자가 확정되면
+    /// 그 사람 머리 위 오버레이로 넘어가므로 여기서 빠진다(중복 표시 방지).
+    /// 타임아웃 실패(`.failed`, 담당자 여전히 미정)는 계속 남아 ⚠️ 로 보인다.
+    private var globalPendingCommands: [PendingCommand] {
+        store.pendingCommands.filter { $0.agentTypeHint == nil && $0.resolvedAgentType == nil }
+    }
+
+    private var pendingBadgeRow: some View {
+        HStack(spacing: Spacing.sm) {
+            ForEach(globalPendingCommands) { command in
+                VStack(alignment: .leading, spacing: Spacing.tight) {
+                    HStack(spacing: Spacing.xs) {
+                        Text(command.phase.badgeIcon)
+                        Text(command.text)
+                            .font(Typography.caption)
+                            .lineLimit(1)
+                    }
+                    if let reason = command.reason {
+                        Text(reason)
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+            }
+        }
     }
 
     private func send(to agentType: String) {
