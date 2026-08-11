@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import {
   CompletionRequest,
   CompletionResponse,
@@ -12,6 +14,7 @@ import {
   CodexQuotaExceededException,
   CodexQuotaScanner,
   computeCodexRetryBackoffMs,
+  computeQuotaBlockUntilMs,
   detectCodexQuotaExhaustion,
   isRetryableCodexError,
 } from './codex-cli.provider';
@@ -21,6 +24,21 @@ type ProviderWithCompleteOnce = {
     request: CompletionRequest,
     timeoutMs?: number,
   ) => Promise<CompletionResponse>;
+};
+
+type ProviderWithSpawnCodex = ProviderWithCompleteOnce & {
+  spawnCodex: (options: {
+    args: string[];
+    cwd: string;
+    homeDir: string;
+    stdinPayload: string;
+    timeoutMs: number;
+  }) => Promise<{
+    quotaDetection: {
+      exhausted: boolean;
+      resetHint?: string;
+    };
+  }>;
 };
 
 const request: CompletionRequest = {
@@ -198,6 +216,143 @@ describe('computeCodexRetryBackoffMs', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0.999);
 
     expect(computeCodexRetryBackoffMs()).toBe(1999);
+  });
+});
+
+describe('computeQuotaBlockUntilMs', () => {
+  const fallbackMs = 30 * 60 * 1000;
+  const maximumMs = 24 * 60 * 60 * 1000;
+
+  it.each([undefined, '', '   '])(
+    'resetHint=%p 이면 30분 fallback 을 반환한다',
+    (resetHint) => {
+      const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+      expect(computeQuotaBlockUntilMs(resetHint, nowMs)).toBe(
+        nowMs + fallbackMs,
+      );
+    },
+  );
+
+  it('ordinal suffix 를 제거해 절대 시각을 해석한다', () => {
+    const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('Aug 8th, 2026 7:00 PM', nowMs)).toBe(
+      new Date(2026, 7, 8, 19, 0, 0).getTime(),
+    );
+  });
+
+  it('날짜 없는 시각을 오늘 날짜에 붙여 해석한다', () => {
+    const nowMs = new Date(2026, 7, 8, 18, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('7:00 PM', nowMs)).toBe(
+      new Date(2026, 7, 8, 19, 0, 0).getTime(),
+    );
+  });
+
+  it('날짜 없는 시각이 이미 지났으면 다음 날로 해석한다', () => {
+    const nowMs = new Date(2026, 7, 8, 20, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('7:00 PM', nowMs)).toBe(
+      new Date(2026, 7, 9, 19, 0, 0).getTime(),
+    );
+  });
+
+  it.each(['in 2 hours', 'not-a-date'])(
+    '상대 표현 또는 파싱 불가 값 %p 은 30분 fallback 을 반환한다',
+    (resetHint) => {
+      const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+      expect(computeQuotaBlockUntilMs(resetHint, nowMs)).toBe(
+        nowMs + fallbackMs,
+      );
+    },
+  );
+
+  it('파싱한 절대 시각이 과거이면 30분 fallback 을 반환한다', () => {
+    const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('Aug 7th, 2026 7:00 PM', nowMs)).toBe(
+      nowMs + fallbackMs,
+    );
+  });
+
+  it('파싱한 시각이 24시간보다 멀면 24시간 상한으로 clamp 한다', () => {
+    const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('Aug 10th, 2026 7:00 PM', nowMs)).toBe(
+      nowMs + maximumMs,
+    );
+  });
+});
+
+describe('CodexCliProvider quota block', () => {
+  const resetHint = 'Aug 8th, 2026 7:00 PM';
+  const beforeResetMs = new Date(2026, 7, 8, 18, 0, 0).getTime();
+  const afterResetMs = new Date(2026, 7, 8, 19, 0, 1).getTime();
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const mockQuotaSpawn = (provider: CodexCliProvider) =>
+    jest
+      .spyOn(provider as unknown as ProviderWithSpawnCodex, 'spawnCodex')
+      .mockImplementation(async ({ args }) => {
+        const outputFile = args[args.indexOf('-o') + 1];
+        await writeFile(outputFile, '');
+        return {
+          quotaDetection: {
+            exhausted: true,
+            resetHint,
+          },
+        };
+      });
+
+  it('쿼터 소진 후 리셋 전에는 spawn 하지 않고, 리셋 후에는 다시 spawn 한다', async () => {
+    const provider = new CodexCliProvider();
+    const providerWithPrivateMethods =
+      provider as unknown as ProviderWithSpawnCodex;
+    const spawnCodexSpy = mockQuotaSpawn(provider);
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(beforeResetMs);
+
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toMatchObject({
+      name: 'CodexQuotaExceededException',
+      resetHint,
+    });
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(1);
+
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toMatchObject({
+      name: 'CodexQuotaExceededException',
+      resetHint,
+    });
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(1);
+
+    nowSpy.mockReturnValue(afterResetMs);
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toBeInstanceOf(CodexQuotaExceededException);
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('차단 중 probeReadiness 는 spawn 없이 false 를 반환한다', async () => {
+    const provider = new CodexCliProvider();
+    const providerWithPrivateMethods =
+      provider as unknown as ProviderWithSpawnCodex;
+    const spawnCodexSpy = mockQuotaSpawn(provider);
+    jest.spyOn(Date, 'now').mockReturnValue(beforeResetMs);
+
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toBeInstanceOf(CodexQuotaExceededException);
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(1);
+
+    await expect(provider.probeReadiness()).resolves.toBe(false);
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(1);
   });
 });
 
