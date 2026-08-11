@@ -34,12 +34,11 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
   async run({
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
-    const l4Enabled = this.isL4Enabled();
-    const issues = await this.knowledgeLint.lintIssues({
+    const outcome = await this.knowledgeLint.lintIssues({
       duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
       limit: LINT_ISSUE_CAP,
       l4: {
-        enabled: l4Enabled,
+        enabled: this.isL4Enabled(),
         maxPairs: this.resolveL4MaxPairs(),
         minDistance: L4_BAND_MIN,
         maxDistance: L4_BAND_MAX,
@@ -47,10 +46,11 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     });
     // 이슈 0건에도 skip 하지 않는다 — 주 1회(일 10:00) 발화라 skip 으로 끊으면 그 주에
     // 점검이 돌았는지 자체가 아무 데도 안 남는다(LLM 을 안 쓰는 구간은 agent_run 에도 없다).
-    // 0건 하트비트 문구는 formatter 가 담당한다.
+    // 하트비트 문구와 점검 범위는 formatter 가 outcome.l4(실행 실태)로 판단한다 —
+    // env 플래그는 "하려고 했다" 일 뿐 "실제로 판정했다" 가 아니다.
     return {
       skip: false,
-      summaryText: formatKnowledgeLint(issues, firedAtKst, l4Enabled),
+      summaryText: formatKnowledgeLint(outcome.issues, firedAtKst, outcome.l4),
     };
   }
 

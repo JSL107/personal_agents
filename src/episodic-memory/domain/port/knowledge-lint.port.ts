@@ -32,8 +32,27 @@ export interface LintEpisodicMemoryInput {
   l4?: ContradictionLintOptions;
 }
 
+// L4 실행 실태 — "모순을 몇 쌍 실제로 판정했나". 이슈 목록만으로는 알 수 없다:
+// 쿼터 소진 중단(circuit break)과 개별 judge 실패는 둘 다 빈 결과로 수렴하므로
+// "판정했고 모순 0건" 과 "판정을 못 했다" 가 구분되지 않는다. 그 구분을 여기서 낸다.
+export interface ContradictionLintOutcome {
+  // 거리 밴드 조회로 나온 후보 쌍 수. 0 이면 판정할 대상 자체가 없었다(정상).
+  candidates: number;
+  // judge 판정을 끝낸 쌍 수. candidates 와 다르면 부분 실패다.
+  judged: number;
+  // codex 쿼터 소진으로 남은 쌍을 포기했나.
+  abortedByQuota: boolean;
+}
+
+export interface KnowledgeLintOutcome {
+  issues: KnowledgeLintIssue[];
+  // L4 를 아예 수행하지 않았으면 null — 비활성(env) 또는 judge 미주입.
+  // "점검 안 함(null)" 과 "점검했으나 일부 실패(judged < candidates)" 는 다른 사실이다.
+  l4: ContradictionLintOutcome | null;
+}
+
 export interface KnowledgeLintPort {
-  lintIssues(input: LintEpisodicMemoryInput): Promise<KnowledgeLintIssue[]>;
+  lintIssues(input: LintEpisodicMemoryInput): Promise<KnowledgeLintOutcome>;
 }
 
 export const KNOWLEDGE_LINT_PORT = Symbol('KNOWLEDGE_LINT_PORT');

@@ -1,23 +1,50 @@
-import { KnowledgeLintIssue } from '../../episodic-memory/domain/port/knowledge-lint.port';
+import {
+  ContradictionLintOutcome,
+  KnowledgeLintIssue,
+} from '../../episodic-memory/domain/port/knowledge-lint.port';
 
 // Knowledge-Lint 이슈 → Slack mrkdwn.
 // L1/L2 는 id/distance(숫자)만 노출. L4 contradiction 의 reason 은 LLM 출력이라
 // mrkdwn 제어문자(*_~`)를 제거(sanitizeMrkdwn) 해 메시지 깨짐을 막는다.
 const sanitizeMrkdwn = (text: string): string => text.replace(/[*_~`]/g, '');
 
+// L4 를 끝까지 못 돌렸나 — 쿼터 중단이거나 후보 중 일부만 판정한 경우.
+// 이때는 "이상 없음" 이 성립하지 않는다: 안 본 쌍에 모순이 있을 수 있다.
+const isL4Incomplete = (l4: ContradictionLintOutcome | null): boolean =>
+  l4 !== null && (l4.abortedByQuota || l4.judged < l4.candidates);
+
+// 실제로 무엇을 점검했는지 — env 플래그가 아니라 실행 결과에서 만든다.
+const describeScope = (l4: ContradictionLintOutcome | null): string => {
+  if (l4 === null) {
+    return '중복·임베딩 점검 · 모순 판정 꺼짐';
+  }
+  if (l4.abortedByQuota) {
+    return `중복·임베딩 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (쿼터 소진으로 중단)`;
+  }
+  if (l4.judged < l4.candidates) {
+    return `중복·임베딩 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (일부 judge 실패)`;
+  }
+  return `중복·임베딩 점검 · 모순 ${l4.candidates}쌍 판정`;
+};
+
 export const formatKnowledgeLint = (
   issues: KnowledgeLintIssue[],
   firedAtKst: string,
-  l4Enabled: boolean,
+  l4: ContradictionLintOutcome | null,
 ): string => {
+  const scope = describeScope(l4);
+  const incomplete = isL4Incomplete(l4);
+
   // 이상 0건도 1줄 하트비트로 내보낸다 — skip 으로 끊으면 "점검했고 깨끗하다" 와 "점검이 아예
   // 안 돌았다" 가 Slack·원장 어디에도 구분되지 않는다(주 1회 발화라 사후 판정 수단이 이것뿐).
-  // 점검 범위를 함께 적는 이유: L4 가 꺼진 채 나온 "이상 없음" 은 모순을 안 본 결과다.
   // (선례: ops-supervisor.formatter.ts / run-retro.formatter.ts 의 조용한 계기판)
+  //
+  // 단 L4 를 끝까지 못 돌린 회차에는 ✅ 를 쓰지 않는다. 안 본 쌍이 남아 있는데 "이상 없음" 을
+  // 알리면 점검 장애가 정상으로 위장되고, 그건 이 하트비트가 없애려던 실패 모드 그 자체다.
   if (issues.length === 0) {
-    const scope = l4Enabled
-      ? '중복·임베딩·모순 점검'
-      : '중복·임베딩 점검, 모순 판정 꺼짐';
+    if (incomplete) {
+      return `⚠️ *Knowledge Lint* — ${firedAtKst} · 모순 판정을 끝내지 못해 "이상 없음" 을 확정하지 못했습니다 (${scope})`;
+    }
     return `✅ *Knowledge Lint* — ${firedAtKst} · episodic-memory 이상 없음 (${scope})`;
   }
 
@@ -30,6 +57,11 @@ export const formatKnowledgeLint = (
   const sections: string[] = [
     `🧹 *Knowledge Lint* — ${firedAtKst} (episodic-memory 무결성)`,
   ];
+
+  // 이슈가 있는 회차에도 L4 미완주는 알린다 — 아래 목록이 전부라고 오해하지 않게.
+  if (incomplete) {
+    sections.push(`⚠️ _${scope} — 아래 목록이 전부가 아닐 수 있습니다._`);
+  }
 
   if (duplicates.length > 0) {
     sections.push(`*중복 후보 ${duplicates.length}건*`);
