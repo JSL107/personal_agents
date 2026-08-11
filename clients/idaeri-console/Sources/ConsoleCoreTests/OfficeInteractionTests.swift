@@ -30,6 +30,19 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     // 겹치는 반경이면 더 가까운 쪽
     t.expectEqual(agentTypeAt(point: OfficePoint(x: 295, y: 100), slots: slots, radius: 300), "CTO", "가장 가까운 원 선택")
 
+    // 대표 앞줄 — 대표와 승인 대기자는 한 칸 차이로 붙어 선다. 대표를 같은 판정에 넣어야
+    // 가까운 쪽 하나만 잡힌다(따로 재면 한 번의 클릭에 둘 다 반응한다).
+    let queueSlots: [(agentType: String, point: OfficePoint)] = [
+        ("CTO", OfficePoint(x: 100, y: 70)),
+        (officeHitTargetPresident, OfficePoint(x: 100, y: 100)),
+    ]
+    t.expectEqual(
+        agentTypeAt(point: OfficePoint(x: 100, y: 96), slots: queueSlots, radius: 26),
+        officeHitTargetPresident, "대표 쪽 클릭 → 대표")
+    t.expectEqual(
+        agentTypeAt(point: OfficePoint(x: 100, y: 74), slots: queueSlots, radius: 26),
+        "CTO", "줄 선 사람 쪽 클릭 → 그 사람")
+
     // approvalFor: 해당 agentType 의 승인 건
     let approvals = [
         ConsoleApproval(id: "a1", agentType: "CTO", title: "PR1", createdAt: "t1"),

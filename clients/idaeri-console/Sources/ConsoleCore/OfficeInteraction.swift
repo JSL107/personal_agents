@@ -1,5 +1,12 @@
 import Foundation
 
+/// 히트 판정에서 대표(나) 를 가리키는 키.
+///
+/// 대표는 에이전트가 아니라 자리도 상태도 없지만, 클릭 판정만은 사람들과 한 번에 재야 한다 —
+/// 따로 재면 대표 앞줄처럼 사람이 붙어 선 자리에서 둘 다 반응한다. `AgentType` 에 없는 값이라
+/// 실제 에이전트와 겹치지 않는다.
+public let officeHitTargetPresident = "__president__"
+
 /// 클릭 좌표가 어느 에이전트 원 안인지 판정한다(순수). 반경 안의 후보 중 가장 가까운 것을 고른다.
 /// 어떤 원과도 반경 밖이면 nil.
 public func agentTypeAt(
