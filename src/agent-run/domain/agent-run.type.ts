@@ -69,6 +69,8 @@ export enum TriggerType {
   // 보유 종목 감시 — 국내/미국 두 cron 이 같은 트리거를 공유하고, 시장 구분은
   // inputSnapshot.marketCountry 로 남긴다(트리거를 시장별로 쪼개면 집계가 흩어진다).
   AUTOPILOT_INVEST_CRON = 'AUTOPILOT_INVEST_CRON',
+  // 모의투자 계좌 일일 평가 — 결정론 평가 결과와 차단 사유를 원장에 적재한다.
+  AUTOPILOT_PAPER_TRADING_CRON = 'AUTOPILOT_PAPER_TRADING_CRON',
   // 저녁 회고→발행 후보 — evening 그룹의 T1_PREVIEW task. 블로그·경력 카드가 안 만들어진 날
   // "회고 생성이 실패했는지, 후보가 없었는지" 를 원장에서 가른다.
   AUTOPILOT_EVENING_RETRO_CRON = 'AUTOPILOT_EVENING_RETRO_CRON',

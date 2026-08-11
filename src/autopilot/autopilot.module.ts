@@ -29,6 +29,7 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
+import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
@@ -47,6 +48,7 @@ import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
+import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
@@ -89,6 +91,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PrReviewLoopModule,
     SlackModule,
     NotificationQueueModule,
+    PaperTradingModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -114,6 +117,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
     PrReviewSweepAutopilotTask,
+    PaperTradingAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -194,6 +198,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitorUs: StockMonitorAutopilotTask,
         stockAlertScoring: StockAlertScoringAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
+        paperTrading: PaperTradingAutopilotTask,
       ) => [
         assign,
         poShadow,
@@ -216,6 +221,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitorUs,
         stockAlertScoring,
         prReviewSweep,
+        paperTrading,
       ],
       inject: [
         AssignAutopilotTask,
@@ -239,6 +245,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         STOCK_MONITOR_US_TASK,
         StockAlertScoringAutopilotTask,
         PrReviewSweepAutopilotTask,
+        PaperTradingAutopilotTask,
       ],
     },
     {

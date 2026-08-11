@@ -10,6 +10,13 @@ export interface PaperAccountRecord {
   cashBalance: MoneyValue;
 }
 
+export interface CreateAccountInput {
+  name: string;
+  currency: string;
+  seedAmount: MoneyValue;
+  openedAt: Date;
+}
+
 export interface PaperPositionRecord {
   id: number;
   accountId: number;
@@ -107,6 +114,28 @@ export class PaperTradingRepository {
       where: { name },
       select: { id: true, seedAmount: true, cashBalance: true },
     });
+  }
+
+  async createAccount(input: CreateAccountInput): Promise<{ id: number }> {
+    try {
+      return await this.prisma.paperAccount.create({
+        data: {
+          name: input.name,
+          currency: input.currency,
+          seedAmount: input.seedAmount.toString(),
+          cashBalance: input.seedAmount.toString(),
+          openedAt: input.openedAt,
+        },
+        select: { id: true },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new Error(
+          `같은 이름의 가상 매매 계좌가 이미 있습니다: ${input.name}`,
+        );
+      }
+      throw error;
+    }
   }
 
   async upsertKrTicker(input: {

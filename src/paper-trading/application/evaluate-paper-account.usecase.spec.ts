@@ -90,6 +90,7 @@ const createFixture = (input?: {
   positions?: ReturnType<typeof createPosition>[];
   trades?: ReturnType<typeof createBuyTrade>[];
   barsBySymbol?: Record<string, DailyBar[]>;
+  errorsBySymbol?: Record<string, Error>;
 }): EvaluationFixture => {
   const positions = input?.positions ?? [];
   const trades = input?.trades ?? [];
@@ -141,6 +142,10 @@ const createFixture = (input?: {
   };
   const marketData = {
     fetchDailyBars: jest.fn(async (symbol: string) => {
+      const error = input?.errorsBySymbol?.[symbol];
+      if (error) {
+        throw error;
+      }
       return input?.barsBySymbol?.[symbol] ?? [];
     }),
     fetchUsdKrwRate: jest.fn(),
@@ -202,8 +207,40 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(result).toEqual({
       skipped: false,
       tradeDate: '2026-08-11',
+      cashBalance: '800000',
+      positionValue: '240000',
       totalValue: '1040000',
       returnRate: '4',
+      benchmarkClose: null,
+      positions: [
+        {
+          tickerId: 21,
+          tickerCode: '005930',
+          tickerName: '005930',
+          quantity: '10',
+          avgPrice: '10000',
+          price: '12000',
+          priceDate: '2026-08-11',
+          marketValue: '120000',
+          unrealizedPnl: '20000',
+          returnRate: '20',
+          isStale: false,
+        },
+        {
+          tickerId: 22,
+          tickerCode: '000660',
+          tickerName: '000660',
+          quantity: '2',
+          avgPrice: '50000',
+          price: '60000',
+          priceDate: '2026-08-11',
+          marketValue: '120000',
+          unrealizedPnl: '20000',
+          returnRate: '20',
+          isStale: false,
+        },
+      ],
+      unpricedPositions: [],
       positionCount: 2,
       staleTickerCount: 0,
       invariantViolations: [],
@@ -230,8 +267,13 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(result).toEqual({
       skipped: false,
       tradeDate: '2026-08-12',
+      cashBalance: '1000000',
+      positionValue: '0',
       totalValue: '1000000',
       returnRate: '0',
+      benchmarkClose: null,
+      positions: [],
+      unpricedPositions: [],
       positionCount: 0,
       staleTickerCount: 0,
       invariantViolations: [],
@@ -302,6 +344,91 @@ describe('EvaluatePaperAccountUsecase', () => {
     });
   });
 
+  it('시세를 받지 못한 종목이 하나라도 있으면 부분 합계를 적재하지 않고 근거를 반환한다', async () => {
+    const positions = [
+      createPosition({
+        tickerId: 21,
+        code: '005930',
+        quantity: '10',
+        avgPrice: '10000',
+      }),
+      createPosition({
+        tickerId: 22,
+        code: '000660',
+        quantity: '2',
+        avgPrice: '50000',
+      }),
+    ];
+    const { usecase, prisma } = createFixture({
+      cashBalance: '800000',
+      positions,
+      barsBySymbol: {
+        '005930': [createBar('2026-08-11', '12000')],
+        '000660': [],
+      },
+    });
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        skipped: true,
+        skipReason: '1개 보유 종목의 평가 시세를 찾을 수 없습니다: 000660',
+        cashBalance: '800000',
+        positionValue: null,
+        totalValue: null,
+        returnRate: null,
+        positions: [
+          expect.objectContaining({
+            tickerId: 21,
+            tickerCode: '005930',
+            price: '12000',
+            marketValue: '120000',
+          }),
+        ],
+        unpricedPositions: [
+          {
+            tickerId: 22,
+            tickerCode: '000660',
+            tickerName: '000660',
+            quantity: '2',
+            avgPrice: '50000',
+          },
+        ],
+      }),
+    );
+    expect(prisma.paperEquitySnapshot.upsert).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('종목 시세 조회가 실패해도 unpriced로 분류하고 부분 스냅샷을 적재하지 않는다', async () => {
+    const position = createPosition({
+      tickerId: 21,
+      code: '005930',
+      quantity: '10',
+      avgPrice: '10000',
+    });
+    const { usecase, prisma } = createFixture({
+      cashBalance: '900000',
+      positions: [position],
+      errorsBySymbol: { '005930': new Error('upstream timeout') },
+    });
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.unpricedPositions).toEqual([
+      expect.objectContaining({ tickerId: 21, tickerCode: '005930' }),
+    ]);
+    expect(prisma.paperEquitySnapshot.upsert).not.toHaveBeenCalled();
+  });
+
   it('휴장일처럼 모든 포지션이 stale이면 다른 검증 전에 스냅샷을 건너뛴다', async () => {
     const positions = [
       createPosition({
@@ -335,8 +462,32 @@ describe('EvaluatePaperAccountUsecase', () => {
       skipped: true,
       skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
       tradeDate: '2026-08-09',
+      cashBalance: '123',
+      positionValue: null,
       totalValue: null,
       returnRate: null,
+      benchmarkClose: null,
+      positions: [
+        expect.objectContaining({
+          tickerId: 21,
+          tickerCode: '005930',
+          price: '5000',
+          marketValue: '50000',
+          unrealizedPnl: '-50000',
+          returnRate: '-50',
+          isStale: true,
+        }),
+        expect.objectContaining({
+          tickerId: 22,
+          tickerCode: '000660',
+          price: '25000',
+          marketValue: '50000',
+          unrealizedPnl: '-50000',
+          returnRate: '-50',
+          isStale: true,
+        }),
+      ],
+      unpricedPositions: [],
       positionCount: 2,
       staleTickerCount: 2,
       invariantViolations: [],
@@ -370,6 +521,15 @@ describe('EvaluatePaperAccountUsecase', () => {
     });
 
     expect(result.skipped).toBe(true);
+    expect(result.cashBalance).toBe('1000000');
+    expect(result.positions).toEqual([
+      expect.objectContaining({
+        tickerId: 21,
+        tickerCode: '005930',
+        quantity: '10',
+        price: '12000',
+      }),
+    ]);
     expect(result.invariantViolations).toEqual([
       '종목 21 수량 불일치: 원장 기준 0주, 실제 10주',
     ]);
@@ -401,6 +561,15 @@ describe('EvaluatePaperAccountUsecase', () => {
     });
 
     expect(result.skipped).toBe(true);
+    expect(result.cashBalance).toBe('123');
+    expect(result.positions).toEqual([
+      expect.objectContaining({
+        tickerId: 21,
+        tickerCode: '005930',
+        quantity: '10',
+        price: '5000',
+      }),
+    ]);
     expect(result.suspiciousJumps).toEqual([
       '종목 21 가격 비정상 점프: 전일 대비 0.5배 (2:1 분할 의심)',
     ]);

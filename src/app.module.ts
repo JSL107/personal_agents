@@ -43,6 +43,7 @@ import { LocalSessionsModule } from './local-sessions/local-sessions.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { NotificationModule } from './notification/notification.module';
 import { NotionModule } from './notion/notion.module';
+import { PaperTradingModule } from './paper-trading/paper-trading.module';
 import { PrCareerLogModule } from './pr-careerlog/pr-careerlog.module';
 import { PrReviewLoopModule } from './pr-review-loop/pr-review-loop.module';
 import { PreferenceProfilePreviewApplier } from './preference-profile/infrastructure/preference-profile.preview-applier';
@@ -101,6 +102,7 @@ import { WebhookModule } from './webhook/webhook.module';
     ImpactReporterModule,
     PoShadowModule,
     StockModule,
+    PaperTradingModule,
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,
