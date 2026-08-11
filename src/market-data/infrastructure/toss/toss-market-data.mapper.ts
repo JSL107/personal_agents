@@ -4,6 +4,9 @@ import { DailyBar } from '../../domain/market-data.type';
 
 interface RawCandle {
   timestamp?: unknown;
+  openPrice?: unknown;
+  highPrice?: unknown;
+  lowPrice?: unknown;
   closePrice?: unknown;
   volume?: unknown;
   currency?: unknown;
@@ -17,6 +20,22 @@ const isNonEmptyString = (value: unknown): value is string => {
   return typeof value === 'string' && value.length > 0;
 };
 
+const parseOptionalDecimal = (value: unknown): Prisma.Decimal | undefined => {
+  if (!isNonEmptyString(value)) {
+    return undefined;
+  }
+
+  try {
+    const decimal = new Prisma.Decimal(value);
+    if (!decimal.isFinite()) {
+      return undefined;
+    }
+    return decimal;
+  } catch {
+    return undefined;
+  }
+};
+
 const mapCandle = (raw: unknown): DailyBar | null => {
   if (!isRecord(raw)) {
     return null;
@@ -25,6 +44,9 @@ const mapCandle = (raw: unknown): DailyBar | null => {
   const candle = raw as RawCandle;
   const {
     timestamp,
+    openPrice: rawOpenPrice,
+    highPrice: rawHighPrice,
+    lowPrice: rawLowPrice,
     closePrice: rawClosePrice,
     volume: rawVolume,
     currency,
@@ -59,12 +81,19 @@ const mapCandle = (raw: unknown): DailyBar | null => {
     if (!closePrice.isFinite()) {
       return null;
     }
+    // 토스는 조정·미조정을 한 응답에 함께 주지 않는다. 요청의 `adjusted` 가 어느 계열을
+    // 받을지 결정하므로 close 와 adjClose 에 같은 값이 들어간다 — 즉 `adjusted=false` 로
+    // 받은 봉의 adjClose 는 조정가가 아니라 미조정 실제 가격이다. adjClose 를 조정가로
+    // 신뢰해야 하는 호출자는 `adjusted` 를 생략(기본 true)해야 한다.
     return {
       tradeDate,
       close: closePrice,
       adjClose: closePrice,
       volume: BigInt(rawVolume),
       currency,
+      open: parseOptionalDecimal(rawOpenPrice),
+      high: parseOptionalDecimal(rawHighPrice),
+      low: parseOptionalDecimal(rawLowPrice),
     };
   } catch {
     return null;

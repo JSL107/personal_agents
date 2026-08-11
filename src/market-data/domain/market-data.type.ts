@@ -27,10 +27,28 @@ export interface DecimalValue {
   toString(): string;
 }
 
+// 기존 DecimalValue 를 확장한다. Prisma.Decimal 이 구조적으로 만족하므로
+// 도메인이 Prisma 를 import 하지 않고도 금액 산술을 할 수 있다(CODE_RULES §2-1).
+export interface MoneyValue extends DecimalValue {
+  plus(other: MoneyValue | string | number): MoneyValue;
+  minus(other: MoneyValue | string | number): MoneyValue;
+  times(other: MoneyValue | string | number): MoneyValue;
+  dividedBy(other: MoneyValue | string | number): MoneyValue;
+  isZero(): boolean;
+  isNegative(): boolean;
+  comparedTo(other: MoneyValue | string | number): number;
+}
+
 export interface DailyBar {
   tradeDate: Date;
   close: DecimalValue;
   adjClose: DecimalValue;
   volume: bigint;
   currency: string;
+  // 토스 /candles 는 openPrice·highPrice·lowPrice 를 준다(실측: 2026-08-06 설계 문서).
+  // optional 인 이유는 매퍼가 캔들 하나만 실패해도 응답 전체를 버리기 때문이다 —
+  // 필수로 올리면 이 필드가 없는 응답에서 종목 전체 조회가 실패한다.
+  open?: DecimalValue;
+  high?: DecimalValue;
+  low?: DecimalValue;
 }

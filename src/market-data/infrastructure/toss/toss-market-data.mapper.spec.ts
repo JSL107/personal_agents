@@ -169,4 +169,64 @@ describe('mapTossCandlesResponse', () => {
     expect(result?.[2].close.toString()).toBe('12255');
     expect(result?.[2].adjClose.toString()).toBe('12255');
   });
+
+  it('openPrice·highPrice·lowPrice 를 DailyBar 에 담는다', () => {
+    const bars = mapTossCandlesResponse({
+      result: {
+        candles: [
+          {
+            timestamp: '2026-08-10T00:00:00+09:00',
+            openPrice: '12300',
+            highPrice: '12400',
+            lowPrice: '12250',
+            closePrice: '12360',
+            volume: '955',
+            currency: 'KRW',
+          },
+        ],
+      },
+    });
+
+    expect(bars).not.toBeNull();
+    expect(bars?.[0].open?.toString()).toBe('12300');
+    expect(bars?.[0].high?.toString()).toBe('12400');
+    expect(bars?.[0].low?.toString()).toBe('12250');
+  });
+
+  it('OHL 이 없어도 응답을 버리지 않는다 (close 만 있으면 유효)', () => {
+    const bars = mapTossCandlesResponse({
+      result: {
+        candles: [
+          {
+            timestamp: '2026-08-10T00:00:00+09:00',
+            closePrice: '12360',
+            volume: '955',
+            currency: 'KRW',
+          },
+        ],
+      },
+    });
+
+    expect(bars).toHaveLength(1);
+    expect(bars?.[0].open).toBeUndefined();
+  });
+
+  it('OHL 이 숫자로 파싱 불가하면 그 필드만 버리고 봉은 유지한다', () => {
+    const bars = mapTossCandlesResponse({
+      result: {
+        candles: [
+          {
+            timestamp: '2026-08-10T00:00:00+09:00',
+            openPrice: 'N/A',
+            closePrice: '12360',
+            volume: '955',
+            currency: 'KRW',
+          },
+        ],
+      },
+    });
+
+    expect(bars).toHaveLength(1);
+    expect(bars?.[0].open).toBeUndefined();
+  });
 });
