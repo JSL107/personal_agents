@@ -76,11 +76,7 @@ struct OfficeView: View {
                         isPresidentBarOpen = false
                         commandText = ""
                     }
-                    scene.onPresidentClick = {
-                        selectedAgent = nil
-                        isPresidentBarOpen = true
-                        commandText = ""
-                    }
+                    scene.onPresidentClick = { openPresidentBar() }
                 }
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents, approvals: store.approvals)
@@ -133,22 +129,10 @@ struct OfficeView: View {
                 interactionBar(for: agentType)
             } else if isPresidentBarOpen {
                 presidentBar
-            } else if !globalPendingCommands.isEmpty {
-                // 바를 닫아도 담당자 미확정 지시의 진행·실패는 남긴다 — 이 지시는 아직 자기 사람이
-                // 없어서 씬의 사람 위 오버레이로 갈 자리가 없다. 여기서 지우면 어디에도 안 보인다.
-                pendingBadgeRow
-                    .padding(.bottom, Spacing.md)
-            } else if let notice = store.approvalNotice {
-                // 승인/거절을 누르면 상호작용 바가 닫히므로, 실패 사유는 바 자리에서 이어 보여준다.
-                Text(notice)
-                    .font(Typography.caption)
-                    .foregroundStyle(Color.red)
-                    .padding(Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                            .fill(Color.primary.opacity(0.08))
-                    )
-                    .padding(.bottom, Spacing.md)
+            } else {
+                // 배지와 승인 실패 사유는 함께 쌓는다. 하나로 분기하면 담당자 미확정 지시가 도는
+                // 몇 분 동안 승인·거절 실패 사유가 배지에 가려 어디에도 안 보인다.
+                idleBar
             }
         }
     }
@@ -184,6 +168,48 @@ struct OfficeView: View {
         .background(.thinMaterial)
         .cornerRadius(10)
         .padding(Spacing.md)
+    }
+
+    /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지·대표 지시 입구.
+    private var idleBar: some View {
+        VStack(spacing: Spacing.sm) {
+            if let notice = store.approvalNotice {
+                // 승인/거절을 누르면 상호작용 바가 닫히므로, 실패 사유는 바 자리에서 이어 보여준다.
+                Text(notice)
+                    .font(Typography.caption)
+                    .foregroundStyle(Color.red)
+                    .padding(Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    )
+            }
+            if !globalPendingCommands.isEmpty {
+                // 바를 닫아도 담당자 미확정 지시의 진행·실패는 남긴다 — 이 지시는 아직 자기 사람이
+                // 없어서 씬의 사람 위 오버레이로 갈 자리가 없다. 여기서 지우면 어디에도 안 보인다.
+                pendingBadgeRow
+            }
+            presidentCommandButton
+        }
+        .padding(.bottom, Spacing.md)
+    }
+
+    /// 대표를 클릭하는 것 말고도 지시 바를 여는 길.
+    ///
+    /// 씬 안의 대표는 `SpriteView` 아래에 있어 키보드·보조기술로는 닿지 않는다 — 씬은 접근성
+    /// 트리에 이름 없는 이미지 하나로만 잡혀 자식을 `.ignore` 로 덮어 읽고, 접근성 API 클릭은
+    /// SpriteKit 씬에 전달되지도 않는다(실측). 대시보드 입력창까지 없앤 뒤라 이 버튼이 없으면
+    /// 마우스를 쓰지 않는 사용자에게 담당자 미지정 지시 경로가 0개가 된다.
+    private var presidentCommandButton: some View {
+        Button("👑 대표에게 지시") { openPresidentBar() }
+            .keyboardShortcut("k", modifiers: .command)
+            .accessibilityHint("담당자를 지정하지 않는 지시를 보냅니다. 담당자는 이대리가 고릅니다.")
+    }
+
+    private func openPresidentBar() {
+        selectedAgent = nil
+        isPresidentBarOpen = true
+        commandText = ""
     }
 
     /// 대표에게 지시 — 담당자를 지정하지 않는다. 라우터가 자연어를 보고 워커를 고르고,
