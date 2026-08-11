@@ -86,8 +86,12 @@ export interface ListAuthorMergedPullRequestsOptions {
   author: string;
   // ISO date (YYYY-MM-DD) 또는 timezone offset 포함 ISO8601 timestamp. 이 시각 이후 merged 된 PR 만.
   sinceIsoDate: string;
+  // ISO 8601 기간 상한. 미지정이면 상한 없이 기존 since 이후 동작을 유지한다.
+  untilIsoDate?: string;
   // 결과 상한. usecase 가 default 20 적용 — prompt 폭발 방지.
   limit: number;
+  // 상세 조회가 한 건이라도 실패하면 불완전한 결과 대신 예외를 던진다. 기본값은 기존 동작인 false.
+  throwOnDetailFailure?: boolean;
 }
 
 // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 조회 + LLM 이 고른 label 부분집합 적용.

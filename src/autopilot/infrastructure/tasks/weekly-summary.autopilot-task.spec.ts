@@ -180,6 +180,8 @@ describe('WeeklySummaryAutopilotTask', () => {
         repo: 'schoolbell-e/sbe-server',
         author: 'idaeri',
         sinceIsoDate: '2026-06-10T15:00:00.000Z',
+        untilIsoDate: '2026-06-17T15:00:00.000Z',
+        throwOnDetailFailure: true,
         limit: 60,
       },
     );
@@ -245,6 +247,14 @@ describe('WeeklySummaryAutopilotTask', () => {
 
     await task.run(CTX);
 
+    if (scenario.author) {
+      expect(listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
+        expect.objectContaining({
+          untilIsoDate: '2026-06-17T15:00:00.000Z',
+          throwOnDetailFailure: true,
+        }),
+      );
+    }
     expect(worklogExecute).toHaveBeenCalledWith(
       expect.objectContaining({
         workText: expect.stringContaining(scenario.reason),

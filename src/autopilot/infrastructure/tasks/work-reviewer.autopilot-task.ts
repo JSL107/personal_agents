@@ -25,6 +25,7 @@ import {
 } from '../../domain/autopilot-task.port';
 
 const DAILY_MERGED_PULL_REQUEST_LIMIT = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface WorklogEvidenceQueryResult {
   mergedPullRequests: GithubPullRequestSummary[];
@@ -69,8 +70,10 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     const latestRun = runs[0];
     const plan = coerceToDailyPlan(latestRun.output);
     // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
-    const sinceIsoDate = new Date(`${firedAtKst}T00:00:00+09:00`).toISOString();
-    const evidence = await this.loadEvidence(sinceIsoDate);
+    const periodStart = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const sinceIsoDate = periodStart.toISOString();
+    const untilIsoDate = new Date(periodStart.getTime() + DAY_MS).toISOString();
+    const evidence = await this.loadEvidence(sinceIsoDate, untilIsoDate);
 
     const workText = this.buildWorkText(plan, firedAtKst, evidence);
 
@@ -124,6 +127,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
 
   private async loadEvidence(
     sinceIsoDate: string,
+    untilIsoDate: string,
   ): Promise<WorklogEvidenceQueryResult> {
     // Impact Report 와 동일 사용자의 동일 GitHub 활동을 조회하므로 기존 env 를 재사용한다.
     const author = this.configService
@@ -145,7 +149,9 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
           repo: repository,
           author,
           sinceIsoDate,
+          untilIsoDate,
           limit: DAILY_MERGED_PULL_REQUEST_LIMIT,
+          throwOnDetailFailure: true,
         });
       return { mergedPullRequests, evidenceUnavailableReason: null };
     } catch (error: unknown) {

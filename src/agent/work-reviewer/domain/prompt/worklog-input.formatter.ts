@@ -1,3 +1,4 @@
+import { formatKstDate } from '../../../../common/util/kst-date.util';
 import { GithubPullRequestSummary } from '../../../../github/domain/github.type';
 
 export interface WorklogInputSource {
@@ -11,7 +12,9 @@ export interface WorklogInputSource {
 const formatMergedPullRequest = (
   pullRequest: GithubPullRequestSummary,
 ): string => {
-  const mergedDate = pullRequest.mergedAt?.slice(0, 10) ?? '날짜 미상';
+  const mergedDate = pullRequest.mergedAt
+    ? (formatKstDate(pullRequest.mergedAt) ?? '날짜 미상')
+    : '날짜 미상';
   return `- ${pullRequest.repo}#${pullRequest.number} ${pullRequest.title} (+${pullRequest.additions}/-${pullRequest.deletions}, ${pullRequest.changedFilesCount}파일, merged ${mergedDate})`;
 };
 

@@ -135,6 +135,8 @@ describe('WorkReviewerAutopilotTask', () => {
         repo: 'schoolbell-e/sbe-server',
         author: 'idaeri',
         sinceIsoDate: '2026-06-16T15:00:00.000Z',
+        untilIsoDate: '2026-06-17T15:00:00.000Z',
+        throwOnDetailFailure: true,
         limit: 30,
       },
     );
@@ -229,6 +231,12 @@ describe('WorkReviewerAutopilotTask', () => {
 
     await task.run(CTX);
 
+    expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
+      expect.objectContaining({
+        untilIsoDate: '2026-06-17T15:00:00.000Z',
+        throwOnDetailFailure: true,
+      }),
+    );
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({
         workText: expect.stringContaining('GitHub 조회 실패: rate limit'),

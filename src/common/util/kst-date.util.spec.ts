@@ -1,4 +1,22 @@
-import { getKstDayStartAsUtc, getTodayKstDate } from './kst-date.util';
+import {
+  formatKstDate,
+  getKstDayStartAsUtc,
+  getTodayKstDate,
+} from './kst-date.util';
+
+describe('formatKstDate', () => {
+  it('UTC 16시는 KST 자정 이후이므로 다음 KST 날짜를 반환한다', () => {
+    expect(formatKstDate('2026-08-10T16:00:00Z')).toBe('2026-08-11');
+  });
+
+  it('UTC 14:59:59는 KST 자정 전이므로 같은 KST 날짜를 반환한다', () => {
+    expect(formatKstDate('2026-08-10T14:59:59Z')).toBe('2026-08-10');
+  });
+
+  it('파싱할 수 없는 입력은 null을 반환한다', () => {
+    expect(formatKstDate('not-a-date')).toBeNull();
+  });
+});
 
 describe('getTodayKstDate', () => {
   it('YYYY-MM-DD ISO 8601 형식 반환', () => {

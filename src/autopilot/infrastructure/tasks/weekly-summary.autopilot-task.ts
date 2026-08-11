@@ -95,7 +95,11 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const since = new Date(
       periodEnd.getTime() - WEEKLY_LOOKBACK_DAYS_AGO * DAY_MS,
     );
-    const evidence = await this.loadEvidence(since.toISOString());
+    const until = new Date(periodEnd.getTime() + DAY_MS);
+    const evidence = await this.loadEvidence(
+      since.toISOString(),
+      until.toISOString(),
+    );
     const sinceLabel = KST_DATE_FORMATTER.format(since);
     const workText = buildWorklogInput({
       periodLabel: `${sinceLabel} ~ ${firedAtKst}`,
@@ -133,6 +137,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
   private async loadEvidence(
     sinceIsoDate: string,
+    untilIsoDate: string,
   ): Promise<WorklogEvidenceQueryResult> {
     // Impact Report 와 동일 사용자의 동일 GitHub 활동을 조회하므로 기존 env 를 재사용한다.
     const author = this.configService
@@ -154,7 +159,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           repo: repository,
           author,
           sinceIsoDate,
+          untilIsoDate,
           limit: WEEKLY_MERGED_PULL_REQUEST_LIMIT,
+          throwOnDetailFailure: true,
         });
       return { mergedPullRequests, evidenceUnavailableReason: null };
     } catch (error: unknown) {

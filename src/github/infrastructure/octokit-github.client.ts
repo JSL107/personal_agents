@@ -694,14 +694,19 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     author,
     sinceIsoDate,
+    untilIsoDate,
     limit,
+    throwOnDetailFailure,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
     this.assertOctokitConfigured();
     const perPage = Math.min(Math.max(1, limit), 100);
     // repo null/empty → author 의 모든 repo 머지 PR (본인 작성 PR 만). qualifier 없는 search 가
     // user repo + contributor repo (fork merge 등) 모두 포함. repo 지정 시 해당 repo 한정.
     const repoQualifier = repo ? `repo:${repo} ` : '';
-    const q = `${repoQualifier}is:pr is:merged author:${author} merged:>=${sinceIsoDate}`;
+    const mergedQualifier = untilIsoDate
+      ? `merged:${sinceIsoDate}..${untilIsoDate}`
+      : `merged:>=${sinceIsoDate}`;
+    const q = `${repoQualifier}is:pr is:merged author:${author} ${mergedQualifier}`;
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
@@ -723,6 +728,7 @@ export class OctokitGithubClient implements GithubClientPort {
     // repo null 모드: per-PR 의 repository_url 에서 owner/repo 추출 (다른 repo 의 PR 포함).
     const itemsToFetch = searchResponse.data.items.slice(0, perPage);
 
+    let detailFailureCount = 0;
     const details = await Promise.all(
       itemsToFetch.map(async (item) => {
         const itemRepo = repo ?? extractRepo(item.repository_url);
@@ -751,6 +757,7 @@ export class OctokitGithubClient implements GithubClientPort {
           };
           return summary;
         } catch (error: unknown) {
+          detailFailureCount += 1;
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
@@ -760,6 +767,15 @@ export class OctokitGithubClient implements GithubClientPort {
         }
       }),
     );
+
+    if (throwOnDetailFailure && detailFailureCount > 0) {
+      // 실적 집계는 일부 성공 결과도 완전한 결과처럼 보이게 만든다. 실적을 잃더라도 틀린
+      // 0건/부분 집계보다 조회 불가로 처리하도록 strict caller에는 전체 실패를 알린다.
+      throw this.wrapRequestFailed(
+        new Error('불완전한 상세 조회 결과'),
+        `GitHub ${scopeLabel} 머지 PR 상세 조회 ${detailFailureCount}/${itemsToFetch.length}건 실패`,
+      );
+    }
 
     return details
       .filter((d): d is NonNullable<typeof d> => d !== null)

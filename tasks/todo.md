@@ -1,3 +1,30 @@
+# PR #270 리뷰 반영 A·B·D (2026-08-11)
+
+**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
+
+**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
+
+- [x] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
+- [x] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
+- [x] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
+- [x] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
+- [x] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
+- [x] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
+- [x] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [x] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
+
+## Review
+
+- A: strict 상세 조회 실패는 실패/전체 건수 예외로 바꾸고, 기본 옵션은 기존 skip 동작을 보존했다.
+- B: ISO 시각을 KST 날짜로 변환하며 자정 경계와 invalid/null fallback을 고정했다.
+- D: daily/weekly에 다음 날 KST 00:00 상한을 전달하고 기존 caller의 하한-only 쿼리는 보존했다.
+- RED 5 suites 실패, focused GREEN 5 suites/75 tests, A/B 역변이 각각 exit 1 후 원복을 확인했다.
+- 최종 게이트 lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,532 tests + code-graph 5 suites/40 tests 통과.
+- 기존 caller 3곳과 C는 무변경. 독립 최종 리뷰 Blocker/Should Fix/Minor 0건.
+
+---
+
 # PR quota backoff 리뷰 반영 (2026-08-11)
 
 **Goal:** 늦게 끝난 성공 호출이 더 최신 quota 차단을 해제하지 못하게 하고, codex 상대 reset hint를 실제 기간으로 해석한다.
@@ -1251,5 +1278,26 @@
 - TDD RED·역변이 확인 후 focused 3 suites/19 tests 통과. 독립 재리뷰 Critical/Important/Minor 0건.
 - 최종 gate: lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,523 tests + code-graph 5 suites/40 tests 통과.
 - commit, push, PR 생성 없음.
+
+---
+# PR #270 리뷰 반영 A·B·D (2026-08-11)
+
+**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
+
+**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
+
+- [ ] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
+- [ ] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
+- [ ] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
+- [ ] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
+- [ ] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
+- [ ] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
+- [ ] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
+- [ ] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [ ] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
+
+## Review
+
+- 진행 중.
 
 ---

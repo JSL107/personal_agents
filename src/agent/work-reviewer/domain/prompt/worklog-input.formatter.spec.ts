@@ -117,4 +117,31 @@ describe('buildWorklogInput', () => {
       '- (조회 한도 30건 도달 — 추가 머지 PR 이 생략되었을 수 있음)',
     );
   });
+
+  it('머지 시각을 UTC 날짜가 아니라 KST 자정 경계 날짜로 표시한다', () => {
+    const result = buildWorklogInput({
+      periodLabel: '2026-08-11',
+      plannedLines: ['- 계획 항목'],
+      mergedPullRequests: [
+        makePullRequest(971, { mergedAt: '2026-08-10T16:00:00Z' }),
+      ],
+      mergedPullRequestLimit: 30,
+      evidenceUnavailableReason: null,
+    });
+
+    expect(result).toContain('merged 2026-08-11');
+    expect(result).not.toContain('merged 2026-08-10)');
+  });
+
+  it('mergedAt이 null이면 기존 날짜 미상 fallback을 유지한다', () => {
+    const result = buildWorklogInput({
+      periodLabel: '2026-08-11',
+      plannedLines: ['- 계획 항목'],
+      mergedPullRequests: [makePullRequest(971, { mergedAt: null })],
+      mergedPullRequestLimit: 30,
+      evidenceUnavailableReason: null,
+    });
+
+    expect(result).toContain('merged 날짜 미상');
+  });
 });
