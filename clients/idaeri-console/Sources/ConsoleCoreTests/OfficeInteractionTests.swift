@@ -476,16 +476,32 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     // 다만 이 검사가 보는 것은 **1차 추정이 자기 예산 안에 있는가** 까지다. 폭을 상한 계산과
     // 같은 평균 비율로 되계산하므로, 실제 폰트가 그보다 넓은 경우(대문자가 이어지는 이름)는
     // 여기서 잡히지 않는다 — 그 몫은 그려 본 폭으로 누르는 `officeSessionLabelSqueeze` 가 맡는다.
+    // 한글이 섞인 이름도 함께 본다. 세션 이름은 실행 디렉터리에서 오므로 경로에 한글이 있으면
+    // 그대로 들어온다 — 글자 수로만 세면 여섯 자가 자리 두 칸이 아니라 세 칸을 차지한다.
     for tileSize in [20.6, 27.4, 40.0, 61.0, 90.0] {
         let fontSize = max(11.0, tileSize * 0.24)
         let limit = officeSessionLabelLimit(tileSize: tileSize, fontSize: fontSize)
-        let label = officeSessionShortName("personal-agents-office-window-light", limit: limit)
-        let width = Double(label.count) * fontSize * officeLatinGlyphWidthRatio
-        t.expect(
-            width <= tileSize * officeSessionDeskStrideTiles,
-            "타일 \(tileSize) · 이름표 폭 \(Int(width))px 이 자리 폭 \(Int(tileSize * 2))px 안"
-        )
+        for name in ["personal-agents-office-window-light", "기타-백엔드-작업방-가나다라마"] {
+            let label = officeSessionShortName(name, limit: limit)
+            let width = Double(officeLabelWidthUnits(label)) * fontSize * officeLatinGlyphWidthRatio
+            t.expect(
+                width <= tileSize * officeSessionDeskStrideTiles,
+                "타일 \(tileSize) · \(label) 폭 \(Int(width))px 이 자리 폭 \(Int(tileSize * 2))px 안"
+            )
+        }
     }
+
+    // 폭 단위: ASCII 는 한 자에 1, 그 밖은 2.
+    t.expectEqual(officeLabelWidthUnits("abc-12"), 6, "ASCII 는 글자 수 그대로")
+    t.expectEqual(officeLabelWidthUnits("가나"), 4, "한글은 두 배")
+    t.expectEqual(officeLabelWidthUnits("…"), 2, "말줄임표도 자리를 먹는다")
+    // 구분자가 없는 한글 이름도 예산 안에 들어온다(뒤에서부터 폭만큼 담는 폴백).
+    let koreanLabel = officeSessionShortName("가나다라마바사", limit: 6)
+    t.expect(
+        officeLabelWidthUnits(koreanLabel) <= 6,
+        "한글 이름표 \(koreanLabel) 폭 \(officeLabelWidthUnits(koreanLabel)) ≤ 6"
+    )
+    t.expect(koreanLabel.hasPrefix("…"), "한글 이름도 잘렸음을 표시한다")
 
     // 평균 폭 예산을 넘긴 이름은 그려 본 폭으로 눌러 자리 안에 넣는다.
     //

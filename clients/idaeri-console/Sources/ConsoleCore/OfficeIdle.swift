@@ -351,21 +351,50 @@ public func officeSessionLabelLimit(tileSize: Double, fontSize: Double) -> Int {
 /// `…l-agents-74`·`…l-agents-86`·`…l-agents-ce` 가 되어, 앞 아홉 글자가 같은 채 뒤 두 자로만
 /// 갈리는 이름표 셋이 나란히 선다(실데이터). 그래서 `-`·`_` 경계 중 **예산에 들어오는 가장 긴
 /// 꼬리**를 고른다 — 같은 길이를 써도 남는 조각이 뜻을 유지한다.
+/// 예산은 글자 수가 아니라 **폭 단위**로 센다(`officeLabelWidthUnits`). 세션 이름은 대개
+/// 라틴이지만 실행 디렉터리 이름이 그대로 오므로 한글·이모지가 섞일 수 있다 — 한글은 라틴의
+/// 두 배 가까이 넓어, 글자 수로 세면 여섯 자가 자리 두 칸이 아니라 세 칸을 차지한다.
 public func officeSessionShortName(_ name: String, limit: Int = 12) -> String {
     let trimmed = name.trimmingCharacters(in: .whitespaces)
-    guard trimmed.count > limit, limit > 1 else {
+    guard officeLabelWidthUnits(trimmed) > limit, limit > 1 else {
         return trimmed
     }
-    let budget = limit - 1  // 잘렸음을 알리는 "…" 몫
+    // 잘렸음을 알리는 "…" 도 자리를 먹는다. 라틴 한 자로 치면 한글 이름에서 예산을 넘긴다.
+    let budget = limit - officeLabelWidthUnits("…")
+    guard budget > 0 else {
+        return "…"
+    }
     // 앞에서부터 훑으므로 처음 들어맞는 꼬리가 곧 가장 긴 꼬리다.
     for index in trimmed.indices where trimmed[index] == "-" || trimmed[index] == "_" {
         let tail = trimmed[trimmed.index(after: index)...]
-        if tail.count <= budget, !tail.isEmpty {
+        if !tail.isEmpty, officeLabelWidthUnits(String(tail)) <= budget {
             return "…" + tail
         }
     }
-    // 구분자가 없거나 마지막 조각조차 예산을 넘으면 글자 수로 자른다.
-    return "…" + String(trimmed.suffix(budget))
+    // 구분자가 없거나 마지막 조각조차 예산을 넘으면 뒤에서부터 예산만큼 담는다.
+    var tail = ""
+    for character in trimmed.reversed() {
+        let candidate = String(character) + tail
+        guard officeLabelWidthUnits(candidate) <= budget else {
+            break
+        }
+        tail = candidate
+    }
+    return "…" + tail
+}
+
+/// 라벨이 차지하는 폭을 세는 단위. ASCII 는 1, 그 밖(한글·이모지 등)은 2로 센다.
+///
+/// 글자 수만 세면 문자 종류에 따라 실제 폭이 두 배까지 벌어진다. 세션 이름은 실행 디렉터리에서
+/// 오고 그 경로에 한글이 섞일 수 있어(이 저장소 경로에도 한글 디렉터리가 있다), 여섯 자로 자른
+/// 한글 이름이 자리 두 칸이 아니라 세 칸을 차지한다.
+///
+/// 이모지처럼 여러 스칼라로 이뤄진 글자는 실제보다 넓게 세어진다. **과대 계산은 안전한
+/// 방향이다** — 이름이 조금 더 짧아질 뿐, 옆자리를 침범하지 않는다.
+public func officeLabelWidthUnits(_ text: String) -> Int {
+    text.unicodeScalars.reduce(0) { total, scalar in
+        total + (scalar.isASCII ? 1 : 2)
+    }
 }
 
 /// 아직 사무실에 남아 있는 세션만 자리에 앉힌다.
