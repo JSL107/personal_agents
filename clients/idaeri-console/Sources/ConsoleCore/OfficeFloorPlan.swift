@@ -871,7 +871,14 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     switch department {
     case .planning:
         // 모여서 논의하는 방 — 일정과 아이디어를 붙여 두는 벽.
-        return [.meetingTable, .whiteboard, .plantSmall, .wallPinboard, .wallCalendar]
+        //
+        // 세 명뿐이라 아래 절반이 통째로 빈 바닥이었다. 자료 선반과 큰 화분으로 방의 남은
+        // 쪽을 쓰게 한다 — 자리를 늘리는 대신 가구로 채우는 이유는, 인원이 늘면 그 자리가
+        // 다시 책상에 밀려나야 하기 때문이다(가구는 좌석에 막히면 알아서 건너뛴다).
+        return [
+            .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
+            .wallPinboard, .wallCalendar,
+        ]
     case .engineering:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
         // 자료 벽 맨 아래 칸은 유리 파티션으로 막아 벽 줄을 아래까지 이어 준다
@@ -882,7 +889,13 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [.whiteboard, .bookshelf, .bookshelf, .filingCabinet, .wallPinboard, .wallPoster]
     case .executive:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
-        return [.sofa2, .coffeeTable, .plantTall, .clock, .wallCertificate, .wallLandscape]
+        //
+        // 둘뿐인 방이라 오른쪽 절반이 빈 나무 바닥이었다. 응접 세트 반대편에 서가와 자료
+        // 캐비닛을 세워, 사람 수가 적은 것이 "덜 지은 방" 으로 보이지 않게 한다.
+        return [
+            .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
+            .clock, .wallCertificate, .wallLandscape,
+        ]
     case .growth:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
         return [
@@ -952,7 +965,10 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
     switch department {
     case .planning:
         // 회의 테이블은 세 자리 바로 앞. 세로 2칸이라 (4,2)~(4,3) 을 차지한다.
-        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0)])
+        // 뒤 두 자리는 빈 아래쪽을 메우는 몫이다. **맨 아래 줄에만 더한다** — 아래 행 좌석
+        // (책상 (1,1)·(7,1) 의 윗칸)에 사람이 앉으면 그 이름표가 y=3 언저리에 뜨므로,
+        // 거기 가구를 세우면 인원이 늘었을 때 이름이 가구에 묻힌다.
+        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
     case .engineering:
         // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
         return spots([(9, 5), (9, 3), (9, 1), (2, 0), (6, 0)])
@@ -961,7 +977,9 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
     case .executive:
         // 응접 세트를 방 가운데에 — 두 사람이 멀찍이 앉고 가운데서 손님을 맞는 모양.
-        return spots([(4, 4), (4, 3), (8, 1), (9, 4), (9, 1)])
+        // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
+        // 높이)를 피해, 오른쪽 벽면과 맨 아래 줄에 붙인다.
+        return spots([(4, 4), (4, 3), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
     case .growth:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
