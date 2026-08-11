@@ -492,6 +492,149 @@ describe('OctokitGithubClient', () => {
       expect(results[0].mergedAt).toBe('2026-06-01T10:00:00Z');
       expect(results[0].updatedAt).toBe('2026-06-01T11:00:00Z');
     });
+
+    it('untilIsoDate 지정 시 merged 기간 범위 쿼리를 사용한다', async () => {
+      const search = jest.fn().mockResolvedValue({ data: { items: [] } });
+      const client = new OctokitGithubClient({
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: jest.fn() },
+        },
+      } as unknown as Octokit);
+
+      await client.listAuthorMergedPullRequestsSince({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-10T15:00:00.000Z',
+        untilIsoDate: '2026-08-11T15:00:00.000Z',
+        limit: 10,
+      });
+
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: 'repo:foo/bar is:pr is:merged author:JSL107 merged:2026-08-10T15:00:00.000Z..2026-08-11T15:00:00.000Z',
+        }),
+      );
+    });
+
+    it('untilIsoDate 미지정 시 기존 merged 하한 쿼리를 유지한다', async () => {
+      const search = jest.fn().mockResolvedValue({ data: { items: [] } });
+      const client = new OctokitGithubClient({
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: jest.fn() },
+        },
+      } as unknown as Octokit);
+
+      await client.listAuthorMergedPullRequestsSince({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-10T15:00:00.000Z',
+        limit: 10,
+      });
+
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: 'repo:foo/bar is:pr is:merged author:JSL107 merged:>=2026-08-10T15:00:00.000Z',
+        }),
+      );
+    });
+
+    it('throwOnDetailFailure=true 이고 상세 조회가 실패하면 실패/전체 건수와 함께 예외를 던진다', async () => {
+      const search = jest.fn().mockResolvedValue({
+        data: {
+          items: [
+            {
+              number: 10,
+              repository_url: 'https://api.github.com/repos/foo/bar',
+            },
+            {
+              number: 11,
+              repository_url: 'https://api.github.com/repos/foo/bar',
+            },
+          ],
+        },
+      });
+      const prGet = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('rate limited'))
+        .mockResolvedValueOnce({
+          data: {
+            title: 'success',
+            body: '',
+            html_url: 'https://github.com/foo/bar/pull/11',
+            merged_at: '2026-08-11T04:00:00Z',
+            updated_at: '2026-08-11T04:00:00Z',
+            additions: 1,
+            deletions: 0,
+            changed_files: 1,
+          },
+        });
+      const client = new OctokitGithubClient({
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: prGet },
+        },
+      } as unknown as Octokit);
+
+      await expect(
+        client.listAuthorMergedPullRequestsSince({
+          repo: 'foo/bar',
+          author: 'JSL107',
+          sinceIsoDate: '2026-08-10T15:00:00.000Z',
+          limit: 10,
+          throwOnDetailFailure: true,
+        }),
+      ).rejects.toThrow('머지 PR 상세 조회 1/2건 실패');
+    });
+
+    it('throwOnDetailFailure 미지정이면 상세 조회 실패분만 제외하고 정상 반환한다', async () => {
+      const search = jest.fn().mockResolvedValue({
+        data: {
+          items: [
+            {
+              number: 10,
+              repository_url: 'https://api.github.com/repos/foo/bar',
+            },
+            {
+              number: 11,
+              repository_url: 'https://api.github.com/repos/foo/bar',
+            },
+          ],
+        },
+      });
+      const prGet = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('rate limited'))
+        .mockResolvedValueOnce({
+          data: {
+            title: 'success',
+            body: '',
+            html_url: 'https://github.com/foo/bar/pull/11',
+            merged_at: '2026-08-11T04:00:00Z',
+            updated_at: '2026-08-11T04:00:00Z',
+            additions: 1,
+            deletions: 0,
+            changed_files: 1,
+          },
+        });
+      const client = new OctokitGithubClient({
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: prGet },
+        },
+      } as unknown as Octokit);
+
+      const results = await client.listAuthorMergedPullRequestsSince({
+        repo: 'foo/bar',
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-10T15:00:00.000Z',
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].number).toBe(11);
+    });
   });
 
   describe('listAuthorOpenPullRequests — open PR 조회', () => {

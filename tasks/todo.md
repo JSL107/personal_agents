@@ -1,3 +1,52 @@
+# PR #270 리뷰 반영 A·B·D (2026-08-11)
+
+**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
+
+**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
+
+- [x] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
+- [x] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
+- [x] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
+- [x] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
+- [x] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
+- [x] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
+- [x] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [x] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
+
+## Review
+
+- A: strict 상세 조회 실패는 실패/전체 건수 예외로 바꾸고, 기본 옵션은 기존 skip 동작을 보존했다.
+- B: ISO 시각을 KST 날짜로 변환하며 자정 경계와 invalid/null fallback을 고정했다.
+- D: daily/weekly에 다음 날 KST 00:00 상한을 전달하고 기존 caller의 하한-only 쿼리는 보존했다.
+- RED 5 suites 실패, focused GREEN 5 suites/75 tests, A/B 역변이 각각 exit 1 후 원복을 확인했다.
+- 최종 게이트 lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,532 tests + code-graph 5 suites/40 tests 통과.
+- 기존 caller 3곳과 C는 무변경. 독립 최종 리뷰 Blocker/Should Fix/Minor 0건.
+
+**실증 (실제 GitHub 조회, KST 2026-08-10 하루)** — 유닛 테스트가 못 보는 두 가지를 실데이터로 확인했다.
+
+- 기간 상한이 실제로 자른다: 상한 있음 9건 vs 상한 없음 17건, 결과 중 KST 8/10 이 아닌 PR 0건.
+  `merged:A..B` 문법이 유효하다는 확인도 겸한다 — 잘못된 문법이면 422 없이 조용히 0건이 나올 수 있어
+  쿼리 문자열 단언만으로는 못 잡는다.
+- B 결함의 실제 피해 사례: `schoolbell-e/sbe-api-v5#971`·`#972` 는 UTC `2026-08-09T23:52Z` 머지로
+  KST 8/10 실적인데, 기존 `slice(0, 10)` 에서는 `merged 2026-08-09` 로 출력됐을 값이다.
+
+**후속으로 남긴 것 (리뷰 지적 C — PR #270 에서 답변만 하고 미수정)**
+
+`WorkReviewerAutopilotTask` / `WeeklySummaryAutopilotTask` 는 PM plan run 이 0건이면 실적 조회 전에
+반환한다(`work-reviewer.autopilot-task.ts` · `weekly-summary.autopilot-task.ts` 의 `runs.length === 0`
+early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 회고가 생성되지 않는다 — "계획에 없었는데
+한 일을 드러낸다" 는 목표와 어긋난다.
+
+이번에 고치지 않은 이유: (1) 이 PR 이 만든 결함이 아니라 기존 동작이고, (2) `agent_run` 실측에서
+최근 14일 PM 실행이 매일 1건 이상 있어(8/3 만 10건) 실제 발생이 0회다. 고치면 skip 이던 자리가
+실행으로 바뀌어, 계획 없는 날의 회고 형식·발송 여부·Notion 적재 기준을 다시 정해야 한다.
+
+착수 조건: plan 0건인 날이 실제로 관측되거나(cron 실패·장기 휴가 등), 계획 없이 진행한 작업의
+회고 누락이 문제로 드러날 때.
+
+---
+
 # PR quota backoff 리뷰 반영 (2026-08-11)
 
 **Goal:** 늦게 끝난 성공 호출이 더 최신 quota 차단을 해제하지 못하게 하고, codex 상대 reset hint를 실제 기간으로 해석한다.
@@ -1228,5 +1277,49 @@
 - focused 6 suites/83 tests 통과 후 wiring 회귀 1건을 추가했다. 독립 리뷰는 Blocker/Should Fix/Minor 0건이었다.
 - 최종 gate 결과와 기존 warning 수는 `.ai/implementation-summary.md`에 기록한다.
 - 설계 편차 없음. LLM 분류·문구 품질은 Slack 실환경 확인이 가능한 잔여 런타임 리스크다.
+
+---
+# WORK_REVIEWER 실제 머지 PR 근거 주입 (2026-08-11)
+
+**Goal:** 자동 회고 입력을 PM 계획과 실제 머지 PR 실적으로 분리해 정량 근거 없는 완료 단정을 막는다.
+
+**Contract:** `.ai/design.md` 준수. 기존 `IMPACT_REPORT_GITHUB_AUTHOR` / `IMPACT_REPORT_GITHUB_REPO`만 재사용. `/worklog` 수동 경로, DB/schema, env, commit/push/PR은 건드리지 않는다.
+
+- [x] 설계와 기존 daily/weekly task, GitHub port, 날짜 helper, spec 패턴을 확인한다.
+- [x] formatter 5케이스와 daily/weekly task 회귀 spec을 추가해 RED를 확인한다.
+- [x] 순수 formatter, system prompt 치환, daily/weekly best-effort 조회를 최소 구현한다.
+- [x] focused spec GREEN과 최종 diff·설계 준수 review를 완료한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 변경 파일, 설계 이탈, 실제 게이트 결과를 기록한다.
+
+## Review
+
+- 자동 일일·주간 worklog 입력을 PM 계획과 실제 머지 PR 실적으로 분리했다. 0건·조회 실패·env 누락도 명시하며 회고는 계속한다.
+- `firedAtKst` 기준 KST 조회 창, 주간 KST plan 날짜, 일일 30·주간 60 limit을 고정했다.
+- port가 total count를 노출하지 않는 제약 때문에 formatter source에 limit을 추가하고, limit 도달 시 정확한 미상 건수를 단정하지 않는 경고로 설계를 보완했다. Claude 재검증 필요.
+- TDD RED·역변이 확인 후 focused 3 suites/19 tests 통과. 독립 재리뷰 Critical/Important/Minor 0건.
+- 최종 gate: lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,523 tests + code-graph 5 suites/40 tests 통과.
+- commit, push, PR 생성 없음.
+
+---
+# PR #270 리뷰 반영 A·B·D (2026-08-11)
+
+**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
+
+**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
+
+- [ ] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
+- [ ] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
+- [ ] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
+- [ ] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
+- [ ] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
+- [ ] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
+- [ ] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
+- [ ] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
+- [ ] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
+
+## Review
+
+- 진행 중.
 
 ---
