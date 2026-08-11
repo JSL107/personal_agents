@@ -46,6 +46,7 @@ model AgentRun {
   careerProfiles   CareerProfile[]
   episodicMemories EpisodicMemory[]
   studyBriefs      StudyBrief[]
+  paperOrders      PaperOrder[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -324,27 +325,31 @@ model PreferenceProposal {
 // Yahoo 경로로 등록한 종목은 market='KOSPI'|'KOSDAQ' 이다.
 // yahooSymbol 은 Yahoo 경로에서만 필수라 nullable 로 둔다.
 model Ticker {
-  id                Int             @id @default(autoincrement())
-  code              String
-  market            String
-  marketCountry     String?         @map("market_country")
-  yahooSymbol       String?         @map("yahoo_symbol")
-  tossSymbol        String?         @map("toss_symbol")
-  name              String
-  currency          String
+  id                     Int                     @id @default(autoincrement())
+  code                   String
+  market                 String
+  marketCountry          String?                 @map("market_country")
+  yahooSymbol            String?                 @map("yahoo_symbol")
+  tossSymbol             String?                 @map("toss_symbol")
+  name                   String
+  currency               String
   // 실질 노출 분류. 표시 통화가 아니라 "기초자산이 어느 시장에 걸려 있는가"를 담는다.
   // 원화 표시 ETF 라도 기초자산이 해외면 해외로 분류한다 — 통화만으로는 구분이 안 된다.
   // null 은 미분류. 집계에서 별도 버킷으로 정직하게 드러낸다(임의로 어느 쪽에 넣지 않는다).
-  exposureRegion    String?         @map("exposure_region")
+  exposureRegion         String?                 @map("exposure_region")
   // LONG | SHORT. 인버스·곱버스 상품을 같은 지역의 롱과 상쇄해서 읽지 않기 위한 축.
-  exposureDirection String          @default("LONG") @map("exposure_direction")
-  source            String          @default("YAHOO")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
-  dailyPrices       DailyPrice[]
-  holdings          Holding[]
-  holdingChanges    HoldingChange[]
-  alerts            StockAlert[]
+  exposureDirection      String                  @default("LONG") @map("exposure_direction")
+  source                 String                  @default("YAHOO")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  dailyPrices            DailyPrice[]
+  holdings               Holding[]
+  holdingChanges         HoldingChange[]
+  alerts                 StockAlert[]
+  paperOrders            PaperOrder[]
+  paperPositions         PaperPosition[]
+  paperTrades            PaperTrade[]
+  paperPositionSnapshots PaperPositionSnapshot[]
 
   @@unique([market, code])
   @@map("ticker")
@@ -480,4 +485,136 @@ model StudyBrief {
 
   @@index([ownerUserId, createdAt])
   @@map("study_brief")
+}
+
+model PaperAccount {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // DEFAULT | LONG_TERM | SWING
+  currency    String   @default("KRW")
+  seedAmount  Decimal  @map("seed_amount") @db.Decimal(18, 4)
+  cashBalance Decimal  @map("cash_balance") @db.Decimal(18, 4)
+  openedAt    DateTime @map("opened_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  orders    PaperOrder[]
+  positions PaperPosition[]
+  trades    PaperTrade[]
+  snapshots PaperEquitySnapshot[]
+
+  @@map("paper_account")
+}
+
+// 판단과 체결을 분리해 기록한다. 이 표가 없으면 "전일 종가로 판단하고 다음날 시가에 체결했다"를
+// 사후에 증명할 수 없다 — 다음날 시가를 본 뒤에 만든 거래와 구별되지 않기 때문이다.
+model PaperOrder {
+  id              Int          @id @default(autoincrement())
+  accountId       Int          @map("account_id")
+  account         PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickerId        Int          @map("ticker_id")
+  ticker          Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  side            String // BUY | SELL
+  quantity        Decimal      @db.Decimal(18, 4)
+  strategy        String // LONG_TERM | SWING | MANUAL
+  reason          String?      @db.Text
+  decidedAt       DateTime     @map("decided_at") // 결정 시각
+  dataAsOf        DateTime     @map("data_as_of") @db.Date // 판단에 사용한 마지막 거래일
+  targetTradeDate DateTime?    @map("target_trade_date") @db.Date // 체결 목표 거래일
+  status          String // PENDING | FILLED | PARTIALLY_FILLED | EXPIRED | CANCELLED
+  statusReason    String?      @map("status_reason") // 미체결 사유 (거래정지·상한가·유동성 등)
+  expiresAt       DateTime?    @map("expires_at")
+  agentRunId      Int?         @map("agent_run_id")
+  agentRun        AgentRun?    @relation(fields: [agentRunId], references: [id])
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  trades PaperTrade[]
+
+  @@index([accountId, status])
+  @@index([targetTradeDate])
+  @@map("paper_order")
+}
+
+model PaperPosition {
+  id        Int          @id @default(autoincrement())
+  accountId Int          @map("account_id")
+  account   PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickerId  Int          @map("ticker_id")
+  ticker    Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  quantity  Decimal      @db.Decimal(18, 4)
+  // 매수 수수료를 포함한 장부 원가 기준 평균단가 (§5 원가 규칙)
+  avgPrice  Decimal      @map("avg_price") @db.Decimal(18, 4)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  @@unique([accountId, tickerId])
+  @@map("paper_position")
+}
+
+model PaperTrade {
+  id          Int          @id @default(autoincrement())
+  accountId   Int          @map("account_id")
+  account     PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  orderId     Int?         @map("order_id")
+  order       PaperOrder?  @relation(fields: [orderId], references: [id])
+  tickerId    Int          @map("ticker_id")
+  ticker      Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  side        String // BUY | SELL
+  quantity    Decimal      @db.Decimal(18, 4)
+  price       Decimal      @db.Decimal(18, 4) // 미조정 실제 체결가
+  fee         Decimal      @db.Decimal(18, 4)
+  tax         Decimal      @db.Decimal(18, 4)
+  realizedPnl Decimal?     @map("realized_pnl") @db.Decimal(18, 4) // 매도 시에만
+  tradeDate   DateTime     @map("trade_date") @db.Date // 체결 거래일
+  // 재시도·stalled 재실행이 같은 체결을 두 번 넣는 것을 DB 층에서 막는다.
+  // HoldingChange 가 같은 문제를 fingerprint @unique 로 푼 선례를 따른다(schema.prisma:406).
+  fingerprint String       @unique
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([accountId, tradeDate])
+  @@index([tickerId, tradeDate])
+  @@map("paper_trade")
+}
+
+// 종목별 평가 근거. 총액만 남기면 어느 종목을 어떤 날짜의 어떤 가격으로 평가했는지
+// 사후 검증이 불가능하고, 거래정지 종목의 며칠 전 종가가 정상 평가로 위장된다.
+model PaperPositionSnapshot {
+  id         Int                 @id @default(autoincrement())
+  snapshotId Int                 @map("snapshot_id")
+  snapshot   PaperEquitySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  tickerId   Int                 @map("ticker_id")
+  ticker     Ticker              @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  quantity   Decimal             @db.Decimal(18, 4)
+  avgPrice   Decimal             @map("avg_price") @db.Decimal(18, 4)
+  price      Decimal             @db.Decimal(18, 4)
+  priceDate  DateTime            @map("price_date") @db.Date // 평가에 쓴 봉의 거래일
+  isStale    Boolean             @default(false) @map("is_stale") // priceDate != snapshot.tradeDate
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  @@unique([snapshotId, tickerId])
+  @@map("paper_position_snapshot")
+}
+
+model PaperEquitySnapshot {
+  id               Int          @id @default(autoincrement())
+  accountId        Int          @map("account_id")
+  account          PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tradeDate        DateTime     @map("trade_date") @db.Date
+  cashBalance      Decimal      @map("cash_balance") @db.Decimal(18, 4)
+  positionValue    Decimal      @map("position_value") @db.Decimal(18, 4)
+  totalValue       Decimal      @map("total_value") @db.Decimal(18, 4)
+  returnRate       Decimal      @map("return_rate") @db.Decimal(9, 4)
+  staleTickerCount Int          @default(0) @map("stale_ticker_count")
+  // 벤치마크 없이는 "시드 대비 +8%" 가 시장 대비 초과인지 미달인지 해석되지 않는다.
+  // 지나간 구간은 소급 적재가 불가능하므로 1단계부터 함께 적는다.
+  benchmarkClose   Decimal?     @map("benchmark_close") @db.Decimal(18, 4)
+  // 렌더러 검증용 백필 구간 표식. 실제 보유 이력이 아니므로 성적 집계에서 제외한다.
+  isBackfilled     Boolean      @default(false) @map("is_backfilled")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  positionSnapshots PaperPositionSnapshot[]
+
+  @@unique([accountId, tradeDate])
+  @@index([accountId, tradeDate])
+  @@map("paper_equity_snapshot")
 }
