@@ -219,8 +219,22 @@ public let officeZoneLabelMinFontSizeValue: Double = 13
 public let officeLabelBoxRatio: Double = 1.3
 
 /// 문패 아래끝과 이름표 위끝 사이에 두는 최소 간격(타일 배수).
-/// 두 라벨의 판(plate)이 각각 바깥으로 3px·1px 넓어지는 몫이다.
-public let officeZoneLabelGapTiles: Double = 0.14
+///
+/// 두 라벨의 판(plate)이 각각 바깥으로 3px·1px 넓어지는 몫에서 출발했는데(0.14), 그 값은
+/// **산술적으로만 안 겹쳤다.** 최소 창의 타일이 20px 남짓이라 0.14칸이면 3픽셀이고, 문패 판과
+/// 이름표 판이 맞닿아 하나의 검은 뭉치로 읽힌다 — 여섯 부서 전부에서 구역 가운데 좌석
+/// (`커리어`·`문서 개선`·`성과 분석`·`스키마`·`PO 평가`·`CTO`)의 이름이 그렇게 묻혔다.
+/// 회귀 테스트는 두 값의 대소만 보므로 이 구간을 그대로 통과시킨다.
+///
+/// 0.35 는 최소 창에서 7픽셀 — 판 둘이 붙어 보이지 않는 최소치다(렌더 실측).
+public let officeZoneLabelGapTiles: Double = 0.35
+
+/// 라벨 판 둘 사이에 남아야 하는 실제 간격(픽셀).
+///
+/// 간격을 칸 배수로만 단언하면 **창 크기와 무관한 검사**가 된다 — 0.14칸도 "이름표 위"라는
+/// 조건은 만족하지만 최소 창에서는 3픽셀이라 두 판이 맞닿는다. 화면에서 떨어져 보이는지는
+/// 칸이 아니라 픽셀이 정한다.
+public let officeLabelSeparationMinPixels: Double = 6
 
 /// 이름표 글자 크기(px). 타일에 비례하되 한글 하한이 걸린다.
 public func officeNameplateFontSize(tileSize: Double) -> Double {

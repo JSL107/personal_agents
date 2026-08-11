@@ -275,6 +275,37 @@ public let officeSessionLeaveAfterSeconds: Double = 900
 /// 정도라 프레임에 부담이 되지 않는다.
 public let officeSessionSweepIntervalSeconds: Double = 30
 
+/// 대표실 세션 책상의 가로 간격(칸). 이름표가 쓸 수 있는 폭이 곧 이 값이다.
+/// 자리를 놓는 쪽(`OfficeFloorPlan` 의 `stride(from: 2, to: zoneWidth, by: 2)`)과 같은 수.
+public let officeSessionDeskStrideTiles: Double = 2
+
+/// 라틴 글자 한 자의 **평균** 폭 ÷ 글자 크기. `AppleSDGothicNeo-Bold` 의 영문·숫자 실측 근사
+/// (렌더에서 9자 라벨이 53.5px, 글자 크기 11px).
+///
+/// **평균이지 상한이 아니다.** 세션 이름은 실행 디렉터리에서 오므로 대개 소문자·숫자·하이픈이지만
+/// (`personal-agents-74`), 넓은 글자가 이어지는 이름(`WWWW…`)은 같은 글자 수로도 이 값을 크게
+/// 넘는다. 그래서 이 비율은 **몇 글자를 남길지 정하는 1차 추정**으로만 쓰고, 실제로 자리를
+/// 넘었는지는 그려 본 폭으로 판정한다(`officeSessionLabelSqueeze`).
+public let officeLatinGlyphWidthRatio: Double = 0.55
+
+/// 이름표에 남기는 최소 글자 수. 이 밑으로는 "…" 만 남아 자리 표시조차 안 된다.
+public let officeSessionLabelMinLimit: Int = 3
+
+/// 그려 본 이름표가 자리를 넘을 때 눌러 넣을 가로 배율.
+///
+/// 글자 수 상한(`officeSessionLabelLimit`)은 평균 글자 폭에서 나오므로 **넘치는 이름이 있다.**
+/// 평균으로 잡은 예산을 실제 글자가 초과하면 옆 세션 이름표를 다시 덮는데, 그건 이 변경이
+/// 없애려는 현상 그 자체다. 마지막에 실제 폭으로 한 번 더 눌러 어떤 이름이 와도 자리를 넘지
+/// 않게 한다 — 눌린 글자는 좁아 보이지만, 겹쳐서 둘 다 못 읽는 것보다는 낫다.
+///
+/// 넘치지 않으면 1(원래 크기)이다. 눌림은 예외적인 이름에서만 일어난다.
+public func officeSessionLabelSqueeze(renderedWidth: Double, availableWidth: Double) -> Double {
+    guard renderedWidth > availableWidth, renderedWidth > 0, availableWidth > 0 else {
+        return 1
+    }
+    return availableWidth / renderedWidth
+}
+
 /// 세션이 마지막으로 뭔가 한 뒤 흐른 시간. 활동 기록이 없으면 띄운 시각부터 잰다.
 public func officeSessionQuietSeconds(_ session: ConsoleSession, now: Date) -> Double? {
     let stamp = session.lastActivityAt ?? session.startedAt
@@ -295,19 +326,75 @@ public func officeSessionIsPresent(_ session: ConsoleSession, now: Date) -> Bool
     return quiet < officeSessionLeaveAfterSeconds
 }
 
+/// 세션 이름표에 넣을 수 있는 글자 수.
+///
+/// 글자 수를 상수로 두면 **창이 작을수록 이름표만 겹친다.** 한글 하한(11px) 때문에 글자는
+/// 어느 크기 아래로 줄지 않는데 자리 간격은 창을 따라 계속 좁아지기 때문이다. 실제로 최소
+/// 창에서는 네 세션의 이름표가 공백 없이 이어붙어 한 덩어리로 보였다.
+///
+/// 그래서 상한을 "자리 간격 ÷ 글자 폭" 으로 낸다 — 자리가 좁아지는 만큼 이름이 짧아진다.
+public func officeSessionLabelLimit(tileSize: Double, fontSize: Double) -> Int {
+    let available = tileSize * officeSessionDeskStrideTiles
+    let perGlyph = max(1, fontSize * officeLatinGlyphWidthRatio)
+    return max(officeSessionLabelMinLimit, Int(available / perGlyph))
+}
+
 /// 책상 이름표에 쓸 짧은 이름.
 ///
 /// 세션 이름은 실행 디렉터리에서 오므로 `personal_agents-office-window-light` 처럼 길다.
-/// 자리 간격이 한 칸이라 그대로 쓰면 옆 세션 이름표와 겹쳐 **둘 다** 못 읽는다.
+/// 자리 간격이 두 칸이라 그대로 쓰면 옆 세션 이름표와 겹쳐 **둘 다** 못 읽는다.
 ///
 /// 뒤쪽을 남기는 이유는 앞이 대개 같은 저장소 이름이기 때문이다 — 여러 세션을 가르는 정보는
 /// 뒤(워크트리·브랜치 이름)에 있다.
+///
+/// 다만 글자 수로만 자르면 **단어 중간에서 끊긴다.** `personal-agents-74/-86/-ce` 셋이
+/// `…l-agents-74`·`…l-agents-86`·`…l-agents-ce` 가 되어, 앞 아홉 글자가 같은 채 뒤 두 자로만
+/// 갈리는 이름표 셋이 나란히 선다(실데이터). 그래서 `-`·`_` 경계 중 **예산에 들어오는 가장 긴
+/// 꼬리**를 고른다 — 같은 길이를 써도 남는 조각이 뜻을 유지한다.
+/// 예산은 글자 수가 아니라 **폭 단위**로 센다(`officeLabelWidthUnits`). 세션 이름은 대개
+/// 라틴이지만 실행 디렉터리 이름이 그대로 오므로 한글·이모지가 섞일 수 있다 — 한글은 라틴의
+/// 두 배 가까이 넓어, 글자 수로 세면 여섯 자가 자리 두 칸이 아니라 세 칸을 차지한다.
 public func officeSessionShortName(_ name: String, limit: Int = 12) -> String {
     let trimmed = name.trimmingCharacters(in: .whitespaces)
-    guard trimmed.count > limit, limit > 1 else {
+    guard officeLabelWidthUnits(trimmed) > limit, limit > 1 else {
         return trimmed
     }
-    return "…" + String(trimmed.suffix(limit - 1))
+    // 잘렸음을 알리는 "…" 도 자리를 먹는다. 라틴 한 자로 치면 한글 이름에서 예산을 넘긴다.
+    let budget = limit - officeLabelWidthUnits("…")
+    guard budget > 0 else {
+        return "…"
+    }
+    // 앞에서부터 훑으므로 처음 들어맞는 꼬리가 곧 가장 긴 꼬리다.
+    for index in trimmed.indices where trimmed[index] == "-" || trimmed[index] == "_" {
+        let tail = trimmed[trimmed.index(after: index)...]
+        if !tail.isEmpty, officeLabelWidthUnits(String(tail)) <= budget {
+            return "…" + tail
+        }
+    }
+    // 구분자가 없거나 마지막 조각조차 예산을 넘으면 뒤에서부터 예산만큼 담는다.
+    var tail = ""
+    for character in trimmed.reversed() {
+        let candidate = String(character) + tail
+        guard officeLabelWidthUnits(candidate) <= budget else {
+            break
+        }
+        tail = candidate
+    }
+    return "…" + tail
+}
+
+/// 라벨이 차지하는 폭을 세는 단위. ASCII 는 1, 그 밖(한글·이모지 등)은 2로 센다.
+///
+/// 글자 수만 세면 문자 종류에 따라 실제 폭이 두 배까지 벌어진다. 세션 이름은 실행 디렉터리에서
+/// 오고 그 경로에 한글이 섞일 수 있어(이 저장소 경로에도 한글 디렉터리가 있다), 여섯 자로 자른
+/// 한글 이름이 자리 두 칸이 아니라 세 칸을 차지한다.
+///
+/// 이모지처럼 여러 스칼라로 이뤄진 글자는 실제보다 넓게 세어진다. **과대 계산은 안전한
+/// 방향이다** — 이름이 조금 더 짧아질 뿐, 옆자리를 침범하지 않는다.
+public func officeLabelWidthUnits(_ text: String) -> Int {
+    text.unicodeScalars.reduce(0) { total, scalar in
+        total + (scalar.isASCII ? 1 : 2)
+    }
 }
 
 /// 아직 사무실에 남아 있는 세션만 자리에 앉힌다.

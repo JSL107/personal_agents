@@ -435,7 +435,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     t.expectEqual(officeSessionShortName("idaeri"), "idaeri", "상한 안이면 그대로")
     let fullName = "personal_agents-office-window-light"
     let shortened = officeSessionShortName(fullName)
-    t.expectEqual(shortened.count, 12, "긴 이름은 상한까지 자른다")
+    t.expect(shortened.count <= 12, "긴 이름은 상한 안으로 자른다(실제 \(shortened))")
     t.expect(shortened.hasPrefix("…"), "잘렸음을 표시한다")
     t.expect(fullName.hasSuffix(shortened.dropFirst()), "남긴 부분은 원래 이름의 꼬리")
     // 같은 저장소의 다른 워크트리 둘이 서로 다른 이름표를 받아야 한다 — 앞을 남겼다면
@@ -444,5 +444,85 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         officeSessionShortName("personal_agents-window-light")
             != officeSessionShortName("personal_agents-selection-ring"),
         "같은 저장소의 다른 워크트리가 서로 다른 이름표"
+    )
+
+    // 단어 중간에서 끊지 않는다.
+    //
+    // 글자 수로만 자르면 실제 세션 이름(`personal-agents-74`·`-86`·`-ce`)이 각각
+    // `…l-agents-74`·`…l-agents-86`·`…l-agents-ce` 가 된다 — 앞 아홉 글자가 같고 뒤 두 자로만
+    // 갈리는 이름표 셋이 나란히 서서, 이름표가 있어도 어느 창인지 알 수 없다. 위의 구분성
+    // 단언이 이 구간을 통과시킨 이유는 표본(`-window-light` / `-selection-ring`)이 꼬리부터
+    // 달라서다 — **실제 이름의 구조(공통 접두 + 짧은 꼬리)를 재현하지 못했다.**
+    for name in ["personal-agents-74", "personal-agents-86", "personal-agents-ce"] {
+        let label = officeSessionShortName(name)
+        t.expect(
+            label == "…agents-74" || label == "…agents-86" || label == "…agents-ce",
+            "\(name) 은 구분자 경계에서 잘린다(실제 \(label))"
+        )
+    }
+
+    // 자리 폭이 좁아지면 이름도 짧아진다.
+    //
+    // 상한이 상수(12)면 **창이 작을수록 이름표만 겹친다** — 한글 하한(11px) 때문에 글자는 어느
+    // 크기 밑으로 안 줄어드는데 자리 간격은 창을 따라 계속 좁아지기 때문이다. 실제로 최소 창에서
+    // 네 세션의 이름표가 공백 없이 이어붙어 한 덩어리로 보였다.
+    let wideLimit = officeSessionLabelLimit(tileSize: 61.0, fontSize: 61.0 * 0.24)
+    let narrowLimit = officeSessionLabelLimit(tileSize: 20.6, fontSize: 11.0)
+    t.expect(narrowLimit < wideLimit, "좁은 창의 상한(\(narrowLimit))이 넓은 창(\(wideLimit))보다 작다")
+    t.expect(narrowLimit >= officeSessionLabelMinLimit, "자리 표시가 남을 만큼은 남긴다")
+
+    // 잘린 이름표가 자리 간격을 넘지 않는다 — 넘으면 옆 세션 이름을 덮는다.
+    //
+    // 다만 이 검사가 보는 것은 **1차 추정이 자기 예산 안에 있는가** 까지다. 폭을 상한 계산과
+    // 같은 평균 비율로 되계산하므로, 실제 폰트가 그보다 넓은 경우(대문자가 이어지는 이름)는
+    // 여기서 잡히지 않는다 — 그 몫은 그려 본 폭으로 누르는 `officeSessionLabelSqueeze` 가 맡는다.
+    // 한글이 섞인 이름도 함께 본다. 세션 이름은 실행 디렉터리에서 오므로 경로에 한글이 있으면
+    // 그대로 들어온다 — 글자 수로만 세면 여섯 자가 자리 두 칸이 아니라 세 칸을 차지한다.
+    for tileSize in [20.6, 27.4, 40.0, 61.0, 90.0] {
+        let fontSize = max(11.0, tileSize * 0.24)
+        let limit = officeSessionLabelLimit(tileSize: tileSize, fontSize: fontSize)
+        for name in ["personal-agents-office-window-light", "기타-백엔드-작업방-가나다라마"] {
+            let label = officeSessionShortName(name, limit: limit)
+            let width = Double(officeLabelWidthUnits(label)) * fontSize * officeLatinGlyphWidthRatio
+            t.expect(
+                width <= tileSize * officeSessionDeskStrideTiles,
+                "타일 \(tileSize) · \(label) 폭 \(Int(width))px 이 자리 폭 \(Int(tileSize * 2))px 안"
+            )
+        }
+    }
+
+    // 폭 단위: ASCII 는 한 자에 1, 그 밖은 2.
+    t.expectEqual(officeLabelWidthUnits("abc-12"), 6, "ASCII 는 글자 수 그대로")
+    t.expectEqual(officeLabelWidthUnits("가나"), 4, "한글은 두 배")
+    t.expectEqual(officeLabelWidthUnits("…"), 2, "말줄임표도 자리를 먹는다")
+    // 구분자가 없는 한글 이름도 예산 안에 들어온다(뒤에서부터 폭만큼 담는 폴백).
+    let koreanLabel = officeSessionShortName("가나다라마바사", limit: 6)
+    t.expect(
+        officeLabelWidthUnits(koreanLabel) <= 6,
+        "한글 이름표 \(koreanLabel) 폭 \(officeLabelWidthUnits(koreanLabel)) ≤ 6"
+    )
+    t.expect(koreanLabel.hasPrefix("…"), "한글 이름도 잘렸음을 표시한다")
+
+    // 평균 폭 예산을 넘긴 이름은 그려 본 폭으로 눌러 자리 안에 넣는다.
+    //
+    // 평균은 상한이 아니다. 같은 아홉 글자라도 `WWWWWWWWW` 는 소문자보다 훨씬 넓어, 글자 수만
+    // 맞춘 상한으로는 옆 세션 이름표를 다시 덮는다.
+    let seatWidth = 54.8  // 최소 창(타일 27.4)의 자리 폭
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: seatWidth) == 1,
+        "자리 안에 들어오면 누르지 않는다"
+    )
+    let overflow = 89.0  // 대문자 아홉 자 실측 근사
+    let squeeze = officeSessionLabelSqueeze(renderedWidth: overflow, availableWidth: seatWidth)
+    t.expect(squeeze < 1, "넘치면 눌린다(배율 \(squeeze))")
+    t.expect(overflow * squeeze <= seatWidth + 0.0001, "누른 뒤 폭이 자리 안")
+    // 폭을 못 잰 경우(0)에 0 배율을 돌려주면 이름표가 화면에서 사라진다 — 눌리는 것보다 나쁘다.
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 0, availableWidth: seatWidth) == 1,
+        "그려진 폭이 0 이면 원래 크기"
+    )
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: 0) == 1,
+        "자리 폭이 0 이면 원래 크기"
     )
 }
