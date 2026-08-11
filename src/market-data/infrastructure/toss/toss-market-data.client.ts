@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { DailyBar } from '../../domain/market-data.type';
-import { MarketDataPort } from '../../domain/port/market-data.port';
+import {
+  FetchDailyBarsOptions,
+  MarketDataPort,
+} from '../../domain/port/market-data.port';
 import { YahooFinanceMarketDataClient } from '../yahoo-finance.market-data.client';
 import { TossApiClient } from './toss-api.client';
 import { mapTossCandlesResponse } from './toss-market-data.mapper';
@@ -21,7 +24,11 @@ export class TossMarketDataClient implements MarketDataPort {
     private readonly yahooMarketData: YahooFinanceMarketDataClient,
   ) {}
 
-  async fetchDailyBars(symbol: string, days: number): Promise<DailyBar[]> {
+  async fetchDailyBars(
+    symbol: string,
+    days: number,
+    options?: FetchDailyBarsOptions,
+  ): Promise<DailyBar[]> {
     if (days <= 0) {
       return [];
     }
@@ -36,11 +43,14 @@ export class TossMarketDataClient implements MarketDataPort {
     //
     // 실측(2026-08-06 직접 호출): 월배당 종목 441640 은 adjusted true/false 가 200봉 중 183봉에서
     // 갈리고, 무배당 종목 114800(KODEX 인버스)은 0봉이 갈린다 — 현금배당까지 조정된다는 뜻이다.
+    // 모의투자 장부는 반대로 미조정 실제 가격이 필요해 `options.adjusted=false`로 호출한다(스펙 §5-(1)).
+    // 기본값 `true`는 기존 감시 호출자의 동작을 보존한다.
+    const adjusted = options?.adjusted ?? true;
     const query = new URLSearchParams({
       symbol,
       interval: '1d',
       count: String(count),
-      adjusted: 'true',
+      adjusted: String(adjusted),
     });
     const response = await this.tossApi.requestJson(
       '일봉 조회',
