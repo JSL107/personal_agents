@@ -54,6 +54,15 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     exit(succeeded ? 0 : 1)
 }
 
+// Dock 아이콘. `.app` 번들 없이 SwiftPM 실행 파일로 뜨는 구조라 macOS 가 아이콘을 찾을
+// 곳이 없어 기본 실행파일 아이콘(검은 `exec`)이 붙는다. 번들을 만드는 대신 뜰 때 한 번
+// 직접 물린다 — 번들 리소스라 개발 실행·배포 경로가 같다.
+if let iconURL = Bundle.module.url(forResource: "appicon", withExtension: "png"),
+    let icon = NSImage(contentsOf: iconURL)
+{
+    application.applicationIconImage = icon
+}
+
 let window = NSWindow(
     contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
     styleMask: [.titled, .closable, .miniaturizable, .resizable],
