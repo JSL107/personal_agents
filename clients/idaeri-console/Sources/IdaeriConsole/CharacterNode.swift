@@ -237,7 +237,11 @@ final class CharacterNode: SKNode {
                 + currentTileSize * CGFloat(officeNameplateGapTiles)
         )
         fitNameplateToSeat()
-        let box = nameLabel.frame.insetBy(dx: -3, dy: -1)
+        // 판 여백은 Core 가 배치 계산에 쓰는 값과 같아야 한다 — 여기만 넓히면 판이 자리 몫을
+        // 그만큼 넘는다(배율은 글자에만 걸리므로 이 여백은 눌리지 않는다).
+        let box = nameLabel.frame.insetBy(
+            dx: -CGFloat(officeNameplatePlatePadding) / 2, dy: -1
+        )
         namePlate.path = CGPath(
             roundedRect: box, cornerWidth: 2, cornerHeight: 2, transform: nil
         )
@@ -257,24 +261,15 @@ final class CharacterNode: SKNode {
             return
         }
         // 이웃과의 여백은 몫을 계산할 때 이미 빠져 있다(`officeNameplateSpanTiles`).
-        let left = CGFloat(span.left) * currentTileSize
-        let right = CGFloat(span.right) * currentTileSize
-        // 몫이 남지 않는 극단(자리 간격보다 여백이 큰 경우)에서는 손대지 않는다. 그대로
-        // 밀면 판이 좌석 중심 왼쪽으로 통째로 빠져, 이름이 남의 자리 위에 가 붙는다.
-        guard left + right > 0 else {
-            return
-        }
-        // 글자가 아니라 **판** 을 기준으로 잰다. 판은 좌우로 3px 씩 넓어(`insetBy(dx: -3)`),
-        // 글자 폭만 맞추면 그 몫이 그대로 옆자리로 넘어간다.
-        let plateWidth = nameLabel.frame.width + 6
-        let squeeze = CGFloat(
-            officeLabelSqueeze(
-                renderedWidth: Double(plateWidth), availableWidth: Double(left + right)
-            )
+        // 배율·이동량 산술은 Core 가 갖는다 — 판 여백은 눌리지 않는다는 규칙까지 포함해서
+        // 회귀 테스트가 실제 글꼴 폭으로 검산할 수 있어야 하기 때문이다.
+        let layout = officeNameplateLayout(
+            glyphWidth: Double(nameLabel.frame.width),
+            spanLeft: span.left * Double(currentTileSize),
+            spanRight: span.right * Double(currentTileSize)
         )
-        nameLabel.xScale = squeeze
-        let half = plateWidth * squeeze / 2
-        nameLabel.position.x = min(max(0, half - left), right - half)
+        nameLabel.xScale = CGFloat(layout.scaleX)
+        nameLabel.position.x = CGFloat(layout.offsetX)
     }
 
     /// 방향을 바꾼다. 앉아 있는 동안은 앉은 자세를 유지한다.

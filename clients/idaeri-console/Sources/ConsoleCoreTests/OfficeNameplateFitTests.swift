@@ -3,18 +3,16 @@ import Foundation
 
 @testable import ConsoleCore
 
-/// 이름표 판을 **실제 글꼴로 그려 본** 폭(px).
+/// 이름표 글자 상자를 **실제 글꼴로 그려 본** 폭(px). 판 여백은 포함하지 않는다.
 ///
 /// 상수로 되계산하지 않는 이유는 그게 자기 확인이기 때문이다 — 폭 상한을 만든 계산을 테스트가
 /// 같은 상수로 다시 세면, 무엇을 바꿔도 양쪽이 함께 움직여 늘 통과한다(직전 작업에서 실제로
 /// 그렇게 통과시켰다). 이름표가 자리에 들어가는지는 글꼴이 정하므로, 앱과 같은 글꼴·같은
 /// 크기로 실제 문자열을 재서 판정한다.
-private func nameplatePlateWidth(_ text: String, tileSize: Double) -> Double {
+private func nameplateGlyphWidth(_ text: String, tileSize: Double) -> Double {
     let size = officeNameplateFontSize(tileSize: tileSize)
     let font = NSFont(name: officeLabelFontName, size: size) ?? .boldSystemFont(ofSize: size)
-    let drawn = NSAttributedString(string: text, attributes: [.font: font]).size().width
-    // 판은 글자 상자에서 좌우로 3px 씩 넓다(`CharacterNode.layoutNameplate` 의 insetBy).
-    return Double(drawn) + 6
+    return Double(NSAttributedString(string: text, attributes: [.font: font]).size().width)
 }
 
 /// 눌러 넣기의 하한. 이 밑으로 누르면 한글 획이 붙어 이름을 못 읽는다.
@@ -73,14 +71,38 @@ func runOfficeNameplateFitTests(_ t: TestRunner) {
                 // 그래서 읽히는 몇 개만 남기고 솎아 낸다(`nameplateIsVisible`). 거기까지 하한을
                 // 걸면 못 고칠 한계를 붙잡고 빨간불이 켜져 있게 된다.
                 let label = agentRoleLabel(for: desk.agentType) ?? desk.agentType
-                let squeeze = officeLabelSqueeze(
-                    renderedWidth: nameplatePlateWidth(label, tileSize: tileSize),
-                    availableWidth: (span.left + span.right) * tileSize
+                let glyphWidth = nameplateGlyphWidth(label, tileSize: tileSize)
+                let spanLeftPixels = span.left * tileSize
+                let spanRightPixels = span.right * tileSize
+                let layout = officeNameplateLayout(
+                    glyphWidth: glyphWidth,
+                    spanLeft: spanLeftPixels,
+                    spanRight: spanRightPixels
+                )
+
+                // **눌러 넣은 뒤의 판**이 몫 안에 들어가는가.
+                //
+                // 배율은 글자에만 걸리고 판 여백(`officeNameplatePlatePadding`)은 눌리지
+                // 않는다. 판 전체가 함께 눌린다고 보고 계산하면 실제 판이 `여백 × (1 - 배율)`
+                // 만큼 몫을 넘는데, 그 크기가 3px 남짓이라 렌더를 눈으로 봐서는 못 잡는다 —
+                // 벽·문 경계와 이웃 사이 6px 가 조용히 깎인다.
+                let plateHalf =
+                    (glyphWidth * layout.scaleX + officeNameplatePlatePadding) / 2
+                t.expect(
+                    layout.offsetX - plateHalf >= -spanLeftPixels - 1e-6
+                        && layout.offsetX + plateHalf <= spanRightPixels + 1e-6,
+                    "타일 \(tileSize) · \(room) x=\(desk.seat.x) `\(label)` 판"
+                        + "(\(String(format: "%.1f", layout.offsetX - plateHalf))~"
+                        + "\(String(format: "%.1f", layout.offsetX + plateHalf)))이 몫"
+                        + "(-\(String(format: "%.1f", spanLeftPixels))~"
+                        + "\(String(format: "%.1f", spanRightPixels)))을 넘음"
                 )
                 t.expect(
-                    tileSize < officeNameplateCrowdedTileSize || squeeze >= nameplateMinSqueeze,
+                    tileSize < officeNameplateCrowdedTileSize
+                        || layout.scaleX >= nameplateMinSqueeze,
                     "타일 \(tileSize) · \(room) x=\(desk.seat.x) `\(label)` 가"
-                        + " \(String(format: "%.2f", squeeze)) 로 눌림 (하한 \(nameplateMinSqueeze))"
+                        + " \(String(format: "%.2f", layout.scaleX)) 로 눌림"
+                        + " (하한 \(nameplateMinSqueeze))"
                 )
             }
 

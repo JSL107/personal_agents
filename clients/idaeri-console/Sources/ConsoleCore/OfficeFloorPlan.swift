@@ -253,6 +253,37 @@ public func officeNameplateFontSize(tileSize: Double) -> Double {
     max(officeNameplateMinFontSizeValue, tileSize * officeNameplateFontTiles)
 }
 
+/// 이름표 판이 글자 상자 밖으로 넓어지는 폭(px). 판을 좌우로 3px 씩 벌리므로 그 합이다.
+public let officeNameplatePlatePadding: Double = 6
+
+/// 이름표를 자리 몫에 맞추는 가로 배율과 중심 이동량(px). 몫은 좌석 중심 기준 좌우 여유다.
+///
+/// **패딩은 눌리지 않는다.** 배율은 글자에만 걸리고 판의 좌우 여백은 그대로 남으므로, 판
+/// 전체가 눌린다고 보고 계산하면 실제 판이 몫을 `패딩 × (1 - 배율)` 만큼 넘는다. 절반쯤
+/// 눌리는 좁은 자리에서는 3px 가까이 새는 셈이라, 지켜 낸 벽·문 경계와 이웃 사이 6px 를
+/// 그만큼 도로 깎아먹는다. 그래서 몫에서 패딩을 먼저 떼고 남은 폭에 글자를 맞춘다.
+///
+/// 이 산술을 렌더 노드가 아니라 여기 두는 이유는 회귀 테스트가 닿게 하기 위해서다 — 노드
+/// 안에 있으면 실제 글꼴로 그려 본 폭으로 검산할 방법이 없다.
+public func officeNameplateLayout(
+    glyphWidth: Double,
+    spanLeft: Double,
+    spanRight: Double
+) -> (scaleX: Double, offsetX: Double) {
+    let available = spanLeft + spanRight
+    // 패딩조차 못 담는 몫에서는 손대지 않는다. 밀어 봐야 판이 좌석 중심에서 통째로 빠져
+    // 이름이 남의 자리 위에 가 붙는다.
+    guard available > officeNameplatePlatePadding, glyphWidth > 0 else {
+        return (scaleX: 1, offsetX: 0)
+    }
+    let scaleX = officeLabelSqueeze(
+        renderedWidth: glyphWidth,
+        availableWidth: available - officeNameplatePlatePadding
+    )
+    let half = (glyphWidth * scaleX + officeNameplatePlatePadding) / 2
+    return (scaleX: scaleX, offsetX: min(max(0, half - spanLeft), spanRight - half))
+}
+
 /// 이 칸이 그 구역 안에 있는가.
 public func officeZoneContains(_ zone: DepartmentZone, _ tile: TilePoint) -> Bool {
     tile.x >= zone.origin.x && tile.x < zone.origin.x + zone.width
