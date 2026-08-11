@@ -52,6 +52,13 @@ const CODEX_RESET_HINT_MAX = 80;
 const CODEX_QUOTA_SCAN_BUFFER_LIMIT = 2000;
 const QUOTA_BLOCK_FALLBACK_MS = 30 * 60 * 1000;
 const QUOTA_BLOCK_MAX_MS = 24 * 60 * 60 * 1000;
+const RELATIVE_RESET_HINT_REGEX = /^(\d+)\s*(second|minute|hour|day)s?$/i;
+const RELATIVE_RESET_UNIT_MS = {
+  second: 1000,
+  minute: 60 * 1000,
+  hour: 60 * 60 * 1000,
+  day: 24 * 60 * 60 * 1000,
+} as const;
 const TIME_ONLY_RESET_HINT_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 
 export type CodexQuotaDetection = {
@@ -72,10 +79,19 @@ export const computeQuotaBlockUntilMs = (
     return fallbackUntilMs;
   }
 
+  const relativeTimeMatch = normalizedResetHint.match(
+    RELATIVE_RESET_HINT_REGEX,
+  );
   const timeOnlyMatch = normalizedResetHint.match(TIME_ONLY_RESET_HINT_REGEX);
   let parsedResetMs: number;
 
-  if (timeOnlyMatch) {
+  if (relativeTimeMatch) {
+    const quantity = Number(relativeTimeMatch[1]);
+    const unit =
+      relativeTimeMatch[2].toLowerCase() as keyof typeof RELATIVE_RESET_UNIT_MS;
+    const unitMs = RELATIVE_RESET_UNIT_MS[unit];
+    parsedResetMs = nowMs + quantity * unitMs;
+  } else if (timeOnlyMatch) {
     const hour = Number(timeOnlyMatch[1]);
     const minute = Number(timeOnlyMatch[2]);
     if (hour < 1 || hour > 12 || minute > 59) {
@@ -327,7 +343,6 @@ export class CodexCliProvider implements ModelProviderPort {
         );
       }
 
-      this.clearQuotaBlock();
       return {
         text,
         modelUsed: 'codex-cli',

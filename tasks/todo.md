@@ -1,3 +1,26 @@
+# PR quota backoff 리뷰 반영 (2026-08-11)
+
+**Goal:** 늦게 끝난 성공 호출이 더 최신 quota 차단을 해제하지 못하게 하고, codex 상대 reset hint를 실제 기간으로 해석한다.
+
+**Constraints:** production/spec 두 파일만 코드 수정한다. 기존 spawn `1 → 1 → 2` 대조군을 유지한다. 최종 결과만 `.ai/implementation-summary.md`에 덧붙인다. commit 금지.
+
+- [x] 현재 성공 경로 state mutation과 quota 테스트 패턴을 확인한다.
+- [x] 상대 시간 3개와 동시성 레이스 회귀 spec을 추가해 RED를 확인한다.
+- [x] 상대 시간 파싱과 성공 경로 `clearQuotaBlock()` 제거를 최소 구현한다.
+- [x] focused spec GREEN을 확인한다.
+- [x] 성공 경로 clear를 임시 복원해 동시성 spec이 실패하는 역변이 검증 후 원복한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`을 각각 실행한다.
+- [x] final diff를 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 성공 경로의 quota clear를 제거해 더 최신 quota 감지가 stale success에 의해 지워지지 않게 했다. 만료 경로의 clear는 유지했다.
+- `second`/`minute`/`hour`/`day` 상대 hint를 현재 시각 기준으로 계산하고 기존 24시간 clamp를 적용한다. `0 seconds`도 즉시 만료로 고정했다.
+- TDD RED는 상대 시간 3건이 30분 fallback을 받고 레이스 후 spawn이 3회로 늘어나는 4 failures를 확인했다. 역변이도 `Expected 2 / Received 3`으로 실패했다.
+- focused 44/44, 최종 lint/test/build/tsc 모두 exit 0. 독립 review Critical/Important/Minor 0건.
+
+---
+
 # PR #262 리뷰 반영 (2026-08-10)
 
 **Goal:** 전달 산출물이 없고 실패가 있는 그룹의 BullMQ 재시도를 보존하고, BullMQ가 허용하는 6필드 cron도 저빈도 정책으로 정확히 분류한다.
