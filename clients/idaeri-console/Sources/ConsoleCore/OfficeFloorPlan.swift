@@ -236,9 +236,79 @@ public let officeZoneLabelGapTiles: Double = 0.35
 /// 칸이 아니라 픽셀이 정한다.
 public let officeLabelSeparationMinPixels: Double = 6
 
+/// 오피스 씬의 모든 한글 라벨(이름표·부서 문패·말풍선·대표 표시)이 쓰는 폰트.
+///
+/// 예전에는 `Menlo` 를 썼는데 이 폰트에 한글 글리프가 없다. 시스템이 대체 폰트로 넘어가고
+/// 그 결과가 힌팅 없이 텍스처로 구워져, 9~10px 한글은 획 사이가 1픽셀도 안 나와 서로 붙었다.
+/// 굵은 고딕이라 작은 크기에서 획이 버틴다. 폰트 이름을 씬·노드에 흩뿌리면 픽셀 한글 폰트
+/// 에셋이 들어올 때 교체가 누락되므로 여기 한 곳에 둔다.
+///
+/// **앱이 아니라 여기 있는 이유는 회귀 테스트다.** 이름표가 자리에 들어가는지는 글자를
+/// 실제로 그려 봐야 알 수 있는데(폭은 글꼴이 정한다), 폰트 이름이 앱 타깃에만 있으면
+/// 테스트가 같은 글꼴로 잴 수 없어 상수로 되계산하는 자기 확인이 된다.
+public let officeLabelFontName = "AppleSDGothicNeo-Bold"
+
 /// 이름표 글자 크기(px). 타일에 비례하되 한글 하한이 걸린다.
 public func officeNameplateFontSize(tileSize: Double) -> Double {
     max(officeNameplateMinFontSizeValue, tileSize * officeNameplateFontTiles)
+}
+
+/// 이 칸이 그 구역 안에 있는가.
+public func officeZoneContains(_ zone: DepartmentZone, _ tile: TilePoint) -> Bool {
+    tile.x >= zone.origin.x && tile.x < zone.origin.x + zone.width
+        && tile.y >= zone.origin.y && tile.y < zone.origin.y + zone.height
+}
+
+/// 좌석 이름표가 좌우로 쓸 수 있는 여유(칸). 좌석 중심(`x + 0.5`) 에서 왼쪽·오른쪽 각각.
+///
+/// 이름표는 캐릭터 노드의 자식이라 늘 좌석 중앙에 놓이는데, 폭은 이름 길이와 창 크기가
+/// 정한다. 자리보다 넓어지면 갈 곳이 없어 두 방향으로 샌다 — **옆자리 이름표를 덮거나**
+/// (`모순 판정│문서 평가│문서 개선│회고 발행│윤문` 다섯 판이 맞닿았다) **방 벽과 문 위로
+/// 넘어간다**(`답변 판정`·`윤문` 은 오른쪽 벽 바로 옆 자리다).
+///
+/// 좌우 이웃과는 중간선까지, 이웃이 없으면 방 안쪽 벽까지를 자기 몫으로 준다. 이웃도 같은
+/// 규칙을 쓰므로 두 이름표의 몫은 중간선에서 만나고 서로를 넘지 않는다 — 자리 간격이나
+/// 이름 길이가 바뀌어도 이 성질은 유지된다.
+///
+/// **문 열도 경계다.** 천장에 낸 문(`officeZoneDoorColumn`)은 그림이 있는 칸이라, 판이 그
+/// 위로 밀려 올라가면 문짝 무늬와 글자가 겹쳐 둘 다 안 읽힌다 — 벽 침범만 막았을 때 벽 옆
+/// 자리(`답변 판정`)가 왼쪽으로 밀리면서 정확히 그렇게 됐다.
+///
+/// **자리 간격(`departmentDeskSpots` 의 2칸)으로는 못 푼다.** 한글 글자 크기에 하한(11px)이
+/// 있어 창이 작아지면 타일 대비 이름표가 커지는데, 자리 간격은 창을 따라 같이 좁아지기
+/// 때문이다. 넘치는 몫은 배치가 아니라 이름표 쪽에서 눌러 흡수한다(`officeLabelSqueeze`).
+///
+/// 이웃 쪽 경계에서만 여백(`officeLabelSeparationMinPixels` 의 절반씩)을 물러난다. 판 둘이
+/// 맞닿으면 한 덩어리로 읽히기 때문인데, 벽과 문은 라벨이 아니라 그럴 일이 없다 — 거기까지
+/// 물러나면 가뜩이나 좁은 벽 옆 자리를 이유 없이 더 누르게 된다.
+public func officeNameplateSpanTiles(
+    seat: TilePoint,
+    seatsInZone: [TilePoint],
+    zone: DepartmentZone,
+    tileSize: Double
+) -> (left: Double, right: Double) {
+    let center = Double(seat.x) + 0.5
+    // 방 안쪽 — 원점 칸과 마지막 칸은 좌우 벽이다.
+    var left = Double(zone.origin.x + 1)
+    var right = Double(zone.origin.x + zone.width - 1)
+
+    let door = Double(zone.origin.x + officeZoneDoorColumn)
+    if center > door + 1 {
+        left = max(left, door + 1)
+    }
+    if center < door {
+        right = min(right, door)
+    }
+
+    let neighborGap = officeLabelSeparationMinPixels / 2 / max(tileSize, 1)
+    let sameRow = seatsInZone.filter { $0.y == seat.y && $0.x != seat.x }
+    if let nearest = sameRow.filter({ $0.x < seat.x }).map(\.x).max() {
+        left = max(left, (Double(nearest) + 0.5 + center) / 2 + neighborGap)
+    }
+    if let nearest = sameRow.filter({ $0.x > seat.x }).map(\.x).min() {
+        right = min(right, (Double(nearest) + 0.5 + center) / 2 - neighborGap)
+    }
+    return (left: max(0, center - left), right: max(0, right - center))
 }
 
 /// 좌석에 앉은 사람의 이름표 위끝이 격자에서 몇 칸 높이에 오는가.
@@ -274,10 +344,7 @@ public func officeZoneLabelBottomTiles(
 public func officeTopSeatY(zone: DepartmentZone, desks: [DeskAssignment]) -> Int? {
     desks
         .map(\.seat)
-        .filter { seat in
-            seat.x >= zone.origin.x && seat.x < zone.origin.x + zone.width
-                && seat.y >= zone.origin.y && seat.y < zone.origin.y + zone.height
-        }
+        .filter { officeZoneContains(zone, $0) }
         .map(\.y)
         .max()
 }
