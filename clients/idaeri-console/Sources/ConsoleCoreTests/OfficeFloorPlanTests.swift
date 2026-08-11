@@ -595,6 +595,18 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
                 labelBottom >= nameplateTop + officeZoneLabelGapTiles - 0.0001,
                 "타일 \(tileSize) · \(zone.department.label) 문패 아래끝(\(labelBottom))이 이름표 위끝(\(nameplateTop)) 위"
             )
+            // 간격을 **픽셀로도** 잰다.
+            //
+            // 위 단언은 두 값의 대소만 보므로 간격이 3픽셀이어도 통과한다. 실제로 0.14칸이던
+            // 동안 최소 창에서 문패 판과 이름표 판이 맞닿아, 여섯 부서 전부에서 구역 가운데
+            // 좌석(`커리어`·`문서 개선`·`성과 분석`·`스키마`·`PO 평가`·`CTO`)의 이름이 검은
+            // 뭉치에 묻혔다 — 화면에서 떨어져 보이는지는 칸이 아니라 픽셀이 정한다.
+            let gapPixels = (labelBottom - nameplateTop) * tileSize
+            t.expect(
+                gapPixels >= officeLabelSeparationMinPixels,
+                "타일 \(tileSize) · \(zone.department.label) 판 사이 \(Int(gapPixels))px"
+                    + " ≥ \(Int(officeLabelSeparationMinPixels))px"
+            )
         }
     }
 

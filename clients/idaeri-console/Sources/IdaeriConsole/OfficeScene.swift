@@ -764,6 +764,16 @@ final class OfficeScene: SKScene {
         crown.position = CGPoint(x: 0, y: node.size.height + 2)
         crown.zPosition = 1
         node.addChild(crown)
+
+        // 판 — 사무실에서 이 라벨만 맨 글자였다. 하필 놓이는 자리가 **밝은 창문 정면**이라
+        // 흰 글자가 유리에 묻혀 반쯤 읽히지 않는다. 다른 라벨(부서 문패·공용실·이름표)은 전부
+        // 어두운 판 위에 얹혀 있으므로 같은 방식을 따른다.
+        let plate = SKShapeNode(rect: crown.frame.insetBy(dx: -5, dy: -3), cornerRadius: 3)
+        plate.fillColor = SKColor(white: 0.07, alpha: 0.72)
+        plate.strokeColor = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 0.55)
+        plate.lineWidth = 1
+        plate.zPosition = 0.9  // 글자(1) 바로 뒤
+        node.addChild(plate)
     }
 
     // MARK: - 걸음
@@ -1165,11 +1175,21 @@ final class OfficeScene: SKScene {
             )
             node.addChild(screen)
         }
+        // 이름 길이는 **실제 적용될 글자 크기**로 정한다. `setChildLabel` 이 한글 하한(11px)을
+        // 걸기 때문에, 요청 크기(tileSize × 0.24)로 계산하면 작은 창에서 글자가 하한만큼 커진
+        // 몫을 놓쳐 이름표가 다시 옆자리를 침범한다.
+        let sessionFontSize = max(officeNameplateMinFontSize, tileSize * 0.24)
         setChildLabel(
-            node, name: "sessionName", text: officeSessionShortName(session.name),
+            node, name: "sessionName",
+            text: officeSessionShortName(
+                session.name,
+                limit: officeSessionLabelLimit(
+                    tileSize: Double(tileSize), fontSize: Double(sessionFontSize)
+                )
+            ),
             // 책상 아래. 위는 바깥벽이고 그 높이에 대표 이름표가 있어 겹친다.
             position: CGPoint(x: 0, y: -tileSize * 0.24),
-            fontSize: tileSize * 0.24,
+            fontSize: sessionFontSize,
             color: SKColor(white: isActive ? 0.95 : 0.60, alpha: 1)
         )
     }
@@ -1642,8 +1662,10 @@ final class OfficeScene: SKScene {
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
         let summary = companySummary(agents: agents)
+        // "대기" 는 밀린 일감처럼 읽힌다 — 이대리에 대기 큐는 없고, 이 숫자는 **지금 맡은 일이
+        // 없는 사람 수**(29명 중 27명이 예사)다. 적체로 오해하면 화면이 늘 비상처럼 보인다.
         var text =
-            "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  대기 \(summary.waiting)"
+            "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  쉬는 중 \(summary.waiting)"
         if !lastSyncedSessions.isEmpty {
             // 대표 앞줄에 설 수 있는 세션은 여덟 남짓이라, 그 수가 곧 전체라고 오해하지 않게
             // 총계를 여기 적는다.

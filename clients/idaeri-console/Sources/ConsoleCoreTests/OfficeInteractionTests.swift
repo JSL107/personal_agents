@@ -435,7 +435,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     t.expectEqual(officeSessionShortName("idaeri"), "idaeri", "상한 안이면 그대로")
     let fullName = "personal_agents-office-window-light"
     let shortened = officeSessionShortName(fullName)
-    t.expectEqual(shortened.count, 12, "긴 이름은 상한까지 자른다")
+    t.expect(shortened.count <= 12, "긴 이름은 상한 안으로 자른다(실제 \(shortened))")
     t.expect(shortened.hasPrefix("…"), "잘렸음을 표시한다")
     t.expect(fullName.hasSuffix(shortened.dropFirst()), "남긴 부분은 원래 이름의 꼬리")
     // 같은 저장소의 다른 워크트리 둘이 서로 다른 이름표를 받아야 한다 — 앞을 남겼다면
@@ -445,4 +445,41 @@ func runOfficeInteractionTests(_ t: TestRunner) {
             != officeSessionShortName("personal_agents-selection-ring"),
         "같은 저장소의 다른 워크트리가 서로 다른 이름표"
     )
+
+    // 단어 중간에서 끊지 않는다.
+    //
+    // 글자 수로만 자르면 실제 세션 이름(`personal-agents-74`·`-86`·`-ce`)이 각각
+    // `…l-agents-74`·`…l-agents-86`·`…l-agents-ce` 가 된다 — 앞 아홉 글자가 같고 뒤 두 자로만
+    // 갈리는 이름표 셋이 나란히 서서, 이름표가 있어도 어느 창인지 알 수 없다. 위의 구분성
+    // 단언이 이 구간을 통과시킨 이유는 표본(`-window-light` / `-selection-ring`)이 꼬리부터
+    // 달라서다 — **실제 이름의 구조(공통 접두 + 짧은 꼬리)를 재현하지 못했다.**
+    for name in ["personal-agents-74", "personal-agents-86", "personal-agents-ce"] {
+        let label = officeSessionShortName(name)
+        t.expect(
+            label == "…agents-74" || label == "…agents-86" || label == "…agents-ce",
+            "\(name) 은 구분자 경계에서 잘린다(실제 \(label))"
+        )
+    }
+
+    // 자리 폭이 좁아지면 이름도 짧아진다.
+    //
+    // 상한이 상수(12)면 **창이 작을수록 이름표만 겹친다** — 한글 하한(11px) 때문에 글자는 어느
+    // 크기 밑으로 안 줄어드는데 자리 간격은 창을 따라 계속 좁아지기 때문이다. 실제로 최소 창에서
+    // 네 세션의 이름표가 공백 없이 이어붙어 한 덩어리로 보였다.
+    let wideLimit = officeSessionLabelLimit(tileSize: 61.0, fontSize: 61.0 * 0.24)
+    let narrowLimit = officeSessionLabelLimit(tileSize: 20.6, fontSize: 11.0)
+    t.expect(narrowLimit < wideLimit, "좁은 창의 상한(\(narrowLimit))이 넓은 창(\(wideLimit))보다 작다")
+    t.expect(narrowLimit >= officeSessionLabelMinLimit, "자리 표시가 남을 만큼은 남긴다")
+
+    // 잘린 이름표가 자리 간격을 넘지 않는다 — 넘으면 옆 세션 이름을 덮는다.
+    for tileSize in [20.6, 27.4, 40.0, 61.0, 90.0] {
+        let fontSize = max(11.0, tileSize * 0.24)
+        let limit = officeSessionLabelLimit(tileSize: tileSize, fontSize: fontSize)
+        let label = officeSessionShortName("personal-agents-office-window-light", limit: limit)
+        let width = Double(label.count) * fontSize * officeLatinGlyphWidthRatio
+        t.expect(
+            width <= tileSize * officeSessionDeskStrideTiles,
+            "타일 \(tileSize) · 이름표 폭 \(Int(width))px 이 자리 폭 \(Int(tileSize * 2))px 안"
+        )
+    }
 }
