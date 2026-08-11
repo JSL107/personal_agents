@@ -269,6 +269,22 @@ describe('computeQuotaBlockUntilMs', () => {
     },
   );
 
+  it.each([
+    ['0 seconds', 0],
+    ['10 seconds', 10_000],
+    ['2 hours', 7_200_000],
+  ])('상대 시간 %s 을 현재 시각 기준으로 계산한다', (resetHint, offsetMs) => {
+    const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs(resetHint, nowMs)).toBe(nowMs + offsetMs);
+  });
+
+  it('24시간보다 긴 상대 시간은 24시간 상한으로 clamp 한다', () => {
+    const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
+
+    expect(computeQuotaBlockUntilMs('3 days', nowMs)).toBe(nowMs + maximumMs);
+  });
+
   it('파싱한 절대 시각이 과거이면 30분 fallback 을 반환한다', () => {
     const nowMs = new Date(2026, 7, 8, 12, 0, 0).getTime();
 
@@ -353,6 +369,63 @@ describe('CodexCliProvider quota block', () => {
 
     await expect(provider.probeReadiness()).resolves.toBe(false);
     expect(spawnCodexSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('먼저 시작한 성공 호출이 뒤에서 설정된 quota 차단을 해제하지 않는다', async () => {
+    const provider = new CodexCliProvider();
+    const providerWithPrivateMethods =
+      provider as unknown as ProviderWithSpawnCodex;
+    jest.spyOn(Date, 'now').mockReturnValue(beforeResetMs);
+
+    let spawnCallCount = 0;
+    let finishSuccessfulSpawn: (() => Promise<void>) | undefined;
+    let markSuccessfulSpawnStarted: (() => void) | undefined;
+    const successfulSpawnStarted = new Promise<void>((resolve) => {
+      markSuccessfulSpawnStarted = resolve;
+    });
+    const spawnCodexSpy = jest
+      .spyOn(providerWithPrivateMethods, 'spawnCodex')
+      .mockImplementation(async ({ args }) => {
+        spawnCallCount += 1;
+        const outputFile = args[args.indexOf('-o') + 1];
+
+        if (spawnCallCount === 1) {
+          return await new Promise((resolve) => {
+            finishSuccessfulSpawn = async () => {
+              await writeFile(outputFile, 'world');
+              resolve({ quotaDetection: { exhausted: false } });
+            };
+            markSuccessfulSpawnStarted?.();
+          });
+        }
+
+        await writeFile(outputFile, '');
+        return {
+          quotaDetection: {
+            exhausted: true,
+            resetHint,
+          },
+        };
+      });
+
+    const successfulCall = providerWithPrivateMethods.completeOnce(request);
+    await successfulSpawnStarted;
+
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toBeInstanceOf(CodexQuotaExceededException);
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(2);
+
+    if (!finishSuccessfulSpawn) {
+      throw new Error('성공 spawn 완료 함수가 설정되지 않았습니다.');
+    }
+    await finishSuccessfulSpawn();
+    await expect(successfulCall).resolves.toEqual(response);
+
+    await expect(
+      providerWithPrivateMethods.completeOnce(request),
+    ).rejects.toBeInstanceOf(CodexQuotaExceededException);
+    expect(spawnCodexSpy).toHaveBeenCalledTimes(2);
   });
 });
 
