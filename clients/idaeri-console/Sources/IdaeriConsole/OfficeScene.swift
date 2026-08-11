@@ -1192,6 +1192,22 @@ final class OfficeScene: SKScene {
             fontSize: sessionFontSize,
             color: SKColor(white: isActive ? 0.95 : 0.60, alpha: 1)
         )
+        // 글자 수 상한은 **평균** 글자 폭에서 나오므로 넘치는 이름이 있다(대문자가 이어지는
+        // 디렉터리명). 마지막에 그려 본 폭으로 한 번 더 눌러, 어떤 이름이 와도 옆자리를 침범하지
+        // 않게 한다.
+        //
+        // 재기 전에 배율을 1 로 되돌린다. 지금은 `setChildLabel` 이 라벨을 매번 새로 만들어
+        // 늘 1 이지만, 재사용 방식으로 바뀌면 이미 눌려 좁아진 폭을 재게 되어 스냅샷마다 조금씩
+        // 더 눌린다 — 한 줄로 그 회귀를 막는다.
+        if let label = node.childNode(withName: "sessionName") {
+            label.xScale = 1
+            label.xScale = CGFloat(
+                officeSessionLabelSqueeze(
+                    renderedWidth: Double(label.calculateAccumulatedFrame().width),
+                    availableWidth: Double(tileSize) * officeSessionDeskStrideTiles
+                )
+            )
+        }
     }
 
     /// 회의 — 체인에 얽힌 사람들이 회의실 테이블에 모였다가 각자 자리로 흩어진다.

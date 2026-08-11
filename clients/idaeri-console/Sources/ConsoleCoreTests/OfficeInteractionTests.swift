@@ -472,6 +472,10 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     t.expect(narrowLimit >= officeSessionLabelMinLimit, "자리 표시가 남을 만큼은 남긴다")
 
     // 잘린 이름표가 자리 간격을 넘지 않는다 — 넘으면 옆 세션 이름을 덮는다.
+    //
+    // 다만 이 검사가 보는 것은 **1차 추정이 자기 예산 안에 있는가** 까지다. 폭을 상한 계산과
+    // 같은 평균 비율로 되계산하므로, 실제 폰트가 그보다 넓은 경우(대문자가 이어지는 이름)는
+    // 여기서 잡히지 않는다 — 그 몫은 그려 본 폭으로 누르는 `officeSessionLabelSqueeze` 가 맡는다.
     for tileSize in [20.6, 27.4, 40.0, 61.0, 90.0] {
         let fontSize = max(11.0, tileSize * 0.24)
         let limit = officeSessionLabelLimit(tileSize: tileSize, fontSize: fontSize)
@@ -482,4 +486,27 @@ func runOfficeInteractionTests(_ t: TestRunner) {
             "타일 \(tileSize) · 이름표 폭 \(Int(width))px 이 자리 폭 \(Int(tileSize * 2))px 안"
         )
     }
+
+    // 평균 폭 예산을 넘긴 이름은 그려 본 폭으로 눌러 자리 안에 넣는다.
+    //
+    // 평균은 상한이 아니다. 같은 아홉 글자라도 `WWWWWWWWW` 는 소문자보다 훨씬 넓어, 글자 수만
+    // 맞춘 상한으로는 옆 세션 이름표를 다시 덮는다.
+    let seatWidth = 54.8  // 최소 창(타일 27.4)의 자리 폭
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: seatWidth) == 1,
+        "자리 안에 들어오면 누르지 않는다"
+    )
+    let overflow = 89.0  // 대문자 아홉 자 실측 근사
+    let squeeze = officeSessionLabelSqueeze(renderedWidth: overflow, availableWidth: seatWidth)
+    t.expect(squeeze < 1, "넘치면 눌린다(배율 \(squeeze))")
+    t.expect(overflow * squeeze <= seatWidth + 0.0001, "누른 뒤 폭이 자리 안")
+    // 폭을 못 잰 경우(0)에 0 배율을 돌려주면 이름표가 화면에서 사라진다 — 눌리는 것보다 나쁘다.
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 0, availableWidth: seatWidth) == 1,
+        "그려진 폭이 0 이면 원래 크기"
+    )
+    t.expect(
+        officeSessionLabelSqueeze(renderedWidth: 40, availableWidth: 0) == 1,
+        "자리 폭이 0 이면 원래 크기"
+    )
 }
