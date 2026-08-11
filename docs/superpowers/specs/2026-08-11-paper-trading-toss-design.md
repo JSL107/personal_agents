@@ -213,6 +213,10 @@ model PaperEquitySnapshot {
   id                Int      @id @default(autoincrement())
   accountId         Int      @map("account_id")
   account           PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // 실행일(KST) 이다. 포지션들이 받은 봉의 거래일을 다수결로 정하지 않는다 — 그러면 다수 그룹이
+  // 정의상 stale 이 아니게 되어 "전 종목 stale" 판정(§5-(6))에 도달할 수 없다.
+  // 실행일을 기준으로 두면 휴장일 실행은 모든 봉이 전 거래일이라 전부 stale 로 잡혀 미적재된다.
+  // 적재되는 스냅샷의 tradeDate 는 결국 실제 거래일과 같다(전부 stale 이면 적재하지 않으므로).
   tradeDate         DateTime @map("trade_date") @db.Date
   cashBalance       Decimal  @map("cash_balance")   @db.Decimal(18, 4)
   positionValue     Decimal  @map("position_value") @db.Decimal(18, 4)
@@ -536,6 +540,12 @@ orchestrator (autopilot.orchestrator.ts:130-134, 227) → summaryText 만 읽어
 | DART 고유번호 파일의 시장 구분 포함 여부 | 파일 1건 확인 | 2단계 `Ticker.market` 조달 경로 미정 |
 | DART 호출 한도 | 문서 확인 | 2,800종목 재무 수집 순서를 후보군 한정으로 바꿔야 할 수 있다 |
 | 캔들 fixture가 실측인지 | 실호출 1건으로 OHLC 확인 | 이 레포에 "존재하지 않는 형태의 mock이 6주간 통과" 전례가 있다 |
+
+### 1단계에 남는 알려진 한계
+
+**세부 시장(KOSPI/KOSDAQ/KONEX)이 종목에 저장되지 않는다.** `Ticker.market` 은 토스 경로의 identity 인 `'KR'` 이라 세부 시장을 담을 자리가 없고, 세율 계산용 시장은 매매 명령 인자로만 전달된다. 그래서 같은 종목의 매수와 매도에 다른 시장을 입력해도 시스템이 막지 못한다.
+
+지금 실질 영향은 작다 — KOSPI 와 KOSDAQ 의 총 세율이 같아(둘 다 0.20%) 값이 갈리는 것은 KONEX(0.10%)뿐이다. 2단계에서 종목 마스터에 시장 구분을 채울 때(§7 `Ticker.market` 조달) 해소한다. 그때 `PaperTrade` 에 적용 시장을 함께 기록하면 "이 거래의 세금이 왜 이 값인가"를 사후 재구성할 수 있다.
 
 ### 구조적 리스크
 
