@@ -12,7 +12,10 @@ function makeTask(over: any = {}) {
 
 const ctx = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-29' };
 
-it('이슈 0건이면 skip=true', async () => {
+// 아래 두 건이 이 task 의 관측 가능성이다 — 주 1회 발화이고 LLM 을 안 쓰는 구간은 agent_run 에도
+// 남지 않아, skip 으로 끊으면 "점검했고 깨끗하다"/"꺼둬서 안 했다"/"점검이 죽었다" 셋이 사후에
+// 전부 같은 모습(흔적 0)이 된다. skip=true 로 되돌리면 이 두 건만 실패한다.
+it('드리프트 0건이어도 하트비트를 남긴다 (skip=false)', async () => {
   const { task } = makeTask({
     result: {
       deterministic: { inSync: true, details: [] },
@@ -20,7 +23,10 @@ it('이슈 0건이면 skip=true', async () => {
       revision: null,
     },
   });
-  expect(await task.run(ctx)).toEqual({ skip: true });
+  const result = await task.run(ctx);
+  expect(result.skip).toBe(false);
+  expect(result.summaryText).toContain('드리프트 없음');
+  expect(result.summaryText).toContain('2026-06-29');
 });
 
 it('이슈 있으면 summaryText 포함', async () => {
@@ -36,9 +42,14 @@ it('이슈 있으면 summaryText 포함', async () => {
   expect(result.summaryText).toContain('docs:check');
 });
 
-it("DOCS_AUDIT_ENABLED='false' 면 runAudit 호출 안 하고 skip", async () => {
+it("DOCS_AUDIT_ENABLED='false' 면 runAudit 없이 '건너뜀' 하트비트", async () => {
   const { task, audit } = makeTask({ enabled: 'false' });
-  expect(await task.run(ctx)).toEqual({ skip: true });
+  const result = await task.run(ctx);
+  expect(result.skip).toBe(false);
+  // 문구가 달라야 한다 — "꺼둬서 안 했다" 와 "점검했고 0건" 은 서로 다른 사실이다.
+  expect(result.summaryText).toContain('건너뜀');
+  expect(result.summaryText).toContain('DOCS_AUDIT_ENABLED=false');
+  expect(result.summaryText).not.toContain('드리프트 없음');
   expect(audit.runAudit).not.toHaveBeenCalled();
 });
 
