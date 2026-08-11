@@ -23,6 +23,28 @@
 - 최종 게이트 lint/tsc/test/build 모두 exit 0. 일반 307 suites/2,532 tests + code-graph 5 suites/40 tests 통과.
 - 기존 caller 3곳과 C는 무변경. 독립 최종 리뷰 Blocker/Should Fix/Minor 0건.
 
+**실증 (실제 GitHub 조회, KST 2026-08-10 하루)** — 유닛 테스트가 못 보는 두 가지를 실데이터로 확인했다.
+
+- 기간 상한이 실제로 자른다: 상한 있음 9건 vs 상한 없음 17건, 결과 중 KST 8/10 이 아닌 PR 0건.
+  `merged:A..B` 문법이 유효하다는 확인도 겸한다 — 잘못된 문법이면 422 없이 조용히 0건이 나올 수 있어
+  쿼리 문자열 단언만으로는 못 잡는다.
+- B 결함의 실제 피해 사례: `schoolbell-e/sbe-api-v5#971`·`#972` 는 UTC `2026-08-09T23:52Z` 머지로
+  KST 8/10 실적인데, 기존 `slice(0, 10)` 에서는 `merged 2026-08-09` 로 출력됐을 값이다.
+
+**후속으로 남긴 것 (리뷰 지적 C — PR #270 에서 답변만 하고 미수정)**
+
+`WorkReviewerAutopilotTask` / `WeeklySummaryAutopilotTask` 는 PM plan run 이 0건이면 실적 조회 전에
+반환한다(`work-reviewer.autopilot-task.ts` · `weekly-summary.autopilot-task.ts` 의 `runs.length === 0`
+early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 회고가 생성되지 않는다 — "계획에 없었는데
+한 일을 드러낸다" 는 목표와 어긋난다.
+
+이번에 고치지 않은 이유: (1) 이 PR 이 만든 결함이 아니라 기존 동작이고, (2) `agent_run` 실측에서
+최근 14일 PM 실행이 매일 1건 이상 있어(8/3 만 10건) 실제 발생이 0회다. 고치면 skip 이던 자리가
+실행으로 바뀌어, 계획 없는 날의 회고 형식·발송 여부·Notion 적재 기준을 다시 정해야 한다.
+
+착수 조건: plan 0건인 날이 실제로 관측되거나(cron 실패·장기 휴가 등), 계획 없이 진행한 작업의
+회고 누락이 문제로 드러날 때.
+
 ---
 
 # PR quota backoff 리뷰 반영 (2026-08-11)
