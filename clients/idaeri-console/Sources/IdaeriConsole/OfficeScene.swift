@@ -109,6 +109,10 @@ final class OfficeScene: SKScene {
     /// 캐릭터 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
     var onAgentClick: ((String) -> Void)?
 
+    /// 대표(나) 클릭 — 담당자를 지정하지 않는 지시 입구다. 부를 사람을 내가 찍는 대신,
+    /// 대표에게 말하면 라우터가 알맞은 워커를 고른다.
+    var onPresidentClick: (() -> Void)?
+
     /// 시각을 고정한다(화면 회귀 렌더 전용, 평소엔 nil).
     /// 밤 화면을 확인하려고 밤까지 기다릴 수는 없어서 둔 주입점이다.
     var hourOverride: Int?
@@ -753,7 +757,7 @@ final class OfficeScene: SKScene {
         }
     }
 
-    /// "나(대표)" — 조작 대상이 아니라 승인 줄의 기준점이다.
+    /// "나(대표)" — 승인 줄의 기준점이면서, 담당자를 정하지 않은 지시의 입구다(클릭 가능).
     private func renderPresident() {
         president?.removeFromParent()
         guard let texture = SpriteLoader.texture("char-down") else {
@@ -1737,22 +1741,36 @@ final class OfficeScene: SKScene {
     // MARK: - 마우스
 
     override func mouseDown(with event: NSEvent) {
-        if let hit = agentType(at: event.location(in: self)) {
-            onAgentClick?(hit)
+        guard let hit = hitTarget(at: event.location(in: self)) else {
+            return
         }
+        if hit == officeHitTargetPresident {
+            onPresidentClick?()
+            return
+        }
+        onAgentClick?(hit)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let hit = agentType(at: event.location(in: self))
+        let hit = hitTarget(at: event.location(in: self))
         if hit == hoveredAgentType {
             return
         }
-        if let previous = hoveredAgentType, let node = characters[previous] {
+        // 대표는 CharacterNode 가 아니라 스프라이트 하나뿐이다. 복귀를 여기서 따로 해주지 않으면
+        // 마우스가 떠난 뒤에도 커진 채로 남는다.
+        if hoveredAgentType == officeHitTargetPresident {
+            president?.run(.scale(to: 1.0, duration: 0.1))
+        } else if let previous = hoveredAgentType, let node = characters[previous] {
             node.sprite.run(.scale(to: 1.0, duration: 0.1))
             node.childNode(withName: "hoverBubble")?.removeFromParent()
             node.setHovered(false)
         }
         hoveredAgentType = hit
+        if hit == officeHitTargetPresident {
+            // 에이전트와 같은 몸짓으로 "누를 수 있다" 를 알린다.
+            president?.run(.scale(to: 1.12, duration: 0.1))
+            return
+        }
         guard let hit, let node = characters[hit] else {
             return
         }
@@ -1767,14 +1785,26 @@ final class OfficeScene: SKScene {
         }
     }
 
-    /// 좌표에 있는 캐릭터. 캐릭터는 발 기준으로 서 있으므로 몸통 높이의 절반만큼 위를 중심으로 본다.
-    private func agentType(at point: CGPoint) -> String? {
-        let slots: [(agentType: String, point: OfficePoint)] = characters.map { entry in
+    /// 좌표에 있는 사람. 캐릭터는 발 기준으로 서 있으므로 몸통 높이의 절반만큼 위를 중심으로 본다.
+    /// 대표도 같은 판정에 넣는다 — 따로 재면 사람이 겹친 자리에서 둘 다 반응한다.
+    private func hitTarget(at point: CGPoint) -> String? {
+        var slots: [(agentType: String, point: OfficePoint)] = characters.map { entry in
             let center = CGPoint(
                 x: entry.value.position.x,
                 y: entry.value.position.y + entry.value.sprite.size.height / 2
             )
             return (entry.key, OfficePoint(x: Double(center.x), y: Double(center.y)))
+        }
+        if let president {
+            let center = CGPoint(
+                x: president.position.x, y: president.position.y + president.size.height / 2
+            )
+            slots.append(
+                (
+                    officeHitTargetPresident,
+                    OfficePoint(x: Double(center.x), y: Double(center.y))
+                )
+            )
         }
         return agentTypeAt(
             point: OfficePoint(x: Double(point.x), y: Double(point.y)),

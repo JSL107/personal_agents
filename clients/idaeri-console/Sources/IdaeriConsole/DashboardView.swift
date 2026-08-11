@@ -3,7 +3,9 @@ import SwiftUI
 
 /// 관제 대시보드 루트. 부팅 시 스냅샷 1콜로 상태를 싣고, 이후 SSE 로 실시간 갱신한다.
 /// 스트림이 끊기면 지수 백오프로 재연결하고 스냅샷을 재동기화한다.
-/// 읽기·표시 전용 — 여기서 에이전트를 호출하거나 승인을 처리하지 않는다.
+/// 지시는 대상이 정해진 것만 여기서 보낸다(부서 카드). 담당자를 정하지 않는 지시는
+/// 오피스 탭의 대표(나) 자리 하나로 모았다 — 같은 입구가 두 탭에 있으면 어느 쪽이 정본인지
+/// 알 수 없고, 그 지시의 진행 배지도 두 곳에서 갈린다.
 struct DashboardView: View {
     /// store·연결은 AppRootView 가 소유하고 주입한다(오피스 탭과 공유).
     @ObservedObject var store: ConsoleStore
@@ -16,7 +18,6 @@ struct DashboardView: View {
     let onReject: (String) -> Void
     let onInject: (String, String) async throws -> InjectOutcome
 
-    @State private var commandText = ""
     @State private var injectTarget: ConsoleSession?
     @State private var injectText = ""
     @State private var injectNotice: String?
@@ -29,8 +30,6 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
-
-                commandBar
 
                 if !bottleneckAgents.isEmpty {
                     bottleneckBanner
@@ -66,56 +65,6 @@ struct DashboardView: View {
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
         .sheet(item: $injectTarget) { target in
             injectSheet(target: target)
-        }
-    }
-
-    // MARK: - 커맨드바
-
-    private var commandBar: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(spacing: Spacing.sm) {
-                TextField("에이전트에게 지시…", text: $commandText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(sendGlobalCommand)
-                Button("전송", action: sendGlobalCommand)
-                    .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            if !globalPendingCommands.isEmpty {
-                pendingBadgeRow
-            }
-        }
-    }
-
-    private func sendGlobalCommand() {
-        onSend(commandText, nil)
-        commandText = ""
-    }
-
-    private var pendingBadgeRow: some View {
-        HStack(spacing: Spacing.sm) {
-            ForEach(globalPendingCommands) { command in
-                VStack(alignment: .leading, spacing: Spacing.tight) {
-                    HStack(spacing: Spacing.xs) {
-                        Text(command.phase.badgeIcon)
-                        Text(command.text)
-                            .font(Typography.caption)
-                            .lineLimit(1)
-                    }
-                    if let reason = command.reason {
-                        Text(reason)
-                            .font(Typography.captionSmall)
-                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                )
-            }
         }
     }
 
@@ -379,14 +328,6 @@ struct DashboardView: View {
 
     private var bottleneckAgents: [ConsoleAgent] {
         store.agents.filter { $0.state == .awaitingIntegration }
-    }
-
-    /// 아직 카드로 라우팅되지 않은(힌트 없음 + run.started 로 확정되지 않음) pending 만
-    /// 헤더 커맨드바에 남긴다. `run.started` 로 `resolvedAgentType` 이 채워지면 해당
-    /// AgentCardView 배지로 넘어가므로 여기서는 제외 — 커맨드바·카드 중복 표시 방지.
-    /// 타임아웃 실패(`.failed`, resolvedAgentType 여전히 nil)는 계속 커맨드바에 남아 ⚠️ 로 보인다.
-    private var globalPendingCommands: [PendingCommand] {
-        store.pendingCommands.filter { $0.agentTypeHint == nil && $0.resolvedAgentType == nil }
     }
 
     private func countOf(_ state: ConsoleAgentState) -> Int {
