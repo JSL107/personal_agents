@@ -1,11 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { isIntradayCapture } from '../../market-data/domain/intraday-guard';
+import {
+  MARKET_INDICATOR_PORT,
+  MarketIndicatorPort,
+} from '../../market-data/domain/port/market-indicator.port';
 import {
   BenchmarkCloseWriteInput,
   BenchmarkRepository,
 } from '../../market-data/infrastructure/benchmark.repository';
-import { TossMarketIndicatorClient } from '../../market-data/infrastructure/toss/toss-market-indicator.client';
 
 const BENCHMARK_SYMBOL = 'KOSPI';
 const DEFAULT_INCREMENTAL_DAYS = 5;
@@ -30,7 +33,8 @@ export class CollectBenchmarkClosesUsecase {
   private readonly logger = new Logger(CollectBenchmarkClosesUsecase.name);
 
   constructor(
-    private readonly marketIndicator: TossMarketIndicatorClient,
+    @Inject(MARKET_INDICATOR_PORT)
+    private readonly marketIndicator: MarketIndicatorPort,
     private readonly repository: BenchmarkRepository,
   ) {}
 

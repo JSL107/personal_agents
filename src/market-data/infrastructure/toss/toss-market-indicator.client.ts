@@ -1,19 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
 import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
+import {
+  BenchmarkBar,
+  MarketIndicatorPort,
+} from '../../domain/port/market-indicator.port';
 import { TossApiClient, TossApiHttpError } from './toss-api.client';
 import { mapTossMarketIndicatorResponse } from './toss-market-indicator.mapper';
 
 const MAXIMUM_CANDLE_COUNT = 200;
 
-export interface BenchmarkBar {
-  tradeDate: Date;
-  close: Prisma.Decimal;
-}
-
 @Injectable()
-export class TossMarketIndicatorClient {
+export class TossMarketIndicatorClient implements MarketIndicatorPort {
   constructor(private readonly tossApi: TossApiClient) {}
 
   async fetchDailyCloses(

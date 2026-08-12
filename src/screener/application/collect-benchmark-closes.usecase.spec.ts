@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { MarketIndicatorPort } from '../../market-data/domain/port/market-indicator.port';
 import { BenchmarkRepository } from '../../market-data/infrastructure/benchmark.repository';
-import { TossMarketIndicatorClient } from '../../market-data/infrastructure/toss/toss-market-indicator.client';
 import { CollectBenchmarkClosesUsecase } from './collect-benchmark-closes.usecase';
 
 const benchmarkBar = (tradeDate: string, close: string) => ({
@@ -22,7 +22,7 @@ const createFixture = (latestTradeDate: Date | null) => {
   };
   return {
     usecase: new CollectBenchmarkClosesUsecase(
-      marketIndicator as unknown as TossMarketIndicatorClient,
+      marketIndicator as unknown as MarketIndicatorPort,
       repository as unknown as BenchmarkRepository,
     ),
     marketIndicator,

@@ -1767,3 +1767,27 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 5종 gate 모두 exit 0: lint 기존 warning 57/error 0, build, tsc, 일반 325 suites/2,625 tests, code-graph 5/40, docs:check.
 
 ---
+# PR #285 아키텍처 리뷰 — 시장지표 조회 포트 분리 (2026-08-12)
+
+**Goal:** `CollectBenchmarkClosesUsecase`가 Toss infrastructure 구현 대신 시장지표 전용 domain port에 의존하게 한다.
+
+**Contract:** `TossMarketIndicatorClient`만 포트로 추상화한다. `BenchmarkRepository`의 구체 주입과 다른 usecase/repository는 건드리지 않는다. 기존 `MARKET_DATA_PORT`는 종목 시세 mock 전체를 깨고 지수 응답 계약도 다르므로 확장하지 않는다. commit, staging, push는 금지한다.
+
+- [x] 관련 코드·spec·DI 패턴과 worktree 상태를 확인한다.
+- [x] usecase spec mock 타입을 `MarketIndicatorPort`로 바꾸고 신규 port 부재 RED를 확인한다.
+- [x] `BenchmarkBar`, `MARKET_INDICATOR_PORT`, `MarketIndicatorPort`를 domain port로 옮긴다.
+- [x] Toss adapter, mapper, module, usecase를 최소 수정한다.
+- [x] focused test GREEN과 final diff 범위 검토를 수행한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `CollectBenchmarkClosesUsecase`의 Toss concrete import를 제거하고 `MARKET_INDICATOR_PORT`를 주입했다. `BenchmarkRepository` concrete 주입은 유지했다.
+- `BenchmarkBar`는 pure domain `DecimalValue`를 사용한다. 저장 repository는 Prisma 경계에서 `toString()`으로 정밀도를 보존해 domain의 `@prisma/client` 의존을 만들지 않았다.
+- `MarketDataModule`은 token/useClass provider와 token export만 남겨 concrete export와 중복 instance를 제거했다.
+- RED는 신규 port 부재 `TS2307`, domain 값의 repository 경계 미지원 `TS2740`으로 확인했다. focused 4 suites/29 tests GREEN.
+- 최종 fresh gate는 lint exit 0(기존 warning 57), 전체 일반 342 suites/2,847 tests + code-graph 5 suites/40 tests, build, tsc 모두 exit 0이다.
+- 다른 usecase/repository 주입 방식, env/schema/dependency/git index/commit/push는 변경하지 않았다.
+
+---
