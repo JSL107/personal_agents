@@ -1536,3 +1536,30 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 5종 gate 모두 exit 0: lint 기존 warning 57/error 0, build, tsc, 일반 325 suites/2,625 tests, code-graph 5/40, docs:check.
 
 ---
+
+# 모의투자 3-A 지표 스크리너 (2026-08-12)
+
+**Goal:** 저장 일봉에서 지표를 계산해 장투·단타 후보를 산출하고 `scripts/screener.ts rank`로 출력한다.
+
+**Contract:** `docs/superpowers/plans/2026-08-12-paper-trading-phase3a-screener.md`. 지표는 `adjClose`, 거래대금·표시 종가는 `close`. Task 1~5 순차 RED→GREEN. commit/git index/DB/Prisma generate/실데이터 rank 실행 금지.
+
+- [x] 수정 계약과 실제 코드 전제, linked worktree/branch, baseline을 확인한다.
+- [x] Task 1 지표 계산 spec RED 후 최소 구현과 GREEN을 확인한다.
+- [x] Task 2 후보 선정 spec RED 후 최소 구현과 GREEN을 확인한다.
+- [x] Task 3 시계열 조회 spec RED 후 최소 구현과 GREEN을 확인한다.
+- [x] Task 4 후보 산출 usecase spec RED 후 최소 구현과 GREEN을 확인한다.
+- [x] Task 5 formatter spec RED 후 formatter/CLI 구현과 GREEN을 확인한다.
+- [x] `grep -rn "screener" src/market-data/`가 빈 결과인지 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 실행해 exit code와 테스트 집계를 기록한다.
+- [x] final diff와 계약 정합성을 검토하고 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- Task 1~5를 계획 순서대로 테스트 먼저 작성하고 각 RED를 확인한 뒤 구현했다. focused GREEN은 지표 12/12, 후보 선정 8/8, repository 기존 포함 11/11, screener 전체 7 suites/35 tests다.
+- 지표는 `adjClose`로 계산하고 `turnover60`·`lastClose`만 원본 `close`를 쓴다. 121봉 하한, 거래대금 5억원 하한, 200일 고가 명명과 `screener` → `market-data` 의존 방향을 유지했다.
+- 최종 gate는 모두 exit 0: lint 0 errors/기존 57 warnings, 일반 test 331 suites/2,758 tests + code-graph 5 suites/40 tests, build 성공.
+- `grep -rn "screener" src/market-data/`와 `git diff --check`는 빈 결과/exit 0이다. 제품 구현의 계획 이탈은 없다.
+- 독립 최종 리뷰는 Blocker 0, Should Fix 0, Minor 0으로 계약 준수를 확인했다.
+- 금지된 DB·`prisma generate`·실데이터 `rank` 실행과 git index/commit/stash는 수행하지 않았다. Prisma 경로 오판 교정은 `tasks/lessons.md`에 기록했다.
+
+---

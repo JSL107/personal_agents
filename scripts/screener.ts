@@ -7,14 +7,20 @@ import {
   CollectPricesOptions,
   CollectUniversePricesUsecase,
 } from '../src/screener/application/collect-universe-prices.usecase';
+import {
+  RankCandidatesOptions,
+  RankCandidatesUsecase,
+} from '../src/screener/application/rank-candidates.usecase';
 import { SyncUniverseUsecase } from '../src/screener/application/sync-universe.usecase';
+import { formatCandidates } from '../src/screener/infrastructure/candidate.formatter';
 import { formatPriceCollectionFailures } from '../src/screener/infrastructure/price-collection-failure.formatter';
 import { ScreenerModule } from '../src/screener/screener.module';
 
 const USAGE =
   '사용법:\n' +
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
-  '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]';
+  '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
+  '  pnpm exec ts-node scripts/screener.ts rank [--limit <후보수>]';
 
 @Module({
   imports: [
@@ -25,11 +31,11 @@ const USAGE =
 })
 class ScreenerCliModule {}
 
-type Subcommand = 'sync-universe' | 'collect-prices';
+type Subcommand = 'sync-universe' | 'collect-prices' | 'rank';
 
 interface ParsedArguments {
   subcommand: Subcommand;
-  options: CollectPricesOptions;
+  options: CollectPricesOptions & RankCandidatesOptions;
 }
 
 const parsePositiveInteger = (value: string, key: string): number => {
@@ -43,7 +49,8 @@ const parseArguments = (values: string[]): ParsedArguments => {
   const [subcommandValue, ...optionValues] = values;
   if (
     subcommandValue !== 'sync-universe' &&
-    subcommandValue !== 'collect-prices'
+    subcommandValue !== 'collect-prices' &&
+    subcommandValue !== 'rank'
   ) {
     throw new Error(USAGE);
   }
@@ -52,6 +59,18 @@ const parseArguments = (values: string[]): ParsedArguments => {
       throw new Error(USAGE);
     }
     return { subcommand: subcommandValue, options: {} };
+  }
+  if (subcommandValue === 'rank') {
+    if (optionValues.length === 0) {
+      return { subcommand: subcommandValue, options: {} };
+    }
+    if (optionValues.length !== 2 || optionValues[0] !== '--limit') {
+      throw new Error(USAGE);
+    }
+    return {
+      subcommand: subcommandValue,
+      options: { limit: parsePositiveInteger(optionValues[1], 'limit') },
+    };
   }
 
   const options: CollectPricesOptions = {};
@@ -85,6 +104,14 @@ const main = async (): Promise<void> => {
       console.log(
         `KRX 유니버스 동기화를 마쳤습니다. ${result.fetched}종목을 받아 ${result.upserted}종목을 반영했고, 목록에서 빠진 ${result.delisted}종목을 상장폐지 처리했습니다.`,
       );
+      return;
+    }
+
+    if (parsed.subcommand === 'rank') {
+      const result = await application
+        .get(RankCandidatesUsecase)
+        .execute(parsed.options);
+      console.log(formatCandidates(result));
       return;
     }
 

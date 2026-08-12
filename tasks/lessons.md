@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-08-12 — pnpm Prisma Client 생성 경로를 잘못 판정함
+
+- `node_modules/.prisma/client` 부재만으로 Prisma Client 미생성을 결론내리지 않는다. pnpm은 생성물을 `node_modules/.pnpm/@prisma+client@*/node_modules/.prisma` 아래에 둘 수 있다.
+- 생성 여부는 경로 추측이 아니라 실제 `@prisma/client` import 또는 프로젝트 test/typecheck 결과로 확인한다.
+- 계획과 schema 주석의 가격 기준이 충돌하면 멈추는 판단은 유지하되, 환경 blocker는 package manager의 실제 module layout을 검증한 뒤 보고한다.
+
 ## 2026-08-12 — 최신 봉 존재 여부는 초기 적재 완료 조건이 아니다
 
 - `_max(tradeDate)`가 존재한다는 사실은 일봉이 한 건 이상 있다는 뜻일 뿐, 기준 이력 200봉이 채워졌다는 뜻이 아니다. 다른 기능이 같은 저장소에 몇 봉을 먼저 넣을 수 있는 공유 시세 계층에서는 존재 여부로 최초/증분을 나누면 부분 이력이 영구히 복구되지 않는다.
