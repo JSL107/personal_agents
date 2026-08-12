@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BenchmarkRepository } from '../../market-data/infrastructure/benchmark.repository';
@@ -53,26 +54,104 @@ describe('CollectBenchmarkClosesUsecase', () => {
     ]);
   });
 
-  it('저장 이력이 있으면 KOSPI 5봉만 증분 조회한다', async () => {
+  it('저장 최신일이 20일 전이면 공백을 덮도록 KOSPI 20봉을 조회한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-11T15:10:00.000Z'));
+    const fixture = createFixture(new Date('2026-07-23T00:00:00.000Z'));
+
+    try {
+      await fixture.usecase.execute();
+
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
+        'KOSPI',
+        20,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('저장 최신일이 5일보다 가까우면 최소 KOSPI 5봉을 조회한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
     const fixture = createFixture(new Date('2026-08-10T00:00:00.000Z'));
 
-    await fixture.usecase.execute();
+    try {
+      await fixture.usecase.execute();
 
-    expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
-      'KOSPI',
-      5,
-    );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
+        'KOSPI',
+        5,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('days를 지정하면 최초·증분 기본 봉수보다 우선한다', async () => {
-    const fixture = createFixture(null);
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
+    const fixture = createFixture(new Date('2026-07-23T00:00:00.000Z'));
 
-    await fixture.usecase.execute({ days: 30 });
+    try {
+      await fixture.usecase.execute({ days: 30 });
 
-    expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
-      'KOSPI',
-      30,
-    );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
+        'KOSPI',
+        30,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([
+    { boundary: '하한', latestTradeDate: '2026-08-07', expectedDays: 5 },
+    { boundary: '상한', latestTradeDate: '2026-01-24', expectedDays: 200 },
+  ])(
+    '저장 최신일과 현재의 공백이 정확히 $boundary이면 $expectedDays봉을 요청하고 경고하지 않는다',
+    async ({ latestTradeDate, expectedDays }) => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
+      const warning = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const fixture = createFixture(
+        new Date(`${latestTradeDate}T00:00:00.000Z`),
+      );
+
+      try {
+        await fixture.usecase.execute();
+
+        expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
+          'KOSPI',
+          expectedDays,
+        );
+        expect(warning).not.toHaveBeenCalled();
+      } finally {
+        warning.mockRestore();
+        jest.useRealTimers();
+      }
+    },
+  );
+
+  it('저장 최신일과 현재의 공백이 200일을 넘으면 상한 경고를 남긴다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
+    const warning = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const fixture = createFixture(new Date('2025-01-01T00:00:00.000Z'));
+
+    try {
+      await fixture.usecase.execute();
+
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
+        'KOSPI',
+        200,
+      );
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining('KOSPI 벤치마크 공백이 API 상한 200봉을 초과'),
+      );
+    } finally {
+      warning.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it('장중 오늘 봉은 차단하고 과거 봉만 저장한다', async () => {
