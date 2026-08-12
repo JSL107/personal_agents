@@ -6,6 +6,15 @@ import { OpsSupervisorAutopilotTask } from './ops-supervisor.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-01' };
 
+// 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
+const makeHumanizer = () => ({
+  humanize: jest
+    .fn()
+    .mockImplementation((fields: Record<string, string>) =>
+      Promise.resolve(fields),
+    ),
+});
+
 const makePreviewRepository = (
   outcomes: Awaited<
     ReturnType<PreviewActionRepositoryPort['countOutcomesByKind']>
@@ -35,6 +44,7 @@ describe('OpsSupervisorAutopilotTask', () => {
     const task = new OpsSupervisorAutopilotTask(
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
       advisor as OpsSupervisorAdvisorPort,
     );
 
@@ -43,6 +53,33 @@ describe('OpsSupervisorAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('이상 없음');
     expect(advisor.advise).not.toHaveBeenCalled();
+  });
+
+  it('제안이 없는 회차는 윤문을 호출하지 않는다 (집계 수치뿐이라 다듬을 서술이 없다)', async () => {
+    const service = {
+      aggregateRunStats: jest.fn().mockResolvedValue([
+        {
+          agentType: 'PM',
+          total: 10,
+          failed: 0,
+          failRate: 0,
+          avgDurationMs: 100,
+        },
+      ]),
+      aggregateRetryCounts: jest.fn().mockResolvedValue([]),
+      aggregateSweptCounts: jest.fn().mockResolvedValue([]),
+    };
+    const humanizer = makeHumanizer();
+    const task = new OpsSupervisorAutopilotTask(
+      service as unknown as AgentRunService,
+      makePreviewRepository() as unknown as PreviewActionRepositoryPort,
+      humanizer as never,
+      { advise: jest.fn() } as OpsSupervisorAdvisorPort,
+    );
+
+    await task.run(context);
+
+    expect(humanizer.humanize).not.toHaveBeenCalled();
   });
 
   it('이상 있으면 제안기를 호출해 리포트에 포함한다', async () => {
@@ -66,6 +103,7 @@ describe('OpsSupervisorAutopilotTask', () => {
     const task = new OpsSupervisorAutopilotTask(
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
       advisor,
     );
 
@@ -96,6 +134,7 @@ describe('OpsSupervisorAutopilotTask', () => {
     const task = new OpsSupervisorAutopilotTask(
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
       advisor,
     );
 
@@ -114,6 +153,7 @@ describe('OpsSupervisorAutopilotTask', () => {
     const task = new OpsSupervisorAutopilotTask(
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
       undefined,
     );
 
@@ -132,6 +172,7 @@ describe('OpsSupervisorAutopilotTask', () => {
     const task = new OpsSupervisorAutopilotTask(
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
       undefined,
     );
 

@@ -6,6 +6,8 @@ import { AssignmentOutput } from '../../../agent/cto/domain/cto.type';
 import { CtoErrorCode } from '../../../agent/cto/domain/cto-error-code.enum';
 import { AgentRunOutcome } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeAssignmentOutput } from '../../../humanize/application/humanize-report.adapter';
 import { formatAssignmentOutput } from '../../../slack/format/assignment.formatter';
 import {
   AutopilotTask,
@@ -19,6 +21,7 @@ export class AssignAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -48,9 +51,15 @@ export class AssignAutopilotTask implements AutopilotTask {
     ) {
       return { skip: true };
     }
+    // 같은 CTO 분배 산출물인데 `/assign` 슬래시(cto.dispatcher)만 윤문을 거치고 이 자동
+    // 발송 경로는 원문 그대로 나가고 있었다. 사람이 읽는 텍스트는 같은 것이므로 맞춘다.
+    const humanized = await humanizeAssignmentOutput(
+      outcome.result,
+      this.humanizeService,
+    );
     return {
       skip: false,
-      summaryText: formatAssignmentOutput(outcome.result),
+      summaryText: formatAssignmentOutput(humanized),
     };
   }
 }

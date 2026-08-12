@@ -14,6 +14,11 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../../github/domain/port/github-client.port';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import {
+  humanizeDailyReview,
+  humanizeMetaOutput,
+} from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
@@ -59,6 +64,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
+    private readonly humanizeService: HumanizeService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -136,7 +142,12 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
     // worklog / CEO meta 각각 summary(메인) / detail(스레드 = 근거) 로 분리.
     // 메인 = worklog 요약 + CEO 요약(구분자로 이음), 스레드 = 각 detail(+model 푸터) 을 이어 1개 댓글로.
-    const worklogFormatted = formatDailyReview(worklogOutcome.result);
+    //
+    // 퇴근 worklog(work-reviewer task)는 윤문을 거치는데 같은 산출물을 쓰는 이 주간 경로만
+    // 빠져 있었다. 사람이 읽는 텍스트는 같으므로 맞춘다.
+    const worklogFormatted = formatDailyReview(
+      await humanizeDailyReview(worklogOutcome.result, this.humanizeService),
+    );
     const worklogSummary =
       `📝 *Weekly Summary — ${firedAtKst} (금 17:00 KST 자동 주간 worklog)*\n\n` +
       worklogFormatted.summary;
@@ -211,7 +222,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         range: 'WEEK',
         triggerType: TriggerType.WEEKLY_CEO_META_CRON,
       });
-      const ceoFormatted = formatCeoMetaOutput(ceoOutcome.result);
+      const ceoFormatted = formatCeoMetaOutput(
+        await humanizeMetaOutput(ceoOutcome.result, this.humanizeService),
+      );
       return {
         summary:
           `🧭 *CEO Meta — ${firedAtKst} (주간 자동 메타 회고)*\n\n` +
