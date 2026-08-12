@@ -2,6 +2,82 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MarketDataRepository } from './market-data.repository';
 
 describe('MarketDataRepository', () => {
+  it('종목 일봉을 4개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
+    const aggregate = jest.fn().mockResolvedValue({
+      _max: { tradeDate: new Date('2026-08-12T00:00:00.000Z') },
+    });
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        tickerId: 1,
+        tradeDate: new Date('2026-08-12T00:00:00.000Z'),
+        adjClose: { toNumber: () => 120, toString: () => '120' },
+        volume: 120n,
+      },
+      {
+        tickerId: 1,
+        tradeDate: new Date('2026-08-11T00:00:00.000Z'),
+        adjClose: { toNumber: () => 110, toString: () => '110' },
+        volume: 110n,
+      },
+      {
+        tickerId: 1,
+        tradeDate: new Date('2026-08-10T00:00:00.000Z'),
+        adjClose: { toNumber: () => 100, toString: () => '100' },
+        volume: 100n,
+      },
+      {
+        tickerId: 2,
+        tradeDate: new Date('2026-08-12T00:00:00.000Z'),
+        adjClose: { toNumber: () => 220, toString: () => '220' },
+        volume: 220n,
+      },
+    ]);
+    const prisma = {
+      dailyPrice: { aggregate, findMany },
+    } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    const result = await repository.findBarsForTickers([1, 2], 2);
+
+    expect(aggregate).toHaveBeenCalledWith({
+      where: { tickerId: { in: [1, 2] } },
+      _max: { tradeDate: true },
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        tickerId: { in: [1, 2] },
+        tradeDate: { gte: new Date('2025-07-08T00:00:00.000Z') },
+      },
+      orderBy: [{ tickerId: 'asc' }, { tradeDate: 'desc' }],
+      select: {
+        tickerId: true,
+        tradeDate: true,
+        adjClose: true,
+        volume: true,
+      },
+    });
+    expect(
+      result.get(1)?.map((bar) => bar.tradeDate.toISOString().slice(0, 10)),
+    ).toEqual(['2026-08-11', '2026-08-12']);
+    expect(result.get(2)).toHaveLength(1);
+  });
+
+  it('대상 종목에 저장된 봉이 없으면 일봉 본문을 조회하지 않는다', async () => {
+    const aggregate = jest
+      .fn()
+      .mockResolvedValue({ _max: { tradeDate: null } });
+    const findMany = jest.fn();
+    const prisma = {
+      dailyPrice: { aggregate, findMany },
+    } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    await expect(repository.findBarsForTickers([1], 200)).resolves.toEqual(
+      new Map(),
+    );
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it('KRX 세부 시장이 분류된 활성 보통주만 유니버스로 조회한다', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { ticker: { findMany } } as unknown as PrismaService;

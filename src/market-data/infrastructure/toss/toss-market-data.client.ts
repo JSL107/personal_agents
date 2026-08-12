@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
 import { DailyBar } from '../../domain/market-data.type';
+import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
 import {
   FetchDailyBarsOptions,
   MarketDataPort,
 } from '../../domain/port/market-data.port';
 import { YahooFinanceMarketDataClient } from '../yahoo-finance.market-data.client';
-import { TossApiClient } from './toss-api.client';
+import { TossApiClient, TossApiHttpError } from './toss-api.client';
 import { mapTossCandlesResponse } from './toss-market-data.mapper';
 
 // 실측(2026-08-06) — MARKET_DATA_CHART 는 5회/초다. 무간격 연속 호출은 6번째부터
@@ -52,10 +53,19 @@ export class TossMarketDataClient implements MarketDataPort {
       count: String(count),
       adjusted: String(adjusted),
     });
-    const response = await this.tossApi.requestJson(
-      '일봉 조회',
-      `/api/v1/candles?${query.toString()}`,
-    );
+    let response: unknown;
+    try {
+      response = await this.tossApi.requestJson(
+        '일봉 조회',
+        `/api/v1/candles?${query.toString()}`,
+      );
+    } catch (error) {
+      if (error instanceof TossApiHttpError && error.status === 429) {
+        // 공급자 HTTP 표현을 감춰 application의 재시도 정책이 adapter 교체에도 유지되게 한다.
+        throw new MarketDataRateLimitError();
+      }
+      throw error;
+    }
     const bars = mapTossCandlesResponse(response);
     if (!bars) {
       throw new Error(

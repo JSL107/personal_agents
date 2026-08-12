@@ -2,12 +2,15 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { isIntradayCapture } from '../domain/intraday-guard';
+import { IndicatorBar } from '../domain/stock-indicator';
 import { KrxListing } from './krx/krx-listing.mapper';
 
 const WRITE_CHUNK_SIZE = 200;
 const MINIMUM_ACTIVE_UNIVERSE_SIZE = 1_000;
 // 실제 상장폐지는 연간 수십 건이라 하루 5% 감소는 공급자 부분 응답으로 본다.
 const MINIMUM_ACTIVE_UNIVERSE_RATIO = 0.95;
+// 200거래일은 약 290일이므로 휴장·장기 연휴 여유를 포함한 400일만 DB에서 읽는다.
+const BAR_READ_LOOKBACK_CALENDAR_DAYS = 400;
 
 export interface DailyPriceWriteInput {
   tickerId: number;
@@ -39,6 +42,56 @@ export interface StoredBarStat {
 @Injectable()
 export class MarketDataRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findBarsForTickers(
+    tickerIds: number[],
+    limit: number,
+  ): Promise<Map<number, IndicatorBar[]>> {
+    if (tickerIds.length === 0 || limit <= 0) {
+      return new Map();
+    }
+    const latest = await this.prisma.dailyPrice.aggregate({
+      where: { tickerId: { in: tickerIds } },
+      _max: { tradeDate: true },
+    });
+    if (latest._max.tradeDate === null) {
+      return new Map();
+    }
+    const earliestTradeDate = new Date(latest._max.tradeDate);
+    earliestTradeDate.setUTCDate(
+      earliestTradeDate.getUTCDate() - BAR_READ_LOOKBACK_CALENDAR_DAYS,
+    );
+    const prices = await this.prisma.dailyPrice.findMany({
+      where: {
+        tickerId: { in: tickerIds },
+        tradeDate: { gte: earliestTradeDate },
+      },
+      orderBy: [{ tickerId: 'asc' }, { tradeDate: 'desc' }],
+      select: {
+        tickerId: true,
+        tradeDate: true,
+        adjClose: true,
+        volume: true,
+      },
+    });
+    const grouped = new Map<number, IndicatorBar[]>();
+    for (const price of prices) {
+      const bars = grouped.get(price.tickerId) ?? [];
+      // DB별 그룹 상한 쿼리를 만들지 않고 최근순 결과에서 오래된 초과 봉만 버린다.
+      if (bars.length < limit) {
+        bars.push({
+          tradeDate: price.tradeDate,
+          adjClose: price.adjClose,
+          volume: price.volume,
+        });
+        grouped.set(price.tickerId, bars);
+      }
+    }
+    for (const bars of grouped.values()) {
+      bars.reverse();
+    }
+    return grouped;
+  }
 
   async upsertDailyPrice(
     input: DailyPriceWriteInput,
