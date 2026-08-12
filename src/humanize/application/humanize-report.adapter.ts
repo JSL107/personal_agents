@@ -1,4 +1,5 @@
 import { BackendPlan } from '../../agent/be/domain/be-agent.type';
+import { EveningRetroResult } from '../../agent/blog/domain/prompt/evening-retro.prompt';
 import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
@@ -315,5 +316,53 @@ export const humanizeBackendPlan = async (
       : null,
     risks: rebuildArray(humanized, 'risks', plan.risks),
     testPoints: rebuildArray(humanized, 'testPoints', plan.testPoints),
+  };
+};
+
+// 저녁 회고의 서술 필드만 윤문한다.
+//
+// 이 산출물은 매일 저녁 Slack 으로 그대로 나가는데 윤문 경로에 연결돼 있지 않아, codex 가
+// 쓴 원문(명사 나열·만연체·한 문장 세 갈래)이 사람 눈에 닿는 유일한 자동 보고였다.
+//
+// keywords 와 sourceRefs 는 입력에서 뺀다 — 전자는 고유명사·영문 약어 나열이라 윤문할 문장이
+// 아니고, 후자는 훼손되면 `resolveSourcePrs()` 의 PR 매칭이 조용히 빗나가 근거가 사라진다.
+// outline 은 승인 카드 안쪽 뼈대 불릿이라 지금은 제외한다(필요해지면 같은 방식으로 추가).
+export const humanizeEveningRetro = async (
+  result: EveningRetroResult,
+  humanizer: HumanizeService,
+): Promise<EveningRetroResult> => {
+  const fields: Record<string, string> = {
+    retrospective: result.retrospective,
+  };
+  flattenArray(
+    fields,
+    'candidates.title',
+    result.candidates.map((candidate) => candidate.title),
+  );
+  flattenArray(
+    fields,
+    'candidates.reason',
+    result.candidates.map((candidate) => candidate.reason),
+  );
+  flattenArray(
+    fields,
+    'prNotes.note',
+    result.prNotes.map((prNote) => prNote.note),
+  );
+
+  const humanized = await humanizer.humanize(fields);
+
+  return {
+    ...result,
+    retrospective: humanized.retrospective ?? result.retrospective,
+    candidates: result.candidates.map((candidate, index) => ({
+      ...candidate,
+      title: humanized[`candidates.title.${index}`] ?? candidate.title,
+      reason: humanized[`candidates.reason.${index}`] ?? candidate.reason,
+    })),
+    prNotes: result.prNotes.map((prNote, index) => ({
+      ...prNote,
+      note: humanized[`prNotes.note.${index}`] ?? prNote.note,
+    })),
   };
 };

@@ -53,6 +53,7 @@ const makeTask = (opts: {
   worklogRuns?: { id: number; output: unknown; endedAt: Date }[];
   dailyEvalRuns?: { id: number; output: unknown; endedAt: Date }[];
   routeResult?: { text: string; modelUsed: string; provider: string };
+  humanized?: Record<string, string>;
 }) => {
   const config = {
     get: jest.fn().mockImplementation((key: string) => {
@@ -113,14 +114,31 @@ const makeTask = (opts: {
     route: jest.fn().mockResolvedValue(opts.routeResult ?? RETRO_RESPONSE),
   };
 
+  // 기본은 통과(입력 그대로 반환) — 실패해도 원본을 돌려주는 실제 best-effort 계약과 같다.
+  const humanizeService = {
+    humanize: jest
+      .fn()
+      .mockImplementation((fields: Record<string, string>) =>
+        Promise.resolve(opts.humanized ?? fields),
+      ),
+  };
+
   const task = new EveningRetroPublishTask(
     agentRunService as never,
     githubClient as never,
     modelRouter as never,
+    humanizeService as never,
     config as never,
   );
 
-  return { task, config, githubClient, agentRunService, modelRouter };
+  return {
+    task,
+    config,
+    githubClient,
+    agentRunService,
+    modelRouter,
+    humanizeService,
+  };
 };
 
 describe('EveningRetroPublishTask', () => {
@@ -506,5 +524,122 @@ describe('EveningRetroPublishTask', () => {
     const result = await task.run(CTX);
 
     expect(result.summaryText).not.toContain('⚠️');
+  });
+
+  it('(n) 회고 문단·후보 이유를 윤문한 결과로 요약을 만든다 (모델 원문 그대로 내보내지 않는다)', async () => {
+    const { task, humanizeService } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+      humanized: {
+        retrospective: '윤문된 회고',
+        'candidates.title.0': '윤문된 제목',
+        'candidates.reason.0': '윤문된 이유',
+        'prNotes.note.0': '윤문된 PR 노트',
+      },
+    });
+
+    const result = await task.run(CTX);
+
+    // 윤문에 넘긴 필드 — sourceRefs 가 섞이면 PR 매칭이 조용히 깨지므로 키 집합까지 확인한다.
+    expect(
+      Object.keys(humanizeService.humanize.mock.calls[0][0]).sort(),
+    ).toEqual([
+      'candidates.reason.0',
+      'candidates.title.0',
+      'prNotes.note.0',
+      'retrospective',
+    ]);
+    expect(result.summaryText).toContain('윤문된 회고');
+    expect(result.summaryText).toContain('윤문된 제목');
+    expect(result.summaryText).toContain('윤문된 이유');
+    expect(result.summaryText).not.toContain('실제 PR 근거가 충분하다.');
+  });
+
+  it('(o) 후보가 상위 정원을 넘으면 요약엔 3건만 세우고 전체는 스레드로 내린다', async () => {
+    const manyCandidates = {
+      text: JSON.stringify({
+        retrospective: 'r',
+        candidates: [95, 90, 85, 80].map((score) => ({
+          title: `제목${score}`,
+          keywords: ['k'],
+          blogValueScore: score,
+          reason: '이유',
+          sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+          outline: [],
+        })),
+        prNotes: [],
+      }),
+      modelUsed: 'gpt',
+      provider: 'CHATGPT',
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: manyCandidates,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain('제목95');
+    expect(result.summaryText).not.toContain('제목80');
+    expect(result.summaryText).toContain('4건 중 상위 3건');
+    expect(result.detailText).toContain('제목80');
+    expect(result.detailText).toContain('발행 후보 전체 — 4건');
+  });
+
+  it('(o-2) 긴 이유는 문장 한복판이 아니라 문장 경계에서 끊는다', async () => {
+    const longReason = {
+      text: JSON.stringify({
+        retrospective: 'r',
+        candidates: [
+          {
+            title: '제목',
+            keywords: [],
+            blogValueScore: 90,
+            // 첫 문장 25자 + 뒤 세 문장 → 합계가 80자 상한을 넘겨 자르기가 걸린다.
+            reason:
+              '계획서를 실적으로 재서술하던 문제를 바로잡았다. 계획과 실적도 분리했다. 성과 평가의 신뢰성과 증거 설계를 함께 다뤄 블로그 가치가 높다. 자동화된 평가의 근거 설계를 설명할 수 있다.',
+            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            outline: [],
+          },
+        ],
+        prNotes: [],
+      }),
+      modelUsed: 'gpt',
+      provider: 'CHATGPT',
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: longReason,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain(
+      '계획서를 실적으로 재서술하던 문제를 바로잡았다. …',
+    );
+    // 문장 중간에서 잘려 뜻이 끊기면 안 된다 — 뒷 문장은 통째로 스레드에만 있다.
+    expect(result.summaryText).not.toContain('블로그 가치가 높다');
+    expect(result.detailText).toContain(
+      '자동화된 평가의 근거 설계를 설명할 수 있다.',
+    );
+  });
+
+  it('(p) 후보가 정원 이내이고 잘린 이유도 없으면 스레드를 만들지 않는다 (본문 반복 방지)', async () => {
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.detailText).toBeUndefined();
   });
 });

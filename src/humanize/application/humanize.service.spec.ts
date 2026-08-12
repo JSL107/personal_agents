@@ -4,7 +4,10 @@ import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
-import { HUMANIZE_SYSTEM_PROMPT } from '../domain/humanize-system.prompt';
+import {
+  HUMANIZE_CONCISE_RULES,
+  HUMANIZE_SYSTEM_PROMPT,
+} from '../domain/humanize-system.prompt';
 import { HumanizeService } from './humanize.service';
 
 interface ExecuteArgs {
@@ -155,7 +158,38 @@ describe('HumanizeService', () => {
       await service.humanize({ a: '원본A' });
 
       const callArg = routeMock.mock.calls[0][0];
-      expect(callArg.request.systemPrompt).toBe(HUMANIZE_SYSTEM_PROMPT);
+      expect(callArg.request.systemPrompt).toBe(
+        `${HUMANIZE_SYSTEM_PROMPT}\n${HUMANIZE_CONCISE_RULES}`,
+      );
+    });
+  });
+
+  describe('길이 예산', () => {
+    // 이 절이 빠지면 윤문이 원문보다 길어진다(2026-08-11 회고 실측: 782자 → 876자).
+    it('기본은 간결 모드 — 길이 예산을 붙여 호출한다', async () => {
+      const { service, routeMock } = makeService({
+        enabled: 'true',
+        routeImpl: async () => ({ text: JSON.stringify({ a: '다듬음A' }) }),
+      });
+
+      await service.humanize({ a: '원본A' });
+
+      expect(routeMock.mock.calls[0][0].request.systemPrompt).toContain(
+        HUMANIZE_CONCISE_RULES,
+      );
+    });
+
+    it('longForm 이면 길이 예산을 붙이지 않는다 (블로그 본문·이력서 분량 보존)', async () => {
+      const { service, routeMock } = makeService({
+        enabled: 'true',
+        routeImpl: async () => ({ text: JSON.stringify({ a: '다듬음A' }) }),
+      });
+
+      await service.humanize({ a: '원본A' }, { longForm: true });
+
+      expect(routeMock.mock.calls[0][0].request.systemPrompt).not.toContain(
+        HUMANIZE_CONCISE_RULES,
+      );
     });
   });
 });

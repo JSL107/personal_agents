@@ -20,7 +20,9 @@ export const humanizeCareerProfile = async (
     fields[`acc.${index}.result`] = accomplishment.star.result;
   });
 
-  const humanized = await humanizer.humanize(fields);
+  // 이력서 STAR 는 구체 상황·수치를 담는 자리라 길이 예산을 걸지 않는다. 압축을 걸면
+  // 가장 먼저 깎이는 것이 그 구체성이고, 이력서에서는 그게 곧 내용이다.
+  const humanized = await humanizer.humanize(fields, { longForm: true });
 
   // 역참조는 `?? 원본` 으로 방어한다 — HumanizeService 가 모든 입력 키를 보존 반환하므로
   // 현재는 항상 값이 있지만, 그 내부 구현에 결합되지 않도록 누락 시 원본으로 폴백한다.

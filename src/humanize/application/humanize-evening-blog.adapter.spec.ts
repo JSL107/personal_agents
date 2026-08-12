@@ -24,10 +24,14 @@ describe('humanizeEveningBlogBlocks', () => {
 
     await humanizeEveningBlogBlocks(blocks, makeHumanizer(humanize));
 
-    expect(humanize).toHaveBeenCalledWith({
-      '1': '첫 문단',
-      '3': '둘째 문단',
-    });
+    // longForm — 블로그 본문에 길이 예산이 걸리면 초안 분량이 깎인다.
+    expect(humanize).toHaveBeenCalledWith(
+      {
+        '1': '첫 문단',
+        '3': '둘째 문단',
+      },
+      { longForm: true },
+    );
   });
 
   it('humanize 반환값으로 paragraph text 만 교체하고 순서와 non-paragraph 및 link 를 보존한다', async () => {
