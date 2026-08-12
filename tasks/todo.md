@@ -1,3 +1,26 @@
+# PR 봇 리뷰 반영 — 벤치마크 증분 공백 탐지 (2026-08-12)
+
+**Goal:** 저장된 KOSPI 최신 거래일부터 현재까지의 캘린더 일수로 증분 조회 범위를 정해 5거래일 초과 중단 뒤 영구 결손을 막고, 200봉 상한 초과 공백은 운영 로그에 드러낸다.
+
+**Contract:** 사용자 리뷰 지적과 수정 방향이 승인된 구현 계약이다. `options.days`와 최초 200봉 동작은 유지하고, 페이지네이션·API client·DB/schema·env는 변경하지 않는다. commit, staging, push, PR 생성은 금지한다.
+
+- [x] 기존 고정 5봉 경로와 날짜·Logger 테스트 패턴을 확인한다.
+- [x] 20일 공백, 최초 200봉, `options.days` 우선, 200일 초과 경고 spec을 추가하고 RED를 확인한다.
+- [x] KST 캘린더 일수 계산, 5..200 clamp, 상한 경고를 최소 구현하고 주석으로 근거를 남긴다.
+- [x] focused Jest GREEN과 최종 diff 검토를 수행한다.
+- [x] 지정된 lint, screener Jest, 전체 test, build, tsc를 각각 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 저장 최신일이 있으면 KST 현재 날짜와의 캘린더 일수 차이를 계산해 5..200봉으로 제한한다. 거래일 수의 보수적 상한이라 중단 기간을 덮고, 최근 봉 5개 재수집 계약도 유지한다.
+- 최초 수집 200봉과 명시 `options.days` 우선은 유지한다. 자동 계산 공백이 200일을 넘으면 페이지네이션 없이 완전 복구할 수 없음을 `Logger.warn`으로 남긴다.
+- RED는 장기 공백 두 케이스가 모두 5봉을 요청해 2 failures였고, 최종 focused spec은 10/10 통과했다. 독립 리뷰의 clamp 경계 제안도 정확히 5일·200일과 200일 무경고 spec으로 해소했다.
+- fresh gate는 lint exit 0(기존 warning 57), screener 9 suites/45 tests, 전체 일반 342 suites/2,847 tests + code-graph 5 suites/40 tests, build, tsc 모두 exit 0이다.
+- DB/schema/env/API client와 git index/commit/push는 변경하지 않았다.
+
+---
+
 # 유동성 하한 + 코스피 벤치마크 수집 (2026-08-12)
 
 **Goal:** `.ai/design.md` 계약대로 60일 평균 거래대금 5억원 하한을 스크리너 공통 게이트로 적용하고, 토스 시장지표 전용 경로로 KOSPI 일별 종가를 수집·적재·자동/수동 실행한다.
