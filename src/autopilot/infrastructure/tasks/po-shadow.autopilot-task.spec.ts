@@ -3,6 +3,7 @@ import { PoShadowException } from '../../../agent/po-shadow/domain/po-shadow.exc
 import { PoShadowErrorCode } from '../../../agent/po-shadow/domain/po-shadow-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { PoShadowAutopilotTask } from './po-shadow.autopilot-task';
 
 const CONTEXT = {
@@ -12,12 +13,22 @@ const CONTEXT = {
 
 describe('PoShadowAutopilotTask', () => {
   let usecase: jest.Mocked<Pick<GeneratePoShadowUsecase, 'execute'>>;
+  let humanizeService: jest.Mocked<Pick<HumanizeService, 'humanize'>>;
   let task: PoShadowAutopilotTask;
 
   beforeEach(() => {
     usecase = { execute: jest.fn() };
+    // 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
+    humanizeService = {
+      humanize: jest
+        .fn()
+        .mockImplementation((fields: Record<string, string>) =>
+          Promise.resolve(fields),
+        ),
+    };
     task = new PoShadowAutopilotTask(
       usecase as unknown as GeneratePoShadowUsecase,
+      humanizeService as unknown as HumanizeService,
     );
   });
 
@@ -83,5 +94,32 @@ describe('PoShadowAutopilotTask', () => {
     usecase.execute.mockRejectedValue(error);
 
     await expect(task.run(CONTEXT)).rejects.toBe(error);
+  });
+
+  it('서술 필드를 윤문한 결과로 보고를 만든다 (모델 원문 그대로 내보내지 않는다)', async () => {
+    usecase.execute.mockResolvedValue({
+      result: {
+        priorityRecheck: '원문 우선순위',
+        missingRequirements: ['원문 누락'],
+        releaseRisks: ['원문 리스크'],
+        realPurposeQuestion: '원문 질문',
+        recommendation: '원문 권고',
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 4,
+    });
+    humanizeService.humanize.mockResolvedValue({
+      priorityRecheck: '윤문 우선순위',
+      'missingRequirements.0': '윤문 누락',
+      'releaseRisks.0': '윤문 리스크',
+      realPurposeQuestion: '윤문 질문',
+      recommendation: '윤문 권고',
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.summaryText).toContain('윤문 우선순위');
+    expect(result.summaryText).toContain('윤문 누락');
+    expect(result.summaryText).not.toContain('원문 우선순위');
   });
 });

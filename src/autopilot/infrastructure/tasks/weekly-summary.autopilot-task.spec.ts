@@ -19,6 +19,15 @@ const MERGED_PULL_REQUEST = {
   changedFilesCount: 14,
 };
 
+// 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
+const makeHumanizer = () => ({
+  humanize: jest
+    .fn()
+    .mockImplementation((fields: Record<string, string>) =>
+      Promise.resolve(fields),
+    ),
+});
+
 const makeConfig = () => ({
   get: jest.fn().mockImplementation((key: string) => {
     if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
@@ -48,6 +57,7 @@ describe('WeeklySummaryAutopilotTask', () => {
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
       ).id,
     ).toBe('weekly-summary');
   });
@@ -61,6 +71,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       { execute: worklogExecute } as never,
       { execute: ceoExecute } as never,
       {} as never,
+      makeHumanizer() as never,
       makeConfig() as never,
     );
 
@@ -99,6 +110,7 @@ describe('WeeklySummaryAutopilotTask', () => {
         status: DomainStatus.NOT_FOUND,
       }),
     );
+    const humanizer = makeHumanizer();
     const task = new WeeklySummaryAutopilotTask(
       { findRecentSucceededRuns } as never,
       { execute: worklogExecute } as never,
@@ -108,12 +120,17 @@ describe('WeeklySummaryAutopilotTask', () => {
           .fn()
           .mockResolvedValue([MERGED_PULL_REQUEST]),
       } as never,
+      humanizer as never,
       makeConfig() as never,
     );
 
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
+    // 퇴근 worklog 는 윤문을 거치는데 같은 산출물을 쓰는 주간 경로만 빠져 있었다.
+    expect(humanizer.humanize).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '이번주 요약' }),
+    );
     // 메인(summaryText): worklog 헤더 + 요약, CEO skip 안내. 근거 섹션은 없다.
     expect(out.summaryText).toContain('Weekly Summary');
     expect(out.summaryText).toContain('이번주 요약');
@@ -170,6 +187,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       { execute: worklogExecute } as never,
       { execute: jest.fn().mockRejectedValue(new Error('ceo down')) } as never,
       githubClient as never,
+      makeHumanizer() as never,
       makeConfig() as never,
     );
 
@@ -242,6 +260,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       { execute: worklogExecute } as never,
       { execute: jest.fn().mockRejectedValue(new Error('ceo down')) } as never,
       { listAuthorMergedPullRequestsSince } as never,
+      makeHumanizer() as never,
       config as never,
     );
 
