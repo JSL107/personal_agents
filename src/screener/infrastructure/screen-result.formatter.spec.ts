@@ -15,6 +15,7 @@ const indicators: StockIndicators = {
   return6m: 45.67,
   high200Position: 0.9,
   volatility20: 18.9,
+  turnover60: 650_000_000,
   barCount: 200,
 };
 
@@ -42,20 +43,22 @@ describe('formatScreenResult', () => {
   it('장투 표에는 6개월 수익률과 20일 변동성을 출력한다', () => {
     const output = formatScreenResult(result('LONG_TERM'));
 
-    expect(output).toContain('순위\t종목코드\t종목명\t시장\t점수');
+    expect(output).toContain(
+      '순위\t종목코드\t종목명\t시장\t점수\tturnover60(억원)',
+    );
     expect(output).toContain('기준일 제외 5종목');
     expect(output).toContain('return6m\tvolatility20');
     expect(output).toContain(
-      '1\t005930\t삼성전자\tKOSPI\t91.23\t45.67%\t18.90%',
+      '1\t005930\t삼성전자\tKOSPI\t91.23\t7\t45.67%\t18.90%',
     );
   });
 
   it('단타 표에는 거래량 급증률과 1개월 수익률을 출력한다', () => {
     const output = formatScreenResult(result('SWING'));
 
-    expect(output).toContain('volumeSurge\treturn1m');
+    expect(output).toContain('turnover60(억원)\tvolumeSurge\treturn1m');
     expect(output).toContain(
-      '1\t005930\t삼성전자\tKOSPI\t91.23\t2.50x\t12.34%',
+      '1\t005930\t삼성전자\tKOSPI\t91.23\t7\t2.50x\t12.34%',
     );
   });
 

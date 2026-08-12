@@ -1,6 +1,7 @@
 import { StockIndicators } from '../../market-data/domain/stock-indicator';
 
-export const SCREENER_RULE_VERSION = 1;
+export const MINIMUM_TURNOVER60 = 500_000_000;
+export const SCREENER_RULE_VERSION = 2;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 
 export interface ScreenCandidate {
@@ -92,10 +93,13 @@ export const screenStocks = (
   strategy: ScreenStrategy,
   limit: number,
 ): ScreenedStock[] => {
-  const passed = candidates.filter((candidate) =>
-    strategy === 'LONG_TERM'
-      ? passesLongTerm(candidate)
-      : passesSwing(candidate),
+  const passed = candidates.filter(
+    (candidate) =>
+      candidate.indicators.turnover60 !== null &&
+      candidate.indicators.turnover60 >= MINIMUM_TURNOVER60 &&
+      (strategy === 'LONG_TERM'
+        ? passesLongTerm(candidate)
+        : passesSwing(candidate)),
   );
   if (passed.length === 0) {
     return [];
