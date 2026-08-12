@@ -2,7 +2,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MarketDataRepository } from './market-data.repository';
 
 describe('MarketDataRepository', () => {
-  it('종목 일봉을 4개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
+  it('종목 일봉을 5개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
     const aggregate = jest.fn().mockResolvedValue({
       _max: { tradeDate: new Date('2026-08-12T00:00:00.000Z') },
     });
@@ -10,24 +10,28 @@ describe('MarketDataRepository', () => {
       {
         tickerId: 1,
         tradeDate: new Date('2026-08-12T00:00:00.000Z'),
+        close: { toNumber: () => 121, toString: () => '121' },
         adjClose: { toNumber: () => 120, toString: () => '120' },
         volume: 120n,
       },
       {
         tickerId: 1,
         tradeDate: new Date('2026-08-11T00:00:00.000Z'),
+        close: { toNumber: () => 111, toString: () => '111' },
         adjClose: { toNumber: () => 110, toString: () => '110' },
         volume: 110n,
       },
       {
         tickerId: 1,
         tradeDate: new Date('2026-08-10T00:00:00.000Z'),
+        close: { toNumber: () => 101, toString: () => '101' },
         adjClose: { toNumber: () => 100, toString: () => '100' },
         volume: 100n,
       },
       {
         tickerId: 2,
         tradeDate: new Date('2026-08-12T00:00:00.000Z'),
+        close: { toNumber: () => 221, toString: () => '221' },
         adjClose: { toNumber: () => 220, toString: () => '220' },
         volume: 220n,
       },
@@ -52,6 +56,7 @@ describe('MarketDataRepository', () => {
       select: {
         tickerId: true,
         tradeDate: true,
+        close: true,
         adjClose: true,
         volume: true,
       },
@@ -59,6 +64,10 @@ describe('MarketDataRepository', () => {
     expect(
       result.get(1)?.map((bar) => bar.tradeDate.toISOString().slice(0, 10)),
     ).toEqual(['2026-08-11', '2026-08-12']);
+    expect(result.get(1)?.map((bar) => bar.close.toString())).toEqual([
+      '111',
+      '121',
+    ]);
     expect(result.get(2)).toHaveLength(1);
   });
 
