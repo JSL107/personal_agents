@@ -6,6 +6,8 @@ import { PoShadowReport } from '../../../agent/po-shadow/domain/po-shadow.type';
 import { PoShadowErrorCode } from '../../../agent/po-shadow/domain/po-shadow-error-code.enum';
 import { AgentRunOutcome } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizePoShadowReport } from '../../../humanize/application/humanize-report.adapter';
 import { formatPoShadowReport } from '../../../slack/format/po-shadow.formatter';
 import {
   AutopilotTask,
@@ -19,6 +21,7 @@ export class PoShadowAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
+    private readonly humanizeService: HumanizeService,
   ) {}
 
   async run({
@@ -56,9 +59,13 @@ export class PoShadowAutopilotTask implements AutopilotTask {
       throw error;
     }
 
+    const humanized = await humanizePoShadowReport(
+      outcome.result,
+      this.humanizeService,
+    );
     return {
       skip: false,
-      summaryText: formatPoShadowReport(outcome.result),
+      summaryText: formatPoShadowReport(humanized),
     };
   }
 }

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { CodexQuotaExceededException } from '../../../model-router/infrastructure/codex-cli.provider';
 import { buildQualityProfiles } from '../../../ops-supervisor/domain/ops-quality.aggregator';
 import {
@@ -35,6 +36,7 @@ export class OpsSupervisorAutopilotTask implements AutopilotTask {
     private readonly agentRunService: AgentRunService,
     @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
     private readonly previewRepository: PreviewActionRepositoryPort,
+    private readonly humanizeService: HumanizeService,
     @Optional()
     @Inject(OPS_SUPERVISOR_ADVISOR_PORT)
     private readonly advisor?: OpsSupervisorAdvisorPort,
@@ -80,12 +82,18 @@ export class OpsSupervisorAutopilotTask implements AutopilotTask {
       }
     }
 
+    // 조치 제안만 LLM 서술이다(나머지는 집계 수치). 제안이 없는 회차는 호출하지 않는다.
+    const humanizedSuggestion = suggestion
+      ? ((await this.humanizeService.humanize({ suggestion })).suggestion ??
+        suggestion)
+      : suggestion;
+
     return {
       skip: false,
       summaryText: formatOpsSupervisor(
         profiles,
         anomalies,
-        suggestion,
+        humanizedSuggestion,
         firedAtKst,
       ),
     };
