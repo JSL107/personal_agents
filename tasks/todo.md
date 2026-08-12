@@ -1,3 +1,28 @@
+# PR #278 봇 리뷰 3건 반영 (2026-08-12)
+
+**Goal:** 잘린 KRX 응답이 대량 상장폐지로 이어지지 않게 이중 방어하고, 부분 일봉 이력을 최초 적재 완료로 오인하지 않으며, KRX 관리 표식을 기준으로 상장폐지를 반영한다.
+
+**Contract:** 사용자가 검증한 리뷰 3건이 구현 계약이다. DB/schema, env, 실제 KRX/DB 호출, dependency, git index/commit은 건드리지 않는다. production과 대응 spec만 최소 수정한다.
+
+- [x] KRX 2,000건 절대 하한과 직전 활성 대비 95% 비율 가드 spec을 추가해 RED를 확인한다.
+- [x] `source='TOSS'`이면서 `krxMarket`이 있는 행도 상장폐지하는 repository spec을 추가해 RED를 확인한다.
+- [x] 저장 일봉 통계를 봉 수와 최신 거래일로 반환하는 repository spec을 추가해 RED를 확인한다.
+- [x] 0봉/4봉/200봉 종목이 각각 insert/full upsert/incremental 경로를 타는 usecase spec을 추가해 RED를 확인한다.
+- [x] production을 최소 수정하고 focused Jest GREEN을 확인한다.
+- [x] `pnpm lint:check`, `pnpm build`, `pnpm exec tsc --noEmit -p tsconfig.json`, `pnpm test`, `pnpm docs:check`, `git diff --check`를 실행한다.
+- [x] 최종 diff를 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- KRX 합계 절대 하한을 정상 약 2,595건의 77%인 2,000건으로 올리고, repository에서 직전 활성 유니버스 대비 95% 미만 감소도 `-1`로 차단한다. 첫 활성 0건일 때만 상대 가드를 건너뛴다.
+- 상장폐지 대상은 `source`가 아니라 유니버스 관리 표식인 `krxMarket != null`로 정한다. Ticker 행은 삭제하지 않아 Holding 기반 감시 대상에는 영향이 없다.
+- 저장 상태 조회를 봉 수와 최신 거래일을 함께 반환하는 단일 `groupBy`로 바꿨다. 0봉은 200봉 insert, 1~199봉은 200봉 upsert, 200봉 이상은 5봉 증분과 소급 재작성 감지를 수행한다.
+- 수정 전 focused test는 신규 API 부재와 1,729건 응답 통과로 3 suites 실패했고, 수정 후 3 suites / 20 tests가 통과했다.
+- 최종 gate는 lint(error 0, 기존 warning 57), build, tsc, docs check, diff check 모두 exit 0이다. 전체 test는 일반 327 suites / 2,727 tests와 code-graph 5 suites / 40 tests가 통과했다.
+- 설계 이탈과 DB/schema/env/dependency 변경은 없다. 실제 KRX/DB 호출과 git index/commit은 수행하지 않았다.
+
+---
+
 # PR #274 리뷰 4건 반영 (2026-08-12)
 
 **Goal:** 활동 대상 번호를 양의 안전한 정수로 제한하고, 동적 bubble·Prisma JSON 정규화 회귀를 고정하며, `run.started` 직후 앱이 활동 bubble 스냅샷을 즉시 다시 받게 한다.

@@ -71,7 +71,7 @@ export class CollectUniversePricesUsecase {
       options.limit === undefined
         ? universe
         : universe.slice(0, Math.max(0, options.limit));
-    const latestDates = await this.repository.findLatestTradeDateByTicker();
+    const storedBarStats = await this.repository.findStoredBarStats();
     const result: CollectPricesResult = {
       targetCount: targets.length,
       succeeded: 0,
@@ -84,17 +84,25 @@ export class CollectUniversePricesUsecase {
 
     for (const [index, ticker] of targets.entries()) {
       try {
-        const hasStoredPrice = latestDates.has(ticker.id);
+        const barCount = storedBarStats.get(ticker.id)?.barCount ?? 0;
+        const hasCompleteHistory = barCount >= DEFAULT_INITIAL_DAYS;
         const days =
           options.days ??
-          (hasStoredPrice ? DEFAULT_INCREMENTAL_DAYS : DEFAULT_INITIAL_DAYS);
+          (hasCompleteHistory
+            ? DEFAULT_INCREMENTAL_DAYS
+            : DEFAULT_INITIAL_DAYS);
         const bars = await this.marketData.fetchDailyBars(
           ticker.tossSymbol,
           days,
         );
         let writeResult: DailyPriceWriteResult;
-        if (!hasStoredPrice) {
+        if (barCount === 0) {
           writeResult = await this.repository.insertDailyPrices(
+            toWriteRows(ticker, bars),
+          );
+        } else if (!hasCompleteHistory) {
+          // 일부 이력은 과거 조정가일 수 있어 빈 행만 채우지 않고 전체 응답으로 덮는다.
+          writeResult = await this.repository.upsertDailyPrices(
             toWriteRows(ticker, bars),
           );
         } else {

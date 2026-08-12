@@ -6,6 +6,8 @@ import { KrxListing } from './krx/krx-listing.mapper';
 
 const WRITE_CHUNK_SIZE = 200;
 const MINIMUM_ACTIVE_UNIVERSE_SIZE = 1_000;
+// 실제 상장폐지는 연간 수십 건이라 하루 5% 감소는 공급자 부분 응답으로 본다.
+const MINIMUM_ACTIVE_UNIVERSE_RATIO = 0.95;
 
 export interface DailyPriceWriteInput {
   tickerId: number;
@@ -27,6 +29,11 @@ export interface UniverseTicker {
   name: string;
   tossSymbol: string;
   krxMarket: string | null;
+}
+
+export interface StoredBarStat {
+  barCount: number;
+  latestTradeDate: string;
 }
 
 @Injectable()
@@ -166,10 +173,24 @@ export class MarketDataRepository {
     if (activeCodes.length < MINIMUM_ACTIVE_UNIVERSE_SIZE) {
       return -1;
     }
+    const currentActiveCount = await this.prisma.ticker.count({
+      where: {
+        market: 'KR',
+        krxMarket: { not: null },
+        delistedAt: null,
+      },
+    });
+    if (
+      currentActiveCount > 0 &&
+      activeCodes.length < currentActiveCount * MINIMUM_ACTIVE_UNIVERSE_RATIO
+    ) {
+      return -1;
+    }
     const result = await this.prisma.ticker.updateMany({
       where: {
         market: 'KR',
-        source: 'KRX',
+        // source가 TOSS여도 krxMarket이 있으면 유니버스가 관리한다. 행은 보존되어 Holding 기반 감시에 영향이 없다.
+        krxMarket: { not: null },
         code: { notIn: activeCodes },
         delistedAt: null,
       },
@@ -203,18 +224,19 @@ export class MarketDataRepository {
     }));
   }
 
-  async findLatestTradeDateByTicker(): Promise<Map<number, string>> {
-    const dates = await this.prisma.dailyPrice.groupBy({
+  async findStoredBarStats(): Promise<Map<number, StoredBarStat>> {
+    const stats = await this.prisma.dailyPrice.groupBy({
       by: ['tickerId'],
+      _count: { _all: true },
       _max: { tradeDate: true },
     });
-    const result = new Map<number, string>();
-    for (const date of dates) {
-      if (date._max.tradeDate) {
-        result.set(
-          date.tickerId,
-          date._max.tradeDate.toISOString().slice(0, 10),
-        );
+    const result = new Map<number, StoredBarStat>();
+    for (const stat of stats) {
+      if (stat._max.tradeDate) {
+        result.set(stat.tickerId, {
+          barCount: stat._count._all,
+          latestTradeDate: stat._max.tradeDate.toISOString().slice(0, 10),
+        });
       }
     }
     return result;
