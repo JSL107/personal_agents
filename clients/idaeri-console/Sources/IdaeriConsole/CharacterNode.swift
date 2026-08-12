@@ -30,6 +30,11 @@ final class CharacterNode: SKNode {
     var isWalking = false
     /// 몇 번째 걸음인가 — 좌우 다리가 번갈아 나가도록 한 칸마다 늘린다.
     private var walkStep = 0
+    /// 상호작용 중에는 상태 몸짓을 다시 걸면 자세가 즉시 덮이므로 씬이 이를 판별해야 한다.
+    private(set) var isInteracting = false
+    private var interactionFacing: Facing?
+    /// 라운지 자세로 전체 노드를 옮긴 양. 종료 때 정확히 빼고, 절대 배치는 새 기준에서 재계산한다.
+    private var interactionOffset: CGPoint = .zero
 
     private var spriteScale: CGFloat = 1
     private var currentTileSize: CGFloat = 32
@@ -133,6 +138,14 @@ final class CharacterNode: SKNode {
             transform: nil
         )
         refreshNameplate()
+    }
+
+    /// 씬의 절대 배치 진입점. 이전 좌표계의 interaction offset은 버리고 새 기준에서 다시 계산한다.
+    func place(at position: CGPoint, depth: CGFloat) {
+        self.position = position
+        zPosition = depth
+        interactionOffset = .zero
+        refreshInteractionOffset()
     }
 
     /// 이 사람 자리의 이름표 몫을 정한다. 자리·방이 바뀌면 다시 넘어온다.
@@ -346,6 +359,130 @@ final class CharacterNode: SKNode {
         apply(facing: facing)
     }
 
+    /// 가구 자세는 몸과 소품을 한 생명주기로 묶어, 취소 경로가 어느 한쪽만 남기지 않게 한다.
+    func beginInteraction(pose: OfficeInteractionPose, facing: Facing) {
+        endInteraction()
+        apply(facing: facing)
+        clearMotion()
+        isInteracting = true
+        interactionFacing = facing
+
+        if pose == .sitting {
+            sit()
+        } else {
+            // **앉아 있던 사람은 명시적으로 일으켜야 한다.** 자세를 걸기 전 상태가 남으면
+            // 커피머신·화이트보드 앞에서 앉은 그림이 그대로 유지된다(렌더로 확인). 걸어와서
+            // 자세를 잡는 경로는 `walk` 가 이미 세우지만, 걸음 없이 자리를 옮기는 경로
+            // (스냅샷 재배치·회귀 렌더)에는 그 보정이 없다.
+            stand()
+            applySpriteSize()
+        }
+
+        if let spriteName = pose.handPropSprite,
+           let texture = SpriteLoader.texture(spriteName) {
+            let prop = SKSpriteNode(texture: texture)
+            prop.name = "handProp"
+            prop.zPosition = 1.2
+            addChild(prop)
+            layoutHandProp(prop, facing: facing)
+            animateHandProp(prop, pose: pose)
+        }
+
+        switch pose {
+        case .reading:
+            startBreathing()
+        case .tending:
+            let tend = SKAction.sequence([
+                .scaleY(to: 0.94, duration: 0.34),
+                .scaleY(to: 1, duration: 0.34),
+            ])
+            tend.timingMode = .easeInEaseOut
+            sprite.run(.repeatForever(tend), withKey: "interaction")
+        case .sitting, .drinking, .carryingPapers, .writing, .stowing:
+            break
+        }
+    }
+
+    /// 같은 취소 신호가 겹쳐도 소품·오프셋·앉은 그림이 남지 않도록 항상 완전한 기본값을 복원한다.
+    func endInteraction() {
+        guard isInteracting
+            || childNode(withName: "handProp") != nil
+            || sprite.action(forKey: "interaction") != nil
+        else {
+            return
+        }
+        childNode(withName: "handProp")?.removeFromParent()
+        sprite.removeAction(forKey: "interaction")
+        isInteracting = false
+        interactionFacing = nil
+        refreshInteractionOffset()
+        stand()
+        clearMotion()
+    }
+
+    private func animateHandProp(_ prop: SKSpriteNode, pose: OfficeInteractionPose) {
+        switch pose {
+        case .drinking:
+            let sip = SKAction.sequence([
+                .moveBy(x: 0, y: currentTileSize * 0.20, duration: 0.20),
+                .wait(forDuration: 0.25),
+                .moveBy(x: 0, y: -currentTileSize * 0.20, duration: 0.20),
+                .wait(forDuration: 0.25),
+            ])
+            prop.run(.repeat(sip, count: 2), withKey: "interaction")
+        case .writing:
+            let stroke = SKAction.sequence([
+                .moveBy(x: -currentTileSize * 0.07, y: 0, duration: 0.18),
+                .moveBy(x: currentTileSize * 0.14, y: 0, duration: 0.36),
+                .moveBy(x: -currentTileSize * 0.07, y: 0, duration: 0.18),
+            ])
+            prop.run(.repeatForever(stroke), withKey: "interaction")
+        case .carryingPapers, .stowing:
+            prop.run(
+                .moveBy(x: 0, y: currentTileSize * 0.12, duration: 0.24),
+                withKey: "interaction"
+            )
+        case .sitting, .reading, .tending:
+            break
+        }
+    }
+
+    private func layoutHandProp(_ prop: SKSpriteNode, facing: Facing) {
+        guard let texture = prop.texture else {
+            return
+        }
+        let sourceSize = texture.size()
+        // **캐릭터와 같은 도트 배율을 쓴다.** "타일의 몇 할" 로 크기를 정하면 7×6px 짜리 머그가
+        // 캐릭터보다 훨씬 굵은 도트로 확대돼, 픽셀 그림에서 가장 먼저 눈에 걸리는 부조화가 된다
+        // (렌더에서 머그가 흰 사각형 덩어리로 보였다). 소품 원본은 캐릭터와 같은 해상도로 그려져
+        // 있으므로 같은 배율이면 손에 든 물건으로 읽힌다.
+        //
+        // 다만 1배로 두면 7px 머그가 몸에 묻혀 아예 안 보였다(렌더 확인). 2배는 정수배라 도트가
+        // 깨지지 않으면서 손에 든 것이 실루엣 밖으로 나온다 — 가시성이 도트 정합보다 앞선다.
+        let propScale = spriteScale * 2
+        prop.size = CGSize(
+            width: sourceSize.width * propScale, height: sourceSize.height * propScale
+        )
+
+        let handOffset: CGPoint
+        switch facing {
+        case .left:
+            handOffset = CGPoint(x: -currentTileSize * 0.20, y: 0)
+        case .right:
+            handOffset = CGPoint(x: currentTileSize * 0.20, y: 0)
+        // 위·아래를 볼 때는 몸이 소품을 가린다(뒤·앞모습이라 손이 실루엣 안에 들어간다).
+        // 옆으로 더 내보내 어깨선 밖에서 보이게 한다.
+        case .up:
+            handOffset = CGPoint(x: currentTileSize * 0.26, y: currentTileSize * 0.06)
+        case .down:
+            handOffset = CGPoint(x: -currentTileSize * 0.26, y: -currentTileSize * 0.04)
+        }
+        prop.position = CGPoint(
+            x: handOffset.x,
+            y: spriteBaseY + sprite.size.height * 0.55 + handOffset.y
+        )
+    }
+
     private func setTexture(_ pose: String) {
         sprite.texture = SpriteLoader.characterTexture(
             pose: pose, sheet: sheetIndex, hair: hairColor, shirt: shirtColor, pants: pantsColor
@@ -368,6 +505,11 @@ final class CharacterNode: SKNode {
         // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
         spriteBaseY = isSeated ? -currentTileSize * CGFloat(officeSeatedSpriteDrop) : 0
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
+        refreshInteractionOffset()
+        if let prop = childNode(withName: "handProp") as? SKSpriteNode,
+           let interactionFacing {
+            layoutHandProp(prop, facing: interactionFacing)
+        }
         // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
@@ -381,6 +523,24 @@ final class CharacterNode: SKNode {
     // 모든 동작은 서로 배타적이라 하나를 걸 때 나머지를 끊는다.
 
     private static let motionKeys = ["typing", "breathing", "slump", "waitTap"]
+
+    private func refreshInteractionOffset() {
+        let nextOffset: CGPoint
+        if isInteracting, isSeated, let interactionFacing {
+            let offset = officeLoungeInteractionOffset(
+                facing: interactionFacing,
+                tileSize: Double(currentTileSize)
+            )
+            nextOffset = CGPoint(x: offset.x, y: offset.y)
+        } else {
+            nextOffset = .zero
+        }
+        position = CGPoint(
+            x: position.x - interactionOffset.x + nextOffset.x,
+            y: position.y - interactionOffset.y + nextOffset.y
+        )
+        interactionOffset = nextOffset
+    }
 
     func clearMotion() {
         for key in Self.motionKeys {

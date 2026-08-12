@@ -1,3 +1,84 @@
+# PR #274 리뷰 4건 반영 (2026-08-12)
+
+**Goal:** 활동 대상 번호를 양의 안전한 정수로 제한하고, 동적 bubble·Prisma JSON 정규화 회귀를 고정하며, `run.started` 직후 앱이 활동 bubble 스냅샷을 즉시 다시 받게 한다.
+
+**Contract:** 사용자 요청이 승인된 구현 설계다. 백엔드 SSE 이벤트 타입·발행부, DB/schema, env, UI 스타일은 바꾸지 않는다. 기존 패턴을 따르는 production/spec과 `.ai/implementation-summary.md`만 최소 수정하며 commit하지 않는다.
+
+- [x] A1 경계값 spec(`pullNumber`: 0/-1/1.5/unsafe, `issueNumber`: 0)을 추가하고 수정 전 RED를 확인한다.
+- [x] `readInteger()`를 `Number.isSafeInteger(value) && value > 0`으로 제한하고 focused GREEN을 확인한다.
+- [x] A2 `ConsoleReadService`의 동적 `#273 리뷰 중` 전달 및 번호 누락 시 `일하는 중…` 폴백 spec을 추가해 기존 production 경로를 검증한다.
+- [x] A3 객체/배열/스칼라/null 혼합 Prisma fixture spec을 추가해 객체 보존·나머지 null·`triggerType` 전달을 검증한다.
+- [x] A4 `AppRootView.connect()`에서 `.runStarted` 처리 직후 `resyncSnapshot()`을 호출하고 스냅샷 전용 bubble 때문에 필요한 이유를 주석으로 남긴다.
+- [x] focused Jest와 Swift compile/test를 실행해 변경 단위 GREEN을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit -p tsconfig.json`을 각각 파이프 없이 실행해 exit 0을 확인한다.
+- [x] 최종 diff·금지 범위·설계 정합성을 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- A1은 수정 전 0·음수 경계 3 failures를 확인한 뒤 양의 safe integer guard로 focused GREEN을 만들었다.
+- A2는 등록된 `CODE_REVIEWER`의 동적 `#273 리뷰 중`과 번호 누락 `일하는 중…` 폴백을 최종 `ConsoleAgent.bubble`에서 고정했다.
+- A3는 한 Prisma 조회 fixture에서 객체만 보존하고 배열·스칼라·null을 `null`로 접으며 `triggerType`을 보존하는 계약을 고정했다.
+- A4는 `.runStarted` 이벤트를 store에 먼저 적용한 뒤 즉시 snapshot resync한다. 백엔드 이벤트 계약은 무변경이다.
+- focused 3 suites/82 tests, lint(기존 warning 57), 일반 308 suites/2,591 tests + code-graph 5 suites/40 tests, build, tsc, diff check가 모두 exit 0이다.
+- 지정 `MacOSX15.4.sdk` 원문 명령은 현재 Swift 6.3.3 compiler와 SDK Swift 6.1 불일치로 exit 1이었다. matching `MacOSX26.5.sdk` + writable cache에서는 Swift build exit 0, ConsoleCoreTests 1,763건 exit 0이다.
+- A4는 실제 앱 실행 없이 컴파일과 ConsoleCoreTests까지만 검증했다. commit 없음.
+- 독립 리뷰는 Critical 0, Important 0, Minor 1, `Ready`. Minor는 A4 앱-level wiring 직접 테스트 부재로 기록했다.
+
+---
+
+# 오피스 에이전트 활동 말풍선 (2026-08-12)
+
+**Goal:** 진행 중인 에이전트의 `triggerType`과 안전한 `inputSnapshot` 값으로 12자 이하의 구체적 활동 문구를 만들고, 미등록·잘못된 입력은 기존 상태 문구로 폴백한다.
+
+**Contract:** `.ai/design.md`가 source of truth다. 계약에 적힌 TypeScript 5개 파일과 Swift 1개 파일만 코드 변경한다. 신규 env·DB/schema·Swift 문구 규칙은 추가하지 않으며 commit하지 않는다.
+
+- [x] `agent-activity-bubble.spec.ts`에 설계 §6 전체 케이스를 작성하고, production 모듈 부재로 RED임을 확인한다.
+- [x] `agent-activity-bubble.ts`에 쌍 키 우선 매핑, 안전한 대상 추출, 12자 상한을 최소 구현해 focused GREEN을 확인한다.
+- [x] `ActiveRunSnapshot`과 Prisma `findActiveRuns()`에 `triggerType`·객체형 `inputSnapshot`을 연결한다.
+- [x] `ConsoleReadService`가 최신 활성 런을 agentType별로 한 번만 접고 `IN_PROGRESS`에서만 활동 문구를 사용하도록 연결한다.
+- [x] `OfficeSceneRender.swift`에서 `updateCompanySummary` 직후 `refreshOverlays`를 호출한다.
+- [x] 타입 오류가 난 기존 `ActiveRunSnapshot` mock은 필드를 완전하게 채우되 타입을 느슨하게 만들지 않는다.
+- [x] focused Jest, `pnpm lint:check`, `pnpm test`, `pnpm build`, `swift build`를 각각 실행해 exit code를 확인한다.
+- [x] 최종 diff와 12자·자유 텍스트·비진행 상태·Swift 단일 변경 제약을 검토한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 변경점·검증·설계 이탈을 기록한다.
+
+## Review
+
+- `triggerType`과 객체형 `inputSnapshot`을 활성 런 조회에 추가하고, pair-key 우선 활동 문구 매핑과 12자 최종 guard를 구현했다. 자유 텍스트는 사용하지 않는다.
+- `ConsoleReadService`는 fresh run을 agentType별 최신 1건으로 접고, 파생 상태가 `IN_PROGRESS`일 때만 활동 문구를 쓴다. 미등록·잘못된 대상·승인 대기는 기존 상태 문구를 유지한다.
+- 신규 순수 함수 spec은 production 모듈 부재로 RED(exit 1) 후 35/35 GREEN. 최신 런 비교와 상태 gate 역변이도 각각 기대한 1 test 실패 후 원복했다.
+- 최종 gate: `pnpm lint:check` exit 0(기존 warning 57), `pnpm test` exit 0(일반 308 suites/2,576 tests + code-graph 5 suites/40 tests), `pnpm build` exit 0.
+- Swift는 기본 cache/toolchain 환경 실패 후 writable cache, `MacOSX15.4.sdk`, `--disable-sandbox`로 `swift build` exit 0. `OfficeSceneRender.swift` 포함 전체 target 컴파일 완료.
+- 독립 최종 리뷰: Critical 0, Important 0, Minor 1(P3 repository JSON 경계 전용 spec 제안), merge-ready. 설계 이탈 없음. commit 없음.
+
+---
+
+# 계획 없는 기간 worklog 생성 (#270 후속 C, 2026-08-11)
+
+**Goal:** PM plan run이 없어도 머지 실적이 있으면 daily/weekly 회고를 생성하고, plan과 실적이 모두 없을 때만 기존 안내문으로 skip한다.
+
+**Contract:** `.ai/design.md`. `WorklogInputSource` 시그니처와 `buildWorklogInput()` 본문, 프롬프트, DB/schema, env는 수정하지 않는다. commit/push/PR 없음.
+
+- [x] 설계·대상 production/spec·formatter·`CODE_RULES.md`·관련 lessons를 읽고 linked worktree/baseline을 확인한다.
+- [x] Task 1의 plan 0건 + 실적 있음/없음/조회 실패 spec을 추가하고 RED를 실제 확인한다.
+- [x] Task 1을 최소 구현하고 focused GREEN을 확인한다.
+- [x] Task 2의 대응 3개 spec을 추가하고 RED를 실제 확인한다.
+- [x] Task 2를 최소 구현하고 focused GREEN을 확인한다.
+- [x] skip 조건 역변이로 plan 0건 + 실적 있음 회귀 spec 실패를 확인하고 원복한다.
+- [x] 설계의 5개 게이트를 각각 파이프 없이 실행해 exit code와 테스트 집계를 기록한다.
+- [x] final diff·금지 범위·설계 정합성을 검토하고 `.ai/implementation-summary.md`와 아래 Review를 갱신한다.
+
+## Review
+
+- daily/weekly 모두 plan run이 없어도 GitHub 실적을 먼저 조회하고, 실적이 있으면 no-plan 표식과 함께 worklog를 생성한다. plan과 실적이 모두 없을 때만 기존 skip 문구를 유지한다.
+- Task 1 RED 2 failures → 26 suites/252 tests GREEN, Task 2 RED 2 failures → 26 suites/254 tests GREEN을 확인했다.
+- skip 조건 역변이는 대상 회귀 spec 1건을 실패시켰고 원복했다.
+- 독립 리뷰 Critical/Important 0건. Minor 1건(파싱 실패 폴백 직접 assertion 부재)은 기존 spec을 보강해 해소했다.
+- 최종 gate: lint/tsc/focused/full/build 모두 exit 0. focused 26 suites/254 tests, 전체 일반 307 suites/2,544 tests + code-graph 5 suites/40 tests 통과.
+- 설계 이탈, 금지 파일 변경, commit/push/PR은 없다.
+
+---
+
 # PR #270 리뷰 반영 A·B·D (2026-08-11)
 
 **Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
@@ -1302,24 +1383,76 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - commit, push, PR 생성 없음.
 
 ---
-# PR #270 리뷰 반영 A·B·D (2026-08-11)
+# PR #272 리뷰 반영 — 조회 실패 재시도 보존 (2026-08-12)
 
-**Goal:** 상세 조회 부분 실패를 실적 0건으로 오인하지 않고, 머지일을 KST로 표시하며, daily/weekly 실적 조회 기간의 상한을 고정한다.
+**Goal:** 계획이 없는 기간의 재시도 가능한 GitHub 조회 실패를 실적 0건으로 확정하지 않고, task 실패를 통해 BullMQ 재시도를 보존한다.
 
-**Contract:** `.ai/design-review-fix.md`가 구현 계약이다. `ListAuthorMergedPullRequestsOptions`에 옵셔널 필드 2개만 추가하고 반환 타입과 기존 production caller 3곳은 바꾸지 않는다. C, env, DB/schema, commit/push/PR은 범위 밖이다.
+**Contract:** `.ai/design-review-fix.md`가 source of truth다. `WorklogInputSource`, `buildWorklogInput()`, 프롬프트, orchestrator, scheduler와 계획이 있는 경로의 동작은 변경하지 않는다. `pnpm install`, commit, push, PR 생성은 금지한다.
 
-- [ ] 변경 대상과 기존 caller 3곳의 baseline을 확인한다.
-- [ ] GitHub 범위 쿼리와 상세 조회 실패 정책 spec을 추가하고 RED를 확인한다.
-- [ ] KST 자정 경계·invalid 입력·formatter fallback spec을 추가하고 RED를 확인한다.
-- [ ] daily/weekly options 전달과 예외의 `evidenceUnavailableReason` 착지 spec을 추가하고 RED를 확인한다.
-- [ ] options/client, KST util/formatter, daily/weekly task를 최소 구현해 focused GREEN을 확인한다.
-- [ ] KST 변환 가드와 상세 실패 가드를 각각 제거하는 역변이로 신규 spec의 실패를 확인하고 원복한다.
-- [ ] 기존 production caller 3곳과 C가 수정되지 않았는지 final diff로 확인한다.
-- [ ] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 각각 실행한다.
-- [ ] `.ai/implementation-summary.md`에 `## 리뷰 반영 (A·B·D)` 절과 아래 Review를 실제 결과로 기록한다.
+- [x] Task 1: 일간 spec의 조회 실패 케이스를 throw 단언으로 교체하고 env 미설정 skip 케이스를 추가해 focused RED를 확인한다.
+- [x] Task 1: `WorklogEvidenceQueryResult.retriable`과 일간 분기·명시 필드 전달을 최소 구현해 focused GREEN을 확인한다.
+- [x] Task 2: 주간 spec의 조회 실패 케이스를 throw 단언으로 교체하고 env 미설정 skip 케이스를 추가해 focused RED를 확인한다.
+- [x] Task 2: `WorklogEvidenceQueryResult.retriable`과 주간 분기·명시 필드 전달을 최소 구현해 focused GREEN을 확인한다.
+- [x] `retriable` throw 분기를 일시 제거하는 역변이로 신규 throw 테스트 실패를 확인하고 즉시 원복한다.
+- [x] final diff에서 금지 파일·시그니처·계획 있는 경로 보존과 설계 이탈 여부를 검토한다.
+- [x] 5개 게이트를 파이프 없이 각각 실행하고 exit code·테스트 집계를 기록한다.
+- [x] `.ai/implementation-summary.md`에 `## 리뷰 반영 (PR #272)` 절과 아래 Review를 실제 결과로 덧붙인다.
 
 ## Review
 
-- 진행 중.
+- daily/weekly 모두 GitHub 조회 실패만 `retriable: true`로 분류해 plan이 없을 때 throw하고, env 미설정·정상 조회는 `false`로 유지했다.
+- Task 1 RED `1 failed / 254 passed` → GREEN `255/255`, Task 2 RED `1 failed / 255 passed` → GREEN `256/256`을 확인했다.
+- 역변이는 exit 1, `2 failed / 254 passed`로 일간·주간 throw 회귀 모두를 검출했고 원복했다.
+- fresh gate는 lint/tsc/focused/full/build 모두 exit 0. focused 26 suites/256 tests, 전체 307 suites/2,546 tests + code-graph 5 suites/40 tests다.
+- 설계가 지정한 코드 변경에서 이탈하지 않았고 금지 파일 변경, `pnpm install`, commit/push/PR은 없다.
+- 기존 orchestrator는 그룹 전멸에만 BullMQ job을 rethrow한다. 단독 `weekly-summary`는 재시도가 보존되지만, 일간 `work-reviewer`는 `evening` 다른 task가 성공하면 부분 성공으로 종료된다. 이 설계/기존 코드 경계는 `.ai/implementation-summary.md`에 재검증 필요 사항으로 기록했다.
 
 ---
+# 가구 자세 후속 시각 결함 수정 (2026-08-12)
+
+**Goal:** lounge 자세가 캐릭터 몸만 옮겨 상태 링·이름표와 분리되는 결함을 없애고, 1칸 가구 실루엣을 보존하는 0.30칸 겹침과 앞쪽 depth를 적용한다.
+
+**Constraints:** 전체 `CharacterNode`만 이동한다. `place`가 절대 위치·depth를 다시 잡을 때 interaction 위치 오프셋 상태도 함께 초기화한다. 책상 `officeSeatedSpriteDrop`은 보존한다. 렌더·git·TypeScript·에셋·의존성 변경은 하지 않는다.
+
+- [x] 방향별 lounge 오프셋 순수 spec을 추가하고 RED를 확인한다.
+- [x] `officeLoungeSpriteShift = 0.30`과 방향별 순수 오프셋 계산을 최소 구현한다.
+- [x] `CharacterNode` 전체 위치 오프셋 적용/멱등 원복을 구현한다.
+- [x] `OfficeScene.place`가 절대 배치와 interaction 오프셋 상태를 한 번에 초기화하게 한다.
+- [x] sprite 전용 interaction 오프셋을 제거하고 `spriteBaseY` 기준 동작을 확인한다.
+- [x] focused GREEN 후 `swift build`, `swift run ConsoleCoreTests`를 실행한다.
+- [x] 최종 변경 범위·depth·책상 앉기 회귀를 검토하고 `.ai/implementation-summary.md`에 후속 절을 덧붙인다.
+
+## Review
+
+- 몸이 아니라 `CharacterNode.position`을 이동해 상태 링·이름표·선택 테두리·손 소품까지 함께 움직인다.
+- `place`는 절대 위치를 정본으로 잡고 저장 오프셋을 초기화한 뒤 필요 시 새 기준에서 재계산한다. resize/texture 재적용은 delta 갱신이라 누적되지 않는다.
+- sitting 5곳은 기존 depth 계산에서 가구보다 `+1` 앞이어서 별도 z 보정은 넣지 않았다.
+- TDD RED는 신규 함수 부재 compile failure로 확인했다. 우회 환경 test `1989/1989`, 전체 build exit 0.
+- 지정 명령 두 개는 기존 compiler/SDK·cache 환경 문제로 코드 컴파일 전 exit 1. 렌더·git·TypeScript·에셋·의존성 변경 없음.
+
+---
+
+---
+# 오피스 가독성 4건 — 사람의 정체·활동·자세와 벽/길 구분 (2026-08-12)
+
+**Goal:** 사무실 화면에서 "이 사람이 누구고 지금 무엇을 하는지", "어디가 벽이고 어디가 길인지"를
+읽히게 한다.
+
+- [x] 멈춰 있던 `feat/office-activity-bubble`(활동 말풍선) 미커밋 작업을 이 브랜치로 흡수 — 방치하면
+      같은 자리를 두 세션이 고쳐 한쪽이 버려진다.
+- [x] 벽 경계 외곽선 — 벽 밝기(117~127)가 바닥(72~92)과 복도(141~155)의 중간값이라 명도로는
+      갈리지 않는다. 도트 그림에서 면을 가르는 수단은 외곽선.
+- [x] 호버 쪽지에 직무 한 줄 — 백엔드는 `job` 을 계속 보내고 있었고(29명 전원 실측) 앱 모델에
+      필드가 없어 버려졌다.
+- [x] 가구 20종 자세 + 바라보는 방향 + 손 소품 (`--pose-demo` 회귀 입구 포함)
+- [x] 검증: ConsoleCoreTests 1989 / pnpm lint:check·test·build 3중 green / 렌더 전후 비교
+
+**남은 것**
+- 실앱에서 8초 주기 배회가 도는 모습과 마우스 호버 쪽지 모양은 사람이 봐야 한다.
+- 앉기는 `char-sit` 이 사무용 의자까지 그려진 그림이라, 소파에 앉으면 의자가 함께 보인다
+  (에셋 한 장의 한계 — 새 스프라이트를 그리지 않는 선에서의 절충).
+
+**리뷰 후속 (PR #276 에서 답변으로 남긴 것)**
+- `state.changed` 이벤트에 말풍선 문구를 실어 보내기. 지금은 이벤트가 `agentType`·`state` 만
+  싣고(`console.type.ts:117-120`) 문구는 스냅샷에만 있어, 화면이 상태 변경 직후 스냅샷을 한 번 더
+  당겨오는 방식으로 우회했다. 근본 수정은 백엔드 이벤트 계약 변경이라 별도 PR 로 분리.

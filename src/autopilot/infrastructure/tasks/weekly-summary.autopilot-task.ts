@@ -43,6 +43,7 @@ const KST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
 interface WorklogEvidenceQueryResult {
   mergedPullRequests: GithubPullRequestSummary[];
   evidenceUnavailableReason: string | null;
+  retriable: boolean;
 }
 
 // Weekly Summary 이관 — 매주 금요일 17:00 KST worklog(주간 7일 PM runs) + CEO meta 체인.
@@ -50,6 +51,7 @@ interface WorklogEvidenceQueryResult {
 // worklog / CEO meta 각각 요약은 summaryText(메인), 근거 detail 은 detailText(스레드)로 분리 반환 —
 // 오케스트레이터(T0)가 메인 발송 후 detailText 를 스레드 댓글로 붙인다.
 // CEO meta 실패 시(NO_PO_EVAL_RUN 등) graceful 안내문(detail 없음)으로 대체해 worklog 발송은 보장.
+// plan과 실적이 모두 없으면 skip 안내를 반환하되, 재시도 가능한 조회 실패는 throw 한다.
 @Injectable()
 export class WeeklySummaryAutopilotTask implements AutopilotTask {
   readonly id = 'weekly-summary';
@@ -77,24 +79,24 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       limit: 7,
     });
 
-    if (runs.length === 0) {
-      return {
-        skip: false,
-        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`,
-      };
-    }
-
-    const plannedLines = runs.flatMap((run) => {
-      const plan = coerceToDailyPlan(run.output);
-      if (!plan) {
-        return [];
-      }
-      const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
-      return [
-        `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
-        ...allTasks.map((task) => `- ${task.title}`),
-      ];
-    });
+    const plannedLines =
+      runs.length === 0
+        ? ['- (이번 주 PM plan 없음)']
+        : runs.flatMap((run) => {
+            const plan = coerceToDailyPlan(run.output);
+            if (!plan) {
+              return [];
+            }
+            const allTasks = [
+              plan.topPriority,
+              ...plan.morning,
+              ...plan.afternoon,
+            ];
+            return [
+              `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
+              ...allTasks.map((task) => `- ${task.title}`),
+            ];
+          });
 
     // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
     const periodEnd = new Date(`${firedAtKst}T00:00:00+09:00`);
@@ -106,12 +108,30 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       since.toISOString(),
       until.toISOString(),
     );
+    if (runs.length === 0 && evidence.mergedPullRequests.length === 0) {
+      if (evidence.retriable) {
+        // 조회 실패를 "실적 0건" 으로 확정하면 정상 완료로 처리돼 멱등 가드가 소비되고
+        // BullMQ 재시도까지 막힌다. 실패로 끊어 다음 슬롯에서 다시 시도하게 한다.
+        throw new Error(
+          `Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: ${evidence.evidenceUnavailableReason}`,
+        );
+      }
+      const evidenceReason = evidence.evidenceUnavailableReason
+        ? ` ${evidence.evidenceUnavailableReason}`
+        : '';
+      return {
+        skip: false,
+        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.${evidenceReason}`,
+      };
+    }
+
     const sinceLabel = KST_DATE_FORMATTER.format(since);
     const workText = buildWorklogInput({
       periodLabel: `${sinceLabel} ~ ${firedAtKst}`,
       plannedLines,
       mergedPullRequestLimit: WEEKLY_MERGED_PULL_REQUEST_LIMIT,
-      ...evidence,
+      mergedPullRequests: evidence.mergedPullRequests,
+      evidenceUnavailableReason: evidence.evidenceUnavailableReason,
     });
 
     const worklogOutcome = await this.generateWorklogUsecase.execute({
@@ -158,6 +178,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       return {
         mergedPullRequests: [],
         evidenceUnavailableReason: 'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+        retriable: false,
       };
     }
 
@@ -174,13 +195,18 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           limit: WEEKLY_MERGED_PULL_REQUEST_LIMIT,
           throwOnDetailFailure: true,
         });
-      return { mergedPullRequests, evidenceUnavailableReason: null };
+      return {
+        mergedPullRequests,
+        evidenceUnavailableReason: null,
+        retriable: false,
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Weekly Summary GitHub 실적 조회 실패: ${message}`);
       return {
         mergedPullRequests: [],
         evidenceUnavailableReason: `GitHub 조회 실패: ${message}`,
+        retriable: true,
       };
     }
   }

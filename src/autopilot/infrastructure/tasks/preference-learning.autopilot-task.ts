@@ -1,7 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { PreferenceInferenceAdapter } from '../../../preference-profile/application/preference-inference.adapter';
+import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  InferenceResult,
+  PreferenceInferenceAdapter,
+} from '../../../preference-profile/application/preference-inference.adapter';
 import { PreferenceSignalCollector } from '../../../preference-profile/application/preference-signal.collector';
 import {
   PREFERENCE_PROFILE_REPOSITORY,
@@ -23,6 +29,12 @@ import {
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const SIGNAL_CAP = 30;
 
+// execute 가 던지는 예외는 두 종류다 — run 콜백의 추론 실패(모델 호출/파싱)와, 원장 자체의
+// 저장 실패(begin/finish DB 오류). 후자를 skip 으로 삼키면 orchestrator 의 실패 안내와
+// BullMQ 재시도가 함께 사라져, 이 변경이 없애려던 조용한 실패를 새로 만든다.
+// 추론 실패에만 이 예외를 쓰고 나머지는 그대로 위로 올린다.
+class PreferenceInferenceFailedError extends Error {}
+
 @Injectable()
 export class PreferenceLearningAutopilotTask implements AutopilotTask {
   readonly id = 'preference-learning';
@@ -39,6 +51,7 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
     @Inject(PREFERENCE_PROPOSAL_REPOSITORY)
     private readonly proposalRepository: PreferenceProposalRepositoryPort,
     private readonly configService: ConfigService,
+    private readonly agentRunService: AgentRunService,
   ) {}
 
   async run({
@@ -73,8 +86,48 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
     }
     const active = await this.profileRepository.findActive(ownerSlackUserId);
     const base = active?.profile ?? EMPTY_PROFILE;
-    const inferred = await this.inference.infer(base, signals);
-    if (!inferred) {
+    // 원장 편입 — 이 워커는 모델을 부르면서도 agent_run 을 거치지 않아, 추론이 며칠 죽어도
+    // 집계에서 "신호가 없어 조용했다" 와 구분되지 않았다(#259·내부 워커 3종 편입의 남은 자리).
+    // 실패 시 동작은 그대로 둔다 — execute 가 FAILED 로 마감한 뒤 다시 던지고, 기존 skip 경로가 받는다.
+    let inferred: InferenceResult;
+    try {
+      const outcome = await this.agentRunService.execute<InferenceResult>({
+        agentType: AgentType.PREFERENCE_LEARNING,
+        triggerType: TriggerType.AUTOPILOT_PREFERENCE_LEARNING_CRON,
+        inputSnapshot: {
+          taskId: this.id,
+          // 사용자 한정 원장 집계(`/quota` 등)가 inputSnapshot.slackUserId JSON path 로만
+          // 필터하므로, 이 키가 없으면 새로 남긴 실행이 그 표면에서 빠진다.
+          slackUserId: ownerSlackUserId,
+          signalCount: signals.length,
+          baseVersion: active?.version ?? 0,
+        },
+        run: async () => {
+          const result = await this.inference.infer(base, signals);
+          if (!result) {
+            throw new PreferenceInferenceFailedError(
+              `선호 추론 실패 — 모델 호출 또는 파싱 실패 (신호 ${signals.length}건)`,
+            );
+          }
+          // diff 본문은 담지 않는다 — preference_proposal 에 이미 저장되고, 원장에 두면
+          // 같은 내용이 중복된다(HUMANIZER 선례). 빈 diff 판정에 필요한 키 목록만 남긴다.
+          return {
+            result,
+            modelUsed: result.modelUsed,
+            output: {
+              rationale: result.rationale,
+              diffKeys: Object.keys(result.diff),
+            },
+          };
+        },
+      });
+      inferred = outcome.result;
+    } catch (error) {
+      // 원장 저장 실패(begin/finish)는 정상 skip 이 아니다 — 위로 올려 orchestrator 의
+      // 실패 안내와 BullMQ 재시도 경로를 살린다. 삼키면 제안이 다음 회차까지 조용히 유실된다.
+      if (!(error instanceof PreferenceInferenceFailedError)) {
+        throw error;
+      }
       this.logger.log(
         `skip — 신호 ${signals.length}건 수집했으나 추론 실패 (모델 호출/파싱 실패)`,
       );

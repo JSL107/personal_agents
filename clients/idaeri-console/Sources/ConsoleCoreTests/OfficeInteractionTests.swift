@@ -16,6 +16,26 @@ private func makeInteractionAgent(_ type: String, _ state: ConsoleAgentState) ->
 func runOfficeInteractionTests(_ t: TestRunner) {
     t.suite("OfficeInteraction")
 
+    // 호버 쪽지 — 직무(정체)가 위, 활동(지금)이 아래. 둘 중 하나만 와도 쪽지는 떠야 한다.
+    t.expect(
+        officeHoverNote(job: "리뷰 답변을 판정한다", activity: "#271 리뷰 중")
+            == "리뷰 답변을 판정한다\n#271 리뷰 중",
+        "직무가 첫 줄, 활동이 둘째 줄"
+    )
+    t.expect(
+        officeHoverNote(job: nil, activity: "업무 대기중") == "업무 대기중",
+        "직무를 모르는 서버(버전 스큐)에서도 활동은 뜬다"
+    )
+    t.expect(
+        officeHoverNote(job: "오늘 할 일을 정한다", activity: nil) == "오늘 할 일을 정한다",
+        "활동이 없어도 직무는 뜬다"
+    )
+    // 공백만 든 문구가 줄로 남으면 쪽지에 빈 줄이 생겨 판이 위로 들뜬다.
+    t.expect(
+        officeHoverNote(job: "  ", activity: "  ") == nil,
+        "빈 문구뿐이면 쪽지를 띄우지 않는다"
+    )
+
     let slots: [(agentType: String, point: OfficePoint)] = [
         ("PM", OfficePoint(x: 100, y: 100)),
         ("CTO", OfficePoint(x: 300, y: 100)),
