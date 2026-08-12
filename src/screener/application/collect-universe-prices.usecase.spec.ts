@@ -1,5 +1,6 @@
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
 import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { TossApiHttpError } from '../../market-data/infrastructure/toss/toss-api.client';
 import { CollectUniversePricesUsecase } from './collect-universe-prices.usecase';
 
 const decimal = (value: string) => ({
@@ -59,6 +60,7 @@ describe('CollectUniversePricesUsecase', () => {
       written: 3,
       blockedIntraday: 0,
       readjusted: 0,
+      retried: 0,
       failures: [],
     });
     expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(1, '005930', 200);
@@ -137,5 +139,144 @@ describe('CollectUniversePricesUsecase', () => {
     expect(result.targetCount).toBe(21);
     expect(result.failed).toBe(21);
     expect(result.failures).toHaveLength(20);
+  });
+
+  it('429가 한 번 발생하면 1초 뒤 한 번 재시도해 성공과 retried를 집계한다', async () => {
+    jest.useFakeTimers();
+    const fetchDailyBars = jest
+      .fn()
+      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429))
+      .mockResolvedValueOnce([bar('2026-08-11', '100')]);
+    const marketData = { fetchDailyBars } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '000020',
+          name: '동화약품',
+          tossSymbol: '000020',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
+      insertDailyPrices: jest
+        .fn()
+        .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
+    } as unknown as MarketDataRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    try {
+      const pending = usecase.execute();
+      await jest.advanceTimersByTimeAsync(999);
+      expect(fetchDailyBars).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+
+      await expect(pending).resolves.toEqual(
+        expect.objectContaining({ succeeded: 1, failed: 0, retried: 1 }),
+      );
+      expect(fetchDailyBars).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('429가 두 번 발생하면 재시도를 더 하지 않고 실패로 남긴다', async () => {
+    jest.useFakeTimers();
+    const fetchDailyBars = jest
+      .fn()
+      .mockRejectedValue(new TossApiHttpError('rate limited', 429));
+    const marketData = { fetchDailyBars } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '000520',
+          name: '삼일제약',
+          tossSymbol: '000520',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
+    } as unknown as MarketDataRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    try {
+      const pending = usecase.execute();
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toEqual(
+        expect.objectContaining({ succeeded: 0, failed: 1, retried: 0 }),
+      );
+      expect(fetchDailyBars).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('429가 아닌 오류는 기다리거나 재시도하지 않고 즉시 실패로 남긴다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockRejectedValue(new TossApiHttpError('server error', 500));
+    const marketData = { fetchDailyBars } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '000970',
+          name: '한국주철관',
+          tossSymbol: '000970',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
+    } as unknown as MarketDataRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    await expect(usecase.execute()).resolves.toEqual(
+      expect.objectContaining({ succeeded: 0, failed: 1, retried: 0 }),
+    );
+    expect(fetchDailyBars).toHaveBeenCalledTimes(1);
+  });
+
+  it('최초 조회와 소급 재수집은 종목당 429 재시도 예산 한 번을 공유한다', async () => {
+    jest.useFakeTimers();
+    const fetchDailyBars = jest
+      .fn()
+      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429))
+      .mockResolvedValueOnce([bar('2026-08-11', '110')])
+      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429));
+    const marketData = { fetchDailyBars } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '001130',
+          name: '대한제분',
+          tossSymbol: '001130',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([[1, { barCount: 200, latestTradeDate: '2026-08-10' }]]),
+        ),
+      findStoredCloses: jest
+        .fn()
+        .mockResolvedValue(new Map([['2026-08-11', '100']])),
+    } as unknown as MarketDataRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    try {
+      const pending = usecase.execute();
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toEqual(
+        expect.objectContaining({ succeeded: 0, failed: 1, retried: 0 }),
+      );
+      expect(fetchDailyBars).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

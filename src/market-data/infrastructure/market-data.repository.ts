@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { isIntradayCapture } from '../domain/intraday-guard';
+import { IndicatorBar } from '../domain/stock-indicator';
 import { KrxListing } from './krx/krx-listing.mapper';
 
 const WRITE_CHUNK_SIZE = 200;
@@ -39,6 +40,42 @@ export interface StoredBarStat {
 @Injectable()
 export class MarketDataRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findBarsForTickers(
+    tickerIds: number[],
+    limit: number,
+  ): Promise<Map<number, IndicatorBar[]>> {
+    if (tickerIds.length === 0 || limit <= 0) {
+      return new Map();
+    }
+    const prices = await this.prisma.dailyPrice.findMany({
+      where: { tickerId: { in: tickerIds } },
+      orderBy: [{ tickerId: 'asc' }, { tradeDate: 'desc' }],
+      select: {
+        tickerId: true,
+        tradeDate: true,
+        adjClose: true,
+        volume: true,
+      },
+    });
+    const grouped = new Map<number, IndicatorBar[]>();
+    for (const price of prices) {
+      const bars = grouped.get(price.tickerId) ?? [];
+      // DB별 그룹 상한 쿼리를 만들지 않고 최근순 결과에서 오래된 초과 봉만 버린다.
+      if (bars.length < limit) {
+        bars.push({
+          tradeDate: price.tradeDate,
+          adjClose: price.adjClose,
+          volume: price.volume,
+        });
+        grouped.set(price.tickerId, bars);
+      }
+    }
+    for (const bars of grouped.values()) {
+      bars.reverse();
+    }
+    return grouped;
+  }
 
   async upsertDailyPrice(
     input: DailyPriceWriteInput,

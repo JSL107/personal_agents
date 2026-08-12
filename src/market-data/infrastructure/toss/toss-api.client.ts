@@ -21,7 +21,7 @@ interface TokenResponse {
   expires_in?: unknown;
 }
 
-class TossApiHttpError extends Error {
+export class TossApiHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
