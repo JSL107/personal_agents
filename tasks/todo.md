@@ -1,3 +1,28 @@
+# PR #278 봇 리뷰 3건 반영 (2026-08-12)
+
+**Goal:** 잘린 KRX 응답이 대량 상장폐지로 이어지지 않게 이중 방어하고, 부분 일봉 이력을 최초 적재 완료로 오인하지 않으며, KRX 관리 표식을 기준으로 상장폐지를 반영한다.
+
+**Contract:** 사용자가 검증한 리뷰 3건이 구현 계약이다. DB/schema, env, 실제 KRX/DB 호출, dependency, git index/commit은 건드리지 않는다. production과 대응 spec만 최소 수정한다.
+
+- [x] KRX 2,000건 절대 하한과 직전 활성 대비 95% 비율 가드 spec을 추가해 RED를 확인한다.
+- [x] `source='TOSS'`이면서 `krxMarket`이 있는 행도 상장폐지하는 repository spec을 추가해 RED를 확인한다.
+- [x] 저장 일봉 통계를 봉 수와 최신 거래일로 반환하는 repository spec을 추가해 RED를 확인한다.
+- [x] 0봉/4봉/200봉 종목이 각각 insert/full upsert/incremental 경로를 타는 usecase spec을 추가해 RED를 확인한다.
+- [x] production을 최소 수정하고 focused Jest GREEN을 확인한다.
+- [x] `pnpm lint:check`, `pnpm build`, `pnpm exec tsc --noEmit -p tsconfig.json`, `pnpm test`, `pnpm docs:check`, `git diff --check`를 실행한다.
+- [x] 최종 diff를 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- KRX 합계 절대 하한을 정상 약 2,595건의 77%인 2,000건으로 올리고, repository에서 직전 활성 유니버스 대비 95% 미만 감소도 `-1`로 차단한다. 첫 활성 0건일 때만 상대 가드를 건너뛴다.
+- 상장폐지 대상은 `source`가 아니라 유니버스 관리 표식인 `krxMarket != null`로 정한다. Ticker 행은 삭제하지 않아 Holding 기반 감시 대상에는 영향이 없다.
+- 저장 상태 조회를 봉 수와 최신 거래일을 함께 반환하는 단일 `groupBy`로 바꿨다. 0봉은 200봉 insert, 1~199봉은 200봉 upsert, 200봉 이상은 5봉 증분과 소급 재작성 감지를 수행한다.
+- 수정 전 focused test는 신규 API 부재와 1,729건 응답 통과로 3 suites 실패했고, 수정 후 3 suites / 20 tests가 통과했다.
+- 최종 gate는 lint(error 0, 기존 warning 57), build, tsc, docs check, diff check 모두 exit 0이다. 전체 test는 일반 327 suites / 2,727 tests와 code-graph 5 suites / 40 tests가 통과했다.
+- 설계 이탈과 DB/schema/env/dependency 변경은 없다. 실제 KRX/DB 호출과 git index/commit은 수행하지 않았다.
+
+---
+
 # PR #274 리뷰 4건 반영 (2026-08-12)
 
 **Goal:** 활동 대상 번호를 양의 안전한 정수로 제한하고, 동적 bubble·Prisma JSON 정규화 회귀를 고정하며, `run.started` 직후 앱이 활동 bubble 스냅샷을 즉시 다시 받게 한다.
@@ -1456,3 +1481,58 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - `state.changed` 이벤트에 말풍선 문구를 실어 보내기. 지금은 이벤트가 `agentType`·`state` 만
   싣고(`console.type.ts:117-120`) 문구는 스냅샷에만 있어, 화면이 상태 변경 직후 스냅샷을 한 번 더
   당겨오는 방식으로 우회했다. 근본 수정은 백엔드 이벤트 계약 변경이라 별도 PR 로 분리.
+# 모의투자 2단계 PR-A — 유니버스 마스터 + 공유 시세 계층 (2026-08-12)
+
+**Goal:** `.ai/design.md` T2~T8 계약대로 KRX 보통주 유니버스와 공유 일봉 저장 계층, 수동 CLI, 일일 Autopilot 수집 경로를 구현한다.
+
+**Architecture:** `market-data`가 장중 저장 가드·KRX 상장 목록·공유 Prisma 쓰기를 소유하고, 신규 `screener` application 계층이 유니버스 동기화와 토스 일봉 수집을 조합한다. CLI와 Autopilot은 같은 usecase만 호출하며 지표·추천은 추가하지 않는다.
+
+**Constraints:** T1 `prisma/schema.prisma`, `.env`, DB, Prisma generate, git index/commit, 실제 KRX 네트워크 호출, 신규 dependency는 건드리지 않는다. 모든 behavior 변경은 focused RED→GREEN 후 전체 5종 gate를 실행한다.
+
+- [x] T2 `intraday-guard.spec.ts` 4경계를 RED로 확인하고 순수 가드를 구현한다.
+- [x] T3 `market-data.repository.spec.ts` 하한선 RED를 확인하고 최초 insert·증분 chunk upsert·저장 close 대조·유니버스 repository를 구현한다.
+- [x] T3 `StockMonitorRepository.upsertDailyPrice`를 공유 repository 위임으로 바꾸고 기존 spec 생성자 mock을 갱신한다.
+- [x] T4 KRX 10셀 HTML 파서·fallback·무효 행·빈 결과 spec을 RED로 확인하고 EUC-KR fetch client를 구현한다.
+- [x] T5 `sync-universe.usecase.spec.ts`를 RED로 확인하고 순차 KRX 결과 upsert/상폐 안전장치를 구현한다.
+- [x] T5 `collect-universe-prices.usecase.spec.ts`를 RED로 확인하고 기본 5/200봉·limit·부분 실패·batch 저장·200건 로그를 구현한다.
+- [x] T5 `ScreenerModule`을 만들어 `MarketDataModule`/`PrismaModule`과 usecase를 배선한다.
+- [x] T6 전용 Nest application context를 쓰는 `scripts/screener.ts`와 엄격한 CLI 옵션 파싱·한국어 결과 출력을 구현한다.
+- [x] T7 `universe-sweep` task spec을 RED로 확인하고 매일 sync+collect, env gate, 18:30 standalone playbook/registry 배선을 구현한다. (실데이터 회귀에서 월요일 제한 제거)
+- [x] T8 `.env.example`, `app.config.ts`, README에 env 3종을 동기화하고 docs catalog를 갱신한다.
+- [x] focused Jest, `git diff --check`, 금지 범위 정적 검사를 수행한다.
+- [x] `pnpm lint:check`, `pnpm build`, `pnpm exec tsc --noEmit -p tsconfig.json`, `pnpm test`, `pnpm docs:check`를 순서대로 실행한다.
+- [x] 최종 diff를 설계와 대조하고 `.ai/implementation-summary.md` 및 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- 1차 계약 대조에서 T3 조정가 갱신, T7 AgentRun 범위, T8 docs catalog 누락을 발견해 중단했다.
+- 수정된 `.ai/design.md`에서 최초 insert/증분 upsert+재조정 감지, 기존 INVEST 원장 재사용, `pnpm docs:sync`로 모두 해소됐다. 구현 재개.
+- T2~T8 구현 완료. focused 16 suites/157 tests, 전체 일반 324 suites/2,620 tests와 code-graph 5 suites/40 tests가 통과했다.
+- 최종 gate 5종 모두 exit 0. lint warning 57건은 기존 파일에만 있으며 신규 error/warning은 없다.
+- 설계 편차 없음. `.env`, DB/Prisma generate, KRX 실제 네트워크, git index/commit은 건드리지 않았다.
+
+---
+
+# PR-A 실데이터 회귀 4건 수정 (2026-08-12)
+
+**Goal:** 실제 KRX 응답과 DB에서 드러난 ETF 유입, 중복 행, 최초 가동 공백, 실패 사유 유실을 수정한다.
+
+**Root causes:** 유니버스 조회가 KRX 분류 여부를 검사하지 않았고, 파서가 공급자 중복을 보존했다. Autopilot sync를 요일에 묶어 빈 유니버스를 성공 처리했으며, failures는 audit에만 남고 사용자 출력 경로에 연결되지 않았다.
+
+- [x] `findUniverseTickers`가 `krxMarket != null`을 요구하는 Prisma query 회귀 spec을 RED→GREEN으로 만든다.
+- [x] 실 KRX fixture 7행을 읽어 5개 고유 코드만 반환하는 mapper spec을 RED→GREEN으로 만든다.
+- [x] 평일과 무관하게 매번 sync→collect 순서를 고정하는 Autopilot spec을 RED→GREEN으로 만든다.
+- [x] Autopilot `detailText`와 CLI가 실패 사유 및 20건 절단 문구를 노출하는 spec/순수 formatter를 RED→GREEN으로 만든다.
+- [x] focused tests와 5종 전체 gate, final diff review를 완료한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `krxMarket: { not: null }`로 KRX 목록이 분류한 보통주만 수집 대상으로 제한했다. 기존 TOSS ETF는 보유 감시 경로에 남고 유니버스에서는 빠진다.
+- 실 KRX fixture 7행에서 코드별 첫 행만 보존해 5개 고유 종목을 반환한다.
+- 요일 분기를 제거해 매일 KRX sync 후 collect하며 최초 가동의 빈 유니버스 성공을 막았다.
+- 공용 실패 formatter를 Autopilot `detailText`와 CLI가 함께 사용한다. 20건 표본보다 전체 실패가 많으면 절단 사실과 전체 건수를 표시한다.
+- RED는 query 조건 누락, fixture 7건 반환, 화요일 sync 미호출/detail 부재, formatter 모듈 부재로 확인했다. focused 6 suites/25 tests GREEN.
+- 5종 gate 모두 exit 0: lint 기존 warning 57/error 0, build, tsc, 일반 325 suites/2,625 tests, code-graph 5/40, docs:check.
+
+---

@@ -143,6 +143,25 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(paperTrading?.digestGroup).toBeUndefined();
   });
 
+  it('유니버스 수집을 모의투자 바로 뒤 18:30 KST standalone 항목으로 포함한다', () => {
+    const paperTradingIndex = AUTOPILOT_PLAYBOOK.findIndex(
+      (entry) => entry.id === 'paper-trading',
+    );
+    const universeSweep = AUTOPILOT_PLAYBOOK[paperTradingIndex + 1];
+
+    expect(universeSweep).toMatchObject({
+      id: 'universe-sweep',
+      taskId: 'universe-sweep',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '30 18 * * *',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(universeSweep.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {
