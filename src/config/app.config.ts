@@ -7,6 +7,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 
@@ -161,6 +162,40 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_TARGET?: string;
+
+  // AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip.
+  @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
+  @IsString()
+  @Matches(/^[^/\s]+\/[^/\s]+$/, {
+    message: 'AI_CLI_ENV_SYNC_REPO 는 "owner/repo" 형식이어야 합니다.',
+  })
+  AI_CLI_ENV_SYNC_REPO?: string;
+
+  // Snapshot repo의 로컬 clone 경로. 미설정 시 ~/.ai-cli-env-sync.
+  @IsOptional()
+  @IsString()
+  AI_CLI_ENV_SYNC_DIR?: string;
+
+  // 스냅샷 export cron. 미설정 시 매주 금 19:00(Asia/Seoul).
+  @IsOptional()
+  @IsString()
+  AI_CLI_ENV_SNAPSHOT_CRON?: string;
+
+  // 스냅샷 export timezone. 미설정 시 Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  AI_CLI_ENV_SNAPSHOT_TIMEZONE?: string;
+
+  // 다른 PC snapshot 감지·승인 카드 cron. 미설정 시 매일 10:00(Asia/Seoul).
+  @IsOptional()
+  @IsString()
+  AI_CLI_ENV_APPLY_CRON?: string;
+
+  // 다른 PC snapshot 감지·승인 카드 timezone. 미설정 시 Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  AI_CLI_ENV_APPLY_TIMEZONE?: string;
 
   // 보유 종목 모니터링. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다.
   @IsOptional()

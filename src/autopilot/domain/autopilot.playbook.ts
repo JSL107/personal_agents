@@ -1,4 +1,8 @@
 import {
+  DEFAULT_AI_CLI_ENV_APPLY_CRON,
+  DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE,
+  DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON,
+  DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE,
   DEFAULT_CEO_META_CRON,
   DEFAULT_CEO_META_TIMEZONE,
   DEFAULT_DAILY_EVAL_CRON,
@@ -309,6 +313,26 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'ai-cli-env-snapshot',
+    taskId: 'ai-cli-env-snapshot',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON,
+      timezone: DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'ai-cli-env-apply',
+    taskId: 'ai-cli-env-apply',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_AI_CLI_ENV_APPLY_CRON,
+      timezone: DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
   },
 ];
 

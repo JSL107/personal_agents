@@ -210,6 +210,8 @@ node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
 | 📅 일 18:00 | CEO Meta |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
+| 🗂️ 금 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
+| 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
 | 🇰🇷 평일 17:10 KST | 국내 보유 종목 모니터링 |
 | 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
 
@@ -256,6 +258,10 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `CLAUDE_MODEL` · `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | Claude provider 보존용 모델 설정(현재 라우팅 경로 없음) · 임베딩(기본 384dim) |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `AI_CLI_ENV_SYNC_REPO` | ❌ | AI CLI 환경 동기화용 private repo `owner/repo`. 미설정 시 snapshot/apply task 모두 skip |
+| `AI_CLI_ENV_SYNC_DIR` | ❌ | snapshot repo 로컬 clone 경로. 기본 `~/.ai-cli-env-sync` |
+| `AI_CLI_ENV_SNAPSHOT_CRON` · `_TIMEZONE` | ❌ | 스냅샷 export cron/timezone. 기본 `0 19 * * 5`, `Asia/Seoul` |
+| `AI_CLI_ENV_APPLY_CRON` · `_TIMEZONE` | ❌ | 다른 PC 스냅샷 감지·승인 cron/timezone. 기본 `0 10 * * *`, `Asia/Seoul` |
 | `AUTOPILOT_SECRETARIAT_SCHEDULE` · `_TIMEZONE` | ❌ | morning(비서실 + 아침 브리핑) cron/timezone override — 기본 `30 8 * * *`, `Asia/Seoul`. 그룹 첫 항목이 `secretariat` 으로 바뀌어, 이전 `AUTOPILOT_MORNING_BRIEFING_*` 은 더 이상 읽히지 않는다 |
 | `AUTOPILOT_ASSIGN_SCHEDULE` · `_TIMEZONE` | ❌ | noon(CTO 배정 + PO Shadow) cron/timezone override — 기본 `0 13 * * *`, `Asia/Seoul`. 키는 그룹명이 아닌 그룹 첫 항목 id(`assign`) 기준 |
 | `STOCK_MONITOR_ENABLED` | ❌ | `'true'` 시 국내 17:10 KST·미국 16:30 ET 보유 종목 모니터링 활성 — 기본 OFF |

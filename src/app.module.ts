@@ -27,6 +27,8 @@ import { StockModule } from './agent/stock/stock.module';
 import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
+import { AiCliEnvModule } from './ai-cli-env/ai-cli-env.module';
+import { AiCliEnvApplyPreviewApplier } from './ai-cli-env/infrastructure/ai-cli-env-apply.preview-applier';
 import { AutopilotModule } from './autopilot/autopilot.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
@@ -137,6 +139,7 @@ import { WebhookModule } from './webhook/webhook.module';
         BeSandboxPushPrApplier,
         DocsAuditPrApplier,
         PreferenceProfilePreviewApplier,
+        AiCliEnvApplyPreviewApplier,
         EveningBlogPublishApplier,
         EveningCareerReflectApplier,
       ],
@@ -150,6 +153,7 @@ import { WebhookModule } from './webhook/webhook.module';
         SandboxModule,
         BeDiffGeneratorModule,
         PreferenceProfileModule,
+        AiCliEnvModule,
         HumanizeModule,
         ModelRouterModule,
         CareerMateModule,

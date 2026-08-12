@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 118개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 124개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -196,6 +196,12 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
+| `AI_CLI_ENV_SYNC_REPO` | ❌ | AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip. |
+| `AI_CLI_ENV_SYNC_DIR` | ❌ | Snapshot repo의 로컬 clone 경로. 미설정 시 ~/.ai-cli-env-sync. |
+| `AI_CLI_ENV_SNAPSHOT_CRON` | ❌ | 스냅샷 export cron. 미설정 시 매주 금 19:00(Asia/Seoul). |
+| `AI_CLI_ENV_SNAPSHOT_TIMEZONE` | ❌ | 스냅샷 export timezone. 미설정 시 Asia/Seoul. |
+| `AI_CLI_ENV_APPLY_CRON` | ❌ | 다른 PC snapshot 감지·승인 카드 cron. 미설정 시 매일 10:00(Asia/Seoul). |
+| `AI_CLI_ENV_APPLY_TIMEZONE` | ❌ | 다른 PC snapshot 감지·승인 카드 timezone. 미설정 시 Asia/Seoul. |
 | `PAPER_TRADING_ENABLED` | ❌ | 모의투자 일일 평가. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다. |
 | `SCREENER_ENABLED` | ❌ | KRX 유니버스 동기화·증분 시세 수집. 명시적으로 'true' 일 때만 실행한다. |
 | `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |

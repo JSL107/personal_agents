@@ -92,3 +92,8 @@ export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 // 열린 PR 이 없으면 GitHub 조회만 하고 끝나므로(실측 14~47초, LLM 미호출) 주기를 줄이는 비용은 작다.
 export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/3 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
+
+export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * 5';
+export const DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE = 'Asia/Seoul';
+export const DEFAULT_AI_CLI_ENV_APPLY_CRON = '0 10 * * *';
+export const DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE = 'Asia/Seoul';
