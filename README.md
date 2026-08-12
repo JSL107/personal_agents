@@ -147,20 +147,27 @@ pnpm dev              # watch 모드 기동
 > **사전 요구사항** — Node 22+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). `claude` CLI 관련 provider/env 는 현재 라우팅에서 호출되지 않으며 롤백 대비 코드로만 보존된다. CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 > **검증** — `pnpm lint:check && pnpm test && pnpm build` 3중 green.
 
-### 다른 PC 로 옮길 때 — Claude Code 개인 환경
+### 다른 PC 로 옮길 때 — Claude Code · Codex 개인 환경
 
-이대리 본체와 별개로, 이 PC 의 Claude Code 환경(플러그인 · MCP · skills · agents · commands · hooks)을 새 PC 에서 재현한다.
+이대리 본체와 별개로, 이 PC 의 AI CLI 환경(플러그인 · MCP · skills · agents · commands · rules · hooks)을 새 PC 에서 재현한다. **Claude Code(`~/.claude`) 와 Codex(`~/.codex`) 를 함께 다루며**, 설치돼 있지 않은 쪽은 자동으로 건너뛴다.
 
 ```bash
-node scripts/export-claude-env.cjs ./claude-env-export   # 기존 PC 에서 내보내기
-# claude-env-export 디렉터리를 새 PC 로 옮긴 뒤
-node scripts/bootstrap-claude-env.cjs ./claude-env-export --dry-run   # 무엇이 바뀌는지 먼저 확인
-node scripts/bootstrap-claude-env.cjs ./claude-env-export             # 적용
+node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내보내기
+# ai-cli-env-export 디렉터리를 새 PC 로 옮긴 뒤
+node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export --dry-run   # 무엇이 바뀌는지 먼저 확인
+node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
 ```
 
+| 도구 | 옮기는 것 | 복원 방법 |
+|---|---|---|
+| Claude Code | 마켓플레이스 · 활성 플러그인 · MCP · `skills` `agents` `commands` `hooks` | `claude plugin marketplace add` → `plugin install` → `mcp add-json` |
+| Codex | 마켓플레이스 · 플러그인 · MCP · `agents` `skills` `rules` `AGENTS.md` | `codex plugin marketplace add` → `plugin add` → `mcp add` |
+
 - **MCP 의 `env`·`headers` 값은 키 이름과 무관하게 전부 플레이스홀더로 빠진다.** 새 PC 에서 같은 이름의 환경 변수를 export 한 뒤 실행하면 채워지고, 없으면 그 MCP 만 건너뛰며 알린다. 필요한 변수와 대화형 인증(Notion OAuth, `codex login` 등) 목록은 산출물의 `SECRETS-TODO.md` 참고.
-- `skills`/`agents` 의 심볼릭 링크는 실체로 풀어서 복사한다(링크 그대로 옮기면 새 PC 에서 전부 끊어진다).
-- `permissions`·`defaultMode` 는 옮기지 않는다. hooks 는 매 세션 실행되는 코드라 `--with-hooks` 를 붙일 때만 적용하고, 대상 PC 에 이미 hooks 가 있으면 `--replace-hooks` 없이는 건너뛴다(`settings.hooks` 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). 명령 안의 옛 홈 경로는 새 PC 홈으로 치환된다.
+- **인증 파일과 대화 기록은 담지 않는다** — `~/.codex/auth.json`, `sessions/`, `memories/`, `~/.claude/projects/` 등. Codex 홈은 3GB 가 넘지만 실제로 옮기는 자산은 수 MB 다.
+- **이 PC 에서만 유효한 것은 제외한다** — 로컬 경로에서 오는 Codex 마켓플레이스·기본 제공 플러그인, 데스크톱 앱이 주입한 MCP(`computer-use`·`node_repl`). 새 PC 에서 런타임이 알아서 다시 만든다. 무엇을 뺐는지는 실행 시 목록으로 보여준다.
+- 심볼릭 링크는 실체로 풀어서 복사한다(링크 그대로 옮기면 새 PC 에서 전부 끊어진다). 숨김 항목(`~/.codex/skills/.system` 등 런타임 관리 영역)은 제외한다.
+- `permissions`·`defaultMode` 는 옮기지 않는다. hooks 는 매 세션 실행되는 코드라 `--with-hooks` 를 붙일 때만 적용하고, 대상 PC 에 이미 hooks 가 있으면 `--replace-hooks` 없이는 건너뛴다(hooks 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). 명령 안의 옛 홈 경로는 새 PC 홈으로 치환된다.
 
 ---
 
