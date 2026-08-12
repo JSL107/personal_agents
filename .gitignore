@@ -82,5 +82,6 @@ node_modules
 # graphify 코드그래프 산출물(AST/graph/report). 로컬 분석용, 커밋 대상 아님.
 graphify-out/
 
-# export-claude-env.cjs 산출물(개인 skills·agents 사본). PC 간 이동용, 커밋 대상 아님.
+# export-ai-cli-env.cjs 산출물(개인 skills·agents 사본). PC 간 이동용, 커밋 대상 아님.
+ai-cli-env-export/
 claude-env-export/
