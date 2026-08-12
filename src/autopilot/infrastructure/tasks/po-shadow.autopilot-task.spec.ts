@@ -50,7 +50,9 @@ describe('PoShadowAutopilotTask', () => {
     });
   });
 
-  it('NO_RECENT_PLAN이면 정상 미실행으로 skip한다', async () => {
+  // 계획이 없어 검토를 못 한 회차는 `skip: true` 로 끊으면 Slack·원장 어디에도 남지 않아,
+  // 연쇄로 멈춘 자리가 침묵한다. 하트비트 한 줄로 "계획이 없었다" 를 드러낸다.
+  it('NO_RECENT_PLAN이면 계획 부재 하트비트를 남긴다 (조용히 사라지지 않는다)', async () => {
     usecase.execute.mockRejectedValue(
       new PoShadowException({
         code: PoShadowErrorCode.NO_RECENT_PLAN,
@@ -59,10 +61,14 @@ describe('PoShadowAutopilotTask', () => {
       }),
     );
 
-    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('2026-07-31');
+    expect(result.summaryText).toContain('최근 계획 없음');
   });
 
-  it('STALE_PLAN이면 정상 미실행으로 skip한다', async () => {
+  it('STALE_PLAN이면 오래된 계획임을 밝히는 하트비트를 남긴다', async () => {
     usecase.execute.mockRejectedValue(
       new PoShadowException({
         code: PoShadowErrorCode.STALE_PLAN,
@@ -71,7 +77,12 @@ describe('PoShadowAutopilotTask', () => {
       }),
     );
 
-    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('계획이 오래돼');
+    // 두 사유가 같은 문구로 뭉개지면 다이제스트에서 원인을 가릴 수 없다.
+    expect(result.summaryText).not.toContain('최근 계획 없음');
   });
 
   it('skip 대상이 아닌 PoShadowException은 다시 던진다', async () => {
