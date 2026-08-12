@@ -339,6 +339,15 @@ model Ticker {
   exposureRegion         String?                 @map("exposure_region")
   // LONG | SHORT. 인버스·곱버스 상품을 같은 지역의 롱과 상쇄해서 읽지 않기 위한 축.
   exposureDirection      String                  @default("LONG") @map("exposure_direction")
+  // KRX 상장법인 목록에서 온 세부 시장('KOSPI'|'KOSDAQ'). identity 축이 아니라 속성이다 —
+  // 같은 종목이 KR 행과 KOSPI 행으로 갈라지지 않게 `market` 은 계속 'KR' 이고,
+  // 세율 계산·스크리닝이 쓰는 세부 시장만 여기 담는다. 값 공간은 PaperMarket 과 같다.
+  krxMarket              String?                 @map("krx_market")
+  sector                 String?
+  listedAt               DateTime?               @map("listed_at") @db.Date
+  // 상장폐지로 목록에서 사라진 날. 유니버스 조회는 이 값이 null 인 행만 본다.
+  // 행을 지우지 않는 이유: 과거 판단의 근거 종목이 사라지면 그때의 성적을 재구성할 수 없다.
+  delistedAt             DateTime?               @map("delisted_at") @db.Date
   source                 String                  @default("YAHOO")
   createdAt              DateTime                @default(now()) @map("created_at")
   updatedAt              DateTime                @updatedAt @map("updated_at")
@@ -352,6 +361,7 @@ model Ticker {
   paperPositionSnapshots PaperPositionSnapshot[]
 
   @@unique([market, code])
+  @@index([krxMarket, delistedAt])
   @@map("ticker")
 }
 

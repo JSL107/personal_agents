@@ -33,6 +33,8 @@ import {
   DEFAULT_STOCK_MONITOR_TIMEZONE,
   DEFAULT_STOCK_MONITOR_US_CRON,
   DEFAULT_STOCK_MONITOR_US_TIMEZONE,
+  DEFAULT_UNIVERSE_SWEEP_CRON,
+  DEFAULT_UNIVERSE_SWEEP_TIMEZONE,
   DEFAULT_WEEKLY_SUMMARY_CRON,
   DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
 } from './autopilot.playbook-defaults';
@@ -227,6 +229,16 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_PAPER_TRADING_CRON,
       timezone: DEFAULT_PAPER_TRADING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'universe-sweep',
+    taskId: 'universe-sweep',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_UNIVERSE_SWEEP_CRON,
+      timezone: DEFAULT_UNIVERSE_SWEEP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

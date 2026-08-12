@@ -255,6 +255,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_STOCK_MONITOR_US_SCHEDULE` · `_TIMEZONE` | ❌ | 미국 모니터링 cron/timezone override — 기본 `30 16 * * 1-5`, `America/New_York` |
 | `PAPER_TRADING_ENABLED` | ❌ | `'true'` 시 모의투자 계좌 일일 평가 활성 — 기본 OFF |
 | `AUTOPILOT_PAPER_TRADING_SCHEDULE` · `_TIMEZONE` | ❌ | standalone 모의투자 평가 cron/timezone override — 기본 `40 17 * * 1-5`, `Asia/Seoul` |
+| `SCREENER_ENABLED` | ❌ | `'true'` 시 KRX 유니버스 동기화·증분 시세 수집 활성 — 기본 OFF |
+| `AUTOPILOT_UNIVERSE_SWEEP_SCHEDULE` · `_TIMEZONE` | ❌ | standalone 유니버스 스윕 cron/timezone override — 기본 `30 18 * * *`, `Asia/Seoul` |
 | `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` · `TOSS_ACCOUNT_SEQ` | ❌ | 토스증권 잔고 동기화. ID/secret 미설정 시 비활성, account seq 미설정 시 첫 BROKERAGE 계좌 자동 선택 |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` · `_L4_MAX_PAIRS` | ❌ | knowledge-lint L4 모순 판정(ChatGPT) on/off(기본 활성) · 주간 상한(기본 `5`, codex 쿼터 가드) |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
