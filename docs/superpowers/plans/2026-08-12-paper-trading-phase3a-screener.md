@@ -18,10 +18,12 @@
 - 인라인 반환 타입 금지 — 별도 `interface`/`type`으로 추출.
 - 파일명은 kebab-case + 역할 접미사. 테스트는 `<파일명>.spec.ts`로 소스와 같은 디렉터리.
 - **의존 방향은 `screener` → `market-data` 한 방향이다.** `market-data`가 `screener`를 import 하면 안 된다 — 시세 계층은 스크리너보다 아래에 있고, 주가 감시 등 다른 소비자도 쓴다.
+- **지표는 `adjClose`(조정가)로 계산하고, 거래대금만 `close`(원본 종가)로 잰다.** `schema.prisma`의 `DailyPrice` 주석이 "지표 계산은 adjClose 를 쓴다"로 못박고 있다. 액면분할이 있으면 원본 종가는 하루 만에 절반으로 떨어져 실제로는 없었던 -50% 수익률이 지표에 박힌다. 반대로 거래대금은 "실제로 얼마어치가 거래됐나"를 묻는 유동성 판정이라 원본 종가라야 한다 — 조정가로 재면 분할 이력이 있는 종목의 과거 구간이 실제보다 작게 나온다.
 - 테스트 실행은 `pnpm exec jest <경로>` — `pnpm test -- <경로>`는 jest를 2단계로 돌려서 필터가 먹지 않는다.
 - 완료 기준은 `pnpm lint:check && pnpm test && pnpm build` 3중 통과.
 - 커밋은 이 worktree(`/Users/juneseok/worktrees/idaeri-paper-recommend`, 브랜치 `feat/paper-trading-phase3`)에서만.
 - 이 단계에서 스키마를 바꾸지 않는다. `db:push` 실행 금지.
+- **PrismaClient는 이미 생성돼 있다** (`pnpm prisma:generate` 완료, 2026-08-12). baseline `pnpm test`가 exit 0이다. 만약 `Module '"@prisma/client"' has no exported member 'Prisma'` 류의 컴파일 오류로 baseline이 깨져 있으면 구현을 시작하지 말고 보고한다 — pnpm 구조상 생성물은 `node_modules/.pnpm/@prisma+client@*/node_modules/.prisma`에 있고 `node_modules/.prisma`에는 없다.
 
 ---
 
@@ -29,7 +31,7 @@
 
 | 파일 | 책임 |
 |---|---|
-| `src/market-data/domain/market-data.type.ts` (수정) | `DailySeriesPoint` 추가 — 계산용 숫자 시계열 점 |
+| `src/market-data/domain/market-data.type.ts` (수정) | `DailySeriesPoint` 추가 — 계산용 숫자 시계열 점(원본 종가·조정가 둘 다) |
 | `src/market-data/infrastructure/market-data.repository.ts` (수정) | `findDailySeries` 추가 |
 | `src/screener/domain/indicator.type.ts` (신규) | 지표 출력 타입 |
 | `src/screener/domain/indicator.ts` (신규) | 시계열 → 지표값. 순수 함수 |
@@ -54,12 +56,14 @@
 **Interfaces:**
 - Consumes: 없음 (순수 함수, 외부 의존 없음)
 - Produces:
-  - `DailySeriesPoint { tradeDate: string; close: number; volume: number }` — `market-data/domain/market-data.type.ts`
+  - `DailySeriesPoint { tradeDate: string; close: number; adjClose: number; volume: number }` — `market-data/domain/market-data.type.ts`
   - `IndicatorValues`, `StockIndicator` — `screener/domain/indicator.type.ts` (아래 Step 3)
   - `calculateIndicator(bars: DailySeriesPoint[]): IndicatorValues | null` — `screener/domain/indicator.ts`
   - `MINIMUM_BAR_COUNT = 121` — 같은 파일
 
-**배경 — 왜 이 지표들인가.** 저장된 일봉에는 종가·수정종가·거래량만 있고 시가·고가·저가가 없다. 그래서 모든 지표를 종가와 거래량만으로 만든다. "52주 고가"를 만들지 않고 `high200Position`(200일 최고 종가 대비 위치)으로 두는 이유는, 토스 캔들 API가 250봉을 요청해도 오류 없이 200봉만 돌려주기 때문이다. 52주는 약 250거래일이므로 52주라고 이름 붙이면 40주짜리 지표가 된다.
+**배경 — 왜 이 지표들인가.** 저장된 일봉에는 종가·조정가·거래량만 있고 시가·고가·저가가 없다. 그래서 모든 지표를 가격과 거래량만으로 만든다. "52주 고가"를 만들지 않고 `high200Position`(200일 최고가 대비 위치)으로 두는 이유는, 토스 캔들 API가 250봉을 요청해도 오류 없이 200봉만 돌려주기 때문이다. 52주는 약 250거래일이므로 52주라고 이름 붙이면 40주짜리 지표가 된다.
+
+**어느 가격을 쓰는가.** 이동평균·수익률·이격도·고가 대비 위치·변동성은 전부 `adjClose`(조정가)로 계산한다. `turnover60`(거래대금)만 `close`(원본 종가)를 쓴다. 이유는 Global Constraints에 적었다 — 요약하면 추세 지표는 분할로 끊기면 안 되고, 유동성은 실제 거래된 금액이라야 한다. `lastClose`는 사람이 보는 값이므로 원본 종가를 싣는다.
 
 **최소 봉 수가 121인 이유.** `ma120`은 120봉이면 계산되지만 `return120`(120거래일 전 대비 수익률)은 121봉이 있어야 한다. 둘 다 만들려면 121이 하한이다. 이 하한에 걸리는 종목은 대부분 신규 상장주다.
 
@@ -71,13 +75,16 @@
 import { DailySeriesPoint } from '../../market-data/domain/market-data.type';
 import { calculateIndicator, MINIMUM_BAR_COUNT } from './indicator';
 
+// 기본은 조정가와 원본 종가가 같다. 분할 이력을 재현할 때만 closes 를 따로 준다.
 const buildBars = (
-  closes: number[],
+  adjCloses: number[],
   volumes?: number[],
+  closes?: number[],
 ): DailySeriesPoint[] =>
-  closes.map((close, index) => ({
+  adjCloses.map((adjClose, index) => ({
     tradeDate: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
-    close,
+    close: closes?.[index] ?? adjClose,
+    adjClose,
     volume: volumes?.[index] ?? 1_000,
   }));
 
@@ -90,11 +97,29 @@ describe('calculateIndicator', () => {
     expect(calculateIndicator(bars)).toBeNull();
   });
 
-  it('종가가 0 이하인 봉이 섞이면 null을 돌려준다', () => {
-    const closes = Array.from({ length: MINIMUM_BAR_COUNT }, () => 100);
-    closes[10] = 0;
+  it('조정가가 0 이하인 봉이 섞이면 null을 돌려준다', () => {
+    const adjCloses = Array.from({ length: MINIMUM_BAR_COUNT }, () => 100);
+    adjCloses[10] = 0;
 
-    expect(calculateIndicator(buildBars(closes))).toBeNull();
+    expect(calculateIndicator(buildBars(adjCloses))).toBeNull();
+  });
+
+  it('지표는 조정가로 계산하고 거래대금과 표시 종가는 원본 종가로 둔다', () => {
+    // 분할 이력이 있는 종목: 조정가는 100 으로 평평하고 원본 종가는 200 이다.
+    const adjCloses = Array.from({ length: MINIMUM_BAR_COUNT }, () => 100);
+    const closes = Array.from({ length: MINIMUM_BAR_COUNT }, () => 200);
+    const volumes = Array.from({ length: MINIMUM_BAR_COUNT }, () => 3_000);
+    const indicator = calculateIndicator(buildBars(adjCloses, volumes, closes));
+
+    // 조정가가 평평하므로 추세 지표는 왜곡이 없다.
+    expect(indicator!.ma20).toBe(100);
+    expect(indicator!.return120).toBeCloseTo(0, 10);
+    expect(indicator!.disparity20).toBeCloseTo(1, 10);
+    expect(indicator!.high200Position).toBeCloseTo(1, 10);
+    // 거래대금은 실제 체결가 200 × 3,000
+    expect(indicator!.turnover60).toBe(600_000);
+    // 사람이 보는 값은 원본 종가
+    expect(indicator!.lastClose).toBe(200);
   });
 
   it('이동평균과 정배열·추세를 계산한다', () => {
@@ -216,7 +241,10 @@ pnpm exec jest src/screener/domain/indicator.spec.ts
 // 이동평균·수익률은 소수 넷째 자리 정밀도가 결과를 바꾸지 않는다.
 export interface DailySeriesPoint {
   tradeDate: string;
+  // 원본 체결가. 거래대금(유동성) 판정과 화면 표시에 쓴다.
   close: number;
+  // 분할·배당 조정가. 추세 지표는 전부 이 값으로 계산한다.
+  adjClose: number;
   volume: number;
 }
 ```
@@ -226,8 +254,10 @@ export interface DailySeriesPoint {
 `src/screener/domain/indicator.type.ts`:
 
 ```ts
+// 아래 지표는 turnover60 을 빼고 전부 조정가(adjClose) 기준이다.
 export interface IndicatorValues {
   lastTradeDate: string;
+  // 사람이 보는 값이라 원본 종가를 싣는다. 계산에는 쓰지 않는다.
   lastClose: number;
   barCount: number;
   ma5: number;
@@ -238,18 +268,18 @@ export interface IndicatorValues {
   isAligned: boolean;
   // ma60 > ma120 — 중장기 추세가 살아 있는가
   isUptrend: boolean;
-  // 현재가 ÷ 20일선. 1보다 크면 20일선 위
+  // 현재 조정가 ÷ 20일선. 1보다 크면 20일선 위
   disparity20: number;
   // 최근 5일 평균 거래량 ÷ 60일 평균 거래량
   volumeSurge: number;
   return20: number;
   return60: number;
   return120: number;
-  // 현재가 ÷ 200일 최고 종가. 1에 가까울수록 고점 부근
+  // 현재 조정가 ÷ 200일 최고 조정가. 1에 가까울수록 고점 부근
   high200Position: number;
   // 최근 20일 일간수익률의 표준편차 (연율화하지 않는다)
   volatility20: number;
-  // 최근 60일 평균 거래대금 (종가 × 거래량)
+  // 최근 60일 평균 거래대금 (원본 종가 × 거래량). 유동성 판정이라 조정가를 쓰지 않는다
   turnover60: number;
 }
 
@@ -307,20 +337,22 @@ export const calculateIndicator = (
   if (bars.length < MINIMUM_BAR_COUNT) {
     return null;
   }
-  const closes = bars.map((bar) => bar.close);
-  // 0 이하 종가는 공급자 오류다. 나눗셈이 Infinity 로 새는 것을 입구에서 막는다.
-  if (closes.some((close) => close <= 0)) {
+  // 추세 지표는 조정가로 계산한다. 원본 종가로 계산하면 액면분할 당일에
+  // 실제로는 없었던 급락이 수익률·이동평균에 그대로 박힌다.
+  const adjCloses = bars.map((bar) => bar.adjClose);
+  // 0 이하 가격은 공급자 오류다. 나눗셈이 Infinity 로 새는 것을 입구에서 막는다.
+  if (adjCloses.some((adjClose) => adjClose <= 0)) {
     return null;
   }
   const volumes = bars.map((bar) => bar.volume);
   const lastBar = bars[bars.length - 1];
-  const ma5 = movingAverage(closes, 5);
-  const ma20 = movingAverage(closes, 20);
-  const ma60 = movingAverage(closes, 60);
-  const ma120 = movingAverage(closes, 120);
+  const ma5 = movingAverage(adjCloses, 5);
+  const ma20 = movingAverage(adjCloses, 20);
+  const ma60 = movingAverage(adjCloses, 60);
+  const ma120 = movingAverage(adjCloses, 120);
   const baseVolume = average(volumes.slice(-SURGE_BASE_SPAN));
   const [return20, return60, return120] = RETURN_SPANS.map((span) =>
-    periodReturn(closes, span),
+    periodReturn(adjCloses, span),
   );
 
   return {
@@ -333,7 +365,7 @@ export const calculateIndicator = (
     ma120,
     isAligned: ma5 > ma20 && ma20 > ma60,
     isUptrend: ma60 > ma120,
-    disparity20: lastBar.close / ma20,
+    disparity20: lastBar.adjClose / ma20,
     volumeSurge:
       baseVolume === 0
         ? 0
@@ -341,8 +373,9 @@ export const calculateIndicator = (
     return20,
     return60,
     return120,
-    high200Position: lastBar.close / Math.max(...closes),
-    volatility20: standardDeviation(dailyReturns(closes, VOLATILITY_SPAN)),
+    high200Position: lastBar.adjClose / Math.max(...adjCloses),
+    volatility20: standardDeviation(dailyReturns(adjCloses, VOLATILITY_SPAN)),
+    // 유동성 판정은 실제로 거래된 금액을 물으므로 원본 종가로 잰다.
     turnover60: average(
       bars.slice(-TURNOVER_SPAN).map((bar) => bar.close * bar.volume),
     ),
@@ -356,7 +389,7 @@ export const calculateIndicator = (
 pnpm exec jest src/screener/domain/indicator.spec.ts
 ```
 
-기대: 11개 테스트 전부 PASS.
+기대: 12개 테스트 전부 PASS.
 
 - [ ] **Step 7: 커밋**
 
@@ -649,18 +682,21 @@ describe('MarketDataRepository.findDailySeries', () => {
         tickerId: 1,
         tradeDate: new Date('2026-08-10T00:00:00.000Z'),
         close: new Prisma.Decimal('1000.5'),
+        adjClose: new Prisma.Decimal('500.25'),
         volume: BigInt(3_000),
       },
       {
         tickerId: 1,
         tradeDate: new Date('2026-08-11T00:00:00.000Z'),
         close: new Prisma.Decimal('1100'),
+        adjClose: new Prisma.Decimal('1100'),
         volume: BigInt(4_000),
       },
       {
         tickerId: 2,
         tradeDate: new Date('2026-08-11T00:00:00.000Z'),
         close: new Prisma.Decimal('500'),
+        adjClose: new Prisma.Decimal('500'),
         volume: BigInt(1_000),
       },
     ]);
@@ -669,12 +705,18 @@ describe('MarketDataRepository.findDailySeries', () => {
 
     const series = await repository.findDailySeries([1, 2], 200);
 
+    // 조정가가 원본 종가와 다른 행이 섞여도 두 값이 각자 실린다.
     expect(series.get(1)).toEqual([
-      { tradeDate: '2026-08-10', close: 1000.5, volume: 3_000 },
-      { tradeDate: '2026-08-11', close: 1100, volume: 4_000 },
+      {
+        tradeDate: '2026-08-10',
+        close: 1000.5,
+        adjClose: 500.25,
+        volume: 3_000,
+      },
+      { tradeDate: '2026-08-11', close: 1100, adjClose: 1100, volume: 4_000 },
     ]);
     expect(series.get(2)).toEqual([
-      { tradeDate: '2026-08-11', close: 500, volume: 1_000 },
+      { tradeDate: '2026-08-11', close: 500, adjClose: 500, volume: 1_000 },
     ]);
   });
 
@@ -684,6 +726,7 @@ describe('MarketDataRepository.findDailySeries', () => {
         tickerId: 1,
         tradeDate: new Date(`2026-08-0${index + 1}T00:00:00.000Z`),
         close: new Prisma.Decimal(String(100 + index)),
+        adjClose: new Prisma.Decimal(String(100 + index)),
         volume: BigInt(1_000),
       })),
     );
@@ -693,8 +736,8 @@ describe('MarketDataRepository.findDailySeries', () => {
     const series = await repository.findDailySeries([1], 2);
 
     expect(series.get(1)).toEqual([
-      { tradeDate: '2026-08-04', close: 103, volume: 1_000 },
-      { tradeDate: '2026-08-05', close: 104, volume: 1_000 },
+      { tradeDate: '2026-08-04', close: 103, adjClose: 103, volume: 1_000 },
+      { tradeDate: '2026-08-05', close: 104, adjClose: 104, volume: 1_000 },
     ]);
   });
 
@@ -769,6 +812,7 @@ const SERIES_TICKER_CHUNK = 200;
           tickerId: true,
           tradeDate: true,
           close: true,
+          adjClose: true,
           volume: true,
         },
       });
@@ -777,6 +821,7 @@ const SERIES_TICKER_CHUNK = 200;
         bars.push({
           tradeDate: row.tradeDate.toISOString().slice(0, 10),
           close: row.close.toNumber(),
+          adjClose: row.adjClose.toNumber(),
           volume: Number(row.volume),
         });
         series.set(row.tickerId, bars);
@@ -842,6 +887,7 @@ const buildSeries = (closes: number[]): DailySeriesPoint[] =>
   closes.map((close, index) => ({
     tradeDate: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
     close,
+    adjClose: close,
     volume: LIQUID_VOLUME,
   }));
 
