@@ -29,6 +29,12 @@ import {
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const SIGNAL_CAP = 30;
 
+// execute 가 던지는 예외는 두 종류다 — run 콜백의 추론 실패(모델 호출/파싱)와, 원장 자체의
+// 저장 실패(begin/finish DB 오류). 후자를 skip 으로 삼키면 orchestrator 의 실패 안내와
+// BullMQ 재시도가 함께 사라져, 이 변경이 없애려던 조용한 실패를 새로 만든다.
+// 추론 실패에만 이 예외를 쓰고 나머지는 그대로 위로 올린다.
+class PreferenceInferenceFailedError extends Error {}
+
 @Injectable()
 export class PreferenceLearningAutopilotTask implements AutopilotTask {
   readonly id = 'preference-learning';
@@ -99,7 +105,7 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
         run: async () => {
           const result = await this.inference.infer(base, signals);
           if (!result) {
-            throw new Error(
+            throw new PreferenceInferenceFailedError(
               `선호 추론 실패 — 모델 호출 또는 파싱 실패 (신호 ${signals.length}건)`,
             );
           }
@@ -116,7 +122,12 @@ export class PreferenceLearningAutopilotTask implements AutopilotTask {
         },
       });
       inferred = outcome.result;
-    } catch {
+    } catch (error) {
+      // 원장 저장 실패(begin/finish)는 정상 skip 이 아니다 — 위로 올려 orchestrator 의
+      // 실패 안내와 BullMQ 재시도 경로를 살린다. 삼키면 제안이 다음 회차까지 조용히 유실된다.
+      if (!(error instanceof PreferenceInferenceFailedError)) {
+        throw error;
+      }
       this.logger.log(
         `skip — 신호 ${signals.length}건 수집했으나 추론 실패 (모델 호출/파싱 실패)`,
       );

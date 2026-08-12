@@ -204,6 +204,48 @@ describe('PreferenceLearningAutopilotTask', () => {
       expect(input.inputSnapshot.baseVersion).toBe(3);
     });
 
+    // 원장의 model_used 는 run 콜백이 돌려주는 modelUsed 로 채워진다. 그 전달이 빠지거나
+    // 잘못 매핑되면 어느 모델이 판정했는지 알 수 없는데, 다른 단언으로는 드러나지 않는다.
+    it('run 결과에 추론이 쓴 실제 모델명을 담는다', async () => {
+      let captured: { modelUsed?: string; result?: unknown } | undefined;
+      const execute = jest.fn(
+        async ({ run }: { run: () => Promise<unknown> }) => {
+          captured = (await run()) as {
+            modelUsed?: string;
+            result?: unknown;
+          };
+          return { result: captured.result };
+        },
+      );
+      const task = buildTask(
+        jest.fn().mockResolvedValue({
+          diff: { tone: { add: ['간결'] } },
+          rationale: 'r',
+          modelUsed: 'gpt-5.2-codex',
+        }),
+        execute,
+      );
+
+      await task.run(ctx);
+
+      expect(captured?.modelUsed).toBe('gpt-5.2-codex');
+    });
+
+    // 원장 저장 실패(begin/finish)를 skip 으로 삼키면 orchestrator 의 실패 안내와 BullMQ
+    // 재시도가 함께 사라져, 이 변경이 없애려던 조용한 실패를 새로 만든다.
+    it('원장 저장 실패는 skip 하지 않고 위로 올린다', async () => {
+      const ledgerError = new Error('agent_run begin 실패 (DB 연결 오류)');
+      const execute = jest.fn().mockRejectedValue(ledgerError);
+      const infer = jest.fn().mockResolvedValue({
+        diff: { tone: { add: ['간결'] } },
+        rationale: 'r',
+        modelUsed: 'codex-cli',
+      });
+      const task = buildTask(infer, execute);
+
+      await expect(task.run(ctx)).rejects.toBe(ledgerError);
+    });
+
     it('추론 실패도 원장을 거친 뒤 skip 한다 — 조용히 사라지지 않는다', async () => {
       const execute = jest.fn(
         async ({ run }: { run: () => Promise<unknown> }) => {
