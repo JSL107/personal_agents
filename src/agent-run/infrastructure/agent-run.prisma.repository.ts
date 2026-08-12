@@ -444,6 +444,8 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         parentId: true,
         startedAt: true,
         endedAt: true,
+        triggerType: true,
+        inputSnapshot: true,
       },
     });
     return rows.map((row) => ({
@@ -453,6 +455,13 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       parentId: row.parentId,
       startedAt: row.startedAt,
       endedAt: row.endedAt,
+      triggerType: row.triggerType,
+      inputSnapshot:
+        row.inputSnapshot !== null &&
+        typeof row.inputSnapshot === 'object' &&
+        !Array.isArray(row.inputSnapshot)
+          ? (row.inputSnapshot as Record<string, unknown>)
+          : null,
     }));
   }
 

@@ -84,6 +84,11 @@ final class OfficeScene: SKScene {
     private var lastSyncedAgents: [ConsoleAgent] = []
     private var lastSyncedApprovals: [ConsoleApproval] = []
     private var agentBubbles: [String: String] = [:]
+    /// agentType → 사규의 직무 한 줄. 호버 쪽지의 첫 줄이 된다.
+    private var agentJobs: [String: String] = [:]
+    /// agentType → 마지막으로 계산한 상시 말풍선 문구. 호버가 그 자리를 빌려 쓰는 동안 보관해,
+    /// 마우스가 떠날 때 다음 갱신을 기다리지 않고 즉시 되돌린다.
+    private var lastInfoBubbles: [String: String?] = [:]
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
@@ -167,6 +172,8 @@ final class OfficeScene: SKScene {
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
             node.removeAction(forKey: "stroll")
+            // 새 격자에 옛 가구 방향 오프셋을 이어 붙이면 몸만 자리 밖에 남는다.
+            node.endInteraction()
             // endWalk 가 isWalking 해제까지 맡는다(걸음 프레임 도입 때 캡슐화).
             node.endWalk()
             // 걷던 중이었다면 node.tile 은 경로 중간이라 자리로 못 쓴다.
@@ -289,6 +296,7 @@ final class OfficeScene: SKScene {
             if !queueOrder.contains(agent.agentType),
                !node.isWalking,
                !strollingAgents.contains(agent.agentType) {
+                node.endInteraction()
                 place(node, at: seat)
                 node.sit()
             }
@@ -310,6 +318,52 @@ final class OfficeScene: SKScene {
         updateDaylight()
         // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
         refreshDoors()
+    }
+
+    /// 회귀 렌더가 자세를 실제로 그리지 않으면 누락도 정상 화면처럼 저장되므로 전부 강제 배치한다.
+    ///
+    /// 자세 종류가 아니라 **가구 종류마다** 한 명씩 세운다. 같은 자세라도 가구가 어디에 어떻게
+    /// 놓였느냐에 따라 몸이 가구에 닿는지가 달라지는데(소파 1칸 vs 회의 테이블 2칸), 자세별로
+    /// 한 명만 세우면 그 자세를 대표하는 가구 하나만 확인되고 나머지는 끝까지 안 보인다.
+    ///
+    /// 배치가 하나도 없는 가구 종류는 건너뛴다 — 평면도가 그 가구를 안 쓸 수도 있고, 그것 때문에
+    /// 데모 전체가 실패하면 확인 수단을 잃는다. 대신 **한 종류도 못 세우면** 실패로 돌려준다.
+    func applyPoseDemo() -> Bool {
+        let spots = officeStrollSpots(plan: plan)
+        var placedCount = 0
+        for kind in FurnitureKind.allCases {
+            // 사람을 **이름으로** 찾는다. 순서로 꺼내면 이름표와 실제 자세가 어긋난다 —
+            // 가구 순서(enum)와 사람 이름 순서(정렬)가 무관해서, `sofa2` 이름표를 단 사람이
+            // 게시판 앞에서 책을 들고 서 있는 화면이 나왔다. 확인용 화면이 확인을 방해했다.
+            guard let pose = kind.interactionPose,
+                let spot = spots.first(where: { $0.kind == kind }),
+                let node = characters[poseDemoAgentType(for: kind)]
+            else {
+                continue
+            }
+            node.removeAllActions()
+            node.sprite.removeAllActions()
+            node.endInteraction()
+            // 데모 자리는 책상 몫이 아니므로 앉아도 원래 좌석의 이름표 폭을 강제하지 않는다.
+            node.setNameplateSpan(nil)
+            place(node, at: spot.tile)
+            node.apply(facing: spot.facing)
+            node.beginInteraction(pose: pose, facing: spot.facing)
+            placedCount += 1
+            // 어느 칸에 누구를 무슨 자세로 세웠는지 남긴다. 굽힌 그림만 보면 사람과 가구가
+            // 겹치는 자리에서 "이 사람이 그 가구를 보고 있는지" 를 눈으로 확정할 수 없다
+            // (실제로 소파 담당이 옆 의자에 앉은 것처럼 보여 배치를 의심하게 됐다).
+            FileHandle.standardError.write(
+                Data(
+                    """
+                    pose-demo \(kind.rawValue) pose=\(pose.rawValue) \
+                    tile=(\(spot.tile.x),\(spot.tile.y)) facing=\(spot.facing) \
+                    prop=\(pose.handPropSprite ?? "-")\n
+                    """.utf8
+                )
+            )
+        }
+        return placedCount > 0
     }
 
     /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
@@ -402,8 +456,7 @@ final class OfficeScene: SKScene {
     /// 한 번이 수백 번 비교로 끝난다.
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
-        node.position = floorPoint(tile)
-        node.zPosition = depth(of: tile)
+        node.place(at: floorPoint(tile), depth: depth(of: tile))
         refreshDoors()
     }
 
@@ -516,6 +569,58 @@ final class OfficeScene: SKScene {
         }
         node.xScale = 1
         node.yScale = 1
+        addWallEdges(node, column: column, row: row)
+    }
+
+    /// 벽 칸에서 **벽이 아닌 이웃과 맞닿는 변**에 어두운 선을 긋는다.
+    ///
+    /// 밝기만으로는 벽이 갈리지 않는다. 렌더 픽셀을 재 보면 벽(밝기 117~127)이 방 바닥
+    /// (72~92)과 복도(141~155)의 정확히 중간값이라, 벽이 바닥의 일부로도 복도의 연장으로도
+    /// 읽힌다 — "어디가 벽이고 어디가 길인지 모르겠다" 는 인상이 여기서 온다. 밝기를 한쪽으로
+    /// 밀어도 그쪽과 붙을 뿐이다(어둡게 하면 바닥, 밝게 하면 복도).
+    ///
+    /// 도트 그림에서 면을 가르는 수단은 명도차가 아니라 **외곽선**이다. 벽끼리 맞닿는 변은
+    /// 비워 두어 벽 한 덩어리가 격자로 쪼개져 보이지 않게 하고, 바닥·복도와 만나는 변에만 긋는다.
+    ///
+    /// 아래 변은 더 두껍게 긋는다 — 위에서 내려보는 시점에서 벽 아래는 벽이 바닥에 드리우는
+    /// 그늘이 놓이는 자리이고, 그 한 줄이 평평한 사각형을 "서 있는 것" 으로 읽히게 한다.
+    private func addWallEdges(_ node: SKSpriteNode, column: Int, row: Int) {
+        node.children.filter { $0.name == "wallEdge" }.forEach { $0.removeFromParent() }
+        let thickness = max(1, tileSize * 0.06)
+        let half = tileSize / 2
+        // dy = +1 이 위쪽이다(격자 원점이 아래).
+        let edges: [(dx: Int, dy: Int)] = [(0, 1), (0, -1), (-1, 0), (1, 0)]
+        for edge in edges {
+            let neighborX = column + edge.dx
+            let neighborY = row + edge.dy
+            let inBounds =
+                neighborX >= 0 && neighborX < plan.columns
+                && neighborY >= 0 && neighborY < plan.rows
+            // 격자 밖은 화면 끝이라 선을 그어도 잘린다 — 벽으로 취급해 건너뛴다.
+            guard !inBounds || plan.floor[neighborY][neighborX] != .wall else {
+                continue
+            }
+            guard inBounds else {
+                continue
+            }
+            let isBottom = edge.dy == -1
+            let lineThickness = isBottom ? thickness * 1.8 : thickness
+            let size =
+                edge.dx == 0
+                ? CGSize(width: tileSize, height: lineThickness)
+                : CGSize(width: lineThickness, height: tileSize)
+            let line = SKSpriteNode(
+                color: SKColor(red: 0.05, green: 0.04, blue: 0.05, alpha: isBottom ? 0.72 : 0.9),
+                size: size
+            )
+            line.name = "wallEdge"
+            line.position = CGPoint(
+                x: CGFloat(edge.dx) * (half - lineThickness / 2),
+                y: CGFloat(edge.dy) * (half - lineThickness / 2)
+            )
+            line.zPosition = 0.1
+            node.addChild(line)
+        }
     }
 
     /// 부서 이름을 구역 왼쪽 위에 얹는다. 바닥 재질만으로는 어느 팀 구역인지 알 수 없다.
@@ -858,10 +963,14 @@ final class OfficeScene: SKScene {
         lastStrollAt[agentType] = Date().timeIntervalSinceReferenceDate
         stopWorking(node)
         walk(node, to: spot.tile) { [weak self, weak node] in
-            node?.apply(facing: .up)
+            node?.apply(facing: spot.facing)
+            node?.beginInteraction(pose: spot.pose, facing: spot.facing)
             node?.run(.sequence([
                 .wait(forDuration: spot.dwellSeconds),
-                .run { [weak self] in self?.endStroll(agentType) },
+                .run { [weak self, weak node] in
+                    node?.endInteraction()
+                    self?.endStroll(agentType)
+                },
             ]), withKey: "stroll")
         }
     }
@@ -893,6 +1002,7 @@ final class OfficeScene: SKScene {
         node.sprite.removeAllActions()
         node.sprite.yScale = 1
         node.sprite.zRotation = 0
+        node.endInteraction()
         // bob 중간 프레임에서 끊기면 y가 떠 있는 값으로 남으므로 서 있는 자세의 기준점도 복원한다.
         node.clearMotion()
         // 걸음 프레임까지 되돌린다. isWalking 만 내리면 다리가 엇갈린 그림이 그대로 남아
@@ -991,6 +1101,7 @@ final class OfficeScene: SKScene {
         guard let node = characters[agentType], let seat = homeSeats[agentType] else {
             return
         }
+        node.endInteraction()
         queueOrder.removeAll { $0 == agentType }
         layoutQueue()
         walk(node, to: seat) { [weak node] in
@@ -1042,16 +1153,29 @@ final class OfficeScene: SKScene {
         }
         cancelStroll(agentType)
         let occupied = Set(characters.values.map(\.tile))
-        guard let spot = plan.loungeTiles.first(where: { !occupied.contains($0) }) else {
+        guard let loungeTile = plan.loungeTiles.first(where: { !occupied.contains($0) }) else {
             return
         }
+        // loungeTiles는 배치 호환 계약이라 유지하고, 자세 정보만 같은 타일의 카탈로그에서 얻는다.
+        let interactionSpot = officeStrollSpots(plan: plan).first { $0.tile == loungeTile }
         strollingAgents.insert(agentType)
         stopWorking(node)
-        walk(node, to: spot) { [weak self, weak node] in
-            node?.apply(facing: .down)
+        walk(node, to: loungeTile) { [weak self, weak node] in
+            if let interactionSpot {
+                node?.apply(facing: interactionSpot.facing)
+                node?.beginInteraction(
+                    pose: interactionSpot.pose,
+                    facing: interactionSpot.facing
+                )
+            } else {
+                node?.apply(facing: .down)
+            }
             node?.run(.sequence([
                 .wait(forDuration: 3.5),
-                .run { [weak self] in self?.endStroll(agentType) },
+                .run { [weak self, weak node] in
+                    node?.endInteraction()
+                    self?.endStroll(agentType)
+                },
             ]), withKey: "stroll")
         }
     }
@@ -1354,15 +1478,34 @@ final class OfficeScene: SKScene {
                 continue
             }
             agentBubbles[agent.agentType] = agent.bubble
+            // 값이 없으면 지운다. 예전 값을 남기면 서버를 되돌렸을 때(필드를 모르는 버전)
+            // 사라진 직무가 화면에 계속 붙어 있다.
+            agentJobs[agent.agentType] = agent.job
             let info = agentTokenInfo(
                 agent: agent, runs: runs, pendingCommands: pendingCommands, now: now
             )
-            if info.bubble != nil {
+            let top = node.sprite.size.height
+            // 마우스를 올린 사람은 **상시 말풍선 자리를 호버 쪽지가 대신 쓴다.**
+            //
+            // 상시 말풍선은 일이 도는 사람에게만 붙는데(`agentTokenInfo`), 그 말풍선이 있으면
+            // 호버 쪽지를 만들지 않는 구조였다. 결과가 거꾸로였다 — 지금 무엇을 하는지 가장
+            // 궁금한 **진행 중·승인 대기 직원에게만 직무가 영영 안 보였다.**
+            // 둘을 같은 높이에 함께 붙이면 글자가 겹치므로, 호버 중에는 활동까지 담은 쪽지 하나로
+            // 합친다(`officeHoverNote` 가 직무 → 활동 두 줄을 만든다).
+            let isHovered = hoveredAgentType == agent.agentType
+            let hoverNote = officeHoverNote(job: agent.job, activity: agent.bubble)
+            lastInfoBubbles[agent.agentType] = info.bubble
+            if isHovered, let hoverNote {
+                setChildLabel(
+                    node, name: "hoverBubble", text: hoverNote,
+                    position: CGPoint(x: 0, y: top + nameplateClearance),
+                    fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+                )
+            } else {
                 node.childNode(withName: "hoverBubble")?.removeFromParent()
             }
-            let top = node.sprite.size.height
             setChildLabel(
-                node, name: "infoBubble", text: info.bubble,
+                node, name: "infoBubble", text: isHovered ? nil : info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
                 fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
             )
@@ -1381,7 +1524,9 @@ final class OfficeScene: SKScene {
 
     /// 마지막으로 받은 스냅샷과 phase 로 몸짓을 다시 건다. 걸음이 끝난 직후에 쓴다.
     private func reapplyMotion(_ agentType: String) {
-        guard let agent = lastSyncedAgents.first(where: { $0.agentType == agentType }) else {
+        guard let node = characters[agentType], !node.isInteracting,
+              let agent = lastSyncedAgents.first(where: { $0.agentType == agentType })
+        else {
             return
         }
         applyMotion(for: agent, phase: lastPhases[agentType])
@@ -1393,7 +1538,7 @@ final class OfficeScene: SKScene {
     /// 걷는 중인 사람은 건너뛴다(걸음 자체가 지금의 동작이다). 대신 도착 시점에 walk 가
     /// `reapplyMotion` 으로 최신 상태를 다시 걸어, 걷는 동안의 변화가 유실되지 않게 한다.
     private func applyMotion(for agent: ConsoleAgent, phase: PendingPhase?) {
-        guard let node = characters[agent.agentType], !node.isWalking else {
+        guard let node = characters[agent.agentType], !node.isWalking, !node.isInteracting else {
             return
         }
         let previous = lastPhases[agent.agentType]
@@ -1679,6 +1824,8 @@ final class OfficeScene: SKScene {
             ?? NSFont.boldSystemFont(ofSize: resolvedSize)
         // 음수 두께 = 채움 + 외곽선. 여기 오는 글자는 전부 바닥·가구 위에 떠서, 외곽선이
         // 없으면 책장·프린터 무늬에 묻혀 읽히지 않는다(에이전트 이름표와 같은 처리).
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
         label.attributedText = NSAttributedString(
             string: text,
             attributes: [
@@ -1686,11 +1833,21 @@ final class OfficeScene: SKScene {
                 .foregroundColor: color,
                 .strokeColor: NSColor(white: 0.03, alpha: 0.95),
                 .strokeWidth: -3.5,
+                .paragraphStyle: paragraph,
             ]
         )
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
-        label.position = position
+        // 개행이 있는 문구(호버 쪽지의 직무 + 활동)를 여러 줄로 그린다. 기본값 1 이면 둘째
+        // 줄이 조용히 잘려, 활동 문구를 넣어도 화면에서는 첫 줄만 보인다.
+        label.numberOfLines = 0
+        // 세로 중앙 정렬이라 줄이 늘면 아래로도 자라 사람 머리를 덮는다. 늘어난 만큼 올려
+        // **첫 줄이 한 줄일 때와 같은 높이**에 오게 한다.
+        let extraLines = text.components(separatedBy: "\n").count - 1
+        label.position = CGPoint(
+            x: position.x,
+            y: position.y + resolvedSize * 0.62 * CGFloat(extraLines)
+        )
         label.zPosition = 20
         parent.addChild(label)
     }
@@ -1764,6 +1921,10 @@ final class OfficeScene: SKScene {
             node.sprite.run(.scale(to: 1.0, duration: 0.1))
             node.childNode(withName: "hoverBubble")?.removeFromParent()
             node.setHovered(false)
+            // 호버 중에는 상시 말풍선 자리를 쪽지가 빌려 쓴다(refreshOverlays 의 같은 근거).
+            // 마우스가 떠나면 그 사람의 상시 말풍선을 되돌려야 한다 — 다음 갱신까지 기다리면
+            // 일이 도는 사람의 말풍선이 최대 30초 동안 비어 보인다.
+            restoreInfoBubble(previous)
         }
         hoveredAgentType = hit
         if hit == officeHitTargetPresident {
@@ -1776,13 +1937,34 @@ final class OfficeScene: SKScene {
         }
         node.setHovered(true)
         node.sprite.run(.scale(to: 1.12, duration: 0.1))
-        if node.childNode(withName: "infoBubble") == nil, let text = agentBubbles[hit] {
-            setChildLabel(
-                node, name: "hoverBubble", text: text,
-                position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
-                fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
-            )
+        // 상시 말풍선이 있어도 쪽지를 띄운다. 예전에는 말풍선이 있으면 건너뛰어서, 진행 중·승인
+        // 대기처럼 **가장 궁금한 상태의 직원에게만** 직무가 안 보였다. 쪽지가 활동까지 담으므로
+        // 말풍선을 잠시 내려도 잃는 정보가 없다.
+        guard let text = officeHoverNote(job: agentJobs[hit], activity: agentBubbles[hit]) else {
+            return
         }
+        node.childNode(withName: "infoBubble")?.removeFromParent()
+        setChildLabel(
+            node, name: "hoverBubble", text: text,
+            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
+            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+        )
+    }
+
+    /// 마우스가 떠난 사람의 상시 말풍선을 되돌린다.
+    ///
+    /// 문구는 마지막 `refreshOverlays` 가 계산해 둔 값을 쓴다. 호버 시점의 문구를 따로 들고 있다가
+    /// 되돌리면 호버 중에 상태가 바뀐 경우 옛 문구가 되살아나는데, 이 캐시는 상태가 바뀔 때마다
+    /// 함께 갱신되므로 항상 지금 값이다.
+    private func restoreInfoBubble(_ agentType: String) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        setChildLabel(
+            node, name: "infoBubble", text: lastInfoBubbles[agentType] ?? nil,
+            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
+            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+        )
     }
 
     /// 좌표에 있는 사람. 캐릭터는 발 기준으로 서 있으므로 몸통 높이의 절반만큼 위를 중심으로 본다.

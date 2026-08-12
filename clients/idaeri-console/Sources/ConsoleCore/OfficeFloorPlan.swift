@@ -56,6 +56,12 @@ public let officeFurnitureWidthCapTiles: Double = 1.15
 /// 공중에 뜬 것처럼 보이는 원인이다. 앉음일 때만 내려 하반신이 책상에 가리게 한다 —
 /// 서 있거나 걷는 캐릭터는 발이 바닥에 닿아야 하므로 오프셋 0 을 유지한다.
 public let officeSeatedSpriteDrop: Double = 0.28
+/// 라운지 좌석은 가구 방향이 고정되지 않아, 책상용 수직 오프셋 대신 바라보는 쪽으로 당긴다.
+///
+/// 0.22칸은 몸이 가구에 닿지 않아 바닥에 쭈그려 앉은 것처럼 보였고, 0.48칸은 높이 약 1.35칸인
+/// 캐릭터가 1×1 소파를 통째로 덮었다. 두 실패 사이인 0.30칸에서 몸과 가구를 겹치되 소파
+/// 실루엣을 남긴다. 책상 좌석의 `officeSeatedSpriteDrop`은 별도 수직 오프셋으로 유지한다.
+public let officeLoungeSpriteShift: Double = 0.30
 
 // MARK: - 책상 위 서류 더미 (오늘 처리한 일의 양)
 
@@ -615,6 +621,31 @@ public enum FurnitureKind: String, Sendable, CaseIterable {
             return 3
         // **문은 목적지가 될 수 없다.** 아래 구역의 유일한 출입구라, 누가 문 앞에 4초 서 있으면
         // 그동안 그 방을 드나드는 사람이 전부 막힌다.
+        case .desk, .chairDown, .chairUp, .clock, .trash,
+            .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPoster,
+            .wallPlantHanging, .doorClosed, .doorOpen, .partitionLow, .partitionGlass,
+            .rugGreen, .rugBeige, .rugNavy:
+            return nil
+        }
+    }
+
+    /// 머무름이 있는 가구만 자세를 가진다. 두 switch를 나란히 둬 새 종류 추가 시 함께 검토한다.
+    public var interactionPose: OfficeInteractionPose? {
+        switch self {
+        case .sofa2, .sofa3, .coffeeTable, .meetingTable:
+            return .sitting
+        case .coffeeMachine, .waterCooler, .vendingMachine, .refrigerator, .sinkCounter:
+            return .drinking
+        case .printer, .filingCabinet:
+            return .carryingPapers
+        case .whiteboard, .wallWhiteboard:
+            return .writing
+        case .bookshelf, .wallShelf, .wallMonitor, .wallPinboard:
+            return .reading
+        case .plantTall, .plantSmall:
+            return .tending
+        case .lockers2:
+            return .stowing
         case .desk, .chairDown, .chairUp, .clock, .trash,
             .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPoster,
             .wallPlantHanging, .doorClosed, .doorOpen, .partitionLow, .partitionGlass,

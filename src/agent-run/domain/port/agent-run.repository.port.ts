@@ -156,6 +156,10 @@ export interface ActiveRunSnapshot {
   parentId: number | null;
   startedAt: Date;
   endedAt: Date | null;
+  // 콘솔 말풍선 — "무슨 일 중" 문구를 만들려면 어떤 계기로 무엇을 대상으로 도는지가 필요하다.
+  triggerType: string;
+  // Prisma Json 을 도메인에 들이지 않는다. 객체가 아니면(배열·스칼라·null) null 로 접는다.
+  inputSnapshot: Record<string, unknown> | null;
 }
 
 // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 "최신 종료 런"의 결과와

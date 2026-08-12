@@ -48,6 +48,15 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// 두면 화면이 통째로 안 뜬다 — 서류 더미 하나 때문에 관제 화면을 잃는 것은 균형이 안 맞는다.
     /// 값이 없으면 서류를 안 놓는다(0장).
     public let doneToday: Int?
+    /// 이 사람이 맡은 일을 사람 말로 옮긴 한 줄(백엔드 사규의 `job`, 예: "리뷰 답변을 판정한다").
+    ///
+    /// 이름표는 여섯 자 안팎이라(`답변 판정`) 무슨 일을 하는 사람인지 화면에서 읽히지 않는다.
+    /// 백엔드는 이 문장을 스냅샷에 계속 실어 보내고 있었는데 앱이 필드를 갖고 있지 않아 통째로
+    /// 버려졌다 — 데이터가 아니라 배선이 빠져 있었다.
+    ///
+    /// 옵셔널인 이유는 `doneToday` 와 같다(버전 스큐). 이 필드를 모르는 서버가 응답을 내려도
+    /// 스냅샷 디코딩 전체가 실패해서는 안 된다.
+    public let job: String?
 
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
@@ -79,7 +88,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
             bubble: bubble ?? self.bubble,
             lastFinishedRunId: lastFinishedRunId ?? self.lastFinishedRunId,
             department: department,
-            doneToday: doneToday
+            doneToday: doneToday,
+            job: job
         )
     }
 
@@ -92,7 +102,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         bubble: String,
         lastFinishedRunId: String? = nil,
         department: String? = nil,
-        doneToday: Int? = nil
+        doneToday: Int? = nil,
+        job: String? = nil
     ) {
         self.agentType = agentType
         self.displayName = displayName
@@ -103,6 +114,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         self.lastFinishedRunId = lastFinishedRunId
         self.department = department
         self.doneToday = doneToday
+        self.job = job
     }
 }
 

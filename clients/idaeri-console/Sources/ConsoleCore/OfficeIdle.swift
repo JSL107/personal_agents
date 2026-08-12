@@ -9,6 +9,31 @@ public let officeStrollMaxConcurrency: Int = 3
 /// 같은 사람이 다시 배회하기까지 쉬는 시간(초).
 public let officeStrollCooldownSeconds: Double = 90
 
+/// 가구 앞에서 취하는 자세. 서기·앉기 그림만 있는 한계를 소품과 몸짓으로 보완한다.
+public enum OfficeInteractionPose: String, Sendable, CaseIterable {
+    case sitting
+    case drinking
+    case carryingPapers
+    case writing
+    case reading
+    case tending
+    case stowing
+
+    /// 손 소품 이름은 Core에 둬야 렌더러 밖에서도 에셋 계약의 누락을 전수 검증할 수 있다.
+    public var handPropSprite: String? {
+        switch self {
+        case .drinking:
+            return "prop-mug"
+        case .carryingPapers, .writing:
+            return "prop-papers"
+        case .reading, .stowing:
+            return "prop-book-stack"
+        case .sitting, .tending:
+            return nil
+        }
+    }
+}
+
 /// 자율 배회 후보 한 명의 상태 요약. SpriteKit 상태를 순수 판정 경계 밖으로 밀어낸다.
 public struct OfficeIdleCandidate: Equatable, Sendable {
     public let agentType: String
@@ -91,11 +116,48 @@ public struct OfficeStrollSpot: Equatable, Sendable {
     public let kind: FurnitureKind
     public let tile: TilePoint
     public let dwellSeconds: Double
+    /// 가구 방향을 목적지와 함께 보존해야 씬이 다시 좌표를 추측하다 잘못된 쪽을 보지 않는다.
+    public let facing: Facing
+    public let pose: OfficeInteractionPose
 
-    public init(kind: FurnitureKind, tile: TilePoint, dwellSeconds: Double) {
+    public init(
+        kind: FurnitureKind,
+        tile: TilePoint,
+        dwellSeconds: Double,
+        facing: Facing,
+        pose: OfficeInteractionPose
+    ) {
         self.kind = kind
         self.tile = tile
         self.dwellSeconds = dwellSeconds
+        self.facing = facing
+        self.pose = pose
+    }
+}
+
+/// 목적지에서 가구를 바라보는 방향. 대각선은 차이가 더 큰 축을 택해 작은 오차에 흔들리지 않는다.
+public func officeFacing(from tile: TilePoint, to furniture: TilePoint) -> Facing {
+    let differenceX = furniture.x - tile.x
+    let differenceY = furniture.y - tile.y
+    if abs(differenceX) > abs(differenceY) {
+        return differenceX < 0 ? .left : .right
+    }
+    return differenceY < 0 ? .down : .up
+}
+
+/// 라운지 자세에서 캐릭터 전체를 가구 쪽으로 옮길 scene 좌표 오프셋.
+/// SpriteKit 자식별로 같은 계산을 복제하지 않도록 Core의 한 순수 경계에서 방향을 정한다.
+public func officeLoungeInteractionOffset(facing: Facing, tileSize: Double) -> OfficePoint {
+    let shift = tileSize * officeLoungeSpriteShift
+    switch facing {
+    case .left:
+        return OfficePoint(x: -shift, y: 0)
+    case .right:
+        return OfficePoint(x: shift, y: 0)
+    case .up:
+        return OfficePoint(x: 0, y: shift)
+    case .down:
+        return OfficePoint(x: 0, y: -shift)
     }
 }
 
@@ -115,7 +177,9 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     var spots: [OfficeStrollSpot] = []
 
     for placement in plan.furniture {
-        guard let dwellSeconds = placement.kind.strollDwellSeconds else {
+        guard let dwellSeconds = placement.kind.strollDwellSeconds,
+              let pose = placement.kind.interactionPose
+        else {
             continue
         }
         let neighbors = [
@@ -130,7 +194,13 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
             continue
         }
         spots.append(
-            OfficeStrollSpot(kind: placement.kind, tile: tile, dwellSeconds: dwellSeconds)
+            OfficeStrollSpot(
+                kind: placement.kind,
+                tile: tile,
+                dwellSeconds: dwellSeconds,
+                facing: officeFacing(from: tile, to: placement.tile),
+                pose: pose
+            )
         )
     }
     return spots

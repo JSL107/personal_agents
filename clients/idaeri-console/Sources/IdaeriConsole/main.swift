@@ -45,11 +45,14 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
             }
             return CGSize(width: parsed.width, height: parsed.height)
         } ?? CGSize(width: 1400, height: 820)
+    // 일반 앱 경로에는 닿지 않고, 회귀 렌더에서만 가구 자세 일곱 종류를 강제로 세운다.
+    let poseDemo = CommandLine.arguments.contains("--pose-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
         hour: hour,
-        size: renderSize
+        size: renderSize,
+        poseDemo: poseDemo
     )
     exit(succeeded ? 0 : 1)
 }
