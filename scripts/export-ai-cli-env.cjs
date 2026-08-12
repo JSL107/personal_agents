@@ -226,9 +226,26 @@ function collectCodex() {
       args: transport.args || [],
       url: transport.url,
       env: transport.env || {},
+      // 값이 아니라 "어느 환경 변수에서 읽을지" 이름이라 비밀이 아니다 — 그대로 보존한다.
+      bearerTokenEnvVar: transport.bearer_token_env_var || undefined,
+      envHttpHeaders: transport.env_http_headers || undefined,
+      // 이쪽은 헤더 값이 그대로 들어가므로 env 와 같은 규칙으로 마스킹한다.
+      headers: transport.http_headers || undefined,
       enabled: entry.enabled,
     };
     redactFields(copy, 'codex', entry.name);
+    if (copy.bearerTokenEnvVar) {
+      secretsRequired.push({
+        tool: 'codex',
+        mcp: entry.name,
+        field: 'bearer token',
+        envKey: copy.bearerTokenEnvVar,
+      });
+    }
+    if (copy.headers) {
+      // `codex mcp add` 에는 헤더를 넣는 옵션이 없다 — 복원되지 않는다는 사실을 남긴다.
+      credentialWarnings.push(`codex/${entry.name} (http_headers 는 자동 복원 불가)`);
+    }
     noteCredentialInText('codex', entry.name, [copy.url, ...copy.args]);
     mcpServers[entry.name] = copy;
   }

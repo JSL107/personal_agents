@@ -283,6 +283,10 @@ function codexMcpArgs(name, definition) {
   for (const [key, value] of Object.entries(definition.env || {})) {
     mcpArgs.push('--env', `${key}=${value}`);
   }
+  // 값이 아니라 변수 이름이라 그대로 넘긴다. 빠뜨리면 인증 없이 등록돼 연결에 실패한다.
+  if (definition.bearerTokenEnvVar) {
+    mcpArgs.push('--bearer-token-env-var', definition.bearerTokenEnvVar);
+  }
   if (definition.url) {
     mcpArgs.push('--url', definition.url);
     return mcpArgs;
@@ -321,6 +325,10 @@ function restoreCodex(codex) {
         console.log(`  - ${name} 건너뜀 (url 도 실행 명령도 없음)`);
         warnings.push(`MCP ${name} — url·command 가 비어 등록할 수 없음`);
         continue;
+      }
+      // `codex mcp add` 에는 헤더 옵션이 없다 — 등록은 하되 헤더가 빠진다는 사실을 알린다.
+      if (definition.headers || definition.envHttpHeaders) {
+        warnings.push(`MCP ${name} — HTTP 헤더 설정은 복원되지 않는다. config.toml 에서 직접 추가할 것`);
       }
       const filled = fillSecrets(definition.env, `MCP ${name}`);
       if (!filled) {
