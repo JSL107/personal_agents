@@ -516,6 +516,58 @@ final class OfficeScene: SKScene {
         }
         node.xScale = 1
         node.yScale = 1
+        addWallEdges(node, column: column, row: row)
+    }
+
+    /// 벽 칸에서 **벽이 아닌 이웃과 맞닿는 변**에 어두운 선을 긋는다.
+    ///
+    /// 밝기만으로는 벽이 갈리지 않는다. 렌더 픽셀을 재 보면 벽(밝기 117~127)이 방 바닥
+    /// (72~92)과 복도(141~155)의 정확히 중간값이라, 벽이 바닥의 일부로도 복도의 연장으로도
+    /// 읽힌다 — "어디가 벽이고 어디가 길인지 모르겠다" 는 인상이 여기서 온다. 밝기를 한쪽으로
+    /// 밀어도 그쪽과 붙을 뿐이다(어둡게 하면 바닥, 밝게 하면 복도).
+    ///
+    /// 도트 그림에서 면을 가르는 수단은 명도차가 아니라 **외곽선**이다. 벽끼리 맞닿는 변은
+    /// 비워 두어 벽 한 덩어리가 격자로 쪼개져 보이지 않게 하고, 바닥·복도와 만나는 변에만 긋는다.
+    ///
+    /// 아래 변은 더 두껍게 긋는다 — 위에서 내려보는 시점에서 벽 아래는 벽이 바닥에 드리우는
+    /// 그늘이 놓이는 자리이고, 그 한 줄이 평평한 사각형을 "서 있는 것" 으로 읽히게 한다.
+    private func addWallEdges(_ node: SKSpriteNode, column: Int, row: Int) {
+        node.children.filter { $0.name == "wallEdge" }.forEach { $0.removeFromParent() }
+        let thickness = max(1, tileSize * 0.06)
+        let half = tileSize / 2
+        // dy = +1 이 위쪽이다(격자 원점이 아래).
+        let edges: [(dx: Int, dy: Int)] = [(0, 1), (0, -1), (-1, 0), (1, 0)]
+        for edge in edges {
+            let neighborX = column + edge.dx
+            let neighborY = row + edge.dy
+            let inBounds =
+                neighborX >= 0 && neighborX < plan.columns
+                && neighborY >= 0 && neighborY < plan.rows
+            // 격자 밖은 화면 끝이라 선을 그어도 잘린다 — 벽으로 취급해 건너뛴다.
+            guard !inBounds || plan.floor[neighborY][neighborX] != .wall else {
+                continue
+            }
+            guard inBounds else {
+                continue
+            }
+            let isBottom = edge.dy == -1
+            let lineThickness = isBottom ? thickness * 1.8 : thickness
+            let size =
+                edge.dx == 0
+                ? CGSize(width: tileSize, height: lineThickness)
+                : CGSize(width: lineThickness, height: tileSize)
+            let line = SKSpriteNode(
+                color: SKColor(red: 0.05, green: 0.04, blue: 0.05, alpha: isBottom ? 0.72 : 0.9),
+                size: size
+            )
+            line.name = "wallEdge"
+            line.position = CGPoint(
+                x: CGFloat(edge.dx) * (half - lineThickness / 2),
+                y: CGFloat(edge.dy) * (half - lineThickness / 2)
+            )
+            line.zPosition = 0.1
+            node.addChild(line)
+        }
     }
 
     /// 부서 이름을 구역 왼쪽 위에 얹는다. 바닥 재질만으로는 어느 팀 구역인지 알 수 없다.
