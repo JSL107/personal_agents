@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { isIntradayCapture } from '../domain/intraday-guard';
+import { DailySeriesPoint } from '../domain/market-data.type';
 import { KrxListing } from './krx/krx-listing.mapper';
 
 const WRITE_CHUNK_SIZE = 200;
+const SERIES_TICKER_CHUNK = 200;
 const MINIMUM_ACTIVE_UNIVERSE_SIZE = 1_000;
 // 실제 상장폐지는 연간 수십 건이라 하루 5% 감소는 공급자 부분 응답으로 본다.
 const MINIMUM_ACTIVE_UNIVERSE_RATIO = 0.95;
@@ -240,5 +242,44 @@ export class MarketDataRepository {
       }
     }
     return result;
+  }
+
+  async findDailySeries(
+    tickerIds: number[],
+    barLimit: number,
+  ): Promise<Map<number, DailySeriesPoint[]>> {
+    const series = new Map<number, DailySeriesPoint[]>();
+    for (
+      let offset = 0;
+      offset < tickerIds.length;
+      offset += SERIES_TICKER_CHUNK
+    ) {
+      const chunk = tickerIds.slice(offset, offset + SERIES_TICKER_CHUNK);
+      const rows = await this.prisma.dailyPrice.findMany({
+        where: { tickerId: { in: chunk } },
+        orderBy: [{ tickerId: 'asc' }, { tradeDate: 'asc' }],
+        select: {
+          tickerId: true,
+          tradeDate: true,
+          close: true,
+          adjClose: true,
+          volume: true,
+        },
+      });
+      for (const row of rows) {
+        const bars = series.get(row.tickerId) ?? [];
+        bars.push({
+          tradeDate: row.tradeDate.toISOString().slice(0, 10),
+          close: row.close.toNumber(),
+          adjClose: row.adjClose.toNumber(),
+          volume: Number(row.volume),
+        });
+        series.set(row.tickerId, bars);
+      }
+    }
+    for (const [tickerId, bars] of series) {
+      series.set(tickerId, bars.slice(-barLimit));
+    }
+    return series;
   }
 }

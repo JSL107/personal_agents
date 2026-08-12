@@ -52,3 +52,15 @@ export interface DailyBar {
   high?: DecimalValue;
   low?: DecimalValue;
 }
+
+// 저장된 일봉을 계산용 숫자로 편 형태. 공급자 응답인 DailyBar 와 달리
+// 지표 계산만을 위한 것이라 Decimal 정밀도를 버리고 number 를 쓴다 —
+// 이동평균·수익률은 소수 넷째 자리 정밀도가 결과를 바꾸지 않는다.
+export interface DailySeriesPoint {
+  tradeDate: string;
+  // 원본 체결가. 거래대금(유동성) 판정과 화면 표시에 쓴다.
+  close: number;
+  // 분할·배당 조정가. 추세 지표는 전부 이 값으로 계산한다.
+  adjClose: number;
+  volume: number;
+}

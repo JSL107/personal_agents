@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { MarketDataRepository } from './market-data.repository';
 
@@ -165,5 +167,96 @@ describe('MarketDataRepository', () => {
       select: { tradeDate: true, close: true },
     });
     expect(result).toEqual(new Map([['2026-08-11', '71200']]));
+  });
+});
+
+describe('MarketDataRepository.findDailySeries', () => {
+  it('종목별로 날짜 오름차순 시계열을 돌려준다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        tickerId: 1,
+        tradeDate: new Date('2026-08-10T00:00:00.000Z'),
+        close: new Prisma.Decimal('1000.5'),
+        adjClose: new Prisma.Decimal('500.25'),
+        volume: BigInt(3_000),
+      },
+      {
+        tickerId: 1,
+        tradeDate: new Date('2026-08-11T00:00:00.000Z'),
+        close: new Prisma.Decimal('1100'),
+        adjClose: new Prisma.Decimal('1100'),
+        volume: BigInt(4_000),
+      },
+      {
+        tickerId: 2,
+        tradeDate: new Date('2026-08-11T00:00:00.000Z'),
+        close: new Prisma.Decimal('500'),
+        adjClose: new Prisma.Decimal('500'),
+        volume: BigInt(1_000),
+      },
+    ]);
+    const prisma = { dailyPrice: { findMany } } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    const series = await repository.findDailySeries([1, 2], 200);
+
+    // 조정가가 원본 종가와 다른 행이 섞여도 두 값이 각자 실린다.
+    expect(series.get(1)).toEqual([
+      {
+        tradeDate: '2026-08-10',
+        close: 1000.5,
+        adjClose: 500.25,
+        volume: 3_000,
+      },
+      { tradeDate: '2026-08-11', close: 1100, adjClose: 1100, volume: 4_000 },
+    ]);
+    expect(series.get(2)).toEqual([
+      { tradeDate: '2026-08-11', close: 500, adjClose: 500, volume: 1_000 },
+    ]);
+  });
+
+  it('종목별로 최근 barLimit 개만 남긴다', async () => {
+    const findMany = jest.fn().mockResolvedValue(
+      Array.from({ length: 5 }, (_, index) => ({
+        tickerId: 1,
+        tradeDate: new Date(`2026-08-0${index + 1}T00:00:00.000Z`),
+        close: new Prisma.Decimal(String(100 + index)),
+        adjClose: new Prisma.Decimal(String(100 + index)),
+        volume: BigInt(1_000),
+      })),
+    );
+    const prisma = { dailyPrice: { findMany } } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    const series = await repository.findDailySeries([1], 2);
+
+    expect(series.get(1)).toEqual([
+      { tradeDate: '2026-08-04', close: 103, adjClose: 103, volume: 1_000 },
+      { tradeDate: '2026-08-05', close: 104, adjClose: 104, volume: 1_000 },
+    ]);
+  });
+
+  it('종목이 chunk 크기를 넘으면 나눠 조회한다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { dailyPrice: { findMany } } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    await repository.findDailySeries(
+      Array.from({ length: 401 }, (_, index) => index + 1),
+      200,
+    );
+
+    expect(findMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('종목이 없으면 조회하지 않는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { dailyPrice: { findMany } } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    const series = await repository.findDailySeries([], 200);
+
+    expect(series.size).toBe(0);
+    expect(findMany).not.toHaveBeenCalled();
   });
 });
