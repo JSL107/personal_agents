@@ -26,6 +26,9 @@ export const PREVIEW_KIND = {
   // 선호 프로필 자가학습 — 주간 추론이 만든 프로필 diff 를 승인 시 적용.
   // payload = { proposalId } (PreferenceProfilePreviewApplier 가 applyService.apply 로 반영).
   PREFERENCE_PROFILE: 'PREFERENCE_PROFILE',
+  // AI CLI 환경 복원 — 다른 PC에서 만든 snapshot을 승인 후 bootstrap으로 적용한다.
+  // payload = { snapshotSha, slackUserId } (AiCliEnvApplyPreviewApplier가 applySnapshot으로 위임).
+  AI_CLI_ENV_APPLY: 'AI_CLI_ENV_APPLY',
   // 저녁 회고 — 오늘 대표 작업을 근거 PR 본문 기반 codex 블로그 초안으로 생성 후 Notion 발행.
   // payload = { topPick:{title,keywords[],reason,sourceRefs[],outline[]}, sourcePrs:[{repo,number,url,title,body}], retroContext, slackUserId } (EveningBlogPublishApplier).
   EVENING_BLOG_PUBLISH: 'EVENING_BLOG_PUBLISH',

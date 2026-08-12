@@ -62,6 +62,10 @@ describe('PREVIEW_KIND_TO_AGENT', () => {
     expect(PREVIEW_KIND_TO_AGENT[PREVIEW_KIND.SESSION_INJECT]).toBeNull();
   });
 
+  it('AI CLI 환경 복원 승인은 특정 에이전트에 귀속하지 않는다', () => {
+    expect(PREVIEW_KIND_TO_AGENT[PREVIEW_KIND.AI_CLI_ENV_APPLY]).toBeNull();
+  });
+
   it('toConsoleApproval 이 kind 로 agentType 을 채운다(더 이상 null 아님)', () => {
     const preview = {
       id: 'p1',
