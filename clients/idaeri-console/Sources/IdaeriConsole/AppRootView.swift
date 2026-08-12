@@ -9,6 +9,8 @@ struct AppRootView: View {
 
     @StateObject private var store = ConsoleStore()
     @State private var status: ConnectionStatus = .connecting
+    /// 마지막으로 스냅샷을 다시 받은 시각. 상태 변경이 몰릴 때 요청 폭주를 막는 최소 간격 기준.
+    @State private var lastResyncAt: Date?
     @State private var tab: Tab = .dashboard
 
     private enum Tab: Hashable {
@@ -168,6 +170,27 @@ struct AppRootView: View {
             return
         }
         await MainActor.run { store.apply(snapshot: snapshot) }
+        lastResyncAt = Date()
+    }
+
+    /// 상태가 바뀐 직후 스냅샷을 한 번 더 받는다.
+    ///
+    /// `state.changed` 는 **상태만** 싣는다(`agentType`·`state`). 그래서 이벤트만으로는 말풍선
+    /// 문구가 갱신되지 않고 이전 스냅샷 값이 그대로 남는데, 지금 무슨 일을 하는지 알려 주는
+    /// 활동 문구가 바로 그 자리에 실려 온다. 30초 주기 재동기화를 기다리면 **그 안에 끝나는 실행은
+    /// 활동 문구가 한 번도 표시되지 않는다** — 이대리 워커 실행은 대개 10~40초다.
+    ///
+    /// 이벤트 스키마에 문구를 실어 보내는 쪽이 근본이지만, 그건 백엔드 이벤트 계약을 바꾸는 일이라
+    /// 여기서는 화면 쪽에서 정본을 한 번 더 당겨온다. 체인 실행처럼 상태 변경이 몰릴 때 요청이
+    /// 폭주하지 않도록 최소 간격을 둔다.
+    private func resyncAfterStateChange(_ event: ConsoleEvent) async {
+        guard case .stateChanged = event else {
+            return
+        }
+        if let lastResyncAt, Date().timeIntervalSince(lastResyncAt) < 2 {
+            return
+        }
+        await resyncSnapshot()
     }
 
     private func connect() async {
@@ -180,11 +203,7 @@ struct AppRootView: View {
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)
-                    if case .runStarted = event {
-                        // 활동 문구(bubble)는 스냅샷에만 있고 SSE는 상태만 나른다. 30초 주기를
-                        // 기다리면 짧은 런은 무슨 일을 하는지 한 번도 보여주지 못한다.
-                        await resyncSnapshot()
-                    }
+                    await resyncAfterStateChange(event)
                 }
             } catch {
                 // 아래 백오프 후 재시도

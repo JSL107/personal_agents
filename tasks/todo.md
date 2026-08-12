@@ -1408,3 +1408,51 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 기존 orchestrator는 그룹 전멸에만 BullMQ job을 rethrow한다. 단독 `weekly-summary`는 재시도가 보존되지만, 일간 `work-reviewer`는 `evening` 다른 task가 성공하면 부분 성공으로 종료된다. 이 설계/기존 코드 경계는 `.ai/implementation-summary.md`에 재검증 필요 사항으로 기록했다.
 
 ---
+# 가구 자세 후속 시각 결함 수정 (2026-08-12)
+
+**Goal:** lounge 자세가 캐릭터 몸만 옮겨 상태 링·이름표와 분리되는 결함을 없애고, 1칸 가구 실루엣을 보존하는 0.30칸 겹침과 앞쪽 depth를 적용한다.
+
+**Constraints:** 전체 `CharacterNode`만 이동한다. `place`가 절대 위치·depth를 다시 잡을 때 interaction 위치 오프셋 상태도 함께 초기화한다. 책상 `officeSeatedSpriteDrop`은 보존한다. 렌더·git·TypeScript·에셋·의존성 변경은 하지 않는다.
+
+- [x] 방향별 lounge 오프셋 순수 spec을 추가하고 RED를 확인한다.
+- [x] `officeLoungeSpriteShift = 0.30`과 방향별 순수 오프셋 계산을 최소 구현한다.
+- [x] `CharacterNode` 전체 위치 오프셋 적용/멱등 원복을 구현한다.
+- [x] `OfficeScene.place`가 절대 배치와 interaction 오프셋 상태를 한 번에 초기화하게 한다.
+- [x] sprite 전용 interaction 오프셋을 제거하고 `spriteBaseY` 기준 동작을 확인한다.
+- [x] focused GREEN 후 `swift build`, `swift run ConsoleCoreTests`를 실행한다.
+- [x] 최종 변경 범위·depth·책상 앉기 회귀를 검토하고 `.ai/implementation-summary.md`에 후속 절을 덧붙인다.
+
+## Review
+
+- 몸이 아니라 `CharacterNode.position`을 이동해 상태 링·이름표·선택 테두리·손 소품까지 함께 움직인다.
+- `place`는 절대 위치를 정본으로 잡고 저장 오프셋을 초기화한 뒤 필요 시 새 기준에서 재계산한다. resize/texture 재적용은 delta 갱신이라 누적되지 않는다.
+- sitting 5곳은 기존 depth 계산에서 가구보다 `+1` 앞이어서 별도 z 보정은 넣지 않았다.
+- TDD RED는 신규 함수 부재 compile failure로 확인했다. 우회 환경 test `1989/1989`, 전체 build exit 0.
+- 지정 명령 두 개는 기존 compiler/SDK·cache 환경 문제로 코드 컴파일 전 exit 1. 렌더·git·TypeScript·에셋·의존성 변경 없음.
+
+---
+
+---
+# 오피스 가독성 4건 — 사람의 정체·활동·자세와 벽/길 구분 (2026-08-12)
+
+**Goal:** 사무실 화면에서 "이 사람이 누구고 지금 무엇을 하는지", "어디가 벽이고 어디가 길인지"를
+읽히게 한다.
+
+- [x] 멈춰 있던 `feat/office-activity-bubble`(활동 말풍선) 미커밋 작업을 이 브랜치로 흡수 — 방치하면
+      같은 자리를 두 세션이 고쳐 한쪽이 버려진다.
+- [x] 벽 경계 외곽선 — 벽 밝기(117~127)가 바닥(72~92)과 복도(141~155)의 중간값이라 명도로는
+      갈리지 않는다. 도트 그림에서 면을 가르는 수단은 외곽선.
+- [x] 호버 쪽지에 직무 한 줄 — 백엔드는 `job` 을 계속 보내고 있었고(29명 전원 실측) 앱 모델에
+      필드가 없어 버려졌다.
+- [x] 가구 20종 자세 + 바라보는 방향 + 손 소품 (`--pose-demo` 회귀 입구 포함)
+- [x] 검증: ConsoleCoreTests 1989 / pnpm lint:check·test·build 3중 green / 렌더 전후 비교
+
+**남은 것**
+- 실앱에서 8초 주기 배회가 도는 모습과 마우스 호버 쪽지 모양은 사람이 봐야 한다.
+- 앉기는 `char-sit` 이 사무용 의자까지 그려진 그림이라, 소파에 앉으면 의자가 함께 보인다
+  (에셋 한 장의 한계 — 새 스프라이트를 그리지 않는 선에서의 절충).
+
+**리뷰 후속 (PR #276 에서 답변으로 남긴 것)**
+- `state.changed` 이벤트에 말풍선 문구를 실어 보내기. 지금은 이벤트가 `agentType`·`state` 만
+  싣고(`console.type.ts:117-120`) 문구는 스냅샷에만 있어, 화면이 상태 변경 직후 스냅샷을 한 번 더
+  당겨오는 방식으로 우회했다. 근본 수정은 백엔드 이벤트 계약 변경이라 별도 PR 로 분리.

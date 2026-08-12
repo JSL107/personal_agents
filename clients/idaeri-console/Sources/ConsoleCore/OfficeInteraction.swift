@@ -95,6 +95,27 @@ public func strollersToStop(
     return strolling.filter { states[$0] != .waiting && states[$0] != .completed }.sorted()
 }
 
+/// 마우스를 올렸을 때 뜨는 쪽지 문구(순수).
+///
+/// 두 가지가 함께 있어야 사람이 읽힌다 — **무슨 일을 하는 사람인가**(사규의 직무 한 줄)와
+/// **지금 무엇을 하는가**(활동·상태). 이름표는 여섯 자 안팎이라(`답변 판정`) 직책만 보이고,
+/// 그 직책이 무슨 일인지는 화면 어디에도 없었다.
+///
+/// 직무를 위에 둔다. 활동은 상태가 바뀔 때마다 달라지므로, 고정된 정체가 먼저 오고 그 아래에
+/// 지금 벌어지는 일이 붙는 순서가 읽기 흐름에 맞는다.
+public func officeHoverNote(job: String?, activity: String?) -> String? {
+    let lines = [job, activity].compactMap { line -> String? in
+        guard let line, !line.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return nil
+        }
+        return line
+    }
+    guard !lines.isEmpty else {
+        return nil
+    }
+    return lines.joined(separator: "\n")
+}
+
 /// 이름표를 진하게 보일지 판정한다(순수).
 ///
 /// 29명 전원의 이름표가 늘 같은 세기로 켜져 있으면 방 하나에 검은 딱지가 4~8개씩 붙어,
