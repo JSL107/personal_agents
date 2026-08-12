@@ -1,5 +1,43 @@
+import { MarketDataRepository } from '../../../market-data/infrastructure/market-data.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { StockMonitorRepository } from './stock-monitor.repository';
+import { StockMonitorRepository as ProductionStockMonitorRepository } from './stock-monitor.repository';
+
+class StockMonitorRepository extends ProductionStockMonitorRepository {
+  constructor(
+    prisma: PrismaService,
+    marketDataRepository: MarketDataRepository = {
+      upsertDailyPrice: jest.fn().mockResolvedValue({
+        written: 1,
+        blockedIntraday: 0,
+      }),
+    } as unknown as MarketDataRepository,
+  ) {
+    super(prisma, marketDataRepository);
+  }
+}
+
+describe('StockMonitorRepository daily price delegation', () => {
+  it('공유 시세 repository에 단건 쓰기를 위임한다', async () => {
+    const prisma = {} as PrismaService;
+    const upsertDailyPrice = jest.fn().mockResolvedValue({
+      written: 1,
+      blockedIntraday: 0,
+    });
+    const marketData = { upsertDailyPrice } as unknown as MarketDataRepository;
+    const repository = new StockMonitorRepository(prisma, marketData);
+    const input = {
+      tickerId: 3,
+      tradeDate: new Date('2026-08-11T00:00:00.000Z'),
+      close: '71200',
+      adjClose: '71200',
+      volume: 10n,
+    };
+
+    await repository.upsertDailyPrice(input);
+
+    expect(upsertDailyPrice).toHaveBeenCalledWith(input);
+  });
+});
 
 describe('StockMonitorRepository alert outcome', () => {
   it('지정 horizon의 outcome이 없는 알림만 조회한다', async () => {

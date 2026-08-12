@@ -62,8 +62,8 @@ describe('AutopilotScheduler', () => {
     //   + weekly-summary + ceo-meta + impact-report
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
-    //   + stock-monitor + paper-trading + stock-monitor-us + stock-alert-scoring + pr-review-sweep = 18그룹.
-    expect(queue.add).toHaveBeenCalledTimes(18);
+    //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep = 19그룹.
+    expect(queue.add).toHaveBeenCalledTimes(19);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
@@ -79,6 +79,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('ops-supervisor');
     expect(addCalls).toContain('stock-monitor');
     expect(addCalls).toContain('paper-trading');
+    expect(addCalls).toContain('universe-sweep');
     expect(addCalls).toContain('stock-monitor-us');
     expect(addCalls).toContain('stock-alert-scoring');
     expect(addCalls).toContain('pr-review-sweep');

@@ -60,6 +60,10 @@ export const DEFAULT_STOCK_MONITOR_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PAPER_TRADING_CRON = '40 17 * * 1-5';
 export const DEFAULT_PAPER_TRADING_TIMEZONE = 'Asia/Seoul';
 
+// KRX 유니버스 동기화·증분 시세 수집 — 감시/모의투자 평가 이후 매일 18:30 KST.
+export const DEFAULT_UNIVERSE_SWEEP_CRON = '30 18 * * *';
+export const DEFAULT_UNIVERSE_SWEEP_TIMEZONE = 'Asia/Seoul';
+
 // Preview Sweeper 기본 스케줄 — 10분마다. 만료 카드는 목록(findAllOpen)에서는 즉시 빠지지만
 // 콘솔이 구독하는 approval.resolved 는 이 스위퍼가 돌 때만 발행된다. 매시간이면 SESSION_INJECT
 // TTL(30분)이 지난 카드가 최대 1시간 동안 콘솔 화면에 남아, 눌러도 서버가 거절하는 유령 버튼이 됐다.

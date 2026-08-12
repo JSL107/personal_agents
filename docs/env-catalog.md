@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 115개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 118개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -76,6 +76,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_STOCK_MONITOR_US_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_PAPER_TRADING_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_PAPER_TRADING_TIMEZONE` | ❌ | — |
+| `AUTOPILOT_UNIVERSE_SWEEP_SCHEDULE` | ❌ | — |
+| `AUTOPILOT_UNIVERSE_SWEEP_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS` | ❌ | 주 1회 LLM 판정 쌍 상한(기본 5). codex 쿼터 보호. |
 | `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED` | ❌ | 'false' 면 L4 만 끄고 L1/L2(결정론)는 유지. 미설정 시 활성. |
 | `AUTOPILOT_DOCS_SYNC_AUDIT_SCHEDULE` | ❌ | docs-sync-audit cron override (id=docs-sync-audit → DOCS_SYNC_AUDIT). 미설정 시 playbook-defaults. |
@@ -195,6 +197,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
 | `PAPER_TRADING_ENABLED` | ❌ | 모의투자 일일 평가. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다. |
+| `SCREENER_ENABLED` | ❌ | KRX 유니버스 동기화·증분 시세 수집. 명시적으로 'true' 일 때만 실행한다. |
 | `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |
 | `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
