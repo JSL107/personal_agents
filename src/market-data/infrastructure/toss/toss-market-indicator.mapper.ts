@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import type { BenchmarkBar } from './toss-market-indicator.client';
+import type { BenchmarkBar } from '../../domain/port/market-indicator.port';
 
 interface RawMarketIndicatorCandle {
   timestamp?: unknown;

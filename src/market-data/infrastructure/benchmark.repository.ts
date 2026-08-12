@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { DecimalValue } from '../domain/market-data.type';
 
 export interface BenchmarkCloseWriteInput {
   symbol: string;
   tradeDate: Date;
-  close: Prisma.Decimal;
+  close: DecimalValue;
 }
 
 @Injectable()
@@ -29,18 +29,23 @@ export class BenchmarkRepository {
 
     const fetchedAt = new Date();
     await this.prisma.$transaction(
-      rows.map((row) =>
-        this.prisma.benchmarkDailyClose.upsert({
+      rows.map((row) => {
+        const close = row.close.toString();
+        return this.prisma.benchmarkDailyClose.upsert({
           where: {
             symbol_tradeDate: {
               symbol: row.symbol,
               tradeDate: row.tradeDate,
             },
           },
-          create: row,
-          update: { close: row.close, fetchedAt },
-        }),
-      ),
+          create: {
+            symbol: row.symbol,
+            tradeDate: row.tradeDate,
+            close,
+          },
+          update: { close, fetchedAt },
+        });
+      }),
     );
     return rows.length;
   }

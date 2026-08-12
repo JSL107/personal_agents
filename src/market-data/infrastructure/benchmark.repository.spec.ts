@@ -1,6 +1,5 @@
-import { Prisma } from '@prisma/client';
-
 import { PrismaService } from '../../prisma/prisma.service';
+import { DecimalValue } from '../domain/market-data.type';
 import { BenchmarkRepository } from './benchmark.repository';
 
 describe('BenchmarkRepository', () => {
@@ -41,7 +40,10 @@ describe('BenchmarkRepository', () => {
     } as unknown as PrismaService;
     const repository = new BenchmarkRepository(prisma);
     const tradeDate = new Date('2026-08-11T00:00:00.000Z');
-    const close = new Prisma.Decimal('3210.24');
+    const close: DecimalValue = {
+      toNumber: () => 3210.24,
+      toString: () => '3210.24',
+    };
 
     try {
       await expect(
@@ -51,9 +53,9 @@ describe('BenchmarkRepository', () => {
         where: {
           symbol_tradeDate: { symbol: 'KOSPI', tradeDate },
         },
-        create: { symbol: 'KOSPI', tradeDate, close },
+        create: { symbol: 'KOSPI', tradeDate, close: '3210.24' },
         update: {
-          close,
+          close: '3210.24',
           fetchedAt: new Date('2026-08-12T08:10:00.000Z'),
         },
       });

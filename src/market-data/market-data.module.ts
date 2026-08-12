@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BROKER_HOLDINGS_PORT } from './domain/port/broker-holdings.port';
 import { MARKET_DATA_PORT } from './domain/port/market-data.port';
+import { MARKET_INDICATOR_PORT } from './domain/port/market-indicator.port';
 import { BenchmarkRepository } from './infrastructure/benchmark.repository';
 import { KrxListingClient } from './infrastructure/krx/krx-listing.client';
 import { MarketDataRepository } from './infrastructure/market-data.repository';
@@ -19,18 +20,21 @@ import { YahooFinanceMarketDataClient } from './infrastructure/yahoo-finance.mar
     KrxListingClient,
     MarketDataRepository,
     BenchmarkRepository,
-    TossMarketIndicatorClient,
     YahooFinanceMarketDataClient,
     { provide: MARKET_DATA_PORT, useClass: TossMarketDataClient },
+    {
+      provide: MARKET_INDICATOR_PORT,
+      useClass: TossMarketIndicatorClient,
+    },
     { provide: BROKER_HOLDINGS_PORT, useClass: TossInvestClient },
   ],
   exports: [
     MARKET_DATA_PORT,
+    MARKET_INDICATOR_PORT,
     BROKER_HOLDINGS_PORT,
     KrxListingClient,
     MarketDataRepository,
     BenchmarkRepository,
-    TossMarketIndicatorClient,
   ],
 })
 export class MarketDataModule {}
