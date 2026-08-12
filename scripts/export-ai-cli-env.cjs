@@ -306,9 +306,11 @@ function main() {
   const manifest = {
     generatedAt: new Date().toISOString(),
     sourceHome: HOME,
+    sourceHost: os.hostname(),
     claude,
     codex,
     secretsRequired,
+    credentialWarnings,
     notes: [
       'permissions / defaultMode 는 의도적으로 제외 — 이식하면 새 PC 의 승인 게이트가 풀린다.',
       '인증 파일(~/.codex/auth.json, keychain)과 대화 기록(sessions·projects·memories)은 담지 않는다.',

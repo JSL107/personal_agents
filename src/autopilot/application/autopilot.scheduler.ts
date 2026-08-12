@@ -87,12 +87,13 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         continue;
       }
       const envKey = primary.id.toUpperCase().replace(/-/g, '_');
+      const aiCliEnvKeys = this.getAiCliEnvScheduleKeys(primary.id);
       const schedule = this.readNonEmpty(
-        `AUTOPILOT_${envKey}_SCHEDULE`,
+        aiCliEnvKeys?.cron ?? `AUTOPILOT_${envKey}_SCHEDULE`,
         primary.trigger.schedule,
       );
       const tz = this.readNonEmpty(
-        `AUTOPILOT_${envKey}_TIMEZONE`,
+        aiCliEnvKeys?.timezone ?? `AUTOPILOT_${envKey}_TIMEZONE`,
         primary.trigger.timezone,
       );
       this.warnIgnoredScheduleOverrides(groupKey, entries);
@@ -147,6 +148,24 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     }
     const trimmed = raw.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private getAiCliEnvScheduleKeys(
+    id: string,
+  ): { cron: string; timezone: string } | undefined {
+    if (id === 'ai-cli-env-snapshot') {
+      return {
+        cron: 'AI_CLI_ENV_SNAPSHOT_CRON',
+        timezone: 'AI_CLI_ENV_SNAPSHOT_TIMEZONE',
+      };
+    }
+    if (id === 'ai-cli-env-apply') {
+      return {
+        cron: 'AI_CLI_ENV_APPLY_CRON',
+        timezone: 'AI_CLI_ENV_APPLY_TIMEZONE',
+      };
+    }
+    return undefined;
   }
 
   private readNonEmpty(key: string, fallback: string): string {

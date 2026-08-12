@@ -1,5 +1,19 @@
 # Lessons
 
+## 2026-08-12 — 디렉터리 존재와 저장소 소유권·commit 범위는 별도 검증 대상임
+
+- `.git`이 있다는 사실은 설정한 remote의 clone이라는 뜻이 아니다. 개인 환경처럼 민감한 데이터를 push하기 전에는 설정 repository와 현재 `origin`을 정규화해 비교하고, 불일치 시 자동 삭제·재clone 대신 경로와 양쪽 값을 담아 중단한다.
+- 생성 전용 저장소라도 working tree 전체가 생성기 소유라고 가정하지 않는다. 변경 감지와 staging 양쪽에 같은 managed pathspec을 사용해야 미추적 메모·임시 secret이 commit 경계에 들어오지 않는다.
+- 삭제를 반영하려면 `git add -A`를 유지하되 경로를 제한한다. 선택적 디렉터리는 처음부터 없을 수 있으므로 scoped status가 있을 때만 개별 stage하면 미존재 pathspec 오류와 tracked deletion을 함께 처리할 수 있다.
+
+## 2026-08-12 — 경로·commit SHA·exit 0만으로는 동기화 정본을 증명하지 못함
+
+- `sourceHome`은 장치 식별자가 아니다. 동일 사용자명의 여러 Mac은 같은 홈 경로를 쓰므로 장치 판별은 hostname처럼 별도 장치 속성으로 하고, 구 데이터에 식별자가 없으면 안전한 쪽인 승인 요청으로 보낸다.
+- HEAD SHA가 같아도 working tree 파일은 달라질 수 있다. commit을 승인 단위로 삼는 실행은 side effect 직전에 SHA와 clean tree를 함께 검증해야 한다.
+- overwrite 성격의 snapshot push는 경쟁 실패 뒤 로컬 분기를 보존할 이유가 없다. 원격 기본 브랜치를 동적으로 찾아 정본으로 reset하고 전체 export를 제한 횟수만 재시도해 영구 교착을 막는다.
+- 부분 성공 warning이 있으면 성공 메시지만 바꾸지 말고 완료 이력도 남기지 않는다. 재승인 경로가 닫히면 경고 노출은 복구 수단이 아니다.
+- 자격 증명 검사는 사람이 stdout을 볼 것이라는 가정에 맡기지 않는다. 구조적 manifest 필드로 adapter의 commit 경계에 전달하고, child process env도 필요한 기본값과 명시된 secret만 allowlist한다.
+
 ## 2026-08-12 — 기간 이름·기준일·계층 경계·DB 읽기 상한을 테스트에서 놓침
 
 - 기간이 이름에 들어간 지표는 최소 표본 수를 같은 숫자로 강제한다. 짧은 표본으로 계산 가능한 수학적 값과 비교 가능한 도메인 지표는 다르다.
@@ -19,6 +33,12 @@
 - 계산 결과의 필수값(`close: number`)을 정의하면서 빈 입력은 “모든 값 null”이라고 쓰면 타입과 동작이 충돌한다. 빈 입력이 정상 상태라면 필드를 전부 nullable로 퍼뜨리기보다 계산 결과 자체를 `null`로 반환해 하류 분기를 한 곳에 둔다.
 - 설계 예시 타입도 레포 의존 방향을 따라야 한다. Infrastructure의 실제 값이 `Prisma.Decimal`이어도 Domain은 기존 구조 타입 `DecimalValue`로 받는다.
 - 순위합을 0~100으로 바꾼다는 문장만으로는 구현 계약이 아니다. 동률 순위, null 정렬, 단일 후보 분모 0, 반올림 자리, 최종 tie-break까지 정의해야 재현 가능한 점수가 된다.
+## 2026-08-12 — 승인 payload를 검증만 하고 실행 경계에 전달하지 않아 승인 의미가 깨짐
+
+- Preview payload에 `snapshotSha`를 담았지만 applier가 존재 여부만 확인하고 무인자 `applySnapshot()`을 호출해, 승인 대기 중 HEAD가 바뀌면 승인한 snapshot과 실제 적용 snapshot이 달라질 수 있었다.
+- 승인·결제·배포처럼 외부 부작용을 허가하는 식별자는 UI/audit payload에 존재하는 것만으로 충분하지 않다. 실행 port의 인자로 끝까지 전달하고 side effect 직전에 현재 대상과 다시 비교해야 한다.
+- `exit 0`도 완전 성공과 같지 않다. 하위 script가 warning을 stdout/stderr로 보고하며 부분 성공을 허용하면, adapter가 구조화해 최종 사용자 메시지까지 전달해야 한다. 출력 문자열을 저장만 하고 presentation layer에서 버리면 실패가 성공으로 위장된다.
+- 설계가 위험한 무인자 계약을 고정했더라도 limitation 기록으로 끝내지 않는다. 승인 불변식이 깨지는 실제 경로를 확인하면 구현 완료와 분리해 명시적으로 계약 변경 승인을 요청하거나 후속 blocker로 올린다.
 
 
 ## 2026-08-12 — 최신 봉 존재 여부는 초기 적재 완료 조건이 아니다
