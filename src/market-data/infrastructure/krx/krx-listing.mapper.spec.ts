@@ -141,8 +141,8 @@ describe('KrxListingClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain('marketType=stockMkt');
 
-    firstResponse.resolve(new Response(listingHtml(500, '유가')));
-    await expect(pending).resolves.toHaveLength(1_000);
+    firstResponse.resolve(new Response(listingHtml(1_500, '유가')));
+    await expect(pending).resolves.toHaveLength(2_000);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1][0])).toContain(
@@ -167,7 +167,7 @@ describe('KrxListingClient', () => {
     encodedRow.set(suffix, prefix.length + encodedName.length);
     fetchMock
       .mockResolvedValueOnce(new Response(encodedRow))
-      .mockResolvedValueOnce(new Response(listingHtml(999, '코스닥')));
+      .mockResolvedValueOnce(new Response(listingHtml(1_999, '코스닥')));
 
     const listings = await new KrxListingClient().fetchListings();
 
@@ -183,21 +183,21 @@ describe('KrxListingClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('두 시장 합계가 1,000건 미만이면 오류를 던진다', async () => {
+  it('두 시장 합계가 2,000건 미만이면 잘린 응답으로 보고 오류를 던진다', async () => {
     fetchMock
-      .mockResolvedValueOnce(new Response(listingHtml(499, '유가')))
-      .mockResolvedValueOnce(new Response(listingHtml(500, '코스닥')));
+      .mockResolvedValueOnce(new Response(listingHtml(829, '유가')))
+      .mockResolvedValueOnce(new Response(listingHtml(900, '코스닥')));
 
     await expect(new KrxListingClient().fetchListings()).rejects.toThrow(
-      '1,000',
+      '2,000',
     );
   });
 
   it('각 요청에 30초 타임아웃을 건다', async () => {
     const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
     fetchMock
-      .mockResolvedValueOnce(new Response(listingHtml(500, '유가')))
-      .mockResolvedValueOnce(new Response(listingHtml(500, '코스닥')));
+      .mockResolvedValueOnce(new Response(listingHtml(1_000, '유가')))
+      .mockResolvedValueOnce(new Response(listingHtml(1_000, '코스닥')));
 
     try {
       await new KrxListingClient().fetchListings();

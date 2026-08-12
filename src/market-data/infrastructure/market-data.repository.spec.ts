@@ -41,6 +41,79 @@ describe('MarketDataRepository', () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
+  it('직전 활성 2,595건 대비 새 활성 코드가 95% 미만이면 상장폐지를 차단한다', async () => {
+    const count = jest.fn().mockResolvedValue(2_595);
+    const updateMany = jest.fn();
+    const prisma = {
+      ticker: { count, updateMany },
+    } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    const result = await repository.markDelistedExcept(
+      Array.from({ length: 2_000 }, (_, index) =>
+        String(index).padStart(6, '0'),
+      ),
+      new Date('2026-08-12T00:00:00.000Z'),
+    );
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        market: 'KR',
+        krxMarket: { not: null },
+        delistedAt: null,
+      },
+    });
+    expect(result).toBe(-1);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('source가 TOSS여도 KRX 시장이 분류된 행은 상장폐지 처리한다', async () => {
+    const count = jest.fn().mockResolvedValue(2_000);
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      ticker: { count, updateMany },
+    } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+    const activeCodes = Array.from({ length: 2_000 }, (_, index) =>
+      String(index).padStart(6, '0'),
+    );
+    const asOf = new Date('2026-08-12T00:00:00.000Z');
+
+    await expect(
+      repository.markDelistedExcept(activeCodes, asOf),
+    ).resolves.toBe(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        market: 'KR',
+        krxMarket: { not: null },
+        code: { notIn: activeCodes },
+        delistedAt: null,
+      },
+      data: { delistedAt: asOf },
+    });
+  });
+
+  it('저장 봉 수와 최신 거래일을 한 번의 groupBy로 반환한다', async () => {
+    const groupBy = jest.fn().mockResolvedValue([
+      {
+        tickerId: 3,
+        _count: { _all: 4 },
+        _max: { tradeDate: new Date('2026-08-11T00:00:00.000Z') },
+      },
+    ]);
+    const prisma = { dailyPrice: { groupBy } } as unknown as PrismaService;
+    const repository = new MarketDataRepository(prisma);
+
+    await expect(repository.findStoredBarStats()).resolves.toEqual(
+      new Map([[3, { barCount: 4, latestTradeDate: '2026-08-11' }]]),
+    );
+    expect(groupBy).toHaveBeenCalledWith({
+      by: ['tickerId'],
+      _count: { _all: true },
+      _max: { tradeDate: true },
+    });
+  });
+
   it('증분 일봉을 200건 단위 순차 transaction으로 upsert한다', async () => {
     const upsert = jest.fn((input) => input);
     const transaction = jest.fn().mockResolvedValue([]);

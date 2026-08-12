@@ -16,38 +16,57 @@ const bar = (date: string, close: string) => ({
 });
 
 describe('CollectUniversePricesUsecase', () => {
-  it('저장 이력이 없는 종목은 200봉을 최초 insert한다', async () => {
+  it('0봉, 4봉, 200봉 종목을 각각 최초 insert, 전체 upsert, 증분 upsert한다', async () => {
     const marketData = {
       fetchDailyBars: jest.fn().mockResolvedValue([bar('2026-08-11', '100')]),
     } as unknown as MarketDataPort;
     const repository = {
-      findUniverseTickers: jest.fn().mockResolvedValue([
-        {
-          id: 1,
-          code: '005930',
-          name: '삼성전자',
-          tossSymbol: '005930',
+      findUniverseTickers: jest.fn().mockResolvedValue(
+        [
+          [1, '005930'],
+          [2, '000660'],
+          [3, '035420'],
+        ].map(([id, code]) => ({
+          id,
+          code,
+          name: `종목${id}`,
+          tossSymbol: code,
           krxMarket: 'KOSPI',
-        },
-      ]),
-      findLatestTradeDateByTicker: jest.fn().mockResolvedValue(new Map()),
+        })),
+      ),
+      findStoredBarStats: jest.fn().mockResolvedValue(
+        new Map([
+          [2, { barCount: 4, latestTradeDate: '2026-08-08' }],
+          [3, { barCount: 200, latestTradeDate: '2026-08-11' }],
+        ]),
+      ),
+      findStoredCloses: jest
+        .fn()
+        .mockResolvedValue(new Map([['2026-08-11', '100']])),
       insertDailyPrices: jest
+        .fn()
+        .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
+      upsertDailyPrices: jest
         .fn()
         .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
     } as unknown as MarketDataRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     await expect(usecase.execute()).resolves.toEqual({
-      targetCount: 1,
-      succeeded: 1,
+      targetCount: 3,
+      succeeded: 3,
       failed: 0,
-      written: 1,
+      written: 3,
       blockedIntraday: 0,
       readjusted: 0,
       failures: [],
     });
-    expect(marketData.fetchDailyBars).toHaveBeenCalledWith('005930', 200);
+    expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(1, '005930', 200);
+    expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(2, '000660', 200);
+    expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(3, '035420', 5);
     expect(repository.insertDailyPrices).toHaveBeenCalledTimes(1);
+    expect(repository.upsertDailyPrices).toHaveBeenCalledTimes(2);
+    expect(repository.findStoredCloses).toHaveBeenCalledTimes(1);
   });
 
   it('증분 종가가 다르면 해당 종목만 200봉을 재수집해 upsert한다', async () => {
@@ -69,9 +88,11 @@ describe('CollectUniversePricesUsecase', () => {
           krxMarket: 'KOSPI',
         },
       ]),
-      findLatestTradeDateByTicker: jest
+      findStoredBarStats: jest
         .fn()
-        .mockResolvedValue(new Map([[1, '2026-08-10']])),
+        .mockResolvedValue(
+          new Map([[1, { barCount: 200, latestTradeDate: '2026-08-10' }]]),
+        ),
       findStoredCloses: jest
         .fn()
         .mockResolvedValue(new Map([['2026-08-11', '100']])),
@@ -107,7 +128,7 @@ describe('CollectUniversePricesUsecase', () => {
     } as unknown as MarketDataPort;
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue(tickers),
-      findLatestTradeDateByTicker: jest.fn().mockResolvedValue(new Map()),
+      findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
     } as unknown as MarketDataRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 

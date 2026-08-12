@@ -5,7 +5,8 @@ import { KrxListing, parseKrxListingHtml } from './krx-listing.mapper';
 const KRX_LISTING_URL =
   'https://kind.krx.co.kr/corpgeneral/corpList.do?method=download';
 const REQUEST_TIMEOUT_MS = 30_000;
-const MINIMUM_LISTING_COUNT = 1_000;
+// 정상 약 2,595건의 77%도 못 받으면 HTTP 200이어도 잘린 응답으로 간주한다.
+const MINIMUM_LISTING_COUNT = 2_000;
 
 const ENDPOINTS = [
   { market: 'KOSPI' as const, marketType: 'stockMkt' },
