@@ -628,3 +628,19 @@ model PaperEquitySnapshot {
   @@index([accountId, tradeDate])
   @@map("paper_equity_snapshot")
 }
+
+// 벤치마크(코스피 등 시장 지표)의 일별 종가. 종목이 아니라 지수라 Ticker/DailyPrice 에 넣지 않는다 —
+// 유니버스 조회와 주가 감시가 Ticker 를 스캔하므로 지수 행이 섞이면 스캔 경로마다 배제 가드가 필요해진다.
+// 토스 `/api/v1/market-indicators/{symbol}/candles` 가 소급 조회를 지원하므로(before/nextBefore)
+// 이 표는 과거 구간도 나중에 채울 수 있다.
+model BenchmarkDailyClose {
+  id        Int      @id @default(autoincrement())
+  // 토스 시장 지표 심볼. 현재 'KOSPI' 만 쓴다. 값 공간은 KOSPI|KOSDAQ|KR_BOND_* 8종.
+  symbol    String
+  tradeDate DateTime @map("trade_date") @db.Date
+  close     Decimal  @db.Decimal(18, 4)
+  fetchedAt DateTime @default(now()) @map("fetched_at")
+
+  @@unique([symbol, tradeDate])
+  @@map("benchmark_daily_close")
+}

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { PrismaModule } from '../src/prisma/prisma.module';
+import { CollectBenchmarkClosesUsecase } from '../src/screener/application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from '../src/screener/application/collect-universe-prices.usecase';
 import { ScreenUniverseUsecase } from '../src/screener/application/screen-universe.usecase';
 import { SyncUniverseUsecase } from '../src/screener/application/sync-universe.usecase';
@@ -39,6 +40,16 @@ const main = async (): Promise<void> => {
         .get(ScreenUniverseUsecase)
         .execute(parsed.options);
       console.log(formatScreenResult(result));
+      return;
+    }
+
+    if (parsed.subcommand === 'collect-benchmark') {
+      const result = await application
+        .get(CollectBenchmarkClosesUsecase)
+        .execute(parsed.options);
+      console.log(
+        `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.`,
+      );
       return;
     }
 
