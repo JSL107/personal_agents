@@ -1,5 +1,6 @@
+import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
 import { YahooFinanceMarketDataClient } from '../yahoo-finance.market-data.client';
-import { TossApiClient } from './toss-api.client';
+import { TossApiClient, TossApiHttpError } from './toss-api.client';
 import { TossMarketDataClient } from './toss-market-data.client';
 
 const CANDLES_RESPONSE = {
@@ -89,15 +90,27 @@ describe('TossMarketDataClient', () => {
     expect(path).toContain('adjusted=false');
   });
 
-  it('토스 HTTP 429 오류를 호출자에게 전파한다', async () => {
+  it('토스 HTTP 429 오류를 시세 조회 rate limit 도메인 오류로 변환한다', async () => {
     const tossApi = createTossApi();
     const yahooMarketData = createYahooMarketData();
     tossApi.requestJson.mockRejectedValue(
-      new Error('토스증권 일봉 조회 실패: HTTP 429 Too Many Requests'),
+      new TossApiHttpError('rate limited', 429),
     );
     const client = new TossMarketDataClient(tossApi, yahooMarketData);
 
-    await expect(client.fetchDailyBars('PFE', 1)).rejects.toThrow('HTTP 429');
+    await expect(client.fetchDailyBars('PFE', 1)).rejects.toBeInstanceOf(
+      MarketDataRateLimitError,
+    );
+  });
+
+  it('429가 아닌 토스 HTTP 오류는 변환하지 않는다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    const error = new TossApiHttpError('server error', 500);
+    tossApi.requestJson.mockRejectedValue(error);
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    await expect(client.fetchDailyBars('PFE', 1)).rejects.toBe(error);
   });
 
   it('캔들 봉투가 올바르지 않으면 심볼을 포함한 명시 오류를 던진다', async () => {

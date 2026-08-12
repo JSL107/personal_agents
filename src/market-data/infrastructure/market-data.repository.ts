@@ -9,6 +9,8 @@ const WRITE_CHUNK_SIZE = 200;
 const MINIMUM_ACTIVE_UNIVERSE_SIZE = 1_000;
 // 실제 상장폐지는 연간 수십 건이라 하루 5% 감소는 공급자 부분 응답으로 본다.
 const MINIMUM_ACTIVE_UNIVERSE_RATIO = 0.95;
+// 200거래일은 약 290일이므로 휴장·장기 연휴 여유를 포함한 400일만 DB에서 읽는다.
+const BAR_READ_LOOKBACK_CALENDAR_DAYS = 400;
 
 export interface DailyPriceWriteInput {
   tickerId: number;
@@ -48,8 +50,22 @@ export class MarketDataRepository {
     if (tickerIds.length === 0 || limit <= 0) {
       return new Map();
     }
-    const prices = await this.prisma.dailyPrice.findMany({
+    const latest = await this.prisma.dailyPrice.aggregate({
       where: { tickerId: { in: tickerIds } },
+      _max: { tradeDate: true },
+    });
+    if (latest._max.tradeDate === null) {
+      return new Map();
+    }
+    const earliestTradeDate = new Date(latest._max.tradeDate);
+    earliestTradeDate.setUTCDate(
+      earliestTradeDate.getUTCDate() - BAR_READ_LOOKBACK_CALENDAR_DAYS,
+    );
+    const prices = await this.prisma.dailyPrice.findMany({
+      where: {
+        tickerId: { in: tickerIds },
+        tradeDate: { gte: earliestTradeDate },
+      },
       orderBy: [{ tickerId: 'asc' }, { tradeDate: 'desc' }],
       select: {
         tickerId: true,

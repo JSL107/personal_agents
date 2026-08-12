@@ -1,3 +1,28 @@
+# PR #281 봇 리뷰 4건 반영 (2026-08-12)
+
+**Goal:** 200봉 지표의 기간 계약을 지키고, 서로 다른 기준일의 종목을 분리하며, 429 재시도 정책의 계층 의존성을 바로잡고, 일봉 조회량에 캘린더 하한을 둔다.
+
+**Contract:** 사용자가 코드로 확정한 A~D가 구현 계약이다. raw SQL, DB/network/schema/env/dependency/git index는 건드리지 않는다.
+
+- [x] A: 60/199/200봉 경계 spec을 RED로 만들고 `high200Position` 최소 봉 수를 200으로 고친다.
+- [x] B: 서로 다른 최신 거래일 spec을 고쳐 RED를 확인하고 `staleCount` 및 CLI 출력을 구현한다.
+- [x] C: domain rate-limit error 기준 spec을 RED로 만들고 Toss adapter에서 429를 변환한다.
+- [x] D: 저장 최신일 기준 400일 하한 repository spec을 RED로 만들고 query filter를 구현한다.
+- [x] focused tests와 최종 diff로 계층·기간·조회량 계약을 검토한다.
+- [x] 5종 gate와 `git diff --check`를 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `high200Position`은 200봉부터만 계산하며 60/199/200 경계를 고정했다.
+- 서로 다른 최신일 후보는 최대 기준일 순위에서 제외하고 `staleCount`를 CLI까지 노출했다.
+- Toss adapter가 HTTP 429를 Domain 오류로 정규화해 Application의 infrastructure import를 제거했다.
+- 저장 최신일의 400일 전을 DB 하한으로 적용하고 종목별 limit 절단은 유지했다.
+- 최종 gate: lint(error 0, 기존 warning 57), build, tsc, 전체 test(일반 333 suites / 2,763 tests + code-graph 5 suites / 40 tests), docs check, diff check 모두 exit 0.
+- DB/network/schema/dependency/env/git index/commit은 건드리지 않았다.
+
+---
+
 # PR-B 실데이터 결함 2건 수정 (2026-08-12)
 
 **Goal:** `high200Position`의 종가 기준 한계를 코드 계약으로 드러내고, Toss 429로 누락되는 종목을 1초 뒤 1회 복구하면서 회복 건수를 운영 출력에 남긴다.
