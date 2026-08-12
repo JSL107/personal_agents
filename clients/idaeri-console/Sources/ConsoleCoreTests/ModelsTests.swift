@@ -36,6 +36,10 @@ func runModelsTests(_ t: TestRunner) {
             snapshot.agents.first?.resolvedDepartment, .review,
             "department 가 화면 부서로 이어진다"
         )
+        // 직무도 같은 종류의 실패를 겪었다 — 백엔드는 계속 보내고 있었는데 앱 모델에 필드가
+        // 없어 조용히 버려졌고, 화면에는 여섯 자 직책만 남았다. 필드명이 어긋나면 다시 nil 이
+        // 되어 호버 쪽지의 첫 줄만 사라진다(에러가 아니라 빈 값으로 나타나는 실패다).
+        t.expectEqual(snapshot.agents.first?.job, "리뷰 답변을 판정한다", "job 문자열 디코딩")
     } catch {
         t.fail("department 포함 스냅샷 디코딩 실패: \(error)")
     }
@@ -51,6 +55,9 @@ func runModelsTests(_ t: TestRunner) {
             snapshot.agents.first?.resolvedDepartment, .internalOps,
             "부서가 없으면 내부 폴백"
         )
+        // 직무를 모르는 서버(이 필드가 없던 버전)로 되돌려도 스냅샷 전체가 실패해서는 안 된다.
+        // 필수로 뒀다면 화면이 통째로 안 뜬다 — 쪽지 한 줄 때문에 관제 화면을 잃는 셈이다.
+        t.expectNil(snapshot.agents.first?.job, "job 없는 응답도 디코딩된다")
     } catch {
         t.fail("department 누락 스냅샷 디코딩 실패: \(error)")
     }

@@ -86,6 +86,9 @@ final class OfficeScene: SKScene {
     private var agentBubbles: [String: String] = [:]
     /// agentType → 사규의 직무 한 줄. 호버 쪽지의 첫 줄이 된다.
     private var agentJobs: [String: String] = [:]
+    /// agentType → 마지막으로 계산한 상시 말풍선 문구. 호버가 그 자리를 빌려 쓰는 동안 보관해,
+    /// 마우스가 떠날 때 다음 갱신을 기다리지 않고 즉시 되돌린다.
+    private var lastInfoBubbles: [String: String?] = [:]
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
@@ -1481,12 +1484,28 @@ final class OfficeScene: SKScene {
             let info = agentTokenInfo(
                 agent: agent, runs: runs, pendingCommands: pendingCommands, now: now
             )
-            if info.bubble != nil {
+            let top = node.sprite.size.height
+            // 마우스를 올린 사람은 **상시 말풍선 자리를 호버 쪽지가 대신 쓴다.**
+            //
+            // 상시 말풍선은 일이 도는 사람에게만 붙는데(`agentTokenInfo`), 그 말풍선이 있으면
+            // 호버 쪽지를 만들지 않는 구조였다. 결과가 거꾸로였다 — 지금 무엇을 하는지 가장
+            // 궁금한 **진행 중·승인 대기 직원에게만 직무가 영영 안 보였다.**
+            // 둘을 같은 높이에 함께 붙이면 글자가 겹치므로, 호버 중에는 활동까지 담은 쪽지 하나로
+            // 합친다(`officeHoverNote` 가 직무 → 활동 두 줄을 만든다).
+            let isHovered = hoveredAgentType == agent.agentType
+            let hoverNote = officeHoverNote(job: agent.job, activity: agent.bubble)
+            lastInfoBubbles[agent.agentType] = info.bubble
+            if isHovered, let hoverNote {
+                setChildLabel(
+                    node, name: "hoverBubble", text: hoverNote,
+                    position: CGPoint(x: 0, y: top + nameplateClearance),
+                    fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+                )
+            } else {
                 node.childNode(withName: "hoverBubble")?.removeFromParent()
             }
-            let top = node.sprite.size.height
             setChildLabel(
-                node, name: "infoBubble", text: info.bubble,
+                node, name: "infoBubble", text: isHovered ? nil : info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
                 fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
             )
@@ -1902,6 +1921,10 @@ final class OfficeScene: SKScene {
             node.sprite.run(.scale(to: 1.0, duration: 0.1))
             node.childNode(withName: "hoverBubble")?.removeFromParent()
             node.setHovered(false)
+            // 호버 중에는 상시 말풍선 자리를 쪽지가 빌려 쓴다(refreshOverlays 의 같은 근거).
+            // 마우스가 떠나면 그 사람의 상시 말풍선을 되돌려야 한다 — 다음 갱신까지 기다리면
+            // 일이 도는 사람의 말풍선이 최대 30초 동안 비어 보인다.
+            restoreInfoBubble(previous)
         }
         hoveredAgentType = hit
         if hit == officeHitTargetPresident {
@@ -1914,15 +1937,34 @@ final class OfficeScene: SKScene {
         }
         node.setHovered(true)
         node.sprite.run(.scale(to: 1.12, duration: 0.1))
-        if node.childNode(withName: "infoBubble") == nil,
-            let text = officeHoverNote(job: agentJobs[hit], activity: agentBubbles[hit])
-        {
-            setChildLabel(
-                node, name: "hoverBubble", text: text,
-                position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
-                fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
-            )
+        // 상시 말풍선이 있어도 쪽지를 띄운다. 예전에는 말풍선이 있으면 건너뛰어서, 진행 중·승인
+        // 대기처럼 **가장 궁금한 상태의 직원에게만** 직무가 안 보였다. 쪽지가 활동까지 담으므로
+        // 말풍선을 잠시 내려도 잃는 정보가 없다.
+        guard let text = officeHoverNote(job: agentJobs[hit], activity: agentBubbles[hit]) else {
+            return
         }
+        node.childNode(withName: "infoBubble")?.removeFromParent()
+        setChildLabel(
+            node, name: "hoverBubble", text: text,
+            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
+            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+        )
+    }
+
+    /// 마우스가 떠난 사람의 상시 말풍선을 되돌린다.
+    ///
+    /// 문구는 마지막 `refreshOverlays` 가 계산해 둔 값을 쓴다. 호버 시점의 문구를 따로 들고 있다가
+    /// 되돌리면 호버 중에 상태가 바뀐 경우 옛 문구가 되살아나는데, 이 캐시는 상태가 바뀔 때마다
+    /// 함께 갱신되므로 항상 지금 값이다.
+    private func restoreInfoBubble(_ agentType: String) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        setChildLabel(
+            node, name: "infoBubble", text: lastInfoBubbles[agentType] ?? nil,
+            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
+            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+        )
     }
 
     /// 좌표에 있는 사람. 캐릭터는 발 기준으로 서 있으므로 몸통 높이의 절반만큼 위를 중심으로 본다.
