@@ -504,6 +504,8 @@ describe('AgentRunService', () => {
         parentId: null,
         startedAt: new Date(Date.now() - 40 * 60 * 1000), // 40분 전(좀비)
         endedAt: null,
+        triggerType: 'SLACK_COMMAND_TODAY',
+        inputSnapshot: null,
       };
       const fresh = {
         id: 56,
@@ -512,6 +514,8 @@ describe('AgentRunService', () => {
         parentId: null,
         startedAt: new Date(Date.now() - 5 * 60 * 1000), // 5분 전(정상)
         endedAt: null,
+        triggerType: 'SLACK_COMMAND_TODAY',
+        inputSnapshot: null,
       };
       repository.findActiveRuns.mockResolvedValue([zombie, fresh]);
       repository.sweepZombies.mockResolvedValue(1);
@@ -560,6 +564,8 @@ describe('AgentRunService', () => {
           parentId: null,
           startedAt: new Date('2026-07-27T00:00:00Z'),
           endedAt: null,
+          triggerType: 'SLACK_COMMAND_TODAY',
+          inputSnapshot: null,
         },
       ];
       repository.findActiveRuns.mockResolvedValue(active);

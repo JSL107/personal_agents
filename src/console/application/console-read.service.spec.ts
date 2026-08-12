@@ -60,6 +60,8 @@ describe('ConsoleReadService', () => {
         parentId: null,
         startedAt,
         endedAt: null,
+        triggerType: 'MORNING_BRIEFING_CRON',
+        inputSnapshot: null,
       },
     ]);
 
@@ -67,6 +69,7 @@ describe('ConsoleReadService', () => {
 
     const pm = snapshot.agents.find((agent) => agent.agentType === 'PM');
     expect(pm?.state).toBe('IN_PROGRESS');
+    expect(pm?.bubble).toBe('아침 계획 짜는 중');
     expect(snapshot.runs).toHaveLength(1);
     expect(snapshot.runs[0]).toMatchObject({
       id: '7',
@@ -75,6 +78,39 @@ describe('ConsoleReadService', () => {
       startedAt: startedAt.toISOString(),
       finishedAt: null,
     });
+  });
+
+  it('같은 에이전트의 활성 런이 여러 개면 startedAt이 가장 최신인 문구를 쓴다', async () => {
+    const olderStartedAt = new Date(Date.now() - 2 * 60_000);
+    const newerStartedAt = new Date(Date.now() - 60_000);
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 7,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: olderStartedAt,
+        endedAt: null,
+        triggerType: 'MORNING_BRIEFING_CRON',
+        inputSnapshot: null,
+      },
+      {
+        id: 8,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: newerStartedAt,
+        endedAt: null,
+        triggerType: 'SLACK_COMMAND_TODAY',
+        inputSnapshot: null,
+      },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.bubble,
+    ).toBe('오늘 계획 짜는 중');
   });
 
   it('최근 실패한 에이전트는 FAILED 로 복원된다', async () => {
@@ -149,6 +185,8 @@ describe('ConsoleReadService', () => {
         parentId: null,
         startedAt,
         endedAt: null,
+        triggerType: 'UNKNOWN_TRIGGER',
+        inputSnapshot: null,
       },
     ]);
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
@@ -160,6 +198,9 @@ describe('ConsoleReadService', () => {
     expect(
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('IN_PROGRESS');
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.bubble,
+    ).toBe('일하는 중…');
   });
 
   it('좀비 임계(30분) 초과 IN_PROGRESS 런은 활성에서 제외한다 (오표시/목록 제거)', async () => {
@@ -172,6 +213,8 @@ describe('ConsoleReadService', () => {
         parentId: null,
         startedAt,
         endedAt: null,
+        triggerType: 'MORNING_BRIEFING_CRON',
+        inputSnapshot: null,
       },
     ]);
 
@@ -185,6 +228,18 @@ describe('ConsoleReadService', () => {
   });
 
   it('열린 승인은 approvals 로 매핑되고 담당 에이전트는 AWAITING_APPROVAL 이 된다', async () => {
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 10,
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: null,
+        triggerType: 'MORNING_BRIEFING_CRON',
+        inputSnapshot: null,
+      },
+    ]);
     findAllOpenPreviews.execute.mockResolvedValue([
       {
         id: 'prev-1',
@@ -207,6 +262,9 @@ describe('ConsoleReadService', () => {
     expect(
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('AWAITING_APPROVAL');
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'PM')?.bubble,
+    ).toBe('확인해주세요');
   });
 
   // 오피스 책상의 서류 더미 높이가 이 값에서 나온다. 창의 시작이 자정이어야 하는 이유는
