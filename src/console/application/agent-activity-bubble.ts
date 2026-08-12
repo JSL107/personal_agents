@@ -102,8 +102,8 @@ function readInteger(
   key: string,
 ): number | null {
   const value = inputSnapshot?.[key];
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    return null;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return value;
   }
-  return value;
+  return null;
 }

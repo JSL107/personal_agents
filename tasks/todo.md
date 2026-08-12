@@ -1,3 +1,31 @@
+# PR #274 리뷰 4건 반영 (2026-08-12)
+
+**Goal:** 활동 대상 번호를 양의 안전한 정수로 제한하고, 동적 bubble·Prisma JSON 정규화 회귀를 고정하며, `run.started` 직후 앱이 활동 bubble 스냅샷을 즉시 다시 받게 한다.
+
+**Contract:** 사용자 요청이 승인된 구현 설계다. 백엔드 SSE 이벤트 타입·발행부, DB/schema, env, UI 스타일은 바꾸지 않는다. 기존 패턴을 따르는 production/spec과 `.ai/implementation-summary.md`만 최소 수정하며 commit하지 않는다.
+
+- [x] A1 경계값 spec(`pullNumber`: 0/-1/1.5/unsafe, `issueNumber`: 0)을 추가하고 수정 전 RED를 확인한다.
+- [x] `readInteger()`를 `Number.isSafeInteger(value) && value > 0`으로 제한하고 focused GREEN을 확인한다.
+- [x] A2 `ConsoleReadService`의 동적 `#273 리뷰 중` 전달 및 번호 누락 시 `일하는 중…` 폴백 spec을 추가해 기존 production 경로를 검증한다.
+- [x] A3 객체/배열/스칼라/null 혼합 Prisma fixture spec을 추가해 객체 보존·나머지 null·`triggerType` 전달을 검증한다.
+- [x] A4 `AppRootView.connect()`에서 `.runStarted` 처리 직후 `resyncSnapshot()`을 호출하고 스냅샷 전용 bubble 때문에 필요한 이유를 주석으로 남긴다.
+- [x] focused Jest와 Swift compile/test를 실행해 변경 단위 GREEN을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit -p tsconfig.json`을 각각 파이프 없이 실행해 exit 0을 확인한다.
+- [x] 최종 diff·금지 범위·설계 정합성을 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- A1은 수정 전 0·음수 경계 3 failures를 확인한 뒤 양의 safe integer guard로 focused GREEN을 만들었다.
+- A2는 등록된 `CODE_REVIEWER`의 동적 `#273 리뷰 중`과 번호 누락 `일하는 중…` 폴백을 최종 `ConsoleAgent.bubble`에서 고정했다.
+- A3는 한 Prisma 조회 fixture에서 객체만 보존하고 배열·스칼라·null을 `null`로 접으며 `triggerType`을 보존하는 계약을 고정했다.
+- A4는 `.runStarted` 이벤트를 store에 먼저 적용한 뒤 즉시 snapshot resync한다. 백엔드 이벤트 계약은 무변경이다.
+- focused 3 suites/82 tests, lint(기존 warning 57), 일반 308 suites/2,591 tests + code-graph 5 suites/40 tests, build, tsc, diff check가 모두 exit 0이다.
+- 지정 `MacOSX15.4.sdk` 원문 명령은 현재 Swift 6.3.3 compiler와 SDK Swift 6.1 불일치로 exit 1이었다. matching `MacOSX26.5.sdk` + writable cache에서는 Swift build exit 0, ConsoleCoreTests 1,763건 exit 0이다.
+- A4는 실제 앱 실행 없이 컴파일과 ConsoleCoreTests까지만 검증했다. commit 없음.
+- 독립 리뷰는 Critical 0, Important 0, Minor 1, `Ready`. Minor는 A4 앱-level wiring 직접 테스트 부재로 기록했다.
+
+---
+
 # 오피스 에이전트 활동 말풍선 (2026-08-12)
 
 **Goal:** 진행 중인 에이전트의 `triggerType`과 안전한 `inputSnapshot` 값으로 12자 이하의 구체적 활동 문구를 만들고, 미등록·잘못된 입력은 기존 상태 문구로 폴백한다.

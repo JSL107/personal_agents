@@ -27,6 +27,19 @@ describe('activityBubble', () => {
     },
   );
 
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'PR 번호가 양의 안전한 정수가 아니면 문구를 만들지 않는다: %p',
+    (pullNumber) => {
+      const result = activityBubble({
+        agentType: 'CODE_REVIEWER',
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: { pullNumber },
+      });
+
+      expect(result).toBeNull();
+    },
+  );
+
   it('이슈 번호로 분류 대상을 표시한다', () => {
     const result = activityBubble({
       agentType: 'ISSUE_LABELER',
@@ -35,6 +48,16 @@ describe('activityBubble', () => {
     });
 
     expect(result).toBe('#12 분류 중');
+  });
+
+  it('이슈 번호가 0이면 문구를 만들지 않는다', () => {
+    const result = activityBubble({
+      agentType: 'ISSUE_LABELER',
+      triggerType: 'WEBHOOK_ISSUE_AUTO_LABEL',
+      inputSnapshot: { issueNumber: 0 },
+    });
+
+    expect(result).toBeNull();
   });
 
   it('미국 시장 코드를 한국어 시장 문구로 바꾼다', () => {

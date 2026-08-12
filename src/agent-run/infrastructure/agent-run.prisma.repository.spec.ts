@@ -129,6 +129,74 @@ describe('AgentRunPrismaRepository.updateParentId', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.findActiveRuns', () => {
+  it('객체 inputSnapshot만 보존하고 배열·스칼라·null은 null로 정규화한다', async () => {
+    const startedAt = new Date('2026-08-12T00:00:00.000Z');
+    const rows = [
+      {
+        id: 1,
+        agentType: 'CODE_REVIEWER',
+        status: AgentRunStatus.IN_PROGRESS,
+        parentId: null,
+        startedAt,
+        endedAt: null,
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: { pullNumber: 273 },
+      },
+      {
+        id: 2,
+        agentType: 'PM',
+        status: AgentRunStatus.IN_PROGRESS,
+        parentId: null,
+        startedAt,
+        endedAt: null,
+        triggerType: 'SLACK_COMMAND_TODAY',
+        inputSnapshot: [273],
+      },
+      {
+        id: 3,
+        agentType: 'BE',
+        status: AgentRunStatus.IN_PROGRESS,
+        parentId: 1,
+        startedAt,
+        endedAt: null,
+        triggerType: 'SLACK_COMMAND_BE_FIX',
+        inputSnapshot: 'scalar',
+      },
+      {
+        id: 4,
+        agentType: 'WORK_REVIEWER',
+        status: AgentRunStatus.IN_PROGRESS,
+        parentId: null,
+        startedAt,
+        endedAt: null,
+        triggerType: 'DAILY_EVAL_CRON',
+        inputSnapshot: null,
+      },
+    ];
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findActiveRuns();
+
+    expect(result.map((run) => run.inputSnapshot)).toEqual([
+      { pullNumber: 273 },
+      null,
+      null,
+      null,
+    ]);
+    expect(result.map((run) => run.triggerType)).toEqual([
+      'PR_REVIEW_SWEEP',
+      'SLACK_COMMAND_TODAY',
+      'SLACK_COMMAND_BE_FIX',
+      'DAILY_EVAL_CRON',
+    ]);
+  });
+});
+
 describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
   const buildRepository = (): {
     repository: AgentRunPrismaRepository;

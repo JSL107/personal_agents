@@ -180,6 +180,11 @@ struct AppRootView: View {
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)
+                    if case .runStarted = event {
+                        // 활동 문구(bubble)는 스냅샷에만 있고 SSE는 상태만 나른다. 30초 주기를
+                        // 기다리면 짧은 런은 무슨 일을 하는지 한 번도 보여주지 못한다.
+                        await resyncSnapshot()
+                    }
                 }
             } catch {
                 // 아래 백오프 후 재시도
