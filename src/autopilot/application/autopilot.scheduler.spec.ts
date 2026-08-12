@@ -62,8 +62,9 @@ describe('AutopilotScheduler', () => {
     //   + weekly-summary + ceo-meta + impact-report
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
-    //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep = 19그룹.
-    expect(queue.add).toHaveBeenCalledTimes(19);
+    //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
+    //   + ai-cli-env-snapshot + ai-cli-env-apply = 21그룹.
+    expect(queue.add).toHaveBeenCalledTimes(21);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
@@ -83,6 +84,8 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('stock-monitor-us');
     expect(addCalls).toContain('stock-alert-scoring');
     expect(addCalls).toContain('pr-review-sweep');
+    expect(addCalls).toContain('ai-cli-env-snapshot');
+    expect(addCalls).toContain('ai-cli-env-apply');
   });
 
   it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:00', async () => {
@@ -187,6 +190,46 @@ describe('AutopilotScheduler', () => {
       repeat: { pattern: '0 17 * * *', tz: 'Asia/Seoul' },
       attempts: 2,
       backoff: { type: 'exponential', delay: 60_000 },
+    });
+  });
+
+  it('AI CLI 환경 태스크는 계약 전용 cron/timezone 키를 우선 적용한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AI_CLI_ENV_SNAPSHOT_CRON') {
+          return '15 18 * * 5';
+        }
+        if (key === 'AI_CLI_ENV_SNAPSHOT_TIMEZONE') {
+          return 'America/New_York';
+        }
+        if (key === 'AI_CLI_ENV_APPLY_CRON') {
+          return '30 11 * * *';
+        }
+        if (key === 'AI_CLI_ENV_APPLY_TIMEZONE') {
+          return 'Europe/London';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const snapshotCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'ai-cli-env-snapshot',
+    );
+    const applyCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'ai-cli-env-apply',
+    );
+    expect(snapshotCall?.[2]).toMatchObject({
+      repeat: { pattern: '15 18 * * 5', tz: 'America/New_York' },
+    });
+    expect(applyCall?.[2]).toMatchObject({
+      repeat: { pattern: '30 11 * * *', tz: 'Europe/London' },
     });
   });
 });

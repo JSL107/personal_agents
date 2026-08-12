@@ -1,3 +1,56 @@
+# PR #284 재리뷰 origin·pathspec 결함 2건 반영 (2026-08-12)
+
+**Goal:** 설정한 private repo와 다른 기존 clone을 거부하고, exporter 관리 산출물 외 파일이 변경 감지·staging·commit에 들어가지 않게 한다.
+
+**Contract:** 기존 clone은 자동 삭제·재clone하지 않는다. GitHub HTTPS/SSH URL 표기 차이는 같은 `owner/repo`로 정규화한다. clean tree를 강제하지 않고 `manifest.json`, `SECRETS-TODO.md`, `claude`, `codex`에만 `status --porcelain`과 `add -A` pathspec을 적용한다. commit/stage/push 금지.
+
+- [x] 다른 origin이면 remote 확인 뒤 pull/export 없이 설정값·현재 origin·디렉터리를 담은 예외를 내는 spec을 RED로 만든다.
+- [x] 동일 repo URL 3형태가 모두 pull까지 통과하는 spec을 RED로 만든다.
+- [x] 산출물 밖 미추적 파일은 status/add 대상에서 제외되고 산출물 변경은 commit/push되는 spec을 RED로 만든다.
+- [x] origin 정규화 검증과 관리 pathspec 상수를 최소 구현하고 focused GREEN을 확인한다.
+- [x] 독립 재리뷰, 6종 gate, `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`, `tasks/lessons.md`, 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 기존 clone은 `origin`을 읽어 설정 `owner/repo`와 비교한다. HTTPS `.git`/no-`.git`, SCP형 SSH, `ssh://`를 같은 저장소로 정규화하며 credential-bearing HTTP(S)는 userinfo를 제거한 뒤 비교·표시한다.
+- mismatch는 설정값·sanitized current origin·sync directory를 담은 예외로 중단하며 pull/export를 실행하지 않는다. 자동 삭제·재clone은 없다.
+- 변경 감지는 exporter의 실제 산출물 4개에만 한정한다. 항상 생성되는 파일 2개는 함께 `add -A`, 선택 디렉터리는 scoped status가 있을 때만 개별 `add -A`해 미존재 pathspec과 tracked deletion을 함께 처리한다.
+- RED는 origin 검증 부재와 전역 status/add 때문에 6건, 추가 SSH/credential hardening 2건이 실패하는 것을 확인했다. 최종 adapter 25 tests, focused 4 suites/39 tests를 GREEN으로 만들었다.
+- 독립 재리뷰는 Critical/Important 0건, Ready. 혼합 상태 test Minor도 관리 변경+외부 미추적 동시 fixture로 보강했다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 338 suites/2,806 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check/diff check 모두 exit 0.
+- commit/stage/push 없음.
+
+---
+
+# PR #284 AI CLI 환경 동기화 리뷰 6건 반영 (2026-08-12)
+
+**Goal:** 장치 식별, 승인 스냅샷 불변성, 동시 push 복구, 부분 적용 재승인, 자격 증명 차단, 자식 env 격리를 실제 실패 입력으로 보장한다.
+
+**Contract:** 사용자 최신 A~F가 구현 계약이다. `scripts/export-ai-cli-env.cjs` 수정은 `sourceHost`와 구조적 credential warning을 위해 허용한다. 기본 브랜치 하드코딩, force push, 앱 전체 env 상속, commit은 금지한다.
+
+- [x] A: 같은 `sourceHome`·다른 `sourceHost`, 구 manifest의 카드/문구 spec을 RED로 만들고 hostname 판별을 구현한다.
+- [x] B: dirty working tree에서 bootstrap 미실행 spec을 RED로 만들고 clean guard를 구현한다.
+- [x] C: 첫 push 실패 후 fetch/default-ref/reset/re-export/retry 및 두 번째 실패 spec을 RED로 만들고 1회 복구를 구현한다.
+- [x] D: bootstrap warning 시 적용 이력 미기록과 재승인 안내 spec을 RED로 만들고 성공 기록 경계를 고친다.
+- [x] E: 구조적 credential warning 시 add/commit/push 미실행 spec을 RED로 만들고 export manifest/adapter gate를 구현한다.
+- [x] F: 기본 allowlist와 `secretsRequired`만 자식 env에 전달하는 spec을 RED로 만들고 실제 HOME 보존 근거를 주석으로 남긴다.
+- [x] focused GREEN과 최종 diff로 A~F 및 금지 범위를 재검토한다.
+- [x] 6종 gate와 `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`, `tasks/lessons.md`, 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- exporter manifest에 `sourceHost`와 구조적 `credentialWarnings`를 추가했다. 적용 태스크는 hostname을 장치 식별자로 쓰며 구 manifest는 특정 불가 안내와 함께 승인 카드로 보낸다.
+- apply는 승인 SHA 일치 뒤 clean tree까지 확인하고, bootstrap warning이 한 건이라도 있으면 적용 이력을 남기지 않는다. applier가 재승인을 명시한다.
+- push 실패만 복구 대상으로 잡아 remote 기본 ref를 동적으로 구하고 reset한 뒤 전체 export/commit/push를 1회만 재시도한다.
+- credential warning은 status/add/commit/push 전에 차단하며 MCP label을 오류에 포함한다. 모든 child는 기본 allowlist env만 받고 bootstrap만 `secretsRequired` 키를 추가로 받는다.
+- guard-breaking RED 6건을 확인한 뒤 focused 4 suites/31 tests, 최종 adapter 18 tests를 GREEN으로 만들었다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 338 suites/2,799 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check/diff check 모두 exit 0.
+- 설계 범위 이탈, `process.env`, force push, main 하드코딩, `--with-hooks`, commit/stage/push 없음.
+
+---
+
 # PR #281 봇 리뷰 4건 반영 (2026-08-12)
 
 **Goal:** 200봉 지표의 기간 계약을 지키고, 서로 다른 기준일의 종목을 분리하며, 429 재시도 정책의 계층 의존성을 바로잡고, 일봉 조회량에 캘린더 하한을 둔다.
@@ -10,6 +63,19 @@
 - [x] D: 저장 최신일 기준 400일 하한 repository spec을 RED로 만들고 query filter를 구현한다.
 - [x] focused tests와 최종 diff로 계층·기간·조회량 계약을 검토한다.
 - [x] 5종 gate와 `git diff --check`를 실행한다.
+# AI CLI 승인 SHA 고정·bootstrap 경고 노출 (2026-08-12)
+
+**Goal:** PreviewGate에서 승인한 snapshot SHA만 bootstrap하고, 성공 종료 안의 부분 복원 warning을 사용자 메시지에 노출한다.
+
+**Contract:** 사용자 최신 수정 지시가 `.ai/design.md`의 기존 무인자 port 계약을 대체한다. `applySnapshot(expectedSha: string)`으로 변경하고 bootstrap 전 HEAD 일치 검증, expected SHA 이력 기록, stdout warning 파싱, 성공 stderr warning 합류를 구현한다. `scripts/*.cjs`는 수정하지 않고 commit하지 않는다.
+
+- [x] port mock과 실제 호출부를 전수 확인하고 수정 전 데이터 단절을 기록한다.
+- [x] HEAD 불일치 시 bootstrap 미실행·행동 가능한 오류를 검증하는 adapter spec을 추가해 RED를 확인한다.
+- [x] bootstrap warning 파싱·stderr 합류·무경고 반환을 검증하는 adapter spec을 추가해 RED를 확인한다.
+- [x] applier가 expected SHA를 전달하고 warning 유무에 따라 메시지를 달리하는 spec을 추가해 RED를 확인한다.
+- [x] port·adapter·applier를 최소 수정하고 focused GREEN을 확인한다.
+- [x] 독립 리뷰와 final diff 검토로 승인 SHA·warning·금지 범위를 재확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm check:env`, `pnpm check:invariants`, `pnpm docs:check`를 fresh 실행한다.
 - [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
 
 ## Review
@@ -74,6 +140,41 @@
 - 독립 리뷰 Critical 0. Important 1(high200 caller 의존)은 201봉 RED→GREEN으로 수정했고, Minor 1(표본분산 분모 spec)은 non-zero 고정 입력으로 보강했다.
 - 최종 focused 9 suites / 40 tests, lint(error 0, 기존 warning 57), build, tsc, 전체 test(일반 332 suites / 2,752 tests + code-graph 5 suites / 40 tests), docs check, diff check 모두 통과했다.
 - 설계 편차 없음. DB/schema/network/dependency/env/autopilot/LLM/추천/매매/git index는 건드리지 않았다.
+- `applySnapshot(expectedSha)`로 port 계약을 바꾸고 bootstrap 직전 local HEAD exact match를 강제했다. 불일치 시 승인/현재 SHA 앞 7자리와 재승인 안내를 포함한 예외를 던지며 bootstrap과 이력 기록은 실행하지 않는다.
+- bootstrap stdout의 `--- 결과 ---` 이후 `주의 N건:` 목록만 파싱하고, 성공 stderr도 사용자 warning에 합쳤다. 다른 generic 명령의 성공 stderr는 `Logger.warn`으로 보존한다.
+- applier는 preview payload SHA를 그대로 전달한다. warning이 있으면 건수와 목록을, 없으면 기존 간결 성공 메시지만 반환한다.
+- RED는 기존 무인자 시그니처 `TS2554`, applier SHA 미전달, generic stderr 로그 0회를 확인했다. focused 4 suites/22 tests와 adapter 11 tests를 GREEN으로 만들었다.
+- 독립 scoped 리뷰는 Critical/Important 0건. 7자리 SHA 축약 Minor는 exact 존재·full SHA 부재 spec으로 보강했다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 332 suites/2,754 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check 모두 exit 0.
+- 남은 재확인은 실제 private repo clone/pull/push와 Slack 승인/bootstrap e2e다. commit/stage/push/PR 없음. `scripts/*.cjs` 무변경.
+
+---
+
+# AI CLI 환경 자동 싱크 (2026-08-12)
+
+**Goal:** `.ai/design.md` 계약대로 AI CLI 환경 스냅샷을 Autopilot에서 자동 export하고, 다른 PC 스냅샷은 PreviewGate 승인 후 hooks 없이 적용한다.
+
+**Contract:** `.ai/design.md`가 source of truth다. `AgentType` 추가, `--with-hooks`, force push, main 직접 조작, `process.env` 직접 참조, `scripts/*.cjs` 수정, commit은 금지한다. 신규 env 6개는 `.env.example`·`.env`·`src/config/app.config.ts`·README에 동기화한다.
+
+- [x] 필수 문서·참고 구현을 끝까지 읽고 linked worktree·clean status·baseline test를 확인한다.
+- [x] 신규 태스크 2종, PreviewApplier, adapter 계약 spec을 먼저 작성하고 의도한 RED를 확인한다.
+- [x] `src/ai-cli-env/` domain port/type, adapter, applier, module을 최소 구현한다.
+- [x] Autopilot 태스크 2종을 구현하고 중앙 task registry에 등록한다.
+- [x] `PREVIEW_KIND`, AppModule applier, 플레이북 기본값·배열 끝 항목을 계약대로 연결한다.
+- [x] 신규 env 6개를 4곳에 동기화하고 docs catalog를 갱신한다.
+- [x] focused test를 GREEN으로 만들고 최종 diff를 설계·금지 범위와 대조한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm check:env`, `pnpm check:invariants`, `pnpm docs:check`를 각각 fresh 실행해 exit 0을 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 파일 목록·설계 이탈·실제 검증 결과·재확인 지점을 기록한다.
+
+## Review
+
+- AI CLI snapshot export(T0)와 cross-PC apply preview(T1), adapter/port/module, PreviewGate applier를 추가했다. bootstrap에는 hooks 관련 인자를 넘기지 않는다.
+- 플레이북 두 항목은 배열 끝에 추가했고, 중앙 `AUTOPILOT_TASKS` 및 AppModule PreviewApplier에 등록했다. 지정 `AI_CLI_ENV_*_CRON/TIMEZONE`이 실제 scheduler에서 소비되도록 최소 alias를 연결했다.
+- env 6개는 `.env.example`, ignored `.env`, `app.config.ts`, README에 동기화했고 `docs/env-catalog.md`를 재생성했다. 빈 repo gate와 `~/` 경로도 회귀 spec으로 고정했다.
+- TDD RED는 신규 모듈/kind/cron key 부재, `~` 미확장, 빈 gate validator 실패를 확인했다. focused GREEN 후 독립 리뷰 fix wave와 재리뷰에서 Critical/Important 0건을 확인했다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 332 suites/2,748 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check 모두 exit 0. `git diff --check`도 exit 0.
+- 승인 SHA 불일치와 bootstrap warning 은 후속 수정에서 해소했다. 실제 private repo 인증·push와 Slack 승인 적용은 호출자가 통합 환경에서 재확인해야 한다.
+- commit/stage/push/PR 없음. `scripts/*.cjs`, `AgentType` 무변경.
 
 ---
 
