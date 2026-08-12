@@ -22,6 +22,8 @@ const activeRun = (agentType: string, startedAt: Date): ActiveRunSnapshot => ({
   parentId: null,
   startedAt,
   endedAt: null,
+  triggerType: 'SCHEDULED',
+  inputSnapshot: null,
 });
 
 const preview = (previewText: string, expiresAt: Date): PreviewAction =>
