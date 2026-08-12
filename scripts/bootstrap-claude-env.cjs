@@ -4,14 +4,15 @@
  *
  *   node scripts/bootstrap-claude-env.cjs <내보낸경로> [--dry-run] [--with-hooks]
  *
- *   --dry-run     실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
- *   --with-hooks  settings.json 의 hooks 블록까지 병합한다 (기본은 안내만)
+ *   --dry-run        실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
+ *   --with-hooks     settings.json 의 hooks 블록까지 적용한다 (기본은 안내만)
+ *   --replace-hooks  이 PC 에 이미 hooks 가 있어도 덮어쓴다 (없으면 건너뛰고 알린다)
  *
  * 하는 일
  *   1. 마켓플레이스 등록 → 활성 플러그인 설치
- *   2. MCP 서버 등록 (비밀값은 현재 셸의 환경 변수에서 채운다 — 없으면 건너뛰고 알린다)
+ *   2. MCP 서버 등록 (env·headers 값은 현재 셸의 환경 변수에서 채운다 — 없으면 건너뛰고 알린다)
  *   3. skills / agents / commands / hooks 파일 복사 (기존 것은 백업)
- *   4. hooks 명령 안의 옛 홈 경로를 이 PC 의 홈으로 치환
+ *   4. hooks 는 settings.hooks 를 통째로 교체하며, 명령 안의 옛 홈 경로를 이 PC 의 홈으로 치환
  *
  * permissions 와 defaultMode 는 옮기지 않는다. 새 PC 의 승인 게이트는 그 PC 에서 정한다.
  */
@@ -27,13 +28,19 @@ const SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json');
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const WITH_HOOKS = args.includes('--with-hooks');
+const REPLACE_HOOKS = args.includes('--replace-hooks');
 const EXPORT_DIR = path.resolve(args.find((arg) => !arg.startsWith('--')) || 'claude-env-export');
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const warnings = [];
 
-function run(command, commandArgs) {
-  const printable = `${command} ${commandArgs.join(' ')}`;
+/**
+ * displayArgs 를 주면 로그에는 그것만 찍는다.
+ * MCP 등록 인자에는 실제 토큰이 채워진 JSON 이 들어가므로, 화면·CI 로그에는
+ * 플레이스홀더 상태의 정의를 대신 보여줘야 한다 (dry-run 도 마찬가지다).
+ */
+function run(command, commandArgs, displayArgs) {
+  const printable = `${command} ${(displayArgs || commandArgs).join(' ')}`;
   if (DRY_RUN) {
     console.log(`  [dry-run] ${printable}`);
     return true;
@@ -173,7 +180,8 @@ function main() {
       console.log(`  - ${name} 건너뜀 (환경 변수 미설정)`);
       continue;
     }
-    run('claude', ['mcp', 'add-json', '--scope', 'user', name, filled]);
+    const mcpArgs = ['mcp', 'add-json', '--scope', 'user', name];
+    run('claude', [...mcpArgs, filled], [...mcpArgs, JSON.stringify(definition)]);
   }
 
   const assets = manifest.assets || {};
@@ -219,6 +227,18 @@ function applyHooks(manifest) {
   if (!WITH_HOOKS) {
     console.log('  건너뜀 — 병합하려면 --with-hooks 를 붙일 것.');
     console.log('  (hook 은 매 세션 실행되는 코드다. 내용을 먼저 읽고 결정하는 편이 안전하다.)');
+    return;
+  }
+
+  // 이 PC 에 이미 hooks 가 있으면 덮어쓰지 않는다. settings.hooks 는 통째로 교체되는 값이라
+  // 그 PC 에서 쓰던 훅이 즉시 비활성화된다. 백업은 남지만 실행 환경은 이미 바뀐 뒤다.
+  const existingEvents = Object.keys(
+    (fs.existsSync(SETTINGS_PATH) ? JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) : {}).hooks || {},
+  );
+  if (existingEvents.length && !REPLACE_HOOKS) {
+    console.log(`  건너뜀 — 이 PC 에 이미 hooks ${existingEvents.length}종이 있다.`);
+    console.log('  덮어쓰려면 --replace-hooks 를 붙일 것 (기존 settings.json 은 백업된다).');
+    warnings.push(`hooks 미적용 — 기존 ${existingEvents.length}종 보존 (덮어쓰려면 --replace-hooks)`);
     return;
   }
 

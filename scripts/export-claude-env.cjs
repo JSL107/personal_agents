@@ -24,8 +24,11 @@ const OUT_DIR = path.resolve(process.argv[2] || 'claude-env-export');
 
 /** 자산 복사 시 건너뛸 것들 — 백업 잔재와 macOS 메타파일. */
 const SKIP_PATTERNS = [/^\.DS_Store$/, /^\.sync-backup-/, /\.bak(-[\w-]+)?$/];
-/** env 키 이름이 이 패턴이면 값 대신 ${키이름} 플레이스홀더를 남긴다. */
-const SECRET_KEY = /token|key|secret|password|auth|credential/i;
+/** url·args 에 자격 증명이 박혀 있을 수 있는 흔한 형태 — 치환은 못 하니 경고만 한다. */
+const CREDENTIAL_IN_TEXT = /(token|key|secret|password|auth|credential|access[-_]?code)=|:\/\/[^/@\s]+:[^/@\s]+@/i;
+
+/** url·args 에 자격 증명이 보이는 MCP 이름 — 사람이 직접 확인해야 한다. */
+const credentialWarnings = [];
 
 function readJson(filePath) {
   try {
@@ -67,22 +70,28 @@ function copyAssets(sourceDir, destinationDir) {
   return copied;
 }
 
-/** MCP 서버 정의에서 비밀값을 ${키이름} 으로 바꾸고, 필요한 키 목록을 모은다. */
+/**
+ * MCP 서버 정의의 env·headers 값을 ${키이름} 플레이스홀더로 바꾸고, 필요한 키 목록을 모은다.
+ *
+ * 키 이름 패턴(token·secret 따위)으로 고르지 않고 값을 전부 바꾼다.
+ * `Cookie`·`DSN`·`ACCESS_CODE` 처럼 이름만 봐서는 비밀인지 알 수 없는 키가 흔하고,
+ * 하나라도 놓치면 자격 증명이 그대로 파일에 남기 때문이다.
+ * 비밀이 아닌 값은 새 PC 에서 같은 이름으로 export 하면 그대로 복원된다.
+ */
 function redactMcpServers(servers, secretsRequired) {
   const redacted = {};
   for (const [name, definition] of Object.entries(servers || {})) {
     const copy = JSON.parse(JSON.stringify(definition));
-    for (const key of Object.keys(copy.env || {})) {
-      if (SECRET_KEY.test(key)) {
-        copy.env[key] = `\${${key}}`;
-        secretsRequired.push({ mcp: name, envKey: key });
+    for (const field of ['env', 'headers']) {
+      for (const key of Object.keys(copy[field] || {})) {
+        copy[field][key] = `\${${key}}`;
+        secretsRequired.push({ mcp: name, field, envKey: key });
       }
     }
-    for (const key of Object.keys(copy.headers || {})) {
-      if (SECRET_KEY.test(key)) {
-        copy.headers[key] = `\${${key}}`;
-        secretsRequired.push({ mcp: name, envKey: key });
-      }
+    // url·args 안에 박힌 자격 증명은 플레이스홀더로 바꾸면 복원할 수 없다 → 경고만 남긴다.
+    const inlineTargets = [copy.url, ...(copy.args || [])].filter((value) => typeof value === 'string');
+    if (inlineTargets.some((value) => CREDENTIAL_IN_TEXT.test(value))) {
+      credentialWarnings.push(name);
     }
     redacted[name] = copy;
   }
@@ -139,20 +148,31 @@ function main() {
     `  자산 — skills ${assets.skills.length} / agents ${assets.agents.length} / commands ${assets.commands.length} / hooks ${assets.hooks.length}`,
   );
   console.log(`  hook 이벤트 ${Object.keys(manifest.hooks).length}종`);
+  if (credentialWarnings.length) {
+    console.log(
+      `\n  ! MCP ${credentialWarnings.join(', ')} 의 url/args 에 자격 증명으로 보이는 값이 있다.`,
+    );
+    console.log('    이 부분은 자동 치환하지 않았다 — manifest.json 을 열어 직접 확인할 것.');
+  }
   console.log(`\n새 PC 로 ${path.basename(OUT_DIR)} 디렉터리를 옮긴 뒤:`);
   console.log('  node scripts/bootstrap-claude-env.cjs <옮긴경로> --dry-run');
 }
 
 function buildSecretsDoc(secretsRequired) {
   const envLines = secretsRequired.length
-    ? secretsRequired.map((item) => `- \`${item.envKey}\` — MCP \`${item.mcp}\` 용`).join('\n')
+    ? secretsRequired
+        .map((item) => `- \`${item.envKey}\` — MCP \`${item.mcp}\` 의 \`${item.field}\``)
+        .join('\n')
     : '- (없음)';
 
   return `# 새 PC 에서 직접 해야 하는 것
 
-내보내기에는 비밀값이 담기지 않는다. 아래는 새 PC 에서 사람이 직접 발급·로그인해야 하는 항목이다.
+MCP 의 env·headers 값은 이름과 무관하게 전부 플레이스홀더로 바뀌어 있다. 아래는 새 PC 에서
+사람이 직접 채우거나 로그인해야 하는 항목이다.
 
 ## 환경 변수 (bootstrap 실행 전에 export)
+
+비밀이 아닌 값(예: 로그 레벨)도 같은 규칙으로 빠져 있으니, 원래 값을 그대로 export 하면 된다.
 
 ${envLines}
 

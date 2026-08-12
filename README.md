@@ -158,9 +158,9 @@ node scripts/bootstrap-claude-env.cjs ./claude-env-export --dry-run   # 무엇�
 node scripts/bootstrap-claude-env.cjs ./claude-env-export             # 적용
 ```
 
-- **비밀값은 담기지 않는다.** 토큰이 필요한 MCP 는 해당 환경 변수를 export 한 뒤 실행하면 채워지고, 없으면 건너뛰며 알린다. 대화형 인증(Notion OAuth, `codex login` 등) 목록은 산출물의 `SECRETS-TODO.md` 참고.
+- **MCP 의 `env`·`headers` 값은 키 이름과 무관하게 전부 플레이스홀더로 빠진다.** 새 PC 에서 같은 이름의 환경 변수를 export 한 뒤 실행하면 채워지고, 없으면 그 MCP 만 건너뛰며 알린다. 필요한 변수와 대화형 인증(Notion OAuth, `codex login` 등) 목록은 산출물의 `SECRETS-TODO.md` 참고.
 - `skills`/`agents` 의 심볼릭 링크는 실체로 풀어서 복사한다(링크 그대로 옮기면 새 PC 에서 전부 끊어진다).
-- `permissions`·`defaultMode` 는 옮기지 않는다. hooks 는 매 세션 실행되는 코드라 `--with-hooks` 를 붙일 때만 병합하며, 명령 안의 옛 홈 경로는 새 PC 홈으로 치환된다.
+- `permissions`·`defaultMode` 는 옮기지 않는다. hooks 는 매 세션 실행되는 코드라 `--with-hooks` 를 붙일 때만 적용하고, 대상 PC 에 이미 hooks 가 있으면 `--replace-hooks` 없이는 건너뛴다(`settings.hooks` 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). 명령 안의 옛 홈 경로는 새 PC 홈으로 치환된다.
 
 ---
 
