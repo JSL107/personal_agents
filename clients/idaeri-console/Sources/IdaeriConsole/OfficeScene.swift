@@ -84,6 +84,8 @@ final class OfficeScene: SKScene {
     private var lastSyncedAgents: [ConsoleAgent] = []
     private var lastSyncedApprovals: [ConsoleApproval] = []
     private var agentBubbles: [String: String] = [:]
+    /// agentType → 사규의 직무 한 줄. 호버 쪽지의 첫 줄이 된다.
+    private var agentJobs: [String: String] = [:]
     private var hoveredAgentType: String?
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
@@ -1406,6 +1408,9 @@ final class OfficeScene: SKScene {
                 continue
             }
             agentBubbles[agent.agentType] = agent.bubble
+            // 값이 없으면 지운다. 예전 값을 남기면 서버를 되돌렸을 때(필드를 모르는 버전)
+            // 사라진 직무가 화면에 계속 붙어 있다.
+            agentJobs[agent.agentType] = agent.job
             let info = agentTokenInfo(
                 agent: agent, runs: runs, pendingCommands: pendingCommands, now: now
             )
@@ -1731,6 +1736,8 @@ final class OfficeScene: SKScene {
             ?? NSFont.boldSystemFont(ofSize: resolvedSize)
         // 음수 두께 = 채움 + 외곽선. 여기 오는 글자는 전부 바닥·가구 위에 떠서, 외곽선이
         // 없으면 책장·프린터 무늬에 묻혀 읽히지 않는다(에이전트 이름표와 같은 처리).
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
         label.attributedText = NSAttributedString(
             string: text,
             attributes: [
@@ -1738,11 +1745,21 @@ final class OfficeScene: SKScene {
                 .foregroundColor: color,
                 .strokeColor: NSColor(white: 0.03, alpha: 0.95),
                 .strokeWidth: -3.5,
+                .paragraphStyle: paragraph,
             ]
         )
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
-        label.position = position
+        // 개행이 있는 문구(호버 쪽지의 직무 + 활동)를 여러 줄로 그린다. 기본값 1 이면 둘째
+        // 줄이 조용히 잘려, 활동 문구를 넣어도 화면에서는 첫 줄만 보인다.
+        label.numberOfLines = 0
+        // 세로 중앙 정렬이라 줄이 늘면 아래로도 자라 사람 머리를 덮는다. 늘어난 만큼 올려
+        // **첫 줄이 한 줄일 때와 같은 높이**에 오게 한다.
+        let extraLines = text.components(separatedBy: "\n").count - 1
+        label.position = CGPoint(
+            x: position.x,
+            y: position.y + resolvedSize * 0.62 * CGFloat(extraLines)
+        )
         label.zPosition = 20
         parent.addChild(label)
     }
@@ -1828,7 +1845,9 @@ final class OfficeScene: SKScene {
         }
         node.setHovered(true)
         node.sprite.run(.scale(to: 1.12, duration: 0.1))
-        if node.childNode(withName: "infoBubble") == nil, let text = agentBubbles[hit] {
+        if node.childNode(withName: "infoBubble") == nil,
+            let text = officeHoverNote(job: agentJobs[hit], activity: agentBubbles[hit])
+        {
             setChildLabel(
                 node, name: "hoverBubble", text: text,
                 position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
