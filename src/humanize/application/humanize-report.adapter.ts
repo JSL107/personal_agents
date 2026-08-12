@@ -6,6 +6,7 @@ import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { EvaluationOutput } from '../../agent/po-eval/domain/po-eval.type';
+import { PoShadowReport } from '../../agent/po-shadow/domain/po-shadow.type';
 import { DailyReview } from '../../agent/work-reviewer/domain/work-reviewer.type';
 import { HumanizeService } from './humanize.service';
 
@@ -316,6 +317,36 @@ export const humanizeBackendPlan = async (
       : null,
     risks: rebuildArray(humanized, 'risks', plan.risks),
     testPoints: rebuildArray(humanized, 'testPoints', plan.testPoints),
+  };
+};
+
+// PO Shadow 보고는 다섯 필드가 모두 서술문이라 통째로 윤문한다(보존할 식별자·수치 필드가 없다).
+export const humanizePoShadowReport = async (
+  report: PoShadowReport,
+  humanizer: HumanizeService,
+): Promise<PoShadowReport> => {
+  const fields: Record<string, string> = {
+    priorityRecheck: report.priorityRecheck,
+    realPurposeQuestion: report.realPurposeQuestion,
+    recommendation: report.recommendation,
+  };
+  flattenArray(fields, 'missingRequirements', report.missingRequirements);
+  flattenArray(fields, 'releaseRisks', report.releaseRisks);
+
+  const humanized = await humanizer.humanize(fields);
+
+  return {
+    ...report,
+    priorityRecheck: humanized.priorityRecheck ?? report.priorityRecheck,
+    realPurposeQuestion:
+      humanized.realPurposeQuestion ?? report.realPurposeQuestion,
+    recommendation: humanized.recommendation ?? report.recommendation,
+    missingRequirements: rebuildArray(
+      humanized,
+      'missingRequirements',
+      report.missingRequirements,
+    ),
+    releaseRisks: rebuildArray(humanized, 'releaseRisks', report.releaseRisks),
   };
 };
 
