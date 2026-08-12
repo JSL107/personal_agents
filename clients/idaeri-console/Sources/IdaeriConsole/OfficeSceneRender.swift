@@ -12,7 +12,13 @@ import SpriteKit
 ///
 /// 시각을 넘기면 그 시간대로 고정해 굽는다 — 밤 화면을 보려고 밤까지 기다릴 수는 없다.
 /// 백엔드가 떠 있으면 실제 스냅샷을 쓰고, 없으면 사람 없는 빈 사무실로 굽는다.
-func renderOfficeScene(client: ConsoleClient, path: String, hour: Int?, size: CGSize) -> Bool {
+func renderOfficeScene(
+    client: ConsoleClient,
+    path: String,
+    hour: Int?,
+    size: CGSize,
+    poseDemo: Bool
+) -> Bool {
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
     scene.hourOverride = hour
@@ -21,19 +27,28 @@ func renderOfficeScene(client: ConsoleClient, path: String, hour: Int?, size: CG
     view.presentScene(scene)
 
     let snapshot = fetchSnapshotSynchronously(client: client)
-    scene.sync(agents: snapshot?.agents ?? [], approvals: snapshot?.approvals ?? [])
+    // 데모는 백엔드가 꺼져도 일곱 자세가 모두 보여야 회귀 입구 역할을 한다.
+    let renderedAgents = poseDemo ? poseDemoAgents() : snapshot?.agents ?? []
+    let renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []
+    let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
+    let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
+    scene.sync(agents: renderedAgents, approvals: renderedApprovals)
     // 세션도 함께 그린다 — 빠뜨리면 실제 앱에만 있는 사람들이 회귀 확인에서 통째로 빠진다
     // (세션 이름표가 서로 겹쳐 못 읽던 문제가 이 구멍으로 렌더 점검을 빠져나갔다).
-    scene.syncSessions(snapshot?.sessions ?? [])
-    scene.updateCompanySummary(snapshot?.agents ?? [])
+    scene.syncSessions(renderedSessions)
+    scene.updateCompanySummary(renderedAgents)
     // 말풍선·경과·승인 배지는 오버레이라 sync 로는 그려지지 않는다. 빼면 이 화면으로
     // 확인할 수 있는 대상에서 "무슨 일 중" 문구가 통째로 빠진다.
     scene.refreshOverlays(
-        agents: snapshot?.agents ?? [],
-        runs: snapshot?.runs ?? [],
+        agents: renderedAgents,
+        runs: renderedRuns,
         pendingCommands: [],
         now: Date()
     )
+    if poseDemo, !scene.applyPoseDemo() {
+        FileHandle.standardError.write(Data("자세 데모에 필요한 사람 또는 가구가 부족하다\n".utf8))
+        return false
+    }
 
     guard
         let texture = view.texture(from: scene),
@@ -52,6 +67,37 @@ func renderOfficeScene(client: ConsoleClient, path: String, hour: Int?, size: CG
     } catch {
         FileHandle.standardError.write(Data("PNG 저장 실패: \(error)\n".utf8))
         return false
+    }
+}
+
+/// 실제 조직 인원과 무관한 렌더 전용 표본. 여섯 방을 모두 만들면 사물함까지 카탈로그에 포함된다.
+///
+/// 자세 종류(7)가 아니라 **상호작용 가구 종류(20)** 만큼 세운다. 자세별로 한 명만 세우면 그 자세를
+/// 대표하는 가구 하나만 화면에 나오는데, 자세가 어색해지는 지점은 자세가 아니라 **가구**에 있다 —
+/// 앉기를 회의 테이블에서만 확인하고 넘어가면 소파에서 몸이 가구에 닿는지는 끝까지 안 보인다
+/// (실제로 그 차이 때문에 앉은 사람이 바닥에 쭈그려 앉은 것처럼 보였다).
+/// 자세 데모용 agentType. 이름을 만드는 쪽(여기)과 찾는 쪽(`applyPoseDemo`)이 어긋나면
+/// 데모가 조용히 비거나 이름표와 자세가 뒤섞인다 — 한 곳에서만 만든다.
+func poseDemoAgentType(for kind: FurnitureKind) -> String {
+    "POSE_DEMO_\(kind.rawValue)"
+}
+
+private func poseDemoAgents() -> [ConsoleAgent] {
+    let departments: [Department] = [
+        .planning, .engineering, .review, .executive, .growth, .internalOps,
+    ]
+    let interactionKinds = FurnitureKind.allCases.filter { $0.interactionPose != nil }
+    return interactionKinds.enumerated().map { index, kind in
+        ConsoleAgent(
+            agentType: poseDemoAgentType(for: kind),
+            // 이름표가 곧 무엇을 보고 있는지의 설명이 된다 — 가구 이름을 그대로 쓴다.
+            displayName: kind.rawValue,
+            slashCommands: [],
+            description: "",
+            state: .waiting,
+            bubble: "",
+            department: departments[index % departments.count].rawValue
+        )
     }
 }
 

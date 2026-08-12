@@ -169,6 +169,8 @@ final class OfficeScene: SKScene {
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
             node.removeAction(forKey: "stroll")
+            // 새 격자에 옛 가구 방향 오프셋을 이어 붙이면 몸만 자리 밖에 남는다.
+            node.endInteraction()
             // endWalk 가 isWalking 해제까지 맡는다(걸음 프레임 도입 때 캡슐화).
             node.endWalk()
             // 걷던 중이었다면 node.tile 은 경로 중간이라 자리로 못 쓴다.
@@ -291,6 +293,7 @@ final class OfficeScene: SKScene {
             if !queueOrder.contains(agent.agentType),
                !node.isWalking,
                !strollingAgents.contains(agent.agentType) {
+                node.endInteraction()
                 place(node, at: seat)
                 node.sit()
             }
@@ -312,6 +315,52 @@ final class OfficeScene: SKScene {
         updateDaylight()
         // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
         refreshDoors()
+    }
+
+    /// 회귀 렌더가 자세를 실제로 그리지 않으면 누락도 정상 화면처럼 저장되므로 전부 강제 배치한다.
+    ///
+    /// 자세 종류가 아니라 **가구 종류마다** 한 명씩 세운다. 같은 자세라도 가구가 어디에 어떻게
+    /// 놓였느냐에 따라 몸이 가구에 닿는지가 달라지는데(소파 1칸 vs 회의 테이블 2칸), 자세별로
+    /// 한 명만 세우면 그 자세를 대표하는 가구 하나만 확인되고 나머지는 끝까지 안 보인다.
+    ///
+    /// 배치가 하나도 없는 가구 종류는 건너뛴다 — 평면도가 그 가구를 안 쓸 수도 있고, 그것 때문에
+    /// 데모 전체가 실패하면 확인 수단을 잃는다. 대신 **한 종류도 못 세우면** 실패로 돌려준다.
+    func applyPoseDemo() -> Bool {
+        let spots = officeStrollSpots(plan: plan)
+        var placedCount = 0
+        for kind in FurnitureKind.allCases {
+            // 사람을 **이름으로** 찾는다. 순서로 꺼내면 이름표와 실제 자세가 어긋난다 —
+            // 가구 순서(enum)와 사람 이름 순서(정렬)가 무관해서, `sofa2` 이름표를 단 사람이
+            // 게시판 앞에서 책을 들고 서 있는 화면이 나왔다. 확인용 화면이 확인을 방해했다.
+            guard let pose = kind.interactionPose,
+                let spot = spots.first(where: { $0.kind == kind }),
+                let node = characters[poseDemoAgentType(for: kind)]
+            else {
+                continue
+            }
+            node.removeAllActions()
+            node.sprite.removeAllActions()
+            node.endInteraction()
+            // 데모 자리는 책상 몫이 아니므로 앉아도 원래 좌석의 이름표 폭을 강제하지 않는다.
+            node.setNameplateSpan(nil)
+            place(node, at: spot.tile)
+            node.apply(facing: spot.facing)
+            node.beginInteraction(pose: pose, facing: spot.facing)
+            placedCount += 1
+            // 어느 칸에 누구를 무슨 자세로 세웠는지 남긴다. 굽힌 그림만 보면 사람과 가구가
+            // 겹치는 자리에서 "이 사람이 그 가구를 보고 있는지" 를 눈으로 확정할 수 없다
+            // (실제로 소파 담당이 옆 의자에 앉은 것처럼 보여 배치를 의심하게 됐다).
+            FileHandle.standardError.write(
+                Data(
+                    """
+                    pose-demo \(kind.rawValue) pose=\(pose.rawValue) \
+                    tile=(\(spot.tile.x),\(spot.tile.y)) facing=\(spot.facing) \
+                    prop=\(pose.handPropSprite ?? "-")\n
+                    """.utf8
+                )
+            )
+        }
+        return placedCount > 0
     }
 
     /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
@@ -404,8 +453,7 @@ final class OfficeScene: SKScene {
     /// 한 번이 수백 번 비교로 끝난다.
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
-        node.position = floorPoint(tile)
-        node.zPosition = depth(of: tile)
+        node.place(at: floorPoint(tile), depth: depth(of: tile))
         refreshDoors()
     }
 
@@ -912,10 +960,14 @@ final class OfficeScene: SKScene {
         lastStrollAt[agentType] = Date().timeIntervalSinceReferenceDate
         stopWorking(node)
         walk(node, to: spot.tile) { [weak self, weak node] in
-            node?.apply(facing: .up)
+            node?.apply(facing: spot.facing)
+            node?.beginInteraction(pose: spot.pose, facing: spot.facing)
             node?.run(.sequence([
                 .wait(forDuration: spot.dwellSeconds),
-                .run { [weak self] in self?.endStroll(agentType) },
+                .run { [weak self, weak node] in
+                    node?.endInteraction()
+                    self?.endStroll(agentType)
+                },
             ]), withKey: "stroll")
         }
     }
@@ -947,6 +999,7 @@ final class OfficeScene: SKScene {
         node.sprite.removeAllActions()
         node.sprite.yScale = 1
         node.sprite.zRotation = 0
+        node.endInteraction()
         // bob 중간 프레임에서 끊기면 y가 떠 있는 값으로 남으므로 서 있는 자세의 기준점도 복원한다.
         node.clearMotion()
         // 걸음 프레임까지 되돌린다. isWalking 만 내리면 다리가 엇갈린 그림이 그대로 남아
@@ -1045,6 +1098,7 @@ final class OfficeScene: SKScene {
         guard let node = characters[agentType], let seat = homeSeats[agentType] else {
             return
         }
+        node.endInteraction()
         queueOrder.removeAll { $0 == agentType }
         layoutQueue()
         walk(node, to: seat) { [weak node] in
@@ -1096,16 +1150,29 @@ final class OfficeScene: SKScene {
         }
         cancelStroll(agentType)
         let occupied = Set(characters.values.map(\.tile))
-        guard let spot = plan.loungeTiles.first(where: { !occupied.contains($0) }) else {
+        guard let loungeTile = plan.loungeTiles.first(where: { !occupied.contains($0) }) else {
             return
         }
+        // loungeTiles는 배치 호환 계약이라 유지하고, 자세 정보만 같은 타일의 카탈로그에서 얻는다.
+        let interactionSpot = officeStrollSpots(plan: plan).first { $0.tile == loungeTile }
         strollingAgents.insert(agentType)
         stopWorking(node)
-        walk(node, to: spot) { [weak self, weak node] in
-            node?.apply(facing: .down)
+        walk(node, to: loungeTile) { [weak self, weak node] in
+            if let interactionSpot {
+                node?.apply(facing: interactionSpot.facing)
+                node?.beginInteraction(
+                    pose: interactionSpot.pose,
+                    facing: interactionSpot.facing
+                )
+            } else {
+                node?.apply(facing: .down)
+            }
             node?.run(.sequence([
                 .wait(forDuration: 3.5),
-                .run { [weak self] in self?.endStroll(agentType) },
+                .run { [weak self, weak node] in
+                    node?.endInteraction()
+                    self?.endStroll(agentType)
+                },
             ]), withKey: "stroll")
         }
     }
@@ -1438,7 +1505,9 @@ final class OfficeScene: SKScene {
 
     /// 마지막으로 받은 스냅샷과 phase 로 몸짓을 다시 건다. 걸음이 끝난 직후에 쓴다.
     private func reapplyMotion(_ agentType: String) {
-        guard let agent = lastSyncedAgents.first(where: { $0.agentType == agentType }) else {
+        guard let node = characters[agentType], !node.isInteracting,
+              let agent = lastSyncedAgents.first(where: { $0.agentType == agentType })
+        else {
             return
         }
         applyMotion(for: agent, phase: lastPhases[agentType])
@@ -1450,7 +1519,7 @@ final class OfficeScene: SKScene {
     /// 걷는 중인 사람은 건너뛴다(걸음 자체가 지금의 동작이다). 대신 도착 시점에 walk 가
     /// `reapplyMotion` 으로 최신 상태를 다시 걸어, 걷는 동안의 변화가 유실되지 않게 한다.
     private func applyMotion(for agent: ConsoleAgent, phase: PendingPhase?) {
-        guard let node = characters[agent.agentType], !node.isWalking else {
+        guard let node = characters[agent.agentType], !node.isWalking, !node.isInteracting else {
             return
         }
         let previous = lastPhases[agent.agentType]
