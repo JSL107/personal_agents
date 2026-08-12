@@ -26,10 +26,10 @@ const SECOND_MERGED_PULL_REQUEST = {
   url: 'https://github.com/schoolbell-e/sbe-server/pull/972',
 };
 
-const makeConfig = () => ({
+const makeConfig = (author: string | null = 'idaeri') => ({
   get: jest.fn().mockImplementation((key: string) => {
     if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
-      return 'idaeri';
+      return author ?? undefined;
     }
     if (key === 'IMPACT_REPORT_GITHUB_REPO') {
       return 'schoolbell-e/sbe-server';
@@ -130,7 +130,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(ceoExecute).toHaveBeenCalled();
   });
 
-  it('이번 주 PM run 0건 + GitHub 조회 실패 → skip 안내문에 실패 사유 포함', async () => {
+  it('이번 주 PM run 0건 + GitHub 조회 실패 → 예외를 던진다', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const worklogExecute = jest.fn();
     const ceoExecute = jest.fn();
@@ -147,12 +147,39 @@ describe('WeeklySummaryAutopilotTask', () => {
       makeConfig() as never,
     );
 
-    const out = await task.run(CTX);
+    await expect(task.run(CTX)).rejects.toThrow(
+      'Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: GitHub 조회 실패: rate limit',
+    );
+    expect(worklogExecute).not.toHaveBeenCalled();
+    expect(ceoExecute).not.toHaveBeenCalled();
+  });
 
-    expect(out.summaryText).toContain(
+  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → skip 안내문에 사유 포함', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const worklogExecute = jest.fn();
+    const ceoExecute = jest.fn();
+    const githubClient = { listAuthorMergedPullRequestsSince: jest.fn() };
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute: worklogExecute } as never,
+      { execute: ceoExecute } as never,
+      githubClient as never,
+      makeConfig(null) as never,
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
       '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
     );
-    expect(out.summaryText).toContain('GitHub 조회 실패: rate limit');
+    expect(result.summaryText).toContain(
+      'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+    );
+    expect(result.detailText).toBeUndefined();
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
     expect(worklogExecute).not.toHaveBeenCalled();
     expect(ceoExecute).not.toHaveBeenCalled();
   });

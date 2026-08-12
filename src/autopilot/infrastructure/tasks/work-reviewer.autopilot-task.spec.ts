@@ -205,7 +205,7 @@ describe('WorkReviewerAutopilotTask', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('오늘 PM plan 없음 + GitHub 조회 실패 → skip 안내문에 실패 사유 포함', async () => {
+  it('오늘 PM plan 없음 + GitHub 조회 실패 → 예외를 던진다', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const execute = jest.fn();
     const githubClient = {
@@ -221,12 +221,37 @@ describe('WorkReviewerAutopilotTask', () => {
       makeConfig() as never,
     );
 
+    await expect(task.run(CTX)).rejects.toThrow(
+      'Work Reviewer 실적 조회 실패로 회고 생성을 보류합니다: GitHub 조회 실패: rate limit',
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('오늘 PM plan 없음 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → skip 안내문에 사유 포함', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const execute = jest.fn();
+    const githubClient = { listAuthorMergedPullRequestsSince: jest.fn() };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig(null) as never,
+    );
+
     const result = await task.run(CTX);
 
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
       '오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. `/today` 로 plan 을 먼저 만들어주세요.',
     );
-    expect(result.summaryText).toContain('GitHub 조회 실패: rate limit');
+    expect(result.summaryText).toContain(
+      'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+    );
+    expect(result.detailText).toBeUndefined();
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
