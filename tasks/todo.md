@@ -1328,3 +1328,28 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - commit, push, PR 생성 없음.
 
 ---
+# PR #272 리뷰 반영 — 조회 실패 재시도 보존 (2026-08-12)
+
+**Goal:** 계획이 없는 기간의 재시도 가능한 GitHub 조회 실패를 실적 0건으로 확정하지 않고, task 실패를 통해 BullMQ 재시도를 보존한다.
+
+**Contract:** `.ai/design-review-fix.md`가 source of truth다. `WorklogInputSource`, `buildWorklogInput()`, 프롬프트, orchestrator, scheduler와 계획이 있는 경로의 동작은 변경하지 않는다. `pnpm install`, commit, push, PR 생성은 금지한다.
+
+- [x] Task 1: 일간 spec의 조회 실패 케이스를 throw 단언으로 교체하고 env 미설정 skip 케이스를 추가해 focused RED를 확인한다.
+- [x] Task 1: `WorklogEvidenceQueryResult.retriable`과 일간 분기·명시 필드 전달을 최소 구현해 focused GREEN을 확인한다.
+- [x] Task 2: 주간 spec의 조회 실패 케이스를 throw 단언으로 교체하고 env 미설정 skip 케이스를 추가해 focused RED를 확인한다.
+- [x] Task 2: `WorklogEvidenceQueryResult.retriable`과 주간 분기·명시 필드 전달을 최소 구현해 focused GREEN을 확인한다.
+- [x] `retriable` throw 분기를 일시 제거하는 역변이로 신규 throw 테스트 실패를 확인하고 즉시 원복한다.
+- [x] final diff에서 금지 파일·시그니처·계획 있는 경로 보존과 설계 이탈 여부를 검토한다.
+- [x] 5개 게이트를 파이프 없이 각각 실행하고 exit code·테스트 집계를 기록한다.
+- [x] `.ai/implementation-summary.md`에 `## 리뷰 반영 (PR #272)` 절과 아래 Review를 실제 결과로 덧붙인다.
+
+## Review
+
+- daily/weekly 모두 GitHub 조회 실패만 `retriable: true`로 분류해 plan이 없을 때 throw하고, env 미설정·정상 조회는 `false`로 유지했다.
+- Task 1 RED `1 failed / 254 passed` → GREEN `255/255`, Task 2 RED `1 failed / 255 passed` → GREEN `256/256`을 확인했다.
+- 역변이는 exit 1, `2 failed / 254 passed`로 일간·주간 throw 회귀 모두를 검출했고 원복했다.
+- fresh gate는 lint/tsc/focused/full/build 모두 exit 0. focused 26 suites/256 tests, 전체 307 suites/2,546 tests + code-graph 5 suites/40 tests다.
+- 설계가 지정한 코드 변경에서 이탈하지 않았고 금지 파일 변경, `pnpm install`, commit/push/PR은 없다.
+- 기존 orchestrator는 그룹 전멸에만 BullMQ job을 rethrow한다. 단독 `weekly-summary`는 재시도가 보존되지만, 일간 `work-reviewer`는 `evening` 다른 task가 성공하면 부분 성공으로 종료된다. 이 설계/기존 코드 경계는 `.ai/implementation-summary.md`에 재검증 필요 사항으로 기록했다.
+
+---
