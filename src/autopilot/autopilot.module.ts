@@ -15,6 +15,7 @@ import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { AgentRunService } from '../agent-run/application/agent-run.service';
+import { AiCliEnvModule } from '../ai-cli-env/ai-cli-env.module';
 import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
@@ -41,6 +42,8 @@ import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
+import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
+import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
 import { AssignAutopilotTask } from './infrastructure/tasks/assign.autopilot-task';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
@@ -95,6 +98,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     NotificationQueueModule,
     PaperTradingModule,
     ScreenerModule,
+    AiCliEnvModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -122,6 +126,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PrReviewSweepAutopilotTask,
     PaperTradingAutopilotTask,
     UniverseSweepAutopilotTask,
+    AiCliEnvSnapshotAutopilotTask,
+    AiCliEnvApplyAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -204,6 +210,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         prReviewSweep: PrReviewSweepAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
         universeSweep: UniverseSweepAutopilotTask,
+        aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
+        aiCliEnvApply: AiCliEnvApplyAutopilotTask,
       ) => [
         assign,
         poShadow,
@@ -228,6 +236,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         prReviewSweep,
         paperTrading,
         universeSweep,
+        aiCliEnvSnapshot,
+        aiCliEnvApply,
       ],
       inject: [
         AssignAutopilotTask,
@@ -253,6 +263,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PrReviewSweepAutopilotTask,
         PaperTradingAutopilotTask,
         UniverseSweepAutopilotTask,
+        AiCliEnvSnapshotAutopilotTask,
+        AiCliEnvApplyAutopilotTask,
       ],
     },
     {
