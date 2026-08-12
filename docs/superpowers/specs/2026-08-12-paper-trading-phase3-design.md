@@ -90,8 +90,10 @@
 `scripts/screener.ts`에 `rank` 하위 명령을 추가한다. autopilot이 부르는 것과 **같은 usecase**를 호출해 검증 경로와 운영 경로를 일치시킨다.
 
 ```
-pnpm exec ts-node scripts/screener.ts rank [--strategy long|swing] [--limit 25]
+pnpm exec ts-node scripts/screener.ts rank [--limit 25]
 ```
+
+전략별로 나눠 보는 옵션은 두지 않는다. 두 후보군을 나란히 봐야 "같은 종목이 양쪽에 있는가", "한쪽만 비었는가"가 바로 읽힌다.
 
 ---
 
