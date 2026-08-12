@@ -24,6 +24,7 @@
 - 커밋은 이 worktree(`/Users/juneseok/worktrees/idaeri-paper-recommend`, 브랜치 `feat/paper-trading-phase3`)에서만.
 - 이 단계에서 스키마를 바꾸지 않는다. `db:push` 실행 금지.
 - **PrismaClient는 이미 생성돼 있다** (`pnpm prisma:generate` 완료, 2026-08-12). baseline `pnpm test`가 exit 0이다. 만약 `Module '"@prisma/client"' has no exported member 'Prisma'` 류의 컴파일 오류로 baseline이 깨져 있으면 구현을 시작하지 말고 보고한다 — pnpm 구조상 생성물은 `node_modules/.pnpm/@prisma+client@*/node_modules/.prisma`에 있고 `node_modules/.prisma`에는 없다.
+- **테스트가 `SIGSEGV`로 죽으면 `pnpm rebuild`를 먼저 돌린다.** 새 worktree가 자기 `node_modules`를 받으면 네이티브 모듈이 이 환경에 맞게 빌드돼 있지 않아, 변경과 무관한 suite가 세그폴트로 통째로 실패한다. 테스트 실패가 아니라 실행 자체가 안 된 것이므로 코드를 고치려 들면 안 된다. 2026-08-12에 `auto-flow.handler.spec.ts`와 `generate-test.usecase.spec.ts`에서 실제로 발생했고 `pnpm rebuild` 한 번으로 해소됐다.
 
 ---
 
