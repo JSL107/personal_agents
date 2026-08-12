@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
+import { MarketDataRepository } from '../../../market-data/infrastructure/market-data.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
 import { ExposurePosition } from '../domain/portfolio-exposure';
@@ -41,7 +42,12 @@ export interface DailyPriceForOutcome {
 
 @Injectable()
 export class StockMonitorRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(StockMonitorRepository.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly marketDataRepository: MarketDataRepository,
+  ) {}
 
   async findPortfolioPositions(): Promise<ExposurePosition[]> {
     const holdings = await this.prisma.holding.findMany({
@@ -223,21 +229,12 @@ export class StockMonitorRepository {
     adjClose: string;
     volume: bigint;
   }): Promise<void> {
-    await this.prisma.dailyPrice.upsert({
-      where: {
-        tickerId_tradeDate: {
-          tickerId: input.tickerId,
-          tradeDate: input.tradeDate,
-        },
-      },
-      create: input,
-      update: {
-        close: input.close,
-        adjClose: input.adjClose,
-        volume: input.volume,
-        lastResyncedAt: new Date(),
-      },
-    });
+    const result = await this.marketDataRepository.upsertDailyPrice(input);
+    if (result.blockedIntraday > 0) {
+      this.logger.warn(
+        `장중 일봉 저장 차단 — tickerId=${input.tickerId}, tradeDate=${input.tradeDate.toISOString().slice(0, 10)}`,
+      );
+    }
   }
 
   async findLatestStoredTradeDate(tickerId: number): Promise<Date | null> {

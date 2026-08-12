@@ -1,5 +1,18 @@
 # Lessons
 
+## 2026-08-12 — 합성 fixture와 필드 존재만으로 실데이터 경계를 고정하지 못함
+
+- `market='KR'`과 `tossSymbol != null`은 국내 조회 가능 종목일 뿐 KRX 보통주 유니버스라는 충분조건이 아니다. 도메인 분류가 완료됐음을 나타내는 `krxMarket != null`까지 조회 경계에 넣는다.
+- 외부 목록은 행 구조가 정상이어도 동일 키 행이 중복될 수 있다. 파서 테스트는 합성 행뿐 아니라 보존된 실응답 fixture로 고유 키 불변식을 검증한다.
+- scheduled task의 정기 sync를 요일에 제한하면 최초 가동·장애 복구가 다음 요일까지 조용히 지연된다. 저비용 authoritative sync는 매 실행 먼저 수행하고, 0건 성공이 정상인지 별도 검토한다.
+- audit DTO에 실패 원인이 있다는 사실은 사용자 가시성과 다르다. `summaryText`/`detailText`/CLI까지 최종 출력선을 테스트하고, 표본 제한은 전체 건수와 절단 사실을 함께 표시한다.
+
+## 2026-08-12 — 성공한 Autopilot 수집을 skip으로 반환해 전달을 지움
+
+- 데이터 수집 task가 원장에는 성공을 남겨도 `{ skip: true }`를 반환하면 Autopilot 오케스트레이터가 사용자 전달 결과를 제거한다.
+- env gate로 의도적으로 비활성화한 경우만 `skip: true`로 반환한다. 실제 실행은 수집·갱신·차단·실패 건수를 담은 `summaryText`와 `skip: false`를 반환한다.
+- 원장 audit 검증만으로 끝내지 말고, task의 최종 `AutopilotTaskResult`가 사용자에게 전달 가능한지도 회귀 spec으로 고정한다.
+
 ## 2026-08-11 — 부분 가격 누락을 표시 문제로만 다루면 가짜 자산 곡선이 영구 적재됨
 
 - 보유 종목 일부의 가격이 아예 없을 때 해당 행만 결과에서 빼고 formatter에 경고를 붙여도, 부분 합계 스냅샷이 적재되면 총평가액 급락이 사후 재계산 없이 영구 고정된다.
@@ -204,5 +217,15 @@ C1에서 전멸 그룹의 digest 발송을 제거하고 `AutopilotConsumer`의 `
 - **적용**: 기존 사용자-visible fallback을 제거할 때 대체 경로의 DI optional 여부, env 기본값, feature gate, dedupe, enqueue 실패, 최종 send target까지 전부 추적한다. 어느 하나라도 조건부면 기존 fallback과 동등하다고 판정하지 않는다.
 - **적용**: "사용자가 계속 통지받는다"는 결론은 happy-path 호출 연결이 아니라 **기본 설정에서 최종 side effect가 발생하는지**로 증명한다. 설정값을 확인할 수 없으면 미설정을 안전 기준으로 삼는다.
 - **적용**: retry를 살리기 위해 idempotency guard를 건너뛰는 실패 알림은 retry마다 중복될 수 있다. 이 tradeoff를 코드 주석과 테스트에 명시하고, silent loss와 중복 알림 중 어느 쪽을 선택했는지 운영 근거를 남긴다.
+
+---
+
+# 2026-08-12 — 외부 조정 시세를 불변 데이터로 가정한 설계 충돌
+
+유니버스 최초·증분 수집 설계에서 `createMany({ skipDuplicates: true })`를 모든 일봉 저장에 쓰려 했지만, 실제 `DailyPrice` 스키마와 기존 감시는 분할·배당으로 과거 조정가가 소급 변경되는 계약이라 upsert를 사용하고 있었다. 설계 문장만 따르면 저장된 조정 계열이 영구히 낡는 결함이었다.
+
+- **적용**: 외부 시계열의 중복 저장 정책을 정할 때 API의 raw/adjusted 의미, schema 주석, 기존 writer의 update 동작을 함께 대조한다. “확정 후 불변”은 공급자가 소급 보정하지 않는다는 근거가 있을 때만 인정한다.
+- **적용**: 최초 적재와 증분 갱신의 쓰기 정책을 분리한다. 최초 빈 구간은 `createMany(skipDuplicates)`, 증분 겹침은 upsert하고 저장값 대조로 소급 재작성 신호를 감지한다.
+- **적용**: 기존 task의 “구조를 따른다”는 요구는 반환값만 보지 말고 AgentRun, enum, registry, docs까지 연쇄 범위를 추적한다. 재사용 가능한 기존 agent/trigger 조합이 있으면 새 타입을 만들기 전에 확인한다.
 
 ---

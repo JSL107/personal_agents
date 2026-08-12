@@ -33,6 +33,7 @@ import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
+import { ScreenerModule } from '../screener/screener.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
@@ -59,6 +60,7 @@ import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.auto
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
+import { UniverseSweepAutopilotTask } from './infrastructure/tasks/universe-sweep.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
 
@@ -92,6 +94,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     SlackModule,
     NotificationQueueModule,
     PaperTradingModule,
+    ScreenerModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -118,6 +121,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     StockAlertScoringAutopilotTask,
     PrReviewSweepAutopilotTask,
     PaperTradingAutopilotTask,
+    UniverseSweepAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -199,6 +203,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockAlertScoring: StockAlertScoringAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
+        universeSweep: UniverseSweepAutopilotTask,
       ) => [
         assign,
         poShadow,
@@ -222,6 +227,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockAlertScoring,
         prReviewSweep,
         paperTrading,
+        universeSweep,
       ],
       inject: [
         AssignAutopilotTask,
@@ -246,6 +252,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         StockAlertScoringAutopilotTask,
         PrReviewSweepAutopilotTask,
         PaperTradingAutopilotTask,
+        UniverseSweepAutopilotTask,
       ],
     },
     {
