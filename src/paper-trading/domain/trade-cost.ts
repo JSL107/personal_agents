@@ -7,9 +7,12 @@ interface CostSchedule {
   transactionTaxRate: Record<PaperMarket, string>;
 }
 
-// 토스증권 국내주식 위탁수수료 0.015%는 공식 고지로 확정하지 못한 기본값이다.
-// 확정된 값이 달라지면 이 상수만 바꾼다.
+// 검색으로 확인된 토스 국내주식 위탁수수료는 KRX 0.015%, NXT 0.014%다.
+// 현재는 거래소 구분 축이 없으므로 KRX 기준 단일 요율을 사용한다.
 const TOSS_BROKERAGE_FEE_RATE = '0.00015';
+// 유관기관 제비용 0.0036396%를 별도로 더하는지는 토스 공식 고지로 확인하지 못했다.
+// 업계는 별도 부과가 일반적이지만 토스가 위탁수수료에 통합 표기했을 가능성도 있다.
+// 통합 요율로 확인되면 이 값을 '0'으로 두고, 거래소 구분이 필요해지면 요율표에 축을 추가한다.
 const AGENCY_FEE_RATE = '0.000036396';
 
 const COST_SCHEDULES: CostSchedule[] = [

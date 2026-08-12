@@ -132,25 +132,27 @@ export class EvaluatePaperAccountUsecase {
     const tradeDateText = formatKstTradeDate(command.executedAt);
     const tradeDate = toDateOnly(tradeDateText);
     const positions = await this.repository.findPositionsWithTicker(account.id);
-    const priceResults = await Promise.all(
-      positions.map(async (position) => {
-        let bars: DailyBar[] = [];
-        try {
-          bars = sortBars(
-            await this.marketData.fetchDailyBars(
-              position.ticker.tossSymbol,
-              2,
-              { adjusted: false },
-            ),
-          );
-        } catch {
-          // 종목 하나의 조회 실패로 전체 실행을 예외 처리하면 어떤 종목이 빠졌는지 audit과
-          // Slack에 남지 않는다. 빈 봉과 같은 unpriced 근거로 변환하고 아래에서 적재를 막는다.
-          bars = [];
-        }
-        return { position, bars };
-      }),
-    );
+    const priceResults: {
+      position: PaperPositionWithTicker;
+      bars: DailyBar[];
+    }[] = [];
+    // TossMarketDataClient의 공유 lastRequestAt 간격 가드는 동시 호출을 직렬화하지 못한다.
+    // 1단계 보유 종목 평가는 rate limiter 경쟁과 HTTP 429를 피하려고 의도적으로 순차 조회한다.
+    for (const position of positions) {
+      let bars: DailyBar[] = [];
+      try {
+        bars = sortBars(
+          await this.marketData.fetchDailyBars(position.ticker.tossSymbol, 2, {
+            adjusted: false,
+          }),
+        );
+      } catch {
+        // 종목 하나의 조회 실패로 전체 실행을 예외 처리하면 어떤 종목이 빠졌는지 audit과
+        // Slack에 남지 않는다. 빈 봉과 같은 unpriced 근거로 변환하고 아래에서 적재를 막는다.
+        bars = [];
+      }
+      priceResults.push({ position, bars });
+    }
     const unpricedPositions = priceResults.flatMap(
       ({ position, bars }): UnpricedPositionRow[] => {
         if (bars.length > 0) {
@@ -260,79 +262,134 @@ export class EvaluatePaperAccountUsecase {
       };
     }
 
-    const trades = await this.repository.findTradesForInvariant(account.id);
-    const invariantViolations = verifyPaperInvariants({
-      seedAmount: account.seedAmount,
-      cashBalance: account.cashBalance,
-      trades,
-      positions: positions.map((position) => ({
-        tickerId: position.tickerId,
-        quantity: position.quantity,
-      })),
-    }).map((violation) => violation.detail);
-    if (invariantViolations.length > 0) {
-      return {
-        skipped: true,
-        skipReason: '거래 원장과 계좌 상태의 불변식이 일치하지 않습니다.',
-        tradeDate: tradeDateText,
-        cashBalance,
-        positionValue: null,
-        totalValue: null,
-        returnRate: null,
-        benchmarkClose: null,
-        positions: evaluatedPositions,
-        unpricedPositions,
-        positionCount: positions.length,
-        staleTickerCount,
-        invariantViolations,
-        suspiciousJumps: [],
-      };
-    }
+    const expectedTickerIds = positions.map((position) => position.tickerId);
+    return await this.repository.saveEquitySnapshotWithRevalidatedState<EvaluateAccountResult>(
+      account.id,
+      (freshState) => {
+        const freshTickerIds = freshState.positions.map(
+          (position) => position.tickerId,
+        );
+        const accountStateChanged =
+          freshState.account.cashBalance.comparedTo(account.cashBalance) !==
+            0 ||
+          freshTickerIds.length !== expectedTickerIds.length ||
+          freshTickerIds.some(
+            (tickerId, index) => tickerId !== expectedTickerIds[index],
+          );
+        if (accountStateChanged) {
+          return {
+            snapshot: null,
+            result: {
+              skipped: true,
+              skipReason:
+                '시세 조회 중 계좌 상태가 변경되어 스냅샷을 적재하지 않았습니다.',
+              tradeDate: tradeDateText,
+              cashBalance: freshState.account.cashBalance.toString(),
+              positionValue: null,
+              totalValue: null,
+              returnRate: null,
+              benchmarkClose: null,
+              positions: evaluatedPositions,
+              unpricedPositions,
+              positionCount: positions.length,
+              staleTickerCount,
+              invariantViolations: [],
+              suspiciousJumps: [],
+            },
+          };
+        }
 
-    const valuation = calculateAccountValuation({
-      seedAmount: account.seedAmount,
-      cashBalance: account.cashBalance,
-      tradeDate,
-      positions: pricedPositions.map(({ position, latest }) => ({
-        tickerId: position.tickerId,
-        quantity: position.quantity,
-        avgPrice: position.avgPrice,
-        price: new Prisma.Decimal(latest.close.toString()),
-        priceDate: latest.tradeDate,
-      })),
-    });
-    await this.repository.upsertEquitySnapshot({
-      accountId: account.id,
-      tradeDate,
-      cashBalance: account.cashBalance.toString(),
-      positionValue: valuation.positionValue,
-      totalValue: valuation.totalValue,
-      returnRate: valuation.returnRate,
-      staleTickerCount: valuation.staleTickerCount,
-      positions: pricedPositions.map(({ position, latest }) => ({
-        tickerId: position.tickerId,
-        quantity: position.quantity.toString(),
-        avgPrice: position.avgPrice.toString(),
-        price: latest.close.toString(),
-        priceDate: latest.tradeDate,
-        isStale: dateText(latest.tradeDate) !== tradeDateText,
-      })),
-    });
+        const invariantViolations = verifyPaperInvariants({
+          seedAmount: freshState.account.seedAmount,
+          cashBalance: freshState.account.cashBalance,
+          trades: freshState.trades,
+          positions: freshState.positions.map((position) => ({
+            tickerId: position.tickerId,
+            quantity: position.quantity,
+          })),
+        }).map((violation) => violation.detail);
+        if (invariantViolations.length > 0) {
+          return {
+            snapshot: null,
+            result: {
+              skipped: true,
+              skipReason: '거래 원장과 계좌 상태의 불변식이 일치하지 않습니다.',
+              tradeDate: tradeDateText,
+              cashBalance: freshState.account.cashBalance.toString(),
+              positionValue: null,
+              totalValue: null,
+              returnRate: null,
+              benchmarkClose: null,
+              positions: evaluatedPositions,
+              unpricedPositions,
+              positionCount: freshState.positions.length,
+              staleTickerCount,
+              invariantViolations,
+              suspiciousJumps: [],
+            },
+          };
+        }
 
-    return {
-      skipped: false,
-      tradeDate: tradeDateText,
-      cashBalance,
-      positionValue: valuation.positionValue,
-      totalValue: valuation.totalValue,
-      returnRate: valuation.returnRate,
-      benchmarkClose: null,
-      positions: evaluatedPositions,
-      unpricedPositions,
-      positionCount: positions.length,
-      staleTickerCount: valuation.staleTickerCount,
-      invariantViolations: [],
-      suspiciousJumps: [],
-    };
+        const latestByTickerId = new Map(
+          pricedPositions.map(({ position, latest }) => [
+            position.tickerId,
+            latest,
+          ]),
+        );
+        const valuation = calculateAccountValuation({
+          seedAmount: freshState.account.seedAmount,
+          cashBalance: freshState.account.cashBalance,
+          tradeDate,
+          positions: freshState.positions.map((position) => {
+            const latest = latestByTickerId.get(position.tickerId)!;
+            return {
+              tickerId: position.tickerId,
+              quantity: position.quantity,
+              avgPrice: position.avgPrice,
+              price: new Prisma.Decimal(latest.close.toString()),
+              priceDate: latest.tradeDate,
+            };
+          }),
+        });
+        const snapshot = {
+          accountId: account.id,
+          tradeDate,
+          cashBalance: freshState.account.cashBalance.toString(),
+          positionValue: valuation.positionValue,
+          totalValue: valuation.totalValue,
+          returnRate: valuation.returnRate,
+          staleTickerCount: valuation.staleTickerCount,
+          positions: freshState.positions.map((position) => {
+            const latest = latestByTickerId.get(position.tickerId)!;
+            return {
+              tickerId: position.tickerId,
+              quantity: position.quantity.toString(),
+              avgPrice: position.avgPrice.toString(),
+              price: latest.close.toString(),
+              priceDate: latest.tradeDate,
+              isStale: dateText(latest.tradeDate) !== tradeDateText,
+            };
+          }),
+        };
+        return {
+          snapshot,
+          result: {
+            skipped: false,
+            tradeDate: tradeDateText,
+            cashBalance: freshState.account.cashBalance.toString(),
+            positionValue: valuation.positionValue,
+            totalValue: valuation.totalValue,
+            returnRate: valuation.returnRate,
+            benchmarkClose: null,
+            positions: evaluatedPositions,
+            unpricedPositions,
+            positionCount: freshState.positions.length,
+            staleTickerCount: valuation.staleTickerCount,
+            invariantViolations: [],
+            suspiciousJumps: [],
+          },
+        };
+      },
+    );
   }
 }

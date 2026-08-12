@@ -82,6 +82,16 @@ interface EvaluationFixture {
       findUnique: jest.Mock;
     };
   };
+  snapshotTransaction: {
+    paperAccount: { update: jest.Mock };
+    paperPosition: { findMany: jest.Mock };
+    paperTrade: { findMany: jest.Mock };
+    paperEquitySnapshot: { upsert: jest.Mock };
+    paperPositionSnapshot: {
+      deleteMany: jest.Mock;
+      createMany: jest.Mock;
+    };
+  };
 }
 
 const createFixture = (input?: {
@@ -95,6 +105,19 @@ const createFixture = (input?: {
   const positions = input?.positions ?? [];
   const trades = input?.trades ?? [];
   const snapshotTransaction = {
+    paperAccount: {
+      update: jest.fn().mockResolvedValue({
+        id: 11,
+        seedAmount: decimal(input?.seedAmount ?? '1000000'),
+        cashBalance: decimal(input?.cashBalance ?? '1000000'),
+      }),
+    },
+    paperPosition: {
+      findMany: jest.fn().mockResolvedValue(positions),
+    },
+    paperTrade: {
+      findMany: jest.fn().mockResolvedValue(trades),
+    },
     paperEquitySnapshot: {
       upsert: jest.fn().mockResolvedValue({ id: 301 }),
     },
@@ -161,6 +184,7 @@ const createFixture = (input?: {
     ),
     marketData,
     prisma,
+    snapshotTransaction,
   };
 };
 
@@ -664,6 +688,159 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(marketData.fetchDailyBars).toHaveBeenCalledWith('005930', 2, {
       adjusted: false,
     });
+  });
+
+  it('공유 rate limiter가 경쟁하지 않도록 종목 시세를 순차 조회한다', async () => {
+    const positions = [
+      createPosition({
+        tickerId: 21,
+        code: '005930',
+        quantity: '10',
+        avgPrice: '10000',
+      }),
+      createPosition({
+        tickerId: 22,
+        code: '000660',
+        quantity: '2',
+        avgPrice: '50000',
+      }),
+    ];
+    const { usecase, marketData } = createFixture({
+      cashBalance: '800000',
+      positions,
+      trades: [
+        createBuyTrade({ tickerId: 21, quantity: '10', price: '10000' }),
+        createBuyTrade({ tickerId: 22, quantity: '2', price: '50000' }),
+      ],
+    });
+    let activeRequestCount = 0;
+    let maximumActiveRequestCount = 0;
+    marketData.fetchDailyBars.mockImplementation(async () => {
+      activeRequestCount += 1;
+      maximumActiveRequestCount = Math.max(
+        maximumActiveRequestCount,
+        activeRequestCount,
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      activeRequestCount -= 1;
+      return [
+        createBar('2026-08-10', '10000'),
+        createBar('2026-08-11', '11000'),
+      ];
+    });
+
+    await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(maximumActiveRequestCount).toBe(1);
+  });
+
+  it('저장 직전 포지션 종목 집합이 달라지면 스냅샷을 적재하지 않는다', async () => {
+    const position = createPosition({
+      tickerId: 21,
+      code: '005930',
+      quantity: '10',
+      avgPrice: '10000',
+    });
+    const { usecase, prisma, snapshotTransaction } = createFixture({
+      cashBalance: '900000',
+      positions: [position],
+      trades: [
+        createBuyTrade({ tickerId: 21, quantity: '10', price: '10000' }),
+      ],
+      barsBySymbol: {
+        '005930': [
+          createBar('2026-08-10', '11000'),
+          createBar('2026-08-11', '12000'),
+        ],
+      },
+    });
+    snapshotTransaction.paperPosition.findMany.mockResolvedValue([
+      position,
+      createPosition({
+        tickerId: 22,
+        code: '000660',
+        quantity: '1',
+        avgPrice: '50000',
+      }),
+    ]);
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toContain('시세 조회 중 계좌 상태가 변경');
+    expect(prisma.paperEquitySnapshot.upsert).not.toHaveBeenCalled();
+  });
+
+  it('저장 직전 현금만 달라져도 스냅샷을 적재하지 않는다', async () => {
+    const position = createPosition({
+      tickerId: 21,
+      code: '005930',
+      quantity: '10',
+      avgPrice: '10000',
+    });
+    const { usecase, prisma, snapshotTransaction } = createFixture({
+      cashBalance: '900000',
+      positions: [position],
+      trades: [
+        createBuyTrade({ tickerId: 21, quantity: '10', price: '10000' }),
+      ],
+      barsBySymbol: {
+        '005930': [
+          createBar('2026-08-10', '11000'),
+          createBar('2026-08-11', '12000'),
+        ],
+      },
+    });
+    snapshotTransaction.paperAccount.update.mockResolvedValue({
+      id: 11,
+      seedAmount: decimal('1000000'),
+      cashBalance: decimal('899999'),
+    });
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toContain('시세 조회 중 계좌 상태가 변경');
+    expect(prisma.paperEquitySnapshot.upsert).not.toHaveBeenCalled();
+  });
+
+  it('저장 직전 포지션 종목 집합과 현금이 같으면 정상 적재한다', async () => {
+    const position = createPosition({
+      tickerId: 21,
+      code: '005930',
+      quantity: '10',
+      avgPrice: '10000',
+    });
+    const { usecase, prisma } = createFixture({
+      cashBalance: '900000',
+      positions: [position],
+      trades: [
+        createBuyTrade({ tickerId: 21, quantity: '10', price: '10000' }),
+      ],
+      barsBySymbol: {
+        '005930': [
+          createBar('2026-08-10', '11000'),
+          createBar('2026-08-11', '12000'),
+        ],
+      },
+    });
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(prisma.paperEquitySnapshot.upsert).toHaveBeenCalledTimes(1);
   });
 
   it('평가 중 DailyPrice를 읽거나 쓰지 않는다', async () => {

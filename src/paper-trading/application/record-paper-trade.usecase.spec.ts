@@ -25,6 +25,7 @@ interface RepositoryFixture {
   usecase: RecordPaperTradeUsecase;
   transaction: {
     paperAccount: { update: jest.Mock };
+    paperOrder: { create: jest.Mock };
     paperPosition: { findUnique: jest.Mock; upsert: jest.Mock };
     paperTrade: { findUnique: jest.Mock; create: jest.Mock };
   };
@@ -50,6 +51,9 @@ const createFixture = (input?: {
   positionAvgPrice?: string;
 }): RepositoryFixture => {
   const transaction = {
+    paperOrder: {
+      create: jest.fn().mockResolvedValue({ id: 701 }),
+    },
     paperTrade: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 91 }),
@@ -146,8 +150,24 @@ describe('RecordPaperTradeUsecase', () => {
       data: { cashBalance: { increment: 0 } },
       select: { id: true, seedAmount: true, cashBalance: true },
     });
+    expect(transaction.paperOrder.create).toHaveBeenCalledWith({
+      data: {
+        accountId: 11,
+        tickerId: 21,
+        side: 'BUY',
+        quantity: '10',
+        strategy: 'MANUAL',
+        reason: null,
+        decidedAt: expect.any(Date),
+        dataAsOf: new Date('2026-08-11T00:00:00.000Z'),
+        targetTradeDate: new Date('2026-08-11T00:00:00.000Z'),
+        status: 'FILLED',
+        agentRunId: null,
+      },
+      select: { id: true },
+    });
     expect(transaction.paperTrade.findUnique).toHaveBeenCalledWith({
-      where: { fingerprint: '11:21:2026-08-11:BUY:10:10000' },
+      where: { fingerprint: '11:21:2026-08-11:BUY:10:10000:701' },
       select: { id: true },
     });
     expect(transaction.paperPosition.findUnique).toHaveBeenCalledWith({
@@ -164,6 +184,8 @@ describe('RecordPaperTradeUsecase', () => {
       data: expect.objectContaining({
         accountId: 11,
         tickerId: 21,
+        orderId: 701,
+        fingerprint: '11:21:2026-08-11:BUY:10:10000:701',
         fee: '18',
         tax: '0',
       }),
@@ -266,9 +288,9 @@ describe('RecordPaperTradeUsecase', () => {
     );
   });
 
-  it('같은 fingerprint 재기록을 한국어 중복 오류로 거부한다', async () => {
+  it('같은 자동 주문 체결을 재시도하면 한국어 중복 오류로 거부한다', async () => {
     const { usecase, prisma, transaction } = createFixture();
-    await usecase.execute(defaultCommand);
+    await usecase.execute({ ...defaultCommand, orderId: 701 });
     transaction.paperAccount.update.mockImplementation(async (argument) => {
       if (argument.data.cashBalance?.increment === 0) {
         return {
@@ -282,12 +304,12 @@ describe('RecordPaperTradeUsecase', () => {
     transaction.paperTrade.findUnique.mockResolvedValue({ id: 91 });
     transaction.paperPosition.findUnique.mockResolvedValue(null);
 
-    await expect(usecase.execute(defaultCommand)).rejects.toThrow(
-      '이미 기록된 가상 매매입니다',
-    );
+    await expect(
+      usecase.execute({ ...defaultCommand, orderId: 701 }),
+    ).rejects.toThrow('이미 기록된 가상 매매입니다');
     expect(transaction.paperTrade.create).toHaveBeenNthCalledWith(1, {
       data: expect.objectContaining({
-        fingerprint: '11:21:2026-08-11:BUY:10:10000',
+        fingerprint: '11:21:2026-08-11:BUY:10:10000:701',
       }),
       select: { id: true },
     });
@@ -300,9 +322,9 @@ describe('RecordPaperTradeUsecase', () => {
     const { usecase, transaction } = createFixture();
     transaction.paperTrade.create.mockRejectedValueOnce({ code: 'P2002' });
 
-    await expect(usecase.execute(defaultCommand)).rejects.toThrow(
-      '이미 기록된 가상 매매입니다',
-    );
+    await expect(
+      usecase.execute({ ...defaultCommand, orderId: 701 }),
+    ).rejects.toThrow('이미 기록된 가상 매매입니다');
   });
 
   it('Ticker identity를 KR/TOSS로 고정하고 이름이 없으면 종목코드를 쓴다', async () => {
@@ -337,6 +359,45 @@ describe('RecordPaperTradeUsecase', () => {
     await usecase.execute({ ...defaultCommand, orderId: 701 });
     await usecase.execute({ ...defaultCommand, orderId: 702 });
 
+    expect(transaction.paperTrade.create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({
+        orderId: 701,
+        fingerprint: '11:21:2026-08-11:BUY:10:10000:701',
+      }),
+      select: { id: true },
+    });
+    expect(transaction.paperTrade.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({
+        orderId: 702,
+        fingerprint: '11:21:2026-08-11:BUY:10:10000:702',
+      }),
+      select: { id: true },
+    });
+    expect(transaction.paperOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('수동 CLI의 동일 조건 체결은 호출마다 새 주문과 fingerprint로 기록한다', async () => {
+    const { usecase, transaction } = createFixture();
+    transaction.paperOrder.create
+      .mockResolvedValueOnce({ id: 701 })
+      .mockResolvedValueOnce({ id: 702 });
+
+    await usecase.execute({ ...defaultCommand, reason: '첫 번째 판단' });
+    await usecase.execute({ ...defaultCommand, reason: '두 번째 판단' });
+
+    expect(transaction.paperOrder.create).toHaveBeenCalledTimes(2);
+    expect(transaction.paperOrder.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({ reason: '첫 번째 판단' }),
+      }),
+    );
+    expect(transaction.paperOrder.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({ reason: '두 번째 판단' }),
+      }),
+    );
     expect(transaction.paperTrade.create).toHaveBeenNthCalledWith(1, {
       data: expect.objectContaining({
         orderId: 701,
