@@ -1,7 +1,8 @@
 import { DecimalValue } from './market-data.type';
 
 const TRADING_DAYS_PER_YEAR = 252;
-const HIGH_POSITION_MINIMUM_BARS = 60;
+// 이름이 200일인데 짧은 구간 값을 섞으면 고점 표본이 낮아 신규·부분 이력 종목이 부당하게 유리해진다.
+const HIGH_POSITION_MINIMUM_BARS = 200;
 
 export interface IndicatorBar {
   tradeDate: Date;

@@ -20,7 +20,7 @@ const risingBars = (count: number, endDate: string): IndicatorBar[] => {
 };
 
 describe('ScreenUniverseUsecase', () => {
-  it('유니버스를 200종목씩 읽고 봉 없는 종목을 제외해 결과를 집계한다', async () => {
+  it('유니버스를 200종목씩 읽고 공통 기준일과 다른 종목을 제외해 집계한다', async () => {
     const tickers = Array.from({ length: 201 }, (_, index) => ({
       id: index + 1,
       code: String(index + 1).padStart(6, '0'),
@@ -51,8 +51,9 @@ describe('ScreenUniverseUsecase', () => {
       ruleVersion: 1,
       universeCount: 201,
       evaluatedCount: 2,
-      passedCount: 2,
-      stocks: [expect.objectContaining({ code: '000001' })],
+      staleCount: 1,
+      passedCount: 1,
+      stocks: [expect.objectContaining({ code: '000201' })],
       asOf: '2026-08-12',
     });
   });
@@ -77,6 +78,7 @@ describe('ScreenUniverseUsecase', () => {
       ruleVersion: 1,
       universeCount: 1,
       evaluatedCount: 0,
+      staleCount: 0,
       passedCount: 0,
       stocks: [],
       asOf: null,

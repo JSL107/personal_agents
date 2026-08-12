@@ -1,6 +1,6 @@
+import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
 import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
-import { TossApiHttpError } from '../../market-data/infrastructure/toss/toss-api.client';
 import { CollectUniversePricesUsecase } from './collect-universe-prices.usecase';
 
 const decimal = (value: string) => ({
@@ -145,7 +145,7 @@ describe('CollectUniversePricesUsecase', () => {
     jest.useFakeTimers();
     const fetchDailyBars = jest
       .fn()
-      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429))
+      .mockRejectedValueOnce(new MarketDataRateLimitError())
       .mockResolvedValueOnce([bar('2026-08-11', '100')]);
     const marketData = { fetchDailyBars } as unknown as MarketDataPort;
     const repository = {
@@ -184,7 +184,7 @@ describe('CollectUniversePricesUsecase', () => {
     jest.useFakeTimers();
     const fetchDailyBars = jest
       .fn()
-      .mockRejectedValue(new TossApiHttpError('rate limited', 429));
+      .mockRejectedValue(new MarketDataRateLimitError());
     const marketData = { fetchDailyBars } as unknown as MarketDataPort;
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue([
@@ -216,7 +216,7 @@ describe('CollectUniversePricesUsecase', () => {
   it('429가 아닌 오류는 기다리거나 재시도하지 않고 즉시 실패로 남긴다', async () => {
     const fetchDailyBars = jest
       .fn()
-      .mockRejectedValue(new TossApiHttpError('server error', 500));
+      .mockRejectedValue(new Error('server error'));
     const marketData = { fetchDailyBars } as unknown as MarketDataPort;
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue([
@@ -242,9 +242,9 @@ describe('CollectUniversePricesUsecase', () => {
     jest.useFakeTimers();
     const fetchDailyBars = jest
       .fn()
-      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429))
+      .mockRejectedValueOnce(new MarketDataRateLimitError())
       .mockResolvedValueOnce([bar('2026-08-11', '110')])
-      .mockRejectedValueOnce(new TossApiHttpError('rate limited', 429));
+      .mockRejectedValueOnce(new MarketDataRateLimitError());
     const marketData = { fetchDailyBars } as unknown as MarketDataPort;
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue([

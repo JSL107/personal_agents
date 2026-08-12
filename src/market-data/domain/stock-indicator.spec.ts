@@ -58,7 +58,7 @@ describe('calculateIndicators', () => {
         return1m: expect.closeTo(20, 10),
         return3m: 100,
         return6m: null,
-        high200Position: 1,
+        high200Position: null,
       },
     },
     {
@@ -84,6 +84,21 @@ describe('calculateIndicators', () => {
       expect(indicators).not.toBeNull();
       expect(indicators).toEqual(expect.objectContaining(expected));
       expect(indicators?.barCount).toBe(count);
+    },
+  );
+
+  it.each([
+    { count: 60, expected: null },
+    { count: 199, expected: null },
+    { count: 200, expected: 1 },
+  ])(
+    '$count봉일 때 high200Position은 200봉 계약을 지킨다',
+    ({ count, expected }) => {
+      const indicators = calculateIndicators(
+        barsFromCloses(Array.from({ length: count }, (_, index) => index + 1)),
+      );
+
+      expect(indicators?.high200Position).toBe(expected);
     },
   );
 

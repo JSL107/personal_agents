@@ -23,6 +23,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
   ruleVersion: 1,
   universeCount: 2_595,
   evaluatedCount: 2_500,
+  staleCount: 5,
   passedCount: 100,
   stocks: [
     {
@@ -42,6 +43,7 @@ describe('formatScreenResult', () => {
     const output = formatScreenResult(result('LONG_TERM'));
 
     expect(output).toContain('순위\t종목코드\t종목명\t시장\t점수');
+    expect(output).toContain('기준일 제외 5종목');
     expect(output).toContain('return6m\tvolatility20');
     expect(output).toContain(
       '1\t005930\t삼성전자\tKOSPI\t91.23\t45.67%\t18.90%',
@@ -66,7 +68,7 @@ describe('formatScreenResult', () => {
     });
 
     expect(output).toBe(
-      '스크리닝 통과 종목이 없습니다. 유니버스 2,595종목 중 봉이 있는 것 2,300종목, 통과 0건입니다.',
+      '스크리닝 통과 종목이 없습니다. 유니버스 2,595종목 중 봉이 있는 것 2,300종목, 기준일 제외 5종목, 통과 0건입니다.',
     );
   });
 });

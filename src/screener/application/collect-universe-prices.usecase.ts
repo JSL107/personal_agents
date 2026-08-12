@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { DailyBar } from '../../market-data/domain/market-data.type';
+import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import {
   MARKET_DATA_PORT,
   MarketDataPort,
@@ -11,7 +12,6 @@ import {
   MarketDataRepository,
   UniverseTicker,
 } from '../../market-data/infrastructure/market-data.repository';
-import { TossApiHttpError } from '../../market-data/infrastructure/toss/toss-api.client';
 
 const DEFAULT_INCREMENTAL_DAYS = 5;
 const DEFAULT_INITIAL_DAYS = 200;
@@ -177,14 +177,11 @@ export class CollectUniversePricesUsecase {
     try {
       return await this.marketData.fetchDailyBars(symbol, days);
     } catch (error) {
-      if (
-        retryState.used ||
-        !(error instanceof TossApiHttpError) ||
-        error.status !== 429
-      ) {
+      if (retryState.used || !(error instanceof MarketDataRateLimitError)) {
         throw error;
       }
       retryState.used = true;
+      // adapter가 공급자별 상태를 같은 도메인 오류로 정규화하므로 어느 시세 공급자든 정책이 같다.
       // 재시도는 종목당 한 번뿐이라 곡선 없이 토스 한도 회복 시간을 고정으로 확보한다.
       await new Promise<void>((resolve) => {
         setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS);
