@@ -33,6 +33,7 @@ const formatSummary = (audit: UniverseSweepAudit): string => {
     `유니버스 스윕 완료 — ${syncText}` +
     `수집 성공 ${formatCount(collection.succeeded)}/${formatCount(collection.targetCount)}종목, ` +
     `저장 ${formatCount(collection.written)}봉, 재조정 ${formatCount(collection.readjusted)}종목, ` +
+    `429 재시도 성공 ${formatCount(collection.retried)}종목, ` +
     `장중 차단 ${formatCount(collection.blockedIntraday)}봉, 실패 ${formatCount(collection.failed)}종목`
   );
 };

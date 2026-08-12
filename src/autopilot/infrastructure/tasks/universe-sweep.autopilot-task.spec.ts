@@ -25,6 +25,7 @@ const createFixture = (enabled = 'true') => {
         written: 12970,
         blockedIntraday: 0,
         readjusted: 1,
+        retried: 5,
         failures: ['000001: 시세 조회 실패'],
       };
     }),
@@ -75,7 +76,7 @@ describe('UniverseSweepAutopilotTask', () => {
     expect(result).toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 장중 차단 0봉, 실패 1종목',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목',
       detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
     });
     expect(fixture.agentRun.execute).toHaveBeenCalledWith(
@@ -93,7 +94,7 @@ describe('UniverseSweepAutopilotTask', () => {
       result: {
         skip: false,
         summaryText:
-          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 장중 차단 0봉, 실패 1종목',
+          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목',
         detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
       },
       modelUsed: 'deterministic',
@@ -106,6 +107,7 @@ describe('UniverseSweepAutopilotTask', () => {
           written: 12970,
           blockedIntraday: 0,
           readjusted: 1,
+          retried: 5,
           failures: ['000001: 시세 조회 실패'],
         },
       },
@@ -120,7 +122,7 @@ describe('UniverseSweepAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 장중 차단 0봉, 실패 1종목',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목',
       detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
     });
 

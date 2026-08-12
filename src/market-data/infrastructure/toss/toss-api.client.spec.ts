@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-import { TossApiClient } from './toss-api.client';
+import { TossApiClient, TossApiHttpError } from './toss-api.client';
 
 const createJsonResponse = (body: unknown, status = 200): Response => {
   return new Response(JSON.stringify(body), {
@@ -58,6 +58,20 @@ describe('TossApiClient HTTP 오류', () => {
 
     await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('HTTP 오류는 호출자가 상태 코드를 구조적으로 판별할 수 있다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(TOKEN_RESPONSE))
+      .mockResolvedValueOnce(createJsonResponse(RATE_LIMIT_RESPONSE, 429));
+
+    try {
+      await client.requestJson('일봉 조회', '/api/v1/candles');
+      throw new Error('오류가 발생해야 합니다.');
+    } catch (error) {
+      expect(error).toBeInstanceOf(TossApiHttpError);
+      expect((error as TossApiHttpError).status).toBe(429);
+    }
   });
 
   it('429 가 아닌 오류는 재시도하지 않는다', async () => {
