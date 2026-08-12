@@ -80,6 +80,53 @@ describe('ConsoleReadService', () => {
     });
   });
 
+  it('활성 PR 리뷰의 inputSnapshot 번호를 에이전트 bubble에 반영한다', async () => {
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 273,
+        agentType: 'CODE_REVIEWER',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: null,
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: {
+          pullNumber: 273,
+          prRef: 'JSL107/personal_agents#273',
+        },
+      },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
+        ?.bubble,
+    ).toBe('#273 리뷰 중');
+  });
+
+  it('활성 PR 리뷰에 pullNumber가 없으면 기존 진행 상태 문구로 폴백한다', async () => {
+    agentRunService.findActiveRuns.mockResolvedValue([
+      {
+        id: 273,
+        agentType: 'CODE_REVIEWER',
+        status: 'IN_PROGRESS',
+        parentId: null,
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: null,
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: { prRef: 'JSL107/personal_agents#273' },
+      },
+    ]);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
+        ?.bubble,
+    ).toBe('일하는 중…');
+  });
+
   it('같은 에이전트의 활성 런이 여러 개면 startedAt이 가장 최신인 문구를 쓴다', async () => {
     const olderStartedAt = new Date(Date.now() - 2 * 60_000);
     const newerStartedAt = new Date(Date.now() - 60_000);

@@ -27,6 +27,39 @@ describe('activityBubble', () => {
     },
   );
 
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'PR 번호가 양의 안전한 정수가 아니면 문구를 만들지 않는다: %p',
+    (pullNumber) => {
+      const result = activityBubble({
+        agentType: 'CODE_REVIEWER',
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: { pullNumber },
+      });
+
+      expect(result).toBeNull();
+    },
+  );
+
+  it('이슈 번호로 분류 대상을 표시한다', () => {
+    const result = activityBubble({
+      agentType: 'ISSUE_LABELER',
+      triggerType: 'WEBHOOK_ISSUE_AUTO_LABEL',
+      inputSnapshot: { issueNumber: 12 },
+    });
+
+    expect(result).toBe('#12 분류 중');
+  });
+
+  it('이슈 번호가 0이면 문구를 만들지 않는다', () => {
+    const result = activityBubble({
+      agentType: 'ISSUE_LABELER',
+      triggerType: 'WEBHOOK_ISSUE_AUTO_LABEL',
+      inputSnapshot: { issueNumber: 0 },
+    });
+
+    expect(result).toBeNull();
+  });
+
   it('미국 시장 코드를 한국어 시장 문구로 바꾼다', () => {
     const result = activityBubble({
       agentType: 'INVEST',
@@ -105,10 +138,10 @@ describe('activityBubble', () => {
     ['BE', 'SLACK_COMMAND_BE_TEST', null],
     ['JOB_APPLICATION', 'SLACK_MENTION_JOB_APPLICATION', null],
     ['OPS_SUPERVISOR', 'SCHEDULED', null],
-    ['CODE_REVIEWER', 'PR_REVIEW_SWEEP', { pullNumber: 99_999 }],
-    ['CODE_REVIEWER', 'SLACK_COMMAND_REVIEW_PR', { pullNumber: 99_999 }],
-    ['BE', 'SLACK_COMMAND_BE_FIX', { pullNumber: 99_999 }],
-    ['ISSUE_LABELER', 'WEBHOOK_ISSUE_AUTO_LABEL', { issueNumber: 12 }],
+    ['CODE_REVIEWER', 'PR_REVIEW_SWEEP', { pullNumber: 999_999 }],
+    ['CODE_REVIEWER', 'SLACK_COMMAND_REVIEW_PR', { pullNumber: 999_999 }],
+    ['BE', 'SLACK_COMMAND_BE_FIX', { pullNumber: 999_999 }],
+    ['ISSUE_LABELER', 'WEBHOOK_ISSUE_AUTO_LABEL', { issueNumber: 999_999 }],
     ['INVEST', 'AUTOPILOT_INVEST_CRON', { marketCountry: 'KR' }],
   ] as const)(
     '%s:%s 문구가 12자를 넘지 않는다',
@@ -124,13 +157,13 @@ describe('activityBubble', () => {
     },
   );
 
-  it('5자리 이슈 번호가 상한을 넘으면 문구를 만들지 않는다', () => {
+  it('6자리 이슈 번호도 상한 안에서 분류 대상을 표시한다', () => {
     const result = activityBubble({
       agentType: 'ISSUE_LABELER',
       triggerType: 'WEBHOOK_ISSUE_AUTO_LABEL',
-      inputSnapshot: { issueNumber: 99_999 },
+      inputSnapshot: { issueNumber: 999_999 },
     });
 
-    expect(result).toBeNull();
+    expect(result).toBe('#999999 분류 중');
   });
 });

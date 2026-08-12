@@ -74,6 +74,7 @@ function createPullRequestCheckBubble(
   return `#${pullNumber} 점검 중`;
 }
 
+// 이름표가 이미 "이슈 분류"라 접두어는 중복이며, 6자리 번호까지 12자 상한 안에 들어와야 한다.
 function createIssueLabelBubble(
   inputSnapshot: Record<string, unknown> | null,
 ): string | null {
@@ -81,7 +82,7 @@ function createIssueLabelBubble(
   if (issueNumber === null) {
     return null;
   }
-  return `이슈 #${issueNumber} 분류 중`;
+  return `#${issueNumber} 분류 중`;
 }
 
 function createInvestBubble(
@@ -101,8 +102,8 @@ function readInteger(
   key: string,
 ): number | null {
   const value = inputSnapshot?.[key];
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    return null;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return value;
   }
-  return value;
+  return null;
 }
