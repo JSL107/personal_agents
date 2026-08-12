@@ -1,3 +1,82 @@
+# PR #281 봇 리뷰 4건 반영 (2026-08-12)
+
+**Goal:** 200봉 지표의 기간 계약을 지키고, 서로 다른 기준일의 종목을 분리하며, 429 재시도 정책의 계층 의존성을 바로잡고, 일봉 조회량에 캘린더 하한을 둔다.
+
+**Contract:** 사용자가 코드로 확정한 A~D가 구현 계약이다. raw SQL, DB/network/schema/env/dependency/git index는 건드리지 않는다.
+
+- [x] A: 60/199/200봉 경계 spec을 RED로 만들고 `high200Position` 최소 봉 수를 200으로 고친다.
+- [x] B: 서로 다른 최신 거래일 spec을 고쳐 RED를 확인하고 `staleCount` 및 CLI 출력을 구현한다.
+- [x] C: domain rate-limit error 기준 spec을 RED로 만들고 Toss adapter에서 429를 변환한다.
+- [x] D: 저장 최신일 기준 400일 하한 repository spec을 RED로 만들고 query filter를 구현한다.
+- [x] focused tests와 최종 diff로 계층·기간·조회량 계약을 검토한다.
+- [x] 5종 gate와 `git diff --check`를 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `high200Position`은 200봉부터만 계산하며 60/199/200 경계를 고정했다.
+- 서로 다른 최신일 후보는 최대 기준일 순위에서 제외하고 `staleCount`를 CLI까지 노출했다.
+- Toss adapter가 HTTP 429를 Domain 오류로 정규화해 Application의 infrastructure import를 제거했다.
+- 저장 최신일의 400일 전을 DB 하한으로 적용하고 종목별 limit 절단은 유지했다.
+- 최종 gate: lint(error 0, 기존 warning 57), build, tsc, 전체 test(일반 333 suites / 2,763 tests + code-graph 5 suites / 40 tests), docs check, diff check 모두 exit 0.
+- DB/network/schema/dependency/env/git index/commit은 건드리지 않았다.
+
+---
+
+# PR-B 실데이터 결함 2건 수정 (2026-08-12)
+
+**Goal:** `high200Position`의 종가 기준 한계를 코드 계약으로 드러내고, Toss 429로 누락되는 종목을 1초 뒤 1회 복구하면서 회복 건수를 운영 출력에 남긴다.
+
+**Contract:** 상태 코드는 기존 `TossApiHttpError.status`를 사용한다. 문자열 매칭, 다른 오류 재시도, 지수 backoff, 종목당 복수 재시도는 추가하지 않는다. DB/network/schema/env/dependency/git index는 건드리지 않는다.
+
+- [x] 429 후 성공, 429 두 번, 비429 즉시 실패 spec과 `retried` 출력 spec을 작성해 RED를 확인한다.
+- [x] `TossApiHttpError`를 상태 코드 판별에 필요한 최소 범위로 export한다.
+- [x] 종목당 1회 예산의 1초 고정 재시도를 구현하고 최종 성공 시 `retried`를 집계한다.
+- [x] Autopilot 요약과 CLI 출력에 `retried`를 연결하고 관련 mock을 완전하게 갱신한다.
+- [x] `high200Position` 타입과 계산부에 종가 기준·장중 고점 미반영 이유를 주석으로 명시한다.
+- [x] focused GREEN, 전체 diff·금지 범위 검토, 5종 gate와 `git diff --check`를 완료한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `high200Position`이 최고 조정 종가 기준이며 장중 고점을 반영하지 못하는 이유를 타입과 계산부에 명시했다. 이름과 동작은 보존했다.
+- 기존 비공개 `TossApiHttpError.status`를 최소 공개해 429만 구조적으로 판별한다. 문자열 매칭은 없다.
+- 최초 조회와 소급 재수집이 종목당 한 번의 예산을 공유하며, 첫 429만 1초 후 재시도한다. 최종 종목 처리 성공만 `retried`에 집계한다.
+- Autopilot summary/audit와 CLI 요약에 429 재시도 성공 건수를 노출했다.
+- 독립 재리뷰 Critical 0. 예산 공유·999ms 경계·typed HTTP 500 spec 공백을 모두 보강했다.
+- 최종 gate: lint(error 0, 기존 warning 57), build, tsc, 전체 test(일반 333 suites / 2,758 tests + code-graph 5 suites / 40 tests), docs check, diff check 모두 exit 0.
+- DB/network/schema/dependency/env/git index/commit은 건드리지 않았다.
+
+---
+
+# 모의투자 2단계 PR-B — 지표 계산과 스크리너 (2026-08-12)
+
+**Goal:** PR-A의 보통주 유니버스와 조정 일봉으로 200거래일 한계 안의 순수 지표를 계산하고, 고정 규칙으로 장투·단타 후보를 결정론적으로 선별해 CLI로 출력한다.
+
+**Contract:** 새 `.ai/design.md` 전문이 source of truth다. `DecimalValue`, 빈 봉 `null`, 명문화된 순위합 점수 공식을 따른다. DB/schema, 네트워크, dependency, env, autopilot, LLM/추천/자동매매, git index/commit은 건드리지 않는다.
+
+- [x] T1 봉 부족·정배열·거래량 0·고정 입력 spec을 작성하고 RED를 확인한다.
+- [x] T1 `calculateIndicators()`를 `adjClose` 전용 순수 함수로 최소 구현하고 focused GREEN을 확인한다.
+- [x] T2 장투/단타 조건과 1개/3개/null 순위 점수 spec을 작성하고 RED를 확인한다.
+- [x] T2 고정 순위합 점수와 결정론적 tie-break를 최소 구현하고 focused GREEN을 확인한다.
+- [x] T3 repository 청크 쿼리·종목별 limit spec과 usecase 200종목 청크·집계 spec을 RED→GREEN으로 만든다.
+- [x] T4 CLI 인자·전략별 표·0건 설명 spec을 RED→GREEN으로 만들고 module/CLI를 연결한다.
+- [x] focused tests와 최종 diff로 200봉·adjClose·4컬럼 select·금지 범위를 검토한다.
+- [x] 5종 gate와 `git diff --check`를 실행한다.
+- [x] `.ai/implementation-summary.md`를 PR-B 기준으로 새로 작성하고 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `DecimalValue` 기반 순수 지표 11종을 추가했다. 빈 봉은 null이며 기간 부족 지표만 null로 남는다. high200은 공용 함수 내부에서 마지막 200봉으로 제한한다.
+- 장투·단타 통과 조건과 명문화된 1..n 순위합 점수를 구현했다. 단일 후보, 3개 고정 순위, null 최하위, code tie-break를 spec으로 고정했다.
+- repository는 호출당 findMany 1회와 4컬럼 select를 사용하고, usecase는 200 ticker씩 읽는다. 봉 없는 종목과 limit 전 전체 통과 수를 분리한다.
+- CLI에 기본 LONG_TERM인 `screen` 명령과 전략별 표, 0건 원인 문구를 추가했다. 기존 두 명령은 보존했다.
+- 독립 리뷰 Critical 0. Important 1(high200 caller 의존)은 201봉 RED→GREEN으로 수정했고, Minor 1(표본분산 분모 spec)은 non-zero 고정 입력으로 보강했다.
+- 최종 focused 9 suites / 40 tests, lint(error 0, 기존 warning 57), build, tsc, 전체 test(일반 332 suites / 2,752 tests + code-graph 5 suites / 40 tests), docs check, diff check 모두 통과했다.
+- 설계 편차 없음. DB/schema/network/dependency/env/autopilot/LLM/추천/매매/git index는 건드리지 않았다.
+
+---
+
 # PR #278 봇 리뷰 3건 반영 (2026-08-12)
 
 **Goal:** 잘린 KRX 응답이 대량 상장폐지로 이어지지 않게 이중 방어하고, 부분 일봉 이력을 최초 적재 완료로 오인하지 않으며, KRX 관리 표식을 기준으로 상장폐지를 반영한다.
