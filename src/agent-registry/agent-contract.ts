@@ -243,6 +243,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.GROWTH,
     '보유 종목의 시세 이상을 장 마감 후 점검한다',
   ),
+  [AgentType.PAPER_TRADE]: stub(
+    Department.GROWTH,
+    '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
+  ),
 
   // ──────────────────────────────── 내부 ────────────────────────────────
   [AgentType.OPS_SUPERVISOR]: {
