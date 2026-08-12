@@ -72,6 +72,9 @@ export enum AgentType {
   // agent_run 에 한 줄도 남기지 않아, 보유 종목 0건으로 아무 일도 안 하는 상태가 관측되지 않았다.
   // 슬래시/ResponseCode/retry-run 비대상 (autopilot 전용 — EVENING_RETRO 선례).
   INVEST = 'INVEST',
+  // 모의투자 일일 평가 — 시세 기반 결정론 계산. LLM 을 쓰지 않으며 AgentRun 원장 등록을 위해 둔다.
+  // 슬래시/ResponseCode/retry-run 비대상 (autopilot 전용 — INVEST 선례).
+  PAPER_TRADE = 'PAPER_TRADE',
   CTO_STUDY = 'CTO_STUDY',
 }
 

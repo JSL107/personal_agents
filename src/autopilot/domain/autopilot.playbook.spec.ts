@@ -126,6 +126,23 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(stockMonitorUs?.digestGroup).toBeUndefined();
   });
 
+  it('모의투자 평가를 평일 17:40 KST standalone 항목으로 포함한다', () => {
+    const paperTrading = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'paper-trading',
+    );
+
+    expect(paperTrading).toMatchObject({
+      taskId: 'paper-trading',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '40 17 * * 1-5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(paperTrading?.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

@@ -15,6 +15,8 @@ import {
   DEFAULT_NOON_REVIEW_TIMEZONE,
   DEFAULT_OPS_SUPERVISOR_CRON,
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
+  DEFAULT_PAPER_TRADING_CRON,
+  DEFAULT_PAPER_TRADING_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
   DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
   DEFAULT_PREFERENCE_LEARNING_CRON,
@@ -214,6 +216,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_STOCK_MONITOR_CRON,
       timezone: DEFAULT_STOCK_MONITOR_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 모의투자 평가는 독립 스케줄/env override 를 유지해야 하므로 digestGroup 에 넣지 않는다.
+  {
+    id: 'paper-trading',
+    taskId: 'paper-trading',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PAPER_TRADING_CRON,
+      timezone: DEFAULT_PAPER_TRADING_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

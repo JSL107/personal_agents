@@ -257,6 +257,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용)',
   },
   {
+    agentType: AgentType.PAPER_TRADE,
+    displayName: 'Paper Trade',
+    slashCommands: [],
+    usecasePath:
+      'src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts',
+    description:
+      '모의투자 계좌 일일 평가 — 포지션 평가·수익률·데이터 이상을 기록 (슬래시 없음, autopilot 전용, LLM 미사용)',
+  },
+  {
     agentType: AgentType.CTO_STUDY,
     displayName: 'CTO Study',
     slashCommands: [],

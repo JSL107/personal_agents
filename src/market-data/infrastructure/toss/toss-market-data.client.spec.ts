@@ -65,6 +65,30 @@ describe('TossMarketDataClient', () => {
     expect(path).toContain('adjusted=true');
   });
 
+  it('adjusted 미지정 시 adjusted=true 를 쿼리에 넣는다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    tossApi.requestJson.mockResolvedValue(CANDLES_RESPONSE);
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    await client.fetchDailyBars('114800', 5);
+
+    const [, path] = tossApi.requestJson.mock.calls[0];
+    expect(path).toContain('adjusted=true');
+  });
+
+  it('adjusted=false 지정 시 adjusted=false 를 쿼리에 넣는다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    tossApi.requestJson.mockResolvedValue(CANDLES_RESPONSE);
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    await client.fetchDailyBars('114800', 5, { adjusted: false });
+
+    const [, path] = tossApi.requestJson.mock.calls[0];
+    expect(path).toContain('adjusted=false');
+  });
+
   it('토스 HTTP 429 오류를 호출자에게 전파한다', async () => {
     const tossApi = createTossApi();
     const yahooMarketData = createYahooMarketData();
