@@ -79,6 +79,9 @@ export enum TriggerType {
   // 자동 보고서 윤문 — 실패해도 원본을 그대로 내보내는 best-effort 경로라,
   // 원장이 없으면 "윤문이 안 먹은 날" 이 겉으로 드러나지 않는다.
   REPORT_HUMANIZE = 'REPORT_HUMANIZE',
+  // 주간 선호 학습 — 추론 실패도 skip 으로 수렴하는 경로라(task 의 skip 분기 5개 중 하나),
+  // 원장이 없으면 "신호가 없어서 조용했다" 와 "모델 호출이 죽었다" 가 집계상 같아진다.
+  AUTOPILOT_PREFERENCE_LEARNING_CRON = 'AUTOPILOT_PREFERENCE_LEARNING_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
