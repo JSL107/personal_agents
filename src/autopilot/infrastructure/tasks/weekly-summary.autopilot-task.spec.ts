@@ -19,6 +19,13 @@ const MERGED_PULL_REQUEST = {
   changedFilesCount: 14,
 };
 
+const SECOND_MERGED_PULL_REQUEST = {
+  ...MERGED_PULL_REQUEST,
+  number: 972,
+  title: '계획 없는 주간 회고',
+  url: 'https://github.com/schoolbell-e/sbe-server/pull/972',
+};
+
 // 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
 const makeHumanizer = () => ({
   humanize: jest
@@ -28,10 +35,10 @@ const makeHumanizer = () => ({
     ),
 });
 
-const makeConfig = () => ({
+const makeConfig = (author: string | null = 'idaeri') => ({
   get: jest.fn().mockImplementation((key: string) => {
     if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
-      return 'idaeri';
+      return author ?? undefined;
     }
     if (key === 'IMPACT_REPORT_GITHUB_REPO') {
       return 'schoolbell-e/sbe-server';
@@ -62,7 +69,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     ).toBe('weekly-summary');
   });
 
-  it('이번 주 PM run 0건 → graceful skip 안내(skip=false, worklog/CEO 미호출)', async () => {
+  it('이번 주 PM run 0건 + 머지 PR 0건 → 기존 skip 안내(worklog/CEO 미호출)', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const worklogExecute = jest.fn();
     const ceoExecute = jest.fn();
@@ -70,7 +77,9 @@ describe('WeeklySummaryAutopilotTask', () => {
       { findRecentSucceededRuns } as never,
       { execute: worklogExecute } as never,
       { execute: ceoExecute } as never,
-      {} as never,
+      {
+        listAuthorMergedPullRequestsSince: jest.fn().mockResolvedValue([]),
+      } as never,
       makeHumanizer() as never,
       makeConfig() as never,
     );
@@ -78,12 +87,115 @@ describe('WeeklySummaryAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('skip');
+    expect(out.summaryText).toContain(
+      '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
+    );
+    expect(out.detailText).toBeUndefined();
     expect(worklogExecute).not.toHaveBeenCalled();
     expect(ceoExecute).not.toHaveBeenCalled();
     expect(findRecentSucceededRuns).toHaveBeenCalledWith(
       expect.objectContaining({ sinceDays: 7 }),
     );
+  });
+
+  it('이번 주 PM run 0건 + 머지 PR 2건 → 계획 없음과 두 실적으로 worklog/CEO 생성', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const worklogExecute = jest.fn().mockResolvedValue({
+      result: {
+        summary: '이번주 요약',
+        oneLineAchievement: '핵심 성과',
+        impact: { quantitative: [], qualitative: '질적 영향 텍스트' },
+        improvementBeforeAfter: null,
+        nextActions: ['다음주 액션'],
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 42,
+    });
+    const ceoExecute = jest.fn().mockRejectedValue(new Error('ceo down'));
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockResolvedValue([MERGED_PULL_REQUEST, SECOND_MERGED_PULL_REQUEST]),
+    };
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute: worklogExecute } as never,
+      { execute: ceoExecute } as never,
+      githubClient as never,
+      makeHumanizer() as never,
+      makeConfig() as never,
+    );
+
+    await task.run(CTX);
+
+    expect(worklogExecute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workText: expect.stringContaining('(이번 주 PM plan 없음)'),
+      }),
+    );
+    expect(worklogExecute.mock.calls[0][0].workText).toContain(
+      'schoolbell-e/sbe-server#971',
+    );
+    expect(worklogExecute.mock.calls[0][0].workText).toContain(
+      'schoolbell-e/sbe-server#972',
+    );
+    expect(ceoExecute).toHaveBeenCalled();
+  });
+
+  it('이번 주 PM run 0건 + GitHub 조회 실패 → 예외를 던진다', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const worklogExecute = jest.fn();
+    const ceoExecute = jest.fn();
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockRejectedValue(new Error('rate limit')),
+    };
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute: worklogExecute } as never,
+      { execute: ceoExecute } as never,
+      githubClient as never,
+      makeHumanizer() as never,
+      makeConfig() as never,
+    );
+
+    await expect(task.run(CTX)).rejects.toThrow(
+      'Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: GitHub 조회 실패: rate limit',
+    );
+    expect(worklogExecute).not.toHaveBeenCalled();
+    expect(ceoExecute).not.toHaveBeenCalled();
+  });
+
+  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → skip 안내문에 사유 포함', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const worklogExecute = jest.fn();
+    const ceoExecute = jest.fn();
+    const githubClient = { listAuthorMergedPullRequestsSince: jest.fn() };
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute: worklogExecute } as never,
+      { execute: ceoExecute } as never,
+      githubClient as never,
+      makeHumanizer() as never,
+      makeConfig(null) as never,
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
+    );
+    expect(result.summaryText).toContain(
+      'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+    );
+    expect(result.detailText).toBeUndefined();
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
+    expect(worklogExecute).not.toHaveBeenCalled();
+    expect(ceoExecute).not.toHaveBeenCalled();
   });
 
   it('worklog 성공 시 요약은 summaryText, 근거 detail 은 detailText 스레드로 분리 (CEO skip 시 CEO detail 없음)', async () => {
@@ -142,6 +254,12 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(out.detailText).toContain('질적 영향');
     expect(out.detailText).toContain('다음 액션');
     expect(out.detailText).toContain('run #42');
+    expect(worklogExecute.mock.calls[0][0].workText).toContain(
+      '(plan 파싱 불가)',
+    );
+    expect(worklogExecute.mock.calls[0][0].workText).not.toContain(
+      '(이번 주 PM plan 없음)',
+    );
   });
 
   it('오늘 포함 7일 KST 창으로 머지 PR을 조회하고 실적 섹션을 worklog 입력에 포함한다', async () => {

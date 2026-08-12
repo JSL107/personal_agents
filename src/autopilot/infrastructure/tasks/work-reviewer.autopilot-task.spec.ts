@@ -19,6 +19,13 @@ const MERGED_PULL_REQUEST = {
   changedFilesCount: 14,
 };
 
+const SECOND_MERGED_PULL_REQUEST = {
+  ...MERGED_PULL_REQUEST,
+  number: 972,
+  title: '계획 없는 날 회고',
+  url: 'https://github.com/schoolbell-e/sbe-server/pull/972',
+};
+
 const makePmRun = (date: string, tasks: string[]) => ({
   endedAt: new Date(date),
   output: {
@@ -142,7 +149,38 @@ describe('WorkReviewerAutopilotTask', () => {
     );
   });
 
-  it('오늘 PM plan 없음 → GenerateWorklog 미호출, skip=false 안내문 반환, detailText 없음', async () => {
+  it('오늘 PM plan 없음 + 머지 PR 2건 → 계획 없음과 두 실적으로 worklog 생성', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const execute = jest.fn().mockResolvedValue(makeOutcome());
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockResolvedValue([MERGED_PULL_REQUEST, SECOND_MERGED_PULL_REQUEST]),
+    };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig() as never,
+    );
+
+    await task.run(CTX);
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workText: expect.stringContaining('(오늘 작성된 PM plan 없음)'),
+      }),
+    );
+    expect(execute.mock.calls[0][0].workText).toContain(
+      'schoolbell-e/sbe-server#971',
+    );
+    expect(execute.mock.calls[0][0].workText).toContain(
+      'schoolbell-e/sbe-server#972',
+    );
+  });
+
+  it('오늘 PM plan 없음 + 머지 PR 0건 → GenerateWorklog 미호출, 기존 안내문 반환', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const execute = jest.fn();
     const humanizeService = makeHumanizeService();
@@ -151,15 +189,69 @@ describe('WorkReviewerAutopilotTask', () => {
       { findRecentSucceededRuns } as never,
       { execute } as never,
       humanizeService as never,
-      {} as never,
+      {
+        listAuthorMergedPullRequestsSince: jest.fn().mockResolvedValue([]),
+      } as never,
       makeConfig() as never,
     );
 
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('plan');
+    expect(result.summaryText).toContain(
+      '오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. `/today` 로 plan 을 먼저 만들어주세요.',
+    );
     expect(result.detailText).toBeUndefined();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('오늘 PM plan 없음 + GitHub 조회 실패 → 예외를 던진다', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const execute = jest.fn();
+    const githubClient = {
+      listAuthorMergedPullRequestsSince: jest
+        .fn()
+        .mockRejectedValue(new Error('rate limit')),
+    };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig() as never,
+    );
+
+    await expect(task.run(CTX)).rejects.toThrow(
+      'Work Reviewer 실적 조회 실패로 회고 생성을 보류합니다: GitHub 조회 실패: rate limit',
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('오늘 PM plan 없음 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → skip 안내문에 사유 포함', async () => {
+    const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
+    const execute = jest.fn();
+    const githubClient = { listAuthorMergedPullRequestsSince: jest.fn() };
+    const task = new WorkReviewerAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      { execute } as never,
+      makeHumanizeService() as never,
+      githubClient as never,
+      makeConfig(null) as never,
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. `/today` 로 plan 을 먼저 만들어주세요.',
+    );
+    expect(result.summaryText).toContain(
+      'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
+    );
+    expect(result.detailText).toBeUndefined();
+    expect(
+      githubClient.listAuthorMergedPullRequestsSince,
+    ).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -211,10 +303,12 @@ describe('WorkReviewerAutopilotTask', () => {
     await expect(task.run(CTX)).rejects.toThrow('db down');
   });
 
-  it('GitHub 조회 실패도 worklog 생성을 계속하고 조회 불가 사유를 입력한다', async () => {
+  it('plan 파싱 실패 + GitHub 조회 실패도 formatter 폴백으로 worklog 생성을 계속한다', async () => {
     const findRecentSucceededRuns = jest
       .fn()
-      .mockResolvedValue([makePmRun('2026-06-17', ['PR 리뷰'])]);
+      .mockResolvedValue([
+        { output: 'not-a-plan', endedAt: new Date('2026-06-17T09:00:00Z') },
+      ]);
     const execute = jest.fn().mockResolvedValue(makeOutcome());
     const githubClient = {
       listAuthorMergedPullRequestsSince: jest
@@ -241,6 +335,10 @@ describe('WorkReviewerAutopilotTask', () => {
       expect.objectContaining({
         workText: expect.stringContaining('GitHub 조회 실패: rate limit'),
       }),
+    );
+    expect(execute.mock.calls[0][0].workText).toContain('(plan 파싱 불가)');
+    expect(execute.mock.calls[0][0].workText).not.toContain(
+      '(오늘 작성된 PM plan 없음)',
     );
   });
 

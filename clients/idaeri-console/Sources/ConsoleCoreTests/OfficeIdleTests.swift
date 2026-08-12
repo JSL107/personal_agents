@@ -36,6 +36,22 @@ func runOfficeIdleTests(_ t: TestRunner) {
     t.expectEqual(officeStrollMaxConcurrency, 3, "동시 배회 상한")
     t.expectEqual(officeStrollCooldownSeconds, 90, "재배회 쿨다운")
 
+    // 이 검증이 잡는 회귀: 가구 방향과 다른 축/부호로 전체 캐릭터 노드를 밀어 몸과 가구가
+    // 멀어지는 버그. 기대값은 10px 타일 × 0.30칸을 손으로 계산한 literal이다.
+    let expectedLoungeOffsets: [(Facing, OfficePoint)] = [
+        (.left, OfficePoint(x: -3, y: 0)),
+        (.right, OfficePoint(x: 3, y: 0)),
+        (.up, OfficePoint(x: 0, y: 3)),
+        (.down, OfficePoint(x: 0, y: -3)),
+    ]
+    for (facing, expected) in expectedLoungeOffsets {
+        t.expectEqual(
+            officeLoungeInteractionOffset(facing: facing, tileSize: 10),
+            expected,
+            "\(facing.rawValue) lounge 전체 노드 오프셋"
+        )
+    }
+
     let now = 1_000.0
     let cooldown = 90.0
     t.expect(
@@ -156,6 +172,112 @@ func runOfficeIdleTests(_ t: TestRunner) {
     let plan = officeFloorPlan(agents: sampleAgents)
     let spots = officeStrollSpots(plan: plan)
     t.expect(!spots.isEmpty, "운영 29명 평면도에 배회 목적지가 있다")
+
+    // 머무름과 자세를 따로 관리하면 새 가구를 한쪽 switch 에만 넣어도 컴파일은 통과한다.
+    // 기본 자세로 조용히 넘어가는 대신 전 종류를 훑어 누락된 쪽을 바로 드러낸다.
+    for kind in FurnitureKind.allCases {
+        t.expectEqual(
+            kind.strollDwellSeconds != nil,
+            kind.interactionPose != nil,
+            "\(kind.rawValue) 머무름과 상호작용 자세가 함께 존재"
+        )
+    }
+    let expectedFurniturePoses: [FurnitureKind: OfficeInteractionPose] = [
+        .sofa2: .sitting,
+        .sofa3: .sitting,
+        .coffeeTable: .sitting,
+        .meetingTable: .sitting,
+        .coffeeMachine: .drinking,
+        .waterCooler: .drinking,
+        .vendingMachine: .drinking,
+        .refrigerator: .drinking,
+        .sinkCounter: .drinking,
+        .printer: .carryingPapers,
+        .filingCabinet: .carryingPapers,
+        .whiteboard: .writing,
+        .wallWhiteboard: .writing,
+        .bookshelf: .reading,
+        .wallShelf: .reading,
+        .wallMonitor: .reading,
+        .wallPinboard: .reading,
+        .plantTall: .tending,
+        .plantSmall: .tending,
+        .lockers2: .stowing,
+    ]
+    for (kind, pose) in expectedFurniturePoses {
+        t.expectEqual(kind.interactionPose, pose, "\(kind.rawValue) 자세 매핑")
+    }
+    t.expectEqual(expectedFurniturePoses.count, 20, "상호작용 가구 20종을 빠짐없이 고정")
+
+    let expectedFacings: [(from: TilePoint, to: TilePoint, facing: Facing)] = [
+        (TilePoint(x: 4, y: 4), TilePoint(x: 4, y: 5), .up),
+        (TilePoint(x: 4, y: 4), TilePoint(x: 4, y: 3), .down),
+        (TilePoint(x: 4, y: 4), TilePoint(x: 3, y: 4), .left),
+        (TilePoint(x: 4, y: 4), TilePoint(x: 5, y: 4), .right),
+        (TilePoint(x: 4, y: 4), TilePoint(x: 7, y: 5), .right),
+        (TilePoint(x: 4, y: 4), TilePoint(x: 5, y: 7), .up),
+    ]
+    for sample in expectedFacings {
+        t.expectEqual(
+            officeFacing(from: sample.from, to: sample.to),
+            sample.facing,
+            "가구 방향 \(sample.from) → \(sample.to)"
+        )
+    }
+
+    // 같은 kind 가 여러 방에 놓이므로 kind 하나만 대조하면 다른 배치의 방향 오류를 놓친다.
+    // 실제 목적지 칸과 이웃한 배치 중 하나가 같은 방향을 가리키는지 각 spot 별로 확인한다.
+    for spot in spots {
+        let matchingPlacement = plan.furniture.first { placement in
+            guard placement.kind == spot.kind else {
+                return false
+            }
+            let distance = abs(placement.tile.x - spot.tile.x) + abs(placement.tile.y - spot.tile.y)
+            return distance == 1
+        }
+        t.expect(matchingPlacement != nil, "\(spot.kind.rawValue) 목적지에 인접 가구 존재")
+        if let matchingPlacement {
+            t.expectEqual(
+                spot.facing,
+                officeFacing(from: spot.tile, to: matchingPlacement.tile),
+                "\(spot.kind.rawValue) 목적지가 가구를 바라봄"
+            )
+            t.expectEqual(
+                spot.pose,
+                matchingPlacement.kind.interactionPose,
+                "\(spot.kind.rawValue) 목적지가 가구 자세를 보존"
+            )
+        }
+    }
+
+    let spotsByTile = Dictionary(uniqueKeysWithValues: spots.map { ($0.tile, $0) })
+    for loungeTile in plan.loungeTiles {
+        t.expect(
+            spotsByTile[loungeTile]?.pose != nil,
+            "휴식 자리 \(loungeTile)는 상호작용 자세가 있는 목적지"
+        )
+    }
+
+    let expectedHandProps: [OfficeInteractionPose: String?] = [
+        .sitting: nil,
+        .drinking: "prop-mug",
+        .carryingPapers: "prop-papers",
+        .writing: "prop-papers",
+        .reading: "prop-book-stack",
+        .tending: nil,
+        .stowing: "prop-book-stack",
+    ]
+    for pose in OfficeInteractionPose.allCases {
+        t.expectEqual(
+            pose.handPropSprite,
+            expectedHandProps[pose] ?? nil,
+            "\(pose.rawValue) 손 소품 매핑"
+        )
+        if let sprite = pose.handPropSprite {
+            t.expect(officeDeskPropSprites.contains(sprite), "\(sprite)는 기존 번들 소품 이름")
+        }
+    }
+
     t.expect(spots.allSatisfy { plan.walkable.contains($0.tile) }, "모든 목적지는 통행 가능")
     let seatTiles = Set(plan.desks.map(\.seat))
     t.expect(spots.allSatisfy { !seatTiles.contains($0.tile) }, "좌석 칸은 목적지에서 제외")

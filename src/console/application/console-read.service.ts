@@ -13,10 +13,12 @@ import { LocalSessionService } from '../../local-sessions/application/local-sess
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
   ConsoleAgent,
+  ConsoleAgentState,
   ConsoleApproval,
   ConsoleRun,
   ConsoleSnapshot,
 } from '../domain/console.type';
+import { activityBubble } from './agent-activity-bubble';
 import { toConsoleApproval, toConsoleSession } from './console-mappers';
 import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
@@ -59,9 +61,17 @@ export class ConsoleReadService {
       (run) => run.startedAt.getTime() >= staleCutoffMs,
     );
 
-    const activeAgentTypes = new Set(
-      freshActiveRuns.map((run) => run.agentType),
-    );
+    const latestActiveRunByAgentType = new Map<
+      string,
+      (typeof freshActiveRuns)[number]
+    >();
+    for (const run of freshActiveRuns) {
+      const latestRun = latestActiveRunByAgentType.get(run.agentType);
+      if (latestRun === undefined || run.startedAt > latestRun.startedAt) {
+        latestActiveRunByAgentType.set(run.agentType, run);
+      }
+    }
+    const activeAgentTypes = new Set(latestActiveRunByAgentType.keys());
 
     // kind→agentType 매핑으로 승인 카드를 담당 에이전트에 연결한다(Phase 4 보완).
     const approvals: ConsoleApproval[] = openPreviews.map(toConsoleApproval);
@@ -95,13 +105,18 @@ export class ConsoleReadService {
         isQueuedWaiting: false,
       });
       const contract = AGENT_CONTRACTS[entry.agentType];
+      const activeRun = latestActiveRunByAgentType.get(entry.agentType);
+      const bubble =
+        state === ConsoleAgentState.IN_PROGRESS && activeRun !== undefined
+          ? (activityBubble(activeRun) ?? bubbleForState(state))
+          : bubbleForState(state);
       return {
         agentType: entry.agentType,
         displayName: entry.displayName,
         slashCommands: entry.slashCommands,
         description: entry.description,
         state,
-        bubble: bubbleForState(state),
+        bubble,
         department: contract.department,
         departmentLabel: DEPARTMENT_LABEL[contract.department],
         job: contract.job,

@@ -8,9 +8,16 @@ import {
 } from '../domain/preference-profile.type';
 import { PreferenceSignal } from '../domain/preference-signal.type';
 
-export interface InferenceResult {
+export interface ParsedPreferenceDiff {
   diff: PreferenceDiff;
   rationale: string;
+}
+
+// 실행 원장에 어느 모델이 판정했는지 남기려면 파싱 결과만으로는 부족하다.
+// 파싱 함수는 모델을 모르므로 타입을 나누고, 모델명은 infer 가 채운다
+// (optional + 기본값으로 두면 누락이 정상값으로 위장된다).
+export interface InferenceResult extends ParsedPreferenceDiff {
+  modelUsed: string;
 }
 
 const SYSTEM_PROMPT = [
@@ -25,7 +32,9 @@ const SYSTEM_PROMPT = [
 ].join('\n');
 
 // LLM 원응답에서 {diff, rationale} 파싱. 실패 시 null(fail-closed).
-export const parsePreferenceDiff = (raw: string): InferenceResult | null => {
+export const parsePreferenceDiff = (
+  raw: string,
+): ParsedPreferenceDiff | null => {
   try {
     const parsed = JSON.parse(raw.trim()) as Record<string, unknown>;
     if (typeof parsed !== 'object' || parsed === null || !parsed.diff) {
@@ -59,7 +68,11 @@ export class PreferenceInferenceAdapter {
         agentType: AgentType.PREFERENCE_LEARNING,
         request: { prompt, systemPrompt: SYSTEM_PROMPT },
       });
-      return parsePreferenceDiff(completion.text);
+      const parsed = parsePreferenceDiff(completion.text);
+      if (!parsed) {
+        return null;
+      }
+      return { ...parsed, modelUsed: completion.modelUsed };
     } catch (error) {
       this.logger.warn(
         `선호 추론 실패(skip): ${error instanceof Error ? error.message : String(error)}`,
