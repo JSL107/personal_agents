@@ -1,4 +1,4 @@
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 
 import { SnapshotStatus } from '../../../ai-cli-env/domain/ai-cli-env.type';
 import { AiCliEnvPort } from '../../../ai-cli-env/domain/port/ai-cli-env.port';
@@ -15,6 +15,7 @@ const buildStatus = (
   appliedSha: 'previous-sha',
   summary: {
     sourceHome: '/other-machine/home',
+    sourceHost: `other-${hostname()}`,
     generatedAt: '2026-08-12T01:00:00.000Z',
     claude: { plugins: 2, mcpServers: 3, assets: 4 },
     codex: { plugins: 5, mcpServers: 6, assets: 7 },
@@ -51,16 +52,49 @@ describe('AiCliEnvApplyAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({ skip: true });
   });
 
-  it('이 PC가 만든 스냅샷이면 skip 한다', async () => {
+  it('이 hostname에서 만든 스냅샷이면 skip 한다', async () => {
     const task = new AiCliEnvApplyAutopilotTask(
       buildPort(
         buildStatus({
-          summary: { ...buildStatus().summary!, sourceHome: homedir() },
+          summary: { ...buildStatus().summary!, sourceHost: hostname() },
         }),
       ),
     );
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
+  });
+
+  it('sourceHome이 같아도 sourceHost가 다르면 복원 preview를 만든다', async () => {
+    const task = new AiCliEnvApplyAutopilotTask(
+      buildPort(
+        buildStatus({
+          summary: {
+            ...buildStatus().summary!,
+            sourceHome: homedir(),
+            sourceHost: `other-${hostname()}`,
+          },
+        }),
+      ),
+    );
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.preview?.previewText).toContain(`other-${hostname()}`);
+  });
+
+  it('sourceHost가 없는 구 manifest는 카드와 만든 PC 특정 불가 문구를 만든다', async () => {
+    const status = buildStatus();
+    const summary = { ...status.summary };
+    delete summary.sourceHost;
+    const task = new AiCliEnvApplyAutopilotTask(
+      buildPort(buildStatus({ summary: summary as SnapshotStatus['summary'] })),
+    );
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.preview?.previewText).toContain('만든 PC를 특정할 수 없다');
   });
 
   it('이미 적용한 SHA면 skip 한다', async () => {

@@ -25,9 +25,16 @@ type SnapshotTool = {
 
 type SnapshotManifest = {
   sourceHome?: unknown;
+  sourceHost?: unknown;
   generatedAt?: unknown;
+  secretsRequired?: unknown;
+  credentialWarnings?: unknown;
   claude?: SnapshotTool | null;
   codex?: SnapshotTool | null;
+};
+
+type SecretRequirement = {
+  envKey: string;
 };
 
 type AppliedSnapshot = {
@@ -38,6 +45,16 @@ type CommandResult = {
   stdout: string;
   stderr: string;
 };
+
+const BOOTSTRAP_ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'LANG',
+  'SHELL',
+  'TMPDIR',
+] as const;
 
 @Injectable()
 export class AiCliEnvAdapter implements AiCliEnvPort {
@@ -68,12 +85,28 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
 
   async exportSnapshot(): Promise<{ changed: boolean; pushed: boolean }> {
     await this.ensureRepository();
+    return await this.exportAndPushSnapshot(true);
+  }
+
+  private async exportAndPushSnapshot(retryPushFailure: boolean): Promise<{
+    changed: boolean;
+    pushed: boolean;
+  }> {
     const syncDirectory = this.getSyncDirectory();
     await this.execute(
       'node',
       [join(cwd(), 'scripts', 'export-ai-cli-env.cjs'), syncDirectory],
       { timeout: EXPORT_TIMEOUT_MS },
     );
+    const manifest = await this.readManifest(
+      join(syncDirectory, 'manifest.json'),
+    );
+    const credentialWarnings = this.readCredentialWarnings(manifest);
+    if (credentialWarnings.length > 0) {
+      throw new Error(
+        `AI CLI 환경 스냅샷에 자격 증명 의심 항목이 있습니다: ${credentialWarnings.join(', ')}`,
+      );
+    }
     const status = await this.executeGit(
       ['status', '--porcelain'],
       syncDirectory,
@@ -86,8 +119,35 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
       ['commit', '-m', `chore(env): 스냅샷 갱신 ${new Date().toISOString()}`],
       syncDirectory,
     );
-    await this.executeGit(['push'], syncDirectory);
+    try {
+      await this.executeGit(['push'], syncDirectory);
+    } catch (error) {
+      if (!retryPushFailure) {
+        throw error;
+      }
+      await this.recoverFromPushConflict();
+      return await this.exportAndPushSnapshot(false);
+    }
     return { changed: true, pushed: true };
+  }
+
+  private async recoverFromPushConflict(): Promise<void> {
+    const syncDirectory = this.getSyncDirectory();
+    await this.executeGit(['fetch'], syncDirectory);
+    const remoteReference = (
+      await this.executeGit(
+        ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+        syncDirectory,
+      )
+    ).trim();
+    if (!remoteReference) {
+      throw new Error(
+        'AI CLI 환경 스냅샷 remote 기본 브랜치를 찾을 수 없습니다.',
+      );
+    }
+    // 이 전용 repo의 local commit은 같은 snapshot export 결과뿐이다. Remote 최신 상태로
+    // 버린 뒤 다시 export하면 동일 입력을 재생성하므로 사용자 작업을 잃지 않는다.
+    await this.executeGit(['reset', '--hard', remoteReference], syncDirectory);
   }
 
   async readStatus(): Promise<SnapshotStatus> {
@@ -127,20 +187,38 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
         `승인한 스냅샷 ${expectedSha.slice(0, 7)}와 현재 HEAD ${currentSha.slice(0, 7)}가 다릅니다. 최신 스냅샷을 다시 승인해 주세요.`,
       );
     }
+    const dirtyStatus = await this.executeGit(
+      ['status', '--porcelain'],
+      syncDirectory,
+    );
+    if (dirtyStatus.trim()) {
+      throw new Error(
+        'AI CLI 환경 스냅샷 저장소에 커밋되지 않은 변경이 있어 적용할 수 없습니다.',
+      );
+    }
+    const manifest = await this.readManifest(
+      join(syncDirectory, 'manifest.json'),
+    );
     const result = await this.executeWithResult(
       'node',
       [join(cwd(), 'scripts', 'bootstrap-ai-cli-env.cjs'), syncDirectory],
-      { timeout: BOOTSTRAP_TIMEOUT_MS },
+      {
+        timeout: BOOTSTRAP_TIMEOUT_MS,
+        env: this.buildBootstrapEnvironment(manifest),
+      },
     );
-    await fileSystem.writeFile(
-      this.getAppliedSnapshotPath(),
-      `${JSON.stringify({ sha: expectedSha, appliedAt: new Date().toISOString() })}\n`,
-      'utf8',
-    );
+    const warnings = this.parseBootstrapWarnings(result.stdout, result.stderr);
+    if (warnings.length === 0) {
+      await fileSystem.writeFile(
+        this.getAppliedSnapshotPath(),
+        `${JSON.stringify({ sha: expectedSha, appliedAt: new Date().toISOString() })}\n`,
+        'utf8',
+      );
+    }
     return {
       appliedSha: expectedSha,
       output: result.stdout,
-      warnings: this.parseBootstrapWarnings(result.stdout, result.stderr),
+      warnings,
     };
   }
 
@@ -223,10 +301,69 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     }
     return {
       sourceHome: manifest.sourceHome,
+      sourceHost:
+        typeof manifest.sourceHost === 'string'
+          ? manifest.sourceHost
+          : undefined,
       generatedAt: manifest.generatedAt,
       claude: this.toToolSummary(manifest.claude, 'enabledPlugins'),
       codex: this.toToolSummary(manifest.codex, 'plugins'),
     };
+  }
+
+  private readCredentialWarnings(manifest: SnapshotManifest | null): string[] {
+    if (!manifest || !Array.isArray(manifest.credentialWarnings)) {
+      return [];
+    }
+    return manifest.credentialWarnings.filter(
+      (warning): warning is string => typeof warning === 'string',
+    );
+  }
+
+  private readSecretRequirements(
+    manifest: SnapshotManifest | null,
+  ): SecretRequirement[] {
+    if (!manifest || !Array.isArray(manifest.secretsRequired)) {
+      return [];
+    }
+    return manifest.secretsRequired.filter(
+      (requirement): requirement is SecretRequirement =>
+        Boolean(
+          requirement &&
+          typeof requirement === 'object' &&
+          'envKey' in requirement &&
+          typeof requirement.envKey === 'string',
+        ),
+    );
+  }
+
+  private buildBootstrapEnvironment(
+    manifest: SnapshotManifest | null,
+  ): NodeJS.ProcessEnv {
+    const environment = this.buildBaseEnvironment();
+    for (const { envKey } of this.readSecretRequirements(manifest)) {
+      const value = this.readConfiguredValue(envKey);
+      if (value) {
+        environment[envKey] = value;
+      }
+    }
+    return environment;
+  }
+
+  // buildSafeChildEnv는 throwaway HOME을 전제로 한 LLM provider 전용이다. 이 스크립트는
+  // 사용자 AI CLI 설정을 읽어야 하므로 실제 HOME과 명시적 비민감 allowlist만 전달한다.
+  private buildBaseEnvironment(): NodeJS.ProcessEnv {
+    const environment: NodeJS.ProcessEnv = { HOME: homedir() };
+    for (const key of BOOTSTRAP_ENV_KEYS) {
+      if (key === 'HOME') {
+        continue;
+      }
+      const value = this.readConfiguredValue(key);
+      if (value) {
+        environment[key] = value;
+      }
+    }
+    return environment;
   }
 
   private toToolSummary(
@@ -294,7 +431,7 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
   private async execute(
     command: string,
     argumentsList: string[],
-    options: { cwd?: string; timeout?: number } = {},
+    options: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv } = {},
   ): Promise<string> {
     const result = await this.executeWithResult(
       command,
@@ -311,7 +448,7 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
   private async executeWithResult(
     command: string,
     argumentsList: string[],
-    options: { cwd?: string; timeout?: number } = {},
+    options: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv } = {},
   ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       execFile(
@@ -319,6 +456,7 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
         argumentsList,
         {
           cwd: options.cwd,
+          env: options.env ?? this.buildBaseEnvironment(),
           timeout: options.timeout ?? EXPORT_TIMEOUT_MS,
           maxBuffer: 10 * 1024 * 1024,
         },

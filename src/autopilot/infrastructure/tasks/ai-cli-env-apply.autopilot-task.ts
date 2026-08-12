@@ -1,4 +1,4 @@
-import { homedir } from 'node:os';
+import { hostname } from 'node:os';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
@@ -34,7 +34,7 @@ export class AiCliEnvApplyAutopilotTask implements AutopilotTask {
       this.logger.log('받을 AI CLI 환경 스냅샷이 없어 skip');
       return { skip: true };
     }
-    if (status.summary.sourceHome === homedir()) {
+    if (status.summary.sourceHost === hostname()) {
       this.logger.log('이 PC가 만든 AI CLI 환경 스냅샷이라 skip');
       return { skip: true };
     }
@@ -44,6 +44,9 @@ export class AiCliEnvApplyAutopilotTask implements AutopilotTask {
     }
     const claude = status.summary.claude;
     const codex = status.summary.codex;
+    const sourceDescription = status.summary.sourceHost
+      ? `${status.summary.sourceHost} (${status.summary.sourceHome})`
+      : `만든 PC를 특정할 수 없다 (구 manifest; sourceHome: ${status.summary.sourceHome})`;
     return {
       skip: false,
       preview: {
@@ -51,7 +54,7 @@ export class AiCliEnvApplyAutopilotTask implements AutopilotTask {
         payload: { snapshotSha: status.headSha, slackUserId: ownerSlackUserId },
         previewText:
           `🗂️ AI CLI 환경 복원 제안\n` +
-          `- 만든 PC: ${status.summary.sourceHome}\n` +
+          `- 만든 PC: ${sourceDescription}\n` +
           `- 생성 시각: ${status.summary.generatedAt}\n` +
           `- Claude: 플러그인 ${claude?.plugins ?? 0}·MCP ${claude?.mcpServers ?? 0}·자산 ${claude?.assets ?? 0}\n` +
           `- Codex: 플러그인 ${codex?.plugins ?? 0}·MCP ${codex?.mcpServers ?? 0}·자산 ${codex?.assets ?? 0}\n` +

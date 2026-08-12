@@ -34,6 +34,8 @@ describe('AiCliEnvApplyPreviewApplier', () => {
     expect(result.message).toContain('주의 2건');
     expect(result.message).toContain('- claude CLI 없음');
     expect(result.message).toContain('- MCP github 토큰 없음');
+    expect(result.message).toContain('완료로 기록하지 않았습니다');
+    expect(result.message).toContain('다시 승인해 주세요');
     expect(result.artifacts).toEqual([]);
   });
 

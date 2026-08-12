@@ -1,5 +1,6 @@
 export interface SnapshotManifestSummary {
   sourceHome: string;
+  sourceHost?: string;
   generatedAt: string;
   claude?: { plugins: number; mcpServers: number; assets: number };
   codex?: { plugins: number; mcpServers: number; assets: number };

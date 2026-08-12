@@ -23,11 +23,17 @@ export class AiCliEnvApplyPreviewApplier implements PreviewApplier {
       );
     }
     const result = await this.port.applySnapshot(payload.snapshotSha);
-    const warningMessage = result.warnings.length
-      ? `\n\n⚠️ 주의 ${result.warnings.length}건:\n${result.warnings.map((warning) => `- ${warning}`).join('\n')}`
-      : '';
+    if (result.warnings.length) {
+      return {
+        message:
+          `⚠️ AI CLI 환경 스냅샷 ${result.appliedSha} 적용 중 주의 ${result.warnings.length}건이 발생했습니다:\n` +
+          `${result.warnings.map((warning) => `- ${warning}`).join('\n')}\n\n` +
+          '경고가 있어 완료로 기록하지 않았습니다. 확인 후 다시 승인해 주세요.',
+        artifacts: [],
+      };
+    }
     return {
-      message: `✅ AI CLI 환경 스냅샷 ${result.appliedSha}를 적용했습니다.${warningMessage}`,
+      message: `✅ AI CLI 환경 스냅샷 ${result.appliedSha}를 적용했습니다.`,
       artifacts: [],
     };
   }

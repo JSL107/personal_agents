@@ -1,3 +1,31 @@
+# PR #284 AI CLI 환경 동기화 리뷰 6건 반영 (2026-08-12)
+
+**Goal:** 장치 식별, 승인 스냅샷 불변성, 동시 push 복구, 부분 적용 재승인, 자격 증명 차단, 자식 env 격리를 실제 실패 입력으로 보장한다.
+
+**Contract:** 사용자 최신 A~F가 구현 계약이다. `scripts/export-ai-cli-env.cjs` 수정은 `sourceHost`와 구조적 credential warning을 위해 허용한다. 기본 브랜치 하드코딩, force push, 앱 전체 env 상속, commit은 금지한다.
+
+- [x] A: 같은 `sourceHome`·다른 `sourceHost`, 구 manifest의 카드/문구 spec을 RED로 만들고 hostname 판별을 구현한다.
+- [x] B: dirty working tree에서 bootstrap 미실행 spec을 RED로 만들고 clean guard를 구현한다.
+- [x] C: 첫 push 실패 후 fetch/default-ref/reset/re-export/retry 및 두 번째 실패 spec을 RED로 만들고 1회 복구를 구현한다.
+- [x] D: bootstrap warning 시 적용 이력 미기록과 재승인 안내 spec을 RED로 만들고 성공 기록 경계를 고친다.
+- [x] E: 구조적 credential warning 시 add/commit/push 미실행 spec을 RED로 만들고 export manifest/adapter gate를 구현한다.
+- [x] F: 기본 allowlist와 `secretsRequired`만 자식 env에 전달하는 spec을 RED로 만들고 실제 HOME 보존 근거를 주석으로 남긴다.
+- [x] focused GREEN과 최종 diff로 A~F 및 금지 범위를 재검토한다.
+- [x] 6종 gate와 `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`, `tasks/lessons.md`, 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- exporter manifest에 `sourceHost`와 구조적 `credentialWarnings`를 추가했다. 적용 태스크는 hostname을 장치 식별자로 쓰며 구 manifest는 특정 불가 안내와 함께 승인 카드로 보낸다.
+- apply는 승인 SHA 일치 뒤 clean tree까지 확인하고, bootstrap warning이 한 건이라도 있으면 적용 이력을 남기지 않는다. applier가 재승인을 명시한다.
+- push 실패만 복구 대상으로 잡아 remote 기본 ref를 동적으로 구하고 reset한 뒤 전체 export/commit/push를 1회만 재시도한다.
+- credential warning은 status/add/commit/push 전에 차단하며 MCP label을 오류에 포함한다. 모든 child는 기본 allowlist env만 받고 bootstrap만 `secretsRequired` 키를 추가로 받는다.
+- guard-breaking RED 6건을 확인한 뒤 focused 4 suites/31 tests, 최종 adapter 18 tests를 GREEN으로 만들었다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 338 suites/2,799 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check/diff check 모두 exit 0.
+- 설계 범위 이탈, `process.env`, force push, main 하드코딩, `--with-hooks`, commit/stage/push 없음.
+
+---
+
 # PR #281 봇 리뷰 4건 반영 (2026-08-12)
 
 **Goal:** 200봉 지표의 기간 계약을 지키고, 서로 다른 기준일의 종목을 분리하며, 429 재시도 정책의 계층 의존성을 바로잡고, 일봉 조회량에 캘린더 하한을 둔다.
