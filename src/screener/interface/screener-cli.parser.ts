@@ -1,3 +1,4 @@
+import { CollectBenchmarkOptions } from '../application/collect-benchmark-closes.usecase';
 import { CollectPricesOptions } from '../application/collect-universe-prices.usecase';
 import { ScreenUniverseOptions } from '../application/screen-universe.usecase';
 
@@ -5,6 +6,7 @@ export const SCREENER_CLI_USAGE =
   '사용법:\n' +
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
+  '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>]';
 
 export interface SyncUniverseArguments {
@@ -22,9 +24,15 @@ export interface ScreenArguments {
   options: ScreenUniverseOptions;
 }
 
+export interface CollectBenchmarkArguments {
+  subcommand: 'collect-benchmark';
+  options: CollectBenchmarkOptions;
+}
+
 export type ScreenerCliArguments =
   | SyncUniverseArguments
   | CollectPricesArguments
+  | CollectBenchmarkArguments
   | ScreenArguments;
 
 const parsePositiveInteger = (value: string, key: string): number => {
@@ -82,6 +90,21 @@ const parseScreenOptions = (optionValues: string[]): ScreenUniverseOptions => {
   return options;
 };
 
+const parseCollectBenchmarkOptions = (
+  optionValues: string[],
+): CollectBenchmarkOptions => {
+  const options: CollectBenchmarkOptions = {};
+  for (let index = 0; index < optionValues.length; index += 2) {
+    const key = optionValues[index];
+    const value = optionValues[index + 1];
+    if (key !== '--days' || value === undefined || value.startsWith('--')) {
+      throw new Error(SCREENER_CLI_USAGE);
+    }
+    options.days = parsePositiveInteger(value, 'days');
+  }
+  return options;
+};
+
 export const parseScreenerCliArguments = (
   values: string[],
 ): ScreenerCliArguments => {
@@ -96,6 +119,12 @@ export const parseScreenerCliArguments = (
     return {
       subcommand,
       options: parseCollectPricesOptions(optionValues),
+    };
+  }
+  if (subcommand === 'collect-benchmark') {
+    return {
+      subcommand,
+      options: parseCollectBenchmarkOptions(optionValues),
     };
   }
   if (subcommand === 'screen') {

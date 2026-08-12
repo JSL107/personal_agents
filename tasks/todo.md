@@ -1,3 +1,31 @@
+# 유동성 하한 + 코스피 벤치마크 수집 (2026-08-12)
+
+**Goal:** `.ai/design.md` 계약대로 60일 평균 거래대금 5억원 하한을 스크리너 공통 게이트로 적용하고, 토스 시장지표 전용 경로로 KOSPI 일별 종가를 수집·적재·자동/수동 실행한다.
+
+**Contract:** `BenchmarkDailyClose` schema와 생성된 Prisma client는 사용자 선행 변경으로 보존한다. DB/network 재조사·`db:push`·commit/git write는 금지한다. TDD RED→GREEN, 명시 주석, 기존 DDD/DI/CLI 패턴을 따른다.
+
+- [x] A1: `IndicatorBar.close`와 repository select/mapping spec을 RED로 만들고 원본 종가를 연결한다.
+- [x] A2: 60봉 미만 `null`, 정확히 60봉 경계, 최근 60봉 `close × volume` 평균 spec을 RED로 만들고 `turnover60`을 구현한다.
+- [x] A3: 5억원 미만/null 탈락과 명시적 통과 fixture spec을 RED로 만들고 공통 게이트·rule version 2·필요한 formatter를 구현한다.
+- [x] B1: 지수 응답 정상/currency 없음/존재하지 않는 날짜/역순 정렬/부분 파싱 실패 spec을 RED로 만들고 전용 매퍼를 구현한다.
+- [x] B2: count 200 상한·URL encoding·429 정규화 spec을 RED로 만들고 `TossMarketIndicatorClient`와 module export를 구현한다.
+- [x] B3: repository latest/upsert 계약과 첫 200봉·증분 5봉·days override·장중 차단 usecase spec을 RED로 만들고 repository/usecase/module DI를 구현한다.
+- [x] B4: `sync → collectPrices → collectBenchmark` 순서, 성공 요약, 벤치마크 실패 비치명 요약 spec을 RED로 만들고 universe-sweep 3단계를 구현한다.
+- [x] B5: `collect-benchmark [--days]` parser/USAGE/handler spec을 RED로 만들고 CLI 수동 실행 입구를 구현한다.
+- [x] 설계 요구 주석(`close` 조정가 현재 한계, 페이지네이션 미사용 `ponytail:`)과 범위 밖 무변경을 final diff로 검토한다.
+- [x] focused Jest 후 `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`, `pnpm check:env`, `pnpm docs:check`, `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 출력 기준으로 작성한다.
+
+## Review
+
+- 유동성 하한은 두 전략 공통 gate이며 `turnover60`은 랭킹 축에서 제외했다. 최근 60봉 원본 종가 기준과 59/60/61봉 경계를 고정했다.
+- 시장지표 전용 mapper/client/repository/usecase와 module DI, autopilot 3단계, CLI 수동 실행 입구를 추가했다.
+- 독립 리뷰 P2인 stale 응답의 `latestTradeDate` 후퇴를 regression RED→GREEN으로 수정했다. LOW 랭킹 회귀 공백도 보강했다.
+- 최종 gate: lint(0 errors, 기존 warning 57), 일반 337 suites/2,800 tests + code-graph 5 suites/40 tests, build, tsc, check:env, docs:check, diff check 모두 exit 0.
+- DB/network/commit/git write는 실행하지 않았다. 실제 DB 반영과 토스 통합 실행은 메인 세션 재검증 대상으로 남겼다.
+
+---
+
 # PR #281 봇 리뷰 4건 반영 (2026-08-12)
 
 **Goal:** 200봉 지표의 기간 계약을 지키고, 서로 다른 기준일의 종목을 분리하며, 429 재시도 정책의 계층 의존성을 바로잡고, 일봉 조회량에 캘린더 하한을 둔다.
