@@ -47,26 +47,6 @@ const parseTradeDate = (value: string): Date => {
   return tradeDate;
 };
 
-const buildTradeFingerprint = (input: {
-  accountId: number;
-  tickerId: number;
-  tradeDate: string;
-  side: TradeSide;
-  quantity: string;
-  price: string;
-  orderId?: number;
-}): string => {
-  const base = [
-    input.accountId,
-    input.tickerId,
-    input.tradeDate,
-    input.side,
-    input.quantity,
-    input.price,
-  ].join(':');
-  return input.orderId === undefined ? base : `${base}:${input.orderId}`;
-};
-
 @Injectable()
 export class RecordPaperTradeUsecase {
   constructor(private readonly repository: PaperTradingRepository) {}
@@ -105,24 +85,16 @@ export class RecordPaperTradeUsecase {
       market: command.market,
     });
     const grossAmount = quantity.times(price);
-    const fingerprint = buildTradeFingerprint({
-      accountId: account.id,
-      tickerId: ticker.id,
-      tradeDate: command.tradeDate,
-      side: command.side,
-      quantity: quantity.toString(),
-      price: price.toString(),
-      orderId: command.orderId,
-    });
     const result = await this.repository.applyTradeAtomically({
       accountId: account.id,
       tickerId: ticker.id,
       orderId: command.orderId,
       side: command.side,
+      strategy: command.strategy,
+      reason: command.reason,
       quantity: quantity.toString(),
       price: price.toString(),
       tradeDate,
-      fingerprint,
       calculateMutation: ({ account: freshAccount, position }) => {
         const currentPosition = {
           quantity: position?.quantity ?? new Prisma.Decimal(0),
