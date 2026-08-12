@@ -1,3 +1,28 @@
+# PR #284 재리뷰 origin·pathspec 결함 2건 반영 (2026-08-12)
+
+**Goal:** 설정한 private repo와 다른 기존 clone을 거부하고, exporter 관리 산출물 외 파일이 변경 감지·staging·commit에 들어가지 않게 한다.
+
+**Contract:** 기존 clone은 자동 삭제·재clone하지 않는다. GitHub HTTPS/SSH URL 표기 차이는 같은 `owner/repo`로 정규화한다. clean tree를 강제하지 않고 `manifest.json`, `SECRETS-TODO.md`, `claude`, `codex`에만 `status --porcelain`과 `add -A` pathspec을 적용한다. commit/stage/push 금지.
+
+- [x] 다른 origin이면 remote 확인 뒤 pull/export 없이 설정값·현재 origin·디렉터리를 담은 예외를 내는 spec을 RED로 만든다.
+- [x] 동일 repo URL 3형태가 모두 pull까지 통과하는 spec을 RED로 만든다.
+- [x] 산출물 밖 미추적 파일은 status/add 대상에서 제외되고 산출물 변경은 commit/push되는 spec을 RED로 만든다.
+- [x] origin 정규화 검증과 관리 pathspec 상수를 최소 구현하고 focused GREEN을 확인한다.
+- [x] 독립 재리뷰, 6종 gate, `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`, `tasks/lessons.md`, 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 기존 clone은 `origin`을 읽어 설정 `owner/repo`와 비교한다. HTTPS `.git`/no-`.git`, SCP형 SSH, `ssh://`를 같은 저장소로 정규화하며 credential-bearing HTTP(S)는 userinfo를 제거한 뒤 비교·표시한다.
+- mismatch는 설정값·sanitized current origin·sync directory를 담은 예외로 중단하며 pull/export를 실행하지 않는다. 자동 삭제·재clone은 없다.
+- 변경 감지는 exporter의 실제 산출물 4개에만 한정한다. 항상 생성되는 파일 2개는 함께 `add -A`, 선택 디렉터리는 scoped status가 있을 때만 개별 `add -A`해 미존재 pathspec과 tracked deletion을 함께 처리한다.
+- RED는 origin 검증 부재와 전역 status/add 때문에 6건, 추가 SSH/credential hardening 2건이 실패하는 것을 확인했다. 최종 adapter 25 tests, focused 4 suites/39 tests를 GREEN으로 만들었다.
+- 독립 재리뷰는 Critical/Important 0건, Ready. 혼합 상태 test Minor도 관리 변경+외부 미추적 동시 fixture로 보강했다.
+- fresh gate: lint exit 0(기존 warning 57), test exit 0(일반 338 suites/2,806 tests + code-graph 5 suites/40 tests), build/check:env/check:invariants/docs:check/diff check 모두 exit 0.
+- commit/stage/push 없음.
+
+---
+
 # PR #284 AI CLI 환경 동기화 리뷰 6건 반영 (2026-08-12)
 
 **Goal:** 장치 식별, 승인 스냅샷 불변성, 동시 push 복구, 부분 적용 재승인, 자격 증명 차단, 자식 env 격리를 실제 실패 입력으로 보장한다.

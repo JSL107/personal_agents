@@ -38,6 +38,123 @@ describe('AiCliEnvAdapter', () => {
       .mockResolvedValue(undefined);
   });
 
+  it('기존 clone origin이 설정 저장소와 다르면 pull과 export 전에 경로를 담아 거부한다', async () => {
+    jest.spyOn(fileSystem, 'stat').mockResolvedValue({
+      isDirectory: () => true,
+    } as never);
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const [command, argumentsList] = argumentsValue as [string, string[]];
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      const stdout =
+        command === 'git' && argumentsList[0] === 'remote'
+          ? 'git@github.com:other/repository.git\n'
+          : '';
+      callback(null, stdout, '');
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+      }),
+    );
+
+    await expect(adapter.exportSnapshot()).rejects.toThrow(
+      /owner\/snapshots.*git@github\.com:other\/repository\.git.*\/tmp\/ai-cli-env-sync/,
+    );
+
+    expect(mockedExecFile).toHaveBeenCalledTimes(1);
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'git',
+      ['remote', 'get-url', 'origin'],
+      expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+  });
+
+  it.each([
+    'https://github.com/owner/snapshots.git',
+    'https://github.com/owner/snapshots',
+    'git@github.com:owner/snapshots.git',
+    'ssh://git@github.com/owner/snapshots.git',
+  ])('같은 설정 저장소의 origin 표기 %s를 재사용한다', async (originUrl) => {
+    jest.spyOn(fileSystem, 'stat').mockResolvedValue({
+      isDirectory: () => true,
+    } as never);
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const [command, argumentsList] = argumentsValue as [string, string[]];
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      const stdout =
+        command === 'git' && argumentsList[0] === 'remote'
+          ? `${originUrl}\n`
+          : '';
+      callback(null, stdout, '');
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+      }),
+    );
+
+    await expect(adapter.ensureRepository()).resolves.toBeUndefined();
+
+    expect(mockedExecFile).toHaveBeenNthCalledWith(
+      2,
+      'git',
+      ['pull', '--ff-only'],
+      expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+  });
+
+  it('credential-bearing origin 불일치 오류에서는 자격 증명을 제거한다', async () => {
+    jest.spyOn(fileSystem, 'stat').mockResolvedValue({
+      isDirectory: () => true,
+    } as never);
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      callback(
+        null,
+        'https://sync-user:secret-token@github.com/other/repository.git\n',
+        '',
+      );
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+      }),
+    );
+
+    let thrownError: Error | undefined;
+    try {
+      await adapter.ensureRepository();
+    } catch (error) {
+      thrownError = error as Error;
+    }
+
+    expect(thrownError?.message).toContain(
+      'https://github.com/other/repository.git',
+    );
+    expect(thrownError?.message).not.toContain('sync-user');
+    expect(thrownError?.message).not.toContain('secret-token');
+  });
+
   it('enabled이면 export script 뒤에 변경을 커밋하고 push한다', async () => {
     mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
       const [command, argumentsList] = argumentsValue as [string, string[]];
@@ -89,12 +206,99 @@ describe('AiCliEnvAdapter', () => {
       expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
       expect.any(Function),
     );
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--',
+        'manifest.json',
+        'SECRETS-TODO.md',
+        'claude',
+        'codex',
+      ],
+      expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'git',
+      ['add', '-A', '--', 'manifest.json', 'SECRETS-TODO.md'],
+      expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+    for (const directory of ['claude', 'codex']) {
+      expect(mockedExecFile).toHaveBeenCalledWith(
+        'git',
+        ['add', '-A', '--', directory],
+        expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+        expect.any(Function),
+      );
+    }
     for (const [, , options] of mockedExecFile.mock.calls) {
       const environment = (options as { env: Record<string, string> }).env;
       expect(environment).toBeDefined();
       expect(environment).not.toHaveProperty('SLACK_BOT_TOKEN');
       expect(environment).not.toHaveProperty('DATABASE_URL');
     }
+  });
+
+  it('산출물 변경과 밖의 미추적 파일이 함께 있어도 관리 경로만 staging한다', async () => {
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const [command, argumentsList] = argumentsValue as [string, string[]];
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      const stdout =
+        command === 'git' && argumentsList[0] === 'status'
+          ? argumentsList.includes('--')
+            ? ' M manifest.json\n'
+            : ' M manifest.json\n?? local-secret-note.txt\n'
+          : '';
+      callback(null, stdout, '');
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+      }),
+    );
+
+    await expect(adapter.exportSnapshot()).resolves.toEqual({
+      changed: true,
+      pushed: true,
+    });
+
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--',
+        'manifest.json',
+        'SECRETS-TODO.md',
+        'claude',
+        'codex',
+      ],
+      expect.any(Object),
+      expect.any(Function),
+    );
+    const addCalls = mockedExecFile.mock.calls.filter(
+      ([executable, argumentsList]) =>
+        executable === 'git' && (argumentsList as string[])[0] === 'add',
+    );
+    for (const [, argumentsList] of addCalls) {
+      expect(argumentsList).not.toContain('local-secret-note.txt');
+    }
+    expect(addCalls.length).toBeGreaterThan(0);
+    expect(
+      mockedExecFile.mock.calls.some(
+        ([executable, argumentsList]) =>
+          executable === 'git' && (argumentsList as string[])[0] === 'push',
+      ),
+    ).toBe(true);
   });
 
   it('push 충돌이면 remote 기본 브랜치로 복구하고 export부터 정확히 한 번 재시도한다', async () => {

@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-08-12 — 디렉터리 존재와 저장소 소유권·commit 범위는 별도 검증 대상임
+
+- `.git`이 있다는 사실은 설정한 remote의 clone이라는 뜻이 아니다. 개인 환경처럼 민감한 데이터를 push하기 전에는 설정 repository와 현재 `origin`을 정규화해 비교하고, 불일치 시 자동 삭제·재clone 대신 경로와 양쪽 값을 담아 중단한다.
+- 생성 전용 저장소라도 working tree 전체가 생성기 소유라고 가정하지 않는다. 변경 감지와 staging 양쪽에 같은 managed pathspec을 사용해야 미추적 메모·임시 secret이 commit 경계에 들어오지 않는다.
+- 삭제를 반영하려면 `git add -A`를 유지하되 경로를 제한한다. 선택적 디렉터리는 처음부터 없을 수 있으므로 scoped status가 있을 때만 개별 stage하면 미존재 pathspec 오류와 tracked deletion을 함께 처리할 수 있다.
+
 ## 2026-08-12 — 경로·commit SHA·exit 0만으로는 동기화 정본을 증명하지 못함
 
 - `sourceHome`은 장치 식별자가 아니다. 동일 사용자명의 여러 Mac은 같은 홈 경로를 쓰므로 장치 판별은 hostname처럼 별도 장치 속성으로 하고, 구 데이터에 식별자가 없으면 안전한 쪽인 승인 요청으로 보낸다.

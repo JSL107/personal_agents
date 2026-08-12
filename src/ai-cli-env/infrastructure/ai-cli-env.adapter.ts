@@ -55,6 +55,14 @@ const BOOTSTRAP_ENV_KEYS = [
   'SHELL',
   'TMPDIR',
 ] as const;
+const EXPORT_MANAGED_PATHS = [
+  'manifest.json',
+  'SECRETS-TODO.md',
+  'claude',
+  'codex',
+] as const;
+const EXPORT_MANAGED_FILES = ['manifest.json', 'SECRETS-TODO.md'] as const;
+const EXPORT_MANAGED_DIRECTORIES = ['claude', 'codex'] as const;
 
 @Injectable()
 export class AiCliEnvAdapter implements AiCliEnvPort {
@@ -73,6 +81,19 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     }
     const syncDirectory = this.getSyncDirectory();
     if (await this.hasDirectory(join(syncDirectory, '.git'))) {
+      const currentOrigin = (
+        await this.executeGit(['remote', 'get-url', 'origin'], syncDirectory)
+      ).trim();
+      const configuredRepository = this.normalizeGithubRepository(repository);
+      if (
+        !configuredRepository ||
+        this.normalizeGithubRepository(currentOrigin) !== configuredRepository
+      ) {
+        const displayOrigin = this.redactOriginCredentials(currentOrigin);
+        throw new Error(
+          `AI CLI 환경 동기화 저장소가 설정과 다릅니다. 설정: ${repository}, 현재 origin: ${displayOrigin}, 디렉터리: ${syncDirectory}. 디렉터리를 확인한 뒤 직접 정리해 주세요.`,
+        );
+      }
       await this.executeGit(['pull', '--ff-only'], syncDirectory);
       return;
     }
@@ -108,13 +129,13 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
       );
     }
     const status = await this.executeGit(
-      ['status', '--porcelain'],
+      ['status', '--porcelain', '--', ...EXPORT_MANAGED_PATHS],
       syncDirectory,
     );
     if (!status.trim()) {
       return { changed: false, pushed: false };
     }
-    await this.executeGit(['add', '-A'], syncDirectory);
+    await this.stageExportChanges(syncDirectory);
     await this.executeGit(
       ['commit', '-m', `chore(env): 스냅샷 갱신 ${new Date().toISOString()}`],
       syncDirectory,
@@ -148,6 +169,22 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     // 이 전용 repo의 local commit은 같은 snapshot export 결과뿐이다. Remote 최신 상태로
     // 버린 뒤 다시 export하면 동일 입력을 재생성하므로 사용자 작업을 잃지 않는다.
     await this.executeGit(['reset', '--hard', remoteReference], syncDirectory);
+  }
+
+  private async stageExportChanges(syncDirectory: string): Promise<void> {
+    await this.executeGit(
+      ['add', '-A', '--', ...EXPORT_MANAGED_FILES],
+      syncDirectory,
+    );
+    for (const directory of EXPORT_MANAGED_DIRECTORIES) {
+      const status = await this.executeGit(
+        ['status', '--porcelain', '--', directory],
+        syncDirectory,
+      );
+      if (status.trim()) {
+        await this.executeGit(['add', '-A', '--', directory], syncDirectory);
+      }
+    }
   }
 
   async readStatus(): Promise<SnapshotStatus> {
@@ -229,6 +266,54 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private normalizeGithubRepository(value: string): string | undefined {
+    const sanitizedValue = this.redactOriginCredentials(value).trim();
+    const scpMatch = sanitizedValue.match(/^git@github\.com:(.+)$/i);
+    let repositoryPath = scpMatch?.[1];
+    if (!repositoryPath && /^[^/:\s]+\/[^/\s]+$/.test(sanitizedValue)) {
+      repositoryPath = sanitizedValue;
+    }
+    if (!repositoryPath) {
+      try {
+        const url = new URL(sanitizedValue);
+        if (
+          url.hostname.toLowerCase() !== 'github.com' ||
+          !['https:', 'ssh:'].includes(url.protocol)
+        ) {
+          return undefined;
+        }
+        repositoryPath = url.pathname;
+      } catch {
+        return undefined;
+      }
+    }
+    const parts = repositoryPath
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.git$/i, '')
+      .split('/');
+    if (parts.length !== 2 || parts.some((part) => !part)) {
+      return undefined;
+    }
+    return `${parts[0]}/${parts[1]}`.toLowerCase();
+  }
+
+  private redactOriginCredentials(value: string): string {
+    try {
+      const url = new URL(value.trim());
+      if (
+        ['http:', 'https:'].includes(url.protocol) &&
+        (url.username || url.password)
+      ) {
+        url.username = '';
+        url.password = '';
+        return url.toString();
+      }
+    } catch {
+      return value;
+    }
+    return value;
   }
 
   private getSyncDirectory(): string {
