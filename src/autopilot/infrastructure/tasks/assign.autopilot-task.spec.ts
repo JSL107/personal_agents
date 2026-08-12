@@ -3,6 +3,7 @@ import { CtoException } from '../../../agent/cto/domain/cto.exception';
 import { CtoErrorCode } from '../../../agent/cto/domain/cto-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { AssignAutopilotTask } from './assign.autopilot-task';
 
@@ -13,12 +14,22 @@ const CONTEXT = {
 
 describe('AssignAutopilotTask', () => {
   let usecase: jest.Mocked<Pick<GenerateAssignmentUsecase, 'execute'>>;
+  let humanizeService: jest.Mocked<Pick<HumanizeService, 'humanize'>>;
   let task: AssignAutopilotTask;
 
   beforeEach(() => {
     usecase = { execute: jest.fn() };
+    // 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
+    humanizeService = {
+      humanize: jest
+        .fn()
+        .mockImplementation((fields: Record<string, string>) =>
+          Promise.resolve(fields),
+        ),
+    };
     task = new AssignAutopilotTask(
       usecase as unknown as GenerateAssignmentUsecase,
+      humanizeService as unknown as HumanizeService,
     );
   });
 
@@ -104,6 +115,30 @@ describe('AssignAutopilotTask', () => {
     });
 
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+  });
+
+  it('자동 발송 텍스트도 슬래시와 똑같이 윤문을 거친다', async () => {
+    usecase.execute.mockResolvedValue({
+      result: {
+        assignments: [],
+        unassignedTasks: [
+          { taskId: 'task-9', taskTitle: '보류 작업', reason: '원문 사유' },
+        ],
+        ctoSummary: '원문 요약',
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 3,
+    });
+    humanizeService.humanize.mockResolvedValue({
+      ctoSummary: '윤문된 요약',
+      'unassignedTasks.reason.0': '윤문된 사유',
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(humanizeService.humanize).toHaveBeenCalled();
+    expect(result.summaryText).toContain('윤문된 요약');
+    expect(result.summaryText).not.toContain('원문 요약');
   });
 
   it('정상 미실행 코드가 아닌 CtoException은 다시 던진다', async () => {

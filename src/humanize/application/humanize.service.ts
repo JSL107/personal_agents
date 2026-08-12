@@ -10,7 +10,19 @@ import {
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
-import { HUMANIZE_SYSTEM_PROMPT } from '../domain/humanize-system.prompt';
+import {
+  HUMANIZE_CONCISE_RULES,
+  HUMANIZE_SYSTEM_PROMPT,
+} from '../domain/humanize-system.prompt';
+
+export interface HumanizeOptions {
+  /**
+   * 분량이 필요한 산출물(블로그 본문·이력서 서술)이라 길이 예산을 걸지 않는다.
+   *
+   * 기본은 간결 모드다 — 윤문 결과의 대다수가 Slack 카드로 훑어 읽히기 때문이다.
+   */
+  longForm?: boolean;
+}
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
 @Injectable()
@@ -35,6 +47,7 @@ export class HumanizeService {
   // fields 의 각 값을 윤문해 같은 키 맵으로 반환. 비활성/빈값/실패 시 입력을 그대로 반환.
   async humanize(
     fields: Record<string, string>,
+    options?: HumanizeOptions,
   ): Promise<Record<string, string>> {
     if (!this.isEnabled()) {
       return fields;
@@ -66,9 +79,12 @@ export class HumanizeService {
           const injection = this.preferenceProfile
             ? await this.preferenceProfile.getInjectionBlock('humanize')
             : '';
+          const basePrompt = options?.longForm
+            ? HUMANIZE_SYSTEM_PROMPT
+            : `${HUMANIZE_SYSTEM_PROMPT}\n${HUMANIZE_CONCISE_RULES}`;
           const systemPrompt = injection
-            ? `${HUMANIZE_SYSTEM_PROMPT}\n\n${injection}`
-            : HUMANIZE_SYSTEM_PROMPT;
+            ? `${basePrompt}\n\n${injection}`
+            : basePrompt;
           const completion = await this.modelRouter.route({
             agentType: AgentType.HUMANIZER,
             request: {

@@ -192,10 +192,13 @@ describe('EveningBlogPublishApplier', () => {
 
     await applier.apply(preview);
 
-    expect(humanizer.humanize).toHaveBeenCalledWith({
-      '1': '첫 문단',
-      '3': '둘째 문단',
-    });
+    expect(humanizer.humanize).toHaveBeenCalledWith(
+      {
+        '1': '첫 문단',
+        '3': '둘째 문단',
+      },
+      { longForm: true },
+    );
     expect(notionClient.appendBlocks).toHaveBeenCalledWith({
       pageId: 'p1',
       blocks: [
