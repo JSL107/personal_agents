@@ -1,3 +1,30 @@
+# 오피스 에이전트 활동 말풍선 (2026-08-12)
+
+**Goal:** 진행 중인 에이전트의 `triggerType`과 안전한 `inputSnapshot` 값으로 12자 이하의 구체적 활동 문구를 만들고, 미등록·잘못된 입력은 기존 상태 문구로 폴백한다.
+
+**Contract:** `.ai/design.md`가 source of truth다. 계약에 적힌 TypeScript 5개 파일과 Swift 1개 파일만 코드 변경한다. 신규 env·DB/schema·Swift 문구 규칙은 추가하지 않으며 commit하지 않는다.
+
+- [x] `agent-activity-bubble.spec.ts`에 설계 §6 전체 케이스를 작성하고, production 모듈 부재로 RED임을 확인한다.
+- [x] `agent-activity-bubble.ts`에 쌍 키 우선 매핑, 안전한 대상 추출, 12자 상한을 최소 구현해 focused GREEN을 확인한다.
+- [x] `ActiveRunSnapshot`과 Prisma `findActiveRuns()`에 `triggerType`·객체형 `inputSnapshot`을 연결한다.
+- [x] `ConsoleReadService`가 최신 활성 런을 agentType별로 한 번만 접고 `IN_PROGRESS`에서만 활동 문구를 사용하도록 연결한다.
+- [x] `OfficeSceneRender.swift`에서 `updateCompanySummary` 직후 `refreshOverlays`를 호출한다.
+- [x] 타입 오류가 난 기존 `ActiveRunSnapshot` mock은 필드를 완전하게 채우되 타입을 느슨하게 만들지 않는다.
+- [x] focused Jest, `pnpm lint:check`, `pnpm test`, `pnpm build`, `swift build`를 각각 실행해 exit code를 확인한다.
+- [x] 최종 diff와 12자·자유 텍스트·비진행 상태·Swift 단일 변경 제약을 검토한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review에 변경점·검증·설계 이탈을 기록한다.
+
+## Review
+
+- `triggerType`과 객체형 `inputSnapshot`을 활성 런 조회에 추가하고, pair-key 우선 활동 문구 매핑과 12자 최종 guard를 구현했다. 자유 텍스트는 사용하지 않는다.
+- `ConsoleReadService`는 fresh run을 agentType별 최신 1건으로 접고, 파생 상태가 `IN_PROGRESS`일 때만 활동 문구를 쓴다. 미등록·잘못된 대상·승인 대기는 기존 상태 문구를 유지한다.
+- 신규 순수 함수 spec은 production 모듈 부재로 RED(exit 1) 후 35/35 GREEN. 최신 런 비교와 상태 gate 역변이도 각각 기대한 1 test 실패 후 원복했다.
+- 최종 gate: `pnpm lint:check` exit 0(기존 warning 57), `pnpm test` exit 0(일반 308 suites/2,576 tests + code-graph 5 suites/40 tests), `pnpm build` exit 0.
+- Swift는 기본 cache/toolchain 환경 실패 후 writable cache, `MacOSX15.4.sdk`, `--disable-sandbox`로 `swift build` exit 0. `OfficeSceneRender.swift` 포함 전체 target 컴파일 완료.
+- 독립 최종 리뷰: Critical 0, Important 0, Minor 1(P3 repository JSON 경계 전용 spec 제안), merge-ready. 설계 이탈 없음. commit 없음.
+
+---
+
 # 계획 없는 기간 worklog 생성 (#270 후속 C, 2026-08-11)
 
 **Goal:** PM plan run이 없어도 머지 실적이 있으면 daily/weekly 회고를 생성하고, plan과 실적이 모두 없을 때만 기존 안내문으로 skip한다.

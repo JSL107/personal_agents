@@ -26,6 +26,14 @@ func renderOfficeScene(client: ConsoleClient, path: String, hour: Int?, size: CG
     // (세션 이름표가 서로 겹쳐 못 읽던 문제가 이 구멍으로 렌더 점검을 빠져나갔다).
     scene.syncSessions(snapshot?.sessions ?? [])
     scene.updateCompanySummary(snapshot?.agents ?? [])
+    // 말풍선·경과·승인 배지는 오버레이라 sync 로는 그려지지 않는다. 빼면 이 화면으로
+    // 확인할 수 있는 대상에서 "무슨 일 중" 문구가 통째로 빠진다.
+    scene.refreshOverlays(
+        agents: snapshot?.agents ?? [],
+        runs: snapshot?.runs ?? [],
+        pendingCommands: [],
+        now: Date()
+    )
 
     guard
         let texture = view.texture(from: scene),
