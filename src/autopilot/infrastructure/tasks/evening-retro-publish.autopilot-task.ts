@@ -348,8 +348,12 @@ export class EveningRetroPublishTask implements AutopilotTask {
   /**
    * 스레드 댓글 본문 — 후보 전체를 키워드·이유 전문과 함께 싣는다.
    *
-   * 메인 메시지는 상위 몇 건만, 이유도 잘라서 보여준다. 잘라낸 게 하나도 없으면 스레드는
-   * 본문을 그대로 반복하는 소음이 되므로 만들지 않는다(undefined → orchestrator 가 생략).
+   * 메인 메시지는 상위 몇 건만, 이유도 잘라서, 키워드는 아예 빼고 보여준다. 그래서
+   * **메인에서 빠진 것이 하나라도 있으면** 스레드를 만든다. 특히 키워드는 메인에 자리가
+   * 없으니(영문 나열이 줄을 밀어낸다) 여기가 유일한 표시 위치다 — 이 조건을 빼면 후보가
+   * 적고 이유가 짧은 날 키워드가 보고 어디에도 남지 않는다.
+   *
+   * 빠진 게 하나도 없을 때만 만들지 않는다(undefined → orchestrator 가 스레드 생략).
    */
   private buildCandidateDetailText(
     candidates: EveningRetroCandidate[],
@@ -359,7 +363,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
     const hasTruncatedReason = candidates.some(
       (candidate) => candidate.reason.length > REASON_PREVIEW_MAX_CHARS,
     );
-    if (!hasHiddenCandidate && !hasTruncatedReason) {
+    const hasKeyword = candidates.some(
+      (candidate) => candidate.keywords.length > 0,
+    );
+    if (!hasHiddenCandidate && !hasTruncatedReason && !hasKeyword) {
       return undefined;
     }
 

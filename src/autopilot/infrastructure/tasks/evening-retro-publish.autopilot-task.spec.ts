@@ -630,7 +630,40 @@ describe('EveningRetroPublishTask', () => {
     );
   });
 
-  it('(p) 후보가 정원 이내이고 잘린 이유도 없으면 스레드를 만들지 않는다 (본문 반복 방지)', async () => {
+  it('(p) 메인에서 빠진 것이 하나도 없으면 스레드를 만들지 않는다 (본문 반복 방지)', async () => {
+    const nothingHidden = {
+      text: JSON.stringify({
+        retrospective: 'r',
+        candidates: [
+          {
+            title: '제목',
+            keywords: [],
+            blogValueScore: 90,
+            reason: '짧은 이유',
+            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            outline: [],
+          },
+        ],
+        prNotes: [],
+      }),
+      modelUsed: 'gpt',
+      provider: 'CHATGPT',
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: nothingHidden,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.detailText).toBeUndefined();
+  });
+
+  // 메인 줄에서 키워드를 뺐으므로 스레드가 유일한 표시 위치다. 후보가 적고 이유도 짧다는
+  // 이유로 스레드를 건너뛰면 키워드가 보고 어디에도 남지 않는다.
+  it('(p-2) 후보가 적고 이유가 짧아도 키워드가 있으면 스레드를 만든다', async () => {
     const { task } = makeTask({
       prs: [PR_ITEM],
       worklogRuns: [],
@@ -640,6 +673,9 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.detailText).toBeUndefined();
+    // 키워드는 `제목 — 키워드` 꼴로만 붙는다. 한 글자 'k' 를 그대로 찾으면 다른 문구에
+    // 우연히 걸리므로 접미사 형태로 대조한다.
+    expect(result.summaryText).not.toContain('— k');
+    expect(result.detailText).toContain('— k');
   });
 });
