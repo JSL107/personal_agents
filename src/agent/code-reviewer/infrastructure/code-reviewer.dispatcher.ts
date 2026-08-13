@@ -55,7 +55,12 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
       prRef,
       slackUserId: input.slackUserId,
       publish: true,
-      triggerType: TriggerType.SLACK_MENTION_CODE_REVIEWER,
+      // 이 dispatcher 는 자연어 멘션과 콘솔 지시를 함께 받는다. 한 값으로 뭉뚱그리면
+      // 트리거 타입을 나눈 목적(경로별 집계·감사)이 콘솔 실행에서 그대로 무너진다.
+      triggerType:
+        input.source === 'REMOTE_CONSOLE'
+          ? TriggerType.REMOTE_CONSOLE_CODE_REVIEWER
+          : TriggerType.SLACK_MENTION_CODE_REVIEWER,
       ...(input.conversationContext !== undefined
         ? { conversationContext: input.conversationContext }
         : {}),

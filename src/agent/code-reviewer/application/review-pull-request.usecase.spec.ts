@@ -329,6 +329,26 @@ describe('ReviewPullRequestUsecase', () => {
     ).not.toHaveProperty('dryRun');
   });
 
+  it('publish 를 주면 inputSnapshot 에 남긴다 — /retry-run 이 게시 의도를 재현하는 근거', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].inputSnapshot).toEqual(
+      expect.objectContaining({ publish: true }),
+    );
+  });
+
+  it('publish 미지정(스윕 경로)이면 inputSnapshot 에 키 자체가 없다 — 재실행도 미게시', async () => {
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(
+      agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
+    ).not.toHaveProperty('publish');
+  });
+
   it('잘못된 PR ref 는 INVALID_PR_REFERENCE 예외 (GitHub/모델 호출 안 함)', async () => {
     await expect(
       usecase.execute({ prRef: 'not a pr', slackUserId: 'U' }),

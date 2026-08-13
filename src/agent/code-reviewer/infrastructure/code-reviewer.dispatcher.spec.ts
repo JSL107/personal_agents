@@ -81,6 +81,7 @@ describe('CodeReviewerDispatcher', () => {
       prRef: '최근 PR을 리뷰해줘',
       slackUserId: 'U1',
       publish: true,
+      // source 가 SLACK_MESSAGE 인 경로 — 콘솔과 다른 트리거로 기록돼야 한다.
       triggerType: 'SLACK_MENTION_CODE_REVIEWER',
     });
     expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
@@ -101,7 +102,7 @@ describe('CodeReviewerDispatcher', () => {
       prRef: 'owner/repo#42',
       slackUserId: 'U1',
       publish: true,
-      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
+      triggerType: 'REMOTE_CONSOLE_CODE_REVIEWER',
     });
     expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
     expect(outcome).not.toHaveProperty('autoResolvedNotice');
@@ -134,7 +135,7 @@ describe('CodeReviewerDispatcher', () => {
       prRef: '최근 PR을 리뷰해줘',
       slackUserId: 'U1',
       publish: true,
-      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
+      triggerType: 'REMOTE_CONSOLE_CODE_REVIEWER',
     });
   });
 
@@ -186,7 +187,7 @@ describe('CodeReviewerDispatcher', () => {
       prRef: 'JSL107/personal_agents#42',
       slackUserId: 'U1',
       publish: true,
-      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
+      triggerType: 'REMOTE_CONSOLE_CODE_REVIEWER',
     });
     expect(outcome.autoResolvedNotice).toBe(
       'PR 미지정 → 최근 open PR JSL107/personal_agents#42 자동 선택: 콘솔 리모컨',

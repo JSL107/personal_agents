@@ -90,6 +90,10 @@ export class ReviewPullRequestUsecase {
         slackUserId,
         // 스윕 경로만 채운다 — findLatestSweepReview 가 읽는 판정 근거.
         ...(dryRun === undefined ? {} : { dryRun }),
+        // 게시 의도를 스냅샷에 남긴다. /retry-run 은 이 스냅샷만 보고 재실행하므로,
+        // 남기지 않으면 최초에 게시하기로 한 리뷰가 재실행에서 조용히 미게시로 빠진다.
+        // 스윕은 publish 를 넘기지 않아 키 자체가 없고, 재실행도 종전대로 미게시다.
+        ...(publish === undefined ? {} : { publish }),
       },
       evidence: this.buildInitialEvidence({
         prRef,

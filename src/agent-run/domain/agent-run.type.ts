@@ -63,6 +63,9 @@ export enum TriggerType {
   SLACK_MENTION_JOB_APPLICATION = 'SLACK_MENTION_JOB_APPLICATION',
   // Code Reviewer 자연어 멘션 진입 — 수동 slash command와 구분해 집계·감사한다.
   SLACK_MENTION_CODE_REVIEWER = 'SLACK_MENTION_CODE_REVIEWER',
+  // 같은 dispatcher 를 콘솔(REMOTE_CONSOLE)도 탄다. 멘션과 한 값으로 묶으면 경로별
+  // 집계가 콘솔 실행에서 어긋나므로 분리한다.
+  REMOTE_CONSOLE_CODE_REVIEWER = 'REMOTE_CONSOLE_CODE_REVIEWER',
   // PR 리뷰 루프 — cron 스윕이 발사한 리뷰. 수동 /review-pr(SLACK_COMMAND_REVIEW_PR),
   // webhook(WEBHOOK) 과 구분해 집계·감사한다.
   PR_REVIEW_SWEEP = 'PR_REVIEW_SWEEP',
