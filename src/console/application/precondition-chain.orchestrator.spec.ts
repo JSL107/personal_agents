@@ -14,11 +14,16 @@ import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator
 
 class FakeDomainException extends DomainException {
   readonly errorCode: string;
-  readonly status = DomainStatus.NOT_FOUND;
+  readonly status: DomainStatus;
 
-  constructor(code: string) {
-    super(`도메인 오류: ${code}`);
+  constructor(
+    code: string,
+    status: DomainStatus = DomainStatus.NOT_FOUND,
+    message = `도메인 오류: ${code}`,
+  ) {
+    super(message);
     this.errorCode = code;
+    this.status = status;
   }
 }
 
@@ -36,20 +41,23 @@ function make(recentDays?: string) {
       alsoDueCount: 0,
     }),
   };
-  const pendingSuggestions = { put: jest.fn() };
+  const pendingTurns = {
+    putSuggestions: jest.fn(),
+    putAwaitingInput: jest.fn(),
+  };
   const orchestrator = new PreconditionChainOrchestrator(
     router as never,
     consoleEvents as unknown as ConsoleEventBus,
     config,
     suggestNextWork as never,
-    pendingSuggestions as never,
+    pendingTurns as never,
   );
   return {
     orchestrator,
     router,
     consoleEvents,
     suggestNextWork,
-    pendingSuggestions,
+    pendingTurns,
   };
 }
 
@@ -70,7 +78,7 @@ describe('PreconditionChainOrchestrator', () => {
       router,
       consoleEvents,
       suggestNextWork,
-      pendingSuggestions,
+      pendingTurns,
     } = make();
     router.dispatch.mockRejectedValue(
       new RouterException({
@@ -96,7 +104,7 @@ describe('PreconditionChainOrchestrator', () => {
       commandId: 'c1',
     });
 
-    expect(pendingSuggestions.put).toHaveBeenCalledWith(
+    expect(pendingTurns.putSuggestions).toHaveBeenCalledWith(
       'U1',
       expect.arrayContaining([
         expect.objectContaining({ agentType: AgentType.PM }),
@@ -110,6 +118,116 @@ describe('PreconditionChainOrchestrator', () => {
     });
     expect(consoleEvents.publish).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'command.rejected' }),
+    );
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['trim 후 빈 문자열', '   '],
+  ])(
+    'text가 %s인 지목 worker의 BAD_REQUEST는 원본 메시지를 숨기고 입력을 되묻는다',
+    async (_, text) => {
+      const { orchestrator, router, consoleEvents, pendingTurns } = make();
+      const originalMessage =
+        '오늘 한 일이 비어 있습니다. `/worklog <오늘 한 일>` 형식으로 입력해주세요.';
+      router.dispatch.mockRejectedValue(
+        new FakeDomainException(
+          'WORKLOG_INPUT_REQUIRED',
+          DomainStatus.BAD_REQUEST,
+          originalMessage,
+        ),
+      );
+
+      await orchestrator.run({
+        slackUserId: 'U1',
+        agentTypeHint: AgentType.WORK_REVIEWER,
+        text,
+        commandId: 'c1',
+      });
+
+      expect(pendingTurns.putAwaitingInput).toHaveBeenCalledWith('U1', {
+        agentType: AgentType.WORK_REVIEWER,
+        displayName: 'Work Reviewer',
+      });
+      const answeredEvent = consoleEvents.publish.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.type === 'command.answered');
+      expect(answeredEvent).toEqual({
+        type: 'command.answered',
+        commandId: 'c1',
+        message:
+          '「Work Reviewer」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요.',
+      });
+      expect(answeredEvent.message).not.toContain(originalMessage);
+      expect(answeredEvent.message).not.toContain('/');
+      expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'command.rejected' }),
+      );
+    },
+  );
+
+  it('text가 있으면 같은 BAD_REQUEST도 기존처럼 command.rejected를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch.mockRejectedValue(
+      new FakeDomainException(
+        'WORKLOG_INPUT_REQUIRED',
+        DomainStatus.BAD_REQUEST,
+      ),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.WORK_REVIEWER,
+      text: '오늘 한 일',
+      commandId: 'c1',
+    });
+
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
+    );
+  });
+
+  it('빈 text의 BAD_REQUEST라도 선행 체이닝 가능하면 되묻기보다 체이닝한다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch
+      .mockRejectedValueOnce(
+        new FakeDomainException(
+          CeoErrorCode.NO_PO_EVAL_RUN,
+          DomainStatus.BAD_REQUEST,
+        ),
+      )
+      .mockResolvedValueOnce(ok('PO_EVAL'))
+      .mockResolvedValueOnce(ok('CEO'));
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.CEO,
+      commandId: 'c1',
+    });
+
+    expect(router.dispatch).toHaveBeenCalledTimes(3);
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.info', commandId: 'c1' }),
+    );
+  });
+
+  it('BAD_REQUEST가 아니면 빈 text와 agentTypeHint가 있어도 기존 rejected다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch.mockRejectedValue(
+      new FakeDomainException('WORKER_FAILED', DomainStatus.NOT_FOUND),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.WORK_REVIEWER,
+      commandId: 'c1',
+    });
+
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
     );
   });
 

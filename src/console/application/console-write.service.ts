@@ -9,7 +9,7 @@ import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
-import { PendingSuggestionStore } from './pending-suggestion.store';
+import { PendingConsoleTurnStore } from './pending-console-turn.store';
 import {
   ConsoleChainInput,
   PreconditionChainOrchestrator,
@@ -32,23 +32,38 @@ export class ConsoleWriteService {
     private readonly chainOrchestrator: PreconditionChainOrchestrator,
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
-    private readonly pendingSuggestions: PendingSuggestionStore,
+    private readonly pendingTurns: PendingConsoleTurnStore,
   ) {}
 
   sendCommand(input: ConsoleCommandInput): void {
     const slackUserId = this.requireOwner();
-    const suggestions = this.pendingSuggestions.peek(slackUserId);
-    const selection = parseTopicSelection(input.text, suggestions.length);
-    if (selection !== null) {
-      const suggestion = suggestions[selection - 1];
-      this.pendingSuggestions.consume(slackUserId);
+    const pendingTurn = this.pendingTurns.peek(slackUserId);
+    if (pendingTurn?.kind === 'AWAITING_INPUT') {
+      this.pendingTurns.consume(slackUserId);
       this.runChain({
         slackUserId,
-        agentTypeHint: suggestion.agentType,
-        text: undefined,
+        agentTypeHint: pendingTurn.agentType,
+        text: input.text,
         commandId: input.commandId,
       });
       return;
+    }
+    if (pendingTurn?.kind === 'SUGGESTIONS') {
+      const selection = parseTopicSelection(
+        input.text,
+        pendingTurn.suggestions.length,
+      );
+      if (selection !== null) {
+        const suggestion = pendingTurn.suggestions[selection - 1];
+        this.pendingTurns.consume(slackUserId);
+        this.runChain({
+          slackUserId,
+          agentTypeHint: suggestion.agentType,
+          text: undefined,
+          commandId: input.commandId,
+        });
+        return;
+      }
     }
     this.runChain({
       slackUserId,

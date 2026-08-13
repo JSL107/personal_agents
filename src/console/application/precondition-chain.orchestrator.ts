@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   IDAERI_ROUTER_PORT,
@@ -11,7 +13,7 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
-import { PendingSuggestionStore } from './pending-suggestion.store';
+import { PendingConsoleTurnStore } from './pending-console-turn.store';
 import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
@@ -44,7 +46,7 @@ export class PreconditionChainOrchestrator {
     private readonly consoleEvents: ConsoleEventBus,
     private readonly config: ConfigService,
     private readonly suggestNextWork: SuggestNextWorkUsecase,
-    private readonly pendingSuggestions: PendingSuggestionStore,
+    private readonly pendingTurns: PendingConsoleTurnStore,
   ) {}
 
   async run(input: ConsoleChainInput): Promise<void> {
@@ -84,6 +86,15 @@ export class PreconditionChainOrchestrator {
       }
       const resolution = resolveChain(error.errorCode);
       if (!resolution || resolution.kind === 'UNRESOLVABLE') {
+        const agentTypeHint = input.agentTypeHint;
+        // agentTypeHint가 있는데 text 없이 발생한 BAD_REQUEST는 worker 입력 부족으로 해석한다.
+        if (
+          agentTypeHint !== undefined &&
+          (input.text === undefined || input.text.trim().length === 0) &&
+          error.status === DomainStatus.BAD_REQUEST
+        ) {
+          return this.askForInput(input, agentTypeHint, error);
+        }
         return this.reject(input, chain, error.message);
       }
       if (chain.visited.includes(resolution.prereqWorker)) {
@@ -141,7 +152,7 @@ export class PreconditionChainOrchestrator {
         );
       }
 
-      this.pendingSuggestions.put(input.slackUserId, result.suggestions);
+      this.pendingTurns.putSuggestions(input.slackUserId, result.suggestions);
       if (input.commandId) {
         const suggestionLines = result.suggestions.map(
           (suggestion, index) =>
@@ -166,6 +177,29 @@ export class PreconditionChainOrchestrator {
       const reason = error instanceof Error ? error.message : String(error);
       return this.reject(input, chain, reason);
     }
+  }
+
+  private askForInput(
+    input: ConsoleChainInput,
+    agentType: AgentType,
+    error: DomainException,
+  ): ChainOutcome {
+    const displayName =
+      AGENT_REGISTRY.find((entry) => entry.agentType === agentType)
+        ?.displayName ?? String(agentType);
+    this.logger.log(`콘솔 worker 입력 요청 — ${agentType}: ${error.message}`);
+    this.pendingTurns.putAwaitingInput(input.slackUserId, {
+      agentType,
+      displayName,
+    });
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.answered',
+        commandId: input.commandId,
+        message: `「${displayName}」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요.`,
+      });
+    }
+    return { ok: false, reason: '입력 요청' };
   }
 
   private reject(

@@ -1,3 +1,30 @@
+# 콘솔 worker 입력 부족 되묻기·재착수 (2026-08-13)
+
+**Goal:** `agentTypeHint`로 직접 지목한 worker가 빈 입력 때문에 `BAD_REQUEST`를 내면 내부 슬래시 문법을 숨긴 채 사람 말로 되묻고, 다음 콘솔 입력을 같은 worker 인자로 재착수한다.
+
+**Contract:** 사용자 최신 명세가 `.ai/design.md`의 제안 선택 후 빈 text dispatch 계약을 대체한다. `resolveChain` 가능한 예외가 우선이며, `agentTypeHint` + 빈 text + `BAD_REQUEST DomainException`만 되묻는다. Swift/Slack/worker/env/DB/Prisma, worker 하드코딩 목록, commit은 금지한다.
+
+- [x] 현재 orchestrator catch 순서, pending store 소비자, write service 번호 분기와 focused baseline을 확인한다.
+- [x] RED: 되묻기 발동·원본 메시지 비노출과 text 있음/선행 체인/BAD_REQUEST 아님 대조군을 추가한다.
+- [x] RED: `AWAITING_INPUT`에서 `"3번"`을 번호가 아닌 worker 인자로 전달하는 spec을 추가한다.
+- [x] RED: `SUGGESTIONS`를 `AWAITING_INPUT`이 덮어쓰고 TTL 만료 시 `null`인 store spec을 추가한다.
+- [x] GREEN: `PendingConsoleTurnStore` 판별 유니온, rename, module/import 갱신을 최소 구현한다.
+- [x] GREEN: orchestrator의 `resolveChain` 이후 입력 부족 분기와 안전한 `command.answered` 문구·로그를 구현한다.
+- [x] GREEN: write service에서 `AWAITING_INPUT`을 최우선 소비하고 `SUGGESTIONS`만 번호 해석한다.
+- [x] focused GREEN, 최종 diff·금지 범위·mutation 관점 검토를 수행한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 리다이렉트하고 실제 exit code를 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- pending 상태를 `SUGGESTIONS | AWAITING_INPUT`으로 일반화했다. 새 put은 이전 상태를 덮어쓰고 둘 다 30분 뒤 만료한다.
+- catch 분기는 의도 분류 실패, 비도메인 reject, 선행 체이닝, 입력 부족 되묻기, 나머지 reject 순서를 지킨다. 내부 slash 문구는 SSE에 노출하지 않고 log에만 남긴다.
+- 후속 입력은 awaiting 상태를 먼저 consume해 저장 worker로 보낸다. `"3번"`도 그대로 인자가 되며 제안 번호 해석을 거치지 않는다.
+- RED는 신규 분기·union·store 부재로 실패했고, focused 3 suites/30 tests가 GREEN이다. 최종 lint/test/build/docs check와 diff check 모두 exit 0이다. 전체 테스트는 일반 353 suites/2,954 tests + code-graph 5 suites/40 tests다.
+- Swift/Slack/worker/env/DB/Prisma와 git index/commit/push는 변경하지 않았다.
+
+---
+
 # 콘솔 의도 분류 실패 → 실측 기반 할 일 제안 (2026-08-13)
 
 **Goal:** `REMOTE_CONSOLE`의 `INTENT_CLASSIFY_FAILED`를 내부 오류 노출 대신 최근 성공 주기 기반 최대 3개 제안으로 전환하고, 번호 답변으로 선택 worker를 착수시킨다.

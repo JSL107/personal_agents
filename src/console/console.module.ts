@@ -5,7 +5,7 @@ import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { RouterModule } from '../router/router.module';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
-import { PendingSuggestionStore } from './application/pending-suggestion.store';
+import { PendingConsoleTurnStore } from './application/pending-console-turn.store';
 import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
 import { SessionPollerService } from './application/session-poller.service';
 import { SuggestNextWorkUsecase } from './application/suggest-next-work.usecase';
@@ -29,7 +29,7 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
     ConsoleReadService,
     ConsoleWriteService,
     ConsoleWriteGuard,
-    PendingSuggestionStore,
+    PendingConsoleTurnStore,
     PreconditionChainOrchestrator,
     SessionPollerService,
     SuggestNextWorkUsecase,
