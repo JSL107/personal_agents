@@ -16,24 +16,65 @@ private func makeInteractionAgent(_ type: String, _ state: ConsoleAgentState) ->
 func runOfficeInteractionTests(_ t: TestRunner) {
     t.suite("OfficeInteraction")
 
-    // 호버 쪽지 — 직무(정체)가 위, 활동(지금)이 아래. 둘 중 하나만 와도 쪽지는 떠야 한다.
+    // 호버 쪽지 — 이름(누구)이 맨 위, 직무(정체)가 가운데, 활동(지금)이 아래.
+    // 하나만 와도 쪽지는 떠야 한다.
     t.expect(
-        officeHoverNote(job: "리뷰 답변을 판정한다", activity: "#271 리뷰 중")
-            == "리뷰 답변을 판정한다\n#271 리뷰 중",
-        "직무가 첫 줄, 활동이 둘째 줄"
+        officeHoverNote(name: "답변 판정", job: "리뷰 답변을 판정한다", activity: "#271 리뷰 중")
+            == "답변 판정\n리뷰 답변을 판정한다\n#271 리뷰 중",
+        "이름이 첫 줄, 직무가 둘째 줄, 활동이 셋째 줄"
+    )
+    // 쪽지가 커서 옆으로 나오면 위치가 주인을 말해 주지 않는다 — 이름이 빠지면 누구 얘기인지
+    // 알 방법이 사라진다.
+    t.expect(
+        officeHoverNote(name: "답변 판정", job: nil, activity: nil)?
+            .hasPrefix("답변 판정") == true,
+        "직무·활동이 없어도 이름은 뜬다"
     )
     t.expect(
-        officeHoverNote(job: nil, activity: "업무 대기중") == "업무 대기중",
+        officeHoverNote(name: nil, job: nil, activity: "업무 대기중") == "업무 대기중",
         "직무를 모르는 서버(버전 스큐)에서도 활동은 뜬다"
     )
     t.expect(
-        officeHoverNote(job: "오늘 할 일을 정한다", activity: nil) == "오늘 할 일을 정한다",
+        officeHoverNote(name: nil, job: "오늘 할 일을 정한다", activity: nil) == "오늘 할 일을 정한다",
         "활동이 없어도 직무는 뜬다"
     )
     // 공백만 든 문구가 줄로 남으면 쪽지에 빈 줄이 생겨 판이 위로 들뜬다.
     t.expect(
-        officeHoverNote(job: "  ", activity: "  ") == nil,
+        officeHoverNote(name: " ", job: "  ", activity: "  ") == nil,
         "빈 문구뿐이면 쪽지를 띄우지 않는다"
+    )
+
+    // 커서 옆 쪽지 판 — 기본은 커서 오른쪽 위, 그쪽이 좁으면 반대편, 그래도 안 되면 화면 안.
+    //
+    // 화면 밖으로 나간 판은 잘려서 **읽히지 않는다.** 머리 위 쪽지를 커서 옆으로 옮긴 이유가
+    // 가림 해소인데, 판이 창 경계에서 잘리면 같은 증상이 자리만 바꿔 돌아온다.
+    let rightUp = officeTooltipOrigin(
+        cursor: OfficePoint(x: 100, y: 100), boxWidth: 180, boxHeight: 60,
+        sceneWidth: 960, sceneHeight: 560, gap: 14
+    )
+    t.expectEqual(rightUp.x, 114, "여유가 있으면 커서 오른쪽")
+    t.expectEqual(rightUp.y, 114, "여유가 있으면 커서 위")
+
+    let flipped = officeTooltipOrigin(
+        cursor: OfficePoint(x: 900, y: 540), boxWidth: 180, boxHeight: 60,
+        sceneWidth: 960, sceneHeight: 560, gap: 14
+    )
+    t.expectEqual(flipped.x, 706, "오른쪽이 좁으면 커서 왼쪽으로 넘긴다")
+    t.expectEqual(flipped.y, 466, "위가 좁으면 커서 아래로 넘긴다")
+
+    // 최소 창에 24자 직무 문장이 온 경우 — 뒤집어도 안 들어간다. 커서에서 멀어지더라도
+    // 판 전체가 화면 안에 있어야 한다.
+    let clamped = officeTooltipOrigin(
+        cursor: OfficePoint(x: 30, y: 20), boxWidth: 300, boxHeight: 70,
+        sceneWidth: 320, sceneHeight: 80, gap: 14
+    )
+    t.expect(
+        clamped.x >= 0 && clamped.x + 300 <= 320,
+        "뒤집어도 안 들어가면 화면 안에 가둔다(x \(clamped.x))"
+    )
+    t.expect(
+        clamped.y >= 0 && clamped.y + 70 <= 80,
+        "뒤집어도 안 들어가면 화면 안에 가둔다(y \(clamped.y))"
     )
 
     let slots: [(agentType: String, point: OfficePoint)] = [

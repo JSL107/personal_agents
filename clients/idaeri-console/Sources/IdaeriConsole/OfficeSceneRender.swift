@@ -17,7 +17,8 @@ func renderOfficeScene(
     path: String,
     hour: Int?,
     size: CGSize,
-    poseDemo: Bool
+    poseDemo: Bool,
+    hoverAgentType: String? = nil
 ) -> Bool {
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
@@ -47,6 +48,14 @@ func renderOfficeScene(
     )
     if poseDemo, !scene.applyPoseDemo() {
         FileHandle.standardError.write(Data("자세 데모에 필요한 사람 또는 가구가 부족하다\n".utf8))
+        return false
+    }
+    // 호버 쪽지는 마우스 이벤트로만 뜨므로 정지 렌더에는 안 잡힌다. 판이 무엇을 가리는지가
+    // 이 변경의 요점이라, 확인 경로가 없으면 회귀가 조용히 돌아온다.
+    if let hoverAgentType, !scene.previewHoverTooltip(agentType: hoverAgentType) {
+        FileHandle.standardError.write(
+            Data("호버 쪽지를 띄우지 못했다: \(hoverAgentType)\n".utf8)
+        )
         return false
     }
 

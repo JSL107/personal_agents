@@ -588,12 +588,20 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             let nameplateTop = officeSeatedNameplateTopTiles(
                 seatY: topSeatY, tileSize: tileSize
             )
+            // 기준은 이름표가 아니라 **그 위에 뜨는 상시 말풍선**이다. 이름표까지만 재던
+            // 동안 첫 행 가운데 좌석의 "#271 리뷰 중" 이 문패 판에 늘 삼켜졌다 — 지금 무슨
+            // 일을 하는지가 정확히 그 자리에서만 안 보였다.
+            let bubbleTop = officeSeatedBubbleTopTiles(seatY: topSeatY, tileSize: tileSize)
+            t.expect(
+                bubbleTop > nameplateTop,
+                "타일 \(tileSize) 말풍선 위끝(\(bubbleTop))이 이름표 위끝(\(nameplateTop))보다 위"
+            )
             let labelBottom = officeZoneLabelBottomTiles(
                 zone: zone, topSeatY: topSeatY, tileSize: tileSize
             )
             t.expect(
-                labelBottom >= nameplateTop + officeZoneLabelGapTiles - 0.0001,
-                "타일 \(tileSize) · \(zone.department.label) 문패 아래끝(\(labelBottom))이 이름표 위끝(\(nameplateTop)) 위"
+                labelBottom >= bubbleTop + officeZoneLabelGapTiles - 0.0001,
+                "타일 \(tileSize) · \(zone.department.label) 문패 아래끝(\(labelBottom))이 말풍선 위끝(\(bubbleTop)) 위"
             )
             // 간격을 **픽셀로도** 잰다.
             //
@@ -601,7 +609,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             // 동안 최소 창에서 문패 판과 이름표 판이 맞닿아, 여섯 부서 전부에서 구역 가운데
             // 좌석(`커리어`·`문서 개선`·`성과 분석`·`스키마`·`PO 평가`·`CTO`)의 이름이 검은
             // 뭉치에 묻혔다 — 화면에서 떨어져 보이는지는 칸이 아니라 픽셀이 정한다.
-            let gapPixels = (labelBottom - nameplateTop) * tileSize
+            let gapPixels = (labelBottom - bubbleTop) * tileSize
             t.expect(
                 gapPixels >= officeLabelSeparationMinPixels,
                 "타일 \(tileSize) · \(zone.department.label) 판 사이 \(Int(gapPixels))px"

@@ -66,9 +66,16 @@ final class OfficeScene: SKScene {
 
     /// 머리 위 표시(말풍선·경과·생각 점)를 이름표보다 더 위에 띄우기 위한 여유 높이.
     /// 이름표가 발밑에서 머리 위로 올라왔으므로, 이 값이 작으면 둘이 겹쳐 둘 다 못 읽는다.
+    ///
+    /// 계산은 Core 에 있다 — 부서 문패를 이 높이 위로 올리는 쪽(`officeZoneLabelBottomTiles`)이
+    /// 같은 값을 봐야 한다. 여기서만 바꾸면 문패가 말풍선을 다시 덮는다.
     private var nameplateClearance: CGFloat {
-        CGFloat(officeNameplateFontSize(tileSize: Double(tileSize)))
-            + tileSize * CGFloat(officeNameplateGapTiles) + 6
+        CGFloat(officeNameplateClearance(tileSize: Double(tileSize)))
+    }
+
+    /// 머리 위 상시 말풍선 글자 크기(px). 문패 높이 계산과 같은 값을 쓴다.
+    private var bubbleFontSize: CGFloat {
+        CGFloat(officeBubbleFontSize(tileSize: Double(tileSize)))
     }
 
     private var characters: [String: CharacterNode] = [:]
@@ -84,12 +91,11 @@ final class OfficeScene: SKScene {
     private var lastSyncedAgents: [ConsoleAgent] = []
     private var lastSyncedApprovals: [ConsoleApproval] = []
     private var agentBubbles: [String: String] = [:]
-    /// agentType → 사규의 직무 한 줄. 호버 쪽지의 첫 줄이 된다.
+    /// agentType → 사규의 직무 한 줄. 호버 쪽지의 둘째 줄이 된다.
     private var agentJobs: [String: String] = [:]
-    /// agentType → 마지막으로 계산한 상시 말풍선 문구. 호버가 그 자리를 빌려 쓰는 동안 보관해,
-    /// 마우스가 떠날 때 다음 갱신을 기다리지 않고 즉시 되돌린다.
-    private var lastInfoBubbles: [String: String?] = [:]
     private var hoveredAgentType: String?
+    /// 마지막 마우스 좌표(씬 기준). 호버 쪽지 판을 여기 옆에 붙인다.
+    private var lastCursor: CGPoint = .zero
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
     /// 내가 직접 돌리는 CLI 세션. 에이전트와 달리 사규가 배정한 자리가 없어 대표 앞줄에 선다.
@@ -135,7 +141,8 @@ final class OfficeScene: SKScene {
         view.window?.acceptsMouseMovedEvents = true
         let tracking = NSTrackingArea(
             rect: view.bounds,
-            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            // 이탈까지 받는다 — 마우스가 창을 벗어날 때 커서 옆 쪽지를 걷어야 한다.
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: view,
             userInfo: nil
         )
@@ -1485,29 +1492,13 @@ final class OfficeScene: SKScene {
                 agent: agent, runs: runs, pendingCommands: pendingCommands, now: now
             )
             let top = node.sprite.size.height
-            // 마우스를 올린 사람은 **상시 말풍선 자리를 호버 쪽지가 대신 쓴다.**
-            //
-            // 상시 말풍선은 일이 도는 사람에게만 붙는데(`agentTokenInfo`), 그 말풍선이 있으면
-            // 호버 쪽지를 만들지 않는 구조였다. 결과가 거꾸로였다 — 지금 무엇을 하는지 가장
-            // 궁금한 **진행 중·승인 대기 직원에게만 직무가 영영 안 보였다.**
-            // 둘을 같은 높이에 함께 붙이면 글자가 겹치므로, 호버 중에는 활동까지 담은 쪽지 하나로
-            // 합친다(`officeHoverNote` 가 직무 → 활동 두 줄을 만든다).
-            let isHovered = hoveredAgentType == agent.agentType
-            let hoverNote = officeHoverNote(job: agent.job, activity: agent.bubble)
-            lastInfoBubbles[agent.agentType] = info.bubble
-            if isHovered, let hoverNote {
-                setChildLabel(
-                    node, name: "hoverBubble", text: hoverNote,
-                    position: CGPoint(x: 0, y: top + nameplateClearance),
-                    fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
-                )
-            } else {
-                node.childNode(withName: "hoverBubble")?.removeFromParent()
-            }
+            // 상시 말풍선은 호버 여부와 무관하게 늘 제자리에 둔다. 호버 쪽지가 커서 옆
+            // 판으로 나갔으므로 이 자리를 두고 다투지 않는다 — 예전에는 쪽지가 같은 높이에
+            // 붙어서, 호버하는 동안 말풍선을 내리고 마우스가 떠나면 되돌리는 왕복이 필요했다.
             setChildLabel(
-                node, name: "infoBubble", text: isHovered ? nil : info.bubble,
+                node, name: "infoBubble", text: info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
-                fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
+                fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95)
             )
             setChildLabel(
                 node, name: "elapsed", text: info.elapsed,
@@ -1518,6 +1509,9 @@ final class OfficeScene: SKScene {
             // 아이콘이 떠 있는 것보다 타이핑·엎드림이 무슨 일인지 더 빨리 읽힌다.
             applyMotion(for: agent, phase: info.badge)
         }
+        // 마우스를 올린 채로 상태가 바뀌면 쪽지의 활동 줄도 따라가야 한다. 갱신 주기가 30초라
+        // 빠뜨리면 "지금 무엇을 하는가" 가 반 분 동안 옛 문구로 남는다.
+        refreshHoverTooltip()
     }
 
     // MARK: - 상태 → 몸짓
@@ -1852,6 +1846,111 @@ final class OfficeScene: SKScene {
         parent.addChild(label)
     }
 
+    // MARK: - 호버 쪽지(커서 옆 판)
+
+    /// 마우스를 올린 사람의 쪽지를 커서 옆에 다시 그린다. 대상이 없으면 걷는다.
+    ///
+    /// 판을 **커서 옆**에 두는 이유는 가림이다. 머리 위에 붙이던 동안에는 24자 직무 문장이
+    /// 좌우 여덟 칸을 뻗어 이웃 이름표·부서 문패와 뒤섞이고, 오버레이인 문패가 늘 이겨서
+    /// 읽으려고 마우스를 올린 글자가 오히려 잘렸다. 커서 옆 판은 오버레이 최상단에 불투명하게
+    /// 떠서 무엇과도 자리를 다투지 않고, 마우스를 떼면 사라지므로 사무실을 계속 덮지도 않는다.
+    private func refreshHoverTooltip() {
+        guard let hovered = hoveredAgentType, hovered != officeHitTargetPresident else {
+            hideHoverTooltip()
+            return
+        }
+        let displayName = lastSyncedAgents.first { $0.agentType == hovered }?.displayName
+        guard
+            let text = officeHoverNote(
+                name: displayName, job: agentJobs[hovered], activity: agentBubbles[hovered]
+            )
+        else {
+            hideHoverTooltip()
+            return
+        }
+        hideHoverTooltip()
+        overlayLayer.addChild(makeHoverTooltip(text: text))
+    }
+
+    private func hideHoverTooltip() {
+        overlayLayer.childNode(withName: officeHoverTooltipNodeName)?.removeFromParent()
+    }
+
+    /// 회귀 렌더용 — 마우스 없이 그 사람의 쪽지를 띄운다. 커서는 그 사람 머리 옆으로 잡는다.
+    ///
+    /// 판이 실제로 붙었는지를 돌려준다. 못 띄운 것을 조용히 넘기면 렌더가 "가리는 게 없는
+    /// 정상 화면" 으로 보여, 이 변경이 되돌아가도 회귀 확인이 통과한다.
+    func previewHoverTooltip(agentType: String) -> Bool {
+        guard let node = characters[agentType] else {
+            return false
+        }
+        lastCursor = CGPoint(
+            x: node.position.x + tileSize * 0.5,
+            y: node.position.y + node.sprite.size.height
+        )
+        hoveredAgentType = agentType
+        refreshHoverTooltip()
+        return overlayLayer.childNode(withName: officeHoverTooltipNodeName) != nil
+    }
+
+    /// 쪽지 판 하나를 만들어 커서 옆 자리에 앉힌다.
+    private func makeHoverTooltip(text: String) -> SKNode {
+        let holder = SKNode()
+        holder.name = officeHoverTooltipNodeName
+        // 문패(z=1)·요약 HUD 위. 판이 뒤로 가면 옮겨 온 이유(가림)가 그대로 돌아온다.
+        holder.zPosition = 100
+
+        let label = SKLabelNode()
+        let fontSize = bubbleFontSize
+        let font = NSFont(name: officeLabelFontName, size: fontSize)
+            ?? NSFont.boldSystemFont(ofSize: fontSize)
+        let paragraph = NSMutableParagraphStyle()
+        // 여러 줄이라 왼쪽 정렬이 읽기 쉽다(가운데 정렬은 줄마다 시작점이 달라진다).
+        paragraph.alignment = .left
+        label.attributedText = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor(white: 0.96, alpha: 1),
+                .paragraphStyle: paragraph,
+            ]
+        )
+        label.numberOfLines = 0
+        label.horizontalAlignmentMode = .left
+        label.verticalAlignmentMode = .top
+        label.zPosition = 1
+
+        // 판 크기는 실제로 그려진 글자 상자에서 나온다 — 글자 수로 어림하면 한글·숫자·`#` 이
+        // 섞인 문구에서 어긋난다.
+        let box = label.frame.insetBy(
+            dx: -CGFloat(officeTooltipPlatePaddingX),
+            dy: -CGFloat(officeTooltipPlatePaddingY)
+        )
+        let plate = SKShapeNode(rect: box, cornerRadius: 4)
+        // 아래 그림이 비쳐 보이면 글자가 다시 무늬와 섞인다 — 판은 거의 불투명하다.
+        plate.fillColor = SKColor(white: 0.05, alpha: 0.94)
+        plate.strokeColor = SKColor(white: 0.55, alpha: 0.5)
+        plate.lineWidth = 1
+        holder.addChild(plate)
+        holder.addChild(label)
+
+        let origin = officeTooltipOrigin(
+            cursor: OfficePoint(x: Double(lastCursor.x), y: Double(lastCursor.y)),
+            boxWidth: Double(box.width),
+            boxHeight: Double(box.height),
+            sceneWidth: Double(size.width),
+            sceneHeight: Double(size.height),
+            gap: Double(officeTooltipCursorGap)
+        )
+        // 계산된 자리는 판의 왼쪽 아래 꼭짓점이다. 글자 상자가 holder 원점 기준으로
+        // 어디에 놓였는지를 빼서, 판 모서리가 그 자리에 정확히 오게 한다.
+        holder.position = CGPoint(
+            x: CGFloat(origin.x) - box.minX,
+            y: CGFloat(origin.y) - box.minY
+        )
+        return holder
+    }
+
     /// 전사 요약을 화면 좌상단에 띄운다.
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
@@ -1909,8 +2008,12 @@ final class OfficeScene: SKScene {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let hit = hitTarget(at: event.location(in: self))
+        lastCursor = event.location(in: self)
+        let hit = hitTarget(at: lastCursor)
         if hit == hoveredAgentType {
+            // 같은 사람 위에서 움직이는 동안에도 판은 커서를 따라와야 한다. 처음 위치에
+            // 못 박아 두면 커서가 판 아래로 파고들어 제 글자를 가린다.
+            refreshHoverTooltip()
             return
         }
         // 대표는 CharacterNode 가 아니라 스프라이트 하나뿐이다. 복귀를 여기서 따로 해주지 않으면
@@ -1919,52 +2022,38 @@ final class OfficeScene: SKScene {
             president?.run(.scale(to: 1.0, duration: 0.1))
         } else if let previous = hoveredAgentType, let node = characters[previous] {
             node.sprite.run(.scale(to: 1.0, duration: 0.1))
-            node.childNode(withName: "hoverBubble")?.removeFromParent()
             node.setHovered(false)
-            // 호버 중에는 상시 말풍선 자리를 쪽지가 빌려 쓴다(refreshOverlays 의 같은 근거).
-            // 마우스가 떠나면 그 사람의 상시 말풍선을 되돌려야 한다 — 다음 갱신까지 기다리면
-            // 일이 도는 사람의 말풍선이 최대 30초 동안 비어 보인다.
-            restoreInfoBubble(previous)
         }
         hoveredAgentType = hit
         if hit == officeHitTargetPresident {
             // 에이전트와 같은 몸짓으로 "누를 수 있다" 를 알린다.
             president?.run(.scale(to: 1.12, duration: 0.1))
+            hideHoverTooltip()
             return
         }
         guard let hit, let node = characters[hit] else {
+            hideHoverTooltip()
             return
         }
         node.setHovered(true)
         node.sprite.run(.scale(to: 1.12, duration: 0.1))
-        // 상시 말풍선이 있어도 쪽지를 띄운다. 예전에는 말풍선이 있으면 건너뛰어서, 진행 중·승인
-        // 대기처럼 **가장 궁금한 상태의 직원에게만** 직무가 안 보였다. 쪽지가 활동까지 담으므로
-        // 말풍선을 잠시 내려도 잃는 정보가 없다.
-        guard let text = officeHoverNote(job: agentJobs[hit], activity: agentBubbles[hit]) else {
-            return
-        }
-        node.childNode(withName: "infoBubble")?.removeFromParent()
-        setChildLabel(
-            node, name: "hoverBubble", text: text,
-            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
-            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
-        )
+        refreshHoverTooltip()
     }
 
-    /// 마우스가 떠난 사람의 상시 말풍선을 되돌린다.
+    /// 마우스가 창 밖으로 나가면 쪽지를 걷는다.
     ///
-    /// 문구는 마지막 `refreshOverlays` 가 계산해 둔 값을 쓴다. 호버 시점의 문구를 따로 들고 있다가
-    /// 되돌리면 호버 중에 상태가 바뀐 경우 옛 문구가 되살아나는데, 이 캐시는 상태가 바뀔 때마다
-    /// 함께 갱신되므로 항상 지금 값이다.
-    private func restoreInfoBubble(_ agentType: String) {
-        guard let node = characters[agentType] else {
-            return
+    /// 이탈은 `mouseMoved` 로 오지 않는다. 판이 불투명해서, 남겨 두면 아무도 보고 있지 않은
+    /// 사람의 쪽지가 사무실 한복판을 계속 덮는다.
+    override func mouseExited(with event: NSEvent) {
+        if let previous = hoveredAgentType, let node = characters[previous] {
+            node.sprite.run(.scale(to: 1.0, duration: 0.1))
+            node.setHovered(false)
         }
-        setChildLabel(
-            node, name: "infoBubble", text: lastInfoBubbles[agentType] ?? nil,
-            position: CGPoint(x: 0, y: node.sprite.size.height + nameplateClearance),
-            fontSize: tileSize * 0.24, color: SKColor(white: 1, alpha: 0.95)
-        )
+        if hoveredAgentType == officeHitTargetPresident {
+            president?.run(.scale(to: 1.0, duration: 0.1))
+        }
+        hoveredAgentType = nil
+        hideHoverTooltip()
     }
 
     /// 좌표에 있는 사람. 캐릭터는 발 기준으로 서 있으므로 몸통 높이의 절반만큼 위를 중심으로 본다.

@@ -262,6 +262,26 @@ public func officeNameplateFontSize(tileSize: Double) -> Double {
 /// 이름표 판이 글자 상자 밖으로 넓어지는 폭(px). 판을 좌우로 3px 씩 벌리므로 그 합이다.
 public let officeNameplatePlatePadding: Double = 6
 
+/// 상시 말풍선("#271 리뷰 중")·경과 글자 크기(타일 배수).
+///
+/// 씬이 라벨을 그릴 때와 문패 높이를 잴 때 **같은 값**을 써야 한다. 한쪽에만 숫자를 두면
+/// 말풍선을 키운 날 문패가 조용히 다시 말풍선을 덮는다.
+public let officeBubbleFontTiles: Double = 0.24
+
+/// 상시 말풍선 글자 크기(px). 이름표와 같은 한글 하한이 걸린다.
+public func officeBubbleFontSize(tileSize: Double) -> Double {
+    max(officeNameplateMinFontSizeValue, tileSize * officeBubbleFontTiles)
+}
+
+/// 이름표 판을 스프라이트 위끝에서 얼마나 띄우는가(px). 판 두께에 눌리지 않을 여유 6px 을 더한다.
+public let officeNameplateClearancePadding: Double = 6
+
+/// 머리 위 라벨(이름표 위에 얹는 말풍선·경과)이 스프라이트 위끝에서 떨어지는 거리(px).
+public func officeNameplateClearance(tileSize: Double) -> Double {
+    officeNameplateFontSize(tileSize: tileSize) + tileSize * officeNameplateGapTiles
+        + officeNameplateClearancePadding
+}
+
 /// 이름표를 자리 몫에 맞추는 가로 배율과 중심 이동량(px). 몫은 좌석 중심 기준 좌우 여유다.
 ///
 /// **패딩은 눌리지 않는다.** 배율은 글자에만 걸리고 판의 좌우 여백은 그대로 남으므로, 판
@@ -355,11 +375,26 @@ public func officeSeatedNameplateTopTiles(seatY: Int, tileSize: Double) -> Doubl
         + officeNameplateGapTiles + boxTiles
 }
 
+/// 좌석에 앉은 사람의 **상시 말풍선** 위끝이 격자에서 몇 칸 높이에 오는가.
+///
+/// 말풍선은 이름표보다 한 층 더 위다 — 스프라이트 위끝에서 `officeNameplateClearance` 만큼
+/// 떨어진 자리를 글자 **중심**으로 쓴다(씬의 `setChildLabel` 이 세로 중앙 정렬이다).
+public func officeSeatedBubbleTopTiles(seatY: Int, tileSize: Double) -> Double {
+    let halfBoxTiles =
+        officeBubbleFontSize(tileSize: tileSize) * officeLabelBoxRatio / 2 / tileSize
+    return Double(seatY) - officeSeatedSpriteDrop + officeSeatedSpriteTiles
+        + officeNameplateClearance(tileSize: tileSize) / tileSize + halfBoxTiles
+}
+
 /// 부서 문패 아래끝을 놓을 높이(격자 칸).
 ///
-/// 구역 경계 줄이 아니라 **그 방 첫 좌석 행 이름표 위끝**에서 파생한다. 문패는
+/// 구역 경계 줄이 아니라 **그 방 첫 좌석 행 머리 위 라벨 위끝**에서 파생한다. 문패는
 /// 오버레이(z=1000)라 겹치면 가리는 쪽이 늘 문패이고, 문패가 구역 정중앙(칸 5.5)·좌석이
-/// 1·3·5·7 이라 겹치는 순간 매번 같은 사람(세 번째 좌석)의 이름이 통째로 사라진다.
+/// 1·3·5·7 이라 겹치는 순간 매번 같은 사람(세 번째 좌석)의 글자가 통째로 사라진다.
+///
+/// 기준은 이름표가 아니라 **말풍선**이다. 이름표 위끝으로 재던 동안, 이름표보다 한 층 위에
+/// 뜨는 상시 말풍선("#271 리뷰 중")은 계산에 없어서 첫 행 가운데 좌석의 말풍선이 문패 판에
+/// 늘 삼켜졌다 — 지금 무슨 일을 하는지가 정확히 그 자리에서만 안 보였다.
 ///
 /// `topSeatY` 가 nil(좌석 없는 구역)이면 경계 줄 바로 위에 둔다.
 public func officeZoneLabelBottomTiles(
@@ -371,10 +406,10 @@ public func officeZoneLabelBottomTiles(
     guard let topSeatY else {
         return boundary
     }
-    let aboveNameplate =
-        officeSeatedNameplateTopTiles(seatY: topSeatY, tileSize: tileSize)
+    let aboveBubble =
+        officeSeatedBubbleTopTiles(seatY: topSeatY, tileSize: tileSize)
         + officeZoneLabelGapTiles
-    return max(boundary, aboveNameplate)
+    return max(boundary, aboveBubble)
 }
 
 /// 구역 안에서 가장 위쪽 좌석의 y. 문패를 그 위로 올리기 위한 기준이다.
