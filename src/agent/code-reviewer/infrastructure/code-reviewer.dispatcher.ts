@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import {
   ResolvedLatestOpenPr,
@@ -53,6 +54,8 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     const outcome = await this.reviewPullRequest.execute({
       prRef,
       slackUserId: input.slackUserId,
+      publish: true,
+      triggerType: TriggerType.SLACK_MENTION_CODE_REVIEWER,
       ...(input.conversationContext !== undefined
         ? { conversationContext: input.conversationContext }
         : {}),

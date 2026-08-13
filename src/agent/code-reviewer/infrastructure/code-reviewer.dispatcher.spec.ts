@@ -80,6 +80,8 @@ describe('CodeReviewerDispatcher', () => {
     expect(reviewPullRequestExecute).toHaveBeenCalledWith({
       prRef: '최근 PR을 리뷰해줘',
       slackUserId: 'U1',
+      publish: true,
+      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
     });
     expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
     expect(outcome).not.toHaveProperty('autoResolvedNotice');
@@ -98,6 +100,8 @@ describe('CodeReviewerDispatcher', () => {
     expect(reviewPullRequestExecute).toHaveBeenCalledWith({
       prRef: 'owner/repo#42',
       slackUserId: 'U1',
+      publish: true,
+      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
     });
     expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
     expect(outcome).not.toHaveProperty('autoResolvedNotice');
@@ -129,6 +133,8 @@ describe('CodeReviewerDispatcher', () => {
     expect(reviewPullRequestExecute).toHaveBeenCalledWith({
       prRef: '최근 PR을 리뷰해줘',
       slackUserId: 'U1',
+      publish: true,
+      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
     });
   });
 
@@ -179,6 +185,8 @@ describe('CodeReviewerDispatcher', () => {
     expect(reviewPullRequestExecute).toHaveBeenCalledWith({
       prRef: 'JSL107/personal_agents#42',
       slackUserId: 'U1',
+      publish: true,
+      triggerType: 'SLACK_MENTION_CODE_REVIEWER',
     });
     expect(outcome.autoResolvedNotice).toBe(
       'PR 미지정 → 최근 open PR JSL107/personal_agents#42 자동 선택: 콘솔 리모컨',
