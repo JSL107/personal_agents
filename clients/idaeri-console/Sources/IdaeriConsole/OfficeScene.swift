@@ -1486,9 +1486,9 @@ final class OfficeScene: SKScene {
         guard let node = characters[agentType], !text.isEmpty else {
             return
         }
-        node.childNode(withName: "bubble")?.removeFromParent()
+        node.childNode(withName: officeTemporaryBubbleLabelName)?.removeFromParent()
         let label = SKLabelNode(text: text)
-        label.name = "bubble"
+        label.name = officeTemporaryBubbleLabelName
         label.fontName = officeLabelFontName
         label.fontSize = max(officeNameplateMinFontSize, tileSize * 0.28)
         label.fontColor = SKColor(white: 1, alpha: 1)
@@ -1526,7 +1526,7 @@ final class OfficeScene: SKScene {
             // 판으로 나갔으므로 이 자리를 두고 다투지 않는다 — 예전에는 쪽지가 같은 높이에
             // 붙어서, 호버하는 동안 말풍선을 내리고 마우스가 떠나면 되돌리는 왕복이 필요했다.
             setChildLabel(
-                node, name: "infoBubble", text: info.bubble,
+                node, name: officeInfoBubbleLabelName, text: info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
                 fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95),
                 maxWidth: bubbleMaxWidth(for: agent.agentType)
@@ -1614,11 +1614,11 @@ final class OfficeScene: SKScene {
 
     /// 접수 대기 표시 — 점이 하나씩 늘었다 줄어든다.
     private func showThinkingDots(_ agentType: String) {
-        guard let node = characters[agentType], node.childNode(withName: "dots") == nil else {
+        guard let node = characters[agentType], node.childNode(withName: officeThinkingDotsLabelName) == nil else {
             return
         }
         let label = SKLabelNode(text: "·")
-        label.name = "dots"
+        label.name = officeThinkingDotsLabelName
         label.fontName = officeLabelFontName
         label.fontSize = max(10, tileSize * 0.4)
         label.fontColor = SKColor(white: 0.95, alpha: 0.9)
@@ -1632,11 +1632,11 @@ final class OfficeScene: SKScene {
             .run { label.text = "··" }, .wait(forDuration: 0.32),
             .run { label.text = "···" }, .wait(forDuration: 0.32),
         ])
-        label.run(.repeatForever(cycle), withKey: "dots")
+        label.run(.repeatForever(cycle), withKey: officeThinkingDotsLabelName)
     }
 
     private func hideThinkingDots(_ agentType: String) {
-        characters[agentType]?.childNode(withName: "dots")?.removeFromParent()
+        characters[agentType]?.childNode(withName: officeThinkingDotsLabelName)?.removeFromParent()
     }
 
     /// 작업 중인 사람의 책상 모니터에 불이 들어온다 — 자리에서 뭔가 돌고 있다는 신호.

@@ -524,6 +524,21 @@ final class CharacterNode: SKNode {
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
         layoutSelectionRing()
+        layoutHeadLabels()
+    }
+
+    /// 씬이 붙인 머리 위 라벨(말풍선·생각 점)을 지금 자세에 맞춰 다시 놓는다.
+    ///
+    /// 이 라벨들은 씬이 만들어 붙이므로 위치를 한 번만 계산한다. 그런데 앉고 서면
+    /// `spriteBaseY` 가 오르내리고, **자리로 걸어와 앉는 경로(`goHome` → `sit`)에는
+    /// `refreshOverlays` 가 뒤따르지 않는다** — 그대로 두면 도착해 앉은 사람의 말풍선만
+    /// 다음 상태 갱신(최대 30초)까지 서 있던 높이에 떠 있다. 이름표가 여기서 다시 잡히는
+    /// 것과 같은 이유이고, 같은 자리에서 함께 처리해야 새 라벨이 빠지지 않는다.
+    private func layoutHeadLabels() {
+        let y = headTopY + CGFloat(officeNameplateClearance(tileSize: Double(currentTileSize)))
+        for name in officeHeadLabelNames {
+            childNode(withName: name)?.position.y = y
+        }
     }
 
     // MARK: - 몸짓 애니메이션
