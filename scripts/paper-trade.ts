@@ -10,10 +10,12 @@ import { FillPendingOrdersUsecase } from '../src/paper-trading/application/fill-
 import { GetPaperTradingStatusUsecase } from '../src/paper-trading/application/get-paper-trading-status.usecase';
 import { OpenPaperAccountUsecase } from '../src/paper-trading/application/open-paper-account.usecase';
 import { RecordPaperTradeUsecase } from '../src/paper-trading/application/record-paper-trade.usecase';
+import { ScoreRecommendationsUsecase } from '../src/paper-trading/application/score-recommendations.usecase';
 import {
   parsePaperMarket,
   parseTradeStrategy,
 } from '../src/paper-trading/domain/paper-account.type';
+import { formatPaperScoreReport } from '../src/paper-trading/infrastructure/paper-score.formatter';
 import { formatPaperTradingReport } from '../src/paper-trading/infrastructure/paper-trading.formatter';
 import { PaperTradingModule } from '../src/paper-trading/paper-trading.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -26,6 +28,7 @@ import { PrismaModule } from '../src/prisma/prisma.module';
 //   pnpm exec ts-node scripts/paper-trade.ts evaluate [--at 2026-08-11]
 //   pnpm exec ts-node scripts/paper-trade.ts recommend
 //   pnpm exec ts-node scripts/paper-trade.ts fill
+//   pnpm exec ts-node scripts/paper-trade.ts score [--at 2026-08-13]
 //
 // evaluate 는 autopilot task 가 매일 17:40 에 하는 것과 **같은 usecase** 를 부른다.
 // cron 을 기다리지 않고 평가 경로를 실증하기 위한 입구이고, 리포트도 Slack 에 나갈
@@ -38,7 +41,8 @@ const USAGE =
   '  pnpm exec ts-node scripts/paper-trade.ts status\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts recommend\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts fill';
+  '  pnpm exec ts-node scripts/paper-trade.ts fill\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts score [--at <YYYY-MM-DD>]';
 
 @Module({
   imports: [
@@ -57,7 +61,8 @@ type Subcommand =
   | 'status'
   | 'evaluate'
   | 'recommend'
-  | 'fill';
+  | 'fill'
+  | 'score';
 
 interface ParsedArguments {
   subcommand: Subcommand;
@@ -73,7 +78,8 @@ const parseArguments = (values: string[]): ParsedArguments => {
     subcommandValue !== 'status' &&
     subcommandValue !== 'evaluate' &&
     subcommandValue !== 'recommend' &&
-    subcommandValue !== 'fill'
+    subcommandValue !== 'fill' &&
+    subcommandValue !== 'score'
   ) {
     throw new Error(USAGE);
   }
@@ -101,6 +107,17 @@ const requireOption = (options: Map<string, string>, key: string): string => {
   return value;
 };
 
+const parseUtcDateBoundary = (value: string): Date => {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${value}`);
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (date.toISOString().slice(0, 10) !== value) {
+    throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${value}`);
+  }
+  return date;
+};
+
 const printStatus = async (
   usecase: GetPaperTradingStatusUsecase,
 ): Promise<void> => {
@@ -118,6 +135,10 @@ const printStatus = async (
 
 const main = async (): Promise<void> => {
   const parsed = parseArguments(process.argv.slice(2));
+  const scoreAt =
+    parsed.subcommand === 'score' && parsed.options.has('at')
+      ? parseUtcDateBoundary(parsed.options.get('at') as string)
+      : undefined;
   const application =
     await NestFactory.createApplicationContext(PaperTradeCliModule);
   try {
@@ -149,6 +170,13 @@ const main = async (): Promise<void> => {
     if (parsed.subcommand === 'fill') {
       const result = await application.get(FillPendingOrdersUsecase).execute();
       console.table([result]);
+      return;
+    }
+    if (parsed.subcommand === 'score') {
+      const result = await application
+        .get(ScoreRecommendationsUsecase)
+        .execute({ asOf: scoreAt });
+      console.log(formatPaperScoreReport(result));
       return;
     }
     if (parsed.subcommand === 'evaluate') {

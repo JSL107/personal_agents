@@ -1,0 +1,128 @@
+import { ScoreRecommendationsResult } from '../application/score-recommendations.usecase';
+import { formatPaperScoreReport } from './paper-score.formatter';
+
+const RESULT: ScoreRecommendationsResult = {
+  asOf: new Date('2026-08-13T00:00:00.000Z'),
+  from: null,
+  accounts: [
+    {
+      accountId: 7,
+      accountName: 'LONG_TERM',
+      strategy: 'LONG_TERM',
+      score: {
+        strategy: 'LONG_TERM',
+        recommendationCount: 6,
+        closedCount: 4,
+        openCount: 1,
+        expiredCount: 1,
+        hitCount: 3,
+        hitRate: '0.75',
+        meanReturnRate: '0.1234',
+        medianReturnRate: '0.1',
+        maximumLoss: '-0.055',
+        averageHoldingDays: '12.5',
+        anomalyCount: 2,
+        realizedPnlMismatchCount: 1,
+      },
+      meanExcessReturnRate: '0.0234',
+      meanShadowReturnRate: '0.08',
+      portfolio: {
+        snapshotCount: 8,
+        accountReturnRate: '0.15',
+        maximumDrawdown: '-0.04',
+        turnoverRate: '1.25',
+        cumulativeCost: '1234.5',
+      },
+      classifications: { closed: 4, open: 1, expired: 1, anomaly: 0 },
+      exclusions: {
+        expired: 1,
+        benchmarkUnavailable: 2,
+        shadowUnavailable: 3,
+        anomaly: 2,
+        realizedPnlMismatch: 1,
+      },
+    },
+  ],
+  classifications: { closed: 4, open: 1, expired: 1, anomaly: 0 },
+  exclusions: {
+    expired: 1,
+    benchmarkUnavailable: 2,
+    shadowUnavailable: 3,
+    anomaly: 2,
+    realizedPnlMismatch: 1,
+  },
+};
+
+describe('formatPaperScoreReport', () => {
+  it('비율 문자열을 100배 한 퍼센트로 표시하고 전략·포트폴리오 지표를 모두 출력한다', () => {
+    const text = formatPaperScoreReport(RESULT);
+
+    expect(text).toContain('추천 6건 · 체결 5건(청산 4·보유 1) · 미체결 1건');
+    expect(text).toContain('적중 3/4 (75%)');
+    expect(text).toContain('평균 +12.34% · 중앙값 +10% · 최대 손실 -5.5%');
+    expect(text).toContain(
+      '평균 보유 12.5일 · 평균 초과 +2.34% · 그림자 평균 +8%',
+    );
+    expect(text).toContain('계좌 수익률 +15% · MDD -4% · 회전율 1.25배');
+    expect(text).toContain('누적 비용 1,234.5원 · 실제 스냅샷 8건');
+  });
+
+  it('모든 제외 사유·분류·소표본 경고와 필수 해석 한계를 출력한다', () => {
+    const text = formatPaperScoreReport(RESULT);
+
+    expect(text).toContain('청산 4 · 보유 1 · 미체결 1 · 이상치 0');
+    expect(text).toContain(
+      '미체결 1 · 벤치마크 결손 2 · 그림자 미산출 3 · 이상치 2 · realizedPnl 불일치 1',
+    );
+    expect(text).toContain('청산 표본 5건 미만');
+    expect(text).toContain('실제는 다음 거래일 시가, 그림자는 같은 날 종가');
+    expect(text).toContain('진입 기준 차이');
+    expect(text).toContain('현재 저장 close는 조정 계열');
+    expect(text).toContain('수집 방식 변경 시 그림자 계산을 재검토');
+  });
+
+  it('빈 표본도 생략하지 않고 산출 불가와 0건을 보고한다', () => {
+    const text = formatPaperScoreReport({
+      ...RESULT,
+      accounts: [
+        {
+          ...RESULT.accounts[0],
+          score: {
+            ...RESULT.accounts[0].score,
+            recommendationCount: 0,
+            closedCount: 0,
+            openCount: 0,
+            expiredCount: 0,
+            hitCount: 0,
+            hitRate: null,
+            meanReturnRate: null,
+            medianReturnRate: null,
+            maximumLoss: null,
+            averageHoldingDays: null,
+          },
+          meanExcessReturnRate: null,
+          meanShadowReturnRate: null,
+          portfolio: {
+            snapshotCount: 0,
+            accountReturnRate: null,
+            maximumDrawdown: null,
+            turnoverRate: null,
+            cumulativeCost: '0',
+          },
+        },
+      ],
+      classifications: { closed: 0, open: 0, expired: 0, anomaly: 0 },
+      exclusions: {
+        expired: 0,
+        benchmarkUnavailable: 0,
+        shadowUnavailable: 0,
+        anomaly: 0,
+        realizedPnlMismatch: 0,
+      },
+    });
+
+    expect(text).toContain('추천 0건');
+    expect(text).toContain('적중 0/0 (-)');
+    expect(text).toContain('평균 - · 중앙값 - · 최대 손실 -');
+  });
+});

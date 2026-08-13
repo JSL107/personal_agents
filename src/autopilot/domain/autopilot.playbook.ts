@@ -23,6 +23,8 @@ import {
   DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
   DEFAULT_PAPER_RECOMMEND_CRON,
   DEFAULT_PAPER_RECOMMEND_TIMEZONE,
+  DEFAULT_PAPER_SCORE_CRON,
+  DEFAULT_PAPER_SCORE_TIMEZONE,
   DEFAULT_PAPER_TRADING_CRON,
   DEFAULT_PAPER_TRADING_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
@@ -268,6 +270,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_PAPER_ORDER_FILL_CRON,
       timezone: DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 추천/체결 진입점 뒤에 두는 독립 주간 성적표. digest 그룹 첫 항목을 바꾸지 않는다.
+  {
+    id: 'paper-score',
+    taskId: 'paper-score',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PAPER_SCORE_CRON,
+      timezone: DEFAULT_PAPER_SCORE_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },
