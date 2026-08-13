@@ -15,6 +15,12 @@ private func nameplateGlyphWidth(_ text: String, tileSize: Double) -> Double {
     return Double(NSAttributedString(string: text, attributes: [.font: font]).size().width)
 }
 
+private func labelGlyphWidth(_ text: String, fontSize: Double) -> Double {
+    let font = NSFont(name: officeLabelFontName, size: fontSize)
+        ?? .boldSystemFont(ofSize: fontSize)
+    return Double(NSAttributedString(string: text, attributes: [.font: font]).size().width)
+}
+
 /// 눌러 넣기의 하한. 이 밑으로 누르면 한글 획이 붙어 이름을 못 읽는다.
 ///
 /// 벽과 문 사이에 낀 자리(구역 상대 x=9)는 몫이 한 칸뿐이라 다섯 글자짜리 이름(`답변 판정`)이
@@ -25,6 +31,52 @@ private let nameplateMinSqueeze: Double = 0.5
 
 func runOfficeNameplateFitTests(_ t: TestRunner) {
     t.suite("OfficeNameplateFit")
+
+    // 상단 밴드와 부서 격자는 열 수에 따라 경계가 달라진다. 밴드 문패를 구역 왼쪽에
+    // 고정하면 2열에서 `탕비실`이 `개발` 중앙 문패를 덮는다. 실제 글꼴·판 여백으로 두
+    // 배치를 모두 재서, 격자가 다시 우연히 같아야만 성립하는 회피로 돌아가지 못하게 한다.
+    for (zoneColumns, tileSize) in [(2, 37.4), (3, 40.0)] {
+        let adaptivePlan = officeFloorPlan(agents: sampleAgents, zoneColumns: zoneColumns)
+        let departmentRanges = adaptivePlan.zones.map { zone -> ClosedRange<Double> in
+            let fontSize = max(officeZoneLabelMinFontSizeValue, tileSize * 0.38)
+            let glyphWidth = labelGlyphWidth(
+                "\(zone.department.icon) \(zone.department.label)", fontSize: fontSize
+            )
+            let plateWidth = glyphWidth + 12
+            let center = (Double(zone.origin.x) + Double(zone.width) / 2) * tileSize
+            return (center - plateWidth / 2)...(center + plateWidth / 2)
+        }
+
+        for area in adaptivePlan.commonAreas {
+            let fontSize = max(officeZoneLabelMinFontSizeValue, tileSize * 0.32)
+            let glyphWidth = labelGlyphWidth("\(area.icon) \(area.label)", fontSize: fontSize)
+            let plateWidth = glyphWidth + 10
+            let preferredLeading = (Double(area.originX) + 0.5) * tileSize - 5
+            let availableTrailing =
+                (Double(area.originX + area.width) - 0.5) * tileSize + 5
+            let available = preferredLeading...availableTrailing
+            let leading = officeNonOverlappingLabelLeadingX(
+                preferredLeadingX: preferredLeading,
+                availableRange: available,
+                labelWidth: plateWidth,
+                occupiedRanges: departmentRanges
+            )
+            let commonRange = leading...(leading + plateWidth)
+
+            for (zone, departmentRange) in zip(adaptivePlan.zones, departmentRanges) {
+                let separated =
+                    commonRange.upperBound + officeLabelSeparationMinPixels
+                        <= departmentRange.lowerBound
+                    || departmentRange.upperBound + officeLabelSeparationMinPixels
+                        <= commonRange.lowerBound
+                t.expect(
+                    separated,
+                    "\(zoneColumns)열 \(area.label) \(commonRange)와 "
+                        + "\(zone.department.label) \(departmentRange) 문패 x 범위 겹침"
+                )
+            }
+        }
+    }
 
     let plan = officeFloorPlan(agents: sampleAgents)
 
