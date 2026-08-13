@@ -31,6 +31,11 @@ export interface AgentRetryInputSnapshot {
   poEvalRunId?: number; // CEO — 합성 source (필수)
   pmRunId?: number; // CEO — 합성 source (선택)
   ctoRunId?: number; // CEO — 합성 source (선택)
+  // PAPER_RECOMMEND — 원래 전략과 판단 시각을 고정해 다른 전략/날짜의 주문을 만들지 않는다.
+  strategy?: 'LONG_TERM' | 'SWING';
+  decidedAt?: string;
+  prompt?: string;
+  ruleVersion?: number;
 }
 
 export interface RetryRunPayload {

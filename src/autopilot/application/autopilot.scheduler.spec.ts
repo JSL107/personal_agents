@@ -64,7 +64,7 @@ describe('AutopilotScheduler', () => {
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
     //   + ai-cli-env-snapshot + ai-cli-env-apply = 21그룹.
-    expect(queue.add).toHaveBeenCalledTimes(21);
+    expect(queue.add).toHaveBeenCalledTimes(23);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');

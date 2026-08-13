@@ -162,6 +162,42 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(universeSweep.digestGroup).toBeUndefined();
   });
 
+  it('모의투자 추천을 유니버스 수집 바로 뒤 평일 19:30 KST standalone 항목으로 포함한다', () => {
+    const universeSweepIndex = AUTOPILOT_PLAYBOOK.findIndex(
+      (entry) => entry.id === 'universe-sweep',
+    );
+    const paperRecommend = AUTOPILOT_PLAYBOOK[universeSweepIndex + 1];
+
+    expect(paperRecommend).toMatchObject({
+      id: 'paper-recommend',
+      taskId: 'paper-recommend',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '30 19 * * 1-5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(paperRecommend.digestGroup).toBeUndefined();
+  });
+
+  it('모의투자 체결을 평일 10분 주기 standalone 항목으로 포함한다', () => {
+    const paperOrderFill = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'paper-order-fill',
+    );
+
+    expect(paperOrderFill).toMatchObject({
+      taskId: 'paper-order-fill',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '*/10 9-15 * * 1-5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(paperOrderFill?.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

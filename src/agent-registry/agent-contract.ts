@@ -247,6 +247,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.GROWTH,
     '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
   ),
+  [AgentType.PAPER_RECOMMEND]: stub(
+    Department.GROWTH,
+    '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',
+  ),
 
   // ──────────────────────────────── 내부 ────────────────────────────────
   [AgentType.OPS_SUPERVISOR]: {

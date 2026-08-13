@@ -266,6 +266,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '모의투자 계좌 일일 평가 — 포지션 평가·수익률·데이터 이상을 기록 (슬래시 없음, autopilot 전용, LLM 미사용)',
   },
   {
+    agentType: AgentType.PAPER_RECOMMEND,
+    displayName: 'Paper Recommend',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts',
+    description:
+      '모의투자 전략별 추천 — 후보와 보유 종목을 함께 LLM 판단 (슬래시 없음, autopilot/CLI 전용)',
+  },
+  {
     agentType: AgentType.CTO_STUDY,
     displayName: 'CTO Study',
     slashCommands: [],

@@ -9,6 +9,7 @@ import { CeoModule } from '../agent/ceo/ceo.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { CtoModule } from '../agent/cto/cto.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
+import { PaperRecommendModule } from '../agent/paper-recommend/paper-recommend.module';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
@@ -16,6 +17,7 @@ import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
@@ -53,6 +55,8 @@ import { SlackService } from './slack.service';
     BeTestModule,
     BeSreModule,
     BeFixModule,
+    PaperRecommendModule,
+    PaperTradingModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO).
     CtoModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade).

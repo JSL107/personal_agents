@@ -64,6 +64,14 @@ export const DEFAULT_PAPER_TRADING_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_UNIVERSE_SWEEP_CRON = '30 18 * * *';
 export const DEFAULT_UNIVERSE_SWEEP_TIMEZONE = 'Asia/Seoul';
 
+// 모의투자 추천 — 평일 유니버스 수집 완료와 재시도 여유 뒤 19:30 KST.
+export const DEFAULT_PAPER_RECOMMEND_CRON = '30 19 * * 1-5';
+export const DEFAULT_PAPER_RECOMMEND_TIMEZONE = 'Asia/Seoul';
+
+// 모의투자 주문 체결 — 평일 09:00~15:59 10분 주기. 실제 처리 창은 usecase가 판정한다.
+export const DEFAULT_PAPER_ORDER_FILL_CRON = '*/10 9-15 * * 1-5';
+export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
+
 // Preview Sweeper 기본 스케줄 — 10분마다. 만료 카드는 목록(findAllOpen)에서는 즉시 빠지지만
 // 콘솔이 구독하는 approval.resolved 는 이 스위퍼가 돌 때만 발행된다. 매시간이면 SESSION_INJECT
 // TTL(30분)이 지난 카드가 최대 1시간 동안 콘솔 화면에 남아, 눌러도 서버가 거절하는 유령 버튼이 됐다.

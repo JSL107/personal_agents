@@ -48,6 +48,7 @@ export interface AgentRunExecutionResult<T> {
 
 export interface AgentRunContext {
   agentRunId: number;
+  updateInputSnapshot: (inputSnapshot: unknown) => Promise<void>;
 }
 
 export interface ExecuteAgentRunInput<T> {
@@ -147,7 +148,17 @@ export class AgentRunService {
         await this.repository.recordEvidence({ agentRunId: id, ...entry });
       }
 
-      const execution = await run({ agentRunId: id });
+      const execution = await run({
+        agentRunId: id,
+        updateInputSnapshot: async (nextInputSnapshot: unknown) => {
+          if (this.repository.updateInputSnapshot) {
+            await this.repository.updateInputSnapshot({
+              id,
+              inputSnapshot: nextInputSnapshot,
+            });
+          }
+        },
+      });
 
       // 직무 계약 검수 — LLM 을 쓰지 않는 결정론 검사라 비용·지연이 없다.
       // 1단계는 관측 모드다: 위반이 있어도 SUCCEEDED 를 유지하고 기록만 남긴다.
