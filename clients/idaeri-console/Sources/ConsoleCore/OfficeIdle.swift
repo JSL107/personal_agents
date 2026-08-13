@@ -161,6 +161,34 @@ public func officeLoungeInteractionOffset(facing: Facing, tileSize: Double) -> O
     }
 }
 
+/// 가구를 쓰러 설(앉을) 후보 칸. 앞쪽부터 우선순위 순서다.
+///
+/// **앉는 가구는 정면 칸 하나뿐이다.** 소파·테이블 그림은 정면도라, 옆 칸에서 앉히면 등받이가
+/// 몸 옆으로 나와 "소파에 앉은 사람" 이 아니라 **소파 옆에 나란히 앉은 사람**이 된다(경영방
+/// 소파는 정면 칸을 커피테이블이 막아 왼쪽 칸으로 밀렸고, 라운지 오프셋 0.30칸으로는 소파
+/// 실루엣과 겹치지도 않았다). 정면이 막히면 그 가구는 목적지에서 빠진다 — 옆에 앉은 그림보다
+/// 아무도 안 앉는 소파가 낫다.
+///
+/// 서서 쓰는 자세(커피머신·책장 등)는 어느 쪽에 서도 그림이 성립하므로 네 방향을 모두 쓴다.
+///
+/// 규칙을 `officeStrollSpots` 안에 두지 않고 꺼내는 이유는 **현재 평면도가 규칙을 가리기
+/// 때문**이다. 지금 배치는 앉는 가구의 정면이 모두 열려 있어, 네 방향 탐색으로 되돌려도
+/// 목적지 결과가 같다 — 평면도를 통해서만 검증하면 규칙이 사라진 것을 눈치채지 못한다.
+public func officeInteractionNeighbors(
+    furniture: TilePoint, pose: OfficeInteractionPose
+) -> [TilePoint] {
+    let front = TilePoint(x: furniture.x, y: furniture.y - 1)
+    guard pose != .sitting else {
+        return [front]
+    }
+    return [
+        front,
+        TilePoint(x: furniture.x - 1, y: furniture.y),
+        TilePoint(x: furniture.x + 1, y: furniture.y),
+        TilePoint(x: furniture.x, y: furniture.y + 1),
+    ]
+}
+
 /// 평면도 가구 순서를 보존해 목적지 카탈로그도 실행마다 같은 순서를 유지한다.
 public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     let seatTiles = Set(plan.desks.map(\.seat))
@@ -182,24 +210,7 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         else {
             continue
         }
-        // **앉는 가구는 정면 칸에서만 앉는다.** 소파·테이블 그림은 정면도라, 옆 칸에서
-        // 앉히면 등받이가 몸 옆으로 나와 "소파에 앉은 사람" 이 아니라 **소파 옆에 나란히
-        // 앉은 사람**이 된다(경영방 소파는 정면 칸을 커피테이블이 막아 왼쪽 칸으로 밀렸고,
-        // 라운지 오프셋 0.30칸으로는 소파 실루엣과 겹치지도 않았다).
-        //
-        // 정면이 막히면 그 가구는 목적지에서 빠진다 — 옆에 앉은 그림보다 아무도 안 앉는
-        // 소파가 낫다. 서서 쓰는 자세(커피머신·책장 등)는 어느 쪽에 서도 그림이 성립하므로
-        // 네 방향을 그대로 쓴다.
-        let front = TilePoint(x: placement.tile.x, y: placement.tile.y - 1)
-        let neighbors =
-            pose == .sitting
-            ? [front]
-            : [
-                front,
-                TilePoint(x: placement.tile.x - 1, y: placement.tile.y),
-                TilePoint(x: placement.tile.x + 1, y: placement.tile.y),
-                TilePoint(x: placement.tile.x, y: placement.tile.y + 1),
-            ]
+        let neighbors = officeInteractionNeighbors(furniture: placement.tile, pose: pose)
         guard let tile = neighbors.first(where: {
             plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
         }), usedTiles.insert(tile).inserted else {
