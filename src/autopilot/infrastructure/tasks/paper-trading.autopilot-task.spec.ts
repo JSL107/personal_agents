@@ -5,9 +5,9 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   EvaluateAccountResult,
+  EvaluatedAccountEntry,
   EvaluatePaperAccountUsecase,
 } from '../../../paper-trading/application/evaluate-paper-account.usecase';
-import { formatPaperTradingReport } from '../../../paper-trading/infrastructure/paper-trading.formatter';
 import { PaperTradingAutopilotTask } from './paper-trading.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-11' };
@@ -42,15 +42,35 @@ const EVALUATION: EvaluateAccountResult = {
   suspiciousJumps: [],
 };
 
+const succeededEntry = (
+  accountName: string,
+  evaluation: EvaluateAccountResult = EVALUATION,
+): EvaluatedAccountEntry => ({
+  accountName,
+  evaluation,
+  failureReason: null,
+});
+
+const failedEntry = (
+  accountName: string,
+  failureReason: string,
+): EvaluatedAccountEntry => ({
+  accountName,
+  evaluation: null,
+  failureReason,
+});
+
 const createFixture = (input?: {
   enabled?: string;
-  evaluation?: EvaluateAccountResult;
-  evaluationError?: Error;
+  accounts?: EvaluatedAccountEntry[];
 }) => {
   const evaluate = {
-    execute: input?.evaluationError
-      ? jest.fn().mockRejectedValue(input.evaluationError)
-      : jest.fn().mockResolvedValue(input?.evaluation ?? EVALUATION),
+    executeAll: jest.fn().mockResolvedValue({
+      accounts: input?.accounts ?? [
+        succeededEntry('LONG_TERM'),
+        succeededEntry('SWING'),
+      ],
+    }),
   };
   const config = {
     get: jest.fn().mockReturnValue(input?.enabled ?? 'true'),
@@ -82,19 +102,31 @@ describe('PaperTradingAutopilotTask', () => {
     const { task, evaluate, agentRun } = createFixture({ enabled: 'false' });
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
-    expect(evaluate.execute).not.toHaveBeenCalled();
+    expect(evaluate.executeAll).not.toHaveBeenCalled();
     expect(agentRun.execute).not.toHaveBeenCalled();
   });
 
-  it('평가 결과를 원장 감사 요약과 Slack summaryText에 함께 남긴다', async () => {
+  // 회귀 방지 — 평가 대상을 'DEFAULT' 로 지목하던 동안 추천이 실제로 매매하는 전략 계좌
+  // (LONG_TERM / SWING) 의 스냅샷이 한 건도 적재되지 않았다. 계좌 이름을 task 가 알지 못하고
+  // 전체를 훑는지(executeAll) 를 계약으로 고정한다.
+  it('계좌 이름을 지정하지 않고 전체 계좌를 슬롯 거래일로 평가한다', async () => {
+    const { task, evaluate } = createFixture();
+
+    await task.run(context);
+
+    expect(evaluate.executeAll).toHaveBeenCalledWith(
+      new Date('2026-08-11T08:40:00.000Z'),
+    );
+  });
+
+  it('계좌별 평가를 원장 감사와 Slack summaryText에 함께 남긴다', async () => {
     const { task, agentRun } = createFixture();
 
     const result = await task.run(context);
 
-    expect(result).toEqual({
-      skip: false,
-      summaryText: formatPaperTradingReport(EVALUATION),
-    });
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('*[LONG_TERM]*');
+    expect(result.summaryText).toContain('*[SWING]*');
     expect(agentRun.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         agentType: AgentType.PAPER_TRADE,
@@ -106,83 +138,113 @@ describe('PaperTradingAutopilotTask', () => {
       }),
     );
     const run = agentRun.execute.mock.calls[0][0].run;
-    await expect(run({ agentRunId: 71 })).resolves.toEqual({
-      result: {
-        skip: false,
-        summaryText: formatPaperTradingReport(EVALUATION),
-      },
-      modelUsed: 'deterministic',
-      output: {
-        positionCount: 1,
-        staleTickerCount: 0,
-        invariantViolationCount: 0,
-        suspiciousJumpCount: 0,
-        tradeDate: '2026-08-11',
-        skipped: false,
-        skipReason: null,
-      },
+    const execution = await run({ agentRunId: 71 });
+    expect(execution.modelUsed).toBe('deterministic');
+    expect(execution.output).toEqual({
+      accountCount: 2,
+      failedCount: 0,
+      accounts: [
+        {
+          accountName: 'LONG_TERM',
+          positionCount: 1,
+          staleTickerCount: 0,
+          invariantViolationCount: 0,
+          suspiciousJumpCount: 0,
+          tradeDate: '2026-08-11',
+          skipped: false,
+          skipReason: null,
+          failureReason: null,
+        },
+        {
+          accountName: 'SWING',
+          positionCount: 1,
+          staleTickerCount: 0,
+          invariantViolationCount: 0,
+          suspiciousJumpCount: 0,
+          tradeDate: '2026-08-11',
+          skipped: false,
+          skipReason: null,
+          failureReason: null,
+        },
+      ],
     });
   });
 
-  it('포지션 0건 실행도 원장에 기록하고 보유 없음 summary를 반환한다', async () => {
-    const evaluation = {
-      ...EVALUATION,
-      cashBalance: '1000000',
-      positionValue: '0',
-      totalValue: '1000000',
-      returnRate: '0',
-      positions: [],
-      positionCount: 0,
-    };
-    const { task, agentRun } = createFixture({ evaluation });
+  // 계좌가 없는 상태를 조용히 성공으로 남기면 성적표가 비어가는 것을 아무도 모른다.
+  it('계좌가 0건이면 원장에 남기고 경고 summary를 반환한다', async () => {
+    const { task, agentRun } = createFixture({ accounts: [] });
 
     const result = await task.run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('_보유 없음_');
+    expect(result.summaryText).toContain('평가할 가상 계좌가 없습니다');
     const run = agentRun.execute.mock.calls[0][0].run;
     const execution = await run({ agentRunId: 71 });
-    expect(execution.output).toEqual(
-      expect.objectContaining({ positionCount: 0, skipped: false }),
+    expect(execution.output).toEqual({
+      accountCount: 0,
+      failedCount: 0,
+      accounts: [],
+    });
+  });
+
+  // 부분 실패를 성공으로 반환하면 슬롯이 완주 처리되어 BullMQ 재시도가 돌지 않는다.
+  // 스냅샷은 거래일 단위라 다음 슬롯이 그날 구멍을 메워주지 못한다.
+  it('한 계좌만 실패해도 재시도되도록 실패로 올린다', async () => {
+    const { task } = createFixture({
+      accounts: [
+        succeededEntry('LONG_TERM'),
+        failedEntry('SWING', '시세 조회 실패'),
+      ],
+    });
+
+    await expect(task.run(context)).rejects.toThrow(
+      '가상 계좌 2개 중 1개를 평가하지 못했습니다 — SWING: 시세 조회 실패 (평가 완료: LONG_TERM)',
     );
   });
 
-  it('스냅샷 미적재 실행도 차단 사유를 원장과 Slack에 남긴다', async () => {
-    const evaluation = {
-      ...EVALUATION,
-      skipped: true,
-      skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
-      positionValue: null,
-      totalValue: null,
-      returnRate: null,
-    };
-    const { task, agentRun } = createFixture({ evaluation });
+  it('모든 계좌가 실패하면 평가 완료 목록 없이 실패로 남긴다', async () => {
+    const { task } = createFixture({
+      accounts: [
+        failedEntry('LONG_TERM', '시세 조회 실패'),
+        failedEntry('SWING', '계좌 상태 불일치'),
+      ],
+    });
+
+    await expect(task.run(context)).rejects.toThrow(
+      '가상 계좌 2개 중 2개를 평가하지 못했습니다 — LONG_TERM: 시세 조회 실패 / SWING: 계좌 상태 불일치',
+    );
+  });
+
+  // 계좌별 격리(한 계좌의 예외가 나머지 계좌의 평가·적재를 막지 않는 것)는
+  // evaluate-paper-account.usecase.spec 의 executeAll 계약이 고정한다.
+
+  it('스냅샷 미적재 사유를 계좌 섹션과 원장에 남긴다', async () => {
+    const { task, agentRun } = createFixture({
+      accounts: [
+        succeededEntry('LONG_TERM', {
+          ...EVALUATION,
+          skipped: true,
+          skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
+          positionValue: null,
+          totalValue: null,
+          returnRate: null,
+        }),
+      ],
+    });
 
     const result = await task.run(context);
 
-    expect(result).toEqual(
-      expect.objectContaining({
-        skip: false,
-        summaryText: expect.stringContaining(
-          '스냅샷 미적재 — 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
-        ),
-      }),
+    expect(result.summaryText).toContain(
+      '스냅샷 미적재 — 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
     );
     const run = agentRun.execute.mock.calls[0][0].run;
     const execution = await run({ agentRunId: 71 });
-    expect(execution.output).toEqual(
+    expect(execution.output.accounts[0]).toEqual(
       expect.objectContaining({
+        accountName: 'LONG_TERM',
         skipped: true,
         skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
       }),
     );
-  });
-
-  it('평가 usecase 예외를 원장 execute 안에서 전파한다', async () => {
-    const error = new Error('시세 조회 실패');
-    const { task, agentRun } = createFixture({ evaluationError: error });
-
-    await expect(task.run(context)).rejects.toThrow('시세 조회 실패');
-    expect(agentRun.execute).toHaveBeenCalledTimes(1);
   });
 });
