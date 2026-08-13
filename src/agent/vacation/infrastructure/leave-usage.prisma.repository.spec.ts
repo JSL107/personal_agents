@@ -1,7 +1,7 @@
 import { PrismaService } from '../../../prisma/prisma.service';
-import { LeaveUsageRepository } from './leave-usage.repository';
+import { LeaveUsagePrismaRepository } from './leave-usage.prisma.repository';
 
-describe('LeaveUsageRepository', () => {
+describe('LeaveUsagePrismaRepository', () => {
   const row = {
     id: 1,
     slackUserId: 'U1',
@@ -16,7 +16,7 @@ describe('LeaveUsageRepository', () => {
   it('save 는 PlainDate 를 UTC Date 로 저장하고 도메인 레코드로 매핑', async () => {
     const create = jest.fn().mockResolvedValue(row);
     const prisma = { leaveUsage: { create } } as unknown as PrismaService;
-    const repo = new LeaveUsageRepository(prisma);
+    const repo = new LeaveUsagePrismaRepository(prisma);
 
     const result = await repo.save({
       slackUserId: 'U1',
@@ -46,7 +46,7 @@ describe('LeaveUsageRepository', () => {
   it('findActiveByUser 는 canceledAt=null 조건 + 매핑', async () => {
     const findMany = jest.fn().mockResolvedValue([row]);
     const prisma = { leaveUsage: { findMany } } as unknown as PrismaService;
-    const repo = new LeaveUsageRepository(prisma);
+    const repo = new LeaveUsagePrismaRepository(prisma);
 
     const result = await repo.findActiveByUser('U1');
 
@@ -61,7 +61,7 @@ describe('LeaveUsageRepository', () => {
   it('softCancel 은 본인 소유 + 미취소 건만 update (count 0 이면 false)', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const prisma = { leaveUsage: { updateMany } } as unknown as PrismaService;
-    const repo = new LeaveUsageRepository(prisma);
+    const repo = new LeaveUsagePrismaRepository(prisma);
 
     const ok = await repo.softCancel({
       slackUserId: 'U1',

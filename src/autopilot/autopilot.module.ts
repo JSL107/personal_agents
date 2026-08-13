@@ -11,7 +11,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { SyncHoldingsUsecase } from '../agent/stock/application/sync-holdings.usecase';
-import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -55,6 +55,7 @@ import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-bri
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PaperOrderFillAutopilotTask } from './infrastructure/tasks/paper-order-fill.autopilot-task';
 import { PaperRecommendAutopilotTask } from './infrastructure/tasks/paper-recommend.autopilot-task';
+import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.autopilot-task';
 import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
@@ -132,13 +133,14 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     UniverseSweepAutopilotTask,
     PaperRecommendAutopilotTask,
     PaperOrderFillAutopilotTask,
+    PaperScoreAutopilotTask,
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
         marketData: MarketDataPort,
-        repository: StockMonitorRepository,
+        repository: StockMonitorPrismaRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
         syncHoldings: SyncHoldingsUsecase,
@@ -153,7 +155,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ),
       inject: [
         MARKET_DATA_PORT,
-        StockMonitorRepository,
+        StockMonitorPrismaRepository,
         ConfigService,
         AgentRunService,
         SyncHoldingsUsecase,
@@ -163,7 +165,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       provide: STOCK_MONITOR_US_TASK,
       useFactory: (
         marketData: MarketDataPort,
-        repository: StockMonitorRepository,
+        repository: StockMonitorPrismaRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
         syncHoldings: SyncHoldingsUsecase,
@@ -178,7 +180,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ),
       inject: [
         MARKET_DATA_PORT,
-        StockMonitorRepository,
+        StockMonitorPrismaRepository,
         ConfigService,
         AgentRunService,
         SyncHoldingsUsecase,
@@ -218,6 +220,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep: UniverseSweepAutopilotTask,
         paperRecommend: PaperRecommendAutopilotTask,
         paperOrderFill: PaperOrderFillAutopilotTask,
+        paperScore: PaperScoreAutopilotTask,
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
       ) => [
@@ -246,6 +249,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep,
         paperRecommend,
         paperOrderFill,
+        paperScore,
         aiCliEnvSnapshot,
         aiCliEnvApply,
       ],
@@ -275,6 +279,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         UniverseSweepAutopilotTask,
         PaperRecommendAutopilotTask,
         PaperOrderFillAutopilotTask,
+        PaperScoreAutopilotTask,
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
       ],

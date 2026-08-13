@@ -4,7 +4,7 @@ import {
   calculateIndicators,
   StockIndicators,
 } from '../../market-data/domain/stock-indicator';
-import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 import {
   ScreenCandidate,
   ScreenedStock,
@@ -49,7 +49,7 @@ interface DatedScreenCandidate {
 
 @Injectable()
 export class ScreenUniverseUsecase {
-  constructor(private readonly repository: MarketDataRepository) {}
+  constructor(private readonly repository: MarketDataPrismaRepository) {}
 
   async execute(options: ScreenUniverseOptions): Promise<ScreenUniverseResult> {
     const universe = await this.repository.findUniverseTickers();

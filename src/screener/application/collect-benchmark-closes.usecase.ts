@@ -7,8 +7,8 @@ import {
 } from '../../market-data/domain/port/market-indicator.port';
 import {
   BenchmarkCloseWriteInput,
-  BenchmarkRepository,
-} from '../../market-data/infrastructure/benchmark.repository';
+  BenchmarkPrismaRepository,
+} from '../../market-data/infrastructure/benchmark.prisma.repository';
 
 const BENCHMARK_SYMBOL = 'KOSPI';
 const DEFAULT_INCREMENTAL_DAYS = 5;
@@ -35,7 +35,7 @@ export class CollectBenchmarkClosesUsecase {
   constructor(
     @Inject(MARKET_INDICATOR_PORT)
     private readonly marketIndicator: MarketIndicatorPort,
-    private readonly repository: BenchmarkRepository,
+    private readonly repository: BenchmarkPrismaRepository,
   ) {}
 
   async execute(

@@ -9,9 +9,9 @@ import {
 import {
   DailyPriceWriteInput,
   DailyPriceWriteResult,
-  MarketDataRepository,
+  MarketDataPrismaRepository,
   UniverseTicker,
-} from '../../market-data/infrastructure/market-data.repository';
+} from '../../market-data/infrastructure/market-data.prisma.repository';
 
 const DEFAULT_INCREMENTAL_DAYS = 5;
 const DEFAULT_INITIAL_DAYS = 200;
@@ -68,7 +68,7 @@ export class CollectUniversePricesUsecase {
 
   constructor(
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
-    private readonly repository: MarketDataRepository,
+    private readonly repository: MarketDataPrismaRepository,
   ) {}
 
   async execute(

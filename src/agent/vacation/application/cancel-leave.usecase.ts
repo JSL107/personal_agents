@@ -14,7 +14,7 @@ import { MonthlyThenFixed15Policy } from '../domain/policy/accrual-policy';
 import { VacationException } from '../domain/vacation.exception';
 import { CancelLeaveResult } from '../domain/vacation.type';
 import { VacationErrorCode } from '../domain/vacation-error-code.enum';
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { resolveHireDate } from './resolve-hire-date';
 
 interface CancelLeaveCommand {
@@ -29,7 +29,7 @@ const policy = new MonthlyThenFixed15Policy();
 export class CancelLeaveUsecase {
   constructor(
     private readonly config: ConfigService,
-    private readonly repository: LeaveUsageRepository,
+    private readonly repository: LeaveUsagePrismaRepository,
     private readonly agentRunService: AgentRunService,
     // 테스트에서 시각 고정용 주입 (default: 실제 now). @Optional 로 Nest DI Function 오류 방지.
     @Optional() private readonly now: () => Date = () => new Date(),

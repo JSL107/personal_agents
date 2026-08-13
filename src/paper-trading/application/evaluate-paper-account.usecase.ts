@@ -14,8 +14,8 @@ import {
 } from '../domain/paper-valuation';
 import {
   PaperPositionWithTicker,
-  PaperTradingRepository,
-} from '../infrastructure/paper-trading.repository';
+  PaperTradingPrismaRepository,
+} from '../infrastructure/paper-trading.prisma.repository';
 
 export interface EvaluateAccountCommand {
   accountName: string;
@@ -59,6 +59,17 @@ export interface EvaluateAccountResult {
   staleTickerCount: number;
   invariantViolations: string[];
   suspiciousJumps: string[];
+}
+
+export interface EvaluatedAccountEntry {
+  accountName: string;
+  // 계좌 하나가 예외로 끝나도 나머지 계좌는 평가해야 하므로, 결과 대신 사유를 싣는다.
+  evaluation: EvaluateAccountResult | null;
+  failureReason: string | null;
+}
+
+export interface EvaluateAllAccountsResult {
+  accounts: EvaluatedAccountEntry[];
 }
 
 interface PositionPrice {
@@ -114,9 +125,39 @@ const sortBars = (bars: DailyBar[]): DailyBar[] =>
 @Injectable()
 export class EvaluatePaperAccountUsecase {
   constructor(
-    private readonly repository: PaperTradingRepository,
+    private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
   ) {}
+
+  // 계좌 이름은 추천(PAPER_RECOMMEND)이 전략명으로 열기 때문에(LONG_TERM / SWING) 평가 쪽이
+  // 이름을 알고 있으면 전략이 늘거나 바뀔 때 조용히 빠진다 — 실제로 평가는 1단계의 DEFAULT
+  // 계좌만 보고 있어서, 추천이 실제로 매매하는 계좌의 스냅샷이 한 건도 적재되지 않았다.
+  // findAllAccounts 로 전체를 훑어 이름 규칙을 아는 쪽을 repository 한 곳으로 남긴다.
+  async executeAll(executedAt: Date): Promise<EvaluateAllAccountsResult> {
+    const accounts = await this.repository.findAllAccounts();
+    const entries: EvaluatedAccountEntry[] = [];
+    // 계좌를 병렬로 평가하면 execute 안에서 종목별로 순차 조회한 이유(시세 rate limit 경쟁과
+    // HTTP 429 회피)가 계좌 수만큼 무의미해지므로 계좌도 순차로 돈다.
+    for (const account of accounts) {
+      try {
+        entries.push({
+          accountName: account.name,
+          evaluation: await this.execute({
+            accountName: account.name,
+            executedAt,
+          }),
+          failureReason: null,
+        });
+      } catch (error: unknown) {
+        entries.push({
+          accountName: account.name,
+          evaluation: null,
+          failureReason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { accounts: entries };
+  }
 
   async execute(
     command: EvaluateAccountCommand,

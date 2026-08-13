@@ -312,6 +312,14 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  AUTOPILOT_PAPER_SCORE_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_PAPER_SCORE_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
   AUTOPILOT_UNIVERSE_SWEEP_SCHEDULE?: string;
 
   @IsOptional()

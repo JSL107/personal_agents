@@ -8,8 +8,8 @@ import {
 import { PaperMarket } from '../domain/paper-account.type';
 import {
   DuePaperOrderRecord,
-  PaperTradingRepository,
-} from '../infrastructure/paper-trading.repository';
+  PaperTradingPrismaRepository,
+} from '../infrastructure/paper-trading.prisma.repository';
 import { RecordPaperTradeUsecase } from './record-paper-trade.usecase';
 
 export type FillWindow = 'BEFORE_OPEN' | 'TRADING' | 'AFTER_CLOSE';
@@ -47,7 +47,7 @@ const findTodayBar = (bars: DailyBar[], tradeDate: string): DailyBar | null =>
 @Injectable()
 export class FillPendingOrdersUsecase {
   constructor(
-    private readonly repository: PaperTradingRepository,
+    private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
     private readonly recordTrade: RecordPaperTradeUsecase,
   ) {}

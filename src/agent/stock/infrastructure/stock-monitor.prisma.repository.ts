@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
-import { MarketDataRepository } from '../../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../../market-data/infrastructure/market-data.prisma.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
 import { ExposurePosition } from '../domain/portfolio-exposure';
@@ -41,12 +41,12 @@ export interface DailyPriceForOutcome {
 }
 
 @Injectable()
-export class StockMonitorRepository {
-  private readonly logger = new Logger(StockMonitorRepository.name);
+export class StockMonitorPrismaRepository {
+  private readonly logger = new Logger(StockMonitorPrismaRepository.name);
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly marketDataRepository: MarketDataRepository,
+    private readonly marketDataRepository: MarketDataPrismaRepository,
   ) {}
 
   async findPortfolioPositions(): Promise<ExposurePosition[]> {
