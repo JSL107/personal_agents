@@ -7,6 +7,7 @@ import { FillPendingOrdersUsecase } from './application/fill-pending-orders.usec
 import { GetPaperTradingStatusUsecase } from './application/get-paper-trading-status.usecase';
 import { OpenPaperAccountUsecase } from './application/open-paper-account.usecase';
 import { RecordPaperTradeUsecase } from './application/record-paper-trade.usecase';
+import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
 import { PaperTradingRepository } from './infrastructure/paper-trading.repository';
 
 @Module({
@@ -18,6 +19,8 @@ import { PaperTradingRepository } from './infrastructure/paper-trading.repositor
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     FillPendingOrdersUsecase,
+    // 자연어 진입 — RouterModule 의 AGENT_DISPATCHER_PORT useFactory 가 중앙에서 inject 한다.
+    PaperTradeDispatcher,
   ],
   exports: [
     PaperTradingRepository,
@@ -26,6 +29,7 @@ import { PaperTradingRepository } from './infrastructure/paper-trading.repositor
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     FillPendingOrdersUsecase,
+    PaperTradeDispatcher,
   ],
 })
 export class PaperTradingModule {}

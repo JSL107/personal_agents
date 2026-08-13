@@ -15,6 +15,11 @@ export interface PaperAccountRecord {
   cashBalance: MoneyValue;
 }
 
+// 전체 훑기(findAllAccounts)는 어느 계좌인지 밝혀야 하므로 이름을 함께 싣는다.
+export interface PaperAccountNamedRecord extends PaperAccountRecord {
+  name: string;
+}
+
 export interface CreateAccountInput {
   name: string;
   currency: string;
@@ -201,6 +206,16 @@ export class PaperTradingRepository {
     return await this.prisma.paperAccount.findUnique({
       where: { name },
       select: { id: true, seedAmount: true, cashBalance: true },
+    });
+  }
+
+  // 계좌 이름은 전략명이 그대로 쓰인다 (PAPER_RECOMMEND 의 findOrOpenAccount 가
+  // LONG_TERM / SWING 으로 연다). 조회 쪽이 이름을 알고 있으면 전략이 늘 때마다
+  // 조용히 빠지므로 전체를 이름순으로 훑는다.
+  async findAllAccounts(): Promise<PaperAccountNamedRecord[]> {
+    return await this.prisma.paperAccount.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, seedAmount: true, cashBalance: true },
     });
   }
 
