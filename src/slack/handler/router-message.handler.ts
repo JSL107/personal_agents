@@ -126,7 +126,10 @@ export class RouterMessageHandler implements SlackHandler {
           : 'unknown';
       const messageTs =
         'ts' in event && typeof event.ts === 'string' ? event.ts : undefined;
-      // DM 도 동일 원칙 — 실제 thread_ts 만 메모리 키 격리에 쓰고, 없으면 channel(=DM) 단위.
+      // 메모리 키에는 실제 thread_ts 만 쓴다 — 없으면 channel(=DM) 단위.
+      // messageTs 를 키에 섞으면 안 된다: DM 입력창에서 연달아 보낸 top-level 메시지들은
+      // 서로 thread_ts 가 없고 ts 는 다르므로 매 발화가 새 키가 되어 맥락이 매번 끊긴다.
+      // 봇이 만든 스레드로 이어가는 흐름은 processRouterMessage 의 channel 키 되짚기가 잇는다.
       const memoryThreadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
@@ -200,7 +203,12 @@ export class RouterMessageHandler implements SlackHandler {
       channelId,
       threadTs: memoryThreadTs,
     });
-    const priorTurns = await this.conversationMemory.getRecentTurns(memoryKey);
+    const priorTurns = await this.getPriorTurnsWithChannelFallback({
+      memoryKey,
+      slackUserId,
+      channelId,
+      memoryThreadTs,
+    });
     let unresolvedStreak = 0;
     for (const turn of [...priorTurns].reverse()) {
       if (turn.role !== 'assistant') {
@@ -369,6 +377,39 @@ export class RouterMessageHandler implements SlackHandler {
         });
       }
     }
+  }
+
+  // 스레드 키 우선 조회 + channel 키 되짚기.
+  //
+  // 봇은 top-level 메시지(thread_ts 없음)에 답글을 달아 스레드를 만든다. 그래서 그 대화의
+  // 첫 턴은 channel 키에 적재되고, 사용자가 그 스레드에서 이어 말한 순간부터 thread 키로
+  // 넘어간다. 스레드 키만 보면 그 전환 지점에서 방금 한 대화를 통째로 잃는다
+  // (2026-08-13 12:37 로그의 priorTurns=0).
+  //
+  // 반대로 키에서 스레드를 아예 없애면 DM 입력창에서 연달아 보낸 top-level 발화가 섞이지
+  // 않는 대신 병행 스레드가 한 덩어리가 된다. 그래서 스레드 격리는 유지하고, 스레드 키가
+  // 아직 빈 첫 진입에서만 channel 키를 한 번 되짚는다. 두 번째 턴 이후로는 스레드 키에
+  // 이미 쌓여 있어 이 되짚기가 일어나지 않는다.
+  private async getPriorTurnsWithChannelFallback({
+    memoryKey,
+    slackUserId,
+    channelId,
+    memoryThreadTs,
+  }: {
+    memoryKey: string;
+    slackUserId: string;
+    channelId: string;
+    memoryThreadTs: string | undefined;
+  }): Promise<ConversationTurn[]> {
+    const turns = await this.conversationMemory.getRecentTurns(memoryKey);
+    if (turns.length > 0 || memoryThreadTs === undefined) {
+      return turns;
+    }
+    const channelKey = this.conversationMemory.buildKey({
+      slackUserId,
+      channelId,
+    });
+    return await this.conversationMemory.getRecentTurns(channelKey);
   }
 
   // 자연어 Y/N 응답 인터셉트 — 사용자가 직전 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
