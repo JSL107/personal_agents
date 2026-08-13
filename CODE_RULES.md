@@ -26,6 +26,9 @@
 ## 2) 아키텍처/레이어 규칙 (MUST)
 
 1. Domain Layer는 프레임워크/외부 라이브러리에 의존하지 않는다.
+   - 예외: 어댑터 등록만을 계약으로 갖는 port 는 등록 대상 프레임워크의 타입을 시그니처에 노출할 수 있다.
+     현재 해당하는 곳은 `src/slack/domain/port/slack-handler.port.ts` 하나이며, Bolt `App` 을 감싸는 자체 추상을 두면
+     래퍼만 늘고 얻는 게 없어 의도적으로 허용한다. 새로 예외를 만들 때는 이 목록에 파일과 이유를 함께 적는다.
 2. Application Layer는 유스케이스를 조합하며 트랜잭션 경계를 가진다.
    트랜잭션의 시작/커밋/롤백은 Application Layer에서 선언하고, 실제 구현은 Infrastructure Layer(Unit of Work 등)에 위임한다.
 3. Infrastructure Layer는 DB, 외부 API, 메시징 등 구현 세부사항을 담당한다.
