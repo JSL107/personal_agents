@@ -7,8 +7,8 @@ import { KnowledgeLintService } from './application/knowledge-lint.service';
 import { EMBEDDER_PORT } from './domain/port/embedder.port';
 import { EPISODIC_MEMORY_PORT } from './domain/port/episodic-memory.port';
 import { KNOWLEDGE_LINT_PORT } from './domain/port/knowledge-lint.port';
-import { EpisodicMemoryRepository } from './infrastructure/episodic-memory.repository';
-import { KnowledgeLintRepository } from './infrastructure/knowledge-lint.repository';
+import { EpisodicMemoryPrismaRepository } from './infrastructure/episodic-memory.prisma.repository';
+import { KnowledgeLintPrismaRepository } from './infrastructure/knowledge-lint.prisma.repository';
 import { LocalEmbedder } from './infrastructure/local-embedder.adapter';
 
 // PrismaService / ConfigService 는 각각 @Global() PrismaModule / isGlobal ConfigModule 로
@@ -20,9 +20,9 @@ const DEFAULT_EMBED_MODEL = 'Xenova/multilingual-e5-small';
   // contradiction-judge → model-router 단방향(model-router 는 episodic 미참조) → 순환 없음.
   imports: [ContradictionJudgeModule],
   providers: [
-    EpisodicMemoryRepository,
+    EpisodicMemoryPrismaRepository,
     EpisodicMemoryService,
-    KnowledgeLintRepository,
+    KnowledgeLintPrismaRepository,
     KnowledgeLintService,
     {
       provide: EMBEDDER_PORT,

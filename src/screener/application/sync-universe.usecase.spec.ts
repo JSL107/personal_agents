@@ -1,5 +1,5 @@
 import { KrxListingClient } from '../../market-data/infrastructure/krx/krx-listing.client';
-import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 import { SyncUniverseUsecase } from './sync-universe.usecase';
 
 describe('SyncUniverseUsecase', () => {
@@ -17,7 +17,7 @@ describe('SyncUniverseUsecase', () => {
     const repository = {
       upsertUniverseTickers: jest.fn().mockResolvedValue(1_000),
       markDelistedExcept: jest.fn().mockResolvedValue(3),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new SyncUniverseUsecase(client, repository);
 
     await expect(usecase.execute()).resolves.toEqual({
@@ -38,7 +38,7 @@ describe('SyncUniverseUsecase', () => {
     const repository = {
       upsertUniverseTickers: jest.fn().mockResolvedValue(0),
       markDelistedExcept: jest.fn().mockResolvedValue(-1),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new SyncUniverseUsecase(client, repository);
 
     await expect(usecase.execute()).rejects.toThrow(

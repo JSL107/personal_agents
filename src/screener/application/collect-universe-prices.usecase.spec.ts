@@ -1,6 +1,6 @@
 import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
-import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 import { CollectUniversePricesUsecase } from './collect-universe-prices.usecase';
 
 const decimal = (value: string) => ({
@@ -50,7 +50,7 @@ describe('CollectUniversePricesUsecase', () => {
       upsertDailyPrices: jest
         .fn()
         .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     await expect(usecase.execute()).resolves.toEqual({
@@ -101,7 +101,7 @@ describe('CollectUniversePricesUsecase', () => {
       upsertDailyPrices: jest
         .fn()
         .mockResolvedValue({ written: 2, blockedIntraday: 0 }),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     const result = await usecase.execute();
@@ -131,7 +131,7 @@ describe('CollectUniversePricesUsecase', () => {
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue(tickers),
       findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     const result = await usecase.execute();
@@ -162,7 +162,7 @@ describe('CollectUniversePricesUsecase', () => {
       insertDailyPrices: jest
         .fn()
         .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     try {
@@ -197,7 +197,7 @@ describe('CollectUniversePricesUsecase', () => {
         },
       ]),
       findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     try {
@@ -229,7 +229,7 @@ describe('CollectUniversePricesUsecase', () => {
         },
       ]),
       findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     await expect(usecase.execute()).resolves.toEqual(
@@ -264,7 +264,7 @@ describe('CollectUniversePricesUsecase', () => {
       findStoredCloses: jest
         .fn()
         .mockResolvedValue(new Map([['2026-08-11', '100']])),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new CollectUniversePricesUsecase(marketData, repository);
 
     try {

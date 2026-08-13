@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { KrxListingClient } from '../../market-data/infrastructure/krx/krx-listing.client';
-import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 
 export interface SyncUniverseResult {
   fetched: number;
@@ -13,7 +13,7 @@ export interface SyncUniverseResult {
 export class SyncUniverseUsecase {
   constructor(
     private readonly krxListingClient: KrxListingClient,
-    private readonly repository: MarketDataRepository,
+    private readonly repository: MarketDataPrismaRepository,
   ) {}
 
   async execute(): Promise<SyncUniverseResult> {
