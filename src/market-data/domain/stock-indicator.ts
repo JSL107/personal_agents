@@ -3,9 +3,11 @@ import { DecimalValue } from './market-data.type';
 const TRADING_DAYS_PER_YEAR = 252;
 // 이름이 200일인데 짧은 구간 값을 섞으면 고점 표본이 낮아 신규·부분 이력 종목이 부당하게 유리해진다.
 const HIGH_POSITION_MINIMUM_BARS = 200;
+const TURNOVER_LOOKBACK_BARS = 60;
 
 export interface IndicatorBar {
   tradeDate: Date;
+  close: DecimalValue;
   adjClose: DecimalValue;
   volume: bigint;
 }
@@ -24,6 +26,7 @@ export interface StockIndicators {
   // 저장 일봉에 장중 고가가 없어 최근 200봉의 최고 종가 기준이다. 장중에 찍고 내려온 고점은 반영하지 못한다.
   high200Position: number | null;
   volatility20: number | null;
+  turnover60: number | null;
   barCount: number;
 }
 
@@ -58,6 +61,19 @@ const calculateVolumeSurge = (bars: IndicatorBar[]): number | null => {
     return null;
   }
   return Number(bars[bars.length - 1].volume) / average;
+};
+
+const calculateTurnover60 = (bars: IndicatorBar[]): number | null => {
+  if (bars.length < TURNOVER_LOOKBACK_BARS) {
+    return null;
+  }
+  const selected = bars.slice(-TURNOVER_LOOKBACK_BARS);
+  return (
+    selected.reduce(
+      (sum, bar) => sum + bar.close.toNumber() * Number(bar.volume),
+      0,
+    ) / TURNOVER_LOOKBACK_BARS
+  );
 };
 
 const calculateVolatility20 = (closes: number[]): number | null => {
@@ -117,6 +133,10 @@ export const calculateIndicators = (
         ? null
         : close / highest,
     volatility20: calculateVolatility20(closes),
+    // 거래대금은 그날 실제 체결 금액이므로 원본 종가를 쓴다. 현재 수집은 adjusted=true이고
+    // 토스 매퍼가 close·adjClose에 같은 값을 넣어 저장하지만, 최근 60봉 실측은 차이가 없었다.
+    // 수집이 미조정 계열로 바뀌면 이 계산은 별도 변경 없이 원본 종가를 사용하게 된다.
+    turnover60: calculateTurnover60(bars),
     barCount: bars.length,
   };
 };

@@ -1,3 +1,54 @@
+# PR 봇 리뷰 반영 — 벤치마크 증분 공백 탐지 (2026-08-12)
+
+**Goal:** 저장된 KOSPI 최신 거래일부터 현재까지의 캘린더 일수로 증분 조회 범위를 정해 5거래일 초과 중단 뒤 영구 결손을 막고, 200봉 상한 초과 공백은 운영 로그에 드러낸다.
+
+**Contract:** 사용자 리뷰 지적과 수정 방향이 승인된 구현 계약이다. `options.days`와 최초 200봉 동작은 유지하고, 페이지네이션·API client·DB/schema·env는 변경하지 않는다. commit, staging, push, PR 생성은 금지한다.
+
+- [x] 기존 고정 5봉 경로와 날짜·Logger 테스트 패턴을 확인한다.
+- [x] 20일 공백, 최초 200봉, `options.days` 우선, 200일 초과 경고 spec을 추가하고 RED를 확인한다.
+- [x] KST 캘린더 일수 계산, 5..200 clamp, 상한 경고를 최소 구현하고 주석으로 근거를 남긴다.
+- [x] focused Jest GREEN과 최종 diff 검토를 수행한다.
+- [x] 지정된 lint, screener Jest, 전체 test, build, tsc를 각각 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 저장 최신일이 있으면 KST 현재 날짜와의 캘린더 일수 차이를 계산해 5..200봉으로 제한한다. 거래일 수의 보수적 상한이라 중단 기간을 덮고, 최근 봉 5개 재수집 계약도 유지한다.
+- 최초 수집 200봉과 명시 `options.days` 우선은 유지한다. 자동 계산 공백이 200일을 넘으면 페이지네이션 없이 완전 복구할 수 없음을 `Logger.warn`으로 남긴다.
+- RED는 장기 공백 두 케이스가 모두 5봉을 요청해 2 failures였고, 최종 focused spec은 10/10 통과했다. 독립 리뷰의 clamp 경계 제안도 정확히 5일·200일과 200일 무경고 spec으로 해소했다.
+- fresh gate는 lint exit 0(기존 warning 57), screener 9 suites/45 tests, 전체 일반 342 suites/2,847 tests + code-graph 5 suites/40 tests, build, tsc 모두 exit 0이다.
+- DB/schema/env/API client와 git index/commit/push는 변경하지 않았다.
+
+---
+
+# 유동성 하한 + 코스피 벤치마크 수집 (2026-08-12)
+
+**Goal:** `.ai/design.md` 계약대로 60일 평균 거래대금 5억원 하한을 스크리너 공통 게이트로 적용하고, 토스 시장지표 전용 경로로 KOSPI 일별 종가를 수집·적재·자동/수동 실행한다.
+
+**Contract:** `BenchmarkDailyClose` schema와 생성된 Prisma client는 사용자 선행 변경으로 보존한다. DB/network 재조사·`db:push`·commit/git write는 금지한다. TDD RED→GREEN, 명시 주석, 기존 DDD/DI/CLI 패턴을 따른다.
+
+- [x] A1: `IndicatorBar.close`와 repository select/mapping spec을 RED로 만들고 원본 종가를 연결한다.
+- [x] A2: 60봉 미만 `null`, 정확히 60봉 경계, 최근 60봉 `close × volume` 평균 spec을 RED로 만들고 `turnover60`을 구현한다.
+- [x] A3: 5억원 미만/null 탈락과 명시적 통과 fixture spec을 RED로 만들고 공통 게이트·rule version 2·필요한 formatter를 구현한다.
+- [x] B1: 지수 응답 정상/currency 없음/존재하지 않는 날짜/역순 정렬/부분 파싱 실패 spec을 RED로 만들고 전용 매퍼를 구현한다.
+- [x] B2: count 200 상한·URL encoding·429 정규화 spec을 RED로 만들고 `TossMarketIndicatorClient`와 module export를 구현한다.
+- [x] B3: repository latest/upsert 계약과 첫 200봉·증분 5봉·days override·장중 차단 usecase spec을 RED로 만들고 repository/usecase/module DI를 구현한다.
+- [x] B4: `sync → collectPrices → collectBenchmark` 순서, 성공 요약, 벤치마크 실패 비치명 요약 spec을 RED로 만들고 universe-sweep 3단계를 구현한다.
+- [x] B5: `collect-benchmark [--days]` parser/USAGE/handler spec을 RED로 만들고 CLI 수동 실행 입구를 구현한다.
+- [x] 설계 요구 주석(`close` 조정가 현재 한계, 페이지네이션 미사용 `ponytail:`)과 범위 밖 무변경을 final diff로 검토한다.
+- [x] focused Jest 후 `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`, `pnpm check:env`, `pnpm docs:check`, `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 출력 기준으로 작성한다.
+
+## Review
+
+- 유동성 하한은 두 전략 공통 gate이며 `turnover60`은 랭킹 축에서 제외했다. 최근 60봉 원본 종가 기준과 59/60/61봉 경계를 고정했다.
+- 시장지표 전용 mapper/client/repository/usecase와 module DI, autopilot 3단계, CLI 수동 실행 입구를 추가했다.
+- 독립 리뷰 P2인 stale 응답의 `latestTradeDate` 후퇴를 regression RED→GREEN으로 수정했다. LOW 랭킹 회귀 공백도 보강했다.
+- 최종 gate: lint(0 errors, 기존 warning 57), 일반 337 suites/2,800 tests + code-graph 5 suites/40 tests, build, tsc, check:env, docs:check, diff check 모두 exit 0.
+- DB/network/commit/git write는 실행하지 않았다. 실제 DB 반영과 토스 통합 실행은 메인 세션 재검증 대상으로 남겼다.
+
+---
+
 # PR #284 재리뷰 origin·pathspec 결함 2건 반영 (2026-08-12)
 
 **Goal:** 설정한 private repo와 다른 기존 clone을 거부하고, exporter 관리 산출물 외 파일이 변경 감지·staging·commit에 들어가지 않게 한다.
@@ -1714,5 +1765,29 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 공용 실패 formatter를 Autopilot `detailText`와 CLI가 함께 사용한다. 20건 표본보다 전체 실패가 많으면 절단 사실과 전체 건수를 표시한다.
 - RED는 query 조건 누락, fixture 7건 반환, 화요일 sync 미호출/detail 부재, formatter 모듈 부재로 확인했다. focused 6 suites/25 tests GREEN.
 - 5종 gate 모두 exit 0: lint 기존 warning 57/error 0, build, tsc, 일반 325 suites/2,625 tests, code-graph 5/40, docs:check.
+
+---
+# PR #285 아키텍처 리뷰 — 시장지표 조회 포트 분리 (2026-08-12)
+
+**Goal:** `CollectBenchmarkClosesUsecase`가 Toss infrastructure 구현 대신 시장지표 전용 domain port에 의존하게 한다.
+
+**Contract:** `TossMarketIndicatorClient`만 포트로 추상화한다. `BenchmarkRepository`의 구체 주입과 다른 usecase/repository는 건드리지 않는다. 기존 `MARKET_DATA_PORT`는 종목 시세 mock 전체를 깨고 지수 응답 계약도 다르므로 확장하지 않는다. commit, staging, push는 금지한다.
+
+- [x] 관련 코드·spec·DI 패턴과 worktree 상태를 확인한다.
+- [x] usecase spec mock 타입을 `MarketIndicatorPort`로 바꾸고 신규 port 부재 RED를 확인한다.
+- [x] `BenchmarkBar`, `MARKET_INDICATOR_PORT`, `MarketIndicatorPort`를 domain port로 옮긴다.
+- [x] Toss adapter, mapper, module, usecase를 최소 수정한다.
+- [x] focused test GREEN과 final diff 범위 검토를 수행한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `CollectBenchmarkClosesUsecase`의 Toss concrete import를 제거하고 `MARKET_INDICATOR_PORT`를 주입했다. `BenchmarkRepository` concrete 주입은 유지했다.
+- `BenchmarkBar`는 pure domain `DecimalValue`를 사용한다. 저장 repository는 Prisma 경계에서 `toString()`으로 정밀도를 보존해 domain의 `@prisma/client` 의존을 만들지 않았다.
+- `MarketDataModule`은 token/useClass provider와 token export만 남겨 concrete export와 중복 instance를 제거했다.
+- RED는 신규 port 부재 `TS2307`, domain 값의 repository 경계 미지원 `TS2740`으로 확인했다. focused 4 suites/29 tests GREEN.
+- 최종 fresh gate는 lint exit 0(기존 warning 57), 전체 일반 342 suites/2,847 tests + code-graph 5 suites/40 tests, build, tsc 모두 exit 0이다.
+- 다른 usecase/repository 주입 방식, env/schema/dependency/git index/commit/push는 변경하지 않았다.
 
 ---

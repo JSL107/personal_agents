@@ -44,4 +44,26 @@ describe('parseScreenerCliArguments', () => {
       options: { days: 200, limit: 3 },
     });
   });
+
+  it('collect-benchmark에 days만 전달한다', () => {
+    expect(parseScreenerCliArguments(['collect-benchmark'])).toEqual({
+      subcommand: 'collect-benchmark',
+      options: {},
+    });
+    expect(
+      parseScreenerCliArguments(['collect-benchmark', '--days', '200']),
+    ).toEqual({
+      subcommand: 'collect-benchmark',
+      options: { days: 200 },
+    });
+  });
+
+  it('collect-benchmark의 days 외 옵션과 양수가 아닌 값을 거부한다', () => {
+    expect(() =>
+      parseScreenerCliArguments(['collect-benchmark', '--limit', '3']),
+    ).toThrow('사용법');
+    expect(() =>
+      parseScreenerCliArguments(['collect-benchmark', '--days', '0']),
+    ).toThrow('--days는 양의 정수여야 합니다.');
+  });
 });
