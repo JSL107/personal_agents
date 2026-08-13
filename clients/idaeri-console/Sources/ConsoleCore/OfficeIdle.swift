@@ -182,12 +182,24 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         else {
             continue
         }
-        let neighbors = [
-            TilePoint(x: placement.tile.x, y: placement.tile.y - 1),
-            TilePoint(x: placement.tile.x - 1, y: placement.tile.y),
-            TilePoint(x: placement.tile.x + 1, y: placement.tile.y),
-            TilePoint(x: placement.tile.x, y: placement.tile.y + 1),
-        ]
+        // **앉는 가구는 정면 칸에서만 앉는다.** 소파·테이블 그림은 정면도라, 옆 칸에서
+        // 앉히면 등받이가 몸 옆으로 나와 "소파에 앉은 사람" 이 아니라 **소파 옆에 나란히
+        // 앉은 사람**이 된다(경영방 소파는 정면 칸을 커피테이블이 막아 왼쪽 칸으로 밀렸고,
+        // 라운지 오프셋 0.30칸으로는 소파 실루엣과 겹치지도 않았다).
+        //
+        // 정면이 막히면 그 가구는 목적지에서 빠진다 — 옆에 앉은 그림보다 아무도 안 앉는
+        // 소파가 낫다. 서서 쓰는 자세(커피머신·책장 등)는 어느 쪽에 서도 그림이 성립하므로
+        // 네 방향을 그대로 쓴다.
+        let front = TilePoint(x: placement.tile.x, y: placement.tile.y - 1)
+        let neighbors =
+            pose == .sitting
+            ? [front]
+            : [
+                front,
+                TilePoint(x: placement.tile.x - 1, y: placement.tile.y),
+                TilePoint(x: placement.tile.x + 1, y: placement.tile.y),
+                TilePoint(x: placement.tile.x, y: placement.tile.y + 1),
+            ]
         guard let tile = neighbors.first(where: {
             plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
         }), usedTiles.insert(tile).inserted else {
