@@ -67,6 +67,28 @@ export interface ApplyTradeResult extends ApplyTradeMutation {
   tradeId: number;
 }
 
+export type PendingOrderFillDecision =
+  | { status: 'EXPIRED'; statusReason: string }
+  | ({ status: 'FILLED'; quantity: string } & ApplyTradeMutation);
+
+export type PendingOrderFillResult =
+  | PendingOrderFillDecision
+  | { status: 'ALREADY_PROCESSED' };
+
+export interface FillPendingOrderInput {
+  orderId: number;
+  accountId: number;
+  tickerId: number;
+  side: TradeSide;
+  strategy: Exclude<TradeStrategy, 'MANUAL'>;
+  price: string;
+  tradeDate: Date;
+  decide: (state: {
+    account: PaperAccountRecord;
+    position: PaperPositionRecord | null;
+  }) => PendingOrderFillDecision;
+}
+
 export interface InvariantTradeRow {
   side: TradeSide;
   quantity: MoneyValue;
@@ -102,6 +124,55 @@ export interface SnapshotRow {
   tradeDate: Date;
   totalValue: MoneyValue;
   returnRate: MoneyValue;
+}
+
+export interface PendingPaperOrderInput {
+  tickerId: number;
+  side: TradeSide;
+  quantity: string;
+  strategy: TradeStrategy;
+  reason: string;
+  decidedAt: Date;
+  dataAsOf: Date;
+  targetTradeDate: Date;
+  status: 'PENDING';
+  indicatorSnapshot: unknown | null;
+  agentRunId: number;
+}
+
+export interface ExistingPaperOrderRecord {
+  tickerId: number;
+  side: string;
+  quantity: MoneyValue;
+  indicatorSnapshot: unknown | null;
+}
+
+export interface DuePaperOrderRecord {
+  id: number;
+  accountId: number;
+  accountName: string;
+  tickerId: number;
+  tickerCode: string;
+  tickerName: string;
+  tossSymbol: string;
+  krxMarket: string | null;
+  side: TradeSide;
+  quantity: MoneyValue;
+  strategy: Exclude<TradeStrategy, 'MANUAL'>;
+  reason: string | null;
+  targetTradeDate: Date;
+}
+
+export interface LockedPaperRecommendationState {
+  account: PaperAccountRecord;
+  positions: PaperPositionWithTicker[];
+  latestValuation: SnapshotRow | null;
+  existingOrders: ExistingPaperOrderRecord[];
+}
+
+export interface PaperRecommendationSaveDecision<T> {
+  result: T;
+  orders: PendingPaperOrderInput[];
 }
 
 export interface RevalidatedPaperAccountState {
@@ -359,6 +430,148 @@ export class PaperTradingRepository {
     }
   }
 
+  async fillPendingOrderAtomically(
+    input: FillPendingOrderInput,
+  ): Promise<PendingOrderFillResult> {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        // 수동 체결과 같은 계좌 lock 순서를 써서 최신 현금·보유량으로 수량을 확정한다.
+        // 주문 상태 변경과 장부 반영도 이 transaction 안에서 끝내 부분 체결 상태를 막는다.
+        const account = await transaction.paperAccount.update({
+          where: { id: input.accountId },
+          data: { cashBalance: { increment: 0 } },
+          select: { id: true, seedAmount: true, cashBalance: true },
+        });
+        const order = await transaction.paperOrder.findUnique({
+          where: { id: input.orderId },
+          select: {
+            status: true,
+            accountId: true,
+            tickerId: true,
+            side: true,
+            strategy: true,
+          },
+        });
+        if (!order || order.status !== 'PENDING') {
+          return { status: 'ALREADY_PROCESSED' as const };
+        }
+        if (
+          order.accountId !== input.accountId ||
+          order.tickerId !== input.tickerId ||
+          order.side !== input.side ||
+          order.strategy !== input.strategy
+        ) {
+          throw new Error(
+            `자동 체결 주문 정보가 일치하지 않습니다: ${input.orderId}`,
+          );
+        }
+        const position = await transaction.paperPosition.findUnique({
+          where: {
+            accountId_tickerId: {
+              accountId: input.accountId,
+              tickerId: input.tickerId,
+            },
+          },
+          select: {
+            id: true,
+            accountId: true,
+            tickerId: true,
+            quantity: true,
+            avgPrice: true,
+          },
+        });
+        const decision = input.decide({ account, position });
+        if (decision.status === 'EXPIRED') {
+          const expired = await transaction.paperOrder.updateMany({
+            where: { id: input.orderId, status: 'PENDING' },
+            data: {
+              status: 'EXPIRED',
+              statusReason: decision.statusReason,
+            },
+          });
+          if (expired.count === 0) {
+            return { status: 'ALREADY_PROCESSED' as const };
+          }
+          return decision;
+        }
+        const claimed = await transaction.paperOrder.updateMany({
+          where: { id: input.orderId, status: 'PENDING' },
+          data: {
+            quantity: decision.quantity,
+            status: 'FILLED',
+            statusReason: null,
+          },
+        });
+        if (claimed.count === 0) {
+          return { status: 'ALREADY_PROCESSED' as const };
+        }
+        const fingerprint = [
+          input.accountId,
+          input.tickerId,
+          input.tradeDate.toISOString().slice(0, 10),
+          input.side,
+          decision.quantity,
+          input.price,
+          input.orderId,
+        ].join(':');
+        const duplicate = await transaction.paperTrade.findUnique({
+          where: { fingerprint },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new Error(
+            '이미 기록된 가상 매매입니다. 중복 입력을 확인해 주세요.',
+          );
+        }
+        await transaction.paperTrade.create({
+          data: {
+            accountId: input.accountId,
+            tickerId: input.tickerId,
+            orderId: input.orderId,
+            side: input.side,
+            quantity: decision.quantity,
+            price: input.price,
+            fee: decision.fee,
+            tax: decision.tax,
+            realizedPnl: decision.realizedPnl,
+            tradeDate: input.tradeDate,
+            fingerprint,
+          },
+        });
+        await transaction.paperPosition.upsert({
+          where: {
+            accountId_tickerId: {
+              accountId: input.accountId,
+              tickerId: input.tickerId,
+            },
+          },
+          create: {
+            accountId: input.accountId,
+            tickerId: input.tickerId,
+            quantity: decision.positionQuantity,
+            avgPrice: decision.positionAvgPrice,
+          },
+          update: {
+            quantity: decision.positionQuantity,
+            avgPrice: decision.positionAvgPrice,
+          },
+        });
+        await transaction.paperAccount.update({
+          where: { id: input.accountId },
+          data: { cashBalance: decision.cashBalance },
+        });
+        return decision;
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new Error(
+          '이미 기록된 가상 매매입니다. 중복 입력을 확인해 주세요.',
+        );
+      }
+      throw error;
+    }
+  }
+
   async findTradesForInvariant(
     accountId: number,
   ): Promise<InvariantTradeRow[]> {
@@ -527,6 +740,195 @@ export class PaperTradingRepository {
         returnRate: true,
       },
     });
+  }
+
+  async findLatestValuation(accountId: number): Promise<SnapshotRow | null> {
+    return await this.prisma.paperEquitySnapshot.findFirst({
+      where: { accountId },
+      orderBy: { tradeDate: 'desc' },
+      select: {
+        id: true,
+        tradeDate: true,
+        totalValue: true,
+        returnRate: true,
+      },
+    });
+  }
+
+  async saveRecommendationAtomically<T>(input: {
+    accountId: number;
+    strategy: Exclude<TradeStrategy, 'MANUAL'>;
+    decidedAt: Date;
+    decide: (
+      state: LockedPaperRecommendationState,
+    ) => PaperRecommendationSaveDecision<T>;
+  }): Promise<T> {
+    return await this.prisma.$transaction(async (transaction) => {
+      // 모델 호출 뒤 계좌 행을 먼저 잠그고 모든 제약 입력을 다시 읽는다. 이 잠금은 같은
+      // account의 동시 추천을 serialize해 identity 검사와 주문 생성 사이의 race도 닫는다.
+      const account = await transaction.paperAccount.update({
+        where: { id: input.accountId },
+        data: { cashBalance: { increment: 0 } },
+        select: { id: true, seedAmount: true, cashBalance: true },
+      });
+      const duplicate = await transaction.paperOrder.findFirst({
+        where: {
+          accountId: input.accountId,
+          strategy: input.strategy,
+          decidedAt: input.decidedAt,
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new Error('이미 저장된 모의투자 추천입니다.');
+      }
+      const [positions, latestValuation, existingOrders] = await Promise.all([
+        transaction.paperPosition.findMany({
+          where: { accountId: input.accountId, quantity: { gt: 0 } },
+          include: { ticker: true },
+          orderBy: { tickerId: 'asc' },
+        }),
+        transaction.paperEquitySnapshot.findFirst({
+          where: { accountId: input.accountId },
+          orderBy: { tradeDate: 'desc' },
+          select: {
+            id: true,
+            tradeDate: true,
+            totalValue: true,
+            returnRate: true,
+          },
+        }),
+        transaction.paperOrder.findMany({
+          where: { accountId: input.accountId, status: 'PENDING' },
+          select: {
+            tickerId: true,
+            side: true,
+            quantity: true,
+            indicatorSnapshot: true,
+          },
+          orderBy: { id: 'asc' },
+        }),
+      ]);
+      const decision = input.decide({
+        account,
+        positions: positions.flatMap((position) => {
+          if (!position.ticker.tossSymbol) {
+            return [];
+          }
+          return [
+            {
+              id: position.id,
+              accountId: position.accountId,
+              tickerId: position.tickerId,
+              quantity: position.quantity,
+              avgPrice: position.avgPrice,
+              ticker: {
+                code: position.ticker.code,
+                name: position.ticker.name,
+                tossSymbol: position.ticker.tossSymbol,
+              },
+            },
+          ];
+        }),
+        latestValuation,
+        existingOrders,
+      });
+      if (decision.orders.length === 0) {
+        return decision.result;
+      }
+      await transaction.paperOrder.createMany({
+        data: decision.orders.map((order) => ({
+          accountId: input.accountId,
+          tickerId: order.tickerId,
+          side: order.side,
+          quantity: order.quantity,
+          strategy: order.strategy,
+          reason: order.reason,
+          decidedAt: order.decidedAt,
+          dataAsOf: order.dataAsOf,
+          targetTradeDate: order.targetTradeDate,
+          status: order.status,
+          indicatorSnapshot:
+            order.indicatorSnapshot === null
+              ? Prisma.JsonNull
+              : (order.indicatorSnapshot as Prisma.InputJsonValue),
+          agentRunId: order.agentRunId,
+        })),
+      });
+      return decision.result;
+    });
+  }
+
+  async hasOrdersForRecommendation(input: {
+    accountId: number;
+    strategy: Exclude<TradeStrategy, 'MANUAL'>;
+    decidedAt: Date;
+  }): Promise<boolean> {
+    const order = await this.prisma.paperOrder.findFirst({
+      where: input,
+      select: { id: true },
+    });
+    return order !== null;
+  }
+
+  async findDuePendingOrders(tradeDate: Date): Promise<DuePaperOrderRecord[]> {
+    const orders = await this.prisma.paperOrder.findMany({
+      where: {
+        status: 'PENDING',
+        targetTradeDate: { lte: tradeDate },
+      },
+      include: { account: true, ticker: true },
+      orderBy: { id: 'asc' },
+    });
+    return orders.flatMap((order) => {
+      if (!order.targetTradeDate || !order.ticker.tossSymbol) {
+        return [];
+      }
+      return [
+        {
+          id: order.id,
+          accountId: order.accountId,
+          accountName: order.account.name,
+          tickerId: order.tickerId,
+          tickerCode: order.ticker.code,
+          tickerName: order.ticker.name,
+          tossSymbol: order.ticker.tossSymbol,
+          krxMarket: order.ticker.krxMarket,
+          side: order.side as TradeSide,
+          quantity: order.quantity,
+          strategy: order.strategy as Exclude<TradeStrategy, 'MANUAL'>,
+          reason: order.reason,
+          targetTradeDate: order.targetTradeDate,
+        },
+      ];
+    });
+  }
+
+  async expirePendingOrder(
+    orderId: number,
+    statusReason: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.paperOrder.updateMany({
+      where: { id: orderId, status: 'PENDING' },
+      data: { status: 'EXPIRED', statusReason },
+    });
+    return result.count === 1;
+  }
+
+  async expireDuePendingOrders(
+    tradeDate: Date,
+    statusReason: string,
+  ): Promise<{ attempted: number; expired: number }> {
+    const where: Prisma.PaperOrderWhereInput = {
+      status: 'PENDING',
+      targetTradeDate: { lte: tradeDate },
+    };
+    const attempted = await this.prisma.paperOrder.count({ where });
+    const result = await this.prisma.paperOrder.updateMany({
+      where,
+      data: { status: 'EXPIRED', statusReason },
+    });
+    return { attempted, expired: result.count };
   }
 
   async findLatestSnapshotBefore(

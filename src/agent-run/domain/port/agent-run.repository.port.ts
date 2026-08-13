@@ -194,6 +194,10 @@ export interface FailedRunDetail {
 
 export interface AgentRunRepositoryPort {
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
+  updateInputSnapshot?(input: {
+    id: number;
+    inputSnapshot: unknown;
+  }): Promise<void>;
   finish(input: FinishAgentRunInput): Promise<void>;
   // Router 의 handoff chain 안 child run 에 parent.id 기록 — chain audit log.
   // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4)
