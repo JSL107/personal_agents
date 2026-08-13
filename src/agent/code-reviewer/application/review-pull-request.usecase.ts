@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   AgentRunOutcome,
@@ -22,6 +23,7 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
@@ -38,6 +40,8 @@ import {
 } from '../domain/prompt/code-reviewer-system.prompt';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
 
+const DEFAULT_INLINE_MAX = 4;
+
 @Injectable()
 export class ReviewPullRequestUsecase {
   private readonly logger = new Logger(ReviewPullRequestUsecase.name);
@@ -53,6 +57,11 @@ export class ReviewPullRequestUsecase {
     @Optional()
     @Inject(EPISODIC_MEMORY_PORT)
     private readonly episodicMemory?: EpisodicMemoryPort,
+    @Optional()
+    private readonly configService?: ConfigService,
+    @Optional()
+    @Inject(PublishFindingsService)
+    private readonly publishFindingsService?: PublishFindingsService,
   ) {}
 
   async execute({
@@ -62,13 +71,18 @@ export class ReviewPullRequestUsecase {
     conversationContext,
     snapshot,
     dryRun,
+    publish,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
+    const effectiveTriggerType =
+      triggerType ?? TriggerType.SLACK_COMMAND_REVIEW_PR;
+    let reviewedDetail: PullRequestDetail | undefined;
+    let reviewedDiff: PullRequestDiff | undefined;
 
-    return this.agentRunService.execute({
+    const outcome = await this.agentRunService.execute({
       agentType: AgentType.CODE_REVIEWER,
-      triggerType: triggerType ?? TriggerType.SLACK_COMMAND_REVIEW_PR,
+      triggerType: effectiveTriggerType,
       inputSnapshot: {
         prRef,
         repo: ref.repo,
@@ -76,8 +90,16 @@ export class ReviewPullRequestUsecase {
         slackUserId,
         // 스윕 경로만 채운다 — findLatestSweepReview 가 읽는 판정 근거.
         ...(dryRun === undefined ? {} : { dryRun }),
+        // 게시 의도를 스냅샷에 남긴다. /retry-run 은 이 스냅샷만 보고 재실행하므로,
+        // 남기지 않으면 최초에 게시하기로 한 리뷰가 재실행에서 조용히 미게시로 빠진다.
+        // 스윕은 publish 를 넘기지 않아 키 자체가 없고, 재실행도 종전대로 미게시다.
+        ...(publish === undefined ? {} : { publish }),
       },
-      evidence: this.buildInitialEvidence({ prRef, slackUserId }),
+      evidence: this.buildInitialEvidence({
+        prRef,
+        slackUserId,
+        triggerType: effectiveTriggerType,
+      }),
       run: async () => {
         // 호출자가 이미 조회한 스냅샷이 있으면 그대로 쓴다 — 리뷰와 후속 게시가 같은
         // headSha·diff 를 보게 하고, GitHub API 왕복도 줄인다.
@@ -87,6 +109,8 @@ export class ReviewPullRequestUsecase {
               this.githubClient.getPullRequest(ref),
               this.githubClient.getPullRequestDiff(ref),
             ]);
+        reviewedDetail = detail;
+        reviewedDiff = diff;
 
         const negativeExamples = await this.buildNegativeExamples({
           slackUserId,
@@ -117,18 +141,61 @@ export class ReviewPullRequestUsecase {
         };
       },
     });
+
+    if (
+      publish === true &&
+      this.publishFindingsService !== undefined &&
+      reviewedDetail !== undefined &&
+      reviewedDiff !== undefined
+    ) {
+      try {
+        await this.publishFindingsService.publish({
+          agentRunId: outcome.agentRunId,
+          repo: ref.repo,
+          pullNumber: ref.number,
+          headSha: reviewedDetail.headSha,
+          diff: reviewedDiff.diff,
+          findings: outcome.result.findings,
+          max: this.inlineMax(),
+          dryRun: false,
+          allowlistRaw: this.configService?.get<string>(
+            'PR_REVIEW_INLINE_REPOS',
+          ),
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `PR 리뷰 게시 실패 (${ref.repo}#${ref.number}), 리뷰 결과는 유지: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    return outcome;
+  }
+
+  private inlineMax(): number {
+    const raw = this.configService?.get<string>('PR_REVIEW_INLINE_MAX');
+    if (raw === undefined || raw.trim().length === 0) {
+      return DEFAULT_INLINE_MAX;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return DEFAULT_INLINE_MAX;
+    }
+    return parsed;
   }
 
   private buildInitialEvidence({
     prRef,
     slackUserId,
+    triggerType,
   }: {
     prRef: string;
     slackUserId: string;
+    triggerType: TriggerType;
   }): EvidenceInput[] {
     return [
       {
-        sourceType: 'SLACK_COMMAND_REVIEW_PR',
+        sourceType: triggerType,
         sourceId: slackUserId,
         payload: { prRef },
       },

@@ -1,4 +1,7 @@
+import { ConfigService } from '@nestjs/config';
+
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -6,6 +9,7 @@ import {
   CompletionResponse,
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
+import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { PullRequestReview } from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
@@ -33,6 +37,8 @@ describe('ReviewPullRequestUsecase', () => {
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
   let githubClient: jest.Mocked<GithubClientPort>;
+  let configGet: jest.Mock;
+  let publishFindings: jest.Mock;
   let usecase: ReviewPullRequestUsecase;
 
   beforeEach(() => {
@@ -65,12 +71,17 @@ describe('ReviewPullRequestUsecase', () => {
       save: jest.fn(),
       findRecentRejected: jest.fn().mockResolvedValue([]),
     };
+    configGet = jest.fn();
+    publishFindings = jest.fn().mockResolvedValue({});
 
     usecase = new ReviewPullRequestUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       githubClient,
       outcomeRepoMock as any,
+      undefined,
+      { get: configGet } as unknown as ConfigService,
+      { publish: publishFindings } as unknown as PublishFindingsService,
     );
 
     githubClient.getPullRequest.mockResolvedValue({
@@ -124,6 +135,141 @@ describe('ReviewPullRequestUsecase', () => {
         systemPrompt: expect.any(String),
         prompt: expect.stringContaining('foo/bar'),
       }),
+    });
+    expect(publishFindings).not.toHaveBeenCalled();
+  });
+
+  it('publish false면 게시하지 않고 기존 review outcome을 그대로 반환한다', async () => {
+    const input = {
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: false,
+    };
+    const result = await usecase.execute(input);
+
+    expect(result).toEqual({
+      result: validReview,
+      modelUsed: 'claude-cli',
+      agentRunId: 55,
+    });
+    expect(publishFindings).not.toHaveBeenCalled();
+  });
+
+  it('publish true면 리뷰에 쓴 snapshot과 outcome id로 findings를 게시한다', async () => {
+    const detail = {
+      number: 34,
+      title: 'feat: injected',
+      body: 'body',
+      repo: 'foo/bar',
+      url: 'https://github.com/foo/bar/pull/34',
+      baseRef: 'main',
+      headRef: 'feature/injected',
+      authorLogin: 'octocat',
+      changedFiles: ['src/injected.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'reviewed-head-sha',
+    };
+    const diff = {
+      diff: 'reviewed diff string',
+      truncated: false,
+      bytes: 20,
+    };
+    configGet.mockImplementation((key: string) => {
+      if (key === 'PR_REVIEW_INLINE_MAX') {
+        return '7';
+      }
+      if (key === 'PR_REVIEW_INLINE_REPOS') {
+        return 'foo/bar,baz/qux';
+      }
+      return undefined;
+    });
+
+    const input = {
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      snapshot: { detail, diff },
+      publish: true,
+    };
+    await usecase.execute(input);
+
+    expect(githubClient.getPullRequest).not.toHaveBeenCalled();
+    expect(githubClient.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(publishFindings).toHaveBeenCalledWith({
+      agentRunId: 55,
+      repo: 'foo/bar',
+      pullNumber: 34,
+      headSha: 'reviewed-head-sha',
+      diff: 'reviewed diff string',
+      findings: validReview.findings,
+      max: 7,
+      dryRun: false,
+      allowlistRaw: 'foo/bar,baz/qux',
+    });
+  });
+
+  it.each([undefined, '   '])(
+    'PR_REVIEW_INLINE_MAX=%p면 게시 상한 기본값 4를 쓴다',
+    async (inlineMax) => {
+      configGet.mockImplementation((key: string) =>
+        key === 'PR_REVIEW_INLINE_MAX' ? inlineMax : undefined,
+      );
+
+      const input = {
+        prRef: 'foo/bar#34',
+        slackUserId: 'U123',
+        publish: true,
+      };
+      await usecase.execute(input);
+
+      expect(publishFindings).toHaveBeenCalledWith(
+        expect.objectContaining({ max: 4 }),
+      );
+    },
+  );
+
+  it('게시 실패를 삼키고 성공한 review outcome을 그대로 반환한다', async () => {
+    publishFindings.mockRejectedValue(new Error('GitHub publish failed'));
+
+    const input = {
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+    };
+    const result = await usecase.execute(input);
+
+    expect(result).toEqual({
+      result: validReview,
+      modelUsed: 'claude-cli',
+      agentRunId: 55,
+    });
+    expect(agentRunServiceExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('publisher 미주입 상태에서 publish를 요청해도 review outcome을 유지한다', async () => {
+    const outcomeRepoMock = {
+      save: jest.fn(),
+      findRecentRejected: jest.fn().mockResolvedValue([]),
+    };
+    const usecaseWithoutPublisher = new ReviewPullRequestUsecase(
+      modelRouter as unknown as ModelRouterUsecase,
+      { execute: agentRunServiceExecute } as unknown as AgentRunService,
+      githubClient,
+      outcomeRepoMock as never,
+    );
+
+    const result = await usecaseWithoutPublisher.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+    });
+
+    expect(result).toEqual({
+      result: validReview,
+      modelUsed: 'claude-cli',
+      agentRunId: 55,
     });
   });
 
@@ -183,6 +329,26 @@ describe('ReviewPullRequestUsecase', () => {
     ).not.toHaveProperty('dryRun');
   });
 
+  it('publish 를 주면 inputSnapshot 에 남긴다 — /retry-run 이 게시 의도를 재현하는 근거', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].inputSnapshot).toEqual(
+      expect.objectContaining({ publish: true }),
+    );
+  });
+
+  it('publish 미지정(스윕 경로)이면 inputSnapshot 에 키 자체가 없다 — 재실행도 미게시', async () => {
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(
+      agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
+    ).not.toHaveProperty('publish');
+  });
+
   it('잘못된 PR ref 는 INVALID_PR_REFERENCE 예외 (GitHub/모델 호출 안 함)', async () => {
     await expect(
       usecase.execute({ prRef: 'not a pr', slackUserId: 'U' }),
@@ -212,6 +378,24 @@ describe('ReviewPullRequestUsecase', () => {
     expect(call.evidence).toEqual([
       {
         sourceType: 'SLACK_COMMAND_REVIEW_PR',
+        sourceId: 'U999',
+        payload: { prRef: 'foo/bar#7' },
+      },
+    ]);
+  });
+
+  it('mention trigger이면 AgentRun과 evidence sourceType을 동일한 mention 값으로 기록한다', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U999',
+      triggerType: TriggerType.SLACK_MENTION_CODE_REVIEWER,
+    });
+
+    const call = agentRunServiceExecute.mock.calls[0][0];
+    expect(call.triggerType).toBe('SLACK_MENTION_CODE_REVIEWER');
+    expect(call.evidence).toEqual([
+      {
+        sourceType: 'SLACK_MENTION_CODE_REVIEWER',
         sourceId: 'U999',
         payload: { prRef: 'foo/bar#7' },
       },

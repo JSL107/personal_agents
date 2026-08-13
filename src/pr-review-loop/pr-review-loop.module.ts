@@ -7,10 +7,8 @@ import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module'
 import { GithubModule } from '../github/github.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { HarvestReviewSignalsUsecase } from './application/harvest-review-signals.usecase';
-import { PublishFindingsService } from './application/publish-findings.service';
 import { SweepPrReviewsUsecase } from './application/sweep-pr-reviews.usecase';
-import { PR_REVIEW_FINDING_REPOSITORY_PORT } from './domain/port/pr-review-finding.repository.port';
-import { PrReviewFindingPrismaRepository } from './infrastructure/pr-review-finding.prisma.repository';
+import { PrReviewPublishModule } from './pr-review-publish.module';
 
 // PR 리뷰 루프 Phase 1 — 스윕 오케스트레이션 · 카드 영속화 · 게시 전담.
 // 리뷰 생성(LLM)은 CodeReviewerModule 의 ReviewPullRequestUsecase 를 그대로 쓴다.
@@ -23,16 +21,9 @@ import { PrReviewFindingPrismaRepository } from './infrastructure/pr-review-find
     AgentRunModule,
     ReviewReplyJudgeModule,
     EpisodicMemoryModule,
+    PrReviewPublishModule,
   ],
-  providers: [
-    PublishFindingsService,
-    SweepPrReviewsUsecase,
-    HarvestReviewSignalsUsecase,
-    {
-      provide: PR_REVIEW_FINDING_REPOSITORY_PORT,
-      useClass: PrReviewFindingPrismaRepository,
-    },
-  ],
+  providers: [SweepPrReviewsUsecase, HarvestReviewSignalsUsecase],
   exports: [SweepPrReviewsUsecase, HarvestReviewSignalsUsecase],
 })
 export class PrReviewLoopModule {}

@@ -34,6 +34,8 @@ const ACTIVITY_BUBBLE_RULES: Record<string, ActivityBubbleRule> = {
   'OPS_SUPERVISOR:SCHEDULED': '운영 점검 중',
   PR_REVIEW_SWEEP: createPullRequestReviewBubble,
   SLACK_COMMAND_REVIEW_PR: createPullRequestReviewBubble,
+  SLACK_MENTION_CODE_REVIEWER: createPullRequestReviewBubble,
+  REMOTE_CONSOLE_CODE_REVIEWER: createPullRequestReviewBubble,
   SLACK_COMMAND_BE_FIX: createPullRequestCheckBubble,
   WEBHOOK_ISSUE_AUTO_LABEL: createIssueLabelBubble,
   AUTOPILOT_INVEST_CRON: createInvestBubble,

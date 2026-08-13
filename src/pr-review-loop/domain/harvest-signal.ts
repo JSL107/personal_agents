@@ -14,7 +14,7 @@ export type HarvestSignal =
 export interface ResolveHarvestSignalInput {
   card: { githubCommentId: string | null };
   thread: ReviewThread | null;
-  ownerLogin: string;
+  decisionLogins: string[];
   pullRequestState: 'OPEN' | 'CLOSED' | 'MERGED';
   truncated: boolean;
 }
@@ -22,7 +22,7 @@ export interface ResolveHarvestSignalInput {
 export const resolveHarvestSignal = ({
   card,
   thread,
-  ownerLogin,
+  decisionLogins,
   pullRequestState,
   truncated,
 }: ResolveHarvestSignalInput): HarvestSignal => {
@@ -32,14 +32,15 @@ export const resolveHarvestSignal = ({
   );
 
   if (botComment) {
-    // 이대리는 owner 토큰으로 코멘트를 달기 때문에 봇 코멘트의 authorLogin 도 owner 다.
+    // 이대리는 owner 토큰으로 코멘트를 달기 때문에 봇 코멘트의 authorLogin 도 owner 일 수 있다.
     // 표식으로 걸러내지 않으면 같은 스레드의 봇 후속 코멘트를 사람 답글로 읽어
     // LLM 에게 자기 글을 판정시킨다 (Phase 2b 에서 봇이 답글로 응수하면 즉시 발생).
     const replyBodies =
       thread?.comments
         .filter(
           (comment) =>
-            comment.authorLogin === ownerLogin &&
+            comment.authorLogin !== null &&
+            decisionLogins.includes(comment.authorLogin) &&
             !comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
             comment.createdAt > botComment.createdAt,
         )
@@ -48,11 +49,12 @@ export const resolveHarvestSignal = ({
 
     let latestReaction: ReviewThreadReaction | null = null;
     for (const reaction of botComment.reactions) {
-      const isOwnerDecision =
-        reaction.userLogin === ownerLogin &&
+      const isDecisionReaction =
+        reaction.userLogin !== null &&
+        decisionLogins.includes(reaction.userLogin) &&
         (reaction.content === 'THUMBS_UP' ||
           reaction.content === 'THUMBS_DOWN');
-      if (!isOwnerDecision) {
+      if (!isDecisionReaction) {
         continue;
       }
       if (
