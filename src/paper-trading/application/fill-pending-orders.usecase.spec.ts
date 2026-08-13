@@ -231,28 +231,87 @@ describe('FillPendingOrdersUsecase', () => {
     expect(result.filled).toBe(1);
   });
 
-  it('KST 15:30 이후에는 due PENDING을 조회 없이 체결가 조회 실패로 닫는다', async () => {
+  it('휴장일 장 마감 후에는 due PENDING을 만료하지 않는다', async () => {
     const { usecase, repository, marketData } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder(),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    jest.mocked(marketData.fetchDailyBars).mockResolvedValue([]);
+
+    await expect(
+      usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
+    ).resolves.toEqual({
+      window: 'AFTER_CLOSE',
+      attempted: 2,
+      filled: 0,
+      expired: 0,
+      lookupFailure: 0,
+      notYetTraded: 2,
+    });
+    expect(repository.expireDuePendingOrders).not.toHaveBeenCalled();
+  });
+
+  it('개장일 장 마감 후에는 봉이 있는 주문을 체결하고 남은 due PENDING을 만료한다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder(),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValueOnce([
+        {
+          tradeDate: new Date('2026-08-13T00:00:00.000Z'),
+          open: decimal('70000'),
+          close: decimal('71000'),
+          adjClose: decimal('71000'),
+          volume: 1n,
+          currency: 'KRW',
+        },
+      ])
+      .mockResolvedValueOnce([]);
     repository.expireDuePendingOrders.mockResolvedValue({
-      attempted: 5,
-      expired: 4,
+      attempted: 1,
+      expired: 1,
     });
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
     ).resolves.toEqual({
       window: 'AFTER_CLOSE',
-      attempted: 5,
-      filled: 0,
-      expired: 4,
+      attempted: 2,
+      filled: 1,
+      expired: 1,
       lookupFailure: 0,
-      notYetTraded: 0,
+      notYetTraded: 1,
     });
     expect(repository.expireDuePendingOrders).toHaveBeenCalledWith(
       new Date('2026-08-13T00:00:00.000Z'),
       '체결가 조회 실패',
     );
-    expect(repository.findDuePendingOrders).not.toHaveBeenCalled();
-    expect(marketData.fetchDailyBars).not.toHaveBeenCalled();
+  });
+
+  it('공급자 전면 장애가 난 장 마감 후에는 due PENDING을 만료하지 않는다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder(),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockRejectedValue(new Error('provider unavailable'));
+
+    await expect(
+      usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
+    ).resolves.toEqual({
+      window: 'AFTER_CLOSE',
+      attempted: 2,
+      filled: 0,
+      expired: 0,
+      lookupFailure: 2,
+      notYetTraded: 0,
+    });
+    expect(repository.expireDuePendingOrders).not.toHaveBeenCalled();
   });
 });
