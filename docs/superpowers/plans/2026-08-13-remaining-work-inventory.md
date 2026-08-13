@@ -1,10 +1,21 @@
 # 남은 일 재고 — 2026-08-13 전수 대조
 
-> **한 줄로** — 계획 문서의 체크박스는 완료 신호가 아니다. 문서 142개의 주제를 코드와 하나씩
-> 대조한 결과, **계획해 놓고 안 만든 기능은 없었다.** 남은 것은 "확인만 하면 되는 것"과
-> "치울 것"이다.
+> **한 줄로** — 계획 문서의 체크박스는 완료 신호가 아니다. 문서의 주제를 코드와 하나씩 대조한
+> 결과, **계획해 놓고 안 만든 기능은 없었다.** 남은 것은 "확인만 하면 되는 것"과 "치울 것"이다.
 
-기준 커밋 `13c4bb5` · 대상 `docs/superpowers/plans/` 74개 + `specs/` 60개 + `audits/` 8개
+기준 커밋 `13c4bb5`
+
+| 대상 | git 추적 | 로컬 파일 |
+|---|---|---|
+| `docs/superpowers/plans/` | 49 | 74 |
+| `docs/superpowers/specs/` | 39 | 60 |
+| `docs/superpowers/audits/` | 2 | 8 |
+| 합계 | **90** | **142** |
+
+**`docs/` 는 gitignore 다.** 이미 추적 중인 파일은 따라오지만 새로 만든 문서는 `git add -f`
+없이는 커밋되지 않는다. 그래서 내 로컬에는 142개가 있어도 **다른 클론에서는 90개만 보인다.**
+아래 대조는 로컬 142개를 대상으로 했고, 추적되지 않는 52개의 판정은 이 문서를 읽는 쪽에서
+재현할 수 없다 — 그 한계를 안고 읽어야 한다.
 
 ---
 
@@ -29,10 +40,12 @@
 
 문서 대신 **코드·PR·실행 기록**을 근거로 삼았다.
 
-1. **기능 존재** — 문서의 주제어로 `src/` 에 디렉터리·파일이 있는지. 단 **한 디렉터리만 보고
-   단정하지 말 것** — 실제로 `Theme.swift` 를 `Sources/ConsoleCore/` 에서 찾다 "없음"으로
-   오판했고, 진짜 위치는 `Sources/IdaeriConsole/` 였다. 산출물이 `src/` 밖(`~/.claude/`)인
-   문서도 둘 있었다.
+1. **기능 존재** — 문서의 주제어로 `src/` 에 디렉터리·파일이 있는지. **못 찾은 것과 없는 것은
+   다르다.** 한 번의 grep 이 비었다고 미구현으로 적으면 다음 사람이 이미 있는 기능을 다시 만든다.
+   이 문서의 초안이 실제로 그 실수를 세 번 했다 — `Theme.swift` 를 `Sources/ConsoleCore/` 에서
+   찾다 "없음" 으로 오판(진짜 위치는 `Sources/IdaeriConsole/`), 산출물이 `src/` 밖(`~/.claude/`)
+   인 문서 둘을 미구현으로 분류, v3 감사 P2 세 건을 "코드에서 못 찾음" 으로 잔여에 등재.
+   **찾지 못했으면 "미구현" 이 아니라 "미확인" 으로 적고, 확인 방법을 함께 남긴다.**
 2. **브랜치 머지 여부** — `gh pr list --state all --json headRefName,state`. **커밋 수로 판정하지
    말 것**: squash 머지라 `git rev-list --count origin/main..<branch>` 는 머지된 브랜치에서도
    0 이 아니다.
@@ -55,8 +68,18 @@
 | multer 3 HIGH CVE | `pnpm.overrides` 로 `^2.1.0` 고정 |
 | 멀티 AI MCP 파이프라인 | `~/.claude/commands/codex-flow.md` 외 3개 존재 |
 | 자동 개발 이벤트드리븐 | `~/.claude/auto-dev/` + launchd 2개 **가동 중** |
+| Slack inbox text 길이 제한 | `slack-inbox.service.ts:14` `SLACK_INBOX_TEXT_MAX_BYTES = 4_000` |
+| Webhook → BullMQ 전환 | `webhook/interface/webhook.controller.ts` 가 `.add(` 로 enqueue |
+| be-schema formatter mrkdwn escape | `slack/format/be-schema.formatter.ts:10,32,37` `escapeSlackMrkdwn` 적용 |
 
 **계획해 놓고 안 만든 기능은 없다.**
+
+마지막 세 줄은 이 문서의 초안이 "코드에서 못 찾음"을 근거로 잔여에 넣었던 항목이다. PR #294
+리뷰에서 실제 위치를 지적받아 확인했더니 전부 구현돼 있었다. 뒤 두 개는 소스 주석에
+`V3 mid-progress audit B4 M-2` 처럼 **그 감사 항목 번호가 그대로 적혀** 있다.
+
+교훈은 §"어떻게 판정했나" 1번과 같다 — **못 찾은 것과 없는 것은 다르다.** 한 번의 grep 이
+비었다고 미구현으로 적으면 다음 사람이 이미 있는 기능을 다시 만든다.
 
 ---
 
@@ -99,9 +122,9 @@
 | 1 | 저녁 블로그 승인 TTL 불일치 | Slack `response_url` 30분 만료 vs preview TTL. 이후 코드가 바뀌어 재확인 필요 |
 | 2 | 기능 플래그 5종 "켤 것·끌 것·지울 것" 판정 | 7/31 로드맵 항목. 실제 `.env` 값 확인이 선행 |
 | 3 | 만료된 preview 의 연동 레코드 잔류 | 8/4 발견. 무응답 만료 시 `PENDING` 영구 잔류 여부 |
-| 4 | Slack inbox text 길이 제한 | v3 감사 P2. 코드에서 못 찾음 |
-| 5 | Webhook → BullMQ queue 전환 | v3 감사 P2 |
-| 6 | be-schema formatter mrkdwn escape | v3 감사 P2 |
+
+초안에는 여기에 세 항목(Slack inbox 길이 제한 · Webhook→BullMQ · be-schema escape)이 더
+있었으나, 리뷰에서 실제 구현 위치를 지적받아 §1 로 옮겼다. **이 세 건은 잔여가 아니다.**
 
 ### 치울 것
 
