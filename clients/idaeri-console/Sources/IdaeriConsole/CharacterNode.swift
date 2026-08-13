@@ -45,6 +45,16 @@ final class CharacterNode: SKNode {
     /// 앉은 사람에게만 장식이 몸에서 한 뼘 떠오른다. 값이 바뀌는 곳은 `applySpriteSize` 하나이므로
     /// 새 장식을 붙일 때는 거기서 함께 다시 잡을 것.
     private var spriteBaseY: CGFloat = 0
+    /// 머리 위 표시(말풍선·경과·생각 점)를 붙일 기준 높이. 씬이 라벨을 놓을 때 쓴다.
+    ///
+    /// `sprite.size.height` 만 쓰면 앉아서 내려간 몫(`spriteBaseY`)이 빠져 **말풍선만 몸에서
+    /// 한 뼘 떠오른다.** 이름표는 내려가는데 그 위 말풍선은 안 내려가 둘 사이가 벌어지고,
+    /// 부서 문패가 비켜설 높이를 재는 Core 계산(`officeSeatedBubbleTopTiles`)과도 0.28칸
+    /// 어긋난다 — 문패에 확보한 0.35칸 간격이 실제로는 0.07칸(최소 창에서 1.4px)만 남는다.
+    var headTopY: CGFloat {
+        spriteBaseY + sprite.size.height
+    }
+
     /// 이름표가 좌우로 쓸 수 있는 여유(칸). 씬이 좌석·방에서 계산해 넘긴다(`officeNameplateSpanTiles`).
     /// nil 이면 제한 없음 — 방에 속하지 않은 자리다.
     private var nameplateSpan: (left: Double, right: Double)?
