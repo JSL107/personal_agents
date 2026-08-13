@@ -171,7 +171,7 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         return [.reject(agentType: agentType)]
 
-    case .sessionOpened, .sessionUpdated, .sessionClosed, .commandInfo:
+    case .sessionOpened, .sessionUpdated, .sessionClosed, .commandInfo, .commandAnswered:
         return []
     }
 }

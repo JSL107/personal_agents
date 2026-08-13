@@ -272,7 +272,7 @@ struct OfficeView: View {
                         Text(reason)
                             .font(Typography.captionSmall)
                             .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                            .lineLimit(2)
+                            .lineLimit(command.phase == .answered ? nil : 2)
                     }
                 }
                 .padding(.horizontal, Spacing.sm)

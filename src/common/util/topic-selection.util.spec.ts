@@ -1,4 +1,4 @@
-import { parseTopicSelection } from './topic-selection-detector';
+import { parseTopicSelection } from './topic-selection.util';
 
 describe('parseTopicSelection', () => {
   it('"2" → 2 (1-based, 범위 내)', () => {
