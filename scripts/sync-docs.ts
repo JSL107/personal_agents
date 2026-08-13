@@ -268,8 +268,23 @@ function assertConsoleAgentSync(): void {
   const roleSource = stripSwiftLineComments(
     readFileSync(CONSOLE_ROLE_PATH, 'utf8'),
   );
+  // `agentRoleLabel` 본문으로 잘라서 센다. 파일 전체를 훑으면 다른 switch 의 같은 case 가
+  // "직책이 있다" 로 잡혀, 정작 이름표를 만드는 함수에는 없는데도 통과한다.
+  const roleBodyStart = roleSource.indexOf('func agentRoleLabel');
+  const roleBodyEnd = roleSource.indexOf('default:', roleBodyStart);
+  if (roleBodyStart < 0 || roleBodyEnd < 0) {
+    throw new Error(
+      `[sync-docs] ${toRepoRelative(CONSOLE_ROLE_PATH)} 에서 agentRoleLabel 본문을 못 찾았습니다.\n` +
+        '  함수 이름이나 switch 서식이 바뀌었는지 확인하세요(파싱이 조용히 빈 결과를 내면 안 됩니다).',
+    );
+  }
+  const roleBody = roleSource.slice(roleBodyStart, roleBodyEnd);
+  // 반환값이 비어 있지 않은 case 만 인정한다 — 빈 이름표는 없는 것과 같다.
+  // 길이·표기 규칙은 Swift 쪽 `runAgentRoleTests` 가 검사한다(CEO·CTO 는 의도적 영문).
   const labeled = new Set(
-    [...roleSource.matchAll(/case "(\w+)":/gu)].map((match) => match[1]),
+    [...roleBody.matchAll(/case "(\w+)":\s*return\s*"([^"]+)"/gu)].map(
+      (match) => match[1],
+    ),
   );
   const unlabeled = declared.filter((type) => !labeled.has(type));
   if (unlabeled.length > 0) {

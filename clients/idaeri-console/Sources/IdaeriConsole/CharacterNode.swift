@@ -53,8 +53,9 @@ final class CharacterNode: SKNode {
     private var isHovered = false
     private var isSelected = false
     private let nameText: String
-    private let sheetIndex: Int
-    private let hairColor: (red: Double, green: Double, blue: Double)
+    /// 얼굴·머리색은 방 구성이 바뀌면 다시 배정될 수 있다(`apply(look:)`).
+    private var sheetIndex: Int
+    private var hairColor: (red: Double, green: Double, blue: Double)
     /// 셔츠색은 부서에서 파생하므로 부서가 바뀌면 함께 바뀐다(`apply(department:)`).
     private var shirtColor: (red: Double, green: Double, blue: Double)
     private let pantsColor: (red: Double, green: Double, blue: Double)
@@ -333,6 +334,29 @@ final class CharacterNode: SKNode {
             return
         }
         setTexture(characterSprite(for: facing).pose)
+    }
+
+    /// 다시 배정된 외형을 반영한다. 바뀌었으면 얼굴·머리색을 새로 굽는다.
+    ///
+    /// 아래 `apply(department:)` 와 같은 이유다 — 노드는 재사용되므로, 방에 사람이 늘어
+    /// 배정이 밀렸을 때(`officeCharacterLooks`) 새로 만들어진 사람만 새 얼굴을 받고 기존
+    /// 사람은 옛 얼굴로 남는다. 그러면 "한 방에 같은 얼굴 없음" 이 재동기화 경로에서만
+    /// 깨진다 — 앱을 껐다 켜면 멀쩡해지므로 조용히 틀린 채 굴러간다.
+    ///
+    /// 옷·바지는 배정이 건드리지 않으므로(`officeCharacterLooks` 가 해시 값을 그대로 둔다)
+    /// 여기서도 보지 않는다. 셔츠는 부서가 정하고, 그 갱신은 `apply(department:)` 가 맡는다.
+    func apply(look: CharacterLook) {
+        let newHairColor = hairPalette[look.hairIndex]
+        guard look.sheetIndex != sheetIndex || newHairColor != hairColor else {
+            return
+        }
+        sheetIndex = look.sheetIndex
+        hairColor = newHairColor
+        if isSeated {
+            setTexture("sit")
+        } else {
+            apply(facing: facing)
+        }
     }
 
     /// 스냅샷 부서를 반영한다. 바뀌었으면 셔츠를 새 부서색으로 갈아입힌다.

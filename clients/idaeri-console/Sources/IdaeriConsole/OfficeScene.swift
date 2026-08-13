@@ -299,6 +299,11 @@ final class OfficeScene: SKScene {
             // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
             // 창 크기가 바뀌면 이 경로를 다시 지나므로 갱신도 여기 한 곳에 둔다.
             node.setNameplateSpan(nameplateSpan(for: seat))
+            // 얼굴도 스냅샷마다 확인한다. 방에 사람이 늘면 배정이 밀릴 수 있는데(위
+            // `roommateLooks`), 새로 만들어진 사람만 새 얼굴을 받으면 기존 사람과 겹친다.
+            node.apply(
+                look: roommateLooks[agent.agentType] ?? characterLook(for: agent.agentType)
+            )
             // 부서는 스냅샷마다 확인한다. 노드는 재사용되므로 여기서 갱신하지 않으면 사규가
             // 사람을 옮겼을 때 방만 바뀌고 옷은 옛 부서색으로 남는다.
             node.apply(department: agent.resolvedDepartment)
