@@ -14,7 +14,7 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
     types.map { planAgent($0, department) }
 }
 
-// 운영 스냅샷(GET /v1/console/snapshot)의 실제 29종을 그대로 옮긴 표본.
+// 운영 스냅샷(GET /v1/console/snapshot)의 실제 31종을 그대로 옮긴 표본.
 //
 // **부서는 백엔드 사규(`agent-registry/agent-contract.ts` 의 `AGENT_CONTRACTS`)가 정본이다.**
 // 예전에는 agentType 만 적고 앱의 하드코딩 매핑이 부서를 유도했는데, 그 매핑이 사규와 어긋나
@@ -22,8 +22,12 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 들고 있으므로, 사규에서 부서를 옮기면 여기도 함께 갱신해야 한다.
 //
 // 인원을 임의로 줄이면 안 된다 — 26명짜리 표본을 쓰던 동안 "내부 부서 마지막 한 명이 자리를
-// 못 받아 화면에서 사라지는" 결함이 통과했다. 구역 정원은 12석이고 지금 가장 큰 부서가 9명이다.
+// 못 받아 화면에서 사라지는" 결함이 통과했다. 구역 정원은 10석이고 지금 가장 큰 부서가 9명이다.
 // agentType 은 displayName 과 다르다: EVENING_RETRO(타입) ↔ "Evening Retro Publish"(표시명).
+//
+// **사규에 사람이 늘면 여기도 늘려야 한다.** 모의투자 둘(`PAPER_TRADE`·`PAPER_RECOMMEND`)이
+// 사규에 추가됐을 때 이 표본이 29명에 머물러, 성장 부서가 실제로는 8명인데 6명으로 검사됐다.
+// 자리표를 넘긴 셋이 좁은 예비 격자로 밀려나 이름표가 서로를 덮는 동안 이 파일은 초록이었다.
 //
 // **배회 목적지 테스트(`OfficeIdleTests`)도 이 표본을 쓴다.** 거기서 따로 만들던 표본은
 // 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
@@ -37,7 +41,10 @@ let sampleAgents: [ConsoleAgent] =
     + planAgents(.executive, ["CTO", "CEO"])
     + planAgents(
         .growth,
-        ["CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST", "CTO_STUDY"]
+        [
+            "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST", "CTO_STUDY",
+            "PAPER_TRADE", "PAPER_RECOMMEND",
+        ]
     )
     + planAgents(
         .internalOps,
@@ -661,9 +668,11 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             let nameplateTop = officeSeatedNameplateTopTiles(
                 seatY: desk.seat.y, tileSize: smallestTile
             )
-            // 같은 열에서 이 사람보다 위에 있는 가장 가까운 책상.
+            // 이 사람보다 위에 있는 가장 가까운 책상. **옆 열까지 본다** — 이름표 폭이
+            // 1.38칸이라 한 칸 옆 책상 위에도 얹힌다. 같은 열만 보면 두 행을 한 칸씩
+            // 엇갈리게 놓은 배치(성장 부서)가 검사를 통째로 빠져나간다.
             guard let above = zoneDesks
-                .filter({ $0.desk.x == desk.desk.x && $0.desk.y > desk.desk.y })
+                .filter({ abs($0.desk.x - desk.desk.x) <= 1 && $0.desk.y > desk.desk.y })
                 .map(\.desk.y)
                 .min()
             else {

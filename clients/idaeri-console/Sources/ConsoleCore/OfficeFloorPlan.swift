@@ -1050,10 +1050,15 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
     case .growth:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
-        // 후보가 여섯인 것은 이 방의 바닥 가구가 다섯인데 **후보가 좌석·기존 가구에 막히면
+        // 후보가 넉넉한 것은 이 방의 바닥 가구가 다섯인데 **후보가 좌석·기존 가구에 막히면
         // 건너뛰기 때문**이다. 화이트보드가 벽걸이에서 바닥 가구로 바뀌면서 다섯 번째가 됐고,
         // 딱 다섯 자리로는 마지막 파티션이 자리를 못 받아 조용히 사라졌다.
-        return spots([(3, 4), (5, 1), (9, 3), (1, 1), (9, 1), (9, 5)])
+        //
+        // 자리가 여덟으로 늘면서 예전 후보 (3,4)·(9,1) 이 책상에 막혔다. 아래 행 책상
+        // 사이사이(3·5·7, y=1)를 채우면 자리 하나 건너 가구 하나가 되어 칸막이가 자리를
+        // 나누는 모양이 된다. (9,3) 은 맨 뒤다 — 오른쪽 끝 좌석의 이름표가 뜨는 높이라
+        // 앞 후보가 다 막힌 경우에만 쓴다.
+        return spots([(3, 4), (5, 1), (1, 1), (7, 1), (3, 1), (9, 5), (9, 3)])
     case .internalOps:
         // 10명이 x=1~9 를 다 쓰므로 설비는 맨 아래 줄로 내려간다.
         //
@@ -1207,16 +1212,25 @@ private let planRows = zoneHeight * 2 + bandHeight + officeFloorWallRows
 public let officeOuterWallRows = 2
 private let outerWallRows = officeOuterWallRows
 
-// 부서별 자리 배치를 다 쓴 뒤의 예비 격자 — 4열 × 3행 = 12석.
+// 부서별 자리 배치를 다 쓴 뒤의 예비 격자 — 5열 × 2행 = 10석.
 // 에이전트가 늘어 부서 배치표를 넘겼을 때 사람이 화면에서 사라지지 않게 하는 안전망이다.
-private let deskColumns = 4
+private let deskColumns = 5
 private let deskColumnStride = 2
 
 /// 예비 격자(구역 상대 좌표). 부서 배치표를 다 쓴 뒤 이어서 채운다.
-private let fallbackDeskSpots: [TilePoint] = (0..<12).map { index in
+///
+/// **행 간격은 아래 배치표와 같은 3 칸이다.** 예전에는 여기만 2 여서, 배치표를 넘긴 사람이
+/// 바로 아래 주석이 금지한 배치로 앉았다 — 성장 부서가 5석 배치표에 8명이 되자 넘친 셋이
+/// y = 2 · 1 에 앉아, 이름표가 위 행 책상과 아래 사람 얼굴을 덮었다. 안전망이 규칙을
+/// 비껴가면 규칙을 지키는 쪽이 오히려 예외가 된다.
+///
+/// 방 하나에 들어가는 자리는 이 격자가 상한이다(간격 3 이면 y = 4 · 1 두 행뿐). 11명째가
+/// 생기면 배정에서 밀려나 `officeFloorPlan` 의 전원 배정 테스트가 깨진다 — 겹쳐 그려
+/// 못 읽게 두는 것보다, 방 배치를 손볼 때가 됐다고 알리는 편이 낫다.
+private let fallbackDeskSpots: [TilePoint] = (0..<10).map { index in
     TilePoint(
         x: 1 + (index % deskColumns) * deskColumnStride,
-        y: zoneHeight - 3 - (index / deskColumns) * 2
+        y: zoneHeight - 3 - (index / deskColumns) * 3
     )
 }
 
@@ -1272,7 +1286,12 @@ public func departmentDeskSpots(_ department: Department) -> [TilePoint] {
         return spots([(2, 4), (6, 4), (2, 1), (6, 1)])
     case .growth:
         // 밝고 트인 방 — 줄을 맞추지 않고 어긋나게 놓아 자유석으로 읽히게 한다.
-        return spots([(1, 4), (5, 4), (3, 1), (7, 1), (7, 4)])
+        // 두 줄을 한 칸씩 엇갈리게 두면 격자로 보이지 않으면서도 행 간격 3 이 유지된다.
+        //
+        // 다섯 자리로 시작했다가 모의투자 둘이 늘어 여덟 명이 됐고, 넘친 셋이 예비 격자의
+        // 좁은 행으로 밀려나 이름표가 서로를 덮었다. 방에 몇 명이 사는지는 사규가 정하므로,
+        // 자리표는 그 인원을 담고도 남게 둔다.
+        return spots([(1, 4), (3, 4), (5, 4), (7, 4), (2, 1), (4, 1), (6, 1), (9, 1)])
     case .internalOps:
         // 설비가 모인 운영실 — 10명이 들어가야 해서 가장 조밀하다(5열 × 2행).
         // x=9 까지 쓰므로 집기는 y=0 줄로 밀려난다(자리·집기 충돌 회피가 자동으로 처리).

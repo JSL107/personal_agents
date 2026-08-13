@@ -52,6 +52,13 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "휴가 관리"
     case "INVEST":
         return "투자 관리"
+    // 셋 다 주식을 보지만 하는 일이 다르다 — 보유 종목 감시(투자 관리) · 가상 계좌 평가
+    // (모의계좌) · 매수 후보 판단(종목 추천). 이름표가 여섯 자라 "모의투자" 로 뭉치면
+    // 뒤 둘이 한 사람으로 읽힌다.
+    case "PAPER_TRADE":
+        return "모의계좌"
+    case "PAPER_RECOMMEND":
+        return "종목 추천"
     case "CTO_STUDY":
         return "학습 코치"
     // 내부
