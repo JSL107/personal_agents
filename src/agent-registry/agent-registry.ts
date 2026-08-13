@@ -263,7 +263,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     usecasePath:
       'src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts',
     description:
-      '모의투자 계좌 일일 평가 — 포지션 평가·수익률·데이터 이상을 기록 (슬래시 없음, autopilot 전용, LLM 미사용)',
+      '모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용)',
   },
   {
     agentType: AgentType.PAPER_RECOMMEND,

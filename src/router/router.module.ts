@@ -39,6 +39,8 @@ import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module'
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
+import { PaperTradeDispatcher } from '../paper-trading/infrastructure/paper-trade.dispatcher';
+import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { ConversationMemoryService } from './application/conversation-memory.service';
 import { ConversationalReplyUsecase } from './application/conversational-reply.usecase';
@@ -83,6 +85,7 @@ import {
     BlogModule,
     CareerMateModule,
     JobApplicationModule,
+    PaperTradingModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -126,6 +129,7 @@ import {
         BlogDispatcher,
         CareerMateDispatcher,
         JobApplicationDispatcher,
+        PaperTradeDispatcher,
       ],
     },
   ],
