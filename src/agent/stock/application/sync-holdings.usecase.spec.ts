@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { BrokerHolding } from '../../../market-data/domain/broker-holdings.type';
 import { BrokerHoldingsPort } from '../../../market-data/domain/port/broker-holdings.port';
 import { HoldingPosition } from '../domain/holding-change';
-import { StockMonitorRepository } from '../infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../infrastructure/stock-monitor.prisma.repository';
 import { SyncHoldingsUsecase } from './sync-holdings.usecase';
 
 const createHolding = (
@@ -51,7 +51,7 @@ describe('SyncHoldingsUsecase', () => {
         upsertHolding,
         findCurrentBrokerHoldings,
         recordHoldingChanges,
-      } as unknown as StockMonitorRepository,
+      } as unknown as StockMonitorPrismaRepository,
     );
   });
 

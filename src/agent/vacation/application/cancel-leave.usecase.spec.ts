@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { VacationException } from '../domain/vacation.exception';
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { CancelLeaveUsecase } from './cancel-leave.usecase';
 
 describe('CancelLeaveUsecase', () => {
@@ -23,7 +23,7 @@ describe('CancelLeaveUsecase', () => {
     });
     usecase = new CancelLeaveUsecase(
       { get: configGet } as unknown as ConfigService,
-      { softCancel, findActiveByUser } as unknown as LeaveUsageRepository,
+      { softCancel, findActiveByUser } as unknown as LeaveUsagePrismaRepository,
       { execute } as unknown as AgentRunService,
       () => new Date('2026-06-10T00:00:00.000Z'),
     );
@@ -57,7 +57,7 @@ describe('CancelLeaveUsecase DI', () => {
       providers: [
         CancelLeaveUsecase,
         { provide: ConfigService, useValue: { get: () => '2024-01-15' } },
-        { provide: LeaveUsageRepository, useValue: {} },
+        { provide: LeaveUsagePrismaRepository, useValue: {} },
         { provide: AgentRunService, useValue: {} },
       ],
     }).compile();

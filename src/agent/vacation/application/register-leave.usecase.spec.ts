@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { VacationException } from '../domain/vacation.exception';
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { RegisterLeaveUsecase } from './register-leave.usecase';
 
 describe('RegisterLeaveUsecase', () => {
@@ -30,7 +30,7 @@ describe('RegisterLeaveUsecase', () => {
     });
     usecase = new RegisterLeaveUsecase(
       { get: configGet } as unknown as ConfigService,
-      { save, findActiveByUser } as unknown as LeaveUsageRepository,
+      { save, findActiveByUser } as unknown as LeaveUsagePrismaRepository,
       { execute } as unknown as AgentRunService,
     );
   });

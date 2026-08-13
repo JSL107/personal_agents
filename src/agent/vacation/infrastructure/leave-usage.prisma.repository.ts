@@ -27,7 +27,7 @@ interface SaveLeaveInput extends Omit<RegisterLeaveInput, 'memo'> {
 }
 
 @Injectable()
-export class LeaveUsageRepository {
+export class LeaveUsagePrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async save(input: SaveLeaveInput): Promise<LeaveUsageRecord> {

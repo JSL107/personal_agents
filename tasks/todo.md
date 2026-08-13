@@ -13,6 +13,18 @@
 - [x] GREEN: write service에서 `AWAITING_INPUT`을 최우선 소비하고 `SUGGESTIONS`만 번호 해석한다.
 - [x] focused GREEN, 최종 diff·금지 범위·mutation 관점 검토를 수행한다.
 - [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 리다이렉트하고 실제 exit code를 확인한다.
+# 모의투자 3-B 추천 성적 채점 (2026-08-13)
+
+**Goal:** 추천별 실제·그림자·벤치마크 성적과 계좌 지표를 정확히 집계해 CLI와 금요일 Slack 리포트로 제공한다.
+
+**Contract:** `.ai/design.md`와 정본 §6을 따른다. 사용자 정정으로 그림자 진입·청산가는 모두 저장된 `DailyPrice.close`를 사용한다. 실제 성적은 `PaperTrade` 체결가·양쪽 비용을 쓴다. 스키마/3-A 로직/DB/git index는 변경하지 않는다.
+
+- [x] T1 RED/GREEN: 추천 매칭, 비용 포함 실현 수익률, 3분류, 이상치·`realizedPnl` 교차검증 도메인을 구현한다.
+- [x] T2/T3 RED/GREEN: 동일 저장 계열 그림자 수익률과 추천별 KOSPI 초과수익을 구현한다.
+- [x] T4 RED/GREEN: 기간 제한 repository 조회, usecase, 포트폴리오 지표, Slack formatter를 구현한다.
+- [x] T5 RED/GREEN: `score` CLI와 금요일 standalone autopilot task를 연결한다.
+- [x] 요구 테스트 7종과 추가 경계 테스트를 확인하고 최종 diff를 독립 리뷰한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm build`, `pnpm test`, `pnpm docs:check`를 fresh 실행한다.
 - [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
 
 ## Review
@@ -51,6 +63,13 @@
 - 분류 실패만 회색 제안으로 전환하며 다른 도메인 오류는 기존 rejected를 유지한다. 번호 선택은 보관 제안이 있을 때만 worker hint로 해석한다.
 - Swift는 answered 상태를 실패와 분리하고 30분 뒤 제거한다. 대조군 포함 TS/Swift 테스트를 추가했다.
 - TS 4종 gate와 matching SDK Swift build/harness는 exit 0이다. 지정한 raw Swift 명령 2개는 system compiler/SDK 및 package testTarget 구조 때문에 exit 1이며 상세는 `.ai/implementation-summary.md`에 기록했다.
+- 실제 성적은 양쪽 비용 포함 정본 식으로 계산하며 보유 중은 적중률 분모에서 제외하고 `EXPIRED`는 건수만 보고한다.
+- 그림자는 진입·청산 모두 저장된 조정 계열 `DailyPrice.close`로 통일했다. 실제 시가 진입과 그림자 종가 진입의 비교 한계를 리포트에 표시한다.
+- 추천별 exact KOSPI 초과수익 평균, 결손 카운터, 5/60 저장 행 그림자, non-backfilled 포트폴리오 지표를 구현했다.
+- CLI와 금요일 18:10 standalone autopilot은 같은 usecase·formatter를 쓴다. 기존 digest group 선두는 바꾸지 않았다.
+- 필수 7종 테스트가 각각 존재하며 최종 독립 리뷰는 READY다.
+- fresh gate: lint/tsc/build/test/docs/diff check 모두 exit 0. 전체 test는 일반 356 suites/2,949 tests와 code-graph 5 suites/40 tests가 통과했다.
+- DB/실데이터/Slack 통합 실행은 금지 지시에 따라 미검증이며 staging/commit/push도 수행하지 않았다.
 
 ---
 
@@ -476,6 +495,25 @@
 - 독립 리뷰 Critical/Important 0건. Minor 1건(파싱 실패 폴백 직접 assertion 부재)은 기존 spec을 보강해 해소했다.
 - 최종 gate: lint/tsc/focused/full/build 모두 exit 0. focused 26 suites/254 tests, 전체 일반 307 suites/2,544 tests + code-graph 5 suites/40 tests 통과.
 - 설계 이탈, 금지 파일 변경, commit/push/PR은 없다.
+
+---
+
+# 워커 건강진단 보고서 사실 검증 (2026-08-11)
+
+**Goal:** 보고서의 10개 코드 주장과 3개 DB 집계를 원문·실코드·실데이터로 독립 검증한다.
+
+- [x] 보고서 원문과 명시된 file:line을 대조한다.
+- [x] fallback·BullMQ backoff·quota clamp·LLM retry 실행 의미를 검산한다.
+- [x] L4 쌍 선정·주식 평단 상태·선호 학습·리뷰 판정의 상하류 호출 경로를 끝까지 추적한다.
+- [ ] Postgres에서 14일 실패, daily_plan 결손, L4 밴드 쌍을 재집계한다.
+- [x] 각 항목을 확인/반박/부분정확으로 판정하고 반증을 명시한다.
+- [x] 결과와 미검증 리스크를 Review에 기록한다.
+
+## Review
+
+- 코드 10항목 대조 완료: 확인 4건, 부분정확 6건, 전면 반박 0건.
+- 핵심 반증: Autopilot retry는 그룹 전멸 시에만 발동하며, L4 상위 5쌍은 신규 memory/supersede로 바뀐다. 주식 상태 줄은 평일·성공 점검 종목에 한한다.
+- DB 재집계는 현재 샌드박스에서 Docker socket `permission denied`, `127.0.0.1:5434` `Operation not permitted`로 미완료. 보고서의 34/30건·daily_plan 결손·120쌍은 독립 확인하지 못했다.
 
 ---
 

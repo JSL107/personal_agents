@@ -10,7 +10,7 @@ import {
   HoldingChange,
   HoldingPosition,
 } from '../domain/holding-change';
-import { StockMonitorRepository } from '../infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../infrastructure/stock-monitor.prisma.repository';
 
 export interface SyncHoldingsResult {
   synced: number;
@@ -24,7 +24,7 @@ export class SyncHoldingsUsecase {
   constructor(
     @Inject(BROKER_HOLDINGS_PORT)
     private readonly brokerHoldings: BrokerHoldingsPort,
-    private readonly repository: StockMonitorRepository,
+    private readonly repository: StockMonitorPrismaRepository,
   ) {}
 
   // 매매 판정은 이 안에서만 가능하다. 잔고는 같은 effectiveDate 행을 덮어쓰므로 동기화가
