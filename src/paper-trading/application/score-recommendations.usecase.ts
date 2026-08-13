@@ -15,7 +15,7 @@ import {
   calculateBenchmarkPerformance,
   calculateShadowPerformance,
 } from '../domain/shadow-performance';
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 
 export interface ScoreRecommendationsCommand {
   asOf?: Date;
@@ -90,7 +90,7 @@ const countClassifications = (
 
 @Injectable()
 export class ScoreRecommendationsUsecase {
-  constructor(private readonly repository: PaperTradingRepository) {}
+  constructor(private readonly repository: PaperTradingPrismaRepository) {}
 
   async execute(
     command: ScoreRecommendationsCommand,
