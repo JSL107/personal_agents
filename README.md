@@ -100,7 +100,7 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 과거 작업을 pgvector 로 의미 검색하고, 오래된 기록일수록 점수를 낮춘다(`@huggingface/transformers`, Xenova/multilingual-e5-small 384dim).
 
-쓰는 곳은 둘이다. **Intent Classifier** 는 비슷한 과거 작업을 예시로 앞에 붙여 분류 정확도를 올린다. **Code Reviewer** 는 `/review-feedback ... reject` 로 기각당한 리뷰를 "이렇게 하지 말라"는 예시로 쌓아 다음 리뷰 프롬프트에 넣는다.
+주로 세 곳이 읽어 간다. **Intent Classifier** 는 비슷한 과거 작업을 예시로 앞에 붙여 분류 정확도를 올린다. **Code Reviewer** 는 `/review-feedback ... reject` 로 기각당한 리뷰를 "이렇게 하지 말라"는 예시로 쌓아 다음 리뷰 프롬프트에 넣는다. **PM** 은 비슷한 과거 계획을 찾아 오늘 계획에 참고로 붙인다 — 한국어는 전문검색 매칭이 약해 의미검색 쪽을 우선한다.
 
 </td></tr>
 <tr><td width="50%" valign="top">
