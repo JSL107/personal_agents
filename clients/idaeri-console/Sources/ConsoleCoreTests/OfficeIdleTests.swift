@@ -250,6 +250,40 @@ func runOfficeIdleTests(_ t: TestRunner) {
         }
     }
 
+    // 후보 규칙은 **평면도를 거치지 않고 직접** 고정한다. 지금 배치는 앉는 가구의 정면이
+    // 모두 열려 있어, 네 방향 탐색으로 되돌려도 목적지 결과가 같다 — 아래 평면도 단언들만
+    // 두면 규칙이 통째로 사라져도 전부 통과한다(실측 확인).
+    let sittingNeighbors = officeInteractionNeighbors(
+        furniture: TilePoint(x: 5, y: 5), pose: .sitting
+    )
+    t.expectEqual(sittingNeighbors, [TilePoint(x: 5, y: 4)], "앉는 자리 후보는 정면 한 칸뿐")
+    for pose in OfficeInteractionPose.allCases where pose != .sitting {
+        t.expectEqual(
+            officeInteractionNeighbors(furniture: TilePoint(x: 5, y: 5), pose: pose),
+            [
+                TilePoint(x: 5, y: 4), TilePoint(x: 4, y: 5),
+                TilePoint(x: 6, y: 5), TilePoint(x: 5, y: 6),
+            ],
+            "\(pose.rawValue) 는 네 방향 후보를 유지"
+        )
+    }
+
+    // 앉는 자리는 **가구 정면뿐**이다. 소파 그림이 정면도라, 옆 칸에서 앉히면 소파에 앉은
+    // 사람이 아니라 소파 옆에 나란히 앉은 사람이 된다(경영방 소파가 그랬다).
+    for spot in spots where spot.pose == .sitting {
+        t.expectEqual(
+            spot.facing, .up, "\(spot.kind.rawValue) 앉는 자리 \(spot.tile) 는 가구 정면"
+        )
+    }
+
+    // 정면만 허용하는 규칙은 **가구를 목적지에서 조용히 탈락시킬 수 있다** — 정면 칸을 다른
+    // 가구가 물면 그 소파는 아무도 앉지 않는 장식이 된다. 배치를 바꿀 때 그 손실이 눈에
+    // 띄도록 소파는 전부 앉을 자리를 갖는지 여기서 고정한다.
+    let sofaKinds: Set<FurnitureKind> = [.sofa2, .sofa3]
+    let placedSofas = plan.furniture.filter { sofaKinds.contains($0.kind) }.count
+    let seatedSofas = spots.filter { sofaKinds.contains($0.kind) }.count
+    t.expectEqual(seatedSofas, placedSofas, "놓인 소파 \(placedSofas)개 모두 앉을 자리 보유")
+
     let spotsByTile = Dictionary(uniqueKeysWithValues: spots.map { ($0.tile, $0) })
     for loungeTile in plan.loungeTiles {
         t.expect(
