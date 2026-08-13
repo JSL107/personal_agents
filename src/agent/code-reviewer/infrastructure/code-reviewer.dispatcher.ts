@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import {
   ResolvedLatestOpenPr,
@@ -53,6 +54,13 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     const outcome = await this.reviewPullRequest.execute({
       prRef,
       slackUserId: input.slackUserId,
+      publish: true,
+      // 이 dispatcher 는 자연어 멘션과 콘솔 지시를 함께 받는다. 한 값으로 뭉뚱그리면
+      // 트리거 타입을 나눈 목적(경로별 집계·감사)이 콘솔 실행에서 그대로 무너진다.
+      triggerType:
+        input.source === 'REMOTE_CONSOLE'
+          ? TriggerType.REMOTE_CONSOLE_CODE_REVIEWER
+          : TriggerType.SLACK_MENTION_CODE_REVIEWER,
       ...(input.conversationContext !== undefined
         ? { conversationContext: input.conversationContext }
         : {}),

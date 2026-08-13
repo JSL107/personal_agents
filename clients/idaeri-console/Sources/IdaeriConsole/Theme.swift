@@ -159,6 +159,8 @@ extension PendingPhase {
             return "🔄"
         case .done:
             return "✅"
+        case .answered:
+            return "💡"
         case .failed:
             return "⚠️"
         }
@@ -172,6 +174,8 @@ extension PendingPhase {
             return "진행 중"
         case .done:
             return "완료"
+        case .answered:
+            return "제안"
         case .failed:
             return "실패"
         }

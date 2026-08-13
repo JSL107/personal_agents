@@ -45,6 +45,16 @@ final class CharacterNode: SKNode {
     /// 앉은 사람에게만 장식이 몸에서 한 뼘 떠오른다. 값이 바뀌는 곳은 `applySpriteSize` 하나이므로
     /// 새 장식을 붙일 때는 거기서 함께 다시 잡을 것.
     private var spriteBaseY: CGFloat = 0
+    /// 머리 위 표시(말풍선·경과·생각 점)를 붙일 기준 높이. 씬이 라벨을 놓을 때 쓴다.
+    ///
+    /// `sprite.size.height` 만 쓰면 앉아서 내려간 몫(`spriteBaseY`)이 빠져 **말풍선만 몸에서
+    /// 한 뼘 떠오른다.** 이름표는 내려가는데 그 위 말풍선은 안 내려가 둘 사이가 벌어지고,
+    /// 부서 문패가 비켜설 높이를 재는 Core 계산(`officeSeatedBubbleTopTiles`)과도 0.28칸
+    /// 어긋난다 — 문패에 확보한 0.35칸 간격이 실제로는 0.07칸(최소 창에서 1.4px)만 남는다.
+    var headTopY: CGFloat {
+        spriteBaseY + sprite.size.height
+    }
+
     /// 이름표가 좌우로 쓸 수 있는 여유(칸). 씬이 좌석·방에서 계산해 넘긴다(`officeNameplateSpanTiles`).
     /// nil 이면 제한 없음 — 방에 속하지 않은 자리다.
     private var nameplateSpan: (left: Double, right: Double)?
@@ -546,6 +556,21 @@ final class CharacterNode: SKNode {
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
         layoutSelectionRing()
+        layoutHeadLabels()
+    }
+
+    /// 씬이 붙인 머리 위 라벨(말풍선·생각 점)을 지금 자세에 맞춰 다시 놓는다.
+    ///
+    /// 이 라벨들은 씬이 만들어 붙이므로 위치를 한 번만 계산한다. 그런데 앉고 서면
+    /// `spriteBaseY` 가 오르내리고, **자리로 걸어와 앉는 경로(`goHome` → `sit`)에는
+    /// `refreshOverlays` 가 뒤따르지 않는다** — 그대로 두면 도착해 앉은 사람의 말풍선만
+    /// 다음 상태 갱신(최대 30초)까지 서 있던 높이에 떠 있다. 이름표가 여기서 다시 잡히는
+    /// 것과 같은 이유이고, 같은 자리에서 함께 처리해야 새 라벨이 빠지지 않는다.
+    private func layoutHeadLabels() {
+        let y = headTopY + CGFloat(officeNameplateClearance(tileSize: Double(currentTileSize)))
+        for name in officeHeadLabelNames {
+            childNode(withName: name)?.position.y = y
+        }
     }
 
     // MARK: - 몸짓 애니메이션

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
+import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
@@ -22,7 +23,6 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
-import { parseTopicSelection } from './topic-selection-detector';
 import { detectYesNoIntent } from './yes-no-detector';
 
 // 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
