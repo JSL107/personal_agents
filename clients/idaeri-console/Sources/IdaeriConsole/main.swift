@@ -57,13 +57,18 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         }
         return CommandLine.arguments[index + 1]
     }
+    // 상시 말풍선은 진행 중인 사람에게만 붙는데 평소 사무실은 0~2명뿐이라, 문패가 말풍선을
+    // 덮는지 확인하려는 순간에 대상이 없다. 전원을 진행 중으로 세워 굽는다.
+    //   swift run IdaeriConsole --render /tmp/office.png --busy-demo
+    let busyDemo = CommandLine.arguments.contains("--busy-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
         hour: hour,
         size: renderSize,
         poseDemo: poseDemo,
-        hoverAgentType: hoverAgentType
+        hoverAgentType: hoverAgentType,
+        busyDemo: busyDemo
     )
     exit(succeeded ? 0 : 1)
 }

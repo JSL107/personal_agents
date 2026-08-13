@@ -18,7 +18,8 @@ func renderOfficeScene(
     hour: Int?,
     size: CGSize,
     poseDemo: Bool,
-    hoverAgentType: String? = nil
+    hoverAgentType: String? = nil,
+    busyDemo: Bool = false
 ) -> Bool {
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
@@ -29,7 +30,10 @@ func renderOfficeScene(
 
     let snapshot = fetchSnapshotSynchronously(client: client)
     // 데모는 백엔드가 꺼져도 일곱 자세가 모두 보여야 회귀 입구 역할을 한다.
-    let renderedAgents = poseDemo ? poseDemoAgents() : snapshot?.agents ?? []
+    var renderedAgents = poseDemo ? poseDemoAgents() : snapshot?.agents ?? []
+    if busyDemo {
+        renderedAgents = renderedAgents.map(busyDemoAgent)
+    }
     let renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []
     let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
     let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
@@ -89,6 +93,18 @@ func renderOfficeScene(
 /// 데모가 조용히 비거나 이름표와 자세가 뒤섞인다 — 한 곳에서만 만든다.
 func poseDemoAgentType(for kind: FurnitureKind) -> String {
     "POSE_DEMO_\(kind.rawValue)"
+}
+
+/// 전원을 진행 중으로 세워 머리 위 상시 말풍선을 강제로 띄운다(렌더 전용).
+///
+/// 말풍선은 일이 도는 사람에게만 붙는다(`agentTokenInfo`). 그런데 평소 사무실은 29명 중
+/// 0~2명만 진행 중이라, 부서 문패가 말풍선을 덮는지를 **확인하려는 순간에만 대상이 없다.**
+/// 실제로 그 겹침은 여섯 달 동안 화면에 있었는데도 회귀 렌더에는 한 번도 잡히지 않았다.
+///
+/// 문구는 실측 상한(`ACTIVITY_BUBBLE_MAX_LENGTH` = 12자)에 맞춘 최장 예시를 쓴다 — 짧은
+/// 문구로 확인하면 폭이 남의 자리를 넘는지가 보이지 않는다.
+private func busyDemoAgent(_ agent: ConsoleAgent) -> ConsoleAgent {
+    agent.replacing(state: .inProgress, bubble: "#2999 리뷰 중")
 }
 
 private func poseDemoAgents() -> [ConsoleAgent] {
