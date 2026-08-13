@@ -32,6 +32,18 @@ func renderOfficeScene(
     // 데모는 백엔드가 꺼져도 일곱 자세가 모두 보여야 회귀 입구 역할을 한다.
     var renderedAgents = poseDemo ? poseDemoAgents() : snapshot?.agents ?? []
     if busyDemo {
+        // 백엔드가 꺼져 있으면 사람이 0명이라 이 모드는 **빈 사무실을 성공으로 저장한다.**
+        // 말풍선 겹침을 보려고 만든 입구인데 정작 확인 대상이 하나도 없는 그림이 나오고,
+        // 종료 코드가 0 이라 자동 점검은 통과로 읽는다(실제로 그 그림을 대조군으로 쓸 뻔했다).
+        guard !renderedAgents.isEmpty else {
+            FileHandle.standardError.write(
+                Data(
+                    "--busy-demo 는 사람이 있어야 한다 — 스냅샷이 비었다"
+                        .appending(" (백엔드와 IDAERI_CONSOLE_URL 확인)\n").utf8
+                )
+            )
+            return false
+        }
         renderedAgents = renderedAgents.map(busyDemoAgent)
     }
     let renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []

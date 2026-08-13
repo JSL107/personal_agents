@@ -189,6 +189,19 @@ public func officeWrapBubble(
     return kept.joined(separator: "\n")
 }
 
+/// 씬이 사람 머리 위에 붙이는 라벨 이름.
+///
+/// **붙이는 쪽(씬)과 자세가 바뀔 때 다시 놓는 쪽(`CharacterNode.applySpriteSize`)이 같은
+/// 목록을 봐야 한다.** 앉고 서면 몸이 `officeSeatedSpriteDrop` 만큼 오르내리는데 라벨은
+/// 붙일 때 한 번 잡은 자리에 남는다 — 이름이 한쪽에만 있으면 새 라벨이 조용히 재배치에서
+/// 빠지고, 자리로 걸어와 앉은 사람의 말풍선만 다음 갱신까지 허공에 뜬다.
+public let officeInfoBubbleLabelName = "infoBubble"
+public let officeTemporaryBubbleLabelName = "bubble"
+public let officeThinkingDotsLabelName = "dots"
+public let officeHeadLabelNames = [
+    officeInfoBubbleLabelName, officeTemporaryBubbleLabelName, officeThinkingDotsLabelName,
+]
+
 /// 커서 옆 쪽지 판 노드 이름. 만드는 쪽과 걷는 쪽이 같은 문자열을 봐야 한다.
 public let officeHoverTooltipNodeName = "hoverTooltip"
 
