@@ -340,49 +340,58 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         )
     }
 
-    let sessionPlan = officeFloorPlan(
-        agents: [
-            makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
-        ]
-    )
-    let sessionTiles = officeSessionDesks(plan: sessionPlan)
-    t.expect(!sessionTiles.isEmpty, "세션 작업 책상 존재")
-    // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 줄 선 사람과 겹쳐 승인이 몇 건인지
-    // 세지 못한다.
-    let queued = Set(sessionPlan.queueTiles)
-    for tile in sessionTiles {
-        t.expect(!queued.contains(tile), "세션 책상이 승인 대기 줄과 겹치지 않음")
-        t.expect(tile.x != sessionPlan.presidentTile.x, "대표가 선 칸은 비운다")
-        t.expectEqual(tile.y, sessionPlan.presidentTile.y, "세션 책상은 대표실 안쪽 줄")
-        // 좌표를 따로 계산하지 않고 평면도에 실제로 놓인 책상만 쓴다. 아니면 화면에 없는
-        // 책상 위에 이름표만 뜬다.
-        t.expect(
-            sessionPlan.furniture.contains { $0.kind == .desk && $0.tile == tile },
-            "평면도에 실제로 놓인 책상"
+    for zoneColumns in [2, 3] {
+        let sessionPlan = officeFloorPlan(
+            agents: [
+                makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
+            ],
+            zoneColumns: zoneColumns
         )
-    }
-    // 이름표가 설 폭을 확보한다. 붙여 놓으면 이름표가 이어 붙어 한 줄짜리 글자 뭉치가 되고,
-    // 그 줄은 어느 것도 읽을 수 없다(실제로 그랬다).
-    let sessionXs = sessionTiles.map(\.x).sorted()
-    for (left, right) in zip(sessionXs, sessionXs.dropFirst()) {
-        t.expect(right - left >= 2, "책상끼리 최소 두 칸 간격")
-    }
-    // 응접 가구가 짝수 칸을 물면 책상이 조용히 줄어든다. 개수를 고정해 그걸 잡는다.
-    //
-    // 기준이 다섯에서 넷으로 내려온 것은 복도를 내면서 방 왼쪽 한 칸이 칸막이 벽이 됐기
-    // 때문이다. 책상은 그 벽을 피해 한 칸 안쪽부터 두 칸 간격으로 놓이므로 넷이 된다 —
-    // 가구를 빼도 늘지 않는다(비는 것은 홀수 칸이다).
-    // 넘치는 세션은 원래 설계대로 좌상단 요약의 총계가 맡는다.
-    t.expect(
-        sessionTiles.count >= 4, "대표실에 작업 책상 최소 4개 (지금 \(sessionTiles.count))"
-    )
-    // 책상 앞줄은 통로로 남아야 한다 — 여기까지 막으면 탕비실 가는 사람이 밴드를 못 건넌다.
-    for tile in sessionTiles {
-        t.expect(
-            sessionPlan.walkable.contains(TilePoint(x: tile.x, y: tile.y - 1)),
-            "책상 \(tile.x) 앞줄은 통행 가능"
+        let sessionTiles = officeSessionDesks(plan: sessionPlan)
+        t.expect(!sessionTiles.isEmpty, "\(zoneColumns)열 세션 작업 책상 존재")
+        // 승인 대기 줄과 다른 줄을 써야 한다 — 같은 줄이면 줄 선 사람과 겹쳐 승인이 몇 건인지
+        // 세지 못한다.
+        let queued = Set(sessionPlan.queueTiles)
+        for tile in sessionTiles {
+            t.expect(!queued.contains(tile), "\(zoneColumns)열 세션 책상이 승인 대기 줄과 겹치지 않음")
+            t.expect(tile.x != sessionPlan.presidentTile.x, "\(zoneColumns)열 대표가 선 칸은 비운다")
+            t.expectEqual(
+                tile.y, sessionPlan.presidentTile.y, "\(zoneColumns)열 세션 책상은 대표실 안쪽 줄"
+            )
+            // 좌표를 따로 계산하지 않고 평면도에 실제로 놓인 책상만 쓴다. 아니면 화면에 없는
+            // 책상 위에 이름표만 뜬다.
+            t.expect(
+                sessionPlan.furniture.contains { $0.kind == .desk && $0.tile == tile },
+                "\(zoneColumns)열 평면도에 실제로 놓인 책상"
+            )
+        }
+        // 이름표가 설 폭을 확보한다. 붙여 놓으면 이름표가 이어 붙어 한 줄짜리 글자 뭉치가 되고,
+        // 그 줄은 어느 것도 읽을 수 없다(실제로 그랬다).
+        let sessionXs = sessionTiles.map(\.x).sorted()
+        for (left, right) in zip(sessionXs, sessionXs.dropFirst()) {
+            t.expect(right - left >= 2, "\(zoneColumns)열 책상끼리 최소 두 칸 간격")
+        }
+        // 대표실 폭이 12칸이면 네 자리, 8칸이면 세 자리다. 홀수 칸은 응접 가구 몫이고
+        // 넘치는 세션은 원래 설계대로 좌상단 요약의 총계가 맡는다.
+        t.expectEqual(
+            sessionTiles.count, zoneColumns == 2 ? 3 : 4,
+            "\(zoneColumns)열 대표실 폭에 따른 세션 책상 수"
         )
+        // 책상 앞줄은 통로로 남아야 한다 — 여기까지 막으면 탕비실 가는 사람이 밴드를 못 건넌다.
+        for tile in sessionTiles {
+            t.expect(
+                sessionPlan.walkable.contains(TilePoint(x: tile.x, y: tile.y - 1)),
+                "\(zoneColumns)열 책상 \(tile.x) 앞줄은 통행 가능"
+            )
+        }
     }
+    let sessionTiles = officeSessionDesks(
+        plan: officeFloorPlan(
+            agents: [
+                makeInteractionAgent("PM", .waiting), makeInteractionAgent("CTO", .waiting),
+            ]
+        )
+    )
 
     // 잠깐 쉬는 사람은 자리를 지키고, 오래 조용한 사람만 퇴근한다.
     //

@@ -1,3 +1,34 @@
+# macOS 콘솔 오피스 도면 창 비율 적응형 배치 (2026-08-13)
+
+**Goal:** `.ai/design.md` 계약대로 창 크기에 따라 부서 구역을 3열×2행 또는 2열×3행으로 선택하고, 배치 전환 때만 도면을 재구성한다.
+
+**Contract:** `clients/idaeri-console/`과 요구된 `.ai/implementation-summary.md`만 구현 범위다. `departmentDeskSpots`·`departmentFurnitureSpots`·`fallbackDeskSpots`, `zoneWidth = 10`·`zoneHeight = 7`·`zoneStride = 12`, 사실과 맞는 기존 주석은 변경하지 않는다. GUI 렌더·git index·commit은 실행하지 않는다.
+
+- [x] 현재 3열 baseline과 공개 API 호출부를 확인한다. 초기 baseline 실행은 sandbox 캐시 권한으로 막혀 격리 cache 명령으로 전환했다.
+- [x] RED: `officeZoneColumns(width:height:currentZoneColumns:)`가 960×1010→2, 1400×820→3, 동률→3, 반대 배치가 5% 이상 유리할 때만 전환하는 테스트를 추가한다.
+- [x] RED: `officeFloorPlan(agents:zoneColumns:)`가 c=3에서 35×20, c=2에서 23×27이고 두 배치의 복도·천장·좌석·대기줄·휴식자리 도달성을 지키는 파라미터 테스트를 추가한다.
+- [x] RED: c=2 표본 31명 전원이 서로 다른 좌석을 받고, c=2·c=3의 모든 상단 밴드 가구 footprint가 해당 `CommonArea` 폭 안에 드는 테스트를 추가한다.
+- [x] GREEN: `officePlanSize(zoneColumns:)`, `officeCorridorColumns(zoneColumns:)`, `officeCorridorRow(zoneColumns:)`와 2/3열 선택 순수 함수를 추가하고, 기존 3열 기본 호출 호환성을 유지한다.
+- [x] GREEN: 도면 열·행, 부서 원점, 행별 문·천장, 복도를 `zoneColumns`/`zoneRows`에서 계산한다. 부서 내부 배치표와 구역 규격 상수는 그대로 둔다.
+- [x] GREEN: `bandSpans`의 35→12/12/11, 23→8/8/7 구간으로 바닥·벽·문패·창·벽등·대표·대기줄·휴식자리를 유도하고, 방별 기존 우선순위 후보를 폭으로 필터링한다.
+- [x] GREEN: `OfficeScene`이 현재 열 수를 보관하고 resize에서 5% 히스테리시스로 열 수를 선택하며, 열 수 변경 때만 새 도면을 만들고 크기만 바뀌면 기존 도면으로 좌표를 재계산한다.
+- [x] REFACTOR: 바뀐 사실과 충돌하는 주석만 같은 사고 기록 톤으로 갱신하고, 금지 함수·상수와 무관한 코드는 손대지 않는다.
+- [x] VERIFY: `swift build`, `swift run ConsoleCoreTests`, `git diff --check`, 금지 심볼 diff 검사를 fresh 실행하고 전체 diff를 `.ai/design.md`와 대조한다.
+- [x] `.ai/implementation-summary.md`에 변경 파일/이유, 설계 이탈, 실제 테스트 건수, Claude 재검증 지점을 기록하고 아래 Review를 채운다.
+- [x] GUI 렌더 실증(960×1010·1400×820)으로 목표 수치와 시각 회귀를 확인한다.
+- [x] 렌더에서 드러난 밴드·부서 문패 x 충돌을 고치고, 두 배치 모두에서 겹침을 막는 회귀 테스트를 추가한다.
+
+## Review
+
+- 3열 기본 API 호환을 유지하면서 2열×3행 도면을 추가했다. 960×1010은 2열, 1400×820은 3열을 선택한다.
+- 독립 리뷰가 첫 배치부터 히스테리시스를 적용한 결함을 찾았다. 초기 열 상태를 nil로 바꿔 첫 렌더는 순수 최대값, 이후 리사이즈만 5% 히스테리시스를 적용했다.
+- `departmentDeskSpots`·`departmentFurnitureSpots`·`fallbackDeskSpots`와 zone 규격 값, 백엔드 `src/`는 변경하지 않았다.
+- GUI 렌더 실증에서 2열 배치의 "탕비실"과 "개발" 문패가 겹쳤다. 원인은 밴드가 도면 폭을 3등분하고 부서는 stride 12로 나뉘어, "밴드와 부서가 같은 x 격자를 쓴다"는 기존 회피 규칙의 전제가 깨진 것이다. 실제 문패 판의 x 범위를 계산해 비충돌 위치로 미루는 방식으로 고쳤고, 조건 분기 대신 격자 어긋남 자체를 견디게 했다.
+- 렌더 실측: 960×1010에서 타일 27.4px→37.4px(+36%), 세로 여백 46%→0%. 1400×820은 3열 유지로 시각 회귀 없음. 두 배치 모두 31명 전원 배치.
+- `swift build` 성공, `swift run ConsoleCoreTests` 2194건 전부 통과, diff check clean.
+
+---
+
 # 모의투자 3-A 체결 관측 교정 B-1/B-2 (2026-08-13)
 
 **Goal:** 장중 당일 봉 부재를 조기 만료하지 않고 별도 계측하며, 마감 회차의 처리 대상 수와 실제 만료 수를 분리한다.
@@ -1901,5 +1932,25 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 독립 최종 리뷰는 Critical/Important/Minor 0건이었다. 설계 편차와 schema/env/dependency/new production file 변경은 없다.
 - 최종 gate: lint exit 0(기존 warning 57), tsc exit 0, 전체 test exit 0(일반 350 suites/2,910 tests + code-graph 5 suites/40 tests), build exit 0, diff check exit 0.
 - 커밋, staging, push는 실행하지 않았다.
+
+---
+# 적응형 도면 밴드·부서 문패 x 충돌 수정 (2026-08-13)
+
+**Goal:** 2열·3열 모두에서 상단 밴드 문패와 부서 문패의 x 범위를 분리하고, 서로 다른 격자를 공유한다고 가정하지 않는다.
+
+**Contract:** 기존 이름표 자산을 먼저 검토한다. `departmentDeskSpots`·`departmentFurnitureSpots`·`fallbackDeskSpots`는 수정하지 않는다. commit하지 않는다.
+
+- [x] 기존 문패 렌더 계산, 이름표 간격 자산, `OfficeNameplateFitTests`를 확인한다.
+- [x] RED: 실제 글꼴 기준 2열·3열 밴드/부서 문패 x 범위 비겹침을 고정한다.
+- [x] GREEN: 점유 구간을 피해 밴드 문패를 배치하는 격자 독립 규칙을 최소 구현한다.
+- [x] 가드를 기존 왼쪽 고정으로 깨뜨려 회귀 테스트 RED를 재확인하고 복원한다.
+- [x] `swift build`, `swift run ConsoleCoreTests`, `git diff --check`, 금지 심볼 diff 검사를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 밴드 문패의 왼쪽 고정 선호는 유지하되, 실제 부서 문패 판과 6px 간격을 확보할 수 있는 가장 가까운 위치로 이동한다. 2열 조건 분기나 두 격자의 stride 공유는 없다.
+- 사람 이름표용 font/세로 계산은 문제 축이 달라 재사용하지 않았고, 공통 판 간격 상수만 재사용했다. 선택 근거를 생산 코드 주석에 남겼다.
+- 최초 RED와 고의 mutation RED 모두 2열의 동일 충돌 3건을 잡았다. 복원 후 전체 2194건과 앱 build가 exit 0이다.
 
 ---

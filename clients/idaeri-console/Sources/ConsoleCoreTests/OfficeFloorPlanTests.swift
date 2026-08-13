@@ -56,8 +56,117 @@ private let sampleDepartments: [String: Department] = Dictionary(
 func runOfficeFloorPlanTests(_ t: TestRunner) {
     t.suite("OfficeFloorPlan")
 
+    t.expectEqual(
+        officeZoneColumns(width: 960, height: 1010), 2,
+        "세로로 긴 창은 2열×3행을 고른다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1400, height: 820), 3,
+        "가로로 긴 창은 3열×2행을 유지한다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 350, height: 270), 3,
+        "두 배치의 타일 크기가 같으면 기존 3열을 고른다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1280, height: 1000), 2,
+        "첫 배치는 히스테리시스 없이 근소하게 큰 2열을 고른다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1310, height: 1000, currentZoneColumns: 3), 3,
+        "2열 이점이 5% 미만이면 현재 3열을 유지한다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1200, height: 1000, currentZoneColumns: 3), 2,
+        "2열 이점이 5% 이상이면 3열에서 전환한다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1320, height: 1000, currentZoneColumns: 2), 2,
+        "3열 이점이 5% 미만이면 현재 2열을 유지한다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1400, height: 1000, currentZoneColumns: 2), 3,
+        "3열 이점이 5% 이상이면 2열에서 전환한다"
+    )
+
+    let adaptiveAgents = sampleAgents + planAgents(.internalOps, ["OPS_AUX_1", "OPS_AUX_2"])
+    for zoneColumns in [2, 3] {
+        let adaptivePlan = officeFloorPlan(agents: adaptiveAgents, zoneColumns: zoneColumns)
+        let expectedSize = zoneColumns == 2 ? (columns: 23, rows: 27) : (columns: 35, rows: 20)
+        t.expectEqual(
+            adaptivePlan.columns, expectedSize.columns,
+            "\(zoneColumns)열 도면 폭"
+        )
+        t.expectEqual(
+            adaptivePlan.rows, expectedSize.rows,
+            "\(zoneColumns)열 도면 높이"
+        )
+        t.expectEqual(
+            adaptivePlan.desks.count, adaptiveAgents.count,
+            "\(zoneColumns)열 도면에서 31명 전원 자리 배정"
+        )
+        t.expectEqual(
+            Set(adaptivePlan.desks.map(\.agentType)).count, adaptiveAgents.count,
+            "\(zoneColumns)열 도면에서 31명 모두 고유 배정"
+        )
+        t.expectEqual(
+            Set(adaptivePlan.desks.map(\.seat)).count, adaptiveAgents.count,
+            "\(zoneColumns)열 도면에서 31명 좌석 중복 없음"
+        )
+        t.expectEqual(
+            Set(adaptivePlan.zones.map { $0.origin.x }).count, zoneColumns,
+            "\(zoneColumns)열 부서 구역 열 수"
+        )
+        t.expectEqual(
+            Set(adaptivePlan.zones.map { $0.origin.y }).count, 6 / zoneColumns,
+            "\(zoneColumns)열 부서 구역 행 수"
+        )
+
+        for area in adaptivePlan.commonAreas {
+            let placements = adaptivePlan.furniture.filter { placement in
+                placement.tile.y >= officeCorridorRow(zoneColumns: zoneColumns) + 1
+                    && placement.tile.x >= area.originX
+                    && placement.tile.x < area.originX + area.width
+            }
+            for placement in placements {
+                t.expect(
+                    placement.tile.x + placement.kind.footprint.width
+                        <= area.originX + area.width,
+                    "\(zoneColumns)열 \(area.label) \(placement.kind.rawValue)가 방 폭 안"
+                )
+            }
+            let identityKind: FurnitureKind
+            switch area.kind {
+            case .meeting:
+                identityKind = .meetingTable
+            case .president:
+                identityKind = .desk
+            case .pantry:
+                identityKind = .coffeeMachine
+            }
+            t.expect(
+                placements.contains { $0.kind == identityKind },
+                "\(zoneColumns)열 \(area.label) 핵심 가구 \(identityKind.rawValue) 유지"
+            )
+        }
+        let bandFixtureTiles = Set(adaptivePlan.windowTiles + adaptivePlan.wallLampTiles)
+        let tallPlantsUnderFixtures = adaptivePlan.furniture.filter { placement in
+            placement.kind == .plantTall
+                && placement.tile.y >= officeCorridorRow(zoneColumns: zoneColumns) + 1
+                && bandFixtureTiles.contains(
+                    TilePoint(x: placement.tile.x, y: adaptivePlan.rows - officeOuterWallRows)
+                )
+        }
+        t.expectEqual(
+            tallPlantsUnderFixtures.count, 0,
+            "\(zoneColumns)열 밴드 큰 화분이 창·벽등 열을 피한다"
+        )
+    }
+
 
     let plan = officeFloorPlan(agents: sampleAgents)
+    let corridorColumns = officeCorridorColumns(zoneColumns: 3)
+    let corridorRow = officeCorridorRow(zoneColumns: 3)
 
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
     t.expectEqual(plan.desks.count, sampleAgents.count, "29명 전원 자리 배정")
@@ -128,7 +237,6 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 지금은 두 벽 사이를 복도로 벌려 해결한다. 벽 사이에 복도가 끼므로 여전히 연속 2칸이 아니다.
     // (구역 천장은 가로로 이어지는 벽이라 이 검사에서 뺀다.)
     let zoneAreaRows = plan.zones.map { $0.origin.y + $0.height }.max() ?? 0
-    let zoneHeight = plan.zones.first?.height ?? 0
     // 위·아래 구역 각각의 천장 줄. 위 구역 천장도 벽이 된 뒤로 둘 다 빼야 한다 —
     // 한쪽만 빼면 그 줄의 가로 벽이 "겹친 벽" 으로 잡혀 통째로 거짓 실패한다.
     // 격자 맨 아래 벽 줄도 가로로 이어지는 벽이라 같이 뺀다.
@@ -200,8 +308,8 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
                 else {
                     return nil
                 }
-                let onCorridorColumn = officeCorridorColumns.contains(x)
-                let onCorridorRow = y == officeCorridorRow
+                let onCorridorColumn = corridorColumns.contains(x)
+                let onCorridorRow = y == corridorRow
                 return (onCorridorColumn || onCorridorRow) ? TilePoint(x: x, y: y) : nil
             }
         }
@@ -290,10 +398,10 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 한 칸 넓은데 그 몫을 빠뜨리면 벽 바로 앞 한 열이 통로색으로 남아 방이 잘려 보인다.
     // 격자 맨 끝 열은 바깥벽이므로 그 **안쪽** 칸을 본다.
     t.expectEqual(
-        plan.floor[officeCorridorRow + 1][plan.columns - 2], .ceramic, "탕비실 오른쪽 끝 열도 바닥"
+        plan.floor[corridorRow + 1][plan.columns - 2], .ceramic, "탕비실 오른쪽 끝 열도 바닥"
     )
     t.expectEqual(
-        plan.floor[officeCorridorRow + 1][plan.columns - 1], .wall, "격자 맨 끝 열은 바깥벽"
+        plan.floor[corridorRow + 1][plan.columns - 1], .wall, "격자 맨 끝 열은 바깥벽"
     )
 
     // 부서별 바닥재 매핑이 6개 부서를 전부 덮는다 — 누락되면 조용히 기본 나무 바닥으로 떨어져
@@ -441,7 +549,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     for column in wallColumns.sorted() {
         let walls = (0..<zoneAreaRows).filter { plan.floor[$0][column] == .wall }
         let facesCorridor =
-            officeCorridorColumns.contains(column - 1) || officeCorridorColumns.contains(column + 1)
+            corridorColumns.contains(column - 1) || corridorColumns.contains(column + 1)
         // 복도에 면한 벽이면 위·아래 구역이 문 하나씩(= 구역 수 ÷ 3 열 만큼)을 낸다.
         let doorCount = facesCorridor ? 2 : 0
         t.expectEqual(
@@ -467,19 +575,19 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 복도가 실제로 이어져 있어야 한다. 한 칸이라도 벽·가구에 막히면 그 위·아래 방들이
     // 통째로 고립되고, 그때 화면에는 "사람이 자기 자리에 못 앉는" 증상으로만 나타난다.
     // 아래 끝은 하단 바깥벽이라 복도가 거기서 끊기는 것이 정상이다 — 격자 맨 아래 줄부터 센다.
-    for column in officeCorridorColumns {
+    for column in corridorColumns {
         let blockedTiles = (officeFloorWallRows..<(plan.rows - officeOuterWallRows))
             .filter { !plan.walkable.contains(TilePoint(x: column, y: $0)) }
         t.expectEqual(blockedTiles.count, 0, "세로 복도 x=\(column) 막힌 줄: \(blockedTiles)")
     }
     let blockedCorridorRow = (1..<(plan.columns - 1))
-        .filter { !plan.walkable.contains(TilePoint(x: $0, y: officeCorridorRow)) }
+        .filter { !plan.walkable.contains(TilePoint(x: $0, y: corridorRow)) }
     t.expectEqual(blockedCorridorRow.count, 0, "가로 복도 막힌 열: \(blockedCorridorRow)")
 
     // 세로 복도와 가로 복도가 실제로 만나는가 — 만나지 않으면 두 복도가 각각 막다른 길이 된다.
-    for column in officeCorridorColumns {
+    for column in corridorColumns {
         t.expect(
-            plan.floor[officeCorridorRow][column] == .corridor,
+            plan.floor[corridorRow][column] == .corridor,
             "세로 복도 x=\(column) 가 가로 복도와 교차"
         )
     }
@@ -559,14 +667,15 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 밴드 세 방도 벽으로 갈려야 한다 — 바닥재만으로 나누면 화면 위쪽이 "가구 놓인 띠 하나"
     // 로 읽힌다. 방 바닥 줄(가로 복도 위)에서 좌우 경계가 벽인지 본다.
     for area in plan.commonAreas {
-        let leftWall = plan.floor[officeCorridorRow + 1][area.originX]
-        let rightWall = plan.floor[officeCorridorRow + 1][area.originX + area.width - 1]
+        let leftWall = plan.floor[corridorRow + 1][area.originX]
+        let rightBoundary = min(area.originX + area.width, plan.columns - 1)
+        let rightWall = plan.floor[corridorRow + 1][rightBoundary]
         t.expectEqual(leftWall, .wall, "\(area.label) 왼쪽 칸막이")
         t.expectEqual(rightWall, .wall, "\(area.label) 오른쪽 칸막이")
     }
     // 그리고 그 벽이 방 높이 전체를 덮어야 한다(한 줄만 서 있으면 위가 뚫려 보인다).
     for area in plan.commonAreas {
-        for y in (officeCorridorRow + 1)..<(plan.rows - officeOuterWallRows) {
+        for y in (corridorRow + 1)..<(plan.rows - officeOuterWallRows) {
             t.expectEqual(plan.floor[y][area.originX], .wall, "\(area.label) 왼쪽 벽 y=\(y)")
         }
     }
@@ -869,6 +978,26 @@ func runOfficePathfindingTests(_ t: TestRunner) {
             officePath(from: $0.seat, to: queue, walkable: plan.walkable).isEmpty
         }
         t.expectEqual(isolatedSeats.count, 0, "고립된 좌석 없음")
+    }
+
+    for zoneColumns in [2, 3] {
+        let adaptivePlan = officeFloorPlan(agents: sampleAgents, zoneColumns: zoneColumns)
+        guard let queue = adaptivePlan.queueTiles.first else {
+            t.fail("\(zoneColumns)열 도면에 승인 대기 줄이 있어야 한다")
+            continue
+        }
+        for desk in adaptivePlan.desks {
+            t.expect(
+                !officePath(from: desk.seat, to: queue, walkable: adaptivePlan.walkable).isEmpty,
+                "\(zoneColumns)열 \(desk.agentType) 좌석에서 승인 대기 줄까지 도달"
+            )
+        }
+        for lounge in adaptivePlan.loungeTiles {
+            t.expect(
+                !officePath(from: queue, to: lounge, walkable: adaptivePlan.walkable).isEmpty,
+                "\(zoneColumns)열 승인 대기 줄에서 휴식 자리 \(lounge.x),\(lounge.y)까지 도달"
+            )
+        }
     }
 
     // === 창문·벽등 ===
