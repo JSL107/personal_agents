@@ -82,6 +82,18 @@ export const formatPaperTradingStatus = (
   return lines.join('\n');
 };
 
+// 계좌 여러 개 — 전략별 계좌(LONG_TERM / SWING)가 각각 독립 시드를 갖기 때문에 합산 수익률을
+// 만들지 않는다. 시드가 다른 계좌의 수익률을 단순 평균하면 실제와 다른 숫자가 되고, 가중
+// 합산은 전략별 성적을 가리는 값이다. 계좌별로 나란히 보여주고 판단은 읽는 사람이 한다.
+export const formatPaperPortfolioStatus = (
+  statuses: PaperTradingStatusResult[],
+): string => {
+  if (statuses.length === 0) {
+    return '가상 매매 계좌가 아직 없어요 — 계좌가 열리면 여기서 수익률을 보여드릴게요.';
+  }
+  return statuses.map(formatPaperTradingStatus).join('\n\n---\n\n');
+};
+
 export const formatPaperTradingReport = (
   result: EvaluateAccountResult,
 ): string => {

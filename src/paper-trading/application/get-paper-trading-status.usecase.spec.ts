@@ -38,6 +38,8 @@ const createFixture = (accountExists = true) => {
         returnRate: decimal('0.001'),
       },
     ]),
+    // executeAll 경로 — 각 테스트가 필요한 계좌 목록으로 덮어쓴다.
+    findAllAccounts: jest.fn().mockResolvedValue([]),
   };
   return {
     repository,
@@ -89,5 +91,46 @@ describe('GetPaperTradingStatusUsecase', () => {
     await expect(
       usecase.execute({ accountName: 'DEFAULT', snapshotLimit: 10 }),
     ).rejects.toThrow('가상 매매 계좌를 찾을 수 없습니다: DEFAULT');
+  });
+
+  // executeAll — 계좌 이름은 전략명으로 열리므로(PAPER_RECOMMEND 의 findOrOpenAccount)
+  // 조회 쪽이 이름을 들고 있으면 전략이 늘 때 조용히 빠진다.
+  it('executeAll 은 열려 있는 계좌를 전부 훑고 각 계좌 이름을 결과에 싣는다', async () => {
+    const { repository, usecase } = createFixture();
+    repository.findAllAccounts = jest.fn().mockResolvedValue([
+      {
+        id: 11,
+        name: 'LONG_TERM',
+        seedAmount: decimal('10000000'),
+        cashBalance: decimal('7999500'),
+      },
+      {
+        id: 12,
+        name: 'SWING',
+        seedAmount: decimal('10000000'),
+        cashBalance: decimal('10000000'),
+      },
+    ]);
+
+    const results = await usecase.executeAll({ snapshotLimit: 5 });
+
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.account.name)).toEqual([
+      'LONG_TERM',
+      'SWING',
+    ]);
+    // 이름으로 되짚어 조회하면 안 된다 — 목록에서 받은 id 를 그대로 쓴다.
+    expect(repository.findAccountByName).not.toHaveBeenCalled();
+    expect(repository.findPositionsWithTicker).toHaveBeenCalledWith(11);
+    expect(repository.findPositionsWithTicker).toHaveBeenCalledWith(12);
+    expect(repository.findRecentSnapshots).toHaveBeenCalledWith(11, 5);
+    expect(repository.findRecentSnapshots).toHaveBeenCalledWith(12, 5);
+  });
+
+  it('executeAll 은 계좌가 없으면 빈 배열을 반환한다 (throw 하지 않음)', async () => {
+    const { usecase, repository } = createFixture();
+    repository.findAllAccounts = jest.fn().mockResolvedValue([]);
+
+    await expect(usecase.executeAll({ snapshotLimit: 5 })).resolves.toEqual([]);
   });
 });
