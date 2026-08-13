@@ -126,12 +126,16 @@ export class RouterMessageHandler implements SlackHandler {
           : 'unknown';
       const messageTs =
         'ts' in event && typeof event.ts === 'string' ? event.ts : undefined;
-      // DM 도 동일 원칙 — 실제 thread_ts 만 메모리 키 격리에 쓰고, 없으면 channel(=DM) 단위.
-      const memoryThreadTs =
+      // DM 도 app_mention 과 동일 원칙 — 메모리 키는 봇이 실제로 답글을 다는 threadTs 를 쓴다.
+      // 실제 thread_ts 만 키에 쓰면, top-level DM(thread_ts 없음)에 봇이 답글로 스레드를 만든 뒤
+      // 사용자의 후속 메시지 thread_ts 가 그 첫 메시지 ts 와 같아지면서 첫 턴(channel 키)·후속
+      // 턴(thread 키)이 어긋난다 → 2턴부터 priorTurns=0 으로 방금 한 대화를 잊는다.
+      const eventThreadTs =
         'thread_ts' in event && typeof event.thread_ts === 'string'
           ? event.thread_ts
           : undefined;
-      const threadTs = memoryThreadTs ?? messageTs;
+      const threadTs = eventThreadTs ?? messageTs;
+      const memoryThreadTs = threadTs;
 
       await this.processRouterMessage({
         text: rawText.trim(),
