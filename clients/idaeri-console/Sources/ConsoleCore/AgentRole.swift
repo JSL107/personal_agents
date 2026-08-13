@@ -158,7 +158,7 @@ public func characterLook(for agentType: String) -> CharacterLook {
     // (같은 나눗셈을 쓰면 시트 A 는 항상 검은 머리처럼 조합이 고정된다).
     let sheetIndex = (sum / 13) % characterSheetCount
     let hairIndex = sum % hairPalette.count
-    let shirtShift = Double((sum / 7) % 5) * 0.05
+    let shirtShift = Double((sum / 7) % 5) * officeShirtShiftStep
     let pantsIndex = (sum / 17) % pantsPalette.count
     return CharacterLook(
         sheetIndex: sheetIndex,
@@ -166,4 +166,65 @@ public func characterLook(for agentType: String) -> CharacterLook {
         shirtShift: shirtShift,
         pantsIndex: pantsIndex
     )
+}
+
+/// 셔츠 톤 단계 폭. 다섯 단계이므로 사람 사이 최대 차이는 이 값의 네 배다.
+///
+/// 0.05 였을 때는 한 방 사람들의 옷이 사실상 같은 색이었다 — 셔츠는 부서색에서 나오므로
+/// 같은 방이면 색상이 같고, 남는 차이가 밝기뿐인데 그 폭이 32픽셀 캐릭터에서 안 보였다.
+/// 폭을 키우되 부서색 계열은 유지한다(색상은 그대로, 연하고 진한 정도만 갈린다).
+public let officeShirtShiftStep: Double = 0.09
+
+/// 한 방 사람들의 얼굴·머리색이 겹치지 않게 조정한 외형표를 만든다(순수·결정론적).
+///
+/// `characterLook(for:)` 단독으로는 같은 방에서 같은 얼굴이 나온다. 시트 5종 × 머리 5색은
+/// 25조합인데 한 방에 최대 10명이 앉으므로, 해시가 부딪히는 쪽이 오히려 흔하다 —
+/// 실제로 `PAPER_TRADE` 와 `PAPER_RECOMMEND` 가 같은 시트·같은 머리로 나란히 앉아 있었다.
+///
+/// **해시를 먼저 쓰고 부딪힌 사람만 다음 자리로 민다.** 순번으로 배정하면 간단하지만 사람이
+/// 하나 추가될 때 그 뒤 사람들의 얼굴이 전부 밀려, 외워 둔 얼굴이 무너진다. 이 방식에서도
+/// 사전순 앞자리에 사람이 들어오면 일부는 밀리므로, 방 전체가 뒤집히지 않는지(과반 유지)를
+/// 테스트가 고정한다.
+///
+/// 옷과 바지는 조정하지 않는다 — 얼굴·머리가 갈리면 사람은 이미 구별되고, 옷까지 흔들면
+/// 부서색(방을 읽는 신호)이 흐려진다.
+public func officeCharacterLooks(forRoommates agentTypes: [String]) -> [String: CharacterLook] {
+    var usedHair: Set<Int> = []
+    var usedFace: Set<Int> = []
+    var looks: [String: CharacterLook] = [:]
+    // 배정 순서가 입력 순서에 흔들리면 스냅샷마다 얼굴이 뒤바뀐다.
+    for agentType in agentTypes.sorted() {
+        let base = characterLook(for: agentType)
+        var sheet = base.sheetIndex
+        var hair = base.hairIndex
+        if usedHair.count < hairPalette.count {
+            // **머리색이 남아 있는 동안은 머리색부터 유일하게 준다.** 32픽셀 캐릭터에서
+            // 가장 먼저 읽히는 건 머리다 — 면적이 크고 색이 서로 멀다(검정·갈색·금발·적갈·회색).
+            // 해시에 맡겼더니 성장방 8명이 5색 중 3색만 써서, 같은 갈색 머리가 방에 넷이었다.
+            while usedHair.contains(hair) {
+                hair = (hair + 1) % hairPalette.count
+            }
+        } else {
+            // 색을 다 쓴 뒤(6명째부터)는 얼굴로 가른다 — 같은 머리색이라도 시트가 다르면
+            // 이목구비·머리모양이 달라진다.
+            for _ in 0..<(characterSheetCount * hairPalette.count) {
+                if !usedFace.contains(sheet * hairPalette.count + hair) {
+                    break
+                }
+                hair = (hair + 1) % hairPalette.count
+                if hair == base.hairIndex {
+                    sheet = (sheet + 1) % characterSheetCount
+                }
+            }
+        }
+        usedHair.insert(hair)
+        usedFace.insert(sheet * hairPalette.count + hair)
+        looks[agentType] = CharacterLook(
+            sheetIndex: sheet,
+            hairIndex: hair,
+            shirtShift: base.shirtShift,
+            pantsIndex: base.pantsIndex
+        )
+    }
+    return looks
 }

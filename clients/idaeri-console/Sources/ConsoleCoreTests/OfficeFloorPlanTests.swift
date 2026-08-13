@@ -771,9 +771,60 @@ func runAgentRoleTests(_ t: TestRunner) {
     t.expect(hairPalette.indices.contains(first.hairIndex), "머리색 인덱스가 팔레트 범위 안")
     t.expect(pantsPalette.indices.contains(first.pantsIndex), "바지색 인덱스가 팔레트 범위 안")
 
-    // 29명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
+    // 31명이 한 시트에 몰리지 않는지 — 몰리면 다양화가 무의미해진다.
     let sheets = Set(sampleAgents.map { characterLook(for: $0.agentType).sheetIndex })
     t.expect(sheets.count >= 3, "캐릭터 시트가 최소 3종으로 분산 (실제 \(sheets.count)종)")
+
+    // **같은 방 안에서는 얼굴·머리색 조합이 한 번씩만 쓰인다.**
+    //
+    // 해시만으로 뽑던 동안 `PAPER_TRADE` 와 `PAPER_RECOMMEND` 가 같은 시트·같은 머리색으로
+    // 성장방에 나란히 앉아, 이름표를 읽기 전엔 같은 사람으로 보였다. 방마다 사람이 몇이든
+    // 조합이 겹치지 않아야 이름표가 가려졌을 때도 서로 구별된다.
+    for (department, members) in Dictionary(grouping: sampleAgents, by: \.resolvedDepartment) {
+        let types = members.map(\.agentType)
+        let looks = officeCharacterLooks(forRoommates: types)
+        t.expectEqual(looks.count, types.count, "\(department.label) 방 인원 전원에게 외형 배정")
+        let faces = types.compactMap { looks[$0] }
+            .map { $0.sheetIndex * hairPalette.count + $0.hairIndex }
+        t.expectEqual(
+            Set(faces).count, faces.count,
+            "\(department.label) 방에 같은 얼굴·머리색이 둘 (\(types.count)명 중 \(Set(faces).count)종)"
+        )
+
+        // **머리색이 먼저 갈려야 한다.** 조합만 유일하면 시트 차이(안경 유무 정도)에 구분을
+        // 맡기게 되는데, 32픽셀에서 그건 안 읽힌다. 해시에 맡겼을 때 성장방 8명이 5색 중
+        // 3색만 써서 같은 갈색 머리가 넷이었다 — 팔레트가 남아 있는 한 다 쓴다.
+        let hairs = Set(types.compactMap { looks[$0]?.hairIndex })
+        t.expectEqual(
+            hairs.count, min(types.count, hairPalette.count),
+            "\(department.label) 방 머리색이 팔레트를 다 쓴다 (\(types.count)명 / \(hairs.count)종)"
+        )
+    }
+
+    // 배정은 입력 순서에 흔들리지 않는다 — 스냅샷마다 사람 순서가 바뀌어도 얼굴은 그대로여야
+    // 한다(자리 배정이 같은 이유로 정렬을 강제하는 것과 같은 계약).
+    let growthTypes = sampleAgents
+        .filter { $0.resolvedDepartment == .growth }
+        .map(\.agentType)
+    t.expectEqual(
+        officeCharacterLooks(forRoommates: growthTypes),
+        officeCharacterLooks(forRoommates: growthTypes.reversed()),
+        "입력 순서 무관 → 동일 외형"
+    )
+
+    // 사람이 하나 늘어도 방 전체가 갈아엎어지지는 않는다.
+    //
+    // 머리색을 방 안에서 다 쓰도록 강제하는 이상(위 단언) 해시 결과를 전원 보존할 수는 없다 —
+    // 사전순 앞자리에 사람이 들어오면 뒤 사람 일부가 밀린다. 다만 **한 명이 늘 때 방 전체
+    // 얼굴이 바뀌면** 외워 둔 얼굴이 매번 무의미해지므로, 과반은 유지되는지 고정해 둔다.
+    let withoutNewcomer = growthTypes.filter { $0 != "PAPER_RECOMMEND" }
+    let before = officeCharacterLooks(forRoommates: withoutNewcomer)
+    let after = officeCharacterLooks(forRoommates: growthTypes)
+    let unchanged = withoutNewcomer.filter { before[$0] == after[$0] }
+    t.expect(
+        unchanged.count * 2 > withoutNewcomer.count,
+        "한 명 추가에도 과반은 같은 얼굴 (유지 \(unchanged.count) / \(withoutNewcomer.count))"
+    )
 
     // 바지색도 한 색에 몰리지 않아야 한다. 이름표를 약하게 만든 만큼 사람을 구별하는 몫이
     // 모습으로 옮겨왔으므로, 축을 늘려 놓고 실제로는 갈리지 않으면 의미가 없다.

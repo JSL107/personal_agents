@@ -66,11 +66,19 @@ final class CharacterNode: SKNode {
     /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
     /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
     ///
-    init(agentType: String, displayName: String, department: Department, tile: TilePoint) {
+    /// 외형(`look`)은 씬이 정해서 넘긴다 — 같은 방 사람끼리 얼굴이 겹치지 않게 맞추려면
+    /// 그 방에 누가 있는지 알아야 하는데(`officeCharacterLooks(forRoommates:)`), 노드는
+    /// 자기 자신만 안다.
+    init(
+        agentType: String,
+        displayName: String,
+        department: Department,
+        look: CharacterLook,
+        tile: TilePoint
+    ) {
         self.tile = tile
         // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
         nameText = agentRoleLabel(for: agentType) ?? displayName
-        let look = characterLook(for: agentType)
         sheetIndex = look.sheetIndex
         hairColor = hairPalette[look.hairIndex]
         self.department = department

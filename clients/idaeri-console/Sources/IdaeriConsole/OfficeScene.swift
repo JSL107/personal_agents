@@ -76,6 +76,8 @@ final class OfficeScene: SKScene {
     /// 문 칸 → 문 스프라이트. 사람이 앞에 오면 열린 그림으로 갈아끼운다(`refreshDoors`).
     private var doorNodes: [TilePoint: SKSpriteNode] = [:]
     private var homeSeats: [String: TilePoint] = [:]
+    /// agentType → 같은 방 사람끼리 겹치지 않게 조정한 외형. `sync` 가 방 단위로 계산한다.
+    private var roommateLooks: [String: CharacterLook] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
     private var lastPhases: [String: PendingPhase] = [:]
     /// 대표실 앞에 줄 선 순서. 승인 대기 인원이 늘면 줄이 길어진다.
@@ -252,6 +254,16 @@ final class OfficeScene: SKScene {
         homeSeats = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.agentType, $0.seat) }
         )
+
+        // 얼굴·머리색은 **방 단위로** 정한다. 사람 하나만 보고 해시로 뽑으면 같은 방에서
+        // 같은 얼굴이 나오는데(시트 5 × 머리 5 = 25조합에 한 방 최대 10명), 옆자리와 똑같이
+        // 생긴 사람은 이름표를 읽기 전엔 구별되지 않는다.
+        roommateLooks = Dictionary(grouping: agents, by: \.resolvedDepartment)
+            .values
+            .map { officeCharacterLooks(forRoommates: $0.map(\.agentType)) }
+            .reduce(into: [:]) { merged, looks in
+                merged.merge(looks) { current, _ in current }
+            }
 
         let incoming = Set(agents.map(\.agentType))
         for (agentType, node) in characters where !incoming.contains(agentType) {
@@ -437,7 +449,10 @@ final class OfficeScene: SKScene {
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
         let node = CharacterNode(
             agentType: agent.agentType, displayName: agent.displayName,
-            department: agent.resolvedDepartment, tile: seat
+            department: agent.resolvedDepartment,
+            // 방 단위 조정본이 없으면 해시 그대로 쓴다(스냅샷 전에 만들어지는 경로).
+            look: roommateLooks[agent.agentType] ?? characterLook(for: agent.agentType),
+            tile: seat
         )
         node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)

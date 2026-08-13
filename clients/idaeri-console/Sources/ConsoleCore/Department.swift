@@ -76,7 +76,9 @@ public func officeShirtColorRGB(
     shift: Double
 ) -> (red: Double, green: Double, blue: Double) {
     let palette = agentDepartmentPaletteRGBA(department)
-    let blend = 0.42 + shift
+    // 시작점을 낮춘 것은 `shift` 폭을 넓히면서(`officeShirtShiftStep`) 방 전체가 진해지지
+    // 않게 중심을 그대로 두기 위해서다 — 폭만 키우면 한 방이 통째로 원색 쪽으로 쏠린다.
+    let blend = 0.34 + shift
     return (
         red: 1.0 - (1.0 - palette.red) * blend,
         green: 1.0 - (1.0 - palette.green) * blend,
