@@ -9,9 +9,11 @@ const decimal = (value: number): DecimalValue => ({
 const barsFromCloses = (
   closes: number[],
   volumes: bigint[] = closes.map(() => 100n),
+  rawCloses: number[] = closes,
 ): IndicatorBar[] =>
   closes.map((close, index) => ({
     tradeDate: new Date(Date.UTC(2025, 0, index + 1)),
+    close: decimal(rawCloses[index]),
     adjClose: decimal(close),
     volume: volumes[index],
   }));
@@ -123,6 +125,42 @@ describe('calculateIndicators', () => {
     );
 
     expect(indicators?.volumeSurge).toBeNull();
+  });
+
+  it('59봉이면 60일 평균 거래대금을 계산하지 않는다', () => {
+    const indicators = calculateIndicators(
+      barsFromCloses(
+        Array.from({ length: 59 }, () => 1),
+        Array.from({ length: 59 }, () => 50_000n),
+        Array.from({ length: 59 }, () => 10_000),
+      ),
+    );
+
+    expect(indicators?.turnover60).toBeNull();
+  });
+
+  it('60봉이면 조정 종가가 아닌 원본 종가와 거래량으로 평균 거래대금을 계산한다', () => {
+    const indicators = calculateIndicators(
+      barsFromCloses(
+        Array.from({ length: 60 }, () => 1),
+        Array.from({ length: 60 }, () => 50_000n),
+        Array.from({ length: 60 }, () => 10_000),
+      ),
+    );
+
+    expect(indicators?.turnover60).toBe(500_000_000);
+  });
+
+  it('60봉을 초과하면 오래된 봉을 제외하고 최근 60봉 거래대금만 평균낸다', () => {
+    const indicators = calculateIndicators(
+      barsFromCloses(
+        Array.from({ length: 61 }, () => 1),
+        Array.from({ length: 61 }, () => 50_000n),
+        [1_000_000, ...Array.from({ length: 60 }, () => 10_000)],
+      ),
+    );
+
+    expect(indicators?.turnover60).toBe(500_000_000);
   });
 
   it('고정 1% 일간 상승 입력에서 수익률·거래량 급증·변동성을 계산한다', () => {

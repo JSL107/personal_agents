@@ -70,6 +70,7 @@ export class MarketDataRepository {
       select: {
         tickerId: true,
         tradeDate: true,
+        close: true,
         adjClose: true,
         volume: true,
       },
@@ -81,6 +82,7 @@ export class MarketDataRepository {
       if (bars.length < limit) {
         bars.push({
           tradeDate: price.tradeDate,
+          close: price.close,
           adjClose: price.adjClose,
           volume: price.volume,
         });

@@ -14,8 +14,10 @@ const risingBars = (count: number, endDate: string): IndicatorBar[] => {
     tradeDate: new Date(
       end.getTime() - (count - 1 - index) * 24 * 60 * 60 * 1_000,
     ),
+    // 유동성 하한을 통과시키는 원본 종가를 별도로 고정해 추세용 조정 종가와 의도를 분리한다.
+    close: decimal(10_000),
     adjClose: decimal(index + 1),
-    volume: index === count - 1 ? 300n : 100n,
+    volume: index === count - 1 ? 150_000n : 50_000n,
   }));
 };
 
@@ -48,7 +50,7 @@ describe('ScreenUniverseUsecase', () => {
     expect(findBarsForTickers).toHaveBeenNthCalledWith(2, [201], 200);
     expect(result).toEqual({
       strategy: 'LONG_TERM',
-      ruleVersion: 1,
+      ruleVersion: 2,
       universeCount: 201,
       evaluatedCount: 2,
       staleCount: 1,
@@ -75,7 +77,7 @@ describe('ScreenUniverseUsecase', () => {
 
     await expect(usecase.execute({ strategy: 'SWING' })).resolves.toEqual({
       strategy: 'SWING',
-      ruleVersion: 1,
+      ruleVersion: 2,
       universeCount: 1,
       evaluatedCount: 0,
       staleCount: 0,

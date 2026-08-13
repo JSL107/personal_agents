@@ -5,6 +5,8 @@ import {
   screenStocks,
 } from './screener-rule';
 
+const LIQUID_TURNOVER60 = 600_000_000;
+
 const indicators = (
   overrides: Partial<StockIndicators> = {},
 ): StockIndicators => ({
@@ -20,6 +22,7 @@ const indicators = (
   return6m: 30,
   high200Position: 0.9,
   volatility20: 15,
+  turnover60: LIQUID_TURNOVER60,
   barCount: 200,
   ...overrides,
 });
@@ -37,11 +40,46 @@ const candidate = (
 
 describe('screenStocks', () => {
   it('장투 통과 후보가 하나면 100점이다', () => {
-    expect(SCREENER_RULE_VERSION).toBe(1);
+    expect(SCREENER_RULE_VERSION).toBe(2);
     expect(screenStocks([candidate('000001')], 'LONG_TERM', 20)).toEqual([
       expect.objectContaining({ code: '000001', score: 100 }),
     ]);
   });
+
+  it.each(['LONG_TERM', 'SWING'] as const)(
+    '%s는 60일 평균 거래대금이 5억원 미만이면 탈락시킨다',
+    (strategy) => {
+      expect(
+        screenStocks(
+          [candidate('000001', { turnover60: 499_999_999 })],
+          strategy,
+          20,
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(['LONG_TERM', 'SWING'] as const)(
+    '%s는 60일 평균 거래대금을 확인할 수 없으면 탈락시킨다',
+    (strategy) => {
+      expect(
+        screenStocks([candidate('000001', { turnover60: null })], strategy, 20),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(['LONG_TERM', 'SWING'] as const)(
+    '%s는 60일 평균 거래대금이 정확히 5억원이면 통과시킨다',
+    (strategy) => {
+      expect(
+        screenStocks(
+          [candidate('000001', { turnover60: 500_000_000 })],
+          strategy,
+          20,
+        ),
+      ).toEqual([expect.objectContaining({ code: '000001', score: 100 })]);
+    },
+  );
 
   it('후보 3개의 세 재료 순위 합을 100점, 50점, 0점으로 뒤집는다', () => {
     const result = screenStocks(
@@ -128,9 +166,13 @@ describe('screenStocks', () => {
     expect(result[0]).toEqual(expect.objectContaining({ code: '000001' }));
   });
 
-  it('재료가 모두 동률이면 code 순으로 순위를 매겨 최종 결과도 결정론적이다', () => {
+  it('유동성 값이 달라도 랭킹 재료가 모두 동률이면 code 순으로 결정한다', () => {
     const result = screenStocks(
-      [candidate('000003'), candidate('000001'), candidate('000002')],
+      [
+        candidate('000003', { turnover60: 900_000_000 }),
+        candidate('000001', { turnover60: 500_000_000 }),
+        candidate('000002', { turnover60: 700_000_000 }),
+      ],
       'LONG_TERM',
       20,
     );
