@@ -156,6 +156,7 @@ export class AgentCommandHandler implements SlackHandler {
           this.reviewPullRequestUsecase.execute({
             prRef,
             slackUserId: command.user_id,
+            publish: true,
           }),
         format: (review) => formatPullRequestReview({ prRef, review }),
       });

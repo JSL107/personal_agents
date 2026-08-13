@@ -176,6 +176,9 @@ export class RetryRunHandler implements SlackHandler {
               this.reviewPullRequestUsecase.execute({
                 prRef: snapshot.prRef ?? '',
                 slackUserId,
+                // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
+                // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
+                publish: snapshot.publish === true,
               }),
             format: (review) =>
               formatPullRequestReview({

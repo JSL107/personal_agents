@@ -188,6 +188,13 @@ export class HarvestReviewSignalsUsecase {
       repo: group.repo,
       number: group.pullNumber,
     });
+    const decisionLogins = Array.from(
+      new Set(
+        [ownerLogin, reviewThreads.pullRequestAuthorLogin].filter(
+          (login): login is string => login !== null && login.length > 0,
+        ),
+      ),
+    );
     const pendingJudgments: PendingJudgment[] = [];
     const pendingResolutions: PendingResolution[] = [];
 
@@ -199,7 +206,7 @@ export class HarvestReviewSignalsUsecase {
       const signal = resolveHarvestSignal({
         card,
         thread,
-        ownerLogin,
+        decisionLogins,
         pullRequestState: reviewThreads.pullRequestState,
         truncated: reviewThreads.truncated,
       });
