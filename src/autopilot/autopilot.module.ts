@@ -55,6 +55,7 @@ import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-bri
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PaperOrderFillAutopilotTask } from './infrastructure/tasks/paper-order-fill.autopilot-task';
 import { PaperRecommendAutopilotTask } from './infrastructure/tasks/paper-recommend.autopilot-task';
+import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.autopilot-task';
 import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
@@ -132,6 +133,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     UniverseSweepAutopilotTask,
     PaperRecommendAutopilotTask,
     PaperOrderFillAutopilotTask,
+    PaperScoreAutopilotTask,
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
     {
@@ -218,6 +220,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep: UniverseSweepAutopilotTask,
         paperRecommend: PaperRecommendAutopilotTask,
         paperOrderFill: PaperOrderFillAutopilotTask,
+        paperScore: PaperScoreAutopilotTask,
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
       ) => [
@@ -246,6 +249,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep,
         paperRecommend,
         paperOrderFill,
+        paperScore,
         aiCliEnvSnapshot,
         aiCliEnvApply,
       ],
@@ -275,6 +279,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         UniverseSweepAutopilotTask,
         PaperRecommendAutopilotTask,
         PaperOrderFillAutopilotTask,
+        PaperScoreAutopilotTask,
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
       ],
