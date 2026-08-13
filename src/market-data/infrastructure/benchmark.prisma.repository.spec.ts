@@ -1,15 +1,15 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { DecimalValue } from '../domain/market-data.type';
-import { BenchmarkRepository } from './benchmark.repository';
+import { BenchmarkPrismaRepository } from './benchmark.prisma.repository';
 
-describe('BenchmarkRepository', () => {
+describe('BenchmarkPrismaRepository', () => {
   it('심볼별 최신 거래일을 반환한다', async () => {
     const tradeDate = new Date('2026-08-11T00:00:00.000Z');
     const findFirst = jest.fn().mockResolvedValue({ tradeDate });
     const prisma = {
       benchmarkDailyClose: { findFirst },
     } as unknown as PrismaService;
-    const repository = new BenchmarkRepository(prisma);
+    const repository = new BenchmarkPrismaRepository(prisma);
 
     await expect(repository.findLatestTradeDate('KOSPI')).resolves.toEqual(
       tradeDate,
@@ -25,7 +25,7 @@ describe('BenchmarkRepository', () => {
     const prisma = {
       benchmarkDailyClose: { findFirst: jest.fn().mockResolvedValue(null) },
     } as unknown as PrismaService;
-    const repository = new BenchmarkRepository(prisma);
+    const repository = new BenchmarkPrismaRepository(prisma);
 
     await expect(repository.findLatestTradeDate('KOSPI')).resolves.toBeNull();
   });
@@ -38,7 +38,7 @@ describe('BenchmarkRepository', () => {
       benchmarkDailyClose: { upsert },
       $transaction: transaction,
     } as unknown as PrismaService;
-    const repository = new BenchmarkRepository(prisma);
+    const repository = new BenchmarkPrismaRepository(prisma);
     const tradeDate = new Date('2026-08-11T00:00:00.000Z');
     const close: DecimalValue = {
       toNumber: () => 3210.24,
@@ -68,7 +68,7 @@ describe('BenchmarkRepository', () => {
   it('저장할 행이 없으면 transaction을 열지 않고 0을 반환한다', async () => {
     const transaction = jest.fn();
     const prisma = { $transaction: transaction } as unknown as PrismaService;
-    const repository = new BenchmarkRepository(prisma);
+    const repository = new BenchmarkPrismaRepository(prisma);
 
     await expect(repository.upsertCloses([])).resolves.toBe(0);
     expect(transaction).not.toHaveBeenCalled();

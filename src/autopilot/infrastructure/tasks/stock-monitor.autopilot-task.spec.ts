@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { SyncHoldingsUsecase } from '../../../agent/stock/application/sync-holdings.usecase';
 import { HoldingChange } from '../../../agent/stock/domain/holding-change';
-import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
   DailyBar,
@@ -163,7 +163,7 @@ const makeTask = (
       fetchUsdKrwRate: jest.fn().mockResolvedValue(null),
       ...marketData,
     } as MarketDataPort,
-    repository as unknown as StockMonitorRepository,
+    repository as unknown as StockMonitorPrismaRepository,
     {
       get: jest.fn().mockReturnValue(monitorEnabled),
     } as unknown as ConfigService,

@@ -25,9 +25,9 @@ export interface BandPairRow {
 
 // Knowledge-Lint 전용 조회 — episodic_memory 무결성 점검용 raw SQL.
 // 판정(임계값 적용/이슈 분류)은 service 책임 — 여기선 후보 행만 반환한다(헥사고날: 비즈니스 규칙을 SQL 로 흘리지 않음).
-// EpisodicMemoryRepository 와 같은 테이블을 보지만 책임(record/search vs lint)이 달라 분리.
+// EpisodicMemoryPrismaRepository 와 같은 테이블을 보지만 책임(record/search vs lint)이 달라 분리.
 @Injectable()
-export class KnowledgeLintRepository {
+export class KnowledgeLintPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // 각 행의 최근접 이웃(같은 kind, 자기 제외, 임베딩 보유)을 거리 오름차순으로 limit 개.

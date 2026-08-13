@@ -11,7 +11,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { SyncHoldingsUsecase } from '../agent/stock/application/sync-holdings.usecase';
-import { StockMonitorRepository } from '../agent/stock/infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { StockModule } from '../agent/stock/stock.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -138,7 +138,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
         marketData: MarketDataPort,
-        repository: StockMonitorRepository,
+        repository: StockMonitorPrismaRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
         syncHoldings: SyncHoldingsUsecase,
@@ -153,7 +153,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ),
       inject: [
         MARKET_DATA_PORT,
-        StockMonitorRepository,
+        StockMonitorPrismaRepository,
         ConfigService,
         AgentRunService,
         SyncHoldingsUsecase,
@@ -163,7 +163,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       provide: STOCK_MONITOR_US_TASK,
       useFactory: (
         marketData: MarketDataPort,
-        repository: StockMonitorRepository,
+        repository: StockMonitorPrismaRepository,
         configService: ConfigService,
         agentRunService: AgentRunService,
         syncHoldings: SyncHoldingsUsecase,
@@ -178,7 +178,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ),
       inject: [
         MARKET_DATA_PORT,
-        StockMonitorRepository,
+        StockMonitorPrismaRepository,
         ConfigService,
         AgentRunService,
         SyncHoldingsUsecase,
