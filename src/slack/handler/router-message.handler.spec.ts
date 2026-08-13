@@ -773,6 +773,50 @@ describe('RouterMessageHandler — message (DM)', () => {
     expect(say).toHaveBeenCalled();
   });
 
+  // 회귀: DM top-level 메시지에 봇이 답글로 스레드를 만들면, 사용자의 후속 메시지에는
+  // thread_ts(=첫 메시지 ts)가 붙는다. 메모리 키를 실제 thread_ts 만으로 잡던 동안에는
+  // 첫 턴이 channel 키, 후속 턴이 thread 키로 갈려 2턴째 priorTurns 가 0 이 됐다
+  // (2026-08-13 실제 로그: "가상 계좌 조회해서 알려줘" priorTurns=0).
+  it('DM 첫 턴 뒤 봇이 만든 스레드에서 이어 말하면 직전 대화가 priorTurns 로 전달된다', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 5,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+
+    // 1턴: top-level DM (thread_ts 없음) — 봇은 ts 로 스레드를 만들어 답글.
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '가상 계좌 수익률 어때',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+    // 2턴: 봇이 만든 그 스레드 안에서 후속 발화 (thread_ts = 1턴의 ts).
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '로컬에 있는 가상계좌',
+      ts: '1730000000.000002',
+      thread_ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    const secondCall = dispatch.mock.calls[1][0] as DispatchInput;
+    expect(secondCall.priorTurns).toHaveLength(2);
+    expect(secondCall.priorTurns?.[0]).toEqual(
+      expect.objectContaining({ role: 'user', text: '가상 계좌 수익률 어때' }),
+    );
+    // 직전 worker run 도 이어져야 한다 (같은 대화의 후속 실행 컨텍스트).
+    expect(secondCall.contextRefs).toEqual({ agentRunId: 5 });
+  });
+
   it('channel_type=channel (DM 아닌 일반 채널) → skip — dispatch 미호출', async () => {
     const { handler, dispatch } = buildWithRouter();
 
