@@ -72,8 +72,14 @@ export const DEFAULT_PAPER_RECOMMEND_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PAPER_ORDER_FILL_CRON = '*/10 9-15 * * 1-5';
 export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
 
-// 모의투자 추천 성적 — 금요일 장 마감·당일 시세 적재 이후 주 1회 18:10 KST.
-export const DEFAULT_PAPER_SCORE_CRON = '10 18 * * 5';
+// 모의투자 추천 성적 — 금요일 20:10 KST 주 1회.
+//
+// 채점은 당일 종가에 의존한다. 청산일·평가기준일의 `DailyPrice` 와 `BenchmarkDailyClose` 가
+// 있어야 그날 청산된 추천의 초과수익과 보유 중 추천의 미실현 수익률이 나온다. 그런데 그 데이터를
+// 적재하는 `universe-sweep` 은 18:30 에 시작해 실측 18:39 에 끝난다. 채점을 그보다 앞에 두면
+// **매주 성적표에서 그날 몫이 통째로 결손·미산출로 빠진다.**
+// 수집(18:39)과 추천(19:30) 이 모두 끝난 뒤로 둔다.
+export const DEFAULT_PAPER_SCORE_CRON = '10 20 * * 5';
 export const DEFAULT_PAPER_SCORE_TIMEZONE = 'Asia/Seoul';
 
 // Preview Sweeper 기본 스케줄 — 10분마다. 만료 카드는 목록(findAllOpen)에서는 즉시 빠지지만

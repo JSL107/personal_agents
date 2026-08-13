@@ -9,7 +9,7 @@ const makeQueue = () => ({
 describe('AutopilotScheduler', () => {
   it.each([
     ['0 17 * * 5', true],
-    ['10 18 * * 5', true],
+    ['10 20 * * 5', true],
     ['0 18 * * 0', true],
     ['0 9 * * 6', true],
     ['0 9 * * 1', true],
@@ -162,7 +162,7 @@ describe('AutopilotScheduler', () => {
       (call: unknown[]) => call[0] === 'paper-score',
     );
     expect(paperScoreCall?.[2]).toMatchObject({
-      repeat: { pattern: '10 18 * * 5', tz: 'Asia/Seoul' },
+      repeat: { pattern: '10 20 * * 5', tz: 'Asia/Seoul' },
       attempts: 4,
       backoff: { type: 'exponential', delay: 1_800_000 },
     });
