@@ -247,7 +247,7 @@ const isUniqueConstraintError = (error: unknown): boolean => {
 };
 
 @Injectable()
-export class PaperTradingRepository {
+export class PaperTradingPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async loadRecommendationScoreData(

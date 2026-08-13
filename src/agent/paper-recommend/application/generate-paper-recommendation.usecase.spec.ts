@@ -5,7 +5,7 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { ModelProviderName } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
-import { PaperTradingRepository } from '../../../paper-trading/infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { ScreenUniverseUsecase } from '../../../screener/application/screen-universe.usecase';
 import { GeneratePaperRecommendationUsecase } from './generate-paper-recommendation.usecase';
 
@@ -40,7 +40,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     findPositionsWithTicker: jest.fn(),
     findLatestValuation: jest.fn(),
     saveRecommendationAtomically: jest.fn(),
-  } as unknown as jest.Mocked<PaperTradingRepository>;
+  } as unknown as jest.Mocked<PaperTradingPrismaRepository>;
   const modelRouter = {
     route: jest.fn(),
   } as unknown as jest.Mocked<ModelRouterUsecase>;

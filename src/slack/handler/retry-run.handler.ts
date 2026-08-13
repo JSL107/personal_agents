@@ -25,7 +25,7 @@ import {
   humanizeBackendPlan,
   humanizeEvaluationOutput,
 } from '../../humanize/application/humanize-report.adapter';
-import { PaperTradingRepository } from '../../paper-trading/infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
@@ -67,7 +67,7 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly generatePaperRecommendationUsecase: GeneratePaperRecommendationUsecase,
-    private readonly paperTradingRepository: PaperTradingRepository,
+    private readonly paperTradingRepository: PaperTradingPrismaRepository,
     private readonly agentRunService: AgentRunService,
     private readonly humanizeService: HumanizeService,
   ) {}

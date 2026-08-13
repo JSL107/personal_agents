@@ -1,9 +1,9 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaperTradingRepository } from './paper-trading.repository';
+import { PaperTradingPrismaRepository } from './paper-trading.prisma.repository';
 
-describe('PaperTradingRepository pending orders', () => {
+describe('PaperTradingPrismaRepository pending orders', () => {
   const transaction = {
     paperAccount: { update: jest.fn() },
     paperPosition: {
@@ -62,7 +62,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('추천 채점 데이터는 기간·전략·계좌 경계를 DB에서 제한하고 비백필 스냅샷만 읽는다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const from = new Date('2026-07-01T00:00:00.000Z');
@@ -187,7 +187,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('전체 이력 조회는 PaperOrder.decidedAt 하한과 포트폴리오 기간 하한을 생략한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const asOf = new Date('2026-08-13T00:00:00.000Z');
@@ -210,7 +210,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('한 계좌의 PENDING 주문 묶음을 계좌 잠금 transaction에서 저장한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const decidedAt = new Date('2026-08-13T07:00:00.000Z');
@@ -277,7 +277,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('주문이 없으면 transaction을 열지 않는다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -295,7 +295,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('최신 평가액을 거래일 내림차순으로 조회한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     prisma.paperEquitySnapshot.findFirst.mockResolvedValue(null);
@@ -315,7 +315,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('같은 strategy와 decidedAt 주문이 하나라도 있으면 callback과 저장을 차단한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     transaction.paperOrder.findFirst.mockResolvedValue({ id: 300 });
@@ -343,7 +343,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('locked callback에 최신 account, positions, valuation, pending orders를 전달한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     transaction.paperPosition.findMany.mockResolvedValue([]);
@@ -371,7 +371,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('recommendation identity 조회는 주문 status와 무관하게 검사한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     prisma.paperOrder.findFirst.mockResolvedValue({ id: 1 });
@@ -392,7 +392,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('오늘까지 도래한 PENDING 주문을 id 순서와 종목 시세 identity로 조회한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const tradeDate = new Date('2026-08-13T00:00:00.000Z');
@@ -435,7 +435,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('개별 만료와 장 마감 일괄 만료는 PENDING 주문에만 compare-and-set한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const tradeDate = new Date('2026-08-13T00:00:00.000Z');
@@ -470,7 +470,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('자동 체결은 PENDING compare-and-set 뒤 거래·포지션·계좌를 같은 transaction에서 갱신한다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     transaction.paperOrder.findUnique.mockResolvedValue({
@@ -521,7 +521,7 @@ describe('PaperTradingRepository pending orders', () => {
   });
 
   it('자동 체결 compare-and-set이 경합에서 지면 장부를 쓰지 않는다', async () => {
-    const repository = new PaperTradingRepository(
+    const repository = new PaperTradingPrismaRepository(
       prisma as unknown as PrismaService,
     );
     transaction.paperOrder.findUnique.mockResolvedValue({

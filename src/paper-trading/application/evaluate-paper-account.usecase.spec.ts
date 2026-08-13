@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { EvaluatePaperAccountUsecase } from './evaluate-paper-account.usecase';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -191,7 +191,7 @@ const createFixture = (input?: {
     }),
     fetchUsdKrwRate: jest.fn(),
   };
-  const repository = new PaperTradingRepository(
+  const repository = new PaperTradingPrismaRepository(
     prisma as unknown as PrismaService,
   );
 
