@@ -4,10 +4,15 @@ import { Prisma } from '@prisma/client';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  OrderStatus,
   PaperMarket,
   TradeSide,
   TradeStrategy,
 } from '../domain/paper-account.type';
+import {
+  RecommendationOrderInput,
+  RecommendationTradeInput,
+} from '../domain/recommendation-score';
 
 export interface PaperAccountRecord {
   id: number;
@@ -191,6 +196,49 @@ export interface SnapshotDecision<T> {
   result: T;
 }
 
+export interface RecommendationScoreAccountRecord {
+  id: number;
+  name: Exclude<TradeStrategy, 'MANUAL'>;
+  seedAmount: MoneyValue;
+}
+
+export interface RecommendationScoreDailyPriceRecord {
+  tickerId: number;
+  market: PaperMarket | null;
+  tradeDate: Date;
+  close: MoneyValue;
+}
+
+export interface RecommendationScorePortfolioTradeRecord {
+  accountId: number;
+  quantity: MoneyValue;
+  price: MoneyValue;
+  fee: MoneyValue;
+  tax: MoneyValue;
+}
+
+export interface RecommendationScoreSnapshotRecord {
+  accountId: number;
+  tradeDate: Date;
+  totalValue: MoneyValue;
+  isBackfilled: boolean;
+}
+
+export interface LoadRecommendationScoreDataInput {
+  asOf: Date;
+  from?: Date;
+}
+
+export interface RecommendationScoreData {
+  accounts: RecommendationScoreAccountRecord[];
+  orders: RecommendationOrderInput[];
+  recommendationTrades: RecommendationTradeInput[];
+  portfolioTrades: RecommendationScorePortfolioTradeRecord[];
+  dailyPrices: RecommendationScoreDailyPriceRecord[];
+  benchmarkCloses: Array<{ tradeDate: Date; close: MoneyValue }>;
+  snapshots: RecommendationScoreSnapshotRecord[];
+}
+
 const isUniqueConstraintError = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
     return false;
@@ -201,6 +249,181 @@ const isUniqueConstraintError = (error: unknown): boolean => {
 @Injectable()
 export class PaperTradingRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async loadRecommendationScoreData(
+    input: LoadRecommendationScoreDataInput,
+  ): Promise<RecommendationScoreData> {
+    const accounts = await this.prisma.paperAccount.findMany({
+      where: { name: { in: ['LONG_TERM', 'SWING'] } },
+      select: { id: true, name: true, seedAmount: true },
+      orderBy: { id: 'asc' },
+    });
+    const accountIds = accounts.map((account) => account.id);
+    const decidedAt = input.from
+      ? { gte: input.from, lte: input.asOf }
+      : { lte: input.asOf };
+    const orders = await this.prisma.paperOrder.findMany({
+      where: {
+        accountId: { in: accountIds },
+        side: 'BUY',
+        strategy: { in: ['LONG_TERM', 'SWING'] },
+        decidedAt,
+      },
+      select: {
+        id: true,
+        accountId: true,
+        tickerId: true,
+        side: true,
+        strategy: true,
+        status: true,
+        quantity: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    const orderIds = orders.map((order) => order.id);
+    const buyTrades =
+      orderIds.length === 0
+        ? []
+        : await this.prisma.paperTrade.findMany({
+            where: {
+              orderId: { in: orderIds },
+              side: 'BUY',
+              tradeDate: { lte: input.asOf },
+            },
+            select: {
+              id: true,
+              orderId: true,
+              accountId: true,
+              tickerId: true,
+              side: true,
+              quantity: true,
+              price: true,
+              fee: true,
+              tax: true,
+              realizedPnl: true,
+              tradeDate: true,
+            },
+            orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+          });
+    const earliestBuyTradeDate = buyTrades.reduce<Date | null>(
+      (earliest, trade) =>
+        earliest === null || trade.tradeDate < earliest
+          ? trade.tradeDate
+          : earliest,
+      null,
+    );
+    const tickerIds = [...new Set(orders.map((order) => order.tickerId))];
+    const sellTrades =
+      earliestBuyTradeDate === null
+        ? []
+        : await this.prisma.paperTrade.findMany({
+            where: {
+              accountId: { in: accountIds },
+              tickerId: { in: tickerIds },
+              side: 'SELL',
+              tradeDate: { gte: earliestBuyTradeDate, lte: input.asOf },
+            },
+            select: {
+              id: true,
+              orderId: true,
+              accountId: true,
+              tickerId: true,
+              side: true,
+              quantity: true,
+              price: true,
+              fee: true,
+              tax: true,
+              realizedPnl: true,
+              tradeDate: true,
+            },
+            orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+          });
+    const portfolioTradeDate = input.from
+      ? { gte: input.from, lte: input.asOf }
+      : { lte: input.asOf };
+    const portfolioTrades = await this.prisma.paperTrade.findMany({
+      where: {
+        accountId: { in: accountIds },
+        tradeDate: portfolioTradeDate,
+      },
+      select: {
+        accountId: true,
+        quantity: true,
+        price: true,
+        fee: true,
+        tax: true,
+      },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    const priceDate = earliestBuyTradeDate
+      ? { gte: earliestBuyTradeDate, lte: input.asOf }
+      : null;
+    const dailyPrices = priceDate
+      ? await this.prisma.dailyPrice.findMany({
+          where: { tickerId: { in: tickerIds }, tradeDate: priceDate },
+          select: {
+            tickerId: true,
+            tradeDate: true,
+            close: true,
+            ticker: { select: { krxMarket: true } },
+          },
+          orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    const benchmarkCloses = priceDate
+      ? await this.prisma.benchmarkDailyClose.findMany({
+          where: { symbol: 'KOSPI', tradeDate: priceDate },
+          select: { tradeDate: true, close: true },
+          orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    const snapshotTradeDate = input.from
+      ? { gte: input.from, lte: input.asOf }
+      : { lte: input.asOf };
+    const snapshots = await this.prisma.paperEquitySnapshot.findMany({
+      where: {
+        accountId: { in: accountIds },
+        tradeDate: snapshotTradeDate,
+        isBackfilled: false,
+      },
+      select: {
+        accountId: true,
+        tradeDate: true,
+        totalValue: true,
+        isBackfilled: true,
+      },
+      orderBy: [{ accountId: 'asc' }, { tradeDate: 'asc' }, { id: 'asc' }],
+    });
+
+    return {
+      accounts: accounts.map((account) => ({
+        ...account,
+        name: account.name as Exclude<TradeStrategy, 'MANUAL'>,
+      })),
+      orders: orders.map((order) => ({
+        ...order,
+        side: order.side as TradeSide,
+        strategy: order.strategy as TradeStrategy,
+        status: order.status as OrderStatus,
+      })),
+      recommendationTrades: [...buyTrades, ...sellTrades]
+        .sort((left, right) => {
+          const dateDifference =
+            left.tradeDate.getTime() - right.tradeDate.getTime();
+          return dateDifference === 0 ? left.id - right.id : dateDifference;
+        })
+        .map((trade) => ({ ...trade, side: trade.side as TradeSide })),
+      portfolioTrades,
+      dailyPrices: dailyPrices.map((dailyPrice) => ({
+        tickerId: dailyPrice.tickerId,
+        market: dailyPrice.ticker.krxMarket as PaperMarket | null,
+        tradeDate: dailyPrice.tradeDate,
+        close: dailyPrice.close,
+      })),
+      benchmarkCloses,
+      snapshots,
+    };
+  }
 
   async findAccountByName(name: string): Promise<PaperAccountRecord | null> {
     return await this.prisma.paperAccount.findUnique({

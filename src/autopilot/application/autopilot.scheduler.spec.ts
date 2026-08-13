@@ -9,6 +9,7 @@ const makeQueue = () => ({
 describe('AutopilotScheduler', () => {
   it.each([
     ['0 17 * * 5', true],
+    ['10 18 * * 5', true],
     ['0 18 * * 0', true],
     ['0 9 * * 6', true],
     ['0 9 * * 1', true],
@@ -63,8 +64,8 @@ describe('AutopilotScheduler', () => {
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
-    //   + ai-cli-env-snapshot + ai-cli-env-apply = 21그룹.
-    expect(queue.add).toHaveBeenCalledTimes(23);
+    //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply = 24그룹.
+    expect(queue.add).toHaveBeenCalledTimes(24);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
@@ -80,6 +81,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('ops-supervisor');
     expect(addCalls).toContain('stock-monitor');
     expect(addCalls).toContain('paper-trading');
+    expect(addCalls).toContain('paper-score');
     expect(addCalls).toContain('universe-sweep');
     expect(addCalls).toContain('stock-monitor-us');
     expect(addCalls).toContain('stock-alert-scoring');
@@ -141,6 +143,26 @@ describe('AutopilotScheduler', () => {
     );
     expect(weeklySummaryCall).toBeDefined();
     expect(weeklySummaryCall[2]).toMatchObject({
+      attempts: 4,
+      backoff: { type: 'exponential', delay: 1_800_000 },
+    });
+  });
+
+  it('금요일 모의투자 채점도 저빈도 재시도 옵션으로 등록한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+
+    const paperScoreCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'paper-score',
+    );
+    expect(paperScoreCall?.[2]).toMatchObject({
+      repeat: { pattern: '10 18 * * 5', tz: 'Asia/Seoul' },
       attempts: 4,
       backoff: { type: 'exponential', delay: 1_800_000 },
     });

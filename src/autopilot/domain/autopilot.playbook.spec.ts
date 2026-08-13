@@ -198,6 +198,25 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(paperOrderFill?.digestGroup).toBeUndefined();
   });
 
+  it('모의투자 추천 성적을 기존 paper 항목 뒤 금요일 18:10 KST standalone 항목으로 포함한다', () => {
+    const paperOrderFillIndex = AUTOPILOT_PLAYBOOK.findIndex(
+      (entry) => entry.id === 'paper-order-fill',
+    );
+    const paperScore = AUTOPILOT_PLAYBOOK[paperOrderFillIndex + 1];
+
+    expect(paperScore).toMatchObject({
+      id: 'paper-score',
+      taskId: 'paper-score',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '10 18 * * 5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(paperScore.digestGroup).toBeUndefined();
+  });
+
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
     const dup: PlaybookEntry[] = [
       {

@@ -1,3 +1,29 @@
+# 모의투자 3-B 추천 성적 채점 (2026-08-13)
+
+**Goal:** 추천별 실제·그림자·벤치마크 성적과 계좌 지표를 정확히 집계해 CLI와 금요일 Slack 리포트로 제공한다.
+
+**Contract:** `.ai/design.md`와 정본 §6을 따른다. 사용자 정정으로 그림자 진입·청산가는 모두 저장된 `DailyPrice.close`를 사용한다. 실제 성적은 `PaperTrade` 체결가·양쪽 비용을 쓴다. 스키마/3-A 로직/DB/git index는 변경하지 않는다.
+
+- [x] T1 RED/GREEN: 추천 매칭, 비용 포함 실현 수익률, 3분류, 이상치·`realizedPnl` 교차검증 도메인을 구현한다.
+- [x] T2/T3 RED/GREEN: 동일 저장 계열 그림자 수익률과 추천별 KOSPI 초과수익을 구현한다.
+- [x] T4 RED/GREEN: 기간 제한 repository 조회, usecase, 포트폴리오 지표, Slack formatter를 구현한다.
+- [x] T5 RED/GREEN: `score` CLI와 금요일 standalone autopilot task를 연결한다.
+- [x] 요구 테스트 7종과 추가 경계 테스트를 확인하고 최종 diff를 독립 리뷰한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm build`, `pnpm test`, `pnpm docs:check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- 실제 성적은 양쪽 비용 포함 정본 식으로 계산하며 보유 중은 적중률 분모에서 제외하고 `EXPIRED`는 건수만 보고한다.
+- 그림자는 진입·청산 모두 저장된 조정 계열 `DailyPrice.close`로 통일했다. 실제 시가 진입과 그림자 종가 진입의 비교 한계를 리포트에 표시한다.
+- 추천별 exact KOSPI 초과수익 평균, 결손 카운터, 5/60 저장 행 그림자, non-backfilled 포트폴리오 지표를 구현했다.
+- CLI와 금요일 18:10 standalone autopilot은 같은 usecase·formatter를 쓴다. 기존 digest group 선두는 바꾸지 않았다.
+- 필수 7종 테스트가 각각 존재하며 최종 독립 리뷰는 READY다.
+- fresh gate: lint/tsc/build/test/docs/diff check 모두 exit 0. 전체 test는 일반 356 suites/2,949 tests와 code-graph 5 suites/40 tests가 통과했다.
+- DB/실데이터/Slack 통합 실행은 금지 지시에 따라 미검증이며 staging/commit/push도 수행하지 않았다.
+
+---
+
 # 모의투자 3-A 체결 관측 교정 B-1/B-2 (2026-08-13)
 
 **Goal:** 장중 당일 봉 부재를 조기 만료하지 않고 별도 계측하며, 마감 회차의 처리 대상 수와 실제 만료 수를 분리한다.

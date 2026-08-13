@@ -24,7 +24,11 @@ describe('PaperTradingRepository pending orders', () => {
   };
   const prisma = {
     $transaction: jest.fn(),
-    paperEquitySnapshot: { findFirst: jest.fn() },
+    paperAccount: { findMany: jest.fn() },
+    paperTrade: { findMany: jest.fn() },
+    dailyPrice: { findMany: jest.fn() },
+    benchmarkDailyClose: { findMany: jest.fn() },
+    paperEquitySnapshot: { findFirst: jest.fn(), findMany: jest.fn() },
     paperOrder: {
       count: jest.fn(),
       findFirst: jest.fn(),
@@ -49,6 +53,160 @@ describe('PaperTradingRepository pending orders', () => {
     transaction.paperOrder.findFirst.mockResolvedValue(null);
     transaction.paperOrder.createMany.mockResolvedValue({ count: 2 });
     transaction.paperOrder.updateMany.mockResolvedValue({ count: 1 });
+    prisma.paperAccount.findMany.mockResolvedValue([]);
+    prisma.paperOrder.findMany.mockResolvedValue([]);
+    prisma.paperTrade.findMany.mockResolvedValue([]);
+    prisma.dailyPrice.findMany.mockResolvedValue([]);
+    prisma.benchmarkDailyClose.findMany.mockResolvedValue([]);
+    prisma.paperEquitySnapshot.findMany.mockResolvedValue([]);
+  });
+
+  it('추천 채점 데이터는 기간·전략·계좌 경계를 DB에서 제한하고 비백필 스냅샷만 읽는다', async () => {
+    const repository = new PaperTradingRepository(
+      prisma as unknown as PrismaService,
+    );
+    const from = new Date('2026-07-01T00:00:00.000Z');
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      { id: 7, name: 'LONG_TERM', seedAmount: new Prisma.Decimal('10000000') },
+      { id: 8, name: 'SWING', seedAmount: new Prisma.Decimal('10000000') },
+    ]);
+    prisma.paperOrder.findMany.mockResolvedValue([
+      {
+        id: 301,
+        accountId: 7,
+        tickerId: 71,
+        side: 'BUY',
+        strategy: 'LONG_TERM',
+        status: 'FILLED',
+        quantity: new Prisma.Decimal('9'),
+      },
+    ]);
+    prisma.paperTrade.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 501,
+          orderId: 301,
+          accountId: 7,
+          tickerId: 71,
+          side: 'BUY',
+          quantity: new Prisma.Decimal('9'),
+          price: new Prisma.Decimal('10000'),
+          fee: new Prisma.Decimal('10'),
+          tax: new Prisma.Decimal('0'),
+          realizedPnl: null,
+          tradeDate: new Date('2026-07-02T00:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await repository.loadRecommendationScoreData({ from, asOf });
+
+    expect(prisma.paperAccount.findMany).toHaveBeenCalledWith({
+      where: { name: { in: ['LONG_TERM', 'SWING'] } },
+      select: { id: true, name: true, seedAmount: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(prisma.paperOrder.findMany).toHaveBeenCalledWith({
+      where: {
+        accountId: { in: [7, 8] },
+        side: 'BUY',
+        strategy: { in: ['LONG_TERM', 'SWING'] },
+        decidedAt: { gte: from, lte: asOf },
+      },
+      select: {
+        id: true,
+        accountId: true,
+        tickerId: true,
+        side: true,
+        strategy: true,
+        status: true,
+        quantity: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(prisma.paperTrade.findMany).toHaveBeenNthCalledWith(1, {
+      where: { orderId: { in: [301] }, side: 'BUY', tradeDate: { lte: asOf } },
+      select: {
+        id: true,
+        orderId: true,
+        accountId: true,
+        tickerId: true,
+        side: true,
+        quantity: true,
+        price: true,
+        fee: true,
+        tax: true,
+        realizedPnl: true,
+        tradeDate: true,
+      },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    expect(prisma.dailyPrice.findMany).toHaveBeenCalledWith({
+      where: {
+        tickerId: { in: [71] },
+        tradeDate: {
+          gte: new Date('2026-07-02T00:00:00.000Z'),
+          lte: asOf,
+        },
+      },
+      select: {
+        tickerId: true,
+        tradeDate: true,
+        close: true,
+        ticker: { select: { krxMarket: true } },
+      },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    expect(prisma.benchmarkDailyClose.findMany).toHaveBeenCalledWith({
+      where: {
+        symbol: 'KOSPI',
+        tradeDate: {
+          gte: new Date('2026-07-02T00:00:00.000Z'),
+          lte: asOf,
+        },
+      },
+      select: { tradeDate: true, close: true },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    expect(prisma.paperEquitySnapshot.findMany).toHaveBeenCalledWith({
+      where: {
+        accountId: { in: [7, 8] },
+        tradeDate: { gte: from, lte: asOf },
+        isBackfilled: false,
+      },
+      select: {
+        accountId: true,
+        tradeDate: true,
+        totalValue: true,
+        isBackfilled: true,
+      },
+      orderBy: [{ accountId: 'asc' }, { tradeDate: 'asc' }, { id: 'asc' }],
+    });
+  });
+
+  it('전체 이력 조회는 PaperOrder.decidedAt 하한과 포트폴리오 기간 하한을 생략한다', async () => {
+    const repository = new PaperTradingRepository(
+      prisma as unknown as PrismaService,
+    );
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      { id: 7, name: 'LONG_TERM', seedAmount: new Prisma.Decimal('10000000') },
+    ]);
+
+    await repository.loadRecommendationScoreData({ asOf });
+
+    expect(prisma.paperOrder.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ decidedAt: { lte: asOf } }),
+      }),
+    );
+    expect(prisma.paperEquitySnapshot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tradeDate: { lte: asOf } }),
+      }),
+    );
   });
 
   it('한 계좌의 PENDING 주문 묶음을 계좌 잠금 transaction에서 저장한다', async () => {
