@@ -143,7 +143,11 @@ final class OfficeScene: SKScene {
             rect: view.bounds,
             // 이탈까지 받는다 — 마우스가 창을 벗어날 때 커서 옆 쪽지를 걷어야 한다.
             options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: view,
+            // owner 는 scene 이어야 한다. SKView 는 mouseMoved·mouseDown 같은 이벤트는
+            // 현재 scene 으로 넘겨주지만 mouseEntered/mouseExited 는 넘기지 않는다.
+            // owner 를 view 로 두면 아래 mouseExited(with:) 가 영영 불리지 않아,
+            // 마우스가 창을 벗어나도 쪽지와 hover 상태가 그대로 남는다.
+            owner: self,
             userInfo: nil
         )
         view.addTrackingArea(tracking)
