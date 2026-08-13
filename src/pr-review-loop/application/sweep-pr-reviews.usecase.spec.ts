@@ -198,6 +198,9 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewArg.snapshot?.diff.diff).toBe('diff');
     expect(reviewArg.dryRun).toBe(true);
     expect(github.getPullRequest).toHaveBeenCalledTimes(1);
+    expect(reviewUsecase.execute).toHaveBeenCalledWith(
+      expect.not.objectContaining({ publish: expect.anything() }),
+    );
     expect(publishService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         agentRunId: 7,

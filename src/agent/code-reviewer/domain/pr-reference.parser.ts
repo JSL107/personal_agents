@@ -3,8 +3,10 @@ import { CodeReviewerException } from './code-reviewer.exception';
 import { CodeReviewerErrorCode } from './code-reviewer-error-code.enum';
 
 const URL_PATTERN =
-  /^https?:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)\/?$/;
-const SHORTHAND_PATTERN = /^([^/\s]+\/[^/\s#]+)#(\d+)$/;
+  /https?:\/\/github\.com\/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\/pull\/(\d+)(?=$|[^A-Za-z0-9])/;
+const SHORTHAND_PATTERN =
+  /(?<![A-Za-z0-9._/-])([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)#(\d+)(?![A-Za-z0-9_-])/;
+const SLACK_LINK_PATTERN = /<([^>|]+)(?:\|[^>]*)?>/g;
 
 export interface ParsedPrReference {
   repo: string; // "owner/repo"
@@ -16,18 +18,22 @@ export interface ParsedPrReference {
 // 1. https://github.com/owner/repo/pull/123 (full URL)
 // 2. owner/repo#123 (shorthand)
 export const parsePrReference = (raw: string): ParsedPrReference => {
-  const trimmed = raw.trim();
+  const normalized = raw.replace(SLACK_LINK_PATTERN, '$1').trim();
 
-  if (trimmed.length === 0) {
+  if (normalized.length === 0) {
     throw buildInvalidException(raw);
   }
 
-  const urlMatch = trimmed.match(URL_PATTERN);
-  if (urlMatch) {
+  const urlMatch = normalized.match(URL_PATTERN);
+  const shortMatch = normalized.match(SHORTHAND_PATTERN);
+
+  if (
+    urlMatch &&
+    (!shortMatch || (urlMatch.index ?? 0) <= (shortMatch.index ?? 0))
+  ) {
     return { repo: urlMatch[1], number: Number.parseInt(urlMatch[2], 10) };
   }
 
-  const shortMatch = trimmed.match(SHORTHAND_PATTERN);
   if (shortMatch) {
     return { repo: shortMatch[1], number: Number.parseInt(shortMatch[2], 10) };
   }

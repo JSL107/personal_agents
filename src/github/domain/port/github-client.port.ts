@@ -49,6 +49,7 @@ export interface ReviewThread {
 
 export interface ListReviewThreadsResult {
   threads: ReviewThread[];
+  pullRequestAuthorLogin: string | null;
   pullRequestState: 'OPEN' | 'CLOSED' | 'MERGED';
   truncated: boolean;
 }

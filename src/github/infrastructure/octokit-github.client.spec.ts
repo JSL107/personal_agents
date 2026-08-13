@@ -1052,6 +1052,7 @@ describe('OctokitGithubClient', () => {
       const graphql = jest.fn().mockResolvedValue({
         repository: {
           pullRequest: {
+            author: { login: 'pr-author' },
             state: 'OPEN',
             merged: false,
             reviewThreads: {
@@ -1097,10 +1098,13 @@ describe('OctokitGithubClient', () => {
       });
 
       expect(graphql).toHaveBeenCalledWith(
-        expect.stringContaining('reviewThreads(first:50)'),
+        expect.stringContaining(
+          'pullRequest(number:$number) {\n        author { login }',
+        ),
         { owner: 'JSL107', name: 'personal_agents', number: 180 },
       );
       expect(result).toEqual({
+        pullRequestAuthorLogin: 'pr-author',
         pullRequestState: 'OPEN',
         truncated: false,
         threads: [
@@ -1131,6 +1135,7 @@ describe('OctokitGithubClient', () => {
       const graphql = jest.fn().mockResolvedValue({
         repository: {
           pullRequest: {
+            author: { login: 'pr-author' },
             state: 'CLOSED',
             merged: true,
             reviewThreads: {
@@ -1152,12 +1157,39 @@ describe('OctokitGithubClient', () => {
       expect(result.pullRequestState).toBe('MERGED');
     });
 
+    it('삭제된 PR 작성자는 null로 보존한다', async () => {
+      const graphql = jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            author: null,
+            state: 'OPEN',
+            merged: false,
+            reviewThreads: {
+              nodes: [],
+              pageInfo: { hasNextPage: false },
+            },
+          },
+        },
+      });
+      const client = new OctokitGithubClient({
+        graphql,
+      } as unknown as Octokit);
+
+      const result = await client.listReviewThreads({
+        repo: 'foo/bar',
+        number: 1,
+      });
+
+      expect(result.pullRequestAuthorLogin).toBeNull();
+    });
+
     it.each(['threads', 'comments', 'reactions'] as const)(
       '%s pagination이 남아 있으면 truncated=true를 반환한다',
       async (truncatedLevel) => {
         const graphql = jest.fn().mockResolvedValue({
           repository: {
             pullRequest: {
+              author: { login: 'pr-author' },
               state: 'OPEN',
               merged: false,
               reviewThreads: {

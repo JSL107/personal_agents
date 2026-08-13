@@ -141,6 +141,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       card({ id: 3, githubCommentId: '557', fingerprint: 'fp-3' }),
     ]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'MERGED',
       truncated: false,
       threads: [
@@ -202,10 +203,42 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
+  it('owner와 다른 PR 작성자의 THUMBS_UP도 ACKED로 반영한다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'pr-author',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'pr-author',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(outcome).toMatchObject({ acked: 1 });
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
   it('잘린 GraphQL 결과에서 코멘트를 못 찾으면 종료 PR도 STALE 확정을 보류한다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'MERGED',
       truncated: true,
       threads: [],
@@ -222,6 +255,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository, episodic } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -250,6 +284,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -298,6 +333,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     episodic.record.mockRejectedValue(new Error('DB 연결 끊김'));
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -325,6 +361,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository, episodic } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -364,6 +401,7 @@ describe('HarvestReviewSignalsUsecase', () => {
 `;
 
     const buildNoReactionThread = () => ({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN' as const,
       truncated: false,
       threads: [reviewThread()],
@@ -558,6 +596,7 @@ describe('HarvestReviewSignalsUsecase', () => {
         buildDependencies();
       repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
       github.listReviewThreads.mockResolvedValue({
+        pullRequestAuthorLogin: null,
         pullRequestState: 'MERGED',
         truncated: false,
         threads: [reviewThread()],
@@ -576,6 +615,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'MERGED',
       truncated: false,
       threads: [reviewThread({ isResolved: true })],
@@ -599,6 +639,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'MERGED',
       truncated: false,
       threads: [reviewThread({ isResolved: true })],
@@ -614,6 +655,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [reviewThread({ isResolved: true })],
@@ -641,6 +683,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       reactions: [],
     });
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -691,6 +734,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       reactions: [],
     });
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -716,6 +760,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -748,6 +793,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
     ]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -795,6 +841,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       { category: 'TEST', status: 'REJECTED', count: 3 },
     ]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [
@@ -836,6 +883,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       { category: 'TEST', status: 'REJECTED', count: 3 },
     ]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [reviewThread()],
@@ -862,6 +910,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       { category: 'TEST', status: 'ACKED', count: 10 },
     ]);
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'MERGED',
       truncated: false,
       threads: [reviewThread()],
@@ -888,6 +937,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       new Error('집계 조회 실패'),
     );
     github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
       truncated: false,
       threads: [

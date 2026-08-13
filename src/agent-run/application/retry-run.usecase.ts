@@ -17,6 +17,9 @@ export interface AgentRetryInputSnapshot {
   tasksText?: string; // PM
   workText?: string; // WORK_REVIEWER
   prRef?: string; // CODE_REVIEWER
+  // CODE_REVIEWER — 최초 실행이 GitHub 게시까지 하기로 했는지. 재실행이 이 값을 보고
+  // 같은 결정을 재현한다(없으면 미게시 = 스윕·연습 모드의 종전 동작).
+  publish?: boolean;
   subject?: string; // IMPACT_REPORTER / BE
   request?: string; // BE_SCHEMA
   filePath?: string; // BE_TEST

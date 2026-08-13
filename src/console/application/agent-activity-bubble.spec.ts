@@ -14,6 +14,22 @@ describe('activityBubble', () => {
     expect(result).toBe('#273 리뷰 중');
   });
 
+  // 사람이 시킨 리뷰(슬래시·자연어 멘션·콘솔)도 사무실 화면에서 "일하는 중"으로 보여야 한다.
+  // 트리거를 새로 나눌 때 이 표에 등록하지 않으면 그 경로만 조용히 말풍선이 사라진다.
+  it.each([
+    'SLACK_COMMAND_REVIEW_PR',
+    'SLACK_MENTION_CODE_REVIEWER',
+    'REMOTE_CONSOLE_CODE_REVIEWER',
+  ])('사람이 시킨 리뷰도 진행 중임을 표시한다: %s', (triggerType) => {
+    const result = activityBubble({
+      agentType: 'CODE_REVIEWER',
+      triggerType,
+      inputSnapshot: { pullNumber: 302 },
+    });
+
+    expect(result).toBe('#302 리뷰 중');
+  });
+
   it.each([{}, { pullNumber: '273' }])(
     'PR 번호가 정수가 아니면 문구를 만들지 않는다: %p',
     (inputSnapshot) => {

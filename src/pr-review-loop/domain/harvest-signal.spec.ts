@@ -19,17 +19,19 @@ const thread = (overrides: Partial<ReviewThread> = {}): ReviewThread => ({
 
 const resolve = ({
   targetThread = thread(),
+  decisionLogins = ['owner'],
   pullRequestState = 'OPEN',
   truncated = false,
 }: {
   targetThread?: ReviewThread | null;
+  decisionLogins?: string[];
   pullRequestState?: 'OPEN' | 'CLOSED' | 'MERGED';
   truncated?: boolean;
 } = {}) =>
   resolveHarvestSignal({
     card: { githubCommentId: '555' },
     thread: targetThread,
-    ownerLogin: 'owner',
+    decisionLogins,
     pullRequestState,
     truncated,
   });
@@ -93,6 +95,106 @@ describe('resolveHarvestSignal', () => {
       kind: 'REJECTED',
       source: 'REACTION',
       replyBody: null,
+    });
+  });
+
+  it('PR 작성자가 봇 코멘트에 THUMBS_UP을 남기면 ACKED다', () => {
+    const targetThread = thread({
+      comments: [
+        {
+          ...thread().comments[0],
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'pr-author',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      resolve({ targetThread, decisionLogins: ['owner', 'pr-author'] }),
+    ).toEqual({
+      kind: 'ACKED',
+      source: 'REACTION',
+      replyBody: null,
+    });
+  });
+
+  it('PR 작성자가 봇 코멘트에 THUMBS_DOWN을 남기면 REJECTED다', () => {
+    const targetThread = thread({
+      comments: [
+        {
+          ...thread().comments[0],
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'pr-author',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      resolve({ targetThread, decisionLogins: ['owner', 'pr-author'] }),
+    ).toEqual({
+      kind: 'REJECTED',
+      source: 'REACTION',
+      replyBody: null,
+    });
+  });
+
+  it('owner도 PR 작성자도 아닌 제3자의 THUMBS_UP은 무시한다', () => {
+    const targetThread = thread({
+      comments: [
+        {
+          ...thread().comments[0],
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'third-party',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(
+      resolve({ targetThread, decisionLogins: ['owner', 'pr-author'] }),
+    ).toEqual({ kind: 'NONE' });
+  });
+
+  it('PR 작성자 답글은 판정 요청하고 bot marker 답글은 제외한다', () => {
+    const targetThread = thread({
+      comments: [
+        thread().comments[0],
+        {
+          databaseId: 556,
+          authorLogin: 'pr-author',
+          body: `${IDAERI_REVIEW_MARKER} · CORRECTNESS / MUST_FIX\n\n봇 후속 지적`,
+          createdAt: '2026-07-31T01:00:00Z',
+          reactions: [],
+        },
+        {
+          databaseId: 557,
+          authorLogin: 'pr-author',
+          body: '이 동작은 의도했습니다',
+          createdAt: '2026-07-31T02:00:00Z',
+          reactions: [],
+        },
+      ],
+    });
+
+    expect(
+      resolve({ targetThread, decisionLogins: ['owner', 'pr-author'] }),
+    ).toEqual({
+      kind: 'NEEDS_JUDGE',
+      replyBody: '이 동작은 의도했습니다',
     });
   });
 

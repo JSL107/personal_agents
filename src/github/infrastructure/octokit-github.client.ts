@@ -55,6 +55,7 @@ const LIST_REVIEW_THREADS_QUERY = `
   query($owner:String!, $name:String!, $number:Int!) {
     repository(owner:$owner, name:$name) {
       pullRequest(number:$number) {
+        author { login }
         state
         merged
         reviewThreads(first:50) {
@@ -120,6 +121,7 @@ interface ReviewThreadGraphqlNode {
 interface ListReviewThreadsGraphqlResponse {
   repository: {
     pullRequest: {
+      author: { login: string } | null;
       state: 'OPEN' | 'CLOSED';
       merged: boolean;
       reviewThreads: {
@@ -459,6 +461,7 @@ export class OctokitGithubClient implements GithubClientPort {
       );
       return {
         threads,
+        pullRequestAuthorLogin: pullRequest.author?.login ?? null,
         pullRequestState: pullRequest.merged ? 'MERGED' : pullRequest.state,
         truncated,
       };
