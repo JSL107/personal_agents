@@ -29,7 +29,7 @@
 | Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
 | Ops Supervisor | `OPS_SUPERVISOR` | — (webhook/자동) | CHATGPT | `src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts` | 월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용) |
 | Paper Recommend | `PAPER_RECOMMEND` | — (webhook/자동) | CHATGPT | `src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts` | 모의투자 전략별 추천 — 후보와 보유 종목을 함께 LLM 판단 (슬래시 없음, autopilot/CLI 전용) |
-| Paper Trade | `PAPER_TRADE` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts` | 모의투자 계좌 일일 평가 — 포지션 평가·수익률·데이터 이상을 기록 (슬래시 없음, autopilot 전용, LLM 미사용) |
+| Paper Trade | `PAPER_TRADE` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts` | 모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용) |
 | PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
 | PO Eval | `PO_EVAL` | `/po-eval` | CHATGPT | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
