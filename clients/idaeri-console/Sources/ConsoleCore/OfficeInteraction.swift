@@ -97,14 +97,17 @@ public func strollersToStop(
 
 /// 마우스를 올렸을 때 뜨는 쪽지 문구(순수).
 ///
-/// 두 가지가 함께 있어야 사람이 읽힌다 — **무슨 일을 하는 사람인가**(사규의 직무 한 줄)와
-/// **지금 무엇을 하는가**(활동·상태). 이름표는 여섯 자 안팎이라(`답변 판정`) 직책만 보이고,
-/// 그 직책이 무슨 일인지는 화면 어디에도 없었다.
+/// 세 가지가 함께 있어야 사람이 읽힌다 — **누구인가**(이름), **무슨 일을 하는 사람인가**
+/// (사규의 직무 한 줄), **지금 무엇을 하는가**(활동·상태). 이름표는 여섯 자 안팎이라
+/// (`답변 판정`) 직책만 보이고, 그 직책이 무슨 일인지는 화면 어디에도 없었다.
 ///
-/// 직무를 위에 둔다. 활동은 상태가 바뀔 때마다 달라지므로, 고정된 정체가 먼저 오고 그 아래에
-/// 지금 벌어지는 일이 붙는 순서가 읽기 흐름에 맞는다.
-public func officeHoverNote(job: String?, activity: String?) -> String? {
-    let lines = [job, activity].compactMap { line -> String? in
+/// 이름이 첫 줄인 이유는 쪽지가 **커서 옆**에 뜨기 때문이다. 머리 위에 붙어 있던 동안에는
+/// 누구 얘기인지 위치가 말해 줬지만, 사람에게서 떨어져 나온 판은 이름이 없으면 주인을 잃는다.
+///
+/// 직무가 활동보다 위다. 활동은 상태가 바뀔 때마다 달라지므로, 고정된 정체가 먼저 오고 그
+/// 아래에 지금 벌어지는 일이 붙는 순서가 읽기 흐름에 맞는다.
+public func officeHoverNote(name: String?, job: String?, activity: String?) -> String? {
+    let lines = [name, job, activity].compactMap { line -> String? in
         guard let line, !line.trimmingCharacters(in: .whitespaces).isEmpty else {
             return nil
         }
@@ -114,6 +117,120 @@ public func officeHoverNote(job: String?, activity: String?) -> String? {
         return nil
     }
     return lines.joined(separator: "\n")
+}
+
+/// 말풍선을 좌석 몫 폭에 맞춰 접는다(순수). 글자 폭 재는 일은 호출자가 넘긴다.
+///
+/// 말풍선은 12자까지 오는데(`ACTIVITY_BUBBLE_MAX_LENGTH`) 한글 하한(11px) 때문에 어느 창
+/// 크기에서도 한 줄로는 좌석 몫 두 칸을 넘는다 — 옆자리도 일이 돌면 두 문구가 그대로 포개져
+/// 둘 다 못 읽었다(최소 창에서는 네다섯 개가 겹친다).
+///
+/// **직접 접는 이유**는 `SKLabelNode.preferredMaxLayoutWidth` 가 `attributedText` 와 함께
+/// 쓰면 무시되기 때문이다(렌더로 확인 — 폭을 넘겨도 한 줄 그대로 나왔다). 라벨에 맡기는 대신
+/// 여기서 개행을 넣고, 그래야 회귀 테스트도 실제 글꼴 폭으로 검산할 수 있다.
+///
+/// 공백을 먼저 쓰고(`#2999 리뷰 중` → `#2999` / `리뷰 중`), 한 낱말이 그것만으로 넘치면 글자
+/// 단위로 끊는다 — 한국어는 낱말이 붙어 오는 일이 잦다.
+public func officeWrapBubble(
+    _ text: String,
+    maxWidth: Double,
+    maxLines: Int,
+    measure: (String) -> Double
+) -> String {
+    guard maxWidth > 0, maxLines >= 1, measure(text) > maxWidth else {
+        return text
+    }
+    var lines: [String] = []
+    var current = ""
+    for word in text.split(separator: " ", omittingEmptySubsequences: true).map(String.init) {
+        let candidate = current.isEmpty ? word : current + " " + word
+        if measure(candidate) <= maxWidth || current.isEmpty {
+            current = candidate
+            continue
+        }
+        lines.append(current)
+        current = word
+    }
+    if !current.isEmpty {
+        lines.append(current)
+    }
+    // 낱말 하나가 몫보다 넓으면 위 단계로는 못 줄인다 — 글자 단위로 다시 끊는다.
+    var wrapped: [String] = []
+    for line in lines {
+        if measure(line) <= maxWidth {
+            wrapped.append(line)
+            continue
+        }
+        var piece = ""
+        for character in line {
+            let candidate = piece + String(character)
+            if measure(candidate) > maxWidth, !piece.isEmpty {
+                wrapped.append(piece)
+                piece = String(character)
+                continue
+            }
+            piece = candidate
+        }
+        if !piece.isEmpty {
+            wrapped.append(piece)
+        }
+    }
+    guard wrapped.count > maxLines else {
+        return wrapped.joined(separator: "\n")
+    }
+    // 넘치는 줄은 버리고 잘렸음을 남긴다. 말줄임표를 붙이느라 마지막 줄이 다시 몫을 넘으면
+    // 접은 의미가 없으므로, 넘는 만큼 글자를 떼고 붙인다.
+    var kept = Array(wrapped.prefix(maxLines))
+    var last = kept[maxLines - 1]
+    while !last.isEmpty, measure(last + "…") > maxWidth {
+        last.removeLast()
+    }
+    kept[maxLines - 1] = last + "…"
+    return kept.joined(separator: "\n")
+}
+
+/// 커서 옆 쪽지 판 노드 이름. 만드는 쪽과 걷는 쪽이 같은 문자열을 봐야 한다.
+public let officeHoverTooltipNodeName = "hoverTooltip"
+
+/// 쪽지 판이 글자 상자 밖으로 넓어지는 여백(px).
+public let officeTooltipPlatePaddingX: Double = 8
+public let officeTooltipPlatePaddingY: Double = 6
+
+/// 커서와 판 사이 간격(px). 붙여 두면 커서 그림이 첫 글자를 덮는다.
+public let officeTooltipCursorGap: Double = 14
+
+/// 커서 옆 쪽지 판의 왼쪽 아래 꼭짓점(순수).
+///
+/// 쪽지를 사람 머리 위에 붙이던 동안에는 **글자가 글자를 덮었다.** 직무 문장은 24자까지
+/// 오는데(`기간 성과를 정성 평가하고 커리어 로그를 남긴다`) 좌석 몫은 두 칸이라, 쪽지가
+/// 좌우로 여덟 칸을 뻗어 이웃 이름표·부서 문패·상단 밴드 라벨과 뒤섞였다. 게다가 문패는
+/// 오버레이(z=1000)라 겹치면 쪽지가 지는 쪽이어서, 정작 읽으려고 마우스를 올린 글이 잘렸다.
+///
+/// 커서 옆 판은 그 겹침을 배치로 푼다 — 판이 화면 최상단에 불투명하게 뜨므로 무엇과도
+/// 자리를 다투지 않는다. 대신 **화면 밖으로 나가지 않아야** 한다. 기본은 커서 오른쪽 위이고,
+/// 그쪽이 좁으면 반대편으로 넘긴 뒤 마지막으로 화면 안에 가둔다.
+public func officeTooltipOrigin(
+    cursor: OfficePoint,
+    boxWidth: Double,
+    boxHeight: Double,
+    sceneWidth: Double,
+    sceneHeight: Double,
+    gap: Double
+) -> OfficePoint {
+    var x = cursor.x + gap
+    if x + boxWidth > sceneWidth {
+        x = cursor.x - gap - boxWidth
+    }
+    var y = cursor.y + gap
+    if y + boxHeight > sceneHeight {
+        y = cursor.y - gap - boxHeight
+    }
+    // 뒤집어도 안 들어가는 크기(작은 창 + 긴 직무 문장)에서는 화면 안쪽이 우선이다 —
+    // 커서에서 조금 멀어지는 편이 글자가 잘리는 것보다 낫다.
+    return OfficePoint(
+        x: min(max(0, x), max(0, sceneWidth - boxWidth)),
+        y: min(max(0, y), max(0, sceneHeight - boxHeight))
+    )
 }
 
 /// 이름표를 진하게 보일지 판정한다(순수).
