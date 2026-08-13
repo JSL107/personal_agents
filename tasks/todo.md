@@ -1,3 +1,28 @@
+# PR #303 리뷰 2건 반영 — 밴드 복도 관통·리사이즈 중복 판정 (2026-08-13)
+
+**Goal:** 밴드와 부서 격자가 어긋나도 세로 복도가 방 내부를 관통하지 않게 하고, 리사이즈 배치 변경 판정을 `sync` 한 곳에 둔다.
+
+**Contract:** c=3의 밴드 경계 복도는 상단까지 유지한다. c=2 특수 분기는 금지한다. 일반 데이터 갱신의 `rebuildPlan = true` 동작은 유지한다. `departmentDeskSpots`·`departmentFurnitureSpots`·`fallbackDeskSpots`, GUI, git index/commit은 건드리지 않는다.
+
+- [x] RED: c=2·c=3 모두에서 각 밴드 방 내부 바닥이 `.corridor`가 아니고 `presidentTile`이 방 바닥임을 단언한다.
+- [x] RED 증명: 현재 구현에서 c=2의 `(11,23)`·`(11,24)`와 대표 자리가 실패하는지 focused runner로 확인한다.
+- [x] GREEN: 복도 열이 밴드 span 끝 경계에 정렬된 경우에만 `wallableRows`까지 연장하고, 그 외에는 `corridorRow`에서 끊는다.
+- [x] Scene 정리: `didChangeSize`의 중복 `officeZoneColumns` 계산을 제거하고 `sync(..., rebuildPlan: false)`로 판정 주체를 단일화한다. 기본값 `true`는 유지한다.
+- [x] Mutation RED: 밴드 경계 가드를 고의로 제거해 신규 테스트가 실패하는지 확인한 뒤 복원한다.
+- [x] VERIFY: `swift build`, `swift run ConsoleCoreTests`, `git diff --check`, 금지 심볼 diff를 fresh 실행하고 2,318건 이상인지 확인한다.
+- [x] `.ai/implementation-summary.md`에 변경·red/green/mutation·게이트 결과를 덧붙이고 아래 Review를 채운다.
+
+## Review
+
+- 복도 열이 `bandSpans.dropFirst()`의 시작 바로 왼쪽 경계인지 계산한다. c=3의 11·23은 상단까지 유지되고 c=2의 11은 가로 복도에서 끝난다.
+- 신규 단언은 수정 전과 가드 mutation에서 모두 같은 3건을 잡았다: c=2 대표실 `(11,23)`·`(11,24)`과 대표 자리.
+- 독립 리뷰가 c=3 상단 연장의 직접 단언 공백을 찾았다. x=11·23의 밴드 구간을 `.corridor`로 고정했고, 경계 집합을 비우는 mutation에서 신규 4건과 기존 1건이 실패했다.
+- `didChangeSize`는 `sync(..., rebuildPlan: false)`만 호출한다. 창 크기 기반 layout 판정은 `sync`가 한 번만 수행하고, 일반 데이터 sync의 기본값 `true`는 유지한다.
+- `officeZoneColumns`의 최초 선택·동률·양방향 5% 히스테리시스 8건은 기존 `ConsoleCoreTests`가 이미 검증한다. Package 타깃 경계상 Scene 직접 테스트는 추가하지 않았다.
+- fresh `swift build` exit 0, `swift run ConsoleCoreTests` exit 0·2,416건 통과. 직전 기준 2,318건보다 98건 많다.
+
+---
+
 # macOS 콘솔 오피스 도면 창 비율 적응형 배치 (2026-08-13)
 
 **Goal:** `.ai/design.md` 계약대로 창 크기에 따라 부서 구역을 3열×2행 또는 2열×3행으로 선택하고, 배치 전환 때만 도면을 재구성한다.

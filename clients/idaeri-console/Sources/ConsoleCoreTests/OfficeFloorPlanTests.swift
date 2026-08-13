@@ -134,6 +134,43 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             "\(zoneColumns)열 부서 구역 행 수"
         )
 
+        // 밴드는 도면 폭을 3등분하고 부서 복도는 12칸 stride를 따른다. 두 격자가 어긋나는
+        // 2열에서 세로 복도를 밴드 끝까지 무조건 연장하면 x=11이 대표실 내부를 관통한다.
+        // 각 span의 양쪽 경계는 벽·복도 몫이므로 제외하고, 실제 방 내부 바닥만 직접 검사한다.
+        let bandInteriorRows = (officeCorridorRow(zoneColumns: zoneColumns) + 1)..<(
+            adaptivePlan.rows - officeOuterWallRows
+        )
+        for area in adaptivePlan.commonAreas {
+            let bandInteriorColumns = (area.originX + 1)..<(area.originX + area.width - 1)
+            for y in bandInteriorRows {
+                for x in bandInteriorColumns {
+                    t.expect(
+                        adaptivePlan.floor[y][x] != .corridor,
+                        "\(zoneColumns)열 \(area.label) 내부 \(x),\(y)는 복도가 아님"
+                    )
+                }
+            }
+        }
+        let presidentFloor = adaptivePlan.floor[
+            adaptivePlan.presidentTile.y
+        ][adaptivePlan.presidentTile.x]
+        t.expect(
+            presidentFloor.isRoomFloor,
+            "\(zoneColumns)열 대표가 서는 칸은 대표실 방 바닥"
+        )
+        if zoneColumns == 3 {
+            // 3열 복도는 밴드 방 경계와 정확히 맞는다. 내부 보호 규칙을 넓히다가 이 경계
+            // 복도까지 잘라 버리면 기존 도면의 남북 통로가 끊기므로 상단 연장을 직접 고정한다.
+            for x in officeCorridorColumns(zoneColumns: zoneColumns) {
+                for y in bandInteriorRows {
+                    t.expectEqual(
+                        adaptivePlan.floor[y][x], .corridor,
+                        "3열 밴드 경계 복도 \(x),\(y)는 상단까지 이어짐"
+                    )
+                }
+            }
+        }
+
         for area in adaptivePlan.commonAreas {
             let placements = adaptivePlan.furniture.filter { placement in
                 placement.tile.y >= officeCorridorRow(zoneColumns: zoneColumns) + 1

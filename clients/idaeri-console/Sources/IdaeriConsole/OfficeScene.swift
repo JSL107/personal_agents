@@ -172,13 +172,11 @@ final class OfficeScene: SKScene {
         guard !lastSyncedAgents.isEmpty else {
             return
         }
-        let nextZoneColumns = officeZoneColumns(
-            width: Double(size.width), height: Double(size.height),
-            currentZoneColumns: zoneColumns
-        )
+        // 배치 변경 판정은 sync 한 곳에서만 한다. 여기서 같은 입력으로 미리 계산하면
+        // `rebuildPlan`과 `layoutChanged`가 항상 같은 값이 되어 판정 경로만 중복된다.
         sync(
             agents: lastSyncedAgents, approvals: lastSyncedApprovals,
-            rebuildPlan: nextZoneColumns != zoneColumns
+            rebuildPlan: false
         )
         // sync 는 줄 선 사람·걷는 사람의 자리를 일부러 건드리지 않는다(연출 유지).
         // 그런데 좌표계가 바뀐 지금은 그 배려가 독이 된다 — 옛 화면 좌표에 남아

@@ -1956,13 +1956,23 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
     //
     // **하단 벽 줄은 건너뛴다.** 여기서 0 부터 칠하면 방금 세운 아래 벽이 복도색으로 덮여
     // 다시 뚫린다 — 벽을 세운 뒤에 칠하는 순서가 그대로 함정이 되는 자리다.
+    //
+    // 부서 복도와 밴드는 서로 다른 격자를 쓴다. 복도 열이 다음 밴드 span의 왼쪽 경계와
+    // 맞닿을 때만 바깥벽 아래까지 이어 칠한다. 경계가 아닌 방 내부를 지나는 열은 가로 복도에서
+    // 끊어야 한다. 이 규칙으로 3열의 기존 경계 복도는 유지되고, 2열 x=11은 대표실을 관통하지
+    // 않는다.
+    let bandBoundaryCorridorColumns = Set(
+        bandSpans.dropFirst().map { $0.originX - 1 }
+    )
     for x in corridorColumns {
+        let corridorTopExclusive = bandBoundaryCorridorColumns.contains(x)
+            ? wallableRows : bandRoomY
         paint(
             .corridor,
             x0: x,
             y0: officeFloorWallRows,
             width: 1,
-            height: wallableRows - officeFloorWallRows
+            height: corridorTopExclusive - officeFloorWallRows
         )
     }
 
