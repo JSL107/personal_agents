@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import {
   PaperAccountNamedRecord,
-  PaperTradingRepository,
-} from '../infrastructure/paper-trading.repository';
+  PaperTradingPrismaRepository,
+} from '../infrastructure/paper-trading.prisma.repository';
 
 export interface GetPaperTradingStatusCommand {
   accountName: string;
@@ -35,7 +35,7 @@ export interface PaperTradingStatusResult {
 
 @Injectable()
 export class GetPaperTradingStatusUsecase {
-  constructor(private readonly repository: PaperTradingRepository) {}
+  constructor(private readonly repository: PaperTradingPrismaRepository) {}
 
   async execute(
     command: GetPaperTradingStatusCommand,

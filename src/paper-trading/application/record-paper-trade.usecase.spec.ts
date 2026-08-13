@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import {
   RecordPaperTradeUsecase,
   RecordTradeCommand,
@@ -120,7 +120,7 @@ const createFixture = (input?: {
         callback(transaction),
     ),
   };
-  const repository = new PaperTradingRepository(
+  const repository = new PaperTradingPrismaRepository(
     prisma as unknown as PrismaService,
   );
 
@@ -442,7 +442,7 @@ describe('RecordPaperTradeUsecase automatic pending order', () => {
       ),
     };
     const usecase = new RecordPaperTradeUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     await expect(usecase.executePendingOrder(command)).resolves.toEqual(
@@ -464,7 +464,7 @@ describe('RecordPaperTradeUsecase automatic pending order', () => {
       ),
     };
     const usecase = new RecordPaperTradeUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     await expect(usecase.executePendingOrder(command)).resolves.toEqual({
@@ -493,7 +493,7 @@ describe('RecordPaperTradeUsecase automatic pending order', () => {
       ),
     };
     const usecase = new RecordPaperTradeUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     await expect(
@@ -517,7 +517,7 @@ describe('RecordPaperTradeUsecase automatic pending order', () => {
       ),
     };
     const usecase = new RecordPaperTradeUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     await expect(

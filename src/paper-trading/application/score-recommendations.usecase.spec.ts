@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ScoreRecommendationsUsecase } from './score-recommendations.usecase';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -104,7 +104,7 @@ describe('ScoreRecommendationsUsecase', () => {
       ],
     });
     const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     const result = await usecase.execute({ asOf });
@@ -213,7 +213,7 @@ describe('ScoreRecommendationsUsecase', () => {
       snapshots: [],
     });
     const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     const result = await usecase.execute({ asOf });
@@ -251,7 +251,7 @@ describe('ScoreRecommendationsUsecase', () => {
       snapshots: [],
     });
     const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     );
 
     const result = await usecase.execute({});

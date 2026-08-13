@@ -1,5 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { OpenPaperAccountUsecase } from './open-paper-account.usecase';
 
 const createFixture = (input?: {
@@ -14,7 +14,7 @@ const createFixture = (input?: {
         : jest.fn().mockResolvedValue({ id: 41 }),
     },
   };
-  const repository = new PaperTradingRepository(
+  const repository = new PaperTradingPrismaRepository(
     prisma as unknown as PrismaService,
   );
   return {

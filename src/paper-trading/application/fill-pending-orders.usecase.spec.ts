@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { FillPendingOrdersUsecase } from './fill-pending-orders.usecase';
 import { RecordPaperTradeUsecase } from './record-paper-trade.usecase';
 
@@ -48,7 +48,7 @@ const createFixture = () => {
     executePendingOrder: jest.fn().mockResolvedValue({ status: 'FILLED' }),
   };
   const usecase = new FillPendingOrdersUsecase(
-    repository as unknown as PaperTradingRepository,
+    repository as unknown as PaperTradingPrismaRepository,
     marketData as MarketDataPort,
     recordTrade as unknown as RecordPaperTradeUsecase,
   );

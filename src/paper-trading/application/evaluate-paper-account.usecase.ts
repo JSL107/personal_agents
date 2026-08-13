@@ -14,8 +14,8 @@ import {
 } from '../domain/paper-valuation';
 import {
   PaperPositionWithTicker,
-  PaperTradingRepository,
-} from '../infrastructure/paper-trading.repository';
+  PaperTradingPrismaRepository,
+} from '../infrastructure/paper-trading.prisma.repository';
 
 export interface EvaluateAccountCommand {
   accountName: string;
@@ -125,7 +125,7 @@ const sortBars = (bars: DailyBar[]): DailyBar[] =>
 @Injectable()
 export class EvaluatePaperAccountUsecase {
   constructor(
-    private readonly repository: PaperTradingRepository,
+    private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
   ) {}
 

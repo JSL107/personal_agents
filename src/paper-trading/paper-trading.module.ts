@@ -9,12 +9,12 @@ import { OpenPaperAccountUsecase } from './application/open-paper-account.usecas
 import { RecordPaperTradeUsecase } from './application/record-paper-trade.usecase';
 import { ScoreRecommendationsUsecase } from './application/score-recommendations.usecase';
 import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
-import { PaperTradingRepository } from './infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.prisma.repository';
 
 @Module({
   imports: [MarketDataModule, PrismaModule],
   providers: [
-    PaperTradingRepository,
+    PaperTradingPrismaRepository,
     GetPaperTradingStatusUsecase,
     OpenPaperAccountUsecase,
     RecordPaperTradeUsecase,
@@ -25,7 +25,7 @@ import { PaperTradingRepository } from './infrastructure/paper-trading.repositor
     PaperTradeDispatcher,
   ],
   exports: [
-    PaperTradingRepository,
+    PaperTradingPrismaRepository,
     GetPaperTradingStatusUsecase,
     OpenPaperAccountUsecase,
     RecordPaperTradeUsecase,

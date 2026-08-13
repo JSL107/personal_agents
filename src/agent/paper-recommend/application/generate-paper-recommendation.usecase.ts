@@ -9,9 +9,9 @@ import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open
 import {
   LockedPaperRecommendationState,
   PaperAccountRecord,
-  PaperTradingRepository,
+  PaperTradingPrismaRepository,
   PendingPaperOrderInput,
-} from '../../../paper-trading/infrastructure/paper-trading.repository';
+} from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import {
   ScreenUniverseResult,
   ScreenUniverseUsecase,
@@ -61,7 +61,7 @@ export class GeneratePaperRecommendationUsecase {
   constructor(
     private readonly screenUniverseUsecase: ScreenUniverseUsecase,
     private readonly openPaperAccountUsecase: OpenPaperAccountUsecase,
-    private readonly repository: PaperTradingRepository,
+    private readonly repository: PaperTradingPrismaRepository,
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
   ) {}

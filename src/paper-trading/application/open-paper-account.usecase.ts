@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 
 export interface OpenAccountCommand {
   accountName: string;
@@ -18,7 +18,7 @@ export interface OpenAccountResult {
 
 @Injectable()
 export class OpenPaperAccountUsecase {
-  constructor(private readonly repository: PaperTradingRepository) {}
+  constructor(private readonly repository: PaperTradingPrismaRepository) {}
 
   async execute(command: OpenAccountCommand): Promise<OpenAccountResult> {
     const seedAmount = new Prisma.Decimal(command.seedAmount);

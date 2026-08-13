@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { PaperTradingRepository } from '../infrastructure/paper-trading.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { GetPaperTradingStatusUsecase } from './get-paper-trading-status.usecase';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -44,7 +44,7 @@ const createFixture = (accountExists = true) => {
   return {
     repository,
     usecase: new GetPaperTradingStatusUsecase(
-      repository as unknown as PaperTradingRepository,
+      repository as unknown as PaperTradingPrismaRepository,
     ),
   };
 };

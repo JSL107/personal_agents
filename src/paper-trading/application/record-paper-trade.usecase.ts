@@ -11,9 +11,9 @@ import {
 import { applyBuy, applySell } from '../domain/position-cost';
 import { calculateTradeCost } from '../domain/trade-cost';
 import {
-  PaperTradingRepository,
+  PaperTradingPrismaRepository,
   PendingOrderFillResult,
-} from '../infrastructure/paper-trading.repository';
+} from '../infrastructure/paper-trading.prisma.repository';
 
 export interface RecordTradeCommand {
   accountName: string;
@@ -65,7 +65,7 @@ const parseTradeDate = (value: string): Date => {
 
 @Injectable()
 export class RecordPaperTradeUsecase {
-  constructor(private readonly repository: PaperTradingRepository) {}
+  constructor(private readonly repository: PaperTradingPrismaRepository) {}
 
   async execute(command: RecordTradeCommand): Promise<RecordTradeResult> {
     if (!/^\d{6}$/u.test(command.tickerCode)) {
