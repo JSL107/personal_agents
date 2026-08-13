@@ -817,6 +817,90 @@ describe('RouterMessageHandler — message (DM)', () => {
     expect(secondCall.contextRefs).toEqual({ agentRunId: 5 });
   });
 
+  // 회귀: 스레드가 아니라 DM 입력창에서 연달아 말하는 흐름. 두 이벤트 모두 thread_ts 가
+  // 없고 ts 만 다르므로, 메모리 키에 messageTs 를 섞으면 매 발화가 새 키가 되어 끊긴다.
+  it('DM 입력창에서 연달아 말하면(스레드 아님) 맥락이 이어진다', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 7,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '가상 계좌 수익률 어때',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+    // 스레드에 들어가지 않고 입력창에서 다시 — thread_ts 없음, ts 만 다르다.
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '로컬에 있는 가상계좌',
+      ts: '1730000000.000002',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+
+    const secondCall = dispatch.mock.calls[1][0] as DispatchInput;
+    expect(secondCall.priorTurns).toHaveLength(2);
+    expect(secondCall.priorTurns?.[0]).toEqual(
+      expect.objectContaining({ role: 'user', text: '가상 계좌 수익률 어때' }),
+    );
+  });
+
+  // 되짚기는 스레드 첫 진입에서만 일어나야 한다 — 스레드에 이미 턴이 쌓였으면
+  // channel 키의 다른 대화가 섞여 들어오면 안 된다.
+  it('스레드에 턴이 쌓인 뒤에는 channel 키를 되짚지 않는다', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 9,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+
+    // channel 키에 별개 대화 1건 (스레드 밖 top-level).
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '채널 키 쪽 대화',
+      ts: '1730000000.000001',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+    // 다른 스레드에서 2턴 진행 (첫 턴은 되짚기로 channel 을 보지만, 이후는 스레드 키).
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '스레드 첫 발화',
+      ts: '1730000000.000010',
+      thread_ts: '1730000000.000009',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+    await invokeHandler(handler, {
+      type: 'message',
+      user: 'U_USER',
+      text: '스레드 두 번째 발화',
+      ts: '1730000000.000011',
+      thread_ts: '1730000000.000009',
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+
+    const thirdCall = dispatch.mock.calls[2][0] as DispatchInput;
+    const texts = (thirdCall.priorTurns ?? []).map((turn) => turn.text);
+    expect(texts).toContain('스레드 첫 발화');
+    expect(texts).not.toContain('채널 키 쪽 대화');
+  });
+
   it('channel_type=channel (DM 아닌 일반 채널) → skip — dispatch 미호출', async () => {
     const { handler, dispatch } = buildWithRouter();
 
