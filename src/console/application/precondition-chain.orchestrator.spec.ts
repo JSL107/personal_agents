@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
@@ -6,17 +7,24 @@ import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.e
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { RouterException } from '../../router/domain/router.exception';
+import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import * as preconditionChainMap from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator';
 
 class FakeDomainException extends DomainException {
   readonly errorCode: string;
-  readonly status = DomainStatus.NOT_FOUND;
+  readonly status: DomainStatus;
 
-  constructor(code: string) {
-    super(`도메인 오류: ${code}`);
+  constructor(
+    code: string,
+    status: DomainStatus = DomainStatus.NOT_FOUND,
+    message = `도메인 오류: ${code}`,
+  ) {
+    super(message);
     this.errorCode = code;
+    this.status = status;
   }
 }
 
@@ -27,12 +35,31 @@ function make(recentDays?: string) {
   } as unknown as ConfigService;
   const router = { dispatch: jest.fn() };
   const consoleEvents = { publish: jest.fn() };
+  const suggestNextWork = {
+    execute: jest.fn().mockResolvedValue({
+      suggestions: [],
+      skippedUnknownCycle: 0,
+      alsoDueCount: 0,
+    }),
+  };
+  const pendingTurns = {
+    putSuggestions: jest.fn(),
+    putAwaitingInput: jest.fn(),
+  };
   const orchestrator = new PreconditionChainOrchestrator(
     router as never,
     consoleEvents as unknown as ConsoleEventBus,
     config,
+    suggestNextWork as never,
+    pendingTurns as never,
   );
-  return { orchestrator, router, consoleEvents };
+  return {
+    orchestrator,
+    router,
+    consoleEvents,
+    suggestNextWork,
+    pendingTurns,
+  };
 }
 
 function ok(workerType: string) {
@@ -46,6 +73,263 @@ function ok(workerType: string) {
 }
 
 describe('PreconditionChainOrchestrator', () => {
+  it('INTENT_CLASSIFY_FAILED면 rejected 대신 제안을 answered로 발행한다', async () => {
+    const {
+      orchestrator,
+      router,
+      consoleEvents,
+      suggestNextWork,
+      pendingTurns,
+    } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockResolvedValue({
+      suggestions: [
+        {
+          agentType: AgentType.PM,
+          displayName: 'PM',
+          reason: '마지막 성공 2일 전 · 평소 1일 주기',
+        },
+      ],
+      skippedUnknownCycle: 1,
+      alsoDueCount: 0,
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 하고 싶은 일이 있어?',
+      commandId: 'c1',
+    });
+
+    expect(pendingTurns.putSuggestions).toHaveBeenCalledWith(
+      'U1',
+      expect.arrayContaining([
+        expect.objectContaining({ agentType: AgentType.PM }),
+      ]),
+    );
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message:
+        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 마지막 성공 2일 전 · 평소 1일 주기',
+    });
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected' }),
+    );
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['trim 후 빈 문자열', '   '],
+  ])(
+    'text가 %s인 지목 worker의 BAD_REQUEST는 원본 메시지를 숨기고 입력을 되묻는다',
+    async (_, text) => {
+      const { orchestrator, router, consoleEvents, pendingTurns } = make();
+      const originalMessage =
+        '오늘 한 일이 비어 있습니다. `/worklog <오늘 한 일>` 형식으로 입력해주세요.';
+      router.dispatch.mockRejectedValue(
+        new FakeDomainException(
+          'WORKLOG_INPUT_REQUIRED',
+          DomainStatus.BAD_REQUEST,
+          originalMessage,
+        ),
+      );
+
+      await orchestrator.run({
+        slackUserId: 'U1',
+        agentTypeHint: AgentType.WORK_REVIEWER,
+        text,
+        commandId: 'c1',
+      });
+
+      expect(pendingTurns.putAwaitingInput).toHaveBeenCalledWith('U1', {
+        agentType: AgentType.WORK_REVIEWER,
+        displayName: 'Work Reviewer',
+      });
+      const answeredEvent = consoleEvents.publish.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.type === 'command.answered');
+      expect(answeredEvent).toEqual({
+        type: 'command.answered',
+        commandId: 'c1',
+        message:
+          '「Work Reviewer」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요.',
+      });
+      expect(answeredEvent.message).not.toContain(originalMessage);
+      expect(answeredEvent.message).not.toContain('/');
+      expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'command.rejected' }),
+      );
+    },
+  );
+
+  it('text가 있으면 같은 BAD_REQUEST도 기존처럼 command.rejected를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch.mockRejectedValue(
+      new FakeDomainException(
+        'WORKLOG_INPUT_REQUIRED',
+        DomainStatus.BAD_REQUEST,
+      ),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.WORK_REVIEWER,
+      text: '오늘 한 일',
+      commandId: 'c1',
+    });
+
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
+    );
+  });
+
+  it('빈 text의 BAD_REQUEST라도 선행 체이닝 가능하면 되묻기보다 체이닝한다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch
+      .mockRejectedValueOnce(
+        new FakeDomainException(
+          CeoErrorCode.NO_PO_EVAL_RUN,
+          DomainStatus.BAD_REQUEST,
+        ),
+      )
+      .mockResolvedValueOnce(ok('PO_EVAL'))
+      .mockResolvedValueOnce(ok('CEO'));
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.CEO,
+      commandId: 'c1',
+    });
+
+    expect(router.dispatch).toHaveBeenCalledTimes(3);
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.info', commandId: 'c1' }),
+    );
+  });
+
+  it('BAD_REQUEST가 아니면 빈 text와 agentTypeHint가 있어도 기존 rejected다', async () => {
+    const { orchestrator, router, consoleEvents, pendingTurns } = make();
+    router.dispatch.mockRejectedValue(
+      new FakeDomainException('WORKER_FAILED', DomainStatus.NOT_FOUND),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.WORK_REVIEWER,
+      commandId: 'c1',
+    });
+
+    expect(pendingTurns.putAwaitingInput).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
+    );
+  });
+
+  it('상위 3개 밖의 due 후보가 있으면 목록 끝에 남은 수를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents, suggestNextWork } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockResolvedValue({
+      suggestions: [
+        {
+          agentType: AgentType.PM,
+          displayName: 'PM',
+          reason: '마지막 성공 2일 전 · 평소 1일 주기',
+        },
+      ],
+      skippedUnknownCycle: 0,
+      alsoDueCount: 2,
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 할 일 있어?',
+      commandId: 'c1',
+    });
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message:
+        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 마지막 성공 2일 전 · 평소 1일 주기\n그 외 2개도 때가 됐어요.',
+    });
+  });
+
+  it('제안이 없으면 내부 worker·분류 용어 없이 command.rejected를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 할 일 있어?',
+      commandId: 'c1',
+    });
+
+    const rejectedEvent = consoleEvents.publish.mock.calls
+      .map((call) => call[0])
+      .find((event) => event.type === 'command.rejected');
+    expect(rejectedEvent.reason).toContain(
+      '지금 새로 시킬 만한 일을 찾지 못했습니다.',
+    );
+    expect(rejectedEvent.reason).not.toMatch(/worker|분류/);
+  });
+
+  it('제안 계산 실패는 내부 오류를 숨기고 고정 문구로 command.rejected를 발행한다', async () => {
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { orchestrator, router, consoleEvents, suggestNextWork } = make();
+    const internalMessage = 'Prisma connection pool timeout at agent_run';
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockRejectedValue(new Error(internalMessage));
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '지금 할 일 있어?',
+        commandId: 'c1',
+      });
+
+      const rejectedEvent = consoleEvents.publish.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.type === 'command.rejected');
+      expect(rejectedEvent).toEqual({
+        type: 'command.rejected',
+        commandId: 'c1',
+        reason:
+          '지금 할 일 있어?: 지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.',
+      });
+      expect(rejectedEvent.reason).not.toContain(internalMessage);
+      expect(warnSpy).toHaveBeenCalledWith(
+        `콘솔 할 일 제안 실패 — ${internalMessage}`,
+      );
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('선행이 이미 있으면 체이닝 없이 단일 dispatch 로 성공한다', async () => {
     const { orchestrator, router } = make();
     router.dispatch.mockResolvedValue(ok('CEO'));
@@ -307,6 +591,9 @@ describe('PreconditionChainOrchestrator', () => {
     expect(router.dispatch).toHaveBeenCalledTimes(1);
     expect(consoleEvents.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
+    );
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.answered' }),
     );
   });
 });

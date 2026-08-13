@@ -202,6 +202,22 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("command.info 디코딩 실패: \(error)")
     }
 
+    // ConsoleEvent 유니온 — command.answered
+    do {
+        let json = """
+        {"type":"command.answered","commandId":"c3","message":"지금 시킬 만한 일이에요."}
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
+        if case let .commandAnswered(commandId, message) = event {
+            t.expectEqual(commandId, "c3", "command.answered commandId")
+            t.expectEqual(message, "지금 시킬 만한 일이에요.", "command.answered message")
+        } else {
+            t.fail("command.answered 로 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("command.answered 디코딩 실패: \(error)")
+    }
+
     // 알 수 없는 이벤트 타입은 디코딩 에러
     t.expectThrows("알 수 없는 이벤트 타입은 throw") {
         let json = """

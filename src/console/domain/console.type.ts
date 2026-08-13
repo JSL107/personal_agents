@@ -133,4 +133,9 @@ export type ConsoleEvent =
       readonly type: 'command.info';
       readonly commandId: string;
       readonly message: string;
+    }
+  | {
+      readonly type: 'command.answered';
+      readonly commandId: string;
+      readonly message: string;
     };

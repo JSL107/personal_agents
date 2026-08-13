@@ -95,6 +95,8 @@ public final class ConsoleStore: ObservableObject {
             markCommand(commandId: commandId, phase: .failed, reason: reason)
         case let .commandInfo(commandId, message):
             annotateCommand(commandId: commandId, reason: message)
+        case let .commandAnswered(commandId, message):
+            markCommand(commandId: commandId, phase: .answered, reason: message)
         }
         eventStream.send(event)
     }

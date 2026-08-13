@@ -1,17 +1,25 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
+import { RouterException } from '../../router/domain/router.exception';
+import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
+import { PendingConsoleTurnStore } from './pending-console-turn.store';
+import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
+const SUGGESTION_FAILURE_MESSAGE =
+  '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
 
 export interface ConsoleChainInput {
   slackUserId: string;
@@ -39,6 +47,8 @@ export class PreconditionChainOrchestrator {
     private readonly router: IdaeriRouterPort,
     private readonly consoleEvents: ConsoleEventBus,
     private readonly config: ConfigService,
+    private readonly suggestNextWork: SuggestNextWorkUsecase,
+    private readonly pendingTurns: PendingConsoleTurnStore,
   ) {}
 
   async run(input: ConsoleChainInput): Promise<void> {
@@ -69,12 +79,24 @@ export class PreconditionChainOrchestrator {
       }
       return { ok: true };
     } catch (error: unknown) {
+      if (isIntentClassifyFailed(error)) {
+        return await this.answerWithSuggestions(input, chain);
+      }
       if (!(error instanceof DomainException)) {
         const reason = error instanceof Error ? error.message : String(error);
         return this.reject(input, chain, reason);
       }
       const resolution = resolveChain(error.errorCode);
       if (!resolution || resolution.kind === 'UNRESOLVABLE') {
+        const agentTypeHint = input.agentTypeHint;
+        // agentTypeHint가 있는데 text 없이 발생한 BAD_REQUEST는 worker 입력 부족으로 해석한다.
+        if (
+          agentTypeHint !== undefined &&
+          (input.text === undefined || input.text.trim().length === 0) &&
+          error.status === DomainStatus.BAD_REQUEST
+        ) {
+          return this.askForInput(input, agentTypeHint, error);
+        }
         return this.reject(input, chain, error.message);
       }
       if (chain.visited.includes(resolution.prereqWorker)) {
@@ -115,13 +137,84 @@ export class PreconditionChainOrchestrator {
     }
   }
 
+  private async answerWithSuggestions(
+    input: ConsoleChainInput,
+    chain: ChainState,
+  ): Promise<ChainOutcome> {
+    try {
+      const result = await this.suggestNextWork.execute();
+      this.logger.log(
+        `콘솔 할 일 제안 계산 — ${result.suggestions.length}개 제안, 주기 미상 ${result.skippedUnknownCycle}개 제외`,
+      );
+      if (result.suggestions.length === 0) {
+        return this.reject(
+          input,
+          chain,
+          '지금 새로 시킬 만한 일을 찾지 못했습니다.',
+        );
+      }
+
+      this.pendingTurns.putSuggestions(input.slackUserId, result.suggestions);
+      if (input.commandId) {
+        const suggestionLines = result.suggestions.map(
+          (suggestion, index) =>
+            `${index + 1}. ${suggestion.displayName} — ${suggestion.reason}`,
+        );
+        const alsoDueLine =
+          result.alsoDueCount > 0
+            ? [`그 외 ${result.alsoDueCount}개도 때가 됐어요.`]
+            : [];
+        this.consoleEvents.publish({
+          type: 'command.answered',
+          commandId: input.commandId,
+          message: [
+            '지금 시킬 만한 일이에요. 번호로 답해주세요.',
+            ...suggestionLines,
+            ...alsoDueLine,
+          ].join('\n'),
+        });
+      }
+      return { ok: false, reason: '제안 제시' };
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`콘솔 할 일 제안 실패 — ${reason}`);
+      return this.reject(input, chain, SUGGESTION_FAILURE_MESSAGE, false);
+    }
+  }
+
+  private askForInput(
+    input: ConsoleChainInput,
+    agentType: AgentType,
+    error: DomainException,
+  ): ChainOutcome {
+    const displayName =
+      AGENT_REGISTRY.find((entry) => entry.agentType === agentType)
+        ?.displayName ?? String(agentType);
+    this.logger.log(`콘솔 worker 입력 요청 — ${agentType}: ${error.message}`);
+    this.pendingTurns.putAwaitingInput(input.slackUserId, {
+      agentType,
+      displayName,
+    });
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.answered',
+        commandId: input.commandId,
+        message: `「${displayName}」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요.`,
+      });
+    }
+    return { ok: false, reason: '입력 요청' };
+  }
+
   private reject(
     input: ConsoleChainInput,
     chain: ChainState,
     reason: string,
+    shouldLog = true,
   ): ChainOutcome {
     const path = chain.path.join(' ← ');
-    this.logger.warn(`콘솔 체이닝 중단 — ${path}: ${reason}`);
+    if (shouldLog) {
+      this.logger.warn(`콘솔 체이닝 중단 — ${path}: ${reason}`);
+    }
     if (input.commandId) {
       this.consoleEvents.publish({
         type: 'command.rejected',
@@ -140,3 +233,7 @@ export class PreconditionChainOrchestrator {
       : DEFAULT_IMPACT_RECENT_DAYS;
   }
 }
+
+const isIntentClassifyFailed = (error: unknown): boolean =>
+  error instanceof RouterException &&
+  error.routerErrorCode === RouterErrorCode.INTENT_CLASSIFY_FAILED;

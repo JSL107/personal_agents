@@ -1,6 +1,9 @@
 import ConsoleCore
 import SwiftUI
 
+// 백엔드의 보관된 작업 제안과 앱의 제안 카드를 같은 30분에 만료시킨다.
+private let answeredCommandTTL: TimeInterval = 30 * 60
+
 /// 콘솔 루트. ConsoleStore 와 연결(스냅샷+SSE+백오프)을 소유하고,
 /// 대시보드↔오피스 탭을 전환한다. 두 탭이 같은 store 를 관측한다.
 struct AppRootView: View {
@@ -154,6 +157,12 @@ struct AppRootView: View {
             while !Task.isCancelled {
                 store.expireStalePendings()
                 for command in store.pendingCommands where command.phase == .done {
+                    store.removeCommand(id: command.id)
+                }
+                for command in store.pendingCommands
+                    where command.phase == .answered
+                    && Date().timeIntervalSince(command.sentAt) >= answeredCommandTTL
+                {
                     store.removeCommand(id: command.id)
                 }
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
