@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
@@ -287,6 +288,46 @@ describe('PreconditionChainOrchestrator', () => {
       '지금 새로 시킬 만한 일을 찾지 못했습니다.',
     );
     expect(rejectedEvent.reason).not.toMatch(/worker|분류/);
+  });
+
+  it('제안 계산 실패는 내부 오류를 숨기고 고정 문구로 command.rejected를 발행한다', async () => {
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { orchestrator, router, consoleEvents, suggestNextWork } = make();
+    const internalMessage = 'Prisma connection pool timeout at agent_run';
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockRejectedValue(new Error(internalMessage));
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '지금 할 일 있어?',
+        commandId: 'c1',
+      });
+
+      const rejectedEvent = consoleEvents.publish.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.type === 'command.rejected');
+      expect(rejectedEvent).toEqual({
+        type: 'command.rejected',
+        commandId: 'c1',
+        reason:
+          '지금 할 일 있어?: 지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.',
+      });
+      expect(rejectedEvent.reason).not.toContain(internalMessage);
+      expect(warnSpy).toHaveBeenCalledWith(
+        `콘솔 할 일 제안 실패 — ${internalMessage}`,
+      );
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('선행이 이미 있으면 체이닝 없이 단일 dispatch 로 성공한다', async () => {

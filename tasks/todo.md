@@ -1,3 +1,33 @@
+# PR #301 리뷰 지적 수정 (2026-08-13)
+
+**Goal:** 정탐 리뷰 5건을 최소 변경으로 수정하고 제안 입력 우선순위·원장 표본·오류 공개 경계·앱 표시를 회귀 테스트로 고정한다.
+
+**Contract:** 사용자 최신 명세가 정본이다. Node 22.23.1을 사용하고, UI 레이아웃·색상 토큰·env·DB/Prisma·Slack 동작·dependency·git commit은 변경하지 않는다.
+
+- [x] `.ai/design.md`, 관련 구현·테스트·원장 조회 순서를 확인하고 원인을 추적한다.
+- [x] RED: hint 우선순위, 고밀도 날짜 표본, 내부 오류 비노출 테스트를 추가해 기대한 실패를 확인한다.
+- [x] 성공일 4개·간격 1일/5일/2일의 홀수 중위 주기 문구 테스트를 추가한다.
+- [x] hint 없는 번호 선택을 보존하면서 hint 있는 입력은 원문·보관을 유지한다.
+- [x] `HISTORY_LIMIT=300`, 운영 실측 주석, 상한 도달·성공일 6개 미만 warn을 구현한다.
+- [x] 제안 계산 원본 오류는 warn에만 남기고 사용자에게 고정 문구를 발행한다.
+- [x] 두 SwiftUI 경로에서 `.answered`만 줄 제한을 해제한다.
+- [x] focused 3 suites / 40 tests GREEN을 확인한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check` exit 0을 확인한다.
+- [x] Swift raw 명령의 환경 실패와 matching SDK·cache·sandbox 우회 build/test exit 0을 확인한다.
+- [x] 최종 diff·금지 범위·whitespace를 검토하고 `.ai/implementation-summary.md`에 실제 결과를 기록한다.
+
+## Review
+
+- hint 있는 `2번 이슈 검토`는 본문·hint·보관을 유지하고, hint 없는 `2번`은 기존 제안 선택을 유지한다.
+- 성공 원장은 300건을 읽고 상한에서 성공일 6개 미만이면 warn한다. 300건 고밀도 표본과 간격 1/5/2일 중위 2일을 회귀 테스트로 고정했다.
+- 제안 계산 내부 오류는 logger warn에만 남고 SSE에는 고정 문구만 발행된다. `.answered`만 두 SwiftUI 표시 경로의 줄 제한을 해제했다.
+- 독립 리뷰의 로그 중복 지적을 반영해 제안 계산 실패 warn은 원본 1회만 남긴다. `tasks/todo.md` 변경 제외 의견은 상위 `AGENTS.md`의 계획 기록 의무 때문에 적용하지 않았다.
+- focused 3 suites/40 tests와 최종 TS 4종 gate, Swift 우회 build/2,133 tests, `git diff --check`가 exit 0이다.
+- raw `swift build`/`swift run ConsoleCoreTests`는 시스템 compiler 6.3.3과 기본 SDK 6.3.2 불일치 및 sandbox 권한으로 각각 exit 1이다. matching MacOSX15.4 SDK, `/tmp` cache, `--disable-sandbox`에서는 각각 exit 0이다.
+- env·DB/Prisma·Slack·dependency·UI 레이아웃/색상·git commit은 변경하지 않았다.
+
+---
+
 # 콘솔 worker 입력 부족 되묻기·재착수 (2026-08-13)
 
 **Goal:** `agentTypeHint`로 직접 지목한 worker가 빈 입력 때문에 `BAD_REQUEST`를 내면 내부 슬래시 문법을 숨긴 채 사람 말로 되묻고, 다음 콘솔 입력을 같은 worker 인자로 재착수한다.

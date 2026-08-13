@@ -14,8 +14,9 @@ import {
 import { ConsoleReadService } from './console-read.service';
 
 const HISTORY_DAYS = 60;
-// 한 회차에 성공 run이 몰려도 서로 다른 성공일 표본을 최대 6일가량 확보하도록 넉넉히 조회한다.
-const HISTORY_LIMIT = 40;
+// 로컬 원장 30일 실측상 CODE_REVIEWER의 하루 최대 성공은 2026-08-11 30건,
+// 2026-08-12 21건이다. 일별 쏠림 뒤에도 여러 성공일을 남기도록 300건을 조회한다.
+const HISTORY_LIMIT = 300;
 const MAX_SUGGESTIONS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -82,6 +83,11 @@ export class SuggestNextWorkUsecase {
           .filter((date): date is string => date !== null),
       ),
     ].sort((left, right) => right.localeCompare(left));
+    if (runs.length === HISTORY_LIMIT && succeededDates.length < 6) {
+      this.logger.warn(
+        `콘솔 할 일 제안 원장 표본 부족 — ${agentType}: 성공 run ${runs.length}/${HISTORY_LIMIT}건, 서로 다른 성공일 ${succeededDates.length}개`,
+      );
+    }
     if (succeededDates.length < 2) {
       return { scoredSuggestion: null, hasUnknownCycle: true };
     }

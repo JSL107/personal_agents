@@ -18,6 +18,8 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
+const SUGGESTION_FAILURE_MESSAGE =
+  '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
 
 export interface ConsoleChainInput {
   slackUserId: string;
@@ -175,7 +177,8 @@ export class PreconditionChainOrchestrator {
       return { ok: false, reason: '제안 제시' };
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      return this.reject(input, chain, reason);
+      this.logger.warn(`콘솔 할 일 제안 실패 — ${reason}`);
+      return this.reject(input, chain, SUGGESTION_FAILURE_MESSAGE, false);
     }
   }
 
@@ -206,9 +209,12 @@ export class PreconditionChainOrchestrator {
     input: ConsoleChainInput,
     chain: ChainState,
     reason: string,
+    shouldLog = true,
   ): ChainOutcome {
     const path = chain.path.join(' ← ');
-    this.logger.warn(`콘솔 체이닝 중단 — ${path}: ${reason}`);
+    if (shouldLog) {
+      this.logger.warn(`콘솔 체이닝 중단 — ${path}: ${reason}`);
+    }
     if (input.commandId) {
       this.consoleEvents.publish({
         type: 'command.rejected',

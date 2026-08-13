@@ -48,7 +48,10 @@ export class ConsoleWriteService {
       });
       return;
     }
-    if (pendingTurn?.kind === 'SUGGESTIONS') {
+    if (
+      pendingTurn?.kind === 'SUGGESTIONS' &&
+      input.agentTypeHint === undefined
+    ) {
       const selection = parseTopicSelection(
         input.text,
         pendingTurn.suggestions.length,

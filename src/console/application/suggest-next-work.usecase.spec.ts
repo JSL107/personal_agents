@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConsoleAgentState, ConsoleSnapshot } from '../domain/console.type';
@@ -59,8 +61,8 @@ const make = ({
   };
   const agentRunService = {
     findRecentSucceededRuns: jest.fn(
-      ({ agentType }: { agentType: AgentType }) =>
-        Promise.resolve(runsByAgentType[agentType] ?? []),
+      ({ agentType, limit }: { agentType: AgentType; limit: number }) =>
+        Promise.resolve((runsByAgentType[agentType] ?? []).slice(0, limit)),
     ),
   };
   const usecase = new SuggestNextWorkUsecase(
@@ -125,6 +127,54 @@ describe('SuggestNextWorkUsecase', () => {
       },
     ]);
     expect(result.skippedUnknownCycle).toBe(0);
+  });
+
+  it('같은 날짜 성공이 조회 상한 가까이 몰려도 이전 날짜 표본으로 주기를 계산한다', async () => {
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const denseRuns = Array.from({ length: 297 }, (_, index) => ({
+      id: index + 1,
+      output: {},
+      endedAt: new Date(NOW.getTime() - 2 * DAY_MS),
+    }));
+    const { usecase } = make({
+      agents: [
+        { agentType: AgentType.CODE_REVIEWER, displayName: 'Code Reviewer' },
+      ],
+      runsByAgentType: {
+        [AgentType.CODE_REVIEWER]: [...denseRuns, ...succeededAt(3, 4, 5)],
+      },
+    });
+
+    try {
+      const result = await usecase.execute();
+
+      expect(result.suggestions[0]?.reason).toBe(
+        '마지막 성공 2일 전 · 평소 1일 주기',
+      );
+      expect(result.skippedUnknownCycle).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '콘솔 할 일 제안 원장 표본 부족 — CODE_REVIEWER: 성공 run 300/300건, 서로 다른 성공일 4개',
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('성공일 4개의 간격 1일·5일·2일을 정렬해 중위 2일 주기로 계산한다', async () => {
+    const { usecase } = make({
+      agents: [{ agentType: AgentType.PM, displayName: 'PM' }],
+      runsByAgentType: {
+        [AgentType.PM]: succeededAt(2, 3, 8, 10),
+      },
+    });
+
+    const result = await usecase.execute();
+
+    expect(result.suggestions[0]?.reason).toBe(
+      '마지막 성공 2일 전 · 평소 2일 주기',
+    );
   });
 
   it('오늘 연속 성공만 있는 PAPER_RECOMMEND는 주기 미상으로 제외한다', async () => {
@@ -274,7 +324,7 @@ describe('SuggestNextWorkUsecase', () => {
     expect(agentRunService.findRecentSucceededRuns).toHaveBeenCalledWith({
       agentType: AgentType.CODE_REVIEWER,
       sinceDays: 60,
-      limit: 40,
+      limit: 300,
     });
   });
 });

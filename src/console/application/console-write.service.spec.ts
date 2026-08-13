@@ -64,6 +64,39 @@ describe('ConsoleWriteService', () => {
     });
   });
 
+  it('명시적 agentTypeHint가 있으면 제안 번호를 해석하지 않고 본문과 보관을 유지한다', () => {
+    const { service, chainOrchestrator, pendingTurns } = makeService(OWNER);
+    pendingTurns.peek.mockReturnValue({
+      kind: 'SUGGESTIONS',
+      suggestions: [
+        {
+          agentType: AgentType.CODE_REVIEWER,
+          displayName: 'Code Reviewer',
+          reason: '첫 번째',
+        },
+        {
+          agentType: AgentType.WORK_REVIEWER,
+          displayName: 'Work Reviewer',
+          reason: '두 번째',
+        },
+      ],
+    });
+
+    service.sendCommand({
+      text: '2번 이슈 검토',
+      agentTypeHint: AgentType.PM,
+      commandId: 'c2',
+    });
+
+    expect(pendingTurns.consume).not.toHaveBeenCalled();
+    expect(chainOrchestrator.run).toHaveBeenCalledWith({
+      slackUserId: OWNER,
+      text: '2번 이슈 검토',
+      agentTypeHint: AgentType.PM,
+      commandId: 'c2',
+    });
+  });
+
   it('보관된 제안이 없으면 번호 입력도 기존 일반 경로로 보낸다', () => {
     const { service, chainOrchestrator, pendingTurns } = makeService(OWNER);
 
