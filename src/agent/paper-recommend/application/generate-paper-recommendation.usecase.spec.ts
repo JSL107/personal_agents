@@ -86,6 +86,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 1,
       asOf: '2026-08-13',
+      includedIndicators: [],
       stocks: [
         {
           tickerId: 71,
@@ -174,10 +175,12 @@ describe('GeneratePaperRecommendationUsecase', () => {
     expect(screenUniverse.execute).toHaveBeenNthCalledWith(1, {
       strategy: 'LONG_TERM',
       limit: 20,
+      includeTickerIds: [],
     });
     expect(screenUniverse.execute).toHaveBeenNthCalledWith(2, {
       strategy: 'SWING',
       limit: 20,
+      includeTickerIds: [],
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(2);
   });
@@ -219,7 +222,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     ]);
   });
 
-  it('모델 prompt에 전체 지표와 계좌 현금·평가액 및 보유 지표 null을 포함한다', async () => {
+  it('후보 밖 보유 종목도 includedIndicators 지표를 모델 prompt에 포함한다', async () => {
     repository.findAccountByName.mockResolvedValue({
       id: 41,
       seedAmount: { toString: () => '10000000' } as never,
@@ -241,15 +244,136 @@ describe('GeneratePaperRecommendationUsecase', () => {
         ticker: { code: '005930', name: '삼성전자', tossSymbol: '005930' },
       },
     ]);
+    screenUniverse.execute.mockImplementation(async ({ strategy }) => ({
+      strategy,
+      ruleVersion: 2,
+      universeCount: 2,
+      evaluatedCount: 2,
+      staleCount: 0,
+      passedCount: 1,
+      asOf: '2026-08-13',
+      includedIndicators: [
+        {
+          tickerId: 81,
+          code: '005930',
+          name: '삼성전자',
+          indicators: { ...indicators, close: 70_000 },
+        },
+      ],
+      stocks: [
+        {
+          tickerId: 71,
+          code: '000660',
+          name: 'SK하이닉스',
+          krxMarket: 'KOSPI',
+          score: 98,
+          indicators,
+        },
+      ],
+    }));
 
     await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
 
     const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
-    expect(prompt).toContain(JSON.stringify(indicators));
+    expect(prompt).toContain(JSON.stringify({ ...indicators, close: 70_000 }));
     expect(prompt).toContain('현금 잔액: 7000000');
     expect(prompt).toContain('계좌 평가액: 9000000');
     expect(prompt).toContain('005930 삼성전자');
-    expect(prompt).toContain('지표 없음');
+    expect(prompt).not.toContain('지표 없음');
+    expect(screenUniverse.execute).toHaveBeenCalledWith({
+      strategy: 'LONG_TERM',
+      limit: 20,
+      includeTickerIds: [81],
+    });
+  });
+
+  it('후보 밖 보유 종목 매도 주문에 includedIndicators 근거를 저장한다', async () => {
+    const heldIndicators = { ...indicators, close: 70_000 };
+    repository.findAccountByName.mockResolvedValue({
+      id: 41,
+      seedAmount: { toString: () => '10000000' } as never,
+      cashBalance: { toString: () => '7000000' } as never,
+    });
+    repository.findPositionsWithTicker.mockResolvedValue([
+      {
+        id: 1,
+        accountId: 41,
+        tickerId: 81,
+        quantity: { toString: () => '3' } as never,
+        avgPrice: { toString: () => '50000' } as never,
+        ticker: { code: '005930', name: '삼성전자', tossSymbol: '005930' },
+      },
+    ]);
+    screenUniverse.execute.mockResolvedValue({
+      strategy: 'LONG_TERM',
+      ruleVersion: 2,
+      universeCount: 2,
+      evaluatedCount: 2,
+      staleCount: 0,
+      passedCount: 1,
+      asOf: '2026-08-13',
+      includedIndicators: [
+        {
+          tickerId: 81,
+          code: '005930',
+          name: '삼성전자',
+          indicators: heldIndicators,
+        },
+      ],
+      stocks: [
+        {
+          tickerId: 71,
+          code: '000660',
+          name: 'SK하이닉스',
+          krxMarket: 'KOSPI',
+          score: 98,
+          indicators,
+        },
+      ],
+    });
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [{ code: '005930', reason: '추세 훼손' }],
+        buys: [],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+
+    await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
+
+    const decision =
+      repository.saveRecommendationAtomically.mock.calls[0][0].decide({
+        account: {
+          id: 41,
+          seedAmount: { toString: () => '10000000' } as never,
+          cashBalance: { toString: () => '7000000' } as never,
+        },
+        positions: [
+          {
+            id: 1,
+            accountId: 41,
+            tickerId: 81,
+            quantity: { toString: () => '3' } as never,
+            avgPrice: { toString: () => '50000' } as never,
+            ticker: {
+              code: '005930',
+              name: '삼성전자',
+              tossSymbol: '005930',
+            },
+          },
+        ],
+        latestValuation: null,
+        existingOrders: [],
+      });
+
+    expect(decision.orders).toEqual([
+      expect.objectContaining({
+        tickerId: 81,
+        side: 'SELL',
+        indicatorSnapshot: heldIndicators,
+      }),
+    ]);
   });
 
   it('PENDING 주문에 판단 근거와 다음 거래일을 저장한다', async () => {
@@ -354,6 +478,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 2,
       asOf: '2026-08-13',
+      includedIndicators: [],
       stocks: [
         {
           tickerId: 71,

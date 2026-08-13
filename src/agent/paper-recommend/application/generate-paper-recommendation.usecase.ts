@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
@@ -109,20 +110,28 @@ export class GeneratePaperRecommendationUsecase {
         ruleVersion: null,
       },
       run: async ({ agentRunId, updateInputSnapshot }) => {
-        const screen = await this.screenUniverseUsecase.execute({
-          strategy,
-          limit: 20,
-        });
         const account = await this.findOrOpenAccount(strategy, decidedAt);
         const positions = await this.repository.findPositionsWithTicker(
           account.id,
         );
+        const screen = await this.screenUniverseUsecase.execute({
+          strategy,
+          limit: 20,
+          includeTickerIds: positions.map((position) => position.tickerId),
+        });
         const valuation = await this.repository.findLatestValuation(account.id);
         const accountValuation = Number(
           (valuation?.totalValue ?? account.seedAmount).toString(),
         );
+        const indicatorSources = [
+          ...screen.includedIndicators,
+          ...screen.stocks,
+        ];
         const indicatorsByCode = new Map(
-          screen.stocks.map((stock) => [stock.code, stock.indicators]),
+          indicatorSources.map((stock) => [stock.code, stock.indicators]),
+        );
+        const indicatorsByTickerId = new Map(
+          indicatorSources.map((stock) => [stock.tickerId, stock.indicators]),
         );
         const prompt = buildPaperRecommendationPrompt({
           strategy,
@@ -165,6 +174,7 @@ export class GeneratePaperRecommendationUsecase {
               strategy,
               decidedAt,
               screen,
+              indicatorsByTickerId,
               agentRunId,
               recommendation,
               state,
@@ -222,6 +232,7 @@ export class GeneratePaperRecommendationUsecase {
     strategy,
     decidedAt,
     screen,
+    indicatorsByTickerId,
     agentRunId,
     recommendation,
     state,
@@ -229,6 +240,7 @@ export class GeneratePaperRecommendationUsecase {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
     screen: ScreenUniverseResult;
+    indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
@@ -305,6 +317,7 @@ export class GeneratePaperRecommendationUsecase {
       strategy,
       decidedAt,
       screen,
+      indicatorsByTickerId,
       agentRunId,
       constrained,
     });
@@ -314,21 +327,20 @@ export class GeneratePaperRecommendationUsecase {
     strategy,
     decidedAt,
     screen,
+    indicatorsByTickerId,
     agentRunId,
     constrained,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
     screen: ScreenUniverseResult;
+    indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
     constrained: ReturnType<typeof constrainPaperRecommendation>;
   }): PendingPaperOrderInput[] {
     if (screen.asOf === null) {
       return [];
     }
-    const indicatorsByTickerId = new Map(
-      screen.stocks.map((stock) => [stock.tickerId, stock.indicators]),
-    );
     const dataAsOf = new Date(`${screen.asOf}T00:00:00.000Z`);
     const targetTradeDate = nextWeekday(decidedAt);
     return [...constrained.sells, ...constrained.buys].map((order) => ({

@@ -70,32 +70,29 @@ export class FillPendingOrdersUsecase {
         notYetTraded: 0,
       };
     }
-    if (minutes > closeMinutes) {
-      const closeResult = await this.repository.expireDuePendingOrders(
-        day,
-        '체결가 조회 실패',
-      );
-      return {
-        window: 'AFTER_CLOSE',
-        attempted: closeResult.attempted,
-        filled: 0,
-        expired: closeResult.expired,
-        lookupFailure: 0,
-        notYetTraded: 0,
-      };
-    }
-
+    const window: FillWindow =
+      minutes > closeMinutes ? 'AFTER_CLOSE' : 'TRADING';
     const orders = await this.repository.findDuePendingOrders(day);
     const result: FillPendingOrdersResult = {
-      window: 'TRADING',
+      window,
       attempted: orders.length,
       filled: 0,
       expired: 0,
       lookupFailure: 0,
       notYetTraded: 0,
     };
+    let sawTodayBar = false;
     for (const order of orders) {
-      await this.fillOrder(order, tradeDate, result);
+      if (await this.fillOrder(order, tradeDate, result)) {
+        sawTodayBar = true;
+      }
+    }
+    if (window === 'AFTER_CLOSE' && sawTodayBar) {
+      const closeResult = await this.repository.expireDuePendingOrders(
+        day,
+        '체결가 조회 실패',
+      );
+      result.expired += closeResult.expired;
     }
     return result;
   }
@@ -104,7 +101,7 @@ export class FillPendingOrdersUsecase {
     order: DuePaperOrderRecord,
     tradeDate: string,
     result: FillPendingOrdersResult,
-  ): Promise<void> {
+  ): Promise<boolean> {
     let bars: DailyBar[];
     try {
       bars = await this.marketData.fetchDailyBars(order.tossSymbol, 1, {
@@ -112,16 +109,16 @@ export class FillPendingOrdersUsecase {
       });
     } catch {
       result.lookupFailure += 1;
-      return;
+      return false;
     }
     const todayBar = findTodayBar(bars, tradeDate);
     if (!todayBar) {
       result.notYetTraded += 1;
-      return;
+      return false;
     }
     if (!todayBar.open) {
       result.lookupFailure += 1;
-      return;
+      return true;
     }
     const market = parsePaperMarket(order.krxMarket);
     if (!market) {
@@ -133,7 +130,7 @@ export class FillPendingOrdersUsecase {
       ) {
         result.expired += 1;
       }
-      return;
+      return true;
     }
     const fill = await this.recordTrade.executePendingOrder({
       orderId: order.id,
@@ -151,5 +148,6 @@ export class FillPendingOrdersUsecase {
     } else if (fill.status === 'EXPIRED') {
       result.expired += 1;
     }
+    return true;
   }
 }

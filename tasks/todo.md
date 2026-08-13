@@ -1879,3 +1879,27 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 다른 usecase/repository 주입 방식, env/schema/dependency/git index/commit/push는 변경하지 않았다.
 
 ---
+# PR #288 리뷰 2건 반영 (2026-08-13)
+
+**Goal:** 휴장일·시세 공급자 전면 장애에는 PENDING 주문을 보존하고, 후보 밖 보유 종목도 이미 계산된 지표를 추천 판단과 주문 근거에 사용한다.
+
+**Contract:** `.ai/design.md`를 그대로 따른다. 거래소 캘린더, port/adapter, schema/env/dependency/new production file은 추가하지 않고 커밋하지 않는다.
+
+- [x] 관련 구현과 spec의 현재 데이터 흐름을 확인한다.
+- [x] 휴장일·부분 봉·전면 장애 및 보유 종목 지표 회귀 spec을 먼저 추가해 RED를 확인한다.
+- [x] `FillPendingOrdersUsecase`가 당일 봉을 하나라도 본 AFTER_CLOSE에만 만료하도록 수정한다.
+- [x] `ScreenUniverseUsecase`가 요청 ticker의 asOf 일치 지표를 `includedIndicators`로 반환하도록 수정한다.
+- [x] 추천 usecase가 보유 종목을 먼저 조회하고 병합 지표 맵을 프롬프트와 주문 저장에 함께 사용하도록 수정한다.
+- [x] focused GREEN 후 `pnpm lint:check`, `pnpm exec tsc --noEmit`, 전체 `pnpm test`, `pnpm build`를 실행한다.
+- [x] 최종 diff와 금지 범위를 검토하고 `.ai/implementation-summary.md` 및 아래 Review를 갱신한다.
+
+## Review
+
+- `AFTER_CLOSE`도 due 주문별 당일 봉을 조회하고, 당일 봉을 하나라도 본 경우에만 남은 주문을 bulk 만료한다. 휴장일·전면 장애는 bulk 만료 mock 미호출로 고정했다.
+- 스크리너는 공통 `asOf`를 통과한 요청 종목 지표를 필터 전 `includedIndicators`로 반환하며, 미지정·stale 경계를 회귀 spec으로 고정했다.
+- 추천은 보유 종목 ID를 스크리너에 전달하고, `includedIndicators` + `screen.stocks` 병합 맵을 프롬프트와 주문 snapshot에 함께 사용한다. 중복은 `screen.stocks`가 우선한다.
+- 독립 최종 리뷰는 Critical/Important/Minor 0건이었다. 설계 편차와 schema/env/dependency/new production file 변경은 없다.
+- 최종 gate: lint exit 0(기존 warning 57), tsc exit 0, 전체 test exit 0(일반 350 suites/2,910 tests + code-graph 5 suites/40 tests), build exit 0, diff check exit 0.
+- 커밋, staging, push는 실행하지 않았다.
+
+---

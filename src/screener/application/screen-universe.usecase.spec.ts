@@ -56,6 +56,7 @@ describe('ScreenUniverseUsecase', () => {
       staleCount: 1,
       passedCount: 1,
       stocks: [expect.objectContaining({ code: '000201' })],
+      includedIndicators: [],
       asOf: '2026-08-12',
     });
   });
@@ -83,7 +84,102 @@ describe('ScreenUniverseUsecase', () => {
       staleCount: 0,
       passedCount: 0,
       stocks: [],
+      includedIndicators: [],
       asOf: null,
     });
+  });
+
+  it('요청 종목은 스크리너 필터에서 탈락해도 includedIndicators에 반환한다', async () => {
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '005930',
+          name: '삼성전자',
+          tossSymbol: '005930',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findBarsForTickers: jest
+        .fn()
+        .mockResolvedValue(new Map([[1, risingBars(59, '2026-08-13')]])),
+    } as unknown as MarketDataRepository;
+    const usecase = new ScreenUniverseUsecase(repository);
+
+    const result = await usecase.execute({
+      strategy: 'LONG_TERM',
+      includeTickerIds: [1],
+    });
+
+    expect(result.stocks).toEqual([]);
+    expect(result.includedIndicators).toEqual([
+      expect.objectContaining({
+        tickerId: 1,
+        code: '005930',
+        name: '삼성전자',
+        indicators: expect.objectContaining({ barCount: 59 }),
+      }),
+    ]);
+  });
+
+  it('요청 종목이어도 asOf와 다른 stale 지표는 includedIndicators에서 제외한다', async () => {
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '005930',
+          name: '삼성전자',
+          tossSymbol: '005930',
+          krxMarket: 'KOSPI',
+        },
+        {
+          id: 2,
+          code: '000660',
+          name: 'SK하이닉스',
+          tossSymbol: '000660',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findBarsForTickers: jest.fn().mockResolvedValue(
+        new Map([
+          [1, risingBars(200, '2026-08-12')],
+          [2, risingBars(200, '2026-08-13')],
+        ]),
+      ),
+    } as unknown as MarketDataRepository;
+    const usecase = new ScreenUniverseUsecase(repository);
+
+    const result = await usecase.execute({
+      strategy: 'LONG_TERM',
+      includeTickerIds: [1],
+    });
+
+    expect(result.asOf).toBe('2026-08-13');
+    expect(result.includedIndicators).toEqual([]);
+  });
+
+  it('includeTickerIds 미지정이면 기존 stocks를 유지하고 includedIndicators는 비운다', async () => {
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '005930',
+          name: '삼성전자',
+          tossSymbol: '005930',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findBarsForTickers: jest
+        .fn()
+        .mockResolvedValue(new Map([[1, risingBars(200, '2026-08-13')]])),
+    } as unknown as MarketDataRepository;
+    const usecase = new ScreenUniverseUsecase(repository);
+
+    const result = await usecase.execute({ strategy: 'LONG_TERM' });
+
+    expect(result.stocks).toEqual([
+      expect.objectContaining({ tickerId: 1, code: '005930' }),
+    ]);
+    expect(result.includedIndicators).toEqual([]);
   });
 });
