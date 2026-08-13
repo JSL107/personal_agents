@@ -1,6 +1,7 @@
 import { EvaluateAccountResult } from '../application/evaluate-paper-account.usecase';
 import { PaperTradingStatusResult } from '../application/get-paper-trading-status.usecase';
 import {
+  formatPaperPortfolioStatus,
   formatPaperTradingReport,
   formatPaperTradingStatus,
 } from './paper-trading.formatter';
@@ -228,5 +229,57 @@ describe('formatPaperTradingStatus', () => {
     });
 
     expect(text).toContain('수익률 *-2.5%*');
+  });
+});
+
+describe('formatPaperPortfolioStatus', () => {
+  // PAPER_RECOMMEND 는 전략명으로 계좌를 연다 (LONG_TERM / SWING).
+  const SWING: PaperTradingStatusResult = {
+    account: {
+      name: 'SWING',
+      seedAmount: '10000000',
+      cashBalance: '9000000',
+    },
+    positions: [
+      {
+        tickerCode: '000660',
+        tickerName: 'SK하이닉스',
+        quantity: '5',
+        avgPrice: '200000',
+      },
+    ],
+    snapshots: [
+      { tradeDate: '2026-08-12', totalValue: '9900000', returnRate: '-1' },
+    ],
+  };
+
+  it('계좌마다 구분해 나란히 보여준다 (전략별 계좌가 하나로 뭉개지지 않는다)', () => {
+    const text = formatPaperPortfolioStatus([
+      { ...STATUS, account: { ...STATUS.account, name: 'LONG_TERM' } },
+      SWING,
+    ]);
+
+    expect(text).toContain('*가상 계좌 현황 — LONG_TERM*');
+    expect(text).toContain('*가상 계좌 현황 — SWING*');
+    expect(text).toContain('---');
+    // 전략별 수익률이 각각 살아 있어야 한다 (합산·평균으로 뭉개면 둘 다 사라진다).
+    expect(text).toContain('수익률 *+1.2%*');
+    expect(text).toContain('수익률 *-1%*');
+  });
+
+  it('계좌가 1개면 구분선 없이 그 계좌만 보여준다', () => {
+    const text = formatPaperPortfolioStatus([SWING]);
+
+    expect(text).toContain('*가상 계좌 현황 — SWING*');
+    expect(text).not.toContain('---');
+  });
+
+  it('계좌가 없으면 계좌 부재를 알린다 (0원 수익률을 만들지 않음)', () => {
+    const text = formatPaperPortfolioStatus([]);
+
+    expect(text).toContain('가상 매매 계좌가 아직 없어요');
+    // 안내 문장에는 "수익률" 이라는 낱말이 들어가지만, 수치가 붙은 수익률 값은 없어야 한다.
+    expect(text).not.toMatch(/수익률 \*/u);
+    expect(text).not.toContain('총 평가액');
   });
 });
