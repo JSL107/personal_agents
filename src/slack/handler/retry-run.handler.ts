@@ -10,6 +10,7 @@ import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
+import { GeneratePaperRecommendationUsecase } from '../../agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
@@ -24,6 +25,7 @@ import {
   humanizeBackendPlan,
   humanizeEvaluationOutput,
 } from '../../humanize/application/humanize-report.adapter';
+import { PaperTradingRepository } from '../../paper-trading/infrastructure/paper-trading.repository';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { formatBackendPlan } from '../format/backend-plan.formatter';
@@ -38,7 +40,7 @@ import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
-import { runAgentCommand } from './slack-handler.helper';
+import { runAgentCommand, runEphemeral } from './slack-handler.helper';
 
 // /retry-run — FAILED AgentRun 의 inputSnapshot 으로 동일 작업을 재실행 (OPS-5).
 // 본인 명의의 run 만 가능, agentType 별로 적합한 usecase 로 라우팅.
@@ -64,6 +66,8 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
+    private readonly generatePaperRecommendationUsecase: GeneratePaperRecommendationUsecase,
+    private readonly paperTradingRepository: PaperTradingRepository,
     private readonly agentRunService: AgentRunService,
     private readonly humanizeService: HumanizeService,
   ) {}
@@ -368,6 +372,69 @@ export class RetryRunHandler implements SlackHandler {
             text: `AgentRun #${id} (VACATION) 은 입력값에 의존하는 계산/기록이라 재실행을 지원하지 않습니다. \`/휴가\` 명령으로 다시 시도해주세요.`,
           });
           return;
+        }
+        case 'PAPER_RECOMMEND': {
+          const strategy = snapshot.strategy;
+          const decidedAt = snapshot.decidedAt
+            ? new Date(snapshot.decidedAt)
+            : null;
+          if (
+            (strategy !== 'LONG_TERM' && strategy !== 'SWING') ||
+            decidedAt === null ||
+            Number.isNaN(decidedAt.getTime())
+          ) {
+            await respond({
+              response_type: 'ephemeral',
+              replace_original: true,
+              text: `AgentRun #${id} (PAPER_RECOMMEND) 의 strategy 또는 decidedAt이 올바르지 않아 재실행할 수 없습니다.`,
+            });
+            return;
+          }
+          const account =
+            await this.paperTradingRepository.findAccountByName(strategy);
+          if (
+            account &&
+            (await this.paperTradingRepository.hasOrdersForRecommendation({
+              accountId: account.id,
+              strategy,
+              decidedAt,
+            }))
+          ) {
+            await respond({
+              response_type: 'ephemeral',
+              replace_original: true,
+              text: `AgentRun #${id} (PAPER_RECOMMEND) 은 이미 PENDING 주문을 남겨 중복 추천 방지를 위해 재실행할 수 없습니다.`,
+            });
+            return;
+          }
+          await runEphemeral({
+            respond,
+            logger: this.logger,
+            commandLabel: `/retry-run#${id} (PAPER_RECOMMEND)`,
+            task: async () => {
+              const result =
+                await this.generatePaperRecommendationUsecase.execute({
+                  strategies: [strategy],
+                  decidedAt,
+                  triggerType: TriggerType.FAILURE_REPLAY,
+                });
+              const completed = result.completed[0];
+              if (completed) {
+                await this.linkRetryLineage(id)({
+                  agentRunId: completed.agentRunId,
+                });
+              }
+              return result;
+            },
+            format: (result) => {
+              const completed = result.completed[0];
+              if (completed) {
+                return `${completed.strategy} 추천 재실행 완료: PENDING 주문 ${completed.ordersCreated}건`;
+              }
+              return `${strategy} 추천 재실행 실패: ${result.failed[0]?.message ?? '알 수 없는 오류'}`;
+            },
+          });
+          break;
         }
         case 'BLOG': {
           await respond({
