@@ -15,6 +15,10 @@ struct AppRootView: View {
     /// 마지막으로 스냅샷을 다시 받은 시각. 상태 변경이 몰릴 때 요청 폭주를 막는 최소 간격 기준.
     @State private var lastResyncAt: Date?
     @State private var tab: Tab = .dashboard
+    /// 담당자 미지정 지시 바가 열렸는지. 오피스 탭의 상태지만 여기서 소유한다 — 메뉴에서 열 때는
+    /// 탭 전환과 함께 세팅돼야 하고, 그 시점의 `OfficeView` 는 아직 만들어지지 않아 통지를 직접
+    /// 받을 수 없다.
+    @State private var isPresidentBarOpen = false
 
     private enum Tab: Hashable {
         case dashboard
@@ -52,11 +56,20 @@ struct AppRootView: View {
                     store: store,
                     onSend: sendCommand,
                     onApprove: approve,
-                    onReject: reject
+                    onReject: reject,
+                    isPresidentBarOpen: $isPresidentBarOpen
                 )
             }
         }
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.windowMinHeight)
+        .onReceive(
+            NotificationCenter.default.publisher(for: .idaeriOpenPresidentCommand)
+        ) { _ in
+            // 지시 바는 오피스 탭에만 있다. 대시보드를 보고 있을 때 눌렸다면 탭까지 옮겨 준다 —
+            // 안 그러면 메뉴를 눌러도 아무 일도 일어나지 않는다.
+            tab = .office
+            isPresidentBarOpen = true
+        }
         .task {
             startPendingJanitor()
             startSnapshotResync()
