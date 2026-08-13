@@ -44,6 +44,40 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         "빈 문구뿐이면 쪽지를 띄우지 않는다"
     )
 
+    // 말풍선 접기 — 좌석 몫 안에 들어가야 옆자리 문구와 포개지지 않는다.
+    //
+    // 폭은 글자 하나당 10px 로 잰다(공백 포함). 실제 글꼴 대신 고정 폭을 쓰는 이유는 판정이
+    // 기계마다 달라지지 않게 하기 위해서다 — 규칙(어디서 끊는가)만 확인한다.
+    let measure: (String) -> Double = { Double($0.count) * 10 }
+
+    t.expectEqual(
+        officeWrapBubble("#2999 리뷰 중", maxWidth: 200, maxLines: 2, measure: measure),
+        "#2999 리뷰 중",
+        "몫 안에 들어가면 그대로 한 줄"
+    )
+    // `#2999 리뷰 중` = 11자 = 110px. 몫이 70px 이면 공백에서 끊어 두 줄.
+    t.expectEqual(
+        officeWrapBubble("#2999 리뷰 중", maxWidth: 70, maxLines: 2, measure: measure),
+        "#2999\n리뷰 중",
+        "몫을 넘으면 공백에서 접는다"
+    )
+    // 공백이 없는 문구는 낱말 단위로 못 줄인다 — 글자로 끊어야 한다.
+    t.expectEqual(
+        officeWrapBubble("스키마짜는중입니다", maxWidth: 50, maxLines: 2, measure: measure),
+        "스키마짜는\n중입니다",
+        "공백이 없으면 글자 단위로 끊는다"
+    )
+    // 두 줄로도 안 들어가면 잘렸다는 표시가 남아야 한다 — 조용히 사라지면 문구가 원래 그런
+    // 줄 알고 읽는다.
+    let truncated = officeWrapBubble(
+        "아주 긴 문구가 계속 이어진다", maxWidth: 50, maxLines: 2, measure: measure
+    )
+    t.expect(truncated.components(separatedBy: "\n").count <= 2, "줄 수 상한을 지킨다")
+    t.expect(truncated.hasSuffix("…"), "잘린 문구에는 말줄임표가 남는다(\(truncated))")
+    for line in truncated.components(separatedBy: "\n") {
+        t.expect(measure(line) <= 50, "접은 줄이 몫 안에 있다: \(line) \(measure(line))px")
+    }
+
     // 커서 옆 쪽지 판 — 기본은 커서 오른쪽 위, 그쪽이 좁으면 반대편, 그래도 안 되면 화면 안.
     //
     // 화면 밖으로 나간 판은 잘려서 **읽히지 않는다.** 머리 위 쪽지를 커서 옆으로 옮긴 이유가

@@ -618,6 +618,35 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         }
     }
 
+    // 상단 밴드 이름표(회의실·대표실·탕비실)도 아래 방 말풍선 위로 비켜선다.
+    //
+    // "밴드 안이라 좌석을 피할 필요가 없다" 고 보고 고정 높이를 쓰던 동안, 최소 창에서 두 줄로
+    // 접힌 말풍선이 밴드까지 올라와 `회의실` 판이 첫 좌석의 `#2999` 를 덮었다. 부서 문패와
+    // 똑같이 오버레이라, 겹치면 이기는 쪽은 늘 라벨이다.
+    for tileSize in [20.6, 32.0, 90.0] {
+        for area in plan.commonAreas {
+            let topSeatYBelow = plan.zones
+                .filter { zone in
+                    zone.origin.x < area.originX + area.width
+                        && area.originX < zone.origin.x + zone.width
+                }
+                .compactMap { officeTopSeatY(zone: $0, desks: plan.desks) }
+                .max()
+            guard let topSeatYBelow else {
+                continue
+            }
+            let labelBottom = officeCommonAreaLabelBottomTiles(
+                area: area, topSeatYBelow: topSeatYBelow, tileSize: tileSize
+            )
+            let bubbleTop = officeSeatedBubbleTopTiles(seatY: topSeatYBelow, tileSize: tileSize)
+            t.expect(
+                labelBottom >= bubbleTop + officeZoneLabelGapTiles - 0.0001,
+                "타일 \(tileSize) · \(area.label) 이름표 아래끝(\(labelBottom))이"
+                    + " 말풍선 위끝(\(bubbleTop)) 위"
+            )
+        }
+    }
+
     // 문패 높이가 실제로 창 크기를 따라 움직이는가. 위 단언만으로는 계산식이 다시 고정
     // 배수로 굳어도(그리고 큰 창에서만 맞아도) 통과할 수 있다. 작은 창에서는 이름표가
     // 커진 만큼 문패가 구역 경계 줄보다 확실히 더 올라가야 한다.

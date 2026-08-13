@@ -273,6 +273,15 @@ public func officeBubbleFontSize(tileSize: Double) -> Double {
     max(officeNameplateMinFontSizeValue, tileSize * officeBubbleFontTiles)
 }
 
+/// 상시 말풍선이 쓸 수 있는 최대 줄 수.
+///
+/// 말풍선은 12자까지 온다(`ACTIVITY_BUBBLE_MAX_LENGTH`). 한글 글자에 하한(11px)이 있어
+/// **어느 창 크기에서도** 한 줄 12자는 좌석 몫 두 칸을 넘는다 — 옆자리도 일이 돌면 두
+/// 말풍선이 그대로 포개져 둘 다 못 읽는다(최소 창에서는 네다섯 개가 겹친다).
+/// 좌석 몫에 맞춰 접되, 세 줄까지 자라면 머리 위가 글자탑이 되고 문패도 그만큼 더 밀어
+/// 올려야 하므로 두 줄에서 끊고 나머지는 말줄임한다 — 창을 키우면 전부 돌아온다.
+public let officeBubbleMaxLines: Double = 2
+
 /// 이름표 판을 스프라이트 위끝에서 얼마나 띄우는가(px). 판 두께에 눌리지 않을 여유 6px 을 더한다.
 public let officeNameplateClearancePadding: Double = 6
 
@@ -378,12 +387,17 @@ public func officeSeatedNameplateTopTiles(seatY: Int, tileSize: Double) -> Doubl
 /// 좌석에 앉은 사람의 **상시 말풍선** 위끝이 격자에서 몇 칸 높이에 오는가.
 ///
 /// 말풍선은 이름표보다 한 층 더 위다 — 스프라이트 위끝에서 `officeNameplateClearance` 만큼
-/// 떨어진 자리를 글자 **중심**으로 쓴다(씬의 `setChildLabel` 이 세로 중앙 정렬이다).
+/// 떨어진 자리에 글자 **아래끝**을 두고 위로 자란다. 아래를 고정하는 이유는 두 줄로 접힐 때
+/// (`officeBubbleMaxLines`) 아래로도 자라면 사람 머리와 이름표를 덮기 때문이다.
+///
+/// 최악(두 줄)을 기준으로 잰다. 지금 한 줄인 사람에 맞춰 문패를 내리면, 옆자리가 긴 문구를
+/// 받아 두 줄이 되는 순간 문패가 다시 그 위를 덮는다.
 public func officeSeatedBubbleTopTiles(seatY: Int, tileSize: Double) -> Double {
-    let halfBoxTiles =
-        officeBubbleFontSize(tileSize: tileSize) * officeLabelBoxRatio / 2 / tileSize
+    let boxTiles =
+        officeBubbleFontSize(tileSize: tileSize) * officeLabelBoxRatio
+        * officeBubbleMaxLines / tileSize
     return Double(seatY) - officeSeatedSpriteDrop + officeSeatedSpriteTiles
-        + officeNameplateClearance(tileSize: tileSize) / tileSize + halfBoxTiles
+        + officeNameplateClearance(tileSize: tileSize) / tileSize + boxTiles
 }
 
 /// 부서 문패 아래끝을 놓을 높이(격자 칸).
@@ -411,6 +425,34 @@ public func officeZoneLabelBottomTiles(
         + officeZoneLabelGapTiles
     return max(boundary, aboveBubble)
 }
+
+/// 상단 밴드(회의실·대표실·탕비실) 이름표 아래끝을 놓을 높이(격자 칸).
+///
+/// 밴드 안이라 좌석을 피할 필요가 없다고 보고 고정 높이를 썼는데, **아래 방의 말풍선이
+/// 밴드까지 올라온다.** 최소 창에서는 말풍선이 두 줄로 접혀 더 높아지고, 밴드 이름표도
+/// 부서 문패와 같이 오버레이라 겹치면 이기는 쪽이라 첫 좌석의 활동 문구 윗줄이 잘렸다
+/// (`회의실` 이 `#2999` 를 덮었다).
+///
+/// `topSeatYBelow` 는 이 방 바로 아래에서 x 가 겹치는 부서 구역의 첫 좌석 행이다. 없으면
+/// (아래가 복도뿐이면) 원래 자리를 그대로 쓴다.
+public func officeCommonAreaLabelBottomTiles(
+    area: CommonArea,
+    topSeatYBelow: Int?,
+    tileSize: Double
+) -> Double {
+    let base = Double(area.labelY) + officeCommonAreaLabelGapTiles
+    guard let topSeatYBelow else {
+        return base
+    }
+    return max(
+        base,
+        officeSeatedBubbleTopTiles(seatY: topSeatYBelow, tileSize: tileSize)
+            + officeZoneLabelGapTiles
+    )
+}
+
+/// 밴드 이름표를 그 줄 바닥에서 띄우는 몫(칸).
+public let officeCommonAreaLabelGapTiles: Double = 0.2
 
 /// 구역 안에서 가장 위쪽 좌석의 y. 문패를 그 위로 올리기 위한 기준이다.
 public func officeTopSeatY(zone: DepartmentZone, desks: [DeskAssignment]) -> Int? {

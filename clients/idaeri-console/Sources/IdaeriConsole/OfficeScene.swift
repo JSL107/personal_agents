@@ -441,6 +441,18 @@ final class OfficeScene: SKScene {
         )
     }
 
+    /// 그 사람의 상시 말풍선이 쓸 수 있는 폭(px). 이름표와 **같은 좌석 몫**을 나눠 쓴다.
+    ///
+    /// 자리 몫이 없는 사람(방 밖 좌석·대표 앞줄)은 이웃이 없으니 제한하지 않는다.
+    /// 걸어 나간 사람도 자기 자리 몫을 그대로 쓴다 — 복도에서 조금 좁게 접히는 편이,
+    /// 돌아와 앉는 순간 옆 사람 문구를 덮는 것보다 낫다.
+    private func bubbleMaxWidth(for agentType: String) -> CGFloat? {
+        guard let seat = homeSeats[agentType], let span = nameplateSpan(for: seat) else {
+            return nil
+        }
+        return CGFloat(span.left + span.right) * tileSize
+    }
+
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
         let node = CharacterNode(
             agentType: agent.agentType, displayName: agent.displayName,
@@ -700,9 +712,23 @@ final class OfficeScene: SKScene {
         for area in plan.commonAreas {
             let holder = SKNode()
             holder.name = "common:\(area.label)"
+            // 아래 방 첫 좌석의 말풍선 위로 비켜선다. 밴드 안이라 좌석과 무관하다고 보고
+            // 고정 높이를 쓰던 동안, 최소 창에서 두 줄로 접힌 말풍선의 윗줄을 이 판이 덮었다.
+            let topSeatYBelow = plan.zones
+                .filter { zone in
+                    zone.origin.x < area.originX + area.width
+                        && area.originX < zone.origin.x + zone.width
+                }
+                .compactMap { officeTopSeatY(zone: $0, desks: plan.desks) }
+                .max()
             holder.position = CGPoint(
                 x: gridOrigin.x + (CGFloat(area.originX) + 0.5) * tileSize,
-                y: gridOrigin.y + (CGFloat(area.labelY) + 0.2) * tileSize
+                y: gridOrigin.y
+                    + CGFloat(
+                        officeCommonAreaLabelBottomTiles(
+                            area: area, topSeatYBelow: topSeatYBelow, tileSize: Double(tileSize)
+                        )
+                    ) * tileSize
             )
 
             let label = SKLabelNode(text: "\(area.icon) \(area.label)")
@@ -1498,7 +1524,8 @@ final class OfficeScene: SKScene {
             setChildLabel(
                 node, name: "infoBubble", text: info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),
-                fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95)
+                fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95),
+                maxWidth: bubbleMaxWidth(for: agent.agentType)
             )
             setChildLabel(
                 node, name: "elapsed", text: info.elapsed,
@@ -1798,13 +1825,17 @@ final class OfficeScene: SKScene {
     ]
 
     /// 이름붙은 라벨 자식을 text 유무에 따라 add/update/remove 한다.
+    ///
+    /// `maxWidth` 를 주면 그 폭에 맞춰 두 줄까지 접고 남으면 말줄임한다(말풍선 전용). 폭을 안
+    /// 주는 라벨(경과)은 짧아서 제한이 필요 없다.
     private func setChildLabel(
         _ parent: SKNode,
         name: String,
         text: String?,
         position: CGPoint,
         fontSize: CGFloat,
-        color: SKColor
+        color: SKColor,
+        maxWidth: CGFloat? = nil
     ) {
         parent.childNode(withName: name)?.removeFromParent()
         guard let text, !text.isEmpty else {
@@ -1816,12 +1847,25 @@ final class OfficeScene: SKScene {
         let resolvedSize = max(officeNameplateMinFontSize, fontSize)
         let font = NSFont(name: officeLabelFontName, size: resolvedSize)
             ?? NSFont.boldSystemFont(ofSize: resolvedSize)
+        // 폭 제한이 있으면 좌석 몫에 맞춰 미리 접는다. 폭은 그려질 글꼴로 직접 잰다 —
+        // 글자 수로 어림하면 `#2999` 처럼 숫자·기호가 섞인 문구에서 어긋난다.
+        let resolvedText =
+            maxWidth.map { width in
+                officeWrapBubble(
+                    text, maxWidth: Double(width), maxLines: Int(officeBubbleMaxLines)
+                ) { candidate in
+                    Double(
+                        NSAttributedString(string: candidate, attributes: [.font: font])
+                            .size().width
+                    )
+                }
+            } ?? text
         // 음수 두께 = 채움 + 외곽선. 여기 오는 글자는 전부 바닥·가구 위에 떠서, 외곽선이
         // 없으면 책장·프린터 무늬에 묻혀 읽히지 않는다(에이전트 이름표와 같은 처리).
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         label.attributedText = NSAttributedString(
-            string: text,
+            string: resolvedText,
             attributes: [
                 .font: font,
                 .foregroundColor: color,
@@ -1830,18 +1874,14 @@ final class OfficeScene: SKScene {
                 .paragraphStyle: paragraph,
             ]
         )
-        label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
-        // 개행이 있는 문구(호버 쪽지의 직무 + 활동)를 여러 줄로 그린다. 기본값 1 이면 둘째
-        // 줄이 조용히 잘려, 활동 문구를 넣어도 화면에서는 첫 줄만 보인다.
+        // 접힌 문구를 두 줄로 그린다. 기본값 1 이면 둘째 줄이 조용히 잘려, 접어 놓고도 화면에는
+        // 첫 줄만 나온다.
         label.numberOfLines = 0
-        // 세로 중앙 정렬이라 줄이 늘면 아래로도 자라 사람 머리를 덮는다. 늘어난 만큼 올려
-        // **첫 줄이 한 줄일 때와 같은 높이**에 오게 한다.
-        let extraLines = text.components(separatedBy: "\n").count - 1
-        label.position = CGPoint(
-            x: position.x,
-            y: position.y + resolvedSize * 0.62 * CGFloat(extraLines)
-        )
+        // 폭 제한이 걸린 라벨(말풍선)은 아래끝을 고정해 **위로만** 자라게 한다. 중앙 정렬이면
+        // 둘째 줄이 생기는 순간 아래로도 내려와 이름표와 사람 머리를 덮는다.
+        label.verticalAlignmentMode = maxWidth == nil ? .center : .bottom
+        label.position = position
         label.zPosition = 20
         parent.addChild(label)
     }

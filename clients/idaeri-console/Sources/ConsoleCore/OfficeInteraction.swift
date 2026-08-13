@@ -119,6 +119,76 @@ public func officeHoverNote(name: String?, job: String?, activity: String?) -> S
     return lines.joined(separator: "\n")
 }
 
+/// 말풍선을 좌석 몫 폭에 맞춰 접는다(순수). 글자 폭 재는 일은 호출자가 넘긴다.
+///
+/// 말풍선은 12자까지 오는데(`ACTIVITY_BUBBLE_MAX_LENGTH`) 한글 하한(11px) 때문에 어느 창
+/// 크기에서도 한 줄로는 좌석 몫 두 칸을 넘는다 — 옆자리도 일이 돌면 두 문구가 그대로 포개져
+/// 둘 다 못 읽었다(최소 창에서는 네다섯 개가 겹친다).
+///
+/// **직접 접는 이유**는 `SKLabelNode.preferredMaxLayoutWidth` 가 `attributedText` 와 함께
+/// 쓰면 무시되기 때문이다(렌더로 확인 — 폭을 넘겨도 한 줄 그대로 나왔다). 라벨에 맡기는 대신
+/// 여기서 개행을 넣고, 그래야 회귀 테스트도 실제 글꼴 폭으로 검산할 수 있다.
+///
+/// 공백을 먼저 쓰고(`#2999 리뷰 중` → `#2999` / `리뷰 중`), 한 낱말이 그것만으로 넘치면 글자
+/// 단위로 끊는다 — 한국어는 낱말이 붙어 오는 일이 잦다.
+public func officeWrapBubble(
+    _ text: String,
+    maxWidth: Double,
+    maxLines: Int,
+    measure: (String) -> Double
+) -> String {
+    guard maxWidth > 0, maxLines >= 1, measure(text) > maxWidth else {
+        return text
+    }
+    var lines: [String] = []
+    var current = ""
+    for word in text.split(separator: " ", omittingEmptySubsequences: true).map(String.init) {
+        let candidate = current.isEmpty ? word : current + " " + word
+        if measure(candidate) <= maxWidth || current.isEmpty {
+            current = candidate
+            continue
+        }
+        lines.append(current)
+        current = word
+    }
+    if !current.isEmpty {
+        lines.append(current)
+    }
+    // 낱말 하나가 몫보다 넓으면 위 단계로는 못 줄인다 — 글자 단위로 다시 끊는다.
+    var wrapped: [String] = []
+    for line in lines {
+        if measure(line) <= maxWidth {
+            wrapped.append(line)
+            continue
+        }
+        var piece = ""
+        for character in line {
+            let candidate = piece + String(character)
+            if measure(candidate) > maxWidth, !piece.isEmpty {
+                wrapped.append(piece)
+                piece = String(character)
+                continue
+            }
+            piece = candidate
+        }
+        if !piece.isEmpty {
+            wrapped.append(piece)
+        }
+    }
+    guard wrapped.count > maxLines else {
+        return wrapped.joined(separator: "\n")
+    }
+    // 넘치는 줄은 버리고 잘렸음을 남긴다. 말줄임표를 붙이느라 마지막 줄이 다시 몫을 넘으면
+    // 접은 의미가 없으므로, 넘는 만큼 글자를 떼고 붙인다.
+    var kept = Array(wrapped.prefix(maxLines))
+    var last = kept[maxLines - 1]
+    while !last.isEmpty, measure(last + "…") > maxWidth {
+        last.removeLast()
+    }
+    kept[maxLines - 1] = last + "…"
+    return kept.joined(separator: "\n")
+}
+
 /// 커서 옆 쪽지 판 노드 이름. 만드는 쪽과 걷는 쪽이 같은 문자열을 봐야 한다.
 public let officeHoverTooltipNodeName = "hoverTooltip"
 
