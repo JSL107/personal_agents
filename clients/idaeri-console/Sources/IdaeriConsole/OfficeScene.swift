@@ -57,6 +57,9 @@ final class OfficeScene: SKScene {
     private let objectLayer = SKNode()
     private let overlayLayer = SKNode()
 
+    /// 실제로 만든 도면이 생기기 전에는 nil. 첫 선택은 순수 최대값이어야 하고, 그 뒤에만
+    /// 현재 배치를 기준으로 5% 히스테리시스를 적용한다.
+    private var zoneColumns: Int?
     private var plan = officeFloorPlan(agents: [])
     private var tileSize: CGFloat = 32
     private var gridOrigin: CGPoint = .zero
@@ -169,7 +172,12 @@ final class OfficeScene: SKScene {
         guard !lastSyncedAgents.isEmpty else {
             return
         }
-        sync(agents: lastSyncedAgents, approvals: lastSyncedApprovals)
+        // 배치 변경 판정은 sync 한 곳에서만 한다. 여기서 같은 입력으로 미리 계산하면
+        // `rebuildPlan`과 `layoutChanged`가 항상 같은 값이 되어 판정 경로만 중복된다.
+        sync(
+            agents: lastSyncedAgents, approvals: lastSyncedApprovals,
+            rebuildPlan: false
+        )
         // sync 는 줄 선 사람·걷는 사람의 자리를 일부러 건드리지 않는다(연출 유지).
         // 그런데 좌표계가 바뀐 지금은 그 배려가 독이 된다 — 옛 화면 좌표에 남아
         // 사무실 밖 허공에 서 있게 된다. 새 좌표계로 강제로 다시 앉힌다.
@@ -249,10 +257,20 @@ final class OfficeScene: SKScene {
 
     // MARK: - 동기화
 
-    func sync(agents: [ConsoleAgent], approvals: [ConsoleApproval]) {
+    func sync(
+        agents: [ConsoleAgent], approvals: [ConsoleApproval], rebuildPlan: Bool = true
+    ) {
         lastSyncedAgents = agents
         lastSyncedApprovals = approvals
-        plan = officeFloorPlan(agents: agents)
+        let nextZoneColumns = officeZoneColumns(
+            width: Double(size.width), height: Double(size.height),
+            currentZoneColumns: zoneColumns
+        )
+        let layoutChanged = nextZoneColumns != zoneColumns
+        zoneColumns = nextZoneColumns
+        if rebuildPlan || layoutChanged {
+            plan = officeFloorPlan(agents: agents, zoneColumns: nextZoneColumns)
+        }
         recalculateMetrics()
         renderFloor()
         renderZoneLabels()
@@ -671,6 +689,7 @@ final class OfficeScene: SKScene {
         overlayLayer.children
             .filter { $0.name?.hasPrefix("zone:") == true }
             .forEach { $0.removeFromParent() }
+        var occupiedLabelRanges: [ClosedRange<Double>] = []
         for zone in plan.zones {
             let palette = agentDepartmentPaletteRGBA(zone.department)
             // 구역 위쪽 경계 줄(칸막이 벽 또는 통로)에 문패처럼 얹는다. 자리 묶음이 구역
@@ -717,19 +736,23 @@ final class OfficeScene: SKScene {
             holder.addChild(plate)
             holder.addChild(label)
             overlayLayer.addChild(holder)
+            let occupiedLeading = Double(holder.position.x + plate.frame.minX)
+            let occupiedTrailing = Double(holder.position.x + plate.frame.maxX)
+            occupiedLabelRanges.append(occupiedLeading...occupiedTrailing)
         }
-        renderCommonAreaLabels()
+        renderCommonAreaLabels(occupiedRanges: occupiedLabelRanges)
     }
 
     /// 상단 밴드(회의실·대표실·탕비실)에 이름을 단다.
     ///
     /// 화면 위쪽 1/4 을 차지하는데 이름이 없어 "가구만 놓인 빈 띠" 로 보였다. 부서 문패와 달리
-    /// **왼쪽 끝에 붙인다** — 밴드 맨 아래 줄과 위 구역 문패가 같은 높이대라, 둘 다 가운데
-    /// 정렬하면 x 까지 겹쳐 서로를 덮는다.
+    /// 왼쪽 끝을 선호하되 실제 부서 문패 판의 x 구간과 겹치면 방 안의 가장 가까운 안전
+    /// 위치로 옮긴다. 밴드와 부서가 같은 격자라는 가정 없이 실제 판 폭으로 푸는 이유와,
+    /// 이름표용 크기·세로 자산을 쓰지 않는 이유는 `officeNonOverlappingLabelLeadingX`에 남겼다.
     ///
     /// 색은 부서색을 쓰지 않고 중성 회색이다. 사람이 상주하지 않는 방이라 부서 문패보다
     /// 뒤로 물러나야 관제 신호(사람·상태 링)가 먼저 읽힌다.
-    private func renderCommonAreaLabels() {
+    private func renderCommonAreaLabels(occupiedRanges: [ClosedRange<Double>]) {
         overlayLayer.children
             .filter { $0.name?.hasPrefix("common:") == true }
             .forEach { $0.removeFromParent() }
@@ -738,6 +761,11 @@ final class OfficeScene: SKScene {
             holder.name = "common:\(area.label)"
             // 아래 방 첫 좌석의 말풍선 위로 비켜선다. 밴드 안이라 좌석과 무관하다고 보고
             // 고정 높이를 쓰던 동안, 최소 창에서 두 줄로 접힌 말풍선의 윗줄을 이 판이 덮었다.
+            //
+            // 자리 계산은 **가로·세로 두 축이 각각** 필요하다. 세로는 아래 방 말풍선을, 가로는
+            // 같은 높이대의 부서 문패를 피한다. 자리를 정하는 코드가 하나뿐이라, 한 축만
+            // 반영하면 다른 축의 겹침이 조용히 돌아온다. 실제 배치는 판 크기를 알아야 하므로
+            // 아래에서 한 번에 한다 — 여기서는 세로 회피에 필요한 값만 구한다.
             let topSeatYBelow = plan.zones
                 .filter { zone in
                     zone.origin.x < area.originX + area.width
@@ -745,15 +773,6 @@ final class OfficeScene: SKScene {
                 }
                 .compactMap { officeTopSeatY(zone: $0, desks: plan.desks) }
                 .max()
-            holder.position = CGPoint(
-                x: gridOrigin.x + (CGFloat(area.originX) + 0.5) * tileSize,
-                y: gridOrigin.y
-                    + CGFloat(
-                        officeCommonAreaLabelBottomTiles(
-                            area: area, topSeatYBelow: topSeatYBelow, tileSize: Double(tileSize)
-                        )
-                    ) * tileSize
-            )
 
             let label = SKLabelNode(text: "\(area.icon) \(area.label)")
             label.fontName = officeLabelFontName
@@ -769,6 +788,30 @@ final class OfficeScene: SKScene {
             plate.fillColor = SKColor(white: 0.07, alpha: 0.62)
             plate.strokeColor = SKColor(white: 0.45, alpha: 0.4)
             plate.lineWidth = 1
+
+            let preferredLeading = Double(
+                gridOrigin.x + (CGFloat(area.originX) + 0.5) * tileSize
+                    + plate.frame.minX
+            )
+            let availableTrailing = Double(
+                gridOrigin.x + (CGFloat(area.originX + area.width) - 0.5) * tileSize
+                    - plate.frame.minX
+            )
+            let leading = officeNonOverlappingLabelLeadingX(
+                preferredLeadingX: preferredLeading,
+                availableRange: preferredLeading...availableTrailing,
+                labelWidth: Double(plate.frame.width),
+                occupiedRanges: occupiedRanges
+            )
+            holder.position = CGPoint(
+                x: CGFloat(leading) - plate.frame.minX,
+                y: gridOrigin.y
+                    + CGFloat(
+                        officeCommonAreaLabelBottomTiles(
+                            area: area, topSeatYBelow: topSeatYBelow, tileSize: Double(tileSize)
+                        )
+                    ) * tileSize
+            )
 
             holder.addChild(plate)
             holder.addChild(label)
