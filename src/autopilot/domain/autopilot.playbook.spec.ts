@@ -198,7 +198,7 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(paperOrderFill?.digestGroup).toBeUndefined();
   });
 
-  it('모의투자 추천 성적을 기존 paper 항목 뒤 금요일 18:10 KST standalone 항목으로 포함한다', () => {
+  it('모의투자 추천 성적을 기존 paper 항목 뒤 금요일 20:10 KST standalone 항목으로 포함한다', () => {
     const paperOrderFillIndex = AUTOPILOT_PLAYBOOK.findIndex(
       (entry) => entry.id === 'paper-order-fill',
     );
@@ -210,11 +210,35 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       riskTier: 'T0_AUTO',
       trigger: {
         kind: 'CRON',
-        schedule: '10 18 * * 5',
+        schedule: '10 20 * * 5',
         timezone: 'Asia/Seoul',
       },
     });
     expect(paperScore.digestGroup).toBeUndefined();
+  });
+
+  // 배열에서 뒤에 오는 것과 실제로 늦게 도는 것은 다르다. 채점을 수집보다 앞에 두면 그날 종가가
+  // 없어 성적표에서 그 몫이 결손 처리되는데, 배열 인접성만 보는 단언은 그 상태를 통과시킨다.
+  // 실제로 채점 18:10 < 수집 18:30 인 채로 리뷰까지 갔다.
+  it('당일 시세를 읽는 작업은 유니버스 수집보다 늦게 실행된다', () => {
+    const startMinuteOfDay = (schedule: string): number => {
+      const [minute, hour] = schedule.split(' ');
+      return Number(hour) * 60 + Number(minute);
+    };
+    const scheduleOf = (id: string): string => {
+      const entry = AUTOPILOT_PLAYBOOK.find((candidate) => candidate.id === id);
+      if (!entry || entry.trigger.kind !== 'CRON') {
+        throw new Error(`CRON 항목이 아니다: ${id}`);
+      }
+      return entry.trigger.schedule;
+    };
+
+    const sweepStartMinute = startMinuteOfDay(scheduleOf('universe-sweep'));
+    for (const dependentId of ['paper-recommend', 'paper-score']) {
+      expect(startMinuteOfDay(scheduleOf(dependentId))).toBeGreaterThan(
+        sweepStartMinute,
+      );
+    }
   });
 
   it('validatePlaybook 은 중복 id 를 거부한다', () => {
