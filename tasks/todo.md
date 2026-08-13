@@ -1,3 +1,32 @@
+# 콘솔 의도 분류 실패 → 실측 기반 할 일 제안 (2026-08-13)
+
+**Goal:** `REMOTE_CONSOLE`의 `INTENT_CLASSIFY_FAILED`를 내부 오류 노출 대신 최근 성공 주기 기반 최대 3개 제안으로 전환하고, 번호 답변으로 선택 worker를 착수시킨다.
+
+**Contract:** `.ai/design.md`가 source of truth다. 최근 60일 성공 최대 6건의 인접 간격 중위값으로 지연률을 계산하고, 성공 2건 미만 worker는 제외하며 `skippedUnknownCycle`로 관측한다. LLM 추가 호출, Slack 동작 변경, env/DB/Prisma, UI 레이아웃·색상 변경, commit은 금지한다.
+
+- [x] 기존 Console/AgentRun/Router/Swift DI·타입·테스트 패턴과 worktree baseline을 확인한다.
+- [x] TS RED: `SuggestNextWorkUsecase`의 주기 정규화, 미도래 제외, unknown cycle 집계, 최대 3개, busy state 제외를 고정한다.
+- [x] TS GREEN: `WorkSuggestionResult`와 중위 간격·사람친화 포맷·병렬 원장 조회를 최소 구현한다.
+- [x] TS RED/GREEN: `PendingSuggestionStore`의 30분 TTL과 `consume` 동작을 구현한다.
+- [x] TS RED: `INTENT_CLASSIFY_FAILED` answered, 다른 `DomainException` rejected, 제안 0개 친화 오류를 고정한다.
+- [x] TS GREEN: orchestrator에 제안 fallback·event·로그를 연결하고 ConsoleModule DI를 갱신한다.
+- [x] TS RED/GREEN: 보관 제안의 `2번` 선택과 보관 없음 일반 경로를 `ConsoleWriteService`에 연결한다.
+- [x] 공용 `parseTopicSelection` 유틸과 spec을 `src/common/util`로 이동하고 Slack import만 갱신한다.
+- [x] Swift RED/GREEN: `command.answered` decoding/store 반영과 `.answered` stale 비강등 대조군을 구현한다.
+- [x] Swift: `.answered` badge와 30분 완료 정리를 최소 반영하고 UI 레이아웃·색상은 보존한다.
+- [x] focused RED→GREEN 근거와 최종 diff를 검토하고 설계 1~8·필수 테스트·범위 금지를 대조한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`, `swift build`, `swift test`를 각각 fresh 실행해 exit code를 기록한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- 원장 성공 간격 중위값으로 지연률을 정규화했고, 성공 2건 미만 worker는 제외·계측했다.
+- 분류 실패만 회색 제안으로 전환하며 다른 도메인 오류는 기존 rejected를 유지한다. 번호 선택은 보관 제안이 있을 때만 worker hint로 해석한다.
+- Swift는 answered 상태를 실패와 분리하고 30분 뒤 제거한다. 대조군 포함 TS/Swift 테스트를 추가했다.
+- TS 4종 gate와 matching SDK Swift build/harness는 exit 0이다. 지정한 raw Swift 명령 2개는 system compiler/SDK 및 package testTarget 구조 때문에 exit 1이며 상세는 `.ai/implementation-summary.md`에 기록했다.
+
+---
+
 # 모의투자 3-A 체결 관측 교정 B-1/B-2 (2026-08-13)
 
 **Goal:** 장중 당일 봉 부재를 조기 만료하지 않고 별도 계측하며, 마감 회차의 처리 대상 수와 실제 만료 수를 분리한다.
@@ -1901,5 +1930,29 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 독립 최종 리뷰는 Critical/Important/Minor 0건이었다. 설계 편차와 schema/env/dependency/new production file 변경은 없다.
 - 최종 gate: lint exit 0(기존 warning 57), tsc exit 0, 전체 test exit 0(일반 350 suites/2,910 tests + code-graph 5 suites/40 tests), build exit 0, diff check exit 0.
 - 커밋, staging, push는 실행하지 않았다.
+
+---
+# 콘솔 할 일 제안 KST 성공일 주기 교정 (2026-08-13)
+
+**Goal:** 같은 날 몰린 성공 run이 주기를 분 단위로 왜곡하지 않도록 KST 성공 날짜 단위로 주기를 추정하고, 상위 3개 밖의 due 후보 수를 사용자에게 알린다.
+
+**Contract:** 사용자 최신 교정 지시가 `.ai/design.md`의 run 시각 간격 설계를 대체한다. 기존 KST 유틸을 재사용하고 서버 timezone에 의존하지 않는다. Swift, DB/schema/env/dependency, git commit/stage/push는 변경하지 않는다.
+
+- [x] 기존 주기 계산·KST 유틸·결과 발행 경로와 실측 결함의 데이터 흐름을 확인한다.
+- [x] 동일 KST 날짜 중복, 당일 연속 `PAPER_RECOMMEND`, KST 자정 경계, `alsoDueCount`, 발행 문구 spec을 추가해 RED를 확인한다.
+- [x] KST 성공 날짜 dedupe, 날짜 차이 중위값, 경과일 계산, 조회 limit 40을 최소 구현한다.
+- [x] `WorkSuggestionResult.alsoDueCount`와 조건부 발행 문구를 구현하고 focused GREEN을 확인한다.
+- [x] Swift 무변경과 최종 diff를 검토한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 리다이렉트로 각각 실행하고 exit code를 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `endedAt`을 기존 `formatKstDate`로 변환·중복 제거해 성공한 KST 날짜만 주기 표본으로 쓴다. 경과와 인접 간격 모두 캘린더 일수로 계산한다.
+- 동일 날짜 성공만 있는 `PAPER_RECOMMEND`는 `skippedUnknownCycle`에 포함되고, KST 00:30/전날 23:30 경계는 서로 다른 날짜로 처리된다.
+- 조회 limit은 40으로 늘렸다. 상위 3개 밖 due 후보는 `alsoDueCount`로 반환하고 목록 끝에 `그 외 N개도 때가 됐어요.`를 조건부 발행한다.
+- RED는 `alsoDueCount` 타입 부재와 추가 문구 미발행으로 2 suites exit 1, focused GREEN은 2 suites/23 tests exit 0이었다.
+- 최종 gate: lint exit 0(기존 warning 57), test exit 0(일반 353 suites/2,947 tests + code-graph 5 suites/40 tests), build exit 0, docs:check exit 0.
+- Swift, DB/schema/env/dependency와 git index/commit/push는 변경하지 않았다.
 
 ---

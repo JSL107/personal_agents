@@ -230,6 +230,27 @@ func runConsoleStoreTests(_ t: TestRunner) {
         "command.info message 기록"
     )
 
+    // command.answered 는 제안 상태와 안내 본문을 함께 기록
+    let answeredStore = ConsoleStore()
+    let answeredId = answeredStore.enqueueCommand(text: "뭘 시킬까?", agentTypeHint: nil, sentAt: base)
+    answeredStore.apply(
+        event: .commandAnswered(commandId: answeredId.uuidString, message: "1. PM — 마지막 성공 2일 전")
+    )
+    t.expectEqual(answeredStore.pendingCommands.first?.phase, .answered, "command.answered → answered")
+    t.expectEqual(
+        answeredStore.pendingCommands.first?.reason,
+        "1. PM — 마지막 성공 2일 전",
+        "command.answered message 기록"
+    )
+
+    // 대조군: 오래된 제안은 실행 무응답이 아니므로 expireStalePendings 가 실패로 강등하지 않음
+    answeredStore.expireStalePendings(now: base.addingTimeInterval(61), timeout: 60)
+    t.expectEqual(
+        answeredStore.pendingCommands.first?.phase,
+        .answered,
+        "command.answered 는 timeout 뒤에도 answered 유지"
+    )
+
     // 미지 commandId 는 pending 목록을 변경하지 않음
     let unknownCommandStore = ConsoleStore()
     let knownId = unknownCommandStore.enqueueCommand(text: "리뷰", agentTypeHint: nil, sentAt: base)

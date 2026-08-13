@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConsoleWriteService } from './console-write.service';
 
 const OWNER = 'U_OWNER';
@@ -13,16 +14,69 @@ function makeService(owner?: string) {
   const chainOrchestrator = { run: jest.fn().mockResolvedValue(undefined) };
   const applyPreview = { execute: jest.fn().mockResolvedValue(undefined) };
   const cancelPreview = { execute: jest.fn().mockResolvedValue(undefined) };
+  const pendingSuggestions = {
+    peek: jest.fn().mockReturnValue([]),
+    consume: jest.fn(),
+  };
   const service = new ConsoleWriteService(
     config,
     chainOrchestrator as never,
     applyPreview as never,
     cancelPreview as never,
+    pendingSuggestions as never,
   );
-  return { service, chainOrchestrator, applyPreview, cancelPreview };
+  return {
+    service,
+    chainOrchestrator,
+    applyPreview,
+    cancelPreview,
+    pendingSuggestions,
+  };
 }
 
 describe('ConsoleWriteService', () => {
+  it('보관된 제안에 2번으로 답하면 두 번째 worker를 agentTypeHint로 착수시킨다', () => {
+    const { service, chainOrchestrator, pendingSuggestions } =
+      makeService(OWNER);
+    pendingSuggestions.peek.mockReturnValue([
+      {
+        agentType: AgentType.PM,
+        displayName: 'PM',
+        reason: '첫 번째',
+      },
+      {
+        agentType: AgentType.CODE_REVIEWER,
+        displayName: 'Code Reviewer',
+        reason: '두 번째',
+      },
+    ]);
+
+    service.sendCommand({ text: '2번', commandId: 'c2' });
+
+    expect(pendingSuggestions.consume).toHaveBeenCalledWith(OWNER);
+    expect(chainOrchestrator.run).toHaveBeenCalledWith({
+      slackUserId: OWNER,
+      agentTypeHint: AgentType.CODE_REVIEWER,
+      text: undefined,
+      commandId: 'c2',
+    });
+  });
+
+  it('보관된 제안이 없으면 번호 입력도 기존 일반 경로로 보낸다', () => {
+    const { service, chainOrchestrator, pendingSuggestions } =
+      makeService(OWNER);
+
+    service.sendCommand({ text: '2번', commandId: 'c2' });
+
+    expect(pendingSuggestions.consume).not.toHaveBeenCalled();
+    expect(chainOrchestrator.run).toHaveBeenCalledWith({
+      slackUserId: OWNER,
+      text: '2번',
+      agentTypeHint: undefined,
+      commandId: 'c2',
+    });
+  });
+
   it('owner 설정 시 orchestrator 에 REMOTE_CONSOLE 지시를 위임한다', () => {
     const { service, chainOrchestrator } = makeService(OWNER);
     service.sendCommand({

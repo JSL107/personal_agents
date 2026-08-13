@@ -226,6 +226,7 @@ public enum ConsoleEvent: Decodable, Sendable {
     case sessionClosed(sessionId: String)
     case commandRejected(commandId: String, reason: String)
     case commandInfo(commandId: String, message: String)
+    case commandAnswered(commandId: String, message: String)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -273,6 +274,11 @@ public enum ConsoleEvent: Decodable, Sendable {
                 commandId: try container.decode(String.self, forKey: .commandId),
                 message: try container.decode(String.self, forKey: .message)
             )
+        case "command.answered":
+            self = .commandAnswered(
+                commandId: try container.decode(String.self, forKey: .commandId),
+                message: try container.decode(String.self, forKey: .message)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -310,6 +316,7 @@ public enum PendingPhase: String, Sendable, Equatable {
     case sent      // 전송·접수(202) — codex 준비 대기
     case running   // run.started 매칭됨
     case done      // run.finished 매칭됨(곧 제거)
+    case answered  // 실행 대신 다음 작업 제안을 받음
     case failed    // 전송 실패 또는 타임아웃
 }
 

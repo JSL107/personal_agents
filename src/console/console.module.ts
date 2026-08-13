@@ -5,8 +5,10 @@ import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { RouterModule } from '../router/router.module';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
+import { PendingSuggestionStore } from './application/pending-suggestion.store';
 import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
 import { SessionPollerService } from './application/session-poller.service';
+import { SuggestNextWorkUsecase } from './application/suggest-next-work.usecase';
 import { ConsoleController } from './interface/console.controller';
 import { ConsoleStreamController } from './interface/console-stream.controller';
 import { ConsoleWriteController } from './interface/console-write.controller';
@@ -27,8 +29,10 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
     ConsoleReadService,
     ConsoleWriteService,
     ConsoleWriteGuard,
+    PendingSuggestionStore,
     PreconditionChainOrchestrator,
     SessionPollerService,
+    SuggestNextWorkUsecase,
   ],
 })
 export class ConsoleModule {}

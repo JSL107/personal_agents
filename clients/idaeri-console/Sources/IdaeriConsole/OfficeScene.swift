@@ -1562,6 +1562,10 @@ final class OfficeScene: SKScene {
                     node.playHop()
                 }
                 node.startBreathing()
+            case .answered:
+                hideThinkingDots(agent.agentType)
+                stopMonitorGlow(agent.agentType)
+                node.startBreathing()
             case .failed:
                 hideThinkingDots(agent.agentType)
                 stopMonitorGlow(agent.agentType)

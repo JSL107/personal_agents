@@ -5,10 +5,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
-import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator';
+import { PendingSuggestionStore } from './pending-suggestion.store';
+import {
+  ConsoleChainInput,
+  PreconditionChainOrchestrator,
+} from './precondition-chain.orchestrator';
 
 interface ConsoleCommandInput {
   text: string;
@@ -27,22 +32,38 @@ export class ConsoleWriteService {
     private readonly chainOrchestrator: PreconditionChainOrchestrator,
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
+    private readonly pendingSuggestions: PendingSuggestionStore,
   ) {}
 
   sendCommand(input: ConsoleCommandInput): void {
     const slackUserId = this.requireOwner();
-    void this.chainOrchestrator
-      .run({
+    const suggestions = this.pendingSuggestions.peek(slackUserId);
+    const selection = parseTopicSelection(input.text, suggestions.length);
+    if (selection !== null) {
+      const suggestion = suggestions[selection - 1];
+      this.pendingSuggestions.consume(slackUserId);
+      this.runChain({
         slackUserId,
-        text: input.text,
-        agentTypeHint: input.agentTypeHint,
+        agentTypeHint: suggestion.agentType,
+        text: undefined,
         commandId: input.commandId,
-      })
-      .catch((error: unknown) => {
-        // orchestrator 는 도메인 예외를 SSE 로 처리한다. 여기 도달하면 예기치 못한 내부 오류.
-        const reason = error instanceof Error ? error.message : String(error);
-        this.logger.error(`리모컨 지시 처리 중 예기치 못한 오류: ${reason}`);
       });
+      return;
+    }
+    this.runChain({
+      slackUserId,
+      text: input.text,
+      agentTypeHint: input.agentTypeHint,
+      commandId: input.commandId,
+    });
+  }
+
+  private runChain(input: ConsoleChainInput): void {
+    void this.chainOrchestrator.run(input).catch((error: unknown) => {
+      // orchestrator 는 도메인 예외를 SSE 로 처리한다. 여기 도달하면 예기치 못한 내부 오류.
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`리모컨 지시 처리 중 예기치 못한 오류: ${reason}`);
+    });
   }
 
   async applyApproval(previewId: string): Promise<void> {

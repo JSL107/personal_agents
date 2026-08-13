@@ -6,6 +6,8 @@ import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.e
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { RouterException } from '../../router/domain/router.exception';
+import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import * as preconditionChainMap from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator';
@@ -27,12 +29,28 @@ function make(recentDays?: string) {
   } as unknown as ConfigService;
   const router = { dispatch: jest.fn() };
   const consoleEvents = { publish: jest.fn() };
+  const suggestNextWork = {
+    execute: jest.fn().mockResolvedValue({
+      suggestions: [],
+      skippedUnknownCycle: 0,
+      alsoDueCount: 0,
+    }),
+  };
+  const pendingSuggestions = { put: jest.fn() };
   const orchestrator = new PreconditionChainOrchestrator(
     router as never,
     consoleEvents as unknown as ConsoleEventBus,
     config,
+    suggestNextWork as never,
+    pendingSuggestions as never,
   );
-  return { orchestrator, router, consoleEvents };
+  return {
+    orchestrator,
+    router,
+    consoleEvents,
+    suggestNextWork,
+    pendingSuggestions,
+  };
 }
 
 function ok(workerType: string) {
@@ -46,6 +64,113 @@ function ok(workerType: string) {
 }
 
 describe('PreconditionChainOrchestrator', () => {
+  it('INTENT_CLASSIFY_FAILED면 rejected 대신 제안을 answered로 발행한다', async () => {
+    const {
+      orchestrator,
+      router,
+      consoleEvents,
+      suggestNextWork,
+      pendingSuggestions,
+    } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockResolvedValue({
+      suggestions: [
+        {
+          agentType: AgentType.PM,
+          displayName: 'PM',
+          reason: '마지막 성공 2일 전 · 평소 1일 주기',
+        },
+      ],
+      skippedUnknownCycle: 1,
+      alsoDueCount: 0,
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 하고 싶은 일이 있어?',
+      commandId: 'c1',
+    });
+
+    expect(pendingSuggestions.put).toHaveBeenCalledWith(
+      'U1',
+      expect.arrayContaining([
+        expect.objectContaining({ agentType: AgentType.PM }),
+      ]),
+    );
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message:
+        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 마지막 성공 2일 전 · 평소 1일 주기',
+    });
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected' }),
+    );
+  });
+
+  it('상위 3개 밖의 due 후보가 있으면 목록 끝에 남은 수를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents, suggestNextWork } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    suggestNextWork.execute.mockResolvedValue({
+      suggestions: [
+        {
+          agentType: AgentType.PM,
+          displayName: 'PM',
+          reason: '마지막 성공 2일 전 · 평소 1일 주기',
+        },
+      ],
+      skippedUnknownCycle: 0,
+      alsoDueCount: 2,
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 할 일 있어?',
+      commandId: 'c1',
+    });
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message:
+        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 마지막 성공 2일 전 · 평소 1일 주기\n그 외 2개도 때가 됐어요.',
+    });
+  });
+
+  it('제안이 없으면 내부 worker·분류 용어 없이 command.rejected를 발행한다', async () => {
+    const { orchestrator, router, consoleEvents } = make();
+    router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '사용자 의도를 worker로 분류하지 못했습니다.',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '지금 할 일 있어?',
+      commandId: 'c1',
+    });
+
+    const rejectedEvent = consoleEvents.publish.mock.calls
+      .map((call) => call[0])
+      .find((event) => event.type === 'command.rejected');
+    expect(rejectedEvent.reason).toContain(
+      '지금 새로 시킬 만한 일을 찾지 못했습니다.',
+    );
+    expect(rejectedEvent.reason).not.toMatch(/worker|분류/);
+  });
+
   it('선행이 이미 있으면 체이닝 없이 단일 dispatch 로 성공한다', async () => {
     const { orchestrator, router } = make();
     router.dispatch.mockResolvedValue(ok('CEO'));
@@ -307,6 +432,9 @@ describe('PreconditionChainOrchestrator', () => {
     expect(router.dispatch).toHaveBeenCalledTimes(1);
     expect(consoleEvents.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'command.rejected', commandId: 'c1' }),
+    );
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.answered' }),
     );
   });
 });

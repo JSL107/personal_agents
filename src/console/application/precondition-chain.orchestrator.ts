@@ -7,8 +7,12 @@ import {
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
+import { RouterException } from '../../router/domain/router.exception';
+import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
+import { PendingSuggestionStore } from './pending-suggestion.store';
+import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
@@ -39,6 +43,8 @@ export class PreconditionChainOrchestrator {
     private readonly router: IdaeriRouterPort,
     private readonly consoleEvents: ConsoleEventBus,
     private readonly config: ConfigService,
+    private readonly suggestNextWork: SuggestNextWorkUsecase,
+    private readonly pendingSuggestions: PendingSuggestionStore,
   ) {}
 
   async run(input: ConsoleChainInput): Promise<void> {
@@ -69,6 +75,9 @@ export class PreconditionChainOrchestrator {
       }
       return { ok: true };
     } catch (error: unknown) {
+      if (isIntentClassifyFailed(error)) {
+        return await this.answerWithSuggestions(input, chain);
+      }
       if (!(error instanceof DomainException)) {
         const reason = error instanceof Error ? error.message : String(error);
         return this.reject(input, chain, reason);
@@ -115,6 +124,50 @@ export class PreconditionChainOrchestrator {
     }
   }
 
+  private async answerWithSuggestions(
+    input: ConsoleChainInput,
+    chain: ChainState,
+  ): Promise<ChainOutcome> {
+    try {
+      const result = await this.suggestNextWork.execute();
+      this.logger.log(
+        `콘솔 할 일 제안 계산 — ${result.suggestions.length}개 제안, 주기 미상 ${result.skippedUnknownCycle}개 제외`,
+      );
+      if (result.suggestions.length === 0) {
+        return this.reject(
+          input,
+          chain,
+          '지금 새로 시킬 만한 일을 찾지 못했습니다.',
+        );
+      }
+
+      this.pendingSuggestions.put(input.slackUserId, result.suggestions);
+      if (input.commandId) {
+        const suggestionLines = result.suggestions.map(
+          (suggestion, index) =>
+            `${index + 1}. ${suggestion.displayName} — ${suggestion.reason}`,
+        );
+        const alsoDueLine =
+          result.alsoDueCount > 0
+            ? [`그 외 ${result.alsoDueCount}개도 때가 됐어요.`]
+            : [];
+        this.consoleEvents.publish({
+          type: 'command.answered',
+          commandId: input.commandId,
+          message: [
+            '지금 시킬 만한 일이에요. 번호로 답해주세요.',
+            ...suggestionLines,
+            ...alsoDueLine,
+          ].join('\n'),
+        });
+      }
+      return { ok: false, reason: '제안 제시' };
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return this.reject(input, chain, reason);
+    }
+  }
+
   private reject(
     input: ConsoleChainInput,
     chain: ChainState,
@@ -140,3 +193,7 @@ export class PreconditionChainOrchestrator {
       : DEFAULT_IMPACT_RECENT_DAYS;
   }
 }
+
+const isIntentClassifyFailed = (error: unknown): boolean =>
+  error instanceof RouterException &&
+  error.routerErrorCode === RouterErrorCode.INTENT_CLASSIFY_FAILED;
