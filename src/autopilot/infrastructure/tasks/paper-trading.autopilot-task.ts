@@ -120,24 +120,32 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
           // 재시도 시각이 자정을 넘어도 원래 슬롯의 거래일을 평가하게 한다.
           new Date(`${context.firedAtKst}T08:40:00.000Z`),
         );
-        // 계좌가 있는데 전부 실패했다면 그날 스냅샷이 한 건도 적재되지 않았다는 뜻이다.
-        // 성공으로 남기면 성적표가 비어가는 것을 아무도 모르므로 원장에 실패로 남긴다
-        // (INVEST 의 "보유 N종목을 한 건도 점검하지 못했습니다" 선례).
+        // 한 계좌라도 실패하면 그 계좌의 그날 스냅샷은 비어 있고, 스냅샷은 거래일 단위라
+        // 다음 슬롯이 메워주지 못한다(3-B 채점이 시계열로 수익률·낙폭을 계산한다).
+        // 성공으로 반환하면 슬롯이 완주 처리되어 BullMQ 재시도(attempts, autopilot.scheduler.ts)
+        // 가 돌지 않으므로, 부분 실패도 실패로 올려 재시도 대상으로 남긴다.
+        // 재평가는 안전하다 — 스냅샷 적재가 거래일 기준 upsert 라 성공했던 계좌를 다시 평가해도
+        // 같은 행을 덮어쓴다. 계좌별 격리(executeAll)는 유지되므로 한 계좌의 예외가 나머지
+        // 계좌의 평가·적재를 막지는 않는다.
         const failedEntries = evaluations.accounts.filter(
           (entry) => !entry.evaluation,
         );
-        if (
-          evaluations.accounts.length > 0 &&
-          failedEntries.length === evaluations.accounts.length
-        ) {
+        if (failedEntries.length > 0) {
           const detail = failedEntries
             .map(
               (entry) =>
                 `${entry.accountName}: ${entry.failureReason ?? '사유 미상'}`,
             )
             .join(' / ');
+          const evaluatedNames = evaluations.accounts
+            .filter((entry) => entry.evaluation)
+            .map((entry) => entry.accountName);
+          const evaluatedText =
+            evaluatedNames.length > 0
+              ? ` (평가 완료: ${evaluatedNames.join(', ')})`
+              : '';
           throw new Error(
-            `가상 계좌 ${evaluations.accounts.length}개를 한 건도 평가하지 못했습니다 — ${detail}`,
+            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}`,
           );
         }
         const taskResult: AutopilotTaskResult = {
