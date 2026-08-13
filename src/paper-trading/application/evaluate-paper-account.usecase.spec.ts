@@ -101,6 +101,8 @@ const createFixture = (input?: {
   trades?: ReturnType<typeof createBuyTrade>[];
   barsBySymbol?: Record<string, DailyBar[]>;
   errorsBySymbol?: Record<string, Error>;
+  allAccountNames?: string[];
+  missingAccountNames?: string[];
 }): EvaluationFixture => {
   const positions = input?.positions ?? [];
   const trades = input?.trades ?? [];
@@ -128,11 +130,27 @@ const createFixture = (input?: {
   };
   const prisma = {
     paperAccount: {
-      findUnique: jest.fn().mockResolvedValue({
-        id: 11,
-        seedAmount: decimal(input?.seedAmount ?? '1000000'),
-        cashBalance: decimal(input?.cashBalance ?? '1000000'),
+      findUnique: jest.fn(async (args?: { where?: { name?: string } }) => {
+        const name = args?.where?.name;
+        if (name && input?.missingAccountNames?.includes(name)) {
+          return null;
+        }
+        return {
+          id: 11,
+          seedAmount: decimal(input?.seedAmount ?? '1000000'),
+          cashBalance: decimal(input?.cashBalance ?? '1000000'),
+        };
       }),
+      findMany: jest.fn().mockResolvedValue(
+        (input?.allAccountNames ?? ['LONG_TERM', 'SWING']).map(
+          (name, index) => ({
+            id: 11 + index,
+            name,
+            seedAmount: decimal(input?.seedAmount ?? '1000000'),
+            cashBalance: decimal(input?.cashBalance ?? '1000000'),
+          }),
+        ),
+      ),
     },
     paperPosition: {
       findMany: jest.fn().mockResolvedValue(positions),
@@ -877,5 +895,58 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(prisma.dailyPrice.findMany).not.toHaveBeenCalled();
     expect(prisma.dailyPrice.findFirst).not.toHaveBeenCalled();
     expect(prisma.dailyPrice.findUnique).not.toHaveBeenCalled();
+  });
+
+  // executeAll — 평가 대상 계좌를 호출자가 지목하던 동안 추천이 매매하는 전략 계좌가
+  // 평가에서 조용히 빠졌다. 이름을 아는 쪽을 repository 하나로 남기는 계약을 고정한다.
+  describe('executeAll', () => {
+    it('등록된 모든 계좌를 이름과 함께 평가한다', async () => {
+      const { usecase } = createFixture({
+        allAccountNames: ['LONG_TERM', 'SWING'],
+      });
+
+      const result = await usecase.executeAll(
+        new Date('2026-08-11T08:40:00.000Z'),
+      );
+
+      expect(result.accounts.map((entry) => entry.accountName)).toEqual([
+        'LONG_TERM',
+        'SWING',
+      ]);
+      expect(
+        result.accounts.every(
+          (entry) =>
+            entry.evaluation?.skipped === false && entry.failureReason === null,
+        ),
+      ).toBe(true);
+    });
+
+    it('계좌가 없으면 빈 결과를 반환한다', async () => {
+      const { usecase } = createFixture({ allAccountNames: [] });
+
+      const result = await usecase.executeAll(
+        new Date('2026-08-11T08:40:00.000Z'),
+      );
+
+      expect(result.accounts).toEqual([]);
+    });
+
+    it('계좌 하나가 실패해도 나머지 계좌를 평가하고 사유를 남긴다', async () => {
+      const { usecase } = createFixture({
+        allAccountNames: ['LONG_TERM', 'SWING'],
+        missingAccountNames: ['SWING'],
+      });
+
+      const result = await usecase.executeAll(
+        new Date('2026-08-11T08:40:00.000Z'),
+      );
+
+      expect(result.accounts[0].evaluation).not.toBeNull();
+      expect(result.accounts[1]).toEqual({
+        accountName: 'SWING',
+        evaluation: null,
+        failureReason: '가상 매매 계좌를 찾을 수 없습니다: SWING',
+      });
+    });
   });
 });
