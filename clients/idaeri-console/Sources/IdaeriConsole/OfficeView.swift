@@ -11,6 +11,9 @@ struct OfficeView: View {
     let onSend: (String, String?) -> Void
     let onApprove: (String) -> Void
     let onReject: (String) -> Void
+    /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
+    /// 소유자는 `AppRootView` — 메뉴에서 열 때 탭 전환과 함께 세팅돼야 한다.
+    @Binding var isPresidentBarOpen: Bool
 
     @State private var scene: OfficeScene = {
         let scene = OfficeScene(size: CGSize(width: 900, height: 600))
@@ -18,8 +21,6 @@ struct OfficeView: View {
         return scene
     }()
     @State private var selectedAgent: String?
-    /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
-    @State private var isPresidentBarOpen = false
     @State private var commandText: String = ""
 
     var body: some View {
@@ -92,6 +93,15 @@ struct OfficeView: View {
                 }
                 .onChange(of: selectedAgent) { newSelection in
                     scene.setSelected(newSelection)
+                }
+                .onChange(of: isPresidentBarOpen) { isOpen in
+                    // 메뉴에서 열린 경우는 `openPresidentBar` 를 거치지 않는다. 선택된 사람이 남아
+                    // 있으면 그 사람 상호작용 바가 우선해 지시 바가 열리지 않으므로 여기서 놓는다.
+                    guard isOpen else {
+                        return
+                    }
+                    selectedAgent = nil
+                    commandText = ""
                 }
                 .onChange(of: store.sessions) { newSessions in
                     // 세션은 사규가 배정한 자리가 없어 사무실을 다시 그릴 필요가 없다.
@@ -170,7 +180,8 @@ struct OfficeView: View {
         .padding(Spacing.md)
     }
 
-    /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지·대표 지시 입구.
+    /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지. 둘 다 없으면 비어 있다
+    /// (사무실을 가리지 않도록 상시 표시하는 것을 두지 않는다).
     private var idleBar: some View {
         VStack(spacing: Spacing.sm) {
             if let notice = store.approvalNotice {
@@ -189,23 +200,14 @@ struct OfficeView: View {
                 // 없어서 씬의 사람 위 오버레이로 갈 자리가 없다. 여기서 지우면 어디에도 안 보인다.
                 pendingBadgeRow
             }
-            presidentCommandButton
         }
         .padding(.bottom, Spacing.md)
     }
 
-    /// 대표를 클릭하는 것 말고도 지시 바를 여는 길.
-    ///
-    /// 씬 안의 대표는 `SpriteView` 아래에 있어 키보드·보조기술로는 닿지 않는다 — 씬은 접근성
-    /// 트리에 이름 없는 이미지 하나로만 잡혀 자식을 `.ignore` 로 덮어 읽고, 접근성 API 클릭은
-    /// SpriteKit 씬에 전달되지도 않는다(실측). 대시보드 입력창까지 없앤 뒤라 이 버튼이 없으면
-    /// 마우스를 쓰지 않는 사용자에게 담당자 미지정 지시 경로가 0개가 된다.
-    private var presidentCommandButton: some View {
-        Button("👑 대표에게 지시") { openPresidentBar() }
-            .keyboardShortcut("k", modifiers: .command)
-            .accessibilityHint("담당자를 지정하지 않는 지시를 보냅니다. 담당자는 이대리가 고릅니다.")
-    }
-
+    /// 씬 안의 대표를 클릭했을 때. 마우스 말고 지시 바를 여는 길은 메뉴 바의 「지시 ▸ 대표에게
+    /// 지시…」(⌘K) — 씬은 접근성 트리에 이름 없는 이미지 하나로만 잡히고 접근성 API 클릭도
+    /// SpriteKit 에 전달되지 않아, 화면 위 버튼을 걷어낸 뒤로는 그 항목이 유일한 대체 경로다
+    /// (MainMenu.swift).
     private func openPresidentBar() {
         selectedAgent = nil
         isPresidentBarOpen = true

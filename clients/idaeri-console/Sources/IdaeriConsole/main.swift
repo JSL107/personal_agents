@@ -66,6 +66,10 @@ if let iconURL = Bundle.module.url(forResource: "appicon", withExtension: "png")
     application.applicationIconImage = icon
 }
 
+// 메뉴 바. 대표에게 지시하는 입구가 여기 있다 — 자세한 이유는 MainMenu.swift.
+// 브리지는 메뉴 항목이 약하게 참조하므로 앱이 사는 동안 여기서 붙들고 있어야 한다.
+let menuBridge = installMainMenu(on: application)
+
 let window = NSWindow(
     contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
     styleMask: [.titled, .closable, .miniaturizable, .resizable],
