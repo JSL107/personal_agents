@@ -71,7 +71,7 @@ describe('JudgeFindingResolutionUsecase', () => {
     ]);
   });
 
-  it('누락 항목과 알 수 없는 verdict 만 UNCLEAR 로 처리한다', async () => {
+  it('알 수 없는 verdict 만 UNCLEAR 로 내리고 유효한 판정은 유지한다', async () => {
     // FIXED 오판은 미해소 지적을 닫아버린다. 모르는 값은 결론이 아니라 미결로 남아야 한다.
     const usecase = new JudgeFindingResolutionUsecase(
       router(
@@ -82,6 +82,21 @@ describe('JudgeFindingResolutionUsecase', () => {
     await expect(usecase.execute({ items })).resolves.toEqual([
       { id: 21, verdict: 'UNCLEAR', reason: '' },
       { id: 22, verdict: 'FIXED', reason: '검증 추가' },
+    ]);
+  });
+
+  it('응답에서 통째로 빠진 항목도 UNCLEAR 로 채워 전건을 돌려준다', async () => {
+    // 호출부는 입력 id 전건에 대해 결과가 온다고 믿고 인덱스로 맞춰 쓴다. 누락을 그냥
+    // 빼버리면 길이가 어긋나 다른 카드의 판정이 엉뚱한 지적에 붙는다.
+    const usecase = new JudgeFindingResolutionUsecase(
+      router(
+        '[{"id":21,"verdict":"FIXED","reason":"트랜잭션 추가됨"}]',
+      ) as never,
+    );
+
+    await expect(usecase.execute({ items })).resolves.toEqual([
+      { id: 21, verdict: 'FIXED', reason: '트랜잭션 추가됨' },
+      { id: 22, verdict: 'UNCLEAR', reason: '' },
     ]);
   });
 
