@@ -47,12 +47,28 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         } ?? CGSize(width: 1400, height: 820)
     // 일반 앱 경로에는 닿지 않고, 회귀 렌더에서만 가구 자세 일곱 종류를 강제로 세운다.
     let poseDemo = CommandLine.arguments.contains("--pose-demo")
+    // 호버 쪽지는 마우스가 있어야 뜨므로 렌더에 잡히지 않는다 — 그러면 "가려지는지" 를
+    // 눈으로 확인할 방법이 사람이 앱을 띄우는 것뿐이다. 대상을 넘겨 강제로 띄운다.
+    //   swift run IdaeriConsole --render /tmp/office.png --hover PO_EVAL
+    let hoverIndex = CommandLine.arguments.firstIndex(of: "--hover")
+    let hoverAgentType = hoverIndex.flatMap { index -> String? in
+        guard index + 1 < CommandLine.arguments.count else {
+            return nil
+        }
+        return CommandLine.arguments[index + 1]
+    }
+    // 상시 말풍선은 진행 중인 사람에게만 붙는데 평소 사무실은 0~2명뿐이라, 문패가 말풍선을
+    // 덮는지 확인하려는 순간에 대상이 없다. 전원을 진행 중으로 세워 굽는다.
+    //   swift run IdaeriConsole --render /tmp/office.png --busy-demo
+    let busyDemo = CommandLine.arguments.contains("--busy-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
         hour: hour,
         size: renderSize,
-        poseDemo: poseDemo
+        poseDemo: poseDemo,
+        hoverAgentType: hoverAgentType,
+        busyDemo: busyDemo
     )
     exit(succeeded ? 0 : 1)
 }
