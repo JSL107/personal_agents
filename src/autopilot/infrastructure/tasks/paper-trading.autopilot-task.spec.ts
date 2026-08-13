@@ -187,26 +187,22 @@ describe('PaperTradingAutopilotTask', () => {
     });
   });
 
-  it('일부 계좌가 실패해도 나머지 계좌 평가를 남긴다', async () => {
-    const { task, agentRun } = createFixture({
+  // 부분 실패를 성공으로 반환하면 슬롯이 완주 처리되어 BullMQ 재시도가 돌지 않는다.
+  // 스냅샷은 거래일 단위라 다음 슬롯이 그날 구멍을 메워주지 못한다.
+  it('한 계좌만 실패해도 재시도되도록 실패로 올린다', async () => {
+    const { task } = createFixture({
       accounts: [
         succeededEntry('LONG_TERM'),
         failedEntry('SWING', '시세 조회 실패'),
       ],
     });
 
-    const result = await task.run(context);
-
-    expect(result.summaryText).toContain('*[LONG_TERM]*');
-    expect(result.summaryText).toContain('평가 실패 — 시세 조회 실패');
-    const run = agentRun.execute.mock.calls[0][0].run;
-    const execution = await run({ agentRunId: 71 });
-    expect(execution.output).toEqual(
-      expect.objectContaining({ accountCount: 2, failedCount: 1 }),
+    await expect(task.run(context)).rejects.toThrow(
+      '가상 계좌 2개 중 1개를 평가하지 못했습니다 — SWING: 시세 조회 실패 (평가 완료: LONG_TERM)',
     );
   });
 
-  it('모든 계좌가 실패하면 원장에 실패로 남긴다', async () => {
+  it('모든 계좌가 실패하면 평가 완료 목록 없이 실패로 남긴다', async () => {
     const { task } = createFixture({
       accounts: [
         failedEntry('LONG_TERM', '시세 조회 실패'),
@@ -215,9 +211,12 @@ describe('PaperTradingAutopilotTask', () => {
     });
 
     await expect(task.run(context)).rejects.toThrow(
-      '가상 계좌 2개를 한 건도 평가하지 못했습니다 — LONG_TERM: 시세 조회 실패 / SWING: 계좌 상태 불일치',
+      '가상 계좌 2개 중 2개를 평가하지 못했습니다 — LONG_TERM: 시세 조회 실패 / SWING: 계좌 상태 불일치',
     );
   });
+
+  // 계좌별 격리(한 계좌의 예외가 나머지 계좌의 평가·적재를 막지 않는 것)는
+  // evaluate-paper-account.usecase.spec 의 executeAll 계약이 고정한다.
 
   it('스냅샷 미적재 사유를 계좌 섹션과 원장에 남긴다', async () => {
     const { task, agentRun } = createFixture({
