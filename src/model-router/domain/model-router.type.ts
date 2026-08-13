@@ -75,6 +75,9 @@ export enum AgentType {
   // 모의투자 일일 평가 — 시세 기반 결정론 계산. LLM 을 쓰지 않으며 AgentRun 원장 등록을 위해 둔다.
   // 슬래시/ResponseCode/retry-run 비대상 (autopilot 전용 — INVEST 선례).
   PAPER_TRADE = 'PAPER_TRADE',
+  // 모의투자 추천 — 전략별 후보와 보유 종목을 함께 판단하는 LLM 호출이다.
+  // 슬래시/dispatcher 없음, autopilot 및 CLI 진입 전용.
+  PAPER_RECOMMEND = 'PAPER_RECOMMEND',
   CTO_STUDY = 'CTO_STUDY',
 }
 

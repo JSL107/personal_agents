@@ -71,6 +71,8 @@ export enum TriggerType {
   AUTOPILOT_INVEST_CRON = 'AUTOPILOT_INVEST_CRON',
   // 모의투자 계좌 일일 평가 — 결정론 평가 결과와 차단 사유를 원장에 적재한다.
   AUTOPILOT_PAPER_TRADING_CRON = 'AUTOPILOT_PAPER_TRADING_CRON',
+  // 모의투자 추천 — 장 마감 뒤 전략별 후보와 보유 종목을 LLM이 함께 판단한다.
+  AUTOPILOT_PAPER_RECOMMEND_CRON = 'AUTOPILOT_PAPER_RECOMMEND_CRON',
   // 저녁 회고→발행 후보 — evening 그룹의 T1_PREVIEW task. 블로그·경력 카드가 안 만들어진 날
   // "회고 생성이 실패했는지, 후보가 없었는지" 를 원장에서 가른다.
   AUTOPILOT_EVENING_RETRO_CRON = 'AUTOPILOT_EVENING_RETRO_CRON',

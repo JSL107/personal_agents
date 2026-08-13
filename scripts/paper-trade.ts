@@ -2,7 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { GeneratePaperRecommendationUsecase } from '../src/agent/paper-recommend/application/generate-paper-recommendation.usecase';
+import { PaperRecommendModule } from '../src/agent/paper-recommend/paper-recommend.module';
+import { TriggerType } from '../src/agent-run/domain/agent-run.type';
 import { EvaluatePaperAccountUsecase } from '../src/paper-trading/application/evaluate-paper-account.usecase';
+import { FillPendingOrdersUsecase } from '../src/paper-trading/application/fill-pending-orders.usecase';
 import { GetPaperTradingStatusUsecase } from '../src/paper-trading/application/get-paper-trading-status.usecase';
 import { OpenPaperAccountUsecase } from '../src/paper-trading/application/open-paper-account.usecase';
 import { RecordPaperTradeUsecase } from '../src/paper-trading/application/record-paper-trade.usecase';
@@ -20,6 +24,8 @@ import { PrismaModule } from '../src/prisma/prisma.module';
 //   pnpm exec ts-node scripts/paper-trade.ts sell --code 005930 --market KOSPI --qty 4 --price 73000 --date 2026-08-12 [--reason "일부 익절"]
 //   pnpm exec ts-node scripts/paper-trade.ts status
 //   pnpm exec ts-node scripts/paper-trade.ts evaluate [--at 2026-08-11]
+//   pnpm exec ts-node scripts/paper-trade.ts recommend
+//   pnpm exec ts-node scripts/paper-trade.ts fill
 //
 // evaluate 는 autopilot task 가 매일 17:40 에 하는 것과 **같은 usecase** 를 부른다.
 // cron 을 기다리지 않고 평가 경로를 실증하기 위한 입구이고, 리포트도 Slack 에 나갈
@@ -30,18 +36,28 @@ const USAGE =
   '  pnpm exec ts-node scripts/paper-trade.ts buy --code <종목코드> --name <종목명> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--strategy <LONG_TERM|SWING|MANUAL>] [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts sell --code <종목코드> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts status\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>]';
+  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts recommend\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts fill';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     PaperTradingModule,
+    PaperRecommendModule,
   ],
 })
 class PaperTradeCliModule {}
 
-type Subcommand = 'open' | 'buy' | 'sell' | 'status' | 'evaluate';
+type Subcommand =
+  | 'open'
+  | 'buy'
+  | 'sell'
+  | 'status'
+  | 'evaluate'
+  | 'recommend'
+  | 'fill';
 
 interface ParsedArguments {
   subcommand: Subcommand;
@@ -55,7 +71,9 @@ const parseArguments = (values: string[]): ParsedArguments => {
     subcommandValue !== 'buy' &&
     subcommandValue !== 'sell' &&
     subcommandValue !== 'status' &&
-    subcommandValue !== 'evaluate'
+    subcommandValue !== 'evaluate' &&
+    subcommandValue !== 'recommend' &&
+    subcommandValue !== 'fill'
   ) {
     throw new Error(USAGE);
   }
@@ -114,6 +132,23 @@ const main = async (): Promise<void> => {
     }
     if (parsed.subcommand === 'status') {
       await printStatus(application.get(GetPaperTradingStatusUsecase));
+      return;
+    }
+    if (parsed.subcommand === 'recommend') {
+      const result = await application
+        .get(GeneratePaperRecommendationUsecase)
+        .execute({ triggerType: TriggerType.MANUAL });
+      console.log('추천 완료');
+      console.table(result.completed);
+      if (result.failed.length > 0) {
+        console.log('추천 실패');
+        console.table(result.failed);
+      }
+      return;
+    }
+    if (parsed.subcommand === 'fill') {
+      const result = await application.get(FillPendingOrdersUsecase).execute();
+      console.table([result]);
       return;
     }
     if (parsed.subcommand === 'evaluate') {

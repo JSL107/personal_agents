@@ -1,3 +1,91 @@
+# 모의투자 3-A 체결 관측 교정 B-1/B-2 (2026-08-13)
+
+**Goal:** 장중 당일 봉 부재를 조기 만료하지 않고 별도 계측하며, 마감 회차의 처리 대상 수와 실제 만료 수를 분리한다.
+
+**Contract:** 최신 사용자 B-1/B-2가 `.ai/design.md`의 장중 무봉 즉시 만료 규칙을 대체한다. 마감 사유는 마지막 조회 결과를 영속하지 않는 현재 구조에서 새 schema 없이 구분할 수 없으므로 기존 `체결가 조회 실패`를 유지하고 이유를 summary에 남긴다.
+
+- [x] 기존 장중 무봉·마감 bulk expire·autopilot summary 테스트 경계를 확인한다.
+- [x] B-1 RED: 장중 무봉은 PENDING 유지 + `notYetTraded` 별도 집계를 고정한다.
+- [x] B-2 RED: 마감 `attempted`와 실제 `expired`가 다른 결과를 고정한다.
+- [x] GREEN: usecase/repository/task summary를 최소 수정한다.
+- [x] focused Jest, 독립 diff 리뷰, 5종 gate와 `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 갱신한다.
+
+## Review
+
+- `TRADING`에서 성공 응답에 당일 봉이 없어도 주문을 만료하지 않고 `notYetTraded`만 증가시킨다. fetch 예외·가격 누락의 `lookupFailure`와 분리했다.
+- `AFTER_CLOSE`는 due 대상 `attempted`와 compare-and-set으로 실제 만료된 `expired`를 별도로 반환한다.
+- 마지막 조회 결과는 주문에 영속하지 않으므로 마감 사유는 기존 `체결가 조회 실패`를 유지한다. 이를 구분하려면 schema/원장 변경이 필요해 범위를 넓히지 않았다.
+- focused 3 suites/20 tests, lint, tsc, build, 전체 test, docs check, diff check가 모두 exit 0이다. 전체 test는 일반 350 suites/2,904 tests와 code-graph 5 suites/40 tests가 통과했다.
+- residual risk는 토스가 장중에 당일 봉을 실제로 제공하는지 아직 운영 실증하지 않았다는 점이다.
+
+---
+
+# 모의투자 3-A 완성 — 리뷰 결함·체결·실행 입구 (2026-08-13)
+
+**Goal:** A-1~A-3를 회귀 방지하고, 다음 거래일 시가 체결과 CLI/autopilot 실행 입구를 구현한다.
+
+**Contract:** `.ai/design.md`가 기본 계약이다. 최신 사용자 확정으로 추천 스케줄만 `30 19 * * 1-5`로 대체한다. 체결 usecase는 09:30 이전 skip, 09:30~15:30 처리, 15:30 이후 남은 PENDING 만료를 직접 판정한다. DB 접속·schema sync·git index/commit/push·3-B는 금지한다.
+
+- [x] `.ai/design.md`, lessons, 기존 T1/T2 diff와 T3/T4 실행 패턴을 매핑한다.
+- [x] 실측 종료 시각과 기존 `18:30` schedule 충돌을 보고하고 사용자 확정 `19:30` override를 기록한다.
+- [x] A-1 RED/GREEN: `sells`/`buys` nullish는 빈 배열, 다른 비배열은 오류로 고정한다.
+- [x] A-2 RED/GREEN: 모든 필터와 0주 탈락 뒤 앞의 유효 매수 3종만 채택한다.
+- [x] A-3 RED/GREEN: 계좌 생성 뒤 진짜 record를 재조회하고 null이면 명시 오류를 낸다.
+- [x] T3 RED: 시간 창, due 조회, 시가 체결, 인프라 실패/시장 무봉 분리, 수량 축소, 반환 집계를 고정한다.
+- [x] T3 GREEN: repository compare-and-set/원자적 FILLED 전이와 `FillPendingOrdersUsecase`를 구현한다.
+- [x] T4 RED/GREEN: CLI `recommend`/`fill`, 추천 19:30, 체결 평일 10분 cadence, task 하나, playbook/module 등록을 구현한다.
+- [x] focused Jest와 `git diff --check` 후 요구사항·보안·동시성·범위 이탈을 리뷰한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm build`, `pnpm test`, `pnpm docs:check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- A-1은 nullish 필드만 빈 배열로 바꾸고 malformed non-array는 기존 도메인 오류를 유지했다.
+- A-2는 보유·후보 밖·중복·가격/비중 오류·0주를 제거한 뒤 유효 매수 3건에서 멈춘다.
+- A-3은 계좌 생성 뒤 repository 재조회 record만 사용하며, 성공 뒤 null과 생성 race를 구분한다.
+- T3는 KST 시간 창을 usecase가 판정하고, 개별 미조정 봉의 시가만 쓴다. fetch 예외/open 누락과 성공 응답의 당일 봉 없음은 서로 다른 카운터로 집계하며 모두 장중 `PENDING`을 유지한다.
+- 자동 체결은 account lock 뒤 최신 현금/position으로 수량을 줄이고, 주문 claim·trade·position·cash를 한 transaction에 반영한다.
+- T4는 전용 CLI module과 동일 production usecase를 사용한다. 추천은 universe-sweep 뒤 평일 19:30, 체결은 평일 09~15시 10분 cron + usecase 창 guard다.
+- 사용자 계약 정정에 따라 독립 리뷰의 장중 무봉 PENDING 제안을 반영했다. CLI 수동 반복의 일일 claim 제안은 T1/T2 schema 재설계 범위라 residual risk로 summary에 기록했다.
+- fresh gate 5종과 diff check 모두 exit 0이다. 전체 test는 350 suites/2,904 tests와 code-graph 5 suites/40 tests가 통과했다.
+
+---
+
+# 모의투자 3-A 앞부분 — 추천 도메인·주문 생성 (2026-08-13)
+
+**Goal:** T1/T2만 구현해 전략별 후보를 계좌당 LLM 1회로 판단하고, 코드 제약을 강제한 `PaperOrder`를 `PENDING`으로 기록한다.
+
+**Contract:** `.ai/design.md`와 정본 `docs/superpowers/specs/2026-08-12-paper-trading-phase3-design.md`가 구현 계약이다. 선행 `indicatorSnapshot` schema/client는 보존한다. T3/T4, DB 접속·스키마 동기화, git index/commit/push는 금지한다.
+
+- [x] 계약·정본을 끝까지 대조하고 T1/T2 직접 충돌이 없음을 확인한다.
+- [x] 기존 AgentType/registry/AgentRun/ModelRouter/screener/paper repository/module/retry 패턴을 매핑한다.
+- [x] T1 RED: parser 오류와 최대 3종·20% 절단·후보 밖/보유 매수 제거·전량 매도·현금 수량 축소·주말 날짜 spec을 작성하고 실패를 확인한다.
+- [x] T1 GREEN: 추천 prompt/parser/error/순수 제약 함수와 AgentType/TriggerType/provider/registry/contract/ResponseCode 등록을 최소 구현한다.
+- [x] T2 RED: 계좌 생성·재사용, 전략별 screener/LLM 1회, 주문 필드·지표 snapshot, 계좌별 graceful spec을 작성하고 실패를 확인한다.
+- [x] T2 GREEN: repository 주문 저장/평가액 조회와 추천 usecase/module DI를 최소 구현한다.
+- [x] `/retry-run`에 PAPER_RECOMMEND 재실행 경로를 연결하고 전체 registry/contract 정합성을 확인한다.
+- [x] focused GREEN 후 독립 요구사항·코드 품질 리뷰를 반영한다.
+- [ ] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm build`, `pnpm test`, `pnpm docs:check`, `git diff --check`를 fresh 실행한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- T1/T2 focused 4 suites/29 tests, tsc, build, 전체 test(일반 350 suites/2,902 tests + code-graph 5 suites/40 tests), docs check, diff check와 scoped ESLint는 exit 0이다.
+- T2 리뷰의 동시성·감사·prompt·retry·계좌 race 5건을 회귀 RED→GREEN으로 수정했고 재리뷰와 final review는 READY다.
+- 전체 `pnpm lint:check`만 동시 진행된 범위 밖 T3/T4 파일의 formatting 오류 9건으로 exit 1이다. 사용자 변경이라 수정·되돌림하지 않았다.
+- DB/schema sync/Prisma generate/commit/staging/push는 실행하지 않았다.
+
+### Fix round 1/5
+
+- [x] 회귀 RED: 원장 내부 전체 전략 실행, full indicator prompt, account 생성 race를 고정한다.
+- [x] 회귀 RED: locked state 재검증, pending cash/BUY/SELL 제약, recommendation identity 동시 중복 차단을 고정한다.
+- [x] GREEN: repository locked callback과 application 재제약/저장을 구현한다.
+- [x] GREEN: retry identity guard와 account real record refetch를 구현한다.
+- [x] focused Jest, tsc, scoped lint 후 Task 2 report에 결과를 추가한다.
+
+---
+
 # PR 봇 리뷰 반영 — 벤치마크 증분 공백 탐지 (2026-08-12)
 
 **Goal:** 저장된 KOSPI 최신 거래일부터 현재까지의 캘린더 일수로 증분 조회 범위를 정해 5거래일 초과 중단 뒤 영구 결손을 막고, 200봉 상한 초과 공백은 운영 로그에 드러낸다.
@@ -1789,5 +1877,29 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - RED는 신규 port 부재 `TS2307`, domain 값의 repository 경계 미지원 `TS2740`으로 확인했다. focused 4 suites/29 tests GREEN.
 - 최종 fresh gate는 lint exit 0(기존 warning 57), 전체 일반 342 suites/2,847 tests + code-graph 5 suites/40 tests, build, tsc 모두 exit 0이다.
 - 다른 usecase/repository 주입 방식, env/schema/dependency/git index/commit/push는 변경하지 않았다.
+
+---
+# PR #288 리뷰 2건 반영 (2026-08-13)
+
+**Goal:** 휴장일·시세 공급자 전면 장애에는 PENDING 주문을 보존하고, 후보 밖 보유 종목도 이미 계산된 지표를 추천 판단과 주문 근거에 사용한다.
+
+**Contract:** `.ai/design.md`를 그대로 따른다. 거래소 캘린더, port/adapter, schema/env/dependency/new production file은 추가하지 않고 커밋하지 않는다.
+
+- [x] 관련 구현과 spec의 현재 데이터 흐름을 확인한다.
+- [x] 휴장일·부분 봉·전면 장애 및 보유 종목 지표 회귀 spec을 먼저 추가해 RED를 확인한다.
+- [x] `FillPendingOrdersUsecase`가 당일 봉을 하나라도 본 AFTER_CLOSE에만 만료하도록 수정한다.
+- [x] `ScreenUniverseUsecase`가 요청 ticker의 asOf 일치 지표를 `includedIndicators`로 반환하도록 수정한다.
+- [x] 추천 usecase가 보유 종목을 먼저 조회하고 병합 지표 맵을 프롬프트와 주문 저장에 함께 사용하도록 수정한다.
+- [x] focused GREEN 후 `pnpm lint:check`, `pnpm exec tsc --noEmit`, 전체 `pnpm test`, `pnpm build`를 실행한다.
+- [x] 최종 diff와 금지 범위를 검토하고 `.ai/implementation-summary.md` 및 아래 Review를 갱신한다.
+
+## Review
+
+- `AFTER_CLOSE`도 due 주문별 당일 봉을 조회하고, 당일 봉을 하나라도 본 경우에만 남은 주문을 bulk 만료한다. 휴장일·전면 장애는 bulk 만료 mock 미호출로 고정했다.
+- 스크리너는 공통 `asOf`를 통과한 요청 종목 지표를 필터 전 `includedIndicators`로 반환하며, 미지정·stale 경계를 회귀 spec으로 고정했다.
+- 추천은 보유 종목 ID를 스크리너에 전달하고, `includedIndicators` + `screen.stocks` 병합 맵을 프롬프트와 주문 snapshot에 함께 사용한다. 중복은 `screen.stocks`가 우선한다.
+- 독립 최종 리뷰는 Critical/Important/Minor 0건이었다. 설계 편차와 schema/env/dependency/new production file 변경은 없다.
+- 최종 gate: lint exit 0(기존 warning 57), tsc exit 0, 전체 test exit 0(일반 350 suites/2,910 tests + code-graph 5 suites/40 tests), build exit 0, diff check exit 0.
+- 커밋, staging, push는 실행하지 않았다.
 
 ---

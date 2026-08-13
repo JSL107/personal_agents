@@ -26,6 +26,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
   evaluatedCount: 2_500,
   staleCount: 5,
   passedCount: 100,
+  includedIndicators: [],
   stocks: [
     {
       tickerId: 1,

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { calculateIndicators } from '../../market-data/domain/stock-indicator';
+import {
+  calculateIndicators,
+  StockIndicators,
+} from '../../market-data/domain/stock-indicator';
 import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
 import {
   ScreenCandidate,
@@ -17,6 +20,14 @@ const DEFAULT_SCREEN_LIMIT = 20;
 export interface ScreenUniverseOptions {
   strategy: ScreenStrategy;
   limit?: number;
+  includeTickerIds?: number[];
+}
+
+export interface IncludedStockIndicators {
+  tickerId: number;
+  code: string;
+  name: string;
+  indicators: StockIndicators;
 }
 
 export interface ScreenUniverseResult {
@@ -27,6 +38,7 @@ export interface ScreenUniverseResult {
   staleCount: number;
   passedCount: number;
   stocks: ScreenedStock[];
+  includedIndicators: IncludedStockIndicators[];
   asOf: string | null;
 }
 
@@ -101,6 +113,15 @@ export class ScreenUniverseUsecase {
       options.strategy,
       candidates.length,
     );
+    const includedTickerIds = new Set(options.includeTickerIds ?? []);
+    const includedIndicators = candidates
+      .filter((candidate) => includedTickerIds.has(candidate.tickerId))
+      .map((candidate) => ({
+        tickerId: candidate.tickerId,
+        code: candidate.code,
+        name: candidate.name,
+        indicators: candidate.indicators,
+      }));
     const limit = options.limit ?? DEFAULT_SCREEN_LIMIT;
     return {
       strategy: options.strategy,
@@ -110,6 +131,7 @@ export class ScreenUniverseUsecase {
       staleCount,
       passedCount: passed.length,
       stocks: passed.slice(0, Math.max(0, limit)),
+      includedIndicators,
       asOf,
     };
   }

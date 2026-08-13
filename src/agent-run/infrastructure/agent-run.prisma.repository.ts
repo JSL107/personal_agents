@@ -74,6 +74,18 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     return { id: record.id };
   }
 
+  async updateInputSnapshot(input: {
+    id: number;
+    inputSnapshot: unknown;
+  }): Promise<void> {
+    await this.prisma.agentRun.update({
+      where: { id: input.id },
+      data: {
+        inputSnapshot: input.inputSnapshot as Prisma.InputJsonValue,
+      },
+    });
+  }
+
   async finish({
     id,
     status,

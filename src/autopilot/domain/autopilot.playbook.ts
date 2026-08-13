@@ -19,6 +19,10 @@ import {
   DEFAULT_NOON_REVIEW_TIMEZONE,
   DEFAULT_OPS_SUPERVISOR_CRON,
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
+  DEFAULT_PAPER_ORDER_FILL_CRON,
+  DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
+  DEFAULT_PAPER_RECOMMEND_CRON,
+  DEFAULT_PAPER_RECOMMEND_TIMEZONE,
   DEFAULT_PAPER_TRADING_CRON,
   DEFAULT_PAPER_TRADING_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
@@ -243,6 +247,27 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_UNIVERSE_SWEEP_CRON,
       timezone: DEFAULT_UNIVERSE_SWEEP_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 유니버스 수집 완료 뒤 최신 종가로 판단한다. standalone 순서도 수집 바로 뒤를 유지한다.
+  {
+    id: 'paper-recommend',
+    taskId: 'paper-recommend',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PAPER_RECOMMEND_CRON,
+      timezone: DEFAULT_PAPER_RECOMMEND_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'paper-order-fill',
+    taskId: 'paper-order-fill',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PAPER_ORDER_FILL_CRON,
+      timezone: DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

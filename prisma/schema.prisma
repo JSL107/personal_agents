@@ -518,24 +518,27 @@ model PaperAccount {
 // 판단과 체결을 분리해 기록한다. 이 표가 없으면 "전일 종가로 판단하고 다음날 시가에 체결했다"를
 // 사후에 증명할 수 없다 — 다음날 시가를 본 뒤에 만든 거래와 구별되지 않기 때문이다.
 model PaperOrder {
-  id              Int          @id @default(autoincrement())
-  accountId       Int          @map("account_id")
-  account         PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tickerId        Int          @map("ticker_id")
-  ticker          Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
-  side            String // BUY | SELL
-  quantity        Decimal      @db.Decimal(18, 4)
-  strategy        String // LONG_TERM | SWING | MANUAL
-  reason          String?      @db.Text
-  decidedAt       DateTime     @map("decided_at") // 결정 시각
-  dataAsOf        DateTime     @map("data_as_of") @db.Date // 판단에 사용한 마지막 거래일
-  targetTradeDate DateTime?    @map("target_trade_date") @db.Date // 체결 목표 거래일
-  status          String // PENDING | FILLED | PARTIALLY_FILLED | EXPIRED | CANCELLED
-  statusReason    String?      @map("status_reason") // 미체결 사유 (거래정지·상한가·유동성 등)
-  expiresAt       DateTime?    @map("expires_at")
-  agentRunId      Int?         @map("agent_run_id")
-  agentRun        AgentRun?    @relation(fields: [agentRunId], references: [id])
-  createdAt       DateTime     @default(now()) @map("created_at")
+  id                Int          @id @default(autoincrement())
+  accountId         Int          @map("account_id")
+  account           PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickerId          Int          @map("ticker_id")
+  ticker            Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  side              String // BUY | SELL
+  quantity          Decimal      @db.Decimal(18, 4)
+  strategy          String // LONG_TERM | SWING | MANUAL
+  reason            String?      @db.Text
+  decidedAt         DateTime     @map("decided_at") // 결정 시각
+  dataAsOf          DateTime     @map("data_as_of") @db.Date // 판단에 사용한 마지막 거래일
+  targetTradeDate   DateTime?    @map("target_trade_date") @db.Date // 체결 목표 거래일
+  status            String // PENDING | FILLED | PARTIALLY_FILLED | EXPIRED | CANCELLED
+  statusReason      String?      @map("status_reason") // 미체결 사유 (거래정지·상한가·유동성 등)
+  // 판단에 쓴 지표를 그대로 박아 둔다. 지표 공식이나 필터를 나중에 손대면 과거 추천을 재계산할 수
+  // 없게 되는데, 그때 본 숫자가 남아 있으면 "왜 이걸 골랐나"가 영구히 재구성된다.
+  indicatorSnapshot Json?        @map("indicator_snapshot")
+  expiresAt         DateTime?    @map("expires_at")
+  agentRunId        Int?         @map("agent_run_id")
+  agentRun          AgentRun?    @relation(fields: [agentRunId], references: [id])
+  createdAt         DateTime     @default(now()) @map("created_at")
 
   trades PaperTrade[]
 
