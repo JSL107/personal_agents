@@ -299,15 +299,27 @@ function assertConsoleAgentSync(): void {
     readFileSync(CONSOLE_SAMPLE_PATH, 'utf8'),
   );
   const sampled = new Map<string, string>();
+  // 같은 사람이 두 방에 적히면 Map 이 덮어써서 조용히 하나로 합쳐진다 — 파싱 단계에서 잡는다.
+  const duplicated: string[] = [];
   for (const group of sampleSource.matchAll(
     /planAgents\(\s*\.(\w+),\s*\[([^\]]*)\]/gu,
   )) {
     for (const quoted of group[2].matchAll(/"(\w+)"/gu)) {
+      if (sampled.has(quoted[1])) {
+        duplicated.push(quoted[1]);
+      }
       sampled.set(quoted[1], group[1]);
     }
   }
   // Department 의 값이 곧 Swift enum case 이름이라(`internalOps`) 그대로 견줄 수 있다.
+  const declaredTypes = new Set<string>(declared);
   const missing = declared.filter((type) => !sampled.has(type));
+  // **표본에만 있는 사람도 실패다.** 사규에서 에이전트를 지웠는데 표본에 남으면 유령 인원으로
+  // 자리·이름표 검사가 계속 돌아, 멀쩡한 배치 변경을 막거나 실제 구성의 회귀를 놓친다.
+  // 같은 파일 `assertEnvEntries` 가 누락과 초과를 함께 보는 것과 같은 이유다.
+  const unexpected = [...sampled.keys()].filter(
+    (type) => !declaredTypes.has(type),
+  );
   const misplaced = declared
     .filter((type) => sampled.has(type))
     .filter((type) => sampled.get(type) !== AGENT_CONTRACTS[type].department)
@@ -315,11 +327,18 @@ function assertConsoleAgentSync(): void {
       (type) =>
         `${type}(표본 ${sampled.get(type)} ≠ 사규 ${AGENT_CONTRACTS[type].department})`,
     );
-  if (missing.length > 0 || misplaced.length > 0) {
+  if (
+    missing.length > 0 ||
+    unexpected.length > 0 ||
+    misplaced.length > 0 ||
+    duplicated.length > 0
+  ) {
     throw new Error(
       `[sync-docs] 오피스 자리 검사 표본이 사규와 다릅니다(사규 ${declared.length}명 / 표본 ${sampled.size}명).\n` +
         `  누락: ${missing.join(', ') || '없음'}\n` +
+        `  초과: ${unexpected.join(', ') || '없음'}\n` +
         `  부서 불일치: ${misplaced.join(', ') || '없음'}\n` +
+        `  중복: ${[...new Set(duplicated)].join(', ') || '없음'}\n` +
         `  ${toRepoRelative(CONSOLE_SAMPLE_PATH)} 의 sampleAgents 를 맞추세요 — 표본이 실제 인원을 재현해야 자리 부족·이름표 겹침이 검사에 걸립니다.`,
     );
   }
