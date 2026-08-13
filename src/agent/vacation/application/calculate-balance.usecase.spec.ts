@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { VacationException } from '../domain/vacation.exception';
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { CalculateBalanceUsecase } from './calculate-balance.usecase';
 
 describe('CalculateBalanceUsecase', () => {
@@ -30,7 +30,7 @@ describe('CalculateBalanceUsecase', () => {
     });
     usecase = new CalculateBalanceUsecase(
       { get: configGet } as unknown as ConfigService,
-      { findActiveByUser } as unknown as LeaveUsageRepository,
+      { findActiveByUser } as unknown as LeaveUsagePrismaRepository,
       { execute } as unknown as AgentRunService,
     );
   });

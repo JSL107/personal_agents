@@ -1,7 +1,7 @@
 import { PrismaService } from '../../prisma/prisma.service';
-import { MarketDataRepository } from './market-data.repository';
+import { MarketDataPrismaRepository } from './market-data.prisma.repository';
 
-describe('MarketDataRepository', () => {
+describe('MarketDataPrismaRepository', () => {
   it('종목 일봉을 5개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
     const aggregate = jest.fn().mockResolvedValue({
       _max: { tradeDate: new Date('2026-08-12T00:00:00.000Z') },
@@ -39,7 +39,7 @@ describe('MarketDataRepository', () => {
     const prisma = {
       dailyPrice: { aggregate, findMany },
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     const result = await repository.findBarsForTickers([1, 2], 2);
 
@@ -79,7 +79,7 @@ describe('MarketDataRepository', () => {
     const prisma = {
       dailyPrice: { aggregate, findMany },
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     await expect(repository.findBarsForTickers([1], 200)).resolves.toEqual(
       new Map(),
@@ -90,7 +90,7 @@ describe('MarketDataRepository', () => {
   it('KRX 세부 시장이 분류된 활성 보통주만 유니버스로 조회한다', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { ticker: { findMany } } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     await repository.findUniverseTickers();
 
@@ -115,7 +115,7 @@ describe('MarketDataRepository', () => {
   it('활성 코드가 1,000건 미만이면 상장폐지 갱신을 차단한다', async () => {
     const updateMany = jest.fn();
     const prisma = { ticker: { updateMany } } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     const result = await repository.markDelistedExcept(
       Array.from({ length: 999 }, (_, index) => String(index).padStart(6, '0')),
@@ -132,7 +132,7 @@ describe('MarketDataRepository', () => {
     const prisma = {
       ticker: { count, updateMany },
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     const result = await repository.markDelistedExcept(
       Array.from({ length: 2_000 }, (_, index) =>
@@ -158,7 +158,7 @@ describe('MarketDataRepository', () => {
     const prisma = {
       ticker: { count, updateMany },
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
     const activeCodes = Array.from({ length: 2_000 }, (_, index) =>
       String(index).padStart(6, '0'),
     );
@@ -187,7 +187,7 @@ describe('MarketDataRepository', () => {
       },
     ]);
     const prisma = { dailyPrice: { groupBy } } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     await expect(repository.findStoredBarStats()).resolves.toEqual(
       new Map([[3, { barCount: 4, latestTradeDate: '2026-08-11' }]]),
@@ -206,7 +206,7 @@ describe('MarketDataRepository', () => {
       dailyPrice: { upsert },
       $transaction: transaction,
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
     const rows = Array.from({ length: 201 }, (_, index) => ({
       tickerId: index + 1,
       tradeDate: new Date('2026-08-11T00:00:00.000Z'),
@@ -236,7 +236,7 @@ describe('MarketDataRepository', () => {
     const prisma = {
       dailyPrice: { findMany },
     } as unknown as PrismaService;
-    const repository = new MarketDataRepository(prisma);
+    const repository = new MarketDataPrismaRepository(prisma);
 
     const result = await repository.findStoredCloses(3, [
       new Date('2026-08-11T00:00:00.000Z'),

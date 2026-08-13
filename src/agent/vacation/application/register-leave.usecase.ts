@@ -12,7 +12,7 @@ import { countBusinessDays } from '../domain/business-day-counter';
 import { PlainDate, plainDateToIso } from '../domain/plain-date';
 import { MonthlyThenFixed15Policy } from '../domain/policy/accrual-policy';
 import { RegisterLeaveResult } from '../domain/vacation.type';
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { resolveHireDate } from './resolve-hire-date';
 
 interface RegisterLeaveCommand {
@@ -30,7 +30,7 @@ const policy = new MonthlyThenFixed15Policy();
 export class RegisterLeaveUsecase {
   constructor(
     private readonly config: ConfigService,
-    private readonly repository: LeaveUsageRepository,
+    private readonly repository: LeaveUsagePrismaRepository,
     private readonly agentRunService: AgentRunService,
   ) {}
 

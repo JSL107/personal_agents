@@ -10,7 +10,7 @@ export interface BenchmarkCloseWriteInput {
 }
 
 @Injectable()
-export class BenchmarkRepository {
+export class BenchmarkPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findLatestTradeDate(symbol: string): Promise<Date | null> {

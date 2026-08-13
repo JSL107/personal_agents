@@ -25,7 +25,7 @@ interface VectorSearchRow {
 // pgvector 적재/검색은 Prisma 네이티브 미지원 → $queryRaw/$executeRaw 로만.
 // 벡터는 '[..]' 리터럴을 Prisma.sql 파라미터로 바인딩 후 ::vector 캐스팅(injection 안전 — 숫자 배열).
 @Injectable()
-export class EpisodicMemoryRepository {
+export class EpisodicMemoryPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async insert(input: InsertEpisodeRow): Promise<void> {

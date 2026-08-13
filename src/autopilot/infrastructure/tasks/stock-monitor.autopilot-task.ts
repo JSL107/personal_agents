@@ -27,9 +27,9 @@ import {
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import {
-  StockMonitorRepository,
+  StockMonitorPrismaRepository,
   UnscoredAlertTicker,
-} from '../../../agent/stock/infrastructure/stock-monitor.repository';
+} from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DailyBar } from '../../../market-data/domain/market-data.type';
@@ -162,7 +162,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
   constructor(
     options: StockMonitorAutopilotTaskOptions,
     private readonly marketData: MarketDataPort,
-    private readonly repository: StockMonitorRepository,
+    private readonly repository: StockMonitorPrismaRepository,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
     private readonly syncHoldings: SyncHoldingsUsecase,

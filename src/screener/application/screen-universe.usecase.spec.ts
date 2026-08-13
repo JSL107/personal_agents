@@ -1,6 +1,6 @@
 import { DecimalValue } from '../../market-data/domain/market-data.type';
 import { IndicatorBar } from '../../market-data/domain/stock-indicator';
-import { MarketDataRepository } from '../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 import { ScreenUniverseUsecase } from './screen-universe.usecase';
 
 const decimal = (value: number): DecimalValue => ({
@@ -37,7 +37,7 @@ describe('ScreenUniverseUsecase', () => {
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue(tickers),
       findBarsForTickers,
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new ScreenUniverseUsecase(repository);
 
     const result = await usecase.execute({ strategy: 'LONG_TERM', limit: 1 });
@@ -73,7 +73,7 @@ describe('ScreenUniverseUsecase', () => {
         },
       ]),
       findBarsForTickers: jest.fn().mockResolvedValue(new Map()),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new ScreenUniverseUsecase(repository);
 
     await expect(usecase.execute({ strategy: 'SWING' })).resolves.toEqual({
@@ -103,7 +103,7 @@ describe('ScreenUniverseUsecase', () => {
       findBarsForTickers: jest
         .fn()
         .mockResolvedValue(new Map([[1, risingBars(59, '2026-08-13')]])),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new ScreenUniverseUsecase(repository);
 
     const result = await usecase.execute({
@@ -146,7 +146,7 @@ describe('ScreenUniverseUsecase', () => {
           [2, risingBars(200, '2026-08-13')],
         ]),
       ),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new ScreenUniverseUsecase(repository);
 
     const result = await usecase.execute({
@@ -172,7 +172,7 @@ describe('ScreenUniverseUsecase', () => {
       findBarsForTickers: jest
         .fn()
         .mockResolvedValue(new Map([[1, risingBars(200, '2026-08-13')]])),
-    } as unknown as MarketDataRepository;
+    } as unknown as MarketDataPrismaRepository;
     const usecase = new ScreenUniverseUsecase(repository);
 
     const result = await usecase.execute({ strategy: 'LONG_TERM' });

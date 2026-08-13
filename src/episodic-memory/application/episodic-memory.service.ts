@@ -7,7 +7,7 @@ import {
 } from '../domain/episode.type';
 import { EMBEDDER_PORT, EmbedderPort } from '../domain/port/embedder.port';
 import { EpisodicMemoryPort } from '../domain/port/episodic-memory.port';
-import { EpisodicMemoryRepository } from '../infrastructure/episodic-memory.repository';
+import { EpisodicMemoryPrismaRepository } from '../infrastructure/episodic-memory.prisma.repository';
 
 const MAX_CONTENT_CHARS = 4000;
 const DEFAULT_HALF_LIFE_DAYS = 30;
@@ -20,7 +20,7 @@ export class EpisodicMemoryService implements EpisodicMemoryPort {
 
   constructor(
     @Inject(EMBEDDER_PORT) private readonly embedder: EmbedderPort,
-    private readonly repository: EpisodicMemoryRepository,
+    private readonly repository: EpisodicMemoryPrismaRepository,
   ) {}
 
   // best-effort 적재 — 임베딩/DB 실패가 호출자(AgentRun finish) 본 흐름을 막지 않도록 swallow.

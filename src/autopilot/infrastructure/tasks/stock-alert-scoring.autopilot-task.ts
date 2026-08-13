@@ -4,7 +4,7 @@ import {
   DEFAULT_HORIZON_DAYS,
   scoreAlert,
 } from '../../../agent/stock/domain/alert-outcome';
-import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -15,7 +15,7 @@ import {
 export class StockAlertScoringAutopilotTask implements AutopilotTask {
   readonly id = 'stock-alert-scoring';
 
-  constructor(private readonly repository: StockMonitorRepository) {}
+  constructor(private readonly repository: StockMonitorPrismaRepository) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     void context;

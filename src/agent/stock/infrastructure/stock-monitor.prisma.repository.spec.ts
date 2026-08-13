@@ -1,30 +1,32 @@
-import { MarketDataRepository } from '../../../market-data/infrastructure/market-data.repository';
+import { MarketDataPrismaRepository } from '../../../market-data/infrastructure/market-data.prisma.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { StockMonitorRepository as ProductionStockMonitorRepository } from './stock-monitor.repository';
+import { StockMonitorPrismaRepository as ProductionStockMonitorRepository } from './stock-monitor.prisma.repository';
 
-class StockMonitorRepository extends ProductionStockMonitorRepository {
+class StockMonitorPrismaRepository extends ProductionStockMonitorRepository {
   constructor(
     prisma: PrismaService,
-    marketDataRepository: MarketDataRepository = {
+    marketDataRepository: MarketDataPrismaRepository = {
       upsertDailyPrice: jest.fn().mockResolvedValue({
         written: 1,
         blockedIntraday: 0,
       }),
-    } as unknown as MarketDataRepository,
+    } as unknown as MarketDataPrismaRepository,
   ) {
     super(prisma, marketDataRepository);
   }
 }
 
-describe('StockMonitorRepository daily price delegation', () => {
+describe('StockMonitorPrismaRepository daily price delegation', () => {
   it('공유 시세 repository에 단건 쓰기를 위임한다', async () => {
     const prisma = {} as PrismaService;
     const upsertDailyPrice = jest.fn().mockResolvedValue({
       written: 1,
       blockedIntraday: 0,
     });
-    const marketData = { upsertDailyPrice } as unknown as MarketDataRepository;
-    const repository = new StockMonitorRepository(prisma, marketData);
+    const marketData = {
+      upsertDailyPrice,
+    } as unknown as MarketDataPrismaRepository;
+    const repository = new StockMonitorPrismaRepository(prisma, marketData);
     const input = {
       tickerId: 3,
       tradeDate: new Date('2026-08-11T00:00:00.000Z'),
@@ -39,14 +41,14 @@ describe('StockMonitorRepository daily price delegation', () => {
   });
 });
 
-describe('StockMonitorRepository alert outcome', () => {
+describe('StockMonitorPrismaRepository alert outcome', () => {
   it('지정 horizon의 outcome이 없는 알림만 조회한다', async () => {
     const tradeDate = new Date('2026-07-16T00:00:00.000Z');
     const findMany = jest
       .fn()
       .mockResolvedValue([{ id: 11, tickerId: 3, tradeDate }]);
     const prisma = { stockAlert: { findMany } } as unknown as PrismaService;
-    const repository = new StockMonitorRepository(prisma);
+    const repository = new StockMonitorPrismaRepository(prisma);
 
     const result = await repository.findAlertsNeedingOutcome(5);
 
@@ -65,7 +67,7 @@ describe('StockMonitorRepository alert outcome', () => {
       { tickerId: 4, ticker: { tossSymbol: null, name: '심볼없음' } },
     ]);
     const prisma = { stockAlert: { findMany } } as unknown as PrismaService;
-    const repository = new StockMonitorRepository(prisma);
+    const repository = new StockMonitorPrismaRepository(prisma);
 
     const result = await repository.findTickersWithUnscoredAlerts({
       marketCountry: 'KR',
@@ -95,7 +97,7 @@ describe('StockMonitorRepository alert outcome', () => {
     const prices = [{ tradeDate, adjClose: { toString: () => '100' } }];
     const findMany = jest.fn().mockResolvedValue(prices);
     const prisma = { dailyPrice: { findMany } } as unknown as PrismaService;
-    const repository = new StockMonitorRepository(prisma);
+    const repository = new StockMonitorPrismaRepository(prisma);
 
     const result = await repository.findDailyPricesSince(3, tradeDate);
 
@@ -110,7 +112,7 @@ describe('StockMonitorRepository alert outcome', () => {
   it('(alertId, horizonDays) 유니크 키로 outcome을 upsert한다', async () => {
     const upsert = jest.fn().mockResolvedValue(undefined);
     const prisma = { alertOutcome: { upsert } } as unknown as PrismaService;
-    const repository = new StockMonitorRepository(prisma);
+    const repository = new StockMonitorPrismaRepository(prisma);
     const input = {
       alertId: 11,
       horizonDays: 5,
@@ -144,10 +146,10 @@ const makePrisma = () => ({
   },
 });
 
-describe('StockMonitorRepository', () => {
+describe('StockMonitorPrismaRepository', () => {
   it('TOSS 현재 보유를 시장 구분 없이 최신 종가와 조회한다', async () => {
     const prisma = makePrisma();
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -199,7 +201,7 @@ describe('StockMonitorRepository', () => {
     ];
     // Prisma mock은 where를 실행하지 않으므로 DB 필터 이후 반환 모양을 직접 지정한다.
     prisma.holding.findMany.mockResolvedValue([databaseHoldings[0]]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -257,7 +259,7 @@ describe('StockMonitorRepository', () => {
         },
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -299,7 +301,7 @@ describe('StockMonitorRepository', () => {
         },
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -308,7 +310,7 @@ describe('StockMonitorRepository', () => {
 
   it('현재 보유 종목을 marketCountry 로 필터한다', async () => {
     const prisma = makePrisma();
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -337,7 +339,7 @@ describe('StockMonitorRepository', () => {
         },
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -376,7 +378,7 @@ describe('StockMonitorRepository', () => {
         ticker,
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -408,7 +410,7 @@ describe('StockMonitorRepository', () => {
         ticker,
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -429,7 +431,7 @@ describe('StockMonitorRepository', () => {
 
   it('일별 환율을 pair 와 rateDate 기준으로 upsert 한다', async () => {
     const prisma = makePrisma();
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const rateDate = new Date('2026-07-23T00:00:00.000Z');
@@ -452,7 +454,7 @@ describe('StockMonitorRepository', () => {
     prisma.dailyFxRate.findUnique.mockResolvedValue({
       rate: { toString: () => '1476.300000' },
     });
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const rateDate = new Date('2026-07-23T00:00:00.000Z');
@@ -487,7 +489,7 @@ describe('StockMonitorRepository', () => {
         },
       },
     ]);
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 
@@ -512,7 +514,7 @@ describe('StockMonitorRepository', () => {
 
   it('매매 사건을 한 번에 적재한다', async () => {
     const prisma = makePrisma();
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
     const effectiveDate = new Date('2026-08-06T00:00:00.000Z');
@@ -541,7 +543,7 @@ describe('StockMonitorRepository', () => {
 
   it('적재할 사건이 없으면 DB 를 건드리지 않는다', async () => {
     const prisma = makePrisma();
-    const repository = new StockMonitorRepository(
+    const repository = new StockMonitorPrismaRepository(
       prisma as unknown as PrismaService,
     );
 

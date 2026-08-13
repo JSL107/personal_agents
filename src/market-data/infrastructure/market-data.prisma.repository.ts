@@ -40,7 +40,7 @@ export interface StoredBarStat {
 }
 
 @Injectable()
-export class MarketDataRepository {
+export class MarketDataPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findBarsForTickers(

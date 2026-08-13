@@ -6,7 +6,7 @@ import { CalculateBalanceUsecase } from './application/calculate-balance.usecase
 import { CancelLeaveUsecase } from './application/cancel-leave.usecase';
 import { ListUsageUsecase } from './application/list-usage.usecase';
 import { RegisterLeaveUsecase } from './application/register-leave.usecase';
-import { LeaveUsageRepository } from './infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from './infrastructure/leave-usage.prisma.repository';
 import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
 
 // PrismaModule 은 @Global() — 별도 import 불필요.
@@ -14,7 +14,7 @@ import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
 @Module({
   imports: [AgentRunModule, ModelRouterModule],
   providers: [
-    LeaveUsageRepository,
+    LeaveUsagePrismaRepository,
     CalculateBalanceUsecase,
     RegisterLeaveUsecase,
     ListUsageUsecase,

@@ -1,4 +1,4 @@
-import { StockMonitorRepository } from '../../../agent/stock/infrastructure/stock-monitor.repository';
+import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { StockAlertScoringAutopilotTask } from './stock-alert-scoring.autopilot-task';
 
@@ -21,7 +21,7 @@ const makeTask = (
   repository: ReturnType<typeof makeRepository>,
 ): StockAlertScoringAutopilotTask =>
   new StockAlertScoringAutopilotTask(
-    repository as unknown as StockMonitorRepository,
+    repository as unknown as StockMonitorPrismaRepository,
   );
 
 describe('StockAlertScoringAutopilotTask', () => {

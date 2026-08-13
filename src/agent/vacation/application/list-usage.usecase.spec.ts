@@ -1,4 +1,4 @@
-import { LeaveUsageRepository } from '../infrastructure/leave-usage.repository';
+import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { ListUsageUsecase } from './list-usage.usecase';
 
 describe('ListUsageUsecase', () => {
@@ -17,7 +17,7 @@ describe('ListUsageUsecase', () => {
     const findActiveByUser = jest.fn().mockResolvedValue(records);
     const usecase = new ListUsageUsecase({
       findActiveByUser,
-    } as unknown as LeaveUsageRepository);
+    } as unknown as LeaveUsagePrismaRepository);
     const result = await usecase.execute({ slackUserId: 'U1' });
     expect(findActiveByUser).toHaveBeenCalledWith('U1');
     expect(result).toEqual(records);

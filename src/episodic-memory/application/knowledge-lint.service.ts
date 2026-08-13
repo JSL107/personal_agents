@@ -19,9 +19,9 @@ interface ContradictionDetection extends ContradictionLintOutcome {
   issues: KnowledgeLintIssue[];
 }
 import {
-  KnowledgeLintRepository,
+  KnowledgeLintPrismaRepository,
   NearestNeighborRow,
-} from '../infrastructure/knowledge-lint.repository';
+} from '../infrastructure/knowledge-lint.prisma.repository';
 
 // episodic-memory 무결성 점검의 판정 책임(application). repository 후보 행에 임계값/분류 규칙을 적용한다.
 // L4(contradiction)는 옵셔널 judge 주입 + 활성 옵션일 때만 — 미주입/비활성 시 L1/L2 만 수행.
@@ -30,7 +30,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
   private readonly logger = new Logger(KnowledgeLintService.name);
 
   constructor(
-    private readonly repository: KnowledgeLintRepository,
+    private readonly repository: KnowledgeLintPrismaRepository,
     @Optional()
     @Inject(CONTRADICTION_JUDGE_PORT)
     private readonly judge?: ContradictionJudgePort,
