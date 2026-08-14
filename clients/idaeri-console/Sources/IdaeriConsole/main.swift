@@ -61,6 +61,12 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 덮는지 확인하려는 순간에 대상이 없다. 전원을 진행 중으로 세워 굽는다.
     //   swift run IdaeriConsole --render /tmp/office.png --busy-demo
     let busyDemo = CommandLine.arguments.contains("--busy-demo")
+    // 글자가 서로를 가리는지는 **그려진 글자 폭**에 달려 있어, 좌석 크기나 폰트 값을 비교하는
+    // 단언으로는 안 잡힌다. 노드마다 이미 붙어 있는 이름(`agentType`)을 그림에 찍고 겹친
+    // 상자만 빨갛게 칠한다 — 겹침이 보여도 그게 누구 것인지 그림에 없으면 어디를 고쳐야
+    // 하는지 지목할 수가 없다. 같은 목록은 stderr 로도 나간다.
+    //   swift run IdaeriConsole --render /tmp/office.png --busy-demo --labels
+    let debugLabels = CommandLine.arguments.contains("--labels")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -68,7 +74,8 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         size: renderSize,
         poseDemo: poseDemo,
         hoverAgentType: hoverAgentType,
-        busyDemo: busyDemo
+        busyDemo: busyDemo,
+        debugLabels: debugLabels
     )
     exit(succeeded ? 0 : 1)
 }
