@@ -8,6 +8,10 @@ import {
   GITHUB_CLIENT_PORT,
   OCTOKIT_INSTANCE,
 } from './domain/port/github-client.port';
+import {
+  fetchWithTimeout,
+  GITHUB_REQUEST_TIMEOUT_MS,
+} from './infrastructure/fetch-with-timeout';
 import { OctokitGithubClient } from './infrastructure/octokit-github.client';
 
 @Module({
@@ -23,7 +27,13 @@ import { OctokitGithubClient } from './infrastructure/octokit-github.client';
         if (!token) {
           return null;
         }
-        return new Octokit({ auth: token });
+        return new Octokit({
+          auth: token,
+          // 상한이 없으면 응답 없는 한 요청이 이 클라이언트를 쓰는 AgentRun 을 무기한 붙잡는다.
+          request: {
+            fetch: fetchWithTimeout(GITHUB_REQUEST_TIMEOUT_MS),
+          },
+        });
       },
       inject: [ConfigService],
     },
