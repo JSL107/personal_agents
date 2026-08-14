@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>이대리 오피스</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #17151a;
+        color: #cfc9d4;
+        font: 13px/1.5 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+      canvas {
+        /* 도트 그림이라 확대·축소에서 뭉개지면 안 된다. */
+        image-rendering: pixelated;
+        background: #0d0c0f;
+      }
+      #status {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      #status.error {
+        color: #ff8f7a;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="office"></canvas>
+    <div id="status">평면도를 읽는 중…</div>
+    <script type="module" src="live.js"></script>
+  </body>
+</html>

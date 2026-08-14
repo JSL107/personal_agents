@@ -857,7 +857,7 @@ final class OfficeScene: SKScene {
             // 같은 눈높이로 올린다.
             var position = floorPoint(placement.tile)
             if placement.kind.isWallMounted {
-                position.y += tileSize * 0.32
+                position.y += tileSize * CGFloat(officeWallMountLiftTiles)
             }
             // 두 칸 이상을 차지하는 가구는 기준 칸 중앙이 아니라 **점유 범위 중앙**에 놓는다.
             // 발밑 기준(anchor x = 0.5)을 그대로 쓰면 2칸 폭 깔개가 좌우로 반 칸씩 삐져나가

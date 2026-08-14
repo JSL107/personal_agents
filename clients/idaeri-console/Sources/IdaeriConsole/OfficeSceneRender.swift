@@ -147,7 +147,7 @@ private func poseDemoAgents() -> [ConsoleAgent] {
 
 /// 렌더는 한 장을 굽고 끝나는 일회성 실행이라, 스냅샷을 기다렸다가 그리는 편이 단순하다.
 /// 실패해도 빈 사무실로 굽는다 — 백엔드가 꺼져 있다고 화면 확인까지 막힐 이유는 없다.
-private func fetchSnapshotSynchronously(client: ConsoleClient) -> ConsoleSnapshot? {
+func fetchSnapshotSynchronously(client: ConsoleClient) -> ConsoleSnapshot? {
     let semaphore = DispatchSemaphore(value: 0)
     var result: ConsoleSnapshot?
     Task {

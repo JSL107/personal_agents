@@ -12,6 +12,25 @@ let client = ConsoleClient(baseURL: baseURL, token: token)
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
+// 굽는 크기를 넘길 수 있다 — `--size 980x680`. 회귀 렌더와 스트림이 함께 쓴다.
+//
+// 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서
+// 세로로 옮겨 간다.** 그래서 격자 규격을 바꾸면 어떤 창에서는 타일이 그대로이고 어떤
+// 창에서는 작아지는데, 렌더 크기가 한 값으로 고정돼 있으면 그 차이를 확인할 방법이 없다.
+// 기본값은 기존 회귀 캡처와 비교되도록 그대로 둔다.
+// 값을 읽는 규칙 자체는 `officeParseRenderSize`(ConsoleCore) 가 갖는다 — 여기 두면
+// 실행 파일 안이라 테스트로 고정할 수가 없다.
+let sizeIndex = CommandLine.arguments.firstIndex(of: "--size")
+let renderSize =
+    sizeIndex.flatMap { index -> CGSize? in
+        guard index + 1 < CommandLine.arguments.count,
+            let parsed = officeParseRenderSize(CommandLine.arguments[index + 1])
+        else {
+            return nil
+        }
+        return CGSize(width: parsed.width, height: parsed.height)
+    } ?? CGSize(width: 1400, height: 820)
+
 // 화면 회귀 확인 모드 — 창을 띄우지 않고 사무실 한 장을 PNG 로 굽고 끝난다.
 // 시각 변경이 실제로 화면에 나왔는지는 눈으로만 판정되는데, 확인 경로가 "앱을 띄우고
 // 사람이 본다" 하나뿐이면 그 판정을 사람에게 매번 떠넘기게 된다.
@@ -27,24 +46,6 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         }
         return Int(CommandLine.arguments[index + 1])
     }
-    // 창 크기를 넘길 수 있다 — `--size 980x680`.
-    //
-    // 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서
-    // 세로로 옮겨 간다.** 그래서 격자 규격을 바꾸면 어떤 창에서는 타일이 그대로이고 어떤
-    // 창에서는 작아지는데, 렌더 크기가 한 값으로 고정돼 있으면 그 차이를 확인할 방법이 없다.
-    // 기본값은 기존 회귀 캡처와 비교되도록 그대로 둔다.
-    // 값을 읽는 규칙 자체는 `officeParseRenderSize`(ConsoleCore) 가 갖는다 — 여기 두면
-    // 실행 파일 안이라 테스트로 고정할 수가 없다.
-    let sizeIndex = CommandLine.arguments.firstIndex(of: "--size")
-    let renderSize =
-        sizeIndex.flatMap { index -> CGSize? in
-            guard index + 1 < CommandLine.arguments.count,
-                let parsed = officeParseRenderSize(CommandLine.arguments[index + 1])
-            else {
-                return nil
-            }
-            return CGSize(width: parsed.width, height: parsed.height)
-        } ?? CGSize(width: 1400, height: 820)
     // 일반 앱 경로에는 닿지 않고, 회귀 렌더에서만 가구 자세 일곱 종류를 강제로 세운다.
     let poseDemo = CommandLine.arguments.contains("--pose-demo")
     // 호버 쪽지는 마우스가 있어야 뜨므로 렌더에 잡히지 않는다 — 그러면 "가려지는지" 를
@@ -78,6 +79,31 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         debugLabels: debugLabels
     )
     exit(succeeded ? 0 : 1)
+}
+
+// 평면도 내보내기 — 다른 기기의 앱이 같은 배치를 그리도록 계산 결과를 JSON 으로 넘긴다.
+//   swift run IdaeriConsole --layout-json /tmp/layout.json --zone-columns 3
+if let layoutIndex = CommandLine.arguments.firstIndex(of: "--layout-json") {
+    let outputPath =
+        layoutIndex + 1 < CommandLine.arguments.count
+        ? CommandLine.arguments[layoutIndex + 1] : "layout.json"
+    // 창이 세로로 길면 부서를 2열×3행으로 세운다 — 화면이 정하는 값이라 부르는 쪽이 넘긴다.
+    //
+    // 잘못된 값은 **여기서 끊는다.** 그대로 넘기면 `officePlanSize` 의 precondition 에서
+    // 죽어, 사용자가 보는 것이 오타를 알려주는 한 줄이 아니라 스택 트레이스가 된다.
+    let zoneColumnsIndex = CommandLine.arguments.firstIndex(of: "--zone-columns")
+    var zoneColumns = 3
+    if let index = zoneColumnsIndex {
+        let raw = index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : ""
+        guard let parsed = officeParseZoneColumns(raw) else {
+            FileHandle.standardError.write(
+                Data("--zone-columns 는 2 또는 3 이어야 한다 (받은 값: \"\(raw)\")\n".utf8)
+            )
+            exit(1)
+        }
+        zoneColumns = parsed
+    }
+    exit(exportOfficeLayout(client: client, path: outputPath, zoneColumns: zoneColumns) ? 0 : 1)
 }
 
 // Dock 아이콘. `.app` 번들 없이 SwiftPM 실행 파일로 뜨는 구조라 macOS 가 아이콘을 찾을

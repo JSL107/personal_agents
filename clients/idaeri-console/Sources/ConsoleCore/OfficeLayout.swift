@@ -116,3 +116,26 @@ public func officeParseRenderSize(_ raw: String) -> (width: Double, height: Doub
     }
     return (width, height)
 }
+
+/// 구역 열 수 인자(`--zone-columns 2`)를 읽는다. 2 · 3 만 받고 나머지는 nil.
+///
+/// **아무 숫자나 통과시키면 크래시한다.** 배치 격자는 두 규격뿐이라 `officePlanSize` 가
+/// `precondition` 으로 막는데, 그 자리에서 죽으면 사용자가 보는 것은 오타를 알려주는 메시지가
+/// 아니라 스택 트레이스다. `nan`·`inf` 는 한술 더 떠서 `Int` 변환 자체가 런타임 트랩이라
+/// (`Int(Double.nan)`) 값을 확인해 보기도 전에 프로세스가 끝난다.
+///
+/// 소수도 받지 않는다 — `2.7` 을 조용히 2 로 깎으면 사용자가 요청한 것과 다른 배치가 나오고,
+/// 그 차이를 화면에서 알아챌 방법이 없다.
+///
+/// 실행 파일이 아니라 여기 있는 이유는 테스트다. `main.swift` 안에 두면 검증 러너가 닿지 못해
+/// 파싱 규칙이 확인되지 않은 채 남는다(`officeParseRenderSize` 와 같은 이유).
+public func officeParseZoneColumns(_ raw: String) -> Int? {
+    // 범위를 **Int 로 바꾸기 전에** 좁힌다. 큰 값(`1e30`)은 유한하고 정수이기도 해서
+    // 앞의 검사를 전부 통과하는데, 그 상태로 변환하면 오버플로로 트랩한다.
+    guard let value = Double(raw), value.isFinite, value == value.rounded(),
+        value == 2 || value == 3
+    else {
+        return nil
+    }
+    return Int(value)
+}

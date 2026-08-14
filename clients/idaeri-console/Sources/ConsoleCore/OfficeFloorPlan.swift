@@ -1,7 +1,7 @@
 import Foundation
 
 /// 타일 격자 좌표. (0,0) = 좌하단, y 는 위로 증가(SpriteKit 좌표계와 같은 방향).
-public struct TilePoint: Hashable, Sendable {
+public struct TilePoint: Hashable, Codable, Sendable {
     public let x: Int
     public let y: Int
     public init(x: Int, y: Int) {
@@ -56,6 +56,16 @@ public let officeFurnitureWidthCapTiles: Double = 1.15
 /// 공중에 뜬 것처럼 보이는 원인이다. 앉음일 때만 내려 하반신이 책상에 가리게 한다 —
 /// 서 있거나 걷는 캐릭터는 발이 바닥에 닿아야 하므로 오프셋 0 을 유지한다.
 public let officeSeatedSpriteDrop: Double = 0.28
+
+/// 벽에 거는 물건을 발밑에서 벽면 중턱으로 올리는 양(타일 배수).
+///
+/// 다른 가구와 같은 발밑 기준(anchor y = 0)을 그대로 쓰면 타일 바닥선에 붙어 **벽 앞에 세워
+/// 둔 것**처럼 보인다 — 벽시계가 탁상시계가 되고 화이트보드가 이젤이 된다.
+///
+/// 씬에 박아 두면 평면도를 내보내는 쪽(`OfficeLayoutExport`)이 같은 값을 실을 수 없어, 그림을
+/// 받아 그리는 다른 기기의 화면에서 벽걸이만 바닥으로 내려앉는다.
+public let officeWallMountLiftTiles: Double = 0.32
+
 /// 라운지 좌석은 가구 방향이 고정되지 않아, 책상용 수직 오프셋 대신 바라보는 쪽으로 당긴다.
 ///
 /// 0.22칸은 몸이 가구에 닿지 않아 바닥에 쭈그려 앉은 것처럼 보였고, 0.48칸은 높이 약 1.35칸인
@@ -508,7 +518,7 @@ public func officeTopSeatY(zone: DepartmentZone, desks: [DeskAssignment]) -> Int
 }
 
 /// 바닥·벽 타일 종류. 스프라이트 파일명(tile-*.png)과 1:1.
-public enum FloorTile: String, Sendable, CaseIterable {
+public enum FloorTile: String, Codable, Sendable, CaseIterable {
     case woodA
     case woodB
     case carpetLight
@@ -585,7 +595,7 @@ public enum FloorTile: String, Sendable, CaseIterable {
 }
 
 /// 가구 종류. 스프라이트 파일명(furn-*.png)과 1:1.
-public enum FurnitureKind: String, Sendable, CaseIterable {
+public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     case desk
     case chairDown
     case chairUp
@@ -1191,7 +1201,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
 }
 
 /// 배치된 가구 하나.
-public struct FurniturePlacement: Equatable, Sendable {
+public struct FurniturePlacement: Equatable, Codable, Sendable {
     public let kind: FurnitureKind
     public let tile: TilePoint
     public init(kind: FurnitureKind, tile: TilePoint) {
@@ -1201,7 +1211,7 @@ public struct FurniturePlacement: Equatable, Sendable {
 }
 
 /// 에이전트 한 명의 자리 — 책상과 그 뒤에 앉는 칸.
-public struct DeskAssignment: Equatable, Sendable {
+public struct DeskAssignment: Equatable, Codable, Sendable {
     public let agentType: String
     public let desk: TilePoint
     /// 캐릭터가 앉는 칸(책상 바로 위). 탑다운이라 책상이 캐릭터 앞을 가린다.
@@ -1214,7 +1224,7 @@ public struct DeskAssignment: Equatable, Sendable {
 }
 
 /// 부서 구역(라벨·바닥색 용).
-public struct DepartmentZone: Equatable, Sendable {
+public struct DepartmentZone: Equatable, Codable, Sendable {
     public let department: Department
     public let origin: TilePoint
     public let width: Int
@@ -1229,7 +1239,7 @@ public struct DepartmentZone: Equatable, Sendable {
 
 /// 사무실 평면도 — 바닥·가구·자리·통로가 전부 타일 격자 위에 확정된 값.
 /// 렌더(SpriteKit)와 이동(길찾기)이 같은 이 하나의 값을 본다.
-public struct OfficeFloorPlan: Sendable {
+public struct OfficeFloorPlan: Codable, Sendable {
     public let columns: Int
     public let rows: Int
     /// [row][column], row 0 = 최하단.
@@ -1254,14 +1264,14 @@ public struct OfficeFloorPlan: Sendable {
 }
 
 /// 공용 구역의 종류. 라벨 문자열로 구역을 찾으면 이름을 다듬는 순간 조용히 어긋난다.
-public enum CommonAreaKind: String, Equatable, Sendable {
+public enum CommonAreaKind: String, Equatable, Codable, Sendable {
     case meeting
     case president
     case pantry
 }
 
 /// 상단 공용 밴드의 한 구역. 문패를 달기 위한 이름과 가로 범위.
-public struct CommonArea: Equatable, Sendable {
+public struct CommonArea: Equatable, Codable, Sendable {
     public let kind: CommonAreaKind
     public let label: String
     public let icon: String
