@@ -27,6 +27,8 @@ const DEFAULT_SERVER_URL = "http://127.0.0.1:3099";
 const REQUEST_TIMEOUT_MS = 10_000;
 /** 설정 본문의 상한. 주소와 토큰 두 줄짜리 JSON 보다 크면 우리 화면이 보낸 것이 아니다. */
 const SETTINGS_BODY_LIMIT = 4096;
+/** 연결 확인 응답을 받아 둘 상한. 스냅샷은 수십 KB 라 이보다 크면 이대리 백엔드가 아니다. */
+const PROBE_BODY_LIMIT = 1_000_000;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -211,22 +213,42 @@ function probeBackend(settings) {
       resolve({ ok: false, message: "주소 형식이 아니다" });
       return;
     }
+    let settled = false;
+    let overallTimer = null;
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(overallTimer);
+      resolve(result);
+    };
     const request = backendClient(target).request(
       target,
       { headers: backendHeaders(settings, "application/json"), timeout: REQUEST_TIMEOUT_MS },
       (incoming) => {
         const chunks = [];
-        incoming.on("data", (chunk) => chunks.push(chunk));
+        let size = 0;
+        incoming.on("data", (chunk) => {
+          size += chunk.length;
+          // 스냅샷은 수십 KB 다. 이보다 큰 응답을 계속 받아 두면 엉뚱한 주소 하나로 앱의
+          // 메모리가 찬다 — 여기서 끊고 "이대리 백엔드가 아니다" 로 답한다.
+          if (size > PROBE_BODY_LIMIT) {
+            request.destroy(new Error("응답이 너무 크다 — 이대리 백엔드가 아닌 것 같다"));
+            return;
+          }
+          chunks.push(chunk);
+        });
         incoming.on("end", () => {
           if (incoming.statusCode !== 200) {
-            resolve({ ok: false, message: `맥이 HTTP ${incoming.statusCode} 를 줬다` });
+            finish({ ok: false, message: `맥이 HTTP ${incoming.statusCode} 를 줬다` });
             return;
           }
           try {
             const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
             const data = payload.data ?? payload;
             const people = (data.agents ?? []).length;
-            resolve(
+            finish(
               people > 0
                 ? { ok: true, message: `사무실에 ${people}명 있다` }
                 : {
@@ -235,15 +257,20 @@ function probeBackend(settings) {
                   }
             );
           } catch {
-            resolve({ ok: false, message: "이대리 백엔드의 응답 형식이 아니다" });
+            finish({ ok: false, message: "이대리 백엔드의 응답 형식이 아니다" });
           }
         });
       }
     );
+    // `timeout` 옵션은 **소켓이 조용할 때만** 발동한다. 상류가 데이터를 조금씩 계속 흘리면
+    // 유휴가 아니므로 영영 걸리지 않는다 — 전체 시간에도 같은 상한을 둔다.
+    overallTimer = setTimeout(() => {
+      request.destroy(new Error(`${REQUEST_TIMEOUT_MS / 1000}초 안에 응답이 끝나지 않았다`));
+    }, REQUEST_TIMEOUT_MS);
     request.on("timeout", () => {
       request.destroy(new Error(`${REQUEST_TIMEOUT_MS / 1000}초 안에 응답이 없었다`));
     });
-    request.on("error", (error) => resolve({ ok: false, message: error.message }));
+    request.on("error", (error) => finish({ ok: false, message: error.message }));
     request.end();
   });
 }
@@ -308,6 +335,17 @@ async function handleSettings(request, response, current) {
 }
 
 async function handleRequest(request, response) {
+  // 이 주소로 온 요청만 받는다.
+  //
+  // `Origin` 대조만으로는 **DNS rebinding 을 막지 못한다.** 공격자 도메인이 127.0.0.1 로
+  // 해석되게 만들면 브라우저 입장에서는 같은 출처가 되어, 같은 출처 GET 이 그렇듯 `Origin`
+  // 을 아예 붙이지 않고 지나간다. 그러면 `/settings` 의 토큰과 토큰이 자동으로 실려 나가는
+  // `/v1/*` 응답까지 읽힌다. 그때 브라우저가 보내는 `Host` 는 그 도메인이므로 여기서 갈린다
+  // — 우리 창은 언제나 `127.0.0.1:<포트>` 를 로드한다.
+  if (request.headers.host !== `127.0.0.1:${serverPort}`) {
+    respondJson(response, 403, { message: "이 주소로 온 요청만 받는다" });
+    return;
+  }
   const settings = readSettings();
   const [pathname] = request.url.split("?");
   if (pathname.startsWith("/v1/")) {
@@ -373,6 +411,41 @@ async function captureOnce(window, target) {
   return succeeded;
 }
 
+/**
+ * `--self-check` — 바깥에서 온 문자열을 다루는 두 함수의 경계 조건을 검사하고 끝낸다.
+ *
+ * `normalizeServerUrl` 은 사람이 친 글자를 **요청이 나갈 주소**로 바꾸고, `resolveStaticPath`
+ * 는 URL 을 **열어 줄 파일 경로**로 바꾼다. 뒤쪽이 무너지면 앱 밖 파일이 새므로, 확인을
+ * "사람이 curl 로 두드려 본다" 에만 맡기지 않는다. 이 디렉터리는 브라우저·Electron 코드라
+ * 레포의 jest 대상(`src/**`)에 들어가지 않아 여기에 둔다.
+ */
+function selfCheck() {
+  const results = [];
+  const expect = (label, actual, expected) => {
+    results.push({ label, actual, expected, ok: actual === expected });
+  };
+
+  expect("스킴 없는 주소에 http 를 붙인다", normalizeServerUrl("127.0.0.1:3099"), "http://127.0.0.1:3099");
+  expect("꼬리 슬래시를 떼낸다", normalizeServerUrl("http://mac:3099/"), "http://mac:3099");
+  expect("https 는 그대로 둔다", normalizeServerUrl("https://mac:3099"), "https://mac:3099");
+  expect("공백만 있으면 빈 값", normalizeServerUrl("   "), "");
+  expect("앞뒤 공백을 떼낸다", normalizeServerUrl(" 100.1.2.3:3099 "), "http://100.1.2.3:3099");
+
+  expect("앱 안 파일은 그 경로", resolveStaticPath("/index.html"), path.join(__dirname, "index.html"));
+  expect("스프라이트는 스프라이트 뿌리", resolveStaticPath("/sprites/char-down.png"), path.join(spritesRoot(), "char-down.png"));
+  expect("상위로 올라가는 경로는 거절", resolveStaticPath("/../main.js"), null);
+  expect("스프라이트에서 빠져나가는 경로는 거절", resolveStaticPath("/sprites/../../main.js"), null);
+  expect("인코딩된 상위 경로도 거절", resolveStaticPath("/%2e%2e%2f%2e%2e%2fmain.js"), null);
+  expect("깨진 인코딩은 거절", resolveStaticPath("/%zz"), null);
+
+  const failed = results.filter((one) => !one.ok);
+  for (const one of failed) {
+    console.error(`실패: ${one.label}\n  받은 값 ${one.actual}\n  기대   ${one.expected}`);
+  }
+  console.log(`${results.length - failed.length}/${results.length} 통과`);
+  return failed.length === 0;
+}
+
 function createWindow() {
   const settings = readSettings();
   const captureTarget = captureTargetFromArgv();
@@ -436,6 +509,10 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  if (process.argv.includes("--self-check")) {
+    app.exit(selfCheck() ? 0 : 1);
+    return;
+  }
   server = http.createServer((request, response) => {
     handleRequest(request, response).catch((error) => {
       if (!response.headersSent) {

@@ -8,7 +8,8 @@
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "capture": "env -u ELECTRON_RUN_AS_NODE electron . --capture=/tmp/idaeri-office.png",
     "check:layouts": "node -e \"for (const name of ['layout-3.json', 'layout-2.json']) { if (!require('fs').existsSync(name)) { throw new Error(name + ' 이 없다 — README 의 평면도 뽑기를 먼저 하라. 없는 채로 빌드하면 텅 빈 사무실이 설치된다.'); } }\"",
-    "dist:win": "pnpm check:layouts && electron-builder --win nsis --x64"
+    "check": "env -u ELECTRON_RUN_AS_NODE electron . --self-check",
+    "dist:win": "pnpm check && pnpm check:layouts && electron-builder --win nsis --x64"
   },
   "devDependencies": {
     "electron": "^43.4.0",
