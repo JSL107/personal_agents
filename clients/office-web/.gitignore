@@ -1,0 +1,8 @@
+# 백엔드 스냅샷에서 매번 뽑는 산출물 — 사람이 손대는 파일이 아니다.
+# 사람이 늘거나 부서 편성이 바뀌면 다시 뽑는다(README 참조).
+layout*.json
+
+# Electron 포장 산출물. node_modules 는 electron 바이너리까지 들어 300MB 를 넘고,
+# dist 에는 만들어진 Setup.exe 가 들어간다.
+node_modules/
+dist/

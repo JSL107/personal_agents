@@ -2,7 +2,7 @@ import Foundation
 
 /// 오피스 부서 구획. 26개 에이전트를 6개 부서로 묶는다(정체성 표현용, 순수).
 /// 상태(ConsoleAgentState)와 직교한다 — 상태는 토큰의 링/색, 부서는 아이콘·채움 tint·(Phase 3)방 배치.
-public enum Department: String, CaseIterable, Sendable {
+public enum Department: String, CaseIterable, Codable, Sendable {
     case planning
     case engineering
     case review
