@@ -20,7 +20,18 @@ const makeConsumer = (due: JobApplicationRecord[]) => {
     findDueNudges: jest.fn().mockResolvedValue(due),
   };
   const slackNotifier = { postMessage: jest.fn().mockResolvedValue(undefined) };
-  const cronIdempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+  // 실제 가드처럼 키를 기억한다 — 같은 키의 두 번째 획득은 false.
+  // (mock 이 항상 true 면 키에 무엇이 들어가든 테스트가 통과해 결함을 못 잡는다.)
+  const acquired = new Set<string>();
+  const cronIdempotency = {
+    acquireOnce: jest.fn(async (key: string) => {
+      if (acquired.has(key)) {
+        return false;
+      }
+      acquired.add(key);
+      return true;
+    }),
+  };
   const notificationPublisher = { publishCronFailure: jest.fn() };
   const consumer = new JobApplicationNudgeCronConsumer(
     repository as never,
@@ -28,7 +39,13 @@ const makeConsumer = (due: JobApplicationRecord[]) => {
     cronIdempotency as never,
     notificationPublisher as never,
   );
-  return { consumer, repository, slackNotifier, notificationPublisher };
+  return {
+    consumer,
+    repository,
+    slackNotifier,
+    cronIdempotency,
+    notificationPublisher,
+  };
 };
 
 describe('JobApplicationNudgeCronConsumer', () => {
@@ -57,6 +74,37 @@ describe('JobApplicationNudgeCronConsumer', () => {
 
     expect(deps.repository.findDueNudges).toHaveBeenCalledTimes(1);
     expect(deps.slackNotifier.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('owner 가 다르면 같은 날에도 각각 발송된다 (가드 키에 owner 포함)', async () => {
+    const deps = makeConsumer([sampleRecord()]);
+
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U2', target: 'C2' },
+    } as never);
+
+    expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    const keys = deps.cronIdempotency.acquireOnce.mock.calls.map(
+      (call) => call[0],
+    );
+    expect(keys[0]).toContain(':U1:');
+    expect(keys[1]).toContain(':U2:');
+  });
+
+  it('같은 owner 가 같은 날 두 번 처리되면 두 번째는 발송 skip', async () => {
+    const deps = makeConsumer([sampleRecord()]);
+
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+
+    expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
   });
 
   it('findDueNudges 실패 — propagate + owner 실패 알람 발사', async () => {

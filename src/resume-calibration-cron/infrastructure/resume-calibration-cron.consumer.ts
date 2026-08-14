@@ -29,6 +29,14 @@ import {
 // 발송 idempotency TTL — 25h. 다음 주기 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
 
+interface DeliverCalibrationInput {
+  ownerSlackUserId: string;
+  target: string;
+  text: string;
+  dateKey: string;
+  detail?: string;
+}
+
 // 주 1회 자동 이력서 보정 점검 — CeoMetaCronConsumer 패턴 그대로.
 // Hermes 웹리서치로 2026 트렌드를 끌어와 CalibrateResumeUsecase 에 webTrendsNote 로 augment.
 // 역량 프로필/증거 없으면 NO_EVIDENCE — graceful skip + Slack 안내.
@@ -76,11 +84,13 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
         `🔍 *이력서 보정 점검 — ${todayKst} (주간 자동${webTrendsNote ? ' · 웹 트렌드 반영' : ''})*\n\n` +
         rendered.summary;
       // 잘린 경우에만 전체를 스레드 상세로. 잘린 게 없으면 요약이 곧 전체.
-      await this.deliverOnce(
+      await this.deliverOnce({
+        ownerSlackUserId,
         target,
-        summaryText,
-        rendered.truncated ? rendered.full : undefined,
-      );
+        text: summaryText,
+        dateKey: todayKst,
+        detail: rendered.truncated ? rendered.full : undefined,
+      });
     } catch (error) {
       if (
         error instanceof CareerMateException &&
@@ -89,10 +99,12 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
         this.logger.warn(
           `Resume Calibration Cron skip — 역량 프로필/증거 없음 (owner=${ownerSlackUserId})`,
         );
-        await this.deliverOnce(
+        await this.deliverOnce({
+          ownerSlackUserId,
           target,
-          `🌙 *이력서 보정 점검 — ${todayKst} skip*\n_역량 프로필이 없어 점검을 건너뜁니다. "@이대리 프로필 정리해줘" 먼저 실행해주세요._`,
-        );
+          text: `🌙 *이력서 보정 점검 — ${todayKst} skip*\n_역량 프로필이 없어 점검을 건너뜁니다. "@이대리 프로필 정리해줘" 먼저 실행해주세요._`,
+          dateKey: todayKst,
+        });
         return;
       }
       this.logger.error(
@@ -120,14 +132,17 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
 
   // 발송 idempotency 가드 — stalled 재처리로 같은 날 두 번째 처리가 오면 발송 skip.
   // detail 이 있으면 요약 메시지의 스레드 댓글로 전체 리포트를 이어 붙인다(요약 벽 방지).
-  private async deliverOnce(
-    target: string,
-    text: string,
-    detail?: string,
-  ): Promise<void> {
-    const dateKey = getTodayKstDate();
+  private async deliverOnce({
+    ownerSlackUserId,
+    target,
+    text,
+    dateKey,
+    detail,
+  }: DeliverCalibrationInput): Promise<void> {
     const firstRun = await this.cronIdempotency.acquireOnce(
-      `cron:${RESUME_CALIBRATION_CRON_QUEUE}:${dateKey}`,
+      // owner 를 키에 포함 — 잡은 owner 별로 등록되므로(scheduler jobId 참조),
+      // owner 가 빠지면 한 owner 의 발송이 같은 날 다른 owner 전원을 막는다.
+      `cron:${RESUME_CALIBRATION_CRON_QUEUE}:${ownerSlackUserId}:${dateKey}`,
       SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {

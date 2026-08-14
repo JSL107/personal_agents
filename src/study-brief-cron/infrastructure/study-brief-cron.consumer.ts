@@ -122,7 +122,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
   async process(job: Job<StudyBriefCronJobData>): Promise<void> {
     const { ownerSlackUserId, target } = job.data;
     const dateKey = getTodayKstDate();
-    const guardKey = `cron:${STUDY_BRIEF_CRON_QUEUE}:${dateKey}`;
+    // owner 를 키에 포함 — 잡은 owner 별로 등록되므로(scheduler jobId 참조),
+    // owner 가 빠지면 한 owner 의 발송이 같은 날 다른 owner 전원을 막는다.
+    const guardKey = `cron:${STUDY_BRIEF_CRON_QUEUE}:${ownerSlackUserId}:${dateKey}`;
     const processingGuardKey = `${guardKey}:processing`;
     let ownsProcessingGuard = false;
     // CTO 판정(EvaluateStudyTopicUsecase)이 자체 AgentRun 을 남기므로, 그 지점에 **진입했는지**
