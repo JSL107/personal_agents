@@ -53,10 +53,14 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   createReviewComment: jest.fn(),
   listReviewThreads: jest.fn(),
   resolveReviewThread: jest.fn(),
+  commitFileToBranch: jest.fn(),
+  getFileFromBranch: jest.fn(),
 });
 
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
   listActiveTasks: jest.fn(),
+  queryDraftPages: jest.fn(),
+  getPageMarkdown: jest.fn(),
   createDatabasePage: jest.fn(),
   archivePage: jest.fn(),
   findOrCreateDailyPage: jest.fn(),

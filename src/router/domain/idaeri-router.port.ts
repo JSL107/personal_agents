@@ -61,6 +61,11 @@ export interface DispatchResult {
   modelUsed: string;
   formattedText: string;
   autoResolvedNotice?: string;
+  preview?: {
+    id: string;
+    text: string;
+    content?: string;
+  };
   followUp?: HandoffSpec;
   handoffResults?: DispatchResult[];
 }

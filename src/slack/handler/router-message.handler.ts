@@ -22,6 +22,7 @@ import {
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 import { detectYesNoIntent } from './yes-no-detector';
 
@@ -283,7 +284,21 @@ export class RouterMessageHandler implements SlackHandler {
       await say({
         thread_ts: threadTs,
         text: routerReplyText,
+        ...(result.preview
+          ? {
+              blocks: buildPreviewBlocks({
+                previewText: routerReplyText,
+                previewId: result.preview.id,
+              }) as never,
+            }
+          : {}),
       });
+      if (result.preview?.content) {
+        await say({
+          thread_ts: threadTs,
+          text: result.preview.content,
+        });
+      }
       // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'assistant',

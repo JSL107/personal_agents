@@ -37,6 +37,8 @@ export interface AgentRetryInputSnapshot {
   // PAPER_RECOMMEND — 원래 전략과 판단 시각을 고정해 다른 전략/날짜의 주문을 만들지 않는다.
   strategy?: 'LONG_TERM' | 'SWING';
   decidedAt?: string;
+  titleQuery?: string; // BLOG_PUBLISH
+  pageId?: string; // BLOG_PUBLISH — 최초 실행에서 선택한 Notion page
   prompt?: string;
   ruleVersion?: number;
 }
