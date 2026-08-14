@@ -88,7 +88,21 @@ if let layoutIndex = CommandLine.arguments.firstIndex(of: "--layout-json") {
         layoutIndex + 1 < CommandLine.arguments.count
         ? CommandLine.arguments[layoutIndex + 1] : "layout.json"
     // 창이 세로로 길면 부서를 2열×3행으로 세운다 — 화면이 정하는 값이라 부르는 쪽이 넘긴다.
-    let zoneColumns = doubleArgument(named: "--zone-columns").map { Int($0) } ?? 3
+    //
+    // 잘못된 값은 **여기서 끊는다.** 그대로 넘기면 `officePlanSize` 의 precondition 에서
+    // 죽어, 사용자가 보는 것이 오타를 알려주는 한 줄이 아니라 스택 트레이스가 된다.
+    let zoneColumnsIndex = CommandLine.arguments.firstIndex(of: "--zone-columns")
+    var zoneColumns = 3
+    if let index = zoneColumnsIndex {
+        let raw = index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : ""
+        guard let parsed = officeParseZoneColumns(raw) else {
+            FileHandle.standardError.write(
+                Data("--zone-columns 는 2 또는 3 이어야 한다 (받은 값: \"\(raw)\")\n".utf8)
+            )
+            exit(1)
+        }
+        zoneColumns = parsed
+    }
     exit(exportOfficeLayout(client: client, path: outputPath, zoneColumns: zoneColumns) ? 0 : 1)
 }
 

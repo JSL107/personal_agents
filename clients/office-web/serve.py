@@ -18,7 +18,10 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-BACKEND = os.environ.get("IDAERI_CONSOLE_URL", "http://127.0.0.1:3099")
+# 기본값은 **맥 앱과 같은 주소**여야 한다(`main.swift` 의 `IDAERI_CONSOLE_URL` 기본값).
+# 두 클라이언트가 서로 다른 포트를 기본으로 들면, 같은 백엔드를 보고 있다고 믿는 채로
+# 한쪽만 502 를 받는다. 실제 운영 포트가 다르면 두 쪽 모두 이 환경변수로 지정한다.
+BACKEND = os.environ.get("IDAERI_CONSOLE_URL", "http://127.0.0.1:3002")
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8777
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -38,7 +41,8 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             upstream = urllib.request.urlopen(url, timeout=None)
         except urllib.error.URLError as error:
-            self.send_error(502, f"백엔드에 못 닿았다: {error}")
+            # 주소를 함께 알린다 — 포트가 어긋났을 때 "502" 만으로는 어디를 두드렸는지 모른다.
+            self.send_error(502, f"백엔드({BACKEND})에 못 닿았다: {error}")
             return
         self.send_response(200)
         content_type = upstream.headers.get("Content-Type", "application/json")

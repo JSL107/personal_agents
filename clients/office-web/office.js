@@ -885,7 +885,12 @@ export class OfficeRenderer {
     for (const [agentType, body] of Object.entries(view.bodies ?? {})) {
       const state = view.agents?.[agentType]?.state ?? "WAITING";
       const color = this.layout.stateColors[state] ?? this.layout.stateColors.WAITING;
-      const point = this.floorPointAt(body.x, body.y);
+      const base = this.floorPointAt(body.x, body.y);
+      // **몸이 통째로 옮겨 간 만큼만 따라간다.** 소파로 옮겨 앉으면 링도 함께 가야 하지만
+      // (안 그러면 상태색이 딴 칸 바닥에 남는다), 책상에 앉을 때 스프라이트를 내리는 것은
+      // 하반신을 가리는 연출이라 링은 칸 바닥에 남는다.
+      const offset = this.groundOffset(body);
+      const point = { x: base.x + offset.x, y: base.y + offset.y };
       context.save();
       context.strokeStyle = css(color, 0.95);
       context.lineWidth =
@@ -919,16 +924,63 @@ export class OfficeRenderer {
     if (!image) {
       return;
     }
-    // 앉으면 책상 쪽으로 내려 하반신이 책상에 가리게 한다. 안 내리면 좌석이 책상 바로 위
-    // 칸이라 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다.
-    const drop = body.seated ? this.tileSize * this.metrics.seatedSpriteDrop : 0;
+    const offset = this.bodyOffset(body);
     this.drawFootAnchored(
       image,
-      { x: point.x, y: point.y - drop },
+      { x: point.x + offset.x, y: point.y + offset.y },
       image.width * this.characterScale,
       image.height * this.characterScale,
       flipped
     );
+  }
+
+  /**
+   * 그 자세일 때 몸을 칸에서 얼마나 옮겨 놓는가.
+   *
+   * 책상 좌석은 **아래로** 내린다 — 좌석이 책상 바로 위 칸이라 그냥 두면 사람이 책상 위
+   * 허공에 별개로 놓인 물체처럼 보인다.
+   *
+   * 라운지 좌석(소파·회의 테이블)은 **바라보는 쪽으로** 당긴다. 좌석이 가구 앞 칸이고
+   * 가구 방향이 고정되지 않아, 아래로 내리면 엉뚱한 방향으로 비켜 앉는다.
+   *
+   * **이름표도 같은 값을 써야 한다.** 한쪽만 옮기면 앉은 사람의 이름이 몸에서 떨어져
+   * 옆 칸 위에 뜬다 — 몸에 붙는 것은 전부 이 함수를 지나게 둔다.
+   */
+  bodyOffset(body) {
+    const ground = this.groundOffset(body);
+    if (body.interactionPose === "sitting") {
+      return ground;
+    }
+    return {
+      x: ground.x,
+      y: ground.y - (body.seated ? this.tileSize * this.metrics.seatedSpriteDrop : 0),
+    };
+  }
+
+  /**
+   * 그 사람이 **서 있는 칸 자체**가 옮겨진 양. 발밑 상태 링이 이 값을 쓴다.
+   *
+   * 책상 오프셋은 여기 들어오지 않는다 — 그건 스프라이트만 책상 쪽으로 내려 하반신을
+   * 가리는 연출이고, 사람이 실제로 그 아래 칸에 선 것은 아니다. 링까지 내리면 상태색이
+   * 책상 아래 칸에 찍혀 누구 것인지 흐려진다(맥 앱도 링은 칸 바닥에 둔다).
+   *
+   * 라운지에 앉을 때는 다르다. 몸이 통째로 가구 쪽으로 옮겨 가므로 링도 함께 간다.
+   */
+  groundOffset(body) {
+    if (body.interactionPose !== "sitting") {
+      return { x: 0, y: 0 };
+    }
+    const shift = this.tileSize * (this.metrics.loungeSpriteShift ?? 0.3);
+    switch (body.facing) {
+      case "left":
+        return { x: -shift, y: 0 };
+      case "right":
+        return { x: shift, y: 0 };
+      case "up":
+        return { x: 0, y: shift };
+      default:
+        return { x: 0, y: -shift };
+    }
   }
 
   /** 그 사람의 색으로 치환한 그림. 시트에 그 자세가 없으면 기본 시트로 내려간다. */
@@ -1068,15 +1120,17 @@ export class OfficeRenderer {
     }
     const fontSize = this.nameplateFontSize();
     const point = this.floorPointAt(body.x, body.y);
-    const drop = body.seated ? this.tileSize * this.metrics.seatedSpriteDrop : 0;
+    // 몸이 옮겨 간 만큼 이름표도 따라간다 — 안 그러면 앉은 사람의 이름만 옆 칸 위에 뜬다.
+    const offset = this.bodyOffset(body);
     const spriteHeight = this.characterHeight(look, body);
+    const centerX = point.x + offset.x;
     const bottomY =
-      point.y - drop + spriteHeight + this.tileSize * this.metrics.nameplateGapTiles;
-    // 자리 몫은 좌석에 앉아 있을 때만 물린다 — 자리를 떠난 사람에게 물리면 복도에서도
-    // 이름표가 한쪽으로 치우친 채 눌려 따라다닌다.
-    const span = body.seated ? this.nameplateSpan(body) : null;
+      point.y + offset.y + spriteHeight + this.tileSize * this.metrics.nameplateGapTiles;
+    // 자리 몫은 **자기 책상에 앉아 있을 때만** 물린다. 자리를 떠난 사람에게 물리면 복도나
+    // 소파에서도 이름표가 한쪽으로 치우친 채 눌려 따라다닌다.
+    const span = body.seated && !body.interactionPose ? this.nameplateSpan(body) : null;
     this.drawPlateLabel(look.roleLabel, {
-      centerX: point.x,
+      centerX,
       bottomY,
       fontSize,
       alpha: emphasized ? 0.72 : 0.38,
@@ -1095,8 +1149,8 @@ export class OfficeRenderer {
       this.tileSize * this.metrics.nameplateGapTiles +
       this.metrics.nameplateClearancePadding;
     this.drawPlateLabel(bubble, {
-      centerX: point.x,
-      bottomY: point.y - drop + spriteHeight + clearance,
+      centerX,
+      bottomY: point.y + offset.y + spriteHeight + clearance,
       fontSize: this.bubbleFontSize(),
       alpha: 0.62,
       textAlpha: 1,

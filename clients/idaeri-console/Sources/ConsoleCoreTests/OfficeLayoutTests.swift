@@ -75,4 +75,21 @@ func runOfficeLayoutTests(_ t: TestRunner) {
     t.expect(officeParseRenderSize("0x680") == nil, "0 은 거부 — 타일 크기가 0 이 된다")
     t.expect(officeParseRenderSize("980x-680") == nil, "음수는 거부")
     t.expect(officeParseRenderSize("") == nil, "빈 문자열은 거부")
+
+    // 구역 열 수 인자(`--zone-columns 2`).
+    //
+    // 배치 격자는 두 규격뿐이라 다른 값은 `officePlanSize` 의 precondition 에서 죽는다.
+    // `nan`·`inf` 는 거기까지 가지도 못한다 — `Int(Double.nan)` 자체가 런타임 트랩이라
+    // 값을 확인해 보기 전에 프로세스가 끝난다. 그래서 여기서 전부 걸러야 한다.
+    t.expectEqual(officeParseZoneColumns("2"), 2, "2 는 받는다")
+    t.expectEqual(officeParseZoneColumns("3"), 3, "3 은 받는다")
+    t.expect(officeParseZoneColumns("4") == nil, "규격에 없는 값은 거부")
+    t.expect(officeParseZoneColumns("0") == nil, "0 은 거부")
+    t.expect(officeParseZoneColumns("-2") == nil, "음수는 거부")
+    t.expect(officeParseZoneColumns("2.7") == nil, "소수는 거부 — 조용히 깎으면 다른 배치가 나온다")
+    t.expect(officeParseZoneColumns("nan") == nil, "nan 은 거부 — Int 변환이 런타임 트랩이다")
+    t.expect(officeParseZoneColumns("inf") == nil, "inf 는 거부")
+    t.expect(officeParseZoneColumns("1e30") == nil, "Int 범위를 넘는 값은 거부")
+    t.expect(officeParseZoneColumns("둘") == nil, "숫자가 아니면 거부")
+    t.expect(officeParseZoneColumns("") == nil, "빈 문자열은 거부")
 }

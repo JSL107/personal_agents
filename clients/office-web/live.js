@@ -60,6 +60,14 @@ const strolling = new Set();
 let lastTickAt = 0;
 /** 실제로 받아 둔 그림 장수. 상태 줄에 찍어 에셋 누락이 조용히 지나가지 않게 한다. */
 let loadedSpriteCount = 0;
+/**
+ * 평면도에 자리가 없는 사람들.
+ *
+ * 평면도는 **뽑은 시점의 사진**이라(데스크톱 앱은 빌드에 동봉한다) 백엔드에 사람이 늘면
+ * 그 사람은 좌석을 못 찾는다. 그때 `sendHome` 이 그 사람을 화면에서 지우므로 **오류 없이
+ * 조용히 사라진다** — 여기 모아 상태 줄에 찍어 "평면도를 다시 뽑아야 한다" 를 드러낸다.
+ */
+let agentsWithoutSeat = [];
 
 // MARK: - 평면도
 
@@ -87,15 +95,20 @@ function chooseZoneColumns(width, height, current) {
 function resize() {
   const width = Math.max(320, window.innerWidth - 24);
   const height = Math.max(240, window.innerHeight - 52);
-  // **캔버스 크기를 정하면 그려 둔 그림이 지워진다.** 움직이는 화면은 다음 프레임이 다시
-  // 채우지만 정지 렌더는 한 번만 그리므로, 창 크기가 뒤늦게 확정되면(캡처 도구가 그렇다)
-  // 화면이 통째로 빈 채 남는다 — 오류도 없이 텅 빈 사무실이 저장됐다.
-  const needsRepaint = canvas.width !== Math.round(width) || canvas.height !== Math.round(height);
+  // **캔버스 크기를 대입하면 그려 둔 그림이 지워진다 — 같은 값을 다시 넣어도 그렇다.**
+  // 움직이는 화면은 다음 프레임이 다시 채우지만 정지 렌더는 한 번만 그리므로, 창 크기가
+  // 뒤늦게 확정되면(캡처 도구가 그렇다) 화면이 통째로 빈 채 남는다 — 오류도 없이 텅 빈
+  // 사무실이 저장됐다. 값이 실제로 달라졌을 때만 대입해 그 경로를 아예 없앤다.
+  const nextWidth = Math.round(width);
+  const nextHeight = Math.round(height);
+  const sizeChanged = canvas.width !== nextWidth || canvas.height !== nextHeight;
   const next = chooseZoneColumns(width, height, zoneColumns);
   const layoutChanged = next !== zoneColumns;
   zoneColumns = next;
-  canvas.width = Math.round(width);
-  canvas.height = Math.round(height);
+  if (sizeChanged) {
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+  }
   if (layoutChanged || !renderer) {
     renderer = renderer ?? new OfficeRenderer(canvas, layouts[zoneColumns]);
     renderer.setLayout(layouts[zoneColumns]);
@@ -104,10 +117,10 @@ function resize() {
     for (const agentType of Object.keys(bodies)) {
       sendHome(agentType);
     }
-  } else {
+  } else if (sizeChanged) {
     renderer.measure();
   }
-  if (isStatic && needsRepaint && loadedSpriteCount > 0) {
+  if (isStatic && (sizeChanged || layoutChanged) && loadedSpriteCount > 0) {
     renderOnce();
   }
 }
@@ -121,7 +134,7 @@ function renderOnce() {
     hour: fixedHour ?? new Date().getHours(),
     blink: 1,
   });
-  setStatus(summary());
+  setStatus(summary(), hasStaleLayout());
   document.body.dataset.rendered = "1";
 }
 
@@ -212,6 +225,9 @@ function walkTo(agentType, goal, options = {}) {
   body.onArrive = options.onArrive ?? null;
   body.dwellSeconds = options.dwellSeconds ?? 0;
   body.arriveFacing = options.facing ?? null;
+  body.arrivePose = options.pose ?? null;
+  body.arriveKind = options.kind ?? "자리";
+  body.interactionPose = null;
   return true;
 }
 
@@ -258,6 +274,11 @@ function advanceBodies(deltaSeconds) {
         if (body.dwellSeconds > 0) {
           body.dwellRemaining = body.dwellSeconds;
           body.dwellSeconds = 0;
+          // 가구 앞에 도착하면 그 가구가 정한 자세를 잡는다. 소파·의자는 앉고, 나머지는
+          // 선 채로 그 방향을 본다 — 서서 쓰는 물건(커피머신·게시판) 앞에서 앉으면
+          // 그 사람만 바닥에 주저앉은 그림이 된다.
+          body.interactionPose = body.arrivePose ?? null;
+          body.seated = body.interactionPose === "sitting";
         } else if (body.onArrive) {
           const arrive = body.onArrive;
           body.onArrive = null;
@@ -324,10 +345,17 @@ function strollTick(now) {
 
   for (const agentType of candidates) {
     // 목적지는 회차마다 갈리되 사람에 따라 다르게 — 같은 자리에 둘이 겹쳐 서지 않게 한다.
+    //
+    // **가려는 칸으로 센다.** 지금 서 있는 칸으로 세면, 방금 출발한 사람은 아직 자기 자리에
+    // 있어서 그가 향하는 목적지가 비어 보인다 — 같은 회차의 두 번째 사람이 같은 칸을 골라
+    // 소파 하나에 둘이 겹쳐 앉는다.
     const taken = new Set(
       Object.values(bodies)
         .filter((body) => body.path || body.dwellRemaining > 0)
-        .map((body) => `${Math.round(body.x)},${Math.round(body.y)}`)
+        .map((body) => {
+          const goal = body.path?.[body.path.length - 1] ?? body;
+          return `${Math.round(goal.x)},${Math.round(goal.y)}`;
+        })
     );
     const free = spots.filter(
       (spot) => !taken.has(`${spot.tile.x},${spot.tile.y}`)
@@ -340,6 +368,8 @@ function strollTick(now) {
       walkTo(agentType, spot.tile, {
         dwellSeconds: spot.dwellSeconds,
         facing: spot.facing,
+        pose: spot.pose,
+        kind: spot.kind,
       })
     ) {
       strolling.add(agentType);
@@ -385,6 +415,9 @@ function applySnapshot(data) {
       delete bodies[agentType];
     }
   }
+  agentsWithoutSeat = Object.keys(agents).filter(
+    (agentType) => !renderer.seatsByAgent.has(agentType)
+  );
 }
 
 /**
@@ -460,13 +493,35 @@ function subscribe() {
         }
       }
     }
-    if (event.type?.startsWith("session")) {
-      refreshSnapshot();
-    }
+    // **이벤트만으로는 화면을 다 채울 수 없다.** `state.changed` 는 상태만 싣고 활동
+    // 문구를 주지 않으며, 승인 열림·해소는 그 사람의 파생 상태를 담지 않는다. 그대로 두면
+    // "지금 무슨 일 중" 이 다음 폴링(20초)까지 옛 값으로 남고, 그보다 짧게 끝나는 실행은
+    // 문구가 한 번도 안 뜬다. 그래서 이벤트가 오면 스냅샷을 당겨 온다.
+    scheduleSnapshot();
   };
   stream.onerror = () => {
     setStatus("실시간 연결이 끊겼다 — 다시 붙는 중", true);
   };
+}
+
+/** 예약된 스냅샷 재동기화. 이벤트가 몰려 와도 요청은 한 번만 나간다. */
+let snapshotTimer = null;
+
+/**
+ * 곧 스냅샷을 다시 받는다.
+ *
+ * 이벤트마다 바로 부르면 안 된다 — 체인 하나가 시작되면 `run.started`·`state.changed`·
+ * 말풍선이 잇따라 오고, 사람이 여럿 얽힌 회의면 한 번에 수십 개가 몰린다. 짧게 묶어
+ * 마지막 이벤트 뒤 한 번만 요청한다.
+ */
+function scheduleSnapshot() {
+  if (snapshotTimer !== null) {
+    return;
+  }
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    refreshSnapshot();
+  }, 400);
 }
 
 let snapshotFailures = 0;
@@ -475,7 +530,7 @@ async function refreshSnapshot() {
   try {
     applySnapshot(await fetchSnapshot());
     snapshotFailures = 0;
-    setStatus(summary());
+    setStatus(summary(), hasStaleLayout());
   } catch (error) {
     snapshotFailures += 1;
     setStatus(`${error} (${snapshotFailures}회)`, true);
@@ -487,12 +542,22 @@ function summary() {
     tally[agent.state] = (tally[agent.state] ?? 0) + 1;
     return tally;
   }, {});
+  const stale =
+    agentsWithoutSeat.length > 0
+      ? ` · 평면도에 자리 없는 사람 ${agentsWithoutSeat.length}명(${agentsWithoutSeat.join(", ")})` +
+        ` — 평면도를 다시 뽑아야 한다`
+      : "";
   return (
     `진행 ${counts.IN_PROGRESS ?? 0} · 승인 ${counts.AWAITING_APPROVAL ?? 0}` +
     ` · 쉬는 중 ${counts.WAITING ?? 0} · 세션 ${sessions.length}` +
     ` · ${renderer.plan.columns}×${renderer.plan.rows} 칸 · 타일 ${renderer.tileSize.toFixed(1)}px` +
-    ` · 그림 ${loadedSpriteCount}장`
+    ` · 그림 ${loadedSpriteCount}장${stale}`
   );
+}
+
+/** 평면도가 낡았는지. 상태 줄을 붉게 만들어 그냥 지나치지 못하게 한다. */
+function hasStaleLayout() {
+  return agentsWithoutSeat.length > 0;
 }
 
 function setStatus(text, isError = false) {
@@ -526,16 +591,35 @@ async function main() {
 
   if (isStatic) {
     if (walkSeconds > 0) {
-      // 산책을 한 번 일으키고 가상 시간으로 진행시킨다. 프레임 간격은 실제 루프와 같은
-      // 크기로 잘라 넣어야 한 칸씩 밟고 지나가는 경로가 같은 방식으로 재현된다.
-      strollTick(0);
+      // 산책을 일으키고 가상 시간으로 진행시킨다. 프레임 간격은 실제 루프와 같은 크기로
+      // 잘라 넣고 배회 틱도 같은 주기로 돌려야, 한 칸씩 밟고 지나가는 경로와 자세가 같은
+      // 방식으로 재현된다.
+      //
+      // **누가 도착하면 거기서 멈춘다.** 끝까지 돌리면 머무는 시간(3~8초)이 지나 전원이
+      // 자리로 돌아가 버려, 확인하려던 그림이 화면에 남지 않는다.
       const step = 1 / 60;
+      let tickedAt = -STROLL_TICK_SECONDS;
       for (let elapsed = 0; elapsed < walkSeconds; elapsed += step) {
+        if (elapsed - tickedAt >= STROLL_TICK_SECONDS) {
+          tickedAt = elapsed;
+          strollTick(elapsed);
+        }
         advanceBodies(step);
+        if (Object.values(bodies).some((body) => body.dwellRemaining > 0)) {
+          break;
+        }
       }
+      // 어느 가구 앞에 어느 자세로 섰는지까지 남긴다. 자세만 찍으면 사람과 가구가 겹치는
+      // 자리에서 "이 사람이 그 가구를 쓰고 있는지" 를 눈으로 확정할 수 없다.
+      const posed = Object.entries(bodies)
+        .filter(([, body]) => body.dwellRemaining > 0)
+        .map(
+          ([agentType, body]) =>
+            `${agentType}:${body.interactionPose ?? "서기"}@${body.arriveKind}` +
+            `(${Math.round(body.x)},${Math.round(body.y)})→${body.facing}`
+        );
       const walking = Object.values(bodies).filter((body) => body.path).length;
-      const arrived = Object.values(bodies).filter((body) => body.dwellRemaining > 0).length;
-      console.log(`걷는 중 ${walking}명 · 도착해 머무는 중 ${arrived}명`);
+      console.log(`걷는 중 ${walking}명 · 도착 ${posed.length}명 [${posed.join(", ")}]`);
     }
     // 한 판만 그리고 멈춘다. 사람은 전부 제자리에 앉아 있으므로 두 화면을 칸 단위로 대조할 수 있다.
     renderOnce();

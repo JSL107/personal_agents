@@ -8,17 +8,6 @@ import Foundation
 /// 배치 규칙을 옮겨 적지 않고 여기서 계산한 결과만 넘기는 이유는, 좌석이 한 칸이라도 어긋나면
 /// 두 화면이 서로 다른 사무실이 되기 때문이다. 규칙은 `officeFloorPlan` 한 곳에만 둔다.
 ///
-/// 격자 열 수는 창 비율이 정하므로(세로로 긴 창은 2열×3행) 부르는 쪽이 넘긴다.
-/// `--zone-columns 2` 처럼 숫자 인자를 읽는다. 없거나 형식이 틀리면 nil 이라 호출부가 기본값을 쓴다.
-func doubleArgument(named name: String) -> Double? {
-    guard let index = CommandLine.arguments.firstIndex(of: name),
-        index + 1 < CommandLine.arguments.count
-    else {
-        return nil
-    }
-    return Double(CommandLine.arguments[index + 1])
-}
-
 /// 가구 한 종류를 그리는 데 필요한 값. 받는 쪽이 종류별 규칙을 다시 짜지 않게 함께 보낸다 —
 /// 규칙이 두 곳에 생기면 새 가구를 넣을 때 한쪽만 고쳐져 조용히 어긋난다.
 struct FurnitureRenderInfo: Codable {
@@ -50,6 +39,11 @@ struct OfficeRenderMetrics: Codable {
     let seatedSpriteDrop: Double
     /// 앉은 캐릭터 스프라이트 높이(타일 배수). 이름표를 머리 위에 올리는 기준.
     let seatedSpriteTiles: Double
+    /// 라운지에 앉을 때 바라보는 쪽으로 당기는 양(타일 배수).
+    ///
+    /// 소파 좌석은 가구 **앞 칸**이라 그냥 앉히면 몸이 가구에 닿지 않아 바닥에 쭈그려 앉은
+    /// 것처럼 보인다. 책상 좌석의 수직 오프셋과 달리 방향이 고정되지 않아 따로 둔다.
+    let loungeSpriteShift: Double
     /// 벽걸이를 발밑에서 벽면 중턱으로 올리는 양(타일 배수).
     let wallMountLiftTiles: Double
     /// 창이 걸치는 벽 줄 수.
@@ -264,6 +258,7 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             characterScaleFactor: officeCharacterScaleFactor,
             seatedSpriteDrop: officeSeatedSpriteDrop,
             seatedSpriteTiles: officeSeatedSpriteTiles,
+            loungeSpriteShift: officeLoungeSpriteShift,
             wallMountLiftTiles: officeWallMountLiftTiles,
             outerWallRows: officeOuterWallRows,
             nameplateFontTiles: officeNameplateFontTiles,
