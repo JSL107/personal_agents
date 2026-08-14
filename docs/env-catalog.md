@@ -135,7 +135,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `PR_REVIEW_LOOP_ENABLED` | ❌ | PR 리뷰 루프 마스터 스위치. `true` (string) 일 때만 스윕이 동작한다. |
 | `PR_REVIEW_INLINE_REPOS` | ❌ | 인라인 코멘트 게시를 허용할 repo allowlist (콤마 구분 "owner/repo"). |
-| `PR_REVIEW_INLINE_DRYRUN` | ❌ | 연습 모드(**미설정이 곧 연습 모드**). `'false'` 일 때만 실제 게시 — 그 외에는 GitHub 게시도 카드 저장도 하지 않고 Slack 요약만 낸다. |
+| `PR_REVIEW_INLINE_DRYRUN` | ❌ | 연습 모드가 기본값 — `false` (string) 일 때만 실제 게시하고, 미설정을 포함한 그 외에는 GitHub 게시도 카드 저장도 없이 Slack 요약만 낸다. |
 | `PR_REVIEW_INLINE_MAX` | ❌ | PR 당 게시 상한. MUST_FIX 우선 정렬 후 절단. 미설정/비정상 값 → 4. |
 | `PR_REVIEW_HARVEST_ENABLED` | ❌ | 게시된 리뷰 카드의 owner 반응 수확 + 상태 전이. `true`일 때만 동작한다. |
 
