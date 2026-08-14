@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>이대리 오피스 — 서버 설정</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #17151a;
+        color: #cfc9d4;
+        font: 13px/1.6 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      main {
+        width: 100%;
+        max-width: 420px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+        font-weight: 600;
+        color: #efe9f4;
+      }
+      p.lead {
+        margin: 0 0 20px;
+        color: #8d8794;
+      }
+      label {
+        display: block;
+        margin-bottom: 16px;
+      }
+      label > span {
+        display: block;
+        margin-bottom: 5px;
+        color: #a9a3b0;
+      }
+      label > small {
+        display: block;
+        margin-top: 5px;
+        color: #756f7c;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid #322e38;
+        border-radius: 5px;
+        background: #100f13;
+        color: #efe9f4;
+        font: inherit;
+      }
+      input:focus {
+        outline: none;
+        border-color: #5b5266;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      button {
+        padding: 8px 14px;
+        border: 1px solid #322e38;
+        border-radius: 5px;
+        background: #24212a;
+        color: #efe9f4;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #2e2a36;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.primary {
+        background: #4b4257;
+        border-color: #5b5266;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #574d64;
+      }
+      #message {
+        min-height: 20px;
+        margin-top: 14px;
+      }
+      #message.ok {
+        color: #8fd18a;
+      }
+      #message.error {
+        color: #ff8f7a;
+      }
+      #open-anyway {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>맥에 붙을 주소</h1>
+      <p class="lead">
+        사무실 데이터는 맥에서 돌고 있는 이대리 백엔드가 준다. 그 맥의 주소를 넣는다.
+      </p>
+
+      <label>
+        <span>서버 주소</span>
+        <input id="url" type="text" placeholder="http://127.0.0.1:3099" spellcheck="false" />
+        <small>
+          같은 공유기면 맥의 내부 주소(<code>192.168.x.x:3099</code>), 밖에서 보려면
+          Tailscale 주소(<code>100.x.x.x:3099</code>). <code>http://</code> 는 빼도 된다.
+        </small>
+      </label>
+
+      <label>
+        <span>토큰 (선택)</span>
+        <input id="token" type="password" placeholder="비워 두면 안 보낸다" spellcheck="false" />
+        <small>
+          지금 백엔드는 읽기 요청에 토큰을 요구하지 않는다. 미리 넣어 두면 서버를 잠그는 날
+          앱을 다시 깔지 않아도 된다.
+        </small>
+      </label>
+
+      <div class="row">
+        <button id="save" class="primary" type="button">저장하고 사무실 열기</button>
+        <button id="open-anyway" type="button">그래도 열기</button>
+      </div>
+
+      <div id="message"></div>
+    </main>
+
+    <script type="module">
+      const urlInput = document.getElementById("url");
+      const tokenInput = document.getElementById("token");
+      const saveButton = document.getElementById("save");
+      const openAnywayButton = document.getElementById("open-anyway");
+      const message = document.getElementById("message");
+
+      function setMessage(text, kind = "") {
+        message.textContent = text;
+        message.className = kind;
+      }
+
+      // 이미 정해 둔 값이 있으면 채워 넣는다 — 재설정은 대개 주소 한 글자를 고치는 일이다.
+      const current = await fetch("/settings").then((response) => response.json());
+      urlInput.value = current.url ?? "";
+      tokenInput.value = current.token ?? "";
+      // 여기까지 왔으면 이 화면의 스크립트가 끝까지 돌았다는 뜻이다(`--capture` 가 이 표식을
+      // 기다린다). 표식이 없으면 빈 폼이 그려진 것과 스크립트가 죽은 것을 구별할 수 없다.
+      document.body.dataset.rendered = "1";
+
+      async function save() {
+        saveButton.disabled = true;
+        openAnywayButton.style.display = "none";
+        setMessage("맥에 닿는지 확인하는 중…");
+        try {
+          const response = await fetch("/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: urlInput.value, token: tokenInput.value }),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            setMessage(result.message ?? `저장 실패 (HTTP ${response.status})`, "error");
+            return;
+          }
+          urlInput.value = result.url;
+          if (result.probe.ok) {
+            setMessage(`${result.probe.message} — 사무실을 연다`, "ok");
+            window.location.href = "index.html";
+            return;
+          }
+          // 주소는 저장했다. 맥이 지금 꺼져 있을 뿐일 수도 있어 강제로 막지 않는다.
+          setMessage(`주소는 저장했는데 지금은 못 닿는다: ${result.probe.message}`, "error");
+          openAnywayButton.style.display = "inline-block";
+        } catch (error) {
+          setMessage(String(error), "error");
+        } finally {
+          saveButton.disabled = false;
+        }
+      }
+
+      saveButton.addEventListener("click", save);
+      openAnywayButton.addEventListener("click", () => {
+        window.location.href = "index.html";
+      });
+      urlInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          save();
+        }
+      });
+    </script>
+  </body>
+</html>
