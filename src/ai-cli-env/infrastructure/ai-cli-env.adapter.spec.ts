@@ -92,10 +92,18 @@ describe('AiCliEnvAdapter', () => {
         stdout: string,
         stderr: string,
       ) => void;
-      const stdout =
-        command === 'git' && argumentsList[0] === 'remote'
-          ? `${originUrl}\n`
-          : '';
+      const stdout = ((): string => {
+        if (command !== 'git') {
+          return '';
+        }
+        if (argumentsList[0] === 'remote') {
+          return `${originUrl}\n`;
+        }
+        if (argumentsList[0] === 'ls-remote') {
+          return 'aaaaaaa\trefs/heads/main\n';
+        }
+        return '';
+      })();
       callback(null, stdout, '');
       return undefined as never;
     });
@@ -109,10 +117,47 @@ describe('AiCliEnvAdapter', () => {
     await expect(adapter.ensureRepository()).resolves.toBeUndefined();
 
     expect(mockedExecFile).toHaveBeenNthCalledWith(
-      2,
+      3,
       'git',
       ['pull', '--ff-only'],
       expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+  });
+
+  it('원격이 빈 저장소면 pull 하지 않고 그대로 진행한다', async () => {
+    jest.spyOn(fileSystem, 'stat').mockResolvedValue({
+      isDirectory: () => true,
+    } as never);
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const [command, argumentsList] = argumentsValue as [string, string[]];
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      // ls-remote 가 빈 출력 = 원격에 브랜치가 하나도 없는 상태(첫 스냅샷 push 전).
+      const stdout =
+        command === 'git' && argumentsList[0] === 'remote'
+          ? 'https://github.com/owner/snapshots.git\n'
+          : '';
+      callback(null, stdout, '');
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+      }),
+    );
+
+    await expect(adapter.ensureRepository()).resolves.toBeUndefined();
+
+    expect(mockedExecFile).toHaveBeenCalledTimes(2);
+    expect(mockedExecFile).not.toHaveBeenCalledWith(
+      'git',
+      ['pull', '--ff-only'],
+      expect.anything(),
       expect.any(Function),
     );
   });

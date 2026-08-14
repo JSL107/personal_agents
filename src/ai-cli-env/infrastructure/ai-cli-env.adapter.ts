@@ -94,7 +94,15 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
           `AI CLI 환경 동기화 저장소가 설정과 다릅니다. 설정: ${repository}, 현재 origin: ${displayOrigin}, 디렉터리: ${syncDirectory}. 디렉터리를 확인한 뒤 직접 정리해 주세요.`,
         );
       }
-      await this.executeGit(['pull', '--ff-only'], syncDirectory);
+      // 원격이 아직 빈 저장소면 병합할 ref 가 없어 pull 이 실패한다. 첫 스냅샷을 push 하기
+      // 전까지 export·apply 가 모두 여기서 막히므로, 원격에 브랜치가 생긴 뒤에만 pull 한다.
+      const remoteHeads = await this.executeGit(
+        ['ls-remote', '--heads', 'origin'],
+        syncDirectory,
+      );
+      if (remoteHeads.trim()) {
+        await this.executeGit(['pull', '--ff-only'], syncDirectory);
+      }
       return;
     }
     await this.execute('git', [
