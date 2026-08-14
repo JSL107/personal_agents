@@ -412,6 +412,17 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.studyBriefRepository.save).toHaveBeenCalledTimes(1);
   });
 
+  it('owner 가 다르면 같은 날에도 각각 처리된다 (가드 키에 owner 포함)', async () => {
+    const dependencies = makeConsumer();
+
+    await dependencies.consumer.process(JOB as never);
+    await dependencies.consumer.process({
+      data: { ownerSlackUserId: 'U2', target: 'C2' },
+    } as never);
+
+    expect(dependencies.studyBriefRepository.save).toHaveBeenCalledTimes(2);
+  });
+
   it('완료 key 반영 전 겹친 처리도 저장 전에 차단한다', async () => {
     const cronIdempotency = makeCronIdempotencyFake();
     cronIdempotency.isDone.mockResolvedValue(false);
@@ -447,7 +458,7 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.cronIdempotency.release).toHaveBeenCalledTimes(1);
     expect(dependencies.cronIdempotency.release).toHaveBeenCalledWith(
       expect.stringMatching(
-        /^cron:study-brief-cron:\d{4}-\d{2}-\d{2}:processing$/,
+        /^cron:study-brief-cron:U1:\d{4}-\d{2}-\d{2}:processing$/,
       ),
     );
   });

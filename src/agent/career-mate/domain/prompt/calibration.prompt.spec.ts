@@ -64,6 +64,13 @@ describe('parseCalibrationOutput', () => {
       ),
     ).toThrow(CareerMateException);
   });
+  it('배열 요소가 문자열 아니면 INVALID_MODEL_OUTPUT (formatter TypeError 방지)', () => {
+    expect(() =>
+      parseCalibrationOutput(
+        '{"verdict":"x","aiSlopRisks":[{"text":"객체"}],"underQuantified":[],"outdatedPhrasing":[],"missingKeywords":[],"actionItems":[]}',
+      ),
+    ).toThrow(CareerMateException);
+  });
   it('JSON 아니면 예외', () => {
     expect(() => parseCalibrationOutput('nope')).toThrow(CareerMateException);
   });

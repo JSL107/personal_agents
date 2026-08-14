@@ -25,7 +25,18 @@ const makeConsumer = (opts: { hermesOk: boolean; cal?: unknown }) => {
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
   };
-  const cronIdempotency = { acquireOnce: jest.fn().mockResolvedValue(true) };
+  // 실제 가드처럼 키를 기억한다 — 같은 키의 두 번째 획득은 false.
+  // (mock 이 항상 true 면 키에 무엇이 들어가든 테스트가 통과해 결함을 못 잡는다.)
+  const acquired = new Set<string>();
+  const cronIdempotency = {
+    acquireOnce: jest.fn(async (key: string) => {
+      if (acquired.has(key)) {
+        return false;
+      }
+      acquired.add(key);
+      return true;
+    }),
+  };
   // 윤문 no-op mock — 입력 필드를 그대로 반환(원본 유지). best-effort 윤문은 발송 흐름과 독립.
   const humanizeService = {
     humanize: jest.fn(async (fields: Record<string, string>) => fields),
@@ -37,7 +48,13 @@ const makeConsumer = (opts: { hermesOk: boolean; cal?: unknown }) => {
     slackNotifier as never,
     cronIdempotency as never,
   );
-  return { consumer, calibrateResume, hermesRunner, slackNotifier };
+  return {
+    consumer,
+    calibrateResume,
+    hermesRunner,
+    slackNotifier,
+    cronIdempotency,
+  };
 };
 
 describe('ResumeCalibrationCronConsumer', () => {
@@ -51,6 +68,24 @@ describe('ResumeCalibrationCronConsumer', () => {
       webTrendsNote: '2026 트렌드 요약',
     });
     expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('owner 가 다르면 같은 날에도 각각 발송된다 (가드 키에 owner 포함)', async () => {
+    const deps = makeConsumer({ hermesOk: true });
+
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'U1' },
+    } as never);
+    await deps.consumer.process({
+      data: { ownerSlackUserId: 'U2', target: 'U2' },
+    } as never);
+
+    expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    const keys = deps.cronIdempotency.acquireOnce.mock.calls.map(
+      (call) => call[0],
+    );
+    expect(keys[0]).toContain(':U1:');
+    expect(keys[1]).toContain(':U2:');
   });
 
   it('Hermes 실패해도 graceful — webTrendsNote undefined 로 진행', async () => {
