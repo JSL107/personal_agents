@@ -39,8 +39,21 @@ func runOfficeLabelOverlapTests(_ t: TestRunner) {
     let neighbourPairs = officeOverlappingLabelPairs(neighbours)
     t.expectEqual(neighbourPairs.count, 1, "겹치는 이웃 이름표 한 쌍을 찾는다")
     t.expectEqual(
-        officeOverlappingLabelKeys(neighbours), ["PM/name", "CTO/name"],
-        "겹친 상자는 주인/종류 키로 지목된다"
+        officeOverlappingLabelIndexes(neighbours), [0, 1],
+        "겹친 상자는 자리 번호로 지목된다"
+    )
+
+    // 이름이 같은 상자가 여럿 있어도, 겹치지 않은 것은 칠해지지 않아야 한다.
+    // 세션 이름표는 주인·종류가 전부 `scene/sessionName` 로 같아서, 이름으로 고르면
+    // 하나가 겹칠 때 나머지까지 번져 정상 배치를 결함으로 보이게 만든다.
+    let sameName = [
+        labelBox("scene", "sessionName", x: 0, y: 0),
+        labelBox("scene", "sessionName", x: 20, y: 0),
+        labelBox("scene", "sessionName", x: 500, y: 0),
+    ]
+    t.expectEqual(
+        officeOverlappingLabelIndexes(sameName), [0, 1],
+        "이름이 같아도 떨어져 있는 셋째는 지목되지 않는다"
     )
 
     // 같은 사람의 문패와 말풍선이 겹치는 경우. 주인이 같다고 건너뛰면 이 회귀를 놓친다.
@@ -61,7 +74,7 @@ func runOfficeLabelOverlapTests(_ t: TestRunner) {
         labelBox("BE", "name", x: 200, y: 0),
     ]
     t.expect(officeOverlappingLabelPairs(apart).isEmpty, "떨어진 이름표는 겹침 0건")
-    t.expect(officeOverlappingLabelKeys(apart).isEmpty, "겹침이 없으면 지목되는 키도 없다")
+    t.expect(officeOverlappingLabelIndexes(apart).isEmpty, "겹침이 없으면 지목되는 상자도 없다")
 
     // 상자가 0~1개면 비교 대상이 없다(빈 배열에서 인덱스가 도는 실수를 막는다).
     t.expect(officeOverlappingLabelPairs([]).isEmpty, "상자 0개면 겹침 0건")
@@ -69,6 +82,27 @@ func runOfficeLabelOverlapTests(_ t: TestRunner) {
         officeOverlappingLabelPairs([labelBox("PM", "name", x: 0, y: 0)]).isEmpty,
         "상자 1개면 겹침 0건"
     )
+
+    // 글자 고르기 — 사람 이름표는 속성 문자열로만 그려진다. 이 경로가 빠져서 확인 대상
+    // 20개가 통째로 누락됐고, 남은 11개로 "겹침 없음" 이 나와 고장이 정상으로 보고됐다.
+    t.expectEqual(
+        officeLabelText(plain: nil, attributed: "PM"), "PM",
+        "일반 텍스트가 없으면 속성 문자열을 쓴다"
+    )
+    t.expectEqual(
+        officeLabelText(plain: "", attributed: "PM"), "PM",
+        "일반 텍스트가 빈 문자열이어도 속성 문자열을 쓴다"
+    )
+    t.expectEqual(
+        officeLabelText(plain: "PM", attributed: nil), "PM",
+        "일반 텍스트가 있으면 그것을 쓴다"
+    )
+    t.expectEqual(
+        officeLabelText(plain: "보임", attributed: "숨김"), "보임",
+        "둘 다 있으면 일반 텍스트가 이긴다"
+    )
+    t.expectNil(officeLabelText(plain: nil, attributed: nil), "둘 다 없으면 글자가 없다")
+    t.expectNil(officeLabelText(plain: "", attributed: ""), "둘 다 비면 글자가 없다")
 
     // 세 상자가 한 자리에 몰리면 쌍은 3개(3C2) — 한 쌍만 세고 멈추지 않는지 확인.
     let pile = [

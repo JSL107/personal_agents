@@ -55,17 +55,47 @@ public func officeOverlappingLabelPairs(
     return pairs
 }
 
-/// 겹친 글상자에 속한 주인·종류 집합. 렌더에서 "이 상자를 빨갛게 칠할지" 판단에 쓴다.
-public func officeOverlappingLabelKeys(_ boxes: [OfficeLabelBox]) -> Set<String> {
-    var keys: Set<String> = []
-    for (left, right) in officeOverlappingLabelPairs(boxes) {
-        keys.insert(officeLabelBoxKey(left))
-        keys.insert(officeLabelBoxKey(right))
+/// 겹친 글상자의 자리 번호. 렌더에서 "이 상자를 빨갛게 칠할지" 판단에 쓴다.
+///
+/// 주인·종류를 조합한 이름으로 고르면 안 된다 — 씬 직속 라벨은 주인이 모두 `scene` 이고
+/// 종류도 같아서(세션 이름표 여럿이 전부 `scene/sessionName`) **하나만 겹쳐도 같은 종류가
+/// 통째로 겹친 것으로 칠해진다.** 자리 번호는 상자마다 다르므로 그런 번짐이 없다.
+public func officeOverlappingLabelIndexes(_ boxes: [OfficeLabelBox]) -> Set<Int> {
+    var indexes: Set<Int> = []
+    guard boxes.count > 1 else {
+        return indexes
     }
-    return keys
+    for leftIndex in 0..<(boxes.count - 1) {
+        for rightIndex in (leftIndex + 1)..<boxes.count {
+            if officeLabelBoxesOverlap(boxes[leftIndex].rect, boxes[rightIndex].rect) {
+                indexes.insert(leftIndex)
+                indexes.insert(rightIndex)
+            }
+        }
+    }
+    return indexes
 }
 
-/// 글상자를 가리키는 키. 주인이 같아도 종류가 다르면 다른 상자다.
+/// 사람이 읽는 이름. 같은 이름이 여럿 나올 수 있으므로 **판정에는 쓰지 않는다**
+/// (보고에서는 글자 내용을 함께 찍어 구분한다).
 public func officeLabelBoxKey(_ box: OfficeLabelBox) -> String {
     "\(box.owner)/\(box.kind)"
+}
+
+/// 라벨이 실제로 보여 주는 글자. 일반 텍스트가 비어 있으면 속성 문자열 쪽을 쓴다.
+///
+/// **사람 이름표는 속성 문자열로만 그려진다** — 외곽선을 주려고 그렇게 쓰는데
+/// (`CharacterNode`), 그 경우 일반 텍스트는 비어 있다. 한쪽만 읽으면 정작 확인하려던
+/// 이름표가 통째로 빠지고, 남은 몇 개로 "겹침 없음" 이 나와 **고장이 정상으로 보고된다.**
+///
+/// SpriteKit 타입을 받지 않고 두 문자열만 받는다 — 그래야 이 선택 규칙을 테스트로 고정할 수
+/// 있다(이 경로의 누락이 실제로 확인 대상 20개를 빠뜨렸다).
+public func officeLabelText(plain: String?, attributed: String?) -> String? {
+    if let plain, !plain.isEmpty {
+        return plain
+    }
+    if let attributed, !attributed.isEmpty {
+        return attributed
+    }
+    return nil
 }

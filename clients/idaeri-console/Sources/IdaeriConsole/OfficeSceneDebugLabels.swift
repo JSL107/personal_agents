@@ -19,10 +19,10 @@ import SpriteKit
 /// 판정만 하고 실패시키지는 않는다 — 이건 게이트가 아니라 확인 입구다.
 func officeOverlayDebugLabels(on scene: SKScene) {
     let boxes = officeSceneLabelBoxes(in: scene)
-    let overlapping = officeOverlappingLabelKeys(boxes)
+    let overlapping = officeOverlappingLabelIndexes(boxes)
 
-    for box in boxes {
-        let isOverlapping = overlapping.contains(officeLabelBoxKey(box))
+    for (index, box) in boxes.enumerated() {
+        let isOverlapping = overlapping.contains(index)
         scene.addChild(debugBoxNode(box, emphasized: isOverlapping))
         // 이름은 겹친 상자에만 붙인다. 전부 붙이면 덧글자끼리 다시 뒤엉켜, 무엇이 원래
         // 겹침이고 무엇이 오버레이 때문인지 구분할 수 없게 된다.
@@ -74,20 +74,10 @@ private func officeSceneLabelBoxes(in scene: SKScene) -> [OfficeLabelBox] {
     return boxes
 }
 
-/// 글자 내용. `text` 와 `attributedText` 둘 다 본다.
-///
-/// **사람 이름표는 `attributedText` 로만 그려진다** — 외곽선을 주려고 속성 문자열을 쓰는데
-/// (`CharacterNode`), 그 경우 `text` 는 비어 있다. `text` 만 보면 정작 확인하려던 이름표가
-/// 통째로 빠지고, 남은 몇 개로 "겹침 없음" 이 나와 **고장이 정상으로 보고된다**
-/// (실제로 첫 구현이 20개를 놓치고 그렇게 통과했다).
+/// 글자 내용. 고르는 규칙 자체는 `officeLabelText`(ConsoleCore) 가 갖는다 — 여기 두면
+/// SpriteKit 타입에 묶여 테스트로 고정할 수가 없다.
 private func labelText(of label: SKLabelNode) -> String? {
-    if let text = label.text, !text.isEmpty {
-        return text
-    }
-    if let attributed = label.attributedText?.string, !attributed.isEmpty {
-        return attributed
-    }
-    return nil
+    officeLabelText(plain: label.text, attributed: label.attributedText?.string)
 }
 
 /// 글상자의 주인. 부모 체인에서 이름이 붙은 가장 가까운 노드를 쓴다.
