@@ -1,0 +1,51 @@
+{
+  "name": "idaeri-office-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "이대리 오피스 — 맥이 계산한 배치를 윈도우 PC 가 그리는 데스크톱 포장",
+  "main": "main.js",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "capture": "env -u ELECTRON_RUN_AS_NODE electron . --capture=/tmp/idaeri-office.png",
+    "check:layouts": "node -e \"for (const name of ['layout-3.json', 'layout-2.json']) { if (!require('fs').existsSync(name)) { throw new Error(name + ' 이 없다 — README 의 평면도 뽑기를 먼저 하라. 없는 채로 빌드하면 텅 빈 사무실이 설치된다.'); } }\"",
+    "dist:win": "pnpm check:layouts && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.schoolbell.idaeri.office",
+    "productName": "Idaeri Office",
+    "artifactName": "IdaeriOfficeSetup-${version}.${ext}",
+    "files": [
+      "main.js",
+      "index.html",
+      "setup.html",
+      "office.js",
+      "live.js",
+      "layout-2.json",
+      "layout-3.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../idaeri-console/Sources/IdaeriConsole/Resources/sprites",
+        "to": "sprites"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "이대리 오피스"
+    }
+  }
+}
