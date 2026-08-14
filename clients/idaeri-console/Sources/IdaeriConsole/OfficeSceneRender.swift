@@ -19,7 +19,8 @@ func renderOfficeScene(
     size: CGSize,
     poseDemo: Bool,
     hoverAgentType: String? = nil,
-    busyDemo: Bool = false
+    busyDemo: Bool = false,
+    debugLabels: Bool = false
 ) -> Bool {
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
@@ -73,6 +74,12 @@ func renderOfficeScene(
             Data("호버 쪽지를 띄우지 못했다: \(hoverAgentType)\n".utf8)
         )
         return false
+    }
+
+    // 진단선은 모든 배치가 끝난 뒤에 얹는다 — 중간에 얹으면 그 뒤 갱신으로 글자가 움직여
+    // 상자가 실제 위치를 가리키지 않게 된다.
+    if debugLabels {
+        officeOverlayDebugLabels(on: scene)
     }
 
     guard
