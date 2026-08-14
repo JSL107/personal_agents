@@ -341,15 +341,23 @@ function captureTargetFromArgv() {
   return flag === undefined ? null : flag.slice("--capture=".length);
 }
 
-/** 다 그려지길 기다렸다가 찍는다. 그리는 중에 찍으면 반쯤 빈 화면이 저장된다. */
+/**
+ * 다 그려지길 기다렸다가 찍는다. 그리는 중에 찍으면 반쯤 빈 화면이 저장된다.
+ *
+ * **다 그렸다는 표식만 보면 부족하다.** 화면은 스냅샷을 못 받아도 방과 가구를 그려 내므로,
+ * 사람이 0명인 사무실이 "정상 그림" 으로 저장된다. 상태 줄이 오류를 달고 있는지 함께 보고,
+ * 그러면 기다리지 않고 바로 실패로 끊는다.
+ */
 async function captureOnce(window, target) {
   const deadline = Date.now() + 15_000;
   let rendered = false;
+  let failed = false;
   while (Date.now() < deadline) {
-    rendered = await window.webContents.executeJavaScript(
-      "document.body.dataset.rendered === '1'"
+    [rendered, failed] = await window.webContents.executeJavaScript(
+      "[document.body.dataset.rendered === '1'," +
+        " document.getElementById('status')?.classList.contains('error') ?? false]"
     );
-    if (rendered) {
+    if (rendered || failed) {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -359,9 +367,10 @@ async function captureOnce(window, target) {
     "document.getElementById('status')?.textContent ?? ''"
   );
   fs.writeFileSync(target, (await window.webContents.capturePage()).toPNG());
-  console.log(`${rendered ? "그렸다" : "다 그리지 못했다"} → ${target}`);
+  const succeeded = rendered && !failed;
+  console.log(`${succeeded ? "그렸다" : "다 그리지 못했다"} → ${target}`);
   console.log(`상태: ${status}`);
-  return rendered;
+  return succeeded;
 }
 
 function createWindow() {
@@ -387,8 +396,11 @@ function createWindow() {
     mainWindow.webContents.once("did-finish-load", async () => {
       const rendered = await captureOnce(mainWindow, captureTarget);
       // 못 그린 것을 성공으로 끝내면 게이트가 텅 빈 그림을 통과시킨다.
-      process.exitCode = rendered ? 0 : 1;
-      app.quit();
+      //
+      // 종료 코드를 `app.exit` 로 직접 넘기는 이유는 **`process.exitCode` 를 세우고
+      // `app.quit()` 을 부르면 그 값이 묻혀 항상 0 으로 끝나기 때문**이다. 판정은 맞는데
+      // 종료 코드만 0 이면, 이 입구를 쓰는 게이트는 실패를 통과로 읽는다.
+      app.exit(rendered ? 0 : 1);
     });
     return;
   }

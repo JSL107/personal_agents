@@ -589,6 +589,14 @@ async function main() {
   await refreshSnapshot();
   window.addEventListener("resize", resize);
 
+  // 정지 렌더는 한 판 그리고 끝난다 — 스냅샷을 못 받은 채로 그리면 **사람이 0명인 사무실이
+  // 정상 그림처럼 저장되고**, 그게 "백엔드가 꺼졌다"·"서버 주소가 틀렸다" 와 구별되지 않는다.
+  // 움직이는 화면은 20초마다 다시 받아 스스로 메우지만 정지 렌더에는 그 기회가 없다.
+  // (1단계가 빈 평면도를 실패로 끊는 것과 같은 이유다.)
+  if (isStatic && snapshotFailures > 0) {
+    throw new Error("스냅샷을 못 받아 그리지 않았다 — 서버 주소와 백엔드를 확인하라");
+  }
+
   if (isStatic) {
     if (walkSeconds > 0) {
       // 산책을 일으키고 가상 시간으로 진행시킨다. 프레임 간격은 실제 루프와 같은 크기로
