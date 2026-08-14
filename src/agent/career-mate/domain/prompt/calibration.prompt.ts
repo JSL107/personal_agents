@@ -79,8 +79,15 @@ export const parseCalibrationOutput = (text: string): CalibrationResultData => {
     'actionItems',
   ];
   for (const key of arrays) {
-    if (!Array.isArray(obj[key])) {
+    const items = obj[key];
+    if (!Array.isArray(items)) {
       return invalid(`보정 점검 실패 — ${key} 가 배열이 아닙니다.`);
+    }
+    // 요소 형태까지 검증한다 — formatter 가 항목을 무가드로 escape 하므로(bulletList),
+    // 비-문자열이 섞이면 여기서 친화 메시지로 끊지 않으면 렌더 단계에서 TypeError 로 폭사한다.
+    // (jd-gap·career-profile-synth 파서와 같은 규약.)
+    if (items.some((item) => typeof item !== 'string')) {
+      return invalid(`보정 점검 실패 — ${key} 요소가 문자열이 아닙니다.`);
     }
   }
   return parsed as CalibrationResultData;

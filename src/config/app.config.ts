@@ -710,8 +710,7 @@ export class EnvironmentVariables {
   @IsString()
   PR_REVIEW_INLINE_REPOS?: string;
 
-  // 연습 모드. `false` (string) 일 때만 실제로 GitHub 에 게시한다.
-  // 미설정 시 연습 모드 — 카드는 저장하지 않고 Slack 요약만 나간다.
+  // 연습 모드가 기본값 — `false` (string) 일 때만 실제 게시하고, 미설정을 포함한 그 외에는 GitHub 게시도 카드 저장도 없이 Slack 요약만 낸다.
   @IsOptional()
   @IsString()
   PR_REVIEW_INLINE_DRYRUN?: string;
