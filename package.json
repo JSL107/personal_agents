@@ -38,7 +38,8 @@
     "db:studio": "prisma studio",
     "prisma:generate": "prisma generate",
     "finlens": "node scripts/token-analyzer/server.mjs",
-    "finlens:refresh": "TS_NODE_TRANSPILE_ONLY=1 NODE_OPTIONS=--max-old-space-size=4096 ts-node scripts/token-analyzer/analyze.ts"
+    "finlens:refresh": "TS_NODE_TRANSPILE_ONLY=1 NODE_OPTIONS=--max-old-space-size=4096 ts-node scripts/token-analyzer/analyze.ts",
+    "backtest": "ts-node scripts/backtest.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
