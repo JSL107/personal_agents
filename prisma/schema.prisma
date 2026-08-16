@@ -373,6 +373,9 @@ model DailyPrice {
   tickerId       Int       @map("ticker_id")
   ticker         Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
   tradeDate      DateTime  @map("trade_date") @db.Date
+  // 백테스트가 실전과 같은 "다음 영업일 시가 체결"을 재현하려면 시가가 필요하다.
+  // 기존 행을 보존해야 하므로 nullable 이다. 재수집이 끝나면 사실상 전 행이 채워진다.
+  open           Decimal?  @db.Decimal(18, 4)
   close          Decimal   @db.Decimal(18, 4)
   adjClose       Decimal   @map("adj_close") @db.Decimal(18, 4)
   volume         BigInt
