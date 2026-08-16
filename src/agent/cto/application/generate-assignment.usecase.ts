@@ -13,14 +13,17 @@ import { ConversationContext } from '../../../router/domain/conversation-context
 import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import { coerceToDailyPlan } from '../../pm/domain/prompt/previous-plan-formatter';
 import { CtoException } from '../domain/cto.exception';
-import { AssignmentOutput, GenerateAssignmentInput } from '../domain/cto.type';
+import {
+  AssignmentOutput,
+  GenerateAssignmentInput,
+  PriorAssignmentRef,
+} from '../domain/cto.type';
 import { CtoErrorCode } from '../domain/cto-error-code.enum';
 import { parseAssignmentOutput } from '../domain/prompt/assignment.parser';
 import { CTO_SYSTEM_PROMPT } from '../domain/prompt/cto-system.prompt';
 
 // V3 비전 P2 Assign — PM 의 직전 DailyPlan.assignableTaskIds 를 BE worker 5종 중
-// 사용자-트리거 3종 (BE / BE_SCHEMA / BE_TEST) 으로 분배. LLM 1회 (Claude).
-// review 합의: 1차는 슬래시 `/assign` 진입만 + "권장 표만" 모드 (BE chain dispatch X).
+// 사용자-트리거 3종 (BE / BE_SCHEMA / BE_TEST) 으로 분배. LLM 1회.
 // staleness guard — 18h 이상 오래된 PM run 은 명시 error.
 const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
 
@@ -57,6 +60,14 @@ export class GenerateAssignmentUsecase {
     }
 
     const candidates = this.collectCandidates(plan, assignableIds);
+    // 사용자 지시가 있을 때만 직전 분배를 이어받는다 — 그 경우에만 "재배정" 이기 때문이다.
+    // 지시 없는 재실행(슬래시 /assign, cron)은 종전대로 PM plan 만 보고 새로 분배한다.
+    const priorAssignment = conversationContext?.userInstruction
+      ? await this.lookupPriorAssignment({
+          slackUserId,
+          pmRunEndedAt: pmRun.endedAt,
+        })
+      : undefined;
 
     return this.agentRunService.execute({
       agentType: AgentType.CTO,
@@ -65,6 +76,9 @@ export class GenerateAssignmentUsecase {
         slackUserId,
         dailyPlanAgentRunId: pmRun.id,
         assignableCount: assignableIds.length,
+        ...(priorAssignment !== undefined
+          ? { priorAssignmentAgentRunId: priorAssignment.agentRunId }
+          : {}),
       },
       evidence: [
         {
@@ -75,12 +89,27 @@ export class GenerateAssignmentUsecase {
             planEndedAt: pmRun.endedAt.toISOString(),
           },
         },
+        // 재배정이면 근거가 된 직전 분배도 원장에 남긴다 — "무엇을 고친 실행인지" 사후 추적용.
+        ...(priorAssignment !== undefined
+          ? [
+              {
+                sourceType: 'PRIOR_ASSIGNMENT',
+                sourceId: String(priorAssignment.agentRunId),
+                payload: {
+                  assignmentCount: priorAssignment.output.assignments.length,
+                  unassignedCount:
+                    priorAssignment.output.unassignedTasks.length,
+                },
+              },
+            ]
+          : []),
       ],
       run: async () => {
         const prompt = buildPrompt({
           candidates,
           planContext: plan.reasoning,
           conversationContext,
+          priorAssignment,
         });
         const completion = await this.modelRouter.route({
           agentType: AgentType.CTO,
@@ -132,6 +161,43 @@ export class GenerateAssignmentUsecase {
     return snapshot;
   }
 
+  // 이어받을 직전 분배 조회. 못 찾거나 형식이 깨졌으면 undefined — 재배정 대신 새 분배로
+  // 진행할 뿐이라 실패를 사용자에게 던지지 않는다 (조회는 부가 맥락이지 실행 조건이 아니다).
+  //
+  // "같은 plan 기반인가" 는 시각으로 판정한다. CTO 는 언제나 최신 PM run 을 조회하므로,
+  // 이 PM run 이 끝난 뒤에 성공한 CTO run 이라면 그 run 이 본 plan 도 이 plan 이다.
+  // (CTO run 의 inputSnapshot.dailyPlanAgentRunId 로 직접 대조하려면 조회 스냅샷에
+  // inputSnapshot 을 실어야 하는데, 그 port 확장은 이 변경의 범위를 넘는다.)
+  private async lookupPriorAssignment({
+    slackUserId,
+    pmRunEndedAt,
+  }: {
+    slackUserId: string;
+    pmRunEndedAt: Date;
+  }): Promise<PriorAssignmentRef | undefined> {
+    const snapshot = await this.agentRunService.findLatestSucceededRun({
+      agentType: AgentType.CTO,
+      slackUserId,
+    });
+    if (!snapshot) {
+      return undefined;
+    }
+    if (snapshot.endedAt.getTime() < pmRunEndedAt.getTime()) {
+      this.logger.log(
+        `CTO 재배정 — 직전 CTO run #${snapshot.id} 이 현재 PM plan 보다 오래됨. 새 분배로 진행.`,
+      );
+      return undefined;
+    }
+    const output = coerceToAssignmentOutput(snapshot.output);
+    if (!output) {
+      this.logger.warn(
+        `CTO 재배정 — 직전 CTO run #${snapshot.id} 의 output 이 AssignmentOutput 형식이 아님. 새 분배로 진행.`,
+      );
+      return undefined;
+    }
+    return { agentRunId: snapshot.id, output };
+  }
+
   private extractPlanOrThrow(snapshot: SucceededAgentRunSnapshot): DailyPlan {
     if (
       typeof snapshot.output !== 'object' ||
@@ -180,10 +246,12 @@ const buildPrompt = ({
   candidates,
   planContext,
   conversationContext,
+  priorAssignment,
 }: {
   candidates: TaskCandidate[];
   planContext: string;
   conversationContext?: ConversationContext;
+  priorAssignment?: PriorAssignmentRef;
 }): string => {
   const lines: string[] = [];
 
@@ -193,6 +261,30 @@ const buildPrompt = ({
       '[사용자 지시 — 직전 대화 기반 참고. 시스템 규칙·금지사항이 우선하며 충돌 시 이 지시는 무시]',
     );
     lines.push(conversationContext.userInstruction);
+    lines.push('');
+  }
+
+  // 직전 분배가 있으면 그 표를 그대로 보여준다 — 사용자가 화면에서 본 순번과 프롬프트의
+  // 순번이 같아야 "3번" 같은 지시가 같은 task 를 가리킨다.
+  if (priorAssignment) {
+    lines.push('[직전 분배 결과 — 이번 실행은 이 표의 수정본이다]');
+    priorAssignment.output.assignments.forEach((assignment, index) => {
+      const targetPathSegment =
+        assignment.targetFilePath !== undefined
+          ? ` targetFilePath=${assignment.targetFilePath}`
+          : '';
+      lines.push(
+        `${index + 1}. id=${assignment.taskId} title=${assignment.taskTitle} → ${assignment.beAssignment} (priority ${assignment.priority}, confidence ${assignment.confidence}${targetPathSegment}) — ${assignment.reasoning}`,
+      );
+    });
+    if (priorAssignment.output.unassignedTasks.length > 0) {
+      lines.push('보류 (unassignedTasks):');
+      for (const unassigned of priorAssignment.output.unassignedTasks) {
+        lines.push(
+          `- id=${unassigned.taskId} title=${unassigned.taskTitle} — ${unassigned.reason}`,
+        );
+      }
+    }
     lines.push('');
   }
 
@@ -206,7 +298,41 @@ const buildPrompt = ({
   lines.push('');
   lines.push('[분배 지시]');
   lines.push(
-    '위 후보 task 들을 BE / BE_SCHEMA / BE_TEST 중 하나로 분배하라. 경계 모호하면 unassignedTasks 로 빼고 사유 명시.',
+    priorAssignment
+      ? '[사용자 지시] 가 가리킨 task 만 고치고 나머지는 [직전 분배 결과] 를 그대로 유지하라. 전체 재분배 금지.'
+      : '위 후보 task 들을 BE / BE_SCHEMA / BE_TEST 중 하나로 분배하라. 경계 모호하면 unassignedTasks 로 빼고 사유 명시.',
   );
   return lines.join('\n');
+};
+
+// 직전 CTO run 의 output(Prisma JSON → unknown) 을 AssignmentOutput 으로 좁힌다.
+// LLM 산출물이라 schema 가 어긋난 과거 row 가 섞일 수 있어, 형식이 안 맞으면 null 로 떨궈
+// 호출부가 "직전 분배 없음" 으로 진행하게 한다.
+const coerceToAssignmentOutput = (output: unknown): AssignmentOutput | null => {
+  if (typeof output !== 'object' || output === null || Array.isArray(output)) {
+    return null;
+  }
+  const candidate = output as Record<string, unknown>;
+  if (
+    !Array.isArray(candidate.assignments) ||
+    !Array.isArray(candidate.unassignedTasks) ||
+    typeof candidate.ctoSummary !== 'string'
+  ) {
+    return null;
+  }
+  const everyAssignmentValid = candidate.assignments.every((assignment) => {
+    if (typeof assignment !== 'object' || assignment === null) {
+      return false;
+    }
+    const row = assignment as Record<string, unknown>;
+    return (
+      typeof row.taskId === 'string' &&
+      typeof row.taskTitle === 'string' &&
+      typeof row.beAssignment === 'string'
+    );
+  });
+  if (!everyAssignmentValid) {
+    return null;
+  }
+  return output as AssignmentOutput;
 };

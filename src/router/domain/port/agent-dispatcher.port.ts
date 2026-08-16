@@ -15,6 +15,11 @@ export interface DispatchOutcome {
   autoResolvedNotice?: string;
   // worker 가 다른 worker 호출을 manager 에 요청할 때 채워 보낸다.
   followUp?: HandoffSpec;
+  // worker 가 버튼·드롭다운이 달린 카드로 답해야 할 때 채우는 Slack Block Kit 블록.
+  // 채워져 있으면 Slack handler 가 formattedText 대신 이 블록으로 답글을 보낸다
+  // (formattedText 는 알림 미리보기·폴백 텍스트로 남는다). worker 별 카드 구성을
+  // dispatcher 가 책임지므로 handler 는 어느 worker 인지 몰라도 된다.
+  slackBlocks?: Array<Record<string, unknown>>;
 }
 
 // 각 agent module 이 자기 agentType 의 dispatch 책임을 구현하는 strategy.

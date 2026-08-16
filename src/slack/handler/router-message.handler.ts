@@ -280,9 +280,14 @@ export class RouterMessageHandler implements SlackHandler {
         timestampMs: Date.now(),
       });
       const routerReplyText = buildRouterReply(result);
+      // worker 가 카드(버튼·드롭다운)를 만들어 보냈으면 그걸로 답한다. text 는 알림
+      // 미리보기와 blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
       await say({
         thread_ts: threadTs,
         text: routerReplyText,
+        ...(result.slackBlocks !== undefined
+          ? { blocks: result.slackBlocks as never }
+          : {}),
       });
       // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
       await this.conversationMemory.appendTurn(memoryKey, {

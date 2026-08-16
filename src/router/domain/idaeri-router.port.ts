@@ -63,6 +63,8 @@ export interface DispatchResult {
   autoResolvedNotice?: string;
   followUp?: HandoffSpec;
   handoffResults?: DispatchResult[];
+  // worker 가 버튼·드롭다운 카드로 답할 때의 Slack Block Kit 블록 (없으면 formattedText 만).
+  slackBlocks?: Array<Record<string, unknown>>;
 }
 
 // Hierarchical Manager Pattern 의 manager-agent.

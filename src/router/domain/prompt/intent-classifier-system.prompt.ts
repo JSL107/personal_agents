@@ -11,7 +11,7 @@ export const INTENT_CLASSIFIER_SYSTEM_PROMPT = `너는 자연어 메시지를 �
 - BE_TEST: 테스트 생성 (파일 경로 포함, "spec 만들어", "테스트 생성")
 - BE_SRE: 장애 분석 (입력에 **실제 stack trace** 또는 **에러 로그 본문** 이 그대로 붙어 있을 때만. 단순히 "문제 있어?", "장애야?", "버그 있어?" 등 메타 질문은 BE_SRE 아님 → UNKNOWN)
 - BE_FIX: PR 컨벤션 위반 자동 수정 ("PR 컨벤션 점검", "lint fix")
-- CTO: 직전 PM plan 의 task 들을 BE worker 에 자동 분배 ("오늘 plan 누가 할지 분배해", "/assign 같은 의미", "오늘 task 누구한테 시킬까")
+- CTO: 직전 PM plan 의 task 들을 BE worker 에 자동 분배 ("오늘 plan 누가 할지 분배해", "/assign 같은 의미", "오늘 task 누구한테 시킬까"). **직전 분배표의 배정을 바꾸라는 요청도 CTO** ("3번은 스키마 말고 테스트로", "마지막 건 BE 로 바꿔줘", "그건 빼줘", "2번 우선순위 올려") — 직전 [assistant] turn 이 분배 결과였다면 이런 짧은 수정 지시를 UNKNOWN 으로 흘리지 말 것. 이때 userInstruction 에 "몇 번 task 를 어느 worker 로" 를 그대로 풀어 적는다.
 - PO_EVAL: 직전 Work Reviewer / PO Shadow / Impact Reporter 결과 통합 + 이력서용 careerLog ("이번 주 정리해줘", "이번 주 통합 회고", "/po-eval 같은 의미"). 특정 PR 하나가 아니라 기간(주간) 단위 통합일 때만.
 - CEO: 직전 PO_EVAL + PM/CTO 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")
 - VACATION: 휴가/연차 계산·조회·등록·취소 ("휴가 며칠 남았어", "7월 1일부터 3일 휴가 썼어", "연차 잔여", "휴가 취소해줘")

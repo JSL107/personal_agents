@@ -1,22 +1,16 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-
 import { Injectable, Logger } from '@nestjs/common';
 import { App, RespondFn } from '@slack/bolt';
 
-import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
-import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
-import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import {
-  Assignment,
   AssignmentOutput,
-  BeAssignmentType,
+  BeChainOutcome,
 } from '../../agent/cto/domain/cto.type';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { RunBeChainUsecase } from '../../be-chain/application/run-be-chain.usecase';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeAssignmentOutput } from '../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -57,13 +51,6 @@ interface StartBeValue {
   ctoAgentRunId: number;
 }
 
-interface BeChainOutcome {
-  assignment: Assignment;
-  status: 'OK' | 'SKIPPED' | 'FAILED';
-  agentRunId?: number;
-  message: string;
-}
-
 // Slack Block Kit 의 minimal block type — Bolt 의 (Block | KnownBlock)[] 와 호환 위해
 // `as unknown` cast 후 respond 에 전달. KnownBlock 의 strict union 직접 만족시키는 대신
 // runtime payload 만 정확하면 OK (Slack API 가 JSON 으로만 검증).
@@ -77,9 +64,7 @@ export class AutoFlowHandler implements SlackHandler {
   constructor(
     private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
     private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
-    private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
-    private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
-    private readonly generateTestUsecase: GenerateTestUsecase,
+    private readonly runBeChainUsecase: RunBeChainUsecase,
     private readonly agentRunService: AgentRunService,
     private readonly humanizeService: HumanizeService,
   ) {}
@@ -225,15 +210,12 @@ export class AutoFlowHandler implements SlackHandler {
         }
         const ctoOutput = ctoRun.output as AssignmentOutput;
         const assignments = ctoOutput.assignments ?? [];
-        const beOutcomes: BeChainOutcome[] = [];
-        for (const assignment of assignments) {
-          const outcome = await this.runBeWorker({
-            assignment,
-            slackUserId,
-            parentRunId: value.ctoAgentRunId,
-          });
-          beOutcomes.push(outcome);
-        }
+        const beOutcomes = await this.runBeChainUsecase.execute({
+          assignments,
+          slackUserId,
+          parentRunId: value.ctoAgentRunId,
+          triggerType: TriggerType.SLACK_COMMAND_AUTO_FLOW,
+        });
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
@@ -263,119 +245,6 @@ export class AutoFlowHandler implements SlackHandler {
         text: '❌ auto-flow 중단 — 부작용 없이 종료되었습니다.',
       });
     });
-  }
-
-  // === BE chain ===
-
-  private async runBeWorker({
-    assignment,
-    slackUserId,
-    parentRunId,
-  }: {
-    assignment: Assignment;
-    slackUserId: string;
-    parentRunId: number;
-  }): Promise<BeChainOutcome> {
-    if (assignment.beAssignment === AgentType.BE_TEST) {
-      const filePath = assignment.targetFilePath;
-      if (filePath === undefined) {
-        return {
-          assignment,
-          status: 'SKIPPED',
-          message:
-            'BE_TEST — CTO 가 task 설명에서 file path 를 식별하지 못함. 사용자가 별도 `/be-test <filePath>` 호출 필요.',
-        };
-      }
-      // PR #19 follow-up — CTO 가 적은 path 가 실제 repo 에 있는지 검증. hallucination fast-fail.
-      const exists = await fileExistsRelativeToCwd(filePath);
-      if (!exists) {
-        this.logger.warn(
-          `[auto-flow] BE_TEST targetFilePath '${filePath}' 가 repo 에 없음 — CTO hallucination 가능 (taskId=${assignment.taskId}).`,
-        );
-        return {
-          assignment,
-          status: 'SKIPPED',
-          message: `BE_TEST — CTO 가 추론한 path \`${filePath}\` 가 실제 repo 에 없습니다 (LLM 추측 가능). 사용자가 정확한 경로로 \`/be-test <filePath>\` 별도 호출 권장.`,
-        };
-      }
-      try {
-        const outcome = await this.generateTestUsecase.execute({
-          filePath,
-          slackUserId,
-        });
-        await this.agentRunService.setParentId({
-          id: outcome.agentRunId,
-          parentId: parentRunId,
-        });
-        return {
-          assignment,
-          status: 'OK',
-          agentRunId: outcome.agentRunId,
-          message: `BE_TEST spec #${outcome.agentRunId} 생성 완료 — ${filePath}.`,
-        };
-      } catch (error) {
-        this.logger.warn(
-          `[auto-flow] BE_TEST dispatch failed — taskId=${assignment.taskId} filePath=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
-        );
-        return {
-          assignment,
-          status: 'FAILED',
-          message: `BE_TEST 실패 — ${error instanceof Error ? error.message : String(error)}`,
-        };
-      }
-    }
-    try {
-      if (assignment.beAssignment === AgentType.BE) {
-        const outcome = await this.generateBackendPlanUsecase.execute({
-          subject: assignment.taskTitle,
-          slackUserId,
-        });
-        await this.agentRunService.setParentId({
-          id: outcome.agentRunId,
-          parentId: parentRunId,
-        });
-        return {
-          assignment,
-          status: 'OK',
-          agentRunId: outcome.agentRunId,
-          message: `BE plan #${outcome.agentRunId} 생성 완료.`,
-        };
-      }
-      if (assignment.beAssignment === AgentType.BE_SCHEMA) {
-        const outcome = await this.generateSchemaProposalUsecase.execute({
-          request: assignment.taskTitle,
-          slackUserId,
-          triggerType: TriggerType.SLACK_COMMAND_AUTO_FLOW,
-        });
-        await this.agentRunService.setParentId({
-          id: outcome.agentRunId,
-          parentId: parentRunId,
-        });
-        return {
-          assignment,
-          status: 'OK',
-          agentRunId: outcome.agentRunId,
-          message: `BE_SCHEMA proposal #${outcome.agentRunId} 생성 완료.`,
-        };
-      }
-      const exhaustive: never =
-        assignment.beAssignment satisfies BeAssignmentType;
-      return {
-        assignment,
-        status: 'SKIPPED',
-        message: `미지원 worker: ${String(exhaustive)}`,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `/auto-flow BE worker (${assignment.beAssignment}, ${assignment.taskId}) 실패: ${message}`,
-      );
-      return {
-        assignment,
-        status: 'FAILED',
-        message: `${assignment.beAssignment} 실패: ${message}`,
-      };
-    }
   }
 }
 
@@ -463,34 +332,6 @@ const buildCtoPreviewBlocks = ({
       ],
     },
   ];
-};
-
-// === file existence guard ===
-
-// BE_TEST 분배 시 CTO 가 추론한 targetFilePath 가 실제 repo 에 존재하는지 검증.
-// LLM hallucination 으로 가짜 경로 ("src/example.service.ts" 같은) 가 들어오면 fast-fail.
-// 보안: absolute path 는 무조건 false — process.cwd() 밖 (e.g. /etc/passwd) 접근 차단.
-// path traversal (../) 은 path.resolve 가 normalize 후 cwd prefix 검사로 추가 차단.
-export const fileExistsRelativeToCwd = async (
-  relativePath: string,
-): Promise<boolean> => {
-  if (relativePath.length === 0) {
-    return false;
-  }
-  if (path.isAbsolute(relativePath)) {
-    return false;
-  }
-  const cwd = process.cwd();
-  const resolved = path.resolve(cwd, relativePath);
-  if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) {
-    return false;
-  }
-  try {
-    await fs.access(resolved, fs.constants.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
 };
 
 // === format ===

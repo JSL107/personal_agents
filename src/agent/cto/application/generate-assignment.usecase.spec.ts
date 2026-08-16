@@ -273,4 +273,133 @@ describe('GenerateAssignmentUsecase', () => {
     });
     expect(outcome.result).toEqual(validAssignment);
   });
+
+  // 자연어 재배정 — 사용자가 "3번은 테스트로" 처럼 일부만 고치려는 것이므로, 직전 분배를
+  // 이어받지 않으면 언급하지 않은 task 의 배정까지 통째로 다시 뽑혀 흔들린다.
+  describe('재배정 (직전 분배 이어받기)', () => {
+    const priorCtoRun = {
+      id: 77,
+      output: validAssignment,
+      endedAt: new Date(Date.now() - 30_000),
+    };
+
+    // findLatestSucceededRun 은 agentType 으로 PM/CTO 를 구분해 답한다.
+    const mockRuns = ({ cto }: { cto: unknown }): void => {
+      agentRunServiceFindLatest.mockImplementation(
+        async ({ agentType }: { agentType: AgentType }) =>
+          agentType === AgentType.CTO
+            ? cto
+            : {
+                id: 99,
+                output: pmPlan,
+                endedAt: new Date(Date.now() - 60_000),
+              },
+      );
+    };
+
+    it('사용자 지시가 있으면 직전 CTO 분배를 prompt 에 [직전 분배 결과] 로 싣는다', async () => {
+      mockRuns({ cto: priorCtoRun });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로 바꿔줘' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('[직전 분배 결과');
+      expect(promptArg).toContain('1. id=t:morning-1');
+      expect(promptArg).toContain('Router refactor');
+      expect(promptArg).toContain('보류 (unassignedTasks)');
+      expect(promptArg).toContain('전체 재분배 금지');
+    });
+
+    // 사용자가 화면에서 본 순번과 prompt 순번이 어긋나면 "3번" 이 다른 task 를 가리킨다.
+    it('직전 분배 항목은 화면과 같은 1-base 순번으로 싣는다', async () => {
+      mockRuns({ cto: priorCtoRun });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '2번 바꿔줘' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('1. id=t:morning-1');
+      expect(promptArg).toContain('2. id=t:afternoon-1');
+    });
+
+    // 지시 없는 재실행(슬래시 /assign, cron)까지 직전 결과를 물면 새 분배를 못 하게 된다.
+    it('사용자 지시가 없으면 직전 CTO run 을 조회조차 하지 않는다', async () => {
+      mockRuns({ cto: priorCtoRun });
+
+      await usecase.execute({ slackUserId: 'U1' });
+
+      expect(agentRunServiceFindLatest).toHaveBeenCalledTimes(1);
+      expect(agentRunServiceFindLatest).toHaveBeenCalledWith({
+        agentType: AgentType.PM,
+        slackUserId: 'U1',
+      });
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+    });
+
+    it('직전 CTO run 이 없으면 새 분배로 진행', async () => {
+      mockRuns({ cto: null });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+    });
+
+    // 현재 plan 보다 오래된 CTO run 은 다른 plan 을 보고 만든 표다.
+    it('직전 CTO run 이 현재 PM plan 보다 오래됐으면 이어받지 않는다', async () => {
+      mockRuns({
+        cto: { ...priorCtoRun, endedAt: new Date(Date.now() - 600_000) },
+      });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+    });
+
+    it('직전 CTO output 이 AssignmentOutput 형식이 아니면 graceful 하게 새 분배', async () => {
+      mockRuns({ cto: { ...priorCtoRun, output: { not: 'an assignment' } } });
+
+      const outcome = await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+      expect(outcome.result).toEqual(validAssignment);
+    });
+
+    it('재배정이면 inputSnapshot + evidence 에 직전 분배 run 을 남긴다', async () => {
+      mockRuns({ cto: priorCtoRun });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot).toMatchObject({
+        priorAssignmentAgentRunId: 77,
+      });
+      expect(call.evidence).toContainEqual(
+        expect.objectContaining({
+          sourceType: 'PRIOR_ASSIGNMENT',
+          sourceId: '77',
+        }),
+      );
+    });
+  });
 });

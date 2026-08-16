@@ -16,6 +16,7 @@ import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { BeChainModule } from '../be-chain/be-chain.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
@@ -27,6 +28,7 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { AgentCommandHandler } from './handler/agent-command.handler';
+import { AssignmentActionHandler } from './handler/assignment-action.handler';
 import { AutoFlowHandler } from './handler/auto-flow.handler';
 import { BeHandler } from './handler/be.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
@@ -59,6 +61,8 @@ import { SlackService } from './slack.service';
     PaperTradingModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO).
     CtoModule,
+    // /auto-flow 의 BE chain step — 자연어 승인 경로(CtoBeChainApplier)와 같은 실행기를 쓴다.
+    BeChainModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade).
     PoEvalModule,
     // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker).
@@ -91,6 +95,7 @@ import { SlackService } from './slack.service';
     BeHandler,
     AgentCommandHandler,
     PhaseCommandHandler,
+    AssignmentActionHandler,
     AutoFlowHandler,
     RetryRunHandler,
     RouterMessageHandler,
