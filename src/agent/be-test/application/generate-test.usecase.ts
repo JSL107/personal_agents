@@ -201,8 +201,10 @@ export class GenerateTestUsecase {
     let stopReason: GeneratedTest['selfCorrectionStopReason'] = undefined;
     let nonRetryableHits = 0;
     let attempts = 0;
+    // 컨테이너는 리눅스라 경로 구분자가 '/' 다. Windows 호스트의 relative() 는
+    // 백슬래시를 돌려주므로 세그먼트로 쪼개 넘겨야 posix.dirname 이 제대로 자른다.
     const containerTargetDir = posix.dirname(
-      posix.join('/repo', relative(repoRoot, resolvedPath)),
+      posix.join('/repo', ...relative(repoRoot, resolvedPath).split(sep)),
     );
 
     for (
