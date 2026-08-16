@@ -28,6 +28,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // BLOG — Hermes CLI(`hermes -z`)를 직접 spawn 하는 외부 에이전트라 route() 를 거치지 않는다.
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
   [AgentType.BLOG]: ModelProviderName.CHATGPT,
+  [AgentType.BLOG_PUBLISH]: ModelProviderName.CHATGPT,
   [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,

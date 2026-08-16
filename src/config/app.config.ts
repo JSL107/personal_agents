@@ -91,6 +91,22 @@ export class EnvironmentVariables {
   @IsString()
   BLOG_NOTION_STATUS_PUBLISHED_VALUE?: string;
 
+  @IsOptional()
+  @IsString()
+  BLOG_PUBLISH_REPO?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_PUBLISH_BRANCH?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_MASK_FORBIDDEN_TERMS?: string;
+
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_STATUS_DRAFT_VALUE?: string;
+
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()

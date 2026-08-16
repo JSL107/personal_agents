@@ -215,6 +215,174 @@ describe('NotionApiClient', () => {
     expect(task.properties).toEqual({});
   });
 
+  it('초안 page를 상태 필터, 생성일 오름차순, 기본 20개 제한과 env 속성명으로 조회한다', async () => {
+    const query = jest.fn().mockResolvedValue({
+      results: [
+        {
+          id: 'draft-page',
+          url: 'https://notion.so/draft-page',
+          created_time: '2026-08-14T01:02:03.000Z',
+          properties: {
+            제목: {
+              type: 'title',
+              title: [{ plain_text: '블로그 ' }, { plain_text: '초안' }],
+            },
+            카테고리: { type: 'select', select: { name: '개발 회고' } },
+            출처유형: { type: 'select', select: { name: 'PR' } },
+            Topics: {
+              type: 'multi_select',
+              multi_select: [{ name: 'nestjs' }, { name: 'notion' }],
+            },
+            Summary: {
+              type: 'rich_text',
+              rich_text: [{ plain_text: '요약 ' }, { plain_text: '내용' }],
+            },
+          },
+        },
+      ],
+    });
+    const adapter = new NotionApiClient(
+      { databases: { query } } as unknown as Client,
+      buildConfig({
+        BLOG_NOTION_PROP_TAGS: 'Topics',
+        BLOG_NOTION_PROP_SUMMARY: 'Summary',
+      }),
+    );
+
+    const pages = await adapter.queryDraftPages({
+      databaseId: 'BLOG_DATABASE',
+      statusPropertyName: '상태',
+      statusValue: '초안',
+    });
+
+    expect(query).toHaveBeenCalledWith({
+      database_id: 'BLOG_DATABASE',
+      filter: { property: '상태', select: { equals: '초안' } },
+      sorts: [{ timestamp: 'created_time', direction: 'ascending' }],
+      page_size: 20,
+    });
+    expect(pages).toEqual([
+      {
+        pageId: 'draft-page',
+        url: 'https://notion.so/draft-page',
+        title: '블로그 초안',
+        category: '개발 회고',
+        sourceType: 'PR',
+        tags: ['nestjs', 'notion'],
+        summary: '요약 내용',
+        createdTime: '2026-08-14T01:02:03.000Z',
+      },
+    ]);
+  });
+
+  it('초안 page 속성이 없거나 타입이 다르면 빈 값으로 안전하게 처리한다', async () => {
+    const query = jest.fn().mockResolvedValue({
+      results: [
+        {
+          id: 'draft-page',
+          url: 'https://notion.so/draft-page',
+          properties: {
+            제목: { type: 'select', select: { name: '제목 아님' } },
+            카테고리: { type: 'rich_text', rich_text: [] },
+            출처유형: { type: 'status', status: { name: '초안' } },
+            태그: { type: 'select', select: { name: '태그 아님' } },
+            요약: { type: 'select', select: { name: '요약 아님' } },
+          },
+        },
+        { object: 'page', id: 'partial-page' },
+      ],
+    });
+    const adapter = new NotionApiClient(
+      { databases: { query } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const pages = await adapter.queryDraftPages({
+      databaseId: 'BLOG_DATABASE',
+      statusPropertyName: '상태',
+      statusValue: '초안',
+      limit: 3,
+    });
+
+    expect(query).toHaveBeenCalledWith({
+      database_id: 'BLOG_DATABASE',
+      filter: { property: '상태', select: { equals: '초안' } },
+      sorts: [{ timestamp: 'created_time', direction: 'ascending' }],
+      page_size: 3,
+    });
+    expect(pages).toEqual([
+      {
+        pageId: 'draft-page',
+        url: 'https://notion.so/draft-page',
+        title: '',
+        category: '',
+        sourceType: '',
+        tags: [],
+        summary: '',
+        createdTime: '',
+      },
+    ]);
+  });
+
+  const buildPagedList = (lastPage: number): jest.Mock =>
+    jest.fn().mockImplementation(({ start_cursor }) => {
+      const pageNumber = start_cursor
+        ? Number(start_cursor.replace('cursor-', ''))
+        : 0;
+      return Promise.resolve({
+        results: [
+          pageNumber === 0
+            ? {
+                type: 'heading_2',
+                heading_2: { rich_text: [{ plain_text: '제목' }] },
+              }
+            : {
+                type: 'code',
+                code: {
+                  language: 'typescript',
+                  rich_text: [{ plain_text: `const page = ${pageNumber};` }],
+                },
+              },
+        ],
+        has_more: pageNumber < lastPage,
+        next_cursor: pageNumber < lastPage ? `cursor-${pageNumber + 1}` : null,
+      });
+    });
+
+  it('페이지 block을 cursor 페이지네이션해 끝까지 읽고 마크다운으로 변환한다', async () => {
+    const list = buildPagedList(2);
+    const adapter = new NotionApiClient(
+      { blocks: { children: { list } } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const markdown = await adapter.getPageMarkdown('draft-page');
+
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(list.mock.calls.map(([input]) => input)).toEqual([
+      { block_id: 'draft-page', start_cursor: undefined, page_size: 100 },
+      { block_id: 'draft-page', start_cursor: 'cursor-1', page_size: 100 },
+      { block_id: 'draft-page', start_cursor: 'cursor-2', page_size: 100 },
+    ]);
+    expect(markdown).toBe(
+      '# 제목\n\n```typescript\nconst page = 1;\n```\n\n```typescript\nconst page = 2;\n```',
+    );
+  });
+
+  // 잘린 본문을 정상 Markdown 으로 넘기면 승인 단계가 뒷부분 유실을 알아채지 못한다.
+  it('조회 상한에 걸린 뒤에도 block이 남아 있으면 잘린 본문 대신 실패한다', async () => {
+    const list = buildPagedList(Number.POSITIVE_INFINITY);
+    const adapter = new NotionApiClient(
+      { blocks: { children: { list } } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(adapter.getPageMarkdown('draft-page')).rejects.toThrow(
+      '조회 상한',
+    );
+    expect(list).toHaveBeenCalledTimes(5);
+  });
+
   it('NotionException 는 Notion API 외 호출자 에러도 잘 형성 (sanity)', () => {
     const ex = new NotionException({
       code: NotionErrorCode.REQUEST_FAILED,
