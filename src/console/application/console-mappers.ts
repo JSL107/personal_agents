@@ -21,6 +21,8 @@ export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   EVENING_BLOG_PUBLISH: AgentType.EVENING_RETRO,
   BLOG_GITHUB_PUBLISH: AgentType.BLOG_PUBLISH,
   EVENING_CAREER_REFLECT: AgentType.EVENING_RETRO,
+  // 분배를 확정하는 승인이라 카드 주인은 실행될 BE worker 가 아니라 분배자인 CTO 다.
+  CTO_BE_CHAIN: AgentType.CTO,
   SESSION_INJECT: null,
 };
 

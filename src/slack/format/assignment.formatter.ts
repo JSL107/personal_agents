@@ -17,8 +17,17 @@ const LOW_CONFIDENCE_THRESHOLD = 0.6;
 //   *⚠️ 자동 분배 보류 (사용자 결정 필요)*
 //   • taskTitle — reason
 //
-//   _분배 결과 override: `/assign <taskId> <worker>` (TODO — 본 step 미지원)_
-export const formatAssignmentOutput = (output: AssignmentOutput): string => {
+//   _이대로 진행할까요? ... (자연어 승인/재배정 안내)_
+export interface FormatAssignmentOptions {
+  // 실행 승인 카드(PreviewGate CTO_BE_CHAIN)가 함께 열렸는지. true 면 "응" 안내를 붙인다.
+  // 승인 카드 없이 표만 보여주는 경로(분배 0건 등)에서 "응 하세요" 라고 하면 거짓말이 된다.
+  awaitingApproval?: boolean;
+}
+
+export const formatAssignmentOutput = (
+  output: AssignmentOutput,
+  options: FormatAssignmentOptions = {},
+): string => {
   const lines: string[] = ['*📋 CTO 분배 결과*'];
   if (output.ctoSummary.trim().length > 0) {
     lines.push('');
@@ -64,8 +73,15 @@ export const formatAssignmentOutput = (output: AssignmentOutput): string => {
   }
 
   lines.push('');
+  if (options.awaitingApproval === true) {
+    lines.push(
+      '*이대로 진행할까요?* `🚀 실행` 버튼을 누르거나 `응` 이라고 답해주세요.',
+    );
+  }
+  // 배정 변경은 카드의 드롭다운이 정식 경로다. 드롭다운으로 표현되지 않는 요청
+  // (우선순위, 보류로 빼기) 은 말로 받아 CTO 를 다시 태운다.
   lines.push(
-    '_분배 결과 override 는 후속 step 에서 도입 예정 — 현재는 worker 슬래시 (`/be plan|schema|test ...`) 직접 호출._',
+    '_배정은 항목 옆 드롭다운에서 바꿀 수 있습니다. 우선순위·보류 조정은 말로 알려주세요 — 예: "3번은 빼줘"._',
   );
 
   return lines.join('\n');

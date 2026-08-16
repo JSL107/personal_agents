@@ -33,6 +33,13 @@ export interface PreviewActionRepositoryPort {
     id: string;
     status: Exclude<PreviewStatus, 'PENDING'>;
   }): Promise<PreviewAction>;
+  // PENDING 카드의 payload 만 교체. 사용자가 카드 위 컨트롤(드롭다운 등)로 승인 내용을
+  // 고쳐 나갈 때 쓴다 — 카드를 새로 만들면 승인 대상이 갈라지므로 같은 카드를 갱신한다.
+  // status 전이는 하지 않는다. PENDING/owner 검증은 호출자(usecase) 책임.
+  updatePayload(input: {
+    id: string;
+    payload: unknown;
+  }): Promise<PreviewAction>;
   countOutcomesByKind(input: {
     sinceDays: number;
     now: Date;

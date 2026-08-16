@@ -41,6 +41,40 @@ export interface AssignmentOutput {
   ctoSummary: string;
 }
 
+// 직전 분배 결과를 이번 실행 prompt 로 되먹이기 위한 참조.
+// 사용자가 "3번은 테스트로 바꿔줘" 처럼 자연어로 재배정을 요청하면, CTO 는 PM plan 만 보고
+// 처음부터 다시 분배하는 대신 이 직전 결과를 이어받아 언급된 task 만 고친다 (나머지 유지).
+export interface PriorAssignmentRef {
+  agentRunId: number;
+  output: AssignmentOutput;
+}
+
+// BE chain 안 worker 1건의 실행 결과.
+// SKIPPED — 실행 전 가드에 걸림 (BE_TEST 의 targetFilePath 누락 / repo 에 없는 경로).
+// FAILED  — worker usecase 가 throw. chain 은 멈추지 않고 다음 assignment 로 진행한다.
+export type BeChainStatus = 'OK' | 'SKIPPED' | 'FAILED';
+
+export interface BeChainOutcome {
+  assignment: Assignment;
+  status: BeChainStatus;
+  agentRunId?: number;
+  message: string;
+}
+
+// PREVIEW_KIND.CTO_BE_CHAIN 의 payload.
+// assignments 를 카드 생성 시점 그대로 담는다 — 사용자가 본 분배와 실행되는 분배를 일치시킨다
+// (승인 시점에 run 을 재조회하면 그 사이 재분배가 끼어들어 다른 게 실행될 수 있다).
+export interface CtoBeChainPayload {
+  ctoAgentRunId: number;
+  slackUserId: string;
+  assignments: Assignment[];
+  // 카드를 다시 그릴 때 필요한 표시용 정보. 드롭다운으로 배정을 바꾸면 카드를 재렌더하는데,
+  // 그 시점에 CTO run 을 다시 읽지 않아도 되도록 카드가 자기 표시 내용을 들고 있게 한다.
+  // 실행에는 쓰이지 않는다 (applier 는 assignments 만 본다) — 과거 카드 호환 위해 optional.
+  ctoSummary?: string;
+  unassignedTasks?: UnassignedTask[];
+}
+
 export interface GenerateAssignmentInput {
   slackUserId: string;
   triggerType?: TriggerType;

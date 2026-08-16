@@ -33,6 +33,10 @@ export interface SucceededAgentRunSnapshot {
   id: number;
   output: unknown;
   endedAt: Date;
+  // 그 run 이 무엇을 입력으로 돌았는지. 시각만으로는 "같은 맥락의 run 인가" 를 가릴 수
+  // 없는 경우에 대조용으로 쓴다 (예: CTO 재배정이 직전 분배를 이어받을 때, 그 분배가
+  // 지금과 같은 PM plan 을 본 것인지 dailyPlanAgentRunId 로 확인).
+  inputSnapshot: unknown;
 }
 
 // OPS-1: /quota 슬래시 응답용 — 한 사용자의 특정 시간 범위 내 agent_run 통계.

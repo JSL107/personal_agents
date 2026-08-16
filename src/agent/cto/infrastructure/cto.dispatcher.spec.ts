@@ -3,6 +3,7 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import { GenerateAssignmentUsecase } from '../application/generate-assignment.usecase';
+import { OpenAssignmentApprovalUsecase } from '../application/open-assignment-approval.usecase';
 import { AssignmentOutput } from '../domain/cto.type';
 import { CtoDispatcher } from './cto.dispatcher';
 
@@ -28,6 +29,7 @@ const baseInput: DispatchInput = {
 
 describe('CtoDispatcher', () => {
   let usecaseExecute: jest.Mock;
+  let openApprovalExecute: jest.Mock;
   let dispatcher: CtoDispatcher;
 
   beforeEach(() => {
@@ -36,6 +38,7 @@ describe('CtoDispatcher', () => {
       modelUsed: 'claude-cli',
       agentRunId: 42,
     });
+    openApprovalExecute = jest.fn().mockResolvedValue(true);
     dispatcher = new CtoDispatcher(
       {
         execute: usecaseExecute,
@@ -49,6 +52,9 @@ describe('CtoDispatcher', () => {
             ),
           ),
       } as unknown as HumanizeService,
+      {
+        execute: openApprovalExecute,
+      } as unknown as OpenAssignmentApprovalUsecase,
     );
   });
 

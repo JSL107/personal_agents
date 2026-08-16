@@ -26,6 +26,7 @@ const buildRepo = (
   create: jest.fn(),
   findById: jest.fn(),
   findLatestPendingForUser: jest.fn(),
+  updatePayload: jest.fn(),
   countOutcomesByKind: jest.fn(),
   countByPayloadValue: jest.fn().mockResolvedValue(0),
   transition: jest

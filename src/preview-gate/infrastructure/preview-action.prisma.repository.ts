@@ -93,6 +93,20 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return toDomain(row);
   }
 
+  async updatePayload({
+    id,
+    payload,
+  }: {
+    id: string;
+    payload: unknown;
+  }): Promise<PreviewAction> {
+    const row = await this.prisma.previewAction.update({
+      where: { id },
+      data: { payload: payload as unknown as Prisma.InputJsonValue },
+    });
+    return toDomain(row);
+  }
+
   async countOutcomesByKind({
     sinceDays,
     now,
