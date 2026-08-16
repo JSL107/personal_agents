@@ -356,9 +356,19 @@ pnpm dev | start | start:prod                  # 개발 watch | 실행 | 프로�
 pnpm db:up | db:down | db:push | db:studio     # 로컬 DB/Redis · 스키마 반영 · Studio
 pnpm build | test | test:e2e | lint:check | format:check
 pnpm docs:sync | docs:check | check:env        # 자동 생성 문서 갱신 · 검사 · .env 동기 확인
+pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
+                                               # 과거 구간 재생으로 매매 규칙 성적 측정 (DB 읽기 전용)
 ```
 
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.
+
+> **백테스트**: 과거 주가를 재생해 "그때 이 규칙대로 샀으면 어떻게 됐을지"를 계산한다. DB 에 쓰지 않는다.
+> `--turnover-min` `--max-positions` `--weight` `--hold` 로 규칙을 바꿔가며 성적을 비교한다.
+> LLM 은 쓰지 않고 "스크리너 점수 상위 N종 기계적 매수" 로 대체하므로 같은 인자면 항상 같은 결과가 나온다.
+> 유니버스 전체를 메모리에 올리므로 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다
+> (Windows 는 `set NODE_OPTIONS=--max-old-space-size=4096` 을 먼저 실행한다).
+> 성적을 읽기 전 확인할 한계는 [설계서 §12](./docs/superpowers/specs/2026-08-16-paper-trading-backtest-design.md) 에 있다 —
+> 과거 깊이 약 10개월, 상장폐지 종목이 빠지는 생존 편향, 슬리피지 미반영.
 
 ---
 
