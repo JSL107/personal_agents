@@ -15,7 +15,10 @@ import { FileAnalysis } from '../domain/be-test.type';
 import { BeTestErrorCode } from '../domain/be-test-error-code.enum';
 import { JestMockGenerator } from '../infrastructure/jest-mock-generator';
 import { TreeSitterTestAnalyzer } from '../infrastructure/tree-sitter-test-analyzer';
-import { GenerateTestUsecase } from './generate-test.usecase';
+import {
+  GenerateTestUsecase,
+  toContainerTargetDir,
+} from './generate-test.usecase';
 
 jest.mock('node:fs/promises', () => ({
   readFile: jest.fn(),
@@ -572,6 +575,27 @@ describe('GenerateTestUsecase', () => {
           triggerType: TriggerType.SLACK_COMMAND_BE_TEST,
         }),
       );
+    });
+  });
+
+  // sandbox 는 리눅스 컨테이너라 import 경로가 항상 posix 다. Windows 호스트의 relative()
+  // 결과를 그대로 posix.join 에 넘기면 백슬래시가 파일명의 일부로 남아 컨테이너 안에서
+  // import 가 깨진다 — 그 회귀를 호스트 플랫폼과 무관하게 잡는다.
+  describe('toContainerTargetDir', () => {
+    it('Windows 백슬래시 경로를 컨테이너 posix 경로로 변환', () => {
+      expect(toContainerTargetDir('src\\agent\\be-test\\foo.service.ts')).toBe(
+        '/repo/src/agent/be-test',
+      );
+    });
+
+    it('posix 경로는 그대로 변환', () => {
+      expect(toContainerTargetDir('src/agent/be-test/foo.service.ts')).toBe(
+        '/repo/src/agent/be-test',
+      );
+    });
+
+    it('repo 루트 바로 아래 파일은 /repo 를 반환', () => {
+      expect(toContainerTargetDir('foo.service.ts')).toBe('/repo');
     });
   });
 });
