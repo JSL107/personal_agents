@@ -18,7 +18,21 @@ describe('buildAstroPost', () => {
       'src/content/posts/2026-08-15-shared-db-consistency.md',
     );
     expect(post.content).toContain('pubDatetime: 2026-08-15T01:30:00+09:00');
-    expect(post.content).toContain('tags:\n  - backend\n  - database');
+    expect(post.content).toContain('tags:\n  - "backend"\n  - "database"');
+  });
+
+  // frontmatter 가 깨지면 공개 저장소 main 에 커밋된 뒤 Astro 빌드 단계에서야 드러난다.
+  it('개행·콜론이 든 title과 tag를 넣어도 frontmatter 구조가 유지된다', () => {
+    const post = buildAstroPost({
+      ...input,
+      title: '정합성\n점검: 1차',
+      tags: ['back: end', '줄\n바꿈'],
+    });
+
+    expect(post.content).toContain('title: "정합성\\n점검: 1차"');
+    expect(post.content).toContain('tags:\n  - "back: end"\n  - "줄\\n바꿈"');
+    // 여는 '---' + title/description/pubDatetime + 'tags:' + 태그 2줄 = 7줄에서 닫힌다.
+    expect(post.content.split('\n---')[0].split('\n')).toHaveLength(7);
   });
 
   it('title과 description의 큰따옴표를 frontmatter에 안전하게 넣는다', () => {

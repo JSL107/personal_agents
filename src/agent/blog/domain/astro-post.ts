@@ -88,16 +88,18 @@ const buildFrontmatter = (input: {
 }): string => {
   const lines = [
     '---',
-    `title: "${escapeYamlValue(input.title)}"`,
-    `description: "${escapeYamlValue(input.description)}"`,
+    `title: ${toYamlString(input.title)}`,
+    `description: ${toYamlString(input.description)}`,
     `pubDatetime: ${input.publishedAt.value}`,
   ];
   if (input.tags.length > 0) {
-    lines.push('tags:', ...input.tags.map((tag) => `  - ${tag}`));
+    lines.push('tags:', ...input.tags.map((tag) => `  - ${toYamlString(tag)}`));
   }
   lines.push('---');
   return lines.join('\n');
 };
 
-const escapeYamlValue = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+// YAML 의 double-quoted 스칼라는 escape 규칙이 JSON 문자열과 호환된다. 직접 escape 하면
+// 개행·탭·제어문자가 그대로 남아 frontmatter 구조를 깨뜨리고, 공개 저장소 main 에 커밋된
+// 뒤에야 Astro 빌드 실패로 드러난다. tag 도 같은 이유로 quoting 없이 넣지 않는다.
+const toYamlString = (value: string): string => JSON.stringify(value);

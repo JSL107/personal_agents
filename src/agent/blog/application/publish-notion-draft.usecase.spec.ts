@@ -125,7 +125,7 @@ describe('PublishNotionDraftUsecase', () => {
         pageId: draft.pageId,
         path: 'src/content/posts/2026-08-15-shared-database-migration.md',
         content:
-          '---\ntitle: "공유 DB 마이그레이션 회고"\ndescription: "공유 DB 마이그레이션의 정합성 교훈"\npubDatetime: 2026-08-15T01:00:00+09:00\ntags:\n  - migration\n---\n\n익명화된 본문\n',
+          '---\ntitle: "공유 DB 마이그레이션 회고"\ndescription: "공유 DB 마이그레이션의 정합성 교훈"\npubDatetime: 2026-08-15T01:00:00+09:00\ntags:\n  - "migration"\n---\n\n익명화된 본문\n',
         title: draft.title,
         notionUrl: draft.url,
         tags: draft.tags,
@@ -154,8 +154,60 @@ describe('PublishNotionDraftUsecase', () => {
       expect(outcome.result.message).toContain(
         'Notion에서 직접 수정 후 재시도',
       );
-      expect(outcome.result.message).toContain('회사명');
+      expect(outcome.result.message).toContain('회**');
     }
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // 차단 메시지는 자연어 멘션 경로에서 채널에 그대로 게시된다. 탐지 원문을 실으면
+  // 차단한 식별정보를 채널 전체에 다시 뿌리게 된다.
+  it('차단 메시지에 탐지 원문과 주변 문맥을 싣지 않는다', async () => {
+    const { usecase } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'shared-database-migration',
+        description: '설명',
+        body: '회사명 서비스의 내부 구조를 정리했다.',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('blocked');
+    if (outcome.result.status === 'blocked') {
+      expect(outcome.result.message).not.toContain('회사명');
+      expect(outcome.result.message).not.toContain('내부 구조를 정리했다');
+      // 원문은 실행 기록(agent_run)에만 남는다.
+      expect(outcome.result.hits).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            term: '회사명',
+            excerpt: expect.any(String),
+          }),
+        ]),
+      );
+    }
+  });
+
+  // slug 은 공개 저장소의 커밋 경로·URL 로 굳으므로 본문이 안전해도 통과시키면 안 된다.
+  it('본문이 안전해도 slug에 금지어가 남으면 preview 없이 차단한다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      forbiddenTerms: 'acme-corp',
+      completionText: JSON.stringify({
+        slug: 'acme-corp-migration',
+        description: '식별 정보가 제거된 설명',
+        body: '식별 정보가 제거된 기술 회고입니다.',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('blocked');
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 

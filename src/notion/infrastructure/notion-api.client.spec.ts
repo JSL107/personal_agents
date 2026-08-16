@@ -324,8 +324,8 @@ describe('NotionApiClient', () => {
     ]);
   });
 
-  it('페이지 block을 최대 다섯 번만 cursor 페이지네이션하고 마크다운으로 변환한다', async () => {
-    const list = jest.fn().mockImplementation(({ start_cursor }) => {
+  const buildPagedList = (lastPage: number): jest.Mock =>
+    jest.fn().mockImplementation(({ start_cursor }) => {
       const pageNumber = start_cursor
         ? Number(start_cursor.replace('cursor-', ''))
         : 0;
@@ -344,10 +344,13 @@ describe('NotionApiClient', () => {
                 },
               },
         ],
-        has_more: true,
-        next_cursor: `cursor-${pageNumber + 1}`,
+        has_more: pageNumber < lastPage,
+        next_cursor: pageNumber < lastPage ? `cursor-${pageNumber + 1}` : null,
       });
     });
+
+  it('페이지 block을 cursor 페이지네이션해 끝까지 읽고 마크다운으로 변환한다', async () => {
+    const list = buildPagedList(2);
     const adapter = new NotionApiClient(
       { blocks: { children: { list } } } as unknown as Client,
       buildConfig({}),
@@ -355,17 +358,29 @@ describe('NotionApiClient', () => {
 
     const markdown = await adapter.getPageMarkdown('draft-page');
 
-    expect(list).toHaveBeenCalledTimes(5);
+    expect(list).toHaveBeenCalledTimes(3);
     expect(list.mock.calls.map(([input]) => input)).toEqual([
       { block_id: 'draft-page', start_cursor: undefined, page_size: 100 },
       { block_id: 'draft-page', start_cursor: 'cursor-1', page_size: 100 },
       { block_id: 'draft-page', start_cursor: 'cursor-2', page_size: 100 },
-      { block_id: 'draft-page', start_cursor: 'cursor-3', page_size: 100 },
-      { block_id: 'draft-page', start_cursor: 'cursor-4', page_size: 100 },
     ]);
     expect(markdown).toBe(
-      '# 제목\n\n```typescript\nconst page = 1;\n```\n\n```typescript\nconst page = 2;\n```\n\n```typescript\nconst page = 3;\n```\n\n```typescript\nconst page = 4;\n```',
+      '# 제목\n\n```typescript\nconst page = 1;\n```\n\n```typescript\nconst page = 2;\n```',
     );
+  });
+
+  // 잘린 본문을 정상 Markdown 으로 넘기면 승인 단계가 뒷부분 유실을 알아채지 못한다.
+  it('조회 상한에 걸린 뒤에도 block이 남아 있으면 잘린 본문 대신 실패한다', async () => {
+    const list = buildPagedList(Number.POSITIVE_INFINITY);
+    const adapter = new NotionApiClient(
+      { blocks: { children: { list } } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(adapter.getPageMarkdown('draft-page')).rejects.toThrow(
+      '조회 상한',
+    );
+    expect(list).toHaveBeenCalledTimes(5);
   });
 
   it('NotionException 는 Notion API 외 호출자 에러도 잘 형성 (sanity)', () => {

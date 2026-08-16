@@ -152,6 +152,7 @@ export class NotionApiClient implements NotionClientPort {
     this.assertClientConfigured('getPageMarkdown');
     const blocks: NotionReadBlock[] = [];
     let cursor: string | undefined;
+    let remaining = false;
 
     try {
       for (
@@ -169,10 +170,11 @@ export class NotionApiClient implements NotionClientPort {
             .map(toNotionReadBlock)
             .filter((block): block is NotionReadBlock => block !== null),
         );
-        if (!response.has_more || !response.next_cursor) {
+        remaining = Boolean(response.has_more && response.next_cursor);
+        if (!remaining) {
           break;
         }
-        cursor = response.next_cursor;
+        cursor = response.next_cursor ?? undefined;
       }
     } catch (error: unknown) {
       throw new NotionException({
@@ -181,6 +183,17 @@ export class NotionApiClient implements NotionClientPort {
           error instanceof Error ? error.message : String(error)
         }`,
         cause: error,
+      });
+    }
+
+    // 상한에 걸린 채 조용히 반환하면 뒷부분이 잘린 본문이 정상 Markdown 으로 승인·발행된다.
+    // 잘린 글을 발행하는 것보다 실패가 낫다 (try 밖 — 위 catch 가 삼키면 안 된다).
+    if (remaining) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 본문이 조회 상한(${
+          MARKDOWN_BLOCK_PAGE_LIMIT * MARKDOWN_BLOCK_PAGE_SIZE
+        } block)을 넘어 일부만 읽혔습니다. 초안을 나눠주세요.`,
       });
     }
 

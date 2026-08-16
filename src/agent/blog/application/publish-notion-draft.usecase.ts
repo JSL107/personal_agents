@@ -25,7 +25,7 @@ import {
   PublishNotionDraftResult,
 } from '../domain/blog.type';
 import { BlogErrorCode } from '../domain/blog-error-code.enum';
-import { scanForbiddenTerms } from '../domain/company-info-scan';
+import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
 import { BLOG_ANONYMIZE_SYSTEM_PROMPT } from '../domain/prompt/blog-anonymize.prompt';
 
 // autopilot 의 T1_PREVIEW 와 같은 24시간. 1시간은 이미 실패로 판명된 값이다 — 저녁 블로그 카드가
@@ -118,11 +118,22 @@ export class PublishNotionDraftUsecase {
         });
         const anonymized = this.parseAnonymizedDraft(completion.text);
         const summary = target.summary.trim() || anonymized.description.trim();
+        const post = buildAstroPost({
+          title: target.title,
+          description: summary,
+          slug: anonymized.slug,
+          tags: target.tags,
+          createdTime: target.createdTime,
+          pageId: target.pageId,
+          body: anonymized.body,
+        });
         const hits = scanForbiddenTerms(
           // frontmatter title/description은 모델 body와 별도 입력이므로 함께 검사하지 않으면
           // 본문은 안전해도 메타데이터에서 회사·기관명이 그대로 발행될 수 있다.
+          // slug 과 최종 path 도 같은 이유 — 본문이 안전해도 모델이 slug 에 남긴 ASCII 식별자는
+          // 공개 저장소의 커밋 경로와 URL 에 영구히 박힌다. 정규화 전후 표기가 다르므로 둘 다 넣는다.
           {
-            body: `${target.title}\n${summary}\n${anonymized.body}`,
+            body: `${target.title}\n${summary}\n${anonymized.slug}\n${post.path}\n${anonymized.body}`,
             tags: target.tags,
           },
           forbiddenTerms,
@@ -140,15 +151,6 @@ export class PublishNotionDraftUsecase {
           };
         }
 
-        const post = buildAstroPost({
-          title: target.title,
-          description: summary,
-          slug: anonymized.slug,
-          tags: target.tags,
-          createdTime: target.createdTime,
-          pageId: target.pageId,
-          body: anonymized.body,
-        });
         const previewText = this.buildPreviewText(target, post.path, summary);
         const payload: BlogGithubPublishPayload = {
           pageId: target.pageId,
@@ -270,14 +272,16 @@ export class PublishNotionDraftUsecase {
     ].join('\n');
   }
 
-  private buildForbiddenMessage(
-    hits: Array<{ term: string; excerpt: string }>,
-  ): string {
-    const details = hits
+  // 이 메시지는 자연어 멘션 경로에서 채널에 그대로 게시된다 (blog-publish.dispatcher.ts →
+  // router-message.handler.ts 의 say). 탐지 지점 주변 원문(excerpt)이나 매치 문자열을 그대로
+  // 실으면 차단한 식별정보를 오히려 채널 전체에 재노출하므로 마스킹한 단서와 건수만 남긴다.
+  // 원본 hit 은 result.hits 로 agent_run 에 남으니 작성자는 실행 기록에서 확인한다.
+  private buildForbiddenMessage(hits: ForbiddenHit[]): string {
+    const details = [...new Set(hits.map((hit) => maskTerm(hit.term)))]
       .slice(0, 10)
-      .map((hit) => `- ${hit.term}: ${hit.excerpt}`)
+      .map((masked) => `- ${masked}`)
       .join('\n');
-    return `익명화 결과에 금지어 또는 식별 패턴이 남아 발행을 차단했습니다.\n${details}\nNotion에서 직접 수정 후 재시도해주세요.`;
+    return `익명화 결과에 금지어 또는 식별 패턴이 ${hits.length}건 남아 발행을 차단했습니다.\n${details}\nNotion에서 직접 수정 후 재시도해주세요. (원문은 실행 기록에만 남깁니다.)`;
   }
 
   private getForbiddenTerms(): string[] {
@@ -311,6 +315,9 @@ export class PublishNotionDraftUsecase {
     });
   }
 }
+
+const maskTerm = (term: string): string =>
+  term.length <= 1 ? '*' : `${term[0]}${'*'.repeat(term.length - 1)}`;
 
 const isAnonymizedBlogDraft = (
   value: unknown,
