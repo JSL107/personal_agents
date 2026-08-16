@@ -9,6 +9,8 @@ import { StudyBriefNotionPublisher } from './study-brief-notion.publisher';
 
 const buildNotionClient = (): jest.Mocked<NotionClientPort> => ({
   listActiveTasks: jest.fn(),
+  queryDraftPages: jest.fn(),
+  getPageMarkdown: jest.fn(),
   createDatabasePage: jest.fn().mockResolvedValue({
     pageId: 'PAGE',
     url: 'https://notion.so/PAGE',

@@ -26,7 +26,7 @@ GitHub · Notion · Slack 을 연결해 **회사 롤플레이 역할**(PM · BE 
 
 | | |
 |---|---|
-| 🗣️ **두 가지 진입** | Slack slash command 18개, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
+| 🗣️ **두 가지 진입** | Slack slash command 19개, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
 | 🎭 **회사 롤플레이** | 한 사람이 PM · BE · 리뷰어 · CTO · PO · CEO 역할을 LLM 워커로 분담 |
 | ⚡ **자동 발화** | 출근/퇴근/주간 cron + GitHub webhook 으로 사용자 입력 없이 proactive 동작 |
 | 🧠 **장기 기억** | 과거 작업을 pgvector 의미검색으로 회상해 분류·리뷰 품질 강화 |
@@ -42,7 +42,7 @@ GitHub · Notion · Slack 을 연결해 **회사 롤플레이 역할**(PM · BE 
 flowchart TD
     subgraph IN["진입점"]
         direction LR
-        S["슬래시 18종"]
+        S["슬래시 19종"]
         M["@이대리 멘션·DM"]
         W["GitHub Webhook"]
         C["Autopilot Cron"]
@@ -115,7 +115,7 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔀 자연어 라우터 (V3 Hierarchical Manager)**
 
-멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 17개 워커 중 하나로 넘긴다.
+멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 19개 워커 중 하나로 넘긴다.
 
 직전 대화를 기억한다 — 사용자·채널·스레드 단위로 5턴, TTL 30분(Redis, 실패 시 in-memory fallback). 그래서 "그거 분배해" 같은 지시대명사가 직전 실행을 자동으로 가리킨다.
 
@@ -162,14 +162,14 @@ pnpm dev              # watch 모드 기동
 
 | 진입 | 무엇 | 인증·게이트 |
 |---|---|---|
-| **슬래시 커맨드** | 18종 (에이전트 호출 · 휴가 · 운영) | Slack Socket Mode |
-| **자연어 멘션·DM** | Router 가 17개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
+| **슬래시 커맨드** | 19종 (에이전트 호출 · 휴가 · 운영) | Slack Socket Mode |
+| **자연어 멘션·DM** | Router 가 19개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
 | **GitHub Webhook** | issue/PR 이벤트로 자동 발화 | HMAC 서명 검증 |
 | **Autopilot cron** | 출근·퇴근·주간 정기 실행 | `AUTOPILOT_OWNER_SLACK_USER_ID` |
 | **macOS 콘솔 앱** | Slack 없이 회사 전체를 보고 조작 | `CONSOLE_OWNER_SLACK_USER_ID` |
 
 <details>
-<summary><b>슬래시 커맨드 18개</b></summary>
+<summary><b>슬래시 커맨드 19개</b></summary>
 
 <br>
 
@@ -177,6 +177,7 @@ pnpm dev              # watch 모드 기동
 |---|---|:---:|
 | `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/be <plan\|schema\|test\|sre>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · BE · CTO · PO · CEO · 체인) | 🟢 ChatGPT(codex) |
 | `/휴가` | 연차 계산 / 등록 / 취소 (결정론, LLM 미사용) | ⚪ — |
+| `/blog-publish [제목일부]` | Notion 초안 익명화 → 승인 후 GitHub 블로그 발행 | 🟢 ChatGPT(codex) |
 | `/sync-plan` `/sync-context` `/quota` `/ping` `/retry-run` `/search-runs` `/review-feedback` | 동기화 · 운영 · 검색 · 피드백 | ⚪ — |
 
 > BE-FIX 는 슬래시가 없다. GitHub webhook 으로만 발화하고, 수동 재실행은 `/retry-run <AgentRun ID>`.
@@ -188,9 +189,9 @@ pnpm dev              # watch 모드 기동
 
 <br>
 
-`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 17개 워커 중 하나로 분류해 dispatch 한다. 결과는 thread 답글로 오고 푸터에 `agentRunId` 가 붙는다.
+`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 19개 워커 중 하나로 분류해 dispatch 한다. 결과는 thread 답글로 오고 푸터에 `agentRunId` 가 붙는다.
 
-- **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용 (슬래시 없음)
+- **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
 
 Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope 에 `app_mentions:read` + `im:history`.
@@ -271,7 +272,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 <br>
 
-단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 124개 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
+단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 130개 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
 
 아래는 처음 띄울 때 실제로 만지는 것만 추렸다.
 
@@ -284,6 +285,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
+| `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안 상태값. 금지어 목록이 비면 발행 차단 |
 | `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | 임베딩 모델·차원 (기본 384dim) |
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입).
@@ -304,7 +306,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
 2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` → install → Bot Token = `SLACK_BOT_TOKEN`
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
-4. **Slash Commands** 에 18종 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
+4. **Slash Commands** 에 19종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
 5. **Event Subscriptions** → `app_mention` + `message.im` 구독 → Reinstall
 6. `.env` 채운 뒤 `pnpm dev` → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
 

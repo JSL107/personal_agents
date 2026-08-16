@@ -6,6 +6,7 @@ import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analy
 import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
 import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
 import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
+import { PublishNotionDraftUsecase } from '../../agent/blog/application/publish-notion-draft.usecase';
 import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
@@ -40,7 +41,12 @@ import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
-import { runAgentCommand, runEphemeral } from './slack-handler.helper';
+import { respondBlogPublishOutcome } from './blog-publish.handler';
+import {
+  runAgentCommand,
+  runEphemeral,
+  toUserFacingErrorMessage,
+} from './slack-handler.helper';
 
 // /retry-run — FAILED AgentRun 의 inputSnapshot 으로 동일 작업을 재실행 (OPS-5).
 // 본인 명의의 run 만 가능, agentType 별로 적합한 usecase 로 라우팅.
@@ -67,6 +73,7 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly generatePaperRecommendationUsecase: GeneratePaperRecommendationUsecase,
+    private readonly publishNotionDraftUsecase: PublishNotionDraftUsecase,
     private readonly paperTradingRepository: PaperTradingPrismaRepository,
     private readonly agentRunService: AgentRunService,
     private readonly humanizeService: HumanizeService,
@@ -446,6 +453,38 @@ export class RetryRunHandler implements SlackHandler {
             text: `AgentRun #${id} (BLOG) 은 Hermes 에이전트 실행이라 retry-run 을 지원하지 않습니다. 같은 요청을 자연어로 다시 멘션해주세요 (예: "@이대리 … 블로그 써줘").`,
           });
           return;
+        }
+        case 'BLOG_PUBLISH': {
+          const commandLabel = `/retry-run#${id} (BLOG_PUBLISH)`;
+          try {
+            const outcome = await this.publishNotionDraftUsecase.execute({
+              titleQuery: snapshot.titleQuery ?? '',
+              pageId: snapshot.pageId,
+              slackUserId,
+              triggerType: TriggerType.FAILURE_REPLAY,
+            });
+            await respondBlogPublishOutcome(respond, outcome);
+            try {
+              await this.linkRetryLineage(id)(outcome);
+            } catch (error: unknown) {
+              this.logger.warn(
+                `${commandLabel} 실행 후처리 실패 (응답은 정상 전달됨): ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          } catch (error: unknown) {
+            const rawMessage =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `${commandLabel} 실패: ${rawMessage}`,
+              error instanceof Error ? error.stack : undefined,
+            );
+            await respond({
+              response_type: 'ephemeral',
+              replace_original: true,
+              text: `이대리 ${commandLabel} 실패: ${toUserFacingErrorMessage(error)}`,
+            });
+          }
+          break;
         }
         case 'CAREER_MATE': {
           await respond({

@@ -154,6 +154,13 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: '블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬)',
   },
   {
+    agentType: AgentType.BLOG_PUBLISH,
+    displayName: 'Blog Publish',
+    slashCommands: ['/blog-publish'],
+    usecasePath: 'src/agent/blog/application/publish-notion-draft.usecase.ts',
+    description: 'Notion 블로그 초안 익명화 + GitHub 발행 승인',
+  },
+  {
     agentType: AgentType.CAREER_MATE,
     displayName: 'Career Mate',
     slashCommands: [],

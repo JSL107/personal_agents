@@ -56,6 +56,9 @@ describe('PREVIEW_KIND_TO_AGENT', () => {
     expect(PREVIEW_KIND_TO_AGENT[PREVIEW_KIND.EVENING_BLOG_PUBLISH]).toBe(
       AgentType.EVENING_RETRO,
     );
+    expect(PREVIEW_KIND_TO_AGENT[PREVIEW_KIND.BLOG_GITHUB_PUBLISH]).toBe(
+      AgentType.BLOG_PUBLISH,
+    );
   });
 
   it('세션 주입 등 에이전트 무관 kind 는 null (오피스 집결 대상 아님)', () => {

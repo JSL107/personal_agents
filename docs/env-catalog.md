@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 126개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 130개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -159,6 +159,10 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `BLOG_NOTION_PROP_TAGS` | ❌ | — |
 | `BLOG_NOTION_PROP_SUMMARY` | ❌ | — |
 | `BLOG_NOTION_STATUS_PUBLISHED_VALUE` | ❌ | — |
+| `BLOG_PUBLISH_REPO` | ❌ | — |
+| `BLOG_PUBLISH_BRANCH` | ❌ | — |
+| `BLOG_MASK_FORBIDDEN_TERMS` | ❌ | — |
+| `BLOG_NOTION_STATUS_DRAFT_VALUE` | ❌ | — |
 | `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip. |
 | `EVENING_RETRO_BLOG_NOTION_DATABASE_ID` | ❌ | 블로그 발행 대상 Notion "블로그 초안" DB ID. 미설정 시 블로그 카드 승인은 명시 에러. |
 

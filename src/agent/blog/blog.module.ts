@@ -3,11 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { WebClient } from '@slack/web-api';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { GenerateBlogDraftUsecase } from './application/generate-blog-draft.usecase';
+import { PublishNotionDraftUsecase } from './application/publish-notion-draft.usecase';
 import { HERMES_RUNNER_PORT } from './domain/port/hermes-runner.port';
 import { BLOG_SLACK_NOTIFIER_PORT } from './domain/port/slack-notifier.port';
 import { BlogDispatcher } from './infrastructure/blog.dispatcher';
+import { BlogPublishDispatcher } from './infrastructure/blog-publish.dispatcher';
 import { HermesCliRunner } from './infrastructure/hermes-cli.runner';
 import {
   BLOG_SLACK_WEB_CLIENT,
@@ -20,10 +23,12 @@ import {
 // SLACK_BOT_TOKEN 미설정 시 WebClient=null → SlackWebNotifier 는 warn noop(부팅 영향 없음).
 // (SlackCollectorModule 의 SLACK_WEB_CLIENT 패턴을 모듈 격리 위해 자체 useFactory 로 복제.)
 @Module({
-  imports: [AgentRunModule, NotionModule],
+  imports: [AgentRunModule, ModelRouterModule, NotionModule],
   providers: [
     GenerateBlogDraftUsecase,
+    PublishNotionDraftUsecase,
     BlogDispatcher,
+    BlogPublishDispatcher,
     { provide: HERMES_RUNNER_PORT, useClass: HermesCliRunner },
     { provide: BLOG_SLACK_NOTIFIER_PORT, useClass: SlackWebNotifier },
     {
@@ -38,6 +43,11 @@ import {
       inject: [ConfigService],
     },
   ],
-  exports: [GenerateBlogDraftUsecase, BlogDispatcher],
+  exports: [
+    GenerateBlogDraftUsecase,
+    PublishNotionDraftUsecase,
+    BlogDispatcher,
+    BlogPublishDispatcher,
+  ],
 })
 export class BlogModule {}

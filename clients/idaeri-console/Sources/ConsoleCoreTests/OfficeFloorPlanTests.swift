@@ -42,7 +42,7 @@ let sampleAgents: [ConsoleAgent] =
     + planAgents(
         .growth,
         [
-            "CAREER_MATE", "JOB_APPLICATION", "BLOG", "VACATION", "INVEST", "CTO_STUDY",
+            "CAREER_MATE", "JOB_APPLICATION", "BLOG", "BLOG_PUBLISH", "VACATION", "INVEST", "CTO_STUDY",
             "PAPER_TRADE", "PAPER_RECOMMEND",
         ]
     )

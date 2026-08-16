@@ -101,6 +101,8 @@ describe('GenerateBackendPlanUsecase', () => {
       createReviewComment: jest.fn(),
       listReviewThreads: jest.fn(),
       resolveReviewThread: jest.fn(),
+      commitFileToBranch: jest.fn(),
+      getFileFromBranch: jest.fn(),
     };
 
     usecase = new GenerateBackendPlanUsecase(

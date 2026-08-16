@@ -16,7 +16,11 @@ import {
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
   AddIssueLabelsInput,
+  CommitFileToBranchInput,
+  CommitFileToBranchResult,
   CompareCommitsOptions,
+  GetFileFromBranchInput,
+  GetFileFromBranchResult,
   GetPullRequestDiffOptions,
   GithubClientPort,
   ListAssignedTasksOptions,
@@ -689,6 +693,77 @@ export class OctokitGithubClient implements GithubClientPort {
     }
   }
 
+  // 승인된 블로그 글을 main 에 파일 1개로 커밋한다. sha 를 전달하지 않아 기존 path 의
+  // update 를 원천 차단하며, GitHub 의 422를 사용자에게 재발행 안내로 변환한다.
+  async commitFileToBranch({
+    repo,
+    branch,
+    path,
+    content,
+    commitMessage,
+  }: CommitFileToBranchInput): Promise<CommitFileToBranchResult> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response =
+        await this.octokit!.rest.repos.createOrUpdateFileContents({
+          owner,
+          repo: repoName,
+          branch,
+          path,
+          message: commitMessage,
+          content: Buffer.from(content, 'utf-8').toString('base64'),
+        });
+      const commitSha = response.data.commit.sha;
+      if (!commitSha) {
+        throw new Error('GitHub commit SHA 가 응답에 없습니다.');
+      }
+      return {
+        commitSha,
+        fileUrl: response.data.content?.html_url ?? '',
+      };
+    } catch (error: unknown) {
+      if (isExistingFileWithoutShaConflict(error)) {
+        throw new GithubException({
+          code: GithubErrorCode.REQUEST_FAILED,
+          message: `GitHub ${repo} 에 이미 발행된 경로입니다: ${path}`,
+          status: DomainStatus.CONFLICT,
+          cause: error,
+        });
+      }
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} 파일 커밋 실패 (${branch}:${path})`,
+      );
+    }
+  }
+
+  // ResultVerifier 용 최소 재조회. 파일 내용은 소비하지 않고, 지정 branch/path 의 존재만
+  // GitHub API 로 확인한다.
+  async getFileFromBranch({
+    repo,
+    branch,
+    path,
+  }: GetFileFromBranchInput): Promise<GetFileFromBranchResult> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response = await this.octokit!.rest.repos.getContent({
+        owner,
+        repo: repoName,
+        path,
+        ref: branch,
+      });
+      const data = response.data as { html_url?: string };
+      return { fileUrl: data.html_url ?? '' };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} 파일 재조회 실패 (${branch}:${path})`,
+      );
+    }
+  }
+
   // `/impact-report --recent <N>d` — author 가 sinceIsoDate 이후 merge 한 PR summary.
   // 흐름: search.issuesAndPullRequests 로 PR number 목록 회복 → 각 PR 에 pulls.get 으로
   // additions/deletions/changed_files/body 보강. N+1 호출이지만 limit 상한 (보통 ≤20) 이라 OK.
@@ -1106,6 +1181,39 @@ const parseRepo = (repo: string): [string, string] => {
     });
   }
   return [repo.slice(0, slash), repo.slice(slash + 1)];
+};
+
+const hasHttpStatus = (error: unknown, expectedStatus: number): boolean => {
+  if (!error || typeof error !== 'object' || !('status' in error)) {
+    return false;
+  }
+  return error.status === expectedStatus;
+};
+
+// createOrUpdateFileContents의 422는 branch protection·validation 등에도 쓰인다. 기존 파일을
+// sha 없이 update하려다 생긴 충돌임이 응답 메시지로 확인될 때만 재발행 안내로 바꾼다.
+const isExistingFileWithoutShaConflict = (error: unknown): boolean => {
+  if (!hasHttpStatus(error, 422)) {
+    return false;
+  }
+  return /["']?sha["']?\s+(?:wasn't|was not)\s+supplied|already exists/iu.test(
+    getGithubErrorMessage(error),
+  );
+};
+
+const getGithubErrorMessage = (error: unknown): string => {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+  const candidate = error as {
+    message?: unknown;
+    response?: { data?: { message?: unknown } };
+  };
+  const messages = [
+    candidate.message,
+    candidate.response?.data?.message,
+  ].filter((message): message is string => typeof message === 'string');
+  return messages.join('\n');
 };
 
 const extractLabels = (labels: SearchItem['labels']): string[] => {

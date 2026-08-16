@@ -3,14 +3,24 @@
 // 부작용이 실제로 반영됐는지 재확인하지 않았다. ApplyResult.artifacts 는 그 재확인 대상을
 // 구조화해 ResultVerifier 가 실제 반영을 재조회 검증하게 한다.
 //
-// 현재 검증 대상은 github_pr 만 (가장 위험한 코드 push 부작용). 코멘트/Notion 등은 검증
-// 비용/한계로 후속 — artifacts 가 빈 배열이면 apply-preview 는 검증 없이 message 만 노출한다.
-export type VerifiableArtifact = {
-  type: 'github_pr';
-  // "owner/repo"
-  repo: string;
-  prNumber: number;
-};
+// 현재 검증 대상은 github_pr / github_file. artifacts 가 빈 배열이면 apply-preview 는 검증 없이
+// message 만 노출한다.
+export type VerifiableArtifact =
+  | {
+      type: 'github_pr';
+      // "owner/repo"
+      repo: string;
+      prNumber: number;
+    }
+  | {
+      type: 'github_file';
+      // "owner/repo"
+      repo: string;
+      branch: string;
+      path: string;
+      // createOrUpdateFileContents 응답의 commit SHA. 파일 blob SHA와 다르므로 재조회 인자로 쓰지 않는다.
+      commitSha: string;
+    };
 
 export interface ApplyResult {
   // 사용자에게 노출할 Slack 메시지 (기존 apply 반환 string 과 동일 역할).

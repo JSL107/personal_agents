@@ -1256,4 +1256,168 @@ describe('OctokitGithubClient', () => {
       );
     });
   });
+
+  describe('blog file publish', () => {
+    it('commitFileToBranch — UTF-8 본문을 base64로 단 한 번 createOrUpdateFileContents 호출한다', async () => {
+      const createOrUpdateFileContents = jest.fn().mockResolvedValue({
+        data: {
+          commit: { sha: 'commit-sha' },
+          content: {
+            html_url:
+              'https://github.com/JSL107/JSL107.github.io/blob/main/src/content/posts/hello.md',
+          },
+        },
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { createOrUpdateFileContents } },
+      } as unknown as Octokit);
+
+      const result = await (
+        client as unknown as {
+          commitFileToBranch: (input: {
+            repo: string;
+            branch: string;
+            path: string;
+            content: string;
+            commitMessage: string;
+          }) => Promise<{ commitSha: string; fileUrl: string }>;
+        }
+      ).commitFileToBranch({
+        repo: 'JSL107/JSL107.github.io',
+        branch: 'main',
+        path: 'src/content/posts/hello.md',
+        content: '한글 본문',
+        commitMessage: 'feat(blog): hello',
+      });
+
+      expect(createOrUpdateFileContents).toHaveBeenCalledTimes(1);
+      expect(createOrUpdateFileContents).toHaveBeenCalledWith({
+        owner: 'JSL107',
+        repo: 'JSL107.github.io',
+        branch: 'main',
+        path: 'src/content/posts/hello.md',
+        message: 'feat(blog): hello',
+        content: Buffer.from('한글 본문', 'utf-8').toString('base64'),
+      });
+      expect(result).toEqual({
+        commitSha: 'commit-sha',
+        fileUrl:
+          'https://github.com/JSL107/JSL107.github.io/blob/main/src/content/posts/hello.md',
+      });
+    });
+
+    it('commitFileToBranch — sha 없이 생긴 422 충돌은 이미 발행된 경로로 안내한다', async () => {
+      const createOrUpdateFileContents = jest.fn().mockRejectedValue({
+        status: 422,
+        message: 'Invalid request. "sha" wasn\'t supplied.',
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { createOrUpdateFileContents } },
+      } as unknown as Octokit);
+
+      await expect(
+        (
+          client as unknown as {
+            commitFileToBranch: (input: {
+              repo: string;
+              branch: string;
+              path: string;
+              content: string;
+              commitMessage: string;
+            }) => Promise<unknown>;
+          }
+        ).commitFileToBranch({
+          repo: 'JSL107/JSL107.github.io',
+          branch: 'main',
+          path: 'src/content/posts/hello.md',
+          content: '본문',
+          commitMessage: 'feat(blog): hello',
+        }),
+      ).rejects.toThrow('이미 발행된 경로');
+      expect(createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.not.objectContaining({ sha: expect.anything() }),
+      );
+    });
+
+    it('commitFileToBranch — 기존 파일 sha 누락을 response message로 확인한 422만 이미 발행된 경로로 변환한다', async () => {
+      const createOrUpdateFileContents = jest.fn().mockRejectedValue({
+        status: 422,
+        message: 'Request failed',
+        response: { data: { message: 'File already exists' } },
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { createOrUpdateFileContents } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.commitFileToBranch({
+          repo: 'JSL107/JSL107.github.io',
+          branch: 'main',
+          path: 'src/content/posts/hello.md',
+          content: '본문',
+          commitMessage: 'feat(blog): hello',
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+        status: 'CONFLICT',
+      });
+    });
+
+    it('commitFileToBranch — 기존 파일 충돌 근거가 없는 422는 원인을 보존해 REQUEST_FAILED로 감싼다', async () => {
+      const error = Object.assign(
+        new Error('Validation Failed: branch is protected'),
+        { status: 422 },
+      );
+      const createOrUpdateFileContents = jest.fn().mockRejectedValue(error);
+      const client = new OctokitGithubClient({
+        rest: { repos: { createOrUpdateFileContents } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.commitFileToBranch({
+          repo: 'JSL107/JSL107.github.io',
+          branch: 'main',
+          path: 'src/content/posts/hello.md',
+          content: '본문',
+          commitMessage: 'feat(blog): hello',
+        }),
+      ).rejects.toThrow(
+        'GitHub JSL107/JSL107.github.io 파일 커밋 실패 (main:src/content/posts/hello.md): Validation Failed: branch is protected',
+      );
+    });
+
+    it('getFileFromBranch — branch의 파일을 재조회한다', async () => {
+      const getContent = jest.fn().mockResolvedValue({
+        data: {
+          html_url:
+            'https://github.com/JSL107/JSL107.github.io/blob/main/src/content/posts/hello.md',
+        },
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { getContent } },
+      } as unknown as Octokit);
+
+      const result = await (
+        client as unknown as {
+          getFileFromBranch: (input: {
+            repo: string;
+            branch: string;
+            path: string;
+          }) => Promise<{ fileUrl: string }>;
+        }
+      ).getFileFromBranch({
+        repo: 'JSL107/JSL107.github.io',
+        branch: 'main',
+        path: 'src/content/posts/hello.md',
+      });
+
+      expect(getContent).toHaveBeenCalledWith({
+        owner: 'JSL107',
+        repo: 'JSL107.github.io',
+        path: 'src/content/posts/hello.md',
+        ref: 'main',
+      });
+      expect(result.fileUrl).toContain('/hello.md');
+    });
+  });
 });
