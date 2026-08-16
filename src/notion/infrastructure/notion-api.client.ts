@@ -18,14 +18,20 @@ import {
   NOTION_CLIENT_INSTANCE,
   NotionClientPort,
   NotionDailyPlanPage,
+  NotionDraftPage,
   NotionPlanBlock,
   NotionRichText,
+  QueryDraftPagesOptions,
   ReplaceAllBlocksOptions,
   ReplaceCheckInSectionOptions,
   UpdatePagePropertiesOptions,
 } from '../domain/port/notion-client.port';
+import { blocksToMarkdown, NotionReadBlock } from './blocks-to-markdown';
 
 const DEFAULT_PER_DB_LIMIT = 50;
+const DEFAULT_DRAFT_PAGE_LIMIT = 20;
+const MARKDOWN_BLOCK_PAGE_LIMIT = 5;
+const MARKDOWN_BLOCK_PAGE_SIZE = 100;
 
 // Notion blocks.children.append API 한 요청당 최대 100 child block — 이 이상은 분할 append.
 // codex review bcpccaqik P2 지적 대응.
@@ -101,6 +107,97 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     return tasks;
+  }
+
+  async queryDraftPages({
+    databaseId,
+    statusPropertyName,
+    statusValue,
+    limit = DEFAULT_DRAFT_PAGE_LIMIT,
+  }: QueryDraftPagesOptions): Promise<NotionDraftPage[]> {
+    this.assertClientConfigured('queryDraftPages');
+    const propertyNames: DraftPropertyNames = {
+      tags: this.configService.get<string>('BLOG_NOTION_PROP_TAGS'),
+      summary: this.configService.get<string>('BLOG_NOTION_PROP_SUMMARY'),
+    };
+    try {
+      const response = await this.client!.databases.query({
+        database_id: databaseId,
+        filter: {
+          property: statusPropertyName,
+          select: { equals: statusValue },
+        },
+        sorts: [{ timestamp: 'created_time', direction: 'ascending' }],
+        page_size: limit,
+      });
+      const pages: NotionDraftPage[] = [];
+      for (const result of response.results) {
+        if (isFullPage(result)) {
+          pages.push(toNotionDraftPage(result, propertyNames));
+        }
+      }
+      return pages;
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion 블로그 초안 DB ${databaseId} 조회 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+  }
+
+  async getPageMarkdown(pageId: string): Promise<string> {
+    this.assertClientConfigured('getPageMarkdown');
+    const blocks: NotionReadBlock[] = [];
+    let cursor: string | undefined;
+    let remaining = false;
+
+    try {
+      for (
+        let pageNumber = 0;
+        pageNumber < MARKDOWN_BLOCK_PAGE_LIMIT;
+        pageNumber += 1
+      ) {
+        const response = await this.client!.blocks.children.list({
+          block_id: pageId,
+          start_cursor: cursor,
+          page_size: MARKDOWN_BLOCK_PAGE_SIZE,
+        });
+        blocks.push(
+          ...response.results
+            .map(toNotionReadBlock)
+            .filter((block): block is NotionReadBlock => block !== null),
+        );
+        remaining = Boolean(response.has_more && response.next_cursor);
+        if (!remaining) {
+          break;
+        }
+        cursor = response.next_cursor ?? undefined;
+      }
+    } catch (error: unknown) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} block 조회 실패: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
+    }
+
+    // 상한에 걸린 채 조용히 반환하면 뒷부분이 잘린 본문이 정상 Markdown 으로 승인·발행된다.
+    // 잘린 글을 발행하는 것보다 실패가 낫다 (try 밖 — 위 catch 가 삼키면 안 된다).
+    if (remaining) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 본문이 조회 상한(${
+          MARKDOWN_BLOCK_PAGE_LIMIT * MARKDOWN_BLOCK_PAGE_SIZE
+        } block)을 넘어 일부만 읽혔습니다. 초안을 나눠주세요.`,
+      });
+    }
+
+    return blocksToMarkdown(blocks);
   }
 
   async createDatabasePage({
@@ -787,8 +884,14 @@ const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
 type FullPage = {
   id: string;
   url: string;
+  created_time?: string;
   properties: Record<string, NotionProperty>;
 };
+
+interface DraftPropertyNames {
+  tags?: string;
+  summary?: string;
+}
 
 const isFullPage = (page: unknown): page is FullPage => {
   if (typeof page !== 'object' || page === null) {
@@ -801,6 +904,86 @@ const isFullPage = (page: unknown): page is FullPage => {
     typeof record.properties === 'object' &&
     record.properties !== null
   );
+};
+
+const toNotionDraftPage = (
+  page: FullPage,
+  propertyNames: DraftPropertyNames,
+): NotionDraftPage => {
+  const titleProperty = Object.values(page.properties).find(
+    (property) => property.type === 'title',
+  );
+
+  return {
+    pageId: page.id,
+    url: page.url,
+    title: titleProperty ? collectPlainText(titleProperty.title) : '',
+    category: readDraftSelect(page.properties, '카테고리'),
+    sourceType: readDraftSelect(page.properties, '출처유형'),
+    tags: readDraftMultiSelect(page.properties, propertyNames.tags),
+    summary: readDraftRichText(page.properties, propertyNames.summary),
+    createdTime: page.created_time ?? '',
+  };
+};
+
+const readDraftSelect = (
+  properties: Record<string, NotionProperty>,
+  name: string,
+): string => {
+  const property = properties[name];
+  if (!property || property.type !== 'select') {
+    return '';
+  }
+  return readNamedOption(property.select);
+};
+
+const readDraftMultiSelect = (
+  properties: Record<string, NotionProperty>,
+  name: string | undefined,
+): string[] => {
+  const property = name ? properties[name] : undefined;
+  if (!property || property.type !== 'multi_select') {
+    return [];
+  }
+  return readNamedOptionList(property.multi_select);
+};
+
+const readDraftRichText = (
+  properties: Record<string, NotionProperty>,
+  name: string | undefined,
+): string => {
+  const property = name ? properties[name] : undefined;
+  if (!property || property.type !== 'rich_text') {
+    return '';
+  }
+  return collectPlainText(property.rich_text);
+};
+
+const toNotionReadBlock = (block: unknown): NotionReadBlock | null => {
+  if (typeof block !== 'object' || block === null) {
+    return null;
+  }
+
+  const record = block as Record<string, unknown>;
+  if (typeof record.type !== 'string') {
+    return null;
+  }
+
+  const payload = record[record.type];
+  if (typeof payload !== 'object' || payload === null) {
+    return { type: record.type, text: '' };
+  }
+
+  const payloadRecord = payload as Record<string, unknown>;
+  const language =
+    record.type === 'code' && typeof payloadRecord.language === 'string'
+      ? payloadRecord.language
+      : undefined;
+  return {
+    type: record.type,
+    text: collectPlainText(payloadRecord.rich_text),
+    ...(language ? { language } : {}),
+  };
 };
 
 // blocks.children.list 결과의 child 가 heading_2 인지, 그렇다면 "Check in *" 으로 시작하는지 판별.
@@ -879,13 +1062,16 @@ const readNamedOption = (option: unknown): string => {
 };
 
 const readNamedOptionsList = (options: unknown): string => {
+  return readNamedOptionList(options).join(', ');
+};
+
+const readNamedOptionList = (options: unknown): string[] => {
   if (!Array.isArray(options)) {
-    return '';
+    return [];
   }
   return options
     .map((opt) => readNamedOption(opt))
-    .filter(Boolean)
-    .join(', ');
+    .filter((name) => name.length > 0);
 };
 
 const readPeople = (people: unknown): string => {

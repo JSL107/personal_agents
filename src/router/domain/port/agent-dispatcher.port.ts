@@ -13,6 +13,11 @@ export interface DispatchOutcome {
   modelUsed: string;
   formattedText: string;
   autoResolvedNotice?: string;
+  preview?: {
+    id: string;
+    text: string;
+    content?: string;
+  };
   // worker 가 다른 worker 호출을 manager 에 요청할 때 채워 보낸다.
   followUp?: HandoffSpec;
   // worker 가 버튼·드롭다운이 달린 카드로 답해야 할 때 채우는 Slack Block Kit 블록.

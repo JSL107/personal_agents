@@ -66,6 +66,8 @@ describe('ReviewPullRequestUsecase', () => {
       createReviewComment: jest.fn(),
       listReviewThreads: jest.fn(),
       resolveReviewThread: jest.fn(),
+      commitFileToBranch: jest.fn(),
+      getFileFromBranch: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -460,6 +462,8 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       createReviewComment: jest.fn(),
       listReviewThreads: jest.fn(),
       resolveReviewThread: jest.fn(),
+      commitFileToBranch: jest.fn(),
+      getFileFromBranch: jest.fn(),
     };
     const outcomeRepoMock = {
       save: jest.fn(),
@@ -720,6 +724,8 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
       createReviewComment: jest.fn(),
       listReviewThreads: jest.fn(),
       resolveReviewThread: jest.fn(),
+      commitFileToBranch: jest.fn(),
+      getFileFromBranch: jest.fn(),
     };
     const outcomeRepo = {
       save: jest.fn(),

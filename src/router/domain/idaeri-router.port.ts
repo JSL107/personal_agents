@@ -61,6 +61,11 @@ export interface DispatchResult {
   modelUsed: string;
   formattedText: string;
   autoResolvedNotice?: string;
+  preview?: {
+    id: string;
+    text: string;
+    content?: string;
+  };
   followUp?: HandoffSpec;
   handoffResults?: DispatchResult[];
   // worker 가 버튼·드롭다운 카드로 답할 때의 Slack Block Kit 블록 (없으면 formattedText 만).

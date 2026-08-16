@@ -14,6 +14,7 @@ import { BeTestModule } from '../agent/be-test/be-test.module';
 import { BeTestDispatcher } from '../agent/be-test/infrastructure/be-test.dispatcher';
 import { BlogModule } from '../agent/blog/blog.module';
 import { BlogDispatcher } from '../agent/blog/infrastructure/blog.dispatcher';
+import { BlogPublishDispatcher } from '../agent/blog/infrastructure/blog-publish.dispatcher';
 import { CareerMateModule } from '../agent/career-mate/career-mate.module';
 import { CareerMateDispatcher } from '../agent/career-mate/infrastructure/career-mate.dispatcher';
 import { CeoModule } from '../agent/ceo/ceo.module';
@@ -127,6 +128,7 @@ import {
         CeoDispatcher,
         VacationDispatcher,
         BlogDispatcher,
+        BlogPublishDispatcher,
         CareerMateDispatcher,
         JobApplicationDispatcher,
         PaperTradeDispatcher,

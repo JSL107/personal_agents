@@ -5,6 +5,7 @@ import { BeFixModule } from '../agent/be-fix/be-fix.module';
 import { BeSchemaModule } from '../agent/be-schema/be-schema.module';
 import { BeSreModule } from '../agent/be-sre/be-sre.module';
 import { BeTestModule } from '../agent/be-test/be-test.module';
+import { BlogModule } from '../agent/blog/blog.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { CtoModule } from '../agent/cto/cto.module';
@@ -31,6 +32,7 @@ import { AgentCommandHandler } from './handler/agent-command.handler';
 import { AssignmentActionHandler } from './handler/assignment-action.handler';
 import { AutoFlowHandler } from './handler/auto-flow.handler';
 import { BeHandler } from './handler/be.handler';
+import { BlogPublishHandler } from './handler/blog-publish.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
@@ -57,6 +59,7 @@ import { SlackService } from './slack.service';
     BeTestModule,
     BeSreModule,
     BeFixModule,
+    BlogModule,
     PaperRecommendModule,
     PaperTradingModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO).
@@ -93,6 +96,7 @@ import { SlackService } from './slack.service';
     FeedbackCommandHandler,
     WriteBackHandler,
     BeHandler,
+    BlogPublishHandler,
     AgentCommandHandler,
     PhaseCommandHandler,
     AssignmentActionHandler,
@@ -112,6 +116,7 @@ import { SlackService } from './slack.service';
         FeedbackCommandHandler,
         WriteBackHandler,
         BeHandler,
+        BlogPublishHandler,
         AgentCommandHandler,
         PhaseCommandHandler,
         AutoFlowHandler,

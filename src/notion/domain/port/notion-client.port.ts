@@ -16,6 +16,24 @@ export interface ListActiveTasksOptions {
   lastEditedSinceIsoDateTime?: string;
 }
 
+export interface NotionDraftPage {
+  pageId: string;
+  url: string;
+  title: string;
+  category: string;
+  sourceType: string;
+  tags: string[];
+  summary: string;
+  createdTime: string;
+}
+
+export interface QueryDraftPagesOptions {
+  databaseId: string;
+  statusPropertyName: string;
+  statusValue: string;
+  limit?: number;
+}
+
 // Day-page 블록 변환용 추상 타입. 도메인이 Notion SDK 에 의존하지 않도록 block 종류만 enum 형태로 노출.
 // 어댑터가 Notion block 형식 (heading_2 / heading_3 / bulleted_list_item / paragraph / to_do / divider) 으로 변환.
 // PRO-2++: bullet / paragraph / todo 3종에 optional `link?: string` — 있으면 전체 text 가 클릭 가능한 링크가 된다.
@@ -112,6 +130,8 @@ export interface NotionDailyPlanPage {
 
 export interface NotionClientPort {
   listActiveTasks(options?: ListActiveTasksOptions): Promise<NotionTask[]>;
+  queryDraftPages(options: QueryDraftPagesOptions): Promise<NotionDraftPage[]>;
+  getPageMarkdown(pageId: string): Promise<string>;
   createDatabasePage(
     options: CreateDatabasePageOptions,
   ): Promise<CreatedDatabasePage>;
