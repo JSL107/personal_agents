@@ -63,10 +63,7 @@ export class GenerateAssignmentUsecase {
     // 사용자 지시가 있을 때만 직전 분배를 이어받는다 — 그 경우에만 "재배정" 이기 때문이다.
     // 지시 없는 재실행(슬래시 /assign, cron)은 종전대로 PM plan 만 보고 새로 분배한다.
     const priorAssignment = conversationContext?.userInstruction
-      ? await this.lookupPriorAssignment({
-          slackUserId,
-          pmRunEndedAt: pmRun.endedAt,
-        })
+      ? await this.lookupPriorAssignment({ slackUserId, pmRunId: pmRun.id })
       : undefined;
 
     return this.agentRunService.execute({
@@ -164,16 +161,16 @@ export class GenerateAssignmentUsecase {
   // 이어받을 직전 분배 조회. 못 찾거나 형식이 깨졌으면 undefined — 재배정 대신 새 분배로
   // 진행할 뿐이라 실패를 사용자에게 던지지 않는다 (조회는 부가 맥락이지 실행 조건이 아니다).
   //
-  // "같은 plan 기반인가" 는 시각으로 판정한다. CTO 는 언제나 최신 PM run 을 조회하므로,
-  // 이 PM run 이 끝난 뒤에 성공한 CTO run 이라면 그 run 이 본 plan 도 이 plan 이다.
-  // (CTO run 의 inputSnapshot.dailyPlanAgentRunId 로 직접 대조하려면 조회 스냅샷에
-  // inputSnapshot 을 실어야 하는데, 그 port 확장은 이 변경의 범위를 넘는다.)
+  // "같은 plan 기반인가" 는 그 CTO run 이 실제로 참조한 PM run id 로 판정한다. 시각 비교
+  // (CTO 가 PM 보다 늦게 끝났는가) 로는 가릴 수 없다 — PM1 기반 CTO 가 도는 중에 PM2 가
+  // 생성되면 그 CTO 는 PM2 보다 늦게 끝나 조건을 통과하고, PM2 재배정이 PM1 의 task 를
+  // 그대로 물고 들어간다. 대조할 수 없으면 이어받지 않는다 (확실할 때만 재배정).
   private async lookupPriorAssignment({
     slackUserId,
-    pmRunEndedAt,
+    pmRunId,
   }: {
     slackUserId: string;
-    pmRunEndedAt: Date;
+    pmRunId: number;
   }): Promise<PriorAssignmentRef | undefined> {
     const snapshot = await this.agentRunService.findLatestSucceededRun({
       agentType: AgentType.CTO,
@@ -182,9 +179,10 @@ export class GenerateAssignmentUsecase {
     if (!snapshot) {
       return undefined;
     }
-    if (snapshot.endedAt.getTime() < pmRunEndedAt.getTime()) {
+    const priorPlanRunId = extractDailyPlanAgentRunId(snapshot.inputSnapshot);
+    if (priorPlanRunId !== pmRunId) {
       this.logger.log(
-        `CTO 재배정 — 직전 CTO run #${snapshot.id} 이 현재 PM plan 보다 오래됨. 새 분배로 진행.`,
+        `CTO 재배정 — 직전 CTO run #${snapshot.id} 은 PM run #${priorPlanRunId ?? '(불명)'} 기반이라 현재 plan #${pmRunId} 과 다름. 새 분배로 진행.`,
       );
       return undefined;
     }
@@ -303,6 +301,16 @@ const buildPrompt = ({
       : '위 후보 task 들을 BE / BE_SCHEMA / BE_TEST 중 하나로 분배하라. 경계 모호하면 unassignedTasks 로 빼고 사유 명시.',
   );
   return lines.join('\n');
+};
+
+// CTO run 의 inputSnapshot 에서 그 실행이 참조한 PM run id 를 꺼낸다.
+// 형식이 다르거나 없으면 null — 호출부는 "대조 불가" 로 보고 이어받지 않는다.
+const extractDailyPlanAgentRunId = (inputSnapshot: unknown): number | null => {
+  if (typeof inputSnapshot !== 'object' || inputSnapshot === null) {
+    return null;
+  }
+  const value = (inputSnapshot as Record<string, unknown>).dailyPlanAgentRunId;
+  return typeof value === 'number' ? value : null;
 };
 
 // 직전 CTO run 의 output(Prisma JSON → unknown) 을 AssignmentOutput 으로 좁힌다.

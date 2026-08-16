@@ -168,7 +168,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     const row = await this.prisma.agentRun.findFirst({
       where,
       orderBy: { endedAt: 'desc' },
-      select: { id: true, output: true, endedAt: true },
+      select: { id: true, output: true, endedAt: true, inputSnapshot: true },
     });
     if (!row || !row.endedAt) {
       return null;
@@ -177,6 +177,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       id: row.id,
       output: row.output as unknown,
       endedAt: row.endedAt,
+      inputSnapshot: row.inputSnapshot as unknown,
     };
   }
 
@@ -209,7 +210,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       where,
       orderBy: { endedAt: 'desc' },
       take: limit,
-      select: { id: true, output: true, endedAt: true },
+      select: { id: true, output: true, endedAt: true, inputSnapshot: true },
     });
 
     return rows
@@ -220,6 +221,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         id: row.id,
         output: row.output as unknown,
         endedAt: row.endedAt,
+        inputSnapshot: row.inputSnapshot as unknown,
       }));
   }
 

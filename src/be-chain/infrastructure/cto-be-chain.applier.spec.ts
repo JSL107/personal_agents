@@ -1,4 +1,5 @@
 import { CtoBeChainPayload } from '../../agent/cto/domain/cto.type';
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   PREVIEW_KIND,
@@ -41,6 +42,7 @@ const buildPreview = (payload: unknown): PreviewAction =>
 
 describe('CtoBeChainApplier', () => {
   let runBeChainExecute: jest.Mock;
+  let findLatestSucceededRun: jest.Mock;
   let applier: CtoBeChainApplier;
 
   beforeEach(() => {
@@ -52,9 +54,17 @@ describe('CtoBeChainApplier', () => {
         message: 'BE plan #201 생성 완료.',
       },
     ]);
-    applier = new CtoBeChainApplier({
-      execute: runBeChainExecute,
-    } as unknown as RunBeChainUsecase);
+    // 기본은 이 카드가 최신 분배인 상태.
+    findLatestSucceededRun = jest.fn().mockResolvedValue({
+      id: validPayload.ctoAgentRunId,
+      output: {},
+      endedAt: new Date(),
+      inputSnapshot: {},
+    });
+    applier = new CtoBeChainApplier(
+      { execute: runBeChainExecute } as unknown as RunBeChainUsecase,
+      { findLatestSucceededRun } as unknown as AgentRunService,
+    );
   });
 
   it('kind 는 CTO_BE_CHAIN', () => {
@@ -100,6 +110,31 @@ describe('CtoBeChainApplier', () => {
   ])('payload 검증 실패 — %s 이면 throw', async (_label, payload) => {
     await expect(applier.apply(buildPreview(payload))).rejects.toThrow();
     expect(runBeChainExecute).not.toHaveBeenCalled();
+  });
+
+  // 카드 정리는 best-effort 라 옛 카드가 PENDING 으로 남을 수 있다. 사용자가 최신 카드를
+  // 취소하면 그 옛 카드가 다시 승인 대상이 되는데, 폐기한 분배가 실행되면 안 된다.
+  it('최신 분배가 아닌 카드는 실행하지 않고 명시 에러', async () => {
+    findLatestSucceededRun.mockResolvedValue({
+      id: 999,
+      output: {},
+      endedAt: new Date(),
+      inputSnapshot: {},
+    });
+
+    await expect(applier.apply(buildPreview(validPayload))).rejects.toThrow(
+      '최신 분배',
+    );
+    expect(runBeChainExecute).not.toHaveBeenCalled();
+  });
+
+  // 조회가 비면(원장에 CTO run 이 없음) 대조할 근거가 없다 — 실행을 막지 않는다.
+  it('직전 CTO run 을 못 찾으면 그대로 실행', async () => {
+    findLatestSucceededRun.mockResolvedValue(null);
+
+    await applier.apply(buildPreview(validPayload));
+
+    expect(runBeChainExecute).toHaveBeenCalledTimes(1);
   });
 
   // 건별 실패는 chain 전체를 실패로 만들지 않는다 — 카드는 APPLIED 로 닫히고 결과만 보고된다.

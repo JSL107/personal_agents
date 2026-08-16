@@ -119,6 +119,7 @@ import { SlackService } from './slack.service';
         BlogPublishHandler,
         AgentCommandHandler,
         PhaseCommandHandler,
+        AssignmentActionHandler,
         AutoFlowHandler,
         RetryRunHandler,
         RouterMessageHandler,

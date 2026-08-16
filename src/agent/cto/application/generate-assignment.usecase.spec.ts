@@ -281,6 +281,8 @@ describe('GenerateAssignmentUsecase', () => {
       id: 77,
       output: validAssignment,
       endedAt: new Date(Date.now() - 30_000),
+      // 이 CTO run 이 참조한 PM run — 현재 plan(#99)과 같아야 이어받는다.
+      inputSnapshot: { slackUserId: 'U1', dailyPlanAgentRunId: 99 },
     };
 
     // findLatestSucceededRun 은 agentType 으로 PM/CTO 를 구분해 답한다.
@@ -293,6 +295,7 @@ describe('GenerateAssignmentUsecase', () => {
                 id: 99,
                 output: pmPlan,
                 endedAt: new Date(Date.now() - 60_000),
+                inputSnapshot: { slackUserId: 'U1' },
               },
       );
     };
@@ -354,10 +357,48 @@ describe('GenerateAssignmentUsecase', () => {
       expect(promptArg).not.toContain('[직전 분배 결과');
     });
 
-    // 현재 plan 보다 오래된 CTO run 은 다른 plan 을 보고 만든 표다.
-    it('직전 CTO run 이 현재 PM plan 보다 오래됐으면 이어받지 않는다', async () => {
+    // 다른 plan 을 보고 만든 표를 이어받으면 이번 plan 에 없는 task 가 섞인다.
+    it('직전 CTO run 이 다른 PM plan 기반이면 이어받지 않는다', async () => {
       mockRuns({
-        cto: { ...priorCtoRun, endedAt: new Date(Date.now() - 600_000) },
+        cto: {
+          ...priorCtoRun,
+          inputSnapshot: { slackUserId: 'U1', dailyPlanAgentRunId: 55 },
+        },
+      });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+    });
+
+    // 시각 비교로는 못 거르는 케이스: PM1 기반 CTO 가 도는 중에 PM2 가 만들어지면
+    // 그 CTO 는 PM2 보다 늦게 끝난다. 참조한 plan id 로 대조해야 걸러진다.
+    it('직전 CTO run 이 현재 plan 보다 늦게 끝났어도 참조 plan 이 다르면 이어받지 않는다', async () => {
+      mockRuns({
+        cto: {
+          ...priorCtoRun,
+          endedAt: new Date(),
+          inputSnapshot: { slackUserId: 'U1', dailyPlanAgentRunId: 55 },
+        },
+      });
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationContext: { userInstruction: '3번은 테스트로' },
+      });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[직전 분배 결과');
+    });
+
+    // 대조할 수 없으면 이어받지 않는다 (확실할 때만 재배정).
+    it('직전 CTO run 의 inputSnapshot 에 참조 plan 이 없으면 이어받지 않는다', async () => {
+      mockRuns({
+        cto: { ...priorCtoRun, inputSnapshot: { slackUserId: 'U1' } },
       });
 
       await usecase.execute({

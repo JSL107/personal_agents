@@ -5,6 +5,7 @@ import {
   PreviewAction,
   PreviewStatus,
 } from '../domain/preview-action.type';
+import { ApplyPreviewUsecase } from './apply-preview.usecase';
 import { UpdatePreviewPayloadUsecase } from './update-preview-payload.usecase';
 
 const buildPreview = (overrides: Partial<PreviewAction> = {}): PreviewAction =>
@@ -28,6 +29,7 @@ const buildPreview = (overrides: Partial<PreviewAction> = {}): PreviewAction =>
 describe('UpdatePreviewPayloadUsecase', () => {
   let findById: jest.Mock;
   let updatePayload: jest.Mock;
+  let isApplying: jest.Mock;
   let usecase: UpdatePreviewPayloadUsecase;
 
   beforeEach(() => {
@@ -37,10 +39,11 @@ describe('UpdatePreviewPayloadUsecase', () => {
       .mockImplementation(async ({ payload }) =>
         buildPreview({ payload } as Partial<PreviewAction>),
       );
-    usecase = new UpdatePreviewPayloadUsecase({
-      findById,
-      updatePayload,
-    } as unknown as PreviewActionRepositoryPort);
+    isApplying = jest.fn().mockReturnValue(false);
+    usecase = new UpdatePreviewPayloadUsecase(
+      { findById, updatePayload } as unknown as PreviewActionRepositoryPort,
+      { isApplying } as unknown as ApplyPreviewUsecase,
+    );
   });
 
   // 조회·검증·변환·저장을 한 호출로 묶는 게 이 usecase 의 존재 이유다.
@@ -107,6 +110,21 @@ describe('UpdatePreviewPayloadUsecase', () => {
     findById.mockResolvedValue(
       buildPreview({ expiresAt: new Date(Date.now() - 1_000) }),
     );
+
+    await expect(
+      usecase.execute({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        update: (current) => current,
+      }),
+    ).rejects.toThrow();
+    expect(updatePayload).not.toHaveBeenCalled();
+  });
+
+  // 실행이 시작된 뒤의 수정은 반영될 수 없다. 막지 않으면 화면에는 바뀐 내용이 남고
+  // 실제로는 apply 가 시작 시점에 읽은 옛 내용이 실행돼 둘이 어긋난다.
+  it('이미 apply 진행 중이면 수정을 거절', async () => {
+    isApplying.mockReturnValue(true);
 
     await expect(
       usecase.execute({

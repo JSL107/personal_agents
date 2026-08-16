@@ -8,6 +8,7 @@ import {
 import { PreviewActionException } from '../domain/preview-action.exception';
 import { PREVIEW_STATUS, PreviewAction } from '../domain/preview-action.type';
 import { PreviewActionErrorCode } from '../domain/preview-action-error-code.enum';
+import { ApplyPreviewUsecase } from './apply-preview.usecase';
 
 // 아직 승인되지 않은 카드의 내용을 사용자가 카드 위에서 고칠 때 쓴다
 // (예: CTO 분배 카드의 worker 드롭다운). 승인 대상 자체를 바꾸는 조작이므로
@@ -21,6 +22,7 @@ export class UpdatePreviewPayloadUsecase {
   constructor(
     @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
     private readonly repository: PreviewActionRepositoryPort,
+    private readonly applyPreview: ApplyPreviewUsecase,
   ) {}
 
   async execute({
@@ -62,6 +64,16 @@ export class UpdatePreviewPayloadUsecase {
       throw new PreviewActionException({
         code: PreviewActionErrorCode.EXPIRED,
         message: 'Preview 가 만료되었습니다 (TTL 초과). 새로 요청해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
+    // 실행이 시작된 뒤의 수정은 반영될 수 없다. apply 는 시작 시점의 payload 로 끝까지
+    // 진행하고 DB 상태는 그동안 PENDING 이라, 여기서 막지 않으면 화면에는 바뀐 내용이
+    // 남고 실제로는 옛 내용이 실행돼 둘이 어긋난다.
+    if (this.applyPreview.isApplying(previewId)) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.ALREADY_APPLYING,
+        message: '이미 실행이 시작돼 지금은 내용을 바꿀 수 없습니다.',
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
