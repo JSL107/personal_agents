@@ -1,3 +1,5 @@
+import { basename, dirname } from 'node:path';
+
 import type { ConsumeDeps, EnqueueDeps } from './inject-queue';
 import { consumeInject, enqueueInject } from './inject-queue';
 
@@ -20,11 +22,12 @@ function memoryFs() {
   };
   const consume: ConsumeDeps = {
     injectDir: '/q',
+    // 구현이 node:path join 으로 경로를 만들므로 구분자는 플랫폼마다 다르다.
+    // 문자열 prefix 대신 dirname/basename 으로 비교해야 Windows 에서도 맞는다.
     readdir: (dir) => {
-      const prefix = `${dir}/`;
       return [...files.keys()]
-        .filter((path) => path.startsWith(prefix))
-        .map((path) => path.slice(prefix.length));
+        .filter((filePath) => dirname(filePath) === dir)
+        .map((filePath) => basename(filePath));
     },
     readFile: (path) => files.get(path) ?? null,
     removeFile: (path) => {

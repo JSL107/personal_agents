@@ -1,0 +1,19 @@
+# 모든 텍스트 파일은 워킹트리·저장소 양쪽에서 LF 로 통일한다.
+#
+# 배경: Git for Windows 설치 기본값이 core.autocrlf=true 라 체크아웃 시 CRLF 로 변환되는데,
+# .prettierrc 에 endOfLine 설정이 없어 prettier 기본값 "lf" 가 적용된다. 그 결과 Windows 에서
+# 클론하면 모든 줄이 prettier/prettier `Delete ␍` 위반이 되어 pnpm lint:check 가 통째로 깨진다.
+# gitattributes 의 eol 속성은 core.autocrlf 보다 우선하므로, 기여자별 git 설정 없이 해결된다.
+* text=auto eol=lf
+
+# 바이너리는 어떤 경우에도 개행 변환 금지 (text=auto 자동 판별 보강).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.node binary
+*.wasm binary
