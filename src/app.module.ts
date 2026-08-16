@@ -32,6 +32,8 @@ import { AgentRunModule } from './agent-run/agent-run.module';
 import { AiCliEnvModule } from './ai-cli-env/ai-cli-env.module';
 import { AiCliEnvApplyPreviewApplier } from './ai-cli-env/infrastructure/ai-cli-env-apply.preview-applier';
 import { AutopilotModule } from './autopilot/autopilot.module';
+import { BeChainModule } from './be-chain/be-chain.module';
+import { CtoBeChainApplier } from './be-chain/infrastructure/cto-be-chain.applier';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { WorkerStartupCoordinator } from './common/queue/worker-startup.coordinator';
@@ -147,6 +149,8 @@ import { WebhookModule } from './webhook/webhook.module';
         EveningBlogPublishApplier,
         GithubBlogPublishApplier,
         EveningCareerReflectApplier,
+        // CTO 분배 확정 — "응" 한 마디로 BE / BE_SCHEMA / BE_TEST 실행 (슬래시 직접 호출 대체).
+        CtoBeChainApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubFileVerifier],
@@ -163,6 +167,7 @@ import { WebhookModule } from './webhook/webhook.module';
         ModelRouterModule,
         CareerMateModule,
         LocalSessionsModule,
+        BeChainModule,
       ],
     }),
     SlackModule,

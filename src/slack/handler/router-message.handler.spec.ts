@@ -998,6 +998,93 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     );
   });
 
+  // CTO 분배 확정 — 슬래시(`/be plan ...`) 대신 "응" 한 마디로 BE worker 를 실행하는 경로.
+  it('CTO 분배 카드 + "응" → 카드 apply (BE chain 실행)', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const pending = buildPendingPreview({
+      kind: PREVIEW_KIND.CTO_BE_CHAIN,
+    });
+    const applyPreviewUsecase = {
+      execute: jest.fn().mockResolvedValue({
+        preview: pending,
+        resultText: '🚀 BE chain 실행 완료 — 2/2건 성공',
+      }),
+    } as unknown as ApplyPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest.fn().mockResolvedValue(pending),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        applyPreviewUsecase,
+        cancelPreviewUsecase: {
+          execute: jest.fn(),
+        } as unknown as CancelPreviewUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 응',
+    });
+
+    expect(applyPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: pending.id,
+      slackUserId: 'U_USER',
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('BE chain 실행 완료'),
+      }),
+    );
+  });
+
+  // 재배정 지시가 승인으로 새면, 사용자가 고치려던 분배가 그대로 실행돼버린다.
+  // Y/N 인터셉트를 통과해 CTO 재분배(dispatch)로 가야 한다.
+  it('CTO 분배 카드 + 재배정 문장 → apply 하지 않고 worker dispatch 로 넘김', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 7,
+      workerType: AgentType.CTO,
+      output: {},
+      modelUsed: 'codex-cli',
+      formattedText: '재분배 결과',
+    });
+    const applyPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as ApplyPreviewUsecase;
+    const cancelPreviewUsecase = {
+      execute: jest.fn(),
+    } as unknown as CancelPreviewUsecase;
+
+    buildHandler(
+      { dispatch },
+      {
+        findLatestPendingPreview: {
+          execute: jest
+            .fn()
+            .mockResolvedValue(
+              buildPendingPreview({ kind: PREVIEW_KIND.CTO_BE_CHAIN }),
+            ),
+        } as unknown as FindLatestPendingPreviewUsecase,
+        applyPreviewUsecase,
+        cancelPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 3번은 스키마 말고 테스트로 해줘',
+    });
+
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
   it('pending preview 있음 + "아니" → CancelPreviewUsecase 호출', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
