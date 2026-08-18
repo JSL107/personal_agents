@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { BlogModule } from '../agent/blog/blog.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CtoModule } from '../agent/cto/cto.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
@@ -46,6 +47,7 @@ import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
 import { AssignAutopilotTask } from './infrastructure/tasks/assign.autopilot-task';
+import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
@@ -81,6 +83,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
   imports: [
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     GithubModule,
+    BlogModule,
     ModelRouterModule,
     PoEvalModule,
     StockModule,
@@ -126,6 +129,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
+    BlogGithubPublishAutopilotTask,
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
     PrReviewSweepAutopilotTask,
@@ -211,6 +215,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
         eveningRetro: EveningRetroPublishTask,
+        blogGithubPublish: BlogGithubPublishAutopilotTask,
         opsSupervisor: OpsSupervisorAutopilotTask,
         stockMonitor: StockMonitorAutopilotTask,
         stockMonitorUs: StockMonitorAutopilotTask,
@@ -240,6 +245,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         docsSyncAudit,
         preferenceLearning,
         eveningRetro,
+        blogGithubPublish,
         opsSupervisor,
         stockMonitor,
         stockMonitorUs,
@@ -270,6 +276,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,
+        BlogGithubPublishAutopilotTask,
         OpsSupervisorAutopilotTask,
         STOCK_MONITOR_KR_TASK,
         STOCK_MONITOR_US_TASK,

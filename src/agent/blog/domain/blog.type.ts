@@ -45,6 +45,23 @@ export interface PublishNotionDraftInput {
   triggerType?: import('../../../agent-run/domain/agent-run.type').TriggerType;
 }
 
+export type BlogPublishCandidate =
+  | { status: 'empty'; message: string }
+  | {
+      status: 'blocked';
+      message: string;
+      hits: Array<{ term: string; kind: 'term' | 'pattern'; excerpt: string }>;
+    }
+  | {
+      status: 'ready';
+      payload: BlogGithubPublishPayload;
+      previewText: string;
+      title: string;
+      notionUrl: string;
+      path: string;
+      content: string;
+    };
+
 export type PublishNotionDraftResult =
   | { status: 'empty'; message: string }
   | {

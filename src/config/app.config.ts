@@ -107,6 +107,12 @@ export class EnvironmentVariables {
   @IsString()
   BLOG_NOTION_STATUS_DRAFT_VALUE?: string;
 
+  // Notion 블로그 초안의 GitHub 발행 승인 카드를 저녁 evening digest에 추가한다.
+  // `false` 문자열이면 skip, 미설정이면 활성(기본 ON).
+  @IsOptional()
+  @IsString()
+  BLOG_GITHUB_PUBLISH_ENABLED?: string;
+
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()

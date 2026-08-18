@@ -96,6 +96,19 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     riskTier: 'T1_PREVIEW',
     digestGroup: 'evening',
   },
+  // 기존 evening 그룹의 schedule env 키는 첫 항목(work-reviewer) id에서 만들어진다.
+  // 이 task는 그룹 맨 뒤에 두어 기존 override와 선행 회고 후보 생성을 모두 보존한다.
+  {
+    id: 'blog-github-publish',
+    taskId: 'blog-github-publish',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_DAILY_EVAL_CRON,
+      timezone: DEFAULT_DAILY_EVAL_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
+    digestGroup: 'evening',
+  },
   // 비서실 — 하루 한 장 결산(완료 / 진행 중 / 승인 대기 / 막힌 것 / 오늘 결정할 것 1건).
   // morning 그룹 맨 앞에 둔다: 오케스트레이터가 배열 순서대로 요약을 이어 붙이므로
   // 이 자리가 곧 메시지 맨 위다. 어제까지 적재된 기록만 보기 때문에 같은 슬롯의
