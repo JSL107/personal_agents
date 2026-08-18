@@ -165,6 +165,38 @@ describe('AuditResumeUsecase', () => {
     ).not.toContain('[목표 공고]');
   });
 
+  it('등록된 공고가 없으면 모델이 낸 jdFindings 를 버린다', async () => {
+    // 프롬프트는 공고가 없으면 빈 배열을 요구하지만, 모델이 계약을 어기면 존재하지 않는
+    // 공고의 요구사항이 정상 결과처럼 화면에 오른다.
+    const fixture = createFixture({ targetJd: null });
+    fixture.modelRouter.route.mockResolvedValueOnce({
+      text: JSON.stringify({
+        verdict: '감사 결과',
+        items: [],
+        jdFindings: [
+          {
+            requirement: '있지도 않은 공고의 요구',
+            priority: 'MUST',
+            status: 'MISSING',
+            quote: '',
+            why: '모델이 지어냈다.',
+          },
+        ],
+        rejectionRisks: [],
+      }),
+      modelUsed: 'codex-cli',
+      provider: 'CHATGPT',
+    });
+
+    const outcome = await fixture.usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+    });
+
+    expect(outcome.result.jdFindings).toEqual([]);
+    expect(outcome.result.jdSource).toBeNull();
+  });
+
   it('성과가 0건이면 모델을 호출하지 않고 빈 결과를 반환한다', async () => {
     const fixture = createFixture({
       profile: { ...PROFILE, accomplishments: [] },
@@ -186,6 +218,7 @@ describe('AuditResumeUsecase', () => {
         droppedTitles: [],
         unjudgedTitles: [],
         forcedMissing: [],
+        rewriteMissing: [],
       },
       jdSource: null,
     });

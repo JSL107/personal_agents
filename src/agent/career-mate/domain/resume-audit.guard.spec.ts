@@ -233,6 +233,64 @@ describe('applyAuditGuards', () => {
     expect(result.guard.unjudgedTitles).toContain('판정 누락');
   });
 
+  it('WEAK 인데 rewrite 가 없으면 파싱을 깨뜨리지 않고 rewriteMissing 으로 드러낸다', () => {
+    // 파싱 단계에서 거부하면 항목 하나의 누락으로 감사 25건이 통째로 사라진다.
+    // 대신 "고칠 문장을 못 받은 자리"로 남겨 사용자와 보고에 드러낸다.
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '약한 성과',
+          status: 'WEAK',
+          quote: '약한 성과 성과를 만들었다.',
+          why: '수치가 없다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+    );
+
+    expect(result.guard.rewriteMissing).toEqual(['약한 성과']);
+  });
+
+  it('강등으로 WEAK 이 된 항목도 rewriteMissing 집계에 든다', () => {
+    // 모델이 PROVEN 으로 낸 항목은 rewrite 를 주지 않는다. 가드가 그걸 WEAK 로 내리면
+    // 고칠 문장 없는 WEAK 가 생기므로, 집계는 강등 이후에 해야 한다.
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '원문에 없는 인용',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+    );
+
+    expect(result.guard.demotedTitles).toEqual(['입증 성과']);
+    expect(result.guard.rewriteMissing).toEqual(['입증 성과']);
+  });
+
+  it('MISSING 은 인용할 원문이 없어 rewriteMissing 에 넣지 않는다', () => {
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '근거 없음',
+          status: 'WEAK',
+          quote: '근거 없음 성과를 만들었다.',
+          why: '수치가 없다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+    );
+
+    // evidence 0 건이라 MISSING 으로 강제된다 → rewrite 대상이 아니다.
+    expect(result.guard.forcedMissing).toEqual(['근거 없음']);
+    expect(result.guard.rewriteMissing).toEqual([]);
+  });
+
   it('MISSING, WEAK, UNJUDGED, PROVEN 순서로 정렬한다', () => {
     const result = applyAuditGuards(
       data([

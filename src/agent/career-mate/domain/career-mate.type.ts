@@ -80,6 +80,8 @@ export interface ResumeAuditResult extends ResumeAuditData {
     droppedTitles: string[];
     unjudgedTitles: string[];
     forcedMissing: string[];
+    // WEAK/MISSING 인데 모델이 rewrite 를 주지 않은 성과. 파싱을 거부하지 않고 여기서 드러낸다.
+    rewriteMissing: string[];
   };
   jdSource: {
     company: string;

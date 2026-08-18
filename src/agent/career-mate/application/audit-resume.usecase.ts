@@ -95,6 +95,9 @@ export class AuditResumeUsecase {
         );
         const result: ResumeAuditResult = {
           ...guarded,
+          // 등록된 공고가 없으면 모델이 낸 jdFindings 를 버린다. 프롬프트는 빈 배열을 요구하지만
+          // 모델이 계약을 어기면 존재하지 않는 공고의 요구사항이 정상 결과처럼 화면에 오른다.
+          jdFindings: targetJd ? guarded.jdFindings : [],
           jdSource: toJdSource(targetJd),
         };
         const weakCount = result.items.filter(
@@ -126,6 +129,7 @@ export class AuditResumeUsecase {
         droppedTitles: [],
         unjudgedTitles: [],
         forcedMissing: [],
+        rewriteMissing: [],
       },
       jdSource: toJdSource(targetJd),
     };

@@ -31,6 +31,7 @@ const AUDIT_RESULT: ResumeAuditResult = {
     droppedTitles: [],
     unjudgedTitles: [],
     forcedMissing: [],
+    rewriteMissing: [],
   },
   jdSource: null,
 };
@@ -153,6 +154,48 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.summaryText).toContain('발행 실패');
     expect(result.summaryText).toContain('PORTFOLIO_SITE_URL 미설정');
     expect(audit.execute).not.toHaveBeenCalled();
+  });
+
+  it('성과가 모두 입증이어도 목표 공고 요건 미달은 보고한다', async () => {
+    // 공고를 등록한 회차에는 이게 사용자가 가장 먼저 볼 결손인데, 발행 변화가 없고 성과가
+    // 전부 PROVEN 이면 조건이 false 가 되어 감사 전체가 skip 됐다.
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        items: [
+          {
+            title: '배포 안정화',
+            status: 'PROVEN',
+            quote: '결과: 실패율 4%→0.5%',
+            why: '정량 결과가 있다.',
+            rewrite: null,
+          },
+        ],
+        jdFindings: [
+          {
+            requirement: 'Kubernetes 운영 경험',
+            priority: 'MUST',
+            status: 'MISSING',
+            quote: '',
+            why: '이력서에 없다.',
+          },
+        ],
+        jdSource: {
+          company: '이대리',
+          role: '백엔드',
+          registeredAt: '2026-08-01T00:00:00.000Z',
+        },
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 3,
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('목표 공고 요건 미달 1건');
+    expect(result.detailText).toContain('Kubernetes 운영 경험');
   });
 
   it('감사가 실패해도 기존 발행 요약과 상세를 그대로 보고한다', async () => {

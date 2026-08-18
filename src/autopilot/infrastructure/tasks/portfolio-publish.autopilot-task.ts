@@ -97,8 +97,15 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     const hasGuardConcern = auditResult
       ? auditResult.guard.demotedTitles.length > 0 ||
         auditResult.guard.droppedTitles.length > 0 ||
-        auditResult.guard.unjudgedTitles.length > 0
+        auditResult.guard.unjudgedTitles.length > 0 ||
+        auditResult.guard.rewriteMissing.length > 0
       : false;
+    // 공고 대조에서 필수·우대 요건이 미달인 건수. 이력서 성과가 전부 입증이어도 이쪽이 비면
+    // 안 되는 이유는, 공고를 등록한 회차에는 이게 사용자가 가장 먼저 볼 결손이기 때문이다.
+    const jdConcernCount =
+      auditResult?.jdFindings.filter(
+        (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
+      ).length ?? 0;
     const worthReporting =
       result.createdProjects.length > 0 ||
       result.createdSkillGroups.length > 0 ||
@@ -108,6 +115,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       weakCount > 0 ||
       missingCount > 0 ||
       hasGuardConcern ||
+      jdConcernCount > 0 ||
       auditNote !== null;
     if (!worthReporting) {
       this.logger.log(
@@ -141,6 +149,11 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     if (auditResult && (weakCount > 0 || missingCount > 0)) {
       summaryLines.push(
         `• 📋 이력서 감사 — 약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${auditResult.items.length}건)`,
+      );
+    }
+    if (auditResult && jdConcernCount > 0) {
+      summaryLines.push(
+        `• 📌 목표 공고 요건 미달 ${jdConcernCount}건 (${auditResult.jdSource?.company ?? '공고'} / ${auditResult.jdSource?.role ?? ''})`,
       );
     }
     if (auditResult && hasGuardConcern) {
@@ -194,8 +207,12 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       const hasGuardConcern =
         auditResult.guard.demotedTitles.length > 0 ||
         auditResult.guard.droppedTitles.length > 0 ||
-        auditResult.guard.unjudgedTitles.length > 0;
-      if (weakItems.length > 0 || hasGuardConcern) {
+        auditResult.guard.unjudgedTitles.length > 0 ||
+        auditResult.guard.rewriteMissing.length > 0;
+      const jdConcerns = auditResult.jdFindings.filter(
+        (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
+      );
+      if (weakItems.length > 0 || hasGuardConcern || jdConcerns.length > 0) {
         // 수동/자동 경로가 같은 escape 규약을 쓰게 formatter 결과를 재사용한다. LLM 문자열을
         // task 에서 직접 이어 붙이면 Slack mrkdwn 제어문자가 보고 구조를 위조할 수 있다.
         lines.push(formatResumeAudit(auditResult).full);

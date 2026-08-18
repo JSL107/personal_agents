@@ -164,6 +164,7 @@ describe('career-mate.formatter', () => {
         droppedTitles: ['환각'],
         unjudgedTitles: ['누락'],
         forcedMissing: ['근거 없는 성과'],
+        rewriteMissing: ['고칠 문장 없는 성과'],
       },
       jdSource: {
         company: '이대리',
@@ -182,6 +183,44 @@ describe('career-mate.formatter', () => {
     expect(rendered.full).toContain('Kubernetes');
     expect(rendered.full).toContain('정량성 부족');
     expect(rendered.full).toContain('강등 1 / 폐기 1 / 누락 1');
+  });
+
+  it('가드가 개입한 회차에는 총평이 개입 전 판정이라는 사실을 밝힌다', () => {
+    const base: ResumeAuditResult = {
+      verdict: '모든 성과가 입증됐다.',
+      items: [],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: ['배포 안정화'],
+        droppedTitles: [],
+        unjudgedTitles: [],
+        forcedMissing: [],
+        rewriteMissing: [],
+      },
+      jdSource: null,
+    };
+
+    expect(formatResumeAudit(base).summary).toContain('가드가 1건을 조정');
+  });
+
+  it('가드 개입이 없으면 고지 문구를 넣지 않는다', () => {
+    const base: ResumeAuditResult = {
+      verdict: '모든 성과가 입증됐다.',
+      items: [],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: [],
+        droppedTitles: [],
+        unjudgedTitles: [],
+        forcedMissing: [],
+        rewriteMissing: [],
+      },
+      jdSource: null,
+    };
+
+    expect(formatResumeAudit(base).summary).not.toContain('가드가');
   });
 
   it('formatPrRetro 는 회고 서술·이력서 bullet·포폴 링크를 담고 escape 한다', () => {

@@ -78,6 +78,7 @@ const makeDispatcher = (intentText: string) => {
           droppedTitles: [],
           unjudgedTitles: [],
           forcedMissing: [],
+          rewriteMissing: [],
         },
         jdSource: null,
       },

@@ -39,6 +39,7 @@ export const applyAuditGuards = (
     ]),
   );
   const demotedTitles: string[] = [];
+  const rewriteMissing: string[] = [];
   const droppedTitles: string[] = [];
   const forcedMissing: string[] = [];
   const guardedItems: AuditItem[] = [];
@@ -104,6 +105,15 @@ export const applyAuditGuards = (
     });
   }
 
+  // WEAK 인데 고쳐 쓸 문장이 없으면 사용자는 "약하다"만 듣고 무엇을 고칠지 못 받는다.
+  // 파싱 단계에서 거부하지 않는 이유는 항목 하나의 누락으로 감사 전체를 잃기 때문이다 —
+  // 대신 여기서 세어 드러낸다. MISSING 은 인용할 원문이 없어 rewrite 대상이 아니다.
+  for (const item of guardedItems) {
+    if (item.status === 'WEAK' && item.rewrite === null) {
+      rewriteMissing.push(item.title);
+    }
+  }
+
   guardedItems.sort(
     (left, right) => STATUS_ORDER[left.status] - STATUS_ORDER[right.status],
   );
@@ -116,6 +126,7 @@ export const applyAuditGuards = (
       droppedTitles,
       unjudgedTitles,
       forcedMissing,
+      rewriteMissing,
     },
     // 목표 공고의 출처는 저장소를 읽는 application layer 에서 덮어쓴다. guard 는 이력서
     // 원문만으로 결정할 수 있는 판정에 한정한다.
