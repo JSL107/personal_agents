@@ -34,9 +34,12 @@ const buildPreview = (): PreviewAction => ({
   slackMessageTs: null,
 });
 
-const buildConfig = (): jest.Mocked<ConfigService> =>
+const buildConfig = (omitKeys: string[] = []): jest.Mocked<ConfigService> =>
   ({
     get: jest.fn((key: string) => {
+      if (omitKeys.includes(key)) {
+        return undefined;
+      }
       const values: Record<string, string> = {
         BLOG_PUBLISH_REPO: 'JSL107/JSL107.github.io',
         BLOG_PUBLISH_BRANCH: 'main',
@@ -109,6 +112,44 @@ describe('GithubBlogPublishApplier', () => {
         commitSha: 'commit-sha',
       },
     ]);
+  });
+
+  // 실사용 .env 에는 BLOG_NOTION_PROP_* 와 발행 상태값이 전부 없다. 여기서 env 를 필수로
+  // 요구하면 카드는 뜨는데 승인 후 Notion 갱신만 실패해 페이지가 '초안' 으로 남고, 다음 저녁에
+  // 같은 글을 다시 올리려다 경로 충돌까지 난다. 후보 생성 경로와 같은 기본값을 써야 한다.
+  it('속성명·발행 상태값 env 가 없어도 기본값으로 Notion 을 갱신한다', async () => {
+    const githubClient = {
+      commitFileToBranch: jest.fn().mockResolvedValue({
+        commitSha: 'commit-sha',
+        fileUrl: 'https://github.com/JSL107/JSL107.github.io/blob/main/x.md',
+      }),
+    } as unknown as jest.Mocked<GithubClientPort>;
+    const notionClient = {
+      updatePageProperties: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<NotionClientPort>;
+    const applier = new GithubBlogPublishApplier(
+      githubClient,
+      notionClient,
+      buildConfig([
+        'BLOG_NOTION_PROP_STATUS',
+        'BLOG_NOTION_PROP_PUBLISHED_AT',
+        'BLOG_NOTION_PROP_TAGS',
+        'BLOG_NOTION_PROP_SUMMARY',
+        'BLOG_NOTION_STATUS_PUBLISHED_VALUE',
+      ]),
+    );
+
+    const result = await applier.apply(buildPreview());
+
+    // 경고 문구가 붙지 않아야 한다 = 갱신이 실제로 성공했다.
+    expect(result.message).not.toContain('Notion 상태 업데이트에 실패');
+    expect(notionClient.updatePageProperties).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          상태: { select: { name: '발행' } },
+        }),
+      }),
+    );
   });
 
   it('Notion 속성 갱신 실패는 GitHub 발행을 되돌리거나 throw하지 않고 경고로 노출한다', async () => {

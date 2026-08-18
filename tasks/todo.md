@@ -1,3 +1,30 @@
+# 모의투자 추천 Slack 알림 상세화 (2026-08-18)
+
+**Goal:** `.ai/design.md` 계약대로 추천 결과에 매매·제외·계좌 정보를 보존하고 Slack summary/detail에 전략별로 표시한다.
+
+**Contract:** 매수/매도 선정과 수량 계산은 바꾸지 않는다. 제외 기록만 추가한다. DB/Prisma/env/dependency/git index·commit은 변경하지 않는다.
+
+- [x] linked worktree, base, 전체 `constrainPaperRecommendation` 호출부와 기존 테스트 구조를 확인한다.
+- [x] RED: constraint의 6개 제외 사유와 매수 상한 이후 전체 기록, 기존 buys 불변 테스트를 추가하고 기대 실패를 확인한다.
+- [x] GREEN: domain type과 constraint에 `close`/`skipped` 기록을 최소 구현한다.
+- [x] RED: usecase 성공 결과의 `orders`/`skipped`/`account` 매핑 테스트를 추가하고 기대 실패를 확인한다.
+- [x] GREEN: locked state 기준 상세 성공 결과를 만들고 기존 주문 저장 동작을 보존한다.
+- [x] RED: Slack 매수 2건, 0건 제외 집계, 제외 0건 추천 없음, 실패 포맷 테스트를 추가·갱신하고 기대 실패를 확인한다.
+- [x] GREEN: 전략별 Slack mrkdwn summary/detail formatter를 구현한다.
+- [x] backtest 등 호출부 타입 호환을 확인하고 focused tests와 mutation 관점 검토를 수행한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`를 순서대로 fresh 실행해 모두 exit 0을 확인한다.
+- [x] 최종 diff·설계 이탈·리스크를 검토하고 `.ai/implementation-summary.md` 및 아래 Review에 증거를 기록한다.
+
+## Review
+
+- 매수/매도 선정·수량 계산 식은 유지하고 탈락 지점의 기록만 추가했다. backtest 포함 focused 39건이 통과했다.
+- success detail은 transaction의 locked state에서 만들고, 실제 `ordersCreated`와 DB 저장 주문 수를 맞췄다.
+- Slack은 전략별 주문·제외·계좌·실패 정보를 summary/detail로 출력한다. 설계 §5의 필수 케이스를 모두 추가했다.
+- 독립 리뷰의 `screen.asOf === null` edge는 새 상태 계약이 필요해 설계 밖 변경으로 판정했고, residual risk를 implementation summary에 기록했다.
+- fresh `pnpm lint:check`, `pnpm test`, `pnpm build` 모두 exit 0. 전체 테스트는 일반 393 suites/3,288 tests + code-graph 5 suites/40 tests다.
+
+---
+
 # PR #303 리뷰 2건 반영 — 밴드 복도 관통·리사이즈 중복 판정 (2026-08-13)
 
 **Goal:** 밴드와 부서 격자가 어긋나도 세로 복도가 방 내부를 관통하지 않게 하고, 리사이즈 배치 변경 판정을 `sync` 한 곳에 둔다.

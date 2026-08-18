@@ -23,6 +23,8 @@ import { isBlogGithubPublishPayload } from '../domain/blog.type';
 import {
   BlogPublishPropertyNames,
   buildBlogPublishProperties,
+  DEFAULT_BLOG_PROP,
+  DEFAULT_BLOG_STATUS_PUBLISHED,
 } from '../domain/blog-publish-properties';
 
 @Injectable()
@@ -91,7 +93,8 @@ export class GithubBlogPublishApplier implements PreviewApplier {
             publishedAt: getTodayKstDate(),
           },
           this.getPropertyNames(),
-          this.getRequiredConfig('BLOG_NOTION_STATUS_PUBLISHED_VALUE'),
+          this.getOptionalConfig('BLOG_NOTION_STATUS_PUBLISHED_VALUE') ??
+            DEFAULT_BLOG_STATUS_PUBLISHED,
         ),
       });
       return '';
@@ -102,13 +105,28 @@ export class GithubBlogPublishApplier implements PreviewApplier {
     }
   }
 
+  // 후보 생성 경로(publish-notion-draft.usecase)와 같은 기본값을 쓴다. 여기만 env 를 필수로
+  // 요구하면 카드는 뜨는데 승인 후 Notion 갱신만 실패한다 — GitHub 파일은 이미 커밋된 뒤라
+  // 페이지가 '초안' 으로 남고, 다음 저녁에 같은 글을 다시 올리려다 경로 충돌(422)까지 난다.
   private getPropertyNames(): BlogPublishPropertyNames {
     return {
-      status: this.getRequiredConfig('BLOG_NOTION_PROP_STATUS'),
-      publishedAt: this.getRequiredConfig('BLOG_NOTION_PROP_PUBLISHED_AT'),
-      tags: this.getRequiredConfig('BLOG_NOTION_PROP_TAGS'),
-      summary: this.getRequiredConfig('BLOG_NOTION_PROP_SUMMARY'),
+      status:
+        this.getOptionalConfig('BLOG_NOTION_PROP_STATUS') ??
+        DEFAULT_BLOG_PROP.status,
+      publishedAt:
+        this.getOptionalConfig('BLOG_NOTION_PROP_PUBLISHED_AT') ??
+        DEFAULT_BLOG_PROP.publishedAt,
+      tags:
+        this.getOptionalConfig('BLOG_NOTION_PROP_TAGS') ??
+        DEFAULT_BLOG_PROP.tags,
+      summary:
+        this.getOptionalConfig('BLOG_NOTION_PROP_SUMMARY') ??
+        DEFAULT_BLOG_PROP.summary,
     };
+  }
+
+  private getOptionalConfig(key: string): string | undefined {
+    return this.configService.get<string>(key)?.trim() || undefined;
   }
 
   private getRequiredConfig(key: string): string {
