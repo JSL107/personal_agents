@@ -35,6 +35,12 @@ interface ProbeOutcome {
 export class PortfolioWarmupAutopilotTask implements AutopilotTask {
   readonly id = 'portfolio-warmup';
   private readonly logger = new Logger(PortfolioWarmupAutopilotTask.name);
+  // 연속 실패 카운터는 프로세스 로컬이다 — 재시작하면 0으로 돌아간다. 그래도 알림이 사라지지는
+  // 않는다: 워밍업이 10분 간격이라 장애가 지속되면 20분 뒤 임계값에 다시 도달하고, 늦어질 뿐이다.
+  // 분산 유실도 없다 — autopilot-cron 큐는 concurrency=1 이고(`autopilot.playbook-defaults.ts`)
+  // 이 provider 는 스코프 없는 싱글톤이라 회차 간 인스턴스가 유지된다. 영속화하려면 상태 저장소가
+  // 필요한데 autopilot task 중 선례가 없어, 재시작이 20분보다 짧은 주기로 반복되는 환경이
+  // 실제로 생기면 그때 Redis 로 옮긴다.
   private consecutiveFailures = 0;
 
   constructor(private readonly configService: ConfigService) {}
