@@ -138,7 +138,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         taskId: this.id,
         firedAtKst: context.firedAtKst,
       },
-      run: async () => {
+      run: async ({ agentRunId }) => {
         // firedAtKst는 오케스트레이터가 고정한 KST 날짜다. 17:40 KST 시각으로 바꿔
         // 재시도 시각이 자정을 넘어도 원래 슬롯의 거래일을 평가하게 한다.
         const executedAt = new Date(`${context.firedAtKst}T08:40:00.000Z`);
@@ -157,6 +157,8 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         const exitBand = await this.applyExitBand.execute({
           accounts: evaluations.accounts,
           executedAt,
+          // 어떤 실행이 이 청산을 결정했는지 원장에서 조인하려면 주문에 실행 id 가 박혀야 한다.
+          agentRunId,
         });
         const failedEntries = evaluations.accounts.filter(
           (entry) => !entry.evaluation,
@@ -175,8 +177,21 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
             evaluatedNames.length > 0
               ? ` (평가 완료: ${evaluatedNames.join(', ')})`
               : '';
+          // 밴드 주문은 이 throw 앞에서 이미 커밋됐다. 실패로 올리면 taskResult·audit 가
+          // 만들어지지 않고, 재시도는 PENDING 중복 방지로 0건을 반환하므로 "몇 건을
+          // 걸었는지" 가 어디에도 남지 않는다. 예외 메시지에 실어 원장으로 흘려보낸다.
+          const exitBandText =
+            exitBand.createdCount > 0
+              ? ` / 밴드 청산 ${exitBand.createdCount}건은 예약 완료: ${exitBand.accounts
+                  .flatMap((account) =>
+                    account.reasons.map(
+                      (reason) => `[${account.accountName}] ${reason}`,
+                    ),
+                  )
+                  .join(', ')}`
+              : '';
           throw new Error(
-            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}`,
+            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}${exitBandText}`,
           );
         }
         const taskResult: AutopilotTaskResult = {

@@ -679,6 +679,7 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
   it('수량을 원장의 현재 보유로 다시 맞춰 저장한다', async () => {
     await expect(repository.createExitBandOrders(input)).resolves.toEqual({
       created: 2,
+      createdTickerIds: [1976, 178],
       skippedByPendingSell: 0,
       skippedByNoPosition: 0,
     });
@@ -700,6 +701,7 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
 
     await expect(repository.createExitBandOrders(input)).resolves.toEqual({
       created: 1,
+      createdTickerIds: [178],
       skippedByPendingSell: 1,
       skippedByNoPosition: 0,
     });
@@ -713,6 +715,7 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
 
     await expect(repository.createExitBandOrders(input)).resolves.toEqual({
       created: 0,
+      createdTickerIds: [],
       skippedByPendingSell: 0,
       skippedByNoPosition: 2,
     });
@@ -724,6 +727,7 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
       repository.createExitBandOrders({ ...input, orders: [] }),
     ).resolves.toEqual({
       created: 0,
+      createdTickerIds: [],
       skippedByPendingSell: 0,
       skippedByNoPosition: 0,
     });

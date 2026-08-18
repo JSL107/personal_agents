@@ -7,6 +7,7 @@ import {
   ExitBandThreshold,
 } from '../domain/exit-band';
 import { TradeStrategy } from '../domain/paper-account.type';
+import { nextWeekday } from '../domain/trade-calendar';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { EvaluatedAccountEntry } from './evaluate-paper-account.usecase';
 
@@ -38,13 +39,6 @@ const strategyOf = (accountName: string): TradeStrategy => {
     return accountName;
   }
   return 'MANUAL';
-};
-
-const nextDay = (date: Date): Date => {
-  const next = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1),
-  );
-  return next;
 };
 
 @Injectable()
@@ -89,22 +83,27 @@ export class ApplyExitBandUsecase {
           tradeDate === null
             ? command.executedAt
             : new Date(`${tradeDate}T00:00:00.000Z`),
-        targetTradeDate: nextDay(command.executedAt),
+        targetTradeDate: nextWeekday(command.executedAt),
         agentRunId: command.agentRunId ?? null,
         orders: decisions.map((decision) => ({
           tickerId: decision.tickerId,
           reason: describeExitBandReason(decision, threshold),
         })),
       });
+      // 저장된 종목만 남긴다. 판정 목록을 그대로 실으면 중복·보유 소멸로 걸러진 것까지
+      // "예약됨" 으로 적혀 카드의 건수와 상세가 어긋난다.
+      const createdTickerIds = new Set(outcome.createdTickerIds);
       accounts.push({
         accountName: entry.accountName,
         created: outcome.created,
         skippedByPendingSell: outcome.skippedByPendingSell,
         skippedByNoPosition: outcome.skippedByNoPosition,
-        reasons: decisions.map(
-          (decision) =>
-            `${decision.tickerCode} ${describeExitBandReason(decision, threshold)}`,
-        ),
+        reasons: decisions
+          .filter((decision) => createdTickerIds.has(decision.tickerId))
+          .map(
+            (decision) =>
+              `${decision.tickerCode} ${describeExitBandReason(decision, threshold)}`,
+          ),
       });
     }
 

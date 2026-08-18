@@ -222,7 +222,20 @@ const main = async (): Promise<void> => {
       // 이 줄이 없으면 밴드 동작을 확인할 유일한 길이 저녁 cron 을 기다리는 것뿐이다.
       // --apply-exit-band 없이는 판정만 찍고 주문은 만들지 않는다(수동 실행이
       // 실수로 매도를 거는 걸 막는다).
-      const applyExitBand = parsed.options.has('apply-exit-band');
+      //
+      // 값을 정확히 검사한다. 존재 여부만 보면 `--apply-exit-band false` 로 명시적으로
+      // 끄려 한 실행이 오히려 매도를 걸어, 안전장치가 정반대로 동작한다.
+      const applyExitBandValue = parsed.options.get('apply-exit-band');
+      if (
+        applyExitBandValue !== undefined &&
+        applyExitBandValue !== 'true' &&
+        applyExitBandValue !== 'false'
+      ) {
+        throw new Error(
+          `--apply-exit-band 는 true 또는 false 만 받습니다: ${applyExitBandValue}\n${USAGE}`,
+        );
+      }
+      const applyExitBand = applyExitBandValue === 'true';
       const exitBand = await application.get(ApplyExitBandUsecase).execute({
         accounts: applyExitBand ? evaluations.accounts : [],
         executedAt,
@@ -233,7 +246,12 @@ const main = async (): Promise<void> => {
       if (!applyExitBand) {
         const preview = evaluations.accounts.flatMap((entry) =>
           decideExitBandOrders(
-            (entry.evaluation?.positions ?? []).map((position) => ({
+            // usecase 와 같은 조건이어야 미리보기가 실제 적용 결과를 예고한다.
+            // 스냅샷이 막힌 회차는 usecase 가 매도를 걸지 않으므로 여기서도 뺀다.
+            (entry.evaluation && !entry.evaluation.skipped
+              ? entry.evaluation.positions
+              : []
+            ).map((position) => ({
               tickerId: position.tickerId,
               tickerCode: position.tickerCode,
               quantity: position.quantity,

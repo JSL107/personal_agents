@@ -70,6 +70,7 @@ describe('ApplyExitBandUsecase', () => {
     });
     repository.createExitBandOrders.mockResolvedValue({
       created: 1,
+      createdTickerIds: [1976],
       skippedByPendingSell: 0,
       skippedByNoPosition: 0,
     });
@@ -153,6 +154,103 @@ describe('ApplyExitBandUsecase', () => {
 
     expect(repository.createExitBandOrders).toHaveBeenCalledWith(
       expect.objectContaining({ strategy: 'MANUAL' }),
+    );
+  });
+  // 금요일 장마감 평가가 토요일을 목표 거래일로 적으면, 체결은 월요일에 되더라도
+  // 원장에는 장이 열리지 않는 날짜가 남아 판단·체결 시점을 재구성할 수 없다.
+  it('금요일 실행은 목표 거래일로 다음 월요일을 적는다', async () => {
+    await usecase.execute({
+      accounts: [entry('LONG_TERM', evaluation({ positions: [position()] }))],
+      executedAt: new Date('2026-08-14T08:40:00.000Z'),
+    });
+
+    expect(repository.createExitBandOrders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetTradeDate: new Date('2026-08-17T00:00:00.000Z'),
+      }),
+    );
+  });
+
+  it('실행 원장 id 를 주문에 실어 어떤 실행이 청산했는지 남긴다', async () => {
+    await usecase.execute({
+      accounts: [entry('LONG_TERM', evaluation({ positions: [position()] }))],
+      executedAt,
+      agentRunId: 71,
+    });
+
+    expect(repository.createExitBandOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ agentRunId: 71 }),
+    );
+  });
+
+  // 판정 목록을 그대로 실으면 중복·보유 소멸로 걸러진 종목까지 "예약됨" 으로 적혀
+  // 카드의 건수(created)와 상세(reasons)가 서로 어긋난다.
+  it('실제로 저장된 종목만 예약 내역에 남긴다', async () => {
+    repository.createExitBandOrders.mockResolvedValue({
+      created: 1,
+      createdTickerIds: [1976],
+      skippedByPendingSell: 1,
+      skippedByNoPosition: 0,
+    });
+
+    const result = await usecase.execute({
+      accounts: [
+        entry(
+          'SWING',
+          evaluation({
+            positions: [
+              position(),
+              position({
+                tickerId: 321,
+                tickerCode: '181710',
+                returnRate: '-9',
+              }),
+            ],
+          }),
+        ),
+      ],
+      executedAt,
+    });
+
+    expect(result.accounts[0].created).toBe(1);
+    expect(result.accounts[0].reasons).toEqual([
+      '121440 익절 밴드 도달: 평가 손익률 5.26% (기준 +2% 이상)',
+    ]);
+  });
+
+  it('호출자가 넘긴 임계값이 판정과 저장 사유에 모두 반영된다', async () => {
+    await usecase.execute({
+      accounts: [
+        entry(
+          'LONG_TERM',
+          evaluation({ positions: [position({ returnRate: '3' })] }),
+        ),
+      ],
+      executedAt,
+      threshold: { takeProfitPercent: 10, stopLossPercent: -5 },
+    });
+    expect(repository.createExitBandOrders).not.toHaveBeenCalled();
+
+    await usecase.execute({
+      accounts: [
+        entry(
+          'LONG_TERM',
+          evaluation({ positions: [position({ returnRate: '-6' })] }),
+        ),
+      ],
+      executedAt,
+      threshold: { takeProfitPercent: 10, stopLossPercent: -5 },
+    });
+
+    expect(repository.createExitBandOrders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orders: [
+          {
+            tickerId: 1976,
+            reason: '손절 밴드 이탈: 평가 손익률 -6.00% (기준 -5% 이하)',
+          },
+        ],
+      }),
     );
   });
 });

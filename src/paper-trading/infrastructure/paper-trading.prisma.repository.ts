@@ -202,6 +202,9 @@ export interface CreateExitBandOrdersInput {
 
 export interface CreateExitBandOrdersResult {
   created: number;
+  // 실제로 저장된 주문의 종목만 담는다. 판정 목록을 그대로 카드에 쓰면 중복·보유 소멸로
+  // 걸러진 종목까지 "예약됨" 으로 적혀 건수와 상세가 어긋난다.
+  createdTickerIds: number[];
   skippedByPendingSell: number;
   skippedByNoPosition: number;
 }
@@ -870,7 +873,12 @@ export class PaperTradingPrismaRepository {
     input: CreateExitBandOrdersInput,
   ): Promise<CreateExitBandOrdersResult> {
     if (input.orders.length === 0) {
-      return { created: 0, skippedByPendingSell: 0, skippedByNoPosition: 0 };
+      return {
+        created: 0,
+        createdTickerIds: [],
+        skippedByPendingSell: 0,
+        skippedByNoPosition: 0,
+      };
     }
     return await this.prisma.$transaction(async (transaction) => {
       await transaction.paperAccount.update({
@@ -939,6 +947,7 @@ export class PaperTradingPrismaRepository {
       }
       return {
         created: data.length,
+        createdTickerIds: data.map((order) => order.tickerId),
         skippedByPendingSell,
         skippedByNoPosition,
       };
