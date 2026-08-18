@@ -92,11 +92,14 @@ export const screenStocks = (
   candidates: ScreenCandidate[],
   strategy: ScreenStrategy,
   limit: number,
+  // 백테스트가 하한을 바꿔가며 성적을 비교할 수 있도록 주입 가능하게 열어 둔다.
+  // 기본값이 운영 규칙이므로 기존 호출부는 그대로 둔다.
+  minimumTurnover60: number = MINIMUM_TURNOVER60,
 ): ScreenedStock[] => {
   const passed = candidates.filter(
     (candidate) =>
       candidate.indicators.turnover60 !== null &&
-      candidate.indicators.turnover60 >= MINIMUM_TURNOVER60 &&
+      candidate.indicators.turnover60 >= minimumTurnover60 &&
       (strategy === 'LONG_TERM'
         ? passesLongTerm(candidate)
         : passesSwing(candidate)),

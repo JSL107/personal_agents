@@ -47,6 +47,7 @@ const toWriteRows = (
   bars.map((bar) => ({
     tickerId: ticker.id,
     tradeDate: bar.tradeDate,
+    open: bar.open?.toString(),
     close: bar.close.toString(),
     adjClose: bar.adjClose.toString(),
     volume: bar.volume,

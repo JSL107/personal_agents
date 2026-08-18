@@ -184,3 +184,21 @@ describe('screenStocks', () => {
     ]);
   });
 });
+
+describe('screenStocks 거래대금 하한 주입', () => {
+  it('하한을 높이면 그 아래 종목이 탈락한다', () => {
+    const candidates = [
+      candidate('000001', { turnover60: 2e9 }),
+      candidate('000002', { turnover60: 7e8 }),
+    ];
+
+    const withDefault = screenStocks(candidates, 'LONG_TERM', 10);
+    const withRaised = screenStocks(candidates, 'LONG_TERM', 10, 1e9);
+
+    expect(withDefault.map((stock) => stock.code)).toEqual([
+      '000001',
+      '000002',
+    ]);
+    expect(withRaised.map((stock) => stock.code)).toEqual(['000001']);
+  });
+});

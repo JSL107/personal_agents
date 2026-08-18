@@ -66,7 +66,10 @@ const constrainBuys = (
     ) {
       continue;
     }
-    const weightPercent = clampWeightPercent(buy.weightPercent);
+    const weightPercent = clampWeightPercent(
+      buy.weightPercent,
+      input.maximumWeightPercent,
+    );
     if (weightPercent <= 0) {
       continue;
     }
@@ -103,5 +106,7 @@ const uniqueByCode = <T extends { code: string }>(values: T[]): T[] => {
   });
 };
 
-const clampWeightPercent = (value: number): number =>
-  Math.min(MAXIMUM_WEIGHT_PERCENT, Math.max(0, value));
+const clampWeightPercent = (
+  value: number,
+  maximumWeightPercent: number = MAXIMUM_WEIGHT_PERCENT,
+): number => Math.min(maximumWeightPercent, Math.max(0, value));

@@ -15,6 +15,8 @@ const BAR_READ_LOOKBACK_CALENDAR_DAYS = 400;
 export interface DailyPriceWriteInput {
   tickerId: number;
   tradeDate: Date;
+  // 토스 응답에 시가가 없는 캔들이 섞일 수 있어 optional 이다.
+  open?: string;
   close: string;
   adjClose: string;
   volume: bigint;
@@ -111,6 +113,9 @@ export class MarketDataPrismaRepository {
       },
       create: input,
       update: {
+        // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가를 빠뜨린
+        // 회차에 null 을 덮어써 이미 모은 시가를 잃는 일을 막는다.
+        open: input.open,
         close: input.close,
         adjClose: input.adjClose,
         volume: input.volume,
@@ -159,6 +164,9 @@ export class MarketDataPrismaRepository {
             },
             create: row,
             update: {
+              // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가를 빠뜨린
+              // 회차에 null 을 덮어써 이미 모은 시가를 잃는 일을 막는다.
+              open: row.open,
               close: row.close,
               adjClose: row.adjClose,
               volume: row.volume,

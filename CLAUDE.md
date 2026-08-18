@@ -36,6 +36,8 @@
 | 인프라 컨테이너 정의 | `docker-compose.yml` |
 | AgentRun 라이프사이클 + setParentId (chain audit) | `src/agent-run/application/agent-run.service.ts` |
 | Preview Gate (외부 부작용 ✅ 게이트) | `src/preview-gate/` |
+| 백테스트 재생 루프 (추천=평일 / 체결=거래일 두 축) | `src/backtest/application/replay-backtest.usecase.ts` |
+| 백테스트 CLI 진입점 | `scripts/backtest.ts` + `src/backtest/interface/backtest-cli.parser.ts` |
 
 **모듈 전체 보기**: `Glob src/**/*.module.ts`.
 **진행 추적**: `git log --oneline -20` — 커밋 메시지에 `V3 §X` 표기 있음.
