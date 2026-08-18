@@ -1,7 +1,4 @@
-import {
-  constrainPaperRecommendation,
-  nextWeekday,
-} from './paper-recommendation.constraint';
+import { constrainPaperRecommendation } from './paper-recommendation.constraint';
 
 describe('constrainPaperRecommendation', () => {
   const candidates = [
@@ -153,17 +150,5 @@ describe('constrainPaperRecommendation', () => {
     });
 
     expect(result.buys).toEqual([]);
-  });
-});
-
-describe('nextWeekday', () => {
-  it.each([
-    ['금요일', '2026-08-14', '2026-08-17'],
-    ['토요일', '2026-08-15', '2026-08-17'],
-    ['일요일', '2026-08-16', '2026-08-17'],
-  ])('%s에는 다음 월요일을 반환한다', (_label, currentDate, expected) => {
-    expect(nextWeekday(new Date(`${currentDate}T12:00:00.000Z`))).toEqual(
-      new Date(`${expected}T00:00:00.000Z`),
-    );
   });
 });

@@ -5,6 +5,7 @@ jest.mock('node:child_process', () => ({
 import { execFile } from 'node:child_process';
 import * as fileSystem from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 import { Logger } from '@nestjs/common';
 
@@ -233,7 +234,8 @@ describe('AiCliEnvAdapter', () => {
     expect(mockedExecFile).toHaveBeenCalledWith(
       'node',
       [
-        expect.stringMatching(/scripts\/export-ai-cli-env\.cjs$/),
+        // 어댑터가 join() 으로 만들므로 구분자는 플랫폼마다 다르다.
+        expect.stringMatching(/scripts[\\/]export-ai-cli-env\.cjs$/),
         '/tmp/ai-cli-env-sync',
       ],
       expect.objectContaining({ timeout: 60_000 }),
@@ -921,7 +923,7 @@ describe('AiCliEnvAdapter', () => {
       [
         'clone',
         'https://github.com/owner/snapshots.git',
-        `${homedir()}/.ai-cli-env-sync`,
+        join(homedir(), '.ai-cli-env-sync'),
       ],
       expect.any(Object),
       expect.any(Function),

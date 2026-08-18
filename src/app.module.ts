@@ -12,6 +12,7 @@ import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
 import { BlogModule } from './agent/blog/blog.module';
 import { EveningBlogPublishApplier } from './agent/blog/infrastructure/evening-blog-publish.applier';
+import { GithubBlogPublishApplier } from './agent/blog/infrastructure/github-blog-publish.applier';
 import { CareerMateModule } from './agent/career-mate/career-mate.module';
 import { EveningCareerReflectApplier } from './agent/career-mate/infrastructure/evening-career-reflect.applier';
 import { CeoModule } from './agent/ceo/ceo.module';
@@ -31,6 +32,8 @@ import { AgentRunModule } from './agent-run/agent-run.module';
 import { AiCliEnvModule } from './ai-cli-env/ai-cli-env.module';
 import { AiCliEnvApplyPreviewApplier } from './ai-cli-env/infrastructure/ai-cli-env-apply.preview-applier';
 import { AutopilotModule } from './autopilot/autopilot.module';
+import { BeChainModule } from './be-chain/be-chain.module';
+import { CtoBeChainApplier } from './be-chain/infrastructure/cto-be-chain.applier';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { WorkerStartupCoordinator } from './common/queue/worker-startup.coordinator';
@@ -52,6 +55,7 @@ import { PrReviewLoopModule } from './pr-review-loop/pr-review-loop.module';
 import { PreferenceProfilePreviewApplier } from './preference-profile/infrastructure/preference-profile.preview-applier';
 import { PreferenceProfileCanceller } from './preference-profile/infrastructure/preference-profile.preview-canceller';
 import { PreferenceProfileModule } from './preference-profile/preference-profile.module';
+import { GithubFileVerifier } from './preview-gate/infrastructure/github-file.verifier';
 import { GithubPrVerifier } from './preview-gate/infrastructure/github-pr.verifier';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -127,7 +131,7 @@ import { WebhookModule } from './webhook/webhook.module';
     // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker). PO_EVAL (필수) + PM/CTO (선택) 합성.
     CeoModule,
     // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort).
-    // 자연어 멘션 → IntentClassifier → 15 worker dispatcher registry 로 dispatch (동작 완료).
+    // 자연어 멘션 → IntentClassifier → 19 worker dispatcher registry 로 dispatch (동작 완료).
     RouterModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // V3 §P4: PoEvalCareerlogApplier 도 같은 forRoot 로 등록 — Notion appendBlocks 만 의존.
@@ -143,10 +147,13 @@ import { WebhookModule } from './webhook/webhook.module';
         PreferenceProfilePreviewApplier,
         AiCliEnvApplyPreviewApplier,
         EveningBlogPublishApplier,
+        GithubBlogPublishApplier,
         EveningCareerReflectApplier,
+        // CTO 분배 확정 — "응" 한 마디로 BE / BE_SCHEMA / BE_TEST 실행 (슬래시 직접 호출 대체).
+        CtoBeChainApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
-      verifiers: [GithubPrVerifier],
+      verifiers: [GithubPrVerifier, GithubFileVerifier],
       // v2 reject-signal: PREFERENCE_PROFILE 제안 ❌ 거부 시 연결 proposal 을 REJECTED 로 기록.
       cancellers: [PreferenceProfileCanceller],
       imports: [
@@ -160,6 +167,11 @@ import { WebhookModule } from './webhook/webhook.module';
         ModelRouterModule,
         CareerMateModule,
         LocalSessionsModule,
+        BeChainModule,
+        // CtoBeChainApplier 는 AgentRunService 도 주입받는다. forRoot 는 applier 를
+        // PreviewGate 컨텍스트에서 새로 만들므로, BeChainModule 이 그것을 재수출하지
+        // 않는 이상 여기 없으면 부팅이 index[1] 에서 끊긴다(런타임에만 드러난다).
+        AgentRunModule,
       ],
     }),
     SlackModule,

@@ -110,17 +110,3 @@ const clampWeightPercent = (
   value: number,
   maximumWeightPercent: number = MAXIMUM_WEIGHT_PERCENT,
 ): number => Math.min(maximumWeightPercent, Math.max(0, value));
-
-export const nextWeekday = (currentDate: Date): Date => {
-  const nextDate = new Date(
-    Date.UTC(
-      currentDate.getUTCFullYear(),
-      currentDate.getUTCMonth(),
-      currentDate.getUTCDate() + 1,
-    ),
-  );
-  while (nextDate.getUTCDay() === 0 || nextDate.getUTCDay() === 6) {
-    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-  }
-  return nextDate;
-};

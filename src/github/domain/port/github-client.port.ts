@@ -128,6 +128,31 @@ export interface PushBranchAndOpenPrResult {
   commitSha: string;
 }
 
+// 블로그 승인 발행 — 지정 branch 에 새 파일 1개를 커밋한다. 기존 path 는 sha 를 의도적으로
+// 전달하지 않아 GitHub 422 로 거절한다(기존 발행 글 덮어쓰기 방지).
+export interface CommitFileToBranchInput {
+  repo: string; // "owner/repo"
+  branch: string;
+  path: string;
+  content: string; // UTF-8 평문. adapter 가 base64 로 인코딩한다.
+  commitMessage: string;
+}
+
+export interface CommitFileToBranchResult {
+  commitSha: string;
+  fileUrl: string;
+}
+
+export interface GetFileFromBranchInput {
+  repo: string; // "owner/repo"
+  branch: string;
+  path: string;
+}
+
+export interface GetFileFromBranchResult {
+  fileUrl: string;
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
@@ -171,6 +196,14 @@ export interface GithubClientPort {
   pushBranchAndOpenPr(
     input: PushBranchAndOpenPrInput,
   ): Promise<PushBranchAndOpenPrResult>;
+
+  commitFileToBranch(
+    input: CommitFileToBranchInput,
+  ): Promise<CommitFileToBranchResult>;
+
+  getFileFromBranch(
+    input: GetFileFromBranchInput,
+  ): Promise<GetFileFromBranchResult>;
 
   // 아침 브리핑 완료/대기 분류용 PR 신호 보강. best-effort — 실패/캡 초과 PR 은
   // 중립 신호(mergeableState='unknown', 모든 flag false)로 채워 분류 시 ACTIVE 로 떨어진다.

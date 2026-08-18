@@ -48,6 +48,13 @@ export class ApplyPreviewUsecase {
     private readonly consoleEvents?: ConsoleEventBus,
   ) {}
 
+  // 지금 apply 가 진행 중인 카드인가. DB 상태는 apply 가 끝날 때까지 PENDING 이라
+  // 상태만으로는 "실행 중" 을 알 수 없다. 실행 중 카드 내용이 바뀌면 화면에는 새 값이,
+  // 실제 실행에는 이미 읽은 옛 값이 쓰여 둘이 어긋나므로 수정 경로가 이걸 보고 거절한다.
+  isApplying(previewId: string): boolean {
+    return this.applying.has(previewId);
+  }
+
   async execute({
     previewId,
     slackUserId,

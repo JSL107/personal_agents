@@ -32,9 +32,17 @@ export const PREVIEW_KIND = {
   // 저녁 회고 — 오늘 대표 작업을 근거 PR 본문 기반 codex 블로그 초안으로 생성 후 Notion 발행.
   // payload = { topPick:{title,keywords[],reason,sourceRefs[],outline[]}, sourcePrs:[{repo,number,url,title,body}], retroContext, slackUserId } (EveningBlogPublishApplier).
   EVENING_BLOG_PUBLISH: 'EVENING_BLOG_PUBLISH',
+  // 노션 블로그 초안을 승인 후 GitHub main에 파일 1개로 발행.
+  // payload = { pageId, path, content, title, notionUrl, tags, summary, slackUserId }.
+  BLOG_GITHUB_PUBLISH: 'BLOG_GITHUB_PUBLISH',
   // 저녁 회고 — 오늘 머지된 PR 전체를 다건 통합 회고로 이력서 프로필 편입 + 포트폴리오 Notion append.
   // payload = { prRefs:string[], slackUserId } (EveningCareerReflectApplier 가 ReflectPrUsecase 위임).
   EVENING_CAREER_REFLECT: 'EVENING_CAREER_REFLECT',
+  // CTO 분배 확정 — 사용자가 분배 결과에 "응" 하면 BE / BE_SCHEMA / BE_TEST 를 순차 실행.
+  // payload = { ctoAgentRunId, slackUserId, assignments } (CtoBeChainPayload).
+  // 슬래시(`/be plan ...`) 를 손으로 치던 실행 경로를 자연어 승인 한 마디로 대체하는 게 목적.
+  // applier 는 CtoBeChainApplier — RunBeChainUsecase 에 위임한다 (auto-flow 버튼 경로와 동일 로직).
+  CTO_BE_CHAIN: 'CTO_BE_CHAIN',
   // 자동 분배 — 2026-08-05 폐지. 생성·승인 경로(session-dispatch 모듈)를 전부 제거했다.
   // 다른 세션의 대화 맥락에 작업을 밀어 넣는 구조라 오염 위험이 컸고, 실제 승인율도 0 이었다.
   // kind 상수만 남기는 이유는 DB 에 남은 과거 카드를 콘솔이 조회할 때 매핑이 깨지지 않게 하려는 것.

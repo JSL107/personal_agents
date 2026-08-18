@@ -139,6 +139,10 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       ...(outcome.autoResolvedNotice !== undefined
         ? { autoResolvedNotice: outcome.autoResolvedNotice }
         : {}),
+      ...(outcome.slackBlocks !== undefined
+        ? { slackBlocks: outcome.slackBlocks }
+        : {}),
+      ...(outcome.preview !== undefined ? { preview: outcome.preview } : {}),
       followUp: outcome.followUp,
     };
 

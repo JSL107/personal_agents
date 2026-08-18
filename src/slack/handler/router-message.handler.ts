@@ -22,6 +22,7 @@ import {
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 import { detectYesNoIntent } from './yes-no-detector';
 
@@ -280,10 +281,20 @@ export class RouterMessageHandler implements SlackHandler {
         timestampMs: Date.now(),
       });
       const routerReplyText = buildRouterReply(result);
+      // worker 가 카드를 만들어 보냈으면 그걸로 답한다. text 는 알림 미리보기와
+      // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
+      const replyBlocks = resolveReplyBlocks(result, routerReplyText);
       await say({
         thread_ts: threadTs,
         text: routerReplyText,
+        ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
       });
+      if (result.preview?.content) {
+        await say({
+          thread_ts: threadTs,
+          text: result.preview.content,
+        });
+      }
       // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'assistant',
@@ -711,6 +722,26 @@ export class RouterMessageHandler implements SlackHandler {
 const isIntentClassifyFailed = (error: unknown): boolean =>
   error instanceof RouterException &&
   error.routerErrorCode === RouterErrorCode.INTENT_CLASSIFY_FAILED;
+
+// 답글에 실을 Block Kit 블록 결정.
+// worker 가 직접 구성한 카드(slackBlocks — 예: CTO 분배의 드롭다운·실행 버튼)가 우선이고,
+// 없으면 preview 승인 카드를 그린다. 둘 다 채우는 worker 는 현재 없지만, 카드 구성을
+// worker 가 쥔 쪽이 더 구체적이라 그쪽을 앞에 둔다. 둘 다 없으면 텍스트만 보낸다.
+const resolveReplyBlocks = (
+  result: DispatchResult,
+  replyText: string,
+): Array<Record<string, unknown>> | undefined => {
+  if (result.slackBlocks !== undefined) {
+    return result.slackBlocks;
+  }
+  if (result.preview) {
+    return buildPreviewBlocks({
+      previewText: replyText,
+      previewId: result.preview.id,
+    });
+  }
+  return undefined;
+};
 
 // Slack 멘션 prefix `<@U....>` 를 모두 제거 + 앞뒤 공백 trim.
 // (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
