@@ -45,17 +45,25 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     );
   });
 
-  it('SP3 플레이북은 daily-eval + work-reviewer + evening-retro-publish 가 모두 evening 그룹', () => {
+  it('저녁 그룹은 기존 선두를 유지하고 블로그 GitHub 발행을 맨 뒤에서 실행한다', () => {
     const eveningEntries = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.digestGroup === 'evening',
     );
-    expect(eveningEntries).toHaveLength(3);
-    const ids = eveningEntries.map((entry) => entry.id).sort();
-    expect(ids).toEqual([
+    expect(eveningEntries.map((entry) => entry.id)).toEqual([
+      'work-reviewer',
       'daily-eval',
       'evening-retro-publish',
-      'work-reviewer',
+      'blog-github-publish',
     ]);
+    expect(eveningEntries.at(-1)).toMatchObject({
+      taskId: 'blog-github-publish',
+      riskTier: 'T1_PREVIEW',
+      trigger: {
+        kind: 'CRON',
+        schedule: '0 19 * * *',
+        timezone: 'Asia/Seoul',
+      },
+    });
   });
 
   it('SP3 플레이북 evening 그룹은 validatePlaybook 통과(스케줄 일치)', () => {

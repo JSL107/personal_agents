@@ -83,6 +83,7 @@ export enum TriggerType {
   // 저녁 회고→발행 후보 — evening 그룹의 T1_PREVIEW task. 블로그·경력 카드가 안 만들어진 날
   // "회고 생성이 실패했는지, 후보가 없었는지" 를 원장에서 가른다.
   AUTOPILOT_EVENING_RETRO_CRON = 'AUTOPILOT_EVENING_RETRO_CRON',
+  AUTOPILOT_BLOG_PUBLISH_CRON = 'AUTOPILOT_BLOG_PUBLISH_CRON',
   STUDY_BRIEF_CRON = 'STUDY_BRIEF_CRON',
   // 잠재의식 변화 감지 tick — 게이트가 죽으면 제안이 0건이 되는데, 그것이 "노이즈가 없어서"
   // 인지 "고장나서" 인지 원장 없이는 구분되지 않는다(fail-closed 라 예외도 안 올라온다).

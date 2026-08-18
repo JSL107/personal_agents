@@ -27,7 +27,7 @@ const makeConsumer = (orchestrator: unknown, notificationPublisher?: unknown) =>
   );
 
 describe('AutopilotConsumer', () => {
-  it('job.name = "evening"(groupKey) → runGroup 위임(daily-eval + work-reviewer + evening-retro-publish 3건)', async () => {
+  it('job.name = "evening"(groupKey) → 기존 선두부터 GitHub 발행까지 4건을 순서대로 위임한다', async () => {
     const runGroup = jest.fn().mockResolvedValue(undefined);
     const consumer = makeConsumer({ runGroup });
     await consumer.process(makeJob('evening'));
@@ -42,9 +42,13 @@ describe('AutopilotConsumer', () => {
       'C1',
       'repeat:evening:1',
     );
-    // entries 는 정확히 3건 (daily-eval + work-reviewer + evening-retro-publish)
-    const entries: unknown[] = runGroup.mock.calls[0][1];
-    expect(entries).toHaveLength(3);
+    const entries: Array<{ id: string }> = runGroup.mock.calls[0][1];
+    expect(entries.map((entry) => entry.id)).toEqual([
+      'work-reviewer',
+      'daily-eval',
+      'evening-retro-publish',
+      'blog-github-publish',
+    ]);
   });
 
   it('job.name = "morning"(groupKey) → orchestrator.runGroup 위임(entries 포함)', async () => {
