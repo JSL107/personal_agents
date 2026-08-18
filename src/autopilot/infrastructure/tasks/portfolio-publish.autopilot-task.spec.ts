@@ -15,7 +15,7 @@ const RESULT: PublishPortfolioSiteResult = {
   updatedSkillGroups: [],
   skippedTitles: [],
   failures: [],
-  publicSlugsAfter: null,
+  missingAfterPublish: [],
   agentRunId: 1,
 };
 
@@ -125,25 +125,28 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.summaryText).toContain('PORTFOLIO_SITE_URL 미설정');
   });
 
-  it('공개 확인을 건너뛴 경우 그 사실이 발행 실패로 읽히지 않게 적는다', async () => {
+  it('재조회에서 발행분이 확인되면 그 사실을 적는다', async () => {
     const { task } = createFixture({
       createdProjects: ['a-pr-1'],
-      publicSlugsAfter: null,
+      missingAfterPublish: [],
     });
 
     const result = await task.run(context);
 
-    expect(result.detailText).toContain('건너뜀 (PORTFOLIO_SITE_HANDLE 미설정');
+    expect(result.detailText).toContain('재조회에서 발행분 전부 확인');
   });
 
-  it('공개 페이지에서 발행분을 확인하면 그 결과를 적는다', async () => {
+  it('재조회에 없는 항목은 갱신만 있는 날에도 보고한다', async () => {
+    // 갱신만 있으면 원래 조용히 넘기지만, 저장이 실제로 안 된 신호는 삼키지 않는다.
     const { task } = createFixture({
-      createdProjects: ['a-pr-1'],
-      publicSlugsAfter: ['a-pr-1', 'old-pr-9'],
+      updatedProjects: ['a-pr-1'],
+      missingAfterPublish: ['a-pr-1'],
     });
 
     const result = await task.run(context);
 
-    expect(result.detailText).toContain('발행분 전부 조회됨');
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('재조회에 없는 항목 1건');
+    expect(result.detailText).toContain('실제로 안 됐을 수 있다');
   });
 });

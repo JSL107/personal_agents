@@ -70,7 +70,8 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       result.createdProjects.length > 0 ||
       result.createdSkillGroups.length > 0 ||
       result.failures.length > 0 ||
-      result.skippedTitles.length > 0;
+      result.skippedTitles.length > 0 ||
+      result.missingAfterPublish.length > 0;
     if (!worthReporting) {
       this.logger.log(
         `포트폴리오 사이트 발행 — 변화 없음(갱신 ${result.updatedProjects.length}건)`,
@@ -95,6 +96,11 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     if (result.failures.length > 0) {
       summaryLines.push(`• ⚠️ 실패 ${result.failures.length}건`);
     }
+    if (result.missingAfterPublish.length > 0) {
+      summaryLines.push(
+        `• ⚠️ 발행 후 재조회에 없는 항목 ${result.missingAfterPublish.length}건`,
+      );
+    }
 
     return {
       skip: false,
@@ -117,19 +123,15 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     for (const failure of result.failures) {
       lines.push(`실패 ${failure.target} — ${failure.reason}`);
     }
-    if (result.publicSlugsAfter === null) {
+    if (result.missingAfterPublish.length > 0) {
       lines.push(
-        '공개 페이지 확인: 건너뜀 (PORTFOLIO_SITE_HANDLE 미설정 — 발행 실패와는 무관)',
+        `발행 확인: 재조회에 없는 slug ${result.missingAfterPublish.join(', ')} — 사이트 저장이 실제로 안 됐을 수 있다`,
       );
-    } else {
-      const missing = result.createdProjects.filter(
-        (slug) => !result.publicSlugsAfter?.includes(slug),
-      );
-      lines.push(
-        missing.length === 0
-          ? `공개 페이지 확인: 발행분 전부 조회됨 (총 ${result.publicSlugsAfter.length}건)`
-          : `공개 페이지 확인: ${missing.length}건 미노출 — 비공개 초안이라 정상 (게시 후 노출)`,
-      );
+    } else if (
+      result.createdProjects.length > 0 ||
+      result.updatedProjects.length > 0
+    ) {
+      lines.push('발행 확인: 재조회에서 발행분 전부 확인');
     }
     return lines.join('\n');
   }

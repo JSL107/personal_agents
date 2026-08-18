@@ -47,7 +47,7 @@ const PROFILE: CareerProfileData = {
   meta: { githubLogin: 'JSL107', windowStart: '2026-06-01', prCount: 3 },
 };
 
-const SLUG = 'personal-agents-pr-313';
+const SLUG = 'jsl107-personal-agents-pr-313';
 
 const createFixture = (
   clientOverrides: Partial<PortfolioSiteClientPort> = {},
@@ -92,7 +92,6 @@ const createFixture = (
           data,
         }),
       ),
-    findPublicProjectSlugs: jest.fn().mockResolvedValue(null),
     ...clientOverrides,
   };
   const repository = {
@@ -162,6 +161,24 @@ describe('PublishPortfolioSiteUsecase', () => {
     expect('published' in payload).toBe(false);
   });
 
+  it('갱신할 때 featured 도 건드리지 않는다 (대표작 지정이 매일 풀리면 안 된다)', async () => {
+    const { usecase, client } = createFixture({
+      listProjects: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'existing-1', slug: SLUG, published: true, data: {} },
+        ]),
+    });
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
+    // 사이트는 "필드가 있으면 덮는다" 라서 값을 넣지 않는 것이 유일한 보존 방법이다.
+    expect('featured' in payload).toBe(false);
+    // 본문 필드는 그대로 실려야 한다.
+    expect(payload.problem).toBe('비교할 수 없었다');
+  });
+
   it('프로젝트 1건이 실패해도 스킬 그룹 발행은 계속한다', async () => {
     const { usecase, client } = createFixture({
       createProject: jest.fn().mockRejectedValue(new Error('HTTP 409')),
@@ -203,25 +220,44 @@ describe('PublishPortfolioSiteUsecase', () => {
     expect(result.agentRunId).toBe(99);
   });
 
-  it('공개 페이지 확인이 불가하면 실패가 아니라 null 로 구분한다', async () => {
-    const { usecase } = createFixture();
+  it('발행 후 목록을 다시 읽어 확인한다 (쓰기 응답만 믿지 않는다)', async () => {
+    const listProjects = jest
+      .fn()
+      .mockResolvedValueOnce([]) // 발행 전
+      .mockResolvedValueOnce([
+        { id: 'p1', slug: SLUG, published: false, data: {} },
+      ]); // 발행 후 재조회
+    const { usecase } = createFixture({ listProjects });
 
     const result = await usecase.execute({ slackUserId: 'U1' });
 
-    expect(result.publicSlugsAfter).toBeNull();
-    expect(result.failures).toEqual([]);
+    expect(listProjects).toHaveBeenCalledTimes(2);
+    expect(result.missingAfterPublish).toEqual([]);
   });
 
-  it('공개 페이지 조회 자체가 터지면 실패로 기록한다', async () => {
-    const { usecase } = createFixture({
-      findPublicProjectSlugs: jest.fn().mockRejectedValue(new Error('timeout')),
-    });
+  it('재조회에 없으면 저장이 안 된 것으로 보고한다', async () => {
+    // 사이트가 200을 주고도 실제로 저장하지 않은 경우 — 쓰기 응답만 보면 성공으로 읽힌다.
+    const listProjects = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const { usecase } = createFixture({ listProjects });
 
     const result = await usecase.execute({ slackUserId: 'U1' });
 
-    expect(result.publicSlugsAfter).toBeNull();
-    expect(result.failures).toEqual([
-      { target: 'public-verify', reason: 'timeout' },
-    ]);
+    expect(result.missingAfterPublish).toEqual([SLUG]);
+  });
+
+  it('재조회 자체가 터지면 실패로 기록하고 미확인을 비운다', async () => {
+    const listProjects = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('timeout'));
+    const { usecase } = createFixture({ listProjects });
+
+    const result = await usecase.execute({ slackUserId: 'U1' });
+
+    expect(result.failures).toEqual([{ target: 'verify', reason: 'timeout' }]);
+    expect(result.missingAfterPublish).toEqual([]);
   });
 });
