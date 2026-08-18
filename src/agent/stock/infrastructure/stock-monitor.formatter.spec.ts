@@ -37,28 +37,29 @@ describe('formatPortfolioExposure', () => {
     expect(formatPortfolioExposure(null)).toBe('');
   });
 
-  it('계산된 버킷 순서대로 비중과 달러 환노출을 한 줄로 표시한다', () => {
+  it('계산된 버킷 순서대로 비중과 달러 자산 비중을 보여준다', () => {
     const exposure: PortfolioExposure = {
       buckets: [
         { label: '미국 주식', ratio: 84 },
-        { label: '코스피 숏', ratio: 15 },
+        { label: '코스피 하락 베팅', ratio: 15 },
         { label: '미분류', ratio: 1 },
       ],
       fxUsdRatio: 84,
     };
 
     expect(formatPortfolioExposure(exposure)).toBe(
-      '🌎 미국 주식 84% · 코스피 숏 15% · 미분류 1% (달러 환노출 84%)',
+      '🌎 *자산 배분* — 미국 주식 84% · 코스피 하락 베팅 15% · 미분류 1%\n' +
+        '_달러 자산 84% — 환율이 내리면 원화 평가액도 함께 줄어듭니다_',
     );
   });
 
-  it('달러 환노출이 0이면 보조 괄호를 생략한다', () => {
+  it('달러 자산이 없으면 환율 설명 줄을 생략한다', () => {
     expect(
       formatPortfolioExposure({
         buckets: [{ label: '한국 주식', ratio: 100 }],
         fxUsdRatio: 0,
       }),
-    ).toBe('🌎 한국 주식 100%');
+    ).toBe('🌎 *자산 배분* — 한국 주식 100%');
   });
 });
 
@@ -69,10 +70,14 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-21',
       failures: [],
       marketClosed: false,
+      marketCountry: 'KR',
     });
 
-    expect(result).toContain('3종목');
+    expect(result).toContain('국내 3종목 점검, 새 경보 없음');
     expect(result).toContain('2026-07-21');
+    // 경보 기준이 빠지면 "이상 없음" 이 감시가 죽은 날과 같은 글자가 된다.
+    expect(result).toContain('하루 ±8% 급등락');
+    expect(result).toContain('평균 매입가 대비 -20% 아래 또는 +30% 위');
   });
 
   it('휴장 추정이면 판정 생략을 밝힌다', () => {
@@ -81,9 +86,10 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-21',
       failures: [],
       marketClosed: true,
+      marketCountry: 'KR',
     });
 
-    expect(result).toContain('휴장');
+    expect(result).toContain('국내 시장이 열리지 않아 점검을 건너뜁니다');
   });
 
   it('발화한 종목의 규칙과 값을 담는다', () => {
@@ -92,11 +98,12 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-21',
       failures: [],
       marketClosed: false,
+      marketCountry: 'KR',
     });
 
     expect(result).toContain('SamsungElec');
     expect(result).toContain('-9.2%');
-    expect(result).toContain('8%');
+    expect(result).toContain('경보선 ±8%');
   });
 
   it('미국 종목에 USD 현재가와 원화 환산액을 병기한다', () => {
@@ -111,6 +118,7 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-23',
       failures: [],
       marketClosed: false,
+      marketCountry: 'US',
       priceDisplays: [
         {
           symbol: 'AAPL',
@@ -138,6 +146,7 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-23',
       failures: [],
       marketClosed: false,
+      marketCountry: 'US',
       priceDisplays: [
         {
           symbol: 'AAPL',
@@ -157,6 +166,7 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-23',
       failures: [],
       marketClosed: false,
+      marketCountry: 'KR',
       priceDisplays: [
         {
           symbol: '005930',
@@ -178,40 +188,56 @@ describe('formatStockMonitorSummary', () => {
       lastTradeDate: '2026-07-21',
       failures: ['247540.KQ: timeout'],
       marketClosed: false,
+      marketCountry: 'KR',
     });
 
-    expect(result).toContain('수집 실패');
+    expect(result).toContain('시세를 못 받은 종목 1개');
     expect(result).toContain('247540.KQ');
   });
 });
 
 describe('formatAvgPriceStatuses', () => {
-  it('임계 밖 종목이 없으면 줄을 만들지 않는다', () => {
+  it('경보선 밖 종목이 없으면 줄을 만들지 않는다', () => {
     expect(formatAvgPriceStatuses([])).toBe('');
   });
 
-  it('손실 구간 유지를 기준값과 함께 보여준다', () => {
+  it('산 가격·현재가·보유수량·평가손을 함께 보여준다', () => {
     const result = formatAvgPriceStatuses([
       {
         tickerName: 'KODEX 인버스',
         symbol: '114800',
         percent: -35.68,
         threshold: -20,
+        avgPrice: 3003.4523,
+        currentPrice: 1932.5,
+        quantity: 500,
+        currency: 'KRW',
       },
     ]);
 
     expect(result).toBe(
-      '📌 *평단 대비 임계 밖 1종목*\n' +
-        '• *KODEX 인버스* — 평단 대비 -35.7% 손실 구간 유지 (기준 -20%)',
+      '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*\n' +
+        '• *KODEX 인버스* — 3,003원에 사서 지금 1,933원, -35.7%\n' +
+        '  500주 보유 · 평가손 535,476원 (경보선 -20%)',
     );
   });
 
-  it('상한 밖은 수익 구간으로 보여준다', () => {
+  it('상한 밖은 평가익으로 보여주고 달러는 USD 표기를 유지한다', () => {
     const result = formatAvgPriceStatuses([
-      { tickerName: 'SPYM', symbol: 'SPYM', percent: 41.2, threshold: 30 },
+      {
+        tickerName: 'SPYM',
+        symbol: 'SPYM',
+        percent: 41.2,
+        threshold: 30,
+        avgPrice: 20,
+        currentPrice: 28.24,
+        quantity: 10,
+        currency: 'USD',
+      },
     ]);
 
-    expect(result).toContain('41.2% 수익 구간 유지 (기준 30%)');
+    expect(result).toContain('USD 20.00에 사서 지금 USD 28.24, 41.2%');
+    expect(result).toContain('평가익 USD 82.40 (경보선 30%)');
   });
 });
 
