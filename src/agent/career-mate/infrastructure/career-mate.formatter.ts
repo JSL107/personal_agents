@@ -168,11 +168,25 @@ export const formatResumeAudit = (
   const missingCount = result.items.filter(
     (item) => item.status === 'MISSING',
   ).length;
+  // 모델 총평은 가드가 강등·강제하기 전 판정을 근거로 쓰인다. 가드가 개입한 회차에 총평만
+  // 첫 화면에 두면 "모두 입증됐다" 같은 문장이 강등된 판정과 나란히 뜬다. 총평을 코드가 다시
+  // 쓰지는 않는다 — 그러면 "무엇이 부족한가"라는 질적 내용을 잃고 위 카운트만 남는다.
+  // 대신 개입 사실을 총평 바로 아래에 밝힌다.
+  const guardTouched =
+    result.guard.demotedTitles.length +
+    result.guard.forcedMissing.length +
+    result.guard.droppedTitles.length +
+    result.guard.unjudgedTitles.length;
   const summary = [
     `*이력서 증거력 감사*`,
     `약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${result.items.length}건)`,
     escapeSlackMrkdwn(result.verdict),
-  ].join('\n');
+    guardTouched > 0
+      ? `_위 총평은 모델이 가드 개입 전에 쓴 것입니다 — 가드가 ${guardTouched}건을 조정했으니 항목별 판정을 기준으로 보세요._`
+      : '',
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n');
   const itemLines = result.items.flatMap((item) => {
     const lines = [
       `• *[${AUDIT_STATUS_LABEL[item.status]}] ${escapeSlackMrkdwn(item.title)}* — ${escapeSlackMrkdwn(item.why)}`,
@@ -195,6 +209,11 @@ export const formatResumeAudit = (
     return `• ${escapeSlackMrkdwn(risk.reason)}${rebuttal}`;
   });
   const guardLine = `강등 ${result.guard.demotedTitles.length} / 폐기 ${result.guard.droppedTitles.length} / 누락 ${result.guard.unjudgedTitles.length} / 근거없음 강제 ${result.guard.forcedMissing.length}`;
+  // 약하다고 판정하고 고칠 문장을 주지 않은 항목 — 사용자가 무엇을 고칠지 못 받은 자리다.
+  const rewriteMissingLine =
+    result.guard.rewriteMissing.length > 0
+      ? `*고칠 문장 누락* ${result.guard.rewriteMissing.length}건 — ${result.guard.rewriteMissing.map((title) => escapeSlackMrkdwn(title)).join(', ')}`
+      : '';
   const source = result.jdSource
     ? `*목표 공고* ${escapeSlackMrkdwn(result.jdSource.company)} / ${escapeSlackMrkdwn(result.jdSource.role)}`
     : '';
@@ -204,6 +223,7 @@ export const formatResumeAudit = (
     source,
     jdLines.length > 0 ? `*공고 대조*\n${jdLines.join('\n')}` : '',
     riskLines.length > 0 ? `*탈락 위험*\n${riskLines.join('\n')}` : '',
+    rewriteMissingLine,
     `*가드 결과* ${guardLine}`,
   ]
     .filter((line) => line.length > 0)
