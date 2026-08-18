@@ -5,6 +5,10 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
+  ApplyExitBandResult,
+  ApplyExitBandUsecase,
+} from '../../../paper-trading/application/apply-exit-band.usecase';
+import {
   EvaluateAllAccountsResult,
   EvaluatedAccountEntry,
   EvaluatePaperAccountUsecase,
@@ -32,6 +36,8 @@ interface PaperTradingAudit {
   accountCount: number;
   failedCount: number;
   accounts: PaperTradingAccountAudit[];
+  exitBandOrderCount: number;
+  exitBandAccounts: ApplyExitBandResult['accounts'];
 }
 
 const buildAccountAudit = (
@@ -64,11 +70,28 @@ const buildAccountAudit = (
   };
 };
 
-const buildAudit = (result: EvaluateAllAccountsResult): PaperTradingAudit => ({
+const buildAudit = (
+  result: EvaluateAllAccountsResult,
+  exitBand: ApplyExitBandResult,
+): PaperTradingAudit => ({
   accountCount: result.accounts.length,
   failedCount: result.accounts.filter((entry) => !entry.evaluation).length,
   accounts: result.accounts.map(buildAccountAudit),
+  exitBandOrderCount: exitBand.createdCount,
+  exitBandAccounts: exitBand.accounts,
 });
+
+// 규칙이 건 매도는 다음 거래일 시가에 체결된다. 카드에 안 적으면 다음날 아침 잔고가
+// 바뀐 이유를 사후에 원장으로만 추적해야 한다.
+const buildExitBandText = (exitBand: ApplyExitBandResult): string => {
+  if (exitBand.accounts.length === 0) {
+    return '';
+  }
+  const lines = exitBand.accounts.flatMap((account) =>
+    account.reasons.map((reason) => `• [${account.accountName}] ${reason}`),
+  );
+  return `\n\n*청산 예약 — 다음 거래일 시가 매도 ${exitBand.createdCount}건*\n${lines.join('\n')}`;
+};
 
 // 계좌가 여러 개면 어느 계좌의 평가인지가 리포트에서 드러나야 한다. 포매터는 계좌 이름을
 // 모르므로(단일 계좌 시절 시그니처) 계좌 이름을 섹션 제목으로 앞에 붙인다.
@@ -96,6 +119,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly evaluatePaperAccount: EvaluatePaperAccountUsecase,
+    private readonly applyExitBand: ApplyExitBandUsecase,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
   ) {}
@@ -115,11 +139,11 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         firedAtKst: context.firedAtKst,
       },
       run: async () => {
-        const evaluations = await this.evaluatePaperAccount.executeAll(
-          // firedAtKst는 오케스트레이터가 고정한 KST 날짜다. 17:40 KST 시각으로 바꿔
-          // 재시도 시각이 자정을 넘어도 원래 슬롯의 거래일을 평가하게 한다.
-          new Date(`${context.firedAtKst}T08:40:00.000Z`),
-        );
+        // firedAtKst는 오케스트레이터가 고정한 KST 날짜다. 17:40 KST 시각으로 바꿔
+        // 재시도 시각이 자정을 넘어도 원래 슬롯의 거래일을 평가하게 한다.
+        const executedAt = new Date(`${context.firedAtKst}T08:40:00.000Z`);
+        const evaluations =
+          await this.evaluatePaperAccount.executeAll(executedAt);
         // 한 계좌라도 실패하면 그 계좌의 그날 스냅샷은 비어 있고, 스냅샷은 거래일 단위라
         // 다음 슬롯이 메워주지 못한다(3-B 채점이 시계열로 수익률·낙폭을 계산한다).
         // 성공으로 반환하면 슬롯이 완주 처리되어 BullMQ 재시도(attempts, autopilot.scheduler.ts)
@@ -127,6 +151,13 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         // 재평가는 안전하다 — 스냅샷 적재가 거래일 기준 upsert 라 성공했던 계좌를 다시 평가해도
         // 같은 행을 덮어쓴다. 계좌별 격리(executeAll)는 유지되므로 한 계좌의 예외가 나머지
         // 계좌의 평가·적재를 막지는 않는다.
+        // 밴드는 평가가 끝난 계좌에만 건다. 실패 계좌가 섞여 있어도 성공한 계좌의
+        // 청산까지 미루지 않도록 아래 throw 앞에서 먼저 처리한다. 재시도로 다시
+        // 들어와도 같은 종목에 PENDING 매도가 있으면 repository 가 건너뛴다.
+        const exitBand = await this.applyExitBand.execute({
+          accounts: evaluations.accounts,
+          executedAt,
+        });
         const failedEntries = evaluations.accounts.filter(
           (entry) => !entry.evaluation,
         );
@@ -150,12 +181,13 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         }
         const taskResult: AutopilotTaskResult = {
           skip: false,
-          summaryText: buildSummaryText(evaluations),
+          summaryText:
+            buildSummaryText(evaluations) + buildExitBandText(exitBand),
         };
         return {
           result: taskResult,
           modelUsed: 'deterministic',
-          output: buildAudit(evaluations),
+          output: buildAudit(evaluations, exitBand),
         };
       },
     });

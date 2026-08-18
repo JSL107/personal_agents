@@ -560,3 +560,173 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     expect(transaction.paperAccount.update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PaperTradingPrismaRepository 보유 종목 조회 조건', () => {
+  // 추천이 고르는 유니버스 종목은 KRX 상장법인 목록에서 오므로 source 가 'KRX' 다.
+  // 조회에 source='TOSS' 를 걸면 그 보유가 통째로 빠져 "보유 없음" 으로 읽히고,
+  // 원장(필터 없이 전량 조회)과 대조하는 불변식이 매일 깨져 스냅샷이 적재되지 않는다.
+  const krxPosition = {
+    id: 11,
+    accountId: 7,
+    tickerId: 1976,
+    quantity: new Prisma.Decimal('293'),
+    avgPrice: new Prisma.Decimal('6821.2696'),
+    ticker: {
+      code: '121440',
+      name: '한국종목',
+      tossSymbol: '121440',
+      source: 'KRX',
+    },
+  };
+
+  it('findPositionsWithTicker 는 source 를 조건에 넣지 않고 KRX 출처 보유도 반환한다', async () => {
+    const prisma = { paperPosition: { findMany: jest.fn() } };
+    prisma.paperPosition.findMany.mockResolvedValue([krxPosition]);
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const positions = await repository.findPositionsWithTicker(7);
+
+    expect(positions).toHaveLength(1);
+    expect(positions[0].tickerId).toBe(1976);
+    const where = prisma.paperPosition.findMany.mock.calls[0][0].where;
+    expect(where.ticker).toEqual({
+      market: 'KR',
+      marketCountry: 'KR',
+      tossSymbol: { not: null },
+    });
+    expect(where.ticker.source).toBeUndefined();
+  });
+
+  it('스냅샷 재검증 조회도 같은 조건이라 평가 대상과 불변식 대상이 갈리지 않는다', async () => {
+    const transaction = {
+      paperAccount: {
+        update: jest.fn().mockResolvedValue({
+          id: 7,
+          seedAmount: new Prisma.Decimal('10000000'),
+          cashBalance: new Prisma.Decimal('4054273'),
+        }),
+      },
+      paperPosition: { findMany: jest.fn().mockResolvedValue([krxPosition]) },
+      paperTrade: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const decide = jest.fn().mockReturnValue({ snapshot: null, result: 'ok' });
+
+    await expect(
+      repository.saveEquitySnapshotWithRevalidatedState(7, decide),
+    ).resolves.toBe('ok');
+
+    const where = transaction.paperPosition.findMany.mock.calls[0][0].where;
+    expect(where.ticker).toEqual({
+      market: 'KR',
+      marketCountry: 'KR',
+      tossSymbol: { not: null },
+    });
+    expect(decide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        positions: [expect.objectContaining({ tickerId: 1976 })],
+      }),
+    );
+  });
+});
+
+describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
+  const transaction = {
+    paperAccount: { update: jest.fn() },
+    paperPosition: { findMany: jest.fn() },
+    paperOrder: { findMany: jest.fn(), createMany: jest.fn() },
+  };
+  const prisma = { $transaction: jest.fn() };
+  const repository = new PaperTradingPrismaRepository(
+    prisma as unknown as PrismaService,
+  );
+  const input = {
+    accountId: 5,
+    strategy: 'LONG_TERM' as const,
+    decidedAt: new Date('2026-08-18T08:40:00.000Z'),
+    dataAsOf: new Date('2026-08-18T00:00:00.000Z'),
+    targetTradeDate: new Date('2026-08-19T00:00:00.000Z'),
+    agentRunId: null,
+    orders: [
+      { tickerId: 1976, reason: '익절 밴드 도달' },
+      { tickerId: 178, reason: '손절 밴드 이탈' },
+    ],
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    transaction.paperAccount.update.mockResolvedValue({ id: 5 });
+    transaction.paperOrder.findMany.mockResolvedValue([]);
+    transaction.paperOrder.createMany.mockResolvedValue({ count: 2 });
+    transaction.paperPosition.findMany.mockResolvedValue([
+      { tickerId: 1976, quantity: new Prisma.Decimal('293') },
+      { tickerId: 178, quantity: new Prisma.Decimal('183') },
+    ]);
+  });
+
+  // 판정 시점의 수량을 그대로 쓰면 그 사이 일부 체결이 끼어들었을 때 보유보다 많은
+  // 수량을 팔려다 체결 단계에서 통째로 실패한다.
+  it('수량을 원장의 현재 보유로 다시 맞춰 저장한다', async () => {
+    await expect(repository.createExitBandOrders(input)).resolves.toEqual({
+      created: 2,
+      skippedByPendingSell: 0,
+      skippedByNoPosition: 0,
+    });
+
+    const data = transaction.paperOrder.createMany.mock.calls[0][0].data;
+    expect(data).toEqual([
+      expect.objectContaining({
+        tickerId: 1976,
+        quantity: '293',
+        side: 'SELL',
+      }),
+      expect.objectContaining({ tickerId: 178, quantity: '183', side: 'SELL' }),
+    ]);
+    expect(transaction.paperAccount.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('이미 대기 중인 매도가 있는 종목은 중복으로 걸지 않는다', async () => {
+    transaction.paperOrder.findMany.mockResolvedValue([{ tickerId: 1976 }]);
+
+    await expect(repository.createExitBandOrders(input)).resolves.toEqual({
+      created: 1,
+      skippedByPendingSell: 1,
+      skippedByNoPosition: 0,
+    });
+
+    const data = transaction.paperOrder.createMany.mock.calls[0][0].data;
+    expect(data).toEqual([expect.objectContaining({ tickerId: 178 })]);
+  });
+
+  it('보유가 사라진 종목은 주문을 만들지 않는다', async () => {
+    transaction.paperPosition.findMany.mockResolvedValue([]);
+
+    await expect(repository.createExitBandOrders(input)).resolves.toEqual({
+      created: 0,
+      skippedByPendingSell: 0,
+      skippedByNoPosition: 2,
+    });
+    expect(transaction.paperOrder.createMany).not.toHaveBeenCalled();
+  });
+
+  it('판정 결과가 없으면 transaction 자체를 열지 않는다', async () => {
+    await expect(
+      repository.createExitBandOrders({ ...input, orders: [] }),
+    ).resolves.toEqual({
+      created: 0,
+      skippedByPendingSell: 0,
+      skippedByNoPosition: 0,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
