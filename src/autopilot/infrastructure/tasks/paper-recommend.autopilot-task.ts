@@ -12,6 +12,7 @@ import {
   PaperRecommendationStrategy,
 } from '../../../agent/paper-recommend/domain/paper-recommendation.type';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -30,6 +31,7 @@ const SKIP_REASON_LABELS: Record<PaperRecommendationSkipReason, string> = {
   INSUFFICIENT_CASH: '현금 부족',
   BUY_LIMIT_REACHED: '매수 상한 초과',
   NOT_HELD: '보유 없음',
+  PENDING_ORDER_EXISTS: '주문 대기 중',
 };
 
 const formatResult = (
@@ -92,7 +94,9 @@ const formatCompletedSummary = (
   const lines = [header, ...completed.orders.map(formatOrderLine)];
   if (completed.skipped.length > 0) {
     lines.push(formatSkipSummary(completed));
-  } else if (completed.orders.length === 0) {
+  }
+  // 시세 부재는 제외 사유와 별개의 원인이다 — 제외 항목이 있어도 함께 알린다.
+  if (completed.orders.length === 0) {
     lines.push(emptyReasonLine(completed));
   }
   return lines.join('\n');
@@ -106,15 +110,18 @@ const formatCompletedDetail = (
     `계좌: ${formatAccount(completed)}`,
   ];
   for (const order of completed.orders) {
-    lines.push(formatOrderLine(order), `   판단: ${order.reason}`);
+    lines.push(
+      formatOrderLine(order),
+      `   판단: ${escapeSlackMrkdwn(order.reason)}`,
+    );
   }
   for (const skip of completed.skipped) {
     lines.push(
-      ` • 제외 ${sideLabel(skip.side)} ${skip.name}(${skip.code}) — ` +
+      ` • 제외 ${sideLabel(skip.side)} ${escapeSlackMrkdwn(skip.name)}(${skip.code}) — ` +
         SKIP_REASON_LABELS[skip.reason],
     );
   }
-  if (completed.orders.length === 0 && completed.skipped.length === 0) {
+  if (completed.orders.length === 0) {
     lines.push(emptyReasonLine(completed));
   }
   return lines.join('\n');
@@ -124,6 +131,9 @@ const formatCompletedDetail = (
 const emptyReasonLine = (completed: PaperRecommendationSuccess): string => {
   if (completed.dataAsOf === null) {
     return ' • 시세 데이터 없음 — 주문 생성 안 됨';
+  }
+  if (completed.skipped.length > 0) {
+    return ' • 추천이 모두 제외돼 주문 없음';
   }
   return ' • 매수·매도 추천 없음';
 };
@@ -144,14 +154,24 @@ const formatReturnRate = (returnRate: number | null): string => {
 };
 
 const formatFailureSummary = (failure: PaperRecommendationFailure): string =>
-  `*${STRATEGY_LABELS[failure.strategy]}* 실패 — ${firstLineOf(failure.message)}`;
+  `*${STRATEGY_LABELS[failure.strategy]}* 실패 — ` +
+  escapeSlackMrkdwn(firstLineOf(failure.message));
 
 const formatFailureDetail = (failure: PaperRecommendationFailure): string =>
-  `*${STRATEGY_LABELS[failure.strategy]} 실패 상세*\n${failure.message}`;
+  `*${STRATEGY_LABELS[failure.strategy]} 실패 상세*\n` +
+  escapeSlackMrkdwn(failure.message);
 
 const formatOrderLine = (order: PaperRecommendationOrderDetail): string =>
-  ` • ${sideLabel(order.side)} ${order.name}(${order.code}) ` +
-  `${order.quantity}주 ≈ ${formatMoney(order.estimatedAmount)}`;
+  ` • ${sideLabel(order.side)} ${escapeSlackMrkdwn(order.name)}(${order.code}) ` +
+  `${order.quantity}주 ${formatEstimatedAmount(order.estimatedAmount)}`;
+
+// 종가를 못 구한 매도를 0 원으로 보이게 두면 실제 가치가 있는 주문이 없는 것처럼 읽힌다.
+const formatEstimatedAmount = (estimatedAmount: number | null): string => {
+  if (estimatedAmount === null) {
+    return '(금액 미상)';
+  }
+  return `≈ ${formatMoney(estimatedAmount)}`;
+};
 
 const formatSkipSummary = (completed: PaperRecommendationSuccess): string => {
   const counts = new Map<PaperRecommendationSkipReason, number>();

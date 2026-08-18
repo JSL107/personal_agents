@@ -765,4 +765,166 @@ describe('GeneratePaperRecommendationUsecase', () => {
       { strategy: 'LONG_TERM', message: 'screen failed' },
     ]);
   });
+  it('미체결 매도 주문 때문에 빠진 추천을 제외 사유로 남긴다', async () => {
+    // 제약 함수 앞에서 걸러지는 경로라 기록하지 않으면 '추천 없음' 으로 오인된다.
+    screenUniverse.execute.mockResolvedValue({
+      strategy: 'LONG_TERM',
+      ruleVersion: 2,
+      universeCount: 1,
+      evaluatedCount: 1,
+      staleCount: 0,
+      passedCount: 0,
+      asOf: '2026-08-13',
+      includedIndicators: [
+        {
+          tickerId: 81,
+          code: '005930',
+          name: '삼성전자',
+          indicators: { ...indicators, close: 70_000 },
+        },
+      ],
+      stocks: [],
+    });
+    repository.findPositionsWithTicker.mockResolvedValue([
+      {
+        id: 1,
+        accountId: 41,
+        tickerId: 81,
+        quantity: { toString: () => '3' } as never,
+        avgPrice: { toString: () => '50000' } as never,
+        ticker: { code: '005930', name: '삼성전자', tossSymbol: '005930' },
+      },
+    ]);
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [{ code: '005930', reason: '추세 훼손' }],
+        buys: [],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    repository.saveRecommendationAtomically.mockImplementation(
+      async ({ decide }) =>
+        decide({
+          account: {
+            id: 41,
+            seedAmount: { toString: () => '10000000' } as never,
+            cashBalance: { toString: () => '4050000' } as never,
+          },
+          positions: [
+            {
+              id: 1,
+              accountId: 41,
+              tickerId: 81,
+              quantity: { toString: () => '3' } as never,
+              avgPrice: { toString: () => '50000' } as never,
+              ticker: {
+                code: '005930',
+                name: '삼성전자',
+                tossSymbol: '005930',
+              },
+            },
+          ],
+          latestValuation: null,
+          existingOrders: [
+            {
+              tickerId: 81,
+              side: 'SELL',
+              quantity: { toString: () => '3' } as never,
+              indicatorSnapshot: null,
+            },
+          ],
+        }).result,
+    );
+
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+
+    expect(result.completed[0].orders).toEqual([]);
+    expect(result.completed[0].skipped).toEqual([
+      {
+        side: 'SELL',
+        code: '005930',
+        name: '삼성전자',
+        reason: 'PENDING_ORDER_EXISTS',
+      },
+    ]);
+  });
+
+  it('종가를 못 구한 매도의 예상금액을 0 이 아니라 null 로 둔다', async () => {
+    // 보유 종목 시세가 stale 하면 includedIndicators 에 실리지 않는다.
+    screenUniverse.execute.mockResolvedValue({
+      strategy: 'LONG_TERM',
+      ruleVersion: 2,
+      universeCount: 1,
+      evaluatedCount: 1,
+      staleCount: 1,
+      passedCount: 0,
+      asOf: '2026-08-13',
+      includedIndicators: [],
+      stocks: [],
+    });
+    repository.findPositionsWithTicker.mockResolvedValue([
+      {
+        id: 1,
+        accountId: 41,
+        tickerId: 81,
+        quantity: { toString: () => '3' } as never,
+        avgPrice: { toString: () => '50000' } as never,
+        ticker: { code: '005930', name: '삼성전자', tossSymbol: '005930' },
+      },
+    ]);
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [{ code: '005930', reason: '추세 훼손' }],
+        buys: [],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    repository.saveRecommendationAtomically.mockImplementation(
+      async ({ decide }) =>
+        decide({
+          account: {
+            id: 41,
+            seedAmount: { toString: () => '10000000' } as never,
+            cashBalance: { toString: () => '4050000' } as never,
+          },
+          positions: [
+            {
+              id: 1,
+              accountId: 41,
+              tickerId: 81,
+              quantity: { toString: () => '3' } as never,
+              avgPrice: { toString: () => '50000' } as never,
+              ticker: {
+                code: '005930',
+                name: '삼성전자',
+                tossSymbol: '005930',
+              },
+            },
+          ],
+          latestValuation: null,
+          existingOrders: [],
+        }).result,
+    );
+
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+
+    expect(result.completed[0].orders).toEqual([
+      {
+        side: 'SELL',
+        code: '005930',
+        name: '삼성전자',
+        quantity: 3,
+        estimatedAmount: null,
+        reason: '추세 훼손',
+      },
+    ]);
+  });
 });

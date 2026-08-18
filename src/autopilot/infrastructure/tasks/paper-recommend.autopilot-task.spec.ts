@@ -325,4 +325,202 @@ describe('PaperRecommendAutopilotTask', () => {
       '현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)',
     );
   });
+  it('시세 없음 안내를 제외 집계와 함께 보여준다', async () => {
+    const recommendation = {
+      execute: jest.fn().mockResolvedValue({
+        completed: [
+          {
+            strategy: 'LONG_TERM',
+            accountId: 11,
+            ordersCreated: 0,
+            agentRunId: 31,
+            dataAsOf: null,
+            orders: [],
+            skipped: [
+              {
+                side: 'BUY',
+                code: '005930',
+                name: '삼성전자',
+                reason: 'ALREADY_HELD',
+              },
+            ],
+            account: {
+              cashBalance: 4_050_000,
+              totalValue: 10_120_000,
+              positionCount: 3,
+              returnRate: null,
+            },
+          },
+        ],
+        failed: [],
+      }),
+    };
+    const task = new PaperRecommendAutopilotTask(
+      recommendation as unknown as GeneratePaperRecommendationUsecase,
+    );
+
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-17',
+    });
+
+    expect(result.summaryText).toContain(' • 제외 1건 — 보유 중·중복 1');
+    expect(result.summaryText).toContain(
+      ' • 시세 데이터 없음 — 주문 생성 안 됨',
+    );
+    expect(result.summaryText).not.toContain('평가 1,012만(');
+  });
+
+  it('종가를 못 구한 매도를 0원 대신 금액 미상으로 표시한다', async () => {
+    const recommendation = {
+      execute: jest.fn().mockResolvedValue({
+        completed: [
+          {
+            strategy: 'SWING',
+            accountId: 12,
+            ordersCreated: 1,
+            agentRunId: 32,
+            dataAsOf: '2026-08-17',
+            orders: [
+              {
+                side: 'SELL',
+                code: '185490',
+                name: '아이진',
+                quantity: 985,
+                estimatedAmount: null,
+                reason: '추세 훼손',
+              },
+            ],
+            skipped: [],
+            account: {
+              cashBalance: 254_202,
+              totalValue: 10_208_337,
+              positionCount: 6,
+              returnRate: 2.0834,
+            },
+          },
+        ],
+        failed: [],
+      }),
+    };
+    const task = new PaperRecommendAutopilotTask(
+      recommendation as unknown as GeneratePaperRecommendationUsecase,
+    );
+
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-17',
+    });
+
+    expect(result.summaryText).toContain(
+      ' • 매도 아이진(185490) 985주 (금액 미상)',
+    );
+    expect(result.summaryText).not.toContain('0원');
+  });
+
+  it('모델 자유 텍스트의 Slack 제어문자를 escape 한다', async () => {
+    const recommendation = {
+      execute: jest.fn().mockResolvedValue({
+        completed: [
+          {
+            strategy: 'LONG_TERM',
+            accountId: 11,
+            ordersCreated: 1,
+            agentRunId: 31,
+            dataAsOf: '2026-08-17',
+            orders: [
+              {
+                side: 'BUY',
+                code: '021240',
+                name: '코웨이 <b>',
+                quantity: 20,
+                estimatedAmount: 1_950_000,
+                reason: 'PER <10 & 배당 매력 <!channel>',
+              },
+            ],
+            skipped: [],
+            account: {
+              cashBalance: 4_050_000,
+              totalValue: 10_120_000,
+              positionCount: 3,
+              returnRate: 0.4868,
+            },
+          },
+        ],
+        failed: [],
+      }),
+    };
+    const task = new PaperRecommendAutopilotTask(
+      recommendation as unknown as GeneratePaperRecommendationUsecase,
+    );
+
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-17',
+    });
+
+    expect(result.detailText).toContain(
+      '판단: PER &lt;10 &amp; 배당 매력 &lt;!channel&gt;',
+    );
+    expect(result.summaryText).toContain('코웨이 &lt;b&gt;(021240)');
+    expect(result.detailText).not.toContain('<!channel>');
+  });
+
+  it('한 전략 성공·다른 전략 실패가 섞여도 전략 순서대로 조합한다', async () => {
+    const recommendation = {
+      execute: jest.fn().mockResolvedValue({
+        completed: [
+          {
+            strategy: 'SWING',
+            accountId: 12,
+            ordersCreated: 1,
+            agentRunId: 32,
+            dataAsOf: '2026-08-17',
+            orders: [
+              {
+                side: 'BUY',
+                code: '007340',
+                name: 'DN오토모티브',
+                quantity: 26,
+                estimatedAmount: 1_531_685,
+                reason: '모멘텀 안정',
+              },
+            ],
+            skipped: [],
+            account: {
+              cashBalance: 254_202,
+              totalValue: 10_208_337,
+              positionCount: 6,
+              returnRate: 2.0834,
+            },
+          },
+        ],
+        failed: [
+          { strategy: 'LONG_TERM', message: '모델 호출 실패\n쿼터 소진' },
+        ],
+      }),
+    };
+    const task = new PaperRecommendAutopilotTask(
+      recommendation as unknown as GeneratePaperRecommendationUsecase,
+    );
+
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-17',
+    });
+
+    expect(result.summaryText).toBe(
+      '*모의투자 추천* — 장기 실패 · 스윙 1건\n' +
+        '*장기* 실패 — 모델 호출 실패\n' +
+        '*스윙* 매수 1 · 매도 0 | 현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)\n' +
+        ' • 매수 DN오토모티브(007340) 26주 ≈ 153만',
+    );
+    expect(result.detailText).toBe(
+      '*장기 실패 상세*\n모델 호출 실패\n쿼터 소진\n\n' +
+        '*스윙 상세*\n' +
+        '계좌: 현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)\n' +
+        ' • 매수 DN오토모티브(007340) 26주 ≈ 153만\n' +
+        '   판단: 모멘텀 안정',
+    );
+  });
 });

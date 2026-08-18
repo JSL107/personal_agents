@@ -65,7 +65,9 @@ export type PaperRecommendationSkipReason =
   | 'ZERO_WEIGHT'
   | 'INSUFFICIENT_CASH'
   | 'BUY_LIMIT_REACHED'
-  | 'NOT_HELD';
+  | 'NOT_HELD'
+  // 같은 종목의 미체결 매도 주문이 이미 있어 이번 회차에서 빠진 건.
+  | 'PENDING_ORDER_EXISTS';
 
 export interface PaperRecommendationSkip {
   side: 'BUY' | 'SELL';

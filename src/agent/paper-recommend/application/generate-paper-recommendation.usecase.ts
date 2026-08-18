@@ -21,6 +21,7 @@ import { constrainPaperRecommendation } from '../domain/paper-recommendation.con
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
 import {
   ConstrainedPaperRecommendation,
+  PaperRecommendationSkip,
   PaperRecommendationSkipReason,
   PaperRecommendationStrategy,
 } from '../domain/paper-recommendation.type';
@@ -58,7 +59,8 @@ export interface PaperRecommendationOrderDetail {
   code: string;
   name: string;
   quantity: number;
-  estimatedAmount: number;
+  // 전일 종가 × 수량. 보유 종목 시세가 stale 해 종가를 못 구하면 null (0 원으로 오인되지 않게).
+  estimatedAmount: number | null;
   reason: string;
 }
 
@@ -335,6 +337,9 @@ export class GeneratePaperRecommendationUsecase {
       const stock = stocksByTickerId.get(tickerId);
       return stock ? [{ tickerId, code: stock.code, quantity: 1 }] : [];
     });
+    // 이미 대기 중인 매도 주문 때문에 제약 함수까지 가지 못한 추천은 skipped 에 남지 않는다 —
+    // 그대로 두면 Slack 이 '추천 없음' 으로 단정하므로 여기서 직접 기록한다.
+    const pendingSells: PaperRecommendationSkip[] = [];
     const constrained = constrainPaperRecommendation({
       recommendation: {
         ...recommendation,
@@ -343,12 +348,28 @@ export class GeneratePaperRecommendationUsecase {
             (item) => item.ticker.code === sell.code,
           );
           if (position) {
-            return !pendingSellTickerIds.has(position.tickerId);
+            if (pendingSellTickerIds.has(position.tickerId)) {
+              pendingSells.push({
+                side: 'SELL',
+                code: sell.code,
+                reason: 'PENDING_ORDER_EXISTS',
+              });
+              return false;
+            }
+            return true;
           }
           const candidate = screen.stocks.find(
             (stock) => stock.code === sell.code,
           );
-          return !candidate || !pendingSellTickerIds.has(candidate.tickerId);
+          if (candidate && pendingSellTickerIds.has(candidate.tickerId)) {
+            pendingSells.push({
+              side: 'SELL',
+              code: sell.code,
+              reason: 'PENDING_ORDER_EXISTS',
+            });
+            return false;
+          }
+          return true;
         }),
       },
       candidates: screen.stocks.map((stock) => ({
@@ -383,7 +404,13 @@ export class GeneratePaperRecommendationUsecase {
       agentRunId,
       constrained,
     });
-    return { constrained, orders };
+    return {
+      constrained: {
+        ...constrained,
+        skipped: [...pendingSells, ...constrained.skipped],
+      },
+      orders,
+    };
   }
 
   private toOrderDetails({
@@ -412,7 +439,10 @@ export class GeneratePaperRecommendationUsecase {
         code: sell.code,
         name: namesByCode.get(sell.code) ?? sell.code,
         quantity: sell.quantity,
-        estimatedAmount: sell.quantity * (closesByCode.get(sell.code) ?? 0),
+        estimatedAmount: estimatedAmountOf(
+          sell.quantity,
+          closesByCode.get(sell.code),
+        ),
         reason: sell.reason,
       })),
       ...lockedRecommendation.constrained.buys.map((buy) => ({
@@ -493,6 +523,17 @@ export class GeneratePaperRecommendationUsecase {
     }));
   }
 }
+
+// 종가를 못 구한 매도는 0 원이 아니라 '금액 미상' 이다 — 둘을 같은 값으로 뭉치지 않는다.
+const estimatedAmountOf = (
+  quantity: number,
+  close: number | undefined,
+): number | null => {
+  if (typeof close !== 'number' || !Number.isFinite(close) || close <= 0) {
+    return null;
+  }
+  return quantity * close;
+};
 
 const errorMessageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
