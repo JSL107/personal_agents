@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
@@ -8,6 +9,7 @@ import {
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
 import { AnalyzeJdGapUsecase } from '../application/analyze-jd-gap.usecase';
+import { AuditResumeUsecase } from '../application/audit-resume.usecase';
 import { BuildCareerProfileUsecase } from '../application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from '../application/calibrate-resume.usecase';
 import { ReflectPrUsecase } from '../application/reflect-pr.usecase';
@@ -24,6 +26,7 @@ import {
   formatProfileSummary,
   formatPrRetro,
   formatResume,
+  formatResumeAudit,
   formatUnknownCareerMate,
 } from './career-mate.formatter';
 
@@ -38,6 +41,7 @@ export class CareerMateDispatcher implements AgentDispatcher {
     private readonly renderPortfolio: RenderPortfolioUsecase,
     private readonly analyzeJdGap: AnalyzeJdGapUsecase,
     private readonly calibrateResume: CalibrateResumeUsecase,
+    private readonly auditResume: AuditResumeUsecase,
     private readonly reflectPr: ReflectPrUsecase,
   ) {}
 
@@ -103,6 +107,18 @@ export class CareerMateDispatcher implements AgentDispatcher {
           outcome.modelUsed,
           // slash 는 사용자가 직접 요청 → 전체 리포트를 그대로 전달(단일 메시지).
           formatCalibrationReport(outcome.result).full,
+        );
+      }
+      case 'AUDIT_RESUME': {
+        const outcome = await this.auditResume.execute({
+          slackUserId,
+          triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+        });
+        return this.toOutcome(
+          outcome.agentRunId,
+          outcome.result,
+          outcome.modelUsed,
+          formatResumeAudit(outcome.result).full,
         );
       }
       case 'REFLECT_PR': {

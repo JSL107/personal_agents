@@ -58,6 +58,33 @@ const makeDispatcher = (intentText: string) => {
       agentRunId: 11,
     }),
   };
+  const auditResume = {
+    execute: jest.fn().mockResolvedValue({
+      result: {
+        verdict: '수치 근거를 보강해야 한다.',
+        items: [
+          {
+            title: '배포 안정화',
+            status: 'WEAK',
+            quote: '배포를 안정화했다.',
+            why: '수치가 없다.',
+            rewrite: null,
+          },
+        ],
+        jdFindings: [],
+        rejectionRisks: [],
+        guard: {
+          demotedTitles: [],
+          droppedTitles: [],
+          unjudgedTitles: [],
+          forcedMissing: [],
+        },
+        jdSource: null,
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 12,
+    }),
+  };
   const reflectPr = {
     execute: jest.fn().mockResolvedValue({
       agentRunId: 21,
@@ -85,6 +112,7 @@ const makeDispatcher = (intentText: string) => {
     renderPortfolio as never,
     analyzeJdGap as never,
     calibrateResume as never,
+    auditResume as never,
     reflectPr as never,
   );
   return {
@@ -94,6 +122,7 @@ const makeDispatcher = (intentText: string) => {
     renderPortfolio,
     analyzeJdGap,
     calibrateResume,
+    auditResume,
     reflectPr,
   };
 };
@@ -159,6 +188,22 @@ describe('CareerMateDispatcher', () => {
       slackUserId: 'U1',
     });
     expect(outcome.formattedText).toContain('IaC');
+  });
+
+  it('AUDIT_RESUME 의도면 수동 trigger로 감사하고 전체 리포트를 반환한다', async () => {
+    const d = makeDispatcher('{"action":"AUDIT_RESUME"}');
+
+    const outcome = await d.dispatcher.dispatch({
+      slackUserId: 'U1',
+      text: '성과 증거 점검',
+    } as never);
+
+    expect(d.auditResume.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: 'SLACK_MENTION_CAREER_MATE',
+    });
+    expect(outcome.formattedText).toContain('배포 안정화');
+    expect(outcome.agentRunId).toBe(12);
   });
 
   it('REFLECT_PR 의도면 reflectPr 를 prText 와 함께 호출한다', async () => {

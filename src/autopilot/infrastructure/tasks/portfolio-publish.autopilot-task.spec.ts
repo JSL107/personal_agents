@@ -1,9 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 
+import { AuditResumeUsecase } from '../../../agent/career-mate/application/audit-resume.usecase';
 import {
   PublishPortfolioSiteResult,
   PublishPortfolioSiteUsecase,
 } from '../../../agent/career-mate/application/publish-portfolio-site.usecase';
+import { ResumeAuditResult } from '../../../agent/career-mate/domain/career-mate.type';
 import { PortfolioPublishAutopilotTask } from './portfolio-publish.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-18' };
@@ -19,6 +21,20 @@ const RESULT: PublishPortfolioSiteResult = {
   agentRunId: 1,
 };
 
+const AUDIT_RESULT: ResumeAuditResult = {
+  verdict: '증거가 확인된다.',
+  items: [],
+  jdFindings: [],
+  rejectionRisks: [],
+  guard: {
+    demotedTitles: [],
+    droppedTitles: [],
+    unjudgedTitles: [],
+    forcedMissing: [],
+  },
+  jdSource: null,
+};
+
 const createFixture = (
   result: Partial<PublishPortfolioSiteResult> = {},
   env: Record<string, string | undefined> = {
@@ -29,19 +45,28 @@ const createFixture = (
   const publish = {
     execute: jest.fn().mockResolvedValue({ ...RESULT, ...result }),
   };
+  const audit = {
+    execute: jest.fn().mockResolvedValue({
+      result: AUDIT_RESULT,
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    }),
+  };
   const config = { get: jest.fn((key: string) => env[key]) };
   return {
     task: new PortfolioPublishAutopilotTask(
       publish as unknown as PublishPortfolioSiteUsecase,
+      audit as unknown as AuditResumeUsecase,
       config as unknown as ConfigService,
     ),
     publish,
+    audit,
   };
 };
 
 describe('PortfolioPublishAutopilotTask', () => {
   it('자동화 토큰이 없으면 발행을 시도하지 않는다', async () => {
-    const { task, publish } = createFixture(
+    const { task, publish, audit } = createFixture(
       {},
       {
         PORTFOLIO_SITE_URL: 'https://portfolio.example.com',
@@ -50,10 +75,11 @@ describe('PortfolioPublishAutopilotTask', () => {
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
     expect(publish.execute).not.toHaveBeenCalled();
+    expect(audit.execute).not.toHaveBeenCalled();
   });
 
   it('사이트 주소가 없으면 발행을 시도하지 않는다', async () => {
-    const { task, publish } = createFixture(
+    const { task, publish, audit } = createFixture(
       {},
       {
         PORTFOLIO_AUTOMATION_TOKEN: 'token',
@@ -62,6 +88,7 @@ describe('PortfolioPublishAutopilotTask', () => {
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
     expect(publish.execute).not.toHaveBeenCalled();
+    expect(audit.execute).not.toHaveBeenCalled();
   });
 
   it('갱신만 있는 날은 보고하지 않는다 (같은 성과를 매일 다시 밀어 넣으므로)', async () => {
@@ -113,8 +140,10 @@ describe('PortfolioPublishAutopilotTask', () => {
         key === 'PORTFOLIO_SITE_URL' ? 'https://x' : 'token',
       ),
     };
+    const audit = { execute: jest.fn() };
     const task = new PortfolioPublishAutopilotTask(
       publish as unknown as PublishPortfolioSiteUsecase,
+      audit as unknown as AuditResumeUsecase,
       config as unknown as ConfigService,
     );
 
@@ -123,6 +152,116 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('발행 실패');
     expect(result.summaryText).toContain('PORTFOLIO_SITE_URL 미설정');
+    expect(audit.execute).not.toHaveBeenCalled();
+  });
+
+  it('감사가 실패해도 기존 발행 요약과 상세를 그대로 보고한다', async () => {
+    const { task, publish, audit } = createFixture({
+      createdProjects: ['a-pr-1'],
+    });
+    audit.execute.mockRejectedValueOnce(new Error('audit timeout'));
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('새 프로젝트 1건');
+    expect(result.detailText).toContain('a-pr-1');
+    expect(`${result.summaryText}\n${result.detailText}`).toContain(
+      '감사 실패 — audit timeout',
+    );
+    expect(publish.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      audit.execute.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('발행 변화가 없어도 약한 성과가 있으면 감사 결과를 보고한다', async () => {
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        verdict: '정량 근거를 보강해야 한다.',
+        items: [
+          {
+            title: '배포 안정화',
+            status: 'WEAK',
+            quote: '배포를 안정화했다.',
+            why: '결과 수치와 영향 범위가 없다.',
+            rewrite: {
+              before: '배포를 안정화했다.',
+              after:
+                '배포를 안정화해 (수치 필요: 실패율과 배포 시간) 변화를 확인했다.',
+              frame: 'STAR3',
+            },
+          },
+        ],
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '이력서 감사 — 약함 1건 / 근거없음 0건 (총 1건)',
+    );
+    expect(result.detailText).toContain('배포 안정화');
+    expect(result.detailText).toContain('결과 수치와 영향 범위가 없다.');
+    expect(result.detailText).toContain('수치 필요');
+  });
+
+  it('발행 변화가 없고 감사 결과가 모두 PROVEN이면 보고하지 않는다', async () => {
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        items: [
+          {
+            title: '장애율 감소',
+            status: 'PROVEN',
+            quote: '장애율을 30% 줄였다.',
+            why: '정량 결과가 있다.',
+            rewrite: null,
+          },
+        ],
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    });
+
+    await expect(task.run(context)).resolves.toEqual({ skip: true });
+  });
+
+  it('발행 변화가 없어도 미판정·폐기 같은 guard 이상 징후를 보고한다', async () => {
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        items: [
+          {
+            title: '모델 누락 성과',
+            status: 'UNJUDGED',
+            quote: '',
+            why: '모델이 이 성과를 판정하지 않았습니다.',
+            rewrite: null,
+          },
+        ],
+        guard: {
+          ...AUDIT_RESULT.guard,
+          droppedTitles: ['환각 성과'],
+          unjudgedTitles: ['모델 누락 성과'],
+        },
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('가드 경고');
+    expect(result.detailText).toContain('미판정');
+    expect(result.detailText).toContain('폐기 1 / 누락 1');
   });
 
   it('재조회에서 발행분이 확인되면 그 사실을 적는다', async () => {

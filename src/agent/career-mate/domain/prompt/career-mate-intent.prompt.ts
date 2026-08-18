@@ -11,7 +11,8 @@ action 은 다음 중 하나:
 - "RENDER_RESUME": 이력서/성과 bullet 출력 ("이력서 뽑아줘", "성과 bullet", "resume").
 - "RENDER_PORTFOLIO": 포트폴리오 페이지 생성 ("포트폴리오 정리", "포트폴리오 페이지").
 - "ANALYZE_JD_GAP": 목표 공고(JD)와 내 역량을 대조해 갭/블로그주제 분석 ("이 공고 갭 분석", "이 JD 로 뭐가 부족한지", "이 포지션 분석해줘"). JD 본문이 함께 붙어온다.
-- "CALIBRATE_RESUME": 내 이력서/프로필을 현재 채용 기준과 대조해 보정 점검 ("이력서 점검해줘", "내 이력서 요즘 기준에 맞나", "이력서 보정", "이력서 검토").
+- "CALIBRATE_RESUME": 내 이력서/프로필을 현재 채용 기준과 대조해 보정 점검 ("이력서 점검해줘", "내 이력서 요즘 기준에 맞나", "이력서 보정", "이력서 검토"). (표현·트렌드 위주. 항목별 증거 판정은 AUDIT_RESUME)
+- "AUDIT_RESUME": 이력서 성과가 증거(수치·근거 PR)로 뒷받침되는지 항목별로 감사 ("이력서 감사", "성과 증거 점검", "내 성과 증거 있나", "이력서 근거 점검"). 등록된 목표 공고가 있으면 함께 대조한다.
 - "REFLECT_PR": 특정 PR 하나 이상을 회고해서 이력서/포트폴리오에 반영 ("이 PR 회고해줘", "이 PR들 묶어서 회고", "이 작업들 회고해서 성과로"). PR URL 또는 owner/repo#번호 가 하나 이상 함께 온다. 이어진 여러 PR 이면 전부 넘긴다.
 - "UNKNOWN": 위에 해당 없음.
 
@@ -25,6 +26,7 @@ const VALID_ACTIONS: CareerMateAction[] = [
   'RENDER_PORTFOLIO',
   'ANALYZE_JD_GAP',
   'CALIBRATE_RESUME',
+  'AUDIT_RESUME',
   'REFLECT_PR',
   'UNKNOWN',
 ];
