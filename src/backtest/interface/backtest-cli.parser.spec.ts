@@ -82,6 +82,31 @@ describe('parseBacktestCliArguments', () => {
     ).toThrow('YYYY-MM-DD');
   });
 
+  // 형식만 보면 2026-02-30 이 통과하고 new Date 가 3월로 조용히 넘긴다. 출력에는 입력한
+  // 날짜가 남고 조회 구간만 밀려, 요청하지 않은 기간의 성적을 받는다.
+  it('달력에 없는 날짜는 거부한다', () => {
+    expect(() =>
+      parseBacktestCliArguments([
+        '--strategy',
+        'SWING',
+        '--from',
+        '2026-02-30',
+        '--to',
+        '2026-08-14',
+      ]),
+    ).toThrow('실제 존재하는 날짜');
+    expect(() =>
+      parseBacktestCliArguments([
+        '--strategy',
+        'SWING',
+        '--from',
+        '2026-08-01',
+        '--to',
+        '2026-13-01',
+      ]),
+    ).toThrow('실제 존재하는 날짜');
+  });
+
   it('필수 날짜가 빠지면 실패한다', () => {
     expect(() =>
       parseBacktestCliArguments(['--strategy', 'SWING', '--to', '2026-08-14']),

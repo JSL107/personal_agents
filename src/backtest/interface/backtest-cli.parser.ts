@@ -51,6 +51,18 @@ const readDate = (argv: string[], key: string): string => {
       `--${key} 는 YYYY-MM-DD 형식이어야 합니다. 받은 값: ${value}\n${BACKTEST_CLI_USAGE}`,
     );
   }
+  // 형식만 맞으면 2026-02-30 처럼 없는 날짜가 통과하고, new Date 가 3월로 조용히 넘긴다.
+  // 출력에는 입력한 날짜가 남고 조회 구간만 밀려 의도하지 않은 기간의 성적이 나온다.
+  // 실전 체결의 parseTradeDate 와 같은 방식으로 왕복 대조한다.
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    throw new Error(
+      `--${key} 는 실제 존재하는 날짜여야 합니다. 받은 값: ${value}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
   return value;
 };
 
