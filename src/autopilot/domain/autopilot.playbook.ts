@@ -27,6 +27,8 @@ import {
   DEFAULT_PAPER_SCORE_TIMEZONE,
   DEFAULT_PAPER_TRADING_CRON,
   DEFAULT_PAPER_TRADING_TIMEZONE,
+  DEFAULT_PORTFOLIO_PUBLISH_CRON,
+  DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE,
   DEFAULT_PORTFOLIO_WARMUP_CRON,
   DEFAULT_PORTFOLIO_WARMUP_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
@@ -398,6 +400,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_PORTFOLIO_WARMUP_CRON,
       timezone: DEFAULT_PORTFOLIO_WARMUP_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 포트폴리오 사이트 발행 — 경력 프로필을 비공개 초안으로 밀어 넣는다.
+  // 공개는 사이트 편집기에서 사람이 누르므로 자동 발행에 외부 공개 부작용이 없어 T0_AUTO.
+  {
+    id: 'portfolio-publish',
+    taskId: 'portfolio-publish',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PORTFOLIO_PUBLISH_CRON,
+      timezone: DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },
