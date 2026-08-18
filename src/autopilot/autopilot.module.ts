@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BlogModule } from '../agent/blog/blog.module';
+import { CareerMateModule } from '../agent/career-mate/career-mate.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CtoModule } from '../agent/cto/cto.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
@@ -61,6 +62,7 @@ import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.auto
 import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
+import { PortfolioPublishAutopilotTask } from './infrastructure/tasks/portfolio-publish.autopilot-task';
 import { PortfolioWarmupAutopilotTask } from './infrastructure/tasks/portfolio-warmup.autopilot-task';
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
@@ -85,6 +87,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     GithubModule,
     BlogModule,
+    CareerMateModule,
     ModelRouterModule,
     PoEvalModule,
     StockModule,
@@ -125,6 +128,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
+    PortfolioPublishAutopilotTask,
     PortfolioWarmupAutopilotTask,
     PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
@@ -212,6 +216,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
+        portfolioPublish: PortfolioPublishAutopilotTask,
         portfolioWarmup: PortfolioWarmupAutopilotTask,
         previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
@@ -243,6 +248,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport,
         runRetro,
         runSweeper,
+        portfolioPublish,
         portfolioWarmup,
         previewSweeper,
         knowledgeLint,
@@ -275,6 +281,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
+        PortfolioPublishAutopilotTask,
         PortfolioWarmupAutopilotTask,
         PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,

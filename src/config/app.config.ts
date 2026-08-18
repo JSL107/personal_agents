@@ -97,6 +97,14 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  PORTFOLIO_AUTOMATION_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  PORTFOLIO_SITE_HANDLE?: string;
+
+  @IsOptional()
+  @IsString()
   BLOG_PUBLISH_REPO?: string;
 
   @IsOptional()
