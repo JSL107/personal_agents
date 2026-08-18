@@ -23,6 +23,7 @@ const buildUsecase = (overrides?: {
   markdown?: string;
   completionText?: string;
   forbiddenTerms?: string;
+  omitKeys?: string[];
 }) => {
   const notionClient = {
     queryDraftPages: jest.fn().mockResolvedValue(overrides?.drafts ?? [draft]),
@@ -75,6 +76,9 @@ const buildUsecase = (overrides?: {
             ? '회사명,서비스명'
             : overrides.forbiddenTerms,
       };
+      if (overrides?.omitKeys?.includes(key)) {
+        return undefined;
+      }
       return values[key];
     }),
   } as unknown as jest.Mocked<ConfigService>;
@@ -508,9 +512,34 @@ describe('PublishNotionDraftUsecase', () => {
 
   // autopilot 이 이 판정으로 skip 여부를 정한다. mock 이 아니라 실제 ConfigService 경로로 확인한다 —
   // 잘못되면 설정 없는 환경에서 매일 FAILED AgentRun 이 쌓이거나, 반대로 조용히 안 돈다.
+  it('속성명 env 가 없으면 기본값 상태/초안 으로 Notion 을 조회한다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      omitKeys: ['BLOG_NOTION_PROP_STATUS', 'BLOG_NOTION_STATUS_DRAFT_VALUE'],
+    });
+
+    await usecase.buildPublishCandidate({ slackUserId: 'U1' });
+
+    expect(notionClient.queryDraftPages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusPropertyName: '상태',
+        statusValue: '초안',
+      }),
+    );
+  });
+
   describe('isPublishConfigured', () => {
     it('필수 설정이 모두 있으면 true 를 반환한다', () => {
       const { usecase } = buildUsecase();
+
+      expect(usecase.isPublishConfigured()).toBe(true);
+    });
+
+    // 실제 .env 에 BLOG_NOTION_PROP_STATUS 가 없어 저녁 task 가 조용히 건너뛴 적이 있다.
+    // 기존 발행 경로는 DEFAULT_BLOG_PROP 으로 동작하므로 여기서만 필수로 요구하면 안 된다.
+    it('노션 속성명·초안 상태값 env 가 없어도 기본값으로 동작한다', () => {
+      const { usecase } = buildUsecase({
+        omitKeys: ['BLOG_NOTION_PROP_STATUS', 'BLOG_NOTION_STATUS_DRAFT_VALUE'],
+      });
 
       expect(usecase.isPublishConfigured()).toBe(true);
     });
