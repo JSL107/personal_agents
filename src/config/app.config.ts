@@ -93,6 +93,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  PORTFOLIO_SITE_URL?: string;
+
+  @IsOptional()
+  @IsString()
   BLOG_PUBLISH_REPO?: string;
 
   @IsOptional()

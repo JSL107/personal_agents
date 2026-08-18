@@ -111,6 +111,18 @@ export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/3 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
 
+// 포트폴리오 사이트(Portfolio OS) 워밍업 — 10분 주기, 08~24시(KST)만.
+//
+// 사이트 API 는 Render 무료 플랜이라 15분 유휴면 잠들고, 깨어나는 첫 요청이 18.4초 걸린다
+// (2026-08-18 실측). 주기가 유휴 기준 15분보다 짧아야 잠들기 전에 깨울 수 있어 10분으로 둔다.
+//
+// 시간대를 24시간으로 넓히지 않는 이유 — 무료 플랜은 워크스페이스당 월 750 인스턴스 시간이고,
+// 소진하면 그 달이 끝날 때까지 무료 웹 서비스 전체가 정지된다. 잠든 동안은 시간을 소비하지
+// 않으므로 워밍업 범위가 곧 과금 시간이다: 24시간 상시는 31일 달에 744시간(여유 6시간)이라
+// 무료 서비스를 하나만 더 만들어도 초과하고, 08~24시는 496시간(여유 254시간)이다.
+export const DEFAULT_PORTFOLIO_WARMUP_CRON = '*/10 8-23 * * *';
+export const DEFAULT_PORTFOLIO_WARMUP_TIMEZONE = 'Asia/Seoul';
+
 export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * 5';
 export const DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_AI_CLI_ENV_APPLY_CRON = '0 10 * * *';

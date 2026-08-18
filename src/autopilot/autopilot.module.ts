@@ -61,6 +61,7 @@ import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.auto
 import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
+import { PortfolioWarmupAutopilotTask } from './infrastructure/tasks/portfolio-warmup.autopilot-task';
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
@@ -124,6 +125,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
+    PortfolioWarmupAutopilotTask,
     PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
     DocsSyncAuditTask,
@@ -210,6 +212,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
+        portfolioWarmup: PortfolioWarmupAutopilotTask,
         previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
@@ -240,6 +243,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         impactReport,
         runRetro,
         runSweeper,
+        portfolioWarmup,
         previewSweeper,
         knowledgeLint,
         docsSyncAudit,
@@ -271,6 +275,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
+        PortfolioWarmupAutopilotTask,
         PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,
         DocsSyncAuditTask,
