@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { ApplyExitBandUsecase } from '../../../paper-trading/application/apply-exit-band.usecase';
 import {
   EvaluateAccountResult,
   EvaluatedAccountEntry,
@@ -72,6 +73,9 @@ const createFixture = (input?: {
       ],
     }),
   };
+  const exitBand = {
+    execute: jest.fn().mockResolvedValue({ accounts: [], createdCount: 0 }),
+  };
   const config = {
     get: jest.fn().mockReturnValue(input?.enabled ?? 'true'),
   };
@@ -88,10 +92,12 @@ const createFixture = (input?: {
   return {
     task: new PaperTradingAutopilotTask(
       evaluate as unknown as EvaluatePaperAccountUsecase,
+      exitBand as unknown as ApplyExitBandUsecase,
       config as unknown as ConfigService,
       agentRun as unknown as AgentRunService,
     ),
     evaluate,
+    exitBand,
     config,
     agentRun,
   };
@@ -167,6 +173,8 @@ describe('PaperTradingAutopilotTask', () => {
           failureReason: null,
         },
       ],
+      exitBandOrderCount: 0,
+      exitBandAccounts: [],
     });
   });
 
@@ -184,7 +192,46 @@ describe('PaperTradingAutopilotTask', () => {
       accountCount: 0,
       failedCount: 0,
       accounts: [],
+      exitBandOrderCount: 0,
+      exitBandAccounts: [],
     });
+  });
+
+  it('밴드 청산이 걸리면 카드와 원장에 예약 내역을 남긴다', async () => {
+    const { task, exitBand } = createFixture();
+    exitBand.execute.mockResolvedValue({
+      createdCount: 1,
+      accounts: [
+        {
+          accountName: 'LONG_TERM',
+          created: 1,
+          skippedByPendingSell: 0,
+          skippedByNoPosition: 0,
+          reasons: ['121440 익절 밴드 도달: 평가 손익률 5.26% (기준 +2% 이상)'],
+        },
+      ],
+    });
+
+    const result = await task.run(context);
+
+    expect(result.summaryText).toContain(
+      '청산 예약 — 다음 거래일 시가 매도 1건',
+    );
+    expect(result.summaryText).toContain('[LONG_TERM] 121440 익절 밴드 도달');
+  });
+
+  // 실패 계좌가 섞여 있어도 성공한 계좌의 청산은 그 회차에 걸려야 한다.
+  // 뒤로 미루면 재시도가 실패하는 동안 손절선이 계속 열려 있는다.
+  it('평가 실패로 던지기 전에 밴드를 먼저 적용한다', async () => {
+    const { task, exitBand } = createFixture({
+      accounts: [
+        succeededEntry('LONG_TERM'),
+        failedEntry('SWING', '시세 조회 실패'),
+      ],
+    });
+
+    await expect(task.run(context)).rejects.toThrow('평가하지 못했습니다');
+    expect(exitBand.execute).toHaveBeenCalledTimes(1);
   });
 
   // 부분 실패를 성공으로 반환하면 슬롯이 완주 처리되어 BullMQ 재시도가 돌지 않는다.

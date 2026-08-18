@@ -5,12 +5,14 @@ import { NestFactory } from '@nestjs/core';
 import { GeneratePaperRecommendationUsecase } from '../src/agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { PaperRecommendModule } from '../src/agent/paper-recommend/paper-recommend.module';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
+import { ApplyExitBandUsecase } from '../src/paper-trading/application/apply-exit-band.usecase';
 import { EvaluatePaperAccountUsecase } from '../src/paper-trading/application/evaluate-paper-account.usecase';
 import { FillPendingOrdersUsecase } from '../src/paper-trading/application/fill-pending-orders.usecase';
 import { GetPaperTradingStatusUsecase } from '../src/paper-trading/application/get-paper-trading-status.usecase';
 import { OpenPaperAccountUsecase } from '../src/paper-trading/application/open-paper-account.usecase';
 import { RecordPaperTradeUsecase } from '../src/paper-trading/application/record-paper-trade.usecase';
 import { ScoreRecommendationsUsecase } from '../src/paper-trading/application/score-recommendations.usecase';
+import { decideExitBandOrders } from '../src/paper-trading/domain/exit-band';
 import {
   parsePaperMarket,
   parseTradeStrategy,
@@ -39,7 +41,7 @@ const USAGE =
   '  pnpm exec ts-node scripts/paper-trade.ts buy --code <종목코드> --name <종목명> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--strategy <LONG_TERM|SWING|MANUAL>] [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts sell --code <종목코드> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts status\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>] [--apply-exit-band true]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts recommend\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts fill\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts score [--at <YYYY-MM-DD>]';
@@ -187,23 +189,86 @@ const main = async (): Promise<void> => {
       if (Number.isNaN(executedAt.getTime())) {
         throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${at}`);
       }
-      const result = await application
+      // autopilot 이 매일 부르는 것과 같은 executeAll 을 쓴다. 여기서 계좌 이름을 하나
+      // 지정하면 실증 입구가 그 계좌만 보게 되어, 정작 추천이 매매하는 계좌
+      // (LONG_TERM/SWING)의 고장을 수동 실행으로는 영영 재현할 수 없다.
+      const evaluations = await application
         .get(EvaluatePaperAccountUsecase)
-        .execute({ accountName: 'DEFAULT', executedAt });
-      console.log(formatPaperTradingReport(result));
+        .executeAll(executedAt);
+      for (const entry of evaluations.accounts) {
+        console.log(`\n[${entry.accountName}]`);
+        if (!entry.evaluation) {
+          console.log(`평가 실패: ${entry.failureReason ?? '사유 미상'}`);
+          continue;
+        }
+        console.log(formatPaperTradingReport(entry.evaluation));
+      }
       console.log('\n판정 상세');
-      console.table([
-        {
-          skipped: result.skipped,
-          skipReason: result.skipReason ?? '',
-          tradeDate: result.tradeDate ?? '',
-          positionCount: result.positionCount,
-          staleTickerCount: result.staleTickerCount,
-          unpriced: result.unpricedPositions.length,
-          invariantViolations: result.invariantViolations.length,
-          suspiciousJumps: result.suspiciousJumps.length,
-        },
-      ]);
+      console.table(
+        evaluations.accounts.map((entry) => ({
+          account: entry.accountName,
+          skipped: entry.evaluation?.skipped ?? true,
+          skipReason: entry.evaluation?.skipReason ?? entry.failureReason ?? '',
+          tradeDate: entry.evaluation?.tradeDate ?? '',
+          positionCount: entry.evaluation?.positionCount ?? 0,
+          staleTickerCount: entry.evaluation?.staleTickerCount ?? 0,
+          unpriced: entry.evaluation?.unpricedPositions.length ?? 0,
+          invariantViolations:
+            entry.evaluation?.invariantViolations.length ?? 0,
+          suspiciousJumps: entry.evaluation?.suspiciousJumps.length ?? 0,
+        })),
+      );
+      // 밴드 청산은 평가 직후 같은 슬롯에서 도는 규칙이라 여기서도 이어서 실행한다.
+      // 이 줄이 없으면 밴드 동작을 확인할 유일한 길이 저녁 cron 을 기다리는 것뿐이다.
+      // --apply-exit-band 없이는 판정만 찍고 주문은 만들지 않는다(수동 실행이
+      // 실수로 매도를 거는 걸 막는다).
+      //
+      // 값을 정확히 검사한다. 존재 여부만 보면 `--apply-exit-band false` 로 명시적으로
+      // 끄려 한 실행이 오히려 매도를 걸어, 안전장치가 정반대로 동작한다.
+      const applyExitBandValue = parsed.options.get('apply-exit-band');
+      if (
+        applyExitBandValue !== undefined &&
+        applyExitBandValue !== 'true' &&
+        applyExitBandValue !== 'false'
+      ) {
+        throw new Error(
+          `--apply-exit-band 는 true 또는 false 만 받습니다: ${applyExitBandValue}\n${USAGE}`,
+        );
+      }
+      const applyExitBand = applyExitBandValue === 'true';
+      const exitBand = await application.get(ApplyExitBandUsecase).execute({
+        accounts: applyExitBand ? evaluations.accounts : [],
+        executedAt,
+      });
+      console.log(
+        `\n밴드 청산 (${applyExitBand ? '주문 생성' : '판정만 — 주문을 만들려면 --apply-exit-band true'})`,
+      );
+      if (!applyExitBand) {
+        const preview = evaluations.accounts.flatMap((entry) =>
+          decideExitBandOrders(
+            // usecase 와 같은 조건이어야 미리보기가 실제 적용 결과를 예고한다.
+            // 스냅샷이 막힌 회차는 usecase 가 매도를 걸지 않으므로 여기서도 뺀다.
+            (entry.evaluation && !entry.evaluation.skipped
+              ? entry.evaluation.positions
+              : []
+            ).map((position) => ({
+              tickerId: position.tickerId,
+              tickerCode: position.tickerCode,
+              quantity: position.quantity,
+              returnRate: position.returnRate,
+              isStale: position.isStale,
+            })),
+          ).map((decision) => ({
+            account: entry.accountName,
+            code: decision.tickerCode,
+            reason: decision.reason,
+            returnRatePercent: decision.returnRatePercent,
+          })),
+        );
+        console.table(preview);
+        return;
+      }
+      console.table(exitBand.accounts);
       return;
     }
 

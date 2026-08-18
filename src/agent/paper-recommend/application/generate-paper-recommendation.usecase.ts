@@ -6,6 +6,7 @@ import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
+import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
 import {
   LockedPaperRecommendationState,
   PaperAccountRecord,
@@ -16,10 +17,7 @@ import {
   ScreenUniverseResult,
   ScreenUniverseUsecase,
 } from '../../../screener/application/screen-universe.usecase';
-import {
-  constrainPaperRecommendation,
-  nextWeekday,
-} from '../domain/paper-recommendation.constraint';
+import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
 import { PaperRecommendationStrategy } from '../domain/paper-recommendation.type';
 import {

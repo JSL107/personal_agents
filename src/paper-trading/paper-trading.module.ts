@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ApplyExitBandUsecase } from './application/apply-exit-band.usecase';
 import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-account.usecase';
 import { FillPendingOrdersUsecase } from './application/fill-pending-orders.usecase';
 import { GetPaperTradingStatusUsecase } from './application/get-paper-trading-status.usecase';
@@ -19,6 +20,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     OpenPaperAccountUsecase,
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
+    ApplyExitBandUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     // 자연어 진입 — RouterModule 의 AGENT_DISPATCHER_PORT useFactory 가 중앙에서 inject 한다.
@@ -30,6 +32,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     OpenPaperAccountUsecase,
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
+    ApplyExitBandUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     PaperTradeDispatcher,
