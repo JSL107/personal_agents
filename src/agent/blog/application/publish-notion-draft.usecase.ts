@@ -228,6 +228,24 @@ export class PublishNotionDraftUsecase {
     };
   }
 
+  // 자동 실행(autopilot) 전용 사전 점검. 수동 경로는 설정이 없으면 **실패해야** 사용자가
+  // 무엇을 안 채웠는지 알 수 있지만, 매일 도는 cron 에서 같은 예외는 FAILED AgentRun 만
+  // 쌓는 소음이 된다. 블로그 발행을 설정하지 않은 환경에서는 task 가 조용히 건너뛰게 한다.
+  isPublishConfigured(): boolean {
+    try {
+      this.getPublishCandidateContext();
+      return true;
+    } catch (error: unknown) {
+      if (
+        error instanceof BlogException &&
+        error.blogErrorCode === BlogErrorCode.PUBLISH_CONFIG_REQUIRED
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   private getPublishCandidateContext(): PublishCandidateContext {
     return {
       forbiddenTerms: this.getForbiddenTerms(),

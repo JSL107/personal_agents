@@ -505,4 +505,20 @@ describe('PublishNotionDraftUsecase', () => {
     ).rejects.toMatchObject({ blogErrorCode: 'BLOG_ANONYMIZE_PARSE_FAILED' });
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
+
+  // autopilot 이 이 판정으로 skip 여부를 정한다. mock 이 아니라 실제 ConfigService 경로로 확인한다 —
+  // 잘못되면 설정 없는 환경에서 매일 FAILED AgentRun 이 쌓이거나, 반대로 조용히 안 돈다.
+  describe('isPublishConfigured', () => {
+    it('필수 설정이 모두 있으면 true 를 반환한다', () => {
+      const { usecase } = buildUsecase();
+
+      expect(usecase.isPublishConfigured()).toBe(true);
+    });
+
+    it('금지어 목록이 비어 있으면 false 를 반환한다 (.env.example 기본값)', () => {
+      const { usecase } = buildUsecase({ forbiddenTerms: '' });
+
+      expect(usecase.isPublishConfigured()).toBe(false);
+    });
+  });
 });

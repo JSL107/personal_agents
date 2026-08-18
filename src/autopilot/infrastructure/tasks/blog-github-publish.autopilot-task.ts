@@ -30,6 +30,13 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
     if (this.config.get<string>('BLOG_GITHUB_PUBLISH_ENABLED') === 'false') {
       return { skip: true };
     }
+    // 블로그 발행 설정(.env)이 비어 있는 환경 — `.env.example` 기본값이 그렇다 — 에서는
+    // 아래 후보 준비가 매번 PUBLISH_CONFIG_REQUIRED 로 죽어 evening digest 에 실패 줄과
+    // FAILED AgentRun 만 매일 쌓인다. 설정하지 않은 환경에서는 기능이 없는 것처럼 조용히 넘긴다.
+    // (수동 `/blog-publish` 는 그대로 실패한다 — 사용자가 무엇을 안 채웠는지 알아야 한다.)
+    if (!this.publishNotionDraft.isPublishConfigured()) {
+      return { skip: true };
+    }
 
     // AgentRun 으로 감싼다 — 실패율·소요시간을 보는 도구는 agent_run 하나뿐이라, 여기 없으면
     // "안 돌았는지 / 돌다 깨졌는지" 가 똑같이 '기록 없음' 으로 보인다. 저녁마다 익명화 모델을
@@ -66,6 +73,9 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: `Notion 블로그 초안 '${candidate.title}'의 GitHub 발행 승인을 기다립니다.`,
+      // 카드의 previewText 는 제목·경로·요약뿐이다. 실제로 공개 저장소에 커밋될 본문을 보지 않고
+      // ✅ 를 누르면 익명화가 잘못된 글이 그대로 공개된다. 전문을 스레드 댓글로 함께 보낸다.
+      detailText: `*발행될 파일* \`${candidate.path}\`\n\n${candidate.content}`,
       preview: {
         kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
         payload: candidate.payload,

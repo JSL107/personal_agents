@@ -34,8 +34,10 @@ const READY_CANDIDATE: BlogPublishCandidate = {
 const buildTask = (options: {
   enabled?: string;
   candidate?: BlogPublishCandidate;
+  configured?: boolean;
 }) => {
   const publishNotionDraft = {
+    isPublishConfigured: jest.fn().mockReturnValue(options.configured ?? true),
     buildPublishCandidate: jest.fn().mockResolvedValue({
       candidate: options.candidate ?? READY_CANDIDATE,
       modelUsed: 'codex-cli',
@@ -77,6 +79,18 @@ describe('BlogGithubPublishAutopilotTask', () => {
 
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
     expect(publishNotionDraft.buildPublishCandidate).not.toHaveBeenCalled();
+  });
+
+  // .env.example 기본값처럼 블로그 설정이 비어 있는 환경에서 매일 FAILED AgentRun 이
+  // 쌓이면 안 된다. 기능을 안 쓰는 환경에서는 없는 것처럼 조용해야 한다.
+  it('블로그 발행 설정이 비어 있으면 후보를 만들지 않고 skip한다', async () => {
+    const { task, publishNotionDraft, agentRunService } = buildTask({
+      configured: false,
+    });
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+    expect(publishNotionDraft.buildPublishCandidate).not.toHaveBeenCalled();
+    expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
   it('초안이 없으면 빈 알림 없이 skip한다', async () => {
@@ -135,12 +149,26 @@ describe('BlogGithubPublishAutopilotTask', () => {
     );
   });
 
+  // 공개 저장소에 커밋되는 내용이라, 카드 요약만 보고 ✅ 를 누르면 익명화 실패를 못 잡는다.
+  it('실제 커밋될 전문을 스레드(detailText)로 함께 보낸다', async () => {
+    const { task } = buildTask({});
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.detailText).toContain(
+      'src/content/posts/2026-08-18-safe-post.md',
+    );
+    // 카드 요약이 아니라 파일 본문이 실려야 한다.
+    expect(result.detailText).toContain('본문');
+    expect(result.detailText).toContain('title: "안전한 글"');
+  });
+
   it('기본 ON에서 준비된 후보를 orchestrator용 단수 preview로 반환한다', async () => {
     const { task } = buildTask({});
 
     const result = await task.run(CONTEXT);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       skip: false,
       summaryText:
         "Notion 블로그 초안 '안전한 글'의 GitHub 발행 승인을 기다립니다.",
