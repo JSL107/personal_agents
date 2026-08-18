@@ -1,3 +1,39 @@
+# 이력서 증거력 감사 게이트 (2026-08-18)
+
+**Goal:** `.ai/design.md` 계약대로 자동 포트폴리오 발행 뒤 비차단 이력서 감사를 실행하고, 수동 `AUDIT_RESUME` 진입점과 30일 목표 공고 대조를 제공한다.
+
+**Architecture:** `ResumeAuditData`는 LLM 원형 출력, `applyAuditGuards`는 환각 폐기·인용 강등·증거 없음 강제·누락 보완을 담당한다. 목표 공고는 별도 `CareerTargetJdRepositoryPort`와 Prisma adapter로 저장한다. autopilot은 발행 성공 뒤 감사만 별도 `try/catch`로 실행해 감사 실패가 발행 결과를 바꾸지 않게 한다.
+
+**Contract:** `.ai/design.md` 299줄이 source of truth다. Prisma/pnpm만 사용하고 `db:push`, commit, 새 env·dependency·발행 차단은 금지한다. `catch (error)`, 중괄호, `try` 안 `return await`, 별도 반환 interface, kebab-case/role suffix와 한국어 주석·로그를 지킨다.
+
+- [x] RED: `resume-audit.prompt.spec.ts`에 정상 JSON·code fence·잘못된 status·rewrite 형태·nullable rebuttal을 추가하고 feature 부재 실패를 확인한다.
+- [x] GREEN: `career-mate.type.ts` 감사 타입/`AUDIT_RESUME`/trigger input과 `resume-audit.prompt.ts`의 설계서 전문·builder·전수 parser 검증을 구현한다.
+- [x] RED: `resume-audit.guard.spec.ts`에 환각 폐기, 원문 밖 quote 강등, evidence 0 강제, `UNJUDGED` 보완, 정렬을 추가하고 실패를 확인한다.
+- [x] GREEN: `resume-audit.guard.ts`에 whitespace 정규화와 결정론 후처리를 구현한다. 강등 로직 mutation 대조군에서 신규 테스트가 실패하는지 확인한 뒤 복원한다.
+- [x] RED: `career-target-jd.prisma.repository.spec.ts`에 저장 mapping, 최신 30일 조회, 만료 경계를 추가하고 실패를 확인한다.
+- [x] GREEN: `prisma/schema.prisma`, 별도 repository port/Prisma adapter를 구현하고 `career-mate.module.ts`에 provider를 배선한다.
+- [x] RED: `analyze-jd-gap.usecase.spec.ts`에 분석 성공 후 저장과 저장 실패 시 기존 응답 보존을 추가하고 실패를 확인한다.
+- [x] GREEN: 첫 비어있지 않은 3줄의 최단 줄=role, 나머지 첫 줄=company, 실패=`(미상)` 추출과 비차단 저장을 `AnalyzeJdGapUsecase`에 구현한다.
+- [x] RED: `audit-resume.usecase.spec.ts`에 공고 있음/없음, 성과 0건 model 미호출을 추가하고 실패를 확인한다.
+- [x] GREEN: `AuditResumeUsecase`를 `AgentRunService.execute` 안에 구현하고 30일 공고·guard·`jdSource`·감사 카운트 로그를 연결한다.
+- [x] RED/GREEN: intent parser, dispatcher, formatter specs에 `AUDIT_RESUME` 분류·실행·escaped summary/full 출력 케이스를 추가하고 `career-mate-intent.prompt.ts`, dispatcher/formatter/module을 배선한다.
+- [x] RED: `portfolio-publish.autopilot-task.spec.ts`에 감사 throw 시 기존 발행 summary 유지, 변화 없는 날 WEAK/MISSING 보고, PROVEN-only 비보고를 추가하고 실패를 확인한다.
+- [x] GREEN: `AUTOPILOT_RESUME_AUDIT_CRON` TriggerType과 autopilot module DI를 추가하고, 발행 성공 뒤 별도 `try/catch` 감사 및 summary/detail 합성을 구현한다.
+- [x] focused: `pnpm exec jest src/agent/career-mate src/autopilot`을 실행하고 신규/변경 spec을 mutation 관점으로 검토한다.
+- [x] VERIFY: `pnpm lint:check`, `pnpm build`, 전체 `pnpm test`, `pnpm docs:check`, `pnpm prisma format`, `pnpm prisma:generate`, `git diff --check`를 fresh 실행해 exit code와 suite/test 수를 기록한다.
+- [x] REVIEW: 최종 diff를 설계 §1~§11, 보안/DI/Prisma/public surface/비차단 계약과 대조하고 `.ai/implementation-summary.md` 및 아래 Review를 실제 증거로 작성한다.
+
+## Review
+
+- 발행 성공 뒤 감사만 별도 `try/catch`에서 실행한다. 감사 예외가 나도 기존 신규 프로젝트 summary/detail과 호출 순서를 보존하는 회귀 테스트가 통과한다.
+- quote guard는 prompt와 같은 `상황:/과제:/행동:/결과:` corpus를 사용한다. 원문 밖 quote는 강등되고 라벨을 포함한 정상 quote는 PROVEN을 유지한다.
+- LLM 누락은 `UNJUDGED`, 환각은 폐기, evidence 0은 `MISSING`으로 기록한다. guard-only 이상 징후도 자동 보고에서 조용히 사라지지 않는다.
+- focused 60 suites/489 tests, 전체 일반 403 suites/3,385 tests와 code-graph 5 suites/40 tests가 통과했다. baseline보다 일반 4 suites/29 tests 증가했다.
+- fresh `pnpm lint:check`, `pnpm build`, `pnpm test`, `pnpm docs:check`, `pnpm prisma format`, `pnpm prisma:generate`, `git diff --check`가 모두 exit 0이다.
+- 독립 최종 리뷰는 Blocker 0건, Should Fix 0건이다. `db:push`·실DB 접속·commit은 실행하지 않았다.
+
+---
+
 # 모의투자 추천 Slack 알림 상세화 (2026-08-18)
 
 **Goal:** `.ai/design.md` 계약대로 추천 결과에 매매·제외·계좌 정보를 보존하고 Slack summary/detail에 전략별로 표시한다.

@@ -37,6 +37,13 @@ describe('parseCareerMateIntent', () => {
     );
   });
 
+  it('AUDIT_RESUME 를 파싱한다', () => {
+    expect(parseCareerMateIntent('{"action":"AUDIT_RESUME"}').action).toBe(
+      'AUDIT_RESUME',
+    );
+    expect(CAREER_MATE_INTENT_SYSTEM_PROMPT).toContain('성과 증거 점검');
+  });
+
   it('REFLECT_PR 를 파싱한다', () => {
     expect(parseCareerMateIntent('{"action":"REFLECT_PR"}').action).toBe(
       'REFLECT_PR',

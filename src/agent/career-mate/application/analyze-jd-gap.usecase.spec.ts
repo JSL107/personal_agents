@@ -35,6 +35,9 @@ const makeDeps = (latest: unknown) => {
     }),
   };
   const createPreview = { execute: jest.fn().mockResolvedValue({ id: 'pv1' }) };
+  const targetJdRepository = {
+    save: jest.fn().mockResolvedValue(undefined),
+  };
   const agentRunService = {
     execute: jest.fn(
       async ({
@@ -54,6 +57,7 @@ const makeDeps = (latest: unknown) => {
     buildProfile,
     modelRouter,
     createPreview,
+    targetJdRepository,
     agentRunService,
   };
 };
@@ -64,6 +68,7 @@ const build = (d: ReturnType<typeof makeDeps>) =>
     d.buildProfile as never,
     d.modelRouter as never,
     d.createPreview as never,
+    d.targetJdRepository as never,
     d.agentRunService as never,
   );
 
@@ -100,6 +105,45 @@ describe('AnalyzeJdGapUsecase', () => {
     expect(d.buildProfile.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
   });
 
+  it('분석 성공 후 공고 회사와 역할을 결정론으로 추출해 저장한다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+    const jdText = '이대리 주식회사\n백엔드\nNestJS 운영 경험 필수';
+
+    await build(d).execute({ slackUserId: 'U1', jdText });
+
+    expect(d.targetJdRepository.save).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      company: '이대리 주식회사',
+      role: '백엔드',
+      jdText,
+    });
+  });
+
+  it('공고 저장이 실패해도 갭 분석과 preview 응답을 보존한다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+    d.targetJdRepository.save.mockRejectedValueOnce(
+      new Error('DB unavailable'),
+    );
+
+    const outcome = await build(d).execute({
+      slackUserId: 'U1',
+      jdText: 'K8s 필수',
+    });
+
+    expect(outcome.result.gaps).toContain('K8s');
+    expect(d.createPreview.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('JD 비어있으면 JD_EMPTY 예외', async () => {
     const d = makeDeps({
       id: 1,
@@ -110,5 +154,6 @@ describe('AnalyzeJdGapUsecase', () => {
     await expect(
       build(d).execute({ slackUserId: 'U1', jdText: '   ' }),
     ).rejects.toBeInstanceOf(CareerMateException);
+    expect(d.targetJdRepository.save).not.toHaveBeenCalled();
   });
 });

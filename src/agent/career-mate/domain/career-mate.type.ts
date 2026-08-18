@@ -1,3 +1,5 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+
 export type SkillCategory = 'LANGUAGE' | 'FRAMEWORK' | 'DOMAIN' | 'TOOL';
 export type Proficiency = 'FAMILIAR' | 'PROFICIENT' | 'EXPERT';
 
@@ -33,12 +35,81 @@ export interface CareerProfileData {
   meta: { githubLogin: string; windowStart: string; prCount: number };
 }
 
+export type AuditStatus = 'PROVEN' | 'WEAK' | 'MISSING' | 'UNJUDGED';
+export type RewriteFrame = 'STAR3' | 'STAR4';
+
+export interface AuditRewrite {
+  before: string;
+  after: string;
+  frame: RewriteFrame;
+}
+
+export interface AuditItem {
+  title: string;
+  status: AuditStatus;
+  quote: string;
+  why: string;
+  rewrite: AuditRewrite | null;
+}
+
+export type JdPriority = 'MUST' | 'PREFERRED' | 'IMPLICIT';
+
+export interface JdFinding {
+  requirement: string;
+  priority: JdPriority;
+  status: AuditStatus;
+  quote: string;
+  why: string;
+}
+
+export interface RejectionRisk {
+  reason: string;
+  rebuttal: string | null;
+}
+
+export interface ResumeAuditData {
+  verdict: string;
+  items: AuditItem[];
+  jdFindings: JdFinding[];
+  rejectionRisks: RejectionRisk[];
+}
+
+export interface ResumeAuditResult extends ResumeAuditData {
+  guard: {
+    demotedTitles: string[];
+    droppedTitles: string[];
+    unjudgedTitles: string[];
+    forcedMissing: string[];
+    // WEAK/MISSING 인데 모델이 rewrite 를 주지 않은 성과. 파싱을 거부하지 않고 여기서 드러낸다.
+    rewriteMissing: string[];
+  };
+  jdSource: {
+    company: string;
+    role: string;
+    registeredAt: string;
+  } | null;
+}
+
+export interface AuditResumeInput {
+  slackUserId: string;
+  triggerType: TriggerType;
+}
+
+export interface CareerTargetJdData {
+  id: number;
+  company: string;
+  role: string;
+  jdText: string;
+  createdAt: Date;
+}
+
 export type CareerMateAction =
   | 'BUILD_PROFILE'
   | 'RENDER_RESUME'
   | 'RENDER_PORTFOLIO'
   | 'ANALYZE_JD_GAP'
   | 'CALIBRATE_RESUME'
+  | 'AUDIT_RESUME'
   | 'REFLECT_PR'
   | 'UNKNOWN';
 
