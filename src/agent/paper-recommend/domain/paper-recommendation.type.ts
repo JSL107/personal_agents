@@ -56,11 +56,29 @@ export interface PaperRecommendationBuyIntent {
   reason: string;
   weightPercent: number;
   quantity: number;
+  close: number;
+}
+
+export type PaperRecommendationSkipReason =
+  | 'ALREADY_HELD'
+  | 'NOT_IN_CANDIDATES'
+  | 'ZERO_WEIGHT'
+  | 'INSUFFICIENT_CASH'
+  | 'BUY_LIMIT_REACHED'
+  | 'NOT_HELD'
+  // 같은 종목의 미체결 매도 주문이 이미 있어 이번 회차에서 빠진 건.
+  | 'PENDING_ORDER_EXISTS';
+
+export interface PaperRecommendationSkip {
+  side: 'BUY' | 'SELL';
+  code: string;
+  reason: PaperRecommendationSkipReason;
 }
 
 export interface ConstrainedPaperRecommendation {
   sells: PaperRecommendationSellIntent[];
   buys: PaperRecommendationBuyIntent[];
+  skipped: PaperRecommendationSkip[];
 }
 
 export interface BuildPaperRecommendationPromptInput {

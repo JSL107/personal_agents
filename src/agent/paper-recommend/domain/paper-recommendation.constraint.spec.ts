@@ -151,4 +151,96 @@ describe('constrainPaperRecommendation', () => {
 
     expect(result.buys).toEqual([]);
   });
+
+  it('보유·후보 이탈·0 비중·현금 부족 매수의 제외 사유를 기록한다', () => {
+    const result = constrainPaperRecommendation({
+      recommendation: {
+        sells: [],
+        buys: [
+          { code: '000001', weightPercent: 20, reason: '보유 중' },
+          { code: '999999', weightPercent: 20, reason: '후보 밖' },
+          { code: '000002', weightPercent: 0, reason: '비중 없음' },
+          { code: '000003', weightPercent: 20, reason: '현금 부족' },
+        ],
+      },
+      candidates,
+      positions: [{ tickerId: 1, code: '000001', quantity: 7 }],
+      cashBalance: 1,
+      accountValuation: 10_000_000,
+    });
+
+    expect(result.skipped).toEqual([
+      { side: 'BUY', code: '000001', reason: 'ALREADY_HELD' },
+      { side: 'BUY', code: '999999', reason: 'NOT_IN_CANDIDATES' },
+      { side: 'BUY', code: '000002', reason: 'ZERO_WEIGHT' },
+      { side: 'BUY', code: '000003', reason: 'INSUFFICIENT_CASH' },
+    ]);
+  });
+
+  it('매수 상한 뒤 남은 추천을 모두 기록하고 기존 세 매수 결과는 바꾸지 않는다', () => {
+    const result = constrainPaperRecommendation({
+      recommendation: {
+        sells: [],
+        buys: [
+          { code: '000001', weightPercent: 20, reason: '첫째' },
+          { code: '000002', weightPercent: 15, reason: '둘째' },
+          { code: '000003', weightPercent: 10, reason: '셋째' },
+          { code: '000004', weightPercent: 20, reason: '넷째' },
+          { code: '999999', weightPercent: 20, reason: '다섯째' },
+        ],
+      },
+      candidates,
+      positions: [],
+      cashBalance: 10_000_000,
+      accountValuation: 10_000_000,
+    });
+
+    expect(result.buys).toEqual([
+      expect.objectContaining({
+        code: '000001',
+        weightPercent: 20,
+        quantity: 200,
+        close: 10_000,
+      }),
+      expect.objectContaining({
+        code: '000002',
+        weightPercent: 15,
+        quantity: 75,
+        close: 20_000,
+      }),
+      expect.objectContaining({
+        code: '000003',
+        weightPercent: 10,
+        quantity: 40,
+        close: 25_000,
+      }),
+    ]);
+    expect(result.skipped).toEqual([
+      { side: 'BUY', code: '000004', reason: 'BUY_LIMIT_REACHED' },
+      { side: 'BUY', code: '999999', reason: 'BUY_LIMIT_REACHED' },
+    ]);
+  });
+
+  it('보유하지 않은 매도 추천의 제외 사유를 기록한다', () => {
+    const result = constrainPaperRecommendation({
+      recommendation: {
+        sells: [
+          { code: '000001', reason: '보유 종목' },
+          { code: '999999', reason: '미보유 종목' },
+        ],
+        buys: [],
+      },
+      candidates,
+      positions: [{ tickerId: 1, code: '000001', quantity: 7 }],
+      cashBalance: 10_000_000,
+      accountValuation: 10_000_000,
+    });
+
+    expect(result.sells).toEqual([
+      expect.objectContaining({ code: '000001', quantity: 7 }),
+    ]);
+    expect(result.skipped).toEqual([
+      { side: 'SELL', code: '999999', reason: 'NOT_HELD' },
+    ]);
+  });
 });
