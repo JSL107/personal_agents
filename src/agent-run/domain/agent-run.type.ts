@@ -84,6 +84,9 @@ export enum TriggerType {
   // "회고 생성이 실패했는지, 후보가 없었는지" 를 원장에서 가른다.
   AUTOPILOT_EVENING_RETRO_CRON = 'AUTOPILOT_EVENING_RETRO_CRON',
   AUTOPILOT_BLOG_PUBLISH_CRON = 'AUTOPILOT_BLOG_PUBLISH_CRON',
+  // 포트폴리오 초안 발행 뒤 실행하는 이력서 증거력 감사. 발행과 원장을 분리해 감사 실패가
+  // 발행 성공을 실패로 덮지 않도록 별도 trigger 로 남긴다.
+  AUTOPILOT_RESUME_AUDIT_CRON = 'AUTOPILOT_RESUME_AUDIT_CRON',
   STUDY_BRIEF_CRON = 'STUDY_BRIEF_CRON',
   // 잠재의식 변화 감지 tick — 게이트가 죽으면 제안이 0건이 되는데, 그것이 "노이즈가 없어서"
   // 인지 "고장나서" 인지 원장 없이는 구분되지 않는다(fail-closed 라 예외도 안 올라온다).

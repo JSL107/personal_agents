@@ -1,4 +1,7 @@
-import { CareerProfileData } from '../domain/career-mate.type';
+import {
+  CareerProfileData,
+  ResumeAuditResult,
+} from '../domain/career-mate.type';
 import {
   buildPortfolioBlocks,
   buildResumeBlocks,
@@ -8,6 +11,7 @@ import {
   formatProfileSummary,
   formatPrRetro,
   formatResume,
+  formatResumeAudit,
   formatUnknownCareerMate,
 } from './career-mate.formatter';
 
@@ -120,6 +124,64 @@ describe('career-mate.formatter', () => {
     // 전체: 전부 노출
     expect(rendered.full).toContain('u4');
     expect(rendered.full).toContain('u5');
+  });
+
+  it('formatResumeAudit은 상태 수와 개선문·공고·탈락 위험·guard를 escape해 렌더한다', () => {
+    const result: ResumeAuditResult = {
+      verdict: '근거 <보강> 필요',
+      items: [
+        {
+          title: '배포 <안정화>',
+          status: 'WEAK',
+          quote: '배포 개선',
+          why: '결과 & 수치가 없다.',
+          rewrite: {
+            before: '배포 개선',
+            after: '배포 개선 후 (수치 필요: 실패율) 확인',
+            frame: 'STAR3',
+          },
+        },
+        {
+          title: '근거 없는 성과',
+          status: 'MISSING',
+          quote: '',
+          why: '연결된 근거가 없다.',
+          rewrite: null,
+        },
+      ],
+      jdFindings: [
+        {
+          requirement: 'Kubernetes',
+          priority: 'MUST',
+          status: 'MISSING',
+          quote: '',
+          why: '이력서에 없다.',
+        },
+      ],
+      rejectionRisks: [{ reason: '정량성 부족', rebuttal: null }],
+      guard: {
+        demotedTitles: ['배포 <안정화>'],
+        droppedTitles: ['환각'],
+        unjudgedTitles: ['누락'],
+        forcedMissing: ['근거 없는 성과'],
+      },
+      jdSource: {
+        company: '이대리',
+        role: '백엔드',
+        registeredAt: '2026-08-01T00:00:00.000Z',
+      },
+    };
+
+    const rendered = formatResumeAudit(result);
+
+    expect(rendered.summary).toContain('약함 1건 / 근거없음 1건');
+    expect(rendered.summary).toContain('&lt;보강&gt;');
+    expect(rendered.full).toContain('배포 &lt;안정화&gt;');
+    expect(rendered.full).toContain('결과 &amp; 수치가 없다.');
+    expect(rendered.full).toContain('수치 필요');
+    expect(rendered.full).toContain('Kubernetes');
+    expect(rendered.full).toContain('정량성 부족');
+    expect(rendered.full).toContain('강등 1 / 폐기 1 / 누락 1');
   });
 
   it('formatPrRetro 는 회고 서술·이력서 bullet·포폴 링크를 담고 escape 한다', () => {

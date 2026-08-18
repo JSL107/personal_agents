@@ -236,6 +236,18 @@ model CareerProfile {
   @@map("career_profile")
 }
 
+model CareerTargetJd {
+  id          Int      @id @default(autoincrement())
+  slackUserId String   @map("slack_user_id")
+  company     String
+  role        String
+  jdText      String   @map("jd_text") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([slackUserId, createdAt])
+  @@map("career_target_jd")
+}
+
 model SubconsciousBaseline {
   id          Int      @id @default(autoincrement())
   ownerUserId String   @map("owner_user_id")

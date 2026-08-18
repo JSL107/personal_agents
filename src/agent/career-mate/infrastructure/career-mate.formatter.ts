@@ -5,7 +5,11 @@ import {
   GapAnalysisData,
   ProfileAccomplishment,
   ReflectPrResult,
+  ResumeAuditResult,
 } from '../domain/career-mate.type';
+
+const bulletList = (items: string[]): string[] =>
+  items.map((item) => `• ${escapeSlackMrkdwn(item)}`);
 
 export const formatProfileSummary = (data: CareerProfileData): string => {
   const top = data.accomplishments
@@ -102,9 +106,6 @@ export const formatCalibrationReport = (
     (section) => section.items.length > CALIBRATION_SUMMARY_LIMIT,
   );
 
-  const bulletList = (items: string[]): string[] =>
-    items.map((item) => `• ${escapeSlackMrkdwn(item)}`);
-
   const summarySection = (title: string, items: string[]): string => {
     if (items.length === 0) {
       return '';
@@ -141,6 +142,73 @@ export const formatCalibrationReport = (
     .join('\n\n');
 
   return { summary, full, truncated };
+};
+
+export interface ResumeAuditRender {
+  summary: string;
+  full: string;
+}
+
+const AUDIT_STATUS_LABEL: Record<
+  ResumeAuditResult['items'][number]['status'],
+  string
+> = {
+  PROVEN: '입증',
+  WEAK: '약함',
+  MISSING: '근거없음',
+  UNJUDGED: '미판정',
+};
+
+export const formatResumeAudit = (
+  result: ResumeAuditResult,
+): ResumeAuditRender => {
+  const weakCount = result.items.filter(
+    (item) => item.status === 'WEAK',
+  ).length;
+  const missingCount = result.items.filter(
+    (item) => item.status === 'MISSING',
+  ).length;
+  const summary = [
+    `*이력서 증거력 감사*`,
+    `약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${result.items.length}건)`,
+    escapeSlackMrkdwn(result.verdict),
+  ].join('\n');
+  const itemLines = result.items.flatMap((item) => {
+    const lines = [
+      `• *[${AUDIT_STATUS_LABEL[item.status]}] ${escapeSlackMrkdwn(item.title)}* — ${escapeSlackMrkdwn(item.why)}`,
+    ];
+    if (item.rewrite) {
+      lines.push(
+        `  ${escapeSlackMrkdwn(item.rewrite.before)} → ${escapeSlackMrkdwn(item.rewrite.after)} _(${item.rewrite.frame})_`,
+      );
+    }
+    return lines;
+  });
+  const jdLines = result.jdFindings.map(
+    (finding) =>
+      `• [${finding.priority}/${AUDIT_STATUS_LABEL[finding.status]}] ${escapeSlackMrkdwn(finding.requirement)} — ${escapeSlackMrkdwn(finding.why)}`,
+  );
+  const riskLines = result.rejectionRisks.map((risk) => {
+    const rebuttal = risk.rebuttal
+      ? ` — 반박: ${escapeSlackMrkdwn(risk.rebuttal)}`
+      : '';
+    return `• ${escapeSlackMrkdwn(risk.reason)}${rebuttal}`;
+  });
+  const guardLine = `강등 ${result.guard.demotedTitles.length} / 폐기 ${result.guard.droppedTitles.length} / 누락 ${result.guard.unjudgedTitles.length} / 근거없음 강제 ${result.guard.forcedMissing.length}`;
+  const source = result.jdSource
+    ? `*목표 공고* ${escapeSlackMrkdwn(result.jdSource.company)} / ${escapeSlackMrkdwn(result.jdSource.role)}`
+    : '';
+  const full = [
+    summary,
+    itemLines.length > 0 ? `*항목별 판정*\n${itemLines.join('\n')}` : '',
+    source,
+    jdLines.length > 0 ? `*공고 대조*\n${jdLines.join('\n')}` : '',
+    riskLines.length > 0 ? `*탈락 위험*\n${riskLines.join('\n')}` : '',
+    `*가드 결과* ${guardLine}`,
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+  return { summary, full };
 };
 
 // accomplishment 의 evidence 중 최빈 repo 를 대표 프로젝트로. 동률이면 첫 evidence 의 repo.
