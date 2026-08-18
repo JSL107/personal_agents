@@ -8,12 +8,15 @@ import { NotionModule } from '../../notion/notion.module';
 import { AnalyzeJdGapUsecase } from './application/analyze-jd-gap.usecase';
 import { BuildCareerProfileUsecase } from './application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from './application/calibrate-resume.usecase';
+import { PublishPortfolioSiteUsecase } from './application/publish-portfolio-site.usecase';
 import { ReflectPrUsecase } from './application/reflect-pr.usecase';
 import { RenderPortfolioUsecase } from './application/render-portfolio.usecase';
 import { RenderResumeUsecase } from './application/render-resume.usecase';
 import { CAREER_PROFILE_REPOSITORY_PORT } from './domain/port/career-profile.repository.port';
+import { PORTFOLIO_SITE_CLIENT_PORT } from './domain/port/portfolio-site.client.port';
 import { CareerMateDispatcher } from './infrastructure/career-mate.dispatcher';
 import { CareerProfilePrismaRepository } from './infrastructure/career-profile.prisma.repository';
+import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.client';
 
 // PrismaModule(@Global) / ConfigModule(isGlobal) 은 별도 import 불필요.
 @Module({
@@ -29,12 +32,17 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
       provide: CAREER_PROFILE_REPOSITORY_PORT,
       useClass: CareerProfilePrismaRepository,
     },
+    {
+      provide: PORTFOLIO_SITE_CLIENT_PORT,
+      useClass: PortfolioSiteApiClient,
+    },
     BuildCareerProfileUsecase,
     RenderResumeUsecase,
     RenderPortfolioUsecase,
     AnalyzeJdGapUsecase,
     CalibrateResumeUsecase,
     ReflectPrUsecase,
+    PublishPortfolioSiteUsecase,
     CareerMateDispatcher,
   ],
   exports: [
@@ -44,6 +52,7 @@ import { CareerProfilePrismaRepository } from './infrastructure/career-profile.p
     AnalyzeJdGapUsecase,
     CalibrateResumeUsecase,
     ReflectPrUsecase,
+    PublishPortfolioSiteUsecase,
     CareerMateDispatcher,
   ],
 })

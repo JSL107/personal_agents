@@ -97,6 +97,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  PORTFOLIO_AUTOMATION_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
   BLOG_PUBLISH_REPO?: string;
 
   @IsOptional()
@@ -251,6 +255,15 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   TOSS_ACCOUNT_SEQ?: string;
+
+  // 포트폴리오 사이트 발행 슬롯. 워밍업과 마찬가지로 단독 그룹이다.
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_PORTFOLIO_PUBLISH_TIMEZONE?: string;
 
   // 포트폴리오 사이트 워밍업 슬롯. 단독 그룹이라 그룹 대표 키가 자기 id 그대로다.
   @IsOptional()

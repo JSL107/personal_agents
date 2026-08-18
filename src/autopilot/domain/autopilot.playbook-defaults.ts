@@ -111,6 +111,15 @@ export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/3 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
 
+// 포트폴리오 사이트 발행 — 매일 23:00 KST.
+//
+// 저녁 회고(DEFAULT_DAILY_EVAL_CRON, 19:00)가 경력 프로필을 갱신하고 그 승인 카드가 눌릴
+// 여유를 4시간 둔 뒤 발행한다. 승인이 안 눌린 날은 이전 프로필을 다시 밀어 넣지만
+// slug 멱등이라 중복 항목이 생기지 않는다.
+// 워밍업 시간대(08~24시) 안이라 사이트가 깨어 있는 시각이기도 하다.
+export const DEFAULT_PORTFOLIO_PUBLISH_CRON = '0 23 * * *';
+export const DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE = 'Asia/Seoul';
+
 // 포트폴리오 사이트(Portfolio OS) 워밍업 — 10분 주기, 08~24시(KST)만.
 //
 // 사이트 API 는 Render 무료 플랜이라 15분 유휴면 잠들고, 깨어나는 첫 요청이 18.4초 걸린다
