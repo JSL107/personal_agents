@@ -23,6 +23,12 @@ export interface AvgPriceStatus {
   symbol: string;
   percent: number;
   threshold: number;
+  // 아래 넷은 화면 설명용이다. 판정은 percent 하나로 끝나지만, 퍼센트만 보여주면
+  // "얼마에 사서 지금 얼마이고 그래서 얼마를 잃고 있는지" 가 카드에 없다.
+  avgPrice: number;
+  currentPrice: number;
+  quantity: number;
+  currency: string;
 }
 
 export interface HoldingSnapshot {

@@ -55,7 +55,7 @@ describe('calculatePortfolioExposure', () => {
     expect(result).toEqual({
       buckets: [
         { label: '미국 주식', ratio: 80 },
-        { label: '코스피 숏', ratio: 20 },
+        { label: '코스피 하락 베팅', ratio: 20 },
       ],
       fxUsdRatio: 80,
     });
@@ -122,7 +122,7 @@ describe('calculatePortfolioExposure', () => {
     expect(result).toEqual({
       buckets: [
         { label: '미국 주식', ratio: 75 },
-        { label: '미국 숏', ratio: 25 },
+        { label: '미국 하락 베팅', ratio: 25 },
       ],
       fxUsdRatio: 100,
     });
