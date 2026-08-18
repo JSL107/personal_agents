@@ -96,6 +96,82 @@ const buildUsecase = (overrides?: {
 };
 
 describe('PublishNotionDraftUsecase', () => {
+  describe('buildPublishCandidate', () => {
+    it('ready 후보만 만들고 AgentRun과 CreatePreview를 호출하지 않는다', async () => {
+      const { usecase, agentRunService, createPreview } = buildUsecase();
+
+      const { candidate, modelUsed } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+      // autopilot 이 AgentRun 에 기록할 값 — 없으면 원장에 모델이 빈 채로 남는다.
+      expect(modelUsed).toBeTruthy();
+
+      expect(candidate).toEqual(
+        expect.objectContaining({
+          status: 'ready',
+          previewText: expect.stringContaining('GitHub 블로그 발행 미리보기'),
+          payload: expect.objectContaining({
+            pageId: draft.pageId,
+            slackUserId: 'U1',
+          }),
+        }),
+      );
+      expect(agentRunService.execute).not.toHaveBeenCalled();
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    it('초안이 없으면 모델·AgentRun·CreatePreview 호출 없이 empty를 반환한다', async () => {
+      const { usecase, modelRouter, agentRunService, createPreview } =
+        buildUsecase({ drafts: [] });
+
+      await expect(
+        usecase.buildPublishCandidate({ slackUserId: 'U1' }),
+      ).resolves.toEqual({
+        candidate: {
+          status: 'empty',
+          message: '발행할 초안이 없습니다.',
+        },
+        // 모델을 부르지 않았으므로 원장에도 결정론 실행으로 남는다.
+        modelUsed: 'deterministic',
+      });
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(agentRunService.execute).not.toHaveBeenCalled();
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    it('금지어가 남으면 공개 메시지에 원문을 넣지 않고 preview를 만들지 않는다', async () => {
+      const { usecase, agentRunService, createPreview } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'safe-post',
+          description: '안전한 설명',
+          body: '회사명 서비스의 내부 구조를 정리했다.',
+        }),
+      });
+
+      const { candidate, modelUsed } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+      // autopilot 이 AgentRun 에 기록할 값 — 없으면 원장에 모델이 빈 채로 남는다.
+      expect(modelUsed).toBeTruthy();
+
+      expect(candidate.status).toBe('blocked');
+      if (candidate.status === 'blocked') {
+        expect(candidate.message).not.toContain('회사명');
+        expect(candidate.message).not.toContain('내부 구조를 정리했다');
+        expect(candidate.hits).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              term: '회사명',
+              excerpt: expect.any(String),
+            }),
+          ]),
+        );
+      }
+      expect(agentRunService.execute).not.toHaveBeenCalled();
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+  });
+
   it('가장 오래된 초안 1건을 익명화해 GitHub 발행 preview를 만든다', async () => {
     const { usecase, createPreview, agentRunService, modelRouter } =
       buildUsecase();

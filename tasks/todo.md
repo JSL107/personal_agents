@@ -2129,3 +2129,27 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - Swift, DB/schema/env/dependency와 git index/commit/push는 변경하지 않았다.
 
 ---
+# 저녁 승인 카드에서 블로그 발행 후보 자동 생성 (2026-08-18)
+
+**Goal:** 기존 `/blog-publish`·자연어·재실행 동작을 보존하면서 저녁 autopilot digest에 Notion 블로그 초안 1건의 GitHub 발행 승인 preview를 추가한다.
+
+**Contract:** `.ai/task.md`와 `.ai/design.md`를 따른다. `buildPublishCandidate`는 preview를 만들지 않으며, `execute`만 기존 24시간 preview를 생성한다. 저녁 그룹 선두와 기존 schedule override는 유지한다. `.env`, DB, 배포, git index/commit은 변경하지 않는다.
+
+- [x] 기존 usecase 반환 계약, autopilot task/playbook/module/spec, config/docs 패턴을 확인한다.
+- [x] `PublishNotionDraftUsecase.buildPublishCandidate`를 부작용 없는 후보 준비 단계로 분리하고 기존 `execute` 계약을 유지한다.
+- [x] `blog-github-publish` autopilot task와 empty/blocked/ready/disabled 회귀 테스트를 추가한다.
+- [x] playbook 저녁 그룹 끝과 autopilot module provider를 연결한다.
+- [x] `BLOG_GITHUB_PUBLISH_ENABLED`를 `.env.example`, config validation, README, 생성 문서에 동기화한다.
+- [x] focused test 후 `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 각각 fresh 실행한다.
+- [x] 최종 diff를 설계·보안·회귀 관점에서 검토하고 `.ai/implementation-summary.md`와 Review를 실제 결과로 작성한다.
+
+## Review
+
+- 후보 준비는 AgentRun·Preview를 만들지 않고 `empty | blocked | ready`를 반환한다. 수동 `execute`는 기존 AgentRun 경계, 24시간 TTL, 반환 shape, retry snapshot을 유지한다.
+- 신규 task는 기본 ON이며 disabled/empty/blocked/ready 4상태를 회귀 테스트로 고정했다. blocked summary는 기존 마스킹 메시지만 사용해 `term`·`excerpt`를 공개하지 않는다.
+- 독립 리뷰에서 autopilot blocked 메시지가 존재하지 않는 AgentRun 원문 확인을 안내하는 결함을 찾았다. 수동 메시지는 유지하고 autopilot summary에서 해당 문구만 제거했다.
+- evening 순서는 `work-reviewer`, `daily-eval`, `evening-retro-publish`, `blog-github-publish`로 고정했다. 그룹 선두와 schedule override는 그대로다.
+- focused 3 suites/42 tests, 최종 lint/test/build/docs check와 diff check가 모두 exit 0이다. 전체 test는 일반 394 suites/3,288 tests와 code-graph 5 suites/40 tests다.
+- `.env`, DB, Slack/GitHub 운영 쓰기, commit/staging/push는 건드리지 않았다. 실제 외부 통합은 미검증이다.
+
+---
