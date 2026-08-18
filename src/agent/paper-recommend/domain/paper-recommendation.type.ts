@@ -56,11 +56,27 @@ export interface PaperRecommendationBuyIntent {
   reason: string;
   weightPercent: number;
   quantity: number;
+  close: number;
+}
+
+export type PaperRecommendationSkipReason =
+  | 'ALREADY_HELD'
+  | 'NOT_IN_CANDIDATES'
+  | 'ZERO_WEIGHT'
+  | 'INSUFFICIENT_CASH'
+  | 'BUY_LIMIT_REACHED'
+  | 'NOT_HELD';
+
+export interface PaperRecommendationSkip {
+  side: 'BUY' | 'SELL';
+  code: string;
+  reason: PaperRecommendationSkipReason;
 }
 
 export interface ConstrainedPaperRecommendation {
   sells: PaperRecommendationSellIntent[];
   buys: PaperRecommendationBuyIntent[];
+  skipped: PaperRecommendationSkip[];
 }
 
 export interface BuildPaperRecommendationPromptInput {

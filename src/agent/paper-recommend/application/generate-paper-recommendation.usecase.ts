@@ -19,7 +19,11 @@ import {
 } from '../../../screener/application/screen-universe.usecase';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
-import { PaperRecommendationStrategy } from '../domain/paper-recommendation.type';
+import {
+  ConstrainedPaperRecommendation,
+  PaperRecommendationSkipReason,
+  PaperRecommendationStrategy,
+} from '../domain/paper-recommendation.type';
 import {
   buildPaperRecommendationPrompt,
   PAPER_RECOMMEND_SYSTEM_PROMPT,
@@ -42,6 +46,35 @@ export interface PaperRecommendationSuccess {
   accountId: number;
   ordersCreated: number;
   agentRunId: number;
+  orders: PaperRecommendationOrderDetail[];
+  skipped: PaperRecommendationSkipDetail[];
+  account: PaperRecommendationAccountSummary;
+  // 스크리너 기준일. null 이면 시세가 없어 주문 자체가 생성되지 않은 회차다.
+  dataAsOf: string | null;
+}
+
+export interface PaperRecommendationOrderDetail {
+  side: 'BUY' | 'SELL';
+  code: string;
+  name: string;
+  quantity: number;
+  estimatedAmount: number;
+  reason: string;
+}
+
+export interface PaperRecommendationSkipDetail {
+  side: 'BUY' | 'SELL';
+  code: string;
+  name: string;
+  reason: PaperRecommendationSkipReason;
+}
+
+export interface PaperRecommendationAccountSummary {
+  cashBalance: number;
+  totalValue: number;
+  positionCount: number;
+  // 시드 대비 수익률(%). 평가 스냅샷이 아직 없으면 null.
+  returnRate: number | null;
 }
 
 export interface PaperRecommendationFailure {
@@ -52,6 +85,11 @@ export interface PaperRecommendationFailure {
 export interface GeneratePaperRecommendationResult {
   completed: PaperRecommendationSuccess[];
   failed: PaperRecommendationFailure[];
+}
+
+interface LockedRecommendationResult {
+  constrained: ConstrainedPaperRecommendation;
+  orders: PendingPaperOrderInput[];
 }
 
 @Injectable()
@@ -168,7 +206,7 @@ export class GeneratePaperRecommendationUsecase {
           strategy,
           decidedAt,
           decide: (state) => {
-            const orders = this.constrainLockedRecommendation({
+            const lockedRecommendation = this.constrainLockedRecommendation({
               strategy,
               decidedAt,
               screen,
@@ -177,12 +215,38 @@ export class GeneratePaperRecommendationUsecase {
               recommendation,
               state,
             });
+            const orders = lockedRecommendation.orders;
             return {
               result: {
                 strategy,
                 accountId: account.id,
                 ordersCreated: orders.length,
                 agentRunId,
+                orders: this.toOrderDetails({
+                  screen,
+                  state,
+                  lockedRecommendation,
+                }),
+                skipped: this.toSkipDetails({
+                  screen,
+                  state,
+                  constrained: lockedRecommendation.constrained,
+                }),
+                dataAsOf: screen.asOf,
+                account: {
+                  cashBalance: Number(state.account.cashBalance.toString()),
+                  totalValue: Number(
+                    (
+                      state.latestValuation?.totalValue ??
+                      state.account.seedAmount
+                    ).toString(),
+                  ),
+                  positionCount: state.positions.length,
+                  returnRate:
+                    state.latestValuation === null
+                      ? null
+                      : Number(state.latestValuation.returnRate.toString()),
+                },
               },
               orders,
             };
@@ -242,7 +306,7 @@ export class GeneratePaperRecommendationUsecase {
     agentRunId: number;
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
-  }): PendingPaperOrderInput[] {
+  }): LockedRecommendationResult {
     const stocksByTickerId = new Map(
       screen.stocks.map((stock) => [stock.tickerId, stock]),
     );
@@ -311,7 +375,7 @@ export class GeneratePaperRecommendationUsecase {
         ).toString(),
       ),
     });
-    return this.toPendingOrders({
+    const orders = this.toPendingOrders({
       strategy,
       decidedAt,
       screen,
@@ -319,6 +383,79 @@ export class GeneratePaperRecommendationUsecase {
       agentRunId,
       constrained,
     });
+    return { constrained, orders };
+  }
+
+  private toOrderDetails({
+    screen,
+    state,
+    lockedRecommendation,
+  }: {
+    screen: ScreenUniverseResult;
+    state: LockedPaperRecommendationState;
+    lockedRecommendation: LockedRecommendationResult;
+  }): PaperRecommendationOrderDetail[] {
+    if (lockedRecommendation.orders.length === 0) {
+      return [];
+    }
+    const namesByCode = this.namesByCode(screen, state);
+    // 보유 종목 종가는 screen.stocks 가 아니라 includedIndicators 에 실려 온다.
+    // stocks 만 보면 매도 예상금액이 늘 0 이 된다.
+    const closesByCode = new Map(
+      [...screen.includedIndicators, ...screen.stocks].map(
+        (stock): [string, number] => [stock.code, stock.indicators.close],
+      ),
+    );
+    return [
+      ...lockedRecommendation.constrained.sells.map((sell) => ({
+        side: sell.side,
+        code: sell.code,
+        name: namesByCode.get(sell.code) ?? sell.code,
+        quantity: sell.quantity,
+        estimatedAmount: sell.quantity * (closesByCode.get(sell.code) ?? 0),
+        reason: sell.reason,
+      })),
+      ...lockedRecommendation.constrained.buys.map((buy) => ({
+        side: buy.side,
+        code: buy.code,
+        name: buy.name,
+        quantity: buy.quantity,
+        estimatedAmount: buy.quantity * buy.close,
+        reason: buy.reason,
+      })),
+    ];
+  }
+
+  private toSkipDetails({
+    screen,
+    state,
+    constrained,
+  }: {
+    screen: ScreenUniverseResult;
+    state: LockedPaperRecommendationState;
+    constrained: ConstrainedPaperRecommendation;
+  }): PaperRecommendationSkipDetail[] {
+    const namesByCode = this.namesByCode(screen, state);
+    return constrained.skipped.map((skip) => ({
+      ...skip,
+      name: namesByCode.get(skip.code) ?? skip.code,
+    }));
+  }
+
+  private namesByCode(
+    screen: ScreenUniverseResult,
+    state: LockedPaperRecommendationState,
+  ): Map<string, string> {
+    return new Map([
+      ...screen.stocks.map((stock): [string, string] => [
+        stock.code,
+        stock.name,
+      ]),
+      ...state.positions.map((position): [string, string] => [
+        position.ticker.code,
+        position.ticker.name,
+      ]),
+    ]);
   }
 
   private toPendingOrders({
