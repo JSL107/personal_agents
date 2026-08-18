@@ -196,8 +196,10 @@ export const formatStockMonitorSummary = (
   const marketLabel = MARKET_LABEL[context.marketCountry];
 
   if (context.failures.length > 0) {
+    // failures 에는 시세 조회 실패뿐 아니라 저장 실패·알림 복구 실패·채점용 보강 실패가 함께 담기고,
+    // 그중에는 종목 단위가 아닌 항목(보강 조회 실패)도 있다. 원인은 아래 각 줄이 말하므로 헤더는 건수만 센다.
     lines.push(
-      `⚠️ *주식 모니터링 — 시세를 못 받은 종목 ${context.failures.length}개*`,
+      `⚠️ *주식 모니터링 — 점검하지 못한 항목 ${context.failures.length}건*`,
     );
     for (const failure of context.failures) {
       lines.push(`• ${failure}`);
@@ -205,8 +207,10 @@ export const formatStockMonitorSummary = (
   }
 
   if (context.marketClosed) {
+    // 관측한 사실(새 거래일 봉이 없다)과 추정(휴장)을 구분해 적는다. 시세 지연·수집 이상도 같은 조건을
+    // 만들므로 "열리지 않았다" 로 단정하면 고장이 정상 휴장으로 읽힌다.
     lines.push(
-      `📉 *주식 모니터링* — ${marketLabel} 시장이 열리지 않아 점검을 건너뜁니다 (마지막 거래일 ${context.lastTradeDate})`,
+      `📉 *주식 모니터링* — ${marketLabel} 새 거래일 시세가 없어 점검을 건너뜁니다 (휴장 추정, 마지막 거래일 ${context.lastTradeDate})`,
     );
     return lines.join('\n');
   }

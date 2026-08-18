@@ -89,7 +89,8 @@ describe('formatStockMonitorSummary', () => {
       marketCountry: 'KR',
     });
 
-    expect(result).toContain('국내 시장이 열리지 않아 점검을 건너뜁니다');
+    expect(result).toContain('국내 새 거래일 시세가 없어 점검을 건너뜁니다');
+    expect(result).toContain('휴장 추정');
   });
 
   it('발화한 종목의 규칙과 값을 담는다', () => {
@@ -191,7 +192,7 @@ describe('formatStockMonitorSummary', () => {
       marketCountry: 'KR',
     });
 
-    expect(result).toContain('시세를 못 받은 종목 1개');
+    expect(result).toContain('점검하지 못한 항목 1건');
     expect(result).toContain('247540.KQ');
   });
 });
