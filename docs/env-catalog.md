@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 132개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 134개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -56,6 +56,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `AUTOPILOT_OWNER_SLACK_USER_ID` | ❌ | Autopilot 전체 게이트. 미설정 시 비활성. |
 | `AUTOPILOT_TARGET` | ❌ | 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 콤마로 다중 타깃 지원. 미설정 시 OWNER DM. 예: "C1234567890,U9876543210". |
+| `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` | ❌ | 포트폴리오 사이트 워밍업 슬롯. 단독 그룹이라 그룹 대표 키가 자기 id 그대로다. |
+| `AUTOPILOT_PORTFOLIO_WARMUP_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_DAILY_EVAL_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_DAILY_EVAL_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 만들므로 이 그룹의 대표 키는 secretariat 이다. |
