@@ -26,6 +26,10 @@ import {
   PublishNotionDraftResult,
 } from '../domain/blog.type';
 import { BlogErrorCode } from '../domain/blog-error-code.enum';
+import {
+  DEFAULT_BLOG_PROP,
+  DEFAULT_BLOG_STATUS_DRAFT,
+} from '../domain/blog-publish-properties';
 import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
 import { BLOG_ANONYMIZE_SYSTEM_PROMPT } from '../domain/prompt/blog-anonymize.prompt';
 
@@ -252,8 +256,16 @@ export class PublishNotionDraftUsecase {
       databaseId: this.getRequiredConfig(
         'EVENING_RETRO_BLOG_NOTION_DATABASE_ID',
       ),
-      statusPropertyName: this.getRequiredConfig('BLOG_NOTION_PROP_STATUS'),
-      statusValue: this.getRequiredConfig('BLOG_NOTION_STATUS_DRAFT_VALUE'),
+      // 속성명·상태값은 env 가 없으면 레포 기본값을 쓴다. 기존 발행 경로
+      // (buildBlogPublishProperties) 가 이미 DEFAULT_BLOG_PROP 으로 동작하는데 여기서만
+      // 필수로 요구하면, 같은 DB 를 쓰는 환경이 이 기능에서만 조용히 skip 된다.
+      // 실제로 사용자 .env 에 BLOG_NOTION_PROP_STATUS 가 없어 저녁 task 가 건너뛰었다.
+      statusPropertyName:
+        this.config.get<string>('BLOG_NOTION_PROP_STATUS')?.trim() ||
+        DEFAULT_BLOG_PROP.status,
+      statusValue:
+        this.config.get<string>('BLOG_NOTION_STATUS_DRAFT_VALUE')?.trim() ||
+        DEFAULT_BLOG_STATUS_DRAFT,
     };
   }
 
