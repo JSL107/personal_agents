@@ -185,6 +185,30 @@ export interface PaperRecommendationSaveDecision<T> {
   orders: PendingPaperOrderInput[];
 }
 
+export interface ExitBandOrderInput {
+  tickerId: number;
+  reason: string;
+}
+
+export interface CreateExitBandOrdersInput {
+  accountId: number;
+  strategy: TradeStrategy;
+  decidedAt: Date;
+  dataAsOf: Date;
+  targetTradeDate: Date;
+  agentRunId: number | null;
+  orders: ExitBandOrderInput[];
+}
+
+export interface CreateExitBandOrdersResult {
+  created: number;
+  // 실제로 저장된 주문의 종목만 담는다. 판정 목록을 그대로 카드에 쓰면 중복·보유 소멸로
+  // 걸러진 종목까지 "예약됨" 으로 적혀 건수와 상세가 어긋난다.
+  createdTickerIds: number[];
+  skippedByPendingSell: number;
+  skippedByNoPosition: number;
+}
+
 export interface RevalidatedPaperAccountState {
   account: PaperAccountRecord;
   positions: PaperPositionWithTicker[];
@@ -516,10 +540,13 @@ export class PaperTradingPrismaRepository {
       where: {
         accountId,
         quantity: { gt: 0 },
+        // source 는 행을 만든 경로를 적은 출처 딱지일 뿐이라 시세 조회 가능 여부와 무관하다.
+        // 여기에 'TOSS' 를 걸면 유니버스(KRX 상장법인 목록, source='KRX')에서 고른 종목이
+        // 통째로 빠져 보유가 0건으로 읽히고, 원장과 대조하는 불변식이 매번 깨진다.
+        // 판별 축은 "토스로 시세를 뽑을 수 있는가" = tossSymbol 유무 하나면 충분하다.
         ticker: {
           market: 'KR',
           marketCountry: 'KR',
-          source: 'TOSS',
           tossSymbol: { not: null },
         },
       },
@@ -839,6 +866,94 @@ export class PaperTradingPrismaRepository {
     });
   }
 
+  // 밴드 이탈 종목을 다음 거래일 시가 매도 주문으로 남긴다. 판정은 호출자가 평가
+  // 결과로 하고, 수량은 여기서 원장의 현재 보유로 다시 맞춘다 — 판정과 주문 사이에
+  // 체결이 끼어들면 보유보다 많은 수량을 팔려다 체결 단계에서 통째로 실패한다.
+  async createExitBandOrders(
+    input: CreateExitBandOrdersInput,
+  ): Promise<CreateExitBandOrdersResult> {
+    if (input.orders.length === 0) {
+      return {
+        created: 0,
+        createdTickerIds: [],
+        skippedByPendingSell: 0,
+        skippedByNoPosition: 0,
+      };
+    }
+    return await this.prisma.$transaction(async (transaction) => {
+      await transaction.paperAccount.update({
+        where: { id: input.accountId },
+        data: { cashBalance: { increment: 0 } },
+        select: { id: true },
+      });
+      const tickerIds = input.orders.map((order) => order.tickerId);
+      const pendingSells = await transaction.paperOrder.findMany({
+        where: {
+          accountId: input.accountId,
+          status: 'PENDING',
+          side: 'SELL',
+          tickerId: { in: tickerIds },
+        },
+        select: { tickerId: true },
+      });
+      const pendingSellTickerIds = new Set(
+        pendingSells.map((order) => order.tickerId),
+      );
+      const positions = await transaction.paperPosition.findMany({
+        where: {
+          accountId: input.accountId,
+          tickerId: { in: tickerIds },
+          quantity: { gt: 0 },
+        },
+        select: { tickerId: true, quantity: true },
+      });
+      const quantityByTickerId = new Map(
+        positions.map((position) => [
+          position.tickerId,
+          position.quantity.toString(),
+        ]),
+      );
+
+      let skippedByPendingSell = 0;
+      let skippedByNoPosition = 0;
+      const data = input.orders.flatMap((order) => {
+        if (pendingSellTickerIds.has(order.tickerId)) {
+          skippedByPendingSell += 1;
+          return [];
+        }
+        const quantity = quantityByTickerId.get(order.tickerId);
+        if (quantity === undefined) {
+          skippedByNoPosition += 1;
+          return [];
+        }
+        return [
+          {
+            accountId: input.accountId,
+            tickerId: order.tickerId,
+            side: 'SELL',
+            quantity,
+            strategy: input.strategy,
+            reason: order.reason,
+            decidedAt: input.decidedAt,
+            dataAsOf: input.dataAsOf,
+            targetTradeDate: input.targetTradeDate,
+            status: 'PENDING',
+            agentRunId: input.agentRunId,
+          },
+        ];
+      });
+      if (data.length > 0) {
+        await transaction.paperOrder.createMany({ data });
+      }
+      return {
+        created: data.length,
+        createdTickerIds: data.map((order) => order.tickerId),
+        skippedByPendingSell,
+        skippedByNoPosition,
+      };
+    });
+  }
+
   async saveEquitySnapshotWithRevalidatedState<T>(
     accountId: number,
     decide: (state: RevalidatedPaperAccountState) => SnapshotDecision<T>,
@@ -855,10 +970,11 @@ export class PaperTradingPrismaRepository {
         where: {
           accountId,
           quantity: { gt: 0 },
+          // findPositionsWithTicker 와 같은 조건이어야 한다. 한쪽만 좁으면 재검증이
+          // "평가한 보유"와 다른 집합을 보고 불변식을 판정한다.
           ticker: {
             market: 'KR',
             marketCountry: 'KR',
-            source: 'TOSS',
             tossSymbol: { not: null },
           },
         },
