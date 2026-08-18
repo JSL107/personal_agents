@@ -19,7 +19,12 @@ import {
 } from '../../../screener/application/screen-universe.usecase';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
-import { PaperRecommendationStrategy } from '../domain/paper-recommendation.type';
+import {
+  ConstrainedPaperRecommendation,
+  PaperRecommendationSkip,
+  PaperRecommendationSkipReason,
+  PaperRecommendationStrategy,
+} from '../domain/paper-recommendation.type';
 import {
   buildPaperRecommendationPrompt,
   PAPER_RECOMMEND_SYSTEM_PROMPT,
@@ -42,6 +47,36 @@ export interface PaperRecommendationSuccess {
   accountId: number;
   ordersCreated: number;
   agentRunId: number;
+  orders: PaperRecommendationOrderDetail[];
+  skipped: PaperRecommendationSkipDetail[];
+  account: PaperRecommendationAccountSummary;
+  // 스크리너 기준일. null 이면 시세가 없어 주문 자체가 생성되지 않은 회차다.
+  dataAsOf: string | null;
+}
+
+export interface PaperRecommendationOrderDetail {
+  side: 'BUY' | 'SELL';
+  code: string;
+  name: string;
+  quantity: number;
+  // 전일 종가 × 수량. 보유 종목 시세가 stale 해 종가를 못 구하면 null (0 원으로 오인되지 않게).
+  estimatedAmount: number | null;
+  reason: string;
+}
+
+export interface PaperRecommendationSkipDetail {
+  side: 'BUY' | 'SELL';
+  code: string;
+  name: string;
+  reason: PaperRecommendationSkipReason;
+}
+
+export interface PaperRecommendationAccountSummary {
+  cashBalance: number;
+  totalValue: number;
+  positionCount: number;
+  // 시드 대비 수익률(%). 평가 스냅샷이 아직 없으면 null.
+  returnRate: number | null;
 }
 
 export interface PaperRecommendationFailure {
@@ -52,6 +87,11 @@ export interface PaperRecommendationFailure {
 export interface GeneratePaperRecommendationResult {
   completed: PaperRecommendationSuccess[];
   failed: PaperRecommendationFailure[];
+}
+
+interface LockedRecommendationResult {
+  constrained: ConstrainedPaperRecommendation;
+  orders: PendingPaperOrderInput[];
 }
 
 @Injectable()
@@ -168,7 +208,7 @@ export class GeneratePaperRecommendationUsecase {
           strategy,
           decidedAt,
           decide: (state) => {
-            const orders = this.constrainLockedRecommendation({
+            const lockedRecommendation = this.constrainLockedRecommendation({
               strategy,
               decidedAt,
               screen,
@@ -177,12 +217,38 @@ export class GeneratePaperRecommendationUsecase {
               recommendation,
               state,
             });
+            const orders = lockedRecommendation.orders;
             return {
               result: {
                 strategy,
                 accountId: account.id,
                 ordersCreated: orders.length,
                 agentRunId,
+                orders: this.toOrderDetails({
+                  screen,
+                  state,
+                  lockedRecommendation,
+                }),
+                skipped: this.toSkipDetails({
+                  screen,
+                  state,
+                  constrained: lockedRecommendation.constrained,
+                }),
+                dataAsOf: screen.asOf,
+                account: {
+                  cashBalance: Number(state.account.cashBalance.toString()),
+                  totalValue: Number(
+                    (
+                      state.latestValuation?.totalValue ??
+                      state.account.seedAmount
+                    ).toString(),
+                  ),
+                  positionCount: state.positions.length,
+                  returnRate:
+                    state.latestValuation === null
+                      ? null
+                      : Number(state.latestValuation.returnRate.toString()),
+                },
               },
               orders,
             };
@@ -242,7 +308,7 @@ export class GeneratePaperRecommendationUsecase {
     agentRunId: number;
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
-  }): PendingPaperOrderInput[] {
+  }): LockedRecommendationResult {
     const stocksByTickerId = new Map(
       screen.stocks.map((stock) => [stock.tickerId, stock]),
     );
@@ -271,6 +337,9 @@ export class GeneratePaperRecommendationUsecase {
       const stock = stocksByTickerId.get(tickerId);
       return stock ? [{ tickerId, code: stock.code, quantity: 1 }] : [];
     });
+    // 이미 대기 중인 매도 주문 때문에 제약 함수까지 가지 못한 추천은 skipped 에 남지 않는다 —
+    // 그대로 두면 Slack 이 '추천 없음' 으로 단정하므로 여기서 직접 기록한다.
+    const pendingSells: PaperRecommendationSkip[] = [];
     const constrained = constrainPaperRecommendation({
       recommendation: {
         ...recommendation,
@@ -279,12 +348,28 @@ export class GeneratePaperRecommendationUsecase {
             (item) => item.ticker.code === sell.code,
           );
           if (position) {
-            return !pendingSellTickerIds.has(position.tickerId);
+            if (pendingSellTickerIds.has(position.tickerId)) {
+              pendingSells.push({
+                side: 'SELL',
+                code: sell.code,
+                reason: 'PENDING_ORDER_EXISTS',
+              });
+              return false;
+            }
+            return true;
           }
           const candidate = screen.stocks.find(
             (stock) => stock.code === sell.code,
           );
-          return !candidate || !pendingSellTickerIds.has(candidate.tickerId);
+          if (candidate && pendingSellTickerIds.has(candidate.tickerId)) {
+            pendingSells.push({
+              side: 'SELL',
+              code: sell.code,
+              reason: 'PENDING_ORDER_EXISTS',
+            });
+            return false;
+          }
+          return true;
         }),
       },
       candidates: screen.stocks.map((stock) => ({
@@ -311,7 +396,7 @@ export class GeneratePaperRecommendationUsecase {
         ).toString(),
       ),
     });
-    return this.toPendingOrders({
+    const orders = this.toPendingOrders({
       strategy,
       decidedAt,
       screen,
@@ -319,6 +404,88 @@ export class GeneratePaperRecommendationUsecase {
       agentRunId,
       constrained,
     });
+    return {
+      constrained: {
+        ...constrained,
+        skipped: [...pendingSells, ...constrained.skipped],
+      },
+      orders,
+    };
+  }
+
+  private toOrderDetails({
+    screen,
+    state,
+    lockedRecommendation,
+  }: {
+    screen: ScreenUniverseResult;
+    state: LockedPaperRecommendationState;
+    lockedRecommendation: LockedRecommendationResult;
+  }): PaperRecommendationOrderDetail[] {
+    if (lockedRecommendation.orders.length === 0) {
+      return [];
+    }
+    const namesByCode = this.namesByCode(screen, state);
+    // 보유 종목 종가는 screen.stocks 가 아니라 includedIndicators 에 실려 온다.
+    // stocks 만 보면 매도 예상금액이 늘 0 이 된다.
+    const closesByCode = new Map(
+      [...screen.includedIndicators, ...screen.stocks].map(
+        (stock): [string, number] => [stock.code, stock.indicators.close],
+      ),
+    );
+    return [
+      ...lockedRecommendation.constrained.sells.map((sell) => ({
+        side: sell.side,
+        code: sell.code,
+        name: namesByCode.get(sell.code) ?? sell.code,
+        quantity: sell.quantity,
+        estimatedAmount: estimatedAmountOf(
+          sell.quantity,
+          closesByCode.get(sell.code),
+        ),
+        reason: sell.reason,
+      })),
+      ...lockedRecommendation.constrained.buys.map((buy) => ({
+        side: buy.side,
+        code: buy.code,
+        name: buy.name,
+        quantity: buy.quantity,
+        estimatedAmount: buy.quantity * buy.close,
+        reason: buy.reason,
+      })),
+    ];
+  }
+
+  private toSkipDetails({
+    screen,
+    state,
+    constrained,
+  }: {
+    screen: ScreenUniverseResult;
+    state: LockedPaperRecommendationState;
+    constrained: ConstrainedPaperRecommendation;
+  }): PaperRecommendationSkipDetail[] {
+    const namesByCode = this.namesByCode(screen, state);
+    return constrained.skipped.map((skip) => ({
+      ...skip,
+      name: namesByCode.get(skip.code) ?? skip.code,
+    }));
+  }
+
+  private namesByCode(
+    screen: ScreenUniverseResult,
+    state: LockedPaperRecommendationState,
+  ): Map<string, string> {
+    return new Map([
+      ...screen.stocks.map((stock): [string, string] => [
+        stock.code,
+        stock.name,
+      ]),
+      ...state.positions.map((position): [string, string] => [
+        position.ticker.code,
+        position.ticker.name,
+      ]),
+    ]);
   }
 
   private toPendingOrders({
@@ -356,6 +523,17 @@ export class GeneratePaperRecommendationUsecase {
     }));
   }
 }
+
+// 종가를 못 구한 매도는 0 원이 아니라 '금액 미상' 이다 — 둘을 같은 값으로 뭉치지 않는다.
+const estimatedAmountOf = (
+  quantity: number,
+  close: number | undefined,
+): number | null => {
+  if (typeof close !== 'number' || !Number.isFinite(close) || close <= 0) {
+    return null;
+  }
+  return quantity * close;
+};
 
 const errorMessageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);

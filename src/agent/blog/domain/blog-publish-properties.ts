@@ -15,6 +15,7 @@ export const DEFAULT_BLOG_PROP: BlogPublishPropertyNames = {
 };
 
 export const DEFAULT_BLOG_STATUS_PUBLISHED = '발행';
+export const DEFAULT_BLOG_STATUS_DRAFT = '초안';
 
 export interface BlogPublishMeta {
   tags: string[];

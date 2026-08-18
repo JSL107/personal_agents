@@ -2,6 +2,7 @@ import {
   ConstrainedPaperRecommendation,
   ConstrainPaperRecommendationInput,
   PaperRecommendationCandidate,
+  PaperRecommendationSkip,
 } from './paper-recommendation.type';
 
 const MAXIMUM_BUY_COUNT = 3;
@@ -16,11 +17,13 @@ export const constrainPaperRecommendation = (
   const candidatesByCode = new Map(
     input.candidates.map((candidate) => [candidate.code, candidate]),
   );
+  const skipped: PaperRecommendationSkip[] = [];
 
   return {
     sells: uniqueByCode(input.recommendation.sells).flatMap((sell) => {
       const position = positionsByCode.get(sell.code);
       if (!position || position.quantity <= 0) {
+        skipped.push({ side: 'SELL', code: sell.code, reason: 'NOT_HELD' });
         return [];
       }
       return [
@@ -33,7 +36,8 @@ export const constrainPaperRecommendation = (
         },
       ];
     }),
-    buys: constrainBuys(input, candidatesByCode, positionsByCode),
+    buys: constrainBuys(input, candidatesByCode, positionsByCode, skipped),
+    skipped,
   };
 };
 
@@ -44,6 +48,7 @@ const constrainBuys = (
     string,
     { tickerId: number; code: string; quantity: number }
   >,
+  skipped: PaperRecommendationSkip[],
 ): ConstrainedPaperRecommendation['buys'] => {
   let remainingCash = Math.max(0, input.cashBalance);
   const accountValuation = Math.max(0, input.accountValuation);
@@ -52,9 +57,19 @@ const constrainBuys = (
 
   for (const buy of input.recommendation.buys) {
     if (constrainedBuys.length >= MAXIMUM_BUY_COUNT) {
-      break;
+      skipped.push({
+        side: 'BUY',
+        code: buy.code,
+        reason: 'BUY_LIMIT_REACHED',
+      });
+      continue;
     }
     if (selectedCodes.has(buy.code) || positionsByCode.has(buy.code)) {
+      skipped.push({
+        side: 'BUY',
+        code: buy.code,
+        reason: 'ALREADY_HELD',
+      });
       continue;
     }
     selectedCodes.add(buy.code);
@@ -64,6 +79,11 @@ const constrainBuys = (
       candidate.close <= 0 ||
       !Number.isFinite(candidate.close)
     ) {
+      skipped.push({
+        side: 'BUY',
+        code: buy.code,
+        reason: 'NOT_IN_CANDIDATES',
+      });
       continue;
     }
     const weightPercent = clampWeightPercent(
@@ -71,6 +91,7 @@ const constrainBuys = (
       input.maximumWeightPercent,
     );
     if (weightPercent <= 0) {
+      skipped.push({ side: 'BUY', code: buy.code, reason: 'ZERO_WEIGHT' });
       continue;
     }
     const targetAmount = (accountValuation * weightPercent) / 100;
@@ -78,6 +99,11 @@ const constrainBuys = (
     const affordableQuantity = Math.floor(remainingCash / candidate.close);
     const quantity = Math.min(desiredQuantity, affordableQuantity);
     if (quantity <= 0) {
+      skipped.push({
+        side: 'BUY',
+        code: buy.code,
+        reason: 'INSUFFICIENT_CASH',
+      });
       continue;
     }
     remainingCash -= quantity * candidate.close;
@@ -89,6 +115,7 @@ const constrainBuys = (
       reason: buy.reason,
       weightPercent,
       quantity,
+      close: candidate.close,
     });
   }
 
