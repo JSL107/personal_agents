@@ -252,3 +252,68 @@ describe('MarketDataPrismaRepository', () => {
     expect(result).toEqual(new Map([['2026-08-11', '71200']]));
   });
 });
+
+describe('MarketDataPrismaRepository open 컬럼', () => {
+  const settledDate = new Date('2026-08-15T17:10:00+09:00');
+  const row = {
+    tickerId: 1,
+    tradeDate: new Date('2026-08-14T00:00:00.000Z'),
+    close: '70000',
+    adjClose: '70000',
+    volume: 1000n,
+  };
+
+  it('insertDailyPrices 가 시가를 함께 저장한다', async () => {
+    const createMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      dailyPrice: { createMany },
+    } as unknown as PrismaService;
+    const repository = new MarketDataPrismaRepository(prisma);
+
+    await repository.insertDailyPrices(
+      [{ ...row, open: '69000' }],
+      settledDate,
+    );
+
+    expect(createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ open: '69000' })],
+      }),
+    );
+  });
+
+  it('upsertDailyPrices 가 신규 생성과 갱신 양쪽에 시가를 싣는다', async () => {
+    const upsert = jest.fn((input) => input);
+    const prisma = {
+      dailyPrice: { upsert },
+      $transaction: jest.fn().mockResolvedValue([]),
+    } as unknown as PrismaService;
+    const repository = new MarketDataPrismaRepository(prisma);
+
+    await repository.upsertDailyPrices(
+      [{ ...row, open: '69000' }],
+      settledDate,
+    );
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ open: '69000' }),
+        update: expect.objectContaining({ open: '69000' }),
+      }),
+    );
+  });
+
+  it('공급자가 시가를 빠뜨린 봉은 저장된 시가를 null 로 덮지 않는다', async () => {
+    const upsert = jest.fn((input) => input);
+    const prisma = {
+      dailyPrice: { upsert },
+      $transaction: jest.fn().mockResolvedValue([]),
+    } as unknown as PrismaService;
+    const repository = new MarketDataPrismaRepository(prisma);
+
+    await repository.upsertDailyPrices([row], settledDate);
+
+    // 키 자체가 있어야 통과하므로 open 줄을 지우는 회귀도, null 로 되돌리는 회귀도 잡는다.
+    expect(upsert.mock.calls[0][0].update).toHaveProperty('open', undefined);
+  });
+});
