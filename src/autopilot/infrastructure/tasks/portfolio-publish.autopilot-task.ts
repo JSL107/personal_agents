@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AuditResumeUsecase } from '../../../agent/career-mate/application/audit-resume.usecase';
 import {
   PublishPortfolioSiteResult,
   PublishPortfolioSiteUsecase,
 } from '../../../agent/career-mate/application/publish-portfolio-site.usecase';
+import { ResumeAuditResult } from '../../../agent/career-mate/domain/career-mate.type';
+import { formatResumeAudit } from '../../../agent/career-mate/infrastructure/career-mate.formatter';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -23,6 +27,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly publishPortfolioSite: PublishPortfolioSiteUsecase,
+    private readonly auditResume: AuditResumeUsecase,
     private readonly configService: ConfigService,
   ) {}
 
@@ -48,7 +53,23 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       };
     }
 
-    return this.toTaskResult(result);
+    let auditResult: ResumeAuditResult | null = null;
+    let auditNote: string | null = null;
+    // 감사는 발행 성공 뒤 별도 경계에서만 실행한다. 여기서 같은 try/catch 를 공유하면 감사의
+    // 모델·파서 실패가 이미 성공한 발행 결과까지 실패로 바꾸는 과거 관제 사고를 재현한다.
+    try {
+      const outcome = await this.auditResume.execute({
+        slackUserId: context.ownerSlackUserId,
+        triggerType: TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
+      });
+      auditResult = outcome.result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      auditNote = `⚠️ 감사 실패 — ${reason}`;
+      this.logger.warn(auditNote);
+    }
+
+    return this.toTaskResult(result, auditResult, auditNote);
   }
 
   private isConfigured(): boolean {
@@ -65,13 +86,37 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
   // 발생하고, 그걸 매일 알리면 알림이 배경 소음이 된다. 신규·실패·누락만 사람에게 올린다.
   private toTaskResult(
     result: PublishPortfolioSiteResult,
+    auditResult: ResumeAuditResult | null,
+    auditNote: string | null,
   ): AutopilotTaskResult {
+    const weakCount =
+      auditResult?.items.filter((item) => item.status === 'WEAK').length ?? 0;
+    const missingCount =
+      auditResult?.items.filter((item) => item.status === 'MISSING').length ??
+      0;
+    const hasGuardConcern = auditResult
+      ? auditResult.guard.demotedTitles.length > 0 ||
+        auditResult.guard.droppedTitles.length > 0 ||
+        auditResult.guard.unjudgedTitles.length > 0 ||
+        auditResult.guard.rewriteMissing.length > 0
+      : false;
+    // 공고 대조에서 필수·우대 요건이 미달인 건수. 이력서 성과가 전부 입증이어도 이쪽이 비면
+    // 안 되는 이유는, 공고를 등록한 회차에는 이게 사용자가 가장 먼저 볼 결손이기 때문이다.
+    const jdConcernCount =
+      auditResult?.jdFindings.filter(
+        (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
+      ).length ?? 0;
     const worthReporting =
       result.createdProjects.length > 0 ||
       result.createdSkillGroups.length > 0 ||
       result.failures.length > 0 ||
       result.skippedTitles.length > 0 ||
-      result.missingAfterPublish.length > 0;
+      result.missingAfterPublish.length > 0 ||
+      weakCount > 0 ||
+      missingCount > 0 ||
+      hasGuardConcern ||
+      jdConcernCount > 0 ||
+      auditNote !== null;
     if (!worthReporting) {
       this.logger.log(
         `포트폴리오 사이트 발행 — 변화 없음(갱신 ${result.updatedProjects.length}건)`,
@@ -101,15 +146,37 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
         `• ⚠️ 발행 후 재조회에 없는 항목 ${result.missingAfterPublish.length}건`,
       );
     }
+    if (auditResult && (weakCount > 0 || missingCount > 0)) {
+      summaryLines.push(
+        `• 📋 이력서 감사 — 약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${auditResult.items.length}건)`,
+      );
+    }
+    if (auditResult && jdConcernCount > 0) {
+      summaryLines.push(
+        `• 📌 목표 공고 요건 미달 ${jdConcernCount}건 (${auditResult.jdSource?.company ?? '공고'} / ${auditResult.jdSource?.role ?? ''})`,
+      );
+    }
+    if (auditResult && hasGuardConcern) {
+      summaryLines.push(
+        `• ⚠️ 이력서 감사 가드 경고 — 강등 ${auditResult.guard.demotedTitles.length} / 폐기 ${auditResult.guard.droppedTitles.length} / 누락 ${auditResult.guard.unjudgedTitles.length}`,
+      );
+    }
+    if (auditNote) {
+      summaryLines.push(`• ${auditNote}`);
+    }
 
     return {
       skip: false,
       summaryText: summaryLines.join('\n'),
-      detailText: this.buildDetail(result),
+      detailText: this.buildDetail(result, auditResult, auditNote),
     };
   }
 
-  private buildDetail(result: PublishPortfolioSiteResult): string {
+  private buildDetail(
+    result: PublishPortfolioSiteResult,
+    auditResult: ResumeAuditResult | null,
+    auditNote: string | null,
+  ): string {
     const lines: string[] = [];
     if (result.createdProjects.length > 0) {
       lines.push(`신규: ${result.createdProjects.join(', ')}`);
@@ -132,6 +199,27 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       result.updatedProjects.length > 0
     ) {
       lines.push('발행 확인: 재조회에서 발행분 전부 확인');
+    }
+    if (auditResult) {
+      const weakItems = auditResult.items.filter(
+        (item) => item.status === 'WEAK' || item.status === 'MISSING',
+      );
+      const hasGuardConcern =
+        auditResult.guard.demotedTitles.length > 0 ||
+        auditResult.guard.droppedTitles.length > 0 ||
+        auditResult.guard.unjudgedTitles.length > 0 ||
+        auditResult.guard.rewriteMissing.length > 0;
+      const jdConcerns = auditResult.jdFindings.filter(
+        (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
+      );
+      if (weakItems.length > 0 || hasGuardConcern || jdConcerns.length > 0) {
+        // 수동/자동 경로가 같은 escape 규약을 쓰게 formatter 결과를 재사용한다. LLM 문자열을
+        // task 에서 직접 이어 붙이면 Slack mrkdwn 제어문자가 보고 구조를 위조할 수 있다.
+        lines.push(formatResumeAudit(auditResult).full);
+      }
+    }
+    if (auditNote) {
+      lines.push(auditNote);
     }
     return lines.join('\n');
   }

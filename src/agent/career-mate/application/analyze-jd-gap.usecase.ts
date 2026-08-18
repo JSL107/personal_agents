@@ -22,6 +22,10 @@ import {
   CareerProfileRepositoryPort,
 } from '../domain/port/career-profile.repository.port';
 import {
+  CAREER_TARGET_JD_REPOSITORY_PORT,
+  CareerTargetJdRepositoryPort,
+} from '../domain/port/career-target-jd.repository.port';
+import {
   buildJdGapPrompt,
   JD_GAP_SYSTEM_PROMPT,
   parseGapAnalysisOutput,
@@ -29,6 +33,29 @@ import {
 import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
 
 const PREVIEW_TTL_MS = 30 * 60 * 1000; // 30분 — 주제 선택 대기
+
+interface TargetJdIdentity {
+  company: string;
+  role: string;
+}
+
+const extractTargetJdIdentity = (jdText: string): TargetJdIdentity => {
+  const lines = jdText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 3);
+  let roleIndex = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (roleIndex === -1 || lines[index].length < lines[roleIndex].length) {
+      roleIndex = index;
+    }
+  }
+  return {
+    role: roleIndex === -1 ? '(미상)' : lines[roleIndex],
+    company: lines.find((_, index) => index !== roleIndex) ?? '(미상)',
+  };
+};
 
 @Injectable()
 export class AnalyzeJdGapUsecase {
@@ -40,6 +67,8 @@ export class AnalyzeJdGapUsecase {
     private readonly buildProfile: BuildCareerProfileUsecase,
     private readonly modelRouter: ModelRouterUsecase,
     private readonly createPreview: CreatePreviewUsecase,
+    @Inject(CAREER_TARGET_JD_REPOSITORY_PORT)
+    private readonly targetJdRepository: CareerTargetJdRepositoryPort,
     private readonly agentRunService: AgentRunService,
   ) {}
 
@@ -69,6 +98,19 @@ export class AnalyzeJdGapUsecase {
           },
         });
         const data = parseGapAnalysisOutput(completion.text);
+        const identity = extractTargetJdIdentity(jdText);
+        try {
+          await this.targetJdRepository.save({
+            slackUserId,
+            company: identity.company,
+            role: identity.role,
+            jdText,
+          });
+        } catch (error) {
+          this.logger.warn(
+            `목표 공고 저장 실패 — 갭 분석 응답은 유지합니다: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         await this.createPreview.execute({
           slackUserId,
           kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
