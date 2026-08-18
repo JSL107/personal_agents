@@ -168,6 +168,10 @@ import { WebhookModule } from './webhook/webhook.module';
         CareerMateModule,
         LocalSessionsModule,
         BeChainModule,
+        // CtoBeChainApplier 는 AgentRunService 도 주입받는다. forRoot 는 applier 를
+        // PreviewGate 컨텍스트에서 새로 만들므로, BeChainModule 이 그것을 재수출하지
+        // 않는 이상 여기 없으면 부팅이 index[1] 에서 끊긴다(런타임에만 드러난다).
+        AgentRunModule,
       ],
     }),
     SlackModule,
