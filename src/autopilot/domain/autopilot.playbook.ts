@@ -27,6 +27,8 @@ import {
   DEFAULT_PAPER_SCORE_TIMEZONE,
   DEFAULT_PAPER_TRADING_CRON,
   DEFAULT_PAPER_TRADING_TIMEZONE,
+  DEFAULT_PORTFOLIO_WARMUP_CRON,
+  DEFAULT_PORTFOLIO_WARMUP_TIMEZONE,
   DEFAULT_PR_REVIEW_SWEEP_CRON,
   DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
   DEFAULT_PREFERENCE_LEARNING_CRON,
@@ -384,6 +386,20 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE,
     },
     riskTier: 'T1_PREVIEW',
+  },
+  // 포트폴리오 사이트 워밍업 — 잠든 사이트 API 를 깨우고, 연속 실패 때만 알린다.
+  // 공개 health GET 만 쓰므로 인증이 필요 없고 외부 부작용이 없어 T0_AUTO.
+  // 배열 맨 끝에 두는 이유 — 단독 그룹이라 그룹 스케줄 env 키(AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE)가
+  // 자기 id 로 정해지고, 기존 그룹의 첫 항목을 밀어내지 않는다.
+  {
+    id: 'portfolio-warmup',
+    taskId: 'portfolio-warmup',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PORTFOLIO_WARMUP_CRON,
+      timezone: DEFAULT_PORTFOLIO_WARMUP_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
   },
 ];
 

@@ -64,9 +64,11 @@ describe('AutopilotScheduler', () => {
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
-    //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply = 24그룹.
-    expect(queue.add).toHaveBeenCalledTimes(24);
+    //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply
+    //   + portfolio-warmup(포트폴리오 사이트 워밍업, 단독 그룹) = 25그룹.
+    expect(queue.add).toHaveBeenCalledTimes(25);
     expect(addCalls).toContain('evening');
+    expect(addCalls).toContain('portfolio-warmup');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
     expect(addCalls).toContain('weekly-summary');
