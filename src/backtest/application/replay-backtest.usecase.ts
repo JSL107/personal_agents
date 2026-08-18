@@ -81,6 +81,9 @@ interface PendingOrder {
   side: 'BUY' | 'SELL';
   quantity: number;
   targetTradeDate: string;
+  // 매수 주문이 체결되면 쓸 현금. 다음 추천에서 같은 현금을 다시 배정하지 않기 위해
+  // 주문 시점 종가로 잡아 둔다. 매도는 0 이다.
+  reservedAmount: number;
 }
 
 const dateTextOf = (value: Date): string => value.toISOString().slice(0, 10);
@@ -309,6 +312,12 @@ export class ReplayBacktestUsecase {
       expiredCount: number;
     };
   }): void {
+    const targetTradeDate = nextWeekdayText(context.today);
+    // 체결일이 재생 구간을 넘어가면 그 주문은 영원히 PENDING 으로 남는다. 채점기는 이를
+    // UNEXPECTED_ORDER_STATUS 이상으로 세고 주문 수도 부풀리므로 아예 만들지 않는다.
+    if (targetTradeDate > context.command.to) {
+      return;
+    }
     // 추천은 평일마다 돌지만 판단 근거는 마지막으로 마감된 거래일 종가다.
     // 실전 크론이 19:30 에 최신 종가로 판단하는 것과 같다.
     const asOf = this.latestTradeDateOnOrBefore(
@@ -336,8 +345,25 @@ export class ReplayBacktestUsecase {
         asOfIndex -
         (context.entryIndexByTicker.get(position.tickerId) ?? asOfIndex),
     }));
+    const pendingBuyTickerIds = new Set(
+      context.state.pendingOrders
+        .filter((order) => order.side === 'BUY')
+        .map((order) => order.tickerId),
+    );
+    // 대기 매수 주문이 있는 종목은 추천 전에 랭킹에서 뺀다. 뒤에서 버리기만 하면 그 자리가
+    // 빈 채로 남아, 연휴 동안 다른 종목 주문이 쌓였다가 개장일에 몰려 체결되는 실전 현상이
+    // 백테스트에서 재현되지 않는다(설계 §연휴 누적 — 막는 것이 아니라 영향을 측정한다).
+    const rankedForRecommendation = ranked.filter(
+      (stock) => !pendingBuyTickerIds.has(stock.tickerId),
+    );
+    // 대기 매수 주문이 쓸 현금은 먼저 뺀다. 실전의 reservedCash 와 같은 규칙이고,
+    // 없으면 같은 현금을 여러 주문에 중복 배정해 성적이 실제보다 좋게 나온다.
+    const reservedCash = context.state.pendingOrders.reduce(
+      (sum, order) => sum + order.reservedAmount,
+      0,
+    );
     const recommendation = selectDeterministicRecommendation({
-      rankedStocks: ranked.map((stock) => ({
+      rankedStocks: rankedForRecommendation.map((stock) => ({
         tickerId: stock.tickerId,
         code: stock.code,
         name: stock.name,
@@ -371,8 +397,14 @@ export class ReplayBacktestUsecase {
         code: context.tickerById.get(position.tickerId)?.code ?? '',
         quantity: Number(position.quantity.toString()),
       })),
-      cashBalance: Number(context.ledger.cashBalance.toString()),
+      cashBalance: Math.max(
+        0,
+        Number(context.ledger.cashBalance.toString()) - reservedCash,
+      ),
       accountValuation,
+      // CLI 의 --weight 를 그대로 쓴다. 이 값을 넘기지 않으면 운영 상수 20% 로 다시 깎여
+      // --weight 30 이 실제로는 20% 만 매수하면서 30% 규칙의 성적으로 표시된다.
+      maximumWeightPercent: context.command.weightPercent,
     });
 
     // 같은 종목에 대기 주문이 이미 있으면 새로 만들지 않는다. 실전의 pendingBuyTickerIds
@@ -380,7 +412,9 @@ export class ReplayBacktestUsecase {
     const pendingTickerIds = new Set(
       context.state.pendingOrders.map((order) => order.tickerId),
     );
-    const targetTradeDate = nextWeekdayText(context.today);
+    const closeByTickerId = new Map(
+      ranked.map((stock) => [stock.tickerId, stock.indicators.close]),
+    );
     for (const intent of [...constrained.sells, ...constrained.buys]) {
       if (pendingTickerIds.has(intent.tickerId)) {
         continue;
@@ -400,6 +434,10 @@ export class ReplayBacktestUsecase {
         side: intent.side,
         quantity: intent.quantity,
         targetTradeDate,
+        reservedAmount:
+          intent.side === 'BUY'
+            ? intent.quantity * (closeByTickerId.get(intent.tickerId) ?? 0)
+            : 0,
       });
       pendingTickerIds.add(intent.tickerId);
       context.state.nextOrderId += 1;

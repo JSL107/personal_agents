@@ -59,6 +59,42 @@ const risingBars = (
     ],
   ]);
 
+// 상위 종목이 대기 주문이라 자리를 못 쓰는 상황을 만들려면 후보가 정원(3종목)보다 많아야 한다.
+const MANY_TICKERS: BacktestTicker[] = [1, 2, 3, 4, 5].map((order) => ({
+  tickerId: 20 + order,
+  code: `00001${order}`,
+  name: `상승${order}`,
+  krxMarket: 'KOSPI',
+}));
+
+// 기울기를 종목마다 달리해 점수 순위가 갈리게 한다. holidayIndexes 의 평일은 봉을 만들지
+// 않아 휴장일이 된다 — 실제 DailyPrice 에 휴장일 행이 없는 것과 같다.
+const manyTickerBars = (
+  holidayIndexes: number[],
+): Map<number, BacktestBar[]> => {
+  const holidays = new Set(holidayIndexes);
+  return new Map(
+    MANY_TICKERS.map((ticker, order) => [
+      ticker.tickerId,
+      TRADE_DATES.flatMap((tradeDate, index) => {
+        if (holidays.has(index)) {
+          return [];
+        }
+        const price = 5000 + index * (32 - order * 2);
+        return [
+          {
+            tradeDate,
+            open: price,
+            close: new Prisma.Decimal(price),
+            adjClose: new Prisma.Decimal(price),
+            volume: BigInt(200_000),
+          },
+        ];
+      }),
+    ]),
+  );
+};
+
 const repositoryOf = (
   bars: Map<number, BacktestBar[]>,
   tickers: BacktestTicker[] = TICKERS,
@@ -141,6 +177,65 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.filledCount).toBe(0);
     expect(result.tradeDateCount).toBe(0);
     expect(result.invariantViolations).toEqual([]);
+  });
+
+  // 시가가 있어도 갭이 크면 주문 시점 수량을 살 현금이 없다. 이 경로는 체결 usecase 가
+  // EXPIRED 를 돌려주고 원장 상태도 리포지토리가 EXPIRED 로 바꾼다. 상태가 PENDING 으로
+  // 남으면 채점기가 이상으로 세므로 그 값까지 함께 확인한다.
+  it('시가가 있어도 현금이 모자라면 만료로 세고 원장 상태까지 정리한다', async () => {
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(risingBars((_, close) => close * 10)),
+    );
+
+    const result = await usecase.execute({
+      ...command,
+      seedAmount: '30000',
+      weightPercent: 100,
+    });
+
+    expect(result.metrics.expirationsByReason['현금 부족']).toBeGreaterThan(0);
+    expect(result.missingOpenCount).toBe(0);
+    expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
+  });
+
+  // 종료일 다음 평일에 체결될 주문은 재생이 끝나 영원히 PENDING 으로 남는다. 채점기가 이를
+  // UNEXPECTED_ORDER_STATUS 로 세면 정상 구간에도 허위 이상과 부풀려진 주문 수가 찍힌다.
+  it('재생 구간을 넘어 체결될 주문은 만들지 않는다', async () => {
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const result = await usecase.execute(command);
+
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
+  });
+
+  // --weight 는 규칙을 바꿔 성적을 비교하기 위한 값이다. 운영 상수 20% 로 다시 깎이면
+  // 30% 규칙을 요청해도 20% 만 매수하면서 30% 성적으로 표시된다.
+  it('목표 비중을 20% 보다 크게 주면 그 비중으로 매수한다', async () => {
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const result = await usecase.execute({ ...command, weightPercent: 40 });
+
+    expect(result.metrics.maximumWeightPercent).toBeGreaterThan(30);
+  });
+
+  // 휴장일에도 추천은 돌지만 상위 종목은 이미 대기 주문이다. 그 자리를 다음 순위로 채우지
+  // 않으면 연휴 뒤 정원을 넘겨 한꺼번에 체결되는 실전 현상이 백테스트에 나타나지 않는다.
+  it('휴장일에 대기 주문이 쌓이면 다음 순위까지 주문해 개장일 동시 체결을 재현한다', async () => {
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(manyTickerBars([219]), MANY_TICKERS),
+    );
+
+    const result = await usecase.execute({
+      ...command,
+      from: dateText(TRADE_DATES[218]),
+      to: dateText(TRADE_DATES[222]),
+    });
+
+    expect(result.metrics.maximumFillsInOneDay).toBeGreaterThan(
+      command.maximumPositions,
+    );
+    expect(result.metrics.burstFillDayCount).toBeGreaterThan(0);
   });
 
   it('보유일수가 차면 청산해 실현손익이 남는다', async () => {
