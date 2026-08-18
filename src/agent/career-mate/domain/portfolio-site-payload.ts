@@ -69,8 +69,11 @@ export const buildProjectSlug = (
   if (!first) {
     return null;
   }
-  const repositoryName = first.repo.split('/').pop() ?? first.repo;
-  const segment = toSlugSegment(repositoryName);
+  // owner 를 버리지 않는다 — 여러 저장소에서 PR 을 모으는 환경에서 owner 가 다른 동명 저장소가
+  // 같은 PR 번호를 가지면(작은 번호대에서 흔하다) 두 성과가 같은 slug 를 얻는다. 그러면 첫
+  // 실행은 유니크 제약으로 실패하고, 다음 실행부터는 같은 항목을 번갈아 PATCH 해 한쪽 내용이
+  // 덮인다. repo 전체(owner/name)를 키에 넣어 그 경로를 없앤다.
+  const segment = toSlugSegment(first.repo);
   if (!segment) {
     return null;
   }

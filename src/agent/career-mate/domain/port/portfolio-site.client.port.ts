@@ -16,7 +16,10 @@ export interface PortfolioSiteSkillGroup {
 }
 
 // Portfolio OS (`/me/*`) 쓰기 어댑터. 자동화 토큰 헤더로 인증한다.
-// 공개 읽기(`/public/portfolios/:handle`)는 발행 결과를 되짚어 보는 검증용이라 별도 메서드.
+//
+// 발행 결과 검증도 이 인증 경로(listProjects)로 한다. 공개 페이지(`/public/portfolios/:handle`)로는
+// 검증할 수 없다 — 발행물이 `published: false` 라 공개 응답에 원래 나오지 않으므로, 거기서
+// "안 보인다"는 결과는 성공과 실패를 구분하지 못한다.
 export interface PortfolioSiteClientPort {
   listProjects(): Promise<PortfolioSiteProject[]>;
   createProject(data: Record<string, unknown>): Promise<PortfolioSiteProject>;
@@ -32,6 +35,4 @@ export interface PortfolioSiteClientPort {
     id: string,
     data: Record<string, unknown>,
   ): Promise<PortfolioSiteSkillGroup>;
-  // 공개 페이지에 실제로 올라갔는지 되짚어 본다. handle 미설정이면 null (검증 불가와 실패를 구분).
-  findPublicProjectSlugs(): Promise<string[] | null>;
 }

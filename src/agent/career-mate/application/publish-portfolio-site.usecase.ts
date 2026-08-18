@@ -33,8 +33,8 @@ export interface PublishPortfolioSiteResult {
   // 근거 PR 이 없어 멱등 키를 만들 수 없던 성과 제목.
   skippedTitles: string[];
   failures: PublishPortfolioSiteFailure[];
-  // 공개 페이지 재조회 결과. handle 미설정이면 null (검증 불가 ≠ 검증 실패).
-  publicSlugsAfter: string[] | null;
+  // 발행 후 재조회에서 확인되지 않은 slug. 정상이면 빈 배열.
+  missingAfterPublish: string[];
   agentRunId: number;
 }
 
@@ -71,25 +71,17 @@ export class PublishPortfolioSiteUsecase {
       payload.skillGroups,
       failures,
     );
-
-    // 실제로 사이트에 남았는지 되짚어 본다 — 쓰기 응답만 믿으면 사이트 스키마가 바뀐 날
-    // "성공했다"는 보고와 빈 화면이 함께 남는다.
-    const publicSlugsAfter = await this.siteClient
-      .findPublicProjectSlugs()
-      .catch((error: unknown) => {
-        failures.push({
-          target: 'public-verify',
-          reason: errorMessage(error),
-        });
-        return null;
-      });
+    const missingAfterPublish = await this.verifyPublished(
+      [...projects.createdProjects, ...projects.updatedProjects],
+      failures,
+    );
 
     return {
       ...projects,
       ...skillGroups,
       skippedTitles: payload.skippedTitles,
       failures,
-      publicSlugsAfter,
+      missingAfterPublish,
       agentRunId,
     };
   }
@@ -106,6 +98,34 @@ export class PublishPortfolioSiteUsecase {
     }
     const built = await this.buildProfile.execute({ slackUserId });
     return { profile: built.result, agentRunId: built.agentRunId };
+  }
+
+  // 쓰기 응답만 믿지 않고 목록을 다시 읽어 확인한다.
+  //
+  // 공개 페이지(`/public/portfolios/:handle`)로 확인하지 않는 이유 — 발행물이 `published: false`
+  // 라 공개 응답에는 원래 나오지 않는다. 거기서 "안 보인다"는 결과는 발행 성공과 실패를 구분하지
+  // 못하므로 검증이 아니라 장식이 된다. 인증 경로는 비공개 초안도 그대로 돌려준다.
+  private async verifyPublished(
+    expectedSlugs: string[],
+    failures: PublishPortfolioSiteFailure[],
+  ): Promise<string[]> {
+    if (expectedSlugs.length === 0) {
+      return [];
+    }
+    try {
+      const after = await this.siteClient.listProjects();
+      const slugs = new Set(after.map((project) => project.slug));
+      const missing = expectedSlugs.filter((slug) => !slugs.has(slug));
+      if (missing.length > 0) {
+        this.logger.warn(
+          `사이트 발행 확인 실패 — 재조회에 없는 slug ${missing.join(', ')}`,
+        );
+      }
+      return missing;
+    } catch (error) {
+      failures.push({ target: 'verify', reason: errorMessage(error) });
+      return [];
+    }
   }
 
   // slug 를 멱등 키로 쓴다 — 사이트에 (userId, slug) 유니크 제약이 있어 같은 성과가 두 번
@@ -129,11 +149,10 @@ export class PublishPortfolioSiteUsecase {
       const existingId = idBySlug.get(payload.slug);
       try {
         if (existingId) {
-          // 사람이 편집기에서 이미 게시한 항목을 다시 비공개로 되돌리지 않는다 —
-          // published 는 갱신 대상에서 뺀다.
-          const { published: _published, ...updatable } = payload;
-          void _published;
-          await this.siteClient.updateProject(existingId, updatable);
+          await this.siteClient.updateProject(
+            existingId,
+            toUpdatePayload(payload),
+          );
           updatedProjects.push(payload.slug);
           continue;
         }
@@ -192,3 +211,18 @@ export class PublishPortfolioSiteUsecase {
     return { createdSkillGroups, updatedSkillGroups };
   }
 }
+
+// 갱신 payload 에서는 사람이 편집기에서 정한 표시 상태를 빼고 보낸다.
+//
+// published 는 공개 여부, featured 는 대표작 지정이다. 둘 다 사람이 손으로 켜는 값인데
+// 매일 도는 발행이 payload 기본값(false)을 실어 보내면 그 지정이 하루마다 풀린다.
+// 사이트는 "필드가 있으면 덮는다"(content.service.ts 의 `"featured" in data`) 라서
+// 값을 넣지 않는 것이 유일한 보존 방법이다.
+const toUpdatePayload = (
+  payload: PortfolioSiteProjectPayload,
+): Record<string, unknown> => {
+  const { published: _published, featured: _featured, ...updatable } = payload;
+  void _published;
+  void _featured;
+  return updatable;
+};

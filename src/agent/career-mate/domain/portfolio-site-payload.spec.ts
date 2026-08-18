@@ -70,7 +70,9 @@ const profile = (): CareerProfileData => ({
 describe('buildProjectSlug', () => {
   it('가장 이른 PR 을 멱등 키로 쓴다 (제목이 흔들려도 같은 slug)', () => {
     // evidence 배열 순서가 아니라 mergedAt 최소값(313)이 기준이어야 한다.
-    expect(buildProjectSlug(ACCOMPLISHMENT)).toBe('personal-agents-pr-313');
+    expect(buildProjectSlug(ACCOMPLISHMENT)).toBe(
+      'jsl107-personal-agents-pr-313',
+    );
   });
 
   it('사이트 slugify 가 깎지 않는 형태로만 만든다', () => {
@@ -79,8 +81,24 @@ describe('buildProjectSlug', () => {
       evidence: [evidence(7, '2026-08-01T00:00:00Z', 'JSL107/My_Repo.v2')],
     });
 
-    expect(slug).toBe('my-repo-v2-pr-7');
+    expect(slug).toBe('jsl107-my-repo-v2-pr-7');
     expect(slug).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it('owner 가 다른 동명 저장소는 같은 PR 번호여도 slug 가 갈린다', () => {
+    // owner 를 버리면 두 성과가 같은 slug 를 얻어 한쪽이 다음 회차에 덮인다.
+    const mine = buildProjectSlug({
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(7, '2026-08-01T00:00:00Z', 'JSL107/web')],
+    });
+    const work = buildProjectSlug({
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(7, '2026-08-01T00:00:00Z', 'schoolbell-e/web')],
+    });
+
+    expect(mine).toBe('jsl107-web-pr-7');
+    expect(work).toBe('schoolbell-e-web-pr-7');
+    expect(mine).not.toBe(work);
   });
 
   it('근거 PR 이 없으면 slug 를 만들지 않는다', () => {

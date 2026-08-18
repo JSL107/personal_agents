@@ -70,8 +70,13 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
       'GET',
       '/me/projects',
     )) as ProjectListResponse | null;
-    const raw = Array.isArray(body?.projects) ? body.projects : [];
-    return raw
+    // 형식이 어긋나면 빈 목록으로 삼키지 않고 끊는다 — 비정상 200 이나 계약 변경을 "기존 항목
+    // 없음" 으로 오판하면 이미 있는 항목을 다시 만들려 든다. 프로젝트는 유니크 제약에 걸려
+    // 실패로 드러나지만, 스킬 그룹에는 그 제약이 없어 중복 그룹이 조용히 쌓인다.
+    if (!Array.isArray(body?.projects)) {
+      throw this.contractViolation('GET /me/projects', 'projects 배열', body);
+    }
+    return body.projects
       .map(toProject)
       .filter((project): project is PortfolioSiteProject => project !== null);
   }
@@ -98,8 +103,14 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
       'GET',
       '/me/skill-groups',
     )) as SkillGroupListResponse | null;
-    const raw = Array.isArray(body?.skillGroups) ? body.skillGroups : [];
-    return raw
+    if (!Array.isArray(body?.skillGroups)) {
+      throw this.contractViolation(
+        'GET /me/skill-groups',
+        'skillGroups 배열',
+        body,
+      );
+    }
+    return body.skillGroups
       .map(toSkillGroup)
       .filter((group): group is PortfolioSiteSkillGroup => group !== null);
   }
@@ -121,40 +132,10 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
     );
   }
 
-  async findPublicProjectSlugs(): Promise<string[] | null> {
-    const handle = this.configService
-      .get<string>('PORTFOLIO_SITE_HANDLE')
-      ?.trim();
-    if (!handle) {
-      // handle 미설정 = 되짚어 볼 주소를 모른다. "검증 실패" 와 구분하려고 null 을 돌린다.
-      return null;
-    }
-    const body = await this.request(
-      'GET',
-      `/public/portfolios/${encodeURIComponent(handle)}`,
-      undefined,
-      { authenticated: false },
-    );
-    if (!isRecord(body) || !Array.isArray(body.projects)) {
-      return [];
-    }
-    return body.projects
-      .map((project) =>
-        isRecord(project) && typeof project.slug === 'string'
-          ? project.slug
-          : null,
-      )
-      .filter((slug): slug is string => slug !== null);
-  }
-
   private requireProject(body: unknown): PortfolioSiteProject {
     const project = toProject(body);
     if (!project) {
-      throw new CareerMateException({
-        code: CareerMateErrorCode.CONFIG_MISSING,
-        message: `사이트 프로젝트 응답 형식이 예상과 다릅니다: ${JSON.stringify(body)?.slice(0, 200)}`,
-        status: DomainStatus.INTERNAL,
-      });
+      throw this.contractViolation('프로젝트 응답', 'id·slug', body);
     }
     return project;
   }
@@ -162,13 +143,22 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
   private requireSkillGroup(body: unknown): PortfolioSiteSkillGroup {
     const group = toSkillGroup(body);
     if (!group) {
-      throw new CareerMateException({
-        code: CareerMateErrorCode.CONFIG_MISSING,
-        message: `사이트 스킬 그룹 응답 형식이 예상과 다릅니다: ${JSON.stringify(body)?.slice(0, 200)}`,
-        status: DomainStatus.INTERNAL,
-      });
+      throw this.contractViolation('스킬 그룹 응답', 'id', body);
     }
     return group;
+  }
+
+  // 사이트 응답이 계약과 어긋난 경우 — 조용히 기본값으로 흘리지 않고 호출자에게 끊어 올린다.
+  private contractViolation(
+    operation: string,
+    expected: string,
+    body: unknown,
+  ): CareerMateException {
+    return new CareerMateException({
+      code: CareerMateErrorCode.CONFIG_MISSING,
+      message: `사이트 ${operation} 형식이 예상과 다릅니다(${expected} 없음): ${JSON.stringify(body)?.slice(0, 200)}`,
+      status: DomainStatus.INTERNAL,
+    });
   }
 
   // 사이트의 모든 API 는 Vercel 의 `/backend/*` rewrite 를 통해 도달한다. 그래서 이대리가
@@ -177,18 +167,17 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
     method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body?: Record<string, unknown>,
-    options?: { authenticated?: boolean },
   ): Promise<unknown> {
     const siteUrl = this.requireConfig('PORTFOLIO_SITE_URL').replace(
       /\/+$/,
       '',
     );
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (options?.authenticated !== false) {
-      headers[AUTOMATION_TOKEN_HEADER] = this.requireConfig(
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      [AUTOMATION_TOKEN_HEADER]: this.requireConfig(
         'PORTFOLIO_AUTOMATION_TOKEN',
-      );
-    }
+      ),
+    };
     if (body) {
       headers['Content-Type'] = 'application/json';
     }
