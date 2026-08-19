@@ -246,6 +246,8 @@ describe('ScoreRecommendationsUsecase', () => {
   });
 
   it('계좌별 채점 결과를 규칙 버전과 함께 원장에 저장한다', async () => {
+    // 원장에 남는 회차는 기준일이 KST 오늘일 때뿐이라 시계를 그날로 고정한다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
@@ -330,11 +332,14 @@ describe('ScoreRecommendationsUsecase', () => {
         exclusions: result.accounts[0].exclusions,
       }),
     );
+    expect(result.persisted).toBe(true);
+    jest.useRealTimers();
   });
 
   // 원장에 남기는 것이 이 채점의 목적이라 저장 실패를 삼키지 않는다. 삼키면 슬랙에는 성적이
   // 뜨는데 원장에는 아무것도 없는 회차가 조용히 생기고, 나중에 그 구멍을 설명할 수 없다.
   it('원장 저장이 실패하면 성적을 반환하지 않고 실패를 그대로 올린다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
@@ -353,9 +358,40 @@ describe('ScoreRecommendationsUsecase', () => {
     );
 
     await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
+    jest.useRealTimers();
+  });
+
+  // 거래는 tradeDate 로 잘려 시점이 복원되지만 주문 상태는 이력이 없어 현재값을 읽는다.
+  // 그날 대기 중이던 주문이 지금은 만료로 잡히므로 뒤늦은 재채점을 그날 행으로 저장하면
+  // "그날의 성적" 이 아닌 숫자가 원장에 남는다.
+  it('과거 기준일 재채점은 그날 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T03:00:00.000Z'));
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      asOf: new Date('2026-08-13T00:00:00.000Z'),
+    });
+
+    expect(result.accounts).toHaveLength(1);
+    expect(result.persisted).toBe(false);
+    expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('구간 집계는 누적 성적 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
+    // 기준일은 오늘로 둔다 — 저장이 막히는 이유가 구간 지정 하나임을 분리하기 위해서다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     repository.loadRecommendationScoreData.mockResolvedValue({
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [],
@@ -375,7 +411,9 @@ describe('ScoreRecommendationsUsecase', () => {
     });
 
     expect(result.accounts).toHaveLength(1);
+    expect(result.persisted).toBe(false);
     expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('입력 생략 시 KST 오늘을 UTC 날짜 경계로 정규화하고 빈 표본도 두 계좌 결과로 반환한다', async () => {

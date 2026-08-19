@@ -72,6 +72,13 @@ export const formatPaperScoreReport = (
     }
   }
 
+  if (!result.persisted) {
+    lines.push(
+      '',
+      '⚠️ 이 회차는 원장에 저장하지 않았습니다 — 과거 기준일 재채점이거나 구간 집계입니다. 주문 상태는 시점 복원이 안 되므로 이 숫자는 그날의 성적과 다를 수 있습니다.',
+    );
+  }
+
   lines.push(
     '',
     '*분류*',

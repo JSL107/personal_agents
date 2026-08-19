@@ -59,6 +59,8 @@ export interface AccountRecommendationScore {
 export interface ScoreRecommendationsResult {
   asOf: Date;
   from: Date | null;
+  // 이 회차를 원장에 남겼는지. 남기지 않은 이유는 아래 저장 조건 주석 참조.
+  persisted: boolean;
   accounts: AccountRecommendationScore[];
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
@@ -102,7 +104,8 @@ export class ScoreRecommendationsUsecase {
   async execute(
     command: ScoreRecommendationsCommand,
   ): Promise<ScoreRecommendationsResult> {
-    const asOf = command.asOf ?? new Date(`${getTodayKstDate()}T00:00:00.000Z`);
+    const today = new Date(`${getTodayKstDate()}T00:00:00.000Z`);
+    const asOf = command.asOf ?? today;
     const data = await this.repository.loadRecommendationScoreData({
       asOf,
       from: command.from,
@@ -230,9 +233,18 @@ export class ScoreRecommendationsUsecase {
       },
     );
 
+    // 원장에 남기는 회차를 둘로 좁힌다.
+    //
     // 구간 집계(from 지정)는 탐색용 조회다. 같은 기준일의 누적 성적 행을 구간 성적으로
-    // 덮어쓰면 그 행이 무엇을 잰 숫자인지 알 수 없게 되므로 누적 집계만 원장에 남긴다.
-    if (command.from === undefined) {
+    // 덮어쓰면 그 행이 무엇을 잰 숫자인지 알 수 없게 된다.
+    //
+    // 과거 기준일 재채점도 남기지 않는다. 거래는 tradeDate 로 잘라 시점이 복원되지만
+    // 주문 상태(PaperOrder.status)는 이력이 없어 현재값을 읽는다. 그날 대기 중이던 주문이
+    // 지금은 만료로 잡히므로, 뒤늦게 과거 날짜를 다시 채점하면 "그날의 성적" 이 아닌 숫자가
+    // 그날 행을 덮어쓴다. 상태 이력이 생기기 전까지는 오늘 기준일만 정본으로 인정한다.
+    const persisted =
+      command.from === undefined && asOf.getTime() === today.getTime();
+    if (persisted) {
       await this.repository.saveRecommendationScores(
         accounts.map((account) => toSaveInput(account, asOf)),
       );
@@ -241,6 +253,7 @@ export class ScoreRecommendationsUsecase {
     return {
       asOf,
       from: command.from ?? null,
+      persisted,
       accounts,
       classifications,
       exclusions,

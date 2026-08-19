@@ -4,6 +4,7 @@ import { formatPaperScoreReport } from './paper-score.formatter';
 const RESULT: ScoreRecommendationsResult = {
   asOf: new Date('2026-08-13T00:00:00.000Z'),
   from: null,
+  persisted: true,
   accounts: [
     {
       accountId: 7,
@@ -68,6 +69,17 @@ describe('formatPaperScoreReport', () => {
     expect(text).toContain('계좌 수익률 +15% · MDD -4% · 회전율 1.25배');
     expect(text).toContain('누적 비용 1,234.5원 · 실제 스냅샷 8건');
     expect(text).toContain('*LONG_TERM* · 규칙 v2');
+  });
+
+  // 저장하지 않은 회차를 조용히 넘기면, 손으로 과거를 재채점한 숫자를 원장에 있는 성적으로
+  // 착각하게 된다.
+  it('원장에 남기지 않은 회차는 그 사실과 이유를 함께 적는다', () => {
+    const kept = formatPaperScoreReport(RESULT);
+    const dropped = formatPaperScoreReport({ ...RESULT, persisted: false });
+
+    expect(kept).not.toContain('원장에 저장하지 않았습니다');
+    expect(dropped).toContain('이 회차는 원장에 저장하지 않았습니다');
+    expect(dropped).toContain('과거 기준일 재채점이거나 구간 집계');
   });
 
   it('규칙 버전이 섞였거나 기록되지 않은 집계를 그대로 드러낸다', () => {
