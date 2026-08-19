@@ -17,7 +17,7 @@ export interface ProfileSkill {
 }
 
 export interface AccomplishmentEvidence extends SkillEvidence {
-  mergedAt: string;
+  mergedAt: string | null;
 }
 
 export interface ProfileAccomplishment {
