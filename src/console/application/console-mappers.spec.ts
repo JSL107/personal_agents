@@ -75,10 +75,36 @@ describe('PREVIEW_KIND_TO_AGENT', () => {
       kind: PREVIEW_KIND.PM_WRITE_BACK,
       previewText: 'PR write-back',
       createdAt: new Date('2026-07-30T00:00:00Z'),
+      expiresAt: new Date('2026-07-30T01:00:00Z'),
     } as unknown as PreviewAction;
 
     const approval = toConsoleApproval(preview);
 
     expect(approval.agentType).toBe(AgentType.PM);
+  });
+});
+
+describe('toConsoleApproval', () => {
+  it('만료 시각을 ISO 문자열로 내려준다', () => {
+    const approval = toConsoleApproval({
+      id: 'preview-1',
+      slackUserId: 'U1',
+      kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+      payload: {},
+      status: 'PENDING',
+      responseUrl: null,
+      previewText: '초안 발행',
+      expiresAt: new Date('2026-08-19T12:00:00.000Z'),
+      createdAt: new Date('2026-08-19T11:00:00.000Z'),
+      appliedAt: null,
+      cancelledAt: null,
+      slackChannelId: null,
+      slackMessageTs: null,
+    });
+
+    // 화면은 이 두 값의 간격으로 방치 압력을 계산한다. 하나라도 빠지면 TTL 을 알 수 없어
+    // 가장 급한 카드(TTL 1시간)에서 신호가 가장 늦게 나온다.
+    expect(approval.createdAt).toBe('2026-08-19T11:00:00.000Z');
+    expect(approval.expiresAt).toBe('2026-08-19T12:00:00.000Z');
   });
 });
