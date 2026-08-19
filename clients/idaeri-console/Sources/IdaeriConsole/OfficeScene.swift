@@ -95,6 +95,9 @@ final class OfficeScene: SKScene {
     private var lastStates: [String: ConsoleAgentState] = [:]
     private var lastSyncedAgents: [ConsoleAgent] = []
     private var lastSyncedApprovals: [ConsoleApproval] = []
+    /// 마지막으로 출근 판정을 확인한 시각(0~23시). 이 값과 달라졌을 때만 다시 판정한다 —
+    /// 매 틱마다 32명을 다시 훑을 이유가 없다, 시각이 실제로 넘어간 순간만 훑으면 된다.
+    private var lastAttendanceHour: Int = 0
     private var agentBubbles: [String: String] = [:]
     /// agentType → 사규의 직무 한 줄. 호버 쪽지의 둘째 줄이 된다.
     private var agentJobs: [String: String] = [:]
@@ -163,6 +166,13 @@ final class OfficeScene: SKScene {
         addChild(floorLayer)
         addChild(objectLayer)
         addChild(overlayLayer)
+        // 씬이 처음 붙는 순간의 기준시각을 잡아 둔다. 이 시점엔 아직 스냅샷이 없어
+        // (`lastSyncedAgents`가 비어 있어) 아래 호출은 대개 아무도 놓지 않는 no-op 이지만,
+        // 오프스크린 렌더처럼 `sync`가 didMove 직후 곧바로 이어지는 경로에서는 기준시각이
+        // 먼저 자리 잡혀 있어야 그 sync 호출이 옳게 판정한다.
+        lastAttendanceHour = currentHour()
+        applyAttendance(animated: false)
+        startAttendanceClock()
         startIdleLoop()
     }
 
@@ -306,6 +316,15 @@ final class OfficeScene: SKScene {
 
         reconcileQueue(agents: agents, approvals: approvals)
 
+        // 출근 판정대로 자리에 놓거나 치운다. reconcileQueue **뒤에** 와야 한다 — 이번 스냅샷에서
+        // 막 승인 대기로 들어온 사람은 `attendanceInput`이 보는 `queueOrder`가 갱신돼 있어야
+        // `isQueued`(대표실 앞 줄, 최우선 조건)로 잡힌다. 순서를 바꾸면 진행 중 상태를 거치지
+        // 않고 폴링 사이에 곧장 승인 대기로 넘어간 사람이 새벽·야간에는 캐릭터 자체가 안 만들어져
+        // 승인 버튼을 누를 대상이 화면에서 사라진다. 이 호출로 막 새로 앉은 사람이 대표실 줄
+        // 칸이 아니라 자기 책상에 놓이더라도 괜찮다 — 아래 메인 루프 뒤의 `layoutQueue()`가
+        // 한 번 더 돌며 줄 칸으로 다시 옮긴다.
+        applyAttendance(animated: false)
+
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
         for agentType in strollersToStop(strolling: strollingAgents, agents: agents) {
@@ -317,12 +336,8 @@ final class OfficeScene: SKScene {
             guard let seat = homeSeats[agent.agentType] else {
                 continue  // 구역 정원을 넘어 자리를 못 받은 인원(현재 구성에서는 발생하지 않음)
             }
-            let node = characters[agent.agentType] ?? makeCharacter(for: agent, seat: seat)
-            if characters[agent.agentType] == nil {
-                characters[agent.agentType] = node
-                objectLayer.addChild(node)
-                place(node, at: seat)
-                node.sit()
+            guard let node = characters[agent.agentType] else {
+                continue  // 출근 판정이 away — 위 applyAttendance가 이미 걸러냈다.
             }
             node.resize(tileSize: tileSize, spriteScale: characterScale)
             // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
@@ -364,6 +379,115 @@ final class OfficeScene: SKScene {
         updateDaylight()
         // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
         refreshDoors()
+    }
+
+    // MARK: - 출근
+
+    /// 스냅샷에서 이 사람의 출근 판정 입력을 뽑는다.
+    ///
+    /// 진행 중 여부를 `runs` 로 세지 않는다 — 씬은 runs 를 들고 있지 않고(`lastSyncedAgents` ·
+    /// `lastSyncedApprovals` · `lastSyncedSessions` 뿐), 백엔드가 이미 그것을 보고 `state` 를
+    /// 계산해 내려준다. 같은 것을 두 곳에서 세면 갈린다.
+    private func attendanceInput(of agent: ConsoleAgent) -> OfficeAttendanceInput {
+        OfficeAttendanceInput(
+            hasActiveRun: agent.state == .inProgress,
+            // 버전 스큐로 옵셔널인 필드(Models.swift 참조) — 값이 없으면 오늘 아직 아무것도
+            // 못 끝낸 것으로 본다. 조기 출근 판정만 이 값을 쓰고 야간 판정에는 안 쓴다.
+            doneToday: agent.doneToday ?? 0,
+            isQueued: queueOrder.contains(agent.agentType)
+        )
+    }
+
+    /// 이 사람이 지금 사무실에 있어야 하는가.
+    private func attendance(of agent: ConsoleAgent) -> OfficeAttendance {
+        officeAttendance(hour: currentHour(), input: attendanceInput(of: agent))
+    }
+
+    /// 출근 판정대로 사람을 놓거나 치운다.
+    ///
+    /// `plan.desks`(자리가 확정된 사람 목록)를 기준으로 돈다 — `homeSeats`가 바로 이 값에서
+    /// 뽑히므로 자리 없는 사람을 다루는 경우가 없다.
+    ///
+    /// `animated: false` 는 **앱을 켠 순간**과 스냅샷이 갱신될 때처럼 "지금 값을 그대로 확정"
+    /// 해야 하는 경로다. 10시에 앱을 켰다고 출근 애니메이션을 소급 재생하면, 이미 일어난 일을
+    /// 처음부터 다시 보여 주는 셈이 된다. 이 태스크는 걷기 연출 자체가 없어 `animated` 가 아직
+    /// 분기를 만들지 않지만, 다음 태스크가 문에서 걸어오는 연출을 여기 끼워 넣을 자리다.
+    private func applyAttendance(animated: Bool) {
+        for entry in plan.desks {
+            guard let agent = lastSyncedAgents.first(where: { $0.agentType == entry.agentType })
+            else {
+                continue
+            }
+            switch attendance(of: agent) {
+            case .present where characters[entry.agentType] == nil:
+                // 다음 태스크가 animated == true 일 때 문에서 걸어오는 연출로 대체한다.
+                spawnCharacter(entry.agentType, at: entry.seat)
+            case .away where characters[entry.agentType] != nil:
+                // 다음 태스크가 animated == true 일 때 문까지 걸어가는 연출로 대체한다.
+                despawnCharacter(entry.agentType)
+            default:
+                continue
+            }
+        }
+    }
+
+    /// 캐릭터를 만들어 지정한 타일에 세운다.
+    ///
+    /// 좌석이든(이 태스크) 문 앞이든(다음 태스크가 걸어 들어오는 연출의 출발점으로 쓴다) 이
+    /// 함수 하나로 만든다 — 좌석 전용 변주를 따로 두면 다음 태스크가 생성 경로를 하나 더
+    /// 만들어야 해서 갈라진다.
+    private func spawnCharacter(_ agentType: String, at tile: TilePoint) {
+        guard characters[agentType] == nil,
+            let agent = lastSyncedAgents.first(where: { $0.agentType == agentType })
+        else {
+            return
+        }
+        let node = makeCharacter(for: agent, seat: tile)
+        characters[agentType] = node
+        objectLayer.addChild(node)
+        place(node, at: tile)
+        node.sit()
+    }
+
+    /// 캐릭터를 치운다. 생성 때 함께 만든 부기(줄 순서·완료 상태·배회 기록)도 같이 지운다 —
+    /// 남겨 두면 다음 스냅샷의 `attendanceInput`이 이미 나간 사람을 여전히 줄 서 있거나
+    /// 배회 중인 것으로 읽는다. 스냅샷에서 사람 자체가 사라졌을 때의 정리(`sync` 위쪽의
+    /// `incoming` 제거 루프)와 같은 항목을 지운다 — 두 제거 경로가 남기는 자국이 다르면
+    /// 안 보이는 사람 하나가 접근성 낭독·문 여닫이 판정에 계속 걸린다.
+    private func despawnCharacter(_ agentType: String) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        node.removeFromParent()
+        characters[agentType] = nil
+        queueOrder.removeAll { $0 == agentType }
+        lastStates[agentType] = nil
+        strollingAgents.remove(agentType)
+        lastStrollAt[agentType] = nil
+    }
+
+    /// 시각이 바뀌었는지 1분마다 확인한다.
+    ///
+    /// 씬이 멈춘 동안(창이 가려짐)에는 돌지 않는다 — 유휴 CPU 를 0.7% 까지 내려둔 상태를 이
+    /// 타이머가 깨면 안 된다. `isPaused`가 SKAction 자체를 세우므로 대기 시간은 그대로 멈췄다가
+    /// 다시 보이는 순간 이어서 흐른다 — 놓친 경계는 그때(최대 60초 안에) 따라잡힌다.
+    private func startAttendanceClock() {
+        let tick = SKAction.sequence([
+            SKAction.wait(forDuration: 60),
+            SKAction.run { [weak self] in
+                guard let self, !self.isPaused else {
+                    return
+                }
+                let hour = self.currentHour()
+                guard hour != self.lastAttendanceHour else {
+                    return
+                }
+                self.lastAttendanceHour = hour
+                self.applyAttendance(animated: true)
+                self.updateDaylight()
+            },
+        ])
+        run(SKAction.repeatForever(tick), withKey: "attendanceClock")
     }
 
     /// 회귀 렌더가 자세를 실제로 그리지 않으면 누락도 정상 화면처럼 저장되므로 전부 강제 배치한다.
