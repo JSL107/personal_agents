@@ -101,7 +101,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     modelRouter.route.mockResolvedValue({
       text: JSON.stringify({
         sells: [],
-        buys: [{ code: '000660', weightPercent: 20, reason: '추세 우위' }],
+        buys: [{ code: '000660', reason: '추세 우위' }],
       }),
       modelUsed: 'codex-cli',
       provider: ModelProviderName.CHATGPT,
@@ -465,8 +465,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
           { code: '999999', reason: '미보유' },
         ],
         buys: [
-          { code: '000660', weightPercent: 20, reason: '추세 우위' },
-          { code: '005930', weightPercent: 20, reason: '이미 보유' },
+          { code: '000660', reason: '추세 우위' },
+          { code: '005930', reason: '이미 보유' },
         ],
       }),
       modelUsed: 'codex-cli',
@@ -566,7 +566,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     modelRouter.route.mockResolvedValue({
       text: JSON.stringify({
         sells: [],
-        buys: [{ code: '000660', weightPercent: 20, reason: '추세 우위' }],
+        buys: [{ code: '000660', reason: '추세 우위' }],
       }),
       modelUsed: 'codex-cli',
       provider: ModelProviderName.CHATGPT,
@@ -601,8 +601,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
           { code: '000660', reason: '중복 매도' },
         ],
         buys: [
-          { code: '000660', weightPercent: 20, reason: '보유 예정' },
-          { code: '035420', weightPercent: 20, reason: '신규 매수' },
+          { code: '000660', reason: '보유 예정' },
+          { code: '035420', reason: '신규 매수' },
         ],
       }),
       modelUsed: 'codex-cli',

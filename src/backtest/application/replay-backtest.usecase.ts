@@ -379,13 +379,7 @@ export class ReplayBacktestUsecase {
       asOf,
     );
     const constrained = constrainPaperRecommendation({
-      recommendation: {
-        sells: recommendation.sells,
-        buys: recommendation.buys.map((buy) => ({
-          ...buy,
-          weightPercent: context.command.weightPercent,
-        })),
-      },
+      recommendation,
       candidates: ranked.map((stock) => ({
         tickerId: stock.tickerId,
         code: stock.code,
@@ -402,7 +396,7 @@ export class ReplayBacktestUsecase {
         Number(context.ledger.cashBalance.toString()) - reservedCash,
       ),
       accountValuation,
-      // CLI 의 --weight 를 그대로 쓴다. 이 값을 넘기지 않으면 운영 상수 20% 로 다시 깎여
+      // CLI 의 --weight 를 그대로 쓴다. 이 값을 넘기지 않으면 운영 상수 20% 가 적용돼
       // --weight 30 이 실제로는 20% 만 매수하면서 30% 규칙의 성적으로 표시된다.
       maximumWeightPercent: context.command.weightPercent,
     });

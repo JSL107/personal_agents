@@ -5,13 +5,29 @@ describe('parsePaperRecommendation', () => {
   it('매수와 매도 JSON을 파싱한다', () => {
     const result = parsePaperRecommendation(`{
       "sells": [{ "code": "005930", "reason": "추세 이탈" }],
-      "buys": [{ "code": "000660", "weightPercent": 20, "reason": "돌파" }]
+      "buys": [{ "code": "000660", "reason": "돌파" }]
     }`);
 
     expect(result).toEqual({
       sells: [{ code: '005930', reason: '추세 이탈' }],
-      buys: [{ code: '000660', weightPercent: 20, reason: '돌파' }],
+      buys: [{ code: '000660', reason: '돌파' }],
     });
+  });
+
+  // 비중은 코드가 정한다. 모델이 보낸 값을 오류로 보지도 않지만 결과에 남겨서도 안 된다 —
+  // 남으면 나중에 누가 읽어 회차마다 다른 수량이 다시 나온다.
+  it('모델이 비중을 보내면 오류 없이 그 값을 떨궈 낸다', () => {
+    const result = parsePaperRecommendation(
+      JSON.stringify({
+        sells: [],
+        buys: [
+          { code: '000660', weightPercent: '터무니없는 값', reason: '돌파' },
+        ],
+      }),
+    );
+
+    expect(result.buys).toEqual([{ code: '000660', reason: '돌파' }]);
+    expect(result.buys[0]).not.toHaveProperty('weightPercent');
   });
 
   it('잘못된 JSON이면 PAPER_RECOMMEND_INVALID_MODEL_OUTPUT을 던진다', () => {
@@ -28,7 +44,7 @@ describe('parsePaperRecommendation', () => {
       parsePaperRecommendation(
         JSON.stringify({
           sells: [{ code: '005930' }],
-          buys: [{ code: '000660', weightPercent: '20', reason: '돌파' }],
+          buys: [{ code: '000660', reason: 42 }],
         }),
       ),
     ).toThrow(

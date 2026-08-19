@@ -7,7 +7,6 @@ export interface PaperRecommendationSell {
 
 export interface PaperRecommendationBuy {
   code: string;
-  weightPercent: number;
   reason: string;
 }
 
@@ -35,7 +34,7 @@ export interface ConstrainPaperRecommendationInput {
   positions: PaperRecommendationPosition[];
   cashBalance: number;
   accountValuation: number;
-  // 백테스트가 비중을 바꿔가며 성적을 비교할 수 있도록 상한을 주입 가능하게 열어 둔다.
+  // 종목당 비중. 백테스트가 값을 바꿔가며 성적을 비교할 수 있도록 주입 가능하게 열어 둔다.
   // 생략하면 운영 상수(20%)를 쓰므로 기존 호출부는 그대로다.
   maximumWeightPercent?: number;
 }
@@ -54,6 +53,8 @@ export interface PaperRecommendationBuyIntent {
   code: string;
   name: string;
   reason: string;
+  // 주문 생성에는 쓰이지 않는다. 코드가 어떤 비중을 배정했는지 드러내는 유일한 관측점이라
+  // 테스트가 이 값으로 결정론을 단언한다 (수량으로 재면 종가에 얽매인다).
   weightPercent: number;
   quantity: number;
   close: number;

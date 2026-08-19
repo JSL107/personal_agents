@@ -8,15 +8,15 @@ describe('constrainPaperRecommendation', () => {
     { tickerId: 4, code: '000004', name: '넷째', close: 40_000 },
   ];
 
-  it('앞의 세 매수만 채택하고 20%를 넘는 비중은 절단한다', () => {
+  it('앞의 세 매수만 채택하고 비중은 종목마다 상한값으로 배정한다', () => {
     const result = constrainPaperRecommendation({
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 25, reason: '첫째' },
-          { code: '000002', weightPercent: 15, reason: '둘째' },
-          { code: '000003', weightPercent: 10, reason: '셋째' },
-          { code: '000004', weightPercent: 20, reason: '넷째' },
+          { code: '000001', reason: '첫째' },
+          { code: '000002', reason: '둘째' },
+          { code: '000003', reason: '셋째' },
+          { code: '000004', reason: '넷째' },
         ],
       },
       candidates,
@@ -33,25 +33,92 @@ describe('constrainPaperRecommendation', () => {
       }),
       expect.objectContaining({
         code: '000002',
-        weightPercent: 15,
-        quantity: 75,
+        weightPercent: 20,
+        quantity: 100,
       }),
       expect.objectContaining({
         code: '000003',
-        weightPercent: 10,
-        quantity: 40,
+        weightPercent: 20,
+        quantity: 80,
       }),
     ]);
   });
+
+  // 같은 추천을 두 번 넣으면 같은 수량이 나와야 백테스트 재생과 규칙 A/B 비교가 성립한다.
+  it('같은 입력에 같은 수량을 내고 모델이 보낸 비중은 읽지 않는다', () => {
+    const recommendation = {
+      sells: [],
+      buys: [{ code: '000001', reason: '첫째' }],
+    };
+    const input = {
+      candidates,
+      positions: [],
+      cashBalance: 10_000_000,
+      accountValuation: 10_000_000,
+    };
+
+    const first = constrainPaperRecommendation({ recommendation, ...input });
+    const second = constrainPaperRecommendation({
+      // 모델이 스키마를 어기고 비중을 덧붙여 보낸 상황. 수량이 흔들리면 안 된다.
+      recommendation: {
+        sells: [],
+        buys: [{ code: '000001', weightPercent: 3, reason: '첫째' } as never],
+      },
+      ...input,
+    });
+
+    expect(first.buys).toEqual(second.buys);
+    expect(first.buys[0]).toEqual(
+      expect.objectContaining({ weightPercent: 20, quantity: 200 }),
+    );
+  });
+
+  it('주입한 비중 상한을 그대로 매수 비중으로 쓴다', () => {
+    const result = constrainPaperRecommendation({
+      recommendation: { sells: [], buys: [{ code: '000001', reason: '첫째' }] },
+      candidates,
+      positions: [],
+      cashBalance: 10_000_000,
+      accountValuation: 10_000_000,
+      maximumWeightPercent: 30,
+    });
+
+    expect(result.buys).toEqual([
+      expect.objectContaining({ weightPercent: 30, quantity: 300 }),
+    ]);
+  });
+
+  // 상한이 유일한 수량 입력이므로 숫자가 아닌 값이 그냥 통과하면 NaN 주문이 만들어진다.
+  it.each([0, Number.NaN, Number.POSITIVE_INFINITY])(
+    '비중 상한이 %p 이면 매수를 만들지 않고 ZERO_WEIGHT로 기록한다',
+    (maximumWeightPercent) => {
+      const result = constrainPaperRecommendation({
+        recommendation: {
+          sells: [],
+          buys: [{ code: '000001', reason: '첫째' }],
+        },
+        candidates,
+        positions: [],
+        cashBalance: 10_000_000,
+        accountValuation: 10_000_000,
+        maximumWeightPercent,
+      });
+
+      expect(result.buys).toEqual([]);
+      expect(result.skipped).toEqual([
+        { side: 'BUY', code: '000001', reason: 'ZERO_WEIGHT' },
+      ]);
+    },
+  );
 
   it('보유 중이거나 후보에 없는 매수는 제거한다', () => {
     const result = constrainPaperRecommendation({
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 20, reason: '보유 중' },
-          { code: '999999', weightPercent: 20, reason: '환각' },
-          { code: '000002', weightPercent: 20, reason: '후보' },
+          { code: '000001', reason: '보유 중' },
+          { code: '999999', reason: '환각' },
+          { code: '000002', reason: '후보' },
         ],
       },
       candidates,
@@ -70,13 +137,13 @@ describe('constrainPaperRecommendation', () => {
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 20, reason: '보유 중' },
-          { code: '999999', weightPercent: 20, reason: '환각' },
-          { code: '000005', weightPercent: 20, reason: '0주' },
-          { code: '000002', weightPercent: 20, reason: '유효 1' },
-          { code: '000003', weightPercent: 20, reason: '유효 2' },
-          { code: '000004', weightPercent: 20, reason: '유효 3' },
-          { code: '000006', weightPercent: 20, reason: '상한 초과' },
+          { code: '000001', reason: '보유 중' },
+          { code: '999999', reason: '환각' },
+          { code: '000005', reason: '0주' },
+          { code: '000002', reason: '유효 1' },
+          { code: '000003', reason: '유효 2' },
+          { code: '000004', reason: '유효 3' },
+          { code: '000006', reason: '상한 초과' },
         ],
       },
       candidates: [
@@ -121,9 +188,9 @@ describe('constrainPaperRecommendation', () => {
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 20, reason: '첫째' },
-          { code: '000002', weightPercent: 20, reason: '둘째' },
-          { code: '000003', weightPercent: 20, reason: '셋째' },
+          { code: '000001', reason: '첫째' },
+          { code: '000002', reason: '둘째' },
+          { code: '000003', reason: '셋째' },
         ],
       },
       candidates,
@@ -141,7 +208,7 @@ describe('constrainPaperRecommendation', () => {
     const result = constrainPaperRecommendation({
       recommendation: {
         sells: [],
-        buys: [{ code: '000002', weightPercent: 20, reason: '비쌈' }],
+        buys: [{ code: '000002', reason: '비쌈' }],
       },
       candidates,
       positions: [],
@@ -152,15 +219,15 @@ describe('constrainPaperRecommendation', () => {
     expect(result.buys).toEqual([]);
   });
 
-  it('보유·후보 이탈·0 비중·현금 부족 매수의 제외 사유를 기록한다', () => {
+  it('보유·후보 이탈·현금 부족 매수의 제외 사유를 기록한다', () => {
     const result = constrainPaperRecommendation({
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 20, reason: '보유 중' },
-          { code: '999999', weightPercent: 20, reason: '후보 밖' },
-          { code: '000002', weightPercent: 0, reason: '비중 없음' },
-          { code: '000003', weightPercent: 20, reason: '현금 부족' },
+          { code: '000001', reason: '보유 중' },
+          { code: '999999', reason: '후보 밖' },
+          { code: '000002', reason: '현금 부족 1' },
+          { code: '000003', reason: '현금 부족 2' },
         ],
       },
       candidates,
@@ -172,7 +239,7 @@ describe('constrainPaperRecommendation', () => {
     expect(result.skipped).toEqual([
       { side: 'BUY', code: '000001', reason: 'ALREADY_HELD' },
       { side: 'BUY', code: '999999', reason: 'NOT_IN_CANDIDATES' },
-      { side: 'BUY', code: '000002', reason: 'ZERO_WEIGHT' },
+      { side: 'BUY', code: '000002', reason: 'INSUFFICIENT_CASH' },
       { side: 'BUY', code: '000003', reason: 'INSUFFICIENT_CASH' },
     ]);
   });
@@ -182,11 +249,11 @@ describe('constrainPaperRecommendation', () => {
       recommendation: {
         sells: [],
         buys: [
-          { code: '000001', weightPercent: 20, reason: '첫째' },
-          { code: '000002', weightPercent: 15, reason: '둘째' },
-          { code: '000003', weightPercent: 10, reason: '셋째' },
-          { code: '000004', weightPercent: 20, reason: '넷째' },
-          { code: '999999', weightPercent: 20, reason: '다섯째' },
+          { code: '000001', reason: '첫째' },
+          { code: '000002', reason: '둘째' },
+          { code: '000003', reason: '셋째' },
+          { code: '000004', reason: '넷째' },
+          { code: '999999', reason: '다섯째' },
         ],
       },
       candidates,
@@ -204,14 +271,14 @@ describe('constrainPaperRecommendation', () => {
       }),
       expect.objectContaining({
         code: '000002',
-        weightPercent: 15,
-        quantity: 75,
+        weightPercent: 20,
+        quantity: 100,
         close: 20_000,
       }),
       expect.objectContaining({
         code: '000003',
-        weightPercent: 10,
-        quantity: 40,
+        weightPercent: 20,
+        quantity: 80,
         close: 25_000,
       }),
     ]);

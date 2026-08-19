@@ -46,16 +46,13 @@ export const selectDeterministicRecommendation = (
     0,
     input.maximumPositions - (heldCodes.size - sellCodes.size),
   );
-  // 실제 비중은 재생 루프가 CLI 의 --weight 로 덮어쓴다. 여기서는 자리 수로 균등 배분한 값을
-  // 기본으로 둬서 이 함수만 따로 써도 합이 100% 를 넘지 않게 한다.
-  const weightPercent =
-    input.maximumPositions === 0 ? 0 : 100 / input.maximumPositions;
+  // 비중은 종목 선정과 분리돼 constrainPaperRecommendation 이 정한다 (재생 루프가 CLI 의
+  // --weight 를 maximumWeightPercent 로 넘긴다). 여기서는 무엇을 살지만 고른다.
   const buys = input.rankedStocks
     .filter((stock) => !heldCodes.has(stock.code))
     .slice(0, openSlots)
     .map((stock) => ({
       code: stock.code,
-      weightPercent,
       reason: `스크리너 점수 ${stock.score}`,
     }));
 
