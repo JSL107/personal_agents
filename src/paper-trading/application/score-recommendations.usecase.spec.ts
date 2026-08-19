@@ -332,6 +332,29 @@ describe('ScoreRecommendationsUsecase', () => {
     );
   });
 
+  // 원장에 남기는 것이 이 채점의 목적이라 저장 실패를 삼키지 않는다. 삼키면 슬랙에는 성적이
+  // 뜨는데 원장에는 아무것도 없는 회차가 조용히 생기고, 나중에 그 구멍을 설명할 수 없다.
+  it('원장 저장이 실패하면 성적을 반환하지 않고 실패를 그대로 올린다', async () => {
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    repository.saveRecommendationScores.mockRejectedValue(
+      new Error('원장 저장 실패'),
+    );
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
+  });
+
   it('구간 집계는 누적 성적 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
     repository.loadRecommendationScoreData.mockResolvedValue({
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
