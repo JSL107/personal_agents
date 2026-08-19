@@ -20,6 +20,7 @@ runOfficeLabelOverlapTests(runner)
 runAgentRoleTests(runner)
 runOfficePathfindingTests(runner)
 runOfficeIdleTests(runner)
+runOfficeAttendanceTests(runner)
 runOfficeAccessibilityTests(runner)
 runConsoleClientTests(runner)
 
