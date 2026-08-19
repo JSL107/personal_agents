@@ -44,10 +44,12 @@ const formatResult = (result: FillPendingOrdersResult): AutopilotTaskResult => {
       ` • 장 마감까지 체결가를 못 받아 만료 ${result.bulkExpired}건 — 주문은 사라지고 다음 추천을 기다립니다`,
     );
   }
-  // 이미 처리된 주문(중복 실행)은 어느 집계에도 안 잡혀 사유 줄이 통째로 비는 카드가 된다.
-  if (lines.length === 1 && result.attempted > 0) {
+  // 이미 처리된 주문(겹친 실행·수동 fill)은 어느 집계에도 안 잡혀 상세에서 조용히 빠진다.
+  // 체결이 섞인 회차에서도 빠지므로 줄 수가 아니라 시도 건수와 상세 수의 차로 판별한다.
+  const unaccounted = result.attempted - result.details.length;
+  if (unaccounted > 0) {
     lines.push(
-      ` • 대기 주문 ${result.attempted}건이 이미 다른 회차에서 처리돼 이번 회차엔 바뀐 것이 없습니다`,
+      ` • 대기 주문 ${unaccounted}건은 이미 다른 회차에서 처리돼 이번 회차엔 바뀐 것이 없습니다`,
     );
   }
   return { skip: false, summaryText: lines.join('\n') };
