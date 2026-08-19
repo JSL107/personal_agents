@@ -413,6 +413,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
         targetTradeDate: new Date('2026-08-17T00:00:00.000Z'),
         status: 'PENDING',
         indicatorSnapshot: indicators,
+        ruleVersion: 2,
         agentRunId: 99,
       },
     ]);

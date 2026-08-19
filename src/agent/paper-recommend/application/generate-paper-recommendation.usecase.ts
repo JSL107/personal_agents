@@ -519,6 +519,7 @@ export class GeneratePaperRecommendationUsecase {
       targetTradeDate,
       status: 'PENDING' as const,
       indicatorSnapshot: indicatorsByTickerId.get(order.tickerId) ?? null,
+      ruleVersion: screen.ruleVersion,
       agentRunId,
     }));
   }

@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client';
 
+import { SCREENER_RULE_VERSION } from '../../screener/domain/screener-rule';
 import { BacktestBar, BacktestTicker } from '../domain/backtest-bar.type';
 import { BacktestPrismaRepository } from '../infrastructure/backtest.prisma.repository';
+import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
 import { ReplayBacktestUsecase } from './replay-backtest.usecase';
 
 const BAR_COUNT = 240;
@@ -236,6 +238,27 @@ describe('ReplayBacktestUsecase', () => {
       command.maximumPositions,
     );
     expect(result.metrics.burstFillDayCount).toBeGreaterThan(0);
+  });
+
+  // 백테스트 원장은 채점기가 그대로 먹는 형태로 쌓인다. 규칙 버전이 빠지거나 엉뚱한 값이면
+  // 실전 원장과 다른 자를 쓰게 되는데, 이 값은 결과 지표에 안 나타나 조용히 틀릴 수 있다.
+  it('재생이 만든 주문에 그날 쓴 스크리너 규칙 버전을 남긴다', async () => {
+    const recordOrder = jest.spyOn(
+      InMemoryPaperLedger.prototype,
+      'recordOrder',
+    );
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const result = await usecase.execute(command);
+
+    expect(result.orderCount).toBeGreaterThan(0);
+    expect(recordOrder).toHaveBeenCalled();
+    expect(
+      recordOrder.mock.calls.every(
+        ([order]) => order.ruleVersion === SCREENER_RULE_VERSION,
+      ),
+    ).toBe(true);
+    recordOrder.mockRestore();
   });
 
   it('보유일수가 차면 청산해 실현손익이 남는다', async () => {

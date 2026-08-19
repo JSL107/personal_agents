@@ -8,6 +8,7 @@ const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
 describe('ScoreRecommendationsUsecase', () => {
   const repository = {
     loadRecommendationScoreData: jest.fn(),
+    saveRecommendationScores: jest.fn(),
   };
 
   beforeEach(() => {
@@ -30,6 +31,7 @@ describe('ScoreRecommendationsUsecase', () => {
           strategy: 'LONG_TERM',
           status: 'FILLED',
           quantity: decimal('1'),
+          ruleVersion: 2,
         },
         {
           id: 302,
@@ -39,6 +41,7 @@ describe('ScoreRecommendationsUsecase', () => {
           strategy: 'SWING',
           status: 'EXPIRED',
           quantity: decimal('1'),
+          ruleVersion: null,
         },
       ],
       recommendationTrades: [
@@ -147,6 +150,11 @@ describe('ScoreRecommendationsUsecase', () => {
         },
       }),
     );
+    expect(result.accounts[0].ruleVersions).toEqual([2]);
+    expect(result.accounts[0].unknownRuleVersionCount).toBe(0);
+    // 버전을 적기 전에 만들어진 추천은 버전 목록에 끼워 넣지 않고 건수로 따로 센다.
+    expect(result.accounts[1].ruleVersions).toEqual([]);
+    expect(result.accounts[1].unknownRuleVersionCount).toBe(1);
     expect(result.accounts[1]).toEqual(
       expect.objectContaining({
         score: expect.objectContaining({
@@ -183,6 +191,7 @@ describe('ScoreRecommendationsUsecase', () => {
           strategy: 'LONG_TERM',
           status: 'FILLED',
           quantity: decimal('1'),
+          ruleVersion: 2,
         },
       ],
       recommendationTrades: [
@@ -234,6 +243,177 @@ describe('ScoreRecommendationsUsecase', () => {
       anomaly: 1,
       realizedPnlMismatch: 0,
     });
+  });
+
+  it('계좌별 채점 결과를 규칙 버전과 함께 원장에 저장한다', async () => {
+    // 원장에 남는 회차는 기준일이 KST 오늘일 때뿐이라 시계를 그날로 고정한다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [
+        {
+          id: 301,
+          accountId: 7,
+          tickerId: 71,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 3,
+        },
+        {
+          id: 302,
+          accountId: 7,
+          tickerId: 72,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 2,
+        },
+        {
+          id: 303,
+          accountId: 7,
+          tickerId: 73,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: null,
+        },
+      ],
+      recommendationTrades: [
+        {
+          id: 501,
+          orderId: 301,
+          accountId: 7,
+          tickerId: 71,
+          side: 'BUY',
+          quantity: decimal('1'),
+          price: decimal('100'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          realizedPnl: null,
+          tradeDate: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      ],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [
+        {
+          accountId: 7,
+          tradeDate: asOf,
+          totalValue: decimal('1100'),
+          isBackfilled: false,
+        },
+      ],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({ asOf });
+
+    expect(repository.saveRecommendationScores).toHaveBeenCalledTimes(1);
+    const [saved] = repository.saveRecommendationScores.mock.calls[0][0];
+    expect(saved).toEqual(
+      expect.objectContaining({
+        accountId: 7,
+        strategy: 'LONG_TERM',
+        asOf,
+        // 중복은 접고 오름차순으로 — 두 값이 남았다는 것 자체가 "규칙이 바뀐 구간을 걸쳤다" 는 사실이다.
+        ruleVersions: [2, 3],
+        unknownRuleVersionCount: 1,
+        recommendationCount: result.accounts[0].score.recommendationCount,
+        accountReturnRate: '0.1',
+        snapshotCount: 1,
+        exclusions: result.accounts[0].exclusions,
+      }),
+    );
+    expect(result.persisted).toBe(true);
+    jest.useRealTimers();
+  });
+
+  // 원장에 남기는 것이 이 채점의 목적이라 저장 실패를 삼키지 않는다. 삼키면 슬랙에는 성적이
+  // 뜨는데 원장에는 아무것도 없는 회차가 조용히 생기고, 나중에 그 구멍을 설명할 수 없다.
+  it('원장 저장이 실패하면 성적을 반환하지 않고 실패를 그대로 올린다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    repository.saveRecommendationScores.mockRejectedValue(
+      new Error('원장 저장 실패'),
+    );
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
+    jest.useRealTimers();
+  });
+
+  // 거래는 tradeDate 로 잘려 시점이 복원되지만 주문 상태는 이력이 없어 현재값을 읽는다.
+  // 그날 대기 중이던 주문이 지금은 만료로 잡히므로 뒤늦은 재채점을 그날 행으로 저장하면
+  // "그날의 성적" 이 아닌 숫자가 원장에 남는다.
+  it('과거 기준일 재채점은 그날 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T03:00:00.000Z'));
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      asOf: new Date('2026-08-13T00:00:00.000Z'),
+    });
+
+    expect(result.accounts).toHaveLength(1);
+    expect(result.persisted).toBe(false);
+    expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('구간 집계는 누적 성적 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
+    // 기준일은 오늘로 둔다 — 저장이 막히는 이유가 구간 지정 하나임을 분리하기 위해서다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      asOf: new Date('2026-08-13T00:00:00.000Z'),
+      from: new Date('2026-07-01T00:00:00.000Z'),
+    });
+
+    expect(result.accounts).toHaveLength(1);
+    expect(result.persisted).toBe(false);
+    expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('입력 생략 시 KST 오늘을 UTC 날짜 경계로 정규화하고 빈 표본도 두 계좌 결과로 반환한다', async () => {
