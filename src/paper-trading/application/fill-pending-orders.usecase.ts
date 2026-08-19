@@ -68,6 +68,23 @@ const findTodayBar = (bars: DailyBar[], tradeDate: string): DailyBar | null =>
   bars.find((bar) => bar.tradeDate.toISOString().slice(0, 10) === tradeDate) ??
   null;
 
+// 일괄 만료는 updateMany 라 대상 주문 id 를 돌려주지 않는다. 같은 거래일의 미체결 주문이
+// 곧 그 대상이므로, 종목을 아는 만큼은 상세에서 만료로 교정하고 나머지만 건수로 보고한다.
+const markUnfilledAsExpired = (details: PaperOrderFillDetail[]): number => {
+  let corrected = 0;
+  for (const detail of details) {
+    if (
+      detail.outcome === 'LOOKUP_FAILURE' ||
+      detail.outcome === 'NOT_YET_TRADED'
+    ) {
+      detail.outcome = 'EXPIRED';
+      detail.reason = '체결가 조회 실패';
+      corrected += 1;
+    }
+  }
+  return corrected;
+};
+
 const toDetail = (
   order: DuePaperOrderRecord,
   outcome: PaperOrderFillOutcome,
@@ -136,7 +153,10 @@ export class FillPendingOrdersUsecase {
         '체결가 조회 실패',
       );
       result.expired += closeResult.expired;
-      result.bulkExpired += closeResult.expired;
+      // 이 만료가 쓸어담는 대상이 방금 미체결로 남긴 주문들이다. 상세를 그대로 두면
+      // 실제로는 취소된 주문이 "다음 회차 재시도" 로 보고된다.
+      const corrected = markUnfilledAsExpired(result.details);
+      result.bulkExpired += Math.max(0, closeResult.expired - corrected);
     }
     return result;
   }

@@ -110,8 +110,53 @@ describe('PaperOrderFillAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toContain(
-      ' • 대기 주문 2건이 이미 다른 회차에서 처리돼 이번 회차엔 바뀐 것이 없습니다',
+      ' • 대기 주문 2건은 이미 다른 회차에서 처리돼 이번 회차엔 바뀐 것이 없습니다',
     );
+  });
+
+  it('체결이 섞인 회차에서도 상세에 없는 주문을 빠뜨리지 않는다', async () => {
+    // 겹친 실행으로 3건 중 1건이 이미 처리돼 상세가 2건만 남은 회차.
+    const task = makeTask({
+      attempted: 3,
+      filled: 2,
+      details: [detail(), detail({ tickerCode: '000660', side: 'SELL' })],
+    });
+
+    const result = await task.run(context);
+
+    expect(result.summaryText).toContain(
+      ' • 대기 주문 1건은 이미 다른 회차에서 처리돼 이번 회차엔 바뀐 것이 없습니다',
+    );
+  });
+
+  it('종목별 만료와 식별 불가 일괄 만료를 한 카드에서 구분해 적는다', async () => {
+    const task = makeTask({
+      attempted: 3,
+      filled: 1,
+      expired: 2,
+      bulkExpired: 1,
+      details: [
+        detail(),
+        detail({
+          tickerName: '아이진',
+          tickerCode: '185490',
+          outcome: 'EXPIRED',
+          price: null,
+          reason: '체결가 조회 실패',
+        }),
+      ],
+    });
+
+    const result = await task.run(context);
+
+    expect(result.summaryText).toContain(
+      ' • 미체결 [장기] 매수 *아이진*(185490) 71주 — 체결가 조회 실패(주문 취소됨)',
+    );
+    expect(result.summaryText).toContain(
+      ' • 장 마감까지 체결가를 못 받아 만료 1건 — 주문은 사라지고 다음 추천을 기다립니다',
+    );
+    // 같은 카드가 "재시도" 와 "주문 소멸" 을 동시에 말하면 안 된다.
+    expect(result.summaryText).not.toContain('다음 회차 재시도');
   });
 
   it('대기 주문이 없는 회차를 사유 없는 0건과 구분한다', async () => {

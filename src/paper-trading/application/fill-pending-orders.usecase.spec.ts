@@ -376,7 +376,7 @@ describe('FillPendingOrdersUsecase', () => {
     ]);
   });
 
-  it('일괄 만료 건수를 종목 단위 상세와 분리해 보고한다', async () => {
+  it('장 마감 후 일괄 만료 대상은 상세에서도 만료로 교정한다', async () => {
     const { usecase, repository, marketData } = createFixture();
     repository.findDuePendingOrders.mockResolvedValue([
       dueOrder(),
@@ -404,10 +404,41 @@ describe('FillPendingOrdersUsecase', () => {
       executedAt: new Date('2026-08-13T06:31:00.000Z'),
     });
 
-    expect(result.bulkExpired).toBe(1);
+    // 두 번째 주문은 오늘 봉이 없어 미체결로 남았다가 곧 일괄 만료된다. 상세를
+    // NOT_YET_TRADED 로 두면 취소된 주문을 "다음 회차 재시도" 로 보고하게 된다.
+    expect(result.details).toMatchObject([
+      { outcome: 'FILLED' },
+      { outcome: 'EXPIRED', reason: '체결가 조회 실패' },
+    ]);
     expect(result.expired).toBe(1);
-    expect(
-      result.details.filter((detail) => detail.outcome === 'EXPIRED'),
-    ).toEqual([]);
+    // 종목을 아는 만큼 상세로 설명했으니 식별 불가 건수는 남지 않는다.
+    expect(result.bulkExpired).toBe(0);
+  });
+
+  it('상세로 설명하지 못한 일괄 만료분만 건수로 남긴다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([dueOrder()]);
+    jest.mocked(marketData.fetchDailyBars).mockResolvedValue([
+      {
+        tradeDate: new Date('2026-08-13T00:00:00.000Z'),
+        open: decimal('70000'),
+        close: decimal('71000'),
+        adjClose: decimal('71000'),
+        volume: 1n,
+        currency: 'KRW',
+      },
+    ]);
+    // 조회 이후 다른 회차가 만든 주문까지 쓸려 만료 건수가 상세보다 많은 상황.
+    repository.expireDuePendingOrders.mockResolvedValue({
+      attempted: 2,
+      expired: 2,
+    });
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-13T06:31:00.000Z'),
+    });
+
+    expect(result.bulkExpired).toBe(2);
+    expect(result.details).toMatchObject([{ outcome: 'FILLED' }]);
   });
 });
