@@ -21,6 +21,7 @@ runAgentRoleTests(runner)
 runOfficePathfindingTests(runner)
 runOfficeIdleTests(runner)
 runOfficeAttendanceTests(runner)
+runOfficeApprovalPressureTests(runner)
 runOfficeAccessibilityTests(runner)
 runConsoleClientTests(runner)
 
