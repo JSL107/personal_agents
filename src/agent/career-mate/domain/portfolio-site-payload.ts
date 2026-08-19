@@ -6,6 +6,7 @@ import {
   ProfileSkill,
   SkillCategory,
 } from './career-mate.type';
+import { toPrNumber } from './reconcile-accomplishment-evidence';
 
 // 사이트(Portfolio OS)의 프로젝트 1건에 보낼 본문. 사이트는 이 객체를 그대로 jsonb 로 저장하고
 // title·slug·published·sortOrder 만 컬럼으로 뽑아 쓴다 (portfolio 레포 content.service.ts).
@@ -46,10 +47,21 @@ const earliestEvidence = (
   evidence: AccomplishmentEvidence[],
 ): AccomplishmentEvidence | null => {
   const sorted = [...evidence].sort((left, right) => {
-    if (left.mergedAt !== right.mergedAt) {
+    if (left.mergedAt === null && right.mergedAt !== null) {
+      return 1;
+    }
+    if (left.mergedAt !== null && right.mergedAt === null) {
+      return -1;
+    }
+    // 둘 다 값이 있으면 이른 머지 시각이 앞이다 — "성과의 첫 PR" 이 slug 의 정의다.
+    if (
+      left.mergedAt !== null &&
+      right.mergedAt !== null &&
+      left.mergedAt !== right.mergedAt
+    ) {
       return left.mergedAt < right.mergedAt ? -1 : 1;
     }
-    return left.pr - right.pr;
+    return toPrNumber(left.pr) - toPrNumber(right.pr);
   });
   return sorted[0] ?? null;
 };
@@ -77,7 +89,15 @@ export const buildProjectSlug = (
   if (!segment) {
     return null;
   }
-  return `${segment}-pr-${first.pr}`;
+  // 저장된 프로필은 보정 전 `pr: "#984"` 를 담고 있을 수 있다. 그대로 두면 사이트가 `#` 를
+  // 깎아 저장해 우리 조회 키와 어긋나고, 같은 성과가 회차마다 새 항목으로 올라간다.
+  const pr = toPrNumber(first.pr);
+  // 숫자로 읽을 수 없으면 slug 를 만들지 않는다 — 그런 값들끼리 같은 slug 로 뭉치면 첫 발행은
+  // 유니크 제약으로 실패하고 이후로는 한 항목을 번갈아 덮는다. 세어 올리는 쪽이 안전하다.
+  if (!Number.isInteger(pr)) {
+    return null;
+  }
+  return `${segment}-pr-${pr}`;
 };
 
 // 근거 PR 들의 머지 시점을 KST 월로 환산해 기간 문구를 만든다.

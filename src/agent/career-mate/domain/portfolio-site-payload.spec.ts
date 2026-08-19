@@ -6,7 +6,7 @@ import {
 
 const evidence = (
   pr: number,
-  mergedAt: string,
+  mergedAt: string | null,
   repo = 'JSL107/personal_agents',
 ) => ({
   repo,
@@ -151,6 +151,55 @@ describe('buildPortfolioSitePayload', () => {
     expect(projects[0].period).toBe('2026.08');
   });
 
+  it('머지 시각 없는 근거는 기간에 1970을 만들지 않는다', () => {
+    const { projects } = buildPortfolioSitePayload({
+      ...profile(),
+      accomplishments: [
+        {
+          ...ACCOMPLISHMENT,
+          evidence: [evidence(314, null)],
+        },
+      ],
+    });
+
+    expect(projects[0].period).toBe('');
+    expect(projects[0].period).not.toContain('1970');
+  });
+
+  it('머지 시각 없는 근거가 섞여도 evidence 순서와 무관하게 같은 slug를 쓴다', () => {
+    const withMergedEvidenceFirst = {
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(313, '2026-08-14T01:00:00Z'), evidence(999, null)],
+    };
+    const withMissingEvidenceFirst = {
+      ...ACCOMPLISHMENT,
+      evidence: [...withMergedEvidenceFirst.evidence].reverse(),
+    };
+
+    expect(buildProjectSlug(withMergedEvidenceFirst)).toBe(
+      'jsl107-personal-agents-pr-313',
+    );
+    expect(buildProjectSlug(withMissingEvidenceFirst)).toBe(
+      'jsl107-personal-agents-pr-313',
+    );
+  });
+
+  // PR 번호 순서와 머지 시각 순서를 일부러 반대로 둔다 — 이 조건에서만 "이른 머지" 기준이
+  // "작은 PR 번호" 기준과 구별된다. slug 는 성과의 첫 PR 을 가리켜야 한다.
+  it('근거가 모두 머지됐으면 PR 번호가 아니라 이른 머지 시각으로 slug 를 고른다', () => {
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      evidence: [
+        evidence(313, '2026-08-14T01:00:00Z'),
+        evidence(999, '2026-08-01T01:00:00Z'),
+      ],
+    };
+
+    expect(buildProjectSlug(accomplishment)).toBe(
+      'jsl107-personal-agents-pr-999',
+    );
+  });
+
   it('스킬을 카테고리별 그룹으로 묶고 중복 이름을 합친다', () => {
     const { skillGroups } = buildPortfolioSitePayload(profile());
 
@@ -179,5 +228,63 @@ describe('buildPortfolioSitePayload', () => {
 
     expect(payload.projects).toHaveLength(1);
     expect(payload.skippedTitles).toEqual(['근거 없는 성과']);
+  });
+
+  // 저장된 프로필은 보정 전 데이터일 수 있다 — 사이트 발행은 DB 의 최신 프로필을 그대로 쓰므로
+  // 생성 시점 보정만으로는 이 경로를 지킬 수 없다. slug 는 소비 지점에서 스스로 정규화해야 한다.
+  it('저장된 프로필의 pr 이 "#984" 문자열이어도 slug 에 # 를 남기지 않는다', () => {
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      evidence: [
+        {
+          ...evidence(984, '2026-08-14T01:00:00Z'),
+          pr: '#984' as unknown as number,
+        },
+      ],
+    };
+
+    expect(buildProjectSlug(accomplishment)).toBe(
+      'jsl107-personal-agents-pr-984',
+    );
+  });
+
+  it('머지 시각이 같으면 오염된 pr 도 숫자로 비교해 이른 PR 을 고른다', () => {
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      evidence: [
+        evidence(315, '2026-08-14T01:00:00Z'),
+        {
+          ...evidence(313, '2026-08-14T01:00:00Z'),
+          pr: '#313' as unknown as number,
+        },
+      ],
+    };
+
+    expect(buildProjectSlug(accomplishment)).toBe(
+      'jsl107-personal-agents-pr-313',
+    );
+  });
+
+  // 같은 slug 를 쓰면 첫 발행은 유니크 제약으로 실패하고 이후로는 한 항목을 번갈아 덮는다.
+  // 숫자로 읽을 수 없는 pr 은 slug 를 만들지 않고 세어 올린다.
+  it('숫자로 읽을 수 없는 pr 은 slug 를 만들지 않고 세어 올린다', () => {
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      title: 'pr 을 읽을 수 없는 성과',
+      evidence: [
+        {
+          ...evidence(1, '2026-08-14T01:00:00Z'),
+          pr: 'unknown' as unknown as number,
+        },
+      ],
+    };
+    const payload = buildPortfolioSitePayload({
+      ...profile(),
+      accomplishments: [accomplishment],
+    });
+
+    expect(buildProjectSlug(accomplishment)).toBeNull();
+    expect(payload.projects).toHaveLength(0);
+    expect(payload.skippedTitles).toEqual(['pr 을 읽을 수 없는 성과']);
   });
 });

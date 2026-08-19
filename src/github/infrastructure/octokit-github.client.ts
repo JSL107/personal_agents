@@ -226,6 +226,7 @@ export class OctokitGithubClient implements GithubClientPort {
         baseRef: prResponse.data.base.ref,
         headRef: prResponse.data.head.ref,
         authorLogin: prResponse.data.user?.login ?? 'unknown',
+        mergedAt: prResponse.data.merged_at,
         changedFiles,
         changedFilesTotalCount: totalCount,
         changedFilesTruncated:

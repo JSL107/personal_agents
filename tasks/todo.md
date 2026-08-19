@@ -1,3 +1,49 @@
+# career-mate mergedAt 백필 버그 수정 (2026-08-18)
+
+**Goal:** `.ai/design.md` 계약대로 `mergedAt` 결측을 코드에서 백필하고, null 날짜가 `1970.01`로 변환되거나 evidence 순서가 slug를 흔드는 회귀를 막는다.
+
+**Contract:** 5개 변경과 요구 테스트만 구현한다. 프롬프트·기존 DB 데이터·env/dependency/Prisma를 건드리지 않고, DB 명령·commit을 실행하지 않는다. 검증 순서는 lint, tsc, test, build다.
+
+- [x] RED: 날짜 nullish/빈 문자열과 `new Date(null)` 회귀 테스트를 추가해 가드 부재 실패를 확인한다.
+- [x] RED: 백필 5종과 portfolio period/slug 순서 불변 테스트를 추가해 기대 실패를 확인한다.
+- [x] GREEN: `formatKstDate` 빈값 가드와 `AccomplishmentEvidence.mergedAt: string | null` 타입 정직화를 구현한다.
+- [x] GREEN: portfolio evidence 정렬을 non-null 우선, 그룹 내 PR 오름차순으로 수정한다.
+- [x] GREEN: 순수 백필 헬퍼를 추가하고 두 profile 생성 usecase에서 parse 직후 배선한다.
+- [x] focused spec을 통과시키고 `new Date(null)` 가드 mutation에서 회귀 테스트 실패를 직접 확인한 뒤 복원한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm build`를 순서대로 fresh 실행해 모두 exit 0을 확인한다.
+- [x] 최종 diff를 설계·범위와 대조하고 `.ai/implementation-summary.md` 및 아래 Review에 실제 증거를 기록한다.
+- [x] 리뷰에서 발견한 결함 2건을 보완한다 — 정렬의 머지 시각 비교 복원, `pr` 문자열 오염(`"#984"`) 정규화.
+- [x] 가드 3종을 각각 무효화해 해당 spec 이 FAIL 하는지 확인하고 복원한다.
+- [x] 재리뷰에서 발견한 결함 2건을 보완한다 — 사이트 slug 와 dedup 키가 저장된 프로필의 오염된 `pr` 을 그대로 쓰던 문제.
+
+## Review
+
+- `formatKstDate`가 nullish/공백을 Date 생성 전에 거르고, mutation에서 `formatKstDate(null)` 회귀 테스트만 정확히 실패한 뒤 복원됐다.
+- 입력 GitHub PR의 실제 `mergedAt`을 accomplishment evidence에 불변 백필한다. Build/Reflect 모두 parse 직후 적용하며 Reflect는 merge 전에 적용한다.
+- `PullRequestDetail.mergedAt`을 required `string | null`로 강화했다. 누락 18건은 관련 fixture에 명시값을 추가해 해결했고 production fallback은 두지 않았다.
+- fresh gate: lint 0, tsc 0, test 0(404 suites/3,408 tests + code-graph 5 suites/40 tests), build 0.
+- 독립 최종 리뷰 READY. 프롬프트·DB/Prisma/env/dependency는 변경하지 않았고 DB 명령·commit도 실행하지 않았다.
+- 리뷰 보완 1 — `earliestEvidence` 에서 둘 다 머지된 경우의 날짜 비교가 빠져 slug 기준이 "가장 이른 머지"에서 "가장 작은 PR 번호"로 바뀌어 있었다. 복원하고, PR 번호 순서와 머지 시각 순서를 반대로 둔 케이스를 테스트에 추가했다(그 조건에서만 두 기준이 구별된다).
+- 리뷰 보완 2 — 실측에서 근거 116개 중 24개의 `pr` 이 `"#984"` 문자열이었다. 백필 키가 `repo##984` 로 어긋나 보정이 빠지고, 정렬이 NaN 이 되고, slug 에 `#` 가 섞여 사이트 조회 키와 어긋난다(사이트가 `#` 를 깎아 저장하므로 같은 성과가 매번 새 항목이 된다). 권위 데이터를 맞추는 같은 지점에서 숫자로 정규화하고 파일·함수명을 `reconcileAccomplishmentEvidence` 로 바꿨다.
+- 실데이터 실측 — 근거 116건의 머지 시각을 GitHub 에서 전수 조회한 결과 **전부 존재(null 0건)**. 프로필의 null 81건은 모두 모델이 흘린 값이다.
+- mutation 검증 — 빈값 가드·`pr` 정규화·날짜 비교를 각각 무효화해 3개 suite 전부 FAIL 을 확인하고 복원했다(복원 후 30 tests PASS).
+- 최종 게이트 재실행: lint 0, tsc 0, test 0(404 suites/3,411 tests + 5 suites/40 tests), build 0.
+- 재리뷰 보완 1 — 보정을 프로필 **생성** 지점에만 두어, 저장된 프로필을 읽는 **소비** 지점이 지켜지지 않았다.
+  `PublishPortfolioSiteUsecase.resolveProfile` 은 DB 최신 프로필을 그대로 쓰므로, 실 DB(id=13, evidence 124건 중
+  `pr` 문자열 24건)로 발행하면 `#` 가 섞인 slug 3건이 그대로 나갔다(`schoolbell-e-sbe-api-v5-pr-#984` 등).
+  `mergeAccomplishment` 는 기존 성과를 `kept` 로 유지하고 `reflect-pr` 은 그 회차 PR 만 백필하므로, 누적된
+  과거 성과(이 프로필은 26건)는 어떤 재실행으로도 보정되지 않는다 — 즉 증상이 그대로 남는 경로였다.
+  `toPrNumber` 를 export 해 `buildProjectSlug` 와 `earliestEvidence` 정렬에 적용했다. 숫자로 읽을 수 없는
+  `pr` 은 slug 를 만들지 않고 기존 `skippedTitles` 로 세어 올린다(같은 slug 로 뭉치면 발행이 서로를 덮는다).
+- 재리뷰 보완 2 — `mergeAccomplishment` 의 `evidenceKey` 도 정규화해, 보정 전 `o/r##1692` 와 보정된 `o/r#1692`
+  로 키가 갈려 같은 PR 성과가 둘 남던 dedup 실패를 막았다.
+- 실데이터 대조 — 같은 프로필로 재실측해 오염 slug 3건 → 0건, 프로젝트 수 26건 유지(skip 0). 기간 빈값 12건은
+  DB 의 `mergedAt` null 89건에서 오므로 이 변경 범위 밖이다(1970 표기는 0건).
+- 보완분 RED 4건(payload 3, merge 1)을 먼저 확인한 뒤 GREEN 으로 넘겼다.
+- 보완 후 게이트: lint 0(warning 57), tsc 0, test 0(404 suites/3,415 tests + 5 suites/40 tests), build 0, docs:check 0.
+
+---
+
 # 이력서 증거력 감사 게이트 (2026-08-18)
 
 **Goal:** `.ai/design.md` 계약대로 자동 포트폴리오 발행 뒤 비차단 이력서 감사를 실행하고, 수동 `AUDIT_RESUME` 진입점과 30일 목표 공고 대조를 제공한다.
