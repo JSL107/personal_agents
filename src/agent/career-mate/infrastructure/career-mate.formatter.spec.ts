@@ -308,6 +308,49 @@ describe('career-mate.formatter', () => {
     expect(formatResumeAudit(result).full).not.toContain('먼저 이것부터');
   });
 
+  it('미판정만 남은 회차에는 먼저 고칠 항목을 지목하지 않는다', () => {
+    // UNJUDGED 는 이력서의 결손이 아니라 모델이 판정을 빠뜨린 자리다. 여기에 올리면 사용자가
+    // 할 수 있는 일이 없는 지시가 된다 — 판정 누락은 [미판정] 과 가드 누락 건수로 드러난다.
+    const result: ResumeAuditResult = {
+      verdict: '판정이 일부 빠졌다.',
+      items: [
+        {
+          title: '모델 누락 성과',
+          status: 'UNJUDGED',
+          quote: '',
+          why: '모델이 이 성과를 판정하지 않았습니다.',
+          rewrite: null,
+        },
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '결과: 30% 감소',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ],
+      highlights: [],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: [],
+        droppedTitles: [],
+        unjudgedTitles: ['모델 누락 성과'],
+        forcedMissing: [],
+        rewriteMissing: [],
+        droppedHighlights: [],
+      },
+      jdSource: null,
+    };
+
+    const { full } = formatResumeAudit(result);
+
+    expect(full).not.toContain('먼저 이것부터');
+    // 대신 판정 누락은 그대로 보인다.
+    expect(full).toContain('[미판정] 모델 누락 성과');
+    expect(full).toContain('누락 1');
+  });
+
   it('가드가 개입한 회차에는 총평이 개입 전 판정이라는 사실을 밝힌다', () => {
     const base: ResumeAuditResult = {
       verdict: '모든 성과가 입증됐다.',
