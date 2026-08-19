@@ -83,9 +83,19 @@ export enum AgentType {
   CTO_STUDY = 'CTO_STUDY',
 }
 
+// LLM 최종 응답의 형태를 강제하는 JSON Schema. 구조를 타입으로 다시 표현하지 않는 이유는
+// provider (codex CLI) 가 이 값을 그대로 파일로 받아 해석하기 때문 — 중간에 우리 타입을 끼우면
+// provider 가 실제로 지원하는 subset 과 어긋날 때 그 사실이 컴파일 타임에 가려진다.
+export type OutputJsonSchema = Record<string, unknown>;
+
 export interface CompletionRequest {
   prompt: string;
   systemPrompt?: string;
+  // 지정 시 모델이 이 스키마를 벗어난 응답을 만들 수 없다 (샘플링 단계 제약).
+  // 프롬프트로 형식을 "부탁" 하는 것과 달리 위반 자체가 불가능해지므로, 파서의 형태 방어가
+  // 사후 수습이 아니라 이중 안전망이 된다. 지원하지 않는 provider 는 무시한다 —
+  // 그 경우 기존과 동일하게 프롬프트 지시에만 의존한다 (§ClaudeCliProvider 주석).
+  outputSchema?: OutputJsonSchema;
 }
 
 export interface CompletionResponse {

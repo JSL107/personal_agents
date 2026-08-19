@@ -18,6 +18,7 @@ import {
   AgentDispatcher,
 } from '../domain/port/agent-dispatcher.port';
 import { parseIntentClassification } from '../domain/prompt/intent-classification.parser';
+import { INTENT_CLASSIFICATION_OUTPUT_SCHEMA } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 
 // 자연어 메시지를 AgentType 으로 1회 LLM 분류. AgentRun 만들지 않는 internal LLM call.
@@ -75,6 +76,7 @@ export class IntentClassifierUsecase {
       request: {
         prompt,
         systemPrompt,
+        outputSchema: INTENT_CLASSIFICATION_OUTPUT_SCHEMA,
       },
       // PM 은 provider 선택용으로 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말이 붙으면
       // 바로 아래 parseIntentClassification 이 기대하는 고정 JSON 스키마와 충돌한다.

@@ -6,6 +6,7 @@ import {
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
+import { INTENT_CLASSIFICATION_OUTPUT_SCHEMA } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 import { IntentClassifierUsecase } from './intent-classifier.usecase';
 
@@ -64,6 +65,9 @@ describe('IntentClassifierUsecase', () => {
       request: {
         prompt: '오늘 plan',
         systemPrompt: INTENT_CLASSIFIER_SYSTEM_PROMPT,
+        // 형태 강제를 프롬프트 지시가 아니라 모델 호출 인자로 넘긴다 — 이 필드가 빠지면
+        // 분류기가 다시 "지켜주길 바라는" 상태로 돌아가므로 명시적으로 고정한다.
+        outputSchema: INTENT_CLASSIFICATION_OUTPUT_SCHEMA,
       },
       // PM 은 provider 선택용 차용이라 계약 머리말을 끈다 — 붙으면 분류기가 기대하는
       // 고정 JSON 스키마와 충돌한다.
