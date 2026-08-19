@@ -670,16 +670,18 @@ model BenchmarkDailyClose {
 // 채점 결과 원장. 계산만 하고 슬랙으로 흘려보내면 규칙을 v3 으로 바꿨을 때 v2 시절 성적이
 // 남지 않아 "바꿔서 나아졌나" 를 영영 가릴 수 없다. StockAlert/AlertOutcome 과 같은 목적이다.
 model RecommendationScore {
-  id           Int          @id @default(autoincrement())
-  accountId    Int          @map("account_id")
-  account      PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  strategy     String
-  // 채점 기준일과 집계 시작일. from 이 null 이면 계좌 개설 이후 전 구간 누적이다.
-  asOf         DateTime     @map("as_of") @db.Date
-  fromDate     DateTime?    @map("from_date") @db.Date
-  // 이 집계에 들어간 추천들이 어느 규칙 버전에서 나왔는지. 값이 둘 이상이면 섞인 집계라는 뜻이고,
-  // 비어 있으면 버전을 기록하기 전에 만들어진 추천들이다. 둘 다 성적 해석에 필요한 사실이다.
-  ruleVersions Int[]        @map("rule_versions")
+  id                      Int          @id @default(autoincrement())
+  accountId               Int          @map("account_id")
+  account                 PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  strategy                String
+  // 채점 기준일. 이 행은 계좌 개설 이후 이 날짜까지의 누적 성적이다 — 구간 집계는 남기지 않는다.
+  asOf                    DateTime     @map("as_of") @db.Date
+  // 이 집계에 들어간 추천들이 어느 규칙 버전에서 나왔는지. 값이 둘 이상이면 규칙이 바뀐 구간을
+  // 걸친 집계라는 뜻이다.
+  ruleVersions            Int[]        @map("rule_versions")
+  // 버전을 적기 전에 만들어진 추천 수. ruleVersions 에서 빠지는 값이라 여기 세지 않으면
+  // "일부는 어느 규칙인지 모른다" 는 사실이 사라져 섞인 표본이 순수한 v2 성적처럼 보인다.
+  unknownRuleVersionCount Int          @map("unknown_rule_version_count")
 
   recommendationCount Int @map("recommendation_count")
   closedCount         Int @map("closed_count")
@@ -698,7 +700,7 @@ model RecommendationScore {
   snapshotCount     Int      @map("snapshot_count")
   accountReturnRate Decimal? @map("account_return_rate") @db.Decimal(9, 4)
   maximumDrawdown   Decimal? @map("maximum_drawdown") @db.Decimal(9, 4)
-  turnoverRate      Decimal? @map("turnover_rate") @db.Decimal(9, 4)
+  turnoverRate      Decimal? @map("turnover_rate") @db.Decimal(18, 6)
   cumulativeCost    Decimal  @map("cumulative_cost") @db.Decimal(18, 4)
 
   // 집계에서 빠진 건수. 성적이 아니라 그 성적을 얼마나 믿을지의 재료라 통째로 남긴다.

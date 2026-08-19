@@ -151,8 +151,10 @@ describe('ScoreRecommendationsUsecase', () => {
       }),
     );
     expect(result.accounts[0].ruleVersions).toEqual([2]);
-    // 버전을 적기 전에 만들어진 추천은 0 이나 1 로 뭉뚱그리지 않는다 — 모르는 것은 빈 값이다.
+    expect(result.accounts[0].unknownRuleVersionCount).toBe(0);
+    // 버전을 적기 전에 만들어진 추천은 버전 목록에 끼워 넣지 않고 건수로 따로 센다.
     expect(result.accounts[1].ruleVersions).toEqual([]);
+    expect(result.accounts[1].unknownRuleVersionCount).toBe(1);
     expect(result.accounts[1]).toEqual(
       expect.objectContaining({
         score: expect.objectContaining({
@@ -245,7 +247,6 @@ describe('ScoreRecommendationsUsecase', () => {
 
   it('계좌별 채점 결과를 규칙 버전과 함께 원장에 저장한다', async () => {
     const asOf = new Date('2026-08-13T00:00:00.000Z');
-    const from = new Date('2026-07-01T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [
@@ -277,7 +278,7 @@ describe('ScoreRecommendationsUsecase', () => {
           strategy: 'LONG_TERM',
           status: 'FILLED',
           quantity: decimal('1'),
-          ruleVersion: 2,
+          ruleVersion: null,
         },
       ],
       recommendationTrades: [
@@ -311,7 +312,7 @@ describe('ScoreRecommendationsUsecase', () => {
       repository as unknown as PaperTradingPrismaRepository,
     );
 
-    const result = await usecase.execute({ asOf, from });
+    const result = await usecase.execute({ asOf });
 
     expect(repository.saveRecommendationScores).toHaveBeenCalledTimes(1);
     const [saved] = repository.saveRecommendationScores.mock.calls[0][0];
@@ -320,15 +321,38 @@ describe('ScoreRecommendationsUsecase', () => {
         accountId: 7,
         strategy: 'LONG_TERM',
         asOf,
-        fromDate: from,
         // 중복은 접고 오름차순으로 — 두 값이 남았다는 것 자체가 "규칙이 바뀐 구간을 걸쳤다" 는 사실이다.
         ruleVersions: [2, 3],
+        unknownRuleVersionCount: 1,
         recommendationCount: result.accounts[0].score.recommendationCount,
         accountReturnRate: '0.1',
         snapshotCount: 1,
         exclusions: result.accounts[0].exclusions,
       }),
     );
+  });
+
+  it('구간 집계는 누적 성적 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      asOf: new Date('2026-08-13T00:00:00.000Z'),
+      from: new Date('2026-07-01T00:00:00.000Z'),
+    });
+
+    expect(result.accounts).toHaveLength(1);
+    expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
   });
 
   it('입력 생략 시 KST 오늘을 UTC 날짜 경계로 정규화하고 빈 표본도 두 계좌 결과로 반환한다', async () => {

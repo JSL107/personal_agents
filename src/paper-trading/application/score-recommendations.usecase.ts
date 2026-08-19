@@ -46,6 +46,8 @@ export interface AccountRecommendationScore {
   strategy: Exclude<TradeStrategy, 'MANUAL'>;
   // 이 성적이 어느 규칙 버전의 추천에서 나왔는지. 둘 이상이면 규칙이 바뀐 구간을 걸친 집계다.
   ruleVersions: number[];
+  // 버전이 안 적힌 추천 수. 0 이 아니면 위 목록만으로는 표본을 다 설명하지 못한다.
+  unknownRuleVersionCount: number;
   score: StrategyRecommendationScore;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
@@ -190,6 +192,9 @@ export class ScoreRecommendationsUsecase {
             ),
           ),
         ].sort((left, right) => left - right),
+        unknownRuleVersionCount: accountOrders.filter(
+          (order) => order.ruleVersion === null,
+        ).length,
         score,
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
@@ -225,11 +230,13 @@ export class ScoreRecommendationsUsecase {
       },
     );
 
-    await this.repository.saveRecommendationScores(
-      accounts.map((account) =>
-        toSaveInput(account, asOf, command.from ?? null),
-      ),
-    );
+    // 구간 집계(from 지정)는 탐색용 조회다. 같은 기준일의 누적 성적 행을 구간 성적으로
+    // 덮어쓰면 그 행이 무엇을 잰 숫자인지 알 수 없게 되므로 누적 집계만 원장에 남긴다.
+    if (command.from === undefined) {
+      await this.repository.saveRecommendationScores(
+        accounts.map((account) => toSaveInput(account, asOf)),
+      );
+    }
 
     return {
       asOf,
@@ -244,13 +251,12 @@ export class ScoreRecommendationsUsecase {
 const toSaveInput = (
   account: AccountRecommendationScore,
   asOf: Date,
-  fromDate: Date | null,
 ): SaveRecommendationScoreInput => ({
   accountId: account.accountId,
   strategy: account.strategy,
   asOf,
-  fromDate,
   ruleVersions: account.ruleVersions,
+  unknownRuleVersionCount: account.unknownRuleVersionCount,
   recommendationCount: account.score.recommendationCount,
   closedCount: account.score.closedCount,
   openCount: account.score.openCount,

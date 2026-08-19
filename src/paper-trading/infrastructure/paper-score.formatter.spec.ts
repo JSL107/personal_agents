@@ -10,6 +10,7 @@ const RESULT: ScoreRecommendationsResult = {
       accountName: 'LONG_TERM',
       strategy: 'LONG_TERM',
       ruleVersions: [2],
+      unknownRuleVersionCount: 0,
       score: {
         strategy: 'LONG_TERM',
         recommendationCount: 6,
@@ -70,17 +71,23 @@ describe('formatPaperScoreReport', () => {
   });
 
   it('규칙 버전이 섞였거나 기록되지 않은 집계를 그대로 드러낸다', () => {
-    const mixed = formatPaperScoreReport({
-      ...RESULT,
-      accounts: [{ ...RESULT.accounts[0], ruleVersions: [2, 3] }],
-    });
-    const unrecorded = formatPaperScoreReport({
-      ...RESULT,
-      accounts: [{ ...RESULT.accounts[0], ruleVersions: [] }],
-    });
+    const render = (
+      ruleVersions: number[],
+      unknownRuleVersionCount: number,
+    ): string =>
+      formatPaperScoreReport({
+        ...RESULT,
+        accounts: [
+          { ...RESULT.accounts[0], ruleVersions, unknownRuleVersionCount },
+        ],
+      });
 
-    expect(mixed).toContain('*LONG_TERM* · 규칙 v2·v3 혼합');
-    expect(unrecorded).toContain('*LONG_TERM* · 규칙 미기록');
+    expect(render([2, 3], 0)).toContain('*LONG_TERM* · 규칙 v2·v3 혼합');
+    // 알려진 버전만 세면 섞인 표본이 순수한 v2 성적처럼 보인다 — 미기록도 함께 적는다.
+    expect(render([2], 3)).toContain('*LONG_TERM* · 규칙 v2 + 미기록 3건');
+    expect(render([], 3)).toContain('*LONG_TERM* · 규칙 미기록 3건');
+    // 추천이 아예 없는 계좌를 "미기록" 으로 적으면 없는 표본이 있는 것처럼 읽힌다.
+    expect(render([], 0)).toContain('*LONG_TERM* · 규칙 -');
   });
 
   it('모든 제외 사유·분류·소표본 경고와 필수 해석 한계를 출력한다', () => {

@@ -258,8 +258,8 @@ export interface SaveRecommendationScoreInput {
   accountId: number;
   strategy: string;
   asOf: Date;
-  fromDate: Date | null;
   ruleVersions: number[];
+  unknownRuleVersionCount: number;
   recommendationCount: number;
   closedCount: number;
   openCount: number;
@@ -489,8 +489,8 @@ export class PaperTradingPrismaRepository {
       inputs.map((input) => {
         const values = {
           strategy: input.strategy,
-          fromDate: input.fromDate,
           ruleVersions: input.ruleVersions,
+          unknownRuleVersionCount: input.unknownRuleVersionCount,
           recommendationCount: input.recommendationCount,
           closedCount: input.closedCount,
           openCount: input.openCount,

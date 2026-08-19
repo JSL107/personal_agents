@@ -29,15 +29,21 @@ const formatDays = (value: string | null): string =>
   value === null ? '-' : `${new Prisma.Decimal(value).toDecimalPlaces(2)}일`;
 
 // 규칙이 바뀐 구간을 걸친 집계는 그 사실을 읽는 사람이 알아야 한다. 버전 하나로 뭉뚱그리면
-// "규칙을 바꿔서 나아졌다" 를 옛 규칙의 성적으로 주장하게 된다.
-const formatRuleVersions = (ruleVersions: number[]): string => {
+// "규칙을 바꿔서 나아졌다" 를 옛 규칙의 성적으로 주장하게 된다. 버전이 안 적힌 추천도
+// 건수로 드러낸다 — 그것을 빼고 세면 섞인 표본이 순수한 한 버전의 성적처럼 보인다.
+const formatRuleVersions = (
+  ruleVersions: number[],
+  unknownCount: number,
+): string => {
+  const unknown = unknownCount === 0 ? '' : `미기록 ${unknownCount}건`;
   if (ruleVersions.length === 0) {
-    return '규칙 미기록';
+    return unknown === '' ? '규칙 -' : `규칙 ${unknown}`;
   }
-  if (ruleVersions.length === 1) {
-    return `규칙 v${ruleVersions[0]}`;
-  }
-  return `규칙 v${ruleVersions.join('·v')} 혼합`;
+  const known =
+    ruleVersions.length === 1
+      ? `v${ruleVersions[0]}`
+      : `v${ruleVersions.join('·v')} 혼합`;
+  return unknown === '' ? `규칙 ${known}` : `규칙 ${known} + ${unknown}`;
 };
 
 export const formatPaperScoreReport = (
@@ -51,7 +57,7 @@ export const formatPaperScoreReport = (
     const score = account.score;
     lines.push(
       '',
-      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions)}`,
+      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)}`,
       `추천 ${score.recommendationCount}건 · 체결 ${score.closedCount + score.openCount}건(청산 ${score.closedCount}·보유 ${score.openCount}) · 미체결 ${score.expiredCount}건`,
       `적중 ${score.hitCount}/${score.closedCount} (${formatUnsignedRate(score.hitRate)})`,
       `평균 ${formatRate(score.meanReturnRate)} · 중앙값 ${formatRate(score.medianReturnRate)} · 최대 손실 ${formatRate(score.maximumLoss)}`,
