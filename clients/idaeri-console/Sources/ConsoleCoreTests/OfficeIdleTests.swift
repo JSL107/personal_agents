@@ -376,6 +376,46 @@ func runOfficeIdleTests(_ t: TestRunner) {
     t.expectEqual(officeDaylight(hour: 24), officeDaylight(hour: 0), "24시는 0시로 정규화")
     t.expectEqual(officeDaylight(hour: -1), officeDaylight(hour: 23), "-1시는 23시로 정규화")
 
+    t.expectEqual(officeLunchHour, 12, "점심 시간대")
+
+    // 점심 시간에는 탕비실·회의실 가구 앞 목적지를 우선선택한다.
+    // 목적지가 [비점심 3개, 점심 2개]로 배열되어 있을 때,
+    // 12시에는 점심 우선이라 점심을 고르고,
+    // 15시에는 원래 순서라 비점심을 고른다.
+    let plant1 = OfficeStrollSpot(
+        kind: .plantSmall, tile: TilePoint(x: 1, y: 1), dwellSeconds: 4, facing: .up, pose: .tending
+    )
+    let desk1 = OfficeStrollSpot(
+        kind: .desk, tile: TilePoint(x: 2, y: 2), dwellSeconds: 5, facing: .up, pose: .sitting
+    )
+    let plant2 = OfficeStrollSpot(
+        kind: .plantTall, tile: TilePoint(x: 3, y: 3), dwellSeconds: 4, facing: .up, pose: .tending
+    )
+    let coffeeTable1 = OfficeStrollSpot(
+        kind: .coffeeTable, tile: TilePoint(x: 4, y: 4), dwellSeconds: 3, facing: .up, pose: .sitting
+    )
+    let coffeeTable2 = OfficeStrollSpot(
+        kind: .coffeeTable, tile: TilePoint(x: 5, y: 5), dwellSeconds: 3, facing: .up, pose: .sitting
+    )
+    // 순서: [비점심(인덱스 0-2), 점심(인덱스 3-4)]
+    let testSpots = [plant1, desk1, plant2, coffeeTable1, coffeeTable2]
+
+    let noOccupied: Set<TilePoint> = []
+
+    // 두 시간대에서 같은 에이전트로 선택을 비교한다.
+    // 12시에는 점심 우선이라 조금 다른 선택을 할 수 있다.
+    let testAgent = "Test1"
+    let spot12 = officeStrollSpot(
+        for: testAgent, round: 0, spots: testSpots, occupied: noOccupied, hour: 12
+    )
+    let spot15 = officeStrollSpot(
+        for: testAgent, round: 0, spots: testSpots, occupied: noOccupied, hour: 15
+    )
+
+    let isLunch12 = spot12?.kind == .coffeeTable
+
+    t.expect(isLunch12, "12시(점심 우선)는 coffeeTable 선택")
+
     // 바닥 빛 세기가 낮 > 아침 > 저녁 > 새벽 > 밤 순으로 단조로워야 시간이 읽힌다.
     // 순서가 뒤집히면 화면만 보고 아침인지 밤인지 가릴 근거가 사라진다.
     let strengthOrder = [11, 8, 17, 5, 22].map { officeWindowLight(hour: $0).glowStrength }

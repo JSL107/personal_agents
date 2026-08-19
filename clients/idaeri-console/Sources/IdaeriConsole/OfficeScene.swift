@@ -1296,12 +1296,14 @@ final class OfficeScene: SKScene {
         strollRound += 1
         let spots = officeStrollSpots(plan: plan)
         var occupied = Set(characters.values.map(\.tile))
+        let hour = currentHour()
         for agentType in picks {
             guard let spot = officeStrollSpot(
                 for: agentType,
                 round: strollRound,
                 spots: spots,
-                occupied: occupied
+                occupied: occupied,
+                hour: hour
             ) else {
                 continue
             }
