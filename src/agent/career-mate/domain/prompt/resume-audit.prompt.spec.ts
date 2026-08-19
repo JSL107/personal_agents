@@ -58,6 +58,9 @@ const VALID_OUTPUT = JSON.stringify({
       rewrite: null,
     },
   ],
+  highlights: [
+    { title: '장애율 감소', reason: '공고의 MUST 인 NestJS 운영과 대응' },
+  ],
   jdFindings: [
     {
       requirement: 'NestJS 운영 경험',
@@ -107,6 +110,32 @@ describe('parseResumeAuditOutput', () => {
     const parsed = parseResumeAuditOutput(output);
 
     expect(parsed.items[0].rewrite).toBeNull();
+  });
+
+  it('highlights 키를 생략해도 빈 배열로 읽는다', () => {
+    // rewrite 와 같은 이유 — 새 필드 하나 때문에 감사 전체를 파싱 실패로 잃지 않는다.
+    const output = JSON.stringify({
+      verdict: '보강이 필요하다.',
+      items: [],
+      jdFindings: [],
+      rejectionRisks: [],
+    });
+
+    expect(parseResumeAuditOutput(output).highlights).toEqual([]);
+  });
+
+  it('highlights 요소 형태가 어긋나면 파싱을 끊는다', () => {
+    const malformed = JSON.stringify({
+      verdict: '보강이 필요하다.',
+      items: [],
+      highlights: [{ title: '장애율 감소' }],
+      jdFindings: [],
+      rejectionRisks: [],
+    });
+
+    expect(() => parseResumeAuditOutput(malformed)).toThrow(
+      CareerMateException,
+    );
   });
 
   it('정상 JSON의 모든 배열을 파싱한다', () => {

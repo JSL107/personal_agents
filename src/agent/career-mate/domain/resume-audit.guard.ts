@@ -1,4 +1,5 @@
 import {
+  AuditHighlight,
   AuditItem,
   AuditStatus,
   CareerProfileData,
@@ -24,6 +25,38 @@ const normalizeForQuote = (value: string): string =>
 // 판정의 정확히 그 형태다. 그래서 길이는 라벨을 벗긴 본문으로 따로 잰다(줄마다 합산).
 const QUOTE_LABEL_PATTERN = /^(상황|과제|행동|결과|기술|근거)\s*:\s*/;
 const MIN_QUOTE_BODY_LENGTH = 6;
+const MAX_HIGHLIGHTS = 3;
+
+// 앞세울 성과는 가드를 통과한 PROVEN 에서만 고른다. 모델은 자기가 PROVEN 이라 쓴 항목을
+// 기준으로 highlights 를 채우는데, 그 판정은 뒤이어 근거 인용 대조·근거 PR 유무로 강등될 수
+// 있다. 강등된 성과를 그대로 앞세우면 같은 카드가 "근거 없음" 과 "이걸 맨 위에" 를 동시에
+// 말하게 된다.
+const selectHighlights = (
+  highlights: AuditHighlight[],
+  guardedItems: AuditItem[],
+): { kept: AuditHighlight[]; dropped: string[] } => {
+  const provenTitles = new Set(
+    guardedItems
+      .filter((item) => item.status === 'PROVEN')
+      .map((item) => item.title),
+  );
+  const kept: AuditHighlight[] = [];
+  const dropped: string[] = [];
+  const seen = new Set<string>();
+  for (const highlight of highlights) {
+    if (
+      !provenTitles.has(highlight.title) ||
+      seen.has(highlight.title) ||
+      kept.length >= MAX_HIGHLIGHTS
+    ) {
+      dropped.push(highlight.title);
+      continue;
+    }
+    seen.add(highlight.title);
+    kept.push(highlight);
+  }
+  return { kept, dropped };
+};
 
 const toQuoteBody = (value: string): string =>
   normalizeForQuote(value).replace(QUOTE_LABEL_PATTERN, '').trim();
@@ -85,7 +118,13 @@ export const applyAuditGuards = (
       }
     }
     if (accomplishment.evidence.length === 0) {
-      guarded = { ...guarded, status: 'MISSING' };
+      // why 도 함께 갈아끼운다. 모델은 이 항목을 입증됐다고 보고 그 근거를 why 에 썼는데,
+      // status 만 뒤집으면 "[근거없음] … — 개선을 했다" 처럼 판정과 사유가 어긋난 줄이 남는다.
+      guarded = {
+        ...guarded,
+        status: 'MISSING',
+        why: `[근거 PR 없음] ${guarded.why}`,
+      };
       forcedMissing.push(guarded.title);
     }
     guardedItems.push(guarded);
@@ -118,15 +157,19 @@ export const applyAuditGuards = (
     (left, right) => STATUS_ORDER[left.status] - STATUS_ORDER[right.status],
   );
 
+  const highlights = selectHighlights(data.highlights, guardedItems);
+
   return {
     ...data,
     items: guardedItems,
+    highlights: highlights.kept,
     guard: {
       demotedTitles,
       droppedTitles,
       unjudgedTitles,
       forcedMissing,
       rewriteMissing,
+      droppedHighlights: highlights.dropped,
     },
     // 목표 공고의 출처는 저장소를 읽는 application layer 에서 덮어쓴다. guard 는 이력서
     // 원문만으로 결정할 수 있는 판정에 한정한다.

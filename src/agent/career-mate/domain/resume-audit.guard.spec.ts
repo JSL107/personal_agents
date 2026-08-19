@@ -34,9 +34,13 @@ const PROFILE: CareerProfileData = {
   meta: { githubLogin: 'octo', windowStart: '2026-01-01', prCount: 4 },
 };
 
-const data = (items: ResumeAuditData['items']): ResumeAuditData => ({
+const data = (
+  items: ResumeAuditData['items'],
+  highlights: ResumeAuditData['highlights'] = [],
+): ResumeAuditData => ({
   verdict: '감사 결과',
   items,
+  highlights,
   jdFindings: [],
   rejectionRisks: [],
 });
@@ -60,6 +64,78 @@ describe('applyAuditGuards', () => {
       expect.objectContaining({ title: '환각 성과' }),
     );
     expect(result.guard.droppedTitles).toEqual(['환각 성과']);
+  });
+
+  it('강등된 성과는 앞세우기에서 반려한다', () => {
+    // 모델은 자기가 PROVEN 이라 쓴 판정을 근거로 highlights 를 채운다. 그 판정이 가드에
+    // 강등되고도 highlights 에 남으면, 같은 카드가 "근거 인용 실패" 와 "이걸 맨 위에" 를
+    // 동시에 말한다.
+    const result = applyAuditGuards(
+      data(
+        [
+          {
+            title: '입증 성과',
+            status: 'PROVEN',
+            quote: '원문에 없는 인용',
+            why: '정량 결과가 있다.',
+            rewrite: null,
+          },
+        ],
+        [{ title: '입증 성과', reason: '공고의 MUST 와 대응' }],
+      ),
+      PROFILE,
+    );
+
+    expect(result.highlights).toEqual([]);
+    expect(result.guard.droppedHighlights).toEqual(['입증 성과']);
+  });
+
+  it('근거 PR이 없어 MISSING으로 강제된 성과도 앞세우지 않는다', () => {
+    const result = applyAuditGuards(
+      data(
+        [
+          {
+            title: '근거 없음',
+            status: 'PROVEN',
+            quote: '근거 없음 결과 30%',
+            why: '수치가 있다.',
+            rewrite: null,
+          },
+        ],
+        [{ title: '근거 없음', reason: '수치가 선명하다' }],
+      ),
+      PROFILE,
+    );
+
+    expect(result.highlights).toEqual([]);
+    expect(result.guard.droppedHighlights).toEqual(['근거 없음']);
+  });
+
+  it('앞세울 성과는 3개까지만 남기고 중복을 버린다', () => {
+    const titles = ['약한 성과', '판정 누락', '입증 성과'];
+    const provenItems = titles.map((title) => ({
+      title,
+      status: 'PROVEN' as const,
+      quote: `${title} 결과 30%`,
+      why: '수치가 있다.',
+      rewrite: null,
+    }));
+    const result = applyAuditGuards(
+      data(provenItems, [
+        { title: '약한 성과', reason: '1순위' },
+        { title: '약한 성과', reason: '중복' },
+        { title: '판정 누락', reason: '2순위' },
+        { title: '입증 성과', reason: '3순위' },
+      ]),
+      PROFILE,
+    );
+
+    expect(result.highlights.map((highlight) => highlight.title)).toEqual([
+      '약한 성과',
+      '판정 누락',
+      '입증 성과',
+    ]);
+    expect(result.guard.droppedHighlights).toEqual(['약한 성과']);
   });
 
   it('원문에 없는 quote의 PROVEN을 WEAK로 강등한다', () => {
@@ -214,9 +290,13 @@ describe('applyAuditGuards', () => {
       PROFILE,
     );
 
-    expect(
-      result.items.find((item) => item.title === '근거 없음')?.status,
-    ).toBe('MISSING');
+    // 판정만 뒤집고 why 를 두면 "[근거없음] … — 정량 결과가 있다" 로 서로 반대되는 줄이 뜬다.
+    expect(result.items.find((item) => item.title === '근거 없음')).toEqual(
+      expect.objectContaining({
+        status: 'MISSING',
+        why: '[근거 PR 없음] 정량 결과가 있다.',
+      }),
+    );
     expect(result.guard.forcedMissing).toEqual(['근거 없음']);
   });
 

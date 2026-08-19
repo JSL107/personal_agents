@@ -1,6 +1,7 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { CareerMateException } from '../career-mate.exception';
 import {
+  AuditHighlight,
   AuditItem,
   CareerProfileData,
   CareerTargetJdData,
@@ -37,6 +38,13 @@ rewrite 규칙(WEAK 항목에만):
 - 입력에 없는 숫자·기술·경험을 after 에 새로 넣지 않는다. 수치를 넣을 근거가 없으면
   after 안에 "(수치 필요: 무엇을 측정해야 하는지)" 를 남긴다.
 
+highlights 규칙:
+- PROVEN 으로 판정한 성과 중에서만 최대 3개를 고른다. 배열 순서가 이력서 상단 배치 순서다.
+- reason 은 "왜 이 순서로 앞세우는가". 목표 공고가 있으면 어느 요구에 대응하는지 적고,
+  없으면 결과 수치가 무엇을 얼마나 바꿨는지 적는다.
+- title 은 items 와 같은 제목을 글자 그대로 쓴다.
+- PROVEN 이 하나도 없으면 빈 배열. 채우려고 WEAK 를 올리지 않는다.
+
 rejectionRisks 규칙:
 - 합격 확률을 매기지 않는다 — 지원자 풀·채용 인원을 모르므로 근거가 없다.
 - 대신 이 이력서가 탈락할 가장 그럴듯한 이유 2개를 쓴다.
@@ -49,7 +57,7 @@ jdFindings 규칙:
 - 각 요구를 위 판정 기준으로 판정한다.
 
 스키마:
-{"verdict":"한 줄 총평","items":[{"title":"...","status":"PROVEN|WEAK|MISSING","quote":"...","why":"...","rewrite":{"before":"...","after":"...","frame":"STAR3|STAR4"}}],"jdFindings":[{"requirement":"...","priority":"MUST|PREFERRED|IMPLICIT","status":"PROVEN|WEAK|MISSING","quote":"...","why":"..."}],"rejectionRisks":[{"reason":"...","rebuttal":"..."}]}`;
+{"verdict":"한 줄 총평","items":[{"title":"...","status":"PROVEN|WEAK|MISSING","quote":"...","why":"...","rewrite":{"before":"...","after":"...","frame":"STAR3|STAR4"}}],"highlights":[{"title":"...","reason":"..."}],"jdFindings":[{"requirement":"...","priority":"MUST|PREFERRED|IMPLICIT","status":"PROVEN|WEAK|MISSING","quote":"...","why":"..."}],"rejectionRisks":[{"reason":"...","rebuttal":"..."}]}`;
 
 export const buildResumeAuditPrompt = (
   profile: CareerProfileData,
@@ -140,6 +148,13 @@ const isAuditItem = (value: unknown): value is AuditItem => {
   );
 };
 
+const isAuditHighlight = (value: unknown): value is AuditHighlight => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.title === 'string' && typeof value.reason === 'string';
+};
+
 const isJdFinding = (value: unknown): value is JdFinding => {
   if (!isObject(value)) {
     return false;
@@ -182,6 +197,12 @@ export const parseResumeAuditOutput = (text: string): ResumeAuditData => {
   ) {
     return invalid('이력서 감사 실패 — 결과 배열 형식 오류.');
   }
+  // highlights 키 생략은 거부하지 않는다 — rewrite 와 같은 이유로, 새 필드 하나 때문에
+  // 감사 전체를 파싱 실패로 잃는 쪽이 손해가 크다. 없으면 "앞세울 성과 없음" 으로 읽는다.
+  const highlights = parsed.highlights ?? [];
+  if (!Array.isArray(highlights)) {
+    return invalid('이력서 감사 실패 — highlights 가 배열이 아닙니다.');
+  }
   // formatter 는 모델 문자열을 곧바로 escape 한다. 중첩 필드까지 여기서 검증하지 않으면
   // 감사 자체가 아니라 Slack 렌더 단계에서 TypeError 로 실패해 원인을 잃는다.
   if (parsed.items.some((item) => !isAuditItem(item))) {
@@ -193,9 +214,15 @@ export const parseResumeAuditOutput = (text: string): ResumeAuditData => {
   if (parsed.rejectionRisks.some((risk) => !isRejectionRisk(risk))) {
     return invalid('이력서 감사 실패 — rejectionRisks 요소 형태 오류.');
   }
+  if (highlights.some((highlight) => !isAuditHighlight(highlight))) {
+    return invalid(
+      '이력서 감사 실패 — highlights 요소 형태 오류(title/reason).',
+    );
+  }
   return {
     verdict: parsed.verdict,
     items: (parsed.items as AuditItem[]).map(toAuditItem),
+    highlights: highlights as AuditHighlight[],
     jdFindings: parsed.jdFindings as JdFinding[],
     rejectionRisks: parsed.rejectionRisks as RejectionRisk[],
   };

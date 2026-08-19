@@ -187,6 +187,28 @@ export const formatResumeAudit = (
   ]
     .filter((line) => line.length > 0)
     .join('\n');
+  // 항목은 MISSING → WEAK → UNJUDGED → PROVEN 으로 정렬돼 있다. 그래서 첫 MISSING/WEAK 이 곧
+  // 가장 시급한 자리다 — 모델에게 "최우선 1개" 를 따로 물으면 항목별 판정과 어긋난 답이
+  // 나란히 뜬다. 코드가 판정 결과에서 직접 고른다.
+  //
+  // UNJUDGED 는 뺀다. 그건 이력서의 결손이 아니라 모델이 판정을 빠뜨린 자리라, 여기에 올리면
+  // "먼저 이것부터 … 모델이 이 성과를 판정하지 않았습니다" 처럼 사용자가 할 수 있는 일이 없는
+  // 지시가 된다. 판정 누락은 항목별 판정의 [미판정] 과 가드 결과의 누락 건수로 이미 드러난다.
+  const topFix = result.items.find(
+    (item) => item.status === 'MISSING' || item.status === 'WEAK',
+  );
+  const topFixLines = topFix
+    ? [
+        `*먼저 이것부터* [${AUDIT_STATUS_LABEL[topFix.status]}] ${escapeSlackMrkdwn(topFix.title)} — ${escapeSlackMrkdwn(topFix.why)}`,
+        ...(topFix.rewrite
+          ? [`  이렇게 고치세요: ${escapeSlackMrkdwn(topFix.rewrite.after)}`]
+          : []),
+      ]
+    : [];
+  const highlightLines = result.highlights.map(
+    (highlight, index) =>
+      `${index + 1}. *${escapeSlackMrkdwn(highlight.title)}* — ${escapeSlackMrkdwn(highlight.reason)}`,
+  );
   const itemLines = result.items.flatMap((item) => {
     const lines = [
       `• *[${AUDIT_STATUS_LABEL[item.status]}] ${escapeSlackMrkdwn(item.title)}* — ${escapeSlackMrkdwn(item.why)}`,
@@ -208,7 +230,7 @@ export const formatResumeAudit = (
       : '';
     return `• ${escapeSlackMrkdwn(risk.reason)}${rebuttal}`;
   });
-  const guardLine = `강등 ${result.guard.demotedTitles.length} / 폐기 ${result.guard.droppedTitles.length} / 누락 ${result.guard.unjudgedTitles.length} / 근거없음 강제 ${result.guard.forcedMissing.length}`;
+  const guardLine = `강등 ${result.guard.demotedTitles.length} / 폐기 ${result.guard.droppedTitles.length} / 누락 ${result.guard.unjudgedTitles.length} / 근거없음 강제 ${result.guard.forcedMissing.length} / 앞세우기 반려 ${result.guard.droppedHighlights.length}`;
   // 약하다고 판정하고 고칠 문장을 주지 않은 항목 — 사용자가 무엇을 고칠지 못 받은 자리다.
   const rewriteMissingLine =
     result.guard.rewriteMissing.length > 0
@@ -219,6 +241,10 @@ export const formatResumeAudit = (
     : '';
   const full = [
     summary,
+    topFixLines.join('\n'),
+    highlightLines.length > 0
+      ? `*앞세울 성과* (이 순서로 이력서 상단에)\n${highlightLines.join('\n')}`
+      : '',
     itemLines.length > 0 ? `*항목별 판정*\n${itemLines.join('\n')}` : '',
     source,
     jdLines.length > 0 ? `*공고 대조*\n${jdLines.join('\n')}` : '',

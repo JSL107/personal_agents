@@ -24,6 +24,7 @@ const RESULT: PublishPortfolioSiteResult = {
 const AUDIT_RESULT: ResumeAuditResult = {
   verdict: '증거가 확인된다.',
   items: [],
+  highlights: [],
   jdFindings: [],
   rejectionRisks: [],
   guard: {
@@ -32,6 +33,7 @@ const AUDIT_RESULT: ResumeAuditResult = {
     unjudgedTitles: [],
     forcedMissing: [],
     rewriteMissing: [],
+    droppedHighlights: [],
   },
   jdSource: null,
 };
@@ -172,6 +174,7 @@ describe('PortfolioPublishAutopilotTask', () => {
             rewrite: null,
           },
         ],
+        highlights: [],
         jdFindings: [
           {
             requirement: 'Kubernetes 운영 경험',
@@ -273,6 +276,37 @@ describe('PortfolioPublishAutopilotTask', () => {
     });
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
+  });
+
+  it('모든 성과가 입증이어도 앞세우기 반려만 있으면 보고한다', async () => {
+    // 반려는 items 상태를 바꾸지 않는다. 가드 조건에서 빠지면 "앞세울 게 없다" 와 "추천이
+    // 반려됐다" 가 자동 경로에서 구분되지 않고 보고가 통째로 사라진다.
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        items: [
+          {
+            title: '장애율 감소',
+            status: 'PROVEN',
+            quote: '장애율을 30% 줄였다.',
+            why: '정량 결과가 있다.',
+            rewrite: null,
+          },
+        ],
+        guard: {
+          ...AUDIT_RESULT.guard,
+          droppedHighlights: ['환각 성과'],
+        },
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.detailText).toContain('앞세우기 반려 1');
   });
 
   it('발행 변화가 없어도 미판정·폐기 같은 guard 이상 징후를 보고한다', async () => {

@@ -122,6 +122,7 @@ export class AuditResumeUsecase {
     return {
       verdict: '판정할 성과가 없습니다.',
       items: [],
+      highlights: [],
       jdFindings: [],
       rejectionRisks: [],
       guard: {
@@ -130,6 +131,7 @@ export class AuditResumeUsecase {
         unjudgedTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
+        droppedHighlights: [],
       },
       jdSource: toJdSource(targetJd),
     };
