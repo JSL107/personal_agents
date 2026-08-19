@@ -725,6 +725,62 @@ describe('PublishNotionDraftUsecase', () => {
     expect(outcome.result.path).toContain('shared-database-drift');
   });
 
+  // 리뷰 지적 — 최종 금지어 검사는 편집 제목만 본다. 편집이 안전한 제목으로 바꾸면
+  // 원제목의 금지어가 이 줄로만 새어 나간다.
+  it('카드에 실리는 초안 원제목도 금지어를 가린다', async () => {
+    const { usecase } = buildUsecase({
+      drafts: [{ ...draft, title: '회사명 마이그레이션 회고' }],
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '공유 DB는 왜 조용히 어긋나는가',
+        slug: 'shared-database-drift',
+        description: '공유 DB 마이그레이션의 정합성 교훈',
+        body: '# 공유 DB는 왜 조용히 어긋나는가\n\n익명화된 본문',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain(
+      '(초안 제목: 회** 마이그레이션 회고)',
+    );
+    expect(outcome.result.previewText).not.toContain('회사명');
+  });
+
+  // 리뷰 지적 — 집합 비교는 [X, Y] → [X, X] 를 통과시킨다(Y 가 X 로 치환됨).
+  it('코드블록이 다른 블록 내용으로 치환되거나 복제되면 끊는다', async () => {
+    const first = '```php\n$a = 1;\n```';
+    const second = '```php\n$b = 2;\n```';
+    const { usecase, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: `설명입니다.\n\n${first}\n\n중간 문단입니다.\n\n${second}`,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        // 둘째 블록이 첫째 블록 내용으로 바뀌었다 — 집합으로 보면 통과한다.
+        body: `설명입니다.\n\n${first}\n\n중간 문단입니다.\n\n${first}`,
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_CODE_CHANGED' });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
   it('윤문이 먹지 않으면 카드에 그 사실을 적는다', async () => {
     const { usecase } = buildUsecase({ humanizeSuffix: null });
 

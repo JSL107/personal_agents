@@ -305,6 +305,7 @@ export class PublishNotionDraftUsecase {
       post.path,
       edited,
       humanized,
+      context.forbiddenTerms,
     );
     const payload: BlogGithubPublishPayload = {
       pageId: target.pageId,
@@ -450,12 +451,18 @@ export class PublishNotionDraftUsecase {
     path: string,
     edited: PublishableBlogDraft,
     humanized: HumanizeMarkdownResult,
+    forbiddenTerms: string[],
   ): string {
     const lines = ['*GitHub 블로그 발행 미리보기*', `제목: ${edited.title}`];
     // 편집이 제목을 바꿨으면 초안 제목도 함께 보여준다 — 무엇이 바뀌었는지 모르고 ✅ 를
     // 누르는 상황을 만들지 않는다.
+    //
+    // 원제목은 **마스킹해서** 넣는다. 최종 금지어 검사는 edited.title 만 보므로, 편집이
+    // 안전한 제목으로 바꾼 경우 원제목의 금지어가 이 줄로만 새어 나간다(리뷰 지적).
     if (edited.title !== draft.title) {
-      lines.push(`(초안 제목: ${draft.title})`);
+      lines.push(
+        `(초안 제목: ${this.maskForbidden(draft.title, forbiddenTerms)})`,
+      );
     }
     lines.push(
       `경로: \`${path}\``,
@@ -520,8 +527,9 @@ export class PublishNotionDraftUsecase {
     context: PublishCandidateContext,
     reason: string,
   ): Promise<void> {
+    // 반환 메시지에만 마스킹을 걸면 같은 값이 로그로 새어 나간다(리뷰 지적).
     this.logger.log(
-      `Notion 초안 '${draft.title}' 을 '${context.holdStatusValue}' 로 옮깁니다 — ${reason}`,
+      `Notion 초안 '${this.maskForbidden(draft.title, context.forbiddenTerms)}' 을 '${context.holdStatusValue}' 로 옮깁니다 — ${this.maskForbidden(reason, context.forbiddenTerms)}`,
     );
     await this.notionClient.updatePageProperties({
       pageId: draft.pageId,
@@ -537,10 +545,20 @@ export class PublishNotionDraftUsecase {
     before: string,
     after: string,
   ): void {
-    const originals = new Set(extractFencedCodeBlocks(before));
-    const changed = extractFencedCodeBlocks(after).filter(
-      (block) => !originals.has(block),
-    );
+    // 집합이 아니라 **개수까지** 센다. Set 으로 보면 원문 [X, Y] 가 [X, X] 로 바뀌어도
+    // (Y 가 X 로 치환되거나 X 가 복제돼도) 통과한다 — 코드 변경을 놓치는 구멍이다(리뷰 지적).
+    const budget = new Map<string, number>();
+    for (const block of extractFencedCodeBlocks(before)) {
+      budget.set(block, (budget.get(block) ?? 0) + 1);
+    }
+    const changed = extractFencedCodeBlocks(after).filter((block) => {
+      const remaining = budget.get(block) ?? 0;
+      if (remaining === 0) {
+        return true;
+      }
+      budget.set(block, remaining - 1);
+      return false;
+    });
     if (changed.length === 0) {
       return;
     }
