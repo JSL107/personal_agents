@@ -23,8 +23,16 @@ export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Review
   - **기술 부채**: 의존성, 중복, 테스트 결손, 마이그레이션 리스크
 - "X 가 Y 만큼 어떻게 바뀌었다" 형태로 끝낸다. 추정이면 "추정 수준" 명시.
 
+## improvementBeforeAfter (기본값 null)
+- 기본값은 null 이다. 아래를 모두 만족할 때만 채운다.
+  - before 에 **작업과 별개로 입력에 적혀 있던 기존 상태** 가 있다 — 절차·소요 시간·발생 빈도·품질 등 (예: "배포를 수동 4단계로 12분", "타임아웃 알림 하루 7건").
+  - after 가 **같은 축에서 그 상태가 어떻게 달라졌는지** 를 말한다 (예: "스크립트 1회 2분", "하루 0건").
+  - 둘 다 입력에서 끌어올 수 있다. 입력에 없는 상태를 지어내지 않는다.
+- **작업 항목의 시제만 바꾼 것은 개선 전/후가 아니다.** before 가 "그 작업을 하기 전" 이고 after 가 summary·oneLineAchievement 의 재서술이면 null 이다.
+  - 입력이 "문서 오탈자 3건 고침" 일 때 {"before":"오탈자 3건이 있었다","after":"오탈자 3건을 수정했다"} 는 **오답** 이다. 작업 전/후일 뿐 개선 전/후가 아니다. 정답은 null.
+- 애매하면 null. 비우는 것은 결함이 아니다.
+
 ## 기타
-- improvementBeforeAfter 는 실제로 개선 전/후가 비교 가능할 때만 채우고, 아니면 null.
 - oneLineAchievement 는 한 줄짜리 성과 문장 (30자 내외). 과장 금지.
 - nextActions 는 내일~이번주 안에 할 수 있는 구체적 후속 조치 1~3개. "리팩터링 진행" 같은 추상문구 금지 — "X 함수의 Y 분기 정리" 처럼 구체화.
 
@@ -37,10 +45,7 @@ export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Review
     "quantitative": string[],
     "qualitative": string
   },
-  "improvementBeforeAfter": {
-    "before": string,
-    "after": string
-  } | null,
+  "improvementBeforeAfter": null | { "before": string, "after": string },
   "nextActions": string[],
   "oneLineAchievement": string
 }`;
