@@ -30,12 +30,25 @@ const getPullRequestNumber = (pullRequest: EvidencePullRequest): number => {
 // 조회 키와 어긋난다(그러면 같은 성과가 회차마다 새 항목으로 올라간다).
 // 숫자로 읽을 수 없는 값은 손대지 않는다 — 추측한 번호로 남의 PR 을 가리키는 편이 더 나쁘다.
 // 저장된 프로필에도 보정 전 값이 남아 있으므로 slug·dedup 키를 만드는 소비 지점에서도 쓴다.
+export // 허용 형식은 양의 정수와 `#` 접두 하나뿐이다 — `984`, `"984"`, `"#984"`.
+// 숫자만 긁어모으는 방식은 형식을 벗어난 값을 **다른 PR** 로 바꿔놓는다: `"1.5"`→15,
+// `"PR-12-extra"`→12, `"-12"`→12(부호 소실), `"984#985"`→984985. 그 번호가 우연히 실재하면
+// 남의 머지 시각을 근거에 심고 slug·dedup 키까지 그 PR 을 가리킨다 — 조용한 오귀속이다.
+// 형식을 벗어나면 원값을 그대로 돌려준다. 그러면 백필은 키 불일치로 건너뛰고 slug 는 만들어지지
+// 않는다(세어 올린다). 추측한 번호로 남의 PR 을 가리키는 편이 더 나쁘다.
+const PR_NUMBER_PATTERN = /^#?(\d+)$/;
+
+// 저장된 프로필에도 보정 전 값이 남아 있으므로 slug·dedup 키를 만드는 소비 지점에서도 쓴다.
 export const toPrNumber = (pr: number): number => {
-  if (Number.isInteger(pr)) {
+  if (Number.isSafeInteger(pr) && pr > 0) {
     return pr;
   }
-  const digits = String(pr).replace(/\D/g, '');
-  return digits.length > 0 ? Number(digits) : pr;
+  const matched = PR_NUMBER_PATTERN.exec(String(pr).trim());
+  if (!matched) {
+    return pr;
+  }
+  const parsed = Number(matched[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : pr;
 };
 
 // 모델 출력의 accomplishment evidence 를 권위 데이터에 맞춘다.

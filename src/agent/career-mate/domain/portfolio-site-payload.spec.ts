@@ -287,4 +287,22 @@ describe('buildPortfolioSitePayload', () => {
     expect(payload.projects).toHaveLength(0);
     expect(payload.skippedTitles).toEqual(['pr 을 읽을 수 없는 성과']);
   });
+
+  // 음수·0 은 PR 번호가 아니다. slug 를 만들면 `-pr--12` 처럼 사이트 조회 키와 어긋난다.
+  it.each([-12, 0, 984.5])(
+    'PR 번호가 될 수 없는 pr %p 은 slug 를 만들지 않는다',
+    (raw) => {
+      const accomplishment = {
+        ...ACCOMPLISHMENT,
+        evidence: [
+          {
+            ...evidence(1, '2026-08-14T01:00:00Z'),
+            pr: raw as unknown as number,
+          },
+        ],
+      };
+
+      expect(buildProjectSlug(accomplishment)).toBeNull();
+    },
+  );
 });

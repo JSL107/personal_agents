@@ -105,4 +105,34 @@ describe('reconcileAccomplishmentEvidence', () => {
     expect(result[0].evidence[0].pr).toBe('unknown');
     expect(result[0].evidence[0].mergedAt).toBe('LLM-값');
   });
+
+  // 숫자만 긁어모으면 형식을 벗어난 값이 **다른 PR** 이 된다("1.5"→15, "PR-12-extra"→12).
+  // 그 번호가 우연히 실재하면 남의 머지 시각을 근거에 심고 slug·dedup 키까지 그 PR 을 가리킨다.
+  it.each(['1.5', 'PR-12-extra', '-12', '984#985', 984.5, -12, 0])(
+    '허용 형식을 벗어난 pr %p 은 다른 번호로 바꾸지 않는다',
+    (raw) => {
+      const source = accomplishment();
+      source.evidence[0].pr = raw as unknown as number;
+
+      const result = reconcileAccomplishmentEvidence({
+        accomplishments: [source],
+        pullRequests,
+      });
+
+      expect(result[0].evidence[0].pr).toBe(raw);
+    },
+  );
+
+  it('형식을 벗어난 pr 은 권위 PR 과 우연히 겹쳐도 mergedAt 을 덮어쓰지 않는다', () => {
+    const source = accomplishment();
+    // 숫자만 남기면 10 이 되어 입력 PR 목록의 10 번과 맞물린다.
+    source.evidence[0].pr = 'PR-10-extra' as unknown as number;
+
+    const result = reconcileAccomplishmentEvidence({
+      accomplishments: [source],
+      pullRequests,
+    });
+
+    expect(result[0].evidence[0].mergedAt).toBe('LLM-값');
+  });
 });

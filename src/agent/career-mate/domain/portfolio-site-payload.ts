@@ -94,7 +94,7 @@ export const buildProjectSlug = (
   const pr = toPrNumber(first.pr);
   // 숫자로 읽을 수 없으면 slug 를 만들지 않는다 — 그런 값들끼리 같은 slug 로 뭉치면 첫 발행은
   // 유니크 제약으로 실패하고 이후로는 한 항목을 번갈아 덮는다. 세어 올리는 쪽이 안전하다.
-  if (!Number.isInteger(pr)) {
+  if (!Number.isSafeInteger(pr) || pr <= 0) {
     return null;
   }
   return `${segment}-pr-${pr}`;
