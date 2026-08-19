@@ -549,12 +549,27 @@ final class OfficeScene: SKScene {
                     self.departingAgents.remove(entry.agentType)
                     return
                 }
+                // 퇴근 도중에 새 일감이 들어올 수 있다(21시대 관측: 14일간 10회). 상태가 .inProgress로
+                // 변하면 hasActiveRun이 true라 attendance가 .present로 변한다. 일하는 중에는
+                // 퇴근할 수 없으므로 여기서 중단하고 복귀한다.
+                guard self.attendance(of: lastSyncedAgents.first(where: { $0.agentType == entry.agentType })!) == .away else {
+                    self.departingAgents.remove(entry.agentType)
+                    node.isWalking = false
+                    return
+                }
                 self.walk(node, to: self.plan.entranceTile) { [weak self] in
                     guard let self, let node = self.characters[entry.agentType] else {
                         return
                     }
                     guard !self.queueOrder.contains(entry.agentType) else {
                         self.departingAgents.remove(entry.agentType)
+                        return
+                    }
+                    // 걷는 도중에도 일감이 들어올 수 있다. 도착 지점에서 다시 한 번 확인해서
+                    // 도중에 업무를 시작한 사람이 남을 수 있게 한다.
+                    guard self.attendance(of: lastSyncedAgents.first(where: { $0.agentType == entry.agentType })!) == .away else {
+                        self.departingAgents.remove(entry.agentType)
+                        node.isWalking = false
                         return
                     }
                     node.run(.sequence([
@@ -2069,8 +2084,10 @@ final class OfficeScene: SKScene {
             stopMonitorGlow(agent.agentType)
             node.startSlump()
         case .awaitingApproval:
+            // 발을 구르며 기다리는 것은 압력 사다리의 3단계다. 카드가 신착일 때는 중립 자세로
+            // 줄을 선다 — 서 있는 것 자체가 1단계 신호다.
             stopMonitorGlow(agent.agentType)
-            node.startWaitTap()
+            node.startBreathing()
         case .completed, .waiting, .awaitingIntegration:
             stopMonitorGlow(agent.agentType)
             node.startBreathing()
