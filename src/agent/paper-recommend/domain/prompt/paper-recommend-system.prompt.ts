@@ -1,4 +1,8 @@
 import {
+  MAXIMUM_BUY_COUNT,
+  MAXIMUM_WEIGHT_PERCENT,
+} from '../paper-recommendation.constraint';
+import {
   BuildPaperRecommendationPromptInput,
   PaperRecommendationStrategy,
 } from '../paper-recommendation.type';
@@ -11,12 +15,12 @@ LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거�
 반드시 아래 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
 {
   "sells": [{ "code": "005930", "reason": "매도 근거" }],
-  "buys": [{ "code": "000660", "weightPercent": 20, "reason": "매수 근거" }]
+  "buys": [{ "code": "000660", "reason": "매수 근거" }]
 }
 
 규칙:
-- buys는 최대 3종이다.
-- weightPercent는 종목당 20 이하의 숫자다.
+- buys는 최대 ${MAXIMUM_BUY_COUNT}종이다.
+- 비중과 수량은 시스템이 정한다. 종목당 ${MAXIMUM_WEIGHT_PERCENT}%가 배정되므로 비중이나 수량은 출력하지 않는다.
 - 보유 중인 종목은 재매수하지 않는다.
 - sells에는 보유 중인 종목만 넣는다.`;
 
@@ -54,7 +58,7 @@ ${positions}
 [신규 후보]
 ${candidates}
 
-후보와 보유 종목을 함께 검토해 매도와 매수를 판단하라. JSON 객체 하나만 출력하라. 매수는 최대 3종, 종목당 20% 이하이며 보유 종목 재매수 금지다.`;
+후보와 보유 종목을 함께 검토해 매도와 매수를 판단하라. JSON 객체 하나만 출력하라. 매수는 최대 ${MAXIMUM_BUY_COUNT}종이고 종목당 ${MAXIMUM_WEIGHT_PERCENT}%가 시스템에서 배정되며 보유 종목 재매수 금지다.`;
 };
 
 const strategyLabelOf = (strategy: PaperRecommendationStrategy): string =>

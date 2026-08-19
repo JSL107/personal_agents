@@ -57,7 +57,9 @@ const parseBuys = (value: unknown): PaperRecommendationBuy[] => {
   if (!value.every(isBuy)) {
     throw invalidModelOutput('buys 항목이 스키마와 맞지 않습니다.');
   }
-  return value;
+  // 원본을 그대로 돌려주면 모델이 덧붙인 weightPercent 가 런타임 객체에 남는다. 지금은 아무도
+  // 읽지 않지만 남겨 두면 나중에 누가 읽어 비결정성이 되살아나므로 여기서 떨궈 낸다.
+  return value.map((buy) => ({ code: buy.code, reason: buy.reason }));
 };
 
 const isSell = (value: unknown): value is PaperRecommendationSell =>
@@ -65,11 +67,11 @@ const isSell = (value: unknown): value is PaperRecommendationSell =>
   typeof value.code === 'string' &&
   typeof value.reason === 'string';
 
+// 모델이 weightPercent 를 덧붙여 보내도 오류로 보지 않는다 — 비중은 코드가 정하므로 읽지 않고,
+// parseBuys 가 code·reason 만 남겨 반환한다.
 const isBuy = (value: unknown): value is PaperRecommendationBuy =>
   isRecord(value) &&
   typeof value.code === 'string' &&
-  typeof value.weightPercent === 'number' &&
-  Number.isFinite(value.weightPercent) &&
   typeof value.reason === 'string';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
