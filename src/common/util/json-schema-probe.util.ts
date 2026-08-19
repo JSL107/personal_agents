@@ -75,6 +75,12 @@ export const findStrictSchemaViolations = (
   for (const [key, definition] of Object.entries(properties)) {
     violations.push(
       ...findStrictSchemaViolations(definition, `${path}.${key}`),
+      // 배열 원소가 객체면 그 안도 strict 여야 한다 — items 를 안 보면 배열 속 객체의
+      // 위반이 통째로 빠져나가 "모든 객체를 본다" 는 이 함수의 설명이 거짓이 된다.
+      ...findStrictSchemaViolations(
+        (definition.items ?? {}) as SchemaNode,
+        `${path}.${key}[]`,
+      ),
     );
   }
   return violations;

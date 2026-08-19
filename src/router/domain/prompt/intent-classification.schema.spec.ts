@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   buildMinimalObject,
   findStrictSchemaViolations,
@@ -19,6 +22,33 @@ const getProperties = (
 ): Record<string, Record<string, unknown>> =>
   schema.properties as Record<string, Record<string, unknown>>;
 
+// 등록 dispatcher 의 agentType 을 소스에서 모은다.
+// AgentDispatcher 구현체는 `readonly agentType = AgentType.X` 로 자기 타입을 선언한다.
+const collectDispatcherAgentTypes = (): string[] => {
+  const srcRoot = join(__dirname, '..', '..', '..');
+  const found: string[] = [];
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.name.endsWith('.dispatcher.ts')) {
+        continue;
+      }
+      const matched = readFileSync(fullPath, 'utf-8').match(
+        /readonly agentType = AgentType\.([A-Z_]+)/,
+      );
+      if (matched !== null) {
+        found.push(matched[1]);
+      }
+    }
+  };
+  walk(srcRoot);
+  return found;
+};
+
 describe('buildIntentClassificationOutputSchema', () => {
   it('라우팅 가능한 agentType 과 UNKNOWN 만 허용한다', () => {
     const schema = buildIntentClassificationOutputSchema(ROUTABLE);
@@ -39,23 +69,30 @@ describe('buildIntentClassificationOutputSchema', () => {
     expect(allowed).not.toContain(AgentType.HUMANIZER);
   });
 
-  it('허용하는 agentType 은 전부 시스템 프롬프트가 설명한 후보다', () => {
-    // 스키마 enum 은 모델에게 "허용된 메뉴" 자체로 보인다. 프롬프트가 설명하지 않은 값이
-    // 메뉴에 있으면, 프롬프트가 UNKNOWN 으로 흘리려고 막아둔 입력에 새 출구가 생긴다.
-    const promptCandidates = (
-      INTENT_CLASSIFIER_SYSTEM_PROMPT.match(/^- [A-Z_]+:/gm) ?? []
-    ).map((line) => line.slice(2, -1));
-    // 정규식이 후보를 하나도 못 잡으면 아래 루프가 공허하게 통과한다 — 먼저 못 박는다.
-    expect(promptCandidates.length).toBeGreaterThan(10);
+  it('실제 dispatcher 의 agentType 은 전부 시스템 프롬프트가 설명한다', () => {
+    // 운영에서 스키마 후보는 등록 dispatcher 에서 온다. 그러므로 검증도 그 소스로 해야 한다 —
+    // 프롬프트에서 뽑은 값을 스키마 입력으로 넣고 다시 프롬프트와 대조하면 "[...X] 가 X 를
+    // 포함한다" 는 언어 사실만 확인하는 항진명제가 된다.
+    //
+    // dispatcher 가 새로 생겼는데 프롬프트에 설명을 안 넣으면, 모델은 그 워커를 고를 수 있지만
+    // 무엇을 하는 워커인지 모른 채 고르게 된다. 여기서 잡는다.
+    // (한계: 파일 존재만 보므로 RouterModule 등록 누락은 이 테스트의 대상이 아니다.)
+    const dispatcherAgentTypes = collectDispatcherAgentTypes();
+    expect(dispatcherAgentTypes.length).toBeGreaterThan(10);
 
-    const schema = buildIntentClassificationOutputSchema(promptCandidates);
+    const undocumented = dispatcherAgentTypes.filter(
+      (agentType) =>
+        !INTENT_CLASSIFIER_SYSTEM_PROMPT.includes(`- ${agentType}:`),
+    );
+    expect(undocumented).toEqual([]);
+  });
+
+  it('스키마 후보는 넘겨받은 dispatcher 목록을 벗어나지 않는다', () => {
+    const dispatcherAgentTypes = collectDispatcherAgentTypes();
+    const schema = buildIntentClassificationOutputSchema(dispatcherAgentTypes);
     const allowed = getProperties(schema).agentType.enum as string[];
-    for (const candidate of allowed) {
-      if (candidate === 'UNKNOWN') {
-        continue;
-      }
-      expect(promptCandidates).toContain(candidate);
-    }
+
+    expect(allowed).toEqual([...new Set([...dispatcherAgentTypes, 'UNKNOWN'])]);
   });
 
   it('중복 agentType 이 들어와도 enum 원소는 유일하다', () => {
