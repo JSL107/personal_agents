@@ -90,6 +90,14 @@ final class OfficeScene: SKScene {
     private var roommateLooks: [String: CharacterLook] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
     private var lastPhases: [String: PendingPhase] = [:]
+    /// 승인 카드별로 마지막에 실제로 적용한 방치 압력 단계(`applyApprovalPressure`). 폴링마다
+    /// 다시 걸면 자세·소품이 처음부터 재생돼 줄 전체가 깜빡이므로, 바뀔 때만 갱신하기 위해
+    /// 필요하다. 줄에서 빠지면 지운다 — 남겨 두면 같은 사람이 다시 줄에 섰을 때 단계가 이미
+    /// 올라간 것으로 읽혀 1단계 표현을 건너뛴다.
+    private var lastAppliedPressure: [String: OfficeApprovalPressure] = [:]
+    /// 마지막으로 방치 압력을 훑은 시각(`update`). `lastSessionSweepAt`과 같은 이유로 필요하다 —
+    /// 줄에 이미 선 카드는 시간이 흘러도 그 자체로는 이벤트를 내지 않는다.
+    private var lastApprovalPressureSweepAt: TimeInterval = 0
     /// 대표실 앞에 줄 선 순서. 승인 대기 인원이 늘면 줄이 길어진다.
     private var queueOrder: [String] = []
     private var lastStates: [String: ConsoleAgentState] = [:]
@@ -382,6 +390,8 @@ final class OfficeScene: SKScene {
         }
 
         layoutQueue()
+        // 줄이 자리 잡은 뒤라야 한다 — 방치 압력은 큐 칸에 이미 선 사람의 자세만 손댄다.
+        applyApprovalPressure()
         // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
         syncSessions(lastSyncedSessions)
         updateDaylight()
@@ -705,22 +715,24 @@ final class OfficeScene: SKScene {
             agents: agents,
             approvals: approvals
         )
-        guard reconciled != queueOrder else {
-            return
+        if reconciled != queueOrder {
+            let leaving = queueOrder.filter { !reconciled.contains($0) }
+            let joining = reconciled.filter { !queueOrder.contains($0) }
+            queueOrder = reconciled
+            for agentType in leaving {
+                goHome(agentType)
+            }
+            // 새로 줄에 들어온 사람이 배회 중이면 끊는다 — 승인 대기는 관제 신호이고 배회는
+            // 연출이다. 끊지 않으면 머무름 콜백이 나중에 깨어나 줄에서 자리로 끌고 간다.
+            for agentType in joining {
+                cancelStroll(agentType)
+            }
+            // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
+            layoutQueue()
         }
-        let leaving = queueOrder.filter { !reconciled.contains($0) }
-        let joining = reconciled.filter { !queueOrder.contains($0) }
-        queueOrder = reconciled
-        for agentType in leaving {
-            goHome(agentType)
-        }
-        // 새로 줄에 들어온 사람이 배회 중이면 끊는다 — 승인 대기는 관제 신호이고 배회는 연출이다.
-        // 끊지 않으면 머무름 콜백이 나중에 깨어나 줄에서 자리로 끌고 간다.
-        for agentType in joining {
-            cancelStroll(agentType)
-        }
-        // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
-        layoutQueue()
+        // 줄 구성이 그대로여도 불러야 한다 — 승인 알림(개설/처리)이 오갈 때마다 이 함수가
+        // 불리므로, 방치 압력도 같이 최신화할 기회로 쓴다.
+        applyApprovalPressure()
     }
 
     /// 그 자리의 이름표가 좌우로 쓸 수 있는 여유(칸). 같은 방 같은 행 이웃과 방 벽이 정한다.
@@ -1501,6 +1513,49 @@ final class OfficeScene: SKScene {
         }
     }
 
+    /// 줄 선 사람의 자세를 방치 단계에 맞춘다.
+    ///
+    /// 판정(누구의 단계가 바뀌었는가)은 `officeApprovalPressureUpdates`(ConsoleCore, 순수)가
+    /// 맡는다. 여기는 그 결과를 SpriteKit 자세로 옮기기만 하는 얇은 어댑터다 — **단계가 오를
+    /// 때만 갱신한다.** 폴링마다 다시 걸면 자세와 소품이 처음부터 재생돼 줄 전체가 깜빡인다
+    /// (책상 소품이 결정론적 선택을 쓰는 것과 같은 이유).
+    private func applyApprovalPressure() {
+        let now = Date().timeIntervalSince1970
+        let (changes, nextApplied) = officeApprovalPressureUpdates(
+            now: now,
+            approvals: lastSyncedApprovals,
+            nodesPresent: Set(characters.keys),
+            previouslyApplied: lastAppliedPressure
+        )
+        lastAppliedPressure = nextApplied
+        for change in changes {
+            if change.parseFailed {
+                // 조용히 "차분함"으로 읽으면 안 되므로 이미 최고 단계(.alarm)로 표시했다.
+                // 여기서는 원인 추적을 위해 로그만 남긴다.
+                FileHandle.standardError.write(
+                    Data(
+                        "승인 카드 시각 파싱 실패(\(change.agentType)) — 경고 단계로 표시\n".utf8
+                    )
+                )
+            }
+            guard let node = characters[change.agentType] else {
+                continue
+            }
+            switch change.pressure {
+            case .queued:
+                node.endInteraction()
+            case .holdingPapers:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+            case .tapping:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+                node.startWaitTap()
+            case .alarm:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+                node.startWaitTap()
+            }
+        }
+    }
+
     /// 완료 직후 탕비실에 잠깐 다녀온다. 비어 있는 휴식 자리를 고른다.
     ///
     /// 배회 중이던 사람이 완료로 바뀔 수 있다(이벤트 없이 스냅샷만 갱신되는 경로). 그때 앞선
@@ -1622,6 +1677,13 @@ final class OfficeScene: SKScene {
     /// 깨어난 첫 프레임에서 간격을 넘겨 즉시 한 번 훑는다.
     override func update(_ currentTime: TimeInterval) {
         super.update(currentTime)
+        // 승인 방치 압력도 같은 문제를 안는다 — 이미 줄 선 카드는 시간만 흘러도 단계가
+        // 올라야 하는데, 목록 자체(SSE 승인 개설/처리)가 그대로면 갱신 이벤트가 오지 않는다.
+        // `applyApprovalPressure` 내부에서 바뀐 사람만 골라내므로 매 훑음이 헛돌지는 않는다.
+        if currentTime - lastApprovalPressureSweepAt >= officeApprovalPressureSweepIntervalSeconds {
+            lastApprovalPressureSweepAt = currentTime
+            applyApprovalPressure()
+        }
         guard currentTime - lastSessionSweepAt >= officeSessionSweepIntervalSeconds else {
             return
         }

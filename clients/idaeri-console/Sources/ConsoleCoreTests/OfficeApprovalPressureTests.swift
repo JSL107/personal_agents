@@ -46,4 +46,93 @@ func runOfficeApprovalPressureTests(_ t: TestRunner) {
         .queued,
         "생성 전 시각은 1단계로 접는다"
     )
+
+    // MARK: - officeApprovalPressureUpdates (씬의 diff·정리 로직)
+
+    let iso: (String) -> String = { "2026-08-19T\($0)Z" }
+    // 15분 경과. TTL 1시간 카드는 25% 소진(서류 — holdingPapers 임계값에 정확히 걸침),
+    // TTL 24시간 카드는 1% 소진(1단계) — 같은 경과 시간이 서로 다른 단계를 내야 한다
+    // (officeApprovalPressure 자체의 회귀 방지와 같은 취지를 diff 레이어에서도 확인한다).
+    let shortTtlApproval = ConsoleApproval(
+        id: "short", agentType: "CTO", title: "PR",
+        createdAt: iso("00:00:00"), expiresAt: iso("01:00:00")
+    )
+    let longTtlApproval = ConsoleApproval(
+        id: "long", agentType: "PM", title: "PR",
+        createdAt: iso("00:00:00"), expiresAt: iso("00:00:00").replacingOccurrences(of: "08-19", with: "08-20")
+    )
+    let now15MinLater = ISO8601DateFormatter().date(from: iso("00:15:00"))!.timeIntervalSince1970
+
+    let firstSweep = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [shortTtlApproval, longTtlApproval],
+        nodesPresent: ["CTO", "PM"],
+        previouslyApplied: [:]
+    )
+    t.expectEqual(
+        firstSweep.changes.first(where: { $0.agentType == "CTO" })?.pressure,
+        .holdingPapers,
+        "TTL 1시간 카드는 15분(25% 소진)에서 서류를 든다"
+    )
+    t.expectEqual(
+        firstSweep.changes.first(where: { $0.agentType == "PM" })?.pressure,
+        .queued,
+        "같은 15분이라도 TTL 24시간 카드는 아직 1단계"
+    )
+    t.expectEqual(
+        firstSweep.nextApplied, ["CTO": .holdingPapers, "PM": .queued],
+        "이번에 적용한 단계가 다음 비교 기준으로 남는다"
+    )
+
+    // 같은 시각·같은 승인 목록으로 다시 스윕 — 단계가 안 바뀌었으니 changes 는 비어야 한다.
+    // 폴링마다 다시 걸면 자세가 매번 처음부터 재생돼 줄 전체가 깜빡인다(브리핑의 핵심 요구).
+    let secondSweep = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [shortTtlApproval, longTtlApproval],
+        nodesPresent: ["CTO", "PM"],
+        previouslyApplied: firstSweep.nextApplied
+    )
+    t.expect(secondSweep.changes.isEmpty, "단계가 그대로면 변경 목록이 비어야 한다(깜빡임 방지)")
+    t.expectEqual(secondSweep.nextApplied, firstSweep.nextApplied, "미변경 스윕은 기록도 그대로")
+
+    // CTO 가 줄에서 빠짐(승인 처리 완료) — 기록도 함께 지워져야 한다. 남겨 두면 CTO 가
+    // 나중에 새 승인으로 다시 줄에 섰을 때 단계가 이미 올라간 것으로 읽혀 1단계를 건너뛴다.
+    let afterDeparture = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [longTtlApproval],
+        nodesPresent: ["PM"],
+        previouslyApplied: firstSweep.nextApplied
+    )
+    t.expectEqual(
+        afterDeparture.nextApplied, ["PM": .queued],
+        "줄에서 빠진 CTO 의 기록은 지워지고 PM 기록만 남는다"
+    )
+
+    // 시각 파싱 실패 — "안 급함" 으로 읽으면 안 되므로 최고 단계(.alarm)로 떨어뜨리고,
+    // 원인 추적을 위해 parseFailed 플래그를 별도로 알린다.
+    let brokenApproval = ConsoleApproval(
+        id: "broken", agentType: "BE", title: "PR",
+        createdAt: "t+1h", expiresAt: "later"
+    )
+    let brokenSweep = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [brokenApproval],
+        nodesPresent: ["BE"],
+        previouslyApplied: [:]
+    )
+    t.expectEqual(
+        brokenSweep.changes.first?.pressure, .alarm,
+        "시각 파싱 실패는 조용히 차분함이 아니라 최고 단계로 읽는다"
+    )
+    t.expectEqual(brokenSweep.changes.first?.parseFailed, true, "파싱 실패는 별도로 표시된다")
+
+    // 노드가 아직 없는 agentType 은 건너뛴다 — 자세를 걸 대상 자체가 없다.
+    let noNodeSweep = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [shortTtlApproval],
+        nodesPresent: [],
+        previouslyApplied: [:]
+    )
+    t.expect(noNodeSweep.changes.isEmpty, "화면에 노드가 없는 사람은 건너뛴다")
+    t.expect(noNodeSweep.nextApplied.isEmpty, "건너뛴 사람은 기록도 남기지 않는다")
 }

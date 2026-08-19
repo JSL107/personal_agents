@@ -139,9 +139,17 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         "CTO", "줄 선 사람 쪽 클릭 → 그 사람")
 
     // approvalFor: 해당 agentType 의 승인 건
+    // createdAt/expiresAt 은 실제 백엔드 형태(ISO 8601)를 그대로 쓴다 — "t1" 같은 자리표시자는
+    // 방치 압력이 그 값을 읽기 시작한 뒤로는 파싱 실패로 잡혀 뜻이 달라진다.
     let approvals = [
-        ConsoleApproval(id: "a1", agentType: "CTO", title: "PR1", createdAt: "t1", expiresAt: "t1+1h"),
-        ConsoleApproval(id: "a2", agentType: "PM", title: "PR2", createdAt: "t2", expiresAt: "t2+1h"),
+        ConsoleApproval(
+            id: "a1", agentType: "CTO", title: "PR1",
+            createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+        ),
+        ConsoleApproval(
+            id: "a2", agentType: "PM", title: "PR2",
+            createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+        ),
     ]
     t.expectEqual(approvalFor(agentType: "PM", in: approvals)?.id, "a2", "PM 승인 건 매칭")
     t.expectNil(approvalFor(agentType: "BE", in: approvals), "승인 없는 에이전트 → nil")
@@ -174,9 +182,18 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     let waitingPM = makeInteractionAgent("PM", .waiting)
     let awaitingCTO = makeInteractionAgent("CTO", .awaitingApproval)
     let waitingBE = makeInteractionAgent("BE", .waiting)
-    let ctoApproval = ConsoleApproval(id: "queue-a1", agentType: "CTO", title: "PR", createdAt: "t", expiresAt: "t+1h")
-    let pmApproval = ConsoleApproval(id: "queue-a2", agentType: "PM", title: "PR", createdAt: "t", expiresAt: "t+1h")
-    let beApproval = ConsoleApproval(id: "queue-a4", agentType: "BE", title: "PR", createdAt: "t", expiresAt: "t+1h")
+    let ctoApproval = ConsoleApproval(
+        id: "queue-a1", agentType: "CTO", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
+    let pmApproval = ConsoleApproval(
+        id: "queue-a2", agentType: "PM", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
+    let beApproval = ConsoleApproval(
+        id: "queue-a4", agentType: "BE", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
 
     t.expectEqual(
         reconciledQueueOrder(current: ["CTO"], agents: [awaitingCTO], approvals: []),
@@ -221,8 +238,8 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         id: "queue-a3",
         agentType: nil,
         title: "세션 유휴",
-        createdAt: "t",
-        expiresAt: "t+1h"
+        createdAt: "2026-08-19T00:00:00Z",
+        expiresAt: "2026-08-19T01:00:00Z"
     )
     t.expectEqual(
         reconciledQueueOrder(

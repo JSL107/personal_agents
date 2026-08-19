@@ -36,7 +36,12 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "run.finished → recolor + bubble")
 
     // approval.opened → 이동 + 승인 대기색 + bubble. 색을 빼면 이벤트 순서에 따라 흰 링이 남는다.
-    let approval = ConsoleApproval(id: "a1", agentType: "CTO", title: "PR", createdAt: "t", expiresAt: "t+1h")
+    // createdAt/expiresAt 은 실제 백엔드가 보내는 형태(ISO 8601)를 그대로 쓴다 — "t" 같은
+    // 자리표시자는 방치 압력이 그 값을 읽기 시작한 뒤로는 파싱 실패로 잡혀 뜻이 달라진다.
+    let approval = ConsoleApproval(
+        id: "a1", agentType: "CTO", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(approval), context: ctx),
         [
@@ -47,13 +52,19 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "approval.opened → summon + 승인 대기색 + bubble")
 
     // 운영의 세션 유휴 승인은 agentType 이 nil 이다. 관계없는 사람을 줄 세우면 안 된다.
-    let nilAgentApproval = ConsoleApproval(id: "a2", agentType: nil, title: "세션 유휴", createdAt: "t", expiresAt: "t+1h")
+    let nilAgentApproval = ConsoleApproval(
+        id: "a2", agentType: nil, title: "세션 유휴",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(nilAgentApproval), context: ctx),
         [],
         "approval.opened agentType nil → 빈 결과")
 
-    let unknownAgentApproval = ConsoleApproval(id: "a3", agentType: "UNKNOWN", title: "PR", createdAt: "t", expiresAt: "t+1h")
+    let unknownAgentApproval = ConsoleApproval(
+        id: "a3", agentType: "UNKNOWN", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(unknownAgentApproval), context: ctx),
         [],
