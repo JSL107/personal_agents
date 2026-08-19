@@ -1268,7 +1268,67 @@ final class OfficeScene: SKScene {
         plate.strokeColor = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 0.55)
         plate.lineWidth = 1
         plate.zPosition = 0.9  // 글자(1) 바로 뒤
+        // 경고등이 이 판 바로 위에 뜨려면 판의 실제 높이(폰트 크기에 따라 달라진다)를
+        // 알아야 한다 — 이름으로 다시 찾아 frame 을 읽는다.
+        plate.name = "presidentTitlePlate"
         node.addChild(plate)
+    }
+
+    /// 승인이 만료 임박까지 방치되면 대표 캐릭터 머리 위에 경고등을 켠다.
+    ///
+    /// **등을 붙이는 대상은 대표 캐릭터 노드다.** 씬이 들고 있는 것은 `president: SKSpriteNode?`
+    /// 하나뿐이고, 대표 전용 책상 노드는 없다 — 대표는 `plan.desks`에 들어가지 않는 사람이라
+    /// (사규가 배정한 좌석이 아니다) 책상 소품이 쓰던 `deskNodes` 경로를 그대로 쓸 수 없다.
+    ///
+    /// 배치 코드를 반드시 함께 넣는다 — 등록만 하고 배치를 빠뜨리면 조용히 화면에 안 나온다
+    /// (`prop-*.png` 일곱 장이 그렇게 방치돼 있었다).
+    private func updatePresidentAlarm(_ highest: OfficeApprovalPressure?) {
+        president?.childNode(withName: "approvalAlarm")?.removeFromParent()
+        guard highest == .alarm,
+            let presidentNode = president,
+            let texture = OfficeLightTexture.deskGlow(
+                radius: officeAlarmGlowRadius,
+                color: officeAlarmGlowColor,
+                strength: officeAlarmGlowStrength
+            )
+        else {
+            // highest 가 .alarm 이 아니면(nil 포함) 끄기만 하고 끝난다 — 승인이 0건이 되거나
+            // 가장 급한 카드도 경고 단계 밑으로 내려오면 등이 반드시 꺼져야 한다. "켜지는 것만
+            // 보고 끝내면 만료 뒤에도 남는 결함을 놓친다" — 이 함수는 그 결함을 만들지 않도록
+            // 매번 지우고 나서 다시 켤지 판단한다.
+            return
+        }
+        let alarm = SKSpriteNode(texture: texture)
+        alarm.name = "approvalAlarm"
+        alarm.blendMode = .add
+        // 책상 스탠드(`officeDeskGlowZPosition`)와는 다른 지역 z 스택이다 — 여기 형제는
+        // 왕관(1)·문패 판(0.9)이라, 그 값을 그대로 쓰면 겹칠 때 경고등이 아래로 깔린다.
+        // 위치 계산(titleTop)이 창 크기·폰트에 따라 조금 어긋나 문패 판과 겹치더라도
+        // 경고등이 항상 이겨야 하므로 형제 중 가장 위에 둔다.
+        alarm.zPosition = 1.1
+        // 다른 스프라이트와 같은 배율을 따라야 창 크기가 바뀌어도 대비가 유지된다
+        // (책상 스탠드 웅덩이와 같은 이유, `updateDeskLamps` 참고).
+        alarm.size = CGSize(
+            width: texture.size().width * spriteScale,
+            height: texture.size().height * spriteScale
+        )
+        // 왕관 문패 판 바로 위에 띄운다 — 겹치면 "나 (대표)" 글자와 경고등이 서로 가린다.
+        let titleTop =
+            presidentNode.childNode(withName: "presidentTitlePlate")?.frame.maxY
+            ?? presidentNode.size.height
+        alarm.position = CGPoint(x: 0, y: titleTop + 2)
+        // 깜빡임은 느리게 — 빠른 점멸은 종일 켜 두는 관제 화면에서 눈을 피로하게 하고,
+        // 접근성상 초당 3회를 넘기면 안 된다. 편도 1.1초 왕복(전체 주기 2.2초)이라
+        // 초당 약 0.45회 — 상한의 1/6 수준으로 여유가 크다.
+        alarm.run(
+            .repeatForever(
+                .sequence([
+                    .fadeAlpha(to: 0.35, duration: 1.1),
+                    .fadeAlpha(to: 1.0, duration: 1.1),
+                ])
+            )
+        )
+        presidentNode.addChild(alarm)
     }
 
     // MARK: - 걸음
@@ -1554,6 +1614,11 @@ final class OfficeScene: SKScene {
                 node.startWaitTap()
             }
         }
+        // 대표 경고등은 가장 급한 카드 하나만 보면 된다. 단계는 위에서 이미 다 구했으므로
+        // approvals 를 다시 훑지 않고 방금 확정한 최신 단계(`nextApplied`) 중 최고값만 뽑는다.
+        // 대기 중인 승인이 하나도 없으면 `nextApplied`가 비어 `max()`가 nil을 돌려주고,
+        // 그 nil이 그대로 `updatePresidentAlarm`에 들어가 등을 끈다.
+        updatePresidentAlarm(nextApplied.values.max())
     }
 
     /// 완료 직후 탕비실에 잠깐 다녀온다. 비어 있는 휴식 자리를 고른다.

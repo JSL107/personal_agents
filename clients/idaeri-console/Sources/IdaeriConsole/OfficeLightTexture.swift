@@ -53,7 +53,11 @@ enum OfficeLightTexture {
     static func deskGlow(radius: Int, color: OfficeColor, strength: Double) -> SKTexture? {
         let dotsPerSide = radius * 2
         let pixelSide = dotsPerSide * dot
-        return texture(key: "deskGlow", width: pixelSide, height: pixelSide) { context in
+        // 캐시 키에 인자를 넣지 않으면 색이 다른 두 번째 호출(대표 경고등의 빨강)이 첫 호출이
+        // 구운 텍스처(책상 스탠드의 호박색)를 그대로 돌려받는다 — 그림을 정하는 세 값을
+        // 전부 키에 넣어야 호출마다 다른 텍스처가 캐시된다.
+        let key = "deskGlow-\(radius)-\(color.red)-\(color.green)-\(color.blue)-\(strength)"
+        return texture(key: key, width: pixelSide, height: pixelSide) { context in
             drawDeskGlow(context, dotsPerSide: dotsPerSide, radius: radius, color: color, strength: strength)
         }
     }

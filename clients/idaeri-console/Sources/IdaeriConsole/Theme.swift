@@ -33,6 +33,20 @@ let officeDeskGlowStrength: Double = 0.8
 /// 소품(0.01)보다는 아래 — 빛 웅덩이가 상판에 깔리고 그 위에 소품·서류가 놓인 그림이어야 한다.
 let officeDeskGlowZPosition: CGFloat = 0.005
 
+/// 대표 경고등 반지름(도트). 책상 스탠드(13)보다 좁게 잡는다 — 대표 머리 위 좁은 자리에
+/// 얹는 등이라, 너무 크면 왕관 문패 판까지 물들여 글자가 묻힌다.
+let officeAlarmGlowRadius = 9
+/// 경고등 색. 실패 상태가 이미 쓰는 코랄 레드(`agentStatePaletteRGBA(.failed)`)를 그대로
+/// 끌어온다 — "위험"을 뜻하는 색을 화면 안에서 따로 또 정의하면 어느 쪽이 진짜 위급
+/// 신호인지 헷갈린다.
+let officeAlarmGlowColor: OfficeColor = {
+    let rgb = agentStatePaletteRGBA(.failed)
+    return OfficeColor(red: rgb.red, green: rgb.green, blue: rgb.blue)
+}()
+/// 경고등 중심의 최대 알파. `.add` 로 얹으므로 책상 스탠드(0.8)보다 살짝 세게 잡아야
+/// "방치됐다"는 신호가 배경에 묻히지 않는다.
+let officeAlarmGlowStrength: Double = 0.9
+
 // MARK: - 간격
 
 /// 화면의 모든 여백·간격이 고르는 단계. 값을 손으로 적는 대신 여기서 이름을 고른다.
