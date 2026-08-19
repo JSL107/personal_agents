@@ -38,6 +38,8 @@ const CREDENTIAL_IN_TEXT = /(token|key|secret|password|auth|credential|access[-_
 const LOCAL_PATH = /^(\/|\.\.?\/|~\/)/;
 
 const CLAUDE_ASSET_DIRS = ['skills', 'agents', 'commands', 'hooks'];
+/** 전역 지침 파일 — 빠지면 새 PC 에서 운영 원칙·모델 라우팅·codex-flow 규칙이 통째로 사라진다. */
+const CLAUDE_ASSET_FILES = ['CLAUDE.md'];
 const CODEX_ASSET_DIRS = ['agents', 'skills', 'rules'];
 const CODEX_ASSET_FILES = ['AGENTS.md'];
 
@@ -54,11 +56,26 @@ function readJson(filePath) {
   }
 }
 
-/** CLI 를 실행해 JSON 출력을 받는다. 명령이 없거나 실패하면 null. */
+/**
+ * CLI 를 실행해 JSON 출력을 받는다. 명령이 없거나 실패하면 null 이고, 사유는 `lastCommandError` 에 남는다.
+ * 사유를 남기는 이유는 manifest 만 보고 "정말 없음" 과 "캡처 실패" 를 구분해야 하기 때문이다.
+ */
+let lastCommandError = null;
 function readCommandJson(command, commandArgs) {
   try {
-    return JSON.parse(execFileSync(command, commandArgs, { encoding: 'utf8', stdio: 'pipe' }));
-  } catch {
+    lastCommandError = null;
+    return JSON.parse(
+      execFileSync(command, commandArgs, {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        // Windows 는 확장자 없는 런처(`codex` → `codex.cmd`)를 execFile 로 해석하지 못한다.
+        // 인자가 전부 고정 리터럴이라 셸을 거쳐도 이스케이프 문제가 없다.
+        shell: process.platform === 'win32',
+      }),
+    );
+  } catch (error) {
+    const stderr = error.stderr ? error.stderr.toString().trim() : '';
+    lastCommandError = (stderr || error.message || '').split('\n')[0] || '원인 불명';
     return null;
   }
 }
@@ -157,6 +174,9 @@ function collectClaude() {
       path.join(OUT_DIR, 'claude', directory),
     );
   }
+  assets.files = CLAUDE_ASSET_FILES.filter((name) =>
+    copyFile(path.join(CLAUDE_DIR, name), path.join(OUT_DIR, 'claude')),
+  );
 
   return {
     marketplaces: Object.fromEntries(
@@ -182,12 +202,23 @@ function collectCodex() {
   if (!fs.existsSync(CODEX_DIR)) {
     return null;
   }
-  const marketplaceList = readCommandJson('codex', ['plugin', 'marketplace', 'list', '--json']);
-  if (!marketplaceList) {
-    console.warn('  ! codex CLI 를 실행할 수 없어 Codex 설정은 건너뛴다 (자산만 복사).');
+  const skipped = { marketplaces: [], plugins: [], mcpServers: [], captureFailure: [] };
+
+  /**
+   * 캡처 실패를 항목별로 남긴다. 세 조회는 각각 실패할 수 있고(CLI 부재·버전 차이로 서브커맨드 없음),
+   * 사유가 없으면 빈 값이 "이 PC 에 없다" 로 읽힌다.
+   */
+  function noteCaptureFailure(what) {
+    const reason = `${what} 캡처 실패 (${lastCommandError}) — 빈 값은 "없음" 이 아니다.`;
+    skipped.captureFailure.push(reason);
+    console.warn(`  ! ${reason}`);
   }
 
-  const skipped = { marketplaces: [], plugins: [], mcpServers: [] };
+  const marketplaceList = readCommandJson('codex', ['plugin', 'marketplace', 'list', '--json']);
+  if (!marketplaceList) {
+    noteCaptureFailure('마켓플레이스');
+    console.warn('    자산(agents·skills·rules·AGENTS.md)과 hooks 는 파일에서 읽으므로 유효하다.');
+  }
 
   const marketplaces = {};
   for (const entry of marketplaceList?.marketplaces || []) {
@@ -200,6 +231,9 @@ function collectCodex() {
   }
 
   const pluginList = readCommandJson('codex', ['plugin', 'list', '--json']);
+  if (!pluginList) {
+    noteCaptureFailure('플러그인');
+  }
   const plugins = [];
   for (const entry of pluginList?.installed || []) {
     if (!entry.installed || !entry.enabled) {
@@ -213,7 +247,11 @@ function collectCodex() {
   }
 
   const mcpServers = {};
-  for (const entry of readCommandJson('codex', ['mcp', 'list', '--json']) || []) {
+  const mcpList = readCommandJson('codex', ['mcp', 'list', '--json']);
+  if (!mcpList) {
+    noteCaptureFailure('MCP');
+  }
+  for (const entry of mcpList || []) {
     const transport = entry.transport || {};
     const launchValues = [transport.command, ...(transport.args || [])];
     if (pointsAtLocalPath(launchValues)) {
@@ -286,9 +324,15 @@ function summarize(label, tool) {
     `  ${label}: 마켓 ${Object.keys(tool.marketplaces).length} · 플러그인 ${pluginCount} · MCP ${Object.keys(tool.mcpServers).length} · 자산 ${assetCount} · hook 이벤트 ${Object.keys(tool.hooks).length}`,
   );
   for (const [kind, entries] of Object.entries(tool.skipped || {})) {
-    if (entries.length) {
-      console.log(`    - ${kind} 제외 ${entries.length}건: ${entries.join(', ')}`);
+    if (!entries.length) {
+      continue;
     }
+    // 캡처 실패는 "제외" 가 아니다 — 값이 비어 있는 원인이라 눈에 띄게 따로 찍는다.
+    if (kind === 'captureFailure') {
+      entries.forEach((reason) => console.log(`    ! ${reason}`));
+      continue;
+    }
+    console.log(`    - ${kind} 제외 ${entries.length}건: ${entries.join(', ')}`);
   }
 }
 

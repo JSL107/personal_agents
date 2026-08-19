@@ -3,11 +3,13 @@
  * export-ai-cli-env.cjs 가 만든 디렉터리를 새 PC 에서 되감는다.
  * manifest 에 담긴 도구(Claude Code · Codex)를 각각 복원하며, CLI 가 없는 쪽은 건너뛴다.
  *
- *   node scripts/bootstrap-ai-cli-env.cjs <내보낸경로> [--dry-run] [--with-hooks] [--replace-hooks]
+ *   node scripts/bootstrap-ai-cli-env.cjs <내보낸경로> [--dry-run] [--with-hooks] [--replace-hooks] [--replace-global-docs]
  *
- *   --dry-run        실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
- *   --with-hooks     hooks 설정까지 적용한다 (기본은 안내만)
- *   --replace-hooks  이 PC 에 이미 hooks 가 있어도 덮어쓴다 (없으면 건너뛰고 알린다)
+ *   --dry-run              실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
+ *   --with-hooks           hooks 설정까지 적용한다 (기본은 안내만)
+ *   --replace-hooks        이 PC 에 이미 hooks 가 있어도 덮어쓴다 (없으면 건너뛰고 알린다)
+ *   --replace-global-docs  이 PC 에 이미 있는 전역 지침 문서(~/.claude/CLAUDE.md · ~/.codex/AGENTS.md)를
+ *                          덮어쓴다. 기본은 건너뛴다 — 그 머신에서 수기로 더한 규칙이 날아가기 때문이다.
  *
  * 하는 일
  *   1. 마켓플레이스 등록 → 플러그인 설치
@@ -32,6 +34,7 @@ const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const WITH_HOOKS = args.includes('--with-hooks');
 const REPLACE_HOOKS = args.includes('--replace-hooks');
+const REPLACE_GLOBAL_DOCS = args.includes('--replace-global-docs');
 const EXPORT_DIR = path.resolve(args.find((arg) => !arg.startsWith('--')) || 'ai-cli-env-export');
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -110,7 +113,11 @@ function fillSecrets(values, label) {
   return filled;
 }
 
-function copyAsset(sourceDir, destinationDir, entries, label) {
+/**
+ * protectExisting 이면 이 PC 에 이미 있는 항목은 덮지 않고 건너뛴다.
+ * 전역 CLAUDE.md 처럼 그 머신에서 수기로 더한 규칙이 섞이는 파일에 쓴다 — hooks 와 같은 급의 보호다.
+ */
+function copyAsset(sourceDir, destinationDir, entries, label, protectExisting) {
   if (!entries || !entries.length) {
     return;
   }
@@ -123,6 +130,11 @@ function copyAsset(sourceDir, destinationDir, entries, label) {
     const to = path.join(destinationDir, entry);
     if (!fs.existsSync(from)) {
       warnings.push(`${label}/${entry} — 내보낸 디렉터리에 없음`);
+      continue;
+    }
+    if (protectExisting && fs.existsSync(to)) {
+      console.log(`  건너뜀 ${entry} — 이 PC 에 이미 있다 (덮어쓰려면 --replace-global-docs).`);
+      warnings.push(`${label}/${entry} 미적용 — 이 PC 의 기존 파일 보존 (덮어쓰려면 --replace-global-docs)`);
       continue;
     }
     if (DRY_RUN) {
@@ -264,6 +276,11 @@ function restoreClaude(claude) {
   }
 
   for (const [directory, entries] of Object.entries(claude.assets || {})) {
+    if (directory === 'files') {
+      // 전역 CLAUDE.md — 이 PC 에서 수기로 더한 규칙이 있을 수 있어 기본은 덮지 않는다.
+      copyAsset(path.join(EXPORT_DIR, 'claude'), CLAUDE_DIR, entries, 'claude/파일', !REPLACE_GLOBAL_DOCS);
+      continue;
+    }
     copyAsset(
       path.join(EXPORT_DIR, 'claude', directory),
       path.join(CLAUDE_DIR, directory),
@@ -345,7 +362,8 @@ function restoreCodex(codex) {
 
   for (const [directory, entries] of Object.entries(codex.assets || {})) {
     if (directory === 'files') {
-      copyAsset(path.join(EXPORT_DIR, 'codex'), CODEX_DIR, entries, 'codex/파일');
+      // 전역 AGENTS.md — CLAUDE.md 와 같은 위험(그 머신 수기분 유실)이라 같은 보호를 준다.
+      copyAsset(path.join(EXPORT_DIR, 'codex'), CODEX_DIR, entries, 'codex/파일', !REPLACE_GLOBAL_DOCS);
       continue;
     }
     copyAsset(
