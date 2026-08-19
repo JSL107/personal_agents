@@ -109,6 +109,19 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         [.recolor(agentType: "PM", state: .completed)],
         "state.changed(COMPLETED) → recolor")
 
+    // 출근·퇴근은 자율 배회를 끊어야 한다. 배회 중에 퇴근 시각이 되면 사람이 사무실
+    // 한가운데서 사라지거나, 문으로 가다 배회에 끌려 되돌아간다.
+    t.expectEqual(
+        affectedAgentTypes(of: .arrive(agentType: "PM")),
+        ["PM"],
+        "출근은 그 사람의 배회를 끊는다"
+    )
+    t.expectEqual(
+        affectedAgentTypes(of: .leave(agentType: "PM")),
+        ["PM"],
+        "퇴근은 그 사람의 배회를 끊는다"
+    )
+
     runOfficeWalkFrameTests(t)
 }
 

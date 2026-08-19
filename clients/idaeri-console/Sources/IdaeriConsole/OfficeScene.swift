@@ -410,9 +410,15 @@ final class OfficeScene: SKScene {
     ///
     /// `animated: false` 는 **앱을 켠 순간**과 스냅샷이 갱신될 때처럼 "지금 값을 그대로 확정"
     /// 해야 하는 경로다. 10시에 앱을 켰다고 출근 애니메이션을 소급 재생하면, 이미 일어난 일을
-    /// 처음부터 다시 보여 주는 셈이 된다. 이 태스크는 걷기 연출 자체가 없어 `animated` 가 아직
-    /// 분기를 만들지 않지만, 다음 태스크가 문에서 걸어오는 연출을 여기 끼워 넣을 자리다.
+    /// 처음부터 다시 보여 주는 셈이 된다. `animated: true`는 출근 시각 경계를 실시간으로 넘는
+    /// 순간(`startAttendanceClock`)에만 걷기 연출로 나간다.
+    ///
+    /// **등장 순서는 `plan.desks` 배열 순서를 그대로 쓴다.** 그 배열은 이미 부서(zoneOrder) →
+    /// 방 안 agentType 사전순으로 채워져 있다 — 배회처럼 무작위로 고르면 회차마다 화면이
+    /// 달라져 렌더 비교가 성립하지 않는다.
     private func applyAttendance(animated: Bool) {
+        var arrivalIndex = 0
+        var departureIndex = 0
         for entry in plan.desks {
             guard let agent = lastSyncedAgents.first(where: { $0.agentType == entry.agentType })
             else {
@@ -420,23 +426,109 @@ final class OfficeScene: SKScene {
             }
             switch attendance(of: agent) {
             case .present where characters[entry.agentType] == nil:
-                // 다음 태스크가 animated == true 일 때 문에서 걸어오는 연출로 대체한다.
-                spawnCharacter(entry.agentType, at: entry.seat)
+                if animated {
+                    playArrival(entry, delay: TimeInterval(arrivalIndex) * Self.arrivalStagger)
+                    arrivalIndex += 1
+                } else {
+                    spawnCharacter(entry.agentType, at: entry.seat)
+                }
             case .away where characters[entry.agentType] != nil:
-                // 다음 태스크가 animated == true 일 때 문까지 걸어가는 연출로 대체한다.
-                despawnCharacter(entry.agentType)
+                if animated {
+                    playDeparture(entry, delay: TimeInterval(departureIndex) * Self.arrivalStagger)
+                    departureIndex += 1
+                } else {
+                    despawnCharacter(entry.agentType)
+                }
             default:
                 continue
             }
         }
     }
 
+    /// 출근 등장 간격(초). 26명이 같은 순간에 길찾기를 돌리면 CPU가 튄다 — 자율 배회의 동시
+    /// 상한(`officeStrollDefaultConcurrency` = 2)을 그대로 쓰면 아홉 배치 이상으로 늘어져
+    /// 출근이 끝나지 않는다. 그렇다고 상한을 없애면(전원 동시 등장) 스파이크가 그대로 온다 —
+    /// 그래서 동시 상한 대신 **시작 시각을 사람마다 조금씩 늦춰** 계산이 자연히 퍼지게 한다.
+    /// 0.12초 간격이면 32명 전원 등장이 4초 안에 끝나고, 실기 확인에서 CPU 튐이 보이지 않았다.
+    private static let arrivalStagger: TimeInterval = 0.12
+
+    /// 복도 진입점에서 등장해 자기 좌석까지 걸어온다.
+    ///
+    /// 도면 밖 타일이 없으므로 "화면 밖에서 걸어온다"는 성립하지 않는다. `plan.entranceTile`
+    /// (세로 복도가 가로 복도와 만나는 칸)에 노드를 만들고 거기서부터 걷는다.
+    private func playArrival(_ entry: DeskAssignment, delay: TimeInterval) {
+        guard characters[entry.agentType] == nil else {
+            return
+        }
+        // 배회는 기존 캐릭터에만 걸리므로 지금 막 만드는 사람에게는 사실상 no-op 이지만,
+        // 퇴근 쪽(playDeparture)과 대칭을 맞춰 두 경로 모두 같은 지점에서 배회를 끊는다.
+        cancelStroll(entry.agentType)
+        spawnCharacter(entry.agentType, at: plan.entranceTile, seated: false)
+        guard let node = characters[entry.agentType] else {
+            return
+        }
+        node.alpha = 0
+        // 계단식 지연 동안에도 감독관(8초 주기)이 이 사람을 한가한 사람으로 오인하지 않게
+        // 미리 "걷는 중" 으로 표시한다. 실제 걸음이 시작되기 전까지는 화면에 안 보이므로
+        // (alpha 0) 자세가 걸음 그림으로 보여도 무해하다 — `walk()` 가 시작되면 그대로 이어진다.
+        node.isWalking = true
+        node.run(.sequence([
+            .wait(forDuration: delay),
+            .fadeIn(withDuration: 0.2),
+            .run { [weak self, weak node] in
+                guard let self, let node else {
+                    return
+                }
+                self.walk(node, to: entry.seat) { [weak node] in
+                    node?.sit()
+                }
+            },
+        ]))
+    }
+
+    /// 좌석에서 복도 진입점까지 걸어간 뒤 화면에서 빠진다. 등장의 반대 순서다.
+    ///
+    /// 배회 중에 퇴근 시각이 되는 경우가 있다 — 자리를 뜨기 전에 배회부터 끊어야, 나중에
+    /// 깨어난 배회 머무름 콜백이 이미 나간 사람을 자리로 도로 끌고 오지 않는다.
+    private func playDeparture(_ entry: DeskAssignment, delay: TimeInterval) {
+        guard let node = characters[entry.agentType] else {
+            return
+        }
+        cancelStroll(entry.agentType)
+        // 계단식 지연 동안에도 감독관이 이 사람을 다시 배회로 뽑을 수 있다 — 위 cancelStroll
+        // 은 "지금까지의" 배회만 끊는다. 걷는 중으로 미리 표시해 그 창을 닫는다.
+        node.isWalking = true
+        node.run(.sequence([
+            .wait(forDuration: delay),
+            .run { [weak self] in
+                guard let self, let node = self.characters[entry.agentType] else {
+                    return
+                }
+                self.walk(node, to: self.plan.entranceTile) { [weak self] in
+                    guard let self, let node = self.characters[entry.agentType] else {
+                        return
+                    }
+                    node.run(.sequence([
+                        .fadeOut(withDuration: 0.2),
+                        .run { [weak self] in
+                            self?.despawnCharacter(entry.agentType)
+                        },
+                    ]))
+                }
+            },
+        ]))
+    }
+
     /// 캐릭터를 만들어 지정한 타일에 세운다.
     ///
-    /// 좌석이든(이 태스크) 문 앞이든(다음 태스크가 걸어 들어오는 연출의 출발점으로 쓴다) 이
-    /// 함수 하나로 만든다 — 좌석 전용 변주를 따로 두면 다음 태스크가 생성 경로를 하나 더
-    /// 만들어야 해서 갈라진다.
-    private func spawnCharacter(_ agentType: String, at tile: TilePoint) {
+    /// 좌석이든 복도 진입점(출근 연출의 출발점)이든 이 함수 하나로 만든다 — 좌석 전용
+    /// 변주를 따로 두면 생성 경로가 갈라진다.
+    ///
+    /// `seated`는 기본값 `true`(좌석에 바로 앉힌다, 이전 동작 그대로)다. 복도 칸에 세울 때는
+    /// `false`를 넘긴다 — 복도 한가운데 앉은 사람은 자세가 타일과 맞지 않는다. `makeCharacter`가
+    /// 이미 서서 아래를 보는 자세로 만들어 두므로(`CharacterNode.init`의 `apply(facing: .down)`)
+    /// 따로 세우는 호출은 필요 없다.
+    private func spawnCharacter(_ agentType: String, at tile: TilePoint, seated: Bool = true) {
         guard characters[agentType] == nil,
             let agent = lastSyncedAgents.first(where: { $0.agentType == agentType })
         else {
@@ -446,7 +538,9 @@ final class OfficeScene: SKScene {
         characters[agentType] = node
         objectLayer.addChild(node)
         place(node, at: tile)
-        node.sit()
+        if seated {
+            node.sit()
+        }
     }
 
     /// 캐릭터를 치운다. 생성 때 함께 만든 부기(줄 순서·완료 상태·배회 기록)도 같이 지운다 —
@@ -1435,6 +1529,16 @@ final class OfficeScene: SKScene {
                 reject(agentType)
             case let .bubble(agentType, text):
                 showBubble(agentType, text: text)
+            case let .arrive(agentType):
+                // 출근 시각 경계는 `applyAttendance`가 지연·계단식 등장을 직접 계산해 부른다
+                // (delay 0 은 이벤트로 들어오는 경우를 위한 완전성 — 지금은 실제로 그 경로가 없다).
+                if let entry = plan.desks.first(where: { $0.agentType == agentType }) {
+                    playArrival(entry, delay: 0)
+                }
+            case let .leave(agentType):
+                if let entry = plan.desks.first(where: { $0.agentType == agentType }) {
+                    playDeparture(entry, delay: 0)
+                }
             }
         }
     }

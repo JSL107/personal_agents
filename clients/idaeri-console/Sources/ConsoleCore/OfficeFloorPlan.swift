@@ -1253,6 +1253,11 @@ public struct OfficeFloorPlan: Codable, Sendable {
     /// 탕비실 휴식 자리(완료 후 잠깐 다녀오는 곳).
     public let loungeTiles: [TilePoint]
     public let presidentTile: TilePoint
+    /// 출퇴근이 시작·끝나는 칸 — 세로 복도가 가로 복도(`officeCorridorRow`)와 만나는 자리.
+    ///
+    /// 도면 밖에는 아무 타일도 없다(사방이 벽으로 닫혀 있다). "화면 밖에서 걸어온다"가
+    /// 성립하지 않으므로, 실제로 걸을 수 있는 칸 중 사무실 로비에 해당하는 이 자리를 대신 쓴다.
+    public let entranceTile: TilePoint
     public let zones: [DepartmentZone]
     /// 상단 공용 밴드의 세 구역(회의실·대표실·탕비실). 부서 구역과 달리 사람이 상주하지 않아
     /// 이름이 없으면 "가구만 놓인 빈 띠" 로 읽힌다 — 화면 위쪽 1/4 을 차지하는데도.
@@ -1986,6 +1991,11 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
         )
     }
 
+    // 세로 복도 첫 열이 가로 복도와 만나는 칸을 출퇴근 진입점으로 쓴다. 두 좌표 모두
+    // 이미 계산돼 있는 `officeCorridorColumns` / `officeCorridorRow` 값에서 그대로 뽑으므로
+    // 새 상수를 만들지 않는다 — 격자 규격이 바뀌어도 같은 규칙으로 따라온다.
+    let entranceTile = TilePoint(x: corridorColumns[0], y: corridorRow)
+
     // 앉는 칸은 통로에서 도달 가능해야 하므로 막지 않는다.
     let seats = Set(desks.map(\.seat))
     var walkable: Set<TilePoint> = []
@@ -2008,6 +2018,7 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
         queueTiles: queueTiles,
         loungeTiles: loungeTiles,
         presidentTile: presidentTile,
+        entranceTile: entranceTile,
         zones: zones,
         commonAreas: commonAreas,
         windowTiles: windowTiles,
