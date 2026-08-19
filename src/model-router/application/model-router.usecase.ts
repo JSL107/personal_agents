@@ -22,7 +22,9 @@ import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provide
 
 // fallback 테이블 — 2026-07-02 부터 비어 있음(Claude 제거로 ChatGPT 단일 provider).
 // route() 의 `!fallbackName` 가드가 즉시 전파하므로, 모든 provider 는 실패 시 재시도 없이 즉시 throw 한다.
-// (롤백: CLAUDE↔CHATGPT 대칭 매핑을 되살리면 이전 양방향 fallback 으로 복구된다.)
+// (롤백: CLAUDE↔CHATGPT 대칭 매핑을 되살리면 이전 양방향 fallback 으로 복구된다.
+//  되살릴 때 outputSchema 를 쓰는 호출을 함께 확인할 것 — claude CLI 에는 형태 강제 인자가
+//  없어 그 경로로 넘어가면 프롬프트 지시만 남는다.)
 const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {};
 
 @Injectable()
