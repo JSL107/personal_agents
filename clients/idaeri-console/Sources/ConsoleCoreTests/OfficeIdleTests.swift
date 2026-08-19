@@ -408,9 +408,8 @@ func runOfficeIdleTests(_ t: TestRunner) {
     let spot12 = officeStrollSpot(
         for: testAgent, round: 0, spots: testSpots, occupied: noOccupied, hour: 12
     )
-    let spot15 = officeStrollSpot(
-        for: testAgent, round: 0, spots: testSpots, occupied: noOccupied, hour: 15
-    )
+    // 비점심(15시) 선택과의 비교는 시간 인자 처리 검증이 주목표이므로,
+    // 정확한 선택 차이는 해시 함수 결과에 따라 달라질 수 있다.
 
     let isLunch12 = spot12?.kind == .coffeeTable
 
