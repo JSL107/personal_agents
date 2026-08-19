@@ -629,10 +629,10 @@ cd clients/idaeri-console && swift build && \
 ```bash
 cd clients/idaeri-console && swift build && \
   .build/arm64-apple-macosx/debug/IdaeriConsole --render /tmp/hud-after.png --hour 13 && \
-  .build/arm64-apple-macosx/debug/IdaeriConsole --render /tmp/hud-narrow.png --hour 13 --size 960
+  .build/arm64-apple-macosx/debug/IdaeriConsole --render /tmp/hud-narrow.png --hour 13 --size 660x820
 ```
 
-창 크기 플래그는 **`--size` 하나**다(`main.swift:23`). 폭·높이를 따로 받지 않는다. 더 좁은 배치가 필요하면 `--zone-columns 2`를 함께 준다.
+창 크기 플래그는 **`--size` 하나**이고 값은 **`WIDTHxHEIGHT` 형식**이다(`main.swift:23` → `officeParseRenderSize`). 숫자 하나만 주면 파싱이 `nil` 을 돌려주고 **기본값 1400×820 으로 조용히 폴백한다** — 좁은 창을 확인했다고 착각하기 쉽다. 두 렌더의 해시나 파일 크기가 실제로 다른지 함께 확인한다. 더 좁은 배치가 필요하면 `--zone-columns 2` 를 같이 준다.
 
 작은 창일수록 글자에 한글 하한(`officeHudMinFontSize`)이 걸려 **글자는 안 줄고 자리만 좁아진다.** 판이 화면 밖으로 나가거나 오른쪽이 잘리지 않는지 이 렌더에서 확인한다.
 
