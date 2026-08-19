@@ -337,10 +337,10 @@ func runOfficeIdleTests(_ t: TestRunner) {
     )
 
     let firstSpot = officeStrollSpot(
-        for: "PM", round: 7, spots: spots, occupied: []
+        for: "PM", round: 7, spots: spots, occupied: [], hour: 12
     )
     let secondSpot = officeStrollSpot(
-        for: "PM", round: 7, spots: spots, occupied: []
+        for: "PM", round: 7, spots: spots, occupied: [], hour: 12
     )
     t.expectEqual(firstSpot, secondSpot, "동일 사람·회차는 동일 목적지")
     t.expectNil(
@@ -348,14 +348,15 @@ func runOfficeIdleTests(_ t: TestRunner) {
             for: "PM",
             round: 7,
             spots: spots,
-            occupied: Set(spots.map(\.tile))
+            occupied: Set(spots.map(\.tile)),
+            hour: 12
         ),
         "모든 목적지가 점유되면 배정하지 않음"
     )
     if spots.count >= 2 {
         t.expect(
-            officeStrollSpot(for: "PM", round: 0, spots: spots, occupied: [])
-                != officeStrollSpot(for: "PM", round: 1, spots: spots, occupied: []),
+            officeStrollSpot(for: "PM", round: 0, spots: spots, occupied: [], hour: 12)
+                != officeStrollSpot(for: "PM", round: 1, spots: spots, occupied: [], hour: 12),
             "회차가 바뀌면 목적지가 달라짐"
         )
     } else {
@@ -378,10 +379,10 @@ func runOfficeIdleTests(_ t: TestRunner) {
 
     t.expectEqual(officeLunchHour, 12, "점심 시간대")
 
-    // 점심 시간에는 탕비실·회의실 가구 앞 목적지를 우선선택한다.
-    // 목적지가 [비점심 3개, 점심 2개]로 배열되어 있을 때,
-    // 12시에는 점심 우선이라 점심을 고르고,
-    // 15시에는 원래 순서라 비점심을 고른다.
+    // 점심 시간에는 탕비실·회의실 목적지를 ONLY 선택한다.
+    // 테스트: [비점심 3개, 점심 2개]로 배열.
+    // 12시에는 점심 2개만 선택 풀 → 모든 에이전트가 coffeeTable 선택.
+    // 15시에는 전체 5개 풀 → 일부는 비점심 선택.
     let plant1 = OfficeStrollSpot(
         kind: .plantSmall, tile: TilePoint(x: 1, y: 1), dwellSeconds: 4, facing: .up, pose: .tending
     )
@@ -399,21 +400,39 @@ func runOfficeIdleTests(_ t: TestRunner) {
     )
     // 순서: [비점심(인덱스 0-2), 점심(인덱스 3-4)]
     let testSpots = [plant1, desk1, plant2, coffeeTable1, coffeeTable2]
-
     let noOccupied: Set<TilePoint> = []
 
-    // 두 시간대에서 같은 에이전트로 선택을 비교한다.
-    // 12시에는 점심 우선이라 조금 다른 선택을 할 수 있다.
-    let testAgent = "Test1"
-    let spot12 = officeStrollSpot(
-        for: testAgent, round: 0, spots: testSpots, occupied: noOccupied, hour: 12
-    )
-    // 비점심(15시) 선택과의 비교는 시간 인자 처리 검증이 주목표이므로,
-    // 정확한 선택 차이는 해시 함수 결과에 따라 달라질 수 있다.
+    // 12시(점심): 점심 풀만 사용 → 모든 에이전트가 coffeeTable 선택
+    let lunchAgents = ["PM", "CTO", "INVEST", "HUMANIZER", "BE"]
+    var lunchHourAllPickLunch = true
+    for agent in lunchAgents {
+        if let spot = officeStrollSpot(
+            for: agent, round: 0, spots: testSpots, occupied: noOccupied, hour: 12
+        ) {
+            if spot.kind != .coffeeTable {
+                lunchHourAllPickLunch = false
+                break
+            }
+        } else {
+            lunchHourAllPickLunch = false
+            break
+        }
+    }
+    t.expect(lunchHourAllPickLunch, "12시: 5명 모두 점심 가구 선택 (점심만 풀)")
 
-    let isLunch12 = spot12?.kind == .coffeeTable
-
-    t.expect(isLunch12, "12시(점심 우선)는 coffeeTable 선택")
+    // 15시(비점심): 전체 풀 사용 → 일부는 비점심 선택
+    var nonLunchHourHasNonLunch = false
+    for agent in lunchAgents {
+        if let spot = officeStrollSpot(
+            for: agent, round: 0, spots: testSpots, occupied: noOccupied, hour: 15
+        ) {
+            if spot.kind != .coffeeTable {
+                nonLunchHourHasNonLunch = true
+                break
+            }
+        }
+    }
+    t.expect(nonLunchHourHasNonLunch, "15시: 최소 1명 비점심 선택 (전체 풀)")
 
     // 바닥 빛 세기가 낮 > 아침 > 저녁 > 새벽 > 밤 순으로 단조로워야 시간이 읽힌다.
     // 순서가 뒤집히면 화면만 보고 아침인지 밤인지 가릴 근거가 사라진다.

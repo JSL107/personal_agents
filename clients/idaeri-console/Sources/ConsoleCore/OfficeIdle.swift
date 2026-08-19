@@ -233,21 +233,21 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
 
 /// 프로세스마다 달라지는 Swift Hasher 대신 유니코드 스칼라 합과 회차만 섞는다.
 ///
-/// 점심시간에는 탕비실·회의실 쪽으로 기운다. 입력 순서가 달라도 같은 회차가 같은 결과를 내도록
-/// (목적지 카탈로그 순서를 보존해) 결정론을 지킨다.
+/// 점심시간(hour == 12)에는 탕비실·회의실 목적지만 선택한다. 빈 경우 전체에서 고른다.
+/// 카탈로그 순서를 보존해 입력 순서가 달라도 같은 회차가 같은 결과를 낸다.
 public func officeStrollSpot(
     for agentType: String,
     round: Int,
     spots: [OfficeStrollSpot],
     occupied: Set<TilePoint>,
-    hour: Int = 12
+    hour: Int
 ) -> OfficeStrollSpot? {
     let candidates = spots.filter { !occupied.contains($0.tile) }
     guard !candidates.isEmpty else {
         return nil
     }
 
-    // 점심시간이면 탕비실·회의실 목적지를 먼저 배치한다. 카탈로그 순서를 유지해 결정론을 지킨다.
+    // 점심시간이면 탕비실·회의실 목적지만 골라본다. 없으면 전체에서 고른다.
     let isLunchHour = hour == officeLunchHour
     let breakroomKinds: Set<FurnitureKind> = [
         .sofa2, .sofa3, .coffeeTable, .coffeeMachine, .waterCooler,
@@ -256,20 +256,19 @@ public func officeStrollSpot(
     let meetingKinds: Set<FurnitureKind> = [.meetingTable]
     let lunchKinds = breakroomKinds.union(meetingKinds)
 
-    let orderedCandidates: [OfficeStrollSpot]
+    let filteredCandidates: [OfficeStrollSpot]
     if isLunchHour {
-        // 점심 목적지와 비점심 목적지를 분리한다. 각 그룹은 원래 카탈로그 순서를 유지한다.
+        // 점심 목적지가 있으면 그것만 고른다. 없으면 전체에서 고른다.
         let lunch = candidates.filter { lunchKinds.contains($0.kind) }
-        let nonLunch = candidates.filter { !lunchKinds.contains($0.kind) }
-        orderedCandidates = lunch + nonLunch
+        filteredCandidates = lunch.isEmpty ? candidates : lunch
     } else {
-        orderedCandidates = candidates
+        filteredCandidates = candidates
     }
 
     let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-    let remainder = (scalarSum + round) % orderedCandidates.count
-    let index = remainder >= 0 ? remainder : remainder + orderedCandidates.count
-    return orderedCandidates[index]
+    let remainder = (scalarSum + round) % filteredCandidates.count
+    let index = remainder >= 0 ? remainder : remainder + filteredCandidates.count
+    return filteredCandidates[index]
 }
 
 // MARK: - 회의
