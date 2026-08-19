@@ -20,6 +20,7 @@ func renderOfficeScene(
     poseDemo: Bool,
     hoverAgentType: String? = nil,
     busyDemo: Bool = false,
+    alarmDemo: Bool = false,
     debugLabels: Bool = false
 ) -> Bool {
     let scene = OfficeScene(size: size)
@@ -47,7 +48,15 @@ func renderOfficeScene(
         }
         renderedAgents = renderedAgents.map(busyDemoAgent)
     }
-    let renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []
+    var renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []
+    if alarmDemo {
+        // 실 백엔드는 지금(2026-08) 승인 대기가 0건이라, 이 데모 없이는 대표 경고등이
+        // 절대 화면에 뜨지 않는다 — `--busy-demo`가 항상 0~2명뿐인 진행 중 상태를 강제로
+        // 세우는 것과 같은 이유로, 카드가 실제로 쌓이길 기다리지 않고 회귀를 확인하려면
+        // 이 입구가 필요하다.
+        renderedAgents.append(alarmDemoAgent())
+        renderedApprovals.append(alarmDemoApproval())
+    }
     let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
     let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
@@ -124,6 +133,42 @@ func poseDemoAgentType(for kind: FurnitureKind) -> String {
 /// 문구로 확인하면 폭이 남의 자리를 넘는지가 보이지 않는다.
 private func busyDemoAgent(_ agent: ConsoleAgent) -> ConsoleAgent {
     agent.replacing(state: .inProgress, bubble: "#2999 리뷰 중")
+}
+
+/// 대표 경고등 데모용 agentType. `poseDemoAgentType`과 같은 명명 관례 — 실제 조직 인원과
+/// 절대 겹치지 않게 이름을 여기서만 만든다.
+private let alarmDemoAgentType = "ALARM_DEMO"
+
+/// 승인 대기 줄에 서 있는 사람 하나(`AWAITING_APPROVAL`)를 만든다. `applyApprovalPressure`가
+/// 방치 압력을 매기려면 승인 카드뿐 아니라 화면에 캐릭터 노드도 있어야 하므로 함께 만든다.
+private func alarmDemoAgent() -> ConsoleAgent {
+    ConsoleAgent(
+        agentType: alarmDemoAgentType,
+        displayName: "경고등 데모",
+        slashCommands: [],
+        description: "",
+        state: .awaitingApproval,
+        bubble: "",
+        department: Department.executive.rawValue
+    )
+}
+
+/// TTL(1시간) 중 50분이 지난 승인 카드 — 소진율 83%로 경고 문턱(80%)은 넘기되 아직
+/// 만료 전이다. "임박"을 보여주려는 것이지 "이미 지남"을 보여주려는 게 아니라 일부러
+/// 만료 전 시각을 쓴다.
+private func alarmDemoApproval() -> ConsoleApproval {
+    let now = Date()
+    let createdAt = now.addingTimeInterval(-50 * 60)
+    let expiresAt = createdAt.addingTimeInterval(60 * 60)
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return ConsoleApproval(
+        id: "alarm-demo",
+        agentType: alarmDemoAgentType,
+        title: "경고등 데모",
+        createdAt: formatter.string(from: createdAt),
+        expiresAt: formatter.string(from: expiresAt)
+    )
 }
 
 private func poseDemoAgents() -> [ConsoleAgent] {

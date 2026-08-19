@@ -51,6 +51,7 @@ describe('CreatePreviewUsecase', () => {
         agentType: 'PM',
         title: '반영할까요?',
         createdAt: '2026-07-27T00:00:00.000Z',
+        expiresAt: '2026-07-27T01:00:00.000Z',
       },
     });
   });

@@ -84,6 +84,17 @@ export interface ConsoleApproval {
   readonly agentType: string | null;
   readonly title: string;
   readonly createdAt: string;
+  /**
+   * 이 카드가 만료되는 시각(ISO 8601).
+   *
+   * 화면이 방치 압력을 **경과 시간이 아니라 TTL 소진 비율**로 계산하기 때문에 필요하다.
+   * TTL 은 카드 종류마다 다르므로(`ttlMs`), 만료 시각 없이는 "2시간 지났다" 가 급한 것인지
+   * 여유가 있는 것인지 화면이 구분할 수 없다.
+   *
+   * DB 컬럼(`preview_action.expires_at`)은 원래부터 있었고 만료 스윕이 그것으로 조회한다.
+   * 이 필드는 그 값을 화면까지 통과시키는 것뿐이라 스키마 변경이 없다.
+   */
+  readonly expiresAt: string;
 }
 
 /** 로컬에서 실행 중인 CLI 세션 한 건(관제 뷰 표현). 읽기 전용. */

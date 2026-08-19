@@ -78,7 +78,7 @@ func runModelsTests(_ t: TestRunner) {
     // Approval 의 agentType 은 v1 에서 null 가능
     do {
         let json = """
-        {"id":"p1","agentType":null,"title":"발행 승인","createdAt":"2026-07-27T00:00:00Z"}
+        {"id":"p1","agentType":null,"title":"발행 승인","createdAt":"2026-07-27T00:00:00Z","expiresAt":"2026-07-27T01:00:00Z"}
         """.data(using: .utf8)!
         let approval = try JSONDecoder().decode(ConsoleApproval.self, from: json)
         t.expectNil(approval.agentType, "approval.agentType 는 null")
@@ -158,7 +158,7 @@ func runModelsTests(_ t: TestRunner) {
     // ConsoleEvent 유니온 — approval.opened
     do {
         let json = """
-        {"type":"approval.opened","approval":{"id":"p1","agentType":null,"title":"발행 승인","createdAt":"2026-07-27T00:00:00Z"}}
+        {"type":"approval.opened","approval":{"id":"p1","agentType":null,"title":"발행 승인","createdAt":"2026-07-27T00:00:00Z","expiresAt":"2026-07-27T01:00:00Z"}}
         """.data(using: .utf8)!
         let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
         if case let .approvalOpened(approval) = event {

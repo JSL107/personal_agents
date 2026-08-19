@@ -10,6 +10,42 @@ let officeNameplateMinFontSize = CGFloat(officeNameplateMinFontSizeValue)
 let officeZoneLabelMinFontSize = CGFloat(officeZoneLabelMinFontSizeValue)
 /// 좌상단 전사 요약(HUD)의 최소 크기. 씬 안의 이름표가 아니라 화면에 얹는 글이라 따로 둔다.
 let officeHudMinFontSize: CGFloat = 13
+/// 좌상단 전사 요약(HUD) 판의 그리기 순서(overlayLayer 안에서의 로컬 zPosition).
+///
+/// 구역 문패(overlayLayer 자식, zPosition 미지정 = 0)보다는 위에 그려야 겹쳐도 이기고,
+/// 커서 옆 쪽지 판(`makeHoverTooltip`, zPosition 100)보다는 아래여야 한다 — 쪽지가 늘
+/// 최상단이어야 하는 이유는 그 판 자체의 주석에 있다(가림 방지).
+let officeHudZPosition: CGFloat = 50
+
+/// 책상 스탠드 빛 웅덩이 반지름(도트). `OfficeLightTexture.deskGlow` 텍스처의 한 변이
+/// 이 값의 두 배가 된다 — 너무 크면 옆 책상까지 물들어 누구 자리가 켜졌는지 흐려진다.
+let officeDeskGlowRadius = 13
+/// 빛 웅덩이 색. 벽등 켜짐 색(`OfficeLightLayer.lampColor`)과 같은 계열의 따뜻한 호박색 —
+/// 스탠드도 벽등도 같은 실내 조명이라 색이 갈리면 두 광원처럼 읽힌다.
+///
+/// 처음엔 책상 나무색에 가까운 옅은 호박색(0.82,0.45)을 썼는데, `.add` 로 얹어도 바탕색과
+/// 겹쳐 실측 렌더에서 거의 안 보였다 — 채도를 올리고 세기(strength)도 함께 올려야
+/// 나무 위에서 도드라진다.
+let officeDeskGlowColor = OfficeColor(red: 1.00, green: 0.74, blue: 0.28)
+/// 웅덩이 중심의 최대 알파. `.add` 로 얹으므로 1에 가까우면 책상 위가 하얗게 날아간다.
+let officeDeskGlowStrength: Double = 0.8
+/// 책상 자식 노드 중 그리는 순서(desk 노드 기준 로컬 zPosition). 책상 상판(0) 보다는 위,
+/// 소품(0.01)보다는 아래 — 빛 웅덩이가 상판에 깔리고 그 위에 소품·서류가 놓인 그림이어야 한다.
+let officeDeskGlowZPosition: CGFloat = 0.005
+
+/// 대표 경고등 반지름(도트). 책상 스탠드(13)보다 좁게 잡는다 — 대표 머리 위 좁은 자리에
+/// 얹는 등이라, 너무 크면 왕관 문패 판까지 물들여 글자가 묻힌다.
+let officeAlarmGlowRadius = 9
+/// 경고등 색. 실패 상태가 이미 쓰는 코랄 레드(`agentStatePaletteRGBA(.failed)`)를 그대로
+/// 끌어온다 — "위험"을 뜻하는 색을 화면 안에서 따로 또 정의하면 어느 쪽이 진짜 위급
+/// 신호인지 헷갈린다.
+let officeAlarmGlowColor: OfficeColor = {
+    let rgb = agentStatePaletteRGBA(.failed)
+    return OfficeColor(red: rgb.red, green: rgb.green, blue: rgb.blue)
+}()
+/// 경고등 중심의 최대 알파. `.add` 로 얹으므로 책상 스탠드(0.8)보다 살짝 세게 잡아야
+/// "방치됐다"는 신호가 배경에 묻히지 않는다.
+let officeAlarmGlowStrength: Double = 0.9
 
 // MARK: - 간격
 

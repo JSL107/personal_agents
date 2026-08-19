@@ -12,7 +12,8 @@ private func makeAgent(_ type: String, _ state: ConsoleAgentState) -> ConsoleAge
 private func makeApproval(_ agentType: String?) -> ConsoleApproval {
     ConsoleApproval(
         id: "ap-\(agentType ?? "nil")", agentType: agentType,
-        title: "승인 요청", createdAt: "2026-08-04T00:00:00.000Z"
+        title: "승인 요청", createdAt: "2026-08-04T00:00:00.000Z",
+        expiresAt: "2026-08-04T01:00:00.000Z"
     )
 }
 

@@ -927,6 +927,19 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         .map { "\($0.agentType)@\($0.desk.x),\($0.desk.y)" }
         .sorted()
     t.expectEqual(firstAssignment, shuffledAssignment, "입력 순서 무관 → 동일 배치")
+
+    // 출퇴근 진입점은 승인 대기 줄 칸과 겹치면 안 된다. 2열 배치에서 실제로
+    // entranceTile == queueTiles[2](세 번째 대기 줄 자리)로 겹친 적이 있다 — 겹치면
+    // 걷는 사람이 대기 줄 칸을 지나거나 그 칸에서 스폰돼, 대기 줄에 자세·서류·경고등 같은
+    // 시각 신호를 얹는 다음 단계의 전제가 깨진다. 2열·3열 모두 확인한다 — 2열만 깨졌던
+    // 자리라 3열만 봤다면 이 회귀를 통과시켰을 것이다.
+    for zoneColumns in [2, 3] {
+        let columnPlan = officeFloorPlan(agents: sampleAgents, zoneColumns: zoneColumns)
+        t.expect(
+            !columnPlan.queueTiles.contains(columnPlan.entranceTile),
+            "\(zoneColumns)열 배치: entranceTile이 queueTiles와 겹치지 않는다"
+        )
+    }
 }
 
 func runAgentRoleTests(_ t: TestRunner) {

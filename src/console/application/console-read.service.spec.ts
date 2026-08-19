@@ -293,6 +293,7 @@ describe('ConsoleReadService', () => {
         kind: PREVIEW_KIND.PM_WRITE_BACK,
         previewText: 'PM 계획을 GitHub 에 반영할까요?',
         createdAt: new Date('2026-07-27T01:00:00Z'),
+        expiresAt: new Date('2026-07-27T02:00:00Z'),
       } as never,
     ]);
 
@@ -304,6 +305,7 @@ describe('ConsoleReadService', () => {
         agentType: 'PM',
         title: 'PM 계획을 GitHub 에 반영할까요?',
         createdAt: '2026-07-27T01:00:00.000Z',
+        expiresAt: '2026-07-27T02:00:00.000Z',
       },
     ]);
     expect(

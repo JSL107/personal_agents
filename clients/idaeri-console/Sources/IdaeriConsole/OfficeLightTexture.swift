@@ -44,6 +44,24 @@ enum OfficeLightTexture {
         }
     }
 
+    /// 책상 위 빛 웅덩이. 스탠드 소품이 있든 없든 같은 그림이 나와야 하므로 소품과 무관하게
+    /// 그린다 — `prop-desk-lamp` 는 개인 소품 일곱 종 중 하나라, 그것에 묶으면 일곱 중 여섯은
+    /// 켤 램프가 없다.
+    ///
+    /// 도트 격자를 맞추는 이유는 창문과 같다. 매끈한 원을 그리면 같은 화면에서 이것만
+    /// 벡터처럼 튄다.
+    static func deskGlow(radius: Int, color: OfficeColor, strength: Double) -> SKTexture? {
+        let dotsPerSide = radius * 2
+        let pixelSide = dotsPerSide * dot
+        // 캐시 키에 인자를 넣지 않으면 색이 다른 두 번째 호출(대표 경고등의 빨강)이 첫 호출이
+        // 구운 텍스처(책상 스탠드의 호박색)를 그대로 돌려받는다 — 그림을 정하는 세 값을
+        // 전부 키에 넣어야 호출마다 다른 텍스처가 캐시된다.
+        let key = "deskGlow-\(radius)-\(color.red)-\(color.green)-\(color.blue)-\(strength)"
+        return texture(key: key, width: pixelSide, height: pixelSide) { context in
+            drawDeskGlow(context, dotsPerSide: dotsPerSide, radius: radius, color: color, strength: strength)
+        }
+    }
+
     /// 창에서 바닥으로 떨어지는 빛기둥(흰색). 위가 밝고 아래로 갈수록 옅어지며 좌우로 벌어진다.
     ///
     /// 처음에는 사각형 세 장을 알파만 낮춰 겹쳤는데, 화면에서 빛이 아니라 **밝은 직사각형
@@ -268,6 +286,35 @@ enum OfficeLightTexture {
         }
         // 켜졌을 때만 심지 쪽에 흰 점을 둔다 — 갓 전체를 밝히는 것보다 광원이 또렷하다.
         fill(context, x: 9, y: 10, width: 2, height: 2, color: (red: 1, green: 0.98, blue: 0.90))
+    }
+
+    /// 중심이 가장 밝고 가장자리로 갈수록 옅어지는 원형 웅덩이. `fill` 로 도트 한 칸씩 채우되
+    /// 칸마다 알파를 중심 거리에 비례해 낮춘다 — 위치는 창·벽등처럼 도트에 맞추면서도
+    /// 빛다운 그러데이션은 남긴다(매끈한 `drawHalo`와 달리 여기는 도트 밖 보간을 쓰지 않는다).
+    private static func drawDeskGlow(
+        _ context: CGContext,
+        dotsPerSide: Int,
+        radius: Int,
+        color: OfficeColor,
+        strength: Double
+    ) {
+        let center = Double(dotsPerSide) / 2
+        let rgb = (red: color.red, green: color.green, blue: color.blue)
+        for row in 0..<dotsPerSide {
+            for column in 0..<dotsPerSide {
+                let dx = Double(column) + 0.5 - center
+                let dy = Double(row) + 0.5 - center
+                let distance = (dx * dx + dy * dy).squareRoot()
+                guard distance <= Double(radius) else {
+                    continue
+                }
+                // 제곱을 줘서 중심 근처는 밝기를 오래 유지하다가 가장자리에서 급히 죽는다 —
+                // 선형으로 두면 웅덩이가 아니라 옅은 사각 담요처럼 보인다.
+                let falloff = 1 - distance / Double(radius)
+                let alpha = strength * falloff * falloff
+                fill(context, x: column, y: row, width: 1, height: 1, color: rgb, alpha: alpha)
+            }
+        }
     }
 
     /// 광원 주위 빛무리. 가운데가 불투명하고 가장자리로 갈수록 사라지는 흰 원.

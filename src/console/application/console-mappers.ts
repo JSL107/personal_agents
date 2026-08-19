@@ -33,6 +33,7 @@ export function toConsoleApproval(preview: PreviewAction): ConsoleApproval {
     agentType: PREVIEW_KIND_TO_AGENT[preview.kind],
     title: preview.previewText,
     createdAt: preview.createdAt.toISOString(),
+    expiresAt: preview.expiresAt.toISOString(),
   };
 }
 

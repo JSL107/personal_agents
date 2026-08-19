@@ -91,7 +91,8 @@ func runConsoleStoreTests(_ t: TestRunner) {
         id: "p1",
         agentType: nil,
         title: "발행 승인",
-        createdAt: "2026-07-27T00:03:00Z"
+        createdAt: "2026-07-27T00:03:00Z",
+        expiresAt: "2026-07-27T01:03:00Z"
     )
     store.apply(event: .approvalOpened(approval))
     t.expectEqual(store.approvals.count, 1, "approval 추가")

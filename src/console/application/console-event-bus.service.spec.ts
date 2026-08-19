@@ -24,11 +24,23 @@ describe('ConsoleEventBus', () => {
     const collected = firstValueFrom(bus.stream().pipe(take(2), toArray()));
     bus.publish({
       type: 'approval.opened',
-      approval: { id: 'a1', agentType: 'BE', title: 't', createdAt: 'now' },
+      approval: {
+        id: 'a1',
+        agentType: 'BE',
+        title: 't',
+        createdAt: 'now',
+        expiresAt: 'later',
+      },
     });
     bus.publish({
       type: 'approval.resolved',
-      approval: { id: 'a1', agentType: 'BE', title: 't', createdAt: 'now' },
+      approval: {
+        id: 'a1',
+        agentType: 'BE',
+        title: 't',
+        createdAt: 'now',
+        expiresAt: 'later',
+      },
     });
     const events = await collected;
     expect(events.map((event) => event.type)).toEqual([
