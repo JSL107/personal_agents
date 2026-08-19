@@ -67,9 +67,17 @@ export interface RejectionRisk {
   rebuttal: string | null;
 }
 
+// 이력서 상단에 먼저 배치할 성과. 배열 순서가 곧 배치 순서라 rank 필드를 따로 두지 않는다 —
+// 숫자를 받으면 모델이 1,1,2 같이 중복을 내는 회차를 검증으로 걸러야 한다.
+export interface AuditHighlight {
+  title: string;
+  reason: string;
+}
+
 export interface ResumeAuditData {
   verdict: string;
   items: AuditItem[];
+  highlights: AuditHighlight[];
   jdFindings: JdFinding[];
   rejectionRisks: RejectionRisk[];
 }
@@ -82,6 +90,9 @@ export interface ResumeAuditResult extends ResumeAuditData {
     forcedMissing: string[];
     // WEAK/MISSING 인데 모델이 rewrite 를 주지 않은 성과. 파싱을 거부하지 않고 여기서 드러낸다.
     rewriteMissing: string[];
+    // 입증되지 않은(또는 존재하지 않는) 성과를 앞세우려 해서 버린 highlight. 강등이 겹치면
+    // highlights 가 통째로 비는데, 사유를 남기지 않으면 "앞세울 게 없다" 와 구분되지 않는다.
+    droppedHighlights: string[];
   };
   jdSource: {
     company: string;

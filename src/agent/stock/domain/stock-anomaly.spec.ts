@@ -109,6 +109,11 @@ describe('inspectAvgPriceStatus', () => {
       symbol: '005930',
       percent: -36,
       threshold: -20,
+      // 화면이 "얼마에 사서 지금 얼마인지" 를 말하려면 판정값 밖의 이 넷이 함께 와야 한다.
+      avgPrice: 100000,
+      currentPrice: 64000,
+      quantity: 10,
+      currency: 'KRW',
     });
   });
 

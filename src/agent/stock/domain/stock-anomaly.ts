@@ -111,7 +111,7 @@ export const detectAvgPriceBreach = (
     ruleVersion: AVG_PRICE_BREACH_RULE_VERSION,
     triggeredValue: todayPercent,
     threshold,
-    detail: `평단 대비 ${todayPercent.toFixed(1)}% ${label} 구간 진입`,
+    detail: `평균 매입가 대비 ${todayPercent.toFixed(1)}% ${label} 구간 진입`,
   };
 };
 
@@ -138,6 +138,10 @@ export const inspectAvgPriceStatus = (
     threshold: isLower
       ? thresholds.avgPriceLowerPercent
       : thresholds.avgPriceUpperPercent,
+    avgPrice: holding.avgPrice.toNumber(),
+    currentPrice: today.adjClose.toNumber(),
+    quantity: holding.quantity.toNumber(),
+    currency: today.currency,
   };
 };
 

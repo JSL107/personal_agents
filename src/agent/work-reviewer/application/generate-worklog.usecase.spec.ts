@@ -6,6 +6,7 @@ import {
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
 import { AppendWorklogUsecase } from '../../../notion/application/append-worklog.usecase';
+import { DAILY_REVIEW_OUTPUT_SCHEMA } from '../domain/prompt/daily-review.schema';
 import { WorkReviewerException } from '../domain/work-reviewer.exception';
 import { DailyReview } from '../domain/work-reviewer.type';
 import { WorkReviewerErrorCode } from '../domain/work-reviewer-error-code.enum';
@@ -67,6 +68,9 @@ describe('GenerateWorklogUsecase', () => {
       request: expect.objectContaining({
         prompt: '오늘 Work Reviewer 구현. 테스트 8건 추가.',
         systemPrompt: expect.any(String),
+        // objectContaining 이라 이 줄이 없으면 스키마를 빼먹어도 테스트가 통과한다 —
+        // 형태 강제가 조용히 사라지는 걸 막으려 명시한다.
+        outputSchema: DAILY_REVIEW_OUTPUT_SCHEMA,
       }),
     });
   });

@@ -100,13 +100,13 @@ const calculateExposureLabel = (position: ExposurePosition): string => {
     return '미국 주식';
   }
   if (position.region === 'US' && position.direction === 'SHORT') {
-    return '미국 숏';
+    return '미국 하락 베팅';
   }
   if (position.region === 'KR' && position.direction === 'LONG') {
     return '한국 주식';
   }
   if (position.region === 'KR' && position.direction === 'SHORT') {
-    return '코스피 숏';
+    return '코스피 하락 베팅';
   }
 
   return '미분류';

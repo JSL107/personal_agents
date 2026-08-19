@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +15,7 @@ import {
   CompletionRequest,
   CompletionResponse,
   ModelProviderName,
+  OutputJsonSchema,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { buildSafeChildEnv, killProcessTree } from './cli-process.util';
@@ -213,8 +214,13 @@ export const buildCodexPrompt = ({
 
 export const buildCodexArgs = ({
   outputFile,
+  schemaFile,
 }: {
   outputFile: string;
+  // 지정 시 codex 가 이 스키마를 벗어난 최종 응답을 만들지 못한다.
+  // 파일이 없거나 JSON 으로 안 읽히면 codex 는 모델 호출 전에 exit 1 로 끊는다(실측) —
+  // 스키마를 걸었다고 믿는데 조용히 안 걸리는 상태는 생기지 않는다.
+  schemaFile?: string;
 }): string[] => [
   'exec',
   '--skip-git-repo-check',
@@ -237,6 +243,7 @@ export const buildCodexArgs = ({
   `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
   '--color',
   'never',
+  ...(schemaFile === undefined ? [] : ['--output-schema', schemaFile]),
   '-o',
   outputFile,
 ];
@@ -316,7 +323,13 @@ export class CodexCliProvider implements ModelProviderPort {
     const outputFile = join(workDir, 'response.txt');
 
     try {
-      const args = buildCodexArgs({ outputFile });
+      // 스키마 파일은 workDir 안에 둔다 — 아래 finally 의 workDir 정리에 그대로 딸려 나가므로
+      // 별도 정리 경로가 필요 없고, 빌드 산출물(dist)에 .json 을 실어 보낼 필요도 없다.
+      const schemaFile = await this.writeOutputSchema(
+        workDir,
+        request.outputSchema,
+      );
+      const args = buildCodexArgs({ outputFile, schemaFile });
       // OPS-4: 외부 CLI 로 흘려보내기 직전 토큰 류 시크릿을 redact —
       // GitHub issue body / Slack mention / Notion property 가 prompt 에 inline 으로 들어가는 surface 차단.
       const stdinPayload = redactPii(buildCodexPrompt(request));
@@ -354,6 +367,19 @@ export class CodexCliProvider implements ModelProviderPort {
         rm(homeDir, { recursive: true, force: true }),
       ]);
     }
+  }
+
+  // outputSchema 가 없으면 undefined 를 돌려 기존 인자 구성을 그대로 유지한다.
+  private async writeOutputSchema(
+    workDir: string,
+    outputSchema: OutputJsonSchema | undefined,
+  ): Promise<string | undefined> {
+    if (outputSchema === undefined) {
+      return undefined;
+    }
+    const schemaFile = join(workDir, 'output-schema.json');
+    await writeFile(schemaFile, JSON.stringify(outputSchema), 'utf-8');
+    return schemaFile;
   }
 
   private spawnCodex({

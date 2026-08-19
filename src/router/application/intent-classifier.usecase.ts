@@ -6,7 +6,10 @@ import {
   EpisodicMemoryPort,
 } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
-import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  AgentType,
+  OutputJsonSchema,
+} from '../../model-router/domain/model-router.type';
 import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
@@ -18,6 +21,7 @@ import {
   AgentDispatcher,
 } from '../domain/port/agent-dispatcher.port';
 import { parseIntentClassification } from '../domain/prompt/intent-classification.parser';
+import { buildIntentClassificationOutputSchema } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 
 // 자연어 메시지를 AgentType 으로 1회 LLM 분류. AgentRun 만들지 않는 internal LLM call.
@@ -36,6 +40,8 @@ const EPISODIC_SEARCH_LIMIT = EPISODIC_FEWSHOT_LIMIT * 3;
 @Injectable()
 export class IntentClassifierUsecase {
   private readonly logger = new Logger(IntentClassifierUsecase.name);
+  // 분류 결과의 형태를 강제하는 스키마. dispatcher 등록에서 파생하므로 호출마다 만들 필요가 없다.
+  private readonly outputSchema: OutputJsonSchema;
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
@@ -55,7 +61,13 @@ export class IntentClassifierUsecase {
     @Optional()
     @Inject(PREFERENCE_PROFILE_PORT)
     private readonly preferenceProfile?: PreferenceProfilePort,
-  ) {}
+  ) {
+    // 분류 후보를 바로 위 dispatchers 에서 받는다 — few-shot 을 걸러내는 근거(라우팅 가능 여부)와
+    // 같은 소스여야 "예시로는 안 보여주는데 스키마로는 고를 수 있는" 값이 생기지 않는다.
+    this.outputSchema = buildIntentClassificationOutputSchema(
+      this.dispatchers.map((dispatcher) => dispatcher.agentType),
+    );
+  }
 
   async classify(
     text: string,
@@ -75,6 +87,7 @@ export class IntentClassifierUsecase {
       request: {
         prompt,
         systemPrompt,
+        outputSchema: this.outputSchema,
       },
       // PM 은 provider 선택용으로 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말이 붙으면
       // 바로 아래 parseIntentClassification 이 기대하는 고정 JSON 스키마와 충돌한다.

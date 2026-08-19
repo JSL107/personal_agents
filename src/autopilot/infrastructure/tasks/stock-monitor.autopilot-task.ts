@@ -115,7 +115,7 @@ const restoreStockAnomaly = (
       symbol: holding.symbol,
       kind: 'AVG_PRICE_BREACH',
       ...alert,
-      detail: `평단 대비 ${alert.triggeredValue.toFixed(1)}% ${label} 구간 진입`,
+      detail: `평균 매입가 대비 ${alert.triggeredValue.toFixed(1)}% ${label} 구간 진입`,
     };
   }
   return null;
@@ -335,6 +335,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         lastTradeDate,
         failures,
         marketClosed: true,
+        marketCountry: this.targetMarketCountry,
       });
       const resultWithExposure = await this.withPortfolioExposure(
         this.withAvgPriceStatuses(
@@ -488,6 +489,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       lastTradeDate: lastTradeDate || '알 수 없음',
       failures,
       marketClosed: false,
+      marketCountry: this.targetMarketCountry,
       priceDisplays,
     });
     const resultWithExposure = await this.withPortfolioExposure(
@@ -698,7 +700,8 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       if (!exposureText) {
         return result;
       }
-      const summaryText = `${result.summaryText}\n${exposureText}`;
+      // 노출은 이제 비중 줄 + 설명 줄 두 줄짜리 블록이라, 한 줄만 띄우면 앞 블록에 달라붙어 읽힌다.
+      const summaryText = `${result.summaryText}\n\n${exposureText}`;
       return { ...result, summaryText };
     } catch (error) {
       this.logger.warn(

@@ -419,10 +419,15 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('이상 없음');
-    expect(result.summaryText).toContain('📌 *평단 대비 임계 밖 1종목*');
+    expect(result.summaryText).toContain('새 경보 없음');
     expect(result.summaryText).toContain(
-      '• *SamsungElec* — 평단 대비 -36.0% 손실 구간 유지 (기준 -20%)',
+      '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
+    );
+    expect(result.summaryText).toContain(
+      '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
+    );
+    expect(result.summaryText).toContain(
+      '  10주 보유 · 평가손 360원 (경보선 -20%)',
     );
     expect(recordedRuns[0].output).toMatchObject({
       anomalyCount: 0,
@@ -448,9 +453,9 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('휴장');
-    expect(result.summaryText).toContain('수집 실패');
-    expect(result.summaryText).not.toContain('평단 대비 임계 밖');
+    expect(result.summaryText).not.toContain('새 거래일 시세가 없어');
+    expect(result.summaryText).toContain('점검하지 못한 항목');
+    expect(result.summaryText).not.toContain('크게 벌어진');
     expect(recordedRuns[0].output).toMatchObject({
       checkedCount: 1,
       avgPriceBreachCount: 0,
@@ -470,7 +475,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('평단 대비 임계 밖');
+    expect(result.summaryText).not.toContain('크게 벌어진');
     expect(recordedRuns[0].output).toMatchObject({ avgPriceBreachCount: 0 });
   });
 
@@ -620,8 +625,8 @@ describe('StockMonitorAutopilotTask', () => {
     const result = await makeTask(marketData, repository).run(context);
 
     expect(marketData.fetchDailyBars).toHaveBeenCalledTimes(2);
-    expect(result.summaryText).toContain('휴장');
-    expect(result.summaryText).toContain('수집 실패');
+    expect(result.summaryText).toContain('새 거래일 시세가 없어');
+    expect(result.summaryText).toContain('점검하지 못한 항목');
     expect(result.summaryText).toContain('000660');
     expect(repository.upsertDailyPrice).not.toHaveBeenCalled();
     expect(recordedRuns[0].output).toMatchObject({
@@ -649,7 +654,7 @@ describe('StockMonitorAutopilotTask', () => {
     expect(marketData.fetchUsdKrwRate).toHaveBeenCalledTimes(1);
     expect(result.summaryText).toContain('📉 *주식 모니터링*');
     expect(result.summaryText).toContain(
-      '🌎 미국 주식 50% · 코스피 숏 50% (달러 환노출 50%)',
+      '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
 
@@ -678,7 +683,7 @@ describe('StockMonitorAutopilotTask', () => {
     try {
       const result = await makeTask(marketData, repository).run(context);
 
-      expect(result.summaryText).toContain('수집 실패');
+      expect(result.summaryText).toContain('점검하지 못한 항목');
       expect(result.summaryText).toContain('BBB');
       expect(result.summaryText).not.toContain('🌎');
       expect(log).toHaveBeenCalledWith(
@@ -790,9 +795,9 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('휴장');
+    expect(result.summaryText).toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain(
-      '🌎 미국 주식 50% · 코스피 숏 50% (달러 환노출 50%)',
+      '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
 
@@ -860,10 +865,12 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('휴장');
-    expect(result.summaryText).toContain('📌 *평단 대비 임계 밖 1종목*');
+    expect(result.summaryText).toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain(
-      '• *SamsungElec* — 평단 대비 -36.0% 손실 구간 유지 (기준 -20%)',
+      '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
+    );
+    expect(result.summaryText).toContain(
+      '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
     );
     expect(recordedRuns[0].output).toMatchObject({
       marketClosed: true,
@@ -889,8 +896,8 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('휴장');
-    expect(result.summaryText).toContain('수집 실패');
+    expect(result.summaryText).not.toContain('새 거래일 시세가 없어');
+    expect(result.summaryText).toContain('점검하지 못한 항목');
     expect(result.summaryText).toContain('005930');
     expect(repository.upsertDailyPrice).toHaveBeenCalledTimes(1);
     expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
@@ -936,7 +943,7 @@ describe('StockMonitorAutopilotTask', () => {
     const result = await makeTask(marketData, repository).run(context);
 
     expect(result.summaryText).toContain('SamsungElec');
-    expect(result.summaryText).toContain('수집 실패');
+    expect(result.summaryText).toContain('점검하지 못한 항목');
     expect(result.summaryText).toContain('000660');
     expect(repository.upsertDailyPrice).toHaveBeenCalledTimes(1);
   });
@@ -963,7 +970,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('휴장');
+    expect(result.summaryText).not.toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain('SamsungElec');
     expect(result.summaryText).toContain('전일 대비 9.0% 급등');
     expect(repository.findAlertsByTradeDate).toHaveBeenCalledWith(
@@ -1098,7 +1105,7 @@ describe('StockMonitorAutopilotTask', () => {
       firedAtKst: '2026-07-24',
     });
 
-    expect(result.summaryText).not.toContain('휴장');
+    expect(result.summaryText).not.toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain('AAPL');
     expect(repository.findAlertsByTradeDate).toHaveBeenCalled();
   });
@@ -1142,7 +1149,7 @@ describe('StockMonitorAutopilotTask', () => {
       firedAtKst: '2026-07-23',
     });
 
-    expect(result.summaryText).not.toContain('휴장');
+    expect(result.summaryText).not.toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain('AAPL');
   });
 
@@ -1307,7 +1314,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     // 전체 실패와의 경계 — 한 종목이라도 점검했으면 SUCCEEDED 로 남고 실패는 요약에 실린다.
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('수집 실패');
+    expect(result.summaryText).toContain('점검하지 못한 항목');
     expect(recordedRuns).toHaveLength(1);
     expect(recordedRuns[0].output).toMatchObject({
       holdingCount: 2,
