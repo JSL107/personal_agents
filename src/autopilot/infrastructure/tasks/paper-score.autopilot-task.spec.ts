@@ -12,6 +12,7 @@ const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-14' };
 const SCORE_RESULT: ScoreRecommendationsResult = {
   asOf: new Date('2026-08-14T00:00:00.000Z'),
   from: null,
+  persisted: true,
   accounts: [],
   classifications: { closed: 0, open: 0, expired: 0, anomaly: 0 },
   exclusions: {

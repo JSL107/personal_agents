@@ -97,6 +97,7 @@ describe('InMemoryPaperLedger', () => {
       strategy: 'LONG_TERM',
       status: 'PENDING',
       quantity: new Prisma.Decimal('10'),
+      ruleVersion: 2,
     });
     ledger.recordOrder({
       id: 2,
@@ -106,6 +107,7 @@ describe('InMemoryPaperLedger', () => {
       strategy: 'LONG_TERM',
       status: 'PENDING',
       quantity: new Prisma.Decimal('10'),
+      ruleVersion: 2,
     });
 
     await usecase.executePendingOrder(buyCommand);

@@ -9,6 +9,8 @@ export interface RecommendationOrderInput {
   strategy: TradeStrategy;
   status: OrderStatus;
   quantity: MoneyValue;
+  // 이 추천을 만든 스크리너 규칙 버전. 버전을 적기 전에 만들어진 추천은 null 이다.
+  ruleVersion: number | null;
 }
 
 export interface RecommendationTradeInput {

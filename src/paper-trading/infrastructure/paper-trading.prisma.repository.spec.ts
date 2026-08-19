@@ -123,6 +123,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         strategy: true,
         status: true,
         quantity: true,
+        ruleVersion: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -233,6 +234,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
             targetTradeDate: new Date('2026-08-14T00:00:00.000Z'),
             status: 'PENDING',
             indicatorSnapshot: { close: 10_000 },
+            ruleVersion: 2,
             agentRunId: 99,
           },
           {
@@ -246,6 +248,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
             targetTradeDate: new Date('2026-08-14T00:00:00.000Z'),
             status: 'PENDING',
             indicatorSnapshot: null,
+            ruleVersion: null,
             agentRunId: 99,
           },
         ],
