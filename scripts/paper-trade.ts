@@ -171,7 +171,11 @@ const main = async (): Promise<void> => {
     }
     if (parsed.subcommand === 'fill') {
       const result = await application.get(FillPendingOrdersUsecase).execute();
-      console.table([result]);
+      const { details, ...counts } = result;
+      console.table([counts]);
+      if (details.length > 0) {
+        console.table(details);
+      }
       return;
     }
     if (parsed.subcommand === 'score') {

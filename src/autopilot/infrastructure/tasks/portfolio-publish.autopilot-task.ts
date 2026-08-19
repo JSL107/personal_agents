@@ -98,7 +98,10 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       ? auditResult.guard.demotedTitles.length > 0 ||
         auditResult.guard.droppedTitles.length > 0 ||
         auditResult.guard.unjudgedTitles.length > 0 ||
-        auditResult.guard.rewriteMissing.length > 0
+        auditResult.guard.rewriteMissing.length > 0 ||
+        // 앞세우기 반려는 items 상태를 바꾸지 않는다. 여기서 세지 않으면 모든 성과가 입증인
+        // 회차에 반려만 발생했을 때 worthReporting 이 false 가 되어 보고가 통째로 사라진다.
+        auditResult.guard.droppedHighlights.length > 0
       : false;
     // 공고 대조에서 필수·우대 요건이 미달인 건수. 이력서 성과가 전부 입증이어도 이쪽이 비면
     // 안 되는 이유는, 공고를 등록한 회차에는 이게 사용자가 가장 먼저 볼 결손이기 때문이다.
@@ -158,7 +161,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (auditResult && hasGuardConcern) {
       summaryLines.push(
-        `• ⚠️ 이력서 감사 가드 경고 — 강등 ${auditResult.guard.demotedTitles.length} / 폐기 ${auditResult.guard.droppedTitles.length} / 누락 ${auditResult.guard.unjudgedTitles.length}`,
+        `• ⚠️ 이력서 감사 가드 경고 — 강등 ${auditResult.guard.demotedTitles.length} / 폐기 ${auditResult.guard.droppedTitles.length} / 누락 ${auditResult.guard.unjudgedTitles.length} / 앞세우기 반려 ${auditResult.guard.droppedHighlights.length}`,
       );
     }
     if (auditNote) {
@@ -208,7 +211,8 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
         auditResult.guard.demotedTitles.length > 0 ||
         auditResult.guard.droppedTitles.length > 0 ||
         auditResult.guard.unjudgedTitles.length > 0 ||
-        auditResult.guard.rewriteMissing.length > 0;
+        auditResult.guard.rewriteMissing.length > 0 ||
+        auditResult.guard.droppedHighlights.length > 0;
       const jdConcerns = auditResult.jdFindings.filter(
         (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
       );

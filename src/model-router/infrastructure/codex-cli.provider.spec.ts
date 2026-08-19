@@ -103,6 +103,25 @@ describe('buildCodexArgs', () => {
     expect(args[args.length - 1]).toBe('/tmp/out.txt');
     expect(args).not.toContain('--');
   });
+
+  it('schemaFile 이 없으면 --output-schema 를 붙이지 않는다 (기존 호출 인자 불변)', () => {
+    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    expect(args).not.toContain('--output-schema');
+  });
+
+  it('schemaFile 을 주면 --output-schema 와 짝지어 넘긴다', () => {
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      schemaFile: '/tmp/schema.json',
+    });
+    // 값만 있고 앞에 플래그가 없으면 codex 가 positional prompt 로 읽어버리므로 짝까지 확인한다.
+    const schemaIndex = args.indexOf('/tmp/schema.json');
+    expect(schemaIndex).toBeGreaterThan(0);
+    expect(args[schemaIndex - 1]).toBe('--output-schema');
+    // -o outputFile 짝은 그대로 유지돼야 한다.
+    expect(args[args.length - 1]).toBe('/tmp/out.txt');
+    expect(args[args.length - 2]).toBe('-o');
+  });
 });
 
 describe('detectCodexQuotaExhaustion', () => {

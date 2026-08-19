@@ -71,6 +71,7 @@ const makeDispatcher = (intentText: string) => {
             rewrite: null,
           },
         ],
+        highlights: [],
         jdFindings: [],
         rejectionRisks: [],
         guard: {
@@ -79,6 +80,7 @@ const makeDispatcher = (intentText: string) => {
           unjudgedTitles: [],
           forcedMissing: [],
           rewriteMissing: [],
+          droppedHighlights: [],
         },
         jdSource: null,
       },
