@@ -499,6 +499,47 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
+  // 실제 실패 케이스 (run#864). 개발 블로그 본문에는 코드 블록이 거의 항상 들어가는데,
+  // 기존 mock 본문에는 코드펜스가 없어 3,000건 초록불에도 첫 실제 실행이 파싱에서 죽었다.
+  it('익명화 본문에 마크다운 코드펜스가 있어도 발행 preview를 만든다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'shared-database-migration',
+        description: '공유 DB 마이그레이션의 정합성 교훈',
+        body: '# 회고\n\n```php\n$row = query("SELECT 1");\n```\n\n## 교훈\n원장을 먼저 남긴다.',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+    expect(createPreview.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          content: expect.stringContaining('```php'),
+        }),
+      }),
+    );
+  });
+
+  it('익명화 파싱이 실패하면 cause 에 모델 raw 응답 앞부분을 남긴다', async () => {
+    const { usecase } = buildUsecase({
+      completionText: '죄송합니다. JSON 을 만들 수 없습니다.',
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toMatchObject({
+      blogErrorCode: 'BLOG_ANONYMIZE_PARSE_FAILED',
+      cause: expect.objectContaining({
+        message: expect.stringContaining('raw=죄송합니다.'),
+      }),
+    });
+  });
+
   it('모델 JSON이 slug, description, body 계약을 지키지 않으면 preview를 만들지 않는다', async () => {
     const { usecase, createPreview } = buildUsecase({
       completionText: JSON.stringify({ slug: 'post', description: '설명' }),

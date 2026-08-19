@@ -212,8 +212,12 @@ export class AgentRunService {
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      // cause 도 함께 남긴다 — LLM 응답 파싱 실패류는 cause 에만 raw 응답 앞부분이 실려 있는데,
+      // Nest logger 는 message/stack 만 찍고 원장 output 에도 message 만 저장돼 실제 응답이
+      // 어디에도 남지 않았다. 원인 없는 실패 한 줄만 쌓이면 다음 조사도 처음부터 추측이 된다.
+      const causeMessage = buildCauseSuffix(error);
       this.logger.error(
-        `AgentRun #${id} (${agentType}) 실패: ${message}`,
+        `AgentRun #${id} (${agentType}) 실패: ${message}${causeMessage}`,
         error instanceof Error ? error.stack : undefined,
       );
 
@@ -494,3 +498,14 @@ export class AgentRunService {
     });
   }
 }
+
+// DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. Nest logger 는
+// message/stack 만 찍고 원장 output 에도 message 만 저장돼, 이 한 줄이 없으면 모델이 무엇을
+// 돌려줬는지 어디에도 남지 않는다. tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
+const buildCauseSuffix = (error: unknown): string => {
+  const cause = (error as { cause?: unknown } | null | undefined)?.cause;
+  if (cause instanceof Error) {
+    return ` — cause: ${cause.message}`;
+  }
+  return typeof cause === 'string' ? ` — cause: ${cause}` : '';
+};
