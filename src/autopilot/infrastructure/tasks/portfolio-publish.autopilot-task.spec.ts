@@ -24,6 +24,7 @@ const RESULT: PublishPortfolioSiteResult = {
 const AUDIT_RESULT: ResumeAuditResult = {
   verdict: '증거가 확인된다.',
   items: [],
+  highlights: [],
   jdFindings: [],
   rejectionRisks: [],
   guard: {
@@ -32,6 +33,7 @@ const AUDIT_RESULT: ResumeAuditResult = {
     unjudgedTitles: [],
     forcedMissing: [],
     rewriteMissing: [],
+    droppedHighlights: [],
   },
   jdSource: null,
 };
@@ -172,6 +174,7 @@ describe('PortfolioPublishAutopilotTask', () => {
             rewrite: null,
           },
         ],
+        highlights: [],
         jdFindings: [
           {
             requirement: 'Kubernetes 운영 경험',

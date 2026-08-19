@@ -149,6 +149,7 @@ describe('career-mate.formatter', () => {
           rewrite: null,
         },
       ],
+      highlights: [],
       jdFindings: [
         {
           requirement: 'Kubernetes',
@@ -165,6 +166,7 @@ describe('career-mate.formatter', () => {
         unjudgedTitles: ['누락'],
         forcedMissing: ['근거 없는 성과'],
         rewriteMissing: ['고칠 문장 없는 성과'],
+        droppedHighlights: [],
       },
       jdSource: {
         company: '이대리',
@@ -185,10 +187,132 @@ describe('career-mate.formatter', () => {
     expect(rendered.full).toContain('강등 1 / 폐기 1 / 누락 1');
   });
 
+  it('앞세울 성과와 먼저 고칠 한 건을 판정 목록 위에 세운다', () => {
+    const result: ResumeAuditResult = {
+      verdict: '보강이 필요하다.',
+      items: [
+        {
+          title: '근거 없는 성과',
+          status: 'MISSING',
+          quote: '',
+          why: '연결된 근거가 없다.',
+          rewrite: null,
+        },
+        {
+          title: '약한 성과',
+          status: 'WEAK',
+          quote: '개선했다',
+          why: '수치가 없다.',
+          rewrite: {
+            before: '개선했다',
+            after: '개선해 (수치 필요: 지연시간) 를 줄였다',
+            frame: 'STAR3',
+          },
+        },
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '결과: 30% 감소',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ],
+      highlights: [{ title: '입증 성과', reason: '공고의 MUST 와 대응' }],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: [],
+        droppedTitles: [],
+        unjudgedTitles: [],
+        forcedMissing: [],
+        rewriteMissing: [],
+        droppedHighlights: [],
+      },
+      jdSource: null,
+    };
+
+    const { full } = formatResumeAudit(result);
+
+    expect(full).toContain('*먼저 이것부터* [근거없음] 근거 없는 성과');
+    expect(full).toContain('1. *입증 성과* — 공고의 MUST 와 대응');
+    // 두 섹션은 항목별 판정보다 위에 있어야 한다 — 아래에 두면 12건을 다 읽어야 결론이 나온다.
+    expect(full.indexOf('먼저 이것부터')).toBeLessThan(
+      full.indexOf('*항목별 판정*'),
+    );
+    expect(full.indexOf('앞세울 성과')).toBeLessThan(
+      full.indexOf('*항목별 판정*'),
+    );
+  });
+
+  it('먼저 고칠 항목에 고쳐 쓸 문장이 있으면 함께 붙인다', () => {
+    const result: ResumeAuditResult = {
+      verdict: '보강이 필요하다.',
+      items: [
+        {
+          title: '약한 성과',
+          status: 'WEAK',
+          quote: '개선했다',
+          why: '수치가 없다.',
+          rewrite: {
+            before: '개선했다',
+            after: '개선해 지연시간을 줄였다',
+            frame: 'STAR3',
+          },
+        },
+      ],
+      highlights: [],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: [],
+        droppedTitles: [],
+        unjudgedTitles: [],
+        forcedMissing: [],
+        rewriteMissing: [],
+        droppedHighlights: [],
+      },
+      jdSource: null,
+    };
+
+    expect(formatResumeAudit(result).full).toContain(
+      '이렇게 고치세요: 개선해 지연시간을 줄였다',
+    );
+  });
+
+  it('전부 입증이면 먼저 고칠 항목 줄을 넣지 않는다', () => {
+    const result: ResumeAuditResult = {
+      verdict: '모두 입증됐다.',
+      items: [
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '결과: 30% 감소',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ],
+      highlights: [],
+      jdFindings: [],
+      rejectionRisks: [],
+      guard: {
+        demotedTitles: [],
+        droppedTitles: [],
+        unjudgedTitles: [],
+        forcedMissing: [],
+        rewriteMissing: [],
+        droppedHighlights: [],
+      },
+      jdSource: null,
+    };
+
+    expect(formatResumeAudit(result).full).not.toContain('먼저 이것부터');
+  });
+
   it('가드가 개입한 회차에는 총평이 개입 전 판정이라는 사실을 밝힌다', () => {
     const base: ResumeAuditResult = {
       verdict: '모든 성과가 입증됐다.',
       items: [],
+      highlights: [],
       jdFindings: [],
       rejectionRisks: [],
       guard: {
@@ -197,6 +321,7 @@ describe('career-mate.formatter', () => {
         unjudgedTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
+        droppedHighlights: [],
       },
       jdSource: null,
     };
@@ -208,6 +333,7 @@ describe('career-mate.formatter', () => {
     const base: ResumeAuditResult = {
       verdict: '모든 성과가 입증됐다.',
       items: [],
+      highlights: [],
       jdFindings: [],
       rejectionRisks: [],
       guard: {
@@ -216,6 +342,7 @@ describe('career-mate.formatter', () => {
         unjudgedTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
+        droppedHighlights: [],
       },
       jdSource: null,
     };

@@ -40,6 +40,7 @@ const AUDIT_JSON = JSON.stringify({
       rewrite: null,
     },
   ],
+  highlights: [],
   jdFindings: [],
   rejectionRisks: [],
 });
@@ -211,6 +212,7 @@ describe('AuditResumeUsecase', () => {
     expect(outcome.result).toEqual({
       verdict: '판정할 성과가 없습니다.',
       items: [],
+      highlights: [],
       jdFindings: [],
       rejectionRisks: [],
       guard: {
@@ -219,6 +221,7 @@ describe('AuditResumeUsecase', () => {
         unjudgedTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
+        droppedHighlights: [],
       },
       jdSource: null,
     });
