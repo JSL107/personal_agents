@@ -12,8 +12,17 @@ import {
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
 import {
   HUMANIZE_CONCISE_RULES,
+  HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT,
   HUMANIZE_SYSTEM_PROMPT,
 } from '../domain/humanize-system.prompt';
+
+/**
+ * 목표 문체.
+ *
+ * - `report`(기본): 보고서·Slack 카드용 문어체. 기존 모든 호출부가 이 값이다.
+ * - `personal-blog`: 사용자 명의로 공개되는 블로그 본문. 보고체 지시를 빼고 개인 문체를 넣는다.
+ */
+export type HumanizeVoice = 'report' | 'personal-blog';
 
 export interface HumanizeOptions {
   /**
@@ -22,6 +31,7 @@ export interface HumanizeOptions {
    * 기본은 간결 모드다 — 윤문 결과의 대다수가 Slack 카드로 훑어 읽히기 때문이다.
    */
   longForm?: boolean;
+  voice?: HumanizeVoice;
 }
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
@@ -79,9 +89,13 @@ export class HumanizeService {
           const injection = this.preferenceProfile
             ? await this.preferenceProfile.getInjectionBlock('humanize')
             : '';
+          const voicePrompt =
+            options?.voice === 'personal-blog'
+              ? HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT
+              : HUMANIZE_SYSTEM_PROMPT;
           const basePrompt = options?.longForm
-            ? HUMANIZE_SYSTEM_PROMPT
-            : `${HUMANIZE_SYSTEM_PROMPT}\n${HUMANIZE_CONCISE_RULES}`;
+            ? voicePrompt
+            : `${voicePrompt}\n${HUMANIZE_CONCISE_RULES}`;
           const systemPrompt = injection
             ? `${basePrompt}\n\n${injection}`
             : basePrompt;

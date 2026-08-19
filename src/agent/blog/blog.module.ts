@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { WebClient } from '@slack/web-api';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { GenerateBlogDraftUsecase } from './application/generate-blog-draft.usecase';
@@ -23,7 +24,8 @@ import {
 // SLACK_BOT_TOKEN 미설정 시 WebClient=null → SlackWebNotifier 는 warn noop(부팅 영향 없음).
 // (SlackCollectorModule 의 SLACK_WEB_CLIENT 패턴을 모듈 격리 위해 자체 useFactory 로 복제.)
 @Module({
-  imports: [AgentRunModule, ModelRouterModule, NotionModule],
+  // HumanizeModule — 발행 전 마지막 단계에서 본문 문단을 사용자 문체로 윤문한다.
+  imports: [AgentRunModule, HumanizeModule, ModelRouterModule, NotionModule],
   providers: [
     GenerateBlogDraftUsecase,
     PublishNotionDraftUsecase,

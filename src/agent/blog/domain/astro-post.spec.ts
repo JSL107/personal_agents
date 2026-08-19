@@ -6,7 +6,7 @@ describe('buildAstroPost', () => {
     description: '공유 DB 전환에서 배운 점.',
     slug: 'shared-db-consistency',
     tags: ['backend', 'database'],
-    createdTime: '2026-08-14T16:30:00.000Z',
+    publishedAt: '2026-08-14T16:30:00.000Z',
     pageId: '37c69cbba394806a983fc42d03a12f19',
     body: '# 공유 DB 정합성\n\n본문입니다.',
   };

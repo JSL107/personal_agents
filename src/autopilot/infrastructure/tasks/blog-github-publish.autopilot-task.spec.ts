@@ -93,6 +93,37 @@ describe('BlogGithubPublishAutopilotTask', () => {
     expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
+  // 보류는 알린다 — 조용히 넘기면 초안이 왜 안 나가는지 사용자가 알 방법이 없다.
+  it('편집이 보류로 판정한 회차는 이유를 알린다', async () => {
+    const { task } = buildTask({
+      candidate: {
+        status: 'skipped',
+        cause: 'hold',
+        message:
+          "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다 — 필기 수준이다.",
+      },
+    });
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({
+      skip: false,
+      summaryText:
+        "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다 — 필기 수준이다.",
+    });
+  });
+
+  // 카드 대기는 알리지 않는다 — 카드 자체가 이미 신호라 매일 같은 알림이 소음이 된다.
+  it('발행 카드가 열려 있는 회차는 조용히 skip한다', async () => {
+    const { task } = buildTask({
+      candidate: {
+        status: 'skipped',
+        cause: 'card-open',
+        message: '카드가 아직 열려 있습니다.',
+      },
+    });
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+  });
+
   it('초안이 없으면 빈 알림 없이 skip한다', async () => {
     const { task, publishNotionDraft } = buildTask({
       candidate: { status: 'empty', message: '발행할 초안이 없습니다.' },

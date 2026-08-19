@@ -16,6 +16,9 @@ export const DEFAULT_BLOG_PROP: BlogPublishPropertyNames = {
 
 export const DEFAULT_BLOG_STATUS_PUBLISHED = '발행';
 export const DEFAULT_BLOG_STATUS_DRAFT = '초안';
+// 편집 단계가 '발행 부적합' 으로 판정한 초안을 옮겨 두는 상태. 이 값이 없으면 같은 초안이
+// 매일 다시 뽑혀 뒤에 있는 초안이 영구히 발행되지 않는다(선택 로직이 가장 오래된 1건 고정).
+export const DEFAULT_BLOG_STATUS_HOLD = '보류';
 
 export interface BlogPublishMeta {
   tags: string[];
@@ -45,3 +48,12 @@ export const buildBlogPublishProperties = (
   }
   return properties;
 };
+
+// 상태 속성만 바꾸는 properties. 보류 전환은 발행일·태그·요약을 건드리지 않아야 한다 —
+// 발행하지 않은 글에 발행일이 찍히면 다음 판정과 통계가 함께 어긋난다.
+export const buildBlogStatusProperty = (
+  statusValue: string,
+  propNames: BlogPublishPropertyNames = DEFAULT_BLOG_PROP,
+): Record<string, unknown> => ({
+  [propNames.status]: { select: { name: statusValue } },
+});
