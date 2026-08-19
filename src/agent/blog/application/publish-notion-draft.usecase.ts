@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -11,6 +11,13 @@ import {
   buildJsonParseCauseMessage,
   extractJsonObjectText,
 } from '../../../common/util/llm-json-extract.util';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
+import { humanizeMarkdownProse } from '../../../humanize/application/humanize-markdown.adapter';
+import {
+  formatKoreanStyleMetrics,
+  measureKoreanStyle,
+} from '../../../humanize/domain/korean-style-metrics';
+import { HumanizeMarkdownResult } from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -19,7 +26,11 @@ import {
   NotionDraftPage,
 } from '../../../notion/domain/port/notion-client.port';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
-import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
+import {
+  PREVIEW_KIND,
+  PreviewAction,
+} from '../../../preview-gate/domain/preview-action.type';
 import { buildAstroPost } from '../domain/astro-post';
 import { BlogException } from '../domain/blog.exception';
 import {
@@ -30,16 +41,29 @@ import {
 } from '../domain/blog.type';
 import { BlogErrorCode } from '../domain/blog-error-code.enum';
 import {
+  buildBlogStatusProperty,
   DEFAULT_BLOG_PROP,
   DEFAULT_BLOG_STATUS_DRAFT,
+  DEFAULT_BLOG_STATUS_HOLD,
 } from '../domain/blog-publish-properties';
 import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
 import { BLOG_ANONYMIZE_SYSTEM_PROMPT } from '../domain/prompt/blog-anonymize.prompt';
+import {
+  EditedBlogDraft,
+  parseBlogEdit,
+} from '../domain/prompt/blog-edit.parser';
+import {
+  BLOG_EDIT_SYSTEM_PROMPT,
+  buildBlogEditPrompt,
+} from '../domain/prompt/blog-edit.prompt';
 
 // autopilot 의 T1_PREVIEW 와 같은 24시간. 1시간은 이미 실패로 판명된 값이다 — 저녁 블로그 카드가
 // 짧은 TTL 때문에 반복적으로 EXPIRED 로 유실돼 autopilot.orchestrator.ts:24 에서 24시간으로 올렸다.
 // 이 카드는 글 전문을 읽고 마스킹을 검토한 뒤 누르는 성격이라 더 긴 여유가 필요하다.
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
+
+// 편집 단계가 '발행 가능' 으로 판정한 결과만 골라낸 타입. 파라미터 타입을 인라인으로 쓰지 않는다.
+type PublishableBlogDraft = Extract<EditedBlogDraft, { publishable: true }>;
 
 interface AnonymizedBlogDraft {
   slug: string;
@@ -52,7 +76,13 @@ interface PublishCandidateContext {
   forbiddenTerms: string[];
   statusPropertyName: string;
   statusValue: string;
+  // 편집 단계가 '발행 부적합' 으로 판정한 초안을 옮길 상태값.
+  holdStatusValue: string;
 }
+
+// 편집이 원문을 이 비율 미만으로 줄이면 과삭제로 보고 끊는다. 덜어내기는 편집의 일이지만,
+// 본문 절반이 사라지는 것은 "정리" 가 아니라 사고다.
+const MIN_EDITED_BODY_RATIO = 0.6;
 
 interface BuiltPublishCandidate {
   candidate: BlogPublishCandidate;
@@ -61,6 +91,8 @@ interface BuiltPublishCandidate {
 
 @Injectable()
 export class PublishNotionDraftUsecase {
+  private readonly logger = new Logger(PublishNotionDraftUsecase.name);
+
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly modelRouter: ModelRouterUsecase,
@@ -68,6 +100,8 @@ export class PublishNotionDraftUsecase {
     private readonly notionClient: NotionClientPort,
     private readonly createPreview: CreatePreviewUsecase,
     private readonly config: ConfigService,
+    private readonly humanizer: HumanizeService,
+    private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
   ) {}
 
   async execute(
@@ -161,6 +195,20 @@ export class PublishNotionDraftUsecase {
         pageId: target.pageId,
       });
     }
+    // 아직 응답하지 않은 발행 카드가 열려 있으면 이번 회차는 넘긴다. 없으면 같은 글 카드가
+    // 두 장 뜨고 모델 호출 세 번이 그대로 낭비된다(카드 수명 24시간 = 저녁 크론 한 번과 겹친다).
+    const openCard = await this.findOpenPublishCard(target.pageId);
+    if (openCard) {
+      return {
+        candidate: {
+          status: 'skipped',
+          cause: 'card-open',
+          message: `'${target.title}' 발행 승인 카드가 아직 열려 있습니다. 그 카드를 처리하면 다음 초안으로 넘어갑니다.`,
+        },
+        modelUsed: 'deterministic',
+      };
+    }
+
     const markdown = await this.notionClient.getPageMarkdown(target.pageId);
     if (markdown.trim().length === 0) {
       throw new BlogException({
@@ -178,23 +226,44 @@ export class PublishNotionDraftUsecase {
       },
     });
     const anonymized = this.parseAnonymizedDraft(completion.text);
-    const summary = target.summary.trim() || anonymized.description.trim();
+
+    // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
+    const edited = await this.editDraft(target, anonymized);
+    if (!edited.publishable) {
+      await this.holdDraft(target, context, edited.reason);
+      return {
+        candidate: {
+          status: 'skipped',
+          cause: 'hold',
+          message: `'${target.title}' 은 발행하지 않고 보류로 옮겼습니다 — ${edited.reason}`,
+        },
+        modelUsed: completion.modelUsed,
+      };
+    }
+    this.assertNotOverTrimmed(target, anonymized.body, edited.body);
+
+    // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
+    const humanized = await humanizeMarkdownProse(edited.body, this.humanizer);
+
+    // 제목·주소·요약의 정본은 편집 단계다. 셋을 한 단계에서 정해야 제목과 URL 이 어긋나지 않는다.
     const post = buildAstroPost({
-      title: target.title,
-      description: summary,
-      slug: anonymized.slug,
+      title: edited.title,
+      description: edited.description,
+      slug: edited.slug,
       tags: target.tags,
-      createdTime: target.createdTime,
+      // 초안을 쓴 날이 아니라 발행하는 날로 찍는다 — 밀린 초안이 목록 아래에 묻히지 않게.
+      publishedAt: new Date().toISOString(),
       pageId: target.pageId,
-      body: anonymized.body,
+      body: humanized.markdown,
     });
     const hits = scanForbiddenTerms(
       // frontmatter title/description은 모델 body와 별도 입력이므로 함께 검사하지 않으면
       // 본문은 안전해도 메타데이터에서 회사·기관명이 그대로 발행될 수 있다.
       // slug 과 최종 path 도 같은 이유 — 본문이 안전해도 모델이 slug 에 남긴 ASCII 식별자는
       // 공개 저장소의 커밋 경로와 URL 에 영구히 박힌다. 정규화 전후 표기가 다르므로 둘 다 넣는다.
+      // 검사는 파이프라인 **끝**에서 한 번 — 편집·윤문이 만들어낸 표현까지 걸러야 한다.
       {
-        body: `${target.title}\n${summary}\n${anonymized.slug}\n${post.path}\n${anonymized.body}`,
+        body: `${edited.title}\n${edited.description}\n${edited.slug}\n${post.path}\n${humanized.markdown}`,
         tags: target.tags,
       },
       context.forbiddenTerms,
@@ -210,15 +279,20 @@ export class PublishNotionDraftUsecase {
       };
     }
 
-    const previewText = this.buildPreviewText(target, post.path, summary);
+    const previewText = this.buildPreviewText(
+      target,
+      post.path,
+      edited,
+      humanized,
+    );
     const payload: BlogGithubPublishPayload = {
       pageId: target.pageId,
       path: post.path,
       content: post.content,
-      title: target.title,
+      title: edited.title,
       notionUrl: target.url,
       tags: target.tags,
-      summary,
+      summary: edited.description,
       slackUserId: input.slackUserId,
     };
     return {
@@ -226,7 +300,7 @@ export class PublishNotionDraftUsecase {
         status: 'ready',
         payload,
         previewText,
-        title: target.title,
+        title: edited.title,
         notionUrl: target.url,
         path: post.path,
         content: post.content,
@@ -269,6 +343,9 @@ export class PublishNotionDraftUsecase {
       statusValue:
         this.config.get<string>('BLOG_NOTION_STATUS_DRAFT_VALUE')?.trim() ||
         DEFAULT_BLOG_STATUS_DRAFT,
+      holdStatusValue:
+        this.config.get<string>('BLOG_NOTION_STATUS_HOLD_VALUE')?.trim() ||
+        DEFAULT_BLOG_STATUS_HOLD,
     };
   }
 
@@ -350,17 +427,116 @@ export class PublishNotionDraftUsecase {
   private buildPreviewText(
     draft: NotionDraftPage,
     path: string,
-    summary: string,
+    edited: PublishableBlogDraft,
+    humanized: HumanizeMarkdownResult,
   ): string {
-    return [
-      '*GitHub 블로그 발행 미리보기*',
-      `제목: ${draft.title}`,
+    const lines = ['*GitHub 블로그 발행 미리보기*', `제목: ${edited.title}`];
+    // 편집이 제목을 바꿨으면 초안 제목도 함께 보여준다 — 무엇이 바뀌었는지 모르고 ✅ 를
+    // 누르는 상황을 만들지 않는다.
+    if (edited.title !== draft.title) {
+      lines.push(`(초안 제목: ${draft.title})`);
+    }
+    lines.push(
       `경로: \`${path}\``,
-      `요약: ${summary}`,
+      `요약: ${edited.description}`,
       `Notion: ${draft.url}`,
+      ...this.buildStageNote(humanized),
       '',
       '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
-    ].join('\n');
+    );
+    return lines.join('\n');
+  }
+
+  // 어느 단계가 실제로 먹었는지 카드에 적는다. 윤문이 조용히 빠져도(플래그 off·모델 실패)
+  // 카드만 보고 알 수 있어야 한다 — 원문 발행을 막지 않는 대신 상황을 드러내는 쪽을 골랐다.
+  private buildStageNote(humanized: HumanizeMarkdownResult): string[] {
+    const stage = ((): string => {
+      if (humanized.proseParagraphs === 0) {
+        return '정리: 편집 완료 · 말투: 윤문할 산문 문단 없음';
+      }
+      if (humanized.changedParagraphs === 0) {
+        return '정리: 편집 완료 · 말투: 적용 안 됨(원문 그대로 — 윤문 실패 또는 비활성)';
+      }
+      return `정리: 편집 완료 · 말투: ${humanized.changedParagraphs}/${humanized.proseParagraphs}문단 적용`;
+    })();
+    // 지표는 판정이 아니라 관측값이다 — 차단 임계값은 발행본이 몇 편 쌓인 뒤에 정한다.
+    return [
+      stage,
+      formatKoreanStyleMetrics(measureKoreanStyle(humanized.markdown)),
+    ];
+  }
+
+  // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
+  private async editDraft(
+    draft: NotionDraftPage,
+    anonymized: AnonymizedBlogDraft,
+  ): Promise<EditedBlogDraft> {
+    const completion = await this.modelRouter.route({
+      agentType: AgentType.BLOG_PUBLISH,
+      request: {
+        systemPrompt: BLOG_EDIT_SYSTEM_PROMPT,
+        prompt: buildBlogEditPrompt({
+          title: draft.title,
+          category: draft.category,
+          tags: draft.tags,
+          summary: draft.summary,
+          markdown: anonymized.body,
+        }),
+      },
+    });
+    return parseBlogEdit(completion.text);
+  }
+
+  // 발행 부적합 초안을 보류 상태로 옮긴다. 실패하면 예외를 그대로 올린다 — 조용히 넘기면
+  // 같은 초안이 매일 다시 뽑혀 뒤에 있는 초안이 영구히 발행되지 않는다.
+  private async holdDraft(
+    draft: NotionDraftPage,
+    context: PublishCandidateContext,
+    reason: string,
+  ): Promise<void> {
+    this.logger.log(
+      `Notion 초안 '${draft.title}' 을 '${context.holdStatusValue}' 로 옮깁니다 — ${reason}`,
+    );
+    await this.notionClient.updatePageProperties({
+      pageId: draft.pageId,
+      properties: buildBlogStatusProperty(context.holdStatusValue, {
+        ...DEFAULT_BLOG_PROP,
+        status: context.statusPropertyName,
+      }),
+    });
+  }
+
+  private assertNotOverTrimmed(
+    draft: NotionDraftPage,
+    before: string,
+    after: string,
+  ): void {
+    const beforeLength = before.trim().length;
+    const afterLength = after.trim().length;
+    if (afterLength >= Math.floor(beforeLength * MIN_EDITED_BODY_RATIO)) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_TOO_SHORT,
+      message: `'${draft.title}' 편집 결과가 원문의 ${Math.round(
+        MIN_EDITED_BODY_RATIO * 100,
+      )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자).`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
+  }
+
+  private async findOpenPublishCard(
+    pageId: string,
+  ): Promise<PreviewAction | null> {
+    const openPreviews = await this.findAllOpenPreviews.execute({});
+    const found = openPreviews.find((preview) => {
+      if (preview.kind !== PREVIEW_KIND.BLOG_GITHUB_PUBLISH) {
+        return false;
+      }
+      const payload = preview.payload as { pageId?: unknown } | null;
+      return payload?.pageId === pageId;
+    });
+    return found ?? null;
   }
 
   // 이 메시지는 자연어 멘션 경로에서 채널에 그대로 게시된다 (blog-publish.dispatcher.ts →

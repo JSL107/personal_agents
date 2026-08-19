@@ -6,7 +6,15 @@ import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { PublishNotionDraftUsecase } from '../src/agent/blog/application/publish-notion-draft.usecase';
+import {
+  NOTION_CLIENT_PORT,
+  NotionClientPort,
+} from '../src/notion/domain/port/notion-client.port';
 import { BlogModule } from '../src/agent/blog/blog.module';
+import {
+  formatKoreanStyleMetrics,
+  measureKoreanStyle,
+} from '../src/humanize/domain/korean-style-metrics';
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 
@@ -27,6 +35,16 @@ const main = async (): Promise<void> => {
     { logger: ['error', 'warn'] },
   );
   try {
+    // Notion 쓰기만 가로막는다 — 검증 때문에 실제 초안 상태가 바뀌면 안 된다.
+    // 나머지 세 단계(익명화·편집·윤문)는 실제 모델을 그대로 호출한다.
+    const notionClient = application.get<NotionClientPort>(NOTION_CLIENT_PORT);
+    notionClient.updatePageProperties = async (input): Promise<void> => {
+      console.log(
+        '[dry-run] Notion 속성 갱신 생략 =',
+        JSON.stringify(input.properties),
+      );
+    };
+
     const usecase = application.get(PublishNotionDraftUsecase);
     console.log('isPublishConfigured =', usecase.isPublishConfigured());
 
@@ -40,6 +58,11 @@ const main = async (): Promise<void> => {
       console.log('path =', candidate.path);
       console.log('본문 코드펜스 포함 =', candidate.content.includes('```'));
       console.log('본문 길이 =', candidate.content.length);
+      console.log(
+        formatKoreanStyleMetrics(measureKoreanStyle(candidate.content)),
+      );
+      console.log('--- 카드 previewText ---');
+      console.log(candidate.previewText);
       console.log('--- content 앞 500자 ---');
       console.log(candidate.content.slice(0, 500));
     } else {

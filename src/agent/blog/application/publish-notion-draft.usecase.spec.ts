@@ -1,9 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { NotionClientPort } from '../../../notion/domain/port/notion-client.port';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
+import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { PublishNotionDraftUsecase } from './publish-notion-draft.usecase';
 
@@ -18,14 +20,53 @@ const draft = {
   createdTime: '2026-08-14T16:00:00.000Z',
 };
 
+// 편집 단계 기본 응답 — 제목·주소·요약·본문의 정본이 이 단계다.
+const editedDraft = {
+  publishable: true,
+  reason: '공유 DB 정합성이라는 요지가 분명하다.',
+  title: '공유 DB 마이그레이션 회고',
+  slug: 'shared-database-migration',
+  description: '공유 DB 마이그레이션의 정합성 교훈',
+  body: '# 공유 DB 마이그레이션 회고\n\n익명화된 본문',
+};
+
+// 익명화 응답을 편집 응답으로 감싼다. 실제 파이프라인에서 편집은 익명화 본문을 이어받으므로
+// 목도 그렇게 이어야 한다 — 그러지 않으면 익명화 단계에 심은 값이 검사 대상에서 빠져 버린다.
+const buildEditTextFrom = (
+  anonymizeText: string,
+  target: typeof draft,
+): string => {
+  try {
+    const parsed = JSON.parse(anonymizeText) as {
+      slug?: string;
+      description?: string;
+      body?: string;
+    };
+    return JSON.stringify({
+      publishable: true,
+      reason: editedDraft.reason,
+      title: target.title,
+      slug: parsed.slug ?? editedDraft.slug,
+      description: parsed.description ?? editedDraft.description,
+      body: parsed.body ?? editedDraft.body,
+    });
+  } catch {
+    return JSON.stringify(editedDraft);
+  }
+};
+
 const buildUsecase = (overrides?: {
   drafts?: (typeof draft)[];
   markdown?: string;
   completionText?: string;
+  editText?: string;
+  humanizeSuffix?: string | null;
+  openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
 }) => {
   const notionClient = {
+    updatePageProperties: jest.fn().mockResolvedValue(undefined),
     queryDraftPages: jest.fn().mockResolvedValue(overrides?.drafts ?? [draft]),
     getPageMarkdown: jest
       .fn()
@@ -33,18 +74,45 @@ const buildUsecase = (overrides?: {
         overrides?.markdown ?? '# 공유 DB 마이그레이션 회고\n\n본문',
       ),
   } as unknown as jest.Mocked<NotionClientPort>;
+  // 파이프라인이 모델을 두 번 부른다 — 1) 익명화 2) 편집. systemPrompt 로 구분해 답을 돌려준다.
+  const anonymizeText =
+    overrides?.completionText ??
+    JSON.stringify({
+      slug: 'shared-database-migration',
+      description: '공유 DB 마이그레이션의 정합성 교훈',
+      body: '# 공유 DB 마이그레이션 회고\n\n익명화된 본문',
+    });
+  const editText =
+    overrides?.editText ??
+    buildEditTextFrom(anonymizeText, overrides?.drafts?.[0] ?? draft);
   const modelRouter = {
-    route: jest.fn().mockResolvedValue({
-      text:
-        overrides?.completionText ??
-        JSON.stringify({
-          slug: 'shared-database-migration',
-          description: '공유 DB 마이그레이션의 정합성 교훈',
-          body: '# 공유 DB 마이그레이션 회고\n\n익명화된 본문',
-        }),
+    route: jest.fn().mockImplementation(async (input) => ({
+      text: String(input.request.systemPrompt).includes('블로그의 편집자')
+        ? editText
+        : anonymizeText,
       modelUsed: 'codex-cli',
-    }),
+    })),
   } as unknown as jest.Mocked<ModelRouterUsecase>;
+  // 윤문 목: 문단 끝에 표식을 덧붙여 "적용됨" 을 만든다. null 이면 원문 그대로(=윤문 실패).
+  const humanizeSuffix =
+    overrides?.humanizeSuffix === undefined
+      ? ' 그렇더라고요.'
+      : overrides.humanizeSuffix;
+  const humanizer = {
+    humanize: jest.fn(async (fields: Record<string, string>) => {
+      if (humanizeSuffix === null) {
+        return fields;
+      }
+      const next: Record<string, string> = {};
+      for (const key of Object.keys(fields)) {
+        next[key] = `${fields[key]}${humanizeSuffix}`;
+      }
+      return next;
+    }),
+  } as unknown as jest.Mocked<HumanizeService>;
+  const findAllOpenPreviews = {
+    execute: jest.fn().mockResolvedValue(overrides?.openPreviews ?? []),
+  } as unknown as jest.Mocked<FindAllOpenPreviewsUsecase>;
   const createPreview = {
     execute: jest.fn().mockImplementation(async (input) => ({
       ...input,
@@ -90,14 +158,27 @@ const buildUsecase = (overrides?: {
       notionClient,
       createPreview,
       configService,
+      humanizer,
+      findAllOpenPreviews,
     ),
     notionClient,
     modelRouter,
     createPreview,
     agentRunService,
     updateInputSnapshot,
+    humanizer,
+    findAllOpenPreviews,
   };
 };
+
+// 발행 날짜가 '오늘' 이 되었으므로 시계를 고정한다. KST 2026-08-19 10:00.
+beforeAll(() => {
+  jest.useFakeTimers({ now: new Date('2026-08-19T01:00:00.000Z') });
+});
+
+afterAll(() => {
+  jest.useRealTimers();
+});
 
 describe('PublishNotionDraftUsecase', () => {
   describe('buildPublishCandidate', () => {
@@ -200,12 +281,12 @@ describe('PublishNotionDraftUsecase', () => {
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
-        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-15-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n문체 지표: 문장 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 금지접속사 0회 (40문장 미만이라 참고값)\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
       payload: {
         pageId: draft.pageId,
-        path: 'src/content/posts/2026-08-15-shared-database-migration.md',
+        path: 'src/content/posts/2026-08-19-shared-database-migration.md',
         content:
-          '---\ntitle: "공유 DB 마이그레이션 회고"\ndescription: "공유 DB 마이그레이션의 정합성 교훈"\npubDatetime: 2026-08-15T01:00:00+09:00\ntags:\n  - "migration"\n---\n\n익명화된 본문\n',
+          '---\ntitle: "공유 DB 마이그레이션 회고"\ndescription: "공유 DB 마이그레이션의 정합성 교훈"\npubDatetime: 2026-08-19T10:00:00+09:00\ntags:\n  - "migration"\n---\n\n익명화된 본문 그렇더라고요.\n',
         title: draft.title,
         notionUrl: draft.url,
         tags: draft.tags,
@@ -348,12 +429,16 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
-  it('Notion 요약에 금지어가 남아도 frontmatter preview를 만들지 않는다', async () => {
+  // 발행 요약의 정본이 편집 단계로 옮겨졌다. Notion 요약은 발행물에 더 이상 들어가지 않으므로
+  // 거기 남은 금지어는 공개되지 않는다 — 대신 편집이 내놓은 요약을 검사해야 한다.
+  it('편집이 내놓은 요약에 금지어가 남으면 preview 없이 차단한다', async () => {
     const { usecase, createPreview } = buildUsecase({
-      drafts: [{ ...draft, summary: '회사명 시스템 마이그레이션 회고' }],
-      completionText: JSON.stringify({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
         slug: 'safe-post',
-        description: '식별 정보가 제거된 설명',
+        description: '회사명 시스템 마이그레이션 회고',
         body: '식별 정보가 제거된 기술 회고입니다.',
       }),
     });
@@ -365,6 +450,219 @@ describe('PublishNotionDraftUsecase', () => {
 
     expect(outcome.result.status).toBe('blocked');
     expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('Notion 요약에 금지어가 있어도 발행 요약은 편집 산출이라 새지 않는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      drafts: [{ ...draft, summary: '회사명 시스템 마이그레이션 회고' }],
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      summary: string;
+      content: string;
+    };
+    expect(payload.summary).not.toContain('회사명');
+    expect(payload.content).not.toContain('회사명');
+  });
+
+  it('편집이 발행 부적합으로 판정하면 Notion 초안을 보류로 옮기고 발행하지 않는다', async () => {
+    const { usecase, notionClient, createPreview } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: false,
+        reason: '강의 필기를 옮겨 적은 수준이라 글쓴이의 판단이 없다.',
+        title: '',
+        slug: '',
+        description: '',
+        body: '',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result).toEqual({
+      status: 'skipped',
+      cause: 'hold',
+      message: expect.stringContaining('보류로 옮겼습니다'),
+    });
+    // 보류 전환이 없으면 같은 초안이 매일 다시 뽑혀 뒤 초안이 영구히 발행되지 않는다.
+    expect(notionClient.updatePageProperties).toHaveBeenCalledWith({
+      pageId: draft.pageId,
+      properties: { 상태: { select: { name: '보류' } } },
+    });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('보류 전환은 발행일·태그를 건드리지 않는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: false,
+        reason: '요지를 정할 수 없다.',
+        title: '',
+        slug: '',
+        description: '',
+        body: '',
+      }),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const properties = notionClient.updatePageProperties.mock.calls[0][0]
+      .properties as Record<string, unknown>;
+    expect(Object.keys(properties)).toEqual(['상태']);
+  });
+
+  it('응답하지 않은 발행 카드가 열려 있으면 모델을 부르지 않고 넘긴다', async () => {
+    const { usecase, modelRouter, createPreview } = buildUsecase({
+      openPreviews: [
+        {
+          id: 'preview-open',
+          kind: 'BLOG_GITHUB_PUBLISH',
+          payload: { pageId: draft.pageId },
+        },
+      ],
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result).toEqual({
+      status: 'skipped',
+      cause: 'card-open',
+      message: expect.stringContaining('아직 열려 있습니다'),
+    });
+    // 모델 호출 세 번이 그대로 낭비되는 것을 막는 게 이 분기의 목적이다.
+    expect(modelRouter.route).not.toHaveBeenCalled();
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('다른 종류의 열린 카드는 발행을 막지 않는다', async () => {
+    const { usecase } = buildUsecase({
+      openPreviews: [
+        {
+          id: 'preview-other',
+          kind: 'PM_WRITE_BACK',
+          payload: { pageId: draft.pageId },
+        },
+      ],
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+  });
+
+  it('편집이 본문을 60% 미만으로 줄이면 발행하지 않고 실패로 끊는다', async () => {
+    const longBody = '가'.repeat(400);
+    const { usecase, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: longBody,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '가'.repeat(100),
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_TOO_SHORT' });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('편집이 제목을 바꾸면 카드에 초안 제목도 함께 보여준다', async () => {
+    const { usecase } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '공유 DB는 왜 조용히 어긋나는가',
+        slug: 'shared-database-drift',
+        description: '공유 DB 마이그레이션의 정합성 교훈',
+        body: '# 공유 DB는 왜 조용히 어긋나는가\n\n익명화된 본문',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain(
+      '제목: 공유 DB는 왜 조용히 어긋나는가',
+    );
+    expect(outcome.result.previewText).toContain(
+      '(초안 제목: 공유 DB 마이그레이션 회고)',
+    );
+    expect(outcome.result.path).toContain('shared-database-drift');
+  });
+
+  it('윤문이 먹지 않으면 카드에 그 사실을 적는다', async () => {
+    const { usecase } = buildUsecase({ humanizeSuffix: null });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain('말투: 적용 안 됨');
+  });
+
+  it('본문 코드블록은 윤문에 넘기지 않고 그대로 발행한다', async () => {
+    const body = [
+      '# 회고',
+      '',
+      '레거시에서 이렇게 조회했다.',
+      '',
+      '```php',
+      '$row = query("SELECT 1");',
+      '```',
+    ].join('\n');
+    const { usecase, humanizer } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body,
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    const passedToHumanizer = Object.values(
+      humanizer.humanize.mock.calls[0][0],
+    ).join('\n');
+    expect(passedToHumanizer).not.toContain('SELECT 1');
+    expect(outcome.result.content).toContain('$row = query("SELECT 1");');
   });
 
   it('BLOG_MASK_FORBIDDEN_TERMS가 비어 있으면 다른 외부 호출 전에 실패한다', async () => {
@@ -430,7 +728,7 @@ describe('PublishNotionDraftUsecase', () => {
 
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith('page-older');
     expect(outcome.result).toEqual(
-      expect.objectContaining({ status: 'preview', title: '오래된 초안' }),
+      expect.objectContaining({ status: 'preview' }),
     );
   });
 
