@@ -14,17 +14,20 @@ describe('parsePaperRecommendation', () => {
     });
   });
 
-  it('비중 없는 매수를 통과시키고 모델이 비중을 보내도 오류로 보지 않는다', () => {
-    expect(() =>
-      parsePaperRecommendation(
-        JSON.stringify({
-          sells: [],
-          buys: [
-            { code: '000660', weightPercent: '터무니없는 값', reason: '돌파' },
-          ],
-        }),
-      ),
-    ).not.toThrow();
+  // 비중은 코드가 정한다. 모델이 보낸 값을 오류로 보지도 않지만 결과에 남겨서도 안 된다 —
+  // 남으면 나중에 누가 읽어 회차마다 다른 수량이 다시 나온다.
+  it('모델이 비중을 보내면 오류 없이 그 값을 떨궈 낸다', () => {
+    const result = parsePaperRecommendation(
+      JSON.stringify({
+        sells: [],
+        buys: [
+          { code: '000660', weightPercent: '터무니없는 값', reason: '돌파' },
+        ],
+      }),
+    );
+
+    expect(result.buys).toEqual([{ code: '000660', reason: '돌파' }]);
+    expect(result.buys[0]).not.toHaveProperty('weightPercent');
   });
 
   it('잘못된 JSON이면 PAPER_RECOMMEND_INVALID_MODEL_OUTPUT을 던진다', () => {

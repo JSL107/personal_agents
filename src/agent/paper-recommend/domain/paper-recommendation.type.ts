@@ -53,6 +53,8 @@ export interface PaperRecommendationBuyIntent {
   code: string;
   name: string;
   reason: string;
+  // 주문 생성에는 쓰이지 않는다. 코드가 어떤 비중을 배정했는지 드러내는 유일한 관측점이라
+  // 테스트가 이 값으로 결정론을 단언한다 (수량으로 재면 종가에 얽매인다).
   weightPercent: number;
   quantity: number;
   close: number;
