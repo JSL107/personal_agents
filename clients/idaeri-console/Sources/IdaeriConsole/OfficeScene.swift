@@ -2076,17 +2076,41 @@ final class OfficeScene: SKScene {
             let active = lastSyncedSessions.filter { $0.state == officeSessionActiveState }.count
             text += "  ·  내 세션 \(lastSyncedSessions.count)(도는 중 \(active))"
         }
+        // 판 없이 글자만 얹으면 벽·창처럼 밝은 타일 위에서 글자가 묻힌다. 실제 화면에서
+        // "내 세션 9(도는 중 5)" 가 배경에 잠겨 잘린 것처럼 보였다.
+        let holder = SKNode()
+        holder.name = "summaryHUD"
+        holder.zPosition = officeHudZPosition
+
         let label = SKLabelNode(text: text)
-        label.name = "summaryHUD"
         // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
         // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
         label.fontName = officeLabelFontName
         label.fontSize = max(officeHudMinFontSize, tileSize * 0.30)
-        label.fontColor = SKColor(white: 0.88, alpha: 1)
+        label.fontColor = SKColor(white: 0.96, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top
-        label.position = CGPoint(x: 12, y: size.height - 10)
-        overlayLayer.addChild(label)
+        label.position = .zero
+
+        let textFrame = label.calculateAccumulatedFrame()
+        let padding = label.fontSize * 0.55
+        let plate = SKShapeNode(
+            rect: CGRect(
+                x: textFrame.minX - padding,
+                y: textFrame.minY - padding * 0.7,
+                width: textFrame.width + padding * 2,
+                height: textFrame.height + padding * 1.4
+            ),
+            cornerRadius: label.fontSize * 0.45
+        )
+        plate.fillColor = SKColor(white: 0.05, alpha: 0.82)
+        plate.strokeColor = SKColor(white: 1.0, alpha: 0.10)
+        plate.lineWidth = 1
+
+        holder.addChild(plate)
+        holder.addChild(label)
+        holder.position = CGPoint(x: 12 + padding, y: size.height - 10 - padding * 0.7)
+        overlayLayer.addChild(holder)
     }
 
     /// 선택된 캐릭터에 지속 하이라이트를 얹는다.

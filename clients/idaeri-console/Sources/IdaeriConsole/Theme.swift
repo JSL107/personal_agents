@@ -10,6 +10,12 @@ let officeNameplateMinFontSize = CGFloat(officeNameplateMinFontSizeValue)
 let officeZoneLabelMinFontSize = CGFloat(officeZoneLabelMinFontSizeValue)
 /// 좌상단 전사 요약(HUD)의 최소 크기. 씬 안의 이름표가 아니라 화면에 얹는 글이라 따로 둔다.
 let officeHudMinFontSize: CGFloat = 13
+/// 좌상단 전사 요약(HUD) 판의 그리기 순서(overlayLayer 안에서의 로컬 zPosition).
+///
+/// 구역 문패(overlayLayer 자식, zPosition 미지정 = 0)보다는 위에 그려야 겹쳐도 이기고,
+/// 커서 옆 쪽지 판(`makeHoverTooltip`, zPosition 100)보다는 아래여야 한다 — 쪽지가 늘
+/// 최상단이어야 하는 이유는 그 판 자체의 주석에 있다(가림 방지).
+let officeHudZPosition: CGFloat = 50
 
 // MARK: - 간격
 
