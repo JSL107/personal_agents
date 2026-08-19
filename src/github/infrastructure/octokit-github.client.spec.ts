@@ -124,6 +124,7 @@ describe('OctokitGithubClient', () => {
           user: { login: 'octocat' },
           additions: 120,
           deletions: 30,
+          merged_at: '2026-06-01T10:00:00Z',
           changed_files: changedFilesTotalCount,
         },
       });
@@ -166,6 +167,7 @@ describe('OctokitGithubClient', () => {
         changedFilesTruncated: false,
         additions: 120,
         deletions: 30,
+        mergedAt: '2026-06-01T10:00:00Z',
       });
       expect(get).toHaveBeenCalledWith({
         owner: 'foo',

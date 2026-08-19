@@ -16,6 +16,17 @@ describe('formatKstDate', () => {
   it('파싱할 수 없는 입력은 null을 반환한다', () => {
     expect(formatKstDate('not-a-date')).toBeNull();
   });
+
+  it('new Date(null)가 epoch로 해석되는 회귀를 막고 null을 반환한다', () => {
+    expect(formatKstDate(null)).toBeNull();
+  });
+
+  it.each([undefined, '', '   '])(
+    '값이 없거나 공백뿐인 입력 %p은 null을 반환한다',
+    (value) => {
+      expect(formatKstDate(value)).toBeNull();
+    },
+  );
 });
 
 describe('getTodayKstDate', () => {
