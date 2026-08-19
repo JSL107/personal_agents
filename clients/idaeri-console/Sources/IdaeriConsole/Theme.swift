@@ -17,6 +17,22 @@ let officeHudMinFontSize: CGFloat = 13
 /// 최상단이어야 하는 이유는 그 판 자체의 주석에 있다(가림 방지).
 let officeHudZPosition: CGFloat = 50
 
+/// 책상 스탠드 빛 웅덩이 반지름(도트). `OfficeLightTexture.deskGlow` 텍스처의 한 변이
+/// 이 값의 두 배가 된다 — 너무 크면 옆 책상까지 물들어 누구 자리가 켜졌는지 흐려진다.
+let officeDeskGlowRadius = 13
+/// 빛 웅덩이 색. 벽등 켜짐 색(`OfficeLightLayer.lampColor`)과 같은 계열의 따뜻한 호박색 —
+/// 스탠드도 벽등도 같은 실내 조명이라 색이 갈리면 두 광원처럼 읽힌다.
+///
+/// 처음엔 책상 나무색에 가까운 옅은 호박색(0.82,0.45)을 썼는데, `.add` 로 얹어도 바탕색과
+/// 겹쳐 실측 렌더에서 거의 안 보였다 — 채도를 올리고 세기(strength)도 함께 올려야
+/// 나무 위에서 도드라진다.
+let officeDeskGlowColor = OfficeColor(red: 1.00, green: 0.74, blue: 0.28)
+/// 웅덩이 중심의 최대 알파. `.add` 로 얹으므로 1에 가까우면 책상 위가 하얗게 날아간다.
+let officeDeskGlowStrength: Double = 0.8
+/// 책상 자식 노드 중 그리는 순서(desk 노드 기준 로컬 zPosition). 책상 상판(0) 보다는 위,
+/// 소품(0.01)보다는 아래 — 빛 웅덩이가 상판에 깔리고 그 위에 소품·서류가 놓인 그림이어야 한다.
+let officeDeskGlowZPosition: CGFloat = 0.005
+
 // MARK: - 간격
 
 /// 화면의 모든 여백·간격이 고르는 단계. 값을 손으로 적는 대신 여기서 이름을 고른다.

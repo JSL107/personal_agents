@@ -1766,6 +1766,52 @@ final class OfficeScene: SKScene {
         for layer in lightLayers {
             layer.apply(light)
         }
+        // 시각이 바뀔 때마다(창·벽등과 같은 호출부에서) 켜고 끈다 — 여기 한 곳에 두면
+        // sync·창 크기 변경·틱 세 경로가 전부 여기를 지나므로 셋을 따로 배선할 필요가 없다.
+        updateDeskLamps()
+    }
+
+    /// 앉아 있는 사람 책상에 스탠드 빛을 켠다.
+    ///
+    /// 낮에는 켜지 않는다 — 창 채광이 이미 광원이라, 빛이 두 겹이 되면 어느 쪽이 광원인지
+    /// 읽히지 않는다(`officeWindowLight`의 `lampLit` 판단과 같은 이유).
+    ///
+    /// **`prop-desk-lamp` 소품과 무관하게 켠다.** 그 소품은 개인 소품 일곱 종 중 하나라
+    /// 사람 일곱 중 여섯은 스탠드 오브젝트 자체가 책상에 없다 — 빛을 소품에 묶으면 대부분의
+    /// 책상이 밤에도 그대로 어둡다.
+    private func updateDeskLamps() {
+        let daylight = officeDaylight(hour: currentHour())
+        let shouldLight = daylight == .dawn || daylight == .evening || daylight == .night
+        for entry in plan.desks {
+            // 책상 노드는 agentType 을 키로 갖는다(`deskNodes[owner] = node`, renderFurniture).
+            let deskNode = deskNodes[entry.agentType]
+            deskNode?.childNode(withName: "deskGlow")?.removeFromParent()
+            guard shouldLight,
+                let node = characters[entry.agentType],
+                node.tile == entry.seat,
+                let texture = OfficeLightTexture.deskGlow(
+                    radius: officeDeskGlowRadius,
+                    color: officeDeskGlowColor,
+                    strength: officeDeskGlowStrength
+                )
+            else {
+                continue
+            }
+            let glow = SKSpriteNode(texture: texture)
+            glow.name = "deskGlow"
+            glow.blendMode = .add
+            glow.zPosition = officeDeskGlowZPosition
+            // 다른 스프라이트와 같은 배율을 따라야 창 크기가 바뀌어도 책상 대비 비율이
+            // 유지된다(원본 텍스처 픽셀 크기를 그대로 쓰면 tileSize 가 작을 때 상판보다 커진다).
+            glow.size = CGSize(
+                width: texture.size().width * spriteScale,
+                height: texture.size().height * spriteScale
+            )
+            // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다 — 상판
+            // 높이쯤(세로 중간)에 중심을 두고, 좌우로는 상판 전체를 덮도록 가운데에 둔다.
+            glow.position = CGPoint(x: 0, y: tileSize * 0.5)
+            deskNode?.addChild(glow)
+        }
     }
 
     /// 벽에 붙는 것들(창문·벽등)과 거기서 나오는 빛을 그린다.
