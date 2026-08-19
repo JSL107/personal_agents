@@ -565,6 +565,113 @@ describe('PublishNotionDraftUsecase', () => {
     expect(outcome.result.status).toBe('preview');
   });
 
+  // 외부 리뷰 지적 — "코드 한 글자도 바꾸지 마라" 를 프롬프트로만 두면 집행이 없다.
+  it('편집이 코드블록을 바꾸면 발행하지 않고 실패로 끊는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: '설명입니다.\n\n```php\n$row = query("SELECT 1");\n```',
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '설명입니다.\n\n```php\n$row = query("SELECT 2");\n```',
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_CODE_CHANGED' });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('편집이 코드블록을 지우는 것은 허용한다 (추리기의 일부)', async () => {
+    const { usecase } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: '설명입니다. 이 문장은 충분히 길어야 60% 가드를 넘는다.\n\n```php\n$row = 1;\n```',
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '설명입니다. 이 문장은 충분히 길어야 60% 가드를 넘는다. 코드는 지웠어요.',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+  });
+
+  // 외부 리뷰 지적 — 편집본만 보고 통과시키면 윤문이 줄인 최종본은 검사되지 않는다.
+  it('윤문이 본문을 크게 줄이면 최종본 기준으로 끊는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: '가'.repeat(300),
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '가'.repeat(300),
+      }),
+      // 윤문이 문단을 10자로 줄여 돌려주는 상황
+      humanizeSuffix: undefined,
+    });
+
+    // humanize 목을 "크게 줄이는" 동작으로 갈아끼운다.
+    const humanizer = (
+      usecase as unknown as { humanizer: { humanize: jest.Mock } }
+    ).humanizer;
+    humanizer.humanize = jest.fn(async () => ({ '0': '짧게 줄였어요.' }));
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_TOO_SHORT' });
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // 외부 리뷰 지적 — 이 메시지는 자연어 멘션 경로에서 채널로도 나간다. 원제목은 익명화 전 값이다.
+  it('보류 메시지의 Notion 원제목과 모델 이유에서 금지어를 가린다', async () => {
+    const { usecase } = buildUsecase({
+      drafts: [{ ...draft, title: '회사명 마이그레이션 회고' }],
+      editText: JSON.stringify({
+        publishable: false,
+        reason: '회사명 내부 문서를 옮겨 적은 수준이다.',
+        title: '',
+        slug: '',
+        description: '',
+        body: '',
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'skipped') {
+      throw new Error('skipped 가 아니다');
+    }
+    expect(outcome.result.message).not.toContain('회사명');
+    expect(outcome.result.message).toContain('회**');
+  });
+
   it('편집이 본문을 60% 미만으로 줄이면 발행하지 않고 실패로 끊는다', async () => {
     const longBody = '가'.repeat(400);
     const { usecase, createPreview } = buildUsecase({
@@ -836,6 +943,22 @@ describe('PublishNotionDraftUsecase', () => {
         message: expect.stringContaining('raw=죄송합니다.'),
       }),
     });
+  });
+
+  // 외부 리뷰 지적 — cause 는 실패 로그로 나간다. 익명화가 깨진 응답에는 원문이 남을 수 있다.
+  it('파싱 실패 로그에 실리는 모델 응답에서도 금지어를 가린다', async () => {
+    const { usecase } = buildUsecase({
+      completionText: '회사명 시스템 정리 중 오류가 났습니다.',
+    });
+
+    try {
+      await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+      throw new Error('여기 도달하면 안 된다');
+    } catch (error: unknown) {
+      const cause = (error as { cause?: Error }).cause;
+      expect(cause?.message).toContain('raw=');
+      expect(cause?.message).not.toContain('회사명');
+    }
   });
 
   it('모델 JSON이 slug, description, body 계약을 지키지 않으면 preview를 만들지 않는다', async () => {

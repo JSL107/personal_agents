@@ -17,7 +17,10 @@ import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
 } from '../../../humanize/domain/korean-style-metrics';
-import { HumanizeMarkdownResult } from '../../../humanize/domain/markdown-blocks';
+import {
+  extractFencedCodeBlocks,
+  HumanizeMarkdownResult,
+} from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -203,7 +206,7 @@ export class PublishNotionDraftUsecase {
         candidate: {
           status: 'skipped',
           cause: 'card-open',
-          message: `'${target.title}' 발행 승인 카드가 아직 열려 있습니다. 그 카드를 처리하면 다음 초안으로 넘어갑니다.`,
+          message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 발행 승인 카드가 아직 열려 있습니다. 그 카드를 처리하면 다음 초안으로 넘어갑니다.`,
         },
         modelUsed: 'deterministic',
       };
@@ -225,25 +228,37 @@ export class PublishNotionDraftUsecase {
         prompt: this.buildAnonymizePrompt(target, markdown),
       },
     });
-    const anonymized = this.parseAnonymizedDraft(completion.text);
+    const anonymized = this.withMaskedCause(
+      () => this.parseAnonymizedDraft(completion.text),
+      context.forbiddenTerms,
+    );
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
-    const edited = await this.editDraft(target, anonymized);
+    const edited = await this.editDraft(target, anonymized, context);
     if (!edited.publishable) {
       await this.holdDraft(target, context, edited.reason);
       return {
         candidate: {
           status: 'skipped',
+          // Notion 원제목은 익명화를 거치지 않은 값이고, 이 메시지는 자연어 멘션 경로에서
+          // 채널로도 나간다. 정상 차단 경로가 원문을 마스킹하는 것과 정책을 맞춘다.
           cause: 'hold',
-          message: `'${target.title}' 은 발행하지 않고 보류로 옮겼습니다 — ${edited.reason}`,
+          message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 은 발행하지 않고 보류로 옮겼습니다 — ${this.maskForbidden(edited.reason, context.forbiddenTerms)}`,
         },
         modelUsed: completion.modelUsed,
       };
     }
+    // 편집이 코드를 바꾸지 않았는지 대조한다. 프롬프트로만 금지하면 집행이 없다 —
+    // 공개 저장소에 잘못된 코드가 나가는 것을 막는 마지막 결정론 검사다. 삭제는 허용한다(추리기).
+    this.assertCodeBlocksPreserved(target, anonymized.body, edited.body);
     this.assertNotOverTrimmed(target, anonymized.body, edited.body);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
     const humanized = await humanizeMarkdownProse(edited.body, this.humanizer);
+
+    // 윤문이 문단을 크게 줄일 수도 있어 **최종 발행본 기준으로 한 번 더** 본다.
+    // 편집본만 보고 통과시키면 최종본이 원문의 60% 미만인 채 발행될 수 있다.
+    this.assertNotOverTrimmed(target, anonymized.body, humanized.markdown);
 
     // 제목·주소·요약의 정본은 편집 단계다. 셋을 한 단계에서 정해야 제목과 URL 이 어긋나지 않는다.
     const post = buildAstroPost({
@@ -470,6 +485,7 @@ export class PublishNotionDraftUsecase {
   private async editDraft(
     draft: NotionDraftPage,
     anonymized: AnonymizedBlogDraft,
+    context: PublishCandidateContext,
   ): Promise<EditedBlogDraft> {
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
@@ -484,7 +500,10 @@ export class PublishNotionDraftUsecase {
         }),
       },
     });
-    return parseBlogEdit(completion.text);
+    return this.withMaskedCause(
+      () => parseBlogEdit(completion.text),
+      context.forbiddenTerms,
+    );
   }
 
   // 발행 부적합 초안을 보류 상태로 옮긴다. 실패하면 예외를 그대로 올린다 — 조용히 넘기면
@@ -506,6 +525,25 @@ export class PublishNotionDraftUsecase {
     });
   }
 
+  private assertCodeBlocksPreserved(
+    draft: NotionDraftPage,
+    before: string,
+    after: string,
+  ): void {
+    const originals = new Set(extractFencedCodeBlocks(before));
+    const changed = extractFencedCodeBlocks(after).filter(
+      (block) => !originals.has(block),
+    );
+    if (changed.length === 0) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_CODE_CHANGED,
+      message: `'${draft.title}' 편집 결과의 코드블록이 원문과 다릅니다 (${changed.length}개). 코드는 편집 대상이 아닙니다.`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
+  }
+
   private assertNotOverTrimmed(
     draft: NotionDraftPage,
     before: string,
@@ -513,7 +551,7 @@ export class PublishNotionDraftUsecase {
   ): void {
     const beforeLength = before.trim().length;
     const afterLength = after.trim().length;
-    if (afterLength >= Math.floor(beforeLength * MIN_EDITED_BODY_RATIO)) {
+    if (afterLength >= beforeLength * MIN_EDITED_BODY_RATIO) {
       return;
     }
     throw new BlogException({
@@ -523,6 +561,36 @@ export class PublishNotionDraftUsecase {
       )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자).`,
       status: DomainStatus.BAD_GATEWAY,
     });
+  }
+
+  // 파싱 실패 cause 에는 모델 raw 응답 앞부분이 실린다(원인 추적에 필요). 다만 익명화가
+  // 깨진 응답에는 원문 회사명이 그대로 되풀이될 수 있어, 로그로 나가기 전에 가린다.
+  private withMaskedCause<T>(run: () => T, terms: string[]): T {
+    try {
+      return run();
+    } catch (error: unknown) {
+      if (
+        !(error instanceof BlogException) ||
+        !(error.cause instanceof Error)
+      ) {
+        throw error;
+      }
+      throw new BlogException({
+        code: error.blogErrorCode,
+        message: error.message,
+        status: error.status,
+        cause: new Error(this.maskForbidden(error.cause.message, terms)),
+      });
+    }
+  }
+
+  private maskForbidden(text: string, terms: string[]): string {
+    return terms.reduce((masked, term) => {
+      const trimmed = term.trim();
+      return trimmed.length === 0
+        ? masked
+        : masked.split(trimmed).join(maskTerm(trimmed));
+    }, text);
   }
 
   private async findOpenPublishCard(

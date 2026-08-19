@@ -6,15 +6,15 @@ import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { PublishNotionDraftUsecase } from '../src/agent/blog/application/publish-notion-draft.usecase';
-import {
-  NOTION_CLIENT_PORT,
-  NotionClientPort,
-} from '../src/notion/domain/port/notion-client.port';
 import { BlogModule } from '../src/agent/blog/blog.module';
 import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
 } from '../src/humanize/domain/korean-style-metrics';
+import {
+  NOTION_CLIENT_PORT,
+  NotionClientPort,
+} from '../src/notion/domain/port/notion-client.port';
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 
