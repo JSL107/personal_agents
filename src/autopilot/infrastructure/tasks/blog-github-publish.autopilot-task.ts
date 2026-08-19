@@ -64,6 +64,14 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
     if (candidate.status === 'empty') {
       return { skip: true };
     }
+    // 발행 부적합으로 보류된 초안은 알린다 — 조용히 넘기면 초안이 쌓이는 것도, 왜 안 나가는지도
+    // 사용자가 알 방법이 없다. 반대로 카드가 이미 열려 있는 회차는 카드 자체가 신호라 넘긴다.
+    if (candidate.status === 'skipped') {
+      if (candidate.cause === 'card-open') {
+        return { skip: true };
+      }
+      return { skip: false, summaryText: candidate.message };
+    }
     if (candidate.status === 'blocked') {
       return {
         skip: false,

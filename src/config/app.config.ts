@@ -115,6 +115,12 @@ export class EnvironmentVariables {
   @IsString()
   BLOG_NOTION_STATUS_DRAFT_VALUE?: string;
 
+  // 편집 단계가 '발행 부적합' 으로 판정한 초안을 옮길 Notion 상태값. 미설정이면 '보류'.
+  // Notion select 옵션 이름과 글자가 정확히 같아야 한다.
+  @IsOptional()
+  @IsString()
+  BLOG_NOTION_STATUS_HOLD_VALUE?: string;
+
   // Notion 블로그 초안의 GitHub 발행 승인 카드를 저녁 evening digest에 추가한다.
   // `false` 문자열이면 skip, 미설정이면 활성(기본 ON).
   @IsOptional()

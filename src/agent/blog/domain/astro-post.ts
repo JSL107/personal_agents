@@ -3,7 +3,9 @@ export interface AstroPostInput {
   description: string;
   slug: string;
   tags: string[];
-  createdTime: string;
+  // 글에 찍히는 날짜(KST). 초안을 쓴 날이 아니라 **발행하는 날**을 넘긴다 —
+  // 밀린 초안이 과거 날짜로 발행되면 최신순 목록 아래에 묻힌다.
+  publishedAt: string;
   pageId: string;
   body: string;
 }
@@ -25,7 +27,7 @@ export const buildAstroPost = (input: AstroPostInput): AstroPost => {
     throw new Error('Astro post pageId is required');
   }
 
-  const publishedAt = formatKstDateTime(input.createdTime);
+  const publishedAt = formatKstDateTime(input.publishedAt);
   const slug = normalizeSlug(input.slug, pageId);
   const body = removeLeadingHeading(input.body);
   const frontmatter = buildFrontmatter({
@@ -42,14 +44,14 @@ export const buildAstroPost = (input: AstroPostInput): AstroPost => {
 };
 
 const formatKstDateTime = (
-  createdTime: string,
+  isoTimestamp: string,
 ): {
   date: string;
   value: string;
 } => {
-  const timestamp = new Date(createdTime).getTime();
+  const timestamp = new Date(isoTimestamp).getTime();
   if (Number.isNaN(timestamp)) {
-    throw new Error('Invalid createdTime');
+    throw new Error('Invalid publishedAt timestamp');
   }
 
   const kstDate = new Date(timestamp + KST_OFFSET_MILLISECONDS);
