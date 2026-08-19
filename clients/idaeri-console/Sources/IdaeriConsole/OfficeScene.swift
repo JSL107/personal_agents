@@ -121,6 +121,13 @@ final class OfficeScene: SKScene {
     private var lastStrollAt: [String: Double] = [:]
     /// 사람별 목적지를 회차마다 바꾸되 실행마다 같은 순서가 나오게 정수 회차만 섞는다.
     private var strollRound = 0
+    /// 퇴근 연출이 이미 걸린 사람. `playArrival`은 캐릭터를 즉시 만들어(`characters` 딕셔너리에
+    /// 바로 들어감) 재진입 방지를 `characters[agentType] == nil` 하나로 해결하지만, 퇴근은
+    /// 캐릭터가 화면에서 사라지는 게 계단식 지연 + 걷기 + 페이드가 끝난 **뒤**라 같은 검사로는
+    /// 못 막는다 — 그 사이에 `playDeparture`가 다시 불리면 같은 사람에게 걷기·페이드 시퀀스가
+    /// 두 겹으로 걸린다. 지금은 호출부(`applyAttendance`의 시각당 1회 루프)가 이 상황을 만들지
+    /// 않지만, `perform(_:)`의 `.leave` 케이스가 나중에 실제 이벤트로 발화하면 겹칠 수 있다.
+    private var departingAgents: Set<String> = []
     private var windowNodes: [SKSpriteNode] = []
     private var wallLampNodes: [SKSpriteNode] = []
     private var lightLayers: [OfficeLightLayer] = []
@@ -312,6 +319,7 @@ final class OfficeScene: SKScene {
             lastStates[agentType] = nil
             strollingAgents.remove(agentType)
             lastStrollAt[agentType] = nil
+            departingAgents.remove(agentType)
         }
 
         reconcileQueue(agents: agents, approvals: approvals)
@@ -455,7 +463,13 @@ final class OfficeScene: SKScene {
     /// 복도 진입점에서 등장해 자기 좌석까지 걸어온다.
     ///
     /// 도면 밖 타일이 없으므로 "화면 밖에서 걸어온다"는 성립하지 않는다. `plan.entranceTile`
-    /// (세로 복도가 가로 복도와 만나는 칸)에 노드를 만들고 거기서부터 걷는다.
+    /// (세로 복도의 바닥벽 쪽 끝)에 노드를 만들고 거기서부터 걷는다.
+    ///
+    /// **줄이 출근보다 우선한다.** 계단식 지연이 끝나기 전에 이 사람이 승인 대기줄에 들어갈
+    /// 수 있다(`joinQueue`가 이미 줄 칸으로 걷는 중일 수 있다) — 그 뒤에 이 함수가 무조건
+    /// 좌석으로 걷게 하면 같은 "walk" 액션 키를 다시 잡아 줄 걸음을 취소하고 자리로 끌고
+    /// 간다. `queueOrder`와 실제 위치가 갈리는 그 상태를 만들지 않으려고, 지연이 끝나는
+    /// 순간 줄 여부를 다시 확인해 이미 줄이면 좌석 걸음을 포기한다.
     private func playArrival(_ entry: DeskAssignment, delay: TimeInterval) {
         guard characters[entry.agentType] == nil else {
             return
@@ -479,6 +493,9 @@ final class OfficeScene: SKScene {
                 guard let self, let node else {
                     return
                 }
+                guard !self.queueOrder.contains(entry.agentType) else {
+                    return
+                }
                 self.walk(node, to: entry.seat) { [weak node] in
                     node?.sit()
                 }
@@ -490,10 +507,21 @@ final class OfficeScene: SKScene {
     ///
     /// 배회 중에 퇴근 시각이 되는 경우가 있다 — 자리를 뜨기 전에 배회부터 끊어야, 나중에
     /// 깨어난 배회 머무름 콜백이 이미 나간 사람을 자리로 도로 끌고 오지 않는다.
+    ///
+    /// **줄이 퇴근보다 우선한다.** `officeAttendance`가 이미 `isQueued`를 시각보다 앞세우므로
+    /// 판정 시점에 줄이었다면 이 함수 자체가 안 불린다 — 하지만 계단식 지연 **중에** 새로
+    /// 줄에 들어가는 경우는 그 판정 뒤에 일어나 여기서 다시 봐야 한다. 문까지 걷기 전, 그리고
+    /// 화면에서 지우기 전 두 지점에서 확인한다 — 뒤쪽 지점을 놓치면 문 앞에서는 줄로
+    /// 넘어갔지만 그 사이 이미 페이드아웃·제거가 걸려, 줄에는 남아 있는데 캐릭터는 사라지는
+    /// (`queueOrder`와 실제 상태가 갈리는) 결과가 된다.
     private func playDeparture(_ entry: DeskAssignment, delay: TimeInterval) {
-        guard let node = characters[entry.agentType] else {
+        // playArrival(460행)의 재진입 방지(`characters[agentType] == nil`)와 같은 목적이다 —
+        // 다만 퇴근은 화면에서 사라지는 시점이 시퀀스 맨 끝(`despawnCharacter`)이라 같은 검사로는
+        // 안 막힌다. `departingAgents`가 그 사이 구간을 대신 막는다.
+        guard let node = characters[entry.agentType], !departingAgents.contains(entry.agentType) else {
             return
         }
+        departingAgents.insert(entry.agentType)
         cancelStroll(entry.agentType)
         // 계단식 지연 동안에도 감독관이 이 사람을 다시 배회로 뽑을 수 있다 — 위 cancelStroll
         // 은 "지금까지의" 배회만 끊는다. 걷는 중으로 미리 표시해 그 창을 닫는다.
@@ -504,8 +532,18 @@ final class OfficeScene: SKScene {
                 guard let self, let node = self.characters[entry.agentType] else {
                     return
                 }
+                guard !self.queueOrder.contains(entry.agentType) else {
+                    // 줄이 이겼다 — 퇴근을 포기한다. 다음에 다시 시도할 수 있어야 하므로
+                    // 재진입 방지 표식을 지운다.
+                    self.departingAgents.remove(entry.agentType)
+                    return
+                }
                 self.walk(node, to: self.plan.entranceTile) { [weak self] in
                     guard let self, let node = self.characters[entry.agentType] else {
+                        return
+                    }
+                    guard !self.queueOrder.contains(entry.agentType) else {
+                        self.departingAgents.remove(entry.agentType)
                         return
                     }
                     node.run(.sequence([
@@ -558,6 +596,7 @@ final class OfficeScene: SKScene {
         lastStates[agentType] = nil
         strollingAgents.remove(agentType)
         lastStrollAt[agentType] = nil
+        departingAgents.remove(agentType)
     }
 
     /// 시각이 바뀌었는지 1분마다 확인한다.
