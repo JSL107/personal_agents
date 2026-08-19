@@ -45,7 +45,9 @@ const createFixture = () => {
     ]),
   };
   const recordTrade = {
-    executePendingOrder: jest.fn().mockResolvedValue({ status: 'FILLED' }),
+    executePendingOrder: jest
+      .fn()
+      .mockResolvedValue({ status: 'FILLED', quantity: '10' }),
   };
   const usecase = new FillPendingOrdersUsecase(
     repository as unknown as PaperTradingPrismaRepository,
@@ -61,7 +63,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T00:29:59.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'BEFORE_OPEN',
       attempted: 0,
       filled: 0,
@@ -78,7 +80,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T00:30:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'TRADING',
       attempted: 1,
       filled: 1,
@@ -111,7 +113,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T01:00:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'TRADING',
       attempted: 1,
       filled: 0,
@@ -138,7 +140,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T01:00:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'TRADING',
       attempted: 1,
       filled: 0,
@@ -205,7 +207,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:30:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'TRADING',
       attempted: 3,
       filled: 1,
@@ -241,7 +243,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'AFTER_CLOSE',
       attempted: 2,
       filled: 0,
@@ -278,7 +280,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'AFTER_CLOSE',
       attempted: 2,
       filled: 1,
@@ -304,7 +306,7 @@ describe('FillPendingOrdersUsecase', () => {
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       window: 'AFTER_CLOSE',
       attempted: 2,
       filled: 0,
@@ -313,5 +315,99 @@ describe('FillPendingOrdersUsecase', () => {
       notYetTraded: 0,
     });
     expect(repository.expireDuePendingOrders).not.toHaveBeenCalled();
+  });
+  it('체결 상세에 종목·체결 수량·체결가를 담는다', async () => {
+    const { usecase, recordTrade } = createFixture();
+    // 현금 한도로 주문 10주가 4주만 체결된 상황 — 주문 수량이 아니라 체결 수량이 남아야 한다.
+    recordTrade.executePendingOrder.mockResolvedValue({
+      status: 'FILLED',
+      quantity: '4',
+    });
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-13T01:00:00.000Z'),
+    });
+
+    expect(result.details).toEqual([
+      {
+        accountName: 'PAPER_LONG_TERM',
+        tickerName: '삼성전자',
+        tickerCode: '005930',
+        side: 'BUY',
+        outcome: 'FILLED',
+        quantity: '4',
+        price: '70000',
+        reason: null,
+      },
+    ]);
+  });
+
+  it('체결되지 않은 주문의 사유를 상세로 남긴다', async () => {
+    const { usecase, repository, marketData, recordTrade } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder(),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValueOnce([
+        {
+          tradeDate: new Date('2026-08-13T00:00:00.000Z'),
+          open: decimal('70000'),
+          close: decimal('71000'),
+          adjClose: decimal('71000'),
+          volume: 1n,
+          currency: 'KRW',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    recordTrade.executePendingOrder.mockResolvedValue({
+      status: 'EXPIRED',
+      statusReason: '현금 부족',
+    });
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-13T01:00:00.000Z'),
+    });
+
+    expect(result.details).toMatchObject([
+      { outcome: 'EXPIRED', reason: '현금 부족', price: null },
+      { outcome: 'NOT_YET_TRADED', reason: null, price: null, quantity: '10' },
+    ]);
+  });
+
+  it('일괄 만료 건수를 종목 단위 상세와 분리해 보고한다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder(),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValueOnce([
+        {
+          tradeDate: new Date('2026-08-13T00:00:00.000Z'),
+          open: decimal('70000'),
+          close: decimal('71000'),
+          adjClose: decimal('71000'),
+          volume: 1n,
+          currency: 'KRW',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    repository.expireDuePendingOrders.mockResolvedValue({
+      attempted: 1,
+      expired: 1,
+    });
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-13T06:31:00.000Z'),
+    });
+
+    expect(result.bulkExpired).toBe(1);
+    expect(result.expired).toBe(1);
+    expect(
+      result.details.filter((detail) => detail.outcome === 'EXPIRED'),
+    ).toEqual([]);
   });
 });
