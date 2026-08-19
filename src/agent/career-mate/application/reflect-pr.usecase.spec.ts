@@ -57,6 +57,7 @@ describe('ReflectPrUsecase', () => {
         changedFilesTotalCount: 1,
         additions: 1,
         deletions: 0,
+        mergedAt: '2026-06-30T12:00:00Z',
       }),
       getPullRequestDiff: jest
         .fn()
@@ -123,6 +124,9 @@ describe('ReflectPrUsecase', () => {
     expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
     expect(outcome.result.portfolioUrl).toBe('https://notion/p');
     expect(outcome.result.accomplishment.evidence[0].pr).toBe(1692);
+    expect(outcome.result.accomplishment.evidence[0].mergedAt).toBe(
+      '2026-06-30T12:00:00Z',
+    );
     expect(outcome.result.narrative).toBe('회고 서술');
   });
 

@@ -30,6 +30,7 @@ import {
   parsePrRetroOutput,
   PR_RETRO_SYNTH_SYSTEM_PROMPT,
 } from '../domain/prompt/pr-retro-synth.prompt';
+import { reconcileAccomplishmentEvidence } from '../domain/reconcile-accomplishment-evidence';
 import { mergeAccomplishment } from './merge-accomplishment';
 import { RenderPortfolioUsecase } from './render-portfolio.usecase';
 
@@ -115,9 +116,16 @@ export class ReflectPrUsecase {
               : PR_RETRO_SYNTH_SYSTEM_PROMPT,
           },
         });
-        const { accomplishment, narrative } = parsePrRetroOutput(
-          completion.text,
-        );
+        const parsed = parsePrRetroOutput(completion.text);
+        const [accomplishment] = reconcileAccomplishmentEvidence({
+          accomplishments: [parsed.accomplishment],
+          pullRequests: items.map(({ detail }) => ({
+            repo: detail.repo,
+            number: detail.number,
+            mergedAt: detail.mergedAt,
+          })),
+        });
+        const { narrative } = parsed;
 
         const latest = await this.repository.findLatestBySlackUser(slackUserId);
         const todayIsoDate = new Date().toISOString().slice(0, 10);

@@ -30,6 +30,7 @@ import {
   CAREER_PROFILE_SYNTH_SYSTEM_PROMPT,
   parseCareerProfileOutput,
 } from '../domain/prompt/career-profile-synth.prompt';
+import { reconcileAccomplishmentEvidence } from '../domain/reconcile-accomplishment-evidence';
 
 const DEFAULT_WINDOW_MONTHS = 12;
 const PR_LIMIT = 100;
@@ -101,8 +102,15 @@ export class BuildCareerProfileUsecase {
           },
         });
         const parsed = parseCareerProfileOutput(completion.text);
-        // 서술 필드 윤문(ChatGPT 전용, best-effort) — 비활성/실패 시 parsed 를 그대로 돌려준다.
-        const data = await humanizeCareerProfile(parsed, this.humanizer);
+        const backfilled = {
+          ...parsed,
+          accomplishments: reconcileAccomplishmentEvidence({
+            accomplishments: parsed.accomplishments,
+            pullRequests: prs,
+          }),
+        };
+        // 서술 필드 윤문(ChatGPT 전용, best-effort) — 비활성/실패 시 backfilled 를 그대로 돌려준다.
+        const data = await humanizeCareerProfile(backfilled, this.humanizer);
         data.meta = {
           githubLogin,
           windowStart: sinceIsoDate,

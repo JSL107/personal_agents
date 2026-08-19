@@ -66,4 +66,28 @@ describe('mergeAccomplishment', () => {
     expect(out.accomplishments[0].bullet).toBe('v2');
     expect(out.meta.prCount).toBe(1);
   });
+
+  // 저장된 프로필에는 보정 전 `pr: "#1692"` 가 남아 있을 수 있다. dedup 키가 정규화되지
+  // 않으면 `o/r##1692` 와 `o/r#1692` 로 갈려 같은 PR 성과가 둘 남는다.
+  it('저장된 항목의 pr 이 문자열이어도 같은 PR 로 보고 교체한다', () => {
+    const stale = acc(1692, 'old');
+    stale.evidence[0].pr = '#1692' as unknown as number;
+    const latest: CareerProfileData = {
+      summary: 'sum',
+      skills: [],
+      accomplishments: [stale],
+      meta: { githubLogin: 'me', windowStart: '2026-01-01', prCount: 1 },
+    };
+
+    const out = mergeAccomplishment({
+      latest,
+      accomplishment: acc(1692, 'v2'),
+      githubLogin: 'me',
+      todayIsoDate: '2026-07-01',
+    });
+
+    expect(out.accomplishments).toHaveLength(1);
+    expect(out.accomplishments[0].bullet).toBe('v2');
+    expect(out.meta.prCount).toBe(1);
+  });
 });

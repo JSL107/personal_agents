@@ -13,7 +13,13 @@ export const getTodayKstDate = (): string =>
 
 // ISO 8601 시각을 KST 캘린더 날짜로 변환한다. fallback 문구는 caller가 결정할 수 있도록
 // 파싱할 수 없는 값에는 null을 반환한다.
-export const formatKstDate = (isoDateTime: string): string | null => {
+export const formatKstDate = (
+  isoDateTime: string | null | undefined,
+): string | null => {
+  // new Date(null)는 epoch가 되어 NaN 검사만으로는 결측 날짜를 막을 수 없다.
+  if (!isoDateTime || isoDateTime.trim().length === 0) {
+    return null;
+  }
   const date = new Date(isoDateTime);
   if (Number.isNaN(date.getTime())) {
     return null;

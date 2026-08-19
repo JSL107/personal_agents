@@ -87,6 +87,50 @@ describe('BuildCareerProfileUsecase', () => {
     expect(d.repository.save.mock.calls[0][0].prCount).toBe(1);
   });
 
+  it('모델이 빠뜨린 mergedAt은 조회한 PR의 실제 시각으로 저장한다', async () => {
+    const d = makeDeps([PR]);
+    d.modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        summary: 's',
+        skills: [],
+        accomplishments: [
+          {
+            title: '성과',
+            bullet: '요약',
+            star: { situation: 's', task: 't', action: 'a', result: 'r' },
+            techTags: [],
+            evidence: [
+              {
+                repo: 'O/R',
+                pr: 1,
+                url: 'https://x/1',
+                mergedAt: null,
+              },
+            ],
+          },
+        ],
+        meta: { githubLogin: 'octo', windowStart: 'ignored', prCount: 1 },
+      }),
+      modelUsed: 'claude-cli',
+      provider: 'CLAUDE',
+    });
+    const usecase = new BuildCareerProfileUsecase(
+      d.githubClient as never,
+      d.modelRouter as never,
+      d.repository as never,
+      d.agentRunService as never,
+      d.config as never,
+      d.humanizer as never,
+    );
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    expect(
+      d.repository.save.mock.calls[0][0].profileJson.accomplishments[0]
+        .evidence[0].mergedAt,
+    ).toBe('2026-06-01');
+  });
+
   it('merged PR 이 없으면 NO_EVIDENCE 예외', async () => {
     const d = makeDeps([]);
     const usecase = new BuildCareerProfileUsecase(

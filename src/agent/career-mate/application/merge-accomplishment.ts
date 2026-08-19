@@ -2,10 +2,13 @@ import {
   CareerProfileData,
   ProfileAccomplishment,
 } from '../domain/career-mate.type';
+import { toPrNumber } from '../domain/reconcile-accomplishment-evidence';
 
 const evidenceKey = (item: ProfileAccomplishment): string => {
   const first = item.evidence[0];
-  return first ? `${first.repo}#${first.pr}` : '';
+  // 보정 전 `pr: "#984"` 가 남은 항목과 보정된 새 항목이 다른 키로 갈리면 dedup 이 빗나가
+  // 같은 PR 성과가 둘 남는다.
+  return first ? `${first.repo}#${toPrNumber(first.pr)}` : '';
 };
 
 // 단일 PR 회고 accomplishment 를 최신 프로필에 편입한다 (순수 함수).
