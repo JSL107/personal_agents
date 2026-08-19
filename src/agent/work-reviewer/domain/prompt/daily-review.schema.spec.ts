@@ -1,39 +1,10 @@
+import {
+  buildMinimalObject,
+  findStrictSchemaViolations,
+} from '../../../../common/util/json-schema-probe.util';
 import { DAILY_REVIEW_OUTPUT_SCHEMA } from './daily-review.schema';
 import { isDailyReviewShape } from './daily-review.shape';
-
-// 스키마에 선언된 property 만으로 최소 객체를 지어 shape 가드에 통과시킨다.
-// 스키마와 파서가 서로 다른 계약을 보게 되면(필드 이름 변경·누락) 여기서 깨진다.
-const buildMinimalObject = (
-  schema: Record<string, unknown>,
-): Record<string, unknown> => {
-  const properties = schema.properties as Record<
-    string,
-    Record<string, unknown>
-  >;
-  const built: Record<string, unknown> = {};
-  for (const [key, definition] of Object.entries(properties)) {
-    built[key] = buildValue(definition);
-  }
-  return built;
-};
-
-const buildValue = (definition: Record<string, unknown>): unknown => {
-  const type = definition.type;
-  // nullable 은 null 도 유효하지만, 여기서는 "채워진 쪽" 을 만들어 하위 필드까지 검증한다.
-  const resolved = Array.isArray(type)
-    ? (type as string[]).find((candidate) => candidate !== 'null')
-    : type;
-  if (resolved === 'object') {
-    return buildMinimalObject(definition);
-  }
-  if (resolved === 'array') {
-    return ['x'];
-  }
-  if (resolved === 'number') {
-    return 0;
-  }
-  return 'x';
-};
+import { WORK_REVIEWER_SYSTEM_PROMPT } from './work-reviewer-system.prompt';
 
 describe('DAILY_REVIEW_OUTPUT_SCHEMA', () => {
   it('스키마대로 만든 객체는 파서의 shape 가드를 통과한다 (스키마↔파서 계약 일치)', () => {
@@ -42,12 +13,21 @@ describe('DAILY_REVIEW_OUTPUT_SCHEMA', () => {
     ).toBe(true);
   });
 
-  it('선언한 property 를 전부 required 로 요구한다 (strict schema 는 선택 필드를 허용하지 않음)', () => {
-    const properties = Object.keys(
+  it('모든 객체가 strict — 중첩까지 required + additionalProperties:false', () => {
+    // 중첩 객체(impact / improvementBeforeAfter)에서 규칙을 빠뜨리면 codex 가 모델 호출 전에
+    // exit 1 로 끊어 이 워커가 통째로 실패한다. 최상위만 보면 그때까지 초록이다.
+    expect(findStrictSchemaViolations(DAILY_REVIEW_OUTPUT_SCHEMA)).toEqual([]);
+  });
+
+  it('시스템 프롬프트의 예시 JSON 이 스키마의 모든 필드를 담고 있다', () => {
+    // additionalProperties:false 는 스키마에 없는 필드를 모델이 낼 수 **없게** 만든다.
+    // 그래서 타입에 필드를 추가하고 스키마를 안 고치면, 예전처럼 "가끔 누락" 이 아니라
+    // 항상 누락된다. 두 소스가 함께 움직이는지 못 박는다.
+    for (const key of Object.keys(
       DAILY_REVIEW_OUTPUT_SCHEMA.properties as Record<string, unknown>,
-    );
-    expect(DAILY_REVIEW_OUTPUT_SCHEMA.required).toEqual(properties);
-    expect(DAILY_REVIEW_OUTPUT_SCHEMA.additionalProperties).toBe(false);
+    )) {
+      expect(WORK_REVIEWER_SYSTEM_PROMPT).toContain(`"${key}"`);
+    }
   });
 
   it('improvementBeforeAfter 는 null 을 허용한다 (도메인상 nullable)', () => {

@@ -6,7 +6,7 @@ import {
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
-import { INTENT_CLASSIFICATION_OUTPUT_SCHEMA } from '../domain/prompt/intent-classification.schema';
+import { buildIntentClassificationOutputSchema } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 import { IntentClassifierUsecase } from './intent-classifier.usecase';
 
@@ -21,11 +21,12 @@ const makeModelRouterMock = (
     }),
   }) as unknown as jest.Mocked<ModelRouterUsecase>;
 
-// few-shot 필터 기준이 되는 등록 dispatcher — 사용자가 실제로 부를 수 있는 worker 만 담는다.
-const dispatchers = [
-  { agentType: AgentType.BE, dispatch: jest.fn() },
-  { agentType: AgentType.PM, dispatch: jest.fn() },
-] as never;
+// few-shot 필터 기준이자 분류 스키마의 후보 목록 — 사용자가 실제로 부를 수 있는 worker 만 담는다.
+const DISPATCHER_AGENT_TYPES = [AgentType.BE, AgentType.PM];
+const dispatchers = DISPATCHER_AGENT_TYPES.map((agentType) => ({
+  agentType,
+  dispatch: jest.fn(),
+})) as never;
 
 describe('IntentClassifierUsecase', () => {
   beforeEach(() => {
@@ -67,7 +68,10 @@ describe('IntentClassifierUsecase', () => {
         systemPrompt: INTENT_CLASSIFIER_SYSTEM_PROMPT,
         // 형태 강제를 프롬프트 지시가 아니라 모델 호출 인자로 넘긴다 — 이 필드가 빠지면
         // 분류기가 다시 "지켜주길 바라는" 상태로 돌아가므로 명시적으로 고정한다.
-        outputSchema: INTENT_CLASSIFICATION_OUTPUT_SCHEMA,
+        // 후보는 등록 dispatcher 에서 파생되므로 여기서도 같은 소스로 기대값을 만든다.
+        outputSchema: buildIntentClassificationOutputSchema(
+          DISPATCHER_AGENT_TYPES,
+        ),
       },
       // PM 은 provider 선택용 차용이라 계약 머리말을 끈다 — 붙으면 분류기가 기대하는
       // 고정 JSON 스키마와 충돌한다.
