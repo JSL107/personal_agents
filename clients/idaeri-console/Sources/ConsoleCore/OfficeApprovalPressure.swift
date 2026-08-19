@@ -140,6 +140,6 @@ public func officeApprovalPressureUpdates(
     }
 
     let queued = Set(approvals.compactMap(\.agentType))
-    nextApplied = nextApplied.filter { queued.contains($0.key) }
+    nextApplied = nextApplied.filter { queued.contains($0.key) && nodesPresent.contains($0.key) }
     return (changes, nextApplied)
 }

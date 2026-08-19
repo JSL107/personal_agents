@@ -328,6 +328,7 @@ final class OfficeScene: SKScene {
             strollingAgents.remove(agentType)
             lastStrollAt[agentType] = nil
             departingAgents.remove(agentType)
+            lastAppliedPressure[agentType] = nil
         }
 
         reconcileQueue(agents: agents, approvals: approvals)
@@ -607,6 +608,7 @@ final class OfficeScene: SKScene {
         strollingAgents.remove(agentType)
         lastStrollAt[agentType] = nil
         departingAgents.remove(agentType)
+        lastAppliedPressure[agentType] = nil
     }
 
     /// 시각이 바뀌었는지 1분마다 확인한다.

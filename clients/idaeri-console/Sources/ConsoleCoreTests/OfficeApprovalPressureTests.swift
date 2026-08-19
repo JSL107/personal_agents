@@ -135,4 +135,22 @@ func runOfficeApprovalPressureTests(_ t: TestRunner) {
     )
     t.expect(noNodeSweep.changes.isEmpty, "화면에 노드가 없는 사람은 건너뛴다")
     t.expect(noNodeSweep.nextApplied.isEmpty, "건너뛴 사람은 기록도 남기지 않는다")
+
+    // 승인은 여전히 대기 중이지만 노드가 사라진 경우 — 오래된 단계 기록은 지워져야 한다.
+    // 노드가 제거된 상태에서 같은 사람이 다시 줄에 서면, 처음부터 1단계를 거쳐야 한다.
+    // 남겨 두면 오래된 이상 높은 단계가 남아 새 노드가 1단계를 건너뛴다.
+    let approvalWithoutNode = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [shortTtlApproval],
+        nodesPresent: [],
+        previouslyApplied: ["CTO": .holdingPapers]
+    )
+    t.expect(
+        approvalWithoutNode.changes.isEmpty,
+        "노드가 없으면 새 변경은 발생하지 않는다(자세를 걸 대상이 없음)"
+    )
+    t.expectEqual(
+        approvalWithoutNode.nextApplied, [:],
+        "노드가 없어졌으면 오래된 단계 기록은 지워진다"
+    )
 }
