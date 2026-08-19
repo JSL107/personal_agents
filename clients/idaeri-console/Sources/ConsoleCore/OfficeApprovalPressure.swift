@@ -109,6 +109,11 @@ public func officeApprovalPressureUpdates(
     var nextApplied = previouslyApplied
     var changes: [OfficeApprovalPressureChange] = []
 
+    // 에이전트당 최고 압력을 구한다. 같은 에이전트가 여러 카드를 들고 있어도
+    // 가장 급한 카드의 신호만 화면에 반영해야 한다(배열 순서에 무관하게).
+    // 예: BE_SANDBOX_APPLY + BE_SANDBOX_PUSH_PR 같은 복수 카드가 모두 BE 로 매핑된다.
+    var maxPressureByAgent: [String: (pressure: OfficeApprovalPressure, parseFailed: Bool)] = [:]
+
     for approval in approvals {
         guard let agentType = approval.agentType, nodesPresent.contains(agentType) else {
             continue
@@ -130,12 +135,28 @@ public func officeApprovalPressureUpdates(
             parseFailed = true
         }
 
-        guard nextApplied[agentType] != pressure else {
+        // 현재까지의 최고 압력과 비교해, 더 높으면 갱신한다.
+        // parse failure 는 `pressure == .alarm` 이므로 자연스럽게 우선순위가 높아진다.
+        // 같은 최고 압력이면 parseFailed 가 이미 true 라면 유지하고, 그 외에는 현재값으로 덮어쓴다.
+        if let existing = maxPressureByAgent[agentType] {
+            if pressure > existing.pressure {
+                maxPressureByAgent[agentType] = (pressure, parseFailed)
+            } else if pressure == existing.pressure && parseFailed && !existing.parseFailed {
+                maxPressureByAgent[agentType] = (pressure, parseFailed)
+            }
+        } else {
+            maxPressureByAgent[agentType] = (pressure, parseFailed)
+        }
+    }
+
+    // 집계 결과와 이전 적용값을 비교해 변경을 추출한다.
+    for (agentType, aggregated) in maxPressureByAgent {
+        guard nextApplied[agentType] != aggregated.pressure else {
             continue
         }
-        nextApplied[agentType] = pressure
+        nextApplied[agentType] = aggregated.pressure
         changes.append(
-            OfficeApprovalPressureChange(agentType: agentType, pressure: pressure, parseFailed: parseFailed)
+            OfficeApprovalPressureChange(agentType: agentType, pressure: aggregated.pressure, parseFailed: aggregated.parseFailed)
         )
     }
 

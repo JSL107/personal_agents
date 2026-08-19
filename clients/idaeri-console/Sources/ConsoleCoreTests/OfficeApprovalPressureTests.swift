@@ -153,4 +153,75 @@ func runOfficeApprovalPressureTests(_ t: TestRunner) {
         approvalWithoutNode.nextApplied, [:],
         "노드가 없어졌으면 오래된 단계 기록은 지워진다"
     )
+
+    // MARK: - 배열 순서 무관성(order independence)
+
+    // 한 에이전트가 여러 카드를 들고 있을 때 — 배열 순서와 무관하게
+    // 가장 높은 압력이 선택되어야 한다.
+    // BE_SANDBOX_APPLY + BE_SANDBOX_PUSH_PR 는 모두 BE 로 매핑되는 실제 사례.
+    let cardLowPressure = ConsoleApproval(
+        id: "be-low", agentType: "BE", title: "Low Pressure Card",
+        createdAt: iso("00:00:00"), expiresAt: iso("01:00:00")
+    )
+    // 15분 경과: TTL 1시간, 25% 소진 → holdingPapers
+
+    let cardHighPressure2 = ConsoleApproval(
+        id: "be-alarm", agentType: "BE", title: "Broken Card",
+        createdAt: "invalid-time", expiresAt: "also-invalid"
+    )
+
+    // 시나리오: BE 가 두 카드를 들고 있다.
+    // - cardLowPressure: 25% 소진 → holdingPapers
+    // - cardHighPressure2: 파싱 실패 → alarm (더 높음)
+    // 기대: alarm 을 선택
+    let multiCardSweep = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [cardLowPressure, cardHighPressure2],
+        nodesPresent: ["BE"],
+        previouslyApplied: [:]
+    )
+    t.expectEqual(
+        multiCardSweep.changes.first(where: { $0.agentType == "BE" })?.pressure,
+        .alarm,
+        "한 에이전트의 여러 카드 중 최고 압력 카드가 선택된다"
+    )
+    t.expectEqual(
+        multiCardSweep.changes.first(where: { $0.agentType == "BE" })?.parseFailed,
+        true,
+        "선택된 카드의 parseFailed 플래그가 함께 전달된다"
+    )
+
+    // 역순 배열 — 같은 카드, 다른 순서
+    let multiCardSweepReversed = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [cardHighPressure2, cardLowPressure],  // 순서 반대
+        nodesPresent: ["BE"],
+        previouslyApplied: [:]
+    )
+    t.expectEqual(
+        multiCardSweepReversed.changes.first(where: { $0.agentType == "BE" })?.pressure,
+        .alarm,
+        "배열 순서를 반대로 해도 같은 최고 압력이 선택된다 (order-independence)"
+    )
+    t.expectEqual(
+        multiCardSweepReversed.changes.first(where: { $0.agentType == "BE" })?.parseFailed,
+        true,
+        "역순 배열에서도 parseFailed 플래그는 일치한다"
+    )
+
+    // 파싱 실패 카드가 낮은 압력 카드 옆에 있을 때
+    let mixedValidInvalid = officeApprovalPressureUpdates(
+        now: now15MinLater,
+        approvals: [
+            cardLowPressure,        // valid, 25% 소진 → holdingPapers
+            cardHighPressure2       // invalid → alarm
+        ],
+        nodesPresent: ["BE"],
+        previouslyApplied: [:]
+    )
+    t.expectEqual(
+        mixedValidInvalid.changes.first(where: { $0.agentType == "BE" })?.pressure,
+        .alarm,
+        "유효한 카드와 파싱 실패 카드가 섞여 있을 때, alarm(가장 높음)이 선택된다"
+    )
 }
