@@ -59,6 +59,10 @@ import {
   BLOG_EDIT_SYSTEM_PROMPT,
   buildBlogEditPrompt,
 } from '../domain/prompt/blog-edit.prompt';
+import {
+  BLOG_ANONYMIZE_OUTPUT_SCHEMA,
+  BLOG_EDIT_OUTPUT_SCHEMA,
+} from '../domain/prompt/blog-publish.schema';
 
 // autopilot 의 T1_PREVIEW 와 같은 24시간. 1시간은 이미 실패로 판명된 값이다 — 저녁 블로그 카드가
 // 짧은 TTL 때문에 반복적으로 EXPIRED 로 유실돼 autopilot.orchestrator.ts:24 에서 24시간으로 올렸다.
@@ -226,6 +230,8 @@ export class PublishNotionDraftUsecase {
       request: {
         systemPrompt: BLOG_ANONYMIZE_SYSTEM_PROMPT,
         prompt: this.buildAnonymizePrompt(target, markdown),
+        // 형태를 샘플링 단계에서 고정한다 — 코드펜스로 감싸거나 앞뒤에 설명을 붙일 수 없다.
+        outputSchema: BLOG_ANONYMIZE_OUTPUT_SCHEMA,
       },
     });
     const anonymized = this.withMaskedCause(
@@ -491,6 +497,7 @@ export class PublishNotionDraftUsecase {
       agentType: AgentType.BLOG_PUBLISH,
       request: {
         systemPrompt: BLOG_EDIT_SYSTEM_PROMPT,
+        outputSchema: BLOG_EDIT_OUTPUT_SCHEMA,
         prompt: buildBlogEditPrompt({
           title: draft.title,
           category: draft.category,
