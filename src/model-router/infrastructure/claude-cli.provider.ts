@@ -175,6 +175,15 @@ export class ClaudeCliProvider implements ModelProviderPort {
   constructor(private readonly configService: ConfigService) {}
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    // claude CLI 에는 codex 의 `--output-schema` 에 해당하는 인자가 없다. 호출자가 스키마를
+    // 걸었는데 여기로 라우팅되면 형태 강제 없이 프롬프트 지시만 남으므로, 그 사실을 소리내어
+    // 남긴다 — 조용히 무시하면 "스키마를 걸었으니 파싱은 안전하다" 는 잘못된 전제가 선다.
+    // (현재 AGENT_TO_PROVIDER 는 전 에이전트가 CHATGPT 라 실제로 도달하지 않는 경로다.)
+    if (request.outputSchema !== undefined) {
+      this.logger.warn(
+        'claude CLI 는 출력 스키마 강제를 지원하지 않습니다 — 프롬프트 지시로만 형식이 유지됩니다.',
+      );
+    }
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-claude-'));
     // keychain 경로 (A) 보존: throwaway HOME 으로 바꾸면 keychain access context 가 깨져
     // 침묵 exit=1. real HOME 사용 — `~/.ssh` 등은 fs 권한 + cwd 격리로 보호.

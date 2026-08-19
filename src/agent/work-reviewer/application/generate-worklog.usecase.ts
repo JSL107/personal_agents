@@ -10,6 +10,7 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { AppendWorklogUsecase } from '../../../notion/application/append-worklog.usecase';
 import { parseDailyReview } from '../domain/prompt/daily-review.parser';
+import { DAILY_REVIEW_OUTPUT_SCHEMA } from '../domain/prompt/daily-review.schema';
 import { WORK_REVIEWER_SYSTEM_PROMPT } from '../domain/prompt/work-reviewer-system.prompt';
 import { WorkReviewerException } from '../domain/work-reviewer.exception';
 import {
@@ -79,6 +80,7 @@ export class GenerateWorklogUsecase {
           request: {
             prompt: trimmed,
             systemPrompt: WORK_REVIEWER_SYSTEM_PROMPT,
+            outputSchema: DAILY_REVIEW_OUTPUT_SCHEMA,
           },
         });
         const review = parseDailyReview(completion.text);
