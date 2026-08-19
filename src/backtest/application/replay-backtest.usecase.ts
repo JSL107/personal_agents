@@ -19,6 +19,7 @@ import {
 import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import {
   ScreenCandidate,
+  SCREENER_RULE_VERSION,
   screenStocks,
   ScreenStrategy,
 } from '../../screener/domain/screener-rule';
@@ -421,6 +422,7 @@ export class ReplayBacktestUsecase {
         strategy: context.command.strategy,
         status: 'PENDING',
         quantity: new Prisma.Decimal(intent.quantity),
+        ruleVersion: SCREENER_RULE_VERSION,
       });
       context.state.pendingOrders.push({
         orderId: context.state.nextOrderId,

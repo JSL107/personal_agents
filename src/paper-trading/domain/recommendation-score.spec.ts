@@ -20,6 +20,7 @@ const order = (
   strategy: 'LONG_TERM',
   status: 'FILLED',
   quantity: decimal('10'),
+  ruleVersion: 2,
   ...overrides,
 });
 

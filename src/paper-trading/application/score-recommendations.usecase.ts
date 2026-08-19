@@ -15,7 +15,10 @@ import {
   calculateBenchmarkPerformance,
   calculateShadowPerformance,
 } from '../domain/shadow-performance';
-import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
+import {
+  PaperTradingPrismaRepository,
+  SaveRecommendationScoreInput,
+} from '../infrastructure/paper-trading.prisma.repository';
 
 export interface ScoreRecommendationsCommand {
   asOf?: Date;
@@ -41,6 +44,8 @@ export interface AccountRecommendationScore {
   accountId: number;
   accountName: string;
   strategy: Exclude<TradeStrategy, 'MANUAL'>;
+  // 이 성적이 어느 규칙 버전의 추천에서 나왔는지. 둘 이상이면 규칙이 바뀐 구간을 걸친 집계다.
+  ruleVersions: number[];
   score: StrategyRecommendationScore;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
@@ -178,6 +183,13 @@ export class ScoreRecommendationsUsecase {
         accountId: account.id,
         accountName: account.name,
         strategy,
+        ruleVersions: [
+          ...new Set(
+            accountOrders.flatMap((order) =>
+              order.ruleVersion === null ? [] : [order.ruleVersion],
+            ),
+          ),
+        ].sort((left, right) => left - right),
         score,
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
@@ -213,6 +225,12 @@ export class ScoreRecommendationsUsecase {
       },
     );
 
+    await this.repository.saveRecommendationScores(
+      accounts.map((account) =>
+        toSaveInput(account, asOf, command.from ?? null),
+      ),
+    );
+
     return {
       asOf,
       from: command.from ?? null,
@@ -222,3 +240,33 @@ export class ScoreRecommendationsUsecase {
     };
   }
 }
+
+const toSaveInput = (
+  account: AccountRecommendationScore,
+  asOf: Date,
+  fromDate: Date | null,
+): SaveRecommendationScoreInput => ({
+  accountId: account.accountId,
+  strategy: account.strategy,
+  asOf,
+  fromDate,
+  ruleVersions: account.ruleVersions,
+  recommendationCount: account.score.recommendationCount,
+  closedCount: account.score.closedCount,
+  openCount: account.score.openCount,
+  expiredCount: account.score.expiredCount,
+  hitCount: account.score.hitCount,
+  hitRate: account.score.hitRate,
+  meanReturnRate: account.score.meanReturnRate,
+  medianReturnRate: account.score.medianReturnRate,
+  maximumLoss: account.score.maximumLoss,
+  averageHoldingDays: account.score.averageHoldingDays,
+  meanExcessReturnRate: account.meanExcessReturnRate,
+  meanShadowReturnRate: account.meanShadowReturnRate,
+  snapshotCount: account.portfolio.snapshotCount,
+  accountReturnRate: account.portfolio.accountReturnRate,
+  maximumDrawdown: account.portfolio.maximumDrawdown,
+  turnoverRate: account.portfolio.turnoverRate,
+  cumulativeCost: account.portfolio.cumulativeCost,
+  exclusions: { ...account.exclusions },
+});

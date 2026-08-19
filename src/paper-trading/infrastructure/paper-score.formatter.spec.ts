@@ -9,6 +9,7 @@ const RESULT: ScoreRecommendationsResult = {
       accountId: 7,
       accountName: 'LONG_TERM',
       strategy: 'LONG_TERM',
+      ruleVersions: [2],
       score: {
         strategy: 'LONG_TERM',
         recommendationCount: 6,
@@ -65,6 +66,21 @@ describe('formatPaperScoreReport', () => {
     );
     expect(text).toContain('계좌 수익률 +15% · MDD -4% · 회전율 1.25배');
     expect(text).toContain('누적 비용 1,234.5원 · 실제 스냅샷 8건');
+    expect(text).toContain('*LONG_TERM* · 규칙 v2');
+  });
+
+  it('규칙 버전이 섞였거나 기록되지 않은 집계를 그대로 드러낸다', () => {
+    const mixed = formatPaperScoreReport({
+      ...RESULT,
+      accounts: [{ ...RESULT.accounts[0], ruleVersions: [2, 3] }],
+    });
+    const unrecorded = formatPaperScoreReport({
+      ...RESULT,
+      accounts: [{ ...RESULT.accounts[0], ruleVersions: [] }],
+    });
+
+    expect(mixed).toContain('*LONG_TERM* · 규칙 v2·v3 혼합');
+    expect(unrecorded).toContain('*LONG_TERM* · 규칙 미기록');
   });
 
   it('모든 제외 사유·분류·소표본 경고와 필수 해석 한계를 출력한다', () => {

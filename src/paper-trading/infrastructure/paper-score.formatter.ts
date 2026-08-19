@@ -28,6 +28,18 @@ const formatUnsignedRate = (value: string | null): string =>
 const formatDays = (value: string | null): string =>
   value === null ? '-' : `${new Prisma.Decimal(value).toDecimalPlaces(2)}일`;
 
+// 규칙이 바뀐 구간을 걸친 집계는 그 사실을 읽는 사람이 알아야 한다. 버전 하나로 뭉뚱그리면
+// "규칙을 바꿔서 나아졌다" 를 옛 규칙의 성적으로 주장하게 된다.
+const formatRuleVersions = (ruleVersions: number[]): string => {
+  if (ruleVersions.length === 0) {
+    return '규칙 미기록';
+  }
+  if (ruleVersions.length === 1) {
+    return `규칙 v${ruleVersions[0]}`;
+  }
+  return `규칙 v${ruleVersions.join('·v')} 혼합`;
+};
+
 export const formatPaperScoreReport = (
   result: ScoreRecommendationsResult,
 ): string => {
@@ -39,7 +51,7 @@ export const formatPaperScoreReport = (
     const score = account.score;
     lines.push(
       '',
-      `*${account.strategy}*`,
+      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions)}`,
       `추천 ${score.recommendationCount}건 · 체결 ${score.closedCount + score.openCount}건(청산 ${score.closedCount}·보유 ${score.openCount}) · 미체결 ${score.expiredCount}건`,
       `적중 ${score.hitCount}/${score.closedCount} (${formatUnsignedRate(score.hitRate)})`,
       `평균 ${formatRate(score.meanReturnRate)} · 중앙값 ${formatRate(score.medianReturnRate)} · 최대 손실 ${formatRate(score.maximumLoss)}`,

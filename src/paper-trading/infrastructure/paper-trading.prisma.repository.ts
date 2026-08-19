@@ -147,6 +147,7 @@ export interface PendingPaperOrderInput {
   targetTradeDate: Date;
   status: 'PENDING';
   indicatorSnapshot: unknown | null;
+  ruleVersion: number | null;
   agentRunId: number;
 }
 
@@ -253,6 +254,32 @@ export interface LoadRecommendationScoreDataInput {
   from?: Date;
 }
 
+export interface SaveRecommendationScoreInput {
+  accountId: number;
+  strategy: string;
+  asOf: Date;
+  fromDate: Date | null;
+  ruleVersions: number[];
+  recommendationCount: number;
+  closedCount: number;
+  openCount: number;
+  expiredCount: number;
+  hitCount: number;
+  hitRate: string | null;
+  meanReturnRate: string | null;
+  medianReturnRate: string | null;
+  maximumLoss: string | null;
+  averageHoldingDays: string | null;
+  meanExcessReturnRate: string | null;
+  meanShadowReturnRate: string | null;
+  snapshotCount: number;
+  accountReturnRate: string | null;
+  maximumDrawdown: string | null;
+  turnoverRate: string | null;
+  cumulativeCost: string;
+  exclusions: Record<string, number>;
+}
+
 export interface RecommendationScoreData {
   accounts: RecommendationScoreAccountRecord[];
   orders: RecommendationOrderInput[];
@@ -301,6 +328,7 @@ export class PaperTradingPrismaRepository {
         strategy: true,
         status: true,
         quantity: true,
+        ruleVersion: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -447,6 +475,50 @@ export class PaperTradingPrismaRepository {
       benchmarkCloses,
       snapshots,
     };
+  }
+
+  // 같은 기준일을 다시 채점하면 덮어쓴다. 채점은 그날의 원장을 다시 읽어 계산하는
+  // 순수 집계라 재실행 결과가 정본이고, 행이 쌓이면 어느 것이 정본인지 알 수 없게 된다.
+  async saveRecommendationScores(
+    inputs: SaveRecommendationScoreInput[],
+  ): Promise<void> {
+    if (inputs.length === 0) {
+      return;
+    }
+    await this.prisma.$transaction(
+      inputs.map((input) => {
+        const values = {
+          strategy: input.strategy,
+          fromDate: input.fromDate,
+          ruleVersions: input.ruleVersions,
+          recommendationCount: input.recommendationCount,
+          closedCount: input.closedCount,
+          openCount: input.openCount,
+          expiredCount: input.expiredCount,
+          hitCount: input.hitCount,
+          hitRate: input.hitRate,
+          meanReturnRate: input.meanReturnRate,
+          medianReturnRate: input.medianReturnRate,
+          maximumLoss: input.maximumLoss,
+          averageHoldingDays: input.averageHoldingDays,
+          meanExcessReturnRate: input.meanExcessReturnRate,
+          meanShadowReturnRate: input.meanShadowReturnRate,
+          snapshotCount: input.snapshotCount,
+          accountReturnRate: input.accountReturnRate,
+          maximumDrawdown: input.maximumDrawdown,
+          turnoverRate: input.turnoverRate,
+          cumulativeCost: input.cumulativeCost,
+          exclusions: input.exclusions,
+        };
+        return this.prisma.recommendationScore.upsert({
+          where: {
+            accountId_asOf: { accountId: input.accountId, asOf: input.asOf },
+          },
+          create: { accountId: input.accountId, asOf: input.asOf, ...values },
+          update: values,
+        });
+      }),
+    );
   }
 
   async findAccountByName(name: string): Promise<PaperAccountRecord | null> {
@@ -1206,6 +1278,7 @@ export class PaperTradingPrismaRepository {
             order.indicatorSnapshot === null
               ? Prisma.JsonNull
               : (order.indicatorSnapshot as Prisma.InputJsonValue),
+          ruleVersion: order.ruleVersion,
           agentRunId: order.agentRunId,
         })),
       });
