@@ -5,13 +5,26 @@ describe('parsePaperRecommendation', () => {
   it('매수와 매도 JSON을 파싱한다', () => {
     const result = parsePaperRecommendation(`{
       "sells": [{ "code": "005930", "reason": "추세 이탈" }],
-      "buys": [{ "code": "000660", "weightPercent": 20, "reason": "돌파" }]
+      "buys": [{ "code": "000660", "reason": "돌파" }]
     }`);
 
     expect(result).toEqual({
       sells: [{ code: '005930', reason: '추세 이탈' }],
-      buys: [{ code: '000660', weightPercent: 20, reason: '돌파' }],
+      buys: [{ code: '000660', reason: '돌파' }],
     });
+  });
+
+  it('비중 없는 매수를 통과시키고 모델이 비중을 보내도 오류로 보지 않는다', () => {
+    expect(() =>
+      parsePaperRecommendation(
+        JSON.stringify({
+          sells: [],
+          buys: [
+            { code: '000660', weightPercent: '터무니없는 값', reason: '돌파' },
+          ],
+        }),
+      ),
+    ).not.toThrow();
   });
 
   it('잘못된 JSON이면 PAPER_RECOMMEND_INVALID_MODEL_OUTPUT을 던진다', () => {
@@ -28,7 +41,7 @@ describe('parsePaperRecommendation', () => {
       parsePaperRecommendation(
         JSON.stringify({
           sells: [{ code: '005930' }],
-          buys: [{ code: '000660', weightPercent: '20', reason: '돌파' }],
+          buys: [{ code: '000660', reason: 42 }],
         }),
       ),
     ).toThrow(

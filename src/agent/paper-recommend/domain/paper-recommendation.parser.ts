@@ -65,11 +65,10 @@ const isSell = (value: unknown): value is PaperRecommendationSell =>
   typeof value.code === 'string' &&
   typeof value.reason === 'string';
 
+// 모델이 weightPercent 를 덧붙여 보내도 무시한다 — 비중은 코드가 정하므로 읽지 않는다.
 const isBuy = (value: unknown): value is PaperRecommendationBuy =>
   isRecord(value) &&
   typeof value.code === 'string' &&
-  typeof value.weightPercent === 'number' &&
-  Number.isFinite(value.weightPercent) &&
   typeof value.reason === 'string';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

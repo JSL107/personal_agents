@@ -1,4 +1,7 @@
-import { buildPaperRecommendationPrompt } from './paper-recommend-system.prompt';
+import {
+  buildPaperRecommendationPrompt,
+  PAPER_RECOMMEND_SYSTEM_PROMPT,
+} from './paper-recommend-system.prompt';
 
 const indicators = {
   close: 10_000,
@@ -52,5 +55,17 @@ describe('buildPaperRecommendationPrompt', () => {
     expect(prompt).toContain('계좌 평가액: 10000000');
     expect(prompt).toContain(JSON.stringify(indicators));
     expect(prompt).toContain('지표 없음');
+  });
+
+  // 비중은 코드가 정한다. 프롬프트에 비중 요구가 남아 있으면 모델이 다시 숫자를 뱉기 시작하고
+  // 그 순간 같은 후보에도 회차마다 다른 수량이 나온다.
+  it('시스템 프롬프트가 비중 출력을 요구하지 않는다', () => {
+    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).not.toContain('weightPercent');
+    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain(
+      '비중이나 수량은 출력하지 않는다',
+    );
+    // 상한을 프롬프트가 따로 적어 두면 제약 코드와 갈린다 — 상수를 읽어 쓰는지 확인한다.
+    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain('최대 3종');
+    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain('종목당 20%');
   });
 });
