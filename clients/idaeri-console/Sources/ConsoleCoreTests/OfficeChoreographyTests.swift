@@ -36,7 +36,7 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "run.finished → recolor + bubble")
 
     // approval.opened → 이동 + 승인 대기색 + bubble. 색을 빼면 이벤트 순서에 따라 흰 링이 남는다.
-    let approval = ConsoleApproval(id: "a1", agentType: "CTO", title: "PR", createdAt: "t")
+    let approval = ConsoleApproval(id: "a1", agentType: "CTO", title: "PR", createdAt: "t", expiresAt: "t+1h")
     t.expectEqual(
         visualIntents(for: .approvalOpened(approval), context: ctx),
         [
@@ -47,13 +47,13 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "approval.opened → summon + 승인 대기색 + bubble")
 
     // 운영의 세션 유휴 승인은 agentType 이 nil 이다. 관계없는 사람을 줄 세우면 안 된다.
-    let nilAgentApproval = ConsoleApproval(id: "a2", agentType: nil, title: "세션 유휴", createdAt: "t")
+    let nilAgentApproval = ConsoleApproval(id: "a2", agentType: nil, title: "세션 유휴", createdAt: "t", expiresAt: "t+1h")
     t.expectEqual(
         visualIntents(for: .approvalOpened(nilAgentApproval), context: ctx),
         [],
         "approval.opened agentType nil → 빈 결과")
 
-    let unknownAgentApproval = ConsoleApproval(id: "a3", agentType: "UNKNOWN", title: "PR", createdAt: "t")
+    let unknownAgentApproval = ConsoleApproval(id: "a3", agentType: "UNKNOWN", title: "PR", createdAt: "t", expiresAt: "t+1h")
     t.expectEqual(
         visualIntents(for: .approvalOpened(unknownAgentApproval), context: ctx),
         [],

@@ -81,6 +81,7 @@ describe('CancelPreviewUsecase', () => {
         agentType: 'PM',
         title: 'preview',
         createdAt: '2026-04-27T11:00:00.000Z',
+        expiresAt: '2026-04-27T13:00:00.000Z',
       },
     });
   });

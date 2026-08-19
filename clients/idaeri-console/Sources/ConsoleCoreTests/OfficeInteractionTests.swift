@@ -140,8 +140,8 @@ func runOfficeInteractionTests(_ t: TestRunner) {
 
     // approvalFor: 해당 agentType 의 승인 건
     let approvals = [
-        ConsoleApproval(id: "a1", agentType: "CTO", title: "PR1", createdAt: "t1"),
-        ConsoleApproval(id: "a2", agentType: "PM", title: "PR2", createdAt: "t2"),
+        ConsoleApproval(id: "a1", agentType: "CTO", title: "PR1", createdAt: "t1", expiresAt: "t1+1h"),
+        ConsoleApproval(id: "a2", agentType: "PM", title: "PR2", createdAt: "t2", expiresAt: "t2+1h"),
     ]
     t.expectEqual(approvalFor(agentType: "PM", in: approvals)?.id, "a2", "PM 승인 건 매칭")
     t.expectNil(approvalFor(agentType: "BE", in: approvals), "승인 없는 에이전트 → nil")
@@ -174,9 +174,9 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     let waitingPM = makeInteractionAgent("PM", .waiting)
     let awaitingCTO = makeInteractionAgent("CTO", .awaitingApproval)
     let waitingBE = makeInteractionAgent("BE", .waiting)
-    let ctoApproval = ConsoleApproval(id: "queue-a1", agentType: "CTO", title: "PR", createdAt: "t")
-    let pmApproval = ConsoleApproval(id: "queue-a2", agentType: "PM", title: "PR", createdAt: "t")
-    let beApproval = ConsoleApproval(id: "queue-a4", agentType: "BE", title: "PR", createdAt: "t")
+    let ctoApproval = ConsoleApproval(id: "queue-a1", agentType: "CTO", title: "PR", createdAt: "t", expiresAt: "t+1h")
+    let pmApproval = ConsoleApproval(id: "queue-a2", agentType: "PM", title: "PR", createdAt: "t", expiresAt: "t+1h")
+    let beApproval = ConsoleApproval(id: "queue-a4", agentType: "BE", title: "PR", createdAt: "t", expiresAt: "t+1h")
 
     t.expectEqual(
         reconciledQueueOrder(current: ["CTO"], agents: [awaitingCTO], approvals: []),
@@ -221,7 +221,8 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         id: "queue-a3",
         agentType: nil,
         title: "세션 유휴",
-        createdAt: "t"
+        createdAt: "t",
+        expiresAt: "t+1h"
     )
     t.expectEqual(
         reconciledQueueOrder(
