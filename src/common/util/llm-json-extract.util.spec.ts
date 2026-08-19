@@ -53,6 +53,35 @@ describe('extractJsonObjectText — LLM 응답 robust JSON 추출', () => {
   it('빈 문자열은 빈 문자열 반환 (호출자가 SyntaxError 받게)', () => {
     expect(extractJsonObjectText('')).toBe('');
   });
+
+  // 실제 실패 케이스 (BLOG_PUBLISH run#864): 모델이 지시대로 fence 없이 JSON 만 냈지만
+  // string 값(블로그 본문·diff)에 마크다운 코드펜스가 들어 있다. 패턴 2 정규식은 JSON string
+  // 경계를 모르므로 그 안쪽 fence 를 응답 fence 로 오인한다.
+  it('JSON string 값 안의 코드펜스를 응답 fence 로 오인하지 않는다', () => {
+    const raw = JSON.stringify({
+      slug: 'legacy-to-node',
+      body: '## 문제\n\n```php\n$row = query("SELECT 1");\n```\n\n## 교훈\n원장을 먼저.',
+    });
+    expect(extractJsonObjectText(raw)).toBe(raw);
+    expect(JSON.parse(extractJsonObjectText(raw))).toHaveProperty(
+      'slug',
+      'legacy-to-node',
+    );
+  });
+
+  it('바깥 fence + 안쪽 코드펜스 + 뒤 설명 텍스트에서도 JSON 전체를 추출한다', () => {
+    const json = JSON.stringify({
+      diff: '--- a/x.ts\n+++ b/x.ts\n```',
+      reasoning: 'fence 포함',
+    });
+    const raw = `\`\`\`json\n${json}\n\`\`\`\n위와 같이 정리했습니다.`;
+    expect(extractJsonObjectText(raw)).toBe(json);
+  });
+
+  it('어떤 후보도 JSON 이 아니면 기존 동작대로 첫 후보를 반환한다', () => {
+    const raw = '```json\n{"foo": 1,\n```';
+    expect(extractJsonObjectText(raw)).toBe('{"foo": 1,');
+  });
 });
 
 describe('buildJsonParseCauseMessage — debug log 친화 cause', () => {

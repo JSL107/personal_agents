@@ -47,6 +47,10 @@ export interface PublishNotionDraftInput {
 
 export type BlogPublishCandidate =
   | { status: 'empty'; message: string }
+  // 이번 저녁은 발행하지 않는다. cause 로 두 경우를 구분한다 —
+  // 'hold': 편집 단계가 발행 부적합으로 판정해 Notion 초안을 보류로 옮겼다(사용자에게 알린다).
+  // 'card-open': 아직 응답하지 않은 발행 카드가 열려 있다(이미 카드가 보이므로 조용히 넘긴다).
+  | { status: 'skipped'; cause: 'hold' | 'card-open'; message: string }
   | {
       status: 'blocked';
       message: string;
@@ -64,6 +68,7 @@ export type BlogPublishCandidate =
 
 export type PublishNotionDraftResult =
   | { status: 'empty'; message: string }
+  | { status: 'skipped'; cause: 'hold' | 'card-open'; message: string }
   | {
       status: 'blocked';
       message: string;
