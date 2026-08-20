@@ -757,9 +757,34 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             let labelBottom = officeZoneLabelBottomTiles(
                 zone: zone, topSeatY: topSeatY, tileSize: tileSize
             )
+            let labelTop = labelBottom + officeZoneLabelBoxTiles(tileSize: tileSize)
+            // **문패는 자기 방을 벗어나지 않는다.**
+            //
+            // 아래 단언(말풍선 위로 비켜서기)만 두는 동안 문패는 방 밖으로 나가면서도 통과했다.
+            // 첫 좌석 위로 이름표·말풍선이 두 층 쌓이면 계산값이 방 천장을 넘는데, 그 결과가
+            // 화면에서는 **위층 방 안에 걸린 문패**였다 — 여섯 방 전부가 한 칸씩 밀려 리뷰 방에
+            // `성장`, 개발 방에 `경영` 이 붙고 맨 아래 두 방은 문패를 잃었다. 값끼리만 비교하면
+            // "말풍선을 안 덮었다" 는 만족하므로, 방 사각형이라는 화면의 사실을 직접 잰다.
             t.expect(
-                labelBottom >= bubbleTop + officeZoneLabelGapTiles - 0.0001,
-                "타일 \(tileSize) · \(zone.department.label) 문패 아래끝(\(labelBottom))이 말풍선 위끝(\(bubbleTop)) 위"
+                labelBottom >= Double(zone.origin.y)
+                    && labelTop <= Double(zone.origin.y + zone.height),
+                "타일 \(tileSize) · \(zone.department.label) 문패(\(labelBottom)~\(labelTop))가"
+                    + " 방 안(\(zone.origin.y)~\(zone.origin.y + zone.height))"
+            )
+            // 사람 라벨과 세로로 겹치지 않는다 — 방 안에 올릴 자리가 있으면 말풍선 위로,
+            // 없으면 좌석보다 아래로 내려간다(자리는 구역 위쪽부터 쌓이므로 아래가 빈다).
+            let seatYs = plan.desks.map(\.seat)
+                .filter { officeZoneContains(zone, $0) }
+                .map(\.y)
+            let bottomSeatY = seatYs.min() ?? topSeatY
+            let clearsAbove = labelBottom >= bubbleTop + officeZoneLabelGapTiles - 0.0001
+            let clearsBelow =
+                labelTop <= Double(bottomSeatY) - officeSeatedSpriteDrop
+                - officeZoneLabelGapTiles + 0.0001
+            t.expect(
+                clearsAbove || clearsBelow,
+                "타일 \(tileSize) · \(zone.department.label) 문패(\(labelBottom)~\(labelTop))가"
+                    + " 말풍선 위끝(\(bubbleTop))·아래 좌석(\(bottomSeatY))과 겹치지 않음"
             )
             // 간격을 **픽셀로도** 잰다.
             //
@@ -767,7 +792,10 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
             // 동안 최소 창에서 문패 판과 이름표 판이 맞닿아, 여섯 부서 전부에서 구역 가운데
             // 좌석(`커리어`·`문서 개선`·`성과 분석`·`스키마`·`PO 평가`·`CTO`)의 이름이 검은
             // 뭉치에 묻혔다 — 화면에서 떨어져 보이는지는 칸이 아니라 픽셀이 정한다.
-            let gapPixels = (labelBottom - bubbleTop) * tileSize
+            let gapPixels =
+                clearsAbove
+                ? (labelBottom - bubbleTop) * tileSize
+                : (Double(bottomSeatY) - officeSeatedSpriteDrop - labelTop) * tileSize
             t.expect(
                 gapPixels >= officeLabelSeparationMinPixels,
                 "타일 \(tileSize) · \(zone.department.label) 판 사이 \(Int(gapPixels))px"
@@ -805,21 +833,13 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         }
     }
 
-    // 문패 높이가 실제로 창 크기를 따라 움직이는가. 위 단언만으로는 계산식이 다시 고정
-    // 배수로 굳어도(그리고 큰 창에서만 맞아도) 통과할 수 있다. 작은 창에서는 이름표가
-    // 커진 만큼 문패가 구역 경계 줄보다 확실히 더 올라가야 한다.
-    for zone in plan.zones {
-        guard let topSeatY = officeTopSeatY(zone: zone, desks: plan.desks) else {
-            continue
-        }
-        let boundary = Double(zone.origin.y + zone.height - 1)
-        let small = officeZoneLabelBottomTiles(zone: zone, topSeatY: topSeatY, tileSize: 20.6)
-        let large = officeZoneLabelBottomTiles(zone: zone, topSeatY: topSeatY, tileSize: 90.0)
-        t.expect(
-            small > boundary + 0.3,
-            "\(zone.department.label) 작은 창에서 문패가 경계 줄보다 올라감(\(small) vs \(boundary))"
+    // 좌석 없는 구역은 경계 줄에 그대로 얹는다(비켜설 이유가 없다).
+    if let zone = plan.zones.first {
+        t.expectEqual(
+            officeZoneLabelBottomTiles(zone: zone, topSeatY: nil, tileSize: 32.0),
+            Double(zone.origin.y + zone.height - 1) + officeZoneLabelGapTiles,
+            "좌석 없는 구역 문패는 경계 줄"
         )
-        t.expect(small > large, "\(zone.department.label) 작은 창 문패가 큰 창보다 더 높이 뜬다")
     }
 
     // 부서마다 자리 모양이 실제로 다르다.
