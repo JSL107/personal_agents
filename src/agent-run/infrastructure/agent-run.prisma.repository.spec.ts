@@ -538,3 +538,34 @@ describe('AgentRunPrismaRepository.countUnsuccessfulSweepReviews', () => {
     jest.useRealTimers();
   });
 });
+
+describe('AgentRunPrismaRepository.findAllRunsForLedger', () => {
+  it('원장 전량에서 집계용 4필드만 조회한다', async () => {
+    const rows = [
+      {
+        agentType: 'PM',
+        triggerType: 'MORNING_BRIEFING_CRON',
+        status: 'SUCCEEDED',
+        startedAt: new Date('2026-08-20T00:00:00.000Z'),
+      },
+    ];
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findAllRunsForLedger();
+
+    expect(result).toEqual(rows);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany).toHaveBeenCalledWith({
+      select: {
+        agentType: true,
+        triggerType: true,
+        status: true,
+        startedAt: true,
+      },
+    });
+  });
+});

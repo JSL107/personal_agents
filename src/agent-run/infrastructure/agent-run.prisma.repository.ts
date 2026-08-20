@@ -42,6 +42,7 @@ import {
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
   LatestSweepReview,
+  LedgerRunRow,
   PmContextStats,
   QuotaStatRow,
   QuotaStatsQuery,
@@ -55,6 +56,18 @@ import {
 @Injectable()
 export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findAllRunsForLedger(): Promise<LedgerRunRow[]> {
+    // ponytail: 전량 스캔. 원장이 수십만 행이 되면 groupBy + 일자 집계 분리로 쪼갠다.
+    return await this.prisma.agentRun.findMany({
+      select: {
+        agentType: true,
+        triggerType: true,
+        status: true,
+        startedAt: true,
+      },
+    });
+  }
 
   async begin({
     agentType,
