@@ -1196,7 +1196,7 @@ export class OfficeRenderer {
       point.y +
       spriteHeight +
       this.tileSize * this.metrics.nameplateGapTiles +
-      this.nameplateFontSize() * this.metrics.labelBoxRatio;
+      this.labelBoxHeight(this.nameplateFontSize());
     const phase = (now % 2.2) / 1.1;
     const fade = phase < 1 ? 1 - 0.65 * phase : 0.35 + 0.65 * (phase - 1);
     const context = this.context;
@@ -1315,6 +1315,16 @@ export class OfficeRenderer {
     this.drawPresidentLabel();
   }
 
+  /**
+   * 라벨 글자 상자의 실제 높이(px). 글자 크기에 외곽선 몫을 더한다.
+   *
+   * 판 두께를 재는 계산이 여러 곳이라, 한 곳만 고치면 말풍선이 이름표를 다시 덮는다
+   * (맥 앱의 `officeLabelBoxHeight` 와 같은 정의를 봐야 한다).
+   */
+  labelBoxHeight(fontSize) {
+    return fontSize + this.metrics.labelBoxOverhead;
+  }
+
   nameplateFontSize() {
     return Math.max(
       this.metrics.nameplateMinFontSize,
@@ -1386,7 +1396,7 @@ export class OfficeRenderer {
       return;
     }
     const clearance =
-      fontSize +
+      this.labelBoxHeight(fontSize) +
       this.tileSize * this.metrics.nameplateGapTiles +
       this.metrics.nameplateClearancePadding;
     this.drawPlateLabel(bubble, {
@@ -1496,7 +1506,7 @@ export class OfficeRenderer {
       const half = (widest * scaleX + padding) / 2;
       offsetX = Math.min(Math.max(0, half - span.left), span.right - half);
     }
-    const lineHeight = fontSize * this.metrics.labelBoxRatio;
+    const lineHeight = this.labelBoxHeight(fontSize);
     const boxWidth = widest * scaleX + padding;
     const boxHeight = lineHeight * lines.length;
     const boxLeft = centerX + offsetX - boxWidth / 2;
@@ -1597,10 +1607,9 @@ export class OfficeRenderer {
    */
   seatedBubbleTopTiles(seatY) {
     const boxTiles =
-      (this.bubbleFontSize() * this.metrics.labelBoxRatio * this.metrics.bubbleMaxLines) /
-      this.tileSize;
+      (this.labelBoxHeight(this.bubbleFontSize()) * this.metrics.bubbleMaxLines) / this.tileSize;
     const clearance =
-      (this.nameplateFontSize() +
+      (this.labelBoxHeight(this.nameplateFontSize()) +
         this.tileSize * this.metrics.nameplateGapTiles +
         this.metrics.nameplateClearancePadding) /
       this.tileSize;

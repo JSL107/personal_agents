@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SpriteKit
 
 @testable import ConsoleCore
 
@@ -192,6 +193,65 @@ func runOfficeNameplateFitTests(_ t: TestRunner) {
         t.expect(
             Set(widths.map { Int($0 * 100) }).count > 1,
             "\(zone.department.label) 자리마다 이름표 몫이 다르다 (실제 \(widths))"
+        )
+    }
+}
+
+/// 라벨이 화면에 차지하는 세로 높이(px). **실제로 그려지는 노드로 잰다.**
+///
+/// `NSAttributedString.size().height` 로는 안 된다 — 같은 글자·같은 외곽선인데도 SpriteKit 이
+/// 잡는 상자와 최대 4px 어긋난다(11pt 에서 13 vs 17). 화면을 가리는 것은 후자이므로, 앱이 쓰는
+/// 노드 종류·정렬·외곽선을 그대로 세워 재야 판정이 화면과 같아진다.
+private func drawnLabelHeight(fontSize: Double) -> Double {
+    let font = NSFont(name: officeLabelFontName, size: fontSize)
+        ?? .boldSystemFont(ofSize: fontSize)
+    let label = SKLabelNode()
+    label.attributedText = NSAttributedString(
+        string: "백엔드",
+        attributes: [
+            .font: font,
+            .foregroundColor: NSColor.white,
+            .strokeColor: NSColor.black,
+            .strokeWidth: -3.5,
+        ]
+    )
+    label.verticalAlignmentMode = .bottom
+    return Double(label.calculateAccumulatedFrame().height)
+}
+
+/// 이름표 위에 얹히는 말풍선이 이름표 **글자**와 실제로 떨어져 있는지.
+///
+/// 이 자리에 단언이 없던 동안, 말풍선은 어느 창 크기에서도 이름표 위끝에 **0.00px** 로 붙어
+/// 있었다. 여백을 6px 확보한다고 써 두고 상자 높이를 글자 크기로 잡은 탓인데, 실제 상자는
+/// 외곽선 몫만큼(5~7px) 더 높아 그 6px 을 정확히 먹었다. 두 글자가 겹친 채로 6주를 갔다.
+///
+/// **파라미터끼리 비교해서는 못 잡는다.** 상자 높이를 만든 상수로 상자 높이를 다시 세면 무엇을
+/// 바꿔도 양쪽이 함께 움직인다. 그래서 한쪽은 그려 본 높이, 다른 쪽은 배치 계산으로 잰다.
+func runOfficeLabelClearanceTests(_ t: TestRunner) {
+    t.suite("OfficeLabelClearance")
+
+    // 최소 창(타일 20.6)부터 큰 창까지. 글자 하한(11px)이 걸리는 구간과 안 걸리는 구간을
+    // 모두 지난다 — 하한 구간에서만 틀리는 결함이 실제로 있었다.
+    for tileSize in [20.6, 27.0, 32.0, 40.0, 60.0, 90.0] {
+        let nameFontSize = officeNameplateFontSize(tileSize: tileSize)
+        let drawn = drawnLabelHeight(fontSize: nameFontSize)
+
+        // 1) 배치 계산이 잡는 상자 높이가 실제로 그려진 높이를 덮는가.
+        let modeled = officeLabelBoxHeight(fontSize: nameFontSize)
+        t.expect(
+            modeled >= drawn,
+            "타일 \(tileSize): 상자 모델 \(modeled)px 이 실제 \(drawn)px 을 덮는다"
+        )
+
+        // 2) 말풍선 아래끝과 이름표 글자 위끝 사이에 여백이 남는가.
+        //    이름표 글자는 스프라이트 위끝에서 `gapTiles` 만큼 띄운 자리부터 위로 자란다.
+        let nameTop = tileSize * officeNameplateGapTiles + drawn
+        let bubbleBottom = officeNameplateClearance(tileSize: tileSize)
+        let gap = bubbleBottom - nameTop
+        t.expect(
+            gap >= officeNameplateClearancePadding,
+            "타일 \(tileSize): 말풍선이 이름표 글자에서 \(gap)px 떨어진다"
+                + " (최소 \(officeNameplateClearancePadding))"
         )
     }
 }
