@@ -340,7 +340,22 @@ final class OfficeScene: SKScene {
         // 승인 버튼을 누를 대상이 화면에서 사라진다. 이 호출로 막 새로 앉은 사람이 대표실 줄
         // 칸이 아니라 자기 책상에 놓이더라도 괜찮다 — 아래 메인 루프 뒤의 `layoutQueue()`가
         // 한 번 더 돌며 줄 칸으로 다시 옮긴다.
-        applyAttendance(animated: false)
+        //
+        // `animated`를 무조건 false로 두면 안 된다 — `sync`는 `store.agents`가 바뀔 때마다
+        // 불리므로(OfficeView.swift 의 onChange), 시각 경계 타이머(`startAttendanceClock`,
+        // 60초 주기)보다 먼저 도착하는 경우가 흔하다. 특히 9시처럼 실행이 몰리는 시각엔 타이머의
+        // 최대 59초 지연 안에 거의 항상 `sync`가 먼저 온다. 그때 여기서 계속 `false`를 쓰면
+        // 걷는 연출 없이 전원이 순간이동해 이미 자리에 앉고, 뒤늦게 도착한 타이머는 걸 연출이
+        // 남지 않는다(`applyAttendance`가 상태 변화가 없는 사람은 건너뛰므로). 그래서 `sync`도
+        // 타이머와 똑같이 시각 경계를 직접 확인하고 `lastAttendanceHour`를 갱신한다 — 두 경로 중
+        // 먼저 경계를 넘는 쪽이 걷기 연출을 맡고, 나머지 한쪽은 이미 반영된 상태라 자연히 no-op
+        // 이 된다.
+        let attendanceHourAtSync = currentHour()
+        let attendanceApplication = officeAttendanceApplication(
+            previousHour: lastAttendanceHour, currentHour: attendanceHourAtSync
+        )
+        lastAttendanceHour = attendanceHourAtSync
+        applyAttendance(animated: attendanceApplication == .boundaryCrossed)
 
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
@@ -639,7 +654,10 @@ final class OfficeScene: SKScene {
                     return
                 }
                 let hour = self.currentHour()
-                guard hour != self.lastAttendanceHour else {
+                let application = officeAttendanceApplication(
+                    previousHour: self.lastAttendanceHour, currentHour: hour
+                )
+                guard application == .boundaryCrossed else {
                     return
                 }
                 self.lastAttendanceHour = hour
