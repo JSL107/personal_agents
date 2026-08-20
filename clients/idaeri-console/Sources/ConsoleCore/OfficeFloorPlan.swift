@@ -212,6 +212,24 @@ public let officeDeskScreenBottomRatio: Double = 23.0 / 32.0
 
 /// 앉은 캐릭터 스프라이트의 높이(타일 배수). `char-*-sit.png` 실측 57px ÷ 기준 타일.
 /// 서 있는 그림(54px)보다 높다 — 의자 등받이까지 그려져 있다.
+///
+/// **이 값을 실물 높이로 환산하려는 시도는 한 번 했고, 되돌렸다.** 가구는 전부
+/// `targetHeightCm` 로 환산되는데 앉은 캐릭터만 원본 도트를 그대로 쓴다. 재 보면 57도트는
+/// 서 있는 자(54도트 = 170cm)로 179cm 를 뜻하니, 실제로 앉은 사람(바닥에서 정수리까지 약
+/// 132cm)보다 36% 크다 — **앉으면 사람이 서 있을 때보다 커진다.** 논리로는 분명한 결함이다.
+///
+/// 그래서 0.74배를 곱해 봤고, 렌더로 확인하니 화면이 세 군데에서 나빠졌다:
+/// 발밑 상태 링(타일 기준 고정 크기)이 작아진 몸의 **허리를 관통**해 상태색과 사람이 겹쳤고,
+/// 안경·머리 모양이 뭉개져 옆자리와 구별이 어려워졌고, 몸이 짧아져 책상에 닿지 않고 그 위에
+/// 뜬 것처럼 보였다.
+///
+/// 되돌린 이유는 **이 화면의 일이 관제**라서다. 사람이 정보의 주체이고 가구는 배경이므로,
+/// 사람이 가구보다 크게 그려지는 것은 여기서는 결함이 아니라 정보 위계다(픽셀 게임의 캐릭터
+/// 우선 축척과도 같은 방향이다). 실물 축척을 맞추고 싶으면 이 값만 건드려서는 안 되고,
+/// 링 크기·이름표 하한·책상 오프셋을 한 묶음으로 다시 잡아야 한다.
+///
+/// 크기 어긋남이 실제로 보이는 곳은 사람이 아니라 **가구끼리**다 — 폭 환산이 없어서
+/// 사물함이 실물의 2.4배로, 커피테이블이 0.6배로 그려진다(`targetHeightCm` 참조).
 public let officeSeatedSpriteTiles: Double =
     57.0 / officeReferenceTileSize * officeCharacterScaleFactor
 
@@ -1068,9 +1086,13 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 세 명뿐이라 아래 절반이 통째로 빈 바닥이었다. 자료 선반과 큰 화분으로 방의 남은
         // 쪽을 쓰게 한다 — 자리를 늘리는 대신 가구로 채우는 이유는, 인원이 늘면 그 자리가
         // 다시 책상에 밀려나야 하기 때문이다(가구는 좌석에 막히면 알아서 건너뛴다).
+        // 벽걸이가 둘뿐이라 세 자리 중 하나가 비어 있었다. 추상화 액자를 여기 건다 —
+        // 운영 방의 벽을 지표 모니터로 바꾸면서 그 액자가 **어느 방에도 안 남았고**,
+        // 그림은 있는데 화면에 한 번도 안 나오는 에셋이 될 뻔했다. 아이디어를 모으는 방이라
+        // 성격도 맞는다.
         return [
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
-            .wallPinboard, .wallCalendar,
+            .wallPinboard, .wallCalendar, .wallAbstract,
         ]
     case .engineering:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
@@ -1079,7 +1101,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [.bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf]
     case .review:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
-        return [.whiteboard, .bookshelf, .bookshelf, .filingCabinet, .wallPinboard, .wallPoster]
+        //
+        // **판은 벽에 건다(`wallWhiteboard`).** 예전에는 이동식 보드(`whiteboard`)를 첫 후보
+        // (3,4)에 놓아 방 한가운데에 바퀴 달린 판이 홀로 서 있었다 — 재제작본이 스탠드까지
+        // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
+        return [.bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
     case .executive:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
         //
@@ -1091,18 +1117,25 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         ]
     case .growth:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
+        //
+        // 판도 벽에 건다(리뷰방과 같은 이유). 이동식 보드는 후보 (7,1) 을 받아 **아래 줄
+        // 책상 사이에 끼어** 있었다 — 자유석 사이를 나누는 것은 파티션의 몫이다.
         return [
-            .plantTall, .plantSmall, .sofa2, .whiteboard, .partitionLow,
-            .wallMonitor, .wallPlantHanging,
+            .plantTall, .plantSmall, .sofa2, .partitionLow,
+            .wallWhiteboard, .wallMonitor, .wallPlantHanging,
         ]
     case .internalOps:
         // 설비가 모인 방 — 사물함과 비품 선반, 그리고 자판기.
         //
         // 자판기가 여기 있는 것은 탕비실에 자리가 없어서다. 탕비실 빈 칸은 전부 창 아래인데
         // 자판기는 1.43칸으로 벽 줄까지 올라와 창을 덮는다. 이 방은 창이 없다.
+        // 벽에는 지표 화면을 건다(예전에는 추상화 액자였다). 이 방 사람들이 하는 일이
+        // 운영 이상 징후 감시·상태 변화 판정이라, 액자는 장식일 뿐이고 볼 것이 없었다 —
+        // 그래서 감시 담당이 자기 방을 지나쳐 성장방 모니터까지 걸어갔다
+        // (`officeWorkAffinity`). 방 벽이 그 방의 일을 말하게 한다.
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
-            .clock, .wallShelf, .wallAbstract,
+            .clock, .wallShelf, .wallMonitor,
         ]
     }
 }
@@ -1173,11 +1206,17 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
         // 높이)를 피해, 오른쪽 벽면과 맨 아래 줄에 붙인다.
         //
-        // **커피테이블은 소파 정면(4,3)이 아니라 그 옆(3,3)이다.** 앉는 자리는 가구 정면
-        // 칸뿐인데(`officeStrollSpots`), 테이블이 소파 정면을 물면 소파에 앉을 자리가
-        // 사라진다. 같은 깔개 안이라 응접 세트로는 그대로 읽히고, 앉은 사람 옆에 테이블이
-        // 놓인 모양이 된다.
-        return spots([(4, 4), (3, 3), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
+        // **커피테이블은 소파와 같은 줄 옆 칸(3,4)이다.** 자리 세 개를 함께 만족해야 한다 —
+        // 소파 정면(4,3)은 앉는 자리라 비워 두고(앉는 자리는 가구 정면 칸뿐이다), 테이블은
+        // 깔개 안에 있어야 하고, 소파와 관계가 보여야 한다.
+        //
+        // 두 가지를 먼저 시도했고 렌더에서 각각 어긋났다. 대각선 아래(3,3)는 소파는 깔개
+        // 중앙, 테이블은 모서리로 흩어져 **둘이 아무 관계가 없었다.** 정면 한 칸 더 앞(4,2)은
+        // 세로로 줄은 섰지만 깔개(2×2)가 세로 세 칸을 못 덮어 **테이블만 깔개 밖에** 남았다.
+        //
+        // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
+        // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
+        return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
     case .growth:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //

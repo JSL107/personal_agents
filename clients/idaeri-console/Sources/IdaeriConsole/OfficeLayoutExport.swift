@@ -93,6 +93,12 @@ struct AgentLookInfo: Codable {
     let roleLabel: String
     /// 이 사람 책상에 놓을 개인 소품 스프라이트.
     let deskProp: String
+    /// 이 사람의 일과 어울리는 가구 종류(우선순위 순). 배회 목적지를 여기서 먼저 고른다.
+    ///
+    /// **판정을 웹에 옮겨 적지 않고 결과만 넘긴다.** 어느 워커가 어떤 물건을 쓰는지는
+    /// 워커가 늘 때마다 바뀌는 표라, 두 곳에 적으면 새 워커가 한쪽에서만 제 일을 한다.
+    /// 빈 배열이면 받는 쪽은 기존 방식(무작위)으로 고른다.
+    let workAffinity: [String]
 }
 
 /// 내보내는 한 덩어리 — 평면도 + 그리는 데 필요한 이름표.
@@ -231,7 +237,8 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             shirt: [shirt.red, shirt.green, shirt.blue],
             pants: [pants.red, pants.green, pants.blue],
             roleLabel: agentRoleLabel(for: agent.agentType) ?? agent.displayName,
-            deskProp: officeDeskProp(agentType: agent.agentType)
+            deskProp: officeDeskProp(agentType: agent.agentType),
+            workAffinity: officeWorkAffinity(agentType: agent.agentType).map(\.rawValue)
         )
     }
     var daylight: [String: DaylightInfo] = [:]

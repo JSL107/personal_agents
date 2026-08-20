@@ -1439,12 +1439,15 @@ final class OfficeScene: SKScene {
         var occupied = Set(characters.values.map(\.tile))
         let hour = currentHour()
         for agentType in picks {
+            // 자기 자리를 함께 넘긴다 — 일에 짝지어진 가구가 여섯 방에 흩어져 있어서,
+            // 기준점이 없으면 자기 방에 같은 가구가 있는데도 남의 방까지 걸어간다.
             guard let spot = officeStrollSpot(
                 for: agentType,
                 round: strollRound,
                 spots: spots,
                 occupied: occupied,
-                hour: hour
+                hour: hour,
+                home: plan.desks.first { $0.agentType == agentType }?.seat
             ) else {
                 continue
             }

@@ -32,8 +32,8 @@ func runOfficeIdleTests(_ t: TestRunner) {
 
     // 값이 씬으로 새면 순수 테스트로 회귀를 잡을 수 없으므로 튜닝 계약도 Core에서 고정한다.
     t.expectEqual(officeStrollTickSeconds, 8, "감독관 호출 주기")
-    t.expectEqual(officeStrollDefaultConcurrency, 2, "기본 동시 배회 인원")
-    t.expectEqual(officeStrollMaxConcurrency, 3, "동시 배회 상한")
+    t.expectEqual(officeStrollDefaultConcurrency, 3, "기본 동시 배회 인원")
+    t.expectEqual(officeStrollMaxConcurrency, 4, "동시 배회 상한")
     t.expectEqual(officeStrollCooldownSeconds, 90, "재배회 쿨다운")
 
     // 이 검증이 잡는 회귀: 가구 방향과 다른 축/부호로 전체 캐릭터 노드를 밀어 몸과 가구가
@@ -100,18 +100,18 @@ func runOfficeIdleTests(_ t: TestRunner) {
     let selectionCandidates = ["C", "B", "A", "D"].map { idleCandidate($0) }
     t.expectEqual(
         officeStrollPicks(candidates: selectionCandidates, activeStrollCount: 0, now: now),
-        ["A", "B"],
-        "기본 상한은 두 명"
+        ["A", "B", "C"],
+        "기본 상한은 세 명"
     )
     t.expectEqual(
         officeStrollPicks(candidates: selectionCandidates, activeStrollCount: 1, now: now),
-        ["A"],
-        "한 명 배회 중이면 한 자리"
+        ["A", "B"],
+        "한 명 배회 중이면 두 자리"
     )
     t.expect(
         officeStrollPicks(
             candidates: selectionCandidates,
-            activeStrollCount: 2,
+            activeStrollCount: 3,
             now: now
         ).isEmpty,
         "기본 상한을 채우면 추가 선발 없음"
@@ -123,8 +123,8 @@ func runOfficeIdleTests(_ t: TestRunner) {
             now: now,
             maxConcurrent: 9
         ).count,
-        3,
-        "요청 상한 9는 3으로 clamp"
+        4,
+        "요청 상한 9는 4로 clamp"
     )
     t.expectEqual(
         officeStrollPicks(
@@ -479,4 +479,123 @@ func runOfficeIdleTests(_ t: TestRunner) {
             "연출 영향 대상"
         )
     }
+}
+
+/// 배회 목적지가 그 사람이 하는 일과 이어졌는가.
+///
+/// 예전에는 목적지가 이름의 문자값 합으로 정해져, 학습 담당이 자판기 앞에 서 있고 시세 점검
+/// 담당이 화분에 물을 주었다. 자세와 손 소품은 이미 가구가 정하고 있었으므로 비어 있던 고리는
+/// "누가 어디로" 하나였다 — 그 고리가 실제로 걸렸는지를 여기서 확인한다.
+func runOfficeWorkAffinityTests(_ t: TestRunner) {
+    let plan = officeFloorPlan(agents: sampleAgents)
+    let spots = officeStrollSpots(plan: plan)
+    func home(_ agentType: String) -> TilePoint? {
+        plan.desks.first { $0.agentType == agentType }?.seat
+    }
+    func destination(_ agentType: String, round: Int = 1, hour: Int = 14) -> OfficeStrollSpot? {
+        officeStrollSpot(
+            for: agentType, round: round, spots: spots, occupied: [], hour: hour,
+            home: home(agentType)
+        )
+    }
+
+    // 짝이 지어진 사람은 목록에 있는 물건 앞으로 간다. 어느 순위로 갔는지는 단언하지 않는다 —
+    // 앞 순위가 다 차 있으면 다음으로 내려가는 것이 설계다.
+    var paired = 0
+    for agent in sampleAgents {
+        let affinity = officeWorkAffinity(agentType: agent.agentType)
+        guard !affinity.isEmpty else {
+            continue
+        }
+        paired += 1
+        guard let spot = destination(agent.agentType) else {
+            t.expect(false, "\(agent.agentType) 목적지를 못 찾음")
+            continue
+        }
+        t.expect(
+            affinity.contains(spot.kind),
+            "\(agent.agentType) → \(spot.kind.rawValue) 가 짝지어진 목록 안"
+        )
+    }
+    // 표가 비면 위 루프가 한 건도 돌지 않고 조용히 통과한다 — 덮은 인원을 함께 못 박는다.
+    t.expect(
+        paired >= sampleAgents.count - 4,
+        "운영 \(sampleAgents.count)명 중 \(paired)명에게 짝지어진 물건이 있다"
+    )
+
+    // 같은 회차·같은 입력이면 늘 같은 결과. 스냅샷마다 목적지가 갈리면 5초 폴링마다
+    // 사람들이 다른 곳으로 출발해 화면이 요동친다.
+    for agentType in ["CTO_STUDY", "CODE_REVIEWER", "OPS_SUPERVISOR"] {
+        t.expectEqual(
+            destination(agentType)?.tile, destination(agentType)?.tile,
+            "\(agentType) 목적지가 회차 안에서 고정"
+        )
+    }
+
+    // 같은 종류 가구가 여섯 방에 흩어져 있어도 자기 자리에서 가까운 쪽을 고른다.
+    // 기준점을 안 넘기면(home: nil) 카탈로그 첫 칸을 잡으므로, 그보다 멀지 않아야 한다.
+    for agent in sampleAgents where !officeWorkAffinity(agentType: agent.agentType).isEmpty {
+        guard let seat = home(agent.agentType),
+              let near = destination(agent.agentType),
+              let blind = officeStrollSpot(
+                  for: agent.agentType, round: 1, spots: spots, occupied: [], hour: 14, home: nil
+              )
+        else {
+            continue
+        }
+        let nearSteps = abs(seat.x - near.tile.x) + abs(seat.y - near.tile.y)
+        let blindSteps = abs(seat.x - blind.tile.x) + abs(seat.y - blind.tile.y)
+        t.expect(
+            nearSteps <= blindSteps,
+            "\(agent.agentType) 가까운 쪽 선택 (\(nearSteps) ≤ \(blindSteps)걸음)"
+        )
+    }
+
+    // 점심시간에는 일 짝짓기를 접고 탕비실·회의실로 기운다 — 정오에도 각자 자기 물건 앞에
+    // 서 있으면 점심 연출이 통째로 죽는다.
+    let lunchKinds: Set<FurnitureKind> = [
+        .sofa2, .sofa3, .coffeeTable, .coffeeMachine, .waterCooler,
+        .vendingMachine, .refrigerator, .sinkCounter, .meetingTable,
+    ]
+    for agentType in ["CTO_STUDY", "CODE_REVIEWER", "OPS_SUPERVISOR", "BLOG"] {
+        guard let spot = destination(agentType, hour: officeLunchHour) else {
+            continue
+        }
+        t.expect(lunchKinds.contains(spot.kind), "\(agentType) 정오 목적지가 점심 자리")
+    }
+
+    // 짝지어진 가구가 평면도에 실제로 있어야 한다. 없으면 그 사람은 표에 적혀 있는데도
+    // 영원히 예전 방식으로 떨어져, 표를 고친 효과가 조용히 사라진다.
+    let placedKinds = Set(plan.furniture.map(\.kind))
+    for agent in sampleAgents {
+        for kind in officeWorkAffinity(agentType: agent.agentType) {
+            t.expect(
+                placedKinds.contains(kind),
+                "\(agent.agentType) 가 찾는 \(kind.rawValue) 가 평면도에 놓여 있다"
+            )
+        }
+    }
+
+    // 벽걸이 열 종이 **모두 어느 방엔가** 걸려야 한다. 방마다 벽 자리가 셋뿐이라 한 종을
+    // 넣으면 다른 종이 밀려나는데, 밀려난 쪽은 오류 없이 화면에서만 사라진다 — 운영 방의
+    // 액자를 지표 모니터로 바꿨을 때 실제로 추상화 액자가 그렇게 빠졌다.
+    let wallKinds = FurnitureKind.allCases.filter { $0.isWallMounted }
+    for kind in wallKinds {
+        t.expect(
+            placedKinds.contains(kind),
+            "벽걸이 \(kind.rawValue) 가 어느 방엔가 걸려 있다"
+        )
+    }
+
+    // 표에 없는 사람은 예전 방식으로 떨어진다 — 새 워커가 늘어도 화면이 멈추지 않아야 한다.
+    t.expect(
+        officeWorkAffinity(agentType: "BRAND_NEW_WORKER").isEmpty,
+        "표에 없는 워커는 빈 목록"
+    )
+    t.expect(
+        officeStrollSpot(
+            for: "BRAND_NEW_WORKER", round: 1, spots: spots, occupied: [], hour: 14, home: nil
+        ) != nil,
+        "표에 없는 워커도 목적지를 받는다"
+    )
 }
