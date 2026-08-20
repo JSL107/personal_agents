@@ -168,7 +168,11 @@ public func officePresidentTodoLines(todos: [ConsoleTodo]) -> [String] {
     // (타일 27.4pt·20.6pt)에서는 라벨을 남긴 후보가 전부 몫을 넘겨, 말줄임표가 끝을 먹으면서
     // 하필 "몇 건 더 있다" 가 사라졌다. 라벨을 자르면 어느 워커인지 알 수 없게 되므로,
     // 개별 정보를 다 버리고 건수를 지키는 쪽을 최후 후보로 둔다.
-    let countOnly = "할 일 \(todos.count)건"
+    // **"건" 이 아니라 "가지" 다.** `todos` 한 항목은 한 건이 아니라 **한 종류** 다 — 백엔드가
+    // 종류마다 집계해 라벨에 건수를 담는다(`승인 3건`, `PR 리뷰 회수 6건`). 실제 원장에서
+    // 종류 1개에 6건이 들어 있는 것을 확인했으므로, 항목 수를 건수로 쓰면 6건이 "1건" 으로
+    // 표시된다.
+    let countOnly = "할 일 \(todos.count)가지"
     guard remaining > 0 else {
         // 한 건뿐이면 상세만 버려도 대개 들어간다. 그래도 안 들어가면 건수 후보로 내려간다.
         return ["\(first.label) — \(first.detail)", first.label, countOnly]
@@ -188,6 +192,15 @@ public func officePresidentTodoLines(todos: [ConsoleTodo]) -> [String] {
 /// 게시판 그림 폭(실사용 창에서 1.07칸)이 도장을 가로로 늘어놓을 수 있는 수를 정한다. 상한이
 /// 없으면 연속 20일에 도장이 게시판을 넘어 벽으로 번진다.
 public let officeStreakStampMaxCount: Int = 5
+
+/// 연속 일수가 도장 상한을 넘었는가.
+///
+/// 넘겼는데 표식이 없으면 6일과 5일이 같은 그림이 된다 — 도장 개수가 곧 연속 일수라는 약속이
+/// 상한에서 조용히 깨진다. 씬은 이 값이 참일 때 마지막 도장을 금색으로 칠해 "여기서 넘쳤다" 를
+/// 남긴다. 정확한 숫자는 퇴근 정산 카드의 문장(`officeDailyReportLines`)이 계속 말한다.
+public func officeStreakStampSaturated(_ streak: ConsoleStreak) -> Bool {
+    streak.current > officeStreakStampMaxCount
+}
 
 /// 게시판에 찍히는 도장 수 — 어제까지 이어진 연속 일수.
 ///

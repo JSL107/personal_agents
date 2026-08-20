@@ -164,7 +164,10 @@ private func briefingDemoValue() -> ConsoleBriefing {
             ConsoleTodo(kind: .failedRun, label: "PM 재시도", detail: "다음 실행은 내일"),
             ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 2건", detail: "10일째"),
         ],
-        streak: ConsoleStreak(current: 3, best: 5, todayOpened: 3, todayRemaining: 3),
+        // 도장 상한(5)을 **넘긴** 값이다. 마지막 도장을 금색으로 칠하는 포화 표식이 이 입구의
+        // 확인 대상이고, 상한 아래(1~5개)는 테스트가 고정한다. 원장 실측 최고 기록은 3일이라
+        // 기다려서는 어느 쪽도 볼 수 없다.
+        streak: ConsoleStreak(current: 8, best: 8, todayOpened: 3, todayRemaining: 3),
         dailyReport: ConsoleDailyReport(
             date: "2026-08-20", succeeded: 21, failed: 1,
             approvalsOpened: 3, approvalsHandled: 0, pendingReviewPulls: 2

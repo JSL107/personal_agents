@@ -120,11 +120,30 @@ func runPresidentBriefingTests(_ t: TestRunner) {
             picked != nil,
             "타일 \(smallTile)pt 에서 들어가는 후보가 하나는 있어야 한다"
         )
+        // 라벨을 살린 후보가 들어가면 "외 1건" 이, 라벨까지 버려야 하면 "2가지" 가 남는다.
+        // 둘 중 어느 쪽이든 **얼마나 남았는지** 는 화면에 있어야 한다.
         t.expect(
-            picked?.contains("2건") == true || picked?.contains("외 1건") == true,
-            "긴 워커 이름에서도 남은 할 일이 몇 건인지 남아야 한다 (고른 후보: \(picked ?? "없음"))"
+            picked?.contains("외 1건") == true || picked?.contains("2가지") == true,
+            "긴 워커 이름에서도 남은 할 일의 규모가 남아야 한다 (고른 후보: \(picked ?? "없음"))"
         )
     }
+
+    // 최후 후보는 **건수가 아니라 종류 수**를 말한다.
+    //
+    // `todos` 한 항목은 한 종류이고 건수는 라벨 안에 있다(`PR 리뷰 회수 6건`). 실제 원장에서
+    // 항목 1개에 6건이 들어 있는 것을 확인했으므로, 여기서 "건" 을 쓰면 6건이 "1건" 으로
+    // 표시된다.
+    let countOnlyCandidate = officePresidentTodoLines(todos: [
+        ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 6건", detail: "10일째")
+    ]).last
+    t.expect(
+        countOnlyCandidate == "할 일 1가지",
+        "최후 후보는 종류 수를 '가지' 로 말해야 한다 (실제: \(countOnlyCandidate ?? "없음"))"
+    )
+    t.expect(
+        countOnlyCandidate?.contains("1건") != true,
+        "종류 수를 건수처럼 적으면 6건이 1건으로 보인다: \(countOnlyCandidate ?? "없음")"
+    )
 
     // MARK: 연속 기록 벽 게시판
 
@@ -212,6 +231,24 @@ func runPresidentBriefingTests(_ t: TestRunner) {
             "\(columns)열 배치에서 대표실 벽에 게시판이 걸려야 한다"
         )
     }
+
+    // 상한을 넘긴 기록은 포화 표식으로 구분된다. 표식이 없으면 8일 연속이 5일과 같은 그림이다.
+    t.expect(
+        !officeStreakStampSaturated(
+            ConsoleStreak(current: officeStreakStampMaxCount, best: 5, todayOpened: 0, todayRemaining: 0)
+        ),
+        "상한과 같으면 포화가 아니다(도장 수가 곧 연속 일수)"
+    )
+    t.expect(
+        officeStreakStampSaturated(
+            ConsoleStreak(current: officeStreakStampMaxCount + 1, best: 8, todayOpened: 0, todayRemaining: 0)
+        ),
+        "상한을 넘기면 포화 표식이 필요하다"
+    )
+    t.expect(
+        !officeStreakStampSaturated(sampleStreak),
+        "연속 0일은 포화가 아니다"
+    )
 
     // 최고 기록은 도장이 말하지 못한다 — 문장이 맡는다.
     t.expect(

@@ -2254,9 +2254,15 @@ final class OfficeScene: SKScene {
         let diameter = boardWidth * officeStreakStampDiameterRatio
         let step = boardWidth * officeStreakStampStepRatio
         let firstX = -step * Double(count - 1) / 2
+        // 상한을 넘긴 기록은 마지막 도장을 금색으로 칠한다 — 표식이 없으면 8일 연속이 5일과
+        // 같은 그림이 되어, 도장 개수가 연속 일수라는 약속이 상한에서 조용히 깨진다.
+        let saturated = officeStreakStampSaturated(briefing.streak)
         for index in 0..<count {
             let stamp = SKShapeNode(circleOfRadius: CGFloat(diameter / 2))
-            stamp.fillColor = SKColor(red: 0.81, green: 0.29, blue: 0.24, alpha: 1)
+            stamp.fillColor =
+                saturated && index == count - 1
+                ? SKColor(red: 0.95, green: 0.75, blue: 0.24, alpha: 1)
+                : SKColor(red: 0.81, green: 0.29, blue: 0.24, alpha: 1)
             // 흰 테두리를 두른다. 게시판 그림에는 색색의 쪽지가 이미 붙어 있어서, 테두리가
             // 없으면 붉은 도장이 분홍 쪽지와 섞여 "쪽지 위 빨간 점" 으로 보인다.
             stamp.strokeColor = SKColor(white: 1, alpha: 0.9)
