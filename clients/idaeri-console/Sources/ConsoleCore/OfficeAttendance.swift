@@ -65,3 +65,30 @@ public func officeAttendance(hour: Int, input: OfficeAttendanceInput) -> OfficeA
     }
     return .away
 }
+
+/// 출근 적용을 부르는 경로가 지금 둘이다 — 시각 경계 타이머와 `sync`(에이전트 스냅샷이 바뀔 때마다).
+/// 어느 쪽이 먼저 경계를 넘는지는 실행마다 다르므로, "이번 호출이 걷기 연출을 틀어야 하는가"라는
+/// 판정을 두 경로가 각자 따로 내리게 두면 어긋난다. 시각 비교 자체는 순수 계산이라 여기 한 곳에
+/// 모아 두 경로가 항상 같은 답을 내게 한다.
+public enum OfficeAttendanceApplication: Sendable, Equatable {
+    /// 이전에 본 시각이 없다 — 씬이 막 붙은 최초 호출. 걷는 사람 없이 최종 상태로 놓는다.
+    case initial
+    /// 시각이 실제로 넘어갔다 — 걷기 연출을 튼다.
+    case boundaryCrossed
+    /// 같은 시각 안의 재호출이다 — 이미 반영돼 있으므로 다시 놓을 이유가 없다.
+    case sameHour
+}
+
+/// `previousHour`가 아직 없으면(nil) 최초 적용, 이전 시각과 다르면 경계를 넘은 것,
+/// 같으면 같은 시각 안의 재호출이다. 자정 넘김(23 → 0)도 단순 비교라 boundaryCrossed 로 잡힌다.
+public func officeAttendanceApplication(
+    previousHour: Int?, currentHour: Int
+) -> OfficeAttendanceApplication {
+    guard let previousHour else {
+        return .initial
+    }
+    if previousHour == currentHour {
+        return .sameHour
+    }
+    return .boundaryCrossed
+}
