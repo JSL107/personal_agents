@@ -73,6 +73,11 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 하는지 지목할 수가 없다. 같은 목록은 stderr 로도 나간다.
     //   swift run IdaeriConsole --render /tmp/office.png --busy-demo --labels
     let debugLabels = CommandLine.arguments.contains("--labels")
+    // 할 일 말풍선과 연속 도장은 실 백엔드가 지금 승인 0건·연속 0일이라 화면에 뜨지 않는다.
+    // 할 일 3종이 겹친 날과 연속 3일을 강제해 굽는다 — `--alarm-demo` 와 함께 쓰면 대표 머리
+    // 위에 문패·경고등·말풍선이 한꺼번에 쌓이는 최악을 볼 수 있다.
+    //   swift run IdaeriConsole --render /tmp/office.png --briefing-demo --alarm-demo
+    let briefingDemo = CommandLine.arguments.contains("--briefing-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -82,6 +87,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         hoverAgentType: hoverAgentType,
         busyDemo: busyDemo,
         alarmDemo: alarmDemo,
+        briefingDemo: briefingDemo,
         debugLabels: debugLabels
     )
     exit(succeeded ? 0 : 1)

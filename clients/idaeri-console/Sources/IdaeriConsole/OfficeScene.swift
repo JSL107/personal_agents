@@ -114,6 +114,14 @@ final class OfficeScene: SKScene {
     private var lastCursor: CGPoint = .zero
     private var selectedAgentType: String?
     private var president: SKSpriteNode?
+    /// 연속 기록 도장을 붙일 대표실 벽 게시판. 이름(`furn:wallPinboard`)만으로 찾으면 기획방·
+    /// 리뷰방 게시판이 먼저 잡혀 도장이 남의 방에 찍힌다.
+    private var streakBoardNode: SKSpriteNode?
+    /// 마지막으로 받은 브리핑. **창 크기 변경 경로가 이것을 다시 그린다** — `sync` 가 가구와
+    /// 대표를 통째로 다시 만들면서 그 자식(할 일 말풍선·연속 도장)을 함께 지우는데, 브리핑은
+    /// 30초 폴링으로만 오므로 기억해 두지 않으면 그 사이 화면에서 사라진 채로 남는다.
+    private var lastBriefing: ConsoleBriefing?
+    private var lastBriefingHour: Int?
     /// 내가 직접 돌리는 CLI 세션. 에이전트와 달리 사규가 배정한 자리가 없어 대표 앞줄에 선다.
     /// 세션 하나당 책상 위 표시(켜진 화면 + 이름) 한 묶음.
     private var sessionMarkers: [String: SKNode] = [:]
@@ -319,6 +327,9 @@ final class OfficeScene: SKScene {
         renderDeskPapers(agents: agents)
         renderDeskProps()
         renderPresident()
+        // 대표·가구가 새로 만들어진 직후여야 한다 — 할 일 말풍선은 대표 노드의 자식이고
+        // 연속 도장은 게시판 노드의 자식이라, 순서를 뒤집으면 방금 지워진 부모에 붙는다.
+        redrawBriefingSigns()
 
         homeSeats = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.agentType, $0.seat) }
@@ -1179,6 +1190,13 @@ final class OfficeScene: SKScene {
         }
         deskNodes.removeAll()
         doorNodes.removeAll()
+        streakBoardNode = nil
+        // 어느 게시판이 대표실 것인지는 배치가 정한다 — 루프 안에서 kind 로 판단하면 목록에서
+        // 먼저 나온 남의 방 게시판이 잡힌다.
+        let streakBoardTile = officeStreakBoardTile(
+            furniture: plan.furniture,
+            presidentArea: plan.commonAreas.first { $0.kind == .president }
+        )
         // 책상 칸 → 주인. 작업 중일 때 그 사람의 모니터만 깜빡이게 하려면 짝을 알아야 한다.
         let deskOwners = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.desk, $0.agentType) }
@@ -1194,6 +1212,9 @@ final class OfficeScene: SKScene {
             }
             if placement.kind.isDoorway {
                 doorNodes[placement.tile] = node
+            }
+            if placement.tile == streakBoardTile {
+                streakBoardNode = node
             }
             node.anchorPoint = CGPoint(x: 0.5, y: 0)
             let base = texture.size()
@@ -2092,12 +2113,15 @@ final class OfficeScene: SKScene {
 
     // MARK: - 대표 브리핑
 
-    /// 회의실 벽면 판과 대표 옆 정산 종이를 갱신한다.
+    /// 대표 머리 위 할 일 말풍선, 벽 달력의 연속 도장, 대표 옆 정산 종이를 갱신한다.
     ///
     /// 시각은 호출자가 넘긴다 — 오프스크린 회귀 렌더가 `--hour` 로 임의 시각을 강제하기 때문이다.
     /// 씬이 `Date()` 를 직접 읽으면 그 경로에서 저녁 화면을 확인할 방법이 사라진다.
     func refreshBriefing(_ briefing: ConsoleBriefing?, hour: Int) {
-        renderMeetingBoard(briefing)
+        lastBriefing = briefing
+        lastBriefingHour = hour
+        renderPresidentTodoBubble(briefing)
+        renderStreakStamps(briefing)
         renderDailyReportPaper(briefing, hour: hour)
         // **펼쳐 둔 카드도 다시 그린다.** 카드 문장은 펼치는 순간 한 번 만들어지는데, 브리핑은
         // 30초마다 새로 온다 — 다시 그리지 않으면 카드를 열어 둔 채로 오늘 수치가 옛것에
@@ -2107,85 +2131,166 @@ final class OfficeScene: SKScene {
         }
     }
 
-    /// 회의실 벽에 걸린 판. 스프라이트가 아니라 도형과 글자로 직접 그린다.
+    /// 부모 노드가 다시 만들어진 뒤 브리핑 표시(말풍선·도장·정산 종이)를 복원한다.
     ///
-    /// 회의실에 이미 화이트보드가 있지만 에셋이 39×22px 이라 글자를 얹을 수 없다
-    /// (`OfficeFloorPlan.swift` 의 보드 높이 주석 참고). 실사용 창에서 회의실은 8칸 × 4칸뿐이고
-    /// 그 안에 책장 둘·회의 테이블·카펫이 이미 들어차 있어, 바닥 자리를 먹지 않는 벽면을 쓴다.
-    private func renderMeetingBoard(_ briefing: ConsoleBriefing?) {
-        overlayLayer.childNode(withName: officeMeetingBoardNodeName)?
+    /// 창 크기가 바뀌면 `sync` 가 가구와 대표를 통째로 다시 만든다. 그 자식으로 붙은 표시들은
+    /// 함께 지워지는데, 브리핑은 30초 폴링으로만 오므로 그때까지 화면에서 사라진 채로 남는다.
+    /// 정산 종이는 씬에 직접 붙지만 좌표를 타일 크기로 계산하므로, 다시 그리지 않으면 옛 타일
+    /// 기준 자리에 어긋난 채 남는다 — 같은 호출로 둘 다 해소된다.
+    ///
+    /// 한 번도 브리핑을 받지 못했으면(부팅 직후 첫 `sync`) 복원할 것이 없다.
+    private func redrawBriefingSigns() {
+        guard let hour = lastBriefingHour else {
+            return
+        }
+        refreshBriefing(lastBriefing, hour: hour)
+    }
+
+    /// 대표 머리 위 할 일 말풍선.
+    ///
+    /// **회의실 벽 판을 대신한다.** 판은 세 줄을 나열했지만 그중 새 정보는 리뷰 회수 한 줄뿐이었다
+    /// — 승인은 대표실 앞 줄과 방치 압력이, 실패는 어깨 처짐이 이미 말한다. 큰 흰 판이 회의실
+    /// 가구를 덮으면서 같은 사실을 글자로 한 번 더 적고 있었다.
+    ///
+    /// **직원 말풍선과 색을 달리한다.** 직원 것은 판 없는 흰 글자로 "지금 하는 일" 을 말하는데,
+    /// 같은 모양으로 그리면 대표가 그 일을 하고 있는 것으로 읽힌다. 여기는 "해야 할 일" 이다.
+    private func renderPresidentTodoBubble(_ briefing: ConsoleBriefing?) {
+        president?.childNode(withName: officePresidentTodoBubbleNodeName)?
             .removeFromParent()
+        // 할 일이 없으면 말풍선을 띄우지 않는다 — 조용한 화면이 곧 그 뜻이다. 지우기만 하고
+        // 끝나는 경로가 있어야 마지막 할 일을 처리한 뒤 문구가 남지 않는다.
         guard
+            let presidentNode = president,
             let briefing,
-            let meeting = plan.commonAreas.first(where: { $0.kind == .meeting })
+            case let candidates = officePresidentTodoLines(todos: briefing.todos),
+            let shortest = candidates.last
         else {
             return
         }
 
-        let boardWidth =
-            Double(meeting.width) * officeBoardWidthRatio * Double(tileSize)
-        let boardHeight = officeBoardHeightTiles * Double(tileSize)
-        let layout = officeBoardLayout(
-            todos: briefing.todos,
-            streak: briefing.streak,
-            boardWidth: boardWidth,
-            boardHeight: boardHeight
-        )
-
         let holder = SKNode()
-        holder.name = officeMeetingBoardNodeName
-        // 방 안쪽 벽면. 문패 줄(`labelY`)은 복도라 그 위 첫 줄이 방의 시작이다.
-        let anchorTile = TilePoint(
-            x: meeting.originX + meeting.width / 2, y: meeting.labelY + 1
-        )
-        var position = floorPoint(anchorTile)
-        position.y += tileSize * CGFloat(officeBoardLiftTiles)
-        holder.position = position
-        // 문패보다 **뒤** 다. 같은 오버레이 레이어라 z 를 안 낮추면 나중에 추가된 판이
-        // "회의실"·"기획" 문패를 덮는다 — 방 이름을 가리면서까지 보여줄 판은 아니다.
-        holder.zPosition = -1
+        holder.name = officePresidentTodoBubbleNodeName
+        // 형제는 왕관 글자(1)·문패 판(0.9)·경고등(1.1)이다. 말풍선이 그 위에 온다 —
+        // 겹치면 이름과 경고등이 함께 묻히는데, 둘 다 이 말풍선보다 오래된 신호다.
+        holder.zPosition = 1.2
 
-        let board = SKShapeNode(
-            rect: CGRect(
-                x: -boardWidth / 2, y: -boardHeight / 2,
-                width: boardWidth, height: boardHeight
-            ),
-            cornerRadius: 3
-        )
-        // 판은 밝고 글자는 어둡다 — 회의실 벽이 어두워 반대로 하면 글자가 벽에 묻힌다.
-        board.fillColor = SKColor(white: 0.93, alpha: 0.96)
-        board.strokeColor = SKColor(white: 0.45, alpha: 1)
-        board.lineWidth = 1
-        holder.addChild(board)
-
-        let title = SKLabelNode(text: "오늘의 할 일")
-        title.fontName = officeLabelFontName
-        title.fontSize = CGFloat(layout.titleFontSize)
-        title.fontColor = SKColor(white: 0.2, alpha: 1)
-        title.horizontalAlignmentMode = .left
-        title.verticalAlignmentMode = .top
-        title.position = CGPoint(
-            x: -boardWidth / 2 + boardWidth * 0.06, y: boardHeight / 2 - boardHeight * 0.08
-        )
-        holder.addChild(title)
-
-        var cursorY =
-            title.position.y - CGFloat(layout.titleFontSize * officeBoardTitleSpacing)
-        for line in layout.lines {
-            let label = SKLabelNode(text: line.text)
-            label.fontName = officeLabelFontName
-            label.fontSize = CGFloat(line.fontSize)
-            label.fontColor = SKColor(white: 0.25, alpha: 1)
-            label.horizontalAlignmentMode = .left
-            label.verticalAlignmentMode = .top
-            label.position = CGPoint(
-                x: -boardWidth / 2 + boardWidth * 0.06, y: cursorY
+        let fontSize = max(officeNameplateMinFontSize, bubbleFontSize)
+        let font = NSFont(name: officeLabelFontName, size: fontSize)
+            ?? NSFont.boldSystemFont(ofSize: fontSize)
+        // 폭은 만드는 쪽이 묶는다(§`officePresidentBubbleWidthTiles`). 몫에 들어가는 첫 후보를
+        // 고른다 — 작은 창에서는 긴 문장이 잘려 "외 N건" 이 날아가므로, 잘리기 전에 상세를
+        // 버린 짧은 후보로 내려간다(§`officePresidentTodoLines`).
+        let budget = Double(tileSize) * officePresidentBubbleWidthTiles
+        let measure: (String) -> Double = { candidate in
+            Double(
+                NSAttributedString(string: candidate, attributes: [.font: font])
+                    .size().width
             )
-            holder.addChild(label)
-            cursorY -= CGFloat(line.fontSize * officeBoardLineSpacing)
+        }
+        // 가장 짧은 후보조차 넘치면 그것을 쓰고 말줄임표에 맡긴다 — 아무것도 안 띄우는 것보다
+        // 잘린 채로 "할 일이 있다" 를 남기는 편이 낫다.
+        let line = candidates.first { measure($0) <= budget } ?? shortest
+        let text = officeWrapBubble(
+            line, maxWidth: budget, maxLines: officePresidentBubbleMaxLines
+        ) { measure($0) }
+
+        let label = SKLabelNode()
+        label.attributedText = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: SKColor(red: 1.0, green: 0.93, blue: 0.76, alpha: 1),
+            ]
+        )
+        label.verticalAlignmentMode = .bottom
+        label.horizontalAlignmentMode = .center
+        label.zPosition = 1
+
+        // 왕관 문패 바로 위에 올린다. 판 높이는 폰트 크기에 따라 달라지므로 실측해야 한다.
+        //
+        // **경고등 위에 쌓지 않는다.** 경고등(`approvalAlarm`)도 같은 문패 위에 뜨는데, 그 위로
+        // 올리면 말풍선이 화면 밖으로 나간다 — 대표실은 화면 최상단 밴드라 문패 위 여유가
+        // 40pt 뿐인데 경고등 빛만으로 그것을 다 쓴다(실제로 굽어 보니 윗줄이 잘려 나갔다).
+        // 그래서 같은 자리를 쓰고 z 로 말풍선이 이긴다(1.2 > 1.1) — 잘린 빛은 여전히 "빛난다"
+        // 로 읽히지만 잘린 글자는 못 읽는다. 빛은 판 주변으로 새어 나와 경고 상태도 남는다.
+        let titleTop = presidentNode.childNode(withName: "presidentTitlePlate")?.frame.maxY
+        label.position = CGPoint(
+            x: 0, y: (titleTop ?? presidentNode.size.height) + tileSize * 0.12
+        )
+
+        // 대표 뒤가 밝은 창문이라 맨 글자는 유리에 묻힌다(왕관 라벨이 판을 쓰는 것과 같은 이유).
+        // 테두리는 금색 — 직원 말풍선에는 판도 테두리도 없어 한눈에 갈린다.
+        let plate = SKShapeNode(
+            rect: label.frame.insetBy(dx: -tileSize * 0.14, dy: -tileSize * 0.06),
+            cornerRadius: 4
+        )
+        plate.fillColor = SKColor(white: 0.07, alpha: 0.88)
+        plate.strokeColor = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 0.9)
+        plate.lineWidth = 1
+        plate.zPosition = 0.9
+
+        holder.addChild(plate)
+        holder.addChild(label)
+        presidentNode.addChild(holder)
+    }
+
+    /// 대표실 벽 게시판에 찍히는 연속 기록 도장.
+    ///
+    /// 게시판 그림에는 글자를 얹을 수 없어(1.07칸) **개수만** 말한다 — 도장 세 개면 사흘
+    /// 연속이고, 빈 게시판이면 끊긴 것이다. 최고 기록·끊김 같은 맥락은 퇴근 정산 카드의
+    /// 문장(`streakText`)이 맡는다.
+    ///
+    /// **가로로 늘어놓는다.** 작은 그림을 위로 쌓으면 한 장과 다섯 장이 같아 보인다.
+    ///
+    /// **게시판 노드의 자식으로 붙인다.** 창 크기가 바뀌면 `renderFurniture` 가 게시판을 통째로
+    /// 다시 만드는데, 씬에 직접 붙이면 그때마다 좌표와 앞뒤 순서를 손으로 다시 맞춰야 한다
+    /// (서류 더미·모니터 화면이 같은 이유로 자식이다).
+    private func renderStreakStamps(_ briefing: ConsoleBriefing?) {
+        guard let board = streakBoardNode else {
+            return
+        }
+        board.childNode(withName: officeStreakStampNodeName)?.removeFromParent()
+        guard let briefing else {
+            return
+        }
+        let count = officeStreakStampCount(briefing.streak)
+        guard count > 0 else {
+            // 도장 0개는 그리지 않는다. 빈 게시판 자체가 "연속 끊김" 이다.
+            return
         }
 
-        overlayLayer.addChild(holder)
+        let holder = SKNode()
+        holder.name = officeStreakStampNodeName
+        // 게시판 그림보다 앞. 형제가 없어 값 자체는 크지 않아도 되지만, 0 이면 부모와 같은
+        // 층이라 그리기 순서에 맡겨진다.
+        holder.zPosition = 1
+
+        // 게시판은 anchor (0.5, 0) — 가로는 가운데, 세로는 아래끝이 기준이다.
+        let boardWidth = Double(board.size.width)
+        let boardHeight = Double(board.size.height)
+        let diameter = boardWidth * officeStreakStampDiameterRatio
+        let step = boardWidth * officeStreakStampStepRatio
+        let firstX = -step * Double(count - 1) / 2
+        // 상한을 넘긴 기록은 마지막 도장을 금색으로 칠한다 — 표식이 없으면 8일 연속이 5일과
+        // 같은 그림이 되어, 도장 개수가 연속 일수라는 약속이 상한에서 조용히 깨진다.
+        let saturated = officeStreakStampSaturated(briefing.streak)
+        for index in 0..<count {
+            let stamp = SKShapeNode(circleOfRadius: CGFloat(diameter / 2))
+            stamp.fillColor =
+                saturated && index == count - 1
+                ? SKColor(red: 0.95, green: 0.75, blue: 0.24, alpha: 1)
+                : SKColor(red: 0.81, green: 0.29, blue: 0.24, alpha: 1)
+            // 흰 테두리를 두른다. 게시판 그림에는 색색의 쪽지가 이미 붙어 있어서, 테두리가
+            // 없으면 붉은 도장이 분홍 쪽지와 섞여 "쪽지 위 빨간 점" 으로 보인다.
+            stamp.strokeColor = SKColor(white: 1, alpha: 0.9)
+            stamp.lineWidth = max(1, tileSize * 0.02)
+            stamp.position = CGPoint(
+                x: CGFloat(firstX + step * Double(index)),
+                y: CGFloat(boardHeight * officeStreakStampHeightRatio)
+            )
+            holder.addChild(stamp)
+        }
+        board.addChild(holder)
     }
 
     /// 퇴근 시각 이후 대표 옆에 놓이는 종이 한 장.
