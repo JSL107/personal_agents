@@ -245,6 +245,17 @@ public let officeLabelBoxRatio: Double = 1.3
 /// 0.35 는 최소 창에서 7픽셀 — 판 둘이 붙어 보이지 않는 최소치다(렌더 실측).
 public let officeZoneLabelGapTiles: Double = 0.35
 
+/// 부서 문패 글자 크기(타일 배수). 씬(`renderZoneLabels`)이 쓰는 값을 여기 둔 이유는
+/// 겹침 계산이 같은 값을 봐야 하기 때문이다 — 씬에만 있으면 문패 판이 얼마나 두꺼운지
+/// 검증 러너가 알 수 없어, "방 안에 들어가는가" 를 판 높이 없이 어림해야 한다.
+public let officeZoneLabelFontTiles: Double = 0.38
+
+/// 부서 문패 판의 높이(타일 배수). 한글 글자 하한(13px) 때문에 작은 창에서 더 두꺼워진다.
+public func officeZoneLabelBoxTiles(tileSize: Double) -> Double {
+    max(officeZoneLabelMinFontSizeValue, tileSize * officeZoneLabelFontTiles)
+        * officeLabelBoxRatio / tileSize
+}
+
 /// 라벨 판 둘 사이에 남아야 하는 실제 간격(픽셀).
 ///
 /// 간격을 칸 배수로만 단언하면 **창 크기와 무관한 검사**가 된다 — 0.14칸도 "이름표 위"라는
@@ -464,20 +475,37 @@ public func officeSeatedBubbleTopTiles(seatY: Int, tileSize: Double) -> Double {
 /// 뜨는 상시 말풍선("#271 리뷰 중")은 계산에 없어서 첫 행 가운데 좌석의 말풍선이 문패 판에
 /// 늘 삼켜졌다 — 지금 무슨 일을 하는지가 정확히 그 자리에서만 안 보였다.
 ///
-/// `topSeatY` 가 nil(좌석 없는 구역)이면 경계 줄 바로 위에 둔다.
+/// **말풍선을 피해 올릴 자리가 방 안에 없으면 방 아래쪽에 둔다.** 첫 좌석이 방 위쪽에 있고
+/// 그 위로 이름표·말풍선이 두 층 쌓이면 계산값이 방 천장(구역 맨 위 줄)을 넘어간다. 예전에는
+/// 그대로 올려서 문패가 **위층 방 안**에 걸렸다 — 여섯 방 전부가 한 칸씩 밀려 리뷰 방에
+/// `성장`, 개발 방에 `경영` 문패가 붙었고, 맨 아래 두 방은 문패를 잃었다. 방 이름이 남의
+/// 방에 걸리면 자리 배정이 틀린 것으로 읽힌다("성장 방에 왜 개발팀이 앉아 있나").
+/// 아래쪽 줄에는 좌석이 없으므로(자리는 구역 위쪽부터 쌓인다) 이름표·말풍선과 겹치지 않는다.
+///
+/// 한계는 **아래끝이 아니라 판 위끝**으로 잰다. 아래끝만 방 안에 두면 판 두께(작은 창에서
+/// 0.82칸)만큼 위로 삐져나가는데, 그 몫이 정확히 위층 방이다. `topSeatY` 가 nil(좌석 없는
+/// 구역)인 경로도 같은 한계를 받는다 — 피할 말풍선이 없다고 해서 방을 벗어나도 되는 것은
+/// 아니다.
 public func officeZoneLabelBottomTiles(
     zone: DepartmentZone,
     topSeatY: Int?,
     tileSize: Double
 ) -> Double {
+    // 판 위끝이 방을 넘지 않는 가장 높은 아래끝.
+    let ceiling =
+        Double(zone.origin.y + zone.height) - officeZoneLabelBoxTiles(tileSize: tileSize)
     let boundary = Double(zone.origin.y + zone.height - 1) + officeZoneLabelGapTiles
     guard let topSeatY else {
-        return boundary
+        return min(boundary, ceiling)
     }
     let aboveBubble =
         officeSeatedBubbleTopTiles(seatY: topSeatY, tileSize: tileSize)
         + officeZoneLabelGapTiles
-    return max(boundary, aboveBubble)
+    let above = max(boundary, aboveBubble)
+    guard above > ceiling else {
+        return above
+    }
+    return Double(zone.origin.y) + officeZoneLabelGapTiles
 }
 
 /// 상단 밴드(회의실·대표실·탕비실) 이름표 아래끝을 놓을 높이(격자 칸).
