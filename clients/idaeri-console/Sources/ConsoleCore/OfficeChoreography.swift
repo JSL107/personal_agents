@@ -16,6 +16,10 @@ public enum VisualIntent: Equatable, Sendable {
     case returnHome(agentType: String)
     case reject(agentType: String)
     case bubble(agentType: String, text: String)
+    /// 출근 — 복도 진입점에서 자기 좌석까지 걸어온다.
+    case arrive(agentType: String)
+    /// 퇴근 — 좌석에서 복도 진입점까지 걸어간 뒤 화면에서 빠진다.
+    case leave(agentType: String)
 }
 
 /// 실제 이벤트가 자율 배회를 즉시 끊을 대상을 연출 종류와 같은 순수 경계에서 확정한다.
@@ -30,7 +34,9 @@ public func affectedAgentTypes(of intent: VisualIntent) -> [String] {
          let .summonToBand(agentType),
          let .returnHome(agentType),
          let .reject(agentType),
-         let .bubble(agentType, _):
+         let .bubble(agentType, _),
+         let .arrive(agentType),
+         let .leave(agentType):
         return [agentType]
     }
 }

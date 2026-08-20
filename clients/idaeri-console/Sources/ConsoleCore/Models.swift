@@ -150,12 +150,15 @@ public struct ConsoleApproval: Codable, Identifiable, Equatable, Sendable {
     public let agentType: String?
     public let title: String
     public let createdAt: String
+    /// 만료 시각(ISO 8601). 방치 압력을 TTL 소진 비율로 재기 위해 받는다.
+    public let expiresAt: String
 
-    public init(id: String, agentType: String?, title: String, createdAt: String) {
+    public init(id: String, agentType: String?, title: String, createdAt: String, expiresAt: String) {
         self.id = id
         self.agentType = agentType
         self.title = title
         self.createdAt = createdAt
+        self.expiresAt = expiresAt
     }
 }
 

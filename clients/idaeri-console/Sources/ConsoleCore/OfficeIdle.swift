@@ -8,6 +8,8 @@ public let officeStrollDefaultConcurrency: Int = 2
 public let officeStrollMaxConcurrency: Int = 3
 /// 같은 사람이 다시 배회하기까지 쉬는 시간(초).
 public let officeStrollCooldownSeconds: Double = 90
+/// 점심시간(시). 이 시간에는 탕비실·회의실로 배회 목적지를 기운다.
+public let officeLunchHour: Int = 12
 
 /// 가구 앞에서 취하는 자세. 서기·앉기 그림만 있는 한계를 소품과 몸짓으로 보완한다.
 public enum OfficeInteractionPose: String, Sendable, CaseIterable {
@@ -230,20 +232,43 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
 }
 
 /// 프로세스마다 달라지는 Swift Hasher 대신 유니코드 스칼라 합과 회차만 섞는다.
+///
+/// 점심시간(hour == 12)에는 탕비실·회의실 목적지만 선택한다. 빈 경우 전체에서 고른다.
+/// 카탈로그 순서를 보존해 입력 순서가 달라도 같은 회차가 같은 결과를 낸다.
 public func officeStrollSpot(
     for agentType: String,
     round: Int,
     spots: [OfficeStrollSpot],
-    occupied: Set<TilePoint>
+    occupied: Set<TilePoint>,
+    hour: Int
 ) -> OfficeStrollSpot? {
     let candidates = spots.filter { !occupied.contains($0.tile) }
     guard !candidates.isEmpty else {
         return nil
     }
+
+    // 점심시간이면 탕비실·회의실 목적지만 골라본다. 없으면 전체에서 고른다.
+    let isLunchHour = hour == officeLunchHour
+    let breakroomKinds: Set<FurnitureKind> = [
+        .sofa2, .sofa3, .coffeeTable, .coffeeMachine, .waterCooler,
+        .vendingMachine, .refrigerator, .sinkCounter,
+    ]
+    let meetingKinds: Set<FurnitureKind> = [.meetingTable]
+    let lunchKinds = breakroomKinds.union(meetingKinds)
+
+    let filteredCandidates: [OfficeStrollSpot]
+    if isLunchHour {
+        // 점심 목적지가 있으면 그것만 고른다. 없으면 전체에서 고른다.
+        let lunch = candidates.filter { lunchKinds.contains($0.kind) }
+        filteredCandidates = lunch.isEmpty ? candidates : lunch
+    } else {
+        filteredCandidates = candidates
+    }
+
     let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-    let remainder = (scalarSum + round) % candidates.count
-    let index = remainder >= 0 ? remainder : remainder + candidates.count
-    return candidates[index]
+    let remainder = (scalarSum + round) % filteredCandidates.count
+    let index = remainder >= 0 ? remainder : remainder + filteredCandidates.count
+    return filteredCandidates[index]
 }
 
 // MARK: - 회의

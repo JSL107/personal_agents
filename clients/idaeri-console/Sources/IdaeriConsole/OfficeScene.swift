@@ -90,11 +90,22 @@ final class OfficeScene: SKScene {
     private var roommateLooks: [String: CharacterLook] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
     private var lastPhases: [String: PendingPhase] = [:]
+    /// 승인 카드별로 마지막에 실제로 적용한 방치 압력 단계(`applyApprovalPressure`). 폴링마다
+    /// 다시 걸면 자세·소품이 처음부터 재생돼 줄 전체가 깜빡이므로, 바뀔 때만 갱신하기 위해
+    /// 필요하다. 줄에서 빠지면 지운다 — 남겨 두면 같은 사람이 다시 줄에 섰을 때 단계가 이미
+    /// 올라간 것으로 읽혀 1단계 표현을 건너뛴다.
+    private var lastAppliedPressure: [String: OfficeApprovalPressure] = [:]
+    /// 마지막으로 방치 압력을 훑은 시각(`update`). `lastSessionSweepAt`과 같은 이유로 필요하다 —
+    /// 줄에 이미 선 카드는 시간이 흘러도 그 자체로는 이벤트를 내지 않는다.
+    private var lastApprovalPressureSweepAt: TimeInterval = 0
     /// 대표실 앞에 줄 선 순서. 승인 대기 인원이 늘면 줄이 길어진다.
     private var queueOrder: [String] = []
     private var lastStates: [String: ConsoleAgentState] = [:]
     private var lastSyncedAgents: [ConsoleAgent] = []
     private var lastSyncedApprovals: [ConsoleApproval] = []
+    /// 마지막으로 출근 판정을 확인한 시각(0~23시). 이 값과 달라졌을 때만 다시 판정한다 —
+    /// 매 틱마다 32명을 다시 훑을 이유가 없다, 시각이 실제로 넘어간 순간만 훑으면 된다.
+    private var lastAttendanceHour: Int = 0
     private var agentBubbles: [String: String] = [:]
     /// agentType → 사규의 직무 한 줄. 호버 쪽지의 둘째 줄이 된다.
     private var agentJobs: [String: String] = [:]
@@ -118,6 +129,13 @@ final class OfficeScene: SKScene {
     private var lastStrollAt: [String: Double] = [:]
     /// 사람별 목적지를 회차마다 바꾸되 실행마다 같은 순서가 나오게 정수 회차만 섞는다.
     private var strollRound = 0
+    /// 퇴근 연출이 이미 걸린 사람. `playArrival`은 캐릭터를 즉시 만들어(`characters` 딕셔너리에
+    /// 바로 들어감) 재진입 방지를 `characters[agentType] == nil` 하나로 해결하지만, 퇴근은
+    /// 캐릭터가 화면에서 사라지는 게 계단식 지연 + 걷기 + 페이드가 끝난 **뒤**라 같은 검사로는
+    /// 못 막는다 — 그 사이에 `playDeparture`가 다시 불리면 같은 사람에게 걷기·페이드 시퀀스가
+    /// 두 겹으로 걸린다. 지금은 호출부(`applyAttendance`의 시각당 1회 루프)가 이 상황을 만들지
+    /// 않지만, `perform(_:)`의 `.leave` 케이스가 나중에 실제 이벤트로 발화하면 겹칠 수 있다.
+    private var departingAgents: Set<String> = []
     private var windowNodes: [SKSpriteNode] = []
     private var wallLampNodes: [SKSpriteNode] = []
     private var lightLayers: [OfficeLightLayer] = []
@@ -163,6 +181,13 @@ final class OfficeScene: SKScene {
         addChild(floorLayer)
         addChild(objectLayer)
         addChild(overlayLayer)
+        // 씬이 처음 붙는 순간의 기준시각을 잡아 둔다. 이 시점엔 아직 스냅샷이 없어
+        // (`lastSyncedAgents`가 비어 있어) 아래 호출은 대개 아무도 놓지 않는 no-op 이지만,
+        // 오프스크린 렌더처럼 `sync`가 didMove 직후 곧바로 이어지는 경로에서는 기준시각이
+        // 먼저 자리 잡혀 있어야 그 sync 호출이 옳게 판정한다.
+        lastAttendanceHour = currentHour()
+        applyAttendance(animated: false)
+        startAttendanceClock()
         startIdleLoop()
     }
 
@@ -302,9 +327,20 @@ final class OfficeScene: SKScene {
             lastStates[agentType] = nil
             strollingAgents.remove(agentType)
             lastStrollAt[agentType] = nil
+            departingAgents.remove(agentType)
+            lastAppliedPressure[agentType] = nil
         }
 
         reconcileQueue(agents: agents, approvals: approvals)
+
+        // 출근 판정대로 자리에 놓거나 치운다. reconcileQueue **뒤에** 와야 한다 — 이번 스냅샷에서
+        // 막 승인 대기로 들어온 사람은 `attendanceInput`이 보는 `queueOrder`가 갱신돼 있어야
+        // `isQueued`(대표실 앞 줄, 최우선 조건)로 잡힌다. 순서를 바꾸면 진행 중 상태를 거치지
+        // 않고 폴링 사이에 곧장 승인 대기로 넘어간 사람이 새벽·야간에는 캐릭터 자체가 안 만들어져
+        // 승인 버튼을 누를 대상이 화면에서 사라진다. 이 호출로 막 새로 앉은 사람이 대표실 줄
+        // 칸이 아니라 자기 책상에 놓이더라도 괜찮다 — 아래 메인 루프 뒤의 `layoutQueue()`가
+        // 한 번 더 돌며 줄 칸으로 다시 옮긴다.
+        applyAttendance(animated: false)
 
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
@@ -317,12 +353,8 @@ final class OfficeScene: SKScene {
             guard let seat = homeSeats[agent.agentType] else {
                 continue  // 구역 정원을 넘어 자리를 못 받은 인원(현재 구성에서는 발생하지 않음)
             }
-            let node = characters[agent.agentType] ?? makeCharacter(for: agent, seat: seat)
-            if characters[agent.agentType] == nil {
-                characters[agent.agentType] = node
-                objectLayer.addChild(node)
-                place(node, at: seat)
-                node.sit()
+            guard let node = characters[agent.agentType] else {
+                continue  // 출근 판정이 away — 위 applyAttendance가 이미 걸러냈다.
             }
             node.resize(tileSize: tileSize, spriteScale: characterScale)
             // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
@@ -359,11 +391,263 @@ final class OfficeScene: SKScene {
         }
 
         layoutQueue()
+        // 줄이 자리 잡은 뒤라야 한다 — 방치 압력은 큐 칸에 이미 선 사람의 자세만 손댄다.
+        applyApprovalPressure()
         // 평면도·타일 크기가 새로 잡혔으므로 세션도 다시 세운다(내부에서 요약까지 갱신한다).
         syncSessions(lastSyncedSessions)
         updateDaylight()
         // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
         refreshDoors()
+    }
+
+    // MARK: - 출근
+
+    /// 스냅샷에서 이 사람의 출근 판정 입력을 뽑는다.
+    ///
+    /// 진행 중 여부를 `runs` 로 세지 않는다 — 씬은 runs 를 들고 있지 않고(`lastSyncedAgents` ·
+    /// `lastSyncedApprovals` · `lastSyncedSessions` 뿐), 백엔드가 이미 그것을 보고 `state` 를
+    /// 계산해 내려준다. 같은 것을 두 곳에서 세면 갈린다.
+    private func attendanceInput(of agent: ConsoleAgent) -> OfficeAttendanceInput {
+        OfficeAttendanceInput(
+            hasActiveRun: agent.state == .inProgress,
+            // 버전 스큐로 옵셔널인 필드(Models.swift 참조) — 값이 없으면 오늘 아직 아무것도
+            // 못 끝낸 것으로 본다. 조기 출근 판정만 이 값을 쓰고 야간 판정에는 안 쓴다.
+            doneToday: agent.doneToday ?? 0,
+            isQueued: queueOrder.contains(agent.agentType)
+        )
+    }
+
+    /// 이 사람이 지금 사무실에 있어야 하는가.
+    private func attendance(of agent: ConsoleAgent) -> OfficeAttendance {
+        officeAttendance(hour: currentHour(), input: attendanceInput(of: agent))
+    }
+
+    /// 출근 판정대로 사람을 놓거나 치운다.
+    ///
+    /// `plan.desks`(자리가 확정된 사람 목록)를 기준으로 돈다 — `homeSeats`가 바로 이 값에서
+    /// 뽑히므로 자리 없는 사람을 다루는 경우가 없다.
+    ///
+    /// `animated: false` 는 **앱을 켠 순간**과 스냅샷이 갱신될 때처럼 "지금 값을 그대로 확정"
+    /// 해야 하는 경로다. 10시에 앱을 켰다고 출근 애니메이션을 소급 재생하면, 이미 일어난 일을
+    /// 처음부터 다시 보여 주는 셈이 된다. `animated: true`는 출근 시각 경계를 실시간으로 넘는
+    /// 순간(`startAttendanceClock`)에만 걷기 연출로 나간다.
+    ///
+    /// **등장 순서는 `plan.desks` 배열 순서를 그대로 쓴다.** 그 배열은 이미 부서(zoneOrder) →
+    /// 방 안 agentType 사전순으로 채워져 있다 — 배회처럼 무작위로 고르면 회차마다 화면이
+    /// 달라져 렌더 비교가 성립하지 않는다.
+    private func applyAttendance(animated: Bool) {
+        var arrivalIndex = 0
+        var departureIndex = 0
+        for entry in plan.desks {
+            guard let agent = lastSyncedAgents.first(where: { $0.agentType == entry.agentType })
+            else {
+                continue
+            }
+            switch attendance(of: agent) {
+            case .present where characters[entry.agentType] == nil:
+                if animated {
+                    playArrival(entry, delay: TimeInterval(arrivalIndex) * Self.arrivalStagger)
+                    arrivalIndex += 1
+                } else {
+                    spawnCharacter(entry.agentType, at: entry.seat)
+                }
+            case .away where characters[entry.agentType] != nil:
+                if animated {
+                    playDeparture(entry, delay: TimeInterval(departureIndex) * Self.arrivalStagger)
+                    departureIndex += 1
+                } else {
+                    despawnCharacter(entry.agentType)
+                }
+            default:
+                continue
+            }
+        }
+    }
+
+    /// 출근 등장 간격(초). 26명이 같은 순간에 길찾기를 돌리면 CPU가 튄다 — 자율 배회의 동시
+    /// 상한(`officeStrollDefaultConcurrency` = 2)을 그대로 쓰면 아홉 배치 이상으로 늘어져
+    /// 출근이 끝나지 않는다. 그렇다고 상한을 없애면(전원 동시 등장) 스파이크가 그대로 온다 —
+    /// 그래서 동시 상한 대신 **시작 시각을 사람마다 조금씩 늦춰** 계산이 자연히 퍼지게 한다.
+    /// 0.12초 간격이면 32명 전원 등장이 4초 안에 끝나고, 실기 확인에서 CPU 튐이 보이지 않았다.
+    private static let arrivalStagger: TimeInterval = 0.12
+
+    /// 복도 진입점에서 등장해 자기 좌석까지 걸어온다.
+    ///
+    /// 도면 밖 타일이 없으므로 "화면 밖에서 걸어온다"는 성립하지 않는다. `plan.entranceTile`
+    /// (세로 복도의 바닥벽 쪽 끝)에 노드를 만들고 거기서부터 걷는다.
+    ///
+    /// **줄이 출근보다 우선한다.** 계단식 지연이 끝나기 전에 이 사람이 승인 대기줄에 들어갈
+    /// 수 있다(`joinQueue`가 이미 줄 칸으로 걷는 중일 수 있다) — 그 뒤에 이 함수가 무조건
+    /// 좌석으로 걷게 하면 같은 "walk" 액션 키를 다시 잡아 줄 걸음을 취소하고 자리로 끌고
+    /// 간다. `queueOrder`와 실제 위치가 갈리는 그 상태를 만들지 않으려고, 지연이 끝나는
+    /// 순간 줄 여부를 다시 확인해 이미 줄이면 좌석 걸음을 포기한다.
+    private func playArrival(_ entry: DeskAssignment, delay: TimeInterval) {
+        guard characters[entry.agentType] == nil else {
+            return
+        }
+        // 배회는 기존 캐릭터에만 걸리므로 지금 막 만드는 사람에게는 사실상 no-op 이지만,
+        // 퇴근 쪽(playDeparture)과 대칭을 맞춰 두 경로 모두 같은 지점에서 배회를 끊는다.
+        cancelStroll(entry.agentType)
+        spawnCharacter(entry.agentType, at: plan.entranceTile, seated: false)
+        guard let node = characters[entry.agentType] else {
+            return
+        }
+        node.alpha = 0
+        // 계단식 지연 동안에도 감독관(8초 주기)이 이 사람을 한가한 사람으로 오인하지 않게
+        // 미리 "걷는 중" 으로 표시한다. 실제 걸음이 시작되기 전까지는 화면에 안 보이므로
+        // (alpha 0) 자세가 걸음 그림으로 보여도 무해하다 — `walk()` 가 시작되면 그대로 이어진다.
+        node.isWalking = true
+        node.run(.sequence([
+            .wait(forDuration: delay),
+            .fadeIn(withDuration: 0.2),
+            .run { [weak self, weak node] in
+                guard let self, let node else {
+                    return
+                }
+                guard !self.queueOrder.contains(entry.agentType) else {
+                    return
+                }
+                self.walk(node, to: entry.seat) { [weak node] in
+                    node?.sit()
+                }
+            },
+        ]))
+    }
+
+    /// 좌석에서 복도 진입점까지 걸어간 뒤 화면에서 빠진다. 등장의 반대 순서다.
+    ///
+    /// 배회 중에 퇴근 시각이 되는 경우가 있다 — 자리를 뜨기 전에 배회부터 끊어야, 나중에
+    /// 깨어난 배회 머무름 콜백이 이미 나간 사람을 자리로 도로 끌고 오지 않는다.
+    ///
+    /// **줄이 퇴근보다 우선한다.** `officeAttendance`가 이미 `isQueued`를 시각보다 앞세우므로
+    /// 판정 시점에 줄이었다면 이 함수 자체가 안 불린다 — 하지만 계단식 지연 **중에** 새로
+    /// 줄에 들어가는 경우는 그 판정 뒤에 일어나 여기서 다시 봐야 한다. 문까지 걷기 전, 그리고
+    /// 화면에서 지우기 전 두 지점에서 확인한다 — 뒤쪽 지점을 놓치면 문 앞에서는 줄로
+    /// 넘어갔지만 그 사이 이미 페이드아웃·제거가 걸려, 줄에는 남아 있는데 캐릭터는 사라지는
+    /// (`queueOrder`와 실제 상태가 갈리는) 결과가 된다.
+    private func playDeparture(_ entry: DeskAssignment, delay: TimeInterval) {
+        // playArrival(460행)의 재진입 방지(`characters[agentType] == nil`)와 같은 목적이다 —
+        // 다만 퇴근은 화면에서 사라지는 시점이 시퀀스 맨 끝(`despawnCharacter`)이라 같은 검사로는
+        // 안 막힌다. `departingAgents`가 그 사이 구간을 대신 막는다.
+        guard let node = characters[entry.agentType], !departingAgents.contains(entry.agentType) else {
+            return
+        }
+        departingAgents.insert(entry.agentType)
+        cancelStroll(entry.agentType)
+        // 계단식 지연 동안에도 감독관이 이 사람을 다시 배회로 뽑을 수 있다 — 위 cancelStroll
+        // 은 "지금까지의" 배회만 끊는다. 걷는 중으로 미리 표시해 그 창을 닫는다.
+        node.isWalking = true
+        node.run(.sequence([
+            .wait(forDuration: delay),
+            .run { [weak self] in
+                guard let self, let node = self.characters[entry.agentType] else {
+                    return
+                }
+                guard !self.queueOrder.contains(entry.agentType) else {
+                    // 줄이 이겼다 — 퇴근을 포기한다. 다음에 다시 시도할 수 있어야 하므로
+                    // 재진입 방지 표식을 지운다.
+                    self.departingAgents.remove(entry.agentType)
+                    return
+                }
+                // 퇴근 도중에 새 일감이 들어올 수 있다(21시대 관측: 14일간 10회). 상태가 .inProgress로
+                // 변하면 hasActiveRun이 true라 attendance가 .present로 변한다. 일하는 중에는
+                // 퇴근할 수 없으므로 여기서 중단하고 복귀한다.
+                guard self.attendance(of: lastSyncedAgents.first(where: { $0.agentType == entry.agentType })!) == .away else {
+                    self.departingAgents.remove(entry.agentType)
+                    node.isWalking = false
+                    return
+                }
+                self.walk(node, to: self.plan.entranceTile) { [weak self] in
+                    guard let self, let node = self.characters[entry.agentType] else {
+                        return
+                    }
+                    guard !self.queueOrder.contains(entry.agentType) else {
+                        self.departingAgents.remove(entry.agentType)
+                        return
+                    }
+                    // 걷는 도중에도 일감이 들어올 수 있다. 도착 지점에서 다시 한 번 확인해서
+                    // 도중에 업무를 시작한 사람이 남을 수 있게 한다.
+                    guard self.attendance(of: lastSyncedAgents.first(where: { $0.agentType == entry.agentType })!) == .away else {
+                        self.departingAgents.remove(entry.agentType)
+                        node.isWalking = false
+                        return
+                    }
+                    node.run(.sequence([
+                        .fadeOut(withDuration: 0.2),
+                        .run { [weak self] in
+                            self?.despawnCharacter(entry.agentType)
+                        },
+                    ]))
+                }
+            },
+        ]))
+    }
+
+    /// 캐릭터를 만들어 지정한 타일에 세운다.
+    ///
+    /// 좌석이든 복도 진입점(출근 연출의 출발점)이든 이 함수 하나로 만든다 — 좌석 전용
+    /// 변주를 따로 두면 생성 경로가 갈라진다.
+    ///
+    /// `seated`는 기본값 `true`(좌석에 바로 앉힌다, 이전 동작 그대로)다. 복도 칸에 세울 때는
+    /// `false`를 넘긴다 — 복도 한가운데 앉은 사람은 자세가 타일과 맞지 않는다. `makeCharacter`가
+    /// 이미 서서 아래를 보는 자세로 만들어 두므로(`CharacterNode.init`의 `apply(facing: .down)`)
+    /// 따로 세우는 호출은 필요 없다.
+    private func spawnCharacter(_ agentType: String, at tile: TilePoint, seated: Bool = true) {
+        guard characters[agentType] == nil,
+            let agent = lastSyncedAgents.first(where: { $0.agentType == agentType })
+        else {
+            return
+        }
+        let node = makeCharacter(for: agent, seat: tile)
+        characters[agentType] = node
+        objectLayer.addChild(node)
+        place(node, at: tile)
+        if seated {
+            node.sit()
+        }
+    }
+
+    /// 캐릭터를 치운다. 생성 때 함께 만든 부기(줄 순서·완료 상태·배회 기록)도 같이 지운다 —
+    /// 남겨 두면 다음 스냅샷의 `attendanceInput`이 이미 나간 사람을 여전히 줄 서 있거나
+    /// 배회 중인 것으로 읽는다. 스냅샷에서 사람 자체가 사라졌을 때의 정리(`sync` 위쪽의
+    /// `incoming` 제거 루프)와 같은 항목을 지운다 — 두 제거 경로가 남기는 자국이 다르면
+    /// 안 보이는 사람 하나가 접근성 낭독·문 여닫이 판정에 계속 걸린다.
+    private func despawnCharacter(_ agentType: String) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        node.removeFromParent()
+        characters[agentType] = nil
+        queueOrder.removeAll { $0 == agentType }
+        lastStates[agentType] = nil
+        strollingAgents.remove(agentType)
+        lastStrollAt[agentType] = nil
+        departingAgents.remove(agentType)
+        lastAppliedPressure[agentType] = nil
+    }
+
+    /// 시각이 바뀌었는지 1분마다 확인한다.
+    ///
+    /// 씬이 멈춘 동안(창이 가려짐)에는 돌지 않는다 — 유휴 CPU 를 0.7% 까지 내려둔 상태를 이
+    /// 타이머가 깨면 안 된다. `isPaused`가 SKAction 자체를 세우므로 대기 시간은 그대로 멈췄다가
+    /// 다시 보이는 순간 이어서 흐른다 — 놓친 경계는 그때(최대 60초 안에) 따라잡힌다.
+    private func startAttendanceClock() {
+        let tick = SKAction.sequence([
+            SKAction.wait(forDuration: 60),
+            SKAction.run { [weak self] in
+                guard let self, !self.isPaused else {
+                    return
+                }
+                let hour = self.currentHour()
+                guard hour != self.lastAttendanceHour else {
+                    return
+                }
+                self.lastAttendanceHour = hour
+                self.applyAttendance(animated: true)
+                self.updateDaylight()
+            },
+        ])
+        run(SKAction.repeatForever(tick), withKey: "attendanceClock")
     }
 
     /// 회귀 렌더가 자세를 실제로 그리지 않으면 누락도 정상 화면처럼 저장되므로 전부 강제 배치한다.
@@ -448,22 +732,24 @@ final class OfficeScene: SKScene {
             agents: agents,
             approvals: approvals
         )
-        guard reconciled != queueOrder else {
-            return
+        if reconciled != queueOrder {
+            let leaving = queueOrder.filter { !reconciled.contains($0) }
+            let joining = reconciled.filter { !queueOrder.contains($0) }
+            queueOrder = reconciled
+            for agentType in leaving {
+                goHome(agentType)
+            }
+            // 새로 줄에 들어온 사람이 배회 중이면 끊는다 — 승인 대기는 관제 신호이고 배회는
+            // 연출이다. 끊지 않으면 머무름 콜백이 나중에 깨어나 줄에서 자리로 끌고 간다.
+            for agentType in joining {
+                cancelStroll(agentType)
+            }
+            // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
+            layoutQueue()
         }
-        let leaving = queueOrder.filter { !reconciled.contains($0) }
-        let joining = reconciled.filter { !queueOrder.contains($0) }
-        queueOrder = reconciled
-        for agentType in leaving {
-            goHome(agentType)
-        }
-        // 새로 줄에 들어온 사람이 배회 중이면 끊는다 — 승인 대기는 관제 신호이고 배회는 연출이다.
-        // 끊지 않으면 머무름 콜백이 나중에 깨어나 줄에서 자리로 끌고 간다.
-        for agentType in joining {
-            cancelStroll(agentType)
-        }
-        // 앞사람이 빠지면 뒷사람 순번이 당겨진다 — 줄에 빈 칸이 남지 않게 다시 세운다.
-        layoutQueue()
+        // 줄 구성이 그대로여도 불러야 한다 — 승인 알림(개설/처리)이 오갈 때마다 이 함수가
+        // 불리므로, 방치 압력도 같이 최신화할 기회로 쓴다.
+        applyApprovalPressure()
     }
 
     /// 그 자리의 이름표가 좌우로 쓸 수 있는 여유(칸). 같은 방 같은 행 이웃과 방 벽이 정한다.
@@ -999,7 +1285,67 @@ final class OfficeScene: SKScene {
         plate.strokeColor = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 0.55)
         plate.lineWidth = 1
         plate.zPosition = 0.9  // 글자(1) 바로 뒤
+        // 경고등이 이 판 바로 위에 뜨려면 판의 실제 높이(폰트 크기에 따라 달라진다)를
+        // 알아야 한다 — 이름으로 다시 찾아 frame 을 읽는다.
+        plate.name = "presidentTitlePlate"
         node.addChild(plate)
+    }
+
+    /// 승인이 만료 임박까지 방치되면 대표 캐릭터 머리 위에 경고등을 켠다.
+    ///
+    /// **등을 붙이는 대상은 대표 캐릭터 노드다.** 씬이 들고 있는 것은 `president: SKSpriteNode?`
+    /// 하나뿐이고, 대표 전용 책상 노드는 없다 — 대표는 `plan.desks`에 들어가지 않는 사람이라
+    /// (사규가 배정한 좌석이 아니다) 책상 소품이 쓰던 `deskNodes` 경로를 그대로 쓸 수 없다.
+    ///
+    /// 배치 코드를 반드시 함께 넣는다 — 등록만 하고 배치를 빠뜨리면 조용히 화면에 안 나온다
+    /// (`prop-*.png` 일곱 장이 그렇게 방치돼 있었다).
+    private func updatePresidentAlarm(_ highest: OfficeApprovalPressure?) {
+        president?.childNode(withName: "approvalAlarm")?.removeFromParent()
+        guard highest == .alarm,
+            let presidentNode = president,
+            let texture = OfficeLightTexture.deskGlow(
+                radius: officeAlarmGlowRadius,
+                color: officeAlarmGlowColor,
+                strength: officeAlarmGlowStrength
+            )
+        else {
+            // highest 가 .alarm 이 아니면(nil 포함) 끄기만 하고 끝난다 — 승인이 0건이 되거나
+            // 가장 급한 카드도 경고 단계 밑으로 내려오면 등이 반드시 꺼져야 한다. "켜지는 것만
+            // 보고 끝내면 만료 뒤에도 남는 결함을 놓친다" — 이 함수는 그 결함을 만들지 않도록
+            // 매번 지우고 나서 다시 켤지 판단한다.
+            return
+        }
+        let alarm = SKSpriteNode(texture: texture)
+        alarm.name = "approvalAlarm"
+        alarm.blendMode = .add
+        // 책상 스탠드(`officeDeskGlowZPosition`)와는 다른 지역 z 스택이다 — 여기 형제는
+        // 왕관(1)·문패 판(0.9)이라, 그 값을 그대로 쓰면 겹칠 때 경고등이 아래로 깔린다.
+        // 위치 계산(titleTop)이 창 크기·폰트에 따라 조금 어긋나 문패 판과 겹치더라도
+        // 경고등이 항상 이겨야 하므로 형제 중 가장 위에 둔다.
+        alarm.zPosition = 1.1
+        // 다른 스프라이트와 같은 배율을 따라야 창 크기가 바뀌어도 대비가 유지된다
+        // (책상 스탠드 웅덩이와 같은 이유, `updateDeskLamps` 참고).
+        alarm.size = CGSize(
+            width: texture.size().width * spriteScale,
+            height: texture.size().height * spriteScale
+        )
+        // 왕관 문패 판 바로 위에 띄운다 — 겹치면 "나 (대표)" 글자와 경고등이 서로 가린다.
+        let titleTop =
+            presidentNode.childNode(withName: "presidentTitlePlate")?.frame.maxY
+            ?? presidentNode.size.height
+        alarm.position = CGPoint(x: 0, y: titleTop + 2)
+        // 깜빡임은 느리게 — 빠른 점멸은 종일 켜 두는 관제 화면에서 눈을 피로하게 하고,
+        // 접근성상 초당 3회를 넘기면 안 된다. 편도 1.1초 왕복(전체 주기 2.2초)이라
+        // 초당 약 0.45회 — 상한의 1/6 수준으로 여유가 크다.
+        alarm.run(
+            .repeatForever(
+                .sequence([
+                    .fadeAlpha(to: 0.35, duration: 1.1),
+                    .fadeAlpha(to: 1.0, duration: 1.1),
+                ])
+            )
+        )
+        presidentNode.addChild(alarm)
     }
 
     // MARK: - 걸음
@@ -1039,12 +1385,14 @@ final class OfficeScene: SKScene {
         strollRound += 1
         let spots = officeStrollSpots(plan: plan)
         var occupied = Set(characters.values.map(\.tile))
+        let hour = currentHour()
         for agentType in picks {
             guard let spot = officeStrollSpot(
                 for: agentType,
                 round: strollRound,
                 spots: spots,
-                occupied: occupied
+                occupied: occupied,
+                hour: hour
             ) else {
                 continue
             }
@@ -1242,6 +1590,54 @@ final class OfficeScene: SKScene {
         }
     }
 
+    /// 줄 선 사람의 자세를 방치 단계에 맞춘다.
+    ///
+    /// 판정(누구의 단계가 바뀌었는가)은 `officeApprovalPressureUpdates`(ConsoleCore, 순수)가
+    /// 맡는다. 여기는 그 결과를 SpriteKit 자세로 옮기기만 하는 얇은 어댑터다 — **단계가 오를
+    /// 때만 갱신한다.** 폴링마다 다시 걸면 자세와 소품이 처음부터 재생돼 줄 전체가 깜빡인다
+    /// (책상 소품이 결정론적 선택을 쓰는 것과 같은 이유).
+    private func applyApprovalPressure() {
+        let now = Date().timeIntervalSince1970
+        let (changes, nextApplied) = officeApprovalPressureUpdates(
+            now: now,
+            approvals: lastSyncedApprovals,
+            nodesPresent: Set(characters.keys),
+            previouslyApplied: lastAppliedPressure
+        )
+        lastAppliedPressure = nextApplied
+        for change in changes {
+            if change.parseFailed {
+                // 조용히 "차분함"으로 읽으면 안 되므로 이미 최고 단계(.alarm)로 표시했다.
+                // 여기서는 원인 추적을 위해 로그만 남긴다.
+                FileHandle.standardError.write(
+                    Data(
+                        "승인 카드 시각 파싱 실패(\(change.agentType)) — 경고 단계로 표시\n".utf8
+                    )
+                )
+            }
+            guard let node = characters[change.agentType] else {
+                continue
+            }
+            switch change.pressure {
+            case .queued:
+                node.endInteraction()
+            case .holdingPapers:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+            case .tapping:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+                node.startWaitTap()
+            case .alarm:
+                node.beginInteraction(pose: .carryingPapers, facing: .up)
+                node.startWaitTap()
+            }
+        }
+        // 대표 경고등은 가장 급한 카드 하나만 보면 된다. 단계는 위에서 이미 다 구했으므로
+        // approvals 를 다시 훑지 않고 방금 확정한 최신 단계(`nextApplied`) 중 최고값만 뽑는다.
+        // 대기 중인 승인이 하나도 없으면 `nextApplied`가 비어 `max()`가 nil을 돌려주고,
+        // 그 nil이 그대로 `updatePresidentAlarm`에 들어가 등을 끈다.
+        updatePresidentAlarm(nextApplied.values.max())
+    }
+
     /// 완료 직후 탕비실에 잠깐 다녀온다. 비어 있는 휴식 자리를 고른다.
     ///
     /// 배회 중이던 사람이 완료로 바뀔 수 있다(이벤트 없이 스냅샷만 갱신되는 경로). 그때 앞선
@@ -1311,6 +1707,16 @@ final class OfficeScene: SKScene {
                 reject(agentType)
             case let .bubble(agentType, text):
                 showBubble(agentType, text: text)
+            case let .arrive(agentType):
+                // 출근 시각 경계는 `applyAttendance`가 지연·계단식 등장을 직접 계산해 부른다
+                // (delay 0 은 이벤트로 들어오는 경우를 위한 완전성 — 지금은 실제로 그 경로가 없다).
+                if let entry = plan.desks.first(where: { $0.agentType == agentType }) {
+                    playArrival(entry, delay: 0)
+                }
+            case let .leave(agentType):
+                if let entry = plan.desks.first(where: { $0.agentType == agentType }) {
+                    playDeparture(entry, delay: 0)
+                }
             }
         }
     }
@@ -1353,6 +1759,13 @@ final class OfficeScene: SKScene {
     /// 깨어난 첫 프레임에서 간격을 넘겨 즉시 한 번 훑는다.
     override func update(_ currentTime: TimeInterval) {
         super.update(currentTime)
+        // 승인 방치 압력도 같은 문제를 안는다 — 이미 줄 선 카드는 시간만 흘러도 단계가
+        // 올라야 하는데, 목록 자체(SSE 승인 개설/처리)가 그대로면 갱신 이벤트가 오지 않는다.
+        // `applyApprovalPressure` 내부에서 바뀐 사람만 골라내므로 매 훑음이 헛돌지는 않는다.
+        if currentTime - lastApprovalPressureSweepAt >= officeApprovalPressureSweepIntervalSeconds {
+            lastApprovalPressureSweepAt = currentTime
+            applyApprovalPressure()
+        }
         guard currentTime - lastSessionSweepAt >= officeSessionSweepIntervalSeconds else {
             return
         }
@@ -1671,8 +2084,10 @@ final class OfficeScene: SKScene {
             stopMonitorGlow(agent.agentType)
             node.startSlump()
         case .awaitingApproval:
+            // 발을 구르며 기다리는 것은 압력 사다리의 3단계다. 카드가 신착일 때는 중립 자세로
+            // 줄을 선다 — 서 있는 것 자체가 1단계 신호다.
             stopMonitorGlow(agent.agentType)
-            node.startWaitTap()
+            node.startBreathing()
         case .completed, .waiting, .awaitingIntegration:
             stopMonitorGlow(agent.agentType)
             node.startBreathing()
@@ -1765,6 +2180,52 @@ final class OfficeScene: SKScene {
         }
         for layer in lightLayers {
             layer.apply(light)
+        }
+        // 시각이 바뀔 때마다(창·벽등과 같은 호출부에서) 켜고 끈다 — 여기 한 곳에 두면
+        // sync·창 크기 변경·틱 세 경로가 전부 여기를 지나므로 셋을 따로 배선할 필요가 없다.
+        updateDeskLamps()
+    }
+
+    /// 앉아 있는 사람 책상에 스탠드 빛을 켠다.
+    ///
+    /// 낮에는 켜지 않는다 — 창 채광이 이미 광원이라, 빛이 두 겹이 되면 어느 쪽이 광원인지
+    /// 읽히지 않는다(`officeWindowLight`의 `lampLit` 판단과 같은 이유).
+    ///
+    /// **`prop-desk-lamp` 소품과 무관하게 켠다.** 그 소품은 개인 소품 일곱 종 중 하나라
+    /// 사람 일곱 중 여섯은 스탠드 오브젝트 자체가 책상에 없다 — 빛을 소품에 묶으면 대부분의
+    /// 책상이 밤에도 그대로 어둡다.
+    private func updateDeskLamps() {
+        let daylight = officeDaylight(hour: currentHour())
+        let shouldLight = daylight == .dawn || daylight == .evening || daylight == .night
+        for entry in plan.desks {
+            // 책상 노드는 agentType 을 키로 갖는다(`deskNodes[owner] = node`, renderFurniture).
+            let deskNode = deskNodes[entry.agentType]
+            deskNode?.childNode(withName: "deskGlow")?.removeFromParent()
+            guard shouldLight,
+                let node = characters[entry.agentType],
+                node.tile == entry.seat,
+                let texture = OfficeLightTexture.deskGlow(
+                    radius: officeDeskGlowRadius,
+                    color: officeDeskGlowColor,
+                    strength: officeDeskGlowStrength
+                )
+            else {
+                continue
+            }
+            let glow = SKSpriteNode(texture: texture)
+            glow.name = "deskGlow"
+            glow.blendMode = .add
+            glow.zPosition = officeDeskGlowZPosition
+            // 다른 스프라이트와 같은 배율을 따라야 창 크기가 바뀌어도 책상 대비 비율이
+            // 유지된다(원본 텍스처 픽셀 크기를 그대로 쓰면 tileSize 가 작을 때 상판보다 커진다).
+            glow.size = CGSize(
+                width: texture.size().width * spriteScale,
+                height: texture.size().height * spriteScale
+            )
+            // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다 — 상판
+            // 높이쯤(세로 중간)에 중심을 두고, 좌우로는 상판 전체를 덮도록 가운데에 둔다.
+            glow.position = CGPoint(x: 0, y: tileSize * 0.5)
+            deskNode?.addChild(glow)
         }
     }
 
@@ -2076,17 +2537,41 @@ final class OfficeScene: SKScene {
             let active = lastSyncedSessions.filter { $0.state == officeSessionActiveState }.count
             text += "  ·  내 세션 \(lastSyncedSessions.count)(도는 중 \(active))"
         }
+        // 판 없이 글자만 얹으면 벽·창처럼 밝은 타일 위에서 글자가 묻힌다. 실제 화면에서
+        // "내 세션 9(도는 중 5)" 가 배경에 잠겨 잘린 것처럼 보였다.
+        let holder = SKNode()
+        holder.name = "summaryHUD"
+        holder.zPosition = officeHudZPosition
+
         let label = SKLabelNode(text: text)
-        label.name = "summaryHUD"
         // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
         // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
         label.fontName = officeLabelFontName
         label.fontSize = max(officeHudMinFontSize, tileSize * 0.30)
-        label.fontColor = SKColor(white: 0.88, alpha: 1)
+        label.fontColor = SKColor(white: 0.96, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top
-        label.position = CGPoint(x: 12, y: size.height - 10)
-        overlayLayer.addChild(label)
+        label.position = .zero
+
+        let textFrame = label.calculateAccumulatedFrame()
+        let padding = label.fontSize * 0.55
+        let plate = SKShapeNode(
+            rect: CGRect(
+                x: textFrame.minX - padding,
+                y: textFrame.minY - padding * 0.7,
+                width: textFrame.width + padding * 2,
+                height: textFrame.height + padding * 1.4
+            ),
+            cornerRadius: label.fontSize * 0.45
+        )
+        plate.fillColor = SKColor(white: 0.05, alpha: 0.82)
+        plate.strokeColor = SKColor(white: 1.0, alpha: 0.10)
+        plate.lineWidth = 1
+
+        holder.addChild(plate)
+        holder.addChild(label)
+        holder.position = CGPoint(x: 12 + padding, y: size.height - 10 - padding * 0.7)
+        overlayLayer.addChild(holder)
     }
 
     /// 선택된 캐릭터에 지속 하이라이트를 얹는다.

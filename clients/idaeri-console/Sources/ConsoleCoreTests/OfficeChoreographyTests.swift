@@ -36,7 +36,12 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "run.finished → recolor + bubble")
 
     // approval.opened → 이동 + 승인 대기색 + bubble. 색을 빼면 이벤트 순서에 따라 흰 링이 남는다.
-    let approval = ConsoleApproval(id: "a1", agentType: "CTO", title: "PR", createdAt: "t")
+    // createdAt/expiresAt 은 실제 백엔드가 보내는 형태(ISO 8601)를 그대로 쓴다 — "t" 같은
+    // 자리표시자는 방치 압력이 그 값을 읽기 시작한 뒤로는 파싱 실패로 잡혀 뜻이 달라진다.
+    let approval = ConsoleApproval(
+        id: "a1", agentType: "CTO", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(approval), context: ctx),
         [
@@ -47,13 +52,19 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "approval.opened → summon + 승인 대기색 + bubble")
 
     // 운영의 세션 유휴 승인은 agentType 이 nil 이다. 관계없는 사람을 줄 세우면 안 된다.
-    let nilAgentApproval = ConsoleApproval(id: "a2", agentType: nil, title: "세션 유휴", createdAt: "t")
+    let nilAgentApproval = ConsoleApproval(
+        id: "a2", agentType: nil, title: "세션 유휴",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(nilAgentApproval), context: ctx),
         [],
         "approval.opened agentType nil → 빈 결과")
 
-    let unknownAgentApproval = ConsoleApproval(id: "a3", agentType: "UNKNOWN", title: "PR", createdAt: "t")
+    let unknownAgentApproval = ConsoleApproval(
+        id: "a3", agentType: "UNKNOWN", title: "PR",
+        createdAt: "2026-08-19T00:00:00Z", expiresAt: "2026-08-19T01:00:00Z"
+    )
     t.expectEqual(
         visualIntents(for: .approvalOpened(unknownAgentApproval), context: ctx),
         [],
@@ -108,6 +119,19 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         visualIntents(for: .stateChanged(agentType: "PM", state: .completed), context: ctx),
         [.recolor(agentType: "PM", state: .completed)],
         "state.changed(COMPLETED) → recolor")
+
+    // 출근·퇴근은 자율 배회를 끊어야 한다. 배회 중에 퇴근 시각이 되면 사람이 사무실
+    // 한가운데서 사라지거나, 문으로 가다 배회에 끌려 되돌아간다.
+    t.expectEqual(
+        affectedAgentTypes(of: .arrive(agentType: "PM")),
+        ["PM"],
+        "출근은 그 사람의 배회를 끊는다"
+    )
+    t.expectEqual(
+        affectedAgentTypes(of: .leave(agentType: "PM")),
+        ["PM"],
+        "퇴근은 그 사람의 배회를 끊는다"
+    )
 
     runOfficeWalkFrameTests(t)
 }
