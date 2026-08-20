@@ -2,10 +2,15 @@ import Foundation
 
 /// 감독관 호출 주기(초). 프레임 루프가 아니라 "기다림 → 감독관 → 재생" 반복이다.
 public let officeStrollTickSeconds: Double = 8
-/// 동시 배회 인원 기본값. 29명이 한꺼번에 움직이면 사무실이 아니라 난장판이다.
-public let officeStrollDefaultConcurrency: Int = 2
+/// 동시 배회 인원 기본값. 서른 명이 한꺼번에 움직이면 사무실이 아니라 난장판이다.
+///
+/// 2 였다. 상한(3)에도 못 미치는 값이라 화면에서 움직이는 사람이 서른두 명 중 둘 — 6% 였고,
+/// 그 둘이 가는 곳조차 하는 일과 무관했다(`officeWorkAffinity` 참조). 목적지가 일과 이어진
+/// 뒤에는 걷는 사람이 늘어도 산만해지지 않는다 — 각자 자기 물건 쪽으로 가므로 동선이
+/// 방 안에서 끝난다. 더 올리려면 렌더로 동선 겹침을 먼저 볼 것.
+public let officeStrollDefaultConcurrency: Int = 3
 /// 동시 배회 인원 상한. 이 값을 넘겨 요청해도 여기서 잘린다.
-public let officeStrollMaxConcurrency: Int = 3
+public let officeStrollMaxConcurrency: Int = 4
 /// 같은 사람이 다시 배회하기까지 쉬는 시간(초).
 public let officeStrollCooldownSeconds: Double = 90
 /// 점심시간(시). 이 시간에는 탕비실·회의실로 배회 목적지를 기운다.
@@ -203,6 +208,17 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     // 잡았다. 방의 유일한 출입구라, 거기 서서 4초를 보내면 그동안 드나드는 사람이 전부
     // 그 사람을 통과해 지나가는 그림이 된다.
     let doorTiles = Set(plan.furniture.filter { $0.kind.isDoorway }.map(\.tile))
+    // **걸어서 닿을 수 없는 칸은 목적지가 될 수 없다.** walkable 은 "막히지 않은 칸"이지
+    // "갈 수 있는 칸"이 아니다 — 운영실에서 자판기·프린터·워터쿨러를 한 줄에 놓자 그 사이
+    // 한 칸이 위(책상)·아래(벽)·좌우(가구)로 완전히 갇혔고, 그 칸이 프린터의 유일한
+    // walkable 이웃이어서 목적지로 뽑혔다. 지시받은 사람은 경로가 빈 채로 남아 자기 책상에서
+    // 프린터 앞 동작만 재생했고, 웹에서는 걸음이 실패한 사람이 매 틱 후보 선두를 차지해
+    // 다른 사람의 배회까지 막았다.
+    //
+    // 기준점은 첫 좌석이다 — 좌석은 전부 도달 가능하다는 것을 도달성 테스트가 이미 지킨다.
+    // 좌석이 없는 평면도(사람 0명)에서는 필터를 걸지 않는다.
+    let reachable =
+        plan.desks.first.map { officeReachableTiles(from: $0.seat, walkable: plan.walkable) }
     var usedTiles: Set<TilePoint> = []
     var spots: [OfficeStrollSpot] = []
 
@@ -215,6 +231,7 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         let neighbors = officeInteractionNeighbors(furniture: placement.tile, pose: pose)
         guard let tile = neighbors.first(where: {
             plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
+                && (reachable?.contains($0) ?? true)
         }), usedTiles.insert(tile).inserted else {
             continue
         }
@@ -231,16 +248,70 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     return spots
 }
 
+/// 이 사람의 일과 어울리는 가구(우선순위 순). 배회 목적지를 여기서 먼저 고른다.
+///
+/// **여기가 없던 동안 목적지는 이름의 문자값 합으로 정해졌다** — 사람은 움직이는데 어디로
+/// 가는지가 하는 일과 아무 관계가 없어서, 학습 담당이 자판기 앞에 서 있고 시세 점검 담당이
+/// 화분에 물을 주는 그림이 나왔다. 자세와 손 소품은 이미 가구가 정하고 있었으므로
+/// (`FurnitureKind.interactionPose`) 비어 있던 고리는 **"누가 어디로"** 하나였다.
+///
+/// 무엇을 짝지었나 — 각 워커가 실제로 하는 일(백엔드 스냅샷의 `job`)을 읽고 그 일에 필요한
+/// 물건으로 보냈다. 자료를 찾는 사람은 책장, 문서를 내보내는 사람은 프린터, 남의 결과를
+/// 판정하는 사람은 게시판, 설계를 그리는 사람은 화이트보드, 지표를 지켜보는 사람은 벽 모니터,
+/// 기록을 넣고 꺼내는 사람은 캐비닛으로 간다.
+///
+/// **빈 배열이면 기존 방식(문자값 합)으로 돌아간다.** 새 워커가 늘었을 때 여기 안 적혀 있어도
+/// 화면이 멈추지 않게 하려는 것이다 — 다만 그 사람만 계속 무관한 곳으로 다니므로, 워커를
+/// 추가할 때 이 표도 함께 보는 것이 맞다.
+public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
+    switch agentType {
+    // 자료를 찾아 읽는다.
+    case "CTO_STUDY", "PREFERENCE_LEARNING", "DOCS_AUDIT_OPTIMIZER":
+        return [.bookshelf, .wallShelf]
+    // 글을 써서 내보낸다.
+    case "BLOG", "BLOG_PUBLISH", "WORK_REVIEWER", "EVENING_RETRO", "HUMANIZER":
+        return [.printer, .filingCabinet]
+    // 남이 만든 것을 검토하고 판정한다 — 체크리스트를 붙여 둔 게시판 앞.
+    case "CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "PO_EVAL", "DOCS_AUDIT_EVALUATOR",
+        "CONTRADICTION_JUDGE", "BE_FIX":
+        return [.wallPinboard, .bookshelf]
+    // 구조를 그린다. 장애 원인 추적도 여기 둔다 — 스택을 따라가는 일이라 판에 그리는 쪽이
+    // 맞고, 지표 화면은 개발실에 없어서 넣으면 성장방까지 걸어간다(벽 자리가 이미 셋 다 찼다).
+    case "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE":
+        return [.wallWhiteboard, .whiteboard, .bookshelf]
+    // 상태를 지켜본다 — 벽에 걸린 지표 화면.
+    case "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "INVEST", "PAPER_TRADE", "PAPER_RECOMMEND":
+        return [.wallMonitor]
+    // 기록을 넣고 꺼낸다.
+    case "VACATION", "JOB_APPLICATION", "CAREER_MATE", "ISSUE_LABELER":
+        return [.filingCabinet, .lockers2]
+    // 모여서 정하고 나눈다.
+    case "PM", "CTO", "CEO", "PO_SHADOW", "IMPACT_REPORTER":
+        return [.meetingTable]
+    default:
+        return []
+    }
+}
+
+/// 두 칸 사이의 걸음 수(맨해튼). 목적지가 여럿일 때 가까운 쪽을 고르는 데 쓴다.
+private func officeWalkingDistance(_ from: TilePoint, _ to: TilePoint) -> Int {
+    abs(from.x - to.x) + abs(from.y - to.y)
+}
+
 /// 프로세스마다 달라지는 Swift Hasher 대신 유니코드 스칼라 합과 회차만 섞는다.
 ///
-/// 점심시간(hour == 12)에는 탕비실·회의실 목적지만 선택한다. 빈 경우 전체에서 고른다.
+/// 고르는 순서는 셋이다. 점심시간(hour == 12)이면 탕비실·회의실만 본다. 그 밖에는 이 사람의
+/// 일과 어울리는 가구(`officeWorkAffinity`)를 먼저 찾고, 그것도 없으면 전체에서 고른다.
+/// 어느 단계에서도 후보가 비면 다음 단계로 내려가므로 목적지를 못 찾는 경우는 없다.
+///
 /// 카탈로그 순서를 보존해 입력 순서가 달라도 같은 회차가 같은 결과를 낸다.
 public func officeStrollSpot(
     for agentType: String,
     round: Int,
     spots: [OfficeStrollSpot],
     occupied: Set<TilePoint>,
-    hour: Int
+    hour: Int,
+    home: TilePoint? = nil
 ) -> OfficeStrollSpot? {
     let candidates = spots.filter { !occupied.contains($0.tile) }
     guard !candidates.isEmpty else {
@@ -256,19 +327,66 @@ public func officeStrollSpot(
     let meetingKinds: Set<FurnitureKind> = [.meetingTable]
     let lunchKinds = breakroomKinds.union(meetingKinds)
 
-    let filteredCandidates: [OfficeStrollSpot]
     if isLunchHour {
         // 점심 목적지가 있으면 그것만 고른다. 없으면 전체에서 고른다.
         let lunch = candidates.filter { lunchKinds.contains($0.kind) }
-        filteredCandidates = lunch.isEmpty ? candidates : lunch
-    } else {
-        filteredCandidates = candidates
+        return officeRotatingPick(
+            from: lunch.isEmpty ? candidates : lunch, agentType: agentType, round: round
+        )
     }
+    // 점심이 아니면 자기 일에 필요한 물건이 먼저다. 짝지어진 가구가 없는 사람만 아래로 내려간다.
+    if let affinity = officeAffinitySpot(
+        agentType: agentType, candidates: candidates, home: home
+    ) {
+        return affinity
+    }
+    return officeRotatingPick(from: candidates, agentType: agentType, round: round)
+}
 
+/// 일과 어울리는 목적지 하나. 없으면 nil.
+///
+/// **가장 가까운 것을 고른다.** 같은 종류 가구가 여섯 방에 흩어져 있어서, 거리를 안 보면
+/// 개발실 사람이 성장실 벽 모니터까지 20칸을 걸어간다 — 왕복 30초가 넘으면 화면에서는
+/// "일하러 간 사람" 이 아니라 "자리를 비운 사람" 으로 읽힌다. 거리를 보면 자기 방 안의
+/// 가구가 자연히 먼저 뽑히므로 방 정보를 따로 넘길 필요가 없다.
+///
+/// 우선순위가 높은 종류부터 보고, 그 종류가 하나도 안 남아 있으면(다른 사람이 이미 서 있으면)
+/// 다음 종류로 내려간다. 거리가 같으면 카탈로그 순서 — `sorted` 가 안정 정렬이 아니라서
+/// 원래 자리(offset)를 tie-break 에 넣어야 실행마다 같은 결과가 나온다.
+private func officeAffinitySpot(
+    agentType: String, candidates: [OfficeStrollSpot], home: TilePoint?
+) -> OfficeStrollSpot? {
+    for kind in officeWorkAffinity(agentType: agentType) {
+        let matched = candidates.enumerated().filter { $0.element.kind == kind }
+        guard !matched.isEmpty else {
+            continue
+        }
+        guard let home else {
+            return matched[0].element
+        }
+        return matched.min { left, right in
+            let leftDistance = officeWalkingDistance(home, left.element.tile)
+            let rightDistance = officeWalkingDistance(home, right.element.tile)
+            if leftDistance != rightDistance {
+                return leftDistance < rightDistance
+            }
+            return left.offset < right.offset
+        }?.element
+    }
+    return nil
+}
+
+/// 후보를 회차마다 돌려 고른다. 짝지어진 가구가 없는 사람과 점심시간이 쓰는 경로다.
+private func officeRotatingPick(
+    from candidates: [OfficeStrollSpot], agentType: String, round: Int
+) -> OfficeStrollSpot? {
+    guard !candidates.isEmpty else {
+        return nil
+    }
     let scalarSum = agentType.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-    let remainder = (scalarSum + round) % filteredCandidates.count
-    let index = remainder >= 0 ? remainder : remainder + filteredCandidates.count
-    return filteredCandidates[index]
+    let remainder = (scalarSum + round) % candidates.count
+    let index = remainder >= 0 ? remainder : remainder + candidates.count
+    return candidates[index]
 }
 
 // MARK: - 회의

@@ -94,3 +94,32 @@ public func facing(from: TilePoint, to: TilePoint) -> Facing? {
     }
     return nil
 }
+
+/// `start` 에서 걸어서 닿을 수 있는 칸 전부(BFS 한 번).
+///
+/// **`walkable` 은 "막히지 않은 칸"이지 "갈 수 있는 칸"이 아니다.** 사방이 가구·벽으로
+/// 둘러싸인 한 칸은 walkable 로 남아 있어도 아무도 그 자리에 갈 수 없다 — 운영실에서 실제로
+/// 자판기·프린터·워터쿨러를 한 줄에 놓자 그 사이 칸이 그렇게 갇혔고, 그 칸이 프린터의
+/// 유일한 walkable 이웃이어서 목적지로 뽑혔다. 걸으라고 지시받은 사람은 경로가 빈 채로
+/// 남아 자기 책상에서 프린터 앞 동작만 재생했다.
+///
+/// 후보마다 `officePath` 를 부르면 목적지 카탈로그를 만들 때마다 A* 를 수십 번 돌리게 되므로
+/// (8초마다 한 번), 한 번의 flood fill 로 집합을 만들어 여러 후보가 나눠 쓴다.
+public func officeReachableTiles(
+    from start: TilePoint,
+    walkable: Set<TilePoint>
+) -> Set<TilePoint> {
+    var visited: Set<TilePoint> = [start]
+    var queue: [TilePoint] = [start]
+    var head = 0
+    while head < queue.count {
+        let current = queue[head]
+        head += 1
+        for next in orthogonalNeighbors(of: current)
+        where walkable.contains(next) && !visited.contains(next) {
+            visited.insert(next)
+            queue.append(next)
+        }
+    }
+    return visited
+}

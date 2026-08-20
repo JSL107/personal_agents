@@ -88,7 +88,15 @@ public let officeDeskPaperMaxCount: Int = 5
 /// 걸치므로, 책상 가운데에 놓으면 서류가 사람 몸통에 파묻힌다. 오른쪽으로 밀어야 하는데,
 /// **너무 밀면 상판 밖으로 삐져나와 공중에 뜬 물체로 보인다** — 책상 스프라이트는 폭 37도트
 /// 안에 좌우 여백이 있어 실제 상판은 그보다 좁다(0.30 에서 상판 경계에 걸쳤다, 실측).
-public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.22, 0.46)
+/// 재제작본(위에서 내려다본 책상)에 맞춰 옮겼다. 상판이 키보드·마우스·모니터로 꽉 차서
+/// 남은 빈 자리는 **맨 위 좌우 구석**뿐이다 — 예전 자리(0.22, 0.46)는 키보드와 모니터 사이
+/// 3도트 틈이라 둘 중 하나를 반드시 덮었다.
+///
+/// 좌우로 벌리는 이유는 앉은 사람이 책상 위쪽 절반을 가리기 때문이다(사람 폭 0.65칸).
+/// y 를 0.72 로 잡은 것은 서류가 다섯 장까지 위로 자라도(+0.11칸) 상판(0.89칸)을 넘지
+/// 않는 상한이다. x 는 0.29 가 상한이다 — 더미는 장수가 늘면 **좌우로도 퍼지므로**
+/// (0.34 에서는 세 장째에 상판 오른쪽을 넘어갔다) 그 퍼짐을 뺀 자리에 두어야 한다.
+public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.29, 0.72)
 
 // MARK: - 책상 위 개인 소품
 
@@ -127,7 +135,7 @@ public func officeDeskProp(agentType: String) -> String {
 /// **책상 반폭(0.51칸)보다 훨씬 안쪽이어야 한다.** -0.24 로 뒀다가 렌더를 보니 소품이 상판
 /// 왼쪽 모서리에 걸쳐 책상 밖으로 반쯤 나갔다. 스프라이트 폭(37도트) 안에서 실제 상판이
 /// 차지하는 범위가 그보다 좁아서다 — 오른쪽 아래는 서류함이 물고 있다. 눈으로 확정한 값.
-public let officeDeskPropOriginTiles: (x: Double, y: Double) = (-0.15, 0.52)
+public let officeDeskPropOriginTiles: (x: Double, y: Double) = (-0.34, 0.72)
 
 /// 한 장 쌓을 때마다 위로 올리는 간격(타일 배수)과 좌우로 어긋내는 폭.
 ///
@@ -199,9 +207,12 @@ public func officeDeskPaperCount(doneToday: Int?) -> Int {
 ///
 /// 실측: 화면은 x 9~27, 위에서 y 4~8도트다(그 위 y 0~2 는 모니터 윗면, y 9 는 받침).
 /// 좌우로 1도트씩 물려 검은 테두리를 남긴다 — 테두리까지 덮으면 화면이 아니라 파란 판이 된다.
-public let officeDeskScreenWidthRatio: Double = 17.0 / 37.0
-public let officeDeskScreenHeightRatio: Double = 5.0 / 32.0
-public let officeDeskScreenBottomRatio: Double = 23.0 / 32.0
+/// 재제작본 실측(108×99). 위에서 내려다보면 화면 자체는 모니터 상단의 **2도트 띠**로만
+/// 보인다 — 그대로 쓰면 배율(0.36)이 곱해져 0.7도트, 즉 1픽셀도 안 되어 켜짐 신호가 사라진다.
+/// 그래서 발광 띠에 모니터 상단 몇 도트를 더해 두께를 확보한다(6도트 → 화면에서 약 2.2도트).
+public let officeDeskScreenWidthRatio: Double = 80.0 / 108.0
+public let officeDeskScreenHeightRatio: Double = 6.0 / 99.0
+public let officeDeskScreenBottomRatio: Double = 43.0 / 99.0
 
 // MARK: - 이름표·문패가 서로를 가리지 않게 하는 기준
 //
@@ -212,6 +223,24 @@ public let officeDeskScreenBottomRatio: Double = 23.0 / 32.0
 
 /// 앉은 캐릭터 스프라이트의 높이(타일 배수). `char-*-sit.png` 실측 57px ÷ 기준 타일.
 /// 서 있는 그림(54px)보다 높다 — 의자 등받이까지 그려져 있다.
+///
+/// **이 값을 실물 높이로 환산하려는 시도는 한 번 했고, 되돌렸다.** 가구는 전부
+/// `targetHeightCm` 로 환산되는데 앉은 캐릭터만 원본 도트를 그대로 쓴다. 재 보면 57도트는
+/// 서 있는 자(54도트 = 170cm)로 179cm 를 뜻하니, 실제로 앉은 사람(바닥에서 정수리까지 약
+/// 132cm)보다 36% 크다 — **앉으면 사람이 서 있을 때보다 커진다.** 논리로는 분명한 결함이다.
+///
+/// 그래서 0.74배를 곱해 봤고, 렌더로 확인하니 화면이 세 군데에서 나빠졌다:
+/// 발밑 상태 링(타일 기준 고정 크기)이 작아진 몸의 **허리를 관통**해 상태색과 사람이 겹쳤고,
+/// 안경·머리 모양이 뭉개져 옆자리와 구별이 어려워졌고, 몸이 짧아져 책상에 닿지 않고 그 위에
+/// 뜬 것처럼 보였다.
+///
+/// 되돌린 이유는 **이 화면의 일이 관제**라서다. 사람이 정보의 주체이고 가구는 배경이므로,
+/// 사람이 가구보다 크게 그려지는 것은 여기서는 결함이 아니라 정보 위계다(픽셀 게임의 캐릭터
+/// 우선 축척과도 같은 방향이다). 실물 축척을 맞추고 싶으면 이 값만 건드려서는 안 되고,
+/// 링 크기·이름표 하한·책상 오프셋을 한 묶음으로 다시 잡아야 한다.
+///
+/// 크기 어긋남이 실제로 보이는 곳은 사람이 아니라 **가구끼리**다 — 폭 환산이 없어서
+/// 사물함이 실물의 2.4배로, 커피테이블이 0.6배로 그려진다(`targetHeightCm` 참조).
 public let officeSeatedSpriteTiles: Double =
     57.0 / officeReferenceTileSize * officeCharacterScaleFactor
 
@@ -675,7 +704,12 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             return (1, 2)
         case .rugGreen, .rugBeige, .rugNavy:
             return (2, 2)
-        case .sofa3, .whiteboard, .bookshelf:
+        // 3인 소파는 두 칸이다. 실물 200cm 는 한 칸(126cm)에 들어가지 않아, 한 칸으로 두면
+        // 폭 상한(1.15칸)이 높이 환산을 눌러 **2인 소파까지 함께 작아진다**(둘이 배율 계산을
+        // 공유했다). 두 칸을 주면 상한에 걸리지 않아 둘 다 목표 높이 80cm 를 채운다.
+        case .sofa3:
+            return (2, 1)
+        case .whiteboard, .bookshelf:
             return (1, 1)
         default:
             return (1, 1)
@@ -820,19 +854,29 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     public var nativeSize: (width: Double, height: Double) {
         switch self {
         case .desk:
-            return (37, 32)
+            // 위에서 내려다본 재제작본(furniture-desk-top). 정면도였을 때는 모니터 화면이
+            // 화면 앞쪽을 봤는데 앉은 사람도 앞쪽을 봐서, 서른두 좌석 전부가 모니터 뒷판을
+            // 마주하고 있었다. 도트 격자가 촘촘해 원본이 세 배 크다 — 배율 환산이 그만큼
+            // 작아지므로 화면에 그려지는 크기는 그대로다.
+            return (108, 99)
         case .chairDown:
             return (16, 26)
         case .chairUp:
             return (17, 24)
         case .meetingTable:
-            return (37, 56)
+            // 재제작본(furniture-4). 의자 여덟 개를 함께 그려 두어 그 자리가 늘 빈 채였다 —
+            // 이제 상판만 있고 사람이 둘레에 실제로 앉는다.
+            return (27, 62)
         case .sofa2:
             return (30, 21)
         case .sofa3:
-            return (39, 21)
+            // 재제작본. 39×21 로는 2인 소파(30×21)와 폭 차이가 30% 뿐이어서 화면에서
+            // 구별되지 않았다. 실물 비(200:80 = 2.5)에 맞춰 다시 뽑았다.
+            return (49, 20)
         case .coffeeTable:
-            return (18, 17)
+            // 재제작본. 유리 원형 테이블(18×17)이 40픽셀 칸에서 파란 원반이 되어 물웅덩이로
+            // 읽혔다. 낮고 넓은 나무 상판으로 바꿨다 — 폭 오차 −40% → −5%.
+            return (27, 16)
         case .coffeeMachine:
             return (27, 31)
         case .waterCooler:
@@ -842,9 +886,12 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             // 다시 뽑았다 — 폭 상한에 걸려 목표의 70% 에서 멈추던 것이 100% 로 올라간다.
             return (55, 56)
         case .printer:
-            return (24, 28)
+            // 재제작본. 24×28 은 거의 정사각형이라 높이를 맞추면 폭이 실물의 1.7배가 되어
+            // 탁상 프린터가 복사기 크기로 부풀었다.
+            return (13, 31)
         case .plantTall:
-            return (18, 32)
+            // 재제작본. 세로로 늘려 화분 비율을 되찾았다(폭 +41% → −3%).
+            return (17, 44)
         case .plantSmall:
             return (17, 20)
         case .bookshelf:
@@ -884,15 +931,21 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             // 배율을 받아 차이가 오히려 커진다.
             return (35, 64)
         case .filingCabinet:
-            return (30, 34)
+            // 재제작본. 30×34 는 3단 서랍장인데 거의 정사각형이라 폭이 실물의 2.1배였다.
+            return (10, 31)
         case .lockers2:
-            return (30, 35)
+            // 재제작본. 30×35 는 2연 사물함인데 폭이 실물의 2.4배로, 벽 하나를 통째로 먹었다.
+            return (17, 47)
         case .partitionLow:
             return (40, 25)
         case .vendingMachine:
-            return (30, 40)
+            // 재제작본. 폭 +50% → +9%.
+            return (24, 44)
         case .refrigerator:
-            return (25, 30)
+            // 재제작본. 요청은 소형 1문이었는데 2문 대형으로 그려져 왔다 — 세로가 길어진
+            // 만큼 `targetHeightCm` 도 함께 올렸다(85 → 120). 그림과 목표 높이 중 한쪽만
+            // 바꾸면 배율이 어긋나 폭이 실물의 3분의 2로 눌린다.
+            return (14, 34)
         case .sinkCounter:
             return (40, 30)
         case .partitionGlass:
@@ -905,18 +958,6 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     /// 원본 세로 픽셀. 높이 환산의 분모다.
     public var nativeHeight: Double {
         nativeSize.height
-    }
-
-    /// 폭 상한을 함께 계산하는 계열. 같은 종류 가구가 서로 다른 배율을 받으면 나란히 놓였을 때
-    /// 2인 소파가 3인 소파보다 높아 보인다 — 탕비실 밴드에 둘이 3칸 간격으로 함께 놓인다.
-    /// 3인 소파가 폭 39px 로 더 넓어 상한이 먼저 걸리므로, 2인 소파도 그 값을 따른다.
-    private var scaleGroup: [FurnitureKind] {
-        switch self {
-        case .sofa2, .sofa3:
-            return [.sofa2, .sofa3]
-        default:
-            return [self]
-        }
     }
 
     /// 실물 높이(cm). 이 값으로 배율을 환산한다. nil 이면 환산하지 않는다.
@@ -957,8 +998,6 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         case .filingCabinet:
             return 105  // 3단 서랍
         case .lockers2:
-            // 2연 사물함. 폭 상한(30px → 1.33배)에 먼저 걸려 목표를 다 채우지 못한다 —
-            // 책장과 같은 이유(에셋 가로세로비가 실물보다 정사각형에 가깝다).
             return 180
         case .partitionLow:
             // 낮은 파티션. 폭이 이미 1칸(40px)이라 상한에 먼저 걸려 목표를 다 채우지 못한다.
@@ -994,7 +1033,10 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         case .vendingMachine:
             return 180
         case .refrigerator:
-            return 85  // 소형 사무실 냉장고
+            // 슬림 2문. 재제작본 그림이 2문 대형이라 소형(85)으로 두면 폭이 35cm 로 눌려
+            // 냉장고로 안 읽힌다. 그렇다고 대형(170)으로 올리면 1.35칸이 되어 탕비실 창을
+            // 덮으므로(자판기를 운영실로 보낸 것과 같은 이유) 0.95칸에서 멈추는 값을 쓴다.
+            return 120
         case .sinkCounter:
             return 90  // 카운터 높이
         case .partitionGlass:
@@ -1030,17 +1072,28 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         if let targetHeightCm {
             byHeight = targetHeightCm * officePixelsPerCentimeter / nativeHeight
         } else if self == .meetingTable {
-            byHeight = 1.15
+            // 위에서 내려다본 테이블은 세로가 높이가 아니라 깊이라 cm 환산이 성립하지 않는다.
+            // 대신 **자기 칸을 채우는 배율**을 쓴다 — 8인 테이블이 칸을 덜 채우면 4인용으로
+            // 읽힌다. 한때 1.15 고정이었는데, 그 값은 옛 그림(37×56)이 폭 상한에 걸리는 것을
+            // 피하려고 손으로 눌러 둔 것이라 그림을 다시 뽑으면 근거가 사라진다. 상한은
+            // 아래 `widthCap` 이 이미 보고 있으므로 여기서 미리 눌러 둘 필요가 없다.
+            byHeight =
+                Double(footprint.height) * officeReferenceTileSize / nativeHeight
         } else {
             byHeight = 1.0
         }
+        // 폭 상한은 **자기 그림만** 본다. 한때 2인·3인 소파가 이 계산을 공유했다 — 둘이
+        // 나란히 놓이는데 배율이 갈리면 2인이 3인보다 높아 보인다는 이유였다. 그런데 그
+        // 공유가 거꾸로 물었다: 3인 소파를 실물 비(200:80)로 다시 뽑자 폭 49px 이 한 칸
+        // 상한에 걸려, **3인 때문에 2인까지 목표 높이의 78% 로 눌렸다.**
+        //
+        // 3인 소파에 두 칸을 주는 것(`footprint`)이 옳은 해법이었다. 실물 200cm 는 한 칸
+        // (126cm)에 애초에 들어가지 않는다. 두 칸을 받으면 둘 다 상한에 걸리지 않고, 같은
+        // 목표 높이(80cm)를 각자 채우므로 결과 높이도 저절로 같아진다 — 배율을 묶지 않아도
+        // 원래 걱정했던 어긋남이 생기지 않는다.
         let widthCap =
-            scaleGroup
-            .map {
-                Double(footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
-                    / $0.nativeSize.width
-            }
-            .min() ?? 1
+            Double(footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
+            / nativeSize.width
         return min(byHeight, widthCap)
     }
 }
@@ -1096,9 +1149,13 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 세 명뿐이라 아래 절반이 통째로 빈 바닥이었다. 자료 선반과 큰 화분으로 방의 남은
         // 쪽을 쓰게 한다 — 자리를 늘리는 대신 가구로 채우는 이유는, 인원이 늘면 그 자리가
         // 다시 책상에 밀려나야 하기 때문이다(가구는 좌석에 막히면 알아서 건너뛴다).
+        // 벽걸이가 둘뿐이라 세 자리 중 하나가 비어 있었다. 추상화 액자를 여기 건다 —
+        // 운영 방의 벽을 지표 모니터로 바꾸면서 그 액자가 **어느 방에도 안 남았고**,
+        // 그림은 있는데 화면에 한 번도 안 나오는 에셋이 될 뻔했다. 아이디어를 모으는 방이라
+        // 성격도 맞는다.
         return [
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
-            .wallPinboard, .wallCalendar,
+            .wallPinboard, .wallCalendar, .wallAbstract,
         ]
     case .engineering:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
@@ -1107,7 +1164,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [.bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf]
     case .review:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
-        return [.whiteboard, .bookshelf, .bookshelf, .filingCabinet, .wallPinboard, .wallPoster]
+        //
+        // **판은 벽에 건다(`wallWhiteboard`).** 예전에는 이동식 보드(`whiteboard`)를 첫 후보
+        // (3,4)에 놓아 방 한가운데에 바퀴 달린 판이 홀로 서 있었다 — 재제작본이 스탠드까지
+        // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
+        return [.bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
     case .executive:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
         //
@@ -1119,18 +1180,25 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         ]
     case .growth:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
+        //
+        // 판도 벽에 건다(리뷰방과 같은 이유). 이동식 보드는 후보 (7,1) 을 받아 **아래 줄
+        // 책상 사이에 끼어** 있었다 — 자유석 사이를 나누는 것은 파티션의 몫이다.
         return [
-            .plantTall, .plantSmall, .sofa2, .whiteboard, .partitionLow,
-            .wallMonitor, .wallPlantHanging,
+            .plantTall, .plantSmall, .sofa2, .partitionLow,
+            .wallWhiteboard, .wallMonitor, .wallPlantHanging,
         ]
     case .internalOps:
         // 설비가 모인 방 — 사물함과 비품 선반, 그리고 자판기.
         //
         // 자판기가 여기 있는 것은 탕비실에 자리가 없어서다. 탕비실 빈 칸은 전부 창 아래인데
         // 자판기는 1.43칸으로 벽 줄까지 올라와 창을 덮는다. 이 방은 창이 없다.
+        // 벽에는 지표 화면을 건다(예전에는 추상화 액자였다). 이 방 사람들이 하는 일이
+        // 운영 이상 징후 감시·상태 변화 판정이라, 액자는 장식일 뿐이고 볼 것이 없었다 —
+        // 그래서 감시 담당이 자기 방을 지나쳐 성장방 모니터까지 걸어갔다
+        // (`officeWorkAffinity`). 방 벽이 그 방의 일을 말하게 한다.
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
-            .clock, .wallShelf, .wallAbstract,
+            .clock, .wallShelf, .wallMonitor,
         ]
     }
 }
@@ -1201,11 +1269,17 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
         // 높이)를 피해, 오른쪽 벽면과 맨 아래 줄에 붙인다.
         //
-        // **커피테이블은 소파 정면(4,3)이 아니라 그 옆(3,3)이다.** 앉는 자리는 가구 정면
-        // 칸뿐인데(`officeStrollSpots`), 테이블이 소파 정면을 물면 소파에 앉을 자리가
-        // 사라진다. 같은 깔개 안이라 응접 세트로는 그대로 읽히고, 앉은 사람 옆에 테이블이
-        // 놓인 모양이 된다.
-        return spots([(4, 4), (3, 3), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
+        // **커피테이블은 소파와 같은 줄 옆 칸(3,4)이다.** 자리 세 개를 함께 만족해야 한다 —
+        // 소파 정면(4,3)은 앉는 자리라 비워 두고(앉는 자리는 가구 정면 칸뿐이다), 테이블은
+        // 깔개 안에 있어야 하고, 소파와 관계가 보여야 한다.
+        //
+        // 두 가지를 먼저 시도했고 렌더에서 각각 어긋났다. 대각선 아래(3,3)는 소파는 깔개
+        // 중앙, 테이블은 모서리로 흩어져 **둘이 아무 관계가 없었다.** 정면 한 칸 더 앞(4,2)은
+        // 세로로 줄은 섰지만 깔개(2×2)가 세로 세 칸을 못 덮어 **테이블만 깔개 밖에** 남았다.
+        //
+        // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
+        // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
+        return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
     case .growth:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
