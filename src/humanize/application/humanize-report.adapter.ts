@@ -320,33 +320,43 @@ export const humanizeBackendPlan = async (
   };
 };
 
-// PO Shadow 보고는 다섯 필드가 모두 서술문이라 통째로 윤문한다(보존할 식별자·수치 필드가 없다).
+// PO Shadow의 코드 생성 사실과 식별자는 보존하고, 모델이 작성한 서술 필드만 윤문한다.
 export const humanizePoShadowReport = async (
   report: PoShadowReport,
   humanizer: HumanizeService,
 ): Promise<PoShadowReport> => {
   const fields: Record<string, string> = {
-    priorityRecheck: report.priorityRecheck,
-    realPurposeQuestion: report.realPurposeQuestion,
-    recommendation: report.recommendation,
+    headline: report.headline,
   };
-  flattenArray(fields, 'missingRequirements', report.missingRequirements);
-  flattenArray(fields, 'releaseRisks', report.releaseRisks);
+  flattenArray(
+    fields,
+    'findings.point',
+    report.findings.map((finding) => finding.point),
+  );
+  flattenArray(
+    fields,
+    'findings.suggestion',
+    report.findings.map((finding) => finding.suggestion),
+  );
+  if (report.purposeConflict !== null) {
+    fields.purposeConflict = report.purposeConflict;
+  }
 
   const humanized = await humanizer.humanize(fields);
 
   return {
     ...report,
-    priorityRecheck: humanized.priorityRecheck ?? report.priorityRecheck,
-    realPurposeQuestion:
-      humanized.realPurposeQuestion ?? report.realPurposeQuestion,
-    recommendation: humanized.recommendation ?? report.recommendation,
-    missingRequirements: rebuildArray(
-      humanized,
-      'missingRequirements',
-      report.missingRequirements,
-    ),
-    releaseRisks: rebuildArray(humanized, 'releaseRisks', report.releaseRisks),
+    headline: humanized.headline ?? report.headline,
+    findings: report.findings.map((finding, index) => ({
+      ...finding,
+      point: humanized[`findings.point.${index}`] ?? finding.point,
+      suggestion:
+        humanized[`findings.suggestion.${index}`] ?? finding.suggestion,
+    })),
+    purposeConflict:
+      report.purposeConflict === null
+        ? null
+        : (humanized.purposeConflict ?? report.purposeConflict),
   };
 };
 

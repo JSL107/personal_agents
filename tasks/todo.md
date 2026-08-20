@@ -1,3 +1,37 @@
+# PO Shadow v2 — 근거 기반 정오 대조 (2026-08-19)
+
+**Goal:** `.ai/design.md`대로 정오 실조회 사실표와 아침 계획을 결정론으로 대조하고, 이상이 없으면 모델 호출 없이 성공 원장을 남기며, 이상이 있으면 fact ID를 인용한 지적만 Slack에 노출한다.
+
+**Architecture:** `PoShadowContextCollector`가 기존 조회 usecase 5종을 graceful하게 모은다. `buildPlanRealityFacts`가 계획과 현실을 안정 키로 대조하고 `hasPlanRealityMismatch`가 quiet 여부를 결정한다. 비-quiet 모델 출력은 JSON schema·runtime parser·`guardPoShadowReport`의 3중 경계를 거친다. formatter와 humanizer는 사실 ID/요약을 보존한다.
+
+**Contract:** `.ai/design.md`가 source of truth다. Prisma schema/DB/env/dependency/public command를 바꾸지 않는다. `pnpm`, Node 22, 기존 DDD·명명·중괄호·`return await` 규칙을 지킨다. commit/PR/DB 명령은 실행하지 않는다.
+
+**Rulings:**
+- 설계의 `findFailedRunsSince({ sinceDays: 1 })`는 실제 API와 달라 `findFailedRunsSince({ withinMinutes: 1440 })` 및 `FailedRunDetail[]`을 사용한다. 의미는 같은 최근 24시간이다.
+- `WaitingItem`에 repo/number가 없으므로 collector가 원본 PR의 URL과 분류 결과 URL을 결합해 안정 키를 복원한다. 공용 GitHub 타입은 변경하지 않는다.
+- 현재 재사용 API는 assigned **open** issue/PR만 제공해 실제 merge/close를 권위 있게 확인할 수 없다. `PLANNED_MERGED` 타입과 quiet 판정은 구현하되, 조회 결과만으로 머지를 추정하지 않는다. 실물 부재는 계약대로 `PLANNED_NOT_FOUND`로 남긴다.
+- `topPriority`, `morning`, `afternoon`의 같은 task ID는 한 계획 항목으로 dedup한다. 같은 사실을 여러 번 만들지 않는다.
+
+- [x] **Task 1 — RED/GREEN: 순수 plan-reality diff.** `plan-reality.diff.spec.ts`에 exact key, `#N` fallback, 미매칭, non-GITHUB, waiting reason, unplanned assigned/mention, worker failure, merged+unverifiable quiet를 literal fixture로 먼저 추가해 feature 부재 FAIL을 확인한다. `plan-reality.diff.ts`에 `PlanRealityFact`, `buildPlanRealityFacts(plan, context)`, `hasPlanRealityMismatch(facts)`를 최소 구현하고 focused GREEN을 확인한다.
+- [x] **Task 2 — RED/GREEN + mutation: 근거 guard.** `po-shadow.guard.spec.ts`에 invalid-only finding 폐기/count 증가, partial factIds 정제, 모두 폐기 시 headline/factSummary 보존을 먼저 추가해 FAIL을 확인한다. `po-shadow.guard.ts`를 구현해 GREEN으로 만든 뒤 유효 ID 필터 assertion을 일부러 깨뜨려 RED를 확인하고 즉시 복원한다.
+- [x] **Task 3 — RED/GREEN: collector.** `po-shadow-context.collector.spec.ts`에 sinceHours 하한/상한, GitHub 분류 성공, 각 5개 source와 engagement 분류 reject의 null/empty graceful 결과를 먼저 추가한다. `po-shadow-context.collector.ts`는 `Promise.all`로 독립 조회를 병렬화하고 GitHub 성공 뒤 분류만 후속 호출한다. `PoShadowModule`에 `GithubModule`, `SlackCollectorModule`, `NotionModule`, collector provider를 배선한다.
+- [x] **Task 4 — RED/GREEN: v2 usecase·schema·prompt.** `PoShadowReport`/shape/parser fixture를 v2로 바꾸고 `PO_SHADOW_OUTPUT_SCHEMA`를 추가한다. usecase spec에 quiet 모델 미호출+SUCCESS 원장, non-quiet fact table prompt/outputSchema, guard drop, `PRIOR_DAILY_PLAN`+`PO_SHADOW_FACT_TABLE` evidence, freshness/trigger/extra context 회귀를 먼저 고정한다. collector→facts→quiet 또는 route→parse→guard 흐름을 구현한다.
+- [x] **Task 5 — RED/GREEN: 소비처.** formatter spec을 quiet 한 줄, non-quiet 근거, purposeConflict/drop count 조건부, 모든 자유텍스트 escape로 교체한다. autopilot spec에 quiet humanize skip과 non-quiet 선택 필드 윤문·fact 필드 보존을 추가한다. formatter, `humanizePoShadowReport`, autopilot task를 최소 수정한다.
+- [x] **Task 6 — 통합·리뷰·문서.** 전역 v1 필드 참조와 Prisma/env/dependency 변경 부재를 확인한다. focused tests 후 `pnpm lint:check && pnpm test && pnpm build`를 fresh 실행해 모두 exit 0으로 만든다. `git diff --check`, 최종 diff와 `.ai/design.md` §1~§5 대조를 수행한다. `.ai/implementation-summary.md`에 파일별 목적, 설계 이탈, 정확한 명령/exit code, 미검증 사항, guard mutation RED를 기록한다.
+
+## Review
+
+- quiet 회차도 `AgentRunService.execute` 안에서 `modelUsed: deterministic`으로 SUCCESS를 남기고 모델/윤문을 호출하지 않는다.
+- non-quiet 모델 출력은 strict output schema, runtime parser, fact ID guard를 순서대로 통과한다. invalid finding은 제거 수가 사용자 카드에 드러난다.
+- collector는 4개 독립 source를 `Promise.all`로 시작하고 PR 분류만 GitHub 결과 뒤 수행한다. 5개 의존 경계 실패와 전체 실패가 throw 없이 degrade함을 검증했다.
+- guard production 조건을 고의로 반전해 4건 RED를 확인하고 복원했다.
+- 최종 독립 리뷰의 3개 minor(schema exact/nonblank, formatter index 방어, 병렬 시작 테스트)를 한 번의 fix wave로 모두 보완했고 scoped 재리뷰 READY를 받았다.
+- 설계와 충돌한 잔여 risk 2건은 숨기지 않았다: open-only API 때문에 `PLANNED_MERGED`를 생성할 수 없고, GitHub 수집 실패가 quiet 긍정 headline으로 보일 수 있다. `.ai/implementation-summary.md`에 후속 설계 필요성을 기록했다.
+- final fresh gate: lint exit 0(error 0/warning 57), 일반 test 417 suites/3,617 tests, code-graph 5 suites/40 tests, build exit 0, `git diff --check` exit 0.
+- Prisma/env/dependency/DB는 변경하지 않았고 `db:push`, commit, PR 생성도 실행하지 않았다.
+
+---
+
 # career-mate mergedAt 백필 버그 수정 (2026-08-18)
 
 **Goal:** `.ai/design.md` 계약대로 `mergedAt` 결측을 코드에서 백필하고, null 날짜가 `1970.01`로 변환되거나 evidence 순서가 slug를 흔드는 회귀를 막는다.
