@@ -40,7 +40,7 @@ import { PreviewGateModule } from '../preview-gate/preview-gate.module';
 import { ScreenerModule } from '../screener/screener.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
-import { StudyBriefCronModule } from '../study-brief-cron/study-brief-cron.module';
+import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
 import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
@@ -113,7 +113,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PaperRecommendModule,
     ScreenerModule,
     AiCliEnvModule,
-    StudyBriefCronModule,
+    StudyDeepdiveModule,
   ],
   providers: [
     AutopilotScheduler,

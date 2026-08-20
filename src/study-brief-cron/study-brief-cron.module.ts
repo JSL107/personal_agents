@@ -12,7 +12,6 @@ import { NotificationQueueModule } from '../notification/notification-queue.modu
 import { NotionModule } from '../notion/notion.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
-import { ExpandStudyBriefUsecase } from './application/expand-study-brief.usecase';
 import { StudyBriefCronScheduler } from './application/study-brief-cron.scheduler';
 import { INSTALLED_TOOLS_PORT } from './domain/port/installed-tools.port';
 import { REPO_CONTEXT_PORT } from './domain/port/repo-context.port';
@@ -38,7 +37,6 @@ import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.p
   providers: [
     StudyBriefCronScheduler,
     StudyBriefCronConsumer,
-    ExpandStudyBriefUsecase,
     { provide: HERMES_RUNNER_PORT, useClass: HermesCliRunner },
     {
       provide: CAREER_PROFILE_REPOSITORY_PORT,
@@ -56,7 +54,5 @@ import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.p
     },
     { provide: SLACK_NOTIFIER_PORT, useExisting: SlackService },
   ],
-  // autopilot 의 study-deepdive task 가 주입받는다.
-  exports: [ExpandStudyBriefUsecase],
 })
 export class StudyBriefCronModule {}

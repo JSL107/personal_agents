@@ -6,7 +6,7 @@ import { AgentRunModule } from '../src/agent-run/agent-run.module';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { ExpandStudyBriefUsecase } from '../src/study-brief-cron/application/expand-study-brief.usecase';
-import { StudyBriefCronModule } from '../src/study-brief-cron/study-brief-cron.module';
+import { StudyDeepdiveModule } from '../src/study-brief-cron/study-deepdive.module';
 
 // 사용법:
 //   pnpm exec ts-node scripts/study-deepdive.ts --owner <SLACK_USER_ID>
@@ -25,7 +25,7 @@ const USAGE =
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AgentRunModule,
-    StudyBriefCronModule,
+    StudyDeepdiveModule,
   ],
 })
 class StudyDeepdiveCliModule {}
