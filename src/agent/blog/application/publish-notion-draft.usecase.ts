@@ -74,6 +74,12 @@ const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
 const draftPriority = (sourceType: string): number =>
   sourceType === STUDY_DEEPDIVE_SOURCE_TYPE ? 0 : 1;
 
+// 초안 조회 상한. 기본 20건은 아래 우선순위 정렬을 무력화한다 — Notion 이 created_time
+// 오름차순으로 오래된 것부터 주므로, 큐가 20건을 넘으면 그날 만든 '오늘의 공부' 초안이 목록에
+// 아예 실려 오지 않고 새치기가 조용히 사라진다(실측 큐 16건, 매일 1건씩 늘어난다).
+// Notion page_size 상한이 100이라 큐가 그보다 커지면 같은 문제가 재발한다.
+const DRAFT_QUERY_LIMIT = 100;
+
 // 편집 단계가 '발행 가능' 으로 판정한 결과만 골라낸 타입. 파라미터 타입을 인라인으로 쓰지 않는다.
 type PublishableBlogDraft = Extract<EditedBlogDraft, { publishable: true }>;
 
@@ -191,6 +197,7 @@ export class PublishNotionDraftUsecase {
       databaseId: context.databaseId,
       statusPropertyName: context.statusPropertyName,
       statusValue: context.statusValue,
+      limit: DRAFT_QUERY_LIMIT,
     });
     if (drafts.length === 0 && !input.pageId) {
       return {

@@ -31,7 +31,7 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
     }));
   }
 
-  async findLatestUnexpandedSince(
+  async findOldestUnexpandedSince(
     ownerUserId: string,
     since: Date,
   ): Promise<ExpandableStudyBrief | undefined> {
@@ -41,7 +41,8 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
         createdAt: { gte: since },
         blogDraftPageId: null,
       },
-      orderBy: { createdAt: 'desc' },
+      // 오래된 것부터 — 실패해서 남은 브리프가 새 브리프에 밀리지 않게 한다.
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true,
         kind: true,

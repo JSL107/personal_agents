@@ -204,15 +204,25 @@ export class NotionApiClient implements NotionClientPort {
     databaseId,
     properties,
     blocks,
+    title,
   }: CreateDatabasePageOptions): Promise<CreatedDatabasePage> {
     this.assertClientConfigured('createDatabasePage');
+    const resolvedProperties =
+      title === undefined
+        ? properties
+        : {
+            ...properties,
+            [await this.resolveTitlePropertyName(databaseId)]: {
+              title: [{ text: { content: title } }],
+            },
+          };
     try {
       const children = blocks
         .slice(0, APPEND_BLOCKS_CHUNK_SIZE)
         .map((block) => toNotionBlock(block as NotionPlanBlock));
       const response = await this.client!.pages.create({
         parent: { database_id: databaseId },
-        properties: properties as Parameters<
+        properties: resolvedProperties as Parameters<
           Client['pages']['create']
         >[0]['properties'],
         children: children as Parameters<

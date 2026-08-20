@@ -19,7 +19,8 @@ describe('parseStudyDeepdive', () => {
 
     expect(parsed.title).toBe('에이전트 권한 경계 설계');
     expect(parsed.tags).toEqual(['llm', 'security', 'agent']);
-    expect(parsed.bodyMd.startsWith('## 어디서 문제가 되나')).toBe(true);
+    // 적재 전에 한 단계 내려 둔다 — Notion 왕복이 레벨을 올려 `## ` 로 되돌아온다.
+    expect(parsed.bodyMd.startsWith('### 어디서 문제가 되나')).toBe(true);
   });
 
   it('헤더 앞에 붙은 잡담을 건너뛴다', () => {
@@ -96,5 +97,48 @@ describe('parseStudyDeepdive', () => {
     ],
   ])('%s 거부한다', (_label, raw) => {
     expect(() => parseStudyDeepdive(raw)).toThrow(StudyBriefException);
+  });
+
+  // Notion 왕복(`## ` → heading_2 → `# `)이 소제목마다 h1 을 만드는 것을 막는 정규화.
+  // 실측에서 소제목 7개가 전부 `# ` 로 되돌아왔다.
+  it('본문 헤딩을 세 단계로 내려 적재한다', () => {
+    const raw = [
+      'TITLE: 제목',
+      'TAGS: a',
+      '---',
+      '# 한 단계',
+      '## 두 단계',
+      '### 세 단계',
+      body('본문'),
+    ].join('\n');
+
+    const lines = parseStudyDeepdive(raw).bodyMd.split('\n');
+
+    expect(lines.slice(0, 3)).toEqual([
+      '### 한 단계',
+      '### 두 단계',
+      '### 세 단계',
+    ]);
+  });
+
+  // 셸·Python 예시의 `# 주석` 이 소제목으로 바뀌면 코드가 깨진다.
+  it('코드블록 안의 # 주석은 건드리지 않는다', () => {
+    const raw = [
+      'TITLE: 제목',
+      'TAGS: a',
+      '---',
+      '## 소제목',
+      '```bash',
+      '# 이건 주석이다',
+      'pnpm test',
+      '```',
+      body('본문'),
+    ].join('\n');
+
+    const bodyMd = parseStudyDeepdive(raw).bodyMd;
+
+    expect(bodyMd).toContain('# 이건 주석이다');
+    expect(bodyMd).not.toContain('### 이건 주석이다');
+    expect(bodyMd).toContain('### 소제목');
   });
 });

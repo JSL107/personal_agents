@@ -51,8 +51,32 @@ export const parseStudyDeepdive = (raw: string): StudyDeepdiveDraft => {
   return {
     title,
     tags: parseTags(readHeaderValue(headerLines, 'TAGS:')),
-    bodyMd,
+    bodyMd: normalizeHeadingLevels(bodyMd),
   };
+};
+
+// Notion 왕복은 헤딩 레벨을 한 단계 **올린다**: `## ` 는 heading_2 로 적재되고
+// (markdown-to-blocks.ts 가 `##` 를 heading, `###` 를 subheading 으로 본다), 발행 라인이
+// 되읽을 때 heading_2 는 `# ` 로 복원된다(blocks-to-markdown.ts). 그대로 두면 소제목마다
+// h1 이 생긴다 — 실측에서 소제목 7개가 전부 `# ` 로 돌아왔다.
+// 적재 전에 한 단계 내려 두면 왕복 후 `## ` 로 제자리에 온다.
+//
+// 코드블록 안은 건드리지 않는다. 셸·Python 예시의 `# 주석` 이 소제목으로 바뀌면 코드가 깨진다.
+const normalizeHeadingLevels = (body: string): string => {
+  let insideFence = false;
+  return body
+    .split('\n')
+    .map((line) => {
+      if (/^```/.test(line.trim())) {
+        insideFence = !insideFence;
+        return line;
+      }
+      if (insideFence) {
+        return line;
+      }
+      return line.replace(/^#{1,3}(\s+)/, '###$1');
+    })
+    .join('\n');
 };
 
 const readHeaderValue = (headerLines: string[], prefix: string): string => {

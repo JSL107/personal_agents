@@ -74,7 +74,7 @@ describe('StudyBriefPrismaRepository', () => {
   });
 
   // 이 조건(blogDraftPageId: null)이 빠지면 같은 브리프를 매일 다시 확장해 초안이 중복 적재된다.
-  it('아직 확장하지 않은 브리프만 최신순 1건 조회한다', async () => {
+  it('아직 확장하지 않은 브리프만 오래된 순 1건 조회한다', async () => {
     const since = new Date('2026-08-18T00:00:00Z');
     const findFirst = jest.fn().mockResolvedValue({
       id: 42,
@@ -94,7 +94,7 @@ describe('StudyBriefPrismaRepository', () => {
       studyBrief: { findFirst },
     } as unknown as PrismaService);
 
-    const found = await repository.findLatestUnexpandedSince('U1', since);
+    const found = await repository.findOldestUnexpandedSince('U1', since);
 
     expect(findFirst).toHaveBeenCalledWith({
       where: {
@@ -102,7 +102,8 @@ describe('StudyBriefPrismaRepository', () => {
         createdAt: { gte: since },
         blogDraftPageId: null,
       },
-      orderBy: { createdAt: 'desc' },
+      // 오래된 것부터 — 실패해 남은 브리프가 새 브리프에 밀리면 48시간 창을 그냥 넘어간다.
+      orderBy: { createdAt: 'asc' },
       select: expect.objectContaining({ reportMd: true, verdictJson: true }),
     });
     // Json 컬럼이라 문자열이 아닌 값이 섞여 있을 수 있다 — 걸러내지 않으면 프롬프트에 박힌다.
@@ -115,7 +116,7 @@ describe('StudyBriefPrismaRepository', () => {
     } as unknown as PrismaService);
 
     await expect(
-      repository.findLatestUnexpandedSince('U1', new Date()),
+      repository.findOldestUnexpandedSince('U1', new Date()),
     ).resolves.toBeUndefined();
   });
 

@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { HermesRunnerPort } from '../../agent/blog/domain/port/hermes-runner.port';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { NotionClientPort } from '../../notion/domain/port/notion-client.port';
 import { RepoContextPort } from '../domain/port/repo-context.port';
 import {
@@ -37,16 +38,17 @@ interface BuildOptions {
   brief?: ExpandableStudyBrief | undefined;
   hermesOutput?: string;
   databaseId?: string | undefined;
-  propertiesFail?: boolean;
+  appendFail?: boolean;
+  guardTaken?: boolean;
 }
 
 const build = (options: BuildOptions = {}) => {
-  const findLatestUnexpandedSince = jest
+  const findOldestUnexpandedSince = jest
     .fn()
     .mockResolvedValue('brief' in options ? options.brief : brief);
   const markBlogDraftCreated = jest.fn().mockResolvedValue(undefined);
   const studyBriefRepository = {
-    findLatestUnexpandedSince,
+    findOldestUnexpandedSince,
     markBlogDraftCreated,
   } as unknown as jest.Mocked<StudyBriefRepositoryPort>;
 
@@ -55,17 +57,19 @@ const build = (options: BuildOptions = {}) => {
     .mockResolvedValue({ stdout: options.hermesOutput ?? deepdiveOutput });
   const hermesRunner = { run } as unknown as jest.Mocked<HermesRunnerPort>;
 
-  const findOrCreateDailyPage = jest
+  const createDatabasePage = jest
     .fn()
     .mockResolvedValue({ pageId: 'notion-page-1', url: 'https://notion.so/1' });
-  const appendBlocks = jest.fn().mockResolvedValue(undefined);
-  const updatePageProperties = options.propertiesFail
-    ? jest.fn().mockRejectedValue(new Error('속성명 불일치'))
+  const appendBlocks = options.appendFail
+    ? jest.fn().mockRejectedValue(new Error('append 실패'))
     : jest.fn().mockResolvedValue(undefined);
+  const archivePage = jest.fn().mockResolvedValue(undefined);
+  const findOrCreateDailyPage = jest.fn();
   const notionClient = {
-    findOrCreateDailyPage,
+    createDatabasePage,
     appendBlocks,
-    updatePageProperties,
+    archivePage,
+    findOrCreateDailyPage,
   } as unknown as jest.Mocked<NotionClientPort>;
 
   const repoContext = {
@@ -97,6 +101,13 @@ const build = (options: BuildOptions = {}) => {
     get: jest.fn(() => databaseId),
   } as unknown as jest.Mocked<ConfigService>;
 
+  const acquireOnce = jest.fn().mockResolvedValue(!options.guardTaken);
+  const release = jest.fn().mockResolvedValue(undefined);
+  const cronIdempotency = {
+    acquireOnce,
+    release,
+  } as unknown as jest.Mocked<CronIdempotencyService>;
+
   const usecase = new ExpandStudyBriefUsecase(
     agentRunService,
     hermesRunner,
@@ -104,15 +115,19 @@ const build = (options: BuildOptions = {}) => {
     repoContext,
     notionClient,
     configService,
+    cronIdempotency,
   );
   return {
     usecase,
     run,
+    createDatabasePage,
     findOrCreateDailyPage,
     appendBlocks,
-    updatePageProperties,
+    archivePage,
     markBlogDraftCreated,
     updateInputSnapshot,
+    acquireOnce,
+    release,
   };
 };
 
@@ -132,11 +147,12 @@ describe('ExpandStudyBriefUsecase', () => {
       tags: ['llm', 'security'],
       notionUrl: 'https://notion.so/1',
     });
-    expect(context.findOrCreateDailyPage).toHaveBeenCalledWith({
-      databaseId: 'blog-draft-db',
-      title: '에이전트 권한 경계 설계',
-    });
-    expect(context.appendBlocks).toHaveBeenCalledTimes(1);
+    expect(context.createDatabasePage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        databaseId: 'blog-draft-db',
+        title: '에이전트 권한 경계 설계',
+      }),
+    );
     expect(context.markBlogDraftCreated).toHaveBeenCalledWith(
       42,
       'notion-page-1',
@@ -145,20 +161,78 @@ describe('ExpandStudyBriefUsecase', () => {
 
   // 발행 라인이 이 값들을 보고 초안을 집는다. 상태가 '초안' 이 아니면 글이 큐에 들어가지 않고,
   // 출처유형이 '오늘의 공부' 가 아니면 새치기가 조용히 사라진다.
-  it('발행 라인이 읽는 상태·출처유형·카테고리를 채운다', async () => {
+  // 별도 갱신으로 두면 그것만 실패했을 때 발행 조회에 안 걸리는 글이 '확장 완료' 로 남는다.
+  it('발행 라인이 읽는 상태·출처유형·카테고리를 생성과 같은 요청에 담는다', async () => {
     const context = build();
 
     await context.usecase.execute({ ownerSlackUserId: 'U1' });
 
-    expect(context.updatePageProperties).toHaveBeenCalledWith({
-      pageId: 'notion-page-1',
-      properties: expect.objectContaining({
-        상태: { select: { name: '초안' } },
-        출처유형: { select: { name: '오늘의 공부' } },
-        카테고리: { select: { name: '기술 학습' } },
-        태그: { multi_select: [{ name: 'llm' }, { name: 'security' }] },
+    expect(context.createDatabasePage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          상태: { select: { name: '초안' } },
+          출처유형: { select: { name: '오늘의 공부' } },
+          카테고리: { select: { name: '기술 학습' } },
+          태그: { multi_select: [{ name: 'llm' }, { name: 'security' }] },
+        }),
       }),
+    );
+  });
+
+  // findOrCreateDailyPage 는 제목만으로 기존 행을 돌려준다 — 모델이 과거 글과 같은 제목을
+  // 지으면 이미 발행한 글에 새 본문이 덧붙고 상태가 '초안' 으로 되돌아간다.
+  it('제목으로 기존 페이지를 재사용하지 않는다', async () => {
+    const context = build();
+
+    await context.usecase.execute({ ownerSlackUserId: 'U1' });
+
+    expect(context.findOrCreateDailyPage).not.toHaveBeenCalled();
+  });
+
+  // 앞부분만 담긴 글이 '초안' 으로 남으면 잘린 글이 그대로 발행 후보가 된다.
+  it('본문 이어붙이기가 실패하면 불완전 초안을 치우고 확장 완료로 표시하지 않는다', async () => {
+    const context = build({
+      appendFail: true,
+      hermesOutput: [
+        'TITLE: 긴 글',
+        'TAGS: a',
+        '---',
+        Array.from({ length: 150 }, (_, index) => `문단 ${index} 입니다.`).join(
+          '\n\n',
+        ),
+      ].join('\n'),
     });
+
+    await expect(
+      context.usecase.execute({ ownerSlackUserId: 'U1' }),
+    ).rejects.toThrow('append 실패');
+    expect(context.archivePage).toHaveBeenCalledWith({
+      pageId: 'notion-page-1',
+    });
+    expect(context.markBlogDraftCreated).not.toHaveBeenCalled();
+  });
+
+  // cron(11:00)과 수동 CLI 가 겹치면 같은 브리프로 초안이 두 장 생긴다.
+  it('다른 확장이 진행 중이면 브리프를 집지 않는다', async () => {
+    const context = build({ guardTaken: true });
+
+    const outcome = await context.usecase.execute({ ownerSlackUserId: 'U1' });
+
+    expect(outcome.result).toEqual({
+      status: 'empty',
+      message: '다른 딥다이브 확장이 진행 중입니다.',
+    });
+    expect(context.run).not.toHaveBeenCalled();
+  });
+
+  it('확장이 끝나면 잠금을 반드시 되돌린다', async () => {
+    const failing = build({ hermesOutput: '조사 실패' });
+
+    await expect(
+      failing.usecase.execute({ ownerSlackUserId: 'U1' }),
+    ).rejects.toThrow();
+
+    expect(failing.release).toHaveBeenCalledTimes(1);
   });
 
   it('조사 재료(요약·출처·적용 지점)를 프롬프트에 실어 보낸다', async () => {
@@ -194,16 +268,7 @@ describe('ExpandStudyBriefUsecase', () => {
       context.usecase.execute({ ownerSlackUserId: 'U1' }),
     ).rejects.toThrow(StudyBriefException);
     expect(context.markBlogDraftCreated).not.toHaveBeenCalled();
-    expect(context.findOrCreateDailyPage).not.toHaveBeenCalled();
-  });
-
-  it('속성 설정이 실패해도 본문은 저장된 것으로 보고한다', async () => {
-    const context = build({ propertiesFail: true });
-
-    const outcome = await context.usecase.execute({ ownerSlackUserId: 'U1' });
-
-    expect(outcome.result.status).toBe('created');
-    expect(context.markBlogDraftCreated).toHaveBeenCalled();
+    expect(context.createDatabasePage).not.toHaveBeenCalled();
   });
 
   it('초안 DB 가 설정돼 있지 않으면 isConfigured 가 false 다', () => {

@@ -37,8 +37,9 @@ export interface StudyBriefRepositoryPort {
     ownerUserId: string,
     since: Date,
   ): Promise<RecentStudyBrief[]>;
-  // 아직 블로그 초안으로 확장하지 않은 브리프 중 가장 최근 1건. 없으면 undefined.
-  findLatestUnexpandedSince(
+  // 아직 블로그 초안으로 확장하지 않은 브리프 중 **가장 오래된** 1건. 없으면 undefined.
+  // 최신순이면 실패한 브리프가 매일 새 브리프에 밀려 조회 창을 그냥 넘어간다.
+  findOldestUnexpandedSince(
     ownerUserId: string,
     since: Date,
   ): Promise<ExpandableStudyBrief | undefined>;
