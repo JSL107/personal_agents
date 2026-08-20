@@ -71,4 +71,34 @@ func runOfficeAttendanceTests(_ t: TestRunner) {
     // 24시 밖 입력도 같은 시계로 접는다(기존 officeDaylight 와 같은 방어).
     t.expectEqual(officeAttendance(hour: 33, input: attendanceInput()), .present, "33시 = 9시")
     t.expectEqual(officeAttendance(hour: -1, input: attendanceInput()), .away, "-1시 = 23시")
+
+    t.suite("OfficeAttendanceApplication")
+
+    // 씬이 막 붙어 이전 시각이 없는 최초 호출 — 걷는 사람 없이 최종 상태로 놓는다.
+    t.expectEqual(
+        officeAttendanceApplication(previousHour: nil, currentHour: 9),
+        .initial,
+        "이전 시각이 없으면 최초 적용"
+    )
+
+    // 8시에서 9시로 — 정규 출근 경계를 실제로 넘었다. 걷기 연출을 튼다.
+    t.expectEqual(
+        officeAttendanceApplication(previousHour: 8, currentHour: 9),
+        .boundaryCrossed,
+        "8시 → 9시는 경계를 넘는다"
+    )
+
+    // 9시에서 9시로 — 같은 시각 안의 재호출(예: sync 가 연달아 두 번 온 경우). 재적용하지 않는다.
+    t.expectEqual(
+        officeAttendanceApplication(previousHour: 9, currentHour: 9),
+        .sameHour,
+        "9시 → 9시는 같은 시각"
+    )
+
+    // 23시에서 0시로 — 자정을 넘겨도 단순 비교라 경계로 잡힌다.
+    t.expectEqual(
+        officeAttendanceApplication(previousHour: 23, currentHour: 0),
+        .boundaryCrossed,
+        "23시 → 0시(자정 넘김)도 경계를 넘는다"
+    )
 }
