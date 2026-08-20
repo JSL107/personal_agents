@@ -518,9 +518,13 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         )
     }
     // 표가 비면 위 루프가 한 건도 돌지 않고 조용히 통과한다 — 덮은 인원을 함께 못 박는다.
-    t.expect(
-        paired >= sampleAgents.count - 4,
-        "운영 \(sampleAgents.count)명 중 \(paired)명에게 짝지어진 물건이 있다"
+    //
+    // **전원이다.** 한때 `>= count - 4` 로 네 명까지 누락을 허용했는데, 그러면 워커를 늘리고
+    // 표를 안 고쳐도 통과해 그 사람만 계속 무관한 곳으로 다닌다 — 정작 이 검사가 막아야 할
+    // 상황이다. 새 워커를 넣으면 여기서 걸리고, 그게 "표도 함께 보라"는 신호다.
+    t.expectEqual(
+        paired, sampleAgents.count,
+        "운영 \(sampleAgents.count)명 전원에게 짝지어진 물건이 있다"
     )
 
     // 같은 회차·같은 입력이면 늘 같은 결과. 스냅샷마다 목적지가 갈리면 5초 폴링마다
@@ -585,6 +589,60 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
             placedKinds.contains(kind),
             "벽걸이 \(kind.rawValue) 가 어느 방엔가 걸려 있다"
         )
+    }
+
+    // 첫 순위가 다 차 있으면 다음 순위로 내려간다. `occupied` 를 늘 빈 집합으로 넘기면
+    // 이 경로가 한 번도 실행되지 않는다 — 목록에 두 종류를 적어 둔 의미가 검증되지 않는다.
+    //
+    // 학습 계열은 [책장, 벽 선반] 순서다. 책장 앞자리를 전부 막으면 벽 선반으로 가야 한다.
+    let studyAffinity = officeWorkAffinity(agentType: "CTO_STUDY")
+    t.expect(studyAffinity.count >= 2, "학습 계열에 대체 종류가 있다")
+    let bookshelfTiles = Set(spots.filter { $0.kind == studyAffinity[0] }.map(\.tile))
+    t.expect(!bookshelfTiles.isEmpty, "첫 순위(\(studyAffinity[0].rawValue)) 자리가 있다")
+    if let fallback = officeStrollSpot(
+        for: "CTO_STUDY", round: 1, spots: spots, occupied: bookshelfTiles, hour: 14,
+        home: home("CTO_STUDY")
+    ) {
+        t.expect(
+            fallback.kind != studyAffinity[0],
+            "첫 순위가 다 차면 다른 종류로 내려감 (실제 \(fallback.kind.rawValue))"
+        )
+        t.expect(
+            studyAffinity.contains(fallback.kind) || studyAffinity.isEmpty,
+            "내려간 곳도 짝지어진 목록 안 (실제 \(fallback.kind.rawValue))"
+        )
+    }
+
+    // 짝지어진 종류를 **전부** 막으면 예전 방식으로 떨어진다.
+    let allStudyTiles = Set(
+        spots.filter { studyAffinity.contains($0.kind) }.map(\.tile)
+    )
+    if let last = officeStrollSpot(
+        for: "CTO_STUDY", round: 1, spots: spots, occupied: allStudyTiles, hour: 14,
+        home: home("CTO_STUDY")
+    ) {
+        t.expect(
+            !studyAffinity.contains(last.kind),
+            "짝지어진 종류가 다 차면 전체에서 고름 (실제 \(last.kind.rawValue))"
+        )
+    }
+
+    // 거리가 같은 후보 둘이면 카탈로그에서 앞선 쪽. `min(by:)` 는 안정 정렬이 아니라
+    // tie-break 를 명시하지 않으면 실행마다 결과가 갈린다.
+    let tieCandidates = spots.enumerated().filter { $0.element.kind == .bookshelf }
+    if tieCandidates.count >= 2 {
+        let base = tieCandidates[0].element.tile
+        // 두 후보에서 같은 걸음 수인 기준점을 찾는다(없으면 이 검사는 건너뛴다).
+        let second = tieCandidates[1].element.tile
+        let midpoint = TilePoint(x: (base.x + second.x) / 2, y: (base.y + second.y) / 2)
+        let d1 = abs(midpoint.x - base.x) + abs(midpoint.y - base.y)
+        let d2 = abs(midpoint.x - second.x) + abs(midpoint.y - second.y)
+        if d1 == d2 {
+            let picked = officeStrollSpot(
+                for: "CTO_STUDY", round: 1, spots: spots, occupied: [], hour: 14, home: midpoint
+            )
+            t.expectEqual(picked?.tile, base, "거리가 같으면 카탈로그에서 앞선 자리")
+        }
     }
 
     // 표에 없는 사람은 예전 방식으로 떨어진다 — 새 워커가 늘어도 화면이 멈추지 않아야 한다.

@@ -208,6 +208,17 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
     // 잡았다. 방의 유일한 출입구라, 거기 서서 4초를 보내면 그동안 드나드는 사람이 전부
     // 그 사람을 통과해 지나가는 그림이 된다.
     let doorTiles = Set(plan.furniture.filter { $0.kind.isDoorway }.map(\.tile))
+    // **걸어서 닿을 수 없는 칸은 목적지가 될 수 없다.** walkable 은 "막히지 않은 칸"이지
+    // "갈 수 있는 칸"이 아니다 — 운영실에서 자판기·프린터·워터쿨러를 한 줄에 놓자 그 사이
+    // 한 칸이 위(책상)·아래(벽)·좌우(가구)로 완전히 갇혔고, 그 칸이 프린터의 유일한
+    // walkable 이웃이어서 목적지로 뽑혔다. 지시받은 사람은 경로가 빈 채로 남아 자기 책상에서
+    // 프린터 앞 동작만 재생했고, 웹에서는 걸음이 실패한 사람이 매 틱 후보 선두를 차지해
+    // 다른 사람의 배회까지 막았다.
+    //
+    // 기준점은 첫 좌석이다 — 좌석은 전부 도달 가능하다는 것을 도달성 테스트가 이미 지킨다.
+    // 좌석이 없는 평면도(사람 0명)에서는 필터를 걸지 않는다.
+    let reachable =
+        plan.desks.first.map { officeReachableTiles(from: $0.seat, walkable: plan.walkable) }
     var usedTiles: Set<TilePoint> = []
     var spots: [OfficeStrollSpot] = []
 
@@ -220,6 +231,7 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         let neighbors = officeInteractionNeighbors(furniture: placement.tile, pose: pose)
         guard let tile = neighbors.first(where: {
             plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
+                && (reachable?.contains($0) ?? true)
         }), usedTiles.insert(tile).inserted else {
             continue
         }

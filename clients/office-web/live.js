@@ -829,13 +829,18 @@ function strollTick(now) {
     }
     // 점심시간에는 탕비실·회의실로 기운다. 그 시간대에 그쪽 자리가 하나도 비어 있지 않으면
     // 평소처럼 전체에서 고른다 — 갈 곳이 없다고 자리에 붙들어 두면 정오만 화면이 굳는다.
-    const lunch =
-      currentHour() === renderer.layout.attendanceHours.lunch
-        ? free.filter((candidate) => LUNCH_KINDS.has(candidate.kind))
-        : [];
+    // **점심시간인지를 따로 들고 있어야 한다.** 한때 `lunch.length === 0` 하나로 갈랐는데,
+    // 그 값은 "점심시간이 아니다" 와 "점심시간이지만 그쪽 자리가 다 찼다" 를 구별하지 못한다 —
+    // 후자에서 업무 짝짓기가 켜져, 맥(`officeStrollSpot`)이 전체에서 회전 선택하는 상황에
+    // 웹만 각자 자기 물건 앞으로 갔다. 같은 시각에 두 화면의 사람이 다른 방에 모인다.
+    const isLunchHour =
+      currentHour() === renderer.layout.attendanceHours.lunch;
+    const lunch = isLunchHour
+      ? free.filter((candidate) => LUNCH_KINDS.has(candidate.kind))
+      : [];
     // 점심이 아니면 자기 일에 필요한 물건이 먼저다 — 자료를 찾는 사람은 책장, 문서를
-    // 내보내는 사람은 프린터로. 어느 쪽도 비어 있지 않으면 평소처럼 전체에서 고른다.
-    const affinity = lunch.length > 0 ? null : affinitySpot(agentType, free);
+    // 내보내는 사람은 프린터로. 짝지어진 물건이 없으면 평소처럼 전체에서 고른다.
+    const affinity = isLunchHour ? null : affinitySpot(agentType, free);
     const pool = lunch.length > 0 ? lunch : free;
     const spot = affinity ?? pool[Math.floor(Math.random() * pool.length)];
     if (
