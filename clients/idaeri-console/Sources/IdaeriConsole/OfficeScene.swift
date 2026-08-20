@@ -1364,6 +1364,11 @@ final class OfficeScene: SKScene {
         let alarm = SKSpriteNode(texture: texture)
         alarm.name = "approvalAlarm"
         alarm.blendMode = .add
+        // 아래 가장자리를 기준점으로 잡는다. 기본 앵커(0.5, 0.5)로 두고 문패 판 위에 놓으면
+        // **위치는 판 위인데 그림의 아래 절반이 판을 덮는다** — 실제로 "나 (대표)" 글자 위로
+        // 붉은 빛이 반쯤 내려앉아, 등은 등대로 반쪽만 보이고 글자는 글자대로 물들었다.
+        // 아래를 앵커로 잡으면 반지름·창 크기가 바뀌어도 판 위에서 시작하는 관계가 유지된다.
+        alarm.anchorPoint = CGPoint(x: 0.5, y: 0)
         // 책상 스탠드(`officeDeskGlowZPosition`)와는 다른 지역 z 스택이다 — 여기 형제는
         // 왕관(1)·문패 판(0.9)이라, 그 값을 그대로 쓰면 겹칠 때 경고등이 아래로 깔린다.
         // 위치 계산(titleTop)이 창 크기·폰트에 따라 조금 어긋나 문패 판과 겹치더라도
