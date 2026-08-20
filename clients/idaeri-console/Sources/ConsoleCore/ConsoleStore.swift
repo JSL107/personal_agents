@@ -15,6 +15,8 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var approvals: [ConsoleApproval] = []
     @Published public private(set) var sessions: [ConsoleSession] = []
     @Published public private(set) var serverTime: String = ""
+    /// 대표 브리핑. 스냅샷과 다른 요청으로 오므로 실패해도 나머지 화면은 그대로다.
+    @Published public private(set) var briefing: ConsoleBriefing?
     @Published public private(set) var pendingCommands: [PendingCommand] = []
     /// 승인/거절 write 결과 안내. 실패 사유를 담고, 성공하면 nil 로 지워진다.
     /// 대시보드·오피스 어느 탭에서 눌러도 같은 store 를 보므로 안내가 공유된다.
@@ -70,6 +72,10 @@ public final class ConsoleStore: ObservableObject {
     }
 
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
+    public func apply(briefing: ConsoleBriefing) {
+        self.briefing = briefing
+    }
+
     public func apply(event: ConsoleEvent) {
         switch event {
         case let .runStarted(run):

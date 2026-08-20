@@ -10,6 +10,7 @@ import { CategoryStatusCount } from '../domain/adoption-rate';
 import {
   HasAnyForPullRequestInput,
   MarkDecidedInput,
+  OpenPostedPullRequestRow,
   PrReviewFindingRepositoryPort,
 } from '../domain/port/pr-review-finding.repository.port';
 import {
@@ -136,6 +137,34 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
         // 빠져(status 가 OPEN 이 아니게 된다) 나머지 갱신을 재시도할 길이 없다.
         ...(resolveThread === true ? { resolvedAt: new Date() } : {}),
       },
+    });
+  }
+
+  async countOpenPostedByPullRequest(): Promise<OpenPostedPullRequestRow[]> {
+    const rows = await this.prisma.prReviewFinding.groupBy({
+      by: ['repo', 'pullNumber'],
+      where: {
+        status: 'OPEN',
+        resolvedAt: null,
+        githubCommentId: { not: null },
+      },
+      _count: { _all: true },
+      _min: { createdAt: true },
+    });
+    return rows.flatMap((row): OpenPostedPullRequestRow[] => {
+      const oldestAt = row._min.createdAt;
+      // groupBy 결과에 행이 있으면 createdAt 은 반드시 있다(NOT NULL). 타입만 좁힌다.
+      if (oldestAt === null) {
+        return [];
+      }
+      return [
+        {
+          repo: row.repo,
+          pullNumber: row.pullNumber,
+          count: row._count._all,
+          oldestAt,
+        },
+      ];
     });
   }
 

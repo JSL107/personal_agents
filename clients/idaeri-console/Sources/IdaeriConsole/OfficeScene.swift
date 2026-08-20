@@ -146,6 +146,7 @@ final class OfficeScene: SKScene {
     /// 대표(나) 클릭 — 담당자를 지정하지 않는 지시 입구다. 부를 사람을 내가 찍는 대신,
     /// 대표에게 말하면 라우터가 알맞은 워커를 고른다.
     var onPresidentClick: (() -> Void)?
+    var onDailyReportClick: (() -> Void)?
 
     /// 시각을 고정한다(화면 회귀 렌더 전용, 평소엔 nil).
     /// 밤 화면을 확인하려고 밤까지 기다릴 수는 없어서 둔 주입점이다.
@@ -2072,6 +2073,250 @@ final class OfficeScene: SKScene {
         refreshHoverTooltip()
     }
 
+    // MARK: - 대표 브리핑
+
+    /// 회의실 벽면 판과 대표 옆 정산 종이를 갱신한다.
+    ///
+    /// 시각은 호출자가 넘긴다 — 오프스크린 회귀 렌더가 `--hour` 로 임의 시각을 강제하기 때문이다.
+    /// 씬이 `Date()` 를 직접 읽으면 그 경로에서 저녁 화면을 확인할 방법이 사라진다.
+    func refreshBriefing(_ briefing: ConsoleBriefing?, hour: Int) {
+        renderMeetingBoard(briefing)
+        renderDailyReportPaper(briefing, hour: hour)
+        // **펼쳐 둔 카드도 다시 그린다.** 카드 문장은 펼치는 순간 한 번 만들어지는데, 브리핑은
+        // 30초마다 새로 온다 — 다시 그리지 않으면 카드를 열어 둔 채로 오늘 수치가 옛것에
+        // 멈춰 있다(닫았다 열기 전까지).
+        if overlayLayer.childNode(withName: officeDailyReportCardNodeName) != nil {
+            renderDailyReportCard(briefing)
+        }
+    }
+
+    /// 회의실 벽에 걸린 판. 스프라이트가 아니라 도형과 글자로 직접 그린다.
+    ///
+    /// 회의실에 이미 화이트보드가 있지만 에셋이 39×22px 이라 글자를 얹을 수 없다
+    /// (`OfficeFloorPlan.swift` 의 보드 높이 주석 참고). 실사용 창에서 회의실은 8칸 × 4칸뿐이고
+    /// 그 안에 책장 둘·회의 테이블·카펫이 이미 들어차 있어, 바닥 자리를 먹지 않는 벽면을 쓴다.
+    private func renderMeetingBoard(_ briefing: ConsoleBriefing?) {
+        overlayLayer.childNode(withName: officeMeetingBoardNodeName)?
+            .removeFromParent()
+        guard
+            let briefing,
+            let meeting = plan.commonAreas.first(where: { $0.kind == .meeting })
+        else {
+            return
+        }
+
+        let boardWidth =
+            Double(meeting.width) * officeBoardWidthRatio * Double(tileSize)
+        let boardHeight = officeBoardHeightTiles * Double(tileSize)
+        let layout = officeBoardLayout(
+            todos: briefing.todos,
+            streak: briefing.streak,
+            boardWidth: boardWidth,
+            boardHeight: boardHeight
+        )
+
+        let holder = SKNode()
+        holder.name = officeMeetingBoardNodeName
+        // 방 안쪽 벽면. 문패 줄(`labelY`)은 복도라 그 위 첫 줄이 방의 시작이다.
+        let anchorTile = TilePoint(
+            x: meeting.originX + meeting.width / 2, y: meeting.labelY + 1
+        )
+        var position = floorPoint(anchorTile)
+        position.y += tileSize * CGFloat(officeBoardLiftTiles)
+        holder.position = position
+        // 문패보다 **뒤** 다. 같은 오버레이 레이어라 z 를 안 낮추면 나중에 추가된 판이
+        // "회의실"·"기획" 문패를 덮는다 — 방 이름을 가리면서까지 보여줄 판은 아니다.
+        holder.zPosition = -1
+
+        let board = SKShapeNode(
+            rect: CGRect(
+                x: -boardWidth / 2, y: -boardHeight / 2,
+                width: boardWidth, height: boardHeight
+            ),
+            cornerRadius: 3
+        )
+        // 판은 밝고 글자는 어둡다 — 회의실 벽이 어두워 반대로 하면 글자가 벽에 묻힌다.
+        board.fillColor = SKColor(white: 0.93, alpha: 0.96)
+        board.strokeColor = SKColor(white: 0.45, alpha: 1)
+        board.lineWidth = 1
+        holder.addChild(board)
+
+        let title = SKLabelNode(text: "오늘의 할 일")
+        title.fontName = officeLabelFontName
+        title.fontSize = CGFloat(layout.titleFontSize)
+        title.fontColor = SKColor(white: 0.2, alpha: 1)
+        title.horizontalAlignmentMode = .left
+        title.verticalAlignmentMode = .top
+        title.position = CGPoint(
+            x: -boardWidth / 2 + boardWidth * 0.06, y: boardHeight / 2 - boardHeight * 0.08
+        )
+        holder.addChild(title)
+
+        var cursorY =
+            title.position.y - CGFloat(layout.titleFontSize * officeBoardTitleSpacing)
+        for line in layout.lines {
+            let label = SKLabelNode(text: line.text)
+            label.fontName = officeLabelFontName
+            label.fontSize = CGFloat(line.fontSize)
+            label.fontColor = SKColor(white: 0.25, alpha: 1)
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .top
+            label.position = CGPoint(
+                x: -boardWidth / 2 + boardWidth * 0.06, y: cursorY
+            )
+            holder.addChild(label)
+            cursorY -= CGFloat(line.fontSize * officeBoardLineSpacing)
+        }
+
+        overlayLayer.addChild(holder)
+    }
+
+    /// 퇴근 시각 이후 대표 옆에 놓이는 종이 한 장.
+    ///
+    /// 대표 **책상** 이 아니라 옆 칸인 이유는 책상에 이미 임자가 있어서다 — 로컬 CLI 세션이
+    /// `officeVisibleSessions(limit: desks.count)` 로 책상을 채운다. 종이가 책상 하나를 먹으면
+    /// 보이는 세션이 그만큼 줄어든다.
+    private func renderDailyReportPaper(_ briefing: ConsoleBriefing?, hour: Int) {
+        overlayLayer.childNode(withName: officeDailyReportNodeName)?
+            .removeFromParent()
+        guard briefing != nil, officeShowsDailyReport(hour: hour) else {
+            // 종이가 사라지면 펼친 카드도 함께 걷는다. 남겨 두면 자정 뒤에 어제 성적이
+            // 떠 있는 채로 화면에 붙어 있다.
+            overlayLayer.childNode(withName: officeDailyReportCardNodeName)?
+                .removeFromParent()
+            return
+        }
+
+        let holder = SKNode()
+        holder.name = officeDailyReportNodeName
+        // 대표 **옆 칸** 은 책상이다. 처음에 거기 놓았더니 종이가 세션 화면을 통째로 덮었다 —
+        // 로컬 CLI 세션이 그 책상 위에 뜨는데, 지금 세션은 10개고 대표실 책상은 3개뿐이라
+        // 한 자리를 먹는 것이 그대로 손실이다.
+        //
+        // 대신 대표실 왼쪽 끝(소파 자리)에 둔다. 책상 줄을 비켜서면서도 같은 방 안이라
+        // "대표 앞에 놓인 서류" 로 읽힌다.
+        let presidentArea = plan.commonAreas.first { $0.kind == .president }
+        let paperTile = TilePoint(
+            x: (presidentArea?.originX ?? plan.presidentTile.x) + 1,
+            y: plan.presidentTile.y
+        )
+        holder.position = floorPoint(paperTile)
+        holder.zPosition = depth(of: paperTile) + 1
+
+        let paperWidth = tileSize * 0.62
+        let paperHeight = tileSize * 0.8
+        let paper = SKShapeNode(
+            rect: CGRect(
+                x: -paperWidth / 2, y: 0, width: paperWidth, height: paperHeight
+            ),
+            cornerRadius: 1
+        )
+        paper.fillColor = SKColor(white: 0.96, alpha: 1)
+        paper.strokeColor = SKColor(white: 0.55, alpha: 1)
+        paper.lineWidth = 1
+        holder.addChild(paper)
+
+        // 종이 위 줄 세 개 — 글자를 그리기엔 너무 작아 "무언가 적힌 서류" 로만 읽히게 한다.
+        for index in 0..<3 {
+            let ruleY = paperHeight * (0.72 - Double(index) * 0.2)
+            let rule = SKShapeNode(
+                rect: CGRect(
+                    x: -paperWidth * 0.3, y: ruleY,
+                    width: paperWidth * 0.6, height: max(1, tileSize * 0.03)
+                )
+            )
+            rule.fillColor = SKColor(white: 0.6, alpha: 1)
+            rule.strokeColor = .clear
+            holder.addChild(rule)
+        }
+
+        let caption = SKLabelNode(text: "오늘 성적")
+        caption.fontName = officeLabelFontName
+        caption.fontSize = max(8, tileSize * 0.26)
+        caption.fontColor = SKColor(white: 0.92, alpha: 1)
+        caption.horizontalAlignmentMode = .center
+        caption.verticalAlignmentMode = .bottom
+        caption.position = CGPoint(x: 0, y: paperHeight + tileSize * 0.1)
+        let plate = SKShapeNode(
+            rect: caption.frame.insetBy(dx: -4, dy: -2), cornerRadius: 2
+        )
+        plate.fillColor = SKColor(white: 0.07, alpha: 0.75)
+        plate.strokeColor = .clear
+        holder.addChild(plate)
+        holder.addChild(caption)
+
+        overlayLayer.addChild(holder)
+    }
+
+    /// 정산 종이를 눌렀을 때 펼쳐지는 카드. 다시 누르면 접힌다.
+    func toggleDailyReportCard(_ briefing: ConsoleBriefing?) {
+        if let opened = overlayLayer.childNode(withName: officeDailyReportCardNodeName) {
+            opened.removeFromParent()
+            return
+        }
+        renderDailyReportCard(briefing)
+    }
+
+    /// 펼친 카드를 (다시) 그린다. 이미 떠 있으면 걷어내고 새 수치로 세운다.
+    private func renderDailyReportCard(_ briefing: ConsoleBriefing?) {
+        overlayLayer.childNode(withName: officeDailyReportCardNodeName)?
+            .removeFromParent()
+        guard let briefing else {
+            return
+        }
+        let lines = officeDailyReportLines(
+            report: briefing.dailyReport, streak: briefing.streak
+        )
+        let holder = SKNode()
+        holder.name = officeDailyReportCardNodeName
+        holder.zPosition = 2000
+
+        let fontSize = max(10, tileSize * 0.34)
+        var labels: [SKLabelNode] = []
+        var widest = 0.0
+        for text in lines {
+            let label = SKLabelNode(text: text)
+            label.fontName = officeLabelFontName
+            label.fontSize = fontSize
+            label.fontColor = SKColor(white: 0.95, alpha: 1)
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .top
+            labels.append(label)
+            widest = max(widest, Double(label.frame.width))
+        }
+
+        let padding = Double(tileSize) * 0.4
+        let lineHeight = Double(fontSize) * 1.45
+        let cardWidth = widest + padding * 2
+        let cardHeight = lineHeight * Double(labels.count) + padding * 2
+
+        let card = SKShapeNode(
+            rect: CGRect(
+                x: -cardWidth / 2, y: -cardHeight / 2,
+                width: cardWidth, height: cardHeight
+            ),
+            cornerRadius: 5
+        )
+        card.fillColor = SKColor(white: 0.1, alpha: 0.94)
+        card.strokeColor = SKColor(white: 0.55, alpha: 1)
+        card.lineWidth = 1
+        holder.addChild(card)
+
+        var cursorY = cardHeight / 2 - padding
+        for label in labels {
+            label.position = CGPoint(x: -cardWidth / 2 + padding, y: cursorY)
+            holder.addChild(label)
+            cursorY -= lineHeight
+        }
+
+        // 대표 위쪽에 띄운다. 종이 자리에 겹치면 카드가 자기를 연 손잡이를 덮어 다시 접을
+        // 곳이 사라진다.
+        var position = floorPoint(plan.presidentTile)
+        position.y += CGFloat(cardHeight / 2) + tileSize * 1.2
+        holder.position = position
+        overlayLayer.addChild(holder)
+    }
+
     // MARK: - 상태 → 몸짓
 
     /// 마지막으로 받은 스냅샷과 phase 로 몸짓을 다시 건다. 걸음이 끝난 직후에 쓴다.
@@ -2647,6 +2892,10 @@ final class OfficeScene: SKScene {
         guard let hit = hitTarget(at: event.location(in: self)) else {
             return
         }
+        if hit == officeHitTargetDailyReport {
+            onDailyReportClick?()
+            return
+        }
         if hit == officeHitTargetPresident {
             onPresidentClick?()
             return
@@ -2712,6 +2961,20 @@ final class OfficeScene: SKScene {
                 y: entry.value.position.y + entry.value.sprite.size.height / 2
             )
             return (entry.key, OfficePoint(x: Double(center.x), y: Double(center.y)))
+        }
+        // 정산 종이를 대표보다 먼저 넣는다. `agentTypeAt` 은 반경 안에서 가장 가까운 것을
+        // 고르는데, 종이는 대표 옆 칸이라 커서가 둘 사이에 오면 거리가 비슷해진다. 먼저 넣은
+        // 쪽이 동률에서 이기므로, 순서를 뒤집으면 종이를 눌러도 지시 입력창이 열린다.
+        if let paper = overlayLayer.childNode(withName: officeDailyReportNodeName) {
+            slots.append(
+                (
+                    officeHitTargetDailyReport,
+                    OfficePoint(
+                        x: Double(paper.position.x),
+                        y: Double(paper.position.y + tileSize * 0.4)
+                    )
+                )
+            )
         }
         if let president {
             let center = CGPoint(

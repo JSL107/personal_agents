@@ -87,6 +87,10 @@ export class PublishFindingsService {
         finding,
         // 게시 성공 시 markPosted 가 INLINE/FILE/ISSUE_COMMENT 로 갱신한다.
         postMode: 'NOT_POSTED',
+        // allowlist 밖이면 게시를 시도조차 하지 않는다. 그 사실을 **만들 때** 상태에 담아,
+        // 생성과 종결이 한 번의 쓰기로 끝나게 한다(둘로 나누면 사이에서 실패한 행이
+        // 영구히 OPEN 으로 남는다 — 지문 중복 때문에 다시 손댈 수 없다).
+        status: canPost ? 'OPEN' : 'SUPPRESSED',
       });
       if (record === null) {
         outcome.duplicate += 1;
@@ -111,6 +115,9 @@ export class PublishFindingsService {
         input,
         finding,
         postMode: 'NOT_POSTED',
+        // 게이트가 떨군 지적도 GitHub 에 올라가지 않는다. 지문은 남겨 같은 지적의 재등장을
+        // 막되, 상태는 처음부터 종결로 둔다.
+        status: 'SUPPRESSED',
       });
       if (record === null) {
         outcome.duplicate += 1;
@@ -130,10 +137,12 @@ export class PublishFindingsService {
     input,
     finding,
     postMode,
+    status,
   }: {
     input: PublishFindingsInput;
     finding: ReviewFinding;
     postMode: FindingPostMode;
+    status?: CreateFindingInput['status'];
   }): Promise<PrReviewFindingRecord | null> {
     const filePath = finding.file ?? null;
     const createInput: CreateFindingInput = {
@@ -154,8 +163,9 @@ export class PublishFindingsService {
         body: finding.body,
       }),
       postMode,
+      status,
     };
-    return this.repository.createIfAbsent(createInput);
+    return await this.repository.createIfAbsent(createInput);
   }
 
   // 1) 줄 단위 → 2) 파일 단위 → 3) 일반 코멘트 묶음. 지적이 조용히 유실되지 않게 한다.

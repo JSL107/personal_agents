@@ -278,8 +278,14 @@ export interface AgentRunRepositoryPort {
     input: CountUnsuccessfulSweepReviewsQuery,
   ): Promise<number>;
   // 콘솔 관제 — agentType별 최신 종료 런의 결과(성공/실패)와 cutoff 이내인 것.
+  //
+  // `since` 를 주면 그 절대 시각을 경계로 쓴다. KST 자정처럼 **정확히 맞아야 하는 경계**는
+  // 상대 분으로 넘길 수 없다 — 호출자가 잰 "자정까지 몇 분" 을 리포지토리가 자기 시각에서
+  // 다시 빼면, 그 사이 흐른 시간과 반올림만큼 경계가 어긋나 전날 23:59 대 실행이 오늘로
+  // 섞인다. `withinMinutes` 는 `since` 가 없을 때만 쓴다.
   findRecentlyFinishedRuns(input: {
     withinMinutes: number;
+    since?: Date;
   }): Promise<RecentlyFinishedRun[]>;
   // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
   // slackUserId 를 주면 그 사용자의 실패만 — 개인 계획 검토(PO Shadow)가 남의 실패를
@@ -297,4 +303,9 @@ export interface AgentRunRepositoryPort {
   countSucceededSince(input: {
     since: Date;
   }): Promise<AgentSucceededCountRow[]>;
+  // 대표 브리핑 퇴근 정산 — 특정 시각 이후에 실패로 끝난 런 총수.
+  //
+  // agentType 별로 나누지 않는 이유는 정산 카드가 "오늘 몇 건 엎어졌나" 만 말하기 때문이다.
+  // 어느 워커가 엎어졌는지는 이미 상태 링(빨강)과 할 일 보드가 말한다.
+  countFailedSince(input: { since: Date }): Promise<number>;
 }

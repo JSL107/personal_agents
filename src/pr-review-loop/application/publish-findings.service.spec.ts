@@ -205,6 +205,11 @@ describe('PublishFindingsService', () => {
       expect.objectContaining({ postMode: 'NOT_POSTED' }),
     );
     expect(outcome.notPosted).toBe(1);
+    // **만들 때부터 종결이어야 한다.** 만든 뒤 따로 종결시키면 그 사이 실패한 행이
+    // OPEN + NOT_POSTED 로 남고, 지문 중복 탓에 다시 손댈 수 없어 유령이 재생산된다.
+    expect(repository.createIfAbsent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SUPPRESSED' }),
+    );
   });
 
   it('상한을 넘은 카드는 NOT_POSTED 로 저장하고 dropped 로 센다', async () => {
@@ -223,6 +228,13 @@ describe('PublishFindingsService', () => {
 
     expect(outcome.inline).toBe(1);
     expect(outcome.dropped).toBe(1);
+    // 게이트가 떨군 카드는 종결로, 게시한 카드는 OPEN 으로 만들어져야 한다.
+    expect(repository.createIfAbsent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SUPPRESSED' }),
+    );
+    expect(repository.createIfAbsent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'OPEN' }),
+    );
   });
 
   it('지문이 이미 있으면(null) 게시하지 않는다', async () => {
