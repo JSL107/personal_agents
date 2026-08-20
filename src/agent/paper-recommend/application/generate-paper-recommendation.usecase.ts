@@ -156,6 +156,11 @@ export class GeneratePaperRecommendationUsecase {
           strategy,
           limit: 20,
           includeTickerIds: positions.map((position) => position.tickerId),
+          // 운영 회차만 원장에 남긴다. 여기서 보여준 목록이 곧 "모델이 보고도 안 산 것" 의
+          // 모집단이라, 나중에 규칙을 고칠 때 대조군이 되는 유일한 회차다.
+          // 회차는 모델 호출보다 먼저 확정되므로 실행 id 를 함께 남긴다 — 이 실행이
+          // 실패한 날은 주문이 없어, id 없이는 "다 보고 아무것도 안 샀다" 와 구분되지 않는다.
+          record: { agentRunId },
         });
         const valuation = await this.repository.findLatestValuation(account.id);
         const accountValuation = Number(

@@ -20,6 +20,33 @@ describe('parseScreenerCliArguments', () => {
     });
   });
 
+  it('--record는 값을 받지 않는 플래그이고 뒤 옵션을 삼키지 않는다', () => {
+    expect(
+      parseScreenerCliArguments([
+        'screen',
+        '--record',
+        '--strategy',
+        'SWING',
+        '--limit',
+        '3',
+      ]),
+    ).toEqual({
+      subcommand: 'screen',
+      // CLI 실행에는 추천 실행 id 가 없다 — 그래서 운영 회차를 덮어쓰지 못한다.
+      options: { strategy: 'SWING', limit: 3, record: { agentRunId: null } },
+    });
+    expect(
+      parseScreenerCliArguments(['screen', '--limit', '3', '--record']),
+    ).toEqual({
+      subcommand: 'screen',
+      options: {
+        strategy: 'LONG_TERM',
+        limit: 3,
+        record: { agentRunId: null },
+      },
+    });
+  });
+
   it('지원하지 않는 전략을 사용법 오류로 거부한다', () => {
     expect(() =>
       parseScreenerCliArguments(['screen', '--strategy', 'DAY_TRADE']),

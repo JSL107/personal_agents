@@ -86,6 +86,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 1,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [],
       stocks: [
         {
@@ -172,15 +173,18 @@ describe('GeneratePaperRecommendationUsecase', () => {
     await usecase.execute({ decidedAt });
 
     expect(screenUniverse.execute).toHaveBeenCalledTimes(2);
+    // 운영 회차는 원장에 남는다 — record 가 빠지면 그날 무엇을 보여줬는지가 사라진다.
     expect(screenUniverse.execute).toHaveBeenNthCalledWith(1, {
       strategy: 'LONG_TERM',
       limit: 20,
       includeTickerIds: [],
+      record: { agentRunId: expect.any(Number) },
     });
     expect(screenUniverse.execute).toHaveBeenNthCalledWith(2, {
       strategy: 'SWING',
       limit: 20,
       includeTickerIds: [],
+      record: { agentRunId: expect.any(Number) },
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(2);
   });
@@ -252,6 +256,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 1,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [
         {
           tickerId: 81,
@@ -284,6 +289,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       strategy: 'LONG_TERM',
       limit: 20,
       includeTickerIds: [81],
+      record: { agentRunId: expect.any(Number) },
     });
   });
 
@@ -312,6 +318,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 1,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [
         {
           tickerId: 81,
@@ -430,6 +437,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 1,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [
         {
           tickerId: 81,
@@ -617,6 +625,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 2,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [],
       stocks: [
         {
@@ -776,6 +785,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 0,
       passedCount: 0,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [
         {
           tickerId: 81,
@@ -864,6 +874,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       staleCount: 1,
       passedCount: 0,
       asOf: '2026-08-13',
+      recordOutcome: null,
       includedIndicators: [],
       stocks: [],
     });
