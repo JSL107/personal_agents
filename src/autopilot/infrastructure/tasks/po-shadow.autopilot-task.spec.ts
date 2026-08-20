@@ -1,5 +1,6 @@
 import { GeneratePoShadowUsecase } from '../../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { PoShadowException } from '../../../agent/po-shadow/domain/po-shadow.exception';
+import { PoShadowReport } from '../../../agent/po-shadow/domain/po-shadow.type';
 import { PoShadowErrorCode } from '../../../agent/po-shadow/domain/po-shadow-error-code.enum';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
@@ -11,6 +12,34 @@ const CONTEXT = {
   firedAtKst: '2026-07-31',
 };
 
+const quietReport = (): PoShadowReport => ({
+  schemaVersion: 2,
+  quiet: true,
+  headline: '계획대로 진행 중',
+  findings: [],
+  purposeConflict: null,
+  factSummary: ['#10 머지 완료'],
+  droppedFindingCount: 0,
+  degradedSources: [],
+});
+
+const nonQuietReport = (): PoShadowReport => ({
+  schemaVersion: 2,
+  quiet: false,
+  headline: '원문 헤드라인',
+  findings: [
+    {
+      factIds: ['stalled:acme/app#264'],
+      point: '원문 지적',
+      suggestion: '원문 제안',
+    },
+  ],
+  purposeConflict: '원문 목적 충돌',
+  factSummary: ['#264 원본 사실'],
+  droppedFindingCount: 0,
+  degradedSources: [],
+});
+
 describe('PoShadowAutopilotTask', () => {
   let usecase: jest.Mocked<Pick<GeneratePoShadowUsecase, 'execute'>>;
   let humanizeService: jest.Mocked<Pick<HumanizeService, 'humanize'>>;
@@ -18,7 +47,6 @@ describe('PoShadowAutopilotTask', () => {
 
   beforeEach(() => {
     usecase = { execute: jest.fn() };
-    // 입력을 그대로 돌려주는 통과 mock — 실제 HumanizeService 의 best-effort 계약과 같다.
     humanizeService = {
       humanize: jest
         .fn()
@@ -36,23 +64,20 @@ describe('PoShadowAutopilotTask', () => {
     expect(task.id).toBe('po-shadow');
   });
 
-  it('검토 결과가 있으면 cron trigger와 빈 추가 맥락으로 실행하고 summaryText를 반환한다', async () => {
+  it('quiet 결과는 윤문을 건너뛰고 원본 사실로 한 줄을 만든다', async () => {
     usecase.execute.mockResolvedValue({
-      result: {
-        priorityRecheck: '오후 우선순위 적절',
-        missingRequirements: ['rollback 확인'],
-        releaseRisks: ['배포 지연'],
-        realPurposeQuestion: '사용자 가치가 명확한가?',
-        recommendation: '오후 계획대로 진행',
-      },
-      modelUsed: 'codex-cli',
+      result: quietReport(),
+      modelUsed: 'none',
       agentRunId: 3,
     });
 
     const result = await task.run(CONTEXT);
 
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('오후 우선순위 적절');
+    expect(result).toEqual({
+      skip: false,
+      summaryText: '✅ *PO 검토* — 계획대로 진행 중 (#10 머지 완료)',
+    });
+    expect(humanizeService.humanize).not.toHaveBeenCalled();
     expect(usecase.execute).toHaveBeenCalledWith({
       slackUserId: 'U123',
       extraContext: '',
@@ -61,9 +86,29 @@ describe('PoShadowAutopilotTask', () => {
     });
   });
 
-  // 계획이 없어 검토를 못 한 회차는 `skip: true` 로 끊으면 Slack·원장 어디에도 남지 않아,
-  // 연쇄로 멈춘 자리가 침묵한다. 하트비트 한 줄로 "계획이 없었다" 를 드러낸다.
-  it('NO_RECENT_PLAN이면 계획 부재 하트비트를 남긴다 (조용히 사라지지 않는다)', async () => {
+  it('non-quiet 결과는 서술 필드 윤문본을 렌더하고 원본 factSummary를 보존한다', async () => {
+    usecase.execute.mockResolvedValue({
+      result: nonQuietReport(),
+      modelUsed: 'codex-cli',
+      agentRunId: 4,
+    });
+    humanizeService.humanize.mockResolvedValue({
+      headline: '윤문 헤드라인',
+      'findings.point.0': '윤문 지적',
+      'findings.suggestion.0': '윤문 제안',
+      purposeConflict: '윤문 목적 충돌',
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.summaryText).toContain('🎯 *먼저 이것부터* 윤문 헤드라인');
+    expect(result.summaryText).toContain('• 윤문 지적 — 윤문 제안');
+    expect(result.summaryText).toContain('⚠️ *1순위와 어긋남* 윤문 목적 충돌');
+    expect(result.summaryText).toContain('↳ 근거: #264 원본 사실');
+    expect(result.summaryText).not.toContain('원문 헤드라인');
+  });
+
+  it('NO_RECENT_PLAN이면 계획 부재 하트비트를 남긴다', async () => {
     usecase.execute.mockRejectedValue(
       new PoShadowException({
         code: PoShadowErrorCode.NO_RECENT_PLAN,
@@ -92,7 +137,6 @@ describe('PoShadowAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('계획이 오래돼');
-    // 두 사유가 같은 문구로 뭉개지면 다이제스트에서 원인을 가릴 수 없다.
     expect(result.summaryText).not.toContain('최근 계획 없음');
   });
 
@@ -105,32 +149,5 @@ describe('PoShadowAutopilotTask', () => {
     usecase.execute.mockRejectedValue(error);
 
     await expect(task.run(CONTEXT)).rejects.toBe(error);
-  });
-
-  it('서술 필드를 윤문한 결과로 보고를 만든다 (모델 원문 그대로 내보내지 않는다)', async () => {
-    usecase.execute.mockResolvedValue({
-      result: {
-        priorityRecheck: '원문 우선순위',
-        missingRequirements: ['원문 누락'],
-        releaseRisks: ['원문 리스크'],
-        realPurposeQuestion: '원문 질문',
-        recommendation: '원문 권고',
-      },
-      modelUsed: 'codex-cli',
-      agentRunId: 4,
-    });
-    humanizeService.humanize.mockResolvedValue({
-      priorityRecheck: '윤문 우선순위',
-      'missingRequirements.0': '윤문 누락',
-      'releaseRisks.0': '윤문 리스크',
-      realPurposeQuestion: '윤문 질문',
-      recommendation: '윤문 권고',
-    });
-
-    const result = await task.run(CONTEXT);
-
-    expect(result.summaryText).toContain('윤문 우선순위');
-    expect(result.summaryText).toContain('윤문 누락');
-    expect(result.summaryText).not.toContain('원문 우선순위');
   });
 });

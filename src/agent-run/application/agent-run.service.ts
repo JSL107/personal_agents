@@ -387,6 +387,7 @@ export class AgentRunService {
   // agentType 별 최신 1건만 주는 findRecentlyFinishedRuns 로는 대체할 수 없다.
   async findFailedRunsSince(input: {
     withinMinutes: number;
+    slackUserId?: string;
   }): Promise<FailedRunDetail[]> {
     return await this.repository.findFailedRunsSince(input);
   }

@@ -1,35 +1,77 @@
 import { PoShadowReport } from '../../agent/po-shadow/domain/po-shadow.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
-// /po-shadow 결과 — PO 시각의 검토를 한국어 Slack 마크다운으로 렌더.
-// LLM 자유텍스트 필드는 escapeSlackMrkdwn 으로 제어문자(<>&) escape — Slack 이 `<...>` 를
-// 링크 태그로 오인해 텍스트가 잘리는 렌더 위조를 막는다.
+// 조회하지 못한 소스는 조용한 날에도, 지적이 있는 날에도 그대로 밝힌다. "이상 없음" 과
+// "못 봤음" 이 같은 글자로 나가면 카드가 조용한 고장을 덮는다.
 export const formatPoShadowReport = (report: PoShadowReport): string => {
-  const lines: string[] = [
-    '*PO Shadow 검토*',
-    '',
-    `🎯 *우선순위 재점검*: ${escapeSlackMrkdwn(report.priorityRecheck)}`,
-    '',
-    `❓ *진짜 목적 재질문*: ${escapeSlackMrkdwn(report.realPurposeQuestion)}`,
-    '',
+  if (report.quiet) {
+    return formatQuietReport(report);
+  }
+
+  const sections = [
+    '*PO 검토*',
+    `🎯 *먼저 이것부터* ${escapeSlackMrkdwn(report.headline)}`,
   ];
 
-  if (report.missingRequirements.length > 0) {
-    lines.push(
-      '*누락 가능 요구사항*',
-      ...report.missingRequirements.map((r) => `• ${escapeSlackMrkdwn(r)}`),
-      '',
+  if (report.findings.length > 0) {
+    sections.push(formatFindings(report));
+  } else if (report.factSummary.length > 0) {
+    sections.push(formatEvidenceLines(report.factSummary));
+  }
+
+  const purposeConflict = report.purposeConflict?.trim();
+  if (purposeConflict) {
+    sections.push(`⚠️ *1순위와 어긋남* ${escapeSlackMrkdwn(purposeConflict)}`);
+  }
+
+  if (report.droppedFindingCount > 0) {
+    sections.push(
+      `_근거 없는 지적 ${report.droppedFindingCount}건은 제외했습니다._`,
     );
   }
 
-  if (report.releaseRisks.length > 0) {
-    lines.push(
-      '*release 리스크*',
-      ...report.releaseRisks.map((r) => `• ${escapeSlackMrkdwn(r)}`),
-      '',
-    );
+  const degradedLine = formatDegradedLine(report.degradedSources);
+  if (degradedLine) {
+    sections.push(degradedLine);
   }
 
-  lines.push('*권고*', escapeSlackMrkdwn(report.recommendation));
-  return lines.join('\n');
+  return sections.join('\n\n');
 };
+
+const formatDegradedLine = (degradedSources: string[]): string | null => {
+  if (degradedSources.length === 0) {
+    return null;
+  }
+  const escapedSources = degradedSources.map(escapeSlackMrkdwn).join(' · ');
+  return `⚠️ _${escapedSources} 조회 실패 — 이 회차는 해당 근거 없이 판단했습니다._`;
+};
+
+const formatQuietReport = (report: PoShadowReport): string => {
+  const escapedFacts = report.factSummary.map(escapeSlackMrkdwn);
+  const headLine =
+    escapedFacts.length === 0
+      ? '✅ *PO 검토* — 계획대로 진행 중'
+      : `✅ *PO 검토* — 계획대로 진행 중 (${escapedFacts.join(' · ')})`;
+  const degradedLine = formatDegradedLine(report.degradedSources);
+  if (!degradedLine) {
+    return headLine;
+  }
+  return `${headLine}\n\n${degradedLine}`;
+};
+
+const formatFindings = (report: PoShadowReport): string =>
+  report.findings
+    .map((finding, index) => {
+      const point = escapeSlackMrkdwn(finding.point);
+      const suggestion = escapeSlackMrkdwn(finding.suggestion);
+      const findingLine = `• ${point} — ${suggestion}`;
+      const fact = report.factSummary[index];
+      if (fact === undefined) {
+        return findingLine;
+      }
+      return `${findingLine}\n  ↳ 근거: ${escapeSlackMrkdwn(fact)}`;
+    })
+    .join('\n');
+
+const formatEvidenceLines = (factSummary: string[]): string =>
+  factSummary.map((fact) => `  ↳ 근거: ${escapeSlackMrkdwn(fact)}`).join('\n');

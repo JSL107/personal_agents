@@ -4,6 +4,7 @@ import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { EvaluationOutput } from '../../agent/po-eval/domain/po-eval.type';
+import { PoShadowReport } from '../../agent/po-shadow/domain/po-shadow.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { HumanizeService } from './humanize.service';
 import {
@@ -15,6 +16,7 @@ import {
   humanizeEvaluationOutput,
   humanizeImpactReport,
   humanizeMetaOutput,
+  humanizePoShadowReport,
 } from './humanize-report.adapter';
 
 // 입력 키에 '_H' 접미사를 붙여 돌려주는 가짜 윤문기 — 매핑이 키별로 정확한지 검증.
@@ -295,6 +297,91 @@ describe('humanizeEvaluationOutput', () => {
     const result = await humanizeEvaluationOutput(base, identityHumanizer());
 
     expect(result).toEqual(base);
+  });
+});
+
+describe('humanizePoShadowReport', () => {
+  const base: PoShadowReport = {
+    schemaVersion: 2,
+    quiet: false,
+    headline: '원문 헤드라인',
+    findings: [
+      {
+        factIds: ['stalled:acme/app#264'],
+        point: '원문 지적 1',
+        suggestion: '원문 제안 1',
+      },
+      {
+        factIds: ['mention:C123:100'],
+        point: '원문 지적 2',
+        suggestion: '원문 제안 2',
+      },
+    ],
+    purposeConflict: '원문 목적 충돌',
+    factSummary: ['#264 리뷰 0건', '새 멘션 1건'],
+    droppedFindingCount: 2,
+    degradedSources: [],
+  };
+
+  it('headline·finding 서술·purposeConflict만 인덱스 키로 윤문한다', async () => {
+    const humanizer = {
+      humanize: jest.fn().mockResolvedValue({
+        headline: '윤문 헤드라인',
+        'findings.point.0': '윤문 지적 1',
+        'findings.suggestion.0': '윤문 제안 1',
+        'findings.point.1': '윤문 지적 2',
+        'findings.suggestion.1': '윤문 제안 2',
+        purposeConflict: '윤문 목적 충돌',
+      }),
+    } as unknown as HumanizeService;
+
+    const result = await humanizePoShadowReport(base, humanizer);
+
+    expect(humanizer.humanize).toHaveBeenCalledWith({
+      headline: '원문 헤드라인',
+      'findings.point.0': '원문 지적 1',
+      'findings.point.1': '원문 지적 2',
+      'findings.suggestion.0': '원문 제안 1',
+      'findings.suggestion.1': '원문 제안 2',
+      purposeConflict: '원문 목적 충돌',
+    });
+    expect(result).toEqual({
+      ...base,
+      headline: '윤문 헤드라인',
+      findings: [
+        {
+          factIds: ['stalled:acme/app#264'],
+          point: '윤문 지적 1',
+          suggestion: '윤문 제안 1',
+        },
+        {
+          factIds: ['mention:C123:100'],
+          point: '윤문 지적 2',
+          suggestion: '윤문 제안 2',
+        },
+      ],
+      purposeConflict: '윤문 목적 충돌',
+    });
+  });
+
+  it('purposeConflict가 null이면 윤문 입력에서 제외하고 bookkeeping을 그대로 보존한다', async () => {
+    const report: PoShadowReport = { ...base, purposeConflict: null };
+    const humanizer = {
+      humanize: jest.fn().mockResolvedValue({}),
+    } as unknown as HumanizeService;
+
+    const result = await humanizePoShadowReport(report, humanizer);
+    const fields = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+
+    expect(fields).not.toHaveProperty('purposeConflict');
+    expect(result.schemaVersion).toBe(2);
+    expect(result.quiet).toBe(false);
+    expect(result.findings.map((finding) => finding.factIds)).toEqual(
+      report.findings.map((finding) => finding.factIds),
+    );
+    expect(result.factSummary).toEqual(report.factSummary);
+    expect(result.droppedFindingCount).toBe(2);
+    expect(result.purposeConflict).toBeNull();
   });
 });
 
