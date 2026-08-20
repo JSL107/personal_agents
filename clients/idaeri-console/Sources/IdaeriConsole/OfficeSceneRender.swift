@@ -21,6 +21,7 @@ func renderOfficeScene(
     hoverAgentType: String? = nil,
     busyDemo: Bool = false,
     alarmDemo: Bool = false,
+    briefingDemo: Bool = false,
     debugLabels: Bool = false
 ) -> Bool {
     let scene = OfficeScene(size: size)
@@ -72,9 +73,11 @@ func renderOfficeScene(
         pendingCommands: [],
         now: Date()
     )
-    // 회의실 판과 정산 종이도 함께 굽는다. 빠뜨리면 "안 그리는 요소는 정상으로 보인다" 는
-    // 사각지대가 그대로 생긴다 — 판이 벽을 넘치는지, 종이가 대표를 덮는지가 이 경로에서만 보인다.
-    let briefing = poseDemo ? nil : fetchBriefingSynchronously(client: client)
+    // 할 일 말풍선·연속 도장·정산 종이도 함께 굽는다. 빠뜨리면 "안 그리는 요소는 정상으로
+    // 보인다" 는 사각지대가 그대로 생긴다 — 말풍선이 화면 위로 넘치는지, 도장이 게시판을
+    // 벗어나는지, 종이가 대표를 덮는지가 이 경로에서만 보인다.
+    let fetched = poseDemo ? nil : fetchBriefingSynchronously(client: client)
+    let briefing = briefingDemo ? briefingDemoValue() : fetched
     scene.refreshBriefing(briefing, hour: hour ?? Calendar.current.component(.hour, from: Date()))
 
     if poseDemo, !scene.applyPoseDemo() {
@@ -146,6 +149,33 @@ private let alarmDemoAgentType = "ALARM_DEMO"
 
 /// 승인 대기 줄에 서 있는 사람 하나(`AWAITING_APPROVAL`)를 만든다. `applyApprovalPressure`가
 /// 방치 압력을 매기려면 승인 카드뿐 아니라 화면에 캐릭터 노드도 있어야 하므로 함께 만든다.
+/// 브리핑 데모 — 할 일 3종이 겹친 날과 연속 3일.
+///
+/// 실 백엔드는 지금(2026-08) 승인 0건·실패 0건·연속 0일이라 이 입구 없이는 말풍선의 "외 N건"
+/// 축약도, 게시판 도장도 화면에 뜨지 않는다. 도장이 실제로 읽히는 크기인지는 눈으로만 판정되고,
+/// 연속 기록이 3일까지 쌓이려면 사흘을 기다려야 한다.
+///
+/// 할 일 순서는 실제 조립 순서(승인 → 실패 → 리뷰)를 그대로 쓴다 — 말풍선이 **가장 급한 것**을
+/// 고르는지 확인하려면 목록에 그 순서가 있어야 한다.
+private func briefingDemoValue() -> ConsoleBriefing {
+    ConsoleBriefing(
+        todos: [
+            ConsoleTodo(kind: .approval, label: "승인 3건", detail: "19:04 만료"),
+            ConsoleTodo(kind: .failedRun, label: "PM 재시도", detail: "다음 실행은 내일"),
+            ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 2건", detail: "10일째"),
+        ],
+        // 도장 상한(5)을 **넘긴** 값이다. 마지막 도장을 금색으로 칠하는 포화 표식이 이 입구의
+        // 확인 대상이고, 상한 아래(1~5개)는 테스트가 고정한다. 원장 실측 최고 기록은 3일이라
+        // 기다려서는 어느 쪽도 볼 수 없다.
+        streak: ConsoleStreak(current: 8, best: 8, todayOpened: 3, todayRemaining: 3),
+        dailyReport: ConsoleDailyReport(
+            date: "2026-08-20", succeeded: 21, failed: 1,
+            approvalsOpened: 3, approvalsHandled: 0, pendingReviewPulls: 2
+        ),
+        serverTime: ISO8601DateFormatter().string(from: Date())
+    )
+}
+
 private func alarmDemoAgent() -> ConsoleAgent {
     ConsoleAgent(
         agentType: alarmDemoAgentType,

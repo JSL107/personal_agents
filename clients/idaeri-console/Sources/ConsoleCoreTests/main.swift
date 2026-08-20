@@ -24,7 +24,7 @@ runOfficeAttendanceTests(runner)
 runOfficeAttendanceScenarioTests(runner)
 runOfficeApprovalPressureTests(runner)
 runOfficeAccessibilityTests(runner)
-runOfficeWhiteboardTests(runner)
+runPresidentBriefingTests(runner)
 runConsoleClientTests(runner)
 
 runner.finish()
