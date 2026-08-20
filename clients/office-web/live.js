@@ -15,8 +15,14 @@ import {
 /** 유휴 산책 규칙 — 맥 앱 `OfficeIdle` 과 같은 값. */
 const STROLL_TICK_SECONDS = 8;
 const STROLL_COOLDOWN_SECONDS = 90;
-/** 동시 배회 인원. 서른 명이 한꺼번에 움직이면 사무실이 아니라 난장판이다. */
-const STROLL_CONCURRENCY = 2;
+/**
+ * 동시 배회 인원 — 맥 쪽 `officeStrollDefaultConcurrency` 와 같은 값.
+ *
+ * 2 였다. 서른두 명 중 둘(6%)만 움직여 사무실이 멈춘 것처럼 보였고, 그 둘이 가는 곳조차
+ * 하는 일과 무관했다. 목적지가 일과 이어진 뒤에는(`affinitySpot`) 걷는 사람이 늘어도
+ * 산만해지지 않는다 — 각자 자기 물건 쪽으로 가므로 동선이 방 안에서 끝난다.
+ */
+const STROLL_CONCURRENCY = 3;
 /** 한 칸 걷는 데 걸리는 시간(초). 0.16 은 다리가 교차하기 전에 몸이 지나가 종종거려 보였다. */
 const STEP_SECONDS = 0.2;
 /** 스냅샷을 다시 받는 주기(초). 스트림이 끊겨도 화면이 굳지 않게 하는 안전망이다. */
@@ -732,6 +738,41 @@ function facingBetween(from, to) {
  * 일이 도는 사람(진행 중·승인 대기)은 자리를 지킨다 — 화면에서 "지금 무슨 일이 도는지" 가
  * 먼저 읽혀야 하는데, 그 사람이 복도에 있으면 자리와 상태가 따로 논다.
  */
+/**
+ * 이 사람의 일과 어울리는 목적지 하나. 짝지어진 가구가 없거나 다 차 있으면 null.
+ *
+ * 우선순위 목록은 맥 앱이 계산해 배치 JSON 에 실어 보낸다(`agentLooks[*].workAffinity`) —
+ * 어느 워커가 무엇을 쓰는지는 워커가 늘 때마다 바뀌는 표라, 두 곳에 적으면 새 워커가
+ * 한쪽 화면에서만 제 일을 한다.
+ *
+ * 같은 종류 가구가 여섯 방에 흩어져 있으므로 **자기 자리에서 가장 가까운 것**을 고른다.
+ * 거리를 안 보면 개발실 사람이 성장실 벽 모니터까지 스무 칸을 걸어가, 왕복하는 동안
+ * 화면에서는 일하러 간 것이 아니라 자리를 비운 것으로 읽힌다.
+ */
+function affinitySpot(agentType, free) {
+  const kinds = renderer.layout.agentLooks?.[agentType]?.workAffinity ?? [];
+  if (kinds.length === 0) {
+    return null;
+  }
+  const home = seatOf(agentType);
+  for (const kind of kinds) {
+    const matched = free.filter((spot) => spot.kind === kind);
+    if (matched.length === 0) {
+      continue;
+    }
+    // 자리를 못 찾은 사람(좌석 배정 밖)은 거리를 잴 기준이 없다 — 목록 순서대로 첫 칸.
+    if (!home) {
+      return matched[0];
+    }
+    const steps = (tile) =>
+      Math.abs(home.x - tile.x) + Math.abs(home.y - tile.y);
+    return matched.reduce((best, spot) =>
+      steps(spot.tile) < steps(best.tile) ? spot : best
+    );
+  }
+  return null;
+}
+
 function strollTick(now) {
   const remaining = STROLL_CONCURRENCY - strolling.size;
   if (remaining <= 0) {
@@ -788,12 +829,20 @@ function strollTick(now) {
     }
     // 점심시간에는 탕비실·회의실로 기운다. 그 시간대에 그쪽 자리가 하나도 비어 있지 않으면
     // 평소처럼 전체에서 고른다 — 갈 곳이 없다고 자리에 붙들어 두면 정오만 화면이 굳는다.
-    const lunch =
-      currentHour() === renderer.layout.attendanceHours.lunch
-        ? free.filter((candidate) => LUNCH_KINDS.has(candidate.kind))
-        : [];
+    // **점심시간인지를 따로 들고 있어야 한다.** 한때 `lunch.length === 0` 하나로 갈랐는데,
+    // 그 값은 "점심시간이 아니다" 와 "점심시간이지만 그쪽 자리가 다 찼다" 를 구별하지 못한다 —
+    // 후자에서 업무 짝짓기가 켜져, 맥(`officeStrollSpot`)이 전체에서 회전 선택하는 상황에
+    // 웹만 각자 자기 물건 앞으로 갔다. 같은 시각에 두 화면의 사람이 다른 방에 모인다.
+    const isLunchHour =
+      currentHour() === renderer.layout.attendanceHours.lunch;
+    const lunch = isLunchHour
+      ? free.filter((candidate) => LUNCH_KINDS.has(candidate.kind))
+      : [];
+    // 점심이 아니면 자기 일에 필요한 물건이 먼저다 — 자료를 찾는 사람은 책장, 문서를
+    // 내보내는 사람은 프린터로. 짝지어진 물건이 없으면 평소처럼 전체에서 고른다.
+    const affinity = isLunchHour ? null : affinitySpot(agentType, free);
     const pool = lunch.length > 0 ? lunch : free;
-    const spot = pool[Math.floor(Math.random() * pool.length)];
+    const spot = affinity ?? pool[Math.floor(Math.random() * pool.length)];
     if (
       walkTo(agentType, spot.tile, {
         dwellSeconds: spot.dwellSeconds,

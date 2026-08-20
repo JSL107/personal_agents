@@ -72,18 +72,18 @@ SHEETS: dict[str, list[str | None]] = {
         "tile-wall",
     ],
     "furniture": [
-        "furn-desk",
+        None,  # furniture-desk-top 이 정본(위에서 내려다본 재제작본)
         "furn-chair-down",
         "furn-chair-up",
-        "furn-meeting-table",
+        None,  # furniture-4 가 정본(의자 없는 재제작본)
         "furn-sofa-2",
-        "furn-sofa-3",
-        "furn-coffee-table",
+        None,  # furniture-4 가 정본(폭을 넓힌 재제작본)
+        None,  # furniture-4 가 정본(낮고 넓은 재제작본)
         "furn-coffee-machine",
         "furn-water-cooler",
         None,  # furniture-3 이 정본(세로로 긴 재제작본)
-        "furn-printer",
-        "furn-plant-tall",
+        None,  # furniture-4 가 정본(좁게 재제작)
+        None,  # furniture-4 가 정본(세로로 늘린 재제작본)
         None,  # furniture-3 이 정본
         "furn-plant-small",
         "furn-clock",
@@ -104,13 +104,13 @@ SHEETS: dict[str, list[str | None]] = {
     "furniture-door": [
         None,  # furniture-3 이 정본
         None,  # furniture-3 이 정본
-        "furn-filing-cabinet",
-        "furn-lockers-2",
+        None,  # furniture-4 가 정본(3단 서랍 비율로 재제작)
+        None,  # furniture-4 가 정본(세로로 긴 재제작본)
         "furn-partition-low",
     ],
     "furniture-2": [
-        "furn-vending-machine",
-        "furn-refrigerator",
+        None,  # furniture-4 가 정본(좁게 재제작)
+        None,  # furniture-4 가 정본(좁게 재제작)
         "furn-sink-counter",
         "furn-partition-glass",
     ],
@@ -124,6 +124,31 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-door-open",
         "furn-bookshelf",
         "furn-whiteboard",
+    ],
+    # 위에서 내려다본 책상. 예전 그림은 정면도라 모니터 화면이 화면 앞쪽을 봤는데 앉은 사람도
+    # 앞쪽을 봐서, 서른두 좌석 전부가 **모니터 뒷판을 마주하고** 있었다.
+    #
+    # 배치가 좌석 방향에 맞춰져 있다 — 좌석은 책상 **위 칸**이므로, 사람에서 먼 쪽(아래)에
+    # 모니터가 서고 화면 발광이 위를 향하며, 키보드·마우스가 그 사이에 눕고 서랍장은 상판
+    # 아래로 빠진다. 그래서 뒤집지 않고 그대로 쓴다.
+    "furniture-desk-top": ["furn-desk"],
+    # 가로세로비 재제작본. 크기는 높이(cm)로만 환산하는데 배율이 가로에도 같이 곱해지므로,
+    # 그림 자체의 비율이 실물과 다르면 키를 맞추는 순간 폭이 어긋난다 — 실측하면 사물함이
+    # 실물의 2.4배, 서류함 2.1배, 프린터 1.7배로 넓고 커피테이블은 0.6배로 좁았다.
+    # 회의 테이블은 의자를 함께 그려 여덟 자리가 늘 빈 채였고, 이제 의자가 없다.
+    #
+    # 네 행(낮고 넓은 것 → 중간 → 높은 것 → 큰 것 하나)으로 받았다. 행 판정이 평균 높이의
+    # 60% 를 기준으로 묶으므로 한 행 안의 높이를 비슷하게 맞춰야 순서가 안 흔들린다.
+    "furniture-4": [
+        "furn-coffee-table",
+        "furn-sofa-3",
+        "furn-refrigerator",
+        "furn-printer",
+        "furn-filing-cabinet",
+        "furn-vending-machine",
+        "furn-plant-tall",
+        "furn-lockers-2",
+        "furn-meeting-table",
     ],
 }
 
