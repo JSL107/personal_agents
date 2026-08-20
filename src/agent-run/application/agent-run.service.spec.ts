@@ -7,6 +7,7 @@ import { AgentRunService } from './agent-run.service';
 
 describe('AgentRunService', () => {
   const createRepoMock = (): jest.Mocked<AgentRunRepositoryPort> => ({
+    findAllRunsForLedger: jest.fn(),
     begin: jest.fn(),
     finish: jest.fn(),
     updateParentId: jest.fn(),

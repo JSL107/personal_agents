@@ -4,6 +4,7 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
+import { BuildLedgerUsecase } from './application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
@@ -33,6 +34,7 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
     ConsoleWriteController,
   ],
   providers: [
+    BuildLedgerUsecase,
     BuildPresidentBriefingUsecase,
     ConsoleReadService,
     ConsoleWriteService,

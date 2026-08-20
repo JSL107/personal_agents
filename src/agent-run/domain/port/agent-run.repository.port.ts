@@ -196,7 +196,16 @@ export interface FailedRunDetail {
   endedAt: Date;
 }
 
+export interface LedgerRunRow {
+  readonly agentType: string;
+  readonly triggerType: string;
+  readonly status: string;
+  readonly startedAt: Date;
+}
+
 export interface AgentRunRepositoryPort {
+  // 콘솔 원장 집계용 전량 조회. 집계는 SQL이 아니라 console 도메인의 순수 함수가 담당한다.
+  findAllRunsForLedger(): Promise<LedgerRunRow[]>;
   begin(input: BeginAgentRunInput): Promise<{ id: number }>;
   updateInputSnapshot?(input: {
     id: number;
