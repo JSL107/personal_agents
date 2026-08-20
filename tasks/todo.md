@@ -1,3 +1,34 @@
+# 콘솔 원장 집계 API (2026-08-20)
+
+**Goal:** `.ai/design.md` 계약대로 `GET /v1/console/ledger`와 KST 기준 워커·회사 원장 집계를 구현한다.
+
+**Architecture:** `AgentRunRepositoryPort`는 4필드 원장 행만 전량 조회한다. 자율성·정지·원장 조립은 `src/console/domain/` 순수 함수가 담당하고, `BuildLedgerUsecase`가 조회 1회와 조립을 연결한다.
+
+**Contract:** `clients/**`, `src/console/domain/briefing.type.ts`, `src/console/application/build-president-briefing.usecase.ts`는 수정하지 않는다. raw SQL·캐시·성공률·스키마 변경·`pnpm db:push`·commit·push는 금지한다.
+
+- [x] RED/GREEN: `classifyAutonomy` 4범주·우선순위·미분류 fallback을 테스트하고 최소 구현한다.
+- [x] RED/GREEN: 기대 주기·정지 판정의 실데이터 검산표와 경계를 테스트하고 최소 구현한다.
+- [x] RED/GREEN: KST 주간 경계, registry 전원, 실패 집계, 결정론 정렬을 테스트하고 `ConsoleLedger` 조립을 구현한다.
+- [x] RED/GREEN: 4필드 `findMany` repository, 조회 1회 usecase, controller/module 배선을 구현한다.
+- [x] 포트 확장으로 깨지는 모든 기존 `AgentRunRepositoryPort` mock에 `findAllRunsForLedger: jest.fn()`을 추가한다.
+- [x] focused tests 후 `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 fresh 실행한다.
+- [x] 최종 diff를 설계·금지 파일·raw SQL·DB 명령 부재와 대조하고 `.ai/implementation-summary.md`를 §9 형식으로 작성한다.
+- [x] 리뷰 수정: `LedgerClock`을 주입해 `buildConsoleLedger`의 시스템 시계 의존과 domain fake timer를 제거한다.
+- [x] 리뷰 수정: autonomy·stall·주간 비교의 운영 판정 근거를 코드 주석으로 보존한다.
+- [x] 리뷰 수정 후 focused tests와 4개 전체 게이트를 fresh 재실행하고 summary를 갱신한다.
+
+## Review
+
+- `GET /v1/console/ledger`가 repository 1회 조회 뒤 KST 기준 worker/company 원장을 반환한다.
+- 신규·영향 focused 검증은 9 suites/83 tests, 전체 검증은 일반 427 suites/3,709 tests와 code-graph 5 suites/40 tests가 통과했다.
+- 최종 `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`는 모두 exit 0이다. lint의 기존 warning 57건은 유지됐다.
+- 독립 리뷰 결과 Critical/Important/Minor 0건, Ready 판정이다. 금지 파일·schema·raw SQL·DB 명령·commit/push 변경 없음.
+- 리뷰 수정으로 `LedgerClock`을 도메인 입력에 추가했다. 시스템 시각 조회는 `BuildLedgerUsecase`로 이동했고 `ledger.spec.ts`의 fake timer 6곳과 teardown을 제거했다.
+- 자율성 분류·동적 정지 임계값·같은 요일까지 주간 비교하는 운영 근거와 실측값을 판정 코드 가까이에 보존했다.
+- 리뷰 수정 후 focused 4 suites/23 tests와 전체 4개 게이트가 모두 exit 0이다.
+
+---
+
 # PO Shadow v2 — 근거 기반 정오 대조 (2026-08-19)
 
 **Goal:** `.ai/design.md`대로 정오 실조회 사실표와 아침 계획을 결정론으로 대조하고, 이상이 없으면 모델 호출 없이 성공 원장을 남기며, 이상이 있으면 fact ID를 인용한 지적만 Slack에 노출한다.

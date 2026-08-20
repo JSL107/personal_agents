@@ -7,6 +7,7 @@ import { GetQuotaStatsUsecase } from './get-quota-stats.usecase';
 const buildRepo = (
   rows: QuotaStatRow[],
 ): jest.Mocked<AgentRunRepositoryPort> => ({
+  findAllRunsForLedger: jest.fn(),
   begin: jest.fn(),
   finish: jest.fn(),
   updateParentId: jest.fn(),

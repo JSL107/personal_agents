@@ -1,5 +1,16 @@
 # Lessons
 
+## 2026-08-20 — 순수 집계 함수 안에서 시스템 시계를 읽고 근거를 gitignore 문서에만 남김
+
+`buildConsoleLedger`를 순수 함수로 계약하고도 내부에서 `getTodayKstDate()`와 `new Date()`를 호출해
+도메인 테스트 6곳이 fake timer에 묶였다. 또 자율성·정지 판정의 운영 근거를 gitignore 된 설계서에만
+두어, 브랜치와 함께 보존되는 코드에는 수식만 남았다.
+
+- **적용:** 날짜·시각에 따라 결과가 달라지는 도메인 함수는 `today`와 `serverTime`을 명시 입력으로 받는다. 시스템 시계 읽기는 application/interface 경계로 올린다.
+- **인자 계약:** 같은 원시 타입이 둘 이상이면 순서 오류를 막는 이름 있는 interface로 묶는다.
+- **근거 보존:** gitignore 문서가 유일한 근거라면 판정 코드 가까이에 “왜 이 규칙인가”를 짧게 남긴다. 수식·동작을 주석으로 반복하지 않는다.
+- **리뷰 체크:** “순수”라고 부른 신규 함수는 `Date.now`, `new Date()`, timezone/global state 접근을 전수 검색하고, 테스트의 fake timer 의존 여부로 재검증한다.
+
 ## 2026-08-13 — 컬럼 이름을 실제 저장 계열로 오인해 계약을 세움
 
 `DailyPrice.close`라는 이름과 의도만 보고 미조정 종가라고 계약했지만, 실제 Toss 수집은
