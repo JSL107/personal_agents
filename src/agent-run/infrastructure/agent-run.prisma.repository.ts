@@ -604,12 +604,18 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
 
   async findFailedRunsSince({
     withinMinutes,
+    slackUserId,
   }: {
     withinMinutes: number;
+    slackUserId?: string;
   }): Promise<FailedRunDetail[]> {
     const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
     const rows = await this.prisma.agentRun.findMany({
-      where: { status: AgentRunStatus.FAILED, endedAt: { gte: cutoff } },
+      where: {
+        status: AgentRunStatus.FAILED,
+        endedAt: { gte: cutoff },
+        ...(slackUserId === undefined ? {} : { slackUserId }),
+      },
       orderBy: { endedAt: 'desc' },
       select: { agentType: true, output: true, endedAt: true },
     });

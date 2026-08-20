@@ -282,8 +282,11 @@ export interface AgentRunRepositoryPort {
     withinMinutes: number;
   }): Promise<RecentlyFinishedRun[]>;
   // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
+  // slackUserId 를 주면 그 사용자의 실패만 — 개인 계획 검토(PO Shadow)가 남의 실패를
+  // 집어오지 않게. 미지정이면 전체(비서실 브리핑처럼 조직 관점 집계).
   findFailedRunsSince(input: {
     withinMinutes: number;
+    slackUserId?: string;
   }): Promise<FailedRunDetail[]>;
   // 비서실 브리핑 — agentType 별 성공 건수(진행 중 제외). **완료 시각** 기준으로 자른다.
   aggregateSucceededCounts(input: {
