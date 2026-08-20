@@ -506,6 +506,9 @@ model StudyBrief {
   reportMd    String    @map("report_md") @db.Text
   sourceUrls  Json      @map("source_urls")
   notionUrl   String?   @map("notion_url")
+  // 딥다이브 확장으로 만들어진 블로그 초안 Notion page id. 값이 있으면 이미 확장한 브리프다 —
+  // 같은 브리프로 두 번째 초안을 만들지 않기 위한 유일한 근거(초안 DB 는 제목이 바뀔 수 있다).
+  blogDraftPageId String? @map("blog_draft_page_id")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([ownerUserId, createdAt])

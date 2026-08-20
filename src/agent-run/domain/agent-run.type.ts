@@ -88,6 +88,7 @@ export enum TriggerType {
   // 발행 성공을 실패로 덮지 않도록 별도 trigger 로 남긴다.
   AUTOPILOT_RESUME_AUDIT_CRON = 'AUTOPILOT_RESUME_AUDIT_CRON',
   STUDY_BRIEF_CRON = 'STUDY_BRIEF_CRON',
+  AUTOPILOT_STUDY_DEEPDIVE_CRON = 'AUTOPILOT_STUDY_DEEPDIVE_CRON',
   // 잠재의식 변화 감지 tick — 게이트가 죽으면 제안이 0건이 되는데, 그것이 "노이즈가 없어서"
   // 인지 "고장나서" 인지 원장 없이는 구분되지 않는다(fail-closed 라 예외도 안 올라온다).
   SUBCONSCIOUS_TICK = 'SUBCONSCIOUS_TICK',

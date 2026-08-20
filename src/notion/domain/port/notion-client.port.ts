@@ -89,6 +89,10 @@ export interface CreateDatabasePageOptions {
   databaseId: string;
   properties: Record<string, unknown>;
   blocks: unknown[];
+  // 있으면 DB 스키마에서 title 타입 속성을 찾아 이 값을 넣는다. 제목 속성명은 DB 마다 달라
+  // 호출부가 가정할 수 없고(`이름` / `제목` / `Name` …), 그렇다고 제목으로 기존 행을 재사용하는
+  // findOrCreateDailyPage 를 쓰면 동명 글의 본문에 덧붙게 된다.
+  title?: string;
 }
 
 export interface CreatedDatabasePage {

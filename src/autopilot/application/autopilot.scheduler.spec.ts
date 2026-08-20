@@ -66,10 +66,11 @@ describe('AutopilotScheduler', () => {
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
     //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply
     //   + portfolio-warmup(사이트 워밍업) + portfolio-publish(사이트 발행) = 26그룹.
-    expect(queue.add).toHaveBeenCalledTimes(26);
+    expect(queue.add).toHaveBeenCalledTimes(27);
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('portfolio-warmup');
     expect(addCalls).toContain('portfolio-publish');
+    expect(addCalls).toContain('study-deepdive');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
     expect(addCalls).toContain('weekly-summary');

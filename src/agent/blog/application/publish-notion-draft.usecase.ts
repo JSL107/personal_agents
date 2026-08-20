@@ -63,11 +63,22 @@ import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
   BLOG_EDIT_OUTPUT_SCHEMA,
 } from '../domain/prompt/blog-publish.schema';
+import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../domain/study-deepdive-blog-properties';
 
 // autopilot 의 T1_PREVIEW 와 같은 24시간. 1시간은 이미 실패로 판명된 값이다 — 저녁 블로그 카드가
 // 짧은 TTL 때문에 반복적으로 EXPIRED 로 유실돼 autopilot.orchestrator.ts:24 에서 24시간으로 올렸다.
 // 이 카드는 글 전문을 읽고 마스킹을 검토한 뒤 누르는 성격이라 더 긴 여유가 필요하다.
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
+
+// 발행 순서 가중치 — 값이 작을수록 먼저. 출처유형은 Notion 속성이라 비어 있을 수 있다.
+const draftPriority = (sourceType: string): number =>
+  sourceType === STUDY_DEEPDIVE_SOURCE_TYPE ? 0 : 1;
+
+// 초안 조회 상한. 기본 20건은 아래 우선순위 정렬을 무력화한다 — Notion 이 created_time
+// 오름차순으로 오래된 것부터 주므로, 큐가 20건을 넘으면 그날 만든 '오늘의 공부' 초안이 목록에
+// 아예 실려 오지 않고 새치기가 조용히 사라진다(실측 큐 16건, 매일 1건씩 늘어난다).
+// Notion page_size 상한이 100이라 큐가 그보다 커지면 같은 문제가 재발한다.
+const DRAFT_QUERY_LIMIT = 100;
 
 // 편집 단계가 '발행 가능' 으로 판정한 결과만 골라낸 타입. 파라미터 타입을 인라인으로 쓰지 않는다.
 type PublishableBlogDraft = Extract<EditedBlogDraft, { publishable: true }>;
@@ -186,6 +197,7 @@ export class PublishNotionDraftUsecase {
       databaseId: context.databaseId,
       statusPropertyName: context.statusPropertyName,
       statusValue: context.statusValue,
+      limit: DRAFT_QUERY_LIMIT,
     });
     if (drafts.length === 0 && !input.pageId) {
       return {
@@ -376,9 +388,17 @@ export class PublishNotionDraftUsecase {
     titleQuery: string,
     pageId?: string,
   ): NotionDraftPage {
-    const oldestFirst = [...drafts].sort((first, second) =>
-      first.createdTime.localeCompare(second.createdTime),
-    );
+    // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
+    // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
+    // 같은 출처끼리는 기존과 같이 오래된 것부터.
+    const oldestFirst = [...drafts].sort((first, second) => {
+      const priorityGap =
+        draftPriority(first.sourceType) - draftPriority(second.sourceType);
+      if (priorityGap !== 0) {
+        return priorityGap;
+      }
+      return first.createdTime.localeCompare(second.createdTime);
+    });
     if (pageId) {
       const replayTarget = oldestFirst.find((draft) => draft.pageId === pageId);
       if (replayTarget) {

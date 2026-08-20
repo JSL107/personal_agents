@@ -895,6 +895,58 @@ describe('PublishNotionDraftUsecase', () => {
     );
   });
 
+  // 기존 큐(회사 PR 회고 다수)는 하루 1건씩만 나간다. 오늘의 공부 초안을 뒤에 붙이면
+  // 오늘 만든 글이 2주 뒤에 발행돼 기술 내용이 낡는다.
+  it('오늘의 공부 초안은 더 오래된 초안보다 먼저 집는다', async () => {
+    const oldPrDraft = {
+      ...draft,
+      pageId: 'page-old-pr',
+      title: '오래된 PR 회고',
+      sourceType: 'PR',
+      createdTime: '2026-08-01T16:00:00.000Z',
+    };
+    const todayStudyDraft = {
+      ...draft,
+      pageId: 'page-study-today',
+      title: '오늘의 공부 딥다이브',
+      sourceType: '오늘의 공부',
+      createdTime: '2026-08-20T02:00:00.000Z',
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [oldPrDraft, todayStudyDraft],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
+      'page-study-today',
+    );
+  });
+
+  it('오늘의 공부 초안이 여러 건이면 그 안에서는 오래된 것부터 집는다', async () => {
+    const yesterdayStudy = {
+      ...draft,
+      pageId: 'page-study-yesterday',
+      sourceType: '오늘의 공부',
+      createdTime: '2026-08-19T02:00:00.000Z',
+    };
+    const todayStudy = {
+      ...draft,
+      pageId: 'page-study-today',
+      sourceType: '오늘의 공부',
+      createdTime: '2026-08-20T02:00:00.000Z',
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [todayStudy, yesterdayStudy],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
+      'page-study-yesterday',
+    );
+  });
+
   it('failure replay pageId가 있으면 목록이 바뀌어도 최초 선택 초안을 재실행한다', async () => {
     const newlyOlderDraft = {
       ...draft,
