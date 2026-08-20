@@ -1692,6 +1692,19 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
             kind: .clock, relativeX: presidentSpan.width - 2,
             relativeY: wallHangY - bandRoomY
         ),
+    // 연속 기록 게시판. 도장이 찍히는 자리라 **대표와 같은 방** 이어야 한다 — 할 일 말풍선이
+    // 대표 머리 위에 뜨므로, 기록까지 이 방에 있으면 "내 몫" 이 한 화면에 모인다.
+    //
+    // **달력(16×18px)이 아니라 게시판(36×24px)을 쓴다.** 달력이 뜻으로는 맞지만 실사용 창에서
+    // 13×15pt(타일의 1/3)로 그려져, 도장 다섯 개를 넣으면 하나가 2.6pt 가 된다 — 개수를 세라고
+    // 찍는 도장이 개수를 셀 수 없게 된다. 게시판은 1.07칸 폭이라 상한까지 찍어도 읽힌다.
+    //
+    // 왼쪽 끝(1)을 쓰는 이유는 벽 줄에 빈 칸이 거기뿐이라서다. 창이 가운데 네 칸, 벽등이 그
+    // 양옆 두 칸, 시계가 오른쪽 끝(width-2)을 쓴다. 아래 칸이 소파(1)라 안전하다 — 책장(7·9)
+    // 위에 걸면 책장 상단이 벽 줄까지 올라와 게시판을 덮는다(시계가 화분에 덮인 것과 같은 함정).
+        BandFurnitureCandidate(
+            kind: .wallPinboard, relativeX: 1, relativeY: wallHangY - bandRoomY
+        ),
     ]
     for candidate in presidentFurniture {
         placeBand(candidate, in: 1)
