@@ -1137,6 +1137,13 @@ async function main() {
         `layout-${columns}.json 이 낡았다 — 출퇴근 시각(attendanceHours)이 없다. 평면도를 다시 뽑아라`
       );
     }
+    // 판 두께를 재는 값이 없으면 `fontSize + undefined` 가 NaN 이 되어, 이름표·말풍선·문패가
+    // 좌표 없이 그려진다 — 오류 한 줄 없이 글자만 사라지므로 여기서 이름을 대고 끊는다.
+    if (typeof layout.metrics?.labelBoxOverhead !== "number") {
+      throw new Error(
+        `layout-${columns}.json 이 낡았다 — 글자 상자 몫(labelBoxOverhead)이 없다. 평면도를 다시 뽑아라`
+      );
+    }
   }
   resize();
 

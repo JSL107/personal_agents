@@ -259,9 +259,21 @@ public let officeNameplateFontTiles: Double = 0.30
 public let officeNameplateMinFontSizeValue: Double = 11
 public let officeZoneLabelMinFontSizeValue: Double = 13
 
-/// 라벨 박스 높이 ÷ 글자 크기. `AppleSDGothicNeo-Bold` 한글 실측(11·12·18.3·24pt에서 1.15~1.27).
-/// 상한 쪽인 1.3 을 쓴다 — 모자라게 잡으면 문패가 이름표를 다시 덮는다.
-public let officeLabelBoxRatio: Double = 1.3
+/// 글자 상자가 글자 크기보다 큰 몫(px).
+///
+/// 화면의 라벨은 전부 외곽선(`strokeWidth: -3.5`)을 두르는데 **그 두께가 상자 높이에 그대로
+/// 더해진다.** `AppleSDGothicNeo-Bold` 한글 실측(11~30px)에서 상자는 늘 글자 크기 + 5~7px 이고,
+/// 그 몫은 글자 크기에 비례하지 않는다 — 외곽선 두께가 상수이기 때문이다.
+///
+/// **예전에는 배수(1.3)로 모델링했고, 그게 양쪽 끝에서 틀렸다.** 글자 하한(11px)이 걸리는 작은
+/// 창에서는 실제 17px 인 상자를 14.3px 로 잡아 문패가 이름표를 2.7px 덮었고, 30px 에서는 반대로
+/// 4px 을 헛되이 띄웠다. 덧셈 모델은 두 끝을 같이 맞춘다. 실측 상한인 7 을 쓴다.
+public let officeLabelBoxOverhead: Double = 7
+
+/// 라벨 글자 상자의 실제 높이(px). 판 두께를 재는 모든 계산이 이 함수 하나를 본다.
+public func officeLabelBoxHeight(fontSize: Double) -> Double {
+    fontSize + officeLabelBoxOverhead
+}
 
 /// 문패 아래끝과 이름표 위끝 사이에 두는 최소 간격(타일 배수).
 ///
@@ -281,8 +293,9 @@ public let officeZoneLabelFontTiles: Double = 0.38
 
 /// 부서 문패 판의 높이(타일 배수). 한글 글자 하한(13px) 때문에 작은 창에서 더 두꺼워진다.
 public func officeZoneLabelBoxTiles(tileSize: Double) -> Double {
-    max(officeZoneLabelMinFontSizeValue, tileSize * officeZoneLabelFontTiles)
-        * officeLabelBoxRatio / tileSize
+    officeLabelBoxHeight(
+        fontSize: max(officeZoneLabelMinFontSizeValue, tileSize * officeZoneLabelFontTiles)
+    ) / tileSize
 }
 
 /// 라벨 판 둘 사이에 남아야 하는 실제 간격(픽셀).
@@ -376,13 +389,17 @@ public func officeBubbleFontSize(tileSize: Double) -> Double {
 /// 올려야 하므로 두 줄에서 끊고 나머지는 말줄임한다 — 창을 키우면 전부 돌아온다.
 public let officeBubbleMaxLines: Double = 2
 
-/// 이름표 판을 스프라이트 위끝에서 얼마나 띄우는가(px). 판 두께에 눌리지 않을 여유 6px 을 더한다.
+/// 이름표 판 위에 남겨야 하는 여유(px). 말풍선 글자와 이름표 글자가 맞닿지 않을 만큼.
 public let officeNameplateClearancePadding: Double = 6
 
 /// 머리 위 라벨(이름표 위에 얹는 말풍선·경과)이 스프라이트 위끝에서 떨어지는 거리(px).
+///
+/// **이름표 상자 높이를 `officeLabelBoxHeight` 로 재야 한다.** 글자 크기를 그대로 상자
+/// 높이로 쓰면 외곽선 몫(5~7px)이 빠져, 확보했다는 여유 6px 이 통째로 그 몫에 먹힌다 —
+/// 실측 여백이 어느 창 크기에서도 0.00px 이 되어 말풍선이 이름표 글자에 그대로 얹혔다.
 public func officeNameplateClearance(tileSize: Double) -> Double {
-    officeNameplateFontSize(tileSize: tileSize) + tileSize * officeNameplateGapTiles
-        + officeNameplateClearancePadding
+    officeLabelBoxHeight(fontSize: officeNameplateFontSize(tileSize: tileSize))
+        + tileSize * officeNameplateGapTiles + officeNameplateClearancePadding
 }
 
 /// 이름표를 자리 몫에 맞추는 가로 배율과 중심 이동량(px). 몫은 좌석 중심 기준 좌우 여유다.
@@ -473,7 +490,8 @@ public func officeNameplateSpanTiles(
 
 /// 좌석에 앉은 사람의 이름표 위끝이 격자에서 몇 칸 높이에 오는가.
 public func officeSeatedNameplateTopTiles(seatY: Int, tileSize: Double) -> Double {
-    let boxTiles = officeNameplateFontSize(tileSize: tileSize) * officeLabelBoxRatio / tileSize
+    let boxTiles =
+        officeLabelBoxHeight(fontSize: officeNameplateFontSize(tileSize: tileSize)) / tileSize
     return Double(seatY) - officeSeatedSpriteDrop + officeSeatedSpriteTiles
         + officeNameplateGapTiles + boxTiles
 }
@@ -488,7 +506,7 @@ public func officeSeatedNameplateTopTiles(seatY: Int, tileSize: Double) -> Doubl
 /// 받아 두 줄이 되는 순간 문패가 다시 그 위를 덮는다.
 public func officeSeatedBubbleTopTiles(seatY: Int, tileSize: Double) -> Double {
     let boxTiles =
-        officeBubbleFontSize(tileSize: tileSize) * officeLabelBoxRatio
+        officeLabelBoxHeight(fontSize: officeBubbleFontSize(tileSize: tileSize))
         * officeBubbleMaxLines / tileSize
     return Double(seatY) - officeSeatedSpriteDrop + officeSeatedSpriteTiles
         + officeNameplateClearance(tileSize: tileSize) / tileSize + boxTiles
