@@ -9,18 +9,24 @@ import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { coerceToDailyPlan } from '../../pm/domain/prompt/previous-plan-formatter';
+import {
+  buildPlanRealityFacts,
+  hasPlanRealityMismatch,
+  PlanRealityFact,
+} from '../domain/plan-reality.diff';
 import { PoShadowException } from '../domain/po-shadow.exception';
+import { guardPoShadowReport } from '../domain/po-shadow.guard';
 import {
   GeneratePoShadowInput,
+  PoShadowFinding,
   PoShadowReport,
 } from '../domain/po-shadow.type';
 import { PoShadowErrorCode } from '../domain/po-shadow-error-code.enum';
 import { parsePoShadowReport } from '../domain/prompt/po-shadow.parser';
+import { PO_SHADOW_OUTPUT_SCHEMA } from '../domain/prompt/po-shadow.schema';
 import { PO_SHADOW_SYSTEM_PROMPT } from '../domain/prompt/po-shadow-system.prompt';
+import { PoShadowContextCollector } from './po-shadow-context.collector';
 
-// /po-shadow — 직전 PM `/today` plan 위에 PO 시각으로 비판적 검토.
-// 직전 PM run 이 없으면 NO_RECENT_PLAN 예외 (PO 모드는 항상 plan 을 전제로 함).
-// cron 진입 전용 staleness guard — CTO(generate-assignment.usecase.ts:25)와 동일한 18h 기준.
 const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
 
 @Injectable()
@@ -28,6 +34,7 @@ export class GeneratePoShadowUsecase {
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly contextCollector: PoShadowContextCollector,
   ) {}
 
   async execute({
@@ -36,7 +43,6 @@ export class GeneratePoShadowUsecase {
     triggerType,
     enforcePlanFreshness,
   }: GeneratePoShadowInput): Promise<AgentRunOutcome<PoShadowReport>> {
-    // slackUserId 한정 검색 — 다른 사용자의 PM run 을 검토하지 않게 (codex review b6xkjewd2 P2).
     const snapshot = await this.agentRunService.findLatestSucceededRun({
       agentType: AgentType.PM,
       slackUserId,
@@ -71,12 +77,12 @@ export class GeneratePoShadowUsecase {
     }
 
     const trimmedExtra = extraContext.trim();
-    const prompt = buildPrompt({
-      planJson: JSON.stringify(plan, null, 2),
-      planEndedAt: snapshot.endedAt.toISOString(),
-      planAgentRunId: snapshot.id,
-      extraContext: trimmedExtra,
+    const context = await this.contextCollector.collect({
+      slackUserId,
+      planEndedAt: snapshot.endedAt,
     });
+    const facts = buildPlanRealityFacts(plan, context);
+    const hasMismatch = hasPlanRealityMismatch(facts);
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
@@ -93,6 +99,11 @@ export class GeneratePoShadowUsecase {
           sourceId: String(snapshot.id),
           payload: { plan, endedAt: snapshot.endedAt.toISOString() },
         },
+        {
+          sourceType: 'PO_SHADOW_FACT_TABLE',
+          sourceId: String(snapshot.id),
+          payload: facts,
+        },
         ...(trimmedExtra.length > 0
           ? [
               {
@@ -104,11 +115,38 @@ export class GeneratePoShadowUsecase {
           : []),
       ],
       run: async () => {
+        if (!hasMismatch) {
+          const report = buildQuietReport({
+            facts,
+            degradedSources: context.degradedSources,
+          });
+          return {
+            result: report,
+            modelUsed: 'deterministic',
+            output: report,
+          };
+        }
+        const prompt = buildPrompt({
+          planJson: JSON.stringify(plan, null, 2),
+          planEndedAt: snapshot.endedAt.toISOString(),
+          planAgentRunId: snapshot.id,
+          facts,
+          extraContext: trimmedExtra,
+        });
         const completion = await this.modelRouter.route({
           agentType: AgentType.PO_SHADOW,
-          request: { prompt, systemPrompt: PO_SHADOW_SYSTEM_PROMPT },
+          request: {
+            prompt,
+            systemPrompt: PO_SHADOW_SYSTEM_PROMPT,
+            outputSchema: PO_SHADOW_OUTPUT_SCHEMA,
+          },
         });
-        const report = parsePoShadowReport(completion.text);
+        const parsedReport = parsePoShadowReport(completion.text);
+        const report = buildGuardedReport({
+          report: parsedReport,
+          facts,
+          degradedSources: context.degradedSources,
+        });
         return {
           result: report,
           modelUsed: completion.modelUsed,
@@ -119,25 +157,123 @@ export class GeneratePoShadowUsecase {
   }
 }
 
+interface BuildQuietReportInput {
+  facts: PlanRealityFact[];
+  degradedSources: string[];
+}
+
+const buildQuietReport = ({
+  facts,
+  degradedSources,
+}: BuildQuietReportInput): PoShadowReport => ({
+  schemaVersion: 2,
+  quiet: true,
+  headline: '계획대로 진행 중',
+  findings: [],
+  purposeConflict: null,
+  factSummary: facts.map(buildFactSummary),
+  droppedFindingCount: 0,
+  degradedSources,
+});
+
+interface BuildGuardedReportInput {
+  report: PoShadowReport;
+  facts: PlanRealityFact[];
+  degradedSources: string[];
+}
+
+const buildGuardedReport = ({
+  report,
+  facts,
+  degradedSources,
+}: BuildGuardedReportInput): PoShadowReport => {
+  const guardedReport = guardPoShadowReport(
+    {
+      ...report,
+      schemaVersion: 2,
+      quiet: false,
+      factSummary: [],
+      droppedFindingCount: 0,
+      degradedSources,
+    },
+    facts,
+  );
+  const factSummary = buildFindingFactSummaries({
+    findings: guardedReport.findings,
+    facts,
+  });
+  return { ...guardedReport, factSummary };
+};
+
+interface BuildFindingFactSummariesInput {
+  findings: PoShadowFinding[];
+  facts: PlanRealityFact[];
+}
+
+const buildFindingFactSummaries = ({
+  findings,
+  facts,
+}: BuildFindingFactSummariesInput): string[] => {
+  if (findings.length === 0) {
+    return facts.map(buildFactSummary);
+  }
+  const factById = new Map(facts.map((fact) => [fact.id, fact]));
+  return findings.map((finding) => {
+    const citedFacts = [...new Set(finding.factIds)]
+      .map((factId) => factById.get(factId))
+      .filter((fact): fact is PlanRealityFact => fact !== undefined);
+    if (citedFacts.length === 0) {
+      return '';
+    }
+    // 인용한 사실을 모두 이어붙이면 근거 한 줄이 지적 문장보다 길어진다. 첫 근거만 보이고
+    // 나머지는 건수로 접는다 — 전체 근거는 원장의 fact table evidence 에 남는다.
+    const [firstFact, ...restFacts] = citedFacts;
+    const summary = buildFactSummary(firstFact);
+    if (restFacts.length === 0) {
+      return summary;
+    }
+    return `${summary} (외 ${restFacts.length}건)`;
+  });
+};
+
+const buildFactSummary = (fact: PlanRealityFact): string => {
+  return `${fact.label} — ${fact.detail}`;
+};
+
+interface BuildPromptInput {
+  planJson: string;
+  planEndedAt: string;
+  planAgentRunId: number;
+  facts: PlanRealityFact[];
+  extraContext: string;
+}
+
 const buildPrompt = ({
   planJson,
   planEndedAt,
   planAgentRunId,
+  facts,
   extraContext,
-}: {
-  planJson: string;
-  planEndedAt: string;
-  planAgentRunId: number;
-  extraContext: string;
-}): string => {
+}: BuildPromptInput): string => {
   const sections = [
     `[직전 PM plan — AgentRun #${planAgentRunId}, endedAt ${planEndedAt}]`,
     planJson,
+    '[정오 사실표]',
+    buildFactTable({ facts }),
+    '[추가 컨텍스트]',
+    extraContext.length > 0 ? extraContext : '(없음)',
   ];
-  if (extraContext.length > 0) {
-    sections.push('[추가 컨텍스트]', extraContext);
-  } else {
-    sections.push('[추가 컨텍스트]', '(없음)');
-  }
   return sections.join('\n\n');
+};
+
+const buildFactTable = ({ facts }: { facts: PlanRealityFact[] }): string => {
+  if (facts.length === 0) {
+    return '(없음)';
+  }
+  return facts
+    .map((fact) => {
+      const url = fact.url ? ` | url: ${fact.url}` : '';
+      return `- id: ${fact.id} | label: ${fact.label} | detail: ${fact.detail}${url}`;
+    })
+    .join('\n');
 };

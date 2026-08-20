@@ -59,6 +59,13 @@ export class PoShadowAutopilotTask implements AutopilotTask {
       throw error;
     }
 
+    if (outcome.result.quiet) {
+      return {
+        skip: false,
+        summaryText: formatPoShadowReport(outcome.result),
+      };
+    }
+
     const humanized = await humanizePoShadowReport(
       outcome.result,
       this.humanizeService,
