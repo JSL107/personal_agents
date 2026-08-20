@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 
+import { BuildPresidentBriefingUsecase } from '../application/build-president-briefing.usecase';
 import { ConsoleReadService } from '../application/console-read.service';
+import { ConsoleBriefing } from '../domain/briefing.type';
 import {
   ConsoleAgent,
   ConsoleApproval,
@@ -12,7 +14,16 @@ import {
 // agents/runs/approvals 는 디버그·부분 재조회용이다.
 @Controller('v1/console')
 export class ConsoleController {
-  constructor(private readonly consoleRead: ConsoleReadService) {}
+  constructor(
+    private readonly consoleRead: ConsoleReadService,
+    private readonly buildBriefing: BuildPresidentBriefingUsecase,
+  ) {}
+
+  // 대표 브리핑 — 오늘의 할 일·연속 기록·퇴근 정산. 스냅샷과 갱신 주기가 달라 따로 둔다.
+  @Get('briefing')
+  async getBriefing(): Promise<ConsoleBriefing> {
+    return await this.buildBriefing.execute();
+  }
 
   @Get('snapshot')
   async getSnapshot(): Promise<ConsoleSnapshot> {

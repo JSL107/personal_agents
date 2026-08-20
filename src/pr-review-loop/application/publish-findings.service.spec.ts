@@ -35,6 +35,7 @@ const buildRepository = () =>
     markDecided: jest.fn(),
     markThreadResolved: jest.fn(),
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
+    markSuppressed: jest.fn(),
   }) as unknown as jest.Mocked<PrReviewFindingRepositoryPort>;
 
 const baseInput = (findings: ReviewFinding[]) => ({
@@ -205,6 +206,9 @@ describe('PublishFindingsService', () => {
       expect.objectContaining({ postMode: 'NOT_POSTED' }),
     );
     expect(outcome.notPosted).toBe(1);
+    // OPEN 으로 두면 수확 스윕이 게시된 카드만 보므로(githubCommentId 조건) PR 이 머지된
+    // 뒤에도 "아직 안 본 지적" 으로 영원히 남는다. 종결까지 확인한다.
+    expect(repository.markSuppressed).toHaveBeenCalledTimes(1);
   });
 
   it('상한을 넘은 카드는 NOT_POSTED 로 저장하고 dropped 로 센다', async () => {
@@ -223,6 +227,9 @@ describe('PublishFindingsService', () => {
 
     expect(outcome.inline).toBe(1);
     expect(outcome.dropped).toBe(1);
+    // 게이트가 떨군 카드도 GitHub 에 올라가지 않으므로 종결한다. 게시된 카드(inline)는
+    // 수확 대상이라 종결하지 않는다 — 호출이 정확히 1회여야 하는 이유다.
+    expect(repository.markSuppressed).toHaveBeenCalledTimes(1);
   });
 
   it('지문이 이미 있으면(null) 게시하지 않는다', async () => {

@@ -407,6 +407,11 @@ export class AgentRunService {
     return await this.repository.countSucceededSince(input);
   }
 
+  // 대표 브리핑 퇴근 정산 — 특정 시각 이후 실패로 끝난 런 총수.
+  async countFailedSince(input: { since: Date }): Promise<number> {
+    return await this.repository.countFailedSince(input);
+  }
+
   async aggregateRetryCounts(input: {
     sinceDays: number;
   }): Promise<AgentRetryCountRow[]> {

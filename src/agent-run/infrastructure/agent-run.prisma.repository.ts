@@ -593,6 +593,15 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     }));
   }
 
+  async countFailedSince({ since }: { since: Date }): Promise<number> {
+    // 성공 집계(countSucceededSince)와 같은 **완료 시각** 기준으로 자른다. 시작 시각으로
+    // 자르면 자정 직전에 시작해 자정 뒤에 엎어진 실행이 어제 몫으로 새어 두 숫자의 기준이
+    // 어긋난다.
+    return await this.prisma.agentRun.count({
+      where: { endedAt: { gte: since }, status: AgentRunStatus.FAILED },
+    });
+  }
+
   async findFailedRunsSince({
     withinMinutes,
   }: {

@@ -7,6 +7,7 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   PreviewActionRepositoryPort,
+  PreviewDayOutcomeRow,
   PreviewOutcomeRow,
 } from '../domain/port/preview-action.repository.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
@@ -209,6 +210,18 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toDomain);
+  }
+
+  async findAllDayOutcomes(): Promise<PreviewDayOutcomeRow[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      select: { createdAt: true, appliedAt: true, cancelledAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((row) => ({
+      createdAt: row.createdAt,
+      // 승인과 거절 중 실제로 찍힌 쪽이 결말이다. 둘 다 비면 무응답 만료 또는 아직 열린 카드다.
+      closedAt: row.appliedAt ?? row.cancelledAt,
+    }));
   }
 }
 

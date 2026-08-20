@@ -93,6 +93,10 @@ export class PublishFindingsService {
         continue;
       }
       if (!canPost) {
+        // 게시하지 않기로 한 카드는 여기서 종결한다. OPEN 으로 두면 수확 스윕이 영원히
+        // 보지 못해(게시된 카드만 조회한다) PR 이 머지된 뒤에도 "아직 안 본 지적" 으로
+        // 남는다.
+        await this.repository.markSuppressed(record.id);
         outcome.notPosted += 1;
         continue;
       }
@@ -116,6 +120,9 @@ export class PublishFindingsService {
         outcome.duplicate += 1;
         continue;
       }
+      // 게이트가 떨군 지적도 GitHub 에 올라가지 않는다. 지문(fingerprint)은 남겨 같은
+      // 지적의 재등장을 막되, 상태는 종결로 둔다.
+      await this.repository.markSuppressed(record.id);
       outcome.dropped += 1;
     }
 

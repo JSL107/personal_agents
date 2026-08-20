@@ -294,4 +294,9 @@ export interface AgentRunRepositoryPort {
   countSucceededSince(input: {
     since: Date;
   }): Promise<AgentSucceededCountRow[]>;
+  // 대표 브리핑 퇴근 정산 — 특정 시각 이후에 실패로 끝난 런 총수.
+  //
+  // agentType 별로 나누지 않는 이유는 정산 카드가 "오늘 몇 건 엎어졌나" 만 말하기 때문이다.
+  // 어느 워커가 엎어졌는지는 이미 상태 링(빨강)과 할 일 보드가 말한다.
+  countFailedSince(input: { since: Date }): Promise<number>;
 }

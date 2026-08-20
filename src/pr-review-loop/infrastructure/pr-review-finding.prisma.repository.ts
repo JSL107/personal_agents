@@ -139,6 +139,13 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     });
   }
 
+  async markSuppressed(id: number): Promise<void> {
+    await this.prisma.prReviewFinding.update({
+      where: { id },
+      data: { status: 'SUPPRESSED', decidedAt: new Date() },
+    });
+  }
+
   async markThreadResolved(id: number): Promise<void> {
     await this.prisma.prReviewFinding.update({
       where: { id },

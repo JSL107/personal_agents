@@ -16,6 +16,13 @@ export interface PreviewOutcomeRow {
   expired: number;
 }
 
+// 대표 브리핑 연속 기록 — 카드 한 장의 생애를 시각 두 개로 압축한 것.
+// `closedAt` 은 승인(appliedAt)·거절(cancelledAt) 중 실제로 찍힌 값이고, 무응답 만료는 null 이다.
+export interface PreviewDayOutcomeRow {
+  createdAt: Date;
+  closedAt: Date | null;
+}
+
 export interface PreviewActionRepositoryPort {
   // 새 preview 를 PENDING 상태로 생성. id 는 어댑터가 uuid 생성. expiresAt 은 ttlMs 기반 계산.
   create(input: CreatePreviewInput): Promise<PreviewAction>;
@@ -64,4 +71,12 @@ export interface PreviewActionRepositoryPort {
   }): Promise<PreviewAction[]>;
   // 콘솔 관제 — 아직 열려 있는(PENDING & 미만료) preview 전체. 사용자 구분 없이 모두 조회.
   findAllOpen(input: { now: Date }): Promise<PreviewAction[]>;
+  // 대표 브리핑 연속 기록 — 카드가 언제 떠서 언제 결말이 났는지만 전건 조회.
+  //
+  // 창을 두지 않는 이유: 최고 기록에 창을 씌우면 오래된 기록이 창 밖으로 밀려나며 "최고" 가
+  // 줄어든다. 로컬 원장은 161행이라 전수 조회가 창 계산보다 싸다.
+  //
+  // payload / previewText 를 빼고 두 시각만 가져온다 — 연속 기록에는 카드 내용이 필요 없고,
+  // 전건 조회에 큰 jsonb 를 딸려 오게 하면 이 값이 커질 때 조용히 무거워진다.
+  findAllDayOutcomes(): Promise<PreviewDayOutcomeRow[]>;
 }

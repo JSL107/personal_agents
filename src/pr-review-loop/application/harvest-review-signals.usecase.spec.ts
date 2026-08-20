@@ -95,6 +95,7 @@ const buildDependencies = ({
     markDecided: jest.fn().mockResolvedValue(undefined),
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
+    markSuppressed: jest.fn(),
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
   const resolutionJudge = { execute: jest.fn().mockResolvedValue([]) };
