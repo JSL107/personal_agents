@@ -40,6 +40,16 @@ const main = async (): Promise<void> => {
         .get(ScreenUniverseUsecase)
         .execute(parsed.options);
       console.log(formatScreenResult(result));
+      if (result.recordOutcome?.saved === true) {
+        console.log(
+          `스크리닝 이력을 원장에 남겼습니다. 회차 #${result.recordOutcome.runId}, 기준일 ${result.asOf ?? '-'}, 기록 ${result.recordOutcome.recordedCount}종목.`,
+        );
+      }
+      if (result.recordOutcome?.saved === false) {
+        console.log(
+          `이미 운영 회차가 있어 원장에 남기지 않았습니다. 기존 회차 #${result.recordOutcome.runId}, 기준일 ${result.asOf ?? '-'} — 확인용 실행이 그날 보여준 목록을 덮어쓰지 않습니다.`,
+        );
+      }
       return;
     }
 

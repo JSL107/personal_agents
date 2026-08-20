@@ -6,10 +6,12 @@ import { CollectBenchmarkClosesUsecase } from './application/collect-benchmark-c
 import { CollectUniversePricesUsecase } from './application/collect-universe-prices.usecase';
 import { ScreenUniverseUsecase } from './application/screen-universe.usecase';
 import { SyncUniverseUsecase } from './application/sync-universe.usecase';
+import { ScreeningHistoryPrismaRepository } from './infrastructure/screening-history.prisma.repository';
 
 @Module({
   imports: [PrismaModule, MarketDataModule],
   providers: [
+    ScreeningHistoryPrismaRepository,
     SyncUniverseUsecase,
     CollectBenchmarkClosesUsecase,
     CollectUniversePricesUsecase,

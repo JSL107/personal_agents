@@ -12,6 +12,10 @@ import {
   screenStocks,
   ScreenStrategy,
 } from '../domain/screener-rule';
+import {
+  SaveScreeningRunOutcome,
+  ScreeningHistoryPrismaRepository,
+} from '../infrastructure/screening-history.prisma.repository';
 
 const TICKER_READ_CHUNK_SIZE = 200;
 const INDICATOR_BAR_LIMIT = 200;
@@ -21,6 +25,11 @@ export interface ScreenUniverseOptions {
   strategy: ScreenStrategy;
   limit?: number;
   includeTickerIds?: number[];
+  // 지정하면 이 회차를 원장에 남긴다. 기본은 남기지 않는다 — 상한을 바꿔가며 확인하는
+  // 임의 실행이 같은 기준일 회차를 덮어쓰면 원장이 "그날 무엇을 보여줬나" 대신 마지막
+  // 실행 흔적이 된다. `agentRunId` 는 이 회차를 만든 추천 실행이고, CLI 실행은 null 이다
+  // — 이 값이 운영 회차와 확인용 실행을 가르는 유일한 축이다.
+  record?: { agentRunId: number | null };
 }
 
 export interface IncludedStockIndicators {
@@ -40,6 +49,10 @@ export interface ScreenUniverseResult {
   stocks: ScreenedStock[];
   includedIndicators: IncludedStockIndicators[];
   asOf: string | null;
+  // 원장 기록 결과. null 이면 애초에 남기지 않는 실행이다 — record 를 지정하지 않았거나
+  // 기준일이 없어(시세 0건) 남길 회차 자체가 없다. 남기려 했으나 운영 회차를 덮어쓰지 않기
+  // 위해 건너뛴 경우는 `saved: false` 와 이유로 돌아온다.
+  recordOutcome: SaveScreeningRunOutcome | null;
 }
 
 interface DatedScreenCandidate {
@@ -49,7 +62,10 @@ interface DatedScreenCandidate {
 
 @Injectable()
 export class ScreenUniverseUsecase {
-  constructor(private readonly repository: MarketDataPrismaRepository) {}
+  constructor(
+    private readonly repository: MarketDataPrismaRepository,
+    private readonly historyRepository: ScreeningHistoryPrismaRepository,
+  ) {}
 
   async execute(options: ScreenUniverseOptions): Promise<ScreenUniverseResult> {
     const universe = await this.repository.findUniverseTickers();
@@ -123,16 +139,40 @@ export class ScreenUniverseUsecase {
         indicators: candidate.indicators,
       }));
     const limit = options.limit ?? DEFAULT_SCREEN_LIMIT;
-    return {
+    const stocks = passed.slice(0, Math.max(0, limit));
+    const result: ScreenUniverseResult = {
       strategy: options.strategy,
       ruleVersion: SCREENER_RULE_VERSION,
       universeCount: universe.length,
       evaluatedCount: datedCandidates.length,
       staleCount,
       passedCount: passed.length,
-      stocks: passed.slice(0, Math.max(0, limit)),
+      stocks,
       includedIndicators,
       asOf,
+      recordOutcome: null,
     };
+    if (options.record === undefined || asOf === null) {
+      return result;
+    }
+    // 남기는 것은 통과 전체가 아니라 limit 안에 든 목록이다 — 추천 프롬프트에 실리는 범위와
+    // 같아야 "보여줬는데 안 샀다" 를 뒤에서 가릴 수 있다. 전체 통과 수는 passedCount 로 간다.
+    const recordOutcome = await this.historyRepository.saveScreeningRun({
+      strategy: options.strategy,
+      asOf: new Date(`${asOf}T00:00:00.000Z`),
+      ruleVersion: SCREENER_RULE_VERSION,
+      agentRunId: options.record.agentRunId,
+      universeCount: universe.length,
+      evaluatedCount: datedCandidates.length,
+      staleCount,
+      passedCount: passed.length,
+      items: stocks.map((stock, index) => ({
+        tickerId: stock.tickerId,
+        rank: index + 1,
+        score: stock.score,
+        indicatorSnapshot: stock.indicators,
+      })),
+    });
+    return { ...result, recordOutcome };
   }
 }
