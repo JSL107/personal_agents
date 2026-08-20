@@ -379,6 +379,7 @@ export class AgentRunService {
   // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료 런의 결과(성공/실패).
   async findRecentlyFinishedRuns(input: {
     withinMinutes: number;
+    since?: Date;
   }): Promise<RecentlyFinishedRun[]> {
     return await this.repository.findRecentlyFinishedRuns(input);
   }

@@ -26,6 +26,15 @@ export interface MarkDecidedInput {
   resolveThread?: boolean;
 }
 
+// 대표 브리핑 — 미회수 지적이 남은 PR 하나.
+export interface OpenPostedPullRequestRow {
+  repo: string;
+  pullNumber: number;
+  count: number;
+  /** 그 PR 에서 가장 먼저 달린 미회수 지적의 시각. 방치 기간을 이 값으로 잰다. */
+  oldestAt: Date;
+}
+
 export interface PrReviewFindingRepositoryPort {
   // 지문이 이미 있으면 null — 재스윕 시 같은 지적을 다시 만들지 않는다.
   createIfAbsent(
@@ -44,18 +53,14 @@ export interface PrReviewFindingRepositoryPort {
   markThreadResolved(id: number): Promise<void>;
 
   /**
-   * GitHub 에 올리지 않기로 한 카드를 종결한다.
+   * 아직 반응이 없는 **게시된** 지적을 PR 단위로 집계한다. 상한 없이 전건이다.
    *
-   * 이 경로가 없던 동안 게시하지 않은 카드가 `OPEN` 인 채로 원장에 영구히 쌓였다. 수확
-   * 스윕은 게시된 카드만 본다(`findOpenPostedCards` 의 `githubCommentId: { not: null }`) —
-   * 맞는 조건이다. GitHub 에 스레드가 없으면 거둘 반응도 없다. 문제는 그 카드들이 PR 이
-   * 머지된 뒤에도 `STALE` 로 내려갈 길이 없다는 것이었고, 실제로 2026-08-20 기준 미결
-   * 21건 중 16건이 이미 닫힌 PR 의 미게시 카드였다.
-   *
-   * 채택률에는 영향이 없다 — `SUPPRESSED` 도 `OPEN` 도 분모(`ACKED`/`FIXED`/`REJECTED`)
-   * 밖이다. 바뀌는 것은 "아직 안 본 지적" 목록의 정직함뿐이다.
+   * 수확 스윕이 쓰는 `findOpenPostedCards` 를 재사용하면 안 된다 — 그쪽은 한 회차의 처리량을
+   * 묶으려고 최근 20개 PR 로 자르고 정렬도 최신순이라, 가장 오래 방치된 PR 이 21번째면
+   * 통째로 빠진다. 브리핑은 바로 그 "가장 오래된 것" 을 골라 보여주고 남은 건수도 세므로,
+   * 처리량 제한을 물려받으면 조용히 틀린 숫자를 낸다.
    */
-  markSuppressed(id: number): Promise<void>;
+  countOpenPostedByPullRequest(): Promise<OpenPostedPullRequestRow[]>;
 
   // 카테고리·상태별 카드 수. 채택률 분모 판정은 summarizeAdoption 이 하므로 여기서는
   // 상태를 걸러내지 않고 조합을 그대로 넘긴다.

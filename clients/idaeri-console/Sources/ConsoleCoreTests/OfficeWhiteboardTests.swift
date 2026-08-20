@@ -65,6 +65,36 @@ func runOfficeWhiteboardTests(_ t: TestRunner) {
         "줄 높이 합(\(consumed))이 판 안(\(allowed))에 들어가야 한다"
     )
 
+    // 할 일이 가장 많은 순간에도 본문이 남는다
+    //
+    // 승인·실패·리뷰가 다 밀리고 연속 기록까지 붙으면 본문이 4줄이다. 줄 수를 안 줄이고
+    // 크기만 맞추려 하면 글자가 하한 아래로 내려가 **전부 nil 이 되고 제목만 남는다** —
+    // 정확히 판이 가장 필요한 순간에 아무것도 안 적힌다.
+    let crowdedLayout = officeBoardLayout(
+        todos: [
+            ConsoleTodo(kind: .approval, label: "승인 2건", detail: "19:04 만료"),
+            ConsoleTodo(kind: .failedRun, label: "PM 재시도", detail: "다음 실행은 내일"),
+            ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 3건", detail: "10일째"),
+        ],
+        streak: sampleStreak,
+        boardWidth: realBoardWidth,
+        boardHeight: realBoardHeight
+    )
+    t.expect(
+        crowdedLayout.lines.count >= 2,
+        "할 일이 꽉 찬 판에도 본문이 남아야 한다 (실제: \(crowdedLayout.lines.count)줄)"
+    )
+    t.expect(
+        crowdedLayout.lines.first?.text.contains("승인") == true,
+        "접을 때는 급한 것부터 남긴다 (실제 첫 줄: \(crowdedLayout.lines.first?.text ?? "없음"))"
+    )
+    for line in crowdedLayout.lines {
+        t.expect(
+            line.fontSize >= officeBoardMinimumFontSize,
+            "남긴 줄은 읽을 수 있는 크기여야 한다 (실제: \(line.fontSize)pt)"
+        )
+    }
+
     // 긴 줄은 자르지 않고 줄인다
     let long = ConsoleTodo(
         kind: .prReview, label: "PR #1005 리뷰 회수", detail: "11일째 방치되는 중"

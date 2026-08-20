@@ -532,10 +532,14 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   // 최신 것만 남으므로 "실패 후 성공" 은 SUCCEEDED 가 된다.
   async findRecentlyFinishedRuns({
     withinMinutes,
+    since,
   }: {
     withinMinutes: number;
+    since?: Date;
   }): Promise<RecentlyFinishedRun[]> {
-    const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    // 절대 시각이 오면 그대로 쓴다. 상대 분을 여기서 다시 빼면 호출자가 잰 순간과 이
+    // 순간 사이의 시차만큼 경계가 밀린다.
+    const cutoff = since ?? new Date(Date.now() - withinMinutes * 60 * 1000);
     // cutoff 이후 종료된 런만 DB 에서 좁혀 distinct — 누적 이력을 매 스냅샷마다 전수 스캔/정렬하지 않는다.
     // cutoff 범위의 최신 종료 = 전체 최신 종료와 동일(cutoff 밖 런이 최신이면 그 agentType 은 어차피 제외)이라
     // 결과는 애플리케이션 필터와 같다.

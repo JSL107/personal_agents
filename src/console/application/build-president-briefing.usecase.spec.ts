@@ -23,28 +23,12 @@ const openPreview = (expiresAt: Date): unknown => ({
   slackMessageTs: null,
 });
 
-const postedCard = (
+const openPull = (
   repo: string,
   pullNumber: number,
-  createdAt: Date,
-): unknown => ({
-  id: pullNumber,
-  agentRunId: 1,
-  repo,
-  pullNumber,
-  headSha: 'abc',
-  category: 'CORRECTNESS',
-  severity: 'MUST_FIX',
-  filePath: 'a.ts',
-  line: 1,
-  body: '지적',
-  fingerprint: `${repo}#${pullNumber}`,
-  status: 'OPEN',
-  postMode: 'INLINE',
-  githubCommentId: '1',
-  githubThreadNodeId: null,
-  createdAt,
-});
+  oldestAt: Date,
+  count = 1,
+): unknown => ({ repo, pullNumber, count, oldestAt });
 
 const succeededRun = (id: number, endedAt: string): unknown => ({
   id,
@@ -63,7 +47,7 @@ describe('BuildPresidentBriefingUsecase', () => {
   };
   let findAllOpenPreviews: { execute: jest.Mock };
   let findPreviewDayOutcomes: { execute: jest.Mock };
-  let findingRepository: { findOpenPostedCards: jest.Mock };
+  let findingRepository: { countOpenPostedByPullRequest: jest.Mock };
 
   beforeEach(async () => {
     agentRunService = {
@@ -75,7 +59,7 @@ describe('BuildPresidentBriefingUsecase', () => {
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     findPreviewDayOutcomes = { execute: jest.fn().mockResolvedValue([]) };
     findingRepository = {
-      findOpenPostedCards: jest.fn().mockResolvedValue([]),
+      countOpenPostedByPullRequest: jest.fn().mockResolvedValue([]),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -196,16 +180,16 @@ describe('BuildPresidentBriefingUsecase', () => {
   });
 
   it('미회수 PR 이 한 건이면 번호를, 여러 건이면 묶어 적는다', async () => {
-    findingRepository.findOpenPostedCards.mockResolvedValue([
-      postedCard('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([
+      openPull('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
     ]);
 
     const single = await usecase.execute();
     expect(single.todos[0].label).toBe('PR #1005 리뷰 회수');
 
-    findingRepository.findOpenPostedCards.mockResolvedValue([
-      postedCard('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
-      postedCard('o/r', 994, new Date('2026-08-09T00:00:00Z')),
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([
+      openPull('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
+      openPull('o/r', 994, new Date('2026-08-09T00:00:00Z')),
     ]);
 
     const many = await usecase.execute();
@@ -213,10 +197,8 @@ describe('BuildPresidentBriefingUsecase', () => {
   });
 
   it('같은 PR 의 지적 여러 건은 한 건으로 묶어 센다', async () => {
-    findingRepository.findOpenPostedCards.mockResolvedValue([
-      postedCard('o/r', 109, new Date('2026-08-09T00:00:00Z')),
-      postedCard('o/r', 109, new Date('2026-08-09T01:00:00Z')),
-      postedCard('o/r', 109, new Date('2026-08-09T02:00:00Z')),
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([
+      openPull('o/r', 109, new Date('2026-08-09T00:00:00Z'), 3),
     ]);
 
     const briefing = await usecase.execute();
@@ -246,8 +228,8 @@ describe('BuildPresidentBriefingUsecase', () => {
         endedAt: new Date('2026-08-18T00:00:00Z'),
       },
     ]);
-    findingRepository.findOpenPostedCards.mockResolvedValue([
-      postedCard('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([
+      openPull('o/r', 1005, new Date('2026-08-19T00:00:00Z')),
     ]);
 
     const briefing = await usecase.execute();
@@ -257,6 +239,43 @@ describe('BuildPresidentBriefingUsecase', () => {
       ConsoleTodoKind.FAILED_RUN,
       ConsoleTodoKind.PR_REVIEW,
     ]);
+  });
+
+  it('오늘의 경계를 KST 자정 절대 시각으로 넘긴다', async () => {
+    await usecase.execute();
+
+    // 상대 분(withinMinutes)으로 넘기면 리포지토리가 자기 시각에서 다시 빼면서 경계가
+    // 최대 1분 앞당겨져, 어제 23:59 에 엎어진 워커가 "오늘 실패" 로 섞인다. 세 집계가
+    // **같은 자정 값**을 쓰는지까지 확인한다 — 기준이 갈리면 화면의 숫자끼리 어긋난다.
+    const call = agentRunService.findRecentlyFinishedRuns.mock.calls[0][0] as {
+      since?: Date;
+    };
+    expect(call.since).toBeInstanceOf(Date);
+
+    const succeededCall = agentRunService.countSucceededSince.mock
+      .calls[0][0] as { since: Date };
+    const failedCall = agentRunService.countFailedSince.mock.calls[0][0] as {
+      since: Date;
+    };
+    expect(call.since?.getTime()).toBe(succeededCall.since.getTime());
+    expect(call.since?.getTime()).toBe(failedCall.since.getTime());
+
+    // KST 자정은 UTC 로 15:00 이다.
+    expect(call.since?.getUTCHours()).toBe(15);
+    expect(call.since?.getUTCMinutes()).toBe(0);
+    expect(call.since?.getUTCSeconds()).toBe(0);
+  });
+
+  it('미회수 PR 집계는 수확 스윕의 20개 상한을 물려받지 않는다', async () => {
+    const many = Array.from({ length: 25 }, (_unused, index) =>
+      openPull('o/r', 100 + index, new Date(2026, 7, 1 + (index % 15))),
+    );
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue(many);
+
+    const briefing = await usecase.execute();
+
+    // 상한이 있는 조회를 쓰면 21번째부터가 통째로 빠져 "가장 오래된 것" 도 건수도 틀린다.
+    expect(briefing.dailyReport.pendingReviewPulls).toBe(25);
   });
 
   it('퇴근 정산은 오늘 성공·실패와 승인 처리 현황을 담는다', async () => {
@@ -273,7 +292,7 @@ describe('BuildPresidentBriefingUsecase', () => {
   });
 
   it('집계 하나가 비어도 나머지는 계산된다', async () => {
-    findingRepository.findOpenPostedCards.mockResolvedValue([]);
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([]);
     agentRunService.countSucceededSince.mockResolvedValue([]);
 
     const briefing = await usecase.execute();

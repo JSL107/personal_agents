@@ -105,17 +105,26 @@ public func officeBoardLayout(
     // **줄 수로 균등 분배하면 안 된다.** 제목 간격(1.35)이 줄 간격(1.3)보다 커서, 균등하게
     // 나눈 값으로는 합이 늘 usableHeight 를 1% 남짓 넘는다 — 마지막 줄이 매번 잘려 나갔다.
     // 실제로 쓰는 간격을 그대로 분모에 넣어야 계산과 배치가 맞는다.
+    //
+    // **줄 수를 먼저 줄인다.** 모든 줄을 한 판에 욱여넣으려 하면 글자가 하한 아래로 내려가고,
+    // 그러면 `fittedFontSize` 가 전부 nil 을 돌려줘 **본문이 통째로 사라진다** — 승인·실패·
+    // 리뷰가 다 밀린 가장 급한 순간에 판에 제목만 남는 것이다(실사용 규격에서 본문 4줄이면
+    // 7.67pt 로 하한 8pt 미달). 몇 줄이 들어가는지부터 정하고 그 줄 수로 크기를 잡는다.
+    let visibleCount = fittedLineCount(
+        requested: allTexts.count, usableHeight: usableHeight
+    )
+    let visibleTexts = Array(allTexts.prefix(visibleCount))
     let spacingTotal =
         officeBoardTitleSpacing
-        + Double(allTexts.count) * officeBoardLineSpacing
-    let perRow = usableHeight / max(spacingTotal, officeBoardLineSpacing)
+        + Double(max(visibleCount, 1)) * officeBoardLineSpacing
+    let perRow = usableHeight / spacingTotal
     let titleFontSize = max(officeBoardMinimumFontSize, min(perRow, 13))
 
     // **넘치는 줄은 버린다.** 폰트만 맞추고 줄 수를 안 세면 마지막 줄이 판 아래로 흘러 문패
     // 위에 겹친다(실제로 그렇게 그려졌다). 계산이 줄 수까지 책임져야 씬이 그대로 그릴 수 있다.
     var consumed = titleFontSize * officeBoardTitleSpacing
     var lines: [OfficeBoardLine] = []
-    for text in allTexts {
+    for text in visibleTexts {
         guard
             let fitted = fittedFontSize(
                 text: text, usableWidth: usableWidth, heightBudget: perRow
@@ -161,6 +170,23 @@ public func streakText(_ streak: ConsoleStreak) -> String {
         return "연속 0일 (최고 \(streak.best)일)"
     }
     return "연속 기록 없음"
+}
+
+/// 판 높이에서 글자 하한을 지키며 보여줄 수 있는 최대 줄 수.
+///
+/// 요청한 줄이 다 안 들어가면 **뒤에서부터 접는다.** 목록이 급한 순서(승인 → 실패 → 리뷰 →
+/// 연속 기록)로 오므로, 뒤를 접으면 덜 급한 것이 먼저 사라진다.
+private func fittedLineCount(requested: Int, usableHeight: Double) -> Int {
+    var count = requested
+    while count > 0 {
+        let spacing =
+            officeBoardTitleSpacing + Double(count) * officeBoardLineSpacing
+        if usableHeight / spacing >= officeBoardMinimumFontSize {
+            return count
+        }
+        count -= 1
+    }
+    return 0
 }
 
 private func fittedFontSize(

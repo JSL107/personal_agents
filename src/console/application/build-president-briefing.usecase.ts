@@ -8,6 +8,7 @@ import {
 } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
+  OpenPostedPullRequestRow,
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
 } from '../../pr-review-loop/domain/port/pr-review-finding.repository.port';
@@ -61,10 +62,6 @@ export class BuildPresidentBriefingUsecase {
   async execute(): Promise<ConsoleBriefing> {
     const now = new Date();
     const dayStart = getKstDayStartAsUtc();
-    const minutesSinceDayStart = Math.max(
-      1,
-      Math.ceil((now.getTime() - dayStart.getTime()) / 60_000),
-    );
 
     const [
       openPreviews,
@@ -76,8 +73,12 @@ export class BuildPresidentBriefingUsecase {
     ] = await Promise.all([
       this.findAllOpenPreviews.execute({ now }),
       this.findPreviewDayOutcomes.execute(),
+      // 자정 경계는 절대 시각으로 넘긴다. 상대 분으로 주면 리포지토리가 자기 시각에서
+      // 다시 빼면서 경계가 최대 1분 앞당겨져, 어제 23:59 에 엎어진 워커가 "오늘 실패" 로
+      // 섞인다.
       this.agentRunService.findRecentlyFinishedRuns({
-        withinMinutes: minutesSinceDayStart,
+        withinMinutes: 0,
+        since: dayStart,
       }),
       this.agentRunService.countSucceededSince({ since: dayStart }),
       this.agentRunService.countFailedSince({ since: dayStart }),
@@ -181,38 +182,19 @@ export class BuildPresidentBriefingUsecase {
     }
   }
 
-  /** 아직 반응이 없는 리뷰 지적이 남은 PR 목록. 오래 방치된 것부터. */
-  private async findOpenReviewPulls(): Promise<OpenReviewPull[]> {
-    const cards = await this.findingRepository.findOpenPostedCards();
-    const byPull = new Map<string, OpenReviewPull>();
-    for (const card of cards) {
-      const key = `${card.repo}#${card.pullNumber}`;
-      const found = byPull.get(key);
-      if (found === undefined) {
-        byPull.set(key, {
-          repo: card.repo,
-          pullNumber: card.pullNumber,
-          count: 1,
-          oldestAt: card.createdAt,
-        });
-        continue;
-      }
-      found.count += 1;
-      if (card.createdAt < found.oldestAt) {
-        found.oldestAt = card.createdAt;
-      }
-    }
-    return [...byPull.values()].sort(
+  /**
+   * 아직 반응이 없는 리뷰 지적이 남은 PR 목록. 오래 방치된 것부터.
+   *
+   * 수확 스윕의 `findOpenPostedCards` 를 쓰지 않는다 — 그쪽은 한 회차 처리량을 묶으려고
+   * 최근 20개 PR 로 자르므로, 가장 오래 방치된 PR 이 그 밖에 있으면 통째로 빠진다.
+   * 브리핑은 바로 그것을 골라 보여주는 화면이라 전건 집계를 따로 쓴다.
+   */
+  private async findOpenReviewPulls(): Promise<OpenPostedPullRequestRow[]> {
+    const rows = await this.findingRepository.countOpenPostedByPullRequest();
+    return [...rows].sort(
       (left, right) => left.oldestAt.getTime() - right.oldestAt.getTime(),
     );
   }
-}
-
-interface OpenReviewPull {
-  repo: string;
-  pullNumber: number;
-  count: number;
-  oldestAt: Date;
 }
 
 const toCardDayOutcomes = (
@@ -276,7 +258,9 @@ const buildFailedRunTodo = (
   ];
 };
 
-const buildReviewTodo = (pulls: readonly OpenReviewPull[]): ConsoleTodo[] => {
+const buildReviewTodo = (
+  pulls: readonly OpenPostedPullRequestRow[],
+): ConsoleTodo[] => {
   if (pulls.length === 0) {
     return [];
   }

@@ -36,6 +36,16 @@ export interface CreateFindingInput {
   body: string;
   fingerprint: string;
   postMode: FindingPostMode;
+  /**
+   * 만들 때 정하는 생애 상태. 생략하면 `OPEN`(DB 기본값).
+   *
+   * 게시하지 않기로 **이미 정해진** 카드(allowlist 밖·억제 게이트 탈락)는 처음부터
+   * `SUPPRESSED` 로 만든다. 만들고 나서 따로 종결시키면 그 사이 실패했을 때
+   * `OPEN` + `NOT_POSTED` 행이 남는데, 다음 회차에는 지문이 중복이라 `createIfAbsent` 가
+   * null 을 돌려줘 그 행을 다시 종결시킬 길이 없다 — 이 PR 이 없애려는 유령이 그대로
+   * 재생산된다.
+   */
+  status?: Extract<FindingStatus, 'OPEN' | 'SUPPRESSED'>;
 }
 
 export interface PrReviewFindingRecord {

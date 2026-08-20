@@ -2082,6 +2082,12 @@ final class OfficeScene: SKScene {
     func refreshBriefing(_ briefing: ConsoleBriefing?, hour: Int) {
         renderMeetingBoard(briefing)
         renderDailyReportPaper(briefing, hour: hour)
+        // **펼쳐 둔 카드도 다시 그린다.** 카드 문장은 펼치는 순간 한 번 만들어지는데, 브리핑은
+        // 30초마다 새로 온다 — 다시 그리지 않으면 카드를 열어 둔 채로 오늘 수치가 옛것에
+        // 멈춰 있다(닫았다 열기 전까지).
+        if overlayLayer.childNode(withName: officeDailyReportCardNodeName) != nil {
+            renderDailyReportCard(briefing)
+        }
     }
 
     /// 회의실 벽에 걸린 판. 스프라이트가 아니라 도형과 글자로 직접 그린다.
@@ -2248,6 +2254,13 @@ final class OfficeScene: SKScene {
             opened.removeFromParent()
             return
         }
+        renderDailyReportCard(briefing)
+    }
+
+    /// 펼친 카드를 (다시) 그린다. 이미 떠 있으면 걷어내고 새 수치로 세운다.
+    private func renderDailyReportCard(_ briefing: ConsoleBriefing?) {
+        overlayLayer.childNode(withName: officeDailyReportCardNodeName)?
+            .removeFromParent()
         guard let briefing else {
             return
         }

@@ -94,8 +94,8 @@ const buildDependencies = ({
     findOpenPostedCards: jest.fn(),
     markDecided: jest.fn().mockResolvedValue(undefined),
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
+    countOpenPostedByPullRequest: jest.fn().mockResolvedValue([]),
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
-    markSuppressed: jest.fn(),
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
   const resolutionJudge = { execute: jest.fn().mockResolvedValue([]) };
