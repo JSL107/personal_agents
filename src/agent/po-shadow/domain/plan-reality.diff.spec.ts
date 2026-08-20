@@ -46,6 +46,7 @@ const emptyContext = (): PoShadowContext => ({
   notionTasks: [],
   failedRunsToday: [],
   mergedPullRequests: [],
+  mergedLookupAvailable: true,
   degradedSources: [],
 });
 
@@ -110,6 +111,19 @@ describe('buildPlanRealityFacts — 계획대로 끝낸 항목', () => {
 
     expect(facts[0].kind).toBe('PLANNED_NOT_FOUND');
     expect(hasPlanRealityMismatch(facts)).toBe(true);
+  });
+
+  it('머지 조회를 못 한 회차에는 부재를 근거로 삼지 않는다', () => {
+    const plan = buildPlan({
+      topPriority: buildTask({ id: 'acme/app#264', title: '업로드 차단' }),
+    });
+    const context = emptyContext();
+    context.mergedLookupAvailable = false;
+
+    const facts = buildPlanRealityFacts(plan, context);
+
+    expect(facts).toEqual([]);
+    expect(hasPlanRealityMismatch(facts)).toBe(false);
   });
 
   it('담당 목록 조회가 실패한 회차에는 부재를 근거로 삼지 않는다', () => {
@@ -287,7 +301,7 @@ describe('buildPlanRealityFacts', () => {
         id: 'not-found:acme/app#404',
         kind: 'PLANNED_NOT_FOUND',
         label: '사라진 이슈 확인',
-        detail: '담당 목록·머지 목록 어디에도 없음',
+        detail: '담당·머지 목록에 없음 (닫혔거나 아직 안 만듦)',
         url: 'https://github.com/acme/app/issues/404',
       },
     ]);

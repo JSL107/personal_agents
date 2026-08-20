@@ -93,9 +93,10 @@ export const buildPlanRealityFacts = (
       continue;
     }
 
-    // 담당 목록 조회 자체가 실패한 회차에는 부재를 근거로 삼을 수 없다. 조회 실패는
-    // context.degradedSources 로 카드에 따로 드러난다.
-    if (!context.assignedTasks) {
+    // 부재를 근거로 삼으려면 담당·머지 두 목록을 모두 실제로 봤어야 한다. 둘 중 하나라도
+    // 못 본 회차에 미발견을 만들면, 계획대로 끝낸 일이 이상 신호로 뒤집힌다.
+    // 못 본 사실 자체는 context.degradedSources 로 카드에 따로 드러난다.
+    if (!context.assignedTasks || !context.mergedLookupAvailable) {
       continue;
     }
     facts.push(buildNotFoundFact(task));
@@ -288,7 +289,9 @@ const buildNotFoundFact = (task: TaskItem): PlanRealityFact => ({
   id: `not-found:${task.id}`,
   kind: 'PLANNED_NOT_FOUND',
   label: truncateLabel(task.title),
-  detail: '담당 목록·머지 목록 어디에도 없음',
+  // 담당 조회는 열린 항목만 돌려주고 머지 조회는 PR 만 본다. 그래서 닫힌 이슈는 여기로
+  // 떨어질 수 있다 — 단정하지 말고 두 가능성을 그대로 적는다.
+  detail: '담당·머지 목록에 없음 (닫혔거나 아직 안 만듦)',
   ...(task.url ? { url: task.url } : {}),
 });
 

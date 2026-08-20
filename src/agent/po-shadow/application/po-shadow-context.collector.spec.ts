@@ -113,6 +113,9 @@ interface Deferred<T> {
   resolve: (value: T) => void;
 }
 
+// fixture 멘션(ts=1787103000)보다 앞선 시각 — 계획 이후 멘션만 남기는 필터를 통과시킨다.
+const PLAN_ENDED_AT = new Date(1787102000 * 1000);
+
 const createDeferred = <T>(): Deferred<T> => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((promiseResolve) => {
@@ -197,6 +200,7 @@ describe('PoShadowContextCollector', () => {
       notionTasks: [notionTask],
       failedRunsToday: [failedRun],
       mergedPullRequests: [mergedPullRequest],
+      mergedLookupAvailable: true,
       degradedSources: [],
     });
     expect(dependencies.listMyMentions.execute).toHaveBeenCalledWith({
@@ -217,7 +221,7 @@ describe('PoShadowContextCollector', () => {
     );
     expect(
       dependencies.agentRunService.findFailedRunsSince,
-    ).toHaveBeenCalledWith({ withinMinutes: 1440 });
+    ).toHaveBeenCalledWith({ withinMinutes: 1440, slackUserId: 'U123' });
   });
 
   it('첫 fetch가 끝나기 전에 독립적인 다섯 fetch를 모두 시작한다', async () => {
@@ -246,7 +250,7 @@ describe('PoShadowContextCollector', () => {
 
     const collection = collector.collect({
       slackUserId: 'U123',
-      planEndedAt: new Date(),
+      planEndedAt: PLAN_ENDED_AT,
     });
 
     expect(dependencies.listAssignedTasks.execute).toHaveBeenCalledTimes(1);
@@ -273,6 +277,7 @@ describe('PoShadowContextCollector', () => {
       notionTasks: [notionTask],
       failedRunsToday: [failedRun],
       mergedPullRequests: [mergedPullRequest],
+      mergedLookupAvailable: true,
       degradedSources: [],
     });
   });
@@ -305,7 +310,7 @@ describe('PoShadowContextCollector', () => {
 
     const context = await collector.collect({
       slackUserId: 'U123',
-      planEndedAt: new Date(),
+      planEndedAt: PLAN_ENDED_AT,
     });
 
     expect(context.assignedTasks).toBeNull();
@@ -333,7 +338,7 @@ describe('PoShadowContextCollector', () => {
 
       const context = await collector.collect({
         slackUserId: 'U123',
-        planEndedAt: new Date(),
+        planEndedAt: PLAN_ENDED_AT,
       });
 
       expect(context[resultName]).toEqual([]);
@@ -351,7 +356,7 @@ describe('PoShadowContextCollector', () => {
 
     const context = await collector.collect({
       slackUserId: 'U123',
-      planEndedAt: new Date(),
+      planEndedAt: PLAN_ENDED_AT,
     });
 
     expect(context.assignedTasks).toEqual(assignedTasks);
@@ -385,7 +390,7 @@ describe('PoShadowContextCollector', () => {
 
     const context = await collector.collect({
       slackUserId: 'U123',
-      planEndedAt: new Date(),
+      planEndedAt: PLAN_ENDED_AT,
     });
 
     expect(context).toEqual({
@@ -396,6 +401,7 @@ describe('PoShadowContextCollector', () => {
       notionTasks: [],
       failedRunsToday: [],
       mergedPullRequests: [],
+      mergedLookupAvailable: false,
       degradedSources: [
         'GitHub 담당 목록',
         'GitHub 머지 목록',
@@ -406,6 +412,37 @@ describe('PoShadowContextCollector', () => {
     });
   });
 
+  // 분류 실패는 원본 PR 이 남아도 "방치" 판정이 통째로 사라진다. 조회 실패로 남기지 않으면
+  // 대기 중인 PR 이 있는데도 조용한 회차로 나간다.
+  it('PR 진행 신호 분류가 실패하면 조회 실패로 남긴다', async () => {
+    const dependencies = createDependencies();
+    dependencies.classifyEngagement.execute.mockRejectedValue(
+      new Error('engagement unavailable'),
+    );
+    const collector = createCollector(dependencies);
+
+    const context = await collector.collect({
+      slackUserId: 'U123',
+      planEndedAt: PLAN_ENDED_AT,
+    });
+
+    expect(context.degradedSources).toContain('GitHub PR 진행 신호');
+  });
+
+  // 조회 창은 시간 단위 올림이라 계획보다 앞선다. 재필터가 없으면 아침 계획 전에 온 멘션이
+  // "계획 이후 새 멘션" 으로 카드에 오른다.
+  it('계획 종료 이전 멘션은 새 멘션에서 제외한다', async () => {
+    const dependencies = createDependencies();
+    const collector = createCollector(dependencies);
+
+    const context = await collector.collect({
+      slackUserId: 'U123',
+      planEndedAt: new Date(1787103000 * 1000 + 1000),
+    });
+
+    expect(context.newMentions).toEqual([]);
+  });
+
   it('머지 조회 author env 가 없으면 조회를 건너뛰되 실패로 세지 않는다', async () => {
     const dependencies = createDependencies();
     dependencies.configService.get.mockReturnValue(undefined);
@@ -413,13 +450,16 @@ describe('PoShadowContextCollector', () => {
 
     const context = await collector.collect({
       slackUserId: 'U123',
-      planEndedAt: new Date(),
+      planEndedAt: PLAN_ENDED_AT,
     });
 
     expect(
       dependencies.githubClient.listAuthorMergedPullRequestsSince,
     ).not.toHaveBeenCalled();
     expect(context.mergedPullRequests).toEqual([]);
+    // 설정이 없는 것과 조회가 죽은 것은 다르다 — 실패로는 세지 않되, 확인하지 못했다는
+    // 사실은 남겨 미발견 판정이 서지 않게 한다.
+    expect(context.mergedLookupAvailable).toBe(false);
     expect(context.degradedSources).toEqual([]);
   });
 });

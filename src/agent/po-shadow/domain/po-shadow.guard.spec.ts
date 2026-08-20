@@ -76,7 +76,9 @@ describe('guardPoShadowReport', () => {
     expect(guarded.droppedFindingCount).toBe(2);
   });
 
-  it('모든 finding이 제거되어도 headline과 factSummary를 포함한 metadata를 보존한다', () => {
+  // headline·purposeConflict 에는 인용 근거가 없다. 지적이 전부 근거 없이 버려졌는데 그 둘만
+  // 남으면 같은 환각이 카드 맨 위 "먼저 이것부터" 자리에 그대로 남는다.
+  it('지적이 전부 근거 없이 버려지면 headline과 목적 충돌 문구도 회수한다', () => {
     const report: PoShadowReport = {
       ...baseReport(),
       quiet: true,
@@ -102,9 +104,9 @@ describe('guardPoShadowReport', () => {
     expect(guarded).toEqual({
       schemaVersion: 2,
       quiet: true,
-      headline: '계획대로 진행 중',
+      headline: '근거를 확인하지 못해 지적을 내지 않습니다',
       findings: [],
-      purposeConflict: '1순위보다 실패 복구가 먼저입니다.',
+      purposeConflict: null,
       factSummary: ['정오 사실 1', '정오 사실 2'],
       droppedFindingCount: 4,
       degradedSources: [],

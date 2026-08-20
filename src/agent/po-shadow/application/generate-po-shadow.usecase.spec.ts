@@ -65,6 +65,7 @@ const emptyContext = (): PoShadowContext => ({
   notionTasks: [],
   failedRunsToday: [],
   mergedPullRequests: [],
+  mergedLookupAvailable: true,
   degradedSources: [],
 });
 
@@ -96,6 +97,7 @@ const mismatchContext = (): PoShadowContext => ({
   notionTasks: [],
   failedRunsToday: [],
   mergedPullRequests: [],
+  mergedLookupAvailable: true,
   degradedSources: [],
 });
 
@@ -222,6 +224,23 @@ describe('GeneratePoShadowUsecase', () => {
 
     expect(result.result.quiet).toBe(true);
     expect(contextCollectorCollect).toHaveBeenCalledTimes(1);
+  });
+
+  // 사용자가 상황을 직접 적어 보냈는데 사실표가 조용하다는 이유로 모델을 건너뛰면,
+  // 그 말은 evidence 에만 저장되고 답은 "계획대로 진행 중" 으로 나간다.
+  it('어긋남이 없어도 사용자가 상황을 적어 보내면 검토한다', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: quietPlan,
+      endedAt: new Date('2026-08-19T03:00:00.000Z'),
+    });
+
+    await usecase.execute({
+      extraContext: '릴리즈가 오늘로 당겨졌습니다',
+      slackUserId: 'U1',
+    });
+
+    expect(modelRouter.route).toHaveBeenCalled();
   });
 
   it('어긋남이 없으면 사실을 수집하고 모델 없이 deterministic v2를 원장에 기록한다', async () => {

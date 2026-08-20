@@ -82,7 +82,11 @@ export class GeneratePoShadowUsecase {
       planEndedAt: snapshot.endedAt,
     });
     const facts = buildPlanRealityFacts(plan, context);
-    const hasMismatch = hasPlanRealityMismatch(facts);
+    // 사용자가 "릴리즈 오늘로 변경" 같은 상황을 직접 적어 보냈다면 사실표가 조용해도 검토한다.
+    // 어긋남만으로 갈림길을 정하면 사용자가 친 말이 evidence 에만 저장되고 답은
+    // "계획대로 진행 중" 으로 나간다.
+    const needsReview =
+      hasPlanRealityMismatch(facts) || trimmedExtra.length > 0;
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
@@ -115,7 +119,7 @@ export class GeneratePoShadowUsecase {
           : []),
       ],
       run: async () => {
-        if (!hasMismatch) {
+        if (!needsReview) {
           const report = buildQuietReport({
             facts,
             degradedSources: context.degradedSources,

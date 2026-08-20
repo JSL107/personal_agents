@@ -16,6 +16,8 @@ export interface PoShadowContext {
   // 계획 수립 이후 머지된 본인 PR. 담당 목록은 open 만 반환하므로, 이게 없으면
   // "오전에 계획대로 끝낸 항목" 이 담당 목록에서 사라졌다는 이유로 미확인 취급된다.
   mergedPullRequests: GithubPullRequestSummary[];
+  // 머지 조회를 실제로 했는지. false 면 빈 배열이 "머지된 게 없다" 를 뜻하지 않는다.
+  mergedLookupAvailable: boolean;
   newMentions: SlackMention[];
   notionTasks: NotionTask[];
   failedRunsToday: FailedRunDetail[];
