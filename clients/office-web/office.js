@@ -187,6 +187,77 @@ function css(color, alpha = 1) {
  * 결과 = 원본 × (1 - factor) + 색 × factor. `source-atop` 이 정확히 이 식이고, 그림이 투명한
  * 곳은 색이 새지 않는다. 칸마다 새로 만들면 700칸을 매번 합성하게 되므로 조합으로 캐시한다.
  */
+/**
+ * 책상 스탠드·경고등의 빛 웅덩이 — 맥 앱 `OfficeLightTexture.deskGlow` 와 같은 도트 그림.
+ *
+ * 매끈한 `createRadialGradient` 로 그리면 같은 화면에서 **이것만 벡터처럼 튄다.** 도트 한
+ * 칸씩 채우되 칸마다 알파를 중심 거리에 비례해 낮춰, 격자는 지키면서 빛다운 감쇠를 남긴다.
+ *
+ * 굽는 값(반지름·색·세기)을 전부 캐시 키에 넣는다 — 하나라도 빠지면 색이 다른 두 번째
+ * 호출(경고등의 빨강)이 첫 호출이 구운 그림(스탠드의 호박색)을 그대로 돌려받는다.
+ */
+const glowCache = new Map();
+
+/** 도트 한 칸의 픽셀 크기. 맥 앱 `OfficeLightTexture.dot` 과 같아야 같은 굵기로 보인다. */
+const GLOW_DOT = 2;
+
+function glowTexture(radius, color, strength) {
+  const key = `${radius}|${rgbKey(color)}|${strength}`;
+  const cached = glowCache.get(key);
+  if (cached) {
+    return cached;
+  }
+  const dotsPerSide = radius * 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = dotsPerSide * GLOW_DOT;
+  canvas.height = dotsPerSide * GLOW_DOT;
+  const context = canvas.getContext("2d");
+  const center = dotsPerSide / 2;
+  for (let row = 0; row < dotsPerSide; row += 1) {
+    for (let column = 0; column < dotsPerSide; column += 1) {
+      const dx = column + 0.5 - center;
+      const dy = row + 0.5 - center;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > radius) {
+        continue;
+      }
+      // 제곱을 줘서 중심 근처는 밝기를 오래 유지하다 가장자리에서 급히 죽는다 — 선형이면
+      // 웅덩이가 아니라 옅은 사각 담요처럼 보인다.
+      const falloff = 1 - distance / radius;
+      context.fillStyle = css(color, strength * falloff * falloff);
+      context.fillRect(column * GLOW_DOT, row * GLOW_DOT, GLOW_DOT, GLOW_DOT);
+    }
+  }
+  glowCache.set(key, canvas);
+  return canvas;
+}
+
+/** 책상 스탠드 — 벽등과 같은 계열의 따뜻한 호박색이라 두 광원으로 갈리지 않는다. */
+const DESK_GLOW = { radius: 13, color: [1.0, 0.74, 0.28], strength: 0.8 };
+/**
+ * 대표 경고등 — 실패 상태가 이미 쓰는 코랄 레드를 그대로 끌어온다. "위험" 색을 화면 안에서
+ * 또 정의하면 어느 쪽이 진짜 위급 신호인지 헷갈린다. 반지름은 스탠드보다 좁다(머리 위
+ * 좁은 자리라 크면 문패 글자까지 물든다).
+ */
+const ALARM_GLOW = { radius: 9, color: [0.9, 0.3, 0.24], strength: 0.9 };
+
+/**
+ * 발을 구르는 순간의 세로 오프셋(px) — 맥 앱 `startWaitTap` 과 같은 주기.
+ *
+ * 0.22초 올라가고 0.22초 내려온 뒤 0.9초 쉰다. 쉬는 구간이 길어야 "초조함" 으로 읽힌다 —
+ * 쉼 없이 떨면 그건 초조가 아니라 고장 난 애니메이션으로 보인다.
+ */
+function waitTapOffset(now) {
+  const phase = now % 1.34;
+  if (phase < 0.22) {
+    return 2.2 * (phase / 0.22);
+  }
+  if (phase < 0.44) {
+    return 2.2 * (1 - (phase - 0.22) / 0.22);
+  }
+  return 0;
+}
+
 const tintCache = new Map();
 
 function tintedTile(image, rgb, factor, size) {
@@ -326,6 +397,8 @@ export class OfficeRenderer {
     }
     names.add("desk-paper");
     names.add("char-down");
+    // 승인이 방치되면 줄 선 사람이 손에 든다. 받아 두지 않으면 그 순간에만 조용히 안 그려진다.
+    names.add("prop-papers");
     for (const [, look] of Object.entries(agentLooks ?? this.layout.agentLooks)) {
       names.add(look.deskProp);
       for (const pose of [
@@ -356,11 +429,21 @@ export class OfficeRenderer {
    *   `bodies` 사람 위치(agentType → {x, y, pose, facing, seated}),
    *   `sessions` 대표 책상에 켤 세션, `hour` 시각(창밖 빛).
    */
-  draw(view) {
+  draw(rawView) {
     const context = this.context;
     context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // 출근 지연 중이라 아직 문 앞에서 기다리는 사람은 그리지 않는다. 걸러내는 자리를 여기
+    // 하나로 두면 사람을 훑는 세 곳(가구·상태 링·라벨)이 저절로 같은 목록을 본다.
+    const view = {
+      ...rawView,
+      bodies: Object.fromEntries(
+        Object.entries(rawView.bodies ?? {}).filter(([, body]) => !body.hidden)
+      ),
+    };
     const light = this.lightFor(view.hour);
+    // 책상 스탠드가 시간대를 봐야 하는데 가구를 그리는 경로는 view 만 받는다.
+    view.light = light;
     this.drawFloor();
     this.drawWallFixtures(light);
     this.drawFloorDecor();
@@ -371,6 +454,7 @@ export class OfficeRenderer {
     this.drawStateRings(view);
     this.drawSessions(view.sessions ?? []);
     this.drawLabels(view);
+    this.drawSummaryHUD(view.summary);
   }
 
   /** 지금 시각의 창밖 빛. 어느 시각이 어느 구간인지는 평면도가 싣고 왔다. */
@@ -747,9 +831,9 @@ export class OfficeRenderer {
         this.drawFurniturePiece(piece.placement, piece.info);
         this.drawDeskExtras(piece.placement, view);
       } else if (piece.kind === "character") {
-        this.drawCharacter(piece.agentType, piece.body);
+        this.drawCharacter(piece.agentType, piece.body, view.now ?? 0);
       } else {
-        this.drawPresident(piece.tile);
+        this.drawPresident(piece.tile, view);
       }
     }
   }
@@ -792,6 +876,39 @@ export class OfficeRenderer {
     const tileSize = this.tileSize;
     const base = this.floorPoint(placement.tile);
     const metrics = this.metrics;
+
+    // 스탠드 빛 웅덩이 — 해가 낮은 시간대(새벽·저녁·밤)에 자기 자리에 앉아 있는 사람만.
+    //
+    // 낮에는 켜지 않는다. 창 채광이 이미 광원이라 빛이 두 겹이 되면 어느 쪽이 광원인지
+    // 읽히지 않는다(벽등을 켜는 조건과 같은 값 — 평면도가 실어 온 `lampLit` 하나를 본다).
+    //
+    // **`prop-desk-lamp` 소품과 무관하게 켠다.** 그 소품은 개인 소품 일곱 종 중 하나라
+    // 사람 일곱 중 여섯은 스탠드 자체가 책상에 없다 — 빛을 소품에 묶으면 대부분의 책상이
+    // 밤에도 그대로 어둡다.
+    const body = view.bodies?.[owner];
+    const seat = this.seatsByAgent.get(owner);
+    if (
+      view.light?.lampLit &&
+      body?.seated &&
+      seat &&
+      Math.round(body.x) === seat.x &&
+      Math.round(body.y) === seat.y
+    ) {
+      const glow = glowTexture(DESK_GLOW.radius, DESK_GLOW.color, DESK_GLOW.strength);
+      const size = glow.width * this.spriteScale;
+      this.context.save();
+      // 밝은 쪽에 더하는 합성이라 어두운 곳은 어두운 채로 남는다.
+      this.context.globalCompositeOperation = "lighter";
+      this.context.drawImage(
+        glow,
+        base.x - size / 2,
+        // 책상이 발밑 기준이라 상판 높이쯤(세로 반 칸)에 중심을 둔다.
+        this.toCanvasY(base.y + tileSize * 0.5 + size / 2),
+        size,
+        size
+      );
+      this.context.restore();
+    }
 
     // 켜진 모니터 — 지금 일하는 중일 때만. 책상 스프라이트 안에서 화면이 차지하는 자리는
     // 비율로 잡는다(책상만 sizeBoost 로 따로 키우기 때문에 타일 배수로는 어긋난다).
@@ -910,7 +1027,7 @@ export class OfficeRenderer {
     }
   }
 
-  drawCharacter(agentType, body) {
+  drawCharacter(agentType, body, now = 0) {
     const look = this.layout.agentLooks[agentType];
     if (!look) {
       return;
@@ -925,12 +1042,61 @@ export class OfficeRenderer {
       return;
     }
     const offset = this.bodyOffset(body);
+    const height = image.height * this.characterScale;
+    // 오래 방치된 승인(3단계 이상)은 발을 구른다. 몸만 오르내리므로 발밑 상태 링은 칸에 남는다.
+    const tap = body.pressure >= 3 ? waitTapOffset(now) : 0;
     this.drawFootAnchored(
       image,
-      { x: point.x + offset.x, y: point.y + offset.y },
+      { x: point.x + offset.x, y: point.y + offset.y + tap },
       image.width * this.characterScale,
-      image.height * this.characterScale,
+      height,
       flipped
+    );
+    if (body.pressure >= 2) {
+      this.drawHandPapers(
+        { x: point.x + offset.x, y: point.y + offset.y + tap },
+        height,
+        body.facing ?? "up"
+      );
+    }
+  }
+
+  /**
+   * 손에 든 결재 서류 — 방치 2단계부터. 줄에 선 사람이 무엇을 기다리는지가 자세만으로 읽힌다.
+   *
+   * **캐릭터와 같은 도트 배율의 두 배**를 쓴다. "타일의 몇 할" 로 크기를 정하면 작은 원본이
+   * 캐릭터보다 굵은 도트로 확대돼 픽셀 그림에서 가장 먼저 눈에 걸린다. 1배로 두면 몸에 묻혀
+   * 아예 안 보인다(맥 앱에서 실측한 값 그대로).
+   */
+  drawHandPapers(point, spriteHeight, facing) {
+    const image = sprite("prop-papers");
+    if (!image) {
+      return;
+    }
+    const tileSize = this.tileSize;
+    const scale = this.characterScale * 2;
+    // 위·아래를 볼 때는 몸이 소품을 가린다(앞·뒷모습이라 손이 실루엣 안에 들어간다).
+    // 옆으로 더 내보내 어깨선 밖에서 보이게 한다.
+    const shift =
+      facing === "left"
+        ? -tileSize * 0.2
+        : facing === "right"
+          ? tileSize * 0.2
+          : facing === "up"
+            ? tileSize * 0.26
+            : -tileSize * 0.26;
+    const lift = facing === "down" ? -tileSize * 0.04 : tileSize * 0.06;
+    const height = image.naturalHeight * scale;
+    this.drawFootAnchored(
+      image,
+      {
+        x: point.x + shift,
+        // 맥 앱은 소품 노드의 **중심**을 몸 높이의 55% 에 둔다. 이쪽 그리기는 발밑 기준이라
+        // 소품 높이의 절반을 빼야 같은 자리가 된다 — 안 빼면 서류가 가슴이 아니라 얼굴 옆에 뜬다.
+        y: point.y + spriteHeight * 0.55 + lift + tileSize * 0.12 - height / 2,
+      },
+      image.naturalWidth * scale,
+      height
     );
   }
 
@@ -995,18 +1161,90 @@ export class OfficeRenderer {
   }
 
   /** "나(대표)" — 승인 줄의 기준점이면서 담당자를 정하지 않은 지시의 입구다. */
-  drawPresident(tile) {
+  drawPresident(tile, view = {}) {
     const image = sprite("char-down");
     if (!image) {
       return;
     }
     const point = this.floorPoint(tile);
+    const height = image.naturalHeight * this.characterScale;
     this.drawFootAnchored(
       image,
       point,
       image.naturalWidth * this.characterScale,
-      image.naturalHeight * this.characterScale
+      height
     );
+    if (view.presidentAlarm) {
+      this.drawPresidentAlarm(point, height, view.now ?? 0);
+    }
+  }
+
+  /**
+   * 만료 임박 승인이 있을 때 대표 머리 위에 켜지는 빨간 등.
+   *
+   * 승인이 0건이 되거나 가장 급한 카드도 경고 단계 밑으로 내려오면 부르는 쪽이 끄므로,
+   * 여기서는 켤 때의 그림만 정한다.
+   *
+   * 깜빡임은 느리게 — 빠른 점멸은 종일 켜 두는 관제 화면에서 눈을 피로하게 하고, 접근성상
+   * 초당 3회를 넘기면 안 된다. 왕복 2.2초라 초당 약 0.45회로 상한의 6분의 1이다.
+   */
+  drawPresidentAlarm(point, spriteHeight, now) {
+    const glow = glowTexture(ALARM_GLOW.radius, ALARM_GLOW.color, ALARM_GLOW.strength);
+    const size = glow.width * this.spriteScale;
+    // 왕관 문패 판 바로 위. 겹치면 "나 (대표)" 글자와 등이 서로 가린다.
+    const bottom =
+      point.y +
+      spriteHeight +
+      this.tileSize * this.metrics.nameplateGapTiles +
+      this.nameplateFontSize() * this.metrics.labelBoxRatio;
+    const phase = (now % 2.2) / 1.1;
+    const fade = phase < 1 ? 1 - 0.65 * phase : 0.35 + 0.65 * (phase - 1);
+    const context = this.context;
+    context.save();
+    context.globalCompositeOperation = "lighter";
+    context.globalAlpha = fade;
+    context.drawImage(glow, point.x - size / 2, this.toCanvasY(bottom + size), size, size);
+    context.restore();
+  }
+
+  /**
+   * 좌상단 전사 요약 카드.
+   *
+   * 판 없이 글자만 얹으면 벽·창처럼 밝은 타일 위에서 배경에 묻혀 잘린 것처럼 보인다.
+   * 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아 사무실 대비 혼자 커 보이므로,
+   * 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
+   */
+  drawSummaryHUD(summary) {
+    if (!summary) {
+      return;
+    }
+    let text = `진행 ${summary.inProgress}  ·  승인 ${summary.awaitingApproval}  ·  쉬는 중 ${summary.waiting}`;
+    if (summary.sessions > 0) {
+      // 대표 앞줄에 설 수 있는 세션은 여덟 남짓이라, 그 수가 곧 전체라고 오해하지 않게
+      // 총계를 여기 적는다.
+      text += `  ·  내 세션 ${summary.sessions}(도는 중 ${summary.activeSessions})`;
+    }
+    const context = this.context;
+    const fontSize = Math.max(13, this.tileSize * 0.3);
+    const padding = fontSize * 0.55;
+    context.save();
+    context.font = this.labelFont(fontSize);
+    context.textAlign = "left";
+    context.textBaseline = "top";
+    const width = context.measureText(text).width;
+    const boxLeft = 12;
+    const boxTop = 10;
+    const boxWidth = width + padding * 2;
+    const boxHeight = fontSize + padding * 1.4;
+    context.fillStyle = "rgba(13,13,13,0.82)";
+    roundRect(context, boxLeft, boxTop, boxWidth, boxHeight, fontSize * 0.45);
+    context.fill();
+    context.strokeStyle = "rgba(255,255,255,0.10)";
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = "rgba(245,245,245,1)";
+    context.fillText(text, boxLeft + padding, boxTop + padding * 0.7);
+    context.restore();
   }
 
   /**
@@ -1129,12 +1367,15 @@ export class OfficeRenderer {
     // 자리 몫은 **자기 책상에 앉아 있을 때만** 물린다. 자리를 떠난 사람에게 물리면 복도나
     // 소파에서도 이름표가 한쪽으로 치우친 채 눌려 따라다닌다.
     const span = body.seated && !body.interactionPose ? this.nameplateSpan(body) : null;
+    // 유휴가 스물아홉이라 전부 선명하면 활성 세 명이 묻힌다. 이름표를 **지우지는 않고**
+    // (누가 어디 앉아 있는지는 유휴일 때도 읽혀야 한다) 대비만 낮춰 눈이 활성 쪽으로 가게 한다.
+    const idle = state === "WAITING";
     this.drawPlateLabel(look.roleLabel, {
       centerX,
       bottomY,
       fontSize,
-      alpha: emphasized ? 0.72 : 0.38,
-      textAlpha: emphasized ? 1 : 0.84,
+      alpha: idle ? 0.35 : 0.72,
+      textAlpha: idle ? 0.45 : 1,
       span,
     });
 
