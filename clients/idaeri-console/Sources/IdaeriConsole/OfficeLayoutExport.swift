@@ -115,6 +115,8 @@ struct OfficeLayoutExport: Codable {
     let agentLooks: [String: AgentLookInfo]
     /// 시간대 이름 → 창유리·바닥 빛. 받는 쪽이 시각만 보고 고른다.
     let daylight: [String: DaylightInfo]
+    /// 출퇴근·점심 시각 경계.
+    let attendanceHours: OfficeAttendanceHours
     /// 대표실 안쪽 줄의 작업 책상 자리(왼쪽부터). 로컬 편집기 세션이 여기 켜진다.
     let sessionDesks: [TilePoint]
     /// 유휴 산책이 갈 수 있는 자리. 어느 가구 앞에 어느 쪽을 보고 몇 초 머무는지까지.
@@ -129,6 +131,23 @@ struct StrollSpotInfo: Codable {
     let dwellSeconds: Double
     let facing: String
     let pose: String
+}
+
+/// 출퇴근·점심 시각 경계. 받는 쪽이 **판정은 직접 하되** 경계값은 옮겨 적지 않는다.
+///
+/// `DaylightInfo.hours` 와 같은 이유로 여기 싣는다 — 경계를 두 곳에 적으면 새벽 5시나
+/// 밤 9시처럼 사람이 눈치채기 어려운 시각에서만 두 화면의 인구가 갈린다. 판정 자체를
+/// 백엔드로 올리지 않는 이유는 `--hour`/`?hour=` 로 시각을 바꿔 그리는 회귀 확인이
+/// 죽기 때문이다(그 경로에는 백엔드가 없거나, 있어도 실제 시각만 안다).
+struct OfficeAttendanceHours: Codable {
+    /// 이 시각부터 조기 출근을 인정한다(오늘 성과가 있는 사람만).
+    let earlyBirdStart: Int
+    /// 이 시각부터 전원이 출근한다.
+    let arrival: Int
+    /// 이 시각부터 일 없는 사람은 집으로 본다.
+    let departure: Int
+    /// 이 시각에는 배회 목적지가 탕비실·회의실로 기운다.
+    let lunch: Int
 }
 
 /// 한 시간대의 창유리 색과 실내로 떨어지는 빛.
@@ -243,6 +262,12 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
         stateColors: stateColors,
         agentLooks: agentLooks,
         daylight: daylight,
+        attendanceHours: OfficeAttendanceHours(
+            earlyBirdStart: officeEarlyBirdStartHour,
+            arrival: officeArrivalHour,
+            departure: officeDepartureHour,
+            lunch: officeLunchHour
+        ),
         sessionDesks: officeSessionDesks(plan: plan),
         strollSpots: officeStrollSpots(plan: plan).map { spot in
             StrollSpotInfo(
