@@ -35,6 +35,11 @@ export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_SWEEPER_CRON = '50 * * * *';
 export const DEFAULT_RUN_SWEEPER_TIMEZONE = 'Asia/Seoul';
 
+// 오늘의 공부 딥다이브 확장 기본 스케줄 — 매일 11:00 KST.
+// 브리프 크론(09:30)이 Hermes 12분 + CTO 판정으로 최악 30분 걸리므로 그 뒤에 둔다.
+export const DEFAULT_STUDY_DEEPDIVE_CRON = '0 11 * * *';
+export const DEFAULT_STUDY_DEEPDIVE_TIMEZONE = 'Asia/Seoul';
+
 // Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).
 // episodic-memory 규모가 작아 일간은 과함 → 주간 무결성 점검.
 export const DEFAULT_KNOWLEDGE_LINT_CRON = '0 10 * * 0';
