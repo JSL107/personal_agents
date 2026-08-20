@@ -430,6 +430,21 @@ final class OfficeScene: SKScene {
             applyMotion(for: agent, phase: lastPhases[agent.agentType])
         }
 
+        // 열 수가 바뀌었으면 좌표계 자체가 달라졌다 — 위 루프가 연출을 지키려고 건너뛴 사람
+        // (걷는 중·배회 중·줄 선 사람)을 여기서 강제로 새 격자에 앉힌다.
+        //
+        // 건너뛰기는 좌표계가 그대로일 때만 배려다. 3열↔2열이 바뀌면 옛 좌표가 새 배치에서
+        // **남의 좌석**이 되어 두 사람이 한 칸에 겹쳐 앉는다(3열 `CTO_STUDY` (19,6) =
+        // 2열 `EVENING_RETRO` (19,6) — 이름표 두 장이 한자리에 겹쳐 찍혔다). 배회 동시 상한이
+        // 2명이라 매번 두 명씩 어긋났고, 배회가 끝나 자리로 돌아갈 때까지 그대로 남았다.
+        //
+        // 창 크기 변경 경로(`didChangeSize`)에는 같은 처리가 이미 있었지만, 스냅샷이 도착하는
+        // 이 경로에도 열 전환이 일어난다(`layoutChanged`, 위 참조) — 한쪽에만 두면 남은 쪽으로
+        // 그대로 새어 나온다.
+        if layoutChanged {
+            repositionEveryone()
+        }
+
         layoutQueue()
         // 줄이 자리 잡은 뒤라야 한다 — 방치 압력은 큐 칸에 이미 선 사람의 자세만 손댄다.
         applyApprovalPressure()
@@ -1048,7 +1063,9 @@ final class OfficeScene: SKScene {
 
             let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
             label.fontName = officeLabelFontName
-            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.38)
+            label.fontSize = max(
+                officeZoneLabelMinFontSize, tileSize * CGFloat(officeZoneLabelFontTiles)
+            )
             label.fontColor = SKColor(
                 red: palette.red, green: palette.green, blue: palette.blue, alpha: 1
             )
