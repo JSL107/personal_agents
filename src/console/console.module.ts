@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
+import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
+import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
 import { PendingConsoleTurnStore } from './application/pending-console-turn.store';
@@ -19,13 +21,19 @@ import { ConsoleWriteGuard } from './interface/console-write.guard';
 // FindAllOpenPreviewsUsecase·ApplyPreviewUsecase·CancelPreviewUsecase 는 PreviewGateModule.forRoot(global) 가,
 // ConsoleEventBus 는 ConsoleEventBusModule(@Global) 이, IDAERI_ROUTER_PORT 는 RouterModule 이 제공한다.
 @Module({
-  imports: [AgentRunModule, LocalSessionsModule, RouterModule],
+  imports: [
+    AgentRunModule,
+    LocalSessionsModule,
+    PrReviewPublishModule,
+    RouterModule,
+  ],
   controllers: [
     ConsoleController,
     ConsoleStreamController,
     ConsoleWriteController,
   ],
   providers: [
+    BuildPresidentBriefingUsecase,
     ConsoleReadService,
     ConsoleWriteService,
     ConsoleWriteGuard,

@@ -37,6 +37,7 @@ const buildRepo = (
   attachSlackMessage: jest.fn(),
   findExpiredPending: jest.fn().mockResolvedValue(expired),
   findAllOpen: jest.fn().mockResolvedValue([]),
+  findAllDayOutcomes: jest.fn().mockResolvedValue([]),
 });
 
 const buildCard = (): jest.Mocked<PreviewCardPort> => ({

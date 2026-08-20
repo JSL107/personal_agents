@@ -379,6 +379,7 @@ export class AgentRunService {
   // 콘솔 관제 — 재접속 스냅샷 복원용. agentType별 최신 종료 런의 결과(성공/실패).
   async findRecentlyFinishedRuns(input: {
     withinMinutes: number;
+    since?: Date;
   }): Promise<RecentlyFinishedRun[]> {
     return await this.repository.findRecentlyFinishedRuns(input);
   }
@@ -406,6 +407,11 @@ export class AgentRunService {
     since: Date;
   }): Promise<AgentSucceededCountRow[]> {
     return await this.repository.countSucceededSince(input);
+  }
+
+  // 대표 브리핑 퇴근 정산 — 특정 시각 이후 실패로 끝난 런 총수.
+  async countFailedSince(input: { since: Date }): Promise<number> {
+    return await this.repository.countFailedSince(input);
   }
 
   async aggregateRetryCounts(input: {

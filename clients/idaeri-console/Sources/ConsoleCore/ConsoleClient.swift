@@ -192,6 +192,24 @@ public actor ConsoleClient {
         return envelope.data
     }
 
+    /// `GET /v1/console/briefing`. 대표 브리핑(할 일·연속 기록·퇴근 정산).
+    ///
+    /// 스냅샷과 따로 부르는 이유는 갱신 주기가 다르기 때문이다 — 스냅샷은 부팅 1회 뒤 SSE
+    /// 증분으로 살고, 브리핑은 하루 종일 값이 변한다. 집계가 실패해도 관제 화면은 살아야 해서
+    /// 요청 자체를 나눠 둔다.
+    public func fetchBriefing() async throws -> ConsoleBriefing {
+        let url = baseURL.appendingPathComponent("v1/console/briefing")
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        let envelope = try JSONDecoder().decode(BriefingEnvelope.self, from: data)
+        return envelope.data
+    }
+
     /// `GET /v1/console/stream` SSE 구독. 라인 스트림을 버퍼에 누적하며 완성 이벤트를 방출한다.
     /// SSE 는 `@RawResponse` 로 래핑을 건너뛰므로 payload 는 `ConsoleEvent` JSON 그대로다.
     /// 스트림이 끊기거나 취소되면 finish 되며, 재연결·재동기화는 호출자(B5 배선)가 관장한다.
@@ -282,4 +300,8 @@ public actor ConsoleClient {
 /// REST 응답 봉투. 실제 payload 는 `data` 에 담긴다.
 private struct SnapshotEnvelope: Decodable {
     let data: ConsoleSnapshot
+}
+
+private struct BriefingEnvelope: Decodable {
+    let data: ConsoleBriefing
 }

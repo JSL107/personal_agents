@@ -193,6 +193,16 @@ struct AppRootView: View {
         }
         await MainActor.run { store.apply(snapshot: snapshot) }
         lastResyncAt = Date()
+        await resyncBriefing()
+    }
+
+    /// 대표 브리핑을 받아 화면에 얹는다. 실패하면 조용히 넘긴다 — 집계가 없다고 관제가
+    /// 멈추면 장식이 본체를 죽이는 셈이다.
+    private func resyncBriefing() async {
+        guard let briefing = try? await client.fetchBriefing() else {
+            return
+        }
+        await MainActor.run { store.apply(briefing: briefing) }
     }
 
     /// 상태가 바뀐 직후 스냅샷을 한 번 더 받는다.
@@ -206,6 +216,14 @@ struct AppRootView: View {
     /// 여기서는 화면 쪽에서 정본을 한 번 더 당겨온다. 체인 실행처럼 상태 변경이 몰릴 때 요청이
     /// 폭주하지 않도록 최소 간격을 둔다.
     private func resyncAfterStateChange(_ event: ConsoleEvent) async {
+        // 승인이 열리거나 닫히면 할 일 보드의 첫 줄이 바로 바뀌어야 한다. 30초 주기를
+        // 기다리면 방금 누른 결재가 보드에 그대로 남아 "안 눌린 것" 처럼 보인다.
+        if case .approvalOpened = event {
+            await resyncBriefing()
+        }
+        if case .approvalResolved = event {
+            await resyncBriefing()
+        }
         guard case .stateChanged = event else {
             return
         }
@@ -222,6 +240,7 @@ struct AppRootView: View {
                 let snapshot = try await client.fetchSnapshot()
                 store.apply(snapshot: snapshot)
                 status = .live
+                await resyncBriefing()
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)

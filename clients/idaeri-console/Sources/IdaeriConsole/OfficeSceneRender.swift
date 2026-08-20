@@ -72,6 +72,11 @@ func renderOfficeScene(
         pendingCommands: [],
         now: Date()
     )
+    // 회의실 판과 정산 종이도 함께 굽는다. 빠뜨리면 "안 그리는 요소는 정상으로 보인다" 는
+    // 사각지대가 그대로 생긴다 — 판이 벽을 넘치는지, 종이가 대표를 덮는지가 이 경로에서만 보인다.
+    let briefing = poseDemo ? nil : fetchBriefingSynchronously(client: client)
+    scene.refreshBriefing(briefing, hour: hour ?? Calendar.current.component(.hour, from: Date()))
+
     if poseDemo, !scene.applyPoseDemo() {
         FileHandle.standardError.write(Data("자세 데모에 필요한 사람 또는 가구가 부족하다\n".utf8))
         return false
@@ -188,6 +193,21 @@ private func poseDemoAgents() -> [ConsoleAgent] {
             department: departments[index % departments.count].rawValue
         )
     }
+}
+
+/// 대표 브리핑도 같은 방식으로 기다렸다가 그린다. 없으면 회의실 판이 통째로 안 그려지므로
+/// 호출자가 그 사실을 알 수 있게 nil 을 그대로 돌려준다.
+func fetchBriefingSynchronously(client: ConsoleClient) -> ConsoleBriefing? {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: ConsoleBriefing?
+    Task {
+        result = try? await client.fetchBriefing()
+        semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + 5) == .success else {
+        return nil
+    }
+    return result
 }
 
 /// 렌더는 한 장을 굽고 끝나는 일회성 실행이라, 스냅샷을 기다렸다가 그리는 편이 단순하다.

@@ -51,6 +51,7 @@ const buildRepo = (
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
+  findAllDayOutcomes: jest.fn().mockResolvedValue([]),
 });
 
 const buildApplier = (
