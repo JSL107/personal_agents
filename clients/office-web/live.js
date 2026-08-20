@@ -90,6 +90,13 @@ const walkSeconds = query.has("walk") ? Number(query.get("walk")) : 0;
  */
 const pressureDemo = query.has("pressure") ? Number(query.get("pressure")) : 0;
 /**
+ * `?queue=12` — 방치 데모 카드를 그 인원수만큼 만든다.
+ *
+ * 대표실 앞 자리는 열 칸 남짓이라, 그보다 긴 줄에서만 드러나는 어긋남(자리를 못 받은 사람이
+ * 줄 명단에는 있는데 몸은 책상에 앉아 있는 상태)이 있다. 기본 한 명으로는 그 구간에 닿지 않는다.
+ */
+const queueDemo = query.has("queue") ? Number(query.get("queue")) : 1;
+/**
  * `?commute=4` — 출근(또는 퇴근) 걷기를 일으키고 그 초만큼 진행시킨 뒤 그린다.
  *
  * 출퇴근은 **시각 경계를 넘는 순간에만** 일어나는데 정지 렌더는 시각이 고정이라 그 순간이
@@ -314,6 +321,12 @@ function applyAttendance(animated) {
         sendHome(entry.agentType);
       }
     } else if (!present && bodies[entry.agentType]) {
+      // 이미 퇴근 걷는 중이면 건드리지 않는다. 스냅샷은 20초마다, 이벤트가 오면 그보다 자주
+      // 도는데 퇴근 걸음은 그보다 짧다 — 여기서 지우면 복도를 걷던 사람이 문 앞에서 갑자기
+      // 사라진다. 문에 닿는 순간 `playDeparture` 의 도착 콜백이 치운다.
+      if (departing.has(entry.agentType)) {
+        continue;
+      }
       if (animated) {
         playDeparture(entry, departureIndex * COMMUTE_STAGGER_SECONDS);
         departureIndex += 1;
@@ -461,7 +474,10 @@ function reconcileQueue() {
 function settleQueue(left) {
   const tiles = renderer.plan.queueTiles ?? [];
   queueOrder.forEach((agentType, order) => {
-    const tile = tiles[order];
+    // 줄이 자리보다 길면 마지막 칸에 겹쳐 세운다(대기 인원이 많다는 것 자체가 신호) —
+    // 맥 앱 `layoutQueue` 와 같은 폴백이다. 없으면 초과 인원이 `queueOrder` 에는 남아 출근
+    // 판정과 배회 제외에는 대기자로 잡히면서 몸만 자기 자리에 앉아, 줄과 실제 위치가 어긋난다.
+    const tile = tiles[Math.min(order, tiles.length - 1)];
     const body = bodies[agentType];
     if (!tile || !body) {
       return;
@@ -609,6 +625,14 @@ function walkTo(agentType, goal, options = {}) {
   body.arrivePose = options.pose ?? null;
   body.arriveKind = options.kind ?? "자리";
   body.interactionPose = null;
+  // **머무는 중이던 사람도 지금부터 걷는다.** 이걸 안 끊으면 `advanceBodies` 가 체류를 먼저
+  // 처리하고, 체류가 끝나는 순간 자리로 돌아가는 걸음이 방금 건 경로를 덮어쓴다 — 퇴근하라고
+  // 보낸 사람이 소파에서 일어나 자기 책상으로 돌아가 앉는다.
+  //
+  // 부르는 쪽마다 지우게 하지 않는 이유는 그 지점이 이미 셋이기 때문이다(퇴근·줄 세우기·일이
+  // 들어와 복귀). 맥 앱은 배회가 액션이라 `cancelStroll` 이 통째로 지우는데, 이쪽은 상태값이라
+  // 걸음을 지시하는 이 한 곳에서 끊어야 한 군데만 고쳐도 셋이 같이 낫는다.
+  body.dwellRemaining = 0;
   return true;
 }
 
@@ -813,15 +837,17 @@ function applySnapshot(data) {
     }));
   approvals = data.approvals ?? [];
   if (pressureDemo > 0) {
-    const demo = demoApproval();
-    approvals = [...approvals, demo];
+    const demos = demoApprovals();
+    approvals = [...approvals, ...demos];
     // 카드만 넣으면 그 사람의 **상태**는 그대로라 발밑 링과 이름표가 평소 색으로 남는다 —
     // 실제 승인이 열릴 때는 상태도 함께 바뀌므로, 데모도 같은 그림이 되게 맞춘다.
-    if (agents[demo.agentType]) {
-      agents[demo.agentType] = {
-        ...agents[demo.agentType],
-        state: "AWAITING_APPROVAL",
-      };
+    for (const demo of demos) {
+      if (agents[demo.agentType]) {
+        agents[demo.agentType] = {
+          ...agents[demo.agentType],
+          state: "AWAITING_APPROVAL",
+        };
+      }
     }
   }
   for (const agentType of Object.keys(bodies)) {
@@ -851,18 +877,18 @@ function applySnapshot(data) {
  * 단계 문턱(25% · 50% · 80%)보다 조금 넘긴 소진율을 쓴다 — 문턱에 정확히 맞추면 계산
  * 오차 한 틱에 아래 단계로 떨어져, 확인하려던 그림이 안 나오는 회차가 생긴다.
  */
-function demoApproval() {
+function demoApprovals() {
   const consumed = { 1: 0.05, 2: 0.3, 3: 0.55, 4: 0.83 }[pressureDemo] ?? 0.83;
   const lifespanMs = 60 * 60 * 1000;
   const createdAt = new Date(Date.now() - lifespanMs * consumed);
-  return {
-    id: "pressure-demo",
-    // 평면도의 첫 좌석 주인에게 붙인다. 없는 사람에게 붙이면 줄에 설 몸이 없어 카드만 뜬다.
-    agentType: renderer.plan.desks[0]?.agentType,
+  // 평면도의 앞쪽 좌석 주인들에게 붙인다. 없는 사람에게 붙이면 줄에 설 몸이 없어 카드만 뜬다.
+  return renderer.plan.desks.slice(0, Math.max(1, queueDemo)).map((desk, index) => ({
+    id: `pressure-demo-${index}`,
+    agentType: desk.agentType,
     title: "방치 압력 데모",
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + lifespanMs).toISOString(),
-  };
+  }));
 }
 
 /**
@@ -1108,6 +1134,10 @@ async function main() {
             sendHome(entry.agentType);
           }
         }
+        // 배회하다 소파에 앉은 사람을 섞는다. 전원이 자리에 앉은 상태에서만 내보내면 "머무는
+        // 중이던 사람이 퇴근하는가" 라는, 정확히 어긋나기 쉬운 경우가 확인에서 통째로 빠진다.
+        strollTick(0);
+        advanceVirtually(7);
       }
       applyAttendance(true);
       advanceVirtually(commuteSeconds);
@@ -1158,10 +1188,19 @@ async function main() {
     }
     // 인원을 숫자로도 남긴다. 그림만 보면 출근 규칙이 통째로 빠져도 새벽 화면은 원래
     // 빈 사무실과 구분되지 않아 통과한다(맥 앱이 시각별 착석 인원을 직접 세는 것과 같은 이유).
-    console.log(
+    // 줄 명단에 있으면서 실제로는 자기 책상에 앉아 있는 사람을 따로 센다. 그림만 보면 그 사람은
+    // "그냥 앉아 있는 사람" 과 구별되지 않아, 자리를 못 받은 것이 조용히 지나간다.
+    const misplaced = queueOrder.filter((agentType) => {
+      const body = bodies[agentType];
+      const seat = renderer.seatsByAgent.get(agentType);
+      return body && seat && Math.round(body.x) === seat.x && Math.round(body.y) === seat.y;
+    });
+    const report =
       `${currentHour()}시 착석 ${Object.keys(bodies).length}명 / 전체 ${Object.keys(agents).length}명` +
-        ` · 줄 ${queueOrder.length}명${presidentAlarm ? " · 대표 경고등" : ""}`
-    );
+      ` · 줄 ${queueOrder.length}명(자리 ${renderer.plan.queueTiles.length}칸` +
+      `, 제자리에 남은 사람 ${misplaced.length}명)${presidentAlarm ? " · 대표 경고등" : ""}`;
+    console.log(report);
+    document.body.dataset.queueReport = report;
     // 한 판만 그리고 멈춘다. 사람은 전부 제자리에 앉아 있으므로 두 화면을 칸 단위로 대조할 수 있다.
     renderOnce();
     return;
