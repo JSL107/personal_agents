@@ -127,6 +127,12 @@ export class EnvironmentVariables {
   @IsString()
   BLOG_GITHUB_PUBLISH_ENABLED?: string;
 
+  // 오늘의 공부를 블로그 초안으로 펼치는 딥다이브 확장(매일 11:00).
+  // `false` 문자열이면 skip, 미설정이면 활성(기본 ON).
+  @IsOptional()
+  @IsString()
+  STUDY_DEEPDIVE_ENABLED?: string;
+
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()

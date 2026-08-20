@@ -47,6 +47,8 @@ import {
   DEFAULT_STOCK_MONITOR_TIMEZONE,
   DEFAULT_STOCK_MONITOR_US_CRON,
   DEFAULT_STOCK_MONITOR_US_TIMEZONE,
+  DEFAULT_STUDY_DEEPDIVE_CRON,
+  DEFAULT_STUDY_DEEPDIVE_TIMEZONE,
   DEFAULT_UNIVERSE_SWEEP_CRON,
   DEFAULT_UNIVERSE_SWEEP_TIMEZONE,
   DEFAULT_WEEKLY_SUMMARY_CRON,
@@ -112,6 +114,20 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T1_PREVIEW',
     digestGroup: 'evening',
+  },
+  // 오늘의 공부 딥다이브 확장 — 그날 아침 브리프를 블로그 초안으로 펼친다.
+  // digestGroup 없음(단독) — 다른 그룹과 시각이 다르고, 자기 스케줄 env 키를 갖는다.
+  // T0_AUTO: Notion 초안 DB 에만 적재하고 공개 발행은 하지 않는다. 발행은 저녁 블로그
+  // 카드(blog-github-publish)가 사용자 승인을 받아서 한다.
+  {
+    id: 'study-deepdive',
+    taskId: 'study-deepdive',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_STUDY_DEEPDIVE_CRON,
+      timezone: DEFAULT_STUDY_DEEPDIVE_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
   },
   // 비서실 — 하루 한 장 결산(완료 / 진행 중 / 승인 대기 / 막힌 것 / 오늘 결정할 것 1건).
   // morning 그룹 맨 앞에 둔다: 오케스트레이터가 배열 순서대로 요약을 이어 붙이므로

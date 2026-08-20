@@ -40,6 +40,7 @@ import { PreviewGateModule } from '../preview-gate/preview-gate.module';
 import { ScreenerModule } from '../screener/screener.module';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
+import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
 import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
@@ -72,6 +73,7 @@ import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.auto
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
+import { StudyDeepdiveAutopilotTask } from './infrastructure/tasks/study-deepdive.autopilot-task';
 import { UniverseSweepAutopilotTask } from './infrastructure/tasks/universe-sweep.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
 import { WorkReviewerAutopilotTask } from './infrastructure/tasks/work-reviewer.autopilot-task';
@@ -111,6 +113,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PaperRecommendModule,
     ScreenerModule,
     AiCliEnvModule,
+    StudyDeepdiveModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -146,6 +149,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PaperScoreAutopilotTask,
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
+    StudyDeepdiveAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -236,6 +240,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         paperScore: PaperScoreAutopilotTask,
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
+        studyDeepdive: StudyDeepdiveAutopilotTask,
       ) => [
         assign,
         poShadow,
@@ -268,6 +273,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         paperScore,
         aiCliEnvSnapshot,
         aiCliEnvApply,
+        studyDeepdive,
       ],
       inject: [
         AssignAutopilotTask,
@@ -301,6 +307,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PaperScoreAutopilotTask,
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
+        StudyDeepdiveAutopilotTask,
       ],
     },
     {
