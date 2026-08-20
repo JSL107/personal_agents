@@ -833,13 +833,24 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         }
     }
 
-    // 좌석 없는 구역은 경계 줄에 그대로 얹는다(비켜설 이유가 없다).
-    if let zone = plan.zones.first {
-        t.expectEqual(
-            officeZoneLabelBottomTiles(zone: zone, topSeatY: nil, tileSize: 32.0),
-            Double(zone.origin.y + zone.height - 1) + officeZoneLabelGapTiles,
-            "좌석 없는 구역 문패는 경계 줄"
-        )
+    // 좌석 없는 구역도 방을 벗어나지 않는다.
+    //
+    // 피할 말풍선이 없어 경계 줄에 그대로 얹히는 경로인데, 판 두께(작은 창에서 0.82칸)를
+    // 빼먹으면 아래끝만 방 안이고 판은 위층 방으로 삐져나간다 — 최소 타일 20.6px 에서
+    // 정확히 `구역 천장 + 0.17칸` 이었다. 좌석이 있는 경로와 같은 한계를 받는지 확인한다.
+    for tileSize in [20.6, 32.0, 90.0] {
+        for zone in plan.zones {
+            let bottom = officeZoneLabelBottomTiles(
+                zone: zone, topSeatY: nil, tileSize: tileSize
+            )
+            let top = bottom + officeZoneLabelBoxTiles(tileSize: tileSize)
+            t.expect(
+                bottom >= Double(zone.origin.y)
+                    && top <= Double(zone.origin.y + zone.height) + 0.0001,
+                "타일 \(tileSize) · 좌석 없는 \(zone.department.label) 문패(\(bottom)~\(top))가"
+                    + " 방 안(\(zone.origin.y)~\(zone.origin.y + zone.height))"
+            )
+        }
     }
 
     // 부서마다 자리 모양이 실제로 다르다.
