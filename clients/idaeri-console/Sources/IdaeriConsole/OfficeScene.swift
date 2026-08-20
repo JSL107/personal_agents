@@ -199,9 +199,18 @@ final class OfficeScene: SKScene {
         }
         // 배치 변경 판정은 sync 한 곳에서만 한다. 여기서 같은 입력으로 미리 계산하면
         // `rebuildPlan`과 `layoutChanged`가 항상 같은 값이 되어 판정 경로만 중복된다.
+        //
+        // `consumesAttendanceBoundary: false`를 반드시 넘겨야 한다 — 창 크기 변경은 시각
+        // 경계와 무관한 사건인데, 기본값(true)으로 부르면 이 호출이 시각 경계를 대신 삼켜
+        // `lastAttendanceHour`를 먼저 갱신해 버린다. 그러면 곧이어 아래 `repositionEveryone()`이
+        // 진행 중인 걸음을 전부 끊고 좌표만 스냅하므로, 정작 경계를 넘는 순간(9시 등)에 리사이즈가
+        // 먼저 끼어들면 걷기 연출이 시작되자마자 끊겨 도로 순간이동으로 보인다 — sync가 경계를
+        // 확인하게 만든 adc9191의 목적 자체가 이 경로에서 무력화된다. 경계는 시각 경계 타이머
+        // (또는 다음 정상 sync)만 삼키게 두고, 여기서는 좌표계가 바뀐 지금 값 그대로
+        // 있어야 할 사람만 앉히고 없어야 할 사람만 치운다(애니메이션 없이).
         sync(
             agents: lastSyncedAgents, approvals: lastSyncedApprovals,
-            rebuildPlan: false
+            rebuildPlan: false, consumesAttendanceBoundary: false
         )
         // sync 는 줄 선 사람·걷는 사람의 자리를 일부러 건드리지 않는다(연출 유지).
         // 그런데 좌표계가 바뀐 지금은 그 배려가 독이 된다 — 옛 화면 좌표에 남아
@@ -282,8 +291,13 @@ final class OfficeScene: SKScene {
 
     // MARK: - 동기화
 
+    /// `consumesAttendanceBoundary`가 기본값 `true`인 보통의 스냅샷 경로에서만 이 호출이
+    /// 시각 경계를 확인·소비한다(`lastAttendanceHour` 갱신). `didChangeSize`처럼 좌표계만
+    /// 다시 잡으려는 호출은 `false`를 넘겨 경계를 남의 것으로 남겨 둔다 — 자세한 이유는
+    /// `didChangeSize` 쪽 주석 참고.
     func sync(
-        agents: [ConsoleAgent], approvals: [ConsoleApproval], rebuildPlan: Bool = true
+        agents: [ConsoleAgent], approvals: [ConsoleApproval], rebuildPlan: Bool = true,
+        consumesAttendanceBoundary: Bool = true
     ) {
         lastSyncedAgents = agents
         lastSyncedApprovals = approvals
@@ -350,12 +364,22 @@ final class OfficeScene: SKScene {
         // 타이머와 똑같이 시각 경계를 직접 확인하고 `lastAttendanceHour`를 갱신한다 — 두 경로 중
         // 먼저 경계를 넘는 쪽이 걷기 연출을 맡고, 나머지 한쪽은 이미 반영된 상태라 자연히 no-op
         // 이 된다.
-        let attendanceHourAtSync = currentHour()
-        let attendanceApplication = officeAttendanceApplication(
-            previousHour: lastAttendanceHour, currentHour: attendanceHourAtSync
-        )
-        lastAttendanceHour = attendanceHourAtSync
-        applyAttendance(animated: attendanceApplication == .boundaryCrossed)
+        //
+        // 단, 이 경계 확인·소비는 `consumesAttendanceBoundary`가 true인 호출만 한다.
+        // `didChangeSize`(창 크기 변경)처럼 좌표계만 다시 잡으려는 호출까지 경계를 삼키면,
+        // 그 직후에 이어지는 `repositionEveryone()`이 방금 튼 걷기 연출을 곧바로 끊어 버려
+        // 순간이동이 다른 경로로 되돌아온다 — 자세한 시나리오는 `didChangeSize` 쪽 주석 참고.
+        // 그런 호출은 경계를 건드리지 않고 지금 값 그대로 있어야 할 사람만 놓는다(애니메이션 없이).
+        if consumesAttendanceBoundary {
+            let attendanceHourAtSync = currentHour()
+            let attendanceApplication = officeAttendanceApplication(
+                previousHour: lastAttendanceHour, currentHour: attendanceHourAtSync
+            )
+            lastAttendanceHour = attendanceHourAtSync
+            applyAttendance(animated: attendanceApplication == .boundaryCrossed)
+        } else {
+            applyAttendance(animated: false)
+        }
 
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
@@ -470,7 +494,11 @@ final class OfficeScene: SKScene {
                 if animated {
                     playDeparture(entry, delay: TimeInterval(departureIndex) * Self.arrivalStagger)
                     departureIndex += 1
-                } else {
+                } else if !departingAgents.contains(entry.agentType) {
+                    // 이미 퇴근 연출(playDeparture)이 진행 중인 사람이다 — 계단식 지연·걷기·
+                    // 페이드 시퀀스 끝에서 스스로 지운다(playDeparture 참고). 여기서
+                    // despawnCharacter를 먼저 부르면 그 시퀀스 도중인 노드를 뜯어내 걷다 만
+                    // 자세로 화면에서 사라진다. 진행 중인 퇴근은 자기 몫이니 손대지 않는다.
                     despawnCharacter(entry.agentType)
                 }
             default:
