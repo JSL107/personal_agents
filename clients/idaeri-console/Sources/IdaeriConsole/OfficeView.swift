@@ -78,6 +78,13 @@ struct OfficeView: View {
                         commandText = ""
                     }
                     scene.onPresidentClick = { openPresidentBar() }
+                    scene.onDailyReportClick = {
+                        scene.toggleDailyReportCard(store.briefing)
+                    }
+                    scene.refreshBriefing(
+                        store.briefing,
+                        hour: Calendar.current.component(.hour, from: Date())
+                    )
                 }
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents, approvals: store.approvals)
