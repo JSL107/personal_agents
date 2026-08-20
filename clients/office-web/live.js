@@ -21,6 +21,41 @@ const STROLL_CONCURRENCY = 2;
 const STEP_SECONDS = 0.2;
 /** 스냅샷을 다시 받는 주기(초). 스트림이 끊겨도 화면이 굳지 않게 하는 안전망이다. */
 const SNAPSHOT_INTERVAL_SECONDS = 20;
+/** 출퇴근 걷기를 한 사람씩 늦추는 간격(초) — 맥 앱 `arrivalStagger` 와 같은 값. */
+const COMMUTE_STAGGER_SECONDS = 0.12;
+/**
+ * 출근 판정을 다시 훑는 주기(초).
+ *
+ * 시각 경계는 **이벤트를 내지 않는다** — 9시가 되는 순간 백엔드에서 오는 것은 아무것도 없다.
+ * 시간축으로 한 번씩 훑지 않으면 아무도 출근하지 않고, 다음 무관한 이벤트가 올 때까지 새벽
+ * 화면이 그대로 남는다.
+ */
+const ATTENDANCE_TICK_SECONDS = 60;
+/** 방치 압력을 다시 따지는 주기(초) — 맥 앱 `officeApprovalPressureSweepIntervalSeconds`. */
+const PRESSURE_SWEEP_SECONDS = 30;
+/**
+ * 방치 단계가 올라가는 TTL 소진 비율 — 맥 앱 `officeApprovalPressureThresholds`.
+ *
+ * 절대 경과 시간이 아니라 비율인 이유는 카드마다 TTL 이 다르기 때문이다. "두 시간 지나면
+ * 경고등" 으로 못 박으면 TTL 한 시간짜리 카드는 이미 만료된 뒤에 신호가 나온다.
+ */
+const PRESSURE_THRESHOLDS = { holdingPapers: 0.25, tapping: 0.5, alarm: 0.8 };
+/**
+ * 점심시간에 목적지가 기우는 가구 — 맥 앱 `officeStrollSpot` 의 탕비실·회의실 목록과 같다.
+ *
+ * 이 목록이 맥과 어긋나면 정오 화면에서 두 사무실의 사람이 다른 방에 모인다.
+ */
+const LUNCH_KINDS = new Set([
+  "sofa2",
+  "sofa3",
+  "coffeeTable",
+  "coffeeMachine",
+  "waterCooler",
+  "vendingMachine",
+  "refrigerator",
+  "sinkCounter",
+  "meetingTable",
+]);
 
 const status = document.getElementById("status");
 const canvas = document.getElementById("office");
@@ -45,6 +80,22 @@ const fixedHour = query.has("hour") ? Number(query.get("hour")) : null;
  * 브라우저를 열어 8초를 기다린다" 하나뿐이면 걸음 그림이 빠져도 아무도 모른다.
  */
 const walkSeconds = query.has("walk") ? Number(query.get("walk")) : 0;
+/**
+ * `?pressure=3` — 승인 카드 하나를 그 단계까지 방치된 것으로 꾸며 넣는다.
+ *
+ * 실 백엔드는 승인 대기가 0건인 날이 대부분이라, 이 입구가 없으면 줄서기·서류·발 구르기·
+ * 대표 경고등이 **한 번도 화면에 뜨지 않는다**(맥 앱의 `--alarm-demo` 와 같은 자리).
+ * 맥과 달리 가짜 사람을 만들지 않고 평면도의 첫 좌석 주인에게 붙인다 — 자리가 있어야
+ * 줄로 걸어 나가는 것까지 대조할 수 있다.
+ */
+const pressureDemo = query.has("pressure") ? Number(query.get("pressure")) : 0;
+/**
+ * `?commute=4` — 출근(또는 퇴근) 걷기를 일으키고 그 초만큼 진행시킨 뒤 그린다.
+ *
+ * 출퇴근은 **시각 경계를 넘는 순간에만** 일어나는데 정지 렌더는 시각이 고정이라 그 순간이
+ * 영영 오지 않는다. 지금 시각이 근무 시간이면 출근을, 아니면 퇴근을 그린다.
+ */
+const commuteSeconds = query.has("commute") ? Number(query.get("commute")) : 0;
 
 /** 지금 화면에 놓인 사람들. agentType → 위치·자세. */
 const bodies = {};
@@ -58,6 +109,20 @@ let zoneColumns = 3;
 const lastStrollAt = {};
 const strolling = new Set();
 let lastTickAt = 0;
+/** 백엔드가 준 승인 카드. 줄 세우기와 방치 압력의 입력이다. */
+let approvals = [];
+/** 대표실 앞에 선 순서. 먼저 기다린 사람이 앞에 남는다. */
+let queueOrder = [];
+/** 출퇴근으로 걷는 중인 사람. 배회 감독관이 이들을 새로 뽑으면 걸음이 서로를 취소한다. */
+const commuting = new Set();
+/** 퇴근 걷기를 이미 시작한 사람. 두 번 걸면 문 앞에서 걸음이 겹친다. */
+const departing = new Set();
+/** 출근 판정을 마지막으로 적용한 시(0~23). 이 값이 바뀔 때만 걷기 연출을 튼다. */
+let lastAttendanceHour = null;
+let lastAttendanceTickAt = 0;
+let lastPressureSweepAt = 0;
+/** 가장 급한 승인이 만료 임박(4단계)인가. 대표 머리 위 경고등이 이 값을 본다. */
+let presidentAlarm = false;
 /** 실제로 받아 둔 그림 장수. 상태 줄에 찍어 에셋 누락이 조용히 지나가지 않게 한다. */
 let loadedSpriteCount = 0;
 /**
@@ -131,8 +196,15 @@ function renderOnce() {
     agents,
     bodies,
     sessions,
-    hour: fixedHour ?? new Date().getHours(),
+    hour: currentHour(),
     blink: 1,
+    // 정지 렌더는 시각을 고정한다 — 발 구르기·경고등이 매번 다른 위상에서 잡히면 두 번 그린
+    // 그림이 서로 달라 회귀 비교가 성립하지 않는다. 3단계 이상을 보려 할 때만 발이 가장 높이
+    // 오른 순간(0.22초)에 세운다. 0 으로 두면 발 구르기가 정확히 바닥이라 2단계와 구별되지 않아,
+    // 그 표현이 통째로 빠져도 그림으로는 알 수 없다.
+    now: pressureDemo >= 3 ? 0.22 : 0,
+    presidentAlarm,
+    summary: summaryCounts(),
   });
   setStatus(summary(), hasStaleLayout());
   document.body.dataset.rendered = "1";
@@ -159,6 +231,315 @@ function sendHome(agentType) {
     path: null,
   };
   strolling.delete(agentType);
+}
+
+/**
+ * 화면에서 사람을 치운다 — 퇴근했거나 평면도에서 사라진 경우.
+ *
+ * 부기를 함께 지운다. 남겨 두면 다음 판정이 **이미 나간 사람**을 여전히 걷는 중이거나 줄에
+ * 서 있는 것으로 읽어, 그 사람이 다시 출근할 때 연출을 통째로 건너뛴다.
+ */
+function despawn(agentType) {
+  delete bodies[agentType];
+  strolling.delete(agentType);
+  commuting.delete(agentType);
+  departing.delete(agentType);
+}
+
+// MARK: - 출퇴근
+
+/** 지금 화면이 보는 시각. 정지 렌더는 `?hour=` 로 고정한다. */
+function currentHour() {
+  return fixedHour ?? new Date().getHours();
+}
+
+/**
+ * 이 사람이 지금 사무실에 있어야 하는가 — 맥 앱 `officeAttendance` 와 **같은 순서**로 판정한다.
+ *
+ * 경계 시각(조기 출근·출근·퇴근)은 평면도가 싣고 온다. 여기 숫자를 다시 적으면 두 화면의
+ * 인구가 새벽 5시·밤 9시처럼 사람이 눈치채기 어려운 시각에서만 갈린다.
+ *
+ * 걷는 중·들어오는 중 같은 과도 상태는 여기 두지 않는다. 그건 연출의 몫이고 이 판정은
+ * "있어야 하는가/없어야 하는가" 두 값만 답한다.
+ */
+function attendanceOf(agentType) {
+  // 1. 줄이 최우선. 줄 선 사람을 치우면 대기열이 실제 상태와 어긋난다.
+  if (queueOrder.includes(agentType)) {
+    return "present";
+  }
+  // 2. 일하는 사람은 시각과 무관하게 자리에 있다.
+  if (agents[agentType]?.state === "IN_PROGRESS") {
+    return "present";
+  }
+  const hours = renderer.layout.attendanceHours;
+  const hour = ((Math.floor(currentHour()) % 24) + 24) % 24;
+  // 3. 정규 근무.
+  if (hour >= hours.arrival && hour < hours.departure) {
+    return "present";
+  }
+  // 4. 조기 출근자. 밤 시간대에는 이 규칙을 적용하지 않으므로, 자정에 0 으로 리셋되는
+  //    `doneToday` 가 야근하다 자정을 넘긴 사람의 판정을 뒤집지 못한다.
+  if (
+    hour >= hours.earlyBirdStart &&
+    hour < hours.arrival &&
+    (agents[agentType]?.doneToday ?? 0) > 0
+  ) {
+    return "present";
+  }
+  return "away";
+}
+
+/**
+ * 시각과 실행 상태대로 사람을 놓고 치운다.
+ *
+ * `animated` 는 시각 경계를 실제로 넘었을 때만 참이다 — 스냅샷이 올 때마다 걷게 하면
+ * 20초마다 사무실 전원이 문에서 다시 들어온다.
+ *
+ * 순서는 평면도의 좌석 순서를 그대로 쓴다. 회차마다 같은 사람이 같은 순번으로 들어와야
+ * 두 화면을 같은 시각에서 대조할 수 있다.
+ */
+function applyAttendance(animated) {
+  let arrivalIndex = 0;
+  let departureIndex = 0;
+  for (const entry of renderer.plan.desks) {
+    if (!agents[entry.agentType]) {
+      continue;
+    }
+    const present = attendanceOf(entry.agentType) === "present";
+    if (present && !bodies[entry.agentType]) {
+      if (animated) {
+        playArrival(entry, arrivalIndex * COMMUTE_STAGGER_SECONDS);
+        arrivalIndex += 1;
+      } else {
+        sendHome(entry.agentType);
+      }
+    } else if (!present && bodies[entry.agentType]) {
+      if (animated) {
+        playDeparture(entry, departureIndex * COMMUTE_STAGGER_SECONDS);
+        departureIndex += 1;
+      } else {
+        despawn(entry.agentType);
+      }
+    }
+  }
+}
+
+/**
+ * 출근 — 복도 진입점에 서서 기다렸다가 자기 자리까지 걸어온다.
+ *
+ * 서른 명이 한꺼번에 길을 찾으면 그 순간만 화면이 튄다. 사람마다 조금씩 늦춰 출발시킨다
+ * (동시 상한을 두는 대신 계단식 지연 — 전원이 4초 안에 들어온다).
+ */
+function playArrival(entry, delay) {
+  if (bodies[entry.agentType]) {
+    return;
+  }
+  const entrance = renderer.plan.entranceTile;
+  bodies[entry.agentType] = {
+    x: entrance.x,
+    y: entrance.y,
+    seated: false,
+    facing: "up",
+    pose: "up",
+    path: null,
+    // 지연이 끝나기 전에는 그리지 않는다 — 문 앞에 전원이 겹쳐 선 그림이 먼저 뜬다.
+    hidden: true,
+    // 0 이면 지연 처리 자체를 건너뛰어 첫 사람이 영영 출발하지 않는다.
+    delayRemaining: Math.max(delay, 1e-6),
+  };
+  // 지연 동안에도 배회 감독관(8초 주기)이 이 사람을 한가한 사람으로 뽑지 않게 미리 표시한다.
+  commuting.add(entry.agentType);
+  bodies[entry.agentType].onDelayEnd = () => {
+    const body = bodies[entry.agentType];
+    if (!body) {
+      return;
+    }
+    body.hidden = false;
+    // **줄이 출근을 이긴다.** 지연 중에 승인 대기줄에 들어갔다면 `reconcileQueue` 가 이미
+    // 줄로 걷게 했다 — 여기서 좌석으로 다시 걸면 그 걸음을 빼앗아 줄이 실제 위치와 어긋난다.
+    if (queueOrder.includes(entry.agentType)) {
+      commuting.delete(entry.agentType);
+      return;
+    }
+    const settle = () => {
+      sendHome(entry.agentType);
+      commuting.delete(entry.agentType);
+    };
+    if (!walkTo(entry.agentType, entry.seat, { onArrive: settle })) {
+      settle();
+    }
+  };
+}
+
+/**
+ * 퇴근 — 자리에서 복도 진입점까지 걸어간 뒤 화면에서 빠진다.
+ *
+ * 두 지점에서 상태를 다시 본다(지연이 끝날 때, 문에 닿을 때). 퇴근 시간대에도 새 일감이
+ * 들어오는데, 한 번만 보면 이미 일을 시작한 사람이 그대로 걸어 나가 버린다.
+ */
+function playDeparture(entry, delay) {
+  if (!bodies[entry.agentType] || departing.has(entry.agentType)) {
+    return;
+  }
+  departing.add(entry.agentType);
+  commuting.add(entry.agentType);
+  strolling.delete(entry.agentType);
+  const cancelled = () =>
+    queueOrder.includes(entry.agentType) ||
+    agents[entry.agentType]?.state === "IN_PROGRESS";
+  bodies[entry.agentType].delayRemaining = Math.max(delay, 1e-6);
+  bodies[entry.agentType].onDelayEnd = () => {
+    const done = () => {
+      departing.delete(entry.agentType);
+      commuting.delete(entry.agentType);
+    };
+    if (!bodies[entry.agentType]) {
+      done();
+      return;
+    }
+    if (cancelled()) {
+      // 나가는 걸 접고 자리로 돌아간다 — 줄이면 `reconcileQueue` 가 줄로 데려간다.
+      if (!queueOrder.includes(entry.agentType)) {
+        sendHome(entry.agentType);
+      }
+      done();
+      return;
+    }
+    const leave = () => {
+      // 문 앞에 닿는 사이 일이 들어왔을 수 있다. 그러면 나가지 않고 자리로 돌려보낸다.
+      if (cancelled()) {
+        sendHome(entry.agentType);
+      } else {
+        despawn(entry.agentType);
+      }
+      done();
+    };
+    if (!walkTo(entry.agentType, renderer.plan.entranceTile, { onArrive: leave })) {
+      leave();
+    }
+  };
+}
+
+// MARK: - 승인 대기줄
+
+/**
+ * 승인 대기줄을 실제 승인 목록과 맞춘다 — 맥 앱 `reconciledQueueOrder` 와 같은 규칙.
+ *
+ * 이미 서 있던 순서를 보존하고 새로 대기가 된 사람만 뒤에 붙인다. 폴링마다 다시 세우면
+ * 누가 먼저 기다렸는지가 화면에서 사라진다.
+ *
+ * 상태(`AWAITING_APPROVAL`)와 승인 카드 둘 중 **하나만 걸려도** 줄로 본다. 백엔드가 카드를
+ * 먼저 만들고 상태를 한 박자 뒤에 반영하는 경로가 있어, 상태만 보면 카드가 떠 있는데도
+ * 아무도 줄을 서지 않는 구간이 생긴다.
+ */
+function reconcileQueue() {
+  const carded = new Set(
+    approvals.map((approval) => approval.agentType).filter(Boolean)
+  );
+  const awaits = (agentType) =>
+    agents[agentType]?.state === "AWAITING_APPROVAL" || carded.has(agentType);
+  const next = queueOrder.filter(
+    (agentType) => agents[agentType] && awaits(agentType)
+  );
+  for (const agentType of Object.keys(agents)) {
+    if (awaits(agentType) && !next.includes(agentType)) {
+      next.push(agentType);
+    }
+  }
+  const left = queueOrder.filter((agentType) => !next.includes(agentType));
+  queueOrder = next;
+  return left;
+}
+
+/**
+ * 줄 순서대로 대표실 앞자리에 세운다.
+ *
+ * **순서 갱신과 따로 두는 이유**: 출근 판정이 `queueOrder` 를 보고 사람을 놓기 때문에
+ * 순서가 먼저 정해져야 한다. 그런데 그 시점엔 아직 몸이 없어 걷기를 걸 대상이 없다 —
+ * 한 함수로 묶으면 사무실이 처음 채워지는 회차에서 줄서기가 통째로 빠진다.
+ */
+function settleQueue(left) {
+  const tiles = renderer.plan.queueTiles ?? [];
+  queueOrder.forEach((agentType, order) => {
+    const tile = tiles[order];
+    const body = bodies[agentType];
+    if (!tile || !body) {
+      return;
+    }
+    // 이미 그 자리에 서 있거나 그리로 걷는 중이면 다시 걸지 않는다 — 폴링마다 다시 걸면
+    // 줄이 계속 들썩이고, 걷던 경로가 매번 처음부터 다시 시작된다.
+    const goal = body.path?.[body.path.length - 1] ?? {
+      x: Math.round(body.x),
+      y: Math.round(body.y),
+    };
+    if (goal.x === tile.x && goal.y === tile.y) {
+      return;
+    }
+    strolling.delete(agentType);
+    walkTo(agentType, tile, { facing: "up" });
+  });
+
+  // 줄에서 빠진 사람은 자기 자리로 돌려보낸다.
+  for (const agentType of left ?? []) {
+    if (!bodies[agentType]) {
+      continue;
+    }
+    const seat = seatOf(agentType);
+    if (!seat || !walkTo(agentType, seat, { onArrive: () => sendHome(agentType) })) {
+      sendHome(agentType);
+    }
+  }
+}
+
+/**
+ * 카드 하나가 얼마나 방치됐는지 — 1(줄에 섬) · 2(서류를 듦) · 3(발을 구름) · 4(경고등).
+ *
+ * 시각을 못 읽거나 유효 구간이 0 이하면 **최고 단계**로 읽는다. "계산 불가 = 안 급함" 으로
+ * 읽으면 값이 깨진 카드가 조용히 차분한 얼굴로 만료된다.
+ */
+function pressureOf(approval, now) {
+  const createdAt = Date.parse(approval.createdAt);
+  const expiresAt = Date.parse(approval.expiresAt);
+  if (Number.isNaN(createdAt) || Number.isNaN(expiresAt) || expiresAt <= createdAt) {
+    return 4;
+  }
+  // 시계가 어긋나 now 가 생성보다 이를 수 있다. 음수 비율은 1단계로 접는다.
+  const consumed = Math.max(0, (now - createdAt) / (expiresAt - createdAt));
+  if (consumed >= PRESSURE_THRESHOLDS.alarm) {
+    return 4;
+  }
+  if (consumed >= PRESSURE_THRESHOLDS.tapping) {
+    return 3;
+  }
+  if (consumed >= PRESSURE_THRESHOLDS.holdingPapers) {
+    return 2;
+  }
+  return 1;
+}
+
+/**
+ * 줄 선 사람마다 방치 단계를 다시 매긴다.
+ *
+ * 한 사람이 카드를 여럿 들고 있어도 **가장 급한 것만** 화면에 반영한다(배열 순서와 무관하게).
+ * 예: `BE_SANDBOX_APPLY` 와 `BE_SANDBOX_PUSH_PR` 은 둘 다 BE 로 매핑된다.
+ */
+function applyApprovalPressure() {
+  const now = Date.now();
+  const highest = {};
+  for (const approval of approvals) {
+    const agentType = approval.agentType;
+    if (!agentType || !bodies[agentType]) {
+      continue;
+    }
+    highest[agentType] = Math.max(
+      highest[agentType] ?? 0,
+      pressureOf(approval, now)
+    );
+  }
+  for (const [agentType, body] of Object.entries(bodies)) {
+    body.pressure = highest[agentType] ?? 0;
+  }
+  presidentAlarm = Object.values(highest).some((stage) => stage === 4);
 }
 
 /** 격자 위 최단 경로(BFS). 이동 비용이 칸마다 같고 맵이 작아 A* 가 필요 없다. */
@@ -238,6 +619,19 @@ function walkTo(agentType, goal, options = {}) {
  */
 function advanceBodies(deltaSeconds) {
   for (const [agentType, body] of Object.entries(bodies)) {
+    // 출퇴근 계단식 지연. `setTimeout` 대신 여기서 세는 이유는 두 가지다 — 정지 렌더의 가상
+    // 시간에서 돌지 않아 **걷는 중을 그림으로 확인할 방법이 없어지고**, 창이 뒤에 깔리면
+    // 브라우저가 타이머를 늦춰 사람마다 도착 간격이 제멋대로가 된다.
+    if (body.delayRemaining > 0) {
+      body.delayRemaining -= deltaSeconds;
+      if (body.delayRemaining <= 0) {
+        body.delayRemaining = 0;
+        const start = body.onDelayEnd;
+        body.onDelayEnd = null;
+        start?.();
+      }
+      continue;
+    }
     if (body.dwellRemaining > 0) {
       body.dwellRemaining -= deltaSeconds;
       if (body.dwellRemaining <= 0) {
@@ -330,6 +724,11 @@ function strollTick(now) {
       if (!body?.seated || strolling.has(agentType)) {
         return false;
       }
+      // 줄 선 사람과 출퇴근으로 걷는 중인 사람은 뽑지 않는다 — 우선순위가 배회보다 위라,
+      // 여기서 뽑으면 두 걸음이 같은 사람을 서로 다른 곳으로 끌고 간다.
+      if (queueOrder.includes(agentType) || commuting.has(agentType)) {
+        return false;
+      }
       if (state === "IN_PROGRESS" || state === "AWAITING_APPROVAL") {
         return false;
       }
@@ -363,7 +762,14 @@ function strollTick(now) {
     if (free.length === 0) {
       return;
     }
-    const spot = free[Math.floor(Math.random() * free.length)];
+    // 점심시간에는 탕비실·회의실로 기운다. 그 시간대에 그쪽 자리가 하나도 비어 있지 않으면
+    // 평소처럼 전체에서 고른다 — 갈 곳이 없다고 자리에 붙들어 두면 정오만 화면이 굳는다.
+    const lunch =
+      currentHour() === renderer.layout.attendanceHours.lunch
+        ? free.filter((candidate) => LUNCH_KINDS.has(candidate.kind))
+        : [];
+    const pool = lunch.length > 0 ? lunch : free;
+    const spot = pool[Math.floor(Math.random() * pool.length)];
     if (
       walkTo(agentType, spot.tile, {
         dwellSeconds: spot.dwellSeconds,
@@ -405,19 +811,58 @@ function applySnapshot(data) {
       label: shortSessionName(session.name),
       active: session.state === "active",
     }));
-  for (const agentType of Object.keys(agents)) {
-    if (!bodies[agentType]) {
-      sendHome(agentType);
+  approvals = data.approvals ?? [];
+  if (pressureDemo > 0) {
+    const demo = demoApproval();
+    approvals = [...approvals, demo];
+    // 카드만 넣으면 그 사람의 **상태**는 그대로라 발밑 링과 이름표가 평소 색으로 남는다 —
+    // 실제 승인이 열릴 때는 상태도 함께 바뀌므로, 데모도 같은 그림이 되게 맞춘다.
+    if (agents[demo.agentType]) {
+      agents[demo.agentType] = {
+        ...agents[demo.agentType],
+        state: "AWAITING_APPROVAL",
+      };
     }
   }
   for (const agentType of Object.keys(bodies)) {
     if (!agents[agentType]) {
-      delete bodies[agentType];
+      despawn(agentType);
     }
   }
+  // 줄을 먼저 맞춘다 — 출근 판정이 `isQueued` 를 시각보다 앞세우므로, 이번 스냅샷에서 막
+  // 승인 대기로 들어온 사람도 그 판정에 잡혀야 한다.
+  const leftQueue = reconcileQueue();
+  // 스냅샷은 20초마다 오지만 시각 경계는 하루 몇 번뿐이다. 경계를 넘었을 때만 걷게 한다.
+  const hour = currentHour();
+  const crossed = lastAttendanceHour !== null && lastAttendanceHour !== hour;
+  lastAttendanceHour = hour;
+  applyAttendance(crossed && !isStatic);
+  // 줄 걷기는 사람이 놓인 **뒤에** 건다.
+  settleQueue(leftQueue);
+  applyApprovalPressure();
   agentsWithoutSeat = Object.keys(agents).filter(
     (agentType) => !renderer.seatsByAgent.has(agentType)
   );
+}
+
+/**
+ * `?pressure=N` 이 요청한 방치 단계에 딱 걸리는 가짜 승인 카드.
+ *
+ * 단계 문턱(25% · 50% · 80%)보다 조금 넘긴 소진율을 쓴다 — 문턱에 정확히 맞추면 계산
+ * 오차 한 틱에 아래 단계로 떨어져, 확인하려던 그림이 안 나오는 회차가 생긴다.
+ */
+function demoApproval() {
+  const consumed = { 1: 0.05, 2: 0.3, 3: 0.55, 4: 0.83 }[pressureDemo] ?? 0.83;
+  const lifespanMs = 60 * 60 * 1000;
+  const createdAt = new Date(Date.now() - lifespanMs * consumed);
+  return {
+    id: "pressure-demo",
+    // 평면도의 첫 좌석 주인에게 붙인다. 없는 사람에게 붙이면 줄에 설 몸이 없어 카드만 뜬다.
+    agentType: renderer.plan.desks[0]?.agentType,
+    title: "방치 압력 데모",
+    createdAt: createdAt.toISOString(),
+    expiresAt: new Date(createdAt.getTime() + lifespanMs).toISOString(),
+  };
 }
 
 /**
@@ -504,6 +949,19 @@ function subscribe() {
   };
 }
 
+/**
+ * 정지 렌더에서 시간을 가상으로 흘린다.
+ *
+ * 실제 루프와 **같은 프레임 간격**으로 잘라 넣어야 한 칸씩 밟고 지나가는 경로와 자세가 같은
+ * 방식으로 재현된다. 한 번에 큰 값을 넣으면 사람이 여러 칸을 건너뛰어 벽을 통과한 그림이 나온다.
+ */
+function advanceVirtually(seconds) {
+  const step = 1 / 60;
+  for (let elapsed = 0; elapsed < seconds; elapsed += step) {
+    advanceBodies(step);
+  }
+}
+
 /** 예약된 스냅샷 재동기화. 이벤트가 몰려 와도 요청은 한 번만 나간다. */
 let snapshotTimer = null;
 
@@ -537,6 +995,26 @@ async function refreshSnapshot() {
   }
 }
 
+/**
+ * 화면 좌상단 요약 카드에 적을 숫자 — 맥 앱 `companySummary` 와 같은 항목.
+ *
+ * "대기" 가 아니라 "쉬는 중" 이라고 부른다. 이대리에 밀린 일감 큐는 없고 이 숫자는 **지금
+ * 맡은 일이 없는 사람 수**(서른 중 스물일곱이 예사)다. 적체로 읽히면 화면이 늘 비상처럼 보인다.
+ */
+function summaryCounts() {
+  const tally = Object.values(agents).reduce((counts, agent) => {
+    counts[agent.state] = (counts[agent.state] ?? 0) + 1;
+    return counts;
+  }, {});
+  return {
+    inProgress: tally.IN_PROGRESS ?? 0,
+    awaitingApproval: tally.AWAITING_APPROVAL ?? 0,
+    waiting: tally.WAITING ?? 0,
+    sessions: sessions.length,
+    activeSessions: sessions.filter((session) => session.active).length,
+  };
+}
+
 function summary() {
   const counts = Object.values(agents).reduce((tally, agent) => {
     tally[agent.state] = (tally[agent.state] ?? 0) + 1;
@@ -548,7 +1026,8 @@ function summary() {
         ` — 평면도를 다시 뽑아야 한다`
       : "";
   return (
-    `진행 ${counts.IN_PROGRESS ?? 0} · 승인 ${counts.AWAITING_APPROVAL ?? 0}` +
+    `${currentHour()}시 출근 ${Object.keys(bodies).length}/${Object.keys(agents).length}명` +
+    ` · 진행 ${counts.IN_PROGRESS ?? 0} · 승인 ${counts.AWAITING_APPROVAL ?? 0}` +
     ` · 쉬는 중 ${counts.WAITING ?? 0} · 세션 ${sessions.length}` +
     ` · ${renderer.plan.columns}×${renderer.plan.rows} 칸 · 타일 ${renderer.tileSize.toFixed(1)}px` +
     ` · 그림 ${loadedSpriteCount}장${stale}`
@@ -574,6 +1053,16 @@ async function main() {
     fetch("layout-2.json").then((response) => response.json()),
   ]);
   layouts = { 3: three, 2: two };
+  // 옛 평면도는 출퇴근 시각을 싣고 오지 않는다. 그대로 두면 첫 출근 판정에서 죽는데, 화면에는
+  // **아무 오류 없이 빈 사무실**이 남아 "백엔드가 꺼졌다" 와 구별되지 않는다. 설치본은 평면도를
+  // 빌드에 동봉하므로(README) 앱을 다시 만들지 않는 한 이 상태가 계속된다 — 여기서 끊는다.
+  for (const [columns, layout] of Object.entries(layouts)) {
+    if (!layout.attendanceHours) {
+      throw new Error(
+        `layout-${columns}.json 이 낡았다 — 출퇴근 시각(attendanceHours)이 없다. 평면도를 다시 뽑아라`
+      );
+    }
+  }
   resize();
 
   setStatus("그림을 받는 중…");
@@ -598,6 +1087,40 @@ async function main() {
   }
 
   if (isStatic) {
+    // 줄서기는 걸어가야 완성된다. 정지 렌더는 프레임 루프를 돌리지 않으므로 `?pressure=` 로
+    // 줄을 세워 놓고도 사람은 자기 자리에 앉은 그림이 나온다 — 가상 시간으로 밀어 준다.
+    if (pressureDemo > 0 && walkSeconds === 0 && commuteSeconds === 0) {
+      advanceVirtually(8);
+    }
+    if (commuteSeconds > 0) {
+      const hours = renderer.layout.attendanceHours;
+      const hour = currentHour();
+      const working = hour >= hours.earlyBirdStart && hour < hours.departure;
+      if (working) {
+        // 출근 — 아직 아무도 오지 않은 상태에서 시작한다.
+        for (const agentType of Object.keys(bodies)) {
+          despawn(agentType);
+        }
+      } else {
+        // 퇴근 — 방금 전까지 자리에 있던 것으로 놓고 내보낸다.
+        for (const entry of renderer.plan.desks) {
+          if (agents[entry.agentType]) {
+            sendHome(entry.agentType);
+          }
+        }
+      }
+      applyAttendance(true);
+      advanceVirtually(commuteSeconds);
+      const walking = Object.values(bodies).filter((body) => body.path).length;
+      const waiting = Object.values(bodies).filter(
+        (body) => body.delayRemaining > 0
+      ).length;
+      const report =
+        `${working ? "출근" : "퇴근"} ${commuteSeconds}초 — 화면에 ${Object.keys(bodies).length}명` +
+        ` · 걷는 중 ${walking}명 · 대기 ${waiting}명`;
+      console.log(report);
+      document.body.dataset.commuteReport = report;
+    }
     if (walkSeconds > 0) {
       // 산책을 일으키고 가상 시간으로 진행시킨다. 프레임 간격은 실제 루프와 같은 크기로
       // 잘라 넣고 배회 틱도 같은 주기로 돌려야, 한 칸씩 밟고 지나가는 경로와 자세가 같은
@@ -627,8 +1150,18 @@ async function main() {
             `(${Math.round(body.x)},${Math.round(body.y)})→${body.facing}`
         );
       const walking = Object.values(bodies).filter((body) => body.path).length;
-      console.log(`걷는 중 ${walking}명 · 도착 ${posed.length}명 [${posed.join(", ")}]`);
+      const report = `걷는 중 ${walking}명 · 도착 ${posed.length}명 [${posed.join(", ")}]`;
+      console.log(report);
+      // 콘솔은 화면 캡처 도구가 가져가지 못한다. 어디에 누가 섰는지 확인하려고 띄운 입구인데
+      // 그 결과가 도구에서 안 보이면 사람이 브라우저를 여는 것 말고는 확인할 방법이 없다.
+      document.body.dataset.walkReport = report;
     }
+    // 인원을 숫자로도 남긴다. 그림만 보면 출근 규칙이 통째로 빠져도 새벽 화면은 원래
+    // 빈 사무실과 구분되지 않아 통과한다(맥 앱이 시각별 착석 인원을 직접 세는 것과 같은 이유).
+    console.log(
+      `${currentHour()}시 착석 ${Object.keys(bodies).length}명 / 전체 ${Object.keys(agents).length}명` +
+        ` · 줄 ${queueOrder.length}명${presidentAlarm ? " · 대표 경고등" : ""}`
+    );
     // 한 판만 그리고 멈춘다. 사람은 전부 제자리에 앉아 있으므로 두 화면을 칸 단위로 대조할 수 있다.
     renderOnce();
     return;
@@ -646,14 +1179,32 @@ async function main() {
       lastTickAt = now;
       strollTick(now);
     }
+    // 시각 경계는 이벤트를 내지 않는다 — 시간축으로 훑지 않으면 9시가 지나도 아무도 안 온다.
+    if (now - lastAttendanceTickAt >= ATTENDANCE_TICK_SECONDS) {
+      lastAttendanceTickAt = now;
+      const hour = currentHour();
+      if (hour !== lastAttendanceHour) {
+        lastAttendanceHour = hour;
+        applyAttendance(true);
+      }
+    }
+    // 줄에 이미 선 카드는 시간이 흘러도 그 자체로는 이벤트를 내지 않는다. 훑지 않으면
+    // 몇 시간을 방치돼도 서류를 들지도 발을 구르지도 않는다 — 이 기능이 막으려는 상황이다.
+    if (now - lastPressureSweepAt >= PRESSURE_SWEEP_SECONDS) {
+      lastPressureSweepAt = now;
+      applyApprovalPressure();
+    }
     advanceBodies(deltaSeconds);
     renderer.draw({
       agents,
       bodies,
       sessions,
-      hour: fixedHour ?? new Date().getHours(),
+      hour: currentHour(),
       // 켜진 모니터가 숨 쉬듯 밝기를 오간다 — 정지 화면이면 "지금 도는 중" 이 안 읽힌다.
       blink: (Math.sin(now * 2) + 1) / 2,
+      now,
+      presidentAlarm,
+      summary: summaryCounts(),
     });
     requestAnimationFrame(frame);
   };
