@@ -7,7 +7,7 @@ export const SCREENER_CLI_USAGE =
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>]\n' +
-  '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>]';
+  '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]';
 
 export interface SyncUniverseArguments {
   subcommand: 'sync-universe';
@@ -68,8 +68,15 @@ const parseCollectPricesOptions = (
 
 const parseScreenOptions = (optionValues: string[]): ScreenUniverseOptions => {
   const options: ScreenUniverseOptions = { strategy: 'LONG_TERM' };
-  for (let index = 0; index < optionValues.length; index += 2) {
+  let index = 0;
+  while (index < optionValues.length) {
     const key = optionValues[index];
+    // --record 는 값을 받지 않는 플래그라 다음 토큰을 건너뛰지 않는다.
+    if (key === '--record') {
+      options.record = true;
+      index += 1;
+      continue;
+    }
     const value = optionValues[index + 1];
     if (
       (key !== '--strategy' && key !== '--limit') ||
@@ -86,6 +93,7 @@ const parseScreenOptions = (optionValues: string[]): ScreenUniverseOptions => {
     } else {
       options.limit = parsePositiveInteger(value, 'limit');
     }
+    index += 2;
   }
   return options;
 };

@@ -156,6 +156,9 @@ export class GeneratePaperRecommendationUsecase {
           strategy,
           limit: 20,
           includeTickerIds: positions.map((position) => position.tickerId),
+          // 운영 회차만 원장에 남긴다. 여기서 보여준 목록이 곧 "모델이 보고도 안 산 것" 의
+          // 모집단이라, 나중에 규칙을 고칠 때 대조군이 되는 유일한 회차다.
+          record: true,
         });
         const valuation = await this.repository.findLatestValuation(account.id);
         const accountValuation = Number(

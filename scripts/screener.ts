@@ -40,6 +40,11 @@ const main = async (): Promise<void> => {
         .get(ScreenUniverseUsecase)
         .execute(parsed.options);
       console.log(formatScreenResult(result));
+      if (result.recordedRunId !== null) {
+        console.log(
+          `스크리닝 이력을 원장에 남겼습니다. 회차 #${result.recordedRunId}, 기준일 ${result.asOf ?? '-'}, 기록 ${result.stocks.length}종목.`,
+        );
+      }
       return;
     }
 

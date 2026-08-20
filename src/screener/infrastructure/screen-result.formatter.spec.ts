@@ -38,6 +38,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
     },
   ],
   asOf: '2026-08-12',
+  recordedRunId: null,
 });
 
 describe('formatScreenResult', () => {
