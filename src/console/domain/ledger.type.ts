@@ -24,6 +24,8 @@ export interface ConsoleAgentLedger {
   readonly stalled: boolean;
   /** 마지막 실행 KST 날짜부터 오늘까지 경과 일수. 실행 기록 없으면 null. */
   readonly idleDays: number | null;
+  /** 마지막 자율 실행 KST 날짜부터 오늘까지 경과 일수. 자율 워커가 아니면 null. */
+  readonly autonomyIdleDays: number | null;
 }
 
 export interface ConsoleCompanyLedger {

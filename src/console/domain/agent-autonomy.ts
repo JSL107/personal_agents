@@ -1,5 +1,11 @@
 import { ConsoleAgentAutonomy } from './ledger.type';
 
+export const isAutonomousTrigger = (triggerType: string): boolean =>
+  triggerType.endsWith('_CRON') ||
+  triggerType === 'SCHEDULED' ||
+  triggerType.endsWith('_SWEEP') ||
+  triggerType.endsWith('_TICK');
+
 /**
  * 무실행을 한 덩어리로 보면 정상적인 수동 워커 8종에 고장 낙인이 찍히고, 실제로 멈춘
  * 자율 워커 1종은 그 안에 묻혔다. 자율 워커만 “안 도는 것”이 고장이므로 실행 계기를
@@ -14,13 +20,7 @@ export const classifyAutonomy = (
     return 'NEVER_RUN';
   }
 
-  const hasAutonomousTrigger = triggerTypes.some(
-    (triggerType) =>
-      triggerType.endsWith('_CRON') ||
-      triggerType === 'SCHEDULED' ||
-      triggerType.endsWith('_SWEEP') ||
-      triggerType.endsWith('_TICK'),
-  );
+  const hasAutonomousTrigger = triggerTypes.some(isAutonomousTrigger);
   // CODE_REVIEWER는 자율 스윕과 수동 멘션을 함께 받는다. 스윕 중단은 고장이므로 자율을
   // 최우선으로 두어 수동 이력이 고장 판정을 가리지 않게 한다.
   if (hasAutonomousTrigger) {

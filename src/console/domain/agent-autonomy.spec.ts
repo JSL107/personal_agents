@@ -1,4 +1,24 @@
-import { classifyAutonomy } from './agent-autonomy';
+import { classifyAutonomy, isAutonomousTrigger } from './agent-autonomy';
+
+describe('isAutonomousTrigger', () => {
+  it.each([
+    'MORNING_BRIEFING_CRON',
+    'SCHEDULED',
+    'PR_REVIEW_SWEEP',
+    'PRICE_COLLECTION_TICK',
+  ])('%s를 자율 트리거로 판정한다', (triggerType) => {
+    expect(isAutonomousTrigger(triggerType)).toBe(true);
+  });
+
+  it.each([
+    'SLACK_COMMAND_REVIEW_PR',
+    'SLACK_MENTION_CODE_REVIEWER',
+    'WEBHOOK_PULL_REQUEST',
+    'REPORT_HUMANIZE',
+  ])('%s를 자율 트리거로 판정하지 않는다', (triggerType) => {
+    expect(isAutonomousTrigger(triggerType)).toBe(false);
+  });
+});
 
 describe('classifyAutonomy', () => {
   it.each([

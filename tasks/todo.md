@@ -16,6 +16,10 @@
 - [x] 리뷰 수정: `LedgerClock`을 주입해 `buildConsoleLedger`의 시스템 시계 의존과 domain fake timer를 제거한다.
 - [x] 리뷰 수정: autonomy·stall·주간 비교의 운영 판정 근거를 코드 주석으로 보존한다.
 - [x] 리뷰 수정 후 focused tests와 4개 전체 게이트를 fresh 재실행하고 summary를 갱신한다.
+- [x] PR #344 리뷰: 자율 trigger 판정을 `isAutonomousTrigger` 단일 함수로 노출한다.
+- [x] PR #344 리뷰 RED/GREEN: `spanDays / (activeDays - 1)` 임계값과 activeDays 3 영구 중단 회귀를 고친다.
+- [x] PR #344 리뷰 RED/GREEN: 자율 행만으로 정지 지표를 계산하고 `autonomyIdleDays` 계약을 추가한다.
+- [x] PR #344 리뷰 후 focused tests와 4개 전체 게이트를 fresh 재실행하고 summary를 갱신한다.
 
 ## Review
 
@@ -26,6 +30,9 @@
 - 리뷰 수정으로 `LedgerClock`을 도메인 입력에 추가했다. 시스템 시각 조회는 `BuildLedgerUsecase`로 이동했고 `ledger.spec.ts`의 fake timer 6곳과 teardown을 제거했다.
 - 자율성 분류·동적 정지 임계값·같은 요일까지 주간 비교하는 운영 근거와 실측값을 판정 코드 가까이에 보존했다.
 - 리뷰 수정 후 focused 4 suites/23 tests와 전체 4개 게이트가 모두 exit 0이다.
+- PR #344 리뷰 반영으로 주기 임계값을 자율 관측 구간의 `spanDays / (activeDays - 1)`에서 계산한다. 유휴 기간은 기준선에서 제외됐다.
+- 혼합 트리거 워커는 자율 행만으로 `autonomyIdleDays`와 `stalled`를 계산하고, 전체 최근 활동용 `idleDays`는 보존한다.
+- PR #344 focused 5 suites/35 tests, 전체 일반 427 suites/3,720 tests와 code-graph 5 suites/40 tests가 통과했다. 독립 최종 리뷰도 이슈 0건, Ready다.
 
 ---
 

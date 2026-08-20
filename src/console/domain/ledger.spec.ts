@@ -70,6 +70,7 @@ describe('buildConsoleLedger', () => {
       autonomy: 'NEVER_RUN',
       stalled: false,
       idleDays: null,
+      autonomyIdleDays: null,
     });
     expect(ledger.company).toEqual({
       foundedDate: null,
@@ -92,6 +93,11 @@ describe('buildConsoleLedger', () => {
     const pm = ledger.agents.find((agent) => agent.agentType === 'PM');
 
     expect(pm?.failedRuns).toBe(1);
+    expect(pm).toMatchObject({
+      autonomy: 'ON_DEMAND',
+      stalled: false,
+      autonomyIdleDays: null,
+    });
     expect(ledger.company.failedRuns).toBe(1);
   });
 
@@ -141,9 +147,39 @@ describe('buildConsoleLedger', () => {
       lastRunAt: '2026-08-19T14:50:00.000Z',
       idleDays: 1,
       autonomy: 'AUTONOMOUS',
+      autonomyIdleDays: 1,
     });
     expect(ledger.company.foundedDate).toBe('2026-08-18');
     expect(ledger.company.ageDays).toBe(3);
     expect(ledger.serverTime).toBe('2026-08-20T03:00:00.000Z');
+  });
+
+  it('최근 수동 실행이 오래 멈춘 자율 스윕의 정지 판정을 가리지 않는다', () => {
+    const rows = [
+      run(
+        'CODE_REVIEWER',
+        'PR_REVIEW_SWEEP',
+        'SUCCEEDED',
+        '2026-07-11T09:00:00+09:00',
+      ),
+      run(
+        'CODE_REVIEWER',
+        'SLACK_COMMAND_REVIEW_PR',
+        'SUCCEEDED',
+        '2026-08-19T09:00:00+09:00',
+      ),
+    ];
+
+    const ledger = buildConsoleLedger(rows, thursdayClock);
+    const codeReviewer = ledger.agents.find(
+      (agent) => agent.agentType === 'CODE_REVIEWER',
+    );
+
+    expect(codeReviewer).toMatchObject({
+      autonomy: 'AUTONOMOUS',
+      idleDays: 1,
+      autonomyIdleDays: 40,
+      stalled: true,
+    });
   });
 });

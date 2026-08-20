@@ -1,7 +1,7 @@
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { LedgerRunRow } from '../../agent-run/domain/port/agent-run.repository.port';
 import { formatKstDate } from '../../common/util/kst-date.util';
-import { classifyAutonomy } from './agent-autonomy';
+import { classifyAutonomy, isAutonomousTrigger } from './agent-autonomy';
 import { ConsoleAgentLedger, ConsoleLedger, LedgerClock } from './ledger.type';
 import { isStalled } from './stall';
 
@@ -68,6 +68,7 @@ const buildAgentLedger = (
       autonomy: 'NEVER_RUN',
       stalled: false,
       idleDays: null,
+      autonomyIdleDays: null,
     };
   }
 
@@ -79,9 +80,39 @@ const buildAgentLedger = (
     row.startedAt.getTime() > latest.startedAt.getTime() ? row : latest,
   );
   const autonomy = classifyAutonomy(rows.map((row) => row.triggerType));
-  const activeDays = new Set(rows.map((row) => row.kstDate)).size;
-  const ageDays = differenceInCalendarDays(today, firstRunDate);
   const idleDays = differenceInCalendarDays(today, lastRun.kstDate);
+  let stalled = false;
+  let autonomyIdleDays: number | null = null;
+
+  if (autonomy === 'AUTONOMOUS') {
+    // 스윕이 멈춘 뒤 수동 호출 한 건이 전체 lastRun을 갱신하면, 중단을 알아야 할 시점에
+    // idleDays가 되돌아가 고장이 가려진다. 정지 근거는 자율 trigger 행으로만 만든다.
+    const autonomousRows = rows.filter((row) =>
+      isAutonomousTrigger(row.triggerType),
+    );
+    const firstAutonomousDate = autonomousRows.reduce(
+      (earliest, row) => (row.kstDate < earliest ? row.kstDate : earliest),
+      autonomousRows[0].kstDate,
+    );
+    const lastAutonomousRun = autonomousRows.reduce((latest, row) =>
+      row.startedAt.getTime() > latest.startedAt.getTime() ? row : latest,
+    );
+    const activeDays = new Set(autonomousRows.map((row) => row.kstDate)).size;
+    const spanDays = differenceInCalendarDays(
+      lastAutonomousRun.kstDate,
+      firstAutonomousDate,
+    );
+    autonomyIdleDays = differenceInCalendarDays(
+      today,
+      lastAutonomousRun.kstDate,
+    );
+    stalled = isStalled({
+      autonomy,
+      activeDays,
+      spanDays,
+      idleDays: autonomyIdleDays,
+    });
+  }
 
   return {
     agentType,
@@ -90,8 +121,9 @@ const buildAgentLedger = (
     failedRuns: rows.filter((row) => row.status === 'FAILED').length,
     lastRunAt: lastRun.startedAt.toISOString(),
     autonomy,
-    stalled: isStalled({ autonomy, activeDays, ageDays, idleDays }),
+    stalled,
     idleDays,
+    autonomyIdleDays,
   };
 };
 
