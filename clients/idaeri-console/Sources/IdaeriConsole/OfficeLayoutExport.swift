@@ -57,7 +57,8 @@ struct OfficeRenderMetrics: Codable {
     let nameplateClearancePadding: Double
     /// 이름표가 이웃과 겹치기 시작하는 타일 크기(px). 그 아래에서는 일부만 남긴다.
     let nameplateCrowdedTileSize: Double
-    let labelBoxRatio: Double
+    /// 글자 상자가 글자 크기보다 큰 몫(px). 외곽선 두께라 글자 크기에 비례하지 않는다.
+    let labelBoxOverhead: Double
     let labelFontName: String
     let labelSeparationMinPixels: Double
     let zoneLabelGapTiles: Double
@@ -299,7 +300,7 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             nameplatePlatePadding: officeNameplatePlatePadding,
             nameplateClearancePadding: officeNameplateClearancePadding,
             nameplateCrowdedTileSize: officeNameplateCrowdedTileSize,
-            labelBoxRatio: officeLabelBoxRatio,
+            labelBoxOverhead: officeLabelBoxOverhead,
             labelFontName: officeLabelFontName,
             labelSeparationMinPixels: officeLabelSeparationMinPixels,
             zoneLabelGapTiles: officeZoneLabelGapTiles,

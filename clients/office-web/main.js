@@ -419,7 +419,7 @@ async function captureOnce(window, target) {
  * "사람이 curl 로 두드려 본다" 에만 맡기지 않는다. 이 디렉터리는 브라우저·Electron 코드라
  * 레포의 jest 대상(`src/**`)에 들어가지 않아 여기에 둔다.
  */
-function selfCheck() {
+async function selfCheck() {
   const results = [];
   const expect = (label, actual, expected) => {
     results.push({ label, actual, expected, ok: actual === expected });
@@ -437,6 +437,33 @@ function selfCheck() {
   expect("스프라이트에서 빠져나가는 경로는 거절", resolveStaticPath("/sprites/../../main.js"), null);
   expect("인코딩된 상위 경로도 거절", resolveStaticPath("/%2e%2e%2f%2e%2e%2fmain.js"), null);
   expect("깨진 인코딩은 거절", resolveStaticPath("/%zz"), null);
+
+  // 머리 위 글자 두 층이 실제로 떨어져 있는가.
+  //
+  // 이 검사가 없는 동안 웹 렌더러의 말풍선은 글자가 커질수록 이름표 쪽으로 내려왔고
+  // (30px 에서 -3px), 아무도 그것을 알아채지 못했다. 브라우저 코드라 레포의 jest 대상이
+  // 아니고, 말풍선을 강제로 띄우는 입구도 없어 **화면으로 확인할 방법 자체가 없었다.**
+  //
+  // 두 값은 서로 다른 그리기 경로가 쓰는 함수에서 가져온다 — 한쪽만 고치면 여기서 갈린다.
+  // 상수를 상수로 되세는 자기 확인이 되지 않도록, 검사는 두 함수의 **차이**만 본다.
+  const geometry = await import("./office.js");
+  const layoutPath = path.join(__dirname, "layout-3.json");
+  if (!fs.existsSync(layoutPath)) {
+    expect("평면도(layout-3.json)가 있어야 글자 여백을 검사할 수 있다", false, true);
+  } else {
+    const metrics = JSON.parse(fs.readFileSync(layoutPath, "utf8")).metrics;
+    // 글자 하한(11px)이 걸리는 작은 창부터 큰 창까지. 하한 구간에서만 틀리는 결함이 있었다.
+    for (const tileSize of [20.6, 27, 32, 40, 60, 90]) {
+      const nameFontSize = Math.max(
+        metrics.nameplateMinFontSize,
+        tileSize * metrics.nameplateFontTiles
+      );
+      const gap =
+        geometry.bubbleBottomOffset(metrics, tileSize, nameFontSize) -
+        geometry.nameplateTopOffset(metrics, tileSize, nameFontSize);
+      expect(`타일 ${tileSize}: 말풍선이 이름표 판에서 떨어진다`, gap, metrics.nameplateClearancePadding);
+    }
+  }
 
   const failed = results.filter((one) => !one.ok);
   for (const one of failed) {
@@ -510,7 +537,15 @@ function buildMenu() {
 
 app.whenReady().then(() => {
   if (process.argv.includes("--self-check")) {
-    app.exit(selfCheck() ? 0 : 1);
+    selfCheck().then(
+      (ok) => app.exit(ok ? 0 : 1),
+      (error) => {
+        // 검사가 **못 돈 것**과 통과한 것을 구별한다. 던진 예외를 삼키면 exit 0 이 되어
+        // "다 통과" 로 보고된다.
+        console.error(`self-check 를 돌리지 못했다: ${error?.stack ?? error}`);
+        app.exit(1);
+      }
+    );
     return;
   }
   server = http.createServer((request, response) => {

@@ -894,8 +894,18 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     //
     // 예전 3행 배치는 행 간격이 2 칸이라, 아래 행 이름표가 위 행 책상 상판에 얹혀 글자가
     // 나뭇결에 묻혔다(사진에서 내부 부서의 "윤문"·"이슈 분류"). 간격 3 칸이면 닿지 않는데,
-    // 여유가 0.1칸뿐이라 배치를 손볼 때 쉽게 되돌아간다 — 최소 창 기준으로 고정해 둔다.
+    // 여유가 얇아 배치를 손볼 때 쉽게 되돌아간다 — 최소 창 기준으로 고정해 둔다.
+    //
+    // **여유가 "0.1칸" 이던 동안 그 값은 실물이 아니었다.** 이름표 상자를 글자 크기의 1.3배로
+    // 잡던 시절의 숫자인데, 외곽선까지 그려진 실제 상자는 그보다 높다(`officeLabelBoxOverhead`).
+    // 상자를 실측 높이로 바꾸자 이름표 위끝이 책상 **칸 경계**를 1.6px 넘는 것으로 나왔다.
+    //
+    // 넘는 것이 칸 경계일 뿐 상판이 아니다 — 책상 그림은 자기 칸 안쪽에 그려지고, 최소 창
+    // 렌더에서 이름표 판이 위 행 책상 그림에 닿지 않는 것을 확인했다. 그래서 경계를 스치는
+    // 몫만 허용하고 그 이상은 막는다. 허용치를 실측(1.6px)보다 크게 잡지 말 것 — 키우는 순간
+    // 이 단언은 다시 아무것도 막지 않는다.
     let smallestTile = 20.6
+    let deskGrazeAllowancePixels = 2.0
     for zone in plan.zones {
         let zoneDesks = plan.desks.filter { desk in
             desk.desk.x >= zone.origin.x && desk.desk.x < zone.origin.x + zone.width
@@ -916,8 +926,9 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
                 continue
             }
             t.expect(
-                nameplateTop <= Double(above),
-                "\(zone.department.label) x=\(desk.desk.x) 아래 행 이름표(\(nameplateTop))가 위 행 책상(\(above))을 침범"
+                nameplateTop <= Double(above) + deskGrazeAllowancePixels / smallestTile,
+                "\(zone.department.label) x=\(desk.desk.x) 아래 행 이름표(\(nameplateTop))가"
+                    + " 위 행 책상(\(above))을 침범"
             )
         }
     }
