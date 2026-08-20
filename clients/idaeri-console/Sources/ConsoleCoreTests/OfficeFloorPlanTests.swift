@@ -508,12 +508,17 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         )
     }
 
-    // 같은 계열 가구는 같은 배율을 받는다 — 탕비실에 2인·3인 소파가 3칸 간격으로 함께 놓이는데
-    // 폭 상한을 각자 계산하면 2인 소파가 3인 소파보다 높아 보인다.
+    // 2인·3인 소파는 **같은 높이로 그려진다** — 탕비실에 둘이 3칸 간격으로 함께 놓이므로
+    // 한쪽이 더 높으면 같은 소파의 크기가 다른 것으로 읽힌다.
+    //
+    // 한때 이 검사가 배율(`sizeBoost`)을 비교했다. 배율은 높이를 맞추는 **수단**이라, 두
+    // 그림의 세로 픽셀이 다르면(21 vs 20) 같은 높이를 내는 배율도 달라진다 — 3인 소파를
+    // 실물 비로 다시 뽑았을 때 이 검사만 실패하고 화면은 오히려 정확해졌다. 재려던 것을
+    // 직접 재도록 결과 높이로 바꿨다.
     t.expectEqual(
-        FurnitureKind.sofa2.sizeBoost,
-        FurnitureKind.sofa3.sizeBoost,
-        "2인·3인 소파가 같은 배율"
+        (FurnitureKind.sofa2.nativeHeight * FurnitureKind.sofa2.sizeBoost * 100).rounded(),
+        (FurnitureKind.sofa3.nativeHeight * FurnitureKind.sofa3.sizeBoost * 100).rounded(),
+        "2인·3인 소파가 같은 높이로 그려짐"
     )
 
     // **환산 예외는 "세로가 높이가 아닌 것" 뿐이다** — 위에서 내려다본 회의 테이블(세로가
@@ -576,7 +581,12 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     //
     // 문이 여기 들어온 것이 재제작의 요점이다 — 예전 에셋(40×45)은 폭 상한에 걸려 1.29칸까지만
     // 서서 **사람이 문보다 컸다.** 지금은 1.59칸으로 사람을 넘어선다.
-    let tallerThanPeople: Set<FurnitureKind> = [.vendingMachine, .doorClosed, .doorOpen]
+    // 사물함도 목표가 180cm 로 자판기와 같다. 예전에는 그림(30×35)이 폭 상한에 걸려 목표의
+    // 94% 에서 멈춰 **우연히 사람 키 아래로 통과**했고, 가로세로비를 고쳐 목표를 다 채우자
+    // 드러났다 — 상한이 값을 눌러 주는 동안은 검사가 무엇을 보고 있는지 알 수 없었다.
+    let tallerThanPeople: Set<FurnitureKind> = [
+        .vendingMachine, .doorClosed, .doorOpen, .lockers2,
+    ]
     for kind in FurnitureKind.allCases where !heightExempt.contains(kind) {
         let height = kind.nativeHeight * kind.sizeBoost
         let allowed = characterHeight * (tallerThanPeople.contains(kind) ? 1.2 : 1.0)
@@ -586,8 +596,16 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         )
     }
 
-    // 책상은 여전히 확대 보정 대상이다(원본이 환산값의 90%).
-    t.expect(FurnitureKind.desk.sizeBoost > 1, "책상은 확대 보정")
+    // 책상이 목표 높이(112cm = 사람 키의 66%)를 채운다.
+    //
+    // 한때 이 검사가 `sizeBoost > 1` 이었다. 옛 그림(37×32)이 환산값의 90% 라 확대가
+    // 필요했다는 **그때의 사실**을 못 박은 것인데, 위에서 내려다본 재제작본은 도트 격자가
+    // 촘촘해 원본이 세 배 크므로 축소가 정상이다 — 배율의 방향이 아니라 결과 높이를 본다.
+    let deskShownHeight = FurnitureKind.desk.nativeHeight * FurnitureKind.desk.sizeBoost
+    t.expect(
+        abs(deskShownHeight / characterHeight - 112.0 / 170.0) < 0.03,
+        "책상이 사람 키의 66% (실제 \(Int(deskShownHeight / characterHeight * 100))%)"
+    )
 
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
@@ -1370,9 +1388,16 @@ private func runDeskPaperTests(_ t: TestRunner) {
     // **서류 더미가 화면을 덮으면 안 된다.** 둘 다 책상 자식이고 서류는 처리량에 따라
     // 위로 자라므로(최대 5장), 자라다 화면 아래를 파고들면 정작 일하는 사람의 켜짐 신호가
     // 제일 바쁜 자리에서 먼저 가려진다. 가로가 겹치는 것은 무방하고 세로 관계만 지키면 된다.
+    // 위아래 어느 쪽으로 비켜 있든 **겹치지 않으면** 된다. 한때 "더미 위끝이 화면 아래끝보다
+    // 밑"만 봤는데, 그건 화면이 상판 위쪽에 있던 정면도 시절의 배치였다 — 위에서 내려다본
+    // 재제작본은 모니터가 상판 아래쪽 끝이라 서류가 화면 **위**로 비켜 있다.
     let screenBottomTiles = officeDeskScreenBottomRatio * deskHeightTiles
+    let screenTopTiles =
+        (officeDeskScreenBottomRatio + officeDeskScreenHeightRatio) * deskHeightTiles
+    let stackBottomTiles = officeDeskPaperOriginTiles.y
     t.expect(
-        stackTopTiles < screenBottomTiles,
-        "5장 더미 위끝 \(stackTopTiles) 이 모니터 화면 아래끝 \(screenBottomTiles) 밑"
+        stackTopTiles < screenBottomTiles || stackBottomTiles > screenTopTiles,
+        "5장 더미(\(stackBottomTiles)~\(stackTopTiles))가 화면"
+            + "(\(screenBottomTiles)~\(screenTopTiles))과 세로로 겹치지 않음"
     )
 }

@@ -665,7 +665,12 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             return (1, 2)
         case .rugGreen, .rugBeige, .rugNavy:
             return (2, 2)
-        case .sofa3, .whiteboard, .bookshelf:
+        // 3인 소파는 두 칸이다. 실물 200cm 는 한 칸(126cm)에 들어가지 않아, 한 칸으로 두면
+        // 폭 상한(1.15칸)이 높이 환산을 눌러 **2인 소파까지 함께 작아진다**(둘이 배율 계산을
+        // 공유했다). 두 칸을 주면 상한에 걸리지 않아 둘 다 목표 높이 80cm 를 채운다.
+        case .sofa3:
+            return (2, 1)
+        case .whiteboard, .bookshelf:
             return (1, 1)
         default:
             return (1, 1)
@@ -816,13 +821,19 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         case .chairUp:
             return (17, 24)
         case .meetingTable:
-            return (37, 56)
+            // 재제작본(furniture-4). 의자 여덟 개를 함께 그려 두어 그 자리가 늘 빈 채였다 —
+            // 이제 상판만 있고 사람이 둘레에 실제로 앉는다.
+            return (27, 62)
         case .sofa2:
             return (30, 21)
         case .sofa3:
-            return (39, 21)
+            // 재제작본. 39×21 로는 2인 소파(30×21)와 폭 차이가 30% 뿐이어서 화면에서
+            // 구별되지 않았다. 실물 비(200:80 = 2.5)에 맞춰 다시 뽑았다.
+            return (49, 20)
         case .coffeeTable:
-            return (18, 17)
+            // 재제작본. 유리 원형 테이블(18×17)이 40픽셀 칸에서 파란 원반이 되어 물웅덩이로
+            // 읽혔다. 낮고 넓은 나무 상판으로 바꿨다 — 폭 오차 −40% → −5%.
+            return (27, 16)
         case .coffeeMachine:
             return (27, 31)
         case .waterCooler:
@@ -832,9 +843,12 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             // 다시 뽑았다 — 폭 상한에 걸려 목표의 70% 에서 멈추던 것이 100% 로 올라간다.
             return (55, 56)
         case .printer:
-            return (24, 28)
+            // 재제작본. 24×28 은 거의 정사각형이라 높이를 맞추면 폭이 실물의 1.7배가 되어
+            // 탁상 프린터가 복사기 크기로 부풀었다.
+            return (13, 31)
         case .plantTall:
-            return (18, 32)
+            // 재제작본. 세로로 늘려 화분 비율을 되찾았다(폭 +41% → −3%).
+            return (17, 44)
         case .plantSmall:
             return (17, 20)
         case .bookshelf:
@@ -874,15 +888,21 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
             // 배율을 받아 차이가 오히려 커진다.
             return (35, 64)
         case .filingCabinet:
-            return (30, 34)
+            // 재제작본. 30×34 는 3단 서랍장인데 거의 정사각형이라 폭이 실물의 2.1배였다.
+            return (10, 31)
         case .lockers2:
-            return (30, 35)
+            // 재제작본. 30×35 는 2연 사물함인데 폭이 실물의 2.4배로, 벽 하나를 통째로 먹었다.
+            return (17, 47)
         case .partitionLow:
             return (40, 25)
         case .vendingMachine:
-            return (30, 40)
+            // 재제작본. 폭 +50% → +9%.
+            return (24, 44)
         case .refrigerator:
-            return (25, 30)
+            // 재제작본. 요청은 소형 1문이었는데 2문 대형으로 그려져 왔다 — 세로가 길어진
+            // 만큼 `targetHeightCm` 도 함께 올렸다(85 → 120). 그림과 목표 높이 중 한쪽만
+            // 바꾸면 배율이 어긋나 폭이 실물의 3분의 2로 눌린다.
+            return (14, 34)
         case .sinkCounter:
             return (40, 30)
         case .partitionGlass:
@@ -895,18 +915,6 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     /// 원본 세로 픽셀. 높이 환산의 분모다.
     public var nativeHeight: Double {
         nativeSize.height
-    }
-
-    /// 폭 상한을 함께 계산하는 계열. 같은 종류 가구가 서로 다른 배율을 받으면 나란히 놓였을 때
-    /// 2인 소파가 3인 소파보다 높아 보인다 — 탕비실 밴드에 둘이 3칸 간격으로 함께 놓인다.
-    /// 3인 소파가 폭 39px 로 더 넓어 상한이 먼저 걸리므로, 2인 소파도 그 값을 따른다.
-    private var scaleGroup: [FurnitureKind] {
-        switch self {
-        case .sofa2, .sofa3:
-            return [.sofa2, .sofa3]
-        default:
-            return [self]
-        }
     }
 
     /// 실물 높이(cm). 이 값으로 배율을 환산한다. nil 이면 환산하지 않는다.
@@ -947,8 +955,6 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         case .filingCabinet:
             return 105  // 3단 서랍
         case .lockers2:
-            // 2연 사물함. 폭 상한(30px → 1.33배)에 먼저 걸려 목표를 다 채우지 못한다 —
-            // 책장과 같은 이유(에셋 가로세로비가 실물보다 정사각형에 가깝다).
             return 180
         case .partitionLow:
             // 낮은 파티션. 폭이 이미 1칸(40px)이라 상한에 먼저 걸려 목표를 다 채우지 못한다.
@@ -984,7 +990,10 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         case .vendingMachine:
             return 180
         case .refrigerator:
-            return 85  // 소형 사무실 냉장고
+            // 슬림 2문. 재제작본 그림이 2문 대형이라 소형(85)으로 두면 폭이 35cm 로 눌려
+            // 냉장고로 안 읽힌다. 그렇다고 대형(170)으로 올리면 1.35칸이 되어 탕비실 창을
+            // 덮으므로(자판기를 운영실로 보낸 것과 같은 이유) 0.95칸에서 멈추는 값을 쓴다.
+            return 120
         case .sinkCounter:
             return 90  // 카운터 높이
         case .partitionGlass:
@@ -1020,17 +1029,28 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
         if let targetHeightCm {
             byHeight = targetHeightCm * officePixelsPerCentimeter / nativeHeight
         } else if self == .meetingTable {
-            byHeight = 1.15
+            // 위에서 내려다본 테이블은 세로가 높이가 아니라 깊이라 cm 환산이 성립하지 않는다.
+            // 대신 **자기 칸을 채우는 배율**을 쓴다 — 8인 테이블이 칸을 덜 채우면 4인용으로
+            // 읽힌다. 한때 1.15 고정이었는데, 그 값은 옛 그림(37×56)이 폭 상한에 걸리는 것을
+            // 피하려고 손으로 눌러 둔 것이라 그림을 다시 뽑으면 근거가 사라진다. 상한은
+            // 아래 `widthCap` 이 이미 보고 있으므로 여기서 미리 눌러 둘 필요가 없다.
+            byHeight =
+                Double(footprint.height) * officeReferenceTileSize / nativeHeight
         } else {
             byHeight = 1.0
         }
+        // 폭 상한은 **자기 그림만** 본다. 한때 2인·3인 소파가 이 계산을 공유했다 — 둘이
+        // 나란히 놓이는데 배율이 갈리면 2인이 3인보다 높아 보인다는 이유였다. 그런데 그
+        // 공유가 거꾸로 물었다: 3인 소파를 실물 비(200:80)로 다시 뽑자 폭 49px 이 한 칸
+        // 상한에 걸려, **3인 때문에 2인까지 목표 높이의 78% 로 눌렸다.**
+        //
+        // 3인 소파에 두 칸을 주는 것(`footprint`)이 옳은 해법이었다. 실물 200cm 는 한 칸
+        // (126cm)에 애초에 들어가지 않는다. 두 칸을 받으면 둘 다 상한에 걸리지 않고, 같은
+        // 목표 높이(80cm)를 각자 채우므로 결과 높이도 저절로 같아진다 — 배율을 묶지 않아도
+        // 원래 걱정했던 어긋남이 생기지 않는다.
         let widthCap =
-            scaleGroup
-            .map {
-                Double(footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
-                    / $0.nativeSize.width
-            }
-            .min() ?? 1
+            Double(footprint.width) * officeFurnitureWidthCapTiles * officeReferenceTileSize
+            / nativeSize.width
         return min(byHeight, widthCap)
     }
 }

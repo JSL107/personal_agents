@@ -75,15 +75,15 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-desk",
         "furn-chair-down",
         "furn-chair-up",
-        "furn-meeting-table",
+        None,  # furniture-4 가 정본(의자 없는 재제작본)
         "furn-sofa-2",
-        "furn-sofa-3",
-        "furn-coffee-table",
+        None,  # furniture-4 가 정본(폭을 넓힌 재제작본)
+        None,  # furniture-4 가 정본(낮고 넓은 재제작본)
         "furn-coffee-machine",
         "furn-water-cooler",
         None,  # furniture-3 이 정본(세로로 긴 재제작본)
-        "furn-printer",
-        "furn-plant-tall",
+        None,  # furniture-4 가 정본(좁게 재제작)
+        None,  # furniture-4 가 정본(세로로 늘린 재제작본)
         None,  # furniture-3 이 정본
         "furn-plant-small",
         "furn-clock",
@@ -104,13 +104,13 @@ SHEETS: dict[str, list[str | None]] = {
     "furniture-door": [
         None,  # furniture-3 이 정본
         None,  # furniture-3 이 정본
-        "furn-filing-cabinet",
-        "furn-lockers-2",
+        None,  # furniture-4 가 정본(3단 서랍 비율로 재제작)
+        None,  # furniture-4 가 정본(세로로 긴 재제작본)
         "furn-partition-low",
     ],
     "furniture-2": [
-        "furn-vending-machine",
-        "furn-refrigerator",
+        None,  # furniture-4 가 정본(좁게 재제작)
+        None,  # furniture-4 가 정본(좁게 재제작)
         "furn-sink-counter",
         "furn-partition-glass",
     ],
@@ -124,6 +124,24 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-door-open",
         "furn-bookshelf",
         "furn-whiteboard",
+    ],
+    # 가로세로비 재제작본. 크기는 높이(cm)로만 환산하는데 배율이 가로에도 같이 곱해지므로,
+    # 그림 자체의 비율이 실물과 다르면 키를 맞추는 순간 폭이 어긋난다 — 실측하면 사물함이
+    # 실물의 2.4배, 서류함 2.1배, 프린터 1.7배로 넓고 커피테이블은 0.6배로 좁았다.
+    # 회의 테이블은 의자를 함께 그려 여덟 자리가 늘 빈 채였고, 이제 의자가 없다.
+    #
+    # 네 행(낮고 넓은 것 → 중간 → 높은 것 → 큰 것 하나)으로 받았다. 행 판정이 평균 높이의
+    # 60% 를 기준으로 묶으므로 한 행 안의 높이를 비슷하게 맞춰야 순서가 안 흔들린다.
+    "furniture-4": [
+        "furn-coffee-table",
+        "furn-sofa-3",
+        "furn-refrigerator",
+        "furn-printer",
+        "furn-filing-cabinet",
+        "furn-vending-machine",
+        "furn-plant-tall",
+        "furn-lockers-2",
+        "furn-meeting-table",
     ],
 }
 
