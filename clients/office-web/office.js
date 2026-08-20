@@ -12,6 +12,37 @@
 // 좌표계가 둘이라는 점만 주의하면 된다 — 평면도는 SpriteKit 기준이라 y 가 **위로** 증가하고,
 // Canvas 는 아래로 증가한다. 변환은 `toCanvasY` 한 곳에서만 한다.
 
+// MARK: 머리 위 글자 층 계산
+//
+// **클래스 밖에 두는 이유는 검사 때문이다.** 이름표 판 위끝과 말풍선 판 아래끝은 서로 다른
+// 그리기 경로에서 나오는데(`drawPlateLabel` 의 박스 높이 ↔ `drawAgentLabels` 의 clearance),
+// 한쪽만 고치면 두 글자가 겹친다 — 맥 앱에서 실제로 그렇게 6주를 갔다. 두 값을 창 없이
+// 부를 수 있어야 `--self-check` 가 그 어긋남을 잡는다.
+
+/** 라벨 글자 상자의 실제 높이(px). 글자 크기에 외곽선 몫을 더한다. */
+export function labelBoxHeight(metrics, fontSize) {
+  return fontSize + metrics.labelBoxOverhead;
+}
+
+/** 이름표 판 **아래끝**이 스프라이트 위끝에서 몇 px 위인가. */
+export function nameplateBottomOffset(metrics, tileSize) {
+  return tileSize * metrics.nameplateGapTiles;
+}
+
+/** 이름표 판 **위끝**이 스프라이트 위끝에서 몇 px 위인가. */
+export function nameplateTopOffset(metrics, tileSize, nameFontSize) {
+  return nameplateBottomOffset(metrics, tileSize) + labelBoxHeight(metrics, nameFontSize);
+}
+
+/** 말풍선 판 **아래끝**이 스프라이트 위끝에서 몇 px 위인가. */
+export function bubbleBottomOffset(metrics, tileSize, nameFontSize) {
+  return (
+    labelBoxHeight(metrics, nameFontSize) +
+    tileSize * metrics.nameplateGapTiles +
+    metrics.nameplateClearancePadding
+  );
+}
+
 const SPRITE_DIR = "sprites";
 
 /** 스프라이트 이름 → Promise<Image|null>. 같은 그림을 두 번 받지 않는다. */
@@ -1193,10 +1224,8 @@ export class OfficeRenderer {
     const size = glow.width * this.spriteScale;
     // 왕관 문패 판 바로 위. 겹치면 "나 (대표)" 글자와 등이 서로 가린다.
     const bottom =
-      point.y +
-      spriteHeight +
-      this.tileSize * this.metrics.nameplateGapTiles +
-      this.labelBoxHeight(this.nameplateFontSize());
+      point.y + spriteHeight
+      + nameplateTopOffset(this.metrics, this.tileSize, this.nameplateFontSize());
     const phase = (now % 2.2) / 1.1;
     const fade = phase < 1 ? 1 - 0.65 * phase : 0.35 + 0.65 * (phase - 1);
     const context = this.context;
@@ -1322,7 +1351,7 @@ export class OfficeRenderer {
    * (맥 앱의 `officeLabelBoxHeight` 와 같은 정의를 봐야 한다).
    */
   labelBoxHeight(fontSize) {
-    return fontSize + this.metrics.labelBoxOverhead;
+    return labelBoxHeight(this.metrics, fontSize);
   }
 
   nameplateFontSize() {
@@ -1373,7 +1402,7 @@ export class OfficeRenderer {
     const spriteHeight = this.characterHeight(look, body);
     const centerX = point.x + offset.x;
     const bottomY =
-      point.y + offset.y + spriteHeight + this.tileSize * this.metrics.nameplateGapTiles;
+      point.y + offset.y + spriteHeight + nameplateBottomOffset(this.metrics, this.tileSize);
     // 자리 몫은 **자기 책상에 앉아 있을 때만** 물린다. 자리를 떠난 사람에게 물리면 복도나
     // 소파에서도 이름표가 한쪽으로 치우친 채 눌려 따라다닌다.
     const span = body.seated && !body.interactionPose ? this.nameplateSpan(body) : null;
@@ -1395,10 +1424,7 @@ export class OfficeRenderer {
     if (!bubble || state === "WAITING") {
       return;
     }
-    const clearance =
-      this.labelBoxHeight(fontSize) +
-      this.tileSize * this.metrics.nameplateGapTiles +
-      this.metrics.nameplateClearancePadding;
+    const clearance = bubbleBottomOffset(this.metrics, this.tileSize, fontSize);
     this.drawPlateLabel(bubble, {
       centerX,
       bottomY: point.y + offset.y + spriteHeight + clearance,
@@ -1609,10 +1635,7 @@ export class OfficeRenderer {
     const boxTiles =
       (this.labelBoxHeight(this.bubbleFontSize()) * this.metrics.bubbleMaxLines) / this.tileSize;
     const clearance =
-      (this.labelBoxHeight(this.nameplateFontSize()) +
-        this.tileSize * this.metrics.nameplateGapTiles +
-        this.metrics.nameplateClearancePadding) /
-      this.tileSize;
+      bubbleBottomOffset(this.metrics, this.tileSize, this.nameplateFontSize()) / this.tileSize;
     return (
       seatY -
       this.metrics.seatedSpriteDrop +
