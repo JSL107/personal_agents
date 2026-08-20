@@ -18,6 +18,8 @@ export interface SaveScreeningRunInput {
   strategy: string;
   asOf: Date;
   ruleVersion: number;
+  // 이 회차를 만든 추천 실행. CLI 로 사람이 확인차 돌린 회차는 null 이다.
+  agentRunId: number | null;
   universeCount: number;
   evaluatedCount: number;
   staleCount: number;
@@ -25,10 +27,11 @@ export interface SaveScreeningRunInput {
   items: ScreeningRunItemInput[];
 }
 
-export interface SavedScreeningRun {
-  runId: number;
-  recordedCount: number;
-}
+export type SaveScreeningRunOutcome =
+  | { saved: true; runId: number; recordedCount: number }
+  // 운영 회차가 이미 있어 남기지 않은 경우. 조용히 성공으로 돌리면 호출자가
+  // "남았다" 로 오해하므로 이유와 기존 회차를 함께 돌려준다.
+  | { saved: false; reason: 'OPERATIONAL_RUN_EXISTS'; runId: number };
 
 @Injectable()
 export class ScreeningHistoryPrismaRepository {
@@ -38,15 +41,36 @@ export class ScreeningHistoryPrismaRepository {
   // 돌린 회차에 옛 항목이 섞여, 그날 무엇을 보여줬는지가 실제와 달라진다.
   async saveScreeningRun(
     input: SaveScreeningRunInput,
-  ): Promise<SavedScreeningRun> {
+  ): Promise<SaveScreeningRunOutcome> {
     const header = {
       ruleVersion: input.ruleVersion,
+      agentRunId: input.agentRunId,
       universeCount: input.universeCount,
       evaluatedCount: input.evaluatedCount,
       staleCount: input.staleCount,
       passedCount: input.passedCount,
     };
     return await this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.screeningRun.findUnique({
+        where: {
+          strategy_asOf: { strategy: input.strategy, asOf: input.asOf },
+        },
+        select: { id: true, agentRunId: true },
+      });
+      // 운영 회차는 확인차 돌린 CLI 실행에 자리를 내주지 않는다. 상한이 다른 실행이
+      // 항목을 갈아버리면 그날 모델에게 무엇을 보여줬는지가 비가역적으로 사라진다.
+      // 운영이 운영을 덮어쓰는 것은 허용 — 같은 기준일 재실행은 정본 갱신이다.
+      if (
+        existing !== null &&
+        existing.agentRunId !== null &&
+        input.agentRunId === null
+      ) {
+        return {
+          saved: false as const,
+          reason: 'OPERATIONAL_RUN_EXISTS' as const,
+          runId: existing.id,
+        };
+      }
       const run = await transaction.screeningRun.upsert({
         where: {
           strategy_asOf: { strategy: input.strategy, asOf: input.asOf },
@@ -76,7 +100,11 @@ export class ScreeningHistoryPrismaRepository {
             })),
         });
       }
-      return { runId: run.id, recordedCount: input.items.length };
+      return {
+        saved: true as const,
+        runId: run.id,
+        recordedCount: input.items.length,
+      };
     });
   }
 }

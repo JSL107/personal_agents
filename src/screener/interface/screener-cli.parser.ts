@@ -72,8 +72,10 @@ const parseScreenOptions = (optionValues: string[]): ScreenUniverseOptions => {
   while (index < optionValues.length) {
     const key = optionValues[index];
     // --record 는 값을 받지 않는 플래그라 다음 토큰을 건너뛰지 않는다.
+    // CLI 실행은 추천 실행이 아니므로 agentRunId 가 없다 — 그래서 같은 기준일의
+    // 운영 회차를 덮어쓰지 못하고 건너뛴다(저장 쪽에서 막는다).
     if (key === '--record') {
-      options.record = true;
+      options.record = { agentRunId: null };
       index += 1;
       continue;
     }

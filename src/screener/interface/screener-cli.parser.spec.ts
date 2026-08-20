@@ -32,13 +32,18 @@ describe('parseScreenerCliArguments', () => {
       ]),
     ).toEqual({
       subcommand: 'screen',
-      options: { strategy: 'SWING', limit: 3, record: true },
+      // CLI 실행에는 추천 실행 id 가 없다 — 그래서 운영 회차를 덮어쓰지 못한다.
+      options: { strategy: 'SWING', limit: 3, record: { agentRunId: null } },
     });
     expect(
       parseScreenerCliArguments(['screen', '--limit', '3', '--record']),
     ).toEqual({
       subcommand: 'screen',
-      options: { strategy: 'LONG_TERM', limit: 3, record: true },
+      options: {
+        strategy: 'LONG_TERM',
+        limit: 3,
+        record: { agentRunId: null },
+      },
     });
   });
 
