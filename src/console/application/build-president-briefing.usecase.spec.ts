@@ -46,6 +46,13 @@ const postedCard = (
   createdAt,
 });
 
+const succeededRun = (id: number, endedAt: string): unknown => ({
+  id,
+  output: {},
+  inputSnapshot: {},
+  endedAt: new Date(endedAt),
+});
+
 describe('BuildPresidentBriefingUsecase', () => {
   let usecase: BuildPresidentBriefingUsecase;
   let agentRunService: {
@@ -111,12 +118,34 @@ describe('BuildPresidentBriefingUsecase', () => {
     expect(briefing.todos[0].detail).toBe('19:04 만료');
   });
 
-  it('오늘 안에 다시 도는 워커의 실패는 할 일이 아니다', async () => {
+  it('하루에 여러 번 도는 워커의 실패는 할 일이 아니다', async () => {
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
       { agentType: 'CODE_REVIEWER', status: 'FAILED', runId: 1 },
     ]);
-    // 하루에도 여러 번 성공하는 워커 — 성공한 날짜가 연속이라 중앙값 간격이 1일 미만이다.
-    agentRunService.findRecentSucceededRuns.mockResolvedValue([]);
+    // 5분마다 도는 스윕 — 같은 날 여러 번 성공한다. 날짜 간격만 보면 "1일 주기" 라 걸러지지
+    // 않는데, 실제로는 몇 분 뒤 다음 회차가 알아서 살린다.
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      succeededRun(1, '2026-08-19T01:00:00Z'),
+      succeededRun(2, '2026-08-19T02:00:00Z'),
+      succeededRun(3, '2026-08-19T03:00:00Z'),
+      succeededRun(4, '2026-08-18T01:00:00Z'),
+      succeededRun(5, '2026-08-18T02:00:00Z'),
+      succeededRun(6, '2026-08-18T03:00:00Z'),
+    ]);
+
+    const briefing = await usecase.execute();
+
+    expect(briefing.todos).toEqual([]);
+  });
+
+  it('주기를 알 수 없는 워커는 근거 없이 재촉하지 않는다', async () => {
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PAPER_TRADE', status: 'FAILED', runId: 1 },
+    ]);
+    // 성공한 날이 하루뿐이면 주기를 잴 수 없다.
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      succeededRun(1, '2026-08-19T01:00:00Z'),
+    ]);
 
     const briefing = await usecase.execute();
 

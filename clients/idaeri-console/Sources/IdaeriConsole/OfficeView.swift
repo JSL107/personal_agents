@@ -115,6 +115,14 @@ struct OfficeView: View {
                     // sync 를 부르면 세션 하나 뜰 때마다 바닥·가구·29명이 통째로 다시 그려진다.
                     scene.syncSessions(newSessions)
                 }
+                .onChange(of: store.briefing) { newBriefing in
+                    // 이게 없으면 브리핑을 새로 받아도 화면은 부팅 때 그린 판 그대로다 —
+                    // 결재를 눌러 할 일이 사라져도 보드에는 계속 남아 있게 된다.
+                    scene.refreshBriefing(
+                        newBriefing,
+                        hour: Calendar.current.component(.hour, from: Date())
+                    )
+                }
                 .onChange(of: store.pendingCommands) { _ in
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,

@@ -106,6 +106,37 @@ func runOfficeWhiteboardTests(_ t: TestRunner) {
     // 자정을 넘기면 성적이 리셋되므로 빈 종이를 남기지 않는다.
     t.expect(!officeShowsDailyReport(hour: 0), "자정 이후에는 걷는다")
 
+    // 종이가 대표보다 먼저 잡힌다 — 히트 판정 순서
+    //
+    // 종이는 대표실 왼쪽 끝, 대표는 방 가운데다. 둘 사이를 누르면 가까운 쪽이 이기는데,
+    // 순서를 뒤집으면 종이를 눌러도 지시 입력창이 열린다(설계서가 남긴 회귀 위험).
+    let paperPoint = OfficePoint(x: 100, y: 200)
+    let presidentPoint = OfficePoint(x: 130, y: 200)
+    let hit = agentTypeAt(
+        point: OfficePoint(x: 105, y: 200),
+        slots: [
+            (officeHitTargetDailyReport, paperPoint),
+            (officeHitTargetPresident, presidentPoint),
+        ],
+        radius: 40
+    )
+    t.expect(
+        hit == officeHitTargetDailyReport,
+        "종이 쪽에 가까우면 종이가 잡혀야 한다 (실제: \(hit ?? "없음"))"
+    )
+    let farHit = agentTypeAt(
+        point: OfficePoint(x: 128, y: 200),
+        slots: [
+            (officeHitTargetDailyReport, paperPoint),
+            (officeHitTargetPresident, presidentPoint),
+        ],
+        radius: 40
+    )
+    t.expect(
+        farHit == officeHitTargetPresident,
+        "대표 쪽에 가까우면 대표가 잡혀야 한다 (실제: \(farHit ?? "없음"))"
+    )
+
     // 정산 문장이 남은 몫을 말한다
     let lines = officeDailyReportLines(
         report: ConsoleDailyReport(

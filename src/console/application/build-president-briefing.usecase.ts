@@ -27,6 +27,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // 같은 질문("이 워커는 며칠에 한 번 도나")을 하므로 창이 다르면 두 화면이 다른 답을 낸다.
 const CYCLE_HISTORY_DAYS = 60;
 const CYCLE_HISTORY_LIMIT = 300;
+// 하루 평균 이만큼 이상 도는 워커는 스스로 살아난다고 본다. 실측상 하루 1회 워커는 다음날
+// 정규 슬롯(약 24시간 뒤)에 복구되고, 여러 번 도는 워커는 몇 분 안에 복구된다.
+const RUNS_PER_DAY_SELF_HEALING = 2;
 
 interface FailedAgentCandidate {
   readonly agentType: string;
@@ -147,14 +150,24 @@ export class BuildPresidentBriefingUsecase {
         sinceDays: CYCLE_HISTORY_DAYS,
         limit: CYCLE_HISTORY_LIMIT,
       });
-      const succeededDates = [
-        ...new Set(
-          runs
-            .map((run) => formatKstDate(run.endedAt.toISOString()))
-            .filter((date): date is string => date !== null),
-        ),
-      ].sort((left, right) => right.localeCompare(left));
+      const dates = runs
+        .map((run) => formatKstDate(run.endedAt.toISOString()))
+        .filter((date): date is string => date !== null);
+      const succeededDates = [...new Set(dates)].sort((left, right) =>
+        right.localeCompare(left),
+      );
       if (succeededDates.length < 2) {
+        return null;
+      }
+      // **하루에 여러 번 도는 워커를 여기서 걸러낸다.**
+      //
+      // 날짜 단위 중앙값만 보면 5분마다 도는 스윕도 "1일 주기" 로 나온다 — 매일 성공하니
+      // 날짜 간격이 1일이다. 그대로 두면 그 스윕이 엎어질 때마다 보드에 "재시도" 가 뜨는데,
+      // 몇 분 뒤 다음 회차가 알아서 살린다(원장 실측: CODE_REVIEWER 복구까지 2~12분).
+      //
+      // 하루 평균 실행 횟수로 가른다. 오늘 안에 또 돌 워커는 대표가 손댈 일이 아니다.
+      const runsPerDay = dates.length / succeededDates.length;
+      if (runsPerDay >= RUNS_PER_DAY_SELF_HEALING) {
         return null;
       }
       return calculateMedianIntervalDays(succeededDates);
