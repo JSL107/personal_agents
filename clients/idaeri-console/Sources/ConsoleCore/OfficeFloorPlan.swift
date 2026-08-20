@@ -88,7 +88,15 @@ public let officeDeskPaperMaxCount: Int = 5
 /// 걸치므로, 책상 가운데에 놓으면 서류가 사람 몸통에 파묻힌다. 오른쪽으로 밀어야 하는데,
 /// **너무 밀면 상판 밖으로 삐져나와 공중에 뜬 물체로 보인다** — 책상 스프라이트는 폭 37도트
 /// 안에 좌우 여백이 있어 실제 상판은 그보다 좁다(0.30 에서 상판 경계에 걸쳤다, 실측).
-public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.22, 0.46)
+/// 재제작본(위에서 내려다본 책상)에 맞춰 옮겼다. 상판이 키보드·마우스·모니터로 꽉 차서
+/// 남은 빈 자리는 **맨 위 좌우 구석**뿐이다 — 예전 자리(0.22, 0.46)는 키보드와 모니터 사이
+/// 3도트 틈이라 둘 중 하나를 반드시 덮었다.
+///
+/// 좌우로 벌리는 이유는 앉은 사람이 책상 위쪽 절반을 가리기 때문이다(사람 폭 0.65칸).
+/// y 를 0.72 로 잡은 것은 서류가 다섯 장까지 위로 자라도(+0.11칸) 상판(0.89칸)을 넘지
+/// 않는 상한이다. x 는 0.29 가 상한이다 — 더미는 장수가 늘면 **좌우로도 퍼지므로**
+/// (0.34 에서는 세 장째에 상판 오른쪽을 넘어갔다) 그 퍼짐을 뺀 자리에 두어야 한다.
+public let officeDeskPaperOriginTiles: (x: Double, y: Double) = (0.29, 0.72)
 
 // MARK: - 책상 위 개인 소품
 
@@ -127,7 +135,7 @@ public func officeDeskProp(agentType: String) -> String {
 /// **책상 반폭(0.51칸)보다 훨씬 안쪽이어야 한다.** -0.24 로 뒀다가 렌더를 보니 소품이 상판
 /// 왼쪽 모서리에 걸쳐 책상 밖으로 반쯤 나갔다. 스프라이트 폭(37도트) 안에서 실제 상판이
 /// 차지하는 범위가 그보다 좁아서다 — 오른쪽 아래는 서류함이 물고 있다. 눈으로 확정한 값.
-public let officeDeskPropOriginTiles: (x: Double, y: Double) = (-0.15, 0.52)
+public let officeDeskPropOriginTiles: (x: Double, y: Double) = (-0.34, 0.72)
 
 /// 한 장 쌓을 때마다 위로 올리는 간격(타일 배수)과 좌우로 어긋내는 폭.
 ///
@@ -199,9 +207,12 @@ public func officeDeskPaperCount(doneToday: Int?) -> Int {
 ///
 /// 실측: 화면은 x 9~27, 위에서 y 4~8도트다(그 위 y 0~2 는 모니터 윗면, y 9 는 받침).
 /// 좌우로 1도트씩 물려 검은 테두리를 남긴다 — 테두리까지 덮으면 화면이 아니라 파란 판이 된다.
-public let officeDeskScreenWidthRatio: Double = 17.0 / 37.0
-public let officeDeskScreenHeightRatio: Double = 5.0 / 32.0
-public let officeDeskScreenBottomRatio: Double = 23.0 / 32.0
+/// 재제작본 실측(108×99). 위에서 내려다보면 화면 자체는 모니터 상단의 **2도트 띠**로만
+/// 보인다 — 그대로 쓰면 배율(0.36)이 곱해져 0.7도트, 즉 1픽셀도 안 되어 켜짐 신호가 사라진다.
+/// 그래서 발광 띠에 모니터 상단 몇 도트를 더해 두께를 확보한다(6도트 → 화면에서 약 2.2도트).
+public let officeDeskScreenWidthRatio: Double = 80.0 / 108.0
+public let officeDeskScreenHeightRatio: Double = 6.0 / 99.0
+public let officeDeskScreenBottomRatio: Double = 43.0 / 99.0
 
 // MARK: - 이름표·문패가 서로를 가리지 않게 하는 기준
 //
@@ -815,7 +826,11 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     public var nativeSize: (width: Double, height: Double) {
         switch self {
         case .desk:
-            return (37, 32)
+            // 위에서 내려다본 재제작본(furniture-desk-top). 정면도였을 때는 모니터 화면이
+            // 화면 앞쪽을 봤는데 앉은 사람도 앞쪽을 봐서, 서른두 좌석 전부가 모니터 뒷판을
+            // 마주하고 있었다. 도트 격자가 촘촘해 원본이 세 배 크다 — 배율 환산이 그만큼
+            // 작아지므로 화면에 그려지는 크기는 그대로다.
+            return (108, 99)
         case .chairDown:
             return (16, 26)
         case .chairUp:
