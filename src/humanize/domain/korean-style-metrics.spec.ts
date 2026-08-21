@@ -110,6 +110,22 @@ describe('measureKoreanStyle — 종결체 축', () => {
 
   // 합쇼체는 자음 뒤 `-습니다` / 모음 뒤 `-ㅂ니다` 로 갈린다. 어미를 열거하면 후자가 빠져
   // 합쇼체가 0 으로 세어지고, 딱딱한 글이 "요체 100%" 로 뒤집힌다.
+  // `~죠` 는 `~지요` 의 축약이라 해요체인데 글자로는 `요` 로 끝나지 않는다. 빼놓으면 문단을
+  // `~죠` 로 맺는 글이 "요체 6%" 로 찍혀 딱딱한 글로 오독된다(실측으로 걸렸다).
+  it('`~죠` 도 요체로 센다', () => {
+    const metrics = measureKoreanStyle(
+      '이건 그렇습니다. 저건 그렇죠. 그건 이렇습니다. 요건 이렇죠.',
+    );
+
+    expect(metrics.yoEndingPercent).toBe(50);
+  });
+
+  it('`~죠` 로만 맺는 글은 요체 100%다', () => {
+    const metrics = measureKoreanStyle('그렇죠. 이렇죠. 저렇죠.');
+
+    expect(metrics.yoEndingPercent).toBe(100);
+  });
+
   it('`-ㅂ니다` 활용형도 합쇼체로 센다', () => {
     const metrics = measureKoreanStyle('갑니다. 봅니다. 줍니다. 씁니다.');
 
