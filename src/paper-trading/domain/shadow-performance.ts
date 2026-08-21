@@ -28,6 +28,10 @@ export interface CalculateShadowPerformanceInput {
 export interface CalculateShadowPerformanceResult {
   performances: ShadowPerformance[];
   shadowUnavailableCount: number;
+  // 위 합계 중 "보유 기간이 아직 안 찼다" 인 건수. 그림자는 매수 후 전략별 고정 거래일
+  // 뒤 종가로 팔았다고 가정하므로, 계좌를 연 지 얼마 안 됐으면 전건이 여기로 떨어진다.
+  // 데이터가 깨진 것과 때가 안 된 것은 다른 사건인데 합계만 보면 구분되지 않는다.
+  shadowNotDueCount: number;
 }
 
 export interface BenchmarkCloseInput {
@@ -54,6 +58,11 @@ export interface CalculateBenchmarkPerformanceResult {
   performances: BenchmarkPerformance[];
   meanExcessReturnRate: string | null;
   benchmarkUnavailableCount: number;
+  // 평가일 지수가 아직 안 들어온 회차인가. 초과수익은 진입일과 청산일 지수를 모두 요구하고
+  // 보유 중인 추천은 청산일이 곧 평가일이라, 이 값이 참이면 전건이 집계에서 빠진다.
+  // 개별 결손과 달리 회차 전체를 무효로 만드는 사건이라 따로 낸다 — 2026-08-19 채점이
+  // 그날 지수 수집(18:30)보다 먼저 돌아 전건 제외로 원장에 박힌 적이 있다.
+  evaluationBenchmarkMissing: boolean;
 }
 
 const SHADOW_HOLDING_ROWS: Record<RecommendationCycle['strategy'], number> = {
@@ -74,6 +83,7 @@ export const calculateShadowPerformance = (
 ): CalculateShadowPerformanceResult => {
   const performances: ShadowPerformance[] = [];
   let shadowUnavailableCount = 0;
+  let shadowNotDueCount = 0;
 
   for (const cycle of input.cycles) {
     if (cycle.classification !== 'CLOSED' && cycle.classification !== 'OPEN') {
@@ -94,8 +104,14 @@ export const calculateShadowPerformance = (
     const entryDailyPrice = dailyPrices[entryIndex];
     const exitDailyPrice = dailyPrices[exitIndex];
 
-    if (entryIndex < 0 || !entryDailyPrice || !exitDailyPrice) {
+    if (entryIndex < 0 || !entryDailyPrice) {
       shadowUnavailableCount += 1;
+      continue;
+    }
+    if (!exitDailyPrice) {
+      // 보유 기간이 아직 안 찼다. 시세가 빠진 것이 아니라 그 거래일이 오지 않은 것이다.
+      shadowUnavailableCount += 1;
+      shadowNotDueCount += 1;
       continue;
     }
 
@@ -132,7 +148,7 @@ export const calculateShadowPerformance = (
     });
   }
 
-  return { performances, shadowUnavailableCount };
+  return { performances, shadowUnavailableCount, shadowNotDueCount };
 };
 
 export const calculateBenchmarkPerformance = (
@@ -143,6 +159,9 @@ export const calculateBenchmarkPerformance = (
       benchmarkClose.tradeDate.getTime(),
       benchmarkClose.close,
     ]),
+  );
+  const evaluationBenchmarkMissing = !benchmarkCloseByDate.has(
+    input.evaluationDate.getTime(),
   );
   const performances: BenchmarkPerformance[] = [];
   const excessReturnRates: MoneyValue[] = [];
@@ -239,5 +258,6 @@ export const calculateBenchmarkPerformance = (
     performances,
     meanExcessReturnRate,
     benchmarkUnavailableCount,
+    evaluationBenchmarkMissing,
   };
 };

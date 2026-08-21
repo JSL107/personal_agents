@@ -90,6 +90,7 @@ describe('calculateShadowPerformance', () => {
         },
       ],
       shadowUnavailableCount: 0,
+      shadowNotDueCount: 0,
     });
   });
 
@@ -196,6 +197,7 @@ describe('calculateBenchmarkPerformance', () => {
       performances: [],
       meanExcessReturnRate: null,
       benchmarkUnavailableCount: 1,
+      evaluationBenchmarkMissing: false,
     });
   });
 
@@ -276,6 +278,7 @@ describe('calculateBenchmarkPerformance', () => {
       ],
       meanExcessReturnRate: '0.0473908852953350677',
       benchmarkUnavailableCount: 0,
+      evaluationBenchmarkMissing: false,
     });
   });
 
