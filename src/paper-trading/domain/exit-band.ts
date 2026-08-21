@@ -145,7 +145,9 @@ export const summarizeExitBandUsage = (
         if (takeProfitDifference !== 0) {
           return takeProfitDifference;
         }
-        return left.stopLossPercent - right.stopLossPercent;
+        // 익절이 같으면 손절이 0 에 가까운 쪽이 좁은 밴드다. 손절은 음수라 오름차순으로
+        // 세우면 -5 가 -0.2 앞에 와 "좁은 것부터" 가 뒤집힌다.
+        return right.stopLossPercent - left.stopLossPercent;
       })
       .map(formatExitBandLabel),
     bandlessSellCount,

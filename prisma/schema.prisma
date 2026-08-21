@@ -699,7 +699,12 @@ model RecommendationScore {
   exitBands               String[]     @map("exit_bands")
   // 밴드가 만들지 않은 매도 건수(모델이 고른 매도). 밴드 성적을 논할 때 분모에서 빠져야 하는
   // 매도가 몇 건인지 남기지 않으면 밴드 설정 하나로 닫힌 표본처럼 읽힌다.
-  bandlessSellCount       Int          @map("bandless_sell_count")
+  //
+  // default 를 둔 이유는 이 축이 생기기 전 행 때문이다. 행이 있는 테이블에 default 없는 필수
+  // 컬럼을 추가하면 Postgres 가 거부해서(`Null constraint failed`) 이 레포의 표준 배포인
+  // `pnpm db:push` 가 통째로 막힌다. 쓰는 경로는 항상 값을 넘기므로 default 가 실제로 쓰이는
+  // 것은 옛 행뿐이고, 위 exitBands 는 Prisma 스칼라 리스트라 DB 에서 이미 nullable 이다.
+  bandlessSellCount       Int          @default(0) @map("bandless_sell_count")
 
   recommendationCount Int @map("recommendation_count")
   closedCount         Int @map("closed_count")
