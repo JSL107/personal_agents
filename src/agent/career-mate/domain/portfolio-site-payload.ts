@@ -52,10 +52,44 @@ const isAnonymized = (
   { anonymizedOwners }: PortfolioSitePayloadOptions,
 ): boolean => anonymizedOwners.includes(ownerOf(repo));
 
-// 익명 저장소 식별자. 저장소 경로를 해시로 접어 이름을 지우되, 같은 저장소는 항상 같은 값이
-// 되게 한다 — slug 는 멱등 키라 회차마다 흔들리면 같은 성과가 새 항목으로 다시 올라간다.
+// 저장소 경로를 짧은 고정 값으로 접는다. 같은 저장소는 항상 같은 값이어야 한다 — slug 는
+// 멱등 키라 회차마다 흔들리면 같은 성과가 새 항목으로 다시 올라간다.
+const repoDigest = (repo: string): string =>
+  createHash('sha1')
+    .update(repo.trim().toLowerCase())
+    .digest('hex')
+    .slice(0, 6);
+
+// 익명 저장소 식별자.
 const anonymousRepoSegment = (repo: string): string =>
-  `company-${createHash('sha1').update(repo.trim().toLowerCase()).digest('hex').slice(0, 6)}`;
+  `company-${repoDigest(repo)}`;
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 저장소 이름 토큰이 너무 짧으면 흔한 낱말과 겹쳐 무관한 문장까지 가린다(예: repo 명이 `api`).
+const MASKABLE_TOKEN_MIN_LENGTH = 4;
+const MASKED_REPO_LABEL = '사내 저장소';
+
+// 익명 묶음의 작업 문장에서 저장소 이름을 가린다.
+//
+// slug 와 링크를 접어도 문장에 저장소 이름이 남으면 같은 것이 그대로 드러난다. 사내 서비스명이나
+// 내부 용어까지 알 수는 없으니 완전한 정화는 아니다 — 저장소 이름에 한해, slug·링크와 같은
+// 수준을 문장에도 적용한다.
+const maskRepoTokens = (text: string, repo: string): string => {
+  let masked = text;
+  for (const token of repo.split('/')) {
+    const trimmed = token.trim();
+    if (trimmed.length < MASKABLE_TOKEN_MIN_LENGTH) {
+      continue;
+    }
+    masked = masked.replace(
+      new RegExp(escapeRegExp(trimmed), 'gi'),
+      MASKED_REPO_LABEL,
+    );
+  }
+  return masked;
+};
 
 // GitHub 자체가 2008년에 생겼으므로 그 이전 머지 시각은 실재할 수 없다. 근거 PR 의 mergedAt 은
 // LLM 합성 결과라(career-profile-synth.prompt.ts) 머지 시각이 "미상" 인 PR 에 모델이 epoch 를
@@ -201,44 +235,69 @@ export const groupAccomplishments = (
   profile: CareerProfileData,
   options: PortfolioSitePayloadOptions = EMPTY_OPTIONS,
 ): { groups: ProjectGroup[]; skippedTitles: string[] } => {
-  const byKey = new Map<string, ProjectGroup>();
+  // 묶음 경계는 **원본 저장소 경로**로 잡는다. slug 는 손실 변환이라(`.`·`_` 가 모두 `-` 로
+  // 접힌다) 서로 다른 저장소가 같은 값을 얻을 수 있고(`org/foo.bar` vs `org/foo-bar`),
+  // 그것을 경계로 쓰면 두 저장소의 작업이 한 프로젝트로 섞인다. 더 위험한 건 익명 저장소가
+  // 공개 저장소 묶음에 흡수되는 경우다 — 먼저 만들어진 묶음의 anonymized·links 정책이
+  // 그대로 재사용돼 사내 저장소 작업이 공개 링크와 함께 발행된다.
+  const byRepo = new Map<
+    string,
+    {
+      repo: string;
+      anonymized: boolean;
+      accomplishments: ProfileAccomplishment[];
+    }
+  >();
   const skippedTitles: string[] = [];
 
   for (const accomplishment of profile.accomplishments) {
     const repo = repoOf(accomplishment);
-    const key = repo ? buildGroupKey(repo, options) : null;
-    if (!repo || !key) {
+    if (!repo || !buildGroupKey(repo, options)) {
       skippedTitles.push(accomplishment.title);
       continue;
     }
-    const found = byKey.get(key);
+    const repoKey = repo.toLowerCase();
+    const found = byRepo.get(repoKey);
     if (found) {
       found.accomplishments.push(accomplishment);
       continue;
     }
-    byKey.set(key, {
-      key,
+    byRepo.set(repoKey, {
       repo,
       anonymized: isAnonymized(repo, options),
       accomplishments: [accomplishment],
-      techStack: [],
-      period: '',
-      links: {},
     });
   }
 
-  // 묶고 나서 한 번에 계산한다 — 기간·스택은 그룹 전체를 봐야 정해진다.
-  const groups: ProjectGroup[] = [...byKey.values()].map((group) => {
-    const evidence = group.accomplishments.flatMap((item) =>
+  const entries = [...byRepo.values()];
+  // slug 이 겹치는 저장소가 둘 이상이면 **양쪽 모두** 해시를 붙인다. 한쪽만 붙이면 어느 쪽이
+  // 접미사 없는 slug 을 갖는지가 입력 순서에 좌우돼 멱등 키가 회차마다 흔들린다.
+  const baseCount = new Map<string, number>();
+  for (const entry of entries) {
+    const base = buildGroupKey(entry.repo, options) as string;
+    baseCount.set(base, (baseCount.get(base) ?? 0) + 1);
+  }
+
+  // 묶고 나서 한 번에 계산한다 — 기간·스택은 묶음 전체를 봐야 정해진다.
+  const groups: ProjectGroup[] = entries.map((entry) => {
+    const base = buildGroupKey(entry.repo, options) as string;
+    const key =
+      (baseCount.get(base) ?? 0) > 1
+        ? `${base}-${repoDigest(entry.repo)}`
+        : base;
+    const evidence = entry.accomplishments.flatMap((item) =>
       sanitizeEvidence(item.evidence),
     );
     const first = earliestEvidence(evidence);
     const links: Record<string, string> =
-      first && !group.anonymized ? { github: first.url } : {};
+      first && !entry.anonymized ? { github: first.url } : {};
     return {
-      ...group,
+      key,
+      repo: entry.repo,
+      anonymized: entry.anonymized,
+      accomplishments: entry.accomplishments,
       techStack: [
-        ...new Set(group.accomplishments.flatMap((item) => item.techTags)),
+        ...new Set(entry.accomplishments.flatMap((item) => item.techTags)),
       ],
       period: buildPeriod(evidence),
       links,
@@ -281,8 +340,13 @@ export const buildPortfolioSitePayload = ({
       problem: naming.problem,
       // 과정은 성과 bullet 을 그대로 쓴다 — 여기까지 모델이 다시 쓰면 개별 작업의 사실이
       // 요약에 녹아 사라진다. 묶는 것은 표지이지 내용이 아니다.
+      // 익명 묶음은 작업 문장에서도 저장소 이름을 가린다 — 문장에 이름이 남으면 slug·링크를
+      // 접은 것이 무의미해진다.
       process: group.accomplishments
-        .map((item) => item.bullet.trim())
+        .map((item) => {
+          const bullet = item.bullet.trim();
+          return group.anonymized ? maskRepoTokens(bullet, group.repo) : bullet;
+        })
         .filter((bullet) => bullet.length > 0),
       result: naming.result,
       techStack: group.techStack,

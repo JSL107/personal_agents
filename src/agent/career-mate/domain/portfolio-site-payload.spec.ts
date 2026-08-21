@@ -262,3 +262,126 @@ describe('buildPortfolioSitePayload', () => {
     expect(payload.unnamedKeys).toEqual(['jsl107-personal-agents']);
   });
 });
+
+describe('slug 이 겹치는 저장소', () => {
+  // slug 는 손실 변환이라 `.`·`_` 가 모두 `-` 로 접힌다. 그것을 묶음 경계로 쓰면 서로 다른
+  // 저장소가 한 프로젝트로 섞인다.
+  const dotted = 'acme/foo.bar';
+  const dashed = 'acme/foo-bar';
+
+  it('서로 다른 저장소를 한 묶음으로 합치지 않는다', () => {
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('점', [evidence(1, '2026-06-01T01:00:00Z', dotted)]),
+        accomplishment('붙임표', [evidence(2, '2026-06-02T01:00:00Z', dashed)]),
+      ]),
+    );
+
+    expect(groups).toHaveLength(2);
+    expect(new Set(groups.map((group) => group.key)).size).toBe(2);
+  });
+
+  it('겹치는 쪽 양쪽 모두에 해시를 붙인다', () => {
+    // 한쪽만 붙이면 어느 쪽이 접미사 없는 키를 갖는지가 입력 순서에 좌우돼 멱등 키가 흔들린다.
+    const keysOf = (repos: string[]) =>
+      groupAccomplishments(
+        profile(
+          repos.map((repo, index) =>
+            accomplishment(repo, [
+              evidence(index + 1, '2026-06-01T01:00:00Z', repo),
+            ]),
+          ),
+        ),
+      ).groups.map((group) => group.key);
+
+    const forward = keysOf([dotted, dashed]).sort();
+    const backward = keysOf([dashed, dotted]).sort();
+
+    expect(forward).toEqual(backward);
+    for (const key of forward) {
+      expect(key).toMatch(/^acme-foo-bar-[0-9a-f]{6}$/);
+    }
+  });
+
+  it('익명 저장소가 공개 묶음에 흡수되지 않는다', () => {
+    // 흡수되면 먼저 만들어진 묶음의 anonymized·links 정책이 재사용돼 사내 저장소 작업이
+    // 공개 링크와 함께 발행된다 — 익명화가 통째로 무력해지는 경로다.
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('공개', [evidence(1, '2026-06-01T01:00:00Z', dashed)]),
+        accomplishment('사내', [evidence(2, '2026-06-02T01:00:00Z', dotted)]),
+      ]),
+      { anonymizedOwners: [] },
+    );
+    const { groups: mixed } = groupAccomplishments(
+      profile([
+        accomplishment('공개', [
+          evidence(1, '2026-06-01T01:00:00Z', 'other/foo-bar'),
+        ]),
+        accomplishment('사내', [evidence(2, '2026-06-02T01:00:00Z', dotted)]),
+      ]),
+      { anonymizedOwners: ['acme'] },
+    );
+
+    expect(groups).toHaveLength(2);
+    const anonymous = mixed.find((group) => group.anonymized);
+    expect(anonymous).toBeDefined();
+    expect(anonymous?.links).toEqual({});
+    // 사이트로 나가는 payload 를 기준으로 본다 — ProjectGroup 은 내부 표현이라 원본 저장소
+    // 경로를 들고 있는 것이 정상이고, 노출 여부는 발행 본문에서만 판정할 수 있다.
+    const payload = buildPortfolioSitePayload({
+      profile: profile([]),
+      groups: mixed,
+      namings: mixed.map((group) => naming(group.key)),
+      skippedTitles: [],
+    });
+    expect(JSON.stringify(payload.projects)).not.toContain('acme');
+    expect(JSON.stringify(payload.projects)).not.toContain('foo.bar');
+  });
+});
+
+describe('익명 묶음의 작업 문장', () => {
+  it('저장소 이름을 가린다', () => {
+    // slug·링크를 접어도 문장에 이름이 남으면 같은 것이 그대로 드러난다.
+    const work = {
+      ...accomplishment('A', [
+        evidence(1, '2026-06-01T01:00:00Z', 'acme-corp/internal-api'),
+      ]),
+      bullet: 'internal-api 의 크롤 워커를 고쳤다 (acme-corp 사내)',
+    };
+    const { groups } = groupAccomplishments(profile([work]), {
+      anonymizedOwners: ['acme-corp'],
+    });
+    const payload = buildPortfolioSitePayload({
+      profile: profile([]),
+      groups,
+      namings: [naming(groups[0].key)],
+      skippedTitles: [],
+    });
+
+    const [project] = payload.projects;
+    expect(project.process[0]).not.toContain('internal-api');
+    expect(project.process[0]).not.toContain('acme-corp');
+    expect(project.process[0]).toContain('사내 저장소');
+    // 문장의 나머지 내용은 그대로 남아야 한다 — 가리는 것은 이름뿐이다.
+    expect(project.process[0]).toContain('크롤 워커를 고쳤다');
+  });
+
+  it('익명이 아닌 묶음의 문장은 건드리지 않는다', () => {
+    const work = {
+      ...accomplishment('A', [evidence(313, '2026-08-14T01:00:00Z')]),
+      bullet: 'personal_agents 의 관제 콘솔을 만들었다',
+    };
+    const { groups } = groupAccomplishments(profile([work]));
+    const payload = buildPortfolioSitePayload({
+      profile: profile([]),
+      groups,
+      namings: [naming(groups[0].key)],
+      skippedTitles: [],
+    });
+
+    expect(payload.projects[0].process[0]).toBe(
+      'personal_agents 의 관제 콘솔을 만들었다',
+    );
+  });
+});

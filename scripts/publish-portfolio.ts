@@ -72,6 +72,9 @@ const main = async (): Promise<void> => {
       formatList('갱신', result.updatedProjects),
       formatList('새 스킬 그룹', result.createdSkillGroups),
       formatList('건너뜀(근거 PR 없음)', result.skippedTitles),
+      // 이름을 못 받은 묶음은 그 저장소 작업이 통째로 빠진 것이다. 출력하지 않으면 운영자가
+      // 부분 손실을 정상 발행으로 읽는다.
+      formatList('⚠️ 이름을 받지 못해 빠진 저장소', result.unnamedKeys),
       formatList(
         '⚠️ 실패',
         result.failures.map(
@@ -84,7 +87,12 @@ const main = async (): Promise<void> => {
     ].filter((line): line is string => line !== null);
     console.log(lines.join('\n'));
     // 실패가 있으면 종료 코드로 알린다 — 파이프에 물려도 초록으로 지나가지 않게 한다.
-    if (result.failures.length > 0 || result.missingAfterPublish.length > 0) {
+    // unnamedKeys 도 실패로 센다. execute 자체는 성공하지만 그 저장소는 발행되지 않았다.
+    if (
+      result.failures.length > 0 ||
+      result.missingAfterPublish.length > 0 ||
+      result.unnamedKeys.length > 0
+    ) {
       process.exitCode = 1;
     }
   } finally {
