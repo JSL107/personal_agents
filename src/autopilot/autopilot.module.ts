@@ -70,6 +70,7 @@ import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preferen
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { ScreeningOutcomeScoringAutopilotTask } from './infrastructure/tasks/screening-outcome-scoring.autopilot-task';
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
@@ -141,6 +142,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     BlogGithubPublishAutopilotTask,
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
+    ScreeningOutcomeScoringAutopilotTask,
     PrReviewSweepAutopilotTask,
     PaperTradingAutopilotTask,
     UniverseSweepAutopilotTask,
@@ -232,6 +234,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitor: StockMonitorAutopilotTask,
         stockMonitorUs: StockMonitorAutopilotTask,
         stockAlertScoring: StockAlertScoringAutopilotTask,
+        screeningOutcomeScoring: ScreeningOutcomeScoringAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
         universeSweep: UniverseSweepAutopilotTask,
@@ -299,6 +302,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         STOCK_MONITOR_KR_TASK,
         STOCK_MONITOR_US_TASK,
         StockAlertScoringAutopilotTask,
+        ScreeningOutcomeScoringAutopilotTask,
         PrReviewSweepAutopilotTask,
         PaperTradingAutopilotTask,
         UniverseSweepAutopilotTask,

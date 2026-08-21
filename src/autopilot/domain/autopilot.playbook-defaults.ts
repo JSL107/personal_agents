@@ -97,6 +97,11 @@ export const DEFAULT_PREVIEW_SWEEPER_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_STOCK_ALERT_SCORING_CRON = '0 18 * * 1-5';
 export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
 
+// 스크리닝 사후 채점 기본 스케줄 — 유니버스 시세 수집(18:30) 뒤, 추천(19:30) 앞.
+// 수집보다 먼저 돌면 그날 봉이 없어 전건이 미도래로 빠지고 채점이 하루 밀린다.
+export const DEFAULT_SCREENING_OUTCOME_SCORING_CRON = '0 19 * * 1-5';
+export const DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE = 'Asia/Seoul';
+
 // 미국 주식 모니터링 기본 스케줄 — 미국 정규장 마감 30분 후 평일 16:30 ET.
 export const DEFAULT_STOCK_MONITOR_US_CRON = '30 16 * * 1-5';
 export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
