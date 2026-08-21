@@ -347,23 +347,34 @@ export class GeneratePaperRecommendationUsecase {
       cashBalance: Number(state.account.cashBalance.toString()),
       codeOf: (tickerId) => codesByTickerId.get(tickerId),
     });
-    // 이미 대기 중인 매도 주문 때문에 제약 함수까지 가지 못한 추천은 skipped 에 남지 않는다 —
-    // 그대로 두면 Slack 이 '추천 없음' 으로 단정하므로 여기서 직접 기록한다.
-    const pendingSells: PaperRecommendationSkip[] = [];
+    // 대기 주문이 있는 종목은 이번 회차 추천에서 아예 뺀다. 제약 함수 뒤에서 버리면 그
+    // 종목이 먼저 먹은 현금과 매수 건수가 되돌아오지 않아, 뒤의 유효한 매수가 상한에 걸려
+    // 사라진다(매수 3건 상한에서 충돌 1건이 자리를 먹으면 4번째 후보가 통째로 유실된다).
+    // 걸린 건은 skipped 에 남긴다 — 그대로 두면 Slack 이 '추천 없음' 으로 단정한다.
+    const pendingCodes = new Set([
+      ...plan.pendingBuyCodes,
+      ...plan.pendingSellCodes,
+    ]);
+    const pendingSkips: PaperRecommendationSkip[] = [];
+    const withoutPendingOrders = <T extends { code: string }>(
+      intents: T[],
+      side: 'BUY' | 'SELL',
+    ): T[] =>
+      intents.filter((intent) => {
+        if (!pendingCodes.has(intent.code)) {
+          return true;
+        }
+        pendingSkips.push({
+          side,
+          code: intent.code,
+          reason: 'PENDING_ORDER_EXISTS',
+        });
+        return false;
+      });
     const constrained = constrainPaperRecommendation({
       recommendation: {
-        ...recommendation,
-        sells: recommendation.sells.filter((sell) => {
-          if (!plan.pendingSellCodes.has(sell.code)) {
-            return true;
-          }
-          pendingSells.push({
-            side: 'SELL',
-            code: sell.code,
-            reason: 'PENDING_ORDER_EXISTS',
-          });
-          return false;
-        }),
+        sells: withoutPendingOrders(recommendation.sells, 'SELL'),
+        buys: withoutPendingOrders(recommendation.buys, 'BUY'),
       },
       candidates: screen.stocks.map((stock) => ({
         tickerId: stock.tickerId,
@@ -371,16 +382,11 @@ export class GeneratePaperRecommendationUsecase {
         name: stock.name,
         close: stock.indicators.close,
       })),
-      // 가상 포지션을 앞에 둔다 — 같은 코드가 겹치면 뒤 항목이 Map 을 덮어써, 실제 보유
-      // 수량이 가상 수량 1 로 바뀌면 매도가 1주만 나간다.
-      positions: [
-        ...plan.reservedPositions,
-        ...state.positions.map((position) => ({
-          tickerId: position.tickerId,
-          code: position.ticker.code,
-          quantity: Number(position.quantity.toString()),
-        })),
-      ],
+      positions: state.positions.map((position) => ({
+        tickerId: position.tickerId,
+        code: position.ticker.code,
+        quantity: Number(position.quantity.toString()),
+      })),
       cashBalance: plan.availableCash,
       accountValuation: Number(
         (
@@ -388,36 +394,19 @@ export class GeneratePaperRecommendationUsecase {
         ).toString(),
       ),
     });
-    const pendingIntents = [...constrained.sells, ...constrained.buys].filter(
-      (intent) => plan.pendingTickerIds.has(intent.tickerId),
-    );
-    const safeConstrained: ConstrainedPaperRecommendation = {
-      sells: constrained.sells.filter(
-        (sell) => !plan.pendingTickerIds.has(sell.tickerId),
-      ),
-      buys: constrained.buys.filter(
-        (buy) => !plan.pendingTickerIds.has(buy.tickerId),
-      ),
-      skipped: [
-        ...pendingSells,
-        ...constrained.skipped,
-        ...pendingIntents.map((intent) => ({
-          side: intent.side,
-          code: intent.code,
-          reason: 'PENDING_ORDER_EXISTS' as const,
-        })),
-      ],
-    };
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,
       screen,
       indicatorsByTickerId,
       agentRunId,
-      constrained: safeConstrained,
+      constrained,
     });
     return {
-      constrained: safeConstrained,
+      constrained: {
+        ...constrained,
+        skipped: [...pendingSkips, ...constrained.skipped],
+      },
       orders,
     };
   }

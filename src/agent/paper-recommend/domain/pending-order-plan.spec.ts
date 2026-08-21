@@ -14,10 +14,6 @@ describe('planPendingOrders', () => {
     expect(plan.reservedCash).toBe(8_000);
     expect(plan.availableCash).toBe(2_000);
     expect(plan.pendingBuyCodes).toEqual(new Set(['000011', '000012']));
-    expect(plan.reservedPositions).toEqual([
-      { tickerId: 11, code: '000011', quantity: 1 },
-      { tickerId: 12, code: '000012', quantity: 1 },
-    ]);
   });
 
   it.each([null, 0, Number.NaN])(
@@ -60,7 +56,7 @@ describe('planPendingOrders', () => {
     expect(plan.pendingTickerIds).toEqual(new Set([11]));
   });
 
-  it('코드를 모르는 대기 매수는 가상 포지션에서만 제외한다', () => {
+  it('코드를 모르는 대기 매수는 코드 집합에서 빠지고 tickerId 에만 남는다', () => {
     const plan = planPendingOrders({
       pendingOrders: [{ tickerId: 11, side: 'BUY', quantity: 2, close: 1_000 }],
       cashBalance: 10_000,
@@ -69,6 +65,5 @@ describe('planPendingOrders', () => {
 
     expect(plan.pendingTickerIds).toEqual(new Set([11]));
     expect(plan.pendingBuyCodes).toEqual(new Set());
-    expect(plan.reservedPositions).toEqual([]);
   });
 });

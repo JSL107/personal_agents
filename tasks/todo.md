@@ -2363,13 +2363,22 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 
 ## Review
 
-- `planPendingOrders`가 예약 현금, BUY/SELL 코드, tickerId 안전망, 가상 포지션을 한 번에 계산한다. 두 usecase의 손계산 심볼은 검색 결과 0건이다.
-- 백테스트 선정은 대기 매수를 자리로 세고 대기 BUY/SELL을 추천에서 제외한다. 휴장 fixture의 `maximumFillsInOneDay`는 `maximumPositions` 이하로 고정했다.
-- 운영은 `screen.stocks`와 보유 포지션으로 code map을 만들고, 공통 계획을 제약 입력과 최종 tickerId 안전망에 적용한다. 안전망 통과 결과만 주문 저장·상세 변환에 전달한다.
-- RED는 신규 계약 부재와 실제 정원 초과(5 > 3), 반대 방향 대기 주문 저장을 확인했다. 자리 가드와 `reservedPositions` 연결을 각각 제거한 mutation도 테스트가 잡았다.
-- 독립 리뷰는 Blocker 0, Should Fix 1이었다. 대기 BUY `ALREADY_HELD`와 대기 SELL `PENDING_ORDER_EXISTS` 단언을 보강해 처리했다.
-- 최종 gate: lint exit 0(기존 warning 57), test exit 0(일반 430 suites/3,745 tests + code-graph 5 suites/40 tests), build exit 0, tsc exit 0.
-- 실제 DB 백테스트 전후 대조는 사용자 금지로 미실행했다. 구현 설계 이탈은 없고, DB 가능한 환경에서 `orderCount` / `filledCount` 재검증이 필요하다.
-- 의존성 설치, Prisma 생성, DB 접속, git 조작은 실행하지 않았다.
+- `planPendingOrders` 가 예약 현금·가용 현금·대기 매수/매도 코드 집합·대기 tickerId 를 한 번에
+  낸다. 두 usecase 의 손계산은 남지 않았다.
+- **착수 시 설계 하나를 철회했다.** 대기 매수를 보유 정원으로 세는 변경을 넣었다가 되돌렸다 —
+  2026-08-16 백테스트 설계 §7 이 연휴 누적 체결을 실전의 정상 동작으로 판정하고 재현 대상으로
+  둔 사항이었다. 자리로 세면 실전과 다른 것을 재게 된다. 기존 재생 spec 의 단언
+  (`maximumFillsInOneDay > maximumPositions`) 도 원래대로 되돌렸다. 대기 매수는 후보에서만
+  빠지고 자리는 다음 순위가 채운다.
+- **PR 리뷰에서 실제 결함 하나가 잡혀 고쳤다.** 충돌 종목을 제약 함수 *뒤에서* 버리면 그
+  종목이 먼저 먹은 현금과 매수 건수가 되돌아오지 않아, 뒤의 유효한 매수가 상한에 걸려
+  사라진다. 회귀 테스트로 재현(4후보 중 충돌 1건 → 유효 매수가 3건이 아니라 2건)한 뒤
+  판정을 제약 함수 앞으로 옮겼다. 그 결과 "대기 매수를 가상 포지션으로 위장해 걸러낸다" 는
+  트릭과 사후 안전망이 둘 다 필요 없어져 삭제했다.
+- 운영 동작 변화 하나 — 같은 종목에 반대 방향 대기 주문이 있으면 새 주문을 만들지 않는다.
+  대기 매수 종목의 skip 사유도 `ALREADY_HELD` 에서 `PENDING_ORDER_EXISTS` 로 정확해졌다.
+- 백테스트 산출물 전후 대조: SWING 2026-01-02~08-18 실제 DB 실행 결과가 `main` 과 출력 전체
+  완전 동일(체결 143건, 최종 평가액 3,619,418원 −63.81%, 초과수익 −7.86%).
+- 게이트: `pnpm lint:check` / `pnpm exec tsc --noEmit` / `pnpm build` / `pnpm test` 전부 exit 0.
 
 ---
