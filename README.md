@@ -289,6 +289,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~24시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
 | `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 750시간을 넘겨 사이트가 월말까지 정지될 수 있다 |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ⭕ | 포트폴리오 사이트 발행용 자동화 토큰(사이트 쪽 `AUTOMATION_TOKEN` 과 같은 값). 비우면 발행 슬롯이 꺼진다 |
+| `PORTFOLIO_ANONYMIZED_OWNERS` | ⭕ | 공개 포트폴리오에 저장소 이름을 남기지 않을 GitHub owner 목록(쉼표 구분). 해당 성과는 slug 가 `company-<해시>-pr-<번호>` 가 되고 PR 링크를 싣지 않는다. 비우면 익명화하지 않는다 |
 | `AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE` · `_TIMEZONE` | ⭕ | 발행 발화 시각 override(기본 `0 23 * * *`, Asia/Seoul) |
 | `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | 임베딩 모델·차원 (기본 384dim) |
 

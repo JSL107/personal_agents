@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
+import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   CAREER_PROFILE_REPOSITORY_PORT,
@@ -11,9 +14,17 @@ import {
 } from '../domain/port/portfolio-site.client.port';
 import {
   buildPortfolioSitePayload,
+  groupAccomplishments,
+  PortfolioSitePayloadOptions,
   PortfolioSiteProjectPayload,
   PortfolioSiteSkillGroupPayload,
 } from '../domain/portfolio-site-payload';
+import { ProjectGroup, ProjectGroupNaming } from '../domain/project-group';
+import {
+  buildProjectGroupPrompt,
+  parseProjectGroupOutput,
+  PROJECT_GROUP_SYNTH_SYSTEM_PROMPT,
+} from '../domain/prompt/project-group-synth.prompt';
 import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
 
 export interface PublishPortfolioSiteInput {
@@ -35,11 +46,21 @@ export interface PublishPortfolioSiteResult {
   failures: PublishPortfolioSiteFailure[];
   // 발행 후 재조회에서 확인되지 않은 slug. 정상이면 빈 배열.
   missingAfterPublish: string[];
+  // 모델이 이름을 돌려주지 않아 발행하지 못한 저장소 그룹. 저장소 하나가 통째로 빠지는
+  // 결과이므로 조용히 넘기지 않는다.
+  unnamedKeys: string[];
   agentRunId: number;
 }
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+// `PORTFOLIO_ANONYMIZED_OWNERS=owner-a,owner-b` → ['owner-a', 'owner-b'].
+const parseAnonymizedOwners = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(',')
+    .map((owner) => owner.trim().toLowerCase())
+    .filter((owner) => owner.length > 0);
 
 // 경력 프로필을 포트폴리오 사이트(Portfolio OS)에 비공개 초안으로 발행한다.
 //
@@ -57,13 +78,26 @@ export class PublishPortfolioSiteUsecase {
     private readonly buildProfile: BuildCareerProfileUsecase,
     @Inject(PORTFOLIO_SITE_CLIENT_PORT)
     private readonly siteClient: PortfolioSiteClientPort,
+    private readonly configService: ConfigService,
+    private readonly modelRouter: ModelRouterUsecase,
   ) {}
 
   async execute({
     slackUserId,
   }: PublishPortfolioSiteInput): Promise<PublishPortfolioSiteResult> {
     const { profile, agentRunId } = await this.resolveProfile(slackUserId);
-    const payload = buildPortfolioSitePayload(profile);
+    const { groups, skippedTitles } = groupAccomplishments(
+      profile,
+      this.payloadOptions(),
+    );
+    // 그룹이 없으면 모델을 부르지 않는다 — 빈 입력으로 호출하면 쿼터만 쓰고 파서가 던진다.
+    const namings = groups.length > 0 ? await this.nameGroups(groups) : [];
+    const payload = buildPortfolioSitePayload({
+      profile,
+      groups,
+      namings,
+      skippedTitles,
+    });
     const failures: PublishPortfolioSiteFailure[] = [];
 
     const projects = await this.publishProjects(payload.projects, failures);
@@ -80,9 +114,33 @@ export class PublishPortfolioSiteUsecase {
       ...projects,
       ...skillGroups,
       skippedTitles: payload.skippedTitles,
+      unnamedKeys: payload.unnamedKeys,
       failures,
       missingAfterPublish,
       agentRunId,
+    };
+  }
+
+  // 저장소 묶음마다 프로젝트 이름·소개를 짓는다. 한 번의 호출로 전부 받는다 — 묶음 수만큼
+  // 부르면 같은 맥락을 반복해서 보내게 되고, 묶음끼리 이름이 겹치는지도 모델이 볼 수 없다.
+  private async nameGroups(
+    groups: ProjectGroup[],
+  ): Promise<ProjectGroupNaming[]> {
+    const completion = await this.modelRouter.route({
+      agentType: AgentType.CAREER_MATE,
+      request: {
+        prompt: buildProjectGroupPrompt(groups),
+        systemPrompt: PROJECT_GROUP_SYNTH_SYSTEM_PROMPT,
+      },
+    });
+    return parseProjectGroupOutput(completion.text, groups);
+  }
+
+  private payloadOptions(): PortfolioSitePayloadOptions {
+    return {
+      anonymizedOwners: parseAnonymizedOwners(
+        this.configService.get<string>('PORTFOLIO_ANONYMIZED_OWNERS'),
+      ),
     };
   }
 
@@ -218,11 +276,28 @@ export class PublishPortfolioSiteUsecase {
 // 매일 도는 발행이 payload 기본값(false)을 실어 보내면 그 지정이 하루마다 풀린다.
 // 사이트는 "필드가 있으면 덮는다"(content.service.ts 의 `"featured" in data`) 라서
 // 값을 넣지 않는 것이 유일한 보존 방법이다.
+//
+// 표지(title·summary·problem·result)도 첫 발행 이후로는 보내지 않는다. 모델은 같은 묶음에도
+// 회차마다 다른 이름을 짓는다 — 실측에서 10건 중 7건의 제목이 재실행만으로 바뀌었다
+// (2026-08-21). 그대로 두면 프로젝트 이름이 매일 흔들리고, 사람이 편집기에서 고친 제목도
+// 다음 회차에 덮인다. 작업 목록·기간·기술 스택은 계속 갱신되므로 내용은 최신을 유지한다.
 const toUpdatePayload = (
   payload: PortfolioSiteProjectPayload,
 ): Record<string, unknown> => {
-  const { published: _published, featured: _featured, ...updatable } = payload;
+  const {
+    published: _published,
+    featured: _featured,
+    title: _title,
+    summary: _summary,
+    problem: _problem,
+    result: _result,
+    ...updatable
+  } = payload;
   void _published;
   void _featured;
+  void _title;
+  void _summary;
+  void _problem;
+  void _result;
   return updatable;
 };

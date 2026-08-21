@@ -114,6 +114,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       result.createdSkillGroups.length > 0 ||
       result.failures.length > 0 ||
       result.skippedTitles.length > 0 ||
+      result.unnamedKeys.length > 0 ||
       result.missingAfterPublish.length > 0 ||
       weakCount > 0 ||
       missingCount > 0 ||
@@ -139,6 +140,11 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     if (result.skippedTitles.length > 0) {
       summaryLines.push(
         `• 근거 PR 이 없어 건너뜀 ${result.skippedTitles.length}건`,
+      );
+    }
+    if (result.unnamedKeys.length > 0) {
+      summaryLines.push(
+        `• ⚠️ 이름을 받지 못해 빠진 저장소 ${result.unnamedKeys.length}건`,
       );
     }
     if (result.failures.length > 0) {
@@ -189,6 +195,11 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (result.skippedTitles.length > 0) {
       lines.push(`건너뜀: ${result.skippedTitles.join(' / ')}`);
+    }
+    if (result.unnamedKeys.length > 0) {
+      lines.push(
+        `이름 없음: ${result.unnamedKeys.join(', ')} — 그 저장소의 작업이 통째로 빠졌다`,
+      );
     }
     for (const failure of result.failures) {
       lines.push(`실패 ${failure.target} — ${failure.reason}`);
