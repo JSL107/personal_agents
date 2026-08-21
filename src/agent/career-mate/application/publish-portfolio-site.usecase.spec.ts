@@ -126,6 +126,7 @@ const createFixture = (
                 summary: '한 문장',
                 problem: '문제',
                 result: '결과',
+                highlights: ['지표 3/6 → 0'],
               })),
             }),
           };
@@ -356,5 +357,77 @@ describe('표지 보존', () => {
 
     const [created] = (client.createProject as jest.Mock).mock.calls[0];
     expect(created.title).toBe(`${SLUG} 프로젝트`);
+  });
+});
+
+describe('카드 성과 줄 채우기', () => {
+  it('기존 프로젝트에 성과 줄이 없으면 채운다', async () => {
+    // 표지와 달리 지금 발행된 항목에는 값 자체가 없다. 갱신에서 아예 빼면 이미 올라간
+    // 프로젝트는 영영 빈 카드로 남는다 — 첫 회차에 백필되어야 한다.
+    const { usecase, client } = createFixture({
+      listProjects: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'existing-1', slug: SLUG, published: true, data: {} },
+        ]),
+    });
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
+    expect(payload.keyContributions).toEqual(['지표 3/6 → 0']);
+  });
+
+  it('이미 성과 줄이 있으면 덮지 않는다', async () => {
+    // 모델 생성물이라 매 회차 덮으면 카드가 흔들리고, 사람이 편집기에서 고친 줄도 사라진다.
+    const { usecase, client } = createFixture({
+      listProjects: jest.fn().mockResolvedValue([
+        {
+          id: 'existing-1',
+          slug: SLUG,
+          published: true,
+          data: { keyContributions: ['사람이 고친 줄'] },
+        },
+      ]),
+    });
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
+    expect('keyContributions' in payload).toBe(false);
+  });
+
+  it('모델이 성과 줄을 주지 않으면 빈 값으로 덮지 않는다', async () => {
+    const { usecase, client, modelRouter } = createFixture({
+      listProjects: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'existing-1', slug: SLUG, published: true, data: {} },
+        ]),
+    });
+    (modelRouter.route as jest.Mock).mockImplementation(
+      async ({ request }: { request: { prompt: string } }) => {
+        const keys = [...request.prompt.matchAll(/^key: (.+)$/gm)].map(
+          (match) => match[1],
+        );
+        return {
+          text: JSON.stringify({
+            projects: keys.map((key) => ({
+              key,
+              title: `${key} 프로젝트`,
+              summary: '한 문장',
+              problem: '문제',
+              result: '결과',
+              highlights: [],
+            })),
+          }),
+        };
+      },
+    );
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
+    expect('keyContributions' in payload).toBe(false);
   });
 });
