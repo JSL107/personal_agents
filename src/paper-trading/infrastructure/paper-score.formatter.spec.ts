@@ -13,6 +13,8 @@ const RESULT: ScoreRecommendationsResult = {
       strategy: 'LONG_TERM',
       ruleVersions: [2],
       unknownRuleVersionCount: 0,
+      exitBands: ['+10/-5'],
+      bandlessSellCount: 0,
       score: {
         strategy: 'LONG_TERM',
         recommendationCount: 6,

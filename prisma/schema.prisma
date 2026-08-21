@@ -539,30 +539,36 @@ model PaperAccount {
 // 판단과 체결을 분리해 기록한다. 이 표가 없으면 "전일 종가로 판단하고 다음날 시가에 체결했다"를
 // 사후에 증명할 수 없다 — 다음날 시가를 본 뒤에 만든 거래와 구별되지 않기 때문이다.
 model PaperOrder {
-  id                Int          @id @default(autoincrement())
-  accountId         Int          @map("account_id")
-  account           PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  tickerId          Int          @map("ticker_id")
-  ticker            Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
-  side              String // BUY | SELL
-  quantity          Decimal      @db.Decimal(18, 4)
-  strategy          String // LONG_TERM | SWING | MANUAL
-  reason            String?      @db.Text
-  decidedAt         DateTime     @map("decided_at") // 결정 시각
-  dataAsOf          DateTime     @map("data_as_of") @db.Date // 판단에 사용한 마지막 거래일
-  targetTradeDate   DateTime?    @map("target_trade_date") @db.Date // 체결 목표 거래일
-  status            String // PENDING | FILLED | PARTIALLY_FILLED | EXPIRED | CANCELLED
-  statusReason      String?      @map("status_reason") // 미체결 사유 (거래정지·상한가·유동성 등)
+  id                    Int          @id @default(autoincrement())
+  accountId             Int          @map("account_id")
+  account               PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickerId              Int          @map("ticker_id")
+  ticker                Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  side                  String // BUY | SELL
+  quantity              Decimal      @db.Decimal(18, 4)
+  strategy              String // LONG_TERM | SWING | MANUAL
+  reason                String?      @db.Text
+  decidedAt             DateTime     @map("decided_at") // 결정 시각
+  dataAsOf              DateTime     @map("data_as_of") @db.Date // 판단에 사용한 마지막 거래일
+  targetTradeDate       DateTime?    @map("target_trade_date") @db.Date // 체결 목표 거래일
+  status                String // PENDING | FILLED | PARTIALLY_FILLED | EXPIRED | CANCELLED
+  statusReason          String?      @map("status_reason") // 미체결 사유 (거래정지·상한가·유동성 등)
   // 판단에 쓴 지표를 그대로 박아 둔다. 지표 공식이나 필터를 나중에 손대면 과거 추천을 재계산할 수
   // 없게 되는데, 그때 본 숫자가 남아 있으면 "왜 이걸 골랐나"가 영구히 재구성된다.
-  indicatorSnapshot Json?        @map("indicator_snapshot")
+  indicatorSnapshot     Json?        @map("indicator_snapshot")
   // 이 추천을 만든 스크리너 규칙 버전. 규칙을 고치면 이후 성적이 이전 성적과 섞이는데,
   // 추천마다 버전이 박혀 있어야 "바꿔서 나아졌나" 를 나중에 갈라 볼 수 있다.
-  ruleVersion       Int?         @map("rule_version")
-  expiresAt         DateTime?    @map("expires_at")
-  agentRunId        Int?         @map("agent_run_id")
-  agentRun          AgentRun?    @relation(fields: [agentRunId], references: [id])
-  createdAt         DateTime     @default(now()) @map("created_at")
+  ruleVersion           Int?         @map("rule_version")
+  // 이 매도를 만든 청산 밴드 설정. 밴드 값을 바꾸면 그 전후 성적이 한 표본에 섞이는데,
+  // 매도마다 기준이 박혀 있으면 "밴드를 넓혀서 나아졌나" 를 나중에 갈라 볼 수 있다
+  // (추천이 ruleVersion 으로 그렇게 하는 것과 같은 축이다).
+  // 밴드가 만들지 않은 주문(매수·모델이 고른 매도)은 null 이다.
+  exitTakeProfitPercent Decimal?     @map("exit_take_profit_percent") @db.Decimal(9, 4)
+  exitStopLossPercent   Decimal?     @map("exit_stop_loss_percent") @db.Decimal(9, 4)
+  expiresAt             DateTime?    @map("expires_at")
+  agentRunId            Int?         @map("agent_run_id")
+  agentRun              AgentRun?    @relation(fields: [agentRunId], references: [id])
+  createdAt             DateTime     @default(now()) @map("created_at")
 
   trades PaperTrade[]
 
@@ -687,6 +693,13 @@ model RecommendationScore {
   // 버전을 적기 전에 만들어진 추천 수. ruleVersions 에서 빠지는 값이라 여기 세지 않으면
   // "일부는 어느 규칙인지 모른다" 는 사실이 사라져 섞인 표본이 순수한 v2 성적처럼 보인다.
   unknownRuleVersionCount Int          @map("unknown_rule_version_count")
+  // 이 집계 구간의 매도 주문에 박힌 청산 밴드 설정들 (`+10/-5` 꼴). 값이 둘 이상이면 밴드를
+  // 바꾼 구간을 걸친 집계라는 뜻이다. 사이클별 귀속이 아니라 구간에 등장한 설정의 집합이다 —
+  // 구간을 잘라 보는 것은 구간 집계가 생긴 뒤의 일이고, 그전까지 이 필드는 "섞였다" 를 알린다.
+  exitBands               String[]     @map("exit_bands")
+  // 밴드가 만들지 않은 매도 건수(모델이 고른 매도). 밴드 성적을 논할 때 분모에서 빠져야 하는
+  // 매도가 몇 건인지 남기지 않으면 밴드 설정 하나로 닫힌 표본처럼 읽힌다.
+  bandlessSellCount       Int          @map("bandless_sell_count")
 
   recommendationCount Int @map("recommendation_count")
   closedCount         Int @map("closed_count")

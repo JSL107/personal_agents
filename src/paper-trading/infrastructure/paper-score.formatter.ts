@@ -72,6 +72,22 @@ const formatRuleVersions = (
   return unknown === '' ? `규칙 ${known}` : `규칙 ${known} + ${unknown}`;
 };
 
+// 밴드를 바꾼 구간을 걸친 집계도 규칙 버전과 같은 이유로 그 사실이 드러나야 한다. 밴드가
+// 만들지 않은 매도(모델이 고른 매도)는 건수로 갈라 둔다 — 밴드 성적의 분모가 아니다.
+const formatExitBands = (
+  exitBands: string[],
+  bandlessSellCount: number,
+): string => {
+  const bandless =
+    bandlessSellCount === 0 ? '' : `밴드 외 ${bandlessSellCount}건`;
+  if (exitBands.length === 0) {
+    return bandless === '' ? '밴드 -' : `밴드 ${bandless}`;
+  }
+  const known = exitBands.join(' · ');
+  const label = exitBands.length === 1 ? known : `${known} 혼합`;
+  return bandless === '' ? `밴드 ${label}` : `밴드 ${label} + ${bandless}`;
+};
+
 export const formatPaperScoreReport = (
   result: ScoreRecommendationsResult,
 ): string => {
@@ -83,7 +99,7 @@ export const formatPaperScoreReport = (
     const score = account.score;
     lines.push(
       '',
-      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)}`,
+      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)} · ${formatExitBands(account.exitBands, account.bandlessSellCount)}`,
       `추천 ${score.recommendationCount}건 · 체결 ${score.closedCount + score.openCount}건(청산 ${score.closedCount}·보유 ${score.openCount}) · 미체결 ${score.expiredCount}건`,
       `적중 ${score.hitCount}/${score.closedCount} (${formatUnsignedRate(score.hitRate)})`,
       `평균 ${formatRate(score.meanReturnRate)} · 중앙값 ${formatRate(score.medianReturnRate)} · 최대 손실 ${formatRate(score.maximumLoss)}`,
