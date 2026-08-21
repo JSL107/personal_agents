@@ -240,6 +240,18 @@ export class PublishNotionDraftUsecase {
       });
     }
 
+    // 공개 프로젝트 계약에서는 코드블록을 표식으로 가려 보낸다. 그 계약은 이미 "코드블록 안의
+    // 코드·명령어·설정" 을 보존 대상으로 두는데 프롬프트만으로는 지켜지지 않았다 — 실측하면
+    // 실제 주소(`developer.mozilla.org`)를 예시 주소로 바꾸고 `Cache-Control: private` 에 없던
+    // `max-age=60` 과 가짜 ETag 를 덧붙였다(편집 단계와 같은 성향이다). 약속에 집행을 붙인다.
+    //
+    // 회사 PR 회고 계약은 반대다. 사내 클래스·함수·테이블 실명을 지우는 것이 그 단계의 일이고
+    // 코드 안에도 그 이름이 있을 수 있어 가리지 않는다.
+    const keepsCodeVerbatim =
+      target.sourceType.trim() === STUDY_DEEPDIVE_SOURCE_TYPE;
+    const { masked, blocks } = keepsCodeVerbatim
+      ? maskFencedCodeBlocks(markdown)
+      : { masked: markdown, blocks: [] as string[] };
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
       request: {
@@ -249,15 +261,21 @@ export class PublishNotionDraftUsecase {
           target.sourceType,
           STUDY_DEEPDIVE_SOURCE_TYPE,
         ),
-        prompt: this.buildAnonymizePrompt(target, markdown),
+        prompt: this.buildAnonymizePrompt(target, masked),
         // 형태를 샘플링 단계에서 고정한다 — 코드펜스로 감싸거나 앞뒤에 설명을 붙일 수 없다.
         outputSchema: BLOG_ANONYMIZE_OUTPUT_SCHEMA,
       },
     });
-    const anonymized = this.withMaskedCause(
+    const parsed = this.withMaskedCause(
       () => this.parseAnonymizedDraft(completion.text),
       context.forbiddenTerms,
     );
+    const anonymized = keepsCodeVerbatim
+      ? { ...parsed, body: restoreFencedCodeBlocks(parsed.body, blocks) }
+      : parsed;
+    if (keepsCodeVerbatim) {
+      this.assertNoCodeMaskLeft(target, anonymized.body);
+    }
     // 익명화가 코드를 바꾸지 않았는지도 **원본 기준으로** 대조한다. 아래 편집 검사는
     // anonymized.body 를 기준선으로 삼기 때문에, 익명화가 이미 코드를 고쳐 놓았으면 그
     // 변경이 기준선이 되어 그대로 통과한다(리뷰 지적). 지금까지 드러나지 않은 이유는
