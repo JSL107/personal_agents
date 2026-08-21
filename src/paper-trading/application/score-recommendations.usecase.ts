@@ -36,6 +36,9 @@ export interface RecommendationScoreExclusions {
   expired: number;
   benchmarkUnavailable: number;
   shadowUnavailable: number;
+  // 위 shadowUnavailable 중 "보유 기간이 아직 안 찼다" 인 건수. 시세가 빠진 것과 때가
+  // 오지 않은 것을 한 숫자로 보고하면 읽는 사람이 고장으로 오해한다.
+  shadowNotDue: number;
   anomaly: number;
   realizedPnlMismatch: number;
 }
@@ -51,6 +54,8 @@ export interface AccountRecommendationScore {
   score: StrategyRecommendationScore;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
+  // 평가일 지수가 아직 안 들어와 초과수익 집계가 통째로 막힌 회차인가.
+  evaluationBenchmarkMissing: boolean;
   portfolio: PortfolioPerformance;
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
@@ -61,6 +66,9 @@ export interface ScoreRecommendationsResult {
   from: Date | null;
   // 이 회차를 원장에 남겼는지. 남기지 않은 이유는 아래 저장 조건 주석 참조.
   persisted: boolean;
+  // 평가일 지수가 아직 안 들어와 초과수익이 통째로 빠진 회차인가. 저장을 막는 조건이자
+  // 카드에 "고장이 아니라 순서 문제" 임을 적기 위한 값이다.
+  evaluationBenchmarkMissing: boolean;
   accounts: AccountRecommendationScore[];
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
@@ -201,12 +209,14 @@ export class ScoreRecommendationsUsecase {
         score,
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
+        evaluationBenchmarkMissing: benchmark.evaluationBenchmarkMissing,
         portfolio,
         classifications,
         exclusions: {
           expired: classifications.expired,
           benchmarkUnavailable: benchmark.benchmarkUnavailableCount,
           shadowUnavailable: shadow.shadowUnavailableCount,
+          shadowNotDue: shadow.shadowNotDueCount,
           anomaly: accountMatched.anomalies.length + nullMarketCycleCount,
           realizedPnlMismatch: accountMatched.realizedPnlMismatchCount,
         },
@@ -220,6 +230,7 @@ export class ScoreRecommendationsUsecase {
           totals.benchmarkUnavailable + account.exclusions.benchmarkUnavailable,
         shadowUnavailable:
           totals.shadowUnavailable + account.exclusions.shadowUnavailable,
+        shadowNotDue: totals.shadowNotDue + account.exclusions.shadowNotDue,
         anomaly: totals.anomaly + account.exclusions.anomaly,
         realizedPnlMismatch:
           totals.realizedPnlMismatch + account.exclusions.realizedPnlMismatch,
@@ -228,6 +239,7 @@ export class ScoreRecommendationsUsecase {
         expired: 0,
         benchmarkUnavailable: 0,
         shadowUnavailable: 0,
+        shadowNotDue: 0,
         anomaly: 0,
         realizedPnlMismatch: 0,
       },
@@ -242,8 +254,24 @@ export class ScoreRecommendationsUsecase {
     // 주문 상태(PaperOrder.status)는 이력이 없어 현재값을 읽는다. 그날 대기 중이던 주문이
     // 지금은 만료로 잡히므로, 뒤늦게 과거 날짜를 다시 채점하면 "그날의 성적" 이 아닌 숫자가
     // 그날 행을 덮어쓴다. 상태 이력이 생기기 전까지는 오늘 기준일만 정본으로 인정한다.
+    //
+    // 평가일 지수가 없는 회차도 남기지 않는다. 초과수익은 진입일과 청산일 지수를 모두
+    // 요구하고 보유 중인 추천은 청산일이 곧 평가일이라, 지수가 하루 비면 그 회차 전건이
+    // 집계에서 빠진다. 그대로 저장하면 "성적을 못 낸 날" 이 원장에 영구히 박히는데,
+    // 위 규칙 때문에 과거 기준일은 다시 채점해 덮을 수도 없다. 2026-08-19 행이 실제로
+    // 그렇게 남았다 — 그날 채점을 지수 수집(18:30)보다 먼저 수동 실행한 결과다.
+    // 자동 경로(금 20:10)는 수집 뒤라 이 가드에 걸리지 않는다.
+    // 집계할 대상이 있었는데 못 낸 회차만 막는다. 추천이 0건이면 지수가 없어도 잃는 숫자가
+    // 없고, 그때까지 막으면 표본이 없는 초기 구간의 채점이 영영 원장에 남지 않는다.
+    const evaluationBenchmarkMissing = accounts.some(
+      (account) =>
+        account.evaluationBenchmarkMissing &&
+        account.classifications.closed + account.classifications.open > 0,
+    );
     const persisted =
-      command.from === undefined && asOf.getTime() === today.getTime();
+      command.from === undefined &&
+      asOf.getTime() === today.getTime() &&
+      !evaluationBenchmarkMissing;
     if (persisted) {
       await this.repository.saveRecommendationScores(
         accounts.map((account) => toSaveInput(account, asOf)),
@@ -254,6 +282,7 @@ export class ScoreRecommendationsUsecase {
       asOf,
       from: command.from ?? null,
       persisted,
+      evaluationBenchmarkMissing,
       accounts,
       classifications,
       exclusions,
