@@ -19,6 +19,7 @@ import {
 } from '../../../humanize/domain/korean-style-metrics';
 import {
   CODE_MASK_PATTERN,
+  countCodeMaskOccurrences,
   extractFencedCodeBlocks,
   HumanizeMarkdownResult,
   maskFencedCodeBlocks,
@@ -270,6 +271,11 @@ export class PublishNotionDraftUsecase {
       () => this.parseAnonymizedDraft(completion.text),
       context.forbiddenTerms,
     );
+    if (keepsCodeVerbatim) {
+      // 이 계약은 코드 보존이다. 편집 단계와 달리 표식 삭제를 허용하지 않는다 — 사라지면
+      // 복원할 것이 없어 코드가 조용히 빠지고, 남은 표식이 없으니 아래 두 검사도 통과한다.
+      this.assertAllCodeMasksKept(target, parsed.body, blocks);
+    }
     const anonymized = keepsCodeVerbatim
       ? { ...parsed, body: restoreFencedCodeBlocks(parsed.body, blocks) }
       : parsed;
@@ -591,6 +597,26 @@ export class PublishNotionDraftUsecase {
     const body = restoreFencedCodeBlocks(edited.body, blocks);
     this.assertNoCodeMaskLeft(draft, body);
     return { ...edited, body };
+  }
+
+  // 코드 보존 계약에서 표식이 정확히 한 번씩 남았는지 본다. 사라진 것도 늘어난 것도 실패다 —
+  // 늘어나면 한 코드가 여러 자리에 복제된다.
+  private assertAllCodeMasksKept(
+    draft: NotionDraftPage,
+    body: string,
+    blocks: readonly string[],
+  ): void {
+    const counts = countCodeMaskOccurrences(body, blocks);
+    const missing = counts.filter((count) => count === 0).length;
+    const duplicated = counts.filter((count) => count > 1).length;
+    if (missing === 0 && duplicated === 0) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_CODE_CHANGED,
+      message: `'${draft.title}' 익명화 결과에서 코드 표식이 사라졌거나 늘어났습니다 (누락 ${missing}개 · 중복 ${duplicated}개). 이 출처는 코드를 그대로 보존해야 합니다.`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
   }
 
   // 되돌리지 못한 표식이 남았는지 본다. 모델이 번호나 형태를 바꾸면 복원이 빗나가고,
