@@ -59,6 +59,20 @@ export const assertWholeShares = (quantity: MoneyValue): void => {
   }
 };
 
+export const parseTradeDate = (value: string): Date => {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    throw new Error(`체결일은 YYYY-MM-DD 형식이어야 합니다. 받은 값: ${value}`);
+  }
+  const tradeDate = new Date(`${value}T00:00:00.000Z`);
+  if (
+    Number.isNaN(tradeDate.getTime()) ||
+    tradeDate.toISOString().slice(0, 10) !== value
+  ) {
+    throw new Error(`유효하지 않은 체결일입니다. 받은 값: ${value}`);
+  }
+  return tradeDate;
+};
+
 export interface TradeCostInput {
   market: PaperMarket;
   side: TradeSide;

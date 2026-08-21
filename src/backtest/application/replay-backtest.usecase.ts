@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain/paper-recommendation.constraint';
 import { calculateIndicators } from '../../market-data/domain/stock-indicator';
-import { RecordPaperTradeUsecase } from '../../paper-trading/application/record-paper-trade.usecase';
+import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import { PaperMarket } from '../../paper-trading/domain/paper-account.type';
 import { verifyPaperInvariants } from '../../paper-trading/domain/paper-invariant';
 import {
@@ -16,7 +16,6 @@ import {
   calculateBenchmarkPerformance,
   ShadowDailyPriceInput,
 } from '../../paper-trading/domain/shadow-performance';
-import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import {
   ScreenCandidate,
   SCREENER_RULE_VERSION,
@@ -123,10 +122,8 @@ export class ReplayBacktestUsecase {
     const recommendDates = new Set(calendar.recommendDates);
 
     const ledger = new InMemoryPaperLedger(command.seedAmount);
-    // 대역은 fillPendingOrderAtomically 하나만 구현한다. usecase 가 그것만 쓰므로 안전하다.
-    const recordTrade = new RecordPaperTradeUsecase(
-      ledger as unknown as PaperTradingPrismaRepository,
-    );
+    // 체결 규칙은 실전과 같은 한 벌을 쓰고, 원장만 메모리 구현으로 갈아끼운다.
+    const executeOrder = new ExecutePaperOrderUsecase(ledger);
     const fills: BacktestFillRecord[] = [];
     const expirations: BacktestExpirationRecord[] = [];
     const entryIndexByTicker = new Map<number, number>();
@@ -151,7 +148,7 @@ export class ReplayBacktestUsecase {
           tickerById,
           tradeDateIndex,
           ledger,
-          recordTrade,
+          executeOrder,
           fills,
           expirations,
           entryIndexByTicker,
@@ -217,7 +214,7 @@ export class ReplayBacktestUsecase {
     tickerById: Map<number, BacktestTicker>;
     tradeDateIndex: Map<string, number>;
     ledger: InMemoryPaperLedger;
-    recordTrade: RecordPaperTradeUsecase;
+    executeOrder: ExecutePaperOrderUsecase;
     fills: BacktestFillRecord[];
     expirations: BacktestExpirationRecord[];
     entryIndexByTicker: Map<number, number>;
@@ -258,7 +255,7 @@ export class ReplayBacktestUsecase {
         context.barsByTicker,
         context.today,
       );
-      const fill = await context.recordTrade.executePendingOrder({
+      const fill = await context.executeOrder.execute({
         orderId: order.orderId,
         accountId: context.ledger.accountId,
         tickerId: order.tickerId,
