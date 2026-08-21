@@ -10,15 +10,17 @@ import {
   TradeStrategy,
 } from '../domain/paper-account.type';
 import {
+  ApplyTradeMutation,
+  FillPendingOrderInput,
+  PaperAccountRecord,
+  PaperOrderLedgerPort,
+  PaperPositionRecord,
+  PendingOrderFillResult,
+} from '../domain/port/paper-order-ledger.port';
+import {
   RecommendationOrderInput,
   RecommendationTradeInput,
 } from '../domain/recommendation-score';
-
-export interface PaperAccountRecord {
-  id: number;
-  seedAmount: MoneyValue;
-  cashBalance: MoneyValue;
-}
 
 // 전체 훑기(findAllAccounts)는 어느 계좌인지 밝혀야 하므로 이름을 함께 싣는다.
 export interface PaperAccountNamedRecord extends PaperAccountRecord {
@@ -30,14 +32,6 @@ export interface CreateAccountInput {
   currency: string;
   seedAmount: MoneyValue;
   openedAt: Date;
-}
-
-export interface PaperPositionRecord {
-  id: number;
-  accountId: number;
-  tickerId: number;
-  quantity: MoneyValue;
-  avgPrice: MoneyValue;
 }
 
 export interface PaperPositionWithTicker extends PaperPositionRecord {
@@ -64,39 +58,8 @@ export interface ApplyTradeInput {
   }) => ApplyTradeMutation;
 }
 
-export interface ApplyTradeMutation {
-  fee: string;
-  tax: string;
-  realizedPnl: string | null;
-  cashBalance: string;
-  positionQuantity: string;
-  positionAvgPrice: string;
-}
-
 export interface ApplyTradeResult extends ApplyTradeMutation {
   tradeId: number;
-}
-
-export type PendingOrderFillDecision =
-  | { status: 'EXPIRED'; statusReason: string }
-  | ({ status: 'FILLED'; quantity: string } & ApplyTradeMutation);
-
-export type PendingOrderFillResult =
-  | PendingOrderFillDecision
-  | { status: 'ALREADY_PROCESSED' };
-
-export interface FillPendingOrderInput {
-  orderId: number;
-  accountId: number;
-  tickerId: number;
-  side: TradeSide;
-  strategy: Exclude<TradeStrategy, 'MANUAL'>;
-  price: string;
-  tradeDate: Date;
-  decide: (state: {
-    account: PaperAccountRecord;
-    position: PaperPositionRecord | null;
-  }) => PendingOrderFillDecision;
 }
 
 export interface InvariantTradeRow {
@@ -298,7 +261,7 @@ const isUniqueConstraintError = (error: unknown): boolean => {
 };
 
 @Injectable()
-export class PaperTradingPrismaRepository {
+export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async loadRecommendationScoreData(
