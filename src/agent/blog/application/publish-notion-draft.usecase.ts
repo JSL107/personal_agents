@@ -282,7 +282,12 @@ export class PublishNotionDraftUsecase {
     }
     // 편집이 코드를 바꾸지 않았는지 대조한다. 프롬프트로만 금지하면 집행이 없다 —
     // 공개 저장소에 잘못된 코드가 나가는 것을 막는 마지막 결정론 검사다. 삭제는 허용한다(추리기).
-    this.assertCodeBlocksPreserved(target, anonymized.body, edited.body, '편집');
+    this.assertCodeBlocksPreserved(
+      target,
+      anonymized.body,
+      edited.body,
+      '편집',
+    );
     this.assertNotOverTrimmed(target, anonymized.body, edited.body);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
