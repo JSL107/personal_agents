@@ -7,7 +7,8 @@ export const SCREENER_CLI_USAGE =
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>]\n' +
-  '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]';
+  '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]\n' +
+  '  pnpm exec ts-node scripts/screener.ts score-outcomes';
 
 export interface SyncUniverseArguments {
   subcommand: 'sync-universe';
@@ -29,11 +30,18 @@ export interface CollectBenchmarkArguments {
   options: CollectBenchmarkOptions;
 }
 
+// 회차에 실린 종목의 사후 성적을 매긴다. 재는 지평도 대상도 원장이 정하므로 옵션이 없다.
+export interface ScoreOutcomesArguments {
+  subcommand: 'score-outcomes';
+  options: Record<string, never>;
+}
+
 export type ScreenerCliArguments =
   | SyncUniverseArguments
   | CollectPricesArguments
   | CollectBenchmarkArguments
-  | ScreenArguments;
+  | ScreenArguments
+  | ScoreOutcomesArguments;
 
 const parsePositiveInteger = (value: string, key: string): number => {
   if (!/^\d+$/.test(value) || Number(value) <= 0) {
@@ -139,6 +147,12 @@ export const parseScreenerCliArguments = (
   }
   if (subcommand === 'screen') {
     return { subcommand, options: parseScreenOptions(optionValues) };
+  }
+  if (subcommand === 'score-outcomes') {
+    if (optionValues.length > 0) {
+      throw new Error(SCREENER_CLI_USAGE);
+    }
+    return { subcommand, options: {} };
   }
   throw new Error(SCREENER_CLI_USAGE);
 };
