@@ -77,6 +77,52 @@ describe('measureKoreanStyle', () => {
   });
 });
 
+describe('measureKoreanStyle — 종결체 축', () => {
+  it('`~요` 와 `~습니다` 의 비율을 잰다', () => {
+    const metrics = measureKoreanStyle(
+      '이건 그렇습니다. 저건 이래요. 그건 저렇습니다. 요건 그래요.',
+    );
+
+    expect(metrics.yoEndingPercent).toBe(50);
+  });
+
+  // 발행본 2026-08-19-http-cache 재현: 구어 어미는 적지만 해요체로 쓴 글이다.
+  // 축이 하나면 "구어 6%" 만 보여 딱딱한 글로 오독된다.
+  it('구어 어미가 없어도 해요체는 요체 비율로 드러난다', () => {
+    const metrics = measureKoreanStyle(
+      '브라우저는 그대로 써도 된다고 봐요. 본문을 다시 안 보내게 만드는 기술에 가까워요. 약속을 하는 셈이에요.',
+    );
+
+    expect(metrics.colloquialEndingPercent).toBe(0);
+    expect(metrics.yoEndingPercent).toBe(100);
+  });
+
+  it('명사 종결·목록은 분모에서 뺀다', () => {
+    // 종결체가 아닌 문장이 분모에 들어가면 불릿 많은 글의 축이 통째로 내려간다.
+    const metrics = measureKoreanStyle(
+      ['- Cache-Control: 재사용 시간', '', '이렇게 씁니다. 저렇게 써요.'].join(
+        '\n',
+      ),
+    );
+
+    expect(metrics.yoEndingPercent).toBe(50);
+  });
+
+  // 합쇼체는 자음 뒤 `-습니다` / 모음 뒤 `-ㅂ니다` 로 갈린다. 어미를 열거하면 후자가 빠져
+  // 합쇼체가 0 으로 세어지고, 딱딱한 글이 "요체 100%" 로 뒤집힌다.
+  it('`-ㅂ니다` 활용형도 합쇼체로 센다', () => {
+    const metrics = measureKoreanStyle('갑니다. 봅니다. 줍니다. 씁니다.');
+
+    expect(metrics.yoEndingPercent).toBe(0);
+  });
+
+  it('종결체가 하나도 없으면 0이다', () => {
+    expect(measureKoreanStyle('- 항목 하나\n- 항목 둘').yoEndingPercent).toBe(
+      0,
+    );
+  });
+});
+
 describe('measureKoreanStyle — 문단 축', () => {
   // run #980 `2026-08-20-agent-security-permission-boundaries` 의 첫 문단을 그대로 쓴다.
   // 문서 지표 네 항목이 모두 통과한 글인데도 이 문단은 5문장 벽이다.
