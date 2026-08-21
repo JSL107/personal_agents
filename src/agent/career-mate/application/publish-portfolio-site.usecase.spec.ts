@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+
 import { CareerProfileData } from '../domain/career-mate.type';
 import { CareerProfileRepositoryPort } from '../domain/port/career-profile.repository.port';
 import {
@@ -58,6 +60,7 @@ const createFixture = (
     profileJson: PROFILE,
     agentRunId: 77,
   },
+  anonymizedOwners: string | undefined = undefined,
 ) => {
   const client: PortfolioSiteClientPort = {
     listProjects: jest.fn().mockResolvedValue([]),
@@ -107,13 +110,42 @@ const createFixture = (
   } as unknown as BuildCareerProfileUsecase;
 
   return {
-    usecase: new PublishPortfolioSiteUsecase(repository, buildProfile, client),
+    usecase: new PublishPortfolioSiteUsecase(repository, buildProfile, client, {
+      get: (key: string) =>
+        key === 'PORTFOLIO_ANONYMIZED_OWNERS' ? anonymizedOwners : undefined,
+    } as unknown as ConfigService),
     client,
     buildProfile,
   };
 };
 
 describe('PublishPortfolioSiteUsecase', () => {
+  it('PORTFOLIO_ANONYMIZED_OWNERS 설정이 발행 본문까지 닿는다', async () => {
+    // 익명화 로직 자체는 도메인 테스트가 지킨다. 여기서 지키는 것은 배선이다 — 설정을 읽지
+    // 못하면 도메인 테스트는 전부 초록인데 운영 발행만 저장소 이름을 그대로 내보낸다.
+    const { usecase, client } = createFixture({}, undefined, 'jsl107');
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [created] = (client.createProject as jest.Mock).mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(String(created.slug)).toMatch(/^company-[0-9a-f]{6}-pr-313$/);
+    expect(created.links).toEqual({});
+  });
+
+  it('설정이 비어 있으면 저장소 이름을 그대로 쓴다', async () => {
+    // 대조군 — 위 테스트가 "항상 익명화" 로도 통과하지 않게 한다.
+    const { usecase, client } = createFixture();
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [created] = (client.createProject as jest.Mock).mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(created.slug).toBe(SLUG);
+  });
+
   it('사이트에 없는 성과는 새로 만든다', async () => {
     const { usecase, client } = createFixture();
 

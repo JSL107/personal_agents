@@ -306,3 +306,106 @@ describe('buildPortfolioSitePayload', () => {
     },
   );
 });
+
+describe('사내 저장소 익명화', () => {
+  const WORK_REPO = 'acme-corp/internal-api';
+  const workAccomplishment = {
+    ...ACCOMPLISHMENT,
+    evidence: [
+      evidence(984, '2026-07-01T01:00:00Z', WORK_REPO),
+      evidence(700, '2026-06-01T01:00:00Z', WORK_REPO),
+    ],
+  };
+  const options = { anonymizedOwners: ['acme-corp'] };
+
+  it('익명화 대상이면 slug 에 저장소 이름이 남지 않는다', () => {
+    const slug = buildProjectSlug(workAccomplishment, options);
+
+    // 해시가 아니라 "이름이 없다" 를 직접 단언한다 — 형식만 맞고 이름이 새면 익명화가 아니다.
+    expect(slug).not.toContain('acme');
+    expect(slug).not.toContain('internal-api');
+    expect(slug).toMatch(/^company-[0-9a-f]{6}-pr-700$/);
+  });
+
+  it('익명화 목록에 없는 저장소는 그대로 둔다', () => {
+    // 대조군 — 익명화가 무차별로 적용되면 개인 저장소 이름까지 사라져 근거가 끊긴다.
+    expect(buildProjectSlug(workAccomplishment, { anonymizedOwners: [] })).toBe(
+      'acme-corp-internal-api-pr-700',
+    );
+    expect(buildProjectSlug(ACCOMPLISHMENT, options)).toBe(
+      'jsl107-personal-agents-pr-313',
+    );
+  });
+
+  it('같은 저장소는 항상 같은 slug 를 얻는다', () => {
+    // slug 는 멱등 키다. 회차마다 흔들리면 같은 성과가 사이트에 계속 새로 쌓인다.
+    expect(buildProjectSlug(workAccomplishment, options)).toBe(
+      buildProjectSlug(workAccomplishment, options),
+    );
+  });
+
+  it('저장소가 다르면 slug 도 다르다', () => {
+    const other = {
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(700, '2026-06-01T01:00:00Z', 'acme-corp/other-api')],
+    };
+
+    expect(buildProjectSlug(other, options)).not.toBe(
+      buildProjectSlug(workAccomplishment, options),
+    );
+  });
+
+  it('익명화 대상은 PR 링크도 싣지 않는다', () => {
+    const [project] = buildPortfolioSitePayload(
+      { ...profile(), accomplishments: [workAccomplishment] },
+      options,
+    ).projects;
+
+    // 링크가 남으면 slug 를 아무리 접어도 주소에서 저장소가 그대로 드러난다.
+    expect(project.links).toEqual({});
+    expect(JSON.stringify(project)).not.toContain('acme-corp');
+  });
+
+  it('익명화하지 않는 저장소는 링크를 유지한다', () => {
+    const [project] = buildPortfolioSitePayload(profile(), options).projects;
+
+    expect(project.links).toEqual({
+      github: 'https://github.com/JSL107/personal_agents/pull/313',
+    });
+  });
+});
+
+describe('실재할 수 없는 머지 시각', () => {
+  // LLM 이 머지 시각 "미상" 인 PR 에 epoch 를 지어 넣어 사이트에 `1970.01` 로 발행된 적이 있다.
+  const EPOCH = '1970-01-01T00:00:00.000Z';
+
+  it('기간 표기에서 제외한다', () => {
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(313, EPOCH)],
+    };
+
+    const [project] = buildPortfolioSitePayload({
+      ...profile(),
+      accomplishments: [accomplishment],
+    }).projects;
+
+    expect(project.period).toBe('');
+  });
+
+  it('가장 이른 PR 선정을 오염시키지 않는다', () => {
+    // epoch 를 그대로 두면 그 PR 이 "첫 PR" 로 뽑혀 slug 와 링크가 엉뚱한 곳을 가리킨다.
+    const accomplishment = {
+      ...ACCOMPLISHMENT,
+      evidence: [evidence(984, EPOCH), evidence(313, '2026-08-14T01:00:00Z')],
+    };
+
+    const [project] = buildPortfolioSitePayload({
+      ...profile(),
+      accomplishments: [accomplishment],
+    }).projects;
+
+    expect(project.slug).toBe('jsl107-personal-agents-pr-313');
+    expect(project.period).toBe('2026.08');
+  });
+});

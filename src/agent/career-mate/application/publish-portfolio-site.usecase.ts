@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
@@ -11,6 +12,7 @@ import {
 } from '../domain/port/portfolio-site.client.port';
 import {
   buildPortfolioSitePayload,
+  PortfolioSitePayloadOptions,
   PortfolioSiteProjectPayload,
   PortfolioSiteSkillGroupPayload,
 } from '../domain/portfolio-site-payload';
@@ -41,6 +43,13 @@ export interface PublishPortfolioSiteResult {
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+// `PORTFOLIO_ANONYMIZED_OWNERS=owner-a,owner-b` → ['owner-a', 'owner-b'].
+const parseAnonymizedOwners = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(',')
+    .map((owner) => owner.trim().toLowerCase())
+    .filter((owner) => owner.length > 0);
+
 // 경력 프로필을 포트폴리오 사이트(Portfolio OS)에 비공개 초안으로 발행한다.
 //
 // `RenderPortfolioUsecase` 의 형제 — 같은 프로필을 Notion 페이지 대신 사이트 API 로 보낸다.
@@ -57,13 +66,14 @@ export class PublishPortfolioSiteUsecase {
     private readonly buildProfile: BuildCareerProfileUsecase,
     @Inject(PORTFOLIO_SITE_CLIENT_PORT)
     private readonly siteClient: PortfolioSiteClientPort,
+    private readonly configService: ConfigService,
   ) {}
 
   async execute({
     slackUserId,
   }: PublishPortfolioSiteInput): Promise<PublishPortfolioSiteResult> {
     const { profile, agentRunId } = await this.resolveProfile(slackUserId);
-    const payload = buildPortfolioSitePayload(profile);
+    const payload = buildPortfolioSitePayload(profile, this.payloadOptions());
     const failures: PublishPortfolioSiteFailure[] = [];
 
     const projects = await this.publishProjects(payload.projects, failures);
@@ -83,6 +93,14 @@ export class PublishPortfolioSiteUsecase {
       failures,
       missingAfterPublish,
       agentRunId,
+    };
+  }
+
+  private payloadOptions(): PortfolioSitePayloadOptions {
+    return {
+      anonymizedOwners: parseAnonymizedOwners(
+        this.configService.get<string>('PORTFOLIO_ANONYMIZED_OWNERS'),
+      ),
     };
   }
 

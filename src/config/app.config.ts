@@ -101,6 +101,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  PORTFOLIO_ANONYMIZED_OWNERS?: string;
+
+  @IsOptional()
+  @IsString()
   BLOG_PUBLISH_REPO?: string;
 
   @IsOptional()
