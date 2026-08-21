@@ -41,6 +41,8 @@ import {
   DEFAULT_RUN_RETRO_TIMEZONE,
   DEFAULT_RUN_SWEEPER_CRON,
   DEFAULT_RUN_SWEEPER_TIMEZONE,
+  DEFAULT_SCREENING_OUTCOME_SCORING_CRON,
+  DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
   DEFAULT_STOCK_ALERT_SCORING_CRON,
   DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
   DEFAULT_STOCK_MONITOR_CRON,
@@ -324,6 +326,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_STOCK_ALERT_SCORING_CRON,
       timezone: DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 회차에 실린 종목의 사후 성적. 지평이 찬 항목만 채점되므로 매일 조금씩 쌓인다.
+  {
+    id: 'screening-outcome-scoring',
+    taskId: 'screening-outcome-scoring',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCREENING_OUTCOME_SCORING_CRON,
+      timezone: DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

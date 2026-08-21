@@ -5,11 +5,13 @@ import { NestFactory } from '@nestjs/core';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { CollectBenchmarkClosesUsecase } from '../src/screener/application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from '../src/screener/application/collect-universe-prices.usecase';
+import { ScoreScreeningOutcomesUsecase } from '../src/screener/application/score-screening-outcomes.usecase';
 import { ScreenUniverseUsecase } from '../src/screener/application/screen-universe.usecase';
 import { SyncUniverseUsecase } from '../src/screener/application/sync-universe.usecase';
 import { formatPriceCollectionFailures } from '../src/screener/infrastructure/price-collection-failure.formatter';
 import { formatPriceCollectionSummary } from '../src/screener/infrastructure/price-collection-summary.formatter';
 import { formatScreenResult } from '../src/screener/infrastructure/screen-result.formatter';
+import { formatScreeningOutcomeResult } from '../src/screener/infrastructure/screening-outcome.formatter';
 import { parseScreenerCliArguments } from '../src/screener/interface/screener-cli.parser';
 import { ScreenerModule } from '../src/screener/screener.module';
 
@@ -50,6 +52,14 @@ const main = async (): Promise<void> => {
           `이미 운영 회차가 있어 원장에 남기지 않았습니다. 기존 회차 #${result.recordOutcome.runId}, 기준일 ${result.asOf ?? '-'} — 확인용 실행이 그날 보여준 목록을 덮어쓰지 않습니다.`,
         );
       }
+      return;
+    }
+
+    if (parsed.subcommand === 'score-outcomes') {
+      const result = await application
+        .get(ScoreScreeningOutcomesUsecase)
+        .execute();
+      console.log(formatScreeningOutcomeResult(result));
       return;
     }
 
