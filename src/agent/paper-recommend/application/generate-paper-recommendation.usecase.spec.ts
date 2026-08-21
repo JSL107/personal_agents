@@ -7,7 +7,10 @@ import { ModelProviderName } from '../../../model-router/domain/model-router.typ
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { PaperTradingPrismaRepository } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { ScreenUniverseUsecase } from '../../../screener/application/screen-universe.usecase';
-import { GeneratePaperRecommendationUsecase } from './generate-paper-recommendation.usecase';
+import {
+  GeneratePaperRecommendationUsecase,
+  PaperRecommendationSuccess,
+} from './generate-paper-recommendation.usecase';
 
 const decidedAt = new Date('2026-08-13T07:00:00.000Z');
 
@@ -695,6 +698,172 @@ describe('GeneratePaperRecommendationUsecase', () => {
       ]),
     );
     expect(decision.orders).toHaveLength(2);
+    const lockedResult = decision.result as PaperRecommendationSuccess;
+    expect(lockedResult.skipped).toEqual(
+      expect.arrayContaining([
+        {
+          side: 'BUY',
+          code: '000660',
+          name: 'SK하이닉스',
+          reason: 'PENDING_ORDER_EXISTS',
+        },
+        {
+          side: 'SELL',
+          code: '000660',
+          name: 'SK하이닉스',
+          reason: 'PENDING_ORDER_EXISTS',
+        },
+      ]),
+    );
+  });
+
+  // 충돌 종목을 제약 함수 뒤에서 버리면, 그 종목이 먼저 먹은 현금과 매수 건수가 되돌아오지
+  // 않아 뒤의 유효한 매수가 상한에 걸려 사라진다. 충돌 판정은 제약 함수 앞에 있어야 한다.
+  it('대기 주문과 충돌하는 매수가 뒤의 유효한 매수 자리를 잡아먹지 않는다', async () => {
+    screenUniverse.execute.mockImplementation(async ({ strategy }) => ({
+      strategy,
+      ruleVersion: 2,
+      universeCount: 4,
+      evaluatedCount: 4,
+      staleCount: 0,
+      passedCount: 4,
+      asOf: '2026-08-13',
+      recordOutcome: null,
+      includedIndicators: [],
+      stocks: [
+        {
+          tickerId: 71,
+          code: '000660',
+          name: 'SK하이닉스',
+          krxMarket: 'KOSPI',
+          score: 98,
+          indicators,
+        },
+        {
+          tickerId: 72,
+          code: '000720',
+          name: '현대건설',
+          krxMarket: 'KOSPI',
+          score: 95,
+          indicators,
+        },
+        {
+          tickerId: 73,
+          code: '000810',
+          name: '삼성화재',
+          krxMarket: 'KOSPI',
+          score: 92,
+          indicators,
+        },
+        {
+          tickerId: 74,
+          code: '000880',
+          name: '한화',
+          krxMarket: 'KOSPI',
+          score: 90,
+          indicators,
+        },
+      ],
+    }));
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [],
+        buys: [
+          { code: '000660', reason: '충돌 종목' },
+          { code: '000720', reason: '유효 1' },
+          { code: '000810', reason: '유효 2' },
+          { code: '000880', reason: '유효 3' },
+        ],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    repository.saveRecommendationAtomically.mockImplementation(
+      async ({ decide }) =>
+        decide({
+          account: {
+            id: 41,
+            seedAmount: { toString: () => '10000000' } as never,
+            cashBalance: { toString: () => '10000000' } as never,
+          },
+          positions: [],
+          latestValuation: null,
+          existingOrders: [
+            {
+              tickerId: 71,
+              side: 'SELL',
+              quantity: { toString: () => '1' } as never,
+              indicatorSnapshot: indicators,
+            },
+          ],
+        }).result,
+    );
+
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+
+    // 충돌 종목만 빠지고 나머지 셋이 그대로 매수 상한을 채워야 한다.
+    expect(result.completed[0].orders.map((order) => order.code)).toEqual([
+      '000720',
+      '000810',
+      '000880',
+    ]);
+    expect(result.completed[0].skipped).toEqual([
+      {
+        side: 'BUY',
+        code: '000660',
+        name: 'SK하이닉스',
+        reason: 'PENDING_ORDER_EXISTS',
+      },
+    ]);
+  });
+
+  it('반대 방향 대기 주문이 있는 종목은 매수 추천에서도 제외한다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [],
+        buys: [{ code: '000660', reason: '신규 매수' }],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    repository.saveRecommendationAtomically.mockImplementation(
+      async ({ decide }) =>
+        decide({
+          account: {
+            id: 41,
+            seedAmount: { toString: () => '10000000' } as never,
+            cashBalance: { toString: () => '10000000' } as never,
+          },
+          positions: [],
+          latestValuation: null,
+          existingOrders: [
+            {
+              tickerId: 71,
+              side: 'SELL',
+              quantity: { toString: () => '1' } as never,
+              indicatorSnapshot: indicators,
+            },
+          ],
+        }).result,
+    );
+
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+
+    expect(result.completed[0].orders).toEqual([]);
+    expect(result.completed[0].skipped).toEqual([
+      {
+        side: 'BUY',
+        code: '000660',
+        name: 'SK하이닉스',
+        reason: 'PENDING_ORDER_EXISTS',
+      },
+    ]);
   });
 
   it('계좌 생성 race 중 duplicate 오류면 exact strategy account를 refetch한다', async () => {
