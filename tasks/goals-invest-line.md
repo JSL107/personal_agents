@@ -380,6 +380,7 @@
 | 실계좌 감시 판정 규칙 | [2026-07-22 감시 설계](../docs/superpowers/specs/2026-07-22-stock-monitor-design.md) |
 | 알림 사후 채점 구조 | [2026-07-23 알림 채점 설계](../docs/superpowers/specs/2026-07-23-stock-alert-outcome-design.md) |
 | 잔여 작업 판정 절차 전반 | [2026-08-13 잔여 재고](../docs/superpowers/plans/2026-08-13-remaining-work-inventory.md) |
+| 자가학습 루프를 왜 이렇게 설계했나 · 무엇을 자동으로 못 바꾸나 | [2026-08-21 자가학습 설계](../docs/superpowers/specs/2026-08-21-invest-self-learning-design.md) |
 
 ### 코드 참고 위치
 
