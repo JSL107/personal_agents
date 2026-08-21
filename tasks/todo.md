@@ -2347,3 +2347,29 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - `.env`, DB, Slack/GitHub 운영 쓰기, commit/staging/push는 건드리지 않았다. 실제 외부 통합은 미검증이다.
 
 ---
+# 주문 배치 규칙 통합 (2026-08-21)
+
+**Goal:** 운영 추천과 백테스트 재생이 대기 주문의 현금 예약, 중복 방지, 보유 자리 계산을 같은 도메인 함수로 적용하게 한다.
+
+**Contract:** `.ai/design.md`를 그대로 따른다. 운영 프롬프트 후보 목록, 청산 밴드, 체결 규칙, 비중 정책은 변경하지 않는다. DB 실행, 의존성 설치, Prisma 생성, git 조작은 하지 않는다.
+
+- [x] `.ai/design.md`, 대상 구현 3개, 관련 제약·타입, repo 규칙을 정독한다.
+- [x] `pending-order-plan.spec.ts`와 `top-scored-selection.spec.ts` 회귀 테스트를 먼저 추가하고 RED를 확인한다.
+- [x] `pending-order-plan.ts`와 선정 규칙을 최소 구현해 focused GREEN을 확인한다.
+- [x] 운영 추천과 백테스트 재생을 공통 계획으로 연결하고 기존 usecase spec을 갱신한다.
+- [x] 관련 focused test를 실행하고 최종 변경 범위를 검토한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`를 각각 리다이렉트해 fresh 실행하고 exit code를 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- `planPendingOrders`가 예약 현금, BUY/SELL 코드, tickerId 안전망, 가상 포지션을 한 번에 계산한다. 두 usecase의 손계산 심볼은 검색 결과 0건이다.
+- 백테스트 선정은 대기 매수를 자리로 세고 대기 BUY/SELL을 추천에서 제외한다. 휴장 fixture의 `maximumFillsInOneDay`는 `maximumPositions` 이하로 고정했다.
+- 운영은 `screen.stocks`와 보유 포지션으로 code map을 만들고, 공통 계획을 제약 입력과 최종 tickerId 안전망에 적용한다. 안전망 통과 결과만 주문 저장·상세 변환에 전달한다.
+- RED는 신규 계약 부재와 실제 정원 초과(5 > 3), 반대 방향 대기 주문 저장을 확인했다. 자리 가드와 `reservedPositions` 연결을 각각 제거한 mutation도 테스트가 잡았다.
+- 독립 리뷰는 Blocker 0, Should Fix 1이었다. 대기 BUY `ALREADY_HELD`와 대기 SELL `PENDING_ORDER_EXISTS` 단언을 보강해 처리했다.
+- 최종 gate: lint exit 0(기존 warning 57), test exit 0(일반 430 suites/3,745 tests + code-graph 5 suites/40 tests), build exit 0, tsc exit 0.
+- 실제 DB 백테스트 전후 대조는 사용자 금지로 미실행했다. 구현 설계 이탈은 없고, DB 가능한 환경에서 `orderCount` / `filledCount` 재검증이 필요하다.
+- 의존성 설치, Prisma 생성, DB 접속, git 조작은 실행하지 않았다.
+
+---
