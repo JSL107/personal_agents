@@ -2,6 +2,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
+import {
+  CODE_MASK_PATTERN,
+  maskFencedCodeBlocks,
+} from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { NotionClientPort } from '../../../notion/domain/port/notion-client.port';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
@@ -185,6 +189,84 @@ afterAll(() => {
 });
 
 describe('PublishNotionDraftUsecase', () => {
+  // 편집 모델에게 코드를 보여주면 손댄다(실측 3회 중 2회). 자리만 남기고 가리는 흐름을
+  // usecase 수준에서 고정한다 — 유틸 단위 테스트만으로는 배선이 빠져도 초록이다.
+  describe('편집 단계 코드 보호', () => {
+    const 코드본문 = [
+      '# 캐시 흐름',
+      '',
+      '이렇게 요청합니다.',
+      '',
+      '```http',
+      'GET /en-US/ HTTP/1.1',
+      'Host: developer.mozilla.org',
+      '```',
+    ].join('\n');
+    const 익명화응답 = JSON.stringify({
+      slug: 'cache-flow',
+      description: '캐시 흐름 정리',
+      body: 코드본문,
+    });
+    const 편집응답 = (body: string): string =>
+      JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body,
+      });
+
+    it('편집 모델에는 코드 대신 표식을 보내고, 응답의 표식을 원본 코드로 되돌린다', async () => {
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase, modelRouter, createPreview } = buildUsecase({
+        markdown: 코드본문,
+        completionText: 익명화응답,
+        editText: 편집응답(masked),
+      });
+
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        responseUrl: 'https://hooks.slack.test/response',
+      });
+
+      const 편집호출 = modelRouter.route.mock.calls.find(([input]) =>
+        String(input.request.systemPrompt).includes('블로그의 편집자'),
+      );
+      expect(편집호출).toBeDefined();
+      const 편집프롬프트 = String(편집호출?.[0].request.prompt);
+      expect(편집프롬프트).not.toContain('developer.mozilla.org');
+      expect(편집프롬프트).toMatch(CODE_MASK_PATTERN);
+
+      // 최종 발행본에는 원본 코드가 그대로 들어간다.
+      const payload = createPreview.execute.mock.calls[0][0] as {
+        payload: { content: string };
+      };
+      expect(payload.payload.content).toContain('Host: developer.mozilla.org');
+      expect(payload.payload.content).not.toMatch(CODE_MASK_PATTERN);
+    });
+
+    it('모델이 표식을 변형하면 발행하지 않는다', async () => {
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase } = buildUsecase({
+        markdown: 코드본문,
+        completionText: 익명화응답,
+        editText: 편집응답(
+          masked.replace(/CODE_BLOCK_[0-9a-f]+/, 'CODE_BLOCK_deadbeef'),
+        ),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/코드 표식/);
+    });
+  });
+
   describe('buildPublishCandidate', () => {
     it('ready 후보만 만들고 AgentRun과 CreatePreview를 호출하지 않는다', async () => {
       const { usecase, agentRunService, createPreview } = buildUsecase();
