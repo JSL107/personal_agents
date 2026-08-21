@@ -121,6 +121,56 @@ describe('calculateShadowPerformance', () => {
     expect(result.shadowUnavailableCount).toBe(1);
   });
 
+  // 시장 축에서 지평이 아직 안 왔을 때만 대기다. 이 구분이 없으면 카드가 "기다리면 됨" 으로만
+  // 보고하고 사람이 손댈 일이 없다고 읽는다.
+  it('시장 거래일이 아직 안 찼으면 미도래로 센다', () => {
+    const result = calculateShadowPerformance({
+      cycles: [
+        cycle({
+          classification: 'OPEN',
+          sellTrade: null,
+          buyTrade: { ...cycle().buyTrade!, tradeDate: date('2026-08-03') },
+        }),
+      ],
+      // SWING 은 진입 뒤 다섯 번째 행이 필요한데 시장 축에 네 개뿐이다.
+      dailyPrices: [
+        dailyPrice('2026-08-03', '100'),
+        dailyPrice('2026-08-04', '100'),
+        dailyPrice('2026-08-05', '100'),
+        dailyPrice('2026-08-06', '100'),
+      ],
+    });
+
+    expect(result.shadowUnavailableCount).toBe(1);
+    expect(result.shadowNotDueCount).toBe(1);
+  });
+
+  // 거래정지·상장폐지로 봉이 끊긴 종목을 대기로 세면 장애가 정상으로 보고된다.
+  it('시장 거래일은 찼는데 그 종목 봉만 없으면 미도래로 세지 않는다', () => {
+    const result = calculateShadowPerformance({
+      cycles: [
+        cycle({
+          classification: 'OPEN',
+          sellTrade: null,
+          buyTrade: { ...cycle().buyTrade!, tradeDate: date('2026-08-03') },
+        }),
+      ],
+      dailyPrices: [
+        // 대상 종목(100)은 진입 직후 두 행에서 끊겼다.
+        dailyPrice('2026-08-03', '100'),
+        dailyPrice('2026-08-04', '100'),
+        // 시장 축은 다른 종목이 채운다 — 진입 뒤 다섯 번째 거래일이 지났다.
+        dailyPrice('2026-08-05', '100', { tickerId: 200 }),
+        dailyPrice('2026-08-06', '100', { tickerId: 200 }),
+        dailyPrice('2026-08-07', '100', { tickerId: 200 }),
+        dailyPrice('2026-08-10', '100', { tickerId: 200 }),
+      ],
+    });
+
+    expect(result.shadowUnavailableCount).toBe(1);
+    expect(result.shadowNotDueCount).toBe(0);
+  });
+
   it('PaperTrade.price 대신 양쪽 저장 close에 매수·매도 비용을 적용한다', () => {
     const result = calculateShadowPerformance({
       cycles: [cycle()],

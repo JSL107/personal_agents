@@ -261,12 +261,14 @@ export class ScoreRecommendationsUsecase {
     // 위 규칙 때문에 과거 기준일은 다시 채점해 덮을 수도 없다. 2026-08-19 행이 실제로
     // 그렇게 남았다 — 그날 채점을 지수 수집(18:30)보다 먼저 수동 실행한 결과다.
     // 자동 경로(금 20:10)는 수집 뒤라 이 가드에 걸리지 않는다.
-    // 집계할 대상이 있었는데 못 낸 회차만 막는다. 추천이 0건이면 지수가 없어도 잃는 숫자가
-    // 없고, 그때까지 막으면 표본이 없는 초기 구간의 채점이 영영 원장에 남지 않는다.
+    // 실제로 집계에서 빠진 건이 있는 회차만 막는다. 판단 근거는 제외 건수 그 자체다 —
+    // "평가일 지수가 없다" 만으로는 부족하다. 평가일 전에 모두 청산된 계좌는 각 추천의
+    // 초과수익이 매도일 지수만으로 온전히 산출되므로, 그런 회차까지 막으면 멀쩡한 성적이
+    // 원장에 남지 못한다. 추천이 0건인 회차도 같은 이유로 통과한다(빠진 것이 없다).
     const evaluationBenchmarkMissing = accounts.some(
       (account) =>
         account.evaluationBenchmarkMissing &&
-        account.classifications.closed + account.classifications.open > 0,
+        account.exclusions.benchmarkUnavailable > 0,
     );
     const persisted =
       command.from === undefined &&

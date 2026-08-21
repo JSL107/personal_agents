@@ -84,6 +84,15 @@ export const calculateShadowPerformance = (
   const performances: ShadowPerformance[] = [];
   let shadowUnavailableCount = 0;
   let shadowNotDueCount = 0;
+  // 미도래와 시세 결손을 가르려면 "그 거래일이 왔는가" 를 종목 밖에서 알아야 한다.
+  // 조회 범위의 전 종목 봉에서 날짜만 모으면 그것이 곧 시장 거래일 축이다 — daily_price
+  // 는 매 거래일 전 종목이 갱신되므로 한 종목이 비어도 축은 남는다. 이 축이 없으면
+  // 상장폐지·거래정지로 봉이 끊긴 종목까지 "아직 대기 중" 으로 보고돼 장애가 묻힌다.
+  const marketTradeDates = [
+    ...new Set(
+      input.dailyPrices.map((dailyPrice) => dailyPrice.tradeDate.getTime()),
+    ),
+  ].sort((left, right) => left - right);
 
   for (const cycle of input.cycles) {
     if (cycle.classification !== 'CLOSED' && cycle.classification !== 'OPEN') {
@@ -109,9 +118,19 @@ export const calculateShadowPerformance = (
       continue;
     }
     if (!exitDailyPrice) {
-      // 보유 기간이 아직 안 찼다. 시세가 빠진 것이 아니라 그 거래일이 오지 않은 것이다.
       shadowUnavailableCount += 1;
-      shadowNotDueCount += 1;
+      // 시장 축에서 그 거래일이 아직 안 왔으면 대기, 왔는데 이 종목 봉만 없으면 결손이다.
+      // 후자를 대기로 세면 거래정지·상장폐지가 정상으로 보고된다.
+      const entryMarketIndex = marketTradeDates.indexOf(
+        entryDailyPrice.tradeDate.getTime(),
+      );
+      const horizonReached =
+        entryMarketIndex >= 0 &&
+        marketTradeDates.length >
+          entryMarketIndex + SHADOW_HOLDING_ROWS[cycle.strategy];
+      if (!horizonReached) {
+        shadowNotDueCount += 1;
+      }
       continue;
     }
 
