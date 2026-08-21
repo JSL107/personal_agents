@@ -209,6 +209,66 @@ describe('matchRecommendationCycles', () => {
     expect(result.realizedPnlMismatchCount).toBe(1);
   });
 
+  // 장부는 평단(나눗셈 → 소수 4자리 저장)으로, 채점은 매수 체결가로 실현손익을 낸다.
+  // 완전 일치를 요구하던 시절 실제 원장에서 청산 13건 중 10건이 이 잔여만으로 이상치가 됐다.
+  it('주당 반올림 한계 안의 실현손익 차이는 이상치로 세지 않는다', () => {
+    const result = matchRecommendationCycles({
+      orders: [order(), order({ id: 2, side: 'SELL' })],
+      trades: [
+        trade({
+          quantity: decimal('1000'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+        }),
+        trade({
+          id: 12,
+          orderId: 2,
+          side: 'SELL',
+          quantity: decimal('1000'),
+          price: decimal('11'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          // 정확한 값은 1000. 주당 0.00005 원이 잘린 잔여라 허용치(주당 0.0001) 안이다.
+          realizedPnl: decimal('1000.05'),
+          tradeDate: date('2026-08-06'),
+        }),
+      ],
+    });
+
+    expect(result.anomalies).toEqual([]);
+    expect(result.realizedPnlMismatchCount).toBe(0);
+  });
+
+  it('허용치를 넘는 실현손익 차이는 그대로 이상치로 잡는다', () => {
+    const result = matchRecommendationCycles({
+      orders: [order(), order({ id: 2, side: 'SELL' })],
+      trades: [
+        trade({
+          quantity: decimal('1000'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+        }),
+        trade({
+          id: 12,
+          orderId: 2,
+          side: 'SELL',
+          quantity: decimal('1000'),
+          price: decimal('11'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          // 허용치는 1000 x 0.0001 = 0.1 원. 0.2 는 그 밖이다.
+          realizedPnl: decimal('1000.2'),
+          tradeDate: date('2026-08-06'),
+        }),
+      ],
+    });
+
+    expect(result.anomalies.map((anomaly) => anomaly.type)).toEqual([
+      'REALIZED_PNL_MISMATCH',
+    ]);
+    expect(result.realizedPnlMismatchCount).toBe(1);
+  });
+
   it('같은 날짜에는 trade id 순으로 첫 매도를 고른다', () => {
     const result = matchRecommendationCycles({
       orders: [order(), order({ id: 2, side: 'SELL' })],
