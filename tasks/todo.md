@@ -2347,3 +2347,38 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - `.env`, DB, Slack/GitHub 운영 쓰기, commit/staging/push는 건드리지 않았다. 실제 외부 통합은 미검증이다.
 
 ---
+# 주문 배치 규칙 통합 (2026-08-21)
+
+**Goal:** 운영 추천과 백테스트 재생이 대기 주문의 현금 예약, 중복 방지, 보유 자리 계산을 같은 도메인 함수로 적용하게 한다.
+
+**Contract:** `.ai/design.md`를 그대로 따른다. 운영 프롬프트 후보 목록, 청산 밴드, 체결 규칙, 비중 정책은 변경하지 않는다. DB 실행, 의존성 설치, Prisma 생성, git 조작은 하지 않는다.
+
+- [x] `.ai/design.md`, 대상 구현 3개, 관련 제약·타입, repo 규칙을 정독한다.
+- [x] `pending-order-plan.spec.ts`와 `top-scored-selection.spec.ts` 회귀 테스트를 먼저 추가하고 RED를 확인한다.
+- [x] `pending-order-plan.ts`와 선정 규칙을 최소 구현해 focused GREEN을 확인한다.
+- [x] 운영 추천과 백테스트 재생을 공통 계획으로 연결하고 기존 usecase spec을 갱신한다.
+- [x] 관련 focused test를 실행하고 최종 변경 범위를 검토한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm exec tsc --noEmit`를 각각 리다이렉트해 fresh 실행하고 exit code를 확인한다.
+- [x] `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- `planPendingOrders` 가 예약 현금·가용 현금·대기 매수/매도 코드 집합·대기 tickerId 를 한 번에
+  낸다. 두 usecase 의 손계산은 남지 않았다.
+- **착수 시 설계 하나를 철회했다.** 대기 매수를 보유 정원으로 세는 변경을 넣었다가 되돌렸다 —
+  2026-08-16 백테스트 설계 §7 이 연휴 누적 체결을 실전의 정상 동작으로 판정하고 재현 대상으로
+  둔 사항이었다. 자리로 세면 실전과 다른 것을 재게 된다. 기존 재생 spec 의 단언
+  (`maximumFillsInOneDay > maximumPositions`) 도 원래대로 되돌렸다. 대기 매수는 후보에서만
+  빠지고 자리는 다음 순위가 채운다.
+- **PR 리뷰에서 실제 결함 하나가 잡혀 고쳤다.** 충돌 종목을 제약 함수 *뒤에서* 버리면 그
+  종목이 먼저 먹은 현금과 매수 건수가 되돌아오지 않아, 뒤의 유효한 매수가 상한에 걸려
+  사라진다. 회귀 테스트로 재현(4후보 중 충돌 1건 → 유효 매수가 3건이 아니라 2건)한 뒤
+  판정을 제약 함수 앞으로 옮겼다. 그 결과 "대기 매수를 가상 포지션으로 위장해 걸러낸다" 는
+  트릭과 사후 안전망이 둘 다 필요 없어져 삭제했다.
+- 운영 동작 변화 하나 — 같은 종목에 반대 방향 대기 주문이 있으면 새 주문을 만들지 않는다.
+  대기 매수 종목의 skip 사유도 `ALREADY_HELD` 에서 `PENDING_ORDER_EXISTS` 로 정확해졌다.
+- 백테스트 산출물 전후 대조: SWING 2026-01-02~08-18 실제 DB 실행 결과가 `main` 과 출력 전체
+  완전 동일(체결 143건, 최종 평가액 3,619,418원 −63.81%, 초과수익 −7.86%).
+- 게이트: `pnpm lint:check` / `pnpm exec tsc --noEmit` / `pnpm build` / `pnpm test` 전부 exit 0.
+
+---

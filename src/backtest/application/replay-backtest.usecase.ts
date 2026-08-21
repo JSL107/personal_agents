@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain/paper-recommendation.constraint';
+import { planPendingOrders } from '../../agent/paper-recommend/domain/pending-order-plan';
 import { calculateIndicators } from '../../market-data/domain/stock-indicator';
 import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import { PaperMarket } from '../../paper-trading/domain/paper-account.type';
@@ -81,9 +82,9 @@ interface PendingOrder {
   side: 'BUY' | 'SELL';
   quantity: number;
   targetTradeDate: string;
-  // 매수 주문이 체결되면 쓸 현금. 다음 추천에서 같은 현금을 다시 배정하지 않기 위해
-  // 주문 시점 종가로 잡아 둔다. 매도는 0 이다.
-  reservedAmount: number;
+  // 주문 시점 종가. 예약 현금은 planPendingOrders 가 여기서 계산한다 — 금액을 미리
+  // 접어 두면 "수량 x 종가" 규칙이 실전과 백테스트에 각각 남는다.
+  close: number | null;
 }
 
 const dateTextOf = (value: Date): string => value.toISOString().slice(0, 10);
@@ -343,25 +344,13 @@ export class ReplayBacktestUsecase {
         asOfIndex -
         (context.entryIndexByTicker.get(position.tickerId) ?? asOfIndex),
     }));
-    const pendingBuyTickerIds = new Set(
-      context.state.pendingOrders
-        .filter((order) => order.side === 'BUY')
-        .map((order) => order.tickerId),
-    );
-    // 대기 매수 주문이 있는 종목은 추천 전에 랭킹에서 뺀다. 뒤에서 버리기만 하면 그 자리가
-    // 빈 채로 남아, 연휴 동안 다른 종목 주문이 쌓였다가 개장일에 몰려 체결되는 실전 현상이
-    // 백테스트에서 재현되지 않는다(설계 §연휴 누적 — 막는 것이 아니라 영향을 측정한다).
-    const rankedForRecommendation = ranked.filter(
-      (stock) => !pendingBuyTickerIds.has(stock.tickerId),
-    );
-    // 대기 매수 주문이 쓸 현금은 먼저 뺀다. 실전의 reservedCash 와 같은 규칙이고,
-    // 없으면 같은 현금을 여러 주문에 중복 배정해 성적이 실제보다 좋게 나온다.
-    const reservedCash = context.state.pendingOrders.reduce(
-      (sum, order) => sum + order.reservedAmount,
-      0,
-    );
+    const plan = planPendingOrders({
+      pendingOrders: context.state.pendingOrders,
+      cashBalance: Number(context.ledger.cashBalance.toString()),
+      codeOf: (tickerId) => context.tickerById.get(tickerId)?.code,
+    });
     const recommendation = selectDeterministicRecommendation({
-      rankedStocks: rankedForRecommendation.map((stock) => ({
+      rankedStocks: ranked.map((stock) => ({
         tickerId: stock.tickerId,
         code: stock.code,
         name: stock.name,
@@ -370,6 +359,7 @@ export class ReplayBacktestUsecase {
       heldPositions,
       maximumPositions: context.command.maximumPositions,
       holdingTradeDays: context.command.holdingTradeDays,
+      pendingBuyCodes: plan.pendingBuyCodes,
     });
     const accountValuation = this.valuate(
       context.ledger,
@@ -389,21 +379,17 @@ export class ReplayBacktestUsecase {
         code: context.tickerById.get(position.tickerId)?.code ?? '',
         quantity: Number(position.quantity.toString()),
       })),
-      cashBalance: Math.max(
-        0,
-        Number(context.ledger.cashBalance.toString()) - reservedCash,
-      ),
+      cashBalance: plan.availableCash,
       accountValuation,
       // CLI 의 --weight 를 그대로 쓴다. 이 값을 넘기지 않으면 운영 상수 20% 가 적용돼
       // --weight 30 이 실제로는 20% 만 매수하면서 30% 규칙의 성적으로 표시된다.
       maximumWeightPercent: context.command.weightPercent,
     });
 
-    // 같은 종목에 대기 주문이 이미 있으면 새로 만들지 않는다. 실전의 pendingBuyTickerIds
-    // 중복 방지와 같은 규칙이고, 없으면 연휴 동안 같은 종목 주문이 겹겹이 쌓인다.
-    const pendingTickerIds = new Set(
-      context.state.pendingOrders.map((order) => order.tickerId),
-    );
+    // 같은 종목에 대기 주문이 이미 있으면 새로 만들지 않는다 — 없으면 연휴 동안 같은 종목
+    // 주문이 겹겹이 쌓인다. 이번 회차에 만든 주문도 뒤 항목을 막아야 하므로, 읽기 전용인
+    // 도메인 계획의 집합을 복사해 루프에서 갱신한다.
+    const pendingTickerIds = new Set(plan.pendingTickerIds);
     const closeByTickerId = new Map(
       ranked.map((stock) => [stock.tickerId, stock.indicators.close]),
     );
@@ -427,10 +413,7 @@ export class ReplayBacktestUsecase {
         side: intent.side,
         quantity: intent.quantity,
         targetTradeDate,
-        reservedAmount:
-          intent.side === 'BUY'
-            ? intent.quantity * (closeByTickerId.get(intent.tickerId) ?? 0)
-            : 0,
+        close: closeByTickerId.get(intent.tickerId) ?? null,
       });
       pendingTickerIds.add(intent.tickerId);
       context.state.nextOrderId += 1;

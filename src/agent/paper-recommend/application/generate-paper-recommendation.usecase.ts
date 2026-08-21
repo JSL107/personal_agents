@@ -6,6 +6,7 @@ import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
+import { parseTradeSide } from '../../../paper-trading/domain/paper-account.type';
 import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
 import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
 import {
@@ -25,6 +26,7 @@ import {
   PaperRecommendationSkipReason,
   PaperRecommendationStrategy,
 } from '../domain/paper-recommendation.type';
+import { planPendingOrders } from '../domain/pending-order-plan';
 import {
   buildPaperRecommendationPrompt,
   PAPER_RECOMMEND_SYSTEM_PROMPT,
@@ -314,68 +316,65 @@ export class GeneratePaperRecommendationUsecase {
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
   }): LockedRecommendationResult {
-    const stocksByTickerId = new Map(
-      screen.stocks.map((stock) => [stock.tickerId, stock]),
-    );
-    const pendingBuyTickerIds = new Set(
-      state.existingOrders
-        .filter((order) => order.side === 'BUY')
-        .map((order) => order.tickerId),
-    );
-    const pendingSellTickerIds = new Set(
-      state.existingOrders
-        .filter((order) => order.side === 'SELL')
-        .map((order) => order.tickerId),
-    );
-    const reservedCash = state.existingOrders.reduce((sum, order) => {
-      if (order.side !== 'BUY') {
-        return sum;
-      }
-      const snapshot = order.indicatorSnapshot as { close?: unknown } | null;
-      const close =
-        typeof snapshot?.close === 'number' && Number.isFinite(snapshot.close)
-          ? snapshot.close
-          : 0;
-      return sum + Number(order.quantity.toString()) * close;
-    }, 0);
-    const pendingBuyPositions = [...pendingBuyTickerIds].flatMap((tickerId) => {
-      const stock = stocksByTickerId.get(tickerId);
-      return stock ? [{ tickerId, code: stock.code, quantity: 1 }] : [];
+    const codesByTickerId = new Map([
+      ...screen.stocks.map((stock): [number, string] => [
+        stock.tickerId,
+        stock.code,
+      ]),
+      ...state.positions.map((position): [number, string] => [
+        position.tickerId,
+        position.ticker.code,
+      ]),
+    ]);
+    const plan = planPendingOrders({
+      pendingOrders: state.existingOrders.map((order) => {
+        const snapshot = order.indicatorSnapshot as {
+          close?: unknown;
+        } | null;
+        const close =
+          typeof snapshot?.close === 'number' && Number.isFinite(snapshot.close)
+            ? snapshot.close
+            : null;
+        return {
+          tickerId: order.tickerId,
+          // DB 의 side 는 제약 없는 문자열 컬럼이다. 캐스팅으로 넘기면 알 수 없는 값이
+          // 매수로 취급돼 조용히 현금을 예약한다 — 도메인 파서로 걸러 즉시 실패시킨다.
+          side: parseTradeSide(order.side),
+          quantity: Number(order.quantity.toString()),
+          close,
+        };
+      }),
+      cashBalance: Number(state.account.cashBalance.toString()),
+      codeOf: (tickerId) => codesByTickerId.get(tickerId),
     });
-    // 이미 대기 중인 매도 주문 때문에 제약 함수까지 가지 못한 추천은 skipped 에 남지 않는다 —
-    // 그대로 두면 Slack 이 '추천 없음' 으로 단정하므로 여기서 직접 기록한다.
-    const pendingSells: PaperRecommendationSkip[] = [];
+    // 대기 주문이 있는 종목은 이번 회차 추천에서 아예 뺀다. 제약 함수 뒤에서 버리면 그
+    // 종목이 먼저 먹은 현금과 매수 건수가 되돌아오지 않아, 뒤의 유효한 매수가 상한에 걸려
+    // 사라진다(매수 3건 상한에서 충돌 1건이 자리를 먹으면 4번째 후보가 통째로 유실된다).
+    // 걸린 건은 skipped 에 남긴다 — 그대로 두면 Slack 이 '추천 없음' 으로 단정한다.
+    const pendingCodes = new Set([
+      ...plan.pendingBuyCodes,
+      ...plan.pendingSellCodes,
+    ]);
+    const pendingSkips: PaperRecommendationSkip[] = [];
+    const withoutPendingOrders = <T extends { code: string }>(
+      intents: T[],
+      side: 'BUY' | 'SELL',
+    ): T[] =>
+      intents.filter((intent) => {
+        if (!pendingCodes.has(intent.code)) {
+          return true;
+        }
+        pendingSkips.push({
+          side,
+          code: intent.code,
+          reason: 'PENDING_ORDER_EXISTS',
+        });
+        return false;
+      });
     const constrained = constrainPaperRecommendation({
       recommendation: {
-        ...recommendation,
-        sells: recommendation.sells.filter((sell) => {
-          const position = state.positions.find(
-            (item) => item.ticker.code === sell.code,
-          );
-          if (position) {
-            if (pendingSellTickerIds.has(position.tickerId)) {
-              pendingSells.push({
-                side: 'SELL',
-                code: sell.code,
-                reason: 'PENDING_ORDER_EXISTS',
-              });
-              return false;
-            }
-            return true;
-          }
-          const candidate = screen.stocks.find(
-            (stock) => stock.code === sell.code,
-          );
-          if (candidate && pendingSellTickerIds.has(candidate.tickerId)) {
-            pendingSells.push({
-              side: 'SELL',
-              code: sell.code,
-              reason: 'PENDING_ORDER_EXISTS',
-            });
-            return false;
-          }
-          return true;
-        }),
+        sells: withoutPendingOrders(recommendation.sells, 'SELL'),
+        buys: withoutPendingOrders(recommendation.buys, 'BUY'),
       },
       candidates: screen.stocks.map((stock) => ({
         tickerId: stock.tickerId,
@@ -383,18 +382,12 @@ export class GeneratePaperRecommendationUsecase {
         name: stock.name,
         close: stock.indicators.close,
       })),
-      positions: [
-        ...state.positions.map((position) => ({
-          tickerId: position.tickerId,
-          code: position.ticker.code,
-          quantity: Number(position.quantity.toString()),
-        })),
-        ...pendingBuyPositions,
-      ],
-      cashBalance: Math.max(
-        0,
-        Number(state.account.cashBalance.toString()) - reservedCash,
-      ),
+      positions: state.positions.map((position) => ({
+        tickerId: position.tickerId,
+        code: position.ticker.code,
+        quantity: Number(position.quantity.toString()),
+      })),
+      cashBalance: plan.availableCash,
       accountValuation: Number(
         (
           state.latestValuation?.totalValue ?? state.account.seedAmount
@@ -412,7 +405,7 @@ export class GeneratePaperRecommendationUsecase {
     return {
       constrained: {
         ...constrained,
-        skipped: [...pendingSells, ...constrained.skipped],
+        skipped: [...pendingSkips, ...constrained.skipped],
       },
       orders,
     };
