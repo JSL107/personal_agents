@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
@@ -26,6 +26,14 @@ export interface HandleConversationTurnInput {
   shouldRemember?: boolean;
 }
 
+interface AppendRoundTripArgs {
+  conversationKey: string;
+  userText: string;
+  assistantText: string;
+  agentType: AgentType | null;
+  agentRunId: number | null;
+}
+
 export type HandleConversationTurnResult =
   | { kind: 'WORKER_RAN'; result: DispatchResult }
   | { kind: 'REPLIED'; text: string };
@@ -44,6 +52,8 @@ export class ConversationalReplyFailedException extends Error {
 
 @Injectable()
 export class HandleConversationTurnUsecase {
+  private readonly logger = new Logger(HandleConversationTurnUsecase.name);
+
   constructor(
     @Inject(IDAERI_ROUTER_PORT)
     private readonly router: IdaeriRouterPort,
@@ -67,7 +77,7 @@ export class HandleConversationTurnUsecase {
         priorTurns,
       });
       if (input.shouldRemember !== false) {
-        await this.appendRoundTrip({
+        await this.appendRoundTripSafely({
           conversationKey: input.conversationKey,
           userText: input.text,
           assistantText: result.formattedText,
@@ -91,7 +101,7 @@ export class HandleConversationTurnUsecase {
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);
       }
-      await this.appendRoundTrip({
+      await this.appendRoundTripSafely({
         conversationKey: input.conversationKey,
         userText: input.text,
         assistantText: reply,
@@ -102,19 +112,28 @@ export class HandleConversationTurnUsecase {
     }
   }
 
+  // 기억 기록은 다음 turn 의 맥락 품질을 위한 부수 작업이다. 이미 worker 가 돌았거나 응답을
+  // 만든 뒤이므로, 여기서 throw 하면 성공한 실행이 rejected 로 보고되고 사용자가 재실행해
+  // 부수효과가 중복된다. ConversationMemory 자체도 best-effort (Redis 실패 시 Map fallback) 다.
+  private async appendRoundTripSafely(
+    args: AppendRoundTripArgs,
+  ): Promise<void> {
+    try {
+      await this.appendRoundTrip(args);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `대화 기억 기록 실패 — 실행 결과는 유지한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async appendRoundTrip({
     conversationKey,
     userText,
     assistantText,
     agentType,
     agentRunId,
-  }: {
-    conversationKey: string;
-    userText: string;
-    assistantText: string;
-    agentType: AgentType | null;
-    agentRunId: number | null;
-  }): Promise<void> {
+  }: AppendRoundTripArgs): Promise<void> {
     // agentTypeHint 로 지목된 dispatch (제안 번호 선택 등) 는 text 없이 온다. 빈 user turn 을
     // 남기면 분류기 prompt 에 빈 줄이 들어가고 5턴 한도의 한 칸을 먹는다.
     if (userText.trim().length > 0) {

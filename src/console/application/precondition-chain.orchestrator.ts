@@ -19,7 +19,9 @@ const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
 const CONSOLE_CHANNEL_ID = 'CONSOLE';
 const CONSOLE_ANSWER_MAX_CHARS = 600;
-const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(전문은 Slack 에서)';
+// 콘솔 지시는 Slack message handler 의 say() 경로를 지나지 않아 전문이 Slack 에 게시되지
+// 않는다. "전문은 Slack 에서" 는 없는 곳을 가리키는 거짓 안내였다. 전문 조회 경로 신설은 후속.
+const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(길어서 여기까지만 보여드려요)';
 const SUGGESTION_FAILURE_MESSAGE =
   '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
 
