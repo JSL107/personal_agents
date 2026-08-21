@@ -280,6 +280,54 @@ describe('PublishNotionDraftUsecase', () => {
       expect(익명화프롬프트).toMatch(CODE_MASK_PATTERN);
     });
 
+    // 코드 보존 계약에서는 삭제도 실패다. 표식이 사라지면 복원할 것이 없어 코드가 조용히 빠지고,
+    // 남은 표식이 없으니 잔여 표식 검사도 삭제를 허용하는 보존 검사도 통과한다.
+    it('공개 프로젝트 계약에서 익명화가 표식을 지우면 발행하지 않는다', async () => {
+      const 공부초안 = { ...draft, sourceType: '오늘의 공부' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase } = buildUsecase({
+        drafts: [공부초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          body: masked.replace(CODE_MASK_PATTERN, ''),
+        }),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
+    });
+
+    it('익명화가 표식을 복제하면 발행하지 않는다', async () => {
+      const 공부초안 = { ...draft, sourceType: '오늘의 공부' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const 표식 = masked.match(CODE_MASK_PATTERN)?.[0] ?? '';
+      const { usecase } = buildUsecase({
+        drafts: [공부초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          // 한 코드가 두 자리에 복제되면 글이 같은 예시를 두 번 보여준다.
+          body: `${masked}\n\n${표식}`,
+        }),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
+    });
+
     it('회사 회고 계약이면 익명화 모델에 코드를 그대로 보낸다', async () => {
       const { usecase, modelRouter } = buildUsecase({
         markdown: 코드본문,

@@ -173,6 +173,15 @@ export const maskFencedCodeBlocks = (markdown: string): MaskedCodeBlocks => {
   return { masked: nextLines.join('\n'), blocks: kept };
 };
 
+// 표식이 몇 번 남았는지 블록별로 센다. 코드 보존을 약속한 단계(익명화의 공개 프로젝트 계약)는
+// **삭제도 허용하지 않는다** — 표식이 사라지면 복원할 것이 없어 코드가 조용히 빠지고, 남은 표식이
+// 없으니 잔여 표식 검사도, 삭제를 허용하는 보존 검사도 통과한다(리뷰 P2). 편집 단계는 덜어내는
+// 일이라 0 이 정상이므로, 이 검사를 쓸 곳은 호출부가 계약에 따라 정한다.
+export const countCodeMaskOccurrences = (
+  text: string,
+  blocks: readonly string[],
+): number[] => blocks.map((block) => text.split(codeMask(block)).length - 1);
+
 // 표식을 원본 코드로 되돌린다.
 //
 // **단일 패스**로 훑는다. 블록마다 문자열 치환을 누적하면 앞서 복원한 코드 안에 다른 표식
