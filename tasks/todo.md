@@ -36,6 +36,31 @@
 
 ---
 
+# 백테스트 청산 밴드 재현 (2026-08-21)
+
+**Goal:** `.ai/design.md` 계약대로 backtest replay에 운영과 동일한 청산 밴드 판정·평가 함수를 연결하고, optional CLI 설정과 결과 가시성을 추가한다.
+
+**Contract:** 밴드 미지정 시 기존 replay 산출물은 완전히 동일해야 한다. `decideExitBandOrders`·`calculatePositionValuation`을 재사용하며 새 판정 규칙, env/Prisma 변경, dependency, commit은 금지한다.
+
+- [x] 기존 replay/CLI/formatter/domain API와 linked worktree baseline을 확인한다.
+- [x] RED: CLI 양쪽 플래그·부분 지정·부호 검증·미지정 케이스와 formatter 밴드 표시 케이스를 추가하고 기대 실패를 확인한다.
+- [x] GREEN: command/result 타입, CLI parser, formatter를 설계대로 최소 구현한다.
+- [x] RED: 조기 밴드 매도·대조군·`ruleVersion: null`·구간 종료 가드·결정론 케이스를 추가하고 기대 실패를 확인한다.
+- [x] GREEN: replay 순서와 `applyExitBand`를 운영 domain 함수 재사용으로 구현한다.
+- [x] focused GREEN과 mutation 관점 회귀 검토를 수행한다.
+- [x] 독립 spec/code review 지적을 반영한다.
+- [x] `pnpm lint:check`, `pnpm exec tsc --noEmit -p tsconfig.json`, `pnpm exec jest src/backtest src/paper-trading`, `pnpm build`를 fresh 실행한다.
+- [x] 최종 diff를 `.ai/design.md`와 대조하고 `.ai/implementation-summary.md` 및 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- replay는 거래일마다 체결 뒤 밴드를 평가하고 추천 전에 pending SELL을 만든다. null 밴드는 즉시 반환해 기존 매매 계산을 보존한다.
+- shared valuation/decision 함수를 호출하고, 밴드 SELL은 전량·`ruleVersion: null`로 다음 평일 체결 대기 상태에 둔다. 사유 문자열(`describeExitBandReason`)은 메모리 원장에 적을 자리가 없어 호출하지 않는다.
+- CLI는 두 밴드 옵션의 동시 지정과 부호를 강제한다. formatter는 밴드 설정과 사유별 주문 생성 건수를 항상 표시한다.
+- 신규 테스트는 종료 가드, stale, 순서 mutation을 실제로 잡는다. 독립 재리뷰 결과 Critical 0, Important 0이다.
+- 최종 lint/tsc/focused jest/build가 모두 exit 0이다. lint에는 기존 warning 57개, Jest에는 worker 강제 종료 경고 1줄이 남았다.
+- Prisma/env/dependency와 git index/commit은 변경하지 않았다.
+
 # PO Shadow v2 — 근거 기반 정오 대조 (2026-08-19)
 
 **Goal:** `.ai/design.md`대로 정오 실조회 사실표와 아침 계획을 결정론으로 대조하고, 이상이 없으면 모델 호출 없이 성공 원장을 남기며, 이상이 있으면 fact ID를 인용한 지적만 Slack에 노출한다.

@@ -5,8 +5,14 @@ import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain
 import { planPendingOrders } from '../../agent/paper-recommend/domain/pending-order-plan';
 import { calculateIndicators } from '../../market-data/domain/stock-indicator';
 import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
+import {
+  decideExitBandOrders,
+  ExitBandCandidate,
+  ExitBandThreshold,
+} from '../../paper-trading/domain/exit-band';
 import { PaperMarket } from '../../paper-trading/domain/paper-account.type';
 import { verifyPaperInvariants } from '../../paper-trading/domain/paper-invariant';
+import { calculatePositionValuation } from '../../paper-trading/domain/paper-valuation';
 import {
   aggregateRecommendationScores,
   matchRecommendationCycles,
@@ -49,6 +55,7 @@ export interface ReplayBacktestCommand {
   maximumPositions: number;
   weightPercent: number;
   holdingTradeDays: number;
+  exitBand: ExitBandThreshold | null;
 }
 
 export interface ReplayBacktestResult {
@@ -67,6 +74,11 @@ export interface ReplayBacktestResult {
   // 코스피 대비 평균 초과수익. 벤치마크 종가가 없으면 null 이다.
   meanExcessReturnRate: string | null;
   benchmarkUnavailableCount: number;
+  exitBand: ExitBandThreshold | null;
+  exitBandSellCounts: { takeProfit: number; stopLoss: number };
+  // 채점기가 센 원장 이상을 유형별로 나눈 것. 건수만 찍으면 "무엇이" 이상인지 알 수 없어
+  // 성적을 믿을지 판단할 수 없다 — 밴드를 태우면 매도가 늘어 이 분포가 달라진다.
+  anomaliesByType: Record<string, number>;
   metrics: BacktestMetricSummary;
   invariantViolations: string[];
 }
@@ -87,7 +99,26 @@ interface PendingOrder {
   close: number | null;
 }
 
+interface ReplayState {
+  pendingOrders: PendingOrder[];
+  nextOrderId: number;
+  missingOpenCount: number;
+  filledCount: number;
+  expiredCount: number;
+  exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
+}
+
 const dateTextOf = (value: Date): string => value.toISOString().slice(0, 10);
+
+const countAnomaliesByType = (
+  anomalies: ReturnType<typeof matchRecommendationCycles>['anomalies'],
+): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const anomaly of anomalies) {
+    counts[anomaly.type] = (counts[anomaly.type] ?? 0) + 1;
+  }
+  return counts;
+};
 
 const nextWeekdayText = (dateText: string): string => {
   const cursor = new Date(`${dateText}T00:00:00.000Z`);
@@ -128,12 +159,13 @@ export class ReplayBacktestUsecase {
     const fills: BacktestFillRecord[] = [];
     const expirations: BacktestExpirationRecord[] = [];
     const entryIndexByTicker = new Map<number, number>();
-    const state = {
-      pendingOrders: [] as PendingOrder[],
+    const state: ReplayState = {
+      pendingOrders: [],
       nextOrderId: 1,
       missingOpenCount: 0,
       filledCount: 0,
       expiredCount: 0,
+      exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
     };
 
     const allDates = [
@@ -141,6 +173,8 @@ export class ReplayBacktestUsecase {
     ].sort();
 
     for (const today of allDates) {
+      // 하루 순서는 체결(시가) → 밴드 판정(종가) → 추천이다. 운영에서 장마감 평가·밴드가
+      // 19:30 추천보다 먼저 도는 것과 같고, 밴드는 종가가 있는 거래일에만 판정한다.
       if (tradeDateIndex.has(today)) {
         await this.fillDueOrders({
           today,
@@ -153,6 +187,14 @@ export class ReplayBacktestUsecase {
           fills,
           expirations,
           entryIndexByTicker,
+          state,
+        });
+        this.applyExitBand({
+          today,
+          command,
+          barsByTicker,
+          tickerById,
+          ledger,
           state,
         });
       }
@@ -219,13 +261,7 @@ export class ReplayBacktestUsecase {
     fills: BacktestFillRecord[];
     expirations: BacktestExpirationRecord[];
     entryIndexByTicker: Map<number, number>;
-    state: {
-      pendingOrders: PendingOrder[];
-      nextOrderId: number;
-      missingOpenCount: number;
-      filledCount: number;
-      expiredCount: number;
-    };
+    state: ReplayState;
   }): Promise<void> {
     const stillPending: PendingOrder[] = [];
     for (const order of context.state.pendingOrders) {
@@ -293,6 +329,100 @@ export class ReplayBacktestUsecase {
     context.state.pendingOrders = stillPending;
   }
 
+  private applyExitBand(context: {
+    today: string;
+    command: ReplayBacktestCommand;
+    barsByTicker: Map<number, BacktestBar[]>;
+    tickerById: Map<number, BacktestTicker>;
+    ledger: InMemoryPaperLedger;
+    state: ReplayState;
+  }): void {
+    if (context.command.exitBand === null) {
+      return;
+    }
+    const targetTradeDate = nextWeekdayText(context.today);
+    // 체결일이 재생 구간을 넘어가면 그 주문은 영원히 PENDING 으로 남는다. placeOrders 가
+    // 같은 이유로 같은 가드를 쓴다.
+    if (targetTradeDate > context.command.to) {
+      return;
+    }
+    // 이미 대기 매도가 있는 종목은 건너뛴다. 보유는 체결 전까지 남아 있으므로 이 가드가
+    // 없으면 같은 종목에 매도가 매일 겹겹이 쌓인다. 운영도 pending SELL 만 보고 pending BUY
+    // 는 보지 않는다 (createExitBandOrders).
+    const pendingSellTickerIds = new Set(
+      context.state.pendingOrders
+        .filter((order) => order.side === 'SELL')
+        .map((order) => order.tickerId),
+    );
+    const candidates: ExitBandCandidate[] = [];
+    for (const position of context.ledger.openPositions()) {
+      if (pendingSellTickerIds.has(position.tickerId)) {
+        continue;
+      }
+      const ticker = context.tickerById.get(position.tickerId);
+      if (ticker === undefined) {
+        continue;
+      }
+      const bars = (context.barsByTicker.get(position.tickerId) ?? []).filter(
+        (bar) => dateTextOf(bar.tradeDate) <= context.today,
+      );
+      const latest = bars.at(-1);
+      if (latest === undefined) {
+        continue;
+      }
+      // 손익률은 운영 평가와 같은 함수로 낸다. 마지막 봉이 오늘이 아니면 그 값은
+      // isStale 로 표시되고 밴드 판정에서 빠진다 — 낡은 시세로 손절하면 그 뒤 반등을
+      // 못 본 채 파는 것이라 운영도 같은 기준으로 넘긴다.
+      const valuation = calculatePositionValuation(
+        {
+          tickerId: position.tickerId,
+          quantity: position.quantity,
+          avgPrice: position.avgPrice,
+          price: new Prisma.Decimal(latest.close.toString()),
+          priceDate: latest.tradeDate,
+        },
+        new Date(`${context.today}T00:00:00.000Z`),
+      );
+      candidates.push({
+        tickerId: position.tickerId,
+        tickerCode: ticker.code,
+        quantity: position.quantity.toString(),
+        returnRate: valuation.returnRate,
+        isStale: valuation.isStale,
+      });
+    }
+
+    const decisions = decideExitBandOrders(
+      candidates,
+      context.command.exitBand,
+    );
+    for (const decision of decisions) {
+      context.ledger.recordOrder({
+        id: context.state.nextOrderId,
+        accountId: context.ledger.accountId,
+        tickerId: decision.tickerId,
+        side: 'SELL',
+        strategy: context.command.strategy,
+        status: 'PENDING',
+        quantity: new Prisma.Decimal(decision.quantity),
+        // 밴드 매도는 스크리너 규칙의 산물이 아니다. 운영 원장도 이 주문에 규칙 버전을
+        // 남기지 않으므로 같은 값을 쓴다 — 채점은 매수 주문만 사이클로 센다.
+        ruleVersion: null,
+      });
+      context.state.pendingOrders.push({
+        orderId: context.state.nextOrderId,
+        tickerId: decision.tickerId,
+        side: 'SELL',
+        quantity: Number(decision.quantity),
+        targetTradeDate,
+        // 매도는 현금을 예약하지 않는다 (planPendingOrders 는 매수만 예약에 센다).
+        close: null,
+      });
+      context.state.exitBandSells[decision.reason] += 1;
+      context.state.nextOrderId += 1;
+    }
+  }
+
   private placeOrders(context: {
     today: string;
     command: ReplayBacktestCommand;
@@ -303,13 +433,7 @@ export class ReplayBacktestUsecase {
     tradeDateIndex: Map<string, number>;
     ledger: InMemoryPaperLedger;
     entryIndexByTicker: Map<number, number>;
-    state: {
-      pendingOrders: PendingOrder[];
-      nextOrderId: number;
-      missingOpenCount: number;
-      filledCount: number;
-      expiredCount: number;
-    };
+    state: ReplayState;
   }): void {
     const targetTradeDate = nextWeekdayText(context.today);
     // 체결일이 재생 구간을 넘어가면 그 주문은 영원히 PENDING 으로 남는다. 채점기는 이를
@@ -429,11 +553,7 @@ export class ReplayBacktestUsecase {
     benchmarkCloses: BenchmarkCloseInput[];
     fills: BacktestFillRecord[];
     expirations: BacktestExpirationRecord[];
-    state: {
-      missingOpenCount: number;
-      filledCount: number;
-      expiredCount: number;
-    };
+    state: ReplayState;
   }): ReplayBacktestResult {
     const lastTradeDate = context.calendar.tradeDates.at(-1) ?? null;
     const finalTotalValue =
@@ -489,6 +609,12 @@ export class ReplayBacktestUsecase {
       scores: aggregateRecommendationScores(matched),
       meanExcessReturnRate: benchmark.meanExcessReturnRate,
       benchmarkUnavailableCount: benchmark.benchmarkUnavailableCount,
+      exitBand: context.command.exitBand,
+      exitBandSellCounts: {
+        takeProfit: context.state.exitBandSells.TAKE_PROFIT,
+        stopLoss: context.state.exitBandSells.STOP_LOSS,
+      },
+      anomaliesByType: countAnomaliesByType(matched.anomalies),
       metrics: summarizeBacktestMetrics({
         fills: context.fills,
         expirations: context.expirations,
