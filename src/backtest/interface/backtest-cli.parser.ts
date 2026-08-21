@@ -1,10 +1,12 @@
+import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
 import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
 
 export const BACKTEST_CLI_USAGE =
   '사용법:\n' +
   '  pnpm backtest --strategy LONG_TERM|SWING --from YYYY-MM-DD --to YYYY-MM-DD\n' +
   '                [--seed <금액>] [--turnover-min <거래대금>] [--max-positions <종목수>]\n' +
-  '                [--weight <비중퍼센트>] [--hold <보유거래일수>]';
+  '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
+  '                [--take-profit <익절%> --stop-loss <손절%>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
 const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
@@ -66,6 +68,32 @@ const readDate = (argv: string[], key: string): string => {
   return value;
 };
 
+const readExitBand = (argv: string[]): ExitBandThreshold | null => {
+  const takeProfitRaw = readOption(argv, 'take-profit');
+  const stopLossRaw = readOption(argv, 'stop-loss');
+  if (takeProfitRaw === undefined && stopLossRaw === undefined) {
+    return null;
+  }
+  if (takeProfitRaw === undefined || stopLossRaw === undefined) {
+    throw new Error(
+      `--take-profit 과 --stop-loss 는 함께 지정해야 합니다.\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  const takeProfitPercent = Number(takeProfitRaw);
+  if (!Number.isFinite(takeProfitPercent) || takeProfitPercent <= 0) {
+    throw new Error(
+      `--take-profit 는 0보다 큰 수여야 합니다. 받은 값: ${takeProfitRaw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  const stopLossPercent = Number(stopLossRaw);
+  if (!Number.isFinite(stopLossPercent) || stopLossPercent >= 0) {
+    throw new Error(
+      `--stop-loss 는 0보다 작은 수여야 합니다. 받은 값: ${stopLossRaw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return { takeProfitPercent, stopLossPercent };
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): ReplayBacktestCommand => {
@@ -95,5 +123,6 @@ export const parseBacktestCliArguments = (
       'hold',
       DEFAULT_HOLDING_TRADE_DAYS[strategy],
     ),
+    exitBand: readExitBand(argv),
   };
 };

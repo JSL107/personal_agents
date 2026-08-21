@@ -61,6 +61,25 @@ const risingBars = (
     ],
   ]);
 
+const staleExitBandBars = (): Map<number, BacktestBar[]> => {
+  const tickerBars = buildBars(
+    (index) => (index === 213 ? (5000 + index * 32) * 1.1 : 5000 + index * 32),
+    () => 200_000,
+    (index, close) => (index === 213 ? null : close),
+  ).filter((_, index) => index !== 214 && index !== 215);
+  const calendarBars = [214, 215].map((index) => ({
+    tradeDate: TRADE_DATES[index],
+    open: 1,
+    close: new Prisma.Decimal(1),
+    adjClose: new Prisma.Decimal(1),
+    volume: BigInt(1),
+  }));
+  return new Map([
+    [11, tickerBars],
+    [999, calendarBars],
+  ]);
+};
+
 // 상위 종목이 대기 주문이라 자리를 못 쓰는 상황을 만들려면 후보가 정원(3종목)보다 많아야 한다.
 const MANY_TICKERS: BacktestTicker[] = [1, 2, 3, 4, 5].map((order) => ({
   tickerId: 20 + order,
@@ -120,6 +139,15 @@ const command = {
   maximumPositions: 3,
   weightPercent: 20,
   holdingTradeDays: 5,
+  exitBand: null,
+};
+
+const commandWithExitBand = {
+  ...command,
+  seedAmount: '15000',
+  weightPercent: 100,
+  holdingTradeDays: 100,
+  exitBand: { takeProfitPercent: 0.1, stopLossPercent: -99 },
 };
 
 describe('ReplayBacktestUsecase', () => {
@@ -133,6 +161,10 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.invariantViolations).toEqual([]);
     expect(result.finalTotalValue).not.toBeNull();
     expect(result.tradeDateCount).toBeGreaterThan(0);
+    expect(result).toMatchObject({
+      exitBand: null,
+      exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
+    });
   });
 
   it('같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
@@ -273,5 +305,160 @@ describe('ReplayBacktestUsecase', () => {
 
     expect(result.scores.length).toBeGreaterThan(0);
     expect(result.scores[0].closedCount).toBeGreaterThan(0);
+  });
+
+  it('밴드를 켜면 보유일수 만기 전에 매도하고 끄면 매도하지 않는다', async () => {
+    const resultWithExitBand = await new ReplayBacktestUsecase(
+      repositoryOf(risingBars()),
+    ).execute(commandWithExitBand);
+    const resultWithoutExitBand = await new ReplayBacktestUsecase(
+      repositoryOf(risingBars()),
+    ).execute({ ...commandWithExitBand, exitBand: null });
+
+    expect(resultWithExitBand.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(
+      resultWithExitBand.scores.some((score) => score.closedCount > 0),
+    ).toBe(true);
+    expect(resultWithoutExitBand.exitBandSellCounts).toEqual({
+      takeProfit: 0,
+      stopLoss: 0,
+    });
+    expect(
+      resultWithoutExitBand.scores.every((score) => score.closedCount === 0),
+    ).toBe(true);
+  });
+
+  it('밴드 매도 주문의 스크리너 규칙 버전은 null이다', async () => {
+    const recordOrder = jest.spyOn(
+      InMemoryPaperLedger.prototype,
+      'recordOrder',
+    );
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      holdingTradeDays: 1,
+    });
+    const orders = recordOrder.mock.calls.map(([order]) => order);
+    const buyOrders = orders.filter((order) => order.side === 'BUY');
+    const sellOrders = orders.filter((order) => order.side === 'SELL');
+    const exitBandSellOrders = orders.filter(
+      (order) => order.side === 'SELL' && order.ruleVersion === null,
+    );
+
+    expect(result.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(buyOrders.length).toBeGreaterThan(0);
+    expect(
+      buyOrders.every((order) => order.ruleVersion === SCREENER_RULE_VERSION),
+    ).toBe(true);
+    expect(exitBandSellOrders).toHaveLength(
+      result.exitBandSellCounts.takeProfit + result.exitBandSellCounts.stopLoss,
+    );
+    expect(sellOrders).toEqual(exitBandSellOrders);
+    expect(orders.map((order) => order.id)).toEqual(
+      Array.from({ length: orders.length }, (_, index) => index + 1),
+    );
+    recordOrder.mockRestore();
+  });
+
+  it('마지막 봉이 오늘보다 오래되면 밴드 매도를 반복 생성하지 않는다', async () => {
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(staleExitBandBars()),
+    );
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      from: dateText(TRADE_DATES[210]),
+      to: dateText(TRADE_DATES[215]),
+      holdingTradeDays: 1,
+      exitBand: { takeProfitPercent: 5, stopLossPercent: -99 },
+    });
+
+    expect(result.exitBandSellCounts).toEqual({
+      takeProfit: 1,
+      stopLoss: 0,
+    });
+    expect(result.missingOpenCount).toBeGreaterThan(0);
+  });
+
+  it('밴드를 켜도 구간을 넘어 체결될 매도 주문은 만들지 않는다', async () => {
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      to: dateText(TRADE_DATES[233]),
+    });
+
+    expect(result.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
+  });
+
+  it('손절 밴드를 넘기면 STOP_LOSS 매도를 만들어 체결한다', async () => {
+    // 시가를 종가보다 10% 높게 두면 매수 체결 직후 평가 손익률이 -9% 대로 시작한다.
+    // 익절은 사실상 끄고(+999%) 손절만 켜서 STOP_LOSS 경로만 태운다.
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(risingBars((_, close) => Math.round(close * 1.1))),
+    );
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+    });
+
+    expect(result.exitBandSellCounts.stopLoss).toBeGreaterThan(0);
+    expect(result.exitBandSellCounts.takeProfit).toBe(0);
+    // 주문이 생성만 되고 끝나지 않았음을 본다 — 매도가 체결돼 사이클이 종결됐다.
+    expect(result.scores.some((score) => score.closedCount > 0)).toBe(true);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  it('마지막 시세 뒤의 평일을 to 로 주면 체결되지 않을 밴드 매도를 만들지 않는다', async () => {
+    // 봉을 TRADE_DATES[233] 까지만 두고 to 를 그 다음 평일로 준다. 평일 기준으로만 막으면
+    // 234일 체결 예정 주문이 만들어지지만 그 날은 봉이 없어 영원히 PENDING 으로 남는다
+    // (가드를 되돌리면 PENDING 1건이 남아 이 단언이 깨진다 — 실측으로 확인한 조합이다).
+    const bars = risingBars();
+    bars.set(11, (bars.get(11) as BacktestBar[]).slice(0, 234));
+    const usecase = new ReplayBacktestUsecase(repositoryOf(bars));
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      to: dateText(TRADE_DATES[234]),
+    });
+
+    expect(result.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
+  });
+
+  it('무밴드에서도 마지막 시세 뒤의 평일을 to 로 주면 체결되지 않을 매수를 만들지 않는다', async () => {
+    // 같은 가드가 밴드 매도와 추천 매수 양쪽에 걸린다. 5종목·보유 1거래일로 매일 회전시키면
+    // 마지막 거래일에도 신규 매수 후보가 남아, 구가드로 되돌리면 PENDING 2건이 남는다.
+    const bars = new Map<number, BacktestBar[]>();
+    for (const [tickerId, tickerBars] of manyTickerBars([])) {
+      bars.set(tickerId, tickerBars.slice(0, 234));
+    }
+    const usecase = new ReplayBacktestUsecase(repositoryOf(bars, MANY_TICKERS));
+
+    const result = await usecase.execute({
+      ...command,
+      to: dateText(TRADE_DATES[234]),
+      holdingTradeDays: 1,
+    });
+
+    expect(result.filledCount).toBeGreaterThan(0);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  it('밴드를 켠 같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
+    const first = await new ReplayBacktestUsecase(
+      repositoryOf(risingBars()),
+    ).execute(commandWithExitBand);
+    const second = await new ReplayBacktestUsecase(
+      repositoryOf(risingBars()),
+    ).execute(commandWithExitBand);
+
+    expect(first.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });
 });

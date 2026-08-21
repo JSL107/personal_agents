@@ -1,4 +1,7 @@
-import { parseBacktestCliArguments } from './backtest-cli.parser';
+import {
+  BACKTEST_CLI_USAGE,
+  parseBacktestCliArguments,
+} from './backtest-cli.parser';
 
 const required = [
   '--strategy',
@@ -22,6 +25,7 @@ describe('parseBacktestCliArguments', () => {
       maximumPositions: 3,
       weightPercent: 20,
       holdingTradeDays: 60,
+      exitBand: null,
     });
   });
 
@@ -58,6 +62,56 @@ describe('parseBacktestCliArguments', () => {
     expect(parsed.maximumPositions).toBe(5);
     expect(parsed.weightPercent).toBe(15);
     expect(parsed.holdingTradeDays).toBe(30);
+  });
+
+  it('익절과 손절을 함께 주면 청산 밴드로 읽는다', () => {
+    const parsed = parseBacktestCliArguments([
+      ...required,
+      '--take-profit',
+      '2',
+      '--stop-loss',
+      '-0.2',
+    ]);
+
+    expect(parsed).toMatchObject({
+      exitBand: {
+        takeProfitPercent: 2,
+        stopLossPercent: -0.2,
+      },
+    });
+  });
+
+  it.each([
+    ['--take-profit', '2'],
+    ['--stop-loss', '-0.2'],
+  ])('청산 밴드의 한쪽 옵션만 주면 실패한다', (key, value) => {
+    expect(() => parseBacktestCliArguments([...required, key, value])).toThrow(
+      '함께 지정',
+    );
+    expect(() => parseBacktestCliArguments([...required, key, value])).toThrow(
+      BACKTEST_CLI_USAGE,
+    );
+  });
+
+  it('익절이 0이거나 손절이 음수가 아니면 실패한다', () => {
+    expect(() =>
+      parseBacktestCliArguments([
+        ...required,
+        '--take-profit',
+        '0',
+        '--stop-loss',
+        '-0.2',
+      ]),
+    ).toThrow('--take-profit');
+    expect(() =>
+      parseBacktestCliArguments([
+        ...required,
+        '--take-profit',
+        '2',
+        '--stop-loss',
+        '0.2',
+      ]),
+    ).toThrow('--stop-loss');
   });
 
   it('전략이 없거나 잘못되면 사용법과 함께 실패한다', () => {
