@@ -16,9 +16,11 @@ export type KoreanStyleMetrics = {
   sentenceCount: number;
   averageLength: number;
   lengthStandardDeviation: number;
-  shortSentenceRatio: number;
+  // 비율은 0~100 정수 퍼센트다. 소수 1자리로 반올림하면 0~5% 가 전부 0 으로 뭉개져
+  // "구어 어미가 하나도 없다" 로 읽힌다(실측: 142문장 중 6개 = 4% 가 0% 로 표시됐다).
+  shortSentencePercent: number;
   longestSentenceLength: number;
-  colloquialEndingRatio: number;
+  colloquialEndingPercent: number;
   bannedConnectiveCount: number;
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
@@ -35,8 +37,10 @@ export type KoreanStyleMetrics = {
  */
 export type KoreanStyleParagraphMetrics = {
   paragraphCount: number;
-  // 4문장 이상 또는 150자 초과 — 화면에서 벽으로 떨어지는 문단의 비율.
-  wallRatio: number;
+  // 4문장 이상 또는 150자 초과 — 화면에서 벽으로 떨어지는 문단의 비율(0~100 정수 퍼센트).
+  // 소수 비율로 담지 않는 이유는 위 shortSentencePercent 와 같다. 25문단 중 1개(0.04)가
+  // 0 으로 뭉개지면 남은 벽을 드러내려고 만든 지표가 벽을 숨긴다.
+  wallPercent: number;
   // 3문장 이상인데 짧은 문장(20자 이하)이 한 개도 없는 문단 수. 호흡이 쉴 자리가 없는 덩어리다.
   //
   // 왜 2문장 문단은 세지 않는가 — J-5 처방으로 문단을 잘게 나누면 2문장 문단이 늘어나는데,
@@ -113,7 +117,7 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
   if (paragraphs.length === 0) {
     return {
       paragraphCount: 0,
-      wallRatio: 0,
+      wallPercent: 0,
       noShortSentenceParagraphs: 0,
     };
   }
@@ -138,10 +142,7 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
 
   return {
     paragraphCount: paragraphs.length,
-    // 여기서 반올림하지 않는다 — 소수 첫째 자리로 뭉개면 25문단 중 1개(0.04)가 0 이 되어
-    // 카드에 "벽 0%" 로 찍힌다. 남은 벽을 드러내려고 만든 지표가 벽을 숨기게 된다.
-    // 표시용 반올림은 formatKoreanStyleMetrics 가 퍼센트로 바꿀 때 한 번만 한다.
-    wallRatio: wallCount / paragraphs.length,
+    wallPercent: toPercent(wallCount, paragraphs.length),
     noShortSentenceParagraphs: noShortCount,
   };
 };
@@ -153,9 +154,9 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       sentenceCount: 0,
       averageLength: 0,
       lengthStandardDeviation: 0,
-      shortSentenceRatio: 0,
+      shortSentencePercent: 0,
       longestSentenceLength: 0,
-      colloquialEndingRatio: 0,
+      colloquialEndingPercent: 0,
       bannedConnectiveCount: 0,
       measurable: false,
       paragraph: measureParagraphs(markdown),
@@ -189,12 +190,12 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     sentenceCount: sentences.length,
     averageLength: round(average),
     lengthStandardDeviation: round(Math.sqrt(variance)),
-    shortSentenceRatio: round(
-      lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length /
-        lengths.length,
+    shortSentencePercent: toPercent(
+      lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length,
+      lengths.length,
     ),
     longestSentenceLength: Math.max(...lengths),
-    colloquialEndingRatio: round(colloquialCount / sentences.length),
+    colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
     bannedConnectiveCount,
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
@@ -208,14 +209,9 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${Math.round(
-    metrics.shortSentenceRatio * 100,
-  )}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${Math.round(
-    metrics.colloquialEndingRatio * 100,
-  )}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
-  const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${Math.round(
-    metrics.paragraph.wallRatio * 100,
-  )}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
+  const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
+  // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
     ? head
     : `${head} (40문장 미만이라 참고값)`;
@@ -223,3 +219,6 @@ export const formatKoreanStyleMetrics = (
 };
 
 const round = (value: number): number => Math.round(value * 10) / 10;
+
+const toPercent = (count: number, total: number): number =>
+  Math.round((count / total) * 100);

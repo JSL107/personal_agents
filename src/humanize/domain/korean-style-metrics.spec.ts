@@ -40,7 +40,7 @@ describe('measureKoreanStyle', () => {
 
     expect(metrics.sentenceCount).toBe(6);
     expect(metrics.lengthStandardDeviation).toBeGreaterThan(11);
-    expect(metrics.colloquialEndingRatio).toBeGreaterThan(0);
+    expect(metrics.colloquialEndingPercent).toBeGreaterThan(0);
     expect(metrics.bannedConnectiveCount).toBe(0);
     // 40문장 미만은 정량 판정을 하지 않는다 — 문장 하나가 비율을 크게 흔든다.
     expect(metrics.measurable).toBe(false);
@@ -56,7 +56,7 @@ describe('measureKoreanStyle', () => {
 
     const metrics = measureKoreanStyle(aiLike);
 
-    expect(metrics.colloquialEndingRatio).toBe(0);
+    expect(metrics.colloquialEndingPercent).toBe(0);
     expect(metrics.bannedConnectiveCount).toBe(2);
   });
 
@@ -89,10 +89,10 @@ describe('measureKoreanStyle — 문단 축', () => {
     );
 
     // 문장 축만 보면 짧은 문장이 절반이라 아무 문제가 없다.
-    expect(metrics.shortSentenceRatio).toBeGreaterThanOrEqual(0.2);
+    expect(metrics.shortSentencePercent).toBeGreaterThanOrEqual(20);
     // 문단 축이 있어야 둘째 문단이 벽이라는 게 드러난다.
     expect(metrics.paragraph.paragraphCount).toBe(2);
-    expect(metrics.paragraph.wallRatio).toBe(0.5);
+    expect(metrics.paragraph.wallPercent).toBe(50);
   });
 
   it('빈 줄로 나누면 같은 글이 벽에서 벗어난다', () => {
@@ -100,7 +100,7 @@ describe('measureKoreanStyle — 문단 축', () => {
       .replace('달라집니다. ', '달라집니다.\n\n')
       .replace('되죠. ', '되죠.\n\n');
 
-    expect(measureKoreanStyle(나눈글).paragraph.wallRatio).toBe(0);
+    expect(measureKoreanStyle(나눈글).paragraph.wallPercent).toBe(0);
     // 글자는 그대로다 — 빈 줄만 넣었을 뿐이라 문장 축 지표는 움직이지 않는다.
     expect(measureKoreanStyle(나눈글).sentenceCount).toBe(
       measureKoreanStyle(벽문단).sentenceCount,
@@ -130,8 +130,8 @@ describe('measureKoreanStyle — 문단 축', () => {
     const 세문장 = [문장, 문장, 문장].join(' ');
     const 네문장 = [문장, 문장, 문장, 문장].join(' ');
 
-    expect(measureKoreanStyle(세문장).paragraph.wallRatio).toBe(0);
-    expect(measureKoreanStyle(네문장).paragraph.wallRatio).toBe(1);
+    expect(measureKoreanStyle(세문장).paragraph.wallPercent).toBe(0);
+    expect(measureKoreanStyle(네문장).paragraph.wallPercent).toBe(100);
   });
 
   it('길이 임계는 150자 초과부터다', () => {
@@ -140,9 +140,9 @@ describe('measureKoreanStyle — 문단 축', () => {
     const 딱151 = `${'가'.repeat(150)}.`;
 
     expect(딱150.length).toBe(150);
-    expect(measureKoreanStyle(딱150).paragraph.wallRatio).toBe(0);
+    expect(measureKoreanStyle(딱150).paragraph.wallPercent).toBe(0);
     expect(딱151.length).toBe(151);
-    expect(measureKoreanStyle(딱151).paragraph.wallRatio).toBe(1);
+    expect(measureKoreanStyle(딱151).paragraph.wallPercent).toBe(100);
   });
 
   // 벽 비율을 저장 시점에 반올림하면 문단이 많은 글에서 남은 벽이 0% 로 사라진다.
@@ -154,15 +154,15 @@ describe('measureKoreanStyle — 문단 축', () => {
     const metrics = measureKoreanStyle(글);
 
     expect(metrics.paragraph.paragraphCount).toBe(25);
-    expect(metrics.paragraph.wallRatio).toBeCloseTo(0.04, 5);
+    expect(metrics.paragraph.wallPercent).toBe(4);
     expect(formatKoreanStyleMetrics(metrics)).toContain('벽 4%');
   });
 
   it('150자를 넘으면 문장 수가 적어도 벽으로 센다', () => {
     expect(
       measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`).paragraph
-        .wallRatio,
-    ).toBe(1);
+        .wallPercent,
+    ).toBe(100);
   });
 
   it('산문이 없으면 문단 수는 0이다', () => {
@@ -183,5 +183,21 @@ describe('formatKoreanStyleMetrics', () => {
     // 참고값 단서는 문장 축에만 붙는다 — 문단 줄까지 참고값으로 읽히면 안 된다.
     expect(line.split('\n')[0]).toContain('40문장 미만이라 참고값');
     expect(line.split('\n')[1]).toContain('문단');
+  });
+
+  // 실제 발행본(142문장 중 구어 6개 = 4%)이 카드에 '구어 0%' 로 찍혀 "말투가 전혀 안 먹었다"
+  // 로 읽혔다. 소수 1자리 반올림이 0~5% 를 전부 0 으로 만들었기 때문이다.
+  it('구어 어미가 5% 미만이어도 0% 로 뭉개지지 않는다', () => {
+    const sentences: string[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      sentences.push('캐시는 응답을 다시 쓰기 위한 약속입니다.');
+    }
+    sentences.push('그건 재검증이거든요.');
+
+    const metrics = measureKoreanStyle(sentences.join(' '));
+
+    expect(metrics.sentenceCount).toBe(25);
+    expect(metrics.colloquialEndingPercent).toBe(4);
+    expect(formatKoreanStyleMetrics(metrics)).toContain('구어 4%');
   });
 });
