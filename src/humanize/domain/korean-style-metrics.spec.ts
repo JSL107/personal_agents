@@ -40,7 +40,7 @@ describe('measureKoreanStyle', () => {
 
     expect(metrics.sentenceCount).toBe(6);
     expect(metrics.lengthStandardDeviation).toBeGreaterThan(11);
-    expect(metrics.colloquialEndingRatio).toBeGreaterThan(0);
+    expect(metrics.colloquialEndingPercent).toBeGreaterThan(0);
     expect(metrics.bannedConnectiveCount).toBe(0);
     // 40문장 미만은 정량 판정을 하지 않는다 — 문장 하나가 비율을 크게 흔든다.
     expect(metrics.measurable).toBe(false);
@@ -56,7 +56,7 @@ describe('measureKoreanStyle', () => {
 
     const metrics = measureKoreanStyle(aiLike);
 
-    expect(metrics.colloquialEndingRatio).toBe(0);
+    expect(metrics.colloquialEndingPercent).toBe(0);
     expect(metrics.bannedConnectiveCount).toBe(2);
   });
 
@@ -86,5 +86,21 @@ describe('formatKoreanStyleMetrics', () => {
     expect(line).toContain('문체 지표: 문장 2개');
     expect(line).toContain('편차');
     expect(line).toContain('40문장 미만이라 참고값');
+  });
+
+  // 실제 발행본(142문장 중 구어 6개 = 4%)이 카드에 '구어 0%' 로 찍혀 "말투가 전혀 안 먹었다"
+  // 로 읽혔다. 소수 1자리 반올림이 0~5% 를 전부 0 으로 만들었기 때문이다.
+  it('구어 어미가 5% 미만이어도 0% 로 뭉개지지 않는다', () => {
+    const sentences: string[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      sentences.push('캐시는 응답을 다시 쓰기 위한 약속입니다.');
+    }
+    sentences.push('그건 재검증이거든요.');
+
+    const metrics = measureKoreanStyle(sentences.join(' '));
+
+    expect(metrics.sentenceCount).toBe(25);
+    expect(metrics.colloquialEndingPercent).toBe(4);
+    expect(formatKoreanStyleMetrics(metrics)).toContain('구어 4%');
   });
 });
