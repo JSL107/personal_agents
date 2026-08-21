@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { CareerProfileRepositoryPort } from '../domain/port/career-profile.repository.port';
 import {
@@ -49,7 +50,7 @@ const PROFILE: CareerProfileData = {
   meta: { githubLogin: 'JSL107', windowStart: '2026-06-01', prCount: 3 },
 };
 
-const SLUG = 'jsl107-personal-agents-pr-313';
+const SLUG = 'jsl107-personal-agents';
 
 const createFixture = (
   clientOverrides: Partial<PortfolioSiteClientPort> = {},
@@ -108,12 +109,42 @@ const createFixture = (
   const buildProfile = {
     execute: jest.fn().mockResolvedValue({ result: PROFILE, agentRunId: 99 }),
   } as unknown as BuildCareerProfileUsecase;
+  // 모델은 묶음마다 이름을 돌려준다 — 발행 배선 테스트라 이름 품질은 여기서 보지 않는다.
+  const modelRouter = {
+    route: jest
+      .fn()
+      .mockImplementation(
+        async ({ request }: { request: { prompt: string } }) => {
+          const keys = [...request.prompt.matchAll(/^key: (.+)$/gm)].map(
+            (match) => match[1],
+          );
+          return {
+            text: JSON.stringify({
+              projects: keys.map((key) => ({
+                key,
+                title: `${key} 프로젝트`,
+                summary: '한 문장',
+                problem: '문제',
+                result: '결과',
+              })),
+            }),
+          };
+        },
+      ),
+  } as unknown as ModelRouterUsecase;
 
   return {
-    usecase: new PublishPortfolioSiteUsecase(repository, buildProfile, client, {
-      get: (key: string) =>
-        key === 'PORTFOLIO_ANONYMIZED_OWNERS' ? anonymizedOwners : undefined,
-    } as unknown as ConfigService),
+    usecase: new PublishPortfolioSiteUsecase(
+      repository,
+      buildProfile,
+      client,
+      {
+        get: (key: string) =>
+          key === 'PORTFOLIO_ANONYMIZED_OWNERS' ? anonymizedOwners : undefined,
+      } as unknown as ConfigService,
+      modelRouter,
+    ),
+    modelRouter,
     client,
     buildProfile,
   };
@@ -130,7 +161,7 @@ describe('PublishPortfolioSiteUsecase', () => {
     const [created] = (client.createProject as jest.Mock).mock.calls[0] as [
       Record<string, unknown>,
     ];
-    expect(String(created.slug)).toMatch(/^company-[0-9a-f]{6}-pr-313$/);
+    expect(String(created.slug)).toMatch(/^company-[0-9a-f]{6}$/);
     expect(created.links).toEqual({});
   });
 
@@ -207,8 +238,9 @@ describe('PublishPortfolioSiteUsecase', () => {
     const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
     // 사이트는 "필드가 있으면 덮는다" 라서 값을 넣지 않는 것이 유일한 보존 방법이다.
     expect('featured' in payload).toBe(false);
-    // 본문 필드는 그대로 실려야 한다.
-    expect(payload.problem).toBe('비교할 수 없었다');
+    // 본문 필드는 그대로 실려야 한다 — problem 은 모델이 묶음을 보고 쓴 서술이다.
+    expect(payload.problem).toBe('문제');
+    expect(payload.process).toEqual(['과거를 재생해 성적을 낸다']);
   });
 
   it('프로젝트 1건이 실패해도 스킬 그룹 발행은 계속한다', async () => {

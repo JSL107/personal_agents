@@ -5,8 +5,8 @@ import { NestFactory } from '@nestjs/core';
 import { PublishPortfolioSiteUsecase } from '../src/agent/career-mate/application/publish-portfolio-site.usecase';
 import { CareerMateModule } from '../src/agent/career-mate/career-mate.module';
 import { AgentRunModule } from '../src/agent-run/agent-run.module';
-import { PrismaModule } from '../src/prisma/prisma.module';
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
+import { PrismaModule } from '../src/prisma/prisma.module';
 
 // 사용법:
 //   pnpm exec ts-node scripts/publish-portfolio.ts --owner <SLACK_USER_ID>

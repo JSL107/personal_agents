@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerProfileData } from '../domain/career-mate.type';
 import {
   CAREER_PROFILE_REPOSITORY_PORT,
@@ -12,10 +14,17 @@ import {
 } from '../domain/port/portfolio-site.client.port';
 import {
   buildPortfolioSitePayload,
+  groupAccomplishments,
   PortfolioSitePayloadOptions,
   PortfolioSiteProjectPayload,
   PortfolioSiteSkillGroupPayload,
 } from '../domain/portfolio-site-payload';
+import { ProjectGroup, ProjectGroupNaming } from '../domain/project-group';
+import {
+  buildProjectGroupPrompt,
+  parseProjectGroupOutput,
+  PROJECT_GROUP_SYNTH_SYSTEM_PROMPT,
+} from '../domain/prompt/project-group-synth.prompt';
 import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
 
 export interface PublishPortfolioSiteInput {
@@ -37,6 +46,9 @@ export interface PublishPortfolioSiteResult {
   failures: PublishPortfolioSiteFailure[];
   // 발행 후 재조회에서 확인되지 않은 slug. 정상이면 빈 배열.
   missingAfterPublish: string[];
+  // 모델이 이름을 돌려주지 않아 발행하지 못한 저장소 그룹. 저장소 하나가 통째로 빠지는
+  // 결과이므로 조용히 넘기지 않는다.
+  unnamedKeys: string[];
   agentRunId: number;
 }
 
@@ -67,13 +79,25 @@ export class PublishPortfolioSiteUsecase {
     @Inject(PORTFOLIO_SITE_CLIENT_PORT)
     private readonly siteClient: PortfolioSiteClientPort,
     private readonly configService: ConfigService,
+    private readonly modelRouter: ModelRouterUsecase,
   ) {}
 
   async execute({
     slackUserId,
   }: PublishPortfolioSiteInput): Promise<PublishPortfolioSiteResult> {
     const { profile, agentRunId } = await this.resolveProfile(slackUserId);
-    const payload = buildPortfolioSitePayload(profile, this.payloadOptions());
+    const { groups, skippedTitles } = groupAccomplishments(
+      profile,
+      this.payloadOptions(),
+    );
+    // 그룹이 없으면 모델을 부르지 않는다 — 빈 입력으로 호출하면 쿼터만 쓰고 파서가 던진다.
+    const namings = groups.length > 0 ? await this.nameGroups(groups) : [];
+    const payload = buildPortfolioSitePayload({
+      profile,
+      groups,
+      namings,
+      skippedTitles,
+    });
     const failures: PublishPortfolioSiteFailure[] = [];
 
     const projects = await this.publishProjects(payload.projects, failures);
@@ -90,10 +114,26 @@ export class PublishPortfolioSiteUsecase {
       ...projects,
       ...skillGroups,
       skippedTitles: payload.skippedTitles,
+      unnamedKeys: payload.unnamedKeys,
       failures,
       missingAfterPublish,
       agentRunId,
     };
+  }
+
+  // 저장소 묶음마다 프로젝트 이름·소개를 짓는다. 한 번의 호출로 전부 받는다 — 묶음 수만큼
+  // 부르면 같은 맥락을 반복해서 보내게 되고, 묶음끼리 이름이 겹치는지도 모델이 볼 수 없다.
+  private async nameGroups(
+    groups: ProjectGroup[],
+  ): Promise<ProjectGroupNaming[]> {
+    const completion = await this.modelRouter.route({
+      agentType: AgentType.CAREER_MATE,
+      request: {
+        prompt: buildProjectGroupPrompt(groups),
+        systemPrompt: PROJECT_GROUP_SYNTH_SYSTEM_PROMPT,
+      },
+    });
+    return parseProjectGroupOutput(completion.text, groups);
   }
 
   private payloadOptions(): PortfolioSitePayloadOptions {

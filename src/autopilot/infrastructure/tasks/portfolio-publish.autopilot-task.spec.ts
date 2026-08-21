@@ -16,6 +16,7 @@ const RESULT: PublishPortfolioSiteResult = {
   createdSkillGroups: [],
   updatedSkillGroups: [],
   skippedTitles: [],
+  unnamedKeys: [],
   failures: [],
   missingAfterPublish: [],
   agentRunId: 1,
@@ -364,5 +365,21 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('재조회에 없는 항목 1건');
     expect(result.detailText).toContain('실제로 안 됐을 수 있다');
+  });
+});
+
+describe('이름을 받지 못한 저장소', () => {
+  it('갱신만 있는 조용한 회차여도 보고를 올린다', async () => {
+    // 이름이 없으면 그 저장소의 작업이 통째로 빠진다. "변화 없음" 으로 접히면 아무도 모른다.
+    const { task } = createFixture({
+      updatedProjects: ['jsl107-personal-agents'],
+      unnamedKeys: ['company-abc123'],
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('이름을 받지 못해 빠진 저장소 1건');
+    expect(result.detailText).toContain('company-abc123');
   });
 });

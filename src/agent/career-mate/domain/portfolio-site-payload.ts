@@ -8,6 +8,7 @@ import {
   ProfileSkill,
   SkillCategory,
 } from './career-mate.type';
+import { ProjectGroup, ProjectGroupNaming } from './project-group';
 import { toPrNumber } from './reconcile-accomplishment-evidence';
 
 // 사이트(Portfolio OS)의 프로젝트 1건에 보낼 본문. 사이트는 이 객체를 그대로 jsonb 로 저장하고
@@ -126,33 +127,26 @@ const toSlugSegment = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-export const buildProjectSlug = (
+// 성과가 속한 저장소. 근거 PR 이 하나도 없으면 어느 저장소인지 알 수 없어 묶을 수 없다.
+export const repoOf = (
   accomplishment: ProfileAccomplishment,
-  options: PortfolioSitePayloadOptions = EMPTY_OPTIONS,
 ): string | null => {
   const first = earliestEvidence(sanitizeEvidence(accomplishment.evidence));
-  if (!first) {
-    return null;
-  }
-  // owner 를 버리지 않는다 — 여러 저장소에서 PR 을 모으는 환경에서 owner 가 다른 동명 저장소가
-  // 같은 PR 번호를 가지면(작은 번호대에서 흔하다) 두 성과가 같은 slug 를 얻는다. 그러면 첫
-  // 실행은 유니크 제약으로 실패하고, 다음 실행부터는 같은 항목을 번갈아 PATCH 해 한쪽 내용이
-  // 덮인다. repo 전체(owner/name)를 키에 넣어 그 경로를 없앤다.
-  const segment = isAnonymized(first.repo, options)
-    ? anonymousRepoSegment(first.repo)
-    : toSlugSegment(first.repo);
-  if (!segment) {
-    return null;
-  }
-  // 저장된 프로필은 보정 전 `pr: "#984"` 를 담고 있을 수 있다. 그대로 두면 사이트가 `#` 를
-  // 깎아 저장해 우리 조회 키와 어긋나고, 같은 성과가 회차마다 새 항목으로 올라간다.
-  const pr = toPrNumber(first.pr);
-  // 숫자로 읽을 수 없으면 slug 를 만들지 않는다 — 그런 값들끼리 같은 slug 로 뭉치면 첫 발행은
-  // 유니크 제약으로 실패하고 이후로는 한 항목을 번갈아 덮는다. 세어 올리는 쪽이 안전하다.
-  if (!Number.isSafeInteger(pr) || pr <= 0) {
-    return null;
-  }
-  return `${segment}-pr-${pr}`;
+  return first?.repo.trim() || null;
+};
+
+// 저장소 → 사이트 slug. 저장소가 같으면 회차가 달라도 같은 값이라 멱등 키가 된다.
+//
+// PR 번호를 키에 넣지 않는다 — 넣으면 저장소 하나의 작업이 PR 수만큼 별개 프로젝트로 흩어진다.
+// owner 를 버리지도 않는다. owner 가 다른 동명 저장소가 한 항목을 번갈아 덮어쓰기 때문이다.
+export const buildGroupKey = (
+  repo: string,
+  options: PortfolioSitePayloadOptions = EMPTY_OPTIONS,
+): string | null => {
+  const segment = isAnonymized(repo, options)
+    ? anonymousRepoSegment(repo)
+    : toSlugSegment(repo);
+  return segment || null;
 };
 
 // 근거 PR 들의 머지 시점을 KST 월로 환산해 기간 문구를 만든다.
@@ -168,36 +162,6 @@ const buildPeriod = (evidence: AccomplishmentEvidence[]): string => {
   const first = months[0];
   const last = months[months.length - 1];
   return first === last ? first : `${first} - ${last}`;
-};
-
-const toProjectPayload = (
-  accomplishment: ProfileAccomplishment,
-  options: PortfolioSitePayloadOptions,
-): PortfolioSiteProjectPayload | null => {
-  const slug = buildProjectSlug(accomplishment, options);
-  if (!slug) {
-    return null;
-  }
-  const evidence = sanitizeEvidence(accomplishment.evidence);
-  const first = earliestEvidence(evidence);
-  const { star } = accomplishment;
-  return {
-    slug,
-    title: accomplishment.title,
-    summary: accomplishment.bullet,
-    problem: star.situation,
-    // 과제(task)와 행동(action)을 과정 두 줄로 펼친다. 빈 항목은 싣지 않는다.
-    process: [star.task, star.action].filter((step) => step.trim().length > 0),
-    result: star.result,
-    techStack: accomplishment.techTags,
-    period: buildPeriod(evidence),
-    // 익명화 대상은 링크도 싣지 않는다 — slug 에서 이름을 지워도 PR 주소가 남으면
-    // 저장소가 그대로 드러나 익명화가 무의미해진다.
-    links:
-      first && !isAnonymized(first.repo, options) ? { github: first.url } : {},
-    published: false,
-    featured: false,
-  };
 };
 
 const toSkillGroupPayloads = (
@@ -224,26 +188,115 @@ export interface PortfolioSitePayload {
   skillGroups: PortfolioSiteSkillGroupPayload[];
   // 근거 PR 이 없어 멱등 키를 만들 수 없던 성과. 조용히 사라지지 않게 세어 올린다.
   skippedTitles: string[];
+  // 모델이 이름을 돌려주지 않아 발행하지 못한 그룹 키. 조용히 사라지면 저장소 하나가 통째로
+  // 빠진 것을 아무도 모른다.
+  unnamedKeys: string[];
 }
 
-// 경력 프로필(STAR 서술) → 사이트 프로젝트·스킬 그룹. 순수 변환이라 네트워크를 모른다.
-export const buildPortfolioSitePayload = (
+// 프로필의 성과들을 저장소 단위로 묶는다. 순수 변환이라 네트워크도 모델도 모른다.
+//
+// 묶는 이유 — 성과는 PR 단위로 누적되기만 하므로(merge-accomplishment) 성과 1개를 프로젝트
+// 1개로 발행하면 저장소 하나가 수십 건으로 흩어지고, 제목도 서로 구분되지 않는다.
+export const groupAccomplishments = (
   profile: CareerProfileData,
   options: PortfolioSitePayloadOptions = EMPTY_OPTIONS,
-): PortfolioSitePayload => {
-  const projects: PortfolioSiteProjectPayload[] = [];
+): { groups: ProjectGroup[]; skippedTitles: string[] } => {
+  const byKey = new Map<string, ProjectGroup>();
   const skippedTitles: string[] = [];
+
   for (const accomplishment of profile.accomplishments) {
-    const payload = toProjectPayload(accomplishment, options);
-    if (payload) {
-      projects.push(payload);
+    const repo = repoOf(accomplishment);
+    const key = repo ? buildGroupKey(repo, options) : null;
+    if (!repo || !key) {
+      skippedTitles.push(accomplishment.title);
       continue;
     }
-    skippedTitles.push(accomplishment.title);
+    const found = byKey.get(key);
+    if (found) {
+      found.accomplishments.push(accomplishment);
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      repo,
+      anonymized: isAnonymized(repo, options),
+      accomplishments: [accomplishment],
+      techStack: [],
+      period: '',
+      links: {},
+    });
   }
+
+  // 묶고 나서 한 번에 계산한다 — 기간·스택은 그룹 전체를 봐야 정해진다.
+  const groups: ProjectGroup[] = [...byKey.values()].map((group) => {
+    const evidence = group.accomplishments.flatMap((item) =>
+      sanitizeEvidence(item.evidence),
+    );
+    const first = earliestEvidence(evidence);
+    const links: Record<string, string> =
+      first && !group.anonymized ? { github: first.url } : {};
+    return {
+      ...group,
+      techStack: [
+        ...new Set(group.accomplishments.flatMap((item) => item.techTags)),
+      ],
+      period: buildPeriod(evidence),
+      links,
+    };
+  });
+  // 작업이 많은 저장소가 앞이다 — 사이트가 sortOrder 없이 받은 순서를 쓰므로 여기서 정한다.
+  groups.sort(
+    (left, right) => right.accomplishments.length - left.accomplishments.length,
+  );
+  return { groups, skippedTitles };
+};
+
+// 그룹 + 모델이 지은 이름 → 사이트 프로젝트. 이름이 없는 그룹은 싣지 않는다(제목 없는
+// 프로젝트를 발행하느니 빠뜨린 것을 세어 올리는 쪽이 낫다).
+export const buildPortfolioSitePayload = ({
+  profile,
+  groups,
+  namings,
+  skippedTitles,
+}: {
+  profile: CareerProfileData;
+  groups: ProjectGroup[];
+  namings: ProjectGroupNaming[];
+  skippedTitles: string[];
+}): PortfolioSitePayload => {
+  const namingByKey = new Map(namings.map((naming) => [naming.key, naming]));
+  const projects: PortfolioSiteProjectPayload[] = [];
+  const unnamedKeys: string[] = [];
+
+  for (const group of groups) {
+    const naming = namingByKey.get(group.key);
+    if (!naming) {
+      unnamedKeys.push(group.key);
+      continue;
+    }
+    projects.push({
+      slug: group.key,
+      title: naming.title,
+      summary: naming.summary,
+      problem: naming.problem,
+      // 과정은 성과 bullet 을 그대로 쓴다 — 여기까지 모델이 다시 쓰면 개별 작업의 사실이
+      // 요약에 녹아 사라진다. 묶는 것은 표지이지 내용이 아니다.
+      process: group.accomplishments
+        .map((item) => item.bullet.trim())
+        .filter((bullet) => bullet.length > 0),
+      result: naming.result,
+      techStack: group.techStack,
+      period: group.period,
+      links: group.links,
+      published: false,
+      featured: false,
+    });
+  }
+
   return {
     projects,
     skillGroups: toSkillGroupPayloads(profile.skills),
     skippedTitles,
+    unnamedKeys,
   };
 };
