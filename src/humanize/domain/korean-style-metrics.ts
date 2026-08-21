@@ -21,7 +21,7 @@ export type KoreanStyleMetrics = {
   shortSentencePercent: number;
   longestSentenceLength: number;
   colloquialEndingPercent: number;
-  // 종결 어미 중 `~요` 로 끝나는 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
+  // 종결 어미 중 해요체(`~요`·`~죠`) 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
   // 여기에 구어 어미가 6분의 1쯤 얹힌다" 다 — 즉 문체는 두 축이고, 구어 어미는 `~요` 축의
   // 부분집합이다. 이 축이 없으면 `~에요`·`~봐요` 로 쓴 글이 "구어 6%" 로만 보여 딱딱한 글로
   // 오독된다(실측: 발행본 2026-08-19-http-cache 가 그랬다).
@@ -212,9 +212,13 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
   ).length;
 
   // 종결체 두 축.
-  const yoCount = sentences.filter((sentence) =>
-    stripSentenceTail(sentence).endsWith('요'),
-  ).length;
+  // `죠` 도 요체로 센다 — `~지요` 의 축약이라 해요체이면서 글자로는 `요` 로 끝나지 않는다.
+  // 빼놓으면 `~죠` 로 문단을 맺는 글이 "요체 6%" 로 찍혀 딱딱한 글로 오독된다(실측: 구어 어미
+  // 33개 중 28개가 `죠` 인 글이 그랬다).
+  const yoCount = sentences.filter((sentence) => {
+    const tail = stripSentenceTail(sentence);
+    return tail.endsWith('요') || tail.endsWith('죠');
+  }).length;
   const formalCount = sentences.filter((sentence) =>
     stripSentenceTail(sentence).endsWith(FORMAL_ENDING),
   ).length;

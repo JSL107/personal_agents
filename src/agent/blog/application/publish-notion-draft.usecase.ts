@@ -263,7 +263,7 @@ export class PublishNotionDraftUsecase {
     // 변경이 기준선이 되어 그대로 통과한다(리뷰 지적). 지금까지 드러나지 않은 이유는
     // 초안에 코드가 아예 없었기 때문이고, 확장 프롬프트가 코드 예시를 요구하기 시작하면
     // 이 구멍으로 실제 코드가 지나간다.
-    this.assertCodeBlocksPreserved(target, markdown, anonymized.body);
+    this.assertCodeBlocksPreserved(target, markdown, anonymized.body, '익명화');
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
     const edited = await this.editDraft(target, anonymized, context);
@@ -282,7 +282,7 @@ export class PublishNotionDraftUsecase {
     }
     // 편집이 코드를 바꾸지 않았는지 대조한다. 프롬프트로만 금지하면 집행이 없다 —
     // 공개 저장소에 잘못된 코드가 나가는 것을 막는 마지막 결정론 검사다. 삭제는 허용한다(추리기).
-    this.assertCodeBlocksPreserved(target, anonymized.body, edited.body);
+    this.assertCodeBlocksPreserved(target, anonymized.body, edited.body, '편집');
     this.assertNotOverTrimmed(target, anonymized.body, edited.body);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
@@ -619,10 +619,13 @@ export class PublishNotionDraftUsecase {
       : '코드 예시: 0개';
   }
 
+  // stage 를 받는 이유 — 익명화와 편집이 같은 검사를 쓰는데 메시지가 같으면 실패 원인을
+  // 좁힐 수 없다. 실제로 편집 단계를 고친 뒤에도 같은 메시지가 떠서 어디를 봐야 할지 몰랐다.
   private assertCodeBlocksPreserved(
     draft: NotionDraftPage,
     before: string,
     after: string,
+    stage: '익명화' | '편집',
   ): void {
     // 집합이 아니라 **개수까지** 센다. Set 으로 보면 원문 [X, Y] 가 [X, X] 로 바뀌어도
     // (Y 가 X 로 치환되거나 X 가 복제돼도) 통과한다 — 코드 변경을 놓치는 구멍이다(리뷰 지적).
@@ -643,7 +646,7 @@ export class PublishNotionDraftUsecase {
     }
     throw new BlogException({
       code: BlogErrorCode.EDIT_CODE_CHANGED,
-      message: `'${draft.title}' 편집 결과의 코드블록이 원문과 다릅니다 (${changed.length}개). 코드는 편집 대상이 아닙니다.`,
+      message: `'${draft.title}' ${stage} 결과의 코드블록이 원문과 다릅니다 (${changed.length}개). 코드는 ${stage} 대상이 아닙니다.`,
       status: DomainStatus.BAD_GATEWAY,
     });
   }
