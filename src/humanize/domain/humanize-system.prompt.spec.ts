@@ -46,4 +46,18 @@ describe('개인 블로그 목소리 프롬프트', () => {
       expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(marker);
     }
   });
+
+  // 전역 비율 지시("열 문장에 한두 번")는 모델이 글 전체를 세야 해서 장문에서 안 지켜졌다
+  // (실측 3~5%). 값 단위로 바꾸자 16~23% 가 됐다. 되돌아가면 말투가 조용히 사라진다.
+  it('구어 종결어미를 전역 비율이 아니라 값 단위로, 하한과 상한을 함께 요구한다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain('각 값마다 한 문장');
+    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).not.toContain(
+      '열 문장에 한두 번',
+    );
+    // 하한만 주면 반대쪽으로 넘어간다 — 상한 없이 재보니 34% 까지 올라가 `~니까요` 로 문단을
+    // 연달아 끝냈고, 그 자체가 기계적으로 읽혔다.
+    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
+      '두 번을 넘기지 마라',
+    );
+  });
 });

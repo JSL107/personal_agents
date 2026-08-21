@@ -3,6 +3,7 @@ import {
   findStrictSchemaViolations,
 } from '../../../../common/util/json-schema-probe.util';
 import { parseBlogEdit } from './blog-edit.parser';
+import { BLOG_EDIT_SYSTEM_PROMPT } from './blog-edit.prompt';
 import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
   BLOG_EDIT_OUTPUT_SCHEMA,
@@ -59,5 +60,17 @@ describe('BLOG_EDIT_OUTPUT_SCHEMA', () => {
         }),
       ),
     ).toEqual({ publishable: false, reason: '필기 수준이다.' });
+  });
+
+  // 프롬프트에만 필드를 추가하면 additionalProperties: false 가 조용히 막는다. 실행은
+  // 성공하고 파서도 통과하는데 값만 늘 비어, 산출물을 열어보기 전에는 드러나지 않는다.
+  it('편집 프롬프트가 요구하는 필드는 스키마에도 있어야 한다', () => {
+    const promptFields = ['title', 'slug', 'category', 'description', 'body'];
+
+    for (const field of promptFields) {
+      expect(BLOG_EDIT_SYSTEM_PROMPT).toContain(`"${field}"`);
+      expect(BLOG_EDIT_OUTPUT_SCHEMA.properties).toHaveProperty(field);
+      expect(BLOG_EDIT_OUTPUT_SCHEMA.required).toContain(field);
+    }
   });
 });
