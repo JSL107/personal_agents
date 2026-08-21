@@ -249,6 +249,107 @@ describe('PublishNotionDraftUsecase', () => {
 
     // 단계명을 붙인 목적이 진단이다. 두 경로가 서로 다른 이름을 내야 실패 원인을 좁힐 수 있다 —
     // 실제로 같은 메시지 때문에 편집 단계를 고친 뒤에도 어디를 봐야 할지 몰랐다.
+    // 공개 프로젝트 계약(오늘의 공부)은 "코드블록 안의 코드·명령어·설정 보존" 을 약속한다.
+    // 프롬프트만으로는 지켜지지 않아 익명화 단계에도 표식을 씌운다. 회사 PR 회고 계약은
+    // 반대로 코드 안 사내 실명을 지우는 것이 일이라 가리지 않는다 — 두 경로를 함께 고정한다.
+    it('공개 프로젝트 계약이면 익명화 모델에도 코드 대신 표식을 보낸다', async () => {
+      const 공부초안 = { ...draft, sourceType: '오늘의 공부' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase, modelRouter } = buildUsecase({
+        drafts: [공부초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          body: masked,
+        }),
+      });
+
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        responseUrl: 'https://hooks.slack.test/response',
+      });
+
+      const 익명화호출 = modelRouter.route.mock.calls.find(
+        ([input]) =>
+          !String(input.request.systemPrompt).includes('블로그의 편집자'),
+      );
+      const 익명화프롬프트 = String(익명화호출?.[0].request.prompt);
+      expect(익명화프롬프트).not.toContain('developer.mozilla.org');
+      expect(익명화프롬프트).toMatch(CODE_MASK_PATTERN);
+    });
+
+    // 코드 보존 계약에서는 삭제도 실패다. 표식이 사라지면 복원할 것이 없어 코드가 조용히 빠지고,
+    // 남은 표식이 없으니 잔여 표식 검사도 삭제를 허용하는 보존 검사도 통과한다.
+    it('공개 프로젝트 계약에서 익명화가 표식을 지우면 발행하지 않는다', async () => {
+      const 공부초안 = { ...draft, sourceType: '오늘의 공부' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase } = buildUsecase({
+        drafts: [공부초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          body: masked.replace(CODE_MASK_PATTERN, ''),
+        }),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
+    });
+
+    it('익명화가 표식을 복제하면 발행하지 않는다', async () => {
+      const 공부초안 = { ...draft, sourceType: '오늘의 공부' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const 표식 = masked.match(CODE_MASK_PATTERN)?.[0] ?? '';
+      const { usecase } = buildUsecase({
+        drafts: [공부초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          // 한 코드가 두 자리에 복제되면 글이 같은 예시를 두 번 보여준다.
+          body: `${masked}\n\n${표식}`,
+        }),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
+    });
+
+    it('회사 회고 계약이면 익명화 모델에 코드를 그대로 보낸다', async () => {
+      const { usecase, modelRouter } = buildUsecase({
+        markdown: 코드본문,
+        completionText: 익명화응답,
+      });
+
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        responseUrl: 'https://hooks.slack.test/response',
+      });
+
+      const 익명화호출 = modelRouter.route.mock.calls.find(
+        ([input]) =>
+          !String(input.request.systemPrompt).includes('블로그의 편집자'),
+      );
+      // 사내 클래스·함수 실명이 코드 안에 있을 수 있어 이 경로는 코드를 봐야 한다.
+      expect(String(익명화호출?.[0].request.prompt)).toContain(
+        'developer.mozilla.org',
+      );
+    });
+
     it('익명화가 코드를 바꾸면 익명화 단계로 알린다', async () => {
       const { usecase } = buildUsecase({
         markdown: 코드본문,
