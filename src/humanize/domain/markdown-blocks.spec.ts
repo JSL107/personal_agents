@@ -1,4 +1,9 @@
-import { scanMarkdownBlocks } from './markdown-blocks';
+import {
+  CODE_MASK_PATTERN,
+  maskFencedCodeBlocks,
+  restoreFencedCodeBlocks,
+  scanMarkdownBlocks,
+} from './markdown-blocks';
 
 const markdown = [
   '## 문제',
@@ -98,5 +103,132 @@ describe('scanMarkdownBlocks — 산문과 보존 블록 가르기', () => {
   it('닫히지 않은 코드펜스는 문서 끝까지 keep 으로 둔다 (깨진 입력 안전)', () => {
     const { blocks } = scanMarkdownBlocks('본문\n\n```ts\nconst a = 1;');
     expect(blocks.map((block) => block.kind)).toEqual(['prose', 'keep']);
+  });
+});
+
+describe('maskFencedCodeBlocks / restoreFencedCodeBlocks', () => {
+  const markdown = [
+    '## 요청',
+    '',
+    '이렇게 보냅니다.',
+    '',
+    '```bash',
+    'curl -I --header \'If-None-Match: "abc123"\' https://developer.mozilla.org/en-US/',
+    '```',
+    '',
+    '응답은 이렇습니다.',
+    '',
+    '```http',
+    'HTTP/1.1 304 Not Modified',
+    'Cache-Control: private',
+    '```',
+  ].join('\n');
+
+  it('코드블록을 표식으로 가리고 산문은 그대로 둔다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+
+    expect(masked).toMatch(CODE_MASK_PATTERN);
+    expect(masked).toContain('이렇게 보냅니다.');
+    // 가린 뒤에는 코드가 한 글자도 남지 않아야 한다 — 남으면 모델이 그것을 만진다.
+    expect(masked).not.toContain('developer.mozilla.org');
+    expect(masked).not.toContain('304 Not Modified');
+    expect(blocks).toHaveLength(2);
+  });
+
+  it('되돌리면 원문과 한 글자도 다르지 않다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+
+    expect(restoreFencedCodeBlocks(masked, blocks)).toBe(markdown);
+  });
+
+  // 편집 단계는 덜어내는 일이라 표식 삭제는 허용이다. 남은 표식만 되돌린다.
+  it('표식이 지워진 자리는 그 코드가 빠진 것으로 둔다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+    const 편집본 = masked
+      .split('\n')
+      .filter((line, index, lines) => {
+        const first = lines.findIndex((candidate) =>
+          CODE_MASK_PATTERN.test(candidate),
+        );
+        return index !== first;
+      })
+      .join('\n');
+
+    const restored = restoreFencedCodeBlocks(편집본, blocks);
+
+    expect(restored).not.toContain('developer.mozilla.org');
+    expect(restored).toContain('304 Not Modified');
+    expect(restored).not.toMatch(CODE_MASK_PATTERN);
+  });
+
+  // 리뷰 P1 — 순번 표식이면 모델이 앞 예시를 지우고 뒤 표식을 1번부터 다시 매길 때 복원이
+  // 엉뚱한 코드를 넣고, 남은 표식도 없어 두 게이트를 모두 통과한다. 해시 ID 는 재번호화가
+  // 불가능하고, 모르는 ID 는 표식으로 남아 검사에 걸린다.
+  it('모델이 표식 ID 를 임의로 바꾸면 엉뚱한 코드가 아니라 표식이 남는다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+    const ids = [...masked.matchAll(/CODE_BLOCK_([0-9a-f]+)/g)].map(
+      (match) => match[1],
+    );
+    expect(ids).toHaveLength(2);
+    // 앞 예시를 지우고 뒤 표식을 앞 ID 로 바꿔 쓰는 시나리오.
+    const 변조본 = masked
+      .replace(`<!-- CODE_BLOCK_${ids[0]} -->\n\n`, '')
+      .replace(ids[1], 'deadbeef');
+
+    const restored = restoreFencedCodeBlocks(변조본, blocks);
+
+    expect(restored).toMatch(CODE_MASK_PATTERN);
+    expect(restored).not.toContain('developer.mozilla.org');
+    expect(restored).not.toContain('304 Not Modified');
+  });
+
+  // 리뷰 P2 / MUST_FIX — 블록마다 치환을 누적하면 앞서 복원한 코드 안의 표식 문자열까지
+  // 치환돼 본문이 변조된다. 단일 패스는 복원된 내용을 다시 보지 않는다.
+  it('복원된 코드 안의 표식 문자열은 다시 치환하지 않는다', () => {
+    const 표식문자열 = maskFencedCodeBlocks(
+      ['```txt', 'placeholder', '```'].join('\n'),
+    ).masked.trim();
+    const 문서 = [
+      '```txt',
+      // 첫 블록이 두 번째 블록의 표식과 같은 문자열을 코드로 담고 있다.
+      표식문자열,
+      '```',
+      '',
+      '사이 문단.',
+      '',
+      '```txt',
+      'placeholder',
+      '```',
+    ].join('\n');
+
+    const { masked, blocks } = maskFencedCodeBlocks(문서);
+
+    expect(restoreFencedCodeBlocks(masked, blocks)).toBe(문서);
+  });
+
+  it('같은 코드가 두 번 나와도 각 자리에 그 코드가 들어간다', () => {
+    const 문서 = [
+      '```sh',
+      'echo hello',
+      '```',
+      '',
+      '사이 문단.',
+      '',
+      '```sh',
+      'echo hello',
+      '```',
+    ].join('\n');
+
+    const { masked, blocks } = maskFencedCodeBlocks(문서);
+
+    expect(blocks).toHaveLength(2);
+    expect(restoreFencedCodeBlocks(masked, blocks)).toBe(문서);
+  });
+
+  it('코드블록이 없으면 원문을 그대로 돌려준다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks('산문만 있습니다.');
+
+    expect(masked).toBe('산문만 있습니다.');
+    expect(blocks).toHaveLength(0);
   });
 });
