@@ -394,6 +394,43 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
   });
 
+  it('손절 밴드를 넘기면 STOP_LOSS 매도를 만들어 체결한다', async () => {
+    // 시가를 종가보다 10% 높게 두면 매수 체결 직후 평가 손익률이 -9% 대로 시작한다.
+    // 익절은 사실상 끄고(+999%) 손절만 켜서 STOP_LOSS 경로만 태운다.
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(risingBars((_, close) => Math.round(close * 1.1))),
+    );
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+    });
+
+    expect(result.exitBandSellCounts.stopLoss).toBeGreaterThan(0);
+    expect(result.exitBandSellCounts.takeProfit).toBe(0);
+    // 주문이 생성만 되고 끝나지 않았음을 본다 — 매도가 체결돼 사이클이 종결됐다.
+    expect(result.scores.some((score) => score.closedCount > 0)).toBe(true);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  it('마지막 시세 뒤의 평일을 to 로 주면 체결되지 않을 밴드 매도를 만들지 않는다', async () => {
+    // 봉을 TRADE_DATES[233] 까지만 두고 to 를 그 다음 평일로 준다. 평일 기준으로만 막으면
+    // 234일 체결 예정 주문이 만들어지지만 그 날은 봉이 없어 영원히 PENDING 으로 남는다
+    // (가드를 되돌리면 PENDING 1건이 남아 이 단언이 깨진다 — 실측으로 확인한 조합이다).
+    const bars = risingBars();
+    bars.set(11, (bars.get(11) as BacktestBar[]).slice(0, 234));
+    const usecase = new ReplayBacktestUsecase(repositoryOf(bars));
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      to: dateText(TRADE_DATES[234]),
+    });
+
+    expect(result.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
+  });
+
   it('밴드를 켠 같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
     const first = await new ReplayBacktestUsecase(
       repositoryOf(risingBars()),

@@ -80,8 +80,9 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
   } else {
     lines.push(
       `청산 밴드 +${result.exitBand.takeProfitPercent}%/${result.exitBand.stopLossPercent}% · ` +
-        `익절 매도 ${result.exitBandSellCounts.takeProfit}건 · ` +
-        `손절 매도 ${result.exitBandSellCounts.stopLoss}건`,
+        // 체결 수가 아니라 주문 생성 수다. 만료(시가 없음)된 주문도 포함된다.
+        `익절 매도 주문 ${result.exitBandSellCounts.takeProfit}건 · ` +
+        `손절 매도 주문 ${result.exitBandSellCounts.stopLoss}건`,
     );
   }
 

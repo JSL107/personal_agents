@@ -69,7 +69,7 @@ describe('formatBacktestResult', () => {
     );
   });
 
-  it('청산 밴드 값과 사유별 매도 건수를 표시한다', () => {
+  it('청산 밴드 값과 사유별 매도 주문 건수를 표시한다', () => {
     const resultWithExitBand: ReplayBacktestResult = {
       ...result,
       exitBand: { takeProfitPercent: 2, stopLossPercent: -0.2 },
@@ -78,7 +78,7 @@ describe('formatBacktestResult', () => {
     const text = formatBacktestResult(resultWithExitBand);
 
     expect(text).toContain(
-      '청산 밴드 +2%/-0.2% · 익절 매도 12건 · 손절 매도 30건',
+      '청산 밴드 +2%/-0.2% · 익절 매도 주문 12건 · 손절 매도 주문 30건',
     );
   });
 

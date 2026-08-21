@@ -194,6 +194,7 @@ export class ReplayBacktestUsecase {
           command,
           barsByTicker,
           tickerById,
+          tradeDates: calendar.tradeDates,
           ledger,
           state,
         });
@@ -334,6 +335,7 @@ export class ReplayBacktestUsecase {
     command: ReplayBacktestCommand;
     barsByTicker: Map<number, BacktestBar[]>;
     tickerById: Map<number, BacktestTicker>;
+    tradeDates: string[];
     ledger: InMemoryPaperLedger;
     state: ReplayState;
   }): void {
@@ -341,9 +343,9 @@ export class ReplayBacktestUsecase {
       return;
     }
     const targetTradeDate = nextWeekdayText(context.today);
-    // 체결일이 재생 구간을 넘어가면 그 주문은 영원히 PENDING 으로 남는다. placeOrders 가
+    // 체결될 거래일이 구간 안에 없으면 그 주문은 영원히 PENDING 으로 남는다. placeOrders 가
     // 같은 이유로 같은 가드를 쓴다.
-    if (targetTradeDate > context.command.to) {
+    if (!this.hasTradeDateAfter(context.tradeDates, context.today)) {
       return;
     }
     // 이미 대기 매도가 있는 종목은 건너뛴다. 보유는 체결 전까지 남아 있으므로 이 가드가
@@ -436,9 +438,9 @@ export class ReplayBacktestUsecase {
     state: ReplayState;
   }): void {
     const targetTradeDate = nextWeekdayText(context.today);
-    // 체결일이 재생 구간을 넘어가면 그 주문은 영원히 PENDING 으로 남는다. 채점기는 이를
+    // 체결될 거래일이 구간 안에 없으면 그 주문은 영원히 PENDING 으로 남는다. 채점기는 이를
     // UNEXPECTED_ORDER_STATUS 이상으로 세고 주문 수도 부풀리므로 아예 만들지 않는다.
-    if (targetTradeDate > context.command.to) {
+    if (!this.hasTradeDateAfter(context.tradeDates, context.today)) {
       return;
     }
     // 추천은 평일마다 돌지만 판단 근거는 마지막으로 마감된 거래일 종가다.
@@ -682,6 +684,13 @@ export class ReplayBacktestUsecase {
   ): BacktestBar | null {
     const bars = barsByTicker.get(tickerId) ?? [];
     return bars.find((bar) => dateTextOf(bar.tradeDate) === tradeDate) ?? null;
+  }
+
+  // 체결은 봉이 있는 날에만 성사된다. tradeDates 는 구간(from~to)으로 이미 잘려 있으므로
+  // "today 뒤의 원소가 있는가" 가 곧 "구간 안에 체결될 날이 남았는가" 다. 평일 기준으로
+  // 판정하면 to 가 마지막 시세 뒤의 평일·휴장일일 때 체결되지 않는 주문을 만들게 된다.
+  private hasTradeDateAfter(tradeDates: string[], today: string): boolean {
+    return tradeDates.some((tradeDate) => tradeDate > today);
   }
 
   private latestTradeDateOnOrBefore(
