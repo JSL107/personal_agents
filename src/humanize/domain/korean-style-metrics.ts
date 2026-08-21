@@ -93,6 +93,21 @@ const NO_SHORT_SENTENCE_MIN = 3;
 
 // 마크다운에서 산문 문단만 골라 문장으로 자른다. 코드·표·헤딩이 섞이면 문장 길이 분포가
 // 통째로 왜곡되므로 윤문 대상과 **같은 분해기**를 쓴다.
+// 문장 끝에 붙는 닫는 문자. 마침표 뒤에 인용·강조가 오는 문장이 실제 본문에 흔하다
+// (`"이 정도면 되겠지" 하고`, `**이렇게 해요.**`). 이걸 빼놓으면 두 곳이 함께 어긋난다 —
+// 문장 분리가 안 돼 두 문장이 하나로 합쳐지고, 종결 어미 판정도 닫는 문자에 막혀 누락된다.
+// 스마트 인용부호(“ ” ‘ ’)와 마크다운 강조(* _), 한글 인용부호(」 』)까지 함께 본다.
+const CLOSING_CHARS = '"\'`)\\]*_”’」』';
+const TRAILING_CLOSERS = new RegExp(`[.!?。${CLOSING_CHARS}]+$`);
+const SENTENCE_BOUNDARY = new RegExp(
+  `(?<=[.!?。][${CLOSING_CHARS}]*)\\s+|\\n+`,
+);
+
+// 문장 끝의 마침표·인용·강조를 걷어낸다. 종결 어미를 보는 모든 자리가 이 함수를 지나야
+// 한 쪽만 고쳐져 지표가 갈리는 일이 없다.
+const stripSentenceTail = (sentence: string): string =>
+  sentence.replace(TRAILING_CLOSERS, '');
+
 export const extractProseSentences = (markdown: string): string[] => {
   const { lines, blocks } = scanMarkdownBlocks(markdown);
   const prose = blocks
@@ -101,7 +116,7 @@ export const extractProseSentences = (markdown: string): string[] => {
     .join(' ');
 
   return prose
-    .split(/(?<=[.!?。])\s+|\n+/)
+    .split(SENTENCE_BOUNDARY)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0);
 };
@@ -124,7 +139,7 @@ export const extractProseParagraphs = (markdown: string): string[] => {
 
 const splitSentences = (text: string): string[] =>
   text
-    .split(/(?<=[.!?。])\s+|\n+/)
+    .split(SENTENCE_BOUNDARY)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0);
 
@@ -192,18 +207,16 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
 
   const colloquialCount = sentences.filter((sentence) =>
     COLLOQUIAL_ENDINGS.some((ending) =>
-      sentence.replace(/[.!?"'`)\]]+$/g, '').endsWith(ending),
+      stripSentenceTail(sentence).endsWith(ending),
     ),
   ).length;
 
-  // 종결체 두 축. 문장 끝의 마침표·인용부호를 걷어낸 뒤 본다.
-  const stripTail = (sentence: string): string =>
-    sentence.replace(/[.!?"'`)\]]+$/g, '');
+  // 종결체 두 축.
   const yoCount = sentences.filter((sentence) =>
-    stripTail(sentence).endsWith('요'),
+    stripSentenceTail(sentence).endsWith('요'),
   ).length;
   const formalCount = sentences.filter((sentence) =>
-    stripTail(sentence).endsWith(FORMAL_ENDING),
+    stripSentenceTail(sentence).endsWith(FORMAL_ENDING),
   ).length;
 
   const bannedConnectiveCount = BANNED_CONNECTIVES.reduce(

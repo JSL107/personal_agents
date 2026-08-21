@@ -116,6 +116,28 @@ describe('measureKoreanStyle — 종결체 축', () => {
     expect(metrics.yoEndingPercent).toBe(0);
   });
 
+  // 마침표 뒤에 인용·강조가 오는 문장은 실제 본문에 흔하다. 닫는 문자를 안 보면 두 곳이 함께
+  // 어긋난다 — 문장이 하나로 합쳐지고, 종결 어미도 그 문자에 막혀 누락된다(요체 50% → 0%).
+  it.each([
+    ['스마트 인용부호', '“이렇게 해요.” 다음에는 갑니다.'],
+    ['마크다운 강조', '**이렇게 해요.** 다음에는 갑니다.'],
+    ['한글 인용부호', '「이렇게 해요.」 다음에는 갑니다.'],
+    ['괄호', '(이렇게 해요.) 다음에는 갑니다.'],
+  ])('%s 로 끝나는 문장도 분리하고 종결 어미를 센다', (_label, text) => {
+    const metrics = measureKoreanStyle(text);
+
+    expect(metrics.sentenceCount).toBe(2);
+    expect(metrics.yoEndingPercent).toBe(50);
+  });
+
+  it('닫는 문자 뒤의 구어 어미도 센다', () => {
+    const metrics = measureKoreanStyle(
+      '“그래서 이렇게 했거든요.” 그러고는 갑니다.',
+    );
+
+    expect(metrics.colloquialEndingPercent).toBe(50);
+  });
+
   it('종결체가 하나도 없으면 0이다', () => {
     expect(measureKoreanStyle('- 항목 하나\n- 항목 둘').yoEndingPercent).toBe(
       0,
