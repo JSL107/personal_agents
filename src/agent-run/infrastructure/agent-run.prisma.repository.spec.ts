@@ -90,6 +90,19 @@ describe('AgentRunPrismaRepository.findFailedRunsSince', () => {
     expect(where.slackUserId).toBeUndefined();
   });
 
+  it('빈 문자열도 JSON 경로로 매칭한다 — 사용자 한정이 사라지지 않게', async () => {
+    // truthy 검사면 여기서 필터가 통째로 빠져 남의 실패까지 반환된다(fail-open).
+    const { repository, findMany } = buildRepository();
+
+    await repository.findFailedRunsSince({
+      withinMinutes: 60,
+      slackUserId: '',
+    });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.inputSnapshot).toEqual({ path: ['slackUserId'], equals: '' });
+  });
+
   it('slackUserId 미지정이면 사용자 필터를 걸지 않는다', async () => {
     const { repository, findMany } = buildRepository();
 
