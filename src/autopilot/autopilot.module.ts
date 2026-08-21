@@ -208,7 +208,12 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       useExisting: GenerateOpsAdviceUsecase,
     },
     {
-      // 플레이북 task 레지스트리 — 신규 task 는 여기 inject 에 추가.
+      // 플레이북 task 레지스트리 — 신규 task 는 **세 곳 모두** 손대야 한다:
+      // useFactory 인자 · 반환 배열 · inject. 인자와 inject 에만 넣고 반환 배열을 빠뜨리면
+      // 컴파일도 테스트도 통과하지만, 그 task 의 슬롯이 발화하는 순간 오케스트레이터가
+      // `Autopilot: task 미등록` 으로 죽는다(autopilot.orchestrator.ts). 실제로 겪었다.
+      // 인자와 배열이 같은 목록을 두 번 적는 구조가 원인이라 `(...tasks) => tasks` 로
+      // 접는 편이 낫지만, 이 파일은 병렬 작업이 잦아 별도 변경으로 다룬다.
       provide: AUTOPILOT_TASKS,
       useFactory: (
         assign: AssignAutopilotTask,
@@ -268,6 +273,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitor,
         stockMonitorUs,
         stockAlertScoring,
+        screeningOutcomeScoring,
         prReviewSweep,
         paperTrading,
         universeSweep,

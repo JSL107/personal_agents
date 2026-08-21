@@ -62,9 +62,9 @@ export interface SaveScreeningItemOutcomeInput {
   returnPct: string;
 }
 
-// 지평 20거래일을 채우려면 달력으로 한 달 남짓이 필요하다. 휴장과 수집 공백을 감안해
-// 넉넉히 잡되, 종목 전체 이력을 끌어오지는 않도록 상한을 둔다.
-const BAR_LOOKAHEAD_DAYS = 90;
+// 조회 상한을 달력으로 두지 않는다. 지평은 저장된 봉의 수로 세는데 달력으로 자르면
+// 스크리닝 직후 오래 거래정지됐다 재개된 종목이 봉을 다 채우고도 잘려 나가, 영영
+// 미도래로 남는다. 미채점 회차만 조회하므로 범위를 열어 두어도 회차당 종목 수만큼이다.
 
 @Injectable()
 export class ScreeningHistoryPrismaRepository {
@@ -183,12 +183,10 @@ export class ScreeningHistoryPrismaRepository {
     if (tickerIds.length === 0) {
       return [];
     }
-    const until = new Date(asOf);
-    until.setUTCDate(until.getUTCDate() + BAR_LOOKAHEAD_DAYS);
     return await this.prisma.dailyPrice.findMany({
       where: {
         tickerId: { in: tickerIds },
-        tradeDate: { gt: asOf, lte: until },
+        tradeDate: { gt: asOf },
       },
       select: {
         tickerId: true,
@@ -200,8 +198,13 @@ export class ScreeningHistoryPrismaRepository {
     });
   }
 
-  // 같은 (항목, 지평) 을 다시 재면 덮어쓴다. 시세가 뒤늦게 보정되는 경우가 있어
-  // 다시 잰 값이 정본이다.
+  // 같은 (항목, 지평) 을 두 번 저장해도 안전하도록 upsert 로 둔다 — 한 회차 안에서
+  // 재실행되거나 저장이 중간에 끊긴 경우를 위한 방어다.
+  //
+  // ⚠️ **이 update 분기는 평상시 채점 경로에서는 실행되지 않는다.** 채점 대상을
+  // `outcomes: { none: { horizonDays } }` 로 뽑기 때문에 이미 저장된 항목은 다시 오지
+  // 않는다. 즉 시세가 뒤늦게 보정돼도 저장된 성적은 그대로다. 소급 재채점이 필요해지면
+  // 대상 조회부터 바꿔야 한다(가격 갱신 시각 비교 등) — 지금은 지원하지 않는다.
   async saveScreeningItemOutcomes(
     rows: SaveScreeningItemOutcomeInput[],
   ): Promise<number> {
