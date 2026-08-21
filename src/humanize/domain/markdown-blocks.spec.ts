@@ -1,4 +1,9 @@
-import { scanMarkdownBlocks } from './markdown-blocks';
+import {
+  CODE_MASK_PATTERN,
+  maskFencedCodeBlocks,
+  restoreFencedCodeBlocks,
+  scanMarkdownBlocks,
+} from './markdown-blocks';
 
 const markdown = [
   '## 문제',
@@ -98,5 +103,71 @@ describe('scanMarkdownBlocks — 산문과 보존 블록 가르기', () => {
   it('닫히지 않은 코드펜스는 문서 끝까지 keep 으로 둔다 (깨진 입력 안전)', () => {
     const { blocks } = scanMarkdownBlocks('본문\n\n```ts\nconst a = 1;');
     expect(blocks.map((block) => block.kind)).toEqual(['prose', 'keep']);
+  });
+});
+
+describe('maskFencedCodeBlocks / restoreFencedCodeBlocks', () => {
+  const markdown = [
+    '## 요청',
+    '',
+    '이렇게 보냅니다.',
+    '',
+    '```bash',
+    'curl -I --header \'If-None-Match: "abc123"\' https://developer.mozilla.org/en-US/',
+    '```',
+    '',
+    '응답은 이렇습니다.',
+    '',
+    '```http',
+    'HTTP/1.1 304 Not Modified',
+    'Cache-Control: private',
+    '```',
+  ].join('\n');
+
+  it('코드블록을 표식으로 가리고 산문은 그대로 둔다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+
+    expect(masked).toContain('<!-- CODE_BLOCK_1 -->');
+    expect(masked).toContain('<!-- CODE_BLOCK_2 -->');
+    expect(masked).toContain('이렇게 보냅니다.');
+    // 가린 뒤에는 코드가 한 글자도 남지 않아야 한다 — 남으면 모델이 그것을 만진다.
+    expect(masked).not.toContain('developer.mozilla.org');
+    expect(masked).not.toContain('304 Not Modified');
+    expect(blocks).toHaveLength(2);
+  });
+
+  it('되돌리면 원문과 한 글자도 다르지 않다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+
+    expect(restoreFencedCodeBlocks(masked, blocks)).toBe(markdown);
+  });
+
+  // 편집 단계는 덜어내는 일이라 표식 삭제는 허용이다. 남은 표식만 되돌린다.
+  it('표식이 지워진 자리는 그 코드가 빠진 것으로 둔다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+    const 편집본 = masked.replace('<!-- CODE_BLOCK_1 -->\n\n', '');
+
+    const restored = restoreFencedCodeBlocks(편집본, blocks);
+
+    expect(restored).not.toContain('developer.mozilla.org');
+    expect(restored).toContain('304 Not Modified');
+    expect(restored).not.toMatch(CODE_MASK_PATTERN);
+  });
+
+  it('모델이 표식을 변형하면 되돌리지 못한 표식이 남는다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks(markdown);
+    const 변형본 = masked.replace('CODE_BLOCK_1', 'CODE_BLOCK_9');
+
+    const restored = restoreFencedCodeBlocks(변형본, blocks);
+
+    // 호출부가 이 상태를 잡아내야 한다 — 그대로 발행되면 독자가 표식을 본다.
+    expect(restored).toMatch(CODE_MASK_PATTERN);
+  });
+
+  it('코드블록이 없으면 원문을 그대로 돌려준다', () => {
+    const { masked, blocks } = maskFencedCodeBlocks('산문만 있습니다.');
+
+    expect(masked).toBe('산문만 있습니다.');
+    expect(blocks).toHaveLength(0);
   });
 });
