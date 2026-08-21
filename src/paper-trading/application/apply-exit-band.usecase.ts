@@ -85,6 +85,7 @@ export class ApplyExitBandUsecase {
             : new Date(`${tradeDate}T00:00:00.000Z`),
         targetTradeDate: nextWeekday(command.executedAt),
         agentRunId: command.agentRunId ?? null,
+        threshold,
         orders: decisions.map((decision) => ({
           tickerId: decision.tickerId,
           reason: describeExitBandReason(decision, threshold),

@@ -657,6 +657,7 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
     dataAsOf: new Date('2026-08-18T00:00:00.000Z'),
     targetTradeDate: new Date('2026-08-19T00:00:00.000Z'),
     agentRunId: null,
+    threshold: { takeProfitPercent: 10, stopLossPercent: -5 },
     orders: [
       { tickerId: 1976, reason: '익절 밴드 도달' },
       { tickerId: 178, reason: '손절 밴드 이탈' },
@@ -697,6 +698,24 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
       expect.objectContaining({ tickerId: 178, quantity: '183', side: 'SELL' }),
     ]);
     expect(transaction.paperAccount.update).toHaveBeenCalledTimes(1);
+  });
+
+  // 이 회차가 어느 밴드로 팔았는지가 주문에 남지 않으면, 값을 바꾼 뒤의 성적이 이전 값의
+  // 성적과 한 표본에 섞여 "밴드를 넓혀서 나아졌나" 를 영영 가릴 수 없다.
+  it('그 회차의 밴드 설정을 주문마다 적는다', async () => {
+    await repository.createExitBandOrders(input);
+
+    const data = transaction.paperOrder.createMany.mock.calls[0][0].data;
+    expect(data).toEqual([
+      expect.objectContaining({
+        exitTakeProfitPercent: 10,
+        exitStopLossPercent: -5,
+      }),
+      expect.objectContaining({
+        exitTakeProfitPercent: 10,
+        exitStopLossPercent: -5,
+      }),
+    ]);
   });
 
   it('이미 대기 중인 매도가 있는 종목은 중복으로 걸지 않는다', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { summarizeExitBandUsage } from '../domain/exit-band';
 import { TradeStrategy } from '../domain/paper-account.type';
 import {
   calculatePortfolioPerformance,
@@ -51,6 +52,11 @@ export interface AccountRecommendationScore {
   ruleVersions: number[];
   // 버전이 안 적힌 추천 수. 0 이 아니면 위 목록만으로는 표본을 다 설명하지 못한다.
   unknownRuleVersionCount: number;
+  // 이 구간의 매도가 어떤 청산 밴드로 나왔는지 (`+10/-5` 꼴). 둘 이상이면 밴드를 바꾼
+  // 구간을 걸친 집계다.
+  exitBands: string[];
+  // 밴드가 만들지 않은 매도 건수(모델이 고른 매도). 위 목록으로 설명되지 않는 청산이다.
+  bandlessSellCount: number;
   score: StrategyRecommendationScore;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
@@ -178,6 +184,11 @@ export class ScoreRecommendationsUsecase {
               )
               .dividedBy(shadow.performances.length)
               .toString();
+      const exitBandUsage = summarizeExitBandUsage(
+        data.sellOrders.filter(
+          (sellOrder) => sellOrder.accountId === account.id,
+        ),
+      );
       const portfolio = calculatePortfolioPerformance({
         seedAmount: account.seedAmount,
         snapshots: data.snapshots
@@ -206,6 +217,8 @@ export class ScoreRecommendationsUsecase {
         unknownRuleVersionCount: accountOrders.filter(
           (order) => order.ruleVersion === null,
         ).length,
+        exitBands: exitBandUsage.bands,
+        bandlessSellCount: exitBandUsage.bandlessSellCount,
         score,
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
@@ -301,6 +314,8 @@ const toSaveInput = (
   asOf,
   ruleVersions: account.ruleVersions,
   unknownRuleVersionCount: account.unknownRuleVersionCount,
+  exitBands: account.exitBands,
+  bandlessSellCount: account.bandlessSellCount,
   recommendationCount: account.score.recommendationCount,
   closedCount: account.score.closedCount,
   openCount: account.score.openCount,

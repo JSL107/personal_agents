@@ -4,6 +4,10 @@ import { Prisma } from '@prisma/client';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  ExitBandSellOrderRecord,
+  ExitBandThreshold,
+} from '../domain/exit-band';
+import {
   OrderStatus,
   PaperMarket,
   TradeSide,
@@ -161,6 +165,8 @@ export interface CreateExitBandOrdersInput {
   dataAsOf: Date;
   targetTradeDate: Date;
   agentRunId: number | null;
+  // 이 회차가 쓴 밴드 설정. 주문마다 박아 둬야 값을 바꾼 전후 성적을 갈라 볼 수 있다.
+  threshold: ExitBandThreshold;
   orders: ExitBandOrderInput[];
 }
 
@@ -223,6 +229,8 @@ export interface SaveRecommendationScoreInput {
   asOf: Date;
   ruleVersions: number[];
   unknownRuleVersionCount: number;
+  exitBands: string[];
+  bandlessSellCount: number;
   recommendationCount: number;
   closedCount: number;
   openCount: number;
@@ -243,9 +251,17 @@ export interface SaveRecommendationScoreInput {
   exclusions: Record<string, number>;
 }
 
+// 채점 구간의 매도 주문에 박힌 밴드 설정. 매수(orders)와 달리 사이클에 귀속시키지 않고
+// 구간 단위로만 모은다 — 지금 필요한 것은 "이 표본이 밴드를 바꾼 구간을 걸쳤나" 이고,
+// 사이클별 귀속은 구간 집계가 생긴 뒤의 일이다.
+export interface RecommendationScoreSellOrderRecord extends ExitBandSellOrderRecord {
+  accountId: number;
+}
+
 export interface RecommendationScoreData {
   accounts: RecommendationScoreAccountRecord[];
   orders: RecommendationOrderInput[];
+  sellOrders: RecommendationScoreSellOrderRecord[];
   recommendationTrades: RecommendationTradeInput[];
   portfolioTrades: RecommendationScorePortfolioTradeRecord[];
   dailyPrices: RecommendationScoreDailyPriceRecord[];
@@ -292,6 +308,27 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         status: true,
         quantity: true,
         ruleVersion: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    // 매도는 채점 대상이 아니지만(성적은 매수 사이클로 센다) 어떤 밴드가 그 사이클들을
+    // 닫았는지는 성적을 읽는 전제다. 그래서 값만 따로 훑는다.
+    //
+    // 체결된 매도만 센다. 사이클을 닫는 것은 체결이므로, 대기·만료·취소된 주문의 밴드까지
+    // 실으면 아직(또는 끝내) 아무 사이클도 닫지 않은 설정이 성적 표본을 닫은 것처럼 보인다 —
+    // 밴드를 바꾼 직후 첫 주문이 대기 중일 때가 정확히 그 상황이다.
+    const sellOrders = await this.prisma.paperOrder.findMany({
+      where: {
+        accountId: { in: accountIds },
+        side: 'SELL',
+        strategy: { in: ['LONG_TERM', 'SWING'] },
+        status: { in: ['FILLED', 'PARTIALLY_FILLED'] },
+        decidedAt,
+      },
+      select: {
+        accountId: true,
+        exitTakeProfitPercent: true,
+        exitStopLossPercent: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -421,6 +458,11 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         strategy: order.strategy as TradeStrategy,
         status: order.status as OrderStatus,
       })),
+      sellOrders: sellOrders.map((order) => ({
+        accountId: order.accountId,
+        takeProfitPercent: order.exitTakeProfitPercent?.toString() ?? null,
+        stopLossPercent: order.exitStopLossPercent?.toString() ?? null,
+      })),
       recommendationTrades: [...buyTrades, ...sellTrades]
         .sort((left, right) => {
           const dateDifference =
@@ -454,6 +496,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           strategy: input.strategy,
           ruleVersions: input.ruleVersions,
           unknownRuleVersionCount: input.unknownRuleVersionCount,
+          exitBands: input.exitBands,
+          bandlessSellCount: input.bandlessSellCount,
           recommendationCount: input.recommendationCount,
           closedCount: input.closedCount,
           openCount: input.openCount,
@@ -974,6 +1018,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             targetTradeDate: input.targetTradeDate,
             status: 'PENDING',
             agentRunId: input.agentRunId,
+            exitTakeProfitPercent: input.threshold.takeProfitPercent,
+            exitStopLossPercent: input.threshold.stopLossPercent,
           },
         ];
       });
