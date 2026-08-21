@@ -238,6 +238,9 @@ struct OfficeView: View {
                 Spacer()
                 Button("닫기") { isPresidentBarOpen = false }
             }
+            if !store.conversation.isEmpty {
+                conversationLog
+            }
             HStack {
                 TextField("지시… 담당자는 이대리가 고릅니다", text: $commandText)
                     .textFieldStyle(.roundedBorder)
@@ -245,14 +248,58 @@ struct OfficeView: View {
                 Button("전송", action: sendToPresident)
                     .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            if !globalPendingCommands.isEmpty {
-                pendingBadgeRow
-            }
+            // 배지를 여기 두지 않는다 — 대화 로그가 이미 같은 진행·응답을 턴으로 보여줘서
+            // 한 응답이 두 번 보인다. 바를 닫았을 때의 진행 추적은 `idleBar` 의 배지가 맡는다.
         }
         .padding(Spacing.md)
         .background(.thinMaterial)
-        .cornerRadius(10)
+        .cornerRadius(Radius.panel)
         .padding(Spacing.md)
+    }
+
+    private var conversationLog: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: Spacing.sm) {
+                    ForEach(store.conversation) { turn in
+                        conversationTurnRow(turn)
+                            .id(turn.id)
+                    }
+                }
+                .padding(.vertical, Spacing.xs)
+            }
+            .frame(maxHeight: 260)
+            .onChange(of: store.conversation.last?.id) { latestTurnId in
+                guard let latestTurnId else {
+                    return
+                }
+                proxy.scrollTo(latestTurnId, anchor: .bottom)
+            }
+        }
+    }
+
+    private func conversationTurnRow(_ turn: ConsoleTurn) -> some View {
+        HStack {
+            if turn.role == .me {
+                Spacer(minLength: Spacing.xxl)
+            }
+            Text(turn.text)
+                .font(Typography.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                        .fill(Color.primary.opacity(turn.role == .me ? 0.10 : 0.06))
+                )
+                .accessibilityLabel(
+                    turn.role == .me ? "나: \(turn.text)" : "이대리: \(turn.text)"
+                )
+            if turn.role == .idaeri {
+                Spacer(minLength: Spacing.xxl)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func sendToPresident() {

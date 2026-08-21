@@ -216,6 +216,25 @@ public struct ConsoleSnapshot: Codable, Sendable {
     }
 }
 
+public enum ConsoleTurnRole: Sendable, Equatable {
+    case me
+    case idaeri
+}
+
+public struct ConsoleTurn: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let role: ConsoleTurnRole
+    public let text: String
+    public let at: Date
+
+    public init(id: UUID = UUID(), role: ConsoleTurnRole, text: String, at: Date) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.at = at
+    }
+}
+
 /// SSE 로 흘려보내는 증분 이벤트. 앱은 이걸 스냅샷 위에 적용한다.
 /// 백엔드는 `{ type, ... }` 형태의 discriminated union 이므로, `type` 필드로 분기해 커스텀 디코딩한다.
 public enum ConsoleEvent: Decodable, Sendable {

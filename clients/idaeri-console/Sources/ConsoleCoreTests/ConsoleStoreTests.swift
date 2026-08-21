@@ -157,6 +157,11 @@ func runConsoleStoreTests(_ t: TestRunner) {
     let pmDone = ConsoleRun(id: "run-pm", agentType: "PM", status: "SUCCEEDED", parentId: nil, startedAt: "t", finishedAt: "t2")
     pendingStore.apply(event: .runFinished(pmDone))
     t.expectEqual(pendingStore.pendingCommands.first?.phase, .done, "running→done")
+    pendingStore.apply(
+        event: .commandAnswered(commandId: cmdId.uuidString, message: "오늘 계획을 정리했습니다.")
+    )
+    t.expectEqual(pendingStore.pendingCommands.first?.phase, .done, "worker 완료 답변 뒤에도 done 유지")
+    t.expectEqual(pendingStore.conversation.last?.text, "오늘 계획을 정리했습니다.", "완료 산출물 대화 기록")
 
     // 힌트 없는 전역 명령 → run.started 의 agentType 으로 카드 확정
     let globalStore = ConsoleStore()
@@ -243,6 +248,15 @@ func runConsoleStoreTests(_ t: TestRunner) {
         "1. PM — 마지막 성공 2일 전",
         "command.answered message 기록"
     )
+    t.expectEqual(answeredStore.conversation.count, 2, "사용자 발화와 답변 2턴 기록")
+    t.expectEqual(answeredStore.conversation[0].role, .me, "첫 턴은 사용자")
+    t.expectEqual(answeredStore.conversation[0].text, "뭘 시킬까?", "사용자 발화 기록")
+    t.expectEqual(answeredStore.conversation[1].role, .idaeri, "두 번째 턴은 이대리")
+    t.expectEqual(
+        answeredStore.conversation[1].text,
+        "1. PM — 마지막 성공 2일 전",
+        "이대리 답변 기록"
+    )
 
     // 대조군: 오래된 제안은 실행 무응답이 아니므로 expireStalePendings 가 실패로 강등하지 않음
     answeredStore.expireStalePendings(now: base.addingTimeInterval(61), timeout: 60)
@@ -261,6 +275,21 @@ func runConsoleStoreTests(_ t: TestRunner) {
     t.expectEqual(unknownCommandStore.pendingCommands.first?.id, knownId, "기존 pending 유지")
     t.expectEqual(unknownCommandStore.pendingCommands.first?.phase, .sent, "미지 commandId 무시")
     t.expectNil(unknownCommandStore.pendingCommands.first?.reason, "미지 commandId reason 미기록")
+    t.expectEqual(unknownCommandStore.conversation.count, 1, "미지 commandId 대화 미기록")
+    t.expectEqual(unknownCommandStore.conversation.first?.text, "리뷰", "기존 사용자 발화 유지")
+
+    // 대화 로그는 최근 40턴만 보존한다. 41번째가 들어오면 가장 오래된 첫 턴을 버린다.
+    let conversationLimitStore = ConsoleStore()
+    for index in 0 ... 40 {
+        _ = conversationLimitStore.enqueueCommand(
+            text: "지시 \(index)",
+            agentTypeHint: nil,
+            sentAt: base.addingTimeInterval(TimeInterval(index))
+        )
+    }
+    t.expectEqual(conversationLimitStore.conversation.count, 40, "대화 로그 40턴 상한")
+    t.expectEqual(conversationLimitStore.conversation.first?.text, "지시 1", "가장 오래된 턴 제거")
+    t.expectEqual(conversationLimitStore.conversation.last?.text, "지시 40", "최근 턴 유지")
 
     _ = tid
     _ = cmdId
