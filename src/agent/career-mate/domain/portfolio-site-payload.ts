@@ -162,11 +162,43 @@ const toSlugSegment = (value: string): string =>
     .replace(/^-|-$/g, '');
 
 // 성과가 속한 저장소. 근거 PR 이 하나도 없으면 어느 저장소인지 알 수 없어 묶을 수 없다.
+//
+// 근거 PR 이 여러 저장소에 걸친 성과가 실제로 절반 가까이 있다(실측 28건 중 12건). 주간 회고가
+// 한 주의 작업을 저장소와 무관하게 한 성과로 합성하기 때문이다. 그래서 대표는 PR 이 가장 많은
+// 저장소로 정한다 — 가장 이른 PR 하나로 정하면 8건 중 1건짜리 저장소가 성과 전체를 가져가
+// 그 주에 주로 일한 저장소가 아닌 곳의 프로젝트로 발행된다(실측 5건).
+// 동률이면 가장 이른 PR 의 저장소를 남긴다. 회차마다 같은 값이 나와야 slug 가 멱등 키로 산다.
 export const repoOf = (
   accomplishment: ProfileAccomplishment,
 ): string | null => {
-  const first = earliestEvidence(sanitizeEvidence(accomplishment.evidence));
-  return first?.repo.trim() || null;
+  const evidence = sanitizeEvidence(accomplishment.evidence).filter((item) =>
+    item.repo.trim(),
+  );
+  const earliest = earliestEvidence(evidence);
+  if (!earliest) {
+    return null;
+  }
+  const countByRepo = new Map<string, number>();
+  for (const item of evidence) {
+    const repo = item.repo.trim();
+    countByRepo.set(repo, (countByRepo.get(repo) ?? 0) + 1);
+  }
+  const earliestRepo = earliest.repo.trim();
+  const [topRepo] = [...countByRepo.entries()].sort(
+    ([leftRepo, leftCount], [rightRepo, rightCount]) => {
+      if (leftCount !== rightCount) {
+        return rightCount - leftCount;
+      }
+      if (leftRepo === earliestRepo) {
+        return -1;
+      }
+      if (rightRepo === earliestRepo) {
+        return 1;
+      }
+      return leftRepo.localeCompare(rightRepo);
+    },
+  )[0] as [string, number];
+  return topRepo;
 };
 
 // 저장소 → 사이트 slug. 저장소가 같으면 회차가 달라도 같은 값이라 멱등 키가 된다.
@@ -288,7 +320,13 @@ export const groupAccomplishments = (
     const evidence = entry.accomplishments.flatMap((item) =>
       sanitizeEvidence(item.evidence),
     );
-    const first = earliestEvidence(evidence);
+    // 대표 링크는 이 묶음 저장소의 PR 중에서 고른다. 성과 근거가 여러 저장소에 걸쳐 있으므로
+    // 묶음 전체에서 가장 이른 PR 을 쓰면 다른 저장소의 주소가 이 프로젝트 링크로 실린다 —
+    // 사내 PR 이 그렇게 실리면 익명화한 저장소의 존재와 작업 시점이 공개 묶음에서 드러난다.
+    const ownEvidence = evidence.filter(
+      (item) => item.repo.trim().toLowerCase() === entry.repo.toLowerCase(),
+    );
+    const first = earliestEvidence(ownEvidence);
     const links: Record<string, string> =
       first && !entry.anonymized ? { github: first.url } : {};
     return {

@@ -385,3 +385,94 @@ describe('익명 묶음의 작업 문장', () => {
     );
   });
 });
+
+describe('여러 저장소에 걸친 성과', () => {
+  const WORK = 'acme-corp/internal-api';
+  const options = { anonymizedOwners: ['acme-corp'] };
+
+  it('PR 이 가장 많은 저장소로 묶는다', () => {
+    // 주간 회고가 한 주의 작업을 저장소와 무관하게 합성하므로 근거가 여러 저장소에 걸친다.
+    // 가장 이른 PR 로 정하면 8건 중 1건짜리 저장소가 성과 전체를 가져간다.
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('한 주의 작업', [
+          evidence(10, '2026-08-01T01:00:00Z', WORK),
+          evidence(11, '2026-08-02T01:00:00Z'),
+          evidence(12, '2026-08-03T01:00:00Z'),
+          evidence(13, '2026-08-04T01:00:00Z'),
+        ]),
+      ]),
+      options,
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe('jsl107-personal-agents');
+    expect(groups[0]?.anonymized).toBe(false);
+  });
+
+  it('사내 PR 이 다수면 사내 묶음으로 간다(익명 판정도 따라간다)', () => {
+    // 대조군 — 다수결이 개인 저장소로 기울기만 하면 익명화가 무력해진다.
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('한 주의 작업', [
+          evidence(10, '2026-08-01T01:00:00Z'),
+          evidence(11, '2026-08-02T01:00:00Z', WORK),
+          evidence(12, '2026-08-03T01:00:00Z', WORK),
+        ]),
+      ]),
+      options,
+    );
+
+    expect(groups[0]?.key).toMatch(/^company-[0-9a-f]{6}$/);
+    expect(groups[0]?.anonymized).toBe(true);
+    expect(groups[0]?.links).toEqual({});
+  });
+
+  it('PR 수가 같으면 가장 이른 PR 의 저장소를 쓴다', () => {
+    // 동률에서 흔들리면 회차마다 slug 가 바뀌어 같은 성과가 새 프로젝트로 또 올라간다.
+    const later = groupAccomplishments(
+      profile([
+        accomplishment('동률', [
+          evidence(10, '2026-08-01T01:00:00Z', 'DDD-Community/ddd-be'),
+          evidence(11, '2026-08-02T01:00:00Z'),
+        ]),
+      ]),
+    );
+    const reversed = groupAccomplishments(
+      profile([
+        accomplishment('동률', [
+          evidence(11, '2026-08-02T01:00:00Z'),
+          evidence(10, '2026-08-01T01:00:00Z', 'DDD-Community/ddd-be'),
+        ]),
+      ]),
+    );
+
+    expect(later.groups[0]?.key).toBe('ddd-community-ddd-be');
+    expect(reversed.groups[0]?.key).toBe('ddd-community-ddd-be');
+  });
+});
+
+describe('묶음 대표 링크', () => {
+  const WORK = 'acme-corp/internal-api';
+  const options = { anonymizedOwners: ['acme-corp'] };
+
+  it('다른 저장소의 PR 주소를 이 묶음 링크로 쓰지 않는다', () => {
+    // 사내 PR 이 더 이르다는 이유로 공개 묶음 링크가 되면 익명화한 저장소가 드러난다.
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('한 주의 작업', [
+          evidence(10, '2026-08-01T01:00:00Z', WORK),
+          evidence(11, '2026-08-02T01:00:00Z'),
+          evidence(12, '2026-08-03T01:00:00Z'),
+        ]),
+      ]),
+      options,
+    );
+
+    expect(groups[0]?.key).toBe('jsl107-personal-agents');
+    expect(groups[0]?.links.github).toBe(
+      'https://github.com/JSL107/personal_agents/pull/11',
+    );
+    expect(JSON.stringify(groups[0]?.links)).not.toContain('acme');
+  });
+});
