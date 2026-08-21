@@ -18,8 +18,11 @@ import {
   measureKoreanStyle,
 } from '../../../humanize/domain/korean-style-metrics';
 import {
+  CODE_MASK_PATTERN,
   extractFencedCodeBlocks,
   HumanizeMarkdownResult,
+  maskFencedCodeBlocks,
+  restoreFencedCodeBlocks,
 } from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -537,6 +540,9 @@ export class PublishNotionDraftUsecase {
     anonymized: AnonymizedBlogDraft,
     context: PublishCandidateContext,
   ): Promise<EditedBlogDraft> {
+    // 코드블록은 표식으로 가려 보낸다. 프롬프트로 금지해도 세 번 중 두 번 손대기 때문이다
+    // (실측: 실제 주소를 예시 주소로 바꾸고, 없던 `max-age=60` 과 가짜 ETag 를 덧붙였다).
+    const { masked, blocks } = maskFencedCodeBlocks(anonymized.body);
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
       request: {
@@ -547,14 +553,34 @@ export class PublishNotionDraftUsecase {
           category: draft.category,
           tags: draft.tags,
           summary: draft.summary,
-          markdown: anonymized.body,
+          markdown: masked,
         }),
       },
     });
-    return this.withMaskedCause(
+    const edited = this.withMaskedCause(
       () => parseBlogEdit(completion.text),
       context.forbiddenTerms,
     );
+    if (!edited.publishable) {
+      return edited;
+    }
+    // 표식을 원본 코드로 되돌린다. 표식이 사라진 자리는 그 예시를 덜어낸 것으로 본다.
+    const body = restoreFencedCodeBlocks(edited.body, blocks);
+    this.assertNoCodeMaskLeft(draft, body);
+    return { ...edited, body };
+  }
+
+  // 되돌리지 못한 표식이 남았는지 본다. 모델이 번호나 형태를 바꾸면 복원이 빗나가고,
+  // 그대로 발행되면 독자가 본문에서 `<!-- CODE_BLOCK_3 -->` 를 보게 된다.
+  private assertNoCodeMaskLeft(draft: NotionDraftPage, body: string): void {
+    if (!CODE_MASK_PATTERN.test(body)) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_CODE_CHANGED,
+      message: `'${draft.title}' 편집 결과에 되돌리지 못한 코드 표식이 남았습니다. 모델이 표식을 변형했습니다.`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
   }
 
   // 발행 부적합 초안을 보류 상태로 옮긴다. 실패하면 예외를 그대로 올린다 — 조용히 넘기면

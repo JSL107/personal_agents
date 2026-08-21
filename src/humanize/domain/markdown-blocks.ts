@@ -111,3 +111,63 @@ export const extractFencedCodeBlocks = (markdown: string): string[] => {
     .filter((block) => FENCE_PATTERN.test(lines[block.startLine]))
     .map((block) => lines.slice(block.startLine, block.endLine + 1).join('\n'));
 };
+
+// 코드블록을 표식으로 가린다. 편집 단계가 코드를 만지지 못하게 하는 장치다.
+//
+// 왜 프롬프트로 안 되는가 — 편집 프롬프트에는 이미 "코드블록 안의 코드, 명령어, 로그: 한 글자도
+// 바꾸지 마라" 가 있다. 그런데 실측하면 세 번 중 두 번 어긴다. 실제 주소(`developer.mozilla.org`)를
+// 예시 주소로 바꾸고, `Cache-Control: private` 에 없던 `max-age=60` 과 가짜 ETag 를 덧붙였다.
+// 규칙을 못 읽는 게 아니라 보이면 만진다. 안 보여주는 편이 확실하다.
+//
+// 말투 단계(`humanizeMarkdownProse`)는 애초에 산문 문단만 골라 보내서 이 문제가 없다.
+// 편집 단계는 글 전체를 봐야 요지를 정할 수 있어 같은 방식을 쓸 수 없다 — 그래서 자리는 남기고
+// 내용만 가린다.
+//
+// 표식을 HTML 주석으로 두는 이유: 마크다운에서 렌더되지 않아 혹시 남아도 화면을 덜 망치고,
+// `[[...]]` 같은 링크 문법으로 오인될 일이 없다.
+const codeMask = (index: number): string => `<!-- CODE_BLOCK_${index} -->`;
+
+// 복원 후 남은 표식을 찾는 패턴. 모델이 표식을 변형하면 복원이 안 되므로 호출부가 검사해야 한다.
+export const CODE_MASK_PATTERN = /<!--\s*CODE_BLOCK_\d+\s*-->/;
+
+export type MaskedCodeBlocks = {
+  masked: string;
+  blocks: string[];
+};
+
+export const maskFencedCodeBlocks = (markdown: string): MaskedCodeBlocks => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  const codeBlocks = blocks.filter((block) =>
+    FENCE_PATTERN.test(lines[block.startLine]),
+  );
+  if (codeBlocks.length === 0) {
+    return { masked: markdown, blocks: [] };
+  }
+
+  const kept: string[] = codeBlocks.map((block) =>
+    lines.slice(block.startLine, block.endLine + 1).join('\n'),
+  );
+  const nextLines = [...lines];
+  // 뒤에서부터 치환한다 — 앞에서 바꾸면 줄 수가 달라져 뒤 블록의 줄 번호가 밀린다.
+  for (let index = codeBlocks.length - 1; index >= 0; index -= 1) {
+    const block = codeBlocks[index];
+    nextLines.splice(
+      block.startLine,
+      block.endLine - block.startLine + 1,
+      codeMask(index + 1),
+    );
+  }
+
+  return { masked: nextLines.join('\n'), blocks: kept };
+};
+
+// 표식을 원본 코드로 되돌린다. 표식이 사라진 자리는 그 예시가 삭제된 것으로 본다(편집은
+// 덜어내는 일이라 삭제는 허용된다). 남은 표식은 호출부가 CODE_MASK_PATTERN 으로 검사한다.
+export const restoreFencedCodeBlocks = (
+  masked: string,
+  blocks: readonly string[],
+): string =>
+  blocks.reduce(
+    (restored, block, index) => restored.split(codeMask(index + 1)).join(block),
+    masked,
+  );
