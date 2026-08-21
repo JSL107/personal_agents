@@ -238,8 +238,7 @@ describe('PublishPortfolioSiteUsecase', () => {
     const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
     // 사이트는 "필드가 있으면 덮는다" 라서 값을 넣지 않는 것이 유일한 보존 방법이다.
     expect('featured' in payload).toBe(false);
-    // 본문 필드는 그대로 실려야 한다 — problem 은 모델이 묶음을 보고 쓴 서술이다.
-    expect(payload.problem).toBe('문제');
+    // 내용 필드는 그대로 실려야 한다(표지는 별도 규칙 — 아래 '표지 보존' 참조).
     expect(payload.process).toEqual(['과거를 재생해 성적을 낸다']);
   });
 
@@ -323,5 +322,39 @@ describe('PublishPortfolioSiteUsecase', () => {
 
     expect(result.failures).toEqual([{ target: 'verify', reason: 'timeout' }]);
     expect(result.missingAfterPublish).toEqual([]);
+  });
+});
+
+describe('표지 보존', () => {
+  it('갱신할 때 제목·서술을 다시 보내지 않는다', async () => {
+    // 모델은 같은 묶음에도 회차마다 다른 이름을 짓는다(실측 10건 중 7건 변동). 매번 실어
+    // 보내면 프로젝트 이름이 매일 흔들리고 사람이 고친 제목도 덮인다.
+    const { usecase, client } = createFixture({
+      listProjects: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'existing-1', slug: SLUG, published: true, data: {} },
+        ]),
+    });
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
+    expect('title' in payload).toBe(false);
+    expect('summary' in payload).toBe(false);
+    expect('problem' in payload).toBe(false);
+    expect('result' in payload).toBe(false);
+    // 내용은 계속 갱신된다 — 새 작업이 붙어도 목록에 반영돼야 한다.
+    expect(payload.process).toEqual(['과거를 재생해 성적을 낸다']);
+    expect(payload.period).toBe('2026.08');
+  });
+
+  it('처음 만들 때는 표지를 싣는다', async () => {
+    const { usecase, client } = createFixture();
+
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const [created] = (client.createProject as jest.Mock).mock.calls[0];
+    expect(created.title).toBe(`${SLUG} 프로젝트`);
   });
 });

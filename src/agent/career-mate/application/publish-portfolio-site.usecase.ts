@@ -276,11 +276,28 @@ export class PublishPortfolioSiteUsecase {
 // 매일 도는 발행이 payload 기본값(false)을 실어 보내면 그 지정이 하루마다 풀린다.
 // 사이트는 "필드가 있으면 덮는다"(content.service.ts 의 `"featured" in data`) 라서
 // 값을 넣지 않는 것이 유일한 보존 방법이다.
+//
+// 표지(title·summary·problem·result)도 첫 발행 이후로는 보내지 않는다. 모델은 같은 묶음에도
+// 회차마다 다른 이름을 짓는다 — 실측에서 10건 중 7건의 제목이 재실행만으로 바뀌었다
+// (2026-08-21). 그대로 두면 프로젝트 이름이 매일 흔들리고, 사람이 편집기에서 고친 제목도
+// 다음 회차에 덮인다. 작업 목록·기간·기술 스택은 계속 갱신되므로 내용은 최신을 유지한다.
 const toUpdatePayload = (
   payload: PortfolioSiteProjectPayload,
 ): Record<string, unknown> => {
-  const { published: _published, featured: _featured, ...updatable } = payload;
+  const {
+    published: _published,
+    featured: _featured,
+    title: _title,
+    summary: _summary,
+    problem: _problem,
+    result: _result,
+    ...updatable
+  } = payload;
   void _published;
   void _featured;
+  void _title;
+  void _summary;
+  void _problem;
+  void _result;
   return updatable;
 };
