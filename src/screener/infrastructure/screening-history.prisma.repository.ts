@@ -33,6 +33,39 @@ export type SaveScreeningRunOutcome =
   // "남았다" 로 오해하므로 이유와 기존 회차를 함께 돌려준다.
   | { saved: false; reason: 'OPERATIONAL_RUN_EXISTS'; runId: number };
 
+export interface UnscoredScreeningItem {
+  itemId: number;
+  tickerId: number;
+}
+
+export interface UnscoredScreeningRun {
+  runId: number;
+  strategy: string;
+  asOf: Date;
+  items: UnscoredScreeningItem[];
+}
+
+export interface ScreeningOutcomeBarRow {
+  tickerId: number;
+  tradeDate: Date;
+  open: Prisma.Decimal | null;
+  close: Prisma.Decimal;
+}
+
+export interface SaveScreeningItemOutcomeInput {
+  itemId: number;
+  horizonDays: number;
+  entryTradeDate: Date;
+  entryPrice: string;
+  horizonTradeDate: Date;
+  horizonPrice: string;
+  returnPct: string;
+}
+
+// 지평 20거래일을 채우려면 달력으로 한 달 남짓이 필요하다. 휴장과 수집 공백을 감안해
+// 넉넉히 잡되, 종목 전체 이력을 끌어오지는 않도록 상한을 둔다.
+const BAR_LOOKAHEAD_DAYS = 90;
+
 @Injectable()
 export class ScreeningHistoryPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -106,5 +139,91 @@ export class ScreeningHistoryPrismaRepository {
         recordedCount: input.items.length,
       };
     });
+  }
+
+  // 아직 그 지평으로 재지 않은 항목을 회차 단위로 묶어 낸다. 같은 회차는 기준일이 같아
+  // 봉 조회를 한 번으로 묶을 수 있다.
+  //
+  // 실행이 성공한 회차만 대상이다. 회차는 모델 호출보다 먼저 확정되므로, 쿼터 소진처럼
+  // 추천이 실패한 날은 회차만 남고 주문이 없다 — 그대로 채점하면 실린 종목 전부가
+  // "보고도 안 샀다" 로 집계돼 대조군이 오염된다. CLI 로 확인차 돌린 회차(agentRunId 없음)도
+  // 같은 이유로 제외된다.
+  async findUnscoredRuns(horizonDays: number): Promise<UnscoredScreeningRun[]> {
+    const items = await this.prisma.screeningRunItem.findMany({
+      where: {
+        outcomes: { none: { horizonDays } },
+        run: { agentRun: { status: 'SUCCEEDED' } },
+      },
+      select: {
+        id: true,
+        tickerId: true,
+        run: { select: { id: true, strategy: true, asOf: true } },
+      },
+      orderBy: [{ runId: 'asc' }, { rank: 'asc' }],
+    });
+
+    const runsById = new Map<number, UnscoredScreeningRun>();
+    for (const item of items) {
+      const found = runsById.get(item.run.id) ?? {
+        runId: item.run.id,
+        strategy: item.run.strategy,
+        asOf: item.run.asOf,
+        items: [],
+      };
+      found.items.push({ itemId: item.id, tickerId: item.tickerId });
+      runsById.set(item.run.id, found);
+    }
+    return [...runsById.values()];
+  }
+
+  async findBarsAfter(
+    tickerIds: number[],
+    asOf: Date,
+  ): Promise<ScreeningOutcomeBarRow[]> {
+    if (tickerIds.length === 0) {
+      return [];
+    }
+    const until = new Date(asOf);
+    until.setUTCDate(until.getUTCDate() + BAR_LOOKAHEAD_DAYS);
+    return await this.prisma.dailyPrice.findMany({
+      where: {
+        tickerId: { in: tickerIds },
+        tradeDate: { gt: asOf, lte: until },
+      },
+      select: {
+        tickerId: true,
+        tradeDate: true,
+        open: true,
+        close: true,
+      },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  // 같은 (항목, 지평) 을 다시 재면 덮어쓴다. 시세가 뒤늦게 보정되는 경우가 있어
+  // 다시 잰 값이 정본이다.
+  async saveScreeningItemOutcomes(
+    rows: SaveScreeningItemOutcomeInput[],
+  ): Promise<number> {
+    for (const row of rows) {
+      await this.prisma.screeningItemOutcome.upsert({
+        where: {
+          itemId_horizonDays: {
+            itemId: row.itemId,
+            horizonDays: row.horizonDays,
+          },
+        },
+        create: row,
+        update: {
+          entryTradeDate: row.entryTradeDate,
+          entryPrice: row.entryPrice,
+          horizonTradeDate: row.horizonTradeDate,
+          horizonPrice: row.horizonPrice,
+          returnPct: row.returnPct,
+          evaluatedAt: new Date(),
+        },
+      });
+    }
+    return rows.length;
   }
 }

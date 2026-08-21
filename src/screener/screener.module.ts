@@ -4,6 +4,7 @@ import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CollectBenchmarkClosesUsecase } from './application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from './application/collect-universe-prices.usecase';
+import { ScoreScreeningOutcomesUsecase } from './application/score-screening-outcomes.usecase';
 import { ScreenUniverseUsecase } from './application/screen-universe.usecase';
 import { SyncUniverseUsecase } from './application/sync-universe.usecase';
 import { ScreeningHistoryPrismaRepository } from './infrastructure/screening-history.prisma.repository';
@@ -16,12 +17,14 @@ import { ScreeningHistoryPrismaRepository } from './infrastructure/screening-his
     CollectBenchmarkClosesUsecase,
     CollectUniversePricesUsecase,
     ScreenUniverseUsecase,
+    ScoreScreeningOutcomesUsecase,
   ],
   exports: [
     SyncUniverseUsecase,
     CollectBenchmarkClosesUsecase,
     CollectUniversePricesUsecase,
     ScreenUniverseUsecase,
+    ScoreScreeningOutcomesUsecase,
   ],
 })
 export class ScreenerModule {}
