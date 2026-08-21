@@ -50,7 +50,7 @@ import {
   DEFAULT_BLOG_STATUS_HOLD,
 } from '../domain/blog-publish-properties';
 import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
-import { BLOG_ANONYMIZE_SYSTEM_PROMPT } from '../domain/prompt/blog-anonymize.prompt';
+import { selectAnonymizeSystemPrompt } from '../domain/prompt/blog-anonymize.prompt';
 import {
   EditedBlogDraft,
   parseBlogEdit,
@@ -240,7 +240,12 @@ export class PublishNotionDraftUsecase {
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
       request: {
-        systemPrompt: BLOG_ANONYMIZE_SYSTEM_PROMPT,
+        // 익명화 계약은 초안 출처에 따라 갈린다. 회사 PR 회고는 사내 식별자를 지우고,
+        // 오늘의 공부 딥다이브는 공개 제품명과 자기 공개 저장소 모듈명을 살린다.
+        systemPrompt: selectAnonymizeSystemPrompt(
+          target.sourceType,
+          STUDY_DEEPDIVE_SOURCE_TYPE,
+        ),
         prompt: this.buildAnonymizePrompt(target, markdown),
         // 형태를 샘플링 단계에서 고정한다 — 코드펜스로 감싸거나 앞뒤에 설명을 붙일 수 없다.
         outputSchema: BLOG_ANONYMIZE_OUTPUT_SCHEMA,

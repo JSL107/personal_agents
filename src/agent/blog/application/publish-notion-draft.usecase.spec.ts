@@ -7,6 +7,10 @@ import { NotionClientPort } from '../../../notion/domain/port/notion-client.port
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import {
+  BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT,
+  BLOG_ANONYMIZE_SYSTEM_PROMPT,
+} from '../domain/prompt/blog-anonymize.prompt';
 import { PublishNotionDraftUsecase } from './publish-notion-draft.usecase';
 
 const draft = {
@@ -920,6 +924,39 @@ describe('PublishNotionDraftUsecase', () => {
 
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
       'page-study-today',
+    );
+  });
+
+  // 익명화 계약이 출처별로 갈린다. 여기서 배선이 끊기면 프롬프트만 새로 쓰고 실제
+  // 발행 경로는 그대로인 상태가 되는데, 산출물만 봐서는 구분되지 않는다.
+  it('오늘의 공부 초안은 공개 프로젝트 익명화 계약으로 부른다', async () => {
+    const studyDraft = { ...draft, sourceType: '오늘의 공부' };
+    const { usecase, modelRouter } = buildUsecase({ drafts: [studyDraft] });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const anonymizeCall = modelRouter.route.mock.calls.find(
+      ([input]) =>
+        !String(input.request.systemPrompt).includes('블로그의 편집자'),
+    );
+    expect(anonymizeCall?.[0].request.systemPrompt).toBe(
+      BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT,
+    );
+  });
+
+  it('회사 PR 회고 초안은 기존 익명화 계약을 그대로 쓴다', async () => {
+    const { usecase, modelRouter } = buildUsecase({
+      drafts: [{ ...draft, sourceType: 'PR' }],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const anonymizeCall = modelRouter.route.mock.calls.find(
+      ([input]) =>
+        !String(input.request.systemPrompt).includes('블로그의 편집자'),
+    );
+    expect(anonymizeCall?.[0].request.systemPrompt).toBe(
+      BLOG_ANONYMIZE_SYSTEM_PROMPT,
     );
   });
 
