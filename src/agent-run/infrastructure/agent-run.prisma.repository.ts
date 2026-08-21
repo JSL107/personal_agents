@@ -634,7 +634,10 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       status: AgentRunStatus.FAILED,
       endedAt: { gte: cutoff },
     };
-    if (slackUserId) {
+    // truthy 검사가 아니라 undefined 검사다. 빈 문자열에서 truthy 검사를 쓰면 사용자 한정이
+    // 통째로 사라져 남의 실패가 이 사용자의 사실표에 실린다(호출부 주석 참조) — 미지정과
+    // 빈 문자열은 다르게 다뤄야 한다. 빈 문자열은 매칭 0건으로 닫는다.
+    if (slackUserId !== undefined) {
       where.inputSnapshot = { path: ['slackUserId'], equals: slackUserId };
     }
     const rows = await this.prisma.agentRun.findMany({
