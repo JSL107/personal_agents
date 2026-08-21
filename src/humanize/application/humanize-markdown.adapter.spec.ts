@@ -96,6 +96,31 @@ describe('humanizeMarkdownProse — 문단만 윤문', () => {
     );
   });
 
+  // J-5(문단 벽) 처방은 모델이 한 값 안에 빈 줄을 넣어 돌려주는 것으로 실현된다.
+  // 되끼울 때 줄 수가 늘어나므로, 뒤 블록이 밀려 코드블록을 덮지 않는지가 관건이다.
+  it('모델이 빈 줄로 나눠 돌려주면 문단이 쪼개지고 뒤 블록은 밀리지 않는다', async () => {
+    const { humanizer } = buildHumanizer((fields) =>
+      Object.fromEntries(
+        Object.entries(fields).map(([key, value]) => [
+          key,
+          value.replace('. ', '.\n\n'),
+        ]),
+      ),
+    );
+
+    const result = await humanizeMarkdownProse(markdown, humanizer);
+
+    expect(result.markdown).toContain(
+      '레거시에서 이렇게 조회했다.\n\n매번 전체를 읽어왔다.',
+    );
+    // 코드·표·인용·목록은 한 줄도 다치지 않는다.
+    expect(result.markdown).toContain('$row = query("SELECT 1");');
+    expect(result.markdown).toContain('| 지연 | 1.2s |');
+    expect(result.markdown).toContain('> 인용은 손대지 않는다');
+    expect(result.markdown).toContain('- 목록도 그대로 둔다');
+    expect(result.changedParagraphs).toBe(2);
+  });
+
   it('윤문 결과에 빈 값이 오면 그 문단은 원문을 유지한다', async () => {
     const { humanizer } = buildHumanizer((fields) => ({
       ...fields,
