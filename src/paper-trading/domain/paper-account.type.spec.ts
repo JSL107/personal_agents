@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import {
   assertWholeShares,
   parsePaperMarket,
+  parseTradeDate,
   parseTradeSide,
   parseTradeStrategy,
 } from './paper-account.type';
@@ -65,6 +66,28 @@ describe('paper account parsing guards', () => {
   it('음수 수량이면 오류를 던진다', () => {
     expect(() => assertWholeShares(new Prisma.Decimal('-5'))).toThrow(
       '국내 주식 수량은 1주 이상이어야 합니다. 받은 값: -5',
+    );
+  });
+});
+
+describe('parseTradeDate', () => {
+  it('YYYY-MM-DD 를 그날 UTC 자정으로 읽는다', () => {
+    expect(parseTradeDate('2026-08-13').toISOString()).toBe(
+      '2026-08-13T00:00:00.000Z',
+    );
+  });
+
+  it('형식이 다르면 거부한다', () => {
+    expect(() => parseTradeDate('2026-8-13')).toThrow(
+      '체결일은 YYYY-MM-DD 형식이어야 합니다. 받은 값: 2026-8-13',
+    );
+  });
+
+  // Date 는 없는 날짜를 다음 달로 굴려서 받아준다(2026-02-30 → 03-02). NaN 검사만으로는
+  // 안 걸리므로 문자열로 되돌려 대조한다 — 체결일이 조용히 이틀 밀리면 그날 성적이 딴 날에 붙는다.
+  it('달력에 없는 날짜가 다음 달로 굴러가는 것을 막는다', () => {
+    expect(() => parseTradeDate('2026-02-30')).toThrow(
+      '유효하지 않은 체결일입니다. 받은 값: 2026-02-30',
     );
   });
 });

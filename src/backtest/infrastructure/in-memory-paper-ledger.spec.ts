@@ -1,13 +1,10 @@
 import { Prisma } from '@prisma/client';
 
-import { RecordPaperTradeUsecase } from '../../paper-trading/application/record-paper-trade.usecase';
-import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
+import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import { InMemoryPaperLedger } from './in-memory-paper-ledger';
 
-const usecaseOf = (ledger: InMemoryPaperLedger): RecordPaperTradeUsecase =>
-  new RecordPaperTradeUsecase(
-    ledger as unknown as PaperTradingPrismaRepository,
-  );
+const usecaseOf = (ledger: InMemoryPaperLedger): ExecutePaperOrderUsecase =>
+  new ExecutePaperOrderUsecase(ledger);
 
 const buyCommand = {
   orderId: 1,
@@ -26,7 +23,7 @@ describe('InMemoryPaperLedger', () => {
     const ledger = new InMemoryPaperLedger('10000000');
     const usecase = usecaseOf(ledger);
 
-    const fill = await usecase.executePendingOrder(buyCommand);
+    const fill = await usecase.execute(buyCommand);
 
     expect(fill.status).toBe('FILLED');
     expect(ledger.positionOf(11)?.quantity.toString()).toBe('10');
@@ -40,7 +37,7 @@ describe('InMemoryPaperLedger', () => {
     const ledger = new InMemoryPaperLedger('100000');
     const usecase = usecaseOf(ledger);
 
-    const fill = await usecase.executePendingOrder({
+    const fill = await usecase.execute({
       ...buyCommand,
       requestedQuantity: '100',
     });
@@ -56,7 +53,7 @@ describe('InMemoryPaperLedger', () => {
     const ledger = new InMemoryPaperLedger('10000000');
     const usecase = usecaseOf(ledger);
 
-    const fill = await usecase.executePendingOrder({
+    const fill = await usecase.execute({
       ...buyCommand,
       tickerId: 99,
       side: 'SELL',
@@ -68,9 +65,9 @@ describe('InMemoryPaperLedger', () => {
   it('매도 체결은 실현손익을 원장에 남긴다', async () => {
     const ledger = new InMemoryPaperLedger('10000000');
     const usecase = usecaseOf(ledger);
-    await usecase.executePendingOrder(buyCommand);
+    await usecase.execute(buyCommand);
 
-    const fill = await usecase.executePendingOrder({
+    const fill = await usecase.execute({
       ...buyCommand,
       orderId: 2,
       side: 'SELL',
@@ -110,8 +107,8 @@ describe('InMemoryPaperLedger', () => {
       ruleVersion: 2,
     });
 
-    await usecase.executePendingOrder(buyCommand);
-    await usecase.executePendingOrder({
+    await usecase.execute(buyCommand);
+    await usecase.execute({
       ...buyCommand,
       orderId: 2,
       tickerId: 99,
@@ -125,10 +122,10 @@ describe('InMemoryPaperLedger', () => {
   it('수량이 0 이 된 보유는 미결제 목록에서 빠진다', async () => {
     const ledger = new InMemoryPaperLedger('10000000');
     const usecase = usecaseOf(ledger);
-    await usecase.executePendingOrder(buyCommand);
+    await usecase.execute(buyCommand);
     expect(ledger.openPositions()).toHaveLength(1);
 
-    await usecase.executePendingOrder({
+    await usecase.execute({
       ...buyCommand,
       orderId: 2,
       side: 'SELL',

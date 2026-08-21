@@ -1,19 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { MoneyValue } from '../../market-data/domain/market-data.type';
 import {
   assertWholeShares,
   PaperMarket,
+  parseTradeDate,
   TradeSide,
   TradeStrategy,
 } from '../domain/paper-account.type';
 import { applyBuy, applySell } from '../domain/position-cost';
 import { calculateTradeCost } from '../domain/trade-cost';
-import {
-  PaperTradingPrismaRepository,
-  PendingOrderFillResult,
-} from '../infrastructure/paper-trading.prisma.repository';
+import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 
 export interface RecordTradeCommand {
   accountName: string;
@@ -36,32 +33,6 @@ export interface RecordTradeResult {
   positionAvgPrice: string;
   realizedPnl: string | null;
 }
-
-export interface FillPendingOrderCommand {
-  orderId: number;
-  accountId: number;
-  tickerId: number;
-  market: PaperMarket;
-  side: TradeSide;
-  requestedQuantity: string;
-  price: string;
-  tradeDate: string;
-  strategy: Exclude<TradeStrategy, 'MANUAL'>;
-}
-
-const parseTradeDate = (value: string): Date => {
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
-    throw new Error(`체결일은 YYYY-MM-DD 형식이어야 합니다. 받은 값: ${value}`);
-  }
-  const tradeDate = new Date(`${value}T00:00:00.000Z`);
-  if (
-    Number.isNaN(tradeDate.getTime()) ||
-    tradeDate.toISOString().slice(0, 10) !== value
-  ) {
-    throw new Error(`유효하지 않은 체결일입니다. 받은 값: ${value}`);
-  }
-  return tradeDate;
-};
 
 @Injectable()
 export class RecordPaperTradeUsecase {
@@ -169,126 +140,5 @@ export class RecordPaperTradeUsecase {
       positionAvgPrice: result.positionAvgPrice,
       realizedPnl: result.realizedPnl,
     };
-  }
-
-  async executePendingOrder(
-    command: FillPendingOrderCommand,
-  ): Promise<PendingOrderFillResult> {
-    const requestedQuantity = new Prisma.Decimal(command.requestedQuantity);
-    const price = new Prisma.Decimal(command.price);
-    assertWholeShares(requestedQuantity);
-    if (price.comparedTo(0) <= 0) {
-      throw new Error(`체결가는 0보다 커야 합니다. 받은 값: ${command.price}`);
-    }
-    const tradeDate = parseTradeDate(command.tradeDate);
-    return await this.repository.fillPendingOrderAtomically({
-      orderId: command.orderId,
-      accountId: command.accountId,
-      tickerId: command.tickerId,
-      side: command.side,
-      strategy: command.strategy,
-      price: price.toString(),
-      tradeDate,
-      decide: ({ account, position }) => {
-        let quantity = requestedQuantity;
-        if (command.side === 'BUY') {
-          quantity = this.findAffordableBuyQuantity({
-            requestedQuantity,
-            price,
-            cashBalance: account.cashBalance,
-            market: command.market,
-            tradeDate,
-          });
-          if (quantity.comparedTo(0) === 0) {
-            return { status: 'EXPIRED', statusReason: '현금 부족' };
-          }
-        } else {
-          const heldQuantity = position?.quantity ?? new Prisma.Decimal(0);
-          if (quantity.comparedTo(heldQuantity.toString()) > 0) {
-            quantity = new Prisma.Decimal(heldQuantity.toString());
-          }
-          if (quantity.comparedTo(0) === 0) {
-            return { status: 'EXPIRED', statusReason: '보유 수량 없음' };
-          }
-        }
-        const grossAmount = quantity.times(price);
-        const cost = calculateTradeCost({
-          market: command.market,
-          side: command.side,
-          grossAmount,
-          tradeDate,
-        });
-        const fee = new Prisma.Decimal(cost.fee);
-        const tax = new Prisma.Decimal(cost.tax);
-        const currentPosition = {
-          quantity: position?.quantity ?? new Prisma.Decimal(0),
-          avgPrice: position?.avgPrice ?? new Prisma.Decimal(0),
-        };
-        if (command.side === 'BUY') {
-          const outcome = applyBuy(currentPosition, { quantity, price, fee });
-          return {
-            status: 'FILLED',
-            quantity: quantity.toString(),
-            fee: cost.fee,
-            tax: cost.tax,
-            realizedPnl: null,
-            cashBalance: account.cashBalance
-              .minus(grossAmount.plus(fee).plus(tax))
-              .toString(),
-            positionQuantity: outcome.quantity,
-            positionAvgPrice: outcome.avgPrice,
-          };
-        }
-        const outcome = applySell(currentPosition, {
-          quantity,
-          price,
-          fee,
-          tax,
-        });
-        return {
-          status: 'FILLED',
-          quantity: quantity.toString(),
-          fee: cost.fee,
-          tax: cost.tax,
-          realizedPnl: outcome.realizedPnl,
-          cashBalance: account.cashBalance
-            .plus(grossAmount.minus(fee).minus(tax))
-            .toString(),
-          positionQuantity: outcome.quantity,
-          positionAvgPrice: outcome.avgPrice,
-        };
-      },
-    });
-  }
-
-  private findAffordableBuyQuantity(input: {
-    requestedQuantity: Prisma.Decimal;
-    price: Prisma.Decimal;
-    cashBalance: MoneyValue;
-    market: PaperMarket;
-    tradeDate: Date;
-  }): Prisma.Decimal {
-    let low = 0;
-    let high = input.requestedQuantity.toNumber();
-    while (low < high) {
-      const candidate = Math.ceil((low + high) / 2);
-      const quantity = new Prisma.Decimal(candidate);
-      const grossAmount = quantity.times(input.price);
-      const cost = calculateTradeCost({
-        market: input.market,
-        side: 'BUY',
-        grossAmount,
-        tradeDate: input.tradeDate,
-      });
-      const required = grossAmount
-        .plus(new Prisma.Decimal(cost.fee))
-        .plus(new Prisma.Decimal(cost.tax));
-      if (input.cashBalance.comparedTo(required) >= 0) {
-        low = candidate;
-      } else {
-        high = candidate - 1;
-      }
-    }
-    return new Prisma.Decimal(low);
   }
 }

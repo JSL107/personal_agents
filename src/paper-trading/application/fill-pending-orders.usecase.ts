@@ -10,7 +10,7 @@ import {
   DuePaperOrderRecord,
   PaperTradingPrismaRepository,
 } from '../infrastructure/paper-trading.prisma.repository';
-import { RecordPaperTradeUsecase } from './record-paper-trade.usecase';
+import { ExecutePaperOrderUsecase } from './execute-paper-order.usecase';
 
 export type FillWindow = 'BEFORE_OPEN' | 'TRADING' | 'AFTER_CLOSE';
 
@@ -105,7 +105,7 @@ export class FillPendingOrdersUsecase {
   constructor(
     private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
-    private readonly recordTrade: RecordPaperTradeUsecase,
+    private readonly executeOrder: ExecutePaperOrderUsecase,
   ) {}
 
   async execute(
@@ -202,7 +202,7 @@ export class FillPendingOrdersUsecase {
       }
       return true;
     }
-    const fill = await this.recordTrade.executePendingOrder({
+    const fill = await this.executeOrder.execute({
       orderId: order.id,
       accountId: order.accountId,
       tickerId: order.tickerId,

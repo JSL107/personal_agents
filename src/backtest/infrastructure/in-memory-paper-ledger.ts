@@ -1,13 +1,14 @@
 import { Prisma } from '@prisma/client';
 
 import {
+  FillPendingOrderInput,
+  PaperOrderLedgerPort,
+  PendingOrderFillResult,
+} from '../../paper-trading/domain/port/paper-order-ledger.port';
+import {
   RecommendationOrderInput,
   RecommendationTradeInput,
 } from '../../paper-trading/domain/recommendation-score';
-import {
-  FillPendingOrderInput,
-  PendingOrderFillResult,
-} from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
 
 interface LedgerPosition {
   id: number;
@@ -17,14 +18,13 @@ interface LedgerPosition {
   avgPrice: Prisma.Decimal;
 }
 
-// 실전 체결 usecase(RecordPaperTradeUsecase)를 그대로 통과시키되 DB 는 건드리지 않는다.
-// 체결 로직을 새로 쓰면 현금 부족 시 수량 축소, 보유 초과 클램프, 만료 판정이 백테스트에는
-// 없게 되어 "실전과 같은 것을 재는가" 가 깨진다. usecase 가 쓰는 리포지토리 메서드는
-// fillPendingOrderAtomically 하나뿐이라 그것만 대역하고, 주입 시점에 호출자가 캐스팅한다.
+// 체결 원장의 메모리 구현. 실전 체결 규칙(ExecutePaperOrderUsecase)을 그대로 통과시키되 DB 는
+// 건드리지 않는다. 체결 로직을 새로 쓰면 현금 부족 시 수량 축소, 보유 초과 클램프, 만료 판정이
+// 백테스트에는 없게 되어 "실전과 같은 것을 재는가" 가 깨진다.
 //
 // 원장은 채점기(matchRecommendationCycles)가 그대로 먹는 형태로 쌓는다. 그래야 백테스트 성적과
 // 실전 성적표가 같은 자로 잰 숫자가 된다.
-export class InMemoryPaperLedger {
+export class InMemoryPaperLedger implements PaperOrderLedgerPort {
   readonly accountId = 1;
   readonly seedAmount: Prisma.Decimal;
   cashBalance: Prisma.Decimal;

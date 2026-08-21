@@ -6,10 +6,10 @@ import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
+import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
 import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
 import {
   LockedPaperRecommendationState,
-  PaperAccountRecord,
   PaperTradingPrismaRepository,
   PendingPaperOrderInput,
 } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';

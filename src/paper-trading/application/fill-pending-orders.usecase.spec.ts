@@ -2,8 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
+import { ExecutePaperOrderUsecase } from './execute-paper-order.usecase';
 import { FillPendingOrdersUsecase } from './fill-pending-orders.usecase';
-import { RecordPaperTradeUsecase } from './record-paper-trade.usecase';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
 
@@ -44,17 +44,15 @@ const createFixture = () => {
       },
     ]),
   };
-  const recordTrade = {
-    executePendingOrder: jest
-      .fn()
-      .mockResolvedValue({ status: 'FILLED', quantity: '10' }),
+  const executeOrder = {
+    execute: jest.fn().mockResolvedValue({ status: 'FILLED', quantity: '10' }),
   };
   const usecase = new FillPendingOrdersUsecase(
     repository as unknown as PaperTradingPrismaRepository,
     marketData as MarketDataPort,
-    recordTrade as unknown as RecordPaperTradeUsecase,
+    executeOrder as unknown as ExecutePaperOrderUsecase,
   );
-  return { usecase, repository, marketData, recordTrade };
+  return { usecase, repository, marketData, executeOrder };
 };
 
 describe('FillPendingOrdersUsecase', () => {
@@ -76,7 +74,7 @@ describe('FillPendingOrdersUsecase', () => {
   });
 
   it('KST 09:30에는 오늘 미조정 봉의 시가로 due 주문을 체결한다', async () => {
-    const { usecase, repository, marketData, recordTrade } = createFixture();
+    const { usecase, repository, marketData, executeOrder } = createFixture();
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T00:30:00.000Z') }),
@@ -94,7 +92,7 @@ describe('FillPendingOrdersUsecase', () => {
     expect(marketData.fetchDailyBars).toHaveBeenCalledWith('005930', 1, {
       adjusted: false,
     });
-    expect(recordTrade.executePendingOrder).toHaveBeenCalledWith({
+    expect(executeOrder.execute).toHaveBeenCalledWith({
       orderId: 101,
       accountId: 11,
       tickerId: 21,
@@ -108,7 +106,7 @@ describe('FillPendingOrdersUsecase', () => {
   });
 
   it('조회 예외는 PENDING을 유지하고 조회실패로 집계한다', async () => {
-    const { usecase, repository, marketData, recordTrade } = createFixture();
+    const { usecase, repository, marketData, executeOrder } = createFixture();
     jest.mocked(marketData.fetchDailyBars).mockRejectedValue(new Error('429'));
 
     await expect(
@@ -122,7 +120,7 @@ describe('FillPendingOrdersUsecase', () => {
       notYetTraded: 0,
     });
     expect(repository.expirePendingOrder).not.toHaveBeenCalled();
-    expect(recordTrade.executePendingOrder).not.toHaveBeenCalled();
+    expect(executeOrder.execute).not.toHaveBeenCalled();
   });
 
   it('장중 응답에 오늘 봉이 없으면 별도 집계하고 PENDING을 유지한다', async () => {
@@ -173,7 +171,7 @@ describe('FillPendingOrdersUsecase', () => {
   });
 
   it('주문을 순서대로 개별 조회하고 체결·만료 결과를 집계한다', async () => {
-    const { usecase, repository, marketData, recordTrade } = createFixture();
+    const { usecase, repository, marketData, executeOrder } = createFixture();
     repository.findDuePendingOrders.mockResolvedValue([
       dueOrder(),
       dueOrder({
@@ -203,7 +201,7 @@ describe('FillPendingOrdersUsecase', () => {
       ])
       .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('timeout'));
-    recordTrade.executePendingOrder.mockResolvedValueOnce({ status: 'FILLED' });
+    executeOrder.execute.mockResolvedValueOnce({ status: 'FILLED' });
 
     await expect(
       usecase.execute({ executedAt: new Date('2026-08-13T06:30:00.000Z') }),
@@ -317,9 +315,9 @@ describe('FillPendingOrdersUsecase', () => {
     expect(repository.expireDuePendingOrders).not.toHaveBeenCalled();
   });
   it('체결 상세에 종목·체결 수량·체결가를 담는다', async () => {
-    const { usecase, recordTrade } = createFixture();
+    const { usecase, executeOrder } = createFixture();
     // 현금 한도로 주문 10주가 4주만 체결된 상황 — 주문 수량이 아니라 체결 수량이 남아야 한다.
-    recordTrade.executePendingOrder.mockResolvedValue({
+    executeOrder.execute.mockResolvedValue({
       status: 'FILLED',
       quantity: '4',
     });
@@ -343,7 +341,7 @@ describe('FillPendingOrdersUsecase', () => {
   });
 
   it('체결되지 않은 주문의 사유를 상세로 남긴다', async () => {
-    const { usecase, repository, marketData, recordTrade } = createFixture();
+    const { usecase, repository, marketData, executeOrder } = createFixture();
     repository.findDuePendingOrders.mockResolvedValue([
       dueOrder(),
       dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
@@ -361,7 +359,7 @@ describe('FillPendingOrdersUsecase', () => {
         },
       ])
       .mockResolvedValueOnce([]);
-    recordTrade.executePendingOrder.mockResolvedValue({
+    executeOrder.execute.mockResolvedValue({
       status: 'EXPIRED',
       statusReason: '현금 부족',
     });
