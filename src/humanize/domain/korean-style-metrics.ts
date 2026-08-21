@@ -21,6 +21,11 @@ export type KoreanStyleMetrics = {
   shortSentencePercent: number;
   longestSentenceLength: number;
   colloquialEndingPercent: number;
+  // 종결 어미 중 `~요` 로 끝나는 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
+  // 여기에 구어 어미가 6분의 1쯤 얹힌다" 다 — 즉 문체는 두 축이고, 구어 어미는 `~요` 축의
+  // 부분집합이다. 이 축이 없으면 `~에요`·`~봐요` 로 쓴 글이 "구어 6%" 로만 보여 딱딱한 글로
+  // 오독된다(실측: 발행본 2026-08-19-http-cache 가 그랬다).
+  yoEndingPercent: number;
   bannedConnectiveCount: number;
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
@@ -51,6 +56,10 @@ export type KoreanStyleParagraphMetrics = {
 
 const SHORT_SENTENCE_MAX = 20;
 // 프로파일의 구어 종결어미. 이유를 문장 끊고 뒤에 던지는 이 문체의 표식이다.
+//
+// 이 목록에 `~에요`·`~아요` 를 넣지 않는다. 그 둘은 이유를 던지는 어미가 아니라 해요체 평서형이라
+// 다른 축이고(→ yoEndingPercent), 기준값 16.5% 가 이 목록으로 실측된 것이라 늘리면 그 기준이
+// 무효가 된다. 축을 섞지 말고 나란히 둔다.
 const COLLOQUIAL_ENDINGS = [
   '니까요',
   '거든요',
@@ -69,6 +78,13 @@ const BANNED_CONNECTIVES = [
   '한편',
 ];
 const MEASURABLE_SENTENCE_MIN = 40;
+// 합쇼체 종결 판정. `습니다` 를 나열하지 않고 `니다` 로 본다 — 합쇼체는 자음 뒤에서 `-습니다`,
+// 모음 뒤에서 `-ㅂ니다` 로 갈려 "씁니다·갑니다·봅니다" 처럼 활용형이 무한하다. 어미를 열거하면
+// 정확히 그 활용형들이 빠져 합쇼체가 0 으로 세어진다(실측으로 걸렸다).
+// 한계: "아니다" 같은 반말 평서형도 걸린다. 존댓말로 쓰는 이 문체에서는 나오지 않아 감수한다.
+const FORMAL_ENDING = '니다';
+// `~요` 와 합쇼체만 세고 나머지(명사 종결·인용·목록)는 분모에서 뺀다 — 분모에 넣으면 불릿이
+// 많은 글의 종결체 비율이 통째로 내려가 축이 무의미해진다.
 // 문단 벽 임계. 문장 길이와 달리 **공백을 포함해** 센다 — 이 지표가 재는 것은 어휘량이 아니라
 // 화면에서 덩어리가 차지하는 면적이고, 거기엔 공백도 자리를 차지한다.
 const PARAGRAPH_WALL_SENTENCE_MIN = 4;
@@ -157,6 +173,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       shortSentencePercent: 0,
       longestSentenceLength: 0,
       colloquialEndingPercent: 0,
+      yoEndingPercent: 0,
       bannedConnectiveCount: 0,
       measurable: false,
       paragraph: measureParagraphs(markdown),
@@ -179,6 +196,16 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     ),
   ).length;
 
+  // 종결체 두 축. 문장 끝의 마침표·인용부호를 걷어낸 뒤 본다.
+  const stripTail = (sentence: string): string =>
+    sentence.replace(/[.!?"'`)\]]+$/g, '');
+  const yoCount = sentences.filter((sentence) =>
+    stripTail(sentence).endsWith('요'),
+  ).length;
+  const formalCount = sentences.filter((sentence) =>
+    stripTail(sentence).endsWith(FORMAL_ENDING),
+  ).length;
+
   const bannedConnectiveCount = BANNED_CONNECTIVES.reduce(
     (count, connective) =>
       count +
@@ -196,6 +223,10 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     ),
     longestSentenceLength: Math.max(...lengths),
     colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
+    yoEndingPercent:
+      yoCount + formalCount === 0
+        ? 0
+        : toPercent(yoCount, yoCount + formalCount),
     bannedConnectiveCount,
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
@@ -209,7 +240,7 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable

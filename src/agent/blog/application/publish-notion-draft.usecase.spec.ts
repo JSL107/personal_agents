@@ -285,7 +285,7 @@ describe('PublishNotionDraftUsecase', () => {
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
-        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n코드 예시: 0개\n문체 지표: 문장 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 금지접속사 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 짧은문장 없는 문단 0개\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n코드 예시: 0개\n문체 지표: 문장 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 요체 100% · 금지접속사 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 짧은문장 없는 문단 0개\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
       payload: {
         pageId: draft.pageId,
         path: 'src/content/posts/2026-08-19-shared-database-migration.md',
