@@ -288,6 +288,8 @@ export class PublishNotionDraftUsecase {
       publishedAt: new Date().toISOString(),
       pageId: target.pageId,
       body: humanized.markdown,
+      // 편집 단계가 고른 분류. 모르는 값이면 파서가 비워 두고 프론트매터에서 생략된다.
+      ...(edited.category ? { category: edited.category } : {}),
     });
     const hits = scanForbiddenTerms(
       // frontmatter title/description은 모델 body와 별도 입력이므로 함께 검사하지 않으면
