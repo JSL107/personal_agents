@@ -215,4 +215,27 @@ describe('HandleConversationTurnUsecase', () => {
     expect(result).toEqual({ kind: 'WORKER_RAN', result: workerResult });
     expect(dependencies.conversationMemory.appendTurn).not.toHaveBeenCalled();
   });
+  it('기억 기록이 실패해도 worker 성공 결과를 예외로 뒤집지 않는다', async () => {
+    const dependencies = buildDependencies();
+    dependencies.router.dispatch.mockResolvedValue(workerResult);
+    dependencies.conversationMemory.appendTurn.mockRejectedValue(
+      new Error('redis down'),
+    );
+    const usecase = new HandleConversationTurnUsecase(
+      dependencies.router,
+      dependencies.conversationMemory,
+      dependencies.conversationalReply,
+    );
+
+    // 여기서 throw 하면 orchestrator 가 rejected 를 발행해, 이미 부수효과를 낸 실행을
+    // 사용자가 실패로 읽고 재실행한다.
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      conversationKey: 'U1:CONSOLE',
+      text: '오늘 계획 짜줘',
+      source: 'REMOTE_CONSOLE',
+    });
+
+    expect(result).toEqual({ kind: 'WORKER_RAN', result: workerResult });
+  });
 });

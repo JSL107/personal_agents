@@ -291,6 +291,32 @@ func runConsoleStoreTests(_ t: TestRunner) {
     t.expectEqual(conversationLimitStore.conversation.first?.text, "지시 1", "가장 오래된 턴 제거")
     t.expectEqual(conversationLimitStore.conversation.last?.text, "지시 40", "최근 턴 유지")
 
+    // pending 이 정리된 뒤 도착하는 worker 산출물도 대화에 남아야 한다.
+    // `run.finished` → `.done` → janitor 즉시 제거 → `command.answered` 가 실제 순서다.
+    let lateStore = ConsoleStore()
+    let lateId = lateStore.enqueueCommand(text: "오늘 계획 짜줘", agentTypeHint: nil, sentAt: base)
+    lateStore.removeCommand(id: lateId)
+    t.expectEqual(lateStore.pendingCommands.count, 0, "janitor 가 pending 을 제거한 상태")
+    lateStore.apply(
+        event: .commandAnswered(commandId: lateId.uuidString, message: "계획을 정리했습니다.")
+    )
+    t.expectEqual(lateStore.conversation.count, 2, "pending 없어도 내 command 응답은 대화에 남는다")
+    t.expectEqual(lateStore.conversation.last?.text, "계획을 정리했습니다.", "산출물 기록")
+
+    // 대조군: 내가 보내지 않은 command 의 응답은 여전히 대화에 넣지 않는다.
+    let foreignStore = ConsoleStore()
+    foreignStore.apply(
+        event: .commandAnswered(commandId: UUID().uuidString, message: "남의 세션 응답")
+    )
+    t.expectEqual(foreignStore.conversation.count, 0, "남의 command 응답은 대화 미기록")
+
+    // 전송 실패는 대화 로그에 남아야 한다 — 대표 바에 배지가 없어 다른 자리가 없다.
+    let failedStore = ConsoleStore()
+    let failedId = failedStore.enqueueCommand(text: "리뷰 봐줘", agentTypeHint: nil, sentAt: base)
+    failedStore.markCommandFailed(id: failedId)
+    t.expectEqual(failedStore.conversation.count, 2, "전송 실패도 대화에 남는다")
+    t.expectEqual(failedStore.conversation.last?.role, .idaeri, "실패 안내는 이대리 턴")
+
     _ = tid
     _ = cmdId
 

@@ -403,7 +403,7 @@ describe('PreconditionChainOrchestrator', () => {
       type: 'command.answered',
       commandId: 'c1',
       message: truncated
-        ? `${'가'.repeat(600)}\n\n…(전문은 Slack 에서)`
+        ? `${'가'.repeat(600)}\n\n…(길어서 여기까지만 보여드려요)`
         : formattedText,
     });
   });
