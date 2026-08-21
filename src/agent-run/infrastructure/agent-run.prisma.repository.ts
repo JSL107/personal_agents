@@ -627,12 +627,18 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     slackUserId?: string;
   }): Promise<FailedRunDetail[]> {
     const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    // slackUserId 는 agent_run 의 컬럼이 아니라 inputSnapshot JSON 안에 있다. 스칼라처럼
+    // where 에 얹으면 Prisma 가 런타임에 거부한다 (스프레드로 넣으면 excess property 검사가
+    // 비껴가 컴파일에서 안 잡힘) — where 변수에 대입하는 아래 형태를 유지할 것.
+    const where: Prisma.AgentRunWhereInput = {
+      status: AgentRunStatus.FAILED,
+      endedAt: { gte: cutoff },
+    };
+    if (slackUserId) {
+      where.inputSnapshot = { path: ['slackUserId'], equals: slackUserId };
+    }
     const rows = await this.prisma.agentRun.findMany({
-      where: {
-        status: AgentRunStatus.FAILED,
-        endedAt: { gte: cutoff },
-        ...(slackUserId === undefined ? {} : { slackUserId }),
-      },
+      where,
       orderBy: { endedAt: 'desc' },
       select: { agentType: true, output: true, endedAt: true },
     });
