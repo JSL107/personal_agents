@@ -36,7 +36,7 @@ const position = (
   priceDate: '2026-08-18',
   marketValue: '2103740',
   unrealizedPnl: '105207',
-  returnRate: '5.26',
+  returnRate: '12.53',
   isStale: false,
   ...overrides,
 });
@@ -93,7 +93,7 @@ describe('ApplyExitBandUsecase', () => {
         orders: [
           {
             tickerId: 1976,
-            reason: '익절 밴드 도달: 평가 손익률 5.26% (기준 +2% 이상)',
+            reason: '익절 밴드 도달: 평가 손익률 12.53% (기준 +10% 이상)',
           },
         ],
       }),
@@ -214,20 +214,24 @@ describe('ApplyExitBandUsecase', () => {
 
     expect(result.accounts[0].created).toBe(1);
     expect(result.accounts[0].reasons).toEqual([
-      '121440 익절 밴드 도달: 평가 손익률 5.26% (기준 +2% 이상)',
+      '121440 익절 밴드 도달: 평가 손익률 12.53% (기준 +10% 이상)',
     ]);
   });
 
+  // 임계값은 기본값과 겹치지 않는 값으로 검증한다. 기본값과 같은 값을 넘기면 호출자 값이
+  // 무시돼도 통과한다.
   it('호출자가 넘긴 임계값이 판정과 저장 사유에 모두 반영된다', async () => {
+    const threshold = { takeProfitPercent: 20, stopLossPercent: -15 };
+
     await usecase.execute({
       accounts: [
         entry(
           'LONG_TERM',
-          evaluation({ positions: [position({ returnRate: '3' })] }),
+          evaluation({ positions: [position({ returnRate: '12' })] }),
         ),
       ],
       executedAt,
-      threshold: { takeProfitPercent: 10, stopLossPercent: -5 },
+      threshold,
     });
     expect(repository.createExitBandOrders).not.toHaveBeenCalled();
 
@@ -235,19 +239,21 @@ describe('ApplyExitBandUsecase', () => {
       accounts: [
         entry(
           'LONG_TERM',
-          evaluation({ positions: [position({ returnRate: '-6' })] }),
+          evaluation({ positions: [position({ returnRate: '-16' })] }),
         ),
       ],
       executedAt,
-      threshold: { takeProfitPercent: 10, stopLossPercent: -5 },
+      threshold,
     });
 
     expect(repository.createExitBandOrders).toHaveBeenCalledWith(
       expect.objectContaining({
+        // 판정에 쓴 밴드가 주문에도 실려야 나중에 성적을 밴드별로 가를 수 있다.
+        threshold,
         orders: [
           {
             tickerId: 1976,
-            reason: '손절 밴드 이탈: 평가 손익률 -6.00% (기준 -5% 이하)',
+            reason: '손절 밴드 이탈: 평가 손익률 -16.00% (기준 -15% 이하)',
           },
         ],
       }),

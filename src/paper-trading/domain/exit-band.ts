@@ -1,8 +1,16 @@
 // 보유 종목을 밴드 밖으로 나가면 정리하는 규칙. 판정은 그날 종가로 하고 체결은
 // 다음 거래일 시가라, "밴드를 넘긴 그 가격에 팔린다"는 보장이 없다 — 갭에 그대로
 // 노출된다. 장중 실시간 청산이 아니라 일봉 기반 시스템이라 생기는 구조적 지연이다.
-export const DEFAULT_TAKE_PROFIT_PERCENT = 2;
-export const DEFAULT_STOP_LOSS_PERCENT = -0.2;
+//
+// 값의 근거: docs/superpowers/specs/2026-08-21-exit-band-measurement.md.
+// 표본 내(2026-01-02~05-29)에서 밴드 후보 6종 + 무밴드 대조군을 두 전략으로 돌려 고르고,
+// 표본 밖(06-01~08-18)에서 그 선택이 요행이 아닌지 확인했다. 여덟 칸(2전략 x 2구간 x
+// 최종·평균) 중 다섯 칸에서 +10 / -5 가 1위였고, 이전 값 +2 / -0.2 가 1위인 칸은 하나였다.
+// 넓히는 방향은 두 전략·두 구간에서 일관됐지만 정확한 값이 좁혀진 것은 아니다 — 구간이
+// 둘뿐이고 성격이 정반대(대세 상승 -> 급락)라 국면 차이가 밴드 차이보다 성적을 크게 흔든다.
+// 다시 튜닝할 때는 구간을 새로 잘라야 한다(위 문서의 표를 보고 고르면 표본 밖이 아니게 된다).
+export const DEFAULT_TAKE_PROFIT_PERCENT = 10;
+export const DEFAULT_STOP_LOSS_PERCENT = -5;
 
 export type ExitBandReason = 'TAKE_PROFIT' | 'STOP_LOSS';
 
@@ -27,6 +35,21 @@ export interface ExitBandDecision {
   reason: ExitBandReason;
   returnRatePercent: number;
 }
+
+export interface ExitBandSellOrderRecord {
+  takeProfitPercent: string | null;
+  stopLossPercent: string | null;
+}
+
+export interface ExitBandUsageSummary {
+  // `+10/-5` 꼴 라벨. 이웃한 ruleVersions 가 Int[] 인 것과 같은 이유로 배열 하나에 담는다 —
+  // 이 값으로 계산하는 코드는 없고(수치 원본은 paper_order 의 두 컬럼이다) 섞였는지만 읽는다.
+  bands: string[];
+  bandlessSellCount: number;
+}
+
+export const formatExitBandLabel = (band: ExitBandThreshold): string =>
+  `+${band.takeProfitPercent}/${band.stopLossPercent}`;
 
 export const DEFAULT_EXIT_BAND: ExitBandThreshold = {
   takeProfitPercent: DEFAULT_TAKE_PROFIT_PERCENT,
@@ -88,4 +111,43 @@ export const describeExitBandReason = (
     return `익절 밴드 도달: 평가 손익률 ${rate}% (기준 +${threshold.takeProfitPercent}% 이상)`;
   }
   return `손절 밴드 이탈: 평가 손익률 ${rate}% (기준 ${threshold.stopLossPercent}% 이하)`;
+};
+
+// 이 구간의 매도 주문에 어떤 밴드 설정이 박혀 있었는지 모은다. 값이 둘 이상이면 밴드를 바꾼
+// 구간을 걸친 표본이라는 뜻이고, 그 사실이 성적을 읽는 전제다 — 뭉뚱그리면 "밴드를 넓혀서
+// 나아졌다" 를 옛 밴드의 성적으로 주장하게 된다(추천의 규칙 버전이 같은 이유로 집합이다).
+//
+// 사이클별 귀속이 아니다. "이 매수를 닫은 매도가 어느 밴드였나" 는 구간 집계가 생긴 뒤의
+// 일이고, 그전까지 이 요약은 섞임을 드러내는 역할만 한다.
+export const summarizeExitBandUsage = (
+  sellOrders: ExitBandSellOrderRecord[],
+): ExitBandUsageSummary => {
+  const bands = new Map<string, ExitBandThreshold>();
+  let bandlessSellCount = 0;
+  for (const order of sellOrders) {
+    // 밴드가 만들지 않은 매도(모델이 고른 매도)는 밴드 성적의 분모가 아니다. 건수로 남기지
+    // 않으면 밴드 설정 하나로 닫힌 표본처럼 읽힌다.
+    if (order.takeProfitPercent === null || order.stopLossPercent === null) {
+      bandlessSellCount += 1;
+      continue;
+    }
+    const band = {
+      takeProfitPercent: Number(order.takeProfitPercent),
+      stopLossPercent: Number(order.stopLossPercent),
+    };
+    bands.set(formatExitBandLabel(band), band);
+  }
+  return {
+    bands: [...bands.values()]
+      .sort((left, right) => {
+        const takeProfitDifference =
+          left.takeProfitPercent - right.takeProfitPercent;
+        if (takeProfitDifference !== 0) {
+          return takeProfitDifference;
+        }
+        return left.stopLossPercent - right.stopLossPercent;
+      })
+      .map(formatExitBandLabel),
+    bandlessSellCount,
+  };
 };

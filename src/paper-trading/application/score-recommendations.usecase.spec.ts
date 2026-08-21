@@ -18,6 +18,7 @@ describe('ScoreRecommendationsUsecase', () => {
   it('계좌별 실제·그림자·벤치마크·포트폴리오 성적과 제외 사유를 집계한다', async () => {
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [
         { id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') },
         { id: 8, name: 'SWING', seedAmount: decimal('1000') },
@@ -184,6 +185,7 @@ describe('ScoreRecommendationsUsecase', () => {
   it('krxMarket null을 조용히 버리지 않고 anomaly와 shadow unavailable로 센다', async () => {
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [
         {
@@ -249,11 +251,20 @@ describe('ScoreRecommendationsUsecase', () => {
     });
   });
 
-  it('계좌별 채점 결과를 규칙 버전과 함께 원장에 저장한다', async () => {
+  it('계좌별 채점 결과를 규칙 버전·청산 밴드와 함께 원장에 저장한다', async () => {
     // 원장에 남는 회차는 기준일이 KST 오늘일 때뿐이라 시계를 그날로 고정한다.
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      // 밴드를 바꾼 구간을 걸친 표본 + 모델이 고른 매도 1건.
+      sellOrders: [
+        { accountId: 7, takeProfitPercent: '2', stopLossPercent: '-0.2' },
+        { accountId: 7, takeProfitPercent: '10', stopLossPercent: '-5' },
+        { accountId: 7, takeProfitPercent: '10', stopLossPercent: '-5' },
+        { accountId: 7, takeProfitPercent: null, stopLossPercent: null },
+        // 다른 계좌의 매도가 이 계좌 집계에 섞이면 안 된다.
+        { accountId: 8, takeProfitPercent: '3', stopLossPercent: '-3' },
+      ],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [
         {
@@ -332,6 +343,9 @@ describe('ScoreRecommendationsUsecase', () => {
         // 중복은 접고 오름차순으로 — 두 값이 남았다는 것 자체가 "규칙이 바뀐 구간을 걸쳤다" 는 사실이다.
         ruleVersions: [2, 3],
         unknownRuleVersionCount: 1,
+        // 밴드도 같은 이유로 집합이다 — 두 값이 남았다는 것이 "밴드를 바꾼 구간을 걸쳤다" 다.
+        exitBands: ['+2/-0.2', '+10/-5'],
+        bandlessSellCount: 1,
         recommendationCount: result.accounts[0].score.recommendationCount,
         accountReturnRate: '0.1',
         snapshotCount: 1,
@@ -339,6 +353,7 @@ describe('ScoreRecommendationsUsecase', () => {
       }),
     );
     expect(result.persisted).toBe(true);
+    expect(result.accounts[0].exitBands).toEqual(['+2/-0.2', '+10/-5']);
     jest.useRealTimers();
   });
 
@@ -348,6 +363,7 @@ describe('ScoreRecommendationsUsecase', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [],
       recommendationTrades: [],
@@ -374,6 +390,7 @@ describe('ScoreRecommendationsUsecase', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [
         {
@@ -428,6 +445,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const buyDate = new Date('2026-08-03T00:00:00.000Z');
     const sellDate = new Date('2026-08-05T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [
         {
@@ -506,6 +524,7 @@ describe('ScoreRecommendationsUsecase', () => {
   it('집계 대상이 없으면 평가일 지수가 없어도 원장에 남긴다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [],
       recommendationTrades: [],
@@ -533,6 +552,7 @@ describe('ScoreRecommendationsUsecase', () => {
   it('과거 기준일 재채점은 그날 행을 덮어쓰지 않도록 원장에 남기지 않는다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-19T03:00:00.000Z'));
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [],
       recommendationTrades: [],
@@ -559,6 +579,7 @@ describe('ScoreRecommendationsUsecase', () => {
     // 기준일은 오늘로 둔다 — 저장이 막히는 이유가 구간 지정 하나임을 분리하기 위해서다.
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
       orders: [],
       recommendationTrades: [],
@@ -585,6 +606,7 @@ describe('ScoreRecommendationsUsecase', () => {
   it('입력 생략 시 KST 오늘을 UTC 날짜 경계로 정규화하고 빈 표본도 두 계좌 결과로 반환한다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-13T16:30:00.000Z'));
     repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
       accounts: [
         { id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') },
         { id: 8, name: 'SWING', seedAmount: decimal('1000') },
