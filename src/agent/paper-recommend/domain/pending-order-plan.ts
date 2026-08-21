@@ -1,5 +1,3 @@
-import { PaperRecommendationPosition } from './paper-recommendation.type';
-
 export interface PendingOrderRecord {
   tickerId: number;
   side: 'BUY' | 'SELL';
@@ -14,16 +12,13 @@ export interface PendingOrderPlan {
   // 같은 현금이 여러 주문에 중복 배정돼 성적이 실제보다 좋게 나온다.
   availableCash: number;
   reservedCash: number;
-  // 대기 매수 종목. 후보 랭킹에서 빼고 보유 자리로도 센다.
+  // 대기 매수 종목. 같은 종목을 겹쳐 사지 않도록 추천 후보에서 뺀다.
   pendingBuyCodes: ReadonlySet<string>;
   // 대기 매도 종목. 같은 종목을 또 팔지 않도록 매도 추천에서 뺀다.
   pendingSellCodes: ReadonlySet<string>;
-  // 매수·매도 어느 쪽이든 대기 주문이 있는 종목. 주문 생성 직전 마지막 방어선이다.
+  // 매수·매도 어느 쪽이든 대기 주문이 있는 종목. 회차 안에서 주문을 여러 번 만드는
+  // 백테스트 루프가 방금 만든 주문까지 막는 데 쓴다.
   pendingTickerIds: ReadonlySet<number>;
-  // 대기 매수를 "이미 내 것" 으로 세기 위한 가상 포지션. 제약 함수의 positions 에
-  // 덧붙이면 ALREADY_HELD 로 걸러진다. 수량 1 은 자리를 차지하기 위한 최소값일 뿐
-  // 실제 주문 수량이 아니다 — 이 값은 매도 수량으로 쓰이지 않는다.
-  reservedPositions: PaperRecommendationPosition[];
 }
 
 export interface PlanPendingOrdersInput {
@@ -48,12 +43,11 @@ export const planPendingOrders = (
   const pendingBuyCodes = new Set<string>();
   const pendingSellCodes = new Set<string>();
   const pendingTickerIds = new Set<number>();
-  const reservedPositions: PaperRecommendationPosition[] = [];
 
   for (const order of input.pendingOrders) {
     pendingTickerIds.add(order.tickerId);
-    // 코드를 모르는 종목은 코드로 매칭하는 집합·가상 포지션에 넣을 수 없다.
-    // 그래도 pendingTickerIds 에는 남아 마지막 방어선이 잡는다.
+    // 코드를 모르는 종목은 코드로 매칭하는 집합에 넣을 수 없다. 그래도 pendingTickerIds
+    // 에는 남는다 — 후보에도 없는 종목이라 추천으로 올라올 수 없다.
     const code = input.codeOf(order.tickerId);
     if (order.side === 'SELL') {
       if (code !== undefined) {
@@ -73,11 +67,6 @@ export const planPendingOrders = (
       continue;
     }
     pendingBuyCodes.add(code);
-    reservedPositions.push({
-      tickerId: order.tickerId,
-      code,
-      quantity: 1,
-    });
   }
 
   return {
@@ -86,6 +75,5 @@ export const planPendingOrders = (
     pendingBuyCodes,
     pendingSellCodes,
     pendingTickerIds,
-    reservedPositions,
   };
 };

@@ -374,16 +374,11 @@ export class ReplayBacktestUsecase {
         name: stock.name,
         close: stock.indicators.close,
       })),
-      // 가상 포지션을 앞에 둔다 — 같은 코드가 겹치면 뒤 항목이 Map 을 덮어써, 실제 보유
-      // 수량이 가상 수량 1 로 바뀌면 매도가 1주만 나간다.
-      positions: [
-        ...plan.reservedPositions,
-        ...context.ledger.openPositions().map((position) => ({
-          tickerId: position.tickerId,
-          code: context.tickerById.get(position.tickerId)?.code ?? '',
-          quantity: Number(position.quantity.toString()),
-        })),
-      ],
+      positions: context.ledger.openPositions().map((position) => ({
+        tickerId: position.tickerId,
+        code: context.tickerById.get(position.tickerId)?.code ?? '',
+        quantity: Number(position.quantity.toString()),
+      })),
       cashBalance: plan.availableCash,
       accountValuation,
       // CLI 의 --weight 를 그대로 쓴다. 이 값을 넘기지 않으면 운영 상수 20% 가 적용돼
