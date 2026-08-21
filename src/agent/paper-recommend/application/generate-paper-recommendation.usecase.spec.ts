@@ -7,7 +7,10 @@ import { ModelProviderName } from '../../../model-router/domain/model-router.typ
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { PaperTradingPrismaRepository } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { ScreenUniverseUsecase } from '../../../screener/application/screen-universe.usecase';
-import { GeneratePaperRecommendationUsecase } from './generate-paper-recommendation.usecase';
+import {
+  GeneratePaperRecommendationUsecase,
+  PaperRecommendationSuccess,
+} from './generate-paper-recommendation.usecase';
 
 const decidedAt = new Date('2026-08-13T07:00:00.000Z');
 
@@ -695,6 +698,69 @@ describe('GeneratePaperRecommendationUsecase', () => {
       ]),
     );
     expect(decision.orders).toHaveLength(2);
+    const lockedResult = decision.result as PaperRecommendationSuccess;
+    expect(lockedResult.skipped).toEqual(
+      expect.arrayContaining([
+        {
+          side: 'BUY',
+          code: '000660',
+          name: 'SK하이닉스',
+          reason: 'ALREADY_HELD',
+        },
+        {
+          side: 'SELL',
+          code: '000660',
+          name: 'SK하이닉스',
+          reason: 'PENDING_ORDER_EXISTS',
+        },
+      ]),
+    );
+  });
+
+  it('반대 방향 대기 주문이 있는 종목도 최종 안전망에서 제외한다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [],
+        buys: [{ code: '000660', reason: '신규 매수' }],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    repository.saveRecommendationAtomically.mockImplementation(
+      async ({ decide }) =>
+        decide({
+          account: {
+            id: 41,
+            seedAmount: { toString: () => '10000000' } as never,
+            cashBalance: { toString: () => '10000000' } as never,
+          },
+          positions: [],
+          latestValuation: null,
+          existingOrders: [
+            {
+              tickerId: 71,
+              side: 'SELL',
+              quantity: { toString: () => '1' } as never,
+              indicatorSnapshot: indicators,
+            },
+          ],
+        }).result,
+    );
+
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+
+    expect(result.completed[0].orders).toEqual([]);
+    expect(result.completed[0].skipped).toEqual([
+      {
+        side: 'BUY',
+        code: '000660',
+        name: 'SK하이닉스',
+        reason: 'PENDING_ORDER_EXISTS',
+      },
+    ]);
   });
 
   it('계좌 생성 race 중 duplicate 오류면 exact strategy account를 refetch한다', async () => {
