@@ -52,6 +52,23 @@ export type KoreanStyleParagraphMetrics = {
   // 거기까지 짧은 문장을 요구하면 처방을 따를수록 지표가 나빠진다. 호흡이 실제로 문제되는 것은
   // 문장이 여럿 이어지는 덩어리다.
   noShortSentenceParagraphs: number;
+  // 가장 흔한 문장 수가 전체 문단에서 차지하는 비율(0~100). **벽의 반대쪽 실패**를 잡는다.
+  //
+  // 왜 필요한가 — 위 wallPercent 는 "너무 큰 문단" 만 센다. 그래서 지표만 보고 다듬으면 계속
+  // 잘게 자르는 쪽으로만 압력이 걸리는데, 그 끝이 격자다: 2026-08-20 발행본은 산문 문단 43개가
+  // 전부 2문장(29개) 아니면 3문장(14개) 이었고 문서 지표 네 항목이 모두 통과했다. 사람은 한
+  // 문장 문단도 쓰고 여섯 문장 문단도 쓴다 — 균일함 자체가 기계 티다.
+  //
+  // 실측 기준선(2026-08-21, 같은 글): 격자 발행본 67% · 그 글을 만든 프롬프트로 재생성 55% ·
+  // 나누기 전 벽 상태 35% · 「조각 크기를 고르게 맞추지 마라」 적용 6회 37·43·43·44·53·60%.
+  //
+  // **이 축만 보고 판정하지 마라 — wallPercent 와 반대로 움직인다.** 벽 상태가 35% 로 가장
+  // "다양" 하게 찍히는데, 안 나누면 크기가 흩어지기 때문이다. 좋은 글은 둘이 함께 낮다
+  // (벽 9% · 같은크기 53% 가 실측 최선). 한 축만 좋게 하려면 반대쪽으로 밀면 되므로,
+  // 프롬프트를 손볼 때는 두 값을 항상 같이 읽어라.
+  //
+  // 문단 수가 적으면 이 값은 무의미하다(문단 2개면 최소 50% 다) — paragraphCount 를 함께 보라.
+  dominantParagraphSizePercent: number;
 };
 
 const SHORT_SENTENCE_MAX = 20;
@@ -150,13 +167,20 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
       paragraphCount: 0,
       wallPercent: 0,
       noShortSentenceParagraphs: 0,
+      dominantParagraphSizePercent: 0,
     };
   }
 
   let wallCount = 0;
   let noShortCount = 0;
+  // 문장 수 → 그 크기인 문단 개수. 4문장과 9문장을 한 칸에 묶지 않는다(묶으면 벽 축과 같아진다).
+  const sizeCounts = new Map<number, number>();
   for (const paragraph of paragraphs) {
     const sentences = splitSentences(paragraph);
+    sizeCounts.set(
+      sentences.length,
+      (sizeCounts.get(sentences.length) ?? 0) + 1,
+    );
     if (
       sentences.length >= PARAGRAPH_WALL_SENTENCE_MIN ||
       paragraph.length > PARAGRAPH_WALL_LENGTH_MAX
@@ -175,6 +199,10 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
     paragraphCount: paragraphs.length,
     wallPercent: toPercent(wallCount, paragraphs.length),
     noShortSentenceParagraphs: noShortCount,
+    dominantParagraphSizePercent: toPercent(
+      Math.max(...sizeCounts.values()),
+      paragraphs.length,
+    ),
   };
 };
 
@@ -258,7 +286,7 @@ export const formatKoreanStyleMetrics = (
     return '문체 지표: 측정할 산문이 없음';
   }
   const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
-  const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
+  const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
     ? head
