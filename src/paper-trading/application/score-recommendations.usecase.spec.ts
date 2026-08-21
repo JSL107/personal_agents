@@ -419,6 +419,88 @@ describe('ScoreRecommendationsUsecase', () => {
     jest.useRealTimers();
   });
 
+  // 평가일 전에 모두 청산된 계좌는 각 추천의 초과수익이 매도일 지수만으로 온전히 나온다.
+  // 평가일 지수 유무만 보고 막으면 멀쩡한 성적이 원장에 남지 못한다 — 판단 근거는 실제로
+  // 빠진 건수여야 한다.
+  it('평가일 지수가 없어도 집계에서 빠진 건이 없으면 원장에 남긴다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    const buyDate = new Date('2026-08-03T00:00:00.000Z');
+    const sellDate = new Date('2026-08-05T00:00:00.000Z');
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [
+        {
+          id: 1,
+          accountId: 7,
+          tickerId: 100,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 2,
+        },
+        {
+          id: 2,
+          accountId: 7,
+          tickerId: 100,
+          side: 'SELL',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: null,
+        },
+      ],
+      recommendationTrades: [
+        {
+          id: 11,
+          orderId: 1,
+          accountId: 7,
+          tickerId: 100,
+          side: 'BUY',
+          quantity: decimal('1'),
+          price: decimal('100'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          realizedPnl: null,
+          tradeDate: buyDate,
+        },
+        {
+          id: 12,
+          orderId: 2,
+          accountId: 7,
+          tickerId: 100,
+          side: 'SELL',
+          quantity: decimal('1'),
+          price: decimal('110'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          realizedPnl: decimal('10'),
+          tradeDate: sellDate,
+        },
+      ],
+      portfolioTrades: [],
+      dailyPrices: [],
+      // 매수일과 매도일 지수는 있고 평가일(8/13) 지수만 없다.
+      benchmarkCloses: [
+        { tradeDate: buyDate, close: decimal('2500') },
+        { tradeDate: sellDate, close: decimal('2550') },
+      ],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({ asOf });
+
+    expect(result.exclusions.benchmarkUnavailable).toBe(0);
+    expect(result.accounts[0].meanExcessReturnRate).not.toBeNull();
+    expect(result.persisted).toBe(true);
+    expect(repository.saveRecommendationScores).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
   // 추천이 0건이면 지수가 없어도 잃는 숫자가 없다. 여기까지 막으면 표본이 없는 초기 구간의
   // 채점이 영영 원장에 남지 않는다 — 차단은 실제로 집계가 막힌 회차에만 걸려야 한다.
   it('집계 대상이 없으면 평가일 지수가 없어도 원장에 남긴다', async () => {

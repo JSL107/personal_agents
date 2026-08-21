@@ -101,7 +101,7 @@ export const formatPaperScoreReport = (
   if (result.evaluationBenchmarkMissing) {
     lines.push(
       '',
-      `⚠️ 평가일(${result.asOf.toISOString().slice(0, 10)}) 코스피 지수가 아직 없습니다 — 보유 중인 추천과 그날 매도분이 초과수익 집계에서 빠졌습니다(결손 ${result.exclusions.benchmarkUnavailable}건). 계산이 깨진 것이 아니라 지수 수집(평일 18:30) 전에 실행된 회차라, 반쪽 성적이 원장에 남지 않도록 저장은 건너뜁니다.`,
+      `⚠️ 평가일(${result.asOf.toISOString().slice(0, 10)}) 코스피 지수가 원장에 없습니다 — 보유 중인 추천과 그날 매도분이 초과수익 집계에서 빠졌습니다(결손 ${result.exclusions.benchmarkUnavailable}건). 반쪽 성적이 정본으로 남지 않도록 저장은 건너뜁니다. 지수 수집(평일 18:30)이 아직 안 돌았을 수도, 그 수집이 실패했을 수도 있습니다 — 수집 시각이 지났다면 유니버스 스윕 결과를 확인하세요.`,
     );
   } else if (!result.persisted) {
     lines.push(
