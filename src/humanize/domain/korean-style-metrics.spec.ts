@@ -249,6 +249,53 @@ describe('measureKoreanStyle — 문단 축', () => {
     ).toBe(100);
   });
 
+  // 벽 축의 반대쪽 실패. 발행본 43개 문단이 전부 2~3문장이었는데 wallPercent 는 19% 로
+  // 낮게 찍혀 "문단은 괜찮다" 로 읽혔다. 균일함을 세는 축이 따로 있어야 드러난다.
+  it('문단 크기가 한 값으로 몰리면 같은크기 비율이 높다', () => {
+    const grid = [
+      '캐시는 약속입니다. 만료가 지나면 다시 묻습니다.',
+      '서버는 판단합니다. 바뀌지 않았다면 304 입니다.',
+      '본문은 생략됩니다. 비용이 줄어듭니다.',
+      '정리하면 두 축입니다. 시간과 확인입니다.',
+    ].join('\n\n');
+
+    const metrics = measureKoreanStyle(grid);
+
+    expect(metrics.paragraph.paragraphCount).toBe(4);
+    // 네 문단 전부 2문장 — 벽은 0% 인데도 이 축이 문제를 드러낸다.
+    expect(metrics.paragraph.dominantParagraphSizePercent).toBe(100);
+    expect(metrics.paragraph.wallPercent).toBe(0);
+  });
+
+  it('문단 크기가 섞이면 같은크기 비율이 내려간다', () => {
+    const mixed = [
+      '캐시는 약속입니다.',
+      '만료가 지나면 다시 묻습니다. 서버는 판단합니다.',
+      '바뀌지 않았다면 304 입니다. 본문은 생략됩니다. 비용이 줄어듭니다.',
+      '정리하면 두 축입니다. 시간과 확인이죠. 앞은 재사용 기간입니다. 뒤는 확인 절차입니다.',
+    ].join('\n\n');
+
+    const metrics = measureKoreanStyle(mixed);
+
+    expect(metrics.paragraph.paragraphCount).toBe(4);
+    // 1·2·3·4문장이 하나씩 — 최빈값이 1개뿐이라 25% 다.
+    expect(metrics.paragraph.dominantParagraphSizePercent).toBe(25);
+  });
+
+  // 4문장과 9문장을 한 칸에 묶으면 이 축이 벽 축과 같아진다. 크기별로 세는지 고정한다.
+  it('큰 문단끼리도 크기가 다르면 같은 크기로 세지 않는다', () => {
+    const paragraphs = [
+      '가 문장 하나입니다. 두 번째입니다. 세 번째입니다. 네 번째입니다.',
+      '나 문장 하나입니다. 두 번째입니다. 세 번째입니다. 네 번째입니다. 다섯 번째입니다.',
+    ].join('\n\n');
+
+    const metrics = measureKoreanStyle(paragraphs);
+
+    // 둘 다 벽(4문장 이상)이지만 크기가 4·5로 달라 같은크기는 50% 다.
+    expect(metrics.paragraph.wallPercent).toBe(100);
+    expect(metrics.paragraph.dominantParagraphSizePercent).toBe(50);
+  });
+
   it('산문이 없으면 문단 수는 0이다', () => {
     expect(
       measureKoreanStyle('```ts\nconst a = 1;\n```').paragraph.paragraphCount,
