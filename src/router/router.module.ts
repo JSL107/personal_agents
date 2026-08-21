@@ -45,6 +45,7 @@ import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { ConversationMemoryService } from './application/conversation-memory.service';
 import { ConversationalReplyUsecase } from './application/conversational-reply.usecase';
+import { HandleConversationTurnUsecase } from './application/handle-conversation-turn.usecase';
 import { IdaeriRouterUsecase } from './application/idaeri-router.usecase';
 import { IntentClassifierUsecase } from './application/intent-classifier.usecase';
 import { IDAERI_ROUTER_PORT } from './domain/idaeri-router.port';
@@ -92,6 +93,7 @@ import {
     IntentClassifierUsecase,
     // intent classifier 가 UNKNOWN 반환 시 RouterMessageHandler 가 fallback 으로 호출 — 자연어 응답.
     ConversationalReplyUsecase,
+    HandleConversationTurnUsecase,
     // V3 §봇 쪼개기 follow-up — ConversationMemory 는 Redis 백엔드로 multi-instance / 재시작 안전.
     // REDIS_HOST/PORT 는 BullMQ 와 동일 env 재사용 (별도 connection — bullmq 의 maxRetries=null
     // 설정과 분리). 서비스가 OnModuleDestroy 에서 quit() 호출하여 graceful close.
@@ -139,6 +141,7 @@ import {
     IDAERI_ROUTER_PORT,
     ConversationMemoryService,
     ConversationalReplyUsecase,
+    HandleConversationTurnUsecase,
   ],
 })
 export class RouterModule {}
