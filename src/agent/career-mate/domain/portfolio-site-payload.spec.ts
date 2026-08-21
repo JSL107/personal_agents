@@ -476,3 +476,30 @@ describe('묶음 대표 링크', () => {
     expect(JSON.stringify(groups[0]?.links)).not.toContain('acme');
   });
 });
+
+describe('저장소 표기가 갈릴 때', () => {
+  const options = { anonymizedOwners: ['acme-corp'] };
+
+  it('대소문자만 다른 표기를 한 저장소로 합산한다', () => {
+    // 근거 정합은 중복을 소문자로 판정하면서 표기는 GitHub API 값으로 덮으므로 한 성과에
+    // 두 표기가 남을 수 있다. 표가 갈리면 소수 저장소가 대표가 되고 익명 판정까지 뒤집힌다.
+    const { groups } = groupAccomplishments(
+      profile([
+        accomplishment('한 주의 작업', [
+          evidence(10, '2026-08-01T01:00:00Z', 'Acme-Corp/Internal-API'),
+          evidence(11, '2026-08-02T01:00:00Z', 'acme-corp/internal-api'),
+          evidence(12, '2026-08-03T01:00:00Z', 'ACME-CORP/internal-api'),
+          evidence(13, '2026-08-04T01:00:00Z'),
+          evidence(14, '2026-08-05T01:00:00Z'),
+        ]),
+      ]),
+      options,
+    );
+
+    // 사내 3건(표기 3종) > 개인 2건 → 사내 묶음이어야 한다.
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toMatch(/^company-[0-9a-f]{6}$/);
+    expect(groups[0]?.anonymized).toBe(true);
+    expect(groups[0]?.links).toEqual({});
+  });
+});

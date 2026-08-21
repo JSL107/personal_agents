@@ -178,27 +178,37 @@ export const repoOf = (
   if (!earliest) {
     return null;
   }
-  const countByRepo = new Map<string, number>();
+  // 표를 소문자 키로 합산한다. 근거 정합(reconcile-accomplishment-evidence) 은 중복을
+  // `repo.toLowerCase()#pr` 로 판정하면서 표기는 GitHub API 가 준 값으로 덮으므로, PR 번호가
+  // 다르면 한 성과 안에 `Acme/Internal` 과 `acme/internal` 이 함께 남을 수 있다. 원문을 키로
+  // 쓰면 그때 같은 저장소의 표가 갈려 소수 저장소가 대표가 되고 익명 판정까지 뒤집힌다.
+  const countByRepo = new Map<string, { repo: string; count: number }>();
   for (const item of evidence) {
     const repo = item.repo.trim();
-    countByRepo.set(repo, (countByRepo.get(repo) ?? 0) + 1);
+    const key = repo.toLowerCase();
+    const found = countByRepo.get(key);
+    if (found) {
+      found.count += 1;
+      continue;
+    }
+    countByRepo.set(key, { repo, count: 1 });
   }
-  const earliestRepo = earliest.repo.trim();
-  const [topRepo] = [...countByRepo.entries()].sort(
-    ([leftRepo, leftCount], [rightRepo, rightCount]) => {
-      if (leftCount !== rightCount) {
-        return rightCount - leftCount;
+  const earliestKey = earliest.repo.trim().toLowerCase();
+  const [, top] = [...countByRepo.entries()].sort(
+    ([leftKey, left], [rightKey, right]) => {
+      if (left.count !== right.count) {
+        return right.count - left.count;
       }
-      if (leftRepo === earliestRepo) {
+      if (leftKey === earliestKey) {
         return -1;
       }
-      if (rightRepo === earliestRepo) {
+      if (rightKey === earliestKey) {
         return 1;
       }
-      return leftRepo.localeCompare(rightRepo);
+      return leftKey.localeCompare(rightKey);
     },
-  )[0] as [string, number];
-  return topRepo;
+  )[0] as [string, { repo: string; count: number }];
+  return top.repo;
 };
 
 // 저장소 → 사이트 slug. 저장소가 같으면 회차가 달라도 같은 값이라 멱등 키가 된다.
