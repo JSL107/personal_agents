@@ -16,9 +16,11 @@ export type KoreanStyleMetrics = {
   sentenceCount: number;
   averageLength: number;
   lengthStandardDeviation: number;
-  shortSentenceRatio: number;
+  // 비율은 0~100 정수 퍼센트다. 소수 1자리로 반올림하면 0~5% 가 전부 0 으로 뭉개져
+  // "구어 어미가 하나도 없다" 로 읽힌다(실측: 142문장 중 6개 = 4% 가 0% 로 표시됐다).
+  shortSentencePercent: number;
   longestSentenceLength: number;
-  colloquialEndingRatio: number;
+  colloquialEndingPercent: number;
   bannedConnectiveCount: number;
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
@@ -67,9 +69,9 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       sentenceCount: 0,
       averageLength: 0,
       lengthStandardDeviation: 0,
-      shortSentenceRatio: 0,
+      shortSentencePercent: 0,
       longestSentenceLength: 0,
-      colloquialEndingRatio: 0,
+      colloquialEndingPercent: 0,
       bannedConnectiveCount: 0,
       measurable: false,
     };
@@ -102,12 +104,12 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     sentenceCount: sentences.length,
     averageLength: round(average),
     lengthStandardDeviation: round(Math.sqrt(variance)),
-    shortSentenceRatio: round(
-      lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length /
-        lengths.length,
+    shortSentencePercent: toPercent(
+      lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length,
+      lengths.length,
     ),
     longestSentenceLength: Math.max(...lengths),
-    colloquialEndingRatio: round(colloquialCount / sentences.length),
+    colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
     bannedConnectiveCount,
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
   };
@@ -120,12 +122,11 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${Math.round(
-    metrics.shortSentenceRatio * 100,
-  )}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${Math.round(
-    metrics.colloquialEndingRatio * 100,
-  )}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
   return metrics.measurable ? head : `${head} (40문장 미만이라 참고값)`;
 };
 
 const round = (value: number): number => Math.round(value * 10) / 10;
+
+const toPercent = (count: number, total: number): number =>
+  Math.round((count / total) * 100);

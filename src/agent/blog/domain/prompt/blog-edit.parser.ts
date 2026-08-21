@@ -3,6 +3,7 @@ import {
   buildJsonParseCauseMessage,
   extractJsonObjectText,
 } from '../../../../common/util/llm-json-extract.util';
+import { BlogCategoryId, isBlogCategoryId } from '../astro-post';
 import { BlogException } from '../blog.exception';
 import { BlogErrorCode } from '../blog-error-code.enum';
 
@@ -15,6 +16,9 @@ export type EditedBlogDraft =
       slug: string;
       description: string;
       body: string;
+      // 모르는 값·빈 값이면 undefined. 분류 하나 때문에 발행 전체를 막지 않는다 —
+      // 빠지면 블로그 화면에 '미분류' 로 드러나므로 사람이 알아챌 수 있다.
+      category?: BlogCategoryId;
     }
   | { publishable: false; reason: string };
 
@@ -57,7 +61,27 @@ export const parseBlogEdit = (text: string): EditedBlogDraft => {
     );
   }
 
-  return { publishable: true, reason, title, slug, description, body };
+  const category = readCategory(record.category);
+
+  return {
+    publishable: true,
+    reason,
+    title,
+    slug,
+    description,
+    body,
+    ...(category ? { category } : {}),
+  };
+};
+
+// slug 과 달리 형식 위반을 예외로 끊지 않는다. slug 은 URL 이라 틀리면 링크가 영구히
+// 깨지지만, 분류는 빠져도 글이 '미분류' 로 보일 뿐이라 발행을 막을 이유가 없다.
+const readCategory = (value: unknown): BlogCategoryId | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return isBlogCategoryId(normalized) ? normalized : undefined;
 };
 
 const parseJson = (text: string): unknown => {

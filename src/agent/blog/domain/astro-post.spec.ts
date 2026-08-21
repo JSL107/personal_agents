@@ -85,4 +85,19 @@ describe('buildAstroPost', () => {
       'src/content/posts/2026-08-15-notion-37c69cbb.md',
     );
   });
+
+  // 블로그 저장소가 태그를 버리고 분류로 바꿨다. 이 값이 없으면 새 글이 '미분류' 로 올라온다.
+  it('분류를 넘기면 frontmatter에 category로 찍는다', () => {
+    const post = buildAstroPost({ ...input, category: 'backend' });
+
+    expect(post.content).toContain('\ncategory: backend\n');
+  });
+
+  // 분류는 URL 이 아니라 화면 표시라, 없다고 발행을 막을 이유가 없다. 빈 값을 적으면
+  // 블로그 쪽 zod enum 이 거부해 오히려 빌드가 깨진다.
+  it('분류가 없으면 category 줄을 아예 넣지 않는다', () => {
+    const post = buildAstroPost(input);
+
+    expect(post.content).not.toContain('category:');
+  });
 });

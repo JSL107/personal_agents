@@ -23,6 +23,11 @@ export const BLOG_ANONYMIZE_OUTPUT_SCHEMA: OutputJsonSchema = {
 // 편집 단계. publishable 이 false 면 나머지 값은 빈 문자열로 온다 —
 // strict schema 는 선언한 property 를 전부 required 로 요구하므로 "없음" 을 키 누락이 아니라
 // 빈 문자열로 표현한다(파서가 그 조합을 이유만 남기는 판정으로 해석한다).
+//
+// ⚠️ `additionalProperties: false` 라 **여기 없는 키는 모델이 낼 수 없다.** 프롬프트에만
+// 필드를 추가하면 지시가 조용히 무시된다 — 실제로 category 를 프롬프트에만 넣었더니 실행이
+// 성공하고 파서도 통과하는데 값만 늘 비어 발행본에 분류가 빠졌다. 유닛 테스트는 전부
+// 초록이었다(파서에 직접 JSON 을 넣어 재기 때문). 필드를 늘릴 때는 이 스키마부터 고칠 것.
 export const BLOG_EDIT_OUTPUT_SCHEMA: OutputJsonSchema = {
   type: 'object',
   properties: {
@@ -30,9 +35,20 @@ export const BLOG_EDIT_OUTPUT_SCHEMA: OutputJsonSchema = {
     reason: { type: 'string' },
     title: { type: 'string' },
     slug: { type: 'string' },
+    // 허용 값 검증은 파서가 한다. 스키마에서 enum 으로 좁히면 publishable=false 회차가
+    // 빈 문자열을 낼 수 없어(위 규칙) 판정 자체가 막힌다.
+    category: { type: 'string' },
     description: { type: 'string' },
     body: { type: 'string' },
   },
-  required: ['publishable', 'reason', 'title', 'slug', 'description', 'body'],
+  required: [
+    'publishable',
+    'reason',
+    'title',
+    'slug',
+    'category',
+    'description',
+    'body',
+  ],
   additionalProperties: false,
 };

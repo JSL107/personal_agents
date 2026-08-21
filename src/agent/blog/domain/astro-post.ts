@@ -1,3 +1,18 @@
+/**
+ * 블로그 저장소가 허용하는 분류 값. 태그와 달리 글마다 하나만 붙는다.
+ *
+ * 정본은 블로그 저장소의 `src/utils/categories.ts` 이고 거기서 zod enum 으로 강제한다 —
+ * 여기 없는 값을 넣으면 발행 뒤 블로그 빌드가 깨진다. 값을 늘릴 때는 양쪽을 함께 고칠 것.
+ * 옵셔널로 두는 이유는 블로그 스키마도 optional 이기 때문이다: 빠지면 화면에 '미분류' 로
+ * 드러나므로, 값 하나 때문에 발행 전체를 막는 것보다 낫다.
+ */
+export const BLOG_CATEGORY_IDS = ['backend', 'web', 'infra', 'note'] as const;
+
+export type BlogCategoryId = (typeof BLOG_CATEGORY_IDS)[number];
+
+export const isBlogCategoryId = (value: string): value is BlogCategoryId =>
+  (BLOG_CATEGORY_IDS as readonly string[]).includes(value);
+
 export interface AstroPostInput {
   title: string;
   description: string;
@@ -8,6 +23,7 @@ export interface AstroPostInput {
   publishedAt: string;
   pageId: string;
   body: string;
+  category?: BlogCategoryId;
 }
 
 export interface AstroPost {
@@ -35,6 +51,7 @@ export const buildAstroPost = (input: AstroPostInput): AstroPost => {
     description,
     publishedAt,
     tags: input.tags,
+    category: input.category,
   });
 
   return {
@@ -87,6 +104,7 @@ const buildFrontmatter = (input: {
   description: string;
   publishedAt: { value: string };
   tags: string[];
+  category?: BlogCategoryId;
 }): string => {
   const lines = [
     '---',
@@ -96,6 +114,10 @@ const buildFrontmatter = (input: {
   ];
   if (input.tags.length > 0) {
     lines.push('tags:', ...input.tags.map((tag) => `  - ${toYamlString(tag)}`));
+  }
+  // 분류는 값이 있을 때만 적는다. 빈 값을 적으면 zod enum 이 거부해 블로그 빌드가 깨진다.
+  if (input.category) {
+    lines.push(`category: ${input.category}`);
   }
   lines.push('---');
   return lines.join('\n');

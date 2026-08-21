@@ -90,4 +90,34 @@ describe('parseBlogEdit', () => {
       );
     }
   });
+
+  it('허용된 분류 값을 읽어 넘긴다', () => {
+    const parsed = parseBlogEdit(
+      JSON.stringify({ ...publishable, category: 'infra' }),
+    );
+
+    expect(parsed).toMatchObject({ publishable: true, category: 'infra' });
+  });
+
+  it('대문자·공백이 섞여 와도 같은 분류로 본다', () => {
+    const parsed = parseBlogEdit(
+      JSON.stringify({ ...publishable, category: '  Backend ' }),
+    );
+
+    expect(parsed).toMatchObject({ publishable: true, category: 'backend' });
+  });
+
+  // slug 과 달리 끊지 않는다. slug 은 URL 이라 틀리면 링크가 영구히 깨지지만, 분류는
+  // 빠져도 글이 '미분류' 로 보일 뿐이다. 값 하나로 발행 전체를 막지 않는다.
+  it('모르는 분류 값이나 누락은 발행을 막지 않고 비워 둔다', () => {
+    const unknown = parseBlogEdit(
+      JSON.stringify({ ...publishable, category: 'devops' }),
+    );
+    const missing = parseBlogEdit(JSON.stringify(publishable));
+
+    expect(unknown).toMatchObject({ publishable: true });
+    expect(unknown).not.toHaveProperty('category');
+    expect(missing).toMatchObject({ publishable: true });
+    expect(missing).not.toHaveProperty('category');
+  });
 });
