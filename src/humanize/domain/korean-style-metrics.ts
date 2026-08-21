@@ -30,8 +30,8 @@ export type KoreanStyleMetrics = {
  *
  * 실측(run #980 `2026-08-20-agent-security-permission-boundaries`): 문서 지표는 네 항목 모두
  * 통과했는데(편차 15.2 · 짧은문장 20% · 구어 10% · 금지접속사 0) 산문 문단 25개 중 20개가
- * 4문장 이상이었고, **짧은 문장이 하나도 없는 문단이 17개**였다. 짧은 문장이 몇몇 문단에
- * 몰려 전체 비율만 채운 것이다. 평균으로 뭉개면 이 편중이 보이지 않는다.
+ * 4문장 이상이었고, **아래 기준(3문장 이상 · 공백 제외)으로 짧은 문장이 없는 문단이 11개**였다.
+ * 짧은 문장이 몇몇 문단에 몰려 전체 비율만 채운 것이다. 평균으로 뭉개면 이 편중이 보이지 않는다.
  */
 export type KoreanStyleParagraphMetrics = {
   paragraphCount: number;
@@ -138,7 +138,10 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
 
   return {
     paragraphCount: paragraphs.length,
-    wallRatio: round(wallCount / paragraphs.length),
+    // 여기서 반올림하지 않는다 — 소수 첫째 자리로 뭉개면 25문단 중 1개(0.04)가 0 이 되어
+    // 카드에 "벽 0%" 로 찍힌다. 남은 벽을 드러내려고 만든 지표가 벽을 숨기게 된다.
+    // 표시용 반올림은 formatKoreanStyleMetrics 가 퍼센트로 바꿀 때 한 번만 한다.
+    wallRatio: wallCount / paragraphs.length,
     noShortSentenceParagraphs: noShortCount,
   };
 };

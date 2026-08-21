@@ -124,6 +124,40 @@ describe('measureKoreanStyle — 문단 축', () => {
     expect(metrics.paragraph.noShortSentenceParagraphs).toBe(0);
   });
 
+  // 임계 경계 — 비교 연산자가 한 칸 밀리면 여기서 갈린다.
+  it('정확히 4문장이면 벽, 3문장이면 벽이 아니다', () => {
+    const 문장 = '이 문장은 서른 자를 넘지 않도록 적당한 길이로 씁니다.';
+    const 세문장 = [문장, 문장, 문장].join(' ');
+    const 네문장 = [문장, 문장, 문장, 문장].join(' ');
+
+    expect(measureKoreanStyle(세문장).paragraph.wallRatio).toBe(0);
+    expect(measureKoreanStyle(네문장).paragraph.wallRatio).toBe(1);
+  });
+
+  it('길이 임계는 150자 초과부터다', () => {
+    // 문단 길이는 공백을 포함해 센다. 문장 수로 걸리지 않도록 한 문장으로 만든다.
+    const 딱150 = `${'가'.repeat(149)}.`;
+    const 딱151 = `${'가'.repeat(150)}.`;
+
+    expect(딱150.length).toBe(150);
+    expect(measureKoreanStyle(딱150).paragraph.wallRatio).toBe(0);
+    expect(딱151.length).toBe(151);
+    expect(measureKoreanStyle(딱151).paragraph.wallRatio).toBe(1);
+  });
+
+  // 벽 비율을 저장 시점에 반올림하면 문단이 많은 글에서 남은 벽이 0% 로 사라진다.
+  it('문단이 많아도 벽 한 개가 0%로 뭉개지지 않는다', () => {
+    const 짧은문단 = '짧다. 이유는 뒤에 붙입니다.';
+    const 벽 = `${'가'.repeat(160)}.`;
+    const 글 = [...Array.from({ length: 24 }, () => 짧은문단), 벽].join('\n\n');
+
+    const metrics = measureKoreanStyle(글);
+
+    expect(metrics.paragraph.paragraphCount).toBe(25);
+    expect(metrics.paragraph.wallRatio).toBeCloseTo(0.04, 5);
+    expect(formatKoreanStyleMetrics(metrics)).toContain('벽 4%');
+  });
+
   it('150자를 넘으면 문장 수가 적어도 벽으로 센다', () => {
     expect(
       measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`).paragraph
