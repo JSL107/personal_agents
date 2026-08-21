@@ -110,3 +110,74 @@ describe('parseProjectGroupOutput', () => {
     ).toThrow(/배열/);
   });
 });
+
+describe('카드 성과 줄(highlights)', () => {
+  const naming = (extra: Record<string, unknown>) => ({
+    key: 'jsl107-personal-agents',
+    title: '관제 플랫폼',
+    summary: '한 문장',
+    problem: '문제',
+    result: '결과',
+    ...extra,
+  });
+
+  it('모델이 준 성과 줄을 담는다', () => {
+    const parsed = parseProjectGroupOutput(
+      body([
+        naming({
+          highlights: ['크롤 사망 3/6회 → 0회', '미처리 24,247건 규명'],
+        }),
+      ]),
+      [group('jsl107-personal-agents')],
+    );
+
+    expect(parsed[0]?.highlights).toEqual([
+      '크롤 사망 3/6회 → 0회',
+      '미처리 24,247건 규명',
+    ]);
+  });
+
+  it('성과 줄이 없어도 프로젝트를 버리지 않는다', () => {
+    // 수치 근거가 없는 묶음이 실제로 있다. 다섯 필드와 달리 없어도 카드가 성립한다 —
+    // 여기서 버리면 저장소 하나가 통째로 발행에서 빠진다.
+    const parsed = parseProjectGroupOutput(body([naming({})]), [
+      group('jsl107-personal-agents'),
+    ]);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.highlights).toEqual([]);
+  });
+
+  it('40자를 넘는 줄과 4번째부터는 싣지 않는다', () => {
+    // 카드 한 줄에 들어가야 한다. 길면 이름표를 밀어내고, 많으면 카드가 목록을 잡아먹는다.
+    const parsed = parseProjectGroupOutput(
+      body([
+        naming({
+          highlights: [
+            '가'.repeat(41),
+            '짧은 줄 1',
+            '짧은 줄 2',
+            '짧은 줄 3',
+            '짧은 줄 4',
+          ],
+        }),
+      ]),
+      [group('jsl107-personal-agents')],
+    );
+
+    expect(parsed[0]?.highlights).toEqual([
+      '짧은 줄 1',
+      '짧은 줄 2',
+      '짧은 줄 3',
+    ]);
+  });
+
+  it('배열이 아니거나 빈 문자열이면 무시한다', () => {
+    const parsed = parseProjectGroupOutput(
+      body([naming({ highlights: '한 줄짜리 문자열' })]),
+      [group('jsl107-personal-agents')],
+    );
+
+    expect(parsed[0]?.highlights).toEqual([]);
+  });
+});

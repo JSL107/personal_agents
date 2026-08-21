@@ -56,12 +56,16 @@ const profile = (
   meta: { githubLogin: 'JSL107', windowStart: '2026-06-01', prCount: 12 },
 });
 
-const naming = (key: string): ProjectGroupNaming => ({
+const naming = (
+  key: string,
+  highlights: string[] = ['지표 3/6 → 0'],
+): ProjectGroupNaming => ({
   key,
   title: `${key} 프로젝트`,
   summary: '한 문장 소개',
   problem: '반복해서 다룬 문제',
   result: '달라진 결과',
+  highlights,
 });
 
 describe('groupAccomplishments', () => {
@@ -501,5 +505,29 @@ describe('저장소 표기가 갈릴 때', () => {
     expect(groups[0]?.key).toMatch(/^company-[0-9a-f]{6}$/);
     expect(groups[0]?.anonymized).toBe(true);
     expect(groups[0]?.links).toEqual({});
+  });
+});
+
+describe('카드 성과 줄', () => {
+  const build = (highlights: string[]) => {
+    const { groups, skippedTitles } = groupAccomplishments(
+      profile([accomplishment('A', [evidence(313, '2026-08-14T01:00:00Z')])]),
+    );
+    return buildPortfolioSitePayload({
+      profile: profile([]),
+      groups,
+      namings: [naming(groups[0].key, highlights)],
+      skippedTitles,
+    });
+  };
+
+  it('모델이 지은 성과 줄을 카드가 읽는 필드로 싣는다', () => {
+    expect(
+      build(['크롤 사망 3/6회 → 0회']).projects[0]?.keyContributions,
+    ).toEqual(['크롤 사망 3/6회 → 0회']);
+  });
+
+  it('성과 줄이 없으면 빈 배열로 싣는다', () => {
+    expect(build([]).projects[0]?.keyContributions).toEqual([]);
   });
 });
