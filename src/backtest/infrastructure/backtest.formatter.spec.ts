@@ -32,6 +32,9 @@ const result: ReplayBacktestResult = {
   ],
   meanExcessReturnRate: '0.037',
   benchmarkUnavailableCount: 0,
+  exitBand: null,
+  exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
+  anomaliesByType: {},
   metrics: {
     weightExceededCount: 4,
     maximumWeightPercent: 26.3,
@@ -43,6 +46,42 @@ const result: ReplayBacktestResult = {
 };
 
 describe('formatBacktestResult', () => {
+  it('청산 밴드를 쓰지 않은 회차를 항상 명시한다', () => {
+    const text = formatBacktestResult(result);
+
+    expect(text).toContain(
+      '청산 밴드 없음 — 보유일수 청산만 (--take-profit/--stop-loss 미지정)',
+    );
+  });
+
+  // 건수만 찍으면 수량 불일치인지 상태 이상인지 몰라 이 성적을 믿어도 되는지 판단할 수 없다.
+  it('원장 이상은 유형별 건수까지 적는다', () => {
+    const resultWithAnomalies: ReplayBacktestResult = {
+      ...result,
+      scores: [{ ...result.scores[0], anomalyCount: 11 }],
+      anomaliesByType: { QUANTITY_MISMATCH: 9, MULTIPLE_BUY_TRADES: 2 },
+    };
+
+    const text = formatBacktestResult(resultWithAnomalies);
+
+    expect(text).toContain(
+      '⚠ 원장 이상 11건 (QUANTITY_MISMATCH 9, MULTIPLE_BUY_TRADES 2)',
+    );
+  });
+
+  it('청산 밴드 값과 사유별 매도 주문 건수를 표시한다', () => {
+    const resultWithExitBand: ReplayBacktestResult = {
+      ...result,
+      exitBand: { takeProfitPercent: 2, stopLossPercent: -0.2 },
+      exitBandSellCounts: { takeProfit: 12, stopLoss: 30 },
+    };
+    const text = formatBacktestResult(resultWithExitBand);
+
+    expect(text).toContain(
+      '청산 밴드 +2%/-0.2% · 익절 매도 주문 12건 · 손절 매도 주문 30건',
+    );
+  });
+
   it('기간·승률·비중 초과 경고를 담는다', () => {
     const text = formatBacktestResult(result);
 
