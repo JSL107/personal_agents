@@ -5,6 +5,7 @@ import Foundation
 /// (`derive-agent-state.ts` 의 `BUBBLES`), 이 전이는 앱 안에서만 일어나 서버에 물어볼 수 없다.
 /// 백엔드의 WAITING 문구가 바뀌면 여기도 함께 바꿔야 한다.
 private let waitingBubble = "업무 대기중"
+private let CONVERSATION_LIMIT = 40
 
 /// 부팅 스냅샷을 초기 상태로 싣고, SSE 증분 이벤트를 그 위에 적용하는 관측 가능한 상태 스토어.
 /// SwiftUI 뷰가 `@Published` 프로퍼티를 바인딩한다. 이벤트 적용은 UI 갱신을 유발하므로
@@ -18,6 +19,12 @@ public final class ConsoleStore: ObservableObject {
     /// 대표 브리핑. 스냅샷과 다른 요청으로 오므로 실패해도 나머지 화면은 그대로다.
     @Published public private(set) var briefing: ConsoleBriefing?
     @Published public private(set) var pendingCommands: [PendingCommand] = []
+    @Published public private(set) var conversation: [ConsoleTurn] = []
+    /// 내가 보낸 command id. pending 은 `run.finished` 로 `.done` 이 되면 janitor 가 TTL 없이
+    /// 즉시 지우는데, worker 산출물 `command.answered` 는 그 뒤에 도착한다. pending 존재만으로
+    /// 대화 기록을 판단하면 정작 결과가 대화에서 빠진다. 남의 세션 command 는 여기 없으므로
+    /// orphan turn 방지도 그대로 유지된다.
+    private var sentCommandIds: [UUID] = []
     /// 승인/거절 write 결과 안내. 실패 사유를 담고, 성공하면 nil 로 지워진다.
     /// 대시보드·오피스 어느 탭에서 눌러도 같은 store 를 보므로 안내가 공유된다.
     @Published public private(set) var approvalNotice: String?
@@ -98,11 +105,20 @@ public final class ConsoleStore: ObservableObject {
         case let .sessionClosed(sessionId):
             sessions.removeAll { $0.sessionId == sessionId }
         case let .commandRejected(commandId, reason):
-            markCommand(commandId: commandId, phase: .failed, reason: reason)
+            let tracked = markCommand(commandId: commandId, phase: .failed, reason: reason)
+            if tracked || wasSentHere(commandId: commandId) {
+                appendConversationTurn(role: .idaeri, text: reason, at: Date())
+            }
         case let .commandInfo(commandId, message):
-            annotateCommand(commandId: commandId, reason: message)
+            let tracked = annotateCommand(commandId: commandId, reason: message)
+            if tracked || wasSentHere(commandId: commandId) {
+                appendConversationTurn(role: .idaeri, text: message, at: Date())
+            }
         case let .commandAnswered(commandId, message):
-            markCommand(commandId: commandId, phase: .answered, reason: message)
+            let tracked = markCommand(commandId: commandId, phase: .answered, reason: message)
+            if tracked || wasSentHere(commandId: commandId) {
+                appendConversationTurn(role: .idaeri, text: message, at: Date())
+            }
         }
         eventStream.send(event)
     }
@@ -170,7 +186,27 @@ public final class ConsoleStore: ObservableObject {
         pendingCommands.append(
             PendingCommand(id: id, text: text, agentTypeHint: agentTypeHint, sentAt: sentAt, phase: .sent)
         )
+        appendConversationTurn(role: .me, text: text, at: sentAt)
+        sentCommandIds.append(id)
+        if sentCommandIds.count > CONVERSATION_LIMIT {
+            sentCommandIds.removeFirst(sentCommandIds.count - CONVERSATION_LIMIT)
+        }
         return id
+    }
+
+    /// pending 이 이미 정리됐더라도 내가 보낸 command 라면 응답을 대화에 남긴다.
+    private func wasSentHere(commandId: String) -> Bool {
+        guard let id = UUID(uuidString: commandId) else {
+            return false
+        }
+        return sentCommandIds.contains(id)
+    }
+
+    private func appendConversationTurn(role: ConsoleTurnRole, text: String, at: Date) {
+        conversation.append(ConsoleTurn(role: role, text: text, at: at))
+        if conversation.count > CONVERSATION_LIMIT {
+            conversation.removeFirst(conversation.count - CONVERSATION_LIMIT)
+        }
     }
 
     /// 전송 실패(네트워크/4xx) 처리.
@@ -179,29 +215,36 @@ public final class ConsoleStore: ObservableObject {
             return
         }
         pendingCommands[index].phase = .failed
+        // 대표 바에서 진행 배지를 뺐으므로 전송 실패가 보일 자리는 대화 로그뿐이다.
+        // 이 turn 이 없으면 사용자 발화만 남아 정상 전송된 것처럼 읽힌다.
+        appendConversationTurn(role: .idaeri, text: "전송하지 못했어요. 잠시 후 다시 시도해주세요.", at: Date())
     }
 
     /// 백엔드 command event 의 문자열 UUID와 정확히 일치하는 pending만 상태·이유를 바꾼다.
-    private func markCommand(commandId: String, phase: PendingPhase, reason: String?) {
+    private func markCommand(commandId: String, phase: PendingPhase, reason: String?) -> Bool {
         guard
             let id = UUID(uuidString: commandId),
             let index = pendingCommands.firstIndex(where: { $0.id == id })
         else {
-            return
+            return false
         }
-        pendingCommands[index].phase = phase
+        if phase != .answered || pendingCommands[index].phase != .done {
+            pendingCommands[index].phase = phase
+        }
         pendingCommands[index].reason = reason
+        return true
     }
 
     /// 안내 이벤트는 phase 전이 없이 이유만 기록한다.
-    private func annotateCommand(commandId: String, reason: String) {
+    private func annotateCommand(commandId: String, reason: String) -> Bool {
         guard
             let id = UUID(uuidString: commandId),
             let index = pendingCommands.firstIndex(where: { $0.id == id })
         else {
-            return
+            return false
         }
         pendingCommands[index].reason = reason
+        return true
     }
 
     /// pending 제거(완료 후 뷰 타이머 또는 사용자 dismiss).

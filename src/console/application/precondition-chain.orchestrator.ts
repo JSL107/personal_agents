@@ -1,16 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
-  IDAERI_ROUTER_PORT,
-  IdaeriRouterPort,
-} from '../../router/domain/idaeri-router.port';
-import { RouterException } from '../../router/domain/router.exception';
-import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
+  ConversationalReplyFailedException,
+  HandleConversationTurnUsecase,
+} from '../../router/application/handle-conversation-turn.usecase';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -18,6 +17,11 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
+const CONSOLE_CHANNEL_ID = 'CONSOLE';
+const CONSOLE_ANSWER_MAX_CHARS = 600;
+// 콘솔 지시는 Slack message handler 의 say() 경로를 지나지 않아 전문이 Slack 에 게시되지
+// 않는다. "전문은 Slack 에서" 는 없는 곳을 가리키는 거짓 안내였다. 전문 조회 경로 신설은 후속.
+const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(길어서 여기까지만 보여드려요)';
 const SUGGESTION_FAILURE_MESSAGE =
   '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
 
@@ -43,8 +47,8 @@ export class PreconditionChainOrchestrator {
   private readonly logger = new Logger(PreconditionChainOrchestrator.name);
 
   constructor(
-    @Inject(IDAERI_ROUTER_PORT)
-    private readonly router: IdaeriRouterPort,
+    private readonly handleConversationTurn: HandleConversationTurnUsecase,
+    private readonly conversationMemory: ConversationMemoryService,
     private readonly consoleEvents: ConsoleEventBus,
     private readonly config: ConfigService,
     private readonly suggestNextWork: SuggestNextWorkUsecase,
@@ -62,14 +66,34 @@ export class PreconditionChainOrchestrator {
   private async runChain(
     input: ConsoleChainInput,
     chain: ChainState,
+    shouldPublishWorkerAnswer = true,
   ): Promise<ChainOutcome> {
     try {
-      const result = await this.router.dispatch({
+      const conversationKey = this.conversationMemory.buildKey({
+        slackUserId: input.slackUserId,
+        channelId: CONSOLE_CHANNEL_ID,
+      });
+      const outcome = await this.handleConversationTurn.execute({
         source: 'REMOTE_CONSOLE',
         slackUserId: input.slackUserId,
-        text: input.text,
+        conversationKey,
+        text: input.text ?? '',
         agentTypeHint: input.agentTypeHint,
+        // 선행 worker turn 은 기억하지 않는다 — 산출물을 사용자에게 보이지 않는 것과 같은 이유.
+        shouldRemember: shouldPublishWorkerAnswer,
       });
+      if (outcome.kind === 'REPLIED') {
+        if (input.commandId) {
+          this.consoleEvents.publish({
+            type: 'command.answered',
+            commandId: input.commandId,
+            message: outcome.text,
+          });
+        }
+        return { ok: true };
+      }
+
+      const result = outcome.result;
       if (input.commandId && result.autoResolvedNotice) {
         this.consoleEvents.publish({
           type: 'command.info',
@@ -77,9 +101,16 @@ export class PreconditionChainOrchestrator {
           message: result.autoResolvedNotice,
         });
       }
+      if (input.commandId && shouldPublishWorkerAnswer) {
+        this.consoleEvents.publish({
+          type: 'command.answered',
+          commandId: input.commandId,
+          message: truncateConsoleAnswer(result.formattedText),
+        });
+      }
       return { ok: true };
     } catch (error: unknown) {
-      if (isIntentClassifyFailed(error)) {
+      if (error instanceof ConversationalReplyFailedException) {
         return await this.answerWithSuggestions(input, chain);
       }
       if (!(error instanceof DomainException)) {
@@ -129,11 +160,11 @@ export class PreconditionChainOrchestrator {
         visited: [...chain.visited, resolution.prereqWorker],
         path: [...chain.path, resolution.prereqWorker],
       };
-      const prereqOutcome = await this.runChain(prereqInput, nextChain);
+      const prereqOutcome = await this.runChain(prereqInput, nextChain, false);
       if (!prereqOutcome.ok) {
         return prereqOutcome;
       }
-      return this.runChain(input, nextChain);
+      return this.runChain(input, nextChain, true);
     }
   }
 
@@ -199,7 +230,7 @@ export class PreconditionChainOrchestrator {
       this.consoleEvents.publish({
         type: 'command.answered',
         commandId: input.commandId,
-        message: `「${displayName}」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요.`,
+        message: `「${displayName}」에 무엇을 맡길지 한 줄로 알려주세요. 적어주시면 그대로 시작할게요. (지금 적는 말은 ${displayName} 에게 그대로 전달됩니다)`,
       });
     }
     return { ok: false, reason: '입력 요청' };
@@ -234,6 +265,7 @@ export class PreconditionChainOrchestrator {
   }
 }
 
-const isIntentClassifyFailed = (error: unknown): boolean =>
-  error instanceof RouterException &&
-  error.routerErrorCode === RouterErrorCode.INTENT_CLASSIFY_FAILED;
+const truncateConsoleAnswer = (text: string): string =>
+  text.length > CONSOLE_ANSWER_MAX_CHARS
+    ? `${text.slice(0, CONSOLE_ANSWER_MAX_CHARS)}${CONSOLE_ANSWER_TRUNCATION_SUFFIX}`
+    : text;
