@@ -5,6 +5,7 @@ const RESULT: ScoreRecommendationsResult = {
   asOf: new Date('2026-08-13T00:00:00.000Z'),
   from: null,
   persisted: true,
+  evaluationBenchmarkMissing: false,
   accounts: [
     {
       accountId: 7,
@@ -29,6 +30,7 @@ const RESULT: ScoreRecommendationsResult = {
       },
       meanExcessReturnRate: '0.0234',
       meanShadowReturnRate: '0.08',
+      evaluationBenchmarkMissing: false,
       portfolio: {
         snapshotCount: 8,
         accountReturnRate: '0.15',
@@ -41,6 +43,7 @@ const RESULT: ScoreRecommendationsResult = {
         expired: 1,
         benchmarkUnavailable: 2,
         shadowUnavailable: 3,
+        shadowNotDue: 0,
         anomaly: 2,
         realizedPnlMismatch: 1,
       },
@@ -51,6 +54,7 @@ const RESULT: ScoreRecommendationsResult = {
     expired: 1,
     benchmarkUnavailable: 2,
     shadowUnavailable: 3,
+    shadowNotDue: 0,
     anomaly: 2,
     realizedPnlMismatch: 1,
   },
@@ -137,6 +141,7 @@ describe('formatPaperScoreReport', () => {
           },
           meanExcessReturnRate: null,
           meanShadowReturnRate: null,
+          evaluationBenchmarkMissing: false,
           portfolio: {
             snapshotCount: 0,
             accountReturnRate: null,
@@ -151,6 +156,7 @@ describe('formatPaperScoreReport', () => {
         expired: 0,
         benchmarkUnavailable: 0,
         shadowUnavailable: 0,
+        shadowNotDue: 0,
         anomaly: 0,
         realizedPnlMismatch: 0,
       },
