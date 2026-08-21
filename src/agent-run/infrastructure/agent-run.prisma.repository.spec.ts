@@ -58,6 +58,62 @@ describe('AgentRunPrismaRepository.sweepZombies', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.findFailedRunsSince', () => {
+  // slackUserId 는 agent_run 의 컬럼이 아니다. 스칼라로 얹으면 Prisma 가 런타임에
+  // 거부하는데(2026-08-21 PO Shadow 실패) 스프레드로 넣으면 컴파일에서 안 잡혀
+  // 통과했다 — where 형태를 단언해 같은 형태의 회귀를 막는다.
+  const buildRepository = (): {
+    repository: AgentRunPrismaRepository;
+    findMany: jest.Mock;
+  } => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prismaMock = { agentRun: { findMany } } as unknown as PrismaService;
+    return {
+      repository: new AgentRunPrismaRepository(prismaMock),
+      findMany,
+    };
+  };
+
+  it('slackUserId 를 inputSnapshot JSON path 로 매칭한다 (스칼라 컬럼 아님)', async () => {
+    const { repository, findMany } = buildRepository();
+
+    await repository.findFailedRunsSince({
+      withinMinutes: 60,
+      slackUserId: 'U1',
+    });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.inputSnapshot).toEqual({
+      path: ['slackUserId'],
+      equals: 'U1',
+    });
+    expect(where.slackUserId).toBeUndefined();
+  });
+
+  it('빈 문자열도 JSON 경로로 매칭한다 — 사용자 한정이 사라지지 않게', async () => {
+    // truthy 검사면 여기서 필터가 통째로 빠져 남의 실패까지 반환된다(fail-open).
+    const { repository, findMany } = buildRepository();
+
+    await repository.findFailedRunsSince({
+      withinMinutes: 60,
+      slackUserId: '',
+    });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.inputSnapshot).toEqual({ path: ['slackUserId'], equals: '' });
+  });
+
+  it('slackUserId 미지정이면 사용자 필터를 걸지 않는다', async () => {
+    const { repository, findMany } = buildRepository();
+
+    await repository.findFailedRunsSince({ withinMinutes: 60 });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.inputSnapshot).toBeUndefined();
+    expect(where.status).toBe(AgentRunStatus.FAILED);
+  });
+});
+
 describe('AgentRunPrismaRepository Ops Supervisor 집계', () => {
   it('aggregateRetryCounts: FAILURE_REPLAY 트리거를 agentType 별로 센다', async () => {
     const groupBy = jest
