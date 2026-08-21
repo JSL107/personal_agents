@@ -247,6 +247,55 @@ describe('PublishNotionDraftUsecase', () => {
       expect(payload.payload.content).not.toMatch(CODE_MASK_PATTERN);
     });
 
+    // 단계명을 붙인 목적이 진단이다. 두 경로가 서로 다른 이름을 내야 실패 원인을 좁힐 수 있다 —
+    // 실제로 같은 메시지 때문에 편집 단계를 고친 뒤에도 어디를 봐야 할지 몰랐다.
+    it('익명화가 코드를 바꾸면 익명화 단계로 알린다', async () => {
+      const { usecase } = buildUsecase({
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          // 익명화가 실제 주소를 예시 주소로 바꾼 상황(실측된 오익명화).
+          body: 코드본문.replace('developer.mozilla.org', 'example.com'),
+        }),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/익명화 결과의 코드블록/);
+    });
+
+    it('편집이 코드를 바꾸면 편집 단계로 알린다', async () => {
+      const { usecase } = buildUsecase({
+        markdown: 코드본문,
+        completionText: 익명화응답,
+        // 표식 자리에 원본과 다른 코드를 직접 써 넣은 응답.
+        editText: 편집응답(
+          [
+            '# 캐시 흐름',
+            '',
+            '이렇게 요청합니다.',
+            '',
+            '```http',
+            'GET /other HTTP/1.1',
+            '```',
+          ].join('\n'),
+        ),
+      });
+
+      await expect(
+        usecase.execute({
+          titleQuery: '',
+          slackUserId: 'U1',
+          responseUrl: 'https://hooks.slack.test/response',
+        }),
+      ).rejects.toThrow(/편집 결과의 코드블록/);
+    });
+
     it('모델이 표식을 변형하면 발행하지 않는다', async () => {
       const { masked } = maskFencedCodeBlocks(코드본문);
       const { usecase } = buildUsecase({
