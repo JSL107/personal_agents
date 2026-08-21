@@ -2407,3 +2407,40 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 게이트: `pnpm lint:check` / `pnpm exec tsc --noEmit` / `pnpm build` / `pnpm test` 전부 exit 0.
 
 ---
+# 콘솔 대표 창구 대화창 승격 (2026-08-21)
+
+**Goal:** `.ai/design.md`의 A~D 계약대로 콘솔 지시창을 맥락 보존 대화창으로 확장한다.
+
+**Contract:** A→D 순서를 지키고, 지정 태스크에만 TDD를 적용한다. `pnpm db:push`, commit, `AppRootView.swift`, `OfficeScene.swift`, `main.swift` 수정은 금지한다. 기존 `pendingCommands` 배지와 `answerWithSuggestions` 최후 폴백을 보존한다.
+
+- [x] T1 RED/GREEN: `HandleConversationTurnUsecase` 성공·분류 실패·그 외 예외 3분기를 테스트 먼저 추가하고 최소 구현한다.
+- [x] T2: `RouterModule` providers/exports에 신규 usecase를 등록하고 build 배선을 확인한다.
+- [x] T3: `PreconditionChainOrchestrator` spec을 계약으로 먼저 갱신한 뒤, 콘솔 전용 key·prior turns·대화 응답·최후 제안 폴백 배선을 구현한다.
+- [x] T4 RED/GREEN: 최종 worker `formattedText`의 599/600/601자 경계를 테스트 먼저 추가하고 600자 상한 발행을 구현한다.
+- [x] T5: `askForInput` 안내 문구에 현재 입력의 전달 대상을 명시한다.
+- [x] T6 RED/GREEN: `ConsoleStoreTests`에 발화/응답 2턴·40턴 상한을 추가하고, `ConsoleTurn` 모델과 Store conversation 배선을 구현한다. 기존 pending 단언을 유지한다.
+- [x] T7: `OfficeView.swift`의 `presidentBar`에 최대 260pt 대화 로그, 좌우 정렬, 최신 턴 자동 스크롤을 기존 `Theme.swift` 토큰만으로 구현한다.
+- [x] focused 테스트와 mutation 관점 회귀 점검을 수행한다.
+- [x] `pnpm lint:check`, `pnpm test`, `pnpm build`, `swift build` + canonical runner 를 fresh 실행해 모두 exit 0을 확인한다.
+- [x] 금지 파일·DB·commit 미변경, 계약 이탈, 최종 diff를 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+- [x] 구현과 분리된 리뷰 패스에서 Blocker 1건·Should Fix 1건을 잡아 고치고 가드를 대조군으로 검증한다.
+
+## Review
+
+- backend `lint=0 test=0 build=0`. Jest 436 suites / 3,847 tests + code-graph 5 suites / 40 tests 전부 통과.
+- Swift `swift build` exit 0, canonical runner `swift run ConsoleCoreTests` 2,796건 exit 0.
+- `swift test` 는 이 package 에 `.testTarget` 이 없어 baseline 에서도 `error: no tests found` 로
+  exit 1 이다. canonical runner 가 정본이므로 test infra 는 건드리지 않았다.
+- **리뷰에서 잡은 Blocker**: 빈 사용자 발화(`text: input.text ?? ''`)가 대화 기억에 user turn 으로
+  쌓여, 체이닝 3-hop 이면 6턴이 5턴 한도를 밀어내 사용자의 실제 발화가 사라졌다. 빈 발화 가드 +
+  `shouldRemember` 로 선행 worker turn 을 기억에서 빼 해결. 두 가드를 무력화해 새 테스트 2건이
+  실제로 실패하는지 대조군으로 확인했다.
+- **리뷰에서 잡은 Should Fix**: 대표 바 안에 대화 로그와 `pendingBadgeRow` 가 동시에 있어 한
+  응답이 두 번 보였다. 바 안 배지만 제거하고 `idleBar` 의 배지는 남겼다.
+- 동작 변화: 분류 실패 시 제안 목록 대신 대화 응답이 온다. 제안 목록은 대화 응답까지 실패할 때만
+  나오므로 실질적으로 도달하지 않는다 — 이번 작업의 의도된 대체다.
+- 미검증: 실앱 대화 실증(worktree 백엔드 부팅이 운영 cron 을 재등록해 지우므로 미수행), 대화 로그
+  실제 렌더, 한 턴 최대 2회 codex 호출 지연 실측.
+- 금지 파일, Prisma/env/dependency, DB 변경 없음.
+
+---
