@@ -255,6 +255,12 @@ export class PublishNotionDraftUsecase {
       () => this.parseAnonymizedDraft(completion.text),
       context.forbiddenTerms,
     );
+    // 익명화가 코드를 바꾸지 않았는지도 **원본 기준으로** 대조한다. 아래 편집 검사는
+    // anonymized.body 를 기준선으로 삼기 때문에, 익명화가 이미 코드를 고쳐 놓았으면 그
+    // 변경이 기준선이 되어 그대로 통과한다(리뷰 지적). 지금까지 드러나지 않은 이유는
+    // 초안에 코드가 아예 없었기 때문이고, 확장 프롬프트가 코드 예시를 요구하기 시작하면
+    // 이 구멍으로 실제 코드가 지나간다.
+    this.assertCodeBlocksPreserved(target, markdown, anonymized.body);
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
     const edited = await this.editDraft(target, anonymized, context);
@@ -495,7 +501,7 @@ export class PublishNotionDraftUsecase {
       `경로: \`${path}\``,
       `요약: ${edited.description}`,
       `Notion: ${draft.url}`,
-      ...this.buildStageNote(humanized),
+      ...this.buildStageNote(humanized, draft),
       '',
       '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
     );
@@ -504,7 +510,10 @@ export class PublishNotionDraftUsecase {
 
   // 어느 단계가 실제로 먹었는지 카드에 적는다. 윤문이 조용히 빠져도(플래그 off·모델 실패)
   // 카드만 보고 알 수 있어야 한다 — 원문 발행을 막지 않는 대신 상황을 드러내는 쪽을 골랐다.
-  private buildStageNote(humanized: HumanizeMarkdownResult): string[] {
+  private buildStageNote(
+    humanized: HumanizeMarkdownResult,
+    draft: NotionDraftPage,
+  ): string[] {
     const stage = ((): string => {
       if (humanized.proseParagraphs === 0) {
         return '정리: 편집 완료 · 말투: 윤문할 산문 문단 없음';
@@ -517,6 +526,7 @@ export class PublishNotionDraftUsecase {
     // 지표는 판정이 아니라 관측값이다 — 차단 임계값은 발행본이 몇 편 쌓인 뒤에 정한다.
     return [
       stage,
+      this.buildCodeBlockNote(humanized.markdown, draft),
       formatKoreanStyleMetrics(measureKoreanStyle(humanized.markdown)),
     ];
   }
@@ -565,6 +575,22 @@ export class PublishNotionDraftUsecase {
         status: context.statusPropertyName,
       }),
     });
+  }
+
+  // 최종 발행본에 코드 예시가 몇 개 남았는지 적는다.
+  //
+  // 왜 막지 않고 적기만 하는가 — 확장 프롬프트는 오늘의 공부 초안에 코드 예시를 요구하지만,
+  // 편집 단계는 덜어내는 것이 일이고 코드 삭제는 의도적으로 허용한다(추리기). 그래서 요구한
+  // 예시가 최종본에서 사라질 수 있다(리뷰 지적). 차단하지 않는 이유는 코드가 없는 것이 정상인
+  // 글도 있기 때문이다 — 막으면 그런 글이 영영 발행되지 않는다. 대신 승인 화면에서 보이게 한다.
+  private buildCodeBlockNote(markdown: string, draft: NotionDraftPage): string {
+    const count = extractFencedCodeBlocks(markdown).length;
+    if (count > 0) {
+      return `코드 예시: ${count}개`;
+    }
+    return draft.sourceType.trim() === STUDY_DEEPDIVE_SOURCE_TYPE
+      ? '코드 예시: 0개 (오늘의 공부 초안은 예시를 요구한다 — 확장 단계에 없었거나 편집이 덜어냈다)'
+      : '코드 예시: 0개';
   }
 
   private assertCodeBlocksPreserved(

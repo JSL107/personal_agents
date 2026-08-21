@@ -285,7 +285,7 @@ describe('PublishNotionDraftUsecase', () => {
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
-        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n문체 지표: 문장 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 금지접속사 0회 (40문장 미만이라 참고값)\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n코드 예시: 0개\n문체 지표: 문장 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 금지접속사 0회 (40문장 미만이라 참고값)\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
       payload: {
         pageId: draft.pageId,
         path: 'src/content/posts/2026-08-19-shared-database-migration.md',
@@ -593,8 +593,32 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
+  // 외부 리뷰 지적 — 편집 검사는 anonymized.body 를 기준선으로 삼는다. 익명화가 이미 코드를
+  // 고쳐 놓으면 그 변경이 기준선이 되어 그대로 통과한다. 초안에 코드가 없던 동안에는 드러나지
+  // 않았고, 확장 프롬프트가 코드 예시를 요구하기 시작하면 이 구멍으로 실제 코드가 지나간다.
+  it('익명화가 코드를 바꾸면 원문 기준으로 끊는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      markdown:
+        '레거시에서 이렇게 조회했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.\n\n```php\n$row = query("SELECT 1");\n```',
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        // 익명화가 테이블명을 지운다며 코드를 고친 상태.
+        body: '레거시에서 이렇게 조회했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.\n\n```php\n$row = query("SELECT masked");\n```',
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toThrow('코드블록이 원문과 다릅니다');
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
   it('편집이 코드블록을 지우는 것은 허용한다 (추리기의 일부)', async () => {
     const { usecase } = buildUsecase({
+      // 익명화는 코드를 그대로 둔다 — 원문에도 같은 코드블록이 있어야 실제 계약과 같다.
+      markdown:
+        '설명입니다. 이 문장은 충분히 길어야 60% 가드를 넘는다.\n\n```php\n$row = 1;\n```',
       completionText: JSON.stringify({
         slug: 'safe-post',
         description: '설명',
@@ -810,6 +834,7 @@ describe('PublishNotionDraftUsecase', () => {
       '```',
     ].join('\n');
     const { usecase, humanizer } = buildUsecase({
+      markdown: body,
       completionText: JSON.stringify({
         slug: 'safe-post',
         description: '설명',
@@ -925,6 +950,51 @@ describe('PublishNotionDraftUsecase', () => {
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
       'page-study-today',
     );
+  });
+
+  // 편집이 고른 분류가 발행본 frontmatter 까지 실제로 전달되는지 본다. 파서와 frontmatter
+  // 생성기는 각각 덮여 있지만, 그 사이 배선이 끊기면 두 테스트 모두 통과하면서 분류만 조용히
+  // 빠진다 — 프롬프트에만 필드를 넣고 출력 스키마를 빠뜨렸을 때 실제로 그렇게 됐다.
+  it('편집이 고른 분류를 발행본 frontmatter 에 싣는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지가 분명하다.',
+        title: '공유 DB 정합성',
+        slug: 'shared-db-consistency',
+        category: 'infra',
+        description: '공유 DB 전환에서 배운 점.',
+        body: '## 문제\n\n익명화된 본문을 정리한 결과입니다. 60% 가드를 넘길 만큼 길게 둔다.',
+      }),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    expect(payload.content).toContain('\ncategory: infra\n');
+  });
+
+  it('편집이 모르는 분류를 내면 frontmatter 에서 분류 줄을 빼고 발행한다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지가 분명하다.',
+        title: '공유 DB 정합성',
+        slug: 'shared-db-consistency',
+        category: 'devops',
+        description: '공유 DB 전환에서 배운 점.',
+        body: '## 문제\n\n익명화된 본문을 정리한 결과입니다. 60% 가드를 넘길 만큼 길게 둔다.',
+      }),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    expect(payload.content).not.toContain('category:');
   });
 
   // 익명화 계약이 출처별로 갈린다. 여기서 배선이 끊기면 프롬프트만 새로 쓰고 실제
@@ -1053,6 +1123,8 @@ describe('PublishNotionDraftUsecase', () => {
   // 기존 mock 본문에는 코드펜스가 없어 3,000건 초록불에도 첫 실제 실행이 파싱에서 죽었다.
   it('익명화 본문에 마크다운 코드펜스가 있어도 발행 preview를 만든다', async () => {
     const { usecase, createPreview } = buildUsecase({
+      markdown:
+        '# 회고\n\n```php\n$row = query("SELECT 1");\n```\n\n## 교훈\n원장을 먼저 남긴다.',
       completionText: JSON.stringify({
         slug: 'shared-database-migration',
         description: '공유 DB 마이그레이션의 정합성 교훈',
