@@ -431,6 +431,25 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
   });
 
+  it('무밴드에서도 마지막 시세 뒤의 평일을 to 로 주면 체결되지 않을 매수를 만들지 않는다', async () => {
+    // 같은 가드가 밴드 매도와 추천 매수 양쪽에 걸린다. 5종목·보유 1거래일로 매일 회전시키면
+    // 마지막 거래일에도 신규 매수 후보가 남아, 구가드로 되돌리면 PENDING 2건이 남는다.
+    const bars = new Map<number, BacktestBar[]>();
+    for (const [tickerId, tickerBars] of manyTickerBars([])) {
+      bars.set(tickerId, tickerBars.slice(0, 234));
+    }
+    const usecase = new ReplayBacktestUsecase(repositoryOf(bars, MANY_TICKERS));
+
+    const result = await usecase.execute({
+      ...command,
+      to: dateText(TRADE_DATES[234]),
+      holdingTradeDays: 1,
+    });
+
+    expect(result.filledCount).toBeGreaterThan(0);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
   it('밴드를 켠 같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
     const first = await new ReplayBacktestUsecase(
       repositoryOf(risingBars()),
