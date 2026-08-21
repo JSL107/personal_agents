@@ -80,11 +80,13 @@ const formatExitBands = (
 ): string => {
   const bandless =
     bandlessSellCount === 0 ? '' : `밴드 외 ${bandlessSellCount}건`;
-  if (exitBands.length === 0) {
-    return bandless === '' ? '밴드 -' : `밴드 ${bandless}`;
-  }
-  const known = exitBands.join(' · ');
-  const label = exitBands.length === 1 ? known : `${known} 혼합`;
+  const joined = exitBands.join(' · ');
+  const label =
+    exitBands.length === 0
+      ? '-'
+      : exitBands.length === 1
+        ? joined
+        : `${joined} 혼합`;
   return bandless === '' ? `밴드 ${label}` : `밴드 ${label} + ${bandless}`;
 };
 

@@ -125,6 +125,16 @@ describe('summarizeExitBandUsage', () => {
     expect(summary).toEqual({ bands: ['+10/-5'], bandlessSellCount: 2 });
   });
 
+  // 익절이 같으면 손절로 갈린다. 손절은 음수라 오름차순으로 세우면 넓은 밴드가 앞에 온다.
+  it('익절이 같으면 손절이 얕은 쪽이 먼저 온다', () => {
+    const summary = summarizeExitBandUsage([
+      { takeProfitPercent: '2', stopLossPercent: '-5' },
+      { takeProfitPercent: '2', stopLossPercent: '-0.2' },
+    ]);
+
+    expect(summary.bands).toEqual(['+2/-0.2', '+2/-5']);
+  });
+
   // 정렬을 문자열로 하면 '+10' 이 '+2' 앞에 온다. 라벨은 문자열이지만 순서는 값이다.
   it('두 자리 익절이 한 자리 뒤에 온다', () => {
     const summary = summarizeExitBandUsage([

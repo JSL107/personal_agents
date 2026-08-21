@@ -108,6 +108,23 @@ describe('formatPaperScoreReport', () => {
     expect(render([], 0)).toContain('*LONG_TERM* · 규칙 -');
   });
 
+  it('청산 밴드가 섞였거나 밴드 밖에서 팔린 집계를 그대로 드러낸다', () => {
+    const render = (exitBands: string[], bandlessSellCount: number): string =>
+      formatPaperScoreReport({
+        ...RESULT,
+        accounts: [{ ...RESULT.accounts[0], exitBands, bandlessSellCount }],
+      });
+
+    expect(render(['+2/-0.2', '+10/-5'], 0)).toContain(
+      '밴드 +2/-0.2 · +10/-5 혼합',
+    );
+    // 모델이 고른 매도는 밴드 성적의 분모가 아니다 — 건수로 갈라 적는다.
+    expect(render(['+10/-5'], 1)).toContain('밴드 +10/-5 + 밴드 외 1건');
+    expect(render([], 2)).toContain('밴드 - + 밴드 외 2건');
+    // 매도가 아예 없는 계좌를 "밴드 외" 로 적으면 없는 표본이 있는 것처럼 읽힌다.
+    expect(render([], 0)).toContain('밴드 -');
+  });
+
   it('모든 제외 사유·분류·소표본 경고와 필수 해석 한계를 출력한다', () => {
     const text = formatPaperScoreReport(RESULT);
 

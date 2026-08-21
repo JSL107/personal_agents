@@ -313,11 +313,16 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     });
     // 매도는 채점 대상이 아니지만(성적은 매수 사이클로 센다) 어떤 밴드가 그 사이클들을
     // 닫았는지는 성적을 읽는 전제다. 그래서 값만 따로 훑는다.
+    //
+    // 체결된 매도만 센다. 사이클을 닫는 것은 체결이므로, 대기·만료·취소된 주문의 밴드까지
+    // 실으면 아직(또는 끝내) 아무 사이클도 닫지 않은 설정이 성적 표본을 닫은 것처럼 보인다 —
+    // 밴드를 바꾼 직후 첫 주문이 대기 중일 때가 정확히 그 상황이다.
     const sellOrders = await this.prisma.paperOrder.findMany({
       where: {
         accountId: { in: accountIds },
         side: 'SELL',
         strategy: { in: ['LONG_TERM', 'SWING'] },
+        status: { in: ['FILLED', 'PARTIALLY_FILLED'] },
         decidedAt,
       },
       select: {
