@@ -93,4 +93,16 @@ describe('parseScreenerCliArguments', () => {
       parseScreenerCliArguments(['collect-benchmark', '--days', '0']),
     ).toThrow('--days는 양의 정수여야 합니다.');
   });
+
+  // 재는 지평도 대상도 원장이 정하므로 옵션이 없다. 옵션을 조용히 무시하면 사용자가
+  // 지정한 값이 안 먹은 것을 모른 채 결과를 신뢰하게 된다.
+  it('score-outcomes는 옵션 없이 받고, 옵션이 붙으면 거부한다', () => {
+    expect(parseScreenerCliArguments(['score-outcomes'])).toEqual({
+      subcommand: 'score-outcomes',
+      options: {},
+    });
+    expect(() =>
+      parseScreenerCliArguments(['score-outcomes', '--horizon', '5']),
+    ).toThrow('사용법');
+  });
 });
