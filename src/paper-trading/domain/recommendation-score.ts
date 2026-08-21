@@ -130,6 +130,24 @@ const calculateActualPerformance = (
   };
 };
 
+// 장부의 realizedPnl 은 포지션 평단으로 계산되고 채점은 매수 체결가로 계산한다. 평단은
+// 나눗셈이라 소수 4자리로 저장되면서 주당 최대 0.00005 원이 잘리고, 그 잔여가 수량만큼
+// 쌓여 두 값의 끝자리가 갈린다. 완전 일치를 요구하면 이 잔여가 전부 이상치로 잡힌다 —
+// 2026-08-20 기준 청산 13건 중 10건이 그랬고, 실측 차이는 전부 주당 0.00005 원 이하였다.
+// 오탐이 이상치의 전부를 차지하면 진짜 불일치가 그 안에 묻힌다.
+// 허용치는 저장 정밀도에서 나온 값이다 — 주당 0.0001 원은 반올림 한계의 두 배다.
+const PNL_TOLERANCE_PER_SHARE = '0.0001';
+
+const exceedsPnlTolerance = (
+  recorded: MoneyValue,
+  computed: MoneyValue,
+  quantity: MoneyValue,
+): boolean => {
+  const difference = recorded.minus(computed);
+  const absolute = difference.isNegative() ? difference.times(-1) : difference;
+  return absolute.comparedTo(quantity.times(PNL_TOLERANCE_PER_SHARE)) > 0;
+};
+
 const holdingDaysBetween = (entryDate: Date, exitDate: Date): number =>
   (exitDate.getTime() - entryDate.getTime()) / (24 * 60 * 60 * 1000);
 
@@ -337,7 +355,11 @@ export const matchRecommendationCycles = (
     const performance = calculateActualPerformance(buyTrade, sellTrade);
     if (
       sellTrade.realizedPnl &&
-      sellTrade.realizedPnl.comparedTo(performance.pnl) !== 0
+      exceedsPnlTolerance(
+        sellTrade.realizedPnl,
+        performance.pnl,
+        sellTrade.quantity,
+      )
     ) {
       anomalies.push({
         type: 'REALIZED_PNL_MISMATCH',
