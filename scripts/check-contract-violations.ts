@@ -6,7 +6,13 @@ import { formatKstDate } from '../src/common/util/kst-date.util';
 import { AgentType } from '../src/model-router/domain/model-router.type';
 
 /**
- * 이미 저장된 산출물에 직무 계약 검수기를 돌려 위반 분포를 본다.
+ * 이미 저장된 산출물에 직무 계약 검수기를 돌려 위반 분포와 점수를 본다.
+ *
+ * **여기의 점수는 `agent_run.contract_score`(실행 당시 기록) 가 아니라 저장된 output 에
+ * 지금 계약을 다시 적용한 값이다.** 계약을 고치면 과거 점수도 함께 움직인다 — 이 스크립트의
+ * 목적이 "새 계약이 과한지" 를 보는 것이라 그게 맞는 동작이지만, 실행 당시 품질의 시계열로
+ * 읽으면 안 된다. 그 시계열은 `contract_score` 컬럼을 직접 조회해야 하고, 컬럼이 2026-08-24
+ * 에 추가돼 그 이전 실행은 전부 NULL 이다.
  *
  * 두 시점에 쓴다.
  *   1. 계약을 새로 쓰거나 고친 직후 — 계약이 과한지(정상 산출물이 무더기로 걸리는지) 확인
@@ -100,7 +106,11 @@ const main = async (): Promise<void> => {
     (left, right) => right[1].violated - left[1].violated,
   );
 
-  console.log('에이전트별 계약 위반 분포와 점수 (성공 실행 대상)\n');
+  console.log(
+    '에이전트별 계약 위반 분포와 점수 (성공 실행 대상)\n' +
+      '※ 점수는 저장된 산출물에 **지금 계약**을 다시 적용한 값이다 —\n' +
+      '  실행 당시 기록(agent_run.contract_score)이 아니므로 계약을 고치면 과거 값도 움직인다.\n',
+  );
   let unscoredRuns = 0;
   for (const [agentType, tally] of rows) {
     const rate = ((tally.violated / tally.total) * 100).toFixed(0);
@@ -130,7 +140,9 @@ const main = async (): Promise<void> => {
     `\n무검사 실행 ${unscoredRuns}/${totalRuns}건 — 계약이 스텁이라 점수가 매겨지지 않은 실행이다.`,
   );
 
-  console.log('\n주별 평균 점수 추이 (월요일 기준)\n');
+  console.log(
+    '\n주별 평균 점수 추이 (KST 월요일 기준, 현재 계약으로 재평가)\n',
+  );
   const weekRows = [...weeks.entries()].sort((left, right) =>
     left[0].localeCompare(right[0]),
   );

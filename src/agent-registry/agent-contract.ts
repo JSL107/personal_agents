@@ -362,10 +362,14 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   [AgentType.BLOG_PUBLISH]: {
     department: Department.GROWTH,
     job: 'Notion 블로그 초안을 익명화해 GitHub 발행 승인을 요청한다',
-    // 2026-08-24 실측: 성공 실행 5/5 전건에 7 키가 모두 등장하지만, content·payload·
-    // previewText 는 승인 카드로 넘기는 전달값이라 필수에서 뺐다. 남긴 4 개가
-    // "무엇을 어디에 어떤 상태로 올렸는가" 라는 산출물의 알맹이다.
-    deliverableFields: ['path', 'title', 'status', 'notionUrl'],
+    // 2026-08-24 실측에서는 성공 실행 5/5 전건에 path·title·notionUrl 이 있었지만,
+    // 그 5 건이 전부 'preview'(발행 진행) 분기였을 뿐이다. `PublishNotionDraftResult`
+    // 는 4 갈래 union 이고 empty·skipped·blocked 도 정상 SUCCEEDED 로 저장되는데
+    // (`publish-notion-draft.usecase.ts` 의 `status !== 'ready'` 조기 반환), 그 셋에는
+    // path·title·notionUrl 이 애초에 없다. 넣어 두면 정상 실행마다 missingField 가
+    // 찍혀 추이를 오염시킨다 — 네 분기 전부에 있는 것은 status 하나다.
+    // 분기별 필수 필드를 따로 검사하는 것은 계약 구조 확장이 필요해 범위 밖으로 둔다.
+    deliverableFields: ['status'],
     requireEvidence: false,
     // 모델은 익명화된 본문을 내고, output 의 path·status·notionUrl 은 발행 경로가
     // 만든다. 머리말이 이 키를 요구하면 익명화 응답 형태가 깨진다.

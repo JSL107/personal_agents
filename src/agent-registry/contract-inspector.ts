@@ -147,18 +147,42 @@ export function evaluateContract(
   agentType: AgentType,
   output: unknown,
 ): ContractEvaluation {
+  const contract = AGENT_CONTRACTS[agentType];
+
   // 산출물이 객체가 아니면(배열·문자열·null) 최상위 키 개념이 성립하지 않는다.
-  // 계약을 억지로 적용하지 않고 검사를 건너뛴다.
+  //
+  // 계약이 스텁이면 검사할 것이 없으니 그대로 건너뛴다 — 배열을 그대로 내보내는
+  // REVIEW_REPLY_JUDGE 같은 경우다.
+  //
+  // 그러나 **계약이 요구하는 것이 있는데 객체가 아니면 그건 형식 오류다.** 이 경우도
+  // `score: null` 로 두면 "계약이 스텁이라 무검사" 와 같은 값이 되어, 조회 스크립트가
+  // 그 실행을 무검사 집계에 넣고 형식 오류를 숨긴다. 필수 필드를 하나도 확인할 수
+  // 없었으므로 전부 누락으로 보고하고 0 점을 준다.
   if (isPlainObject(output) === false) {
+    const evidenceChecked = contract.requireEvidence ? 1 : 0;
+    const checkedCount = contract.deliverableFields.length + evidenceChecked;
+    if (checkedCount === 0) {
+      return {
+        violations: [],
+        checkedCount: 0,
+        passedCount: 0,
+        score: null,
+      };
+    }
+    const violations: ContractViolation[] = contract.deliverableFields.map(
+      (field) => ({ rule: 'missingField', detail: field }),
+    );
+    if (contract.requireEvidence) {
+      violations.push({ rule: 'noEvidence', detail: agentType });
+    }
     return {
-      violations: [],
-      checkedCount: 0,
+      violations,
+      checkedCount,
       passedCount: 0,
-      score: null,
+      score: 0,
     };
   }
 
-  const contract = AGENT_CONTRACTS[agentType];
   const violations: ContractViolation[] = [];
 
   let checkedCount = 0;

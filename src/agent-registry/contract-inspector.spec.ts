@@ -48,11 +48,20 @@ describe('inspectContract', () => {
       expect(violations).toEqual([]);
     });
 
-    it('산출물이 객체가 아니면 필드 검사를 건너뛴다', () => {
-      // ISSUE_LABELER 는 배열을 그대로 내보낸다.
-      expect(inspectContract(AgentType.PM, ['a', 'b'])).toEqual([]);
-      expect(inspectContract(AgentType.PM, 'plain text')).toEqual([]);
-      expect(inspectContract(AgentType.PM, null)).toEqual([]);
+    it('계약이 스텁이면 산출물이 객체가 아니어도 검사를 건너뛴다', () => {
+      // ISSUE_LABELER 는 배열을 그대로 내보낸다 — 계약이 없으니 형식 오류가 아니다.
+      expect(inspectContract(AgentType.ISSUE_LABELER, ['a', 'b'])).toEqual([]);
+      expect(inspectContract(AgentType.ISSUE_LABELER, null)).toEqual([]);
+    });
+
+    it('계약이 요구하는 것이 있는데 객체가 아니면 전부 누락으로 보고한다', () => {
+      // 건너뛰면 형식 오류가 "무검사" 로 집계돼 숨는다(PR #374 리뷰 지적).
+      expect(inspectContract(AgentType.PM, ['a', 'b'])).toEqual([
+        { rule: 'missingField', detail: 'topPriority' },
+        { rule: 'missingField', detail: 'morning' },
+        { rule: 'missingField', detail: 'afternoon' },
+        { rule: 'noEvidence', detail: AgentType.PM },
+      ]);
     });
   });
 
@@ -251,9 +260,32 @@ describe('evaluateContract — 점수', () => {
     expect(evaluation.score).toBeNull();
   });
 
-  it('산출물이 객체가 아니면 점수를 null 로 남긴다', () => {
-    expect(evaluateContract(AgentType.PM, ['배열']).score).toBeNull();
-    expect(evaluateContract(AgentType.PM, null).score).toBeNull();
+  it('계약이 요구하는 것이 있는데 객체가 아니면 형식 오류로 0 점을 준다', () => {
+    // null 로 두면 "계약이 스텁이라 무검사" 와 같은 값이 되어 형식 오류가 숨는다.
+    for (const broken of [['배열'], null, '문자열', 42]) {
+      const evaluation = evaluateContract(AgentType.PM, broken);
+
+      expect(evaluation.score).toBe(0);
+      // PM 은 필드 3 개 + 근거 요구 1 개.
+      expect(evaluation.checkedCount).toBe(4);
+      expect(evaluation.passedCount).toBe(0);
+      expect(evaluation.violations).toEqual([
+        { rule: 'missingField', detail: 'topPriority' },
+        { rule: 'missingField', detail: 'morning' },
+        { rule: 'missingField', detail: 'afternoon' },
+        { rule: 'noEvidence', detail: AgentType.PM },
+      ]);
+    }
+  });
+
+  it('스텁 계약은 객체가 아니어도 그대로 무검사(null)로 남긴다', () => {
+    // REVIEW_REPLY_JUDGE 는 배열을 그대로 내보낸다 — 계약이 없으니 형식 오류가 아니다.
+    const evaluation = evaluateContract(AgentType.REVIEW_REPLY_JUDGE, [
+      { accepted: true },
+    ]);
+
+    expect(evaluation.score).toBeNull();
+    expect(evaluation.violations).toEqual([]);
   });
 
   it('금칙어는 분모를 늘리지 않고 분자에서만 깎는다', () => {
