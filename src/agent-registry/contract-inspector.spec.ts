@@ -1,5 +1,5 @@
 import { AgentType } from '../model-router/domain/model-router.type';
-import { inspectContract } from './contract-inspector';
+import { evaluateContract, inspectContract } from './contract-inspector';
 
 describe('inspectContract', () => {
   describe('missingField — 산출물 필수 필드', () => {
@@ -48,11 +48,20 @@ describe('inspectContract', () => {
       expect(violations).toEqual([]);
     });
 
-    it('산출물이 객체가 아니면 필드 검사를 건너뛴다', () => {
-      // ISSUE_LABELER 는 배열을 그대로 내보낸다.
-      expect(inspectContract(AgentType.PM, ['a', 'b'])).toEqual([]);
-      expect(inspectContract(AgentType.PM, 'plain text')).toEqual([]);
-      expect(inspectContract(AgentType.PM, null)).toEqual([]);
+    it('계약이 스텁이면 산출물이 객체가 아니어도 검사를 건너뛴다', () => {
+      // ISSUE_LABELER 는 배열을 그대로 내보낸다 — 계약이 없으니 형식 오류가 아니다.
+      expect(inspectContract(AgentType.ISSUE_LABELER, ['a', 'b'])).toEqual([]);
+      expect(inspectContract(AgentType.ISSUE_LABELER, null)).toEqual([]);
+    });
+
+    it('계약이 요구하는 것이 있는데 객체가 아니면 전부 누락으로 보고한다', () => {
+      // 건너뛰면 형식 오류가 "무검사" 로 집계돼 숨는다(PR #374 리뷰 지적).
+      expect(inspectContract(AgentType.PM, ['a', 'b'])).toEqual([
+        { rule: 'missingField', detail: 'topPriority' },
+        { rule: 'missingField', detail: 'morning' },
+        { rule: 'missingField', detail: 'afternoon' },
+        { rule: 'noEvidence', detail: AgentType.PM },
+      ]);
     });
   });
 
@@ -193,5 +202,140 @@ describe('inspectContract', () => {
       { rule: 'forbiddenPhrase', detail: '마법 같은' },
       { rule: 'noEvidence', detail: 'PM' },
     ]);
+  });
+});
+
+describe('evaluateContract — 점수', () => {
+  it('필수 필드가 전부 채워지고 근거가 있으면 만점이다', () => {
+    // PM 계약: 필드 3 개 + 근거 요구 1 개 = 검사 4 항목.
+    const evaluation = evaluateContract(AgentType.PM, {
+      topPriority: '오늘의 최우선 과제 #193',
+      morning: '오전 계획',
+      afternoon: '오후 계획',
+    });
+
+    expect(evaluation.checkedCount).toBe(4);
+    expect(evaluation.passedCount).toBe(4);
+    expect(evaluation.score).toBe(1);
+    expect(evaluation.violations).toEqual([]);
+  });
+
+  it('필드 하나가 비면 부분 점수를 준다 — 위반 유무로는 안 보이는 해상도다', () => {
+    const evaluation = evaluateContract(AgentType.PM, {
+      topPriority: '오늘의 최우선 과제 #193',
+      morning: '오전 계획',
+      afternoon: '',
+    });
+
+    // 4 항목 중 3 통과.
+    expect(evaluation.score).toBeCloseTo(0.75);
+  });
+
+  it('필드가 전부 비면 하나만 빈 경우보다 점수가 낮다', () => {
+    const one = evaluateContract(AgentType.PM, {
+      topPriority: '최우선 #193',
+      morning: '오전',
+      afternoon: '',
+    });
+    const all = evaluateContract(AgentType.PM, {
+      topPriority: '',
+      morning: '',
+      afternoon: '',
+      note: '근거 #193',
+    });
+
+    // 둘 다 inspectContract 로는 "위반 있음" 한 가지로 뭉개진다.
+    expect(one.violations.length).toBeGreaterThan(0);
+    expect(all.violations.length).toBeGreaterThan(0);
+    expect(all.score).toBeLessThan(one.score as number);
+  });
+
+  it('검사 항목이 0 개인 스텁 계약은 점수를 null 로 남긴다 (만점 아님)', () => {
+    // CONTRADICTION_JUDGE 는 실행 이력이 없어 스텁으로 남긴 계약이다.
+    const evaluation = evaluateContract(AgentType.CONTRADICTION_JUDGE, {
+      anything: '값',
+    });
+
+    expect(evaluation.checkedCount).toBe(0);
+    expect(evaluation.score).toBeNull();
+  });
+
+  it('계약이 요구하는 것이 있는데 객체가 아니면 형식 오류로 0 점을 준다', () => {
+    // null 로 두면 "계약이 스텁이라 무검사" 와 같은 값이 되어 형식 오류가 숨는다.
+    for (const broken of [['배열'], null, '문자열', 42]) {
+      const evaluation = evaluateContract(AgentType.PM, broken);
+
+      expect(evaluation.score).toBe(0);
+      // PM 은 필드 3 개 + 근거 요구 1 개.
+      expect(evaluation.checkedCount).toBe(4);
+      expect(evaluation.passedCount).toBe(0);
+      expect(evaluation.violations).toEqual([
+        { rule: 'missingField', detail: 'topPriority' },
+        { rule: 'missingField', detail: 'morning' },
+        { rule: 'missingField', detail: 'afternoon' },
+        { rule: 'noEvidence', detail: AgentType.PM },
+      ]);
+    }
+  });
+
+  it('스텁 계약은 객체가 아니어도 그대로 무검사(null)로 남긴다', () => {
+    // REVIEW_REPLY_JUDGE 는 배열을 그대로 내보낸다 — 계약이 없으니 형식 오류가 아니다.
+    const evaluation = evaluateContract(AgentType.REVIEW_REPLY_JUDGE, [
+      { accepted: true },
+    ]);
+
+    expect(evaluation.score).toBeNull();
+    expect(evaluation.violations).toEqual([]);
+  });
+
+  it('금칙어는 분모를 늘리지 않고 분자에서만 깎는다', () => {
+    const clean = evaluateContract(AgentType.CTO, {
+      ctoSummary: '분배 요약',
+      assignments: ['a'],
+      unassignedTasks: [],
+    });
+    const dirty = evaluateContract(AgentType.CTO, {
+      ctoSummary: '마법 같은 분배 요약',
+      assignments: ['a'],
+      unassignedTasks: [],
+    });
+
+    // 분모가 같아야 한다 — 금칙어가 항목으로 세어지면 깨끗한 산출물이 공짜 1 점을 받는다.
+    expect(dirty.checkedCount).toBe(clean.checkedCount);
+    expect(clean.score).toBe(1);
+    expect(dirty.score).toBeLessThan(1);
+  });
+
+  it('금칙어가 필드 수보다 많아도 점수가 음수로 내려가지 않는다', () => {
+    const evaluation = evaluateContract(AgentType.HUMANIZER, {
+      // 필수 필드는 humanizedKeys 하나뿐인데 금칙어는 두 개 들어 있다.
+      humanizedKeys: ['마법 같은', '놀라운 변화'],
+    });
+
+    expect(evaluation.score).toBe(0);
+    // 필드 자체는 통과했다 — 0 이 된 것은 금칙어 감점 때문이고, 그 구분이 남아야 한다.
+    expect(evaluation.passedCount).toBe(1);
+  });
+
+  it('근거 요구가 면제되면 분모에서도 빠진다', () => {
+    // CODE_REVIEWER: 지적이 없는 승인 리뷰는 근거를 붙일 대상이 없다.
+    const evaluation = evaluateContract(AgentType.CODE_REVIEWER, {
+      summary: '변경 없음 승인',
+      findings: [],
+      mustFix: [],
+      approvalRecommendation: 'APPROVE',
+    });
+
+    // 필드 3 개만 세고 근거 항목은 빠져야 한다.
+    expect(evaluation.checkedCount).toBe(3);
+    expect(evaluation.score).toBe(1);
+  });
+
+  it('inspectContract 는 같은 검수의 위반 목록과 일치한다', () => {
+    const output = { topPriority: '', morning: '오전', afternoon: '오후' };
+
+    expect(inspectContract(AgentType.PM, output)).toEqual(
+      evaluateContract(AgentType.PM, output).violations,
+    );
   });
 });

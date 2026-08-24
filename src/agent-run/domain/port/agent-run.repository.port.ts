@@ -27,6 +27,9 @@ export interface FinishAgentRunInput {
   // 직무 계약 검수 결과(ContractViolation[]). 위반이 없으면 미지정.
   // 관측 전용이라 status 판정에는 영향을 주지 않는다.
   contractViolations?: unknown;
+  // 계약 검수 점수(0.0~1.0). 검사 항목이 0 개인 스텁 계약은 미지정 — 무검사를
+  // 만점으로 위장하지 않기 위해 1.0 을 쓰지 않는다(`ContractEvaluation.score` 주석).
+  contractScore?: number;
 }
 
 export interface SucceededAgentRunSnapshot {
