@@ -563,7 +563,13 @@ export class PublishNotionDraftUsecase {
         return '정리: 편집 완료 · 말투: 윤문할 산문 문단 없음';
       }
       if (humanized.changedParagraphs === 0) {
-        return '정리: 편집 완료 · 말투: 적용 안 됨(원문 그대로 — 윤문 실패 또는 비활성)';
+        // 전부 원본 그대로면 모델 호출 실패·비활성과 구분되지 않는다 — 셋 다 입력이 그대로
+        // 돌아오기 때문이다. 그런데 **빈 값이 섞였다면 이야기가 다르다**: 모델이 응답은 했는데
+        // 내용을 비워 보낸 것이라 원인이 아예 다르고, 「원문 그대로」라는 문구부터 사실이 아니다.
+        // 여기서 사유를 버리면 계측이 **가장 심한 경우에** 사라진다(PR #380 리뷰 지적).
+        return humanized.skippedParagraphs.empty === 0
+          ? '정리: 편집 완료 · 말투: 적용 안 됨(원문 그대로 — 윤문 실패 또는 비활성)'
+          : `정리: 편집 완료 · 말투: 적용 안 됨${this.buildSkipNote(humanized)}`;
       }
       return `정리: 편집 완료 · 말투: ${humanized.changedParagraphs}/${humanized.proseParagraphs}문단 적용${this.buildSkipNote(humanized)}`;
     })();
