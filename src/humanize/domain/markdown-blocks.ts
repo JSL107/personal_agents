@@ -22,11 +22,31 @@ export type MarkdownBlockScan = {
   blocks: MarkdownBlock[];
 };
 
+/**
+ * 윤문이 적용되지 않은 문단을 사유별로 센다.
+ *
+ * 왜 사유가 필요한가 — 카드에는 `N/M문단 적용` 만 찍힌다. 같은 입력으로 4회 윤문한 실측에서
+ * 3회는 43/43 인데 1회가 42/43 이었고, 빠진 문단이 **빈 값이었는지 원본 그대로였는지 사후에
+ * 갈라낼 신호가 어디에도 없었다**(2026-08-24). 두 사유는 처방이 다르다 — 빈 값은 어떤 경우에도
+ * 정상 윤문이 아니고, 원본 그대로는 손댈 것이 없어서일 수도 있다.
+ *
+ * 전체 실패는 여기 세지 않는다. 모델 호출이나 파싱이 깨지면 `HumanizeService` 가 입력 전부를
+ * 그대로 돌려주므로 모든 문단이 `identical` 이 되고 `changedParagraphs` 는 0 이다 — 카드는
+ * 그 상태를 「적용 안 됨」으로 따로 찍는다.
+ */
+export type HumanizeSkipReasons = {
+  // 모델이 빈 값을 돌려줬다(문자열이 아닌 값도 여기 센다).
+  empty: number;
+  // 모델이 원본을 한 글자도 바꾸지 않고 돌려줬다.
+  identical: number;
+};
+
 export type HumanizeMarkdownResult = {
   markdown: string;
   // 실제로 문장이 바뀐 문단 수. 0 이면 윤문이 안 먹었다는 뜻이라 카드에 그대로 드러낸다.
   changedParagraphs: number;
   proseParagraphs: number;
+  skippedParagraphs: HumanizeSkipReasons;
 };
 
 // 펜스는 **길이까지** 잡는다. ```` 로 열고 안쪽에 ``` 가 들어간 블록을 3글자 마커로만 보면

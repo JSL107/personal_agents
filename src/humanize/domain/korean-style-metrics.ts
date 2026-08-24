@@ -20,6 +20,9 @@ export type KoreanStyleMetrics = {
   // "구어 어미가 하나도 없다" 로 읽힌다(실측: 142문장 중 6개 = 4% 가 0% 로 표시됐다).
   shortSentencePercent: number;
   longestSentenceLength: number;
+  // 가장 긴 문장 그대로. 상한을 넘겼을 때 **무엇이 길었는지** 사람이 봐야 처방이 갈린다 —
+  // 끊어야 할 만연체와, 끊을 수 없는 영문 이름 나열은 길이만으로 구분되지 않는다.
+  longestSentence: string;
   colloquialEndingPercent: number;
   // 종결 어미 중 해요체(`~요`·`~죠`) 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
   // 여기에 구어 어미가 6분의 1쯤 얹힌다" 다 — 즉 문체는 두 축이고, 구어 어미는 `~요` 축의
@@ -106,6 +109,19 @@ const BANNED_CONNECTIVES = [
 // 제외해야 하는데, 쉼표를 붙여 피하면 '즉 그래서' 처럼 쉼표 없는 접속 용법을 놓친다.
 const JEUK_PATTERN = /즉(?![가-힣])/;
 const MEASURABLE_SENTENCE_MIN = 40;
+/**
+ * 상한을 넘긴 문장을 카드에 보여줄 때 잘라 낼 길이. 상한 자체는 `KOREAN_STYLE_TARGETS`
+ * (`longestSentenceMax`)가 정본이다.
+ *
+ * 왜 문장을 보여주는가 — 넘겼다고 발행을 막지 않으므로 사람이 판단해야 하는데, **숫자만으로는
+ * 판단이 안 선다.** 실측(2026-08-24, 같은 입력 4회)에서 80자 초과 네 문장 중 셋은 53·75·59자로
+ * 끊겼고, 남은 하나는 네 회차 모두 91자 그대로였다. 그 하나는 공백 제외 91자 중 77자(85%)가
+ * 영문 이름이라 절대 규칙(고유명사·항목 순서 불변)이 끊는 것을 막는다 — 끊어야 할 만연체와
+ * 끊을 수 없는 이름 나열이 길이로는 갈리지 않는다.
+ *
+ * 한 줄에 들어갈 만큼만 보여준다. 판정에 필요한 것은 문장의 **성격**이지 전문이 아니다.
+ */
+const LONGEST_SENTENCE_PREVIEW = 60;
 // 합쇼체 종결 판정. `습니다` 를 나열하지 않고 `니다` 로 본다 — 합쇼체는 자음 뒤에서 `-습니다`,
 // 모음 뒤에서 `-ㅂ니다` 로 갈려 "씁니다·갑니다·봅니다" 처럼 활용형이 무한하다. 어미를 열거하면
 // 정확히 그 활용형들이 빠져 합쇼체가 0 으로 세어진다(실측으로 걸렸다).
@@ -226,6 +242,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       lengthStandardDeviation: 0,
       shortSentencePercent: 0,
       longestSentenceLength: 0,
+      longestSentence: '',
       colloquialEndingPercent: 0,
       yoEndingPercent: 0,
       endingAlternationPercent: 0,
@@ -244,6 +261,8 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
   const variance =
     lengths.reduce((sum, length) => sum + (length - average) ** 2, 0) /
     lengths.length;
+
+  const longestIndex = lengths.indexOf(Math.max(...lengths));
 
   const colloquialCount = sentences.filter((sentence) =>
     COLLOQUIAL_ENDINGS.some((ending) =>
@@ -302,7 +321,8 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length,
       lengths.length,
     ),
-    longestSentenceLength: Math.max(...lengths),
+    longestSentenceLength: lengths[longestIndex],
+    longestSentence: sentences[longestIndex],
     colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
     yoEndingPercent:
       yoCount + formalCount === 0
@@ -427,8 +447,18 @@ export const formatKoreanStyleMetrics = (
     : gaps.length === 0
       ? `\n판정 대상 충족 (${KOREAN_STYLE_UNJUDGED_AXES.join('·')}은 판정 밖)`
       : `\n목표 밖: ${gaps.join(' · ')}`;
-  return `${sentenceLine}\n${paragraph}${verdict}`;
+  // 판정 줄은 「기준에서 얼마나 벗어났나」까지만 알려준다. **무엇이 길었는지**는 숫자로 갈리지
+  // 않는다 — 끊어야 할 만연체와, 고유명사 불변 규칙 때문에 끊을 수 없는 영문 이름 나열이
+  // 같은 91자로 찍힌다. 넘겼을 때만 그 문장을 덧붙여 사람이 읽고 판단하게 한다.
+  const longest =
+    metrics.longestSentenceLength > KOREAN_STYLE_TARGETS.longestSentenceMax
+      ? `\n최장 문장(${metrics.longestSentenceLength}자): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
+      : '';
+  return `${sentenceLine}\n${paragraph}${verdict}${longest}`;
 };
+
+const truncate = (text: string, max: number): string =>
+  text.length <= max ? text : `${text.slice(0, max)}…`;
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 

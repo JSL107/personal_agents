@@ -3,6 +3,7 @@ import {
   findKoreanStyleGaps,
   formatKoreanStyleMetrics,
   KOREAN_STYLE_TARGETS,
+  KoreanStyleMetrics,
   measureKoreanStyle,
 } from './korean-style-metrics';
 
@@ -66,6 +67,21 @@ describe('measureKoreanStyle', () => {
     const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
 
     expect(metrics.longestSentenceLength).toBeGreaterThan(80);
+  });
+
+  // 「최장 91자」만 보면 만연체인지 영문 이름 나열인지 갈리지 않는다. 둘은 처방이 정반대다
+  // — 만연체는 끊어야 하고, 나열은 끊을 수 없다(고유명사 불변이 절대 규칙이다).
+  it('최장 문장이 상한을 넘으면 그 문장을 함께 돌려준다', () => {
+    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
+
+    expect(metrics.longestSentence).toBe(`${'가'.repeat(120)}입니다.`);
+    expect(formatKoreanStyleMetrics(metrics)).toContain('최장 문장(124자):');
+  });
+
+  it('최장 문장이 상한 이하면 문장을 덧붙이지 않는다', () => {
+    const metrics = measureKoreanStyle('짧습니다. 이것도 짧아요.');
+
+    expect(formatKoreanStyleMetrics(metrics)).not.toContain('최장 문장(');
   });
 
   it('산문이 없으면 측정 불가로 표시한다', () => {
@@ -371,12 +387,15 @@ describe('formatKoreanStyleMetrics', () => {
 });
 
 describe('재현 목표 판정', () => {
-  const base = {
+  // 타입을 그대로 받는다 — `as unknown as` 로 캐스팅하면 지표에 필드가 늘어도 컴파일러가
+  // 잡아 주지 못해, 손으로 조립한 이 픽스처만 옛 형태로 남아 런타임에 터진다(실제로 겪었다).
+  const base: KoreanStyleMetrics = {
     sentenceCount: 100,
     averageLength: 40,
     lengthStandardDeviation: 15,
     shortSentencePercent: 25,
     longestSentenceLength: 70,
+    longestSentence: '이 문장은 상한 안에 든다.',
     colloquialEndingPercent: 15,
     yoEndingPercent: 50,
     endingAlternationPercent: 30,
@@ -388,7 +407,7 @@ describe('재현 목표 판정', () => {
       dominantParagraphSizePercent: 50,
       noShortSentenceParagraphs: 2,
     },
-  } as unknown as Parameters<typeof findKoreanStyleGaps>[0];
+  };
 
   it('목표 안이면 지적할 것이 없다', () => {
     expect(findKoreanStyleGaps(base)).toEqual([]);
