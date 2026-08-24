@@ -37,9 +37,9 @@ import { PrismaModule } from '../src/prisma/prisma.module';
 // 것과 동일한 formatter 로 찍는다. `--at` 은 실행 시각을 그 날짜 KST 18:00 으로 고정한다.
 const USAGE =
   '사용법:\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts open --account <계좌명> --seed <금액>\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts buy --account <계좌명> --code <종목코드> --name <종목명> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--strategy <LONG_TERM|SWING|MANUAL>] [--reason <사유>]\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts sell --account <계좌명> --code <종목코드> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--reason <사유>]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts open --account <DEFAULT|LONG_TERM|SWING> --seed <금액>\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts buy --account <DEFAULT|LONG_TERM|SWING> --code <종목코드> --name <종목명> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--strategy <LONG_TERM|SWING|MANUAL>] [--reason <사유>]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts sell --account <DEFAULT|LONG_TERM|SWING> --code <종목코드> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts status\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>] [--apply-exit-band true]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts recommend\n' +
@@ -109,6 +109,23 @@ const requireOption = (options: Map<string, string>, key: string): string => {
   return value;
 };
 
+// 계좌 이름은 전략명이 그대로 쓰인다 — apply-exit-band.usecase.ts:37-42 의 strategyOf 가
+// LONG_TERM / SWING 만 전략으로 인정하고 그 밖은 MANUAL 로 떨어뜨린다. 오타로 계좌를 열면
+// 지우는 경로가 없고(계좌 삭제·종료 usecase 없음) evaluate 의 executeAll 이 전 계좌를 훑으므로
+// 고아 계좌가 매일 평가·시세 조회에 섞인다. 생성 전에 허용 값으로 끊는다.
+const PAPER_ACCOUNT_NAMES: string[] = ['DEFAULT', 'LONG_TERM', 'SWING'];
+
+const requireAccountName = (options: Map<string, string>): string => {
+  const given = requireOption(options, 'account');
+  const normalized = given.toUpperCase();
+  if (!PAPER_ACCOUNT_NAMES.includes(normalized)) {
+    throw new Error(
+      `알 수 없는 계좌명: ${given} (허용: ${PAPER_ACCOUNT_NAMES.join(' | ')})`,
+    );
+  }
+  return normalized;
+};
+
 const parseUtcDateBoundary = (value: string): Date => {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
     throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${value}`);
@@ -153,7 +170,7 @@ const main = async (): Promise<void> => {
   try {
     if (parsed.subcommand === 'open') {
       const result = await application.get(OpenPaperAccountUsecase).execute({
-        accountName: requireOption(parsed.options, 'account'),
+        accountName: requireAccountName(parsed.options),
         seedAmount: requireOption(parsed.options, 'seed'),
         openedAt: new Date(),
       });
@@ -284,7 +301,7 @@ const main = async (): Promise<void> => {
     }
 
     const result = await application.get(RecordPaperTradeUsecase).execute({
-      accountName: requireOption(parsed.options, 'account'),
+      accountName: requireAccountName(parsed.options),
       tickerCode: requireOption(parsed.options, 'code'),
       tickerName:
         parsed.subcommand === 'buy'
