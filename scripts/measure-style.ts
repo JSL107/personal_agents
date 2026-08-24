@@ -94,9 +94,17 @@ const ALLOWED_CONNECTIVES: ReadonlyArray<readonly [string, RegExp]> = [
   ['하지만', boundary('하지만')],
 ];
 
-// 1인칭 표식. 「문제 」·「언제 」가 `제\s` 에 걸리는 오탐을 봤으므로 어절 단위로 잡는다.
+// 1인칭 표식. 「문제 」·「언제 」가 `제\s` 에 걸리는 오탐을 봤으므로 어절 경계를 요구한다.
+//
+// **「제일」은 세지 않는다.** 프로파일 §9 가 1인칭 예문으로 든 「제일 마음에 드는 건」에서
+// 「제일」은 저+의가 아니라 최상급(=가장)이다. 낱말만 떼어 오면 「제일 중요한 부분」까지
+// 1인칭으로 세어져 비율이 부풀려진다(PR #381 리뷰, 두 리뷰어 일치).
+//
+// 반말 1인칭(나·내)도 센다. 다만 **「나는」은 문장 첫머리에서만** 본다 — 「하늘을 나는 새」의
+// 날다 활용형과 구분할 방법이 없어서, 흔한 쪽인 「나는 …」으로 문장을 여는 용법만 취한다.
+// 「하나는」·「하나도」·「하나를」은 앞 경계 요구로 걸러진다.
 const FIRST_PERSON =
-  /(^|[\s(「"'])(제가|제[는를의]|저는|저를|저도|저한테|제 [가-힣]|제일 [가-힣])/;
+  /(^|[\s(「"'])(제가|제[는를의]|제 [가-힣]|저는|저를|저도|저한테|내가|내 [가-힣]|나도|나를)|^나는[\s,]/;
 
 const stripTail = (sentence: string): string =>
   sentence.replace(TRAILING_CLOSERS, '').trim();
@@ -227,7 +235,13 @@ const selfTest = (): void => {
 
   assert.equal(firstPersonIn('문제 상황에 맞게 골랐다.'), false);
   assert.equal(firstPersonIn('그래서 언제 갱신할지 정한다.'), false);
+  assert.equal(firstPersonIn('제일 중요한 부분이에요.'), false);
+  assert.equal(firstPersonIn('그 중 하나는 빠졌다.'), false);
+  assert.equal(firstPersonIn('하늘을 나는 새를 봤다.'), false);
   assert.equal(firstPersonIn('제가 직접 손봤어요.'), true);
+  assert.equal(firstPersonIn('제 주관이에요.'), true);
+  assert.equal(firstPersonIn('나는 그때 몰랐다.'), true);
+  assert.equal(firstPersonIn('내가 만든 규칙이다.'), true);
 
   console.log('selftest ok');
 };
