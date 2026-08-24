@@ -331,4 +331,39 @@ describe('formatKoreanStyleMetrics', () => {
     expect(metrics.colloquialEndingPercent).toBe(4);
     expect(formatKoreanStyleMetrics(metrics)).toContain('구어 4%');
   });
+  // 비율과 배치는 다른 축이다. 요체 비율이 같은데 배치만 다른 두 입력으로 확인한다 — 이 대조군이
+  // 없으면 「한쪽으로 몰리지 않게」 지시가 만든 문장 단위 지그재그를 지표가 그대로 통과시킨다
+  // (실측: 발행본 세 편이 교대율 73~88% 인데 요체 비율만 보면 문제로 보이지 않았다).
+  it('종결체 비율이 같아도 문장마다 갈아타면 교대율로 갈린다', () => {
+    const zigzag = measureKoreanStyle(
+      '캐시는 재사용 시간을 정해요. 그 시간이 지나면 다시 묻습니다. 본문은 저장한 것을 그대로 써요. 네트워크 비용은 줄어듭니다.',
+    );
+    const grouped = measureKoreanStyle(
+      '캐시는 재사용 시간을 정해요. 그 시간이 지나면 다시 물어요. 본문은 저장한 것을 그대로 씁니다. 네트워크 비용은 줄어듭니다.',
+    );
+
+    expect(zigzag.yoEndingPercent).toBe(50);
+    expect(grouped.yoEndingPercent).toBe(50);
+    expect(zigzag.endingAlternationPercent).toBe(100);
+    expect(grouped.endingAlternationPercent).toBe(33);
+    expect(formatKoreanStyleMetrics(zigzag)).toContain('종결체교대 100%');
+  });
+
+  // 분류되지 않는 문장을 분모에 넣으면 그 문장 하나가 인접 쌍을 둘로 쪼개 교대가 실제보다
+  // 심하게 보인다. 같은 종결체 두 문장 사이에 명사 종결 문장을 끼워 0% 인지 확인한다.
+  it('종결체로 분류되지 않는 문장은 인접 쌍에서 빠진다', () => {
+    const metrics = measureKoreanStyle(
+      '캐시는 재사용 시간을 정해요. 핵심은 재검증. 본문은 저장한 것을 그대로 써요.',
+    );
+
+    expect(metrics.sentenceCount).toBe(3);
+    expect(metrics.endingAlternationPercent).toBe(0);
+  });
+
+  it('종결체 문장이 하나뿐이면 교대율은 0 이다', () => {
+    expect(
+      measureKoreanStyle('캐시는 재사용 시간을 정해요.')
+        .endingAlternationPercent,
+    ).toBe(0);
+  });
 });
