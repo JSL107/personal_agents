@@ -6,7 +6,8 @@ export const BACKTEST_CLI_USAGE =
   '  pnpm backtest --strategy LONG_TERM|SWING --from YYYY-MM-DD --to YYYY-MM-DD\n' +
   '                [--seed <금액>] [--turnover-min <거래대금>] [--max-positions <종목수>]\n' +
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
-  '                [--take-profit <익절%> --stop-loss <손절%>]';
+  '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
+  '                [--delisting-recovery <폐지청산 회수율, 기본 1>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
 const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
@@ -94,6 +95,22 @@ const readExitBand = (argv: string[]): ExitBandThreshold | null => {
   return { takeProfitPercent, stopLossPercent };
 };
 
+// 보유 중 폐지된 종목의 청산가를 마지막 종가의 몇 배로 칠지. 상한 1 을 두는 것은 폐지가
+// 마지막 종가보다 이득인 경우를 가정하면 그 자체가 낙관 편향이 되기 때문이다.
+const readDelistingRecoveryRate = (argv: string[]): number => {
+  const raw = readOption(argv, 'delisting-recovery');
+  if (raw === undefined) {
+    return 1;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    throw new Error(
+      `--delisting-recovery 는 0 초과 1 이하의 수여야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return value;
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): ReplayBacktestCommand => {
@@ -124,5 +141,6 @@ export const parseBacktestCliArguments = (
       DEFAULT_HOLDING_TRADE_DAYS[strategy],
     ),
     exitBand: readExitBand(argv),
+    delistingRecoveryRate: readDelistingRecoveryRate(argv),
   };
 };
