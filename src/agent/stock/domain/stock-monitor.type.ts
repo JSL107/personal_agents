@@ -1,3 +1,7 @@
+// 환율 원장(daily_fx_rate)의 통화쌍 키. 저장하는 쪽(저녁 감시)과 읽는 쪽(아침 브리핑)이
+// 각자 리터럴을 들고 있으면 한쪽만 바뀌는 날 조회가 조용히 빈 결과를 낸다.
+export const USD_KRW_PAIR = 'USDKRW';
+
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
 
 export type StockAnomalyKind = 'DAILY_CHANGE' | 'AVG_PRICE_BREACH';
