@@ -96,6 +96,27 @@ export interface AgentContract {
   readonly claimFields?: readonly string[];
   /** 이 에이전트 고유 금칙어. 회사 공통 금칙어(COMPANY_FORBIDDEN_PHRASES) 에 더해진다. */
   readonly forbidPhrases?: readonly string[];
+  /**
+   * 산출물 검사는 켜되 프롬프트 머리말 주입은 건너뛴다.
+   *
+   * **`deliverableFields` 는 두 가지 서로 다른 것에 쓰인다.** 검수기에서는
+   * "`agent_run.output` 의 최상위 키" 지만, 프롬프트 머리말에서는 "모델이 낼 응답의 키"
+   * 로 읽힌다(`buildContractPreamble` 이 "산출물에 반드시 포함할 것" 으로 적어 보낸다).
+   * 두 스키마가 같은 에이전트에서는 문제가 없다 — PM·CODE_REVIEWER 처럼 모델 응답이
+   * 그대로 output 이 되는 경우다.
+   *
+   * 문제는 **output 을 usecase 가 조립하는 에이전트**다. 모델은 도메인 응답을 내고
+   * usecase 가 그것을 집계·가공해 다른 모양으로 저장한다. 이런 계약에 머리말을 넣으면
+   * 모델에게 **존재하지 않는 스키마를 요구**하게 되고, 원래 기대했던 응답 형태가 깨져
+   * 파서가 실패한다. 검사는 output 을 보므로 켜 두는 것이 맞고, 머리말만 꺼야 한다.
+   *
+   * 판정 기준: `AgentRunService.execute` 의 `run` 이 돌려주는 `result` 가 모델 응답
+   * 그대로인가. 조립이면 이 플래그를 켠다.
+   *
+   * 설계문서 `2026-07-31-idaeri-company-rules-design.md` §5 가 "프롬프트 머리말이 기존
+   * 출력 스키마와 충돌한다" 로 예고한 리스크의 구체형이다.
+   */
+  readonly skipPreamble?: boolean;
   /** 산출물을 넘겨받는 다음 부서. 체인 끝이면 null. */
   readonly nextAgent: AgentType | null;
 }
@@ -203,7 +224,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   [AgentType.CTO]: {
     department: Department.EXECUTIVE,
     job: 'PM 이 뽑은 할 일을 백엔드 워커에 분배한다',
-    deliverableFields: [],
+    // 2026-08-24 실측: 성공 실행 15/15 전건에 세 키가 비어 있지 않은 값으로 등장.
+    // `skipPreamble` 을 켜지 않는다 — output 이 모델 응답 그대로다
+    // (`generate-assignment.usecase.ts` 의 `result: output`, 같은 키를 타입가드가 검증).
+    deliverableFields: ['ctoSummary', 'assignments', 'unassignedTasks'],
     requireEvidence: false,
     nextAgent: AgentType.BE,
   },
@@ -243,14 +267,32 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.GROWTH,
     '보유 종목의 시세 이상을 장 마감 후 점검한다',
   ),
-  [AgentType.PAPER_TRADE]: stub(
-    Department.GROWTH,
-    '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
-  ),
-  [AgentType.PAPER_RECOMMEND]: stub(
-    Department.GROWTH,
-    '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',
-  ),
+  [AgentType.PAPER_TRADE]: {
+    department: Department.GROWTH,
+    job: '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
+    // 2026-08-24 실측: 성공 실행 8/8 전건. exitBandAccounts 계열은 5/8 로 매도 밴드가
+    // 걸린 회차에만 등장해 필수에서 뺐다.
+    deliverableFields: ['accounts', 'accountCount', 'failedCount'],
+    requireEvidence: false,
+    // output 은 `buildPaperTradingAudit` 이 계좌 평가를 집계해 만든다. 현재 이 워커는
+    // 모델을 부르지 않아 머리말 경로 자체가 없지만, 조립 output 이라는 성질은 그대로다 —
+    // 나중에 모델 호출이 붙는 순간 함정이 되므로 미리 끈다.
+    skipPreamble: true,
+    nextAgent: null,
+  },
+  [AgentType.PAPER_RECOMMEND]: {
+    department: Department.GROWTH,
+    job: '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',
+    // 2026-08-24 실측: 성공 실행 16/16 전건. agentRunId 는 자기 실행 식별자일 뿐
+    // 산출물의 내용이 아니라 제외했다(`claimFields` 주석의 taskId 판단과 같은 이유).
+    deliverableFields: ['strategy', 'accountId', 'ordersCreated'],
+    requireEvidence: false,
+    // 모델은 추천 종목을 내고, output 은 usecase 가 계좌·주문 수를 집계해 만든다
+    // (`generate-paper-recommendation.usecase.ts` 의 `result` 조립). 머리말이 이 키를
+    // 요구하면 모델이 추천 스키마 대신 집계값을 지어낸다.
+    skipPreamble: true,
+    nextAgent: null,
+  },
 
   // ──────────────────────────────── 내부 ────────────────────────────────
   [AgentType.OPS_SUPERVISOR]: {
@@ -260,22 +302,47 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     requireEvidence: false,
     nextAgent: null,
   },
-  [AgentType.EVENING_RETRO]: stub(
-    Department.INTERNAL_OPS,
-    '하루를 회고해 발행 초안을 만든다',
-  ),
-  [AgentType.HUMANIZER]: stub(
-    Department.INTERNAL_OPS,
-    '기계적인 문장을 사람이 쓴 글로 다듬는다',
-  ),
+  [AgentType.EVENING_RETRO]: {
+    department: Department.INTERNAL_OPS,
+    job: '하루를 회고해 발행 초안을 만든다',
+    // 2026-08-24 실측: 성공 실행 14/14 전건.
+    // `skipPreamble` 을 켜지 않는다 — 세 키를 모델에게 직접 요구하는 프롬프트가 이미 있다
+    // (`evening-retro.prompt.ts`). 머리말이 같은 스키마를 되짚어 주는 셈이라 안전하다.
+    deliverableFields: ['prNotes', 'candidates', 'retrospective'],
+    requireEvidence: false,
+    nextAgent: null,
+  },
+  [AgentType.HUMANIZER]: {
+    department: Department.INTERNAL_OPS,
+    job: '기계적인 문장을 사람이 쓴 글로 다듬는다',
+    // 2026-08-24 실측: 성공 실행 141/141 전건. 산출물이 이 키 하나뿐이라 검사가
+    // 잡아내는 것은 "윤문 결과를 아예 못 담은 회차" 로 좁다. 그래도 켜 두는 이유는
+    // 141 회차가 무검사로 남는 쪽이 더 나쁘기 때문이다.
+    deliverableFields: ['humanizedKeys'],
+    requireEvidence: false,
+    // 두 겹으로 위험하다. (1) `humanize.service.ts` 는 `prompt` 에 윤문 대상 JSON 을
+    // 그대로 담고 응답도 JSON 파싱을 기대하는데, 머리말이 그 JSON 앞에 붙는다.
+    // (2) humanizedKeys 는 모델이 내는 키가 아니라 어댑터가 만드는 메타 필드라
+    // 머리말이 모델에게 없는 스키마를 요구한다.
+    skipPreamble: true,
+    nextAgent: null,
+  },
   [AgentType.ISSUE_LABELER]: stub(
     Department.INTERNAL_OPS,
     '새 이슈에 기존 라벨 중 적합한 것을 붙인다',
   ),
-  [AgentType.SUBCONSCIOUS_GATE]: stub(
-    Department.INTERNAL_OPS,
-    '감지된 상태 변화를 제안으로 올릴지 판정한다',
-  ),
+  [AgentType.SUBCONSCIOUS_GATE]: {
+    department: Department.INTERNAL_OPS,
+    job: '감지된 상태 변화를 제안으로 올릴지 판정한다',
+    // 2026-08-24 실측: 성공 실행 102/102 전건. promotedCount 는 0 이 정상값이고
+    // `isEmptyValue` 가 숫자 0 을 비어 있다고 보지 않으므로 필수로 둬도 오탐이 없다.
+    deliverableFields: ['decisions', 'promotedCount'],
+    requireEvidence: false,
+    // 모델은 판정 목록만 내고 promotedCount 는 코드가 세어 붙인다
+    // (`llm-subconscious-gate.ts` 의 `decisions.filter(...).length`).
+    skipPreamble: true,
+    nextAgent: null,
+  },
   [AgentType.CONTRADICTION_JUDGE]: stub(
     Department.INTERNAL_OPS,
     '기록된 지식 사이의 모순을 판정한다',
@@ -292,10 +359,23 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.INTERNAL_OPS,
     '대표의 취향을 관찰해 선호 프로필을 갱신한다',
   ),
-  [AgentType.BLOG_PUBLISH]: stub(
-    Department.GROWTH,
-    'Notion 블로그 초안을 익명화해 GitHub 발행 승인을 요청한다',
-  ),
+  [AgentType.BLOG_PUBLISH]: {
+    department: Department.GROWTH,
+    job: 'Notion 블로그 초안을 익명화해 GitHub 발행 승인을 요청한다',
+    // 2026-08-24 실측에서는 성공 실행 5/5 전건에 path·title·notionUrl 이 있었지만,
+    // 그 5 건이 전부 'preview'(발행 진행) 분기였을 뿐이다. `PublishNotionDraftResult`
+    // 는 4 갈래 union 이고 empty·skipped·blocked 도 정상 SUCCEEDED 로 저장되는데
+    // (`publish-notion-draft.usecase.ts` 의 `status !== 'ready'` 조기 반환), 그 셋에는
+    // path·title·notionUrl 이 애초에 없다. 넣어 두면 정상 실행마다 missingField 가
+    // 찍혀 추이를 오염시킨다 — 네 분기 전부에 있는 것은 status 하나다.
+    // 분기별 필수 필드를 따로 검사하는 것은 계약 구조 확장이 필요해 범위 밖으로 둔다.
+    deliverableFields: ['status'],
+    requireEvidence: false,
+    // 모델은 익명화된 본문을 내고, output 의 path·status·notionUrl 은 발행 경로가
+    // 만든다. 머리말이 이 키를 요구하면 익명화 응답 형태가 깨진다.
+    skipPreamble: true,
+    nextAgent: null,
+  },
   [AgentType.CTO_STUDY]: stub(
     Department.GROWTH,
     '딥다이브 주제를 대표의 현재 일과 연결해 학습 필요성을 판정한다',
@@ -314,6 +394,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
  */
 export function buildContractPreamble(agentType: AgentType): string | null {
   const contract = AGENT_CONTRACTS[agentType];
+  // 계약이 있어도 머리말만 끄는 경우가 있다 — 사유는 `skipPreamble` 주석 참조.
+  if (contract.skipPreamble === true) {
+    return null;
+  }
   const isStub =
     contract.deliverableFields.length === 0 &&
     contract.requireEvidence === false;

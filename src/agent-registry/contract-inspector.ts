@@ -107,22 +107,93 @@ function hasNoClaims(
   return lists.length > 0 && lists.every((list) => list.length === 0);
 }
 
-export function inspectContract(
+/**
+ * 검수 결과 — 위반 목록과 그것을 점수로 환산한 값.
+ *
+ * 위반 목록만으로는 "얼마나" 를 알 수 없다. 필수 필드 3 개 중 1 개가 빈 산출물과
+ * 3 개 모두 빈 산출물이 똑같이 "위반 있음" 으로 뭉개져, 워커별 산출물이 나빠지는
+ * 추세를 볼 수 없다. 점수는 그 해상도를 준다.
+ */
+export interface ContractEvaluation {
+  readonly violations: readonly ContractViolation[];
+  /** 점수 분모 — 이 산출물에 실제로 적용된 검사 항목 수. */
+  readonly checkedCount: number;
+  /**
+   * 통과한 검사 항목 수. **금칙어 차감 전** 값이다 — 금칙어는 항목이 아니라 감점이라
+   * 이 수에 섞으면 "몇 항목을 지켰나" 를 읽을 수 없게 된다. 차감은 `score` 에만 반영된다.
+   */
+  readonly passedCount: number;
+  /**
+   * 0.0 ~ 1.0. 검사 항목이 0 개면 `null`.
+   *
+   * `null` 을 `1.0` 으로 바꾸지 않는 것이 이 설계의 핵심이다. 계약이 스텁이라 아무것도
+   * 검사하지 않은 실행과 모든 검사를 통과한 실행이 같은 값을 가지면, 무검사가 만점으로
+   * 위장돼 평균이 조용히 부풀려진다.
+   */
+  readonly score: number | null;
+}
+
+/**
+ * 산출물을 계약과 대조해 위반과 점수를 함께 낸다.
+ *
+ * 금칙어는 **분모에 넣지 않는다.** 넣으면 모든 계약이 "금칙어 없음" 항목 하나를 공짜로
+ * 통과해 점수가 위로 눌린다(2026-08-24 실측에서 공통 금칙어 4 개의 적중은 성공 실행
+ * 1,067 건 중 0 건이었다). 대신 걸렸을 때 분자에서 깎아 실제로 점수가 내려가게 한다.
+ *
+ * 근거 요구는 면제되면(주장이 하나도 없는 산출물) 분모에서도 빠진다 — 검사하지 않은
+ * 항목을 통과로 세면 그것도 점수를 부풀리는 쪽이다.
+ */
+export function evaluateContract(
   agentType: AgentType,
   output: unknown,
-): readonly ContractViolation[] {
+): ContractEvaluation {
+  const contract = AGENT_CONTRACTS[agentType];
+
   // 산출물이 객체가 아니면(배열·문자열·null) 최상위 키 개념이 성립하지 않는다.
-  // 계약을 억지로 적용하지 않고 검사를 건너뛴다.
+  //
+  // 계약이 스텁이면 검사할 것이 없으니 그대로 건너뛴다 — 배열을 그대로 내보내는
+  // REVIEW_REPLY_JUDGE 같은 경우다.
+  //
+  // 그러나 **계약이 요구하는 것이 있는데 객체가 아니면 그건 형식 오류다.** 이 경우도
+  // `score: null` 로 두면 "계약이 스텁이라 무검사" 와 같은 값이 되어, 조회 스크립트가
+  // 그 실행을 무검사 집계에 넣고 형식 오류를 숨긴다. 필수 필드를 하나도 확인할 수
+  // 없었으므로 전부 누락으로 보고하고 0 점을 준다.
   if (isPlainObject(output) === false) {
-    return [];
+    const evidenceChecked = contract.requireEvidence ? 1 : 0;
+    const checkedCount = contract.deliverableFields.length + evidenceChecked;
+    if (checkedCount === 0) {
+      return {
+        violations: [],
+        checkedCount: 0,
+        passedCount: 0,
+        score: null,
+      };
+    }
+    const violations: ContractViolation[] = contract.deliverableFields.map(
+      (field) => ({ rule: 'missingField', detail: field }),
+    );
+    if (contract.requireEvidence) {
+      violations.push({ rule: 'noEvidence', detail: agentType });
+    }
+    return {
+      violations,
+      checkedCount,
+      passedCount: 0,
+      score: 0,
+    };
   }
 
-  const contract = AGENT_CONTRACTS[agentType];
   const violations: ContractViolation[] = [];
 
+  let checkedCount = 0;
+  let passedCount = 0;
+
   for (const field of contract.deliverableFields) {
+    checkedCount += 1;
     if (isEmptyValue(output[field])) {
       violations.push({ rule: 'missingField', detail: field });
+    } else {
+      passedCount += 1;
     }
   }
 
@@ -132,19 +203,47 @@ export function inspectContract(
     ...COMPANY_FORBIDDEN_PHRASES,
     ...(contract.forbidPhrases ?? []),
   ];
+  let forbiddenHits = 0;
   for (const phrase of forbidden) {
     if (serialized.includes(phrase)) {
       violations.push({ rule: 'forbiddenPhrase', detail: phrase });
+      forbiddenHits += 1;
     }
   }
 
   if (
     contract.requireEvidence &&
-    hasNoClaims(output, contract.claimFields) === false &&
-    EVIDENCE_PATTERN.test(serialized) === false
+    hasNoClaims(output, contract.claimFields) === false
   ) {
-    violations.push({ rule: 'noEvidence', detail: agentType });
+    checkedCount += 1;
+    if (EVIDENCE_PATTERN.test(serialized)) {
+      passedCount += 1;
+    } else {
+      violations.push({ rule: 'noEvidence', detail: agentType });
+    }
   }
 
-  return violations;
+  // 금칙어는 분모를 늘리지 않고 분자에서만 깎는다. 하한 0 — 금칙어가 필수 필드보다
+  // 많아도 음수 점수가 나오지 않게 한다.
+  const scoredPass = Math.max(0, passedCount - forbiddenHits);
+
+  return {
+    violations,
+    checkedCount,
+    passedCount,
+    score: checkedCount === 0 ? null : scoredPass / checkedCount,
+  };
+}
+
+/**
+ * 위반 목록만 필요한 호출부를 위한 얇은 래퍼.
+ *
+ * 검사 본체는 `evaluateContract` 하나다 — 두 함수가 각자 검사 로직을 들면 반드시
+ * 어긋난다.
+ */
+export function inspectContract(
+  agentType: AgentType,
+  output: unknown,
+): readonly ContractViolation[] {
+  return evaluateContract(agentType, output).violations;
 }

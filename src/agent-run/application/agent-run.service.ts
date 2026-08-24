@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
-import { inspectContract } from '../../agent-registry/contract-inspector';
+import { evaluateContract } from '../../agent-registry/contract-inspector';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import {
   ConsoleAgentState,
@@ -164,7 +164,8 @@ export class AgentRunService {
       // 1단계는 관측 모드다: 위반이 있어도 SUCCEEDED 를 유지하고 기록만 남긴다.
       // 기존 산출물이 새 계약을 얼마나 지키는지 모르는 상태에서 반려를 걸면
       // 매일 도는 cron 이 무더기로 막히기 때문이다.
-      const contractViolations = inspectContract(agentType, execution.output);
+      const evaluation = evaluateContract(agentType, execution.output);
+      const contractViolations = evaluation.violations;
       if (contractViolations.length > 0) {
         this.logger.warn(
           `[계약 위반] ${agentType} run#${id} — ${contractViolations
@@ -182,6 +183,9 @@ export class AgentRunService {
         durationMs: Date.now() - startMs,
         contractViolations:
           contractViolations.length > 0 ? contractViolations : undefined,
+        // null(검사 항목 0 개)은 그대로 미지정으로 넘긴다 — 1.0 으로 바꾸면 스텁 계약의
+        // 무검사 실행이 만점으로 집계돼 평균을 위로 끌어올린다.
+        contractScore: evaluation.score ?? undefined,
       });
 
       // 콘솔 관제 — 성공 종료 알림(run.finished + COMPLETED).

@@ -76,6 +76,11 @@ export class EveningBlogPublishApplier implements PreviewApplier {
         }),
         systemPrompt: EVENING_BLOG_BODY_SYSTEM_PROMPT,
       },
+      // 이 호출은 EVENING_RETRO 의 회고 업무가 아니라 provider 를 고르기 위해 그 타입을
+      // 차용한다 — 실제로 받는 것은 Notion 에 그대로 실릴 Markdown 본문이다(아래 toBlocks).
+      // 계약 머리말이 붙으면 "산출물에 prNotes·candidates·retrospective 를 포함하라" 가
+      // 본문 지시와 충돌해 발행 글에 회고 JSON 이 섞인다.
+      noContractPreamble: true,
     });
 
     const row = await this.notionClient.findOrCreateDailyPage({

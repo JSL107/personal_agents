@@ -1,6 +1,7 @@
 import { AgentType } from '../model-router/domain/model-router.type';
 import {
   AGENT_CONTRACTS,
+  buildContractPreamble,
   Department,
   DEPARTMENT_LABEL,
 } from './agent-contract';
@@ -50,6 +51,56 @@ describe('AGENT_CONTRACTS', () => {
       if (contract.requireEvidence) {
         expect(contract.deliverableFields.length).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+describe('buildContractPreamble', () => {
+  it('계약이 있는 에이전트는 필수 필드를 머리말에 싣는다', () => {
+    const preamble = buildContractPreamble(AgentType.CTO);
+
+    expect(preamble).not.toBeNull();
+    for (const field of AGENT_CONTRACTS[AgentType.CTO].deliverableFields) {
+      expect(preamble).toContain(field);
+    }
+  });
+
+  it('output 을 usecase 가 조립하는 에이전트는 검수를 켜고도 머리말을 넣지 않는다', () => {
+    // 이 다섯은 모델 응답과 저장되는 output 의 스키마가 다르다. 머리말이 output 키를
+    // 요구하면 모델이 존재하지 않는 스키마를 내려 하고 원래 응답 파서가 깨진다.
+    const assembled = [
+      AgentType.HUMANIZER,
+      AgentType.PAPER_RECOMMEND,
+      AgentType.PAPER_TRADE,
+      AgentType.SUBCONSCIOUS_GATE,
+      AgentType.BLOG_PUBLISH,
+    ];
+
+    for (const agentType of assembled) {
+      const contract = AGENT_CONTRACTS[agentType];
+      expect(contract.skipPreamble).toBe(true);
+      // 검사는 켜져 있어야 한다 — 머리말만 끄는 것이 이 플래그의 목적이다.
+      expect(contract.deliverableFields.length).toBeGreaterThan(0);
+      expect(buildContractPreamble(agentType)).toBeNull();
+    }
+  });
+
+  it('output 이 모델 응답 그대로인 에이전트는 머리말을 유지한다', () => {
+    // 여기서 머리말을 끄면 모델이 계약을 모른 채 답하게 된다 — 이 기능의 원래 목적을 잃는다.
+    for (const agentType of [AgentType.CTO, AgentType.EVENING_RETRO]) {
+      expect(AGENT_CONTRACTS[agentType].skipPreamble).toBeUndefined();
+      expect(buildContractPreamble(agentType)).not.toBeNull();
+    }
+  });
+
+  it('skipPreamble 을 쓰는 계약은 산출물 검사가 켜져 있어야 한다', () => {
+    // 검사도 끄고 머리말도 끄면 스텁과 같다 — 플래그를 쓸 이유가 없다.
+    for (const [agentType, contract] of Object.entries(AGENT_CONTRACTS)) {
+      if (contract.skipPreamble !== true) {
+        continue;
+      }
+      expect(contract.deliverableFields.length > 0).toBe(true);
+      expect(agentType).toBeTruthy();
     }
   });
 });

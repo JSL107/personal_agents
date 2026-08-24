@@ -27,6 +27,11 @@ model AgentRun {
   // 예상하지 못한 키를 만나 깨지는 것을 피한다.
   // 1단계는 관측 모드 — 위반이 있어도 status 는 SUCCEEDED 그대로 둔다.
   contractViolations Json?     @map("contract_violations")
+  // 같은 검수의 점수(0.0~1.0). 위반 유무만으로는 "필수 필드 3 개 중 1 개 누락" 과
+  // "3 개 전부 누락" 이 같은 값이 되어 산출물이 나빠지는 추세가 보이지 않는다.
+  // NULL 은 "검사 항목이 0 개(스텁 계약)" 를 뜻한다 — 1.0 으로 채우면 무검사가
+  // 만점으로 위장돼 평균이 조용히 부풀려진다.
+  contractScore      Float?    @map("contract_score")
   startedAt          DateTime  @default(now()) @map("started_at")
   endedAt            DateTime? @map("ended_at")
 
