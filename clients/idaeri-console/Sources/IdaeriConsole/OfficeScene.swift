@@ -261,6 +261,10 @@ final class OfficeScene: SKScene {
 
     /// 격자 크기와 화면 크기로 타일 한 칸의 픽셀 크기·격자 원점을 정한다.
     /// 관제 화면이라 스크롤을 두지 않고 사무실 전체가 한 화면에 들어가게 맞춘다.
+    /// 마지막으로 **그려 낸** 평면도의 서명. nil 이면 아직 한 번도 그리지 않았다는 뜻이라
+    /// 첫 스냅샷이 빈 명단이어도 렌더를 건너뛰지 않는다.
+    private var lastPlanSignature: Set<String>?
+
     private func recalculateMetrics() {
         guard plan.columns > 0, plan.rows > 0, size.width > 0, size.height > 0 else {
             return
@@ -319,14 +323,31 @@ final class OfficeScene: SKScene {
         if rebuildPlan || layoutChanged {
             plan = officeFloorPlan(agents: agents, zoneColumns: nextZoneColumns)
         }
+        let previousTileSize = tileSize
+        let previousGridOrigin = gridOrigin
         recalculateMetrics()
-        renderFloor()
-        renderZoneLabels()
-        renderFurniture()
-        // 책상이 새로 만들어진 뒤여야 한다 — 서류·소품은 책상 노드의 자식으로 붙는다.
+        // **그림이 달라질 이유가 있을 때만 다시 그린다.** 이 함수는 상태가 바뀔 때마다 불리는데
+        // (SSE `state.changed`·`run.*`, 실측 5초에 한 번꼴), 그때마다 바닥·가구·책상·대표를
+        // 새로 만들면 책상의 **자식**인 모니터 불빛이 부모와 함께 사라졌다 되살아나 1.4초짜리
+        // 깜빡임이 매번 처음부터 재생된다 — 화면에서는 규칙적인 숨쉬기가 아니라 불규칙하게 튀는
+        // 것으로 보인다(승인 줄만 맞추는 `reconcileQueue` 경로를 따로 둔 것과 같은 이유).
+        //
+        // 평면도는 **명단과 부서 구성**으로만 정해지고(`officeFloorPlan`), 좌표계는 창 크기로만
+        // 바뀐다. 상태·런·토큰은 그림에 영향이 없으므로 서명에서 뺀다.
+        let planSignature = Set(agents.map { "\($0.agentType)|\($0.resolvedDepartment)" })
+        let geometryChanged = tileSize != previousTileSize || gridOrigin != previousGridOrigin
+        if geometryChanged || layoutChanged || planSignature != lastPlanSignature {
+            lastPlanSignature = planSignature
+            renderFloor()
+            renderZoneLabels()
+            renderFurniture()
+            renderDeskProps()
+            renderPresident()
+        }
+        // 서류는 오늘 처리량을 말하므로 그림을 다시 그리지 않는 회차에도 갱신한다 — 자체적으로
+        // 기존 장수를 지우고 다시 쌓으므로 책상이 재사용돼도 누적되지 않는다. 책상이 새로
+        // 만들어진 뒤여야 한다(서류는 책상 노드의 자식으로 붙는다).
         renderDeskPapers(agents: agents)
-        renderDeskProps()
-        renderPresident()
         // 대표·가구가 새로 만들어진 직후여야 한다 — 할 일 말풍선은 대표 노드의 자식이고
         // 연속 도장은 게시판 노드의 자식이라, 순서를 뒤집으면 방금 지워진 부모에 붙는다.
         redrawBriefingSigns()
@@ -1905,26 +1926,39 @@ final class OfficeScene: SKScene {
         // 책상 스프라이트보다 앞에 와야 화면 빛이 상판에 가리지 않는다.
         node.zPosition = depth(of: desk) + 5
         let isActive = session.state == officeSessionActiveState
-        node.childNode(withName: "screen")?.removeFromParent()
         if isActive {
-            let screen = SKSpriteNode(
-                color: SKColor(red: 0.58, green: 0.90, blue: 1.0, alpha: 0.9),
-                size: CGSize(width: tileSize * 0.34, height: tileSize * 0.22)
-            )
-            screen.name = "screen"
+            // **이미 켜진 화면은 지우지 않는다.** 이 함수는 세션이 활동할 때마다
+            // (`session.updated`) 그리고 30초 스윕마다 다시 불리는데, 매번 새로 만들면
+            // 1.6초짜리 숨쉬기가 그때마다 alpha 1 에서 처음부터 재생돼 빛이 뚝뚝 끊긴다 —
+            // 작업이 활발한 세션일수록 갱신이 잦아 더 심하게 튄다. 책상 모니터
+            // (`startMonitorGlow`)가 같은 이유로 이미 켜진 화면을 건너뛴다.
+            let screen: SKSpriteNode
+            if let lit = node.childNode(withName: "screen") as? SKSpriteNode {
+                screen = lit
+            } else {
+                screen = SKSpriteNode(
+                    color: SKColor(red: 0.58, green: 0.90, blue: 1.0, alpha: 0.9),
+                    size: .zero
+                )
+                screen.name = "screen"
+                screen.run(
+                    .repeatForever(
+                        .sequence([
+                            .fadeAlpha(to: 0.45, duration: 0.8),
+                            .fadeAlpha(to: 0.9, duration: 0.8),
+                        ])
+                    )
+                )
+                node.addChild(screen)
+            }
+            // 크기·자리는 재사용할 때도 매번 맞춘다 — 창 크기가 바뀌면 한 칸이 달라진다.
+            screen.size = CGSize(width: tileSize * 0.34, height: tileSize * 0.22)
             // 모니터 **화면** 자리. 책상 스프라이트는 발밑 기준이고 모니터는 상판 위에 얹혀
             // 있으므로, 상판 높이(0.5칸)가 아니라 그보다 위를 짚어야 한다 — 0.5 로 뒀더니
             // 빛이 화면이 아니라 책상 나뭇결 위에 떠 있었다.
             screen.position = CGPoint(x: 0, y: tileSize * 0.70)
-            screen.run(
-                .repeatForever(
-                    .sequence([
-                        .fadeAlpha(to: 0.45, duration: 0.8),
-                        .fadeAlpha(to: 0.9, duration: 0.8),
-                    ])
-                )
-            )
-            node.addChild(screen)
+        } else {
+            node.childNode(withName: "screen")?.removeFromParent()
         }
         // 이름 길이는 **실제 적용될 글자 크기**로 정한다. `setChildLabel` 이 한글 하한(11px)을
         // 걸기 때문에, 요청 크기(tileSize × 0.24)로 계산하면 작은 창에서 글자가 하한만큼 커진
