@@ -23,6 +23,12 @@ import {
 // 환율을 저장하는 것은 저녁 감시라 아침에는 늘 어제 값이 최신이다. 연휴를 감안해도 이만큼
 // 묵었으면 환산이 자산 규모를 왜곡하므로, 그때는 자산 줄 자체를 내지 않는다.
 const MAXIMUM_FX_RATE_AGE_DAYS = 7;
+// 잔고 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 그것은
+// 지금 자산이 아니다 — 환율에 상한을 둔 것과 같은 이유로 그때는 줄을 내지 않는다.
+const MAXIMUM_HOLDING_AGE_DAYS = 7;
+
+const ageInDaysOf = (date: Date): number =>
+  (Date.now() - date.getTime()) / (24 * 60 * 60 * 1000);
 
 // Morning Briefing 이관 — 매일 08:30 KST PM /today 자동 발화.
 // 기존 src/morning-briefing/infrastructure/morning-briefing.consumer.ts 의 핵심 로직을 task 로 옮김.
@@ -86,6 +92,15 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       if (positions.length === 0) {
         return summaryText;
       }
+      const holdingAgeDays = Math.min(
+        ...positions.map((position) => ageInDaysOf(position.holdingDate)),
+      );
+      if (holdingAgeDays > MAXIMUM_HOLDING_AGE_DAYS) {
+        this.logger.warn(
+          `잔고가 ${Math.floor(holdingAgeDays)}일 전 값이라 자산 요약을 생략합니다.`,
+        );
+        return summaryText;
+      }
       const rate = await this.resolveUsdKrwRate();
       const value = summarizePortfolioValue(positions, rate);
       const valueText = formatPortfolioValue(value);
@@ -104,8 +119,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     if (!stored) {
       return null;
     }
-    const ageDays =
-      (Date.now() - stored.rateDate.getTime()) / (24 * 60 * 60 * 1000);
+    const ageDays = ageInDaysOf(stored.rateDate);
     if (ageDays > MAXIMUM_FX_RATE_AGE_DAYS) {
       this.logger.warn(
         `환율이 ${Math.floor(ageDays)}일 전 값이라 자산 요약에 쓰지 않습니다.`,

@@ -25,12 +25,17 @@ export interface ValuedPosition extends ExposurePosition {
   avgPrice: ExposureDecimal;
   // 최신 봉 직전 거래일의 종가. 봉이 하나뿐이면 null 이고, 그때는 전일 대비를 내지 않는다.
   previousClose: ExposureDecimal | null;
+  // 이 보유 행의 잔고 기준일. 동기화는 전 종목을 한 번에 갱신하므로 값이 갈리면
+  // 그 회차가 일부만 반영됐다는 뜻이다.
+  holdingDate: Date;
 }
 
 export interface PortfolioValue {
   // 전부 원화 환산 후의 값이다.
   totalValue: number;
-  // 평단 대비 누적 손익.
+  // 매입가 대비 누적 손익. **원화 투입금 대비가 아니다** — 달러 보유의 매입 당시 환율을
+  // 잔고가 갖고 있지 않아, 원가도 현재 환율로 환산한다. 즉 이 값은 "달러로 얼마 벌었나" 를
+  // 지금 환율로 옮긴 것이고 환차손익은 들어 있지 않다. 표시 문구도 그 의미로 적는다.
   profit: number;
   profitRate: number;
   // 직전 거래일 종가 대비. 봉이 하나뿐인 종목이 있으면 null 이다 — 일부만 더한 값은
@@ -114,6 +119,18 @@ export const summarizePortfolioValue = (
     (position) => position.currency === 'USD',
   );
   if (positions.length === 0 || (hasUsdPosition && !usdKrwRate)) {
+    return null;
+  }
+  // 잔고 동기화는 전 종목을 한 회차에 갱신한다. 기준일이 갈렸다면 그 회차가 일부만
+  // 반영된 것이고, 그 상태로 더한 합계는 실제 보유가 아니다 — 저녁 감시가 부분 실패한
+  // 회차의 자산 배분 줄을 통째로 생략하는 것과 같은 이유다. 조회는 성공하므로 이걸
+  // 보지 않으면 틀린 평가액이 정상 값처럼 매일 아침 발송된다.
+  const holdingDates = new Set(
+    positions.map((position) =>
+      position.holdingDate.toISOString().slice(0, 10),
+    ),
+  );
+  if (holdingDates.size > 1) {
     return null;
   }
 

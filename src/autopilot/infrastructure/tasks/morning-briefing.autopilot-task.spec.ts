@@ -161,6 +161,7 @@ describe('MorningBriefingAutopilotTask', () => {
       close: new Prisma.Decimal('120'),
       avgPrice: new Prisma.Decimal('100'),
       previousClose: new Prisma.Decimal('110'),
+      holdingDate: new Date(),
     };
 
     it('보유가 있으면 브리핑 끝에 자산 줄을 붙인다', async () => {
@@ -176,7 +177,7 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.summaryText).toContain('내 자산');
-      expect(out.summaryText).toContain('원금 대비');
+      expect(out.summaryText).toContain('매입가 대비');
     });
 
     // 장식 쿼리 하나가 본체를 죽이면 안 된다.
@@ -221,6 +222,56 @@ describe('MorningBriefingAutopilotTask', () => {
 
       expect(out.summaryText).toContain('자동 수집된 할 일이 없습니다');
       expect(out.summaryText).toContain('내 자산');
+    });
+
+    // 환율을 실제로 읽어 쓰는 경로다. 파싱·전달·출력 연결이 여기서만 한 번에 확인된다.
+    it('최근 환율이 있으면 달러 보유를 환산해 자산 줄을 낸다', async () => {
+      const task = new MorningBriefingAutopilotTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        {
+          findPortfolioPositions: jest.fn().mockResolvedValue([
+            {
+              ...holding,
+              currency: 'USD',
+              quantity: new Prisma.Decimal('100'),
+              close: new Prisma.Decimal('10'),
+              avgPrice: new Prisma.Decimal('8'),
+              previousClose: new Prisma.Decimal('9'),
+            },
+          ]),
+          findLatestFxRate: jest
+            .fn()
+            .mockResolvedValue({ rate: '1400', rateDate: new Date() }),
+        } as never,
+      );
+
+      const out = await task.run(CTX);
+
+      // 100주 x $10 x 1,400 = 1,400,000원. 환율이 실제로 곱해졌는지 값으로 확인한다
+      // (환율을 안 쓰면 1,000원이라 만원 단위 표기 자체가 나오지 않는다).
+      expect(out.summaryText).toContain('140만원');
+      expect(out.summaryText).toContain('매입가 대비');
+    });
+
+    // 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 지금 자산이 아니다.
+    it('잔고가 오래됐으면 자산 줄을 내지 않는다', async () => {
+      const stale = new Date();
+      stale.setDate(stale.getDate() - 30);
+      const task = new MorningBriefingAutopilotTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        {
+          findPortfolioPositions: jest
+            .fn()
+            .mockResolvedValue([{ ...holding, holdingDate: stale }]),
+          findLatestFxRate: jest.fn().mockResolvedValue(null),
+        } as never,
+      );
+
+      const out = await task.run(CTX);
+
+      expect(out.summaryText).not.toContain('내 자산');
     });
 
     // 환율이 오래되면 환산이 자산 규모를 왜곡한다. 달러 보유가 있으면 줄을 통째로 뺀다.
