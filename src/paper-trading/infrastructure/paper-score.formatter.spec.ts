@@ -41,6 +41,7 @@ const RESULT: ScoreRecommendationsResult = {
         cumulativeCost: '1234.5',
       },
       classifications: { closed: 4, open: 1, expired: 1, anomaly: 0 },
+      periods: [],
       exclusions: {
         expired: 1,
         benchmarkUnavailable: 2,

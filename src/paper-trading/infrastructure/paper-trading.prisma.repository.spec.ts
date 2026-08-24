@@ -756,3 +756,99 @@ describe('PaperTradingPrismaRepository 밴드 청산 주문', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+// 구간 행은 실행마다 개수가 달라진다. upsert 만 하면 사라진 구간이 유령으로 남아 밴드별 판정에
+// 섞이므로, 같은 트랜잭션에서 먼저 지우고 다시 넣는지 순서까지 본다.
+describe('PaperTradingPrismaRepository 추천 채점 저장', () => {
+  const prisma = {
+    $transaction: jest.fn(),
+    recommendationScore: { upsert: jest.fn() },
+    recommendationScorePeriod: { deleteMany: jest.fn(), upsert: jest.fn() },
+  };
+  const repository = new PaperTradingPrismaRepository(
+    prisma as unknown as PrismaService,
+  );
+  const asOf = new Date('2026-08-24T00:00:00.000Z');
+  const cumulative = {
+    accountId: 7,
+    strategy: 'LONG_TERM',
+    asOf,
+    ruleVersions: [2],
+    unknownRuleVersionCount: 0,
+    exitBands: ['+2/-0.2'],
+    bandlessSellCount: 0,
+    recommendationCount: 1,
+    closedCount: 1,
+    openCount: 0,
+    expiredCount: 0,
+    hitCount: 1,
+    hitRate: '1',
+    meanReturnRate: '0.1',
+    medianReturnRate: '0.1',
+    maximumLoss: null,
+    averageHoldingDays: '1',
+    meanExcessReturnRate: null,
+    meanShadowReturnRate: null,
+    snapshotCount: 1,
+    accountReturnRate: '0.1',
+    maximumDrawdown: null,
+    turnoverRate: '1',
+    cumulativeCost: '0',
+    exclusions: {},
+  };
+  const periodInput = {
+    accountId: 7,
+    asOf,
+    periodLabel: '+2/-0.2',
+    strategy: 'LONG_TERM',
+    closedCount: 1,
+    hitCount: 1,
+    hitRate: '1',
+    meanReturnRate: '0.1',
+    medianReturnRate: '0.1',
+    maximumLoss: null,
+    averageHoldingDays: '1',
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    prisma.recommendationScorePeriod.deleteMany.mockReturnValue('DELETE');
+    prisma.recommendationScore.upsert.mockReturnValue('SCORE_UPSERT');
+    prisma.recommendationScorePeriod.upsert.mockReturnValue('PERIOD_UPSERT');
+  });
+
+  it('구간을 먼저 지운 뒤 누적과 구간을 한 트랜잭션에서 쓴다', async () => {
+    await repository.saveRecommendationScores(
+      [cumulative as never],
+      [periodInput as never],
+    );
+
+    // 삭제가 반드시 앞이다. 뒤면 방금 쓴 구간을 지운다.
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      'DELETE',
+      'SCORE_UPSERT',
+      'PERIOD_UPSERT',
+    ]);
+    expect(prisma.recommendationScorePeriod.deleteMany).toHaveBeenCalledWith({
+      where: { accountId: 7, asOf },
+    });
+  });
+
+  it('이번 회차의 구간이 0개인 계좌도 옛 구간을 지운다', async () => {
+    await repository.saveRecommendationScores([cumulative as never], []);
+
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      'DELETE',
+      'SCORE_UPSERT',
+    ]);
+    expect(prisma.recommendationScorePeriod.deleteMany).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('저장할 것이 아무것도 없으면 트랜잭션을 열지 않는다', async () => {
+    await repository.saveRecommendationScores([], []);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

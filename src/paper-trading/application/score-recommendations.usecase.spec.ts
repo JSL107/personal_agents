@@ -357,6 +357,109 @@ describe('ScoreRecommendationsUsecase', () => {
     jest.useRealTimers();
   });
 
+  // 누적 행만으로는 밴드를 바꾼 전후를 갈라 볼 수 없다(`exitBands` 는 "섞였다" 만 알린다).
+  // 구간 행이 밴드별로 갈려 저장되는지 본다.
+  it('청산 밴드별로 구간 성적을 갈라 원장에 남긴다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    const buy = (id: number, tickerId: number): Record<string, unknown> => ({
+      id,
+      accountId: 7,
+      tickerId,
+      side: 'BUY',
+      strategy: 'LONG_TERM',
+      status: 'FILLED',
+      quantity: decimal('1'),
+      ruleVersion: 2,
+    });
+    const sell = (id: number, tickerId: number): Record<string, unknown> => ({
+      ...buy(id, tickerId),
+      side: 'SELL',
+    });
+    const fill = (
+      id: number,
+      orderId: number,
+      tickerId: number,
+      side: 'BUY' | 'SELL',
+      price: string,
+      realizedPnl: string | null,
+    ): Record<string, unknown> => ({
+      id,
+      orderId,
+      accountId: 7,
+      tickerId,
+      side,
+      quantity: decimal('1'),
+      price: decimal(price),
+      fee: decimal('0'),
+      tax: decimal('0'),
+      realizedPnl: realizedPnl === null ? null : decimal(realizedPnl),
+      tradeDate: new Date(
+        side === 'BUY'
+          ? '2026-08-01T00:00:00.000Z'
+          : '2026-08-10T00:00:00.000Z',
+      ),
+    });
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      // 옛 밴드로 판 것 1건, 새 밴드로 판 것 1건.
+      sellOrders: [
+        {
+          id: 401,
+          accountId: 7,
+          takeProfitPercent: '2',
+          stopLossPercent: '-0.2',
+        },
+        {
+          id: 402,
+          accountId: 7,
+          takeProfitPercent: '10',
+          stopLossPercent: '-5',
+        },
+      ],
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [buy(301, 71), buy(302, 72), sell(401, 71), sell(402, 72)],
+      recommendationTrades: [
+        fill(501, 301, 71, 'BUY', '100', null),
+        fill(502, 302, 72, 'BUY', '100', null),
+        fill(503, 401, 71, 'SELL', '110', '10'),
+        fill(504, 402, 72, 'SELL', '90', '-10'),
+      ],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [{ tradeDate: asOf, close: decimal('2500') }],
+      snapshots: [
+        {
+          accountId: 7,
+          tradeDate: asOf,
+          totalValue: decimal('1100'),
+          isBackfilled: false,
+        },
+      ],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({ asOf });
+
+    // 누적과 구간은 한 트랜잭션이라 같은 호출의 두 번째 인자로 들어간다.
+    expect(repository.saveRecommendationScores).toHaveBeenCalledTimes(1);
+    const savedPeriods = repository.saveRecommendationScores.mock.calls[0][1];
+    expect(
+      savedPeriods.map((period: { periodLabel: string }) => period.periodLabel),
+    ).toEqual(['+2/-0.2', '+10/-5']);
+    // 각 구간이 자기 매도 1건씩만 센다 — 누적 한 행이었으면 둘이 뭉쳐 보이지 않는다.
+    expect(
+      savedPeriods.map((period: { closedCount: number }) => period.closedCount),
+    ).toEqual([1, 1]);
+    // 이 표본에서 이익을 낸 것은 +2/-0.2 쪽(먼저 오는 라벨)이다.
+    expect(
+      savedPeriods.map((period: { hitCount: number }) => period.hitCount),
+    ).toEqual([1, 0]);
+    expect(result.accounts[0].periods).toHaveLength(2);
+    jest.useRealTimers();
+  });
+
   // 원장에 남기는 것이 이 채점의 목적이라 저장 실패를 삼키지 않는다. 삼키면 슬랙에는 성적이
   // 뜨는데 원장에는 아무것도 없는 회차가 조용히 생기고, 나중에 그 구멍을 설명할 수 없다.
   it('원장 저장이 실패하면 성적을 반환하지 않고 실패를 그대로 올린다', async () => {

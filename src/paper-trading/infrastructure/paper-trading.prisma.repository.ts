@@ -223,6 +223,22 @@ export interface LoadRecommendationScoreDataInput {
   from?: Date;
 }
 
+// 청산 밴드별 구간 성적. 누적 행(`SaveRecommendationScoreInput`)이 계좌 전체 지표까지 담는 것과
+// 달리 사이클 성적만 담는다 — 자산 수익률·MDD·회전율은 구간으로 자를 수 없는 축이다.
+export interface SaveRecommendationScorePeriodInput {
+  accountId: number;
+  asOf: Date;
+  periodLabel: string;
+  strategy: string;
+  closedCount: number;
+  hitCount: number;
+  hitRate: string | null;
+  meanReturnRate: string | null;
+  medianReturnRate: string | null;
+  maximumLoss: string | null;
+  averageHoldingDays: string | null;
+}
+
 export interface SaveRecommendationScoreInput {
   accountId: number;
   strategy: string;
@@ -252,9 +268,11 @@ export interface SaveRecommendationScoreInput {
 }
 
 // 채점 구간의 매도 주문에 박힌 밴드 설정. 매수(orders)와 달리 사이클에 귀속시키지 않고
-// 구간 단위로만 모은다 — 지금 필요한 것은 "이 표본이 밴드를 바꾼 구간을 걸쳤나" 이고,
-// 사이클별 귀속은 구간 집계가 생긴 뒤의 일이다.
+// `id` 는 사이클별 귀속에 쓴다 — 매도 체결의 `orderId` 와 맞춰 그 사이클이 어느 밴드에서
+// 닫혔는지 가른다(`splitCyclesByExitBand`). 구간 집계가 생기기 전에는 밴드 집합만 필요해
+// 싣지 않았다.
 export interface RecommendationScoreSellOrderRecord extends ExitBandSellOrderRecord {
+  id: number;
   accountId: number;
 }
 
@@ -326,6 +344,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         decidedAt,
       },
       select: {
+        id: true,
         accountId: true,
         exitTakeProfitPercent: true,
         exitStopLossPercent: true,
@@ -459,6 +478,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         status: order.status as OrderStatus,
       })),
       sellOrders: sellOrders.map((order) => ({
+        id: order.id,
         accountId: order.accountId,
         takeProfitPercent: order.exitTakeProfitPercent?.toString() ?? null,
         stopLossPercent: order.exitStopLossPercent?.toString() ?? null,
@@ -484,14 +504,31 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
 
   // 같은 기준일을 다시 채점하면 덮어쓴다. 채점은 그날의 원장을 다시 읽어 계산하는
   // 순수 집계라 재실행 결과가 정본이고, 행이 쌓이면 어느 것이 정본인지 알 수 없게 된다.
+  //
+  // 구간 행(`periodInputs`)도 **같은 트랜잭션**에 넣는다. 나눠 쓰면 누적만 남고 구간이 빠진
+  // 회차가 생기는데, 과거 기준일은 저장 자체를 건너뛰므로(usecase 의 `persisted` 조건) 그날
+  // 구간 성적은 영구 결손이 된다. 밴드를 바꾼 전후를 갈라 보려고 만든 표라, 구멍 난 날이 곧
+  // 판정할 수 없는 날이다.
   async saveRecommendationScores(
     inputs: SaveRecommendationScoreInput[],
+    periodInputs: SaveRecommendationScorePeriodInput[] = [],
   ): Promise<void> {
-    if (inputs.length === 0) {
+    if (inputs.length === 0 && periodInputs.length === 0) {
       return;
     }
-    await this.prisma.$transaction(
-      inputs.map((input) => {
+    await this.prisma.$transaction([
+      // 구간 행은 **먼저 지우고 다시 넣는다**. 누적은 계좌·기준일당 한 행이라 upsert 로 늘 정본이
+      // 되지만, 구간은 행 수가 실행마다 달라진다 — 매도 주문 상태나 밴드 값이 정정돼 어떤 구간이
+      // 사라지면 upsert 만으로는 옛 행이 남는다. 그 유령 행은 "그 밴드로 청산한 적이 있다" 고
+      // 주장하며 밴드별 판정에 섞이는데, 이 표를 만든 목적이 바로 그 판정이다.
+      // 삭제 범위를 `periodInputs` 가 아니라 `inputs`(회차의 계좌 목록)에서 뽑는 이유: 이번 회차의
+      // 구간이 0 개인 계좌도 옛 행을 지워야 정본이 된다.
+      ...inputs.map((input) =>
+        this.prisma.recommendationScorePeriod.deleteMany({
+          where: { accountId: input.accountId, asOf: input.asOf },
+        }),
+      ),
+      ...inputs.map((input) => {
         const values = {
           strategy: input.strategy,
           ruleVersions: input.ruleVersions,
@@ -525,7 +562,36 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           update: values,
         });
       }),
-    );
+      ...periodInputs.map((input) => {
+        const values = {
+          closedCount: input.closedCount,
+          hitCount: input.hitCount,
+          hitRate: input.hitRate,
+          meanReturnRate: input.meanReturnRate,
+          medianReturnRate: input.medianReturnRate,
+          maximumLoss: input.maximumLoss,
+          averageHoldingDays: input.averageHoldingDays,
+        };
+        return this.prisma.recommendationScorePeriod.upsert({
+          where: {
+            accountId_asOf_periodLabel_strategy: {
+              accountId: input.accountId,
+              asOf: input.asOf,
+              periodLabel: input.periodLabel,
+              strategy: input.strategy,
+            },
+          },
+          create: {
+            accountId: input.accountId,
+            asOf: input.asOf,
+            periodLabel: input.periodLabel,
+            strategy: input.strategy,
+            ...values,
+          },
+          update: values,
+        });
+      }),
+    ]);
   }
 
   async findAccountByName(name: string): Promise<PaperAccountRecord | null> {
