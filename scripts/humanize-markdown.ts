@@ -85,8 +85,18 @@ const main = async (): Promise<void> => {
         `[확인 필요] 바뀐 문단 0/${result.proseParagraphs} — 모델 호출이 실패했거나, 손댈 것이 없었다`,
       );
     }
+    // 건너뛴 문단은 사유까지 적는다. 규칙을 손볼 때 "42/43" 만 보이면 그 하나가 빈 값이었는지
+    // 원본 그대로였는지 몰라 다음 회차에서 같은 자리를 다시 헤맨다.
+    const { empty, identical } = result.skippedParagraphs;
+    const skipNote =
+      empty + identical === 0
+        ? ''
+        : ` · 건너뜀 ${[
+            ...(empty > 0 ? [`빈 값 ${empty}`] : []),
+            ...(identical > 0 ? [`원문 그대로 ${identical}`] : []),
+          ].join(' · ')}`;
     console.log(
-      `윤문: ${result.changedParagraphs}/${result.proseParagraphs}문단 · ${elapsedSeconds}초 · 독자 ${audience ?? 'developer(기본)'}`,
+      `윤문: ${result.changedParagraphs}/${result.proseParagraphs}문단 · ${elapsedSeconds}초 · 독자 ${audience ?? 'developer(기본)'}${skipNote}`,
     );
     console.log(
       '[before] ' + formatKoreanStyleMetrics(measureKoreanStyle(source)),

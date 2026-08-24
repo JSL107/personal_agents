@@ -1,5 +1,6 @@
 import {
   HumanizeMarkdownResult,
+  HumanizeSkipReasons,
   scanMarkdownBlocks,
 } from '../domain/markdown-blocks';
 import { HumanizeAudience, HumanizeService } from './humanize.service';
@@ -32,7 +33,12 @@ export const humanizeMarkdownProse = async (
   );
 
   if (proseBlocks.length === 0) {
-    return { markdown, changedParagraphs: 0, proseParagraphs: 0 };
+    return {
+      markdown,
+      changedParagraphs: 0,
+      proseParagraphs: 0,
+      skippedParagraphs: { empty: 0, identical: 0 },
+    };
   }
 
   const fields: Record<string, string> = {};
@@ -52,14 +58,19 @@ export const humanizeMarkdownProse = async (
   // 뒤에서부터 갈아끼운다 — 앞에서부터 바꾸면 줄 수가 달라져 뒤 블록의 줄 번호가 밀린다.
   const nextLines = [...lines];
   let changedParagraphs = 0;
+  // 건너뛴 문단을 사유별로 센다. 세지 않으면 카드의 `42/43` 을 보고도 그 하나가 왜 빠졌는지
+  // 알 수 없다 — 원인 규명이 막히는 자리가 정확히 여기였다.
+  const skippedParagraphs: HumanizeSkipReasons = { empty: 0, identical: 0 };
   for (let order = proseBlocks.length - 1; order >= 0; order -= 1) {
     const block = proseBlocks[order];
     const original = fields[String(order)];
     const rewritten = humanized[String(order)];
     if (typeof rewritten !== 'string' || rewritten.trim().length === 0) {
+      skippedParagraphs.empty += 1;
       continue;
     }
     if (rewritten === original) {
+      skippedParagraphs.identical += 1;
       continue;
     }
     changedParagraphs += 1;
@@ -74,5 +85,6 @@ export const humanizeMarkdownProse = async (
     markdown: nextLines.join('\n'),
     changedParagraphs,
     proseParagraphs: proseBlocks.length,
+    skippedParagraphs,
   };
 };

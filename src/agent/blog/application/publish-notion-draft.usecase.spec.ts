@@ -69,6 +69,8 @@ const buildUsecase = (overrides?: {
   completionText?: string;
   editText?: string;
   humanizeSuffix?: string | null;
+  // 이 키의 문단만 원본 그대로 돌려준다 — 한 문단이 조용히 빠진 상황을 만든다.
+  humanizeSkipKeys?: string[];
   openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
@@ -113,7 +115,9 @@ const buildUsecase = (overrides?: {
       }
       const next: Record<string, string> = {};
       for (const key of Object.keys(fields)) {
-        next[key] = `${fields[key]}${humanizeSuffix}`;
+        next[key] = overrides?.humanizeSkipKeys?.includes(key)
+          ? fields[key]
+          : `${fields[key]}${humanizeSuffix}`;
       }
       return next;
     }),
@@ -1039,6 +1043,33 @@ describe('PublishNotionDraftUsecase', () => {
       usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
     ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_CODE_CHANGED' });
     expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // `42/43` 만 적혀 있으면 승인자도 사후 조사도 그 하나가 왜 빠졌는지 알 수 없다.
+  it('건너뛴 문단이 있으면 카드에 사유를 적는다', async () => {
+    const { usecase } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '# 제목\n\n첫 문단입니다.\n\n둘째 문단입니다.',
+      }),
+      humanizeSkipKeys: ['0'],
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain(
+      '말투: 1/2문단 적용 (건너뜀: 원문 그대로 1)',
+    );
   });
 
   it('윤문이 먹지 않으면 카드에 그 사실을 적는다', async () => {
