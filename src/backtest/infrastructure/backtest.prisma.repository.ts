@@ -8,22 +8,31 @@ import { BacktestBar, BacktestTicker } from '../domain/backtest-bar.type';
 export class BacktestPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 재생은 현재 상장 종목만 본다. 상장폐지 종목이 빠지는 생존 편향은 설계서 §12 에 명시한 한계다.
-  async findUniverse(): Promise<BacktestTicker[]> {
+  // 유니버스는 재생 시작일 기준이다. `delistedAt: null` 로 좁히면 구간 안에 폐지된 종목이
+  // 살아 있던 날까지 통째로 사라져, 재생이 "끝까지 살아남은 종목" 만 보는 생존 편향이 된다.
+  // 폐지 이후 날짜에서 빠지는 것은 재생 루프가 봉으로 판정한다(마지막 봉이 그날이 아니면 후보 제외).
+  async findUniverse(activeAsOf: Date): Promise<BacktestTicker[]> {
     const tickers = await this.prisma.ticker.findMany({
       where: {
         market: 'KR',
         krxMarket: { not: null },
-        delistedAt: null,
+        OR: [{ delistedAt: null }, { delistedAt: { gt: activeAsOf } }],
       },
       orderBy: { code: 'asc' },
-      select: { id: true, code: true, name: true, krxMarket: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        krxMarket: true,
+        delistedAt: true,
+      },
     });
     return tickers.map((ticker) => ({
       tickerId: ticker.id,
       code: ticker.code,
       name: ticker.name,
       krxMarket: ticker.krxMarket as string,
+      delistedAt: ticker.delistedAt,
     }));
   }
 

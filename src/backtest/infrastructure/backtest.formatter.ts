@@ -85,6 +85,12 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
         `손절 매도 주문 ${result.exitBandSellCounts.stopLoss}건`,
     );
   }
+  // 0 건도 적는다. 줄이 없으면 "폐지가 없던 구간" 과 "폐지를 안 본 구간" 이 구분되지 않는다.
+  lines.push(
+    `보유 중 상장폐지 청산 ${result.delistedLiquidation.count}건` +
+      ` · 청산 대금 ${won(result.delistedLiquidation.proceeds)}` +
+      ` (회수율 ${result.delistingRecoveryRate})`,
+  );
 
   if (result.metrics.weightExceededCount > 0) {
     lines.push(

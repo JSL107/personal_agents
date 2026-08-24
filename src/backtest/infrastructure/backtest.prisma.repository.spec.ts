@@ -40,31 +40,56 @@ describe('BacktestPrismaRepository', () => {
     expect(bars.get(1)![1].open).toBeNull();
   });
 
-  it('유니버스는 상장폐지 종목을 제외한 국내 상장 종목만 본다', async () => {
+  // 시작일 기준으로 좁히지 않으면 구간 안에 폐지된 종목이 살아 있던 날까지 사라져
+  // 재생이 "끝까지 살아남은 종목" 만 보게 된다 — 생존 편향이 정확히 여기서 들어온다.
+  it('유니버스는 재생 시작일에 살아 있던 종목까지 본다', async () => {
+    const delistedAt = new Date('2026-05-20T00:00:00.000Z');
     const findMany = jest.fn().mockResolvedValue([
       {
         id: 7,
         code: '005930',
         name: '삼성전자',
         krxMarket: 'KOSPI',
+        delistedAt: null,
+      },
+      {
+        id: 8,
+        code: '299900',
+        name: '중간폐지',
+        krxMarket: 'KOSDAQ',
+        delistedAt,
       },
     ]);
     const prisma = { ticker: { findMany } } as unknown as PrismaService;
     const repository = new BacktestPrismaRepository(prisma);
+    const from = new Date('2026-01-02T00:00:00.000Z');
 
-    const tickers = await repository.findUniverse();
+    const tickers = await repository.findUniverse(from);
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           market: 'KR',
           krxMarket: { not: null },
-          delistedAt: null,
+          OR: [{ delistedAt: null }, { delistedAt: { gt: from } }],
         }),
       }),
     );
     expect(tickers).toEqual([
-      { tickerId: 7, code: '005930', name: '삼성전자', krxMarket: 'KOSPI' },
+      {
+        tickerId: 7,
+        code: '005930',
+        name: '삼성전자',
+        krxMarket: 'KOSPI',
+        delistedAt: null,
+      },
+      {
+        tickerId: 8,
+        code: '299900',
+        name: '중간폐지',
+        krxMarket: 'KOSDAQ',
+        delistedAt,
+      },
     ]);
   });
 
