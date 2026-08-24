@@ -163,7 +163,7 @@ describe('StockMonitorPrismaRepository', () => {
           include: {
             dailyPrices: {
               orderBy: { tradeDate: 'desc' },
-              take: 1,
+              take: 2,
             },
           },
         },
@@ -175,16 +175,22 @@ describe('StockMonitorPrismaRepository', () => {
     const prisma = makePrisma();
     const currentQuantity = { isZero: () => false };
     const currentClose = { toString: () => '200' };
+    const currentAvgPrice = { toString: () => '150' };
+    const currentPreviousClose = { toString: () => '190' };
     const databaseHoldings = [
       {
         tickerId: 1,
         quantity: currentQuantity,
+        avgPrice: currentAvgPrice,
         currency: 'KRW',
         ticker: {
           source: 'TOSS',
           exposureRegion: 'KR',
           exposureDirection: 'LONG',
-          dailyPrices: [{ close: currentClose }],
+          dailyPrices: [
+            { close: currentClose },
+            { close: currentPreviousClose },
+          ],
         },
       },
       {
@@ -219,6 +225,8 @@ describe('StockMonitorPrismaRepository', () => {
         currency: 'KRW',
         quantity: currentQuantity,
         close: currentClose,
+        avgPrice: currentAvgPrice,
+        previousClose: currentPreviousClose,
       },
     ]);
   });
@@ -272,6 +280,9 @@ describe('StockMonitorPrismaRepository', () => {
         currency: 'USD',
         quantity,
         close,
+        avgPrice: undefined,
+        // 봉이 하나뿐인 종목은 직전 종가가 없다. 평가 요약이 이 값으로 전일 대비를 낼지 판단한다.
+        previousClose: null,
       },
     ]);
   });

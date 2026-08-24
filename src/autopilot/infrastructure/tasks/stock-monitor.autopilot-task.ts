@@ -18,6 +18,7 @@ import {
   StockAnomaly,
   StockMarketCountry,
   StoredStockAlert,
+  USD_KRW_PAIR,
 } from '../../../agent/stock/domain/stock-monitor.type';
 import {
   formatAvgPriceStatuses,
@@ -43,7 +44,6 @@ import {
 
 // 판정에 필요한 최소 봉 수(당일 + 전일). 여유를 두고 5거래일을 받는다.
 const REQUIRED_BARS = 5;
-const USD_KRW_PAIR = 'USDKRW';
 
 // 원장(`agent_run.output`)에 남길 실행 요약. 화면에 보내는 summaryText 와 달리
 // **일이 없었던 실행도** 남긴다 — holdingCount=0 이 기록되지 않으면 "감시는 켜져 있는데
