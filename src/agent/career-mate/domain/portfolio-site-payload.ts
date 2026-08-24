@@ -17,6 +17,9 @@ export interface PortfolioSiteProjectPayload {
   slug: string;
   title: string;
   summary: string;
+  // 사이트 목록 카드가 읽는 성과 줄(project-card.tsx). 카드에는 제목·기술·기간만 나와서
+  // "무엇이 달라졌는지" 가 상세 페이지 안에만 있었다. 수치 근거가 없는 묶음은 빈 배열이다.
+  keyContributions: string[];
   problem: string;
   process: string[];
   result: string;
@@ -397,6 +400,7 @@ export const buildPortfolioSitePayload = ({
         })
         .filter((bullet) => bullet.length > 0),
       result: naming.result,
+      keyContributions: naming.highlights,
       techStack: group.techStack,
       period: group.period,
       links: group.links,

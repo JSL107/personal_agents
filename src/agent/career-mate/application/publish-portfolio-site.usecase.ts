@@ -199,17 +199,15 @@ export class PublishPortfolioSiteUsecase {
     }
 
     const existing = await this.siteClient.listProjects();
-    const idBySlug = new Map(
-      existing.map((project) => [project.slug, project.id]),
-    );
+    const bySlug = new Map(existing.map((project) => [project.slug, project]));
 
     for (const payload of payloads) {
-      const existingId = idBySlug.get(payload.slug);
+      const found = bySlug.get(payload.slug);
       try {
-        if (existingId) {
+        if (found) {
           await this.siteClient.updateProject(
-            existingId,
-            toUpdatePayload(payload),
+            found.id,
+            toUpdatePayload(payload, found.data),
           );
           updatedProjects.push(payload.slug);
           continue;
@@ -281,8 +279,21 @@ export class PublishPortfolioSiteUsecase {
 // 회차마다 다른 이름을 짓는다 — 실측에서 10건 중 7건의 제목이 재실행만으로 바뀌었다
 // (2026-08-21). 그대로 두면 프로젝트 이름이 매일 흔들리고, 사람이 편집기에서 고친 제목도
 // 다음 회차에 덮인다. 작업 목록·기간·기술 스택은 계속 갱신되므로 내용은 최신을 유지한다.
+// 카드 성과 줄(keyContributions)도 모델 생성물이라 표지와 같은 이유로 매 회차 덮으면
+// 흔들린다. 다만 표지와 달리 지금 발행된 프로젝트에는 값 자체가 없어서, 아예 빼면 이미
+// 올라간 항목은 영영 빈 카드로 남는다. 그래서 **기존 값이 비어 있을 때만** 채운다 —
+// 첫 회차에 백필이 되고, 이후에는 고정되며, 사람이 편집기에서 고친 줄도 덮이지 않는다.
+const hasExistingHighlights = (
+  existingData: Record<string, unknown>,
+): boolean =>
+  Array.isArray(existingData.keyContributions) &&
+  existingData.keyContributions.some(
+    (item) => typeof item === 'string' && item.trim().length > 0,
+  );
+
 const toUpdatePayload = (
   payload: PortfolioSiteProjectPayload,
+  existingData: Record<string, unknown>,
 ): Record<string, unknown> => {
   const {
     published: _published,
@@ -291,6 +302,7 @@ const toUpdatePayload = (
     summary: _summary,
     problem: _problem,
     result: _result,
+    keyContributions,
     ...updatable
   } = payload;
   void _published;
@@ -299,5 +311,8 @@ const toUpdatePayload = (
   void _summary;
   void _problem;
   void _result;
-  return updatable;
+  if (hasExistingHighlights(existingData) || keyContributions.length === 0) {
+    return updatable;
+  }
+  return { ...updatable, keyContributions };
 };

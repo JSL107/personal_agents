@@ -23,4 +23,8 @@ export interface ProjectGroupNaming {
   summary: string;
   problem: string;
   result: string;
+  // 목록 카드에 얹을 성과 줄. 카드에는 제목·기술·기간만 나와서 "무엇이 달라졌는지" 가
+  // 상세 페이지 안에만 갇혀 있었다. 근거에 수치가 없는 묶음도 있으므로 없으면 빈 배열이다
+  // — 없는 수치를 지어내게 하느니 카드에 안 싣는다.
+  highlights: string[];
 }
