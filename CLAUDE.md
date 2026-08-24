@@ -176,10 +176,13 @@ Dated reference snapshots — 단일 커밋 결정 기록, 사후 갱신 X (신�
   **작성자 계정이 사람과 같다** — 계정으로 구분하려 하지 말고 이 표식으로 판별한다.
 - **정탐 → 👍**
   `gh api --method POST repos/<owner>/<repo>/pulls/comments/<comment_id>/reactions -f content=+1`
-- **오탐(부정확·반박) → 👎 + 반박 근거를 인라인 답변으로 반드시 함께**
+- **오탐(부정확·반박) → 반박 근거를 인라인 답변으로 먼저 게시하고, 그 다음 👎**
   `... /reactions -f content=-1` (REST 값은 `+1`/`-1`)
-  👎만 누르고 답변을 안 달면 기각 이유가 빈 채로(`harvest-review-signals.usecase.ts:255` 가 답글 본문을 이유로 저장)
-  학습에 적재된다 — 이유 없는 기각은 학습 재료로서 가치가 없다.
+  🔴 **순서가 중요하다.** `harvest-signal.ts:68-72` 는 리액션을 먼저 보고 `replyBody` 가 비어 있어도
+  즉시 `REJECTED` 를 반환한다. 👎를 먼저 붙이면 다음 `*/5` 스윕이 답변보다 앞질러 돌아
+  `rejectReason: null` 로 적재되고(`harvest-review-signals.usecase.ts:262`), 카드가 종결돼
+  `status='OPEN' AND resolvedAt IS NULL` 조회에서 빠진다 — **뒤늦게 단 답변은 영영 수확되지 않는다.**
+  이유 없는 기각은 학습 재료로서 가치가 없다.
 - **멘션은 불필요**(봇이 폴링 스윕으로 읽는다). 외부 봇용 멘션 규칙은 이 봇에 적용되지 않는다.
 - **답변 본문을 `🤖 **이대리 자동 리뷰**` 로 시작하지 않는다** — 표식으로 시작하면 봇이 자기 글로 걸러내
   답변이 신호에서 빠진다(`harvest-signal.ts:43`).
