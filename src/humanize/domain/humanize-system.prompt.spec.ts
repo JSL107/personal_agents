@@ -1,8 +1,10 @@
 import {
+  HUMANIZE_GENERAL_AUDIENCE_TERM_LINE,
   HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT,
   HUMANIZE_PERSONAL_BLOG_TONE,
   HUMANIZE_REPORT_TONE_LINE,
   HUMANIZE_SYSTEM_PROMPT,
+  HUMANIZE_TERM_PRESERVE_LINE,
 } from './humanize-system.prompt';
 
 describe('개인 블로그 목소리 프롬프트', () => {
@@ -67,6 +69,36 @@ describe('개인 블로그 목소리 프롬프트', () => {
     );
     expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
       '한 어미에 몰지 말고',
+    );
+  });
+});
+
+describe('일반 독자 용어 규칙', () => {
+  // 치환이 조용히 실패하는 두 경로를 막는다: (a) 프롬프트 본문의 문구가 바뀌어 앵커를 못 찾는 경우,
+  // (b) 같은 줄이 여러 번 나와 엉뚱한 자리가 바뀌는 경우. 둘 다 "영어가 그대로 남는" 같은 증상을 낸다.
+  it('치환 앵커가 기본 프롬프트에 정확히 한 번 존재한다', () => {
+    const occurrences =
+      HUMANIZE_SYSTEM_PROMPT.split(HUMANIZE_TERM_PRESERVE_LINE).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('개인 블로그 프롬프트에서도 앵커가 살아 있다', () => {
+    // 목소리 치환과 독자 치환은 곱해서 적용되므로, 앞 단계가 앵커를 지워버리면 안 된다.
+    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
+      HUMANIZE_TERM_PRESERVE_LINE,
+    );
+  });
+
+  it('완화본도 식별자 불변은 유지한다', () => {
+    // 풀어 쓰는 것은 설명하는 말이고, 가리키는 이름은 여전히 불변이다.
+    for (const kept of ['코드 식별자', '#PR번호', 'URL', '숫자']) {
+      expect(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE).toContain(kept);
+    }
+  });
+
+  it('완화본은 원문에 없는 내용을 지어내지 못하게 막는다', () => {
+    expect(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE).toContain(
+      '원문에 없는 사실·평가·예시를 지어내면 실패다',
     );
   });
 });
