@@ -43,7 +43,13 @@ const buildBars = (
   });
 
 const TICKERS: BacktestTicker[] = [
-  { tickerId: 11, code: '000001', name: '꾸준상승', krxMarket: 'KOSPI' },
+  {
+    tickerId: 11,
+    code: '000001',
+    name: '꾸준상승',
+    krxMarket: 'KOSPI',
+    delistedAt: null,
+  },
 ];
 
 // 5,000 에서 완만히 오르는 정배열 종목. 거래대금 2e9 로 유동성 필터를 통과한다.
@@ -86,6 +92,7 @@ const MANY_TICKERS: BacktestTicker[] = [1, 2, 3, 4, 5].map((order) => ({
   code: `00001${order}`,
   name: `상승${order}`,
   krxMarket: 'KOSPI',
+  delistedAt: null,
 }));
 
 // 기울기를 종목마다 달리해 점수 순위가 갈리게 한다. holidayIndexes 의 평일은 봉을 만들지
@@ -140,6 +147,7 @@ const command = {
   weightPercent: 20,
   holdingTradeDays: 5,
   exitBand: null,
+  delistingRecoveryRate: 1,
 };
 
 const commandWithExitBand = {
@@ -164,6 +172,65 @@ describe('ReplayBacktestUsecase', () => {
     expect(result).toMatchObject({
       exitBand: null,
       exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
+    });
+  });
+
+  describe('보유 중 상장폐지', () => {
+    // 폐지 종목을 유니버스에 들이면서 청산하지 않으면, 봉이 끊긴 보유가 마지막 종가로
+    // 영원히 평가된다 — 생존 편향을 지우려다 손실만 빠지는 반대 편향이 생긴다.
+    it('폐지일이 지나면 보유를 청산하고 건수와 대금을 남긴다', async () => {
+      const delistedAt = TRADE_DATES[230];
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), [{ ...TICKERS[0], delistedAt }]),
+      );
+
+      const result = await usecase.execute(command);
+
+      expect(result.delistedLiquidation.count).toBe(1);
+      expect(Number(result.delistedLiquidation.proceeds)).toBeGreaterThan(0);
+      expect(result.delistingRecoveryRate).toBe(1);
+    });
+
+    it('폐지가 없으면 청산도 없다', async () => {
+      const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+      const result = await usecase.execute(command);
+
+      expect(result.delistedLiquidation).toEqual({ count: 0, proceeds: '0' });
+    });
+
+    it('회수율을 낮추면 청산 대금이 그만큼 줄어든다', async () => {
+      const delistedAt = TRADE_DATES[230];
+      const tickers = [{ ...TICKERS[0], delistedAt }];
+      const full = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), tickers),
+      ).execute(command);
+      const halved = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), tickers),
+      ).execute({ ...command, delistingRecoveryRate: 0.5 });
+
+      expect(halved.delistedLiquidation.count).toBe(1);
+      expect(Number(halved.delistedLiquidation.proceeds)).toBeCloseTo(
+        Number(full.delistedLiquidation.proceeds) / 2,
+        6,
+      );
+      // 회수를 덜 하면 최종 평가액도 낮아야 한다. 대금만 줄고 계좌가 그대로면
+      // 청산이 장부에 반영되지 않았다는 뜻이다.
+      expect(Number(halved.finalTotalValue)).toBeLessThan(
+        Number(full.finalTotalValue),
+      );
+    });
+
+    // 폐지 마킹이 마지막 봉보다 이르면 봉 대조만으로는 못 막는다.
+    it('이미 폐지된 종목은 봉이 남아 있어도 새로 사지 않는다', async () => {
+      const delistedAt = TRADE_DATES[205];
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), [{ ...TICKERS[0], delistedAt }]),
+      );
+
+      const result = await usecase.execute(command);
+
+      expect(result.orderCount).toBe(0);
     });
   });
 
