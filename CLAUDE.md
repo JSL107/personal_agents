@@ -149,9 +149,14 @@ pnpm prisma format  # schema 변경 시
 
 Dated reference snapshots — 단일 커밋 결정 기록, 사후 갱신 X (신규 결정은 새 파일):
 
-- **⚠️ 잔여 판정은 여기부터**: `docs/superpowers/plans/2026-08-13-remaining-work-inventory.md`
-  — 문서 142개를 코드와 전수 대조한 재고. **개별 plan 의 체크박스는 완료 후에도 갱신하지 않으므로
-  잔여 신호가 아니다**(머지 완료된 작업이 "미완 55/55" 로 남아 있는 실례 포함). 판정 절차도 이 문서에.
+- **⚠️ 잔여 판정은 여기부터**: `docs/superpowers/plans/2026-08-24-remaining-work-inventory.md`
+  — `tasks/todo.md` 의 「남은 것」 18개를 코드와 대조한 최신 재고 (확인 6 · 수정 4 · 치울 것 3).
+  배경은 `2026-08-13-remaining-work-inventory.md` (문서 142개 전수 대조 · 판정 절차 3단계).
+  **개별 plan 의 체크박스는 완료 후에도 갱신하지 않으므로 잔여 신호가 아니다**(머지 완료된 작업이
+  "미완 55/55" 로 남아 있는 실례 포함). `## Review` 헤딩 유무도 신호가 아니다 — 「검증」 등
+  다른 이름을 쓴 블록이 있다.
+- **완료 작업 로그**: `tasks/archive/todo-completed-2026-08-24.md` (2026-08-24 분리한 70블록).
+  `tasks/todo.md` 에는 잔여 꼬리가 남은 블록만 둔다.
 - **V3 plan 인덱스 (출발점)**: `docs/superpowers/plans/2026-04-29-v3-roadmap.md` (#6~#11 단계별)
 - **V3 mid-progress audit**: `docs/superpowers/audits/2026-04-29-v3-mid-progress-audit.md` (P2 잔여 항목 §8)
 - **최신 결정**: `ls docs/superpowers/plans/` 로 timestamp 역순 확인 (보류/deprecate/방향 변경 결정 명문화)
