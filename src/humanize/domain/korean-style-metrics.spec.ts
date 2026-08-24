@@ -423,10 +423,45 @@ describe('재현 목표 판정', () => {
   });
 
   it('카드에 판정 결과가 함께 실린다', () => {
-    expect(formatKoreanStyleMetrics(base)).toContain('목표 충족');
+    expect(formatKoreanStyleMetrics(base)).toContain('판정 대상 충족');
     expect(
       formatKoreanStyleMetrics({ ...base, longestSentenceLength: 120 }),
     ).toContain('목표 밖: 최장 120자(≤80)');
+  });
+
+  it.each([
+    ['편차', { lengthStandardDeviation: 8 }, '편차 8(≥11)'],
+    ['짧은문장', { shortSentencePercent: 12 }, '짧은문장 12%(≥20%)'],
+    ['금지접속사', { bannedConnectiveCount: 3 }, '금지접속사 3회(0회)'],
+    ['종결체교대', { endingAlternationPercent: 85 }, '종결체교대 85%(≤60%)'],
+  ])('%s 분기도 기준을 넘으면 잡는다', (_name, patch, expected) => {
+    // 분기마다 테스트가 없으면 비교 방향(< vs >)이 뒤집혀도 초록이 유지된다.
+    const gaps = findKoreanStyleGaps({ ...base, ...patch });
+    expect(gaps).toContain(expected);
+  });
+
+  it.each([
+    ['편차 하한 경계', { lengthStandardDeviation: 11 }],
+    ['짧은문장 하한 경계', { shortSentencePercent: 20 }],
+    ['최장 상한 경계', { longestSentenceLength: 80 }],
+    ['교대율 상한 경계', { endingAlternationPercent: 60 }],
+  ])('%s 값은 통과다(경계 포함)', (_name, patch) => {
+    expect(findKoreanStyleGaps({ ...base, ...patch })).toEqual([]);
+  });
+
+  it('요체 비율은 판정하지 않는다', () => {
+    // 프로파일의 "반반" 은 2026-08-24 에 재현 대상에서 내려갔다. 지금 지시는 해요체가
+    // 기본이라, 낡은 40~60% 로 재면 지시를 잘 따른 글이 목표 밖으로 찍힌다.
+    expect(findKoreanStyleGaps({ ...base, yoEndingPercent: 5 })).toEqual([]);
+    expect(findKoreanStyleGaps({ ...base, yoEndingPercent: 95 })).toEqual([]);
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('yoEndingPercentMin');
+  });
+
+  it('판정 밖 축이 있음을 카드가 밝힌다', () => {
+    // "목표 충족" 이라고만 쓰면 요체·문단까지 통과한 것으로 읽힌다.
+    const line = formatKoreanStyleMetrics(base);
+    expect(line).toContain('판정 대상 충족');
+    expect(line).toContain('요체 비율');
   });
 
   it('문단 축은 판정하지 않는다', () => {
@@ -438,4 +473,29 @@ describe('재현 목표 판정', () => {
     expect(wall).toEqual([]);
     expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('wallPercentMax');
   });
+});
+
+describe('금지접속사 "즉" 탐지', () => {
+  const build = (sentence: string): string =>
+    Array.from({ length: 45 }, (_, i) =>
+      i === 0 ? sentence : `문장 ${i} 입니다.`,
+    ).join('\n\n');
+
+  it.each([
+    '즉, 이 방식은 빠릅니다.',
+    '즉 이 방식은 빠릅니다.',
+    '즉. 다음은 이렇습니다.',
+  ])('구두점과 무관하게 센다: %s', (sentence) => {
+    // 쉼표를 붙여 '즉시' 오탐을 피했더니 쉼표 없는 접속 용법을 통째로 놓쳤다.
+    expect(
+      measureKoreanStyle(build(sentence)).bannedConnectiveCount,
+    ).toBeGreaterThan(0);
+  });
+
+  it.each(['즉시 반영됩니다.', '즉각 처리했습니다.'])(
+    '접속사가 아닌 낱말은 세지 않는다: %s',
+    (sentence) => {
+      expect(measureKoreanStyle(build(sentence)).bannedConnectiveCount).toBe(0);
+    },
+  );
 });

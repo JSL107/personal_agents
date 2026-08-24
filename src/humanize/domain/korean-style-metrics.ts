@@ -96,9 +96,15 @@ const BANNED_CONNECTIVES = [
   '따라서',
   '게다가',
   '뿐만 아니라',
-  '즉,',
+  // '즉' 은 아래 정규식으로 따로 센다 — '즉시'·'즉각' 을 빼려고 쉼표를 붙였더니
+  // '즉 이 방식은' 처럼 쉼표 없는 쓰임을 통째로 놓쳤다(PR #379 리뷰 지적).
+  // 프롬프트가 금지하는 것은 구두점과 무관한 '즉' 자체다.
   '한편',
 ];
+
+// '즉' 은 뒤에 한글이 붙지 않을 때만 접속사다. '즉시'·'즉각'·'즉효' 는 접속사가 아니라
+// 제외해야 하는데, 쉼표를 붙여 피하면 '즉 그래서' 처럼 쉼표 없는 접속 용법을 놓친다.
+const JEUK_PATTERN = /즉(?![가-힣])/;
 const MEASURABLE_SENTENCE_MIN = 40;
 // 합쇼체 종결 판정. `습니다` 를 나열하지 않고 `니다` 로 본다 — 합쇼체는 자음 뒤에서 `-습니다`,
 // 모음 뒤에서 `-ㅂ니다` 로 갈려 "씁니다·갑니다·봅니다" 처럼 활용형이 무한하다. 어미를 열거하면
@@ -280,12 +286,13 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     (kind, index) => index > 0 && kind !== rankedEndings[index - 1],
   ).length;
 
-  const bannedConnectiveCount = BANNED_CONNECTIVES.reduce(
-    (count, connective) =>
-      count +
-      sentences.filter((sentence) => sentence.includes(connective)).length,
-    0,
-  );
+  const bannedConnectiveCount =
+    BANNED_CONNECTIVES.reduce(
+      (count, connective) =>
+        count +
+        sentences.filter((sentence) => sentence.includes(connective)).length,
+      0,
+    ) + sentences.filter((sentence) => JEUK_PATTERN.test(sentence)).length;
 
   return {
     sentenceCount: sentences.length,
@@ -335,11 +342,25 @@ export const KOREAN_STYLE_TARGETS = {
   // 하한이 없으면 구어 어미 0% 인 전형적 AI 문체가 그대로 통과한다.
   colloquialEndingPercentMin: 10,
   colloquialEndingPercentMax: 20,
-  // `~습니다` 와 `~요` 가 거의 반반(39.1% vs 34.8% + 구어 15.6%).
-  yoEndingPercentMin: 40,
-  yoEndingPercentMax: 60,
+  // 종결체 교대율 상한. 비율이 맞아도 문장마다 갈아타면 그 자체가 기계적으로 읽힌다.
+  // 실측(위 타입 주석): 사용자가 쓴 노션 글 50% · 사용자가 손본 발행본 37% vs 「한쪽으로
+  // 몰리지 않게」 지시로 만든 발행본 73~88%. 두 무리가 겹치지 않아 경계를 그 사이에 둔다.
+  endingAlternationPercentMax: 60,
   bannedConnectiveMax: 0,
 } as const;
+
+/**
+ * 판정하지 않는 축과 그 이유. 카드 문구가 "모든 지표를 충족" 으로 읽히지 않게 하려면
+ * 무엇이 판정 대상 밖인지 여기 적어 두어야 한다.
+ *
+ * - **요체 비율**: 기준이 없다. 프로파일의 "`~습니다` 와 `~요` 가 반반" 은 2026-08-24 에
+ *   **재현 대상에서 내려갔다**(`humanize-system.prompt.ts` 의 종결체 절). 지금 지시는
+ *   "해요체가 기본이고 `~습니다` 는 한 값의 절반을 넘기지 않는다" 라, 지시를 잘 따른 글일수록
+ *   해요체가 높다. 낡은 40~60% 로 재면 잘 쓴 글이 목표 밖으로 찍힌다. 새 범위를 정할 실측
+ *   분포가 아직 없어 **판정을 보류하고 수치만 보여준다**.
+ * - **문단 축(벽·같은크기)**: 프로파일 실측에 대응 항목이 없다.
+ */
+export const KOREAN_STYLE_UNJUDGED_AXES = ['요체 비율', '문단 축'] as const;
 
 /**
  * 목표를 벗어난 항목만 골라 "값(기준)" 꼴로 돌려준다. 전부 맞으면 빈 배열이다.
@@ -376,12 +397,9 @@ export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
       `구어 ${metrics.colloquialEndingPercent}%(${T.colloquialEndingPercentMin}~${T.colloquialEndingPercentMax}%)`,
     );
   }
-  if (
-    metrics.yoEndingPercent < T.yoEndingPercentMin ||
-    metrics.yoEndingPercent > T.yoEndingPercentMax
-  ) {
+  if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
     gaps.push(
-      `요체 ${metrics.yoEndingPercent}%(${T.yoEndingPercentMin}~${T.yoEndingPercentMax}%)`,
+      `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
     );
   }
   if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
@@ -407,7 +425,7 @@ export const formatKoreanStyleMetrics = (
   const verdict = !metrics.measurable
     ? ''
     : gaps.length === 0
-      ? '\n목표 충족 — 벗어난 항목 없음'
+      ? `\n판정 대상 충족 (${KOREAN_STYLE_UNJUDGED_AXES.join('·')}은 판정 밖)`
       : `\n목표 밖: ${gaps.join(' · ')}`;
   return `${sentenceLine}\n${paragraph}${verdict}`;
 };
