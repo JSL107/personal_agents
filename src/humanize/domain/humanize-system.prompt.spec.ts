@@ -102,3 +102,27 @@ describe('일반 독자 용어 규칙', () => {
     );
   });
 });
+
+describe('완화본이 보호 범위를 좁히지 않는다', () => {
+  // 완화본을 손으로 쓰다 보면 예시를 들려다 범위를 좁히기 쉽다(실제로 "제품·기관 고유명사" 로
+  // 좁혀 인명·지명이 빠진 적이 있다). 원본이 지키던 항목이 하나라도 사라지면 여기서 FAIL 한다.
+  const PROTECTED = ['숫자', '고유명사', '#PR번호', 'URL', '코드 식별자'];
+
+  it.each(PROTECTED)('원본이 지키던 %s 를 완화본도 지킨다', (item) => {
+    expect(HUMANIZE_TERM_PRESERVE_LINE).toContain(item);
+    expect(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE).toContain(item);
+  });
+
+  it('고유명사는 종류를 좁히지 않는다', () => {
+    for (const kind of ['인명', '지명', '제품명', '기관명']) {
+      expect(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE).toContain(kind);
+    }
+  });
+
+  it('완화되는 항목은 영문 약어 하나뿐이다', () => {
+    // 원본에만 있고 완화본에 없는 항목이 늘어나면 그만큼 보호가 사라진 것이다.
+    expect(HUMANIZE_TERM_PRESERVE_LINE).toContain('영문 약어');
+    const firstLine = HUMANIZE_GENERAL_AUDIENCE_TERM_LINE.split('\n')[0];
+    expect(firstLine).not.toContain('영문 약어');
+  });
+});
