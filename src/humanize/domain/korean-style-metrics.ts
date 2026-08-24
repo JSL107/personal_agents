@@ -20,6 +20,9 @@ export type KoreanStyleMetrics = {
   // "구어 어미가 하나도 없다" 로 읽힌다(실측: 142문장 중 6개 = 4% 가 0% 로 표시됐다).
   shortSentencePercent: number;
   longestSentenceLength: number;
+  // 가장 긴 문장 그대로. 상한을 넘겼을 때 **무엇이 길었는지** 사람이 봐야 처방이 갈린다 —
+  // 끊어야 할 만연체와, 끊을 수 없는 영문 이름 나열은 길이만으로 구분되지 않는다.
+  longestSentence: string;
   colloquialEndingPercent: number;
   // 종결 어미 중 해요체(`~요`·`~죠`) 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
   // 여기에 구어 어미가 6분의 1쯤 얹힌다" 다 — 즉 문체는 두 축이고, 구어 어미는 `~요` 축의
@@ -100,6 +103,18 @@ const BANNED_CONNECTIVES = [
   '한편',
 ];
 const MEASURABLE_SENTENCE_MIN = 40;
+/**
+ * 최장 문장 상한. 프로파일의 재현 대상(표본 70자 · 허용 80자 이하)과 윤문 프롬프트의
+ * 「가장 긴 문장도 80자를 넘기지 마라」가 같은 값을 본다.
+ *
+ * 넘겼다고 발행을 막지 않는다 — **넘긴 문장을 보여줘서 사람이 판단하게** 한다. 실측(2026-08-24,
+ * 같은 입력 4회)에서 80자 초과 네 문장 중 셋은 53·75·59자로 끊겼고, 남은 하나는 네 회차 모두
+ * 91자 그대로였다. 그 하나는 공백 제외 91자 중 77자(85%)가 영문 이름이라 절대 규칙(고유명사·
+ * 항목 순서 불변)이 끊는 것을 막는다. 길이 숫자만으로는 이 둘이 갈리지 않는다.
+ */
+const LONGEST_SENTENCE_MAX = 80;
+// 카드 한 줄에 들어갈 만큼만 보여준다. 판정에 필요한 것은 문장의 **성격**이지 전문이 아니다.
+const LONGEST_SENTENCE_PREVIEW = 60;
 // 합쇼체 종결 판정. `습니다` 를 나열하지 않고 `니다` 로 본다 — 합쇼체는 자음 뒤에서 `-습니다`,
 // 모음 뒤에서 `-ㅂ니다` 로 갈려 "씁니다·갑니다·봅니다" 처럼 활용형이 무한하다. 어미를 열거하면
 // 정확히 그 활용형들이 빠져 합쇼체가 0 으로 세어진다(실측으로 걸렸다).
@@ -220,6 +235,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       lengthStandardDeviation: 0,
       shortSentencePercent: 0,
       longestSentenceLength: 0,
+      longestSentence: '',
       colloquialEndingPercent: 0,
       yoEndingPercent: 0,
       endingAlternationPercent: 0,
@@ -238,6 +254,8 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
   const variance =
     lengths.reduce((sum, length) => sum + (length - average) ** 2, 0) /
     lengths.length;
+
+  const longestIndex = lengths.indexOf(Math.max(...lengths));
 
   const colloquialCount = sentences.filter((sentence) =>
     COLLOQUIAL_ENDINGS.some((ending) =>
@@ -295,7 +313,8 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length,
       lengths.length,
     ),
-    longestSentenceLength: Math.max(...lengths),
+    longestSentenceLength: lengths[longestIndex],
+    longestSentence: sentences[longestIndex],
     colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
     yoEndingPercent:
       yoCount + formalCount === 0
@@ -324,8 +343,16 @@ export const formatKoreanStyleMetrics = (
   const sentenceLine = metrics.measurable
     ? head
     : `${head} (40문장 미만이라 참고값)`;
-  return `${sentenceLine}\n${paragraph}`;
+  // 상한을 넘겼을 때만 붙인다. 넘지 않은 글에까지 붙이면 카드가 길어지기만 하고 읽히지 않는다.
+  const longest =
+    metrics.longestSentenceLength > LONGEST_SENTENCE_MAX
+      ? `\n최장 문장(${metrics.longestSentenceLength}자): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
+      : '';
+  return `${sentenceLine}\n${paragraph}${longest}`;
 };
+
+const truncate = (text: string, max: number): string =>
+  text.length <= max ? text : `${text.slice(0, max)}…`;
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 

@@ -66,6 +66,21 @@ describe('measureKoreanStyle', () => {
     expect(metrics.longestSentenceLength).toBeGreaterThan(80);
   });
 
+  // 「최장 91자」만 보면 만연체인지 영문 이름 나열인지 갈리지 않는다. 둘은 처방이 정반대다
+  // — 만연체는 끊어야 하고, 나열은 끊을 수 없다(고유명사 불변이 절대 규칙이다).
+  it('최장 문장이 상한을 넘으면 그 문장을 함께 돌려준다', () => {
+    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
+
+    expect(metrics.longestSentence).toBe(`${'가'.repeat(120)}입니다.`);
+    expect(formatKoreanStyleMetrics(metrics)).toContain('최장 문장(124자):');
+  });
+
+  it('최장 문장이 상한 이하면 문장을 덧붙이지 않는다', () => {
+    const metrics = measureKoreanStyle('짧습니다. 이것도 짧아요.');
+
+    expect(formatKoreanStyleMetrics(metrics)).not.toContain('최장 문장(');
+  });
+
   it('산문이 없으면 측정 불가로 표시한다', () => {
     const metrics = measureKoreanStyle('```ts\nconst a = 1;\n```');
 
