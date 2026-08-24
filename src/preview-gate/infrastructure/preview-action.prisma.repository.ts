@@ -94,6 +94,34 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return toDomain(row);
   }
 
+  // `where` 에 status 를 함께 걸어 전이를 원자적으로 획득한다. Prisma 의 `update` 는 where 에
+  // unique 필드만 받으므로 `updateMany` 를 쓴다 — 갱신 행이 0 이면 그 사이 다른 경로가
+  // 상태를 바꿨다는 뜻이라 아무것도 하지 않고 null.
+  async transitionIfStatus({
+    id,
+    from,
+    to,
+  }: {
+    id: string;
+    from: PreviewStatus;
+    to: PreviewStatus;
+  }): Promise<PreviewAction | null> {
+    const now = new Date();
+    const { count } = await this.prisma.previewAction.updateMany({
+      where: { id, status: from },
+      data: {
+        status: to,
+        appliedAt: to === PREVIEW_STATUS.APPLIED ? now : undefined,
+        cancelledAt: to === PREVIEW_STATUS.CANCELLED ? now : undefined,
+      },
+    });
+    if (count === 0) {
+      return null;
+    }
+    const row = await this.prisma.previewAction.findUnique({ where: { id } });
+    return row ? toDomain(row) : null;
+  }
+
   async updatePayload({
     id,
     payload,

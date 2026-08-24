@@ -52,6 +52,11 @@ const buildRepo = (
     .mockImplementation(({ id, status }) =>
       Promise.resolve(buildPreview({ id, status })),
     ),
+  transitionIfStatus: jest
+    .fn()
+    .mockImplementation(({ id, to }) =>
+      Promise.resolve(buildPreview({ id, status: to })),
+    ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),

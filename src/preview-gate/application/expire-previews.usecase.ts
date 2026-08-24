@@ -54,19 +54,47 @@ export class ExpirePreviewsUsecase {
     let sweptCount = 0;
     for (const preview of expiredPreviews) {
       try {
-        const expired = await this.repository.transition({
+        // 목록을 뽑은 시점과 여기 사이에 사용자가 ✅/❌ 를 누를 수 있다. id 만 보고 덮어쓰면
+        // 방금 APPLIED 가 된 row 를 EXPIRED 로 되돌리고, 아래 만료 후처리까지 돌아 이미
+        // APPROVED 로 기록된 연동 레코드를 EXPIRED 로 오염시킨다. 전이를 획득한 회차만 진행한다.
+        const expired = await this.repository.transitionIfStatus({
           id: preview.id,
-          status: PREVIEW_STATUS.EXPIRED,
+          from: PREVIEW_STATUS.PENDING,
+          to: PREVIEW_STATUS.EXPIRED,
         });
+        if (expired === null) {
+          continue;
+        }
+        // 도메인 후처리를 카드보다 **먼저** 한다. 실패하면 아래에서 PENDING 으로 되돌리는데,
+        // 카드를 이미 EXPIRED 로 바꿔 놓았으면 되살아난 카드가 버튼 없는 채로 남는다.
+        const cancelled = await runPreviewCanceller({
+          cancellers: this.cancellers,
+          preview: expired,
+          reason: PREVIEW_CANCEL_REASON.EXPIRED,
+          logger: this.logger,
+        });
+        if (!cancelled) {
+          // 전이를 되돌려 재시도 거리를 남긴다 — 삼키고 넘어가면 이 row 는 EXPIRED 라
+          // findExpiredPending(PENDING) 에 영영 안 걸리고, 연동 레코드가 PENDING 으로
+          // 잔류해 이 변경이 없애려던 쿼터 차단이 실패한 그 건에서 그대로 재발한다.
+          // 되돌리기도 조건부다 — 그 사이 사용자가 눌렀다면 그 결말을 존중한다.
+          await this.repository.transitionIfStatus({
+            id: expired.id,
+            from: PREVIEW_STATUS.EXPIRED,
+            to: PREVIEW_STATUS.PENDING,
+          });
+          this.logger.warn(
+            `만료 후처리 실패로 PENDING 복원 preview=${expired.id} — 다음 스윕에서 재시도`,
+          );
+          continue;
+        }
         // 콘솔 관제 — 승인 종결 알림(만료된 카드가 스냅샷/스트림에서 사라지도록).
         this.consoleEvents?.publish({
           type: 'approval.resolved',
           approval: toConsoleApproval(expired),
         });
-        // 카드 갱신은 best-effort — 여기서 throw 를 밖으로 내보내면 아래 canceller 가
-        // 건너뛰어진다. row 는 이미 EXPIRED 라 다음 스윕의 findExpiredPending(PENDING) 에
-        // 다시 잡히지 않으므로, Slack 이 한 번 흔들린 카드는 후처리를 영영 못 받는다.
-        // (CancelPreviewUsecase 가 카드 갱신을 감싸는 것과 같은 결.)
+        // 카드 갱신은 best-effort — Slack 이 흔들려도 만료와 후처리는 이미 끝났다. 여기서
+        // throw 를 내보내면 성공한 회차가 실패로 집계된다.
         try {
           await this.card.update({ preview: expired, state: 'EXPIRED' });
         } catch (error: unknown) {
@@ -76,15 +104,6 @@ export class ExpirePreviewsUsecase {
             }`,
           );
         }
-        // 카드 마감 뒤 도메인 후처리. 훅이 throw 해도 만료 자체는 성공으로 집계한다
-        // (helper 가 swallow) — 훅 실패로 카드가 PENDING 으로 되돌아가면 다음 스윕이
-        // 같은 카드를 다시 잡아 훅을 반복 호출한다.
-        await runPreviewCanceller({
-          cancellers: this.cancellers,
-          preview: expired,
-          reason: PREVIEW_CANCEL_REASON.EXPIRED,
-          logger: this.logger,
-        });
         sweptCount += 1;
       } catch (error: unknown) {
         this.logger.warn(
