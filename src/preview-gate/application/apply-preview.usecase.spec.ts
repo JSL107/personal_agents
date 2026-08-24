@@ -2,6 +2,10 @@ import { ConsoleEventBus } from '../../console/application/console-event-bus.ser
 import { VerifiableArtifact } from '../domain/apply-result.type';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
 import { PreviewApplier } from '../domain/port/preview-applier.port';
+import {
+  PREVIEW_CANCEL_REASON,
+  PreviewCanceller,
+} from '../domain/port/preview-canceller.port';
 import { PreviewCardPort } from '../domain/port/preview-card.port';
 import { ResultVerifier } from '../domain/port/result-verifier.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
@@ -48,6 +52,11 @@ const buildRepo = (
     .mockImplementation(({ id, status }) =>
       Promise.resolve(buildPreview({ id, status })),
     ),
+  transitionIfStatus: jest
+    .fn()
+    .mockImplementation(({ id, to }) =>
+      Promise.resolve(buildPreview({ id, status: to })),
+    ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
@@ -75,7 +84,13 @@ describe('ApplyPreviewUsecase', () => {
       PREVIEW_KIND.PM_WRITE_BACK,
       'PR #707 코멘트 추가',
     );
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
 
     const result = await usecase.execute({
       previewId: 'p-1',
@@ -103,6 +118,7 @@ describe('ApplyPreviewUsecase', () => {
       repo,
       [applier],
       [],
+      [],
       buildCard(),
       bus,
     );
@@ -127,7 +143,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('미존재 previewId 면 NOT_FOUND', async () => {
     const repo = buildRepo(null);
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     await expect(
       usecase.execute({
@@ -142,7 +158,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('owner 매칭 실패 시 WRONG_OWNER 예외 (다른 사용자 preview 보호)', async () => {
     const repo = buildRepo(buildPreview({ slackUserId: 'U-other' }));
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -153,7 +169,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('이미 APPLIED 인 preview 는 ALREADY_RESOLVED 예외', async () => {
     const repo = buildRepo(buildPreview({ status: PREVIEW_STATUS.APPLIED }));
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -166,7 +182,7 @@ describe('ApplyPreviewUsecase', () => {
     const repo = buildRepo(
       buildPreview({ expiresAt: new Date('2026-04-27T11:30:00.000Z') }),
     );
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -179,10 +195,48 @@ describe('ApplyPreviewUsecase', () => {
     });
   });
 
+  // 스위퍼가 훑기 전에 사용자가 뒤늦게 ✅ 를 누른 경우도 만료다. 여기서 후처리를 빠뜨리면
+  // 스위퍼 경로만 고쳐도 연동 레코드가 이 경로로 계속 PENDING 잔류한다.
+  it('TTL 지난 카드에 apply 를 시도하면 canceller 를 EXPIRED 사유로 호출한다', async () => {
+    const repo = buildRepo(
+      buildPreview({
+        kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+        expiresAt: new Date('2026-04-27T11:30:00.000Z'),
+      }),
+    );
+    // 전이 후 row 의 kind 로 canceller 를 찾으므로 mock 도 kind 를 보존해야 한다.
+    repo.transition.mockImplementation(({ id, status }) =>
+      Promise.resolve(
+        buildPreview({ id, status, kind: PREVIEW_KIND.PREFERENCE_PROFILE }),
+      ),
+    );
+    const canceller: jest.Mocked<PreviewCanceller> = {
+      kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+      onCancel: jest.fn().mockResolvedValue(undefined),
+    };
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [],
+      [],
+      [canceller],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.EXPIRED,
+    });
+    expect(canceller.onCancel).toHaveBeenCalledWith(
+      expect.objectContaining({ status: PREVIEW_STATUS.EXPIRED }),
+      PREVIEW_CANCEL_REASON.EXPIRED,
+    );
+  });
+
   it('kind 에 매칭되는 PreviewApplier 가 없으면 NO_APPLIER_FOR_KIND 예외', async () => {
     // PM_WRITE_BACK preview 가 있는데 PREVIEW_APPLIERS multi-provider 가 비어있는 DI 미스 상황을 시뮬레이션.
     const repo = buildRepo(buildPreview());
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -195,7 +249,13 @@ describe('ApplyPreviewUsecase', () => {
     const repo = buildRepo(buildPreview());
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
     applier.apply.mockRejectedValue(new Error('GitHub API down'));
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -206,7 +266,7 @@ describe('ApplyPreviewUsecase', () => {
 
   it('PreviewActionException 은 도메인 정책 그대로 throw (Slack handler 가 user-friendly 메시지로 변환)', async () => {
     const repo = buildRepo(buildPreview());
-    const usecase = new ApplyPreviewUsecase(repo, [], [], buildCard());
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], buildCard());
 
     const error = await usecase
       .execute({
@@ -239,6 +299,7 @@ describe('ApplyPreviewUsecase', () => {
       repo,
       [applier],
       [verifier],
+      [],
       buildCard(),
     );
 
@@ -273,6 +334,7 @@ describe('ApplyPreviewUsecase', () => {
       repo,
       [applier],
       [verifier],
+      [],
       buildCard(),
     );
 
@@ -296,6 +358,7 @@ describe('ApplyPreviewUsecase', () => {
       repo,
       [applier],
       [verifier],
+      [],
       buildCard(),
     );
 
@@ -313,7 +376,7 @@ describe('ApplyPreviewUsecase', () => {
     const repo = buildRepo(buildPreview());
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '동기화 완료');
     const card = buildCard();
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], card);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
 
     await usecase.execute({
       previewId: 'p-1',
@@ -330,7 +393,7 @@ describe('ApplyPreviewUsecase', () => {
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
     applier.apply.mockRejectedValue(new Error('Notion down'));
     const card = buildCard();
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], card);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
@@ -354,7 +417,7 @@ describe('ApplyPreviewUsecase', () => {
       applyGate.then(() => ({ message: 'ok', artifacts: [] })),
     );
     const card = buildCard();
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], card);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
 
     const first = usecase.execute({
       previewId: 'p-1',
@@ -379,7 +442,7 @@ describe('ApplyPreviewUsecase', () => {
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '완료');
     const card = buildCard();
     card.update.mockRejectedValue(new Error('slack down'));
-    const usecase = new ApplyPreviewUsecase(repo, [applier], [], card);
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
 
     const result = await usecase.execute({
       previewId: 'p-1',
