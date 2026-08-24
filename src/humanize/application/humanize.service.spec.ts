@@ -117,9 +117,20 @@ describe('HumanizeService', () => {
       expect.objectContaining({
         agentType: AgentType.HUMANIZER,
         triggerType: TriggerType.REPORT_HUMANIZE,
-        inputSnapshot: { fieldKeys: ['a'] },
+        inputSnapshot: {
+          fieldKeys: ['a'],
+          voice: 'report',
+          audience: 'developer',
+        },
       }),
     );
+    // 원장에는 어떤 축으로 돌았는지까지만 남고 본문은 남지 않는다.
+    const snapshot = (
+      agentRunService.execute.mock.calls[0][0] as {
+        inputSnapshot: Record<string, unknown>;
+      }
+    ).inputSnapshot;
+    expect(JSON.stringify(snapshot)).not.toContain('원본A');
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });

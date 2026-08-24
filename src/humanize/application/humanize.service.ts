@@ -98,7 +98,13 @@ export class HumanizeService {
       >({
         agentType: AgentType.HUMANIZER,
         triggerType: TriggerType.REPORT_HUMANIZE,
-        inputSnapshot: { fieldKeys: keys },
+        // 두 축을 함께 남긴다. 없으면 원장에서 "이 회차가 어떤 목소리·독자로 돌았나" 를
+        // 되짚을 수 없어, 산출물이 이상할 때 프롬프트 문제인지 축 지정 문제인지 갈리지 않는다.
+        inputSnapshot: {
+          fieldKeys: keys,
+          voice: options?.voice ?? 'report',
+          audience: options?.audience ?? 'developer',
+        },
         run: async () => {
           const injection = this.preferenceProfile
             ? await this.preferenceProfile.getInjectionBlock('humanize')
@@ -109,6 +115,11 @@ export class HumanizeService {
               : HUMANIZE_SYSTEM_PROMPT;
           // 독자 축은 목소리 위에 겹쳐 적용한다 — 용어 보존 한 줄만 갈아끼우므로
           // 나머지 지시(문체·길이 예산)는 두 축 모두에서 그대로 살아 있다.
+          //
+          // `general` 은 용어 풀이가 붙어 글이 길어지므로 아래 길이 예산과 방향이 반대다.
+          // 지금은 부딪히지 않는다 — `general` 을 넘기는 유일한 경로(마크다운 어댑터)가
+          // `longForm: true` 라 예산 자체가 안 붙는다. Slack 카드처럼 훑어 읽는 산출물에
+          // `general` 을 쓰게 되면 그때 둘 중 하나를 완화해야 한다.
           const audiencePrompt =
             options?.audience === 'general'
               ? voicePrompt.replace(
