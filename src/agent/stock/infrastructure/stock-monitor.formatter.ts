@@ -1,5 +1,8 @@
 import { HoldingChange } from '../domain/holding-change';
-import { PortfolioExposure } from '../domain/portfolio-exposure';
+import {
+  PortfolioExposure,
+  PortfolioValue,
+} from '../domain/portfolio-exposure';
 import { STOCK_THRESHOLDS } from '../domain/stock-anomaly';
 import {
   AvgPriceStatus,
@@ -163,6 +166,36 @@ export const formatPortfolioExposure = (
   // "환노출 94%" 는 그 자체로는 좋은 상태인지 나쁜 상태인지 읽히지 않는다. 무엇이 달라지는지까지 적는다.
   return `${exposureLine}\n_달러 자산 ${exposure.fxUsdRatio}% — 환율이 내리면 원화 평가액도 함께 줄어듭니다_`;
 };
+
+// 아침에 듣는 자산 한 줄. 노출 비중(어디에 쏠려 있나)과 다른 축이다 — 얼마이고 얼마 벌었나.
+// 숫자만 적으면 "1,234만원" 이 좋은 상태인지 읽히지 않으므로 평단 대비와 어제 대비를 함께 놓는다.
+export const formatPortfolioValue = (value: PortfolioValue | null): string => {
+  if (!value) {
+    return '';
+  }
+  const profitText = `${formatSignedMoney(value.profit)} (${formatSignedPercent(value.profitRate)})`;
+  const headline = `💰 *내 자산* — ${formatAssetAmount(value.totalValue)} · 원금 대비 ${profitText}`;
+  if (value.dailyChange === null || value.dailyChangeRate === null) {
+    // 직전 봉이 없는 종목이 섞이면 어제 대비를 내지 않는다. 줄이 통째로 빠지면 "왜 없지" 가
+    // 되므로 이유를 적는다.
+    return `${headline}\n_직전 거래일 대비는 시세가 하루치뿐인 종목이 있어 생략했습니다_`;
+  }
+  return `${headline}\n_직전 거래일보다 ${formatSignedMoney(value.dailyChange)} (${formatSignedPercent(value.dailyChangeRate)}) — 주가 변동분만이고, 환율이 움직인 몫은 빠져 있습니다_`;
+};
+
+const formatAssetAmount = (amount: number): string => {
+  if (Math.abs(amount) < 10_000) {
+    return `${Math.round(amount).toLocaleString('ko-KR')}원`;
+  }
+  return `${Math.round(amount / 10_000).toLocaleString('ko-KR')}만원`;
+};
+
+// 부호를 명시한다. "-3만원" 과 "3만원" 이 한 줄에 섞이면 어느 쪽이 손실인지 매번 다시 읽어야 한다.
+const formatSignedMoney = (amount: number): string =>
+  `${amount >= 0 ? '+' : '-'}${formatAssetAmount(Math.abs(amount))}`;
+
+const formatSignedPercent = (rate: number): string =>
+  `${rate >= 0 ? '+' : '-'}${(Math.abs(rate) * 100).toFixed(1)}%`;
 
 // 평단 대비 임계 밖 종목의 **지속 상태**. 발화(사건)는 최초 진입 때만이라, 감시를 시작한 시점에
 // 이미 구간 밖이던 종목은 알림이 영원히 안 뜬다 — 그 손실이 "이상 없음" 뒤에 가려지는 것을 막는다.
