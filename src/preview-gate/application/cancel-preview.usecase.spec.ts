@@ -1,6 +1,9 @@
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
-import { PreviewCanceller } from '../domain/port/preview-canceller.port';
+import {
+  PREVIEW_CANCEL_REASON,
+  PreviewCanceller,
+} from '../domain/port/preview-canceller.port';
 import { PreviewCardPort } from '../domain/port/preview-card.port';
 import {
   PREVIEW_KIND,
@@ -139,6 +142,10 @@ describe('CancelPreviewUsecase', () => {
     expect(canceller.onCancel).toHaveBeenCalledTimes(1);
     expect(canceller.onCancel.mock.calls[0][0].kind).toBe(
       PREVIEW_KIND.PREFERENCE_PROFILE,
+    );
+    // ❌ 클릭은 명시적 거부 — 무응답 만료(EXPIRED)와 사유가 구분돼 전달돼야 한다.
+    expect(canceller.onCancel.mock.calls[0][1]).toBe(
+      PREVIEW_CANCEL_REASON.CANCELLED,
     );
   });
 

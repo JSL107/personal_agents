@@ -8,6 +8,7 @@ import {
   PreviewActionRepositoryPort,
 } from '../domain/port/preview-action.repository.port';
 import {
+  PREVIEW_CANCEL_REASON,
   PREVIEW_CANCELLERS,
   PreviewCanceller,
 } from '../domain/port/preview-canceller.port';
@@ -18,6 +19,7 @@ import {
 import { PreviewActionException } from '../domain/preview-action.exception';
 import { PREVIEW_STATUS, PreviewAction } from '../domain/preview-action.type';
 import { PreviewActionErrorCode } from '../domain/preview-action-error-code.enum';
+import { runPreviewCanceller } from './preview-canceller.helper';
 
 // PO-2: 사용자 ❌ cancel 클릭 시점. PENDING 검증 + owner 매칭 후 CANCELLED 전이.
 // 만료된 PENDING 도 그대로 CANCELLED 처리 (이미 죽은 결과 row 라 사용자 의도와 일치).
@@ -89,23 +91,12 @@ export class CancelPreviewUsecase {
         }`,
       );
     }
-    await this.runCanceller(cancelled);
+    await runPreviewCanceller({
+      cancellers: this.cancellers,
+      preview: cancelled,
+      reason: PREVIEW_CANCEL_REASON.CANCELLED,
+      logger: this.logger,
+    });
     return cancelled;
-  }
-
-  // kind 일치 canceller 의 onCancel 을 best-effort 호출. 없으면 no-op(기존 kind 하위호환).
-  // 훅 실패가 사용자 cancel UX 를 막지 않도록 예외는 swallow 하고 로그만 남긴다.
-  private async runCanceller(preview: PreviewAction): Promise<void> {
-    const canceller = this.cancellers.find((c) => c.kind === preview.kind);
-    if (!canceller) {
-      return;
-    }
-    try {
-      await canceller.onCancel(preview);
-    } catch (error) {
-      this.logger.warn(
-        `PreviewCanceller(${preview.kind}) onCancel 실패(swallow): ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
   }
 }
