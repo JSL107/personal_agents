@@ -12,8 +12,10 @@ import {
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
 import {
   HUMANIZE_CONCISE_RULES,
+  HUMANIZE_GENERAL_AUDIENCE_TERM_LINE,
   HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT,
   HUMANIZE_SYSTEM_PROMPT,
+  HUMANIZE_TERM_PRESERVE_LINE,
 } from '../domain/humanize-system.prompt';
 
 /**
@@ -24,6 +26,14 @@ import {
  */
 export type HumanizeVoice = 'report' | 'personal-blog';
 
+/**
+ * 읽는 사람. 목소리(`voice`)가 "어디에 실리는 글인가" 라면 이 축은 "누가 읽는가" 다 — 둘은 곱해서 쓴다.
+ *
+ * - `developer`(기본): 지금까지의 동작. 영어 용어를 그대로 둔다.
+ * - `general`: 개발자가 아닌 독자. 옮길 수 있는 영어는 한국어로 풀고, 남기는 용어에는 첫 등장 풀이를 붙인다.
+ */
+export type HumanizeAudience = 'developer' | 'general';
+
 export interface HumanizeOptions {
   /**
    * 분량이 필요한 산출물(블로그 본문·이력서 서술)이라 길이 예산을 걸지 않는다.
@@ -32,6 +42,10 @@ export interface HumanizeOptions {
    */
   longForm?: boolean;
   voice?: HumanizeVoice;
+  /**
+   * 기본은 `developer` 다 — 지정하지 않은 모든 기존 호출부의 산출물이 그대로 유지된다.
+   */
+  audience?: HumanizeAudience;
 }
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
@@ -84,7 +98,13 @@ export class HumanizeService {
       >({
         agentType: AgentType.HUMANIZER,
         triggerType: TriggerType.REPORT_HUMANIZE,
-        inputSnapshot: { fieldKeys: keys },
+        // 두 축을 함께 남긴다. 없으면 원장에서 "이 회차가 어떤 목소리·독자로 돌았나" 를
+        // 되짚을 수 없어, 산출물이 이상할 때 프롬프트 문제인지 축 지정 문제인지 갈리지 않는다.
+        inputSnapshot: {
+          fieldKeys: keys,
+          voice: options?.voice ?? 'report',
+          audience: options?.audience ?? 'developer',
+        },
         run: async () => {
           const injection = this.preferenceProfile
             ? await this.preferenceProfile.getInjectionBlock('humanize')
@@ -93,9 +113,23 @@ export class HumanizeService {
             options?.voice === 'personal-blog'
               ? HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT
               : HUMANIZE_SYSTEM_PROMPT;
+          // 독자 축은 목소리 위에 겹쳐 적용한다 — 용어 보존 한 줄만 갈아끼우므로
+          // 나머지 지시(문체·길이 예산)는 두 축 모두에서 그대로 살아 있다.
+          //
+          // `general` 은 용어 풀이가 붙어 글이 길어지므로 아래 길이 예산과 방향이 반대다.
+          // 지금은 부딪히지 않는다 — `general` 을 넘기는 유일한 경로(마크다운 어댑터)가
+          // `longForm: true` 라 예산 자체가 안 붙는다. Slack 카드처럼 훑어 읽는 산출물에
+          // `general` 을 쓰게 되면 그때 둘 중 하나를 완화해야 한다.
+          const audiencePrompt =
+            options?.audience === 'general'
+              ? voicePrompt.replace(
+                  HUMANIZE_TERM_PRESERVE_LINE,
+                  HUMANIZE_GENERAL_AUDIENCE_TERM_LINE,
+                )
+              : voicePrompt;
           const basePrompt = options?.longForm
-            ? voicePrompt
-            : `${voicePrompt}\n${HUMANIZE_CONCISE_RULES}`;
+            ? audiencePrompt
+            : `${audiencePrompt}\n${HUMANIZE_CONCISE_RULES}`;
           const systemPrompt = injection
             ? `${basePrompt}\n\n${injection}`
             : basePrompt;
