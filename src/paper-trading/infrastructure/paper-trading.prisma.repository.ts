@@ -517,6 +517,17 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       return;
     }
     await this.prisma.$transaction([
+      // 구간 행은 **먼저 지우고 다시 넣는다**. 누적은 계좌·기준일당 한 행이라 upsert 로 늘 정본이
+      // 되지만, 구간은 행 수가 실행마다 달라진다 — 매도 주문 상태나 밴드 값이 정정돼 어떤 구간이
+      // 사라지면 upsert 만으로는 옛 행이 남는다. 그 유령 행은 "그 밴드로 청산한 적이 있다" 고
+      // 주장하며 밴드별 판정에 섞이는데, 이 표를 만든 목적이 바로 그 판정이다.
+      // 삭제 범위를 `periodInputs` 가 아니라 `inputs`(회차의 계좌 목록)에서 뽑는 이유: 이번 회차의
+      // 구간이 0 개인 계좌도 옛 행을 지워야 정본이 된다.
+      ...inputs.map((input) =>
+        this.prisma.recommendationScorePeriod.deleteMany({
+          where: { accountId: input.accountId, asOf: input.asOf },
+        }),
+      ),
       ...inputs.map((input) => {
         const values = {
           strategy: input.strategy,
