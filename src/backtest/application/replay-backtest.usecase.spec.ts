@@ -221,6 +221,52 @@ describe('ReplayBacktestUsecase', () => {
       );
     });
 
+    // 원장에는 주문과 거래가 남으므로 체결 통계에서 빠지면 주문 수와 체결 수가 어긋난다.
+    it('청산도 체결이므로 주문 수와 체결·만료 수가 맞아떨어진다', async () => {
+      const delistedAt = TRADE_DATES[230];
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), [{ ...TICKERS[0], delistedAt }]),
+      );
+
+      const result = await usecase.execute(command);
+
+      expect(result.delistedLiquidation.count).toBe(1);
+      expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    });
+
+    // 폐지일에 봉이 남아 있으면(정리매매 마지막 날에 목록에서 빠지는 경우) 전 거래일 추천이
+    // 체결되고 같은 날 되파는 왕복이 생긴다. buildCandidates 의 날짜 규칙과도 갈린다.
+    // 첫 추천일(210) 직후를 폐지일로 잡아야 그 대기 주문이 폐지일에 걸린다 — 보유가 이미
+    // 차 있으면 새 매수가 나가지 않아 이 경로 자체가 만들어지지 않는다.
+    it('폐지일에 봉이 남아 있어도 대기 매수는 체결하지 않는다', async () => {
+      const delistedAt = TRADE_DATES[211];
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), [{ ...TICKERS[0], delistedAt }]),
+      );
+
+      const result = await usecase.execute(command);
+
+      expect(result.metrics.expirationsByReason['상장폐지']).toBeGreaterThan(0);
+      // 사지 않았으므로 청산할 보유도 없다. 왕복이 생기면 둘 다 1 이상이 된다.
+      expect(result.delistedLiquidation.count).toBe(0);
+      expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+      expect(result.invariantViolations).toEqual([]);
+    });
+
+    // 대기 매도가 남은 채 폐지되면 같은 보유를 두 번 파는 경로가 생길 수 있다. 하루 순서를
+    // 체결 뒤·밴드 앞으로 둔 것이 그 방어선이고, 불변식이 그것을 지켜본다.
+    it('대기 매도가 있는 상태로 폐지돼도 같은 보유를 두 번 팔지 않는다', async () => {
+      const delistedAt = TRADE_DATES[230];
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(risingBars(), [{ ...TICKERS[0], delistedAt }]),
+      );
+
+      const result = await usecase.execute(commandWithExitBand);
+
+      expect(result.invariantViolations).toEqual([]);
+      expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+    });
+
     // 폐지 마킹이 마지막 봉보다 이르면 봉 대조만으로는 못 막는다.
     it('이미 폐지된 종목은 봉이 남아 있어도 새로 사지 않는다', async () => {
       const delistedAt = TRADE_DATES[205];

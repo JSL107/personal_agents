@@ -213,6 +213,7 @@ export class ReplayBacktestUsecase {
           tickerById,
           ledger,
           executeOrder,
+          fills,
           entryIndexByTicker,
           state,
         });
@@ -303,6 +304,23 @@ export class ReplayBacktestUsecase {
         context.today,
       );
       const ticker = context.tickerById.get(order.tickerId);
+      // 이미 폐지된 종목은 새로 사지 않는다. 폐지일에 봉이 남아 있으면(정리매매 마지막 날에
+      // 목록에서 빠지는 경우) 전 거래일 추천이 여기서 체결되고 같은 날 liquidateDelisted 가
+      // 즉시 되파는 왕복이 생긴다 — 수수료·세금과 당일 등락이 성적에 섞이고, 같은 날짜를
+      // 거래 불가로 보는 buildCandidates 와 규칙이 갈린다. 매도는 그대로 체결한다(정리매매).
+      if (
+        order.side === 'BUY' &&
+        ticker?.delistedAt != null &&
+        dateTextOf(ticker.delistedAt) <= context.today
+      ) {
+        context.state.expiredCount += 1;
+        context.expirations.push({
+          tradeDate: context.today,
+          statusReason: '상장폐지',
+        });
+        context.ledger.markOrderStatus(order.orderId, 'EXPIRED');
+        continue;
+      }
       // 시가가 없으면 체결가를 만들 수 없다. 조용히 넘기면 표본이 줄어든 줄 모른 채
       // 성적만 좋아 보이므로 만료로 세고 사유를 남긴다.
       if (!bar || bar.open === null || !ticker) {
@@ -369,6 +387,7 @@ export class ReplayBacktestUsecase {
     tickerById: Map<number, BacktestTicker>;
     ledger: InMemoryPaperLedger;
     executeOrder: ExecutePaperOrderUsecase;
+    fills: BacktestFillRecord[];
     entryIndexByTicker: Map<number, number>;
     state: ReplayState;
   }): Promise<void> {
@@ -392,6 +411,12 @@ export class ReplayBacktestUsecase {
       }
       const price =
         latest.close.toNumber() * context.command.delistingRecoveryRate;
+      // 비중 지표는 체결 직전 평가액 대비로 잰다. 일반 체결과 같은 기준이어야 한 표에서 읽힌다.
+      const valuationBefore = this.valuate(
+        context.ledger,
+        context.barsByTicker,
+        context.today,
+      );
       const orderId = context.state.nextOrderId;
       context.ledger.recordOrder({
         id: orderId,
@@ -419,8 +444,18 @@ export class ReplayBacktestUsecase {
       if (fill.status !== 'FILLED') {
         continue;
       }
+      // 원장에 주문과 거래가 남았으므로 체결 통계에도 같이 넣는다. 빼면 orderCount 가
+      // filledCount + expiredCount 보다 커져 청산 건수만큼 주문이 증발한 것처럼 보이고,
+      // 일별 체결 진단에서도 이 체결만 빠진다.
+      const filledAmount = Number(fill.quantity) * price;
+      context.state.filledCount += 1;
+      context.fills.push({
+        tradeDate: context.today,
+        filledAmount,
+        accountValuation: valuationBefore,
+      });
       context.state.delistedLiquidatedCount += 1;
-      context.state.delistedProceeds += Number(fill.quantity) * price;
+      context.state.delistedProceeds += filledAmount;
       context.entryIndexByTicker.delete(position.tickerId);
       // 같은 종목에 남아 있던 대기 매도는 체결될 보유가 없어 만료로 흘러간다. 여기서 지우면
       // 만료 건수가 줄어 "주문을 냈는데 어떻게 됐나" 가 원장에서 사라진다.
