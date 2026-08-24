@@ -1,6 +1,8 @@
 import {
   extractProseSentences,
+  findKoreanStyleGaps,
   formatKoreanStyleMetrics,
+  KOREAN_STYLE_TARGETS,
   measureKoreanStyle,
 } from './korean-style-metrics';
 
@@ -365,5 +367,75 @@ describe('formatKoreanStyleMetrics', () => {
       measureKoreanStyle('캐시는 재사용 시간을 정해요.')
         .endingAlternationPercent,
     ).toBe(0);
+  });
+});
+
+describe('재현 목표 판정', () => {
+  const base = {
+    sentenceCount: 100,
+    averageLength: 40,
+    lengthStandardDeviation: 15,
+    shortSentencePercent: 25,
+    longestSentenceLength: 70,
+    colloquialEndingPercent: 15,
+    yoEndingPercent: 50,
+    endingAlternationPercent: 30,
+    bannedConnectiveCount: 0,
+    measurable: true,
+    paragraph: {
+      paragraphCount: 20,
+      wallPercent: 10,
+      dominantParagraphSizePercent: 50,
+      noShortSentenceParagraphs: 2,
+    },
+  } as unknown as Parameters<typeof findKoreanStyleGaps>[0];
+
+  it('목표 안이면 지적할 것이 없다', () => {
+    expect(findKoreanStyleGaps(base)).toEqual([]);
+  });
+
+  it('편차가 통과해도 초장문 하나면 잡는다', () => {
+    // 편차만 보면 159자 만연체가 섞인 글이 통과해버린 사례가 있다 — 두 축을 AND 로 본다.
+    const gaps = findKoreanStyleGaps({ ...base, longestSentenceLength: 159 });
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toContain('최장 159자');
+  });
+
+  it('구어 어미는 상한뿐 아니라 하한도 본다', () => {
+    // 상한만 두면 구어 0% 인 전형적 AI 문체가 그대로 통과한다.
+    expect(
+      findKoreanStyleGaps({ ...base, colloquialEndingPercent: 0 })[0],
+    ).toContain('구어 0%');
+    expect(
+      findKoreanStyleGaps({ ...base, colloquialEndingPercent: 35 })[0],
+    ).toContain('구어 35%');
+  });
+
+  it('40문장 미만이면 판정하지 않는다', () => {
+    // 문장 하나가 비율을 10%p 씩 흔들어 판정이 무의미하다.
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        measurable: false,
+        longestSentenceLength: 200,
+      }),
+    ).toEqual([]);
+  });
+
+  it('카드에 판정 결과가 함께 실린다', () => {
+    expect(formatKoreanStyleMetrics(base)).toContain('목표 충족');
+    expect(
+      formatKoreanStyleMetrics({ ...base, longestSentenceLength: 120 }),
+    ).toContain('목표 밖: 최장 120자(≤80)');
+  });
+
+  it('문단 축은 판정하지 않는다', () => {
+    // 프로파일 실측에 대응 항목이 없어 기준을 지어내야 한다 — 수치만 보여준다.
+    const wall = findKoreanStyleGaps({
+      ...base,
+      paragraph: { ...base.paragraph, wallPercent: 90 },
+    });
+    expect(wall).toEqual([]);
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('wallPercentMax');
   });
 });

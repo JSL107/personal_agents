@@ -312,6 +312,84 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
 };
 
 // 카드 한 줄로 적는 요약. 판정이 아니라 관측값이라는 게 드러나야 한다.
+/**
+ * 재현 목표. 출처는 `style-profile-juneseok.md` §1~§2 실측이다.
+ *
+ * 왜 코드에 두는가 — 지금까지 카드는 숫자만 던졌다. `편차 23.4` 를 보고도 그게 좋은 값인지
+ * 나쁜 값인지 알 수 없어서, 발행본 5편의 지표가 원장에 남아 있는데도 아무도 판정하지 못했다.
+ * 기준을 옆에 적어야 수치가 뜻을 갖는다.
+ *
+ * **이 값들은 발행을 막지 않는다.** 차단선을 정하려면 분포가 필요한데 지금 표본은 5편이고
+ * 그중 문단 지표가 있는 것은 3편뿐이라, 한 편이 기준을 통째로 흔든다. 카드에 표시만 해서
+ * 판정 사례를 쌓고, 분포가 서면 그때 차단 여부를 정한다.
+ *
+ * 문단 축(벽·같은크기)은 여기에 없다 — 프로파일 실측에 대응 항목이 없어 기준을 지어내야 한다.
+ * 없는 기준으로 판정하느니 수치만 보여주는 편이 낫다.
+ */
+export const KOREAN_STYLE_TARGETS = {
+  // 편차와 최장은 **둘 다** 만족해야 한다. 편차만 보면 159자 만연체 하나가 섞인 글이
+  // 편차 44.5 로 통과해버린 사례가 있다(프로파일 §1 경고).
+  lengthStandardDeviationMin: 11,
+  longestSentenceMax: 80,
+  shortSentencePercentMin: 20,
+  // 하한이 없으면 구어 어미 0% 인 전형적 AI 문체가 그대로 통과한다.
+  colloquialEndingPercentMin: 10,
+  colloquialEndingPercentMax: 20,
+  // `~습니다` 와 `~요` 가 거의 반반(39.1% vs 34.8% + 구어 15.6%).
+  yoEndingPercentMin: 40,
+  yoEndingPercentMax: 60,
+  bannedConnectiveMax: 0,
+} as const;
+
+/**
+ * 목표를 벗어난 항목만 골라 "값(기준)" 꼴로 돌려준다. 전부 맞으면 빈 배열이다.
+ *
+ * 40문장 미만이면 빈 배열을 돌려준다 — 문장 하나가 비율을 10%p 씩 흔들어 판정이 무의미하다.
+ * 이때 카드에는 판정 줄 대신 기존의 "참고값" 단서만 남는다.
+ */
+export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
+  if (!metrics.measurable) {
+    return [];
+  }
+  const gaps: string[] = [];
+  const T = KOREAN_STYLE_TARGETS;
+  if (metrics.lengthStandardDeviation < T.lengthStandardDeviationMin) {
+    gaps.push(
+      `편차 ${metrics.lengthStandardDeviation}(≥${T.lengthStandardDeviationMin})`,
+    );
+  }
+  if (metrics.longestSentenceLength > T.longestSentenceMax) {
+    gaps.push(
+      `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
+    );
+  }
+  if (metrics.shortSentencePercent < T.shortSentencePercentMin) {
+    gaps.push(
+      `짧은문장 ${metrics.shortSentencePercent}%(≥${T.shortSentencePercentMin}%)`,
+    );
+  }
+  if (
+    metrics.colloquialEndingPercent < T.colloquialEndingPercentMin ||
+    metrics.colloquialEndingPercent > T.colloquialEndingPercentMax
+  ) {
+    gaps.push(
+      `구어 ${metrics.colloquialEndingPercent}%(${T.colloquialEndingPercentMin}~${T.colloquialEndingPercentMax}%)`,
+    );
+  }
+  if (
+    metrics.yoEndingPercent < T.yoEndingPercentMin ||
+    metrics.yoEndingPercent > T.yoEndingPercentMax
+  ) {
+    gaps.push(
+      `요체 ${metrics.yoEndingPercent}%(${T.yoEndingPercentMin}~${T.yoEndingPercentMax}%)`,
+    );
+  }
+  if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
+    gaps.push(`금지접속사 ${metrics.bannedConnectiveCount}회(0회)`);
+  }
+  return gaps;
+};
+
 export const formatKoreanStyleMetrics = (
   metrics: KoreanStyleMetrics,
 ): string => {
@@ -324,7 +402,14 @@ export const formatKoreanStyleMetrics = (
   const sentenceLine = metrics.measurable
     ? head
     : `${head} (40문장 미만이라 참고값)`;
-  return `${sentenceLine}\n${paragraph}`;
+  const gaps = findKoreanStyleGaps(metrics);
+  // 수치만 있는 카드는 좋은 값인지 나쁜 값인지 알려주지 못한다. 기준을 값 옆에 붙여 적는다.
+  const verdict = !metrics.measurable
+    ? ''
+    : gaps.length === 0
+      ? '\n목표 충족 — 벗어난 항목 없음'
+      : `\n목표 밖: ${gaps.join(' · ')}`;
+  return `${sentenceLine}\n${paragraph}${verdict}`;
 };
 
 const round = (value: number): number => Math.round(value * 10) / 10;
