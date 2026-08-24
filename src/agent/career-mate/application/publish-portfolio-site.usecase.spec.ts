@@ -29,7 +29,7 @@ const PROFILE: CareerProfileData = {
   accomplishments: [
     {
       title: '백테스트 재생 루프',
-      bullet: '과거를 재생해 성적을 낸다',
+      bullet: '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
       star: {
         situation: '비교할 수 없었다',
         task: '재생 루프 설계',
@@ -126,7 +126,7 @@ const createFixture = (
                 summary: '한 문장',
                 problem: '문제',
                 result: '결과',
-                highlights: ['지표 3/6 → 0'],
+                highlights: ['실패 3회 → 0회'],
               })),
             }),
           };
@@ -240,7 +240,9 @@ describe('PublishPortfolioSiteUsecase', () => {
     // 사이트는 "필드가 있으면 덮는다" 라서 값을 넣지 않는 것이 유일한 보존 방법이다.
     expect('featured' in payload).toBe(false);
     // 내용 필드는 그대로 실려야 한다(표지는 별도 규칙 — 아래 '표지 보존' 참조).
-    expect(payload.process).toEqual(['과거를 재생해 성적을 낸다']);
+    expect(payload.process).toEqual([
+      '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
+    ]);
   });
 
   it('프로젝트 1건이 실패해도 스킬 그룹 발행은 계속한다', async () => {
@@ -346,7 +348,9 @@ describe('표지 보존', () => {
     expect('problem' in payload).toBe(false);
     expect('result' in payload).toBe(false);
     // 내용은 계속 갱신된다 — 새 작업이 붙어도 목록에 반영돼야 한다.
-    expect(payload.process).toEqual(['과거를 재생해 성적을 낸다']);
+    expect(payload.process).toEqual([
+      '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
+    ]);
     expect(payload.period).toBe('2026.08');
   });
 
@@ -375,7 +379,7 @@ describe('카드 성과 줄 채우기', () => {
     await usecase.execute({ slackUserId: 'U1' });
 
     const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect(payload.keyContributions).toEqual(['지표 3/6 → 0']);
+    expect(payload.keyContributions).toEqual(['실패 3회 → 0회']);
   });
 
   it('이미 성과 줄이 있으면 덮지 않는다', async () => {
