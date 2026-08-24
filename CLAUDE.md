@@ -150,7 +150,7 @@ pnpm prisma format  # schema 변경 시
 Dated reference snapshots — 단일 커밋 결정 기록, 사후 갱신 X (신규 결정은 새 파일):
 
 - **⚠️ 잔여 판정은 여기부터**: `docs/superpowers/plans/2026-08-24-remaining-work-inventory.md`
-  — `tasks/todo.md` 의 「남은 것」 18개를 코드와 대조한 최신 재고 (확인 6 · 수정 3 · 치울 것 3).
+  — `tasks/todo.md` 의 「남은 것」 18개를 코드와 대조한 최신 재고 (확인 6 · 수정 4 · 치울 것 3).
   배경은 `2026-08-13-remaining-work-inventory.md` (문서 142개 전수 대조 · 판정 절차 3단계).
   **개별 plan 의 체크박스는 완료 후에도 갱신하지 않으므로 잔여 신호가 아니다**(머지 완료된 작업이
   "미완 55/55" 로 남아 있는 실례 포함). `## Review` 헤딩 유무도 신호가 아니다 — 「검증」 등
