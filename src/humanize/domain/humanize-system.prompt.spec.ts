@@ -69,4 +69,20 @@ describe('개인 블로그 목소리 프롬프트', () => {
       '한 어미에 몰지 말고',
     );
   });
+  // 블로그 글은 해요체가 기본이라는 사용자 진술(2026-08-24)을 고정한다. 이전 지시는 두 종결체를
+  // "한쪽으로 몰리지 않게" 요구했고, 그 결과 모델이 문장마다 갈아타 발행본 교대율이 73~88% 가
+  // 됐다(사용자가 손본 발행본 37% · 사용자가 쓴 글 50%). 되살아나면 같은 증상이 재발한다.
+  it('해요체를 기본으로 주고, 반반 지시는 남기지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('기본 종결은');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('해요체');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('절반을 넘기지 마라');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain(
+      '둘의 비율이 한쪽으로 몰리지 않게',
+    );
+  });
+
+  // 비율만 지시하면 배치가 망가진다 — 배치 금지를 함께 줘야 한다.
+  it('종결체를 한 문장씩 번갈아 쓰지 말라고 요구한다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('한 문장씩 번갈아 쓰지 마라');
+  });
 });
