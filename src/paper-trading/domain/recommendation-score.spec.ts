@@ -2,9 +2,11 @@ import { Prisma } from '@prisma/client';
 
 import {
   aggregateRecommendationScores,
+  BANDLESS_PERIOD_LABEL,
   matchRecommendationCycles,
   RecommendationOrderInput,
   RecommendationTradeInput,
+  splitCyclesByExitBand,
 } from './recommendation-score';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -472,5 +474,113 @@ describe('aggregateRecommendationScores', () => {
     });
 
     expect(aggregateRecommendationScores(result)[0].maximumLoss).toBeNull();
+  });
+});
+
+describe('splitCyclesByExitBand', () => {
+  // 매수 2건은 서로 다른 밴드로 팔리고, 1건은 아직 안 팔린 표본.
+  const buildCycles = (): ReturnType<typeof matchRecommendationCycles> =>
+    matchRecommendationCycles({
+      orders: [
+        order({ id: 1, tickerId: 100 }),
+        order({ id: 2, tickerId: 200 }),
+        order({ id: 3, tickerId: 300 }),
+        order({ id: 101, tickerId: 100, side: 'SELL' }),
+        order({ id: 102, tickerId: 200, side: 'SELL' }),
+      ],
+      trades: [
+        trade({ id: 11, orderId: 1, tickerId: 100 }),
+        trade({ id: 12, orderId: 2, tickerId: 200 }),
+        trade({ id: 13, orderId: 3, tickerId: 300 }),
+        trade({
+          id: 21,
+          orderId: 101,
+          tickerId: 100,
+          side: 'SELL',
+          price: decimal('12'),
+          realizedPnl: decimal('15'),
+          tradeDate: date('2026-08-10'),
+        }),
+        trade({
+          id: 22,
+          orderId: 102,
+          tickerId: 200,
+          side: 'SELL',
+          price: decimal('9'),
+          realizedPnl: decimal('-15'),
+          tradeDate: date('2026-08-10'),
+        }),
+      ],
+    });
+
+  it('매도에 박힌 밴드로 사이클을 가르고, 안 팔린 것은 어느 구간에도 넣지 않는다', () => {
+    const periods = splitCyclesByExitBand(buildCycles().cycles, [
+      { id: 101, takeProfitPercent: '10', stopLossPercent: '-5' },
+      { id: 102, takeProfitPercent: '2', stopLossPercent: '-0.2' },
+    ]);
+
+    // 누적 행의 exitBands 와 같은 순서다 — 익절 오름차순.
+    expect(periods.map((period) => period.periodLabel)).toEqual([
+      '+2/-0.2',
+      '+10/-5',
+    ]);
+    expect(periods.map((period) => period.cycles.length)).toEqual([1, 1]);
+    // 매수 3건 중 팔린 2건만 구간에 들어간다.
+    const total = periods.reduce(
+      (sum, period) => sum + period.cycles.length,
+      0,
+    );
+    expect(total).toBe(2);
+  });
+
+  it('밴드가 만들지 않은 매도는 BANDLESS 로 따로 센다', () => {
+    const periods = splitCyclesByExitBand(buildCycles().cycles, [
+      { id: 101, takeProfitPercent: '10', stopLossPercent: '-5' },
+      { id: 102, takeProfitPercent: null, stopLossPercent: null },
+    ]);
+
+    // 밴드가 아닌 것은 크기 비교 대상이 아니라 맨 뒤다.
+    expect(periods.map((period) => period.periodLabel)).toEqual([
+      '+10/-5',
+      BANDLESS_PERIOD_LABEL,
+    ]);
+  });
+
+  it('표본에 없는 매도 주문의 사이클은 BANDLESS 로 부풀리지 않고 제외한다', () => {
+    const periods = splitCyclesByExitBand(buildCycles().cycles, [
+      { id: 101, takeProfitPercent: '10', stopLossPercent: '-5' },
+    ]);
+
+    expect(periods).toHaveLength(1);
+    expect(periods[0].periodLabel).toBe('+10/-5');
+    expect(periods[0].cycles).toHaveLength(1);
+  });
+
+  it('밴드가 하나뿐이면 구간도 하나다', () => {
+    const periods = splitCyclesByExitBand(buildCycles().cycles, [
+      { id: 101, takeProfitPercent: '10', stopLossPercent: '-5' },
+      { id: 102, takeProfitPercent: '10', stopLossPercent: '-5' },
+    ]);
+
+    expect(periods).toHaveLength(1);
+    expect(periods[0].cycles).toHaveLength(2);
+  });
+
+  it('구간 집계는 누적 집계와 같은 산식을 쓴다', () => {
+    const matched = buildCycles();
+    const periods = splitCyclesByExitBand(matched.cycles, [
+      { id: 101, takeProfitPercent: '10', stopLossPercent: '-5' },
+      { id: 102, takeProfitPercent: '10', stopLossPercent: '-5' },
+    ]);
+    const periodScores = aggregateRecommendationScores({
+      cycles: periods[0].cycles,
+      anomalies: [],
+      realizedPnlMismatchCount: 0,
+    });
+    const wholeScores = aggregateRecommendationScores(matched);
+
+    // 밴드가 하나라 구간 = 청산 전체. 청산 건수와 적중 건수가 누적과 일치해야 한다.
+    expect(periodScores[0].closedCount).toBe(wholeScores[0].closedCount);
+    expect(periodScores[0].hitCount).toBe(wholeScores[0].hitCount);
   });
 });

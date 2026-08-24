@@ -10,6 +10,7 @@ import {
 import {
   aggregateRecommendationScores,
   matchRecommendationCycles,
+  splitCyclesByExitBand,
   StrategyRecommendationScore,
 } from '../domain/recommendation-score';
 import {
@@ -19,6 +20,7 @@ import {
 import {
   PaperTradingPrismaRepository,
   SaveRecommendationScoreInput,
+  SaveRecommendationScorePeriodInput,
 } from '../infrastructure/paper-trading.prisma.repository';
 
 export interface ScoreRecommendationsCommand {
@@ -65,6 +67,14 @@ export interface AccountRecommendationScore {
   portfolio: PortfolioPerformance;
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
+  // 청산 밴드별로 가른 성적. 밴드를 바꾼 전후를 갈라 보기 위한 축이라 누적 지표와 따로 둔다.
+  // 매도가 없는 사이클은 귀속 근거가 없어 어느 구간에도 없다 — 구간 합 < 추천 건수가 정상이다.
+  periods: ExitBandPeriodScore[];
+}
+
+export interface ExitBandPeriodScore {
+  periodLabel: string;
+  score: StrategyRecommendationScore;
 }
 
 export interface ScoreRecommendationsResult {
@@ -184,10 +194,28 @@ export class ScoreRecommendationsUsecase {
               )
               .dividedBy(shadow.performances.length)
               .toString();
-      const exitBandUsage = summarizeExitBandUsage(
-        data.sellOrders.filter(
-          (sellOrder) => sellOrder.accountId === account.id,
-        ),
+      const accountSellOrders = data.sellOrders.filter(
+        (sellOrder) => sellOrder.accountId === account.id,
+      );
+      const exitBandUsage = summarizeExitBandUsage(accountSellOrders);
+      // 누적 성적과 같은 산식(`aggregateRecommendationScores`)을 구간별로 다시 부른다.
+      // 산식을 두 벌로 두면 누적과 구간이 어긋나고 그 어긋남을 아무도 못 본다.
+      const periods = splitCyclesByExitBand(
+        accountMatched.cycles,
+        accountSellOrders,
+      ).flatMap((period) =>
+        // 이상치는 구간에 귀속시키지 않는다 — 주문 단위 판정이라 어느 밴드의 몫인지 가릴 수
+        // 없다. 그래서 구간 성적의 anomalyCount 는 늘 0 이고, 이상치는 누적 행에서만 읽는다.
+        aggregateRecommendationScores({
+          cycles: period.cycles,
+          anomalies: [],
+          realizedPnlMismatchCount: 0,
+        })
+          .filter((periodScore) => periodScore.strategy === strategy)
+          .map((periodScore) => ({
+            periodLabel: period.periodLabel,
+            score: periodScore,
+          })),
       );
       const portfolio = calculatePortfolioPerformance({
         seedAmount: account.seedAmount,
@@ -225,6 +253,7 @@ export class ScoreRecommendationsUsecase {
         evaluationBenchmarkMissing: benchmark.evaluationBenchmarkMissing,
         portfolio,
         classifications,
+        periods,
         exclusions: {
           expired: classifications.expired,
           benchmarkUnavailable: benchmark.benchmarkUnavailableCount,
@@ -290,6 +319,7 @@ export class ScoreRecommendationsUsecase {
     if (persisted) {
       await this.repository.saveRecommendationScores(
         accounts.map((account) => toSaveInput(account, asOf)),
+        accounts.flatMap((account) => toSavePeriodInputs(account, asOf)),
       );
     }
 
@@ -335,3 +365,21 @@ const toSaveInput = (
   cumulativeCost: account.portfolio.cumulativeCost,
   exclusions: { ...account.exclusions },
 });
+
+const toSavePeriodInputs = (
+  account: AccountRecommendationScore,
+  asOf: Date,
+): SaveRecommendationScorePeriodInput[] =>
+  account.periods.map((period) => ({
+    accountId: account.accountId,
+    asOf,
+    periodLabel: period.periodLabel,
+    strategy: account.strategy,
+    closedCount: period.score.closedCount,
+    hitCount: period.score.hitCount,
+    hitRate: period.score.hitRate,
+    meanReturnRate: period.score.meanReturnRate,
+    medianReturnRate: period.score.medianReturnRate,
+    maximumLoss: period.score.maximumLoss,
+    averageHoldingDays: period.score.averageHoldingDays,
+  }));

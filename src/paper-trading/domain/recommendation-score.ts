@@ -1,4 +1,5 @@
 import { MoneyValue } from '../../market-data/domain/market-data.type';
+import { formatExitBandLabel } from './exit-band';
 import { OrderStatus, TradeSide, TradeStrategy } from './paper-account.type';
 
 export interface RecommendationOrderInput {
@@ -508,3 +509,115 @@ export const aggregateRecommendationScores = (
     const score = scoreStrategy(strategy, result);
     return score ? [score] : [];
   });
+
+/**
+ * 밴드가 만들지 않은 매도(모델이 고른 매도)를 담는 구간 라벨.
+ *
+ * 밴드 성적의 분모에서 빼야 하는 매도라 별도 구간으로 센다. 지우면 밴드 하나로 닫힌
+ * 표본처럼 읽힌다(`summarizeExitBandUsage` 의 `bandlessSellCount` 와 같은 이유).
+ */
+export const BANDLESS_PERIOD_LABEL = 'BANDLESS';
+
+/** 사이클을 구간에 귀속시키기 위해 필요한 매도 주문 정보. */
+export interface CycleExitBandRecord {
+  id: number;
+  takeProfitPercent: string | null;
+  stopLossPercent: string | null;
+}
+
+export interface ExitBandPeriodCycles {
+  periodLabel: string;
+  cycles: RecommendationCycle[];
+}
+
+// 밴드 라벨(`+10/-5`)을 크기로 견준다. 파싱에 실패하면(BANDLESS 등) 뒤로 보낸다.
+const parseExitBandLabel = (
+  label: string,
+): { takeProfitPercent: number; stopLossPercent: number } | null => {
+  const matched = /^\+(-?[\d.]+)\/(-?[\d.]+)$/.exec(label);
+  if (matched === null) {
+    return null;
+  }
+  return {
+    takeProfitPercent: Number(matched[1]),
+    stopLossPercent: Number(matched[2]),
+  };
+};
+
+const compareExitBandLabels = (left: string, right: string): number => {
+  const leftBand = parseExitBandLabel(left);
+  const rightBand = parseExitBandLabel(right);
+  if (leftBand === null || rightBand === null) {
+    if (leftBand === rightBand) {
+      return left.localeCompare(right);
+    }
+    return leftBand === null ? 1 : -1;
+  }
+  const takeProfitDifference =
+    leftBand.takeProfitPercent - rightBand.takeProfitPercent;
+  if (takeProfitDifference !== 0) {
+    return takeProfitDifference;
+  }
+  // 익절이 같으면 손절이 0 에 가까운 쪽이 좁은 밴드다(손절은 음수).
+  return rightBand.stopLossPercent - leftBand.stopLossPercent;
+};
+
+/**
+ * 사이클을 청산 밴드별로 가른다.
+ *
+ * 귀속은 **매도 주문**이 정한다. 옛 밴드로 사서 새 밴드로 팔린 건은 새 밴드 구간에 들어간다 —
+ * 청산 결과를 만든 것이 매도 규칙이기 때문이다. 매수 시점으로 가르면 규칙을 바꾼 날을 걸친
+ * 사이클이 어느 쪽 성적도 아니게 된다.
+ *
+ * 매도가 없는 사이클(미청산·만료)은 **어느 구간에도 넣지 않는다**. 귀속 근거가 없다.
+ * 그래서 구간별 청산 건수의 합은 누적 행의 추천 건수보다 작다 — 결함이 아니다.
+ */
+export const splitCyclesByExitBand = (
+  cycles: readonly RecommendationCycle[],
+  sellOrders: readonly CycleExitBandRecord[],
+): ExitBandPeriodCycles[] => {
+  const bandByOrderId = new Map<number, string>();
+  for (const order of sellOrders) {
+    bandByOrderId.set(
+      order.id,
+      order.takeProfitPercent === null || order.stopLossPercent === null
+        ? BANDLESS_PERIOD_LABEL
+        : formatExitBandLabel({
+            takeProfitPercent: Number(order.takeProfitPercent),
+            stopLossPercent: Number(order.stopLossPercent),
+          }),
+    );
+  }
+
+  const grouped = new Map<string, RecommendationCycle[]>();
+  for (const cycle of cycles) {
+    const sellOrderId = cycle.sellTrade?.orderId;
+    if (sellOrderId === undefined || sellOrderId === null) {
+      continue;
+    }
+    const label = bandByOrderId.get(sellOrderId);
+    // 매도 체결은 있는데 그 주문이 표본에 없다 — 로드 조건(체결 상태·결정일)에서 빠진
+    // 주문이다. 임의로 BANDLESS 에 넣으면 밴드 없는 매도 건수가 부풀려지므로 제외한다.
+    if (label === undefined) {
+      continue;
+    }
+    const bucket = grouped.get(label);
+    if (bucket === undefined) {
+      grouped.set(label, [cycle]);
+      continue;
+    }
+    bucket.push(cycle);
+  }
+
+  // 정렬은 누적 행의 `exitBands`(`summarizeExitBandUsage`)와 같은 규칙을 쓴다. 문자열 순으로
+  // 세우면 같은 두 밴드가 누적에서는 `+2/-0.2, +10/-5`, 구간에서는 `+10/-5, +2/-0.2` 로 뒤집혀
+  // 보인다. BANDLESS 는 밴드가 아니므로 크기 비교 대상이 아니라 맨 뒤에 둔다.
+  return [...grouped.entries()]
+    .map(([periodLabel, periodCycles]) => ({
+      periodLabel,
+      cycles: periodCycles,
+    }))
+    .sort((left, right) =>
+      compareExitBandLabels(left.periodLabel, right.periodLabel),
+    );
+};
