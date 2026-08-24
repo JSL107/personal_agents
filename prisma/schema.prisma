@@ -532,6 +532,7 @@ model PaperAccount {
   trades    PaperTrade[]
   snapshots PaperEquitySnapshot[]
   scores    RecommendationScore[]
+  scorePeriods RecommendationScorePeriod[]
 
   @@map("paper_account")
 }
@@ -734,6 +735,39 @@ model RecommendationScore {
   @@unique([accountId, asOf])
   @@index([strategy, asOf])
   @@map("recommendation_score")
+}
+
+// 추천 성적을 "어느 청산 밴드에서 나온 것인가" 로 갈라 센 구간 집계.
+//
+// `RecommendationScore` 는 (계좌, 기준일) 당 한 행에 계좌 개설 이후 전 구간을 누적한다.
+// 2026-08-21 에 청산 밴드가 `+2/-0.2` → `+10/-5` 로 바뀌었으므로(PR #361), 누적 행만으로는
+// 바꾼 값이 나은지 판정할 수 없다. `exitBands` 배열이 "섞였다" 를 알릴 뿐이었다.
+//
+// 계좌 전체 지표(자산 수익률·MDD·회전율)는 구간으로 자를 수 없어 누적 행에 남긴다.
+// 이 표에는 사이클 성적만 담는다.
+model RecommendationScorePeriod {
+  id        Int          @id @default(autoincrement())
+  accountId Int          @map("account_id")
+  account   PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asOf      DateTime     @map("as_of") @db.Date
+  // 구간 라벨 — 청산 밴드 설정(`+10/-5` 꼴) 또는 밴드가 만들지 않은 매도를 뜻하는 'BANDLESS'.
+  periodLabel String @map("period_label")
+  strategy    String
+
+  closedCount        Int      @map("closed_count")
+  hitCount           Int      @map("hit_count")
+  hitRate            Decimal? @map("hit_rate") @db.Decimal(9, 4)
+  meanReturnRate     Decimal? @map("mean_return_rate") @db.Decimal(9, 4)
+  medianReturnRate   Decimal? @map("median_return_rate") @db.Decimal(9, 4)
+  maximumLoss        Decimal? @map("maximum_loss") @db.Decimal(9, 4)
+  averageHoldingDays Decimal? @map("average_holding_days") @db.Decimal(9, 4)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([accountId, asOf, periodLabel, strategy])
+  @@index([periodLabel, asOf])
+  @@map("recommendation_score_period")
 }
 
 // 스크리닝 회차. "그날 규칙이 무엇을 통과시켰나" 를 남긴다 — 산 것은 paper_order 에
