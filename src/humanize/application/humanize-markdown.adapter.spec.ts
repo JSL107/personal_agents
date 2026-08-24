@@ -146,3 +146,34 @@ describe('humanizeMarkdownProse — 문단만 윤문', () => {
     expect(result.proseParagraphs).toBe(0);
   });
 });
+
+describe('독자 축 전달', () => {
+  const markdown = [
+    '# 제목',
+    '',
+    '첫 문단입니다. 여기에 산문이 있습니다.',
+  ].join('\n');
+
+  it('생략하면 humanize 옵션에 audience 가 실리지 않는다', async () => {
+    const humanize = jest.fn().mockResolvedValue({ '0': '다듬은 문단입니다.' });
+    const humanizer = { humanize } as unknown as HumanizeService;
+
+    await humanizeMarkdownProse(markdown, humanizer);
+
+    expect(humanize.mock.calls[0][1]).toMatchObject({
+      longForm: true,
+      voice: 'personal-blog',
+    });
+    expect(humanize.mock.calls[0][1].audience).toBeUndefined();
+  });
+
+  it('general 을 넘기면 그대로 humanize 까지 도달한다', async () => {
+    // 인자를 받기만 하고 버려도 위 테스트는 통과한다 — 도달 여부는 여기서 지킨다.
+    const humanize = jest.fn().mockResolvedValue({ '0': '다듬은 문단입니다.' });
+    const humanizer = { humanize } as unknown as HumanizeService;
+
+    await humanizeMarkdownProse(markdown, humanizer, 'general');
+
+    expect(humanize.mock.calls[0][1].audience).toBe('general');
+  });
+});

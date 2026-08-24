@@ -5,14 +5,20 @@
 // 그때그때 달라 대조가 안 된다. 여기서는 파일이 입력이라 before/after 를 같은 글로 잰다.
 //
 // 사용법:
-//   pnpm exec ts-node scripts/humanize-markdown.ts <입력.md> [--out <출력.md>]
+//   pnpm exec ts-node scripts/humanize-markdown.ts <입력.md> [--out <출력.md>] [--audience general]
+//
+// --audience 는 독자 축 실측용이다. 같은 파일을 지정 없이 / general 로 두 번 돌려
+// 영어 낱말 수를 대조하면 용어 규칙이 실제로 먹었는지 보인다(프롬프트만 보고는 알 수 없다).
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
-import { HumanizeService } from '../src/humanize/application/humanize.service';
+import {
+  HumanizeAudience,
+  HumanizeService,
+} from '../src/humanize/application/humanize.service';
 import { humanizeMarkdownProse } from '../src/humanize/application/humanize-markdown.adapter';
 import {
   formatKoreanStyleMetrics,
@@ -54,7 +60,18 @@ const main = async (): Promise<void> => {
       throw new Error('HUMANIZE_REPORTS_ENABLED=false — 윤문이 꺼져 있다');
     }
     const started = Date.now();
-    const result = await humanizeMarkdownProse(source, humanizer);
+    const audienceOption = readOption('audience');
+    if (
+      audienceOption &&
+      audienceOption !== 'general' &&
+      audienceOption !== 'developer'
+    ) {
+      throw new Error(
+        `--audience 는 developer|general 만 받는다: ${audienceOption}`,
+      );
+    }
+    const audience = audienceOption as HumanizeAudience | undefined;
+    const result = await humanizeMarkdownProse(source, humanizer, audience);
     const elapsedSeconds = Math.round((Date.now() - started) / 1000);
 
     // 윤문이 통째로 실패해도 어댑터는 원문을 그대로 돌려준다(best-effort). 0문단이면
@@ -69,7 +86,7 @@ const main = async (): Promise<void> => {
       );
     }
     console.log(
-      `윤문: ${result.changedParagraphs}/${result.proseParagraphs}문단 · ${elapsedSeconds}초`,
+      `윤문: ${result.changedParagraphs}/${result.proseParagraphs}문단 · ${elapsedSeconds}초 · 독자 ${audience ?? 'developer(기본)'}`,
     );
     console.log(
       '[before] ' + formatKoreanStyleMetrics(measureKoreanStyle(source)),

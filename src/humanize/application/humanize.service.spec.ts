@@ -6,7 +6,11 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
 import {
   HUMANIZE_CONCISE_RULES,
+  HUMANIZE_GENERAL_AUDIENCE_TERM_LINE,
+  HUMANIZE_PERSONAL_BLOG_TONE,
+  HUMANIZE_REPORT_TONE_LINE,
   HUMANIZE_SYSTEM_PROMPT,
+  HUMANIZE_TERM_PRESERVE_LINE,
 } from '../domain/humanize-system.prompt';
 import { HumanizeService } from './humanize.service';
 
@@ -113,9 +117,20 @@ describe('HumanizeService', () => {
       expect.objectContaining({
         agentType: AgentType.HUMANIZER,
         triggerType: TriggerType.REPORT_HUMANIZE,
-        inputSnapshot: { fieldKeys: ['a'] },
+        inputSnapshot: {
+          fieldKeys: ['a'],
+          voice: 'report',
+          audience: 'developer',
+        },
       }),
     );
+    // 원장에는 어떤 축으로 돌았는지까지만 남고 본문은 남지 않는다.
+    const snapshot = (
+      agentRunService.execute.mock.calls[0][0] as {
+        inputSnapshot: Record<string, unknown>;
+      }
+    ).inputSnapshot;
+    expect(JSON.stringify(snapshot)).not.toContain('원본A');
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
@@ -191,5 +206,56 @@ describe('HumanizeService', () => {
         HUMANIZE_CONCISE_RULES,
       );
     });
+  });
+});
+
+describe('독자 축 (audience)', () => {
+  const routeImpl = async () => ({ text: JSON.stringify({ a: '다듬음A' }) });
+
+  it('지정하지 않으면 용어 보존 규칙이 그대로 간다 (기존 산출물 회귀 0)', async () => {
+    const { service, routeMock } = makeService({ enabled: 'true', routeImpl });
+
+    await service.humanize({ a: '원본A' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain(HUMANIZE_TERM_PRESERVE_LINE);
+    expect(systemPrompt).not.toContain(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE);
+  });
+
+  it('developer 를 명시해도 기본과 같다', async () => {
+    const { service, routeMock } = makeService({ enabled: 'true', routeImpl });
+
+    await service.humanize({ a: '원본A' }, { audience: 'developer' });
+
+    expect(routeMock.mock.calls[0][0].request.systemPrompt).toContain(
+      HUMANIZE_TERM_PRESERVE_LINE,
+    );
+  });
+
+  it('general 이면 보존 규칙을 완화본으로 갈아끼운다', async () => {
+    const { service, routeMock } = makeService({ enabled: 'true', routeImpl });
+
+    await service.humanize({ a: '원본A' }, { audience: 'general' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    // 덧붙이기가 아니라 치환이어야 한다 — 원본 줄이 남아 있으면 모델이 그쪽을 따라
+    // 영어를 그대로 둔다(실측: 영어 낱말 121 → 129).
+    expect(systemPrompt).not.toContain(HUMANIZE_TERM_PRESERVE_LINE);
+    expect(systemPrompt).toContain(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE);
+  });
+
+  it('목소리와 독자는 곱해서 적용된다', async () => {
+    const { service, routeMock } = makeService({ enabled: 'true', routeImpl });
+
+    await service.humanize(
+      { a: '원본A' },
+      { voice: 'personal-blog', audience: 'general', longForm: true },
+    );
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain(HUMANIZE_GENERAL_AUDIENCE_TERM_LINE);
+    // 목소리 축이 독자 치환에 밀려 사라지지 않았는지 함께 본다.
+    expect(systemPrompt).toContain(HUMANIZE_PERSONAL_BLOG_TONE);
+    expect(systemPrompt).not.toContain(HUMANIZE_REPORT_TONE_LINE);
   });
 });

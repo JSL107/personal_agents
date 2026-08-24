@@ -2,7 +2,7 @@ import {
   HumanizeMarkdownResult,
   scanMarkdownBlocks,
 } from '../domain/markdown-blocks';
-import { HumanizeService } from './humanize.service';
+import { HumanizeAudience, HumanizeService } from './humanize.service';
 
 // 마크다운 본문에서 **산문 문단만** 골라 윤문하고 제자리에 되끼운다.
 //
@@ -14,6 +14,12 @@ import { HumanizeService } from './humanize.service';
 export const humanizeMarkdownProse = async (
   markdown: string,
   humanizer: HumanizeService,
+  // 생략하면 `developer` — 지금까지의 발행 동작 그대로다. 대외용 글이 생기면 여기에 `general` 을 넘긴다.
+  //
+  // 왜 이 어댑터에만 뚫었는가 — 노션 초안 발행이 유일하게 "개발자가 아닌 사람이 읽을 수도 있는"
+  // 경로다. 저녁 블로그(`humanize-evening-blog`)와 이력서(`humanize-career-profile`)는 독자가
+  // 각각 본인·채용 담당이라 완화할 이유가 없다. 필요해지면 같은 방식으로 인자 하나만 통과시키면 된다.
+  audience?: HumanizeAudience,
 ): Promise<HumanizeMarkdownResult> => {
   const { lines, blocks } = scanMarkdownBlocks(markdown);
   const proseBlocks = blocks.filter(
@@ -40,6 +46,7 @@ export const humanizeMarkdownProse = async (
   const humanized = await humanizer.humanize(fields, {
     longForm: true,
     voice: 'personal-blog',
+    audience,
   });
 
   // 뒤에서부터 갈아끼운다 — 앞에서부터 바꾸면 줄 수가 달라져 뒤 블록의 줄 번호가 밀린다.
