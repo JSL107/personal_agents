@@ -28,6 +28,7 @@ const createValued = (
   close: new Prisma.Decimal('100'),
   avgPrice: new Prisma.Decimal('80'),
   previousClose: new Prisma.Decimal('90'),
+  holdingDate: new Date('2026-08-21T00:00:00.000Z'),
   ...overrides,
 });
 
@@ -97,6 +98,20 @@ describe('summarizePortfolioValue', () => {
 
   it('보유가 없으면 아무 값도 내지 않는다', () => {
     expect(summarizePortfolioValue([], null)).toBeNull();
+  });
+
+  // 동기화는 전 종목을 한 회차에 갱신한다. 갈렸다면 그 회차가 일부만 반영된 것이고,
+  // 조회는 성공하므로 이걸 보지 않으면 틀린 평가액이 정상 값처럼 발송된다.
+  it('잔고 기준일이 종목마다 갈리면 부분 동기화이므로 아무 값도 내지 않는다', () => {
+    const result = summarizePortfolioValue(
+      [
+        createValued(),
+        createValued({ holdingDate: new Date('2026-08-20T00:00:00.000Z') }),
+      ],
+      null,
+    );
+
+    expect(result).toBeNull();
   });
 });
 

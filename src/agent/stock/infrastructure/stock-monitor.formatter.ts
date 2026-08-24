@@ -168,19 +168,25 @@ export const formatPortfolioExposure = (
 };
 
 // 아침에 듣는 자산 한 줄. 노출 비중(어디에 쏠려 있나)과 다른 축이다 — 얼마이고 얼마 벌었나.
-// 숫자만 적으면 "1,234만원" 이 좋은 상태인지 읽히지 않으므로 평단 대비와 어제 대비를 함께 놓는다.
+// 숫자만 적으면 "1,234만원" 이 좋은 상태인지 읽히지 않으므로 매입가 대비와 어제 대비를 함께 놓는다.
+//
+// **"원금 대비" 라고 쓰지 않는다.** 달러 보유의 매입 당시 환율을 우리는 모른다(잔고에 없다).
+// 그래서 손익은 "달러로 얼마 벌었나를 지금 환율로 환산한 값" 이고, 원화를 얼마 넣어 얼마가
+// 됐나와는 다르다. 환율이 매입 이후 움직였다면 그 차이만큼 갈린다.
 export const formatPortfolioValue = (value: PortfolioValue | null): string => {
   if (!value) {
     return '';
   }
   const profitText = `${formatSignedMoney(value.profit)} (${formatSignedPercent(value.profitRate)})`;
-  const headline = `💰 *내 자산* — ${formatAssetAmount(value.totalValue)} · 원금 대비 ${profitText}`;
+  const headline = `💰 *내 자산* — ${formatAssetAmount(value.totalValue)} · 매입가 대비 ${profitText}`;
+  const fxNote =
+    '달러 자산은 지금 환율로 환산했습니다 — 두 숫자 모두 환율이 움직인 몫은 빠져 있습니다';
   if (value.dailyChange === null || value.dailyChangeRate === null) {
     // 직전 봉이 없는 종목이 섞이면 어제 대비를 내지 않는다. 줄이 통째로 빠지면 "왜 없지" 가
     // 되므로 이유를 적는다.
-    return `${headline}\n_직전 거래일 대비는 시세가 하루치뿐인 종목이 있어 생략했습니다_`;
+    return `${headline}\n_직전 거래일 대비는 시세가 하루치뿐인 종목이 있어 생략했습니다 · ${fxNote}_`;
   }
-  return `${headline}\n_직전 거래일보다 ${formatSignedMoney(value.dailyChange)} (${formatSignedPercent(value.dailyChangeRate)}) — 주가 변동분만이고, 환율이 움직인 몫은 빠져 있습니다_`;
+  return `${headline}\n_직전 거래일보다 ${formatSignedMoney(value.dailyChange)} (${formatSignedPercent(value.dailyChangeRate)}) · ${fxNote}_`;
 };
 
 const formatAssetAmount = (amount: number): string => {

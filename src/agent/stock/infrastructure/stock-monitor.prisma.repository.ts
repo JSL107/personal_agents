@@ -92,6 +92,7 @@ export class StockMonitorPrismaRepository {
         close: price.close,
         avgPrice: holding.avgPrice,
         previousClose: holding.ticker.dailyPrices[1]?.close ?? null,
+        holdingDate: holding.effectiveDate,
       });
     }
 
