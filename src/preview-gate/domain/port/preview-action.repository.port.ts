@@ -40,6 +40,19 @@ export interface PreviewActionRepositoryPort {
     id: string;
     status: Exclude<PreviewStatus, 'PENDING'>;
   }): Promise<PreviewAction>;
+  // 기대 상태일 때만 전이한다. 아니면 아무것도 쓰지 않고 null 을 돌려준다.
+  //
+  // `transition` 은 id 만 보고 덮어쓰므로 "조회 시점의 상태" 를 믿는 호출자는 경합에 진다 —
+  // 스위퍼가 PENDING 목록을 뽑은 뒤 사용자가 ✅ 를 누르면, 방금 APPLIED 가 된 row 위에
+  // EXPIRED 를 덮어쓴다. 그 상태로 만료 후처리(canceller)까지 돌면 이미 APPROVED 로 기록된
+  // 연동 레코드가 EXPIRED 로 되돌아가 결과가 손상된다.
+  //
+  // 반환값이 곧 "전이를 획득했는가" 다 — 부작용이 있는 후처리는 획득한 쪽만 실행해야 한다.
+  transitionIfStatus(input: {
+    id: string;
+    from: PreviewStatus;
+    to: PreviewStatus;
+  }): Promise<PreviewAction | null>;
   // PENDING 카드의 payload 만 교체. 사용자가 카드 위 컨트롤(드롭다운 등)로 승인 내용을
   // 고쳐 나갈 때 쓴다 — 카드를 새로 만들면 승인 대상이 갈라지므로 같은 카드를 갱신한다.
   // status 전이는 하지 않는다. PENDING/owner 검증은 호출자(usecase) 책임.

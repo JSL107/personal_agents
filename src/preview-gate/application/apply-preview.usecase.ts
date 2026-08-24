@@ -13,6 +13,11 @@ import {
   PreviewApplier,
 } from '../domain/port/preview-applier.port';
 import {
+  PREVIEW_CANCEL_REASON,
+  PREVIEW_CANCELLERS,
+  PreviewCanceller,
+} from '../domain/port/preview-canceller.port';
+import {
   PREVIEW_CARD_PORT,
   PreviewCardPort,
   PreviewCardState,
@@ -24,6 +29,7 @@ import {
 import { PreviewActionException } from '../domain/preview-action.exception';
 import { PREVIEW_STATUS, PreviewAction } from '../domain/preview-action.type';
 import { PreviewActionErrorCode } from '../domain/preview-action-error-code.enum';
+import { runPreviewCanceller } from './preview-canceller.helper';
 
 // PO-2: 사용자 ✅ apply 클릭 시점. PENDING 검증 + owner 매칭 + ttl 검증 후 strategy.apply 위임.
 // strategy 가 throw 하면 row 는 PENDING 그대로 두고 (재시도 가능) 예외 그대로 전파.
@@ -41,6 +47,9 @@ export class ApplyPreviewUsecase {
     private readonly appliers: PreviewApplier[],
     @Inject(RESULT_VERIFIERS)
     private readonly verifiers: ResultVerifier[],
+    // TTL 지난 뒤의 ✅ 클릭도 만료 경로다 — 스위퍼와 같은 후처리를 받아야 한다.
+    @Inject(PREVIEW_CANCELLERS)
+    private readonly cancellers: PreviewCanceller[],
     @Inject(PREVIEW_CARD_PORT)
     private readonly card: PreviewCardPort,
     // 콘솔 관제 — ConsoleEventBusModule(@Global) 이 production 에 항상 주입. 미주입 시 emit no-op.
@@ -220,8 +229,30 @@ export class ApplyPreviewUsecase {
         id: preview.id,
         status: PREVIEW_STATUS.EXPIRED,
       });
-      // 스위퍼가 아직 안 훑은 카드를 사용자가 먼저 눌렀을 때, 거절과 동시에 버튼 제거.
-      await this.safeUpdateCard({ preview: expired, state: 'EXPIRED' });
+      // 스위퍼 경로와 동일한 만료 후처리. 여기를 빼면 이 경로로 들어온 카드만 연동 레코드가
+      // PENDING 으로 잔류한다 — 스위퍼는 이미 EXPIRED 인 이 row 를 다시 잡지 않는다.
+      const cancelled = await runPreviewCanceller({
+        cancellers: this.cancellers,
+        preview: expired,
+        reason: PREVIEW_CANCEL_REASON.EXPIRED,
+        logger: this.logger,
+      });
+      if (!cancelled) {
+        // 후처리가 실패했으면 EXPIRED 를 물고 있을 이유가 없다. PENDING 으로 되돌려 스위퍼가
+        // 다시 잡게 한다 — 사용자에게는 어차피 만료 예외를 던지므로 이 카드로 승인은 못 한다.
+        await this.repository.transitionIfStatus({
+          id: expired.id,
+          from: PREVIEW_STATUS.EXPIRED,
+          to: PREVIEW_STATUS.PENDING,
+        });
+        this.logger.warn(
+          `만료 후처리 실패로 PENDING 복원 preview=${expired.id} — 스위퍼가 재시도`,
+        );
+      } else {
+        // 스위퍼가 아직 안 훑은 카드를 사용자가 먼저 눌렀을 때, 거절과 동시에 버튼 제거.
+        // 복원한 경우에는 카드를 그대로 둔다 — 버튼만 사라진 카드가 남으면 안 된다.
+        await this.safeUpdateCard({ preview: expired, state: 'EXPIRED' });
+      }
       throw new PreviewActionException({
         code: PreviewActionErrorCode.EXPIRED,
         message: 'Preview 가 만료되었습니다 (TTL 초과). 새로 요청해주세요.',

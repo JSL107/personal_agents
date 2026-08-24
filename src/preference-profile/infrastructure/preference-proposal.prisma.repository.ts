@@ -46,7 +46,7 @@ export class PreferenceProposalPrismaRepository implements PreferenceProposalRep
 
   async markResolved(
     id: number,
-    status: 'APPROVED' | 'REJECTED',
+    status: 'APPROVED' | 'REJECTED' | 'EXPIRED',
   ): Promise<void> {
     await this.prisma.preferenceProposal.update({
       where: { id },
