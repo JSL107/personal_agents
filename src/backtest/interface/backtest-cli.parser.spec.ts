@@ -26,7 +26,22 @@ describe('parseBacktestCliArguments', () => {
       weightPercent: 20,
       holdingTradeDays: 60,
       exitBand: null,
+      delistingRecoveryRate: 1,
     });
+  });
+
+  it('--delisting-recovery 를 읽고 범위 밖 값을 거부한다', () => {
+    expect(
+      parseBacktestCliArguments([...required, '--delisting-recovery', '0.3'])
+        .delistingRecoveryRate,
+    ).toBe(0.3);
+    // 1 초과는 폐지가 마지막 종가보다 이득이라는 가정이라 그 자체가 낙관 편향이다.
+    expect(() =>
+      parseBacktestCliArguments([...required, '--delisting-recovery', '1.5']),
+    ).toThrow('--delisting-recovery');
+    expect(() =>
+      parseBacktestCliArguments([...required, '--delisting-recovery', '0']),
+    ).toThrow('--delisting-recovery');
   });
 
   it('SWING 의 보유일수 기본값은 5다', () => {
