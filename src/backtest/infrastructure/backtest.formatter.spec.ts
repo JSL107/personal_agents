@@ -13,6 +13,8 @@ const result: ReplayBacktestResult = {
   finalCashBalance: '2159419',
   finalTotalValue: '10412880',
   finalReturnRate: '0.041288',
+  delistedLiquidation: { count: 0, proceeds: '0' },
+  delistingRecoveryRate: 1,
   scores: [
     {
       strategy: 'LONG_TERM',

@@ -11,4 +11,7 @@ export interface BacktestTicker {
   code: string;
   name: string;
   krxMarket: string;
+  // 상장폐지일. null 이면 아직 상장 중이다. 재생은 이 날짜를 지난 종목을 후보로 올리지
+  // 않고, 그날 보유 중이면 청산한다 — 폐지를 모르면 마지막 종가로 영원히 들고 있게 된다.
+  delistedAt: Date | null;
 }

@@ -56,6 +56,10 @@ export interface ReplayBacktestCommand {
   weightPercent: number;
   holdingTradeDays: number;
   exitBand: ExitBandThreshold | null;
+  // 보유 중 상장폐지된 종목을 마지막 종가의 몇 배로 청산할지. 1 이면 마지막 종가 그대로다.
+  // 기본을 1 로 둔 것은 근거가 있어서가 아니라 없어서다 — 정리매매 회수율은 폐지 사유마다
+  // 다르고 그 사유가 우리 데이터에 없다. 값을 낮춰 성적이 얼마나 흔들리는지 재는 손잡이다.
+  delistingRecoveryRate: number;
 }
 
 export interface ReplayBacktestResult {
@@ -76,6 +80,10 @@ export interface ReplayBacktestResult {
   benchmarkUnavailableCount: number;
   exitBand: ExitBandThreshold | null;
   exitBandSellCounts: { takeProfit: number; stopLoss: number };
+  // 보유 중 폐지돼 강제 청산된 건수와 그 청산 대금. 0 이면 이 구간에 폐지 보유가 없었다는
+  // 뜻이지 폐지 종목이 후보에서 빠졌다는 뜻이 아니다.
+  delistedLiquidation: { count: number; proceeds: string };
+  delistingRecoveryRate: number;
   // 채점기가 센 원장 이상을 유형별로 나눈 것. 건수만 찍으면 "무엇이" 이상인지 알 수 없어
   // 성적을 믿을지 판단할 수 없다 — 밴드를 태우면 매도가 늘어 이 분포가 달라진다.
   anomaliesByType: Record<string, number>;
@@ -106,6 +114,8 @@ interface ReplayState {
   filledCount: number;
   expiredCount: number;
   exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
+  delistedLiquidatedCount: number;
+  delistedProceeds: number;
 }
 
 const dateTextOf = (value: Date): string => value.toISOString().slice(0, 10);
@@ -134,7 +144,10 @@ export class ReplayBacktestUsecase {
   constructor(private readonly repository: BacktestPrismaRepository) {}
 
   async execute(command: ReplayBacktestCommand): Promise<ReplayBacktestResult> {
-    const tickers = await this.repository.findUniverse();
+    // 유니버스 기준일은 재생 시작일이다. 그 뒤에 폐지된 종목도 살아 있던 날까지는 후보다.
+    const tickers = await this.repository.findUniverse(
+      new Date(`${command.from}T00:00:00.000Z`),
+    );
     const barsByTicker = await this.repository.findBarsInRange(
       tickers.map((ticker) => ticker.tickerId),
       this.warmupFrom(command.from),
@@ -166,6 +179,8 @@ export class ReplayBacktestUsecase {
       filledCount: 0,
       expiredCount: 0,
       exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
+      delistedLiquidatedCount: 0,
+      delistedProceeds: 0,
     };
 
     const allDates = [
@@ -186,6 +201,19 @@ export class ReplayBacktestUsecase {
           executeOrder,
           fills,
           expirations,
+          entryIndexByTicker,
+          state,
+        });
+        // 폐지 청산은 체결 뒤·밴드 앞이다. 그날 대기 주문이 먼저 처리돼야 이미 팔린 것을
+        // 두 번 팔지 않고, 폐지로 사라진 보유는 밴드 판정에 오르지 않는다.
+        await this.liquidateDelisted({
+          today,
+          command,
+          barsByTicker,
+          tickerById,
+          ledger,
+          executeOrder,
+          fills,
           entryIndexByTicker,
           state,
         });
@@ -276,6 +304,23 @@ export class ReplayBacktestUsecase {
         context.today,
       );
       const ticker = context.tickerById.get(order.tickerId);
+      // 이미 폐지된 종목은 새로 사지 않는다. 폐지일에 봉이 남아 있으면(정리매매 마지막 날에
+      // 목록에서 빠지는 경우) 전 거래일 추천이 여기서 체결되고 같은 날 liquidateDelisted 가
+      // 즉시 되파는 왕복이 생긴다 — 수수료·세금과 당일 등락이 성적에 섞이고, 같은 날짜를
+      // 거래 불가로 보는 buildCandidates 와 규칙이 갈린다. 매도는 그대로 체결한다(정리매매).
+      if (
+        order.side === 'BUY' &&
+        ticker?.delistedAt != null &&
+        dateTextOf(ticker.delistedAt) <= context.today
+      ) {
+        context.state.expiredCount += 1;
+        context.expirations.push({
+          tradeDate: context.today,
+          statusReason: '상장폐지',
+        });
+        context.ledger.markOrderStatus(order.orderId, 'EXPIRED');
+        continue;
+      }
       // 시가가 없으면 체결가를 만들 수 없다. 조용히 넘기면 표본이 줄어든 줄 모른 채
       // 성적만 좋아 보이므로 만료로 세고 사유를 남긴다.
       if (!bar || bar.open === null || !ticker) {
@@ -328,6 +373,93 @@ export class ReplayBacktestUsecase {
       }
     }
     context.state.pendingOrders = stillPending;
+  }
+
+  // 보유 중 상장폐지된 종목을 마지막 종가로 청산한다. 이것이 없으면 폐지 종목은 봉이 끊긴
+  // 채 보유로 남아, 매도 주문을 내도 시가가 없어 만료되고 평가액에는 마지막 종가가 영원히
+  // 잡힌다 — 폐지를 유니버스에 들이면서 손실만 빼는 꼴이라 생존 편향을 지우는 대신 키운다.
+  // 청산가를 마지막 종가로 둔 것은 그것이 옳아서가 아니라 폐지 사유(부실 폐지·합병·자진
+  // 상폐)를 우리 데이터가 모르기 때문이다. 회수율 손잡이가 그 모름을 성적으로 재는 수단이다.
+  private async liquidateDelisted(context: {
+    today: string;
+    command: ReplayBacktestCommand;
+    barsByTicker: Map<number, BacktestBar[]>;
+    tickerById: Map<number, BacktestTicker>;
+    ledger: InMemoryPaperLedger;
+    executeOrder: ExecutePaperOrderUsecase;
+    fills: BacktestFillRecord[];
+    entryIndexByTicker: Map<number, number>;
+    state: ReplayState;
+  }): Promise<void> {
+    for (const position of context.ledger.openPositions()) {
+      const ticker = context.tickerById.get(position.tickerId);
+      if (
+        ticker === undefined ||
+        ticker.delistedAt === null ||
+        dateTextOf(ticker.delistedAt) > context.today
+      ) {
+        continue;
+      }
+      const bars = (context.barsByTicker.get(position.tickerId) ?? []).filter(
+        (bar) => dateTextOf(bar.tradeDate) <= context.today,
+      );
+      const latest = bars.at(-1);
+      // 봉이 하나도 없으면 청산가를 지어낼 수 없다. 조용히 남기면 좀비 보유가 되므로
+      // 원장 이상으로 드러나게 두고, 건수는 세지 않는다(청산이 일어나지 않았으므로).
+      if (latest === undefined) {
+        continue;
+      }
+      const price =
+        latest.close.toNumber() * context.command.delistingRecoveryRate;
+      // 비중 지표는 체결 직전 평가액 대비로 잰다. 일반 체결과 같은 기준이어야 한 표에서 읽힌다.
+      const valuationBefore = this.valuate(
+        context.ledger,
+        context.barsByTicker,
+        context.today,
+      );
+      const orderId = context.state.nextOrderId;
+      context.ledger.recordOrder({
+        id: orderId,
+        accountId: context.ledger.accountId,
+        tickerId: position.tickerId,
+        side: 'SELL',
+        strategy: context.command.strategy,
+        status: 'PENDING',
+        quantity: position.quantity,
+        // 밴드 매도와 같은 이유로 규칙 버전을 남기지 않는다 — 스크리너가 만든 매도가 아니다.
+        ruleVersion: null,
+      });
+      context.state.nextOrderId += 1;
+      const fill = await context.executeOrder.execute({
+        orderId,
+        accountId: context.ledger.accountId,
+        tickerId: position.tickerId,
+        market: ticker.krxMarket as PaperMarket,
+        side: 'SELL',
+        requestedQuantity: position.quantity.toString(),
+        price: String(price),
+        tradeDate: context.today,
+        strategy: context.command.strategy,
+      });
+      if (fill.status !== 'FILLED') {
+        continue;
+      }
+      // 원장에 주문과 거래가 남았으므로 체결 통계에도 같이 넣는다. 빼면 orderCount 가
+      // filledCount + expiredCount 보다 커져 청산 건수만큼 주문이 증발한 것처럼 보이고,
+      // 일별 체결 진단에서도 이 체결만 빠진다.
+      const filledAmount = Number(fill.quantity) * price;
+      context.state.filledCount += 1;
+      context.fills.push({
+        tradeDate: context.today,
+        filledAmount,
+        accountValuation: valuationBefore,
+      });
+      context.state.delistedLiquidatedCount += 1;
+      context.state.delistedProceeds += filledAmount;
+      context.entryIndexByTicker.delete(position.tickerId);
+      // 같은 종목에 남아 있던 대기 매도는 체결될 보유가 없어 만료로 흘러간다. 여기서 지우면
+      // 만료 건수가 줄어 "주문을 냈는데 어떻게 됐나" 가 원장에서 사라진다.
+    }
   }
 
   private applyExitBand(context: {
@@ -616,6 +748,11 @@ export class ReplayBacktestUsecase {
         takeProfit: context.state.exitBandSells.TAKE_PROFIT,
         stopLoss: context.state.exitBandSells.STOP_LOSS,
       },
+      delistedLiquidation: {
+        count: context.state.delistedLiquidatedCount,
+        proceeds: String(context.state.delistedProceeds),
+      },
+      delistingRecoveryRate: context.command.delistingRecoveryRate,
       anomaliesByType: countAnomaliesByType(matched.anomalies),
       metrics: summarizeBacktestMetrics({
         fills: context.fills,
@@ -713,6 +850,11 @@ export class ReplayBacktestUsecase {
   ): ScreenCandidate[] {
     const candidates: ScreenCandidate[] = [];
     for (const ticker of tickers) {
+      // 이미 폐지된 종목은 후보가 아니다. 봉이 끊기면 아래 asOf 대조가 어차피 걸러내지만,
+      // 폐지 마킹이 마지막 봉보다 이를 때(수집 주기 차이) 그 틈으로 폐지 종목을 사게 된다.
+      if (ticker.delistedAt !== null && dateTextOf(ticker.delistedAt) <= asOf) {
+        continue;
+      }
       const bars = (barsByTicker.get(ticker.tickerId) ?? []).filter(
         (bar) => dateTextOf(bar.tradeDate) <= asOf,
       );
