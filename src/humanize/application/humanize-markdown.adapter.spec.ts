@@ -135,6 +135,46 @@ describe('humanizeMarkdownProse — 문단만 윤문', () => {
     expect(result.changedParagraphs).toBe(0);
   });
 
+  // 카드에는 `N/M문단 적용` 만 찍힌다. 사유를 함께 세지 않으면 한 문단이 조용히 빠졌을 때
+  // "모델이 빈 값을 냈나 / 원본을 그대로 돌려줬나" 를 사후에 갈라낼 방법이 없다.
+  it('빈 값으로 건너뛴 문단은 사유를 empty 로 센다', async () => {
+    const { humanizer } = buildHumanizer((fields) => ({
+      ...fields,
+      '0': '   ',
+      '1': `${fields['1']} 정말이지 그랬거든요.`,
+    }));
+
+    const result = await humanizeMarkdownProse(markdown, humanizer);
+
+    expect(result.changedParagraphs).toBe(1);
+    expect(result.skippedParagraphs).toEqual({ empty: 1, identical: 0 });
+  });
+
+  it('원본 그대로 돌아온 문단은 사유를 identical 로 센다', async () => {
+    const { humanizer } = buildHumanizer((fields) => ({
+      ...fields,
+      '1': `${fields['1']} 정말이지 그랬거든요.`,
+    }));
+
+    const result = await humanizeMarkdownProse(markdown, humanizer);
+
+    expect(result.changedParagraphs).toBe(1);
+    expect(result.skippedParagraphs).toEqual({ empty: 0, identical: 1 });
+  });
+
+  it('모두 윤문되면 건너뛴 문단은 0 이다', async () => {
+    const { humanizer } = buildHumanizer((fields) =>
+      Object.fromEntries(
+        Object.entries(fields).map(([key, value]) => [key, `${value} 그랬죠.`]),
+      ),
+    );
+
+    const result = await humanizeMarkdownProse(markdown, humanizer);
+
+    expect(result.changedParagraphs).toBe(2);
+    expect(result.skippedParagraphs).toEqual({ empty: 0, identical: 0 });
+  });
+
   it('산문이 없는 본문은 모델을 호출하지 않는다', async () => {
     const { humanizer, humanize } = buildHumanizer((fields) => fields);
     const codeOnly = '```ts\nconst a = 1;\n```';

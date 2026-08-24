@@ -69,6 +69,10 @@ const buildUsecase = (overrides?: {
   completionText?: string;
   editText?: string;
   humanizeSuffix?: string | null;
+  // 이 키의 문단만 원본 그대로 돌려준다 — 한 문단이 조용히 빠진 상황을 만든다.
+  humanizeSkipKeys?: string[];
+  // 모든 문단을 빈 값으로 돌려준다 — 모델이 응답은 했는데 내용이 비어 온 상황.
+  humanizeAllEmpty?: boolean;
   openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
@@ -113,7 +117,13 @@ const buildUsecase = (overrides?: {
       }
       const next: Record<string, string> = {};
       for (const key of Object.keys(fields)) {
-        next[key] = `${fields[key]}${humanizeSuffix}`;
+        if (overrides?.humanizeAllEmpty) {
+          next[key] = '';
+          continue;
+        }
+        next[key] = overrides?.humanizeSkipKeys?.includes(key)
+          ? fields[key]
+          : `${fields[key]}${humanizeSuffix}`;
       }
       return next;
     }),
@@ -1039,6 +1049,53 @@ describe('PublishNotionDraftUsecase', () => {
       usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
     ).rejects.toMatchObject({ blogErrorCode: 'BLOG_EDIT_CODE_CHANGED' });
     expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // `42/43` 만 적혀 있으면 승인자도 사후 조사도 그 하나가 왜 빠졌는지 알 수 없다.
+  it('건너뛴 문단이 있으면 카드에 사유를 적는다', async () => {
+    const { usecase } = buildUsecase({
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body: '# 제목\n\n첫 문단입니다.\n\n둘째 문단입니다.',
+      }),
+      humanizeSkipKeys: ['0'],
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain(
+      '말투: 1/2문단 적용 (건너뜀: 원문 그대로 1)',
+    );
+  });
+
+  // 전 문단이 빠지면 `changedParagraphs === 0` 분기로 빠지는데, 거기서 사유를 버리면
+  // **가장 심한 경우에 계측이 사라진다**. 모델이 빈 값만 돌려준 것과 호출이 실패한 것은
+  // 원인이 다른데 둘 다 「원문 그대로 — 윤문 실패」로 찍히면 이 계측을 넣은 이유가 없다.
+  it('전 문단이 빈 값이면 적용 안 됨에도 사유를 적는다', async () => {
+    const { usecase } = buildUsecase({ humanizeAllEmpty: true });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    if (outcome.result.status !== 'preview') {
+      throw new Error('preview 가 아니다');
+    }
+    expect(outcome.result.previewText).toContain(
+      '말투: 적용 안 됨 (건너뜀: 빈 값 1)',
+    );
+    expect(outcome.result.previewText).not.toContain('원문 그대로 — 윤문 실패');
   });
 
   it('윤문이 먹지 않으면 카드에 그 사실을 적는다', async () => {

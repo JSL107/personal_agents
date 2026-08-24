@@ -540,6 +540,18 @@ export class PublishNotionDraftUsecase {
     return lines.join('\n');
   }
 
+  // 빠진 문단이 있으면 **사유까지** 적는다. `42/43` 만으로는 승인자도, 나중에 되짚는 사람도
+  // 그 하나가 왜 빠졌는지 알 수 없다 — 빈 값은 어떤 경우에도 결함이고, 원본 그대로는 손댈 것이
+  // 없어서일 수도 있어 판단이 갈린다. 빠진 문단이 없으면 아무것도 붙이지 않는다.
+  private buildSkipNote(humanized: HumanizeMarkdownResult): string {
+    const { empty, identical } = humanized.skippedParagraphs;
+    const reasons = [
+      ...(empty > 0 ? [`빈 값 ${empty}`] : []),
+      ...(identical > 0 ? [`원문 그대로 ${identical}`] : []),
+    ];
+    return reasons.length === 0 ? '' : ` (건너뜀: ${reasons.join(' · ')})`;
+  }
+
   // 어느 단계가 실제로 먹었는지 카드에 적는다. 윤문이 조용히 빠져도(플래그 off·모델 실패)
   // 카드만 보고 알 수 있어야 한다 — 원문 발행을 막지 않는 대신 상황을 드러내는 쪽을 골랐다.
   private buildStageNote(
@@ -551,9 +563,15 @@ export class PublishNotionDraftUsecase {
         return '정리: 편집 완료 · 말투: 윤문할 산문 문단 없음';
       }
       if (humanized.changedParagraphs === 0) {
-        return '정리: 편집 완료 · 말투: 적용 안 됨(원문 그대로 — 윤문 실패 또는 비활성)';
+        // 전부 원본 그대로면 모델 호출 실패·비활성과 구분되지 않는다 — 셋 다 입력이 그대로
+        // 돌아오기 때문이다. 그런데 **빈 값이 섞였다면 이야기가 다르다**: 모델이 응답은 했는데
+        // 내용을 비워 보낸 것이라 원인이 아예 다르고, 「원문 그대로」라는 문구부터 사실이 아니다.
+        // 여기서 사유를 버리면 계측이 **가장 심한 경우에** 사라진다(PR #380 리뷰 지적).
+        return humanized.skippedParagraphs.empty === 0
+          ? '정리: 편집 완료 · 말투: 적용 안 됨(원문 그대로 — 윤문 실패 또는 비활성)'
+          : `정리: 편집 완료 · 말투: 적용 안 됨${this.buildSkipNote(humanized)}`;
       }
-      return `정리: 편집 완료 · 말투: ${humanized.changedParagraphs}/${humanized.proseParagraphs}문단 적용`;
+      return `정리: 편집 완료 · 말투: ${humanized.changedParagraphs}/${humanized.proseParagraphs}문단 적용${this.buildSkipNote(humanized)}`;
     })();
     // 지표는 판정이 아니라 관측값이다 — 차단 임계값은 발행본이 몇 편 쌓인 뒤에 정한다.
     return [
