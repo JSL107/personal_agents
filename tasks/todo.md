@@ -2444,3 +2444,69 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 금지 파일, Prisma/env/dependency, DB 변경 없음.
 
 ---
+# 계약 검수를 점수로 — 스텁 해제와 산출물 품질 추이 (2026-08-24)
+
+**Goal:** 성공 실행 1,067건에서 계약 위반이 0건인 원인(스텁 24종·검사 면제 458건)을 실측 근거로 해소하고, 이진 판정을 0~1 점수로 바꿔 워커별 산출물 품질 추이를 관측 가능하게 만든다.
+
+**Architecture:** `inspectContract`는 얇은 래퍼로 남기고, 분모(검사 항목 수)를 아는 `evaluateContract`를 새 본체로 둔다. 점수는 `agent_run.contract_score`에 기록하고 기존 `contract_violations`는 그대로 유지한다. 검사 항목이 0개인 스텁은 점수를 `null`로 남긴다 — `1.0`으로 두면 무검사가 만점으로 위장된다.
+
+**Contract:** `deliverableFields`는 `agent_run` 실측(2026-08-24, 성공 실행 전건 100% 등장)만 근거로 채운다. 표본 n≤2·usecase 분기로 형태가 갈리는 워커·실행 0건 워커는 스텁을 유지한다. 금칙어 목록은 실측 적중이 0건이지만 추측으로 늘리지 않는다. LLM 검수는 도입하지 않는다(결정론 검사만). 차단 모드 전환·회귀 게이트는 이번 범위 밖.
+
+- [x] 실측 기반으로 스텁 7종(CTO·HUMANIZER·SUBCONSCIOUS_GATE·EVENING_RETRO·PAPER_RECOMMEND·PAPER_TRADE·BLOG_PUBLISH)의 `deliverableFields`를 채운다.
+- [x] `skipPreamble` 플래그를 추가해 HUMANIZER의 프롬프트 머리말 주입만 차단한다(입력 텍스트를 그대로 다듬는 워커라 머리말이 산출물을 오염시킨다 — 설계문서 §3.6 경고).
+- [x] RED/GREEN: `evaluateContract`가 분모·분자·점수를 내고, 검사 항목 0개면 `null`을 돌려준다.
+- [x] RED/GREEN: 금칙어는 분모에 넣지 않고 적중 시 분자에서만 차감한다(공짜 만점 방지).
+- [x] `agent_run.contract_score Float?` 추가 + repository port·prisma repository·service 기록 배선.
+- [x] `check-contract-violations.ts`에 워커별 평균 점수와 주별 추이를 추가한다.
+- [x] 계약 무결성 테스트: 채운 계약의 필드가 실측 목록과 일치, `skipPreamble`이 켜진 계약은 `buildContractPreamble`이 null.
+- [x] `pnpm lint:check && pnpm test && pnpm build && pnpm docs:check` 4중 green.
+- [x] 실측 재실행으로 위반·점수 분포가 0%를 벗어났는지 확인하고 정직하게 보고한다.
+- [x] 리뷰 수정: `skipPreamble` 적용 범위를 HUMANIZER 1종 → 조립 output 5종으로 넓힌다.
+- [x] 리뷰 수정: `passedCount` 에서 금칙어 차감을 걷어내 이름과 의미를 맞춘다(차감은 `score` 만).
+- [x] 리뷰 수정: 주별 추이의 주 경계를 UTC → KST 로 옮긴다(`started_at` 은 UTC 저장).
+- [x] `agent_run.contract_score` 컬럼 추가 — `pnpm db:push` 대신 `ALTER TABLE` 한 줄만 직접
+      실행했다. diff 첫 줄이 `DROP INDEX "idx_episodic_memory_embedding"`(Prisma 스키마에 없는
+      pgvector 수동 인덱스)여서 push 를 돌리면 벡터 검색이 죽는다. 실행 전후로 인덱스 3 개를
+      직접 조회해 그대로 살아 있음을 확인했다.
+- [x] 실앱 경로 실증 — `AgentRunService.execute` 를 직접 조립해(AppModule 미부팅) 4 케이스가
+      DB 에 기록되는지 확인하고 검증 행을 삭제했다.
+
+## Review
+
+- **훔친 것**: Mastra Evals 의 Scorer 개념 — 계약 검수를 통과/위반 이진에서 0~1 점수로 바꿨다.
+  회귀 게이트(과거 산출물을 고정 평가셋으로 삼아 배포 전 점수 하락 검사)는 이번 범위 밖이다.
+  기준선이 이번 계약 변경으로 흔들리므로, 점수 분포가 안정된 뒤 붙이는 것이 맞다.
+- **실측이 드러낸 것**: 위반 0/1,067 건은 "다 지킨다" 가 아니라 "검사기가 잡을 게 없다" 였다.
+  32 종 중 24 종이 스텁이어서 실행 458 건(43%)이 무검사였고, 공통 금칙어 4 개의 적중은
+  1,067 건에서 0 건이었다. 계약 파일이 예고한 "위반 통계를 보고 2단계를 판단한다" 는 통계가
+  0 이라 영구히 판단할 수 없는 상태였다.
+- **성과**: 무검사 실행 458 → 157 건(43% → 14.7%). 301 건이 검사망에 들어왔고 점수 축과
+  주별 추이가 생겼다.
+- **정직한 한계**: 모든 점수가 1.000 이다. 계약을 "실측 전건 100% 등장 키" 로 채웠으므로 과거
+  데이터에 대해서는 정의상 만점이다. 이 변경의 실익은 지금 드러나는 결함이 아니라 **기준선**
+  이다 — 지금까지 항상 있던 필드가 앞으로 빠지면 점수가 내려간다.
+- **계측기가 실제로 무는지는 실데이터로 확인했다**: 채운 7 종의 최근 실행에서 필수 필드를
+  하나씩 지우고 금칙어를 주입해 점수 하락을 대조했다. 21 개 필드 삭제와 7 개 금칙어 주입
+  전부 하락, "변화없음" 0 건.
+- **리뷰에서 잡은 Blocker**: `deliverableFields` 가 두 뜻으로 쓰인다는 것을 놓쳤다. 검수기는
+  `agent_run.output` 의 키로 읽지만 프롬프트 머리말은 "모델이 낼 응답의 키" 로 적어 보낸다.
+  PAPER_RECOMMEND·PAPER_TRADE·SUBCONSCIOUS_GATE·BLOG_PUBLISH·HUMANIZER 는 output 을 usecase 가
+  조립하므로, 머리말이 모델에게 **존재하지 않는 스키마를 요구**해 응답 파서를 깨뜨릴 수
+  있었다. `skipPreamble` 을 5 종으로 넓혀 막았다. CTO·EVENING_RETRO 는 output 이 모델 응답
+  그대로라(전자는 `result: output` + 타입가드, 후자는 프롬프트가 같은 키를 직접 요구) 유지했다.
+- **동작 변화**: CTO·EVENING_RETRO 프롬프트에 사규 머리말(약 200 바이트)이 새로 붙는다.
+  실측 근거로 필드를 뽑았고 EVENING_RETRO 는 기존 프롬프트가 같은 키를 이미 요구하지만,
+  **실제 모델 호출로 산출물이 그대로인지는 검증하지 못했다.**
+- **실앱 경로 실증(2026-08-24)**: `AgentRunService.execute` 를 직접 조립해 — AppModule 을
+  부팅하면 운영 중 서비스의 repeatable job 을 재등록하므로 — 네 케이스를 돌리고 DB 를 조회했다.
+  준수 `score=1`, 필드 누락 `score=0` + violations 기록, CTO 3 필드 중 1 개 누락 `score=0.667`,
+  스텁 계약(INVEST) `score=null`. 경고 로그도 실제로 찍혔다. 검증 행 4 건은 삭제해 원장을
+  오염시키지 않았다(잔존 0 건 확인).
+- **DB 변경**: `pnpm db:push` 를 쓰지 않았다. diff 첫 줄이 `DROP INDEX
+  "idx_episodic_memory_embedding"` 로, Prisma 스키마에 없는 pgvector 수동 인덱스를 함께 지운다.
+  `ALTER TABLE "agent_run" ADD COLUMN IF NOT EXISTS "contract_score" DOUBLE PRECISION;` 만
+  실행하고, 전후로 `pg_indexes` 를 직접 조회해 인덱스 3 개가 그대로임을 확인했다. 이 pgvector
+  드리프트는 이번 작업과 무관한 기존 문제로 남아 있다.
+- **미검증**: CTO·EVENING_RETRO 에 머리말이 새로 붙은 뒤 실제 모델 호출로 산출물 형식이
+  그대로인지, 점수가 1.000 을 벗어나는 실제 회귀 관측.
+
