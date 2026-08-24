@@ -4,7 +4,7 @@ import { DecimalValue } from '../../../market-data/domain/market-data.type';
 import { MarketDataPrismaRepository } from '../../../market-data/infrastructure/market-data.prisma.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
-import { ExposurePosition } from '../domain/portfolio-exposure';
+import { ValuedPosition } from '../domain/portfolio-exposure';
 import {
   HoldingSnapshot,
   StockMarketCountry,
@@ -49,7 +49,9 @@ export class StockMonitorPrismaRepository {
     private readonly marketDataRepository: MarketDataPrismaRepository,
   ) {}
 
-  async findPortfolioPositions(): Promise<ExposurePosition[]> {
+  // 노출 비중과 평가 요약이 같은 조회를 쓴다. 평가 쪽이 평단과 직전 종가를 더 보므로
+  // 봉을 2개 읽는다 — 노출 계산은 첫 봉만 쓰던 그대로다.
+  async findPortfolioPositions(): Promise<ValuedPosition[]> {
     const holdings = await this.prisma.holding.findMany({
       // 전환 이력이 있는 DB의 과거 등록 경로 행이 현재 포지션에 섞이면 노출 비중이 틀어진다.
       where: { ticker: { source: 'TOSS' } },
@@ -59,7 +61,7 @@ export class StockMonitorPrismaRepository {
           include: {
             dailyPrices: {
               orderBy: { tradeDate: 'desc' },
-              take: 1,
+              take: 2,
             },
           },
         },
@@ -67,7 +69,7 @@ export class StockMonitorPrismaRepository {
     });
 
     const seen = new Set<number>();
-    const positions: ExposurePosition[] = [];
+    const positions: ValuedPosition[] = [];
     for (const holding of holdings) {
       if (seen.has(holding.tickerId)) {
         continue;
@@ -88,6 +90,9 @@ export class StockMonitorPrismaRepository {
         currency: holding.currency,
         quantity: holding.quantity,
         close: price.close,
+        avgPrice: holding.avgPrice,
+        previousClose: holding.ticker.dailyPrices[1]?.close ?? null,
+        holdingDate: holding.effectiveDate,
       });
     }
 
@@ -396,6 +401,22 @@ export class StockMonitorPrismaRepository {
         fetchedAt: new Date(),
       },
     });
+  }
+
+  // 아침 브리핑은 그날 환율이 아직 없다 — 저장하는 것은 저녁 감시다. 그래서 정확한 날짜가
+  // 아니라 가장 최근 값을 날짜와 함께 준다. 얼마나 묵은 값인지는 부르는 쪽이 판단한다.
+  async findLatestFxRate(
+    pair: string,
+  ): Promise<{ rate: string; rateDate: Date } | null> {
+    const fxRate = await this.prisma.dailyFxRate.findFirst({
+      where: { pair },
+      orderBy: { rateDate: 'desc' },
+      select: { rate: true, rateDate: true },
+    });
+    if (!fxRate) {
+      return null;
+    }
+    return { rate: fxRate.rate.toString(), rateDate: fxRate.rateDate };
   }
 
   async findFxRate(input: {

@@ -5,6 +5,7 @@ import {
   formatAvgPriceStatuses,
   formatHoldingChanges,
   formatPortfolioExposure,
+  formatPortfolioValue,
   formatStockMonitorSummary,
 } from './stock-monitor.formatter';
 
@@ -358,5 +359,58 @@ describe('formatHoldingChanges', () => {
     ]);
 
     expect(result).toContain('평단 변동 1,757.0445원 → 1,757.9원');
+  });
+});
+
+describe('formatPortfolioValue', () => {
+  const base = {
+    totalValue: 12_340_000,
+    profit: 120_000,
+    profitRate: 0.0098,
+    dailyChange: -30_000,
+    dailyChangeRate: -0.0024,
+  };
+
+  it('만원 단위로 줄이고 손익에 부호를 붙인다', () => {
+    const text = formatPortfolioValue(base);
+
+    expect(text).toContain('1,234만원');
+    expect(text).toContain('+12만원 (+1.0%)');
+    expect(text).toContain('-3만원 (-0.2%)');
+  });
+
+  // 원화 투입금 대비가 아니다 — 달러 매입 당시 환율을 잔고가 갖고 있지 않다.
+  it('손익을 "원금 대비" 가 아니라 "매입가 대비" 로 적고 환율 고지를 함께 붙인다', () => {
+    const text = formatPortfolioValue(base);
+
+    expect(text).toContain('매입가 대비');
+    expect(text).not.toContain('원금 대비');
+    expect(text).toContain('환율이 움직인 몫은 빠져 있습니다');
+  });
+
+  it('만원 미만 손익은 원 단위로 적는다', () => {
+    const text = formatPortfolioValue({
+      ...base,
+      profit: -3456,
+      profitRate: -0.001,
+    });
+
+    expect(text).toContain('-3,456원');
+  });
+
+  it('전일 대비가 없으면 이유를 적는다', () => {
+    const text = formatPortfolioValue({
+      ...base,
+      dailyChange: null,
+      dailyChangeRate: null,
+    });
+
+    expect(text).toContain('시세가 하루치뿐인 종목이 있어 생략');
+    // 고지는 전일 대비 유무와 무관하게 손익에도 걸린다.
+    expect(text).toContain('환율이 움직인 몫은 빠져 있습니다');
+  });
+
+  it('값이 없으면 빈 문자열이라 줄이 생기지 않는다', () => {
+    expect(formatPortfolioValue(null)).toBe('');
   });
 });
