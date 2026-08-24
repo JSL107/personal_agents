@@ -26,6 +26,11 @@ export type KoreanStyleMetrics = {
   // 부분집합이다. 이 축이 없으면 `~에요`·`~봐요` 로 쓴 글이 "구어 6%" 로만 보여 딱딱한 글로
   // 오독된다(실측: 발행본 2026-08-19-http-cache 가 그랬다).
   yoEndingPercent: number;
+  // 종결체가 인접 문장에서 바뀌는 비율. 비율(`yoEndingPercent`) 이 반반이어도 문장마다
+  // 갈아타면 그 자체가 기계적으로 읽힌다 — 비율과 배치는 다른 축이다. 실측: 사용자가 쓴
+  // 노션 글 50% · 사용자가 직접 손본 발행본 37% vs 「한쪽으로 몰리지 않게」 지시로 만든
+  // 발행본 73~88% (2026-08-21~23 세 편).
+  endingAlternationPercent: number;
   bannedConnectiveCount: number;
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
@@ -217,6 +222,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       longestSentenceLength: 0,
       colloquialEndingPercent: 0,
       yoEndingPercent: 0,
+      endingAlternationPercent: 0,
       bannedConnectiveCount: 0,
       measurable: false,
       paragraph: measureParagraphs(markdown),
@@ -243,12 +249,21 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
   // `죠` 도 요체로 센다 — `~지요` 의 축약이라 해요체이면서 글자로는 `요` 로 끝나지 않는다.
   // 빼놓으면 `~죠` 로 문단을 맺는 글이 "요체 6%" 로 찍혀 딱딱한 글로 오독된다(실측: 구어 어미
   // 33개 중 28개가 `죠` 인 글이 그랬다).
-  const yoCount = sentences.filter((sentence) => {
+  const endingKinds = sentences.map((sentence) => {
     const tail = stripSentenceTail(sentence);
-    return tail.endsWith('요') || tail.endsWith('죠');
-  }).length;
-  const formalCount = sentences.filter((sentence) =>
-    stripSentenceTail(sentence).endsWith(FORMAL_ENDING),
+    if (tail.endsWith('요') || tail.endsWith('죠')) {
+      return 'yo';
+    }
+    return tail.endsWith(FORMAL_ENDING) ? 'formal' : 'other';
+  });
+  const yoCount = endingKinds.filter((kind) => kind === 'yo').length;
+  const formalCount = endingKinds.filter((kind) => kind === 'formal').length;
+
+  // 종결체 배치. 분류되지 않는 문장(명사 종결·인용·목록)은 빼고 남은 것들의 인접 쌍만 센다 —
+  // 분모에 넣으면 한 문장 건너 끼어든 목록 때문에 배치가 실제보다 고르게 보인다.
+  const rankedEndings = endingKinds.filter((kind) => kind !== 'other');
+  const alternationCount = rankedEndings.filter(
+    (kind, index) => index > 0 && kind !== rankedEndings[index - 1],
   ).length;
 
   const bannedConnectiveCount = BANNED_CONNECTIVES.reduce(
@@ -272,6 +287,10 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       yoCount + formalCount === 0
         ? 0
         : toPercent(yoCount, yoCount + formalCount),
+    endingAlternationPercent:
+      rankedEndings.length < 2
+        ? 0
+        : toPercent(alternationCount, rankedEndings.length - 1),
     bannedConnectiveCount,
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
@@ -285,7 +304,7 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
