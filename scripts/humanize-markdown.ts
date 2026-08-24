@@ -59,13 +59,14 @@ const main = async (): Promise<void> => {
 
     // 윤문이 통째로 실패해도 어댑터는 원문을 그대로 돌려준다(best-effort). 0문단이면
     // "규칙이 안 먹었다" 가 아니라 "모델 호출이 실패했다" 이므로 구분해서 알린다.
-    // exit code 로도 알린다 — 사람이 로그를 훑는 스크립트여도, 실패를 0 으로 흘리면
-    // 반복 실행을 스크립트로 감쌀 때 실패한 회차가 조용히 표본에 섞인다.
+    // 0 을 실패로 단정하지 않는다 — 어댑터는 best-effort 라 모델 실패 시에도 원문을 그대로
+    // 돌려주고(humanize-markdown.adapter.ts), 정상 응답이 원문과 같아도 같은 0 이 된다. 둘을
+    // 구분할 신호가 이 계층에 없으므로 종료 코드로 갈라서는 안 된다(유효한 무변경 표본이
+    // 실패로 빠진다). 눈에 띄게 알리기만 하고 판정은 아래 지표에 맡긴다.
     if (result.changedParagraphs === 0) {
       console.error(
-        `[실패] 바뀐 문단 0/${result.proseParagraphs} — 모델 호출이 실패했거나 응답이 비었다`,
+        `[확인 필요] 바뀐 문단 0/${result.proseParagraphs} — 모델 호출이 실패했거나, 손댈 것이 없었다`,
       );
-      process.exitCode = 1;
     }
     console.log(
       `윤문: ${result.changedParagraphs}/${result.proseParagraphs}문단 · ${elapsedSeconds}초`,
