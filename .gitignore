@@ -85,3 +85,6 @@ graphify-out/
 # export-ai-cli-env.cjs 산출물(개인 skills·agents 사본). PC 간 이동용, 커밋 대상 아님.
 ai-cli-env-export/
 claude-env-export/
+
+# 임시 디버깅 스크립트. 목적 달성 후 지우는 일회용 — 커밋 대상 아님.
+scripts/__*.ts
