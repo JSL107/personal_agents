@@ -711,7 +711,28 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
   드리프트는 이번 작업과 무관한 기존 문제로 남아 있다.
 - **미검증**: CTO·EVENING_RETRO 에 머리말이 새로 붙은 뒤 실제 모델 호출로 산출물 형식이
   그대로인지, 점수가 1.000 을 벗어나는 실제 회귀 관측.
+# 과거 시세 확장 수집 구현 (2026-08-25)
 
+**Contract:** `.ai/design.md` 변경 대상 1~9와 필수 테스트 전체. 기존 `CollectUniversePricesUsecase`, `prisma/schema.prisma` 불변. DB·외부 API 호출 및 `pnpm db:push` 금지.
+
+- [x] baseline 테스트와 기존 코드 패턴을 확인한다.
+- [x] RED/GREEN: market-data port·Toss/Yahoo adapter·저장 통계 계약과 단위 테스트를 구현한다.
+- [x] RED/GREEN: 커서 조립 helper와 `BackfillUniversePricesUsecase` 필수 5개 동작 테스트를 구현한다.
+- [x] RED/GREEN: backfill 요약 formatter와 CLI `backfill-prices` parser 테스트를 구현한다.
+- [x] `scripts/screener.ts`와 `ScreenerModule`에 신규 경로를 배선한다.
+- [x] 금지 파일·기존 일일 수집 경로 불변 및 전체 diff를 검수한다.
+- [x] `pnpm lint:check && pnpm test && pnpm build`를 모두 exit 0까지 반복한다.
+- [x] `.ai/implementation-summary.md`에 파일 목록·설계 이탈·실제 게이트 출력을 기록한다.
+
+## Review
+
+- `.ai/design.md` §1~9와 필수 테스트 전부 구현. 비진전 cursor는 두 번째 fetch에서 `exhausted`로 끝나며 같은 페이지는 재저장하지 않는다.
+- 기존 mapper가 raw Toss 순서를 오름차순으로 정렬하므로 application에서는 가장 오래된 봉을 날짜 최솟값으로 고른다.
+- `CollectUniversePricesUsecase`, `prisma/schema.prisma` 무변경. DB/API 호출, `pnpm db:push`, commit, PR 없음.
+- 독립 리뷰: Critical 0, 코드 계약 §1~9 통과. Minor는 failures 20건 cap·200종목 progress log 전용 테스트 부재이며 설계 필수 테스트 범위 밖이라 보류.
+- 전체 gate: lint exit 0(0 errors, 기존 warning 57), test 439 suites/4,015 tests + code-graph 5 suites/40 tests, build exit 0.
+
+---
 ---
 # 윤문 내용 보존 가드 (2026-08-25)
 
