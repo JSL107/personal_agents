@@ -69,4 +69,15 @@ describe('YahooFinanceMarketDataClient.fetchDailyBars', () => {
 
     await expect(client.fetchDailyBars('AAPL', 5)).rejects.toThrow(/currency/);
   });
+
+  it('과거 조회 커서를 조용히 무시하지 않고 거부한다', async () => {
+    const client = new YahooFinanceMarketDataClient();
+
+    await expect(
+      client.fetchDailyBars('AAPL', 200, {
+        before: '2025-10-21T00:00:00.000+09:00',
+      }),
+    ).rejects.toThrow('야후 파이낸스는 과거 커서 조회를 지원하지 않습니다.');
+    expect(chart).not.toHaveBeenCalled();
+  });
 });
