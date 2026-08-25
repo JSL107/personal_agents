@@ -8,7 +8,7 @@ export const SCREENER_CLI_USAGE =
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts backfill-prices [--years <연수>] [--limit <종목수>] [--recheck]\n' +
-  '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>]\n' +
+  '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>] [--years <연수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]\n' +
   '  pnpm exec ts-node scripts/screener.ts score-outcomes';
 
@@ -155,10 +155,22 @@ const parseCollectBenchmarkOptions = (
   for (let index = 0; index < optionValues.length; index += 2) {
     const key = optionValues[index];
     const value = optionValues[index + 1];
-    if (key !== '--days' || value === undefined || value.startsWith('--')) {
+    if (
+      (key !== '--days' && key !== '--years') ||
+      value === undefined ||
+      value.startsWith('--')
+    ) {
       throw new Error(SCREENER_CLI_USAGE);
     }
-    options.days = parsePositiveInteger(value, 'days');
+    const parsed = parsePositiveInteger(value, key.slice(2));
+    if (key === '--days') {
+      options.days = parsed;
+    } else {
+      options.years = parsed;
+    }
+  }
+  if (options.days !== undefined && options.years !== undefined) {
+    throw new Error(SCREENER_CLI_USAGE);
   }
   return options;
 };

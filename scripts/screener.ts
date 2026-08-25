@@ -70,7 +70,10 @@ const main = async (): Promise<void> => {
         .get(CollectBenchmarkClosesUsecase)
         .execute(parsed.options);
       console.log(
-        `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.`,
+        `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.` +
+          (parsed.options.years === undefined
+            ? ''
+            : ` 백필 ${result.pages}페이지, 가장 오래된 거래일 ${result.oldestTradeDate ?? '없음'}.`),
       );
       return;
     }

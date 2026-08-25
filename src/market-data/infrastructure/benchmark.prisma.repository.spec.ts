@@ -30,6 +30,24 @@ describe('BenchmarkPrismaRepository', () => {
     await expect(repository.findLatestTradeDate('KOSPI')).resolves.toBeNull();
   });
 
+  it('심볼별 가장 오래된 거래일을 반환한다', async () => {
+    const tradeDate = new Date('2020-12-03T00:00:00.000Z');
+    const findFirst = jest.fn().mockResolvedValue({ tradeDate });
+    const prisma = {
+      benchmarkDailyClose: { findFirst },
+    } as unknown as PrismaService;
+    const repository = new BenchmarkPrismaRepository(prisma);
+
+    await expect(repository.findOldestTradeDate('KOSPI')).resolves.toEqual(
+      tradeDate,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { symbol: 'KOSPI' },
+      orderBy: { tradeDate: 'asc' },
+      select: { tradeDate: true },
+    });
+  });
+
   it('심볼과 거래일 기준으로 종가를 upsert하고 수집 시각을 갱신한다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-12T08:10:00.000Z'));
     const upsert = jest.fn((input) => input);

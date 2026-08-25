@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import { MarketIndicatorPort } from '../../market-data/domain/port/market-indicator.port';
 import { BenchmarkPrismaRepository } from '../../market-data/infrastructure/benchmark.prisma.repository';
 import { CollectBenchmarkClosesUsecase } from './collect-benchmark-closes.usecase';
@@ -18,6 +19,7 @@ const createFixture = (latestTradeDate: Date | null) => {
   };
   const repository = {
     findLatestTradeDate: jest.fn().mockResolvedValue(latestTradeDate),
+    findOldestTradeDate: jest.fn().mockResolvedValue(latestTradeDate),
     upsertCloses: jest.fn().mockResolvedValue(1),
   };
   return {
@@ -40,6 +42,8 @@ describe('CollectBenchmarkClosesUsecase', () => {
       written: 1,
       blockedIntraday: 0,
       latestTradeDate: '2026-08-11',
+      pages: 1,
+      oldestTradeDate: '2026-08-11',
     });
     expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
       'KOSPI',
@@ -169,6 +173,8 @@ describe('CollectBenchmarkClosesUsecase', () => {
         written: 1,
         blockedIntraday: 1,
         latestTradeDate: '2026-08-11',
+        pages: 1,
+        oldestTradeDate: '2026-08-11',
       });
       expect(fixture.repository.upsertCloses).toHaveBeenCalledWith([
         expect.objectContaining({
@@ -196,6 +202,8 @@ describe('CollectBenchmarkClosesUsecase', () => {
         written: 0,
         blockedIntraday: 1,
         latestTradeDate: '2026-08-11',
+        pages: 1,
+        oldestTradeDate: null,
       });
       expect(fixture.repository.upsertCloses).toHaveBeenCalledWith([]);
     } finally {
@@ -213,5 +221,182 @@ describe('CollectBenchmarkClosesUsecase', () => {
     await expect(fixture.usecase.execute()).resolves.toEqual(
       expect.objectContaining({ latestTradeDate: '2026-08-11' }),
     );
+  });
+
+  it('days와 years를 함께 지정하면 조회 전에 거부한다', async () => {
+    const fixture = createFixture(null);
+
+    await expect(
+      fixture.usecase.execute({ days: 200, years: 5 }),
+    ).rejects.toThrow('days와 years를 함께 지정할 수 없습니다.');
+    expect(fixture.marketIndicator.fetchDailyCloses).not.toHaveBeenCalled();
+    expect(fixture.repository.findLatestTradeDate).not.toHaveBeenCalled();
+  });
+
+  it('years 지정 시 저장된 가장 오래된 날에서 시작해 이전 페이지의 가장 오래된 날로 커서를 잇는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(new Date('2025-10-21T00:00:00.000Z'));
+    fixture.repository.findOldestTradeDate.mockResolvedValue(
+      new Date('2025-01-02T00:00:00.000Z'),
+    );
+    fixture.marketIndicator.fetchDailyCloses
+      .mockResolvedValueOnce([
+        benchmarkBar('2024-12-30', '2500.00'),
+        benchmarkBar('2025-08-01', '2800.00'),
+      ])
+      .mockResolvedValueOnce([benchmarkBar('2020-08-24', '2300.00')]);
+    fixture.repository.upsertCloses.mockResolvedValue(2);
+
+    try {
+      const execution = fixture.usecase.execute({ years: 5 });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(249);
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+
+      await expect(execution).resolves.toEqual({
+        symbol: 'KOSPI',
+        fetched: 3,
+        written: 4,
+        blockedIntraday: 0,
+        latestTradeDate: '2025-10-21',
+        pages: 2,
+        oldestTradeDate: '2020-08-24',
+      });
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenNthCalledWith(
+        1,
+        'KOSPI',
+        200,
+        { before: '2025-01-02T00:00:00.000+09:00' },
+      );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenNthCalledWith(
+        2,
+        'KOSPI',
+        200,
+        { before: '2024-12-30T00:00:00.000+09:00' },
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('첫 페이지에서 목표 시작일에 닿으면 추가 요청 없이 멈춘다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(null);
+    fixture.repository.findOldestTradeDate.mockResolvedValue(null);
+    fixture.marketIndicator.fetchDailyCloses.mockResolvedValue([
+      benchmarkBar('2020-08-24', '2300.00'),
+      benchmarkBar('2026-08-24', '3200.00'),
+    ]);
+    fixture.repository.upsertCloses.mockResolvedValue(2);
+
+    try {
+      await expect(fixture.usecase.execute({ years: 5 })).resolves.toEqual(
+        expect.objectContaining({ pages: 1, oldestTradeDate: '2020-08-24' }),
+      );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('빈 페이지가 오면 소진으로 보고 추가 요청 없이 멈춘다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(null);
+    fixture.repository.findOldestTradeDate.mockResolvedValue(null);
+    fixture.marketIndicator.fetchDailyCloses.mockResolvedValue([]);
+    fixture.repository.upsertCloses.mockResolvedValue(0);
+
+    try {
+      await expect(fixture.usecase.execute({ years: 5 })).resolves.toEqual({
+        symbol: 'KOSPI',
+        fetched: 0,
+        written: 0,
+        blockedIntraday: 0,
+        latestTradeDate: null,
+        pages: 1,
+        oldestTradeDate: null,
+      });
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
+      expect(fixture.repository.upsertCloses).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('커서 날짜와 같은 가장 오래된 봉이 반복되면 정체로 보고 한 페이지에서 멈춘다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(new Date('2026-08-24T00:00:00.000Z'));
+    fixture.repository.findOldestTradeDate.mockResolvedValue(
+      new Date('2025-01-02T00:00:00.000Z'),
+    );
+    fixture.marketIndicator.fetchDailyCloses.mockResolvedValue([
+      benchmarkBar('2025-01-02', '2500.00'),
+      benchmarkBar('2025-08-01', '2800.00'),
+    ]);
+
+    try {
+      const execution = fixture.usecase.execute({ years: 5 });
+      await jest.runAllTimersAsync();
+
+      await expect(execution).resolves.toEqual(
+        expect.objectContaining({ pages: 1, oldestTradeDate: '2025-01-02' }),
+      );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('429는 같은 페이지를 1초 뒤 한 번 재시도한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(null);
+    fixture.repository.findOldestTradeDate.mockResolvedValue(null);
+    fixture.marketIndicator.fetchDailyCloses
+      .mockRejectedValueOnce(new MarketDataRateLimitError())
+      .mockResolvedValueOnce([benchmarkBar('2020-08-24', '2300.00')]);
+
+    try {
+      const execution = fixture.usecase.execute({ years: 5 });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(execution).resolves.toEqual(
+        expect.objectContaining({ pages: 1, oldestTradeDate: '2020-08-24' }),
+      );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(2);
+      expect(fixture.marketIndicator.fetchDailyCloses.mock.calls[0]).toEqual(
+        fixture.marketIndicator.fetchDailyCloses.mock.calls[1],
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('목표와 소진에 닿지 않아도 40페이지에서 안전하게 멈춘다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(null);
+    fixture.repository.findOldestTradeDate.mockResolvedValue(null);
+    fixture.marketIndicator.fetchDailyCloses.mockImplementation(async () => {
+      const page = fixture.marketIndicator.fetchDailyCloses.mock.calls.length;
+      const tradeDate = new Date(Date.UTC(2026, 7, 25 - page))
+        .toISOString()
+        .slice(0, 10);
+      return [benchmarkBar(tradeDate, '3200.00')];
+    });
+
+    try {
+      const execution = fixture.usecase.execute({ years: 5 });
+      await jest.runAllTimersAsync();
+
+      await expect(execution).resolves.toEqual(
+        expect.objectContaining({ pages: 40 }),
+      );
+      expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(
+        40,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { isIntradayCapture } from '../../market-data/domain/intraday-guard';
+import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import {
+  BenchmarkBar,
   MARKET_INDICATOR_PORT,
   MarketIndicatorPort,
 } from '../../market-data/domain/port/market-indicator.port';
@@ -9,15 +12,24 @@ import {
   BenchmarkCloseWriteInput,
   BenchmarkPrismaRepository,
 } from '../../market-data/infrastructure/benchmark.prisma.repository';
+import {
+  buildBackfillCursor,
+  calculateBackfillStartDate,
+} from '../domain/backfill-cursor';
 
 const BENCHMARK_SYMBOL = 'KOSPI';
 const DEFAULT_INCREMENTAL_DAYS = 5;
 const DEFAULT_INITIAL_DAYS = 200;
 const MAXIMUM_INCREMENTAL_DAYS = 200;
+const BACKFILL_PAGE_SIZE = 200;
+const MAXIMUM_BACKFILL_PAGES = 40;
+const BACKFILL_PAGE_DELAY_MILLISECONDS = 250;
+const RATE_LIMIT_RETRY_DELAY_MILLISECONDS = 1_000;
 const CALENDAR_DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
 
 export interface CollectBenchmarkOptions {
   days?: number;
+  years?: number;
 }
 
 export interface CollectBenchmarkResult {
@@ -26,7 +38,37 @@ export interface CollectBenchmarkResult {
   written: number;
   blockedIntraday: number;
   latestTradeDate: string | null;
+  pages: number;
+  oldestTradeDate: string | null;
 }
+
+const findOldestBar = (bars: BenchmarkBar[]): BenchmarkBar => {
+  return bars.reduce((oldest, bar) => {
+    return bar.tradeDate < oldest.tradeDate ? bar : oldest;
+  });
+};
+
+const findLatestBar = (bars: BenchmarkBar[]): BenchmarkBar => {
+  return bars.reduce((latest, bar) => {
+    return bar.tradeDate > latest.tradeDate ? bar : latest;
+  });
+};
+
+const selectOldestTradeDate = (
+  current: string | null,
+  candidate: string,
+): string => {
+  if (current === null || candidate < current) {
+    return candidate;
+  }
+  return current;
+};
+
+const wait = async (milliseconds: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+};
 
 @Injectable()
 export class CollectBenchmarkClosesUsecase {
@@ -41,6 +83,13 @@ export class CollectBenchmarkClosesUsecase {
   async execute(
     options: CollectBenchmarkOptions = {},
   ): Promise<CollectBenchmarkResult> {
+    if (options.days !== undefined && options.years !== undefined) {
+      throw new Error('days와 years를 함께 지정할 수 없습니다.');
+    }
+    if (options.years !== undefined) {
+      return await this.executeBackfill(options.years);
+    }
+
     const latestTradeDate =
       await this.repository.findLatestTradeDate(BENCHMARK_SYMBOL);
     const now = new Date();
@@ -101,7 +150,129 @@ export class CollectBenchmarkClosesUsecase {
       blockedIntraday: bars.length - safeBars.length,
       latestTradeDate:
         resultLatestTradeDate?.toISOString().slice(0, 10) ?? null,
+      pages: 1,
+      oldestTradeDate:
+        safeBars.length === 0
+          ? null
+          : findOldestBar(safeBars).tradeDate.toISOString().slice(0, 10),
     };
+  }
+
+  private async executeBackfill(
+    years: number,
+  ): Promise<CollectBenchmarkResult> {
+    const latestTradeDate =
+      await this.repository.findLatestTradeDate(BENCHMARK_SYMBOL);
+    const storedOldestTradeDate =
+      await this.repository.findOldestTradeDate(BENCHMARK_SYMBOL);
+    const targetStartDate = calculateBackfillStartDate(
+      getTodayKstDate(),
+      years,
+    );
+    const now = new Date();
+    let cursor =
+      storedOldestTradeDate === null
+        ? undefined
+        : buildBackfillCursor(storedOldestTradeDate);
+    let fetched = 0;
+    let written = 0;
+    let blockedIntraday = 0;
+    let pages = 0;
+    let oldestTradeDate: string | null = null;
+    let fetchedLatestTradeDate: Date | null = null;
+
+    while (pages < MAXIMUM_BACKFILL_PAGES) {
+      const bars = await this.fetchBackfillPage(cursor);
+      pages += 1;
+      fetched += bars.length;
+      if (bars.length === 0) {
+        break;
+      }
+
+      const oldestBar = findOldestBar(bars);
+      const pageOldestTradeDate = oldestBar.tradeDate
+        .toISOString()
+        .slice(0, 10);
+      oldestTradeDate = selectOldestTradeDate(
+        oldestTradeDate,
+        pageOldestTradeDate,
+      );
+      const cursorTradeDate = cursor?.slice(0, 10);
+      if (
+        cursorTradeDate !== undefined &&
+        pageOldestTradeDate >= cursorTradeDate
+      ) {
+        break;
+      }
+
+      const safeBars = bars.filter(
+        (bar) => !isIntradayCapture(bar.tradeDate, now),
+      );
+      blockedIntraday += bars.length - safeBars.length;
+      const rows: BenchmarkCloseWriteInput[] = safeBars.map((bar) => ({
+        symbol: BENCHMARK_SYMBOL,
+        tradeDate: bar.tradeDate,
+        close: bar.close,
+      }));
+      written += await this.repository.upsertCloses(rows);
+      if (safeBars.length > 0) {
+        const pageLatestTradeDate = findLatestBar(safeBars).tradeDate;
+        if (
+          fetchedLatestTradeDate === null ||
+          pageLatestTradeDate > fetchedLatestTradeDate
+        ) {
+          fetchedLatestTradeDate = pageLatestTradeDate;
+        }
+      }
+
+      if (pageOldestTradeDate <= targetStartDate) {
+        break;
+      }
+      cursor = buildBackfillCursor(oldestBar.tradeDate);
+      if (pages < MAXIMUM_BACKFILL_PAGES) {
+        await wait(BACKFILL_PAGE_DELAY_MILLISECONDS);
+      }
+    }
+
+    const resultLatestTradeDate =
+      latestTradeDate === null ||
+      (fetchedLatestTradeDate !== null &&
+        fetchedLatestTradeDate > latestTradeDate)
+        ? fetchedLatestTradeDate
+        : latestTradeDate;
+
+    return {
+      symbol: BENCHMARK_SYMBOL,
+      fetched,
+      written,
+      blockedIntraday,
+      latestTradeDate:
+        resultLatestTradeDate?.toISOString().slice(0, 10) ?? null,
+      pages,
+      oldestTradeDate,
+    };
+  }
+
+  private async fetchBackfillPage(
+    cursor: string | undefined,
+  ): Promise<BenchmarkBar[]> {
+    try {
+      return await this.marketIndicator.fetchDailyCloses(
+        BENCHMARK_SYMBOL,
+        BACKFILL_PAGE_SIZE,
+        { before: cursor },
+      );
+    } catch (error) {
+      if (!(error instanceof MarketDataRateLimitError)) {
+        throw error;
+      }
+      await wait(RATE_LIMIT_RETRY_DELAY_MILLISECONDS);
+      return await this.marketIndicator.fetchDailyCloses(
+        BENCHMARK_SYMBOL,
+        BACKFILL_PAGE_SIZE,
+        { before: cursor },
+      );
+    }
   }
 }
 
