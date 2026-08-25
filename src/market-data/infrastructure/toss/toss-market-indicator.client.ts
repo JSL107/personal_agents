@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
 import {
   BenchmarkBar,
+  FetchDailyClosesOptions,
   MarketIndicatorPort,
 } from '../../domain/port/market-indicator.port';
 import { TossApiClient, TossApiHttpError } from './toss-api.client';
@@ -17,15 +18,23 @@ export class TossMarketIndicatorClient implements MarketIndicatorPort {
   async fetchDailyCloses(
     symbol: string,
     count: number,
+    options?: FetchDailyClosesOptions,
   ): Promise<BenchmarkBar[]> {
     if (count <= 0) {
       return [];
     }
 
     const limitedCount = Math.min(count, MAXIMUM_CANDLE_COUNT);
+    const query = new URLSearchParams({
+      interval: '1d',
+      count: String(limitedCount),
+    });
+    if (options?.before) {
+      query.set('before', options.before);
+    }
     const path =
       `/api/v1/market-indicators/${encodeURIComponent(symbol)}/candles` +
-      `?interval=1d&count=${limitedCount}`;
+      `?${query.toString()}`;
     let response: unknown;
     try {
       response = await this.tossApi.requestJson('시장 지표 일봉 조회', path);
@@ -43,8 +52,8 @@ export class TossMarketIndicatorClient implements MarketIndicatorPort {
       );
     }
 
-    // ponytail: 페이지네이션을 쓰지 않아 한 번에 최대 200봉(약 10개월)만 수집한다.
-    // 더 긴 성적 구간이 필요해지면 응답의 `nextBefore`를 다음 요청의 `before`로 넘겨 확장한다.
+    // 한 번에 최대 200봉(약 10개월)이다. 그보다 긴 구간은 호출부가 `before` 커서로
+    // 페이지를 이어 받는다.
     return bars.slice(-count);
   }
 }

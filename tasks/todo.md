@@ -1,3 +1,24 @@
+# KOSPI 벤치마크 과거 종가 소급 수집 (2026-08-25)
+
+**Goal:** `.ai/design.md`대로 `collect-benchmark --years <연수>`가 Toss `before` 커서로 KOSPI 일봉을 과거 방향으로 수집한다.
+
+**Contract:** 기존 `--days` 증분 경로와 `BENCHMARK_SYMBOL`을 보존한다. 200봉 페이지, 250ms 페이지 간격, 페이지당 429 1회·1초 재시도, 40페이지 상한, 빈 페이지·목표 도달·커서 정체 종료를 구현한다. Prisma schema/env/dependency를 바꾸지 않고 `db:push`, commit, PR을 실행하지 않는다.
+
+- [x] **Task 1 — RED/GREEN: 포트·Toss 커서·repository.** `before` 쿼리 전달과 `findOldestTradeDate` 오름차순 조회 spec을 먼저 추가해 RED를 확인하고 최소 구현한다.
+- [x] **Task 2 — RED/GREEN: 백필 usecase.** `years`/`days` 상호 배제, 저장된 가장 오래된 날의 시작 커서, 이전 페이지의 가장 오래된 날을 잇는 커서, 목표 도달, 빈 페이지, 40페이지 상한, 장중 차단, 페이지당 rate-limit 재시도 결과를 spec으로 먼저 고정하고 구현한다.
+- [x] **Task 3 — 정체 가드 역변이.** 동일 페이지 반복이 2회 이내 종료되는 spec을 추가한다. GREEN 후 production 정체 판정을 일부러 제거해 해당 spec RED를 확인하고 즉시 복원한다.
+- [x] **Task 4 — RED/GREEN: CLI·출력.** parser usage/`--years`/양의 정수/`--days` 동시 거부 spec을 먼저 추가하고 parser 및 `scripts/screener.ts` 결과 문구를 갱신한다.
+- [x] **Task 5 — 통합·검증·기록.** focused specs, `git diff --check`, `pnpm lint:check`, 전체 `pnpm test`, `pnpm build`를 fresh 실행한다. 최종 diff를 설계와 대조하고 `.ai/implementation-summary.md` 및 아래 Review에 변경 파일·이탈·실제 출력 요약을 기록한다.
+
+## Review
+
+- `collect-benchmark --years` focused 4 suites/39 tests GREEN. 정체 가드 제거 시 대상 spec이 `pages: 1` 대신 `pages: 40`으로 RED, 복원 후 GREEN.
+- 설계에 없는 별도 `backfill-benchmark` 서브커맨드를 만들었다가 사용자 교정 후 파일·CLI·module wiring을 전부 제거했다. 백필 기능은 계약대로 `collect-benchmark --years` 한 경로에만 남겼다.
+- final fresh gate: lint exit 0(error 0, 기존 warning 55), 일반 test 444 suites/4,137 tests, code-graph 5 suites/40 tests, build exit 0, `git diff --check` exit 0.
+- Prisma schema/env/dependency는 변경하지 않았고 `db:push`, 실제 Toss 수집, commit, push, PR 생성도 실행하지 않았다.
+
+---
+
 # PO Shadow v2 — 근거 기반 정오 대조 (2026-08-19)
 
 **Goal:** `.ai/design.md`대로 정오 실조회 사실표와 아침 계획을 결정론으로 대조하고, 이상이 없으면 모델 호출 없이 성공 원장을 남기며, 이상이 있으면 fact ID를 인용한 지적만 Slack에 노출한다.
