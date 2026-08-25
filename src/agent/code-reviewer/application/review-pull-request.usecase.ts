@@ -33,6 +33,7 @@ import { parsePrReference } from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
   CODE_REVIEWER_SYSTEM_PROMPT,
+  isSelfRepo,
 } from '../domain/prompt/code-reviewer-system.prompt';
 import { renderLearnedConventions } from '../domain/prompt/learned-conventions';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
@@ -207,6 +208,12 @@ export class ReviewPullRequestUsecase {
    * 덧붙이던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다.
    */
   private async buildLearnedConventions(repo: string): Promise<string> {
+    // owner 저장소로 한정한다. 기각 이유는 owner 뿐 아니라 **PR 작성자**도 남길 수 있어
+    // (`harvest-review-signals.usecase.ts` 의 `decisionLogins`), 남의 저장소에서는 제3자가
+    // 쓴 문장이 규약으로 굳는다. 손으로 적은 규약(`buildRepoConventions`)과 같은 경계다.
+    if (!isSelfRepo(repo)) {
+      return '';
+    }
     if (this.findingRepository === undefined) {
       // 옵셔널 주입이라 배선이 틀려도 부팅은 성공한다 — 그 경우 규약만 조용히 사라지므로
       // 흔적을 남긴다. 정상 경로(CodeReviewerModule)에서는 찍히지 않는다.
