@@ -621,3 +621,18 @@ export const splitCyclesByExitBand = (
       compareExitBandLabels(left.periodLabel, right.periodLabel),
     );
 };
+
+/**
+ * 채점 회차 한 건의 요약. 프롬프트 되먹임이 읽는 최소 필드다.
+ *
+ * `RecommendationScore` 한 행은 **계좌 개설 이후 그 기준일까지의 누적**이다
+ * (`prisma/schema.prisma` 의 `asOf` 주석). 행끼리 더하면 같은 청산이 두 번 세어진다.
+ */
+export interface RecommendationScoreSummary {
+  asOf: Date;
+  closedCount: number;
+  hitCount: number;
+  meanReturnRate: number | null;
+  meanExcessReturnRate: number | null;
+  maximumLoss: number | null;
+}

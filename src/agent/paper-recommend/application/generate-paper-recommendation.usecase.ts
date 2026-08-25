@@ -35,9 +35,6 @@ import { renderRecommendationScorecard } from '../domain/prompt/recommendation-s
 
 const PAPER_ACCOUNT_SEED_AMOUNT = '10000000';
 
-// 프롬프트에 실을 채점 회차 수. 회차가 주 1회라 3이면 최근 3주다 — 더 늘리면 밴드를 바꾸기
-// 전 성적까지 섞여 지금 규칙의 성적으로 읽히지 않는다.
-const SCORECARD_ROUNDS = 3;
 const DEFAULT_STRATEGIES: PaperRecommendationStrategy[] = [
   'LONG_TERM',
   'SWING',
@@ -185,7 +182,7 @@ export class GeneratePaperRecommendationUsecase {
         const indicatorsByTickerId = new Map(
           indicatorSources.map((stock) => [stock.tickerId, stock.indicators]),
         );
-        const scorecard = await this.buildScorecard(strategy);
+        const scorecard = await this.buildScorecard(strategy, decidedAt);
         const prompt =
           buildPaperRecommendationPrompt({
             strategy,
@@ -534,19 +531,23 @@ export class GeneratePaperRecommendationUsecase {
   /**
    * 지난 회차 성적을 프롬프트 블록으로 만든다. 조회 실패는 성적 없이 진행(best-effort) —
    * 되먹임이 없다고 추천 자체를 막으면 하루치 회차가 통째로 사라진다.
+   *
+   * `decidedAt` 을 상한으로 넘긴다. 과거 시점으로 추천을 재현할 때 그 이후 성적이 새면
+   * "그날의 판단" 이 아니라 결과를 알고 내린 판단이 된다.
    */
   private async buildScorecard(
     strategy: PaperRecommendationStrategy,
+    decidedAt: Date,
   ): Promise<string> {
     try {
-      const rows = await this.repository.findRecentRecommendationScores({
+      const latest = await this.repository.findLatestRecommendationScore({
         strategy,
-        limit: SCORECARD_ROUNDS,
+        asOfMax: decidedAt,
       });
-      const block = renderRecommendationScorecard(rows);
-      if (block.length > 0) {
+      const block = renderRecommendationScorecard(latest);
+      if (block.length > 0 && latest !== null) {
         this.logger.log(
-          `추천 성적표 주입 (${strategy}): ${rows.length}회차 · 청산 ${rows.reduce((sum, row) => sum + row.closedCount, 0)}건`,
+          `추천 성적표 주입 (${strategy}): ${latest.asOf.toISOString().slice(0, 10)} 누적 · 청산 ${latest.closedCount}건`,
         );
       }
       return block;
