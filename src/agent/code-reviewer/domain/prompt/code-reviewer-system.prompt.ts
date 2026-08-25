@@ -70,11 +70,16 @@ const SELF_REPO_CONVENTIONS = `
 
 이 목록에 없는 사항은 평소대로 판단한다. 규약을 이유로 실제 결함을 덮지 말 것.`;
 
+/**
+ * 규약을 실을 대상 레포인지. 손으로 적은 규약과 기각에서 학습한 규약이 같은 경계를 쓴다.
+ *
+ * 학습 규약에서 특히 중요하다 — 기각 이유는 owner 뿐 아니라 **PR 작성자**도 남길 수 있어
+ * (`harvest-review-signals.usecase.ts` 의 `decisionLogins`), 남의 레포에서는 제3자가 쓴
+ * 문장이 규약으로 굳을 수 있다. owner 저장소로 한정해 그 경로를 막는다.
+ */
+export const isSelfRepo = (repo: string): boolean =>
+  repo.trim().toLowerCase() === SELF_REPO;
+
 // 리뷰 프롬프트에 덧붙일 레포 규약. 대상 레포가 아니면 빈 문자열(동작 변화 0).
-export const buildRepoConventions = (repo: string): string => {
-  const normalizedRepo = repo.trim().toLowerCase();
-  if (normalizedRepo !== SELF_REPO) {
-    return '';
-  }
-  return SELF_REPO_CONVENTIONS;
-};
+export const buildRepoConventions = (repo: string): string =>
+  isSelfRepo(repo) ? SELF_REPO_CONVENTIONS : '';
