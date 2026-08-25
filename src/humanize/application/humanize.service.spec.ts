@@ -24,7 +24,10 @@ interface ExecuteArgs {
 
 // 실제 execute 와 같은 계약 — run 을 실행하고 outcome 으로 감싸며, 던지면 그대로 전파한다
 // (호출부가 기존처럼 원본을 반환하는 best-effort fallback 으로 받는다).
-const makeAgentRunService = (): { execute: jest.Mock } => ({
+const makeAgentRunService = (): {
+  execute: jest.Mock;
+  findRecentSucceededRuns: jest.Mock;
+} => ({
   execute: jest.fn().mockImplementation(async ({ run }: ExecuteArgs) => {
     const execution = await run({ agentRunId: 1 });
     return {
@@ -33,6 +36,8 @@ const makeAgentRunService = (): { execute: jest.Mock } => ({
       agentRunId: 1,
     };
   }),
+  // 없으면 조회가 TypeError 로 죽고 catch 가 삼켜, 되먹임이 조용히 빠진 채 테스트가 통과한다.
+  findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
 });
 
 const makeService = (opts: {
@@ -42,7 +47,7 @@ const makeService = (opts: {
 }): {
   service: HumanizeService;
   routeMock: jest.Mock;
-  agentRunService: { execute: jest.Mock };
+  agentRunService: { execute: jest.Mock; findRecentSucceededRuns: jest.Mock };
 } => {
   const routeMock = jest.fn(opts.routeImpl ?? (async () => ({ text: '{}' })));
   const modelRouter = { route: routeMock } as unknown as ModelRouterUsecase;
@@ -134,7 +139,12 @@ describe('HumanizeService', () => {
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
-    expect(executed.output).toEqual({ humanizedKeys: ['a'] });
+    // 본문은 없고 키 목록과 문체 갭(숫자 몇 줄)만 남는다.
+    expect(executed.output).toEqual({
+      humanizedKeys: ['a'],
+      styleGaps: expect.any(Array),
+    });
+    expect(JSON.stringify(executed.output)).not.toContain('원본A');
   });
 
   it('빈 값만 있으면 LLM 호출 없이 원본을 반환한다', async () => {
@@ -257,5 +267,121 @@ describe('독자 축 (audience)', () => {
     // 목소리 축이 독자 치환에 밀려 사라지지 않았는지 함께 본다.
     expect(systemPrompt).toContain(HUMANIZE_PERSONAL_BLOG_TONE);
     expect(systemPrompt).not.toContain(HUMANIZE_REPORT_TONE_LINE);
+  });
+});
+
+describe('문체 되먹임', () => {
+  const runOf = (gaps: string[]) => ({
+    id: 1,
+    endedAt: new Date(),
+    inputSnapshot: { voice: 'personal-blog' },
+    output: { humanizedKeys: ['a'], styleGaps: gaps },
+  });
+
+  // 40문장을 넘겨야 갭 판정이 열린다(그 아래는 문장 하나가 비율을 10%p 씩 흔든다).
+  const longProse = Array.from(
+    { length: 45 },
+    (_, index) =>
+      `${index}번째 문장은 목표를 벗어나도록 길게 늘여 쓴 서술입니다.`,
+  ).join(' ');
+
+  it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      runOf(['편차 12.3(≥15)']),
+      runOf(['편차 11.8(≥15)']),
+    ]);
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('되풀이된 문체 갭');
+    expect(systemPrompt).toContain('편차 12.3(≥15)');
+  });
+
+  it('목소리를 조회 조건으로 내린다 — 보고서 윤문이 상한을 채워도 표본이 밀리지 않게', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const [input] = agentRunService.findRecentSucceededRuns.mock.calls[0] as [
+      { inputSnapshotEquals?: { path: string[]; value: string } },
+    ];
+    expect(input.inputSnapshotEquals).toEqual({
+      path: ['voice'],
+      value: 'personal-blog',
+    });
+  });
+
+  it('보고서 목소리면 원장을 조회조차 하지 않는다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'report' });
+
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalled();
+  });
+
+  it('되먹임 조회가 실패해도 윤문은 계속된다 — best-effort', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    agentRunService.findRecentSucceededRuns.mockRejectedValue(
+      new Error('db down'),
+    );
+
+    const result = await service.humanize(
+      { a: '원본A' },
+      { voice: 'personal-blog' },
+    );
+
+    expect(result.a).toBe('윤문A');
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).not.toContain('되풀이된 문체 갭');
+  });
+
+  it('측정 가능한 결과면 계산된 갭이 원장에 기록된다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: longProse }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
+    const executed = await runArg.run({ agentRunId: 1 });
+    const output = executed.output as { styleGaps: string[] };
+    // 목표를 벗어나도록 만든 표본이라 갭이 비어 있지 않아야 한다.
+    expect(output.styleGaps.length).toBeGreaterThan(0);
+  });
+
+  it('모델이 비워 돌려준 필드의 원문도 측정에 포함한다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      // a 를 빈 값으로 돌려주면 어댑터는 그 문단을 원문 그대로 둔다.
+      routeImpl: async () => ({
+        text: JSON.stringify({ a: '', b: '짧은 윤문본.' }),
+      }),
+    });
+
+    await service.humanize(
+      { a: longProse, b: '원본B' },
+      { voice: 'personal-blog' },
+    );
+
+    const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
+    const executed = await runArg.run({ agentRunId: 1 });
+    const output = executed.output as { styleGaps: string[] };
+    // a 의 원문이 빠지면 문장 수가 임계 미만이 되어 갭이 빈 배열로 저장된다.
+    expect(output.styleGaps.length).toBeGreaterThan(0);
   });
 });

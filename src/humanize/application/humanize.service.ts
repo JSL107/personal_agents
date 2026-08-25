@@ -17,6 +17,14 @@ import {
   HUMANIZE_SYSTEM_PROMPT,
   HUMANIZE_TERM_PRESERVE_LINE,
 } from '../domain/humanize-system.prompt';
+import {
+  findKoreanStyleGaps,
+  measureKoreanStyle,
+} from '../domain/korean-style-metrics';
+import {
+  renderStyleFeedback,
+  toStyleFeedbackRun,
+} from '../domain/style-feedback';
 
 /**
  * 목표 문체.
@@ -24,6 +32,14 @@ import {
  * - `report`(기본): 보고서·Slack 카드용 문어체. 기존 모든 호출부가 이 값이다.
  * - `personal-blog`: 사용자 명의로 공개되는 블로그 본문. 보고체 지시를 빼고 개인 문체를 넣는다.
  */
+// 문체 되먹임은 사용자 명의 글에만 쓴다. 목표 수치가 사용자 글에서 잰 재현 대상이라,
+// 내부 보고서에 그 문체를 강요하면 목적이 뒤집힌다.
+const STYLE_FEEDBACK_VOICE = 'personal-blog';
+// 볼 최근 편수. 목소리 조건을 조회로 내리므로(inputSnapshotEquals) 이 수가 곧 개인 글
+// 표본 수다 — 보고서 윤문이 아무리 많이 끼어도 표본이 밀리지 않는다.
+const STYLE_FEEDBACK_RUNS = 5;
+const STYLE_FEEDBACK_DAYS = 60;
+
 export type HumanizeVoice = 'report' | 'personal-blog';
 
 /**
@@ -49,6 +65,24 @@ export interface HumanizeOptions {
 }
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
+/**
+ * 실제로 적용되는 본문. 빈 윤문 값은 원문으로 되돌린다 —
+ * `humanize-markdown.adapter.ts` 가 빈 값을 만나면 그 문단을 원문 그대로 두기 때문에,
+ * 이 규칙을 맞추지 않으면 측정 대상과 발행본이 어긋난다.
+ */
+const appliedText = (
+  fields: Record<string, string>,
+  humanized: Record<string, string>,
+): string =>
+  Object.keys(fields)
+    .map((key) => {
+      const rewritten = humanized[key];
+      return rewritten !== undefined && rewritten.trim().length > 0
+        ? rewritten
+        : fields[key];
+    })
+    .join('\n\n');
+
 @Injectable()
 export class HumanizeService {
   private readonly logger = new Logger(HumanizeService.name);
@@ -130,9 +164,10 @@ export class HumanizeService {
           const basePrompt = options?.longForm
             ? audiencePrompt
             : `${audiencePrompt}\n${HUMANIZE_CONCISE_RULES}`;
-          const systemPrompt = injection
-            ? `${basePrompt}\n\n${injection}`
-            : basePrompt;
+          const styleFeedback = await this.buildStyleFeedback(options?.voice);
+          const systemPrompt =
+            (injection ? `${basePrompt}\n\n${injection}` : basePrompt) +
+            styleFeedback;
           const completion = await this.modelRouter.route({
             agentType: AgentType.HUMANIZER,
             request: {
@@ -148,7 +183,17 @@ export class HumanizeService {
             result: { ...fields, ...humanized },
             modelUsed: completion.modelUsed,
             // 윤문 본문은 원장에 담지 않는다 — 보고서 전문이 그대로 복제된다.
-            output: { humanizedKeys: Object.keys(humanized) },
+            // 문체 갭은 숫자 몇 줄이라 담아도 원장이 부풀지 않고, 다음 회차 되먹임의
+            // 유일한 재료다. 40문장 미만이면 판정이 무의미해 빈 배열이 온다.
+            output: {
+              humanizedKeys: Object.keys(humanized),
+              // 실제로 발행되는 본문을 잰다(`appliedText`). `humanized` 만 재면 모델이
+              // 비워 돌려줘 원문이 유지된 문단이 측정에서 빠져, 발행본은 40문장을 넘는데
+              // 측정본만 임계 미만이 되거나 원문에 있던 갭을 놓친다.
+              styleGaps: findKoreanStyleGaps(
+                measureKoreanStyle(appliedText(fields, humanized)),
+              ),
+            },
           };
         },
       });
@@ -157,6 +202,42 @@ export class HumanizeService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`윤문 실패 — 원본 유지: ${message}`);
       return fields;
+    }
+  }
+
+  /**
+   * 최근 개인 글 윤문본에서 되풀이된 문체 갭을 프롬프트 블록으로 만든다.
+   * 조회 실패는 되먹임 없이 진행(best-effort) — 윤문 자체가 best-effort 경로라
+   * 되먹임 때문에 본문이 원본으로 떨어지면 손해가 더 크다.
+   */
+  private async buildStyleFeedback(voice?: HumanizeVoice): Promise<string> {
+    if (voice !== STYLE_FEEDBACK_VOICE) {
+      return '';
+    }
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.HUMANIZER,
+        // 조회 단계에서 목소리를 거른다. 애플리케이션에서 거르면 take 가 먼저 걸려,
+        // 보고서 윤문이 상한을 채우는 순간 개인 글 이력이 있어도 표본이 빈다.
+        inputSnapshotEquals: { path: ['voice'], value: STYLE_FEEDBACK_VOICE },
+        sinceDays: STYLE_FEEDBACK_DAYS,
+        limit: STYLE_FEEDBACK_RUNS,
+      });
+      const samples = runs
+        .map((run) => toStyleFeedbackRun(run.output))
+        .filter(
+          (sample): sample is NonNullable<typeof sample> => sample !== null,
+        );
+      const block = renderStyleFeedback(samples);
+      if (block.length > 0) {
+        this.logger.log(`문체 되먹임 주입 — 최근 ${samples.length}편 기준`);
+      }
+      return block;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `문체 되먹임 조회 실패, 되먹임 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return '';
     }
   }
 }
