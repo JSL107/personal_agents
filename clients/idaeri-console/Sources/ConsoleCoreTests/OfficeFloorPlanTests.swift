@@ -33,10 +33,14 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
 // 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
 let sampleAgents: [ConsoleAgent] =
-    planAgents(.planning, ["PM", "PO_SHADOW", "PO_EVAL"])
-    + planAgents(.engineering, ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE", "BE_FIX"])
+    planAgents(.planning, ["PM", "PO_SHADOW"])
+    + planAgents(.engineering, ["BE", "BE_SCHEMA", "BE_TEST", "BE_SRE"])
     + planAgents(
-        .review, ["CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE"]
+        .review,
+        [
+            "CODE_REVIEWER", "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE",
+            "BE_FIX", "PO_EVAL",
+        ]
     )
     + planAgents(.executive, ["CTO", "CEO"])
     + planAgents(
@@ -218,7 +222,7 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let corridorRow = officeCorridorRow(zoneColumns: 3)
 
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
-    t.expectEqual(plan.desks.count, sampleAgents.count, "29명 전원 자리 배정")
+    t.expectEqual(plan.desks.count, sampleAgents.count, "\(sampleAgents.count)명 전원 자리 배정")
 
     // 인원이 가장 많은 부서도 정원 안에 들어가야 한다. 부서별 인원은 언제든 늘 수 있으므로,
     // "가장 큰 부서 전원이 자리를 받았는가" 를 부서 단위로 못 박는다.
@@ -231,6 +235,29 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expectEqual(
             seated.count, members.count,
             "\(zoneDepartment.label) 부서 \(members.count)명 전원 배정(정원 초과 시 실패)"
+        )
+    }
+
+    // 자리표(`departmentDeskSpots`)를 넘겨 예비 격자에 앉은 사람이 없다.
+    //
+    // 위의 "전원 배정" 단언만으로는 부족하다 — 예비 격자가 10석이나 되어, 자리표가 모자라도
+    // 넘친 사람을 조용히 받아 준다. 실제로 성장 부서는 자리표 여덟 칸에 아홉 명이 사는
+    // 동안 이 파일이 초록이었고, 아홉 번째가 어디 앉을지는 예비 격자와 자리표가 겹치지
+    // 않았다는 우연이 정했다. 안전망은 사규가 늘었을 때 화면에서 사람이 사라지지 않게 하는
+    // 것이지, 자리표를 갱신하지 않아도 되게 하는 장치가 아니다.
+    for zone in plan.zones {
+        let spots = Set(
+            departmentDeskSpots(zone.department).map { spot in
+                TilePoint(x: zone.origin.x + spot.x, y: zone.origin.y + spot.y)
+            }
+        )
+        let overflowed = plan.desks
+            .filter { sampleDepartments[$0.agentType] == zone.department }
+            .filter { !spots.contains($0.desk) }
+        t.expectEqual(
+            overflowed.count, 0,
+            "\(zone.department.label) 전원이 자리표 안에 앉음"
+                + "(예비 격자로 밀린 사람: \(overflowed.map(\.agentType).joined(separator: ", ")))"
         )
     }
 
