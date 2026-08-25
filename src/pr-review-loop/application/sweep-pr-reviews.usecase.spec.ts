@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
@@ -50,7 +51,10 @@ describe('SweepPrReviewsUsecase', () => {
   let github: jest.Mocked<
     Pick<
       GithubClientPort,
-      'listAuthorOpenPullRequests' | 'getPullRequest' | 'getPullRequestDiff'
+      | 'listAuthorOpenPullRequests'
+      | 'getPullRequest'
+      | 'getPullRequestDiff'
+      | 'addIssueComment'
     >
   >;
   let reviewUsecase: jest.Mocked<Pick<ReviewPullRequestUsecase, 'execute'>>;
@@ -110,6 +114,7 @@ describe('SweepPrReviewsUsecase', () => {
       getPullRequestDiff: jest
         .fn()
         .mockResolvedValue({ diff: 'diff', truncated: false, bytes: 4 }),
+      addIssueComment: jest.fn().mockResolvedValue(undefined),
     } as never;
     reviewUsecase = { execute: jest.fn().mockResolvedValue(REVIEW_OUTCOME) };
     // 판정은 AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준 — 카드(PrReviewFinding) 유무와
@@ -600,6 +605,85 @@ describe('SweepPrReviewsUsecase', () => {
 
     expect(publishService.publish).not.toHaveBeenCalled();
     expect(results).toEqual([]);
+  });
+
+  // 지적 0건이면 게시할 카드가 없어 PR 이 완전히 조용해진다 — "깨끗하다" 와 "리뷰가 돌긴 했나"
+  // 가 구분되지 않으므로, 검토했다는 사실만 코멘트로 남는지 확인한다.
+  describe('지적 0건 안내 코멘트', () => {
+    const noFindings = (): void => {
+      reviewUsecase.execute.mockResolvedValue({
+        ...REVIEW_OUTCOME,
+        result: {
+          ...REVIEW_OUTCOME.result,
+          summary: '요약 첫 줄\n요약 둘째 줄',
+          findings: [],
+        },
+      });
+    };
+
+    it('실게시 모드에서 findings 가 비면 PR 에 지적 없음 코멘트를 단다', async () => {
+      noFindings();
+
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      expect(github.addIssueComment).toHaveBeenCalledWith({
+        repo: 'JSL107/personal_agents',
+        number: 180,
+        body: expect.stringContaining('지적 사항 없음'),
+      });
+      // 요약은 한 줄로 눌러 인용한다 — 줄바꿈이 남으면 인용 밖으로 새어 나간다.
+      const [{ body }] = github.addIssueComment.mock.calls[0];
+      expect(body).toContain('> 요약 첫 줄 요약 둘째 줄');
+    });
+
+    it('연습 모드에서는 코멘트를 달지 않는다', async () => {
+      noFindings();
+
+      await buildUsecase(ENABLED).execute();
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+    });
+
+    // 코멘트 실패가 바깥 catch 로 새도 반환값은 똑같이 [] 다 — 결과만으로는 구분되지 않으므로
+    // "스윕 실패" 로그가 찍혔는지로 가른다.
+    it('코멘트 게시가 실패해도 스윕 실패로 번지지 않는다', async () => {
+      noFindings();
+      github.addIssueComment.mockRejectedValue(new Error('403'));
+      const errorLog = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      const warnLog = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const results = await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      expect(github.addIssueComment).toHaveBeenCalled();
+      expect(results).toEqual([]);
+      expect(errorLog).not.toHaveBeenCalled();
+      expect(warnLog).toHaveBeenCalledWith(
+        expect.stringContaining('지적 없음 코멘트 게시 실패'),
+      );
+
+      errorLog.mockRestore();
+      warnLog.mockRestore();
+    });
+
+    it('findings 가 있으면 안내 코멘트를 달지 않는다', async () => {
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+      expect(publishService.publish).toHaveBeenCalled();
+    });
   });
 
   it('DRYRUN 이 false 면 실게시 모드로 넘긴다', async () => {

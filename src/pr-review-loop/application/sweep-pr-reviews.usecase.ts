@@ -13,6 +13,7 @@ import {
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { buildNoFindingsCommentBody } from '../domain/finding-comment.body';
 import { SweepPullRequestResult } from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
 
@@ -277,6 +278,13 @@ export class SweepPrReviewsUsecase {
         dryRun,
       });
       if (outcome.result.findings.length === 0) {
+        await this.commentNoFindings({
+          repo,
+          pullNumber,
+          prRef,
+          dryRun,
+          summary: outcome.result.summary,
+        });
         return null;
       }
       const published = await this.publishService.publish({
@@ -309,6 +317,51 @@ export class SweepPrReviewsUsecase {
         });
       }
       return null;
+    }
+  }
+
+  // 지적 0건이면 게시할 카드가 없어 PR 에 아무 흔적도 남지 않는다 — 받는 쪽에서 "깨끗하다" 와
+  // "리뷰가 돌긴 했나" 가 구분되지 않는다(실측: #389·#1027·#1030 이 리뷰 성공 후 코멘트 0건).
+  // 검토했고 고칠 것이 없었다는 사실만 코멘트로 남긴다.
+  //
+  // 같은 PR 에 반복해 달리지 않는다 — 성공한 리뷰는 SWEEP_REVIEW_LOOKBACK_DAYS 동안 SKIP 이고
+  // (judgeLatestReview), 연습 모드 회차는 아래 dryRun 가드에서 걸러 실게시 전환 시 첫 1회만
+  // 남는다. 예외는 그 lookback 을 넘겨 재리뷰되는 장수 PR 로, 지적 코멘트와 달리 이 안내에는
+  // 지문 중복 방지가 없어 30일에 한 건씩 늘어난다 — 30분 안에 merge 되는 이 레포의 PR 수명상
+  // 실사용 영향은 없다고 보고 받아들인다.
+  //
+  // 실패해도 스윕을 실패로 만들지 않는다. 리뷰 자체는 이미 SUCCEEDED 로 마감됐고, 이 코멘트는
+  // 안내일 뿐이라 여기서 throw 하면 성공한 회차가 원장에 실패로 남아 재시도 예산만 닳는다.
+  private async commentNoFindings({
+    repo,
+    pullNumber,
+    prRef,
+    dryRun,
+    summary,
+  }: {
+    repo: string;
+    pullNumber: number;
+    prRef: string;
+    dryRun: boolean;
+    summary: string;
+  }): Promise<void> {
+    // 연습 모드는 GitHub 에 아무것도 남기지 않는 것이 정의다.
+    if (dryRun) {
+      return;
+    }
+    // 게시 허용 판정(isRepoAllowed)을 여기서 다시 하지 않는다 — 스윕이 도는 레포 목록 자체가
+    // 같은 PR_REVIEW_INLINE_REPOS 에서 나오므로(allowlistRepos) 여기 닿은 레포는 이미 허용
+    // 목록 안이다. 스윕 대상과 게시 허용을 다른 키로 가르는 변경이 오면 이 지점도 함께 봐야 한다.
+    try {
+      await this.githubClient.addIssueComment({
+        repo,
+        number: pullNumber,
+        body: buildNoFindingsCommentBody(summary),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `지적 없음 코멘트 게시 실패 (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
