@@ -3,7 +3,6 @@ import {
   renderStyleFeedback,
   StyleFeedbackRun,
   toStyleFeedbackRun,
-  voiceOf,
 } from './style-feedback';
 
 const run = (...gaps: string[]): StyleFeedbackRun => ({ gaps });
@@ -108,17 +107,5 @@ describe('toStyleFeedbackRun', () => {
     expect(toStyleFeedbackRun('gaps')).toBeNull();
     expect(toStyleFeedbackRun({ styleGaps: 'gap' })).toBeNull();
     expect(toStyleFeedbackRun({ styleGaps: [1, 2] })).toBeNull();
-  });
-});
-
-describe('voiceOf', () => {
-  it('목소리 축을 꺼낸다', () => {
-    expect(voiceOf({ voice: 'personal-blog' })).toBe('personal-blog');
-  });
-
-  it('없거나 형태가 어긋나면 null', () => {
-    expect(voiceOf({})).toBeNull();
-    expect(voiceOf(null)).toBeNull();
-    expect(voiceOf({ voice: 3 })).toBeNull();
   });
 });

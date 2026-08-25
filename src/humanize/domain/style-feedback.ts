@@ -33,15 +33,6 @@ export const toStyleFeedbackRun = (
   return { gaps };
 };
 
-/** 실행 원장의 `inputSnapshot` 에서 목소리 축을 꺼낸다. */
-export const voiceOf = (inputSnapshot: unknown): string | null => {
-  if (typeof inputSnapshot !== 'object' || inputSnapshot === null) {
-    return null;
-  }
-  const voice = (inputSnapshot as { voice?: unknown }).voice;
-  return typeof voice === 'string' ? voice : null;
-};
-
 /** 이 횟수 이상 반복된 항목만 싣는다. 한 번 벗어난 것은 그 글의 사정일 수 있다. */
 export const MINIMUM_REPEAT_COUNT = 2;
 

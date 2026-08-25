@@ -24,7 +24,6 @@ import {
 import {
   renderStyleFeedback,
   toStyleFeedbackRun,
-  voiceOf,
 } from '../domain/style-feedback';
 
 /**
@@ -36,10 +35,8 @@ import {
 // 문체 되먹임은 사용자 명의 글에만 쓴다. 목표 수치가 사용자 글에서 잰 재현 대상이라,
 // 내부 보고서에 그 문체를 강요하면 목적이 뒤집힌다.
 const STYLE_FEEDBACK_VOICE = 'personal-blog';
-// 원장에서 훑을 최근 실행 수. 목소리 필터가 조회 **뒤에** 걸리므로(포트가 voice 필터를
-// 받지 않는다) 넉넉히 가져와 걸러야 개인 글 표본이 모인다.
-const STYLE_FEEDBACK_SCAN_LIMIT = 40;
-// 그중 실제로 볼 최근 편수.
+// 볼 최근 편수. 목소리 조건을 조회로 내리므로(inputSnapshotEquals) 이 수가 곧 개인 글
+// 표본 수다 — 보고서 윤문이 아무리 많이 끼어도 표본이 밀리지 않는다.
 const STYLE_FEEDBACK_RUNS = 5;
 const STYLE_FEEDBACK_DAYS = 60;
 
@@ -68,6 +65,24 @@ export interface HumanizeOptions {
 }
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
+/**
+ * 실제로 적용되는 본문. 빈 윤문 값은 원문으로 되돌린다 —
+ * `humanize-markdown.adapter.ts` 가 빈 값을 만나면 그 문단을 원문 그대로 두기 때문에,
+ * 이 규칙을 맞추지 않으면 측정 대상과 발행본이 어긋난다.
+ */
+const appliedText = (
+  fields: Record<string, string>,
+  humanized: Record<string, string>,
+): string =>
+  Object.keys(fields)
+    .map((key) => {
+      const rewritten = humanized[key];
+      return rewritten !== undefined && rewritten.trim().length > 0
+        ? rewritten
+        : fields[key];
+    })
+    .join('\n\n');
+
 @Injectable()
 export class HumanizeService {
   private readonly logger = new Logger(HumanizeService.name);
@@ -172,8 +187,11 @@ export class HumanizeService {
             // 유일한 재료다. 40문장 미만이면 판정이 무의미해 빈 배열이 온다.
             output: {
               humanizedKeys: Object.keys(humanized),
+              // 실제로 발행되는 본문을 잰다(`appliedText`). `humanized` 만 재면 모델이
+              // 비워 돌려줘 원문이 유지된 문단이 측정에서 빠져, 발행본은 40문장을 넘는데
+              // 측정본만 임계 미만이 되거나 원문에 있던 갭을 놓친다.
               styleGaps: findKoreanStyleGaps(
-                measureKoreanStyle(Object.values(humanized).join('\n\n')),
+                measureKoreanStyle(appliedText(fields, humanized)),
               ),
             },
           };
@@ -199,16 +217,17 @@ export class HumanizeService {
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.HUMANIZER,
+        // 조회 단계에서 목소리를 거른다. 애플리케이션에서 거르면 take 가 먼저 걸려,
+        // 보고서 윤문이 상한을 채우는 순간 개인 글 이력이 있어도 표본이 빈다.
+        inputSnapshotEquals: { path: ['voice'], value: STYLE_FEEDBACK_VOICE },
         sinceDays: STYLE_FEEDBACK_DAYS,
-        limit: STYLE_FEEDBACK_SCAN_LIMIT,
+        limit: STYLE_FEEDBACK_RUNS,
       });
       const samples = runs
-        .filter((run) => voiceOf(run.inputSnapshot) === STYLE_FEEDBACK_VOICE)
         .map((run) => toStyleFeedbackRun(run.output))
         .filter(
           (sample): sample is NonNullable<typeof sample> => sample !== null,
-        )
-        .slice(0, STYLE_FEEDBACK_RUNS);
+        );
       const block = renderStyleFeedback(samples);
       if (block.length > 0) {
         this.logger.log(`문체 되먹임 주입 — 최근 ${samples.length}편 기준`);

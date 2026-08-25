@@ -41,6 +41,7 @@ import {
   FailedRunSnapshot,
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
+  InputSnapshotEquals,
   LatestSweepReview,
   LedgerRunRow,
   PmContextStats,
@@ -199,11 +200,13 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
   async findRecentSucceededRuns({
     agentType,
     slackUserId,
+    inputSnapshotEquals,
     sinceDays,
     limit,
   }: {
     agentType: AgentType;
     slackUserId?: string;
+    inputSnapshotEquals?: InputSnapshotEquals;
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
@@ -218,6 +221,12 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       where.inputSnapshot = {
         path: ['slackUserId'],
         equals: slackUserId,
+      };
+    }
+    if (inputSnapshotEquals) {
+      where.inputSnapshot = {
+        path: inputSnapshotEquals.path,
+        equals: inputSnapshotEquals.value,
       };
     }
 
