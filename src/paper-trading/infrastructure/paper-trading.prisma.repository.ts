@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { RecommendationScorecardRow } from '../../agent/paper-recommend/domain/prompt/recommendation-scorecard';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -294,6 +295,11 @@ const isUniqueConstraintError = (error: unknown): boolean => {
   return error.code === 'P2002';
 };
 
+// Prisma Decimal 은 그대로 두면 프롬프트에 [object Object] 로 찍힌다. 결측은 null 로 보존해
+// 렌더 쪽이 칸을 비울 수 있게 한다 — 0 으로 채우면 지수 결손 회차가 "초과수익 0%" 로 읽힌다.
+const toRateOrNull = (value: Prisma.Decimal | null): number | null =>
+  value === null ? null : Number(value.toString());
+
 @Injectable()
 export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
   constructor(private readonly prisma: PrismaService) {}
@@ -509,6 +515,39 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
   // 회차가 생기는데, 과거 기준일은 저장 자체를 건너뛰므로(usecase 의 `persisted` 조건) 그날
   // 구간 성적은 영구 결손이 된다. 밴드를 바꾼 전후를 갈라 보려고 만든 표라, 구멍 난 날이 곧
   // 판정할 수 없는 날이다.
+  /**
+   * 이 전략의 최근 채점 회차. 다음 추천 프롬프트에 실을 성적표 재료다.
+   *
+   * 계좌가 아니라 **전략**으로 묶는다 — 프롬프트를 받는 모델이 한 전략의 판단자이고,
+   * 같은 전략을 여러 계좌가 돌면 성적은 그 전략의 것으로 합쳐 읽는 편이 맞다.
+   */
+  async findRecentRecommendationScores(input: {
+    strategy: string;
+    limit: number;
+  }): Promise<RecommendationScorecardRow[]> {
+    const rows = await this.prisma.recommendationScore.findMany({
+      where: { strategy: input.strategy },
+      orderBy: { asOf: 'desc' },
+      take: input.limit,
+      select: {
+        asOf: true,
+        closedCount: true,
+        hitCount: true,
+        meanReturnRate: true,
+        meanExcessReturnRate: true,
+        maximumLoss: true,
+      },
+    });
+    return rows.map((row) => ({
+      asOf: row.asOf,
+      closedCount: row.closedCount,
+      hitCount: row.hitCount,
+      meanReturnRate: toRateOrNull(row.meanReturnRate),
+      meanExcessReturnRate: toRateOrNull(row.meanExcessReturnRate),
+      maximumLoss: toRateOrNull(row.maximumLoss),
+    }));
+  }
+
   async saveRecommendationScores(
     inputs: SaveRecommendationScoreInput[],
     periodInputs: SaveRecommendationScorePeriodInput[] = [],
