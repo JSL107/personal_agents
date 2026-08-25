@@ -44,11 +44,14 @@ export class YahooFinanceMarketDataClient implements MarketDataPort {
     days: number,
     options?: FetchDailyBarsOptions,
   ): Promise<DailyBar[]> {
+    if (options?.before !== undefined) {
+      // 커서를 조용히 무시하면 호출자는 과거 페이지를 받은 줄 알고 같은 봉을 반복 저장한다.
+      throw new Error('야후 파이낸스는 과거 커서 조회를 지원하지 않습니다.');
+    }
     // Yahoo 응답은 close(미조정)와 adjclose(조정)를 함께 주고, 매퍼가 그 둘을
     // DailyBar.close·adjClose 에 각각 담는다(`yahoo-finance.mapper.ts:104-108`).
     // 즉 이 경로에서 조정 여부는 요청 파라미터가 아니라 **어느 필드를 읽느냐**로
     // 결정되므로, 이 옵션에는 적용할 대상이 없다.
-    void options;
     const period1 = new Date();
     period1.setDate(
       period1.getDate() -

@@ -39,6 +39,7 @@ export interface UniverseTicker {
 export interface StoredBarStat {
   barCount: number;
   latestTradeDate: string;
+  oldestTradeDate: string;
 }
 
 @Injectable()
@@ -292,13 +293,15 @@ export class MarketDataPrismaRepository {
       by: ['tickerId'],
       _count: { _all: true },
       _max: { tradeDate: true },
+      _min: { tradeDate: true },
     });
     const result = new Map<number, StoredBarStat>();
     for (const stat of stats) {
-      if (stat._max.tradeDate) {
+      if (stat._max.tradeDate && stat._min.tradeDate) {
         result.set(stat.tickerId, {
           barCount: stat._count._all,
           latestTradeDate: stat._max.tradeDate.toISOString().slice(0, 10),
+          oldestTradeDate: stat._min.tradeDate.toISOString().slice(0, 10),
         });
       }
     }

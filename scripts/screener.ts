@@ -3,11 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { PrismaModule } from '../src/prisma/prisma.module';
+import { BackfillUniversePricesUsecase } from '../src/screener/application/backfill-universe-prices.usecase';
 import { CollectBenchmarkClosesUsecase } from '../src/screener/application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from '../src/screener/application/collect-universe-prices.usecase';
 import { ScoreScreeningOutcomesUsecase } from '../src/screener/application/score-screening-outcomes.usecase';
 import { ScreenUniverseUsecase } from '../src/screener/application/screen-universe.usecase';
 import { SyncUniverseUsecase } from '../src/screener/application/sync-universe.usecase';
+import { formatBackfillSummary } from '../src/screener/infrastructure/backfill-summary.formatter';
 import { formatPriceCollectionFailures } from '../src/screener/infrastructure/price-collection-failure.formatter';
 import { formatPriceCollectionSummary } from '../src/screener/infrastructure/price-collection-summary.formatter';
 import { formatScreenResult } from '../src/screener/infrastructure/screen-result.formatter';
@@ -70,6 +72,23 @@ const main = async (): Promise<void> => {
       console.log(
         `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.`,
       );
+      return;
+    }
+
+    if (parsed.subcommand === 'backfill-prices') {
+      const result = await application
+        .get(BackfillUniversePricesUsecase)
+        .execute(parsed.options);
+      console.log(formatBackfillSummary(result));
+      // 전종목 실행은 한 시간 가까이 걸린다. 요약만 내고 상세를 버리면 어느 종목이 왜
+      // 누락됐는지 알 길이 없어 다시 받을 대상을 특정할 수 없다.
+      const backfillFailureDetail = formatPriceCollectionFailures(
+        result.failed,
+        result.failures,
+      );
+      if (backfillFailureDetail) {
+        console.log(backfillFailureDetail);
+      }
       return;
     }
 
