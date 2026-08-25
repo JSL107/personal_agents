@@ -42,6 +42,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     findAccountByName: jest.fn(),
     findPositionsWithTicker: jest.fn(),
     findLatestValuation: jest.fn(),
+    findLatestRecommendationScore: jest.fn(),
     saveRecommendationAtomically: jest.fn(),
   } as unknown as jest.Mocked<PaperTradingPrismaRepository>;
   const modelRouter = {
@@ -81,6 +82,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     });
     repository.findPositionsWithTicker.mockResolvedValue([]);
     repository.findLatestValuation.mockResolvedValue(null);
+    repository.findLatestRecommendationScore.mockResolvedValue(null);
     screenUniverse.execute.mockImplementation(async ({ strategy }) => ({
       strategy,
       ruleVersion: 2,
@@ -1107,5 +1109,63 @@ describe('GeneratePaperRecommendationUsecase', () => {
         reason: '추세 훼손',
       },
     ]);
+  });
+
+  it('최신 누적 성적을 prompt 에 실어 모델이 자기 성적을 보게 한다', async () => {
+    repository.findLatestRecommendationScore.mockResolvedValue({
+      asOf: new Date('2026-08-21'),
+      closedCount: 10,
+      hitCount: 3,
+      meanReturnRate: -0.0393,
+      meanExcessReturnRate: -0.0206,
+      maximumLoss: -0.1943,
+    });
+
+    await usecase.execute({ decidedAt });
+
+    const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('추천 성적');
+    expect(prompt).toContain('청산 10건 중 적중 3건');
+    expect(prompt).toContain('지수를 따라가지 못했다');
+    expect(prompt).toContain('채울 의무가 없다');
+  });
+
+  it('전략별로 그 전략의 성적만 조회한다', async () => {
+    await usecase.execute({ decidedAt });
+
+    const strategies = repository.findLatestRecommendationScore.mock.calls.map(
+      ([input]: [{ strategy: string }]) => input.strategy,
+    );
+    expect(new Set(strategies)).toEqual(new Set(['LONG_TERM', 'SWING']));
+  });
+
+  it('기준 시점 이후 성적은 조회 조건에서 배제한다 — look-ahead 차단', async () => {
+    await usecase.execute({ decidedAt });
+
+    const [input] = repository.findLatestRecommendationScore.mock.calls[0] as [
+      { asOfMax: Date },
+    ];
+    expect(input.asOfMax).toEqual(decidedAt);
+  });
+
+  it('성적 조회가 실패해도 추천은 계속된다 — best-effort', async () => {
+    repository.findLatestRecommendationScore.mockRejectedValue(
+      new Error('db down'),
+    );
+
+    const result = await usecase.execute({ decidedAt });
+
+    expect(result.completed.length).toBeGreaterThan(0);
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
+      '추천 성적',
+    );
+  });
+
+  it('채점 이력이 없으면 prompt 가 늘어나지 않는다', async () => {
+    await usecase.execute({ decidedAt });
+
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
+      '추천 성적',
+    );
   });
 });
