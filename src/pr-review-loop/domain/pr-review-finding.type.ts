@@ -73,3 +73,14 @@ export interface MarkPostedInput {
   githubCommentId: string | null;
   githubThreadNodeId: string | null;
 }
+
+/**
+ * 기각된 지적 한 건의 요약. 규약 되먹임이 읽는 최소 필드다.
+ *
+ * 저장소 계약이 소비자의 프롬프트 표현에 종속되지 않도록 데이터 쪽이 소유한다.
+ */
+export interface RejectedFindingSummary {
+  category: string;
+  rejectReason: string;
+  decidedAt: Date;
+}

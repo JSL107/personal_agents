@@ -53,6 +53,9 @@ export class TossMarketDataClient implements MarketDataPort {
       count: String(count),
       adjusted: String(adjusted),
     });
+    if (options?.before) {
+      query.set('before', options.before);
+    }
     let response: unknown;
     try {
       response = await this.tossApi.requestJson(

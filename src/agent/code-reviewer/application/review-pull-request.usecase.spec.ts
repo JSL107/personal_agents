@@ -13,6 +13,7 @@ import { PublishFindingsService } from '../../../pr-review-loop/application/publ
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { PullRequestReview } from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
+import { MIN_REASON_LENGTH } from '../domain/prompt/learned-conventions';
 import {
   buildReviewPrompt,
   ReviewPullRequestUsecase,
@@ -69,10 +70,6 @@ describe('ReviewPullRequestUsecase', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
     };
-    const outcomeRepoMock = {
-      save: jest.fn(),
-      findRecentRejected: jest.fn().mockResolvedValue([]),
-    };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
 
@@ -80,7 +77,6 @@ describe('ReviewPullRequestUsecase', () => {
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       githubClient,
-      outcomeRepoMock as any,
       undefined,
       { get: configGet } as unknown as ConfigService,
       { publish: publishFindings } as unknown as PublishFindingsService,
@@ -253,15 +249,11 @@ describe('ReviewPullRequestUsecase', () => {
   });
 
   it('publisher 미주입 상태에서 publish를 요청해도 review outcome을 유지한다', async () => {
-    const outcomeRepoMock = {
-      save: jest.fn(),
-      findRecentRejected: jest.fn().mockResolvedValue([]),
-    };
     const usecaseWithoutPublisher = new ReviewPullRequestUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       githubClient,
-      outcomeRepoMock as never,
+      undefined,
     );
 
     const result = await usecaseWithoutPublisher.execute({
@@ -468,16 +460,12 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
     };
-    const outcomeRepoMock = {
-      save: jest.fn(),
-      findRecentRejected: jest.fn().mockResolvedValue([]),
-    };
 
     usecase = new ReviewPullRequestUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       githubClient,
-      outcomeRepoMock as any,
+      undefined,
     );
 
     githubClient.getPullRequest.mockResolvedValue({
@@ -672,8 +660,7 @@ describe('buildReviewPrompt', () => {
     expect(text).toContain('잘려서 전달됨');
   });
 });
-
-describe('ReviewPullRequestUsecase × episodic negative examples', () => {
+describe('ReviewPullRequestUsecase × 학습 규약', () => {
   const validReview: PullRequestReview = {
     summary: 's',
     riskLevel: 'low',
@@ -685,12 +672,19 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
     findings: [],
   };
 
+  // 실제 기각 이유는 판단 + 근거라 길다. 한 줄 요약은 규약 재료에서 빠지므로 하한을 넘긴다.
+  const rejection = (category: string, reason: string) => ({
+    category,
+    rejectReason: reason.padEnd(MIN_REASON_LENGTH, '.'),
+    decidedAt: new Date('2026-08-20T00:00:00Z'),
+  });
+
   const makeDeps = () => {
     const modelRouter = {
       route: jest.fn().mockResolvedValue({
         text: JSON.stringify(validReview),
-        modelUsed: 'claude-cli',
-        provider: ModelProviderName.CLAUDE,
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
       }),
     };
     const agentRunServiceExecute = jest.fn(async (input) => {
@@ -707,7 +701,7 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
         number: 1,
         title: 'feat: 결제 PG 연동',
         body: '',
-        repo: 'foo/bar',
+        repo: 'JSL107/personal_agents',
         url: 'u',
         baseRef: 'main',
         headRef: 'h',
@@ -736,106 +730,146 @@ describe('ReviewPullRequestUsecase × episodic negative examples', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
     };
-    const outcomeRepo = {
-      save: jest.fn(),
-      findRecentRejected: jest.fn().mockResolvedValue([]),
+    const findingRepository = {
+      findRejectionsForConventions: jest.fn().mockResolvedValue([]),
     };
-    return { modelRouter, agentRunServiceExecute, githubClient, outcomeRepo };
+    return {
+      modelRouter,
+      agentRunServiceExecute,
+      githubClient,
+      findingRepository,
+    };
   };
 
-  it('episodic 주입 시 의미 유사 reject 를 negative example 로 주입', async () => {
-    const deps = makeDeps();
-    const episodic = {
-      record: jest.fn(),
-      searchRelevant: jest.fn().mockResolvedValue([
-        {
-          id: 1,
-          agentRunId: 9,
-          agentType: 'CODE_REVIEWER',
-          content: 'any 쓰지 마세요',
-          score: 0.9,
-          occurredAt: new Date(),
-        },
-      ]),
-    };
-    const usecase = new ReviewPullRequestUsecase(
+  const buildUsecase = (
+    deps: ReturnType<typeof makeDeps>,
+    withRepository = true,
+  ): ReviewPullRequestUsecase =>
+    new ReviewPullRequestUsecase(
       deps.modelRouter as never,
       { execute: deps.agentRunServiceExecute } as never,
       deps.githubClient as never,
-      deps.outcomeRepo as never,
-      episodic as never,
+      withRepository ? (deps.findingRepository as never) : undefined,
     );
 
-    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+  const promptOf = (deps: ReturnType<typeof makeDeps>): string =>
+    deps.modelRouter.route.mock.calls[0][0].request.prompt;
 
-    expect(episodic.searchRelevant).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: 'pr_review',
-        agentType: 'CODE_REVIEWER',
-        limit: 2,
-      }),
-    );
-    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
-    expect(prompt).toContain('과거에 무시한 리뷰 패턴');
-    expect(prompt).toContain('any 쓰지 마세요');
-    expect(deps.outcomeRepo.findRecentRejected).not.toHaveBeenCalled();
+  it('반복 기각된 카테고리를 규약으로 실어 보낸다', async () => {
+    const deps = makeDeps();
+    deps.findingRepository.findRejectionsForConventions.mockResolvedValue([
+      rejection('ARCHITECTURE', '이 레포는 port 를 외부 I/O 경계에만 씁니다'),
+      rejection('ARCHITECTURE', 'DB 접근은 직접 주입이 이 레포 관례입니다'),
+    ]);
+
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
+
+    const prompt = promptOf(deps);
+    expect(prompt).toContain('기각된 지적과 그 이유');
+    expect(prompt).toContain('이 레포는 port 를 외부 I/O 경계에만 씁니다');
   });
 
-  it('episodic 미주입 시 recency(findRecentRejected) fallback', async () => {
+  it('임계 미달이면 프롬프트가 늘어나지 않는다', async () => {
     const deps = makeDeps();
-    deps.outcomeRepo.findRecentRejected.mockResolvedValue([
-      {
-        id: 1,
-        agentRunId: 9,
-        slackUserId: 'U1',
-        accepted: false,
-        comment: 'console.log 금지',
-        createdAt: new Date(),
-      },
+    deps.findingRepository.findRejectionsForConventions.mockResolvedValue([
+      rejection('ARCHITECTURE', '한 번뿐인 기각'),
     ]);
-    const usecase = new ReviewPullRequestUsecase(
-      deps.modelRouter as never,
-      { execute: deps.agentRunServiceExecute } as never,
-      deps.githubClient as never,
-      deps.outcomeRepo as never,
-      undefined,
-    );
 
-    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
-    expect(deps.outcomeRepo.findRecentRejected).toHaveBeenCalled();
-    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
-    expect(prompt).toContain('console.log 금지');
+    expect(promptOf(deps)).not.toContain('기각된 지적과 그 이유');
   });
 
-  it('episodic 검색 throw 시 recency fallback (best-effort)', async () => {
+  it('이 레포의 기각만, 90일 창 안에서 조회한다', async () => {
     const deps = makeDeps();
-    deps.outcomeRepo.findRecentRejected.mockResolvedValue([
-      {
-        id: 1,
-        agentRunId: 9,
-        slackUserId: 'U1',
-        accepted: false,
-        comment: 'magic number 금지',
-        createdAt: new Date(),
-      },
-    ]);
-    const episodic = {
-      record: jest.fn(),
-      searchRelevant: jest.fn().mockRejectedValue(new Error('embed down')),
-    };
-    const usecase = new ReviewPullRequestUsecase(
-      deps.modelRouter as never,
-      { execute: deps.agentRunServiceExecute } as never,
-      deps.githubClient as never,
-      deps.outcomeRepo as never,
-      episodic as never,
+
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
+
+    const [input] =
+      deps.findingRepository.findRejectionsForConventions.mock.calls[0];
+    expect(input.repo).toBe('JSL107/personal_agents');
+    const windowDays = (Date.now() - input.since.getTime()) / 86_400_000;
+    expect(windowDays).toBeGreaterThan(89);
+    expect(windowDays).toBeLessThan(91);
+  });
+
+  it('카드 저장소가 없으면 규약 없이 리뷰한다 — 미주입 회귀 0', async () => {
+    const deps = makeDeps();
+
+    const outcome = await buildUsecase(deps, false).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.summary).toBe('s');
+    expect(promptOf(deps)).not.toContain('기각된 지적과 그 이유');
+  });
+
+  it('규약 조회가 실패해도 리뷰는 계속된다 — best-effort', async () => {
+    const deps = makeDeps();
+    deps.findingRepository.findRejectionsForConventions.mockRejectedValue(
+      new Error('db down'),
     );
 
-    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    const outcome = await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
-    expect(deps.outcomeRepo.findRecentRejected).toHaveBeenCalled();
-    const prompt = deps.modelRouter.route.mock.calls[0][0].request.prompt;
-    expect(prompt).toContain('magic number 금지');
+    expect(outcome.result.summary).toBe('s');
+    expect(promptOf(deps)).not.toContain('기각된 지적과 그 이유');
+  });
+
+  it('예시로 덧붙이던 옛 되먹임 문구는 더 이상 싣지 않는다', async () => {
+    const deps = makeDeps();
+    deps.findingRepository.findRejectionsForConventions.mockResolvedValue([
+      rejection('TEST', '이 레포는 배선 테스트를 요구하지 않습니다'),
+      rejection('TEST', 'controller 테스트는 대상 밖입니다'),
+    ]);
+
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
+
+    expect(promptOf(deps)).not.toContain('과거에 무시한 리뷰 패턴');
+  });
+  it('owner 저장소가 아니면 조회조차 하지 않는다 — 남이 쓴 기각 이유가 규약이 되지 않게', async () => {
+    const deps = makeDeps();
+    deps.githubClient.getPullRequest.mockResolvedValue({
+      number: 1,
+      title: 'feat: 결제 PG 연동',
+      body: '',
+      repo: 'schoolbell-e/sbe-api-v5',
+      url: 'u',
+      baseRef: 'main',
+      headRef: 'h',
+      authorLogin: 'someone-else',
+      mergedAt: null,
+      changedFiles: ['src/payment.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'sha',
+    });
+
+    await buildUsecase(deps).execute({
+      prRef: 'schoolbell-e/sbe-api-v5#1',
+      slackUserId: 'U1',
+    });
+
+    expect(
+      deps.findingRepository.findRejectionsForConventions,
+    ).not.toHaveBeenCalled();
   });
 });
