@@ -1,3 +1,4 @@
+import { BackfillPricesOptions } from '../application/backfill-universe-prices.usecase';
 import { CollectBenchmarkOptions } from '../application/collect-benchmark-closes.usecase';
 import { CollectPricesOptions } from '../application/collect-universe-prices.usecase';
 import { ScreenUniverseOptions } from '../application/screen-universe.usecase';
@@ -6,6 +7,7 @@ export const SCREENER_CLI_USAGE =
   '사용법:\n' +
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
+  '  pnpm exec ts-node scripts/screener.ts backfill-prices [--years <연수>] [--limit <종목수>] [--recheck]\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]\n' +
   '  pnpm exec ts-node scripts/screener.ts score-outcomes';
@@ -18,6 +20,11 @@ export interface SyncUniverseArguments {
 export interface CollectPricesArguments {
   subcommand: 'collect-prices';
   options: CollectPricesOptions;
+}
+
+export interface BackfillPricesArguments {
+  subcommand: 'backfill-prices';
+  options: BackfillPricesOptions;
 }
 
 export interface ScreenArguments {
@@ -39,6 +46,7 @@ export interface ScoreOutcomesArguments {
 export type ScreenerCliArguments =
   | SyncUniverseArguments
   | CollectPricesArguments
+  | BackfillPricesArguments
   | CollectBenchmarkArguments
   | ScreenArguments
   | ScoreOutcomesArguments;
@@ -70,6 +78,38 @@ const parseCollectPricesOptions = (
     } else {
       options.limit = parsed;
     }
+  }
+  return options;
+};
+
+const parseBackfillPricesOptions = (
+  optionValues: string[],
+): BackfillPricesOptions => {
+  const options: BackfillPricesOptions = {};
+  let index = 0;
+  while (index < optionValues.length) {
+    const key = optionValues[index];
+    // --recheck 는 값을 받지 않는 플래그라 다음 토큰을 건너뛰지 않는다(--record 와 같은 꼴).
+    if (key === '--recheck') {
+      options.recheck = true;
+      index += 1;
+      continue;
+    }
+    const value = optionValues[index + 1];
+    if (
+      (key !== '--years' && key !== '--limit') ||
+      value === undefined ||
+      value.startsWith('--')
+    ) {
+      throw new Error(SCREENER_CLI_USAGE);
+    }
+    const parsed = parsePositiveInteger(value, key.slice(2));
+    if (key === '--years') {
+      options.years = parsed;
+    } else {
+      options.limit = parsed;
+    }
+    index += 2;
   }
   return options;
 };
@@ -137,6 +177,12 @@ export const parseScreenerCliArguments = (
     return {
       subcommand,
       options: parseCollectPricesOptions(optionValues),
+    };
+  }
+  if (subcommand === 'backfill-prices') {
+    return {
+      subcommand,
+      options: parseBackfillPricesOptions(optionValues),
     };
   }
   if (subcommand === 'collect-benchmark') {

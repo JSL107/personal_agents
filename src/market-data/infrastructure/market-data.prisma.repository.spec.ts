@@ -178,24 +178,35 @@ describe('MarketDataPrismaRepository', () => {
     });
   });
 
-  it('저장 봉 수와 최신 거래일을 한 번의 groupBy로 반환한다', async () => {
+  it('저장 봉 수와 최신·최초 거래일을 한 번의 groupBy로 반환한다', async () => {
     const groupBy = jest.fn().mockResolvedValue([
       {
         tickerId: 3,
         _count: { _all: 4 },
         _max: { tradeDate: new Date('2026-08-11T00:00:00.000Z') },
+        _min: { tradeDate: new Date('2026-08-06T00:00:00.000Z') },
       },
     ]);
     const prisma = { dailyPrice: { groupBy } } as unknown as PrismaService;
     const repository = new MarketDataPrismaRepository(prisma);
 
     await expect(repository.findStoredBarStats()).resolves.toEqual(
-      new Map([[3, { barCount: 4, latestTradeDate: '2026-08-11' }]]),
+      new Map([
+        [
+          3,
+          {
+            barCount: 4,
+            latestTradeDate: '2026-08-11',
+            oldestTradeDate: '2026-08-06',
+          },
+        ],
+      ]),
     );
     expect(groupBy).toHaveBeenCalledWith({
       by: ['tickerId'],
       _count: { _all: true },
       _max: { tradeDate: true },
+      _min: { tradeDate: true },
     });
   });
 

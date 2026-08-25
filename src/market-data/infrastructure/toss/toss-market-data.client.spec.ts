@@ -90,6 +90,20 @@ describe('TossMarketDataClient', () => {
     expect(path).toContain('adjusted=false');
   });
 
+  it('과거 조회 커서를 인코딩해 쿼리에 넣는다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    tossApi.requestJson.mockResolvedValue(CANDLES_RESPONSE);
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    await client.fetchDailyBars('005930', 200, {
+      before: '2025-10-21T00:00:00.000+09:00',
+    });
+
+    const [, path] = tossApi.requestJson.mock.calls[0];
+    expect(path).toContain('before=2025-10-21T00%3A00%3A00.000%2B09%3A00');
+  });
+
   it('토스 HTTP 429 오류를 시세 조회 rate limit 도메인 오류로 변환한다', async () => {
     const tossApi = createTossApi();
     const yahooMarketData = createYahooMarketData();
