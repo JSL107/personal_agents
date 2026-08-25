@@ -7,6 +7,7 @@ import { ModelProviderName } from '../../../model-router/domain/model-router.typ
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { PaperTradingPrismaRepository } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { ScreenUniverseUsecase } from '../../../screener/application/screen-universe.usecase';
+import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
   GeneratePaperRecommendationUsecase,
   PaperRecommendationSuccess,
@@ -51,6 +52,11 @@ describe('GeneratePaperRecommendationUsecase', () => {
   const agentRunService = {
     execute: jest.fn(),
   } as unknown as jest.Mocked<AgentRunService>;
+  const strategyParameters = {
+    execute: jest.fn(),
+  } as unknown as jest.Mocked<ResolveStrategyParametersUsecase>;
+  // 실제 시스템 프롬프트는 run 안의 갱신으로만 남으므로, 그 인자를 볼 수 있게 참조를 둔다.
+  const updateInputSnapshot = jest.fn();
 
   let usecase: GeneratePaperRecommendationUsecase;
 
@@ -62,7 +68,14 @@ describe('GeneratePaperRecommendationUsecase', () => {
       repository,
       modelRouter,
       agentRunService,
+      strategyParameters,
     );
+    // 활성 행이 코드 상수와 같은 상태가 기본이다 — 이 PR 은 값을 옮긴 것이지 바꾼 것이 아니다.
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
+    });
     repository.findAccountByName.mockImplementation(async (accountName) => {
       const opened = openPaperAccount.execute.mock.calls.some(
         ([command]) => command.accountName === accountName,
@@ -115,7 +128,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     agentRunService.execute.mockImplementation(async (input) => {
       const execution = await input.run({
         agentRunId: 99,
-        updateInputSnapshot: jest.fn(),
+        updateInputSnapshot,
       });
       return {
         result: execution.result,
@@ -184,12 +197,14 @@ describe('GeneratePaperRecommendationUsecase', () => {
       limit: 20,
       includeTickerIds: [],
       record: { agentRunId: expect.any(Number) },
+      minimumTurnover60: 500_000_000,
     });
     expect(screenUniverse.execute).toHaveBeenNthCalledWith(2, {
       strategy: 'SWING',
       limit: 20,
       includeTickerIds: [],
       record: { agentRunId: expect.any(Number) },
+      minimumTurnover60: 500_000_000,
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(2);
   });
@@ -197,6 +212,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
   it('prompt와 ruleVersion을 strategy AgentRun inputSnapshot에 남긴다', async () => {
     await usecase.execute({ decidedAt });
 
+    // 초기 스냅샷은 파라미터를 해소하기 전이라 이 회차의 시스템 프롬프트를 아직 모른다.
+    // prompt·ruleVersion 과 같은 자리이고, 실제 값은 run 안의 갱신으로 채워진다.
     expect(agentRunService.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         agentType: 'PAPER_RECOMMEND',
@@ -204,8 +221,15 @@ describe('GeneratePaperRecommendationUsecase', () => {
         inputSnapshot: expect.objectContaining({
           strategy: 'LONG_TERM',
           decidedAt: decidedAt.toISOString(),
-          systemPrompt: expect.stringContaining('한국 주식 모의투자 추천'),
+          systemPrompt: null,
         }),
+      }),
+    );
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategy: 'LONG_TERM',
+        systemPrompt: expect.stringContaining('한국 주식 모의투자 추천'),
+        ruleVersion: expect.any(Number),
       }),
     );
   });
@@ -295,6 +319,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       limit: 20,
       includeTickerIds: [81],
       record: { agentRunId: expect.any(Number) },
+      minimumTurnover60: 500_000_000,
     });
   });
 
