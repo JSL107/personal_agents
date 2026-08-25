@@ -56,6 +56,20 @@ export const formatPullRequestReview = ({
     );
   }
 
+  // 지적이 하나도 없으면 섹션이 통째로 빠져 요약만 남는다 — "리뷰가 잘렸나"로 읽히므로
+  // 지적 없음을 명시한다.
+  if (
+    review.mustFix.length === 0 &&
+    review.niceToHave.length === 0 &&
+    review.missingTests.length === 0 &&
+    review.reviewCommentDrafts.length === 0
+  ) {
+    lines.push(
+      '',
+      '*지적 사항 없음* — 이번 diff 에서 고칠 것을 찾지 못했습니다.',
+    );
+  }
+
   if (review.reviewCommentDrafts.length > 0) {
     lines.push('', '*리뷰 코멘트 초안*');
     for (const draft of review.reviewCommentDrafts) {
