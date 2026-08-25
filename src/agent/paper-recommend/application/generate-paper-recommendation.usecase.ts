@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
@@ -31,8 +31,13 @@ import {
   buildPaperRecommendationPrompt,
   PAPER_RECOMMEND_SYSTEM_PROMPT,
 } from '../domain/prompt/paper-recommend-system.prompt';
+import { renderRecommendationScorecard } from '../domain/prompt/recommendation-scorecard';
 
 const PAPER_ACCOUNT_SEED_AMOUNT = '10000000';
+
+// 프롬프트에 실을 채점 회차 수. 회차가 주 1회라 3이면 최근 3주다 — 더 늘리면 밴드를 바꾸기
+// 전 성적까지 섞여 지금 규칙의 성적으로 읽히지 않는다.
+const SCORECARD_ROUNDS = 3;
 const DEFAULT_STRATEGIES: PaperRecommendationStrategy[] = [
   'LONG_TERM',
   'SWING',
@@ -98,6 +103,8 @@ interface LockedRecommendationResult {
 
 @Injectable()
 export class GeneratePaperRecommendationUsecase {
+  private readonly logger = new Logger(GeneratePaperRecommendationUsecase.name);
+
   constructor(
     private readonly screenUniverseUsecase: ScreenUniverseUsecase,
     private readonly openPaperAccountUsecase: OpenPaperAccountUsecase,
@@ -178,23 +185,25 @@ export class GeneratePaperRecommendationUsecase {
         const indicatorsByTickerId = new Map(
           indicatorSources.map((stock) => [stock.tickerId, stock.indicators]),
         );
-        const prompt = buildPaperRecommendationPrompt({
-          strategy,
-          cashBalance: Number(account.cashBalance.toString()),
-          accountValuation,
-          positions: positions.map((position) => ({
-            code: position.ticker.code,
-            name: position.ticker.name,
-            quantity: Number(position.quantity.toString()),
-            indicators: indicatorsByCode.get(position.ticker.code) ?? null,
-          })),
-          candidates: screen.stocks.map((stock) => ({
-            code: stock.code,
-            name: stock.name,
-            score: stock.score,
-            indicators: stock.indicators,
-          })),
-        });
+        const scorecard = await this.buildScorecard(strategy);
+        const prompt =
+          buildPaperRecommendationPrompt({
+            strategy,
+            cashBalance: Number(account.cashBalance.toString()),
+            accountValuation,
+            positions: positions.map((position) => ({
+              code: position.ticker.code,
+              name: position.ticker.name,
+              quantity: Number(position.quantity.toString()),
+              indicators: indicatorsByCode.get(position.ticker.code) ?? null,
+            })),
+            candidates: screen.stocks.map((stock) => ({
+              code: stock.code,
+              name: stock.name,
+              score: stock.score,
+              indicators: stock.indicators,
+            })),
+          }) + scorecard;
         await updateInputSnapshot({
           strategy,
           decidedAt: decidedAt.toISOString(),
@@ -520,6 +529,33 @@ export class GeneratePaperRecommendationUsecase {
       ruleVersion: screen.ruleVersion,
       agentRunId,
     }));
+  }
+
+  /**
+   * 지난 회차 성적을 프롬프트 블록으로 만든다. 조회 실패는 성적 없이 진행(best-effort) —
+   * 되먹임이 없다고 추천 자체를 막으면 하루치 회차가 통째로 사라진다.
+   */
+  private async buildScorecard(
+    strategy: PaperRecommendationStrategy,
+  ): Promise<string> {
+    try {
+      const rows = await this.repository.findRecentRecommendationScores({
+        strategy,
+        limit: SCORECARD_ROUNDS,
+      });
+      const block = renderRecommendationScorecard(rows);
+      if (block.length > 0) {
+        this.logger.log(
+          `추천 성적표 주입 (${strategy}): ${rows.length}회차 · 청산 ${rows.reduce((sum, row) => sum + row.closedCount, 0)}건`,
+        );
+      }
+      return block;
+    } catch (error) {
+      this.logger.warn(
+        `추천 성적표 조회 실패, 성적 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return '';
+    }
   }
 }
 
