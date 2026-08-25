@@ -256,4 +256,88 @@ describe('content preservation', () => {
     );
     expect(violations).toHaveLength(2);
   });
+
+  it.each([
+    ['음수 소수', '-3.2', '3.2', '3.2', '-3.2'],
+    ['음수 백분율', '-3%', '3%', '3%', '-3%'],
+    ['선행 소수점', '.5', '5', '5', '.5'],
+    ['통화 기호', '$100', '100', '100', '$100'],
+    ['양수 부호', '+3', '3', '3', '+3'],
+    ['원화 기호', '₩100', '100', '100', '₩100'],
+    ['유로 기호', '€100', '100', '100', '€100'],
+    ['파운드 기호', '£100', '100', '100', '£100'],
+  ])(
+    '%s 표기가 바뀌면 값 변경으로 롤백한다',
+    (_, original, rewritten, injected, lost) => {
+      const violations = findPreservationViolations(original, rewritten);
+
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          { kind: 'number', token: injected, direction: 'injected' },
+          { kind: 'number', token: lost, direction: 'lost' },
+        ]),
+      );
+      expect(violations).toHaveLength(2);
+      expect(shouldRollbackField(violations)).toBe(true);
+    },
+  );
+
+  it('날짜 하이픈은 음수 부호로 해석하지 않고 동일하면 통과한다', () => {
+    const violations = findPreservationViolations(
+      '기준일은 2026-08-25입니다.',
+      '기준일은 2026-08-25입니다.',
+    );
+
+    expect(violations).toEqual([]);
+    expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('날짜 일부가 바뀌면 하이픈 없는 숫자 토큰으로 진단한다', () => {
+    const violations = findPreservationViolations(
+      '기준일은 2026-08-25입니다.',
+      '기준일은 2026-09-25입니다.',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'number', token: '09', direction: 'injected' },
+        { kind: 'number', token: '08', direction: 'lost' },
+      ]),
+    );
+    expect(violations).toHaveLength(2);
+  });
+
+  it('음수 소수가 그대로면 같은 숫자 토큰으로 보고 통과한다', () => {
+    const violations = findPreservationViolations('변동률 -3.2', '변동률 -3.2');
+
+    expect(violations).toEqual([]);
+    expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('균형 잡힌 URL 끝 괄호가 삭제되면 URL 훼손으로 롤백한다', () => {
+    const original =
+      'https://en.wikipedia.org/wiki/Ruby_(programming_language)';
+    const rewritten =
+      'https://en.wikipedia.org/wiki/Ruby_(programming_language';
+    const violations = findPreservationViolations(original, rewritten);
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'url', token: rewritten, direction: 'injected' },
+        { kind: 'url', token: original, direction: 'lost' },
+      ]),
+    );
+    expect(violations).toHaveLength(2);
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('URL을 감싼 문장 괄호가 제거되어도 같은 URL로 보고 통과한다', () => {
+    const violations = findPreservationViolations(
+      '(https://a.io/b)',
+      'https://a.io/b',
+    );
+
+    expect(violations).toEqual([]);
+    expect(shouldRollbackField(violations)).toBe(false);
+  });
 });

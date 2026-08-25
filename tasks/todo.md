@@ -759,3 +759,28 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 최종 검증은 lint exit 0, humanize 10 suites/176 tests, 전체 437 suites/4,032 tests + code-graph 5 suites/40 tests, build exit 0이다.
 - 사용자가 끝 suffix 제거 대상으로 명시한 닫는 괄호가 실제 URL 마지막 문자인 경우도 제거된다. balance parser는 이번 정책·범위 밖이라 추가하지 않았다.
 - DB/Prisma/env/의존성 변경과 git add/commit/push 없음.
+
+---
+# PR #386 봇 리뷰 대응 (2026-08-25)
+
+**Goal:** 수치 표기 미탐, 균형 괄호 URL 미탐, URL credential 로그 노출을 제거한다.
+
+**Root cause:** number 토큰이 값 의미의 부호·통화·선행 소수점·백분율을 버리고, URL suffix 정규화가 괄호 균형을 무시하며, rollback 경고가 판정용 URL 전문을 그대로 직렬화한다.
+
+- [x] RED 1: 부호·백분율·선행 소수점·통화 변경과 날짜·동일 음수 대조군을 domain spec에 추가하고 예상 실패를 확인한다.
+- [x] GREEN 1: 날짜 하이픈을 음수로 보지 않으면서 값 의미 표기를 포함하는 number regex를 적용한다.
+- [x] RED/GREEN 2: 균형 괄호 URL 훼손과 문장 wrapper 괄호 대조군을 추가하고 unmatched closer만 suffix로 제거한다.
+- [x] RED/GREEN 3: credential query URL rollback 로그가 query·fragment·userinfo를 노출하지 않는 service spec과 로그 전용 축약을 추가한다.
+- [x] mutation 3종: number 표기, URL 괄호 balance, URL 로그 축약을 각각 무력화해 대응 테스트 실패를 확인하고 원복한다.
+- [x] `pnpm lint:check`, `pnpm exec jest src/humanize`, `pnpm test`, `pnpm build`를 파이프 없이 각각 실행해 exit 0을 확인한다.
+- [x] 최종 diff를 독립 리뷰하고 `.ai/implementation-summary.md`에 봇 리뷰 대응 회차를 덧붙인다.
+
+## Review
+
+- number 토큰에 부호·통화·선행 소수점·백분율을 포함했고 날짜 하이픈은 부호로 결합하지 않는다.
+- URL 끝 닫는 괄호는 해당 여는 괄호보다 많을 때만 문장 suffix로 제거한다.
+- URL 로그는 판정용 토큰을 바꾸지 않고 origin+pathname만 출력하며, 파싱 실패 fallback도 query·fragment와 마지막 `@`까지의 userinfo를 제거한다.
+- 세 mutation 모두 대응 테스트가 exit 1로 실패했고 원복 뒤 focused 2 suites/58 tests가 통과했다.
+- 독립 리뷰가 malformed 다중 `@` fallback 노출을 발견했다. 회귀 테스트 RED exit 1을 확인하고 보강했으며 재리뷰 범위의 유일한 P2를 해소했다.
+- 최종 검증은 lint exit 0, humanize 10 suites/191 tests, 전체 437 suites/4,047 tests + code-graph 5 suites/40 tests, build exit 0이다.
+- DB/Prisma/env/의존성 변경과 git add/commit/push 없음.
