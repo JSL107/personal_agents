@@ -98,6 +98,7 @@ describe('BackfillUniversePricesUsecase', () => {
       skipped: 0,
       succeeded: 1,
       exhausted: 0,
+      stalled: 0,
       failed: 0,
       pagesFetched: 1,
       written: 2,
@@ -128,7 +129,7 @@ describe('BackfillUniversePricesUsecase', () => {
     expect(fixture.upsertDailyPrices).not.toHaveBeenCalled();
   });
 
-  it('같은 페이지가 반복되어 커서가 진전하지 않으면 유한 호출 후 exhausted로 끝낸다', async () => {
+  it('같은 페이지가 반복되어 커서가 진전하지 않으면 유한 호출 후 stalled로 끝낸다', async () => {
     const repeatedPage = [bar('2025-01-02', '90'), bar('2025-01-03', '100')];
     const fetchDailyBars = jest.fn().mockResolvedValue(repeatedPage);
     const upsertDailyPrices = jest
@@ -141,7 +142,9 @@ describe('BackfillUniversePricesUsecase', () => {
     expect(result).toEqual(
       expect.objectContaining({
         succeeded: 0,
-        exhausted: 1,
+        // 공급자 이상 신호이므로 정상 소진과 같은 칸에 담지 않는다.
+        exhausted: 0,
+        stalled: 1,
         failed: 0,
         pagesFetched: 2,
         written: 2,
@@ -223,5 +226,73 @@ describe('BackfillUniversePricesUsecase', () => {
       expect.objectContaining({ exhausted: 1, failed: 0, pagesFetched: 1 }),
     );
     expect(fetchDailyBars).toHaveBeenCalledTimes(2);
+  });
+
+  // 페이지네이션의 본질은 여러 장을 이어 받는 것인데, 종료 조건만 검증하면 정작 그
+  // 성공 경로가 한 번도 실행되지 않는다.
+  it('여러 페이지를 이어 받으며 직전 페이지의 최古 봉으로 커서를 갱신한다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValueOnce([bar('2024-01-02', '80'), bar('2024-06-03', '90')])
+      .mockResolvedValueOnce([bar('2022-05-10', '70'), bar('2023-12-28', '75')])
+      .mockResolvedValueOnce([
+        bar('2021-06-01', '60'),
+        bar('2022-05-09', '65'),
+      ]);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 2, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    const result = await fixture.usecase.execute();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        succeeded: 1,
+        exhausted: 0,
+        stalled: 0,
+        failed: 0,
+        pagesFetched: 3,
+        written: 6,
+      }),
+    );
+    expect(fetchDailyBars).toHaveBeenNthCalledWith(1, '005930', 200, {
+      before: undefined,
+    });
+    expect(fetchDailyBars).toHaveBeenNthCalledWith(2, '005930', 200, {
+      before: '2024-01-02T00:00:00.000+09:00',
+    });
+    expect(fetchDailyBars).toHaveBeenNthCalledWith(3, '005930', 200, {
+      before: '2022-05-10T00:00:00.000+09:00',
+    });
+    expect(upsertDailyPrices).toHaveBeenCalledTimes(3);
+  });
+
+  // 조정가가 소급 변경된 구간을 갱신하려는 것이므로, 저장된 최古 봉부터 이어 받으면
+  // 이미 있는 구간을 정확히 비껴가 아무것도 고치지 못한다.
+  it('recheck 는 목표만큼 저장된 종목도 커서 없이 최신부터 다시 받는다', async () => {
+    const storedBarStats = new Map([
+      [
+        1,
+        {
+          barCount: 1_400,
+          latestTradeDate: '2026-08-24',
+          oldestTradeDate: '2020-12-03',
+        },
+      ],
+    ]);
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValue([bar('2021-08-20', '80'), bar('2021-09-01', '100')]);
+    const fixture = createFixture({ storedBarStats, fetchDailyBars });
+
+    const result = await fixture.usecase.execute({ recheck: true });
+
+    expect(result).toEqual(
+      expect.objectContaining({ skipped: 0, succeeded: 1, pagesFetched: 1 }),
+    );
+    expect(fetchDailyBars).toHaveBeenCalledWith('005930', 200, {
+      before: undefined,
+    });
   });
 });

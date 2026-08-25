@@ -80,6 +80,15 @@ const main = async (): Promise<void> => {
         .get(BackfillUniversePricesUsecase)
         .execute(parsed.options);
       console.log(formatBackfillSummary(result));
+      // 전종목 실행은 한 시간 가까이 걸린다. 요약만 내고 상세를 버리면 어느 종목이 왜
+      // 누락됐는지 알 길이 없어 다시 받을 대상을 특정할 수 없다.
+      const backfillFailureDetail = formatPriceCollectionFailures(
+        result.failed,
+        result.failures,
+      );
+      if (backfillFailureDetail) {
+        console.log(backfillFailureDetail);
+      }
       return;
     }
 

@@ -26,13 +26,21 @@ const RATE_LIMIT_RETRY_DELAY_MS = 1_000;
 export interface BackfillPricesOptions {
   years?: number;
   limit?: number;
+  // 이미 목표만큼 받아 둔 종목도 다시 받는다. 배당·분할로 `adjusted=true` 과거 가격이
+  // 소급 변경되면 일일 수집이 최근 200봉만 다시 쓰므로, 그보다 오래된 백필분은 옛 조정
+  // 기준으로 남아 한 시계열에 기준이 둘 공존한다. 이 손잡이가 그 구간을 갱신하는 수단이다.
+  recheck?: boolean;
 }
 
 export interface BackfillPricesResult {
   targetCount: number;
   skipped: number;
   succeeded: number;
+  // 공급자가 더 줄 게 없어 끝난 종목. 상장 이력이 목표보다 짧으면 정상적으로 여기 들어온다.
   exhausted: number;
+  // 커서가 진전하지 않아 끊은 종목. 같은 페이지가 반복된다는 뜻이므로 공급자 이상 신호이며,
+  // 목표에 도달하지 못한 채 끝난 것이라 `exhausted` 와 같은 칸에 담으면 장애가 묻힌다.
+  stalled: number;
   failed: number;
   pagesFetched: number;
   written: number;
@@ -89,6 +97,7 @@ export class BackfillUniversePricesUsecase {
       skipped: 0,
       succeeded: 0,
       exhausted: 0,
+      stalled: 0,
       failed: 0,
       pagesFetched: 0,
       written: 0,
@@ -96,9 +105,11 @@ export class BackfillUniversePricesUsecase {
       failures: [],
     };
 
+    const shouldRecheck = options.recheck === true;
     for (const [index, ticker] of targets.entries()) {
       const storedBarStat = storedBarStats.get(ticker.id);
       if (
+        !shouldRecheck &&
         storedBarStat !== undefined &&
         storedBarStat.oldestTradeDate <= targetStartDate
       ) {
@@ -108,8 +119,10 @@ export class BackfillUniversePricesUsecase {
       }
 
       try {
+        // recheck 는 최신부터 다시 받아야 뜻이 선다. 저장된 최古 봉부터 이어 받으면
+        // 이미 있는 구간은 그대로 남아, 조정가가 바뀐 자리를 정확히 비껴간다.
         let cursor =
-          storedBarStat === undefined
+          shouldRecheck || storedBarStat === undefined
             ? undefined
             : buildBackfillCursor(
                 new Date(`${storedBarStat.oldestTradeDate}T00:00:00.000Z`),
@@ -142,7 +155,7 @@ export class BackfillUniversePricesUsecase {
             cursorTradeDate !== undefined &&
             oldestTradeDate >= cursorTradeDate
           ) {
-            result.exhausted += 1;
+            result.stalled += 1;
             shouldContinue = false;
             continue;
           }

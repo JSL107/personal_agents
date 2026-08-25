@@ -91,6 +91,27 @@ describe('parseScreenerCliArguments', () => {
     });
   });
 
+  // 값을 받지 않는 플래그라 다음 토큰을 소비하면 뒤 옵션이 통째로 밀린다.
+  it('backfill-prices의 --recheck는 값 없는 플래그로 읽고 뒤 옵션을 밀지 않는다', () => {
+    expect(parseScreenerCliArguments(['backfill-prices', '--recheck'])).toEqual(
+      {
+        subcommand: 'backfill-prices',
+        options: { recheck: true },
+      },
+    );
+    expect(
+      parseScreenerCliArguments([
+        'backfill-prices',
+        '--recheck',
+        '--years',
+        '3',
+      ]),
+    ).toEqual({
+      subcommand: 'backfill-prices',
+      options: { recheck: true, years: 3 },
+    });
+  });
+
   it('backfill-prices의 알 수 없는 옵션과 양수가 아닌 값을 거부한다', () => {
     expect(() =>
       parseScreenerCliArguments(['backfill-prices', '--days', '200']),
