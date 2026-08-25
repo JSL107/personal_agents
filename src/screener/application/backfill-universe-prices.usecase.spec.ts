@@ -228,6 +228,66 @@ describe('BackfillUniversePricesUsecase', () => {
     expect(fetchDailyBars).toHaveBeenCalledTimes(2);
   });
 
+  // 실제 전종목 실행에서 상장 5년 미만 종목이 전부 이 경로로 끝났다. 토스가 커서 날짜의
+  // 봉을 응답에 포함하므로 빈 배열이 아니고 커서도 안 움직인다 — 정상 소진이다.
+  it('커서 날짜의 봉 하나만 돌아오면 이상이 아니라 소진으로 끝낸다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValueOnce([bar('2023-12-22', '50'), bar('2024-03-05', '60')])
+      .mockResolvedValueOnce([bar('2023-12-22', '50')]);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 2, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    const result = await fixture.usecase.execute();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        succeeded: 0,
+        exhausted: 1,
+        stalled: 0,
+        failed: 0,
+        pagesFetched: 2,
+      }),
+    );
+  });
+
+  // 개수만 보면 이 경우가 소진으로 숨는다. before 를 준 시각보다 미래인 봉이 왔다는 것은
+  // 공급자가 커서를 무시했다는 뜻이라, 정상 소진이 아니라 이상 신호다.
+  it('커서보다 미래인 봉 하나가 오면 소진이 아니라 미진전으로 센다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValueOnce([bar('2023-12-22', '50'), bar('2024-03-05', '60')])
+      .mockResolvedValueOnce([bar('2024-06-01', '70')]);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 2, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    const result = await fixture.usecase.execute();
+
+    expect(result).toEqual(
+      expect.objectContaining({ exhausted: 0, stalled: 1, pagesFetched: 2 }),
+    );
+  });
+
+  // 같은 페이지가 통째로 다시 오는 것은 공급자가 커서를 무시했다는 뜻이라 위와 구분한다.
+  it('여러 봉이 통째로 다시 오면 소진이 아니라 미진전으로 센다', async () => {
+    const repeated = [bar('2025-01-02', '90'), bar('2025-01-03', '100')];
+    const fetchDailyBars = jest.fn().mockResolvedValue(repeated);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 2, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    const result = await fixture.usecase.execute();
+
+    expect(result).toEqual(
+      expect.objectContaining({ exhausted: 0, stalled: 1, pagesFetched: 2 }),
+    );
+  });
+
   // 페이지네이션의 본질은 여러 장을 이어 받는 것인데, 종료 조건만 검증하면 정작 그
   // 성공 경로가 한 번도 실행되지 않는다.
   it('여러 페이지를 이어 받으며 직전 페이지의 최古 봉으로 커서를 갱신한다', async () => {
