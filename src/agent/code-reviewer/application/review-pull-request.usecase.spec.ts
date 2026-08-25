@@ -676,7 +676,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
   const rejection = (category: string, reason: string) => ({
     category,
     rejectReason: reason.padEnd(MIN_REASON_LENGTH, '.'),
-    resolvedAt: new Date('2026-08-20T00:00:00Z'),
+    decidedAt: new Date('2026-08-20T00:00:00Z'),
   });
 
   const makeDeps = () => {
@@ -701,7 +701,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         number: 1,
         title: 'feat: 결제 PG 연동',
         body: '',
-        repo: 'foo/bar',
+        repo: 'JSL107/personal_agents',
         url: 'u',
         baseRef: 'main',
         headRef: 'h',
@@ -762,7 +762,10 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       rejection('ARCHITECTURE', 'DB 접근은 직접 주입이 이 레포 관례입니다'),
     ]);
 
-    await buildUsecase(deps).execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
     const prompt = promptOf(deps);
     expect(prompt).toContain('기각된 지적과 그 이유');
@@ -775,7 +778,10 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       rejection('ARCHITECTURE', '한 번뿐인 기각'),
     ]);
 
-    await buildUsecase(deps).execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
     expect(promptOf(deps)).not.toContain('기각된 지적과 그 이유');
   });
@@ -783,11 +789,14 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
   it('이 레포의 기각만, 90일 창 안에서 조회한다', async () => {
     const deps = makeDeps();
 
-    await buildUsecase(deps).execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
     const [input] =
       deps.findingRepository.findRejectionsForConventions.mock.calls[0];
-    expect(input.repo).toBe('foo/bar');
+    expect(input.repo).toBe('JSL107/personal_agents');
     const windowDays = (Date.now() - input.since.getTime()) / 86_400_000;
     expect(windowDays).toBeGreaterThan(89);
     expect(windowDays).toBeLessThan(91);
@@ -797,7 +806,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     const deps = makeDeps();
 
     const outcome = await buildUsecase(deps, false).execute({
-      prRef: 'foo/bar#1',
+      prRef: 'JSL107/personal_agents#1',
       slackUserId: 'U1',
     });
 
@@ -812,7 +821,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     );
 
     const outcome = await buildUsecase(deps).execute({
-      prRef: 'foo/bar#1',
+      prRef: 'JSL107/personal_agents#1',
       slackUserId: 'U1',
     });
 
@@ -827,8 +836,40 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       rejection('TEST', 'controller 테스트는 대상 밖입니다'),
     ]);
 
-    await buildUsecase(deps).execute({ prRef: 'foo/bar#1', slackUserId: 'U1' });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
 
     expect(promptOf(deps)).not.toContain('과거에 무시한 리뷰 패턴');
+  });
+  it('owner 저장소가 아니면 조회조차 하지 않는다 — 남이 쓴 기각 이유가 규약이 되지 않게', async () => {
+    const deps = makeDeps();
+    deps.githubClient.getPullRequest.mockResolvedValue({
+      number: 1,
+      title: 'feat: 결제 PG 연동',
+      body: '',
+      repo: 'schoolbell-e/sbe-api-v5',
+      url: 'u',
+      baseRef: 'main',
+      headRef: 'h',
+      authorLogin: 'someone-else',
+      mergedAt: null,
+      changedFiles: ['src/payment.ts'],
+      changedFilesTotalCount: 1,
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'sha',
+    });
+
+    await buildUsecase(deps).execute({
+      prRef: 'schoolbell-e/sbe-api-v5#1',
+      slackUserId: 'U1',
+    });
+
+    expect(
+      deps.findingRepository.findRejectionsForConventions,
+    ).not.toHaveBeenCalled();
   });
 });

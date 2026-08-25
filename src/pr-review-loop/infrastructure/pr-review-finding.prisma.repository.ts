@@ -5,7 +5,6 @@ import {
   FindingCategory,
   FindingSeverity,
 } from '../../agent/code-reviewer/domain/code-reviewer.type';
-import { RejectedConventionRow } from '../../agent/code-reviewer/domain/prompt/learned-conventions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoryStatusCount } from '../domain/adoption-rate';
 import {
@@ -21,6 +20,7 @@ import {
   FindingStatus,
   MarkPostedInput,
   PrReviewFindingRecord,
+  RejectedFindingSummary,
 } from '../domain/pr-review-finding.type';
 
 const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
@@ -194,28 +194,28 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
 
   async findRejectionsForConventions(
     input: FindRejectionsForConventionsInput,
-  ): Promise<RejectedConventionRow[]> {
+  ): Promise<RejectedFindingSummary[]> {
     const rows = await this.prisma.prReviewFinding.findMany({
       where: {
         repo: input.repo,
         status: 'REJECTED',
         // 이유 없는 기각(👎 만 누른 경우)은 학습 재료가 아니다 — 무엇이 틀렸는지가 없다.
         rejectReason: { not: null },
-        resolvedAt: { gte: input.since },
+        decidedAt: { gte: input.since },
       },
-      select: { category: true, rejectReason: true, resolvedAt: true },
-      orderBy: { resolvedAt: 'desc' },
+      select: { category: true, rejectReason: true, decidedAt: true },
+      orderBy: { decidedAt: 'desc' },
     });
-    // rejectReason·resolvedAt 은 스키마상 nullable 이라 where 로 걸러도 타입이 좁혀지지 않는다.
+    // rejectReason·decidedAt 은 스키마상 nullable 이라 where 로 걸러도 타입이 좁혀지지 않는다.
     return rows.flatMap((row) => {
-      if (row.rejectReason === null || row.resolvedAt === null) {
+      if (row.rejectReason === null || row.decidedAt === null) {
         return [];
       }
       return [
         {
           category: row.category,
           rejectReason: row.rejectReason,
-          resolvedAt: row.resolvedAt,
+          decidedAt: row.decidedAt,
         },
       ];
     });

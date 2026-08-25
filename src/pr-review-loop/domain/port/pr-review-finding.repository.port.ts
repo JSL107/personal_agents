@@ -1,10 +1,10 @@
-import { RejectedConventionRow } from '../../../agent/code-reviewer/domain/prompt/learned-conventions';
 import { CategoryStatusCount } from '../adoption-rate';
 import {
   CreateFindingInput,
   FindingStatus,
   MarkPostedInput,
   PrReviewFindingRecord,
+  RejectedFindingSummary,
 } from '../pr-review-finding.type';
 
 export const PR_REVIEW_FINDING_REPOSITORY_PORT = Symbol(
@@ -29,7 +29,14 @@ export interface MarkDecidedInput {
 
 export interface FindRejectionsForConventionsInput {
   repo: string;
-  /** 이 시각 이후 확정된 기각만. 조회 조건이 곧 규약의 만료 기한이다. */
+  /**
+   * 이 시각 이후 **확정된**(`decidedAt`) 기각만. 조회 조건이 곧 규약의 만료 기한이다.
+   *
+   * `resolvedAt` 이 아니라 `decidedAt` 이다 — 기각을 저장한 뒤 GitHub 스레드 닫기가
+   * 실패하면 `resolvedAt` 만 null 로 남는데, 그때 status 는 이미 `REJECTED` 라 다음
+   * 수확에서도 복구되지 않는다. 그 카드를 `resolvedAt` 으로 조회하면 학습 신호가
+   * 영구히 빠진다. 결정의 정본은 `decidedAt` 이다.
+   */
   since: Date;
 }
 
@@ -82,5 +89,5 @@ export interface PrReviewFindingRepositoryPort {
    */
   findRejectionsForConventions(
     input: FindRejectionsForConventionsInput,
-  ): Promise<RejectedConventionRow[]>;
+  ): Promise<RejectedFindingSummary[]>;
 }
