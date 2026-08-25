@@ -229,7 +229,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 | 📅 일 18:00 | CEO Meta |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
-| 🗂️ 금 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
+| 🗂️ 매일 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
 | 🇰🇷 평일 17:10 KST | 국내 보유 종목 모니터링 |
 | 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
