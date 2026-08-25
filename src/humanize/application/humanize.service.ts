@@ -17,6 +17,15 @@ import {
   HUMANIZE_SYSTEM_PROMPT,
   HUMANIZE_TERM_PRESERVE_LINE,
 } from '../domain/humanize-system.prompt';
+import {
+  findKoreanStyleGaps,
+  measureKoreanStyle,
+} from '../domain/korean-style-metrics';
+import {
+  renderStyleFeedback,
+  toStyleFeedbackRun,
+  voiceOf,
+} from '../domain/style-feedback';
 
 /**
  * 목표 문체.
@@ -24,6 +33,16 @@ import {
  * - `report`(기본): 보고서·Slack 카드용 문어체. 기존 모든 호출부가 이 값이다.
  * - `personal-blog`: 사용자 명의로 공개되는 블로그 본문. 보고체 지시를 빼고 개인 문체를 넣는다.
  */
+// 문체 되먹임은 사용자 명의 글에만 쓴다. 목표 수치가 사용자 글에서 잰 재현 대상이라,
+// 내부 보고서에 그 문체를 강요하면 목적이 뒤집힌다.
+const STYLE_FEEDBACK_VOICE = 'personal-blog';
+// 원장에서 훑을 최근 실행 수. 목소리 필터가 조회 **뒤에** 걸리므로(포트가 voice 필터를
+// 받지 않는다) 넉넉히 가져와 걸러야 개인 글 표본이 모인다.
+const STYLE_FEEDBACK_SCAN_LIMIT = 40;
+// 그중 실제로 볼 최근 편수.
+const STYLE_FEEDBACK_RUNS = 5;
+const STYLE_FEEDBACK_DAYS = 60;
+
 export type HumanizeVoice = 'report' | 'personal-blog';
 
 /**
@@ -130,9 +149,10 @@ export class HumanizeService {
           const basePrompt = options?.longForm
             ? audiencePrompt
             : `${audiencePrompt}\n${HUMANIZE_CONCISE_RULES}`;
-          const systemPrompt = injection
-            ? `${basePrompt}\n\n${injection}`
-            : basePrompt;
+          const styleFeedback = await this.buildStyleFeedback(options?.voice);
+          const systemPrompt =
+            (injection ? `${basePrompt}\n\n${injection}` : basePrompt) +
+            styleFeedback;
           const completion = await this.modelRouter.route({
             agentType: AgentType.HUMANIZER,
             request: {
@@ -148,7 +168,14 @@ export class HumanizeService {
             result: { ...fields, ...humanized },
             modelUsed: completion.modelUsed,
             // 윤문 본문은 원장에 담지 않는다 — 보고서 전문이 그대로 복제된다.
-            output: { humanizedKeys: Object.keys(humanized) },
+            // 문체 갭은 숫자 몇 줄이라 담아도 원장이 부풀지 않고, 다음 회차 되먹임의
+            // 유일한 재료다. 40문장 미만이면 판정이 무의미해 빈 배열이 온다.
+            output: {
+              humanizedKeys: Object.keys(humanized),
+              styleGaps: findKoreanStyleGaps(
+                measureKoreanStyle(Object.values(humanized).join('\n\n')),
+              ),
+            },
           };
         },
       });
@@ -157,6 +184,41 @@ export class HumanizeService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`윤문 실패 — 원본 유지: ${message}`);
       return fields;
+    }
+  }
+
+  /**
+   * 최근 개인 글 윤문본에서 되풀이된 문체 갭을 프롬프트 블록으로 만든다.
+   * 조회 실패는 되먹임 없이 진행(best-effort) — 윤문 자체가 best-effort 경로라
+   * 되먹임 때문에 본문이 원본으로 떨어지면 손해가 더 크다.
+   */
+  private async buildStyleFeedback(voice?: HumanizeVoice): Promise<string> {
+    if (voice !== STYLE_FEEDBACK_VOICE) {
+      return '';
+    }
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.HUMANIZER,
+        sinceDays: STYLE_FEEDBACK_DAYS,
+        limit: STYLE_FEEDBACK_SCAN_LIMIT,
+      });
+      const samples = runs
+        .filter((run) => voiceOf(run.inputSnapshot) === STYLE_FEEDBACK_VOICE)
+        .map((run) => toStyleFeedbackRun(run.output))
+        .filter(
+          (sample): sample is NonNullable<typeof sample> => sample !== null,
+        )
+        .slice(0, STYLE_FEEDBACK_RUNS);
+      const block = renderStyleFeedback(samples);
+      if (block.length > 0) {
+        this.logger.log(`문체 되먹임 주입 — 최근 ${samples.length}편 기준`);
+      }
+      return block;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `문체 되먹임 조회 실패, 되먹임 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return '';
     }
   }
 }

@@ -24,7 +24,10 @@ interface ExecuteArgs {
 
 // 실제 execute 와 같은 계약 — run 을 실행하고 outcome 으로 감싸며, 던지면 그대로 전파한다
 // (호출부가 기존처럼 원본을 반환하는 best-effort fallback 으로 받는다).
-const makeAgentRunService = (): { execute: jest.Mock } => ({
+const makeAgentRunService = (): {
+  execute: jest.Mock;
+  findRecentSucceededRuns: jest.Mock;
+} => ({
   execute: jest.fn().mockImplementation(async ({ run }: ExecuteArgs) => {
     const execution = await run({ agentRunId: 1 });
     return {
@@ -33,6 +36,8 @@ const makeAgentRunService = (): { execute: jest.Mock } => ({
       agentRunId: 1,
     };
   }),
+  // 없으면 조회가 TypeError 로 죽고 catch 가 삼켜, 되먹임이 조용히 빠진 채 테스트가 통과한다.
+  findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
 });
 
 const makeService = (opts: {
@@ -42,7 +47,7 @@ const makeService = (opts: {
 }): {
   service: HumanizeService;
   routeMock: jest.Mock;
-  agentRunService: { execute: jest.Mock };
+  agentRunService: { execute: jest.Mock; findRecentSucceededRuns: jest.Mock };
 } => {
   const routeMock = jest.fn(opts.routeImpl ?? (async () => ({ text: '{}' })));
   const modelRouter = { route: routeMock } as unknown as ModelRouterUsecase;
@@ -134,7 +139,12 @@ describe('HumanizeService', () => {
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
-    expect(executed.output).toEqual({ humanizedKeys: ['a'] });
+    // 본문은 없고 키 목록과 문체 갭(숫자 몇 줄)만 남는다.
+    expect(executed.output).toEqual({
+      humanizedKeys: ['a'],
+      styleGaps: expect.any(Array),
+    });
+    expect(JSON.stringify(executed.output)).not.toContain('원본A');
   });
 
   it('빈 값만 있으면 LLM 호출 없이 원본을 반환한다', async () => {
@@ -257,5 +267,77 @@ describe('독자 축 (audience)', () => {
     // 목소리 축이 독자 치환에 밀려 사라지지 않았는지 함께 본다.
     expect(systemPrompt).toContain(HUMANIZE_PERSONAL_BLOG_TONE);
     expect(systemPrompt).not.toContain(HUMANIZE_REPORT_TONE_LINE);
+  });
+});
+
+describe('문체 되먹임', () => {
+  const runOf = (voice: string, gaps: string[]) => ({
+    id: 1,
+    endedAt: new Date(),
+    inputSnapshot: { voice },
+    output: { humanizedKeys: ['a'], styleGaps: gaps },
+  });
+
+  it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      runOf('personal-blog', ['편차 12.3(≥15)']),
+      runOf('personal-blog', ['편차 11.8(≥15)']),
+    ]);
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('되풀이된 문체 갭');
+    expect(systemPrompt).toContain('편차 12.3(≥15)');
+  });
+
+  it('다른 목소리의 회차는 표본에서 뺀다 — 보고서 문체가 개인 글 목표를 흔들지 않게', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      runOf('report', ['편차 12.3(≥15)']),
+      runOf('report', ['편차 11.8(≥15)']),
+    ]);
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).not.toContain('되풀이된 문체 갭');
+  });
+
+  it('보고서 목소리면 원장을 조회조차 하지 않는다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'report' });
+
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalled();
+  });
+
+  it('되먹임 조회가 실패해도 윤문은 계속된다 — best-effort', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    agentRunService.findRecentSucceededRuns.mockRejectedValue(
+      new Error('db down'),
+    );
+
+    const result = await service.humanize(
+      { a: '원본A' },
+      { voice: 'personal-blog' },
+    );
+
+    expect(result.a).toBe('윤문A');
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).not.toContain('되풀이된 문체 갭');
   });
 });
