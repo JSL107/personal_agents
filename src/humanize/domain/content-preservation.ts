@@ -9,6 +9,21 @@ export type PreservationViolation = {
 type PreservedTokens = Record<PreservedTokenKind, Set<string>>;
 
 const TOKEN_KINDS: PreservedTokenKind[] = ['code', 'url', 'pr', 'number'];
+const URL_TRAILING_PUNCTUATION = new Set([
+  '.',
+  ',',
+  ';',
+  ':',
+  '!',
+  '?',
+  "'",
+  '"',
+]);
+const URL_CLOSER_TO_OPENER: Record<string, string> = {
+  ')': '(',
+  ']': '[',
+  '}': '{',
+};
 
 export const findPreservationViolations = (
   original: string,
@@ -56,7 +71,7 @@ const extractPreservedTokens = (text: string): PreservedTokens => {
   remaining = extractAndMask(remaining, /#[0-9]+/g, tokens.pr);
   extractAndMask(
     remaining,
-    /[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?/g,
+    /(?<![0-9])[-+]?[$₩€£]?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)%?/g,
     tokens.number,
   );
 
@@ -65,12 +80,52 @@ const extractPreservedTokens = (text: string): PreservedTokens => {
 
 const extractUrlsAndMask = (text: string, tokens: Set<string>): string => {
   return text.replace(/https?:\/\/[^\s]+/g, (matched) => {
-    // 문장 재구성으로 달라질 수 있는 URL 끝 구두점은 토큰에서 빼고 후속 추출용 원문에는 남긴다.
-    const url = matched.replace(/[.,;:!?\])}'"]+$/, '');
+    // 문장 구두점과 균형 밖 닫는 괄호만 URL에서 빼고 후속 추출용 원문에는 남긴다.
+    const url = trimTrailingUrlPunctuation(matched);
     const punctuation = matched.slice(url.length);
     tokens.add(url);
     return `${' '.repeat(url.length)}${punctuation}`;
   });
+};
+
+const trimTrailingUrlPunctuation = (matched: string): string => {
+  let url = matched;
+
+  while (url.length > 0) {
+    const lastCharacter = url[url.length - 1];
+    if (URL_TRAILING_PUNCTUATION.has(lastCharacter)) {
+      url = url.slice(0, -1);
+      continue;
+    }
+    if (hasUnmatchedClosingBracket(url, lastCharacter)) {
+      url = url.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+
+  return url;
+};
+
+const hasUnmatchedClosingBracket = (
+  text: string,
+  closingBracket: string,
+): boolean => {
+  const openingBracket = URL_CLOSER_TO_OPENER[closingBracket];
+  if (!openingBracket) {
+    return false;
+  }
+
+  let balance = 0;
+  for (const character of text) {
+    if (character === openingBracket) {
+      balance += 1;
+    }
+    if (character === closingBracket) {
+      balance -= 1;
+    }
+  }
+  return balance < 0;
 };
 
 const extractAndMask = (

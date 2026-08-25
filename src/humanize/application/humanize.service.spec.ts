@@ -147,6 +147,49 @@ describe('HumanizeService', () => {
     });
   });
 
+  it('URL 롤백 경고에서 userinfo와 query, fragment를 제거한다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const sensitiveUrl =
+      'https://user:password@example.com/private/report?credential=secret#fragment';
+    const { service } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ link: '링크를 확인했습니다.' }),
+      }),
+    });
+
+    const result = await service.humanize({ link: sensitiveUrl });
+
+    expect(result).toEqual({ link: sensitiveUrl });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const warning = String(warnSpy.mock.calls[0][0]);
+    expect(warning).toContain('https://example.com/private/report');
+    expect(warning).not.toContain('user:password');
+    expect(warning).not.toContain('credential=secret');
+    expect(warning).not.toContain('#fragment');
+  });
+
+  it('파싱할 수 없는 URL 경고도 userinfo와 query를 제거한다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const sensitiveUrl =
+      'https://user@password@[invalid/private?credential=secret#fragment';
+    const { service } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ link: '링크를 확인했습니다.' }),
+      }),
+    });
+
+    await service.humanize({ link: sensitiveUrl });
+
+    const warning = String(warnSpy.mock.calls[0][0]);
+    expect(warning).toContain('https://[invalid/private');
+    expect(warning).not.toContain('user@password');
+    expect(warning).not.toContain('password@');
+    expect(warning).not.toContain('credential=secret');
+    expect(warning).not.toContain('#fragment');
+  });
+
   it('env 가 false 면 LLM 호출 없이 원본을 반환한다', async () => {
     const { service, routeMock } = makeService({ enabled: 'false' });
     const result = await service.humanize({ a: '원본A' });
