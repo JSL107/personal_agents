@@ -9,6 +9,12 @@ import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
+import {
+  findPreservationViolations,
+  PreservationViolation,
+  PreservedTokenKind,
+  shouldRollbackField,
+} from '../domain/content-preservation';
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
 import {
   HUMANIZE_CONCISE_RULES,
@@ -63,6 +69,13 @@ export interface HumanizeOptions {
    */
   audience?: HumanizeAudience;
 }
+
+type PreservationViolationCounts = Record<PreservedTokenKind, number>;
+
+type PreservationViolationSummary = Record<
+  PreservationViolation['direction'],
+  PreservationViolationCounts
+>;
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
 /**
@@ -179,6 +192,29 @@ export class HumanizeService {
             noFallback: true,
           });
           const humanized = parseHumanizeOutput(completion.text, keys);
+          const rolledBackKeys: string[] = [];
+          const violationsByKey: Record<string, PreservationViolation[]> = {};
+          const preservationViolations = createViolationSummary();
+
+          for (const key of keys) {
+            const violations = findPreservationViolations(
+              fields[key],
+              humanized[key],
+            );
+            addViolationsToSummary(preservationViolations, violations);
+            if (shouldRollbackField(violations)) {
+              humanized[key] = fields[key];
+              rolledBackKeys.push(key);
+              violationsByKey[key] = violations;
+            }
+          }
+
+          if (rolledBackKeys.length > 0) {
+            this.logger.warn(
+              buildRollbackWarning(rolledBackKeys, violationsByKey),
+            );
+          }
+
           return {
             result: { ...fields, ...humanized },
             modelUsed: completion.modelUsed,
@@ -187,9 +223,15 @@ export class HumanizeService {
             // 유일한 재료다. 40문장 미만이면 판정이 무의미해 빈 배열이 온다.
             output: {
               humanizedKeys: Object.keys(humanized),
+              rolledBackKeys,
+              preservationViolations,
               // 실제로 발행되는 본문을 잰다(`appliedText`). `humanized` 만 재면 모델이
               // 비워 돌려줘 원문이 유지된 문단이 측정에서 빠져, 발행본은 40문장을 넘는데
               // 측정본만 임계 미만이 되거나 원문에 있던 갭을 놓친다.
+              //
+              // 보존 롤백은 위에서 이미 `humanized` 를 원문으로 되돌린 뒤라, 여기서 재는
+              // 것은 롤백까지 반영된 실제 발행본이다. 롤백된 문단은 원문이 나가므로
+              // 원문의 문체 갭이 잡히는 것이 맞다.
               styleGaps: findKoreanStyleGaps(
                 measureKoreanStyle(appliedText(fields, humanized)),
               ),
@@ -241,3 +283,55 @@ export class HumanizeService {
     }
   }
 }
+
+const createViolationSummary = (): PreservationViolationSummary => {
+  return {
+    injected: { code: 0, url: 0, pr: 0, number: 0 },
+    lost: { code: 0, url: 0, pr: 0, number: 0 },
+  };
+};
+
+const addViolationsToSummary = (
+  summary: PreservationViolationSummary,
+  violations: PreservationViolation[],
+): void => {
+  for (const violation of violations) {
+    summary[violation.direction][violation.kind] += 1;
+  }
+};
+
+const buildRollbackWarning = (
+  rolledBackKeys: string[],
+  violationsByKey: Record<string, PreservationViolation[]>,
+): string => {
+  const details = rolledBackKeys.map((key) => {
+    const violations = violationsByKey[key]
+      .map(
+        (violation) =>
+          `${violation.direction} ${violation.kind} ${formatViolationTokenForLog(violation)}`,
+      )
+      .join(', ');
+    return `${key}: ${violations}`;
+  });
+  return `윤문 내용 보존 롤백 — ${details.join('; ')}`;
+};
+
+const formatViolationTokenForLog = (
+  violation: PreservationViolation,
+): string => {
+  const token =
+    violation.kind === 'url'
+      ? redactUrlForLog(violation.token)
+      : violation.token;
+  return JSON.stringify(token);
+};
+
+const redactUrlForLog = (token: string): string => {
+  try {
+    const url = new URL(token);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    const urlWithoutQueryOrFragment = token.split(/[?#]/)[0];
+    return urlWithoutQueryOrFragment.replace(/^(https?:\/\/)[^/?#]*@/i, '$1');
+  }
+};
