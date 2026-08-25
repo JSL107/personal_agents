@@ -44,6 +44,7 @@ describe('CollectBenchmarkClosesUsecase', () => {
       latestTradeDate: '2026-08-11',
       pages: 1,
       oldestTradeDate: '2026-08-11',
+      stopReason: null,
     });
     expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledWith(
       'KOSPI',
@@ -175,6 +176,7 @@ describe('CollectBenchmarkClosesUsecase', () => {
         latestTradeDate: '2026-08-11',
         pages: 1,
         oldestTradeDate: '2026-08-11',
+        stopReason: null,
       });
       expect(fixture.repository.upsertCloses).toHaveBeenCalledWith([
         expect.objectContaining({
@@ -204,6 +206,7 @@ describe('CollectBenchmarkClosesUsecase', () => {
         latestTradeDate: '2026-08-11',
         pages: 1,
         oldestTradeDate: null,
+        stopReason: null,
       });
       expect(fixture.repository.upsertCloses).toHaveBeenCalledWith([]);
     } finally {
@@ -263,6 +266,7 @@ describe('CollectBenchmarkClosesUsecase', () => {
         latestTradeDate: '2025-10-21',
         pages: 2,
         oldestTradeDate: '2020-08-24',
+        stopReason: 'targetReached',
       });
       expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenNthCalledWith(
         1,
@@ -276,6 +280,62 @@ describe('CollectBenchmarkClosesUsecase', () => {
         200,
         { before: '2024-12-30T00:00:00.000+09:00' },
       );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('저장분이 이미 목표 기간을 덮으면 조회하지 않고 끝낸다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(new Date('2026-08-24T00:00:00.000Z'));
+    // 목표 시작일은 2021-08-25 인데 저장분이 그보다 과거까지 있다.
+    fixture.repository.findOldestTradeDate.mockResolvedValue(
+      new Date('2020-02-17T00:00:00.000Z'),
+    );
+
+    try {
+      await expect(fixture.usecase.execute({ years: 5 })).resolves.toEqual({
+        symbol: 'KOSPI',
+        fetched: 0,
+        written: 0,
+        blockedIntraday: 0,
+        latestTradeDate: '2026-08-24',
+        pages: 0,
+        oldestTradeDate: '2020-02-17',
+        stopReason: 'alreadyCovered',
+      });
+      // 이 가드가 없으면 저장 최古일을 커서로 한 장을 더 받아, 같은 명령을 반복할수록
+      // 목표 밖으로 200봉씩 밀려난다.
+      expect(fixture.marketIndicator.fetchDailyCloses).not.toHaveBeenCalled();
+      expect(fixture.repository.upsertCloses).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('백필에서도 장중 오늘 봉은 저장하지 않고 차단 수에 센다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-25T03:00:00.000Z'));
+    const fixture = createFixture(null);
+    fixture.repository.findOldestTradeDate.mockResolvedValue(null);
+    fixture.marketIndicator.fetchDailyCloses.mockResolvedValue([
+      benchmarkBar('2020-08-24', '2300.00'),
+      benchmarkBar('2026-08-25', '3300.00'),
+    ]);
+    fixture.repository.upsertCloses.mockResolvedValue(1);
+
+    try {
+      await expect(fixture.usecase.execute({ years: 5 })).resolves.toEqual(
+        expect.objectContaining({
+          fetched: 2,
+          written: 1,
+          blockedIntraday: 1,
+          latestTradeDate: '2020-08-24',
+          stopReason: 'targetReached',
+        }),
+      );
+      const [rows] = fixture.repository.upsertCloses.mock.calls[0];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].tradeDate).toEqual(new Date('2020-08-24T00:00:00.000Z'));
     } finally {
       jest.useRealTimers();
     }
@@ -317,6 +377,7 @@ describe('CollectBenchmarkClosesUsecase', () => {
         latestTradeDate: null,
         pages: 1,
         oldestTradeDate: null,
+        stopReason: 'exhausted',
       });
       expect(fixture.marketIndicator.fetchDailyCloses).toHaveBeenCalledTimes(1);
       expect(fixture.repository.upsertCloses).not.toHaveBeenCalled();

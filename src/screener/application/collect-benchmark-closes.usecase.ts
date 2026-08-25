@@ -32,6 +32,15 @@ export interface CollectBenchmarkOptions {
   years?: number;
 }
 
+// 백필이 왜 끝났는지. 목표를 채워서 끝난 것과 상한에 걸려 끝난 것을 결과가 구분하지 못하면
+// 목표에 못 미친 회차도 완료처럼 보인다.
+export type BenchmarkBackfillStopReason =
+  | 'alreadyCovered'
+  | 'targetReached'
+  | 'exhausted'
+  | 'stalled'
+  | 'pageLimit';
+
 export interface CollectBenchmarkResult {
   symbol: string;
   fetched: number;
@@ -40,6 +49,8 @@ export interface CollectBenchmarkResult {
   latestTradeDate: string | null;
   pages: number;
   oldestTradeDate: string | null;
+  // 증분(`days`) 경로는 백필이 아니므로 null 이다.
+  stopReason: BenchmarkBackfillStopReason | null;
 }
 
 const findOldestBar = (bars: BenchmarkBar[]): BenchmarkBar => {
@@ -155,6 +166,7 @@ export class CollectBenchmarkClosesUsecase {
         safeBars.length === 0
           ? null
           : findOldestBar(safeBars).tradeDate.toISOString().slice(0, 10),
+      stopReason: null,
     };
   }
 
@@ -170,6 +182,28 @@ export class CollectBenchmarkClosesUsecase {
       years,
     );
     const now = new Date();
+    const storedOldestDateText =
+      storedOldestTradeDate?.toISOString().slice(0, 10) ?? null;
+
+    // 커서를 저장된 최古일로 잡는 구조라, 이미 목표를 덮은 상태에서 그대로 루프에 들어가면
+    // 그 최古일보다 더 과거를 한 장 더 받고서야 목표 도달로 끝난다. 같은 명령을 반복하면
+    // 실행마다 200봉씩 목표 밖으로 밀려나므로 조회 전에 끊는다.
+    if (
+      storedOldestDateText !== null &&
+      storedOldestDateText <= targetStartDate
+    ) {
+      return {
+        symbol: BENCHMARK_SYMBOL,
+        fetched: 0,
+        written: 0,
+        blockedIntraday: 0,
+        latestTradeDate: latestTradeDate?.toISOString().slice(0, 10) ?? null,
+        pages: 0,
+        oldestTradeDate: storedOldestDateText,
+        stopReason: 'alreadyCovered',
+      };
+    }
+
     let cursor =
       storedOldestTradeDate === null
         ? undefined
@@ -180,12 +214,15 @@ export class CollectBenchmarkClosesUsecase {
     let pages = 0;
     let oldestTradeDate: string | null = null;
     let fetchedLatestTradeDate: Date | null = null;
+    // 루프를 조건으로 빠져나오면 상한에 걸린 것이다. 그 밖의 종료는 아래에서 덮어쓴다.
+    let stopReason: BenchmarkBackfillStopReason = 'pageLimit';
 
     while (pages < MAXIMUM_BACKFILL_PAGES) {
       const bars = await this.fetchBackfillPage(cursor);
       pages += 1;
       fetched += bars.length;
       if (bars.length === 0) {
+        stopReason = 'exhausted';
         break;
       }
 
@@ -202,6 +239,7 @@ export class CollectBenchmarkClosesUsecase {
         cursorTradeDate !== undefined &&
         pageOldestTradeDate >= cursorTradeDate
       ) {
+        stopReason = 'stalled';
         break;
       }
 
@@ -226,6 +264,7 @@ export class CollectBenchmarkClosesUsecase {
       }
 
       if (pageOldestTradeDate <= targetStartDate) {
+        stopReason = 'targetReached';
         break;
       }
       cursor = buildBackfillCursor(oldestBar.tradeDate);
@@ -250,6 +289,7 @@ export class CollectBenchmarkClosesUsecase {
         resultLatestTradeDate?.toISOString().slice(0, 10) ?? null,
       pages,
       oldestTradeDate,
+      stopReason,
     };
   }
 

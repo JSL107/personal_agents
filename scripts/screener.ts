@@ -26,6 +26,21 @@ import { ScreenerModule } from '../src/screener/screener.module';
 })
 class ScreenerCliModule {}
 
+const BACKFILL_STOP_DESCRIPTION: Record<string, string> = {
+  alreadyCovered: '이미 목표 기간을 덮고 있어 조회하지 않음',
+  targetReached: '목표 시작일 도달',
+  exhausted: '공급자 데이터 소진',
+  stalled: '커서가 더 과거로 가지 않음 — 목표 미달',
+  pageLimit: '페이지 상한 도달 — 목표 미달, 다시 실행하면 이어 받는다',
+};
+
+const describeBackfillStop = (reason: string | null): string => {
+  if (reason === null) {
+    return '알 수 없음';
+  }
+  return BACKFILL_STOP_DESCRIPTION[reason] ?? reason;
+};
+
 const main = async (): Promise<void> => {
   const parsed = parseScreenerCliArguments(process.argv.slice(2));
   const application =
@@ -73,7 +88,7 @@ const main = async (): Promise<void> => {
         `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.` +
           (parsed.options.years === undefined
             ? ''
-            : ` 백필 ${result.pages}페이지, 가장 오래된 거래일 ${result.oldestTradeDate ?? '없음'}.`),
+            : ` 백필 ${result.pages}페이지, 가장 오래된 거래일 ${result.oldestTradeDate ?? '없음'}, 종료 ${describeBackfillStop(result.stopReason)}.`),
       );
       return;
     }
