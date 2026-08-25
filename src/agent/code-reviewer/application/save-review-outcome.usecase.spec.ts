@@ -1,7 +1,7 @@
 import { SaveReviewOutcomeUsecase } from './save-review-outcome.usecase';
 
 describe('SaveReviewOutcomeUsecase', () => {
-  const mockRepo = { save: jest.fn(), findRecentRejected: jest.fn() };
+  const mockRepo = { save: jest.fn() };
   const usecase = new SaveReviewOutcomeUsecase(mockRepo as any);
 
   beforeEach(() => jest.clearAllMocks());
@@ -24,7 +24,6 @@ describe('SaveReviewOutcomeUsecase × episodic', () => {
   function createRepoMock() {
     return {
       save: jest.fn().mockResolvedValue(undefined),
-      findRecentRejected: jest.fn(),
     };
   }
 

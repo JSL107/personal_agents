@@ -10,10 +10,6 @@ import {
   TriggerType,
 } from '../../../agent-run/domain/agent-run.type';
 import {
-  EPISODIC_MEMORY_PORT,
-  EpisodicMemoryPort,
-} from '../../../episodic-memory/domain/port/episodic-memory.port';
-import {
   PullRequestDetail,
   PullRequestDiff,
 } from '../../../github/domain/github.type';
@@ -24,23 +20,27 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
+import {
+  PR_REVIEW_FINDING_REPOSITORY_PORT,
+  PrReviewFindingRepositoryPort,
+} from '../../../pr-review-loop/domain/port/pr-review-finding.repository.port';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
-import {
-  PR_REVIEW_OUTCOME_REPOSITORY_PORT,
-  PrReviewOutcomeRepositoryPort,
-} from '../domain/port/pr-review-outcome.repository.port';
 import { parsePrReference } from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
   CODE_REVIEWER_SYSTEM_PROMPT,
 } from '../domain/prompt/code-reviewer-system.prompt';
+import { renderLearnedConventions } from '../domain/prompt/learned-conventions';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
 
 const DEFAULT_INLINE_MAX = 4;
+
+// 규약으로 되먹일 기각의 유효기간. 조회 조건이 곧 만료라, 오래된 기각은 저절로 빠진다.
+const CONVENTION_WINDOW_DAYS = 90;
 
 @Injectable()
 export class ReviewPullRequestUsecase {
@@ -51,12 +51,10 @@ export class ReviewPullRequestUsecase {
     private readonly agentRunService: AgentRunService,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
-    @Inject(PR_REVIEW_OUTCOME_REPOSITORY_PORT)
-    private readonly outcomeRepository: PrReviewOutcomeRepositoryPort,
-    // episodic 은 옵셔널 — 주입 시 의미 유사 reject 우선, 미주입/실패 시 recency fallback(회귀 0).
+    // 카드 저장소는 옵셔널 — 미주입이면 학습 규약 없이 리뷰한다(회귀 0).
     @Optional()
-    @Inject(EPISODIC_MEMORY_PORT)
-    private readonly episodicMemory?: EpisodicMemoryPort,
+    @Inject(PR_REVIEW_FINDING_REPOSITORY_PORT)
+    private readonly findingRepository?: PrReviewFindingRepositoryPort,
     @Optional()
     private readonly configService?: ConfigService,
     @Optional()
@@ -112,17 +110,17 @@ export class ReviewPullRequestUsecase {
         reviewedDetail = detail;
         reviewedDiff = diff;
 
-        const negativeExamples = await this.buildNegativeExamples({
-          slackUserId,
-          detail,
-        });
+        const learnedConventions = await this.buildLearnedConventions(
+          detail.repo,
+        );
 
-        // 규약은 diff 뒤(negative example 과 같은 자리)에 붙인다 — "이건 지적하지 말라" 류
-        // 지시는 diff 를 다 읽은 뒤 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다.
+        // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
+        // 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다. 손으로 적은 규약과 기각에서
+        // 학습한 규약을 나란히 두어 같은 무게로 읽히게 한다.
         const prompt =
           buildReviewPrompt({ detail, diff, conversationContext }) +
           buildRepoConventions(detail.repo) +
-          negativeExamples;
+          learnedConventions;
 
         const completion = await this.modelRouter.route({
           agentType: AgentType.CODE_REVIEWER,
@@ -202,61 +200,43 @@ export class ReviewPullRequestUsecase {
     ];
   }
 
-  // negative example — episodic 주입 시 이번 PR 과 의미 유사한 과거 reject 우선,
-  // 미주입/검색실패/빈결과 시 recency(findRecentRejected) fallback. 둘 다 best-effort.
-  private async buildNegativeExamples({
-    slackUserId,
-    detail,
-  }: {
-    slackUserId: string;
-    detail: PullRequestDetail;
-  }): Promise<string> {
-    const comments = await this.recallRejectedComments({ slackUserId, detail });
-    if (comments.length === 0) {
+  /**
+   * 이 레포에서 기각된 지적을 규약 블록으로 만든다. 조회 실패는 규약 없이 진행(best-effort).
+   *
+   * 예시가 아니라 규약인 이유는 `learned-conventions.ts` 머리말 참조 — 프롬프트 끝에 예시로
+   * 덧붙이던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다.
+   */
+  private async buildLearnedConventions(repo: string): Promise<string> {
+    if (this.findingRepository === undefined) {
+      // 옵셔널 주입이라 배선이 틀려도 부팅은 성공한다 — 그 경우 규약만 조용히 사라지므로
+      // 흔적을 남긴다. 정상 경로(CodeReviewerModule)에서는 찍히지 않는다.
+      this.logger.warn(
+        '카드 저장소 미주입 — 학습 규약 없이 리뷰한다 (배선 확인 필요)',
+      );
       return '';
     }
-    return (
-      `\n\n[이 사용자가 과거에 무시한 리뷰 패턴 — 이런 코멘트는 피하세요]\n` +
-      comments.map((comment) => `• ${comment}`).join('\n')
-    );
-  }
-
-  private async recallRejectedComments({
-    slackUserId,
-    detail,
-  }: {
-    slackUserId: string;
-    detail: PullRequestDetail;
-  }): Promise<string[]> {
-    if (this.episodicMemory) {
-      try {
-        const hits = await this.episodicMemory.searchRelevant({
-          query: `${detail.title} ${detail.changedFiles.join(' ')}`,
-          kind: 'pr_review',
-          agentType: 'CODE_REVIEWER',
-          limit: 2,
-        });
-        const contents = hits
-          .map((hit) => hit.content)
-          .filter((content) => content.trim().length > 0);
-        if (contents.length > 0) {
-          return contents;
-        }
-      } catch (error) {
-        this.logger.warn(
-          `episodic reject 검색 실패, recency fallback: ${error instanceof Error ? error.message : String(error)}`,
+    try {
+      const since = new Date(
+        Date.now() - CONVENTION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const rows = await this.findingRepository.findRejectionsForConventions({
+        repo,
+        since,
+      });
+      const { block, categories } = renderLearnedConventions(rows);
+      if (categories.length > 0) {
+        // 무엇이 학습됐는지 남긴다 — 잘못 굳은 규약은 조용하기 때문에 발견이 늦는다.
+        this.logger.log(
+          `학습 규약 주입 (${repo}): ${categories.join(', ')} — 기각 ${rows.length}건 기준`,
         );
       }
-    }
-    const recent = await this.outcomeRepository
-      .findRecentRejected({ slackUserId, limit: 2 })
-      .catch(
-        () =>
-          [] as Awaited<
-            ReturnType<PrReviewOutcomeRepositoryPort['findRecentRejected']>
-          >,
+      return block;
+    } catch (error) {
+      this.logger.warn(
+        `학습 규약 조회 실패, 규약 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
       );
-    return recent.map((row) => row.comment ?? '(코멘트 없음)');
+      return '';
+    }
   }
 }
 

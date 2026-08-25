@@ -5,9 +5,11 @@ import {
   FindingCategory,
   FindingSeverity,
 } from '../../agent/code-reviewer/domain/code-reviewer.type';
+import { RejectedConventionRow } from '../../agent/code-reviewer/domain/prompt/learned-conventions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoryStatusCount } from '../domain/adoption-rate';
 import {
+  FindRejectionsForConventionsInput,
   HasAnyForPullRequestInput,
   MarkDecidedInput,
   OpenPostedPullRequestRow,
@@ -188,6 +190,35 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       status,
       count: _count._all,
     }));
+  }
+
+  async findRejectionsForConventions(
+    input: FindRejectionsForConventionsInput,
+  ): Promise<RejectedConventionRow[]> {
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: {
+        repo: input.repo,
+        status: 'REJECTED',
+        // 이유 없는 기각(👎 만 누른 경우)은 학습 재료가 아니다 — 무엇이 틀렸는지가 없다.
+        rejectReason: { not: null },
+        resolvedAt: { gte: input.since },
+      },
+      select: { category: true, rejectReason: true, resolvedAt: true },
+      orderBy: { resolvedAt: 'desc' },
+    });
+    // rejectReason·resolvedAt 은 스키마상 nullable 이라 where 로 걸러도 타입이 좁혀지지 않는다.
+    return rows.flatMap((row) => {
+      if (row.rejectReason === null || row.resolvedAt === null) {
+        return [];
+      }
+      return [
+        {
+          category: row.category,
+          rejectReason: row.rejectReason,
+          resolvedAt: row.resolvedAt,
+        },
+      ];
+    });
   }
 
   private isDuplicateFingerprint(error: unknown): boolean {

@@ -1,3 +1,4 @@
+import { RejectedConventionRow } from '../../../agent/code-reviewer/domain/prompt/learned-conventions';
 import { CategoryStatusCount } from '../adoption-rate';
 import {
   CreateFindingInput,
@@ -24,6 +25,12 @@ export interface MarkDecidedInput {
   // 두 번의 쓰기로 나누면 첫 쓰기 뒤 실패했을 때 status 가 OPEN 이 아니게 되어
   // 다음 회차 조회(status='OPEN' AND resolvedAt IS NULL)에서 빠지고 재시도가 사라진다.
   resolveThread?: boolean;
+}
+
+export interface FindRejectionsForConventionsInput {
+  repo: string;
+  /** 이 시각 이후 확정된 기각만. 조회 조건이 곧 규약의 만료 기한이다. */
+  since: Date;
 }
 
 // 대표 브리핑 — 미회수 지적이 남은 PR 하나.
@@ -65,4 +72,15 @@ export interface PrReviewFindingRepositoryPort {
   // 카테고리·상태별 카드 수. 채택률 분모 판정은 summarizeAdoption 이 하므로 여기서는
   // 상태를 걸러내지 않고 조합을 그대로 넘긴다.
   countAdoptionByCategory(): Promise<CategoryStatusCount[]>;
+
+  /**
+   * 이 레포에서 기각된 지적과 그 이유. 다음 리뷰의 규약 블록 재료다.
+   *
+   * 임계·상한·길이 컷은 `renderLearnedConventions` 가 맡는다 — 여기서는 학습 재료가 될 수
+   * 없는 행만 뺀다(이유 없는 기각, 기간 밖). 90일 기각이 십수 건 수준이라 전건을 넘겨도
+   * 무해하고, 선별을 순수 함수에 두면 규칙을 테스트로 고정할 수 있다.
+   */
+  findRejectionsForConventions(
+    input: FindRejectionsForConventionsInput,
+  ): Promise<RejectedConventionRow[]>;
 }
