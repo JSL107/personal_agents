@@ -271,12 +271,19 @@ describe('독자 축 (audience)', () => {
 });
 
 describe('문체 되먹임', () => {
-  const runOf = (voice: string, gaps: string[]) => ({
+  const runOf = (gaps: string[]) => ({
     id: 1,
     endedAt: new Date(),
-    inputSnapshot: { voice },
+    inputSnapshot: { voice: 'personal-blog' },
     output: { humanizedKeys: ['a'], styleGaps: gaps },
   });
+
+  // 40문장을 넘겨야 갭 판정이 열린다(그 아래는 문장 하나가 비율을 10%p 씩 흔든다).
+  const longProse = Array.from(
+    { length: 45 },
+    (_, index) =>
+      `${index}번째 문장은 목표를 벗어나도록 길게 늘여 쓴 서술입니다.`,
+  ).join(' ');
 
   it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
     const { service, routeMock, agentRunService } = makeService({
@@ -284,8 +291,8 @@ describe('문체 되먹임', () => {
       routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
     });
     agentRunService.findRecentSucceededRuns.mockResolvedValue([
-      runOf('personal-blog', ['편차 12.3(≥15)']),
-      runOf('personal-blog', ['편차 11.8(≥15)']),
+      runOf(['편차 12.3(≥15)']),
+      runOf(['편차 11.8(≥15)']),
     ]);
 
     await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
@@ -295,20 +302,21 @@ describe('문체 되먹임', () => {
     expect(systemPrompt).toContain('편차 12.3(≥15)');
   });
 
-  it('다른 목소리의 회차는 표본에서 뺀다 — 보고서 문체가 개인 글 목표를 흔들지 않게', async () => {
-    const { service, routeMock, agentRunService } = makeService({
+  it('목소리를 조회 조건으로 내린다 — 보고서 윤문이 상한을 채워도 표본이 밀리지 않게', async () => {
+    const { service, agentRunService } = makeService({
       enabled: 'true',
       routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
     });
-    agentRunService.findRecentSucceededRuns.mockResolvedValue([
-      runOf('report', ['편차 12.3(≥15)']),
-      runOf('report', ['편차 11.8(≥15)']),
-    ]);
 
     await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
 
-    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
-    expect(systemPrompt).not.toContain('되풀이된 문체 갭');
+    const [input] = agentRunService.findRecentSucceededRuns.mock.calls[0] as [
+      { inputSnapshotEquals?: { path: string[]; value: string } },
+    ];
+    expect(input.inputSnapshotEquals).toEqual({
+      path: ['voice'],
+      value: 'personal-blog',
+    });
   });
 
   it('보고서 목소리면 원장을 조회조차 하지 않는다', async () => {
@@ -339,5 +347,41 @@ describe('문체 되먹임', () => {
     expect(result.a).toBe('윤문A');
     const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
     expect(systemPrompt).not.toContain('되풀이된 문체 갭');
+  });
+
+  it('측정 가능한 결과면 계산된 갭이 원장에 기록된다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: longProse }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
+    const executed = await runArg.run({ agentRunId: 1 });
+    const output = executed.output as { styleGaps: string[] };
+    // 목표를 벗어나도록 만든 표본이라 갭이 비어 있지 않아야 한다.
+    expect(output.styleGaps.length).toBeGreaterThan(0);
+  });
+
+  it('모델이 비워 돌려준 필드의 원문도 측정에 포함한다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      // a 를 빈 값으로 돌려주면 어댑터는 그 문단을 원문 그대로 둔다.
+      routeImpl: async () => ({
+        text: JSON.stringify({ a: '', b: '짧은 윤문본.' }),
+      }),
+    });
+
+    await service.humanize(
+      { a: longProse, b: '원본B' },
+      { voice: 'personal-blog' },
+    );
+
+    const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
+    const executed = await runArg.run({ agentRunId: 1 });
+    const output = executed.output as { styleGaps: string[] };
+    // a 의 원문이 빠지면 문장 수가 임계 미만이 되어 갭이 빈 배열로 저장된다.
+    expect(output.styleGaps.length).toBeGreaterThan(0);
   });
 });

@@ -32,6 +32,17 @@ export interface FinishAgentRunInput {
   contractScore?: number;
 }
 
+/**
+ * `inputSnapshot` JSON 의 한 경로를 값으로 거르는 조건.
+ *
+ * 조회 **뒤에** 애플리케이션에서 거르면 `take` 가 필터보다 먼저 걸려, 찾는 종류가 최근
+ * 목록 밖으로 밀리는 순간 결과가 통째로 빈다. 조건을 조회로 내려야 표본이 안정된다.
+ */
+export interface InputSnapshotEquals {
+  path: string[];
+  value: string;
+}
+
 export interface SucceededAgentRunSnapshot {
   id: number;
   output: unknown;
