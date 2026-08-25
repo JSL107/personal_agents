@@ -57,6 +57,7 @@ import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
+import { PaperIntradayStopAutopilotTask } from './infrastructure/tasks/paper-intraday-stop.autopilot-task';
 import { PaperOrderFillAutopilotTask } from './infrastructure/tasks/paper-order-fill.autopilot-task';
 import { PaperRecommendAutopilotTask } from './infrastructure/tasks/paper-recommend.autopilot-task';
 import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.autopilot-task';
@@ -148,6 +149,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     UniverseSweepAutopilotTask,
     PaperRecommendAutopilotTask,
     PaperOrderFillAutopilotTask,
+    PaperIntradayStopAutopilotTask,
     PaperScoreAutopilotTask,
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
@@ -245,6 +247,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep: UniverseSweepAutopilotTask,
         paperRecommend: PaperRecommendAutopilotTask,
         paperOrderFill: PaperOrderFillAutopilotTask,
+        paperIntradayStop: PaperIntradayStopAutopilotTask,
         paperScore: PaperScoreAutopilotTask,
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
@@ -279,6 +282,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         universeSweep,
         paperRecommend,
         paperOrderFill,
+        paperIntradayStop,
         paperScore,
         aiCliEnvSnapshot,
         aiCliEnvApply,
@@ -314,6 +318,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         UniverseSweepAutopilotTask,
         PaperRecommendAutopilotTask,
         PaperOrderFillAutopilotTask,
+        PaperIntradayStopAutopilotTask,
         PaperScoreAutopilotTask,
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,

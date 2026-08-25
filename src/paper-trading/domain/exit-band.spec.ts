@@ -1,7 +1,9 @@
 import {
   decideExitBandOrders,
+  decideIntradayStopOrders,
   DEFAULT_EXIT_BAND,
   describeExitBandReason,
+  describeIntradayStopReason,
   summarizeExitBandUsage,
 } from './exit-band';
 
@@ -20,6 +22,77 @@ const candidate = (
   returnRate: '0',
   isStale: false,
   ...overrides,
+});
+
+const intradayStopCandidate = (
+  overrides: Partial<{
+    tickerId: number;
+    tickerCode: string;
+    quantity: string;
+    returnRatePercent: number;
+    price: string;
+  }> = {},
+) => ({
+  tickerId: 1,
+  tickerCode: '008930',
+  quantity: '32',
+  returnRatePercent: -5,
+  price: '46100',
+  ...overrides,
+});
+
+describe('decideIntradayStopOrders', () => {
+  // `<=`가 `<`로 바뀌면 정확히 손절선에 닿은 보유 종목이 청산되지 않는다.
+  it('정확히 -5%이면 장중 손절 대상으로 정리한다', () => {
+    const decisions = decideIntradayStopOrders([intradayStopCandidate()]);
+
+    expect(decisions).toEqual([
+      {
+        tickerId: 1,
+        tickerCode: '008930',
+        quantity: '32',
+        returnRatePercent: -5,
+        price: '46100',
+      },
+    ]);
+  });
+
+  it.each([
+    ['0', -6],
+    ['-1', -6],
+    ['NaN', -6],
+    ['1', Number.NaN],
+    ['1', Number.POSITIVE_INFINITY],
+  ])(
+    '수량 또는 손익률이 유효하지 않으면 제외한다: quantity=%s, returnRatePercent=%s',
+    (quantity, returnRatePercent) => {
+      const decisions = decideIntradayStopOrders([
+        intradayStopCandidate({ quantity, returnRatePercent }),
+      ]);
+
+      expect(decisions).toEqual([]);
+    },
+  );
+
+  it('익절 구간은 장중 청산하지 않는다', () => {
+    const decisions = decideIntradayStopOrders([
+      intradayStopCandidate({ returnRatePercent: 20 }),
+    ]);
+
+    expect(decisions).toEqual([]);
+  });
+});
+
+describe('describeIntradayStopReason', () => {
+  it('판정가를 포함한 장중 손절 사유를 남긴다', () => {
+    const reason = describeIntradayStopReason(
+      intradayStopCandidate({ returnRatePercent: -18.28 }),
+    );
+
+    expect(reason).toBe(
+      '장중 손절 밴드 이탈: 평가 손익률 -18.28% (기준 -5% 이하, 판정가 46100원)',
+    );
+  });
 });
 
 describe('decideExitBandOrders', () => {

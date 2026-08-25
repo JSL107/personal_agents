@@ -206,11 +206,30 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(paperOrderFill?.digestGroup).toBeUndefined();
   });
 
-  it('모의투자 추천 성적을 기존 paper 항목 뒤 금요일 20:10 KST standalone 항목으로 포함한다', () => {
+  it('모의투자 장중 손절을 체결 바로 뒤 평일 5분 주기 standalone 항목으로 포함한다', () => {
     const paperOrderFillIndex = AUTOPILOT_PLAYBOOK.findIndex(
       (entry) => entry.id === 'paper-order-fill',
     );
-    const paperScore = AUTOPILOT_PLAYBOOK[paperOrderFillIndex + 1];
+    const paperIntradayStop = AUTOPILOT_PLAYBOOK[paperOrderFillIndex + 1];
+
+    expect(paperIntradayStop).toMatchObject({
+      id: 'paper-intraday-stop',
+      taskId: 'paper-intraday-stop',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '*/5 9-15 * * 1-5',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(paperIntradayStop.digestGroup).toBeUndefined();
+  });
+
+  it('모의투자 추천 성적을 장중 손절 바로 뒤 금요일 20:10 KST standalone 항목으로 포함한다', () => {
+    const paperIntradayStopIndex = AUTOPILOT_PLAYBOOK.findIndex(
+      (entry) => entry.id === 'paper-intraday-stop',
+    );
+    const paperScore = AUTOPILOT_PLAYBOOK[paperIntradayStopIndex + 1];
 
     expect(paperScore).toMatchObject({
       id: 'paper-score',

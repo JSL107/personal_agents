@@ -1,3 +1,15 @@
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+export const getKstClock = (
+  date: Date,
+): { tradeDate: string; minutes: number } => {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  return {
+    tradeDate: shifted.toISOString().slice(0, 10),
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
+  };
+};
+
 // 주문의 목표 거래일 계산. 체결기는 `targetTradeDate <= 오늘` 로 조회하므로 주말 날짜를
 // 적어도 결국 월요일에 체결되기는 한다. 그래도 주말을 건너뛰는 이유는 원장 때문이다 —
 // "무엇을 보고 언제 체결할 작정이었나" 를 사후에 증명하는 표에 장이 열리지 않는 날짜가

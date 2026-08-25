@@ -11,6 +11,7 @@
 // 다시 튜닝할 때는 구간을 새로 잘라야 한다(위 문서의 표를 보고 고르면 표본 밖이 아니게 된다).
 export const DEFAULT_TAKE_PROFIT_PERCENT = 10;
 export const DEFAULT_STOP_LOSS_PERCENT = -5;
+export const INTRADAY_STOP_REASON_PREFIX = '장중 손절';
 
 export type ExitBandReason = 'TAKE_PROFIT' | 'STOP_LOSS';
 
@@ -34,6 +35,22 @@ export interface ExitBandDecision {
   quantity: string;
   reason: ExitBandReason;
   returnRatePercent: number;
+}
+
+export interface IntradayStopCandidate {
+  tickerId: number;
+  tickerCode: string;
+  quantity: string;
+  returnRatePercent: number;
+  price: string;
+}
+
+export interface IntradayStopDecision {
+  tickerId: number;
+  tickerCode: string;
+  quantity: string;
+  returnRatePercent: number;
+  price: string;
 }
 
 export interface ExitBandSellOrderRecord {
@@ -102,6 +119,34 @@ export const decideExitBandOrders = (
     ];
   });
 
+// 종가 밴드는 하루 한 번 종가로 판정해 다음 거래일 시가에 체결하지만, 이 함수는 장중
+// 관측 주기에 맞춰 손절만 판정한다. 판정가 즉시 체결은 급락장에서는 슬리피지로 성립하지
+// 않을 수 있는 단순화이며, 실측 슬리피지를 반영하려면 별도 측정이 필요하다.
+export const decideIntradayStopOrders = (
+  candidates: IntradayStopCandidate[],
+  stopLossPercent: number = DEFAULT_STOP_LOSS_PERCENT,
+): IntradayStopDecision[] =>
+  candidates.flatMap((candidate) => {
+    const quantity = Number(candidate.quantity);
+    if (
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      !Number.isFinite(candidate.returnRatePercent) ||
+      candidate.returnRatePercent > stopLossPercent
+    ) {
+      return [];
+    }
+    return [
+      {
+        tickerId: candidate.tickerId,
+        tickerCode: candidate.tickerCode,
+        quantity: candidate.quantity,
+        returnRatePercent: candidate.returnRatePercent,
+        price: candidate.price,
+      },
+    ];
+  });
+
 export const describeExitBandReason = (
   decision: ExitBandDecision,
   threshold: ExitBandThreshold = DEFAULT_EXIT_BAND,
@@ -112,6 +157,12 @@ export const describeExitBandReason = (
   }
   return `손절 밴드 이탈: 평가 손익률 ${rate}% (기준 ${threshold.stopLossPercent}% 이하)`;
 };
+
+export const describeIntradayStopReason = (
+  decision: IntradayStopDecision,
+  stopLossPercent: number = DEFAULT_STOP_LOSS_PERCENT,
+): string =>
+  `${INTRADAY_STOP_REASON_PREFIX} 밴드 이탈: 평가 손익률 ${decision.returnRatePercent.toFixed(2)}% (기준 ${stopLossPercent}% 이하, 판정가 ${decision.price}원)`;
 
 // 이 구간의 매도 주문에 어떤 밴드 설정이 박혀 있었는지 모은다. 값이 둘 이상이면 밴드를 바꾼
 // 구간을 걸친 표본이라는 뜻이고, 그 사실이 성적을 읽는 전제다 — 뭉뚱그리면 "밴드를 넓혀서

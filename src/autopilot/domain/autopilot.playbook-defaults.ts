@@ -77,6 +77,11 @@ export const DEFAULT_PAPER_RECOMMEND_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PAPER_ORDER_FILL_CRON = '*/10 9-15 * * 1-5';
 export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
 
+// 모의투자 장중 손절 — 평일 09:00~15:59 5분 주기. 실제 처리 창(09:30~15:20)은 usecase가 판정한다.
+// 종가 밴드(17:40)만으로는 장중 급락을 못 잡아 -18% 에서야 판정된 사례가 있다.
+export const DEFAULT_PAPER_INTRADAY_STOP_CRON = '*/5 9-15 * * 1-5';
+export const DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE = 'Asia/Seoul';
+
 // 모의투자 추천 성적 — 금요일 20:10 KST 주 1회.
 //
 // 채점은 당일 종가에 의존한다. 청산일·평가기준일의 `DailyPrice` 와 `BenchmarkDailyClose` 가

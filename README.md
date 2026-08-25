@@ -231,6 +231,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
 | 🗂️ 금 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
+| 📉 평일 09:00~15:59 KST, 5분 주기 | 모의투자 장중 손절 — 실제 처리 창 09:30~15:20 KST, `PAPER_TRADING_ENABLED=true` 일 때만 실행 |
 | 🇰🇷 평일 17:10 KST | 국내 보유 종목 모니터링 |
 | 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
 
