@@ -9,6 +9,12 @@ import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
+import {
+  findPreservationViolations,
+  PreservationViolation,
+  PreservedTokenKind,
+  shouldRollbackField,
+} from '../domain/content-preservation';
 import { parseHumanizeOutput } from '../domain/humanize-output.parser';
 import {
   HUMANIZE_CONCISE_RULES,
@@ -47,6 +53,13 @@ export interface HumanizeOptions {
    */
   audience?: HumanizeAudience;
 }
+
+type PreservationViolationCounts = Record<PreservedTokenKind, number>;
+
+type PreservationViolationSummary = Record<
+  PreservationViolation['direction'],
+  PreservationViolationCounts
+>;
 
 // 자동 보고서 서술 필드 윤문(humanize). best-effort — 어떤 실패도 원본을 반환해 보고서를 막지 않는다.
 @Injectable()
@@ -144,11 +157,38 @@ export class HumanizeService {
             noFallback: true,
           });
           const humanized = parseHumanizeOutput(completion.text, keys);
+          const rolledBackKeys: string[] = [];
+          const violationsByKey: Record<string, PreservationViolation[]> = {};
+          const preservationViolations = createViolationSummary();
+
+          for (const key of keys) {
+            const violations = findPreservationViolations(
+              fields[key],
+              humanized[key],
+            );
+            addViolationsToSummary(preservationViolations, violations);
+            if (shouldRollbackField(violations)) {
+              humanized[key] = fields[key];
+              rolledBackKeys.push(key);
+              violationsByKey[key] = violations;
+            }
+          }
+
+          if (rolledBackKeys.length > 0) {
+            this.logger.warn(
+              buildRollbackWarning(rolledBackKeys, violationsByKey),
+            );
+          }
+
           return {
             result: { ...fields, ...humanized },
             modelUsed: completion.modelUsed,
             // 윤문 본문은 원장에 담지 않는다 — 보고서 전문이 그대로 복제된다.
-            output: { humanizedKeys: Object.keys(humanized) },
+            output: {
+              humanizedKeys: Object.keys(humanized),
+              rolledBackKeys,
+              preservationViolations,
+            },
           };
         },
       });
@@ -160,3 +200,35 @@ export class HumanizeService {
     }
   }
 }
+
+const createViolationSummary = (): PreservationViolationSummary => {
+  return {
+    injected: { code: 0, url: 0, pr: 0, number: 0 },
+    lost: { code: 0, url: 0, pr: 0, number: 0 },
+  };
+};
+
+const addViolationsToSummary = (
+  summary: PreservationViolationSummary,
+  violations: PreservationViolation[],
+): void => {
+  for (const violation of violations) {
+    summary[violation.direction][violation.kind] += 1;
+  }
+};
+
+const buildRollbackWarning = (
+  rolledBackKeys: string[],
+  violationsByKey: Record<string, PreservationViolation[]>,
+): string => {
+  const details = rolledBackKeys.map((key) => {
+    const violations = violationsByKey[key]
+      .map(
+        (violation) =>
+          `${violation.direction} ${violation.kind} ${JSON.stringify(violation.token)}`,
+      )
+      .join(', ');
+    return `${key}: ${violations}`;
+  });
+  return `윤문 내용 보존 롤백 — ${details.join('; ')}`;
+};
