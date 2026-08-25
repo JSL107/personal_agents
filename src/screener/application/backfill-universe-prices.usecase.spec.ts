@@ -253,6 +253,25 @@ describe('BackfillUniversePricesUsecase', () => {
     );
   });
 
+  // 개수만 보면 이 경우가 소진으로 숨는다. before 를 준 시각보다 미래인 봉이 왔다는 것은
+  // 공급자가 커서를 무시했다는 뜻이라, 정상 소진이 아니라 이상 신호다.
+  it('커서보다 미래인 봉 하나가 오면 소진이 아니라 미진전으로 센다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValueOnce([bar('2023-12-22', '50'), bar('2024-03-05', '60')])
+      .mockResolvedValueOnce([bar('2024-06-01', '70')]);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 2, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    const result = await fixture.usecase.execute();
+
+    expect(result).toEqual(
+      expect.objectContaining({ exhausted: 0, stalled: 1, pagesFetched: 2 }),
+    );
+  });
+
   // 같은 페이지가 통째로 다시 오는 것은 공급자가 커서를 무시했다는 뜻이라 위와 구분한다.
   it('여러 봉이 통째로 다시 오면 소진이 아니라 미진전으로 센다', async () => {
     const repeated = [bar('2025-01-02', '90'), bar('2025-01-03', '100')];
