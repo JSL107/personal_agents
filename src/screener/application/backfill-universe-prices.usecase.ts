@@ -155,7 +155,15 @@ export class BackfillUniversePricesUsecase {
             cursorTradeDate !== undefined &&
             oldestTradeDate >= cursorTradeDate
           ) {
-            result.stalled += 1;
+            // 토스는 커서 날짜의 봉을 응답에 포함한다. 상장일까지 다 받은 종목은 그 봉
+            // 하나만 돌아오므로 빈 응답이 아니고 커서도 움직이지 않는다 — 이건 더 줄 게
+            // 없다는 뜻이지 이상이 아니다. 상장 5년 미만 종목이 전부 이 경로로 끝난다.
+            // 반면 여러 봉이 통째로 다시 오면 공급자가 커서를 무시한 것이라 이상 신호다.
+            if (bars.length <= 1) {
+              result.exhausted += 1;
+            } else {
+              result.stalled += 1;
+            }
             shouldContinue = false;
             continue;
           }
@@ -218,8 +226,10 @@ export class BackfillUniversePricesUsecase {
   ): void {
     const processed = index + 1;
     if (processed % PROGRESS_INTERVAL === 0) {
+      // 모든 종료 사유를 싣는다. 일부만 찍으면 처리 수와 합이 맞지 않아, 어디로 샜는지
+      // 로그만 보고는 알 수 없다(실제로 stalled 를 빠뜨려 그 상태를 한 번 만들었다).
       this.logger.log(
-        `유니버스 과거 시세 수집 진행 — ${processed}/${targetCount}, 성공 ${result.succeeded}, 소진 ${result.exhausted}, 실패 ${result.failed}`,
+        `유니버스 과거 시세 수집 진행 — ${processed}/${targetCount}, 성공 ${result.succeeded}, 건너뜀 ${result.skipped}, 소진 ${result.exhausted}, 미진전 ${result.stalled}, 실패 ${result.failed}`,
       );
     }
   }
