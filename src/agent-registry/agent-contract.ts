@@ -29,6 +29,11 @@ import { AgentType } from '../model-router/domain/model-router.type';
  * (1) 화면 평면도와 어긋나고 (2) #199 로 CTO·PO Shadow 가 autopilot 에 편입돼
  * "안 쓰인다" 는 전제가 흔들려 보류했다. 계약의 알맹이(하는 일·산출물 규격·근거 요구)는
  * 부서 구분과 독립이라 편성을 바꿔도 그대로 유효하다.
+ *
+ * 2026-08-25 재배치: 부서 정의문과 각 워커의 `job` 을 한 줄씩 대조해 어긋난 둘을 옮겼다
+ * (BE_FIX 개발 → 리뷰, PO_EVAL 기획 → 리뷰). EVENING_RETRO 는 옮기지 않았다 — 산출물이
+ * 발행 후보라 성장으로 읽히지만 하루 운영을 되짚는 회고라는 성격이 남아 판정이 갈리고,
+ * 성장 구역이 이미 자리표를 넘겨 있어(콘솔 `departmentDeskSpots`) 이동이 배치까지 흔든다.
  */
 export enum Department {
   /** 기획 — 할 일 정의·기획 검토. */
@@ -39,7 +44,7 @@ export enum Department {
   REVIEW = 'review',
   /** 경영 — 배분·총평. */
   EXECUTIVE = 'executive',
-  /** 성장 — 블로그·이력서·커리어·휴가. */
+  /** 성장 — 대표 개인의 자산: 블로그·이력서·커리어·휴가, 그리고 투자·모의투자. */
   GROWTH = 'growth',
   /** 내부 — 회사 자체 유지보수. */
   INTERNAL_OPS = 'internalOps',
@@ -161,13 +166,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     requireEvidence: true,
     nextAgent: AgentType.CTO,
   },
-  [AgentType.PO_EVAL]: {
-    department: Department.PLANNING,
-    job: '기간 성과를 정성 평가하고 커리어 로그를 남긴다',
-    deliverableFields: ['qualitative', 'careerLog'],
-    requireEvidence: false,
-    nextAgent: AgentType.CEO,
-  },
   [AgentType.PO_SHADOW]: stub(
     Department.PLANNING,
     'PO 관점에서 기획을 그림자 검토한다',
@@ -183,10 +181,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   [AgentType.BE_SRE]: stub(
     Department.ENGINEERING,
     '스택 트레이스를 분석해 장애 원인을 찾는다',
-  ),
-  [AgentType.BE_FIX]: stub(
-    Department.ENGINEERING,
-    'PR 의 컨벤션 위반을 찾아 고칠 곳을 알린다',
   ),
 
   // ──────────────────────────────── 리뷰 ────────────────────────────────
@@ -219,6 +213,25 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.REVIEW,
     'PR 리뷰 지적에 달린 답변이 수용인지 판정한다',
   ),
+  // 2026-08-25 개발 → 리뷰. 하는 일이 "PR 의 diff 를 읽고 고칠 곳을 지적한다" 라
+  // CODE_REVIEWER 와 대상도 산출물도 같다. 개발 부서의 정의(구현 계획·스키마·테스트·
+  // 장애 분석)에는 PR 을 읽는 일이 없다 — `analyze-pr-convention.usecase.ts` 는 코드를
+  // 쓰지 않고 GitHub diff 를 받아 위반 목록을 낸다.
+  [AgentType.BE_FIX]: stub(
+    Department.REVIEW,
+    'PR 의 컨벤션 위반을 찾아 고칠 곳을 알린다',
+  ),
+  // 2026-08-25 기획 → 리뷰. 기획 부서의 정의는 "할 일 정의·기획 검토" 인데 이 워커는
+  // 이미 끝난 기간의 성과를 평가한다 — 리뷰 정의의 "임팩트 평가" 그대로이고,
+  // WORK_REVIEWER(리뷰) → PO_EVAL → CEO 라는 인계 순서와도 맞는다. 이름의 PO 는 직군
+  // 명칭일 뿐이고, 부서 편성의 기준은 직군이 아니라 하는 일이다.
+  [AgentType.PO_EVAL]: {
+    department: Department.REVIEW,
+    job: '기간 성과를 정성 평가하고 커리어 로그를 남긴다',
+    deliverableFields: ['qualitative', 'careerLog'],
+    requireEvidence: false,
+    nextAgent: AgentType.CEO,
+  },
 
   // ──────────────────────────────── 경영 ────────────────────────────────
   [AgentType.CTO]: {
