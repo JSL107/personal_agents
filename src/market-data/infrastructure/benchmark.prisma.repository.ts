@@ -22,6 +22,15 @@ export class BenchmarkPrismaRepository {
     return latest?.tradeDate ?? null;
   }
 
+  async findOldestTradeDate(symbol: string): Promise<Date | null> {
+    const oldest = await this.prisma.benchmarkDailyClose.findFirst({
+      where: { symbol },
+      orderBy: { tradeDate: 'asc' },
+      select: { tradeDate: true },
+    });
+    return oldest?.tradeDate ?? null;
+  }
+
   async upsertCloses(rows: BenchmarkCloseWriteInput[]): Promise<number> {
     if (rows.length === 0) {
       return 0;
