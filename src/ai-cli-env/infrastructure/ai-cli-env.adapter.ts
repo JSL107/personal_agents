@@ -55,14 +55,23 @@ const BOOTSTRAP_ENV_KEYS = [
   'SHELL',
   'TMPDIR',
 ] as const;
+// export 가 만드는 산출물만 스테이징한다. 절차서처럼 사람이 손대는 파일은 건드리지 않는다.
+// 목록에서 빠진 산출물은 워킹트리에만 남아 원격에 영영 올라가지 않으므로, export 가 새 파일을
+// 만들면 여기도 같이 늘려야 한다 (apply.sh·tools 가 그렇게 추가됐다).
 const EXPORT_MANAGED_PATHS = [
   'manifest.json',
   'SECRETS-TODO.md',
+  'apply.sh',
   'claude',
   'codex',
+  'tools',
 ] as const;
-const EXPORT_MANAGED_FILES = ['manifest.json', 'SECRETS-TODO.md'] as const;
-const EXPORT_MANAGED_DIRECTORIES = ['claude', 'codex'] as const;
+const EXPORT_MANAGED_FILES = [
+  'manifest.json',
+  'SECRETS-TODO.md',
+  'apply.sh',
+] as const;
+const EXPORT_MANAGED_DIRECTORIES = ['claude', 'codex', 'tools'] as const;
 
 @Injectable()
 export class AiCliEnvAdapter implements AiCliEnvPort {
@@ -246,7 +255,15 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     );
     const result = await this.executeWithResult(
       'node',
-      [join(cwd(), 'scripts', 'bootstrap-ai-cli-env.cjs'), syncDirectory],
+      // --all 을 붙이지 않으면 bootstrap 이 hooks 와 전역 지침 문서를 건너뛴다. 그 기본값은 남의 PC 에
+      // 적용하는 상황을 전제한 안전장치인데, 이 동기화는 같은 사람의 PC 사이에서만 도는 기능이라
+      // 붙이지 않으면 자동 적용이 끝나도 hooks 가 한 줄도 안 붙어 결국 손으로 채워야 한다.
+      // 덮어쓰기 전 기존 파일은 bootstrap 이 타임스탬프를 붙여 백업한다.
+      [
+        join(cwd(), 'scripts', 'bootstrap-ai-cli-env.cjs'),
+        syncDirectory,
+        '--all',
+      ],
       {
         timeout: BOOTSTRAP_TIMEOUT_MS,
         env: this.buildBootstrapEnvironment(manifest),

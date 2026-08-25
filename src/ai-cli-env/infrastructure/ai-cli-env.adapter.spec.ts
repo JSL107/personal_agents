@@ -261,15 +261,17 @@ describe('AiCliEnvAdapter', () => {
         '--',
         'manifest.json',
         'SECRETS-TODO.md',
+        'apply.sh',
         'claude',
         'codex',
+        'tools',
       ],
       expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
       expect.any(Function),
     );
     expect(mockedExecFile).toHaveBeenCalledWith(
       'git',
-      ['add', '-A', '--', 'manifest.json', 'SECRETS-TODO.md'],
+      ['add', '-A', '--', 'manifest.json', 'SECRETS-TODO.md', 'apply.sh'],
       expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
       expect.any(Function),
     );
@@ -326,8 +328,10 @@ describe('AiCliEnvAdapter', () => {
         '--',
         'manifest.json',
         'SECRETS-TODO.md',
+        'apply.sh',
         'claude',
         'codex',
+        'tools',
       ],
       expect.any(Object),
       expect.any(Function),
@@ -531,7 +535,10 @@ describe('AiCliEnvAdapter', () => {
         command === 'node' &&
         (argumentsList as string[])[0]?.endsWith('bootstrap-ai-cli-env.cjs'),
     );
-    expect(bootstrapCall?.[1]).not.toContain('--with-hooks');
+    // #284 는 hooks 를 자동 적용하지 않기로 했지만, 그 결과 자동 적용이 끝나도 hooks 와 전역 지침은
+    // 늘 손으로 채워야 했다. 이 동기화는 같은 사람의 PC 사이에서만 돌고 적용 자체가 Slack 승인
+    // 관문을 거치므로, 지금은 --all 로 전부 적용한다 (기존 파일은 bootstrap 이 백업한다).
+    expect(bootstrapCall?.[1]).toContain('--all');
     expect(bootstrapCall?.[2]).toEqual(
       expect.objectContaining({ timeout: 600_000 }),
     );
