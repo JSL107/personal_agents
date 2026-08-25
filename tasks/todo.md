@@ -733,3 +733,75 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 전체 gate: lint exit 0(0 errors, 기존 warning 57), test 439 suites/4,015 tests + code-graph 5 suites/40 tests, build exit 0.
 
 ---
+---
+# 윤문 내용 보존 가드 (2026-08-25)
+
+**Goal:** `.ai/design.md` 계약대로 윤문 결과의 수치·PR·URL·코드 토큰 훼손을 필드 단위로 감지하고 안전하게 원본으로 롤백한다.
+
+**Contract:** 공개 시그니처를 유지하고, 토큰은 `code`·`url`·`pr`·`number` 순서로 집합 비교한다. `injected` 전부와 `lost`의 `pr`·`url`·`code`만 롤백한다. 본문과 토큰 전문은 원장에 남기지 않는다. DB/env/Prisma/의존성은 변경하지 않는다.
+
+- [x] T1 RED: `content-preservation.spec.ts`에 설계의 필수 8개 케이스를 먼저 작성하고, production 파일 부재로 예상 실패를 확인한다.
+- [x] T1 GREEN: `content-preservation.ts`에 타입·토큰 추출·위반 탐지·롤백 판정을 최소 구현하고 focused spec green을 확인한다.
+- [x] T2: 기존 `humanize.service.spec.ts`에 필드별 롤백, 1회 warn, 원장 요약 케이스를 보강한다.
+- [x] T2: `humanize.service.ts`에서 parse 직후 검증·부분 롤백·로그·원장 요약을 배선한다.
+- [x] 가드 mutation: 롤백 판정을 반대로 뒤집어 T1 spec이 실패하는지 확인한 뒤 원복하고 green을 재확인한다.
+- [x] `pnpm lint:check`, `pnpm exec jest src/humanize`, `pnpm test`, `pnpm build`를 파이프 없이 각각 실행해 exit 0을 확인한다.
+- [x] 최종 diff를 설계·보안·회귀·금지 범위 관점에서 검토하고 `.ai/implementation-summary.md`와 아래 Review를 실제 결과로 작성한다.
+
+## Review
+
+- T1은 production 모듈 부재 `TS2307` RED를 확인한 뒤 8개 계약 테스트를 GREEN으로 만들었다.
+- 판정 반전 mutation에서 8개 중 7개가 실패했고, 원복 뒤 8개 전부 다시 통과했다.
+- service는 위반 필드만 원복한다. 정상 필드는 윤문본을 유지하며 `3개` → `세 개`도 통과한다.
+- 원장은 `humanizedKeys`, `rolledBackKeys`, 종류·방향별 건수만 저장한다. 본문·토큰 전문은 저장하지 않는다.
+- 최종 검증은 lint exit 0, humanize 10 suites/157 tests, 전체 437 suites/4,013 tests + code-graph 5 suites/40 tests, build exit 0이다.
+- 독립 리뷰 결과 Blocker/Should Fix 없음. 설계 이탈, DB/Prisma/env/의존성 변경, git add/commit/push 없음.
+- 실제 LLM 호출과 운영 AgentRun·로그 수집기 통합은 미검증이다.
+
+---
+# 윤문 보존 토큰 경계 오탐 수정 (2026-08-25)
+
+**Goal:** URL 뒤 문장부호를 URL 토큰에서 제외하고 천 단위 쉼표 숫자를 하나의 토큰으로 진단한다.
+
+**Root cause:** URL regex가 공백 전 문장부호까지 토큰으로 삼고, number regex가 천 단위 쉼표를 허용하지 않아 의미상 같은 URL은 다르게, 하나의 수치는 여러 토큰으로 해석한다.
+
+- [x] RED: URL 끝 쉼표·마침표, URL 내부 마침표 유지/변경, 천 단위 숫자 유지/변경, 숫자 나열 경계 케이스를 spec에 추가하고 예상 실패를 확인한다.
+- [x] GREEN: URL 끝 문장부호만 토큰에서 제거하되 제거 문자는 마스킹하지 않고, 천 단위 쉼표와 소수를 한 숫자 토큰으로 추출한다.
+- [x] mutation: URL 끝 문장부호 정규화를 제거한 상태에서 신규 URL 테스트가 실패하는지 확인하고 원복한다.
+- [x] `pnpm lint:check`, `pnpm exec jest src/humanize`, `pnpm test`, `pnpm build`를 파이프 없이 각각 실행해 exit 0을 확인한다.
+- [x] 최종 diff를 검토하고 `.ai/implementation-summary.md`에 이번 회차 결과를 이전 기록 뒤에 덧붙인다.
+
+## Review
+
+- RED에서 24개 중 12개가 실패했다. URL suffix 11개와 `1,000` 진단 분할 1개가 보고된 오탐을 재현했다.
+- URL 토큰은 끝의 `.,;:!?)]}'\"`만 제거하고, 제거한 suffix는 공백 마스킹 뒤 원문 위치에 그대로 남긴다.
+- number regex는 천 단위 쉼표 반복과 소수를 한 토큰으로 잡는다. `3, 4`는 별개 숫자로 유지한다.
+- URL suffix 제거 mutation에서 신규 URL 테스트 11개가 실패했고, 원복 뒤 확장 spec 27개가 모두 통과했다.
+- 최종 검증은 lint exit 0, humanize 10 suites/176 tests, 전체 437 suites/4,032 tests + code-graph 5 suites/40 tests, build exit 0이다.
+- 사용자가 끝 suffix 제거 대상으로 명시한 닫는 괄호가 실제 URL 마지막 문자인 경우도 제거된다. balance parser는 이번 정책·범위 밖이라 추가하지 않았다.
+- DB/Prisma/env/의존성 변경과 git add/commit/push 없음.
+
+---
+# PR #386 봇 리뷰 대응 (2026-08-25)
+
+**Goal:** 수치 표기 미탐, 균형 괄호 URL 미탐, URL credential 로그 노출을 제거한다.
+
+**Root cause:** number 토큰이 값 의미의 부호·통화·선행 소수점·백분율을 버리고, URL suffix 정규화가 괄호 균형을 무시하며, rollback 경고가 판정용 URL 전문을 그대로 직렬화한다.
+
+- [x] RED 1: 부호·백분율·선행 소수점·통화 변경과 날짜·동일 음수 대조군을 domain spec에 추가하고 예상 실패를 확인한다.
+- [x] GREEN 1: 날짜 하이픈을 음수로 보지 않으면서 값 의미 표기를 포함하는 number regex를 적용한다.
+- [x] RED/GREEN 2: 균형 괄호 URL 훼손과 문장 wrapper 괄호 대조군을 추가하고 unmatched closer만 suffix로 제거한다.
+- [x] RED/GREEN 3: credential query URL rollback 로그가 query·fragment·userinfo를 노출하지 않는 service spec과 로그 전용 축약을 추가한다.
+- [x] mutation 3종: number 표기, URL 괄호 balance, URL 로그 축약을 각각 무력화해 대응 테스트 실패를 확인하고 원복한다.
+- [x] `pnpm lint:check`, `pnpm exec jest src/humanize`, `pnpm test`, `pnpm build`를 파이프 없이 각각 실행해 exit 0을 확인한다.
+- [x] 최종 diff를 독립 리뷰하고 `.ai/implementation-summary.md`에 봇 리뷰 대응 회차를 덧붙인다.
+
+## Review
+
+- number 토큰에 부호·통화·선행 소수점·백분율을 포함했고 날짜 하이픈은 부호로 결합하지 않는다.
+- URL 끝 닫는 괄호는 해당 여는 괄호보다 많을 때만 문장 suffix로 제거한다.
+- URL 로그는 판정용 토큰을 바꾸지 않고 origin+pathname만 출력하며, 파싱 실패 fallback도 query·fragment와 마지막 `@`까지의 userinfo를 제거한다.
+- 세 mutation 모두 대응 테스트가 exit 1로 실패했고 원복 뒤 focused 2 suites/58 tests가 통과했다.
+- 독립 리뷰가 malformed 다중 `@` fallback 노출을 발견했다. 회귀 테스트 RED exit 1을 확인하고 보강했으며 재리뷰 범위의 유일한 P2를 해소했다.
+- 최종 검증은 lint exit 0, humanize 10 suites/191 tests, 전체 437 suites/4,047 tests + code-graph 5 suites/40 tests, build exit 0이다.
+- DB/Prisma/env/의존성 변경과 git add/commit/push 없음.

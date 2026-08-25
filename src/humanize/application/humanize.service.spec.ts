@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
@@ -22,23 +23,31 @@ interface ExecuteArgs {
   }>;
 }
 
+interface AgentRunServiceMock {
+  execute: jest.Mock;
+  // 없으면 되먹임 조회가 TypeError 로 죽고 catch 가 삼켜, 되먹임이 조용히 빠진 채
+  // 테스트가 통과한다.
+  findRecentSucceededRuns: jest.Mock;
+  lastOutput?: unknown;
+}
+
 // 실제 execute 와 같은 계약 — run 을 실행하고 outcome 으로 감싸며, 던지면 그대로 전파한다
 // (호출부가 기존처럼 원본을 반환하는 best-effort fallback 으로 받는다).
-const makeAgentRunService = (): {
-  execute: jest.Mock;
-  findRecentSucceededRuns: jest.Mock;
-} => ({
-  execute: jest.fn().mockImplementation(async ({ run }: ExecuteArgs) => {
-    const execution = await run({ agentRunId: 1 });
-    return {
-      result: execution.result,
-      modelUsed: execution.modelUsed,
-      agentRunId: 1,
-    };
-  }),
-  // 없으면 조회가 TypeError 로 죽고 catch 가 삼켜, 되먹임이 조용히 빠진 채 테스트가 통과한다.
-  findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
-});
+const makeAgentRunService = (): AgentRunServiceMock => {
+  const agentRunService: AgentRunServiceMock = {
+    execute: jest.fn().mockImplementation(async ({ run }: ExecuteArgs) => {
+      const execution = await run({ agentRunId: 1 });
+      agentRunService.lastOutput = execution.output;
+      return {
+        result: execution.result,
+        modelUsed: execution.modelUsed,
+        agentRunId: 1,
+      };
+    }),
+    findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
+  };
+  return agentRunService;
+};
 
 const makeService = (opts: {
   enabled?: string;
@@ -47,7 +56,7 @@ const makeService = (opts: {
 }): {
   service: HumanizeService;
   routeMock: jest.Mock;
-  agentRunService: { execute: jest.Mock; findRecentSucceededRuns: jest.Mock };
+  agentRunService: AgentRunServiceMock;
 } => {
   const routeMock = jest.fn(opts.routeImpl ?? (async () => ({ text: '{}' })));
   const modelRouter = { route: routeMock } as unknown as ModelRouterUsecase;
@@ -69,6 +78,10 @@ const makeService = (opts: {
 };
 
 describe('HumanizeService', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('정상 윤문 시 같은 키로 다듬은 값을 반환한다', async () => {
     const { service } = makeService({
       enabled: 'true',
@@ -78,6 +91,109 @@ describe('HumanizeService', () => {
     });
     const result = await service.humanize({ a: '원본A', b: '원본B' });
     expect(result).toEqual({ a: '다듬음A', b: '다듬음B' });
+  });
+
+  it('보존 토큰을 바꾼 필드만 원본으로 롤백하고 경고를 한 번 남긴다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({
+          changed: 'PR #278을 검토했습니다.',
+          safe: '문장을 자연스럽게 다듬었습니다.',
+        }),
+      }),
+    });
+
+    const result = await service.humanize({
+      changed: 'PR #275를 검토했습니다.',
+      safe: '문장을 다듬었습니다.',
+    });
+
+    expect(result).toEqual({
+      changed: 'PR #275를 검토했습니다.',
+      safe: '문장을 자연스럽게 다듬었습니다.',
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('changed'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#275'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#278'));
+    expect(agentRunService.lastOutput).toEqual({
+      humanizedKeys: ['changed', 'safe'],
+      rolledBackKeys: ['changed'],
+      preservationViolations: {
+        injected: { code: 0, url: 0, pr: 1, number: 0 },
+        lost: { code: 0, url: 0, pr: 1, number: 0 },
+      },
+      styleGaps: expect.any(Array),
+    });
+  });
+
+  it('number 소실만 있으면 윤문본을 유지하고 롤백 경고를 남기지 않는다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ count: '할 일이 세 개 있습니다.' }),
+      }),
+    });
+
+    const result = await service.humanize({ count: '할 일이 3개 있습니다.' });
+
+    expect(result).toEqual({ count: '할 일이 세 개 있습니다.' });
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(agentRunService.lastOutput).toEqual({
+      humanizedKeys: ['count'],
+      rolledBackKeys: [],
+      preservationViolations: {
+        injected: { code: 0, url: 0, pr: 0, number: 0 },
+        lost: { code: 0, url: 0, pr: 0, number: 1 },
+      },
+      styleGaps: expect.any(Array),
+    });
+  });
+
+  it('URL 롤백 경고에서 userinfo와 query, fragment를 제거한다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const sensitiveUrl =
+      'https://user:password@example.com/private/report?credential=secret#fragment';
+    const { service } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ link: '링크를 확인했습니다.' }),
+      }),
+    });
+
+    const result = await service.humanize({ link: sensitiveUrl });
+
+    expect(result).toEqual({ link: sensitiveUrl });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const warning = String(warnSpy.mock.calls[0][0]);
+    expect(warning).toContain('https://example.com/private/report');
+    expect(warning).not.toContain('user:password');
+    expect(warning).not.toContain('credential=secret');
+    expect(warning).not.toContain('#fragment');
+  });
+
+  it('파싱할 수 없는 URL 경고도 userinfo와 query를 제거한다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const sensitiveUrl =
+      'https://user@password@[invalid/private?credential=secret#fragment';
+    const { service } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ link: '링크를 확인했습니다.' }),
+      }),
+    });
+
+    await service.humanize({ link: sensitiveUrl });
+
+    const warning = String(warnSpy.mock.calls[0][0]);
+    expect(warning).toContain('https://[invalid/private');
+    expect(warning).not.toContain('user@password');
+    expect(warning).not.toContain('password@');
+    expect(warning).not.toContain('credential=secret');
+    expect(warning).not.toContain('#fragment');
   });
 
   it('env 가 false 면 LLM 호출 없이 원본을 반환한다', async () => {
@@ -139,9 +255,14 @@ describe('HumanizeService', () => {
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
-    // 본문은 없고 키 목록과 문체 갭(숫자 몇 줄)만 남는다.
+    // 본문은 없고 키 목록·보존 판정·문체 갭(숫자 몇 줄)만 남는다.
     expect(executed.output).toEqual({
       humanizedKeys: ['a'],
+      rolledBackKeys: [],
+      preservationViolations: {
+        injected: { code: 0, url: 0, pr: 0, number: 0 },
+        lost: { code: 0, url: 0, pr: 0, number: 0 },
+      },
       styleGaps: expect.any(Array),
     });
     expect(JSON.stringify(executed.output)).not.toContain('원본A');
@@ -355,7 +476,11 @@ describe('문체 되먹임', () => {
       routeImpl: async () => ({ text: JSON.stringify({ a: longProse }) }),
     });
 
-    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+    // 원문도 longProse 다. `longProse` 는 `${index}번째` 로 숫자를 45개 담고 있어,
+    // 원문을 짧은 글로 두면 보존 가드가 그 숫자를 주입으로 보고 필드를 롤백한다.
+    // 그러면 측정 대상이 짧은 원문이 되어 측정 자체가 불가능해진다(갭 0). 이 테스트가
+    // 보려는 것은 보존 판정이 아니라 "측정 가능하면 갭이 기록되는가" 이므로 토큰을 맞춘다.
+    await service.humanize({ a: longProse }, { voice: 'personal-blog' });
 
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
