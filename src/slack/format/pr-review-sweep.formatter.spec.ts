@@ -1,4 +1,5 @@
 import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
+import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { formatPrReviewSweep } from './pr-review-sweep.formatter';
 
 const outcome = (overrides = {}) => ({
@@ -236,14 +237,18 @@ describe('formatPrReviewSweep', () => {
     expect(text).not.toContain('→');
   });
 
-  it('채택률 줄에 구간 길이를 밝힌다', () => {
+  it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
+    // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나만 센 값이라,
+    // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.
     const text = formatPrReviewSweep({
       harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),
       results: [],
     });
 
-    expect(text).toContain(`채택률(최근 ${ADOPTION_WINDOW_DAYS}일)`);
+    expect(text).toContain(
+      `채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`)`,
+    );
   });
 
   it('집계가 비면 채택률 줄을 생략한다', () => {

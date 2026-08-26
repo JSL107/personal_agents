@@ -186,6 +186,9 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     const rows = await this.prisma.prReviewFinding.groupBy({
       by: ['category', 'status'],
       where: {
+        // 대소문자 무시 — 카드의 repo 는 GitHub 이 준 표기를 그대로 담는데, 상수 쪽
+        // 표기가 한 글자만 달라도 조회가 조용히 0건이 된다(에러가 아니라 빈 눈금).
+        repo: { equals: input.repo, mode: 'insensitive' },
         decidedAt:
           input.until === undefined
             ? { gte: input.since }
@@ -205,7 +208,8 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
   ): Promise<RejectedFindingSummary[]> {
     const rows = await this.prisma.prReviewFinding.findMany({
       where: {
-        repo: input.repo,
+        // 채택률 집계와 같은 정책 — 표기 차이로 규약이 조용히 비지 않게 한다.
+        repo: { equals: input.repo, mode: 'insensitive' },
         status: 'REJECTED',
         // 이유 없는 기각(👎 만 누른 경우)은 학습 재료가 아니다 — 무엇이 틀렸는지가 없다.
         rejectReason: { not: null },

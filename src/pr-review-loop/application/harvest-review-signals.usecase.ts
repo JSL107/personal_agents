@@ -26,6 +26,7 @@ import {
   findThreadForComment,
   resolveHarvestSignal,
 } from '../domain/harvest-signal';
+import { LEARNING_REPO } from '../domain/learning-repo';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -41,10 +42,24 @@ interface PullRequestCardGroup {
   cards: PrReviewFindingRecord[];
 }
 
+// 모델·사용자 문자열을 로그 한 줄로 누른다. 제어문자를 그대로 찍으면 로그 행을 위조하거나
+// 터미널 escape 를 흘려보낼 수 있다.
+const LOG_REASON_MAX = 120;
+const flattenForLog = (text: string): string => {
+  // eslint-disable-next-line no-control-regex -- 제어문자 제거가 본 패턴의 의도.
+  const flattened = text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+  return flattened.length > LOG_REASON_MAX
+    ? `${flattened.slice(0, LOG_REASON_MAX)}…`
+    : flattened;
+};
+
 interface PendingJudgment {
   card: PrReviewFindingRecord;
   thread: ReviewThread;
+  // 판정기 입력 — 누가 무엇을 수용했는지는 스레드 전체를 봐야 정확하다.
   replyBody: string;
+  // 규약 재료 — owner 가 쓴 답글만. 없으면 기각 이유를 남기지 않는다.
+  ownerReplyBody: string | null;
 }
 
 interface PendingResolution {
@@ -140,6 +155,10 @@ export class HarvestReviewSignalsUsecase {
   // 조회조차 안 해 그 값이 영영 안 나온다. 대상 테이블은 카테고리×상태 조합이라 행이
   // 수십 개 수준이고 조회는 밀리초라, 아끼는 비용보다 유실이 비싸다.
   // 집계는 요약에 곁들이는 정보이므로 실패하면 수확 결과만 그대로 보고한다.
+  //
+  // 대상은 학습 규약이 실리는 레포 하나로 한정한다(`LEARNING_REPO`). 전 레포를 합산하면
+  // 규약이 실리지도 않는 레포의 결론이 섞여 "규약을 실은 뒤 나아졌나" 에 답할 수 없다 —
+  // 실측(2026-08-26)상 ARCHITECTURE 최근 14일 기각 4건 중 1건이 규약 미적용 레포였다.
   private async attachAdoption(outcome: HarvestOutcome): Promise<void> {
     try {
       const windowMs = ADOPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
@@ -147,8 +166,12 @@ export class HarvestReviewSignalsUsecase {
       const recentSince = new Date(now - windowMs);
       // 직전 구간은 [2배 전, 최근 구간 시작). 같은 길이라야 두 비율을 나란히 둘 수 있다.
       const [recent, prior] = await Promise.all([
-        this.repository.countAdoptionByCategory({ since: recentSince }),
         this.repository.countAdoptionByCategory({
+          repo: LEARNING_REPO,
+          since: recentSince,
+        }),
+        this.repository.countAdoptionByCategory({
+          repo: LEARNING_REPO,
           since: new Date(now - windowMs * 2),
           until: recentSince,
         }),
@@ -213,6 +236,7 @@ export class HarvestReviewSignalsUsecase {
         card,
         thread,
         decisionLogins,
+        ownerLogin,
         pullRequestState: reviewThreads.pullRequestState,
         truncated: reviewThreads.truncated,
       });
@@ -265,7 +289,8 @@ export class HarvestReviewSignalsUsecase {
             card,
             thread,
             status: 'REJECTED',
-            rejectReason: signal.replyBody,
+            // 규약이 될 문장은 owner 가 쓴 것만 — `harvest-signal.ts` 의 `ownerLogin` 참조.
+            rejectReason: signal.ownerReplyBody,
             outcome,
           });
           break;
@@ -287,6 +312,7 @@ export class HarvestReviewSignalsUsecase {
             card,
             thread,
             replyBody: signal.replyBody,
+            ownerReplyBody: signal.ownerReplyBody,
           });
           break;
         case 'NONE':
@@ -505,11 +531,28 @@ export class HarvestReviewSignalsUsecase {
         continue;
       }
       outcome.judged += 1;
+      if (judgment.verdict === 'REJECTED') {
+        // 판정 근거는 원장에 자리가 없다 — 왜 기각으로 읽었는지는 여기서만 남는다.
+        // 모델 출력이라 줄바꿈·제어문자가 섞일 수 있어 한 줄로 눌러 찍는다(로그 행 위조 방지).
+        this.logger.log(
+          `PR 리뷰 답글 판정: 카드 ${pending.card.id} REJECTED — ${flattenForLog(judgment.reason)}`,
+        );
+      }
       await this.markDecisionAndResolve({
         card: pending.card,
         thread: pending.thread,
         status: judgment.verdict === 'ACCEPTED' ? 'ACKED' : 'REJECTED',
-        rejectReason: judgment.verdict === 'REJECTED' ? judgment.reason : null,
+        // 판정기의 한 줄 요약이 아니라 **사람이 쓴 답글 원문**을 남긴다. 이 값은 그대로
+        // 다음 리뷰의 레포 규약이 되므로(`renderLearnedConventions`), 요약을 저장하면
+        // 학습 재료가 게시 시점에 파괴된다 — 실측(2026-08-26)상 판정 경로로 결론난 기각
+        // 4건의 원장 이유가 9~13자였고, 같은 스레드의 실제 답글은 456~774자의 근거
+        // 있는 반박이었다(#354·#203·#220·#201). 길이 하한(MIN_REASON_LENGTH)에 걸려
+        // 그 4건이 통째로 규약에서 빠져 있었다.
+        //
+        // 리액션 경로는 이미 답글 원문을 남긴다(`harvest-signal.ts` 의 `replyBody`) —
+        // 두 경로가 같은 것을 저장하게 맞춘다.
+        rejectReason:
+          judgment.verdict === 'REJECTED' ? pending.ownerReplyBody : null,
         outcome,
       });
     }

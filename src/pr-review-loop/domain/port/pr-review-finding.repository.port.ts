@@ -1,6 +1,9 @@
 import { CategoryStatusCount } from '../adoption-rate';
 
 export interface AdoptionWindowInput {
+  // 셀 대상 레포. 옵셔널로 두면 "안 넘기면 전 레포" 라는 조용한 기본값이 남아, 규약이
+  // 실리지도 않는 레포의 결론이 눈금에 섞인다 — 호출부가 반드시 정하게 한다.
+  repo: string;
   // 이 시각 이후에 결론이 난 카드. 경계는 [since, until) 로 다룬다.
   since: Date;
   // 생략하면 상한 없음(= 지금까지). 직전 구간을 조회할 때만 준다.

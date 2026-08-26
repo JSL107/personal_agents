@@ -315,18 +315,47 @@ describe('PrReviewFindingPrismaRepository', () => {
     ]);
 
     const since = new Date('2026-08-12T00:00:00Z');
-    const rows = await repository.countAdoptionByCategory({ since });
+    const rows = await repository.countAdoptionByCategory({
+      repo: 'JSL107/personal_agents',
+      since,
+    });
 
     // 상태 필터는 순수 함수(summarizeAdoption)가 맡는다 — 여기서는 조합을 그대로 넘긴다.
     // 구간은 결론 시각으로 자른다. 상한이 없으면 하한만 건다.
+    // repo 를 함께 걸어야 규약이 실리지 않는 레포의 결론이 눈금에 섞이지 않는다.
     expect(prisma.prReviewFinding.groupBy).toHaveBeenCalledWith({
       by: ['category', 'status'],
-      where: { decidedAt: { gte: since } },
+      where: {
+        repo: { equals: 'JSL107/personal_agents', mode: 'insensitive' },
+        decidedAt: { gte: since },
+      },
       _count: { _all: true },
     });
     expect(rows).toEqual([
       { category: 'CORRECTNESS', status: 'ACKED', count: 14 },
       { category: 'CORRECTNESS', status: 'REJECTED', count: 1 },
     ]);
+  });
+
+  it('규약 재료도 같은 대소문자 정책으로 조회한다', async () => {
+    // 채택률 집계에만 정책을 걸면, 규약 조회가 표기 차이로 조용히 0건이 되는 길이 남는다.
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+
+    const since = new Date('2026-05-28T00:00:00Z');
+    await repository.findRejectionsForConventions({
+      repo: 'JSL107/personal_agents',
+      since,
+    });
+
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
+      where: {
+        repo: { equals: 'JSL107/personal_agents', mode: 'insensitive' },
+        status: 'REJECTED',
+        rejectReason: { not: null },
+        decidedAt: { gte: since },
+      },
+      select: { category: true, rejectReason: true, decidedAt: true },
+      orderBy: { decidedAt: 'desc' },
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
+import { LEARNING_REPO } from '../domain/learning-repo';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
 import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
@@ -108,6 +109,16 @@ const buildDependencies = ({
   );
   return { usecase, github, repository, judge, resolutionJudge };
 };
+
+// 판정 경로로 결론난 기각의 실제 형태 — 판단 한 줄 + 근거. 실측(2026-08)상 이런 답글은
+// 456~774자였고, 원장에는 판정기가 요약한 9~13자만 남아 학습에서 통째로 빠졌다.
+// 길이는 학습 하한(`learned-conventions.ts` 의 MIN_REASON_LENGTH = 40)을 넉넉히 넘긴다 —
+// 짧은 답글로 단언하면 저장만 확인하고 그 값이 실제로 규약이 되는지는 못 본다.
+// 상수를 직접 import 하지 않는 것은 의도다: pr-review-loop 이 code-reviewer 를 참조하면
+// 의존 방향이 뒤집힌다(#382 에서 고친 방향).
+const LONG_REJECT_REPLY =
+  '이 지적은 받아들이지 않습니다. 이 레포에서 application 이 infrastructure repository 를 ' +
+  '직접 주입받는 것은 위반이 아니라 관례입니다. 같은 형태가 최소 12곳입니다.';
 
 describe('HarvestReviewSignalsUsecase', () => {
   it('수확이 비활성이면 저장소와 GitHub를 호출하지 않는다', async () => {
@@ -607,7 +618,7 @@ describe('HarvestReviewSignalsUsecase', () => {
         reviewThread({ replies: [reply(600, '수정했습니다')] }),
         reviewThread({
           databaseId: 556,
-          replies: [reply(601, '이 지적은 틀렸습니다')],
+          replies: [reply(601, LONG_REJECT_REPLY)],
         }),
       ],
     });
@@ -620,10 +631,14 @@ describe('HarvestReviewSignalsUsecase', () => {
 
     expect(judge.execute).toHaveBeenCalledTimes(1);
     expect(outcome).toMatchObject({ acked: 1, rejected: 1, judged: 2 });
+    // 판정기의 요약('의도된 동작')이 아니라 사람이 쓴 답글 원문을 남긴다 — 이 값이
+    // 그대로 다음 리뷰의 레포 규약이 되므로, 요약을 저장하면 학습 재료가 파괴된다.
+    // 답글을 길게 둔 것은 의도다: 저장값이 학습 하한(MIN_REASON_LENGTH=40)을 넘어야
+    // 실제로 규약이 된다. 짧은 답글로 단언하면 저장만 확인하고 학습은 못 본다.
     expect(repository.markDecided).toHaveBeenCalledWith({
       id: 2,
       status: 'REJECTED',
-      rejectReason: '의도된 동작',
+      rejectReason: LONG_REJECT_REPLY,
       githubThreadNodeId: 'PRRT_556',
     });
   });
@@ -866,11 +881,15 @@ describe('HarvestReviewSignalsUsecase', () => {
       const recentSince = new Date('2026-08-12T00:00:00.000Z');
       expect(repository.countAdoptionByCategory).toHaveBeenCalledTimes(2);
       // 최근 구간은 상한이 없다 — 지금 결론이 나는 카드까지 세어야 한다.
+      // 두 구간 모두 학습 규약이 실리는 레포로 한정한다. 전 레포를 합산하면 규약이
+      // 실리지도 않는 레포의 결론이 섞여 규약 효과를 물어볼 수 없다.
       expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        repo: LEARNING_REPO,
         since: recentSince,
       });
       // 직전 구간은 같은 길이로 맞닿아 있다. 경계가 어긋나면 두 비율의 기준이 달라진다.
       expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        repo: LEARNING_REPO,
         since: new Date('2026-07-29T00:00:00.000Z'),
         until: recentSince,
       });
