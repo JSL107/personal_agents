@@ -12,6 +12,11 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import {
+  formatMoney,
+  formatQuantity,
+  formatWon,
+} from '../paper-number.formatter';
 
 const ACCOUNT_LABELS: Record<string, string> = {
   LONG_TERM: '장기',
@@ -110,19 +115,6 @@ const amountOf = (detail: PaperOrderFillDetail): number =>
 
 const totalAmount = (details: PaperOrderFillDetail[]): number =>
   details.reduce((sum, detail) => sum + amountOf(detail), 0);
-
-export const formatQuantity = (quantity: string): string =>
-  Number(quantity).toLocaleString('ko-KR');
-
-export const formatWon = (price: string): string =>
-  `${Math.round(Number(price)).toLocaleString('ko-KR')}원`;
-
-const formatMoney = (amount: number): string => {
-  if (Math.abs(amount) < 10_000) {
-    return `${Math.round(amount).toLocaleString('ko-KR')}원`;
-  }
-  return `${Math.round(amount / 10_000).toLocaleString('ko-KR')}만`;
-};
 
 @Injectable()
 export class PaperOrderFillAutopilotTask implements AutopilotTask {
