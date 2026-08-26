@@ -15,7 +15,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
-import { formatQuantity, formatWon } from './paper-order-fill.autopilot-task';
+import { formatQuantity, formatWon } from '../paper-number.formatter';
 
 interface PaperIntradayStopAudit {
   inspectedCount: number;
