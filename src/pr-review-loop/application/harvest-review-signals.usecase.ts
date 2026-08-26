@@ -11,7 +11,10 @@ import {
   GithubClientPort,
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
-import { summarizeAdoption } from '../domain/adoption-rate';
+import {
+  ADOPTION_WINDOW_DAYS,
+  summarizeAdoption,
+} from '../domain/adoption-rate';
 import {
   extractFileDiff,
   isTouchedByChanges,
@@ -139,8 +142,18 @@ export class HarvestReviewSignalsUsecase {
   // 집계는 요약에 곁들이는 정보이므로 실패하면 수확 결과만 그대로 보고한다.
   private async attachAdoption(outcome: HarvestOutcome): Promise<void> {
     try {
-      const rows = await this.repository.countAdoptionByCategory();
-      outcome.adoption = summarizeAdoption(rows);
+      const windowMs = ADOPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const recentSince = new Date(now - windowMs);
+      // 직전 구간은 [2배 전, 최근 구간 시작). 같은 길이라야 두 비율을 나란히 둘 수 있다.
+      const [recent, prior] = await Promise.all([
+        this.repository.countAdoptionByCategory({ since: recentSince }),
+        this.repository.countAdoptionByCategory({
+          since: new Date(now - windowMs * 2),
+          until: recentSince,
+        }),
+      ]);
+      outcome.adoption = summarizeAdoption(recent, prior);
     } catch (error: unknown) {
       this.logger.warn(
         `채택률 집계 실패 — 수확 결과만 보고합니다: ${

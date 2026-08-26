@@ -744,7 +744,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
-  it('카드 상태가 바뀌면 누적 채택률을 함께 낸다', async () => {
+  it('카드 상태가 바뀌면 구간 채택률을 함께 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -779,14 +779,16 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 3,
         total: 15,
         ratePercent: 80,
+        // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
+        changePercentPoint: 0,
       },
     ]);
   });
 
-  // 이 회차에 반응이 없어도 누적 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
+  // 이 회차에 반응이 없어도 구간 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
   // (autopilot.orchestrator buildGuardKey), 반응이 있던 회차가 그날 첫 발송이 아니면 그대로
   // 차단된다 — 조회를 반응 있는 회차로 아끼면 그 값이 영영 안 나온다.
-  it('반응이 없는 회차에도 누적 채택률을 낸다', async () => {
+  it('반응이 없는 회차에도 구간 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -810,11 +812,13 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 3,
         total: 15,
         ratePercent: 80,
+        // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
+        changePercentPoint: 0,
       },
     ]);
   });
 
-  it('STALE 확정만 있는 회차에도 누적 채택률을 낸다', async () => {
+  it('STALE 확정만 있는 회차에도 구간 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -837,8 +841,42 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 0,
         total: 10,
         ratePercent: 100,
+        changePercentPoint: 0,
       },
     ]);
+  });
+
+  it('최근 구간과 그 직전 같은 길이 구간을 조회한다', async () => {
+    // 두 조회에 같은 mock 을 물리면 구간 계산이 통째로 틀려도 결과가 같아 보인다 —
+    // 실제로 `windowMs * 2` 를 `windowMs` 로 바꿔도 다른 테스트는 전부 통과했다.
+    // 여기서만 호출 인자를 직접 본다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T00:00:00.000Z'));
+    try {
+      const { usecase, github, repository } = buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card()]);
+      github.listReviewThreads.mockResolvedValue({
+        pullRequestAuthorLogin: null,
+        pullRequestState: 'OPEN',
+        truncated: false,
+        threads: [reviewThread()],
+      });
+
+      await usecase.execute();
+
+      const recentSince = new Date('2026-08-12T00:00:00.000Z');
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledTimes(2);
+      // 최근 구간은 상한이 없다 — 지금 결론이 나는 카드까지 세어야 한다.
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        since: recentSince,
+      });
+      // 직전 구간은 같은 길이로 맞닿아 있다. 경계가 어긋나면 두 비율의 기준이 달라진다.
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        since: new Date('2026-07-29T00:00:00.000Z'),
+        until: recentSince,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('채택률 집계가 실패해도 수확 결과는 그대로 낸다', async () => {
