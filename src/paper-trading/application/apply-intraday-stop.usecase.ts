@@ -6,15 +6,16 @@ import {
   MARKET_DATA_PORT,
   MarketDataPort,
 } from '../../market-data/domain/port/market-data.port';
+import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
   decideIntradayStopOrders,
-  DEFAULT_STOP_LOSS_PERCENT,
-  DEFAULT_TAKE_PROFIT_PERCENT,
+  DEFAULT_EXIT_BAND,
   describeIntradayStopReason,
+  ExitBandThreshold,
   IntradayStopCandidate,
   IntradayStopDecision,
 } from '../domain/exit-band';
-import { PaperMarket } from '../domain/paper-account.type';
+import { PaperMarket, TradeStrategy } from '../domain/paper-account.type';
 import { PendingOrderFillResult } from '../domain/port/paper-order-ledger.port';
 import { getKstClock } from '../domain/trade-calendar';
 import {
@@ -112,6 +113,7 @@ export class ApplyIntradayStopUsecase {
     private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
     private readonly executeOrder: ExecutePaperOrderUsecase,
+    private readonly strategyParameters: ResolveStrategyParametersUsecase,
   ) {}
 
   async execute(
@@ -129,16 +131,40 @@ export class ApplyIntradayStopUsecase {
     const accounts = await this.repository.findAllAccounts();
     const result = emptyResult('TRADING');
     result.accountCount = accounts.length;
-    const stopLossPercent =
-      command.stopLossPercent ?? DEFAULT_STOP_LOSS_PERCENT;
     const tradeDay = new Date(`${tradeDate}T00:00:00.000Z`);
+    // 손절선은 종가 밴드와 같은 원장(`strategy_parameter`)에서 온다. 상수를 따로 읽으면
+    // 원장에서 값을 바꿨을 때 종가 밴드만 따라가고 장중 손절은 옛 값에 남아, 같은 계좌가
+    // 두 기준으로 청산된다. 전략당 한 번만 해소해 같은 회차가 같은 값을 쓰게 한다.
+    const thresholdByStrategy = new Map<TradeStrategy, ExitBandThreshold>();
+    const resolveThreshold = async (
+      accountName: string,
+    ): Promise<ExitBandThreshold> => {
+      if (command.stopLossPercent !== undefined) {
+        return {
+          takeProfitPercent: DEFAULT_EXIT_BAND.takeProfitPercent,
+          stopLossPercent: command.stopLossPercent,
+        };
+      }
+      const strategy = strategyOf(accountName);
+      // 수동 계좌는 전략 파라미터의 대상이 아니다(종가 밴드와 같은 판단).
+      if (strategy === 'MANUAL') {
+        return DEFAULT_EXIT_BAND;
+      }
+      const cached = thresholdByStrategy.get(strategy);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const parameters = await this.strategyParameters.execute(strategy);
+      thresholdByStrategy.set(strategy, parameters.exitBand);
+      return parameters.exitBand;
+    };
 
     for (const account of accounts) {
       try {
         await this.applyToAccount({
           account,
           command,
-          stopLossPercent,
+          threshold: await resolveThreshold(account.name),
           tradeDate,
           tradeDay,
           result,
@@ -158,7 +184,7 @@ export class ApplyIntradayStopUsecase {
   private async applyToAccount(input: {
     account: PaperAccountNamedRecord;
     command: ApplyIntradayStopCommand;
-    stopLossPercent: number;
+    threshold: ExitBandThreshold;
     tradeDate: string;
     tradeDay: Date;
     result: ApplyIntradayStopResult;
@@ -173,7 +199,7 @@ export class ApplyIntradayStopUsecase {
     );
     const decisions = decideIntradayStopOrders(
       candidates,
-      input.stopLossPercent,
+      input.threshold.stopLossPercent,
     );
     input.result.decidedCount += decisions.length;
     if (decisions.length === 0) {
@@ -188,13 +214,14 @@ export class ApplyIntradayStopUsecase {
       dataAsOf: input.tradeDay,
       targetTradeDate: input.tradeDay,
       agentRunId: input.command.agentRunId ?? null,
-      threshold: {
-        takeProfitPercent: DEFAULT_TAKE_PROFIT_PERCENT,
-        stopLossPercent: input.stopLossPercent,
-      },
+      // 익절값도 함께 박아야 성적 집계가 읽는 밴드 라벨이 종가 밴드와 같은 형식으로 남는다.
+      threshold: input.threshold,
       orders: decisions.map((decision) => ({
         tickerId: decision.tickerId,
-        reason: describeIntradayStopReason(decision, input.stopLossPercent),
+        reason: describeIntradayStopReason(
+          decision,
+          input.threshold.stopLossPercent,
+        ),
       })),
     });
     input.result.skippedByPendingSell += outcome.skippedByPendingSell;

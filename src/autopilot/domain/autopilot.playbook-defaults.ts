@@ -152,7 +152,9 @@ export const DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PORTFOLIO_WARMUP_CRON = '*/10 8-23 * * *';
 export const DEFAULT_PORTFOLIO_WARMUP_TIMEZONE = 'Asia/Seoul';
 
-export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * 5';
+// 주 1회였을 때는 스냅샷이 최대 7일 낡은 채로 남아, 그 사이 만든 스킬·규칙은 새 PC 에서 손으로
+// 채워야 했다. export 는 변경이 없으면 커밋조차 하지 않으므로 매일 돌려도 히스토리가 늘지 않는다.
+export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * *';
 export const DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_AI_CLI_ENV_APPLY_CRON = '0 10 * * *';
 export const DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE = 'Asia/Seoul';

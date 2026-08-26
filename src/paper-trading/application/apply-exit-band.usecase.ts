@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
   decideExitBandOrders,
   DEFAULT_EXIT_BAND,
@@ -15,6 +16,8 @@ export interface ApplyExitBandCommand {
   accounts: EvaluatedAccountEntry[];
   executedAt: Date;
   agentRunId?: number | null;
+  // 지정하면 모든 계좌에 이 밴드를 건다. 지정하지 않으면 계좌의 전략에 해당하는 값을
+  // `strategy_parameter` 에서 해소하고, 없으면 코드 상수를 쓴다.
   threshold?: ExitBandThreshold;
 }
 
@@ -43,10 +46,35 @@ export const strategyOf = (accountName: string): TradeStrategy => {
 
 @Injectable()
 export class ApplyExitBandUsecase {
-  constructor(private readonly repository: PaperTradingPrismaRepository) {}
+  constructor(
+    private readonly repository: PaperTradingPrismaRepository,
+    private readonly strategyParameters: ResolveStrategyParametersUsecase,
+  ) {}
 
   async execute(command: ApplyExitBandCommand): Promise<ApplyExitBandResult> {
-    const threshold = command.threshold ?? DEFAULT_EXIT_BAND;
+    // 밴드는 계좌마다 다를 수 있다 — 계좌 이름이 곧 전략이고 파라미터는 전략별이다.
+    // 전략당 한 번만 해소해 같은 회차가 같은 값을 쓰게 한다.
+    const thresholdByStrategy = new Map<TradeStrategy, ExitBandThreshold>();
+    const resolveThreshold = async (
+      accountName: string,
+    ): Promise<ExitBandThreshold> => {
+      if (command.threshold !== undefined) {
+        return command.threshold;
+      }
+      const strategy = strategyOf(accountName);
+      // 수동 계좌는 전략 파라미터의 대상이 아니다. 규칙이 연 계좌가 아니므로
+      // 규칙을 바꿔도 이 계좌의 청산 기준은 따라 움직이지 않는다.
+      if (strategy === 'MANUAL') {
+        return DEFAULT_EXIT_BAND;
+      }
+      const cached = thresholdByStrategy.get(strategy);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const parameters = await this.strategyParameters.execute(strategy);
+      thresholdByStrategy.set(strategy, parameters.exitBand);
+      return parameters.exitBand;
+    };
     const accounts: ExitBandAccountOutcome[] = [];
 
     for (const entry of command.accounts) {
@@ -55,6 +83,7 @@ export class ApplyExitBandUsecase {
       if (!entry.evaluation || entry.evaluation.skipped) {
         continue;
       }
+      const threshold = await resolveThreshold(entry.accountName);
       const decisions = decideExitBandOrders(
         entry.evaluation.positions.map((position) => ({
           tickerId: position.tickerId,

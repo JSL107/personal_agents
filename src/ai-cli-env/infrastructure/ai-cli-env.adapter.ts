@@ -55,14 +55,25 @@ const BOOTSTRAP_ENV_KEYS = [
   'SHELL',
   'TMPDIR',
 ] as const;
-const EXPORT_MANAGED_PATHS = [
+// export 가 만드는 산출물만 스테이징한다. 절차서처럼 사람이 손대는 파일은 건드리지 않는다.
+// 목록에서 빠진 산출물은 워킹트리에만 남아 원격에 영영 올라가지 않으므로, export 가 새 파일을
+// 만들면 여기도 같이 늘려야 한다 (apply.sh·tools 가 그렇게 추가됐다).
+const EXPORT_MANAGED_FILES = [
   'manifest.json',
   'SECRETS-TODO.md',
+  'apply.sh',
+] as const;
+const EXPORT_MANAGED_DIRECTORIES = ['claude', 'codex', 'tools'] as const;
+// 변경 감지에서는 manifest.json 을 뺀다. `generatedAt` 이 매 회차 현재 시각으로 다시 찍히므로,
+// 넣어 두면 자산이 한 글자도 안 바뀐 날에도 커밋·push 가 일어나고 다른 PC 에는 새 SHA 마다
+// 승인 카드가 뜬다. 자산이 실제로 바뀐 회차에는 manifest 도 함께 스테이징된다.
+const EXPORT_CHANGE_DETECT_PATHS = [
+  'SECRETS-TODO.md',
+  'apply.sh',
   'claude',
   'codex',
+  'tools',
 ] as const;
-const EXPORT_MANAGED_FILES = ['manifest.json', 'SECRETS-TODO.md'] as const;
-const EXPORT_MANAGED_DIRECTORIES = ['claude', 'codex'] as const;
 
 @Injectable()
 export class AiCliEnvAdapter implements AiCliEnvPort {
@@ -137,10 +148,13 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
       );
     }
     const status = await this.executeGit(
-      ['status', '--porcelain', '--', ...EXPORT_MANAGED_PATHS],
+      ['status', '--porcelain', '--', ...EXPORT_CHANGE_DETECT_PATHS],
       syncDirectory,
     );
     if (!status.trim()) {
+      // 자산은 그대로고 manifest 의 타임스탬프만 새로 찍힌 회차다. 되돌리지 않으면 워킹트리가
+      // dirty 로 남아, 같은 PC 에서 도는 apply 의 clean 검사에 걸려 복원이 막힌다.
+      await this.restoreManifest(syncDirectory);
       return { changed: false, pushed: false };
     }
     await this.stageExportChanges(syncDirectory);
@@ -177,6 +191,18 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     // 이 전용 repo의 local commit은 같은 snapshot export 결과뿐이다. Remote 최신 상태로
     // 버린 뒤 다시 export하면 동일 입력을 재생성하므로 사용자 작업을 잃지 않는다.
     await this.executeGit(['reset', '--hard', remoteReference], syncDirectory);
+  }
+
+  // 첫 회차라 manifest 가 아직 추적 대상이 아니면 checkout 이 실패한다. 그 경우는 자산도 전부
+  // 새로 생겨 이 경로로 오지 않지만, 실패해도 export 결과를 버릴 이유는 없으므로 경고만 남긴다.
+  private async restoreManifest(syncDirectory: string): Promise<void> {
+    try {
+      await this.executeGit(['checkout', '--', 'manifest.json'], syncDirectory);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `manifest 되돌리기 실패 (워킹트리에 남음): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async stageExportChanges(syncDirectory: string): Promise<void> {
@@ -246,7 +272,15 @@ export class AiCliEnvAdapter implements AiCliEnvPort {
     );
     const result = await this.executeWithResult(
       'node',
-      [join(cwd(), 'scripts', 'bootstrap-ai-cli-env.cjs'), syncDirectory],
+      // --all 을 붙이지 않으면 bootstrap 이 hooks 와 전역 지침 문서를 건너뛴다. 그 기본값은 남의 PC 에
+      // 적용하는 상황을 전제한 안전장치인데, 이 동기화는 같은 사람의 PC 사이에서만 도는 기능이라
+      // 붙이지 않으면 자동 적용이 끝나도 hooks 가 한 줄도 안 붙어 결국 손으로 채워야 한다.
+      // 덮어쓰기 전 기존 파일은 bootstrap 이 타임스탬프를 붙여 백업한다.
+      [
+        join(cwd(), 'scripts', 'bootstrap-ai-cli-env.cjs'),
+        syncDirectory,
+        '--all',
+      ],
       {
         timeout: BOOTSTRAP_TIMEOUT_MS,
         env: this.buildBootstrapEnvironment(manifest),

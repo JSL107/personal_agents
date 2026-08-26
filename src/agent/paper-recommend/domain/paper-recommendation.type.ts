@@ -86,6 +86,9 @@ export interface BuildPaperRecommendationPromptInput {
   strategy: PaperRecommendationStrategy;
   cashBalance: number;
   accountValuation: number;
+  // 이 회차에 배정될 종목당 비중. 시스템 프롬프트와 같은 값을 써야 한다 — 두 프롬프트가
+  // 서로 다른 비중을 말하면 모델이 무엇을 기준으로 골랐는지 사후에 가릴 수 없다.
+  maximumWeightPercent: number;
   positions: Array<{
     code: string;
     name: string;

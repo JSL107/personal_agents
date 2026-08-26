@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
+import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ApplyIntradayStopUsecase } from './apply-intraday-stop.usecase';
 import { ExecutePaperOrderUsecase } from './execute-paper-order.usecase';
@@ -82,12 +83,21 @@ const createFixture = () => {
       quantity: '10',
     }),
   };
+  // 손절선은 종가 밴드와 같은 원장에서 온다. 기본 mock 은 현행 운영값을 돌려준다.
+  const strategyParameters = {
+    execute: jest.fn().mockResolvedValue({
+      exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
+    }),
+  };
   const usecase = new ApplyIntradayStopUsecase(
     repository as unknown as PaperTradingPrismaRepository,
     marketData as MarketDataPort,
     executeOrder as unknown as ExecutePaperOrderUsecase,
+    strategyParameters as unknown as ResolveStrategyParametersUsecase,
   );
-  return { usecase, repository, marketData, executeOrder };
+  return { usecase, repository, marketData, executeOrder, strategyParameters };
 };
 
 describe('ApplyIntradayStopUsecase', () => {
@@ -261,6 +271,36 @@ describe('ApplyIntradayStopUsecase', () => {
     expect(result.decidedCount).toBe(0);
     expect(repository.createExitBandOrders).not.toHaveBeenCalled();
     expect(executeOrder.execute).not.toHaveBeenCalled();
+  });
+
+  // 손절선을 상수에서 읽으면 원장에서 값을 바꿨을 때 종가 밴드만 따라가고 장중 손절은
+  // 옛 값에 남아, 같은 계좌가 두 기준으로 청산된다.
+  it('손절선을 코드 상수가 아니라 전략 파라미터 원장에서 읽는다', async () => {
+    const { usecase, repository, marketData, strategyParameters } =
+      createFixture();
+    // 원장이 -3% 를 준다. 코드 상수(-5%)를 읽었다면 -4% 종목은 손절되지 않는다.
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 8, stopLossPercent: -3 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
+    });
+    // 평단 100 에 현재가 96 이면 -4% 다. 상수 -5% 로는 걸리지 않고 원장 -3% 로는 걸린다.
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([dailyBar('2026-08-25', '96')]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(strategyParameters.execute).toHaveBeenCalledWith('SWING');
+    expect(result.decidedCount).toBe(1);
+    // 주문에 박히는 밴드도 원장 값이어야 성적 집계가 전후를 가를 수 있다.
+    expect(repository.createExitBandOrders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threshold: { takeProfitPercent: 8, stopLossPercent: -3 },
+      }),
+    );
   });
 
   // 주문만 만들고 체결에 실패하면 그 SELL 은 PENDING 으로 남고, 같은 거래일에 도는
