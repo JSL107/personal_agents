@@ -1,7 +1,19 @@
 import { StockIndicators } from '../../market-data/domain/stock-indicator';
 
 export const MINIMUM_TURNOVER60 = 500_000_000;
-export const SCREENER_RULE_VERSION = 2;
+// 당일 상승률 상한. 스크리너는 급등한 그날의 종가를 보고 다음 거래일 시가에 사므로,
+// 상한이 없으면 하루에 크게 오른 종목이 순위 상단을 차지한다(SWING 은 거래량 급증·1개월
+// 수익률·신고가 위치를 합산하는데, 급등 당일에는 셋이 동시에 뛴다).
+//
+// 기본값이 상한 없음인 것은 근거가 있어서가 아니라 아직 없어서다 — 값은 백테스트로
+// 재서 정한다. 그때까지 운영 동작은 지금과 같아야 하므로 무한대를 기본으로 둔다.
+export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
+// 3 으로 올린 이유(2026-08-26): 후보를 고르는 조건 자체는 그대로다. 바뀐 것은 **산출물의
+// 지표 집합**이다 — `return1d` 가 늘어 `indicator_snapshot` 의 형태가 달라졌고, 추천 프롬프트가
+// 지표를 통째로 싣기 때문에 모델이 보는 입력도 달라졌다. 버전의 목적은 "규칙이 바뀌었다" 를
+// 알리는 것보다 **섞어 보면 안 되는 경계**를 표시하는 것이므로, 그 경계를 여기에 둔다.
+// 이 값을 안 올리면 배포 전후 추천이 같은 버전으로 집계돼 변화의 효과를 분리할 수 없다.
+export const SCREENER_RULE_VERSION = 3;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 
 export interface ScreenCandidate {
@@ -38,6 +50,19 @@ const passesSwing = (candidate: ScreenCandidate): boolean => {
   return (
     ma20 !== null && close > ma20 && volumeSurge !== null && volumeSurge >= 1.5
   );
+};
+
+// 상한을 넘긴 종목만 뺀다. `return1d` 가 null 인 종목(첫 봉이라 전일이 없음)은 급등했다는
+// 근거가 없으므로 통과시킨다 — 지표 결측을 급등으로 취급하면 신규 상장이 통째로 빠진다.
+const withinDailyGainCap = (
+  candidate: ScreenCandidate,
+  maximumDailyGainPercent: number,
+): boolean => {
+  const { return1d } = candidate.indicators;
+  if (return1d === null) {
+    return true;
+  }
+  return return1d <= maximumDailyGainPercent;
 };
 
 const materialsByStrategy: Record<ScreenStrategy, RankingMaterial[]> = {
@@ -95,11 +120,13 @@ export const screenStocks = (
   // 백테스트가 하한을 바꿔가며 성적을 비교할 수 있도록 주입 가능하게 열어 둔다.
   // 기본값이 운영 규칙이므로 기존 호출부는 그대로 둔다.
   minimumTurnover60: number = MINIMUM_TURNOVER60,
+  maximumDailyGainPercent: number = DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
 ): ScreenedStock[] => {
   const passed = candidates.filter(
     (candidate) =>
       candidate.indicators.turnover60 !== null &&
       candidate.indicators.turnover60 >= minimumTurnover60 &&
+      withinDailyGainCap(candidate, maximumDailyGainPercent) &&
       (strategy === 'LONG_TERM'
         ? passesLongTerm(candidate)
         : passesSwing(candidate)),

@@ -1,3 +1,59 @@
+# 모의투자 장중 손절 (2026-08-25)
+
+**Goal:** `.ai/design.md` §구현 1~9대로 장중 5분 주기 손절 판정, 현재가 즉시 체결, Slack 보고를 구현한다.
+
+**Architecture:** `exit-band.ts`에 장중 전용 순수 판정 함수를 추가하고, `ApplyIntradayStopUsecase`가 KST 처리 창·당일 현재가·계좌 격리·주문 생성·방금 만든 SELL만 즉시 체결하는 흐름을 맡는다. 공용 `getKstClock`과 `strategyOf`만 기존 구현에서 export해 재사용한다. Autopilot task는 기존 `PAPER_TRADING_ENABLED`와 `AgentType.PAPER_TRADE`를 사용하며 알릴 일이 있을 때만 Slack 카드를 만든다.
+
+**Contract:** `.ai/design.md`가 source of truth다. Prisma schema/env/AgentType/기존 밴드 함수/`isIntradayCapture`를 바꾸지 않는다. `findDuePendingOrders` 결과에서 방금 만든 동일 계좌 SELL ticker만 체결한다. playbook 기존 순서를 보존하고 `paper-order-fill` 바로 뒤에 독립 항목을 둔다. `pnpm`만 사용하며 `db:push`, commit, push, PR 생성은 실행하지 않는다.
+
+- [x] **Task 1 — RED/GREEN: 장중 손절 도메인 판정.** 경계값 -5%, 수량 0·음수·NaN, 비유한 손익률, +20% 익절 미판정, 사유 문구를 `exit-band.spec.ts`에 먼저 추가해 RED를 확인한 뒤 `decideIntradayStopOrders`와 `describeIntradayStopReason`을 최소 구현한다.
+- [x] **Task 2 — RED/GREEN: 장중 손절 usecase.** 설계 필수 8개 케이스를 신규 spec에 먼저 작성해 RED를 확인한다. `getKstClock`을 `trade-calendar.ts`로 이동하고 `strategyOf`를 export한 뒤, 당일 현재가 검사·Decimal 손익률·계좌 격리·주문 생성·신규 SELL 한정 즉시 체결을 구현한다. focused spec과 기존 `fill-pending-orders.usecase.spec.ts`를 GREEN으로 만든다.
+- [x] **Task 3 — RED/GREEN: autopilot task.** gate off, `BEFORE_OPEN`, 무소식, 체결 카드 네 케이스를 신규 spec에 먼저 작성해 RED를 확인한다. 기존 formatter helper를 재사용해 audit output, skip 정책, Slack summary를 구현한다.
+- [x] **Task 4 — 배선·playbook·문서.** `PaperTradingModule`, `AutopilotModule` 4곳, defaults, playbook의 `paper-order-fill` 직후 독립 항목, `TriggerType`, 기존 playbook spec, README/docs 검사 대상을 갱신한다. 기존 playbook 항목 순서는 바꾸지 않는다.
+- [x] **Task 5 — 리뷰·최종 검증·기록.** 금지 범위와 설계 §1~9를 최종 diff로 대조하고 독립 코드 리뷰를 수행한다. `pnpm lint:check`, `pnpm test`, `pnpm build`, `pnpm docs:check`를 각각 fresh 실행해 exit 0을 확인한다. `.ai/implementation-summary.md`와 아래 Review에 실제 결과·설계 이탈·재검증 위험을 기록한다.
+
+## Review
+
+- 새 시스템을 만들지 않았다. 장중 폴링 슬롯(`paper-order-fill`, `*/10 9-15`)과 현재가 조회
+  경로(`fetchDailyBars(symbol, 1)` 는 장중에 진행 중인 오늘 봉을 준다)가 이미 있어서, 판정
+  함수와 usecase 하나를 얹는 것으로 끝났다. Prisma schema·env·AgentType 은 건드리지 않았다.
+- playbook 삽입 위치를 `paper-order-fill` 직후에서 `paper-score` 직후로 옮겼다. 기존
+  playbook spec 이 "paper-order-fill 다음은 paper-score" 를 인덱스로 못박고 있어, 남의
+  단언을 고치는 대신 자리를 비켰다. 배열 위치는 실행 시각과 무관하다.
+- 리뷰에서 고친 것 3가지.
+  - 계좌 단위 `catch` 가 예외를 세지 않고 삼켜, DB·체결 실패가 "손절 0건" 과 구분되지
+    않았다. `accountFailureCount` 를 결과·audit·Slack 카드에 노출했다.
+  - 공휴일에는 전 종목이 오늘 봉을 못 받아 실패로 잡히고, 그 회차마다 카드가 나가
+    휴장일 하루에 70장이 발송될 수 있었다. 판정에 성공한 종목이 0이면 휴장으로 보고
+    조용히 넘기되 집계는 audit 에 남긴다.
+  - `inspectedCount` 가 평단 0 인 종목까지 세고 있었다. 판정한 종목만 세도록 옮겼다.
+- 검증: `pnpm lint:check` / `pnpm test`(4173건) / `pnpm build` / `pnpm docs:check` 전부 exit 0.
+- 미검증: 실제 장중 실행. cron 진입점뿐이라 수동 실행 경로가 없어, 다음 거래일 09:30~15:20
+  에 실제로 도는 것으로만 확인할 수 있다.
+
+---
+
+# KOSPI 벤치마크 과거 종가 소급 수집 (2026-08-25)
+
+**Goal:** `.ai/design.md`대로 `collect-benchmark --years <연수>`가 Toss `before` 커서로 KOSPI 일봉을 과거 방향으로 수집한다.
+
+**Contract:** 기존 `--days` 증분 경로와 `BENCHMARK_SYMBOL`을 보존한다. 200봉 페이지, 250ms 페이지 간격, 페이지당 429 1회·1초 재시도, 40페이지 상한, 빈 페이지·목표 도달·커서 정체 종료를 구현한다. Prisma schema/env/dependency를 바꾸지 않고 `db:push`, commit, PR을 실행하지 않는다.
+
+- [x] **Task 1 — RED/GREEN: 포트·Toss 커서·repository.** `before` 쿼리 전달과 `findOldestTradeDate` 오름차순 조회 spec을 먼저 추가해 RED를 확인하고 최소 구현한다.
+- [x] **Task 2 — RED/GREEN: 백필 usecase.** `years`/`days` 상호 배제, 저장된 가장 오래된 날의 시작 커서, 이전 페이지의 가장 오래된 날을 잇는 커서, 목표 도달, 빈 페이지, 40페이지 상한, 장중 차단, 페이지당 rate-limit 재시도 결과를 spec으로 먼저 고정하고 구현한다.
+- [x] **Task 3 — 정체 가드 역변이.** 동일 페이지 반복이 2회 이내 종료되는 spec을 추가한다. GREEN 후 production 정체 판정을 일부러 제거해 해당 spec RED를 확인하고 즉시 복원한다.
+- [x] **Task 4 — RED/GREEN: CLI·출력.** parser usage/`--years`/양의 정수/`--days` 동시 거부 spec을 먼저 추가하고 parser 및 `scripts/screener.ts` 결과 문구를 갱신한다.
+- [x] **Task 5 — 통합·검증·기록.** focused specs, `git diff --check`, `pnpm lint:check`, 전체 `pnpm test`, `pnpm build`를 fresh 실행한다. 최종 diff를 설계와 대조하고 `.ai/implementation-summary.md` 및 아래 Review에 변경 파일·이탈·실제 출력 요약을 기록한다.
+
+## Review
+
+- `collect-benchmark --years` focused 4 suites/39 tests GREEN. 정체 가드 제거 시 대상 spec이 `pages: 1` 대신 `pages: 40`으로 RED, 복원 후 GREEN.
+- 설계에 없는 별도 `backfill-benchmark` 서브커맨드를 만들었다가 사용자 교정 후 파일·CLI·module wiring을 전부 제거했다. 백필 기능은 계약대로 `collect-benchmark --years` 한 경로에만 남겼다.
+- final fresh gate: lint exit 0(error 0, 기존 warning 55), 일반 test 444 suites/4,137 tests, code-graph 5 suites/40 tests, build exit 0, `git diff --check` exit 0.
+- Prisma schema/env/dependency는 변경하지 않았고 `db:push`, 실제 Toss 수집, commit, push, PR 생성도 실행하지 않았다.
+
+---
+
 # PO Shadow v2 — 근거 기반 정오 대조 (2026-08-19)
 
 **Goal:** `.ai/design.md`대로 정오 실조회 사실표와 아침 계획을 결정론으로 대조하고, 이상이 없으면 모델 호출 없이 성공 원장을 남기며, 이상이 있으면 fact ID를 인용한 지적만 Slack에 노출한다.

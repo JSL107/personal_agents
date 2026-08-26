@@ -124,6 +124,10 @@ describe('AiCliEnvApplyAutopilotTask', () => {
       'Codex: 플러그인 5·MCP 6·자산 7',
     );
     expect(result.preview?.previewText).toContain('.bak-');
-    expect(result.preview?.previewText).toContain('hooks는 적용되지 않습니다');
+    // 승인 카드는 실제로 덮이는 범위를 말해야 한다. 복원이 --all 로 도는데 카드가 "hooks는
+    // 적용되지 않습니다" 라고 안내하면, hooks 가 보존된다고 믿고 ✅ 를 누른 뒤 매 세션 도는
+    // 코드와 전역 지침이 덮인다 — 승인의 전제가 사실과 다르다.
+    expect(result.preview?.previewText).toContain('hooks·전역 지침');
+    expect(result.preview?.previewText).toContain('덮어씁니다');
   });
 });

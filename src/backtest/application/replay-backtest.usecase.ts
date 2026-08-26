@@ -52,6 +52,8 @@ export interface ReplayBacktestCommand {
   to: string;
   seedAmount: string;
   minimumTurnover60: number;
+  // 당일 상승률 상한(%). 값을 바꿔가며 "급등 당일 매수" 를 얼마나 걸러야 하는지 잰다.
+  maximumDailyGainPercent: number;
   maximumPositions: number;
   weightPercent: number;
   holdingTradeDays: number;
@@ -594,6 +596,7 @@ export class ReplayBacktestUsecase {
       context.command.strategy,
       candidates.length,
       context.command.minimumTurnover60,
+      context.command.maximumDailyGainPercent,
     );
     const asOfIndex = context.tradeDateIndex.get(asOf) as number;
     const heldPositions = context.ledger.openPositions().map((position) => ({

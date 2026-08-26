@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { StrategyParameterModule } from '../strategy-parameter/strategy-parameter.module';
 import { ApplyExitBandUsecase } from './application/apply-exit-band.usecase';
+import { ApplyIntradayStopUsecase } from './application/apply-intraday-stop.usecase';
 import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-account.usecase';
 import { ExecutePaperOrderUsecase } from './application/execute-paper-order.usecase';
 import { FillPendingOrdersUsecase } from './application/fill-pending-orders.usecase';
@@ -15,7 +17,7 @@ import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
 import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.prisma.repository';
 
 @Module({
-  imports: [MarketDataModule, PrismaModule],
+  imports: [MarketDataModule, PrismaModule, StrategyParameterModule],
   providers: [
     PaperTradingPrismaRepository,
     // 체결 원장 — 운영·모의는 DB 장부를 쓴다. 백테스트는 같은 포트의 메모리 구현을 직접 끼운다.
@@ -29,6 +31,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     ApplyExitBandUsecase,
+    ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     // 자연어 진입 — RouterModule 의 AGENT_DISPATCHER_PORT useFactory 가 중앙에서 inject 한다.
@@ -41,6 +44,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     ApplyExitBandUsecase,
+    ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
     PaperTradeDispatcher,
