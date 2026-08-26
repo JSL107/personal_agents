@@ -1,5 +1,6 @@
 import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
 import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
+import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import {
   PublishOutcome,
   SweepPullRequestResult,
@@ -75,7 +76,7 @@ export const formatPrReviewSweep = ({
   // 이 한 칸으로만 보인다 — 없으면 다시 손으로 원장을 뒤져야 한다.
   if (harvest.adoption.length > 0) {
     lines.push(
-      `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일) ${harvest.adoption
+      `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`) ${harvest.adoption
         .map(({ category, total, ratePercent, changePercentPoint }) =>
           ratePercent === null
             ? `${escapeSlackMrkdwn(category)} 표본 ${total}`
