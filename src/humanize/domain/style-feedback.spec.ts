@@ -1,5 +1,7 @@
+import { KOREAN_STYLE_TARGETS } from './korean-style-metrics';
 import {
   MINIMUM_REPEAT_COUNT,
+  renderBreathFeedback,
   renderStyleFeedback,
   StyleFeedbackRun,
   toStyleFeedbackRun,
@@ -133,5 +135,34 @@ describe('판정에서 내린 축', () => {
     const block = renderStyleFeedback(runs);
     expect(block).toContain('금지접속사');
     expect(block).not.toContain('편차');
+  });
+});
+
+describe('renderBreathFeedback', () => {
+  // 프롬프트에 "기본은 40~60자" 를 넣고 돌린 발행본이 32.6자였다. 모델은 자기 글의 평균을
+  // 재지 못한다 — 재는 쪽은 코드이고, 그 수치를 돌려보내야 고칠 기회가 생긴다.
+  it('하한 미달이면 실측 수치를 적어 되먹인다', () => {
+    const block = renderBreathFeedback(32.6);
+    expect(block).toContain('32.6자');
+    expect(block).toContain(`${KOREAN_STYLE_TARGETS.averageLengthMin}자`);
+    expect(block).toContain('한 문장으로 합쳐라');
+  });
+
+  it('하한을 넘겼으면 아무것도 붙이지 않는다', () => {
+    expect(renderBreathFeedback(KOREAN_STYLE_TARGETS.averageLengthMin)).toBe(
+      '',
+    );
+    expect(renderBreathFeedback(44.7)).toBe('');
+  });
+
+  it('실측이 없으면 아무것도 붙이지 않는다', () => {
+    expect(renderBreathFeedback(undefined)).toBe('');
+  });
+
+  // 합치라고 시키면서 내용을 줄이게 두면 사실이 빠진다. 절대 규칙과 같은 방향을 못 박는다.
+  it('내용 보존을 함께 요구한다', () => {
+    const block = renderBreathFeedback(30);
+    expect(block).toContain('사실·수치·고유명사·인용은 그대로다');
+    expect(block).toContain('낱말을 새로 지어내지 마라');
   });
 });

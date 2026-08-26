@@ -8,7 +8,10 @@
 // 여기서도 차단하지 않는다. 반복된 항목을 알려줄 뿐이고, 무엇을 어떻게 고칠지는 윤문
 // 프롬프트의 기존 규칙이 정한다.
 
-import { KOREAN_STYLE_UNJUDGED_AXES } from './korean-style-metrics';
+import {
+  KOREAN_STYLE_TARGETS,
+  KOREAN_STYLE_UNJUDGED_AXES,
+} from './korean-style-metrics';
 
 export interface StyleFeedbackRun {
   /** `findKoreanStyleGaps` 결과. `편차 12.3(≥15)` 처럼 "항목 값(기준)" 꼴이다. */
@@ -94,6 +97,9 @@ const tally = (runs: StyleFeedbackRun[]): GapTally[] => {
  *
  * `runs` 는 **최신순**이어야 한다.
  */
+// 지표의 평균 하한을 그대로 쓴다. 두 자리에 숫자를 두면 한쪽만 바뀌어 조용히 갈린다.
+const BREATH_TARGET_MIN = KOREAN_STYLE_TARGETS.averageLengthMin;
+
 export const renderStyleFeedback = (runs: StyleFeedbackRun[]): string => {
   const repeated = tally(runs);
   if (repeated.length === 0) {
@@ -110,4 +116,35 @@ export const renderStyleFeedback = (runs: StyleFeedbackRun[]): string => {
 ${lines}
 
 이번 글에서는 이 항목들을 특히 살펴라. 다른 규칙을 어겨 가며 맞추지는 말 것 — 내용과 의미는 그대로 두는 것이 먼저다.`;
+};
+
+// 방금 만든 산출물의 실측 평균 문장 길이를 되먹인다.
+//
+// 위 `renderStyleFeedback` 과 다른 축이다. 그쪽은 원장에 쌓인 **지난 글들**의 반복 갭이라
+// 이번 산출물을 보지 못한다. 이 함수는 **방금 나온 이 글**의 실측을 그대로 적어 준다.
+//
+// 왜 수치를 적어 주는가 — 프롬프트에 "기본은 40~60자" 를 넣고 돌린 발행본이 32.6자였다.
+// 모델은 자기 글의 평균을 재지 못한다. 규칙은 읽었지만 지켰는지는 모르는 상태로 끝난다.
+// 재는 쪽은 코드이므로, 그 결과를 돌려보내야 고칠 기회가 생긴다.
+//
+// 하한을 넘겼으면 빈 문자열이다 — 부르는 쪽이 미달일 때만 넘기지만, 여기서도 한 번 막아
+// 통과한 글에 불필요한 지시가 붙지 않게 한다.
+export const renderBreathFeedback = (
+  measuredAverageLength?: number,
+): string => {
+  if (
+    measuredAverageLength === undefined ||
+    measuredAverageLength >= BREATH_TARGET_MIN
+  ) {
+    return '';
+  }
+
+  return `
+
+[방금 만든 글의 실측]
+평균 문장 길이가 ${measuredAverageLength}자로 나왔다. 목표 하한은 ${BREATH_TARGET_MIN}자다.
+숨이 가쁘게 읽힌다는 뜻이므로, **이어 붙여도 뜻이 상하지 않는 짧은 문장끼리 한 문장으로 합쳐라.**
+- 앞 문장의 결론을 뒤 문장이 부연하는 자리, 조건과 결과가 두 문장으로 나뉜 자리가 후보다.
+- 합칠 때 낱말을 새로 지어내지 마라. 두 문장의 말을 그대로 두고 연결어미로 잇는다.
+- 사실·수치·고유명사·인용은 그대로다. 문장 수만 줄고 내용은 하나도 줄지 않아야 한다.`;
 };

@@ -21,6 +21,8 @@ export const humanizeMarkdownProse = async (
   // 경로다. 저녁 블로그(`humanize-evening-blog`)와 이력서(`humanize-career-profile`)는 독자가
   // 각각 본인·채용 담당이라 완화할 이유가 없다. 필요해지면 같은 방식으로 인자 하나만 통과시키면 된다.
   audience?: HumanizeAudience,
+  // 직전 회차 실측 평균. 하한 미달일 때만 넘겨 그 수치를 지시에 싣는다(호흡 되먹임).
+  measuredAverageLength?: number,
 ): Promise<HumanizeMarkdownResult> => {
   const { lines, blocks } = scanMarkdownBlocks(markdown);
   const proseBlocks = blocks.filter(
@@ -53,6 +55,7 @@ export const humanizeMarkdownProse = async (
     longForm: true,
     voice: 'personal-blog',
     audience,
+    measuredAverageLength,
   });
 
   // 뒤에서부터 갈아끼운다 — 앞에서부터 바꾸면 줄 수가 달라져 뒤 블록의 줄 번호가 밀린다.

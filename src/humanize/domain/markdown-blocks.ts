@@ -125,6 +125,40 @@ export const scanMarkdownBlocks = (markdown: string): MarkdownBlockScan => {
   return { lines, blocks };
 };
 
+// 헤딩과 목록 머리말의 줄표를 콜론으로 바꾼다.
+//
+// 왜 코드로 하는가 — 말투 단계(`humanizeMarkdownProse`)는 **산문 문단만** 모델에 넘긴다.
+// 헤딩·목록은 구조라서 손대면 문서가 깨지기 때문인데, 그래서 프롬프트에 넣은 "헤딩과 목록
+// 머리말에 줄표를 쓰지 마라" 가 정작 그 두 자리에 닿지 않는다. 규칙을 지킬 기회 자체가 없다.
+// 규칙을 넣고 발행한 글에서 줄표 9개가 **전부** 헤딩(3)과 목록(6)이었고 산문은 0개였다.
+//
+// 산문 속 줄표는 여기서 손대지 않는다. 부연을 쉼표로 붙일지 문장을 나눌지는 뜻을 읽어야 갈리고,
+// 그건 말투 단계와 `emDashCount` 지표가 맡는다. 여기서 다루는 것은 **머리말 구분자** 하나뿐이다.
+//
+// 줄 하나에 여러 개가 있어도 첫 번째만 바꾼다. 뒤엣것은 머리말이 아니라 서술 안의 줄표라
+// 콜론으로 바꾸면 문장이 어그러진다(`- A — B. C — D.`). 남은 것은 지표에 걸려 사람이 본다.
+const STRUCTURAL_DASH_PATTERN =
+  /^(\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s).*?)\s+—\s+/;
+
+export const stripStructuralEmDashes = (markdown: string): string => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  // 코드 펜스 안은 건드리지 않는다 — 명령어나 출력 예시의 `—` 는 필자의 문체가 아니다.
+  const fenced = new Set<number>();
+  blocks
+    .filter((block) => FENCE_PATTERN.test(lines[block.startLine]))
+    .forEach((block) => {
+      for (let line = block.startLine; line <= block.endLine; line += 1) {
+        fenced.add(line);
+      }
+    });
+
+  return lines
+    .map((line, index) =>
+      fenced.has(index) ? line : line.replace(STRUCTURAL_DASH_PATTERN, '$1: '),
+    )
+    .join('\n');
+};
+
 // 펜스 코드블록만 원문 그대로 뽑는다. 편집 단계가 코드를 바꾸지 않았는지 대조하는 데 쓴다 —
 // "코드 한 글자도 바꾸지 마라" 를 프롬프트로만 두면 집행이 없다.
 export const extractFencedCodeBlocks = (markdown: string): string[] => {
