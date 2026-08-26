@@ -3,9 +3,11 @@
  * export-ai-cli-env.cjs 가 만든 디렉터리를 새 PC 에서 되감는다.
  * manifest 에 담긴 도구(Claude Code · Codex)를 각각 복원하며, CLI 가 없는 쪽은 건너뛴다.
  *
- *   node scripts/bootstrap-ai-cli-env.cjs <내보낸경로> [--dry-run] [--with-hooks] [--replace-hooks] [--replace-global-docs]
+ *   node scripts/bootstrap-ai-cli-env.cjs <내보낸경로> [--dry-run] [--all] [--with-hooks] [--replace-hooks] [--replace-global-docs]
  *
  *   --dry-run              실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
+ *   --all                  아래 세 플래그를 한 번에 켠다. 내 PC 를 그대로 옮기는 게 목적일 때 쓴다.
+ *                          (남의 PC 나 공용 머신에 적용할 때는 켜지 말 것 — 그 머신의 hooks·전역 규칙을 덮는다)
  *   --with-hooks           hooks 설정까지 적용한다 (기본은 안내만)
  *   --replace-hooks        이 PC 에 이미 hooks 가 있어도 덮어쓴다 (없으면 건너뛰고 알린다)
  *   --replace-global-docs  이 PC 에 이미 있는 전역 지침 문서(~/.claude/CLAUDE.md · ~/.codex/AGENTS.md)를
@@ -32,9 +34,13 @@ const CODEX_HOOKS = path.join(CODEX_DIR, 'hooks.json');
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
-const WITH_HOOKS = args.includes('--with-hooks');
-const REPLACE_HOOKS = args.includes('--replace-hooks');
-const REPLACE_GLOBAL_DOCS = args.includes('--replace-global-docs');
+// --all 은 "이 스냅샷이 곧 내 환경" 인 경우의 프리셋이다. 기본값이 보수적인 이유(hooks 는 매 세션 도는
+// 코드, 전역 규칙에는 그 머신 수기분이 있을 수 있음)는 남의 PC 를 전제한 것이라, 내 PC 를 옮길 때는
+// 매번 플래그 세 개를 기억해야 하는 쪽이 오히려 사고를 부른다 (붙이지 않으면 hooks 가 한 줄도 안 붙는다).
+const ALL = args.includes('--all');
+const WITH_HOOKS = ALL || args.includes('--with-hooks');
+const REPLACE_HOOKS = ALL || args.includes('--replace-hooks');
+const REPLACE_GLOBAL_DOCS = ALL || args.includes('--replace-global-docs');
 const EXPORT_DIR = path.resolve(args.find((arg) => !arg.startsWith('--')) || 'ai-cli-env-export');
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');

@@ -214,7 +214,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
 | `AI_CLI_ENV_SYNC_REPO` | ❌ | AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip. |
 | `AI_CLI_ENV_SYNC_DIR` | ❌ | Snapshot repo의 로컬 clone 경로. 미설정 시 ~/.ai-cli-env-sync. |
-| `AI_CLI_ENV_SNAPSHOT_CRON` | ❌ | 스냅샷 export cron. 미설정 시 매주 금 19:00(Asia/Seoul). |
+| `AI_CLI_ENV_SNAPSHOT_CRON` | ❌ | 스냅샷 export cron. 미설정 시 매일 19:00(Asia/Seoul). |
 | `AI_CLI_ENV_SNAPSHOT_TIMEZONE` | ❌ | 스냅샷 export timezone. 미설정 시 Asia/Seoul. |
 | `AI_CLI_ENV_APPLY_CRON` | ❌ | 다른 PC snapshot 감지·승인 카드 cron. 미설정 시 매일 10:00(Asia/Seoul). |
 | `AI_CLI_ENV_APPLY_TIMEZONE` | ❌ | 다른 PC snapshot 감지·승인 카드 timezone. 미설정 시 Asia/Seoul. |

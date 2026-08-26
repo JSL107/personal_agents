@@ -223,7 +223,7 @@ export class EnvironmentVariables {
   @IsString()
   AI_CLI_ENV_SYNC_DIR?: string;
 
-  // 스냅샷 export cron. 미설정 시 매주 금 19:00(Asia/Seoul).
+  // 스냅샷 export cron. 미설정 시 매일 19:00(Asia/Seoul).
   @IsOptional()
   @IsString()
   AI_CLI_ENV_SNAPSHOT_CRON?: string;

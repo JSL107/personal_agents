@@ -103,6 +103,10 @@ function copyAssets(sourceDir, destinationDir) {
       fs.cpSync(path.join(sourceDir, entry), path.join(destinationDir, entry), {
         recursive: true,
         dereference: true,
+        // 자체 git 레포인 스킬(예: humanize-korean)의 .git 까지 딸려오면, 스냅샷 레포가 그 디렉터리를
+        // 서브모듈(gitlink)로 잡는다. 그러면 커밋에는 해시만 남고 내용은 한 파일도 올라가지 않아
+        // 새 PC 에서 clone 했을 때 빈 디렉터리가 된다 — 스킬이 통째로 사라지는 경로다.
+        filter: (source) => path.basename(source) !== '.git',
       });
       copied.push(entry);
     } catch (error) {
@@ -336,8 +340,22 @@ function summarize(label, tool) {
   }
 }
 
+/**
+ * 도구별 자산 디렉터리를 비운다.
+ *
+ * 복사는 덮어쓰기라, 지운 스킬·에이전트가 이전 회차의 산출물로 남아 계속 되살아난다.
+ * 스냅샷은 누적본이 아니라 "지금 이 PC 의 상태" 여야 하므로 매번 새로 만든다.
+ * OUT_DIR 자체는 건드리지 않는다 — windows/ 나 절차서, .git 이 같은 자리에 있다.
+ */
+function resetToolDirs() {
+  for (const tool of ['claude', 'codex', 'tools']) {
+    fs.rmSync(path.join(OUT_DIR, tool), { recursive: true, force: true });
+  }
+}
+
 function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  resetToolDirs();
 
   const claude = collectClaude();
   const codex = collectCodex();
@@ -365,6 +383,7 @@ function main() {
 
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   fs.writeFileSync(path.join(OUT_DIR, 'SECRETS-TODO.md'), buildSecretsDoc());
+  bundleRestoreTool();
 
   console.log(`내보내기 완료 → ${OUT_DIR}`);
   summarize('Claude Code', claude);
@@ -374,8 +393,37 @@ function main() {
     console.log(`\n  ! ${credentialWarnings.join(', ')} 의 url/args 에 자격 증명으로 보이는 값이 있다.`);
     console.log('    이 부분은 자동 치환하지 않았다 — manifest.json 을 열어 직접 확인할 것.');
   }
-  console.log(`\n새 PC 로 ${path.basename(OUT_DIR)} 디렉터리를 옮긴 뒤:`);
-  console.log('  node scripts/bootstrap-ai-cli-env.cjs <옮긴경로> --dry-run');
+  console.log(`\n새 PC 에서 ${path.basename(OUT_DIR)} 를 받은 뒤:`);
+  console.log(`  ${path.join(path.basename(OUT_DIR), 'apply.sh')} --dry-run   # 확인 후 플래그 없이 다시`);
+}
+
+/**
+ * 복원 도구를 스냅샷 안에 함께 넣는다.
+ *
+ * bootstrap 의 정본은 이 레포(personal_agents)에 하나뿐이지만, 그래서 새 PC 는 스냅샷과 별개로
+ * 이 레포까지 clone 해야 복원을 시작할 수 있었다. 스냅샷이 자기 복원 도구를 들고 있으면
+ * clone 한 번으로 끝난다. tools/ 안의 것은 매 export 마다 덮어쓰는 사본이지 편집 대상이 아니다.
+ */
+function bundleRestoreTool() {
+  const toolsDir = path.join(OUT_DIR, 'tools');
+  fs.mkdirSync(toolsDir, { recursive: true });
+  fs.cpSync(path.join(__dirname, 'bootstrap-ai-cli-env.cjs'), path.join(toolsDir, 'bootstrap-ai-cli-env.cjs'));
+
+  const applyPath = path.join(OUT_DIR, 'apply.sh');
+  fs.writeFileSync(
+    applyPath,
+    [
+      '#!/usr/bin/env bash',
+      '# 이 스냅샷을 지금 PC 에 적용한다. export-ai-cli-env.cjs 가 만든 파일이라 직접 고치지 말 것.',
+      '#   ./apply.sh --dry-run   먼저 이걸로 확인',
+      '#   ./apply.sh             실제 적용 (hooks·전역 규칙까지 전부)',
+      'set -euo pipefail',
+      'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+      'exec node "$HERE/tools/bootstrap-ai-cli-env.cjs" "$HERE" --all "$@"',
+      '',
+    ].join('\n'),
+  );
+  fs.chmodSync(applyPath, 0o755);
 }
 
 function buildSecretsDoc() {
