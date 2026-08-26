@@ -52,9 +52,13 @@ const buildTask = (options: {
   } as unknown as jest.Mocked<PublishNotionDraftUsecase>;
   // 실제 AgentRunService 처럼 run() 을 실행해 결과를 그대로 돌려준다.
   const runOutputs: unknown[] = [];
+  const updateInputSnapshot = jest.fn();
   const agentRunService = {
     execute: jest.fn().mockImplementation(async (input) => {
-      const execution = await input.run({ agentRunId: 91 });
+      const execution = await input.run({
+        agentRunId: 91,
+        updateInputSnapshot,
+      });
       runOutputs.push(execution.output);
       return {
         result: execution.result,
@@ -80,6 +84,7 @@ const buildTask = (options: {
     publishNotionDraft,
     agentRunService,
     runOutputs,
+    updateInputSnapshot,
   };
 };
 
@@ -140,9 +145,11 @@ describe('BlogGithubPublishAutopilotTask', () => {
     });
 
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
-    expect(publishNotionDraft.buildPublishCandidate).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-    });
+    expect(publishNotionDraft.buildPublishCandidate).toHaveBeenCalledWith(
+      { slackUserId: 'U1' },
+      // 두 번째 인자는 고른 초안을 원장에 남기는 콜백이다.
+      expect.any(Function),
+    );
   });
 
   it('금지어가 남으면 원문 없는 안내만 반환하고 preview를 만들지 않는다', async () => {
@@ -282,6 +289,30 @@ describe('BlogGithubPublishAutopilotTask — 단계 경계 계측', () => {
     expect(runOutputs[0]).toEqual({
       status: 'empty',
       message: '발행할 초안이 없습니다.',
+    });
+  });
+});
+
+// 이 경로가 pageId 를 안 남기면, 실패·차단 회차가 어느 글 때문이었는지 원장에 없다 —
+// 큐가 막혀도 무엇이 막고 있는지 조회할 수 없고, 후순위 로직도 판정 근거를 잃는다.
+describe('BlogGithubPublishAutopilotTask — 선택한 초안 기록', () => {
+  it('고른 초안의 pageId 를 원장 스냅샷에 남긴다', async () => {
+    const { task, publishNotionDraft, updateInputSnapshot } = buildTask({});
+
+    await task.run(CONTEXT);
+
+    const [, onSelected] = (
+      publishNotionDraft.buildPublishCandidate as jest.Mock
+    ).mock.calls[0];
+    await onSelected({ slackUserId: 'U1', pageId: 'page-1' });
+
+    expect(updateInputSnapshot).toHaveBeenCalledWith({
+      // cron 자신의 스냅샷이 살아 있어야 한다 — 콜백은 통째로 교체하므로 넘긴 값만 쓰면
+      // taskId 와 firedAtKst 가 지워진다.
+      taskId: 'blog-github-publish',
+      slackUserId: 'U1',
+      firedAtKst: CONTEXT.firedAtKst,
+      pageId: 'page-1',
     });
   });
 });

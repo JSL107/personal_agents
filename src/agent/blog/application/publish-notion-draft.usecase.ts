@@ -107,6 +107,19 @@ interface PublishCandidateContext {
   holdStatusValue: string;
 }
 
+// 금지어로 막힌 초안을 며칠 뒤로 미룰지. 발행 슬롯이 하루 1회라 이 값이 곧 건너뛰는 횟수다.
+//
+// 왜 필요한가 — 금지어 차단은 과삭제와 성질이 다르다. 과삭제는 회차마다 결과가 흔들리지만
+// 금지어는 **사람이 Notion 을 고치기 전까지 매일 같은 결과**를 낸다. 하루 1회 슬롯에서 그
+// 한 건이 뒤에 쌓인 초안 전부를 무기한 막는다(실측 큐 20건).
+//
+// 제외가 아니라 **후순위**다. 큐에 다른 초안이 없으면 여전히 시도되고, 며칠 뒤 창을 벗어나면
+// 저절로 다시 차례가 온다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+const BLOCKED_DRAFT_COOLDOWN_DAYS = 3;
+
+// 위 창 안에서 훑을 실행 기록 수. 하루 1~2회 도는 워커라 넉넉하다.
+const BLOCKED_DRAFT_SCAN_LIMIT = 50;
+
 // 카드에 찍을 축. 라벨과 키를 한 자리에 둬 표시 순서와 값이 갈리지 않게 한다.
 const STRUCTURE_AXES: ReadonlyArray<{
   label: string;
@@ -205,12 +218,19 @@ export class PublishNotionDraftUsecase {
 
   // modelUsed 를 함께 돌려준다 — autopilot 경로가 이 값을 AgentRun 에 기록해야
   // 저녁마다 도는 익명화 호출이 원장(실패율·소요시간·쿼터)에 잡힌다.
+  //
+  // `updateInputSnapshot` 은 저녁 cron 경로가 넘긴다. 그 경로는 자기 AgentRun 을 따로 여는데
+  // 스냅샷에 `pageId` 가 없어서, **실패한 회차가 어느 초안이었는지 원장에 남지 않았다** —
+  // 큐가 막혀도 무엇이 막고 있는지 조회할 방법이 없었다. 스냅샷 조립은 호출부 몫이다(이 콜백은
+  // 통째로 교체한다): cron 의 `taskId` · `firedAtKst` 를 여기서 알 수 없으므로 덮으면 지워진다.
   async buildPublishCandidate(
     input: PublishNotionDraftInput,
+    updateInputSnapshot?: (snapshot: Record<string, unknown>) => Promise<void>,
   ): Promise<BuiltPublishCandidate> {
     return this.buildPublishCandidateWithContext(
       input,
       this.getPublishCandidateContext(),
+      updateInputSnapshot,
     );
   }
 
@@ -234,7 +254,15 @@ export class PublishNotionDraftUsecase {
       };
     }
 
-    const target = this.selectDraft(drafts, titleQuery, input.pageId);
+    const target = this.selectDraft(
+      drafts,
+      titleQuery,
+      input.pageId,
+      // 제목이나 pageId 로 콕 집은 요청은 후순위를 적용하지 않는다 — 사람이 그 글을 지목했다.
+      titleQuery || input.pageId
+        ? new Set<string>()
+        : await this.findRecentlyBlockedPageIds(),
+    );
     if (updateInputSnapshot) {
       await updateInputSnapshot({
         slackUserId: input.slackUserId,
@@ -486,11 +514,22 @@ export class PublishNotionDraftUsecase {
     drafts: NotionDraftPage[],
     titleQuery: string,
     pageId?: string,
+    blockedPageIds: Set<string> = new Set(),
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
     // 같은 출처끼리는 기존과 같이 오래된 것부터.
+    //
+    // 최근 금지어로 막힌 초안은 **출처 우선순위보다 먼저** 뒤로 보낸다. 막힌 글이 '오늘의 공부'
+    // 이면 우선순위 0 이라 매일 큐 맨 앞을 차지하는데, 그 회차는 카드도 안 만들어져 다음 회차의
+    // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
     const oldestFirst = [...drafts].sort((first, second) => {
+      const blockedGap =
+        Number(blockedPageIds.has(first.pageId)) -
+        Number(blockedPageIds.has(second.pageId));
+      if (blockedGap !== 0) {
+        return blockedGap;
+      }
       const priorityGap =
         draftPriority(first.sourceType) - draftPriority(second.sourceType);
       if (priorityGap !== 0) {
@@ -498,6 +537,13 @@ export class PublishNotionDraftUsecase {
       }
       return first.createdTime.localeCompare(second.createdTime);
     });
+    if (blockedPageIds.has(oldestFirst[0].pageId)) {
+      // 큐 전체가 막힌 초안뿐이라 후순위가 무의미한 회차. 조용히 같은 글을 또 돌리는 것보다
+      // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
+      this.logger.warn(
+        `발행 후보가 모두 최근 차단된 초안입니다 (${blockedPageIds.size}건). Notion 에서 금지어를 수정해야 합니다.`,
+      );
+    }
     if (pageId) {
       const replayTarget = oldestFirst.find((draft) => draft.pageId === pageId);
       if (replayTarget) {
@@ -850,6 +896,40 @@ export class PublishNotionDraftUsecase {
         ? masked
         : masked.split(trimmed).join(maskTerm(trimmed));
     }, text);
+  }
+
+  // 최근 금지어로 막힌 초안의 pageId. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
+  // 원장이 안 읽힌다고 그날 발행 자체를 막으면 손해가 더 크다.
+  //
+  // **FAILED 가 아니라 SUCCEEDED 를 훑는다.** 금지어 차단은 예외가 아니라 정상 종료다
+  // (`status: 'blocked'` 를 돌려준다). 실패 조회로 찾으면 이 경로가 통째로 빠진다.
+  //
+  // 과삭제로 **예외를 던진** 회차는 여기 안 잡힌다. 그건 회차마다 흔들리는 실패라 다음 날
+  // 재시도가 합리적이고, 세려면 실패 회차의 pageId 를 돌려주는 조회가 따로 필요하다.
+  private async findRecentlyBlockedPageIds(): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.BLOG_PUBLISH,
+        sinceDays: BLOCKED_DRAFT_COOLDOWN_DAYS,
+        limit: BLOCKED_DRAFT_SCAN_LIMIT,
+      });
+      for (const run of runs) {
+        const output = run.output as { status?: unknown } | null;
+        if (output?.status !== 'blocked') {
+          continue;
+        }
+        const snapshot = run.inputSnapshot as { pageId?: unknown } | null;
+        if (typeof snapshot?.pageId === 'string') {
+          blocked.add(snapshot.pageId);
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `차단 이력 조회 실패 — 후순위 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return blocked;
   }
 
   private async findOpenPublishCard(
