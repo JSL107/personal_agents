@@ -21,8 +21,10 @@ import {
 import {
   CODE_MASK_PATTERN,
   countCodeMaskOccurrences,
+  countMarkdownStructure,
   extractFencedCodeBlocks,
   HumanizeMarkdownResult,
+  MarkdownStructureCounts,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
   stripStructuralEmDashes,
@@ -45,6 +47,8 @@ import { BlogException } from '../domain/blog.exception';
 import {
   BlogGithubPublishPayload,
   BlogPublishCandidate,
+  BlogStageStructure,
+  buildBlogRunOutput,
   PublishNotionDraftInput,
   PublishNotionDraftResult,
 } from '../domain/blog.type';
@@ -64,6 +68,7 @@ import {
 import {
   BLOG_EDIT_SYSTEM_PROMPT,
   buildBlogEditPrompt,
+  MIN_EDITED_BODY_RATIO,
 } from '../domain/prompt/blog-edit.prompt';
 import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
@@ -104,13 +109,36 @@ interface PublishCandidateContext {
   holdStatusValue: string;
 }
 
-// 편집이 원문을 이 비율 미만으로 줄이면 과삭제로 보고 끊는다. 덜어내기는 편집의 일이지만,
-// 본문 절반이 사라지는 것은 "정리" 가 아니라 사고다.
-const MIN_EDITED_BODY_RATIO = 0.6;
+// 금지어로 막힌 초안을 며칠 뒤로 미룰지. 발행 슬롯이 하루 1회라 이 값이 곧 건너뛰는 횟수다.
+//
+// 왜 필요한가 — 금지어 차단은 과삭제와 성질이 다르다. 과삭제는 회차마다 결과가 흔들리지만
+// 금지어는 **사람이 Notion 을 고치기 전까지 매일 같은 결과**를 낸다. 하루 1회 슬롯에서 그
+// 한 건이 뒤에 쌓인 초안 전부를 무기한 막는다(실측 큐 20건).
+//
+// 제외가 아니라 **후순위**다. 큐에 다른 초안이 없으면 여전히 시도되고, 며칠 뒤 창을 벗어나면
+// 저절로 다시 차례가 온다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+const BLOCKED_DRAFT_COOLDOWN_DAYS = 3;
+
+// 위 창 안에서 훑을 실행 기록 수. 하루 1~2회 도는 워커라 넉넉하다.
+const BLOCKED_DRAFT_SCAN_LIMIT = 50;
+
+// 카드에 찍을 축. 라벨과 키를 한 자리에 둬 표시 순서와 값이 갈리지 않게 한다.
+const STRUCTURE_AXES: ReadonlyArray<{
+  label: string;
+  key: keyof MarkdownStructureCounts;
+}> = [
+  { label: '글자', key: 'chars' },
+  { label: '헤딩', key: 'headings' },
+  { label: '인용', key: 'quotes' },
+  { label: '링크', key: 'links' },
+  { label: '코드', key: 'codeBlocks' },
+];
 
 interface BuiltPublishCandidate {
   candidate: BlogPublishCandidate;
   modelUsed: string;
+  // 도달한 단계까지만 담긴다 — 보류·차단으로 끊긴 회차도 거기까지의 손실을 남긴다.
+  stages: BlogStageStructure[];
 }
 
 @Injectable()
@@ -158,7 +186,11 @@ export class PublishNotionDraftUsecase {
         const candidate = built.candidate;
         if (candidate.status !== 'ready') {
           const result: PublishNotionDraftResult = candidate;
-          return { result, modelUsed: built.modelUsed, output: result };
+          return {
+            result,
+            modelUsed: built.modelUsed,
+            output: buildBlogRunOutput(result, built.stages),
+          };
         }
         const preview = await this.createPreview.execute({
           slackUserId: input.slackUserId,
@@ -177,19 +209,30 @@ export class PublishNotionDraftUsecase {
           path: candidate.path,
           content: candidate.content,
         };
-        return { result, modelUsed: built.modelUsed, output: result };
+        return {
+          result,
+          modelUsed: built.modelUsed,
+          output: buildBlogRunOutput(result, built.stages),
+        };
       },
     });
   }
 
   // modelUsed 를 함께 돌려준다 — autopilot 경로가 이 값을 AgentRun 에 기록해야
   // 저녁마다 도는 익명화 호출이 원장(실패율·소요시간·쿼터)에 잡힌다.
+  //
+  // `updateInputSnapshot` 은 저녁 cron 경로가 넘긴다. 그 경로는 자기 AgentRun 을 따로 여는데
+  // 스냅샷에 `pageId` 가 없어서, **실패한 회차가 어느 초안이었는지 원장에 남지 않았다** —
+  // 큐가 막혀도 무엇이 막고 있는지 조회할 방법이 없었다. 스냅샷 조립은 호출부 몫이다(이 콜백은
+  // 통째로 교체한다): cron 의 `taskId` · `firedAtKst` 를 여기서 알 수 없으므로 덮으면 지워진다.
   async buildPublishCandidate(
     input: PublishNotionDraftInput,
-  ): Promise<{ candidate: BlogPublishCandidate; modelUsed: string }> {
+    updateInputSnapshot?: (snapshot: Record<string, unknown>) => Promise<void>,
+  ): Promise<BuiltPublishCandidate> {
     return this.buildPublishCandidateWithContext(
       input,
       this.getPublishCandidateContext(),
+      updateInputSnapshot,
     );
   }
 
@@ -209,10 +252,19 @@ export class PublishNotionDraftUsecase {
       return {
         candidate: { status: 'empty', message: '발행할 초안이 없습니다.' },
         modelUsed: 'deterministic',
+        stages: [],
       };
     }
 
-    const target = this.selectDraft(drafts, titleQuery, input.pageId);
+    const target = this.selectDraft(
+      drafts,
+      titleQuery,
+      input.pageId,
+      // 제목이나 pageId 로 콕 집은 요청은 후순위를 적용하지 않는다 — 사람이 그 글을 지목했다.
+      titleQuery || input.pageId
+        ? new Set<string>()
+        : await this.findRecentlyBlockedPageIds(),
+    );
     if (updateInputSnapshot) {
       await updateInputSnapshot({
         slackUserId: input.slackUserId,
@@ -231,6 +283,7 @@ export class PublishNotionDraftUsecase {
           message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 발행 승인 카드가 아직 열려 있습니다. 그 카드를 처리하면 다음 초안으로 넘어갑니다.`,
         },
         modelUsed: 'deterministic',
+        stages: [],
       };
     }
 
@@ -242,6 +295,13 @@ export class PublishNotionDraftUsecase {
         status: DomainStatus.BAD_REQUEST,
       });
     }
+
+    // 단계마다 구조를 센다. **모델에 보내는 `masked` 가 아니라 원문을 기준선으로** 삼는다 —
+    // 마스킹은 코드블록을 한 줄 표식으로 접어서 글자 수를 크게 줄이므로, 그 값을 기준선으로
+    // 쓰면 뒤 단계의 손실률이 조용히 낮게 나온다.
+    const stages: BlogStageStructure[] = [
+      { stage: '원문', ...countMarkdownStructure(markdown) },
+    ];
 
     // 공개 프로젝트 계약에서는 코드블록을 표식으로 가려 보낸다. 그 계약은 이미 "코드블록 안의
     // 코드·명령어·설정" 을 보존 대상으로 두는데 프롬프트만으로는 지켜지지 않았다 — 실측하면
@@ -290,6 +350,10 @@ export class PublishNotionDraftUsecase {
     // 초안에 코드가 아예 없었기 때문이고, 확장 프롬프트가 코드 예시를 요구하기 시작하면
     // 이 구멍으로 실제 코드가 지나간다.
     this.assertCodeBlocksPreserved(target, markdown, anonymized.body, '익명화');
+    stages.push({
+      stage: '익명화',
+      ...countMarkdownStructure(anonymized.body),
+    });
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
     const edited = await this.editDraft(target, anonymized, context);
@@ -304,6 +368,7 @@ export class PublishNotionDraftUsecase {
           message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 은 발행하지 않고 보류로 옮겼습니다 — ${this.maskForbidden(edited.reason, context.forbiddenTerms)}`,
         },
         modelUsed: completion.modelUsed,
+        stages,
       };
     }
     // 편집이 코드를 바꾸지 않았는지 대조한다. 프롬프트로만 금지하면 집행이 없다 —
@@ -314,7 +379,16 @@ export class PublishNotionDraftUsecase {
       edited.body,
       '편집',
     );
-    this.assertNotOverTrimmed(target, anonymized.body, edited.body);
+    // 가드보다 **먼저** 센다. 뒤에 두면 과삭제로 끊긴 회차에는 편집 수치가 아예 없는데,
+    // 그 회차야말로 무엇이 사라졌는지 알아야 하는 회차다(실측 통과율 1/4). 예외가 나가면
+    // 호출부는 배열을 받지 못하므로 — 원장에는 `output: { error }` 만 남는다 — 가드가
+    // 수치를 **메시지에 실어** 보낸다.
+    stages.push({ stage: '편집', ...countMarkdownStructure(edited.body) });
+    // 과삭제를 **먼저** 본다. 본문 절반이 사라진 회차는 인용도 함께 사라졌을 텐데, 그 경우
+    // 진단은 "인용이 없다" 가 아니라 "본문이 없다" 여야 한다 — 좁은 증상을 먼저 보고하면
+    // 원인을 그 축으로 좁혀 찾게 된다.
+    this.assertNotOverTrimmed(target, anonymized.body, edited.body, stages);
+    this.assertQuotesNotWiped(target, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
     const humanized = await this.humanizeWithBreathRetry(edited.body);
@@ -329,7 +403,18 @@ export class PublishNotionDraftUsecase {
 
     // 윤문이 문단을 크게 줄일 수도 있어 **최종 발행본 기준으로 한 번 더** 본다.
     // 편집본만 보고 통과시키면 최종본이 원문의 60% 미만인 채 발행될 수 있다.
-    this.assertNotOverTrimmed(target, anonymized.body, structured.markdown);
+    // 계측은 **줄표 치환까지 끝난 `structured`** 를 잰다. 실제로 발행되는 본문이 그것이다 —
+    // `humanized` 를 재면 카드에 찍히는 수와 나가는 글이 갈린다.
+    stages.push({
+      stage: '최종',
+      ...countMarkdownStructure(structured.markdown),
+    });
+    this.assertNotOverTrimmed(
+      target,
+      anonymized.body,
+      structured.markdown,
+      stages,
+    );
 
     // 제목·주소·요약의 정본은 편집 단계다. 셋을 한 단계에서 정해야 제목과 URL 이 어긋나지 않는다.
     const post = buildAstroPost({
@@ -364,6 +449,7 @@ export class PublishNotionDraftUsecase {
           hits,
         },
         modelUsed: completion.modelUsed,
+        stages,
       };
     }
 
@@ -373,6 +459,7 @@ export class PublishNotionDraftUsecase {
       edited,
       structured,
       context.forbiddenTerms,
+      stages,
     );
     const payload: BlogGithubPublishPayload = {
       pageId: target.pageId,
@@ -395,6 +482,7 @@ export class PublishNotionDraftUsecase {
         content: post.content,
       },
       modelUsed: completion.modelUsed,
+      stages,
     };
   }
 
@@ -442,11 +530,22 @@ export class PublishNotionDraftUsecase {
     drafts: NotionDraftPage[],
     titleQuery: string,
     pageId?: string,
+    blockedPageIds: Set<string> = new Set(),
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
     // 같은 출처끼리는 기존과 같이 오래된 것부터.
+    //
+    // 최근 금지어로 막힌 초안은 **출처 우선순위보다 먼저** 뒤로 보낸다. 막힌 글이 '오늘의 공부'
+    // 이면 우선순위 0 이라 매일 큐 맨 앞을 차지하는데, 그 회차는 카드도 안 만들어져 다음 회차의
+    // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
     const oldestFirst = [...drafts].sort((first, second) => {
+      const blockedGap =
+        Number(blockedPageIds.has(first.pageId)) -
+        Number(blockedPageIds.has(second.pageId));
+      if (blockedGap !== 0) {
+        return blockedGap;
+      }
       const priorityGap =
         draftPriority(first.sourceType) - draftPriority(second.sourceType);
       if (priorityGap !== 0) {
@@ -466,7 +565,19 @@ export class PublishNotionDraftUsecase {
       });
     }
     if (!titleQuery) {
-      return oldestFirst[0];
+      // 여기서만 배열 접근이 안전하다 — 지목 없는 경로는 호출부가 빈 큐를 이미 걸렀다
+      // (`drafts.length === 0 && !input.pageId` → status: 'empty'). 정렬 직후에 이 검사를
+      // 두면 큐가 빈 채로 pageId 재실행이 들어올 때 터진다. 그 경로는 아래 DRAFT_NOT_FOUND 가
+      // 맡아야 한다.
+      const head = oldestFirst[0];
+      if (blockedPageIds.has(head.pageId)) {
+        // 후순위로 밀 곳이 없다 = 큐가 전부 차단분이다. 조용히 같은 글을 또 돌리는 것보다
+        // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
+        this.logger.warn(
+          `발행 후보가 모두 최근 차단된 초안입니다 (${blockedPageIds.size}건). Notion 에서 금지어를 수정해야 합니다.`,
+        );
+      }
+      return head;
     }
     const normalizedQuery = titleQuery.toLocaleLowerCase('ko-KR');
     const found = oldestFirst.find((draft) =>
@@ -527,6 +638,7 @@ export class PublishNotionDraftUsecase {
     edited: PublishableBlogDraft,
     humanized: HumanizeMarkdownResult,
     forbiddenTerms: string[],
+    stages: readonly BlogStageStructure[],
   ): string {
     const lines = ['*GitHub 블로그 발행 미리보기*', `제목: ${edited.title}`];
     // 편집이 제목을 바꿨으면 초안 제목도 함께 보여준다 — 무엇이 바뀌었는지 모르고 ✅ 를
@@ -543,7 +655,7 @@ export class PublishNotionDraftUsecase {
       `경로: \`${path}\``,
       `요약: ${edited.description}`,
       `Notion: ${draft.url}`,
-      ...this.buildStageNote(humanized, draft),
+      ...this.buildStageNote(humanized, draft, stages),
       '',
       '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
     );
@@ -614,6 +726,7 @@ export class PublishNotionDraftUsecase {
   private buildStageNote(
     humanized: HumanizeMarkdownResult,
     draft: NotionDraftPage,
+    stages: readonly BlogStageStructure[],
   ): string[] {
     const stage = ((): string => {
       if (humanized.proseParagraphs === 0) {
@@ -633,9 +746,25 @@ export class PublishNotionDraftUsecase {
     // 지표는 판정이 아니라 관측값이다 — 차단 임계값은 발행본이 몇 편 쌓인 뒤에 정한다.
     return [
       stage,
+      this.buildStructureNote(stages),
       this.buildCodeBlockNote(humanized.markdown, draft),
       formatKoreanStyleMetrics(measureKoreanStyle(humanized.markdown)),
     ];
+  }
+
+  // 단계마다 구조가 어떻게 줄었는지 한 줄로 보인다.
+  //
+  //   구조(원문→익명화→편집→최종): 글자 11742→11623→7098→7050 · 인용 7→7→0→0 · …
+  //
+  // 축을 세로가 아니라 **가로 화살표**로 늘어놓는 이유: 승인자가 보려는 것은 절대값이 아니라
+  // "어디서 떨어졌나" 다. `인용 7→7→0→0` 한 줄이면 편집 단계가 지웠다는 것이 바로 읽힌다.
+  // 이 조사 자체가, 승인 카드에 `인용 0` 이 보였다면 필요하지 않았을 일이다.
+  private buildStructureNote(stages: readonly BlogStageStructure[]): string {
+    const trail = STRUCTURE_AXES.map(
+      ({ label, key }) =>
+        `${label} ${stages.map((counts) => counts[key]).join('→')}`,
+    ).join(' · ');
+    return `구조(${stages.map((counts) => counts.stage).join('→')}): ${trail}`;
   }
 
   // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
@@ -775,10 +904,51 @@ export class PublishNotionDraftUsecase {
     });
   }
 
+  // 원문에 있던 인용이 **하나도** 남지 않으면 끊는다.
+  //
+  // 왜 이 축만 집행하는가 — 다른 구조 수치는 관측만 한다. 인용 몇 줄이 줄거나 헤딩이 합쳐지는
+  // 것은 정당한 편집일 수 있고(중복 인용 덜어내기, 섹션 병합), 임계값을 정할 근거가 아직 없다.
+  // 실제로 헤딩 감소를 결함으로 보고 프롬프트를 고치려던 판단이 계측으로 기각됐다.
+  //
+  // 반면 **전부 사라짐은 임계값이 아니라 경계다.** 원문 인용 7줄이 0줄이 되는 것은 어떤 글에서도
+  // 정리가 아니다. 그리고 인용을 쓰지 않은 초안은 이 검사에 걸리지 않는다(원문이 0이면 통과).
+  // 코드 보존 계약이 "누락 0" 을 강제하는 것과 같은 논리다(`assertAllCodeMasksKept`).
+  //
+  // 편집 직후에만 본다. 말투 단계는 산문 문단만 모델에 보내고 인용은 `keep` 으로 분류되므로
+  // (`markdown-blocks.ts` `KEEP_LINE_PATTERN` 에 `>`) 구조상 인용을 지울 수 없다.
+  private assertQuotesNotWiped(
+    draft: NotionDraftPage,
+    stages: readonly BlogStageStructure[],
+  ): void {
+    const source = stages[0];
+    const edited = stages[stages.length - 1];
+    if (source.quotes === 0 || edited.quotes > 0) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_QUOTES_WIPED,
+      message: `'${draft.title}' 편집 결과에서 원문 인용 ${source.quotes}줄이 모두 사라졌습니다. ${this.buildStructureNote(
+        stages,
+      )}`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
+  }
+
+  // 실패 메시지에 단계별 구조를 함께 싣는다. 이 경로는 예외로 끊기므로 원장에 남는 것이
+  // `output: { error }` 하나뿐이고(agent-run.service.ts), 지금까지 그 문자열에는 글자 수
+  // 두 개밖에 없었다 — 통과율 1/4 인 파이프라인에서 **실패 회차가 가장 많은데** 그 회차의
+  // 인용·헤딩 손실은 어디에도 기록되지 않았다.
+  //
+  // autopilot digest 는 이 메시지를 200자로 자른다(autopilot.orchestrator.ts). 실측 제목으로
+  // 조립하면 163자라 지금은 다 보이지만, 제목이 길면 뒤 축부터 잘린다. 전문은 원장에 남는다.
+  //
+  // 앞부분의 `(N자 → M자)` 는 그대로 둔다 — 과거 실패 회차를 훑는 조회가 그 형태를 정규식으로
+  // 파싱한다. 덧붙이기만 하고 기존 형태를 건드리지 않는다.
   private assertNotOverTrimmed(
     draft: NotionDraftPage,
     before: string,
     after: string,
+    stages: readonly BlogStageStructure[],
   ): void {
     const beforeLength = before.trim().length;
     const afterLength = after.trim().length;
@@ -789,7 +959,9 @@ export class PublishNotionDraftUsecase {
       code: BlogErrorCode.EDIT_TOO_SHORT,
       message: `'${draft.title}' 편집 결과가 원문의 ${Math.round(
         MIN_EDITED_BODY_RATIO * 100,
-      )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자).`,
+      )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자). ${this.buildStructureNote(
+        stages,
+      )}`,
       status: DomainStatus.BAD_GATEWAY,
     });
   }
@@ -822,6 +994,40 @@ export class PublishNotionDraftUsecase {
         ? masked
         : masked.split(trimmed).join(maskTerm(trimmed));
     }, text);
+  }
+
+  // 최근 금지어로 막힌 초안의 pageId. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
+  // 원장이 안 읽힌다고 그날 발행 자체를 막으면 손해가 더 크다.
+  //
+  // **FAILED 가 아니라 SUCCEEDED 를 훑는다.** 금지어 차단은 예외가 아니라 정상 종료다
+  // (`status: 'blocked'` 를 돌려준다). 실패 조회로 찾으면 이 경로가 통째로 빠진다.
+  //
+  // 과삭제로 **예외를 던진** 회차는 여기 안 잡힌다. 그건 회차마다 흔들리는 실패라 다음 날
+  // 재시도가 합리적이고, 세려면 실패 회차의 pageId 를 돌려주는 조회가 따로 필요하다.
+  private async findRecentlyBlockedPageIds(): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.BLOG_PUBLISH,
+        sinceDays: BLOCKED_DRAFT_COOLDOWN_DAYS,
+        limit: BLOCKED_DRAFT_SCAN_LIMIT,
+      });
+      for (const run of runs) {
+        const output = run.output as { status?: unknown } | null;
+        if (output?.status !== 'blocked') {
+          continue;
+        }
+        const snapshot = run.inputSnapshot as { pageId?: unknown } | null;
+        if (typeof snapshot?.pageId === 'string') {
+          blocked.add(snapshot.pageId);
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `차단 이력 조회 실패 — 후순위 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return blocked;
   }
 
   private async findOpenPublishCard(
