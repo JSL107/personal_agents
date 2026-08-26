@@ -1,3 +1,4 @@
+import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ApplyExitBandUsecase } from './apply-exit-band.usecase';
 import {
@@ -56,8 +57,14 @@ describe('ApplyExitBandUsecase', () => {
     findAccountByName: jest.fn(),
     createExitBandOrders: jest.fn(),
   };
+  // 파라미터 조회는 여기서 대역이다. threshold 를 명시하지 않은 케이스가 활성 행을
+  // 보러 가는지까지 이 대역으로 확인한다.
+  const strategyParameters = {
+    execute: jest.fn(),
+  };
   const usecase = new ApplyExitBandUsecase(
     repository as unknown as PaperTradingPrismaRepository,
+    strategyParameters as unknown as ResolveStrategyParametersUsecase,
   );
   const executedAt = new Date('2026-08-18T08:40:00.000Z');
 
@@ -73,6 +80,12 @@ describe('ApplyExitBandUsecase', () => {
       createdTickerIds: [1976],
       skippedByPendingSell: 0,
       skippedByNoPosition: 0,
+    });
+    // 기본은 활성 행이 코드 상수와 같은 상태. 값을 옮긴 것이지 바꾼 것이 아니다.
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
     });
   });
 
@@ -258,5 +271,57 @@ describe('ApplyExitBandUsecase', () => {
         ],
       }),
     );
+  });
+
+  // 배선이 살아 있는지는 "활성 행 값이 판정을 실제로 바꾸는가" 로만 증명된다. 코드 상수와
+  // 같은 값으로 확인하면 조회 결과를 버려도 통과한다.
+  it('threshold 를 안 주면 그 전략의 활성 행 값으로 판정한다', async () => {
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 30, stopLossPercent: -20 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
+    });
+
+    // 12.53% 는 코드 상수(+10)로는 익절이지만 활성 행(+30)으로는 밴드 안이다.
+    const result = await usecase.execute({
+      accounts: [entry('SWING', evaluation({ positions: [position()] }))],
+      executedAt,
+    });
+
+    expect(strategyParameters.execute).toHaveBeenCalledWith('SWING');
+    expect(result.createdCount).toBe(0);
+    expect(repository.createExitBandOrders).not.toHaveBeenCalled();
+  });
+
+  // 수동 계좌는 규칙이 연 계좌가 아니다. 전략 파라미터를 따라 움직이면 규칙을 바꿀 때마다
+  // 손으로 만든 계좌의 청산 기준까지 조용히 끌려간다.
+  it('수동 계좌는 파라미터를 조회하지 않고 코드 상수로 판정한다', async () => {
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 30, stopLossPercent: -20 },
+      minimumTurnover60: 500_000_000,
+      maximumWeightPercent: 20,
+    });
+
+    const result = await usecase.execute({
+      accounts: [entry('DEFAULT', evaluation({ positions: [position()] }))],
+      executedAt,
+    });
+
+    expect(strategyParameters.execute).not.toHaveBeenCalled();
+    // 코드 상수 +10 기준이므로 12.53% 는 익절이다.
+    expect(result.createdCount).toBe(1);
+  });
+
+  // 계좌가 여럿이어도 전략당 한 번만 읽어야 같은 회차가 같은 값을 쓴다.
+  it('같은 전략의 계좌가 여럿이어도 파라미터는 한 번만 읽는다', async () => {
+    await usecase.execute({
+      accounts: [
+        entry('SWING', evaluation({ positions: [position()] })),
+        entry('SWING', evaluation({ positions: [position()] })),
+      ],
+      executedAt,
+    });
+
+    expect(strategyParameters.execute).toHaveBeenCalledTimes(1);
   });
 });

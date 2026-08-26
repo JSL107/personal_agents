@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { StrategyParameterModule } from '../strategy-parameter/strategy-parameter.module';
 import { ApplyExitBandUsecase } from './application/apply-exit-band.usecase';
 import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-account.usecase';
 import { ExecutePaperOrderUsecase } from './application/execute-paper-order.usecase';
@@ -15,7 +16,7 @@ import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
 import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.prisma.repository';
 
 @Module({
-  imports: [MarketDataModule, PrismaModule],
+  imports: [MarketDataModule, PrismaModule, StrategyParameterModule],
   providers: [
     PaperTradingPrismaRepository,
     // 체결 원장 — 운영·모의는 DB 장부를 쓴다. 백테스트는 같은 포트의 메모리 구현을 직접 끼운다.
