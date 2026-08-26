@@ -76,6 +76,10 @@ const buildUsecase = (overrides?: {
   openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
+  // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
+  recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
+  // 원장 조회가 깨진 상황. 발행이 그 때문에 멈추면 안 된다.
+  recentRunsError?: Error;
 }) => {
   const notionClient = {
     updatePageProperties: jest.fn().mockResolvedValue(undefined),
@@ -142,6 +146,12 @@ const buildUsecase = (overrides?: {
   // 수단이 없어, 배선이 빠져도 초록이다.
   const runOutputs: unknown[] = [];
   const agentRunService = {
+    findRecentSucceededRuns: jest.fn().mockImplementation(async () => {
+      if (overrides?.recentRunsError) {
+        throw overrides.recentRunsError;
+      }
+      return overrides?.recentRuns ?? [];
+    }),
     execute: jest.fn().mockImplementation(async (input) => {
       const execution = await input.run({
         agentRunId: 71,
@@ -1641,5 +1651,115 @@ describe('단계 경계 계측', () => {
       // 무엇을 잃었는지 알 수 없었다.
       /미만으로 줄었습니다 \(\d+자 → \d+자\)\. 구조\(원문→익명화→편집\): .*인용 1→1→0/,
     );
+  });
+});
+
+// 금지어 차단은 과삭제와 성질이 다르다 — 사람이 Notion 을 고치기 전까지 매일 같은 결과를 낸다.
+// 발행 슬롯이 하루 1회라 그 한 건이 뒤에 쌓인 초안 전부를 무기한 막는다(실측 큐 20건).
+describe('차단된 초안 큐 막힘', () => {
+  const 막힌초안 = {
+    ...draft,
+    pageId: 'page-blocked',
+    title: '차단된 회고',
+    createdTime: '2026-08-01T00:00:00.000Z',
+  };
+  const 다음초안 = {
+    ...draft,
+    pageId: 'page-next',
+    title: '다음 회고',
+    createdTime: '2026-08-10T00:00:00.000Z',
+  };
+  // 원장이 돌려주는 형태 그대로 — 차단은 예외가 아니라 정상 종료라 SUCCEEDED 로 남는다.
+  const 차단이력 = [
+    {
+      output: { status: 'blocked', message: '금지어가 남았습니다.' },
+      inputSnapshot: { pageId: '막힌초안-자리표시' },
+    },
+  ];
+
+  it('최근 차단된 초안은 뒤로 미루고 다음 초안을 집는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRuns: [
+        {
+          ...차단이력[0],
+          inputSnapshot: { pageId: 막힌초안.pageId },
+        },
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    // 오래된 순이라면 막힌초안(8/1)이 먼저다. 차단 이력이 그 순서를 뒤집어야 한다.
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
+  // 제외가 아니라 후순위다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+  it('큐에 막힌 초안뿐이면 그래도 시도한다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안],
+      recentRuns: [
+        {
+          ...차단이력[0],
+          inputSnapshot: { pageId: 막힌초안.pageId },
+        },
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+  });
+
+  // 사람이 그 글을 콕 집었으면 차단 이력과 무관하게 그 글을 돌린다.
+  it('제목으로 지목하면 후순위를 적용하지 않는다', async () => {
+    const { usecase, notionClient, agentRunService } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRuns: [
+        {
+          ...차단이력[0],
+          inputSnapshot: { pageId: 막힌초안.pageId },
+        },
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '차단된', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+    // 지목 요청에서는 원장을 읽을 이유도 없다.
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalled();
+  });
+
+  // 차단이 아닌 성공 회차까지 뒤로 미루면 정상 초안이 이유 없이 밀린다.
+  it('성공한 회차의 초안은 미루지 않는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRuns: [
+        {
+          output: { status: 'preview', previewId: 'preview-1' },
+          inputSnapshot: { pageId: 막힌초안.pageId },
+        },
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+  });
+
+  // 원장이 안 읽힌다고 그날 발행 자체를 막으면 손해가 더 크다.
+  it('차단 이력 조회가 깨져도 발행을 진행한다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRunsError: new Error('DB 연결 실패'),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
   });
 });

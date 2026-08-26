@@ -44,21 +44,29 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
     // AgentRun 으로 감싼다 — 실패율·소요시간을 보는 도구는 agent_run 하나뿐이라, 여기 없으면
     // "안 돌았는지 / 돌다 깨졌는지" 가 똑같이 '기록 없음' 으로 보인다. 저녁마다 익명화 모델을
     // 호출하는 task 라 쿼터 소모도 원장에 남아야 한다. 차단된 원문(hits) 도 여기에만 남는다.
+    const inputSnapshot = {
+      taskId: this.id,
+      // 사용자 한정 원장 집계(`/quota` 등)가 inputSnapshot.slackUserId 로 필터하므로
+      // 이 키가 없으면 이 실행이 그 표면에서 통째로 빠진다.
+      slackUserId: ownerSlackUserId,
+      firedAtKst,
+    };
     const outcome = await this.agentRunService.execute<BlogPublishCandidate>({
       agentType: AgentType.BLOG_PUBLISH,
       triggerType: TriggerType.AUTOPILOT_BLOG_PUBLISH_CRON,
-      inputSnapshot: {
-        taskId: this.id,
-        // 사용자 한정 원장 집계(`/quota` 등)가 inputSnapshot.slackUserId 로 필터하므로
-        // 이 키가 없으면 이 실행이 그 표면에서 통째로 빠진다.
-        slackUserId: ownerSlackUserId,
-        firedAtKst,
-      },
-      run: async () => {
+      inputSnapshot,
+      run: async ({ updateInputSnapshot }) => {
         const { candidate, modelUsed, stages } =
-          await this.publishNotionDraft.buildPublishCandidate({
-            slackUserId: ownerSlackUserId,
-          });
+          await this.publishNotionDraft.buildPublishCandidate(
+            { slackUserId: ownerSlackUserId },
+            // 어느 초안을 골랐는지 원장에 남긴다. 이 값이 없으면 실패·차단 회차가 **어느 글
+            // 때문이었는지** 조회할 수 없고, 큐가 막혀도 무엇이 막고 있는지 알 수 없다.
+            //
+            // 위 base 를 함께 펼친다 — 콜백은 스냅샷을 통째로 교체하므로, 넘긴 값만 쓰면
+            // `taskId` 와 `firedAtKst` 가 지워진다.
+            async (selected) =>
+              updateInputSnapshot({ ...inputSnapshot, ...selected }),
+          );
         // 단계별 구조 수치를 원장에 함께 남긴다. 저녁 발행은 **이 경로로만** 돈다 —
         // usecase 의 `execute` 는 수동 `/blog-publish` 전용이라, 거기에만 넣으면 매일 도는
         // 회차가 계측에서 통째로 빠진다.
