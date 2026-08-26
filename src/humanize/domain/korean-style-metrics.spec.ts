@@ -425,6 +425,62 @@ describe('줄표(—) 세기', () => {
     expect(metrics.emDashCount).toBe(0);
   });
 
+  // 자체 정규식(/```[\s\S]*?```/)은 세 개 백틱만 처리해 아래 세 형태를 놓쳤다. 공용
+  // `maskFencedCodeBlocks` 로 넘긴 이유이자, 되돌아가면 깨지는 자리다(리뷰 P2).
+  it('물결 펜스 안의 줄표도 세지 않는다', () => {
+    const metrics = measureKoreanStyle(
+      '본문이에요.\n\n~~~bash\necho "a — b"\n~~~\n\n끝이에요.',
+    );
+    expect(metrics.emDashCount).toBe(0);
+  });
+
+  it('네 개 백틱으로 연 블록은 안쪽 세 개에서 닫히지 않는다', () => {
+    const metrics = measureKoreanStyle(
+      '본문이에요.\n\n````md\n```\na — b\n```\n````\n\n끝이에요.',
+    );
+    expect(metrics.emDashCount).toBe(0);
+  });
+
+  it('닫히지 않은 펜스 안의 줄표도 세지 않는다', () => {
+    const metrics = measureKoreanStyle('본문이에요.\n\n```bash\necho "a — b"');
+    expect(metrics.emDashCount).toBe(0);
+  });
+
+  // 코드만 빼야 한다. `keep` 블록 전체(헤딩·목록·인용·표)를 빼면 이번에 문제가 된 자리가
+  // 통째로 사라진다 — 발행본에서 빠져나간 15개 중 12개가 헤딩과 목록 머리말이었다.
+  it('헤딩과 목록 머리말의 줄표를 센다', () => {
+    const metrics = measureKoreanStyle(
+      '## 채점관 — /goal\n\n본문이에요.\n\n- **채점관** — 조건을 확인해요.\n- **알람** — 시간을 봐요.\n',
+    );
+    expect(metrics.emDashCount).toBe(3);
+  });
+
+  // 줄표는 문장 수와 무관한 문서 축이다. 문장 축 보류(40문장 미만)에 함께 묶여 있어서,
+  // 짧은 글은 줄표가 몇 개든 카드에 안 찍혔다(리뷰 P2).
+  it('40문장 미만이라 문장 축이 보류돼도 줄표는 판정한다', () => {
+    const gaps = findKoreanStyleGaps({
+      ...BASE_FOR_DASH,
+      sentenceCount: 12,
+      measurable: false,
+      // 문장 축 값은 전부 목표 밖이지만 보류라 잡히지 않아야 한다.
+      lengthStandardDeviation: 1,
+      shortSentencePercent: 0,
+      emDashCount: 9,
+    });
+    expect(gaps).toEqual(['줄표 9회(≤2회)']);
+  });
+
+  it('보류된 글에 위반이 없으면 판정 줄을 만들지 않는다', () => {
+    const gaps = findKoreanStyleGaps({
+      ...BASE_FOR_DASH,
+      sentenceCount: 12,
+      measurable: false,
+      lengthStandardDeviation: 1,
+      emDashCount: 1,
+    });
+    expect(gaps).toEqual([]);
+  });
+
   it('상한을 넘기면 목표 밖으로 잡는다', () => {
     const gaps = findKoreanStyleGaps({
       ...BASE_FOR_DASH,
