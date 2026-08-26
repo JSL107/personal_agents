@@ -18,6 +18,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { formatMoney } from '../paper-number.formatter';
 
 const STRATEGIES: PaperRecommendationStrategy[] = ['LONG_TERM', 'SWING'];
 const STRATEGY_LABELS: Record<PaperRecommendationStrategy, string> = {
@@ -186,13 +187,6 @@ const formatSkipSummary = (completed: PaperRecommendationSuccess): string => {
 
 const sideLabel = (side: 'BUY' | 'SELL'): string =>
   side === 'BUY' ? '매수' : '매도';
-
-const formatMoney = (amount: number): string => {
-  if (Math.abs(amount) < 10_000) {
-    return `${Math.round(amount).toLocaleString('ko-KR')}원`;
-  }
-  return `${Math.round(amount / 10_000).toLocaleString('ko-KR')}만`;
-};
 
 const firstLineOf = (message: string): string => message.split(/\r?\n/, 1)[0];
 
