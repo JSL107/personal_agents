@@ -17,7 +17,10 @@ const resultOf = (
   window: 'TRADING',
   accountCount: 2,
   inspectedCount: 2,
-  lookupFailureCount: 0,
+  priceErrorCount: 0,
+  notTradedCount: 0,
+  fillFailureCount: 0,
+  accountFailures: [],
   decidedCount: 0,
   filledCount: 0,
   fills: [],
@@ -102,7 +105,10 @@ describe('PaperIntradayStopAutopilotTask', () => {
     const { task } = createFixture({
       result: resultOf({
         filledCount: 0,
-        lookupFailureCount: 0,
+        priceErrorCount: 0,
+        notTradedCount: 0,
+        fillFailureCount: 0,
+        accountFailures: [],
         decidedCount: 0,
       }),
     });
@@ -114,7 +120,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
   // 5분 간격으로 같은 카드가 70장 나간다.
   it('판정에 성공한 종목이 하나도 없으면 휴장으로 보고 조용히 skip한다', async () => {
     const { task } = createFixture({
-      result: resultOf({ inspectedCount: 0, lookupFailureCount: 4 }),
+      result: resultOf({ inspectedCount: 0, notTradedCount: 4 }),
     });
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
@@ -123,7 +129,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
   // 반대로 일부만 실패한 회차는 진짜 부분 장애라 알려야 한다.
   it('일부 종목만 조회에 실패하면 카드를 낸다', async () => {
     const { task } = createFixture({
-      result: resultOf({ inspectedCount: 2, lookupFailureCount: 1 }),
+      result: resultOf({ inspectedCount: 2, priceErrorCount: 1 }),
     });
 
     const result = await task.run(context);
@@ -135,7 +141,13 @@ describe('PaperIntradayStopAutopilotTask', () => {
   // 계좌 실패까지 조용한 skip 에 묶이면, 예외를 삼킨 회차가 "손절 0건" 과 구분되지 않는다.
   it('체결이 없어도 계좌 처리 실패가 있으면 카드를 낸다', async () => {
     const { task } = createFixture({
-      result: resultOf({ accountFailureCount: 2 }),
+      result: resultOf({
+        accountFailureCount: 2,
+        accountFailures: [
+          { accountName: 'SWING', reason: 'db down' },
+          { accountName: 'LONG_TERM', reason: 'timeout' },
+        ],
+      }),
     });
 
     const result = await task.run(context);
@@ -144,6 +156,9 @@ describe('PaperIntradayStopAutopilotTask', () => {
     expect(result.summaryText).toContain(
       '계좌 2개는 처리 중 오류로 건너뛰었습니다',
     );
+    // 건수만 남기면 원장을 봐도 무엇을 볼지 알 수 없다.
+    expect(result.summaryText).toContain('SWING: db down');
+    expect(result.summaryText).toContain('LONG_TERM: timeout');
   });
 
   it('체결 내역을 raw 계좌명과 escape된 종목명으로 정확히 포맷한다', async () => {
@@ -183,14 +198,14 @@ describe('PaperIntradayStopAutopilotTask', () => {
 
   it('시세 조회 실패가 있으면 다음 회차 재시도 문구를 덧붙인다', async () => {
     const { task } = createFixture({
-      result: resultOf({ lookupFailureCount: 3 }),
+      result: resultOf({ priceErrorCount: 3 }),
     });
 
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
         '*장중 손절* — 0건 청산\n' +
-        ' • 시세 조회 실패 3건 — 다음 회차에 다시 봅니다',
+        ' • 시세 조회 실패 3건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다',
     });
   });
 
@@ -234,7 +249,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-12T02:34:56.000Z'));
     const applyResult = resultOf({
       inspectedCount: 7,
-      lookupFailureCount: 2,
+      priceErrorCount: 2,
       decidedCount: 3,
       filledCount: 1,
       skippedByPendingSell: 1,
@@ -274,18 +289,21 @@ describe('PaperIntradayStopAutopilotTask', () => {
         summaryText:
           '*장중 손절* — 1건 청산\n' +
           ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
-          ' • 시세 조회 실패 2건 — 다음 회차에 다시 봅니다\n' +
+          ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
           ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
       },
       modelUsed: 'deterministic',
       output: {
         inspectedCount: 7,
-        lookupFailureCount: 2,
+        priceErrorCount: 2,
+        notTradedCount: 0,
         decidedCount: 3,
         filledCount: 1,
+        fillFailureCount: 0,
         skippedByPendingSell: 1,
         skippedByNoPosition: 1,
         accountFailureCount: 0,
+        accountFailures: [],
       },
     });
   });

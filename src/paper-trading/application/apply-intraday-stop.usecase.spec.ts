@@ -100,7 +100,10 @@ describe('ApplyIntradayStopUsecase', () => {
       window: 'BEFORE_OPEN',
       accountCount: 0,
       inspectedCount: 0,
-      lookupFailureCount: 0,
+      priceErrorCount: 0,
+      notTradedCount: 0,
+      fillFailureCount: 0,
+      accountFailures: [],
       decidedCount: 0,
       filledCount: 0,
       fills: [],
@@ -121,7 +124,10 @@ describe('ApplyIntradayStopUsecase', () => {
       window: 'AFTER_CLOSE',
       accountCount: 0,
       inspectedCount: 0,
-      lookupFailureCount: 0,
+      priceErrorCount: 0,
+      notTradedCount: 0,
+      fillFailureCount: 0,
+      accountFailures: [],
       decidedCount: 0,
       filledCount: 0,
       fills: [],
@@ -157,7 +163,10 @@ describe('ApplyIntradayStopUsecase', () => {
       window: 'TRADING',
       accountCount: 1,
       inspectedCount: 2,
-      lookupFailureCount: 0,
+      priceErrorCount: 0,
+      notTradedCount: 0,
+      fillFailureCount: 0,
+      accountFailures: [],
       decidedCount: 1,
       filledCount: 1,
       fills: [
@@ -230,7 +239,7 @@ describe('ApplyIntradayStopUsecase', () => {
       executedAt: new Date('2026-08-25T02:00:00.000Z'),
     });
 
-    expect(result.lookupFailureCount).toBe(1);
+    expect(result.priceErrorCount).toBe(1);
     expect(result.inspectedCount).toBe(0);
     expect(result.decidedCount).toBe(0);
     expect(repository.createExitBandOrders).not.toHaveBeenCalled();
@@ -247,11 +256,67 @@ describe('ApplyIntradayStopUsecase', () => {
       executedAt: new Date('2026-08-25T02:00:00.000Z'),
     });
 
-    expect(result.lookupFailureCount).toBe(1);
+    expect(result.notTradedCount).toBe(1);
     expect(result.inspectedCount).toBe(0);
     expect(result.decidedCount).toBe(0);
     expect(repository.createExitBandOrders).not.toHaveBeenCalled();
     expect(executeOrder.execute).not.toHaveBeenCalled();
+  });
+
+  // 주문만 만들고 체결에 실패하면 그 SELL 은 PENDING 으로 남고, 같은 거래일에 도는
+  // 체결기가 그것을 당일 **시가**로 체결한다 — 장중 손절이 시가 매도로 둔갑한다.
+  // 게다가 다음 회차는 PENDING 이 있어 판정만 하고 건너뛰므로 스스로 회복하지도 못한다.
+  it('체결이 예외로 끊기면 방금 만든 주문을 되돌린다', async () => {
+    const { usecase, repository, executeOrder } = createFixture();
+    jest
+      .mocked(executeOrder.execute)
+      .mockRejectedValue(new Error('ledger unavailable'));
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.decidedCount).toBe(1);
+    expect(result.filledCount).toBe(0);
+    expect(result.fillFailureCount).toBe(1);
+    expect(repository.expirePendingOrder).toHaveBeenCalledWith(
+      101,
+      '장중 손절 체결 실패',
+    );
+  });
+
+  it('체결이 FILLED 가 아니면 주문을 PENDING 으로 남기지 않는다', async () => {
+    const { usecase, repository, executeOrder } = createFixture();
+    jest
+      .mocked(executeOrder.execute)
+      .mockResolvedValue({ status: 'EXPIRED', statusReason: '현금 부족' });
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.filledCount).toBe(0);
+    expect(result.fillFailureCount).toBe(1);
+    expect(repository.expirePendingOrder).toHaveBeenCalledWith(
+      101,
+      '장중 손절 체결 실패',
+    );
+  });
+
+  // 되돌리기까지 실패해도 그 계좌의 나머지 종목 처리를 접지 않는다.
+  it('되돌리기가 실패해도 예외를 올리지 않는다', async () => {
+    const { usecase, repository, executeOrder } = createFixture();
+    jest
+      .mocked(executeOrder.execute)
+      .mockRejectedValue(new Error('ledger unavailable'));
+    repository.expirePendingOrder.mockRejectedValue(new Error('db down'));
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.fillFailureCount).toBe(1);
+    expect(result.accountFailureCount).toBe(0);
   });
 
   it('같은 계좌의 unrelated pending BUY는 장중 손절 체결에서 제외한다', async () => {

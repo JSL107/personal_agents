@@ -15,6 +15,7 @@ import {
   IntradayStopDecision,
 } from '../domain/exit-band';
 import { PaperMarket } from '../domain/paper-account.type';
+import { PendingOrderFillResult } from '../domain/port/paper-order-ledger.port';
 import { getKstClock } from '../domain/trade-calendar';
 import {
   PaperAccountNamedRecord,
@@ -39,19 +40,33 @@ export interface IntradayStopFill {
   returnRatePercent: number;
 }
 
+// 계좌 하나가 왜 통째로 빠졌는지. 건수만 세면 Slack 이 "원장을 보라" 고 안내해도 원장에
+// 숫자밖에 없어 무엇을 볼 수가 없다.
+export interface IntradayStopAccountFailure {
+  accountName: string;
+  reason: string;
+}
+
 export interface ApplyIntradayStopResult {
   window: 'BEFORE_OPEN' | 'TRADING' | 'AFTER_CLOSE';
   accountCount: number;
   inspectedCount: number;
-  lookupFailureCount: number;
+  // 시세 조회가 예외로 끊긴 종목 수. 공급자 장애 신호다.
+  priceErrorCount: number;
+  // 조회는 됐는데 오늘 봉이 없는 종목 수. 휴장이거나 그 종목만 거래정지다.
+  // 예외와 합쳐 세면 "장이 안 열렸다" 와 "시세가 안 온다" 를 가를 수 없다.
+  notTradedCount: number;
   decidedCount: number;
   filledCount: number;
+  // 주문은 만들었는데 체결하지 못해 되돌린 수. 다음 회차가 새 현재가로 다시 판정한다.
+  fillFailureCount: number;
   fills: IntradayStopFill[];
   skippedByPendingSell: number;
   skippedByNoPosition: number;
-  // 계좌 단위로 격리하느라 삼킨 예외의 수. 세지 않으면 DB·체결 실패가 "손절 0건" 과
+  // 계좌 단위로 격리하느라 삼킨 예외. 세지 않으면 DB·체결 실패가 "손절 0건" 과
   // 구분되지 않아, 고장난 회차가 조용한 정상 회차로 보고된다.
   accountFailureCount: number;
+  accountFailures: IntradayStopAccountFailure[];
 }
 
 interface CandidateContext {
@@ -65,13 +80,16 @@ const emptyResult = (
   window,
   accountCount: 0,
   inspectedCount: 0,
-  lookupFailureCount: 0,
+  priceErrorCount: 0,
+  notTradedCount: 0,
   decidedCount: 0,
   filledCount: 0,
+  fillFailureCount: 0,
   fills: [],
   skippedByPendingSell: 0,
   skippedByNoPosition: 0,
   accountFailureCount: 0,
+  accountFailures: [],
 });
 
 const findTodayBar = (bars: DailyBar[], tradeDate: string): DailyBar | null => {
@@ -125,8 +143,12 @@ export class ApplyIntradayStopUsecase {
           tradeDay,
           result,
         });
-      } catch {
+      } catch (error) {
         result.accountFailureCount += 1;
+        result.accountFailures.push({
+          accountName: account.name,
+          reason: error instanceof Error ? error.message : String(error),
+        });
         continue;
       }
     }
@@ -217,18 +239,25 @@ export class ApplyIntradayStopUsecase {
         continue;
       }
       // ponytail: 판정가 즉시 체결을 가정한다. 급락장 슬리피지는 실측 후 별도 반영해야 한다.
-      const fill = await this.executeOrder.execute({
-        orderId: order.id,
-        accountId: order.accountId,
-        tickerId: order.tickerId,
-        market,
-        side: 'SELL',
-        requestedQuantity: order.quantity.toString(),
-        price: context.decision.price,
-        tradeDate: input.tradeDate,
-        strategy: order.strategy,
-      });
+      let fill: PendingOrderFillResult;
+      try {
+        fill = await this.executeOrder.execute({
+          orderId: order.id,
+          accountId: order.accountId,
+          tickerId: order.tickerId,
+          market,
+          side: 'SELL',
+          requestedQuantity: order.quantity.toString(),
+          price: context.decision.price,
+          tradeDate: input.tradeDate,
+          strategy: order.strategy,
+        });
+      } catch {
+        await this.rollbackUnfilledOrder(order.id, input.result);
+        continue;
+      }
       if (fill.status !== 'FILLED') {
+        await this.rollbackUnfilledOrder(order.id, input.result);
         continue;
       }
       input.result.filledCount += 1;
@@ -240,6 +269,26 @@ export class ApplyIntradayStopUsecase {
         price: context.decision.price,
         returnRatePercent: context.decision.returnRatePercent,
       });
+    }
+  }
+
+  // 주문만 만들고 체결하지 못하면 그 SELL 은 PENDING 으로 남는다. 그러면 같은 거래일에
+  // 도는 체결기(FillPendingOrdersUsecase)가 그것을 당일 **시가**로 체결한다 — 장중 손절이
+  // 시가 매도로 둔갑하고, 원장에는 장중 손절 사유가 박힌 채 엉뚱한 가격이 남는다.
+  // 게다가 다음 장중 회차는 그 종목에 PENDING SELL 이 있어 판정만 하고 건너뛰므로
+  // (`skippedByPendingSell`) 스스로 회복하지도 못한다.
+  //
+  // 그래서 되돌린다. 다음 회차가 새 현재가로 다시 판정하고 새 주문을 만든다.
+  private async rollbackUnfilledOrder(
+    orderId: number,
+    result: ApplyIntradayStopResult,
+  ): Promise<void> {
+    result.fillFailureCount += 1;
+    try {
+      await this.repository.expirePendingOrder(orderId, '장중 손절 체결 실패');
+    } catch {
+      // 되돌리기까지 실패하면 PENDING 주문 하나가 남는다. 여기서 더 할 수 있는 일이 없고,
+      // 예외를 올리면 같은 계좌의 나머지 종목까지 놓친다. 건수는 위에서 이미 셌다.
     }
   }
 
@@ -258,23 +307,27 @@ export class ApplyIntradayStopUsecase {
           { adjusted: false },
         );
       } catch {
-        result.lookupFailureCount += 1;
+        result.priceErrorCount += 1;
         continue;
       }
+      // 오늘 봉이 없는 것은 장애가 아니다 — 휴장이거나 그 종목만 거래정지다. 예외와
+      // 합쳐 세면 "장이 안 열렸다" 와 "시세가 안 온다" 를 가를 수 없고, 그러면 휴장마다
+      // 장애 카드가 나가거나 반대로 진짜 장애가 휴장으로 묻힌다.
       const todayBar = findTodayBar(bars, tradeDate);
       if (!todayBar) {
-        result.lookupFailureCount += 1;
+        result.notTradedCount += 1;
         continue;
       }
       let price: Prisma.Decimal;
       try {
         price = new Prisma.Decimal(todayBar.close.toString());
       } catch {
-        result.lookupFailureCount += 1;
+        result.priceErrorCount += 1;
         continue;
       }
+      // 봉은 왔는데 값이 쓸 수 없는 꼴이면 공급자 쪽 문제다.
       if (!price.isFinite() || price.comparedTo(0) <= 0) {
-        result.lookupFailureCount += 1;
+        result.priceErrorCount += 1;
         continue;
       }
       const averagePrice = new Prisma.Decimal(position.avgPrice.toString());

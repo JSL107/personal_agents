@@ -218,7 +218,7 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       riskTier: 'T0_AUTO',
       trigger: {
         kind: 'CRON',
-        schedule: '*/5 9-15 * * 1-5',
+        schedule: '2-57/5 9-15 * * 1-5',
         timezone: 'Asia/Seoul',
       },
     });

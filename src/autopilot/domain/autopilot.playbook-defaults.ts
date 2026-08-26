@@ -79,7 +79,12 @@ export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
 
 // 모의투자 장중 손절 — 평일 09:00~15:59 5분 주기. 실제 처리 창(09:30~15:20)은 usecase가 판정한다.
 // 종가 밴드(17:40)만으로는 장중 급락을 못 잡아 -18% 에서야 판정된 사례가 있다.
-export const DEFAULT_PAPER_INTRADAY_STOP_CRON = '*/5 9-15 * * 1-5';
+//
+// 🔴 `*/5` 가 아니라 `2-57/5` 인 이유: 바로 위 체결기가 `*/10` 이라 `*/5` 로 두면 정각·10분·
+// 20분… 마다 두 슬롯이 동시에 발화한다. 장중 손절은 주문을 만든 뒤 같은 회차 안에서
+// 현재가로 체결하는데, 그 찰나에 체결기가 같은 주문을 집어 **시가**로 체결해 버릴 수 있다.
+// 2분 어긋내면 두 cron 의 발화 분(0·10·20…과 2·7·12…)이 영원히 겹치지 않는다.
+export const DEFAULT_PAPER_INTRADAY_STOP_CRON = '2-57/5 9-15 * * 1-5';
 export const DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE = 'Asia/Seoul';
 
 // 모의투자 추천 성적 — 금요일 20:10 KST 주 1회.
