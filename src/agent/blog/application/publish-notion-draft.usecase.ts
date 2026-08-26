@@ -382,7 +382,11 @@ export class PublishNotionDraftUsecase {
     // 호출부는 배열을 받지 못하므로 — 원장에는 `output: { error }` 만 남는다 — 가드가
     // 수치를 **메시지에 실어** 보낸다.
     stages.push({ stage: '편집', ...countMarkdownStructure(edited.body) });
+    // 과삭제를 **먼저** 본다. 본문 절반이 사라진 회차는 인용도 함께 사라졌을 텐데, 그 경우
+    // 진단은 "인용이 없다" 가 아니라 "본문이 없다" 여야 한다 — 좁은 증상을 먼저 보고하면
+    // 원인을 그 축으로 좁혀 찾게 된다.
     this.assertNotOverTrimmed(target, anonymized.body, edited.body, stages);
+    this.assertQuotesNotWiped(target, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
     const humanized = await humanizeMarkdownProse(edited.body, this.humanizer);
@@ -837,6 +841,36 @@ export class PublishNotionDraftUsecase {
     throw new BlogException({
       code: BlogErrorCode.EDIT_CODE_CHANGED,
       message: `'${draft.title}' ${stage} 결과의 코드블록이 원문과 다릅니다 (${changed.length}개). 코드는 ${stage} 대상이 아닙니다.`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
+  }
+
+  // 원문에 있던 인용이 **하나도** 남지 않으면 끊는다.
+  //
+  // 왜 이 축만 집행하는가 — 다른 구조 수치는 관측만 한다. 인용 몇 줄이 줄거나 헤딩이 합쳐지는
+  // 것은 정당한 편집일 수 있고(중복 인용 덜어내기, 섹션 병합), 임계값을 정할 근거가 아직 없다.
+  // 실제로 헤딩 감소를 결함으로 보고 프롬프트를 고치려던 판단이 계측으로 기각됐다.
+  //
+  // 반면 **전부 사라짐은 임계값이 아니라 경계다.** 원문 인용 7줄이 0줄이 되는 것은 어떤 글에서도
+  // 정리가 아니다. 그리고 인용을 쓰지 않은 초안은 이 검사에 걸리지 않는다(원문이 0이면 통과).
+  // 코드 보존 계약이 "누락 0" 을 강제하는 것과 같은 논리다(`assertAllCodeMasksKept`).
+  //
+  // 편집 직후에만 본다. 말투 단계는 산문 문단만 모델에 보내고 인용은 `keep` 으로 분류되므로
+  // (`markdown-blocks.ts` `KEEP_LINE_PATTERN` 에 `>`) 구조상 인용을 지울 수 없다.
+  private assertQuotesNotWiped(
+    draft: NotionDraftPage,
+    stages: readonly BlogStageStructure[],
+  ): void {
+    const source = stages[0];
+    const edited = stages[stages.length - 1];
+    if (source.quotes === 0 || edited.quotes > 0) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_QUOTES_WIPED,
+      message: `'${draft.title}' 편집 결과에서 원문 인용 ${source.quotes}줄이 모두 사라졌습니다. ${this.buildStructureNote(
+        stages,
+      )}`,
       status: DomainStatus.BAD_GATEWAY,
     });
   }
