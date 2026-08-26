@@ -1,4 +1,11 @@
 import { CategoryStatusCount } from '../adoption-rate';
+
+export interface AdoptionWindowInput {
+  // 이 시각 이후에 결론이 난 카드. 경계는 [since, until) 로 다룬다.
+  since: Date;
+  // 생략하면 상한 없음(= 지금까지). 직전 구간을 조회할 때만 준다.
+  until?: Date;
+}
 import {
   CreateFindingInput,
   FindingStatus,
@@ -78,7 +85,13 @@ export interface PrReviewFindingRepositoryPort {
 
   // 카테고리·상태별 카드 수. 채택률 분모 판정은 summarizeAdoption 이 하므로 여기서는
   // 상태를 걸러내지 않고 조합을 그대로 넘긴다.
-  countAdoptionByCategory(): Promise<CategoryStatusCount[]>;
+  //
+  // 구간은 **결론 시각**(`decidedAt`)으로 자른다. 게시 시각으로 자르면 오래 열려 있던 PR 의
+  // 카드가 결론이 난 회차가 아니라 게시된 회차에 세어져, "이번 2주에 무엇이 채택됐나" 가
+  // 흐려진다.
+  countAdoptionByCategory(
+    input: AdoptionWindowInput,
+  ): Promise<CategoryStatusCount[]>;
 
   /**
    * 이 레포에서 기각된 지적과 그 이유. 다음 리뷰의 규약 블록 재료다.
