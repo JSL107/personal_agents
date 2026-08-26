@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
@@ -6,10 +6,6 @@ import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/ap
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
 import { FindingResolutionItem } from '../../agent/review-reply-judge/domain/finding-resolution.type';
 import { ReviewReplyJudgment } from '../../agent/review-reply-judge/domain/review-reply-judge.type';
-import {
-  EPISODIC_MEMORY_PORT,
-  EpisodicMemoryPort,
-} from '../../episodic-memory/domain/port/episodic-memory.port';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -85,9 +81,6 @@ export class HarvestReviewSignalsUsecase {
     private readonly repository: PrReviewFindingRepositoryPort,
     private readonly judgeReviewReply: JudgeReviewReplyUsecase,
     private readonly judgeFindingResolution: JudgeFindingResolutionUsecase,
-    @Optional()
-    @Inject(EPISODIC_MEMORY_PORT)
-    private readonly episodicMemory?: EpisodicMemoryPort,
   ) {}
 
   async execute(): Promise<HarvestOutcome> {
@@ -366,7 +359,6 @@ export class HarvestReviewSignalsUsecase {
         continue;
       }
       outcome.judged += 1;
-      // FIXED 는 채택 쪽이라 episodic 에 적재하지 않는다(적재는 REJECTED 만).
       // fixed 카운터는 markDecisionAndResolve 가 올린다 — 여기서 또 올리면 이중 계상.
       await this.markDecisionAndResolve({
         card: pending.card,
@@ -523,20 +515,6 @@ export class HarvestReviewSignalsUsecase {
     rejectReason: string | null;
     outcome: HarvestOutcome;
   }): Promise<void> {
-    if (status === 'REJECTED') {
-      // 학습 신호를 먼저 적재한다. 카드를 REJECTED 로 확정한 뒤 적재하면, 실패했을 때
-      // 카드가 다음 회차 조회(OPEN 만)에서 빠져 재시도할 길이 없다 — 이 루프가 존재하는
-      // 이유가 바로 그 신호다. 확정을 미루면 다음 스윕이 같은 반응을 다시 읽어 재시도한다.
-      const recorded = await this.recordRejectEpisode({
-        card,
-        reason: rejectReason,
-      });
-      if (!recorded) {
-        outcome.skipped += 1;
-        return;
-      }
-    }
-
     await this.repository.markDecided({
       id: card.id,
       status,
@@ -565,41 +543,5 @@ export class HarvestReviewSignalsUsecase {
     }
     await this.repository.markThreadResolved(card.id);
     outcome.resolved += 1;
-  }
-
-  // 적재에 성공했는지. false 면 호출부가 카드를 확정하지 않고 OPEN 으로 남겨
-  // 다음 회차에 재시도하게 한다.
-  private async recordRejectEpisode({
-    card,
-    reason,
-  }: {
-    card: PrReviewFindingRecord;
-    reason: string | null;
-  }): Promise<boolean> {
-    if (!this.episodicMemory) {
-      // 적재 대상 자체가 없는 구성 — 확정을 막을 이유가 없다.
-      return true;
-    }
-    const content =
-      reason && reason.length > 0
-        ? `${card.body}\n(기각 이유: ${reason})`
-        : card.body;
-    try {
-      await this.episodicMemory.record({
-        kind: 'pr_review',
-        agentType: 'CODE_REVIEWER',
-        agentRunId: card.agentRunId,
-        content,
-        occurredAt: new Date(),
-      });
-      return true;
-    } catch (error: unknown) {
-      this.logger.error(
-        `PR 리뷰 기각 학습 신호 적재 실패 (카드 ${card.id}) — 확정을 미루고 다음 회차에 재시도: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return false;
-    }
   }
 }
