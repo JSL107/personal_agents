@@ -7,6 +7,7 @@ import {
   extractActionValue,
 } from '../bolt/action-body.parser';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { SUBCONSCIOUS_PROPOSAL_ACTION_IDS } from '../format/subconscious-proposal-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
@@ -42,7 +43,7 @@ export class SubconsciousProposalActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: true,
-            text: resultText,
+            ...toReadableSlackArgs(resultText),
           });
         } catch (error: unknown) {
           await respond({

@@ -153,3 +153,19 @@ describe('buildResolvedPreviewBlocks', () => {
     expect(JSON.stringify(blocks[0])).toContain('⏳');
   });
 });
+
+describe('chunkMrkdwnText — 링크 경계 보존', () => {
+  it('상한 경계에 걸린 링크를 두 조각으로 가르지 않는다', () => {
+    const filler = 'ㄱ'.repeat(2930);
+    const chunks = chunkMrkdwnText(
+      `${filler}<https://github.com/owner/repo/pull/12345|repo #12345> 꼬리`,
+      SECTION_MRKDWN_LIMIT,
+    );
+
+    for (const chunk of chunks) {
+      expect((chunk.match(/</g) ?? []).length).toBe(
+        (chunk.match(/>/g) ?? []).length,
+      );
+    }
+  });
+});

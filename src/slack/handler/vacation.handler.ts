@@ -12,6 +12,7 @@ import {
 import { PlainDate, todayInKst } from '../../agent/vacation/domain/plain-date';
 import { VacationException } from '../../agent/vacation/domain/vacation.exception';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import {
   formatBalance,
   formatCanceled,
@@ -44,7 +45,7 @@ export class VacationHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text,
+          ...toReadableSlackArgs(text),
         });
       } catch (error) {
         const message =

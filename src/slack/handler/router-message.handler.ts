@@ -22,6 +22,7 @@ import {
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 import { detectYesNoIntent } from './yes-no-detector';
@@ -283,16 +284,17 @@ export class RouterMessageHandler implements SlackHandler {
       const routerReplyText = buildRouterReply(result);
       // worker 가 카드를 만들어 보냈으면 그걸로 답한다. text 는 알림 미리보기와
       // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
-      const replyBlocks = resolveReplyBlocks(result, routerReplyText);
+      const readableReply = toReadableSlackArgs(routerReplyText);
+      const replyBlocks = resolveReplyBlocks(result, readableReply.text);
       await say({
         thread_ts: threadTs,
-        text: routerReplyText,
+        ...readableReply,
         ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
       });
       if (result.preview?.content) {
         await say({
           thread_ts: threadTs,
-          text: result.preview.content,
+          ...toReadableSlackArgs(result.preview.content),
         });
       }
       // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
@@ -325,7 +327,7 @@ export class RouterMessageHandler implements SlackHandler {
             agentRunId: null,
             timestampMs: Date.now(),
           });
-          await say({ thread_ts: threadTs, text: reply });
+          await say({ thread_ts: threadTs, ...toReadableSlackArgs(reply) });
           await this.conversationMemory.appendTurn(memoryKey, {
             role: 'assistant',
             text: reply,
@@ -545,7 +547,7 @@ export class RouterMessageHandler implements SlackHandler {
       timestampMs: Date.now(),
     });
     const replyText = buildRouterReply(result);
-    await say({ thread_ts: threadTs, text: replyText });
+    await say({ thread_ts: threadTs, ...toReadableSlackArgs(replyText) });
     await this.conversationMemory.appendTurn(memoryKey, {
       role: 'assistant',
       text: replyText,
@@ -588,7 +590,9 @@ export class RouterMessageHandler implements SlackHandler {
       });
       await say({
         thread_ts: threadTs,
-        text: `✅ 적용 완료 (${preview.kind})\n\n${resultText}`,
+        ...toReadableSlackArgs(
+          `✅ 적용 완료 (${preview.kind})\n\n${resultText}`,
+        ),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
