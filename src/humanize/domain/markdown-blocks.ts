@@ -150,7 +150,7 @@ export const scanMarkdownBlocks = (markdown: string): MarkdownBlockScan => {
 // 보지만, 잘못 바꾸면 뜻이 조용히 변한 채 발행된다. 그래서 머리말로 확신할 수 없으면 그대로 둔다
 // (`- 개요 — …` 처럼 명사 어미가 종결어미와 겹치는 경우를 놓치는 대가를 받아들인다).
 const STRUCTURAL_DASH_PATTERN =
-  /^(\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s).*?)\s+—\s+/;
+  /^(\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s).*?)\s+—\s+(\S*)/;
 
 // 목록·헤딩 마커. 선행부에서 떼어내고 나머지로 판정한다.
 const LIST_OR_HEADING_MARKER = /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/;
@@ -160,6 +160,15 @@ const ALREADY_PUNCTUATED = /[:?!]$/;
 
 // 숫자·기호만이면 머리말이 아니라 범위·수량 표기다.
 const NUMERIC_HEAD = /^[\d\s.,()~%-]+$/;
+
+// 숫자로 시작하면 단위가 붙어도 범위일 수 있다 — `2026년 — 2027년`, `3천 — 5천`.
+// `NUMERIC_HEAD` 는 `년` 때문에 이걸 놓친다(리뷰 지적). 그래서 **양쪽을 함께** 본다:
+// 앞뒤가 둘 다 숫자로 시작하면 범위로 보고 손대지 않는다. 한쪽만 숫자면 머리말일 수 있다
+// (`- 3가지 — 정리하면`).
+const STARTS_WITH_NUMBER = /^\d/;
+
+// 인라인 코드 안의 줄표는 리터럴이다. ``## `foo — bar` 사용법`` 을 바꾸면 코드 예시의 뜻이
+// 조용히 변한다(리뷰 지적). 선행부의 백틱이 홀수면 줄표가 코드 span 안에 있다는 뜻이다.
 
 // 종결어미로 끝나면 머리말(짧은 명사구)이 아니라 서술이다. 뒤엣것은 설명이 아니라 이어지는 말이라
 // 콜론을 넣으면 문장이 어그러진다.
@@ -172,16 +181,24 @@ const SENTENCE_ENDING_HEAD =
 // 머리말 구분자로 볼 수 있는지 판정한다. 반환값이 치환 결과를 정한다.
 type DashVerdict = 'colon' | 'strip' | 'keep';
 
-const judgeStructuralDash = (head: string): DashVerdict => {
+const judgeStructuralDash = (head: string, tail: string): DashVerdict => {
   const label = head.replace(LIST_OR_HEADING_MARKER, '').trim();
   if (label.length === 0) {
     // `- — 설명` 처럼 머리말이 비어 있다. 콜론만 남으면 더 이상하다.
+    return 'keep';
+  }
+  // 백틱이 홀수면 줄표가 인라인 코드 안이다.
+  if ((label.match(/`/g)?.length ?? 0) % 2 === 1) {
     return 'keep';
   }
   if (ALREADY_PUNCTUATED.test(label)) {
     return 'strip';
   }
   if (NUMERIC_HEAD.test(label) || SENTENCE_ENDING_HEAD.test(label)) {
+    return 'keep';
+  }
+  // 앞뒤가 둘 다 숫자로 시작하면 범위 표기다.
+  if (STARTS_WITH_NUMBER.test(label) && STARTS_WITH_NUMBER.test(tail)) {
     return 'keep';
   }
   return 'colon';
@@ -208,13 +225,18 @@ export const stripStructuralEmDashes = (markdown: string): string => {
       if (fenced.has(index) || INDENTED_LINE_PATTERN.test(line)) {
         return line;
       }
-      return line.replace(STRUCTURAL_DASH_PATTERN, (whole, head: string) => {
-        const verdict = judgeStructuralDash(head);
-        if (verdict === 'keep') {
-          return whole;
-        }
-        return verdict === 'strip' ? `${head} ` : `${head}: `;
-      });
+      return line.replace(
+        STRUCTURAL_DASH_PATTERN,
+        (whole, head: string, tail: string) => {
+          const verdict = judgeStructuralDash(head, tail);
+          if (verdict === 'keep') {
+            return whole;
+          }
+          // `tail` 은 후행 첫 토큰이라 되돌려 붙여야 한다 — 판정에만 쓰고 버리면 그 낱말이
+          // 사라진다.
+          return verdict === 'strip' ? `${head} ${tail}` : `${head}: ${tail}`;
+        },
+      );
     })
     .join('\n');
 };
