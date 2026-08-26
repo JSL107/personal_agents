@@ -125,6 +125,122 @@ export const scanMarkdownBlocks = (markdown: string): MarkdownBlockScan => {
   return { lines, blocks };
 };
 
+// 헤딩과 목록 머리말의 줄표를 콜론으로 바꾼다.
+//
+// 왜 코드로 하는가 — 말투 단계(`humanizeMarkdownProse`)는 **산문 문단만** 모델에 넘긴다.
+// 헤딩·목록은 구조라서 손대면 문서가 깨지기 때문인데, 그래서 프롬프트에 넣은 "헤딩과 목록
+// 머리말에 줄표를 쓰지 마라" 가 정작 그 두 자리에 닿지 않는다. 규칙을 지킬 기회 자체가 없다.
+// 규칙을 넣고 발행한 글에서 줄표 9개가 **전부** 헤딩(3)과 목록(6)이었고 산문은 0개였다.
+//
+// 산문 속 줄표는 여기서 손대지 않는다. 부연을 쉼표로 붙일지 문장을 나눌지는 뜻을 읽어야 갈리고,
+// 그건 말투 단계와 `emDashCount` 지표가 맡는다. 여기서 다루는 것은 **머리말 구분자** 하나뿐이다.
+//
+// 줄 하나에 여러 개가 있어도 첫 번째만 바꾼다. 뒤엣것은 머리말이 아니라 서술 안의 줄표라
+// 콜론으로 바꾸면 문장이 어그러진다(`- A — B. C — D.`). 남은 것은 지표에 걸려 사람이 본다.
+//
+// 치환 여부는 **선행부를 읽고** 정한다. 앞에 무엇이 있는지 보지 않고 첫 ` — ` 를 머리말
+// 구분자로 단정하면 아래 넷이 조용히 망가진다(전부 실측 확인):
+//
+//   - 2026 — 2027 매출 추이     →  - 2026: 2027 매출 추이     범위 표기의 뜻이 바뀐다
+//   ## 정리: — 핵심만            →  ## 정리:: 핵심만           이중 콜론
+//   ## 왜 느려질까요? — 원인      →  ## 왜 느려질까요?: 원인     `?:` 는 조판이 아니다
+//   1. 결과는 좋았다 — 라고…      →  1. 결과는 좋았다: 라고…     도치가 깨진다
+//
+// 판정은 **안 바꾸는 쪽으로 기운다.** 안 바꾸면 줄표가 남아 `emDashCount` 지표에 걸려 사람이
+// 보지만, 잘못 바꾸면 뜻이 조용히 변한 채 발행된다. 그래서 머리말로 확신할 수 없으면 그대로 둔다
+// (`- 개요 — …` 처럼 명사 어미가 종결어미와 겹치는 경우를 놓치는 대가를 받아들인다).
+const STRUCTURAL_DASH_PATTERN =
+  /^(\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s).*?)\s+—\s+(\S*)/;
+
+// 목록·헤딩 마커. 선행부에서 떼어내고 나머지로 판정한다.
+const LIST_OR_HEADING_MARKER = /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/;
+
+// 이미 구분자가 있다. 콜론을 더하면 `::` 나 `?:` 가 된다 — 줄표만 뗀다.
+const ALREADY_PUNCTUATED = /[:?!]$/;
+
+// 숫자·기호만이면 머리말이 아니라 범위·수량 표기다.
+const NUMERIC_HEAD = /^[\d\s.,()~%-]+$/;
+
+// 숫자로 시작하면 단위가 붙어도 범위일 수 있다 — `2026년 — 2027년`, `3천 — 5천`.
+// `NUMERIC_HEAD` 는 `년` 때문에 이걸 놓친다(리뷰 지적). 그래서 **양쪽을 함께** 본다:
+// 앞뒤가 둘 다 숫자로 시작하면 범위로 보고 손대지 않는다. 한쪽만 숫자면 머리말일 수 있다
+// (`- 3가지 — 정리하면`).
+const STARTS_WITH_NUMBER = /^\d/;
+
+// 인라인 코드 안의 줄표는 리터럴이다. ``## `foo — bar` 사용법`` 을 바꾸면 코드 예시의 뜻이
+// 조용히 변한다(리뷰 지적). 선행부의 백틱이 홀수면 줄표가 코드 span 안에 있다는 뜻이다.
+
+// 종결어미로 끝나면 머리말(짧은 명사구)이 아니라 서술이다. 뒤엣것은 설명이 아니라 이어지는 말이라
+// 콜론을 넣으면 문장이 어그러진다.
+//
+// 단독 `요` 는 넣지 않는다 — `개요`·`중요` 같은 명사를 종결어미로 오인해 정상 머리말을 놓친다.
+// 흔한 종결형만 담고, 못 잡은 것은 줄표가 남아 지표에 걸린다.
+const SENTENCE_ENDING_HEAD =
+  /(?:다|죠|까|군|(?:어|에|예|아|해|네|세|지|래|더)요)$/;
+
+// 머리말 구분자로 볼 수 있는지 판정한다. 반환값이 치환 결과를 정한다.
+type DashVerdict = 'colon' | 'strip' | 'keep';
+
+const judgeStructuralDash = (head: string, tail: string): DashVerdict => {
+  const label = head.replace(LIST_OR_HEADING_MARKER, '').trim();
+  if (label.length === 0) {
+    // `- — 설명` 처럼 머리말이 비어 있다. 콜론만 남으면 더 이상하다.
+    return 'keep';
+  }
+  // 백틱이 홀수면 줄표가 인라인 코드 안이다.
+  if ((label.match(/`/g)?.length ?? 0) % 2 === 1) {
+    return 'keep';
+  }
+  if (ALREADY_PUNCTUATED.test(label)) {
+    return 'strip';
+  }
+  if (NUMERIC_HEAD.test(label) || SENTENCE_ENDING_HEAD.test(label)) {
+    return 'keep';
+  }
+  // 앞뒤가 둘 다 숫자로 시작하면 범위 표기다.
+  if (STARTS_WITH_NUMBER.test(label) && STARTS_WITH_NUMBER.test(tail)) {
+    return 'keep';
+  }
+  return 'colon';
+};
+
+export const stripStructuralEmDashes = (markdown: string): string => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  // 코드 펜스 안은 건드리지 않는다 — 명령어나 출력 예시의 `—` 는 필자의 문체가 아니다.
+  const fenced = new Set<number>();
+  blocks
+    .filter((block) => FENCE_PATTERN.test(lines[block.startLine]))
+    .forEach((block) => {
+      for (let line = block.startLine; line <= block.endLine; line += 1) {
+        fenced.add(line);
+      }
+    });
+
+  return lines
+    .map((line, index) => {
+      // 들여쓴 줄도 제외한다. 주석의 약속("코드 펜스 안은 손대지 않는다")보다 실제 동작이
+      // 좁았다 — 4칸 들여쓴 코드블록은 `FENCE_PATTERN` 에 걸리지 않아 치환 대상이었다.
+      // 이 파일의 스캐너는 `INDENTED_LINE_PATTERN` 으로 그 존재를 이미 알고 있었는데
+      // 치환기만 몰랐다. 목록 하위 문단까지 함께 빠지지만, 그쪽은 안 바꾸는 실수라 안전하다.
+      if (fenced.has(index) || INDENTED_LINE_PATTERN.test(line)) {
+        return line;
+      }
+      return line.replace(
+        STRUCTURAL_DASH_PATTERN,
+        (whole, head: string, tail: string) => {
+          const verdict = judgeStructuralDash(head, tail);
+          if (verdict === 'keep') {
+            return whole;
+          }
+          // `tail` 은 후행 첫 토큰이라 되돌려 붙여야 한다 — 판정에만 쓰고 버리면 그 낱말이
+          // 사라진다.
+          return verdict === 'strip' ? `${head} ${tail}` : `${head}: ${tail}`;
+        },
+      );
+    })
+    .join('\n');
+};
+
 // 펜스 코드블록만 원문 그대로 뽑는다. 편집 단계가 코드를 바꾸지 않았는지 대조하는 데 쓴다 —
 // "코드 한 글자도 바꾸지 마라" 를 프롬프트로만 두면 집행이 없다.
 export const extractFencedCodeBlocks = (markdown: string): string[] => {

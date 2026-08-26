@@ -14,7 +14,9 @@ import {
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeMarkdownProse } from '../../../humanize/application/humanize-markdown.adapter';
 import {
+  findKoreanStyleGapAxes,
   formatKoreanStyleMetrics,
+  KOREAN_STYLE_TARGETS,
   measureKoreanStyle,
 } from '../../../humanize/domain/korean-style-metrics';
 import {
@@ -26,6 +28,7 @@ import {
   MarkdownStructureCounts,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
+  stripStructuralEmDashes,
 } from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -389,18 +392,28 @@ export class PublishNotionDraftUsecase {
     this.assertQuotesNotWiped(target, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
-    const humanized = await humanizeMarkdownProse(edited.body, this.humanizer);
+    const humanized = await this.humanizeWithBreathRetry(edited.body);
+
+    // 4) 구조 줄표 — 헤딩·목록 머리말의 `—` 를 콜론으로 바꾼다. 말투 단계가 산문만 보므로
+    // 프롬프트의 줄표 금지가 그 두 자리에 닿지 않는다. 규칙을 넣고 발행한 글에서 줄표 9개가
+    // 전부 헤딩과 목록이었다. 산문 속 줄표는 여기서 손대지 않는다(뜻을 읽어야 갈린다).
+    const structured: HumanizeMarkdownResult = {
+      ...humanized,
+      markdown: stripStructuralEmDashes(humanized.markdown),
+    };
 
     // 윤문이 문단을 크게 줄일 수도 있어 **최종 발행본 기준으로 한 번 더** 본다.
     // 편집본만 보고 통과시키면 최종본이 원문의 60% 미만인 채 발행될 수 있다.
+    // 계측은 **줄표 치환까지 끝난 `structured`** 를 잰다. 실제로 발행되는 본문이 그것이다 —
+    // `humanized` 를 재면 카드에 찍히는 수와 나가는 글이 갈린다.
     stages.push({
       stage: '최종',
-      ...countMarkdownStructure(humanized.markdown),
+      ...countMarkdownStructure(structured.markdown),
     });
     this.assertNotOverTrimmed(
       target,
       anonymized.body,
-      humanized.markdown,
+      structured.markdown,
       stages,
     );
 
@@ -413,7 +426,7 @@ export class PublishNotionDraftUsecase {
       // 초안을 쓴 날이 아니라 발행하는 날로 찍는다 — 밀린 초안이 목록 아래에 묻히지 않게.
       publishedAt: new Date().toISOString(),
       pageId: target.pageId,
-      body: humanized.markdown,
+      body: structured.markdown,
       // 편집 단계가 고른 분류. 모르는 값이면 파서가 비워 두고 프론트매터에서 생략된다.
       ...(edited.category ? { category: edited.category } : {}),
     });
@@ -424,7 +437,7 @@ export class PublishNotionDraftUsecase {
       // 공개 저장소의 커밋 경로와 URL 에 영구히 박힌다. 정규화 전후 표기가 다르므로 둘 다 넣는다.
       // 검사는 파이프라인 **끝**에서 한 번 — 편집·윤문이 만들어낸 표현까지 걸러야 한다.
       {
-        body: `${edited.title}\n${edited.description}\n${edited.slug}\n${post.path}\n${humanized.markdown}`,
+        body: `${edited.title}\n${edited.description}\n${edited.slug}\n${post.path}\n${structured.markdown}`,
         tags: target.tags,
       },
       context.forbiddenTerms,
@@ -445,7 +458,7 @@ export class PublishNotionDraftUsecase {
       target,
       post.path,
       edited,
-      humanized,
+      structured,
       context.forbiddenTerms,
       stages,
     );
@@ -648,6 +661,81 @@ export class PublishNotionDraftUsecase {
       '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
     );
     return lines.join('\n');
+  }
+
+  // 말투 단계를 돌리고, 호흡이 하한에 못 미치면 그 수치를 적어 한 번 더 들여보낸다.
+  //
+  // 왜 필요한가 — 프롬프트에 "기본은 40~60자" 를 넣고 돌린 발행본이 평균 32.6자였다. 규칙은
+  // 읽었지만 모델은 자기 글의 평균을 재지 못한다. 재는 것은 코드인데 그 결과가 카드에만 찍히고
+  // 모델에게 돌아가지 않아, 지켜졌는지 모르는 채로 끝났다.
+  //
+  // 재시도는 **한 번뿐**이다. 모델 호출이 그만큼 늘고, 두 번째에도 안 되면 세 번째라고 될
+  // 이유가 없다. 여전히 미달이면 그대로 두고 카드의 「목표 밖」 에 남겨 사람이 본다.
+  //
+  // 재시도본이 더 나쁘면 첫 판을 쓴다. 되먹임이 역효과를 낸 회차까지 받아들일 이유는 없다.
+  private async humanizeWithBreathRetry(
+    body: string,
+  ): Promise<HumanizeMarkdownResult> {
+    const first = await humanizeMarkdownProse(body, this.humanizer);
+    const metrics = measureKoreanStyle(first.markdown);
+    if (
+      !metrics.measurable ||
+      metrics.averageLength >= KOREAN_STYLE_TARGETS.averageLengthMin
+    ) {
+      return first;
+    }
+
+    this.logger.log(
+      `호흡 되먹임 — 평균 ${metrics.averageLength}자 < ${KOREAN_STYLE_TARGETS.averageLengthMin}자, 한 번 더 윤문한다`,
+    );
+    const retried = await humanizeMarkdownProse(
+      first.markdown,
+      this.humanizer,
+      undefined,
+      metrics.averageLength,
+    );
+    const retriedMetrics = measureKoreanStyle(retried.markdown);
+    // 평균 하나로 판정하면 **되먹임이 제대로 작동한 결과가 곧 가드의 사각지대**가 된다.
+    // 짧은 문장을 합치면 평균과 최장이 함께 오르고, 문장을 이어 붙이는 과정에서 종결체가 한쪽으로
+    // 몰린다. 평균이 0.1자 올라가는 것만 보면 최장이 80자를 넘겨도, 종결체교대가 60%를 넘겨도
+    // 통과한다 — 하필 종결체교대는 이 파일이 의존하는 지표 중 **출처 의심 표본과 무관한 유일한
+    // 정량 기준**이다(`korean-style-metrics.ts` 의 `endingAlternationPercentMax` 주석).
+    // 가장 믿는 축을 팔아 가장 근거가 약한 축을 사는 거래가 된다.
+    //
+    // 그래서 목표 밖 축의 **정체**를 본다. 개수만 비교하면 축이 맞바뀐 재시도본을 통과시킨다
+    // (리뷰 지적): 첫 판의 유일한 갭이 `평균` 이고 재시도에서 평균은 하한을 넘었지만 `최장` 이
+    // 새로 상한을 넘으면, 둘 다 1개라 **더 나빠진 판이 채택된다.**
+    //
+    // 재시도본의 표본 크기도 함께 본다. 문장을 합치는 것이 이 되먹임의 목적이라 문장 수가
+    // 줄어드는데, 40문장 미만이 되면 `findKoreanStyleGaps` 가 문장 축을 아예 건너뛴다 —
+    // 갭이 사라진 것처럼 보여 그대로 수락된다. 판정 대상이 아닌 결과를 판정하는 셈이다.
+    const axesBefore = new Set(findKoreanStyleGapAxes(metrics));
+    const newAxes = findKoreanStyleGapAxes(retriedMetrics).filter(
+      (axis) => !axesBefore.has(axis),
+    );
+    const rejectReason = ((): string | null => {
+      if (!retriedMetrics.measurable) {
+        return `재시도본이 ${retriedMetrics.sentenceCount}문장으로 줄어 정량 판정 대상이 아니다`;
+      }
+      if (retriedMetrics.averageLength <= metrics.averageLength) {
+        return `평균이 오르지 않았다(${metrics.averageLength}자 → ${retriedMetrics.averageLength}자)`;
+      }
+      if (newAxes.length > 0) {
+        return `다른 축이 새로 목표를 벗어났다(${newAxes.join(', ')})`;
+      }
+      return null;
+    })();
+    if (rejectReason) {
+      this.logger.log(`호흡 되먹임 무효 — ${rejectReason}, 첫 판을 쓴다`);
+      return first;
+    }
+
+    this.logger.log(
+      `호흡 되먹임 적용 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 새로 벗어난 축 없음`,
+    );
+    // 문단 계수는 첫 판 것을 쓴다. 재시도는 같은 문단을 한 번 더 다듬은 것이지 새로 고른 게
+    // 아니라, 두 번째 계수를 카드에 적으면 "몇 문단이 윤문됐나" 가 실제보다 작게 읽힌다.
+    return { ...first, markdown: retried.markdown };
   }
 
   // 빠진 문단이 있으면 **사유까지** 적는다. `42/43` 만으로는 승인자도, 나중에 되짚는 사람도

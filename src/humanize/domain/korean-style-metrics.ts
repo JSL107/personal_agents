@@ -409,8 +409,20 @@ export const KOREAN_STYLE_TARGETS = {
   endingAlternationPercentMax: 60,
   bannedConnectiveMax: 0,
   // 호흡. 편차만 보면 "들쭉날쭉한가" 는 알아도 "숨이 가쁜가" 는 모른다 — 2026-08-26 발행본이
-  // 편차 11(통과)·평균 33.2자였는데 사용자 판정은 "호흡이 너무 짧다" 였다. 사용자가 실제로 쓴
-  // 글은 평균 44.7자다(프로파일 §1). 발행본과 그 사이에 경계를 둔다.
+  // 편차 11(통과)·평균 33.2자였는데 사용자 판정은 "호흡이 너무 짧다" 였다.
+  //
+  // **이 값의 근거는 그 판정 하나다.** 사용자 글의 평균 44.7자를 근거로 들었던 앞선 주석은
+  // 지웠다 — 그 수치는 15문장 표본에서 나왔고, 이 파일이 스스로 집행하는 문턱
+  // (`MEASURABLE_SENTENCE_MIN = 40`)을 통과하지 못한다. 자기가 무의미하다고 판정하는 크기의
+  // 표본을 기준으로 삼고 있었다. 프로파일 문서도 그 항의 수치를 재현 대상으로 쓰지 말라고
+  // 적어 두었는데 주석이 독자를 정확히 그 자리로 안내했다.
+  //
+  // 그래서 35 는 측정된 목표치가 아니라 **임시 눈금**이다. "숨 가쁘다" 고 판정된 33자 바로
+  // 위에 둔 값이고, 40문장 이상 코퍼스가 모이면 갱신한다.
+  //
+  // 이 축을 남겨 두는 이유(#398 이 내린 세 축과 다른 점): 그 세 축은 출처가 의심스러운 표본을
+  // **재현하는** 목표치였다. 35 는 의심 군집(29.9·31.4자)에서 **멀어지는 방향의 하한**이라
+  // 의심 리듬을 되먹이지 않는다.
   averageLengthMin: 35,
   // 스킬 룰북 J-3 의 "1문서 1~2회 이하" 를 그대로 옮긴다. 0 이 아닌 이유는 한 번쯤은
   // 자연스러운 자리가 있기 때문이고, 상한을 두는 이유는 15개가 들어간 발행본이 실제로 나갔기 때문이다.
@@ -448,35 +460,65 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
  * 줄표는 문장 수와 무관한 **문서 축**이라 표본이 작아도 판정한다. 보류에 함께 묶으면 짧은 글은
  * 줄표가 몇 개든 카드에 안 찍힌다(리뷰 P2).
  */
-export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
-  const gaps: string[] = [];
+// 목표 밖 항목 하나. `axis` 는 어느 축인지, `text` 는 사람이 읽는 표기다.
+//
+// 왜 축을 따로 내보내는가 — 재시도 수락 판정이 "새로 생긴 축이 있나" 를 물어야 하는데,
+// 표기 문자열에서 축 이름을 파싱하면 라벨을 다듬는 순간 그 판정이 조용히 무력해진다.
+// 조건은 아래 한 자리에만 두고, 축과 표기를 함께 만들어 나눠 준다.
+type KoreanStyleGap = {
+  axis: string;
+  text: string;
+};
+
+const collectKoreanStyleGaps = (
+  metrics: KoreanStyleMetrics,
+): KoreanStyleGap[] => {
+  const gaps: KoreanStyleGap[] = [];
   const T = KOREAN_STYLE_TARGETS;
   // 문장 축은 40문장 이상일 때만 판정한다. main 이 표본 출처 의심으로 편차·짧은문장·구어를
   // 내렸고(#398), 남은 축에 이번 평균 하한이 더해진다.
   if (metrics.measurable) {
     if (metrics.longestSentenceLength > T.longestSentenceMax) {
-      gaps.push(
-        `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
-      );
+      gaps.push({
+        axis: 'longestSentence',
+        text: `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
+      });
     }
     if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
-      gaps.push(
-        `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
-      );
+      gaps.push({
+        axis: 'endingAlternation',
+        text: `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
+      });
     }
     if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
-      gaps.push(`금지접속사 ${metrics.bannedConnectiveCount}회(0회)`);
+      gaps.push({
+        axis: 'bannedConnective',
+        text: `금지접속사 ${metrics.bannedConnectiveCount}회(0회)`,
+      });
     }
     if (metrics.averageLength < T.averageLengthMin) {
-      gaps.push(`평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`);
+      gaps.push({
+        axis: 'averageLength',
+        text: `평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`,
+      });
     }
   }
   // 줄표는 문장 수와 무관한 문서 축이라 표본이 작아도 판정한다.
   if (metrics.emDashCount > T.emDashMax) {
-    gaps.push(`줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`);
+    gaps.push({
+      axis: 'emDash',
+      text: `줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`,
+    });
   }
   return gaps;
 };
+
+export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] =>
+  collectKoreanStyleGaps(metrics).map((gap) => gap.text);
+
+// 목표 밖인 축의 이름만. 재시도 수락 판정이 개수가 아니라 **정체**를 보게 하려고 쓴다.
+export const findKoreanStyleGapAxes = (metrics: KoreanStyleMetrics): string[] =>
+  collectKoreanStyleGaps(metrics).map((gap) => gap.axis);
 
 export const formatKoreanStyleMetrics = (
   metrics: KoreanStyleMetrics,
