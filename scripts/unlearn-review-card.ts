@@ -65,15 +65,19 @@ const main = async (): Promise<void> => {
   const [idArgument, ...restArguments] = process.argv.slice(2);
   // `--apply` 오타(`--appl`)를 조용히 미리보기로 흘리지 않는다 — 적용한 줄 알고 넘어가게 된다.
   const apply = restArguments.length === 1 && restArguments[0] === '--apply';
+  const cardId = idArgument === undefined ? Number.NaN : Number(idArgument);
   if (
     idArgument === undefined ||
     !CARD_ID_PATTERN.test(idArgument) ||
+    // 정규식은 자릿수를 세지 않아 20자리도 통과한다. 그 값은 `Number` 를 거치며 정밀도를
+    // 잃고(길면 `Infinity`), 그대로 조회에 들어가면 Prisma 가 원문과 무관한 오류를 던져
+    // 끝난다 — 무엇이 잘못됐는지 알려주는 쪽이 낫다.
+    !Number.isSafeInteger(cardId) ||
     (restArguments.length > 0 && !apply)
   ) {
     console.error(USAGE);
     process.exit(1);
   }
-  const cardId = Number(idArgument);
 
   const prisma = new PrismaClient();
   try {
