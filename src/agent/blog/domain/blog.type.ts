@@ -1,3 +1,17 @@
+import { MarkdownStructureCounts } from '../../../humanize/domain/markdown-blocks';
+
+// 단계 경계 계측 — 파이프라인 각 단계가 무엇을 남기고 무엇을 덜어냈는지.
+//
+// 왜 재는가: 편집 과삭제 가드는 글자 수 비율만 본다(`assertNotOverTrimmed`). 실측된 발행본은
+// 그 가드를 60.45% 로 통과하면서 인용 7줄과 헤딩 9개를 잃었다 — 200자 남짓이라 문자 게이트에
+// 잡히지 않는다. 어느 단계가 지웠는지도 사후에 알 수 없었다(익명화 산출물을 아무도 세지 않는다).
+// 그래서 차단이 아니라 관측이다: 단계마다 세어 승인 카드와 원장에 남긴다.
+export type BlogStageName = '원문' | '익명화' | '편집' | '최종';
+
+export type BlogStageStructure = MarkdownStructureCounts & {
+  stage: BlogStageName;
+};
+
 export interface GenerateBlogDraftInput {
   requestText: string;
   slackUserId: string;
@@ -103,3 +117,19 @@ export interface BlogDraftResult {
    */
   publishError?: string;
 }
+
+// 원장 output — 결과에 단계 수치만 얹는다. **본문은 담지 않는다**(윤문 경로가 세운 규약):
+// 단계별 본문을 담으면 원장이 같은 글 네 벌로 부푼다.
+//
+// 발행 경로가 둘이라 한 자리에 둔다 — 수동 `/blog-publish` 는 usecase 의 `execute` 가, 저녁
+// cron 은 autopilot task 가 각자 AgentRun 을 연다. 한쪽에만 넣으면 **정작 매일 도는 쪽이**
+// 빠진다.
+//
+// 도달한 단계가 없으면 키를 만들지 않는다: 빈 배열을 남기면 '재지 않았다' 와 '0 이었다' 가
+// 같은 값이 되어, 원장을 훑는 쪽이 계측 누락을 손실로 읽는다.
+export const buildBlogRunOutput = (
+  result: PublishNotionDraftResult | BlogPublishCandidate,
+  stages: readonly BlogStageStructure[],
+): Record<string, unknown> => {
+  return stages.length === 0 ? { ...result } : { ...result, stages };
+};
