@@ -78,8 +78,20 @@ const extractPreservedTokens = (text: string): PreservedTokens => {
   return tokens;
 };
 
+// URL 문자에서 한글을 뺀다. `[Osmani](https://…/loop-engineering/)는` 처럼 마크다운 링크 뒤에
+// 조사가 붙으면 `[^\s]+` 는 공백 전까지 삼켜 **닫는 괄호와 조사까지 주소로 본다**. 그러면 윤문이
+// 조사를 `는`→`가` 로 바꾸는 것만으로 다른 URL 토큰이 되어 injected/lost 위반이 뜨고, 그 문단이
+// 통째로 원문으로 롤백된다 — 실측에서 같은 문단이 3회 재실행 내내 윤문되지 못했다.
+//
+// 아래 `trimTrailingUrlPunctuation` 이 못 잡는 이유: 그 루프는 마지막 문자부터 떼는데 조사가
+// 한글이라 첫 검사에서 바로 멈춘다. 닫는 괄호까지 가지도 못한다.
+//
+// 한글이 든 주소는 이 검사에서 조금 짧게 잡힐 수 있다. 실무에서 그런 주소는 퍼센트 인코딩되어
+// 오고, 짧게 잡히더라도 앞뒤가 같이 짧아져 대조는 여전히 성립한다.
+const URL_PATTERN = /https?:\/\/[^\s가-힣ㄱ-ㅎㅏ-ㅣ]+/g;
+
 const extractUrlsAndMask = (text: string, tokens: Set<string>): string => {
-  return text.replace(/https?:\/\/[^\s]+/g, (matched) => {
+  return text.replace(URL_PATTERN, (matched) => {
     // 문장 구두점과 균형 밖 닫는 괄호만 URL에서 빼고 후속 추출용 원문에는 남긴다.
     const url = trimTrailingUrlPunctuation(matched);
     const punctuation = matched.slice(url.length);
