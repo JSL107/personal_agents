@@ -179,7 +179,10 @@ const describe = (label: string, markdown: string): void => {
   console.log(`\n## ${label}`);
   console.log(`상태    문장 ${sentences.length}개 · ${verdict}`);
   console.log(
-    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자 · 20자↓ ${metrics.shortSentencePercent}%(목표 ${KOREAN_STYLE_TARGETS.shortSentencePercentMin}%↑) · 61자↑ ${percent(longCount, sentences.length)}`,
+    // 이 줄에 목표를 적지 않는다 — 편차·20자↓ 는 2026-08-26 판정에서 내려갔고, 이 스크립트는
+    // 그 기준을 **다시 세우려고** 코퍼스를 재는 도구다. 내린 목표를 옆에 적으면 새 표본이
+    // 옛 값에 맞는지부터 보게 된다. 최장만 목표를 함께 적는다(아직 판정 축이다).
+    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자(목표 ${KOREAN_STYLE_TARGETS.longestSentenceMax}자↓) · 20자↓ ${metrics.shortSentencePercent}% · 61자↑ ${percent(longCount, sentences.length)}`,
   );
   console.log(
     `종결    해요체 ${metrics.yoEndingPercent}% · 구어 ${metrics.colloquialEndingPercent}% · 교대율 ${metrics.endingAlternationPercent}%`,
