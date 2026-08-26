@@ -8,6 +8,8 @@
 // 여기서도 차단하지 않는다. 반복된 항목을 알려줄 뿐이고, 무엇을 어떻게 고칠지는 윤문
 // 프롬프트의 기존 규칙이 정한다.
 
+import { KOREAN_STYLE_UNJUDGED_AXES } from './korean-style-metrics';
+
 export interface StyleFeedbackRun {
   /** `findKoreanStyleGaps` 결과. `편차 12.3(≥15)` 처럼 "항목 값(기준)" 꼴이다. */
   gaps: string[];
@@ -36,6 +38,18 @@ export const toStyleFeedbackRun = (
 /** 이 횟수 이상 반복된 항목만 싣는다. 한 번 벗어난 것은 그 글의 사정일 수 있다. */
 export const MINIMUM_REPEAT_COUNT = 2;
 
+/**
+ * 지금 판정 축이 아닌 항목은 싣지 않는다.
+ *
+ * 원장에는 **그때의 판정 결과**가 남는다. 축을 내려도 이미 적재된 회차의 갭은 그대로라,
+ * 거르지 않으면 내린 축이 최근 표본이 밀려날 때까지(최대 `STYLE_FEEDBACK_RUNS` 편) 계속
+ * 프롬프트로 들어간다 — 2026-08-26 에 편차·짧은문장·구어를 내렸을 때 원장에는 「편차
+ * 9.6(≥11)」 회차가 5편 있었다. 판정 축은 코드가 정하므로 소비 지점에서 현재 축으로
+ * 다시 거른다. 다음에 축을 또 바꿔도 이 필터가 알아서 맞는다.
+ */
+const isJudgedLabel = (label: string): boolean =>
+  !KOREAN_STYLE_UNJUDGED_AXES.some((axis) => axis === label);
+
 interface GapTally {
   label: string;
   count: number;
@@ -53,6 +67,9 @@ const tally = (runs: StyleFeedbackRun[]): GapTally[] => {
   for (const item of runs) {
     for (const gap of item.gaps) {
       const label = labelOf(gap);
+      if (!isJudgedLabel(label)) {
+        continue;
+      }
       const found = byLabel.get(label);
       if (found === undefined) {
         byLabel.set(label, { label, count: 1, latest: gap });

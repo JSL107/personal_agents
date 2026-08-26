@@ -5,12 +5,32 @@ import { scanMarkdownBlocks } from './markdown-blocks';
 // 출처: `~/.claude/skills/humanize-korean/references/style-profile-juneseok.md`
 // (「이대리 프로젝트」소개 글 본문 115문장 실측). 수치는 목표가 아니라 **재현 대상**이다.
 //
-// 왜 상한만 보지 않고 하한을 함께 두는가 — 상한만 두면 구어 어미 0%인 전형적 AI 문체가
-// 그대로 통과한다. 왜 표준편차만 보지 않는가 — 159자 만연체 하나가 섞인 글이 편차만으로는
-// 통과해버린 사례가 있어 **최장 문장 상한과 AND 조건**으로 본다.
+// **2026-08-26 — 그 표본이 사용자 글이 아닐 가능성이 크다.** 프로파일 문서가 스스로 경고를
+// 달았다: 「기준 코퍼스 0편 · 판정 보류」, 「1·7·8·9·10항의 수치와 예문은 출처가 확인될
+// 때까지 재현 대상으로 쓰지 말 것」. 근거는 세 표본의 대조다 —
 //
-// 이 지표는 지금 발행을 막지 않는다. 카드에 수치를 적어 눈으로 보게 하는 용도다 —
-// 차단 임계값은 실제 발행본을 몇 편 쌓아 분포를 본 뒤에 정할 일이다.
+//   글                          문장   평균     편차   20자↓   구어
+//   「이대리 프로젝트」(의심)     115   29.9자   13.7   26.1%   16.5%
+//   「Redis란?」 노션 정리         83   31.4자   14.0   18.1%    0%
+//   사용자 블로그(본인 확인)       15   44.7자     —     6.7%   33.3%
+//
+// 앞의 둘이 붙어 있고 본인 확인 글만 떨어져 있다. 즉 §1 수치는 **AI 글의 리듬을 개인 문체로
+// 오인한 값으로 의심된다**. 사용자는 더 길게(44.7 vs 29.9자) · 더 구어체로(33.3 vs 16.5%) ·
+// 짧은 문장은 훨씬 덜(6.7 vs 26.1%) 쓴다.
+//
+// 그래서 §1 에서 파생된 세 축(편차 · 짧은문장 · 구어)을 **판정에서 내렸다**. 그대로 두면
+// 되먹임(`style-feedback.ts`)이 그 미달을 매 회차 프롬프트에 실어, 의심 표본의 리듬을 더
+// 정확히 재현하라고 모델에 되먹인다 — 학습 루프가 반대로 도는 것이다. 실제로 2026-08-25
+// 발행본 5편이 연속으로 「편차 미달」로 찍혔고 그 지적이 주입되고 있었다.
+//
+// **수치는 계속 잰다.** 카드에 값을 보여주는 것과, 그 값을 「목표 밖」으로 판정해 되먹이는
+// 것은 다르다. 지금 내린 것은 판정뿐이다.
+//
+// 되살리는 조건은 프로파일 §1 의 갱신 절차다 — 사용자가 직접 쓰거나 손본 **해요체 서술글
+// 40문장 이상**을 코퍼스에 모아 `scripts/measure-style.ts` 로 다시 재고, 표와 「기준 코퍼스」
+// 줄을 갈아끼운 뒤에 이 파일의 임계값을 되돌린다.
+//
+// 이 지표는 지금도 발행을 막지 않는다. 카드에 수치를 적어 눈으로 보게 하는 용도다.
 
 export type KoreanStyleMetrics = {
   sentenceCount: number;
@@ -350,21 +370,25 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
  * 그중 문단 지표가 있는 것은 3편뿐이라, 한 편이 기준을 통째로 흔든다. 카드에 표시만 해서
  * 판정 사례를 쌓고, 분포가 서면 그때 차단 여부를 정한다.
  *
+ * **남은 것이 셋뿐인 이유는 파일 헤더에 있다** — 프로파일 §1 에서 파생된 편차·짧은문장·구어는
+ * 표본 출처가 의심돼 2026-08-26 에 판정에서 내렸다. 여기에 값을 되살리기 전에 헤더의 갱신
+ * 조건(본인 글 40문장 이상)을 먼저 충족시켜라. 지어낸 기준은 되먹임을 타고 산출물로 나간다.
+ *
  * 문단 축(벽·같은크기)은 여기에 없다 — 프로파일 실측에 대응 항목이 없어 기준을 지어내야 한다.
  * 없는 기준으로 판정하느니 수치만 보여주는 편이 낫다.
  */
 export const KOREAN_STYLE_TARGETS = {
-  // 편차와 최장은 **둘 다** 만족해야 한다. 편차만 보면 159자 만연체 하나가 섞인 글이
-  // 편차 44.5 로 통과해버린 사례가 있다(프로파일 §1 경고).
-  lengthStandardDeviationMin: 11,
+  // 최장만 남는다. 아래 세 축과 달리 이것은 **상한**이라, 지키게 해도 의심 표본의 리듬을
+  // 재현하는 방향으로 밀지 않는다. 본인 확인 글의 최장은 미측정이라 어긋난다는 근거도 없다.
+  // 편차와 짝지어 「초장문 하나가 섞인 글」을 걸러내던 역할은 편차가 내려가며 사라졌고,
+  // 지금 이 값이 막는 것은 읽기 어려운 만연체뿐이다.
   longestSentenceMax: 80,
-  shortSentencePercentMin: 20,
-  // 하한이 없으면 구어 어미 0% 인 전형적 AI 문체가 그대로 통과한다.
-  colloquialEndingPercentMin: 10,
-  colloquialEndingPercentMax: 20,
   // 종결체 교대율 상한. 비율이 맞아도 문장마다 갈아타면 그 자체가 기계적으로 읽힌다.
   // 실측(위 타입 주석): 사용자가 쓴 노션 글 50% · 사용자가 손본 발행본 37% vs 「한쪽으로
   // 몰리지 않게」 지시로 만든 발행본 73~88%. 두 무리가 겹치지 않아 경계를 그 사이에 둔다.
+  //
+  // **출처 의심 표본과 무관한 유일한 정량 기준이다** — 대조군(37%·50%)이 사용자 글 쪽에서
+  // 나왔다. 아래 세 축을 내리고도 이 축이 남는 이유가 그것이다.
   endingAlternationPercentMax: 60,
   bannedConnectiveMax: 0,
 } as const;
@@ -373,6 +397,9 @@ export const KOREAN_STYLE_TARGETS = {
  * 판정하지 않는 축과 그 이유. 카드 문구가 "모든 지표를 충족" 으로 읽히지 않게 하려면
  * 무엇이 판정 대상 밖인지 여기 적어 두어야 한다.
  *
+ * - **편차 · 짧은문장 · 구어**(2026-08-26 추가): 프로파일 §1 에서 온 값인데 그 표본의 출처가
+ *   의심된다. 본인 확인 글과 방향이 어긋나거나(짧은문장 6.7% vs 목표 20% 이상) 본인 글을
+ *   상한으로 누른다(구어 33.3% vs 목표 20% 이하). 근거는 파일 헤더의 대조표.
  * - **요체 비율**: 기준이 없다. 프로파일의 "`~습니다` 와 `~요` 가 반반" 은 2026-08-24 에
  *   **재현 대상에서 내려갔다**(`humanize-system.prompt.ts` 의 종결체 절). 지금 지시는
  *   "해요체가 기본이고 `~습니다` 는 한 값의 절반을 넘기지 않는다" 라, 지시를 잘 따른 글일수록
@@ -380,7 +407,13 @@ export const KOREAN_STYLE_TARGETS = {
  *   분포가 아직 없어 **판정을 보류하고 수치만 보여준다**.
  * - **문단 축(벽·같은크기)**: 프로파일 실측에 대응 항목이 없다.
  */
-export const KOREAN_STYLE_UNJUDGED_AXES = ['요체 비율', '문단 축'] as const;
+export const KOREAN_STYLE_UNJUDGED_AXES = [
+  '편차',
+  '짧은문장',
+  '구어',
+  '요체 비율',
+  '문단 축',
+] as const;
 
 /**
  * 목표를 벗어난 항목만 골라 "값(기준)" 꼴로 돌려준다. 전부 맞으면 빈 배열이다.
@@ -394,27 +427,9 @@ export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
   }
   const gaps: string[] = [];
   const T = KOREAN_STYLE_TARGETS;
-  if (metrics.lengthStandardDeviation < T.lengthStandardDeviationMin) {
-    gaps.push(
-      `편차 ${metrics.lengthStandardDeviation}(≥${T.lengthStandardDeviationMin})`,
-    );
-  }
   if (metrics.longestSentenceLength > T.longestSentenceMax) {
     gaps.push(
       `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
-    );
-  }
-  if (metrics.shortSentencePercent < T.shortSentencePercentMin) {
-    gaps.push(
-      `짧은문장 ${metrics.shortSentencePercent}%(≥${T.shortSentencePercentMin}%)`,
-    );
-  }
-  if (
-    metrics.colloquialEndingPercent < T.colloquialEndingPercentMin ||
-    metrics.colloquialEndingPercent > T.colloquialEndingPercentMax
-  ) {
-    gaps.push(
-      `구어 ${metrics.colloquialEndingPercent}%(${T.colloquialEndingPercentMin}~${T.colloquialEndingPercentMax}%)`,
     );
   }
   if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
