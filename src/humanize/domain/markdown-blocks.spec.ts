@@ -283,6 +283,67 @@ describe('stripStructuralEmDashes', () => {
   });
 });
 
+// 정규식이 앞에 무엇이 있는지 보지 않고 첫 ` — ` 를 머리말 구분자로 단정하던 반례들.
+// 전부 실측으로 확인한 뒤 판정을 붙였다.
+describe('stripStructuralEmDashes — 머리말이 아닌 줄표', () => {
+  it('숫자 범위는 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- 2026 — 2027 매출 추이')).toBe(
+      '- 2026 — 2027 매출 추이',
+    );
+  });
+
+  // 콜론을 더하면 `::` 가 된다.
+  it('이미 콜론으로 끝나면 줄표만 뗀다', () => {
+    expect(stripStructuralEmDashes('## 정리: — 핵심만')).toBe(
+      '## 정리: 핵심만',
+    );
+  });
+
+  // `?:` 는 조판이 아니다.
+  it('물음표·느낌표로 끝나면 줄표만 뗀다', () => {
+    expect(stripStructuralEmDashes('## 왜 느려질까요? — 원인 세 가지')).toBe(
+      '## 왜 느려질까요? 원인 세 가지',
+    );
+    expect(stripStructuralEmDashes('- 드디어 됐다! — 그 뒤가 문제였어요')).toBe(
+      '- 드디어 됐다! 그 뒤가 문제였어요',
+    );
+  });
+
+  // 뒤엣것이 설명이 아니라 이어지는 말이다. 콜론을 넣으면 도치가 깨진다.
+  it('종결어미로 끝나면 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('1. 결과는 좋았다 — 라고 생각했어요')).toBe(
+      '1. 결과는 좋았다 — 라고 생각했어요',
+    );
+    expect(stripStructuralEmDashes('- 잘 돌아가네요 — 라고 믿었죠')).toBe(
+      '- 잘 돌아가네요 — 라고 믿었죠',
+    );
+  });
+
+  // 4칸 들여쓴 코드블록은 `FENCE_PATTERN` 에 안 걸려 치환 대상이었다. 스캐너는 알고 치환기는
+  // 몰랐던 자리다.
+  it('들여쓴 줄은 손대지 않는다', () => {
+    const markdown = ['본문이에요.', '', '    - foo — bar'].join('\n');
+    expect(stripStructuralEmDashes(markdown)).toBe(markdown);
+  });
+
+  // 머리말이 비어 있으면 콜론만 남아 더 이상해진다.
+  it('머리말이 비어 있으면 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- — 설명만 있어요')).toBe(
+      '- — 설명만 있어요',
+    );
+  });
+
+  // 대조군 — 정상 머리말은 그대로 콜론이 된다. 위 조건들이 과하게 걸리면 이게 깨진다.
+  it('명사 머리말은 여전히 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('## 채점관 — /goal')).toBe(
+      '## 채점관: /goal',
+    );
+    expect(stripStructuralEmDashes('- 개요 — 무엇을 다루는지')).toBe(
+      '- 개요: 무엇을 다루는지',
+    );
+  });
+});
+
 describe('countMarkdownStructure — 단계 경계 계측', () => {
   it('헤딩·인용·링크·코드블록을 종류별로 센다', () => {
     const 본문 = [
