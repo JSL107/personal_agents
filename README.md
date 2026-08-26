@@ -22,14 +22,16 @@
 
 ## ✨ 무엇을 하나
 
-GitHub · Notion · Slack 을 연결해 **회사 롤플레이 역할**(PM · BE · Code Reviewer · CTO · PO · CEO …)과 **개인 업무**(이직 메이트 · 지원 추적 · 휴가 · 블로그)를 함께 수행하는 1인 개발자용 비서 백엔드.
+GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 역할**(PM · BE · Code Reviewer · CTO · PO · CEO …), **개인 업무**(이직 메이트 · 지원 추적 · 휴가 · 블로그), **투자 라인**(종목 감시 · 모의투자 추천·채점)을 함께 수행하는 1인 개발자용 비서 백엔드.
 
 | | |
 |---|---|
 | 🗣️ **두 가지 진입** | Slack slash command 19개, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
 | 🎭 **회사 롤플레이** | 한 사람이 PM · BE · 리뷰어 · CTO · PO · CEO 역할을 LLM 워커로 분담 |
-| ⚡ **자동 발화** | 출근/퇴근/주간 cron + GitHub webhook 으로 사용자 입력 없이 proactive 동작 |
+| ⚡ **자동 실행** | 출근/퇴근/주간 cron 33슬롯 + GitHub webhook 으로 사용자 입력 없이 돈다 — 대부분은 Slack 으로 보고하고, 뒷정리·폴링 성격의 4슬롯은 처리한 게 있을 때만 알린다 |
+| 📈 **투자 라인** | KRX 전종목을 훑어 후보를 추리고, 가상 계좌로 사고팔아 추천 규칙의 성적을 남긴다 |
 | 🧠 **장기 기억** | 과거 작업을 pgvector 의미검색으로 회상해 분류·리뷰 품질 강화 |
+| 🔁 **자기 학습** | PR 리뷰의 채택/기각을 수확해 다음 리뷰 프롬프트에 되먹인다 |
 | 🛡️ **승인 게이트** | 외부 시스템 쓰기는 항상 Slack ✅/❌ 확인 후 실행 |
 
 > 자동화 규칙 [AGENTS.md](./AGENTS.md) · 코드 컨벤션 [CODE_RULES.md](./CODE_RULES.md)
@@ -50,11 +52,13 @@ flowchart TD
 
     R["Router<br/>Intent Classifier"]
     MR["Model Router<br/>codex CLI · 격리 spawn"]
-    WK["17 User-facing Workers<br/>30 AgentTypes incl. internal automation<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    WK["19 Dispatch Workers (자연어·슬래시)<br/>32 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    IV["투자 라인<br/>screener · market-data<br/>paper-trading · backtest"]
     PG{"Preview Gate<br/>✅ / ❌"}
     EXT["Slack · Notion · GitHub"]
     EM[("Episodic Memory<br/>pgvector")]
     AR[("AgentRun<br/>PostgreSQL")]
+    MD[("시세·모의계좌<br/>PostgreSQL")]
 
     S --> R
     M --> R
@@ -62,6 +66,9 @@ flowchart TD
     R --> MR --> WK
     W --> WK
     C --> WK
+    C --> IV
+    IV --> MD
+    IV --> AR
     WK --> PG --> EXT
     WK --> AR
     WK -. 기록 .-> EM
@@ -76,7 +83,7 @@ src/{domain}/
   infrastructure/ # Port 어댑터 (DB · 큐 · 외부 API)
   interface/      # Controller, DTO, 큐 Provider
 src/common, src/config, src/prisma   # 공통 · env 검증 · PrismaService(Global)
-prisma/schema.prisma                 # DB 단일 소스 (14 models)
+prisma/schema.prisma                 # DB 단일 소스 (36 models — 절반이 시세·모의투자)
 ```
 
 ---
@@ -122,6 +129,25 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 워커끼리 넘긴 기록은 `AgentRun.parentId` 로 남아 체인 전체를 추적할 수 있다.
 
 </td></tr>
+<tr><td width="50%" valign="top">
+
+**📈 투자 라인**
+
+축이 둘이다. **실계좌 감시**는 평일 장 마감 뒤 토스증권 잔고를 읽어 급등락·평단 대비 손익이 임계에 닿으면 알린다. **모의투자**는 KRX 전종목(유니버스)을 훑어 후보를 추리고, 가상 계좌로 사고팔아 추천 규칙의 성적을 남긴다 — 실제 주문은 나가지 않는다.
+
+추천은 스스로를 채점한다. 지난 회차 성적을 다음 회차 프롬프트에 되먹이고, 벤치마크(코스피) 대비 초과 수익으로 규칙의 값어치를 잰다. `pnpm backtest` 는 같은 규칙을 과거 구간에 재생해 LLM 없이 결정론으로 성적을 낸다.
+
+목표와 현재 위치는 [tasks/goals-invest-line.md](./tasks/goals-invest-line.md) 에 있다 — 모의투자 고도화 → 실거래 → 추천 서비스 3단계.
+
+</td><td width="50%" valign="top">
+
+**🔁 스스로 배우는 코드 리뷰**
+
+봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다.
+
+기각된 지적은 두 방향으로 되돌아온다. episodic memory 에 "이렇게 하지 말라"는 예시로 쌓이고, 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다.
+
+</td></tr>
 </table>
 
 **🎭 에이전트**
@@ -132,12 +158,14 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 - **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · `/be sre`(스택트레이스 분석) · BE-FIX(PR 컨벤션) — BE-FIX 는 webhook 자동
 - **체인 / 승인형 실행** — `/auto-flow` PM → CTO → BE 1-shot, BE sandbox apply/test, 성공 후 사용자 승인 기반 branch + commit + PR open preview
 - **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 지원 추적 CRM(등록/상태/넛지 cron) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
-- **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish
+- **투자** — INVEST(보유 종목 감시, LLM 미사용) · PAPER_RECOMMEND(후보 추천) · PAPER_TRADE(가상 계좌 매매) — 셋 다 cron 발화, PAPER_TRADE 만 자연어 dispatch 가 있다
+- **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish · Ops Supervisor · Review Reply Judge · CTO Study
 
 **🔌 외부 연동**
 
 - **GitHub** — issue/PR 이벤트를 webhook 으로 받아 자동 발화 ([이벤트별 매핑](#-인터페이스))
 - **Notion** — Daily Plan append · PR careerLog 일별 자식 페이지 누적 · 📌 reaction → to-do 적재
+- **증권 시세** — 토스증권에서 잔고·일봉·코스피 지수를 읽어 온다(읽기 전용, 주문 API 없음)
 - **운영** — `/search-runs`(성공 run ILIKE 검색) · `/retry-run`(실패 run 재실행) · docs-sync-audit · 인증/cron 실패 owner DM 알림
 
 ---
@@ -154,7 +182,7 @@ pnpm dev              # watch 모드 기동
 
 > **사전 요구사항** — Node 22+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행한다([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 >
-> **검증** — `pnpm lint:check && pnpm test && pnpm build` 3중 green.
+> **검증** — 로컬은 `pnpm lint:check && pnpm test && pnpm build` 3중 green. CI 는 여기에 `check:env` · `docs:check` · `check:invariants` 를 더 돌린다.
 
 ---
 
@@ -218,23 +246,55 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 
 <br>
 
-`AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체가 켜지고, 없으면 전부 비활성이다.
+`AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체가 켜지고, 없으면 전부 비활성이다. 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts) 에 **33슬롯**이 있고, 아래는 그것을 성격별로 묶은 것이다.
+
+**하루 리듬** — 같은 시각의 항목은 digest 로 묶여 메시지 1개로 온다.
+
+| 시간 (Asia/Seoul) | 동작 |
+|---|---|
+| 🌅 매일 08:30 | 비서실(하루 한 장 결산) + Morning Briefing(PM `/today` 자동 계획) |
+| 🕚 매일 11:00 | 오늘의 공부 딥다이브 — 아침 브리프를 블로그 초안으로 펼침 |
+| 🕐 매일 13:00 | CTO 배분(`/assign`) + PO Shadow |
+| 🌆 매일 19:00 | Worklog + Daily Eval(PO_EVAL) + 저녁 회고 발행 후보 + 블로그 GitHub 발행 카드 |
+| 🌙 매일 23:00 | 포트폴리오 사이트 발행 |
+
+**투자** — 종목 감시·모의계좌 평가·유니버스 수집에는 각각 `STOCK_MONITOR_ENABLED` · `PAPER_TRADING_ENABLED` · `SCREENER_ENABLED` 가 필요하다(기본 OFF). 나머지 슬롯은 전용 스위치 없이 돌되 대상 데이터(열린 계좌·미체결 주문·채점할 알림)가 없으면 조용히 건너뛴다.
 
 | 시간 | 동작 |
 |---|---|
-| 🌅 매일 08:30 | 비서실(하루 한 장 결산) + Morning Briefing (PM `/today` 자동 계획) — digest 1메시지 |
-| 🌆 매일 19:00 | Daily Eval(PO_EVAL) + Worklog — digest 1메시지 |
+| 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
+| 🇰🇷 평일 17:10 | 국내 보유 종목 모니터링 |
+| 평일 17:40 | 모의계좌 일일 평가 |
+| 평일 18:00 | 급등락 알림의 사후 성적 채점 |
+| 매일 18:30 | KRX 유니버스 동기화 · 증분 시세 수집 |
+| 평일 19:00 | 스크리닝 결과의 사후 성적 채점 |
+| 평일 19:30 | 다음 거래일 추천 종목 선정 |
+| 평일 09:00~15:00 (10분) | 미체결 모의 주문 체결 처리 |
+| 📅 금 20:10 | 추천 성적표 집계 (벤치마크 대비) |
+
+**주간 · 월간**
+
+| 시간 | 동작 |
+|---|---|
 | 📅 금 17:00 | Weekly Summary (Worklog 1주 + CEO meta) |
-| 📅 일 10:00~12:00 | Knowledge-Lint · Docs Audit · Preference Learning |
+| 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
+| 📅 일 10:00 / 11:00 / 12:00 | Knowledge-Lint · Docs Audit · Preference Learning |
 | 📅 일 18:00 | CEO Meta |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
-| 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
-| 🗂️ 금 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
+| 📅 매월 1일 09:00 | Ops Supervisor (운영 점검) |
+| 🗂️ 매일 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
-| 🇰🇷 평일 17:10 KST | 국내 보유 종목 모니터링 |
-| 🇺🇸 평일 16:30 ET | 미국 보유 종목 모니터링 |
 
-> 스케줄·타임존은 `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` 으로 덮어쓴다. 여기서 `<ID>` 는 **그룹명이 아니라 그룹의 첫 항목 id** 다(morning 그룹은 `SECRETARIAT`, noon 그룹은 `ASSIGN`). 플레이북 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts).
+**상시 스윕** — 뒷정리·폴링이라 평소엔 조용하다. 다만 **처리한 게 있으면 Slack 으로 보고한다** — 정리한 카드·좀비 run 이 0건이면 침묵하고 1건이라도 있으면 알리며, 워밍업은 연속 실패가 임계에 닿을 때만 알린다.
+
+| 주기 | 동작 |
+|---|---|
+| 3분마다 | PR 리뷰 스윕 (지적 게시 · 채택/기각 수확) |
+| 10분마다 | Preview Gate 만료 카드 정리 |
+| 매시 50분 | 좀비 run 정리 |
+| 08~23시 10분마다 | 포트폴리오 사이트 워밍업 |
+
+> 스케줄·타임존은 `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` 으로 덮어쓴다. 여기서 `<ID>` 는 **그룹명이 아니라 그룹의 첫 항목 id** 다(morning 그룹은 `SECRETARIAT`, noon 그룹은 `ASSIGN`, evening 그룹은 `WORK_REVIEWER`).
 
 </details>
 
@@ -243,14 +303,14 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 
 <br>
 
-Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 앱(Swift ~5.8k 줄, SwiftUI + SpriteKit). Xcode 프로젝트 없이 Swift Package 로 빌드한다.
+Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 앱(Swift 약 18.8k 줄, SwiftUI + SpriteKit). Xcode 프로젝트 없이 Swift Package 로 빌드한다.
 
 | 탭 | 내용 |
 |---|---|
-| 대시보드 | 에이전트 27종 상태 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
-| 오피스 | 부서 6개 방으로 나뉜 픽셀 사무실 — 상태는 발밑 링, 진행은 몸짓(타이핑·엎드림·줄서기)으로 |
+| 대시보드 | 에이전트 32종 상태 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
+| 오피스 | 부서 6개 방(기획 · 개발 · 리뷰 · 경영 · 성장 · 내부)으로 나뉜 픽셀 사무실 — 상태는 발밑 링, 진행은 몸짓(타이핑·엎드림·줄서기)으로 |
 
-- **읽기** — `GET /v1/console/{snapshot,agents,runs,approvals}` + `GET /v1/console/stream`(SSE) 로 실시간 반영
+- **읽기** — `GET /v1/console/{snapshot,agents,runs,approvals,briefing,ledger}` + `GET /v1/console/stream`(SSE) 로 실시간 반영
 - **쓰기** — `POST /v1/console/command`(지시) · `approvals/:id/{apply,cancel}`(승인·거절) · `sessions/:sessionId/inject`(유휴 CLI 세션에 작업 주입). 기존 dispatch·PreviewGate usecase 에 위임하므로 Slack 경로와 판정이 갈리지 않는다. `CONSOLE_OWNER_SLACK_USER_ID` 가 없으면 쓰기는 503 으로 막힌다.
 - 앱 안에는 지능 로직을 두지 않는다. 상태 판정은 전부 백엔드가 하고 앱은 표시·조작만 한다.
 
@@ -272,7 +332,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 <br>
 
-단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 130개 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
+단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 140개 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
 
 아래는 처음 띄울 때 실제로 만지는 것만 추렸다.
 
@@ -295,7 +355,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입).
 
-모의투자 추천 성적은 기본적으로 금요일 18:10 KST에 실행한다. `AUTOPILOT_PAPER_SCORE_SCHEDULE`·`AUTOPILOT_PAPER_SCORE_TIMEZONE`으로 별도 override할 수 있다.
+모의투자 추천 성적은 기본적으로 금요일 20:10 KST에 실행한다. `AUTOPILOT_PAPER_SCORE_SCHEDULE`·`AUTOPILOT_PAPER_SCORE_TIMEZONE`으로 별도 override할 수 있다.
 
 **기본 ON 이라 끌 때만 만지는 것** — `'false'` 로 끈다. `HUMANIZE_REPORTS_ENABLED`(보고서 자동 윤문) · `BRIEFING_WAITING_SECTION_ENABLED`(아침 브리핑 PR 분류 섹션) · `EVENING_RETRO_PUBLISH_ENABLED`(저녁 회고 발행 후보) · `BLOG_GITHUB_PUBLISH_ENABLED`(저녁 Notion 초안 GitHub 발행 승인 카드) · `STUDY_DEEPDIVE_ENABLED`(오늘의 공부 → 블로그 초안 딥다이브 확장) · `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED`(모순 판정).
 
@@ -326,12 +386,18 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 이대리 본체와는 별개로, 이 PC 의 AI CLI 환경(플러그인 · MCP · skills · agents · commands · rules · hooks)을 새 PC 에서 재현하는 스크립트다. Claude Code(`~/.claude`) 와 Codex(`~/.codex`) 를 함께 다루고, 설치돼 있지 않은 쪽은 자동으로 건너뛴다.
 
+평소에는 손댈 일이 없다. 이대리가 매일 19시에 스냅샷을 갱신해 비공개 저장소로 올리고(`ai-cli-env-snapshot`), 다른 PC 는 매일 10시에 새 스냅샷을 감지해 Slack 승인 카드를 띄운다(`ai-cli-env-apply`, ✅ 를 눌러야 적용). `AI_CLI_ENV_SYNC_REPO` 를 설정해야 두 태스크가 켜진다.
+
+아래는 이대리 본체가 아직 없는 새 PC 처럼, 손으로 돌려야 할 때의 경로다.
+
 ```bash
 node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내보내기
-# ai-cli-env-export 디렉터리를 새 PC 로 옮긴 뒤
-node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export --dry-run   # 무엇이 바뀌는지 먼저 확인
-node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
+# ai-cli-env-export 디렉터리를 새 PC 로 옮긴 뒤 (스냅샷 저장소를 clone 해도 된다)
+./ai-cli-env-export/apply.sh --dry-run   # 무엇이 바뀌는지 먼저 확인
+./ai-cli-env-export/apply.sh             # 적용
 ```
+
+`apply.sh` 와 `tools/` 는 export 가 스냅샷 안에 함께 넣는 복원 도구다. 새 PC 가 이 저장소까지 clone 하지 않아도 스냅샷 하나로 복원을 시작할 수 있다. 직접 부를 때는 `node scripts/bootstrap-ai-cli-env.cjs <경로> --all` 과 같다.
 
 | 도구 | 옮기는 것 | 복원 방법 |
 |---|---|---|
@@ -340,9 +406,11 @@ node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
 
 **안 옮기는 것** — 비밀값(MCP 의 `env`·`headers` 는 키 이름과 무관하게 전부 플레이스홀더로 빠진다), 인증 파일과 대화 기록(`~/.codex/auth.json`, `sessions/`, `memories/`, `~/.claude/projects/`), 이 PC 에서만 유효한 것(로컬 경로 마켓플레이스, 데스크톱 앱이 주입한 MCP). 그래서 Codex 홈이 3GB 를 넘어도 실제로 옮기는 자산은 수 MB 다. 무엇을 뺐는지는 실행할 때 목록으로 보여준다.
 
-**새 PC 에서 할 일** — 빠진 환경 변수를 export 하고 대화형 인증(Notion OAuth, `codex login` 등)을 마친다. 필요한 목록은 산출물의 `SECRETS-TODO.md` 에 있다. 없는 채로 두면 그 MCP 만 건너뛰고 알린다.
+**새 PC 에서 할 일** — 빠진 환경 변수를 export 하고 대화형 인증(Notion OAuth, `codex login` 등)을 마친다. 필요한 목록은 산출물의 `SECRETS-TODO.md` 에 있다. 없는 채로 두면 그 MCP 만 건너뛰고 알린다. 자동화해도 이 칸은 남는다 — 브라우저 로그인은 파일로 옮길 수 있는 형태의 값이 아니다.
 
-**hooks 는 매 세션 실행되는 코드라 따로 취급한다.** `--with-hooks` 를 붙일 때만 적용하고, 대상 PC 에 이미 hooks 가 있으면 `--replace-hooks` 없이는 건너뛴다(hooks 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). `permissions`·`defaultMode` 는 옮기지 않는다. 심볼릭 링크는 실체로 풀어서 복사하고(링크 그대로 옮기면 새 PC 에서 전부 끊어진다), 명령 안의 옛 홈 경로는 새 PC 홈으로 치환한다.
+**VS Code 설정은 여기서 다루지 않는다.** VS Code 자체의 Settings Sync(설정 → Backup and Sync Settings)가 설정 · 키바인딩 · 스니펫 · 확장을 GitHub 계정으로 동기화한다. 확장 설치에는 `code` CLI 가 필요한데 이 PC 에는 깔려 있지 않아, 스크립트로 흉내 내면 설정만 옮기고 확장은 빠지는 반쪽이 된다.
+
+**hooks 는 매 세션 실행되는 코드라 따로 취급한다.** 기본값은 건너뛰기이고, `--with-hooks`·`--replace-hooks`·`--replace-global-docs` 를 붙일 때만 적용한다(hooks 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). 내 PC 를 그대로 옮기는 게 목적이면 셋을 한 번에 켜는 `--all` 을 쓴다 — `apply.sh` 와 이대리의 자동 적용이 쓰는 값이며, 덮이는 파일은 타임스탬프를 붙여 백업된다. 남의 PC·공용 머신에는 켜지 말 것. `permissions`·`defaultMode` 는 어느 경우에도 옮기지 않는다. 심볼릭 링크는 실체로 풀어서 복사하고(링크 그대로 옮기면 새 PC 에서 전부 끊어진다), 명령 안의 옛 홈 경로는 새 PC 홈으로 치환한다.
 
 </details>
 
@@ -350,6 +418,7 @@ node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
 
 ## 🔭 앞으로 만들 것
 
+- [ ] **투자 라인 3단계** — ① 모의투자 고도화(모의와 실전의 격차를 줄이는 일이지 모의 성적을 올리는 일이 아니다) → ② 실거래(승인 카드를 누르면 주문이 나가는 형태, Preview Gate 그대로 재사용) → ③ 추천 서비스. 확정된 제약 둘: **토스는 주문 API 를 공개하지 않아** 실거래에는 별도 증권사가 필요하고, ③은 코드가 아니라 법적 요건(유사투자자문업)의 문제다. 자세한 것은 [tasks/goals-invest-line.md](./tasks/goals-invest-line.md)
 - [ ] **토론 모드** — 멀티 에이전트가 한 주제로 의견을 교환·반박하며 합의안을 도출 (현재 단일 워커 dispatch → 다자 debate 로 확장)
 - [ ] **BE 자율 개발 hardening** — 승인형 sandbox apply/test + PR open preview 는 구현됨. 남은 과제는 실패 시 self-correction retry, 더 넓은 repo/테스트 매트릭스, 운영 가드 강화
 - [ ] **운영 전환** — `prisma db push`(synchronize) → `prisma migrate dev` 마이그레이션 워크플로우
@@ -363,6 +432,7 @@ pnpm dev | start | start:prod                  # 개발 watch | 실행 | 프로�
 pnpm db:up | db:down | db:push | db:studio     # 로컬 DB/Redis · 스키마 반영 · Studio
 pnpm build | test | test:e2e | lint:check | format:check
 pnpm docs:sync | docs:check | check:env        # 자동 생성 문서 갱신 · 검사 · .env 동기 확인
+pnpm check:invariants                          # 프로젝트 불변식 (TypeORM 금지 · 자율 플래그 등록 등)
 pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
                                                # 과거 구간 재생으로 매매 규칙 성적 측정 (DB 읽기 전용)
 ```
@@ -370,12 +440,18 @@ pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.
 
 > **백테스트**: 과거 주가를 재생해 "그때 이 규칙대로 샀으면 어떻게 됐을지"를 계산한다. DB 에 쓰지 않는다.
-> `--turnover-min` `--max-positions` `--weight` `--hold` 로 규칙을 바꿔가며 성적을 비교한다.
+> `--turnover-min` `--max-positions` `--weight` `--hold` `--seed` `--stop-loss` `--take-profit` `--delisting-recovery` 로 규칙을 바꿔가며 성적을 비교한다.
 > LLM 은 쓰지 않고 "스크리너 점수 상위 N종 기계적 매수" 로 대체하므로 같은 인자면 항상 같은 결과가 나온다.
 > 유니버스 전체를 메모리에 올리므로 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다
 > (Windows 는 `set NODE_OPTIONS=--max-old-space-size=4096` 을 먼저 실행한다).
-> 성적을 읽기 전 확인할 한계는 [설계서 §12](./docs/superpowers/specs/2026-08-16-paper-trading-backtest-design.md) 에 있다 —
-> 과거 깊이 약 10개월, 상장폐지 종목이 빠지는 생존 편향, 슬리피지 미반영.
+>
+> 성적을 읽기 전 알아야 할 한계 — **슬리피지 미반영**(시가에 원하는 수량이 다 체결된다고 본다), 거래정지·상하한가 미반영,
+> 그리고 **LLM 부재**(실전은 codex 가 고르지만 재생은 규칙만 남긴 기준선이다). 수수료·거래세는 실제 계산기를 그대로 쓴다.
+> 원래 한계였던 **생존 편향은 절반만 걷혔다** — 재생 유니버스를 시작일 기준으로 잡아 구간 중 폐지된 종목도 살아 있던 날까지 재생하지만,
+> 그건 DB 에 행이 있는 종목에 한한다. 유니버스 동기화는 KRX 의 **현재** 목록만 받아오므로(`sync-universe.usecase.ts`)
+> 수집을 시작하기 전에 이미 폐지된 종목은 표본에 아예 없다. 역사적 유니버스를 따로 수집하기 전까지는 이 편향이 남는다.
+> 과거 깊이도 `before` 커서 백필로 상장일까지 소급할 수 있어 고정 상한이 아니다(실제 깊이는 백필을 어디까지 돌렸는지에 달렸다).
+> 배경은 [설계서 §12](./docs/superpowers/specs/2026-08-16-paper-trading-backtest-design.md) 에 있다 — 그날의 스냅샷이라 위 두 항목은 이후 바뀌었다.
 
 ---
 
@@ -383,4 +459,5 @@ pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
 
 - [자동화 규칙 (AGENTS.md)](./AGENTS.md) · [코드 규칙 (CODE_RULES.md)](./CODE_RULES.md)
 - 자동 생성 — [에이전트 카탈로그](./docs/agent-catalog.md) · [환경변수 카탈로그](./docs/env-catalog.md)
+- 목표 원장(항상 현재를 가리킨다) — [투자 라인](./tasks/goals-invest-line.md) · [PR 리뷰 루프](./tasks/goals-pr-review-loop.md)
 - 진행 기록 [docs/superpowers/plans/](./docs/superpowers/plans/) · [과거 설계/기획 archive](./docs/archive/)

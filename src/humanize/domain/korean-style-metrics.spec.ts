@@ -413,21 +413,54 @@ describe('재현 목표 판정', () => {
     expect(findKoreanStyleGaps(base)).toEqual([]);
   });
 
-  it('편차가 통과해도 초장문 하나면 잡는다', () => {
-    // 편차만 보면 159자 만연체가 섞인 글이 통과해버린 사례가 있다 — 두 축을 AND 로 본다.
+  it('초장문 하나는 여전히 잡는다', () => {
+    // 편차가 판정에서 내려가며 AND 짝은 사라졌다. 최장은 상한이라 홀로 남아도 의심 표본의
+    // 리듬을 재현시키지 않는다 — 지금 이 축이 막는 것은 읽기 어려운 만연체뿐이다.
     const gaps = findKoreanStyleGaps({ ...base, longestSentenceLength: 159 });
     expect(gaps).toHaveLength(1);
     expect(gaps[0]).toContain('최장 159자');
   });
 
-  it('구어 어미는 상한뿐 아니라 하한도 본다', () => {
-    // 상한만 두면 구어 0% 인 전형적 AI 문체가 그대로 통과한다.
+  it('출처가 의심되는 세 축(편차·짧은문장·구어)은 판정하지 않는다', () => {
+    // 프로파일 §1 표본이 사용자 글이 아닐 가능성이 크다(파일 헤더 대조표). 판정하면 그
+    // 미달이 되먹임을 타고 프롬프트로 들어가, 의심 표본의 리듬을 재현하라고 되먹인다.
+    //
+    // 본인 확인 글과 **정반대 방향**인 값으로 검사한다 — 옛 기준이 살아 있으면 셋 다 잡힌다.
     expect(
-      findKoreanStyleGaps({ ...base, colloquialEndingPercent: 0 })[0],
-    ).toContain('구어 0%');
+      findKoreanStyleGaps({
+        ...base,
+        lengthStandardDeviation: 3,
+        shortSentencePercent: 6,
+        colloquialEndingPercent: 33,
+      }),
+    ).toEqual([]);
+    // 상한 쪽도 마찬가지다 — 구어는 하한만이 아니라 판정 자체가 없다.
     expect(
-      findKoreanStyleGaps({ ...base, colloquialEndingPercent: 35 })[0],
-    ).toContain('구어 35%');
+      findKoreanStyleGaps({ ...base, colloquialEndingPercent: 0 }),
+    ).toEqual([]);
+  });
+
+  it('내린 축의 임계값은 코드에도 남기지 않는다', () => {
+    // 값만 남겨 두면 다음 사람이 판정을 되살릴 때 근거 없는 숫자를 그대로 쓴다.
+    // 되살리려면 헤더의 갱신 절차(본인 글 40문장 이상)를 먼저 밟아야 한다.
+    for (const key of [
+      'lengthStandardDeviationMin',
+      'shortSentencePercentMin',
+      'colloquialEndingPercentMin',
+      'colloquialEndingPercentMax',
+    ]) {
+      expect(KOREAN_STYLE_TARGETS).not.toHaveProperty(key);
+    }
+  });
+
+  it('내린 축은 카드의 판정 밖 목록에 이름이 실린다', () => {
+    // 수치는 계속 보여준다. 「충족」이 편차까지 통과한 뜻으로 읽히면 안 된다.
+    const line = formatKoreanStyleMetrics(base);
+    expect(line).toContain('편차');
+    expect(line).toContain('판정 대상 충족');
+    for (const axis of ['편차', '짧은문장', '구어']) {
+      expect(line).toContain(axis);
+    }
   });
 
   it('40문장 미만이면 판정하지 않는다', () => {
@@ -449,8 +482,6 @@ describe('재현 목표 판정', () => {
   });
 
   it.each([
-    ['편차', { lengthStandardDeviation: 8 }, '편차 8(≥11)'],
-    ['짧은문장', { shortSentencePercent: 12 }, '짧은문장 12%(≥20%)'],
     ['금지접속사', { bannedConnectiveCount: 3 }, '금지접속사 3회(0회)'],
     ['종결체교대', { endingAlternationPercent: 85 }, '종결체교대 85%(≤60%)'],
   ])('%s 분기도 기준을 넘으면 잡는다', (_name, patch, expected) => {
@@ -460,8 +491,6 @@ describe('재현 목표 판정', () => {
   });
 
   it.each([
-    ['편차 하한 경계', { lengthStandardDeviation: 11 }],
-    ['짧은문장 하한 경계', { shortSentencePercent: 20 }],
     ['최장 상한 경계', { longestSentenceLength: 80 }],
     ['교대율 상한 경계', { endingAlternationPercent: 60 }],
   ])('%s 값은 통과다(경계 포함)', (_name, patch) => {

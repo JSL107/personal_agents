@@ -281,6 +281,21 @@ describe('ReplayBacktestUsecase', () => {
     });
   });
 
+  // command fixture 에 값을 넣는 것만으로는 새 전달 경로가 살아 있는지 알 수 없다.
+  // `risingBars` 는 매일 0.25~0.27% 씩 오르므로, 상한 0.1% 는 모든 후보를 걸러낸다.
+  it('유한한 상한은 후보 선정을 실제로 바꾼다', async () => {
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const withoutCap = await usecase.execute(command);
+    const withCap = await usecase.execute({
+      ...command,
+      maximumDailyGainPercent: 0.1,
+    });
+
+    expect(withoutCap.orderCount).toBeGreaterThan(0);
+    expect(withCap.orderCount).toBe(0);
+  });
+
   it('같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
     const first = await new ReplayBacktestUsecase(
       repositoryOf(risingBars()),

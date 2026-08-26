@@ -1,4 +1,5 @@
 import { PullRequestReview } from '../../agent/code-reviewer/domain/code-reviewer.type';
+import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 const RISK_LEVEL_LABEL: Record<PullRequestReview['riskLevel'], string> = {
@@ -57,17 +58,9 @@ export const formatPullRequestReview = ({
   }
 
   // 지적이 하나도 없으면 섹션이 통째로 빠져 요약만 남는다 — "리뷰가 잘렸나"로 읽히므로
-  // 지적 없음을 명시한다.
-  // findings 까지 함께 본다 — 모델이 3배열은 비우고 findings 만 채우면 카드에는 아무 섹션도
-  // 안 뜨지만 게시 경로(publish)는 findings 로 GitHub 인라인 지적을 단다. 그때 이 카드가
-  // "지적 없음"을 단언하면 실제 게시와 정반대가 된다. 그 경우는 아무 말도 하지 않는다.
-  if (
-    review.mustFix.length === 0 &&
-    review.niceToHave.length === 0 &&
-    review.missingTests.length === 0 &&
-    review.reviewCommentDrafts.length === 0 &&
-    review.findings.length === 0
-  ) {
+  // 지적 없음을 명시한다. 다섯 목록을 모두 보는 판정은 스윕의 PR 코멘트와 공유한다
+  // (hasNoReviewFindings) — 한쪽만 목록을 빠뜨리면 무증상으로 갈린다.
+  if (hasNoReviewFindings(review)) {
     lines.push(
       '',
       '*지적 사항 없음* — 이번 diff 에서 고칠 것을 찾지 못했습니다.',

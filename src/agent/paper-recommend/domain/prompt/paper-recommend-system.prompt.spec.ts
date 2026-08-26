@@ -1,6 +1,6 @@
 import {
   buildPaperRecommendationPrompt,
-  PAPER_RECOMMEND_SYSTEM_PROMPT,
+  buildPaperRecommendSystemPrompt,
 } from './paper-recommend-system.prompt';
 
 const indicators = {
@@ -27,6 +27,7 @@ describe('buildPaperRecommendationPrompt', () => {
       strategy: 'LONG_TERM',
       cashBalance: 7_000_000,
       accountValuation: 10_000_000,
+      maximumWeightPercent: 20,
       positions: [
         {
           code: '005930',
@@ -61,12 +62,34 @@ describe('buildPaperRecommendationPrompt', () => {
   // 비중은 코드가 정한다. 프롬프트에 비중 요구가 남아 있으면 모델이 다시 숫자를 뱉기 시작하고
   // 그 순간 같은 후보에도 회차마다 다른 수량이 나온다.
   it('시스템 프롬프트가 비중 출력을 요구하지 않는다', () => {
-    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).not.toContain('weightPercent');
-    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain(
-      '비중이나 수량은 출력하지 않는다',
-    );
-    // 상한을 프롬프트가 따로 적어 두면 제약 코드와 갈린다 — 상수를 읽어 쓰는지 확인한다.
-    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain('최대 3종');
-    expect(PAPER_RECOMMEND_SYSTEM_PROMPT).toContain('종목당 20%');
+    const systemPrompt = buildPaperRecommendSystemPrompt({
+      maximumWeightPercent: 20,
+    });
+    expect(systemPrompt).not.toContain('weightPercent');
+    expect(systemPrompt).toContain('비중이나 수량은 출력하지 않는다');
+    // 상한을 프롬프트가 따로 적어 두면 제약 코드와 갈린다 — 넘긴 값을 읽어 쓰는지 확인한다.
+    expect(systemPrompt).toContain('최대 3종');
+    expect(systemPrompt).toContain('종목당 20%');
+  });
+
+  // 값이 DB 로 내려간 뒤에도 프롬프트가 상수에 고정돼 있으면, 모델은 20% 인 줄 알고 고르는데
+  // 코드는 다른 비중을 배정한다. 두 프롬프트 모두 넘긴 값을 그대로 실어야 한다.
+  it('두 프롬프트가 상수가 아니라 넘긴 비중을 싣는다', () => {
+    const systemPrompt = buildPaperRecommendSystemPrompt({
+      maximumWeightPercent: 12.5,
+    });
+    expect(systemPrompt).toContain('종목당 12.5%');
+    expect(systemPrompt).not.toContain('종목당 20%');
+
+    const userPrompt = buildPaperRecommendationPrompt({
+      strategy: 'SWING',
+      cashBalance: 1_000_000,
+      accountValuation: 1_000_000,
+      maximumWeightPercent: 12.5,
+      positions: [],
+      candidates: [],
+    });
+    expect(userPrompt).toContain('종목당 12.5%');
+    expect(userPrompt).not.toContain('종목당 20%');
   });
 });

@@ -30,6 +30,10 @@ export interface ScreenUniverseOptions {
   // 실행 흔적이 된다. `agentRunId` 는 이 회차를 만든 추천 실행이고, CLI 실행은 null 이다
   // — 이 값이 운영 회차와 확인용 실행을 가르는 유일한 축이다.
   record?: { agentRunId: number | null };
+  // 거래대금 60일 하한. 지정하지 않으면 `screenStocks` 의 코드 상수가 쓰인다.
+  // 호출부가 `ResolveStrategyParametersUsecase` 로 해소한 값을 넘긴다 — 이 usecase 가
+  // 직접 조회하지 않는 이유는 같은 회차가 비중 때문에 어차피 한 번 해소하기 때문이다.
+  minimumTurnover60?: number;
 }
 
 export interface IncludedStockIndicators {
@@ -128,6 +132,7 @@ export class ScreenUniverseUsecase {
       candidates,
       options.strategy,
       candidates.length,
+      options.minimumTurnover60,
     );
     const includedTickerIds = new Set(options.includeTickerIds ?? []);
     const includedIndicators = candidates

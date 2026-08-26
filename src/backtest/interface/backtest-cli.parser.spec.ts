@@ -13,7 +13,10 @@ const required = [
 ];
 
 describe('parseBacktestCliArguments', () => {
-  it('필수 인자를 읽고 나머지는 기본값을 채운다', () => {
+  // 파라미터 테이블이 다루는 두 값(거래대금 하한·비중)은 파서가 기본값을 박지 않는다.
+  // 박으면 "미지정" 과 "우연히 기본값과 같은 값을 명시" 가 구분되지 않아, 활성 행이
+  // 인자를 이기는지가 값에 따라 달라진다. 채우는 것은 진입점의 몫이다.
+  it('필수 인자를 읽고, 파라미터 두 값은 미지정으로 남긴다', () => {
     const parsed = parseBacktestCliArguments(required);
 
     expect(parsed).toEqual({
@@ -21,14 +24,44 @@ describe('parseBacktestCliArguments', () => {
       from: '2026-01-02',
       to: '2026-08-14',
       seedAmount: '10000000',
-      minimumTurnover60: 500000000,
+      minimumTurnover60: undefined,
       maximumDailyGainPercent: Number.POSITIVE_INFINITY,
       maximumPositions: 3,
-      weightPercent: 20,
+      weightPercent: undefined,
       holdingTradeDays: 60,
       exitBand: null,
       delistingRecoveryRate: 1,
     });
+  });
+
+  it('파라미터 두 값을 명시하면 그 값이 그대로 남는다', () => {
+    const parsed = parseBacktestCliArguments([
+      ...required,
+      '--turnover-min',
+      '300000000',
+      '--weight',
+      '30',
+    ]);
+
+    expect(parsed.minimumTurnover60).toBe(300_000_000);
+    expect(parsed.weightPercent).toBe(30);
+  });
+
+  // 기본값만 단언하면 옵션 이름이나 값 전달이 깨져도 탐지하지 못한다.
+  it('--max-daily-gain 을 명시하면 그 값이 그대로 남는다', () => {
+    const parsed = parseBacktestCliArguments([
+      ...required,
+      '--max-daily-gain',
+      '15',
+    ]);
+
+    expect(parsed.maximumDailyGainPercent).toBe(15);
+  });
+
+  it('--max-daily-gain 에 0 이하를 주면 거부한다', () => {
+    expect(() =>
+      parseBacktestCliArguments([...required, '--max-daily-gain', '0']),
+    ).toThrow('--max-daily-gain');
   });
 
   it('--delisting-recovery 를 읽고 범위 밖 값을 거부한다', () => {

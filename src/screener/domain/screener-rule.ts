@@ -8,7 +8,12 @@ export const MINIMUM_TURNOVER60 = 500_000_000;
 // 기본값이 상한 없음인 것은 근거가 있어서가 아니라 아직 없어서다 — 값은 백테스트로
 // 재서 정한다. 그때까지 운영 동작은 지금과 같아야 하므로 무한대를 기본으로 둔다.
 export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
-export const SCREENER_RULE_VERSION = 2;
+// 3 으로 올린 이유(2026-08-26): 후보를 고르는 조건 자체는 그대로다. 바뀐 것은 **산출물의
+// 지표 집합**이다 — `return1d` 가 늘어 `indicator_snapshot` 의 형태가 달라졌고, 추천 프롬프트가
+// 지표를 통째로 싣기 때문에 모델이 보는 입력도 달라졌다. 버전의 목적은 "규칙이 바뀌었다" 를
+// 알리는 것보다 **섞어 보면 안 되는 경계**를 표시하는 것이므로, 그 경계를 여기에 둔다.
+// 이 값을 안 올리면 배포 전후 추천이 같은 버전으로 집계돼 변화의 효과를 분리할 수 없다.
+export const SCREENER_RULE_VERSION = 3;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 
 export interface ScreenCandidate {
