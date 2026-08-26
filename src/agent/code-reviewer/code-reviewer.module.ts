@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
-import { EpisodicMemoryModule } from '../../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../../github/github.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { PrReviewPublishModule } from '../../pr-review-loop/pr-review-publish.module';
@@ -16,7 +15,6 @@ import { PrReviewOutcomePrismaRepository } from './infrastructure/pr-review-outc
   imports: [
     ModelRouterModule,
     AgentRunModule,
-    EpisodicMemoryModule,
     GithubModule,
     PrismaModule,
     PrReviewPublishModule,
