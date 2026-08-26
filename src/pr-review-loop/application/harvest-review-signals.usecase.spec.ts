@@ -846,6 +846,39 @@ describe('HarvestReviewSignalsUsecase', () => {
     ]);
   });
 
+  it('최근 구간과 그 직전 같은 길이 구간을 조회한다', async () => {
+    // 두 조회에 같은 mock 을 물리면 구간 계산이 통째로 틀려도 결과가 같아 보인다 —
+    // 실제로 `windowMs * 2` 를 `windowMs` 로 바꿔도 다른 테스트는 전부 통과했다.
+    // 여기서만 호출 인자를 직접 본다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-26T00:00:00.000Z'));
+    try {
+      const { usecase, github, repository } = buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card()]);
+      github.listReviewThreads.mockResolvedValue({
+        pullRequestAuthorLogin: null,
+        pullRequestState: 'OPEN',
+        truncated: false,
+        threads: [reviewThread()],
+      });
+
+      await usecase.execute();
+
+      const recentSince = new Date('2026-08-12T00:00:00.000Z');
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledTimes(2);
+      // 최근 구간은 상한이 없다 — 지금 결론이 나는 카드까지 세어야 한다.
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        since: recentSince,
+      });
+      // 직전 구간은 같은 길이로 맞닿아 있다. 경계가 어긋나면 두 비율의 기준이 달라진다.
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+        since: new Date('2026-07-29T00:00:00.000Z'),
+        until: recentSince,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('채택률 집계가 실패해도 수확 결과는 그대로 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
