@@ -104,6 +104,29 @@ describe('개인 블로그 목소리 프롬프트', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('값 하나에 많아야 한 번');
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('처음 나올 때 한 번');
   });
+
+  // 스킬 룰북(`rewriting-playbook.md` J-3)에는 "대시(—) 1문서 1~2회 이하" 가 있었는데 백엔드
+  // 프롬프트에는 없어, 발행본에 15개가 들어간 채로 나갔다(2026-08-26: 헤딩 6 · 목록 6 · 본문 3).
+  // 규칙이 두 벌로 갈린 자리를 여기서 고정한다. 세는 쪽은 `korean-style-metrics` 의 emDashCount 다.
+  //
+  // 지시문 자체가 줄표를 쓰면 모델이 규칙보다 본 것을 따라 한다. 그래서 블록 안의 줄표도 함께 걷었고,
+  // 남긴 것은 금지 규칙이 드는 예시 하나뿐이다.
+  it('줄표를 쓰지 말라고 요구하고, 지시문 자체도 줄표를 쓰지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('줄표');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('헤딩과 목록 머리말');
+    const dashLines = HUMANIZE_PERSONAL_BLOG_TONE.split('\n').filter(
+      (line) => line.includes('—') && !line.includes('줄표('),
+    );
+    expect(dashLines).toEqual([]);
+  });
+
+  // "짧은 문장을 문단마다 하나 이상" 이 호흡을 끊었다. 발행본이 평균 33.2자에 짧은 문장 30% 였고
+  // 사용자 판정은 "호흡이 너무 짧다" 였다(사용자가 쓴 글은 평균 44.7자). 강제를 걷고 기본 길이를 준다.
+  it('기본 문장 길이를 주고 문단마다 짧은 문장을 강제하지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('40~60자');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('잘게 끊지 마라');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('문단마다 하나 이상');
+  });
 });
 
 describe('일반 독자 용어 규칙', () => {
