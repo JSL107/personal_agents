@@ -363,3 +363,43 @@ describe('마크다운 링크 뒤 조사', () => {
     expect(violations.some((item) => item.direction === 'injected')).toBe(true);
   });
 });
+
+// 경계를 조사가 아니라 괄호로 잡는 이유. 한글을 URL 문자에서 제외하면 조사 문제는 사라지지만
+// **한글 경로의 변조가 통째로 안 보인다** — 양쪽 모두 첫 한글 앞에서 잘려 같은 토큰이 된다.
+// 리뷰가 지적한 회귀이고, 여기서 실제로 잡히는지 못 박는다.
+describe('퍼센트 인코딩되지 않은 한글 주소', () => {
+  it('한글 경로가 바뀌면 잡는다', () => {
+    const violations = findPreservationViolations(
+      '자세한 내용은 https://example.com/문서 를 봤다.',
+      '자세한 내용은 https://example.com/문건 를 봤다.',
+    );
+    expect(violations).toContainEqual({
+      kind: 'url',
+      token: 'https://example.com/문서',
+      direction: 'lost',
+    });
+    expect(violations).toContainEqual({
+      kind: 'url',
+      token: 'https://example.com/문건',
+      direction: 'injected',
+    });
+  });
+
+  it('한글 경로가 그대로면 문장이 바뀌어도 통과한다', () => {
+    expect(
+      findPreservationViolations(
+        '자세한 내용은 https://example.com/문서 를 봤다.',
+        '자세한 내용은 https://example.com/문서 를 봤어요.',
+      ),
+    ).toEqual([]);
+  });
+
+  // 주소 안에 정상적으로 짝이 맞는 괄호가 있으면 끊지 않는다 (위키 등).
+  it('짝이 맞는 괄호는 주소의 일부로 남긴다', () => {
+    const violations = findPreservationViolations(
+      '[문서](https://ko.wikipedia.org/wiki/노드_(자료구조))를 봤다.',
+      '[문서](https://ko.wikipedia.org/wiki/노드_(자료구조))를 봤어요.',
+    );
+    expect(violations).toEqual([]);
+  });
+});
