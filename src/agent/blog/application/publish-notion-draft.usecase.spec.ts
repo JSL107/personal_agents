@@ -76,6 +76,9 @@ const buildUsecase = (overrides?: {
   openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
+  // 윤문 호출마다 다른 본문을 돌려준다 — 호흡 되먹임은 1·2회차 결과가 갈려야 판정이 도는데,
+  // suffix 방식 목은 매번 같은 변형을 내서 그 분기를 만들 수 없다.
+  humanizeByCall?: string[];
   // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
   recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
   // 원장 조회가 깨진 상황. 발행이 그 때문에 멈추면 안 된다.
@@ -114,8 +117,21 @@ const buildUsecase = (overrides?: {
     overrides?.humanizeSuffix === undefined
       ? ' 그렇더라고요.'
       : overrides.humanizeSuffix;
+  let humanizeCallCount = 0;
   const humanizer = {
     humanize: jest.fn(async (fields: Record<string, string>) => {
+      if (overrides?.humanizeByCall) {
+        // 문단 전부를 이 회차의 본문으로 바꿔치기한다. 어댑터가 문단 단위로 부르는 것을
+        // 이용해 첫 문단에만 싣고 나머지는 비워 원문이 남게 둔다.
+        const body = overrides.humanizeByCall[humanizeCallCount] ?? '';
+        humanizeCallCount += 1;
+        const next: Record<string, string> = {};
+        const keys = Object.keys(fields);
+        keys.forEach((key, index) => {
+          next[key] = index === 0 ? body : fields[key];
+        });
+        return next;
+      }
       if (humanizeSuffix === null) {
         return fields;
       }
@@ -1864,5 +1880,98 @@ describe('인용 전부 소실 차단', () => {
     });
 
     expect(outcome.result.status).toBe('preview');
+  });
+});
+
+// 호흡 되먹임은 테스트에서도 프로덕션에서도 한 번도 실행된 적이 없는 분기였다 — 실제 발행에서는
+// 첫 판이 38.2자로 나와 조건에 걸리지 않았다. 네 갈래를 유닛으로 고정한다.
+describe('호흡 되먹임 재시도', () => {
+  const 짧은문장 = '이건 짧은 문장이에요.';
+  const 긴문장 =
+    '이건 호흡이 넉넉하도록 앞뒤를 이어 붙여 쓴 문장인데 이만하면 읽기에 편하다고 느껴져요.';
+  const 만연체 =
+    '이건 끊지 않고 계속 이어 붙인 문장이라 읽는 사람이 숨을 쉴 자리를 찾지 못하게 되는데 그런 문장이 하나라도 섞이면 최장 축이 바로 넘어가고 그게 이 판정에서 걸려야 하는 대목이며 여기까지 오면 여든 자를 확실히 넘겨요.';
+  const 반복 = (횟수: number, 문장: string): string =>
+    Array.from({ length: 횟수 }, () => 문장).join(' ');
+
+  // 실측(measureKoreanStyle): 평균 10자 · 목표 밖 1개 — 하한 미달이라 재시도가 발동한다.
+  const 첫판_짧음 = 반복(45, 짧은문장);
+  // 평균 38자 · 목표 밖 0개 — 수락되어야 한다.
+  const 재시도_좋아짐 = 반복(45, 긴문장);
+  // 평균 13.6자(첫판보다 오름) · 최장 90자 · 목표 밖 2개 — **평균만 보면 통과하지만 기각해야 한다.**
+  const 재시도_다른축_악화 = `${반복(43, 짧은문장)} ${만연체} ${만연체}`;
+  // 40문장 미만이라 정량 판정 자체를 하지 않는다(measurable=false).
+  const 첫판_표본부족 = 반복(10, 짧은문장);
+
+  const buildForRetry = (calls: string[]) =>
+    buildUsecase({
+      markdown: '# 제목\n\n원문 문단입니다.',
+      completionText: JSON.stringify({
+        slug: 'breath',
+        description: '호흡 되먹임 확인',
+        body: '# 제목\n\n원문 문단입니다.',
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'breath',
+        description: '호흡 되먹임 확인',
+        body: '# 제목\n\n원문 문단입니다.',
+      }),
+      humanizeByCall: calls,
+    });
+
+  it('첫 판이 하한 이상이면 재시도하지 않는다', async () => {
+    const { usecase, humanizer } = buildForRetry([재시도_좋아짐]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(humanizer.humanize).toHaveBeenCalledTimes(1);
+  });
+
+  // 40문장 미만이면 평균 자체가 판정 대상이 아니다. 여기서 재시도하면 표본이 없는데도 모델을
+  // 한 번 더 부르는 셈이다.
+  it('40문장 미만이면 재시도하지 않는다', async () => {
+    const { usecase, humanizer } = buildForRetry([첫판_표본부족]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(humanizer.humanize).toHaveBeenCalledTimes(1);
+  });
+
+  it('재시도본이 나아지면 그것을 쓴다', async () => {
+    const { usecase, humanizer, createPreview } = buildForRetry([
+      첫판_짧음,
+      재시도_좋아짐,
+    ]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(humanizer.humanize).toHaveBeenCalledTimes(2);
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    const content = payload.content;
+    expect(content).toContain(긴문장);
+  });
+
+  // D2 의 핵심 — 문장을 합치면 평균과 최장이 **함께** 오른다. 평균 하나만 보면 되먹임이 제대로
+  // 작동한 결과가 곧 가드의 사각지대가 된다. 평균이 올랐어도 다른 축이 나빠지면 첫 판을 쓴다.
+  it('평균은 올랐지만 다른 축이 나빠지면 첫 판을 쓴다', async () => {
+    const { usecase, humanizer, createPreview } = buildForRetry([
+      첫판_짧음,
+      재시도_다른축_악화,
+    ]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(humanizer.humanize).toHaveBeenCalledTimes(2);
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    const content = payload.content;
+    expect(content).not.toContain(만연체);
+    expect(content).toContain(짧은문장);
   });
 });
