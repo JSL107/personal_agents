@@ -138,12 +138,16 @@ const buildUsecase = (overrides?: {
     })),
   } as unknown as jest.Mocked<CreatePreviewUsecase>;
   const updateInputSnapshot = jest.fn();
+  // 원장에 실리는 output 을 잡아 둔다. 목이 이 값을 버리면 "무엇이 원장에 남는가" 를 검사할
+  // 수단이 없어, 배선이 빠져도 초록이다.
+  const runOutputs: unknown[] = [];
   const agentRunService = {
     execute: jest.fn().mockImplementation(async (input) => {
       const execution = await input.run({
         agentRunId: 71,
         updateInputSnapshot,
       });
+      runOutputs.push(execution.output);
       return {
         result: execution.result,
         modelUsed: execution.modelUsed,
@@ -186,6 +190,7 @@ const buildUsecase = (overrides?: {
     updateInputSnapshot,
     humanizer,
     findAllOpenPreviews,
+    runOutputs,
   };
 };
 
@@ -464,6 +469,8 @@ describe('PublishNotionDraftUsecase', () => {
         },
         // 모델을 부르지 않았으므로 원장에도 결정론 실행으로 남는다.
         modelUsed: 'deterministic',
+        // 초안을 열어 보지도 않았다 — 잰 단계가 없다.
+        stages: [],
       });
       expect(modelRouter.route).not.toHaveBeenCalled();
       expect(agentRunService.execute).not.toHaveBeenCalled();
@@ -527,7 +534,7 @@ describe('PublishNotionDraftUsecase', () => {
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
-        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n코드 예시: 0개\n문체 지표: 문장 1개 · 평균 13자 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 요체 100% · 종결체교대 0% · 금지접속사 0회 · 줄표 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 같은크기 100% · 짧은문장 없는 문단 0개\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n구조(원문→익명화→편집→최종): 글자 21→26→26→34 · 헤딩 1→1→1→1 · 인용 0→0→0→0 · 링크 0→0→0→0 · 코드 0→0→0→0\n코드 예시: 0개\n문체 지표: 문장 1개 · 평균 13자 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 요체 100% · 종결체교대 0% · 금지접속사 0회 · 줄표 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 같은크기 100% · 짧은문장 없는 문단 0개\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
       payload: {
         pageId: draft.pageId,
         path: 'src/content/posts/2026-08-19-shared-database-migration.md',
@@ -1517,5 +1524,122 @@ describe('PublishNotionDraftUsecase', () => {
 
       expect(usecase.isPublishConfigured()).toBe(false);
     });
+  });
+});
+
+describe('단계 경계 계측', () => {
+  // 인용·헤딩이 통째로 사라져도 글자 수 가드는 통과한다. 그 손실이 어느 단계에서 났는지
+  // 승인 카드와 원장 어디에도 남지 않아, 사후에 유도로만 좁힐 수 있었다.
+  const 원문 = [
+    '# 캐시 흐름',
+    '',
+    '> 인용 첫 줄',
+    '> 인용 둘째 줄',
+    '',
+    '자세한 내용은 https://developer.mozilla.org 를 봤습니다.',
+    '',
+    '## 정리',
+    '',
+    '읽어보니 정리가 되었습니다.',
+  ].join('\n');
+  // 편집이 인용 두 줄과 헤딩 하나를 지운 판.
+  const 편집본 = [
+    '# 캐시 흐름',
+    '',
+    '자세한 내용은 https://developer.mozilla.org 를 봤습니다.',
+    '',
+    '읽어보니 정리가 되었습니다.',
+  ].join('\n');
+
+  const buildForStages = () =>
+    buildUsecase({
+      markdown: 원문,
+      completionText: JSON.stringify({
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: 원문,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: 편집본,
+      }),
+    });
+
+  it('승인 카드에 단계별 구조 수치를 한 줄로 적는다', async () => {
+    const { usecase, createPreview } = buildForStages();
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const previewText = createPreview.execute.mock.calls[0][0]
+      .previewText as string;
+    const 구조줄 = previewText
+      .split('\n')
+      .find((line) => line.startsWith('구조('));
+    expect(구조줄).toBeDefined();
+    expect(구조줄).toContain('구조(원문→익명화→편집→최종)');
+    // 편집 단계에서 인용 2줄이 사라진 것이 그대로 읽혀야 한다.
+    expect(구조줄).toContain('인용 2→2→0→0');
+    expect(구조줄).toContain('헤딩 2→2→1→1');
+  });
+
+  it('원장 output 에 단계별 수치를 남긴다 (본문은 담지 않는다)', async () => {
+    const { usecase, runOutputs } = buildForStages();
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const stages = (runOutputs[0] as { stages: Array<Record<string, unknown>> })
+      .stages;
+    expect(stages.map((stage) => stage.stage)).toEqual([
+      '원문',
+      '익명화',
+      '편집',
+      '최종',
+    ]);
+    expect(stages.map((stage) => stage.quotes)).toEqual([2, 2, 0, 0]);
+    // 숫자만 담는다 — 단계별 본문을 담으면 원장이 같은 글 네 벌로 부푼다.
+    for (const stage of stages) {
+      expect(Object.keys(stage).sort()).toEqual([
+        'chars',
+        'codeBlocks',
+        'headings',
+        'links',
+        'quotes',
+        'stage',
+      ]);
+    }
+  });
+
+  // 과삭제로 끊긴 회차야말로 무엇이 사라졌는지 알아야 하는 회차다(실측 통과율 1/4).
+  // 이 경로는 예외로 끊겨 원장에 `output: { error }` 만 남으므로, 수치는 메시지에 실린다.
+  it('과삭제로 끊긴 회차는 실패 메시지에 편집 단계까지의 수치를 싣는다', async () => {
+    const 긴원문 = ['# 제목', '', '> 인용', '', '가'.repeat(400)].join('\n');
+    const { usecase } = buildUsecase({
+      markdown: 긴원문,
+      completionText: JSON.stringify({
+        slug: 'over-trim',
+        description: '과삭제 사례',
+        body: 긴원문,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'over-trim',
+        description: '과삭제 사례',
+        body: '# 제목\n\n가',
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toThrow(
+      // 인용 1줄이 편집에서 사라진 것까지 실패 기록에 남는다 — 글자 수 두 개만으로는
+      // 무엇을 잃었는지 알 수 없었다.
+      /미만으로 줄었습니다 \(\d+자 → \d+자\)\. 구조\(원문→익명화→편집\): .*인용 1→1→0/,
+    );
   });
 });

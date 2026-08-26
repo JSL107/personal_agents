@@ -20,8 +20,10 @@ import {
 import {
   CODE_MASK_PATTERN,
   countCodeMaskOccurrences,
+  countMarkdownStructure,
   extractFencedCodeBlocks,
   HumanizeMarkdownResult,
+  MarkdownStructureCounts,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
 } from '../../../humanize/domain/markdown-blocks';
@@ -43,6 +45,8 @@ import { BlogException } from '../domain/blog.exception';
 import {
   BlogGithubPublishPayload,
   BlogPublishCandidate,
+  BlogStageStructure,
+  buildBlogRunOutput,
   PublishNotionDraftInput,
   PublishNotionDraftResult,
 } from '../domain/blog.type';
@@ -106,9 +110,23 @@ interface PublishCandidateContext {
 // 본문 절반이 사라지는 것은 "정리" 가 아니라 사고다.
 const MIN_EDITED_BODY_RATIO = 0.6;
 
+// 카드에 찍을 축. 라벨과 키를 한 자리에 둬 표시 순서와 값이 갈리지 않게 한다.
+const STRUCTURE_AXES: ReadonlyArray<{
+  label: string;
+  key: keyof MarkdownStructureCounts;
+}> = [
+  { label: '글자', key: 'chars' },
+  { label: '헤딩', key: 'headings' },
+  { label: '인용', key: 'quotes' },
+  { label: '링크', key: 'links' },
+  { label: '코드', key: 'codeBlocks' },
+];
+
 interface BuiltPublishCandidate {
   candidate: BlogPublishCandidate;
   modelUsed: string;
+  // 도달한 단계까지만 담긴다 — 보류·차단으로 끊긴 회차도 거기까지의 손실을 남긴다.
+  stages: BlogStageStructure[];
 }
 
 @Injectable()
@@ -156,7 +174,11 @@ export class PublishNotionDraftUsecase {
         const candidate = built.candidate;
         if (candidate.status !== 'ready') {
           const result: PublishNotionDraftResult = candidate;
-          return { result, modelUsed: built.modelUsed, output: result };
+          return {
+            result,
+            modelUsed: built.modelUsed,
+            output: buildBlogRunOutput(result, built.stages),
+          };
         }
         const preview = await this.createPreview.execute({
           slackUserId: input.slackUserId,
@@ -175,7 +197,11 @@ export class PublishNotionDraftUsecase {
           path: candidate.path,
           content: candidate.content,
         };
-        return { result, modelUsed: built.modelUsed, output: result };
+        return {
+          result,
+          modelUsed: built.modelUsed,
+          output: buildBlogRunOutput(result, built.stages),
+        };
       },
     });
   }
@@ -184,7 +210,7 @@ export class PublishNotionDraftUsecase {
   // 저녁마다 도는 익명화 호출이 원장(실패율·소요시간·쿼터)에 잡힌다.
   async buildPublishCandidate(
     input: PublishNotionDraftInput,
-  ): Promise<{ candidate: BlogPublishCandidate; modelUsed: string }> {
+  ): Promise<BuiltPublishCandidate> {
     return this.buildPublishCandidateWithContext(
       input,
       this.getPublishCandidateContext(),
@@ -207,6 +233,7 @@ export class PublishNotionDraftUsecase {
       return {
         candidate: { status: 'empty', message: '발행할 초안이 없습니다.' },
         modelUsed: 'deterministic',
+        stages: [],
       };
     }
 
@@ -229,6 +256,7 @@ export class PublishNotionDraftUsecase {
           message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 발행 승인 카드가 아직 열려 있습니다. 그 카드를 처리하면 다음 초안으로 넘어갑니다.`,
         },
         modelUsed: 'deterministic',
+        stages: [],
       };
     }
 
@@ -240,6 +268,13 @@ export class PublishNotionDraftUsecase {
         status: DomainStatus.BAD_REQUEST,
       });
     }
+
+    // 단계마다 구조를 센다. **모델에 보내는 `masked` 가 아니라 원문을 기준선으로** 삼는다 —
+    // 마스킹은 코드블록을 한 줄 표식으로 접어서 글자 수를 크게 줄이므로, 그 값을 기준선으로
+    // 쓰면 뒤 단계의 손실률이 조용히 낮게 나온다.
+    const stages: BlogStageStructure[] = [
+      { stage: '원문', ...countMarkdownStructure(markdown) },
+    ];
 
     // 공개 프로젝트 계약에서는 코드블록을 표식으로 가려 보낸다. 그 계약은 이미 "코드블록 안의
     // 코드·명령어·설정" 을 보존 대상으로 두는데 프롬프트만으로는 지켜지지 않았다 — 실측하면
@@ -288,6 +323,10 @@ export class PublishNotionDraftUsecase {
     // 초안에 코드가 아예 없었기 때문이고, 확장 프롬프트가 코드 예시를 요구하기 시작하면
     // 이 구멍으로 실제 코드가 지나간다.
     this.assertCodeBlocksPreserved(target, markdown, anonymized.body, '익명화');
+    stages.push({
+      stage: '익명화',
+      ...countMarkdownStructure(anonymized.body),
+    });
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
     const edited = await this.editDraft(target, anonymized, context);
@@ -302,6 +341,7 @@ export class PublishNotionDraftUsecase {
           message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 은 발행하지 않고 보류로 옮겼습니다 — ${this.maskForbidden(edited.reason, context.forbiddenTerms)}`,
         },
         modelUsed: completion.modelUsed,
+        stages,
       };
     }
     // 편집이 코드를 바꾸지 않았는지 대조한다. 프롬프트로만 금지하면 집행이 없다 —
@@ -312,14 +352,28 @@ export class PublishNotionDraftUsecase {
       edited.body,
       '편집',
     );
-    this.assertNotOverTrimmed(target, anonymized.body, edited.body);
+    // 가드보다 **먼저** 센다. 뒤에 두면 과삭제로 끊긴 회차에는 편집 수치가 아예 없는데,
+    // 그 회차야말로 무엇이 사라졌는지 알아야 하는 회차다(실측 통과율 1/4). 예외가 나가면
+    // 호출부는 배열을 받지 못하므로 — 원장에는 `output: { error }` 만 남는다 — 가드가
+    // 수치를 **메시지에 실어** 보낸다.
+    stages.push({ stage: '편집', ...countMarkdownStructure(edited.body) });
+    this.assertNotOverTrimmed(target, anonymized.body, edited.body, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
     const humanized = await humanizeMarkdownProse(edited.body, this.humanizer);
 
     // 윤문이 문단을 크게 줄일 수도 있어 **최종 발행본 기준으로 한 번 더** 본다.
     // 편집본만 보고 통과시키면 최종본이 원문의 60% 미만인 채 발행될 수 있다.
-    this.assertNotOverTrimmed(target, anonymized.body, humanized.markdown);
+    stages.push({
+      stage: '최종',
+      ...countMarkdownStructure(humanized.markdown),
+    });
+    this.assertNotOverTrimmed(
+      target,
+      anonymized.body,
+      humanized.markdown,
+      stages,
+    );
 
     // 제목·주소·요약의 정본은 편집 단계다. 셋을 한 단계에서 정해야 제목과 URL 이 어긋나지 않는다.
     const post = buildAstroPost({
@@ -354,6 +408,7 @@ export class PublishNotionDraftUsecase {
           hits,
         },
         modelUsed: completion.modelUsed,
+        stages,
       };
     }
 
@@ -363,6 +418,7 @@ export class PublishNotionDraftUsecase {
       edited,
       humanized,
       context.forbiddenTerms,
+      stages,
     );
     const payload: BlogGithubPublishPayload = {
       pageId: target.pageId,
@@ -385,6 +441,7 @@ export class PublishNotionDraftUsecase {
         content: post.content,
       },
       modelUsed: completion.modelUsed,
+      stages,
     };
   }
 
@@ -517,6 +574,7 @@ export class PublishNotionDraftUsecase {
     edited: PublishableBlogDraft,
     humanized: HumanizeMarkdownResult,
     forbiddenTerms: string[],
+    stages: readonly BlogStageStructure[],
   ): string {
     const lines = ['*GitHub 블로그 발행 미리보기*', `제목: ${edited.title}`];
     // 편집이 제목을 바꿨으면 초안 제목도 함께 보여준다 — 무엇이 바뀌었는지 모르고 ✅ 를
@@ -533,7 +591,7 @@ export class PublishNotionDraftUsecase {
       `경로: \`${path}\``,
       `요약: ${edited.description}`,
       `Notion: ${draft.url}`,
-      ...this.buildStageNote(humanized, draft),
+      ...this.buildStageNote(humanized, draft, stages),
       '',
       '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
     );
@@ -557,6 +615,7 @@ export class PublishNotionDraftUsecase {
   private buildStageNote(
     humanized: HumanizeMarkdownResult,
     draft: NotionDraftPage,
+    stages: readonly BlogStageStructure[],
   ): string[] {
     const stage = ((): string => {
       if (humanized.proseParagraphs === 0) {
@@ -576,9 +635,25 @@ export class PublishNotionDraftUsecase {
     // 지표는 판정이 아니라 관측값이다 — 차단 임계값은 발행본이 몇 편 쌓인 뒤에 정한다.
     return [
       stage,
+      this.buildStructureNote(stages),
       this.buildCodeBlockNote(humanized.markdown, draft),
       formatKoreanStyleMetrics(measureKoreanStyle(humanized.markdown)),
     ];
+  }
+
+  // 단계마다 구조가 어떻게 줄었는지 한 줄로 보인다.
+  //
+  //   구조(원문→익명화→편집→최종): 글자 11742→11623→7098→7050 · 인용 7→7→0→0 · …
+  //
+  // 축을 세로가 아니라 **가로 화살표**로 늘어놓는 이유: 승인자가 보려는 것은 절대값이 아니라
+  // "어디서 떨어졌나" 다. `인용 7→7→0→0` 한 줄이면 편집 단계가 지웠다는 것이 바로 읽힌다.
+  // 이 조사 자체가, 승인 카드에 `인용 0` 이 보였다면 필요하지 않았을 일이다.
+  private buildStructureNote(stages: readonly BlogStageStructure[]): string {
+    const trail = STRUCTURE_AXES.map(
+      ({ label, key }) =>
+        `${label} ${stages.map((counts) => counts[key]).join('→')}`,
+    ).join(' · ');
+    return `구조(${stages.map((counts) => counts.stage).join('→')}): ${trail}`;
   }
 
   // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
@@ -718,10 +793,21 @@ export class PublishNotionDraftUsecase {
     });
   }
 
+  // 실패 메시지에 단계별 구조를 함께 싣는다. 이 경로는 예외로 끊기므로 원장에 남는 것이
+  // `output: { error }` 하나뿐이고(agent-run.service.ts), 지금까지 그 문자열에는 글자 수
+  // 두 개밖에 없었다 — 통과율 1/4 인 파이프라인에서 **실패 회차가 가장 많은데** 그 회차의
+  // 인용·헤딩 손실은 어디에도 기록되지 않았다.
+  //
+  // autopilot digest 는 이 메시지를 200자로 자른다(autopilot.orchestrator.ts). 실측 제목으로
+  // 조립하면 163자라 지금은 다 보이지만, 제목이 길면 뒤 축부터 잘린다. 전문은 원장에 남는다.
+  //
+  // 앞부분의 `(N자 → M자)` 는 그대로 둔다 — 과거 실패 회차를 훑는 조회가 그 형태를 정규식으로
+  // 파싱한다. 덧붙이기만 하고 기존 형태를 건드리지 않는다.
   private assertNotOverTrimmed(
     draft: NotionDraftPage,
     before: string,
     after: string,
+    stages: readonly BlogStageStructure[],
   ): void {
     const beforeLength = before.trim().length;
     const afterLength = after.trim().length;
@@ -732,7 +818,9 @@ export class PublishNotionDraftUsecase {
       code: BlogErrorCode.EDIT_TOO_SHORT,
       message: `'${draft.title}' 편집 결과가 원문의 ${Math.round(
         MIN_EDITED_BODY_RATIO * 100,
-      )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자).`,
+      )}% 미만으로 줄었습니다 (${beforeLength}자 → ${afterLength}자). ${this.buildStructureNote(
+        stages,
+      )}`,
       status: DomainStatus.BAD_GATEWAY,
     });
   }

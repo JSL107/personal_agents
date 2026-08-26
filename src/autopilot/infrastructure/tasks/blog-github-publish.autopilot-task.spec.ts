@@ -1,7 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 
 import { PublishNotionDraftUsecase } from '../../../agent/blog/application/publish-notion-draft.usecase';
-import { BlogPublishCandidate } from '../../../agent/blog/domain/blog.type';
+import {
+  BlogPublishCandidate,
+  BlogStageStructure,
+} from '../../../agent/blog/domain/blog.type';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
@@ -35,18 +38,24 @@ const buildTask = (options: {
   enabled?: string;
   candidate?: BlogPublishCandidate;
   configured?: boolean;
+  stages?: BlogStageStructure[];
 }) => {
   const publishNotionDraft = {
     isPublishConfigured: jest.fn().mockReturnValue(options.configured ?? true),
     buildPublishCandidate: jest.fn().mockResolvedValue({
       candidate: options.candidate ?? READY_CANDIDATE,
       modelUsed: 'codex-cli',
+      // 실제 usecase 는 항상 배열을 돌려준다. 목이 이 키를 빼면 형태가 갈려, 배선이 깨져도
+      // 초록이 나온다.
+      stages: options.stages ?? [],
     }),
   } as unknown as jest.Mocked<PublishNotionDraftUsecase>;
   // 실제 AgentRunService 처럼 run() 을 실행해 결과를 그대로 돌려준다.
+  const runOutputs: unknown[] = [];
   const agentRunService = {
     execute: jest.fn().mockImplementation(async (input) => {
       const execution = await input.run({ agentRunId: 91 });
+      runOutputs.push(execution.output);
       return {
         result: execution.result,
         modelUsed: execution.modelUsed,
@@ -70,6 +79,7 @@ const buildTask = (options: {
     ),
     publishNotionDraft,
     agentRunService,
+    runOutputs,
   };
 };
 
@@ -211,6 +221,67 @@ describe('BlogGithubPublishAutopilotTask', () => {
             : undefined,
         previewText: 'GitHub 블로그 발행 미리보기',
       },
+    });
+  });
+});
+
+// 저녁 발행은 이 task 로만 돈다 — usecase 의 `execute` 는 수동 `/blog-publish` 전용이다.
+// 계측을 usecase 쪽에만 넣으면 매일 도는 회차가 통째로 빠진다.
+describe('BlogGithubPublishAutopilotTask — 단계 경계 계측', () => {
+  it('단계별 구조 수치를 원장 output 에 남긴다', async () => {
+    const stages: BlogStageStructure[] = [
+      {
+        stage: '원문',
+        chars: 11_742,
+        headings: 18,
+        quotes: 7,
+        links: 9,
+        codeBlocks: 4,
+      },
+      {
+        stage: '익명화',
+        chars: 11_623,
+        headings: 18,
+        quotes: 7,
+        links: 9,
+        codeBlocks: 4,
+      },
+      {
+        stage: '편집',
+        chars: 7_098,
+        headings: 9,
+        quotes: 0,
+        links: 7,
+        codeBlocks: 4,
+      },
+      {
+        stage: '최종',
+        chars: 7_050,
+        headings: 9,
+        quotes: 0,
+        links: 7,
+        codeBlocks: 4,
+      },
+    ];
+    const { task, runOutputs } = buildTask({ stages });
+
+    await task.run(CONTEXT);
+
+    expect(runOutputs[0]).toEqual({ ...READY_CANDIDATE, stages });
+  });
+
+  // 빈 배열을 키로 남기면 '재지 않았다' 와 '0 이었다' 가 같은 값이 되어, 원장을 훑는 쪽이
+  // 계측 누락을 손실로 읽는다.
+  it('잰 단계가 없으면 stages 키를 만들지 않는다', async () => {
+    const { task, runOutputs } = buildTask({
+      candidate: { status: 'empty', message: '발행할 초안이 없습니다.' },
+    });
+
+    await task.run(CONTEXT);
+
+    expect(runOutputs[0]).toEqual({
+      status: 'empty',
+      message: '발행할 초안이 없습니다.',
     });
   });
 });

@@ -224,3 +224,72 @@ export const restoreFencedCodeBlocks = (
     (whole, id: string) => byId.get(id) ?? whole,
   );
 };
+
+// 단계 경계 계측 — 편집이 무엇을 덜어냈는지 **글자 수 말고 구조로** 본다.
+//
+// 왜 필요한가: 편집 산출물이 원문의 60% 밑으로 줄면 끊는 가드는 있지만(글자 수 비율),
+// 인용 7줄과 헤딩 9개가 통째로 사라져도 200자 남짓이라 그 문자 게이트에는 보이지 않는다.
+// 실제로 그렇게 통과한 발행본이 나왔고, 어느 단계에서 사라졌는지 사후에 알 방법이 없었다.
+// 그래서 판정이 아니라 관측이다 — 차단하지 않고 단계마다 세어 카드와 원장에 남긴다.
+export type MarkdownStructureCounts = {
+  // `assertNotOverTrimmed` 와 같은 기준(`trim().length`)으로 잰다 — 두 자리가 갈리면
+  // 카드에 적힌 수와 가드가 판정한 수가 달라 승인자가 어느 쪽을 믿을지 모른다.
+  chars: number;
+  headings: number;
+  // **줄 수**로 센다(블록 수가 아니라). 인용 한 덩어리가 통째로 빠졌는지, 안에서 몇 줄만
+  // 빠졌는지를 블록 수로는 가를 수 없다.
+  quotes: number;
+  // 마크다운 링크·맨 URL 을 가리지 않고 `http(s)` 출현 수로 센다. `[MDN](https://…)` 도
+  // 맨 URL 도 하나씩 잡힌다. 상대 경로 링크는 세지 않는다 — 블로그 초안에는 거의 없다.
+  //
+  // **인라인 링크만 세지 않는 이유**(실측): 라이브 발행본 하나를 재면 인라인 `[…](…)` 는
+  // 9 개인데 `http` 출현은 21 개다. 차이 12 개는 글 끝 참고문헌 목록의 맨 URL 이다. 인라인만
+  // 세면 그 목록이 통째로 사라져도 `9→9` 로 아무 변화가 보이지 않는다 — 문자 게이트가 인용
+  // 7 줄을 못 본 것과 같은 종류의 눈먼 자리를 계측에 다시 만드는 셈이다.
+  //
+  // 그래서 앞선 조사 메모의 `링크 9 개` 와 이 수는 **다른 것을 센 값**이다. 뒤에 두 수를
+  // 나란히 놓고 비교하지 말 것.
+  links: number;
+  codeBlocks: number;
+};
+
+const HEADING_LINE_PATTERN = /^\s{0,3}#{1,6}\s/;
+const QUOTE_LINE_PATTERN = /^\s{0,3}>/;
+const LINK_PATTERN = /https?:\/\//g;
+
+export const countMarkdownStructure = (
+  markdown: string,
+): MarkdownStructureCounts => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  // 코드블록 안의 `# 주석` 과 `> ` 프롬프트는 헤딩·인용이 아니다. 펜스 인식은 이 파일의
+  // 스캐너 하나만 쓴다 — 갈리면 한쪽만 고쳐질 때 계측이 조용히 틀린다.
+  const codeLines = new Set<number>();
+  let codeBlocks = 0;
+  for (const block of blocks) {
+    if (!FENCE_PATTERN.test(lines[block.startLine])) {
+      continue;
+    }
+    codeBlocks += 1;
+    for (let line = block.startLine; line <= block.endLine; line += 1) {
+      codeLines.add(line);
+    }
+  }
+
+  let headings = 0;
+  let quotes = 0;
+  let links = 0;
+  lines.forEach((line, index) => {
+    if (codeLines.has(index)) {
+      return;
+    }
+    if (HEADING_LINE_PATTERN.test(line)) {
+      headings += 1;
+    }
+    if (QUOTE_LINE_PATTERN.test(line)) {
+      quotes += 1;
+    }
+    links += line.match(LINK_PATTERN)?.length ?? 0;
+  });
+
+  return { chars: markdown.trim().length, headings, quotes, links, codeBlocks };
+};
