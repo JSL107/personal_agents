@@ -107,7 +107,9 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 과거 작업을 pgvector 로 의미 검색하고, 오래된 기록일수록 점수를 낮춘다(`@huggingface/transformers`, Xenova/multilingual-e5-small 384dim).
 
-주로 세 곳이 읽어 간다. **Intent Classifier** 는 비슷한 과거 작업을 예시로 앞에 붙여 분류 정확도를 올린다. **Code Reviewer** 는 `/review-feedback ... reject` 로 기각당한 리뷰를 "이렇게 하지 말라"는 예시로 쌓아 다음 리뷰 프롬프트에 넣는다. **PM** 은 비슷한 과거 계획을 찾아 오늘 계획에 참고로 붙인다 — 한국어는 전문검색 매칭이 약해 의미검색 쪽을 우선한다.
+주로 두 곳이 읽어 간다. **Intent Classifier** 는 비슷한 과거 작업을 예시로 앞에 붙여 분류 정확도를 올린다. **PM** 은 비슷한 과거 계획을 찾아 오늘 계획에 참고로 붙인다 — 한국어는 전문검색 매칭이 약해 의미검색 쪽을 우선한다.
+
+코드 리뷰의 기각 학습은 여기를 쓰지 않는다. 의미검색으로 사례를 찾아 넣어도 행동이 바뀌지 않아 규약 경로로 옮겼다(아래 «스스로 배우는 코드 리뷰»).
 
 </td></tr>
 <tr><td width="50%" valign="top">
@@ -145,7 +147,7 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다.
 
-기각된 지적은 두 방향으로 되돌아온다. episodic memory 에 "이렇게 하지 말라"는 예시로 쌓이고, 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다.
+기각된 지적은 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다. 사례를 쌓던 episodic 경로는 읽는 곳이 사라져 걷어냈다.
 
 </td></tr>
 </table>

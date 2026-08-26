@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ReviewReplyJudgeModule } from '../agent/review-reply-judge/review-reply-judge.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
-import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { HarvestReviewSignalsUsecase } from './application/harvest-review-signals.usecase';
@@ -20,7 +19,6 @@ import { PrReviewPublishModule } from './pr-review-publish.module';
     CodeReviewerModule,
     AgentRunModule,
     ReviewReplyJudgeModule,
-    EpisodicMemoryModule,
     PrReviewPublishModule,
   ],
   providers: [SweepPrReviewsUsecase, HarvestReviewSignalsUsecase],

@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 
 import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
-import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import {
   GithubClientPort,
   ReviewThread,
@@ -100,19 +99,14 @@ const buildDependencies = ({
   } satisfies jest.Mocked<PrReviewFindingRepositoryPort>;
   const judge = { execute: jest.fn().mockResolvedValue([]) };
   const resolutionJudge = { execute: jest.fn().mockResolvedValue([]) };
-  const episodic = {
-    record: jest.fn().mockResolvedValue(undefined),
-    searchRelevant: jest.fn(),
-  };
   const usecase = new HarvestReviewSignalsUsecase(
     config as unknown as ConfigService,
     github as unknown as GithubClientPort,
     repository,
     judge as unknown as JudgeReviewReplyUsecase,
     resolutionJudge as unknown as JudgeFindingResolutionUsecase,
-    episodic as unknown as EpisodicMemoryPort,
   );
-  return { usecase, github, repository, judge, resolutionJudge, episodic };
+  return { usecase, github, repository, judge, resolutionJudge };
 };
 
 describe('HarvestReviewSignalsUsecase', () => {
@@ -136,7 +130,7 @@ describe('HarvestReviewSignalsUsecase', () => {
   });
 
   it('ACKED/REJECTED/STALE을 전이하고 PRRC 대신 조회한 PRRT를 저장한다', async () => {
-    const { usecase, github, repository, episodic } = buildDependencies();
+    const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([
       card(),
       card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
@@ -194,15 +188,6 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_555');
     expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_556');
     expect(github.resolveReviewThread).not.toHaveBeenCalledWith('PRRT_557');
-    expect(episodic.record).toHaveBeenCalledTimes(1);
-    expect(episodic.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: 'pr_review',
-        agentType: 'CODE_REVIEWER',
-        agentRunId: 7,
-        content: '트랜잭션 밖에서 저장한다',
-      }),
-    );
   });
 
   it('owner와 다른 PR 작성자의 THUMBS_UP도 ACKED로 반영한다', async () => {
@@ -253,37 +238,8 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(repository.markThreadResolved).not.toHaveBeenCalled();
   });
 
-  it('ACKED 카드는 episodic memory에 절대 적재하지 않는다', async () => {
-    const { usecase, github, repository, episodic } = buildDependencies();
-    repository.findOpenPostedCards.mockResolvedValue([card()]);
-    github.listReviewThreads.mockResolvedValue({
-      pullRequestAuthorLogin: null,
-      pullRequestState: 'OPEN',
-      truncated: false,
-      threads: [
-        reviewThread({
-          reactions: [
-            {
-              content: 'THUMBS_UP',
-              userLogin: 'owner',
-              createdAt: '2026-07-31T01:00:00Z',
-            },
-          ],
-        }),
-      ],
-    });
-
-    await usecase.execute();
-
-    expect(repository.markDecided).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'ACKED' }),
-    );
-    expect(episodic.record).not.toHaveBeenCalled();
-  });
-
-  it('THUMBS_DOWN과 owner 답글을 기각 이유와 episodic content에 보존한다', async () => {
-    const { usecase, github, repository, judge, episodic } =
-      buildDependencies();
+  it('THUMBS_DOWN과 owner 답글을 기각 이유로 보존한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestAuthorLogin: null,
@@ -320,47 +276,10 @@ describe('HarvestReviewSignalsUsecase', () => {
       rejectReason: '의도된 동작이라 변경하지 않습니다',
       githubThreadNodeId: 'PRRT_555',
     });
-    expect(episodic.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content:
-          '트랜잭션 밖에서 저장한다\n(기각 이유: 의도된 동작이라 변경하지 않습니다)',
-      }),
-    );
-  });
-
-  it('기각 학습 신호 적재가 실패하면 카드를 확정하지 않고 스레드도 닫지 않는다', async () => {
-    // REJECTED 로 먼저 확정하면 다음 회차 조회(OPEN 만)에서 빠져 재시도가 불가능하다.
-    // 확정을 미뤄야 다음 스윕이 같은 반응을 다시 읽어 적재를 재시도할 수 있다.
-    const { usecase, github, repository, episodic } = buildDependencies();
-    episodic.record.mockRejectedValue(new Error('DB 연결 끊김'));
-    repository.findOpenPostedCards.mockResolvedValue([card()]);
-    github.listReviewThreads.mockResolvedValue({
-      pullRequestAuthorLogin: null,
-      pullRequestState: 'OPEN',
-      truncated: false,
-      threads: [
-        reviewThread({
-          reactions: [
-            {
-              content: 'THUMBS_DOWN',
-              userLogin: 'owner',
-              createdAt: '2026-07-31T01:00:00Z',
-            },
-          ],
-        }),
-      ],
-    });
-
-    const outcome = await usecase.execute();
-
-    expect(outcome).toMatchObject({ rejected: 0, skipped: 1, resolved: 0 });
-    expect(repository.markDecided).not.toHaveBeenCalled();
-    expect(github.resolveReviewThread).not.toHaveBeenCalled();
-    expect(repository.markThreadResolved).not.toHaveBeenCalled();
   });
 
   it('이미 resolve된 스레드도 owner 기각 신호를 먼저 반영한다', async () => {
-    const { usecase, github, repository, episodic } = buildDependencies();
+    const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestAuthorLogin: null,
@@ -389,7 +308,6 @@ describe('HarvestReviewSignalsUsecase', () => {
       rejectReason: null,
       githubThreadNodeId: 'PRRT_555',
     });
-    expect(episodic.record).toHaveBeenCalledTimes(1);
     expect(github.resolveReviewThread).not.toHaveBeenCalled();
   });
 
@@ -449,9 +367,8 @@ describe('HarvestReviewSignalsUsecase', () => {
       expect(outcome).toMatchObject({ fixed: 0, skipped: 1 });
     });
 
-    it('겹치고 FIXED 판정이면 확정하고 스레드를 닫는다 — episodic 은 적재하지 않는다', async () => {
-      // FIXED 는 채택 쪽이다. 적재하면 좋은 지적을 피하도록 역학습한다.
-      const { usecase, github, repository, resolutionJudge, episodic } =
+    it('겹치고 FIXED 판정이면 확정하고 스레드를 닫는다', async () => {
+      const { usecase, github, repository, resolutionJudge } =
         buildDependencies();
       repository.findOpenPostedCards.mockResolvedValue([card({ line: 42 })]);
       github.listReviewThreads.mockResolvedValue(buildNoReactionThread());
@@ -479,7 +396,6 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejectReason: null,
         githubThreadNodeId: 'PRRT_555',
       });
-      expect(episodic.record).not.toHaveBeenCalled();
     });
 
     it('UNCLEAR 면 OPEN 을 유지한다 — 억지 판정보다 미결이 안전하다', async () => {
@@ -670,9 +586,8 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(repository.markThreadResolved).toHaveBeenCalledWith(1);
   });
 
-  it('owner 답글은 PR 단위 1회 배치 판정하고 기각 이유를 적재한다', async () => {
-    const { usecase, github, repository, judge, episodic } =
-      buildDependencies();
+  it('owner 답글은 PR 단위 1회 배치 판정하고 기각 이유를 저장한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([
       card(),
       card({ id: 2, githubCommentId: '556', fingerprint: 'fp-2' }),
@@ -711,12 +626,6 @@ describe('HarvestReviewSignalsUsecase', () => {
       rejectReason: '의도된 동작',
       githubThreadNodeId: 'PRRT_556',
     });
-    expect(episodic.record).toHaveBeenCalledTimes(1);
-    expect(episodic.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: '트랜잭션 밖에서 저장한다\n(기각 이유: 의도된 동작)',
-      }),
-    );
   });
 
   it('UNCLEAR 판정은 judged 가 아니라 skipped 로만 센다', async () => {
