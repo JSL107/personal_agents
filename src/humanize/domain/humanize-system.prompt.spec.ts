@@ -122,6 +122,19 @@ describe('개인 블로그 목소리 프롬프트', () => {
 
   // "짧은 문장을 문단마다 하나 이상" 이 호흡을 끊었다. 발행본이 평균 33.2자에 짧은 문장 30% 였고
   // 사용자 판정은 "호흡이 너무 짧다" 였다(사용자가 쓴 글은 평균 44.7자). 강제를 걷고 기본 길이를 준다.
+  // 기본 호흡(40~60자)을 준 뒤에도 "이유는 문장을 끊고 뒤에 던져라" 가 같은 블록에 남아 있었다.
+  // 한쪽은 한 문장으로 가라 하고 한쪽은 끊으라 해서 모델에 상충하는 명령이 됐다(리뷰 MUST_FIX).
+  // 구어 어미 지시는 살리고 끊으라는 부분만 치환했다. 되살아나면 긴 호흡이 다시 무너진다.
+  it('이유를 문장에서 끊으라는 지시를 남기지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain(
+      '이유는 문장을 끊고 뒤에 던져라',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '어미를 넣겠다고 문장을 끊지 마라',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('~거든요');
+  });
+
   it('기본 문장 길이를 주고 문단마다 짧은 문장을 강제하지 않는다', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('40~60자');
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('잘게 끊지 마라');
