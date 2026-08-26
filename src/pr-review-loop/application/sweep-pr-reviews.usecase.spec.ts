@@ -610,12 +610,18 @@ describe('SweepPrReviewsUsecase', () => {
   // 지적 0건이면 게시할 카드가 없어 PR 이 완전히 조용해진다 — "깨끗하다" 와 "리뷰가 돌긴 했나"
   // 가 구분되지 않으므로, 검토했다는 사실만 코멘트로 남는지 확인한다.
   describe('지적 0건 안내 코멘트', () => {
+    // 다섯 목록을 모두 비운다 — findings 만 비우면 3배열에 지적이 남아 "지적 없음" 이
+    // 성립하지 않는다(hasNoReviewFindings).
     const noFindings = (): void => {
       reviewUsecase.execute.mockResolvedValue({
         ...REVIEW_OUTCOME,
         result: {
           ...REVIEW_OUTCOME.result,
           summary: '요약 첫 줄\n요약 둘째 줄',
+          mustFix: [],
+          niceToHave: [],
+          missingTests: [],
+          reviewCommentDrafts: [],
           findings: [],
         },
       });
@@ -673,6 +679,30 @@ describe('SweepPrReviewsUsecase', () => {
 
       errorLog.mockRestore();
       warnLog.mockRestore();
+    });
+
+    // 파서는 findings 를 3배열에서만 파생시켜, 초안만 찬 응답이 findings 0 건으로 통과한다.
+    // 그 리뷰에 "지적 없음" 을 달면 실제 리뷰 결과와 정반대가 된다 — 침묵하는 편이 안전하다.
+    it('초안(reviewCommentDrafts)만 남은 응답에는 코멘트를 달지 않는다', async () => {
+      reviewUsecase.execute.mockResolvedValue({
+        ...REVIEW_OUTCOME,
+        result: {
+          ...REVIEW_OUTCOME.result,
+          mustFix: [],
+          niceToHave: [],
+          missingTests: [],
+          reviewCommentDrafts: [{ body: 'src/foo.ts:12 를 보세요' }],
+          findings: [],
+        },
+      });
+
+      const results = await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+      expect(results).toEqual([]);
     });
 
     it('findings 가 있으면 안내 코멘트를 달지 않는다', async () => {

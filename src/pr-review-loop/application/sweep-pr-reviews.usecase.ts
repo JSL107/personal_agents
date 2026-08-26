@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
   AgentRunStatus,
@@ -278,13 +279,17 @@ export class SweepPrReviewsUsecase {
         dryRun,
       });
       if (outcome.result.findings.length === 0) {
-        await this.commentNoFindings({
-          repo,
-          pullNumber,
-          prRef,
-          dryRun,
-          summary: outcome.result.summary,
-        });
+        // 게시할 카드는 없지만 "지적 없음" 을 단언할 수 있는지는 별개다 — 초안(reviewCommentDrafts)
+        // 만 찬 응답은 findings 가 비어도 지적이 있는 리뷰다(hasNoReviewFindings).
+        if (hasNoReviewFindings(outcome.result)) {
+          await this.commentNoFindings({
+            repo,
+            pullNumber,
+            prRef,
+            dryRun,
+            summary: outcome.result.summary,
+          });
+        }
         return null;
       }
       const published = await this.publishService.publish({
