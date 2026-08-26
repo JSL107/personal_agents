@@ -19,6 +19,8 @@ import {
   DEFAULT_NOON_REVIEW_TIMEZONE,
   DEFAULT_OPS_SUPERVISOR_CRON,
   DEFAULT_OPS_SUPERVISOR_TIMEZONE,
+  DEFAULT_PAPER_INTRADAY_STOP_CRON,
+  DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE,
   DEFAULT_PAPER_ORDER_FILL_CRON,
   DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
   DEFAULT_PAPER_RECOMMEND_CRON,
@@ -305,6 +307,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_PAPER_ORDER_FILL_CRON,
       timezone: DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 장중 손절. 체결 진입점 바로 뒤에 두는 독립 항목이다 — digestGroup 에 넣으면 그룹 첫 항목
+  // id 로 만드는 env override 키가 바뀌어, 이웃 항목의 기존 override 가 조용히 무시된다.
+  {
+    id: 'paper-intraday-stop',
+    taskId: 'paper-intraday-stop',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_PAPER_INTRADAY_STOP_CRON,
+      timezone: DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

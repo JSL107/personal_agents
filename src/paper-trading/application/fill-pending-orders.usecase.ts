@@ -6,6 +6,7 @@ import {
   MarketDataPort,
 } from '../../market-data/domain/port/market-data.port';
 import { PaperMarket, TradeSide } from '../domain/paper-account.type';
+import { getKstClock } from '../domain/trade-calendar';
 import {
   DuePaperOrderRecord,
   PaperTradingPrismaRepository,
@@ -46,16 +47,6 @@ export interface FillPendingOrdersResult {
   // 장 마감 후 체결가를 못 받아 한꺼번에 만료된 주문 수(종목 단위 식별 불가).
   bulkExpired: number;
 }
-
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-const getKstClock = (date: Date): { tradeDate: string; minutes: number } => {
-  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
-  return {
-    tradeDate: shifted.toISOString().slice(0, 10),
-    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
-  };
-};
 
 const parsePaperMarket = (value: string | null): PaperMarket | null => {
   if (value === 'KOSPI' || value === 'KOSDAQ' || value === 'KONEX') {
