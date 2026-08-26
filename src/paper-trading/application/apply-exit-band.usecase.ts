@@ -37,7 +37,7 @@ export interface ApplyExitBandResult {
 // 계좌 이름이 곧 전략명이다 (PAPER_RECOMMEND 가 LONG_TERM / SWING 으로 연다).
 // 규칙에서 나온 주문도 그 전략의 성적으로 집계돼야 채점이 한 계좌를 두 갈래로
 // 쪼개 보지 않는다. 수동 계좌(DEFAULT)는 전략이 없으므로 MANUAL 로 남긴다.
-const strategyOf = (accountName: string): TradeStrategy => {
+export const strategyOf = (accountName: string): TradeStrategy => {
   if (accountName === 'LONG_TERM' || accountName === 'SWING') {
     return accountName;
   }

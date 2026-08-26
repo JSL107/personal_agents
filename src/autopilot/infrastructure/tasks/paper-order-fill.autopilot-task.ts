@@ -111,10 +111,10 @@ const amountOf = (detail: PaperOrderFillDetail): number =>
 const totalAmount = (details: PaperOrderFillDetail[]): number =>
   details.reduce((sum, detail) => sum + amountOf(detail), 0);
 
-const formatQuantity = (quantity: string): string =>
+export const formatQuantity = (quantity: string): string =>
   Number(quantity).toLocaleString('ko-KR');
 
-const formatWon = (price: string): string =>
+export const formatWon = (price: string): string =>
   `${Math.round(Number(price)).toLocaleString('ko-KR')}원`;
 
 const formatMoney = (amount: number): string => {
