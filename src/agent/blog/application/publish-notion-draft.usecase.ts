@@ -14,6 +14,7 @@ import {
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeMarkdownProse } from '../../../humanize/application/humanize-markdown.adapter';
 import {
+  findKoreanStyleGaps,
   formatKoreanStyleMetrics,
   KOREAN_STYLE_TARGETS,
   measureKoreanStyle,
@@ -694,15 +695,28 @@ export class PublishNotionDraftUsecase {
       metrics.averageLength,
     );
     const retriedMetrics = measureKoreanStyle(retried.markdown);
-    if (retriedMetrics.averageLength <= metrics.averageLength) {
+    // 평균 하나로 판정하면 **되먹임이 제대로 작동한 결과가 곧 가드의 사각지대**가 된다.
+    // 짧은 문장을 합치면 평균과 최장이 함께 오르고, 문장을 이어 붙이는 과정에서 종결체가 한쪽으로
+    // 몰린다. 평균이 0.1자 올라가는 것만 보면 최장이 80자를 넘겨도, 종결체교대가 60%를 넘겨도
+    // 통과한다 — 하필 종결체교대는 이 파일이 의존하는 지표 중 **출처 의심 표본과 무관한 유일한
+    // 정량 기준**이다(`korean-style-metrics.ts` 의 `endingAlternationPercentMax` 주석).
+    // 가장 믿는 축을 팔아 가장 근거가 약한 축을 사는 거래가 된다.
+    //
+    // 그래서 갭 **개수**로 본다. 목표 밖 항목이 늘지 않았을 때만 재시도본을 쓴다.
+    const gapsBefore = findKoreanStyleGaps(metrics);
+    const gapsAfter = findKoreanStyleGaps(retriedMetrics);
+    if (
+      retriedMetrics.averageLength <= metrics.averageLength ||
+      gapsAfter.length > gapsBefore.length
+    ) {
       this.logger.log(
-        `호흡 되먹임 무효 — ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자, 첫 판을 쓴다`,
+        `호흡 되먹임 무효 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 목표 밖 ${gapsBefore.length}개 → ${gapsAfter.length}개, 첫 판을 쓴다`,
       );
       return first;
     }
 
     this.logger.log(
-      `호흡 되먹임 적용 — ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자`,
+      `호흡 되먹임 적용 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 목표 밖 ${gapsBefore.length}개 → ${gapsAfter.length}개`,
     );
     // 문단 계수는 첫 판 것을 쓴다. 재시도는 같은 문단을 한 번 더 다듬은 것이지 새로 고른 게
     // 아니라, 두 번째 계수를 카드에 적으면 "몇 문단이 윤문됐나" 가 실제보다 작게 읽힌다.
