@@ -1552,9 +1552,12 @@ describe('단계 경계 계측', () => {
     '',
     '읽어보니 정리가 되었습니다.',
   ].join('\n');
-  // 편집이 인용 두 줄과 헤딩 하나를 지운 판.
+  // 편집이 인용 한 줄과 헤딩 하나를 지운 판. **두 줄 다 지우지는 않는다** — 전부 소실은
+  // `assertQuotesNotWiped` 가 끊으므로 계측 표시를 보는 예시로 쓸 수 없다.
   const 편집본 = [
     '# 캐시 흐름',
+    '',
+    '> 인용 첫 줄',
     '',
     '자세한 내용은 https://developer.mozilla.org 를 봤습니다.',
     '',
@@ -1592,7 +1595,7 @@ describe('단계 경계 계측', () => {
     expect(구조줄).toBeDefined();
     expect(구조줄).toContain('구조(원문→익명화→편집→최종)');
     // 편집 단계에서 인용 2줄이 사라진 것이 그대로 읽혀야 한다.
-    expect(구조줄).toContain('인용 2→2→0→0');
+    expect(구조줄).toContain('인용 2→2→1→1');
     expect(구조줄).toContain('헤딩 2→2→1→1');
   });
 
@@ -1609,7 +1612,7 @@ describe('단계 경계 계측', () => {
       '편집',
       '최종',
     ]);
-    expect(stages.map((stage) => stage.quotes)).toEqual([2, 2, 0, 0]);
+    expect(stages.map((stage) => stage.quotes)).toEqual([2, 2, 1, 1]);
     // 숫자만 담는다 — 단계별 본문을 담으면 원장이 같은 글 네 벌로 부푼다.
     for (const stage of stages) {
       expect(Object.keys(stage).sort()).toEqual([
@@ -1777,5 +1780,89 @@ describe('빈 큐에서 pageId 재실행', () => {
         pageId: 'page-gone',
       }),
     ).rejects.toThrow('찾을 수 없습니다');
+  });
+});
+
+// 글자 수 가드는 인용 소실에 눈이 멀어 있다 — 인용 7줄은 200자 남짓이라 60% 문턱을 넘고도
+// 통째로 사라질 수 있다. 실측된 회귀가 정확히 그 형태였다(리뷰 지적).
+describe('인용 전부 소실 차단', () => {
+  const 인용본문 = [
+    '# 캐시 흐름',
+    '',
+    '> 인용 첫 줄',
+    '> 인용 둘째 줄',
+    '',
+    '가'.repeat(300),
+  ].join('\n');
+
+  const buildWithEdited = (editedBody: string) =>
+    buildUsecase({
+      markdown: 인용본문,
+      completionText: JSON.stringify({
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: 인용본문,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: editedBody,
+      }),
+    });
+
+  it('글자 비율은 통과하지만 인용만 사라진 편집본을 끊는다', async () => {
+    // 인용 두 줄(14자)만 뺀다 — 글자 수로는 98% 라 과삭제 가드를 여유롭게 통과한다.
+    const { usecase } = buildWithEdited(
+      ['# 캐시 흐름', '', '가'.repeat(300)].join('\n'),
+    );
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toThrow(/인용 2줄이 모두 사라졌습니다.*인용 2→2→0/);
+  });
+
+  // 한 줄이라도 남으면 정당한 편집일 수 있다(중복 인용 덜어내기). 임계값을 세울 근거가 없다.
+  it('인용이 일부만 줄면 통과시킨다', async () => {
+    const { usecase } = buildWithEdited(
+      ['# 캐시 흐름', '', '> 인용 첫 줄', '', '가'.repeat(300)].join('\n'),
+    );
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+  });
+
+  // 인용을 쓰지 않은 초안이 이 검사에 걸리면 그런 글은 영영 발행되지 않는다.
+  it('원문에 인용이 없으면 검사하지 않는다', async () => {
+    const 인용없는본문 = ['# 캐시 흐름', '', '가'.repeat(300)].join('\n');
+    const { usecase } = buildUsecase({
+      markdown: 인용없는본문,
+      completionText: JSON.stringify({
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: 인용없는본문,
+      }),
+      editText: JSON.stringify({
+        publishable: true,
+        reason: '발행 가능',
+        title: draft.title,
+        slug: 'cache-flow',
+        description: '캐시 흐름 정리',
+        body: 인용없는본문,
+      }),
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
   });
 });
