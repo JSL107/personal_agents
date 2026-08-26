@@ -11,6 +11,7 @@ const indicators = {
   ma120: 8_000,
   isAligned: true,
   volumeSurge: 2,
+  return1d: 0,
   return1m: 5,
   return3m: 8,
   return6m: 12,

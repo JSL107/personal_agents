@@ -22,6 +22,7 @@ describe('parseBacktestCliArguments', () => {
       to: '2026-08-14',
       seedAmount: '10000000',
       minimumTurnover60: 500000000,
+      maximumDailyGainPercent: Number.POSITIVE_INFINITY,
       maximumPositions: 3,
       weightPercent: 20,
       holdingTradeDays: 60,

@@ -143,6 +143,7 @@ const command = {
   to: TO,
   seedAmount: '10000000',
   minimumTurnover60: 5e8,
+  maximumDailyGainPercent: Number.POSITIVE_INFINITY,
   maximumPositions: 3,
   weightPercent: 20,
   holdingTradeDays: 5,

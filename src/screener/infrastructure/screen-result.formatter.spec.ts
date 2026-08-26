@@ -10,6 +10,7 @@ const indicators: StockIndicators = {
   ma120: 100,
   isAligned: true,
   volumeSurge: 2.5,
+  return1d: 1.23,
   return1m: 12.34,
   return3m: 20,
   return6m: 45.67,

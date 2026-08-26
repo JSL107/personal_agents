@@ -1,5 +1,6 @@
 import { StockIndicators } from '../../market-data/domain/stock-indicator';
 import {
+  MINIMUM_TURNOVER60,
   ScreenCandidate,
   SCREENER_RULE_VERSION,
   screenStocks,
@@ -17,6 +18,7 @@ const indicators = (
   ma120: 100,
   isAligned: true,
   volumeSurge: 2,
+  return1d: 0,
   return1m: 10,
   return3m: 20,
   return6m: 30,
@@ -200,5 +202,81 @@ describe('screenStocks 거래대금 하한 주입', () => {
       '000002',
     ]);
     expect(withRaised.map((stock) => stock.code)).toEqual(['000001']);
+  });
+});
+
+describe('screenStocks — 당일 상승률 상한', () => {
+  const swingCandidate = (
+    code: string,
+    overrides: Partial<StockIndicators> = {},
+  ): ScreenCandidate =>
+    candidate(code, { volumeSurge: 2, return1m: 10, ...overrides });
+
+  // 기본값이 상한 없음이어야 이 변경이 운영 동작을 바꾸지 않는다.
+  it('상한을 넘기지 않으면 급등 종목도 그대로 통과한다', () => {
+    const screened = screenStocks(
+      [swingCandidate('000001', { return1d: 25 })],
+      'SWING',
+      10,
+    );
+
+    expect(screened.map((stock) => stock.code)).toEqual(['000001']);
+  });
+
+  it('상한을 넘긴 종목은 후보에서 뺀다', () => {
+    const screened = screenStocks(
+      [
+        swingCandidate('000001', { return1d: 25 }),
+        swingCandidate('000002', { return1d: 5 }),
+      ],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      15,
+    );
+
+    expect(screened.map((stock) => stock.code)).toEqual(['000002']);
+  });
+
+  // 경계는 포함이다. `<=` 가 `<` 로 바뀌면 정확히 상한에 붙은 종목이 빠진다.
+  it('정확히 상한과 같으면 통과시킨다', () => {
+    const screened = screenStocks(
+      [swingCandidate('000001', { return1d: 15 })],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      15,
+    );
+
+    expect(screened.map((stock) => stock.code)).toEqual(['000001']);
+  });
+
+  // 지표 결측을 급등으로 취급하면 전일 봉이 없는 신규 상장이 통째로 빠진다.
+  it('전일 종가가 없어 상승률을 모르는 종목은 빼지 않는다', () => {
+    const screened = screenStocks(
+      [swingCandidate('000001', { return1d: null })],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      15,
+    );
+
+    expect(screened.map((stock) => stock.code)).toEqual(['000001']);
+  });
+
+  // 상한은 매수 후보를 거르는 규칙이지 전략별 규칙이 아니다.
+  it('LONG_TERM 후보에도 같은 상한이 걸린다', () => {
+    const screened = screenStocks(
+      [
+        candidate('000001', { return1d: 25 }),
+        candidate('000002', { return1d: 5 }),
+      ],
+      'LONG_TERM',
+      10,
+      MINIMUM_TURNOVER60,
+      15,
+    );
+
+    expect(screened.map((stock) => stock.code)).toEqual(['000002']);
   });
 });

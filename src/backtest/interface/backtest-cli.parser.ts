@@ -1,10 +1,12 @@
 import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
+import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../../screener/domain/screener-rule';
 import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
 
 export const BACKTEST_CLI_USAGE =
   '사용법:\n' +
   '  pnpm backtest --strategy LONG_TERM|SWING --from YYYY-MM-DD --to YYYY-MM-DD\n' +
   '                [--seed <금액>] [--turnover-min <거래대금>] [--max-positions <종목수>]\n' +
+  '                [--max-daily-gain <당일상승률상한%, 미지정이면 상한 없음>]\n' +
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]';
@@ -133,6 +135,11 @@ export const parseBacktestCliArguments = (
     to: readDate(argv, 'to'),
     seedAmount,
     minimumTurnover60: readPositiveNumber(argv, 'turnover-min', 500_000_000),
+    maximumDailyGainPercent: readPositiveNumber(
+      argv,
+      'max-daily-gain',
+      DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+    ),
     maximumPositions: readPositiveNumber(argv, 'max-positions', 3),
     weightPercent: readPositiveNumber(argv, 'weight', 20),
     holdingTradeDays: readPositiveNumber(
