@@ -206,6 +206,36 @@ describe('resolveHarvestSignal', () => {
     });
   });
 
+  it('owner 로그인 표기가 달라도 규약 재료로 인정한다', () => {
+    // `ownerLogin` 은 env 에서 손으로 적는 값이고 답글의 `authorLogin` 은 GitHub API 표기라
+    // 대소문자가 갈릴 수 있다. 갈리면 판정은 PR 작성자 경로로 REJECTED 까지 가는데 owner
+    // 판정만 어긋나 학습 재료가 조용히 사라진다 — 에러 없이 규약만 비므로 발견이 늦다.
+    const targetThread = thread({
+      comments: [
+        thread().comments[0],
+        {
+          databaseId: 556,
+          authorLogin: 'JSL107',
+          body: '이 레포에서는 정상입니다',
+          createdAt: '2026-07-31T01:00:00Z',
+          reactions: [],
+        },
+      ],
+    });
+
+    expect(
+      resolve({
+        targetThread,
+        decisionLogins: ['jsl107', 'JSL107'],
+        ownerLogin: 'jsl107',
+      }),
+    ).toEqual({
+      kind: 'NEEDS_JUDGE',
+      replyBody: '이 레포에서는 정상입니다',
+      ownerReplyBody: '이 레포에서는 정상입니다',
+    });
+  });
+
   it('owner 와 PR 작성자가 함께 답글을 달면 규약 재료는 owner 것만이다', () => {
     // 공개 저장소에서 제3자가 PR 을 올리면 그 작성자도 결정 주체가 된다(`decisionLogins`).
     // 판정은 대화 전체를 봐야 정확하지만, 프롬프트로 흘러가는 문장은 owner 것만 남긴다.

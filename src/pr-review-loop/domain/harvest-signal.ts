@@ -36,6 +36,20 @@ export interface ResolveHarvestSignalInput {
   truncated: boolean;
 }
 
+/**
+ * GitHub 로그인 비교. 대소문자를 무시한다.
+ *
+ * `ownerLogin` 은 env(`GITHUB_WEBHOOK_OWNER_LOGIN`) 에서 손으로 적는 값이고 `authorLogin` 은
+ * GitHub API 가 준 표기라, 둘의 대소문자가 갈릴 수 있다. 갈리면 조용히 실패한다 — owner 가
+ * 자기 PR 에 답글을 달면 `decisionLogins` 는 API 표기의 PR 작성자로 통과해 판정이 REJECTED
+ * 로 확정되는데, owner 판정만 어긋나 `ownerReplyBody` 가 null 이 되어 학습 재료가 사라진다.
+ * 에러가 아니라 빈 규약이라 발견이 늦는다. repo 조회에 건 정책과 같은 이유다.
+ */
+const sameLogin = (left: string | null, right: string | null): boolean =>
+  left !== null &&
+  right !== null &&
+  left.trim().toLowerCase() === right.trim().toLowerCase();
+
 export const resolveHarvestSignal = ({
   card,
   thread,
@@ -56,8 +70,9 @@ export const resolveHarvestSignal = ({
     const humanReplies =
       thread?.comments.filter(
         (comment) =>
-          comment.authorLogin !== null &&
-          decisionLogins.includes(comment.authorLogin) &&
+          decisionLogins.some((login) =>
+            sameLogin(login, comment.authorLogin),
+          ) &&
           !comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
           comment.createdAt > botComment.createdAt,
       ) ?? [];
@@ -68,14 +83,15 @@ export const resolveHarvestSignal = ({
     const replyBody = joinBodies(humanReplies);
     // 규약으로 굳을 문장은 owner 가 쓴 것만 남긴다 — 이유는 `ownerLogin` 주석 참조.
     const ownerReplyBody = joinBodies(
-      humanReplies.filter((comment) => comment.authorLogin === ownerLogin),
+      humanReplies.filter((comment) =>
+        sameLogin(comment.authorLogin, ownerLogin),
+      ),
     );
 
     let latestReaction: ReviewThreadReaction | null = null;
     for (const reaction of botComment.reactions) {
       const isDecisionReaction =
-        reaction.userLogin !== null &&
-        decisionLogins.includes(reaction.userLogin) &&
+        decisionLogins.some((login) => sameLogin(login, reaction.userLogin)) &&
         (reaction.content === 'THUMBS_UP' ||
           reaction.content === 'THUMBS_DOWN');
       if (!isDecisionReaction) {
