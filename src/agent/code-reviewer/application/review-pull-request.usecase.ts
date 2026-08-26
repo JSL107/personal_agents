@@ -20,6 +20,7 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
+import { isSelfRepo } from '../../../pr-review-loop/domain/learning-repo';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -33,7 +34,6 @@ import { parsePrReference } from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
   CODE_REVIEWER_SYSTEM_PROMPT,
-  isSelfRepo,
 } from '../domain/prompt/code-reviewer-system.prompt';
 import {
   CONVENTION_WINDOW_DAYS,
