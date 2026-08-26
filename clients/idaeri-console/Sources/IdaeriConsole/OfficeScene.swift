@@ -1139,6 +1139,20 @@ final class OfficeScene: SKScene {
             .filter { $0.name?.hasPrefix("common:") == true }
             .forEach { $0.removeFromParent() }
         for area in plan.commonAreas {
+            // 대표실은 세션 이름표에 자리를 양보한다.
+            //
+            // 이 밴드는 세로·가로 어느 쪽으로도 비켜설 자리가 없다. 아래로는 방 첫 좌석
+            // 말풍선을 피해 이미 올라와 있고(`officeCommonAreaLabelBottomTiles` 의 max),
+            // 위로는 세션 책상과 대표 이름표가 차 있다. 가로는 세션 책상이 두 칸 간격으로
+            // 놓여(`officeSessionDeskStrideTiles`) 이름표 몫이 밴드를 사실상 덮으므로
+            // `officeNonOverlappingLabelLeadingX` 에 구간을 넘겨도 안전한 자리가 없다.
+            //
+            // 그래서 둘 중 하나를 접어야 하고, 접는 쪽은 문패다 — 세션 이름표는 "지금 어느
+            // 작업이 도는가" 를 말하고, 대표실은 왕관을 쓴 대표가 앉아 있어 문패 없이도
+            // 식별된다. 세션이 없으면 문패가 돌아온다(빈 띠로 보이던 문제는 그대로 막힌다).
+            if area.kind == .president && !sessionSeats.isEmpty {
+                continue
+            }
             let holder = SKNode()
             holder.name = "common:\(area.label)"
             // 아래 방 첫 좌석의 말풍선 위로 비켜선다. 밴드 안이라 좌석과 무관하다고 보고
@@ -1894,7 +1908,15 @@ final class OfficeScene: SKScene {
         let assigned = officeAssignSessionSeats(
             sessions: visible, tiles: desks, previous: sessionSeats
         )
+        // 문패 양보는 세션 **유무**로 갈리는데, 이 함수는 세션 이벤트와 30초 스윕으로 불리고
+        // 문패를 그리는 `renderZoneLabels` 는 평면도·창 크기가 바뀔 때만 불린다. 유무가
+        // 뒤집힌 회차에 문패를 다시 그리지 않으면, 첫 세션이 뜬 뒤에도 문패가 남아 겹치고
+        // 마지막 세션이 떠난 뒤에는 문패가 돌아오지 않는다.
+        let hadSessions = !sessionSeats.isEmpty
         sessionSeats = assigned
+        if hadSessions != !assigned.isEmpty {
+            renderZoneLabels()
+        }
         for (sessionId, node) in sessionMarkers where assigned[sessionId] == nil {
             node.removeFromParent()
             sessionMarkers[sessionId] = nil
