@@ -341,3 +341,25 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(false);
   });
 });
+
+// 실측 회귀: 같은 문단이 3회 재실행 내내 윤문되지 못했다. 윤문이 조사만 바꿨는데 그 조사가
+// URL 토큰에 붙어 있어 "주소가 바뀌었다" 로 잡히고, 보존 검사가 문단을 통째로 되돌렸다.
+describe('마크다운 링크 뒤 조사', () => {
+  const 원문 =
+    '[Osmani](https://addyosmani.com/blog/loop-engineering/)가 이렇게 정리했다.';
+  const 윤문본 =
+    '[Osmani](https://addyosmani.com/blog/loop-engineering/)는 이렇게 정리했어요.';
+
+  it('조사만 바뀐 문장을 주소 변경으로 보지 않는다', () => {
+    expect(findPreservationViolations(원문, 윤문본)).toEqual([]);
+  });
+
+  // 조사를 떼느라 주소 자체의 변경까지 놓치면 안 된다.
+  it('주소가 실제로 바뀌면 여전히 잡는다', () => {
+    const 바뀐본 =
+      '[Osmani](https://example.com/blog/loop-engineering/)는 이렇게 정리했어요.';
+    const violations = findPreservationViolations(원문, 바뀐본);
+    expect(violations.some((item) => item.direction === 'lost')).toBe(true);
+    expect(violations.some((item) => item.direction === 'injected')).toBe(true);
+  });
+});
