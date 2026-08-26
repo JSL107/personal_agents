@@ -282,7 +282,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 | 📅 일 18:00 | CEO Meta |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 매월 1일 09:00 | Ops Supervisor (운영 점검) |
-| 🗂️ 금 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
+| 🗂️ 매일 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
 
 **상시 스윕** — 뒷정리·폴링이라 평소엔 조용하다. 다만 **처리한 게 있으면 Slack 으로 보고한다** — 정리한 카드·좀비 run 이 0건이면 침묵하고 1건이라도 있으면 알리며, 워밍업은 연속 실패가 임계에 닿을 때만 알린다.
@@ -386,12 +386,18 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 이대리 본체와는 별개로, 이 PC 의 AI CLI 환경(플러그인 · MCP · skills · agents · commands · rules · hooks)을 새 PC 에서 재현하는 스크립트다. Claude Code(`~/.claude`) 와 Codex(`~/.codex`) 를 함께 다루고, 설치돼 있지 않은 쪽은 자동으로 건너뛴다.
 
+평소에는 손댈 일이 없다. 이대리가 매일 19시에 스냅샷을 갱신해 비공개 저장소로 올리고(`ai-cli-env-snapshot`), 다른 PC 는 매일 10시에 새 스냅샷을 감지해 Slack 승인 카드를 띄운다(`ai-cli-env-apply`, ✅ 를 눌러야 적용). `AI_CLI_ENV_SYNC_REPO` 를 설정해야 두 태스크가 켜진다.
+
+아래는 이대리 본체가 아직 없는 새 PC 처럼, 손으로 돌려야 할 때의 경로다.
+
 ```bash
 node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내보내기
-# ai-cli-env-export 디렉터리를 새 PC 로 옮긴 뒤
-node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export --dry-run   # 무엇이 바뀌는지 먼저 확인
-node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
+# ai-cli-env-export 디렉터리를 새 PC 로 옮긴 뒤 (스냅샷 저장소를 clone 해도 된다)
+./ai-cli-env-export/apply.sh --dry-run   # 무엇이 바뀌는지 먼저 확인
+./ai-cli-env-export/apply.sh             # 적용
 ```
+
+`apply.sh` 와 `tools/` 는 export 가 스냅샷 안에 함께 넣는 복원 도구다. 새 PC 가 이 저장소까지 clone 하지 않아도 스냅샷 하나로 복원을 시작할 수 있다. 직접 부를 때는 `node scripts/bootstrap-ai-cli-env.cjs <경로> --all` 과 같다.
 
 | 도구 | 옮기는 것 | 복원 방법 |
 |---|---|---|
@@ -400,9 +406,11 @@ node scripts/bootstrap-ai-cli-env.cjs ./ai-cli-env-export             # 적용
 
 **안 옮기는 것** — 비밀값(MCP 의 `env`·`headers` 는 키 이름과 무관하게 전부 플레이스홀더로 빠진다), 인증 파일과 대화 기록(`~/.codex/auth.json`, `sessions/`, `memories/`, `~/.claude/projects/`), 이 PC 에서만 유효한 것(로컬 경로 마켓플레이스, 데스크톱 앱이 주입한 MCP). 그래서 Codex 홈이 3GB 를 넘어도 실제로 옮기는 자산은 수 MB 다. 무엇을 뺐는지는 실행할 때 목록으로 보여준다.
 
-**새 PC 에서 할 일** — 빠진 환경 변수를 export 하고 대화형 인증(Notion OAuth, `codex login` 등)을 마친다. 필요한 목록은 산출물의 `SECRETS-TODO.md` 에 있다. 없는 채로 두면 그 MCP 만 건너뛰고 알린다.
+**새 PC 에서 할 일** — 빠진 환경 변수를 export 하고 대화형 인증(Notion OAuth, `codex login` 등)을 마친다. 필요한 목록은 산출물의 `SECRETS-TODO.md` 에 있다. 없는 채로 두면 그 MCP 만 건너뛰고 알린다. 자동화해도 이 칸은 남는다 — 브라우저 로그인은 파일로 옮길 수 있는 형태의 값이 아니다.
 
-**hooks 는 매 세션 실행되는 코드라 따로 취급한다.** `--with-hooks` 를 붙일 때만 적용하고, 대상 PC 에 이미 hooks 가 있으면 `--replace-hooks` 없이는 건너뛴다(hooks 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). `permissions`·`defaultMode` 는 옮기지 않는다. 심볼릭 링크는 실체로 풀어서 복사하고(링크 그대로 옮기면 새 PC 에서 전부 끊어진다), 명령 안의 옛 홈 경로는 새 PC 홈으로 치환한다.
+**VS Code 설정은 여기서 다루지 않는다.** VS Code 자체의 Settings Sync(설정 → Backup and Sync Settings)가 설정 · 키바인딩 · 스니펫 · 확장을 GitHub 계정으로 동기화한다. 확장 설치에는 `code` CLI 가 필요한데 이 PC 에는 깔려 있지 않아, 스크립트로 흉내 내면 설정만 옮기고 확장은 빠지는 반쪽이 된다.
+
+**hooks 는 매 세션 실행되는 코드라 따로 취급한다.** 기본값은 건너뛰기이고, `--with-hooks`·`--replace-hooks`·`--replace-global-docs` 를 붙일 때만 적용한다(hooks 는 통째로 교체되는 값이라 기존 훅이 즉시 꺼진다). 내 PC 를 그대로 옮기는 게 목적이면 셋을 한 번에 켜는 `--all` 을 쓴다 — `apply.sh` 와 이대리의 자동 적용이 쓰는 값이며, 덮이는 파일은 타임스탬프를 붙여 백업된다. 남의 PC·공용 머신에는 켜지 말 것. `permissions`·`defaultMode` 는 어느 경우에도 옮기지 않는다. 심볼릭 링크는 실체로 풀어서 복사하고(링크 그대로 옮기면 새 PC 에서 전부 끊어진다), 명령 안의 옛 홈 경로는 새 PC 홈으로 치환한다.
 
 </details>
 
