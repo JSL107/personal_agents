@@ -531,6 +531,17 @@
         인자 없이 돌리던 기존 백테스트의 동작이 바뀐다. 운영 밴드는 활성 행을 읽는다.
       - **아직 값을 바꾸는 경로는 없다.** 되돌리기·승인 반영은 PR ③ 이고, 지금 있는 것은
         `scripts/strategy-parameter.ts` 의 `list` 와 멱등 `seed` 뿐이다.
+      - **🔴 PR ③ 착수 전제 — 파라미터 버전을 집계 축에 심는 일을 함께 해야 한다.**
+        `SCREENER_RULE_VERSION` 은 코드 상수라 파라미터를 바꿔도 `paper_order.rule_version`
+        이 움직이지 않고, `recommendation_score` 는 그 값으로 집계한다. 지금은 모든 회차가
+        같은 파라미터라 오귀속이 없지만, **값을 바꾸는 순간부터 전후가 한 버전으로 뭉친다.**
+        지금 반영한 것은 회차가 쓴 값을 `agent_run.input_snapshot.parameters` 에 남기는
+        것까지이고, `ScreeningRun`·`PaperOrder` 컬럼과 집계 분리는 값을 바꾸는 그 PR 에서
+        함께 넣는다(컬럼만 먼저 넣으면 집계 쪽이 비어 반쪽이 된다). 지적: PR #396 Codex 리뷰.
+      - **활성 행 단일성은 DB 가 지킨다.** `@@unique([strategy, name, version])` 로는 v1 과
+        v2 가 동시에 활성인 상태를 못 막아, `prisma.service.ts` 부팅 훅의 부분 유니크 인덱스
+        `idx_strategy_parameter_active` 가 강제한다. PR ③ 이 값을 바꿀 때 구 행 supersede 와
+        신 행 activate 를 **한 트랜잭션**으로 묶지 않으면 이 인덱스가 거부한다.
     - 남은 것은 탐색기(PR ②)와 제안·승인 루프(PR ③)다. 급했던 이유(바꾼 값의 전후를 못
       가름)는 구간 집계로 해소됐다.
   - [ ] **5. 통과 전체 저장 → 순위 공식 검증** — 지금은 프롬프트에 실린 상위 20종목만 남는다.
