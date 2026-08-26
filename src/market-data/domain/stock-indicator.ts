@@ -20,6 +20,9 @@ export interface StockIndicators {
   ma120: number | null;
   isAligned: boolean | null;
   volumeSurge: number | null;
+  // 전일 종가 대비 당일 종가 상승률(%). 스크리너가 급등 당일의 종가를 보고 다음 거래일
+  // 시가에 사기 때문에, "이미 하루에 얼마나 올랐나" 를 후보 판정에 쓰려면 이 값이 필요하다.
+  return1d: number | null;
   return1m: number | null;
   return3m: number | null;
   return6m: number | null;
@@ -125,6 +128,7 @@ export const calculateIndicators = (
     ma120,
     isAligned,
     volumeSurge: calculateVolumeSurge(bars),
+    return1d: calculateReturn(closes, 1),
     return1m: calculateReturn(closes, 20),
     return3m: calculateReturn(closes, 60),
     return6m: calculateReturn(closes, 120),

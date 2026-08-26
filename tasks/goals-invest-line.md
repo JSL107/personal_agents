@@ -15,7 +15,7 @@
 > **이 파일은 갱신된다.** `docs/superpowers/` 아래 날짜가 붙은 문서들은 그날의 판단을 굳힌
 > 스냅샷이라 사후에 고치지 않는다. 이 원장은 반대로 항상 현재를 가리켜야 한다.
 
-최종 갱신: 2026-08-25 · 파라미터를 DB 로 내린 회차(목표 12 의 4단계 첫 몫)
+최종 갱신: 2026-08-26 · 매수 급등률 상한 실측 회차(표본 내 6구간 30회 · 도입 기각)
 
 ---
 
@@ -77,7 +77,13 @@
 
 ### 지금 쓰는 규칙
 
-- 스크리너 `SCREENER_RULE_VERSION = 2` — 거래대금 60일 평균 5억 하한 + 전략별 필터, 지표 3종 순위합 점수
+- 스크리너 `SCREENER_RULE_VERSION = 3` — 거래대금 60일 평균 5억 하한 + 전략별 필터, 지표 3종 순위합 점수.
+  **2026-08-26 에 2 에서 올렸다** — 고르는 조건은 그대로지만 지표에 `return1d` 가 늘어
+  `indicator_snapshot` 형태와 추천 프롬프트 입력이 달라졌다. 섞어 보면 안 되는 경계다.
+- 매수 급등률 상한 — **없음**(`DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Infinity`). 손잡이는
+  2026-08-26 에 만들었고 같은 날 재서 **도입하지 않기로 했다**(근거는 §문서 색인의 급등률 상한 실측).
+  당일 상승률이 클수록 이후 5거래일 중앙값이 나빠지는 것은 맞지만, +25% 이상 구간은 평균이
+  플러스라 상한이 나쁜 구간과 대박 꼬리를 함께 자른다. 표본 내 6구간에서 개선이 없었다.
 - 추천 상한 — 매수 최대 3종, 종목당 비중 20% (모델이 아니라 코드가 배정. `MAXIMUM_WEIGHT_PERCENT`)
 - 청산 밴드 — 익절 `+10%` / 손절 `-5%` (`DEFAULT_EXIT_BAND`). **2026-08-21 에 `+2% / -0.2%`
   에서 옮겼다** (PR #361, 근거는 §문서 색인의 청산 밴드 실측).
@@ -646,6 +652,7 @@
 | 잔여 작업 판정 절차 전반 | [2026-08-13 잔여 재고](../docs/superpowers/plans/2026-08-13-remaining-work-inventory.md) |
 | 왜 파라미터를 전부 다시 재야 하나 · 다음에 무엇부터 | [2026-08-25 재측정 인수인계](../docs/superpowers/plans/2026-08-25-backtest-remeasurement-handoff.md) |
 | 다시 잰 결과가 무엇이었나 · 왜 값을 안 바꿨나 | [2026-08-25 재측정 결과](../docs/superpowers/specs/2026-08-25-backtest-remeasurement.md) |
+| 급등 종목을 걸러내면 성적이 나아지나 · 왜 상한을 안 두나 | [2026-08-26 급등률 상한 실측](../docs/superpowers/specs/2026-08-26-daily-gain-cap-measurement.md) |
 | 과거 시세를 어떻게 조달했나 · 야후를 왜 기각했나 | [2026-08-25 과거 시세 확장 설계](../docs/superpowers/specs/2026-08-25-price-history-backfill-design.md) |
 | 자가학습 루프를 왜 이렇게 설계했나 · 무엇을 자동으로 못 바꾸나 | [2026-08-21 자가학습 설계](../docs/superpowers/specs/2026-08-21-invest-self-learning-design.md) |
 | 파라미터를 DB 로 내린 구조 · walk-forward 로 바꾼 이유 | [2026-08-25 파라미터 루프 설계](../docs/superpowers/specs/2026-08-25-strategy-parameter-loop-design.md) |

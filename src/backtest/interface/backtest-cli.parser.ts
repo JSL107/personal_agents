@@ -1,10 +1,12 @@
 import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
+import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../../screener/domain/screener-rule';
 import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
 
 export const BACKTEST_CLI_USAGE =
   '사용법:\n' +
   '  pnpm backtest --strategy LONG_TERM|SWING --from YYYY-MM-DD --to YYYY-MM-DD\n' +
   '                [--seed <금액>] [--turnover-min <거래대금>] [--max-positions <종목수>]\n' +
+  '                [--max-daily-gain <당일상승률상한%, 미지정이면 상한 없음>]\n' +
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]';
@@ -156,6 +158,14 @@ export const parseBacktestCliArguments = (
     to: readDate(argv, 'to'),
     seedAmount,
     minimumTurnover60: readOptionalPositiveNumber(argv, 'turnover-min'),
+    // 급등률 상한은 원장(`strategy_parameter`)에 없다 — 재 보고 도입하지 않기로 한 축이라
+    // 백테스트 전용 손잡이로만 남는다. 그래서 이웃과 달리 optional 이 아니라 기본값을 박는다.
+    // 기본값 자체가 "상한 없음" 이므로 미지정과 구분할 필요가 없다.
+    maximumDailyGainPercent: readPositiveNumber(
+      argv,
+      'max-daily-gain',
+      DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+    ),
     maximumPositions: readPositiveNumber(argv, 'max-positions', 3),
     weightPercent: readOptionalPositiveNumber(argv, 'weight'),
     holdingTradeDays: readPositiveNumber(

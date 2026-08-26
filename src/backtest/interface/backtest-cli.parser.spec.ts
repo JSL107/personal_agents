@@ -25,6 +25,7 @@ describe('parseBacktestCliArguments', () => {
       to: '2026-08-14',
       seedAmount: '10000000',
       minimumTurnover60: undefined,
+      maximumDailyGainPercent: Number.POSITIVE_INFINITY,
       maximumPositions: 3,
       weightPercent: undefined,
       holdingTradeDays: 60,
@@ -44,6 +45,23 @@ describe('parseBacktestCliArguments', () => {
 
     expect(parsed.minimumTurnover60).toBe(300_000_000);
     expect(parsed.weightPercent).toBe(30);
+  });
+
+  // 기본값만 단언하면 옵션 이름이나 값 전달이 깨져도 탐지하지 못한다.
+  it('--max-daily-gain 을 명시하면 그 값이 그대로 남는다', () => {
+    const parsed = parseBacktestCliArguments([
+      ...required,
+      '--max-daily-gain',
+      '15',
+    ]);
+
+    expect(parsed.maximumDailyGainPercent).toBe(15);
+  });
+
+  it('--max-daily-gain 에 0 이하를 주면 거부한다', () => {
+    expect(() =>
+      parseBacktestCliArguments([...required, '--max-daily-gain', '0']),
+    ).toThrow('--max-daily-gain');
   });
 
   it('--delisting-recovery 를 읽고 범위 밖 값을 거부한다', () => {
