@@ -26,14 +26,13 @@ const readOption = (argv: string[], key: string): string | undefined => {
   return value;
 };
 
-const readPositiveNumber = (
+const readOptionalPositiveNumber = (
   argv: string[],
   key: string,
-  fallback: number,
-): number => {
+): number | undefined => {
   const raw = readOption(argv, key);
   if (raw === undefined) {
-    return fallback;
+    return undefined;
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
@@ -43,6 +42,12 @@ const readPositiveNumber = (
   }
   return value;
 };
+
+const readPositiveNumber = (
+  argv: string[],
+  key: string,
+  fallback: number,
+): number => readOptionalPositiveNumber(argv, key) ?? fallback;
 
 const readDate = (argv: string[], key: string): string => {
   const value = readOption(argv, key);
@@ -111,9 +116,27 @@ const readDelistingRecoveryRate = (argv: string[]): number => {
   return value;
 };
 
+/**
+ * 파싱 결과. 파라미터 테이블이 다루는 두 값은 **미지정이면 `undefined`** 로 남는다.
+ *
+ * 파서가 기본값을 박아 넣으면 "미지정" 과 "우연히 기본값과 같은 값을 명시" 가 구분되지
+ * 않아, 활성 행이 인자를 이기는지 지는지가 값에 따라 달라진다. 진입점이 이 자리를
+ * `CLI ?? 활성 행 ?? 코드 상수` 로 채운다.
+ *
+ * `exitBand` 는 여기 해당하지 않는다 — 백테스트에서 `null` 은 "미지정" 이 아니라
+ * "밴드 없이 보유일수로만 청산" 이라는 대조군 스위치다.
+ */
+export interface BacktestCliOptions extends Omit<
+  ReplayBacktestCommand,
+  'minimumTurnover60' | 'weightPercent'
+> {
+  minimumTurnover60?: number;
+  weightPercent?: number;
+}
+
 export const parseBacktestCliArguments = (
   argv: string[],
-): ReplayBacktestCommand => {
+): BacktestCliOptions => {
   const strategy = readOption(argv, 'strategy');
   if (strategy !== 'LONG_TERM' && strategy !== 'SWING') {
     throw new Error(
@@ -132,9 +155,9 @@ export const parseBacktestCliArguments = (
     from: readDate(argv, 'from'),
     to: readDate(argv, 'to'),
     seedAmount,
-    minimumTurnover60: readPositiveNumber(argv, 'turnover-min', 500_000_000),
+    minimumTurnover60: readOptionalPositiveNumber(argv, 'turnover-min'),
     maximumPositions: readPositiveNumber(argv, 'max-positions', 3),
-    weightPercent: readPositiveNumber(argv, 'weight', 20),
+    weightPercent: readOptionalPositiveNumber(argv, 'weight'),
     holdingTradeDays: readPositiveNumber(
       argv,
       'hold',

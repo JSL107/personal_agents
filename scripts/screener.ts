@@ -16,12 +16,15 @@ import { formatScreenResult } from '../src/screener/infrastructure/screen-result
 import { formatScreeningOutcomeResult } from '../src/screener/infrastructure/screening-outcome.formatter';
 import { parseScreenerCliArguments } from '../src/screener/interface/screener-cli.parser';
 import { ScreenerModule } from '../src/screener/screener.module';
+import { ResolveStrategyParametersUsecase } from '../src/strategy-parameter/application/resolve-strategy-parameters.usecase';
+import { StrategyParameterModule } from '../src/strategy-parameter/strategy-parameter.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     ScreenerModule,
+    StrategyParameterModule,
   ],
 })
 class ScreenerCliModule {}
@@ -55,9 +58,15 @@ const main = async (): Promise<void> => {
     }
 
     if (parsed.subcommand === 'screen') {
-      const result = await application
-        .get(ScreenUniverseUsecase)
-        .execute(parsed.options);
+      // 확인용 실행도 운영과 같은 값으로 걸러야 한다 — 여기서만 코드 상수를 쓰면
+      // 활성 행을 바꾼 뒤 CLI 로 확인한 결과가 그날 운영이 보여줄 목록과 달라진다.
+      const parameters = await application
+        .get(ResolveStrategyParametersUsecase)
+        .execute(parsed.options.strategy);
+      const result = await application.get(ScreenUniverseUsecase).execute({
+        ...parsed.options,
+        minimumTurnover60: parameters.minimumTurnover60,
+      });
       console.log(formatScreenResult(result));
       if (result.recordOutcome?.saved === true) {
         console.log(
