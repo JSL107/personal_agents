@@ -460,35 +460,65 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
  * 줄표는 문장 수와 무관한 **문서 축**이라 표본이 작아도 판정한다. 보류에 함께 묶으면 짧은 글은
  * 줄표가 몇 개든 카드에 안 찍힌다(리뷰 P2).
  */
-export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
-  const gaps: string[] = [];
+// 목표 밖 항목 하나. `axis` 는 어느 축인지, `text` 는 사람이 읽는 표기다.
+//
+// 왜 축을 따로 내보내는가 — 재시도 수락 판정이 "새로 생긴 축이 있나" 를 물어야 하는데,
+// 표기 문자열에서 축 이름을 파싱하면 라벨을 다듬는 순간 그 판정이 조용히 무력해진다.
+// 조건은 아래 한 자리에만 두고, 축과 표기를 함께 만들어 나눠 준다.
+type KoreanStyleGap = {
+  axis: string;
+  text: string;
+};
+
+const collectKoreanStyleGaps = (
+  metrics: KoreanStyleMetrics,
+): KoreanStyleGap[] => {
+  const gaps: KoreanStyleGap[] = [];
   const T = KOREAN_STYLE_TARGETS;
   // 문장 축은 40문장 이상일 때만 판정한다. main 이 표본 출처 의심으로 편차·짧은문장·구어를
   // 내렸고(#398), 남은 축에 이번 평균 하한이 더해진다.
   if (metrics.measurable) {
     if (metrics.longestSentenceLength > T.longestSentenceMax) {
-      gaps.push(
-        `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
-      );
+      gaps.push({
+        axis: 'longestSentence',
+        text: `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
+      });
     }
     if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
-      gaps.push(
-        `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
-      );
+      gaps.push({
+        axis: 'endingAlternation',
+        text: `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
+      });
     }
     if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
-      gaps.push(`금지접속사 ${metrics.bannedConnectiveCount}회(0회)`);
+      gaps.push({
+        axis: 'bannedConnective',
+        text: `금지접속사 ${metrics.bannedConnectiveCount}회(0회)`,
+      });
     }
     if (metrics.averageLength < T.averageLengthMin) {
-      gaps.push(`평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`);
+      gaps.push({
+        axis: 'averageLength',
+        text: `평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`,
+      });
     }
   }
   // 줄표는 문장 수와 무관한 문서 축이라 표본이 작아도 판정한다.
   if (metrics.emDashCount > T.emDashMax) {
-    gaps.push(`줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`);
+    gaps.push({
+      axis: 'emDash',
+      text: `줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`,
+    });
   }
   return gaps;
 };
+
+export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] =>
+  collectKoreanStyleGaps(metrics).map((gap) => gap.text);
+
+// 목표 밖인 축의 이름만. 재시도 수락 판정이 개수가 아니라 **정체**를 보게 하려고 쓴다.
+export const findKoreanStyleGapAxes = (metrics: KoreanStyleMetrics): string[] =>
+  collectKoreanStyleGaps(metrics).map((gap) => gap.axis);
 
 export const formatKoreanStyleMetrics = (
   metrics: KoreanStyleMetrics,
