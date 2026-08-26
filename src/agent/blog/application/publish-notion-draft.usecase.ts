@@ -66,6 +66,7 @@ import {
 import {
   BLOG_EDIT_SYSTEM_PROMPT,
   buildBlogEditPrompt,
+  MIN_EDITED_BODY_RATIO,
 } from '../domain/prompt/blog-edit.prompt';
 import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
@@ -105,10 +106,6 @@ interface PublishCandidateContext {
   // 편집 단계가 '발행 부적합' 으로 판정한 초안을 옮길 상태값.
   holdStatusValue: string;
 }
-
-// 편집이 원문을 이 비율 미만으로 줄이면 과삭제로 보고 끊는다. 덜어내기는 편집의 일이지만,
-// 본문 절반이 사라지는 것은 "정리" 가 아니라 사고다.
-const MIN_EDITED_BODY_RATIO = 0.6;
 
 // 카드에 찍을 축. 라벨과 키를 한 자리에 둬 표시 순서와 값이 갈리지 않게 한다.
 const STRUCTURE_AXES: ReadonlyArray<{
