@@ -68,6 +68,14 @@ export const chunkMrkdwnText = (text: string, limit: number): string[] => {
     if (cutAt < limit / 2) {
       cutAt = limit;
     }
+    // 자를 자리가 `<url|이름>` 한가운데면 링크가 두 조각으로 갈려 양쪽 모두 깨진 텍스트가 된다.
+    // 열린 채 끝나는 링크가 있으면 그 링크 시작 앞으로 당긴다.
+    // (링크 하나가 limit 을 통째로 넘기는 극단은 당길 자리가 없어 그대로 자른다 — 무한 루프 방지.)
+    const beforeCut = remaining.slice(0, cutAt);
+    const lastOpen = beforeCut.lastIndexOf('<');
+    if (lastOpen > 0 && lastOpen > beforeCut.lastIndexOf('>')) {
+      cutAt = lastOpen;
+    }
     chunks.push(remaining.slice(0, cutAt));
     remaining = remaining.slice(cutAt).replace(/^\n+/, '');
   }

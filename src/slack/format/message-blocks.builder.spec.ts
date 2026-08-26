@@ -128,3 +128,21 @@ describe('buildReadableBlocks — 코드블록 보호', () => {
     expect(fenced[0].match(/```/g)).toHaveLength(2);
   });
 });
+
+describe('buildReadableBlocks — 나눌 수 없으면 text 경로로', () => {
+  it('코드블록이 section 상한을 넘겨 갈릴 상황이면 블록을 만들지 않는다', () => {
+    const hugeFence = [
+      '*제안 모델*',
+      '```prisma',
+      Array.from(
+        { length: 120 },
+        (_, index) =>
+          `model M${index} { id Int @id } // 한 줄을 길게 늘리는 설명`,
+      ).join('\n'),
+      '```',
+    ].join('\n');
+
+    // 나눠 담으면 여는 fence 와 닫는 fence 가 서로 다른 section 에 떨어진다 → 통째로 포기.
+    expect(buildReadableBlocks(hugeFence)).toBeNull();
+  });
+});

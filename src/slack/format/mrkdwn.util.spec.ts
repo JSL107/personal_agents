@@ -1,4 +1,4 @@
-import { breakProseIntoSentences } from './mrkdwn.util';
+import { breakProseIntoSentences, linkifyBareUrls } from './mrkdwn.util';
 
 describe('breakProseIntoSentences', () => {
   // 실제 PM 산출물과 같은 모양 — 문장마다 링크가 붙는다. 링크 없는 짧은 표본으로 재면
@@ -87,5 +87,47 @@ describe('breakProseIntoSentences — 코드블록 보호', () => {
     expect(result).toContain('```ts\nconst a = 1;\n```');
     // fence 3 줄은 그대로, 산문만 문장 3 줄로 갈린다.
     expect(result.split('\n')).toHaveLength(6);
+  });
+});
+
+describe('linkifyBareUrls — 코드 영역 보존', () => {
+  it('코드블록 안 주소는 한 글자도 바꾸지 않는다', () => {
+    const source = [
+      '*변경 안내*',
+      '```ts',
+      "const pr = 'https://github.com/o/r/pull/1';",
+      '```',
+    ].join('\n');
+
+    expect(linkifyBareUrls(source)).toBe(source);
+  });
+
+  it('인라인 코드 안 주소도 그대로 둔다', () => {
+    // 백틱이 링크 문법 안으로 말려 들어가면 `<https://...`|r #2> 처럼 통째로 깨진다.
+    const source = '참고: `https://github.com/o/r/pull/2` 를 보세요.';
+
+    expect(linkifyBareUrls(source)).toBe(source);
+  });
+
+  it('코드 밖 주소는 그대로 접는다', () => {
+    const source = [
+      '```ts',
+      'const a = 1;',
+      '```',
+      '근거: https://github.com/o/r/pull/3 참고.',
+    ].join('\n');
+
+    expect(linkifyBareUrls(source)).toContain(
+      '<https://github.com/o/r/pull/3|r #3>',
+    );
+  });
+});
+
+describe('breakProseIntoSentences — 인라인 코드 보존', () => {
+  it('인라인 코드 안 마침표는 문장 끝으로 보지 않는다', () => {
+    const source =
+      '설정 파일 `a. b. c` 안의 값을 오늘 자로 갱신하고 관련 검증 항목을 함께 묶어 두었다. 뒷 문장도 충분히 길게 이어 붙여 임계값을 넘긴다.';
+
+    expect(breakProseIntoSentences(source)).toContain('`a. b. c`');
   });
 });

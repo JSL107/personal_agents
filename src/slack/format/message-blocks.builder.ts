@@ -25,11 +25,22 @@ const HEADER_UNSAFE_CHARACTER = /[<>&`_~]/;
 
 type SlackBlock = Record<string, unknown>;
 
-const toSectionBlocks = (body: string): SlackBlock[] =>
-  chunkMrkdwnText(body, SECTION_MRKDWN_LIMIT).map((chunk) => ({
+// Slack 의 mrkdwn 상태는 block 사이로 이어지지 않는다 — 코드블록이 두 section 에 걸치면
+// 뒷 조각이 평범한 글로 렌더돼 서식이 깨지고 그 안의 Slack 문법까지 해석된다.
+// 나눌 수 없으면 null 을 돌려 통째로 text 경로에 맡긴다(현행 렌더 유지).
+const splitsCodeFence = (chunk: string): boolean =>
+  (chunk.match(/```/g) ?? []).length % 2 !== 0;
+
+const toSectionBlocks = (body: string): SlackBlock[] | null => {
+  const chunks = chunkMrkdwnText(body, SECTION_MRKDWN_LIMIT);
+  if (chunks.some(splitsCodeFence)) {
+    return null;
+  }
+  return chunks.map((chunk) => ({
     type: 'section',
     text: { type: 'mrkdwn', text: chunk },
   }));
+};
 
 // mrkdwn 텍스트를 읽기 쉬운 Block Kit 블록으로 분해한다.
 //
@@ -45,13 +56,20 @@ export const buildReadableBlocks = (text: string): SlackBlock[] | null => {
 
   const blocks: SlackBlock[] = [];
   let buffer: string[] = [];
+  let unsplittable = false;
 
   const flushBuffer = (): void => {
     const body = buffer.join('\n').trim();
     buffer = [];
-    if (body.length > 0) {
-      blocks.push(...toSectionBlocks(body));
+    if (body.length === 0) {
+      return;
     }
+    const sections = toSectionBlocks(body);
+    if (sections === null) {
+      unsplittable = true;
+      return;
+    }
+    blocks.push(...sections);
   };
 
   // ``` 코드블록 안의 `*강조*` 줄을 제목으로 올리면 그 자리에서 블록이 갈려
@@ -81,7 +99,7 @@ export const buildReadableBlocks = (text: string): SlackBlock[] | null => {
 
   // 제목이 하나도 없으면 단일 section 과 다를 게 없다 — 블록으로 감쌀 이득이 없으니 text 경로에 맡긴다.
   const hasHeader = blocks.some((block) => block.type === 'header');
-  if (!hasHeader || blocks.length > SLACK_MAX_BLOCKS) {
+  if (unsplittable || !hasHeader || blocks.length > SLACK_MAX_BLOCKS) {
     return null;
   }
   return blocks;

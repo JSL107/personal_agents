@@ -19,7 +19,10 @@ export const escapeSlackMrkdwn = (text: string): string =>
 // 문단이 통짜 벽처럼 보인다. GitHub PR/이슈 주소는 사람이 읽는 이름(`repo #52`)으로 접어 준다.
 // 이미 `<url|label>` 로 감싼 링크는 건드리지 않는다.
 const BARE_URL = /https?:\/\/[^\s<>|]+/g;
-const SLACK_LINK_TOKEN = /(<[^<>]*>)/;
+// 변환에서 제외할 구간 — 이미 이름이 붙은 링크(`<url|이름>`)와 인라인 코드(`` `...` ``).
+// 인라인 코드를 빼면 `` `https://github.com/o/r/pull/2` `` 의 백틱이 링크 문법 안으로 말려 들어가
+// `` `<https://...` |r #2> `` 처럼 통째로 깨진다.
+const PROTECTED_TOKEN = /(<[^<>]*>|`[^`]*`)/;
 const URL_TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
 const GITHUB_ISSUE_URL =
   /^https?:\/\/github\.com\/[^/]+\/([^/]+)\/(?:pull|issues)\/(\d+)/;
@@ -34,13 +37,42 @@ const toLabeledLink = (url: string): string => {
   return `<${bare}|${issue[1]} #${issue[2]}>${trailing}`;
 };
 
-export const linkifyBareUrls = (text: string): string =>
-  text
-    .split(SLACK_LINK_TOKEN)
-    .map((part, index) =>
-      index % 2 === 1 ? part : part.replace(BARE_URL, toLabeledLink),
-    )
+// 보호 토큰 사이 구간에만 변환을 적용한다.
+const mapUnprotected = (
+  line: string,
+  transform: (part: string) => string,
+): string =>
+  line
+    .split(PROTECTED_TOKEN)
+    .map((part, index) => (index % 2 === 1 ? part : transform(part)))
     .join('');
+
+// ``` 코드블록 안은 통째로 건너뛴다 — 사용자가 그대로 복사해 쓰는 원문이라 한 글자도 바꾸면 안 된다.
+// fence 가 닫히지 않은 입력이면 그 뒤 전체를 코드로 보고 통과시킨다(안전한 실패).
+export const isCodeFenceLine = (line: string): boolean =>
+  line.trimStart().startsWith('```');
+
+const mapOutsideCodeFence = (
+  text: string,
+  transformLine: (line: string) => string,
+): string => {
+  let insideCodeFence = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (isCodeFenceLine(line)) {
+        insideCodeFence = !insideCodeFence;
+        return line;
+      }
+      return insideCodeFence ? line : transformLine(line);
+    })
+    .join('\n');
+};
+
+export const linkifyBareUrls = (text: string): string =>
+  mapOutsideCodeFence(text, (line) =>
+    mapUnprotected(line, (part) => part.replace(BARE_URL, toLabeledLink)),
+  );
 
 // 모델이 만든 산문(판단 근거, 회고 요약 등)은 문장 여러 개를 줄바꿈 없이 한 덩어리로 뱉는다.
 // Slack 폭에서 그대로 흐르면 대여섯 줄짜리 글자 벽이 되어 어디서 끊어 읽을지 알 수 없다.
@@ -93,32 +125,12 @@ const breakLineIntoSentences = (line: string): string => {
   ) {
     return line;
   }
-  // `<url|이름>` 안에도 마침표가 있다 — 링크 토큰은 건드리지 않고 통과시킨다.
-  const marked = line
-    .split(SLACK_LINK_TOKEN)
-    .map((part, index) =>
-      index % 2 === 1 ? part : part.replace(SENTENCE_BOUNDARY, '$1\n'),
-    )
-    .join('');
+  // `<url|이름>` 과 인라인 코드 안에도 마침표가 있다 — 보호 토큰은 건드리지 않고 통과시킨다.
+  const marked = mapUnprotected(line, (part) =>
+    part.replace(SENTENCE_BOUNDARY, '$1\n'),
+  );
   return mergeShortSentences(marked.split('\n'));
 };
 
-// ``` 코드블록 안은 손대지 않는다 — 사용자가 그대로 복사해 붙여 쓰는 원문이라
-// 한 글자라도 바꾸면 안 되고, 줄을 쪼개면 코드가 깨진다.
-// fence 가 닫히지 않은 입력이면 그 뒤 전체를 코드로 보고 통과시킨다(안전한 실패).
-export const isCodeFenceLine = (line: string): boolean =>
-  line.trimStart().startsWith('```');
-
-export const breakProseIntoSentences = (text: string): string => {
-  let insideCodeFence = false;
-  return text
-    .split('\n')
-    .map((line) => {
-      if (isCodeFenceLine(line)) {
-        insideCodeFence = !insideCodeFence;
-        return line;
-      }
-      return insideCodeFence ? line : breakLineIntoSentences(line);
-    })
-    .join('\n');
-};
+export const breakProseIntoSentences = (text: string): string =>
+  mapOutsideCodeFence(text, breakLineIntoSentences);
