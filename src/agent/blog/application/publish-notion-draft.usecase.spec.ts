@@ -1956,6 +1956,61 @@ describe('호흡 되먹임 재시도', () => {
     expect(content).toContain(긴문장);
   });
 
+  // 실측: 평균 39.2자(첫판 10자보다 오름) · 최장 90자 · 목표 밖 **1개**(`longestSentence`).
+  // 첫 판도 1개(`averageLength`) 라 **개수만 비교하면 통과한다** — 축이 맞바뀐 것을 못 본다.
+  const 재시도_축맞바뀜 = `${반복(44, 긴문장)} ${만연체}`;
+  // 실측: 20문장 → measurable=false. 문장 축 판정을 아예 건너뛰어 갭이 0개로 보인다.
+  const 재시도_표본축소 = 반복(20, 긴문장);
+  // 실측: 평균 4자 — 첫판보다 낮다.
+  const 재시도_평균하락 = 반복(45, '짧아요.');
+
+  // 개수가 같아도 축이 바뀌면 더 나빠진 판이다. 이전 수정(개수 비교)이 통과시켰던 형태다.
+  it('목표 밖 개수가 같아도 축이 새로 생기면 첫 판을 쓴다', async () => {
+    const { usecase, createPreview } = buildForRetry([
+      첫판_짧음,
+      재시도_축맞바뀜,
+    ]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    expect(payload.content).not.toContain(만연체);
+  });
+
+  // 문장을 합치는 것이 이 되먹임의 목적이라 문장 수가 줄어든다. 40문장 미만이 되면 문장 축
+  // 판정을 건너뛰어 갭이 사라진 것처럼 보이고, 판정 대상이 아닌 결과를 수락하게 된다.
+  it('재시도본이 40문장 미만으로 줄면 첫 판을 쓴다', async () => {
+    const { usecase, createPreview } = buildForRetry([
+      첫판_짧음,
+      재시도_표본축소,
+    ]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    expect(payload.content).toContain(짧은문장);
+  });
+
+  // 수락 조건이 둘(평균 오름 · 새 축 없음)인데 평균 쪽 기각에 테스트가 없었다.
+  it('재시도본 평균이 첫 판 이하면 첫 판을 쓴다', async () => {
+    const { usecase, createPreview } = buildForRetry([
+      첫판_짧음,
+      재시도_평균하락,
+    ]);
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    const payload = createPreview.execute.mock.calls[0][0].payload as {
+      content: string;
+    };
+    expect(payload.content).toContain(짧은문장);
+    expect(payload.content).not.toContain('짧아요.');
+  });
+
   // D2 의 핵심 — 문장을 합치면 평균과 최장이 **함께** 오른다. 평균 하나만 보면 되먹임이 제대로
   // 작동한 결과가 곧 가드의 사각지대가 된다. 평균이 올랐어도 다른 축이 나빠지면 첫 판을 쓴다.
   it('평균은 올랐지만 다른 축이 나빠지면 첫 판을 쓴다', async () => {

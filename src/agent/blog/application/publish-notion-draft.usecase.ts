@@ -14,7 +14,7 @@ import {
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeMarkdownProse } from '../../../humanize/application/humanize-markdown.adapter';
 import {
-  findKoreanStyleGaps,
+  findKoreanStyleGapAxes,
   formatKoreanStyleMetrics,
   KOREAN_STYLE_TARGETS,
   measureKoreanStyle,
@@ -702,21 +702,36 @@ export class PublishNotionDraftUsecase {
     // 정량 기준**이다(`korean-style-metrics.ts` 의 `endingAlternationPercentMax` 주석).
     // 가장 믿는 축을 팔아 가장 근거가 약한 축을 사는 거래가 된다.
     //
-    // 그래서 갭 **개수**로 본다. 목표 밖 항목이 늘지 않았을 때만 재시도본을 쓴다.
-    const gapsBefore = findKoreanStyleGaps(metrics);
-    const gapsAfter = findKoreanStyleGaps(retriedMetrics);
-    if (
-      retriedMetrics.averageLength <= metrics.averageLength ||
-      gapsAfter.length > gapsBefore.length
-    ) {
-      this.logger.log(
-        `호흡 되먹임 무효 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 목표 밖 ${gapsBefore.length}개 → ${gapsAfter.length}개, 첫 판을 쓴다`,
-      );
+    // 그래서 목표 밖 축의 **정체**를 본다. 개수만 비교하면 축이 맞바뀐 재시도본을 통과시킨다
+    // (리뷰 지적): 첫 판의 유일한 갭이 `평균` 이고 재시도에서 평균은 하한을 넘었지만 `최장` 이
+    // 새로 상한을 넘으면, 둘 다 1개라 **더 나빠진 판이 채택된다.**
+    //
+    // 재시도본의 표본 크기도 함께 본다. 문장을 합치는 것이 이 되먹임의 목적이라 문장 수가
+    // 줄어드는데, 40문장 미만이 되면 `findKoreanStyleGaps` 가 문장 축을 아예 건너뛴다 —
+    // 갭이 사라진 것처럼 보여 그대로 수락된다. 판정 대상이 아닌 결과를 판정하는 셈이다.
+    const axesBefore = new Set(findKoreanStyleGapAxes(metrics));
+    const newAxes = findKoreanStyleGapAxes(retriedMetrics).filter(
+      (axis) => !axesBefore.has(axis),
+    );
+    const rejectReason = ((): string | null => {
+      if (!retriedMetrics.measurable) {
+        return `재시도본이 ${retriedMetrics.sentenceCount}문장으로 줄어 정량 판정 대상이 아니다`;
+      }
+      if (retriedMetrics.averageLength <= metrics.averageLength) {
+        return `평균이 오르지 않았다(${metrics.averageLength}자 → ${retriedMetrics.averageLength}자)`;
+      }
+      if (newAxes.length > 0) {
+        return `다른 축이 새로 목표를 벗어났다(${newAxes.join(', ')})`;
+      }
+      return null;
+    })();
+    if (rejectReason) {
+      this.logger.log(`호흡 되먹임 무효 — ${rejectReason}, 첫 판을 쓴다`);
       return first;
     }
 
     this.logger.log(
-      `호흡 되먹임 적용 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 목표 밖 ${gapsBefore.length}개 → ${gapsAfter.length}개`,
+      `호흡 되먹임 적용 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 새로 벗어난 축 없음`,
     );
     // 문단 계수는 첫 판 것을 쓴다. 재시도는 같은 문단을 한 번 더 다듬은 것이지 새로 고른 게
     // 아니라, 두 번째 계수를 카드에 적으면 "몇 문단이 윤문됐나" 가 실제보다 작게 읽힌다.
