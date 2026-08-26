@@ -314,11 +314,14 @@ describe('PrReviewFindingPrismaRepository', () => {
       { category: 'CORRECTNESS', status: 'REJECTED', _count: { _all: 1 } },
     ]);
 
-    const rows = await repository.countAdoptionByCategory();
+    const since = new Date('2026-08-12T00:00:00Z');
+    const rows = await repository.countAdoptionByCategory({ since });
 
     // 상태 필터는 순수 함수(summarizeAdoption)가 맡는다 — 여기서는 조합을 그대로 넘긴다.
+    // 구간은 결론 시각으로 자른다. 상한이 없으면 하한만 건다.
     expect(prisma.prReviewFinding.groupBy).toHaveBeenCalledWith({
       by: ['category', 'status'],
+      where: { decidedAt: { gte: since } },
       _count: { _all: true },
     });
     expect(rows).toEqual([

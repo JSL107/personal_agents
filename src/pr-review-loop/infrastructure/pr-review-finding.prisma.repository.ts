@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoryStatusCount } from '../domain/adoption-rate';
 import {
+  AdoptionWindowInput,
   FindRejectionsForConventionsInput,
   HasAnyForPullRequestInput,
   MarkDecidedInput,
@@ -177,12 +178,19 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     });
   }
 
-  // ponytail: 기간 제한 없이 전체 누적. 카테고리×상태 조합이라 행 수가 작아(현재 4×5 미만)
-  // 비용이 무시할 수준이고, 원장의 계측 쿼리와 같은 범위라 대조가 쉽다. 카드가 수천 건
-  // 쌓여 옛 데이터가 현재 품질을 가리기 시작하면 createdAt 하한을 넣는다.
-  async countAdoptionByCategory(): Promise<CategoryStatusCount[]> {
+  // 누적이 아니라 구간으로 센다. 누적은 표본이 쌓일수록 최근 변화를 희석해, 규약을 실은
+  // 카테고리가 나아졌는지 가려낼 수 없었다 — 이 표를 두 번 조회해 최근/직전을 비교한다.
+  async countAdoptionByCategory(
+    input: AdoptionWindowInput,
+  ): Promise<CategoryStatusCount[]> {
     const rows = await this.prisma.prReviewFinding.groupBy({
       by: ['category', 'status'],
+      where: {
+        decidedAt:
+          input.until === undefined
+            ? { gte: input.since }
+            : { gte: input.since, lt: input.until },
+      },
       _count: { _all: true },
     });
     return rows.map(({ category, status, _count }) => ({

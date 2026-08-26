@@ -744,7 +744,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     );
   });
 
-  it('카드 상태가 바뀌면 누적 채택률을 함께 낸다', async () => {
+  it('카드 상태가 바뀌면 구간 채택률을 함께 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -779,14 +779,16 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 3,
         total: 15,
         ratePercent: 80,
+        // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
+        changePercentPoint: 0,
       },
     ]);
   });
 
-  // 이 회차에 반응이 없어도 누적 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
+  // 이 회차에 반응이 없어도 구간 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
   // (autopilot.orchestrator buildGuardKey), 반응이 있던 회차가 그날 첫 발송이 아니면 그대로
   // 차단된다 — 조회를 반응 있는 회차로 아끼면 그 값이 영영 안 나온다.
-  it('반응이 없는 회차에도 누적 채택률을 낸다', async () => {
+  it('반응이 없는 회차에도 구간 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -810,11 +812,13 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 3,
         total: 15,
         ratePercent: 80,
+        // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
+        changePercentPoint: 0,
       },
     ]);
   });
 
-  it('STALE 확정만 있는 회차에도 누적 채택률을 낸다', async () => {
+  it('STALE 확정만 있는 회차에도 구간 채택률을 낸다', async () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
@@ -837,6 +841,7 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejected: 0,
         total: 10,
         ratePercent: 100,
+        changePercentPoint: 0,
       },
     ]);
   });
