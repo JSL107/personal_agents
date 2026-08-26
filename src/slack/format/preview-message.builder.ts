@@ -1,5 +1,6 @@
 import { PreviewCardState } from '../../preview-gate/domain/port/preview-card.port';
 import { PREVIEW_ACTION_IDS } from '../../preview-gate/domain/preview-action.type';
+import { linkifyBareUrls } from './mrkdwn.util';
 
 // Slack section.text(mrkdwn) 의 최대 문자 수는 3000. 안전 마진 50 두고 2950 로.
 // PR #26 (omc:code-reviewer MEDIUM-2) follow-up — 긴 careerLog / WBS 분해는 단일 section 으로
@@ -17,7 +18,12 @@ export const buildPreviewBlocks = ({
   previewText: string;
   previewId: string;
 }): Array<Record<string, unknown>> => {
-  const chunks = chunkMrkdwnText(previewText, SECTION_MRKDWN_LIMIT);
+  // 카드 본문에도 맨 주소 접기를 적용한다 — 승인 카드는 사용자가 가장 오래 들여다보는 화면이라
+  // 주소 한 줄이 판단 근거를 밀어내면 안 된다. 이미 `<url|이름>` 인 링크는 그대로 통과한다(멱등).
+  const chunks = chunkMrkdwnText(
+    linkifyBareUrls(previewText),
+    SECTION_MRKDWN_LIMIT,
+  );
   return [
     ...chunks.map((chunk) => ({
       type: 'section',
@@ -92,7 +98,10 @@ export const buildResolvedPreviewBlocks = ({
   previewId: string;
 }): Array<Record<string, unknown>> => {
   const header = RESOLVED_HEADERS[state];
-  const bodyChunks = chunkMrkdwnText(bodyText, SECTION_MRKDWN_LIMIT);
+  const bodyChunks = chunkMrkdwnText(
+    linkifyBareUrls(bodyText),
+    SECTION_MRKDWN_LIMIT,
+  );
   const sections: Array<Record<string, unknown>> = [
     { type: 'section', text: { type: 'mrkdwn', text: header } },
     ...bodyChunks.map((chunk) => ({

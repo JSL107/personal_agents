@@ -9,6 +9,7 @@ import {
   extractActionValue,
 } from '../bolt/action-body.parser';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
 // PO-2 Preview Gate — apply / cancel 버튼 클릭 처리.
@@ -40,7 +41,7 @@ export class PreviewActionHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `✅ Preview 적용 완료 — ${resultText}`,
+          ...toReadableSlackArgs(`✅ Preview 적용 완료 — ${resultText}`),
         });
       } catch (error: unknown) {
         await respond({

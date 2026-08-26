@@ -20,6 +20,7 @@ import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatAssignmentOutput } from '../format/assignment.formatter';
 import { buildAssignmentCardBlocks } from '../format/assignment-card.builder';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { formatModelFooter } from '../format/model-footer.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
@@ -90,7 +91,7 @@ export class PhaseCommandHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text,
+          ...toReadableSlackArgs(text),
           // 실행할 분배가 없으면 카드도 없다 — 텍스트만 보낸다.
           ...(previewId !== null
             ? {
