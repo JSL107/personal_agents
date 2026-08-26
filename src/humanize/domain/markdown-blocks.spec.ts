@@ -333,6 +333,40 @@ describe('stripStructuralEmDashes — 머리말이 아닌 줄표', () => {
     );
   });
 
+  // 단위가 붙으면 `NUMERIC_HEAD` 가 놓친다 — 앞뒤가 둘 다 숫자로 시작하는지로 잡는다.
+  it('단위가 붙은 범위도 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- 2026년 — 2027년 매출 추이')).toBe(
+      '- 2026년 — 2027년 매출 추이',
+    );
+    expect(stripStructuralEmDashes('- 3천 — 5천 사이예요')).toBe(
+      '- 3천 — 5천 사이예요',
+    );
+  });
+
+  // 한쪽만 숫자면 범위가 아니라 머리말일 수 있다.
+  it('앞만 숫자이고 뒤가 설명이면 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('- 3가지 — 정리하면 이렇습니다')).toBe(
+      '- 3가지: 정리하면 이렇습니다',
+    );
+  });
+
+  // 인라인 코드 안의 줄표는 리터럴이다. 바꾸면 코드 예시의 뜻이 조용히 변한다.
+  it('인라인 코드 안의 줄표는 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('## `foo — bar` 사용법')).toBe(
+      '## `foo — bar` 사용법',
+    );
+    expect(stripStructuralEmDashes('- `a — b` 를 넘겨요')).toBe(
+      '- `a — b` 를 넘겨요',
+    );
+  });
+
+  // 코드 span 이 닫힌 뒤의 줄표는 머리말 구분자다 — 백틱 짝이 맞으면 치환한다.
+  it('닫힌 코드 뒤의 줄표는 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('## `--auto` 옵션 — 언제 쓰나')).toBe(
+      '## `--auto` 옵션: 언제 쓰나',
+    );
+  });
+
   // 대조군 — 정상 머리말은 그대로 콜론이 된다. 위 조건들이 과하게 걸리면 이게 깨진다.
   it('명사 머리말은 여전히 콜론으로 바꾼다', () => {
     expect(stripStructuralEmDashes('## 채점관 — /goal')).toBe(
