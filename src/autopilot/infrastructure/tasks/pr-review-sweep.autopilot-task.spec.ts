@@ -104,6 +104,7 @@ describe('PrReviewSweepAutopilotTask', () => {
           rejected: 1,
           total: 17,
           ratePercent: 94,
+          changePercentPoint: 3,
         },
       ],
     });

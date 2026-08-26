@@ -1,3 +1,4 @@
+import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
 import { formatPrReviewSweep } from './pr-review-sweep.formatter';
 
 const outcome = (overrides = {}) => ({
@@ -27,6 +28,7 @@ const adoption = (
   category: string,
   total: number,
   ratePercent: number | null,
+  changePercentPoint: number | null = null,
 ) => {
   // adopted + rejected === total 을 지킨다. 깨진 조합으로 검증하면 실제로는 나올 수 없는
   // 입력을 통과시키게 된다.
@@ -38,6 +40,7 @@ const adoption = (
     rejected: total - adopted,
     total,
     ratePercent,
+    changePercentPoint,
   };
 };
 
@@ -172,7 +175,7 @@ describe('formatPrReviewSweep', () => {
     ).toBe('');
   });
 
-  it('누적 채택률을 카테고리별로 한 줄에 렌더한다', () => {
+  it('구간 채택률을 카테고리별로 한 줄에 렌더한다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
@@ -196,6 +199,51 @@ describe('formatPrReviewSweep', () => {
 
     expect(text).toContain('RELIABILITY 표본 7');
     expect(text).not.toContain('%');
+  });
+
+  it('직전 구간 대비 변화를 화살표로 붙인다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [
+          adoption('CORRECTNESS', 20, 90, 8),
+          adoption('TEST', 30, 70, -12),
+          adoption('RELIABILITY', 12, 83, 0),
+        ],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('CORRECTNESS 90%(20) ↑8%p');
+    expect(text).toContain('TEST 70%(30) ↓12%p');
+    expect(text).toContain('RELIABILITY 83%(12) →');
+  });
+
+  it('기준선이 없으면 화살표를 붙이지 않는다', () => {
+    // 직전 구간 표본이 미달이면 변화가 null 로 온다. 없는 기준선으로 그린 화살표는
+    // 추세처럼 보이지만 잡음이다.
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('READABILITY', 11, 91, null)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('READABILITY 91%(11)');
+    expect(text).not.toContain('↑');
+    expect(text).not.toContain('↓');
+    expect(text).not.toContain('→');
+  });
+
+  it('채택률 줄에 구간 길이를 밝힌다', () => {
+    // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
+    const text = formatPrReviewSweep({
+      harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),
+      results: [],
+    });
+
+    expect(text).toContain(`채택률(최근 ${ADOPTION_WINDOW_DAYS}일)`);
   });
 
   it('집계가 비면 채택률 줄을 생략한다', () => {

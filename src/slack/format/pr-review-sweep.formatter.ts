@@ -1,9 +1,24 @@
+import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
 import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
 import {
   PublishOutcome,
   SweepPullRequestResult,
 } from '../../pr-review-loop/domain/publish-outcome.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
+
+// 직전 구간 대비 변화. 두 구간 중 하나라도 표본이 미달이면 null 이 와서 아무것도 붙지 않는다 —
+// 기준선이 없는 화살표는 추세처럼 보이지만 사실은 잡음이다.
+const formatChange = (changePercentPoint: number | null): string => {
+  if (changePercentPoint === null) {
+    return '';
+  }
+  if (changePercentPoint === 0) {
+    return ' →';
+  }
+  return changePercentPoint > 0
+    ? ` ↑${changePercentPoint}%p`
+    : ` ↓${Math.abs(changePercentPoint)}%p`;
+};
 
 const RISK_ICON: Record<string, string> = {
   low: '🟢',
@@ -54,15 +69,17 @@ export const formatPrReviewSweep = ({
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
   }
-  // 누적 채택률은 카드 상태가 바뀐 회차에만 채워진다. 표본이 미달인 카테고리는 비율을
+  // 채택률은 카드 상태가 바뀐 회차에만 채워진다. 표본이 미달인 카테고리는 비율을
   // 감추고 표본 수만 보여준다 — 4건으로 낸 비율이 판단 근거로 쓰이는 것을 막는다.
+  // 화살표는 직전 같은 길이 구간과의 차이다. 규약이 선 카테고리가 실제로 나아졌는지는
+  // 이 한 칸으로만 보인다 — 없으면 다시 손으로 원장을 뒤져야 한다.
   if (harvest.adoption.length > 0) {
     lines.push(
-      `📊 채택률 ${harvest.adoption
-        .map(({ category, total, ratePercent }) =>
+      `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일) ${harvest.adoption
+        .map(({ category, total, ratePercent, changePercentPoint }) =>
           ratePercent === null
             ? `${escapeSlackMrkdwn(category)} 표본 ${total}`
-            : `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})`,
+            : `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
         )
         .join(' · ')}`,
     );
