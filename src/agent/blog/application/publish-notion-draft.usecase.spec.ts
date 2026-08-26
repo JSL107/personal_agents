@@ -1763,3 +1763,19 @@ describe('차단된 초안 큐 막힘', () => {
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
   });
 });
+
+// 정렬 직후에 큐 머리를 들여다보면, 초안 큐가 빈 채로 pageId 재실행이 들어올 때 터진다.
+// 그 경로는 "초안을 찾을 수 없습니다" 라는 제대로 된 예외가 나야 하는 자리다.
+describe('빈 큐에서 pageId 재실행', () => {
+  it('초안 목록이 비어 있어도 DRAFT_NOT_FOUND 로 끊는다', async () => {
+    const { usecase } = buildUsecase({ drafts: [] });
+
+    await expect(
+      usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        pageId: 'page-gone',
+      }),
+    ).rejects.toThrow('찾을 수 없습니다');
+  });
+});

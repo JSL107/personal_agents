@@ -537,13 +537,6 @@ export class PublishNotionDraftUsecase {
       }
       return first.createdTime.localeCompare(second.createdTime);
     });
-    if (blockedPageIds.has(oldestFirst[0].pageId)) {
-      // 큐 전체가 막힌 초안뿐이라 후순위가 무의미한 회차. 조용히 같은 글을 또 돌리는 것보다
-      // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
-      this.logger.warn(
-        `발행 후보가 모두 최근 차단된 초안입니다 (${blockedPageIds.size}건). Notion 에서 금지어를 수정해야 합니다.`,
-      );
-    }
     if (pageId) {
       const replayTarget = oldestFirst.find((draft) => draft.pageId === pageId);
       if (replayTarget) {
@@ -556,7 +549,19 @@ export class PublishNotionDraftUsecase {
       });
     }
     if (!titleQuery) {
-      return oldestFirst[0];
+      // 여기서만 배열 접근이 안전하다 — 지목 없는 경로는 호출부가 빈 큐를 이미 걸렀다
+      // (`drafts.length === 0 && !input.pageId` → status: 'empty'). 정렬 직후에 이 검사를
+      // 두면 큐가 빈 채로 pageId 재실행이 들어올 때 터진다. 그 경로는 아래 DRAFT_NOT_FOUND 가
+      // 맡아야 한다.
+      const head = oldestFirst[0];
+      if (blockedPageIds.has(head.pageId)) {
+        // 후순위로 밀 곳이 없다 = 큐가 전부 차단분이다. 조용히 같은 글을 또 돌리는 것보다
+        // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
+        this.logger.warn(
+          `발행 후보가 모두 최근 차단된 초안입니다 (${blockedPageIds.size}건). Notion 에서 금지어를 수정해야 합니다.`,
+        );
+      }
+      return head;
     }
     const normalizedQuery = titleQuery.toLocaleLowerCase('ko-KR');
     const found = oldestFirst.find((draft) =>
