@@ -1,5 +1,6 @@
 import {
   CODE_MASK_PATTERN,
+  countMarkdownStructure,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
   scanMarkdownBlocks,
@@ -230,5 +231,79 @@ describe('maskFencedCodeBlocks / restoreFencedCodeBlocks', () => {
 
     expect(masked).toBe('산문만 있습니다.');
     expect(blocks).toHaveLength(0);
+  });
+});
+
+describe('countMarkdownStructure — 단계 경계 계측', () => {
+  it('헤딩·인용·링크·코드블록을 종류별로 센다', () => {
+    const 본문 = [
+      '# 제목',
+      '',
+      '### 소제목',
+      '',
+      '> 인용 첫 줄',
+      '> 인용 둘째 줄',
+      '',
+      '[MDN](https://developer.mozilla.org) 과 https://example.com 을 봤다.',
+      '',
+      '```ts',
+      'const a = 1;',
+      '```',
+    ].join('\n');
+
+    expect(countMarkdownStructure(본문)).toEqual({
+      chars: 본문.trim().length,
+      headings: 2,
+      // 블록이 아니라 **줄 수** 다 — 한 덩어리가 통째로 빠졌는지 안에서 몇 줄만 빠졌는지를
+      // 블록 수로는 가를 수 없다.
+      quotes: 2,
+      links: 2,
+      codeBlocks: 1,
+    });
+  });
+
+  // 코드블록 안의 `#` 주석과 `>` 프롬프트를 헤딩·인용으로 세면, 편집이 산문 헤딩을 지워도
+  // 총계가 그대로여서 계측이 손실을 가린다.
+  it('코드블록 안의 #·>·URL 은 세지 않는다', () => {
+    const 본문 = [
+      '## 실행',
+      '',
+      '```bash',
+      '# 주석입니다',
+      '> here-doc 프롬프트',
+      'curl https://example.com',
+      '```',
+    ].join('\n');
+
+    expect(countMarkdownStructure(본문)).toMatchObject({
+      headings: 1,
+      quotes: 0,
+      links: 0,
+      codeBlocks: 1,
+    });
+  });
+
+  // 실측된 손실 형태 — 편집이 인용을 전부 지우고 헤딩을 반으로 줄여도 글자 수는 60% 위에
+  // 남는다. 문자 게이트가 못 보는 자리를 이 계측이 본다.
+  it('글자 수는 60% 위인데 인용·헤딩만 사라진 경우를 잡아낸다', () => {
+    const 원문 = [
+      '## 가',
+      '',
+      '> 인용',
+      '',
+      '가'.repeat(100),
+      '',
+      '## 나',
+    ].join('\n');
+    const 편집본 = ['## 가', '', '가'.repeat(100)].join('\n');
+
+    const before = countMarkdownStructure(원문);
+    const after = countMarkdownStructure(편집본);
+
+    expect(after.chars).toBeGreaterThan(before.chars * 0.6);
+    expect(after.quotes).toBe(0);
+    expect(before.quotes).toBe(1);
+    expect(after.headings).toBe(1);
+    expect(before.headings).toBe(2);
   });
 });

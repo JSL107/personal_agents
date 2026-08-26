@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { PublishNotionDraftUsecase } from '../../../agent/blog/application/publish-notion-draft.usecase';
-import { BlogPublishCandidate } from '../../../agent/blog/domain/blog.type';
+import {
+  BlogPublishCandidate,
+  buildBlogRunOutput,
+} from '../../../agent/blog/domain/blog.type';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -52,11 +55,18 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
         firedAtKst,
       },
       run: async () => {
-        const { candidate, modelUsed } =
+        const { candidate, modelUsed, stages } =
           await this.publishNotionDraft.buildPublishCandidate({
             slackUserId: ownerSlackUserId,
           });
-        return { result: candidate, modelUsed, output: candidate };
+        // 단계별 구조 수치를 원장에 함께 남긴다. 저녁 발행은 **이 경로로만** 돈다 —
+        // usecase 의 `execute` 는 수동 `/blog-publish` 전용이라, 거기에만 넣으면 매일 도는
+        // 회차가 계측에서 통째로 빠진다.
+        return {
+          result: candidate,
+          modelUsed,
+          output: buildBlogRunOutput(candidate, stages),
+        };
       },
     });
 
