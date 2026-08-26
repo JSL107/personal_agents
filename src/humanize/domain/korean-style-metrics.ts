@@ -1,4 +1,4 @@
-import { scanMarkdownBlocks } from './markdown-blocks';
+import { maskFencedCodeBlocks, scanMarkdownBlocks } from './markdown-blocks';
 
 // 윤문본이 "이 사람 말투" 에 얼마나 가까운지 재는 지표.
 //
@@ -55,6 +55,10 @@ export type KoreanStyleMetrics = {
   // 발행본 73~88% (2026-08-21~23 세 편).
   endingAlternationPercent: number;
   bannedConnectiveCount: number;
+  // 줄표(—) 개수. 스킬 룰북(`rewriting-playbook.md` J-3)이 "1문서 1~2회 이하" 로 정한 항목인데
+  // 프롬프트에만 있고 세는 자리가 없어 발행본에 15개가 들어가도 어떤 지표에도 안 걸렸다
+  // (2026-08-26 실측: 헤딩 6 · 목록 6 · 본문 3). 문장 축이 아니라 문서 축이라 40문장 미만에도 잰다.
+  emDashCount: number;
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
   paragraph: KoreanStyleParagraphMetrics;
@@ -253,6 +257,17 @@ const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
   };
 };
 
+// 줄표를 센다. 코드블록 안은 빼는데, 명령어나 출력 예시에 든 `—` 는 필자의 문체가 아니다.
+//
+// 펜스 처리는 `maskFencedCodeBlocks` 에 맡긴다. 직접 `/```[\s\S]*?```/` 로 자르면 `~~~` 펜스와
+// ```` 로 연 블록(안쪽 ``` 에서 잘못 닫힌다)과 닫히지 않은 펜스를 놓쳐, 코드 예시가 든 글에서
+// 문체에 없는 줄표가 상한을 넘긴다(리뷰 P2). 이 레포는 같은 함정을 이미 겪고 고쳤다.
+//
+// `keep` 블록 전체를 빼면 안 된다 — 헤딩과 목록 머리말이 함께 빠진다. 이번에 빠져나간 줄표
+// 15개 중 12개가 바로 그 자리였다. 펜스만 가리는 이 함수가 맞다.
+const countEmDashes = (markdown: string): number =>
+  (maskFencedCodeBlocks(markdown).masked.match(/—/g) ?? []).length;
+
 export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
   const sentences = extractProseSentences(markdown);
   if (sentences.length === 0) {
@@ -267,6 +282,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       yoEndingPercent: 0,
       endingAlternationPercent: 0,
       bannedConnectiveCount: 0,
+      emDashCount: countEmDashes(markdown),
       measurable: false,
       paragraph: measureParagraphs(markdown),
     };
@@ -353,6 +369,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
         ? 0
         : toPercent(alternationCount, rankedEndings.length - 1),
     bannedConnectiveCount,
+    emDashCount: countEmDashes(markdown),
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
   };
@@ -391,6 +408,13 @@ export const KOREAN_STYLE_TARGETS = {
   // 나왔다. 아래 세 축을 내리고도 이 축이 남는 이유가 그것이다.
   endingAlternationPercentMax: 60,
   bannedConnectiveMax: 0,
+  // 호흡. 편차만 보면 "들쭉날쭉한가" 는 알아도 "숨이 가쁜가" 는 모른다 — 2026-08-26 발행본이
+  // 편차 11(통과)·평균 33.2자였는데 사용자 판정은 "호흡이 너무 짧다" 였다. 사용자가 실제로 쓴
+  // 글은 평균 44.7자다(프로파일 §1). 발행본과 그 사이에 경계를 둔다.
+  averageLengthMin: 35,
+  // 스킬 룰북 J-3 의 "1문서 1~2회 이하" 를 그대로 옮긴다. 0 이 아닌 이유는 한 번쯤은
+  // 자연스러운 자리가 있기 때문이고, 상한을 두는 이유는 15개가 들어간 발행본이 실제로 나갔기 때문이다.
+  emDashMax: 2,
 } as const;
 
 /**
@@ -418,27 +442,38 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
 /**
  * 목표를 벗어난 항목만 골라 "값(기준)" 꼴로 돌려준다. 전부 맞으면 빈 배열이다.
  *
- * 40문장 미만이면 빈 배열을 돌려준다 — 문장 하나가 비율을 10%p 씩 흔들어 판정이 무의미하다.
+ * 40문장 미만이면 **문장 축**을 보류한다 — 문장 하나가 비율을 10%p 씩 흔들어 판정이 무의미하다.
  * 이때 카드에는 판정 줄 대신 기존의 "참고값" 단서만 남는다.
+ *
+ * 줄표는 문장 수와 무관한 **문서 축**이라 표본이 작아도 판정한다. 보류에 함께 묶으면 짧은 글은
+ * 줄표가 몇 개든 카드에 안 찍힌다(리뷰 P2).
  */
 export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] => {
-  if (!metrics.measurable) {
-    return [];
-  }
   const gaps: string[] = [];
   const T = KOREAN_STYLE_TARGETS;
-  if (metrics.longestSentenceLength > T.longestSentenceMax) {
-    gaps.push(
-      `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
-    );
+  // 문장 축은 40문장 이상일 때만 판정한다. main 이 표본 출처 의심으로 편차·짧은문장·구어를
+  // 내렸고(#398), 남은 축에 이번 평균 하한이 더해진다.
+  if (metrics.measurable) {
+    if (metrics.longestSentenceLength > T.longestSentenceMax) {
+      gaps.push(
+        `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
+      );
+    }
+    if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
+      gaps.push(
+        `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
+      );
+    }
+    if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
+      gaps.push(`금지접속사 ${metrics.bannedConnectiveCount}회(0회)`);
+    }
+    if (metrics.averageLength < T.averageLengthMin) {
+      gaps.push(`평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`);
+    }
   }
-  if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
-    gaps.push(
-      `종결체교대 ${metrics.endingAlternationPercent}%(≤${T.endingAlternationPercentMax}%)`,
-    );
-  }
-  if (metrics.bannedConnectiveCount > T.bannedConnectiveMax) {
-    gaps.push(`금지접속사 ${metrics.bannedConnectiveCount}회(0회)`);
+  // 줄표는 문장 수와 무관한 문서 축이라 표본이 작아도 판정한다.
+  if (metrics.emDashCount > T.emDashMax) {
+    gaps.push(`줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`);
   }
   return gaps;
 };
@@ -449,7 +484,7 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
@@ -457,11 +492,14 @@ export const formatKoreanStyleMetrics = (
     : `${head} (40문장 미만이라 참고값)`;
   const gaps = findKoreanStyleGaps(metrics);
   // 수치만 있는 카드는 좋은 값인지 나쁜 값인지 알려주지 못한다. 기준을 값 옆에 붙여 적는다.
-  const verdict = !metrics.measurable
-    ? ''
-    : gaps.length === 0
-      ? `\n판정 대상 충족 (${KOREAN_STYLE_UNJUDGED_AXES.join('·')}은 판정 밖)`
-      : `\n목표 밖: ${gaps.join(' · ')}`;
+  // 문장 축이 보류돼도 줄표 같은 문서 축은 걸린다. "판정 대상 충족" 은 문장 축을 실제로 판정한
+  // 글에만 쓴다 — 보류된 글에 붙이면 재지도 않은 축까지 통과한 것으로 읽힌다.
+  const verdict =
+    gaps.length > 0
+      ? `\n목표 밖: ${gaps.join(' · ')}`
+      : metrics.measurable
+        ? `\n판정 대상 충족 (${KOREAN_STYLE_UNJUDGED_AXES.join('·')}은 판정 밖)`
+        : '';
   // 판정 줄은 「기준에서 얼마나 벗어났나」까지만 알려준다. **무엇이 길었는지**는 숫자로 갈리지
   // 않는다 — 끊어야 할 만연체와, 고유명사 불변 규칙 때문에 끊을 수 없는 영문 이름 나열이
   // 같은 91자로 찍힌다. 넘겼을 때만 그 문장을 덧붙여 사람이 읽고 판단하게 한다.

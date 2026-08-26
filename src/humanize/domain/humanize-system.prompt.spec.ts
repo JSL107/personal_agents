@@ -71,21 +71,74 @@ describe('개인 블로그 목소리 프롬프트', () => {
       '한 어미에 몰지 말고',
     );
   });
-  // 블로그 글은 해요체가 기본이라는 사용자 진술(2026-08-24)을 고정한다. 이전 지시는 두 종결체를
-  // "한쪽으로 몰리지 않게" 요구했고, 그 결과 모델이 문장마다 갈아타 발행본 교대율이 73~88% 가
-  // 됐다(사용자가 손본 발행본 37% · 사용자가 쓴 글 50%). 되살아나면 같은 증상이 재발한다.
-  it('해요체를 기본으로 주고, 반반 지시는 남기지 않는다', () => {
-    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('기본 종결은');
+  // 블로그 글은 해요체로 쓴다는 사용자 진술(2026-08-24)과 결정(2026-08-25)을 고정한다.
+  //
+  // 섞어 쓰기 전제로 배치를 조율한 회차들이 전부 실패했다 — 상한만 지우면 `~습니다` 가 124 → 19개,
+  // 하한을 도로 넣으면 교대가 50~76% 로 흔들렸다. 종결이 한 가지면 갈아탈 일이 없어 이 축이 사라진다.
+  // 되살아나면(= 두 종결체를 섞으라는 지시가 돌아오면) 교대 문제가 그대로 재발한다.
+  it('종결을 해요체로 통일하라고 요구한다', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('해요체');
-    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('절반을 넘기지 마라');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('섞어 쓰지 마라');
+    // 값 단위 비율 지시는 「문단 나누기」와 곱해져 교대를 강제한다. 어떤 형태로도 돌아오면 안 된다.
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('절반을 넘기지 마라');
     expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain(
       '둘의 비율이 한쪽으로 몰리지 않게',
     );
   });
 
-  // 비율만 지시하면 배치가 망가진다 — 배치 금지를 함께 줘야 한다.
-  it('종결체를 한 문장씩 번갈아 쓰지 말라고 요구한다', () => {
-    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('한 문장씩 번갈아 쓰지 마라');
+  // 삭제 허가가 없으면 절대 규칙("있는 사실을 빼지도 마라")이 이겨서 정보가 0인 문장도 남는다.
+  // 실측(2026-08-25): 같은 글의 원문 → 윤문본에서 볼드 34 → 34 · 따옴표 22 → 22 · 개수 예고
+  // 10 → 7 로 삭제가 거의 일어나지 않았다. 「길이 예산」절의 예외 문구와 같은 방식으로 푼다.
+  it('정보가 0인 문장을 지우라고 하고, 절대 규칙과의 충돌을 명시적으로 풀어 준다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('정보가 0인 문장은 지워라');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '개수를 미리 세어 알리는 문장',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('인용 앞에 붙는 예고와 상찬');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('진행을 중계하는 문장');
+    // 이 한 줄이 빠지면 규칙이 있어도 절대 규칙에 막혀 작동하지 않는다.
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('"사실을 빼는 것"이 아니다');
+  });
+
+  it('강조 표시를 값 단위로 제한한다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('값 하나에 많아야 한 번');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('처음 나올 때 한 번');
+  });
+
+  // 스킬 룰북(`rewriting-playbook.md` J-3)에는 "대시(—) 1문서 1~2회 이하" 가 있었는데 백엔드
+  // 프롬프트에는 없어, 발행본에 15개가 들어간 채로 나갔다(2026-08-26: 헤딩 6 · 목록 6 · 본문 3).
+  // 규칙이 두 벌로 갈린 자리를 여기서 고정한다. 세는 쪽은 `korean-style-metrics` 의 emDashCount 다.
+  //
+  // 지시문 자체가 줄표를 쓰면 모델이 규칙보다 본 것을 따라 한다. 그래서 블록 안의 줄표도 함께 걷었고,
+  // 남긴 것은 금지 규칙이 드는 예시 하나뿐이다.
+  it('줄표를 쓰지 말라고 요구하고, 지시문 자체도 줄표를 쓰지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('줄표');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('헤딩과 목록 머리말');
+    const dashLines = HUMANIZE_PERSONAL_BLOG_TONE.split('\n').filter(
+      (line) => line.includes('—') && !line.includes('줄표('),
+    );
+    expect(dashLines).toEqual([]);
+  });
+
+  // "짧은 문장을 문단마다 하나 이상" 이 호흡을 끊었다. 발행본이 평균 33.2자에 짧은 문장 30% 였고
+  // 사용자 판정은 "호흡이 너무 짧다" 였다(사용자가 쓴 글은 평균 44.7자). 강제를 걷고 기본 길이를 준다.
+  // 기본 호흡(40~60자)을 준 뒤에도 "이유는 문장을 끊고 뒤에 던져라" 가 같은 블록에 남아 있었다.
+  // 한쪽은 한 문장으로 가라 하고 한쪽은 끊으라 해서 모델에 상충하는 명령이 됐다(리뷰 MUST_FIX).
+  // 구어 어미 지시는 살리고 끊으라는 부분만 치환했다. 되살아나면 긴 호흡이 다시 무너진다.
+  it('이유를 문장에서 끊으라는 지시를 남기지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain(
+      '이유는 문장을 끊고 뒤에 던져라',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '어미를 넣겠다고 문장을 끊지 마라',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('~거든요');
+  });
+
+  it('기본 문장 길이를 주고 문단마다 짧은 문장을 강제하지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('40~60자');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('잘게 끊지 마라');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('문단마다 하나 이상');
   });
 });
 
