@@ -12,6 +12,7 @@ import {
   SLACK_HANDLER_PORT,
   SlackHandler,
 } from './domain/port/slack-handler.port';
+import { toReadableSlackArgs } from './format/message-blocks.builder';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
@@ -233,7 +234,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     const app = this.assertAppReady();
     const response = await app.client.chat.postMessage({
       channel: target,
-      text,
+      ...toReadableSlackArgs(text),
       ...(threadTs ? { thread_ts: threadTs } : {}),
     });
     return { ts: response.ts };

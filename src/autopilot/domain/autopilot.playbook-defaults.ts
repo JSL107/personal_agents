@@ -77,6 +77,16 @@ export const DEFAULT_PAPER_RECOMMEND_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PAPER_ORDER_FILL_CRON = '*/10 9-15 * * 1-5';
 export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
 
+// 모의투자 장중 손절 — 평일 09:00~15:59 5분 주기. 실제 처리 창(09:30~15:20)은 usecase가 판정한다.
+// 종가 밴드(17:40)만으로는 장중 급락을 못 잡아 -18% 에서야 판정된 사례가 있다.
+//
+// 🔴 `*/5` 가 아니라 `2-57/5` 인 이유: 바로 위 체결기가 `*/10` 이라 `*/5` 로 두면 정각·10분·
+// 20분… 마다 두 슬롯이 동시에 발화한다. 장중 손절은 주문을 만든 뒤 같은 회차 안에서
+// 현재가로 체결하는데, 그 찰나에 체결기가 같은 주문을 집어 **시가**로 체결해 버릴 수 있다.
+// 2분 어긋내면 두 cron 의 발화 분(0·10·20…과 2·7·12…)이 영원히 겹치지 않는다.
+export const DEFAULT_PAPER_INTRADAY_STOP_CRON = '2-57/5 9-15 * * 1-5';
+export const DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE = 'Asia/Seoul';
+
 // 모의투자 추천 성적 — 금요일 20:10 KST 주 1회.
 //
 // 채점은 당일 종가에 의존한다. 청산일·평가기준일의 `DailyPrice` 와 `BenchmarkDailyClose` 가
@@ -142,7 +152,9 @@ export const DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_PORTFOLIO_WARMUP_CRON = '*/10 8-23 * * *';
 export const DEFAULT_PORTFOLIO_WARMUP_TIMEZONE = 'Asia/Seoul';
 
-export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * 5';
+// 주 1회였을 때는 스냅샷이 최대 7일 낡은 채로 남아, 그 사이 만든 스킬·규칙은 새 PC 에서 손으로
+// 채워야 했다. export 는 변경이 없으면 커밋조차 하지 않으므로 매일 돌려도 히스토리가 늘지 않는다.
+export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * *';
 export const DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_AI_CLI_ENV_APPLY_CRON = '0 10 * * *';
 export const DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE = 'Asia/Seoul';

@@ -400,27 +400,36 @@ describe('문체 되먹임', () => {
   });
 
   // 40문장을 넘겨야 갭 판정이 열린다(그 아래는 문장 하나가 비율을 10%p 씩 흔든다).
-  const longProse = Array.from(
-    { length: 45 },
-    (_, index) =>
-      `${index}번째 문장은 목표를 벗어나도록 길게 늘여 쓴 서술입니다.`,
-  ).join(' ');
+  //
+  // 길이를 균일하게 만드는 것만으로는 갭이 생기지 않는다 — 편차·짧은문장·구어는 2026-08-26
+  // 에 판정에서 내려갔다(`korean-style-metrics` 헤더의 표본 출처 문제). 남은 판정 축 중
+  // 문장 내용만으로 확실히 걸리는 것이 금지접속사다.
+  const gappyProse = [
+    '또한 이 표본은 금지 접속사를 담고 있습니다.',
+    ...Array.from(
+      { length: 45 },
+      (_, index) =>
+        `${index}번째 문장은 목표를 벗어나도록 길게 늘여 쓴 서술입니다.`,
+    ),
+  ].join(' ');
 
   it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
     const { service, routeMock, agentRunService } = makeService({
       enabled: 'true',
       routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
     });
+    // 지금도 판정 축인 항목으로 준다. 내린 축(편차·짧은문장·구어)은 소비 지점에서 걸러져
+    // 프롬프트에 실리지 않는다(`style-feedback.ts` 의 `isJudgedLabel`).
     agentRunService.findRecentSucceededRuns.mockResolvedValue([
-      runOf(['편차 12.3(≥15)']),
-      runOf(['편차 11.8(≥15)']),
+      runOf(['종결체교대 76%(≤60%)']),
+      runOf(['종결체교대 71%(≤60%)']),
     ]);
 
     await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
 
     const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
     expect(systemPrompt).toContain('되풀이된 문체 갭');
-    expect(systemPrompt).toContain('편차 12.3(≥15)');
+    expect(systemPrompt).toContain('종결체교대 76%(≤60%)');
   });
 
   it('목소리를 조회 조건으로 내린다 — 보고서 윤문이 상한을 채워도 표본이 밀리지 않게', async () => {
@@ -473,20 +482,20 @@ describe('문체 되먹임', () => {
   it('측정 가능한 결과면 계산된 갭이 원장에 기록된다', async () => {
     const { service, agentRunService } = makeService({
       enabled: 'true',
-      routeImpl: async () => ({ text: JSON.stringify({ a: longProse }) }),
+      routeImpl: async () => ({ text: JSON.stringify({ a: gappyProse }) }),
     });
 
-    // 원문도 longProse 다. `longProse` 는 `${index}번째` 로 숫자를 45개 담고 있어,
+    // 원문도 gappyProse 다. 이 픽스처는 `${index}번째` 로 숫자를 45개 담고 있어,
     // 원문을 짧은 글로 두면 보존 가드가 그 숫자를 주입으로 보고 필드를 롤백한다.
     // 그러면 측정 대상이 짧은 원문이 되어 측정 자체가 불가능해진다(갭 0). 이 테스트가
     // 보려는 것은 보존 판정이 아니라 "측정 가능하면 갭이 기록되는가" 이므로 토큰을 맞춘다.
-    await service.humanize({ a: longProse }, { voice: 'personal-blog' });
+    await service.humanize({ a: gappyProse }, { voice: 'personal-blog' });
 
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
     const output = executed.output as { styleGaps: string[] };
     // 목표를 벗어나도록 만든 표본이라 갭이 비어 있지 않아야 한다.
-    expect(output.styleGaps.length).toBeGreaterThan(0);
+    expect(output.styleGaps).toContain('금지접속사 1회(0회)');
   });
 
   it('모델이 비워 돌려준 필드의 원문도 측정에 포함한다', async () => {
@@ -499,14 +508,15 @@ describe('문체 되먹임', () => {
     });
 
     await service.humanize(
-      { a: longProse, b: '원본B' },
+      { a: gappyProse, b: '원본B' },
       { voice: 'personal-blog' },
     );
 
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
     const output = executed.output as { styleGaps: string[] };
-    // a 의 원문이 빠지면 문장 수가 임계 미만이 되어 갭이 빈 배열로 저장된다.
-    expect(output.styleGaps.length).toBeGreaterThan(0);
+    // a 의 원문이 빠지면 문장 수가 임계 미만이 되고, 금지 접속사도 함께 빠져 갭이 비어 있게
+    // 된다. 즉 이 단언이 서려면 빈 윤문 필드의 **원문**이 측정에 들어가야 한다.
+    expect(output.styleGaps).toContain('금지접속사 1회(0회)');
   });
 });

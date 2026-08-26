@@ -16,15 +16,33 @@ import { formatScreenResult } from '../src/screener/infrastructure/screen-result
 import { formatScreeningOutcomeResult } from '../src/screener/infrastructure/screening-outcome.formatter';
 import { parseScreenerCliArguments } from '../src/screener/interface/screener-cli.parser';
 import { ScreenerModule } from '../src/screener/screener.module';
+import { ResolveStrategyParametersUsecase } from '../src/strategy-parameter/application/resolve-strategy-parameters.usecase';
+import { StrategyParameterModule } from '../src/strategy-parameter/strategy-parameter.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     ScreenerModule,
+    StrategyParameterModule,
   ],
 })
 class ScreenerCliModule {}
+
+const BACKFILL_STOP_DESCRIPTION: Record<string, string> = {
+  alreadyCovered: '이미 목표 기간을 덮고 있어 조회하지 않음',
+  targetReached: '목표 시작일 도달',
+  exhausted: '공급자 데이터 소진',
+  stalled: '커서가 더 과거로 가지 않음 — 목표 미달',
+  pageLimit: '페이지 상한 도달 — 목표 미달, 다시 실행하면 이어 받는다',
+};
+
+const describeBackfillStop = (reason: string | null): string => {
+  if (reason === null) {
+    return '알 수 없음';
+  }
+  return BACKFILL_STOP_DESCRIPTION[reason] ?? reason;
+};
 
 const main = async (): Promise<void> => {
   const parsed = parseScreenerCliArguments(process.argv.slice(2));
@@ -40,9 +58,15 @@ const main = async (): Promise<void> => {
     }
 
     if (parsed.subcommand === 'screen') {
-      const result = await application
-        .get(ScreenUniverseUsecase)
-        .execute(parsed.options);
+      // 확인용 실행도 운영과 같은 값으로 걸러야 한다 — 여기서만 코드 상수를 쓰면
+      // 활성 행을 바꾼 뒤 CLI 로 확인한 결과가 그날 운영이 보여줄 목록과 달라진다.
+      const parameters = await application
+        .get(ResolveStrategyParametersUsecase)
+        .execute(parsed.options.strategy);
+      const result = await application.get(ScreenUniverseUsecase).execute({
+        ...parsed.options,
+        minimumTurnover60: parameters.minimumTurnover60,
+      });
       console.log(formatScreenResult(result));
       if (result.recordOutcome?.saved === true) {
         console.log(
@@ -70,7 +94,10 @@ const main = async (): Promise<void> => {
         .get(CollectBenchmarkClosesUsecase)
         .execute(parsed.options);
       console.log(
-        `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.`,
+        `벤치마크 ${result.symbol} 수집을 마쳤습니다. 조회 ${result.fetched}봉, 저장 ${result.written}봉, 장중 차단 ${result.blockedIntraday}봉, 최신 거래일 ${result.latestTradeDate ?? '없음'}.` +
+          (parsed.options.years === undefined
+            ? ''
+            : ` 백필 ${result.pages}페이지, 가장 오래된 거래일 ${result.oldestTradeDate ?? '없음'}, 종료 ${describeBackfillStop(result.stopReason)}.`),
       );
       return;
     }

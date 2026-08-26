@@ -35,6 +35,16 @@ export class PrismaService
         `CREATE INDEX IF NOT EXISTS idx_episodic_memory_embedding
          ON episodic_memory USING hnsw (embedding vector_cosine_ops)`,
       );
+      // StrategyParameter — (전략, 이름) 당 활성 행은 하나라는 불변식을 DB 가 지키게 한다.
+      // Prisma 스키마는 부분 유니크 인덱스를 표현하지 못해 `@@unique([strategy, name, version])`
+      // 까지만 걸리고, 그것으로는 v1 과 v2 가 동시에 활성인 상태를 막지 못한다. 값을 바꾸는
+      // 경로(구 행 supersede + 신 행 activate)가 한 트랜잭션이 아니면 정확히 그 자리에서
+      // 두 값이 동시에 활성이 되고, 읽는 쪽은 둘 중 하나를 골라 조용히 다른 값으로 돈다.
+      await this.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_parameter_active
+         ON strategy_parameter (strategy, name)
+         WHERE activated_at IS NOT NULL AND superseded_at IS NULL`,
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Prisma 부팅 setup 일부 실패 (lazy 재연결 후 query 시 정상 동작): ${error instanceof Error ? error.message : String(error)}`,

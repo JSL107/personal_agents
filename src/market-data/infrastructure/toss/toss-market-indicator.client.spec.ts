@@ -39,6 +39,21 @@ describe('TossMarketIndicatorClient', () => {
     );
   });
 
+  it('before 커서를 시장 지표 일봉 쿼리에 전달한다', async () => {
+    const tossApi = createTossApi();
+    tossApi.requestJson.mockResolvedValue(CANDLES_RESPONSE);
+    const client = new TossMarketIndicatorClient(tossApi);
+
+    await client.fetchDailyCloses('KOSPI', 200, {
+      before: '2026-08-11T00:00:00.000+09:00',
+    });
+
+    expect(tossApi.requestJson).toHaveBeenCalledWith(
+      '시장 지표 일봉 조회',
+      '/api/v1/market-indicators/KOSPI/candles?interval=1d&count=200&before=2026-08-11T00%3A00%3A00.000%2B09%3A00',
+    );
+  });
+
   it('count가 0 이하면 요청하지 않고 빈 배열을 반환한다', async () => {
     const tossApi = createTossApi();
     const client = new TossMarketIndicatorClient(tossApi);

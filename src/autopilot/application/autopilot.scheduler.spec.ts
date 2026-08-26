@@ -66,8 +66,9 @@ describe('AutopilotScheduler', () => {
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
     //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply
     //   + portfolio-warmup(사이트 워밍업) + portfolio-publish(사이트 발행)
-    //   + screening-outcome-scoring(회차 종목 사후 채점, 단독 그룹) = 28그룹.
-    expect(queue.add).toHaveBeenCalledTimes(28);
+    //   + screening-outcome-scoring(회차 종목 사후 채점, 단독 그룹)
+    //   + paper-intraday-stop(모의투자 장중 손절, 단독 그룹) = 29그룹.
+    expect(queue.add).toHaveBeenCalledTimes(29);
     expect(addCalls).toContain('screening-outcome-scoring');
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('portfolio-warmup');

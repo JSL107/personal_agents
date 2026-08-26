@@ -58,8 +58,8 @@ export class AiCliEnvApplyAutopilotTask implements AutopilotTask {
           `- 생성 시각: ${status.summary.generatedAt}\n` +
           `- Claude: 플러그인 ${claude?.plugins ?? 0}·MCP ${claude?.mcpServers ?? 0}·자산 ${claude?.assets ?? 0}\n` +
           `- Codex: 플러그인 ${codex?.plugins ?? 0}·MCP ${codex?.mcpServers ?? 0}·자산 ${codex?.assets ?? 0}\n` +
-          `- 이 PC의 기존 skills·agents는 .bak-<타임스탬프>로 백업됩니다.\n` +
-          `- hooks는 적용되지 않습니다.`,
+          `- 이 PC의 기존 skills·agents·hooks·전역 지침(CLAUDE.md·AGENTS.md)을 덮어씁니다.\n` +
+          `- 덮이는 파일은 .bak-<타임스탬프>로 백업됩니다. hooks는 교체 즉시 이 PC의 기존 훅이 꺼집니다.`,
       },
     };
   }

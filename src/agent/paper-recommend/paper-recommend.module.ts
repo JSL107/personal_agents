@@ -4,6 +4,7 @@ import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { PaperTradingModule } from '../../paper-trading/paper-trading.module';
 import { ScreenerModule } from '../../screener/screener.module';
+import { StrategyParameterModule } from '../../strategy-parameter/strategy-parameter.module';
 import { GeneratePaperRecommendationUsecase } from './application/generate-paper-recommendation.usecase';
 
 @Module({
@@ -12,6 +13,7 @@ import { GeneratePaperRecommendationUsecase } from './application/generate-paper
     PaperTradingModule,
     ModelRouterModule,
     AgentRunModule,
+    StrategyParameterModule,
   ],
   providers: [GeneratePaperRecommendationUsecase],
   exports: [GeneratePaperRecommendationUsecase],

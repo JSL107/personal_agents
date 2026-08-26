@@ -19,6 +19,7 @@ import {
   extractActionValue,
 } from '../bolt/action-body.parser';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { toReadableSlackArgs } from '../format/message-blocks.builder';
 
 // V3 phase loop chain Phase 2 — PreviewGate 안전판 (사용자 매 step confirm).
 // Phase 1 (1-shot 흐름) 은 deprecated — 본 PR 부터 모든 chain step 사이 confirm 강제.
@@ -151,7 +152,9 @@ export class AutoFlowHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: true,
-            text: `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 chain 종료.\n\n${displayResult.ctoSummary}`,
+            ...toReadableSlackArgs(
+              `[2/3] CTO 분배 완료 (#${ctoOutcome.agentRunId}) — 자동 분배 가능 assignment 가 없어 chain 종료.\n\n${displayResult.ctoSummary}`,
+            ),
           });
           return;
         }
@@ -219,12 +222,14 @@ export class AutoFlowHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: formatFinalChainResult({
-            pmAgentRunId: value.pmAgentRunId,
-            ctoAgentRunId: value.ctoAgentRunId,
-            ctoSummary: ctoOutput.ctoSummary,
-            beOutcomes,
-          }),
+          ...toReadableSlackArgs(
+            formatFinalChainResult({
+              pmAgentRunId: value.pmAgentRunId,
+              ctoAgentRunId: value.ctoAgentRunId,
+              ctoSummary: ctoOutput.ctoSummary,
+              beOutcomes,
+            }),
+          ),
         });
       } catch (error: unknown) {
         await respondError({

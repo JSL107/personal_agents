@@ -18,6 +18,7 @@ import {
   ScreenUniverseResult,
   ScreenUniverseUsecase,
 } from '../../../screener/application/screen-universe.usecase';
+import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
 import {
@@ -29,7 +30,7 @@ import {
 import { planPendingOrders } from '../domain/pending-order-plan';
 import {
   buildPaperRecommendationPrompt,
-  PAPER_RECOMMEND_SYSTEM_PROMPT,
+  buildPaperRecommendSystemPrompt,
 } from '../domain/prompt/paper-recommend-system.prompt';
 import { renderRecommendationScorecard } from '../domain/prompt/recommendation-scorecard';
 
@@ -108,6 +109,7 @@ export class GeneratePaperRecommendationUsecase {
     private readonly repository: PaperTradingPrismaRepository,
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly strategyParameters: ResolveStrategyParametersUsecase,
   ) {}
 
   async execute(
@@ -149,11 +151,19 @@ export class GeneratePaperRecommendationUsecase {
       inputSnapshot: {
         strategy,
         decidedAt: decidedAt.toISOString(),
-        systemPrompt: PAPER_RECOMMEND_SYSTEM_PROMPT,
+        // 파라미터를 해소하기 전이라 이 회차의 시스템 프롬프트를 아직 모른다.
+        // prompt·ruleVersion 과 같이 run 안에서 갱신한다.
+        systemPrompt: null,
         prompt: null,
         ruleVersion: null,
       },
       run: async ({ agentRunId, updateInputSnapshot }) => {
+        // 이 회차가 쓸 값을 한 번만 해소한다. 아래 스크리닝·프롬프트·비중 배정이 모두
+        // 이 한 벌을 쓴다 — 회차 도중에 값이 갈리면 "무엇으로 판단했나" 가 남지 않는다.
+        const parameters = await this.strategyParameters.execute(strategy);
+        const systemPrompt = buildPaperRecommendSystemPrompt({
+          maximumWeightPercent: parameters.maximumWeightPercent,
+        });
         const account = await this.findOrOpenAccount(strategy, decidedAt);
         const positions = await this.repository.findPositionsWithTicker(
           account.id,
@@ -161,6 +171,7 @@ export class GeneratePaperRecommendationUsecase {
         const screen = await this.screenUniverseUsecase.execute({
           strategy,
           limit: 20,
+          minimumTurnover60: parameters.minimumTurnover60,
           includeTickerIds: positions.map((position) => position.tickerId),
           // 운영 회차만 원장에 남긴다. 여기서 보여준 목록이 곧 "모델이 보고도 안 산 것" 의
           // 모집단이라, 나중에 규칙을 고칠 때 대조군이 되는 유일한 회차다.
@@ -188,6 +199,7 @@ export class GeneratePaperRecommendationUsecase {
             strategy,
             cashBalance: Number(account.cashBalance.toString()),
             accountValuation,
+            maximumWeightPercent: parameters.maximumWeightPercent,
             positions: positions.map((position) => ({
               code: position.ticker.code,
               name: position.ticker.name,
@@ -204,15 +216,23 @@ export class GeneratePaperRecommendationUsecase {
         await updateInputSnapshot({
           strategy,
           decidedAt: decidedAt.toISOString(),
-          systemPrompt: PAPER_RECOMMEND_SYSTEM_PROMPT,
+          systemPrompt,
           prompt,
           ruleVersion: screen.ruleVersion,
+          // 이 회차가 실제로 쓴 값. `ruleVersion` 은 스크리너 규칙의 버전이라 파라미터를
+          // 바꿔도 움직이지 않는다 — 값이 바뀌기 시작하면 두 회차를 가를 축이 이것뿐이다.
+          parameters: {
+            minimumTurnover60: parameters.minimumTurnover60,
+            maximumWeightPercent: parameters.maximumWeightPercent,
+            exitTakeProfitPercent: parameters.exitBand.takeProfitPercent,
+            exitStopLossPercent: parameters.exitBand.stopLossPercent,
+          },
         });
         const completion = await this.modelRouter.route({
           agentType: AgentType.PAPER_RECOMMEND,
           request: {
             prompt,
-            systemPrompt: PAPER_RECOMMEND_SYSTEM_PROMPT,
+            systemPrompt,
           },
         });
         const recommendation = parsePaperRecommendation(completion.text);
@@ -229,6 +249,7 @@ export class GeneratePaperRecommendationUsecase {
               agentRunId,
               recommendation,
               state,
+              maximumWeightPercent: parameters.maximumWeightPercent,
             });
             const orders = lockedRecommendation.orders;
             return {
@@ -313,6 +334,7 @@ export class GeneratePaperRecommendationUsecase {
     agentRunId,
     recommendation,
     state,
+    maximumWeightPercent,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
@@ -321,6 +343,7 @@ export class GeneratePaperRecommendationUsecase {
     agentRunId: number;
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
+    maximumWeightPercent: number;
   }): LockedRecommendationResult {
     const codesByTickerId = new Map([
       ...screen.stocks.map((stock): [number, string] => [
@@ -399,6 +422,7 @@ export class GeneratePaperRecommendationUsecase {
           state.latestValuation?.totalValue ?? state.account.seedAmount
         ).toString(),
       ),
+      maximumWeightPercent,
     });
     const orders = this.toPendingOrders({
       strategy,

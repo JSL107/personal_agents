@@ -53,6 +53,7 @@ model AgentRun {
   studyBriefs      StudyBrief[]
   paperOrders      PaperOrder[]
   screeningRuns    ScreeningRun[]
+  strategyParameters StrategyParameter[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -877,4 +878,51 @@ model ScreeningItemOutcome {
   @@unique([itemId, horizonDays])
   @@index([horizonDays])
   @@map("screening_item_outcome")
+}
+
+// 운영과 백테스트가 함께 읽는 조정 가능한 파라미터. 코드 상수를 여기로 내려, 값을 바꾸는 일이
+// 코드 수정이 아니라 행 추가가 되게 한다.
+//
+// 코드 상수는 지우지 않고 이 테이블이 비었을 때의 기본값으로 남는다 — 조회가 실패해도 그날
+// 추천 회차는 돌아야 한다. 값을 고르는 순서는 `CLI 인자 > 활성 행 > 코드 상수` 이고, CLI 가
+// 가장 세다. 탐색기가 같은 축의 후보를 차례로 재는데 활성 행이 인자를 이기면 후보를 몇 개
+// 주든 전부 같은 값으로 돌게 된다.
+//
+// 설계 근거: docs/superpowers/specs/2026-08-25-strategy-parameter-loop-design.md
+model StrategyParameter {
+  id       Int    @id @default(autoincrement())
+  strategy String
+  name     String
+
+  value Decimal @db.Decimal(18, 4)
+
+  // (strategy, name) 안에서 1부터 오른다. 되돌리기는 행을 지우는 것이 아니라 이전 값으로
+  // 새 버전을 만들어 활성화하는 것이다 — 무엇이 언제 왜 바뀌었는지가 남아야 반영 후 성적을
+  // 그 변경에 귀속시킬 수 있다.
+  version Int
+
+  // 활성 행은 `activatedAt IS NOT NULL AND supersededAt IS NULL` 인 하나다. 둘 다 null 인
+  // 행은 만들어졌지만 승인되지 않은 제안이다.
+  //
+  // 이 단일성은 아래 `@@unique` 로 안 걸린다 — (strategy, name, version) 유니크는 v1 과 v2 가
+  // 동시에 활성인 상태를 막지 못한다. Prisma 스키마가 부분 유니크 인덱스를 표현하지 못해,
+  // 실제 강제는 `prisma.service.ts` 부팅 훅의 `idx_strategy_parameter_active`
+  // (WHERE activated_at IS NOT NULL AND superseded_at IS NULL) 가 한다. `db:push` 가 그
+  // 인덱스를 지우지만 다음 부팅이 되살린다(pgvector HNSW 인덱스와 같은 취급).
+  activatedAt  DateTime? @map("activated_at")
+  supersededAt DateTime? @map("superseded_at")
+
+  // 왜 이 값인가. 초기 seed 는 근거 문서 경로를 적는다. 이유 없는 값은 다음에 바꿀 때
+  // 무엇을 되돌리는지 알 수 없게 만든다.
+  reason String @db.Text
+
+  // 이 값을 만든 실행. seed 와 손으로 넣은 행은 null 이다.
+  agentRunId Int?      @map("agent_run_id")
+  agentRun   AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([strategy, name, version])
+  @@index([strategy, name, activatedAt])
+  @@map("strategy_parameter")
 }

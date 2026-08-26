@@ -124,7 +124,7 @@ describe('parseScreenerCliArguments', () => {
     ).toThrow('--limit는 양의 정수여야 합니다.');
   });
 
-  it('collect-benchmark에 days만 전달한다', () => {
+  it('collect-benchmark에 days 또는 years를 전달한다', () => {
     expect(parseScreenerCliArguments(['collect-benchmark'])).toEqual({
       subcommand: 'collect-benchmark',
       options: {},
@@ -135,15 +135,36 @@ describe('parseScreenerCliArguments', () => {
       subcommand: 'collect-benchmark',
       options: { days: 200 },
     });
+    expect(
+      parseScreenerCliArguments(['collect-benchmark', '--years', '5']),
+    ).toEqual({
+      subcommand: 'collect-benchmark',
+      options: { years: 5 },
+    });
   });
 
-  it('collect-benchmark의 days 외 옵션과 양수가 아닌 값을 거부한다', () => {
+  it('collect-benchmark의 알 수 없는 옵션과 양수가 아닌 값을 거부한다', () => {
     expect(() =>
       parseScreenerCliArguments(['collect-benchmark', '--limit', '3']),
     ).toThrow('사용법');
     expect(() =>
       parseScreenerCliArguments(['collect-benchmark', '--days', '0']),
     ).toThrow('--days는 양의 정수여야 합니다.');
+    expect(() =>
+      parseScreenerCliArguments(['collect-benchmark', '--years', '0']),
+    ).toThrow('--years는 양의 정수여야 합니다.');
+  });
+
+  it('collect-benchmark의 days와 years를 함께 지정하면 거부한다', () => {
+    expect(() =>
+      parseScreenerCliArguments([
+        'collect-benchmark',
+        '--days',
+        '200',
+        '--years',
+        '5',
+      ]),
+    ).toThrow('사용법');
   });
 
   // 재는 지평도 대상도 원장이 정하므로 옵션이 없다. 옵션을 조용히 무시하면 사용자가
