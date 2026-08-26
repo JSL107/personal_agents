@@ -159,6 +159,15 @@ describe('renderBreathFeedback', () => {
     expect(renderBreathFeedback(undefined)).toBe('');
   });
 
+  // 숫자를 목표로 주면 모델은 그 숫자만 맞춘다 — 앞쪽 몇 개를 합쳐 평균을 채우고 뒤에는 토막
+  // 문장을 남기면, 긴 문장 뒤에 조각이 붙어 고치기 전보다 어색해진다. 숫자는 눈금이지 목표가 아니다.
+  it('숫자가 아니라 리듬을 고치라고 못 박는다', () => {
+    const block = renderBreathFeedback(32.6);
+    expect(block).toContain('고치는 것은 숫자가 아니라 리듬이다');
+    expect(block).toContain('문단은 통째로 읽고 고쳐라');
+    expect(block).toContain('합칠 자리가 없으면 합치지 마라');
+  });
+
   // 합치라고 시키면서 내용을 줄이게 두면 사실이 빠진다. 절대 규칙과 같은 방향을 못 박는다.
   it('내용 보존을 함께 요구한다', () => {
     const block = renderBreathFeedback(30);
