@@ -219,6 +219,14 @@ export class GeneratePaperRecommendationUsecase {
           systemPrompt,
           prompt,
           ruleVersion: screen.ruleVersion,
+          // 이 회차가 실제로 쓴 값. `ruleVersion` 은 스크리너 규칙의 버전이라 파라미터를
+          // 바꿔도 움직이지 않는다 — 값이 바뀌기 시작하면 두 회차를 가를 축이 이것뿐이다.
+          parameters: {
+            minimumTurnover60: parameters.minimumTurnover60,
+            maximumWeightPercent: parameters.maximumWeightPercent,
+            exitTakeProfitPercent: parameters.exitBand.takeProfitPercent,
+            exitStopLossPercent: parameters.exitBand.stopLossPercent,
+          },
         });
         const completion = await this.modelRouter.route({
           agentType: AgentType.PAPER_RECOMMEND,

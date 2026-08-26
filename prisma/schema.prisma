@@ -903,6 +903,12 @@ model StrategyParameter {
 
   // 활성 행은 `activatedAt IS NOT NULL AND supersededAt IS NULL` 인 하나다. 둘 다 null 인
   // 행은 만들어졌지만 승인되지 않은 제안이다.
+  //
+  // 이 단일성은 아래 `@@unique` 로 안 걸린다 — (strategy, name, version) 유니크는 v1 과 v2 가
+  // 동시에 활성인 상태를 막지 못한다. Prisma 스키마가 부분 유니크 인덱스를 표현하지 못해,
+  // 실제 강제는 `prisma.service.ts` 부팅 훅의 `idx_strategy_parameter_active`
+  // (WHERE activated_at IS NOT NULL AND superseded_at IS NULL) 가 한다. `db:push` 가 그
+  // 인덱스를 지우지만 다음 부팅이 되살린다(pgvector HNSW 인덱스와 같은 취급).
   activatedAt  DateTime? @map("activated_at")
   supersededAt DateTime? @map("superseded_at")
 

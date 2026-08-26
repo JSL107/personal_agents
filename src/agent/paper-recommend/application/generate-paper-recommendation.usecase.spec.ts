@@ -234,6 +234,29 @@ describe('GeneratePaperRecommendationUsecase', () => {
     );
   });
 
+  // `ruleVersion` 은 스크리너 규칙의 버전이라 파라미터를 바꿔도 움직이지 않는다. 값이
+  // 바뀌기 시작하면 두 회차를 가를 축이 이 스냅샷뿐이므로, 실제로 쓴 값이 실려야 한다.
+  it('그 회차가 쓴 파라미터를 입력 스냅샷에 남긴다', async () => {
+    strategyParameters.execute.mockResolvedValue({
+      exitBand: { takeProfitPercent: 30, stopLossPercent: -15 },
+      minimumTurnover60: 300_000_000,
+      maximumWeightPercent: 12.5,
+    });
+
+    await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
+
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parameters: {
+          minimumTurnover60: 300_000_000,
+          maximumWeightPercent: 12.5,
+          exitTakeProfitPercent: 30,
+          exitStopLossPercent: -15,
+        },
+      }),
+    );
+  });
+
   it('screen 실패도 AgentRun 내부에서 FAILED 처리되도록 run callback 안에서 실행한다', async () => {
     screenUniverse.execute.mockRejectedValueOnce(new Error('screen failed'));
     agentRunService.execute.mockImplementationOnce(async (input) => {
