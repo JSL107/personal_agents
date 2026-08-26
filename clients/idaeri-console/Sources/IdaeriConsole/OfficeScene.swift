@@ -1150,7 +1150,9 @@ final class OfficeScene: SKScene {
             // 그래서 둘 중 하나를 접어야 하고, 접는 쪽은 문패다 — 세션 이름표는 "지금 어느
             // 작업이 도는가" 를 말하고, 대표실은 왕관을 쓴 대표가 앉아 있어 문패 없이도
             // 식별된다. 세션이 없으면 문패가 돌아온다(빈 띠로 보이던 문제는 그대로 막힌다).
-            if area.kind == .president && !sessionSeats.isEmpty {
+            if area.kind == .president
+                && officeHidesPresidentPlate(sessionCount: sessionSeats.count)
+            {
                 continue
             }
             let holder = SKNode()
@@ -1912,9 +1914,12 @@ final class OfficeScene: SKScene {
         // 문패를 그리는 `renderZoneLabels` 는 평면도·창 크기가 바뀔 때만 불린다. 유무가
         // 뒤집힌 회차에 문패를 다시 그리지 않으면, 첫 세션이 뜬 뒤에도 문패가 남아 겹치고
         // 마지막 세션이 떠난 뒤에는 문패가 돌아오지 않는다.
-        let hadSessions = !sessionSeats.isEmpty
+        let previousSessionCount = sessionSeats.count
         sessionSeats = assigned
-        if hadSessions != !assigned.isEmpty {
+        if officeNeedsPlateRedraw(
+            previousSessionCount: previousSessionCount,
+            currentSessionCount: assigned.count
+        ) {
             renderZoneLabels()
         }
         for (sessionId, node) in sessionMarkers where assigned[sessionId] == nil {

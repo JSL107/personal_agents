@@ -14,6 +14,35 @@ private func labelBox(
 func runOfficeLabelOverlapTests(_ t: TestRunner) {
     t.suite("OfficeLabelOverlap")
 
+    // 대표실 문패 접힘 — 세션 이름표가 밴드를 덮는 동안만 접는다.
+    t.expect(
+        !officeHidesPresidentPlate(sessionCount: 0),
+        "세션이 없으면 대표실 문패를 그린다"
+    )
+    t.expect(
+        officeHidesPresidentPlate(sessionCount: 1),
+        "세션이 하나라도 있으면 대표실 문패를 접는다"
+    )
+
+    // 다시 그릴 회차 판정. **양방향**이어야 한다 — 켜지는 쪽만 맞으면 마지막 세션이 떠난
+    // 뒤에 문패가 영영 돌아오지 않는다. `> 0` 을 `> 1` 로 깨뜨리면 아래 첫 두 줄이 잡힌다.
+    t.expect(
+        officeNeedsPlateRedraw(previousSessionCount: 0, currentSessionCount: 3),
+        "세션이 생긴 회차에는 문패를 다시 그린다"
+    )
+    t.expect(
+        officeNeedsPlateRedraw(previousSessionCount: 3, currentSessionCount: 0),
+        "마지막 세션이 떠난 회차에는 문패를 다시 그린다"
+    )
+    t.expect(
+        !officeNeedsPlateRedraw(previousSessionCount: 0, currentSessionCount: 0),
+        "세션이 계속 없으면 다시 그리지 않는다"
+    )
+    t.expect(
+        !officeNeedsPlateRedraw(previousSessionCount: 3, currentSessionCount: 5),
+        "세션 수만 달라지면(둘 다 있음) 다시 그리지 않는다"
+    )
+
     // 변이 맞닿기만 한 경우는 겹침이 아니다. 이름표는 나란히 붙어 서는 것이 정상이라,
     // 접촉을 겹침으로 세면 정상 배치가 전부 빨갛게 나와 판정이 무의미해진다.
     t.expect(
