@@ -16,7 +16,7 @@ const SEED_REASONS = {
   EXIT_STOP_LOSS_PERCENT:
     '2026-08-21 청산 밴드 실측(PR #361)에서 +10/-5 를 골랐고, 2026-08-25 재측정에서도 현행 유지. docs/superpowers/specs/2026-08-21-exit-band-measurement.md',
   MINIMUM_TURNOVER60:
-    'SCREENER_RULE_VERSION 2 의 거래대금 60일 평균 하한. 2026-08-25 재측정에서 표본 내 후보(3억)가 표본 밖에서 재현되지 않아 현행 유지. docs/superpowers/specs/2026-08-25-backtest-remeasurement.md',
+    '스크리너 거래대금 60일 평균 하한. 2026-08-25 재측정에서 표본 내 후보(3억)가 표본 밖에서 재현되지 않아 현행 유지. docs/superpowers/specs/2026-08-25-backtest-remeasurement.md',
   MAXIMUM_WEIGHT_PERCENT:
     '비중을 언어모델에서 떼어낸 PR #328 의 상한 배정값. 최대 3종 x 20%.',
 } as const;
