@@ -211,7 +211,7 @@ describe('AiCliEnvAdapter', () => {
       ) => void;
       const stdout =
         command === 'git' && argumentsList[0] === 'status'
-          ? ' M manifest.json'
+          ? ' M claude/skills/humanize-korean/SKILL.md'
           : '';
       callback(null, stdout, '');
       return undefined as never;
@@ -259,7 +259,6 @@ describe('AiCliEnvAdapter', () => {
         'status',
         '--porcelain',
         '--',
-        'manifest.json',
         'SECRETS-TODO.md',
         'apply.sh',
         'claude',
@@ -289,6 +288,50 @@ describe('AiCliEnvAdapter', () => {
       expect(environment).not.toHaveProperty('SLACK_BOT_TOKEN');
       expect(environment).not.toHaveProperty('DATABASE_URL');
     }
+  });
+
+  it('자산이 그대로면 manifest 타임스탬프가 새로 찍혀도 커밋하지 않고 되돌린다', async () => {
+    // export 는 매 회차 generatedAt 을 현재 시각으로 다시 쓴다. manifest 를 변경 감지에 넣으면
+    // 자산이 한 글자도 안 바뀐 날에도 커밋·push 가 일어나고, 다른 PC 에는 새 SHA 마다 승인
+    // 카드가 뜬다. 되돌리지 않으면 워킹트리가 dirty 로 남아 같은 PC 의 apply 도 막힌다.
+    mockedExecFile.mockImplementation((...argumentsValue: unknown[]) => {
+      const callback = argumentsValue.at(-1) as (
+        error: Error | null,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      callback(null, '', '');
+      return undefined as never;
+    });
+    const adapter = new AiCliEnvAdapter(
+      buildConfig({
+        AI_CLI_ENV_SYNC_REPO: 'owner/snapshots',
+        AI_CLI_ENV_SYNC_DIR: '/tmp/ai-cli-env-sync',
+        PATH: '/usr/local/bin',
+      }),
+    );
+
+    await expect(adapter.exportSnapshot()).resolves.toEqual({
+      changed: false,
+      pushed: false,
+    });
+
+    const statusCall = mockedExecFile.mock.calls.find(
+      ([executable, argumentsList]) =>
+        executable === 'git' && (argumentsList as string[])[0] === 'status',
+    );
+    expect(statusCall?.[1]).not.toContain('manifest.json');
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'git',
+      ['checkout', '--', 'manifest.json'],
+      expect.objectContaining({ cwd: '/tmp/ai-cli-env-sync' }),
+      expect.any(Function),
+    );
+    const committed = mockedExecFile.mock.calls.some(
+      ([executable, argumentsList]) =>
+        executable === 'git' && (argumentsList as string[])[0] === 'commit',
+    );
+    expect(committed).toBe(false);
   });
 
   it('산출물 변경과 밖의 미추적 파일이 함께 있어도 관리 경로만 staging한다', async () => {
@@ -326,7 +369,6 @@ describe('AiCliEnvAdapter', () => {
         'status',
         '--porcelain',
         '--',
-        'manifest.json',
         'SECRETS-TODO.md',
         'apply.sh',
         'claude',
