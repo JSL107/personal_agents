@@ -4,6 +4,7 @@ import {
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
   scanMarkdownBlocks,
+  stripStructuralEmDashes,
 } from './markdown-blocks';
 
 const markdown = [
@@ -231,6 +232,149 @@ describe('maskFencedCodeBlocks / restoreFencedCodeBlocks', () => {
 
     expect(masked).toBe('산문만 있습니다.');
     expect(blocks).toHaveLength(0);
+  });
+});
+
+describe('stripStructuralEmDashes', () => {
+  // 말투 단계는 산문 문단만 모델에 넘긴다. 그래서 프롬프트의 줄표 금지가 헤딩·목록에 닿지 않고,
+  // 규칙을 넣고 발행한 글에서 줄표 9개가 전부 그 두 자리에 있었다(산문 0개).
+  it('헤딩 머리말의 줄표를 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('## 채점관 — /goal')).toBe(
+      '## 채점관: /goal',
+    );
+  });
+
+  it('목록 머리말의 줄표를 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('- 채점관 — 조건을 확인해요.')).toBe(
+      '- 채점관: 조건을 확인해요.',
+    );
+  });
+
+  it('번호 목록도 같이 다룬다', () => {
+    expect(stripStructuralEmDashes('1. 첫째 — 설명이에요.')).toBe(
+      '1. 첫째: 설명이에요.',
+    );
+  });
+
+  // 산문 속 줄표는 부연을 쉼표로 붙일지 문장을 나눌지가 뜻에 따라 갈린다. 기계가 정할 수 없어
+  // 말투 단계와 `emDashCount` 지표에 맡긴다.
+  it('산문의 줄표는 손대지 않는다', () => {
+    const prose = '본문에는 줄표 — 이렇게 — 그대로 둔다.';
+    expect(stripStructuralEmDashes(prose)).toBe(prose);
+  });
+
+  // 뒤엣것은 머리말 구분자가 아니라 서술 안의 줄표라, 콜론으로 바꾸면 문장이 어그러진다.
+  it('한 줄에 여러 개면 머리말 하나만 바꾼다', () => {
+    expect(stripStructuralEmDashes('- 시계 — `/loop` — 시간에 켜요.')).toBe(
+      '- 시계: `/loop` — 시간에 켜요.',
+    );
+  });
+
+  it('코드 펜스 안은 건드리지 않는다', () => {
+    const markdown = ['```bash', '# 주석 — 설명', 'echo "a — b"', '```'].join(
+      '\n',
+    );
+    expect(stripStructuralEmDashes(markdown)).toBe(markdown);
+  });
+
+  it('줄표가 없으면 원문 그대로다', () => {
+    const markdown = '## 제목\n\n본문이에요.\n\n- 항목이에요.';
+    expect(stripStructuralEmDashes(markdown)).toBe(markdown);
+  });
+});
+
+// 정규식이 앞에 무엇이 있는지 보지 않고 첫 ` — ` 를 머리말 구분자로 단정하던 반례들.
+// 전부 실측으로 확인한 뒤 판정을 붙였다.
+describe('stripStructuralEmDashes — 머리말이 아닌 줄표', () => {
+  it('숫자 범위는 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- 2026 — 2027 매출 추이')).toBe(
+      '- 2026 — 2027 매출 추이',
+    );
+  });
+
+  // 콜론을 더하면 `::` 가 된다.
+  it('이미 콜론으로 끝나면 줄표만 뗀다', () => {
+    expect(stripStructuralEmDashes('## 정리: — 핵심만')).toBe(
+      '## 정리: 핵심만',
+    );
+  });
+
+  // `?:` 는 조판이 아니다.
+  it('물음표·느낌표로 끝나면 줄표만 뗀다', () => {
+    expect(stripStructuralEmDashes('## 왜 느려질까요? — 원인 세 가지')).toBe(
+      '## 왜 느려질까요? 원인 세 가지',
+    );
+    expect(stripStructuralEmDashes('- 드디어 됐다! — 그 뒤가 문제였어요')).toBe(
+      '- 드디어 됐다! 그 뒤가 문제였어요',
+    );
+  });
+
+  // 뒤엣것이 설명이 아니라 이어지는 말이다. 콜론을 넣으면 도치가 깨진다.
+  it('종결어미로 끝나면 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('1. 결과는 좋았다 — 라고 생각했어요')).toBe(
+      '1. 결과는 좋았다 — 라고 생각했어요',
+    );
+    expect(stripStructuralEmDashes('- 잘 돌아가네요 — 라고 믿었죠')).toBe(
+      '- 잘 돌아가네요 — 라고 믿었죠',
+    );
+  });
+
+  // 4칸 들여쓴 코드블록은 `FENCE_PATTERN` 에 안 걸려 치환 대상이었다. 스캐너는 알고 치환기는
+  // 몰랐던 자리다.
+  it('들여쓴 줄은 손대지 않는다', () => {
+    const markdown = ['본문이에요.', '', '    - foo — bar'].join('\n');
+    expect(stripStructuralEmDashes(markdown)).toBe(markdown);
+  });
+
+  // 머리말이 비어 있으면 콜론만 남아 더 이상해진다.
+  it('머리말이 비어 있으면 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- — 설명만 있어요')).toBe(
+      '- — 설명만 있어요',
+    );
+  });
+
+  // 단위가 붙으면 `NUMERIC_HEAD` 가 놓친다 — 앞뒤가 둘 다 숫자로 시작하는지로 잡는다.
+  it('단위가 붙은 범위도 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('- 2026년 — 2027년 매출 추이')).toBe(
+      '- 2026년 — 2027년 매출 추이',
+    );
+    expect(stripStructuralEmDashes('- 3천 — 5천 사이예요')).toBe(
+      '- 3천 — 5천 사이예요',
+    );
+  });
+
+  // 한쪽만 숫자면 범위가 아니라 머리말일 수 있다.
+  it('앞만 숫자이고 뒤가 설명이면 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('- 3가지 — 정리하면 이렇습니다')).toBe(
+      '- 3가지: 정리하면 이렇습니다',
+    );
+  });
+
+  // 인라인 코드 안의 줄표는 리터럴이다. 바꾸면 코드 예시의 뜻이 조용히 변한다.
+  it('인라인 코드 안의 줄표는 손대지 않는다', () => {
+    expect(stripStructuralEmDashes('## `foo — bar` 사용법')).toBe(
+      '## `foo — bar` 사용법',
+    );
+    expect(stripStructuralEmDashes('- `a — b` 를 넘겨요')).toBe(
+      '- `a — b` 를 넘겨요',
+    );
+  });
+
+  // 코드 span 이 닫힌 뒤의 줄표는 머리말 구분자다 — 백틱 짝이 맞으면 치환한다.
+  it('닫힌 코드 뒤의 줄표는 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('## `--auto` 옵션 — 언제 쓰나')).toBe(
+      '## `--auto` 옵션: 언제 쓰나',
+    );
+  });
+
+  // 대조군 — 정상 머리말은 그대로 콜론이 된다. 위 조건들이 과하게 걸리면 이게 깨진다.
+  it('명사 머리말은 여전히 콜론으로 바꾼다', () => {
+    expect(stripStructuralEmDashes('## 채점관 — /goal')).toBe(
+      '## 채점관: /goal',
+    );
+    expect(stripStructuralEmDashes('- 개요 — 무엇을 다루는지')).toBe(
+      '- 개요: 무엇을 다루는지',
+    );
   });
 });
 
