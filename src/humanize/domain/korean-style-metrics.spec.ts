@@ -386,6 +386,59 @@ describe('formatKoreanStyleMetrics', () => {
   });
 });
 
+describe('줄표(—) 세기', () => {
+  // 갭 판정에 넘길 최소 픽스처. 다른 축은 전부 목표 안이라 줄표만 판정에 영향을 준다.
+  const BASE_FOR_DASH: KoreanStyleMetrics = {
+    sentenceCount: 100,
+    averageLength: 40,
+    lengthStandardDeviation: 15,
+    shortSentencePercent: 25,
+    longestSentenceLength: 70,
+    longestSentence: '이 문장은 상한 안에 든다.',
+    colloquialEndingPercent: 15,
+    yoEndingPercent: 50,
+    endingAlternationPercent: 30,
+    bannedConnectiveCount: 0,
+    emDashCount: 0,
+    measurable: true,
+    paragraph: {
+      paragraphCount: 10,
+      wallPercent: 10,
+      noShortSentenceParagraphs: 0,
+      dominantParagraphSizePercent: 40,
+    },
+  };
+
+  // 스킬 룰북 J-3 은 "1문서 1~2회 이하" 인데 프롬프트에만 있고 세는 자리가 없어,
+  // 발행본에 15개가 들어가고도 어떤 지표에도 안 걸렸다(2026-08-26). 세는 쪽을 고정한다.
+  it('본문의 줄표를 센다', () => {
+    const metrics = measureKoreanStyle(
+      '첫 문장이에요 — 부연이고요.\n\n둘째 — 셋째 — 넷째.',
+    );
+    expect(metrics.emDashCount).toBe(3);
+  });
+
+  it('코드블록 안의 줄표는 세지 않는다', () => {
+    const metrics = measureKoreanStyle(
+      '본문이에요.\n\n```bash\necho "a — b — c"\n```\n\n끝이에요.',
+    );
+    expect(metrics.emDashCount).toBe(0);
+  });
+
+  it('상한을 넘기면 목표 밖으로 잡는다', () => {
+    const gaps = findKoreanStyleGaps({
+      ...BASE_FOR_DASH,
+      emDashCount: 15,
+    });
+    expect(gaps.some((gap) => gap.startsWith('줄표'))).toBe(true);
+  });
+
+  it('두 번까지는 통과한다', () => {
+    const gaps = findKoreanStyleGaps({ ...BASE_FOR_DASH, emDashCount: 2 });
+    expect(gaps.some((gap) => gap.startsWith('줄표'))).toBe(false);
+  });
+});
+
 describe('재현 목표 판정', () => {
   // 타입을 그대로 받는다 — `as unknown as` 로 캐스팅하면 지표에 필드가 늘어도 컴파일러가
   // 잡아 주지 못해, 손으로 조립한 이 픽스처만 옛 형태로 남아 런타임에 터진다(실제로 겪었다).
@@ -400,6 +453,7 @@ describe('재현 목표 판정', () => {
     yoEndingPercent: 50,
     endingAlternationPercent: 30,
     bannedConnectiveCount: 0,
+    emDashCount: 0,
     measurable: true,
     paragraph: {
       paragraphCount: 20,
