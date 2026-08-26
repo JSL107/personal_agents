@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 
+import { toReadableSlackArgs } from '../../../slack/format/message-blocks.builder';
 import {
   BlogSlackNotifierPort,
   BlogSlackNotifyInput,
@@ -37,7 +38,7 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
       await this.client.chat.postMessage({
         channel,
         ...(threadTs ? { thread_ts: threadTs } : {}),
-        text,
+        ...toReadableSlackArgs(text),
       });
     } catch (error: unknown) {
       this.logger.warn(

@@ -1,3 +1,4 @@
+import { linkifyBareUrls } from './mrkdwn.util';
 import {
   chunkMrkdwnText,
   SECTION_MRKDWN_LIMIT,
@@ -18,7 +19,10 @@ export const buildSubconsciousProposalBlocks = ({
   proposalId: number;
 }): Array<Record<string, unknown>> => {
   const proposalIdStr = String(proposalId);
-  const chunks = chunkMrkdwnText(proposalText, SECTION_MRKDWN_LIMIT);
+  const chunks = chunkMrkdwnText(
+    linkifyBareUrls(proposalText),
+    SECTION_MRKDWN_LIMIT,
+  );
   return [
     ...chunks.map((chunk) => ({
       type: 'section',
