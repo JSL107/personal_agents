@@ -120,6 +120,31 @@ describe('renderLearnedConventions', () => {
     expect(block).toContain('…');
   });
 
+  it('실측 최댓값(1052자) 길이의 이유는 온전히 실린다', () => {
+    // 상한을 상수로 계산하면 값이 400 으로 되돌아가도 테스트가 통과한다. 상한을 올린
+    // 목적이 "근거가 붙은 실제 기각 이유가 안 잘린다" 이므로, 그 목적을 리터럴로 고정한다.
+    // 1052 는 2026-08 기준 원장에서 가장 긴 기각 이유의 길이다.
+    const realWorldLongest = '가'.repeat(1052);
+    const { block } = renderLearnedConventions([
+      row('TEST', realWorldLongest, '2026-08-20'),
+      row('TEST', enough('짧은 이유'), '2026-08-19'),
+    ]);
+
+    expect(block).toContain(realWorldLongest);
+    expect(block).not.toContain('…');
+  });
+
+  it('1200자를 넘는 이유만 자른다', () => {
+    const { block } = renderLearnedConventions([
+      row('TEST', '가'.repeat(1201), '2026-08-20'),
+      row('TEST', enough('짧은 이유'), '2026-08-19'),
+    ]);
+
+    expect(block).toContain('가'.repeat(1200));
+    expect(block).not.toContain('가'.repeat(1201));
+    expect(block).toContain('…');
+  });
+
   it('상한 이하 이유에는 말줄임을 붙이지 않는다', () => {
     const { block } = renderLearnedConventions([
       row('TEST', enough('짧은 이유 하나'), '2026-08-20'),

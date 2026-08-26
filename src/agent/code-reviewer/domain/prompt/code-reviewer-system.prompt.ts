@@ -1,3 +1,5 @@
+import { isSelfRepo } from '../../../../pr-review-loop/domain/learning-repo';
+
 // 기획서 §7.3 Code Reviewer 역할 정의 + §8 증거 기반 운영 원칙.
 // 코드를 안 보고 하는 리뷰 금지. 단정보다는 위험 구간/누락 테스트를 명확히 짚는다.
 export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Reviewer 에이전트다. PR 메타 정보 + diff 를 받아 구조화된 리뷰 초안을 작성한다.
@@ -53,10 +55,6 @@ export const CODE_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Code Review
   ]
 }`;
 
-// 규약은 레포마다 다르다 — 세대가 다른 레포에 틀린 규약을 실으면 오탐 대신 정탐을 지운다.
-// 그래서 정확히 이 레포일 때만 붙인다. 다른 레포는 규약 없이(현행 그대로) 리뷰한다.
-const SELF_REPO = 'jsl107/personal_agents';
-
 // 실측 오탐만 담는다 — 규약 전문(CODE_RULES.md 385줄)을 넣으면 토큰만 늘고 지적이 희석된다.
 // 근거: 2026-07-31 스윕 표본 7종 중 오탐 3종이 전부 아래 항목이었다.
 // - "PrReviewFinding 모델의 migration 파일이 없다" (2회, prisma/schema.prisma)
@@ -70,16 +68,8 @@ const SELF_REPO_CONVENTIONS = `
 
 이 목록에 없는 사항은 평소대로 판단한다. 규약을 이유로 실제 결함을 덮지 말 것.`;
 
-/**
- * 규약을 실을 대상 레포인지. 손으로 적은 규약과 기각에서 학습한 규약이 같은 경계를 쓴다.
- *
- * 학습 규약에서 특히 중요하다 — 기각 이유는 owner 뿐 아니라 **PR 작성자**도 남길 수 있어
- * (`harvest-review-signals.usecase.ts` 의 `decisionLogins`), 남의 레포에서는 제3자가 쓴
- * 문장이 규약으로 굳을 수 있다. owner 저장소로 한정해 그 경로를 막는다.
- */
-export const isSelfRepo = (repo: string): boolean =>
-  repo.trim().toLowerCase() === SELF_REPO;
-
 // 리뷰 프롬프트에 덧붙일 레포 규약. 대상 레포가 아니면 빈 문자열(동작 변화 0).
+// 대상 판정은 `isSelfRepo` 하나로 모은다 — 손으로 적은 이 규약, 기각에서 학습한 규약,
+// 그리고 그 효과를 재는 채택률 집계가 같은 경계를 봐야 한다(`learning-repo.ts`).
 export const buildRepoConventions = (repo: string): string =>
   isSelfRepo(repo) ? SELF_REPO_CONVENTIONS : '';
