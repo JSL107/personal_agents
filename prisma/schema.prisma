@@ -243,6 +243,8 @@ model CareerProfile {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
+  scoredJobPostings JobPosting[]
+
   @@index([slackUserId, createdAt])
   @@map("career_profile")
 }
@@ -959,9 +961,10 @@ model JobPosting {
   normalizedKey String @map("normalized_key")
   contentHash   String @map("content_hash")
 
-  matchScore      Int?      @map("match_score")
-  scoredProfileId Int?      @map("scored_profile_id")
-  scoredAt        DateTime? @map("scored_at")
+  matchScore      Int?           @map("match_score")
+  scoredProfileId Int?           @map("scored_profile_id")
+  scoredProfile   CareerProfile? @relation(fields: [scoredProfileId], references: [id], onDelete: SetNull)
+  scoredAt        DateTime?      @map("scored_at")
 
   firstSeenAt DateTime  @default(now()) @map("first_seen_at")
   lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
