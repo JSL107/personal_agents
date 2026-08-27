@@ -1,8 +1,33 @@
+import { NormalizedJobPosting } from '../domain/job-feed.type';
 import { JobPostingPrismaRepository } from './job-posting.prisma.repository';
 
 type UpdateManyArgs = {
   where: Record<string, unknown>;
   data: Record<string, unknown>;
+};
+
+type FindManyArgs = {
+  where: Record<string, unknown>;
+};
+
+const BASE_POSTING: NormalizedJobPosting = {
+  source: 'jumpit',
+  sourceId: '123',
+  company: '토스',
+  companyKey: 'toss',
+  title: '백엔드 개발자',
+  detailUrl: 'https://example.com/jobs/123',
+  skillTags: ['nestjs'],
+  rawSkillTags: ['NestJS'],
+  minYears: 1,
+  maxYears: 3,
+  yearsSource: 'RANGE',
+  rawJobLevel: null,
+  experienceLevel: 'junior',
+  locations: ['서울'],
+  rawLocations: ['서울 강남구'],
+  normalizedKey: 'toss|백엔드개발자',
+  contentHash: 'hash-v1',
 };
 
 const createPrismaStub = (updateManyCount: number) => {
@@ -55,5 +80,106 @@ describe('JobPostingPrismaRepository.claimForNotification', () => {
 
     expect(calls[0].where).not.toHaveProperty('source');
     expect(calls[0].where).not.toHaveProperty('id');
+  });
+});
+
+describe('JobPostingPrismaRepository.findScoringTargets', () => {
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('profileId 가 있으면 matchScore null · scoredProfileId null · 다른 프로필 세 조건을 모두 건다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findScoringTargets(7);
+
+    // scoredProfileId 는 CareerProfile 삭제 시 onDelete: SetNull 로 null 이 될 수 있다.
+    // { not: 7 } 만 걸면 SQL 3값 논리상 NULL 행이 <> 비교에서 빠져 영영 재채점 안 된다 —
+    // { scoredProfileId: null } 조건을 별도로 더해야 그 행도 잡힌다.
+    expect(calls[0].where).toEqual({
+      closedAt: null,
+      OR: [
+        { matchScore: null },
+        { scoredProfileId: null },
+        { scoredProfileId: { not: 7 } },
+      ],
+    });
+  });
+
+  it('profileId 가 null 이면 scoredProfileId null 조건을 중복으로 넣지 않는다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findScoringTargets(null);
+
+    // profileId 자체가 null 인 경우 { scoredProfileId: null } 을 또 넣으면
+    // "프로필 없이 정상 채점된" 행까지 매번 재채점 대상으로 다시 걸린다.
+    expect(calls[0].where).toEqual({
+      closedAt: null,
+      OR: [{ matchScore: null }, { scoredProfileId: { not: null } }],
+    });
+  });
+});
+
+describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알림', () => {
+  const createUpsertStub = (found: { id: number; contentHash: string }) => {
+    const updateCalls: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }[] = [];
+    return {
+      updateCalls,
+      prisma: {
+        jobPosting: {
+          findUnique: jest.fn(async () => found),
+          create: jest.fn(async () => undefined),
+          update: jest.fn(
+            async (args: {
+              where: Record<string, unknown>;
+              data: Record<string, unknown>;
+            }) => {
+              updateCalls.push(args);
+              return undefined;
+            },
+          ),
+        },
+      },
+    };
+  };
+
+  it('contentHash 가 달라졌으면 notifiedAt: null 을 update data 에 싣는다', async () => {
+    const { prisma, updateCalls } = createUpsertStub({
+      id: 1,
+      contentHash: 'hash-old',
+    });
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.upsertMany([BASE_POSTING]);
+
+    expect(updateCalls[0].data).toMatchObject({ notifiedAt: null });
+  });
+
+  it('contentHash 가 같으면 notifiedAt 키 자체를 넣지 않는다 — 이미 본 공고가 다시 뜨면 안 된다', async () => {
+    const { prisma, updateCalls } = createUpsertStub({
+      id: 1,
+      contentHash: BASE_POSTING.contentHash,
+    });
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.upsertMany([BASE_POSTING]);
+
+    expect(updateCalls[0].data).not.toHaveProperty('notifiedAt');
   });
 });

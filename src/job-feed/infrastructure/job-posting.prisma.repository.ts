@@ -79,12 +79,20 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
   async findScoringTargets(
     profileId: number | null,
   ): Promise<StoredJobPosting[]> {
+    // Prisma 의 `not:` 은 `<>` 로 컴파일되는데 SQL 3값 논리상 NULL 행은 걸리지 않는다.
+    // scoredProfileId 는 CareerProfile 삭제 시 onDelete: SetNull 로 NULL 이 될 수 있어,
+    // 그 경우를 따로 넣지 않으면 점수가 남은 채 영영 재채점 대상에서 빠진다.
+    const staleConditions =
+      profileId === null
+        ? [{ matchScore: null }, { scoredProfileId: { not: null } }]
+        : [
+            { matchScore: null },
+            { scoredProfileId: null },
+            { scoredProfileId: { not: profileId } },
+          ];
+
     return this.prisma.jobPosting.findMany({
-      where: {
-        closedAt: null,
-        // 아직 안 매겼거나, 다른 프로필로 매긴 행만 다시 본다.
-        OR: [{ matchScore: null }, { scoredProfileId: { not: profileId } }],
-      },
+      where: { closedAt: null, OR: staleConditions },
       select: SELECT_FIELDS,
     });
   }
