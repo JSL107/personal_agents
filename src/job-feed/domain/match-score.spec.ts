@@ -127,7 +127,36 @@ describe('scorePosting', () => {
       buildMatchProfile({ techTags: ['Java'], years: 5, locations: ['서울'] }),
     );
     expect(result.skillHitRatio).toBe(0);
-    expect(result.score).toBeGreaterThan(0);
+    expect(result.score).toBe(65);
+  });
+
+  it('연차가 상한을 넘으면 감점하되 미달보다는 덜 깎는다', () => {
+    const result = scorePosting(
+      posting(),
+      buildMatchProfile({
+        techTags: ['Java', 'Spring Boot', 'AWS', 'MSA'],
+        years: 9,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.yearsFit).toBe('OVER');
+    expect(result.score).toBe(90);
+  });
+
+  it('연차가 정확히 하한이면 맞는 것으로 본다', () => {
+    const result = scorePosting(
+      posting(),
+      buildMatchProfile({ techTags: ['Java'], years: 3, locations: [] }),
+    );
+    expect(result.yearsFit).toBe('FIT');
+  });
+
+  it('연차가 정확히 상한이면 맞는 것으로 본다', () => {
+    const result = scorePosting(
+      posting(),
+      buildMatchProfile({ techTags: ['Java'], years: 7, locations: [] }),
+    );
+    expect(result.yearsFit).toBe('FIT');
   });
 
   it('점수는 0~100 정수다', () => {
