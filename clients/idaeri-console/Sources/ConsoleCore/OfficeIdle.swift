@@ -515,6 +515,27 @@ public let officeSessionSweepIntervalSeconds: Double = 30
 /// 자리를 놓는 쪽(`OfficeFloorPlan` 의 `stride(from: 2, to: zoneWidth, by: 2)`)과 같은 수.
 public let officeSessionDeskStrideTiles: Double = 2
 
+/// 대표실 문패를 접어야 하는가.
+///
+/// 세션 이름표가 밴드를 사실상 덮으므로(`officeSessionDeskStrideTiles` 간격으로 놓인 책상마다
+/// 두 칸 몫), 세션이 하나라도 화면에 있으면 문패가 설 자리가 없다. 세로로도 비켜설 곳이 없다 —
+/// 아래로는 아래 방 말풍선을 피해 이미 올라와 있고 위로는 책상과 대표 이름표가 차 있다.
+public func officeHidesPresidentPlate(sessionCount: Int) -> Bool {
+    sessionCount > 0
+}
+
+/// 세션 수가 바뀐 회차에 부서·공용 문패를 다시 그려야 하는가.
+///
+/// 문패는 평면도·창 크기가 바뀔 때만 그려지는데 세션은 이벤트와 30초 스윕으로 바뀐다. 이
+/// 판정이 없으면 첫 세션이 뜬 뒤에도 문패가 남아 겹치고, **마지막 세션이 떠난 뒤에는 문패가
+/// 돌아오지 않는다**(후자가 이대리 리뷰 지적 방향이다).
+///
+/// 접힘 판정을 그대로 다시 쓴다 — 두 자리가 각자 조건을 들면 한쪽만 바뀔 때 조용히 갈린다.
+public func officeNeedsPlateRedraw(previousSessionCount: Int, currentSessionCount: Int) -> Bool {
+    officeHidesPresidentPlate(sessionCount: previousSessionCount)
+        != officeHidesPresidentPlate(sessionCount: currentSessionCount)
+}
+
 /// 라틴 글자 한 자의 **평균** 폭 ÷ 글자 크기. `AppleSDGothicNeo-Bold` 의 영문·숫자 실측 근사
 /// (렌더에서 9자 라벨이 53.5px, 글자 크기 11px).
 ///
