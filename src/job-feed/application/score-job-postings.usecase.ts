@@ -28,7 +28,10 @@ const BUCKET_SIZE = 20;
 
 const toBucketLabel = (score: number): string => {
   const lower = Math.min(80, Math.floor(score / BUCKET_SIZE) * BUCKET_SIZE);
-  return `${lower}-${lower + BUCKET_SIZE - 1}`;
+  // 최상위 구간만 100점을 포함한다는 걸 라벨에 드러낸다 — "80-99" 로 두면
+  // 100점 만점이 어느 구간에 잡히는지 CLI 출력만 보고는 알 수 없다.
+  const upper = lower === 80 ? 100 : lower + BUCKET_SIZE - 1;
+  return `${lower}-${upper}`;
 };
 
 // 모델을 부르지 않는 결정론 계산기라 AgentRunService(원장)를 쓰지 않는다 — 이 레포의
