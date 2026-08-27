@@ -194,11 +194,16 @@ Dated reference snapshots — 단일 커밋 결정 기록, 사후 갱신 X (신�
 - **owner 계정 리액션만 신호로 인정**된다(`harvest-signal.ts:52`). 다른 계정의 👍👎는 무시된다.
 - 이모지가 없으면 답글을 LLM(`REVIEW_REPLY_JUDGE`)이 배치 판정한다(`harvest-signal.ts:66-75`) — 이모지를 남기면
   그 LLM 호출과 오판 가능성을 건너뛴다. 이게 이모지를 요구하는 실질적 이유.
-- 🔴 **정탐에 👎 금지 (되돌릴 수 없다)**: `REJECTED` 카드의 기각 이유는 그 레포의 **규약**이 되어 다음 리뷰
+- 🔴 **정탐에 👎 금지**: `REJECTED` 카드의 기각 이유는 그 레포의 **규약**이 되어 다음 리뷰
   프롬프트에 실린다(`learned-conventions.ts` — 카테고리당 기각 2건·이유 40자 이상). 정탐을 기각하면 "이 레포에서는
   그게 정상" 이라고 가르치는 셈이라 좋은 지적을 피하도록 **역학습**한다. 반대로 오탐에 👍를 누르면 채택률이
   부풀려져 억제 게이트가 잘못 학습한다. **판정은 실제 코드 근거로만** (맹종·맹반 금지).
   (기각 카드를 episodic memory 에 쌓던 옛 경로는 읽는 곳이 사라져 제거됐다 — 규약이 유일한 학습 경로다.)
+- **잘못 누른 👎 되돌리기**: `pnpm review:unlearn <카드id>` 로 미리보기, `--apply` 로 적용. 카드를 `ACKED` 로
+  바로잡아 규약 재료에서 빼고 채택률도 제 값으로 돌린다. `--apply` 를 빼면 아무것도 바꾸지 않고 "뺀 뒤의 규약
+  블록" 을 보여준다. 카드 id 는 GitHub 코멘트 id 가 아니라 `pr_review_finding.id` 다
+  (`select id, pull_number, category, decided_at from pr_review_finding where status = 'REJECTED'`).
+  이미 나간 리뷰는 되돌리지 못하므로 예방이 먼저다. GitHub 의 👎 리액션은 손으로 지운다.
 - 이모지 부착도 게시와 같은 outward 액션 → **승인 게이트 적용**(무엇에 👍/👎를 달지 + 답변 초안을 먼저 보고).
 
 ---

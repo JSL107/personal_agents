@@ -11,6 +11,15 @@ import { RejectedFindingSummary } from '../../../../pr-review-loop/domain/pr-rev
 // 차단이 아니라 맥락이다. 지적을 막는 게 아니라 이 레포의 사정을 알려주는 것이라,
 // 규약이 이번 diff 에 해당하지 않으면 모델이 평소대로 지적할 수 있다.
 
+/**
+ * 규약으로 되먹일 기각의 유효기간(일). 조회 조건이 곧 만료라, 오래된 기각은 저절로 빠진다.
+ *
+ * 규약을 읽는 리뷰(`review-pull-request.usecase`)와 카드를 학습에서 빼는 도구
+ * (`scripts/unlearn-review-card.ts`)가 같은 창을 봐야 해서 규약 쪽에 둔다 — 창이 갈리면
+ * 도구가 보여주는 규약이 실제로 실리는 규약과 달라진다.
+ */
+export const CONVENTION_WINDOW_DAYS = 90;
+
 /** 한 번의 기각은 그 PR 사정일 수 있다. 두 번부터 레포 성향으로 본다. */
 export const MIN_REJECTIONS_PER_CATEGORY = 2;
 
