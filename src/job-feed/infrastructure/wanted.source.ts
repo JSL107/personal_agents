@@ -15,9 +15,12 @@ const LIST_ENDPOINT = 'https://www.wanted.co.kr/api/v4/jobs';
 const DETAIL_ENDPOINT = 'https://www.wanted.co.kr/api/v4/jobs';
 const PAGE_SIZE = 40;
 
-// 백엔드 전용 category_tags 값을 확정하지 못했다. 잘못된 값을 넣으면 HTTP 200 으로
-// 디자이너 공고가 정상 수집된다(실측 — category_tags=872 가 타이포그래피·Zeplin·UI 디자인).
-// 그래서 카테고리를 좁히지 않고 개발 직군을 넓게 받은 뒤 isBackendPosting 으로 거른다.
+// 원티드 개발 직군 태그. 파라미터 이름이 category_tags 가 아니라 tag_type_ids 다 —
+// category_tags 로 넣으면 HTTP 200 에 전 직군(마케터·MD·기획)이 정상 응답으로 돌아온다(실측).
+// 872 는 백엔드 전용이 아니라 개발 직군 전반이라 네트워크 엔지니어·컨설턴트도 섞인다.
+// 나머지는 isBackendPosting 이 거른다.
+const DEVELOPER_TAG_TYPE_ID = '872';
+
 @Injectable()
 export class WantedSource implements JobDetailSourcePort {
   readonly source: JobSourceId = 'wanted';
@@ -29,6 +32,7 @@ export class WantedSource implements JobDetailSourcePort {
       job_sort: 'job.latest_order',
       years: '-1',
       locations: 'all',
+      tag_type_ids: DEVELOPER_TAG_TYPE_ID,
       limit: String(PAGE_SIZE),
       offset: String(offset),
     });
