@@ -129,4 +129,38 @@ describe('mapRallitList', () => {
   it('전체 페이지 수를 응답에서 그대로 읽는다', () => {
     expect(mapRallitList(payload).totalPages).toBe(16);
   });
+
+  // totalPage 가 빠지거나 이상값이면 조용히 1페이지로 떨어져, 실제로는 여러 페이지가
+  // 있어도 수집기가 1페이지만 돌고 멈춘다 — 폴백 조건 자체를 회귀로 잡아둔다.
+  it('totalPage 가 없으면 1페이지로 취급한다', () => {
+    const result = mapRallitList({
+      data: {
+        totalCount: 2,
+        items: payload.data.items,
+      },
+    });
+    expect(result.totalPages).toBe(1);
+  });
+
+  it('totalPage 가 0이면 1페이지로 취급한다', () => {
+    const result = mapRallitList({
+      data: {
+        totalCount: 2,
+        totalPage: 0,
+        items: payload.data.items,
+      },
+    });
+    expect(result.totalPages).toBe(1);
+  });
+
+  it('totalPage 가 숫자가 아니면 1페이지로 취급한다', () => {
+    const result = mapRallitList({
+      data: {
+        totalCount: 2,
+        totalPage: '16',
+        items: payload.data.items,
+      },
+    });
+    expect(result.totalPages).toBe(1);
+  });
 });

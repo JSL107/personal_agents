@@ -59,6 +59,19 @@ describe('fetchJsonWithRetry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // 408 은 서버가 유휴 연결을 닫거나 요청을 기다리다 타임아웃했을 때 보내는 것이라
+  // 429 와 같은 성격으로 재시도 대상이다 — 영구 실패로 분류하면 안 된다.
+  it('408 은 재시도한다', async () => {
+    fetchMock.mockResolvedValue(createJsonResponse({}, 408));
+
+    const pending = requestOnce();
+    const assertion = expect(pending).rejects.toThrow('HTTP 408');
+    await jest.advanceTimersByTimeAsync(1_000);
+
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('404 는 즉시 실패하고 재시도하지 않는다', async () => {
     fetchMock.mockResolvedValue(createJsonResponse({}, 404));
 

@@ -5,10 +5,12 @@ import { JobFeedRateLimitError } from './job-feed-rate-limit.error';
 const MAX_ATTEMPTS = 2;
 const BACKOFF_BASE_MS = 1_000;
 
-// 429 는 별도 타입(JobFeedRateLimitError)으로 재시도 대상이다. 나머지 4xx 는 인증·요청
-// 형식 문제라 재시도해도 결과가 달라지지 않는다 — 반복하면 차단만 앞당긴다.
+// 429 는 별도 타입(JobFeedRateLimitError)으로 재시도 대상이다. 408 도 재시도 대상이다 —
+// 서버가 유휴 연결을 닫거나 요청을 기다리다 타임아웃했을 때 보내는 것이라 다시 시도하면
+// 성공할 수 있다(429 와 같은 성격). 나머지 4xx 는 인증·요청 형식 문제라 재시도해도 결과가
+// 달라지지 않는다 — 반복하면 차단만 앞당긴다.
 const isPermanentStatus = (status: number): boolean => {
-  return status >= 400 && status < 500 && status !== 429;
+  return status >= 400 && status < 500 && status !== 429 && status !== 408;
 };
 
 const sleep = (milliseconds: number): Promise<void> => {
