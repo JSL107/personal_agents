@@ -35,13 +35,13 @@ import {
   buildRepoConventions,
   CODE_REVIEWER_SYSTEM_PROMPT,
 } from '../domain/prompt/code-reviewer-system.prompt';
-import { renderLearnedConventions } from '../domain/prompt/learned-conventions';
+import {
+  CONVENTION_WINDOW_DAYS,
+  renderLearnedConventions,
+} from '../domain/prompt/learned-conventions';
 import { parsePullRequestReview } from '../domain/prompt/pr-review.parser';
 
 const DEFAULT_INLINE_MAX = 4;
-
-// 규약으로 되먹일 기각의 유효기간. 조회 조건이 곧 만료라, 오래된 기각은 저절로 빠진다.
-const CONVENTION_WINDOW_DAYS = 90;
 
 @Injectable()
 export class ReviewPullRequestUsecase {
