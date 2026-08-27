@@ -1,10 +1,5 @@
 export type JobSourceId = 'jumpit' | 'rallit' | 'wanted';
-export type ExperienceLevel =
-  | 'newcomer'
-  | 'junior'
-  | 'mid'
-  | 'senior'
-  | 'any';
+export type ExperienceLevel = 'newcomer' | 'junior' | 'mid' | 'senior' | 'any';
 export type YearsSource = 'RANGE' | 'LEVEL';
 export type SourceStatus = 'SUCCESS' | 'DEGRADED' | 'FAILED';
 

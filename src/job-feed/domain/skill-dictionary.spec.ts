@@ -2,9 +2,13 @@ import { normalizeSkillTags } from './skill-dictionary';
 
 describe('normalizeSkillTags', () => {
   it('소스마다 다른 표기를 같은 정규명으로 모은다', () => {
-    expect(normalizeSkillTags(['Spring Boot']).matched).toEqual(['Spring Boot']);
+    expect(normalizeSkillTags(['Spring Boot']).matched).toEqual([
+      'Spring Boot',
+    ]);
     expect(normalizeSkillTags(['SpringBoot']).matched).toEqual(['Spring Boot']);
-    expect(normalizeSkillTags(['spring boot']).matched).toEqual(['Spring Boot']);
+    expect(normalizeSkillTags(['spring boot']).matched).toEqual([
+      'Spring Boot',
+    ]);
     expect(normalizeSkillTags(['스프링부트']).matched).toEqual(['Spring Boot']);
   });
 
