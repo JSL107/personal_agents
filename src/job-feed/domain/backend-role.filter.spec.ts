@@ -114,4 +114,42 @@ describe('isBackendPosting', () => {
       }),
     ).toBe(false);
   });
+
+  it('직군 중립 제목에 프론트 단서가 붙으면 제외한다', () => {
+    expect(
+      isBackendPosting({
+        title: '소프트웨어 엔지니어(Frontend)',
+        skillTags: [],
+        rawSkillTags: ['React', 'Svelte'],
+      }),
+    ).toBe(false);
+    expect(
+      isBackendPosting({
+        title: '(Frontend Software Engineer)',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('프론트 단서가 없는 직군 중립 제목은 통과시킨다', () => {
+    expect(
+      isBackendPosting({
+        title: '소프트웨어 엔지니어',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(true);
+  });
+
+  it('서버 스킬 하나만으로는 모호한 제목을 통과시키지 않는다', () => {
+    // skillTags 는 rawSkillTags 의 정규화 결과라 합쳐 세면 같은 기술이 두 번 잡힌다.
+    expect(
+      isBackendPosting({
+        title: '회로설계 엔지니어',
+        skillTags: ['Python'],
+        rawSkillTags: ['Python', 'Altium', 'PCB'],
+      }),
+    ).toBe(false);
+  });
 });
