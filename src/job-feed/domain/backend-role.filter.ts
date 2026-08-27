@@ -12,14 +12,19 @@ const BACKEND_TITLE_PATTERNS: readonly RegExp[] = [
   /platform\s*engineer/iu,
 ];
 
-const EXCLUDE_TITLE_PATTERNS: readonly RegExp[] = [
-  /프[\s-]?론[\s-]?트/u,
-  /front[\s-]?end/iu,
+// 백엔드 키워드가 함께 있어도 무조건 제외한다 — 직군 자체가 다르거나 실제 공고가 아니다.
+const HARD_EXCLUDE_PATTERNS: readonly RegExp[] = [
   /인재풀/u,
   /디자이너/u,
   /designer/iu,
   /퍼블리셔/u,
-  /안드로이드|android|ios\b/iu,
+  /안드로이드|android|\bios\b/iu,
+];
+
+// 프론트 단서 — 백엔드 키워드가 없을 때만 제외 근거가 된다.
+const FRONTEND_HINT_PATTERNS: readonly RegExp[] = [
+  /프[\s-]?론[\s-]?트/u,
+  /front[\s-]?end/iu,
 ];
 
 const SERVER_SKILLS: ReadonlySet<string> = new Set([
@@ -50,6 +55,7 @@ const SERVER_SKILLS: ReadonlySet<string> = new Set([
   'MyBatis',
   'QueryDSL',
   'Prisma',
+  'TypeORM',
 ]);
 
 const MINIMUM_SERVER_SKILLS = 2;
@@ -65,13 +71,19 @@ export const isBackendPosting = ({
   skillTags,
   rawSkillTags,
 }: BackendPostingInput): boolean => {
-  if (EXCLUDE_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
+  // ① 직군 자체가 다르거나 실제 공고가 아닌 것 — 백엔드 키워드가 있어도 제외한다.
+  if (HARD_EXCLUDE_PATTERNS.some((pattern) => pattern.test(title))) {
     return false;
   }
+  // ② 백엔드를 명시하면 통과. 프론트를 겸한 공고도 백엔드 채용이므로 여기서 걸린다.
   if (BACKEND_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
     return true;
   }
-  // 제목이 모호한 공고(예: "개발팀 팀장")는 스택으로 판정한다.
+  // ③ 백엔드 언급이 없는데 프론트 단서만 있으면 프론트 공고다.
+  if (FRONTEND_HINT_PATTERNS.some((pattern) => pattern.test(title))) {
+    return false;
+  }
+  // ④ 제목이 모호한 공고(예: "개발팀 팀장")는 스택으로 판정한다.
   const serverSkillCount = [...skillTags, ...rawSkillTags].filter((tag) => {
     return SERVER_SKILLS.has(tag);
   }).length;

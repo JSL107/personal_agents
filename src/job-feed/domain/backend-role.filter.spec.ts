@@ -74,4 +74,44 @@ describe('isBackendPosting', () => {
       }),
     ).toBe(false);
   });
+
+  it('회사명에 Studios 가 들어간 서버 공고를 거르지 않는다', () => {
+    expect(
+      isBackendPosting({
+        title: '넥슨 Studios 백엔드 엔지니어',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(true);
+  });
+
+  it('프론트와 백엔드를 겸한 공고는 백엔드 채용으로 본다', () => {
+    expect(
+      isBackendPosting({
+        title: '프론트엔드/백엔드 개발자',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(true);
+  });
+
+  it('백엔드를 명시해도 인재풀 공고는 제외한다', () => {
+    expect(
+      isBackendPosting({
+        title: '[인재풀] 백엔드 개발자',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('iOS 개발자는 여전히 제외한다', () => {
+    expect(
+      isBackendPosting({
+        title: 'iOS 개발자',
+        skillTags: [],
+        rawSkillTags: [],
+      }),
+    ).toBe(false);
+  });
 });
