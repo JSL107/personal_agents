@@ -16,7 +16,7 @@ const asNonEmptyString = (value: unknown): string | null => {
   return null;
 };
 
-const asPositiveInteger = (value: unknown): number | null => {
+const asFiniteNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
@@ -37,7 +37,7 @@ const mapPosting = (raw: unknown): RawJobPosting | null => {
   if (!isRecord(raw)) {
     return null;
   }
-  const sourceId = asPositiveInteger(raw.id);
+  const sourceId = asFiniteNumber(raw.id);
   const company = asNonEmptyString(raw.companyName);
   const title = asNonEmptyString(raw.title);
   if (sourceId === null || company === null || title === null) {
@@ -50,8 +50,8 @@ const mapPosting = (raw: unknown): RawJobPosting | null => {
     title,
     detailUrl: `${DETAIL_URL_PREFIX}${sourceId}`,
     rawSkillTags: asStringArray(raw.techStacks),
-    minYears: asPositiveInteger(raw.minCareer),
-    maxYears: asPositiveInteger(raw.maxCareer),
+    minYears: asFiniteNumber(raw.minCareer),
+    maxYears: asFiniteNumber(raw.maxCareer),
     yearsSource: 'RANGE',
     rawJobLevel: null,
     isNewcomer: raw.newcomer === true,
@@ -71,7 +71,7 @@ export const mapJumpitList = (payload: unknown): JobSourceListResult => {
     const mapped = mapPosting(raw);
     return mapped === null ? [] : [mapped];
   });
-  const total = asPositiveInteger(totalCount) ?? postings.length;
+  const total = asFiniteNumber(totalCount) ?? postings.length;
   return {
     received: positions.length,
     postings,

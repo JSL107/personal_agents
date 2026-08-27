@@ -1,11 +1,15 @@
 import { JobSourceId } from '../domain/job-feed.type';
+import { JobFeedPermanentError } from './job-feed-permanent.error';
 import { JobFeedRateLimitError } from './job-feed-rate-limit.error';
 
 const MAX_ATTEMPTS = 2;
 const BACKOFF_BASE_MS = 1_000;
 
-// 재시도해도 결과가 달라지지 않는 응답. 반복하면 차단만 앞당긴다.
-const PERMANENT_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404]);
+// 429 는 별도 타입(JobFeedRateLimitError)으로 재시도 대상이다. 나머지 4xx 는 인증·요청
+// 형식 문제라 재시도해도 결과가 달라지지 않는다 — 반복하면 차단만 앞당긴다.
+const isPermanentStatus = (status: number): boolean => {
+  return status >= 400 && status < 500 && status !== 429;
+};
 
 const sleep = (milliseconds: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -39,11 +43,9 @@ export const fetchJsonWithRetry = async ({
       if (response.status === 429) {
         throw new JobFeedRateLimitError(source);
       }
-      if (PERMANENT_STATUSES.has(response.status)) {
+      if (isPermanentStatus(response.status)) {
         // 인증이 붙거나 차단된 경우다. 재시도하면 영구 실패를 반복한다.
-        throw new Error(
-          `${label} 요청 실패: HTTP ${response.status} (재시도 안 함)`,
-        );
+        throw new JobFeedPermanentError(source, response.status, label);
       }
       if (!response.ok) {
         throw new Error(`${label} 요청 실패: HTTP ${response.status}`);
@@ -52,7 +54,7 @@ export const fetchJsonWithRetry = async ({
     } catch (error) {
       const normalized =
         error instanceof Error ? error : new Error(String(error));
-      const isPermanent = normalized.message.includes('재시도 안 함');
+      const isPermanent = normalized instanceof JobFeedPermanentError;
       if (isPermanent || attempt >= MAX_ATTEMPTS) {
         throw normalized;
       }
