@@ -199,7 +199,6 @@ export class CollectJobPostingsUsecase {
     unmatchedSink: string[],
   ): NormalizedJobPosting | null {
     const skills = normalizeSkillTags(raw.rawSkillTags);
-    unmatchedSink.push(...skills.unmatched);
 
     if (
       !isBackendPosting({
@@ -210,6 +209,11 @@ export class CollectJobPostingsUsecase {
     ) {
       return null;
     }
+
+    // 미매칭 태그는 백엔드 사전 갱신 재료다(스펙 §4-3) — 직군 필터를 통과한 공고에서만
+    // 모은다. 판정보다 앞에서 모으면 탈락한 공고(프론트 등)의 React·Vue.js·CSS 같은
+    // 태그가 섞여, 정작 필요한 백엔드 신규 기술(Quarkus·Temporal 등)이 잡음에 묻힌다.
+    unmatchedSink.push(...skills.unmatched);
 
     // raw 를 그대로 spread 하지 않고 NormalizedJobPosting 이 선언한 필드만 명시적으로
     // 나열한다. TypeScript 는 변수를 거쳐 전달된 객체가 "타입이 선언한 필드만 갖는다"를

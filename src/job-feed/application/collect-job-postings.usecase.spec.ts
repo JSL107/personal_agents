@@ -40,6 +40,27 @@ const stubSource = (
   };
 };
 
+// 페이지마다 다른 응답(또는 예외)을 주는 대역 — 다중 페이지 누적·페이지 중간 예외를
+// 검증하려면 stubSource 처럼 매 호출 같은 값을 주는 것으론 부족하다.
+const stubPagedSource = (
+  source: JobSourcePort['source'],
+  pages: Array<JobSourceListResult | Error>,
+): JobSourcePort => {
+  return {
+    source,
+    fetchList: async (page: number): Promise<JobSourceListResult> => {
+      const result = pages[page - 1];
+      if (result === undefined) {
+        throw new Error(`stubPagedSource: page ${page} 응답이 정의되지 않음`);
+      }
+      if (result instanceof Error) {
+        throw result;
+      }
+      return result;
+    },
+  };
+};
+
 const stubRepository = () => {
   return {
     upsertMany: jest.fn(async () => ({
@@ -161,6 +182,32 @@ describe('CollectJobPostingsUsecase', () => {
     expect(result.unmatchedSkillTags).toEqual([{ tag: 'Quarkus', count: 2 }]);
   });
 
+  it('직군 필터에서 탈락한 공고의 태그는 미매칭 목록에 넣지 않는다', async () => {
+    // 사전 보강 재료를 찾는 목록이라 백엔드 공고의 태그만 의미가 있다.
+    const repository = stubRepository();
+    const usecase = new CollectJobPostingsUsecase(
+      [
+        stubSource('jumpit', {
+          received: 2,
+          postings: [
+            backendPosting({ rawSkillTags: ['Java', 'Quarkus'] }),
+            backendPosting({
+              sourceId: '2',
+              title: '프론트엔드 개발자',
+              rawSkillTags: ['React', 'Vue.js'],
+            }),
+          ],
+          totalPages: 1,
+        }),
+      ],
+      repository as never,
+    );
+
+    const result = await usecase.execute({ maxPages: 1 });
+
+    expect(result.unmatchedSkillTags).toEqual([{ tag: 'Quarkus', count: 1 }]);
+  });
+
   it('dryRun 이면 저장하지 않는다', async () => {
     const repository = stubRepository();
     const usecase = new CollectJobPostingsUsecase(
@@ -177,5 +224,65 @@ describe('CollectJobPostingsUsecase', () => {
     await usecase.execute({ maxPages: 1, dryRun: true });
 
     expect(repository.upsertMany).not.toHaveBeenCalled();
+  });
+
+  it('여러 페이지를 도는 동안 수신·검증 건수가 누적된다', async () => {
+    const repository = stubRepository();
+    const usecase = new CollectJobPostingsUsecase(
+      [
+        stubPagedSource('jumpit', [
+          {
+            received: 2,
+            postings: [backendPosting()],
+            totalPages: 2,
+          },
+          {
+            received: 3,
+            postings: [backendPosting({ sourceId: '2' })],
+            totalPages: 2,
+          },
+        ]),
+      ],
+      repository as never,
+    );
+
+    const result = await usecase.execute({ maxPages: 2 });
+
+    expect(result.outcomes[0]).toMatchObject({
+      status: 'SUCCESS',
+      received: 5,
+      validated: 2,
+      accepted: 2,
+    });
+  });
+
+  it('페이지 2에서 예외가 나도 페이지 1의 성과는 보존되고 저장으로 넘어간다', async () => {
+    const repository = stubRepository();
+    const usecase = new CollectJobPostingsUsecase(
+      [
+        stubPagedSource('jumpit', [
+          {
+            received: 2,
+            postings: [backendPosting()],
+            totalPages: 2,
+          },
+          new Error('HTTP 500'),
+        ]),
+      ],
+      repository as never,
+    );
+
+    const result = await usecase.execute({ maxPages: 2 });
+
+    expect(result.outcomes[0]).toMatchObject({
+      status: 'FAILED',
+      received: 2,
+      validated: 1,
+      accepted: 1,
+      error: expect.stringContaining('HTTP 500'),
+    });
+    expect(repository.upsertMany).toHaveBeenCalledWith([
+      expect.objectContaining({ sourceId: '1' }),
+    ]);
   });
 });
