@@ -246,7 +246,10 @@ const formatOlderBaseDates = (baseDates?: StockBaseDate[]): string => {
   const listed = baseDates
     .map((baseDate) => `${baseDate.symbol} ${baseDate.tradeDate}`)
     .join(' · ');
-  return `_기준일이 다른 종목: ${listed} — 최신 봉이 아직 안 들어와 하루 전 값입니다_`;
+  // "하루 전" 이라고 쓰지 않는다. 뒤처진 폭은 종목마다 다르고 이틀 이상일 수도 있어
+  // (그 종목만 봉을 못 받은 날이 이어지면 그렇게 된다) 단정하면 카드가 사실과 어긋난다.
+  // 얼마나 뒤처졌는지는 함께 적은 날짜가 말한다.
+  return `_기준일이 다른 종목: ${listed} — 최신 봉이 아직 안 들어와 이전 거래일 값입니다_`;
 };
 
 const MARGIN_AXIS_LABEL: Record<AlertMargin['kind'], string> = {
@@ -309,6 +312,10 @@ export const formatStockMonitorSummary = (
     lines.push(
       `📉 *주식 모니터링* — ${marketLabel} 새 거래일 시세가 없어 점검을 건너뜁니다 (휴장 추정, 마지막 거래일 ${context.lastTradeDate})`,
     );
+    // 휴장 경로에서도 기준일은 갈릴 수 있다. 종목마다 마지막으로 저장된 거래일이 다르면
+    // (그 종목만 봉을 못 받은 날이 있었으면) 전 종목에 새 봉이 없는 날에도 각자 다른 날짜에
+    // 멈춰 있고, 아래 평단 상태 줄은 그 날짜의 가격으로 계산된다.
+    pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
     return lines.join('\n');
   }
 
