@@ -823,7 +823,7 @@ export class EnvironmentVariables {
   // - JOB_FEED_YEARS: 연차 매칭 축(0~50). 미설정 시 중립으로 채점.
   // - JOB_FEED_LOCATIONS: 지역 매칭 축(쉼표 구분). 미설정 시 중립으로 채점.
   // - JOB_FEED_MATCH_THRESHOLD: 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값.
-  // - JOB_FEED_GAP_ANALYSIS_TOP_N: 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~5).
+  // - JOB_FEED_GAP_ANALYSIS_TOP_N: 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2).
   // - JOB_FEED_DETAIL_LIMIT: 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한).
   @IsOptional()
   @IsString()
@@ -847,11 +847,15 @@ export class EnvironmentVariables {
   @Max(100)
   JOB_FEED_MATCH_THRESHOLD?: number;
 
+  // 상한이 2인 이유 — 순차 모델 호출 1건의 worst-case(606초)가 이미 autopilot consumer
+  // lock 예산(876초)의 60%를 넘는다. 3건 이상이면 job-feed-gap.autopilot-task.ts 의
+  // 경과 시간 가드가 사실상 항상 1건만 처리해 나머지가 매 회차 밀리므로, 설정 가능한
+  // 상한 자체를 예산 안에서 의미 있는 값(2)으로 막는다.
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(5)
+  @Max(2)
   JOB_FEED_GAP_ANALYSIS_TOP_N?: number;
 
   @IsOptional()

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { CollectJobPostingsUsecase } from '../../../job-feed/application/collect-job-postings.usecase';
@@ -21,7 +21,9 @@ interface ProfileMatchInput {
   profileId: number | null;
 }
 
-const DEFAULT_MATCH_THRESHOLD = 60;
+// 실측 분포(228건 중 80~100:95 · 60~79:117 · 40~59:14 · 20~39:2) 기준 — 60점은
+// 93%가 통과해 필터 구실을 못 한다(Task 17, .env.example JOB_FEED_MATCH_THRESHOLD=80).
+const DEFAULT_MATCH_THRESHOLD = 80;
 const DEFAULT_DETAIL_LIMIT = 20;
 const DEFAULT_NOTIFY_LIMIT = 10;
 
@@ -32,7 +34,6 @@ const DEFAULT_NOTIFY_LIMIT = 10;
 @Injectable()
 export class JobFeedAutopilotTask implements AutopilotTask {
   readonly id = 'job-feed';
-  private readonly logger = new Logger(JobFeedAutopilotTask.name);
 
   constructor(
     private readonly collect: CollectJobPostingsUsecase,
@@ -46,19 +47,17 @@ export class JobFeedAutopilotTask implements AutopilotTask {
   ) {}
 
   async run(): Promise<AutopilotTaskResult> {
-    // env 는 아직 app.config.ts 에 없다(Task 17 예정) — 미설정이면 꺼진 상태가 기본이다.
+    // 미설정이면 꺼진 상태가 기본이다.
     if (this.configService.get<string>('JOB_FEED_ENABLED') !== 'true') {
       return { skip: true };
     }
 
-    const threshold = this.readNumber(
-      'JOB_FEED_MATCH_THRESHOLD',
-      DEFAULT_MATCH_THRESHOLD,
-    );
-    const detailLimit = this.readNumber(
-      'JOB_FEED_DETAIL_LIMIT',
-      DEFAULT_DETAIL_LIMIT,
-    );
+    const threshold =
+      this.configService.get<number>('JOB_FEED_MATCH_THRESHOLD') ??
+      DEFAULT_MATCH_THRESHOLD;
+    const detailLimit =
+      this.configService.get<number>('JOB_FEED_DETAIL_LIMIT') ??
+      DEFAULT_DETAIL_LIMIT;
 
     const collected = await this.collect.execute({});
 
@@ -74,7 +73,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
 
     await this.score.execute({
       techTags: profile.techTags,
-      years: this.readNumberOrNull('JOB_FEED_YEARS'),
+      years: this.configService.get<number>('JOB_FEED_YEARS') ?? null,
       locations: this.parseLocations(),
       profileId: profile.profileId,
     });
@@ -108,31 +107,6 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
-  }
-
-  // env 가 아직 app.config.ts 에 선언되지 않아(Task 17) class-transformer 의
-  // enableImplicitConversion 이 이 키들에 적용되지 않는다 — ConfigService.get<number>()
-  // 를 믿지 않고 문자열로 읽어 직접 파싱한다.
-  private readNumber(key: string, fallback: number): number {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined || raw.trim().length === 0) {
-      return fallback;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      this.logger.warn(`${key} 값이 숫자가 아닙니다 — 기본값 ${fallback} 사용`);
-      return fallback;
-    }
-    return parsed;
-  }
-
-  private readNumberOrNull(key: string): number | null {
-    const raw = this.configService.get<string>(key);
-    if (raw === undefined || raw.trim().length === 0) {
-      return null;
-    }
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private async loadProfile(): Promise<ProfileMatchInput> {

@@ -1,6 +1,9 @@
 import { JobFeedAutopilotTask } from './job-feed.autopilot-task';
 
-function makeConfig(values: Record<string, string | undefined> = {}) {
+// app.config.ts 가 JOB_FEED_MATCH_THRESHOLD 등을 @Type(() => Number) 로 선언한 뒤로
+// ConfigService.get() 은 실제로 number 타입을 돌려준다(문자열이 아니다) — mock 도
+// 실제 계약과 같은 타입으로 맞춘다.
+function makeConfig(values: Record<string, string | number | undefined> = {}) {
   return { get: jest.fn((key: string) => values[key]) };
 }
 
@@ -83,7 +86,9 @@ const makeDeps = (
 
 const buildTask = (
   deps: ReturnType<typeof makeDeps>,
-  config: Record<string, string | undefined> = { JOB_FEED_ENABLED: 'true' },
+  config: Record<string, string | number | undefined> = {
+    JOB_FEED_ENABLED: 'true',
+  },
 ) => {
   return new JobFeedAutopilotTask(
     deps.collect as never,
@@ -166,10 +171,10 @@ describe('JobFeedAutopilotTask', () => {
     });
     const task = buildTask(deps, {
       JOB_FEED_ENABLED: 'true',
-      JOB_FEED_MATCH_THRESHOLD: '70',
-      JOB_FEED_DETAIL_LIMIT: '5',
+      JOB_FEED_MATCH_THRESHOLD: 70,
+      JOB_FEED_DETAIL_LIMIT: 5,
       JOB_FEED_LOCATIONS: '서울, 경기 ,',
-      JOB_FEED_YEARS: '4',
+      JOB_FEED_YEARS: 4,
     });
 
     const result = await task.run();
@@ -194,22 +199,20 @@ describe('JobFeedAutopilotTask', () => {
     expect(result.summaryText).toContain('마지막 수집');
   });
 
-  it('숫자 env 가 숫자가 아니면 기본값으로 폴백한다', async () => {
+  it('JOB_FEED_MATCH_THRESHOLD·JOB_FEED_DETAIL_LIMIT 미설정이면 코드 기본값(80/20)을 쓴다', async () => {
+    // app.config.ts 가 @Type(() => Number) + @IsInt/@Min/@Max 로 이미 값 형태를 보장하므로
+    // (형식이 잘못되면 부팅 자체가 막힌다), 이 task 가 신경 쓸 나머지 경우는 "미설정"뿐이다.
     const deps = makeDeps();
-    const task = buildTask(deps, {
-      JOB_FEED_ENABLED: 'true',
-      JOB_FEED_MATCH_THRESHOLD: 'not-a-number',
-      JOB_FEED_DETAIL_LIMIT: '',
-    });
+    const task = buildTask(deps, { JOB_FEED_ENABLED: 'true' });
 
     await task.run();
 
     expect(deps.fetchDetail.execute).toHaveBeenCalledWith({
-      threshold: 60,
+      threshold: 80,
       limit: 20,
     });
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith({
-      threshold: 60,
+      threshold: 80,
       limit: 10,
     });
   });

@@ -398,13 +398,13 @@ const TASK_ID_CLASS_NAME_OVERRIDE: Readonly<Record<string, string>> = {
   'stock-monitor-us': 'StockMonitorAutopilotTask',
 };
 
-// AUTOPILOT_TASKS 프로바이더 텍스트에서 useFactory 파라미터 목록과 그 뒤에 오는 반환
-// 배열(`) => [ ... ]`)을 각각 잘라낸다. 실제 인스턴스를 만들지 않고 문자열만 다루므로
-// Nest 모듈을 부팅하지 않는다 — 부팅하면 실행 중인 정기 실행 등록을 건드린다
+// AUTOPILOT_TASKS 프로바이더 텍스트에서 useFactory 파라미터 목록·그 뒤 반환 배열
+// (`) => [ ... ]`)·inject 배열을 각각 잘라낸다. 실제 인스턴스를 만들지 않고 문자열만
+// 다루므로 Nest 모듈을 부팅하지 않는다 — 부팅하면 실행 중인 정기 실행 등록을 건드린다
 // (Nest 전체 부팅의 부작용, feedback_nest_full_boot_side_effect).
 const extractAutopilotTasksFactoryBlocks = (
   moduleSource: string,
-): { paramsBlock: string; returnBlock: string } => {
+): { paramsBlock: string; returnBlock: string; injectBlock: string } => {
   const providerStart = moduleSource.indexOf('provide: AUTOPILOT_TASKS');
   if (providerStart === -1) {
     throw new Error('AUTOPILOT_TASKS 프로바이더를 모듈 소스에서 찾지 못했다');
@@ -413,6 +413,12 @@ const extractAutopilotTasksFactoryBlocks = (
   const arrowStart = moduleSource.indexOf(') => [', useFactoryStart);
   const injectStart = moduleSource.indexOf('inject: [', arrowStart);
   const returnArrayEnd = moduleSource.lastIndexOf('],', injectStart);
+  // inject 항목은 단순 식별자·심볼 나열이라 중첩 대괄호가 없다 — inject 시작 뒤 첫
+  // `],` 가 곧 그 배열의 닫는 지점이다.
+  const injectArrayEnd = moduleSource.indexOf(
+    '],',
+    injectStart + 'inject: ['.length,
+  );
 
   return {
     paramsBlock: moduleSource.slice(
@@ -423,7 +429,23 @@ const extractAutopilotTasksFactoryBlocks = (
       arrowStart + ') => ['.length,
       returnArrayEnd,
     ),
+    injectBlock: moduleSource.slice(
+      injectStart + 'inject: ['.length,
+      injectArrayEnd,
+    ),
   };
+};
+
+// paramsBlock 의 타입 애노테이션과 inject 배열의 토큰은 대부분 이름이 같다(둘 다
+// 클래스명). 예외는 stock-monitor/-us — 같은 클래스(StockMonitorAutopilotTask)를
+// 국가만 다른 두 파라미터로 나눠 주입받는데, Nest DI 는 같은 클래스 토큰을 인자
+// 위치 둘에 중복으로 못 써서 실제 inject 토큰은 커스텀 Symbol
+// (STOCK_MONITOR_KR_TASK / STOCK_MONITOR_US_TASK)이다. 파라미터 이름 기준 예외 맵 —
+// 새 예외를 추가할 땐 왜 이름이 갈리는지 주석으로 남길 것(TASK_ID_CLASS_NAME_OVERRIDE 와
+// 같은 원칙).
+const PARAM_NAME_INJECT_TOKEN_OVERRIDE: Readonly<Record<string, string>> = {
+  stockMonitor: 'STOCK_MONITOR_KR_TASK',
+  stockMonitorUs: 'STOCK_MONITOR_US_TASK',
 };
 
 describe('AUTOPILOT_PLAYBOOK ↔ AUTOPILOT_TASKS 정합성', () => {
@@ -469,5 +491,42 @@ describe('AUTOPILOT_PLAYBOOK ↔ AUTOPILOT_TASKS 정합성', () => {
 
     expect(declaredParams.length).toBeGreaterThan(0);
     expect([...returnedNames].sort()).toEqual([...declaredParams].sort());
+  });
+
+  it('AUTOPILOT_TASKS inject 배열이 useFactory 인자 타입과 순서까지 정확히 같다', async () => {
+    // 앞의 두 테스트가 못 잡는 사고가 둘 더 있다:
+    //   (1) inject 배열에서만 항목을 빼면 — 클래스명은 인자 타입 애노테이션·providers·
+    //       import 에 여전히 남아 있어 첫 번째 테스트가 못 잡고, 반환 배열은 안 건드렸으니
+    //       두 번째 테스트도 통과한다. 그런데 useFactory 는 위치 기반 인자 바인딩이라
+    //       실제로는 그 자리 파라미터가 undefined 로 주입돼, AutopilotOrchestrator 생성자의
+    //       `new Map(tasks.map((task) => [task.id, task]))` 가 undefined.id 접근에서
+    //       즉시 죽는다 — 첫 cron 발화가 아니라 **앱 부팅 시점에 Nest 전체가 크래시**한다.
+    //   (2) inject 배열 안에서 두 항목의 순서만 바꾸면 — 식별자 집합은 그대로라 두 번째
+    //       테스트의 정렬 비교로는 안 잡히고, 두 task 가 서로 반대 파라미터에 주입된다.
+    //       둘 다 AutopilotTask 인터페이스를 구현하니 TypeScript 도 못 잡는다 — 크래시조차
+    //       안 나고 **`job-feed` 슬롯이 실제로는 `job-feed-gap` 로직을 조용히 실행**한다.
+    // inject 는 위치 기반이므로 정렬 비교가 아니라 인자 순서 그대로 비교해야 이 둘을 잡는다.
+    const moduleSource = await import('node:fs').then((fs) => {
+      return fs.readFileSync(require.resolve('../autopilot.module'), 'utf8');
+    });
+    const { paramsBlock, injectBlock } =
+      extractAutopilotTasksFactoryBlocks(moduleSource);
+
+    const paramTypePairs = [
+      ...paramsBlock.matchAll(/^\s*(\w+):\s*(\w+),\s*$/gm),
+    ].map((match) => ({ paramName: match[1], typeName: match[2] }));
+    const injectTokens = [...injectBlock.matchAll(/^\s*(\w+),?\s*$/gm)].map(
+      (match) => match[1],
+    );
+
+    const expectedInjectTokens = paramTypePairs.map(
+      ({ paramName, typeName }) => {
+        return PARAM_NAME_INJECT_TOKEN_OVERRIDE[paramName] ?? typeName;
+      },
+    );
+
+    expect(paramTypePairs.length).toBeGreaterThan(0);
+    // 정렬 없이 그대로 비교 — 순서가 다르면 실패해야 (2)를 잡는다.
+    expect(injectTokens).toEqual(expectedInjectTokens);
   });
 });

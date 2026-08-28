@@ -1,7 +1,9 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { JobFeedGapAutopilotTask } from './job-feed-gap.autopilot-task';
 
-function makeConfig(values: Record<string, string | undefined> = {}) {
+// app.config.ts 가 JOB_FEED_MATCH_THRESHOLD·JOB_FEED_GAP_ANALYSIS_TOP_N 을
+// @Type(() => Number) 로 선언한 뒤로 ConfigService.get() 은 실제로 number 를 돌려준다.
+function makeConfig(values: Record<string, string | number | undefined> = {}) {
   return { get: jest.fn((key: string) => values[key]) };
 }
 
@@ -58,7 +60,7 @@ describe('JobFeedGapAutopilotTask', () => {
       repository as never,
       makeConfig({
         JOB_FEED_ENABLED: 'true',
-        JOB_FEED_GAP_ANALYSIS_TOP_N: '0',
+        JOB_FEED_GAP_ANALYSIS_TOP_N: 0,
       }) as never,
     );
 
@@ -66,6 +68,24 @@ describe('JobFeedGapAutopilotTask', () => {
 
     expect(result).toEqual({ skip: true });
     expect(repository.findGapCandidates).not.toHaveBeenCalled();
+  });
+
+  it('JOB_FEED_GAP_ANALYSIS_TOP_N 미설정이면 코드 기본값 1을 쓴다', async () => {
+    const repository = {
+      findGapCandidates: jest.fn().mockResolvedValue([]),
+      saveGapAgentRunId: jest.fn(),
+    };
+    const analyzeJdGap = { execute: jest.fn() };
+    const task = new JobFeedGapAutopilotTask(
+      analyzeJdGap as never,
+      repository as never,
+      makeConfig({ JOB_FEED_ENABLED: 'true' }) as never,
+    );
+
+    await task.run(CONTEXT);
+
+    // 미설정 시 threshold 도 코드 기본값(80)을 쓴다.
+    expect(repository.findGapCandidates).toHaveBeenCalledWith(80, 1);
   });
 
   it('후보가 없으면 skip=true 이다', async () => {
@@ -108,14 +128,14 @@ describe('JobFeedGapAutopilotTask', () => {
       repository as never,
       makeConfig({
         JOB_FEED_ENABLED: 'true',
-        JOB_FEED_MATCH_THRESHOLD: '70',
-        JOB_FEED_GAP_ANALYSIS_TOP_N: '3',
+        JOB_FEED_MATCH_THRESHOLD: 70,
+        JOB_FEED_GAP_ANALYSIS_TOP_N: 2,
       }) as never,
     );
 
     const result = await task.run(CONTEXT);
 
-    expect(repository.findGapCandidates).toHaveBeenCalledWith(70, 3);
+    expect(repository.findGapCandidates).toHaveBeenCalledWith(70, 2);
     expect(analyzeJdGap.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       jdText: found.jdText,
@@ -185,22 +205,14 @@ describe('JobFeedGapAutopilotTask', () => {
     );
   });
 
-  it('한 후보가 실패해도 나머지를 계속 처리하고 실패 사유를 카드에 남긴다', async () => {
-    const first = candidate({ id: 1, company: '토스' });
-    const second = candidate({ id: 2, company: '카카오' });
+  it('후보 처리가 실패해도 예외를 던지지 않고 실패 사유를 카드에 남긴다', async () => {
+    const found = candidate({ company: '토스' });
     const repository = {
-      findGapCandidates: jest.fn().mockResolvedValue([first, second]),
+      findGapCandidates: jest.fn().mockResolvedValue([found]),
       saveGapAgentRunId: jest.fn().mockResolvedValue(undefined),
     };
     const analyzeJdGap = {
-      execute: jest
-        .fn()
-        .mockRejectedValueOnce(new Error('쿼터 소진'))
-        .mockResolvedValueOnce({
-          result: { fitSummary: '적합', have: [], gaps: [], topics: [] },
-          modelUsed: 'gpt-test',
-          agentRunId: 99,
-        }),
+      execute: jest.fn().mockRejectedValue(new Error('쿼터 소진')),
     };
     const task = new JobFeedGapAutopilotTask(
       analyzeJdGap as never,
@@ -210,13 +222,50 @@ describe('JobFeedGapAutopilotTask', () => {
 
     const result = await task.run(CONTEXT);
 
-    expect(analyzeJdGap.execute).toHaveBeenCalledTimes(2);
-    expect(repository.saveGapAgentRunId).toHaveBeenCalledTimes(1);
-    expect(repository.saveGapAgentRunId).toHaveBeenCalledWith(2, 99);
+    expect(repository.saveGapAgentRunId).not.toHaveBeenCalled();
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('토스');
     expect(result.summaryText).toContain('갭 분석 실패');
     expect(result.summaryText).toContain('쿼터 소진');
-    expect(result.summaryText).toContain('카카오');
-    expect(result.summaryText).toContain('적합');
+  });
+
+  // 예산 안전장치 — 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=606초)가
+  // 이미 안전 상한(AUTOPILOT_WORKER_OPTIONS.lockDuration 의 60%=525.6초)보다 크기 때문에,
+  // 이 가드는 실행 속도와 무관하게 "같은 회차엔 최대 1건만 처리"로 항상 귀결된다 — Date.now()
+  // 를 흉내 낼 필요 없이 결정론적으로 재현된다(job-feed-gap.autopilot-task.ts 상단 주석 참조).
+  it('예산 안전장치 — 후보가 2건이어도 1건만 처리하고 나머지는 다음 회차로 미룬다', async () => {
+    const first = candidate({ id: 1, company: '토스' });
+    const second = candidate({ id: 2, company: '카카오' });
+    const repository = {
+      findGapCandidates: jest.fn().mockResolvedValue([first, second]),
+      saveGapAgentRunId: jest.fn().mockResolvedValue(undefined),
+    };
+    const analyzeJdGap = {
+      execute: jest.fn().mockResolvedValue({
+        result: { fitSummary: '적합', have: [], gaps: [], topics: [] },
+        modelUsed: 'gpt-test',
+        agentRunId: 99,
+      }),
+    };
+    const task = new JobFeedGapAutopilotTask(
+      analyzeJdGap as never,
+      repository as never,
+      makeConfig({
+        JOB_FEED_ENABLED: 'true',
+        JOB_FEED_GAP_ANALYSIS_TOP_N: 2,
+      }) as never,
+    );
+
+    const result = await task.run(CONTEXT);
+
+    // 두 후보 모두 성공했을 실패가 아니라 "예산" 때문에 멈춘 것임을 확인 —
+    // 두 번째 후보는 시도조차 되지 않는다.
+    expect(analyzeJdGap.execute).toHaveBeenCalledTimes(1);
+    expect(repository.saveGapAgentRunId).toHaveBeenCalledTimes(1);
+    expect(repository.saveGapAgentRunId).toHaveBeenCalledWith(1, 99);
+    expect(result.summaryText).toContain('토스');
+    expect(result.summaryText).not.toContain('카카오');
+    expect(result.summaryText).toContain('⏱️');
+    expect(result.summaryText).toContain('남은 1건');
   });
 });
