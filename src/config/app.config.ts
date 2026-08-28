@@ -1,6 +1,12 @@
-import { plainToInstance } from 'class-transformer';
+import {
+  plainToInstance,
+  Transform,
+  TransformFnParams,
+  Type,
+} from 'class-transformer';
 import {
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -10,6 +16,22 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
+
+// validateEnv 는 plainToInstance 를 `enableImplicitConversion: true` 로 호출한다.
+// 이 옵션은 class-transformer 가 design:type 메타데이터(여기서는 Number)로 값을
+// 먼저 강제 변환한 뒤에야 커스텀 @Transform 콜백을 부른다 — 그래서 콜백 인자
+// `value` 는 이미 Number('')=0 으로 바뀐 뒤의 값이고, `value === ''` 비교는
+// 항상 거짓이 된다. (`@Transform(({ value }) => value === '' ? undefined : value)`
+// 형태로 먼저 짰다가 ts-node 로 직접 재현해 이 사실을 확인했다 — 빈 문자열이
+// 실제로는 전혀 걸러지지 않고 그대로 0 이 나왔다.) 강제 변환 이전의 원본 문자열은
+// `obj[key]` 로만 볼 수 있으므로, 판정은 반드시 obj[key] 기준이어야 한다.
+const normalizeOptionalNumberEnv = ({
+  obj,
+  key,
+}: TransformFnParams): number | undefined => {
+  const raw = obj[key];
+  return raw === '' ? undefined : Number(raw);
+};
 
 export class EnvironmentVariables {
   @IsNumber()
@@ -815,6 +837,61 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   STUDY_BRIEF_NOTION_DATABASE_ID?: string;
+
+  // ====== 백엔드 채용공고 자동 수집 (점핏 · 랠릿 · 원티드) ======
+  // 전부 선택 항목이다 — 하나도 없어도 부팅되고, 기능은 꺼진 상태가 기본이다.
+  // - JOB_FEED_ENABLED: 'true' 일 때만 수집·채점·알림 autopilot task 가 동작한다.
+  // - JOB_FEED_YEARS: 연차 매칭 축(0~50). 미설정 시 중립으로 채점.
+  // - JOB_FEED_LOCATIONS: 지역 매칭 축(쉼표 구분). 미설정 시 중립으로 채점.
+  // - JOB_FEED_MATCH_THRESHOLD: 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값.
+  // - JOB_FEED_GAP_ANALYSIS_TOP_N: 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2).
+  // - JOB_FEED_DETAIL_LIMIT: 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한).
+  @IsOptional()
+  @IsString()
+  JOB_FEED_ENABLED?: string;
+
+  // 연차 0년차 오채점(빈 문자열이 0으로 읽힘)으로 이어진 실제 사고 — 정규화는
+  // 위 normalizeOptionalNumberEnv 참고.
+  @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  JOB_FEED_YEARS?: number;
+
+  @IsOptional()
+  @IsString()
+  JOB_FEED_LOCATIONS?: string;
+
+  @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  JOB_FEED_MATCH_THRESHOLD?: number;
+
+  // 상한이 2인 이유 — 순차 모델 호출 1건의 worst-case(606초)가 이미 autopilot consumer
+  // lock 예산(876초)의 60%를 넘는다. 3건 이상이면 job-feed-gap.autopilot-task.ts 의
+  // 경과 시간 가드가 사실상 항상 1건만 처리해 나머지가 매 회차 밀리므로, 설정 가능한
+  // 상한 자체를 예산 안에서 의미 있는 값(2)으로 막는다.
+  @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2)
+  JOB_FEED_GAP_ANALYSIS_TOP_N?: number;
+
+  // 빈 문자열을 정규화하지 않으면 @Min(1) 위반으로 앱 부팅 자체가 실패한다(실측 확인).
+  @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  JOB_FEED_DETAIL_LIMIT?: number;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

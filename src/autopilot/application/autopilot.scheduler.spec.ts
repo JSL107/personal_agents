@@ -67,8 +67,9 @@ describe('AutopilotScheduler', () => {
     //   + paper-score + ai-cli-env-snapshot + ai-cli-env-apply
     //   + portfolio-warmup(사이트 워밍업) + portfolio-publish(사이트 발행)
     //   + screening-outcome-scoring(회차 종목 사후 채점, 단독 그룹)
-    //   + paper-intraday-stop(모의투자 장중 손절, 단독 그룹) = 29그룹.
-    expect(queue.add).toHaveBeenCalledTimes(29);
+    //   + paper-intraday-stop(모의투자 장중 손절, 단독 그룹)
+    //   + job-feed(백엔드 채용공고 수집, 단독 그룹) + job-feed-gap(공고 갭 분석, 단독 그룹) = 31그룹.
+    expect(queue.add).toHaveBeenCalledTimes(31);
     expect(addCalls).toContain('screening-outcome-scoring');
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('portfolio-warmup');
@@ -95,6 +96,8 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('pr-review-sweep');
     expect(addCalls).toContain('ai-cli-env-snapshot');
     expect(addCalls).toContain('ai-cli-env-apply');
+    expect(addCalls).toContain('job-feed');
+    expect(addCalls).toContain('job-feed-gap');
   });
 
   it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:00', async () => {

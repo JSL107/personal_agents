@@ -141,9 +141,18 @@ export interface GapAnalysisData {
   topics: GapTopic[];
 }
 
+// 공고 피드 자동 수집분과 사용자 직접 등록분을 가른다. 자동 수집분(JOB_FEED)은 목표 공고로
+// 저장하지 않고 주제 선택 카드도 띄우지 않는다 — usecase 참조.
+export type JdGapOrigin = 'USER' | 'JOB_FEED';
+
 export interface AnalyzeJdGapInput {
   slackUserId: string;
   jdText: string;
+  // 아래 넷은 모두 선택이다. 없으면 기존 슬랙 멘션 경로와 완전히 같게 동작한다.
+  triggerType?: TriggerType;
+  company?: string;
+  role?: string;
+  origin?: JdGapOrigin;
 }
 
 export interface BuildCareerProfileInput {

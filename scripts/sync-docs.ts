@@ -22,6 +22,12 @@
  * `.env.example` 동기는 본 생성기 범위 밖 — scripts/check-env-sync.cjs(pnpm check:env) 가 담당.
  */
 
+// EnvironmentVariables(app.config.ts)의 JOB_FEED_* 필드가 @Type(() => Number) 를 쓴다.
+// class-transformer 의 Type 데코레이터는 클래스 선언 시점에 Reflect.getMetadata 를 호출하는데,
+// 이 스크립트는 NestJS 를 부팅하지 않아(=@nestjs/common 을 거치지 않아) 그 폴리필이 없다.
+// import 순서상 아래 클래스 import 보다 반드시 먼저 와야 한다.
+import 'reflect-metadata';
+
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -362,6 +368,7 @@ const ENV_GROUP_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^BE_(SANDBOX|AUTONOMOUS)/u, 'BE 자율개발'],
   [/^(IMPACT_REPORT_|PR_CAREERLOG_|CAREER_LOG_)/u, 'careerLog / Impact'],
   [/^(CAREER_|RESUME_|JOB_APPLICATION_)/u, 'Career Mate'],
+  [/^JOB_FEED_/u, '채용 공고 수집'],
   [/^PR_REVIEW_/u, 'PR 리뷰 루프'],
   [/^DOCS_AUDIT_/u, 'docs-sync-audit'],
   [/^(BLOG_|EVENING_RETRO_)/u, '블로그 / 저녁 발행'],

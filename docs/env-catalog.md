@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 140개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 146개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -132,6 +132,17 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `JOB_APPLICATION_NUDGE_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
 | `JOB_APPLICATION_NUDGE_CRON` | ❌ | BullMQ cron (default 매일 09:00 — `0 9 * * *`). |
 | `JOB_APPLICATION_NUDGE_TIMEZONE` | ❌ | default Asia/Seoul. |
+
+## 채용 공고 수집
+
+| 키 | 필수 | 설명 |
+|---|---|---|
+| `JOB_FEED_ENABLED` | ❌ | 'true' 일 때만 수집·채점·알림 autopilot task 가 동작한다. |
+| `JOB_FEED_YEARS` | ❌ | 연차 매칭 축(0~50). 미설정 시 중립으로 채점. |
+| `JOB_FEED_LOCATIONS` | ❌ | 지역 매칭 축(쉼표 구분). 미설정 시 중립으로 채점. |
+| `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값. |
+| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2). |
+| `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한). |
 
 ## PR 리뷰 루프
 
