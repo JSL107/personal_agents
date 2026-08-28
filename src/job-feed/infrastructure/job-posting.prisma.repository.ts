@@ -51,7 +51,7 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
             sourceId: posting.sourceId,
           },
         },
-        select: { id: true, contentHash: true },
+        select: { id: true, contentHash: true, detailFetchedAt: true },
       });
 
       if (found === null) {
@@ -64,10 +64,41 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
 
       // 요건이 바뀌었으면 알림 표식을 되돌려 다음 카드에 다시 올린다.
       const changed = found.contentHash !== posting.contentHash;
+      // 상세를 이미 받은 행(원티드처럼 목록에 스킬이 없는 소스)은 saveDetail 이 채운
+      // skillTags·rawSkillTags 를 다음 수집의 목록 값(원티드는 항상 빈 배열)으로
+      // 되돌리면 안 된다 — 되돌리면 스킬이 다시 비어 findDetailTargets 데드락이
+      // 재발한다. 목록이 갱신할 나머지 필드만 명시적으로 나열한다(raw 를 그대로
+      // spread 하지 않는 위 normalize() 의 이유와 같다 — 여분 필드가 조용히 섞이면 안 된다).
+      const listOnlyFields = {
+        source: posting.source,
+        sourceId: posting.sourceId,
+        company: posting.company,
+        companyKey: posting.companyKey,
+        title: posting.title,
+        detailUrl: posting.detailUrl,
+        minYears: posting.minYears,
+        maxYears: posting.maxYears,
+        yearsSource: posting.yearsSource,
+        rawJobLevel: posting.rawJobLevel,
+        experienceLevel: posting.experienceLevel,
+        locations: posting.locations,
+        rawLocations: posting.rawLocations,
+        normalizedKey: posting.normalizedKey,
+        contentHash: posting.contentHash,
+      };
+      const updateData =
+        found.detailFetchedAt === null
+          ? {
+              ...listOnlyFields,
+              skillTags: posting.skillTags,
+              rawSkillTags: posting.rawSkillTags,
+            }
+          : listOnlyFields;
+
       await this.prisma.jobPosting.update({
         where: { id: found.id },
         data: {
-          ...posting,
+          ...updateData,
           lastSeenAt: now,
           ...(changed ? { notifiedAt: null } : {}),
         },
@@ -161,11 +192,23 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     return this.prisma.jobPosting.findMany({
       where: {
         closedAt: null,
-        matchScore: { gte: threshold },
         lastSeenAt: { gte: freshnessCutoff },
-        OR: [
-          { detailFetchedAt: null },
-          { detailFetchedAt: { lt: staleBefore } },
+        AND: [
+          {
+            OR: [
+              { matchScore: { gte: threshold } },
+              // 목록에 스킬이 없는 소스(원티드)는 상세를 받기 전엔 점수가 오를 수 없다.
+              // 점수 조건만 두면 상세를 못 받고 → 스킬이 안 채워지고 → 점수가 안 오르는
+              // 데드락이 된다(Task 17 이후 최종 리뷰 Critical 1).
+              { skillTags: { isEmpty: true } },
+            ],
+          },
+          {
+            OR: [
+              { detailFetchedAt: null },
+              { detailFetchedAt: { lt: staleBefore } },
+            ],
+          },
         ],
       },
       orderBy: { matchScore: 'desc' },
@@ -182,7 +225,18 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
   }: SaveDetailInput): Promise<void> {
     await this.prisma.jobPosting.update({
       where: { id },
-      data: { jdText, skillTags, rawSkillTags, detailFetchedAt: new Date() },
+      data: {
+        jdText,
+        skillTags,
+        rawSkillTags,
+        detailFetchedAt: new Date(),
+        // 점수는 상세로 채워진 새 스킬 기준으로 다시 매겨야 한다. 형제 함수
+        // saveSkillTags 와 같은 이유로 채점 표식을 지워 다음 채점에서 다시
+        // 걸리게 한다 — 지우지 않으면 findScoringTargets 가 재채점 대상으로
+        // 잡지 못해 원티드가 상세를 받고도 옛 점수(65)에 영원히 머문다.
+        scoredProfileId: null,
+        scoredAt: null,
+      },
     });
   }
 

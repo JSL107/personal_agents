@@ -135,6 +135,86 @@ describe('JobPostingPrismaRepository.findScoringTargets', () => {
   });
 });
 
+describe('JobPostingPrismaRepository.findDetailTargets — 스킬 없는 소스 데드락 방지', () => {
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('점수 조건과 skillTags 빈 조건을 OR 로 묶는다 — 원티드처럼 목록에 스킬이 없는 소스는 점수가 기준 미만이어도 상세 대상에 들어야 한다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+    const staleBefore = new Date('2026-08-20T00:00:00.000Z');
+
+    await repository.findDetailTargets(80, 20, staleBefore);
+
+    // matchScore 조건만 있으면 원티드(스킬 없음 → 최대 65점)는 기준 80을 못 넘어
+    // 영영 상세를 못 받는다. skillTags 빈 조건을 OR 로 더해야 그 데드락이 풀린다.
+    expect(calls[0].where).toEqual({
+      closedAt: null,
+      lastSeenAt: { gte: expect.any(Date) },
+      AND: [
+        {
+          OR: [{ matchScore: { gte: 80 } }, { skillTags: { isEmpty: true } }],
+        },
+        {
+          OR: [
+            { detailFetchedAt: null },
+            { detailFetchedAt: { lt: staleBefore } },
+          ],
+        },
+      ],
+    });
+  });
+});
+
+describe('JobPostingPrismaRepository.saveDetail', () => {
+  it('상세를 저장하며 채점 표식을 지운다 — 새 스킬 기준으로 다시 채점되게 한다', async () => {
+    const updateCalls: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }[] = [];
+    const prisma = {
+      jobPosting: {
+        update: jest.fn(async (args: (typeof updateCalls)[number]) => {
+          updateCalls.push(args);
+          return undefined;
+        }),
+      },
+    };
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.saveDetail({
+      id: 1,
+      jdText: '백엔드 경력 3년 이상',
+      skillTags: ['Java', 'Spring Boot'],
+      rawSkillTags: ['Java', 'Spring Boot'],
+    });
+
+    expect(updateCalls[0].where).toEqual({ id: 1 });
+    // 표식을 지우지 않으면 findScoringTargets 가 재채점 대상으로 잡지 못해,
+    // 상세를 받고도 옛 점수에 영원히 머문다(원티드 65점 고정 사고의 근본 원인).
+    expect(updateCalls[0].data).toMatchObject({
+      jdText: '백엔드 경력 3년 이상',
+      skillTags: ['Java', 'Spring Boot'],
+      rawSkillTags: ['Java', 'Spring Boot'],
+      scoredProfileId: null,
+      scoredAt: null,
+    });
+    expect(updateCalls[0].data.detailFetchedAt).toBeInstanceOf(Date);
+  });
+});
+
 describe('JobPostingPrismaRepository — 신선도 조건 (lastSeenAt)', () => {
   // 이번 수집에서 못 본 공고는 마감됐거나 직군 필터에서 걸러진 것이다.
   // 조건이 없으면 옛 행이 DB 에 영원히 남아 계속 채점·알림·상세수집·갭분석 대상이 된다.
@@ -251,7 +331,11 @@ describe('JobPostingPrismaRepository.saveSkillTags', () => {
 });
 
 describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알림', () => {
-  const createUpsertStub = (found: { id: number; contentHash: string }) => {
+  const createUpsertStub = (found: {
+    id: number;
+    contentHash: string;
+    detailFetchedAt?: Date | null;
+  }) => {
     const updateCalls: {
       where: Record<string, unknown>;
       data: Record<string, unknown>;
@@ -260,7 +344,10 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
       updateCalls,
       prisma: {
         jobPosting: {
-          findUnique: jest.fn(async () => found),
+          findUnique: jest.fn(async () => ({
+            detailFetchedAt: null,
+            ...found,
+          })),
           create: jest.fn(async () => undefined),
           update: jest.fn(
             async (args: {
@@ -298,6 +385,76 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
     await repository.upsertMany([BASE_POSTING]);
 
     expect(updateCalls[0].data).not.toHaveProperty('notifiedAt');
+  });
+});
+
+describe('JobPostingPrismaRepository.upsertMany — 상세로 받은 스킬 보존', () => {
+  const createUpsertStub = (found: {
+    id: number;
+    contentHash: string;
+    detailFetchedAt: Date | null;
+  }) => {
+    const updateCalls: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }[] = [];
+    return {
+      updateCalls,
+      prisma: {
+        jobPosting: {
+          findUnique: jest.fn(async () => found),
+          create: jest.fn(async () => undefined),
+          update: jest.fn(
+            async (args: {
+              where: Record<string, unknown>;
+              data: Record<string, unknown>;
+            }) => {
+              updateCalls.push(args);
+              return undefined;
+            },
+          ),
+        },
+      },
+    };
+  };
+
+  it('상세를 이미 받은 행은 목록의 빈 skillTags·rawSkillTags 로 덮어쓰지 않는다', async () => {
+    const { prisma, updateCalls } = createUpsertStub({
+      id: 1,
+      contentHash: BASE_POSTING.contentHash,
+      detailFetchedAt: new Date('2026-08-20T00:00:00.000Z'),
+    });
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    // 원티드처럼 목록에 스킬이 없는 소스가 다시 수집되는 상황을 흉내낸다.
+    // 되돌리면 findDetailTargets 데드락이 재발한다(상세를 다시 받을 방법이 없어진다).
+    await repository.upsertMany([
+      { ...BASE_POSTING, skillTags: [], rawSkillTags: [] },
+    ]);
+
+    expect(updateCalls[0].data).not.toHaveProperty('skillTags');
+    expect(updateCalls[0].data).not.toHaveProperty('rawSkillTags');
+    // 스킬 말고 목록이 갱신할 필드(회사명 등)는 그대로 갱신돼야 한다.
+    expect(updateCalls[0].data).toMatchObject({
+      company: BASE_POSTING.company,
+      title: BASE_POSTING.title,
+    });
+  });
+
+  it('아직 상세를 못 받은 행은 목록의 skillTags·rawSkillTags 로 그대로 갱신한다', async () => {
+    const { prisma, updateCalls } = createUpsertStub({
+      id: 1,
+      contentHash: BASE_POSTING.contentHash,
+      detailFetchedAt: null,
+    });
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.upsertMany([BASE_POSTING]);
+
+    expect(updateCalls[0].data).toMatchObject({
+      skillTags: BASE_POSTING.skillTags,
+      rawSkillTags: BASE_POSTING.rawSkillTags,
+    });
   });
 });
 
