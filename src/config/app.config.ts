@@ -1,4 +1,9 @@
-import { plainToInstance, Type } from 'class-transformer';
+import {
+  plainToInstance,
+  Transform,
+  TransformFnParams,
+  Type,
+} from 'class-transformer';
 import {
   IsIn,
   IsInt,
@@ -11,6 +16,22 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
+
+// validateEnv 는 plainToInstance 를 `enableImplicitConversion: true` 로 호출한다.
+// 이 옵션은 class-transformer 가 design:type 메타데이터(여기서는 Number)로 값을
+// 먼저 강제 변환한 뒤에야 커스텀 @Transform 콜백을 부른다 — 그래서 콜백 인자
+// `value` 는 이미 Number('')=0 으로 바뀐 뒤의 값이고, `value === ''` 비교는
+// 항상 거짓이 된다. (`@Transform(({ value }) => value === '' ? undefined : value)`
+// 형태로 먼저 짰다가 ts-node 로 직접 재현해 이 사실을 확인했다 — 빈 문자열이
+// 실제로는 전혀 걸러지지 않고 그대로 0 이 나왔다.) 강제 변환 이전의 원본 문자열은
+// `obj[key]` 로만 볼 수 있으므로, 판정은 반드시 obj[key] 기준이어야 한다.
+const normalizeOptionalNumberEnv = ({
+  obj,
+  key,
+}: TransformFnParams): number | undefined => {
+  const raw = obj[key];
+  return raw === '' ? undefined : Number(raw);
+};
 
 export class EnvironmentVariables {
   @IsNumber()
@@ -829,7 +850,10 @@ export class EnvironmentVariables {
   @IsString()
   JOB_FEED_ENABLED?: string;
 
+  // 연차 0년차 오채점(빈 문자열이 0으로 읽힘)으로 이어진 실제 사고 — 정규화는
+  // 위 normalizeOptionalNumberEnv 참고.
   @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -841,6 +865,7 @@ export class EnvironmentVariables {
   JOB_FEED_LOCATIONS?: string;
 
   @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -852,13 +877,16 @@ export class EnvironmentVariables {
   // 경과 시간 가드가 사실상 항상 1건만 처리해 나머지가 매 회차 밀리므로, 설정 가능한
   // 상한 자체를 예산 안에서 의미 있는 값(2)으로 막는다.
   @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
   @Type(() => Number)
   @IsInt()
   @Min(0)
   @Max(2)
   JOB_FEED_GAP_ANALYSIS_TOP_N?: number;
 
+  // 빈 문자열을 정규화하지 않으면 @Min(1) 위반으로 앱 부팅 자체가 실패한다(실측 확인).
   @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
   @Type(() => Number)
   @IsInt()
   @Min(1)
