@@ -331,6 +331,70 @@ describe('evaluateContract — 점수', () => {
     expect(evaluation.score).toBe(1);
   });
 
+  // PAPER_TRADE 는 성격이 다른 워커 셋이 나눠 쓰는 이름이다. 계약이 일일 평가 형태만 알고
+  // 있던 동안 장중 손절의 성공 실행 167 건이 전부 "필수 필드 3 개 누락" 으로 찍혔다.
+  describe('산출물 형태가 여러 갈래인 계약', () => {
+    // 2026-08-28 원장에서 그대로 가져온 형태다(값만 축약).
+    const dailyEvaluationOutput = {
+      accounts: [{ accountId: 1, name: 'LONG_TERM' }],
+      accountCount: 1,
+      failedCount: 0,
+    };
+    const intradayStopOutput = {
+      inspectedCount: 6,
+      decidedCount: 0,
+      filledCount: 0,
+      notTradedCount: 0,
+      priceErrorCount: 0,
+      accountFailures: [],
+    };
+
+    it('일일 평가 형태를 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(
+        AgentType.PAPER_TRADE,
+        dailyEvaluationOutput,
+      );
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('장중 손절 형태도 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(
+        AgentType.PAPER_TRADE,
+        intradayStopOutput,
+      );
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    // 후보를 여럿 두면 검사가 헐거워질 수 있다 — 어느 형태에도 못 맞는 산출물은 여전히
+    // 위반으로 잡혀야 한다. 그러지 않으면 이 필드가 "검사 포기" 와 같아진다.
+    it('어느 형태에도 맞지 않으면 그대로 위반이다', () => {
+      const evaluation = evaluateContract(AgentType.PAPER_TRADE, {
+        somethingElse: 1,
+      });
+
+      expect(evaluation.score).toBe(0);
+      expect(evaluation.violations).toHaveLength(3);
+    });
+
+    // 채점은 가장 부합하는 후보 하나로 한다. 두 형태의 분모를 합치면 늘 절반이 누락으로 남는다.
+    it('부분 일치는 더 잘 맞는 형태를 기준으로 센다', () => {
+      const evaluation = evaluateContract(AgentType.PAPER_TRADE, {
+        inspectedCount: 6,
+        decidedCount: 1,
+      });
+
+      expect(evaluation.checkedCount).toBe(3);
+      expect(evaluation.passedCount).toBe(2);
+      expect(evaluation.violations).toEqual([
+        { rule: 'missingField', detail: 'filledCount' },
+      ]);
+    });
+  });
+
   it('inspectContract 는 같은 검수의 위반 목록과 일치한다', () => {
     const output = { topPriority: '', morning: '오전', afternoon: '오후' };
 
