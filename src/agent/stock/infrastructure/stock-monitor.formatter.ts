@@ -5,6 +5,7 @@ import {
 } from '../domain/portfolio-exposure';
 import { STOCK_THRESHOLDS } from '../domain/stock-anomaly';
 import {
+  AlertMargin,
   AvgPriceStatus,
   StockAnomaly,
   StockMarketCountry,
@@ -17,6 +18,16 @@ export interface StockMonitorContext {
   marketClosed: boolean;
   marketCountry: StockMarketCountry;
   priceDisplays?: StockPriceDisplay[];
+  // 기준일이 lastTradeDate 보다 이른 종목. 공급자 지연으로 종목마다 마지막 봉이 갈릴 수 있는데,
+  // 헤더는 그중 최신 날짜 하나만 찍으므로 하루 묵은 값이 어제 값으로 읽힌다.
+  olderBaseDates?: StockBaseDate[];
+  // 경보선에 가장 가까운 종목 하나. 없으면(전 종목 임계 밖 등) 줄을 만들지 않는다.
+  nearestMargin?: AlertMargin | null;
+}
+
+export interface StockBaseDate {
+  symbol: string;
+  tradeDate: string;
 }
 
 const MARKET_LABEL: Record<StockMarketCountry, string> = {
@@ -226,6 +237,56 @@ export const formatAvgPriceStatuses = (statuses: AvgPriceStatus[]): string => {
   return lines.join('\n');
 };
 
+// 종목마다 기준일이 다르면 그 사실을 적는다. 헤더의 "(YYYY-MM-DD 종가 기준)" 은 종목별
+// 마지막 봉 중 **가장 최신 날짜** 하나라, 지연된 종목의 하루 전 값이 그 날짜 아래에 섞인다.
+const formatOlderBaseDates = (baseDates?: StockBaseDate[]): string => {
+  if (!baseDates || baseDates.length === 0) {
+    return '';
+  }
+  const listed = baseDates
+    .map((baseDate) => `${baseDate.symbol} ${baseDate.tradeDate}`)
+    .join(' · ');
+  // "하루 전" 이라고 쓰지 않는다. 뒤처진 폭은 종목마다 다르고 이틀 이상일 수도 있어
+  // (그 종목만 봉을 못 받은 날이 이어지면 그렇게 된다) 단정하면 카드가 사실과 어긋난다.
+  // 얼마나 뒤처졌는지는 함께 적은 날짜가 말한다.
+  return `_기준일이 다른 종목: ${listed} — 최신 봉이 아직 안 들어와 이전 거래일 값입니다_`;
+};
+
+const MARGIN_AXIS_LABEL: Record<AlertMargin['kind'], string> = {
+  DAILY_CHANGE: '하루 등락',
+  AVG_PRICE_BREACH: '평균 매입가 대비',
+};
+
+// 같은 파일의 formatSignedPercent 는 비율(0.03)을 받아 ×100 하지만 이쪽은 이미 퍼센트인
+// 값을 그대로 찍는다 — 판정이 퍼센트로 끝나므로 한 번 더 곱하면 값이 100배가 된다.
+const formatMarginPercent = (value: number): string =>
+  `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+
+// "새 경보 없음" 만으로는 오늘이 안전한 날인지 경보선 코앞인지 갈리지 않는다.
+// 가장 가까운 종목 하나만 적는다 — 종목 수가 늘어도 줄 수가 늘지 않는다.
+const formatNearestMargin = (margin?: AlertMargin | null): string => {
+  if (!margin) {
+    return '';
+  }
+  // 경보선은 설정값(±8 / -20 / +30)이라 소수부를 붙이지 않는다 — 아래 경보 기준 문구와
+  // 같은 숫자가 한 카드 안에서 다르게 보이면 둘이 다른 값으로 읽힌다.
+  const thresholdText =
+    margin.kind === 'DAILY_CHANGE'
+      ? `±${margin.threshold}%`
+      : `${margin.threshold >= 0 ? '+' : ''}${margin.threshold}%`;
+  return (
+    `_경보선에 가장 가까운 종목: ${margin.tickerName} — ` +
+    `${MARGIN_AXIS_LABEL[margin.kind]} ${formatMarginPercent(margin.currentPercent)}, ` +
+    `경보선 ${thresholdText} 까지 ${margin.marginPoint.toFixed(1)}%p_`
+  );
+};
+
+const pushIfPresent = (lines: string[], line: string): void => {
+  if (line) {
+    lines.push(line);
+  }
+};
+
 export const formatStockMonitorSummary = (
   anomalies: StockAnomaly[],
   context: StockMonitorContext,
@@ -251,6 +312,10 @@ export const formatStockMonitorSummary = (
     lines.push(
       `📉 *주식 모니터링* — ${marketLabel} 새 거래일 시세가 없어 점검을 건너뜁니다 (휴장 추정, 마지막 거래일 ${context.lastTradeDate})`,
     );
+    // 휴장 경로에서도 기준일은 갈릴 수 있다. 종목마다 마지막으로 저장된 거래일이 다르면
+    // (그 종목만 봉을 못 받은 날이 있었으면) 전 종목에 새 봉이 없는 날에도 각자 다른 날짜에
+    // 멈춰 있고, 아래 평단 상태 줄은 그 날짜의 가격으로 계산된다.
+    pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
     return lines.join('\n');
   }
 
@@ -258,6 +323,8 @@ export const formatStockMonitorSummary = (
     lines.push(
       `📉 *주식 모니터링* — ${marketLabel} ${context.checkedCount}종목 점검, 새 경보 없음 (${context.lastTradeDate} 종가 기준)`,
     );
+    pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
+    pushIfPresent(lines, formatNearestMargin(context.nearestMargin));
     lines.push(THRESHOLD_GUIDE);
     return lines.join('\n');
   }
@@ -265,6 +332,7 @@ export const formatStockMonitorSummary = (
   lines.push(
     `📉 *주식 모니터링* — ${marketLabel} ${context.checkedCount}종목 중 ${anomalies.length}건 경보 (${context.lastTradeDate} 종가 기준)`,
   );
+  pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
   for (const anomaly of anomalies) {
     const stockPriceDisplay = context.priceDisplays?.find(
       (candidate) => candidate.symbol === anomaly.symbol,

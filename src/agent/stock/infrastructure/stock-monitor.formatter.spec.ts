@@ -81,6 +81,104 @@ describe('formatStockMonitorSummary', () => {
     expect(result).toContain('평균 매입가 대비 -20% 아래 또는 +30% 위');
   });
 
+  it('기준일이 갈린 종목을 헤더 아래에 밝힌다', () => {
+    // 헤더의 날짜는 종목별 마지막 봉 중 가장 최신 하나라, 지연된 종목의 하루 전 값이
+    // 그 날짜 아래에 섞여 어제 값으로 읽힌다.
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 2,
+      lastTradeDate: '2026-08-27',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'US',
+      olderBaseDates: [{ symbol: 'VST', tradeDate: '2026-08-26' }],
+    });
+
+    expect(result).toContain('기준일이 다른 종목: VST 2026-08-26');
+    expect(result).toContain('이전 거래일 값');
+  });
+
+  it('기준일이 모두 같으면 그 줄을 만들지 않는다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 2,
+      lastTradeDate: '2026-08-27',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'US',
+      olderBaseDates: [],
+    });
+
+    expect(result).not.toContain('기준일이 다른 종목');
+  });
+
+  it('경보가 있는 날에도 기준일 갈림을 밝힌다', () => {
+    const result = formatStockMonitorSummary([anomaly], {
+      checkedCount: 2,
+      lastTradeDate: '2026-08-27',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'KR',
+      olderBaseDates: [{ symbol: '005930', tradeDate: '2026-08-26' }],
+    });
+
+    expect(result).toContain('기준일이 다른 종목: 005930 2026-08-26');
+  });
+
+  it('경보선에 가장 가까운 종목과 남은 폭을 적는다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 3,
+      lastTradeDate: '2026-07-21',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'KR',
+      nearestMargin: {
+        tickerName: 'SamsungElec',
+        symbol: '005930',
+        kind: 'AVG_PRICE_BREACH',
+        currentPercent: 27.5,
+        threshold: 30,
+        marginPoint: 2.5,
+      },
+    });
+
+    expect(result).toContain('경보선에 가장 가까운 종목: SamsungElec');
+    expect(result).toContain('평균 매입가 대비 +27.5%');
+    expect(result).toContain('경보선 +30% 까지 2.5%p');
+  });
+
+  it('하루 등락 축은 경보선을 ± 로 적는다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 3,
+      lastTradeDate: '2026-07-21',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'KR',
+      nearestMargin: {
+        tickerName: 'SamsungElec',
+        symbol: '005930',
+        kind: 'DAILY_CHANGE',
+        currentPercent: -6.2,
+        threshold: 8,
+        marginPoint: 1.8,
+      },
+    });
+
+    expect(result).toContain('하루 등락 -6.2%');
+    expect(result).toContain('경보선 ±8% 까지 1.8%p');
+  });
+
+  it('가장 가까운 종목이 없으면 여유 줄을 만들지 않는다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 3,
+      lastTradeDate: '2026-07-21',
+      failures: [],
+      marketClosed: false,
+      marketCountry: 'KR',
+      nearestMargin: null,
+    });
+
+    expect(result).not.toContain('경보선에 가장 가까운 종목');
+  });
+
   it('휴장 추정이면 판정 생략을 밝힌다', () => {
     const result = formatStockMonitorSummary([], {
       checkedCount: 3,
@@ -92,6 +190,22 @@ describe('formatStockMonitorSummary', () => {
 
     expect(result).toContain('국내 새 거래일 시세가 없어 점검을 건너뜁니다');
     expect(result).toContain('휴장 추정');
+  });
+
+  // 종목마다 마지막으로 저장된 거래일이 다르면, 전 종목에 새 봉이 없는 날에도 각자 다른
+  // 날짜에 멈춰 있다. 아래 평단 상태 줄이 그 날짜의 가격으로 계산되므로 밝혀야 한다.
+  it('휴장 추정일에도 기준일 갈림을 밝힌다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 2,
+      lastTradeDate: '2026-08-27',
+      failures: [],
+      marketClosed: true,
+      marketCountry: 'US',
+      olderBaseDates: [{ symbol: 'VST', tradeDate: '2026-08-25' }],
+    });
+
+    expect(result).toContain('휴장 추정');
+    expect(result).toContain('기준일이 다른 종목: VST 2026-08-25');
   });
 
   it('발화한 종목의 규칙과 값을 담는다', () => {
