@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { evaluateContract } from '../../../agent-registry/contract-inspector';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -306,5 +307,20 @@ describe('PaperIntradayStopAutopilotTask', () => {
         accountFailures: [],
       },
     });
+  });
+
+  // 이 워커는 PAPER_TRADE 라는 이름을 일일 평가 워커와 나눠 쓴다. 계약이 그쪽 형태만 알던
+  // 동안 성공 실행 전건이 "필수 필드 3개 누락" 으로 기록됐다(2026-08-28 실측 167/167, 점수 0).
+  // 원장에 남기는 output 을 계약으로 직접 채점해, 형태와 계약이 다시 갈리면 여기서 깨지게 한다.
+  it('원장에 남기는 산출물이 자기 직무 계약을 만족한다', async () => {
+    const { task, getExecutionOutput } = createFixture();
+
+    await task.run(context);
+
+    const executed = getExecutionOutput() as { output: unknown };
+    const evaluation = evaluateContract(AgentType.PAPER_TRADE, executed.output);
+
+    expect(evaluation.violations).toEqual([]);
+    expect(evaluation.score).toBe(1);
   });
 });
