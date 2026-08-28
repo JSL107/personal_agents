@@ -1,11 +1,15 @@
-import { AgentRunStatRow } from '../../agent-run/domain/port/agent-run.repository.port';
+import {
+  AgentContractScoreRow,
+  AgentRunStatRow,
+} from '../../agent-run/domain/port/agent-run.repository.port';
 
 export type RunAnomalyKind =
   | 'FAILURE_SPIKE'
   | 'LATENCY_CEILING'
   | 'AGENT_DISAPPEARED'
   | 'TOTAL_SILENCE'
-  | 'CHAIN_FAILURE';
+  | 'CHAIN_FAILURE'
+  | 'CONTRACT_SCORE';
 
 // TOTAL_SILENCE 는 시스템 전역 신호라 agentType 없음(null).
 export interface RunAnomaly {
@@ -19,6 +23,12 @@ export const RUN_RETRO_THRESHOLDS = {
   minFailed: 2,
   durationCeilingMs: 180_000,
   disappearMinPrev: 3,
+  // 직무 계약 점수 하한. 2026-08-28 실측에서 채점된 12 종 중 11 종이 1.000 이고 하나가
+  // 0.023 이라, 그 사이 어디를 잘라도 결과가 같다 — 중간값을 둔다. 값이 갈리기 시작하면
+  // (부분 위반이 상시로 남는 워커가 생기면) 그때 분포를 다시 재서 정한다.
+  contractScore: 0.5,
+  // 표본이 적으면 한 회차의 형식 오류가 평균을 끌어내려 매주 같은 경보가 뜬다.
+  minContractScored: 5,
 } as const;
 
 type Thresholds = typeof RUN_RETRO_THRESHOLDS;
@@ -84,6 +94,32 @@ export const detectRunAnomalies = (
 
   return anomalies;
 };
+
+// 직무 계약 점수 이상 — 산출물이 계약과 어긋난 채 쌓이고 있는 워커를 지목한다. 부작용 없는 순수함수.
+//
+// 이 판정이 없던 동안 검수는 제 몫을 했는데 **읽는 곳이 없었다**. 위반은 logger.warn 으로만
+// 나가고 `contract_score` 컬럼을 조회하는 코드가 없어, 성공 실행 167 건이 전건 0 점으로
+// 기록되는 동안 화면에는 아무 신호도 뜨지 않았다(2026-08-28 실측).
+//
+// 실패율과 달리 낮은 점수는 **실행이 성공한 채로** 남는다 — status 는 SUCCEEDED 라 다른 어떤
+// 축에도 걸리지 않는다. 그래서 별도 축이 필요하다.
+export const detectContractScoreAnomalies = (
+  rows: AgentContractScoreRow[],
+  thresholds: Thresholds = RUN_RETRO_THRESHOLDS,
+): RunAnomaly[] =>
+  rows
+    .filter(
+      (row) =>
+        row.scoredCount >= thresholds.minContractScored &&
+        row.avgScore < thresholds.contractScore,
+    )
+    .map((row) => ({
+      agentType: row.agentType,
+      kind: 'CONTRACT_SCORE',
+      detail:
+        `계약 점수 ${row.avgScore.toFixed(2)} ` +
+        `(${row.scoredCount}건 평균, 하한 ${thresholds.contractScore})`,
+    }));
 
 // 한 chain(뿌리 run 하나로부터 뻗은 계보)의 실패 요약. DB 조회는 태스크가 하고 판정만 여기서 한다.
 export interface ChainFailureSummary {

@@ -128,6 +128,19 @@ export interface AgentSucceededCountRow {
   succeeded: number;
 }
 
+// Run Retro — agentType 별 직무 계약 점수. **채점된 실행만** 센다.
+//
+// `contractScore` 가 null 인 실행은 분모에서 뺀다. 계약이 스텁이라 검사 항목이 0 개였던
+// 실행과 컬럼이 생기기 전(2026-08-24 이전) 실행이 여기 해당하는데, 그것을 0 으로 세면
+// 검수를 받은 적 없는 워커가 전부 최하점으로 뜬다.
+export interface AgentContractScoreRow {
+  agentType: string;
+  // 점수가 매겨진 실행 수(= 평균의 분모).
+  scoredCount: number;
+  // 0.0 ~ 1.0.
+  avgScore: number;
+}
+
 // Ops Supervisor — agentType 별 재시도(FAILURE_REPLAY) 건수.
 export interface AgentRetryCountRow {
   agentType: string;
@@ -282,6 +295,10 @@ export interface AgentRunRepositoryPort {
     sinceDays: number;
     untilDays?: number;
   }): Promise<AgentRunStatRow[]>;
+  aggregateContractScores(input: {
+    sinceDays: number;
+    untilDays?: number;
+  }): Promise<AgentContractScoreRow[]>;
   aggregateRetryCounts(input: {
     sinceDays: number;
   }): Promise<AgentRetryCountRow[]>;
