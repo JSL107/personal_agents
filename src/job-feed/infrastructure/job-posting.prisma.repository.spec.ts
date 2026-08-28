@@ -227,6 +227,61 @@ describe('JobPostingPrismaRepository.findDetailTargets — 스킬 없는 소스 
   });
 });
 
+describe('JobPostingPrismaRepository.findDetailTargets — 기피 기술 제외', () => {
+  // 알림에서 거르는 기피 기술이 상세수집 예산(JOB_FEED_DETAIL_LIMIT)엔 안 걸리면,
+  // 알림에 안 뜰 공고가 상세 호출 순번을 대신 차지해 정작 보여줄 공고의 상세
+  // 수집이 밀린다 — findNotifiable 과 같은 계약을 여기도 지켜야 한다.
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('기피 기술이 있으면 skillTags 에 하나라도 포함된 공고를 NOT 조건으로 뺀다 — 기존 AND 구조는 유지된다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+    const staleBefore = new Date('2026-08-20T00:00:00.000Z');
+
+    await repository.findDetailTargets(80, 20, staleBefore, ['PHP', 'JSP']);
+
+    expect(calls[0].where).toMatchObject({
+      AND: [
+        {
+          OR: [{ matchScore: { gte: 80 } }, { skillTags: { isEmpty: true } }],
+        },
+        {
+          OR: [
+            { detailFetchedAt: null },
+            { detailFetchedAt: { lt: staleBefore } },
+          ],
+        },
+      ],
+      NOT: { skillTags: { hasSome: ['PHP', 'JSP'] } },
+    });
+  });
+
+  it('기피 기술 목록이 비어 있으면(생략 포함) NOT 조건 자체를 걸지 않는다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+    const staleBefore = new Date('2026-08-20T00:00:00.000Z');
+
+    await repository.findDetailTargets(80, 20, staleBefore, []);
+    await repository.findDetailTargets(80, 20, staleBefore);
+
+    expect(calls[0].where).not.toHaveProperty('NOT');
+    expect(calls[1].where).not.toHaveProperty('NOT');
+  });
+});
+
 describe('JobPostingPrismaRepository.findGapCandidates — 빈 JD 제외', () => {
   const createFindManyStub = () => {
     const calls: FindManyArgs[] = [];
@@ -285,6 +340,55 @@ describe('JobPostingPrismaRepository.findGapCandidates — 빈 JD 제외', () =>
     expect(calls[0].where).toMatchObject({
       NOT: [{ jdText: null }, { jdText: '' }],
     });
+  });
+});
+
+describe('JobPostingPrismaRepository.findGapCandidates — 기피 기술 제외', () => {
+  // 알림에서 거른 기피 기술 공고가 갭 분석(모델 호출)에는 그대로 나가면, "저장은
+  // 하되 알림에서만 뺀다"는 목적이 알림 표면 두 곳 중 하나에서만 지켜진다.
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('기피 기술이 있으면 NOT 배열에 skillTags hasSome 조건을 더한다 — jdText NOT 조건과 공존한다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findGapCandidates(80, 10, ['PHP', 'JSP']);
+
+    expect(calls[0].where).toEqual({
+      closedAt: null,
+      matchScore: { gte: 80 },
+      lastSeenAt: { gte: expect.any(Date) },
+      gapAgentRunId: null,
+      NOT: [
+        { jdText: null },
+        { jdText: '' },
+        { skillTags: { hasSome: ['PHP', 'JSP'] } },
+      ],
+    });
+  });
+
+  it('기피 기술 목록이 비어 있으면(생략 포함) jdText NOT 조건만 남는다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findGapCandidates(80, 10, []);
+    await repository.findGapCandidates(80, 10);
+
+    expect(calls[0].where.NOT).toEqual([{ jdText: null }, { jdText: '' }]);
+    expect(calls[1].where.NOT).toEqual([{ jdText: null }, { jdText: '' }]);
   });
 });
 

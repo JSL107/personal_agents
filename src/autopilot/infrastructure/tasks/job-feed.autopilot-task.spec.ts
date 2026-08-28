@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import { JobFeedAutopilotTask } from './job-feed.autopilot-task';
 
 // app.config.ts 가 JOB_FEED_MATCH_THRESHOLD 등을 @Type(() => Number) 로 선언한 뒤로
@@ -194,6 +196,7 @@ describe('JobFeedAutopilotTask', () => {
     expect(deps.fetchDetail.execute).toHaveBeenCalledWith({
       threshold: 70,
       limit: 5,
+      avoidSkillTags: [],
     });
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith({
       threshold: 70,
@@ -233,6 +236,25 @@ describe('JobFeedAutopilotTask', () => {
     ).toHaveBeenCalledWith('U1');
   });
 
+  it('프로필 JSON 에 accomplishments 가 없어도 죽지 않는다 — DB JSON 캐스팅은 런타임 보장이 아니다', async () => {
+    const deps = makeDeps({
+      profile: {
+        id: 8,
+        agentRunId: 1,
+        createdAt: new Date(),
+        // accomplishments 자체가 없는 손상된/구버전 행을 흉내낸다.
+        profileJson: { summary: '', skills: [], meta: {} },
+      },
+    });
+    const task = buildTask(deps);
+
+    const result = await task.run(CONTEXT);
+
+    // techTags 가 없으니 프로필 없음과 같은 경로(채점 skip)로 빠지되, 예외로 죽지는 않는다.
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('커리어 프로필이 없어');
+  });
+
   it('JOB_FEED_MATCH_THRESHOLD·JOB_FEED_DETAIL_LIMIT 미설정이면 코드 기본값(80/20)을 쓴다', async () => {
     // app.config.ts 가 @Type(() => Number) + @IsInt/@Min/@Max 로 이미 값 형태를 보장하므로
     // (형식이 잘못되면 부팅 자체가 막힌다), 이 task 가 신경 쓸 나머지 경우는 "미설정"뿐이다.
@@ -244,6 +266,7 @@ describe('JobFeedAutopilotTask', () => {
     expect(deps.fetchDetail.execute).toHaveBeenCalledWith({
       threshold: 80,
       limit: 20,
+      avoidSkillTags: [],
     });
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith({
       threshold: 80,
@@ -301,7 +324,7 @@ describe('JobFeedAutopilotTask', () => {
     ).toHaveBeenNthCalledWith(2, 'danggeun|서버개발자', expect.any(Date));
   });
 
-  it('JOB_FEED_AVOID_SKILLS 를 정규화해 알림 후보 조회에 넘긴다', async () => {
+  it('JOB_FEED_AVOID_SKILLS 를 정규화해 알림·상세수집 두 표면 모두에 같은 값으로 넘긴다', async () => {
     const deps = makeDeps();
     const task = buildTask(deps, {
       JOB_FEED_ENABLED: 'true',
@@ -312,9 +335,85 @@ describe('JobFeedAutopilotTask', () => {
 
     await task.run(CONTEXT);
 
+    // 두 표면이 각자 파싱하면 갈릴 수 있다 — 한 번만 계산해 재사용하는지 확인한다
+    // (findDetailTargets 도 걸러야 기피 공고가 상세수집 예산을 대신 차지하지 않는다).
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith(
       expect.objectContaining({ avoidSkillTags: ['PHP', 'JSP'] }),
     );
+    expect(deps.fetchDetail.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ avoidSkillTags: ['PHP', 'JSP'] }),
+    );
+  });
+
+  it('사전에 없는 기피 기술은 무시되고 그 사실을 로그로 남긴다', async () => {
+    const warning = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const deps = makeDeps();
+    const task = buildTask(deps, {
+      JOB_FEED_ENABLED: 'true',
+      // Cobol 은 사전에 없다 — 필터가 조용히 무효화되면 "조용한 0건" 계열 사고다.
+      JOB_FEED_AVOID_SKILLS: 'php,Cobol',
+    });
+
+    await task.run(CONTEXT);
+
+    expect(deps.listNotifiable.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ avoidSkillTags: ['PHP'] }),
+    );
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('Cobol'));
+    warning.mockRestore();
+  });
+
+  it('onDelivered 는 한 건이 선점에 실패해도 나머지를 계속 선점하고 실패 건수를 로그로 남긴다', async () => {
+    const warning = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const postingA = {
+      id: 1,
+      source: 'jumpit',
+      sourceId: '1',
+      company: '토스',
+      title: '백엔드 개발자',
+      detailUrl: 'https://example.test/1',
+      skillTags: ['Java'],
+      rawSkillTags: [],
+      minYears: 3,
+      maxYears: 5,
+      experienceLevel: 'mid',
+      locations: ['서울'],
+      normalizedKey: 'toss|백엔드개발자',
+      jdText: null,
+      matchScore: 80,
+    };
+    const postingB = {
+      ...postingA,
+      id: 2,
+      normalizedKey: 'danggeun|서버개발자',
+    };
+    const postingC = { ...postingA, id: 3, normalizedKey: 'kakao|서버개발자' };
+    const deps = makeDeps({
+      notifiablePostings: [postingA, postingB, postingC],
+    });
+    // 두 번째 후보 선점만 실패한다 — 발송은 이미 끝났으니 나머지는 계속 선점돼야 한다.
+    deps.jobPostingRepository.claimForNotification = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error('DB 연결 끊김'))
+      .mockResolvedValueOnce(true);
+    const task = buildTask(deps);
+
+    const result = await task.run(CONTEXT);
+    await expect(result.onDelivered?.()).resolves.toBeUndefined();
+
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).toHaveBeenCalledTimes(3);
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).toHaveBeenNthCalledWith(3, 'kakao|서버개발자', expect.any(Date));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('1건'));
+    warning.mockRestore();
   });
 
   it('JOB_FEED_LOCATIONS 미설정이면 빈 배열을 넘긴다', async () => {

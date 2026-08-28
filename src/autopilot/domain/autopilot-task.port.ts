@@ -29,6 +29,9 @@ export interface AutopilotTaskResult {
   // 발송이 성공한 뒤에만 실행할 후처리. 발송 실패 시 호출되지 않는다.
   // 되돌릴 수 없는 상태(알림 기록 등)를 task 안에서 미리 쓰면, 발송이 실패해도
   // 그 상태가 남아 다음 회차에 복구되지 않는다(job-feed.autopilot-task.ts 참조).
+  // ⚠️ 요약을 실제로 실은 task 만 호출된다 — orchestrator 는 `!result.skip &&
+  // result.summaryText` 인 결과만 발송 대상 item 에 싣는다. skip=true 이거나
+  // summaryText 가 없으면 이 콜백을 갖고 있어도 아무 신호 없이 버려진다.
   onDelivered?: () => Promise<void>;
 }
 

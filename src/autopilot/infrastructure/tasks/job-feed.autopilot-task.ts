@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -9,11 +9,11 @@ import { CollectJobPostingsUsecase } from '../../../job-feed/application/collect
 import { FetchPostingDetailUsecase } from '../../../job-feed/application/fetch-posting-detail.usecase';
 import { ListNotifiablePostingsUsecase } from '../../../job-feed/application/list-notifiable-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../../../job-feed/application/score-job-postings.usecase';
+import { parseAvoidSkillTags } from '../../../job-feed/domain/avoid-skills';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
-import { normalizeSkillTags } from '../../../job-feed/domain/skill-dictionary';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
 import {
   AutopilotTask,
@@ -39,6 +39,7 @@ const DEFAULT_NOTIFY_LIMIT = 10;
 @Injectable()
 export class JobFeedAutopilotTask implements AutopilotTask {
   readonly id = 'job-feed';
+  private readonly logger = new Logger(JobFeedAutopilotTask.name);
 
   constructor(
     private readonly collect: CollectJobPostingsUsecase,
@@ -66,6 +67,9 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const detailLimit =
       this.configService.get<number>('JOB_FEED_DETAIL_LIMIT') ??
       DEFAULT_DETAIL_LIMIT;
+    // 알림·상세수집 두 표면이 같은 기피 목록을 써야 한다 — 상세수집만 빠뜨리면
+    // 알림엔 안 뜰 공고가 상세 호출 예산(JOB_FEED_DETAIL_LIMIT)을 대신 차지한다.
+    const avoidSkillTags = this.resolveAvoidSkillTags();
 
     const collected = await this.collect.execute({});
 
@@ -90,7 +94,11 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     // (profile.skillTags 가 비었는지는 techTags 로만 정해진다) skip 여부는 항상 같다.
     const scoreResult = await this.score.execute(scoreInput);
 
-    await this.fetchDetail.execute({ threshold, limit: detailLimit });
+    await this.fetchDetail.execute({
+      threshold,
+      limit: detailLimit,
+      avoidSkillTags,
+    });
 
     // fetchDetail → saveDetail 이 목록에 스킬이 없는 소스(원티드)의 skillTags 를
     // 채우면서 채점 표식(scoredProfileId·scoredAt)을 지운 행이 있을 수 있다. 여기서
@@ -103,7 +111,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const postings = await this.listNotifiable.execute({
       threshold,
       limit: DEFAULT_NOTIFY_LIMIT,
-      avoidSkillTags: this.parseAvoidSkills(),
+      avoidSkillTags,
     });
 
     // 조회 계층의 신선도 조건(이틀)이 걸려 있어, 수집이 며칠째 실패하면 postings 가
@@ -129,10 +137,28 @@ export class JobFeedAutopilotTask implements AutopilotTask {
         ? undefined
         : async (): Promise<void> => {
             const claimedAt = new Date();
+            let failed = 0;
+            // 발송은 이미 끝났다 — 한 건의 선점 실패로 나머지를 포기하면, 카드에는
+            // 이미 나갔는데 표식만 안 남은 공고가 다음 회차에 다시 뜬다. 건별로
+            // 격리해 최대한 많이 선점한다.
             for (const posting of postings) {
-              await this.jobPostingRepository.claimForNotification(
-                posting.normalizedKey,
-                claimedAt,
+              try {
+                await this.jobPostingRepository.claimForNotification(
+                  posting.normalizedKey,
+                  claimedAt,
+                );
+              } catch (error: unknown) {
+                failed += 1;
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                this.logger.warn(
+                  `job-feed 알림 선점 실패 — ${posting.normalizedKey}: ${message}`,
+                );
+              }
+            }
+            if (failed > 0) {
+              this.logger.warn(
+                `job-feed 알림 선점 — ${postings.length}건 중 ${failed}건 실패, 다음 회차에 재알림될 수 있음`,
               );
             }
           };
@@ -148,15 +174,20 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       .filter((item) => item.length > 0);
   }
 
-  // 저장된 skillTags 는 사전을 통과한 정규명이다 — 사용자가 쓴 표기(대소문자·별칭)를
-  // 그대로 비교하면 "php" 같은 입력이 저장된 "PHP" 와 안 맞아 필터가 조용히 무효화된다.
-  private parseAvoidSkills(): string[] {
-    const raw = this.configService.get<string>('JOB_FEED_AVOID_SKILLS') ?? '';
-    const tags = raw
-      .split(',')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-    return normalizeSkillTags(tags).matched;
+  // 사전에 없는 값(예: 오탈자·미등록 기술)을 넣으면 그 항목이 조용히 무시돼 필터가
+  // 통째로 무효가 될 수 있다 — 이 레포가 반복해 겪은 "조용한 0건" 계열이라 로그를
+  // 남긴다. job-feed-gap.autopilot-task.ts 도 같은 파싱을 쓰므로 도메인 계층
+  // 공용 함수(parseAvoidSkillTags)로 뺐다.
+  private resolveAvoidSkillTags(): string[] {
+    const { matched, unmatched } = parseAvoidSkillTags(
+      this.configService.get<string>('JOB_FEED_AVOID_SKILLS'),
+    );
+    if (unmatched.length > 0) {
+      this.logger.warn(
+        `JOB_FEED_AVOID_SKILLS 중 사전에 없어 무시된 항목: ${unmatched.join(', ')}`,
+      );
+    }
+    return matched;
   }
 
   private async loadProfile(
@@ -171,9 +202,14 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     if (profile === null) {
       return { techTags: [], profileId: null };
     }
-    const techTags = profile.profileJson.accomplishments.flatMap((item) => {
-      return item.techTags ?? [];
-    });
+    // profileJson 은 DB JSON 컬럼을 CareerProfileData 로 캐스팅한 값이라 타입
+    // 보장이 런타임 보장은 아니다 — accomplishments 자체나 개별 techTags 가 없는
+    // 행이 오면 `?? []` 가 없을 때 TypeError 로 task 전체가 죽는다.
+    const techTags = (profile.profileJson.accomplishments ?? []).flatMap(
+      (item) => {
+        return item.techTags ?? [];
+      },
+    );
     return { techTags: [...new Set(techTags)], profileId: profile.id };
   }
 }
