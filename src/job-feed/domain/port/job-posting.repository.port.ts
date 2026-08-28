@@ -60,4 +60,9 @@ export interface JobPostingRepositoryPort {
     limit: number,
   ): Promise<StoredJobPosting[]>;
   saveGapAgentRunId(id: number, agentRunId: number): Promise<void>;
+  // 사전 갱신 후 과거 행을 되살리는 용도다. 다른 조회와 달리 lastSeenAt 신선도
+  // 조건을 걸면 안 된다 — 재파생의 목적 자체가 오래돼 조용히 방치된 행까지
+  // 포함해 skillTags 를 되살리는 것이라, 신선도로 거르면 정작 손볼 대상이 빠진다.
+  findAllForReprocess(): Promise<StoredJobPosting[]>;
+  saveSkillTags(id: number, skillTags: string[]): Promise<void>;
 }

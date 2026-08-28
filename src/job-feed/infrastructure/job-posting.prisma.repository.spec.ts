@@ -193,6 +193,63 @@ describe('JobPostingPrismaRepository — 신선도 조건 (lastSeenAt)', () => {
   });
 });
 
+describe('JobPostingPrismaRepository.findAllForReprocess', () => {
+  // 재파생은 사전 갱신 효과를 과거 행까지 소급 적용하는 것이 목적이다.
+  // 다른 조회 넷과 달리 lastSeenAt 신선도 조건을 걸면 안 된다 — 걸면 정작
+  // 되살려야 할, 최근에 못 본 옛 행이 대상에서 빠진다.
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('lastSeenAt 신선도 조건 없이 마감되지 않은 행 전체를 대상으로 한다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findAllForReprocess();
+
+    expect(calls[0].where).toEqual({ closedAt: null });
+    expect(calls[0].where).not.toHaveProperty('lastSeenAt');
+  });
+});
+
+describe('JobPostingPrismaRepository.saveSkillTags', () => {
+  it('새 skillTags 와 함께 채점 표식을 지운다 — 다음 채점에서 다시 걸리게 한다', async () => {
+    const updateCalls: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }[] = [];
+    const prisma = {
+      jobPosting: {
+        update: jest.fn(async (args: (typeof updateCalls)[number]) => {
+          updateCalls.push(args);
+          return undefined;
+        }),
+      },
+    };
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.saveSkillTags(1, ['Java', 'Spring Boot']);
+
+    expect(updateCalls[0].where).toEqual({ id: 1 });
+    expect(updateCalls[0].data).toEqual({
+      skillTags: ['Java', 'Spring Boot'],
+      scoredProfileId: null,
+      scoredAt: null,
+    });
+  });
+});
+
 describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알림', () => {
   const createUpsertStub = (found: { id: number; contentHash: string }) => {
     const updateCalls: {

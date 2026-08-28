@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 
 import { CollectJobPostingsUsecase } from '../src/job-feed/application/collect-job-postings.usecase';
 import { ListNotifiablePostingsUsecase } from '../src/job-feed/application/list-notifiable-postings.usecase';
+import { ReprocessJobPostingsUsecase } from '../src/job-feed/application/reprocess-job-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../src/job-feed/application/score-job-postings.usecase';
 import { parseJobFeedCliArguments } from '../src/job-feed/interface/job-feed-cli.parser';
 import { JobFeedModule } from '../src/job-feed/job-feed.module';
@@ -50,22 +51,21 @@ const loadProfileTechTags = async (
 const main = async (): Promise<void> => {
   const options = parseJobFeedCliArguments(process.argv.slice(2));
 
-  // ReprocessJobPostingsUsecase 는 Task 13-A 에서 추가한다. 파서는 명령을
-  // 미리 받아 두지만(테스트도 그대로) 여기서는 아직 처리하지 않는다 —
-  // AppModule 을 올려놓고 아무 일도 안 하는 대신 명시적으로 안내만 한다.
-  if (options.command === 'reprocess') {
-    console.log(
-      'reprocess 명령은 아직 구현되지 않았습니다 (Task 13-A 에서 추가 예정입니다).',
-    );
-    return;
-  }
-
   const application =
     await NestFactory.createApplicationContext(JobFeedCliModule);
 
   try {
     const prisma = application.get(PrismaService);
     const { techTags, profileId } = await loadProfileTechTags(prisma);
+
+    if (options.command === 'reprocess') {
+      const result = await application
+        .get(ReprocessJobPostingsUsecase)
+        .execute();
+      console.log(
+        `재파생 — 대상 ${result.examined}건 중 ${result.changed}건 갱신`,
+      );
+    }
 
     if (options.command === 'collect') {
       const collect = await application.get(CollectJobPostingsUsecase).execute({
@@ -93,22 +93,6 @@ const main = async (): Promise<void> => {
           console.log(`  ${entry.tag} × ${entry.count}`);
         }
       }
-
-      if (!options.dryRun) {
-        const score = await application.get(ScoreJobPostingsUsecase).execute({
-          techTags,
-          years: null,
-          locations: [],
-          profileId,
-        });
-        if (score.skipped) {
-          console.log(`채점 건너뜀 — ${score.reason ?? ''}`);
-        } else {
-          console.log(
-            `채점 ${score.scored}건 · 분포 ${JSON.stringify(score.histogram)}`,
-          );
-        }
-      }
     }
 
     if (options.command === 'digest') {
@@ -118,6 +102,24 @@ const main = async (): Promise<void> => {
       for (const posting of postings) {
         console.log(
           `[${posting.matchScore ?? 0}] ${posting.company} — ${posting.title} (${posting.skillTags.join(', ')})`,
+        );
+      }
+    }
+
+    // reprocess 는 saveSkillTags 가 채점 표식을 지우므로, digest 를 제외한 모든
+    // 명령 뒤에 채점을 이어 붙인다 — collect 때와 동일한 조건이다.
+    if (options.command !== 'digest' && !options.dryRun) {
+      const score = await application.get(ScoreJobPostingsUsecase).execute({
+        techTags,
+        years: null,
+        locations: [],
+        profileId,
+      });
+      if (score.skipped) {
+        console.log(`채점 건너뜀 — ${score.reason ?? ''}`);
+      } else {
+        console.log(
+          `채점 ${score.scored}건 · 분포 ${JSON.stringify(score.histogram)}`,
         );
       }
     }

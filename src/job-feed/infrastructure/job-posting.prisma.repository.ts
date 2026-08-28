@@ -213,4 +213,22 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
       data: { gapAgentRunId: agentRunId },
     });
   }
+
+  // 신선도(lastSeenAt) 조건을 일부러 넣지 않는다 — 재파생은 사전 갱신 효과를
+  // 과거 행까지 소급 적용하는 것이 목적이라, 최근에 못 본 행까지 포함해야 한다.
+  async findAllForReprocess(): Promise<StoredJobPosting[]> {
+    return this.prisma.jobPosting.findMany({
+      where: { closedAt: null },
+      select: SELECT_FIELDS,
+    });
+  }
+
+  async saveSkillTags(id: number, skillTags: string[]): Promise<void> {
+    // 점수는 새 태그 기준으로 다시 매겨야 하므로 채점 표식을 지워 다음 채점에서
+    // 다시 걸리게 한다.
+    await this.prisma.jobPosting.update({
+      where: { id },
+      data: { skillTags, scoredProfileId: null, scoredAt: null },
+    });
+  }
 }

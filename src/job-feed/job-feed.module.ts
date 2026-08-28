@@ -4,6 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CollectJobPostingsUsecase } from './application/collect-job-postings.usecase';
 import { FetchPostingDetailUsecase } from './application/fetch-posting-detail.usecase';
 import { ListNotifiablePostingsUsecase } from './application/list-notifiable-postings.usecase';
+import { ReprocessJobPostingsUsecase } from './application/reprocess-job-postings.usecase';
 import { ScoreJobPostingsUsecase } from './application/score-job-postings.usecase';
 import { JOB_POSTING_REPOSITORY_PORT } from './domain/port/job-posting.repository.port';
 import { JOB_SOURCES } from './domain/port/job-source.port';
@@ -36,12 +37,14 @@ import { WantedSource } from './infrastructure/wanted.source';
     ScoreJobPostingsUsecase,
     ListNotifiablePostingsUsecase,
     FetchPostingDetailUsecase,
+    ReprocessJobPostingsUsecase,
   ],
   exports: [
     CollectJobPostingsUsecase,
     ScoreJobPostingsUsecase,
     ListNotifiablePostingsUsecase,
     FetchPostingDetailUsecase,
+    ReprocessJobPostingsUsecase,
     JOB_POSTING_REPOSITORY_PORT,
   ],
 })
