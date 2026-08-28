@@ -7,6 +7,7 @@ import { CollectJobPostingsUsecase } from '../src/job-feed/application/collect-j
 import { ListNotifiablePostingsUsecase } from '../src/job-feed/application/list-notifiable-postings.usecase';
 import { ReprocessJobPostingsUsecase } from '../src/job-feed/application/reprocess-job-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../src/job-feed/application/score-job-postings.usecase';
+import { normalizeSkillTags } from '../src/job-feed/domain/skill-dictionary';
 import { parseJobFeedCliArguments } from '../src/job-feed/interface/job-feed-cli.parser';
 import { JobFeedModule } from '../src/job-feed/job-feed.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -118,9 +119,21 @@ const main = async (): Promise<void> => {
       // 선점(claimForNotification) 은 usecase 가 더 이상 여기서 하지 않는다 — 발송이
       // 성공한 뒤에만 별도로 한다(job-feed.autopilot-task.ts 의 onDelivered 참조).
       // 이 CLI 는 후보를 보여주기만 하고 그 콜백을 부르지 않으므로 선점도 안 일어난다.
+      // JOB_FEED_AVOID_SKILLS 도 autopilot task 와 같은 방식으로 반영한다 — 안 그러면
+      // 이 진단 CLI 가 실 운영 카드와 다른(기피 기술이 안 걸러진) 결과를 보여준다.
+      const avoidSkillsRaw = application
+        .get(ConfigService)
+        .get<string>('JOB_FEED_AVOID_SKILLS');
+      const avoidSkillTags = normalizeSkillTags(
+        (avoidSkillsRaw ?? '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ).matched;
+
       const postings = await application
         .get(ListNotifiablePostingsUsecase)
-        .execute({ threshold: 0, limit: 10 });
+        .execute({ threshold: 0, limit: 10, avoidSkillTags });
       for (const posting of postings) {
         console.log(
           `[${posting.matchScore ?? 0}] ${posting.company} — ${posting.title} (${posting.skillTags.join(', ')})`,
