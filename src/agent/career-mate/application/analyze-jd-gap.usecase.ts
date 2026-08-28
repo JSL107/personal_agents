@@ -75,6 +75,10 @@ export class AnalyzeJdGapUsecase {
   async execute({
     slackUserId,
     jdText,
+    triggerType,
+    company,
+    role,
+    origin,
   }: AnalyzeJdGapInput): Promise<AgentRunOutcome<GapAnalysisData>> {
     if (jdText.trim().length === 0) {
       throw new CareerMateException({
@@ -86,8 +90,8 @@ export class AnalyzeJdGapUsecase {
 
     return this.agentRunService.execute<GapAnalysisData>({
       agentType: AgentType.CAREER_MATE,
-      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
-      inputSnapshot: { slackUserId, jdLength: jdText.length },
+      triggerType: triggerType ?? TriggerType.SLACK_MENTION_CAREER_MATE,
+      inputSnapshot: { slackUserId, jdLength: jdText.length, company, role },
       run: async (context) => {
         const profile = await this.resolveProfile(slackUserId);
         const completion = await this.modelRouter.route({
@@ -98,28 +102,42 @@ export class AnalyzeJdGapUsecase {
           },
         });
         const data = parseGapAnalysisOutput(completion.text);
-        const identity = extractTargetJdIdentity(jdText);
-        try {
-          await this.targetJdRepository.save({
-            slackUserId,
-            company: identity.company,
-            role: identity.role,
-            jdText,
-          });
-        } catch (error) {
-          this.logger.warn(
-            `목표 공고 저장 실패 — 갭 분석 응답은 유지합니다: ${error instanceof Error ? error.message : String(error)}`,
-          );
+        const isAutomated = origin === 'JOB_FEED';
+
+        // 자동 수집분은 "내가 노리는 목표 공고" 가 아니다. 저장하면 이력서 감사가
+        // 매일 자동 수집물을 목표로 삼는다(감사는 최근 1건을 쓴다).
+        if (!isAutomated) {
+          const identity =
+            company !== undefined && role !== undefined
+              ? { company, role }
+              : extractTargetJdIdentity(jdText);
+          try {
+            await this.targetJdRepository.save({
+              slackUserId,
+              company: identity.company,
+              role: identity.role,
+              jdText,
+            });
+          } catch (error) {
+            this.logger.warn(
+              `목표 공고 저장 실패 — 갭 분석 응답은 유지합니다: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         }
-        await this.createPreview.execute({
-          slackUserId,
-          kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
-          // agentRunId 를 payload 에 실어, 주제 선택 시 BLOG run 의 parentId 로 연결(chain audit).
-          payload: { topics: data.topics, agentRunId: context.agentRunId },
-          previewText: 'JD 갭 분석 — 블로그 주제 선택 대기',
-          responseUrl: null,
-          ttlMs: PREVIEW_TTL_MS,
-        });
+
+        // 대기 카드 조회에는 종류 필터가 없다. 자동 생성분이 살아 있으면 사용자가
+        // 다른 맥락에서 "1번" 이라고 답할 때 그 카드가 가로채 블로그 체인을 발사한다.
+        if (!isAutomated) {
+          await this.createPreview.execute({
+            slackUserId,
+            kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG,
+            // agentRunId 를 payload 에 실어, 주제 선택 시 BLOG run 의 parentId 로 연결(chain audit).
+            payload: { topics: data.topics, agentRunId: context.agentRunId },
+            previewText: 'JD 갭 분석 — 블로그 주제 선택 대기',
+            responseUrl: null,
+            ttlMs: PREVIEW_TTL_MS,
+          });
+        }
         this.logger.log(
           `CAREER_MATE JD 갭 분석 — gaps=${data.gaps.length} topics=${data.topics.length}`,
         );

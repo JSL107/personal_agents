@@ -100,6 +100,11 @@ export enum TriggerType {
   // 주간 선호 학습 — 추론 실패도 skip 으로 수렴하는 경로라(task 의 skip 분기 5개 중 하나),
   // 원장이 없으면 "신호가 없어서 조용했다" 와 "모델 호출이 죽었다" 가 집계상 같아진다.
   AUTOPILOT_PREFERENCE_LEARNING_CRON = 'AUTOPILOT_PREFERENCE_LEARNING_CRON',
+  // 공고 피드 자동 수집분의 갭 분석 — 수동 멘션(SLACK_MENTION_CAREER_MATE)과 구분해 집계한다.
+  // 이 트리거로 들어온 실행은 목표 공고 저장·주제 선택 카드 생성 부수효과를 건너뛴다
+  // (자동 수집물을 목표로 저장하면 사용자가 등록한 목표 공고가 밀려나고, 대기 카드가
+  // 살아 있으면 사용자의 다음 응답을 가로챈다).
+  AUTOPILOT_JOB_FEED_GAP_CRON = 'AUTOPILOT_JOB_FEED_GAP_CRON',
 }
 
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
