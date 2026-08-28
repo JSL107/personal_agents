@@ -131,7 +131,11 @@ describe('CollectJobPostingsUsecase', () => {
     expect(result.outcomes[0].status).toBe('FAILED');
     expect(result.outcomes[0].error).toContain('HTTP 503');
     expect(result.outcomes[1].status).toBe('SUCCESS');
-    expect(repository.upsertMany).toHaveBeenCalled();
+    // toHaveBeenCalled() 만으로는 실패한 소스(jumpit)의 데이터가 섞여 들어가도
+    // 통과한다 — 실려 나간 배열 내용까지 확인해 성공한 소스(rallit) 것만 저장됐는지 본다.
+    expect(repository.upsertMany).toHaveBeenCalledWith([
+      expect.objectContaining({ source: 'rallit', sourceId: '1' }),
+    ]);
   });
 
   it('영구 실패(403/429 등)는 httpStatus 를 카드에 실어 진단 가치를 남긴다', async () => {

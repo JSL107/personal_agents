@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { validateEnv } from '../src/config/app.config';
 import { CollectJobPostingsUsecase } from '../src/job-feed/application/collect-job-postings.usecase';
 import { ListNotifiablePostingsUsecase } from '../src/job-feed/application/list-notifiable-postings.usecase';
 import { ReprocessJobPostingsUsecase } from '../src/job-feed/application/reprocess-job-postings.usecase';
@@ -13,9 +14,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 // AppModule 전체를 올리면 AutopilotScheduler 가 함께 떠서 운영 중인 정기 실행 등록을 건드린다.
 // 필요한 모듈만 올린다.
+// validate: validateEnv — 지금은 이 CLI 가 JOB_FEED_* 숫자 env 를 안 읽어 무해하지만,
+// 나중에 configService.get<number>(...) 가 붙으면 검증 없이는 문자열이 그대로 들어와
+// 비교가 조용히 틀린다(scripts/sync-toss-holdings.ts 의 기존 선례를 따른다).
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     PrismaModule,
     JobFeedModule,
   ],
