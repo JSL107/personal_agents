@@ -350,6 +350,14 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         failures,
         marketClosed: true,
         marketCountry: this.targetMarketCountry,
+        // 휴장 경로에서도 종목별 기준일은 갈릴 수 있다. 판정은 건너뛰지만 평단 상태 줄은
+        // 각 종목의 마지막 봉 가격으로 계산되므로, 그 날짜가 헤더와 다르면 밝혀야 한다.
+        olderBaseDates: collectedHoldings
+          .map(({ holding, today }) => ({
+            symbol: holding.symbol,
+            tradeDate: today.tradeDate.toISOString().slice(0, 10),
+          }))
+          .filter((baseDate) => baseDate.tradeDate !== lastTradeDate),
       });
       const resultWithExposure = await this.withPortfolioExposure(
         this.withAvgPriceStatuses(

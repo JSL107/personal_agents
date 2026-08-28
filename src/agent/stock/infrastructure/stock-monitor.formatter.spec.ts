@@ -94,7 +94,7 @@ describe('formatStockMonitorSummary', () => {
     });
 
     expect(result).toContain('기준일이 다른 종목: VST 2026-08-26');
-    expect(result).toContain('하루 전 값');
+    expect(result).toContain('이전 거래일 값');
   });
 
   it('기준일이 모두 같으면 그 줄을 만들지 않는다', () => {
@@ -190,6 +190,22 @@ describe('formatStockMonitorSummary', () => {
 
     expect(result).toContain('국내 새 거래일 시세가 없어 점검을 건너뜁니다');
     expect(result).toContain('휴장 추정');
+  });
+
+  // 종목마다 마지막으로 저장된 거래일이 다르면, 전 종목에 새 봉이 없는 날에도 각자 다른
+  // 날짜에 멈춰 있다. 아래 평단 상태 줄이 그 날짜의 가격으로 계산되므로 밝혀야 한다.
+  it('휴장 추정일에도 기준일 갈림을 밝힌다', () => {
+    const result = formatStockMonitorSummary([], {
+      checkedCount: 2,
+      lastTradeDate: '2026-08-27',
+      failures: [],
+      marketClosed: true,
+      marketCountry: 'US',
+      olderBaseDates: [{ symbol: 'VST', tradeDate: '2026-08-25' }],
+    });
+
+    expect(result).toContain('휴장 추정');
+    expect(result).toContain('기준일이 다른 종목: VST 2026-08-25');
   });
 
   it('발화한 종목의 규칙과 값을 담는다', () => {
