@@ -11,6 +11,7 @@ import {
 import {
   ChainFailureSummary,
   detectChainFailureAnomalies,
+  detectContractScoreAnomalies,
   detectRunAnomalies,
   RunAnomaly,
 } from '../../domain/run-retro.anomaly';
@@ -41,8 +42,15 @@ export class RunRetroAutopilotTask implements AutopilotTask {
       sinceDays: PREVIOUS_WINDOW_DAYS,
       untilDays: CURRENT_WINDOW_DAYS,
     });
+    // 계약 점수는 이번주 창만 본다. 지난주와의 비교가 아니라 절대 하한으로 판정하므로
+    // (사유는 RUN_RETRO_THRESHOLDS.contractScore 주석) 두 번째 창이 필요 없다.
+    const contractScores = await this.agentRunService.aggregateContractScores({
+      sinceDays: CURRENT_WINDOW_DAYS,
+      untilDays: 0,
+    });
     const anomalies = [
       ...detectRunAnomalies(current, previous),
+      ...detectContractScoreAnomalies(contractScores),
       ...(await this.detectChainAnomaliesSafely()),
     ];
     if (current.length === 0 && anomalies.length === 0) {
