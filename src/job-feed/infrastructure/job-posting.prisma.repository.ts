@@ -10,6 +10,11 @@ import {
   UpsertOutcome,
 } from '../domain/port/job-posting.repository.port';
 
+// 수집이 매일 돌므로 이틀 넘게 안 보인 공고는 사라진 것으로 본다.
+// 없으면 직군 필터·마감 등으로 이번 수집에서 빠진 옛 행이 DB 에 영원히 남아
+// 계속 채점·알림·상세수집·갭분석 대상이 된다 (Task 12 실증에서 발견).
+const FRESHNESS_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+
 const SELECT_FIELDS = {
   id: true,
   source: true,
@@ -90,9 +95,14 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
             { scoredProfileId: null },
             { scoredProfileId: { not: profileId } },
           ];
+    const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
 
     return this.prisma.jobPosting.findMany({
-      where: { closedAt: null, OR: staleConditions },
+      where: {
+        closedAt: null,
+        lastSeenAt: { gte: freshnessCutoff },
+        OR: staleConditions,
+      },
       select: SELECT_FIELDS,
     });
   }
@@ -112,11 +122,14 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     threshold: number,
     limit: number,
   ): Promise<StoredJobPosting[]> {
+    const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
+
     return this.prisma.jobPosting.findMany({
       where: {
         notifiedAt: null,
         closedAt: null,
         matchScore: { gte: threshold },
+        lastSeenAt: { gte: freshnessCutoff },
       },
       orderBy: [{ matchScore: 'desc' }, { firstSeenAt: 'desc' }],
       take: limit,
@@ -143,10 +156,13 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     limit: number,
     staleBefore: Date,
   ): Promise<StoredJobPosting[]> {
+    const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
+
     return this.prisma.jobPosting.findMany({
       where: {
         closedAt: null,
         matchScore: { gte: threshold },
+        lastSeenAt: { gte: freshnessCutoff },
         OR: [
           { detailFetchedAt: null },
           { detailFetchedAt: { lt: staleBefore } },
@@ -174,10 +190,13 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     threshold: number,
     limit: number,
   ): Promise<StoredJobPosting[]> {
+    const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
+
     return this.prisma.jobPosting.findMany({
       where: {
         closedAt: null,
         matchScore: { gte: threshold },
+        lastSeenAt: { gte: freshnessCutoff },
         // 이미 분석한 공고는 다시 부르지 않는다. 없으면 매일 같은 공고를 재분석한다.
         gapAgentRunId: null,
         jdText: { not: null },

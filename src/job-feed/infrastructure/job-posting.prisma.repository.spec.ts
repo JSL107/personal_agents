@@ -110,6 +110,7 @@ describe('JobPostingPrismaRepository.findScoringTargets', () => {
     // { scoredProfileId: null } 조건을 별도로 더해야 그 행도 잡힌다.
     expect(calls[0].where).toEqual({
       closedAt: null,
+      lastSeenAt: { gte: expect.any(Date) },
       OR: [
         { matchScore: null },
         { scoredProfileId: null },
@@ -128,8 +129,67 @@ describe('JobPostingPrismaRepository.findScoringTargets', () => {
     // "프로필 없이 정상 채점된" 행까지 매번 재채점 대상으로 다시 걸린다.
     expect(calls[0].where).toEqual({
       closedAt: null,
+      lastSeenAt: { gte: expect.any(Date) },
       OR: [{ matchScore: null }, { scoredProfileId: { not: null } }],
     });
+  });
+});
+
+describe('JobPostingPrismaRepository — 신선도 조건 (lastSeenAt)', () => {
+  // 이번 수집에서 못 본 공고는 마감됐거나 직군 필터에서 걸러진 것이다.
+  // 조건이 없으면 옛 행이 DB 에 영원히 남아 계속 채점·알림·상세수집·갭분석 대상이 된다.
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it.each([
+    {
+      name: 'findScoringTargets',
+      call: (repository: JobPostingPrismaRepository) => {
+        return repository.findScoringTargets(null);
+      },
+    },
+    {
+      name: 'findNotifiable',
+      call: (repository: JobPostingPrismaRepository) => {
+        return repository.findNotifiable(60, 10);
+      },
+    },
+    {
+      name: 'findDetailTargets',
+      call: (repository: JobPostingPrismaRepository) => {
+        return repository.findDetailTargets(60, 10, new Date());
+      },
+    },
+    {
+      name: 'findGapCandidates',
+      call: (repository: JobPostingPrismaRepository) => {
+        return repository.findGapCandidates(60, 10);
+      },
+    },
+  ])('$name 은 최근 이틀 안에 본 공고만 대상으로 삼는다', async ({ call }) => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await call(repository);
+
+    const lastSeenAt = calls[0].where.lastSeenAt as { gte: Date };
+    expect(lastSeenAt.gte).toBeInstanceOf(Date);
+    // FRESHNESS_WINDOW_MS = 2일. 실행 지연을 감안해 5초 오차를 허용한다.
+    const expectedCutoffMs = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    expect(lastSeenAt.gte.getTime()).toBeGreaterThan(expectedCutoffMs - 5000);
+    expect(lastSeenAt.gte.getTime()).toBeLessThan(expectedCutoffMs + 5000);
   });
 });
 
