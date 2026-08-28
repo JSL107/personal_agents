@@ -7,6 +7,8 @@ function makeConfig(values: Record<string, string | number | undefined> = {}) {
   return { get: jest.fn((key: string) => values[key]) };
 }
 
+const CONTEXT = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-27' };
+
 const CAREER_PROFILE_WITH_TAGS = {
   id: 7,
   profileJson: {
@@ -106,7 +108,7 @@ describe('JobFeedAutopilotTask', () => {
     const deps = makeDeps();
     const task = buildTask(deps, {});
 
-    const result = await task.run();
+    const result = await task.run(CONTEXT);
 
     expect(result).toEqual({ skip: true });
     expect(deps.collect.execute).not.toHaveBeenCalled();
@@ -116,7 +118,7 @@ describe('JobFeedAutopilotTask', () => {
     const deps = makeDeps();
     const task = buildTask(deps, { JOB_FEED_ENABLED: 'false' });
 
-    const result = await task.run();
+    const result = await task.run(CONTEXT);
 
     expect(result).toEqual({ skip: true });
   });
@@ -132,7 +134,7 @@ describe('JobFeedAutopilotTask', () => {
     });
     const task = buildTask(deps);
 
-    const result = await task.run();
+    const result = await task.run(CONTEXT);
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('커리어 프로필이 없어');
@@ -177,7 +179,7 @@ describe('JobFeedAutopilotTask', () => {
       JOB_FEED_YEARS: 4,
     });
 
-    const result = await task.run();
+    const result = await task.run(CONTEXT);
 
     expect(deps.score.execute).toHaveBeenCalledWith({
       techTags: ['Java', 'Spring Boot'],
@@ -197,6 +199,20 @@ describe('JobFeedAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('토스');
     expect(result.summaryText).toContain('마지막 수집');
+
+    // fetchDetail 이 saveDetail 로 스킬을 채우며 채점 표식을 지운 행이 그날 안에
+    // 반영되려면, fetchDetail 이후 채점이 한 번 더 돌아야 한다(원티드 65점 고정 재발 방지).
+    expect(deps.score.execute).toHaveBeenCalledTimes(2);
+    const secondScoreCallOrder = deps.score.execute.mock.invocationCallOrder[1];
+    const fetchDetailCallOrder =
+      deps.fetchDetail.execute.mock.invocationCallOrder[0];
+    expect(secondScoreCallOrder).toBeGreaterThan(fetchDetailCallOrder);
+
+    // owner 의 프로필만 조회해야 한다 — 다른 사용자가 더 최근에 만든 프로필로
+    // 채점하면 안 된다.
+    expect(deps.prisma.careerProfile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { slackUserId: 'U1' } }),
+    );
   });
 
   it('JOB_FEED_MATCH_THRESHOLD·JOB_FEED_DETAIL_LIMIT 미설정이면 코드 기본값(80/20)을 쓴다', async () => {
@@ -205,7 +221,7 @@ describe('JobFeedAutopilotTask', () => {
     const deps = makeDeps();
     const task = buildTask(deps, { JOB_FEED_ENABLED: 'true' });
 
-    await task.run();
+    await task.run(CONTEXT);
 
     expect(deps.fetchDetail.execute).toHaveBeenCalledWith({
       threshold: 80,
@@ -221,7 +237,7 @@ describe('JobFeedAutopilotTask', () => {
     const deps = makeDeps();
     const task = buildTask(deps, { JOB_FEED_ENABLED: 'true' });
 
-    await task.run();
+    await task.run(CONTEXT);
 
     expect(deps.score.execute).toHaveBeenCalledWith(
       expect.objectContaining({ locations: [], years: null }),

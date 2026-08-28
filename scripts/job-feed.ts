@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { CollectJobPostingsUsecase } from '../src/job-feed/application/collect-job-postings.usecase';
@@ -33,8 +33,17 @@ interface ProfileJsonShape {
 
 const loadProfileTechTags = async (
   prisma: PrismaService,
+  ownerSlackUserId: string | undefined,
 ): Promise<ProfileTechTags> => {
   const profile = await prisma.careerProfile.findFirst({
+    // AUTOPILOT_OWNER_SLACK_USER_ID 가 있으면 그 owner 의 프로필만 본다 — 없으면
+    // (autopilot task 와 달리 이 CLI 는 로컬 1인 진단 도구 전제라) 기존처럼 전체에서
+    // 최신 프로필을 쓴다. 값이 있는데도 필터를 안 걸면 다른 사용자의 프로필로 채점한
+    // CLI 출력이 실 운영(autopilot task)과 어긋나 보인다.
+    where:
+      ownerSlackUserId === undefined
+        ? undefined
+        : { slackUserId: ownerSlackUserId },
     orderBy: { createdAt: 'desc' },
     select: { id: true, profileJson: true },
   });
@@ -56,7 +65,13 @@ const main = async (): Promise<void> => {
 
   try {
     const prisma = application.get(PrismaService);
-    const { techTags, profileId } = await loadProfileTechTags(prisma);
+    const ownerSlackUserId = application
+      .get(ConfigService)
+      .get<string>('AUTOPILOT_OWNER_SLACK_USER_ID');
+    const { techTags, profileId } = await loadProfileTechTags(
+      prisma,
+      ownerSlackUserId,
+    );
 
     if (options.command === 'reprocess') {
       const result = await application

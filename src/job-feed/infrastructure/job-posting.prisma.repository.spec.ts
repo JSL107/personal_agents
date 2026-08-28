@@ -178,6 +178,67 @@ describe('JobPostingPrismaRepository.findDetailTargets — 스킬 없는 소스 
   });
 });
 
+describe('JobPostingPrismaRepository.findGapCandidates — 빈 JD 제외', () => {
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('jdText 가 null 이거나 빈 문자열인 행을 NOT 조건으로 함께 배제한다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findGapCandidates(80, 10);
+
+    // jdText: { not: null } 만 쓰면 매퍼가 만드는 빈 문자열('')은 SQL 3값 논리상
+    // <> 비교를 통과해 걸러지지 않는다(findScoringTargets 의 { not: profileId } 와
+    // 같은 함정). null 과 '' 을 각각 명시한 NOT 배열이어야 둘 다 배제된다.
+    expect(calls[0].where).toEqual({
+      closedAt: null,
+      matchScore: { gte: 80 },
+      lastSeenAt: { gte: expect.any(Date) },
+      gapAgentRunId: null,
+      NOT: [{ jdText: null }, { jdText: '' }],
+    });
+  });
+
+  it('빈 문자열이 아닌 실제 본문이 있으면 정상 대상이 된다 — 과도하게 걸러지지 않는지 확인', async () => {
+    const calls: FindManyArgs[] = [];
+    const prisma = {
+      jobPosting: {
+        findMany: jest.fn(async (args: FindManyArgs) => {
+          calls.push(args);
+          return [
+            {
+              id: 1,
+              jdText: '백엔드 경력 3년 이상',
+            },
+          ];
+        }),
+      },
+    };
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    const result = await repository.findGapCandidates(80, 10);
+
+    expect(result).toHaveLength(1);
+    // where 조건 자체는 위 테스트와 동일해야 한다 — limit·threshold 만 바뀐다.
+    expect(calls[0].where).toMatchObject({
+      NOT: [{ jdText: null }, { jdText: '' }],
+    });
+  });
+});
+
 describe('JobPostingPrismaRepository.saveDetail', () => {
   it('상세를 저장하며 채점 표식을 지운다 — 새 스킬 기준으로 다시 채점되게 한다', async () => {
     const updateCalls: {
@@ -363,7 +424,7 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
     };
   };
 
-  it('contentHash 가 달라졌으면 notifiedAt: null 을 update data 에 싣는다', async () => {
+  it('contentHash 가 달라졌으면 notifiedAt·scoredProfileId·scoredAt 을 모두 null 로 되돌린다', async () => {
     const { prisma, updateCalls } = createUpsertStub({
       id: 1,
       contentHash: 'hash-old',
@@ -372,10 +433,17 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
 
     await repository.upsertMany([BASE_POSTING]);
 
-    expect(updateCalls[0].data).toMatchObject({ notifiedAt: null });
+    // scoredProfileId 를 지우지 않으면, 바뀐 요건 후 매긴 점수가 우연히 같은
+    // profileId 값을 갖는 한 findScoringTargets 가 재채점 대상으로 다시 잡지
+    // 못해 변경 전 점수가 그대로 알림 판단에 쓰인다.
+    expect(updateCalls[0].data).toMatchObject({
+      notifiedAt: null,
+      scoredProfileId: null,
+      scoredAt: null,
+    });
   });
 
-  it('contentHash 가 같으면 notifiedAt 키 자체를 넣지 않는다 — 이미 본 공고가 다시 뜨면 안 된다', async () => {
+  it('contentHash 가 같으면 notifiedAt·scoredProfileId·scoredAt 키를 전혀 건드리지 않는다', async () => {
     const { prisma, updateCalls } = createUpsertStub({
       id: 1,
       contentHash: BASE_POSTING.contentHash,
@@ -385,6 +453,8 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
     await repository.upsertMany([BASE_POSTING]);
 
     expect(updateCalls[0].data).not.toHaveProperty('notifiedAt');
+    expect(updateCalls[0].data).not.toHaveProperty('scoredProfileId');
+    expect(updateCalls[0].data).not.toHaveProperty('scoredAt');
   });
 });
 

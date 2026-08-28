@@ -100,7 +100,13 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
         data: {
           ...updateData,
           lastSeenAt: now,
-          ...(changed ? { notifiedAt: null } : {}),
+          // 요건(기술·연차·지역 등)이 바뀌면 점수도 무효화해야 한다. scoredProfileId 를
+          // 그대로 두면, 현재 프로필과 값이 같을 때 findScoringTargets 가 이 행을 재채점
+          // 대상으로 다시 잡지 못해 변경 전 점수(matchScore)가 그대로 남는다 — 바뀐
+          // 요건과 무관하게 알림에 포함되거나 빠지는 결과가 된다.
+          ...(changed
+            ? { notifiedAt: null, scoredProfileId: null, scoredAt: null }
+            : {}),
         },
       });
       updated += 1;
@@ -253,7 +259,12 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
         lastSeenAt: { gte: freshnessCutoff },
         // 이미 분석한 공고는 다시 부르지 않는다. 없으면 매일 같은 공고를 재분석한다.
         gapAgentRunId: null,
-        jdText: { not: null },
+        // jdText: { not: null } 만으로는 매퍼가 본문 필드가 전부 비었을 때 만드는
+        // 빈 문자열('')을 걸러내지 못한다(findScoringTargets 의 { not: profileId } 와
+        // 같은 계열의 SQL 3값 논리 함정 — `<>` 비교는 NULL 만 배제하고 빈 문자열은
+        // 그대로 통과시킨다). 빈 JD 가 여기를 통과하면 AnalyzeJdGapUsecase 가 예외를
+        // 던져 gapAgentRunId 가 계속 비고, 같은 공고를 매일 재시도하게 된다.
+        NOT: [{ jdText: null }, { jdText: '' }],
       },
       orderBy: { matchScore: 'desc' },
       take: limit,
