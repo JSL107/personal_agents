@@ -180,10 +180,12 @@ describe('measureKoreanStyle — 종결체 축', () => {
 });
 
 describe('measureKoreanStyle — 문단 축', () => {
-  // run #980 `2026-08-20-agent-security-permission-boundaries` 의 첫 문단을 그대로 쓴다.
-  // 문서 지표 네 항목이 모두 통과한 글인데도 이 문단은 5문장 벽이다.
+  // run #980 `2026-08-20-agent-security-permission-boundaries` 의 첫 문단(5문장)에 같은 글의
+  // 톤으로 한 문장을 더해 6문장으로 만든 것이다. 벽 기준을 6문장으로 올린 뒤로 5문장은 벽이
+  // 아니라, 원문 그대로는 이 테스트가 재려는 "문서 평균은 통과하는데 문단 하나가 벽" 상태를
+  // 만들지 못한다. 문서 지표 네 항목이 모두 통과한 글이라는 점은 그대로다.
   const 벽문단 =
-    '협업 메신저 봇이 외부 콘텐츠를 읽고 비공개 데이터에 접근해 직접 행동하기 시작하면 이야기가 달라집니다. prompt injection은 단순한 오답이 아닙니다. 권한 오남용과 정보 유출의 문제가 되죠. 에이전트 보안의 핵심은 모델이 절대 속지 않게 하는 데 있지 않습니다. 속더라도 넘지 못할 권한 경계를 만드는 데 있습니다.';
+    '협업 메신저 봇이 외부 콘텐츠를 읽고 비공개 데이터에 접근해 직접 행동하기 시작하면 이야기가 달라집니다. prompt injection은 단순한 오답이 아닙니다. 권한 오남용과 정보 유출의 문제가 되죠. 에이전트 보안의 핵심은 모델이 절대 속지 않게 하는 데 있지 않습니다. 속더라도 넘지 못할 권한 경계를 만드는 데 있습니다. 그 경계를 어디에 그을지가 설계의 몫입니다.';
 
   it('문서 평균이 통과해도 벽 문단을 드러낸다', () => {
     const metrics = measureKoreanStyle(
@@ -227,30 +229,33 @@ describe('measureKoreanStyle — 문단 축', () => {
   });
 
   // 임계 경계 — 비교 연산자가 한 칸 밀리면 여기서 갈린다.
-  it('정확히 4문장이면 벽, 3문장이면 벽이 아니다', () => {
-    const 문장 = '이 문장은 서른 자를 넘지 않도록 적당한 길이로 씁니다.';
-    const 세문장 = [문장, 문장, 문장].join(' ');
-    const 네문장 = [문장, 문장, 문장, 문장].join(' ');
+  it('정확히 6문장이면 벽, 5문장이면 벽이 아니다', () => {
+    // 재는 것은 문장 수 축이다. 길이(250자)로 먼저 걸리면 경계가 검증되지 않으므로
+    // 여섯 문장을 이어도 250자를 넘지 않는 짧은 문장을 쓴다. 길이 축은 아래 두 테스트가 맡는다.
+    const 문장 = '짧게 씁니다.';
+    const 다섯문장 = Array.from({ length: 5 }, () => 문장).join(' ');
+    const 여섯문장 = Array.from({ length: 6 }, () => 문장).join(' ');
 
-    expect(measureKoreanStyle(세문장).paragraph.wallPercent).toBe(0);
-    expect(measureKoreanStyle(네문장).paragraph.wallPercent).toBe(100);
+    expect(여섯문장.length).toBeLessThanOrEqual(250);
+    expect(measureKoreanStyle(다섯문장).paragraph.wallPercent).toBe(0);
+    expect(measureKoreanStyle(여섯문장).paragraph.wallPercent).toBe(100);
   });
 
-  it('길이 임계는 150자 초과부터다', () => {
+  it('길이 임계는 250자 초과부터다', () => {
     // 문단 길이는 공백을 포함해 센다. 문장 수로 걸리지 않도록 한 문장으로 만든다.
-    const 딱150 = `${'가'.repeat(149)}.`;
-    const 딱151 = `${'가'.repeat(150)}.`;
+    const 딱250 = `${'가'.repeat(249)}.`;
+    const 딱251 = `${'가'.repeat(250)}.`;
 
-    expect(딱150.length).toBe(150);
-    expect(measureKoreanStyle(딱150).paragraph.wallPercent).toBe(0);
-    expect(딱151.length).toBe(151);
-    expect(measureKoreanStyle(딱151).paragraph.wallPercent).toBe(100);
+    expect(딱250.length).toBe(250);
+    expect(measureKoreanStyle(딱250).paragraph.wallPercent).toBe(0);
+    expect(딱251.length).toBe(251);
+    expect(measureKoreanStyle(딱251).paragraph.wallPercent).toBe(100);
   });
 
   // 벽 비율을 저장 시점에 반올림하면 문단이 많은 글에서 남은 벽이 0% 로 사라진다.
   it('문단이 많아도 벽 한 개가 0%로 뭉개지지 않는다', () => {
     const 짧은문단 = '짧다. 이유는 뒤에 붙입니다.';
-    const 벽 = `${'가'.repeat(160)}.`;
+    const 벽 = `${'가'.repeat(260)}.`;
     const 글 = [...Array.from({ length: 24 }, () => 짧은문단), 벽].join('\n\n');
 
     const metrics = measureKoreanStyle(글);
@@ -260,9 +265,9 @@ describe('measureKoreanStyle — 문단 축', () => {
     expect(formatKoreanStyleMetrics(metrics)).toContain('벽 4%');
   });
 
-  it('150자를 넘으면 문장 수가 적어도 벽으로 센다', () => {
+  it('250자를 넘으면 문장 수가 적어도 벽으로 센다', () => {
     expect(
-      measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`).paragraph
+      measureKoreanStyle(`짧다. ${'가'.repeat(260)}입니다.`).paragraph
         .wallPercent,
     ).toBe(100);
   });
@@ -300,16 +305,16 @@ describe('measureKoreanStyle — 문단 축', () => {
     expect(metrics.paragraph.dominantParagraphSizePercent).toBe(25);
   });
 
-  // 4문장과 9문장을 한 칸에 묶으면 이 축이 벽 축과 같아진다. 크기별로 세는지 고정한다.
+  // 6문장과 9문장을 한 칸에 묶으면 이 축이 벽 축과 같아진다. 크기별로 세는지 고정한다.
   it('큰 문단끼리도 크기가 다르면 같은 크기로 세지 않는다', () => {
     const paragraphs = [
-      '가 문장 하나입니다. 두 번째입니다. 세 번째입니다. 네 번째입니다.',
-      '나 문장 하나입니다. 두 번째입니다. 세 번째입니다. 네 번째입니다. 다섯 번째입니다.',
+      '가 하나입니다. 둘입니다. 셋입니다. 넷입니다. 다섯입니다. 여섯입니다.',
+      '나 하나입니다. 둘입니다. 셋입니다. 넷입니다. 다섯입니다. 여섯입니다. 일곱입니다.',
     ].join('\n\n');
 
     const metrics = measureKoreanStyle(paragraphs);
 
-    // 둘 다 벽(4문장 이상)이지만 크기가 4·5로 달라 같은크기는 50% 다.
+    // 둘 다 벽(6문장 이상)이지만 크기가 6·7로 달라 같은크기는 50% 다.
     expect(metrics.paragraph.wallPercent).toBe(100);
     expect(metrics.paragraph.dominantParagraphSizePercent).toBe(50);
   });
