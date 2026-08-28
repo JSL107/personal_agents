@@ -199,6 +199,21 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
     expect(result.summaryText).toContain('이상 없음');
   });
 
+  // 계약 점수는 부가 축이다 — 이 조회 하나의 사고가 실패율·지연 회고까지 막으면 원래 보려던
+  // 신호가 함께 사라진다(체인 관측과 같은 정책).
+  it('계약 점수 조회가 실패해도 통계 회고는 그대로 나간다', async () => {
+    const service = makeService(healthyStats, healthyStats);
+    service.aggregateContractScores = jest
+      .fn()
+      .mockRejectedValue(new Error('DB 연결 끊김'));
+    const task = new RunRetroAutopilotTask(service as never);
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('이상 없음');
+  });
+
   it('체인 조회가 실패해도 통계 회고는 그대로 나간다', async () => {
     const service = makeService(healthyStats, healthyStats);
     service.findChainRootsInWindow = jest
