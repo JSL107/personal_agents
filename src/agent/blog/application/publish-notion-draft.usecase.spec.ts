@@ -534,6 +534,84 @@ describe('PublishNotionDraftUsecase', () => {
       expect(agentRunService.execute).not.toHaveBeenCalled();
       expect(createPreview.execute).not.toHaveBeenCalled();
     });
+
+    // 앞단의 제외 목록은 프롬프트 문장이라 모델이 흘리면 통과하고, 노션 초안 큐로 들어온 글은
+    // 그 목록을 보지도 않는다. 실제로 같은 주제가 이틀 간격으로 두 번 발행됐다.
+    it('최근 같은 주소로 발행한 이력이 있으면 보류로 옮기고 preview 를 만들지 않는다', async () => {
+      const { usecase, createPreview, notionClient } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'http-cache-expiration',
+          description: '안전한 설명',
+          body: '캐시 만료와 재검증을 정리했다.',
+        }),
+        recentRuns: [
+          {
+            output: {
+              path: 'src/content/posts/2026-08-19-http-cache-expiration.md',
+            },
+            inputSnapshot: {},
+          },
+        ],
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('skipped');
+      if (candidate.status === 'skipped') {
+        expect(candidate.cause).toBe('hold');
+        expect(candidate.message).toContain('http-cache-expiration');
+      }
+      // 큐에서 빼지 않으면 같은 초안이 매일 다시 뽑혀 뒤의 초안이 영구히 밀린다.
+      expect(notionClient.updatePageProperties).toHaveBeenCalled();
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 날짜만 다르고 주제가 다르면 막지 않는다. 이 대조군이 없으면 위 테스트는 "무조건 보류" 인
+    // 구현으로도 통과한다.
+    it('발행 이력의 주소가 다르면 그대로 발행 후보를 만든다', async () => {
+      const { usecase, createPreview } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'safe-post',
+          description: '안전한 설명',
+          body: '다른 주제를 정리했다.',
+        }),
+        recentRuns: [
+          {
+            output: {
+              path: 'src/content/posts/2026-08-19-http-cache-expiration.md',
+            },
+            inputSnapshot: {},
+          },
+        ],
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('ready');
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다 — 차단 이력 조회와 같은 정책.
+    it('발행 이력 조회가 실패해도 중복 검사만 건너뛰고 발행을 계속한다', async () => {
+      const { usecase } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'http-cache-expiration',
+          description: '안전한 설명',
+          body: '캐시 만료와 재검증을 정리했다.',
+        }),
+        recentRunsError: new Error('원장 조회 실패'),
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('ready');
+    });
   });
 
   it('가장 오래된 초안 1건을 익명화해 GitHub 발행 preview를 만든다', async () => {

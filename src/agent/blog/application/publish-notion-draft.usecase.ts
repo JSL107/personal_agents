@@ -43,7 +43,7 @@ import {
   PREVIEW_KIND,
   PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
-import { buildAstroPost } from '../domain/astro-post';
+import { buildAstroPost, extractPostSlug } from '../domain/astro-post';
 import { BlogException } from '../domain/blog.exception';
 import {
   BlogGithubPublishPayload,
@@ -122,6 +122,21 @@ const BLOCKED_DRAFT_COOLDOWN_DAYS = 3;
 
 // 위 창 안에서 훑을 실행 기록 수. 하루 1~2회 도는 워커라 넉넉하다.
 const BLOCKED_DRAFT_SCAN_LIMIT = 50;
+
+// 같은 주제를 다시 쓴 초안을 가리기 위해 훑을 발행 이력의 범위.
+//
+// 왜 30일인가 — 글감을 고르는 앞단('오늘의 공부' 조사 프롬프트)이 쓰는 제외 창과 같은 값이다.
+// 그쪽은 "최근 30일과 사실상 같은 주제는 제외하라"고 **모델에게 부탁**할 뿐이고, 노션 초안 큐로
+// 들어온 글은 그 부탁조차 거치지 않는다. 여기서 같은 창을 결정론으로 한 번 더 막는다.
+//
+// limit 이 창보다 넉넉해야 한다 — 하루 1~2회 도는 워커라 30일이면 최대 60여 건이고, 조회가
+// 창보다 먼저 잘리면 오래된 발행분이 목록에서 빠져 중복이 통과한다.
+const PUBLISHED_SLUG_SCAN_DAYS = 30;
+const PUBLISHED_SLUG_SCAN_LIMIT = 120;
+
+// 보류로 옮길 때 Notion 과 로그에 남길 사유. 금지어 차단과 달리 사람이 초안을 고쳐도 풀리지
+// 않는다 — 주제 자체가 겹치므로 다른 글감으로 바꾸거나 초안을 버려야 한다.
+const DUPLICATE_TOPIC_REASON = '최근 같은 주제로 이미 발행한 글이 있습니다.';
 
 // 카드에 찍을 축. 라벨과 키를 한 자리에 둬 표시 순서와 값이 갈리지 않게 한다.
 const STRUCTURE_AXES: ReadonlyArray<{
@@ -448,6 +463,33 @@ export class PublishNotionDraftUsecase {
           status: 'blocked',
           message: this.buildForbiddenMessage(hits),
           hits,
+        },
+        modelUsed: completion.modelUsed,
+        stages,
+      };
+    }
+
+    // 이미 낸 글과 같은 주제인지 본다. 금지어 검사 **뒤**에 두는 이유는 순서가 곧 우선순위이기
+    // 때문이다 — 공개 저장소에 회사명이 나가는 것을 막는 쪽이 먼저다.
+    //
+    // 앞단의 제외 목록은 프롬프트 문장이라 모델이 흘리면 그대로 통과하고, 노션 초안 큐로 들어온
+    // 글은 그 목록을 아예 보지 않는다. 그래서 판정을 **경로가 정해진 뒤** 결정론으로 한 번 한다.
+    // 제목은 회차마다 달라지지만(같은 주제로 두 번 나간 글의 제목이 실제로 달랐다) 주소는
+    // 주제에서 나오므로 같아진다.
+    // 콕 집은 요청은 검사하지 않는다 — 차단 후순위와 같은 정책이다. 사람이 그 글을 지목했다면
+    // 겹치는 줄 알고도 다시 내려는 것일 수 있고(고쳐 쓴 판), 그 판단을 코드가 뒤집지 않는다.
+    const slug = extractPostSlug(post.path);
+    const publishedSlugs =
+      titleQuery || input.pageId
+        ? new Set<string>()
+        : await this.findRecentlyPublishedSlugs();
+    if (slug.length > 0 && publishedSlugs.has(slug)) {
+      await this.holdDraft(target, context, DUPLICATE_TOPIC_REASON);
+      return {
+        candidate: {
+          status: 'skipped',
+          cause: 'hold',
+          message: `'${this.maskForbidden(target.title, context.forbiddenTerms)}' 은 최근 ${PUBLISHED_SLUG_SCAN_DAYS}일 안에 같은 주제(${slug})로 이미 발행해 보류로 옮겼습니다.`,
         },
         modelUsed: completion.modelUsed,
         stages,
@@ -1057,6 +1099,38 @@ export class PublishNotionDraftUsecase {
       );
     }
     return blocked;
+  }
+
+  // 최근 발행한 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) — 차단 이력
+  // 조회와 같은 정책이다. 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다.
+  //
+  // **이 원장은 자동 발행 경로만 안다.** 사람이 저장소에 직접 커밋한 글은 여기 없어서 중복으로
+  // 잡히지 않는다. 저장소 목록을 읽어야 완전해지지만 그러려면 GitHub 조회가 새로 필요하고,
+  // 실측한 중복 2건은 둘 다 이 경로로 나갔다 — 비용이 큰 쪽은 남겨 둔다.
+  private async findRecentlyPublishedSlugs(): Promise<Set<string>> {
+    const slugs = new Set<string>();
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.BLOG_PUBLISH,
+        sinceDays: PUBLISHED_SLUG_SCAN_DAYS,
+        limit: PUBLISHED_SLUG_SCAN_LIMIT,
+      });
+      for (const run of runs) {
+        const output = run.output as { path?: unknown } | null;
+        if (typeof output?.path !== 'string') {
+          continue;
+        }
+        const slug = extractPostSlug(output.path);
+        if (slug.length > 0) {
+          slugs.add(slug);
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `발행 이력 조회 실패 — 중복 주제 검사 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return slugs;
   }
 
   private async findOpenPublishCard(
