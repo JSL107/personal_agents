@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { evaluateContract } from '../../../agent-registry/contract-inspector';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -104,6 +105,29 @@ const createFixture = (input?: {
 };
 
 describe('PaperTradingAutopilotTask', () => {
+  // 이 워커의 계약(accounts / accountCount / failedCount)은 2026-08-24 실측으로 정했는데,
+  // 그 표본에는 같은 AgentType 으로 기록하는 장중 손절 워커가 빠져 있었다. 양쪽 모두 자기
+  // 산출물을 계약으로 채점하게 두어, 형태와 계약이 갈리면 테스트가 먼저 깨지게 한다.
+  it('원장에 남기는 산출물이 자기 직무 계약을 만족한다', async () => {
+    const { task, agentRun } = createFixture();
+
+    await task.run(context);
+
+    const executionInput = agentRun.execute.mock.calls[0][0] as {
+      agentType: AgentType;
+      run: (context: { agentRunId: number }) => Promise<{ output: unknown }>;
+    };
+    const executed = await executionInput.run({ agentRunId: 71 });
+    const evaluation = evaluateContract(
+      executionInput.agentType,
+      executed.output,
+    );
+
+    expect(executionInput.agentType).toBe(AgentType.PAPER_TRADE);
+    expect(evaluation.violations).toEqual([]);
+    expect(evaluation.score).toBe(1);
+  });
+
   it('게이트가 꺼져 있으면 usecase와 원장을 호출하지 않는다', async () => {
     const { task, evaluate, agentRun } = createFixture({ enabled: 'false' });
 
