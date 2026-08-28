@@ -1,6 +1,7 @@
 import {
   CreatePreviewInput,
   PreviewAction,
+  PreviewKind,
   PreviewStatus,
 } from '../preview-action.type';
 
@@ -91,5 +92,15 @@ export interface PreviewActionRepositoryPort {
   //
   // payload / previewText 를 빼고 두 시각만 가져온다 — 연속 기록에는 카드 내용이 필요 없고,
   // 전건 조회에 큰 jsonb 를 딸려 오게 하면 이 값이 커질 때 조용히 무거워진다.
+  // 실제로 적용된 카드만 kind 별로 조회한다 — 중복 발행 판정처럼 "정말 나갔는가" 를 물어야
+  // 하는 곳이 쓴다.
+  //
+  // 후보를 만든 실행 기록(agent_run)으로 대신하면 안 된다. 그건 카드를 **띄운** 시점의
+  // 기록이라 사용자가 거절했거나 무응답으로 만료된 회차까지 "나간 것" 으로 세게 된다.
+  findRecentAppliedByKind(input: {
+    kind: PreviewKind;
+    since: Date;
+    limit: number;
+  }): Promise<PreviewAction[]>;
   findAllDayOutcomes(): Promise<PreviewDayOutcomeRow[]>;
 }

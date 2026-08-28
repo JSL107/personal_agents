@@ -39,6 +39,7 @@ import {
 } from '../../../notion/domain/port/notion-client.port';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
+import { FindRecentAppliedPreviewsUsecase } from '../../../preview-gate/application/find-recent-applied-previews.usecase';
 import {
   PREVIEW_KIND,
   PreviewAction,
@@ -170,6 +171,7 @@ export class PublishNotionDraftUsecase {
     private readonly config: ConfigService,
     private readonly humanizer: HumanizeService,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+    private readonly findRecentAppliedPreviews: FindRecentAppliedPreviewsUsecase,
   ) {}
 
   async execute(
@@ -1101,8 +1103,13 @@ export class PublishNotionDraftUsecase {
     return blocked;
   }
 
-  // 최근 발행한 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) — 차단 이력
-  // 조회와 같은 정책이다. 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다.
+  // 최근 **실제로 나간** 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
+  // 차단 이력 조회와 같은 정책이다. 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다.
+  //
+  // **후보 생성 기록(agent_run)이 아니라 적용된 카드(preview_action)를 본다.** 이 워커의
+  // 성공은 "카드를 띄웠다" 는 뜻이고 실제 커밋은 사용자가 승인한 뒤 applier 에서 일어난다.
+  // 후보 기록으로 세면 거절했거나 무응답으로 만료된 회차까지 "이미 나갔다" 로 취급해, 정작
+  // 발행된 적 없는 주제의 초안이 영구히 보류로 밀린다(리뷰 지적).
   //
   // **이 원장은 자동 발행 경로만 안다.** 사람이 저장소에 직접 커밋한 글은 여기 없어서 중복으로
   // 잡히지 않는다. 저장소 목록을 읽어야 완전해지지만 그러려면 GitHub 조회가 새로 필요하고,
@@ -1110,17 +1117,19 @@ export class PublishNotionDraftUsecase {
   private async findRecentlyPublishedSlugs(): Promise<Set<string>> {
     const slugs = new Set<string>();
     try {
-      const runs = await this.agentRunService.findRecentSucceededRuns({
-        agentType: AgentType.BLOG_PUBLISH,
-        sinceDays: PUBLISHED_SLUG_SCAN_DAYS,
+      const applied = await this.findRecentAppliedPreviews.execute({
+        kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+        since: new Date(
+          Date.now() - PUBLISHED_SLUG_SCAN_DAYS * 24 * 60 * 60 * 1_000,
+        ),
         limit: PUBLISHED_SLUG_SCAN_LIMIT,
       });
-      for (const run of runs) {
-        const output = run.output as { path?: unknown } | null;
-        if (typeof output?.path !== 'string') {
+      for (const preview of applied) {
+        const payload = preview.payload as { path?: unknown } | null;
+        if (typeof payload?.path !== 'string') {
           continue;
         }
-        const slug = extractPostSlug(output.path);
+        const slug = extractPostSlug(payload.path);
         if (slug.length > 0) {
           slugs.add(slug);
         }
