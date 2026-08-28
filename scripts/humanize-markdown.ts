@@ -7,6 +7,8 @@
 // 사용법:
 //   pnpm exec ts-node scripts/humanize-markdown.ts <입력.md> [--out <출력.md>] [--audience general]
 //
+// 발행 경로와 같은 호흡 되먹임을 태운다(평균이 하한 미달이면 한 번 더 윤문).
+//
 // --audience 는 독자 축 실측용이다. 같은 파일을 지정 없이 / general 로 두 번 돌려
 // 영어 낱말 수를 대조하면 용어 규칙이 실제로 먹었는지 보인다(프롬프트만 보고는 알 수 없다).
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -19,7 +21,7 @@ import {
   HumanizeAudience,
   HumanizeService,
 } from '../src/humanize/application/humanize.service';
-import { humanizeMarkdownProse } from '../src/humanize/application/humanize-markdown.adapter';
+import { humanizeMarkdownProseWithBreathRetry } from '../src/humanize/application/humanize-markdown.adapter';
 import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
@@ -71,7 +73,15 @@ const main = async (): Promise<void> => {
       );
     }
     const audience = audienceOption as HumanizeAudience | undefined;
-    const result = await humanizeMarkdownProse(source, humanizer, audience);
+    // 발행 경로(publish-notion-draft)와 같은 되먹임을 태운다. 문장 평균이 하한에 못 미치면
+    // 그 수치를 지시에 실어 한 번 더 들여보낸다 — 그 경로가 빠지면 여기서 잰 결과가 발행본과
+    // 갈려, 규칙을 손보고 확인하는 이 스크립트의 목적 자체가 무너진다.
+    const result = await humanizeMarkdownProseWithBreathRetry(
+      source,
+      humanizer,
+      console,
+      audience,
+    );
     const elapsedSeconds = Math.round((Date.now() - started) / 1000);
 
     // 윤문이 통째로 실패해도 어댑터는 원문을 그대로 돌려준다(best-effort). 0문단이면
