@@ -1,4 +1,3 @@
-import { resolveExperienceLevel } from '../domain/experience';
 import { RawJobDetail, RawJobPosting } from '../domain/job-feed.type';
 import { JobSourceListResult } from '../domain/port/job-source.port';
 
@@ -109,13 +108,4 @@ export const mapJumpitDetail = (payload: unknown): RawJobDetail => {
     .join('\n\n');
 
   return { jdText, rawSkillTags: mapDetailSkillTags(techStacks) };
-};
-
-// 목록에는 등급이 없고 숫자 구간만 있으므로, 등급은 구간에서 파생한다.
-export const resolveJumpitExperienceLevel = (posting: RawJobPosting) => {
-  return resolveExperienceLevel({
-    minYears: posting.minYears,
-    maxYears: posting.maxYears,
-    isNewcomer: posting.isNewcomer,
-  });
 };

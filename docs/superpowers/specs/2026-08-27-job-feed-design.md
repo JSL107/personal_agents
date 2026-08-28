@@ -302,7 +302,7 @@ accomplishments[].techTags — distinct 123개
 - **연차 적합** — 내 연차가 `[minYears, maxYears]` 안이면 가점, 벗어나면 감점. `IRRELEVANT`(양쪽 null)는 중립
 - **지역 일치** — 설정 지역과 겹치면 가점
 
-기준점(기본 60) 이상만 알림 후보. 저장은 전량.
+기준점(기본 80) 이상만 알림 후보. 저장은 전량.
 
 채점할 때 `scoredProfileId`와 `scoredAt`을 함께 쓴다. 프로필이 갱신되면 기존 점수는 낡은 것이 되는데, 그 사실이 행에 남아 있어야 재채점 대상을 고를 수 있다. 프로필을 다시 만든 뒤에는 `reprocess`로 재채점한다.
 
@@ -507,7 +507,7 @@ export interface AnalyzeJdGapInput {
 | `JOB_FEED_ENABLED` | 선택 | 빈 값(꺼짐) | 기능 스위치 | 수집·알림 모두 하지 않음 |
 | `JOB_FEED_YEARS` | 선택 | 없음 | 내 연차 (정수 0~50) | 연차 가점을 중립으로 |
 | `JOB_FEED_LOCATIONS` | 선택 | 없음 | 희망 지역 (쉼표 구분 시도명) | 지역 가점을 중립으로 |
-| `JOB_FEED_MATCH_THRESHOLD` | 선택 | 60 | 알림 기준 점수 (0~100) | 기본값 |
+| `JOB_FEED_MATCH_THRESHOLD` | 선택 | 80 | 알림 기준 점수 (0~100) | 기본값 |
 | `JOB_FEED_GAP_ANALYSIS_TOP_N` | 선택 | 2 | 자동 갭 분석 건수 (0~5) | 기본값 |
 | `JOB_FEED_DETAIL_LIMIT` | 선택 | 20 | 슬롯당 상세 호출 상한 (1~100) | 기본값 |
 

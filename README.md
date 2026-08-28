@@ -358,7 +358,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `JOB_FEED_ENABLED` | ❌ | 백엔드 채용공고 자동 수집(점핏·랠릿·원티드) 마스터 스위치. `true` 가 아니면 수집·채점·알림 자체가 skip |
 | `JOB_FEED_YEARS` · `JOB_FEED_LOCATIONS` | ❌ | 연차(0~50)·지역(쉼표 구분) 매칭 축. 미설정 시 각 축을 중립으로 채점 |
 | `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 최소 매칭 점수(0~100, 기본 80). 실측 228건 분포에서 60점은 93%가 통과해 필터 구실을 못 해 80으로 올렸다(80~100점 대만 95건, 42%) |
-| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2). 미설정 시 코드 기본값 1, `.env.example` 은 2로 출하 — 모델 호출 순차 실행이라 실행 시간 예산 가드가 2건째는 항상 다음 회차로 미룬다 |
+| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2, 기본 1). 모델 호출 순차 실행 1건의 worst-case(606초)가 실행 시간 예산(525.6초)을 이미 넘어, 2로 두면 후보가 2건 이상인 날마다 경과 시간 가드가 항상 2번째를 다음 회차로 미룬다 |
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집).

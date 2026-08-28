@@ -1,7 +1,7 @@
 export type JobSourceId = 'jumpit' | 'rallit' | 'wanted';
 export type ExperienceLevel = 'newcomer' | 'junior' | 'mid' | 'senior' | 'any';
 export type YearsSource = 'RANGE' | 'LEVEL';
-export type SourceStatus = 'SUCCESS' | 'DEGRADED' | 'FAILED';
+export type SourceStatus = 'SUCCESS' | 'FAILED';
 
 // 소스 매퍼가 목록 응답 한 건에서 뽑아내는 값. 정규화 전이다.
 export interface RawJobPosting {
