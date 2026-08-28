@@ -18,6 +18,7 @@ import {
 import {
   ActiveRunSnapshot,
   AGENT_RUN_REPOSITORY_PORT,
+  AgentContractScoreRow,
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
@@ -419,6 +420,13 @@ export class AgentRunService {
   // 대표 브리핑 퇴근 정산 — 특정 시각 이후 실패로 끝난 런 총수.
   async countFailedSince(input: { since: Date }): Promise<number> {
     return await this.repository.countFailedSince(input);
+  }
+
+  async aggregateContractScores(input: {
+    sinceDays: number;
+    untilDays?: number;
+  }): Promise<AgentContractScoreRow[]> {
+    return await this.repository.aggregateContractScores(input);
   }
 
   async aggregateRetryCounts(input: {

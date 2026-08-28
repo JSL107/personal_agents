@@ -2,6 +2,7 @@ import { AgentRunStatRow } from '../../agent-run/domain/port/agent-run.repositor
 import {
   ChainFailureSummary,
   detectChainFailureAnomalies,
+  detectContractScoreAnomalies,
   detectRunAnomalies,
 } from './run-retro.anomaly';
 
@@ -123,5 +124,38 @@ describe('detectChainFailureAnomalies — 체인 실패 지목', () => {
     expect(anomalies).toHaveLength(4);
     expect(anomalies[3].agentType).toBeNull();
     expect(anomalies[3].detail).toContain('외 2건');
+  });
+});
+
+describe('detectContractScoreAnomalies', () => {
+  // 2026-08-28 실측값 그대로 — PAPER_TRADE 171건 평균 0.023, 나머지 워커는 1.000.
+  it('하한 아래인 워커를 지목한다', () => {
+    const anomalies = detectContractScoreAnomalies([
+      { agentType: 'PAPER_TRADE', scoredCount: 171, avgScore: 0.023 },
+      { agentType: 'HUMANIZER', scoredCount: 66, avgScore: 1 },
+    ]);
+
+    expect(anomalies).toHaveLength(1);
+    expect(anomalies[0].agentType).toBe('PAPER_TRADE');
+    expect(anomalies[0].kind).toBe('CONTRACT_SCORE');
+    expect(anomalies[0].detail).toContain('계약 점수 0.02');
+    expect(anomalies[0].detail).toContain('171건 평균');
+  });
+
+  // 표본이 적으면 한 회차의 형식 오류가 평균을 끌어내려 매주 같은 경보가 뜬다.
+  it('표본이 하한 미만이면 지목하지 않는다', () => {
+    const anomalies = detectContractScoreAnomalies([
+      { agentType: 'CTO', scoredCount: 4, avgScore: 0 },
+    ]);
+
+    expect(anomalies).toEqual([]);
+  });
+
+  it('점수가 하한 이상이면 조용하다 (계기판 소음 방지)', () => {
+    const anomalies = detectContractScoreAnomalies([
+      { agentType: 'PM', scoredCount: 20, avgScore: 0.5 },
+    ]);
+
+    expect(anomalies).toEqual([]);
   });
 });

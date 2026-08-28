@@ -11,6 +11,7 @@ import {
 import {
   ChainFailureSummary,
   detectChainFailureAnomalies,
+  detectContractScoreAnomalies,
   detectRunAnomalies,
   RunAnomaly,
 } from '../../domain/run-retro.anomaly';
@@ -43,6 +44,7 @@ export class RunRetroAutopilotTask implements AutopilotTask {
     });
     const anomalies = [
       ...detectRunAnomalies(current, previous),
+      ...(await this.detectContractScoreAnomaliesSafely()),
       ...(await this.detectChainAnomaliesSafely()),
     ];
     if (current.length === 0 && anomalies.length === 0) {
@@ -52,6 +54,26 @@ export class RunRetroAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: formatRunRetro(current, anomalies, firedAtKst),
     };
+  }
+
+  // 계약 점수도 chain 과 같은 부가 축이다 — 이 조회 하나가 실패했다고 실패율·지연 회고까지
+  // 막으면, 원래 보려던 신호가 부가 신호의 사고로 가려진다. 대신 **삼킨 사실은 로그로 남긴다**
+  // (조용한 0건이 되면 "이번주는 계약 점수가 정상이었다" 와 구분되지 않는다).
+  private async detectContractScoreAnomaliesSafely(): Promise<RunAnomaly[]> {
+    try {
+      // 이번주 창만 본다. 지난주와의 비교가 아니라 절대 하한으로 판정하므로
+      // (사유는 RUN_RETRO_THRESHOLDS.contractScore 주석) 두 번째 창이 필요 없다.
+      const rows = await this.agentRunService.aggregateContractScores({
+        sinceDays: CURRENT_WINDOW_DAYS,
+        untilDays: 0,
+      });
+      return detectContractScoreAnomalies(rows);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `주간 회고 계약 점수 조회 실패 (통계 회고는 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   }
 
   // chain 관측은 부가 신호다 — 조회가 실패해도 통계 회고 자체는 나가야 하므로 여기서 삼킨다.
