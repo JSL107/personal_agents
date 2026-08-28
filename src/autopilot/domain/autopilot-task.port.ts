@@ -32,6 +32,16 @@ export interface AutopilotTaskResult {
   // ⚠️ 요약을 실제로 실은 task 만 호출된다 — orchestrator 는 `!result.skip &&
   // result.summaryText` 인 결과만 발송 대상 item 에 싣는다. skip=true 이거나
   // summaryText 가 없으면 이 콜백을 갖고 있어도 아무 신호 없이 버려진다.
+  //
+  // ⚠️ 다중 target(AUTOPILOT_TARGET 콤마 구분) 부분 실패 시의 트레이드오프:
+  // A 는 성공하고 B 가 실패하면 이 콜백은 호출되지 않는다 — "모든 target 성공" 이
+  // 호출 조건이다. guard 가 해제돼 다음 회차에 재시도되므로 A 는 같은 알림을 한 번
+  // 더 받는다.
+  // 반대로 "하나라도 성공하면 호출" 로 바꾸면 B 가 그 알림을 영영 못 받는다 — 콜백이
+  // 상태를 확정해 다음 회차의 후보에서 빠지기 때문이다. 알림 중복(불편)과 알림
+  // 유실(손실) 중 전자를 택했다(at-least-once).
+  // 완전한 해결은 "무엇을 어느 target 에 보냈나" 를 target 별로 추적하는 것인데 그건
+  // 이 콜백 하나가 감당할 범위가 아니다. target 이 하나면 애초에 해당 없다.
   onDelivered?: () => Promise<void>;
 }
 
