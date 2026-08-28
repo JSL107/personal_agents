@@ -44,16 +44,17 @@ model AgentRun {
   parent   AgentRun?  @relation("AgentRunHandoff", fields: [parentId], references: [id], onDelete: SetNull)
   children AgentRun[] @relation("AgentRunHandoff")
 
-  evidenceRecords  EvidenceRecord[]
-  dailyPlan        DailyPlan?
-  prReviewOutcomes PrReviewOutcome[]
-  prReviewFindings PrReviewFinding[]
-  careerProfiles   CareerProfile[]
-  episodicMemories EpisodicMemory[]
-  studyBriefs      StudyBrief[]
-  paperOrders      PaperOrder[]
-  screeningRuns    ScreeningRun[]
+  evidenceRecords    EvidenceRecord[]
+  dailyPlan          DailyPlan?
+  prReviewOutcomes   PrReviewOutcome[]
+  prReviewFindings   PrReviewFinding[]
+  careerProfiles     CareerProfile[]
+  episodicMemories   EpisodicMemory[]
+  studyBriefs        StudyBrief[]
+  paperOrders        PaperOrder[]
+  screeningRuns      ScreeningRun[]
   strategyParameters StrategyParameter[]
+  jobPostings        JobPosting[]
 
   @@index([agentType, startedAt])
   @@index([parentId])
@@ -222,6 +223,9 @@ model JobApplication {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
+  jobPostingId Int?        @map("job_posting_id")
+  jobPosting   JobPosting? @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+
   @@index([slackUserId, status])
   @@map("job_application")
 }
@@ -238,6 +242,8 @@ model CareerProfile {
   profileJson Json      @map("profile_json")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  scoredJobPostings JobPosting[]
 
   @@index([slackUserId, createdAt])
   @@map("career_profile")
@@ -925,4 +931,55 @@ model StrategyParameter {
   @@unique([strategy, name, version])
   @@index([strategy, name, activatedAt])
   @@map("strategy_parameter")
+}
+
+model JobPosting {
+  id         Int    @id @default(autoincrement())
+  source     String
+  sourceId   String @map("source_id")
+  company    String
+  companyKey String @map("company_key")
+  title      String
+  detailUrl  String @map("detail_url")
+
+  skillTags    String[] @map("skill_tags")
+  rawSkillTags String[] @map("raw_skill_tags")
+
+  minYears        Int?    @map("min_years")
+  maxYears        Int?    @map("max_years")
+  yearsSource     String  @map("years_source")
+  rawJobLevel     String? @map("raw_job_level")
+  experienceLevel String? @map("experience_level")
+
+  locations    String[]
+  rawLocations String[] @map("raw_locations")
+
+  // 상위 후보만 채운다. null 이 정상이다.
+  jdText          String?   @map("jd_text") @db.Text
+  detailFetchedAt DateTime? @map("detail_fetched_at")
+
+  normalizedKey String @map("normalized_key")
+  contentHash   String @map("content_hash")
+
+  matchScore      Int?           @map("match_score")
+  scoredProfileId Int?           @map("scored_profile_id")
+  scoredProfile   CareerProfile? @relation(fields: [scoredProfileId], references: [id], onDelete: SetNull)
+  scoredAt        DateTime?      @map("scored_at")
+
+  firstSeenAt DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  closedAt    DateTime? @map("closed_at")
+  notifiedAt  DateTime? @map("notified_at")
+
+  gapAgentRunId Int?      @map("gap_agent_run_id")
+  gapAgentRun   AgentRun? @relation(fields: [gapAgentRunId], references: [id], onDelete: SetNull)
+
+  applications JobApplication[]
+
+  @@unique([source, sourceId])
+  @@index([normalizedKey])
+  @@index([notifiedAt, matchScore])
+  @@index([companyKey])
+  @@map("job_posting")
 }

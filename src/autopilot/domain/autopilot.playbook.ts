@@ -11,6 +11,10 @@ import {
   DEFAULT_DOCS_AUDIT_TIMEZONE,
   DEFAULT_IMPACT_REPORT_CRON,
   DEFAULT_IMPACT_REPORT_TIMEZONE,
+  DEFAULT_JOB_FEED_CRON,
+  DEFAULT_JOB_FEED_GAP_CRON,
+  DEFAULT_JOB_FEED_GAP_TIMEZONE,
+  DEFAULT_JOB_FEED_TIMEZONE,
   DEFAULT_KNOWLEDGE_LINT_CRON,
   DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
@@ -455,6 +459,31 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_PORTFOLIO_PUBLISH_CRON,
       timezone: DEFAULT_PORTFOLIO_PUBLISH_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 백엔드 채용공고 자동 수집 — 아침 카드보다 앞서 돌아 결과를 미리 적재한다.
+  // digestGroup 을 주지 않는다 — 그룹에 넣으면 잠금 시간 예산을 공유하게 되고,
+  // 그룹 첫 항목 id 로 env override 키를 만드는 규칙에도 걸린다.
+  {
+    id: 'job-feed',
+    taskId: 'job-feed',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_JOB_FEED_CRON,
+      timezone: DEFAULT_JOB_FEED_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 공고 갭 분석 — 모델을 부르므로 수집(job-feed)과 다른 슬롯에 둔다. 같은 슬롯에
+  // 묶으면 그룹 잠금 시간 예산(모델 호출 1회분)을 넘긴다.
+  {
+    id: 'job-feed-gap',
+    taskId: 'job-feed-gap',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_JOB_FEED_GAP_CRON,
+      timezone: DEFAULT_JOB_FEED_GAP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

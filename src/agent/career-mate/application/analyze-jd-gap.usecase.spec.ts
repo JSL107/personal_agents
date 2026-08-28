@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { CareerMateException } from '../domain/career-mate.exception';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { AnalyzeJdGapUsecase } from './analyze-jd-gap.usecase';
@@ -155,5 +156,149 @@ describe('AnalyzeJdGapUsecase', () => {
       build(d).execute({ slackUserId: 'U1', jdText: '   ' }),
     ).rejects.toBeInstanceOf(CareerMateException);
     expect(d.targetJdRepository.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnalyzeJdGapUsecase — 자동 수집 경로', () => {
+  it('origin 이 JOB_FEED 면 목표 공고를 저장하지 않는다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '• 백엔드 경력 3년 이상',
+      origin: 'JOB_FEED',
+      company: '토스',
+      role: '백엔드 개발자',
+    });
+
+    // 저장하면 사용자가 등록한 목표 공고가 매일 자동 수집물로 밀린다.
+    expect(d.targetJdRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('origin 이 JOB_FEED 면 주제 선택 카드를 띄우지 않는다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '• 백엔드 경력 3년 이상',
+      origin: 'JOB_FEED',
+      company: '토스',
+      role: '백엔드 개발자',
+    });
+
+    // 대기 카드 조회에 종류 필터가 없어, 살아 있으면 사용자의 다음 답변을 가로챈다.
+    expect(d.createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  it('origin 이 없으면 기존 멘션 경로 그대로 저장하고 카드를 띄운다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '토스\n백엔드 개발자\n• 요건',
+    });
+
+    expect(d.targetJdRepository.save).toHaveBeenCalled();
+    expect(d.createPreview.execute).toHaveBeenCalled();
+  });
+
+  it('회사와 직무를 받으면 본문에서 추측하지 않는다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '• Java/Spring 기반 서버 개발 5년 이상\n• MSA 경험',
+      origin: 'USER',
+      company: '토스',
+      role: '백엔드 개발자',
+    });
+
+    // 추측 함수는 "앞 3줄 중 가장 짧은 줄" 을 직무로 잡는다 —
+    // 자격요건 불릿을 넣으면 회사명 자리에 "• MSA 경험" 같은 값이 들어간다.
+    expect(d.targetJdRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ company: '토스', role: '백엔드 개발자' }),
+    );
+  });
+
+  it('회사와 직무는 inputSnapshot 에도 그대로 실려 감사 근거로 남는다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '• Java/Spring 기반 서버 개발 5년 이상\n• MSA 경험',
+      origin: 'JOB_FEED',
+      company: '토스',
+      role: '백엔드 개발자',
+    });
+
+    const call = d.agentRunService.execute.mock.calls[0][0] as unknown as {
+      inputSnapshot: { company?: string; role?: string };
+    };
+    expect(call.inputSnapshot.company).toBe('토스');
+    expect(call.inputSnapshot.role).toBe('백엔드 개발자');
+  });
+
+  it('triggerType 을 넘기면 그대로 AgentRunService 에 전달한다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: '• 백엔드 경력 3년 이상',
+      origin: 'JOB_FEED',
+      company: '토스',
+      role: '백엔드 개발자',
+      triggerType: TriggerType.AUTOPILOT_JOB_FEED_GAP_CRON,
+    });
+
+    const call = d.agentRunService.execute.mock.calls[0][0] as unknown as {
+      triggerType: TriggerType;
+    };
+    expect(call.triggerType).toBe(TriggerType.AUTOPILOT_JOB_FEED_GAP_CRON);
+  });
+
+  it('triggerType 을 안 넘기면 기존 슬랙 멘션 트리거로 동작한다', async () => {
+    const d = makeDeps({
+      id: 1,
+      agentRunId: 5,
+      profileJson: PROFILE,
+      createdAt: new Date(),
+    });
+
+    await build(d).execute({ slackUserId: 'U1', jdText: 'K8s 필수' });
+
+    const call = d.agentRunService.execute.mock.calls[0][0] as unknown as {
+      triggerType: TriggerType;
+    };
+    expect(call.triggerType).toBe(TriggerType.SLACK_MENTION_CAREER_MATE);
   });
 });
