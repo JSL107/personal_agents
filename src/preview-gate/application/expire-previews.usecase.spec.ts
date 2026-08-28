@@ -54,6 +54,7 @@ const buildRepo = (
   findExpiredPending: jest.fn().mockResolvedValue(expired),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
+  findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
 });
 
 // kind 를 보존해 전이하는 repo — canceller 매칭은 전이 후 row 의 kind 로 이뤄지므로
