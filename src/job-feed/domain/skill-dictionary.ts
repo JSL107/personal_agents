@@ -45,6 +45,9 @@ const CANONICAL_BY_ALIAS: ReadonlyMap<string, string> = new Map([
   ['rabbitmq', 'RabbitMQ'],
   ['bullmq', 'BullMQ'],
   ['queue', 'Message Queue'],
+  // 정규명 자신('Message Queue')도 별칭으로 등록한다 — 없으면 이 값이 사전에 없는
+  // 원본 태그로 취급돼, 입력 순서에 따라 매칭이 막히는 사고가 재발한다(같은 계열 예방).
+  ['messagequeue', 'Message Queue'],
   ['prisma', 'Prisma'],
   ['typeorm', 'TypeORM'],
   ['jpa', 'JPA'],
@@ -78,7 +81,11 @@ export interface SkillNormalizeResult {
 export const normalizeSkillTags = (raw: string[]): SkillNormalizeResult => {
   const matched: string[] = [];
   const unmatched: string[] = [];
-  const seen = new Set<string>();
+  // 정규명과 미매칭 원본을 한 집합으로 관리하면, 'Message Queue'처럼 자기 이름이
+  // 별칭 키에 없는 정규명이 먼저 오면 미매칭으로 먼저 등록돼 그 뒤 진짜 매칭('queue')을
+  // 막는다 — 결과가 입력 순서에 따라 달라진다. 두 집합을 분리해 서로 간섭하지 않게 한다.
+  const seenCanonical = new Set<string>();
+  const seenUnmatched = new Set<string>();
 
   for (const item of raw) {
     const trimmed = item.trim();
@@ -87,16 +94,16 @@ export const normalizeSkillTags = (raw: string[]): SkillNormalizeResult => {
     }
     const canonical = CANONICAL_BY_ALIAS.get(toLookupKey(trimmed));
     if (canonical === undefined) {
-      if (!seen.has(trimmed)) {
-        seen.add(trimmed);
+      if (!seenUnmatched.has(trimmed)) {
+        seenUnmatched.add(trimmed);
         unmatched.push(trimmed);
       }
       continue;
     }
-    if (seen.has(canonical)) {
+    if (seenCanonical.has(canonical)) {
       continue;
     }
-    seen.add(canonical);
+    seenCanonical.add(canonical);
     matched.push(canonical);
   }
 
