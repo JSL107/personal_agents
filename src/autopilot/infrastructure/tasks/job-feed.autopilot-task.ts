@@ -9,6 +9,7 @@ import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
+import { normalizeSkillTags } from '../../../job-feed/domain/skill-dictionary';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
@@ -96,6 +97,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const postings = await this.listNotifiable.execute({
       threshold,
       limit: DEFAULT_NOTIFY_LIMIT,
+      avoidSkillTags: this.parseAvoidSkills(),
     });
 
     // 조회 계층의 신선도 조건(이틀)이 걸려 있어, 수집이 며칠째 실패하면 postings 가
@@ -120,6 +122,17 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
+  }
+
+  // 저장된 skillTags 는 사전을 통과한 정규명이다 — 사용자가 쓴 표기(대소문자·별칭)를
+  // 그대로 비교하면 "php" 같은 입력이 저장된 "PHP" 와 안 맞아 필터가 조용히 무효화된다.
+  private parseAvoidSkills(): string[] {
+    const raw = this.configService.get<string>('JOB_FEED_AVOID_SKILLS') ?? '';
+    const tags = raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    return normalizeSkillTags(tags).matched;
   }
 
   private async loadProfile(

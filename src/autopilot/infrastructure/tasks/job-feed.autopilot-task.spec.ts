@@ -194,6 +194,7 @@ describe('JobFeedAutopilotTask', () => {
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith({
       threshold: 70,
       limit: 10,
+      avoidSkillTags: [],
     });
     expect(deps.jobPostingRepository.findLastCollectedAt).toHaveBeenCalled();
     expect(result.skip).toBe(false);
@@ -230,7 +231,24 @@ describe('JobFeedAutopilotTask', () => {
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith({
       threshold: 80,
       limit: 10,
+      avoidSkillTags: [],
     });
+  });
+
+  it('JOB_FEED_AVOID_SKILLS 를 정규화해 알림 후보 조회에 넘긴다', async () => {
+    const deps = makeDeps();
+    const task = buildTask(deps, {
+      JOB_FEED_ENABLED: 'true',
+      // 소문자·쉼표 구분 입력이 저장된 정규명(PHP·JSP)으로 정규화돼야 한다 —
+      // 그러지 않으면 skillTags 와 정확히 비교하는 필터가 조용히 무효화된다.
+      JOB_FEED_AVOID_SKILLS: 'php, jsp,',
+    });
+
+    await task.run(CONTEXT);
+
+    expect(deps.listNotifiable.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ avoidSkillTags: ['PHP', 'JSP'] }),
+    );
   });
 
   it('JOB_FEED_LOCATIONS 미설정이면 빈 배열을 넘긴다', async () => {

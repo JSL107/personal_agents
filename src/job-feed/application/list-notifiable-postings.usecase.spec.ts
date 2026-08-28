@@ -85,4 +85,29 @@ describe('ListNotifiablePostingsUsecase', () => {
 
     expect(result).toEqual([]);
   });
+
+  it('avoidSkillTags 를 repository.findNotifiable 에 그대로 전달한다', async () => {
+    const repository = stubRepository([], true);
+    const usecase = new ListNotifiablePostingsUsecase(repository as never);
+
+    await usecase.execute({
+      threshold: 80,
+      limit: 20,
+      avoidSkillTags: ['PHP', 'JSP'],
+    });
+
+    expect(repository.findNotifiable).toHaveBeenCalledWith(80, 20, [
+      'PHP',
+      'JSP',
+    ]);
+  });
+
+  it('avoidSkillTags 를 안 주면 빈 배열을 전달한다', async () => {
+    const repository = stubRepository([], true);
+    const usecase = new ListNotifiablePostingsUsecase(repository as never);
+
+    await usecase.execute({ threshold: 80, limit: 20 });
+
+    expect(repository.findNotifiable).toHaveBeenCalledWith(80, 20, []);
+  });
 });

@@ -158,6 +158,7 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
   async findNotifiable(
     threshold: number,
     limit: number,
+    avoidSkillTags: string[] = [],
   ): Promise<StoredJobPosting[]> {
     const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
 
@@ -167,6 +168,12 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
         closedAt: null,
         matchScore: { gte: threshold },
         lastSeenAt: { gte: freshnessCutoff },
+        // 빈 배열이면 조건 자체를 안 건다 — Prisma 의 hasSome([]) 은 항상 거짓이라
+        // NOT: { hasSome: [] } 은 항상 참이 되어 무해해 보이지만, 의도(필터 없음)를
+        // 조건절 존재 자체로 숨기지 않기 위해 명시적으로 분기한다.
+        ...(avoidSkillTags.length > 0
+          ? { NOT: { skillTags: { hasSome: avoidSkillTags } } }
+          : {}),
       },
       orderBy: [{ matchScore: 'desc' }, { firstSeenAt: 'desc' }],
       take: limit,

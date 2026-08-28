@@ -46,7 +46,13 @@ export interface JobPostingRepositoryPort {
   upsertMany(postings: NormalizedJobPosting[]): Promise<UpsertOutcome>;
   findScoringTargets(profileId: number | null): Promise<StoredJobPosting[]>;
   saveScore(input: SaveScoreInput): Promise<void>;
-  findNotifiable(threshold: number, limit: number): Promise<StoredJobPosting[]>;
+  // avoidSkillTags 는 정규화(사전 통과)된 기술명이어야 skillTags 와 정확히 비교된다.
+  // 하나라도 요구하는 공고는 알림 후보에서 뺀다 — 저장은 그대로 두고 알림만 거른다.
+  findNotifiable(
+    threshold: number,
+    limit: number,
+    avoidSkillTags: string[],
+  ): Promise<StoredJobPosting[]>;
   // 같은 normalizedKey 의 모든 행을 한 번에 잠근다. 반환값이 false 면 다른 실행이 먼저 가져갔다.
   claimForNotification(normalizedKey: string, now: Date): Promise<boolean>;
   findDetailTargets(

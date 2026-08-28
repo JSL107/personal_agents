@@ -11,6 +11,9 @@ export interface ListNotifiableInput {
   limit: number;
   // true 면 선점하지 않는다 (CLI 미리보기용).
   peek?: boolean;
+  // 알림에서 제외할 정규화된 기술명(예: 원치 않는 스택). 저장은 그대로 두고
+  // 알림 후보에서만 뺀다 — repository.findNotifiable 참조.
+  avoidSkillTags?: string[];
 }
 
 @Injectable()
@@ -24,8 +27,13 @@ export class ListNotifiablePostingsUsecase {
     threshold,
     limit,
     peek,
+    avoidSkillTags,
   }: ListNotifiableInput): Promise<StoredJobPosting[]> {
-    const candidates = await this.repository.findNotifiable(threshold, limit);
+    const candidates = await this.repository.findNotifiable(
+      threshold,
+      limit,
+      avoidSkillTags ?? [],
+    );
     if (peek === true) {
       return candidates;
     }

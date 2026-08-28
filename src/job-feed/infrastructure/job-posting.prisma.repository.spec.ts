@@ -135,6 +135,55 @@ describe('JobPostingPrismaRepository.findScoringTargets', () => {
   });
 });
 
+describe('JobPostingPrismaRepository.findNotifiable — 기피 기술 제외', () => {
+  const createFindManyStub = () => {
+    const calls: FindManyArgs[] = [];
+    return {
+      calls,
+      prisma: {
+        jobPosting: {
+          findMany: jest.fn(async (args: FindManyArgs) => {
+            calls.push(args);
+            return [];
+          }),
+        },
+      },
+    };
+  };
+
+  it('기피 기술이 있으면 skillTags 에 하나라도 포함된 공고를 NOT 조건으로 뺀다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findNotifiable(80, 10, ['PHP', 'JSP']);
+
+    expect(calls[0].where).toMatchObject({
+      NOT: { skillTags: { hasSome: ['PHP', 'JSP'] } },
+    });
+  });
+
+  // hasSome([]) 을 그대로 조건에 넣으면 항상 거짓이 되어 NOT 이 항상 참이 될 수
+  // 있다 — 의도(필터 없음)와 다르게 동작할 위험이 있어, 빈 목록이면 조건 자체를
+  // 아예 안 거는지 직접 확인한다.
+  it('기피 기술 목록이 비어 있으면 NOT 조건 자체를 걸지 않는다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findNotifiable(80, 10, []);
+
+    expect(calls[0].where).not.toHaveProperty('NOT');
+  });
+
+  it('기피 기술 인자를 생략해도 빈 목록과 같이 동작한다', async () => {
+    const { prisma, calls } = createFindManyStub();
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    await repository.findNotifiable(80, 10);
+
+    expect(calls[0].where).not.toHaveProperty('NOT');
+  });
+});
+
 describe('JobPostingPrismaRepository.findDetailTargets — 스킬 없는 소스 데드락 방지', () => {
   const createFindManyStub = () => {
     const calls: FindManyArgs[] = [];
