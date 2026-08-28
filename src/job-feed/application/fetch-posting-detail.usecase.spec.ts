@@ -123,4 +123,36 @@ describe('FetchPostingDetailUsecase', () => {
       expect.any(Date),
     );
   });
+
+  it('실제 호출 사이에만 지연을 둔다 — 배열 인덱스가 아니라 시도 횟수로 센다', async () => {
+    // 랠릿(상세 미지원)은 HTTP 호출 없이 건너뛴다. 배열 인덱스로 지연을 걸면
+    // 그 뒤 첫 실제 호출이 index > 0 에 걸려 불필요하게 기다린다 — 후보가
+    // 점수 순 정렬이고 랠릿 비중이 크므로 흔한 조합이다.
+    jest.useFakeTimers();
+    try {
+      const repository = stubRepository([
+        stored({ id: 1, source: 'rallit', sourceId: '1' }),
+        stored({ id: 2, source: 'jumpit', sourceId: '2' }),
+        stored({ id: 3, source: 'jumpit', sourceId: '3' }),
+      ]);
+      const jumpit = detailSource('jumpit');
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+      const usecase = new FetchPostingDetailUsecase(
+        [listOnlySource('rallit'), jumpit] as never,
+        repository as never,
+      );
+
+      const resultPromise = usecase.execute({ threshold: 60, limit: 20 });
+      await jest.runAllTimersAsync();
+      const result = await resultPromise;
+
+      // 실제 호출은 두 번(jumpit×2)이라 지연은 그 사이 한 번만 걸려야 한다.
+      // 랠릿 건너뛰기 뒤 첫 jumpit 호출은 기다리면 안 된다.
+      expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+      expect(result.skippedNoDetailSupport).toBe(1);
+      expect(result.updated).toBe(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

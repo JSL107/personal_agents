@@ -53,8 +53,12 @@ export class FetchPostingDetailUsecase {
     let updated = 0;
     let failed = 0;
     let skippedNoDetailSupport = 0;
+    // 배열 인덱스가 아니라 실제 HTTP 호출 횟수로 센다. 상세 미지원 소스(랠릿)는
+    // 호출 없이 건너뛰는데, 인덱스로 세면 건너뛴 항목 뒤 첫 실제 호출이
+    // `index > 0` 에 걸려 불필요하게 지연을 기다리게 된다.
+    let attempted = 0;
 
-    for (const [index, target] of targets.entries()) {
+    for (const target of targets) {
       const source = this.sources.find((candidate) => {
         return candidate.source === target.source;
       });
@@ -63,9 +67,10 @@ export class FetchPostingDetailUsecase {
         continue;
       }
 
-      if (index > 0) {
+      if (attempted > 0) {
         await sleep(DETAIL_REQUEST_DELAY_MS);
       }
+      attempted += 1;
 
       try {
         const detail = await source.fetchDetail(target.sourceId);
