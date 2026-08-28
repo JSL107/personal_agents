@@ -240,6 +240,29 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return rows.map(toDomain);
   }
 
+  async findRecentAppliedByKind({
+    kind,
+    since,
+    limit,
+  }: {
+    kind: PreviewKind;
+    since: Date;
+    limit: number;
+  }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      // 적용 시각으로 자른다. 카드를 만든 시각으로 자르면 오래 열려 있다 뒤늦게 승인된 카드가
+      // 창 밖으로 밀려난다 — 실제로 나간 것을 못 보게 된다.
+      where: {
+        kind,
+        status: PREVIEW_STATUS.APPLIED,
+        appliedAt: { gte: since },
+      },
+      orderBy: { appliedAt: 'desc' },
+      take: limit,
+    });
+    return rows.map(toDomain);
+  }
+
   async findAllDayOutcomes(): Promise<PreviewDayOutcomeRow[]> {
     const rows = await this.prisma.previewAction.findMany({
       select: { createdAt: true, appliedAt: true, cancelledAt: true },

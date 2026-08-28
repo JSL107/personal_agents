@@ -33,6 +33,19 @@ export interface AstroPost {
 
 const KST_OFFSET_MILLISECONDS = 9 * 60 * 60 * 1_000;
 
+const POST_PATH_PATTERN = /^src\/content\/posts\/\d{4}-\d{2}-\d{2}-(.+)\.md$/;
+
+/**
+ * 발행 경로에서 주제 식별자(slug)를 뽑는다. 경로를 만드는 규칙이 여기 있으므로 되읽는 규칙도
+ * 같은 자리에 둔다 — 한쪽만 바뀌면 중복 판정이 조용히 빗나간다.
+ *
+ * 날짜를 떼는 이유는 그것이 **같은 주제를 다시 쓴 글을 가르는 유일한 차이**이기 때문이다.
+ * 실제로 `2026-08-19-http-cache-...` 와 `2026-08-21-http-cache-...` 가 이틀 간격으로 나갔다.
+ * 형식이 맞지 않으면 빈 문자열을 돌려준다 — 판정하는 쪽이 "모름"을 통과로 다루게 한다.
+ */
+export const extractPostSlug = (path: string): string =>
+  POST_PATH_PATTERN.exec(path.trim())?.[1] ?? '';
+
 export const buildAstroPost = (input: AstroPostInput): AstroPost => {
   const description = input.description.trim();
   if (description.length === 0) {

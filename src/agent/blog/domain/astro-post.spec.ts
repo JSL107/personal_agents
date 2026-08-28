@@ -1,4 +1,4 @@
-import { buildAstroPost } from './astro-post';
+import { buildAstroPost, extractPostSlug } from './astro-post';
 
 describe('buildAstroPost', () => {
   const input = {
@@ -99,5 +99,35 @@ describe('buildAstroPost', () => {
     const post = buildAstroPost(input);
 
     expect(post.content).not.toContain('category:');
+  });
+});
+
+describe('extractPostSlug', () => {
+  it('발행 경로에서 날짜를 떼고 주제 식별자만 남긴다', () => {
+    expect(
+      extractPostSlug('src/content/posts/2026-08-19-http-cache-expiration.md'),
+    ).toBe('http-cache-expiration');
+  });
+
+  // 같은 주제를 다시 쓴 글은 날짜만 다르다 — 이 두 경로가 같은 값으로 접히지 않으면
+  // 중복 판정이 통째로 무효가 된다(실제로 이틀 간격으로 두 번 발행됐다).
+  it('날짜가 다르고 주제가 같은 두 경로를 같은 값으로 접는다', () => {
+    const first = extractPostSlug(
+      'src/content/posts/2026-08-19-http-cache-expiration-and-revalidation.md',
+    );
+    const second = extractPostSlug(
+      'src/content/posts/2026-08-21-http-cache-expiration-and-revalidation.md',
+    );
+
+    expect(first).toBe(second);
+    expect(first).not.toBe('');
+  });
+
+  // 형식이 어긋나면 빈 문자열이다. 판정하는 쪽이 "모름" 을 통과로 다루므로, 여기서 억지로
+  // 값을 지어내면 무관한 글끼리 중복으로 묶여 발행이 막힌다.
+  it('경로 형식이 다르면 빈 문자열을 돌려준다', () => {
+    expect(extractPostSlug('src/content/pages/about.md')).toBe('');
+    expect(extractPostSlug('2026-08-19-no-prefix.md')).toBe('');
+    expect(extractPostSlug('')).toBe('');
   });
 });

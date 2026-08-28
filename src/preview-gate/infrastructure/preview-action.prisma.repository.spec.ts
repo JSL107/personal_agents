@@ -189,3 +189,32 @@ describe('PreviewActionPrismaRepository.findAllOpen', () => {
     expect(result[0].id).toBe('p-2');
   });
 });
+
+describe('PreviewActionPrismaRepository.findRecentAppliedByKind', () => {
+  // 이 조회의 존재 이유가 곧 이 단언이다 — 카드를 **띄운** 기록이 아니라 **적용된** 기록만
+  // 세야 한다. 거절·만료된 회차까지 세면 발행된 적 없는 주제가 중복으로 막힌다.
+  it('APPLIED 상태만, 적용 시각 기준으로 자른다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prismaMock = {
+      previewAction: { findMany },
+    } as unknown as PrismaService;
+    const repository = new PreviewActionPrismaRepository(prismaMock);
+    const since = new Date('2026-07-29T00:00:00Z');
+
+    await repository.findRecentAppliedByKind({
+      kind: 'BLOG_GITHUB_PUBLISH',
+      since,
+      limit: 120,
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        kind: 'BLOG_GITHUB_PUBLISH',
+        status: 'APPLIED',
+        appliedAt: { gte: since },
+      },
+      orderBy: { appliedAt: 'desc' },
+      take: 120,
+    });
+  });
+});

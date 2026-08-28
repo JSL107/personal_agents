@@ -10,6 +10,7 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import { NotionClientPort } from '../../../notion/domain/port/notion-client.port';
 import { CreatePreviewUsecase } from '../../../preview-gate/application/create-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
+import { FindRecentAppliedPreviewsUsecase } from '../../../preview-gate/application/find-recent-applied-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
   BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT,
@@ -81,6 +82,8 @@ const buildUsecase = (overrides?: {
   humanizeByCall?: string[];
   // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
   recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
+  appliedPreviews?: Array<{ payload: unknown }>;
+  appliedPreviewsError?: Error;
   // 원장 조회가 깨진 상황. 발행이 그 때문에 멈추면 안 된다.
   recentRunsError?: Error;
 }) => {
@@ -151,6 +154,15 @@ const buildUsecase = (overrides?: {
   const findAllOpenPreviews = {
     execute: jest.fn().mockResolvedValue(overrides?.openPreviews ?? []),
   } as unknown as jest.Mocked<FindAllOpenPreviewsUsecase>;
+  // 실제로 적용된 발행 카드. 후보 생성 기록이 아니라 이것이 "정말 나갔는가" 의 근거다.
+  const findRecentAppliedPreviews = {
+    execute: jest.fn().mockImplementation(async () => {
+      if (overrides?.appliedPreviewsError) {
+        throw overrides.appliedPreviewsError;
+      }
+      return overrides?.appliedPreviews ?? [];
+    }),
+  } as unknown as jest.Mocked<FindRecentAppliedPreviewsUsecase>;
   const createPreview = {
     execute: jest.fn().mockImplementation(async (input) => ({
       ...input,
@@ -208,6 +220,7 @@ const buildUsecase = (overrides?: {
       configService,
       humanizer,
       findAllOpenPreviews,
+      findRecentAppliedPreviews,
     ),
     notionClient,
     modelRouter,
@@ -216,6 +229,7 @@ const buildUsecase = (overrides?: {
     updateInputSnapshot,
     humanizer,
     findAllOpenPreviews,
+    findRecentAppliedPreviews,
     runOutputs,
   };
 };
@@ -533,6 +547,113 @@ describe('PublishNotionDraftUsecase', () => {
       }
       expect(agentRunService.execute).not.toHaveBeenCalled();
       expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 앞단의 제외 목록은 프롬프트 문장이라 모델이 흘리면 통과하고, 노션 초안 큐로 들어온 글은
+    // 그 목록을 보지도 않는다. 실제로 같은 주제가 이틀 간격으로 두 번 발행됐다.
+    it('최근 같은 주소로 발행한 이력이 있으면 보류로 옮기고 preview 를 만들지 않는다', async () => {
+      const { usecase, createPreview, notionClient } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'http-cache-expiration',
+          description: '안전한 설명',
+          body: '캐시 만료와 재검증을 정리했다.',
+        }),
+        appliedPreviews: [
+          {
+            payload: {
+              path: 'src/content/posts/2026-08-19-http-cache-expiration.md',
+            },
+          },
+        ],
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('skipped');
+      if (candidate.status === 'skipped') {
+        expect(candidate.cause).toBe('hold');
+        expect(candidate.message).toContain('http-cache-expiration');
+      }
+      // 큐에서 빼지 않으면 같은 초안이 매일 다시 뽑혀 뒤의 초안이 영구히 밀린다.
+      expect(notionClient.updatePageProperties).toHaveBeenCalled();
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 날짜만 다르고 주제가 다르면 막지 않는다. 이 대조군이 없으면 위 테스트는 "무조건 보류" 인
+    // 구현으로도 통과한다.
+    it('발행 이력의 주소가 다르면 그대로 발행 후보를 만든다', async () => {
+      const { usecase, createPreview } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'safe-post',
+          description: '안전한 설명',
+          body: '다른 주제를 정리했다.',
+        }),
+        appliedPreviews: [
+          {
+            payload: {
+              path: 'src/content/posts/2026-08-19-http-cache-expiration.md',
+            },
+          },
+        ],
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('ready');
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 조건이 `titleQuery || input.pageId` 라 두 갈래인데, pageId 쪽만 테스트가 없으면 그 항이
+    // 지워져도 초록이다. 사람이 콕 집은 재발행이 조용히 보류로 밀리는 회귀를 막는다(리뷰 지적).
+    it('pageId 로 지목하면 중복 이력이 있어도 발행 후보를 만든다', async () => {
+      const { usecase, findRecentAppliedPreviews, notionClient } = buildUsecase(
+        {
+          completionText: JSON.stringify({
+            slug: 'http-cache-expiration',
+            description: '안전한 설명',
+            body: '캐시 만료와 재검증을 정리했다.',
+          }),
+          appliedPreviews: [
+            {
+              payload: {
+                path: 'src/content/posts/2026-08-19-http-cache-expiration.md',
+              },
+            },
+          ],
+        },
+      );
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+        pageId: 'page-12345678',
+      });
+
+      expect(candidate.status).toBe('ready');
+      // 지목 경로에서는 원장을 읽을 이유도 없다.
+      expect(findRecentAppliedPreviews.execute).not.toHaveBeenCalled();
+      expect(notionClient.updatePageProperties).not.toHaveBeenCalled();
+    });
+
+    // 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다 — 차단 이력 조회와 같은 정책.
+    it('발행 이력 조회가 실패해도 중복 검사만 건너뛰고 발행을 계속한다', async () => {
+      const { usecase } = buildUsecase({
+        completionText: JSON.stringify({
+          slug: 'http-cache-expiration',
+          description: '안전한 설명',
+          body: '캐시 만료와 재검증을 정리했다.',
+        }),
+        appliedPreviewsError: new Error('원장 조회 실패'),
+      });
+
+      const { candidate } = await usecase.buildPublishCandidate({
+        slackUserId: 'U1',
+      });
+
+      expect(candidate.status).toBe('ready');
     });
   });
 

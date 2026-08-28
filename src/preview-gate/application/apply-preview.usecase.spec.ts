@@ -61,6 +61,7 @@ const buildRepo = (
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
+  findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
 });
 
 const buildApplier = (

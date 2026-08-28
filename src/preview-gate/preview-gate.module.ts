@@ -10,6 +10,7 @@ import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
 import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews.usecase';
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { FindPreviewDayOutcomesUsecase } from './application/find-preview-day-outcomes.usecase';
+import { FindRecentAppliedPreviewsUsecase } from './application/find-recent-applied-previews.usecase';
 import { UpdatePreviewPayloadUsecase } from './application/update-preview-payload.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
 import {
@@ -43,6 +44,7 @@ import {
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
     FindAllOpenPreviewsUsecase,
+    FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
     UpdatePreviewPayloadUsecase,
@@ -91,6 +93,7 @@ import {
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
     FindAllOpenPreviewsUsecase,
+    FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
     UpdatePreviewPayloadUsecase,
