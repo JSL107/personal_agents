@@ -15,7 +15,10 @@ export interface FetchDetailInput {
 }
 
 export interface FetchDetailOutcome {
-  attempted: number;
+  // 실제 HTTP 호출 수가 아니라 대상으로 뽑힌 전체 건수다(미지원 소스로 건너뛴
+  // 것도 포함). 실제 호출 횟수는 아래 execute() 의 지역 변수 attempted 가 센다 —
+  // 이름이 같으면 서로 다른 것을 가리키게 되므로 반환 필드는 examined 로 구분한다.
+  examined: number;
   updated: number;
   failed: number;
   skippedNoDetailSupport: number;
@@ -101,7 +104,7 @@ export class FetchPostingDetailUsecase {
     );
 
     return {
-      attempted: targets.length,
+      examined: targets.length,
       updated,
       failed,
       skippedNoDetailSupport,

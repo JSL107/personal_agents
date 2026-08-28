@@ -61,7 +61,7 @@ describe('FetchPostingDetailUsecase', () => {
 
     const result = await usecase.execute({ threshold: 60, limit: 20 });
 
-    expect(result.attempted).toBe(1);
+    expect(result.examined).toBe(1);
     expect(result.updated).toBe(1);
     expect(jumpit.fetchDetail).toHaveBeenCalledWith('100');
     expect(repository.saveDetail).toHaveBeenCalledWith({
@@ -103,7 +103,7 @@ describe('FetchPostingDetailUsecase', () => {
 
     const result = await usecase.execute({ threshold: 60, limit: 20 });
 
-    expect(result.attempted).toBe(2);
+    expect(result.examined).toBe(2);
     expect(result.failed).toBe(1);
     expect(result.updated).toBe(1);
   });

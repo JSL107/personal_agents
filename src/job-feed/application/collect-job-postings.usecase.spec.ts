@@ -3,6 +3,7 @@ import {
   JobSourceListResult,
   JobSourcePort,
 } from '../domain/port/job-source.port';
+import { JobFeedPermanentError } from '../infrastructure/job-feed-permanent.error';
 import { CollectJobPostingsUsecase } from './collect-job-postings.usecase';
 
 const backendPosting = (
@@ -131,6 +132,41 @@ describe('CollectJobPostingsUsecase', () => {
     expect(result.outcomes[0].error).toContain('HTTP 503');
     expect(result.outcomes[1].status).toBe('SUCCESS');
     expect(repository.upsertMany).toHaveBeenCalled();
+  });
+
+  it('영구 실패(403/429 등)는 httpStatus 를 카드에 실어 진단 가치를 남긴다', async () => {
+    const repository = stubRepository();
+    const usecase = new CollectJobPostingsUsecase(
+      [
+        stubSource(
+          'jumpit',
+          new JobFeedPermanentError('jumpit', 403, '점핏 목록'),
+        ),
+      ],
+      repository as never,
+    );
+
+    const result = await usecase.execute({ maxPages: 1 });
+
+    expect(result.outcomes[0]).toMatchObject({
+      status: 'FAILED',
+      httpStatus: 403,
+    });
+  });
+
+  it('httpStatus 가 없는 일반 예외는 null 로 남긴다', async () => {
+    const repository = stubRepository();
+    const usecase = new CollectJobPostingsUsecase(
+      [stubSource('jumpit', new Error('network error'))],
+      repository as never,
+    );
+
+    const result = await usecase.execute({ maxPages: 1 });
+
+    expect(result.outcomes[0]).toMatchObject({
+      status: 'FAILED',
+      httpStatus: null,
+    });
   });
 
   it('수신은 있는데 검증이 0이면 실패로 본다 — 응답 형태 변경 신호다', async () => {

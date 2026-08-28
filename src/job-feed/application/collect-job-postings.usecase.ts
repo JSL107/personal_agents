@@ -16,6 +16,7 @@ import {
 } from '../domain/port/job-posting.repository.port';
 import { JOB_SOURCES, JobSourcePort } from '../domain/port/job-source.port';
 import { normalizeSkillTags } from '../domain/skill-dictionary';
+import { JobFeedPermanentError } from '../infrastructure/job-feed-permanent.error';
 
 export interface UnmatchedSkillTag {
   tag: string;
@@ -154,7 +155,11 @@ export class CollectJobPostingsUsecase {
           received,
           validated,
           accepted: accepted.length,
-          httpStatus: null,
+          // 403/429 등 HTTP 상태를 카드에 실으면 진단 가치가 크다(차단인지 일시
+          // 장애인지 사람이 바로 구분할 수 있다) — JobFeedPermanentError 일 때만
+          // 실제 값을 채운다. 그 밖의 예외(네트워크 오류 등)는 상태 코드가 없다.
+          httpStatus:
+            error instanceof JobFeedPermanentError ? error.httpStatus : null,
           error: error instanceof Error ? error.message : String(error),
         },
         postings: accepted,
