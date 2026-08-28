@@ -24,6 +24,7 @@ import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import { JobFeedModule } from '../job-feed/job-feed.module';
 import {
   MARKET_DATA_PORT,
   MarketDataPort,
@@ -54,6 +55,8 @@ import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
+import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
+import { JobFeedGapAutopilotTask } from './infrastructure/tasks/job-feed-gap.autopilot-task';
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
@@ -116,6 +119,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ScreenerModule,
     AiCliEnvModule,
     StudyDeepdiveModule,
+    JobFeedModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -154,6 +158,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
     StudyDeepdiveAutopilotTask,
+    JobFeedAutopilotTask,
+    JobFeedGapAutopilotTask,
     {
       provide: STOCK_MONITOR_KR_TASK,
       useFactory: (
@@ -252,6 +258,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
         studyDeepdive: StudyDeepdiveAutopilotTask,
+        jobFeed: JobFeedAutopilotTask,
+        jobFeedGap: JobFeedGapAutopilotTask,
       ) => [
         assign,
         poShadow,
@@ -287,6 +295,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         aiCliEnvSnapshot,
         aiCliEnvApply,
         studyDeepdive,
+        jobFeed,
+        jobFeedGap,
       ],
       inject: [
         AssignAutopilotTask,
@@ -323,6 +333,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
         StudyDeepdiveAutopilotTask,
+        JobFeedAutopilotTask,
+        JobFeedGapAutopilotTask,
       ],
     },
     {

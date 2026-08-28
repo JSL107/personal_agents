@@ -231,4 +231,11 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
       data: { skillTags, scoredProfileId: null, scoredAt: null },
     });
   }
+
+  async findLastCollectedAt(): Promise<Date | null> {
+    const latest = await this.prisma.jobPosting.aggregate({
+      _max: { lastSeenAt: true },
+    });
+    return latest._max.lastSeenAt ?? null;
+  }
 }

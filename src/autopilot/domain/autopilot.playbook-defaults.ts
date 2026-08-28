@@ -158,3 +158,12 @@ export const DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON = '0 19 * * *';
 export const DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_AI_CLI_ENV_APPLY_CRON = '0 10 * * *';
 export const DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE = 'Asia/Seoul';
+
+// 백엔드 채용공고 자동 수집 — 아침 카드(morning-briefing, 08:30)보다 앞서 돌아
+// 결과를 미리 적재한다.
+export const DEFAULT_JOB_FEED_CRON = '0 7 * * 1-5';
+export const DEFAULT_JOB_FEED_TIMEZONE = 'Asia/Seoul';
+// 갭 분석은 모델을 부르므로 수집(job-feed)과 다른 슬롯에 둔다 — 같은 슬롯에 묶으면
+// 그룹 잠금 시간 예산(모델 호출 1회분)을 넘긴다.
+export const DEFAULT_JOB_FEED_GAP_CRON = '30 7 * * 1-5';
+export const DEFAULT_JOB_FEED_GAP_TIMEZONE = 'Asia/Seoul';

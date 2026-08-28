@@ -23,7 +23,8 @@ const SOURCE_LABEL: Readonly<Record<JobSourceId, string>> = {
 };
 
 // 회사명·제목은 외부에서 온 문자열이라 mrkdwn 제어문자가 섞일 수 있다.
-const escapeMrkdwn = (value: string): string => {
+// job-feed-gap.autopilot-task.ts 도 같은 출처(company/title)를 카드에 실으므로 재사용한다.
+export const escapeMrkdwn = (value: string): string => {
   return value
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
@@ -102,10 +103,12 @@ export const formatJobFeedDigest = ({
         posting.skillTags.length === 0
           ? '스킬 정보 없음'
           : posting.skillTags.slice(0, 6).join(' · ');
+      // 랠릿은 고정 지역 코드라 안전하지만, 점핏·원티드는 원본 문자열의 첫 토큰을
+      // 그대로 쓰므로 회사명·제목과 마찬가지로 escape 없이는 특수문자가 노출될 수 있다.
       const location =
         posting.locations.length === 0
           ? ''
-          : ` · ${posting.locations.join('/')}`;
+          : ` · ${escapeMrkdwn(posting.locations.join('/'))}`;
       lines.push(
         `• [${posting.matchScore ?? 0}점] <${posting.detailUrl}|${escapeMrkdwn(
           posting.company,

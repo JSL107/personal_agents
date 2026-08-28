@@ -300,3 +300,32 @@ describe('JobPostingPrismaRepository.upsertMany — 콘텐츠 변경 시 재알�
     expect(updateCalls[0].data).not.toHaveProperty('notifiedAt');
   });
 });
+
+describe('JobPostingPrismaRepository.findLastCollectedAt', () => {
+  it('lastSeenAt 최댓값을 마지막 수집 시각으로 돌려준다', async () => {
+    const latest = new Date('2026-08-27T07:00:00Z');
+    const prisma = {
+      jobPosting: {
+        aggregate: jest.fn(async () => ({ _max: { lastSeenAt: latest } })),
+      },
+    };
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    const result = await repository.findLastCollectedAt();
+
+    expect(result).toBe(latest);
+  });
+
+  it('저장된 공고가 없으면 null 을 돌려준다', async () => {
+    const prisma = {
+      jobPosting: {
+        aggregate: jest.fn(async () => ({ _max: { lastSeenAt: null } })),
+      },
+    };
+    const repository = new JobPostingPrismaRepository(prisma as never);
+
+    const result = await repository.findLastCollectedAt();
+
+    expect(result).toBeNull();
+  });
+});

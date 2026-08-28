@@ -65,4 +65,9 @@ export interface JobPostingRepositoryPort {
   // 포함해 skillTags 를 되살리는 것이라, 신선도로 거르면 정작 손볼 대상이 빠진다.
   findAllForReprocess(): Promise<StoredJobPosting[]>;
   saveSkillTags(id: number, skillTags: string[]): Promise<void>;
+  // 저장소에 "언제 마지막으로 수집했는지"를 기록하는 별도 필드가 없다 — 공고를
+  // 마지막으로 본 시각(lastSeenAt) 의 최댓값이 곧 마지막 수집 성공 시각이다.
+  // 자동 카드(Task 16)가 신선도 조건으로 조회가 조용히 비는 것과 수집기 장애를
+  // 구분하는 각주(formatJobFeedDigest)에 쓴다.
+  findLastCollectedAt(): Promise<Date | null>;
 }

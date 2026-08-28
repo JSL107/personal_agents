@@ -68,6 +68,18 @@ describe('formatJobFeedDigest', () => {
     expect(text).not.toContain('<주식회사>');
   });
 
+  it('지역 문자열도 escape 한다 — 점핏·원티드는 원본 표기를 그대로 쓴다', () => {
+    const text = formatJobFeedDigest({
+      postings: [posting({ locations: ['<서울> & 경기'] })],
+      outcomes: [],
+      unmatchedSkillTags: [],
+      lastCollectedAt: new Date(),
+    });
+    expect(text).toContain('&lt;');
+    expect(text).toContain('&amp;');
+    expect(text).not.toContain('<서울>');
+  });
+
   it('소스별 상태를 각주로 붙인다 — 한 소스가 조용히 빠진 것을 알아차릴 유일한 경로다', () => {
     const text = formatJobFeedDigest({
       postings: [posting()],
