@@ -355,8 +355,13 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ⭕ | 공개 포트폴리오에 저장소 이름을 남기지 않을 GitHub owner 목록(쉼표 구분). 해당 성과는 slug 가 `company-<해시>-pr-<번호>` 가 되고 PR 링크를 싣지 않는다. 비우면 익명화하지 않는다 |
 | `AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE` · `_TIMEZONE` | ⭕ | 발행 발화 시각 override(기본 `0 23 * * *`, Asia/Seoul) |
 | `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | 임베딩 모델·차원 (기본 384dim) |
+| `JOB_FEED_ENABLED` | ❌ | 백엔드 채용공고 자동 수집(점핏·랠릿·원티드) 마스터 스위치. `true` 가 아니면 수집·채점·알림 자체가 skip |
+| `JOB_FEED_YEARS` · `JOB_FEED_LOCATIONS` | ❌ | 연차(0~50)·지역(쉼표 구분) 매칭 축. 미설정 시 각 축을 중립으로 채점 |
+| `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 최소 매칭 점수(0~100, 기본 80). 실측 228건 분포에서 60점은 93%가 통과해 필터 구실을 못 해 80으로 올렸다(80~100점 대만 95건, 42%) |
+| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~5, 기본 2) |
+| `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 
-**기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입).
+**기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집).
 
 모의투자 추천 성적은 기본적으로 금요일 20:10 KST에 실행한다. `AUTOPILOT_PAPER_SCORE_SCHEDULE`·`AUTOPILOT_PAPER_SCORE_TIMEZONE`으로 별도 override할 수 있다.
 

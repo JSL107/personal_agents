@@ -1,6 +1,7 @@
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, Type } from 'class-transformer';
 import {
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -815,6 +816,50 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   STUDY_BRIEF_NOTION_DATABASE_ID?: string;
+
+  // ====== 백엔드 채용공고 자동 수집 (점핏 · 랠릿 · 원티드) ======
+  // 전부 선택 항목이다 — 하나도 없어도 부팅되고, 기능은 꺼진 상태가 기본이다.
+  // - JOB_FEED_ENABLED: 'true' 일 때만 수집·채점·알림 autopilot task 가 동작한다.
+  // - JOB_FEED_YEARS: 연차 매칭 축(0~50). 미설정 시 중립으로 채점.
+  // - JOB_FEED_LOCATIONS: 지역 매칭 축(쉼표 구분). 미설정 시 중립으로 채점.
+  // - JOB_FEED_MATCH_THRESHOLD: 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값.
+  // - JOB_FEED_GAP_ANALYSIS_TOP_N: 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~5).
+  // - JOB_FEED_DETAIL_LIMIT: 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한).
+  @IsOptional()
+  @IsString()
+  JOB_FEED_ENABLED?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  JOB_FEED_YEARS?: number;
+
+  @IsOptional()
+  @IsString()
+  JOB_FEED_LOCATIONS?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  JOB_FEED_MATCH_THRESHOLD?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  JOB_FEED_GAP_ANALYSIS_TOP_N?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  JOB_FEED_DETAIL_LIMIT?: number;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {
