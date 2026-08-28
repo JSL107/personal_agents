@@ -5,6 +5,7 @@ import {
   detectDailyChange,
   inspectAvgPriceStatus,
   isMarketClosed,
+  measureAlertMargin,
 } from './stock-anomaly';
 import { HoldingSnapshot } from './stock-monitor.type';
 
@@ -139,5 +140,54 @@ describe('isMarketClosed', () => {
 
   it('직전 저장분이 없으면 휴장이 아니다(최초 실행)', () => {
     expect(isMarketClosed(new Date('2026-07-21'), null)).toBe(false);
+  });
+});
+
+describe('measureAlertMargin', () => {
+  // 평단 100,000 기준: 하루 등락 ±8% / 평단 대비 -20% ~ +30%
+  it('두 축 중 경보선에 더 가까운 쪽을 고른다', () => {
+    // 하루 +5% (여유 3%p) vs 평단 대비 +5% (상한까지 25%p) → 하루 축이 가깝다.
+    const result = measureAlertMargin(holding, bar(105000), bar(100000));
+
+    expect(result?.kind).toBe('DAILY_CHANGE');
+    expect(result?.currentPercent).toBeCloseTo(5, 4);
+    expect(result?.threshold).toBe(8);
+    expect(result?.marginPoint).toBeCloseTo(3, 4);
+  });
+
+  it('평단 축이 더 가까우면 넘어설 쪽의 경보선을 든다', () => {
+    // 하루 +1% (여유 7%p) vs 평단 대비 +28% (상한까지 2%p) → 평단 축.
+    const result = measureAlertMargin(holding, bar(128000), bar(126732.67));
+
+    expect(result?.kind).toBe('AVG_PRICE_BREACH');
+    expect(result?.threshold).toBe(30);
+    expect(result?.marginPoint).toBeCloseTo(2, 1);
+  });
+
+  it('평단 대비 하한이 가까우면 하한 경보선을 든다', () => {
+    const result = measureAlertMargin(holding, bar(82000), bar(82000));
+
+    expect(result?.kind).toBe('AVG_PRICE_BREACH');
+    expect(result?.threshold).toBe(-20);
+    expect(result?.marginPoint).toBeCloseTo(2, 4);
+  });
+
+  // 이미 넘은 축을 "남은 거리" 로 적으면 경보가 없다는 문장 옆에 음수 여유가 실린다.
+  it('이미 임계 밖인 축은 후보에서 뺀다', () => {
+    // 하루 +10% 로 일간 축은 이미 발화 구간, 평단 대비 +10% 는 아직 안이다.
+    const result = measureAlertMargin(holding, bar(110000), bar(100000));
+
+    expect(result?.kind).toBe('AVG_PRICE_BREACH');
+    expect(result?.marginPoint).toBeCloseTo(20, 4);
+  });
+
+  it('두 축 모두 임계 밖이면 아무것도 돌려주지 않는다', () => {
+    expect(measureAlertMargin(holding, bar(140000), bar(120000))).toBeNull();
+  });
+
+  it('전일 봉이 없으면 평단 축만 본다', () => {
+    const result = measureAlertMargin(holding, bar(105000), null);
+
+    expect(result?.kind).toBe('AVG_PRICE_BREACH');
   });
 });
