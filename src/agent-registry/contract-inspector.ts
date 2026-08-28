@@ -1,5 +1,9 @@
 import { AgentType } from '../model-router/domain/model-router.type';
-import { AGENT_CONTRACTS, COMPANY_FORBIDDEN_PHRASES } from './agent-contract';
+import {
+  AGENT_CONTRACTS,
+  AgentContract,
+  COMPANY_FORBIDDEN_PHRASES,
+} from './agent-contract';
 
 /**
  * 직무 계약 검수기 — 산출물이 소속 부서의 계약을 지켰는지 검사한다.
@@ -108,6 +112,59 @@ function hasNoClaims(
 }
 
 /**
+ * 산출물 형태 후보 하나를 대조한 결과.
+ *
+ * 한 AgentType 을 성격이 다른 워커가 나눠 쓰면 최상위 키가 통째로 갈린다
+ * (`deliverableVariants`). 산출물만 보고는 어느 워커가 냈는지 알 수 없으므로 후보를
+ * 각각 대조한 뒤 **가장 많이 맞은 것**을 그 실행의 계약으로 삼는다.
+ */
+export interface DeliverableMatch {
+  readonly fields: readonly string[];
+  readonly violations: readonly ContractViolation[];
+  readonly passedCount: number;
+}
+
+const matchDeliverables = (
+  output: PlainObject,
+  fields: readonly string[],
+): DeliverableMatch => {
+  const violations: ContractViolation[] = [];
+  let passedCount = 0;
+  for (const field of fields) {
+    if (isEmptyValue(output[field])) {
+      violations.push({ rule: 'missingField', detail: field });
+    } else {
+      passedCount += 1;
+    }
+  }
+  return { fields, violations, passedCount };
+};
+
+// 비교는 통과 **개수**가 아니라 **비율**로 한다. 후보마다 필드 수가 다를 수 있어(계약이
+// 그것을 제약하지 않는다) 개수로 재면 2 개를 다 채운 짧은 형태보다 5 개 중 3 개만 채운 긴
+// 형태가 이긴다 — 정상 산출물에 누락 위반 2 건과 0.6 점이 남는다.
+//
+// 동점이면 앞선 후보(= deliverableFields)를 남긴다. 형태가 안 맞아 둘 다 0 점일 때 위반
+// 목록이 회차마다 뒤집히면 원장에서 같은 실패가 다른 사실처럼 읽힌다.
+const matchRatio = (match: DeliverableMatch): number =>
+  match.fields.length === 0 ? 0 : match.passedCount / match.fields.length;
+
+export const pickBestMatch = (
+  output: PlainObject,
+  contract: Pick<AgentContract, 'deliverableFields' | 'deliverableVariants'>,
+): DeliverableMatch => {
+  const candidates = [
+    contract.deliverableFields,
+    ...(contract.deliverableVariants ?? []),
+  ];
+  return candidates
+    .map((fields) => matchDeliverables(output, fields))
+    .reduce((best, candidate) =>
+      matchRatio(candidate) > matchRatio(best) ? candidate : best,
+    );
+};
+
+/**
  * 검수 결과 — 위반 목록과 그것을 점수로 환산한 값.
  *
  * 위반 목록만으로는 "얼마나" 를 알 수 없다. 필수 필드 3 개 중 1 개가 빈 산출물과
@@ -169,6 +226,9 @@ export function evaluateContract(
         score: null,
       };
     }
+    // 형태 후보(`deliverableVariants`)가 있어도 여기서는 기본 형태로 보고한다 — 객체가
+    // 아니면 어느 후보로 봐도 전부 누락이라 어느 쪽을 적어도 사실이 같고, 회차마다 다른
+    // 형태가 찍히면 원장에서 같은 실패가 다른 사실처럼 읽힌다.
     const violations: ContractViolation[] = contract.deliverableFields.map(
       (field) => ({ rule: 'missingField', detail: field }),
     );
@@ -188,14 +248,10 @@ export function evaluateContract(
   let checkedCount = 0;
   let passedCount = 0;
 
-  for (const field of contract.deliverableFields) {
-    checkedCount += 1;
-    if (isEmptyValue(output[field])) {
-      violations.push({ rule: 'missingField', detail: field });
-    } else {
-      passedCount += 1;
-    }
-  }
+  const deliverables = pickBestMatch(output, contract);
+  checkedCount += deliverables.fields.length;
+  passedCount += deliverables.passedCount;
+  violations.push(...deliverables.violations);
 
   const serialized = JSON.stringify(output) ?? '';
 

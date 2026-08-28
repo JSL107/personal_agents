@@ -77,6 +77,23 @@ export interface AgentContract {
    */
   readonly deliverableFields: readonly string[];
   /**
+   * 같은 AgentType 으로 기록하는 **다른 워커의 산출물 형태**.
+   *
+   * 한 이름을 성격이 다른 워커가 나눠 쓰면 최상위 키가 통째로 갈린다. 지금까지 그 경우는
+   * `deliverableFields: []` 로 검사를 포기하는 것이 유일한 선택지였는데(VACATION /
+   * CAREER_MATE), 그러면 어느 쪽도 검수되지 않는다. 형태를 나열하면 검사를 유지한 채
+   * 양쪽을 모두 인정할 수 있다.
+   *
+   * 채점은 **가장 부합하는 형태 하나**로 한다 — 산출물만 보고는 어느 워커가 냈는지 알 수
+   * 없으므로, 후보 중 충족 **비율**이 가장 높은 것을 그 실행의 계약으로 본다. 후보마다 필드
+   * 수가 달라도 된다(개수로 비교하면 다 채운 짧은 형태가 부분만 채운 긴 형태에 진다).
+   * 형태끼리 키가 겹치면 판별이 흐려지므로 서로 구별되는 키를 골라 적는다.
+   *
+   * 프롬프트 머리말에는 `deliverableFields` 만 들어간다. 머리말은 모델에게 "이 형태로
+   * 내라" 고 지시하는 자리라 후보를 여럿 주면 형태가 흔들린다.
+   */
+  readonly deliverableVariants?: readonly (readonly string[])[];
+  /**
    * 근거(URL · PR 참조 · `파일:라인` · file/url 구조화 필드) 를 1개 이상 요구하는가.
    *
    * 실측으로 **이미 근거를 담고 있는 에이전트에만** 켠다 (PM 67/67, BLOG 4/4,
@@ -285,7 +302,17 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
     // 2026-08-24 실측: 성공 실행 8/8 전건. exitBandAccounts 계열은 5/8 로 매도 밴드가
     // 걸린 회차에만 등장해 필수에서 뺐다.
+    //
+    // 그 표본 8건은 전부 일일 평가 cron 이었다. 이 이름으로 기록하는 워커는 셋인데
+    // (`paper-trading` 일일 평가 · `paper-intraday-stop` 장중 손절 · 자연어 dispatcher),
+    // 장중 손절은 산출물이 전혀 달라 성공 실행 전건이 "필수 필드 3개 누락" 으로 찍혔다
+    // (2026-08-28 실측: 167/167, 계약 점수 0.000. 같은 기간 일일 평가는 4/4 로 1.000).
+    // 계약을 실측으로 정할 때는 **그 이름으로 기록하는 주체가 하나인지** 부터 확인해야 한다.
     deliverableFields: ['accounts', 'accountCount', 'failedCount'],
+    // 장중 손절(`paper-intraday-stop.autopilot-task.ts` 의 `buildAudit`) 형태.
+    // 2026-08-28 실측: 성공 실행 168/168 전건에 열 개 필드가 모두 등장하는 고정 형태이고,
+    // 그중 "무엇을 몇 개 보고 몇 개를 처분했나" 를 말하는 셋을 골랐다.
+    deliverableVariants: [['inspectedCount', 'decidedCount', 'filledCount']],
     requireEvidence: false,
     // output 은 `buildPaperTradingAudit` 이 계좌 평가를 집계해 만든다. 현재 이 워커는
     // 모델을 부르지 않아 머리말 경로 자체가 없지만, 조립 output 이라는 성질은 그대로다 —
