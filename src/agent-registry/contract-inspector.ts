@@ -118,7 +118,7 @@ function hasNoClaims(
  * (`deliverableVariants`). 산출물만 보고는 어느 워커가 냈는지 알 수 없으므로 후보를
  * 각각 대조한 뒤 **가장 많이 맞은 것**을 그 실행의 계약으로 삼는다.
  */
-interface DeliverableMatch {
+export interface DeliverableMatch {
   readonly fields: readonly string[];
   readonly violations: readonly ContractViolation[];
   readonly passedCount: number;
@@ -140,11 +140,18 @@ const matchDeliverables = (
   return { fields, violations, passedCount };
 };
 
-// 동점이면 앞선 후보(= deliverableFields)를 남긴다. 형태가 안 맞아 둘 다 0 점일 때
-// 위반 목록이 회차마다 뒤집히면 원장에서 같은 실패가 다른 사실처럼 읽힌다.
-const pickBestMatch = (
+// 비교는 통과 **개수**가 아니라 **비율**로 한다. 후보마다 필드 수가 다를 수 있어(계약이
+// 그것을 제약하지 않는다) 개수로 재면 2 개를 다 채운 짧은 형태보다 5 개 중 3 개만 채운 긴
+// 형태가 이긴다 — 정상 산출물에 누락 위반 2 건과 0.6 점이 남는다.
+//
+// 동점이면 앞선 후보(= deliverableFields)를 남긴다. 형태가 안 맞아 둘 다 0 점일 때 위반
+// 목록이 회차마다 뒤집히면 원장에서 같은 실패가 다른 사실처럼 읽힌다.
+const matchRatio = (match: DeliverableMatch): number =>
+  match.fields.length === 0 ? 0 : match.passedCount / match.fields.length;
+
+export const pickBestMatch = (
   output: PlainObject,
-  contract: AgentContract,
+  contract: Pick<AgentContract, 'deliverableFields' | 'deliverableVariants'>,
 ): DeliverableMatch => {
   const candidates = [
     contract.deliverableFields,
@@ -153,7 +160,7 @@ const pickBestMatch = (
   return candidates
     .map((fields) => matchDeliverables(output, fields))
     .reduce((best, candidate) =>
-      candidate.passedCount > best.passedCount ? candidate : best,
+      matchRatio(candidate) > matchRatio(best) ? candidate : best,
     );
 };
 

@@ -1,5 +1,9 @@
 import { AgentType } from '../model-router/domain/model-router.type';
-import { evaluateContract, inspectContract } from './contract-inspector';
+import {
+  evaluateContract,
+  inspectContract,
+  pickBestMatch,
+} from './contract-inspector';
 
 describe('inspectContract', () => {
   describe('missingField — 산출물 필수 필드', () => {
@@ -378,6 +382,43 @@ describe('evaluateContract — 점수', () => {
 
       expect(evaluation.score).toBe(0);
       expect(evaluation.violations).toHaveLength(3);
+    });
+
+    // 후보마다 필드 수가 다를 수 있다. 통과 개수로 비교하면 다 채운 짧은 형태(2/2)가 부분만
+    // 채운 긴 형태(3/5)에 져서, 정상 산출물에 누락 위반과 0.6 점이 남는다.
+    it('필드 수가 달라도 충족 비율이 높은 형태를 고른다', () => {
+      const contract = {
+        deliverableFields: ['alpha', 'beta', 'gamma', 'delta', 'epsilon'],
+        deliverableVariants: [['short1', 'short2']],
+      };
+      const output = {
+        alpha: 1,
+        beta: 2,
+        gamma: 3,
+        short1: 'a',
+        short2: 'b',
+      };
+
+      const match = pickBestMatch(output, contract);
+
+      // 긴 후보는 3/5(0.6), 짧은 후보는 2/2(1.0) — 짧은 쪽이 이겨야 한다.
+      expect(match.fields).toEqual(['short1', 'short2']);
+      expect(match.violations).toEqual([]);
+    });
+
+    it('비율이 같으면 앞선 후보(기본 형태)를 남긴다', () => {
+      // 둘 다 절반 — 위반 목록이 회차마다 뒤집히지 않게 기본 형태로 고정한다.
+      const contract = {
+        deliverableFields: ['alpha', 'beta'],
+        deliverableVariants: [['short1', 'short2']],
+      };
+
+      const match = pickBestMatch({ alpha: 1, short1: 'a' }, contract);
+
+      expect(match.fields).toEqual(['alpha', 'beta']);
+      expect(match.violations).toEqual([
+        { rule: 'missingField', detail: 'beta' },
+      ]);
     });
 
     // 채점은 가장 부합하는 후보 하나로 한다. 두 형태의 분모를 합치면 늘 절반이 누락으로 남는다.
