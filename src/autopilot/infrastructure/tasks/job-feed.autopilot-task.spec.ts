@@ -11,7 +11,12 @@ const CONTEXT = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-27' };
 
 const CAREER_PROFILE_WITH_TAGS = {
   id: 7,
+  agentRunId: 99,
+  createdAt: new Date('2026-08-01T00:00:00.000Z'),
   profileJson: {
+    summary: '',
+    skills: [],
+    meta: { githubLogin: 'octocat', windowStart: '2026-07-01', prCount: 3 },
     accomplishments: [
       { techTags: ['Java', 'Spring Boot'] },
       { techTags: ['Java'] },
@@ -62,26 +67,25 @@ const makeDeps = (
   const listNotifiable = {
     execute: jest.fn().mockResolvedValue(overrides.notifiablePostings ?? []),
   };
-  const prisma = {
-    careerProfile: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue(
-          'profile' in overrides ? overrides.profile : CAREER_PROFILE_WITH_TAGS,
-        ),
-    },
+  const careerProfileRepository = {
+    findLatestBySlackUser: jest
+      .fn()
+      .mockResolvedValue(
+        'profile' in overrides ? overrides.profile : CAREER_PROFILE_WITH_TAGS,
+      ),
   };
   const jobPostingRepository = {
     findLastCollectedAt: jest
       .fn()
       .mockResolvedValue(overrides.lastCollectedAt ?? new Date()),
+    claimForNotification: jest.fn().mockResolvedValue(true),
   };
   return {
     collect,
     score,
     fetchDetail,
     listNotifiable,
-    prisma,
+    careerProfileRepository,
     jobPostingRepository,
   };
 };
@@ -97,8 +101,8 @@ const buildTask = (
     deps.score as never,
     deps.fetchDetail as never,
     deps.listNotifiable as never,
-    deps.prisma as never,
     deps.jobPostingRepository as never,
+    deps.careerProfileRepository as never,
     makeConfig(config) as never,
   );
 };
@@ -201,6 +205,19 @@ describe('JobFeedAutopilotTask', () => {
     expect(result.summaryText).toContain('토스');
     expect(result.summaryText).toContain('마지막 수집');
 
+    // run() 실행만으로는 아직 아무것도 선점하지 않는다 — 선점은 onDelivered 콜백
+    // 안에서, 발송이 성공한 뒤에만 일어난다(orchestrator 가 그 시점에 호출한다).
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).not.toHaveBeenCalled();
+    expect(result.onDelivered).toBeInstanceOf(Function);
+
+    await result.onDelivered?.();
+    expect(deps.jobPostingRepository.claimForNotification).toHaveBeenCalledWith(
+      'toss|백엔드개발자',
+      expect.any(Date),
+    );
+
     // fetchDetail 이 saveDetail 로 스킬을 채우며 채점 표식을 지운 행이 그날 안에
     // 반영되려면, fetchDetail 이후 채점이 한 번 더 돌아야 한다(원티드 65점 고정 재발 방지).
     expect(deps.score.execute).toHaveBeenCalledTimes(2);
@@ -210,10 +227,10 @@ describe('JobFeedAutopilotTask', () => {
     expect(secondScoreCallOrder).toBeGreaterThan(fetchDetailCallOrder);
 
     // owner 의 프로필만 조회해야 한다 — 다른 사용자가 더 최근에 만든 프로필로
-    // 채점하면 안 된다.
-    expect(deps.prisma.careerProfile.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { slackUserId: 'U1' } }),
-    );
+    // 채점하면 안 된다. (포트 findLatestBySlackUser 가 이미 이 계약을 진다.)
+    expect(
+      deps.careerProfileRepository.findLatestBySlackUser,
+    ).toHaveBeenCalledWith('U1');
   });
 
   it('JOB_FEED_MATCH_THRESHOLD·JOB_FEED_DETAIL_LIMIT 미설정이면 코드 기본값(80/20)을 쓴다', async () => {
@@ -233,6 +250,55 @@ describe('JobFeedAutopilotTask', () => {
       limit: 10,
       avoidSkillTags: [],
     });
+  });
+
+  it('알림 후보가 없으면 onDelivered 를 아예 만들지 않는다 — 선점할 것이 없다', async () => {
+    const deps = makeDeps({ notifiablePostings: [] });
+    const task = buildTask(deps);
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.onDelivered).toBeUndefined();
+  });
+
+  it('onDelivered 는 후보 각각을 normalizedKey 로 선점한다 — 중복 공고는 한 번만', async () => {
+    const postingA = {
+      id: 1,
+      source: 'jumpit',
+      sourceId: '1',
+      company: '토스',
+      title: '백엔드 개발자',
+      detailUrl: 'https://example.test/1',
+      skillTags: ['Java'],
+      rawSkillTags: [],
+      minYears: 3,
+      maxYears: 5,
+      experienceLevel: 'mid',
+      locations: ['서울'],
+      normalizedKey: 'toss|백엔드개발자',
+      jdText: null,
+      matchScore: 80,
+    };
+    const postingB = {
+      ...postingA,
+      id: 2,
+      normalizedKey: 'danggeun|서버개발자',
+    };
+    const deps = makeDeps({ notifiablePostings: [postingA, postingB] });
+    const task = buildTask(deps);
+
+    const result = await task.run(CONTEXT);
+    await result.onDelivered?.();
+
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).toHaveBeenNthCalledWith(1, 'toss|백엔드개발자', expect.any(Date));
+    expect(
+      deps.jobPostingRepository.claimForNotification,
+    ).toHaveBeenNthCalledWith(2, 'danggeun|서버개발자', expect.any(Date));
   });
 
   it('JOB_FEED_AVOID_SKILLS 를 정규화해 알림 후보 조회에 넘긴다', async () => {
@@ -259,6 +325,27 @@ describe('JobFeedAutopilotTask', () => {
 
     expect(deps.score.execute).toHaveBeenCalledWith(
       expect.objectContaining({ locations: [], years: null }),
+    );
+  });
+
+  it('채점이 skip 되면 그 사유를 카드에 담는다 — "조용한 0건"을 다른 원인과 구분한다', async () => {
+    const deps = makeDeps({
+      scoreResult: {
+        scored: 0,
+        skipped: true,
+        reason:
+          '커리어 프로필에 사전과 맞는 기술 태그가 없어 채점을 건너뜁니다.',
+        histogram: {},
+        profileTokenCount: 0,
+      },
+    });
+    const task = buildTask(deps);
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.summaryText).toContain('채점 건너뜀');
+    expect(result.summaryText).toContain(
+      '커리어 프로필에 사전과 맞는 기술 태그가 없어 채점을 건너뜁니다.',
     );
   });
 });

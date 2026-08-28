@@ -26,6 +26,10 @@ export interface AutopilotTaskResult {
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.
   // 단수 preview 와 병행 가능(둘 다 있으면 둘 다 발송). 한 task 가 카드 여러 장을 낼 때 사용.
   previews?: AutopilotPreviewRequest[];
+  // 발송이 성공한 뒤에만 실행할 후처리. 발송 실패 시 호출되지 않는다.
+  // 되돌릴 수 없는 상태(알림 기록 등)를 task 안에서 미리 쓰면, 발송이 실패해도
+  // 그 상태가 남아 다음 회차에 복구되지 않는다(job-feed.autopilot-task.ts 참조).
+  onDelivered?: () => Promise<void>;
 }
 
 export interface AutopilotTask {

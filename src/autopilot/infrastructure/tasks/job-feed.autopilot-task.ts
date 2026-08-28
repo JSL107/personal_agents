@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import {
+  CAREER_PROFILE_REPOSITORY_PORT,
+  CareerProfileRepositoryPort,
+} from '../../../agent/career-mate/domain/port/career-profile.repository.port';
 import { CollectJobPostingsUsecase } from '../../../job-feed/application/collect-job-postings.usecase';
 import { FetchPostingDetailUsecase } from '../../../job-feed/application/fetch-posting-detail.usecase';
 import { ListNotifiablePostingsUsecase } from '../../../job-feed/application/list-notifiable-postings.usecase';
@@ -11,7 +15,6 @@ import {
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { normalizeSkillTags } from '../../../job-feed/domain/skill-dictionary';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
-import { PrismaService } from '../../../prisma/prisma.service';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -42,9 +45,10 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     private readonly score: ScoreJobPostingsUsecase,
     private readonly fetchDetail: FetchPostingDetailUsecase,
     private readonly listNotifiable: ListNotifiablePostingsUsecase,
-    private readonly prisma: PrismaService,
     @Inject(JOB_POSTING_REPOSITORY_PORT)
     private readonly jobPostingRepository: JobPostingRepositoryPort,
+    @Inject(CAREER_PROFILE_REPOSITORY_PORT)
+    private readonly careerProfileRepository: CareerProfileRepositoryPort,
     private readonly configService: ConfigService,
   ) {}
 
@@ -82,7 +86,9 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       profileId: profile.profileId,
     };
 
-    await this.score.execute(scoreInput);
+    // skipped 사유는 첫 호출 결과로 판단한다 — 두 호출 모두 같은 scoreInput 을 쓰므로
+    // (profile.skillTags 가 비었는지는 techTags 로만 정해진다) skip 여부는 항상 같다.
+    const scoreResult = await this.score.execute(scoreInput);
 
     await this.fetchDetail.execute({ threshold, limit: detailLimit });
 
@@ -111,9 +117,27 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       outcomes: collected.outcomes,
       unmatchedSkillTags: collected.unmatchedSkillTags,
       lastCollectedAt,
+      scoreSkipReason: scoreResult.skipped ? scoreResult.reason : null,
     });
 
-    return { skip: false, summaryText };
+    // 알림 선점(claimForNotification)은 발송이 성공한 뒤에만 한다. listNotifiable 은
+    // 이제 후보만 돌려주고 선점하지 않는다 — 여기서 미리 선점하면 이 뒤(포매팅·전달
+    // 과정)의 실패가 표식만 남기고 그 공고를 영영 다시 안 뜨게 만든다(orchestrator 의
+    // onDelivered 계약 참조). 후보가 없으면 선점할 것도 없다.
+    const onDelivered =
+      postings.length === 0
+        ? undefined
+        : async (): Promise<void> => {
+            const claimedAt = new Date();
+            for (const posting of postings) {
+              await this.jobPostingRepository.claimForNotification(
+                posting.normalizedKey,
+                claimedAt,
+              );
+            }
+          };
+
+    return { skip: false, summaryText, onDelivered };
   }
 
   private parseLocations(): string[] {
@@ -138,20 +162,16 @@ export class JobFeedAutopilotTask implements AutopilotTask {
   private async loadProfile(
     ownerSlackUserId: string,
   ): Promise<ProfileMatchInput> {
-    const profile = await this.prisma.careerProfile.findFirst({
-      // owner 필터 없이 findFirst 만 쓰면 다른 사용자가 더 최근에 만든 프로필이 있을 때
-      // 그 사람의 기술 이력으로 채점한 공고가 owner 에게 간다.
-      where: { slackUserId: ownerSlackUserId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, profileJson: true },
-    });
+    // 포트가 이미 slackUserId 단위로 최신 1건만 돌려준다(findLatestBySlackUser) —
+    // 다른 사용자가 더 최근에 만든 프로필로 채점하는 사고는 포트 계약상 나지 않는다.
+    const profile =
+      await this.careerProfileRepository.findLatestBySlackUser(
+        ownerSlackUserId,
+      );
     if (profile === null) {
       return { techTags: [], profileId: null };
     }
-    const data = profile.profileJson as {
-      accomplishments?: Array<{ techTags?: string[] }>;
-    };
-    const techTags = (data.accomplishments ?? []).flatMap((item) => {
+    const techTags = profile.profileJson.accomplishments.flatMap((item) => {
       return item.techTags ?? [];
     });
     return { techTags: [...new Set(techTags)], profileId: profile.id };

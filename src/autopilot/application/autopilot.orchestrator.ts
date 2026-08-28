@@ -104,7 +104,11 @@ export class AutopilotOrchestrator {
       );
     }
 
-    const items: { summary: string; detail?: string }[] = [];
+    const items: {
+      summary: string;
+      detail?: string;
+      onDelivered?: () => Promise<void>;
+    }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
     let hasDeliverableSummary = false;
     let failedTaskCount = 0;
@@ -132,6 +136,7 @@ export class AutopilotOrchestrator {
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
+            onDelivered: result.onDelivered,
           });
         }
       } catch (error: unknown) {
@@ -258,6 +263,27 @@ export class AutopilotOrchestrator {
               );
             }
           }
+        }
+      }
+
+      // 메인 발송이 여기까지 왔다는 것은 모든 target 에 성공적으로 전달됐다는 뜻이다.
+      // 이 시점 이후에만 각 task 의 후처리 콜백을 부른다 — 발송 실패 시엔 절대 부르지
+      // 않는다(그래야 "발송 실패했는데 상태만 바뀐" job-feed 알림 표식 선점 같은
+      // 사고를 막는다). task 별로 격리해서 부른다 — 한 콜백의 실패가 다른 task 의
+      // 후처리를 막으면 안 되고, 콜백 실패가 이미 나간 발송을 실패로 되돌리면 안 된다
+      // (실패는 로그만 남기고 삼킨다).
+      for (const item of items) {
+        if (!item.onDelivered) {
+          continue;
+        }
+        try {
+          await item.onDelivered();
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Autopilot[${groupKey}] onDelivered 후처리 실패 (발송은 유지): ${message}`,
+          );
         }
       }
     } catch (error: unknown) {
