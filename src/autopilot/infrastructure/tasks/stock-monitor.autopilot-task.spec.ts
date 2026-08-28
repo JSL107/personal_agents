@@ -462,6 +462,70 @@ describe('StockMonitorAutopilotTask', () => {
     });
   });
 
+  // 공급자 지연은 종목마다 갈린다. 헤더의 "(YYYY-MM-DD 종가 기준)" 은 그중 최신 하나뿐이라,
+  // 밝히지 않으면 하루 묵은 종목의 값이 그 날짜의 값으로 읽힌다.
+  it('종목마다 기준일이 갈리면 요약에 밝힌다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        // 005930 — 새 봉 7/22
+        .mockResolvedValueOnce([bar('2026-07-21', 100), bar('2026-07-22', 100)])
+        // 000660 — 새 봉이긴 하나 하루 뒤처진 7/21
+        .mockResolvedValueOnce([
+          bar('2026-07-20', 100),
+          bar('2026-07-21', 100),
+        ]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate
+      .mockResolvedValueOnce(new Date('2026-07-21T00:00:00.000Z'))
+      .mockResolvedValueOnce(new Date('2026-07-20T00:00:00.000Z'));
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).toContain('2026-07-22 종가 기준');
+    expect(result.summaryText).toContain(
+      '기준일이 다른 종목: 000660 2026-07-21',
+    );
+    expect(recordedRuns[0].output).toMatchObject({ checkedCount: 2 });
+  });
+
+  it('기준일이 모두 같으면 갈림 줄을 넣지 않는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).not.toContain('기준일이 다른 종목');
+  });
+
+  // "새 경보 없음" 이 안전한 날인지 경보선 코앞인지 카드만 보고 갈리지 않던 것을 메운다.
+  it('경보가 없으면 경보선에 가장 가까운 종목을 함께 적는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        // 하루 +3%(여유 5%p) vs 평단 대비 +3%(상한 +30% 까지 27%p) → 일간 축이 가깝다.
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 103)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.summaryText).toContain('새 경보 없음');
+    expect(result.summaryText).toContain('하루 등락 +3.0%');
+    expect(result.summaryText).toContain('경보선 ±8% 까지 5.0%p');
+  });
+
   it('평단 대비가 임계 안이면 상태 줄을 넣지 않는다', async () => {
     const marketData = {
       fetchDailyBars: jest

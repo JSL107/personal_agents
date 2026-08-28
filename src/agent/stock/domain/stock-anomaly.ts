@@ -1,5 +1,6 @@
 import { DailyBar } from '../../../market-data/domain/market-data.type';
 import {
+  AlertMargin,
   AvgPriceStatus,
   HoldingSnapshot,
   StockAnomaly,
@@ -143,6 +144,62 @@ export const inspectAvgPriceStatus = (
     quantity: holding.quantity.toNumber(),
     currency: today.currency,
   };
+};
+
+// 경보선까지 얼마나 남았나. 두 판정(detectDailyChange · detectAvgPriceBreach)과 **같은 임계**로
+// 재야 카드의 숫자와 실제 발화 조건이 갈리지 않으므로 여기에 둔다.
+//
+// 이미 임계 밖인 축은 후보에서 뺀다 — 여유가 음수인 값을 "남은 거리" 로 적으면 경보가 없다는
+// 문장 옆에 경보 상태가 실리는 줄이 된다(평단 축은 재진입 때만 발화해서 이 상황이 실제로 있다.
+// 그 침묵은 inspectAvgPriceStatus 가 따로 메운다).
+export const measureAlertMargin = (
+  holding: HoldingSnapshot,
+  today: DailyBar,
+  yesterday: DailyBar | null,
+  thresholds: Thresholds = STOCK_THRESHOLDS,
+): AlertMargin | null => {
+  const candidates: AlertMargin[] = [];
+  const identity = {
+    tickerName: holding.tickerName,
+    symbol: holding.symbol,
+  };
+
+  if (yesterday) {
+    const change = percentChange(today, yesterday);
+    const marginPoint = thresholds.dailyChangePercent - Math.abs(change);
+    if (marginPoint >= 0) {
+      candidates.push({
+        ...identity,
+        kind: 'DAILY_CHANGE',
+        currentPercent: change,
+        threshold: thresholds.dailyChangePercent,
+        marginPoint,
+      });
+    }
+  }
+
+  const percent = percentAgainstAvgPrice(today, holding);
+  if (!isBreached(percent, thresholds)) {
+    const toUpper = thresholds.avgPriceUpperPercent - percent;
+    const toLower = percent - thresholds.avgPriceLowerPercent;
+    const isUpperCloser = toUpper <= toLower;
+    candidates.push({
+      ...identity,
+      kind: 'AVG_PRICE_BREACH',
+      currentPercent: percent,
+      threshold: isUpperCloser
+        ? thresholds.avgPriceUpperPercent
+        : thresholds.avgPriceLowerPercent,
+      marginPoint: isUpperCloser ? toUpper : toLower,
+    });
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+  return candidates.reduce((closest, candidate) =>
+    candidate.marginPoint < closest.marginPoint ? candidate : closest,
+  );
 };
 
 // 휴장일에는 새 봉이 생기지 않는다. 별도 휴장일 캘린더를 두지 않고

@@ -11,8 +11,10 @@ import {
   detectDailyChange,
   inspectAvgPriceStatus,
   isMarketClosed,
+  measureAlertMargin,
 } from '../../../agent/stock/domain/stock-anomaly';
 import {
+  AlertMargin,
   AvgPriceStatus,
   HoldingSnapshot,
   StockAnomaly,
@@ -25,6 +27,7 @@ import {
   formatHoldingChanges,
   formatPortfolioExposure,
   formatStockMonitorSummary,
+  StockBaseDate,
   StockPriceDisplay,
 } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import {
@@ -140,6 +143,17 @@ const resolveExpectedTradeDate = (
   const day = dateParts.find((part) => part.type === 'day')?.value;
   return `${year}-${month}-${day}`;
 };
+
+// 카드에는 가장 아슬아슬한 종목 하나만 싣는다. 전 종목을 나열하면 보유가 늘수록 줄이 늘어
+// "경보 없음" 한 줄을 읽으러 스크롤해야 한다.
+const pickNearestMargin = (margins: AlertMargin[]): AlertMargin | null =>
+  margins.reduce<AlertMargin | null>(
+    (closest, candidate) =>
+      closest === null || candidate.marginPoint < closest.marginPoint
+        ? candidate
+        : closest,
+    null,
+  );
 
 const normalizePositiveDecimal = (value: string): string | null => {
   try {
@@ -378,13 +392,26 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     // "신규 거래일 봉 없음" 으로 실패 처리될 종목(거래정지·종목별 지연)까지 **전날 가격으로**
     // 섞여 들어와, 최신 거래일 아래에 지금 상태인 것처럼 표시되고 건수도 부풀려진다.
     const avgPriceStatuses: AvgPriceStatus[] = [];
+    // 점검한 종목의 기준일과 경보선 여유. 둘 다 "판정에 실제로 쓰인 봉" 을 근거로 해야 하므로
+    // 실패로 빠진 종목이 섞이지 않는 이 자리에서 함께 모은다.
+    const checkedBaseDates: StockBaseDate[] = [];
+    const alertMargins: AlertMargin[] = [];
     const collectStatus = (
       entry: HoldingSnapshot & { tickerId: number },
       bar: DailyBar,
+      previousBar: DailyBar | null,
     ): void => {
       const status = inspectAvgPriceStatus(entry, bar);
       if (status) {
         avgPriceStatuses.push(status);
+      }
+      checkedBaseDates.push({
+        symbol: entry.symbol,
+        tradeDate: bar.tradeDate.toISOString().slice(0, 10),
+      });
+      const margin = measureAlertMargin(entry, bar, previousBar);
+      if (margin) {
+        alertMargins.push(margin);
       }
     };
     for (const {
@@ -408,7 +435,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
               }
             }
             checkedCount += 1;
-            collectStatus(holding, today);
+            collectStatus(holding, today, yesterday);
           } catch (error) {
             failures.push(
               `${holding.symbol}: 알림 복구 실패 — ${(error as Error).message}`,
@@ -456,7 +483,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
       anomalies.push(...holdingAnomalies);
       checkedCount += 1;
-      collectStatus(holding, today);
+      collectStatus(holding, today, yesterday);
     }
 
     const backfilledCount = await this.backfillUnscoredAlertPrices(
@@ -491,6 +518,10 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       marketClosed: false,
       marketCountry: this.targetMarketCountry,
       priceDisplays,
+      olderBaseDates: checkedBaseDates.filter(
+        (baseDate) => baseDate.tradeDate !== lastTradeDate,
+      ),
+      nearestMargin: pickNearestMargin(alertMargins),
     });
     const resultWithExposure = await this.withPortfolioExposure(
       this.withAvgPriceStatuses({ skip: false, summaryText }, avgPriceStatuses),

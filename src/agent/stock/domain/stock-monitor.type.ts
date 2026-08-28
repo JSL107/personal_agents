@@ -35,6 +35,21 @@ export interface AvgPriceStatus {
   currency: string;
 }
 
+// 경보선까지 남은 거리. 사건(StockAnomaly)도 상태(AvgPriceStatus)도 아닌 **여유**다 —
+// 아직 아무 일도 일어나지 않은 종목에 대해서만 값이 있다. "새 경보 없음" 이 안전해서인지
+// 간발의 차인지가 카드에 없어, 조용한 날과 아슬아슬한 날의 글자가 똑같던 것을 메운다.
+export interface AlertMargin {
+  tickerName: string;
+  symbol: string;
+  kind: StockAnomalyKind;
+  // 지금 값(퍼센트). 일간 축은 전일 대비, 평단 축은 평균 매입가 대비다.
+  currentPercent: number;
+  // 그 축에서 가장 가까운 경보선(퍼센트).
+  threshold: number;
+  // 경보선까지 남은 폭(%p). 음수는 이미 넘은 것이므로 이 타입에 담지 않는다.
+  marginPoint: number;
+}
+
 export interface HoldingSnapshot {
   tickerName: string;
   symbol: string;
