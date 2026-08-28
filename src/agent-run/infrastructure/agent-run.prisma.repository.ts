@@ -30,6 +30,7 @@ import {
 } from '../domain/agent-run.type';
 import {
   ActiveRunSnapshot,
+  AgentContractScoreRow,
   AgentRetryCountRow,
   AgentRunRepositoryPort,
   AgentRunStatRow,
@@ -443,6 +444,35 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         avgDurationMs: Math.round(row._avg.durationMs ?? 0),
       };
     });
+  }
+
+  // Run Retro 계약 점수 — 채점된 실행만 모아 agentType 별 평균을 낸다.
+  // `contractScore: { not: null }` 이 분모를 "실제로 검수된 실행" 으로 좁힌다(사유는 포트의
+  // `AgentContractScoreRow` 주석).
+  async aggregateContractScores({
+    sinceDays,
+    untilDays = 0,
+  }: {
+    sinceDays: number;
+    untilDays?: number;
+  }): Promise<AgentContractScoreRow[]> {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const since = new Date(Date.now() - sinceDays * dayMs);
+    const until = new Date(Date.now() - untilDays * dayMs);
+    const rows = await this.prisma.agentRun.groupBy({
+      by: ['agentType'],
+      where: {
+        startedAt: { gte: since, lt: until },
+        contractScore: { not: null },
+      },
+      _count: { _all: true },
+      _avg: { contractScore: true },
+    });
+    return rows.map((row) => ({
+      agentType: row.agentType,
+      scoredCount: row._count._all,
+      avgScore: row._avg.contractScore ?? 0,
+    }));
   }
 
   // Run Retro chain 관측 — 최근 window 의 chain 뿌리 id 목록.
