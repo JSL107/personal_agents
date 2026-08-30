@@ -5,6 +5,7 @@ import { AnalyzeJdGapUsecase } from '../../../agent/career-mate/application/anal
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../../common/llm/llm-timeout.constant';
 import { AUTOPILOT_WORKER_OPTIONS } from '../../../common/queue/worker-options.constant';
+import { parseAvoidSkillTags } from '../../../job-feed/domain/avoid-skills';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
@@ -65,8 +66,25 @@ export class JobFeedGapAutopilotTask implements AutopilotTask {
       this.configService.get<number>('JOB_FEED_MATCH_THRESHOLD') ??
       DEFAULT_MATCH_THRESHOLD;
 
+    // 알림에서 거르는 기피 기술이 갭 분석(모델 호출)에는 안 걸리면, "저장은 하되
+    // 알림에서만 뺀다"는 목적이 알림 표면 두 곳 중 하나에서만 지켜진다 — 기피
+    // 회사의 공고가 matchScore 순 정렬 맨 앞이면 그날 유일한 갭 분석이 정확히
+    // 그 공고에 쓰일 수 있다(job-feed.autopilot-task.ts 와 같은 파싱을 쓴다).
+    const { matched: avoidSkillTags, unmatched } = parseAvoidSkillTags(
+      this.configService.get<string>('JOB_FEED_AVOID_SKILLS'),
+    );
+    if (unmatched.length > 0) {
+      this.logger.warn(
+        `JOB_FEED_AVOID_SKILLS 중 사전에 없어 무시된 항목: ${unmatched.join(', ')}`,
+      );
+    }
+
     // gapAgentRunId 가 비어 있는 것만 고른다 — 없으면 매일 같은 공고를 다시 분석한다.
-    const candidates = await this.repository.findGapCandidates(threshold, topN);
+    const candidates = await this.repository.findGapCandidates(
+      threshold,
+      topN,
+      avoidSkillTags,
+    );
     if (candidates.length === 0) {
       return { skip: true };
     }

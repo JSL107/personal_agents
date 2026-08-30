@@ -66,6 +66,21 @@ const CANONICAL_BY_ALIAS: ReadonlyMap<string, string> = new Map([
   ['datadog', 'Datadog'],
   ['grafana', 'Grafana'],
   ['prometheus', 'Prometheus'],
+  // 실측 미매칭 상위(2026-08) 보강 — 사전에 없으면 그 기술이 채점 분모에서 빠져
+  // 점수가 부풀려진다(파일 상단 주석). 백엔드 공고에 실제로 나오는 것만 넣는다.
+  ['sql', 'SQL'],
+  ['oracle', 'Oracle'],
+  ['mssql', 'MSSQL'],
+  ['nosql', 'NoSQL'],
+  ['php', 'PHP'],
+  ['jsp', 'JSP'],
+  // 'gcp' 는 이미 별칭으로 있다 — 풀네임 표기만 추가로 그 정규명에 묶는다.
+  ['googlecloudplatform', 'GCP'],
+  // PyTorch·LLM 은 프론트/모바일과 달리 백엔드 채용 공고(이미 직군 필터를 통과한
+  // 표본)에 실제로 등장한 요구 기술이다 — AI/LLM 백엔드 포지션의 정당한 요구사항으로
+  // 보고 추가한다(Next.js·Flutter·React Native 처럼 직군 자체가 다른 기술이 아니다).
+  ['pytorch', 'PyTorch'],
+  ['llm', 'LLM'],
 ]);
 
 const toLookupKey = (raw: string): string => {

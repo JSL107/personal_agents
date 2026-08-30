@@ -846,6 +846,8 @@ export class EnvironmentVariables {
   // - JOB_FEED_MATCH_THRESHOLD: 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값.
   // - JOB_FEED_GAP_ANALYSIS_TOP_N: 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2).
   // - JOB_FEED_DETAIL_LIMIT: 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한).
+  // - JOB_FEED_AVOID_SKILLS: 기피 기술(쉼표 구분). 사전에서 빼지 않는다 — 빼면 그 요구사항이
+  //   채점에서 사라져 오히려 만점을 받는다. 대신 하나라도 요구하는 공고를 알림 후보에서만 뺀다.
   @IsOptional()
   @IsString()
   JOB_FEED_ENABLED?: string;
@@ -892,6 +894,10 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(100)
   JOB_FEED_DETAIL_LIMIT?: number;
+
+  @IsOptional()
+  @IsString()
+  JOB_FEED_AVOID_SKILLS?: string;
 }
 
 export const validateEnv = (config: Record<string, unknown>) => {

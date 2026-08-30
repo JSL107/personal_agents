@@ -46,18 +46,32 @@ export interface JobPostingRepositoryPort {
   upsertMany(postings: NormalizedJobPosting[]): Promise<UpsertOutcome>;
   findScoringTargets(profileId: number | null): Promise<StoredJobPosting[]>;
   saveScore(input: SaveScoreInput): Promise<void>;
-  findNotifiable(threshold: number, limit: number): Promise<StoredJobPosting[]>;
+  // avoidSkillTags 는 정규화(사전 통과)된 기술명이어야 skillTags 와 정확히 비교된다.
+  // 하나라도 요구하는 공고는 알림 후보에서 뺀다 — 저장은 그대로 두고 알림만 거른다.
+  findNotifiable(
+    threshold: number,
+    limit: number,
+    avoidSkillTags: string[],
+  ): Promise<StoredJobPosting[]>;
   // 같은 normalizedKey 의 모든 행을 한 번에 잠근다. 반환값이 false 면 다른 실행이 먼저 가져갔다.
   claimForNotification(normalizedKey: string, now: Date): Promise<boolean>;
+  // avoidSkillTags — findNotifiable 과 같은 계약이다. 상세수집 예산(JOB_FEED_DETAIL_LIMIT)을
+  // 기피 공고가 차지하지 않게 걸러야 한다(안 걸면 알림엔 안 뜨는 공고가 상세 호출
+  // 순번은 그대로 차지해, 정작 보여줄 공고의 상세 수집이 밀린다).
   findDetailTargets(
     threshold: number,
     limit: number,
     staleBefore: Date,
+    avoidSkillTags: string[],
   ): Promise<StoredJobPosting[]>;
   saveDetail(input: SaveDetailInput): Promise<void>;
+  // avoidSkillTags — findNotifiable 과 같은 계약이다. 안 걸면 기피 공고가 갭 분석
+  // 카드(모델 호출)로 그대로 나간다 — "저장은 하되 알림에서만 뺀다"는 목적이
+  // 알림 표면 중 하나에서만 지켜지는 사고가 난다.
   findGapCandidates(
     threshold: number,
     limit: number,
+    avoidSkillTags: string[],
   ): Promise<StoredJobPosting[]>;
   saveGapAgentRunId(id: number, agentRunId: number): Promise<void>;
   // 사전 갱신 후 과거 행을 되살리는 용도다. 다른 조회와 달리 lastSeenAt 신선도

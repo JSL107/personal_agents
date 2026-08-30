@@ -12,6 +12,10 @@ import { DETAIL_REQUEST_DELAY_MS } from '../infrastructure/http-constants';
 export interface FetchDetailInput {
   threshold: number;
   limit: number;
+  // 기피 기술을 요구하는 공고가 상세수집 예산(JOB_FEED_DETAIL_LIMIT)을 차지하지
+  // 않게 거른다 — 알림에는 안 뜨는 공고가 상세 호출 순번만 차지하면, 정작 카드에
+  // 실릴 공고의 상세 수집이 밀린다.
+  avoidSkillTags?: string[];
 }
 
 export interface FetchDetailOutcome {
@@ -45,12 +49,14 @@ export class FetchPostingDetailUsecase {
   async execute({
     threshold,
     limit,
+    avoidSkillTags,
   }: FetchDetailInput): Promise<FetchDetailOutcome> {
     const staleBefore = new Date(Date.now() - DETAIL_STALE_MS);
     const targets = await this.repository.findDetailTargets(
       threshold,
       limit,
       staleBefore,
+      avoidSkillTags ?? [],
     );
 
     let updated = 0;

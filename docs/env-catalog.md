@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 146개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 147개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -143,6 +143,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 대상 최소 매칭 점수(0~100). 미설정 시 코드 기본값. |
 | `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2). |
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 소스별 HTTP 호출 상한). |
+| `JOB_FEED_AVOID_SKILLS` | ❌ | 기피 기술(쉼표 구분). 사전에서 빼지 않는다 — 빼면 그 요구사항이 채점에서 사라져 오히려 만점을 받는다. 대신 하나라도 요구하는 공고를 알림 후보에서만 뺀다. |
 
 ## PR 리뷰 루프
 

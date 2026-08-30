@@ -85,7 +85,31 @@ describe('JobFeedGapAutopilotTask', () => {
     await task.run(CONTEXT);
 
     // 미설정 시 threshold 도 코드 기본값(80)을 쓴다.
-    expect(repository.findGapCandidates).toHaveBeenCalledWith(80, 1);
+    expect(repository.findGapCandidates).toHaveBeenCalledWith(80, 1, []);
+  });
+
+  it('JOB_FEED_AVOID_SKILLS 를 정규화해 findGapCandidates 에 넘긴다 — 기피 회사 공고가 갭 분석(모델 호출)에 쓰이면 안 된다', async () => {
+    const repository = {
+      findGapCandidates: jest.fn().mockResolvedValue([]),
+      saveGapAgentRunId: jest.fn(),
+    };
+    const analyzeJdGap = { execute: jest.fn() };
+    const task = new JobFeedGapAutopilotTask(
+      analyzeJdGap as never,
+      repository as never,
+      makeConfig({
+        JOB_FEED_ENABLED: 'true',
+        // 소문자·쉼표 구분 입력이 저장된 정규명(PHP·JSP)으로 정규화돼야 한다.
+        JOB_FEED_AVOID_SKILLS: 'php, jsp,',
+      }) as never,
+    );
+
+    await task.run(CONTEXT);
+
+    expect(repository.findGapCandidates).toHaveBeenCalledWith(80, 1, [
+      'PHP',
+      'JSP',
+    ]);
   });
 
   it('후보가 없으면 skip=true 이다', async () => {
@@ -135,7 +159,7 @@ describe('JobFeedGapAutopilotTask', () => {
 
     const result = await task.run(CONTEXT);
 
-    expect(repository.findGapCandidates).toHaveBeenCalledWith(70, 2);
+    expect(repository.findGapCandidates).toHaveBeenCalledWith(70, 2, []);
     expect(analyzeJdGap.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       jdText: found.jdText,

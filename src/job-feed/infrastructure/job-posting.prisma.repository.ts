@@ -158,6 +158,7 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
   async findNotifiable(
     threshold: number,
     limit: number,
+    avoidSkillTags: string[] = [],
   ): Promise<StoredJobPosting[]> {
     const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
 
@@ -167,6 +168,12 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
         closedAt: null,
         matchScore: { gte: threshold },
         lastSeenAt: { gte: freshnessCutoff },
+        // 빈 배열이면 조건 자체를 안 건다 — Prisma 의 hasSome([]) 은 항상 거짓이라
+        // NOT: { hasSome: [] } 은 항상 참이 되어 무해해 보이지만, 의도(필터 없음)를
+        // 조건절 존재 자체로 숨기지 않기 위해 명시적으로 분기한다.
+        ...(avoidSkillTags.length > 0
+          ? { NOT: { skillTags: { hasSome: avoidSkillTags } } }
+          : {}),
       },
       orderBy: [{ matchScore: 'desc' }, { firstSeenAt: 'desc' }],
       take: limit,
@@ -192,6 +199,7 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     threshold: number,
     limit: number,
     staleBefore: Date,
+    avoidSkillTags: string[] = [],
   ): Promise<StoredJobPosting[]> {
     const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
 
@@ -216,6 +224,10 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
             ],
           },
         ],
+        // findNotifiable 과 같은 이유로 빈 배열이면 조건 자체를 안 건다.
+        ...(avoidSkillTags.length > 0
+          ? { NOT: { skillTags: { hasSome: avoidSkillTags } } }
+          : {}),
       },
       orderBy: { matchScore: 'desc' },
       take: limit,
@@ -249,6 +261,7 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
   async findGapCandidates(
     threshold: number,
     limit: number,
+    avoidSkillTags: string[] = [],
   ): Promise<StoredJobPosting[]> {
     const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS);
 
@@ -264,7 +277,18 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
         // 같은 계열의 SQL 3값 논리 함정 — `<>` 비교는 NULL 만 배제하고 빈 문자열은
         // 그대로 통과시킨다). 빈 JD 가 여기를 통과하면 AnalyzeJdGapUsecase 가 예외를
         // 던져 gapAgentRunId 가 계속 비고, 같은 공고를 매일 재시도하게 된다.
-        NOT: [{ jdText: null }, { jdText: '' }],
+        //
+        // NOT 은 한 where 오브젝트에 키가 하나뿐이라 jdText 조건과 avoidSkillTags
+        // 조건을 같은 배열에 함께 넣는다 — NOT: [A, B, C] 는 "A 도 아니고 B 도
+        // 아니고 C 도 아니다"로 전부 AND 로 묶인다. findNotifiable·findDetailTargets
+        // 와 같은 이유로 avoidSkillTags 가 빈 배열이면 그 원소 자체를 안 넣는다.
+        NOT: [
+          { jdText: null },
+          { jdText: '' },
+          ...(avoidSkillTags.length > 0
+            ? [{ skillTags: { hasSome: avoidSkillTags } }]
+            : []),
+        ],
       },
       orderBy: { matchScore: 'desc' },
       take: limit,

@@ -145,6 +145,33 @@ describe('formatJobFeedDigest', () => {
     expect(text).toContain('Quarkus');
   });
 
+  describe('scoreSkipReason — 채점 자체를 안 한 것과 "조건 미달 0건"을 구분한다', () => {
+    it('채점을 건너뛰었으면 그 사유를 각주에 남긴다', () => {
+      const text = formatJobFeedDigest({
+        postings: [],
+        outcomes: [],
+        unmatchedSkillTags: [],
+        lastCollectedAt: new Date(),
+        scoreSkipReason:
+          '커리어 프로필에 사전과 맞는 기술 태그가 없어 채점을 건너뜁니다.',
+      });
+      expect(text).toContain('채점 건너뜀');
+      expect(text).toContain(
+        '커리어 프로필에 사전과 맞는 기술 태그가 없어 채점을 건너뜁니다.',
+      );
+    });
+
+    it('채점이 정상 수행됐으면(사유 없음) 그 각주를 넣지 않는다', () => {
+      const text = formatJobFeedDigest({
+        postings: [],
+        outcomes: [],
+        unmatchedSkillTags: [],
+        lastCollectedAt: new Date(),
+      });
+      expect(text).not.toContain('채점 건너뜀');
+    });
+  });
+
   describe('lastCollectedAt — 신선도 조건 도입 후 새로 생긴 실패 모드를 드러낸다', () => {
     // findAllForReprocess 를 제외한 조회들이 lastSeenAt 신선도 조건(이틀)을 걸기
     // 시작하면서, 수집이 이틀 넘게 실패하면 postings 조회가 전부 조용히 비어

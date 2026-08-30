@@ -34,6 +34,30 @@ describe('normalizeSkillTags', () => {
     expect(normalizeSkillTags(['  '])).toEqual({ matched: [], unmatched: [] });
   });
 
+  it('실측 미매칭 상위로 보강한 백엔드 기술을 정규명으로 매칭한다', () => {
+    expect(normalizeSkillTags(['SQL']).matched).toEqual(['SQL']);
+    expect(normalizeSkillTags(['Oracle']).matched).toEqual(['Oracle']);
+    expect(normalizeSkillTags(['MSSQL']).matched).toEqual(['MSSQL']);
+    expect(normalizeSkillTags(['NoSql']).matched).toEqual(['NoSQL']);
+    expect(normalizeSkillTags(['PHP']).matched).toEqual(['PHP']);
+    expect(normalizeSkillTags(['JSP']).matched).toEqual(['JSP']);
+    expect(normalizeSkillTags(['PyTorch']).matched).toEqual(['PyTorch']);
+    expect(normalizeSkillTags(['LLM']).matched).toEqual(['LLM']);
+  });
+
+  it('Google Cloud Platform 풀네임을 기존 GCP 별칭과 같은 정규명으로 묶는다', () => {
+    expect(normalizeSkillTags(['Google Cloud Platform']).matched).toEqual([
+      'GCP',
+    ]);
+    expect(normalizeSkillTags(['gcp']).matched).toEqual(['GCP']);
+  });
+
+  it('프론트/모바일 전용 기술은 사전에 넣지 않는다 — 백엔드 매칭용 사전이다', () => {
+    const result = normalizeSkillTags(['Next.js', 'Flutter', 'React Native']);
+    expect(result.matched).toEqual([]);
+    expect(result.unmatched).toEqual(['Next.js', 'Flutter', 'React Native']);
+  });
+
   it('중복 제거가 입력 순서에 영향받지 않는다 — 자기 이름이 별칭 키에 없는 정규명이 먼저 와도 매칭을 막지 않는다', () => {
     // 'Message Queue'는 사전의 정규명이지만 별칭 키('messagequeue')로도 등록돼
     // 있어야 한다. 등록 전에는 이 값이 먼저 오면 "사전에 없는 원본"으로 잘못
