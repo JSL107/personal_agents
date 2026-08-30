@@ -121,6 +121,28 @@ describe('FetchPostingDetailUsecase', () => {
       60,
       20,
       expect.any(Date),
+      [],
+    );
+  });
+
+  it('avoidSkillTags 를 저장소에 그대로 넘긴다 — 기피 공고가 상세수집 예산을 차지하지 않게', async () => {
+    const repository = stubRepository([]);
+    const usecase = new FetchPostingDetailUsecase(
+      [] as never,
+      repository as never,
+    );
+
+    await usecase.execute({
+      threshold: 60,
+      limit: 20,
+      avoidSkillTags: ['PHP', 'JSP'],
+    });
+
+    expect(repository.findDetailTargets).toHaveBeenCalledWith(
+      60,
+      20,
+      expect.any(Date),
+      ['PHP', 'JSP'],
     );
   });
 

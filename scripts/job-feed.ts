@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { validateEnv } from '../src/config/app.config';
 import { CollectJobPostingsUsecase } from '../src/job-feed/application/collect-job-postings.usecase';
 import { ListNotifiablePostingsUsecase } from '../src/job-feed/application/list-notifiable-postings.usecase';
 import { ReprocessJobPostingsUsecase } from '../src/job-feed/application/reprocess-job-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../src/job-feed/application/score-job-postings.usecase';
+import { parseAvoidSkillTags } from '../src/job-feed/domain/avoid-skills';
 import { parseJobFeedCliArguments } from '../src/job-feed/interface/job-feed-cli.parser';
 import { JobFeedModule } from '../src/job-feed/job-feed.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -13,9 +15,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 // AppModule 전체를 올리면 AutopilotScheduler 가 함께 떠서 운영 중인 정기 실행 등록을 건드린다.
 // 필요한 모듈만 올린다.
+// validate: validateEnv — 지금은 이 CLI 가 JOB_FEED_* 숫자 env 를 안 읽어 무해하지만,
+// 나중에 configService.get<number>(...) 가 붙으면 검증 없이는 문자열이 그대로 들어와
+// 비교가 조용히 틀린다(scripts/sync-toss-holdings.ts 의 기존 선례를 따른다).
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     PrismaModule,
     JobFeedModule,
   ],
@@ -111,9 +116,25 @@ const main = async (): Promise<void> => {
     }
 
     if (options.command === 'digest') {
+      // 선점(claimForNotification) 은 usecase 가 더 이상 여기서 하지 않는다 — 발송이
+      // 성공한 뒤에만 별도로 한다(job-feed.autopilot-task.ts 의 onDelivered 참조).
+      // 이 CLI 는 후보를 보여주기만 하고 그 콜백을 부르지 않으므로 선점도 안 일어난다.
+      // JOB_FEED_AVOID_SKILLS 도 autopilot task 와 같은 방식(공용 파서)으로
+      // 반영한다 — 안 그러면 이 진단 CLI 가 실 운영 카드와 다른(기피 기술이
+      // 안 걸러진) 결과를 보여준다.
+      const { matched: avoidSkillTags, unmatched: avoidSkillsUnmatched } =
+        parseAvoidSkillTags(
+          application.get(ConfigService).get<string>('JOB_FEED_AVOID_SKILLS'),
+        );
+      if (avoidSkillsUnmatched.length > 0) {
+        console.warn(
+          `JOB_FEED_AVOID_SKILLS 중 사전에 없어 무시된 항목: ${avoidSkillsUnmatched.join(', ')}`,
+        );
+      }
+
       const postings = await application
         .get(ListNotifiablePostingsUsecase)
-        .execute({ threshold: 0, limit: 10, peek: true });
+        .execute({ threshold: 0, limit: 10, avoidSkillTags });
       for (const posting of postings) {
         console.log(
           `[${posting.matchScore ?? 0}] ${posting.company} — ${posting.title} (${posting.skillTags.join(', ')})`,

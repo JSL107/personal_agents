@@ -548,6 +548,128 @@ describe('AutopilotOrchestrator', () => {
     expect(release).not.toHaveBeenCalled();
   });
 
+  // job-feed 알림 도장(claimForNotification) 선점을 발송 성공 뒤로 미루기 위해 추가한
+  // 후처리 콜백 계약 — 되돌릴 수 없는 상태 변경은 발송이 실제로 나간 뒤에만 실행돼야
+  // 한다(autopilot-task.port.ts AutopilotTaskResult.onDelivered 참조).
+  describe('AutopilotTaskResult.onDelivered — 발송 성공 뒤 후처리', () => {
+    it('발송 성공 시 task 의 onDelivered 콜백을 호출한다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const task = makeTask('daily-eval', {
+        skip: false,
+        summaryText: '본문',
+        onDelivered,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+      expect(onDelivered).toHaveBeenCalledTimes(1);
+    });
+
+    it('발송 실패 시 onDelivered 콜백을 호출하지 않는다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const task = makeTask('daily-eval', {
+        skip: false,
+        summaryText: '본문',
+        onDelivered,
+      });
+      const postMessage = jest
+        .fn()
+        .mockRejectedValue(new Error('Slack API 오류'));
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await expect(
+        orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1'),
+      ).rejects.toThrow('Slack API 오류');
+
+      expect(onDelivered).not.toHaveBeenCalled();
+    });
+
+    it('onDelivered 콜백이 던져도 발송 결과는 성공으로 남는다 (release·rethrow 없음, 로그만)', async () => {
+      const onDelivered = jest.fn().mockRejectedValue(new Error('DB 오류'));
+      const task = makeTask('daily-eval', {
+        skip: false,
+        summaryText: '본문',
+        onDelivered,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const release = jest.fn().mockResolvedValue(undefined);
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release,
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await expect(
+        orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1'),
+      ).resolves.toBeUndefined();
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(release).not.toHaveBeenCalled();
+    });
+
+    it('여러 task 의 onDelivered 콜백은 각각 격리해서 부른다 — 한 콜백 실패가 다른 콜백을 막지 않는다', async () => {
+      const failingOnDelivered = jest
+        .fn()
+        .mockRejectedValue(new Error('첫 task 후처리 실패'));
+      const succeedingOnDelivered = jest.fn().mockResolvedValue(undefined);
+      const taskA = makeTask('job-feed', {
+        skip: false,
+        summaryText: 'A',
+        onDelivered: failingOnDelivered,
+      });
+      const taskB = makeTask('job-feed-gap', {
+        skip: false,
+        summaryText: 'B',
+        onDelivered: succeedingOnDelivered,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const orchestrator = new AutopilotOrchestrator(
+        [taskA, taskB] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+      const e1 = makeEntry('job-feed', 'job-feed');
+      const e2 = makeEntry('job-feed-gap', 'job-feed-gap');
+
+      await orchestrator.runGroup('morning', [e1, e2], 'U1', 'C1');
+
+      expect(failingOnDelivered).toHaveBeenCalledTimes(1);
+      expect(succeedingOnDelivered).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // 메인 발송은 성공(ts 반환)했으나 스레드 상세 발송만 실패한 경우 — 이미 자체 try/catch 로
   // swallow 하므로 가드 롤백/rethrow 대상이 아니다(메인 요약은 전달됨 = 데이터 손실 아님).
   it('task.result.previews 배열이면 각 항목마다 PreviewGate 카드를 발송한다', async () => {

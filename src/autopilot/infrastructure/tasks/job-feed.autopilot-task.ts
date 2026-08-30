@@ -1,16 +1,20 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import {
+  CAREER_PROFILE_REPOSITORY_PORT,
+  CareerProfileRepositoryPort,
+} from '../../../agent/career-mate/domain/port/career-profile.repository.port';
 import { CollectJobPostingsUsecase } from '../../../job-feed/application/collect-job-postings.usecase';
 import { FetchPostingDetailUsecase } from '../../../job-feed/application/fetch-posting-detail.usecase';
 import { ListNotifiablePostingsUsecase } from '../../../job-feed/application/list-notifiable-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../../../job-feed/application/score-job-postings.usecase';
+import { parseAvoidSkillTags } from '../../../job-feed/domain/avoid-skills';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
-import { PrismaService } from '../../../prisma/prisma.service';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -35,15 +39,17 @@ const DEFAULT_NOTIFY_LIMIT = 10;
 @Injectable()
 export class JobFeedAutopilotTask implements AutopilotTask {
   readonly id = 'job-feed';
+  private readonly logger = new Logger(JobFeedAutopilotTask.name);
 
   constructor(
     private readonly collect: CollectJobPostingsUsecase,
     private readonly score: ScoreJobPostingsUsecase,
     private readonly fetchDetail: FetchPostingDetailUsecase,
     private readonly listNotifiable: ListNotifiablePostingsUsecase,
-    private readonly prisma: PrismaService,
     @Inject(JOB_POSTING_REPOSITORY_PORT)
     private readonly jobPostingRepository: JobPostingRepositoryPort,
+    @Inject(CAREER_PROFILE_REPOSITORY_PORT)
+    private readonly careerProfileRepository: CareerProfileRepositoryPort,
     private readonly configService: ConfigService,
   ) {}
 
@@ -61,6 +67,9 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const detailLimit =
       this.configService.get<number>('JOB_FEED_DETAIL_LIMIT') ??
       DEFAULT_DETAIL_LIMIT;
+    // 알림·상세수집 두 표면이 같은 기피 목록을 써야 한다 — 상세수집만 빠뜨리면
+    // 알림엔 안 뜰 공고가 상세 호출 예산(JOB_FEED_DETAIL_LIMIT)을 대신 차지한다.
+    const avoidSkillTags = this.resolveAvoidSkillTags();
 
     const collected = await this.collect.execute({});
 
@@ -81,9 +90,15 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       profileId: profile.profileId,
     };
 
-    await this.score.execute(scoreInput);
+    // skipped 사유는 첫 호출 결과로 판단한다 — 두 호출 모두 같은 scoreInput 을 쓰므로
+    // (profile.skillTags 가 비었는지는 techTags 로만 정해진다) skip 여부는 항상 같다.
+    const scoreResult = await this.score.execute(scoreInput);
 
-    await this.fetchDetail.execute({ threshold, limit: detailLimit });
+    await this.fetchDetail.execute({
+      threshold,
+      limit: detailLimit,
+      avoidSkillTags,
+    });
 
     // fetchDetail → saveDetail 이 목록에 스킬이 없는 소스(원티드)의 skillTags 를
     // 채우면서 채점 표식(scoredProfileId·scoredAt)을 지운 행이 있을 수 있다. 여기서
@@ -96,6 +111,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const postings = await this.listNotifiable.execute({
       threshold,
       limit: DEFAULT_NOTIFY_LIMIT,
+      avoidSkillTags,
     });
 
     // 조회 계층의 신선도 조건(이틀)이 걸려 있어, 수집이 며칠째 실패하면 postings 가
@@ -109,9 +125,45 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       outcomes: collected.outcomes,
       unmatchedSkillTags: collected.unmatchedSkillTags,
       lastCollectedAt,
+      scoreSkipReason: scoreResult.skipped ? scoreResult.reason : null,
     });
 
-    return { skip: false, summaryText };
+    // 알림 선점(claimForNotification)은 발송이 성공한 뒤에만 한다. listNotifiable 은
+    // 이제 후보만 돌려주고 선점하지 않는다 — 여기서 미리 선점하면 이 뒤(포매팅·전달
+    // 과정)의 실패가 표식만 남기고 그 공고를 영영 다시 안 뜨게 만든다(orchestrator 의
+    // onDelivered 계약 참조). 후보가 없으면 선점할 것도 없다.
+    const onDelivered =
+      postings.length === 0
+        ? undefined
+        : async (): Promise<void> => {
+            const claimedAt = new Date();
+            let failed = 0;
+            // 발송은 이미 끝났다 — 한 건의 선점 실패로 나머지를 포기하면, 카드에는
+            // 이미 나갔는데 표식만 안 남은 공고가 다음 회차에 다시 뜬다. 건별로
+            // 격리해 최대한 많이 선점한다.
+            for (const posting of postings) {
+              try {
+                await this.jobPostingRepository.claimForNotification(
+                  posting.normalizedKey,
+                  claimedAt,
+                );
+              } catch (error: unknown) {
+                failed += 1;
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                this.logger.warn(
+                  `job-feed 알림 선점 실패 — ${posting.normalizedKey}: ${message}`,
+                );
+              }
+            }
+            if (failed > 0) {
+              this.logger.warn(
+                `job-feed 알림 선점 — ${postings.length}건 중 ${failed}건 실패, 다음 회차에 재알림될 수 있음`,
+              );
+            }
+          };
+
+    return { skip: false, summaryText, onDelivered };
   }
 
   private parseLocations(): string[] {
@@ -122,25 +174,42 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       .filter((item) => item.length > 0);
   }
 
+  // 사전에 없는 값(예: 오탈자·미등록 기술)을 넣으면 그 항목이 조용히 무시돼 필터가
+  // 통째로 무효가 될 수 있다 — 이 레포가 반복해 겪은 "조용한 0건" 계열이라 로그를
+  // 남긴다. job-feed-gap.autopilot-task.ts 도 같은 파싱을 쓰므로 도메인 계층
+  // 공용 함수(parseAvoidSkillTags)로 뺐다.
+  private resolveAvoidSkillTags(): string[] {
+    const { matched, unmatched } = parseAvoidSkillTags(
+      this.configService.get<string>('JOB_FEED_AVOID_SKILLS'),
+    );
+    if (unmatched.length > 0) {
+      this.logger.warn(
+        `JOB_FEED_AVOID_SKILLS 중 사전에 없어 무시된 항목: ${unmatched.join(', ')}`,
+      );
+    }
+    return matched;
+  }
+
   private async loadProfile(
     ownerSlackUserId: string,
   ): Promise<ProfileMatchInput> {
-    const profile = await this.prisma.careerProfile.findFirst({
-      // owner 필터 없이 findFirst 만 쓰면 다른 사용자가 더 최근에 만든 프로필이 있을 때
-      // 그 사람의 기술 이력으로 채점한 공고가 owner 에게 간다.
-      where: { slackUserId: ownerSlackUserId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, profileJson: true },
-    });
+    // 포트가 이미 slackUserId 단위로 최신 1건만 돌려준다(findLatestBySlackUser) —
+    // 다른 사용자가 더 최근에 만든 프로필로 채점하는 사고는 포트 계약상 나지 않는다.
+    const profile =
+      await this.careerProfileRepository.findLatestBySlackUser(
+        ownerSlackUserId,
+      );
     if (profile === null) {
       return { techTags: [], profileId: null };
     }
-    const data = profile.profileJson as {
-      accomplishments?: Array<{ techTags?: string[] }>;
-    };
-    const techTags = (data.accomplishments ?? []).flatMap((item) => {
-      return item.techTags ?? [];
-    });
+    // profileJson 은 DB JSON 컬럼을 CareerProfileData 로 캐스팅한 값이라 타입
+    // 보장이 런타임 보장은 아니다 — accomplishments 자체나 개별 techTags 가 없는
+    // 행이 오면 `?? []` 가 없을 때 TypeError 로 task 전체가 죽는다.
+    const techTags = (profile.profileJson.accomplishments ?? []).flatMap(
+      (item) => {
+        return item.techTags ?? [];
+      },
+    );
     return { techTags: [...new Set(techTags)], profileId: profile.id };
   }
 }
