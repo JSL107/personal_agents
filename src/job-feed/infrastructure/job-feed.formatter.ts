@@ -14,6 +14,11 @@ export interface JobFeedDigestInput {
   // "오늘은 조건에 맞는 공고 없음"으로 보인다. 실제 원인은 수집기 장애인데
   // 카드만 보면 구분할 수 없어, 마지막 수집 시각을 각주에 반드시 남긴다.
   lastCollectedAt: Date | null;
+  // ScoreJobPostingsUsecase.execute 가 skipped=true 를 돌려줬을 때의 사유. 채점 자체를
+  // 안 한 것과 "채점했지만 기준 통과 공고가 없음"은 다른 원인인데, 이 필드가 없으면
+  // 둘 다 "조건에 맞는 공고가 없습니다"로 똑같이 보인다 — 수집은 성공했으니 각주(마지막
+  // 수집 시각)도 정상으로 보여 "조용한 0건"이 다른 원인으로 재발한다.
+  scoreSkipReason?: string | null;
 }
 
 const SOURCE_LABEL: Readonly<Record<JobSourceId, string>> = {
@@ -91,6 +96,7 @@ export const formatJobFeedDigest = ({
   outcomes,
   unmatchedSkillTags,
   lastCollectedAt,
+  scoreSkipReason = null,
 }: JobFeedDigestInput): string => {
   const lines: string[] = [];
 
@@ -122,6 +128,10 @@ export const formatJobFeedDigest = ({
 
   lines.push('');
   lines.push(formatLastCollectedAt(lastCollectedAt));
+
+  if (scoreSkipReason) {
+    lines.push(`_⚠️ 채점 건너뜀 — ${scoreSkipReason}_`);
+  }
 
   if (outcomes.length > 0) {
     lines.push(`_수집: ${outcomes.map(formatOutcome).join(' · ')}_`);

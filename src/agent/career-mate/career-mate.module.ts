@@ -63,6 +63,10 @@ import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.clie
     ReflectPrUsecase,
     PublishPortfolioSiteUsecase,
     CareerMateDispatcher,
+    // job-feed.autopilot-task.ts 가 커리어 프로필 조회에 이 포트를 직접 쓴다 —
+    // 이 레포 관례(usecase/port 경유, PrismaService 직접 주입 금지)를 맞추려면
+    // usecase 뿐 아니라 포트 토큰 자체도 밖으로 열려 있어야 한다.
+    CAREER_PROFILE_REPOSITORY_PORT,
   ],
 })
 export class CareerMateModule {}
