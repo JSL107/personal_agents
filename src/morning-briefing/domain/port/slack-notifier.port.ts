@@ -1,3 +1,5 @@
+import { PreviewKind } from '../../../preview-gate/domain/preview-action.type';
+
 export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 
 // OPS-7: MorningBriefingConsumer (Infrastructure) 가 SlackService (Slack 어댑터) 를 직접 의존하지 않도록
@@ -15,9 +17,13 @@ export interface SlackNotifierPort {
     unfurlLinks?: boolean;
   }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW preview 버튼 메시지. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
+  // kind·payload 는 선택 — 종류에 따라 카드에 입력 컨트롤이 더 붙는 경우에만 쓴다(경력 반영
+  // 카드의 묶음별 "작업 맥락" 칸). 주지 않으면 종전대로 본문 + 승인/취소 버튼만 그린다.
   postPreviewMessage(input: {
     target: string;
     previewText: string;
     previewId: string;
+    kind?: PreviewKind;
+    payload?: unknown;
   }): Promise<{ channelId: string; messageTs: string }>;
 }

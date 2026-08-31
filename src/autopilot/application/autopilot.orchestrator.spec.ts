@@ -1,3 +1,4 @@
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { PlaybookEntry } from '../domain/playbook.type';
 import { AutopilotOrchestrator } from './autopilot.orchestrator';
 
@@ -339,6 +340,10 @@ describe('AutopilotOrchestrator', () => {
       target: 'C1',
       previewText: '발행 후보',
       previewId: 'PV1',
+      // 카드 종류와 payload 를 함께 넘긴다 — 경력 반영 카드에만 묶음별 "작업 맥락"
+      // 입력칸이 붙고, 그 개수·라벨·기존 값이 전부 payload 에서 나온다.
+      kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+      payload: {},
     });
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
@@ -476,6 +481,8 @@ describe('AutopilotOrchestrator', () => {
       target: 'U1',
       previewText: 'pv',
       previewId: 'PV1',
+      kind: PREVIEW_KIND.DOCS_AUDIT_PR,
+      payload: { files: [] },
     });
     // preview 발송 후 첫 타깃 좌표(channel/ts)를 저장한다.
     expect(previewRepository.attachSlackMessage).toHaveBeenCalledWith({

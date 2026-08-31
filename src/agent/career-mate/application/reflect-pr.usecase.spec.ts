@@ -199,4 +199,97 @@ describe('ReflectPrUsecase', () => {
     expect(outcome.result.accomplishment.evidence).toHaveLength(2);
     expect(outcome.result.narrative).toBe('이어진 두 PR 통합 회고');
   });
+
+  it('작업 맥락을 주면 프롬프트에 싣고 저장되는 성과에 원문 그대로 남긴다', async () => {
+    const { usecase, repository, modelRouter } = makeUsecase();
+    const impactContext = '결제 실패율 3%→0.5%, 월 2,000건 수동 재시도 제거';
+
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1692',
+      impactContext,
+    });
+
+    const { prompt } = (modelRouter.route as jest.Mock).mock.calls[0][0]
+      .request;
+    expect(prompt).toContain('[작업 맥락 — 사용자가 직접 적은 영향]');
+    expect(prompt).toContain(impactContext);
+    // 모델이 되돌려준 값이 아니라 입력 원문이 그대로 남아야 한다.
+    expect(outcome.result.accomplishment.impactContext).toBe(impactContext);
+    const saved = (repository.save as jest.Mock).mock.calls[0][0];
+    expect(saved.profileJson.accomplishments[0].impactContext).toBe(
+      impactContext,
+    );
+  });
+
+  it('맥락이 없으면 프롬프트에도 성과에도 맥락이 생기지 않는다 (기존 동작 동일)', async () => {
+    const { usecase, repository, modelRouter } = makeUsecase();
+
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1692',
+    });
+
+    const { prompt } = (modelRouter.route as jest.Mock).mock.calls[0][0]
+      .request;
+    expect(prompt).not.toContain('[작업 맥락');
+    expect(outcome.result.accomplishment).not.toHaveProperty('impactContext');
+    const saved = (repository.save as jest.Mock).mock.calls[0][0];
+    expect(saved.profileJson.accomplishments[0]).not.toHaveProperty(
+      'impactContext',
+    );
+  });
+
+  it('공백만 적힌 맥락은 없는 것과 같게 다룬다', async () => {
+    const { usecase, modelRouter } = makeUsecase();
+
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1692',
+      impactContext: '   ',
+    });
+
+    const { prompt } = (modelRouter.route as jest.Mock).mock.calls[0][0]
+      .request;
+    expect(prompt).not.toContain('[작업 맥락');
+    expect(outcome.result.accomplishment).not.toHaveProperty('impactContext');
+  });
+
+  it('다건 회고에도 맥락이 실린다', async () => {
+    const { usecase, github, modelRouter } = makeUsecase();
+    (github.getPullRequest as jest.Mock).mockImplementation(
+      async ({ number }: { number: number }) => ({
+        number,
+        title: `T${number}`,
+        body: 'B',
+        repo: 'o/r',
+        url: `u${number}`,
+        baseRef: 'main',
+        headRef: 'f',
+        authorLogin: 'me',
+        changedFiles: ['a.ts'],
+        changedFilesTruncated: false,
+        changedFilesTotalCount: 1,
+        additions: 1,
+        deletions: 0,
+      }),
+    );
+    (modelRouter.route as jest.Mock).mockResolvedValue({
+      text: MULTI_SYNTH,
+      modelUsed: 'codex',
+    });
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1 https://github.com/o/r/pull/2',
+      impactContext: '주간 배치 실패 12건 → 0건',
+    });
+
+    const { prompt } = (modelRouter.route as jest.Mock).mock.calls[0][0]
+      .request;
+    expect(prompt).toContain('주간 배치 실패 12건 → 0건');
+    expect(prompt.indexOf('[작업 맥락')).toBeLessThan(
+      prompt.indexOf('[이어진 PR'),
+    );
+  });
 });

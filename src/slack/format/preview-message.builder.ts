@@ -1,5 +1,10 @@
 import { PreviewCardState } from '../../preview-gate/domain/port/preview-card.port';
-import { PREVIEW_ACTION_IDS } from '../../preview-gate/domain/preview-action.type';
+import {
+  PREVIEW_ACTION_IDS,
+  PREVIEW_KIND,
+  PreviewKind,
+} from '../../preview-gate/domain/preview-action.type';
+import { buildCareerContextInputBlocks } from './career-context-input.builder';
 import { linkifyBareUrls } from './mrkdwn.util';
 
 // Slack section.text(mrkdwn) 의 최대 문자 수는 3000. 안전 마진 50 두고 2950 로.
@@ -14,9 +19,15 @@ export const SECTION_MRKDWN_LIMIT = 2950;
 export const buildPreviewBlocks = ({
   previewText,
   previewId,
+  kind,
+  payload,
 }: {
   previewText: string;
   previewId: string;
+  // 아래 둘은 선택. 주지 않으면 카드는 종전대로 본문 + 버튼만이다.
+  // 경력 반영 카드에만 승인 전 "작업 맥락" 입력칸이 묶음(저장소) 수만큼 더 붙는다.
+  kind?: PreviewKind;
+  payload?: unknown;
 }): Array<Record<string, unknown>> => {
   // 카드 본문에도 맨 주소 접기를 적용한다 — 승인 카드는 사용자가 가장 오래 들여다보는 화면이라
   // 주소 한 줄이 판단 근거를 밀어내면 안 된다. 이미 `<url|이름>` 인 링크는 그대로 통과한다(멱등).
@@ -29,6 +40,10 @@ export const buildPreviewBlocks = ({
       type: 'section',
       text: { type: 'mrkdwn', text: chunk },
     })),
+    // 버튼보다 위에 둔다 — 적기 전에 승인을 누르는 순서를 만들지 않기 위해서다.
+    ...(kind === PREVIEW_KIND.EVENING_CAREER_REFLECT
+      ? buildCareerContextInputBlocks({ previewId, payload })
+      : []),
     {
       type: 'actions',
       block_id: `preview-actions:${previewId}`,
@@ -119,6 +134,8 @@ export const buildResolvedPreviewBlocks = ({
   ];
   if (state === 'APPLY_FAILED') {
     // buildPreviewBlocks 의 마지막 요소가 actions 블록 — 버튼만 이어 붙인다.
+    // kind 를 주지 않으므로 경력 입력칸은 붙지 않는다(해소된 카드에 입력칸을 남기면
+    // 적어도 반영될 곳이 없다).
     const withButtons = buildPreviewBlocks({ previewText: '', previewId });
     const actionsBlock = withButtons[withButtons.length - 1];
     return [...sections, actionsBlock];
