@@ -886,6 +886,56 @@ describe('AutopilotOrchestrator', () => {
       expect(onDelivered).toHaveBeenCalledTimes(1);
     });
 
+    // 건너뛰기는 task 단위여야 한다. 한 task 의 상세가 실패했다고 같은 메시지에 요약을
+    // 실은 다른 task 의 후처리까지 막으면, 그 task 는 멀쩡히 전달됐는데도 상태가 확정되지
+    // 않아 다음 회차에 통째로 다시 돈다. 단일 item 테스트만으로는 격리가 실제로
+    // 인덱스 단위인지(전역 플래그가 아닌지) 드러나지 않는다.
+    it('여러 task 중 하나의 상세만 실패하면 그 task 의 후처리만 건너뛴다', async () => {
+      const failedItemOnDelivered = jest.fn().mockResolvedValue(undefined);
+      const deliveredItemOnDelivered = jest.fn().mockResolvedValue(undefined);
+      const taskA = makeTask('job-feed', {
+        skip: false,
+        summaryText: 'A',
+        detailText: 'DA',
+        onDelivered: failedItemOnDelivered,
+      });
+      const taskB = makeTask('job-feed-gap', {
+        skip: false,
+        summaryText: 'B',
+        detailText: 'DB',
+        onDelivered: deliveredItemOnDelivered,
+      });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' }) // 메인
+        .mockRejectedValueOnce(new Error('A 상세 실패')) // A 스레드
+        .mockResolvedValueOnce({ ts: 'TS2' }); // B 스레드
+      const orchestrator = new AutopilotOrchestrator(
+        [taskA, taskB] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup(
+        'morning',
+        [
+          makeEntry('job-feed', 'job-feed'),
+          makeEntry('job-feed-gap', 'job-feed-gap'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      expect(failedItemOnDelivered).not.toHaveBeenCalled();
+      expect(deliveredItemOnDelivered).toHaveBeenCalledTimes(1);
+    });
+
     // 링크가 실리는 곳이 스레드 댓글이므로, 메인에만 끄면 정작 링크가 있는 쪽에서
     // 미리보기가 그대로 펼쳐진다.
     it('unfurlLinks=false 는 스레드 댓글 발송에도 함께 걸린다', async () => {
