@@ -94,7 +94,7 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).toHaveBeenCalledTimes(2);
     expect(result.message).toContain('c/d 1건');
-    expect(result.message).toContain('실패 1건');
+    expect(result.message).toContain('실패: a/b');
   });
 
   it('(d) 모든 묶음이 실패하면 throw 한다 — 성공으로 보고하지 않는다', async () => {

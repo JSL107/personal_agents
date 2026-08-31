@@ -33,8 +33,8 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     // 순차 실행이어야 한다 — ReflectPrUsecase 는 "최신 프로필 조회 → 병합 → 저장" 이라
     // 병렬로 돌리면 뒤에 저장한 회차가 앞 회차의 성과를 덮어쓴다(lost update).
     const messages: string[] = [];
+    const failedRepositories: string[] = [];
     let lastPortfolioUrl: string | null = null;
-    let failed = 0;
     for (const refs of groups) {
       try {
         const outcome = await this.reflectPr.execute({
@@ -46,7 +46,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
       } catch (error) {
         // 그룹 하나가 실패해도 나머지는 반영한다 — 한 저장소의 PR 접근 실패로 그날 성과가
         // 통째로 사라지면, 승인 카드는 이미 소비돼 다시 누를 수 없다.
-        failed += 1;
+        failedRepositories.push(this.repoOf(refs));
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
           `EVENING_CAREER_REFLECT 그룹 실패 — ${this.repoOf(refs)}: ${message}`,
@@ -59,7 +59,12 @@ export class EveningCareerReflectApplier implements PreviewApplier {
         `EVENING_CAREER_REFLECT: ${groups.length}개 묶음이 모두 실패했습니다.`,
       );
     }
-    const failedNote = failed > 0 ? ` · 실패 ${failed}건은 로그 참고` : '';
+    // 실패한 저장소를 이름으로 남긴다 — 건수만 알려주면 어느 성과가 빠졌는지 알 수 없고,
+    // 카드는 이미 소비돼 다시 누를 수 없다.
+    const failedNote =
+      failedRepositories.length > 0
+        ? ` · 실패: ${failedRepositories.join(', ')} (로그 참고)`
+        : '';
     return {
       message: `이력서/포트폴리오에 반영했습니다 (${messages.join(', ')})${failedNote} — ${lastPortfolioUrl ?? '완료'}`,
       artifacts: [],
