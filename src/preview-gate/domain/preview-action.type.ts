@@ -91,6 +91,24 @@ export interface CreatePreviewInput {
   ttlMs: number;
 }
 
+// 승인 카드 하나를 그리는 데 필요한 것 전부. 발송 어댑터(SlackNotifierPort)가 이 형태로 받는다.
+//
+// previewId·kind·payload 를 낱개 인자로 늘어놓지 않는 이유: 카드 종류마다 필요한 것이 다르고
+// (경력 반영 카드는 묶음 수만큼 입력칸이 붙는데 그 개수·라벨·기존 값이 전부 payload 에서 나온다),
+// 낱개로 두면 종류가 늘 때마다 발송 포트의 계약이 따라 넓어진다. 무엇으로 그리는지는
+// preview-gate 의 개념이므로 그 묶음도 여기가 소유한다.
+//
+// 필드는 PreviewAction 의 부분집합이다 — 호출자는 저장된 카드 행에서 그대로 뽑아 넘긴다.
+// 따로 선언한 이유는 "카드를 그리는 데 필요한 것" 이 DB 행의 형태와 같아야 할 이유가
+// 없기 때문이다(상태·좌표·TTL 은 그리기와 무관하다).
+export interface PreviewCardMessage {
+  id: string;
+  kind: PreviewKind;
+  previewText: string;
+  // kind 별 자유 JSON. 카드 빌더가 종류를 보고 해석한다.
+  payload: unknown;
+}
+
 // Slack Bolt block_actions 의 action_id 명세 — Block Kit 의 button 마다 이 값 노출.
 export const PREVIEW_ACTION_IDS = {
   APPLY: 'preview:apply',

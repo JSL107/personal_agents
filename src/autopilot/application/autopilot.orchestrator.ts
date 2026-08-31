@@ -3,15 +3,15 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { CRON_SENT_GUARD_TTL_SECONDS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
-import {
-  SLACK_NOTIFIER_PORT,
-  SlackNotifierPort,
-} from '../../morning-briefing/domain/port/slack-notifier.port';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
 } from '../../preview-gate/domain/port/preview-action.repository.port';
+import {
+  SLACK_NOTIFIER_PORT,
+  SlackNotifierPort,
+} from '../../slack/domain/port/slack-notifier.port';
 import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
@@ -352,10 +352,13 @@ export class AutopilotOrchestrator {
           const { channelId, messageTs } =
             await this.slackNotifier.postPreviewMessage({
               target: resolved,
-              previewText: preview.previewText,
-              previewId: created.id,
-              kind: preview.kind,
-              payload: preview.payload,
+              // 방금 만든 카드 그대로 — id 는 저장된 것, 나머지는 task 가 만든 것.
+              preview: {
+                id: created.id,
+                kind: preview.kind,
+                previewText: preview.previewText,
+                payload: preview.payload,
+              },
             });
           // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
           if (!coordinateSaved && messageTs) {

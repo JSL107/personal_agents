@@ -15,11 +15,11 @@ import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.c
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeCalibrationReport } from '../../humanize/application/humanize-report.adapter';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
-} from '../../morning-briefing/domain/port/slack-notifier.port';
-import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+} from '../../slack/domain/port/slack-notifier.port';
 import {
   RESUME_CALIBRATION_CRON_QUEUE,
   RESUME_TREND_RESEARCH_PROMPT,

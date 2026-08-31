@@ -2,8 +2,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
 import { JobApplicationModule } from '../agent/job-application/job-application.module';
-import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
+import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { JobApplicationNudgeCronScheduler } from './application/job-application-nudge-cron.scheduler';
