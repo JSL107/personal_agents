@@ -1,6 +1,6 @@
 import {
   ContradictionLintOutcome,
-  KnowledgeLintIssue,
+  KnowledgeLintOutcome,
 } from '../../episodic-memory/domain/port/knowledge-lint.port';
 
 // Knowledge-Lint 이슈 → Slack mrkdwn.
@@ -28,9 +28,8 @@ const describeScope = (l4: ContradictionLintOutcome | null): string => {
 };
 
 export const formatKnowledgeLint = (
-  issues: KnowledgeLintIssue[],
+  { issues, duplicateTotal, l4 }: KnowledgeLintOutcome,
   firedAtKst: string,
-  l4: ContradictionLintOutcome | null,
 ): string => {
   const scope = describeScope(l4);
   const incomplete = isL4Incomplete(l4);
@@ -64,7 +63,13 @@ export const formatKnowledgeLint = (
   }
 
   if (duplicates.length > 0) {
-    sections.push(`*중복 후보 ${duplicates.length}건*`);
+    // 목록은 보고 상한으로 잘린다. 잘린 사실을 적지 않으면 화면의 건수가 곧 실제 규모로
+    // 읽히고, 그 오해는 아래 L4 미완주 경고가 막으려는 것과 같은 종류다.
+    sections.push(
+      duplicateTotal > duplicates.length
+        ? `*중복 후보 ${duplicateTotal}건* _— 가까운 순 ${duplicates.length}건만 표시_`
+        : `*중복 후보 ${duplicates.length}건*`,
+    );
     for (const issue of duplicates) {
       sections.push(
         `• #${issue.episodeId} ↔ #${issue.relatedId} — ${issue.detail}`,

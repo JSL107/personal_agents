@@ -22,6 +22,7 @@ describe('KnowledgeLintAutopilotTask', () => {
             occurredAt: new Date(),
           },
         ],
+        duplicateTotal: 0,
         l4: L4_DONE,
       }),
     };
@@ -34,7 +35,7 @@ describe('KnowledgeLintAutopilotTask', () => {
 
     expect(knowledgeLint.lintIssues).toHaveBeenCalledWith(
       expect.objectContaining({
-        duplicateMaxDistance: 0.05,
+        duplicateMaxDistance: 0.001,
         limit: 50,
         l4: {
           enabled: true,
@@ -50,7 +51,9 @@ describe('KnowledgeLintAutopilotTask', () => {
 
   it('L4_ENABLED=false 면 l4.enabled=false 로 전달', async () => {
     const knowledgeLint = {
-      lintIssues: jest.fn().mockResolvedValue({ issues: [], l4: L4_DONE }),
+      lintIssues: jest
+        .fn()
+        .mockResolvedValue({ issues: [], duplicateTotal: 0, l4: L4_DONE }),
     };
     const config = makeConfig({ AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED: 'false' });
     const task = new KnowledgeLintAutopilotTask(
@@ -69,7 +72,9 @@ describe('KnowledgeLintAutopilotTask', () => {
 
   it('L4_MAX_PAIRS env 를 maxPairs 로 반영', async () => {
     const knowledgeLint = {
-      lintIssues: jest.fn().mockResolvedValue({ issues: [], l4: L4_DONE }),
+      lintIssues: jest
+        .fn()
+        .mockResolvedValue({ issues: [], duplicateTotal: 0, l4: L4_DONE }),
     };
     const config = makeConfig({ AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS: '3' });
     const task = new KnowledgeLintAutopilotTask(
@@ -89,7 +94,9 @@ describe('KnowledgeLintAutopilotTask', () => {
   // 가를 근거가 하나도 없어진다. skip=true 로 되돌리면 이 테스트만 실패한다.
   it('이슈 0건이어도 하트비트를 남긴다 (skip=false)', async () => {
     const knowledgeLint = {
-      lintIssues: jest.fn().mockResolvedValue({ issues: [], l4: L4_DONE }),
+      lintIssues: jest
+        .fn()
+        .mockResolvedValue({ issues: [], duplicateTotal: 0, l4: L4_DONE }),
     };
     const task = new KnowledgeLintAutopilotTask(
       knowledgeLint as never,
@@ -106,7 +113,9 @@ describe('KnowledgeLintAutopilotTask', () => {
   // L4 를 수행하지 않은 회차는 service 가 l4=null 을 돌려준다(비활성 또는 judge 미주입).
   it('L4 를 수행하지 않았으면 하트비트가 점검 범위를 좁혀 표시한다', async () => {
     const knowledgeLint = {
-      lintIssues: jest.fn().mockResolvedValue({ issues: [], l4: null }),
+      lintIssues: jest
+        .fn()
+        .mockResolvedValue({ issues: [], duplicateTotal: 0, l4: null }),
     };
     const task = new KnowledgeLintAutopilotTask(
       knowledgeLint as never,
@@ -126,6 +135,7 @@ describe('KnowledgeLintAutopilotTask', () => {
     const knowledgeLint = {
       lintIssues: jest.fn().mockResolvedValue({
         issues: [],
+        duplicateTotal: 0,
         l4: { candidates: 5, judged: 1, abortedByQuota: true },
       }),
     };

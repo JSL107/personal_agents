@@ -19,16 +19,15 @@ const L4 = {
 describe('KnowledgeLintService', () => {
   const occurredAt = new Date('2026-06-20T00:00:00Z');
 
-  it('임계값 이내 이웃만 near_duplicate 로 잡고, 역방향 쌍은 dedup', async () => {
+  it('역방향 쌍은 dedup 하고 distance 를 detail 에 적는다', async () => {
     const repository = createRepositoryMock();
     repository.findNearestNeighbors.mockResolvedValue([
       { id: 1, relatedId: 2, distance: 0.01, occurredAt },
       { id: 2, relatedId: 1, distance: 0.01, occurredAt }, // 역쌍 — 제거되어야
-      { id: 3, relatedId: 4, distance: 0.5, occurredAt }, // 임계값 초과 — 제외
     ]);
     const service = new KnowledgeLintService(repository as never);
 
-    const { issues } = await service.lintIssues({
+    const { issues, duplicateTotal } = await service.lintIssues({
       duplicateMaxDistance: 0.05,
       limit: 50,
     });
@@ -40,6 +39,43 @@ describe('KnowledgeLintService', () => {
     expect(duplicates[0].episodeId).toBe(1);
     expect(duplicates[0].relatedId).toBe(2);
     expect(duplicates[0].detail).toContain('0.010');
+    expect(duplicateTotal).toBe(1);
+  });
+
+  // 임계값 판정은 조회 단계로 내려갔다 — service 가 그 값을 그대로 넘기는지가 계약이다.
+  it('임계값을 조회에 그대로 넘긴다', async () => {
+    const repository = createRepositoryMock();
+    const service = new KnowledgeLintService(repository as never);
+
+    await service.lintIssues({ duplicateMaxDistance: 0.001, limit: 50 });
+
+    expect(repository.findNearestNeighbors).toHaveBeenCalledWith(
+      expect.objectContaining({ maxDistance: 0.001 }),
+    );
+  });
+
+  // 보고 상한에 잘려도 총 쌍 수는 잘리기 전 값이어야 한다 — 이 값이 화면의 "N건 중" 이 된다.
+  it('보고 상한으로 목록을 자르되 duplicateTotal 은 전체 쌍 수를 낸다', async () => {
+    const repository = createRepositoryMock();
+    repository.findNearestNeighbors.mockResolvedValue(
+      Array.from({ length: 7 }, (_unused, index) => ({
+        id: index * 2 + 1,
+        relatedId: index * 2 + 2,
+        distance: 0,
+        occurredAt,
+      })),
+    );
+    const service = new KnowledgeLintService(repository as never);
+
+    const { issues, duplicateTotal } = await service.lintIssues({
+      duplicateMaxDistance: 0.001,
+      limit: 3,
+    });
+
+    expect(
+      issues.filter((issue) => issue.type === 'near_duplicate'),
+    ).toHaveLength(3);
+    expect(duplicateTotal).toBe(7);
   });
 
   it('embedding NULL 행을 embedding_null 이슈로 변환', async () => {
