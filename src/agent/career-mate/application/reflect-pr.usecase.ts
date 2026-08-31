@@ -16,7 +16,11 @@ import { humanizeCareerProfile } from '../../../humanize/application/humanize-ca
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerMateException } from '../domain/career-mate.exception';
-import { ReflectPrInput, ReflectPrResult } from '../domain/career-mate.type';
+import {
+  ProfileAccomplishment,
+  ReflectPrInput,
+  ReflectPrResult,
+} from '../domain/career-mate.type';
 import { CareerMateErrorCode } from '../domain/career-mate-error-code.enum';
 import { extractPrReferences } from '../domain/extract-pr-reference';
 import {
@@ -57,8 +61,12 @@ export class ReflectPrUsecase {
   async execute({
     slackUserId,
     prText,
+    impactContext,
   }: ReflectPrInput): Promise<AgentRunOutcome<ReflectPrResult>> {
     const refs = extractPrReferences(prText); // 0건 시 INVALID_PR_REFERENCE
+    // 빈 문자열·공백만 들어온 입력은 없는 것과 같게 다룬다. 이후 분기가 전부 이 값을
+    // 기준으로 갈리므로 여기서 한 번만 정규화한다.
+    const trimmedContext = impactContext?.trim() || undefined;
     const githubLogin = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     if (!githubLogin) {
       throw new CareerMateException({
@@ -75,6 +83,10 @@ export class ReflectPrUsecase {
       inputSnapshot: {
         slackUserId,
         prs: refs.map((ref) => `${ref.repo}#${ref.number}`),
+        // 맥락이 실린 회차인지 원장에서 바로 보이게 한다 — 프롬프트가 달라지는 회차라
+        // 산출물이 튈 때 "맥락 때문인지" 를 가르는 유일한 표식이다. 원문 자체를 넣지
+        // 않는 이유는 저장되는 성과(impactContext)에 이미 그대로 남기 때문.
+        hasImpactContext: trimmedContext !== undefined,
       },
       run: async (context) => {
         const perPrDiffBytes = Math.max(
@@ -109,15 +121,21 @@ export class ReflectPrUsecase {
           agentType: AgentType.CAREER_MATE,
           request: {
             prompt: isMulti
-              ? buildMultiPrRetroPrompt({ items })
-              : buildPrRetroPrompt(items[0]),
+              ? buildMultiPrRetroPrompt({
+                  items,
+                  impactContext: trimmedContext,
+                })
+              : buildPrRetroPrompt({
+                  ...items[0],
+                  impactContext: trimmedContext,
+                }),
             systemPrompt: isMulti
               ? MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT
               : PR_RETRO_SYNTH_SYSTEM_PROMPT,
           },
         });
         const parsed = parsePrRetroOutput(completion.text);
-        const [accomplishment] = reconcileAccomplishmentEvidence({
+        const [reconciled] = reconcileAccomplishmentEvidence({
           accomplishments: [parsed.accomplishment],
           pullRequests: items.map(({ detail }) => ({
             repo: detail.repo,
@@ -125,6 +143,13 @@ export class ReflectPrUsecase {
             mergedAt: detail.mergedAt,
           })),
         });
+        // 사용자가 적은 원문을 그대로 심는다. 모델에게 돌려받지 않는 이유는 evidence 와
+        // 같다 — 모델은 요약·의역·누락을 하는데, 이 값은 나중에 "그때 사람이 무엇을
+        // 알고 있었는지" 를 되짚는 유일한 기록이라 원문이 아니면 쓸모가 없다.
+        const accomplishment: ProfileAccomplishment =
+          trimmedContext === undefined
+            ? reconciled
+            : { ...reconciled, impactContext: trimmedContext };
         const { narrative } = parsed;
 
         const latest = await this.repository.findLatestBySlackUser(slackUserId);

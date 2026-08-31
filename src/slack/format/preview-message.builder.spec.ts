@@ -1,3 +1,4 @@
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import {
   buildPreviewBlocks,
   buildResolvedPreviewBlocks,
@@ -167,5 +168,118 @@ describe('chunkMrkdwnText — 링크 경계 보존', () => {
         (chunk.match(/>/g) ?? []).length,
       );
     }
+  });
+});
+
+// 경력 반영 카드에만 승인 전 "작업 맥락" 입력칸이 묶음(저장소) 수만큼 붙는다.
+describe('buildPreviewBlocks — 경력 맥락 입력칸', () => {
+  const CAREER_PAYLOAD = {
+    prGroups: [['o/company#1', 'o/company#2'], ['o/personal#9']],
+    slackUserId: 'U1',
+  };
+
+  it('묶음마다 input 블록을 하나씩, 버튼보다 위에 둔다', () => {
+    const blocks = buildPreviewBlocks({
+      previewText: '경력 반영 후보',
+      previewId: 'prv-c1',
+      kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
+      payload: CAREER_PAYLOAD,
+    });
+
+    expect(blocks).toHaveLength(4);
+    expect(blocks[0].type).toBe('section');
+    expect(blocks[1].type).toBe('input');
+    expect(blocks[2].type).toBe('input');
+    // 적기 전에 승인을 누르는 순서를 만들지 않으려면 버튼보다 위여야 한다.
+    expect(blocks[3].type).toBe('actions');
+
+    const first = blocks[1] as {
+      block_id: string;
+      dispatch_action: boolean;
+      label: { text: string };
+      element: { action_id: string; initial_value?: string };
+    };
+    expect(first.block_id).toBe('career-context:prv-c1:0');
+    // 메시지 안의 input 은 제출 버튼이 없다 — 이 값이 없으면 적어도 전달되지 않는다.
+    expect(first.dispatch_action).toBe(true);
+    expect(first.element.action_id).toBe('career-context:set');
+    expect(first.element.initial_value).toBeUndefined();
+    // 어느 저장소 칸인지 라벨로 구분돼야 한다 — 아니면 회사 수치를 개인 칸에 적게 된다.
+    expect(first.label.text).toContain('o/company');
+    expect((blocks[2] as { block_id: string }).block_id).toBe(
+      'career-context:prv-c1:1',
+    );
+    expect((blocks[2] as { label: { text: string } }).label.text).toContain(
+      'o/personal',
+    );
+  });
+
+  it('이미 적어둔 맥락은 그 묶음 칸에만 initial_value 로 되살린다', () => {
+    const blocks = buildPreviewBlocks({
+      previewText: '경력 반영 후보',
+      previewId: 'prv-c2',
+      kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
+      payload: {
+        ...CAREER_PAYLOAD,
+        impactContexts: [null, '주간 배치 실패 12건 → 0건'],
+      },
+    });
+    expect(
+      (blocks[1] as { element: { initial_value?: string } }).element
+        .initial_value,
+    ).toBeUndefined();
+    expect(
+      (blocks[2] as { element: { initial_value?: string } }).element
+        .initial_value,
+    ).toBe('주간 배치 실패 12건 → 0건');
+  });
+
+  it('구형 prRefs 카드도 한 묶음으로 입력칸을 받는다', () => {
+    const blocks = buildPreviewBlocks({
+      previewText: '경력 반영 후보',
+      previewId: 'prv-c4',
+      kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
+      payload: { prRefs: ['o/legacy#3'], slackUserId: 'U1' },
+    });
+    expect(blocks.filter((block) => block.type === 'input')).toHaveLength(1);
+    expect((blocks[1] as { block_id: string }).block_id).toBe(
+      'career-context:prv-c4:0',
+    );
+  });
+
+  it('다른 kind 와 kind 미지정은 입력칸 없이 종전과 같다', () => {
+    const base = buildPreviewBlocks({
+      previewText: '블로그 발행 후보',
+      previewId: 'prv-b1',
+    });
+    const blog = buildPreviewBlocks({
+      previewText: '블로그 발행 후보',
+      previewId: 'prv-b1',
+      kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+      payload: CAREER_PAYLOAD,
+    });
+    expect(base).toEqual(blog);
+    expect(base.some((block) => block.type === 'input')).toBe(false);
+  });
+
+  it('묶음을 못 읽는 payload 면 입력칸 없이 승인 버튼은 남긴다', () => {
+    const blocks = buildPreviewBlocks({
+      previewText: '경력 반영 후보',
+      previewId: 'prv-c5',
+      kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
+      payload: null,
+    });
+    expect(blocks.some((block) => block.type === 'input')).toBe(false);
+    expect(blocks[blocks.length - 1].type).toBe('actions');
+  });
+
+  it('해소된 카드에는 입력칸을 남기지 않는다 (반영될 곳이 없다)', () => {
+    const blocks = buildResolvedPreviewBlocks({
+      state: 'APPLY_FAILED',
+      bodyText: '실패',
+      previewId: 'prv-c3',
+    });
+    expect(blocks.some((block) => block.type === 'input')).toBe(false);
+    expect(blocks[blocks.length - 1].type).toBe('actions');
   });
 });

@@ -146,4 +146,64 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).not.toHaveBeenCalled();
   });
+
+  it('(f) 맥락은 적어 넣은 묶음에만 실린다 — 회사 수치가 개인 성과로 새지 않는다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+        impactContexts: ['  결제 실패율 3%→0.5%  ', null],
+      }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenNthCalledWith(1, {
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+      impactContext: '결제 실패율 3%→0.5%',
+    });
+    // 두 번째 묶음은 도입 전과 완전히 같은 호출 형태여야 한다.
+    expect(reflectPr.execute).toHaveBeenNthCalledWith(2, {
+      slackUserId: 'U1',
+      prText: 'o/personal#9',
+    });
+    expect(result.message).toContain('o/company 1건(맥락 반영)');
+    expect(result.message).toContain('o/personal 1건');
+    expect(result.message).not.toContain('o/personal 1건(맥락 반영)');
+  });
+
+  it('(g) impactContexts 가 없으면 도입 전과 같은 호출만 남는다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+    });
+    expect(result.message).not.toContain('맥락 반영');
+  });
+
+  it('(h) 공백만 적힌 맥락은 없는 것과 같게 다룬다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1']],
+        slackUserId: 'U1',
+        impactContexts: ['   '],
+      }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+    });
+  });
 });

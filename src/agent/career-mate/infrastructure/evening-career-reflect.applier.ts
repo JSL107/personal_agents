@@ -7,14 +7,12 @@ import {
   PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
 import { ReflectPrUsecase } from '../application/reflect-pr.usecase';
-
-interface EveningCareerPayload {
-  // 저장소별로 나뉜 PR 묶음. 묶음 하나가 회고 1회 = 성과 1건이 된다.
-  prGroups?: string[][];
-  // 그룹 도입(2026-08-31) 이전에 만들어져 아직 승인되지 않은 카드가 쓰는 형태.
-  prRefs?: string[];
-  slackUserId: string;
-}
+import {
+  careerGroupRepo,
+  EveningCareerPayload,
+  readImpactContext,
+  resolveCareerPrGroups,
+} from '../domain/evening-career-payload';
 
 @Injectable()
 export class EveningCareerReflectApplier implements PreviewApplier {
@@ -25,7 +23,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
 
   async apply(preview: PreviewAction): Promise<ApplyResult> {
     const payload = preview.payload as EveningCareerPayload;
-    const groups = this.resolveGroups(payload);
+    const groups = resolveCareerPrGroups(payload);
     if (groups.length === 0) {
       throw new Error('EVENING_CAREER_REFLECT: payload.prGroups/prRefs 누락');
     }
@@ -35,21 +33,29 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     const messages: string[] = [];
     const failedGroups: string[][] = [];
     let lastPortfolioUrl: string | null = null;
-    for (const refs of groups) {
+    for (const [index, refs] of groups.entries()) {
+      // 맥락은 묶음마다 따로 받는다 — 카드 전체에 한 줄만 받으면 회사 저장소의 수치가
+      // 개인 프로젝트 성과에도 실린다.
+      const impactContext = readImpactContext(payload, index);
       try {
         const outcome = await this.reflectPr.execute({
           slackUserId: payload.slackUserId,
           prText: refs.join('\n'),
+          ...(impactContext ? { impactContext } : {}),
         });
         lastPortfolioUrl = outcome.result.portfolioUrl ?? lastPortfolioUrl;
-        messages.push(`${this.repoOf(refs)} ${refs.length}건`);
+        // 맥락이 실렸는지를 결과 문구에 남긴다. 입력칸은 승인과 함께 사라지므로, 여기서
+        // 말하지 않으면 "적은 게 반영됐는지" 를 확인할 화면이 어디에도 없다.
+        messages.push(
+          `${careerGroupRepo(refs)} ${refs.length}건${impactContext ? '(맥락 반영)' : ''}`,
+        );
       } catch (error) {
         // 그룹 하나가 실패해도 나머지는 반영한다 — 한 저장소의 PR 접근 실패로 그날 성과가
         // 통째로 사라지면, 승인 카드는 이미 소비돼 다시 누를 수 없다.
         failedGroups.push(refs);
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `EVENING_CAREER_REFLECT 그룹 실패 — ${this.repoOf(refs)}: ${message}`,
+          `EVENING_CAREER_REFLECT 그룹 실패 — ${careerGroupRepo(refs)}: ${message}`,
         );
       }
     }
@@ -72,18 +78,5 @@ export class EveningCareerReflectApplier implements PreviewApplier {
       message: `이력서/포트폴리오에 반영했습니다 (${messages.join(', ')})${failedNote} — ${lastPortfolioUrl ?? '완료'}`,
       artifacts: [],
     };
-  }
-
-  private resolveGroups(payload: EveningCareerPayload): string[][] {
-    const grouped = (payload?.prGroups ?? []).filter((refs) => refs.length > 0);
-    if (grouped.length > 0) {
-      return grouped;
-    }
-    const legacy = payload?.prRefs ?? [];
-    return legacy.length > 0 ? [legacy] : [];
-  }
-
-  private repoOf(refs: string[]): string {
-    return refs[0]?.split('#')[0] ?? '(알 수 없음)';
   }
 }

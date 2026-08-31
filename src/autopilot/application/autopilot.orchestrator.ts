@@ -354,6 +354,8 @@ export class AutopilotOrchestrator {
               target: resolved,
               previewText: preview.previewText,
               previewId: created.id,
+              kind: preview.kind,
+              payload: preview.payload,
             });
           // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
           if (!coordinateSaved && messageTs) {
