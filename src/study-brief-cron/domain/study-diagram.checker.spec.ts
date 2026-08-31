@@ -99,10 +99,7 @@ describe('findDiagramViolations', () => {
   });
 
   it('잰 글자가 하나도 없으면 빈 그림으로 보고 FONT_TOO_SMALL 을 낸다', () => {
-    const violations = findDiagramViolations(
-      { ...clean, texts: [] },
-      limits,
-    );
+    const violations = findDiagramViolations({ ...clean, texts: [] }, limits);
 
     expect(violations).toHaveLength(1);
     expect(violations[0].rule).toBe('FONT_TOO_SMALL');
