@@ -120,6 +120,7 @@ const createFixture = (input?: {
     tickerId: number;
     cashDelta: Prisma.Decimal;
     quantityDelta: Prisma.Decimal;
+    payDate: Date | null;
   }[];
 }): EvaluationFixture => {
   const positions = input?.positions ?? [];
@@ -250,6 +251,7 @@ describe('EvaluatePaperAccountUsecase', () => {
           tickerId: 21,
           cashDelta: decimal('200'),
           quantityDelta: decimal('0'),
+          payDate: date('2026-08-10'),
         },
       ],
       barsBySymbol: { '005930': [createBar('2026-08-11', '100')] },
@@ -265,6 +267,10 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(result.unsettledCash).toBe('-100');
     expect(result.dividendNetTotal).toBe('200');
     expect(result.dividendCount).toBe(1);
+    // 지급일이 이미 지난 배당이라 잔고 전액을 매수에 쓸 수 있다.
+    expect(result.pendingDividendCash).toBe('0');
+    expect(result.purchasableCash).toBe('1100');
+    expect(result.nextDividendPayDate).toBeNull();
     expect(result.invariantViolations).toEqual([]);
   });
 
@@ -315,6 +321,9 @@ describe('EvaluatePaperAccountUsecase', () => {
       unsettledCash: '0',
       dividendNetTotal: '0',
       dividendCount: 0,
+      pendingDividendCash: '0',
+      purchasableCash: '800000',
+      nextDividendPayDate: null,
       positionValue: '240000',
       totalValue: '1040000',
       returnRate: '4',
@@ -384,6 +393,9 @@ describe('EvaluatePaperAccountUsecase', () => {
       unsettledCash: '0',
       dividendNetTotal: '0',
       dividendCount: 0,
+      pendingDividendCash: '0',
+      purchasableCash: '1000000',
+      nextDividendPayDate: null,
       positionValue: '0',
       totalValue: '1000000',
       returnRate: '0',
@@ -590,6 +602,9 @@ describe('EvaluatePaperAccountUsecase', () => {
       unsettledCash: '0',
       dividendNetTotal: '0',
       dividendCount: 0,
+      pendingDividendCash: '0',
+      purchasableCash: '123',
+      nextDividendPayDate: null,
       positionValue: null,
       totalValue: null,
       returnRate: null,

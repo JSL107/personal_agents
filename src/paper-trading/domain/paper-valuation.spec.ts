@@ -2,8 +2,11 @@ import { Prisma } from '@prisma/client';
 
 import {
   calculateAccountValuation,
+  calculatePendingDividendCash,
   calculatePositionValuation,
+  calculatePurchasableCash,
   calculateUnsettledCash,
+  findNextPayDate,
 } from './paper-valuation';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -192,5 +195,125 @@ describe('calculateUnsettledCash', () => {
     });
 
     expect(unsettledCash.toString()).toBe('0');
+  });
+});
+
+// 코람코더원리츠 특별배당의 실제 값. 8/28 권리락에 원장이 적히고 지급은 11/27 이라, 그 사이
+// 석 달 동안 잔고 2,106,271 원 중 1,330,319 원은 아직 받지 않은 돈이다.
+describe('calculatePendingDividendCash', () => {
+  const dividend = {
+    payDate: new Date('2026-11-27T00:00:00.000Z'),
+    cashDelta: decimal('1330319'),
+  };
+
+  it('지급일이 오지 않은 배당을 합산한다', () => {
+    expect(
+      calculatePendingDividendCash({
+        asOf: new Date('2026-08-31T00:00:00.000Z'),
+        zero: decimal('0'),
+        corporateActions: [dividend],
+      }).toString(),
+    ).toBe('1330319');
+  });
+
+  // 지급일에 상태를 바꾸는 작업이 없으므로, 그날이 지났다는 사실만으로 미수에서 빠져야 한다.
+  // 빠지지 않으면 배당이 영영 못 쓰는 돈으로 남는다.
+  it('지급일 당일부터는 미수에서 빠진다', () => {
+    expect(
+      calculatePendingDividendCash({
+        asOf: new Date('2026-11-27T00:00:00.000Z'),
+        zero: decimal('0'),
+        corporateActions: [dividend],
+      }).toString(),
+    ).toBe('0');
+  });
+
+  // 지급일을 모르는 옛 기록까지 미수로 잡으면, 이미 쓴 돈이 갑자기 못 쓰는 돈이 된다.
+  it('지급일이 없는 기록은 즉시 입금으로 본다', () => {
+    expect(
+      calculatePendingDividendCash({
+        asOf: new Date('2026-08-31T00:00:00.000Z'),
+        zero: decimal('0'),
+        corporateActions: [{ payDate: null, cashDelta: decimal('500') }],
+      }).toString(),
+    ).toBe('0');
+  });
+
+  // 분할·병합은 cashDelta 가 0 이라 종류를 가리지 않아도 합에 섞이지 않는다.
+  it('현금이 움직이지 않는 기업행동은 합에 영향을 주지 않는다', () => {
+    expect(
+      calculatePendingDividendCash({
+        asOf: new Date('2026-08-31T00:00:00.000Z'),
+        zero: decimal('0'),
+        corporateActions: [
+          dividend,
+          {
+            payDate: new Date('2026-12-01T00:00:00.000Z'),
+            cashDelta: decimal('0'),
+          },
+        ],
+      }).toString(),
+    ).toBe('1330319');
+  });
+});
+
+describe('calculatePurchasableCash', () => {
+  it('잔고에서 미수 배당을 뺀 금액이 매수 여력이다', () => {
+    expect(
+      calculatePurchasableCash({
+        cashBalance: decimal('2106271'),
+        pendingDividendCash: decimal('1330319'),
+      }).toString(),
+    ).toBe('775952');
+  });
+
+  // 미수 배당으로 이미 매수가 나간 계좌는 잔고가 미수분보다 적을 수 있다. 음수를 그대로
+  // 흘리면 제약 함수가 0 으로 깎기 전까지 여력처럼 돌아다닌다.
+  it('미수가 잔고보다 크면 0 에서 끊는다', () => {
+    expect(
+      calculatePurchasableCash({
+        cashBalance: decimal('100000'),
+        pendingDividendCash: decimal('1330319'),
+      }).toString(),
+    ).toBe('0');
+  });
+});
+
+describe('findNextPayDate', () => {
+  it('미도래 기업행동 중 가장 이른 지급일을 고른다', () => {
+    const payDate = findNextPayDate({
+      asOf: new Date('2026-08-31T00:00:00.000Z'),
+      corporateActions: [
+        {
+          payDate: new Date('2026-12-15T00:00:00.000Z'),
+          cashDelta: decimal('100'),
+        },
+        {
+          payDate: new Date('2026-11-27T00:00:00.000Z'),
+          cashDelta: decimal('200'),
+        },
+        // 이미 지난 지급일이 가장 이르다고 뽑히면 카드가 지난 날짜를 예고한다.
+        {
+          payDate: new Date('2026-08-10T00:00:00.000Z'),
+          cashDelta: decimal('300'),
+        },
+      ],
+    });
+
+    expect(payDate?.toISOString().slice(0, 10)).toBe('2026-11-27');
+  });
+
+  it('미도래 건이 없으면 null 이다', () => {
+    expect(
+      findNextPayDate({
+        asOf: new Date('2026-11-27T00:00:00.000Z'),
+        corporateActions: [
+          {
+            payDate: new Date('2026-11-27T00:00:00.000Z'),
+            cashDelta: decimal('200'),
+          },
+        ],
+      }),
+    ).toBeNull();
   });
 });

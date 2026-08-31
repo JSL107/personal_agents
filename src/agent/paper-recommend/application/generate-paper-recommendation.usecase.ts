@@ -2,14 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { MoneyValue } from '../../../market-data/domain/market-data.type';
 import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { parseTradeSide } from '../../../paper-trading/domain/paper-account.type';
+import {
+  calculatePendingDividendCash,
+  calculatePurchasableCash,
+} from '../../../paper-trading/domain/paper-valuation';
 import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
 import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
 import {
+  InvariantCorporateActionRow,
   LockedPaperRecommendationState,
   PaperTradingPrismaRepository,
   PendingPaperOrderInput,
@@ -40,6 +46,22 @@ const DEFAULT_STRATEGIES: PaperRecommendationStrategy[] = [
   'LONG_TERM',
   'SWING',
 ];
+
+// 잔고에서 지급일 미도래 배당을 뺀 매수 여력. 모델에게 보여줄 때와 실제 수량을 배정할 때가
+// 같은 값을 써야 "모델이 본 현금" 과 "배정된 현금" 이 갈리지 않는다.
+const subtractPendingDividend = (input: {
+  cashBalance: MoneyValue;
+  corporateActions: InvariantCorporateActionRow[];
+  asOf: Date;
+}): MoneyValue =>
+  calculatePurchasableCash({
+    cashBalance: input.cashBalance,
+    pendingDividendCash: calculatePendingDividendCash({
+      asOf: input.asOf,
+      zero: input.cashBalance.times(0),
+      corporateActions: input.corporateActions,
+    }),
+  });
 
 export interface GeneratePaperRecommendationCommand {
   strategies?: PaperRecommendationStrategy[];
@@ -194,10 +216,19 @@ export class GeneratePaperRecommendationUsecase {
           indicatorSources.map((stock) => [stock.tickerId, stock.indicators]),
         );
         const scorecard = await this.buildScorecard(strategy, decidedAt);
+        // 모델에게는 잔고가 아니라 매수 여력을 보여준다. 배당은 권리락일에 잔고로 잡히지만
+        // 지급일까지 쓸 수 없어(코람코더원리츠는 8/28 락, 11/27 지급) 잔고를 그대로 실으면
+        // 받지도 않은 돈을 근거로 매수를 고른다. 실제 수량을 정하는 아래 제약 함수와 같은
+        // 기준을 써야 모델이 본 현금과 배정된 현금이 갈리지 않는다.
+        const purchasableCash = await this.findPurchasableCash(
+          account.id,
+          account.cashBalance,
+          decidedAt,
+        );
         const prompt =
           buildPaperRecommendationPrompt({
             strategy,
-            cashBalance: Number(account.cashBalance.toString()),
+            purchasableCash: Number(purchasableCash.toString()),
             accountValuation,
             maximumWeightPercent: parameters.maximumWeightPercent,
             positions: positions.map((position) => ({
@@ -298,6 +329,19 @@ export class GeneratePaperRecommendationUsecase {
     return outcome.result;
   }
 
+  private async findPurchasableCash(
+    accountId: number,
+    cashBalance: MoneyValue,
+    asOf: Date,
+  ): Promise<MoneyValue> {
+    return subtractPendingDividend({
+      cashBalance,
+      corporateActions:
+        await this.repository.findCorporateActionsForInvariant(accountId),
+      asOf,
+    });
+  }
+
   private async findOrOpenAccount(
     strategy: PaperRecommendationStrategy,
     decidedAt: Date,
@@ -373,7 +417,15 @@ export class GeneratePaperRecommendationUsecase {
           close,
         };
       }),
-      cashBalance: Number(state.account.cashBalance.toString()),
+      // 잠금 뒤 원장으로 다시 계산한다. 프롬프트 단계와 이 사이에 배당이 들어올 수 있고,
+      // 실제 주문 수량을 정하는 것은 이쪽이다.
+      cashBalance: Number(
+        subtractPendingDividend({
+          cashBalance: state.account.cashBalance,
+          corporateActions: state.corporateActions,
+          asOf: decidedAt,
+        }).toString(),
+      ),
       codeOf: (tickerId) => codesByTickerId.get(tickerId),
     });
     // 대기 주문이 있는 종목은 이번 회차 추천에서 아예 뺀다. 제약 함수 뒤에서 버리면 그

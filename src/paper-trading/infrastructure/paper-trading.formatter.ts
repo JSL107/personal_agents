@@ -148,6 +148,18 @@ export const formatPaperTradingReport = (
     // 결제가 다 끝난 뒤의 잔고, 곧 D+2 다.
     `예수금 D+0 ${formatMoney(result.settledCash)} · D+2 ${formatMoney(result.cashBalance)}`,
   );
+  // 배당은 권리락일에 잔고로 잡히지만 지급일까지는 쓸 수 없다. 두 줄 위의 예수금은 매매
+  // 결제(D+0/D+2)만 가르므로 그 돈이 어디에도 드러나지 않아, 잔고를 그대로 매수 여력으로
+  // 읽게 된다. 미수분이 있는 날만 적는다 — 없는 날 0 원 줄은 읽을 것이 없다.
+  if (new Prisma.Decimal(result.pendingDividendCash).comparedTo(0) > 0) {
+    const payDateNote =
+      result.nextDividendPayDate === null
+        ? ''
+        : ` (${result.nextDividendPayDate} 지급)`;
+    lines.push(
+      `미수 배당 ${formatMoney(result.pendingDividendCash)}${payDateNote} · 매수 가능 ${formatMoney(result.purchasableCash)}`,
+    );
+  }
   const dividendCount = result.dividendCount ?? 0;
   // 전일 대비를 적을 때 배당을 함께 밝힌다. 소급 반영한 배당은 과거 스냅샷을 고치지
   // 않으므로(그날 실제로 무엇을 봤는지가 기록이다) 입금 당일만 하루 만에 급등한 것처럼

@@ -14,6 +14,9 @@ const RESULT: EvaluateAccountResult = {
   unsettledCash: '100000',
   dividendNetTotal: '0',
   dividendCount: 0,
+  pendingDividendCash: '0',
+  purchasableCash: '800000',
+  nextDividendPayDate: null,
   positionValue: '240000',
   totalValue: '1040000',
   returnRate: '4',
@@ -130,9 +133,31 @@ describe('formatPaperTradingReport', () => {
     });
 
     expect(text).toContain('예수금 D+0 900,000원 · D+2 800,000원');
+    // 지급일이 지난 배당이라 잔고 전액이 매수 여력이다 — 적을 것이 없다.
+    expect(text).not.toContain('미수 배당');
     // 배당은 손익 줄에서 매매분과 갈려 나온다. 별도 요약 줄을 두면 같은 금액이 카드에
     // 두 번 적혀 어느 쪽이 합계인지 흐려진다.
     expect(text).toContain('배당 1건 +1,330,319원');
+  });
+
+  // 실제 사고 값. 코람코더원리츠 특별배당은 8/28 락, 11/27 지급이라 석 달 동안 잔고에는
+  // 있지만 쓸 수 없다. 그 줄이 없으면 D+2 잔고를 그대로 매수 여력으로 읽는다.
+  it('지급일이 오지 않은 배당은 매수 가능액과 함께 따로 적는다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      cashBalance: '2106271',
+      settledCash: '5417053',
+      unsettledCash: '-3310782',
+      dividendNetTotal: '1330319',
+      dividendCount: 1,
+      pendingDividendCash: '1330319',
+      purchasableCash: '775952',
+      nextDividendPayDate: '2026-11-27',
+    });
+
+    expect(text).toContain(
+      '미수 배당 1,330,319원 (2026-11-27 지급) · 매수 가능 775,952원',
+    );
   });
 
   // 실제 사고 값. realizedPnl(-191,840)만 내면 매매로 152만원을 잃은 사실이 배당에
