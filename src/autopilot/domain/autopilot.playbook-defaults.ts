@@ -109,6 +109,9 @@ export const DEFAULT_STOCK_ALERT_SCORING_TIMEZONE = 'Asia/Seoul';
 
 // 스크리닝 사후 채점 기본 스케줄 — 유니버스 시세 수집(18:30) 뒤, 추천(19:30) 앞.
 // 수집보다 먼저 돌면 그날 봉이 없어 전건이 미도래로 빠지고 채점이 하루 밀린다.
+// 주간 성적 카드. paper-score(금 20:10) 직후에 두어 투자 성적표가 한 자리에 모인다.
+export const DEFAULT_SCREENING_SCORECARD_CRON = '20 20 * * 5';
+export const DEFAULT_SCREENING_SCORECARD_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_SCREENING_OUTCOME_SCORING_CRON = '0 19 * * 1-5';
 export const DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE = 'Asia/Seoul';
 
