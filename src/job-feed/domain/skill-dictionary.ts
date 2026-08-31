@@ -95,16 +95,12 @@ const CANONICAL_BY_ALIAS: ReadonlyMap<string, string> = new Map([
   // 있지만 'GitHub' 단독이 없어 못 만났다 — 채용 태그 맥락에서 이 태그는 "형상관리로 GitHub 를
   // 쓴다" 는 뜻이므로 Git 보유로 충족된다고 보고 같은 정규명에 묶는다.
   ['github', 'Git'],
-  // AWS 세부 서비스 표기(13건). 개별 정규명을 만들면 프로필의 'AWS' 와 못 만난다.
-  ['awsec2', 'AWS'],
-  ['ec2', 'AWS'],
-  ['awsrds', 'AWS'],
-  ['awsecs', 'AWS'],
-  ['awselasticache', 'AWS'],
-  ['awscloudformation', 'AWS'],
-  ['cloudfront', 'AWS'],
-  ['lambda', 'AWS'],
-  // REST 표기 흔들림(8건).
+  // AWS 세부 서비스(aws-rds·Lambda·CloudFront 등)는 일부러 'AWS' 로 묶지 않는다.
+  // 묶으면 서로 다른 서비스 요구 네 가지가 정규명 하나로 접혀 분모가 줄고, 'AWS' 만
+  // 아는 프로필이 1/1 로 충족돼 이 커밋이 고치려는 부풀림이 그대로 재발한다(실측:
+  // 다이노즈 공고가 요구 8개 → 5개로 접히며 50% 가 80% 로 뛰었다). 사전에 없으면
+  // 원본 표기 그대로 분모에 남으므로, 안 넣는 것이 곧 정확한 채점이다.
+  // REST 표기 흔들림(8건) — 이쪽은 같은 것을 달리 적은 것이라 묶는다.
   ['restful', 'REST API'],
   ['restfulapi', 'REST API'],
   ['api', 'REST API'],
@@ -177,6 +173,10 @@ export interface SkillNormalizeResult {
   // 없으면 원본 표기를 그대로 담는다.
   identified: string[];
   unmatched: string[];
+  // NON_SKILL_KEYS 로 뺀 것. 채점 경로는 무시하지만, 사용자가 직접 적은 값을 다루는
+  // 쪽(JOB_FEED_AVOID_SKILLS)은 이걸 보고 "설정했는데 안 걸린다" 를 알려야 한다 —
+  // 조용히 넘기면 이 레포가 반복해 겪은 "조용한 0건" 계열 사고가 된다.
+  dropped: string[];
 }
 
 // 사전에 없는 원본은 버리지 않는다 — 사전 갱신 재료이자, 사전이 낡았다는 유일한 신호다.
@@ -194,6 +194,7 @@ export interface SkillNormalizeResult {
 export const normalizeSkillTags = (raw: string[]): SkillNormalizeResult => {
   const identified: string[] = [];
   const unmatched: string[] = [];
+  const dropped: string[] = [];
   // 정규명과 미매칭 원본을 한 집합으로 관리하면, 'Message Queue'처럼 자기 이름이
   // 별칭 키에 없는 정규명이 먼저 오면 미매칭으로 먼저 등록돼 그 뒤 진짜 매칭('queue')을
   // 막는다 — 결과가 입력 순서에 따라 달라진다. 두 집합을 분리해 서로 간섭하지 않게 한다.
@@ -207,6 +208,7 @@ export const normalizeSkillTags = (raw: string[]): SkillNormalizeResult => {
     }
     const key = toSkillKey(trimmed);
     if (NON_SKILL_KEYS.has(key)) {
+      dropped.push(trimmed);
       continue;
     }
     const canonical = CANONICAL_BY_ALIAS.get(key);
@@ -227,5 +229,5 @@ export const normalizeSkillTags = (raw: string[]): SkillNormalizeResult => {
     identified.push(canonical);
   }
 
-  return { identified, unmatched };
+  return { identified, unmatched, dropped };
 };

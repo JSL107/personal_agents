@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { toContentHash } from '../domain/dedupe';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
@@ -30,7 +31,14 @@ export class ReprocessJobPostingsUsecase {
       if (this.isSame(row.skillTags, next)) {
         continue;
       }
-      await this.repository.saveSkillTags(row.id, next);
+      // 지문도 새 태그 기준으로 다시 찍는다. 재파생은 공고 요건이 바뀐 게 아니라
+      // 우리 해석이 바뀐 것이므로, 다음 수집이 이 행을 "요건 변경" 으로 보고 알림
+      // 이력을 지우면 이미 본 공고가 통째로 다시 뜬다.
+      await this.repository.saveSkillTags(
+        row.id,
+        next,
+        toContentHash({ ...row, skillTags: next }),
+      );
       changed += 1;
     }
 

@@ -13,11 +13,24 @@ describe('parseAvoidSkillTags', () => {
     expect(result.unmatched).toEqual(['Cobol']);
   });
 
+  it('기술이 아닌 값은 걸러지지 않는다는 사실을 dropped 로 알린다', () => {
+    // 저장된 skillTags 에서 이미 빠진 태그라 필터가 걸릴 대상이 없다. 조용히 넘기면
+    // "설정했는데 안 걸리고 경고도 없는" 상태가 된다.
+    const result = parseAvoidSkillTags('php,Figma');
+    expect(result.identified).toEqual(['PHP']);
+    expect(result.dropped).toEqual(['Figma']);
+  });
+
   it('undefined·빈 문자열은 빈 결과를 준다', () => {
     expect(parseAvoidSkillTags(undefined)).toEqual({
       identified: [],
       unmatched: [],
+      dropped: [],
     });
-    expect(parseAvoidSkillTags('')).toEqual({ identified: [], unmatched: [] });
+    expect(parseAvoidSkillTags('')).toEqual({
+      identified: [],
+      unmatched: [],
+      dropped: [],
+    });
   });
 });

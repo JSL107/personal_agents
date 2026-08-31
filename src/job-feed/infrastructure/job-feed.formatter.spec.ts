@@ -6,6 +6,7 @@ const posting = (override: Record<string, unknown> = {}) => {
     source: 'jumpit',
     sourceId: '1',
     company: '토스',
+    companyKey: 'toss',
     title: '백엔드 개발자',
     detailUrl: 'https://example.test/1',
     skillTags: ['Java', 'Spring Boot'],

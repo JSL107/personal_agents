@@ -70,12 +70,21 @@ export class JobFeedGapAutopilotTask implements AutopilotTask {
     // 알림에서만 뺀다"는 목적이 알림 표면 두 곳 중 하나에서만 지켜진다 — 기피
     // 회사의 공고가 matchScore 순 정렬 맨 앞이면 그날 유일한 갭 분석이 정확히
     // 그 공고에 쓰일 수 있다(job-feed.autopilot-task.ts 와 같은 파싱을 쓴다).
-    const { identified: avoidSkillTags, unmatched } = parseAvoidSkillTags(
+    const {
+      identified: avoidSkillTags,
+      unmatched,
+      dropped,
+    } = parseAvoidSkillTags(
       this.configService.get<string>('JOB_FEED_AVOID_SKILLS'),
     );
     if (unmatched.length > 0) {
       this.logger.warn(
         `JOB_FEED_AVOID_SKILLS 중 사전에 없는 항목(표기가 정확히 같은 공고만 걸린다): ${unmatched.join(', ')}`,
+      );
+    }
+    if (dropped.length > 0) {
+      this.logger.warn(
+        `JOB_FEED_AVOID_SKILLS 중 기술이 아니라 걸러지지 않는 항목: ${dropped.join(', ')}`,
       );
     }
 

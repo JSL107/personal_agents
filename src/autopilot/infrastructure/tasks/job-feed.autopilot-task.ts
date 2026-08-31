@@ -179,12 +179,17 @@ export class JobFeedAutopilotTask implements AutopilotTask {
   // 남긴다. job-feed-gap.autopilot-task.ts 도 같은 파싱을 쓰므로 도메인 계층
   // 공용 함수(parseAvoidSkillTags)로 뺐다.
   private resolveAvoidSkillTags(): string[] {
-    const { identified, unmatched } = parseAvoidSkillTags(
+    const { identified, unmatched, dropped } = parseAvoidSkillTags(
       this.configService.get<string>('JOB_FEED_AVOID_SKILLS'),
     );
     if (unmatched.length > 0) {
       this.logger.warn(
         `JOB_FEED_AVOID_SKILLS 중 사전에 없는 항목(표기가 정확히 같은 공고만 걸린다): ${unmatched.join(', ')}`,
+      );
+    }
+    if (dropped.length > 0) {
+      this.logger.warn(
+        `JOB_FEED_AVOID_SKILLS 중 기술이 아니라 걸러지지 않는 항목: ${dropped.join(', ')}`,
       );
     }
     return identified;

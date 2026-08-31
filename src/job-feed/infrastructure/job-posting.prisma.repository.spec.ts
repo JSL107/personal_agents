@@ -533,11 +533,14 @@ describe('JobPostingPrismaRepository.saveSkillTags', () => {
     };
     const repository = new JobPostingPrismaRepository(prisma as never);
 
-    await repository.saveSkillTags(1, ['Java', 'Spring Boot']);
+    await repository.saveSkillTags(1, ['Java', 'Spring Boot'], 'newhash');
 
     expect(updateCalls[0].where).toEqual({ id: 1 });
+    // 지문을 함께 갱신하지 않으면 다음 수집이 "요건 변경" 으로 오인해 notifiedAt 을
+    // 지우고, 재파생만 했을 뿐인데 이미 본 공고가 통째로 다시 알림된다.
     expect(updateCalls[0].data).toEqual({
       skillTags: ['Java', 'Spring Boot'],
+      contentHash: 'newhash',
       scoredProfileId: null,
       scoredAt: null,
     });

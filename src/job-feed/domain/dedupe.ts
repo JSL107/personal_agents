@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
 
-import { NormalizedJobPosting } from './job-feed.type';
-
 const LEGAL_ENTITY_PATTERNS: readonly RegExp[] = [
   /\(주\)/gu,
   /주식회사/gu,
@@ -50,9 +48,22 @@ export const toNormalizedKey = (company: string, title: string): string => {
   return `${toCompanyKey(company)}|${stripSymbols(title)}`;
 };
 
+// 지문이 실제로 쓰는 필드만 받는다. 재파생(ReprocessJobPostingsUsecase)은 저장된 행
+// (StoredJobPosting)으로 지문을 다시 계산해야 하는데, NormalizedJobPosting 전체를
+// 요구하면 그쪽에 없는 필드(yearsSource·rawLocations 등)를 억지로 채워야 한다.
+export interface ContentHashInput {
+  companyKey: string;
+  title: string;
+  skillTags: string[];
+  minYears: number | null;
+  maxYears: number | null;
+  experienceLevel: string | null;
+  locations: string[];
+}
+
 // 요건이 바뀐 공고를 다시 알리기 위한 지문. 요건과 무관한 필드는 넣지 않는다 —
 // 넣으면 URL 이 바뀔 때마다 이미 본 공고가 다시 뜬다.
-export const toContentHash = (posting: NormalizedJobPosting): string => {
+export const toContentHash = (posting: ContentHashInput): string => {
   const material = JSON.stringify([
     posting.companyKey,
     stripSymbols(posting.title),

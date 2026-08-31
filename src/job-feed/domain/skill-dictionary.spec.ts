@@ -64,10 +64,15 @@ describe('normalizeSkillTags', () => {
   });
 
   it('빈 배열과 공백 문자열을 견딘다', () => {
-    expect(normalizeSkillTags([])).toEqual({ identified: [], unmatched: [] });
+    expect(normalizeSkillTags([])).toEqual({
+      identified: [],
+      unmatched: [],
+      dropped: [],
+    });
     expect(normalizeSkillTags(['  '])).toEqual({
       identified: [],
       unmatched: [],
+      dropped: [],
     });
   });
 
@@ -100,10 +105,6 @@ describe('normalizeSkillTags', () => {
     // 형상관리 플랫폼 표기 — 실측 20건.
     expect(normalizeSkillTags(['Github']).identified).toEqual(['Git']);
     expect(normalizeSkillTags(['GitHub']).identified).toEqual(['Git']);
-    // AWS 세부 서비스는 개별 정규명을 만들면 프로필의 'AWS' 와 못 만난다.
-    expect(normalizeSkillTags(['aws-rds', 'Lambda', 'ec2']).identified).toEqual(
-      ['AWS'],
-    );
     expect(
       normalizeSkillTags(['restful', 'api', 'Web API']).identified,
     ).toEqual(['REST API']);
@@ -118,11 +119,32 @@ describe('normalizeSkillTags', () => {
     expect(normalizeSkillTags(['Message Queue', 'queue'])).toEqual({
       identified: ['Message Queue'],
       unmatched: [],
+      dropped: [],
     });
     expect(normalizeSkillTags(['queue', 'Message Queue'])).toEqual({
       identified: ['Message Queue'],
       unmatched: [],
+      dropped: [],
     });
+  });
+
+  // AWS 세부 서비스를 'AWS' 하나로 묶으면 서로 다른 요구 네 가지가 정규명 하나로
+  // 접혀 분모가 줄고, 이 커밋이 고치려는 부풀림이 alias 단계에서 재발한다.
+  it('AWS 세부 서비스는 AWS 로 묶지 않는다 — 묶으면 분모가 줄어 부풀림이 재발한다', () => {
+    const result = normalizeSkillTags([
+      'aws-rds',
+      'Lambda',
+      'CloudFront',
+      'aws-elasticache',
+    ]);
+    expect(result.identified).toHaveLength(4);
+    expect(result.identified).not.toContain('AWS');
+  });
+
+  it('비기술로 뺀 태그는 dropped 로 보고한다 — 사용자가 직접 적은 값이 조용히 사라지지 않게', () => {
+    const result = normalizeSkillTags(['Java', 'Figma', 'JIRA']);
+    expect(result.identified).toEqual(['Java']);
+    expect(result.dropped).toEqual(['Figma', 'JIRA']);
   });
 
   // 사전과 비기술 목록에 같은 키를 넣으면 비기술 판정이 먼저라 사전 항목이 조용히

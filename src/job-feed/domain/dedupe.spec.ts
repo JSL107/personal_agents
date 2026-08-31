@@ -76,11 +76,9 @@ describe('toContentHash', () => {
     );
   });
 
-  it('마지막 확인 시각처럼 요건과 무관한 값에는 반응하지 않는다', () => {
-    expect(toContentHash(base)).toBe(
-      toContentHash({ ...base, detailUrl: 'https://example.test/changed' }),
-    );
-  });
+  // 요건과 무관한 필드(detailUrl 등)를 넣으면 URL 이 바뀔 때마다 이미 본 공고가 다시
+  // 뜬다 — 예전에는 그걸 테스트로 지켰지만, 이제 ContentHashInput 이 요건 필드만
+  // 받도록 좁혀져 타입 단계에서 막힌다(dedupe.ts).
 
   // toContentHash 가 skillTags·locations 를 .sort() 후 해시에 넣어야 순서만 바뀐 공고를
   // "요건 변경"으로 오인해 재알림하지 않는다. 이 회귀를 지키는 테스트가 없었다 —
