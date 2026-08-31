@@ -1,10 +1,17 @@
-export type DiagramViolationRule = 'FONT_TOO_SMALL' | 'OVERFLOW_X' | 'TOO_TALL';
+export type DiagramViolationRule =
+  | 'FONT_TOO_SMALL'
+  | 'TEXT_COVERED'
+  | 'OVERFLOW_X'
+  | 'TOO_TALL';
 
 export interface DiagramTextMeasurement {
   // 사람이 로그에서 어느 요소인지 알아볼 수 있는 표식. 재작업 프롬프트에도 그대로 실린다.
   label: string;
   // CSS font-size 가 아니라 실제 렌더 높이 기반 값. SVG viewBox 스케일이 반영된 크기다.
   renderedFontPx: number;
+  // 글자 자리에서 실제로 보이는 최상단 요소가 이 글자 자신이 아니면 true.
+  // 크기·폭과 무관하게, 다른 도형·글자에 덮여 사람 눈에 안 보이는 경우를 잡는다.
+  covered: boolean;
 }
 
 export interface DiagramMeasurements {
@@ -45,6 +52,15 @@ export const findDiagramViolations = (
     violations.push({
       rule: 'FONT_TOO_SMALL',
       detail: `글자 하한 ${limits.minFontPx}px 미만: ${listed}`,
+    });
+  }
+
+  const covered = measurements.texts.filter((text) => text.covered);
+  if (covered.length > 0) {
+    const listed = covered.map((text) => text.label).join(', ');
+    violations.push({
+      rule: 'TEXT_COVERED',
+      detail: `다른 요소에 가려져 안 보이는 글자: ${listed}`,
     });
   }
 

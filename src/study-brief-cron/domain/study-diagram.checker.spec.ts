@@ -3,8 +3,8 @@ import { findDiagramViolations } from './study-diagram.checker';
 const limits = { widthPx: 700, minFontPx: 14, maxHeightPx: 1600 };
 const clean = {
   texts: [
-    { label: 'svg>text "요청"', renderedFontPx: 18 },
-    { label: 'div.caption', renderedFontPx: 14 },
+    { label: 'svg>text "요청"', renderedFontPx: 18, covered: false },
+    { label: 'div.caption', renderedFontPx: 14, covered: false },
   ],
   contentWidth: 700,
   contentHeight: 900,
@@ -18,7 +18,7 @@ describe('findDiagramViolations', () => {
   it('하한과 같은 글자 크기는 통과시킨다', () => {
     const measurements = {
       ...clean,
-      texts: [{ label: 'svg>text', renderedFontPx: 14 }],
+      texts: [{ label: 'svg>text', renderedFontPx: 14, covered: false }],
     };
 
     expect(findDiagramViolations(measurements, limits)).toEqual([]);
@@ -28,8 +28,8 @@ describe('findDiagramViolations', () => {
     const measurements = {
       ...clean,
       texts: [
-        { label: 'svg>text "정상"', renderedFontPx: 18 },
-        { label: 'svg>text "작음"', renderedFontPx: 9 },
+        { label: 'svg>text "정상"', renderedFontPx: 18, covered: false },
+        { label: 'svg>text "작음"', renderedFontPx: 9, covered: false },
       ],
     };
 
@@ -46,8 +46,8 @@ describe('findDiagramViolations', () => {
     const measurements = {
       ...clean,
       texts: [
-        { label: 'a', renderedFontPx: 8 },
-        { label: 'b', renderedFontPx: 10 },
+        { label: 'a', renderedFontPx: 8, covered: false },
+        { label: 'b', renderedFontPx: 10, covered: false },
       ],
     };
 
@@ -56,6 +56,61 @@ describe('findDiagramViolations', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0].detail).toContain('a');
     expect(violations[0].detail).toContain('b');
+  });
+
+  it('가려진 글자가 하나 있으면 TEXT_COVERED 를 낸다', () => {
+    const measurements = {
+      ...clean,
+      texts: [
+        { label: 'svg>text "정상"', renderedFontPx: 18, covered: false },
+        { label: 'text "server tool"', renderedFontPx: 18, covered: true },
+      ],
+    };
+
+    const violations = findDiagramViolations(measurements, limits);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe('TEXT_COVERED');
+    expect(violations[0].detail).toContain('text "server tool"');
+  });
+
+  it('가려진 글자가 여러 개면 detail 에 모두 담는다', () => {
+    const measurements = {
+      ...clean,
+      texts: [
+        { label: 'a', renderedFontPx: 18, covered: true },
+        { label: 'b', renderedFontPx: 18, covered: true },
+      ],
+    };
+
+    const violations = findDiagramViolations(measurements, limits);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe('TEXT_COVERED');
+    expect(violations[0].detail).toContain('a');
+    expect(violations[0].detail).toContain('b');
+  });
+
+  it('가려진 글자가 없으면 TEXT_COVERED 는 발동하지 않는다', () => {
+    const violations = findDiagramViolations(clean, limits);
+
+    expect(violations.map((violation) => violation.rule)).not.toContain(
+      'TEXT_COVERED',
+    );
+  });
+
+  it('작고 가려진 글자는 FONT_TOO_SMALL 과 TEXT_COVERED 를 함께 낸다', () => {
+    const measurements = {
+      ...clean,
+      texts: [{ label: 'tiny-covered', renderedFontPx: 9, covered: true }],
+    };
+
+    const violations = findDiagramViolations(measurements, limits);
+
+    expect(violations.map((violation) => violation.rule)).toEqual([
+      'FONT_TOO_SMALL',
+      'TEXT_COVERED',
+    ]);
   });
 
   it('내용이 캔버스 폭을 넘으면 OVERFLOW_X 를 낸다', () => {
@@ -84,7 +139,7 @@ describe('findDiagramViolations', () => {
   it('여러 규칙을 동시에 위반하면 모두 반환한다', () => {
     const violations = findDiagramViolations(
       {
-        texts: [{ label: 'tiny', renderedFontPx: 6 }],
+        texts: [{ label: 'tiny', renderedFontPx: 6, covered: false }],
         contentWidth: 900,
         contentHeight: 3000,
       },
