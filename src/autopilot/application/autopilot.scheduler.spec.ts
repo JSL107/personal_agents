@@ -315,6 +315,75 @@ describe('AutopilotScheduler', () => {
     }
   });
 
+  it('AUTOPILOT_CAREER_TARGET → 커리어 라인만 채널로, 투자·공통은 각자 유지', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_INVEST_TARGET') {
+          return 'C0STOCK';
+        }
+        if (key === 'AUTOPILOT_CAREER_TARGET') {
+          return 'C0JOB';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    // 라인이 둘 이상일 때 서로 섞이지 않는지가 이 단언의 요지다 — 키를 하나만 두고
+    // 보면 "override 가 먹는다"까지만 확인되고, 다른 라인이 끌려가는 것은 못 잡는다.
+    const careerGroups = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.line === 'career',
+    ).map((entry) => entry.digestGroup ?? entry.id);
+    expect(careerGroups).toHaveLength(2);
+    for (const groupKey of careerGroups) {
+      const call = queue.add.mock.calls.find(
+        (item: unknown[]) => item[0] === groupKey,
+      );
+      expect(call?.[1]).toMatchObject({ target: 'C0JOB' });
+    }
+
+    const stockCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'stock-monitor',
+    );
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(stockCall?.[1]).toMatchObject({ target: 'C0STOCK' });
+    expect(morningCall?.[1]).toMatchObject({ target: 'U1' });
+  });
+
+  it('AUTOPILOT_CAREER_TARGET 미설정이면 커리어 라인도 공통 TARGET 을 쓴다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C0COMMON';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const jobFeedCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'job-feed',
+    );
+    expect(jobFeedCall?.[1]).toMatchObject({ target: 'C0COMMON' });
+  });
+
   it('AUTOPILOT_INVEST_TARGET 미설정이면 투자 라인도 공통 TARGET 을 쓴다', async () => {
     const queue = makeQueue();
     const config = {

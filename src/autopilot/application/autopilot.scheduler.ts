@@ -26,6 +26,7 @@ const DEFAULT_RETRY_OPTIONS = {
 // 라인별 발송 대상 env 키. 미설정이면 AUTOPILOT_TARGET 으로 떨어진다.
 const LINE_TARGET_ENV_KEYS: Record<PlaybookLine, string> = {
   invest: 'AUTOPILOT_INVEST_TARGET',
+  career: 'AUTOPILOT_CAREER_TARGET',
 };
 
 const isFixedCronField = (field: string): boolean => {
