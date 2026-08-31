@@ -108,6 +108,7 @@ export class AutopilotOrchestrator {
       summary: string;
       detail?: string;
       onDelivered?: () => Promise<void>;
+      unfurlLinks?: boolean;
     }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
     let hasDeliverableSummary = false;
@@ -137,6 +138,7 @@ export class AutopilotOrchestrator {
             summary: result.summaryText,
             detail: result.detailText,
             onDelivered: result.onDelivered,
+            unfurlLinks: result.unfurlLinks,
           });
         }
       } catch (error: unknown) {
@@ -228,10 +230,17 @@ export class AutopilotOrchestrator {
         const mainText = items
           .map((item) => item.summary)
           .join('\n\n────────\n\n');
+        // 요약이 한 메시지로 합쳐지므로 미리보기 설정도 메시지 단위다. 한 항목이라도
+        // 끄기를 요청하면 끈다 — 켜 두면 그 항목의 링크가 미리보기로 펼쳐져, 정작
+        // 끄려던 이유(요약이 미리보기에 파묻힘)가 그대로 남는다.
+        const unfurlLinks = items.some((item) => item.unfurlLinks === false)
+          ? false
+          : undefined;
         for (const resolved of targets) {
           const { ts } = await this.slackNotifier.postMessage({
             target: resolved,
             text: mainText,
+            ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
           });
           if (ts) {
             for (const item of items) {
