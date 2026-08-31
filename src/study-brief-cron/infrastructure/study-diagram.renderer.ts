@@ -16,7 +16,9 @@ const CONTENT_TIMEOUT_MS = 15_000;
 // 논리 폭은 노션 본문 폭과 같게 두고, 물리 픽셀만 2배로 올린다.
 // 이렇게 해야 노션에서 축소가 일어나지 않으면서 확대 시 선명하다.
 const DEVICE_SCALE_FACTOR = 2;
-const INITIAL_VIEWPORT_HEIGHT = 800;
+// 초기 로드 시 뷰포트 높이가 scrollHeight 계산에 영향을 미치지 않도록 최소값으로 설정.
+// 측정 후 실제 콘텐츠 높이로 다시 조정한다.
+const INITIAL_VIEWPORT_HEIGHT = 1;
 
 @Injectable()
 export class StudyDiagramRenderer implements StudyDiagramRendererPort {
@@ -41,6 +43,13 @@ export class StudyDiagramRenderer implements StudyDiagramRendererPort {
       });
 
       const measurements = await measureDocument(page);
+      // fullPage 는 뷰포트 높이를 하한으로 삼는다. 콘텐츠가 그보다 짧으면 아래에 빈 여백이
+      // 붙으므로, 캡처 직전에 뷰포트를 실제 콘텐츠 높이로 낮춘다.
+      await page.setViewport({
+        width: limits.widthPx,
+        height: Math.max(1, Math.ceil(measurements.contentHeight)),
+        deviceScaleFactor: DEVICE_SCALE_FACTOR,
+      });
       const screenshot = await page.screenshot({ fullPage: true, type: 'png' });
 
       return {
