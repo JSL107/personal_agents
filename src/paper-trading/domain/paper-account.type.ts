@@ -130,5 +130,12 @@ export interface AccountValuation {
   positionValue: string;
   totalValue: string;
   returnRate: string;
+  // 보유분의 평가손익. 카드가 종목별로만 보여주던 값이라 합계를 읽는 곳이 없었다.
+  unrealizedPnl: string;
+  // 이미 팔아 확정한 손익. 카드에 없어서 "보유 종목은 전부 +인데 총 수익률은 -13%" 라는
+  // 읽을 수 없는 화면이 나왔다(2026-08-28). 매도 원장을 다시 더하지 않고 항등식으로 구한다 —
+  // 현금은 시드에서 매수를 빼고 매도를 더한 값이므로, 총손익에서 평가손익을 빼면 남는 것이
+  // 실현손익이다. 수수료·세금도 현금에 이미 반영돼 있어 함께 들어온다.
+  realizedPnl: string;
   staleTickerCount: number;
 }

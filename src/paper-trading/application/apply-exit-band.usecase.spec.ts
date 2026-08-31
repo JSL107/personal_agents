@@ -15,6 +15,8 @@ const evaluation = (
   positionValue: '6059930',
   totalValue: '10114203',
   returnRate: '1.142',
+  realizedPnl: '0',
+  unrealizedPnl: '114203',
   benchmarkClose: null,
   positions: [],
   unpricedPositions: [],

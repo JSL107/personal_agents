@@ -218,3 +218,40 @@ describe('summarizeExitBandUsage', () => {
     expect(summary.bands).toEqual(['+3/-3', '+10/-5']);
   });
 });
+
+// 기업행동 다음 거래일에는 장부(수량·평단)만 옛 기준으로 남아 손익률이 크게 벌어진다.
+// 그날은 전일 대비 변동이 정상이라 가격 점프 판정에 걸리지 않으므로, 두 청산 경로가
+// 공유하는 이 파일에서 막는다.
+describe('장부 불일치 하한', () => {
+  it('종가 밴드는 손익률이 -50%를 넘게 벌어지면 청산하지 않는다', () => {
+    expect(decideExitBandOrders([candidate({ returnRate: '-78.4' })])).toEqual(
+      [],
+    );
+  });
+
+  it('장중 손절도 같은 폭이면 청산하지 않는다', () => {
+    expect(
+      decideIntradayStopOrders([
+        intradayStopCandidate({ returnRatePercent: -78.4 }),
+      ]),
+    ).toEqual([]);
+  });
+
+  // 주식병합이면 주가가 뛴 채 장부 수량만 남아 익절이 나간다. 아래쪽만 막으면 그 경로가
+  // 그대로 열려 있다.
+  it('위쪽으로 벌어진 폭도 익절하지 않는다', () => {
+    expect(decideExitBandOrders([candidate({ returnRate: '900' })])).toEqual(
+      [],
+    );
+  });
+
+  // 하한을 넘지 않는 큰 손실은 정상적인 손절 대상이다. 여기까지 막으면 진짜 급락을
+  // 못 자른다.
+  it('하한 안쪽의 손실은 그대로 청산한다', () => {
+    const decisions = decideExitBandOrders([
+      candidate({ returnRate: '-49.9' }),
+    ]);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].reason).toBe('STOP_LOSS');
+  });
+});

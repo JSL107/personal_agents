@@ -73,10 +73,37 @@ export const DEFAULT_EXIT_BAND: ExitBandThreshold = {
   stopLossPercent: DEFAULT_STOP_LOSS_PERCENT,
 };
 
+// 밴드가 +10%/-5% 인데 평단 대비 ±50% 까지 벌어진 채 남아 있을 수는 없다. 하루 가격제한이
+// ±30% 라 한 번에 갈 수 없고, 5분마다 도는 장중 손절과 하루 한 번 도는 종가 밴드가 그전에
+// 정리했어야 한다. 그런데도 그 폭이라면 장부(수량·평단)와 시세가 서로 다른 기준으로 매겨진
+// 것이다 — 기업행동 **다음** 거래일이 정확히 그 상태다.
+//
+// 그날은 전일 대비 변동이 이미 정상 범위로 돌아와 가격 점프 판정(`corporate-action-guard`)에
+// 걸리지 않는다. 2026-08-28 배당락으로 종가가 10,930원에서 2,335원이 된 종목은, 다음 날
+// 2,335원에서 정상 범위로 움직이는 순간 장부 평단 10,880원과 비교되어 다시 -78% 청산
+// 대상이 된다. 위쪽도 같다 — 주식병합이면 주가가 뛴 채 장부 수량만 남아 익절이 나간다.
+//
+// 두 청산 경로(종가 밴드·장중 손절)가 모두 이 파일을 지나므로 여기서 한 번 막는다.
+export const LEDGER_MISMATCH_RETURN_PERCENT = 50;
+
+export const isLedgerMismatch = (returnRatePercent: number): boolean =>
+  Math.abs(returnRatePercent) > LEDGER_MISMATCH_RETURN_PERCENT;
+
+export const describeLedgerMismatch = (
+  tickerLabel: string,
+  returnRatePercent: number,
+): string =>
+  `${tickerLabel} 평가 손익률이 ${returnRatePercent.toFixed(2)}% 입니다 — ` +
+  `밴드가 진작 정리했어야 할 폭이라 장부의 수량·평단이 기업행동 전 값으로 ` +
+  `남아 있는 것으로 봅니다.`;
+
 const reasonOf = (
   returnRatePercent: number,
   threshold: ExitBandThreshold,
 ): ExitBandReason | null => {
+  if (isLedgerMismatch(returnRatePercent)) {
+    return null;
+  }
   if (returnRatePercent >= threshold.takeProfitPercent) {
     return 'TAKE_PROFIT';
   }
@@ -132,7 +159,8 @@ export const decideIntradayStopOrders = (
       !Number.isFinite(quantity) ||
       quantity <= 0 ||
       !Number.isFinite(candidate.returnRatePercent) ||
-      candidate.returnRatePercent > stopLossPercent
+      candidate.returnRatePercent > stopLossPercent ||
+      isLedgerMismatch(candidate.returnRatePercent)
     ) {
       return [];
     }

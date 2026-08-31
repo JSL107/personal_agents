@@ -112,6 +112,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 0,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 0,
@@ -136,6 +138,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 0,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 0,
@@ -175,6 +179,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 2,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 1,
@@ -472,5 +478,97 @@ describe('ApplyIntradayStopUsecase', () => {
     expect(executeOrder.execute).toHaveBeenCalledWith(
       expect.objectContaining({ accountId: 12, tickerId: 31 }),
     );
+  });
+  // 2026-08-28 코람코더원리츠 재현. 주당 8,640원 배당락으로 종가가 10,930원에서 2,335원이
+  // 되자 평가 손익률이 -78.68% 로 잡혔고, 그 가격 그대로 182주가 청산돼 계좌에 -156만원이
+  // 확정됐다. 배당금은 장부에 들어오지 않으므로 그 손실은 스스로 회복되지 않는다.
+  it('배당락처럼 가격제한 밖으로 튄 종목은 손절하지 않고 보류한다', async () => {
+    const { usecase, repository, marketData, executeOrder } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue([
+      position(21, '005930', { avgPrice: decimal('10880') }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([
+        dailyBar('2026-08-22', '10930'),
+        dailyBar('2026-08-25', '2335'),
+      ]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    // 사유가 가격 점프 문구라는 것이 곧 그 판정이 먼저 막았다는 뜻이다.
+    expect(result.corporateActionCount).toBe(1);
+    expect(result.corporateActions).toEqual([
+      '종목 005930(005930) 가격이 전일 대비 0.21363220494053064959배로 ' +
+        '변했습니다 — 하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
+    ]);
+    // 판정 자체를 하지 않았으므로 검사 건수에도 들어가지 않는다.
+    expect(result.inspectedCount).toBe(0);
+    expect(result.decidedCount).toBe(0);
+    expect(repository.createExitBandOrders).not.toHaveBeenCalled();
+    expect(executeOrder.execute).not.toHaveBeenCalled();
+  });
+
+  // 가격 점프 판정만의 효과를 재는 대조군. 평단을 3,000원으로 두어 손익률이 -22% 에
+  // 머물게 했다 — 손절 밴드(-5%)는 이탈하지만 장부 불일치 하한(±50%)에는 걸리지 않으므로,
+  // 막고 못 막고를 가르는 것이 전일 종가 유무뿐이다.
+  it('가격이 점프해도 손익률이 정상 폭이면 전일 봉 유무가 판정을 가른다', async () => {
+    const withBars = async (bars: ReturnType<typeof dailyBar>[]) => {
+      const { usecase, repository, marketData, executeOrder } = createFixture();
+      repository.findPositionsWithTicker.mockResolvedValue([
+        position(21, '005930', { avgPrice: decimal('3000') }),
+      ]);
+      jest.mocked(marketData.fetchDailyBars).mockResolvedValue(bars);
+      const result = await usecase.execute({
+        executedAt: new Date('2026-08-25T02:00:00.000Z'),
+      });
+      return { result, executeOrder };
+    };
+
+    const guarded = await withBars([
+      dailyBar('2026-08-22', '10930'),
+      dailyBar('2026-08-25', '2335'),
+    ]);
+    expect(guarded.result.corporateActionCount).toBe(1);
+    expect(guarded.result.decidedCount).toBe(0);
+    expect(guarded.executeOrder.execute).not.toHaveBeenCalled();
+
+    // 전일 봉만 없앤 같은 조건 — 판정 근거가 사라지자 손절이 그대로 나간다.
+    // 실제 사고도 이 상태였다. 손절 경로가 1봉만 받아 전일 종가를 쥐지 못했다.
+    const unguarded = await withBars([dailyBar('2026-08-25', '2335')]);
+    expect(unguarded.result.corporateActionCount).toBe(0);
+    expect(unguarded.result.decidedCount).toBe(1);
+    expect(unguarded.executeOrder.execute).toHaveBeenCalled();
+  });
+  // 기업행동 **다음** 거래일. 전일 대비 변동은 이미 정상 범위로 돌아왔지만 장부 평단은
+  // 여전히 배당락 전 값(10,880원)이라 손익률이 -78% 로 나온다. 가격 점프만 보는 판정으로는
+  // 잡히지 않아 하루 뒤 같은 청산이 그대로 재현된다.
+  it('기업행동 다음 거래일에도 장부가 어긋난 채면 청산하지 않는다', async () => {
+    const { usecase, repository, executeOrder, marketData } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue([
+      position(21, '005930', { avgPrice: decimal('10880') }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([
+        dailyBar('2026-08-22', '2335'),
+        dailyBar('2026-08-25', '2350'),
+      ]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.decidedCount).toBe(0);
+    expect(executeOrder.execute).not.toHaveBeenCalled();
+    expect(result.corporateActionCount).toBe(1);
+    expect(result.corporateActions).toEqual([
+      '종목 005930(005930) 평가 손익률이 -78.40% 입니다 — 밴드가 진작 정리했어야 할 ' +
+        '폭이라 장부의 수량·평단이 기업행동 전 값으로 남아 있는 것으로 봅니다.',
+    ]);
+    // 판정하지 않았으므로 검사 건수에도 들어가지 않는다.
+    expect(result.inspectedCount).toBe(0);
   });
 });

@@ -13,6 +13,8 @@ const RESULT: EvaluateAccountResult = {
   positionValue: '240000',
   totalValue: '1040000',
   returnRate: '4',
+  realizedPnl: '-15000',
+  unrealizedPnl: '55000',
   benchmarkClose: null,
   positions: [
     {
@@ -61,6 +63,33 @@ describe('formatPaperTradingReport', () => {
     expect(text).toContain('총 평가액 *1,040,000원*');
     expect(text).toContain('현금 800,000원');
     expect(text).toContain('총 수익률 *+4%*');
+    expect(text).toContain('확정 손익 -15,000원 · 보유 평가손익 +55,000원');
+  });
+
+  // 총 수익률만 적힌 카드로는 "보유 종목은 전부 + 인데 총 수익률은 마이너스" 를 설명할 수
+  // 없다. 이미 팔아 확정한 손익이 그 차이의 전부이므로 부호가 곧 뜻이고, 평단이 소수라
+  // 손익도 소수로 떨어져 원 단위로 반올림해야 읽힌다.
+  it('확정·평가 손익에 부호를 붙이고 원 단위로 반올림한다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      realizedPnl: '-1522158.9988',
+      unrealizedPnl: '207538.9988',
+    });
+
+    expect(text).toContain('확정 손익 -1,522,159원 · 보유 평가손익 +207,539원');
+  });
+
+  it('평가를 내지 못한 회차에는 손익 분해를 적지 않는다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      skipped: true,
+      totalValue: null,
+      returnRate: null,
+      realizedPnl: null,
+      unrealizedPnl: null,
+    });
+
+    expect(text).not.toContain('확정 손익');
   });
 
   it('stale 종목에 가격 기준일 표식을 붙인다', () => {

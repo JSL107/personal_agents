@@ -20,6 +20,8 @@ const resultOf = (
   inspectedCount: 2,
   priceErrorCount: 0,
   notTradedCount: 0,
+  corporateActionCount: 0,
+  corporateActions: [],
   fillFailureCount: 0,
   accountFailures: [],
   decidedCount: 0,
@@ -125,6 +127,35 @@ describe('PaperIntradayStopAutopilotTask', () => {
     });
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
+  });
+
+  // 기업행동 보류는 청산 0건·판정 0건으로 끝나 위 조용히-skip 조건에 그대로 걸린다.
+  // 정확히 알려야 할 회차가 침묵하면 배당금이나 늘어난 수량이 장부에서 빠진 사실을
+  // 아무도 모른 채 지나간다.
+  it('기업행동으로 보류한 회차는 skip하지 않고 종목별 사유를 싣는다', async () => {
+    const { task } = createFixture({
+      result: resultOf({
+        inspectedCount: 0,
+        filledCount: 0,
+        decidedCount: 0,
+        corporateActionCount: 1,
+        corporateActions: [
+          '코람코더원리츠(417310) 가격이 전일 대비 0.2136배로 변했습니다 — ' +
+            '하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
+        ],
+      }),
+    });
+
+    await expect(task.run(context)).resolves.toEqual({
+      skip: false,
+      summaryText:
+        '*장중 손절* — 0건 청산\n' +
+        ' • 기업행동 의심으로 손절 판정 보류 1건 — 그 종목은 이번 회차에 청산되지 ' +
+        '않았습니다. 배당락이면 받을 배당금이, 분할이면 늘어난 수량이 장부에 아직 ' +
+        '없으니 확인이 필요합니다\n' +
+        '   - 코람코더원리츠(417310) 가격이 전일 대비 0.2136배로 변했습니다 — ' +
+        '하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
+    });
   });
 
   // 반대로 일부만 실패한 회차는 진짜 부분 장애라 알려야 한다.
@@ -298,6 +329,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
         inspectedCount: 7,
         priceErrorCount: 2,
         notTradedCount: 0,
+        corporateActionCount: 0,
+        corporateActions: [],
         decidedCount: 3,
         filledCount: 1,
         fillFailureCount: 0,

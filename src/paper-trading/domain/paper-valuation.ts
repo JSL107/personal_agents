@@ -51,12 +51,21 @@ export const calculateAccountValuation = (
     zero,
   );
   const totalValue = input.cashBalance.plus(positionValue);
+  const unrealizedPnl = positions.reduce<MoneyValue>(
+    (total, position) => total.plus(position.unrealizedPnl),
+    zero,
+  );
 
   return {
     positions,
     positionValue: positionValue.toString(),
     totalValue: totalValue.toString(),
     returnRate: calculateReturnRate(totalValue, input.seedAmount),
+    unrealizedPnl: unrealizedPnl.toString(),
+    realizedPnl: totalValue
+      .minus(input.seedAmount)
+      .minus(unrealizedPnl)
+      .toString(),
     staleTickerCount: positions.filter((position) => position.isStale).length,
   };
 };
