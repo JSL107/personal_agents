@@ -65,7 +65,10 @@ export type NotionPlanBlock =
   | ({ type: 'code'; language: string } & NotionTextBlock)
   | ({ type: 'callout'; icon: string } & NotionTextBlock)
   | ({ type: 'todo'; checked?: boolean; link?: string } & NotionTextBlock)
-  | { type: 'divider' };
+  | { type: 'divider' }
+  // 이미지는 텍스트 블록이 아니다 — NotionTextBlock 교차 타입에 넣지 않는다.
+  // fileUploadId 는 NotionFileUploadPort.uploadImage 가 돌려준 값이다.
+  | { type: 'image'; fileUploadId: string };
 
 export interface FindOrCreateDailyPageOptions {
   databaseId: string;
