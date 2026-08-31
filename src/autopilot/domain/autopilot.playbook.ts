@@ -62,7 +62,7 @@ import {
   DEFAULT_WEEKLY_SUMMARY_CRON,
   DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
 } from './autopilot.playbook-defaults';
-import { PlaybookEntry } from './playbook.type';
+import { PlaybookEntry, PlaybookLine } from './playbook.type';
 
 // 자율 워크데이 플레이북 — "무엇이 언제 발화하는지" 단일 선언.
 // SP1: Daily Eval 1건만(기존 cron 이관). SP2: Morning Briefing 추가(출근 통합).
@@ -271,6 +271,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_STOCK_MONITOR_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // 모의투자 평가는 독립 스케줄/env override 를 유지해야 하므로 digestGroup 에 넣지 않는다.
   {
@@ -282,6 +283,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PAPER_TRADING_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   {
     id: 'universe-sweep',
@@ -292,6 +294,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_UNIVERSE_SWEEP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // 유니버스 수집 완료 뒤 최신 종가로 판단한다. standalone 순서도 수집 바로 뒤를 유지한다.
   {
@@ -303,6 +306,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PAPER_RECOMMEND_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   {
     id: 'paper-order-fill',
@@ -313,6 +317,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PAPER_ORDER_FILL_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // 장중 손절. 체결 진입점 바로 뒤에 두는 독립 항목이다 — digestGroup 에 넣으면 그룹 첫 항목
   // id 로 만드는 env override 키가 바뀌어, 이웃 항목의 기존 override 가 조용히 무시된다.
@@ -325,6 +330,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // 추천/체결 진입점 뒤에 두는 독립 주간 성적표. digest 그룹 첫 항목을 바꾸지 않는다.
   {
@@ -336,6 +342,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PAPER_SCORE_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   {
     id: 'stock-alert-scoring',
@@ -346,6 +353,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // 회차에 실린 종목의 사후 성적. 지평이 찬 항목만 채점되므로 매일 조금씩 쌓인다.
   {
@@ -357,6 +365,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   {
     id: 'stock-monitor-us',
@@ -367,6 +376,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_STOCK_MONITOR_US_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'invest',
   },
   // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락). 읽기 전용이라 T0_AUTO.
   {
@@ -519,6 +529,26 @@ export const validatePlaybook = (entries: PlaybookEntry[]): void => {
     if (existing.schedule !== schedule || existing.timezone !== timezone) {
       throw new Error(
         `Autopilot 그룹 '${key}' 항목들의 스케줄이 불일치 — schedule/timezone 은 그룹 내 모두 동일해야 합니다`,
+      );
+    }
+  }
+
+  // 같은 digestGroup 내 line 일치 검사.
+  // 발송은 그룹 단위 1회이고 대상은 그룹 첫 항목의 line 으로 정해진다. 라인이 섞이면
+  // 뒤 항목의 알림이 제 라인이 아닌 채널로 조용히 실려 나간다 — 부팅 때 끊는다.
+  const groupLines = new Map<string, PlaybookLine | undefined>();
+  for (const entry of entries) {
+    if (entry.trigger.kind !== 'CRON' || !entry.digestGroup) {
+      continue;
+    }
+    const key = entry.digestGroup;
+    if (!groupLines.has(key)) {
+      groupLines.set(key, entry.line);
+      continue;
+    }
+    if (groupLines.get(key) !== entry.line) {
+      throw new Error(
+        `Autopilot 그룹 '${key}' 항목들의 line 이 불일치 — 발송 대상이 그룹 첫 항목 기준이라 라인은 그룹 내 모두 같아야 합니다`,
       );
     }
   }
