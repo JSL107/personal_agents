@@ -13,11 +13,11 @@ import {
 } from '../../agent/vacation/domain/plain-date';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
-} from '../../morning-briefing/domain/port/slack-notifier.port';
-import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+} from '../../slack/domain/port/slack-notifier.port';
 import {
   JOB_APPLICATION_NUDGE_CRON_QUEUE,
   JobApplicationNudgeCronJobData,

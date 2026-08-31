@@ -5,8 +5,8 @@ import { HERMES_RUNNER_PORT } from '../agent/blog/domain/port/hermes-runner.port
 import { HermesCliRunner } from '../agent/blog/infrastructure/hermes-cli.runner';
 import { CareerMateModule } from '../agent/career-mate/career-mate.module';
 import { HumanizeModule } from '../humanize/humanize.module';
-import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
+import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { ResumeCalibrationCronScheduler } from './application/resume-calibration-cron.scheduler';
