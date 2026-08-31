@@ -47,6 +47,22 @@ describe('parseStudyDiagram', () => {
     expect(parseStudyDiagram(raw)).toEqual({ html: svgDocument });
   });
 
+  // ko-ending-gate:allow
+  it('그림 뒤에 설명 펜스가 와도 그림을 고른다 — 위치가 아니라 내용으로 판별한다', () => {
+    const raw = [
+      '그림입니다.',
+      '```html',
+      svgDocument,
+      '```',
+      '덧붙이면,',
+      '```text',
+      '위 그림은 요청과 응답의 흐름을 보여줍니다.',
+      '```',
+    ].join('\n');
+
+    expect(parseStudyDiagram(raw)).toEqual({ html: svgDocument });
+  });
+
   it('코드펜스가 없으면 거부한다', () => {
     const result = parseStudyDiagram('그림을 그리지 못했습니다.');
 
