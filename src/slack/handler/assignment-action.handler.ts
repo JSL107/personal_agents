@@ -57,20 +57,31 @@ export class AssignmentActionHandler implements SlackHandler {
           const updated = await this.updatePreviewPayload.execute({
             previewId: target.previewId,
             slackUserId,
-            update: (current) =>
-              applyWorkerChange({
-                payload: parsePayload(current),
-                index: target.index,
-                worker,
-              }),
+            update: (current) => {
+              const payload = parsePayload(current);
+              return target.kind === 'PENDING'
+                ? promoteUnassigned({
+                    payload,
+                    taskId: target.taskId,
+                    worker,
+                  })
+                : applyWorkerChange({
+                    payload,
+                    index: target.index,
+                    worker,
+                  });
+            },
           });
           const payload = parsePayload(updated.payload);
           this.logger.log(
-            `분배 배정 변경 — previewId=${target.previewId} index=${target.index} → ${worker}`,
+            `분배 ${target.kind === 'PENDING' ? '보류 승격' : '배정 변경'} — previewId=${target.previewId} index=${target.index} → ${worker}`,
           );
           await respond({
             replace_original: true,
-            text: '📋 CTO 분배 결과 (배정 변경됨)',
+            text:
+              target.kind === 'PENDING'
+                ? '📋 CTO 분배 결과 (보류 항목 배정됨)'
+                : '📋 CTO 분배 결과 (배정 변경됨)',
             blocks: buildAssignmentCardBlocks({
               output: toDisplayOutput(payload),
               previewId: target.previewId,
@@ -80,7 +91,7 @@ export class AssignmentActionHandler implements SlackHandler {
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
-            `분배 배정 변경 실패 — previewId=${target.previewId}: ${message}`,
+            `분배 카드 갱신 실패 — previewId=${target.previewId} kind=${target.kind}: ${message}`,
           );
           // 카드는 그대로 두고 실패만 알린다 — 여기서 카드를 덮으면 사용자가
           // 직전까지 고쳐둔 배정을 화면에서 잃는다.
@@ -124,6 +135,49 @@ export const applyWorkerChange = ({
           }
         : assignment,
     ),
+  };
+};
+
+// 보류 항목에 담당을 고른 새 payload. 보류 목록에서 빼고 실행 대상(assignments) 끝에 붙인다.
+// 예전에는 이 이동이 자연어 재배정(CTO 재실행) 으로만 가능했다 — 사용자가 카드를 떠나
+// 문장을 쓰고, LLM 이 어느 항목인지 다시 맞혀야 했다. 드롭다운은 대상도 값도 확정이다.
+export const promoteUnassigned = ({
+  payload,
+  taskId,
+  worker,
+}: {
+  payload: CtoBeChainPayload;
+  taskId: string;
+  worker: BeAssignmentType;
+}): CtoBeChainPayload => {
+  const pending = payload.unassignedTasks ?? [];
+  // 순번이 아니라 taskId 로 찾는다. 승격은 보류 목록을 줄이므로, 카드가 다시 그려지기 전에
+  // 같은 카드에서 두 번째 드롭다운을 고르면 순번으로는 뒤 항목이 한 칸 당겨져 옆 항목이
+  // 배정된다 (배정 교체에는 없던 위험 — 그쪽은 목록 길이가 그대로다). taskId 로 찾으면
+  // 오래된 이벤트는 다른 항목을 승격하는 대신 아래에서 명시 에러로 거절된다.
+  const index = pending.findIndex((task) => task.taskId === taskId);
+  if (index === -1) {
+    throw new Error(
+      `보류 항목을 카드에서 찾지 못했습니다 — 이미 담당이 정해졌거나 카드가 오래됐을 수 있습니다 (${taskId}).`,
+    );
+  }
+  const promoted = pending[index];
+  return {
+    ...payload,
+    assignments: [
+      ...payload.assignments,
+      {
+        taskId: promoted.taskId,
+        taskTitle: promoted.taskTitle,
+        beAssignment: worker,
+        // 사용자가 보류에서 직접 꺼낸 항목이므로 오늘 진행(2). 더 급하면 우선순위는
+        // 말로 조정한다 — 드롭다운이 표현하지 않는 축이다.
+        priority: 2,
+        reasoning: '사용자 지정',
+        confidence: 1,
+      },
+    ],
+    unassignedTasks: pending.filter((_, current) => current !== index),
   };
 };
 
