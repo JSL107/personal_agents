@@ -603,12 +603,8 @@ describe('StudyBriefCronConsumer', () => {
     try {
       await dependencies.consumer.process(JOB as never);
 
-      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(
-        2,
-      );
-      expect(
-        dependencies.studyBriefPublisher.publish.mock.calls[1][0],
-      ).toEqual(
+      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(2);
+      expect(dependencies.studyBriefPublisher.publish.mock.calls[1][0]).toEqual(
         expect.not.objectContaining({
           diagramFileUploadId: expect.anything(),
         }),
@@ -643,9 +639,7 @@ describe('StudyBriefCronConsumer', () => {
     try {
       await dependencies.consumer.process(JOB as never);
 
-      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(
-        2,
-      );
+      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(2);
       expect(
         dependencies.studyBriefRepository.updateNotionUrl,
       ).not.toHaveBeenCalled();
