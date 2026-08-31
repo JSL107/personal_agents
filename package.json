@@ -42,7 +42,8 @@
     "backtest": "ts-node scripts/backtest.ts",
     "job-feed": "ts-node scripts/job-feed.ts",
     "portfolio:publish": "ts-node scripts/publish-portfolio.ts",
-    "review:unlearn": "ts-node scripts/unlearn-review-card.ts"
+    "review:unlearn": "ts-node scripts/unlearn-review-card.ts",
+    "study:diagram": "ts-node scripts/study-diagram.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

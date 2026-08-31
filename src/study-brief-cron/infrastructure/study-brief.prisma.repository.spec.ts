@@ -120,6 +120,77 @@ describe('StudyBriefPrismaRepository', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('findLatest 는 소유자의 가장 최근 브리프를 확장 여부와 무관하게 돌려준다', async () => {
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 12,
+      kind: 'CONCEPT',
+      topic: 'durable execution',
+      verdictJson: {
+        kind: 'CONCEPT',
+        whyNow: '지금 필요',
+        whereItLands: 'src/agent-run/',
+        minutes: 10,
+      },
+      reportMd: 'report',
+      sourceUrls: ['https://example.com'],
+      createdAt: new Date('2026-08-30T00:30:00Z'),
+    });
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findFirst },
+    } as unknown as PrismaService);
+
+    const found = await repository.findLatest('U1');
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { ownerUserId: 'U1' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(found).toMatchObject({ id: 12, topic: 'durable execution' });
+  });
+
+  it('findLatest 는 기록이 없으면 undefined 다', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findFirst },
+    } as unknown as PrismaService);
+
+    await expect(repository.findLatest('U1')).resolves.toBeUndefined();
+  });
+
+  it('findById 는 id 로 브리프 1건을 조회한다', async () => {
+    const findUnique = jest.fn().mockResolvedValue({
+      id: 42,
+      kind: 'TOOL',
+      topic: 'context7',
+      verdictJson: {
+        kind: 'TOOL',
+        whyNow: '지금 필요',
+        whereItLands: 'src/mcp/',
+        minutes: 5,
+      },
+      reportMd: 'report',
+      sourceUrls: ['https://example.com'],
+      createdAt: new Date('2026-08-30T00:30:00Z'),
+    });
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findUnique },
+    } as unknown as PrismaService);
+
+    const found = await repository.findById(42);
+
+    expect(findUnique).toHaveBeenCalledWith({ where: { id: 42 } });
+    expect(found).toMatchObject({ id: 42, topic: 'context7' });
+  });
+
+  it('findById 는 없는 id 에 undefined 다', async () => {
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findUnique },
+    } as unknown as PrismaService);
+
+    await expect(repository.findById(999)).resolves.toBeUndefined();
+  });
+
   it('확장 완료 page id 를 기록한다', async () => {
     const update = jest.fn().mockResolvedValue({});
     const repository = new StudyBriefPrismaRepository({
