@@ -346,6 +346,83 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(() => validatePlaybook(mismatch)).toThrow(/그룹.*스케줄|schedule/);
   });
 
+  it('같은 digestGroup 인데 line 이 다른 항목 → validatePlaybook throw', () => {
+    const mismatch: PlaybookEntry[] = [
+      {
+        id: 'e',
+        taskId: 'e',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+        line: 'invest',
+      },
+      {
+        id: 'f',
+        taskId: 'f',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'evening',
+      },
+    ];
+    expect(() => validatePlaybook(mismatch)).toThrow(/line/);
+  });
+
+  it('같은 digestGroup 이고 line 도 같으면 통과한다', () => {
+    const matched: PlaybookEntry[] = [
+      {
+        id: 'g',
+        taskId: 'g',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'invest-digest',
+        line: 'invest',
+      },
+      {
+        id: 'h',
+        taskId: 'h',
+        trigger: {
+          kind: 'CRON',
+          schedule: '0 19 * * *',
+          timezone: 'Asia/Seoul',
+        },
+        riskTier: 'T0_AUTO',
+        digestGroup: 'invest-digest',
+        line: 'invest',
+      },
+    ];
+    expect(() => validatePlaybook(matched)).not.toThrow();
+  });
+
+  it('투자 라인 태그는 10개 항목에 빠짐없이 붙어 있다', () => {
+    const investIds = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.line === 'invest',
+    ).map((entry) => entry.id);
+    expect(investIds).toEqual([
+      'stock-monitor',
+      'paper-trading',
+      'universe-sweep',
+      'paper-recommend',
+      'paper-order-fill',
+      'paper-intraday-stop',
+      'paper-score',
+      'stock-alert-scoring',
+      'screening-outcome-scoring',
+      'stock-monitor-us',
+    ]);
+  });
+
   it('백엔드 채용공고 수집을 평일 07:00 KST standalone 항목으로 포함한다', () => {
     const jobFeed = AUTOPILOT_PLAYBOOK.find((entry) => entry.id === 'job-feed');
 
