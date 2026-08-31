@@ -26,6 +26,11 @@ export interface ProfileAccomplishment {
   star: { situation: string; task: string; action: string; result: string };
   techTags: string[];
   evidence: AccomplishmentEvidence[];
+  // 사용자가 승인 카드에 직접 적은 "이 작업이 서비스에 무엇을 했는지" 한 줄.
+  // PR·diff 에는 없고 사람 기억에만 있는 정보라, 모델이 되돌려준 값이 아니라 입력 원문을
+  // 그대로 보존한다(회고 프롬프트는 이 값을 bullet·star.result 의 근거로 쓴다).
+  // 대부분의 성과에는 없다 — 없으면 이 필드도 없고 동작은 도입 전과 같다.
+  impactContext?: string;
 }
 
 export interface CareerProfileData {
@@ -202,6 +207,9 @@ export interface ParsedPrRef {
 export interface ReflectPrInput {
   slackUserId: string;
   prText: string; // 사용자 원문 (dispatcher 가 input.text 를 그대로 전달)
+  // 선택 입력. 없으면 도입 전과 완전히 같게 동작한다 — 프롬프트에 맥락 절이 붙지 않고
+  // 저장되는 성과에도 impactContext 가 생기지 않는다.
+  impactContext?: string;
 }
 
 export interface PrRetroSynth {

@@ -4,6 +4,7 @@ import {
   buildPrRetroPrompt,
   MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT,
   parsePrRetroOutput,
+  PR_RETRO_SYNTH_SYSTEM_PROMPT,
 } from './pr-retro-synth.prompt';
 
 const VALID = JSON.stringify({
@@ -115,5 +116,93 @@ describe('pr-retro-synth', () => {
   it('MULTI 시스템 프롬프트는 하나의 통합 성과 지침을 담는다', () => {
     expect(MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT).toContain('통합');
     expect(MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT).toContain('evidence');
+  });
+});
+
+// 작업 맥락 — 사용자가 카드에 적은 한 줄이 회고 프롬프트에 실리는지.
+// "없을 때 도입 전과 같다" 가 이 기능의 계약이라, 없는 경로를 문자열 동일성으로 못 박는다.
+describe('pr-retro-synth — 작업 맥락', () => {
+  const DETAIL = {
+    number: 1692,
+    title: 'T',
+    body: 'B',
+    repo: 'o/r',
+    url: 'u',
+    baseRef: 'main',
+    headRef: 'feat',
+    authorLogin: 'me',
+    mergedAt: null,
+    changedFiles: ['a.ts'],
+    changedFilesTruncated: false,
+    changedFilesTotalCount: 1,
+    additions: 10,
+    deletions: 2,
+    headSha: 'sha',
+  };
+  const DIFF = { diff: 'diff-body', truncated: false, bytes: 9 };
+  const CONTEXT = '결제 실패율 3%→0.5%, 월 2,000건 수동 재시도 제거';
+
+  it('맥락이 있으면 PR 블록 앞에 [작업 맥락] 절이 붙는다', () => {
+    const prompt = buildPrRetroPrompt({
+      detail: DETAIL,
+      diff: DIFF,
+      impactContext: CONTEXT,
+    });
+    expect(prompt).toContain('[작업 맥락 — 사용자가 직접 적은 영향]');
+    expect(prompt).toContain(CONTEXT);
+    // diff 수천 줄 아래로 밀리면 모델이 사실상 보지 않는다 — 맨 앞이어야 한다.
+    expect(prompt.indexOf('[작업 맥락')).toBeLessThan(
+      prompt.indexOf('[PR 메타]'),
+    );
+  });
+
+  it('맥락이 없으면 프롬프트가 도입 전과 문자열까지 같다', () => {
+    const base = buildPrRetroPrompt({ detail: DETAIL, diff: DIFF });
+    expect(base).not.toContain('[작업 맥락');
+    expect(base.startsWith('[PR 메타]')).toBe(true);
+    // undefined / 빈 문자열 / 공백만 — 셋 다 "없음" 과 같은 결과여야 한다.
+    expect(
+      buildPrRetroPrompt({ detail: DETAIL, diff: DIFF, impactContext: '' }),
+    ).toBe(base);
+    expect(
+      buildPrRetroPrompt({ detail: DETAIL, diff: DIFF, impactContext: '   ' }),
+    ).toBe(base);
+  });
+
+  it('다건 프롬프트도 맥락 유무로 갈린다', () => {
+    const items = [
+      { detail: DETAIL, diff: DIFF },
+      { detail: { ...DETAIL, number: 1693 }, diff: DIFF },
+    ];
+    const withContext = buildMultiPrRetroPrompt({
+      items,
+      impactContext: CONTEXT,
+    });
+    expect(withContext).toContain(CONTEXT);
+    expect(withContext.indexOf('[작업 맥락')).toBeLessThan(
+      withContext.indexOf('[이어진 PR'),
+    );
+
+    const without = buildMultiPrRetroPrompt({ items });
+    expect(without).not.toContain('[작업 맥락');
+    expect(without.startsWith('[이어진 PR 2개')).toBe(true);
+  });
+
+  it('시스템 프롬프트의 충돌 규칙이 남아 있지 않다 (덧붙이기 금지)', () => {
+    // 이 줄이 남아 있으면 "PR 에 없는 값은 쓰지 말라" 가 맥락 규칙을 이긴다.
+    for (const prompt of [
+      PR_RETRO_SYNTH_SYSTEM_PROMPT,
+      MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT,
+    ]) {
+      expect(prompt).not.toContain(
+        '지표는 PR 제목·본문·diff 에 문자로 적힌 값만',
+      );
+      expect(prompt).toContain(
+        '지표는 PR 제목·본문·diff 또는 [작업 맥락] 에 문자로 적힌 값만',
+      );
+      // 맥락이 없는 회차가 대부분이다 — 그때 지어내지 말라는 지시가 반드시 있어야 한다.
+      expect(prompt).toContain('[작업 맥락] 절이 없으면');
+      expect(prompt).toContain('없는 수치를 지어내느니');
+    }
   });
 });

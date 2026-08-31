@@ -80,9 +80,17 @@ export class CtoBeChainApplier implements PreviewApplier {
     if (typeof obj.slackUserId !== 'string' || obj.slackUserId.length === 0) {
       throw new Error('CtoBeChainPayload.slackUserId 가 string 이 아닙니다.');
     }
-    if (!Array.isArray(obj.assignments) || obj.assignments.length === 0) {
+    if (!Array.isArray(obj.assignments)) {
+      throw new Error('CtoBeChainPayload.assignments 가 array 가 아닙니다.');
+    }
+    if (obj.assignments.length === 0) {
+      // 보류만 있는 카드도 열린다(담당 드롭다운을 그릴 자리가 필요하다). 그 카드에 실행
+      // 버튼은 없지만 자연어 "응" 은 최근 PENDING preview 를 그대로 apply 로 넘기므로
+      // 여기로 온다. 통과시키면 아무 일도 하지 않은 채 카드가 APPLIED 로 닫혀,
+      // 사용자는 담당을 정할 기회를 잃고 실행됐다고 오해한다. 형식이 깨진 게 아니라
+      // 아직 담당이 없는 정상 상태이므로 메시지도 사용자가 읽을 말로 낸다.
       throw new Error(
-        'CtoBeChainPayload.assignments 가 비어 있지 않은 array 가 아닙니다.',
+        '실행할 배정이 없습니다 — 보류 항목에서 담당을 먼저 정해주세요.',
       );
     }
     for (const assignment of obj.assignments) {

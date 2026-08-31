@@ -161,4 +161,63 @@ describe('BuildCareerProfileUsecase', () => {
       CareerMateException,
     );
   });
+
+  // 전체 재합성은 이전 프로필을 읽지 않고 모델 출력으로 통째로 덮는다. 사람이 승인 카드에 적은
+  // 맥락은 모델 입력에 없으므로, 되살리지 않으면 이 명령 한 번에 전부 사라진다 — 코드에 없는
+  // 정보를 붙잡으려고 만든 기능인데 정작 그 문장만 유실된다.
+  it('사람이 적은 맥락은 프로필을 다시 만들어도 남는다', async () => {
+    const d = makeDeps([PR]);
+    d.modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        summary: 's',
+        skills: [],
+        accomplishments: [
+          {
+            title: '큐 락 수정',
+            bullet: 'b',
+            star: { situation: 's', task: 't', action: 'a', result: 'r' },
+            techTags: [],
+            evidence: [{ repo: 'o/r', pr: 1, url: 'https://x/1' }],
+          },
+        ],
+        meta: { githubLogin: 'octo', windowStart: '2025-06-15', prCount: 1 },
+      }),
+      modelUsed: 'claude-cli',
+      provider: 'CLAUDE',
+    });
+    d.repository.findLatestBySlackUser.mockResolvedValue({
+      profileJson: {
+        summary: 's',
+        skills: [],
+        accomplishments: [
+          {
+            title: '큐 락 수정',
+            bullet: 'b',
+            star: { situation: 's', task: 't', action: 'a', result: 'r' },
+            techTags: [],
+            evidence: [
+              { repo: 'o/r', pr: 1, url: 'https://x/1', mergedAt: null },
+            ],
+            impactContext: '결제 실패율 3%→0.5%',
+          },
+        ],
+        meta: { githubLogin: 'octo', windowStart: '2025-06-15', prCount: 1 },
+      },
+    });
+
+    const usecase = new BuildCareerProfileUsecase(
+      d.githubClient as never,
+      d.modelRouter as never,
+      d.repository as never,
+      d.agentRunService as never,
+      d.config as never,
+      d.humanizer as never,
+    );
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const saved = d.repository.save.mock.calls[0][0];
+    expect(saved.profileJson.accomplishments[0].impactContext).toBe(
+      '결제 실패율 3%→0.5%',
+    );
+  });
 });

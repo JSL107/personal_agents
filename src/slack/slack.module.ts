@@ -33,6 +33,7 @@ import { AssignmentActionHandler } from './handler/assignment-action.handler';
 import { AutoFlowHandler } from './handler/auto-flow.handler';
 import { BeHandler } from './handler/be.handler';
 import { BlogPublishHandler } from './handler/blog-publish.handler';
+import { CareerContextActionHandler } from './handler/career-context-action.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
@@ -100,6 +101,7 @@ import { SlackService } from './slack.service';
     AgentCommandHandler,
     PhaseCommandHandler,
     AssignmentActionHandler,
+    CareerContextActionHandler,
     AutoFlowHandler,
     RetryRunHandler,
     RouterMessageHandler,
@@ -120,6 +122,7 @@ import { SlackService } from './slack.service';
         AgentCommandHandler,
         PhaseCommandHandler,
         AssignmentActionHandler,
+        CareerContextActionHandler,
         AutoFlowHandler,
         RetryRunHandler,
         RouterMessageHandler,

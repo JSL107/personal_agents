@@ -12,6 +12,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
       upsert: jest.fn(),
     },
     paperTrade: { findUnique: jest.fn(), create: jest.fn() },
+    paperCorporateAction: { findMany: jest.fn() },
     paperEquitySnapshot: { findFirst: jest.fn() },
     paperOrder: {
       findMany: jest.fn(),
@@ -44,10 +45,13 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     );
     transaction.paperAccount.update.mockResolvedValue({
       id: 7,
-      seedAmount: { toString: () => '10000000' },
-      cashBalance: { toString: () => '10000000' },
+      // 실제 Prisma 가 주는 것과 같은 Decimal 로 둔다. toString 만 있는 대역은 잔액을
+      // 계산하는 경로(매수 여력 차감 등)가 늘어날 때마다 "없는 메서드" 로 터진다.
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('10000000'),
     });
     transaction.paperPosition.findMany.mockResolvedValue([]);
+    transaction.paperCorporateAction.findMany.mockResolvedValue([]);
     transaction.paperEquitySnapshot.findFirst.mockResolvedValue(null);
     transaction.paperOrder.findMany.mockResolvedValue([]);
     transaction.paperOrder.findFirst.mockResolvedValue(null);

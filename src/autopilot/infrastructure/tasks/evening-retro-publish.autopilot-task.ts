@@ -242,7 +242,9 @@ export class EveningRetroPublishTask implements AutopilotTask {
             prGroups: groups.map((group) => group.refs),
             slackUserId: ownerSlackUserId,
           },
-          previewText: `💼 *경력 반영 후보* (오늘 머지 ${reflectedCount}건 · 저장소 ${groups.length}곳${droppedNote})\n${groupedRefsText}\n✅ 누르면 저장소별로 나눠 성과 ${groups.length}건을 이력서 프로필에 편입 + 포트폴리오 Notion 반영.`,
+          // 아래 입력칸 안내를 본문에도 한 줄 둔다. 입력칸의 label·hint 만으로는 "왜
+          // 적어야 하는지" 가 없어서, 코드에 남지 않는 정보라는 사실이 전달되지 않는다.
+          previewText: `💼 *경력 반영 후보* (오늘 머지 ${reflectedCount}건 · 저장소 ${groups.length}곳${droppedNote})\n${groupedRefsText}\n✅ 누르면 저장소별로 나눠 성과 ${groups.length}건을 이력서 프로필에 편입 + 포트폴리오 Notion 반영.\n📝 이 작업이 사용자·매출·비용·처리량에 무엇을 했는지는 코드에 남지 않습니다 — 아래 칸에 저장소별로 적어 두면 이력서 문장이 그 근거를 씁니다(선택).`,
         });
       }
 
