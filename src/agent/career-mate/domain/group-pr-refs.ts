@@ -30,13 +30,20 @@ interface RepoScopedPullRequest {
   number: number;
 }
 
-// 저장소별로 나눈 뒤 PR 이 많은 그룹을 앞에 둔다. 같은 수면 저장소 이름 순 — 회차마다 순서가
-// 흔들리면 같은 하루를 두 번 처리할 때 결과가 달라진다.
-const compareGroups = (left: PrRefGroup, right: PrRefGroup): number => {
-  if (left.refs.length !== right.refs.length) {
-    return right.refs.length - left.refs.length;
+// PR 이 많은 저장소를 앞에 둔다. 같은 수면 저장소 이름 순 — 회차마다 순서가 흔들리면 같은
+// 하루를 두 번 처리할 때 결과가 달라진다.
+//
+// 비교는 반드시 **자르기 전** PR 수로 한다. 그룹당 상한으로 먼저 자르고 나면 8건을 넘긴
+// 그룹끼리 모두 8 로 같아져, "PR 이 많은 저장소를 남긴다" 는 정책이 이름순으로 뒤집힌다
+// (12건 저장소가 8건 저장소에 밀려 그룹 상한 밖으로 나가는 경로).
+const compareByOriginalSize = (
+  [leftRepo, leftRefs]: [string, string[]],
+  [rightRepo, rightRefs]: [string, string[]],
+): number => {
+  if (leftRefs.length !== rightRefs.length) {
+    return rightRefs.length - leftRefs.length;
   }
-  return left.repo.localeCompare(right.repo);
+  return leftRepo.localeCompare(rightRepo);
 };
 
 export const groupPrRefsByRepo = (
@@ -57,17 +64,17 @@ export const groupPrRefsByRepo = (
 
   let droppedRefCount = 0;
   const groups: PrRefGroup[] = [];
-  for (const [repo, refs] of byRepo) {
+  for (const [repo, refs] of [...byRepo.entries()].sort(
+    compareByOriginalSize,
+  )) {
+    if (groups.length >= MAX_GROUPS) {
+      droppedRefCount += refs.length;
+      continue;
+    }
     if (refs.length > MAX_REFS_PER_GROUP) {
       droppedRefCount += refs.length - MAX_REFS_PER_GROUP;
     }
     groups.push({ repo, refs: refs.slice(0, MAX_REFS_PER_GROUP) });
   }
-  groups.sort(compareGroups);
-
-  const kept = groups.slice(0, MAX_GROUPS);
-  for (const group of groups.slice(MAX_GROUPS)) {
-    droppedRefCount += group.refs.length;
-  }
-  return { groups: kept, droppedRefCount };
+  return { groups, droppedRefCount };
 };

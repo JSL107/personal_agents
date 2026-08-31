@@ -94,7 +94,9 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).toHaveBeenCalledTimes(2);
     expect(result.message).toContain('c/d 1건');
-    expect(result.message).toContain('실패: a/b');
+    // 카드는 재사용 불가 — 실패한 묶음을 손으로 다시 돌리려면 PR 참조가 있어야 한다.
+    expect(result.message).toContain('반영 실패 1묶음');
+    expect(result.message).toContain('a/b#1');
   });
 
   it('(d) 모든 묶음이 실패하면 throw 한다 — 성공으로 보고하지 않는다', async () => {

@@ -83,6 +83,48 @@ describe('groupPrRefsByRepo', () => {
     expect(droppedRefCount).toBe(2);
   });
 
+  it('상한으로 자르기 전 PR 수로 우선순위를 매긴다 — 자른 뒤 비교하면 이름순에 뒤집힌다', () => {
+    const many = Array.from({ length: 12 }, (_, index) =>
+      pr('owner/z-repo', index + 1),
+    );
+    const fewer = Array.from({ length: 8 }, (_, index) =>
+      pr('owner/a-repo', index + 100),
+    );
+
+    const { groups } = groupPrRefsByRepo([...many, ...fewer]);
+
+    // 둘 다 8건으로 잘리지만, 원래 12건인 z-repo 가 앞이어야 한다.
+    expect(groups.map((group) => group.repo)).toEqual([
+      'owner/z-repo',
+      'owner/a-repo',
+    ]);
+  });
+
+  it('그룹 상한 밖으로 밀린 저장소는 잘리기 전 PR 수 전부를 제외 수에 넣는다', () => {
+    // 상한 안에 드는 5개 저장소가 각 12건(그룹당 8 초과분 4건씩), 6번째가 10건으로 밀린다.
+    const kept = Array.from({ length: 5 }, (_, repoIndex) =>
+      Array.from({ length: 12 }, (_, index) =>
+        pr(`owner/a-${repoIndex}`, index + 1),
+      ),
+    ).flat();
+    const pushedOut = Array.from({ length: 10 }, (_, index) =>
+      pr('owner/z-pushed-out', index + 1),
+    );
+
+    const { groups, droppedRefCount } = groupPrRefsByRepo([
+      ...kept,
+      ...pushedOut,
+    ]);
+
+    expect(groups).toHaveLength(5);
+    expect(groups.map((group) => group.repo)).not.toContain(
+      'owner/z-pushed-out',
+    );
+    // 남은 5그룹의 상한 초과 4건씩(20) + 밀려난 저장소의 10건 전부.
+    // 잘린 뒤 길이(8)를 더하면 여기서 28 이 나온다.
+    expect(droppedRefCount).toBe(20 + 10);
+  });
+
   it('입력이 없으면 빈 그룹을 낸다', () => {
     expect(groupPrRefsByRepo([])).toEqual({ groups: [], droppedRefCount: 0 });
   });
