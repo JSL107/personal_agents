@@ -850,6 +850,38 @@ export class EnvironmentVariables {
   @IsString()
   STUDY_BRIEF_NOTION_DATABASE_ID?: string;
 
+  // ====== 오늘의 공부 그림 첨부 ======
+  // - STUDY_DIAGRAM_ENABLED: 'true' 일 때만 그림을 그려 노션 페이지에 붙인다. 기본 꺼짐.
+  // - STUDY_DIAGRAM_WIDTH_PX: 캔버스 가로 = 노션 본문 폭. 이 값을 넘겨 그리면
+  //   노션이 이미지를 축소해 글자가 뭉개진다. 실측으로 확정한 값을 넣는다.
+  // - STUDY_DIAGRAM_MIN_FONT_PX: 화면에서 보이는 글자 높이의 하한. 미달이면 재작업.
+  // - STUDY_DIAGRAM_MAX_HEIGHT_PX: 세로 상한. 축소와 무관하며 "한눈에 들어오는가" 기준이다.
+  @IsOptional()
+  @IsString()
+  STUDY_DIAGRAM_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'STUDY_DIAGRAM_WIDTH_PX 는 양의 정수 (예: "700") 만 허용합니다.',
+  })
+  STUDY_DIAGRAM_WIDTH_PX?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'STUDY_DIAGRAM_MIN_FONT_PX 는 양의 정수 (예: "14") 만 허용합니다.',
+  })
+  STUDY_DIAGRAM_MIN_FONT_PX?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message:
+      'STUDY_DIAGRAM_MAX_HEIGHT_PX 는 양의 정수 (예: "1600") 만 허용합니다.',
+  })
+  STUDY_DIAGRAM_MAX_HEIGHT_PX?: string;
+
   // ====== 백엔드 채용공고 자동 수집 (점핏 · 랠릿 · 원티드) ======
   // 전부 선택 항목이다 — 하나도 없어도 부팅되고, 기능은 꺼진 상태가 기본이다.
   // - JOB_FEED_ENABLED: 'true' 일 때만 수집·채점·알림 autopilot task 가 동작한다.

@@ -27,6 +27,14 @@ import {
 } from '../../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
+  NOTION_FILE_UPLOAD_PORT,
+  NotionFileUploadPort,
+} from '../../notion/domain/port/notion-file-upload.port';
+import {
+  GenerateStudyDiagramInput,
+  GenerateStudyDiagramUsecase,
+} from '../application/generate-study-diagram.usecase';
+import {
   INSTALLED_TOOLS_PORT,
   InstalledToolsPort,
 } from '../domain/port/installed-tools.port';
@@ -88,6 +96,7 @@ interface PublishToNotionInput {
   briefId: number;
   research: StudyResearchResult;
   verdict: StudyBriefVerdict;
+  diagramFileUploadId?: string;
 }
 
 @Processor(STUDY_BRIEF_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
@@ -108,6 +117,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
     private readonly repoContext: RepoContextPort,
     @Inject(STUDY_BRIEF_PUBLISHER_PORT)
     private readonly studyBriefPublisher: StudyBriefPublisherPort,
+    private readonly generateStudyDiagram: GenerateStudyDiagramUsecase,
+    @Inject(NOTION_FILE_UPLOAD_PORT)
+    private readonly notionFileUpload: NotionFileUploadPort,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
@@ -189,10 +201,16 @@ export class StudyBriefCronConsumer extends WorkerHost {
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
       });
+      const diagramFileUploadId = await this.buildDiagramOrNull({
+        topic: research.topic,
+        kind: research.kind,
+        reportMd: research.reportMd,
+      });
       const published = await this.publishToNotionOrNull({
         briefId: saved.id,
         research,
         verdict,
+        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
       });
 
       const rendered = formatStudyBrief({
@@ -310,6 +328,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     briefId,
     research,
     verdict,
+    diagramFileUploadId,
   }: PublishToNotionInput): Promise<PublishedStudyBrief | null> {
     const databaseId = this.configService
       .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
@@ -326,6 +345,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
         createdAt: new Date(),
+        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
       });
     } catch (error) {
       this.logger.warn(
@@ -342,6 +362,28 @@ export class StudyBriefCronConsumer extends WorkerHost {
       );
     }
     return published;
+  }
+
+  // 그림은 있으면 좋은 것이지 발행을 막을 이유가 아니다.
+  // 여기서 나오는 모든 실패는 삼키고, 왜 삼켰는지만 남긴다.
+  private async buildDiagramOrNull(
+    input: GenerateStudyDiagramInput,
+  ): Promise<string | null> {
+    try {
+      const diagram = await this.generateStudyDiagram.execute(input);
+      if (diagram === null) {
+        return null;
+      }
+      return await this.notionFileUpload.uploadImage({
+        filename: buildDiagramFilename(input.topic),
+        png: diagram.png,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Study 그림 첨부 실패 — 그림 없이 발행합니다: ${formatError(error)}`,
+      );
+      return null;
+    }
   }
 
   private async research(
@@ -484,6 +526,15 @@ const calculateKindBalance = (
 const isSkippedResearch = (
   research: StudyResearchResult | StudyResearchSkipped,
 ): research is StudyResearchSkipped => 'skippedReason' in research;
+
+const buildDiagramFilename = (topic: string): string => {
+  const slug = topic
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return `${slug || 'study'}-diagram.png`;
+};
 
 const formatError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);

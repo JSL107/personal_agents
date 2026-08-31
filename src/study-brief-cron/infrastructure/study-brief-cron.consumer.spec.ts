@@ -102,6 +102,12 @@ const makeConsumer = ({
           url: 'https://notion.so/PAGE',
         }),
   };
+  const generateStudyDiagram = {
+    execute: jest.fn().mockResolvedValue(null),
+  };
+  const notionFileUpload = {
+    uploadImage: jest.fn().mockResolvedValue('upload-1'),
+  };
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
   };
@@ -134,6 +140,8 @@ const makeConsumer = ({
     installedTools as never,
     repoContext as never,
     studyBriefPublisher as never,
+    generateStudyDiagram as never,
+    notionFileUpload as never,
     slackNotifier as never,
     cronIdempotency as never,
     configService as never,
@@ -151,6 +159,8 @@ const makeConsumer = ({
     installedTools,
     repoContext,
     studyBriefPublisher,
+    generateStudyDiagram,
+    notionFileUpload,
     slackNotifier,
     notificationPublisher,
     cronIdempotency,
@@ -505,5 +515,62 @@ describe('StudyBriefCronConsumer', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('그림이 만들어지면 업로드해서 퍼블리셔에 넘긴다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockResolvedValue({
+      png: Buffer.from('png'),
+      html: '<html></html>',
+      violations: [],
+    });
+    dependencies.notionFileUpload.uploadImage.mockResolvedValue('upload-1');
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ diagramFileUploadId: 'upload-1' }),
+    );
+  });
+
+  it('그림 생성이 null 이면 그림 없이 발행한다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockResolvedValue(null);
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.notionFileUpload.uploadImage).not.toHaveBeenCalled();
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledWith(
+      expect.not.objectContaining({ diagramFileUploadId: expect.anything() }),
+    );
+  });
+
+  it('업로드가 실패해도 페이지 발행과 Slack 발송은 그대로 진행한다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockResolvedValue({
+      png: Buffer.from('png'),
+      html: '<html></html>',
+      violations: [],
+    });
+    dependencies.notionFileUpload.uploadImage.mockRejectedValue(
+      new Error('notion 500'),
+    );
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalled();
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalled();
+  });
+
+  it('그림 생성이 예외를 던져도 발행을 막지 않는다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockRejectedValue(
+      new Error('unexpected'),
+    );
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalled();
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalled();
   });
 });
