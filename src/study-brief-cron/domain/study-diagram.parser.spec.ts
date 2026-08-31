@@ -47,7 +47,6 @@ describe('parseStudyDiagram', () => {
     expect(parseStudyDiagram(raw)).toEqual({ html: svgDocument });
   });
 
-  // ko-ending-gate:allow
   it('그림 뒤에 설명 펜스가 와도 그림을 고른다 — 위치가 아니라 내용으로 판별한다', () => {
     const raw = [
       '그림입니다.',
@@ -84,7 +83,10 @@ describe('parseStudyDiagram', () => {
     ['<script src="//cdn.example/b.js"></script>', '//'],
     ['<link rel="stylesheet" href="http://cdn.example/c.css">', 'http'],
   ])('외부 리소스(%s)를 참조하면 거부한다', (tag) => {
-    const raw = '```html\n<html><body>' + tag + '<svg><text font-size="20">가</text></svg></body></html>\n```';
+    const raw =
+      '```html\n<html><body>' +
+      tag +
+      '<svg><text font-size="20">가</text></svg></body></html>\n```';
 
     const result = parseStudyDiagram(raw);
 
