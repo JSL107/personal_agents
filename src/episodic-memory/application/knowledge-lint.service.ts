@@ -23,7 +23,13 @@ import {
   NearestNeighborRow,
 } from '../infrastructure/knowledge-lint.prisma.repository';
 
-// episodic-memory 무결성 점검의 판정 책임(application). repository 후보 행에 임계값/분류 규칙을 적용한다.
+// near-duplicate 조회 폭주 안전망 — 판정 임계가 아니다. 최근접이웃은 행당 1개라 반환 상한이
+// 곧 테이블 행 수이므로 현재 규모(2026-08-31 기준 1,700행)에서는 도달하지 않는다.
+// 도달하면 duplicateTotal 이 과소 보고되므로 경고를 남긴다.
+const DUPLICATE_SCAN_LIMIT = 5_000;
+
+// episodic-memory 무결성 점검의 판정 책임(application). 임계값은 여기서 정해 조회에 넘기고,
+// 돌아온 후보 행에 dedup/분류 규칙과 보고 상한을 적용한다.
 // L4(contradiction)는 옵셔널 judge 주입 + 활성 옵션일 때만 — 미주입/비활성 시 L1/L2 만 수행.
 @Injectable()
 export class KnowledgeLintService implements KnowledgeLintPort {
@@ -40,14 +46,22 @@ export class KnowledgeLintService implements KnowledgeLintPort {
     input: LintEpisodicMemoryInput,
   ): Promise<KnowledgeLintOutcome> {
     const [neighbors, nullRows] = await Promise.all([
-      this.repository.findNearestNeighbors(input.limit),
+      this.repository.findNearestNeighbors({
+        maxDistance: input.duplicateMaxDistance,
+        scanLimit: DUPLICATE_SCAN_LIMIT,
+      }),
       this.repository.findEmbeddingNull(input.limit),
     ]);
+    const scanTruncated = neighbors.length >= DUPLICATE_SCAN_LIMIT;
+    if (scanTruncated) {
+      this.logger.warn(
+        `near-duplicate 조회가 스캔 상한(${DUPLICATE_SCAN_LIMIT})에 도달 — 중복 총계는 하한값입니다.`,
+      );
+    }
 
-    const duplicates = this.toDuplicateIssues(
-      neighbors,
-      input.duplicateMaxDistance,
-    );
+    // 전체 쌍을 먼저 세고 나서 자른다 — 보고 상한이 곧 실제 규모로 읽히는 것을 막기 위해
+    // 잘린 목록(issues)과 총 쌍 수(duplicateTotal)를 함께 낸다.
+    const allDuplicates = this.toDuplicateIssues(neighbors);
     const nullIssues = nullRows.map<KnowledgeLintIssue>((row) => ({
       type: 'embedding_null',
       episodeId: row.id,
@@ -64,7 +78,13 @@ export class KnowledgeLintService implements KnowledgeLintPort {
         : null;
 
     return {
-      issues: [...duplicates, ...nullIssues, ...(detection?.issues ?? [])],
+      issues: [
+        ...allDuplicates.slice(0, input.limit),
+        ...nullIssues,
+        ...(detection?.issues ?? []),
+      ],
+      duplicateTotal: allDuplicates.length,
+      duplicateTotalTruncated: scanTruncated,
       l4:
         detection === null
           ? null
@@ -126,17 +146,14 @@ export class KnowledgeLintService implements KnowledgeLintPort {
     return { issues, candidates: pairs.length, judged, abortedByQuota };
   }
 
-  // 임계값 필터 + (id, relatedId) 무순서 쌍 dedup — a→b, b→a 가 둘 다 후보로 와도 1건으로 만든다.
+  // (id, relatedId) 무순서 쌍 dedup — a→b, b→a 가 둘 다 후보로 와도 1건으로 만든다.
+  // 임계값 필터는 조회 단계(repository)에 있다 — 총 쌍 수를 세려면 잘리지 않은 목록이 필요하다.
   private toDuplicateIssues(
     neighbors: NearestNeighborRow[],
-    maxDistance: number,
   ): KnowledgeLintIssue[] {
     const seenPairs = new Set<string>();
     const issues: KnowledgeLintIssue[] = [];
     for (const row of neighbors) {
-      if (row.distance > maxDistance) {
-        continue;
-      }
       const pairKey =
         row.id < row.relatedId
           ? `${row.id}:${row.relatedId}`
