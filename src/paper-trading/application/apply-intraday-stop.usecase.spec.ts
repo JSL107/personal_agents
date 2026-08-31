@@ -112,6 +112,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 0,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 0,
@@ -136,6 +138,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 0,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 0,
@@ -175,6 +179,8 @@ describe('ApplyIntradayStopUsecase', () => {
       inspectedCount: 2,
       priceErrorCount: 0,
       notTradedCount: 0,
+      corporateActionCount: 0,
+      corporateActions: [],
       fillFailureCount: 0,
       accountFailures: [],
       decidedCount: 1,
@@ -472,5 +478,57 @@ describe('ApplyIntradayStopUsecase', () => {
     expect(executeOrder.execute).toHaveBeenCalledWith(
       expect.objectContaining({ accountId: 12, tickerId: 31 }),
     );
+  });
+  // 2026-08-28 코람코더원리츠 재현. 주당 8,640원 배당락으로 종가가 10,930원에서 2,335원이
+  // 되자 평가 손익률이 -78.68% 로 잡혔고, 그 가격 그대로 182주가 청산돼 계좌에 -156만원이
+  // 확정됐다. 배당금은 장부에 들어오지 않으므로 그 손실은 스스로 회복되지 않는다.
+  it('배당락처럼 가격제한 밖으로 튄 종목은 손절하지 않고 보류한다', async () => {
+    const { usecase, repository, marketData, executeOrder } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue([
+      position(21, '005930', { avgPrice: decimal('10880') }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([
+        dailyBar('2026-08-22', '10930'),
+        dailyBar('2026-08-25', '2335'),
+      ]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.corporateActionCount).toBe(1);
+    expect(result.corporateActions).toEqual([
+      '종목 005930(005930) 가격이 전일 대비 0.21363220494053064959배로 ' +
+        '변했습니다 — 하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
+    ]);
+    // 판정 자체를 하지 않았으므로 검사 건수에도 들어가지 않는다.
+    expect(result.inspectedCount).toBe(0);
+    expect(result.decidedCount).toBe(0);
+    expect(repository.createExitBandOrders).not.toHaveBeenCalled();
+    expect(executeOrder.execute).not.toHaveBeenCalled();
+  });
+
+  // 위 테스트의 대조군. 같은 가격·같은 평단인데 전일 봉만 없애면 손절이 그대로 나간다 —
+  // 보류가 가드 때문이지 다른 조건 덕이 아니라는 증명이다. 실제 사고도 이 상태였다.
+  // 손절 경로가 1봉만 받아 전일 종가를 손에 쥐지 못했다.
+  it('전일 봉이 없으면 같은 가격이라도 막지 못하고 손절이 나간다', async () => {
+    const { usecase, repository, marketData, executeOrder } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue([
+      position(21, '005930', { avgPrice: decimal('10880') }),
+    ]);
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([dailyBar('2026-08-25', '2335')]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.corporateActionCount).toBe(0);
+    expect(result.inspectedCount).toBe(1);
+    expect(result.decidedCount).toBe(1);
+    expect(executeOrder.execute).toHaveBeenCalled();
   });
 });

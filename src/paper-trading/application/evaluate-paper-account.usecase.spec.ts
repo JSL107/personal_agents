@@ -253,6 +253,8 @@ describe('EvaluatePaperAccountUsecase', () => {
       positionValue: '240000',
       totalValue: '1040000',
       returnRate: '4',
+      realizedPnl: '0',
+      unrealizedPnl: '40000',
       benchmarkClose: null,
       positions: [
         {
@@ -313,6 +315,8 @@ describe('EvaluatePaperAccountUsecase', () => {
       positionValue: '0',
       totalValue: '1000000',
       returnRate: '0',
+      realizedPnl: '0',
+      unrealizedPnl: '0',
       benchmarkClose: null,
       positions: [],
       unpricedPositions: [],
@@ -423,6 +427,8 @@ describe('EvaluatePaperAccountUsecase', () => {
         positionValue: null,
         totalValue: null,
         returnRate: null,
+        realizedPnl: null,
+        unrealizedPnl: null,
         positions: [
           expect.objectContaining({
             tickerId: 21,
@@ -508,6 +514,8 @@ describe('EvaluatePaperAccountUsecase', () => {
       positionValue: null,
       totalValue: null,
       returnRate: null,
+      realizedPnl: null,
+      unrealizedPnl: null,
       benchmarkClose: null,
       positions: [
         expect.objectContaining({
@@ -613,7 +621,8 @@ describe('EvaluatePaperAccountUsecase', () => {
       }),
     ]);
     expect(result.suspiciousJumps).toEqual([
-      '종목 21 가격 비정상 점프: 전일 대비 0.5배 (2:1 분할 의심)',
+      '005930(005930) 가격이 전일 대비 0.5배로 변했습니다 — ' +
+        '하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
     ]);
     expect(result.invariantViolations).toEqual([]);
     expect(prisma.paperEquitySnapshot.upsert).not.toHaveBeenCalled();

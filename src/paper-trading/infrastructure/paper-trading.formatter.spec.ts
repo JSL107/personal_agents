@@ -13,6 +13,8 @@ const RESULT: EvaluateAccountResult = {
   positionValue: '240000',
   totalValue: '1040000',
   returnRate: '4',
+  realizedPnl: '-15000',
+  unrealizedPnl: '55000',
   benchmarkClose: null,
   positions: [
     {

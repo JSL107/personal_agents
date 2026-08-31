@@ -20,6 +20,17 @@ const formatDecimal = (value: string): string =>
 const formatMoney = (value: string | null): string =>
   value === null ? '-' : `${formatDecimal(value)}원`;
 
+// 손익은 부호가 곧 뜻이라 양수에도 + 를 붙인다. 평단이 소수라 손익도 소수로 떨어지는데,
+// 원 단위 밑자리는 읽는 데 방해만 되어 반올림한다.
+const formatSignedMoney = (value: string | null): string => {
+  if (value === null) {
+    return '-';
+  }
+  const amount = new Prisma.Decimal(value).toDecimalPlaces(0);
+  const sign = amount.comparedTo(0) > 0 ? '+' : '';
+  return `${sign}${addThousandsSeparators(amount.toString())}원`;
+};
+
 const formatRate = (value: string | null): string => {
   if (value === null) {
     return '-';
@@ -132,6 +143,11 @@ export const formatPaperTradingReport = (
     '',
     `총 평가액 *${formatMoney(result.totalValue)}* · 현금 ${formatMoney(result.cashBalance)} · 총 수익률 *${formatRate(result.returnRate)}*`,
   );
+  if (result.realizedPnl !== null && result.unrealizedPnl !== null) {
+    lines.push(
+      `확정 손익 ${formatSignedMoney(result.realizedPnl)} · 보유 평가손익 ${formatSignedMoney(result.unrealizedPnl)}`,
+    );
+  }
   if (result.benchmarkClose !== null) {
     lines.push(`벤치마크 종가 ${formatDecimal(result.benchmarkClose)}`);
   }

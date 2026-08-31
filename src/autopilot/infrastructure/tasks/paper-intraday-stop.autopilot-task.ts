@@ -21,6 +21,8 @@ interface PaperIntradayStopAudit {
   inspectedCount: number;
   priceErrorCount: number;
   notTradedCount: number;
+  corporateActionCount: number;
+  corporateActions: string[];
   decidedCount: number;
   filledCount: number;
   fillFailureCount: number;
@@ -36,6 +38,8 @@ const buildAudit = (
   inspectedCount: result.inspectedCount,
   priceErrorCount: result.priceErrorCount,
   notTradedCount: result.notTradedCount,
+  corporateActionCount: result.corporateActionCount,
+  corporateActions: result.corporateActions,
   decidedCount: result.decidedCount,
   filledCount: result.filledCount,
   fillFailureCount: result.fillFailureCount,
@@ -100,12 +104,15 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
   // 보호가 통째로 멈춘 상태다 — 조용히 넘기면 그 사실이 아무에게도 안 알려진다.
   // 계좌 실패와 체결 실패도 같은 이유로 알린다.
   const holidayLike =
-    result.priceErrorCount === 0 && result.inspectedCount === 0;
+    result.priceErrorCount === 0 &&
+    result.inspectedCount === 0 &&
+    result.corporateActionCount === 0;
   if (
     result.filledCount === 0 &&
     result.decidedCount === 0 &&
     result.accountFailureCount === 0 &&
     result.fillFailureCount === 0 &&
+    result.corporateActionCount === 0 &&
     (holidayLike ||
       (result.priceErrorCount === 0 && result.notTradedCount === 0))
   ) {
@@ -124,6 +131,16 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
   if (result.notTradedCount > 0 && result.inspectedCount > 0) {
     lines.push(
       ` • 오늘 거래가 없는 종목 ${result.notTradedCount}건 — 거래정지 여부를 확인해 주세요`,
+    );
+  }
+  if (result.corporateActions.length > 0) {
+    lines.push(
+      ` • 기업행동 의심으로 손절 판정 보류 ${result.corporateActionCount}건 — ` +
+        `그 종목은 이번 회차에 청산되지 않았습니다. 배당락이면 받을 배당금이, ` +
+        `분할이면 늘어난 수량이 장부에 아직 없으니 확인이 필요합니다`,
+      ...result.corporateActions.map(
+        (description) => `   - ${escapeSlackMrkdwn(description)}`,
+      ),
     );
   }
   if (result.fillFailureCount > 0) {

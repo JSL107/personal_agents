@@ -8,6 +8,10 @@ import {
 } from '../../market-data/domain/port/market-data.port';
 import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
+  describeSuspiciousPriceJump,
+  detectSuspiciousPriceJump,
+} from '../domain/corporate-action-guard';
+import {
   decideIntradayStopOrders,
   DEFAULT_EXIT_BAND,
   describeIntradayStopReason,
@@ -57,6 +61,10 @@ export interface ApplyIntradayStopResult {
   // 조회는 됐는데 오늘 봉이 없는 종목 수. 휴장이거나 그 종목만 거래정지다.
   // 예외와 합쳐 세면 "장이 안 열렸다" 와 "시세가 안 온다" 를 가를 수 없다.
   notTradedCount: number;
+  // 하루 가격제한 밖으로 튄 종목 수. 분할·배당락 같은 기업행동이라 판정을 보류했다.
+  corporateActionCount: number;
+  // 보류 사유. 건수만 세면 어느 종목이 왜 빠졌는지 알 수 없어 사람이 확인할 수 없다.
+  corporateActions: string[];
   decidedCount: number;
   filledCount: number;
   // 주문은 만들었는데 체결하지 못해 되돌린 수. 다음 회차가 새 현재가로 다시 판정한다.
@@ -83,6 +91,8 @@ const emptyResult = (
   inspectedCount: 0,
   priceErrorCount: 0,
   notTradedCount: 0,
+  corporateActionCount: 0,
+  corporateActions: [],
   decidedCount: 0,
   filledCount: 0,
   fillFailureCount: 0,
@@ -93,12 +103,10 @@ const emptyResult = (
   accountFailures: [],
 });
 
-const findTodayBar = (bars: DailyBar[], tradeDate: string): DailyBar | null => {
-  const bar = bars.find(
+const findTodayBarIndex = (bars: DailyBar[], tradeDate: string): number =>
+  bars.findIndex(
     (candidate) => candidate.tradeDate.toISOString().slice(0, 10) === tradeDate,
   );
-  return bar ?? null;
-};
 
 const parseMarket = (value: string | null): PaperMarket | null => {
   if (value === 'KOSPI' || value === 'KOSDAQ' || value === 'KONEX') {
@@ -328,9 +336,11 @@ export class ApplyIntradayStopUsecase {
     for (const position of positions) {
       let bars: DailyBar[];
       try {
+        // 2봉을 받는다. 전일 종가가 없으면 기업행동 판정 자체가 불가능하고, 그러면
+        // 배당락·분할로 튄 가격이 그대로 손절 판정에 들어간다.
         bars = await this.marketData.fetchDailyBars(
           position.ticker.tossSymbol,
-          1,
+          2,
           { adjusted: false },
         );
       } catch {
@@ -340,11 +350,12 @@ export class ApplyIntradayStopUsecase {
       // 오늘 봉이 없는 것은 장애가 아니다 — 휴장이거나 그 종목만 거래정지다. 예외와
       // 합쳐 세면 "장이 안 열렸다" 와 "시세가 안 온다" 를 가를 수 없고, 그러면 휴장마다
       // 장애 카드가 나가거나 반대로 진짜 장애가 휴장으로 묻힌다.
-      const todayBar = findTodayBar(bars, tradeDate);
-      if (!todayBar) {
+      const todayIndex = findTodayBarIndex(bars, tradeDate);
+      if (todayIndex < 0) {
         result.notTradedCount += 1;
         continue;
       }
+      const todayBar = bars[todayIndex];
       let price: Prisma.Decimal;
       try {
         price = new Prisma.Decimal(todayBar.close.toString());
@@ -356,6 +367,30 @@ export class ApplyIntradayStopUsecase {
       if (!price.isFinite() || price.comparedTo(0) <= 0) {
         result.priceErrorCount += 1;
         continue;
+      }
+      // 전일 봉이 없으면(신규 상장 첫 봉) 판정 근거가 없어 건너뛴다 — 장마감 평가가
+      // `bars.length < 2` 를 다루는 방식과 같다.
+      const previousBar = todayIndex > 0 ? bars[todayIndex - 1] : null;
+      if (previousBar) {
+        const [suspicion] = detectSuspiciousPriceJump([
+          {
+            tickerId: position.tickerId,
+            previousClose: new Prisma.Decimal(previousBar.close.toString()),
+            currentClose: price,
+          },
+        ]);
+        // 기업행동이면 이 가격으로 손익률을 재서는 안 된다. 배당락을 폭락으로 읽으면
+        // 밴드를 한참 밑도는 손익률이 나와 멀쩡한 보유분이 통째로 청산된다.
+        if (suspicion) {
+          result.corporateActionCount += 1;
+          result.corporateActions.push(
+            describeSuspiciousPriceJump(
+              suspicion,
+              `${position.ticker.name}(${position.ticker.code})`,
+            ),
+          );
+          continue;
+        }
       }
       const averagePrice = new Prisma.Decimal(position.avgPrice.toString());
       // 평단 0 은 손익률을 정의할 수 없다. 판정하지 않았으므로 inspected 에도 넣지 않는다.
