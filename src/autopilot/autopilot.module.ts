@@ -31,7 +31,6 @@ import {
 } from '../market-data/domain/port/market-data.port';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
-import { SLACK_NOTIFIER_PORT } from '../morning-briefing/domain/port/slack-notifier.port';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
@@ -39,6 +38,7 @@ import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
 import { ScreenerModule } from '../screener/screener.module';
+import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
