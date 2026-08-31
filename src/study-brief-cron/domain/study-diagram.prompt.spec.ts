@@ -65,6 +65,12 @@ describe('buildStudyDiagramPrompt', () => {
 
     expect(prompt).toContain('전체 폭');
   });
+
+  it('상자·글자가 서로 겹치지 말라는 지시를 담는다', () => {
+    const prompt = buildStudyDiagramPrompt(input);
+
+    expect(prompt).toContain('겹치지 마라');
+  });
 });
 
 describe('buildStudyDiagramRetryPrompt', () => {
