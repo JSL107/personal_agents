@@ -1,7 +1,4 @@
-export type DiagramViolationRule =
-  | 'FONT_TOO_SMALL'
-  | 'OVERFLOW_X'
-  | 'TOO_TALL';
+export type DiagramViolationRule = 'FONT_TOO_SMALL' | 'OVERFLOW_X' | 'TOO_TALL';
 
 export interface DiagramTextMeasurement {
   // 사람이 로그에서 어느 요소인지 알아볼 수 있는 표식. 재작업 프롬프트에도 그대로 실린다.
