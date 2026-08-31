@@ -17,7 +17,9 @@ import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
   calculatePositionValuation,
+  calculatePurchasableCash,
   calculateUnsettledCash,
+  summarizePendingDividends,
 } from '../domain/paper-valuation';
 import {
   InvariantCorporateActionRow,
@@ -62,6 +64,13 @@ export interface EvaluateAccountResult {
   unsettledCash: string;
   dividendNetTotal: string;
   dividendCount?: number;
+  // 지급일이 아직 오지 않은 배당과, 그것을 뺀 실제 매수 여력. 총평가액과 수익률은 잔고
+  // 전액으로 계산한다 — 받을 배당도 자산이라 여기서 빼면 지급일까지 계좌가 실제보다
+  // 나빠 보인다. 달라지는 것은 매수에 쓸 수 있는 금액 하나뿐이다.
+  pendingDividendCash: string;
+  pendingDividendCount: number;
+  purchasableCash: string;
+  nextDividendPayDate: string | null;
   positionValue: string | null;
   totalValue: string | null;
   returnRate: string | null;
@@ -109,6 +118,10 @@ interface CashSettlementSummary {
   unsettledCash: string;
   dividendNetTotal: string;
   dividendCount: number;
+  pendingDividendCash: string;
+  pendingDividendCount: number;
+  purchasableCash: string;
+  nextDividendPayDate: string | null;
 }
 
 const emptyCashSettlementSummary = (
@@ -118,6 +131,10 @@ const emptyCashSettlementSummary = (
   unsettledCash: '0',
   dividendNetTotal: '0',
   dividendCount: 0,
+  pendingDividendCash: '0',
+  pendingDividendCount: 0,
+  purchasableCash: cashBalance,
+  nextDividendPayDate: null,
 });
 
 const calculateCashSettlementSummary = (input: {
@@ -138,11 +155,24 @@ const calculateCashSettlementSummary = (input: {
     (total, corporateAction) => total.plus(corporateAction.cashDelta),
     input.cashBalance.times(0),
   );
+  const pendingDividends = summarizePendingDividends({
+    asOf: input.tradeDate,
+    zero: input.cashBalance.times(0),
+    corporateActions: input.corporateActions,
+  });
   return {
     settledCash: input.cashBalance.minus(unsettledCash).toString(),
     unsettledCash: unsettledCash.toString(),
     dividendNetTotal: dividendNetTotal.toString(),
     dividendCount: dividendActions.length,
+    pendingDividendCash: pendingDividends.amount.toString(),
+    pendingDividendCount: pendingDividends.count,
+    purchasableCash: calculatePurchasableCash({
+      cashBalance: input.cashBalance,
+      pendingDividendCash: pendingDividends.amount,
+    }).toString(),
+    nextDividendPayDate:
+      pendingDividends.nextPayDate?.toISOString().slice(0, 10) ?? null,
   };
 };
 

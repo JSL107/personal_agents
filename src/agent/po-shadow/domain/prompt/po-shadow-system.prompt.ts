@@ -11,7 +11,7 @@ export const PO_SHADOW_SYSTEM_PROMPT = `당신은 "이대리"의 PO Shadow 에�
 - finding은 최대 3개다.
 - point와 suggestion은 각각 한 문장, 60자 이내다.
 - headline은 지금 가장 먼저 할 일만 담은 한 문장, 80자 이내다. 이유를 붙이지 않는다.
-- purposeConflict는 계획 1순위와 사실표의 위험이 실제로 어긋날 때만 한 문장으로 쓰고, 아니면 null이다.
+- purposeConflict는 계획 1순위와 사실표의 위험이 어긋나고, 그 어긋남을 headline이 아직 말하지 않았을 때만 쓴다. headline이나 첫 finding이 이미 가리킨 사건이면 null이다 — 같은 사건을 두 번 적으면 카드만 길어지고 새로 알려주는 것은 없다.
 - 번호만 쓰지 않는다. "#264"가 아니라 "#264 업로드 차단"처럼 대상을 함께 쓴다.
 
 ## 출력 규칙

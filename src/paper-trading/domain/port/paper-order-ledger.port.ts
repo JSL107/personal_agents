@@ -7,6 +7,10 @@ export interface PaperAccountRecord {
   id: number;
   seedAmount: MoneyValue;
   cashBalance: MoneyValue;
+  // 지급일이 아직 오지 않은 배당. cashBalance 에 이미 들어 있지만 쓸 수 없는 돈이라
+  // 매수 여력에서 뺀다. 기업행동 원장이 없는 구현(백테스트 인메모리 장부)은 채우지
+  // 않으며, 그 경우 차감이 0 이라 기존 판정이 그대로 유지된다.
+  pendingDividendCash?: MoneyValue;
 }
 
 export interface PaperPositionRecord {

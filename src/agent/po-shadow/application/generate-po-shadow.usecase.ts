@@ -241,6 +241,13 @@ const buildFindingFactSummaries = ({
 };
 
 const buildFactSummary = (fact: PlanRealityFact): string => {
+  // UNPLANNED_ASSIGNED 의 detail("계획에 없는 담당 항목")은 근거가 아니라 판정이다.
+  // 그 판정은 finding 이 이미 문장으로 말하므로, 근거 줄에 다시 적으면
+  // "근거: (방금 한 말 다시 쓰기)" 가 된다. 다른 kind 의 detail 은 실측이라
+  // (멈춘 이유·머지 여부·멘션 채널) 그대로 남긴다.
+  if (fact.kind === 'UNPLANNED_ASSIGNED') {
+    return fact.label;
+  }
   return `${fact.label} — ${fact.detail}`;
 };
 

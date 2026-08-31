@@ -9,8 +9,10 @@ import {
   TradeSide,
   TradeStrategy,
 } from '../domain/paper-account.type';
+import { calculatePurchasableCash } from '../domain/paper-valuation';
 import {
   PAPER_ORDER_LEDGER_PORT,
+  PaperAccountRecord,
   PaperOrderLedgerPort,
   PendingOrderFillResult,
 } from '../domain/port/paper-order-ledger.port';
@@ -28,6 +30,29 @@ export interface ExecutePaperOrderCommand {
   tradeDate: string;
   strategy: Exclude<TradeStrategy, 'MANUAL'>;
 }
+
+// 미수 배당을 모르는 구현(백테스트 인메모리 장부)은 그 값을 채우지 않으므로 잔고가 그대로
+// 여력이 된다 — 기업행동 원장이 없는 재생에서는 뺄 것도 없다.
+const purchasableCashOf = (account: PaperAccountRecord): MoneyValue =>
+  account.pendingDividendCash === undefined
+    ? account.cashBalance
+    : calculatePurchasableCash({
+        cashBalance: account.cashBalance,
+        pendingDividendCash: account.pendingDividendCash,
+      });
+
+// 잔고는 넉넉한데 지급일 전 배당이라 못 쓴 경우 '현금 부족' 한 마디로는 왜 만료됐는지 알 수
+// 없다 — 원장의 잔고를 보면 살 수 있어 보이기 때문이다. 뺀 금액을 사유에 함께 적는다.
+const expiredReasonOf = (account: PaperAccountRecord): string => {
+  const pendingDividendCash = account.pendingDividendCash;
+  if (
+    pendingDividendCash === undefined ||
+    pendingDividendCash.comparedTo(0) <= 0
+  ) {
+    return '현금 부족';
+  }
+  return `현금 부족 (지급일 전 배당 ${pendingDividendCash.toString()}원 제외)`;
+};
 
 // 대기 주문 하나를 체결로 바꾸는 규칙 — 현금이 모자라면 살 수 있는 수량까지 줄이고, 보유보다
 // 많이 팔려 하면 보유까지 깎고, 한 주도 못 되면 만료로 끊는다. 수수료·세금·평단은 도메인 함수가
@@ -67,12 +92,17 @@ export class ExecutePaperOrderUsecase {
           quantity = this.findAffordableBuyQuantity({
             requestedQuantity,
             price,
-            cashBalance: account.cashBalance,
+            // 잔고가 아니라 매수 여력을 넘긴다. 배당은 권리락일에 잔고로 잡히지만 지급일
+            // 전까지는 쓸 수 없어, 잔고로 재면 아직 받지도 않은 돈으로 체결이 난다.
+            cashBalance: purchasableCashOf(account),
             market: command.market,
             tradeDate,
           });
           if (quantity.comparedTo(0) === 0) {
-            return { status: 'EXPIRED', statusReason: '현금 부족' };
+            return {
+              status: 'EXPIRED',
+              statusReason: expiredReasonOf(account),
+            };
           }
         } else {
           const heldQuantity = position?.quantity ?? new Prisma.Decimal(0);

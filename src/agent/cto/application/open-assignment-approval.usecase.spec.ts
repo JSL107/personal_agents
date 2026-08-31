@@ -86,16 +86,38 @@ describe('OpenAssignmentApprovalUsecase', () => {
     });
   });
 
-  // 실행할 게 없는데 실행 버튼을 띄우면 눌러도 아무 일이 안 일어난다.
-  it('분배가 0건이면 카드를 열지 않고 null 반환', async () => {
+  // 보여줄 것이 하나도 없을 때만 열지 않는다.
+  it('분배도 보류도 없으면 카드를 열지 않고 null 반환', async () => {
     const previewId = await usecase.execute({
       slackUserId: 'U1',
       ctoAgentRunId: 42,
-      output: { ...output, assignments: [] },
+      output: { ...output, assignments: [], unassignedTasks: [] },
     });
 
     expect(previewId).toBeNull();
     expect(createExecute).not.toHaveBeenCalled();
+  });
+
+  // 카드가 없으면 보류 항목의 담당 드롭다운을 그릴 자리가 없다 — 그러면 정작 "전부 보류"
+  // 인 회차에만 사용자가 카드에서 결정할 수 없게 된다.
+  it('배정이 0건이어도 보류가 있으면 카드를 연다', async () => {
+    const previewId = await usecase.execute({
+      slackUserId: 'U1',
+      ctoAgentRunId: 42,
+      output: {
+        ...output,
+        assignments: [],
+        unassignedTasks: [
+          { taskId: 't:9', taskTitle: '검증 작업', reason: '경계 모호' },
+        ],
+      },
+    });
+
+    expect(previewId).toBe('p-new');
+    const input = createExecute.mock.calls[0][0];
+    expect(input.kind).toBe(PREVIEW_KIND.CTO_BE_CHAIN);
+    // 실행 대기가 아니라 담당 대기다 — 카드 목록에서 상태를 구분할 수 있어야 한다.
+    expect(input.previewText).toContain('담당 대기');
   });
 
   // 재배정 때마다 카드가 쌓이면, 최신 카드를 "아니" 로 닫는 순간 옛 분배 카드가 최신

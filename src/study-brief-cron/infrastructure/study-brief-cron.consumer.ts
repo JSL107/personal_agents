@@ -21,11 +21,11 @@ import { CronIdempotencyService } from '../../common/queue/cron-idempotency.serv
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
-} from '../../morning-briefing/domain/port/slack-notifier.port';
-import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+} from '../../slack/domain/port/slack-notifier.port';
 import {
   NOTION_FILE_UPLOAD_PORT,
   NotionFileUploadPort,

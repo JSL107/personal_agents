@@ -4,7 +4,9 @@ import {
 } from '../domain/career-mate.type';
 import { toPrNumber } from '../domain/reconcile-accomplishment-evidence';
 
-const evidenceKey = (item: ProfileAccomplishment): string => {
+// 성과를 가리키는 키. 프로필을 다시 쓰는 경로들이 "같은 PR 의 성과" 를 알아보는 유일한 수단이라
+// 한 곳에서만 만든다(preserve-impact-context.ts 도 이 키를 쓴다).
+export const evidenceKey = (item: ProfileAccomplishment): string => {
   const first = item.evidence[0];
   // 보정 전 `pr: "#984"` 가 남은 항목과 보정된 새 항목이 다른 키로 갈리면 dedup 이 빗나가
   // 같은 PR 성과가 둘 남는다.

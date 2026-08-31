@@ -1,3 +1,4 @@
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { PlaybookEntry } from '../domain/playbook.type';
 import { AutopilotOrchestrator } from './autopilot.orchestrator';
 
@@ -335,10 +336,17 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).resolves.toBeUndefined();
 
+    // 카드를 무엇으로 그릴지는 preview-gate 가 소유하는 PreviewCardMessage 한 묶음으로 넘어간다 —
+    // 경력 반영 카드에만 묶음별 "작업 맥락" 입력칸이 붙고, 그 개수·라벨·기존 값이 전부
+    // payload 에서 나오기 때문이다.
     expect(postPreviewMessage).toHaveBeenCalledWith({
       target: 'C1',
-      previewText: '발행 후보',
-      previewId: 'PV1',
+      preview: {
+        id: 'PV1',
+        kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+        previewText: '발행 후보',
+        payload: {},
+      },
     });
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
@@ -474,8 +482,12 @@ describe('AutopilotOrchestrator', () => {
     );
     expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith({
       target: 'U1',
-      previewText: 'pv',
-      previewId: 'PV1',
+      preview: {
+        id: 'PV1',
+        kind: PREVIEW_KIND.DOCS_AUDIT_PR,
+        previewText: 'pv',
+        payload: { files: [] },
+      },
     });
     // preview 발송 후 첫 타깃 좌표(channel/ts)를 저장한다.
     expect(previewRepository.attachSlackMessage).toHaveBeenCalledWith({
