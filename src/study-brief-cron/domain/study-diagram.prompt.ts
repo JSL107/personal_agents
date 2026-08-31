@@ -69,7 +69,8 @@ export const buildStudyDiagramRetryPrompt = ({
 
 const buildCanvasRules = (limits: DiagramLimits): string[] => [
   '[캔버스 — 어기면 자동으로 거부된다]',
-  `- 가로는 정확히 ${limits.widthPx}px 다. 이 폭을 넘는 요소를 두지 마라.`,
+  `- 가로는 정확히 ${limits.widthPx}px 다. **바깥 여백까지 포함한 전체 폭**이 이 값을 넘으면 거부된다.`,
+  `- html 과 body 의 margin·padding 은 0 으로 둬라. 여백이 필요하면 그림(SVG) 안에서 처리한다.`,
   `- 세로는 ${limits.maxHeightPx}px 이내면 자유롭다. 세로로 흐르는 구성으로 짜도 된다.`,
   `- 모든 글자는 화면에서 ${limits.minFontPx}px 이상으로 보여야 한다. 하나라도 작으면 거부된다.`,
   '- SVG 의 width·height 속성을 viewBox 의 크기와 같은 값으로 둬라. 축소 변환이 끼면 글자가 기준보다 작아진다.',
