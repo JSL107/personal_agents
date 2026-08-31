@@ -536,6 +536,10 @@ describe('JobPostingPrismaRepository.saveSkillTags', () => {
     await repository.saveSkillTags(1, ['Java', 'Spring Boot']);
 
     expect(updateCalls[0].where).toEqual({ id: 1 });
+    // 🔴 contentHash 는 여기서 건드리지 않는다. 지문의 주인은 수집(upsertMany 의
+    // listOnlyFields)이고, 상세를 받은 행은 지문만 목록 기준으로 유지한다 — 재파생이
+    // 상세 태그로 지문을 다시 찍으면 다음 목록 수집과 어긋나 이미 발송한 공고가
+    // 다시 알림된다.
     expect(updateCalls[0].data).toEqual({
       skillTags: ['Java', 'Spring Boot'],
       scoredProfileId: null,
