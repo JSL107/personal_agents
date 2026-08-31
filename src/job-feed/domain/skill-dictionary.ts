@@ -164,6 +164,58 @@ const NON_SKILL_KEYS: ReadonlySet<string> = new Set([
   'pii',
 ]);
 
+// 프론트·모바일·게임 전용 기술. **프로필에서만** 뺀다(buildMatchProfile).
+//
+// 이 피드는 백엔드 공고를 고르는 것이 목적인데, 매칭은 "무엇을 할 줄 아느냐" 로만
+// 재기 때문에 곁다리로 익힌 프론트 기술이 프론트 공고를 만점으로 만든다 — 실측에서
+// React·TypeScript·Next.js 만 적힌 'Backend Engineer' 공고가 3/3 = 100점이었다.
+//
+// 🔴 공고 쪽에서는 절대 빼지 않는다. 공고의 React 는 "내가 못 맞추는 요구" 로 분모에
+// 남아야 한다. 양쪽에서 빼면 프론트 스택만 적힌 공고가 "요구사항이 없는 공고" 가 돼
+// 다시 만점으로 올라온다 — 이 파일이 고친 결함이 그대로 재발한다.
+//
+// 양쪽에서 쓰는 것(TypeScript·JavaScript·Kotlin 등)은 넣지 않는다. Kotlin 은 Spring
+// 백엔드의 정식 언어이고, TypeScript 는 이 프로필의 주력 백엔드 언어다.
+export const FRONTEND_ONLY_SKILL_KEYS: ReadonlySet<string> = new Set([
+  // 웹 프론트
+  'react',
+  'reactjs',
+  'nextjs',
+  'vue',
+  'vuejs',
+  'nuxtjs',
+  'angular',
+  'svelte',
+  'jquery',
+  'redux',
+  'sass',
+  'scss',
+  'css',
+  'css3',
+  'html',
+  'html5',
+  'html/css',
+  'tailwindcss',
+  'storybook',
+  'astro',
+  'htmlcanvas',
+  // 모바일·데스크톱 앱
+  'swift',
+  'swiftui',
+  'objectivec',
+  'flutter',
+  'reactnative',
+  'expo',
+  'ios',
+  'android',
+  'androidos',
+  'spritekit',
+  'combine',
+  // 게임 엔진
+  'unity',
+  'unrealengine',
+]);
+
 export const toSkillKey = (raw: string): string => {
   return raw.toLowerCase().replace(/[\s._-]/gu, '');
 };

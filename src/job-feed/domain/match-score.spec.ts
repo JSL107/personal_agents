@@ -204,6 +204,51 @@ describe('scorePosting', () => {
     expect(result.matchedSkills).toEqual(['OpenCV']);
   });
 
+  // 이 피드는 백엔드 공고를 고르는 것이 목적이다. 곁다리로 익힌 프론트 기술이
+  // 매칭에 쓰이면 프론트 공고가 만점으로 올라온다 — 실측(2026-08-31)에서
+  // 'Backend Engineer' 제목에 React·TypeScript·Next.js 만 적힌 공고가 3/3 = 100점.
+  it('프로필의 프론트·모바일 전용 기술은 매칭에 쓰지 않는다', () => {
+    const profile = buildMatchProfile({
+      techTags: ['TypeScript', 'React', 'Next.js', 'Swift', 'NestJS'],
+      years: 5,
+      locations: ['서울'],
+    });
+    expect(profile.skillTags).toEqual(['TypeScript', 'NestJS']);
+
+    const result = scorePosting(
+      posting({ skillTags: ['React', 'TypeScript', 'Next.js'] }),
+      profile,
+    );
+    expect(result.matchedSkills).toEqual(['TypeScript']);
+    expect(result.missingSkills).toEqual(['React', 'Next.js']);
+    expect(result.score).toBeLessThan(80);
+  });
+
+  // 🔴 공고 쪽에서 빼면 프론트 스택만 적힌 공고가 "요구사항 없는 공고" 가 돼 다시
+  // 만점으로 올라온다 — 이 파일이 고친 결함의 재발 경로다.
+  it('공고 쪽 프론트 기술은 분모에 그대로 남는다 — 못 맞추는 요구도 요구다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['React', 'CSS', 'Java'] }),
+      buildMatchProfile({ techTags: ['Java'], years: 5, locations: ['서울'] }),
+    );
+    expect(result.skillHitRatio).toBeCloseTo(1 / 3);
+  });
+
+  // 양쪽에서 쓰는 언어까지 빼면 백엔드 매칭 자체가 무너진다.
+  it('양쪽에서 쓰는 언어는 빼지 않는다 — TypeScript 는 이 프로필의 백엔드 주력이다', () => {
+    const profile = buildMatchProfile({
+      techTags: ['TypeScript', 'JavaScript', 'Kotlin', 'Node.js'],
+      years: 5,
+      locations: ['서울'],
+    });
+    expect(profile.skillTags).toEqual([
+      'TypeScript',
+      'JavaScript',
+      'Kotlin',
+      'Node.js',
+    ]);
+  });
+
   it('점수는 0~100 정수다', () => {
     const result = scorePosting(
       posting(),
