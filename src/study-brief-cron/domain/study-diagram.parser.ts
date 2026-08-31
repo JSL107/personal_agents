@@ -33,8 +33,7 @@ export const parseStudyDiagram = (
   const html = drawings[drawings.length - 1];
   if (EXTERNAL_RESOURCE.test(html)) {
     return {
-      rejectedReason:
-        '외부 리소스를 참조합니다. 인라인 SVG·CSS 만 허용합니다.',
+      rejectedReason: '외부 리소스를 참조합니다. 인라인 SVG·CSS 만 허용합니다.',
     };
   }
 
