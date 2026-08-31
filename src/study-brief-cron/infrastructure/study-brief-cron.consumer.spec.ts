@@ -581,4 +581,91 @@ describe('StudyBriefCronConsumer', () => {
 
     expect(dependencies.generateStudyDiagram.execute).not.toHaveBeenCalled();
   });
+
+  it('그림 포함 발행이 실패하면 그림 없이 재발행해 페이지를 만든다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockResolvedValue({
+      png: Buffer.from('png'),
+      html: '<html></html>',
+      violations: [],
+    });
+    dependencies.notionFileUpload.uploadImage.mockResolvedValue('upload-1');
+    dependencies.studyBriefPublisher.publish
+      .mockRejectedValueOnce(new Error('image expired'))
+      .mockResolvedValueOnce({
+        pageId: 'PAGE',
+        url: 'https://notion.so/PAGE',
+      });
+    const warn = jest
+      .spyOn(dependencies.consumer['logger'], 'warn')
+      .mockImplementation();
+
+    try {
+      await dependencies.consumer.process(JOB as never);
+
+      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(
+        dependencies.studyBriefPublisher.publish.mock.calls[1][0],
+      ).toEqual(
+        expect.not.objectContaining({
+          diagramFileUploadId: expect.anything(),
+        }),
+      );
+      expect(
+        dependencies.studyBriefRepository.updateNotionUrl,
+      ).toHaveBeenCalledWith(7, 'https://notion.so/PAGE');
+      expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('그림 없이 재발행 성공'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('그림 없는 재발행도 실패하면 null이 되어 Slack 전체 카드로 간다', async () => {
+    const dependencies = makeConsumer({ notionDatabaseId: 'DATABASE' });
+    dependencies.generateStudyDiagram.execute.mockResolvedValue({
+      png: Buffer.from('png'),
+      html: '<html></html>',
+      violations: [],
+    });
+    dependencies.notionFileUpload.uploadImage.mockResolvedValue('upload-1');
+    dependencies.studyBriefPublisher.publish
+      .mockRejectedValueOnce(new Error('image expired'))
+      .mockRejectedValueOnce(new Error('retry down'));
+    const warn = jest
+      .spyOn(dependencies.consumer['logger'], 'warn')
+      .mockImplementation();
+
+    try {
+      await dependencies.consumer.process(JOB as never);
+
+      expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(
+        dependencies.studyBriefRepository.updateNotionUrl,
+      ).not.toHaveBeenCalled();
+      expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('그림 없는 재발행도 실패'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('그림이 없던 발행 실패는 재발행하지 않는다(publish 호출 1회)', async () => {
+    const dependencies = makeConsumer({
+      notionDatabaseId: 'DATABASE',
+      notionError: new Error('notion down'),
+    });
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalledTimes(1);
+  });
 });

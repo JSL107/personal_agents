@@ -50,6 +50,7 @@ import {
 } from '../domain/port/study-brief.repository.port';
 import {
   PublishedStudyBrief,
+  PublishStudyBriefInput,
   STUDY_BRIEF_PUBLISHER_PORT,
   StudyBriefPublisherPort,
 } from '../domain/port/study-brief-publisher.port';
@@ -338,21 +339,19 @@ export class StudyBriefCronConsumer extends WorkerHost {
     if (!this.resolveNotionDatabaseId()) {
       return null;
     }
-    let published: PublishedStudyBrief;
-    try {
-      published = await this.studyBriefPublisher.publish({
-        kind: research.kind,
-        topic: research.topic,
-        verdict,
-        reportMd: research.reportMd,
-        sourceUrls: research.sourceUrls,
-        createdAt: new Date(),
-        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
-      );
+    const publishInput: PublishStudyBriefInput = {
+      kind: research.kind,
+      topic: research.topic,
+      verdict,
+      reportMd: research.reportMd,
+      sourceUrls: research.sourceUrls,
+      createdAt: new Date(),
+    };
+    const published = await this.publishWithDiagramFallback(
+      publishInput,
+      diagramFileUploadId,
+    );
+    if (published === null) {
       return null;
     }
 
@@ -364,6 +363,43 @@ export class StudyBriefCronConsumer extends WorkerHost {
       );
     }
     return published;
+  }
+
+  // 그림을 포함한 발행이 실패하면 그림 없이 한 번 재발행한다. 그림 블록은 콜아웃·본문·출처와
+  // 같은 createDatabasePage() 요청에 실려 나가므로, 첨부 하나(만료·거부)가 실패하면 원래
+  // 잘 만들어지던 텍스트 페이지까지 통째로 사라진다 — "그림은 있으면 좋은 것이지 발행을
+  // 막을 이유가 아니다" 라는 전제와 어긋나는 회귀다. diagramFileUploadId 가 애초에 없었다면
+  // 재발행하지 않는다(같은 요청을 두 번 보내는 셈이다).
+  private async publishWithDiagramFallback(
+    input: PublishStudyBriefInput,
+    diagramFileUploadId: string | undefined,
+  ): Promise<PublishedStudyBrief | null> {
+    try {
+      return await this.studyBriefPublisher.publish({
+        ...input,
+        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
+      );
+      if (diagramFileUploadId === undefined) {
+        return null;
+      }
+    }
+
+    try {
+      const published = await this.studyBriefPublisher.publish(input);
+      this.logger.warn(
+        'Study Brief Notion 그림 없이 재발행 성공 — 그림 첨부 단계만 실패했을 가능성이 높습니다.',
+      );
+      return published;
+    } catch (retryError) {
+      this.logger.warn(
+        `Study Brief Notion 그림 없는 재발행도 실패 — Slack 전체 카드로 대체: ${formatError(retryError)}`,
+      );
+      return null;
+    }
   }
 
   // 두 곳(그림 생성 진입 전, 발행 대상 확인)이 같은 설정을 따로 읽으면 한쪽만 고쳐지는
