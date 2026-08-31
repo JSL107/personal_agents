@@ -167,7 +167,7 @@ describe('buildAssignmentCardBlocks', () => {
     });
 
     const pendingBlock = blocks.find(
-      (block) => block.block_id === 'assignment-pending:p-1:0',
+      (block) => block.block_id === 'assignment-pending:p-1:0:t:2',
     );
     expect(pendingBlock).toBeDefined();
     const accessory = pendingBlock?.accessory as Record<string, unknown>;
@@ -176,6 +176,40 @@ describe('buildAssignmentCardBlocks', () => {
     // 배정이 선택된 것처럼 보인다.
     expect(accessory.initial_option).toBeUndefined();
     expect(accessory.options).toHaveLength(3);
+  });
+
+  // 실행할 배정이 없는 카드에서 실행 버튼은 눌러도 아무 일이 없거나 카드만 닫는다 —
+  // 그러면 사용자는 담당을 정할 기회를 잃는다.
+  it('실행할 배정이 없으면 실행 버튼을 그리지 않는다', () => {
+    const blocks = buildAssignmentCardBlocks({
+      output: output({
+        assignments: [],
+        unassignedTasks: [
+          { taskId: 't:2', taskTitle: '테스트 보강', reason: '경계 모호' },
+        ],
+      }),
+      previewId: 'p-1',
+    });
+
+    const actions = blocks.find((block) => block.type === 'actions');
+    const elements = actions?.elements as Array<Record<string, unknown>>;
+    expect(elements.map((element) => element.action_id)).toEqual([
+      'preview:cancel',
+    ]);
+  });
+
+  it('배정이 있으면 실행 버튼을 그린다', () => {
+    const blocks = buildAssignmentCardBlocks({
+      output: output(),
+      previewId: 'p-1',
+    });
+
+    const actions = blocks.find((block) => block.type === 'actions');
+    const elements = actions?.elements as Array<Record<string, unknown>>;
+    expect(elements.map((element) => element.action_id)).toEqual([
+      'preview:apply',
+      'preview:cancel',
+    ]);
   });
 
   it('보류가 10건을 넘으면 잘라내되 몇 건이 안 보이는지 알린다', () => {
@@ -240,12 +274,35 @@ describe('parseAssignmentBlockId', () => {
 
   // 두 드롭다운은 action_id 가 같다 — 처리 분기(교체 vs 승격)가 block_id 하나에만
   // 걸려 있으므로, 종류를 잘못 읽으면 보류 항목이 배정 항목을 덮어쓴다.
-  it('보류 항목 block_id 는 PENDING 으로 구분한다', () => {
-    expect(parseAssignmentBlockId('assignment-pending:p-42:0')).toEqual({
+  it('보류 항목 block_id 는 PENDING + taskId 로 읽는다', () => {
+    expect(parseAssignmentBlockId('assignment-pending:p-42:0:t-9')).toEqual({
       previewId: 'p-42',
       index: 0,
       kind: 'PENDING',
+      taskId: 't-9',
     });
+  });
+
+  // taskId 는 LLM 이 채우는 값이라 콜론이 들어올 수 있다. 앞 세 조각만 고정으로 읽고
+  // 나머지를 다시 이어 붙이지 않으면 대상이 잘려 엉뚱한 항목을 찾게 된다.
+  it('taskId 에 콜론이 있어도 원래 값으로 복원한다', () => {
+    expect(
+      parseAssignmentBlockId('assignment-pending:p-42:0:acme/app#52:extra'),
+    ).toEqual({
+      previewId: 'p-42',
+      index: 0,
+      kind: 'PENDING',
+      taskId: 'acme/app#52:extra',
+    });
+  });
+
+  it('보류 block_id 에 taskId 가 없으면 거부한다', () => {
+    expect(parseAssignmentBlockId('assignment-pending:p-42:0')).toBeNull();
+  });
+
+  // 배정 쪽은 순번만 쓴다 — 꼬리가 붙은 형식은 다른 블록의 이벤트일 수 있다.
+  it('배정 block_id 에 꼬리가 붙으면 거부한다', () => {
+    expect(parseAssignmentBlockId('assignment-worker:p-42:0:extra')).toBeNull();
   });
 
   // 다른 블록의 이벤트를 잘못 처리하면 엉뚱한 카드의 배정이 바뀐다.

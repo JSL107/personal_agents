@@ -62,7 +62,7 @@ export class AssignmentActionHandler implements SlackHandler {
               return target.kind === 'PENDING'
                 ? promoteUnassigned({
                     payload,
-                    index: target.index,
+                    taskId: target.taskId,
                     worker,
                   })
                 : applyWorkerChange({
@@ -143,23 +143,22 @@ export const applyWorkerChange = ({
 // 문장을 쓰고, LLM 이 어느 항목인지 다시 맞혀야 했다. 드롭다운은 대상도 값도 확정이다.
 export const promoteUnassigned = ({
   payload,
-  index,
+  taskId,
   worker,
 }: {
   payload: CtoBeChainPayload;
-  index: number;
+  taskId: string;
   worker: BeAssignmentType;
 }): CtoBeChainPayload => {
   const pending = payload.unassignedTasks ?? [];
-  // ponytail: 대상은 카드가 그려진 시점의 순번으로 찾는다. 승격은 보류 목록을 줄이므로,
-  // 카드가 다시 그려지기 전에 같은 카드에서 두 번째 드롭다운을 고르면 뒤 항목이 한 칸씩
-  // 당겨져 옆 항목이 배정될 수 있다 (배정 항목 교체에는 없던 위험 — 그쪽은 목록 길이가
-  // 그대로다). 조작 즉시 replace_original 로 카드를 다시 그리므로 창이 좁고, 어긋나도
-  // 실행 전 카드에 그대로 보인다. 순번 대신 taskId 로 찾으려면 block_id 형식부터
-  // 바꿔야 한다 (taskId 에 콜론이 들어가 3-세그먼트 파싱이 깨진다).
-  if (index >= pending.length) {
+  // 순번이 아니라 taskId 로 찾는다. 승격은 보류 목록을 줄이므로, 카드가 다시 그려지기 전에
+  // 같은 카드에서 두 번째 드롭다운을 고르면 순번으로는 뒤 항목이 한 칸 당겨져 옆 항목이
+  // 배정된다 (배정 교체에는 없던 위험 — 그쪽은 목록 길이가 그대로다). taskId 로 찾으면
+  // 오래된 이벤트는 다른 항목을 승격하는 대신 아래에서 명시 에러로 거절된다.
+  const index = pending.findIndex((task) => task.taskId === taskId);
+  if (index === -1) {
     throw new Error(
-      `보류 항목 ${index + 1} 번이 카드에 없습니다 — 카드가 오래됐을 수 있습니다.`,
+      `보류 항목을 카드에서 찾지 못했습니다 — 이미 담당이 정해졌거나 카드가 오래됐을 수 있습니다 (${taskId}).`,
     );
   }
   const promoted = pending[index];

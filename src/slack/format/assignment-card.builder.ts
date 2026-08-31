@@ -123,13 +123,20 @@ export const buildAssignmentCardBlocks = ({
     type: 'actions',
     block_id: `assignment-actions:${previewId}`,
     elements: [
-      {
-        type: 'button',
-        action_id: PREVIEW_ACTION_IDS.APPLY,
-        text: { type: 'plain_text', text: '🚀 실행' },
-        value: previewId,
-        style: 'primary',
-      },
+      // 실행할 배정이 없으면 버튼을 그리지 않는다 — 누를 것이 없는 버튼은 눌러도 아무 일이
+      // 없거나(빈 실행) 카드를 닫을 뿐이라, 사용자가 담당을 정할 기회만 잃는다. 보류에
+      // 담당을 고르면 카드가 다시 그려지면서 버튼이 나타난다.
+      ...(shown.length > 0
+        ? [
+            {
+              type: 'button',
+              action_id: PREVIEW_ACTION_IDS.APPLY,
+              text: { type: 'plain_text', text: '🚀 실행' },
+              value: previewId,
+              style: 'primary',
+            },
+          ]
+        : []),
       {
         type: 'button',
         action_id: PREVIEW_ACTION_IDS.CANCEL,
@@ -192,7 +199,10 @@ const buildUnassignedBlock = ({
   previewId: string;
 }): SlackBlock => ({
   type: 'section',
-  block_id: `${PENDING_BLOCK_ID_PREFIX}:${previewId}:${index}`,
+  // index 뒤에 taskId 를 함께 싣는다. 승격은 보류 목록을 줄이므로 순번만으로 찾으면
+  // 카드가 다시 그려지기 전에 도착한 이벤트가 옆 항목을 승격할 수 있다. taskId 는
+  // 콜론을 포함할 수 있어 파서가 마지막 세그먼트들을 다시 이어 붙인다.
+  block_id: `${PENDING_BLOCK_ID_PREFIX}:${previewId}:${index}:${unassigned.taskId}`,
   text: {
     type: 'mrkdwn',
     text: `*${escapeSlackMrkdwn(unassigned.taskTitle)}*\n_${escapeSlackMrkdwn(unassigned.reason)}_`,
@@ -242,13 +252,13 @@ const toWorkerOption = (worker: BeAssignmentType): SlackBlock => ({
 // 처리 분기는 block_id 로만 갈린다 (배정은 교체, 보류는 실행 목록으로 승격).
 export type AssignmentBlockKind = 'ASSIGNED' | 'PENDING';
 
-export interface AssignmentBlockTarget {
-  previewId: string;
-  index: number;
-  kind: AssignmentBlockKind;
-}
+// 보류 쪽만 taskId 를 갖는다 — 배정 목록은 길이가 변하지 않아 순번으로 충분하지만,
+// 보류는 승격할 때마다 줄어들어 순번이 다른 항목을 가리키게 된다.
+export type AssignmentBlockTarget =
+  | { kind: 'ASSIGNED'; previewId: string; index: number }
+  | { kind: 'PENDING'; previewId: string; index: number; taskId: string };
 
-// 드롭다운 변경 이벤트의 block_id 에서 previewId 와 항목 index 를 복원.
+// 드롭다운 변경 이벤트의 block_id 에서 대상을 복원.
 // 형식이 다르면 null — 다른 블록의 이벤트를 잘못 처리하지 않도록.
 export const parseAssignmentBlockId = (
   blockId: string | null,
@@ -257,7 +267,7 @@ export const parseAssignmentBlockId = (
     return null;
   }
   const segments = blockId.split(':');
-  if (segments.length !== 3) {
+  if (segments.length < 3) {
     return null;
   }
   const kind = toBlockKind(segments[0]);
@@ -269,7 +279,16 @@ export const parseAssignmentBlockId = (
   if (previewId.length === 0 || !Number.isInteger(index) || index < 0) {
     return null;
   }
-  return { previewId, index, kind };
+  if (kind === 'ASSIGNED') {
+    return segments.length === 3 ? { kind, previewId, index } : null;
+  }
+  // taskId 는 콜론을 포함할 수 있다(LLM 이 채우는 값이라 형식을 보장할 수 없다).
+  // 앞의 세 조각만 고정으로 읽고 나머지는 원래 문자열로 다시 이어 붙인다.
+  const taskId = segments.slice(3).join(':');
+  if (taskId.length === 0) {
+    return null;
+  }
+  return { kind, previewId, index, taskId };
 };
 
 const toBlockKind = (prefix: string): AssignmentBlockKind | null => {

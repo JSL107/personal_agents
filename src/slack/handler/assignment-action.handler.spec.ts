@@ -49,7 +49,7 @@ describe('promoteUnassigned', () => {
   it('고른 보류 항목을 실행 목록으로 옮기고 보류에서 뺀다', () => {
     const updated = promoteUnassigned({
       payload: withPending(),
-      index: 0,
+      taskId: 't:9',
       worker: AgentType.BE_TEST,
     });
 
@@ -64,7 +64,7 @@ describe('promoteUnassigned', () => {
   it('승격한 항목의 근거는 사용자 지정 + confidence 1 이다', () => {
     const updated = promoteUnassigned({
       payload: withPending(),
-      index: 0,
+      taskId: 't:9',
       worker: AgentType.BE,
     });
 
@@ -78,7 +78,7 @@ describe('promoteUnassigned', () => {
     const before = withPending();
     const updated = promoteUnassigned({
       payload: before,
-      index: 1,
+      taskId: 't:10',
       worker: AgentType.BE,
     });
 
@@ -86,20 +86,68 @@ describe('promoteUnassigned', () => {
   });
 
   // 오래된 카드의 이벤트가 엉뚱한 항목을 배정하면 사용자가 고르지 않은 일이 실행된다.
-  it('카드에 없는 보류 번호면 거부한다', () => {
+  it('카드에 없는 taskId 면 거부한다', () => {
     expect(() =>
       promoteUnassigned({
         payload: withPending(),
-        index: 5,
+        taskId: 't:없음',
         worker: AgentType.BE,
       }),
-    ).toThrow('보류 항목 6 번이 카드에 없습니다');
+    ).toThrow('카드에서 찾지 못했습니다');
   });
 
   it('보류 목록이 아예 없는 옛 카드면 거부한다', () => {
     expect(() =>
-      promoteUnassigned({ payload: payload(), index: 0, worker: AgentType.BE }),
-    ).toThrow('카드에 없습니다');
+      promoteUnassigned({
+        payload: payload(),
+        taskId: 't:9',
+        worker: AgentType.BE,
+      }),
+    ).toThrow('찾지 못했습니다');
+  });
+
+  // 첫 승격으로 보류 목록이 줄어든 뒤, 아직 다시 그려지지 않은 카드에서 도착한 두 번째
+  // 이벤트. 순번으로 찾으면 뒤 항목이 한 칸 당겨져 사용자가 고르지 않은 일이 배정된다.
+  it('첫 승격 뒤 도착한 옛 카드 이벤트가 다른 항목을 승격하지 않는다', () => {
+    const first = promoteUnassigned({
+      payload: withPending(),
+      taskId: 't:9',
+      worker: AgentType.BE,
+    });
+
+    // 옛 카드의 두 번째 항목(index 1 = t:10)을 고른 이벤트가 뒤늦게 도착한다.
+    // 목록은 이미 [t:10] 한 건으로 줄어, 순번 1 은 존재하지 않는다.
+    const second = promoteUnassigned({
+      payload: first,
+      taskId: 't:10',
+      worker: AgentType.BE_TEST,
+    });
+
+    expect(second.assignments.map((item) => item.taskId)).toEqual([
+      't:1',
+      't:2',
+      't:9',
+      't:10',
+    ]);
+    expect(second.unassignedTasks).toHaveLength(0);
+  });
+
+  // 같은 항목을 두 번 고른 이벤트(중복 전달·연타)는 두 번째가 거절돼야 한다 —
+  // 통과하면 같은 task 가 실행 목록에 두 번 들어간다.
+  it('이미 승격한 항목을 다시 고르면 거부한다', () => {
+    const first = promoteUnassigned({
+      payload: withPending(),
+      taskId: 't:9',
+      worker: AgentType.BE,
+    });
+
+    expect(() =>
+      promoteUnassigned({
+        payload: first,
+        taskId: 't:9',
+        worker: AgentType.BE_TEST,
+      }),
+    ).toThrow('찾지 못했습니다');
   });
 });
 
