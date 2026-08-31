@@ -52,9 +52,10 @@ export class KnowledgeLintService implements KnowledgeLintPort {
       }),
       this.repository.findEmbeddingNull(input.limit),
     ]);
-    if (neighbors.length >= DUPLICATE_SCAN_LIMIT) {
+    const scanTruncated = neighbors.length >= DUPLICATE_SCAN_LIMIT;
+    if (scanTruncated) {
       this.logger.warn(
-        `near-duplicate 조회가 스캔 상한(${DUPLICATE_SCAN_LIMIT})에 도달 — 중복 총계가 과소 보고됩니다.`,
+        `near-duplicate 조회가 스캔 상한(${DUPLICATE_SCAN_LIMIT})에 도달 — 중복 총계는 하한값입니다.`,
       );
     }
 
@@ -83,6 +84,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
         ...(detection?.issues ?? []),
       ],
       duplicateTotal: allDuplicates.length,
+      duplicateTotalTruncated: scanTruncated,
       l4:
         detection === null
           ? null

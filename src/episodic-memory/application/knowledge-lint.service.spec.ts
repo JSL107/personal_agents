@@ -78,6 +78,42 @@ describe('KnowledgeLintService', () => {
     expect(duplicateTotal).toBe(7);
   });
 
+  // 스캔 상한에 걸리면 총계는 하한값이다 — 그 사실이 outcome 에 실려야 화면이 확정값처럼
+  // 적지 않는다(로그만으로는 메시지를 보는 사람에게 닿지 않는다).
+  it('스캔 상한에 도달하면 duplicateTotalTruncated 를 세운다', async () => {
+    const repository = createRepositoryMock();
+    repository.findNearestNeighbors.mockResolvedValue(
+      Array.from({ length: 5_000 }, (_unused, index) => ({
+        id: index * 2 + 1,
+        relatedId: index * 2 + 2,
+        distance: 0,
+        occurredAt,
+      })),
+    );
+    const service = new KnowledgeLintService(repository as never);
+
+    const { duplicateTotal, duplicateTotalTruncated } =
+      await service.lintIssues({ duplicateMaxDistance: 0.001, limit: 50 });
+
+    expect(duplicateTotalTruncated).toBe(true);
+    expect(duplicateTotal).toBe(5_000);
+  });
+
+  it('상한에 못 미치면 duplicateTotalTruncated 는 false', async () => {
+    const repository = createRepositoryMock();
+    repository.findNearestNeighbors.mockResolvedValue([
+      { id: 1, relatedId: 2, distance: 0, occurredAt },
+    ]);
+    const service = new KnowledgeLintService(repository as never);
+
+    const { duplicateTotalTruncated } = await service.lintIssues({
+      duplicateMaxDistance: 0.001,
+      limit: 50,
+    });
+
+    expect(duplicateTotalTruncated).toBe(false);
+  });
+
   it('embedding NULL 행을 embedding_null 이슈로 변환', async () => {
     const repository = createRepositoryMock();
     repository.findEmbeddingNull.mockResolvedValue([{ id: 9, occurredAt }]);

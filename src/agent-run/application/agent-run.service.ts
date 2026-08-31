@@ -49,11 +49,14 @@ const DEFAULT_CHAIN_MAX_DEPTH = 16;
 // 카운트 값이 매번 조금씩 달랐을 뿐이라, 중복률로 걸렀다면 놓쳤을 것이다.
 // 반대로 PAPER_RECOMMEND·SUBCONSCIOUS_GATE 는 계측처럼 보이지만 reason/proposalText 서술을
 // 담고 있어 남긴다.
+//
+// 한 agentType 을 여러 usecase 가 공유하면 제외하지 않는다 — 아래 넷은 전부 cron autopilot
+// 전용이라 output 형태가 하나다. VACATION 은 후보였다가 뺐다: 같은 타입을 조회(계측) 외에
+// 등록·취소 usecase 가 함께 쓰고 있어, 막으면 사용자 휴가 행위 기록까지 사라진다.
 const EPISODIC_EXCLUDED_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
   AgentType.PAPER_TRADE, // {"inspectedCount":6,"priceErrorCount":0,...}
   AgentType.HUMANIZER, // {"humanizedKeys":["retrospective"]}
   AgentType.INVEST, // {"marketCountry":"KR","holdingCount":0,...}
-  AgentType.VACATION, // {"hireDate":{...},"grantedDays":4,"usedDays":2,...}
 ]);
 
 export interface AgentRunExecutionResult<T> {

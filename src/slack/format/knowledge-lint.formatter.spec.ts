@@ -14,7 +14,12 @@ const format = (
   l4: ContradictionLintOutcome | null,
   duplicateTotal = issues.filter((issue) => issue.type === 'near_duplicate')
     .length,
-): string => formatKnowledgeLint({ issues, duplicateTotal, l4 }, firedAtKst);
+  duplicateTotalTruncated = false,
+): string =>
+  formatKnowledgeLint(
+    { issues, duplicateTotal, duplicateTotalTruncated, l4 },
+    firedAtKst,
+  );
 
 describe('formatKnowledgeLint', () => {
   const occurredAt = new Date('2026-06-20T00:00:00Z');
@@ -170,6 +175,28 @@ describe('formatKnowledgeLint', () => {
     );
 
     expect(text).toContain('중복 후보 1370건');
+    expect(text).toContain('가까운 순 1건만 표시');
+  });
+
+  // 스캔 상한에 걸린 총계는 확정값이 아니다 — 그대로 적으면 실제보다 적은 수를 확정처럼 보인다.
+  it('스캔 상한에 걸린 총계는 "이상" 으로 적는다', () => {
+    const text = format(
+      [
+        {
+          type: 'near_duplicate',
+          episodeId: 1,
+          relatedId: 2,
+          detail: '중복 후보 — distance 0.000',
+          occurredAt,
+        },
+      ],
+      '2026-06-28',
+      L4_DONE,
+      5000,
+      true,
+    );
+
+    expect(text).toContain('중복 후보 5000건 이상');
     expect(text).toContain('가까운 순 1건만 표시');
   });
 
