@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import {
   calculateAccountValuation,
   calculatePositionValuation,
+  calculateUnsettledCash,
 } from './paper-valuation';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -142,5 +143,54 @@ describe('calculateAccountValuation', () => {
 
     expect(valuation.totalValue).toBe('1100');
     expect(valuation.returnRate).toBe('10');
+  });
+});
+
+describe('calculateUnsettledCash', () => {
+  it('결제일이 지나지 않은 매수·매도의 현금 효과만 합산한다', () => {
+    const unsettledCash = calculateUnsettledCash({
+      asOf: new Date('2026-08-11T00:00:00.000Z'),
+      zero: decimal('0'),
+      trades: [
+        {
+          side: 'BUY',
+          quantity: decimal('10'),
+          price: decimal('100'),
+          fee: decimal('2'),
+          tax: decimal('0'),
+          settlementDate: new Date('2026-08-12T00:00:00.000Z'),
+        },
+        {
+          side: 'SELL',
+          quantity: decimal('3'),
+          price: decimal('200'),
+          fee: decimal('1'),
+          tax: decimal('2'),
+          settlementDate: new Date('2026-08-11T00:00:00.000Z'),
+        },
+        {
+          side: 'BUY',
+          quantity: decimal('1'),
+          price: decimal('500'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          settlementDate: null,
+        },
+      ],
+    });
+
+    expect(unsettledCash.toString()).toBe('-1002');
+  });
+
+  // 갓 개설해 거래가 없는 계좌도 평가를 돈다. 기준값을 거래에서 뽑으면 이 계좌에서
+  // 뽑을 곳이 없어 평가 전체가 실패한다.
+  it('거래가 한 건도 없으면 0을 반환한다', () => {
+    const unsettledCash = calculateUnsettledCash({
+      asOf: new Date('2026-08-11T00:00:00.000Z'),
+      zero: decimal('0'),
+      trades: [],
+    });
+
+    expect(unsettledCash.toString()).toBe('0');
   });
 });

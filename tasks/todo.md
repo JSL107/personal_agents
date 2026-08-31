@@ -32,6 +32,27 @@
   에 실제로 도는 것으로만 확인할 수 있다.
 
 ---
+# 모의투자 기업행동 원장·T+2 구현 (2026-08-31)
+
+**Contract:** `.ai/design.md` §2~§7 및 §9. `src/backtest/`·PR #418 가드 로직 불변. `pnpm db:push`·git commit 금지.
+
+- [x] `.ai/design.md`, `CLAUDE.md`, `CODE_RULES.md`와 기존 paper-trading 계약·테스트를 확인한다.
+- [x] Prisma schema에 `PaperCorporateAction`과 `PaperTrade.settlementDate`를 추가하고 Prisma client를 재생성한다.
+- [x] 배당 계산, 불변식, 결제일·미결제 대금 도메인 로직을 구현하고 필수 대조군 테스트를 추가한다.
+- [x] repository의 기업행동 원자 적용·과거 수량 조회·결제일 백필·재검증 상태 확장을 구현한다.
+- [x] 기업행동 usecase, 평가 결과, formatter, module, CLI 서브커맨드를 구현한다.
+- [x] 관련 unit spec을 갱신하고 `pnpm lint:check`, `pnpm test`, `pnpm build`를 전체 실행한다.
+- [x] `.ai/implementation-summary.md`에 파일 목록·설계 이탈·실제 게이트 결과·Claude 재검증 지점을 기록한다.
+
+## Review
+
+- 구현·검증 완료.
+- `pnpm lint:check`: exit 0 (기존 warning 55건, error 0건)
+- `pnpm test`: exit 0 (477 suites / 4,644 tests, code-graph 5 suites / 40 tests, snapshots 2 passed)
+- `pnpm build`: exit 0
+- `pnpm docs:check`: exit 0
+
+---
 
 # KOSPI 벤치마크 과거 종가 소급 수집 (2026-08-25)
 

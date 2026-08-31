@@ -19,6 +19,18 @@ export interface JobFeedDigestInput {
   // 둘 다 "조건에 맞는 공고가 없습니다"로 똑같이 보인다 — 수집은 성공했으니 각주(마지막
   // 수집 시각)도 정상으로 보여 "조용한 0건"이 다른 원인으로 재발한다.
   scoreSkipReason?: string | null;
+  // 카드 제목에 적을 KST 캘린더 날짜(YYYY-MM-DD). orchestrator 가 슬롯마다 한 번
+  // 계산해 넘기는 값을 그대로 받는다(AutopilotTaskContext.firedAtKst) — 여기서 다시
+  // 재면 자정 근처에 제목과 각주의 날짜가 갈릴 수 있다.
+  firedAtKst: string;
+}
+
+// 카드는 두 조각으로 나간다 — 메인 메시지(제목·날짜·진단 각주)와 스레드 댓글(공고 목록).
+// 열 건을 메인에 그대로 실으면 채널 한 화면을 통째로 차지해 다른 대화를 밀어낸다.
+export interface JobFeedDigestText {
+  summary: string;
+  // 붙일 공고가 없으면 null — orchestrator 는 detail 이 있을 때만 스레드 댓글을 단다.
+  detail: string | null;
 }
 
 const SOURCE_LABEL: Readonly<Record<JobSourceId, string>> = {
@@ -61,6 +73,9 @@ const formatOutcome = (outcome: SourceFetchOutcome): string => {
   return `${label} ${outcome.accepted}건`;
 };
 
+// 카드에 적는 기술 개수 상한.
+const MAX_SKILL_TAGS = 4;
+
 const STALE_COLLECTION_HOURS = 24;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -91,59 +106,56 @@ const formatLastCollectedAt = (lastCollectedAt: Date | null): string => {
   return `_마지막 수집: ${timestamp}_`;
 };
 
+const CARD_DATE_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul',
+  month: 'long',
+  day: 'numeric',
+  weekday: 'short',
+});
+
+// "2026-08-31" 을 그대로 제목에 붙이면 오늘 카드인지 한눈에 안 들어온다 — 요일까지 붙여
+// "8월 31일 (월)" 로 읽히게 한다. 파싱할 수 없는 값이면 원문을 그대로 둔다: 날짜를 통째로
+// 빼면 어느 날 카드인지 알 수 없어지고, 그건 형식이 어긋난 것보다 나쁘다.
+const formatCardDate = (firedAtKst: string): string => {
+  // 오프셋을 명시해 KST 자정으로 고정한다. "2026-08-31" 만 넘기면 UTC 자정으로 파싱돼
+  // 서버 timezone 에 따라 하루 전으로 표시될 수 있다.
+  const parsed = new Date(`${firedAtKst}T00:00:00+09:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return firedAtKst;
+  }
+  return CARD_DATE_FORMATTER.format(parsed);
+};
+
 export const formatJobFeedDigest = ({
   postings,
   outcomes,
   unmatchedSkillTags,
   lastCollectedAt,
+  firedAtKst,
   scoreSkipReason = null,
-}: JobFeedDigestInput): string => {
-  const lines: string[] = [];
+}: JobFeedDigestInput): JobFeedDigestText => {
+  const cardDate = formatCardDate(firedAtKst);
+  const summaryLines: string[] = [];
 
   if (postings.length === 0) {
-    lines.push('*새 백엔드 공고* — 조건에 맞는 공고가 없습니다.');
+    summaryLines.push(`*새 백엔드 공고* — ${cardDate}`);
+    summaryLines.push('조건에 맞는 공고가 없습니다.');
   } else {
-    lines.push(`*새 백엔드 공고 ${postings.length}건*`);
-    for (const posting of postings) {
-      const skills =
-        posting.skillTags.length === 0
-          ? '스킬 정보 없음'
-          : posting.skillTags.slice(0, 6).join(' · ');
-      // 랠릿은 고정 지역 코드라 안전하지만, 점핏·원티드는 원본 문자열의 첫 토큰을
-      // 그대로 쓰므로 회사명·제목과 마찬가지로 escape 없이는 특수문자가 노출될 수 있다.
-      const location =
-        posting.locations.length === 0
-          ? ''
-          : `${escapeMrkdwn(posting.locations.join('/'))} · `;
-      // 건과 건 사이를 빈 줄로 끊는다. 열 건이 같은 간격으로 붙어 있으면 어디서
-      // 한 건이 끝나는지 보이지 않아 두 줄짜리 항목이 한 덩어리로 읽힌다.
-      lines.push('');
-      // 회사명을 줄 맨 앞에 굵게 둔다. 예전엔 `[100점]` 배지가 앞자리였는데,
-      // 알림은 점수 내림차순 상위 10건이고 만점 행이 수십 건 쌓여 있어 배지가
-      // 사실상 항상 같은 값이었다 — 회사명 시작 위치만 줄마다 어긋나 세로로
-      // 훑을 수 없었다. 점수는 값이 갈릴 때만 쓸모가 있으므로 메타 줄 끝으로 옮긴다.
-      lines.push(
-        `*${escapeMrkdwn(posting.company)}* — <${posting.detailUrl}|${escapeMrkdwn(
-          posting.title,
-        )}>`,
-      );
-      // 연차·지역·스킬·점수는 회사명을 고른 뒤에 보는 부속 정보다. 기울임으로
-      // 눌러 두지 않으면 본문과 같은 무게라 회사명과 시선을 두고 경쟁한다.
-      lines.push(
-        `_${formatYears(posting.minYears, posting.maxYears)} · ${location}${escapeMrkdwn(skills)} · ${posting.matchScore ?? 0}점_`,
-      );
-    }
+    summaryLines.push(`*새 백엔드 공고 ${postings.length}건* — ${cardDate}`);
   }
 
-  lines.push('');
-  lines.push(formatLastCollectedAt(lastCollectedAt));
+  // 각주는 메인에 남긴다. 스레드로 내리면 접힌 채라, 수집이 멈췄다는 신호를 펼쳐 보기
+  // 전까지 아무도 못 본다 — 이 각주들이 존재하는 이유가 바로 그 조용한 실패를 드러내는
+  // 것이다(lastCollectedAt·scoreSkipReason 주석 참조).
+  summaryLines.push('');
+  summaryLines.push(formatLastCollectedAt(lastCollectedAt));
 
   if (scoreSkipReason) {
-    lines.push(`_⚠️ 채점 건너뜀 — ${scoreSkipReason}_`);
+    summaryLines.push(`_⚠️ 채점 건너뜀 — ${scoreSkipReason}_`);
   }
 
   if (outcomes.length > 0) {
-    lines.push(`_수집: ${outcomes.map(formatOutcome).join(' · ')}_`);
+    summaryLines.push(`_수집: ${outcomes.map(formatOutcome).join(' · ')}_`);
   }
 
   if (unmatchedSkillTags.length > 0) {
@@ -151,8 +163,44 @@ export const formatJobFeedDigest = ({
       .slice(0, 5)
       .map((entry) => `${escapeMrkdwn(entry.tag)}×${entry.count}`)
       .join(', ');
-    lines.push(`_사전 미등록 기술: ${preview}_`);
+    summaryLines.push(`_사전 미등록 기술: ${preview}_`);
   }
 
-  return lines.join('\n');
+  const detailLines: string[] = [];
+  for (const posting of postings) {
+    // 기술은 네 개까지만 적는다. 여섯 개를 다 늘어놓으면 그 줄이 화면을 가로질러
+    // 회사명보다 무거워진다 — 카드는 고를 거리를 주는 자리지 명세를 옮기는 자리가 아니다.
+    const skills =
+      posting.skillTags.length === 0
+        ? '스킬 정보 없음'
+        : posting.skillTags.slice(0, MAX_SKILL_TAGS).join(' · ');
+    // 랠릿은 고정 지역 코드라 안전하지만, 점핏·원티드는 원본 문자열의 첫 토큰을
+    // 그대로 쓰므로 회사명·제목과 마찬가지로 escape 없이는 특수문자가 노출될 수 있다.
+    const location =
+      posting.locations.length === 0
+        ? ''
+        : `${escapeMrkdwn(posting.locations.join('/'))} · `;
+    // 회사명을 줄 맨 앞에 굵게 둔다. 예전엔 `[100점]` 배지가 앞자리였는데,
+    // 알림은 점수 내림차순 상위 10건이고 만점 행이 수십 건 쌓여 있어 배지가
+    // 사실상 항상 같은 값이었다 — 회사명 시작 위치만 줄마다 어긋나 세로로
+    // 훑을 수 없었다.
+    detailLines.push(
+      `*${escapeMrkdwn(posting.company)}* — <${posting.detailUrl}|${escapeMrkdwn(
+        posting.title,
+      )}>`,
+    );
+    // 부속 정보는 인용 줄로 내린다. 슬랙이 왼쪽에 세로선을 그려 "위 회사에 딸린
+    // 정보"라는 종속 관계가 위치가 아니라 선으로 보인다. 기울임(`_..._`)을 먼저
+    // 썼다가 되돌렸다 — 슬랙 이탤릭은 색을 바꾸지 않아 눌러쓰기가 되지 않고,
+    // 한글은 기울임체가 없어 강제로 비스듬히 그려지느라 오히려 읽기 나빠졌다.
+    // 인용 줄은 덤으로 문장 분해에서도 보호받는다(mrkdwn.util 의 LIST_OR_QUOTE_LINE).
+    detailLines.push(
+      `> ${formatYears(posting.minYears, posting.maxYears)} · ${location}${escapeMrkdwn(skills)}`,
+    );
+  }
+
+  return {
+    summary: summaryLines.join('\n'),
+    detail: detailLines.length === 0 ? null : detailLines.join('\n'),
+  };
 };

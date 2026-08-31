@@ -35,8 +35,9 @@ export const PREVIEW_KIND = {
   // 노션 블로그 초안을 승인 후 GitHub main에 파일 1개로 발행.
   // payload = { pageId, path, content, title, notionUrl, tags, summary, slackUserId }.
   BLOG_GITHUB_PUBLISH: 'BLOG_GITHUB_PUBLISH',
-  // 저녁 회고 — 오늘 머지된 PR 전체를 다건 통합 회고로 이력서 프로필 편입 + 포트폴리오 Notion append.
-  // payload = { prRefs:string[], slackUserId } (EveningCareerReflectApplier 가 ReflectPrUsecase 위임).
+  // 저녁 회고 — 오늘 머지된 PR 을 저장소별로 나눠 묶음마다 회고해 이력서 프로필 편입 + 포트폴리오 Notion append.
+  // payload = { prGroups:string[][], slackUserId } (EveningCareerReflectApplier 가 묶음마다 ReflectPrUsecase 위임).
+  // prRefs:string[] 는 그룹 도입(2026-08-31) 이전 카드의 형태 — applier 가 1개 묶음으로 받아준다.
   EVENING_CAREER_REFLECT: 'EVENING_CAREER_REFLECT',
   // CTO 분배 확정 — 사용자가 분배 결과에 "응" 하면 BE / BE_SCHEMA / BE_TEST 를 순차 실행.
   // payload = { ctoAgentRunId, slackUserId, assignments } (CtoBeChainPayload).

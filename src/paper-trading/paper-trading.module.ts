@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StrategyParameterModule } from '../strategy-parameter/strategy-parameter.module';
+import { ApplyCorporateActionUsecase } from './application/apply-corporate-action.usecase';
 import { ApplyExitBandUsecase } from './application/apply-exit-band.usecase';
 import { ApplyIntradayStopUsecase } from './application/apply-intraday-stop.usecase';
 import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-account.usecase';
@@ -31,6 +32,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     ApplyExitBandUsecase,
+    ApplyCorporateActionUsecase,
     ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
@@ -44,6 +46,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     RecordPaperTradeUsecase,
     EvaluatePaperAccountUsecase,
     ApplyExitBandUsecase,
+    ApplyCorporateActionUsecase,
     ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,

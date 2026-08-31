@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { GeneratePaperRecommendationUsecase } from '../src/agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { PaperRecommendModule } from '../src/agent/paper-recommend/paper-recommend.module';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
+import { ApplyCorporateActionUsecase } from '../src/paper-trading/application/apply-corporate-action.usecase';
 import { ApplyExitBandUsecase } from '../src/paper-trading/application/apply-exit-band.usecase';
 import { EvaluatePaperAccountUsecase } from '../src/paper-trading/application/evaluate-paper-account.usecase';
 import { FillPendingOrdersUsecase } from '../src/paper-trading/application/fill-pending-orders.usecase';
@@ -19,6 +20,10 @@ import {
 } from '../src/paper-trading/domain/paper-account.type';
 import { formatPaperScoreReport } from '../src/paper-trading/infrastructure/paper-score.formatter';
 import { formatPaperTradingReport } from '../src/paper-trading/infrastructure/paper-trading.formatter';
+import {
+  CorporateActionKind,
+  PaperTradingPrismaRepository,
+} from '../src/paper-trading/infrastructure/paper-trading.prisma.repository';
 import { PaperTradingModule } from '../src/paper-trading/paper-trading.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 
@@ -31,6 +36,8 @@ import { PrismaModule } from '../src/prisma/prisma.module';
 //   pnpm exec ts-node scripts/paper-trade.ts recommend
 //   pnpm exec ts-node scripts/paper-trade.ts fill
 //   pnpm exec ts-node scripts/paper-trade.ts score [--at 2026-08-13]
+//   pnpm exec ts-node scripts/paper-trade.ts corporate-action --ticker 417310 --kind DIVIDEND --ex-date 2026-08-28 --per-share 8640 [--account LONG_TERM] [--quantity 182] [--apply true]
+//   pnpm exec ts-node scripts/paper-trade.ts settlement-backfill [--apply true]
 //
 // evaluate 는 autopilot task 가 매일 17:40 에 하는 것과 **같은 usecase** 를 부른다.
 // cron 을 기다리지 않고 평가 경로를 실증하기 위한 입구이고, 리포트도 Slack 에 나갈
@@ -41,10 +48,12 @@ const USAGE =
   '  pnpm exec ts-node scripts/paper-trade.ts buy --account <DEFAULT|LONG_TERM|SWING> --code <종목코드> --name <종목명> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--strategy <LONG_TERM|SWING|MANUAL>] [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts sell --account <DEFAULT|LONG_TERM|SWING> --code <종목코드> --market <KOSPI|KOSDAQ|KONEX> --qty <수량> --price <체결가> --date <YYYY-MM-DD> [--reason <사유>]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts status\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--at <YYYY-MM-DD>] [--apply-exit-band true]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts evaluate [--account <DEFAULT|LONG_TERM|SWING>] [--at <YYYY-MM-DD>] [--apply-exit-band true]\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts recommend\n' +
   '  pnpm exec ts-node scripts/paper-trade.ts fill\n' +
-  '  pnpm exec ts-node scripts/paper-trade.ts score [--at <YYYY-MM-DD>]';
+  '  pnpm exec ts-node scripts/paper-trade.ts score [--at <YYYY-MM-DD>]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts corporate-action --ticker <종목코드> --kind <DIVIDEND|SPLIT|MERGE|BONUS_ISSUE> --ex-date <YYYY-MM-DD> [--per-share <금액>] [--quantity-ratio <배율>] [--quantity <수량>] [--account <계좌>] [--pay-date <YYYY-MM-DD>] [--note <사유>] [--apply true]\n' +
+  '  pnpm exec ts-node scripts/paper-trade.ts settlement-backfill [--apply true]';
 
 @Module({
   imports: [
@@ -64,7 +73,9 @@ type Subcommand =
   | 'evaluate'
   | 'recommend'
   | 'fill'
-  | 'score';
+  | 'score'
+  | 'corporate-action'
+  | 'settlement-backfill';
 
 interface ParsedArguments {
   subcommand: Subcommand;
@@ -81,7 +92,9 @@ const parseArguments = (values: string[]): ParsedArguments => {
     subcommandValue !== 'evaluate' &&
     subcommandValue !== 'recommend' &&
     subcommandValue !== 'fill' &&
-    subcommandValue !== 'score'
+    subcommandValue !== 'score' &&
+    subcommandValue !== 'corporate-action' &&
+    subcommandValue !== 'settlement-backfill'
   ) {
     throw new Error(USAGE);
   }
@@ -124,6 +137,44 @@ const requireAccountName = (options: Map<string, string>): string => {
     );
   }
   return normalized;
+};
+
+const optionalAccountName = (
+  options: Map<string, string>,
+): string | undefined => {
+  const given = options.get('account');
+  if (given === undefined) {
+    return undefined;
+  }
+  const normalized = given.toUpperCase();
+  if (!PAPER_ACCOUNT_NAMES.includes(normalized)) {
+    throw new Error(
+      `알 수 없는 계좌명: ${given} (허용: ${PAPER_ACCOUNT_NAMES.join(' | ')})`,
+    );
+  }
+  return normalized;
+};
+
+const parseApplyOption = (options: Map<string, string>): boolean => {
+  const value = options.get('apply');
+  if (value !== undefined && value !== 'true' && value !== 'false') {
+    throw new Error(
+      `--apply 는 true 또는 false 만 받습니다: ${value}\n${USAGE}`,
+    );
+  }
+  return value === 'true';
+};
+
+const parseCorporateActionKind = (value: string): CorporateActionKind => {
+  if (
+    value !== 'DIVIDEND' &&
+    value !== 'SPLIT' &&
+    value !== 'MERGE' &&
+    value !== 'BONUS_ISSUE'
+  ) {
+    throw new Error(`기업행동 종류가 올바르지 않습니다: ${value}\n${USAGE}`);
+  }
+  return value;
 };
 
 const parseUtcDateBoundary = (value: string): Date => {
@@ -209,6 +260,48 @@ const main = async (): Promise<void> => {
       console.log(formatPaperScoreReport(result));
       return;
     }
+    if (parsed.subcommand === 'settlement-backfill') {
+      const apply = parseApplyOption(parsed.options);
+      if (!apply) {
+        console.log(
+          '결제일 백필 판정만 수행합니다. 반영하려면 --apply true를 지정하세요.',
+        );
+        return;
+      }
+      const result = await application
+        .get(PaperTradingPrismaRepository)
+        .backfillSettlementDates();
+      console.table([result]);
+      return;
+    }
+    if (parsed.subcommand === 'corporate-action') {
+      const apply = parseApplyOption(parsed.options);
+      const payDateValue = parsed.options.get('pay-date');
+      const result = await application
+        .get(ApplyCorporateActionUsecase)
+        .execute({
+          accountName: optionalAccountName(parsed.options),
+          tickerCode: requireOption(parsed.options, 'ticker'),
+          kind: parseCorporateActionKind(requireOption(parsed.options, 'kind')),
+          exDate: parseUtcDateBoundary(
+            requireOption(parsed.options, 'ex-date'),
+          ),
+          payDate:
+            payDateValue === undefined
+              ? undefined
+              : parseUtcDateBoundary(payDateValue),
+          perShareAmount: parsed.options.get('per-share'),
+          quantityRatio: parsed.options.get('quantity-ratio'),
+          eligibleQuantity: parsed.options.get('quantity'),
+          note: parsed.options.get('note'),
+          dryRun: !apply,
+        });
+      console.log(
+        apply ? '기업행동을 반영했습니다.' : '기업행동을 판정만 했습니다.',
+      );
+      console.table(result.accounts);
+      return;
+    }
     if (parsed.subcommand === 'evaluate') {
       const at = parsed.options.get('at');
       // 장 마감 후 시각으로 고정한다. 그날 종가가 확정된 뒤를 가정해야 tradeDate 가
@@ -220,9 +313,22 @@ const main = async (): Promise<void> => {
       // autopilot 이 매일 부르는 것과 같은 executeAll 을 쓴다. 여기서 계좌 이름을 하나
       // 지정하면 실증 입구가 그 계좌만 보게 되어, 정작 추천이 매매하는 계좌
       // (LONG_TERM/SWING)의 고장을 수동 실행으로는 영영 재현할 수 없다.
-      const evaluations = await application
-        .get(EvaluatePaperAccountUsecase)
-        .executeAll(executedAt);
+      const evaluateUsecase = application.get(EvaluatePaperAccountUsecase);
+      const requestedAccountName = optionalAccountName(parsed.options);
+      const evaluations = requestedAccountName
+        ? {
+            accounts: [
+              {
+                accountName: requestedAccountName,
+                evaluation: await evaluateUsecase.execute({
+                  accountName: requestedAccountName,
+                  executedAt,
+                }),
+                failureReason: null,
+              },
+            ],
+          }
+        : await evaluateUsecase.executeAll(executedAt);
       for (const entry of evaluations.accounts) {
         console.log(`\n[${entry.accountName}]`);
         if (!entry.evaluation) {
