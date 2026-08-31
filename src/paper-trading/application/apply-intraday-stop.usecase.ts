@@ -15,9 +15,11 @@ import {
   decideIntradayStopOrders,
   DEFAULT_EXIT_BAND,
   describeIntradayStopReason,
+  describeLedgerMismatch,
   ExitBandThreshold,
   IntradayStopCandidate,
   IntradayStopDecision,
+  isLedgerMismatch,
 } from '../domain/exit-band';
 import { PaperMarket, TradeStrategy } from '../domain/paper-account.type';
 import { PendingOrderFillResult } from '../domain/port/paper-order-ledger.port';
@@ -370,6 +372,7 @@ export class ApplyIntradayStopUsecase {
       }
       // 전일 봉이 없으면(신규 상장 첫 봉) 판정 근거가 없어 건너뛴다 — 장마감 평가가
       // `bars.length < 2` 를 다루는 방식과 같다.
+      const tickerLabel = `${position.ticker.name}(${position.ticker.code})`;
       const previousBar = todayIndex > 0 ? bars[todayIndex - 1] : null;
       if (previousBar) {
         const [suspicion] = detectSuspiciousPriceJump([
@@ -384,10 +387,7 @@ export class ApplyIntradayStopUsecase {
         if (suspicion) {
           result.corporateActionCount += 1;
           result.corporateActions.push(
-            describeSuspiciousPriceJump(
-              suspicion,
-              `${position.ticker.name}(${position.ticker.code})`,
-            ),
+            describeSuspiciousPriceJump(suspicion, tickerLabel),
           );
           continue;
         }
@@ -397,11 +397,23 @@ export class ApplyIntradayStopUsecase {
       if (averagePrice.isZero()) {
         continue;
       }
-      result.inspectedCount += 1;
       const returnRatePercent = price
         .minus(averagePrice)
         .dividedBy(averagePrice)
         .times(100);
+      // 기업행동 다음 거래일은 전일 대비 변동이 정상이라 위 가격 점프 판정에 걸리지 않는다.
+      // 장부와 시세의 기준이 다른 상태가 남아 있는지는 손익률 폭으로 드러난다.
+      // `decideIntradayStopOrders` 도 같은 조건으로 거르지만, 그쪽은 조용히 빠지므로
+      // 여기서 미리 판별해 보류 사유를 남긴다.
+      const returnRatePercentNumber = returnRatePercent.toNumber();
+      if (isLedgerMismatch(returnRatePercentNumber)) {
+        result.corporateActionCount += 1;
+        result.corporateActions.push(
+          describeLedgerMismatch(tickerLabel, returnRatePercentNumber),
+        );
+        continue;
+      }
+      result.inspectedCount += 1;
       candidates.push({
         tickerId: position.tickerId,
         tickerCode: position.ticker.code,
