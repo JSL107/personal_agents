@@ -75,6 +75,7 @@ import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-swee
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
 import { ScreeningOutcomeScoringAutopilotTask } from './infrastructure/tasks/screening-outcome-scoring.autopilot-task';
+import { ScreeningScorecardAutopilotTask } from './infrastructure/tasks/screening-scorecard.autopilot-task';
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
@@ -148,6 +149,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
     ScreeningOutcomeScoringAutopilotTask,
+    ScreeningScorecardAutopilotTask,
     PrReviewSweepAutopilotTask,
     PaperTradingAutopilotTask,
     UniverseSweepAutopilotTask,
@@ -248,6 +250,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitorUs: StockMonitorAutopilotTask,
         stockAlertScoring: StockAlertScoringAutopilotTask,
         screeningOutcomeScoring: ScreeningOutcomeScoringAutopilotTask,
+        screeningScorecard: ScreeningScorecardAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
         universeSweep: UniverseSweepAutopilotTask,
@@ -285,6 +288,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         stockMonitorUs,
         stockAlertScoring,
         screeningOutcomeScoring,
+        screeningScorecard,
         prReviewSweep,
         paperTrading,
         universeSweep,
@@ -323,6 +327,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         STOCK_MONITOR_US_TASK,
         StockAlertScoringAutopilotTask,
         ScreeningOutcomeScoringAutopilotTask,
+        ScreeningScorecardAutopilotTask,
         PrReviewSweepAutopilotTask,
         PaperTradingAutopilotTask,
         UniverseSweepAutopilotTask,

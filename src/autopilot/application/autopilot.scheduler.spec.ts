@@ -69,9 +69,11 @@ describe('AutopilotScheduler', () => {
     //   + portfolio-warmup(사이트 워밍업) + portfolio-publish(사이트 발행)
     //   + screening-outcome-scoring(회차 종목 사후 채점, 단독 그룹)
     //   + paper-intraday-stop(모의투자 장중 손절, 단독 그룹)
-    //   + job-feed(백엔드 채용공고 수집, 단독 그룹) + job-feed-gap(공고 갭 분석, 단독 그룹) = 31그룹.
-    expect(queue.add).toHaveBeenCalledTimes(31);
+    //   + job-feed(백엔드 채용공고 수집, 단독 그룹) + job-feed-gap(공고 갭 분석, 단독 그룹)
+    //   + screening-scorecard(주간 성적 카드, 단독 그룹) = 32그룹.
+    expect(queue.add).toHaveBeenCalledTimes(32);
     expect(addCalls).toContain('screening-outcome-scoring');
+    expect(addCalls).toContain('screening-scorecard');
     expect(addCalls).toContain('evening');
     expect(addCalls).toContain('portfolio-warmup');
     expect(addCalls).toContain('portfolio-publish');
@@ -306,7 +308,7 @@ describe('AutopilotScheduler', () => {
     const investGroups = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.line === 'invest',
     ).map((entry) => entry.digestGroup ?? entry.id);
-    expect(investGroups).toHaveLength(10);
+    expect(investGroups).toHaveLength(11);
     for (const groupKey of investGroups) {
       const call = queue.add.mock.calls.find(
         (item: unknown[]) => item[0] === groupKey,
