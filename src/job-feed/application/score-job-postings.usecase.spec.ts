@@ -48,9 +48,12 @@ describe('ScoreJobPostingsUsecase', () => {
     });
 
     expect(result.scored).toBe(1);
+    // 요구 기술 두 개를 모두 맞혔지만 만점은 아니다 — 스킬 축은 비율(50)과 증거량(20)
+    // 으로 나뉘고, 증거량은 맞힌 개수가 네 개일 때 포화한다(match-score.ts). 두 개면
+    // 그 축의 절반만 받아 50 + 10 + 연차 20 + 지역 10 = 90 이다.
     expect(repository.saveScore).toHaveBeenCalledWith({
       id: 1,
-      matchScore: 100,
+      matchScore: 90,
       scoredProfileId: 19,
     });
   });
