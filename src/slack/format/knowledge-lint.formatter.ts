@@ -1,6 +1,6 @@
 import {
   ContradictionLintOutcome,
-  KnowledgeLintIssue,
+  KnowledgeLintOutcome,
 } from '../../episodic-memory/domain/port/knowledge-lint.port';
 
 // Knowledge-Lint 이슈 → Slack mrkdwn.
@@ -27,10 +27,26 @@ const describeScope = (l4: ContradictionLintOutcome | null): string => {
   return `중복·임베딩 점검 · 모순 ${l4.candidates}쌍 판정`;
 };
 
+// 중복 섹션 헤딩 — 목록은 보고 상한에, 총계는 스캔 상한에 각각 잘릴 수 있다.
+// 잘린 사실을 적지 않으면 화면의 건수가 곧 실제 규모로 읽히고, 그 오해는 L4 미완주 경고가
+// 막으려는 것과 같은 종류다. 스캔 상한에 걸린 총계는 확정값이 아니라 하한값이다.
+const describeDuplicateCount = (
+  total: number,
+  shown: number,
+  truncated: boolean,
+): string => {
+  if (truncated) {
+    return `*중복 후보 ${total}건 이상* _— 가까운 순 ${shown}건만 표시_`;
+  }
+  if (total > shown) {
+    return `*중복 후보 ${total}건* _— 가까운 순 ${shown}건만 표시_`;
+  }
+  return `*중복 후보 ${shown}건*`;
+};
+
 export const formatKnowledgeLint = (
-  issues: KnowledgeLintIssue[],
+  { issues, duplicateTotal, duplicateTotalTruncated, l4 }: KnowledgeLintOutcome,
   firedAtKst: string,
-  l4: ContradictionLintOutcome | null,
 ): string => {
   const scope = describeScope(l4);
   const incomplete = isL4Incomplete(l4);
@@ -64,7 +80,13 @@ export const formatKnowledgeLint = (
   }
 
   if (duplicates.length > 0) {
-    sections.push(`*중복 후보 ${duplicates.length}건*`);
+    sections.push(
+      describeDuplicateCount(
+        duplicateTotal,
+        duplicates.length,
+        duplicateTotalTruncated,
+      ),
+    );
     for (const issue of duplicates) {
       sections.push(
         `• #${issue.episodeId} ↔ #${issue.relatedId} — ${issue.detail}`,

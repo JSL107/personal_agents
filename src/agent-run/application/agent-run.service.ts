@@ -40,6 +40,25 @@ import {
 // caller 가 더 큰 값 넘겨도 service 가 clamp 하여 DoS (recursive CTE 깊이 폭발) 차단.
 const DEFAULT_CHAIN_MAX_DEPTH = 16;
 
+// episodic 인덱스에 적재하지 않는 워커 — output 에 사람이 읽을 서술이 없고 카운트·id·날짜만
+// 있는 계측이라, 이 인덱스의 용도(유사 plan 검색·intent few-shot)에 쓸 내용이 없다.
+// 게다가 값이 반복되면 문자열까지 같아져 중복만 쌓는다.
+//
+// 판정은 중복률이 아니라 output 형태로 한다 — 2026-08-31 실측에서 INVEST 는 중복률이 3.4%
+// 였는데도 {"marketCountry":"KR","holdingCount":0,...} 로 PAPER_TRADE 와 같은 계측이었다.
+// 카운트 값이 매번 조금씩 달랐을 뿐이라, 중복률로 걸렀다면 놓쳤을 것이다.
+// 반대로 PAPER_RECOMMEND·SUBCONSCIOUS_GATE 는 계측처럼 보이지만 reason/proposalText 서술을
+// 담고 있어 남긴다.
+//
+// 한 agentType 을 여러 usecase 가 공유하면 제외하지 않는다 — 아래 넷은 전부 cron autopilot
+// 전용이라 output 형태가 하나다. VACATION 은 후보였다가 뺐다: 같은 타입을 조회(계측) 외에
+// 등록·취소 usecase 가 함께 쓰고 있어, 막으면 사용자 휴가 행위 기록까지 사라진다.
+const EPISODIC_EXCLUDED_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
+  AgentType.PAPER_TRADE, // {"inspectedCount":6,"priceErrorCount":0,...}
+  AgentType.HUMANIZER, // {"humanizedKeys":["retrospective"]}
+  AgentType.INVEST, // {"marketCountry":"KR","holdingCount":0,...}
+]);
+
 export interface AgentRunExecutionResult<T> {
   result: T;
   modelUsed: string;
@@ -265,6 +284,9 @@ export class AgentRunService {
     output: unknown,
   ): void {
     if (!this.episodicMemory) {
+      return;
+    }
+    if (EPISODIC_EXCLUDED_AGENT_TYPES.has(agentType)) {
       return;
     }
     const content =

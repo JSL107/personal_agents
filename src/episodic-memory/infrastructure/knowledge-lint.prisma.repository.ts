@@ -30,9 +30,18 @@ export interface BandPairRow {
 export class KnowledgeLintPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 각 행의 최근접 이웃(같은 kind, 자기 제외, 임베딩 보유)을 거리 오름차순으로 limit 개.
+  // 각 행의 최근접 이웃(같은 kind, 자기 제외, 임베딩 보유) 중 maxDistance 이하인 것 전부를
+  // 거리 오름차순으로. 임계값을 SQL 로 내리는 것은 판정을 여기로 옮기는 게 아니라(값은 호출자가 준다)
+  // 전체 행을 application 으로 올리지 않기 위함이다 — 호출자가 총 쌍 수를 정확히 세려면
+  // 잘리지 않은 목록이 필요하고, 그러려면 필터가 조회 단계에 있어야 한다.
+  //
+  // scanLimit 은 판정 임계가 아니라 폭주 안전망이다. 최근접이웃은 행당 1개라 반환 상한이 곧
+  // 테이블 행 수이므로 현재 규모에서는 도달하지 않지만, 도달하면 호출자의 총계가 과소 보고된다.
   // pgvector 거리 인덱스가 있으면 LATERAL 근접쿼리가 빠르고, 없으면 풀스캔(소규모 가정 — 규모 커지면 인덱스 선행).
-  async findNearestNeighbors(limit: number): Promise<NearestNeighborRow[]> {
+  async findNearestNeighbors(input: {
+    maxDistance: number;
+    scanLimit: number;
+  }): Promise<NearestNeighborRow[]> {
     const rows = await this.prisma.$queryRaw<
       Array<{
         id: number;
@@ -59,8 +68,9 @@ export class KnowledgeLintPrismaRepository {
       ) n
       WHERE a.embedding IS NOT NULL
         AND a.superseded_at IS NULL
+        AND n.distance <= ${input.maxDistance}
       ORDER BY n.distance ASC
-      LIMIT ${limit}
+      LIMIT ${input.scanLimit}
     `;
     return rows.map((row) => ({
       id: row.id,

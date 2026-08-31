@@ -46,6 +46,12 @@ export interface ContradictionLintOutcome {
 
 export interface KnowledgeLintOutcome {
   issues: KnowledgeLintIssue[];
+  // 임계값 이하 near_duplicate 쌍의 전체 수(dedup 후). issues 는 보고 상한(limit)으로 잘린
+  // 목록이라 이 값과 다를 수 있다 — 그 차이를 알리지 않으면 화면의 건수가 곧 실제 규모로 읽힌다.
+  duplicateTotal: number;
+  // 조회가 스캔 상한에 걸려 duplicateTotal 이 하한값인가. 로그만으로는 부족하다 —
+  // 화면에 뜨는 숫자가 확정 총계인지 "이 이상" 인지는 메시지를 보는 사람이 알아야 한다.
+  duplicateTotalTruncated: boolean;
   // L4 를 아예 수행하지 않았으면 null — 비활성(env) 또는 judge 미주입.
   // "점검 안 함(null)" 과 "점검했으나 일부 실패(judged < candidates)" 는 다른 사실이다.
   l4: ContradictionLintOutcome | null;
