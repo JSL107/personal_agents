@@ -16,9 +16,6 @@ export interface StoredJobPosting {
   source: string;
   sourceId: string;
   company: string;
-  // 지문(toContentHash) 재계산에 필요하다 — company 에서 다시 파생하면 저장 당시 규칙과
-  // 어긋날 수 있어, 저장된 값을 그대로 싣는다.
-  companyKey: string;
   title: string;
   detailUrl: string;
   skillTags: string[];
@@ -81,14 +78,12 @@ export interface JobPostingRepositoryPort {
   // 조건을 걸면 안 된다 — 재파생의 목적 자체가 오래돼 조용히 방치된 행까지
   // 포함해 skillTags 를 되살리는 것이라, 신선도로 거르면 정작 손볼 대상이 빠진다.
   findAllForReprocess(): Promise<StoredJobPosting[]>;
-  // 지문을 함께 갱신한다. 재파생은 요건이 바뀐 게 아니라 해석이 바뀐 것이라,
-  // 지문을 옛 값으로 두면 다음 수집이 요건 변경으로 오인해 알림 이력(notifiedAt)을
-  // 지우고 이미 본 공고를 다시 띄운다(upsertMany 의 changed 분기).
-  saveSkillTags(
-    id: number,
-    skillTags: string[],
-    contentHash: string,
-  ): Promise<void>;
+  // 채점식(match-score.ts)을 고쳤을 때 쓴다. findScoringTargets 는 프로필이 바뀐 행만
+  // 잡으므로, 산식만 바꾸면 기존 행이 옛 점수 그대로 남아 변경이 조용히 무효가 된다.
+  // 표식을 지워 다음 채점이 전량을 다시 매기게 한다 — matchScore 자체는 남겨 둔다
+  // (재채점이 덮어쓴다. 미리 지우면 그 사이 조회가 점수 없는 행을 보게 된다).
+  clearScoringMarks(): Promise<number>;
+  saveSkillTags(id: number, skillTags: string[]): Promise<void>;
   // 저장소에 "언제 마지막으로 수집했는지"를 기록하는 별도 필드가 없다 — 공고를
   // 마지막으로 본 시각(lastSeenAt) 의 최댓값이 곧 마지막 수집 성공 시각이다.
   // 자동 카드(Task 16)가 신선도 조건으로 조회가 조용히 비는 것과 수집기 장애를

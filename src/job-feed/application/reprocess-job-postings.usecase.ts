@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { toContentHash } from '../domain/dedupe';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
@@ -31,14 +30,14 @@ export class ReprocessJobPostingsUsecase {
       if (this.isSame(row.skillTags, next)) {
         continue;
       }
-      // 지문도 새 태그 기준으로 다시 찍는다. 재파생은 공고 요건이 바뀐 게 아니라
-      // 우리 해석이 바뀐 것이므로, 다음 수집이 이 행을 "요건 변경" 으로 보고 알림
-      // 이력을 지우면 이미 본 공고가 통째로 다시 뜬다.
-      await this.repository.saveSkillTags(
-        row.id,
-        next,
-        toContentHash({ ...row, skillTags: next }),
-      );
+      // 🔴 contentHash 는 일부러 건드리지 않는다. 이 저장소에서 지문의 주인은 수집이다 —
+      // upsertMany 의 listOnlyFields 가 매 수집마다 지문을 목록 기준으로 덮어쓰고,
+      // 상세를 받은 행(원티드는 목록에 스킬이 없어 상세로 채운다)도 지문만은 목록
+      // 기준으로 유지한다. 여기서 상세 태그로 지문을 다시 찍으면 다음 목록 수집의
+      // 지문과 어긋나 upsertMany 가 "요건 변경" 으로 오인하고 notifiedAt 을 지운다 —
+      // 이미 발송한 공고가 다시 알림된다. 실측(2026-08-31) 상세 수집된 행이 247건 중
+      // 82건(원티드 62·점핏 20)이라 영향 범위가 작지 않다.
+      await this.repository.saveSkillTags(row.id, next);
       changed += 1;
     }
 

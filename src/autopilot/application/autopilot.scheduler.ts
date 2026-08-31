@@ -11,7 +11,7 @@ import {
   AUTOPILOT_CRON_QUEUE,
   AutopilotJobData,
 } from '../domain/autopilot.type';
-import { PlaybookEntry } from '../domain/playbook.type';
+import { PlaybookEntry, PlaybookLine } from '../domain/playbook.type';
 
 const LOW_FREQUENCY_RETRY_OPTIONS = {
   attempts: 4,
@@ -21,6 +21,12 @@ const LOW_FREQUENCY_RETRY_OPTIONS = {
 const DEFAULT_RETRY_OPTIONS = {
   attempts: 2,
   backoff: { type: 'exponential' as const, delay: 60_000 },
+};
+
+// 라인별 발송 대상 env 키. 미설정이면 AUTOPILOT_TARGET 으로 떨어진다.
+const LINE_TARGET_ENV_KEYS: Record<PlaybookLine, string> = {
+  invest: 'AUTOPILOT_INVEST_TARGET',
+  career: 'AUTOPILOT_CAREER_TARGET',
 };
 
 const isFixedCronField = (field: string): boolean => {
@@ -96,8 +102,16 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         aiCliEnvKeys?.timezone ?? `AUTOPILOT_${envKey}_TIMEZONE`,
         primary.trigger.timezone,
       );
+      // 라인별 발송 대상. 투자 라인만 전용 채널로 빼고 나머지는 공통 target(기본 owner DM)을
+      // 쓴다. 그룹 안에서 라인이 섞이지 않는 것은 validatePlaybook 이 부팅 때 보장한다.
+      const groupTarget = primary.line
+        ? this.readNonEmpty(LINE_TARGET_ENV_KEYS[primary.line], target)
+        : target;
       this.warnIgnoredScheduleOverrides(groupKey, entries);
-      const payload: AutopilotJobData = { ownerSlackUserId: owner, target };
+      const payload: AutopilotJobData = {
+        ownerSlackUserId: owner,
+        target: groupTarget,
+      };
       const retryOptions = isLowFrequencyCron(schedule)
         ? LOW_FREQUENCY_RETRY_OPTIONS
         : DEFAULT_RETRY_OPTIONS;
@@ -109,7 +123,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         ...retryOptions,
       });
       this.logger.log(
-        `Autopilot 그룹 활성화 — ${groupKey}(${entries.length} task), cron="${schedule}" (${tz})`,
+        `Autopilot 그룹 활성화 — ${groupKey}(${entries.length} task), cron="${schedule}" (${tz}), target=${groupTarget}`,
       );
     }
   }

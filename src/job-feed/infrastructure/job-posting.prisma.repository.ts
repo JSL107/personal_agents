@@ -20,7 +20,6 @@ const SELECT_FIELDS = {
   source: true,
   sourceId: true,
   company: true,
-  companyKey: true,
   title: true,
   detailUrl: true,
   skillTags: true,
@@ -313,17 +312,20 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     });
   }
 
-  async saveSkillTags(
-    id: number,
-    skillTags: string[],
-    contentHash: string,
-  ): Promise<void> {
+  async clearScoringMarks(): Promise<number> {
+    const { count } = await this.prisma.jobPosting.updateMany({
+      where: { closedAt: null },
+      data: { scoredProfileId: null, scoredAt: null },
+    });
+    return count;
+  }
+
+  async saveSkillTags(id: number, skillTags: string[]): Promise<void> {
     // 점수는 새 태그 기준으로 다시 매겨야 하므로 채점 표식을 지워 다음 채점에서
-    // 다시 걸리게 한다. 지문도 함께 갱신한다 — 안 하면 다음 수집이 새 태그로 계산한
-    // 지문과 옛 지문을 비교해 "요건 변경" 으로 오인하고 notifiedAt 을 지운다.
+    // 다시 걸리게 한다.
     await this.prisma.jobPosting.update({
       where: { id },
-      data: { skillTags, contentHash, scoredProfileId: null, scoredAt: null },
+      data: { skillTags, scoredProfileId: null, scoredAt: null },
     });
   }
 

@@ -299,6 +299,10 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 
 > 스케줄·타임존은 `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` 으로 덮어쓴다. 여기서 `<ID>` 는 **그룹명이 아니라 그룹의 첫 항목 id** 다(morning 그룹은 `SECRETARIAT`, noon 그룹은 `ASSIGN`, evening 그룹은 `WORK_REVIEWER`).
 
+> 주식·모의투자 알림은 플레이북에서 `line: 'invest'` 로 묶여 있어 `AUTOPILOT_INVEST_TARGET` 하나로 전용 채널에 보낼 수 있다. 미설정 시 `AUTOPILOT_TARGET`(없으면 owner DM)을 그대로 쓴다. 채널로 보내려면 봇이 그 채널에 초대돼 있어야 한다.
+>
+> 채용공고 카드(`job-feed`)와 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다.
+
 </details>
 
 <details>
@@ -346,6 +350,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
+| `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
 | `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` · `BLOG_NOTION_STATUS_HOLD_VALUE` · `BLOG_GITHUB_PUBLISH_ENABLED` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안/보류 상태값과 저녁 GitHub 발행 승인 카드 스위치. 금지어 목록이 비면 발행 차단. 보류 상태값 기본은 `보류` — 편집 단계가 발행 부적합으로 판정한 초안이 여기로 옮겨져 큐를 막지 않는다 |

@@ -21,6 +21,8 @@ const EVALUATION: EvaluateAccountResult = {
   positionValue: '120000',
   totalValue: '920000',
   returnRate: '-8',
+  realizedPnl: '-100000',
+  unrealizedPnl: '20000',
   benchmarkClose: null,
   positions: [
     {

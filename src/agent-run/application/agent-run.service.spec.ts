@@ -243,6 +243,68 @@ describe('AgentRunService', () => {
     expect(recorder.record.mock.calls[0][0].agentType).toBe(AgentType.PM);
   });
 
+  // 계측 전용 워커는 적재에서 제외한다 — 인덱스 용도에 값이 없고 같은 값이 반복돼
+  // 중복만 쌓는다(2026-08-31 실측: PAPER_TRADE 240행 중 distinct 18).
+  it.each([
+    [
+      AgentType.PAPER_TRADE,
+      { inspectedCount: 0, decidedCount: 0, filledCount: 0 },
+    ],
+    [AgentType.HUMANIZER, { humanizedKeys: ['retrospective'] }],
+    [AgentType.INVEST, { marketCountry: 'KR', holdingCount: 0 }],
+  ])(
+    '%s 의 성공 output 은 episodic 에 적재하지 않는다',
+    async (agentType, output) => {
+      const recorder = {
+        record: jest.fn().mockResolvedValue(undefined),
+        searchRelevant: jest.fn().mockResolvedValue([]),
+      };
+      const serviceWithRecorder = new AgentRunService(
+        repository,
+        recorder as never,
+      );
+
+      await serviceWithRecorder.execute({
+        agentType,
+        triggerType: TriggerType.MORNING_BRIEFING_CRON,
+        inputSnapshot: {},
+        run: async () => ({
+          result: 'r',
+          modelUsed: 'codex-cli',
+          output,
+        }),
+      });
+
+      expect(recorder.record).not.toHaveBeenCalled();
+    },
+  );
+
+  // VACATION 은 조회(계측) 외에 등록·취소 usecase 가 같은 타입을 쓴다 — 막으면 사용자
+  // 휴가 행위 기록까지 사라진다(PR #419 codex 리뷰).
+  it('VACATION 처럼 usecase 를 공유하는 타입은 적재를 막지 않는다', async () => {
+    const recorder = {
+      record: jest.fn().mockResolvedValue(undefined),
+      searchRelevant: jest.fn().mockResolvedValue([]),
+    };
+    const serviceWithRecorder = new AgentRunService(
+      repository,
+      recorder as never,
+    );
+
+    await serviceWithRecorder.execute({
+      agentType: AgentType.VACATION,
+      triggerType: TriggerType.SLACK_COMMAND_VACATION,
+      inputSnapshot: {},
+      run: async () => ({
+        result: 'r',
+        modelUsed: 'codex-cli',
+        output: { registered: { id: 4, memo: '여름 휴가' } },
+      }),
+    });
+
+    expect(recorder.record).toHaveBeenCalledTimes(1);
+  });
+
   it('recorder 미주입(undefined)이어도 execute 는 정상 동작한다', async () => {
     await expect(
       service.execute({

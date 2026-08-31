@@ -6,7 +6,10 @@ import {
   MARKET_DATA_PORT,
   MarketDataPort,
 } from '../../market-data/domain/port/market-data.port';
-import { detectSuspiciousPriceJump } from '../domain/corporate-action-guard';
+import {
+  describeSuspiciousPriceJump,
+  detectSuspiciousPriceJump,
+} from '../domain/corporate-action-guard';
 import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
@@ -52,6 +55,10 @@ export interface EvaluateAccountResult {
   positionValue: string | null;
   totalValue: string | null;
   returnRate: string | null;
+  // 총 수익률을 "이미 확정한 손익" 과 "아직 들고 있는 손익" 으로 가른 값. 카드가 보유
+  // 종목만 보여주면 매도로 확정된 손실이 어디에도 드러나지 않는다.
+  realizedPnl: string | null;
+  unrealizedPnl: string | null;
   benchmarkClose: string | null;
   positions: EvaluatedPositionRow[];
   unpricedPositions: UnpricedPositionRow[];
@@ -236,6 +243,8 @@ export class EvaluatePaperAccountUsecase {
         positionValue: null,
         totalValue: null,
         returnRate: null,
+        realizedPnl: null,
+        unrealizedPnl: null,
         benchmarkClose: null,
         positions: evaluatedPositions,
         unpricedPositions,
@@ -257,6 +266,8 @@ export class EvaluatePaperAccountUsecase {
         positionValue: null,
         totalValue: null,
         returnRate: null,
+        realizedPnl: null,
+        unrealizedPnl: null,
         benchmarkClose: null,
         positions: evaluatedPositions,
         unpricedPositions,
@@ -267,6 +278,12 @@ export class EvaluatePaperAccountUsecase {
       };
     }
 
+    const tickerLabelById = new Map(
+      pricedPositions.map(({ position }) => [
+        position.tickerId,
+        `${position.ticker.name}(${position.ticker.code})`,
+      ]),
+    );
     const suspiciousJumps = detectSuspiciousPriceJump(
       pricedPositions.flatMap(({ position, bars }) => {
         if (bars.length < 2) {
@@ -280,19 +297,24 @@ export class EvaluatePaperAccountUsecase {
           },
         ];
       }),
-    ).map(
-      (jump) =>
-        `종목 ${jump.tickerId} 가격 비정상 점프: 전일 대비 ${jump.ratio}배 (${jump.suspectedRatio}:1 분할 의심)`,
+    ).map((jump) =>
+      describeSuspiciousPriceJump(
+        jump,
+        tickerLabelById.get(jump.tickerId) ?? `종목 ${jump.tickerId}`,
+      ),
     );
     if (suspiciousJumps.length > 0) {
       return {
         skipped: true,
-        skipReason: '분할 등 기업행동이 의심되는 가격 변동을 발견했습니다.',
+        skipReason:
+          '분할·배당락 등 기업행동이 의심되는 가격 변동을 발견했습니다.',
         tradeDate: tradeDateText,
         cashBalance,
         positionValue: null,
         totalValue: null,
         returnRate: null,
+        realizedPnl: null,
+        unrealizedPnl: null,
         benchmarkClose: null,
         positions: evaluatedPositions,
         unpricedPositions,
@@ -329,6 +351,8 @@ export class EvaluatePaperAccountUsecase {
               positionValue: null,
               totalValue: null,
               returnRate: null,
+              realizedPnl: null,
+              unrealizedPnl: null,
               benchmarkClose: null,
               positions: evaluatedPositions,
               unpricedPositions,
@@ -360,6 +384,8 @@ export class EvaluatePaperAccountUsecase {
               positionValue: null,
               totalValue: null,
               returnRate: null,
+              realizedPnl: null,
+              unrealizedPnl: null,
               benchmarkClose: null,
               positions: evaluatedPositions,
               unpricedPositions,
@@ -399,6 +425,8 @@ export class EvaluatePaperAccountUsecase {
           positionValue: valuation.positionValue,
           totalValue: valuation.totalValue,
           returnRate: valuation.returnRate,
+          realizedPnl: valuation.realizedPnl,
+          unrealizedPnl: valuation.unrealizedPnl,
           staleTickerCount: valuation.staleTickerCount,
           positions: freshState.positions.map((position) => {
             const latest = latestByTickerId.get(position.tickerId)!;
@@ -421,6 +449,8 @@ export class EvaluatePaperAccountUsecase {
             positionValue: valuation.positionValue,
             totalValue: valuation.totalValue,
             returnRate: valuation.returnRate,
+            realizedPnl: valuation.realizedPnl,
+            unrealizedPnl: valuation.unrealizedPnl,
             benchmarkClose: null,
             positions: evaluatedPositions,
             unpricedPositions,

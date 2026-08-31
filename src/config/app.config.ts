@@ -218,6 +218,10 @@ export class EnvironmentVariables {
   // - AUTOPILOT_OWNER_SLACK_USER_ID: Autopilot 전체 게이트. 미설정 시 비활성.
   // - AUTOPILOT_TARGET: 발송 대상 슬랙 user(U...)/channel(C.../G...) ID. 콤마로 다중 타깃 지원.
   //   미설정 시 OWNER DM. 예: "C1234567890,U9876543210".
+  // - AUTOPILOT_INVEST_TARGET: 투자 라인(플레이북 line: 'invest' 10개 항목) 전용 발송 대상.
+  //   미설정 시 AUTOPILOT_TARGET. 주식·모의투자 알림만 전용 채널로 뺄 때 쓴다.
+  // - AUTOPILOT_CAREER_TARGET: 커리어 라인(line: 'career' — job-feed, job-feed-gap) 전용
+  //   발송 대상. 미설정 시 AUTOPILOT_TARGET. 채용공고 카드만 전용 채널로 뺄 때 쓴다.
   // 스케줄 override (각 항목): AUTOPILOT_<ID>_SCHEDULE / _TIMEZONE.
   //   ID = 플레이북 entry id 대문자 + 언더스코어 변환:
   //     daily-eval → DAILY_EVAL, morning-briefing → MORNING_BRIEFING,
@@ -230,6 +234,14 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_INVEST_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_CAREER_TARGET?: string;
 
   // AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip.
   @IsOptional()

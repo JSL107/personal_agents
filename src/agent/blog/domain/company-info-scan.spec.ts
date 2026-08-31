@@ -91,7 +91,7 @@ describe('scanForbiddenTerms', () => {
     ]);
   });
 
-  it('외부 저장소 링크를 차단한다', () => {
+  it('외부 저장소의 PR 링크를 차단한다', () => {
     const hits = scanForbiddenTerms(
       {
         body: 'https://github.com/some-org/sbe-api-v4/pull/261',
@@ -103,11 +103,59 @@ describe('scanForbiddenTerms', () => {
     expect(hits).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          term: 'github.com/some-org/sbe-api-v4/pull/261',
+          kind: 'pattern',
+        }),
+      ]),
+    );
+  });
+
+  // 정규식에 세 경로를 넣었으면 세 경로를 다 재야 한다 — 하나만 단언하면 나머지 둘이 빠져도
+  // 초록이다(리뷰 지적 반영).
+  it.each([
+    ['pull', 'https://github.com/some-org/other-repo/pull/261'],
+    ['issues', 'https://github.com/some-org/other-repo/issues/12'],
+    ['commit', 'https://github.com/some-org/other-repo/commit/abc123'],
+  ])('외부 저장소의 %s 링크를 차단한다', (_kind, url) => {
+    const hits = scanForbiddenTerms({ body: url, tags: [] }, []);
+
+    expect(hits).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'pattern' })]),
+    );
+  });
+
+  // 저장소 루트는 통과시키되 사내 저장소 접두사는 경로와 무관하게 막는다.
+  it('사내 저장소는 루트 링크도 차단한다', () => {
+    const hits = scanForbiddenTerms(
+      { body: 'https://github.com/some-org/sbe-api-v4', tags: [] },
+      [],
+    );
+
+    expect(hits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           term: 'github.com/some-org/sbe-api-v4',
           kind: 'pattern',
         }),
       ]),
     );
+  });
+
+  // 이 규칙이 저장소 루트까지 막던 동안 이틀치 발행이 나가지 못했다(run 1746·1767).
+  // 기술 글은 남의 저장소를 링크하는 것이 정상이라, 여기서 막히면 규칙이 상시 차단이 된다.
+  it('남의 공개 저장소 링크는 인용이므로 통과시킨다', () => {
+    const hits = scanForbiddenTerms(
+      {
+        body: [
+          'https://github.com/ArcadeAI/arcade-vercel-ai-template',
+          'https://github.com/agentclientprotocol/agent-client-protocol',
+        ].join('\n'),
+        tags: [],
+      },
+      [],
+    );
+
+    expect(hits).toEqual([]);
   });
 
   it('본인 저장소 링크는 허용한다', () => {

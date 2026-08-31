@@ -8,6 +8,10 @@ import { ListNotifiablePostingsUsecase } from '../src/job-feed/application/list-
 import { ReprocessJobPostingsUsecase } from '../src/job-feed/application/reprocess-job-postings.usecase';
 import { ScoreJobPostingsUsecase } from '../src/job-feed/application/score-job-postings.usecase';
 import { parseAvoidSkillTags } from '../src/job-feed/domain/avoid-skills';
+import {
+  JOB_POSTING_REPOSITORY_PORT,
+  JobPostingRepositoryPort,
+} from '../src/job-feed/domain/port/job-posting.repository.port';
 import { parseJobFeedCliArguments } from '../src/job-feed/interface/job-feed-cli.parser';
 import { JobFeedModule } from '../src/job-feed/job-feed.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -79,6 +83,18 @@ const main = async (): Promise<void> => {
     );
 
     if (options.command === 'reprocess') {
+      // 채점식을 고친 배포 뒤에는 표식을 먼저 지운다. 안 지우면 findScoringTargets 가
+      // 프로필이 바뀐 행만 잡아 기존 점수가 옛 산식 그대로 남는다 — 산식 변경이
+      // 조용히 무효가 되는 경로라, 운영자가 SQL 을 손으로 짜게 두지 않는다.
+      if (options.rescoreAll) {
+        const cleared = await application
+          .get<JobPostingRepositoryPort>(JOB_POSTING_REPOSITORY_PORT)
+          .clearScoringMarks();
+        console.log(
+          `채점 표식 초기화 — ${cleared}건 (다음 채점이 전량 재계산)`,
+        );
+      }
+
       const result = await application
         .get(ReprocessJobPostingsUsecase)
         .execute();
