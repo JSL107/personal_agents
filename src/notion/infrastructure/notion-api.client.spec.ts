@@ -62,6 +62,30 @@ describe('NotionApiClient', () => {
     expect(create.mock.calls[0][0].children).toHaveLength(100);
   });
 
+  it('image 블록을 file_upload 참조로 변환한다', async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: 'page-1',
+      url: 'https://notion.so/page-1',
+      properties: {},
+    });
+    const adapter = new NotionApiClient(
+      { pages: { create } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await adapter.createDatabasePage({
+      databaseId: 'db-1',
+      properties: {},
+      blocks: [{ type: 'image', fileUploadId: 'upload-1' }],
+    });
+
+    expect(create.mock.calls[0][0].children[0]).toEqual({
+      object: 'block',
+      type: 'image',
+      image: { type: 'file_upload', file_upload: { id: 'upload-1' } },
+    });
+  });
+
   it('page를 archived 상태로 갱신한다', async () => {
     const update = jest.fn().mockResolvedValue({});
     const adapter = new NotionApiClient(
