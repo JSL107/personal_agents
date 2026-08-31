@@ -314,13 +314,20 @@ export class ScreeningHistoryPrismaRepository {
     }));
   }
 
-  // 그 지평으로 이 시각 이후에 판정된 건수. 누적 표가 그대로여도 표본이 늘고 있는지를
+  // 그 지평으로 이 창 안에서 판정된 건수. 누적 표가 그대로여도 표본이 늘고 있는지를
   // 이 값으로 안다.
-  async countScoredSince(horizonDays: number, since: Date): Promise<number> {
+  //
+  // 창은 `[since, until)` 로 닫는다. 위를 열어 두면 회차마다 창이 겹쳐 같은 판정이 두 주에
+  // 걸쳐 세어지고, "신규" 가 실제 증가량과 달라진다.
+  async countScoredBetween(
+    horizonDays: number,
+    since: Date,
+    until: Date,
+  ): Promise<number> {
     return await this.prisma.screeningItemOutcome.count({
       where: {
         horizonDays,
-        evaluatedAt: { gte: since },
+        evaluatedAt: { gte: since, lt: until },
         item: { run: { agentRun: { status: 'SUCCEEDED' } } },
       },
     });

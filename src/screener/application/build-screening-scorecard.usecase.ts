@@ -33,8 +33,17 @@ export class BuildScreeningScorecardUsecase {
   async execute(
     options: BuildScreeningScorecardOptions,
   ): Promise<BuildScreeningScorecardResult> {
+    // 창을 양끝에서 닫는다. 위가 열려 있으면 다음 회차의 창과 겹쳐 같은 판정이 두 주에
+    // 걸쳐 세어진다.
+    //
+    // 하한을 `asOf - 7일` 로 두면 그 자리가 **전주 금요일 자정**이 되는데, 채점은 평일
+    // 19:00 KST(10:00 UTC) 에 돌고 카드는 금 20:20 KST(11:20 UTC) 에 발화한다. 즉 전주
+    // 금요일 판정분(10:00 UTC)이 전주 카드에도 이번 주 카드에도 들어간다. `asOf` 를
+    // 포함해 7일이 되도록 하한을 하루 당기고 상한을 다음 날 자정으로 닫는다.
     const since = new Date(options.asOf);
-    since.setUTCDate(since.getUTCDate() - NEWLY_SCORED_WINDOW_DAYS);
+    since.setUTCDate(since.getUTCDate() - (NEWLY_SCORED_WINDOW_DAYS - 1));
+    const until = new Date(options.asOf);
+    until.setUTCDate(until.getUTCDate() + 1);
 
     const horizons: ScreeningScorecardHorizon[] = [];
     for (const horizonDays of SCREENING_OUTCOME_HORIZONS) {
@@ -42,9 +51,10 @@ export class BuildScreeningScorecardUsecase {
         buildScorecardHorizon({
           horizonDays,
           rows: await this.repository.findScorecardRows(horizonDays),
-          newlyScoredCount: await this.repository.countScoredSince(
+          newlyScoredCount: await this.repository.countScoredBetween(
             horizonDays,
             since,
+            until,
           ),
           pendingRunCount:
             await this.repository.countRunsPendingOutcome(horizonDays),
