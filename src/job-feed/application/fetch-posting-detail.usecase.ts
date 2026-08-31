@@ -91,7 +91,7 @@ export class FetchPostingDetailUsecase {
         await this.repository.saveDetail({
           id: target.id,
           jdText: detail.jdText,
-          skillTags: normalizeSkillTags(rawSkillTags).matched,
+          skillTags: normalizeSkillTags(rawSkillTags).identified,
           rawSkillTags,
         });
         updated += 1;

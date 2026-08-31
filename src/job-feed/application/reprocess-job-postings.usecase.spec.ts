@@ -47,6 +47,10 @@ describe('ReprocessJobPostingsUsecase', () => {
 
     expect(result.examined).toBe(1);
     expect(result.changed).toBe(1);
+    // 🔴 지문(contentHash)은 넘기지 않는다. 이 저장소에서 지문의 주인은 수집이고,
+    // 상세를 받은 행은 지문만 목록 기준으로 유지한다 — 여기서 상세 태그로 다시 찍으면
+    // 다음 목록 수집과 어긋나 upsertMany 가 "요건 변경" 으로 오인하고 이미 발송한
+    // 공고를 다시 알린다(usecase 주석 참조).
     expect(repository.saveSkillTags).toHaveBeenCalledWith(1, [
       'Java',
       'Spring Boot',

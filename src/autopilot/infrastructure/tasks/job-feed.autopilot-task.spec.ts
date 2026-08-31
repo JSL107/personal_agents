@@ -345,21 +345,23 @@ describe('JobFeedAutopilotTask', () => {
     );
   });
 
-  it('사전에 없는 기피 기술은 무시되고 그 사실을 로그로 남긴다', async () => {
+  it('사전에 없는 기피 기술도 필터에 넘기되, 표기가 정확해야 걸린다는 사실을 로그로 남긴다', async () => {
     const warning = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
     const deps = makeDeps();
     const task = buildTask(deps, {
       JOB_FEED_ENABLED: 'true',
-      // Cobol 은 사전에 없다 — 필터가 조용히 무효화되면 "조용한 0건" 계열 사고다.
+      // Cobol 은 사전에 없다. 예전에는 여기서 통째로 버려져 필터가 조용히 무효가 됐다
+      // ("조용한 0건" 계열). 이제는 원본 표기 그대로 저장·비교되므로 넘기되, 표기가
+      // 정확히 같은 공고만 걸린다는 반쪽 동작을 로그로 알린다.
       JOB_FEED_AVOID_SKILLS: 'php,Cobol',
     });
 
     await task.run(CONTEXT);
 
     expect(deps.listNotifiable.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ avoidSkillTags: ['PHP'] }),
+      expect.objectContaining({ avoidSkillTags: ['PHP', 'Cobol'] }),
     );
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('Cobol'));
     warning.mockRestore();

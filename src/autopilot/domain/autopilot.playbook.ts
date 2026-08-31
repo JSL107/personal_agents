@@ -478,6 +478,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'job-feed',
     taskId: 'job-feed',
+    line: 'career',
     trigger: {
       kind: 'CRON',
       schedule: DEFAULT_JOB_FEED_CRON,
@@ -490,6 +491,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   {
     id: 'job-feed-gap',
     taskId: 'job-feed-gap',
+    line: 'career',
     trigger: {
       kind: 'CRON',
       schedule: DEFAULT_JOB_FEED_GAP_CRON,
