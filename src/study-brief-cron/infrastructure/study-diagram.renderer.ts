@@ -72,7 +72,14 @@ const measureDocument = async (page: Page): Promise<DiagramMeasurements> =>
       if (element.children.length > 0) {
         return false;
       }
-      return (element.textContent ?? '').trim().length > 0;
+      if ((element.textContent ?? '').trim().length === 0) {
+        return false;
+      }
+      // head 의 title·style 처럼 화면에 그려지지 않는 요소는 글자로 세지 않는다.
+      // 렌더 사각형이 0 이면 사람 눈에 보이지 않는다 — 태그 이름을 나열해 막는 것보다
+      // 넓게 걸러진다(script·template·hidden 등도 함께 빠진다).
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
     });
 
     const texts = leaves.map((element) => {
