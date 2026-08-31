@@ -226,16 +226,23 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     target,
     text,
     threadTs,
+    unfurlLinks,
   }: {
     target: string;
     text: string;
     threadTs?: string;
+    unfurlLinks?: boolean;
   }): Promise<{ ts: string | undefined }> {
     const app = this.assertAppReady();
     const response = await app.client.chat.postMessage({
       channel: target,
       ...toReadableSlackArgs(text),
       ...(threadTs ? { thread_ts: threadTs } : {}),
+      // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
+      // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
+      ...(unfurlLinks === false
+        ? { unfurl_links: false, unfurl_media: false }
+        : {}),
     });
     return { ts: response.ts };
   }

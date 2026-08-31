@@ -22,7 +22,7 @@ const posting = (override: Record<string, unknown> = {}) => {
 };
 
 describe('formatJobFeedDigest', () => {
-  it('회사·연차·스킬·점수를 한 줄에 담는다', () => {
+  it('회사·직무·연차·지역·스킬을 담는다', () => {
     const text = formatJobFeedDigest({
       postings: [posting()],
       outcomes: [],
@@ -33,7 +33,33 @@ describe('formatJobFeedDigest', () => {
     expect(text).toContain('백엔드 개발자');
     expect(text).toContain('3~7년');
     expect(text).toContain('Java');
-    expect(text).toContain('82');
+  });
+
+  it('점수는 카드에 적지 않는다 — 상위 열 건이 늘 같은 값이라 자리만 차지했다', () => {
+    const text = formatJobFeedDigest({
+      postings: [posting()],
+      outcomes: [],
+      unmatchedSkillTags: [],
+      lastCollectedAt: new Date(),
+    });
+    expect(text).not.toContain('82점');
+    expect(text).not.toContain('[82');
+  });
+
+  it('기술은 네 개까지만 적는다 — 그 이상은 줄이 회사명보다 무거워진다', () => {
+    const text = formatJobFeedDigest({
+      postings: [
+        posting({
+          skillTags: ['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka', 'Redis'],
+        }),
+      ],
+      outcomes: [],
+      unmatchedSkillTags: [],
+      lastCollectedAt: new Date(),
+    });
+    expect(text).toContain('MSA');
+    expect(text).not.toContain('Kafka');
+    expect(text).not.toContain('Redis');
   });
 
   describe('카드 구조 — 회사명을 세로로 훑을 수 있어야 한다', () => {
@@ -57,11 +83,14 @@ describe('formatJobFeedDigest', () => {
       );
     });
 
-    it('연차·지역·스킬·점수는 기울임 메타 줄로 내려간다', () => {
+    it('연차·지역·스킬은 인용 줄로 내려간다', () => {
+      // 기울임(`_..._`)을 쓰면 안 된다 — 슬랙 이탤릭은 색을 바꾸지 않아 눌러쓰기가
+      // 되지 않고, 한글은 기울임체가 없어 강제로 비스듬히 그려져 읽기 나빠진다.
       const metaLine = linesOf().find((line) => {
         return line.includes('3~7년');
       });
-      expect(metaLine).toBe('_3~7년 · 서울 · Java · Spring Boot · 82점_');
+      expect(metaLine).toBe('> 3~7년 · 서울 · Java · Spring Boot');
+      expect(metaLine?.startsWith('_')).toBe(false);
     });
 
     it('점수 배지가 줄 앞머리를 차지하지 않는다', () => {
@@ -71,7 +100,9 @@ describe('formatJobFeedDigest', () => {
       }
     });
 
-    it('건과 건 사이가 빈 줄로 끊긴다', () => {
+    it('한 건은 회사 줄과 인용 줄 두 줄로 끝난다 — 사이에 빈 줄을 넣지 않는다', () => {
+      // 인용선이 이미 덩어리를 갈라 준다. 빈 줄까지 넣으면 열 건에서 세로가 절반 더
+      // 길어져 스크롤만 늘고 얻는 게 없다.
       const text = formatJobFeedDigest({
         postings: [posting(), posting({ id: 2, company: '카카오' })],
         outcomes: [],
@@ -82,7 +113,9 @@ describe('formatJobFeedDigest', () => {
       const secondCompanyIndex = lines.findIndex((line) => {
         return line.includes('카카오');
       });
-      expect(lines[secondCompanyIndex - 1]).toBe('');
+      expect(lines[secondCompanyIndex - 1]).toBe(
+        '> 3~7년 · 서울 · Java · Spring Boot',
+      );
     });
   });
 
