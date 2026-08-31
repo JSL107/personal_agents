@@ -2,6 +2,7 @@ import {
   Assignment,
   AssignmentOutput,
   BeAssignmentType,
+  UnassignedTask,
 } from '../../agent/cto/domain/cto.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { PREVIEW_ACTION_IDS } from '../../preview-gate/domain/preview-action.type';
@@ -20,11 +21,17 @@ export const ASSIGNMENT_ACTION_IDS = {
 } as const;
 
 const BLOCK_ID_PREFIX = 'assignment-worker';
+// 보류 항목의 드롭다운. 배정 항목과 같은 action_id 를 쓰고 block_id 로만 구분한다 —
+// 고르는 값(worker 3종)이 같으므로 액션을 나누면 같은 파싱을 두 벌 갖게 된다.
+const PENDING_BLOCK_ID_PREFIX = 'assignment-pending';
 
 // Slack 은 메시지당 블록 50개까지 받는다. 머리말·보류·버튼·푸터로 4개를 쓰므로
 // 항목은 넉넉히 남는 선에서 끊고, 넘친 만큼은 안내로 알린다 (조용히 잘라내면
 // 사용자는 카드에 없는 분배가 실행되는 걸 모른다).
 const MAX_CARD_ASSIGNMENTS = 20;
+// 보류는 실행 대상이 아니라 결정 대기 목록이다. 배정분과 합쳐 50 블록을 넘기지 않도록
+// 더 짧게 끊고, 넘친 건수는 안내로 밝힌다.
+const MAX_CARD_UNASSIGNED = 10;
 
 const WORKER_LABEL: Record<BeAssignmentType, string> = {
   [AgentType.BE]: 'BE — 구현',
@@ -79,20 +86,37 @@ export const buildAssignmentCardBlocks = ({
   }
 
   if (output.unassignedTasks.length > 0) {
+    const shownUnassigned = output.unassignedTasks.slice(
+      0,
+      MAX_CARD_UNASSIGNED,
+    );
+    const hiddenUnassignedCount =
+      output.unassignedTasks.length - shownUnassigned.length;
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: [
-          '*⚠️ 자동 분배 보류*',
-          ...output.unassignedTasks.map(
-            (unassigned) =>
-              `• ${escapeSlackMrkdwn(unassigned.taskTitle)} — ${escapeSlackMrkdwn(unassigned.reason)}`,
-          ),
-          '_보류 건은 실행되지 않습니다. 배정하려면 말로 알려주세요 — 예: "테스트 보강은 BE_TEST 로"._',
-        ].join('\n'),
+        // 예전에는 "보류하려면 말로 알려주세요" 만 있어서, 카드를 보는 사람이 담당을
+        // 정하려면 카드를 떠나 문장을 써야 했다. 드롭다운이 있으면 그 자리에서 끝난다.
+        text: '*⚠️ 보류 — 담당을 정해주세요*\n_담당을 고르면 실행 목록으로 옮겨집니다. 실행하지 않을 항목은 그대로 두세요._',
       },
     });
+    blocks.push(
+      ...shownUnassigned.map((unassigned, index) =>
+        buildUnassignedBlock({ unassigned, index, previewId }),
+      ),
+    );
+    if (hiddenUnassignedCount > 0) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `_보류 ${hiddenUnassignedCount}건은 카드에 표시하지 않았습니다. 담당을 정하려면 말로 알려주세요._`,
+          },
+        ],
+      });
+    }
   }
 
   blocks.push({
@@ -120,14 +144,16 @@ export const buildAssignmentCardBlocks = ({
 };
 
 const buildHeaderText = (output: AssignmentOutput): string => {
-  const lines = ['*📋 CTO 분배 결과*'];
+  // 배정 0건은 제목에서 한 번만 말한다 — 제목과 본문이 같은 사실을 두 번 말하면
+  // 정보량 한 줄짜리 카드가 문단 여러 개로 불어난다 (assignment.formatter 와 같은 기준).
+  const lines = [
+    output.assignments.length > 0
+      ? '*📋 CTO 분배 결과*'
+      : '*📋 CTO 분배 결과 — 자동 배정 0건*',
+  ];
   if (output.ctoSummary.trim().length > 0) {
     lines.push('');
     lines.push(escapeSlackMrkdwn(output.ctoSummary));
-  }
-  if (output.assignments.length === 0) {
-    lines.push('');
-    lines.push('_분배된 task 없음 — 모두 보류로 분류됐습니다._');
   }
   return lines.join('\n');
 };
@@ -153,6 +179,31 @@ const buildAssignmentBlock = ({
     action_id: ASSIGNMENT_ACTION_IDS.SET_WORKER,
     options: WORKER_ORDER.map(toWorkerOption),
     initial_option: toWorkerOption(assignment.beAssignment),
+  },
+});
+
+const buildUnassignedBlock = ({
+  unassigned,
+  index,
+  previewId,
+}: {
+  unassigned: UnassignedTask;
+  index: number;
+  previewId: string;
+}): SlackBlock => ({
+  type: 'section',
+  block_id: `${PENDING_BLOCK_ID_PREFIX}:${previewId}:${index}`,
+  text: {
+    type: 'mrkdwn',
+    text: `*${escapeSlackMrkdwn(unassigned.taskTitle)}*\n_${escapeSlackMrkdwn(unassigned.reason)}_`,
+  },
+  accessory: {
+    type: 'static_select',
+    action_id: ASSIGNMENT_ACTION_IDS.SET_WORKER,
+    // initial_option 을 두지 않는다 — 아직 아무 담당도 정해지지 않은 항목이라
+    // 기본값을 찍어두면 사용자가 고르지 않은 배정이 선택된 것처럼 보인다.
+    placeholder: { type: 'plain_text', text: '담당 고르기' },
+    options: WORKER_ORDER.map(toWorkerOption),
   },
 });
 
@@ -187,16 +238,30 @@ const toWorkerOption = (worker: BeAssignmentType): SlackBlock => ({
   value: worker,
 });
 
+// 드롭다운이 배정 항목의 것인지 보류 항목의 것인지. 같은 action_id 를 쓰므로
+// 처리 분기는 block_id 로만 갈린다 (배정은 교체, 보류는 실행 목록으로 승격).
+export type AssignmentBlockKind = 'ASSIGNED' | 'PENDING';
+
+export interface AssignmentBlockTarget {
+  previewId: string;
+  index: number;
+  kind: AssignmentBlockKind;
+}
+
 // 드롭다운 변경 이벤트의 block_id 에서 previewId 와 항목 index 를 복원.
 // 형식이 다르면 null — 다른 블록의 이벤트를 잘못 처리하지 않도록.
 export const parseAssignmentBlockId = (
   blockId: string | null,
-): { previewId: string; index: number } | null => {
+): AssignmentBlockTarget | null => {
   if (blockId === null) {
     return null;
   }
   const segments = blockId.split(':');
-  if (segments.length !== 3 || segments[0] !== BLOCK_ID_PREFIX) {
+  if (segments.length !== 3) {
+    return null;
+  }
+  const kind = toBlockKind(segments[0]);
+  if (kind === null) {
     return null;
   }
   const previewId = segments[1];
@@ -204,7 +269,17 @@ export const parseAssignmentBlockId = (
   if (previewId.length === 0 || !Number.isInteger(index) || index < 0) {
     return null;
   }
-  return { previewId, index };
+  return { previewId, index, kind };
+};
+
+const toBlockKind = (prefix: string): AssignmentBlockKind | null => {
+  if (prefix === BLOCK_ID_PREFIX) {
+    return 'ASSIGNED';
+  }
+  if (prefix === PENDING_BLOCK_ID_PREFIX) {
+    return 'PENDING';
+  }
+  return null;
 };
 
 // 드롭다운에서 고른 worker. BE 계열 3종이 아니면 null (payload 오염 차단).

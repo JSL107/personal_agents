@@ -2,6 +2,7 @@ import { CtoBeChainPayload } from '../../agent/cto/domain/cto.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   applyWorkerChange,
+  promoteUnassigned,
   toDisplayOutput,
 } from './assignment-action.handler';
 
@@ -34,6 +35,72 @@ const payload = (
   ...(overrides.unassignedTasks !== undefined
     ? { unassignedTasks: overrides.unassignedTasks }
     : {}),
+});
+
+describe('promoteUnassigned', () => {
+  const withPending = () =>
+    payload({
+      unassignedTasks: [
+        { taskId: 't:9', taskTitle: '테스트 보강', reason: '경계 모호' },
+        { taskId: 't:10', taskTitle: '문서 검증', reason: '구현 아님' },
+      ],
+    });
+
+  it('고른 보류 항목을 실행 목록으로 옮기고 보류에서 뺀다', () => {
+    const updated = promoteUnassigned({
+      payload: withPending(),
+      index: 0,
+      worker: AgentType.BE_TEST,
+    });
+
+    const promoted = updated.assignments[updated.assignments.length - 1];
+    expect(promoted.taskId).toBe('t:9');
+    expect(promoted.beAssignment).toBe(AgentType.BE_TEST);
+    expect(updated.unassignedTasks).toHaveLength(1);
+    expect(updated.unassignedTasks?.[0].taskId).toBe('t:10');
+  });
+
+  // 사용자가 직접 고른 값이므로 LLM 의 보류 사유를 근거로 남기면 결과와 설명이 어긋난다.
+  it('승격한 항목의 근거는 사용자 지정 + confidence 1 이다', () => {
+    const updated = promoteUnassigned({
+      payload: withPending(),
+      index: 0,
+      worker: AgentType.BE,
+    });
+
+    const promoted = updated.assignments[updated.assignments.length - 1];
+    expect(promoted.reasoning).toBe('사용자 지정');
+    expect(promoted.confidence).toBe(1);
+    expect(promoted.priority).toBe(2);
+  });
+
+  it('기존 배정은 건드리지 않는다', () => {
+    const before = withPending();
+    const updated = promoteUnassigned({
+      payload: before,
+      index: 1,
+      worker: AgentType.BE,
+    });
+
+    expect(updated.assignments.slice(0, 2)).toEqual(before.assignments);
+  });
+
+  // 오래된 카드의 이벤트가 엉뚱한 항목을 배정하면 사용자가 고르지 않은 일이 실행된다.
+  it('카드에 없는 보류 번호면 거부한다', () => {
+    expect(() =>
+      promoteUnassigned({
+        payload: withPending(),
+        index: 5,
+        worker: AgentType.BE,
+      }),
+    ).toThrow('보류 항목 6 번이 카드에 없습니다');
+  });
+
+  it('보류 목록이 아예 없는 옛 카드면 거부한다', () => {
+    expect(() =>
+      promoteUnassigned({ payload: payload(), index: 0, worker: AgentType.BE }),
+    ).toThrow('카드에 없습니다');
+  });
 });
 
 describe('applyWorkerChange', () => {

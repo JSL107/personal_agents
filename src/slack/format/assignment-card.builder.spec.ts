@@ -137,7 +137,7 @@ describe('buildAssignmentCardBlocks', () => {
     expect(text).not.toContain('건너뜁니다');
   });
 
-  it('보류 목록이 있으면 실행되지 않는다고 함께 알린다', () => {
+  it('보류 목록이 있으면 항목과 보류 사유를 함께 보여준다', () => {
     const blocks = buildAssignmentCardBlocks({
       output: output({
         unassignedTasks: [
@@ -149,7 +149,51 @@ describe('buildAssignmentCardBlocks', () => {
 
     const text = JSON.stringify(blocks);
     expect(text).toContain('테스트 보강');
-    expect(text).toContain('실행되지 않습니다');
+    expect(text).toContain('경계 모호');
+    expect(text).toContain('담당을 정해주세요');
+  });
+
+  // 보류를 배정하는 유일한 입구가 자연어였을 때는, 카드를 보는 사람이 담당을 정하려면
+  // 카드를 떠나 문장을 써야 했고 LLM 이 어느 항목인지 다시 맞혀야 했다.
+  it('보류 항목마다 담당 드롭다운을 붙인다', () => {
+    const blocks = buildAssignmentCardBlocks({
+      output: output({
+        assignments: [],
+        unassignedTasks: [
+          { taskId: 't:2', taskTitle: '테스트 보강', reason: '경계 모호' },
+        ],
+      }),
+      previewId: 'p-1',
+    });
+
+    const pendingBlock = blocks.find(
+      (block) => block.block_id === 'assignment-pending:p-1:0',
+    );
+    expect(pendingBlock).toBeDefined();
+    const accessory = pendingBlock?.accessory as Record<string, unknown>;
+    expect(accessory.type).toBe('static_select');
+    // 아직 아무 담당도 정해지지 않은 항목이라 기본값을 찍어두면 사용자가 고르지 않은
+    // 배정이 선택된 것처럼 보인다.
+    expect(accessory.initial_option).toBeUndefined();
+    expect(accessory.options).toHaveLength(3);
+  });
+
+  it('보류가 10건을 넘으면 잘라내되 몇 건이 안 보이는지 알린다', () => {
+    const many = Array.from({ length: 13 }, (_unused, index) => ({
+      taskId: `u${index}`,
+      taskTitle: `보류 ${index}`,
+      reason: '경계 모호',
+    }));
+    const blocks = buildAssignmentCardBlocks({
+      output: output({ assignments: [], unassignedTasks: many }),
+      previewId: 'p-1',
+    });
+
+    const pendingCount = blocks.filter((block) =>
+      String(block.block_id ?? '').startsWith('assignment-pending:'),
+    ).length;
+    expect(pendingCount).toBe(10);
+    expect(JSON.stringify(blocks)).toContain('보류 3건');
   });
 
   // 조용히 잘라내면 사용자는 카드에 없는 분배가 실행되는 걸 모른다.
@@ -190,6 +234,17 @@ describe('parseAssignmentBlockId', () => {
     expect(parseAssignmentBlockId('assignment-worker:p-42:3')).toEqual({
       previewId: 'p-42',
       index: 3,
+      kind: 'ASSIGNED',
+    });
+  });
+
+  // 두 드롭다운은 action_id 가 같다 — 처리 분기(교체 vs 승격)가 block_id 하나에만
+  // 걸려 있으므로, 종류를 잘못 읽으면 보류 항목이 배정 항목을 덮어쓴다.
+  it('보류 항목 block_id 는 PENDING 으로 구분한다', () => {
+    expect(parseAssignmentBlockId('assignment-pending:p-42:0')).toEqual({
+      previewId: 'p-42',
+      index: 0,
+      kind: 'PENDING',
     });
   });
 
