@@ -431,6 +431,49 @@ describe('GeneratePoShadowUsecase', () => {
     expect(result.result.factSummary[0]).not.toContain('mention:C1');
   });
 
+  // UNPLANNED_ASSIGNED 의 detail("계획에 없는 담당 항목")은 근거가 아니라 판정이고,
+  // finding 이 이미 같은 말을 한다 — 근거 줄에 다시 실으면 "근거: (방금 한 말)" 이 된다.
+  it('계획 밖 담당 항목의 근거는 판정을 반복하지 않고 제목만 남긴다', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: mismatchPlan,
+      endedAt: new Date(),
+    });
+    const context = mismatchContext();
+    context.assignedTasks?.pullRequests.push({
+      number: 999,
+      title: '캐시 정리',
+      repo: 'acme/app',
+      url: 'https://github.com/acme/app/pull/999',
+      draft: false,
+      updatedAt: '2026-08-19T00:00:00.000Z',
+      requestedReviewers: [],
+      isApproved: false,
+    });
+    contextCollectorCollect.mockResolvedValue(context);
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify(
+        modelReport([
+          {
+            factIds: ['unplanned:acme/app#999'],
+            point: '캐시 정리가 계획에 없습니다.',
+            suggestion: '오늘 할지 정하세요.',
+          },
+        ]),
+      ),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    } satisfies CompletionResponse);
+
+    const result = await usecase.execute({
+      extraContext: '',
+      slackUserId: 'U1',
+    });
+
+    expect(result.result.factSummary).toEqual(['캐시 정리']);
+    expect(result.result.factSummary[0]).not.toContain('계획에 없는');
+  });
+
   it('모든 모델 finding이 제거되면 전체 사실 요약을 보존한다', async () => {
     agentRunServiceFindLatest.mockResolvedValue({
       id: 99,

@@ -112,6 +112,17 @@ describe('CtoBeChainApplier', () => {
     expect(runBeChainExecute).not.toHaveBeenCalled();
   });
 
+  // 보류만 있는 카드에는 실행 버튼이 없지만, 자연어 "응" 은 최근 PENDING preview 를 그대로
+  // 넘긴다. 빈 실행이 통과하면 아무 일도 없이 카드가 닫혀 담당을 정할 기회를 잃는다.
+  it('배정이 없는 카드는 사용자가 읽을 말로 거절한다', async () => {
+    await expect(
+      applier.apply(
+        buildPreview({ ctoAgentRunId: 42, slackUserId: 'U1', assignments: [] }),
+      ),
+    ).rejects.toThrow('보류 항목에서 담당을 먼저 정해주세요');
+    expect(runBeChainExecute).not.toHaveBeenCalled();
+  });
+
   // 카드 정리는 best-effort 라 옛 카드가 PENDING 으로 남을 수 있다. 사용자가 최신 카드를
   // 취소하면 그 옛 카드가 다시 승인 대상이 되는데, 폐기한 분배가 실행되면 안 된다.
   it('최신 분배가 아닌 카드는 실행하지 않고 명시 에러', async () => {

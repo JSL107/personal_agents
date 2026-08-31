@@ -30,14 +30,22 @@ export class OpenAssignmentApprovalUsecase {
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
   ) {}
 
-  // 연 카드의 previewId. 실행할 분배가 없으면(전부 보류) 열지 않고 null.
-  // 호출자는 이 id 로 배정 드롭다운·실행 버튼이 달린 카드를 그린다.
+  // 연 카드의 previewId. 보여줄 것이 하나도 없을 때만 열지 않고 null.
+  // 호출자는 이 id 로 배정·보류 드롭다운과 실행 버튼이 달린 카드를 그린다.
+  //
+  // 배정 0건이어도 보류가 있으면 연다 — 카드가 없으면 보류 항목의 담당 드롭다운을 그릴
+  // 자리가 없어, 정작 "전부 보류" 인 회차에만 사용자가 카드에서 결정할 수 없게 된다.
+  // (CTO 는 8/23~8/31 아홉 회차 연속 배정 0건이었다.) 실행할 배정이 없는 카드에는
+  // 실행 버튼을 그리지 않고, 자연어 "응" 으로 들어온 빈 실행은 applier 가 거절한다.
   async execute({
     slackUserId,
     ctoAgentRunId,
     output,
   }: OpenAssignmentApprovalInput): Promise<string | null> {
-    if (output.assignments.length === 0) {
+    if (
+      output.assignments.length === 0 &&
+      output.unassignedTasks.length === 0
+    ) {
       return null;
     }
     await this.supersedePriorApprovals(slackUserId);
@@ -53,7 +61,10 @@ export class OpenAssignmentApprovalUsecase {
       slackUserId,
       kind: PREVIEW_KIND.CTO_BE_CHAIN,
       payload,
-      previewText: `CTO 분배 ${output.assignments.length}건 실행 대기 (CTO run #${ctoAgentRunId})`,
+      previewText:
+        output.assignments.length > 0
+          ? `CTO 분배 ${output.assignments.length}건 실행 대기 (CTO run #${ctoAgentRunId})`
+          : `CTO 보류 ${output.unassignedTasks.length}건 담당 대기 (CTO run #${ctoAgentRunId})`,
       // 카드 메시지는 호출자가 직접 보낸다 (슬래시는 respond, 자연어는 say).
       responseUrl: null,
       ttlMs: APPROVAL_TTL_MS,
