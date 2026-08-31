@@ -613,6 +613,7 @@ describe('PaperTradingPrismaRepository 보유 종목 조회 조건', () => {
       },
       paperPosition: { findMany: jest.fn().mockResolvedValue([krxPosition]) },
       paperTrade: { findMany: jest.fn().mockResolvedValue([]) },
+      paperCorporateAction: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const prisma = {
       $transaction: jest.fn(async (callback) => callback(transaction)),
@@ -850,5 +851,180 @@ describe('PaperTradingPrismaRepository 추천 채점 저장', () => {
     await repository.saveRecommendationScores([], []);
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaperTradingPrismaRepository 기업행동·결제일', () => {
+  it('기업행동은 계좌 잠금·포지션 조회 뒤 원장과 잔액을 한 transaction에 반영한다', async () => {
+    const accountUpdate = jest.fn().mockResolvedValue({
+      id: 5,
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('775952'),
+    });
+    const positionFindUnique = jest.fn().mockResolvedValue({
+      id: 71,
+      accountId: 5,
+      tickerId: 178,
+      quantity: new Prisma.Decimal('743'),
+      avgPrice: new Prisma.Decimal('2335'),
+    });
+    const corporateActionCreate = jest.fn().mockResolvedValue({ id: 41 });
+    const transaction = {
+      paperAccount: { update: accountUpdate },
+      paperPosition: {
+        findUnique: positionFindUnique,
+        upsert: jest.fn(),
+      },
+      paperCorporateAction: { create: corporateActionCreate },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await repository.applyCorporateActionAtomically({
+      accountId: 5,
+      tickerId: 178,
+      kind: 'DIVIDEND',
+      exDate: new Date('2026-08-28T00:00:00.000Z'),
+      perShareAmount: '8640',
+      decide: ({ account }) => ({
+        cashBalance: account.cashBalance.plus('1330319').toString(),
+        cashDelta: '1330319',
+        quantityDelta: '0',
+        avgPriceAfter: null,
+        eligibleQuantity: '182',
+        grossAmount: '1572480',
+        taxAmount: '242161',
+      }),
+    });
+
+    expect(result).toEqual({
+      corporateActionId: 41,
+      cashBalance: '2106271',
+      cashDelta: '1330319',
+      quantityDelta: '0',
+      avgPriceAfter: null,
+      eligibleQuantity: '182',
+      grossAmount: '1572480',
+      taxAmount: '242161',
+    });
+    expect(accountUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      positionFindUnique.mock.invocationCallOrder[0],
+    );
+    expect(positionFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId_tickerId: { accountId: 5, tickerId: 178 } },
+      }),
+    );
+    expect(corporateActionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fingerprint: '5:178:2026-08-28:DIVIDEND:8640:',
+          cashDelta: '1330319',
+        }),
+      }),
+    );
+    expect(accountUpdate).toHaveBeenCalledTimes(2);
+    expect(accountUpdate).toHaveBeenLastCalledWith({
+      where: { id: 5 },
+      data: { cashBalance: '2106271' },
+    });
+  });
+
+  it('기업행동 fingerprint 유니크 오류를 한국어 중복 메시지로 변환한다', async () => {
+    const transaction = {
+      paperAccount: {
+        update: jest.fn().mockResolvedValue({
+          id: 5,
+          seedAmount: new Prisma.Decimal('1000'),
+          cashBalance: new Prisma.Decimal('1000'),
+        }),
+      },
+      paperPosition: { findUnique: jest.fn().mockResolvedValue(null) },
+      paperCorporateAction: {
+        create: jest.fn().mockRejectedValue({ code: 'P2002' }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await expect(
+      repository.applyCorporateActionAtomically({
+        accountId: 5,
+        tickerId: 178,
+        kind: 'DIVIDEND',
+        exDate: new Date('2026-08-28T00:00:00.000Z'),
+        perShareAmount: '8640',
+        decide: () => ({
+          cashBalance: '1000',
+          cashDelta: '0',
+          quantityDelta: '0',
+          avgPriceAfter: null,
+          eligibleQuantity: '1',
+          grossAmount: '1',
+          taxAmount: '0',
+        }),
+      }),
+    ).rejects.toThrow('이미 기록된 기업행동입니다');
+  });
+
+  it('기준일 전 거래·기업행동의 수량을 합산한다', async () => {
+    const prisma = {
+      paperTrade: {
+        findMany: jest.fn().mockResolvedValue([
+          { side: 'BUY', quantity: new Prisma.Decimal('10') },
+          { side: 'SELL', quantity: new Prisma.Decimal('3') },
+        ]),
+      },
+      paperCorporateAction: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ quantityDelta: new Prisma.Decimal('2') }]),
+      },
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await expect(
+      repository.findQuantityAtDate(
+        5,
+        178,
+        new Date('2026-08-28T00:00:00.000Z'),
+      ),
+    ).resolves.toEqual(new Prisma.Decimal('9'));
+  });
+
+  it('결제일이 없는 거래만 체결일 기준 결제일로 백필한다', async () => {
+    const update = jest.fn();
+    const prisma = {
+      paperTrade: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 71, tradeDate: new Date('2026-08-14T00:00:00.000Z') },
+          ]),
+        update,
+      },
+      $transaction: jest.fn().mockResolvedValue([]),
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await expect(repository.backfillSettlementDates()).resolves.toEqual({
+      updated: 1,
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 71 },
+      data: { settlementDate: new Date('2026-08-18T00:00:00.000Z') },
+    });
   });
 });

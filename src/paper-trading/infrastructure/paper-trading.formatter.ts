@@ -142,10 +142,35 @@ export const formatPaperTradingReport = (
   lines.push(
     '',
     `총 평가액 *${formatMoney(result.totalValue)}* · 현금 ${formatMoney(result.cashBalance)} · 총 수익률 *${formatRate(result.returnRate)}*`,
+    // 증권사 계좌와 같은 D+0 / D+2 표기를 쓴다. "예수금 · 미결제 대금" 으로 적으면
+    // 매수 대금이 아직 안 빠진 날 예수금이 현금보다 커 보여(2,106,271원인데 5,417,053원)
+    // 어느 쪽이 실제 잔고인지 읽히지 않는다. 장부의 cashBalance 는 체결 즉시 반영이라
+    // 결제가 다 끝난 뒤의 잔고, 곧 D+2 다.
+    `예수금 D+0 ${formatMoney(result.settledCash)} · D+2 ${formatMoney(result.cashBalance)}`,
   );
-  if (result.realizedPnl !== null && result.unrealizedPnl !== null) {
+  const dividendCount = result.dividendCount ?? 0;
+  // 전일 대비를 적을 때 배당을 함께 밝힌다. 소급 반영한 배당은 과거 스냅샷을 고치지
+  // 않으므로(그날 실제로 무엇을 봤는지가 기록이다) 입금 당일만 하루 만에 급등한 것처럼
+  // 보인다. 괄호가 없으면 그 폭을 시장에서 번 것으로 읽는다.
+  if (result.previousReturnRate != null && result.returnRate !== null) {
+    const dividendNote =
+      dividendCount > 0
+        ? ` (배당 반영 ${formatSignedMoney(result.dividendNetTotal)})`
+        : '';
     lines.push(
-      `확정 손익 ${formatSignedMoney(result.realizedPnl)} · 보유 평가손익 ${formatSignedMoney(result.unrealizedPnl)}`,
+      `전일 ${formatRate(result.previousReturnRate)} → 오늘 ${formatRate(result.returnRate)}${dividendNote}`,
+    );
+  }
+  // 배당이 있으면 매매분과 갈라 적는다. realizedPnl 은 역산이라 배당을 흡수하는데,
+  // 그 값 하나만 "확정 손익" 으로 내면 종목을 골라 번 돈과 배당이 뭉쳐 추천 채점이
+  // 불가능해진다. 배당이 없는 계좌는 가를 것이 없으므로 기존 한 줄 그대로 둔다.
+  if (result.realizedPnl !== null && result.unrealizedPnl !== null) {
+    const realizedText =
+      dividendCount > 0 && result.tradingRealizedPnl != null
+        ? `매매 확정손익 ${formatSignedMoney(result.tradingRealizedPnl)} · 배당 ${dividendCount}건 ${formatSignedMoney(result.dividendNetTotal)}`
+        : `확정 손익 ${formatSignedMoney(result.realizedPnl)}`;
+    lines.push(
+      `${realizedText} · 보유 평가손익 ${formatSignedMoney(result.unrealizedPnl)}`,
     );
   }
   if (result.benchmarkClose !== null) {
