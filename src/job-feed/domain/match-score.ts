@@ -37,9 +37,19 @@ export const buildMatchProfile = ({
   };
 };
 
-const SKILL_WEIGHT = 70;
+// 스킬 축(70점)을 비율과 증거량으로 쪼갠다. 비율만 보면 요구 기술이 하나뿐인
+// 공고(1/1)와 다섯 개를 모두 맞춘 공고(5/5)가 똑같이 만점을 받는다 — 실측
+// (2026-08-31) 당시 만점 35건 중 태그가 한두 개뿐인 행이 15건(43%)이었고,
+// 알림은 점수 내림차순 상위 10건이라 카드가 매일 만점 동점으로만 채워졌다.
+const SKILL_RATIO_WEIGHT = 50;
+const SKILL_DEPTH_WEIGHT = 20;
 const YEARS_WEIGHT = 20;
 const LOCATION_WEIGHT = 10;
+
+// 몇 개를 맞혀야 증거 축이 만점인가. 같은 실측에서 만점 공고의 40%가 태그 4개
+// 이상이었다 — 그 위는 만점으로 묶고 아래를 개수 순으로 가른다. 더 올리면
+// 태그를 적게 다는 소스(점핏)가 구조적으로 불리해진다.
+const SKILL_DEPTH_SATURATION = 4;
 
 const resolveYearsFit = (
   posting: NormalizedJobPosting,
@@ -96,8 +106,15 @@ export const scorePosting = (
       return profile.locations.includes(location);
     });
 
+  // 맞힌 개수 자체가 증거다. 비율 축과 달리 공고가 요구한 개수로 나누지 않는다 —
+  // 나누면 다시 1/1 과 5/5 가 같아진다.
+  const skillDepthRatio =
+    Math.min(matchedSkills.length, SKILL_DEPTH_SATURATION) /
+    SKILL_DEPTH_SATURATION;
+
   const score = Math.round(
-    SKILL_WEIGHT * skillRatioForScore +
+    SKILL_RATIO_WEIGHT * skillRatioForScore +
+      SKILL_DEPTH_WEIGHT * skillDepthRatio +
       YEARS_WEIGHT * YEARS_RATIO_BY_FIT[yearsFit] +
       LOCATION_WEIGHT * (locationFit ? 1 : 0),
   );
