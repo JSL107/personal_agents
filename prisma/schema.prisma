@@ -383,6 +383,7 @@ model Ticker {
   paperOrders            PaperOrder[]
   paperPositions         PaperPosition[]
   paperTrades            PaperTrade[]
+  paperCorporateActions  PaperCorporateAction[]
   paperPositionSnapshots PaperPositionSnapshot[]
   screeningRunItems      ScreeningRunItem[]
 
@@ -542,11 +543,48 @@ model PaperAccount {
   orders    PaperOrder[]
   positions PaperPosition[]
   trades    PaperTrade[]
+  corporateActions PaperCorporateAction[]
   snapshots PaperEquitySnapshot[]
   scores    RecommendationScore[]
   scorePeriods RecommendationScorePeriod[]
 
   @@map("paper_account")
+}
+
+// 매매가 아닌 사유로 계좌의 현금이나 수량이 바뀌는 사건. 배당·분할·병합·무상증자가 들어온다.
+// 이 표가 없으면 불변식(현금 = 시드 − 매수 + 매도)이 배당 입금을 위반으로 읽어
+// evaluate-paper-account 가 그 계좌의 평가를 영구히 건너뛴다.
+model PaperCorporateAction {
+  id        Int          @id @default(autoincrement())
+  accountId Int          @map("account_id")
+  account   PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tickerId  Int          @map("ticker_id")
+  ticker    Ticker       @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  kind      String // DIVIDEND | SPLIT | MERGE | BONUS_ISSUE
+  // 배당락·권리락일. 이 날 직전 거래일 종가 시점의 보유 수량이 권리 수량이다.
+  exDate    DateTime     @map("ex_date") @db.Date
+  payDate   DateTime?    @map("pay_date") @db.Date
+
+  // 금액만 남기면 사후에 왜 이 값인가를 재구성할 수 없다. paper_order가
+  // indicatorSnapshot을 박아 두는 것과 같은 이유로 계산 근거를 함께 보존한다.
+  perShareAmount   Decimal? @map("per_share_amount") @db.Decimal(18, 4)
+  eligibleQuantity Decimal? @map("eligible_quantity") @db.Decimal(18, 4)
+  grossAmount      Decimal? @map("gross_amount") @db.Decimal(18, 4)
+  taxAmount        Decimal? @map("tax_amount") @db.Decimal(18, 4)
+
+  // 불변식이 읽는 두 값. 종류가 무엇이든 계좌 변화는 이 둘로 완전히 표현된다.
+  cashDelta     Decimal @default(0) @map("cash_delta") @db.Decimal(18, 4)
+  quantityDelta Decimal @default(0) @map("quantity_delta") @db.Decimal(18, 4)
+  // 분할·병합이 평단을 바꿀 때의 조정 후 값. 배당은 평단을 낮추지 않으므로 null이다.
+  avgPriceAfter Decimal? @map("avg_price_after") @db.Decimal(18, 4)
+
+  note        String?  @db.Text
+  // 재실행이 같은 사건을 두 번 넣는 것을 DB 층에서 막는다.
+  fingerprint String   @unique
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([accountId, exDate])
+  @@map("paper_corporate_action")
 }
 
 // 판단과 체결을 분리해 기록한다. 이 표가 없으면 "전일 종가로 판단하고 다음날 시가에 체결했다"를
@@ -621,6 +659,8 @@ model PaperTrade {
   tax         Decimal      @db.Decimal(18, 4)
   realizedPnl Decimal?     @map("realized_pnl") @db.Decimal(18, 4) // 매도 시에만
   tradeDate   DateTime     @map("trade_date") @db.Date // 체결 거래일
+  // 실제 결제일(체결일 + 2영업일). 총평가와 수익률에는 영향이 없고 결제 완료 예수금 표시용이다.
+  settlementDate DateTime? @map("settlement_date") @db.Date
   // 재시도·stalled 재실행이 같은 체결을 두 번 넣는 것을 DB 층에서 막는다.
   // HoldingChange 가 같은 문제를 fingerprint @unique 로 푼 선례를 따른다(schema.prisma:406).
   fingerprint String       @unique

@@ -205,8 +205,16 @@ describe('JobFeedAutopilotTask', () => {
     });
     expect(deps.jobPostingRepository.findLastCollectedAt).toHaveBeenCalled();
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('토스');
+    // 공고 목록은 스레드 댓글로, 진단 각주는 메인에 남는다. 메인에 목록이 다시
+    // 실리면 접는 의미가 없으므로 "메인에는 없다" 까지 단언한다.
+    expect(result.detailText).toContain('토스');
+    expect(result.summaryText).not.toContain('토스');
     expect(result.summaryText).toContain('마지막 수집');
+    // 카드 제목의 날짜는 슬롯이 준 firedAtKst 에서 온다(여기서 다시 재지 않는다).
+    expect(result.summaryText).toContain('8월 27일');
+    // 카드에 공고 링크가 여러 개 실린다. 미리보기를 켜 두면 채용 사이트가 회사 사진과
+    // 소개문을 하나씩 펼쳐 목록이 묻히므로, 이 task 는 반드시 끄기를 요청해야 한다.
+    expect(result.unfurlLinks).toBe(false);
 
     // run() 실행만으로는 아직 아무것도 선점하지 않는다 — 선점은 onDelivered 콜백
     // 안에서, 발송이 성공한 뒤에만 일어난다(orchestrator 가 그 시점에 호출한다).

@@ -55,6 +55,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
 
   async run({
     ownerSlackUserId,
+    firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     // 미설정이면 꺼진 상태가 기본이다.
     if (this.configService.get<string>('JOB_FEED_ENABLED') !== 'true') {
@@ -120,11 +121,13 @@ export class JobFeedAutopilotTask implements AutopilotTask {
     const lastCollectedAt =
       await this.jobPostingRepository.findLastCollectedAt();
 
-    const summaryText = formatJobFeedDigest({
+    // 공고 목록은 스레드 댓글(detail)로 내린다 — 메인에는 제목·날짜와 진단 각주만 남는다.
+    const { summary, detail } = formatJobFeedDigest({
       postings,
       outcomes: collected.outcomes,
       unmatchedSkillTags: collected.unmatchedSkillTags,
       lastCollectedAt,
+      firedAtKst,
       scoreSkipReason: scoreResult.skipped ? scoreResult.reason : null,
     });
 
@@ -163,7 +166,20 @@ export class JobFeedAutopilotTask implements AutopilotTask {
             }
           };
 
-    return { skip: false, summaryText, onDelivered };
+    // 카드에 공고 열 건의 링크가 실린다. 미리보기를 켜 두면 채용 사이트가 회사 사진과
+    // 소개문을 하나씩 펼쳐, 열 줄짜리 요약이 화면 몇 배 길이로 늘어나고 정작 목록은 묻힌다.
+    // 링크가 실리는 곳이 스레드 댓글로 옮겨갔으므로, orchestrator 는 이 설정을 메인뿐
+    // 아니라 스레드 발송에도 적용한다.
+    //
+    // detailText 는 undefined 로 넘겨야 orchestrator 가 스레드 댓글을 건너뛴다
+    // (null 을 그대로 실으면 빈 댓글이 하나 붙는다).
+    return {
+      skip: false,
+      summaryText: summary,
+      detailText: detail ?? undefined,
+      onDelivered,
+      unfurlLinks: false,
+    };
   }
 
   private parseLocations(): string[] {

@@ -108,6 +108,7 @@ export class AutopilotOrchestrator {
       summary: string;
       detail?: string;
       onDelivered?: () => Promise<void>;
+      unfurlLinks?: boolean;
     }[] = [];
     const previews: AutopilotPreviewRequest[] = [];
     let hasDeliverableSummary = false;
@@ -137,6 +138,7 @@ export class AutopilotOrchestrator {
             summary: result.summaryText,
             detail: result.detailText,
             onDelivered: result.onDelivered,
+            unfurlLinks: result.unfurlLinks,
           });
         }
       } catch (error: unknown) {
@@ -223,26 +225,47 @@ export class AutopilotOrchestrator {
     // ⚠️ 가드는 group 단위 단일 키(target 별 아님)다. 다중 target 부분 실패(앞 target 성공 후
     //    뒤 target 실패) 시 release+rethrow → 재시도가 성공한 target 에도 재발송한다 —
     //    "전 target 미전송" 보다 작은 해악으로 수용(단일 target 운영 기준). 완전 제거는 target 별 가드.
+    // 스레드 상세가 유실된 task 를 표시해 둔다. 상세 발송 실패는 아래에서 삼키는데(메인은
+    // 이미 나갔으므로), 그 상태로 후처리까지 부르면 "본문을 못 본 채 처리 완료로 확정" 된다 —
+    // job-feed 는 후처리가 알림 표식을 찍으므로 그 공고들이 영영 다시 안 뜬다. 상세를 못 보낸
+    // task 는 후처리를 건너뛰고 다음 회차에 다시 보낸다(중복 > 유실, onDelivered 계약과 동일).
+    const detailUndelivered = new Set<number>();
+
     try {
       if (items.length > 0) {
         const mainText = items
           .map((item) => item.summary)
           .join('\n\n────────\n\n');
+        // 요약이 한 메시지로 합쳐지므로 미리보기 설정도 메시지 단위다. 한 항목이라도
+        // 끄기를 요청하면 끈다 — 켜 두면 그 항목의 링크가 미리보기로 펼쳐져, 정작
+        // 끄려던 이유(요약이 미리보기에 파묻힘)가 그대로 남는다.
+        const unfurlLinks = items.some((item) => item.unfurlLinks === false)
+          ? false
+          : undefined;
         for (const resolved of targets) {
           const { ts } = await this.slackNotifier.postMessage({
             target: resolved,
             text: mainText,
+            ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
           });
           if (ts) {
-            for (const item of items) {
+            for (const [index, item] of items.entries()) {
               if (item.detail) {
                 try {
                   await this.slackNotifier.postMessage({
                     target: resolved,
                     text: item.detail,
                     threadTs: ts,
+                    // 미리보기 설정은 스레드 댓글에도 걸어야 한다 — 링크를 여럿 싣는
+                    // 목록형 카드(job-feed)는 그 링크가 detail 에 있으므로, 메인에만
+                    // 걸면 정작 링크가 있는 쪽에서 미리보기가 그대로 펼쳐진다.
+                    // 여긴 항목 하나의 본문이라 그 항목의 설정을 그대로 쓴다.
+                    ...(item.unfurlLinks === false
+                      ? { unfurlLinks: false }
+                      : {}),
                   });
                 } catch (error: unknown) {
+                  detailUndelivered.add(index);
                   const message =
                     error instanceof Error ? error.message : String(error);
                   this.logger.warn(
@@ -253,7 +276,13 @@ export class AutopilotOrchestrator {
             }
           } else {
             // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
-            // 메인 요약은 이미 발송됐고 detail 만 누락되므로 데이터 손실은 아니나, 관측성 위해 경고.
+            // 메인 요약은 나갔으니 발송 자체는 실패가 아니다. 다만 상세에 실린 내용은 유실되므로
+            // (job-feed 는 공고 목록 전체가 상세에 있다) 그 task 의 후처리는 아래에서 건너뛴다.
+            for (const [index, item] of items.entries()) {
+              if (item.detail) {
+                detailUndelivered.add(index);
+              }
+            }
             const skippedDetailCount = items.filter(
               (item) => item.detail,
             ).length;
@@ -272,8 +301,14 @@ export class AutopilotOrchestrator {
       // 사고를 막는다). task 별로 격리해서 부른다 — 한 콜백의 실패가 다른 task 의
       // 후처리를 막으면 안 되고, 콜백 실패가 이미 나간 발송을 실패로 되돌리면 안 된다
       // (실패는 로그만 남기고 삼킨다).
-      for (const item of items) {
+      for (const [index, item] of items.entries()) {
         if (!item.onDelivered) {
+          continue;
+        }
+        if (detailUndelivered.has(index)) {
+          this.logger.warn(
+            `Autopilot[${groupKey}] 스레드 상세를 못 보내 후처리 건너뜀 — 다음 회차에 다시 발송된다`,
+          );
           continue;
         }
         try {
