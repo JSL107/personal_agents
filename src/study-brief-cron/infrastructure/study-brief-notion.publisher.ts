@@ -88,13 +88,16 @@ const formatError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const buildPageBlocks = (input: PublishStudyBriefInput): NotionPlanBlock[] => {
-  const blocks: NotionPlanBlock[] = [
-    ...buildCalloutBlocks(input.verdict),
+  const blocks: NotionPlanBlock[] = [...buildCalloutBlocks(input.verdict)];
+  if (input.diagramFileUploadId !== undefined) {
+    blocks.push({ type: 'image', fileUploadId: input.diagramFileUploadId });
+  }
+  blocks.push(
     { type: 'divider' },
     ...markdownToBlocks(input.reportMd),
     { type: 'divider' },
     { type: 'heading', text: '출처' },
-  ];
+  );
   for (const sourceUrl of input.sourceUrls) {
     blocks.push({ type: 'bullet', text: sourceUrl, link: sourceUrl });
   }

@@ -367,8 +367,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2, 기본 1). 모델 호출 순차 실행 1건의 worst-case(606초)가 실행 시간 예산(525.6초)을 이미 넘어, 2로 두면 후보가 2건 이상인 날마다 경과 시간 가드가 항상 2번째를 다음 회차로 미룬다 |
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 | `JOB_FEED_AVOID_SKILLS` | ❌ | 기피 기술(쉼표 구분). 사전에서 빼지 않고 저장은 그대로 두되, 하나라도 요구하는 공고를 알림 후보에서만 뺀다(설정을 바꾸면 다시 보인다) |
+| `STUDY_DIAGRAM_WIDTH_PX` · `STUDY_DIAGRAM_MIN_FONT_PX` · `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 오늘의 공부 그림(`STUDY_DIAGRAM_ENABLED`)의 캔버스 폭 · 최소 글자 높이 · 세로 상한(px). 실측으로 확정한 값을 넣는다 |
 
-**기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집).
+**기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집) · `STUDY_DIAGRAM_ENABLED`(오늘의 공부 그림 첨부).
 
 모의투자 추천 성적은 기본적으로 금요일 20:10 KST에 실행한다. `AUTOPILOT_PAPER_SCORE_SCHEDULE`·`AUTOPILOT_PAPER_SCORE_TIMEZONE`으로 별도 override할 수 있다.
 
