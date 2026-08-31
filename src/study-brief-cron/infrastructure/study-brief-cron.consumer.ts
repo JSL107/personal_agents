@@ -23,13 +23,13 @@ import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
-  SLACK_NOTIFIER_PORT,
-  SlackNotifierPort,
-} from '../../slack/domain/port/slack-notifier.port';
-import {
   NOTION_FILE_UPLOAD_PORT,
   NotionFileUploadPort,
 } from '../../notion/domain/port/notion-file-upload.port';
+import {
+  SLACK_NOTIFIER_PORT,
+  SlackNotifierPort,
+} from '../../slack/domain/port/slack-notifier.port';
 import {
   GenerateStudyDiagramInput,
   GenerateStudyDiagramUsecase,
