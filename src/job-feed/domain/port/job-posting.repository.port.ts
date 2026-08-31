@@ -78,6 +78,11 @@ export interface JobPostingRepositoryPort {
   // 조건을 걸면 안 된다 — 재파생의 목적 자체가 오래돼 조용히 방치된 행까지
   // 포함해 skillTags 를 되살리는 것이라, 신선도로 거르면 정작 손볼 대상이 빠진다.
   findAllForReprocess(): Promise<StoredJobPosting[]>;
+  // 채점식(match-score.ts)을 고쳤을 때 쓴다. findScoringTargets 는 프로필이 바뀐 행만
+  // 잡으므로, 산식만 바꾸면 기존 행이 옛 점수 그대로 남아 변경이 조용히 무효가 된다.
+  // 표식을 지워 다음 채점이 전량을 다시 매기게 한다 — matchScore 자체는 남겨 둔다
+  // (재채점이 덮어쓴다. 미리 지우면 그 사이 조회가 점수 없는 행을 보게 된다).
+  clearScoringMarks(): Promise<number>;
   saveSkillTags(id: number, skillTags: string[]): Promise<void>;
   // 저장소에 "언제 마지막으로 수집했는지"를 기록하는 별도 필드가 없다 — 공고를
   // 마지막으로 본 시각(lastSeenAt) 의 최댓값이 곧 마지막 수집 성공 시각이다.

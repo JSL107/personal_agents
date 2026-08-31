@@ -36,6 +36,56 @@ describe('formatJobFeedDigest', () => {
     expect(text).toContain('82');
   });
 
+  describe('카드 구조 — 회사명을 세로로 훑을 수 있어야 한다', () => {
+    // 부분 문자열만 보면 배지가 앞에 붙든 회사명이 링크에 묶이든 통과한다.
+    // 줄 단위로 구조를 단언해야 그 회귀를 잡는다.
+    const linesOf = (): string[] => {
+      return formatJobFeedDigest({
+        postings: [posting()],
+        outcomes: [],
+        unmatchedSkillTags: [],
+        lastCollectedAt: new Date(),
+      }).split('\n');
+    };
+
+    it('회사명이 줄 맨 앞에 굵게 오고 링크는 직무명에만 걸린다', () => {
+      const companyLine = linesOf().find((line) => {
+        return line.includes('토스');
+      });
+      expect(companyLine).toBe(
+        '*토스* — <https://example.test/1|백엔드 개발자>',
+      );
+    });
+
+    it('연차·지역·스킬·점수는 기울임 메타 줄로 내려간다', () => {
+      const metaLine = linesOf().find((line) => {
+        return line.includes('3~7년');
+      });
+      expect(metaLine).toBe('_3~7년 · 서울 · Java · Spring Boot · 82점_');
+    });
+
+    it('점수 배지가 줄 앞머리를 차지하지 않는다', () => {
+      for (const line of linesOf()) {
+        expect(line.startsWith('• [')).toBe(false);
+        expect(line.startsWith('[82점]')).toBe(false);
+      }
+    });
+
+    it('건과 건 사이가 빈 줄로 끊긴다', () => {
+      const text = formatJobFeedDigest({
+        postings: [posting(), posting({ id: 2, company: '카카오' })],
+        outcomes: [],
+        unmatchedSkillTags: [],
+        lastCollectedAt: new Date(),
+      });
+      const lines = text.split('\n');
+      const secondCompanyIndex = lines.findIndex((line) => {
+        return line.includes('카카오');
+      });
+      expect(lines[secondCompanyIndex - 1]).toBe('');
+    });
+  });
+
   it('상한이 없으면 이상으로 적는다', () => {
     const text = formatJobFeedDigest({
       postings: [posting({ minYears: 7, maxYears: null })],
