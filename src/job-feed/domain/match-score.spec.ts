@@ -224,6 +224,96 @@ describe('scorePosting', () => {
     expect(result.yearsFit).toBe('FIT');
   });
 
+  // 🔴 2026-08-31 실측 결함의 회귀 테스트. 사전이 화이트리스트로 동작하던 때는 공고가
+  // 요구한 기술 중 사전이 아는 것만 남아 분모가 줄었고, 프론트 스택만 적힌 공고가
+  // 만점을 받았다(실측 247건 중 97건이 기준점 80 통과 — 필터가 사실상 무효).
+  it('사전에 없는 요구 기술도 분모에 센다 — 아는 것만 남겨 만점을 주지 않는다', () => {
+    const frontendHeavy = posting({
+      skillTags: ['React', 'CSS', 'HTML', 'JavaScript'],
+    });
+    const result = scorePosting(
+      frontendHeavy,
+      buildMatchProfile({
+        techTags: ['JavaScript'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['JavaScript']);
+    expect(result.missingSkills).toEqual(['React', 'CSS', 'HTML']);
+    expect(result.skillHitRatio).toBeCloseTo(0.25);
+    expect(result.score).toBeLessThan(80);
+  });
+
+  it('사전에 없어도 공고와 프로필 양쪽에 있으면 만난다 — 예전에는 둘 다 버려져 못 만났다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['Firebase', 'OpenCV'] }),
+      buildMatchProfile({
+        techTags: ['OpenCV'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['OpenCV']);
+  });
+
+  it('표기만 다른 같은 기술은 키로 비교해 만난다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['OpenCV'] }),
+      buildMatchProfile({
+        techTags: ['open-cv'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['OpenCV']);
+  });
+
+  // 이 피드는 백엔드 공고를 고르는 것이 목적이다. 곁다리로 익힌 프론트 기술이
+  // 매칭에 쓰이면 프론트 공고가 만점으로 올라온다 — 실측(2026-08-31)에서
+  // 'Backend Engineer' 제목에 React·TypeScript·Next.js 만 적힌 공고가 3/3 = 100점.
+  it('프로필의 프론트·모바일 전용 기술은 매칭에 쓰지 않는다', () => {
+    const profile = buildMatchProfile({
+      techTags: ['TypeScript', 'React', 'Next.js', 'Swift', 'NestJS'],
+      years: 5,
+      locations: ['서울'],
+    });
+    expect(profile.skillTags).toEqual(['TypeScript', 'NestJS']);
+
+    const result = scorePosting(
+      posting({ skillTags: ['React', 'TypeScript', 'Next.js'] }),
+      profile,
+    );
+    expect(result.matchedSkills).toEqual(['TypeScript']);
+    expect(result.missingSkills).toEqual(['React', 'Next.js']);
+    expect(result.score).toBeLessThan(80);
+  });
+
+  // 🔴 공고 쪽에서 빼면 프론트 스택만 적힌 공고가 "요구사항 없는 공고" 가 돼 다시
+  // 만점으로 올라온다 — 이 파일이 고친 결함의 재발 경로다.
+  it('공고 쪽 프론트 기술은 분모에 그대로 남는다 — 못 맞추는 요구도 요구다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['React', 'CSS', 'Java'] }),
+      buildMatchProfile({ techTags: ['Java'], years: 5, locations: ['서울'] }),
+    );
+    expect(result.skillHitRatio).toBeCloseTo(1 / 3);
+  });
+
+  // 양쪽에서 쓰는 언어까지 빼면 백엔드 매칭 자체가 무너진다.
+  it('양쪽에서 쓰는 언어는 빼지 않는다 — TypeScript 는 이 프로필의 백엔드 주력이다', () => {
+    const profile = buildMatchProfile({
+      techTags: ['TypeScript', 'JavaScript', 'Kotlin', 'Node.js'],
+      years: 5,
+      locations: ['서울'],
+    });
+    expect(profile.skillTags).toEqual([
+      'TypeScript',
+      'JavaScript',
+      'Kotlin',
+      'Node.js',
+    ]);
+  });
+
   it('점수는 0~100 정수다', () => {
     const result = scorePosting(
       posting(),

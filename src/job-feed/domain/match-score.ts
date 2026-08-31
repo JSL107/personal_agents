@@ -1,5 +1,9 @@
 import { NormalizedJobPosting } from './job-feed.type';
-import { normalizeSkillTags } from './skill-dictionary';
+import {
+  FRONTEND_ONLY_SKILL_KEYS,
+  normalizeSkillTags,
+  toSkillKey,
+} from './skill-dictionary';
 
 export type YearsFit = 'FIT' | 'OVER' | 'UNDER' | 'NEUTRAL';
 
@@ -25,13 +29,20 @@ export interface BuildMatchProfileInput {
 }
 
 // 프로필 기술도 공고와 같은 사전을 통과시킨다. 한쪽만 다듬으면 사전이 절반만 작동한다.
+//
+// 다만 프론트·모바일 전용 기술은 여기서만 뺀다. 이 피드는 백엔드 공고를 고르는 것이
+// 목적인데, 곁다리로 익힌 React·Next.js 가 매칭에 쓰이면 프론트 공고가 만점으로
+// 올라온다(실측: 'Backend Engineer' 제목에 React·TypeScript·Next.js 만 적힌 공고가
+// 3/3 = 100점). 공고 쪽에서 빼면 안 되는 이유는 FRONTEND_ONLY_SKILL_KEYS 주석 참조.
 export const buildMatchProfile = ({
   techTags,
   years,
   locations,
 }: BuildMatchProfileInput): MatchProfile => {
   return {
-    skillTags: normalizeSkillTags(techTags).matched,
+    skillTags: normalizeSkillTags(techTags).identified.filter((tag) => {
+      return !FRONTEND_ONLY_SKILL_KEYS.has(toSkillKey(tag));
+    }),
     years,
     locations,
   };
@@ -82,12 +93,14 @@ export const scorePosting = (
   posting: NormalizedJobPosting,
   profile: MatchProfile,
 ): MatchBreakdown => {
-  const profileSkills = new Set(profile.skillTags);
+  // 키로 비교한다. 사전에 없는 기술은 원본 표기 그대로 담기므로(skill-dictionary.ts),
+  // 공고의 'react' 와 프로필의 'React' 가 표기 차이만으로 못 만나면 안 된다.
+  const profileSkillKeys = new Set(profile.skillTags.map(toSkillKey));
   const matchedSkills = posting.skillTags.filter((tag) => {
-    return profileSkills.has(tag);
+    return profileSkillKeys.has(toSkillKey(tag));
   });
   const missingSkills = posting.skillTags.filter((tag) => {
-    return !profileSkills.has(tag);
+    return !profileSkillKeys.has(toSkillKey(tag));
   });
   const skillHitRatio =
     posting.skillTags.length === 0

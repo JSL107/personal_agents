@@ -208,7 +208,7 @@ export class CollectJobPostingsUsecase {
     if (
       !isBackendPosting({
         title: raw.title,
-        skillTags: skills.matched,
+        skillTags: skills.identified,
         rawSkillTags: raw.rawSkillTags,
       })
     ) {
@@ -233,7 +233,7 @@ export class CollectJobPostingsUsecase {
       companyKey: toCompanyKey(raw.company),
       title: raw.title,
       detailUrl: raw.detailUrl,
-      skillTags: skills.matched,
+      skillTags: skills.identified,
       rawSkillTags: raw.rawSkillTags,
       minYears: raw.minYears,
       maxYears: raw.maxYears,
