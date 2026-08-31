@@ -56,7 +56,7 @@ export const buildPaperRecommendationPrompt = (
           .join('\n');
 
   return `전략: ${strategyLabel}
-현금 잔액: ${input.cashBalance}
+매수 가능 현금: ${input.purchasableCash}
 계좌 평가액: ${input.accountValuation}
 
 [보유 종목]

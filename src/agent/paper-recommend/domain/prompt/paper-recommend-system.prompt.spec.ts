@@ -25,7 +25,7 @@ describe('buildPaperRecommendationPrompt', () => {
   it('전략, 보유 종목, 후보와 JSON 출력 제약을 포함한다', () => {
     const prompt = buildPaperRecommendationPrompt({
       strategy: 'LONG_TERM',
-      cashBalance: 7_000_000,
+      purchasableCash: 7_000_000,
       accountValuation: 10_000_000,
       maximumWeightPercent: 20,
       positions: [
@@ -53,7 +53,7 @@ describe('buildPaperRecommendationPrompt', () => {
     expect(prompt).toContain('최대 3종');
     expect(prompt).toContain('20%');
     expect(prompt).toContain('재매수 금지');
-    expect(prompt).toContain('현금 잔액: 7000000');
+    expect(prompt).toContain('매수 가능 현금: 7000000');
     expect(prompt).toContain('계좌 평가액: 10000000');
     expect(prompt).toContain(JSON.stringify(indicators));
     expect(prompt).toContain('지표 없음');
@@ -83,7 +83,7 @@ describe('buildPaperRecommendationPrompt', () => {
 
     const userPrompt = buildPaperRecommendationPrompt({
       strategy: 'SWING',
-      cashBalance: 1_000_000,
+      purchasableCash: 1_000_000,
       accountValuation: 1_000_000,
       maximumWeightPercent: 12.5,
       positions: [],

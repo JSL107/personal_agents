@@ -84,7 +84,9 @@ export interface ConstrainedPaperRecommendation {
 
 export interface BuildPaperRecommendationPromptInput {
   strategy: PaperRecommendationStrategy;
-  cashBalance: number;
+  // 잔고가 아니라 지금 매수에 쓸 수 있는 금액. 배당은 권리락일에 잔고로 잡히지만 지급일
+  // 전까지는 쓸 수 없어, 잔고를 실으면 모델이 받지도 않은 돈을 근거로 종목을 고른다.
+  purchasableCash: number;
   accountValuation: number;
   // 이 회차에 배정될 종목당 비중. 시스템 프롬프트와 같은 값을 써야 한다 — 두 프롬프트가
   // 서로 다른 비중을 말하면 모델이 무엇을 기준으로 골랐는지 사후에 가릴 수 없다.
