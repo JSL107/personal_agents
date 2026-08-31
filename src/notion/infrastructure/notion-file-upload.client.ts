@@ -11,6 +11,11 @@ const FILE_UPLOAD_ENDPOINT = 'https://api.notion.com/v1/file_uploads';
 // 이 경로에만 별도로 명시한다. 아래 값은 실호출로 확인하지 않은 임시값 — 실제 최소 지원 버전은 Task 8 에서 확정한다.
 const FILE_UPLOAD_NOTION_VERSION = '2022-06-28';
 const CONTENT_TYPE_PNG = 'image/png';
+// Node 의 fetch 는 응답이 오지 않아도 스스로 끊지 않는다. 이 호출은 그림 첨부(선택 기능)
+// 하나 때문에 본체인 노션 페이지 발행·Slack 전달까지 무기한 멈추게 하는 경로라 상한이 필수다.
+// 생성 요청은 작은 JSON 본문이라 짧게, 전송 요청은 PNG 수백 KB 업로드라 넉넉하게 둔다.
+const CREATE_UPLOAD_TIMEOUT_MS = 10_000;
+const SEND_CONTENT_TIMEOUT_MS = 30_000;
 
 interface CreatedFileUpload {
   id: string;
@@ -54,6 +59,7 @@ export class NotionFileUploadClient implements NotionFileUploadPort {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ filename, content_type: CONTENT_TYPE_PNG }),
+      signal: AbortSignal.timeout(CREATE_UPLOAD_TIMEOUT_MS),
     });
     await assertOk(response, '파일 업로드 객체 생성');
 
@@ -94,6 +100,7 @@ export class NotionFileUploadClient implements NotionFileUploadPort {
           // Content-Type 을 직접 넣지 않는다. multipart 경계 문자열은 런타임이 붙인다.
         },
         body: form,
+        signal: AbortSignal.timeout(SEND_CONTENT_TIMEOUT_MS),
       },
     );
     await assertOk(response, '파일 내용 전송');
