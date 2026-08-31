@@ -142,7 +142,17 @@ export const formatPaperTradingReport = (
   lines.push(
     '',
     `총 평가액 *${formatMoney(result.totalValue)}* · 현금 ${formatMoney(result.cashBalance)} · 총 수익률 *${formatRate(result.returnRate)}*`,
+    // 증권사 계좌와 같은 D+0 / D+2 표기를 쓴다. "예수금 · 미결제 대금" 으로 적으면
+    // 매수 대금이 아직 안 빠진 날 예수금이 현금보다 커 보여(2,106,271원인데 5,417,053원)
+    // 어느 쪽이 실제 잔고인지 읽히지 않는다. 장부의 cashBalance 는 체결 즉시 반영이라
+    // 결제가 다 끝난 뒤의 잔고, 곧 D+2 다.
+    `예수금 D+0 ${formatMoney(result.settledCash)} · D+2 ${formatMoney(result.cashBalance)}`,
   );
+  if ((result.dividendCount ?? 0) > 0) {
+    lines.push(
+      `배당 수취 ${result.dividendCount}건 · 순입금 ${formatMoney(result.dividendNetTotal)}`,
+    );
+  }
   if (result.realizedPnl !== null && result.unrealizedPnl !== null) {
     lines.push(
       `확정 손익 ${formatSignedMoney(result.realizedPnl)} · 보유 평가손익 ${formatSignedMoney(result.unrealizedPnl)}`,

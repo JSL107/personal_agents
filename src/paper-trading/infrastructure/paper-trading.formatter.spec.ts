@@ -10,6 +10,10 @@ const RESULT: EvaluateAccountResult = {
   skipped: false,
   tradeDate: '2026-08-11',
   cashBalance: '800000',
+  settledCash: '700000',
+  unsettledCash: '100000',
+  dividendNetTotal: '0',
+  dividendCount: 0,
   positionValue: '240000',
   totalValue: '1040000',
   returnRate: '4',
@@ -111,6 +115,21 @@ describe('formatPaperTradingReport', () => {
     });
 
     expect(text).toContain('벤치마크 종가 2,847.32');
+  });
+
+  // 매수 대금이 아직 안 빠진 날은 D+0 이 D+2 보다 크다. 그 관계가 뒤집혀 보이지 않아야
+  // 어느 쪽이 실제 잔고인지 읽힌다(RESULT 의 cashBalance 800,000 이 D+2 다).
+  it('예수금을 D+0·D+2 로 갈라 표시하고 배당 요약을 붙인다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      settledCash: '900000',
+      unsettledCash: '-100000',
+      dividendNetTotal: '1330319',
+      dividendCount: 1,
+    });
+
+    expect(text).toContain('예수금 D+0 900,000원 · D+2 800,000원');
+    expect(text).toContain('배당 수취 1건 · 순입금 1,330,319원');
   });
 
   it('포지션이 0건이면 보유 없음이라고 표시한다', () => {

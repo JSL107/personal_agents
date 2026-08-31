@@ -30,3 +30,9 @@ export const nextWeekday = (currentDate: Date): Date => {
   }
   return nextDate;
 };
+
+// 결제일 = 체결일 + 2영업일. 공휴일 테이블이 없어 주말만 건너뛴다(nextWeekday 와 같은 한계).
+// 총평가에 영향이 없는 표시용 값이라 이 근사로 충분하다 — 정확한 개장일은 daily_price 행
+// 존재로만 알 수 있는데 미래 날짜에는 그 행이 없다.
+export const settlementDateOf = (tradeDate: Date): Date =>
+  nextWeekday(nextWeekday(tradeDate));

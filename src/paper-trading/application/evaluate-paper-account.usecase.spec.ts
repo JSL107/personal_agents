@@ -56,6 +56,7 @@ const createBuyTrade = (input: {
   fee: decimal('0'),
   tax: decimal('0'),
   tickerId: input.tickerId,
+  settlementDate: null,
 });
 
 interface EvaluationFixture {
@@ -86,6 +87,7 @@ interface EvaluationFixture {
     paperAccount: { update: jest.Mock };
     paperPosition: { findMany: jest.Mock };
     paperTrade: { findMany: jest.Mock };
+    paperCorporateAction: { findMany: jest.Mock };
     paperEquitySnapshot: { upsert: jest.Mock };
     paperPositionSnapshot: {
       deleteMany: jest.Mock;
@@ -94,15 +96,31 @@ interface EvaluationFixture {
   };
 }
 
+interface TestTrade {
+  side: string;
+  quantity: Prisma.Decimal;
+  price: Prisma.Decimal;
+  fee: Prisma.Decimal;
+  tax: Prisma.Decimal;
+  tickerId: number;
+  settlementDate: Date | null;
+}
+
 const createFixture = (input?: {
   seedAmount?: string;
   cashBalance?: string;
   positions?: ReturnType<typeof createPosition>[];
-  trades?: ReturnType<typeof createBuyTrade>[];
+  trades?: TestTrade[];
   barsBySymbol?: Record<string, DailyBar[]>;
   errorsBySymbol?: Record<string, Error>;
   allAccountNames?: string[];
   missingAccountNames?: string[];
+  corporateActions?: {
+    kind: 'DIVIDEND';
+    tickerId: number;
+    cashDelta: Prisma.Decimal;
+    quantityDelta: Prisma.Decimal;
+  }[];
 }): EvaluationFixture => {
   const positions = input?.positions ?? [];
   const trades = input?.trades ?? [];
@@ -119,6 +137,9 @@ const createFixture = (input?: {
     },
     paperTrade: {
       findMany: jest.fn().mockResolvedValue(trades),
+    },
+    paperCorporateAction: {
+      findMany: jest.fn().mockResolvedValue(input?.corporateActions ?? []),
     },
     paperEquitySnapshot: {
       upsert: jest.fn().mockResolvedValue({ id: 301 }),
@@ -207,6 +228,46 @@ const createFixture = (input?: {
 };
 
 describe('EvaluatePaperAccountUsecase', () => {
+  it('기업행동 원장을 불변식에 반영하고 결제 완료 예수금과 배당 합계를 계산한다', async () => {
+    const position = createPosition({
+      tickerId: 21,
+      code: '005930',
+      quantity: '1',
+      avgPrice: '100',
+    });
+    const trade = {
+      ...createBuyTrade({ tickerId: 21, quantity: '1', price: '100' }),
+      settlementDate: date('2026-08-12'),
+    };
+    const { usecase } = createFixture({
+      seedAmount: '1000',
+      cashBalance: '1100',
+      positions: [position],
+      trades: [trade],
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 21,
+          cashDelta: decimal('200'),
+          quantityDelta: decimal('0'),
+        },
+      ],
+      barsBySymbol: { '005930': [createBar('2026-08-11', '100')] },
+    });
+
+    const result = await usecase.execute({
+      accountName: 'DEFAULT',
+      executedAt: new Date('2026-08-11T08:40:00.000Z'),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.settledCash).toBe('1200');
+    expect(result.unsettledCash).toBe('-100');
+    expect(result.dividendNetTotal).toBe('200');
+    expect(result.dividendCount).toBe(1);
+    expect(result.invariantViolations).toEqual([]);
+  });
+
   it('포지션 2건을 각각 최신 종가로 평가해 계좌 총액을 합산한다', async () => {
     const positions = [
       createPosition({
@@ -250,6 +311,10 @@ describe('EvaluatePaperAccountUsecase', () => {
       skipped: false,
       tradeDate: '2026-08-11',
       cashBalance: '800000',
+      settledCash: '800000',
+      unsettledCash: '0',
+      dividendNetTotal: '0',
+      dividendCount: 0,
       positionValue: '240000',
       totalValue: '1040000',
       returnRate: '4',
@@ -312,6 +377,10 @@ describe('EvaluatePaperAccountUsecase', () => {
       skipped: false,
       tradeDate: '2026-08-12',
       cashBalance: '1000000',
+      settledCash: '1000000',
+      unsettledCash: '0',
+      dividendNetTotal: '0',
+      dividendCount: 0,
       positionValue: '0',
       totalValue: '1000000',
       returnRate: '0',
@@ -511,6 +580,10 @@ describe('EvaluatePaperAccountUsecase', () => {
       skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
       tradeDate: '2026-08-09',
       cashBalance: '123',
+      settledCash: '123',
+      unsettledCash: '0',
+      dividendNetTotal: '0',
+      dividendCount: 0,
       positionValue: null,
       totalValue: null,
       returnRate: null,

@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { DailyBar } from '../../market-data/domain/market-data.type';
+import {
+  DailyBar,
+  MoneyValue,
+} from '../../market-data/domain/market-data.type';
 import {
   MARKET_DATA_PORT,
   MarketDataPort,
@@ -14,8 +17,11 @@ import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
   calculatePositionValuation,
+  calculateUnsettledCash,
 } from '../domain/paper-valuation';
 import {
+  InvariantCorporateActionRow,
+  InvariantTradeRow,
   PaperPositionWithTicker,
   PaperTradingPrismaRepository,
 } from '../infrastructure/paper-trading.prisma.repository';
@@ -52,6 +58,10 @@ export interface EvaluateAccountResult {
   skipReason?: string;
   tradeDate: string | null;
   cashBalance: string;
+  settledCash: string;
+  unsettledCash: string;
+  dividendNetTotal: string;
+  dividendCount?: number;
   positionValue: string | null;
   totalValue: string | null;
   returnRate: string | null;
@@ -84,6 +94,48 @@ interface PositionPrice {
   bars: DailyBar[];
   latest: DailyBar;
 }
+
+interface CashSettlementSummary {
+  settledCash: string;
+  unsettledCash: string;
+  dividendNetTotal: string;
+  dividendCount: number;
+}
+
+const emptyCashSettlementSummary = (
+  cashBalance: string,
+): CashSettlementSummary => ({
+  settledCash: cashBalance,
+  unsettledCash: '0',
+  dividendNetTotal: '0',
+  dividendCount: 0,
+});
+
+const calculateCashSettlementSummary = (input: {
+  cashBalance: MoneyValue;
+  tradeDate: Date;
+  trades: InvariantTradeRow[];
+  corporateActions: InvariantCorporateActionRow[];
+}): CashSettlementSummary => {
+  const unsettledCash = calculateUnsettledCash({
+    asOf: input.tradeDate,
+    zero: input.cashBalance.times(0),
+    trades: input.trades,
+  });
+  const dividendActions = input.corporateActions.filter(
+    (corporateAction) => corporateAction.kind === 'DIVIDEND',
+  );
+  const dividendNetTotal = dividendActions.reduce(
+    (total, corporateAction) => total.plus(corporateAction.cashDelta),
+    input.cashBalance.times(0),
+  );
+  return {
+    settledCash: input.cashBalance.minus(unsettledCash).toString(),
+    unsettledCash: unsettledCash.toString(),
+    dividendNetTotal: dividendNetTotal.toString(),
+    dividendCount: dividendActions.length,
+  };
+};
 
 const buildEvaluatedPositionRows = (
   pricedPositions: PositionPrice[],
@@ -240,6 +292,7 @@ export class EvaluatePaperAccountUsecase {
         skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -263,6 +316,7 @@ export class EvaluatePaperAccountUsecase {
         skipReason: `${unpricedPositions.length}개 보유 종목의 평가 시세를 찾을 수 없습니다: ${missingCodes}`,
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -310,6 +364,7 @@ export class EvaluatePaperAccountUsecase {
           '분할·배당락 등 기업행동이 의심되는 가격 변동을 발견했습니다.',
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -348,6 +403,9 @@ export class EvaluatePaperAccountUsecase {
                 '시세 조회 중 계좌 상태가 변경되어 스냅샷을 적재하지 않았습니다.',
               tradeDate: tradeDateText,
               cashBalance: freshState.account.cashBalance.toString(),
+              ...emptyCashSettlementSummary(
+                freshState.account.cashBalance.toString(),
+              ),
               positionValue: null,
               totalValue: null,
               returnRate: null,
@@ -372,7 +430,14 @@ export class EvaluatePaperAccountUsecase {
             tickerId: position.tickerId,
             quantity: position.quantity,
           })),
+          corporateActions: freshState.corporateActions,
         }).map((violation) => violation.detail);
+        const cashSettlement = calculateCashSettlementSummary({
+          cashBalance: freshState.account.cashBalance,
+          tradeDate,
+          trades: freshState.trades,
+          corporateActions: freshState.corporateActions,
+        });
         if (invariantViolations.length > 0) {
           return {
             snapshot: null,
@@ -381,6 +446,7 @@ export class EvaluatePaperAccountUsecase {
               skipReason: '거래 원장과 계좌 상태의 불변식이 일치하지 않습니다.',
               tradeDate: tradeDateText,
               cashBalance: freshState.account.cashBalance.toString(),
+              ...cashSettlement,
               positionValue: null,
               totalValue: null,
               returnRate: null,
@@ -446,6 +512,7 @@ export class EvaluatePaperAccountUsecase {
             skipped: false,
             tradeDate: tradeDateText,
             cashBalance: freshState.account.cashBalance.toString(),
+            ...cashSettlement,
             positionValue: valuation.positionValue,
             totalValue: valuation.totalValue,
             returnRate: valuation.returnRate,

@@ -45,6 +45,34 @@ describe('verifyPaperInvariants', () => {
     ]);
   });
 
+  describe('배당 기업행동 원장 대조', () => {
+    it('배당 현금만 더하면 CASH_MISMATCH를 반환한다', () => {
+      const input = consistentInput();
+      input.cashBalance = decimal('1331266');
+
+      expect(verifyPaperInvariants(input)).toEqual([
+        {
+          kind: 'CASH_MISMATCH',
+          detail: '현금 잔액 불일치: 원장 기준 947원, 실제 1331266원',
+        },
+      ]);
+    });
+
+    it('같은 현금을 기업행동 원장으로 기록하면 위반이 없다', () => {
+      const input = consistentInput();
+      input.cashBalance = decimal('1331266');
+      input.corporateActions = [
+        {
+          tickerId: 1,
+          cashDelta: decimal('1330319'),
+          quantityDelta: decimal('0'),
+        },
+      ];
+
+      expect(verifyPaperInvariants(input)).toEqual([]);
+    });
+  });
+
   it('포지션 수량이 거래 합계와 다르면 QUANTITY_MISMATCH를 반환한다', () => {
     const input = consistentInput();
     input.positions = [{ tickerId: 1, quantity: decimal('2') }];

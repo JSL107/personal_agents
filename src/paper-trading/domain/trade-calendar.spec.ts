@@ -1,4 +1,4 @@
-import { nextWeekday } from './trade-calendar';
+import { nextWeekday, settlementDateOf } from './trade-calendar';
 
 describe('nextWeekday', () => {
   it.each([
@@ -14,6 +14,14 @@ describe('nextWeekday', () => {
   it('평일에는 바로 다음 날을 반환한다', () => {
     expect(nextWeekday(new Date('2026-08-18T12:00:00.000Z'))).toEqual(
       new Date('2026-08-19T00:00:00.000Z'),
+    );
+  });
+});
+
+describe('settlementDateOf', () => {
+  it('체결일에서 주말을 건너뛴 이틀 뒤 결제일을 계산한다', () => {
+    expect(settlementDateOf(new Date('2026-08-14T12:00:00.000Z'))).toEqual(
+      new Date('2026-08-18T00:00:00.000Z'),
     );
   });
 });
