@@ -820,6 +820,91 @@ describe('AutopilotOrchestrator', () => {
     expect(release).not.toHaveBeenCalled();
   });
 
+  // 상세를 스레드로 내리는 task 는 "메인만 나가고 목록은 유실" 이 가능하다. 그 상태로
+  // 후처리까지 부르면 사용자가 목록을 못 본 채 처리 완료로 확정된다 — job-feed 는 후처리가
+  // 알림 표식을 찍으므로 그 공고들이 영영 다시 안 뜬다.
+  describe('스레드 상세 — 유실되면 후처리를 건너뛰고, 미리보기 설정을 함께 건다', () => {
+    const makeOrchestrator = (
+      postMessage: jest.Mock,
+      onDelivered: jest.Mock,
+      unfurlLinks?: boolean,
+    ): AutopilotOrchestrator => {
+      const task = {
+        id: 'daily-eval',
+        run: jest.fn().mockResolvedValue({
+          skip: false,
+          summaryText: 'S',
+          detailText: 'D',
+          onDelivered,
+          ...(unfurlLinks === undefined ? {} : { unfurlLinks }),
+        }),
+      };
+      return new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+    };
+
+    const run = async (orchestrator: AutopilotOrchestrator): Promise<void> => {
+      await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+    };
+
+    it('스레드 댓글 발송이 실패하면 onDelivered 를 부르지 않는다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' })
+        .mockRejectedValueOnce(new Error('thread 실패'));
+
+      await run(makeOrchestrator(postMessage, onDelivered));
+
+      expect(onDelivered).not.toHaveBeenCalled();
+    });
+
+    it('메인 ts 를 못 받아 상세를 붙일 수 없어도 onDelivered 를 부르지 않는다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+
+      await run(makeOrchestrator(postMessage, onDelivered));
+
+      expect(onDelivered).not.toHaveBeenCalled();
+    });
+
+    it('상세가 정상 전달되면 onDelivered 를 부른다 — 위 두 케이스의 대조군', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+
+      await run(makeOrchestrator(postMessage, onDelivered));
+
+      expect(onDelivered).toHaveBeenCalledTimes(1);
+    });
+
+    // 링크가 실리는 곳이 스레드 댓글이므로, 메인에만 끄면 정작 링크가 있는 쪽에서
+    // 미리보기가 그대로 펼쳐진다.
+    it('unfurlLinks=false 는 스레드 댓글 발송에도 함께 걸린다', async () => {
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+
+      await run(
+        makeOrchestrator(
+          postMessage,
+          jest.fn().mockResolvedValue(undefined),
+          false,
+        ),
+      );
+
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ threadTs: 'TS1', unfurlLinks: false }),
+      );
+    });
+  });
+
   // 다중 target 부분 실패 — 앞 target 성공 후 뒤 target 발송 실패 시 release 1회 + rethrow.
   // 가드가 group 단위 단일 키라 재시도는 성공 target 에도 재발송되는 트레이드오프를 고정한다
   // ("전 target 미전송" 보다 작은 해악으로 수용 — orchestrator 주석 참조).
