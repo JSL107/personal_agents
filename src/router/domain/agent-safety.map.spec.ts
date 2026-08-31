@@ -15,11 +15,13 @@ describe('agent-safety.map', () => {
   //  - JOB_APPLICATION: addApplication / updateApplication 으로 지원 기록을 쓴다
   //  - BLOG: Notion 초안 페이지를 만들고 상태를 갱신한다
   //  - BLOG_PUBLISH: 익명화한 초안을 GitHub Pages 로 발행한다
+  //  - PAPER_RECOMMEND: saveRecommendationAtomically 로 추천·모의 주문을 트랜잭션 저장한다
   //  - ISSUE_LABELER: issues.addLabels 로 레포 이슈를 바꾼다
   it.each([
     [AgentType.VACATION, AgentSafetyLevel.WRITE],
     [AgentType.JOB_APPLICATION, AgentSafetyLevel.WRITE],
     [AgentType.BLOG, AgentSafetyLevel.WRITE],
+    [AgentType.PAPER_RECOMMEND, AgentSafetyLevel.WRITE],
     [AgentType.BLOG_PUBLISH, AgentSafetyLevel.IRREVERSIBLE],
     [AgentType.ISSUE_LABELER, AgentSafetyLevel.IRREVERSIBLE],
   ])('%s 는 %s 등급이다', (agentType, expected) => {
@@ -71,6 +73,19 @@ describe('agent-safety.map', () => {
         )
         .filter(hasWarningMark);
       expect(wrongMark).toEqual([]);
+    });
+
+    // 자연어 분류 후보로 올린 worker 는 실행 경로가 열린 것이므로, 행동을 실측해
+    // 등급을 확정해야 한다. UNAUDITED 인 채로 후보에 오르면 "무엇이 남는지 모르는 worker"
+    // 가 자연어 한 마디로 실행될 수 있다.
+    it('분류 후보로 올라온 worker 는 UNAUDITED 로 남아 있지 않다', () => {
+      const unaudited = Object.values(AgentType)
+        .filter(listedInPrompt)
+        .filter(
+          (agentType) =>
+            AGENT_SAFETY_LEVEL[agentType] === AgentSafetyLevel.UNAUDITED,
+        );
+      expect(unaudited).toEqual([]);
     });
   });
 });

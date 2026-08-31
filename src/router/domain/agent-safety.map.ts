@@ -14,6 +14,10 @@ export enum AgentSafetyLevel {
   WRITE = 'WRITE',
   // 레포·외부 서비스에 되돌리기 어려운 변화를 남긴다.
   IRREVERSIBLE = 'IRREVERSIBLE',
+  // 아직 행동을 실측하지 않았다. 자연어 라우팅 후보가 아니라 지금은 판정이 필요 없지만,
+  // "안전하다"는 뜻이 아니다 — 이 맵을 게이트나 감사에 쓰려면 먼저 실측해 등급을 확정해야 한다.
+  // READ_ONLY 로 뭉뚱그리면 미검증이 안전 신호로 둔갑한다.
+  UNAUDITED = 'UNAUDITED',
 }
 
 // Record 로 전수 강제 — AgentType 에 worker 를 추가하면 여기서 컴파일 에러가 난다.
@@ -40,19 +44,21 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   // 조회 전용 — 매수/매도 등록 경로가 없다 (분류 프롬프트에도 명시돼 있다).
   [AgentType.PAPER_TRADE]: AgentSafetyLevel.READ_ONLY,
 
-  // --- 라우터 미등록 (cron·webhook·내부 판정 전용) ---
-  [AgentType.SUBCONSCIOUS_GATE]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.CONTRADICTION_JUDGE]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.REVIEW_REPLY_JUDGE]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.HUMANIZER]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.DOCS_AUDIT_OPTIMIZER]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.DOCS_AUDIT_EVALUATOR]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.PREFERENCE_LEARNING]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.EVENING_RETRO]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.OPS_SUPERVISOR]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.INVEST]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.PAPER_RECOMMEND]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.CTO_STUDY]: AgentSafetyLevel.READ_ONLY,
+  // --- 라우터 미등록 (cron·webhook·내부 판정 전용) — 행동 미실측 ---
+  // 자연어 분류 후보가 아니라 이번 변경의 소비 경로(프롬프트 표식)에 걸리지 않는다.
+  // 등급을 READ_ONLY 로 단정하지 않는 이유는 PAPER_RECOMMEND 가 보여준다 — 실행 경로가
+  // 다른 모듈의 repository 로 넘어가면 워커 디렉터리만 봐서는 쓰기를 놓친다.
+  [AgentType.SUBCONSCIOUS_GATE]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.CONTRADICTION_JUDGE]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.REVIEW_REPLY_JUDGE]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.HUMANIZER]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.DOCS_AUDIT_OPTIMIZER]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.DOCS_AUDIT_EVALUATOR]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.PREFERENCE_LEARNING]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.EVENING_RETRO]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.OPS_SUPERVISOR]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.INVEST]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.CTO_STUDY]: AgentSafetyLevel.UNAUDITED,
 
   // --- 사용자 데이터를 기록하는 worker (되돌릴 경로 있음) ---
   // registerLeave / cancelLeave — 잘못 등록해도 취소로 되돌린다.
@@ -61,6 +67,9 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.JOB_APPLICATION]: AgentSafetyLevel.WRITE,
   // Notion '블로그 초안' DB 에 페이지를 만들고 상태를 갱신한다.
   [AgentType.BLOG]: AgentSafetyLevel.WRITE,
+  // GeneratePaperRecommendationUsecase → saveRecommendationAtomically 로 추천과 모의 주문을
+  // 트랜잭션 안에서 저장한다 (paperAccount.update · paperOrder 생성).
+  [AgentType.PAPER_RECOMMEND]: AgentSafetyLevel.WRITE,
 
   // --- 외부에 되돌리기 어려운 변화를 남기는 worker ---
   // 익명화한 초안을 GitHub Pages 로 발행한다 (PreviewGate 승인이 앞에 있지만 등급은 행동 기준).
