@@ -201,11 +201,16 @@ export class StudyBriefCronConsumer extends WorkerHost {
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
       });
-      const diagramFileUploadId = await this.buildDiagramOrNull({
-        topic: research.topic,
-        kind: research.kind,
-        reportMd: research.reportMd,
-      });
+      // 노션 발행 대상이 없는 Slack-only 구성에서는 그림을 만들 이유가 없다 — 어차피
+      // publishToNotionOrNull() 이 결과를 버린다. codex 를 최대 두 번 돌리고 파일까지
+      // 올린 뒤 버리는 매일 반복되는 낭비를 막는다(codex 는 구독 쿼터를 쓴다).
+      const diagramFileUploadId = this.resolveNotionDatabaseId()
+        ? await this.buildDiagramOrNull({
+            topic: research.topic,
+            kind: research.kind,
+            reportMd: research.reportMd,
+          })
+        : null;
       const published = await this.publishToNotionOrNull({
         briefId: saved.id,
         research,
@@ -330,10 +335,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     verdict,
     diagramFileUploadId,
   }: PublishToNotionInput): Promise<PublishedStudyBrief | null> {
-    const databaseId = this.configService
-      .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
-      ?.trim();
-    if (!databaseId) {
+    if (!this.resolveNotionDatabaseId()) {
       return null;
     }
     let published: PublishedStudyBrief;
@@ -362,6 +364,14 @@ export class StudyBriefCronConsumer extends WorkerHost {
       );
     }
     return published;
+  }
+
+  // 두 곳(그림 생성 진입 전, 발행 대상 확인)이 같은 설정을 따로 읽으면 한쪽만 고쳐지는
+  // 사고가 난다 — 작은 헬퍼로 묶어 둘이 항상 같은 판단을 쓰게 한다.
+  private resolveNotionDatabaseId(): string | undefined {
+    return this.configService
+      .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
+      ?.trim();
   }
 
   // 그림은 있으면 좋은 것이지 발행을 막을 이유가 아니다.
