@@ -140,3 +140,120 @@ describe('ApplyCorporateActionUsecase 수동 권리 수량 가드', () => {
     expect(repository.applyCorporateActionAtomically).not.toHaveBeenCalled();
   });
 });
+
+describe('ApplyCorporateActionUsecase 수량 조정', () => {
+  const splitRepository = (overrides: Record<string, unknown> = {}) => ({
+    findTickerByCode: jest.fn().mockResolvedValue({ id: 178 }),
+    findAccountByName: jest.fn().mockResolvedValue({
+      id: 5,
+      seedAmount: decimal('10000000'),
+      cashBalance: decimal('775952'),
+    }),
+    findPosition: jest.fn().mockResolvedValue({
+      id: 71,
+      accountId: 5,
+      tickerId: 178,
+      quantity: decimal('100'),
+      avgPrice: decimal('10000'),
+    }),
+    findQuantityAtDate: jest.fn().mockResolvedValue(decimal('100')),
+    applyCorporateActionAtomically: jest
+      .fn()
+      .mockImplementation(
+        async (input: { decide: (state: unknown) => unknown }) => ({
+          corporateActionId: 42,
+          ...(input.decide({
+            account: { cashBalance: decimal('775952') },
+            position: { quantity: decimal('100'), avgPrice: decimal('10000') },
+          }) as Record<string, unknown>),
+        }),
+      ),
+    ...overrides,
+  });
+
+  it('2:1 분할은 수량을 배로 늘리고 평단을 절반으로 낮춘다', async () => {
+    const repository = splitRepository();
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      accountName: 'LONG_TERM',
+      tickerCode: '417310',
+      kind: 'SPLIT',
+      exDate: new Date('2026-09-10T00:00:00.000Z'),
+      quantityRatio: '2',
+      dryRun: false,
+    });
+
+    expect(result.accounts[0]).toEqual(
+      expect.objectContaining({
+        quantityDelta: '100',
+        avgPriceAfter: '5000',
+        cashDelta: '0',
+      }),
+    );
+    // 재실행이 수량을 또 늘리지 못하도록, 중복 키의 재료는 계산 결과가 아니라 명령 입력이어야 한다.
+    expect(repository.applyCorporateActionAtomically).toHaveBeenCalledWith(
+      expect.objectContaining({ quantityRatio: '2' }),
+    );
+  });
+
+  // 권리락일 뒤에 매매가 있으면 현재 수량에 권리와 무관한 주식이 섞여 있다. 그대로 조정하면
+  // 나중에 산 주식까지 쪼개고 그 사이 판 주식은 빠뜨려 수량·평단이 함께 망가진다.
+  it('권리락일 이후 매매가 있으면 소급 적용을 거부한다', async () => {
+    const repository = splitRepository({
+      findQuantityAtDate: jest.fn().mockResolvedValue(decimal('80')),
+    });
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    await expect(
+      usecase.execute({
+        accountName: 'LONG_TERM',
+        tickerCode: '417310',
+        kind: 'SPLIT',
+        exDate: new Date('2026-09-10T00:00:00.000Z'),
+        quantityRatio: '2',
+        dryRun: true,
+      }),
+    ).rejects.toThrow('권리일 수량 80주, 현재 100주');
+    expect(repository.applyCorporateActionAtomically).not.toHaveBeenCalled();
+  });
+
+  // 배당은 현금만 더하므로 권리락일 이후 매매가 있어도 소급이 안전하다. 실제 이번 건이
+  // 그 경우다 — 8/28 배당락 뒤 8/31에 743주를 다시 샀는데도 182주분만 정확히 들어왔다.
+  it('배당은 권리락일 이후 매매가 있어도 소급 적용한다', async () => {
+    const repository = splitRepository({
+      findQuantityAtDate: jest.fn().mockResolvedValue(decimal('182')),
+      findPosition: jest.fn().mockResolvedValue({
+        id: 71,
+        accountId: 5,
+        tickerId: 178,
+        quantity: decimal('743'),
+        avgPrice: decimal('2335'),
+      }),
+    });
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    const result = await usecase.execute({
+      accountName: 'LONG_TERM',
+      tickerCode: '417310',
+      kind: 'DIVIDEND',
+      exDate: new Date('2026-08-28T00:00:00.000Z'),
+      perShareAmount: '8640',
+      dryRun: true,
+    });
+
+    expect(result.accounts[0]).toEqual(
+      expect.objectContaining({
+        eligibleQuantity: '182',
+        cashDelta: '1330319',
+        quantityDelta: '0',
+      }),
+    );
+  });
+});

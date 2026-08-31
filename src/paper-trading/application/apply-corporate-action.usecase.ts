@@ -48,6 +48,8 @@ interface AccountTarget {
   cashBalance: MoneyValue;
 }
 
+const dateText = (value: Date): string => value.toISOString().slice(0, 10);
+
 const parseAmount = (value: string, label: string): Prisma.Decimal => {
   const amount = new Prisma.Decimal(value);
   if (amount.comparedTo(0) <= 0) {
@@ -122,6 +124,7 @@ export class ApplyCorporateActionUsecase {
         exDate: command.exDate,
         payDate: command.payDate,
         perShareAmount: command.perShareAmount,
+        quantityRatio: command.quantityRatio,
         note: command.note,
         decide: ({ account: freshAccount, position: freshPosition }) => {
           const freshMutation = this.calculateMutationFromState({
@@ -192,6 +195,23 @@ export class ApplyCorporateActionUsecase {
       eligibleQuantity.comparedTo(0) <= 0
     ) {
       return null;
+    }
+    // 수량을 바꾸는 종류는 지금 보유한 주식을 쪼개거나 합친다. 그런데 권리락일 뒤에 매매가
+    // 있었다면 현재 수량에는 권리와 무관한 주식이 섞여 있어, 그대로 조정하면 나중에 산
+    // 주식까지 쪼개고 그 사이 판 주식은 빠뜨린다. 배당은 현금만 더해 되돌리기 쉽지만 이쪽은
+    // 수량·평단을 덮어쓰므로 복구가 어렵다 — 어긋난 채 적용하느니 소급 입력을 거부한다.
+    if (input.command.kind !== 'DIVIDEND' && input.position !== null) {
+      const quantityAtExDate = await this.repository.findQuantityAtDate(
+        input.accountId,
+        input.tickerId,
+        input.command.exDate,
+      );
+      if (quantityAtExDate.comparedTo(input.position.quantity) !== 0) {
+        throw new Error(
+          `권리락일(${dateText(input.command.exDate)}) 이후 이 종목에 매매가 있어 소급 적용할 수 없습니다. ` +
+            `권리일 수량 ${quantityAtExDate.toString()}주, 현재 ${input.position.quantity.toString()}주.`,
+        );
+      }
     }
     return this.calculateMutationFromState({
       account: input.account,

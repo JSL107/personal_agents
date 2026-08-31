@@ -922,7 +922,7 @@ describe('PaperTradingPrismaRepository 기업행동·결제일', () => {
     expect(corporateActionCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          fingerprint: '5:178:2026-08-28:DIVIDEND:8640:0',
+          fingerprint: '5:178:2026-08-28:DIVIDEND:8640:',
           cashDelta: '1330319',
         }),
       }),

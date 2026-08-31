@@ -108,6 +108,9 @@ export interface ApplyCorporateActionInput {
   exDate: Date;
   payDate?: Date;
   perShareAmount?: string;
+  // fingerprint 재료. 명령이 준 입력이라 몇 번을 실행해도 같은 값이다 — 계산된 수량
+  // 변화는 그때그때의 보유량에 따라 달라져 중복 차단에 쓸 수 없다(fingerprint 주석 참조).
+  quantityRatio?: string;
   note?: string;
   decide: (state: {
     account: PaperAccountRecord;
@@ -975,13 +978,18 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           },
         });
         const decision = input.decide({ account, position });
+        // 사건을 식별하는 키이므로 **명령이 준 입력만** 넣는다. 계산 결과인
+        // decision.quantityDelta 를 쓰면 2:1 분할을 재실행할 때 100주 → delta 100,
+        // 200주 → delta 200 으로 키가 매번 달라져 유니크 제약이 재실행을 막지 못하고
+        // 수량이 10 → 20 → 40 으로 불어난다. 배당은 perShareAmount 가 고정이라
+        // 우연히 안전했을 뿐이고, 수량을 바꾸는 종류에서는 그대로 뚫린다.
         const fingerprint = [
           input.accountId,
           input.tickerId,
           input.exDate.toISOString().slice(0, 10),
           input.kind,
           input.perShareAmount ?? '',
-          decision.quantityDelta,
+          input.quantityRatio ?? '',
         ].join(':');
         const corporateAction = await transaction.paperCorporateAction.create({
           data: {
