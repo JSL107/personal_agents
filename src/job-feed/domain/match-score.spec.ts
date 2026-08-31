@@ -176,6 +176,25 @@ describe('scorePosting', () => {
     );
   });
 
+  it('포화점을 넘겨 맞혀도 더 오르지 않는다 — 증거 축의 상한', () => {
+    // 증가만 확인하면 상한이 없어도(맞힌 개수를 그대로 더해도) 통과한다.
+    // 4개와 5개 이상이 같은 값이어야 포화가 실제로 작동하는 것이다.
+    const profile = buildMatchProfile({
+      techTags: ['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka', 'Redis'],
+      years: 5,
+      locations: ['서울'],
+    });
+    const scoreOf = (skillTags: string[]): number => {
+      return scorePosting(posting({ skillTags }), profile).score;
+    };
+    const four = scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA']);
+    expect(scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka'])).toBe(four);
+    expect(
+      scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka', 'Redis']),
+    ).toBe(four);
+    expect(four).toBe(100);
+  });
+
   it('연차가 상한을 넘으면 감점하되 미달보다는 덜 깎는다', () => {
     const result = scorePosting(
       posting(),
