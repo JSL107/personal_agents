@@ -53,18 +53,23 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
         createdAt: true,
       },
     });
-    if (!row) {
-      return undefined;
-    }
-    return {
-      id: row.id,
-      kind: row.kind as StudyResearchKind,
-      topic: row.topic,
-      verdict: row.verdictJson as unknown as StudyBriefVerdict,
-      reportMd: row.reportMd,
-      sourceUrls: toStringArray(row.sourceUrls),
-      createdAt: row.createdAt,
-    };
+    return row ? toExpandableStudyBrief(row) : undefined;
+  }
+
+  // 확장 여부와 무관하게 소유자의 가장 최근 브리프 1건. 실증 CLI(scripts/study-diagram.ts) 전용.
+  async findLatest(
+    ownerUserId: string,
+  ): Promise<ExpandableStudyBrief | undefined> {
+    const row = await this.prisma.studyBrief.findFirst({
+      where: { ownerUserId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return row ? toExpandableStudyBrief(row) : undefined;
+  }
+
+  async findById(id: number): Promise<ExpandableStudyBrief | undefined> {
+    const row = await this.prisma.studyBrief.findUnique({ where: { id } });
+    return row ? toExpandableStudyBrief(row) : undefined;
   }
 
   async save(input: SaveStudyBriefInput): Promise<{ id: number }> {
@@ -100,6 +105,28 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
     });
   }
 }
+
+// select 유무와 무관하게 studyBrief 조회 3곳(findOldestUnexpandedSince·findLatest·findById)이
+// 공유하는 row → ExpandableStudyBrief 변환. 여기서만 바꾸면 셋 다 같이 바뀐다.
+interface StudyBriefRow {
+  id: number;
+  kind: string;
+  topic: string;
+  verdictJson: unknown;
+  reportMd: string;
+  sourceUrls: unknown;
+  createdAt: Date;
+}
+
+const toExpandableStudyBrief = (row: StudyBriefRow): ExpandableStudyBrief => ({
+  id: row.id,
+  kind: row.kind as StudyResearchKind,
+  topic: row.topic,
+  verdict: row.verdictJson as unknown as StudyBriefVerdict,
+  reportMd: row.reportMd,
+  sourceUrls: toStringArray(row.sourceUrls),
+  createdAt: row.createdAt,
+});
 
 // sourceUrls 는 Json 컬럼이라 런타임 형태가 타입으로 보장되지 않는다. 문자열만 남긴다 —
 // 여기서 걸러내지 않으면 프롬프트에 `[object Object]` 가 출처로 박힌다.

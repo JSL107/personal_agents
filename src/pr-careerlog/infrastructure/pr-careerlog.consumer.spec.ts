@@ -5,10 +5,14 @@ import {
   buildPrCareerLogBlocks,
 } from './pr-careerlog.consumer';
 
-// NotionPlanBlock union 에서 divider 외 모든 block 은 `text` 필드 보유 — narrowing helper.
-type TextBlock = Exclude<NotionPlanBlock, { type: 'divider' }>;
+// NotionPlanBlock union 에서 divider·image 외 모든 block 은 `text` 필드 보유 — narrowing helper.
+// image 는 Task 4(그림 첨부)에서 추가된 변형으로 텍스트 필드가 없다.
+type TextBlock = Exclude<
+  NotionPlanBlock,
+  { type: 'divider' } | { type: 'image' }
+>;
 const isTextBlock = (block: NotionPlanBlock): block is TextBlock =>
-  block.type !== 'divider';
+  block.type !== 'divider' && block.type !== 'image';
 
 describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)', () => {
   const buildDetail = (
@@ -120,9 +124,7 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
       todayKst: '2026-06-01',
     });
     expect(
-      blocks.some(
-        (b) => b.type !== 'divider' && b.text.startsWith('대표 파일'),
-      ),
+      blocks.some((b) => isTextBlock(b) && b.text.startsWith('대표 파일')),
     ).toBe(false);
   });
 
@@ -153,7 +155,7 @@ describe('buildPrCareerLogBlocks — PR 메타 → Notion block 변환 (LLM X)',
     });
     // 링크 paragraph 는 있지만, body paragraph 는 없어야.
     const paragraphs = blocks.filter(
-      (b): b is Exclude<typeof b, { type: 'divider' }> =>
+      (b): b is Extract<NotionPlanBlock, { type: 'paragraph' }> =>
         b.type === 'paragraph',
     );
     expect(paragraphs).toHaveLength(1);

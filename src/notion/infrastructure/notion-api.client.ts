@@ -887,6 +887,14 @@ const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
       type: 'paragraph',
       paragraph: { rich_text: resolveRichText({ text, richText, link }) },
     }))
+    .with({ type: 'image' }, ({ fileUploadId }) => ({
+      object: 'block',
+      type: 'image',
+      image: {
+        type: 'file_upload',
+        file_upload: { id: fileUploadId },
+      },
+    }))
     .exhaustive();
 };
 

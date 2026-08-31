@@ -23,9 +23,17 @@ import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
+  NOTION_FILE_UPLOAD_PORT,
+  NotionFileUploadPort,
+} from '../../notion/domain/port/notion-file-upload.port';
+import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
+import {
+  GenerateStudyDiagramInput,
+  GenerateStudyDiagramUsecase,
+} from '../application/generate-study-diagram.usecase';
 import {
   INSTALLED_TOOLS_PORT,
   InstalledToolsPort,
@@ -42,6 +50,7 @@ import {
 } from '../domain/port/study-brief.repository.port';
 import {
   PublishedStudyBrief,
+  PublishStudyBriefInput,
   STUDY_BRIEF_PUBLISHER_PORT,
   StudyBriefPublisherPort,
 } from '../domain/port/study-brief-publisher.port';
@@ -88,6 +97,7 @@ interface PublishToNotionInput {
   briefId: number;
   research: StudyResearchResult;
   verdict: StudyBriefVerdict;
+  diagramFileUploadId?: string;
 }
 
 @Processor(STUDY_BRIEF_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
@@ -108,6 +118,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
     private readonly repoContext: RepoContextPort,
     @Inject(STUDY_BRIEF_PUBLISHER_PORT)
     private readonly studyBriefPublisher: StudyBriefPublisherPort,
+    private readonly generateStudyDiagram: GenerateStudyDiagramUsecase,
+    @Inject(NOTION_FILE_UPLOAD_PORT)
+    private readonly notionFileUpload: NotionFileUploadPort,
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
@@ -189,10 +202,21 @@ export class StudyBriefCronConsumer extends WorkerHost {
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
       });
+      // 노션 발행 대상이 없는 Slack-only 구성에서는 그림을 만들 이유가 없다 — 어차피
+      // publishToNotionOrNull() 이 결과를 버린다. codex 를 최대 두 번 돌리고 파일까지
+      // 올린 뒤 버리는 매일 반복되는 낭비를 막는다(codex 는 구독 쿼터를 쓴다).
+      const diagramFileUploadId = this.resolveNotionDatabaseId()
+        ? await this.buildDiagramOrNull({
+            topic: research.topic,
+            kind: research.kind,
+            reportMd: research.reportMd,
+          })
+        : null;
       const published = await this.publishToNotionOrNull({
         briefId: saved.id,
         research,
         verdict,
+        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
       });
 
       const rendered = formatStudyBrief({
@@ -310,27 +334,24 @@ export class StudyBriefCronConsumer extends WorkerHost {
     briefId,
     research,
     verdict,
+    diagramFileUploadId,
   }: PublishToNotionInput): Promise<PublishedStudyBrief | null> {
-    const databaseId = this.configService
-      .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
-      ?.trim();
-    if (!databaseId) {
+    if (!this.resolveNotionDatabaseId()) {
       return null;
     }
-    let published: PublishedStudyBrief;
-    try {
-      published = await this.studyBriefPublisher.publish({
-        kind: research.kind,
-        topic: research.topic,
-        verdict,
-        reportMd: research.reportMd,
-        sourceUrls: research.sourceUrls,
-        createdAt: new Date(),
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
-      );
+    const publishInput: PublishStudyBriefInput = {
+      kind: research.kind,
+      topic: research.topic,
+      verdict,
+      reportMd: research.reportMd,
+      sourceUrls: research.sourceUrls,
+      createdAt: new Date(),
+    };
+    const published = await this.publishWithDiagramFallback(
+      publishInput,
+      diagramFileUploadId,
+    );
+    if (published === null) {
       return null;
     }
 
@@ -342,6 +363,73 @@ export class StudyBriefCronConsumer extends WorkerHost {
       );
     }
     return published;
+  }
+
+  // 그림을 포함한 발행이 실패하면 그림 없이 한 번 재발행한다. 그림 블록은 콜아웃·본문·출처와
+  // 같은 createDatabasePage() 요청에 실려 나가므로, 첨부 하나(만료·거부)가 실패하면 원래
+  // 잘 만들어지던 텍스트 페이지까지 통째로 사라진다 — "그림은 있으면 좋은 것이지 발행을
+  // 막을 이유가 아니다" 라는 전제와 어긋나는 회귀다. diagramFileUploadId 가 애초에 없었다면
+  // 재발행하지 않는다(같은 요청을 두 번 보내는 셈이다).
+  private async publishWithDiagramFallback(
+    input: PublishStudyBriefInput,
+    diagramFileUploadId: string | undefined,
+  ): Promise<PublishedStudyBrief | null> {
+    try {
+      return await this.studyBriefPublisher.publish({
+        ...input,
+        ...(diagramFileUploadId ? { diagramFileUploadId } : {}),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief Notion 페이지 발행 실패 — Slack 전체 카드로 대체: ${formatError(error)}`,
+      );
+      if (diagramFileUploadId === undefined) {
+        return null;
+      }
+    }
+
+    try {
+      const published = await this.studyBriefPublisher.publish(input);
+      this.logger.warn(
+        'Study Brief Notion 그림 없이 재발행 성공 — 그림 첨부 단계만 실패했을 가능성이 높습니다.',
+      );
+      return published;
+    } catch (retryError) {
+      this.logger.warn(
+        `Study Brief Notion 그림 없는 재발행도 실패 — Slack 전체 카드로 대체: ${formatError(retryError)}`,
+      );
+      return null;
+    }
+  }
+
+  // 두 곳(그림 생성 진입 전, 발행 대상 확인)이 같은 설정을 따로 읽으면 한쪽만 고쳐지는
+  // 사고가 난다 — 작은 헬퍼로 묶어 둘이 항상 같은 판단을 쓰게 한다.
+  private resolveNotionDatabaseId(): string | undefined {
+    return this.configService
+      .get<string>('STUDY_BRIEF_NOTION_DATABASE_ID')
+      ?.trim();
+  }
+
+  // 그림은 있으면 좋은 것이지 발행을 막을 이유가 아니다.
+  // 여기서 나오는 모든 실패는 삼키고, 왜 삼켰는지만 남긴다.
+  private async buildDiagramOrNull(
+    input: GenerateStudyDiagramInput,
+  ): Promise<string | null> {
+    try {
+      const diagram = await this.generateStudyDiagram.execute(input);
+      if (diagram === null) {
+        return null;
+      }
+      return await this.notionFileUpload.uploadImage({
+        filename: buildDiagramFilename(input.topic),
+        png: diagram.png,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Study 그림 첨부 실패 — 그림 없이 발행합니다: ${formatError(error)}`,
+      );
+      return null;
+    }
   }
 
   private async research(
@@ -484,6 +572,15 @@ const calculateKindBalance = (
 const isSkippedResearch = (
   research: StudyResearchResult | StudyResearchSkipped,
 ): research is StudyResearchSkipped => 'skippedReason' in research;
+
+const buildDiagramFilename = (topic: string): string => {
+  const slug = topic
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return `${slug || 'study'}-diagram.png`;
+};
 
 const formatError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);

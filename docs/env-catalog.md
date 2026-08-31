@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 149개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 153개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -243,3 +243,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `STUDY_BRIEF_CRON` | ❌ | BullMQ cron (default 매일 09:30 — `30 9 * * *`). |
 | `STUDY_BRIEF_TIMEZONE` | ❌ | default Asia/Seoul. |
 | `STUDY_BRIEF_NOTION_DATABASE_ID` | ❌ | 발행 대상 DB. 미설정 시 Slack 전체 카드 fallback. |
+| `STUDY_DIAGRAM_ENABLED` | ❌ | 'true' 일 때만 그림을 그려 노션 페이지에 붙인다. 기본 꺼짐. |
+| `STUDY_DIAGRAM_WIDTH_PX` | ❌ | 캔버스 가로 = 노션 본문 폭. 이 값을 넘겨 그리면 노션이 이미지를 축소해 글자가 뭉개진다. 실측으로 확정한 값을 넣는다. |
+| `STUDY_DIAGRAM_MIN_FONT_PX` | ❌ | 화면에서 보이는 글자 높이의 하한. 미달이면 재작업. |
+| `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 세로 상한. 축소와 무관하며 "한눈에 들어오는가" 기준이다. |

@@ -307,4 +307,45 @@ describe('StudyBriefNotionPublisher', () => {
       ].join('\n'),
     });
   });
+
+  it('diagramFileUploadId 가 있으면 콜아웃 다음·본문 앞에 image 블록을 넣는다', async () => {
+    const notionClient = buildNotionClient();
+    const publisher = new StudyBriefNotionPublisher(
+      notionClient,
+      buildConfig(),
+    );
+
+    await publisher.publish({
+      ...buildLargeInput(),
+      diagramFileUploadId: 'upload-1',
+    });
+
+    const blocks = notionClient.createDatabasePage.mock.calls[0][0]
+      .blocks as NotionPlanBlock[];
+    const imageIndex = blocks.findIndex((block) => block.type === 'image');
+    const firstDividerIndex = blocks.findIndex(
+      (block) => block.type === 'divider',
+    );
+
+    expect(blocks[imageIndex]).toEqual({
+      type: 'image',
+      fileUploadId: 'upload-1',
+    });
+    expect(imageIndex).toBeLessThan(firstDividerIndex);
+    expect(blocks[0].type).toBe('callout');
+  });
+
+  it('diagramFileUploadId 가 없으면 image 블록을 넣지 않는다', async () => {
+    const notionClient = buildNotionClient();
+    const publisher = new StudyBriefNotionPublisher(
+      notionClient,
+      buildConfig(),
+    );
+
+    await publisher.publish(buildLargeInput());
+
+    const blocks = notionClient.createDatabasePage.mock.calls[0][0]
+      .blocks as NotionPlanBlock[];
+    expect(blocks.some((block) => block.type === 'image')).toBe(false);
+  });
 });

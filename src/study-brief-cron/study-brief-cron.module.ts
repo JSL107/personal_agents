@@ -23,6 +23,7 @@ import { RepoContextCollector } from './infrastructure/repo-context.collector';
 import { StudyBriefPrismaRepository } from './infrastructure/study-brief.prisma.repository';
 import { StudyBriefCronConsumer } from './infrastructure/study-brief-cron.consumer';
 import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.publisher';
+import { StudyDiagramModule } from './study-diagram.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { StudyBriefNotionPublisher } from './infrastructure/study-brief-notion.p
     SlackModule,
     NotificationQueueModule,
     NotionModule,
+    StudyDiagramModule,
   ],
   providers: [
     StudyBriefCronScheduler,
