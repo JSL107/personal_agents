@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
 
+import { PreviewKind } from '../preview-gate/domain/preview-action.type';
 import {
   SLACK_HANDLER_PORT,
   SlackHandler,
@@ -254,17 +255,26 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     target,
     previewText,
     previewId,
+    kind,
+    payload,
   }: {
     target: string;
     previewText: string;
     previewId: string;
+    kind?: PreviewKind;
+    payload?: unknown;
   }): Promise<{ channelId: string; messageTs: string }> {
     const app = this.assertAppReady();
     const response = await app.client.chat.postMessage({
       channel: target,
       text: previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
-      blocks: buildPreviewBlocks({ previewText, previewId }) as never,
+      blocks: buildPreviewBlocks({
+        previewText,
+        previewId,
+        kind,
+        payload,
+      }) as never,
     });
     return {
       channelId: String(response.channel ?? target),

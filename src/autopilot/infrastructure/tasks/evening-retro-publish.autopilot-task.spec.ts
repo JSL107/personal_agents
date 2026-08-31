@@ -457,6 +457,12 @@ describe('EveningRetroPublishTask', () => {
     expect(careerPreview?.previewText).toContain(
       '• JSL107/personal_agents#142 — 개인 프로젝트 저녁 회고 개선',
     );
+    // 카드에 붙는 "작업 맥락" 입력칸의 존재 이유를 본문이 설명해야 한다 —
+    // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
+    expect(careerPreview?.previewText).toContain('코드에 남지 않습니다');
+    expect(careerPreview?.previewText).toContain(
+      '아래 칸에 저장소별로 적어 두면',
+    );
   });
 
   it('(i) 저녁 회고 LLM 호출은 기존 1회만 수행한다', async () => {

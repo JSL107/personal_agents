@@ -25,6 +25,7 @@ import {
   CAREER_PROFILE_REPOSITORY_PORT,
   CareerProfileRepositoryPort,
 } from '../domain/port/career-profile.repository.port';
+import { preserveImpactContexts } from '../domain/preserve-impact-context';
 import {
   buildSynthPrompt,
   CAREER_PROFILE_SYNTH_SYSTEM_PROMPT,
@@ -110,7 +111,15 @@ export class BuildCareerProfileUsecase {
           }),
         };
         // 서술 필드 윤문(ChatGPT 전용, best-effort) — 비활성/실패 시 backfilled 를 그대로 돌려준다.
-        const data = await humanizeCareerProfile(backfilled, this.humanizer);
+        // 전체 재합성은 이전 프로필을 읽지 않고 모델 출력으로 통째로 덮는다. 사람이 승인
+        // 카드에 적은 맥락은 모델 입력에 없으므로, 되살리지 않으면 이 명령 한 번에 전부 사라진다.
+        const previous =
+          await this.repository.findLatestBySlackUser(slackUserId);
+        const withContexts = preserveImpactContexts({
+          previous: previous?.profileJson ?? null,
+          next: backfilled,
+        });
+        const data = await humanizeCareerProfile(withContexts, this.humanizer);
         data.meta = {
           githubLogin,
           windowStart: sinceIsoDate,

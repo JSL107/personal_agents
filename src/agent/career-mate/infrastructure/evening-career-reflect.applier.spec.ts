@@ -146,4 +146,124 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).not.toHaveBeenCalled();
   });
+
+  it('(f) 맥락은 적어 넣은 묶음에만 실린다 — 회사 수치가 개인 성과로 새지 않는다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+        impactContexts: ['  결제 실패율 3%→0.5%  ', null],
+      }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenNthCalledWith(1, {
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+      impactContext: '결제 실패율 3%→0.5%',
+    });
+    // 두 번째 묶음은 도입 전과 완전히 같은 호출 형태여야 한다.
+    expect(reflectPr.execute).toHaveBeenNthCalledWith(2, {
+      slackUserId: 'U1',
+      prText: 'o/personal#9',
+    });
+    expect(result.message).toContain('o/company 1건(맥락 반영)');
+    expect(result.message).toContain('o/personal 1건');
+    expect(result.message).not.toContain('o/personal 1건(맥락 반영)');
+  });
+
+  it('(g) impactContexts 가 없으면 도입 전과 같은 호출만 남는다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+    });
+    expect(result.message).not.toContain('맥락 반영');
+  });
+
+  it('(h) 공백만 적힌 맥락은 없는 것과 같게 다룬다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1']],
+        slackUserId: 'U1',
+        impactContexts: ['   '],
+      }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      prText: 'o/company#1',
+    });
+  });
+
+  it('(i) 묶음이 실패하면 적어둔 맥락도 함께 돌려준다 — 카드는 다시 못 누른다', async () => {
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('PR 접근 불가'))
+        .mockResolvedValueOnce({
+          result: { portfolioUrl: 'https://notion.so/portfolio' },
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+        impactContexts: ['결제 실패율 3%→0.5%', null],
+      }),
+    );
+
+    expect(result.message).toContain('반영 실패 1묶음');
+    expect(result.message).toContain('• o/company#1');
+    // 이 줄이 없으면 사용자가 손으로 적은 문장이 어디에도 남지 않는다.
+    expect(result.message).toContain('적어두신 맥락: 결제 실패율 3%→0.5%');
+  });
+
+  it('(j) 맥락 없이 실패한 묶음은 PR 참조만 (군더더기 줄 없음)', async () => {
+    const reflectPr = {
+      execute: jest.fn().mockRejectedValueOnce(new Error('PR 접근 불가')),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    await expect(
+      applier.apply(
+        makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+      ),
+    ).rejects.toThrow('1개 묶음이 모두 실패했습니다');
+  });
+
+  it('(k) 실패 안내는 진짜 줄바꿈을 쓴다 — 백슬래시 n 이 글자로 찍히면 한 줄로 뭉개진다', async () => {
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('PR 접근 불가'))
+        .mockResolvedValueOnce({
+          result: { portfolioUrl: 'https://notion.so/portfolio' },
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+    );
+
+    expect(result.message).not.toContain('\\n');
+    expect(result.message.split('\n').length).toBeGreaterThan(1);
+  });
 });
