@@ -1,5 +1,5 @@
 import { NormalizedJobPosting } from './job-feed.type';
-import { normalizeSkillTags } from './skill-dictionary';
+import { normalizeSkillTags, toSkillKey } from './skill-dictionary';
 
 export type YearsFit = 'FIT' | 'OVER' | 'UNDER' | 'NEUTRAL';
 
@@ -31,7 +31,7 @@ export const buildMatchProfile = ({
   locations,
 }: BuildMatchProfileInput): MatchProfile => {
   return {
-    skillTags: normalizeSkillTags(techTags).matched,
+    skillTags: normalizeSkillTags(techTags).identified,
     years,
     locations,
   };
@@ -72,12 +72,14 @@ export const scorePosting = (
   posting: NormalizedJobPosting,
   profile: MatchProfile,
 ): MatchBreakdown => {
-  const profileSkills = new Set(profile.skillTags);
+  // 키로 비교한다. 사전에 없는 기술은 원본 표기 그대로 담기므로(skill-dictionary.ts),
+  // 공고의 'react' 와 프로필의 'React' 가 표기 차이만으로 못 만나면 안 된다.
+  const profileSkillKeys = new Set(profile.skillTags.map(toSkillKey));
   const matchedSkills = posting.skillTags.filter((tag) => {
-    return profileSkills.has(tag);
+    return profileSkillKeys.has(toSkillKey(tag));
   });
   const missingSkills = posting.skillTags.filter((tag) => {
-    return !profileSkills.has(tag);
+    return !profileSkillKeys.has(toSkillKey(tag));
   });
   const skillHitRatio =
     posting.skillTags.length === 0

@@ -122,13 +122,13 @@ const main = async (): Promise<void> => {
       // JOB_FEED_AVOID_SKILLS 도 autopilot task 와 같은 방식(공용 파서)으로
       // 반영한다 — 안 그러면 이 진단 CLI 가 실 운영 카드와 다른(기피 기술이
       // 안 걸러진) 결과를 보여준다.
-      const { matched: avoidSkillTags, unmatched: avoidSkillsUnmatched } =
+      const { identified: avoidSkillTags, unmatched: avoidSkillsUnmatched } =
         parseAvoidSkillTags(
           application.get(ConfigService).get<string>('JOB_FEED_AVOID_SKILLS'),
         );
       if (avoidSkillsUnmatched.length > 0) {
         console.warn(
-          `JOB_FEED_AVOID_SKILLS 중 사전에 없어 무시된 항목: ${avoidSkillsUnmatched.join(', ')}`,
+          `JOB_FEED_AVOID_SKILLS 중 사전에 없는 항목(표기가 정확히 같은 공고만 걸린다): ${avoidSkillsUnmatched.join(', ')}`,
         );
       }
 

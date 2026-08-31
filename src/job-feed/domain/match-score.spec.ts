@@ -159,6 +159,51 @@ describe('scorePosting', () => {
     expect(result.yearsFit).toBe('FIT');
   });
 
+  // 🔴 2026-08-31 실측 결함의 회귀 테스트. 사전이 화이트리스트로 동작하던 때는 공고가
+  // 요구한 기술 중 사전이 아는 것만 남아 분모가 줄었고, 프론트 스택만 적힌 공고가
+  // 만점을 받았다(실측 247건 중 97건이 기준점 80 통과 — 필터가 사실상 무효).
+  it('사전에 없는 요구 기술도 분모에 센다 — 아는 것만 남겨 만점을 주지 않는다', () => {
+    const frontendHeavy = posting({
+      skillTags: ['React', 'CSS', 'HTML', 'JavaScript'],
+    });
+    const result = scorePosting(
+      frontendHeavy,
+      buildMatchProfile({
+        techTags: ['JavaScript'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['JavaScript']);
+    expect(result.missingSkills).toEqual(['React', 'CSS', 'HTML']);
+    expect(result.skillHitRatio).toBeCloseTo(0.25);
+    expect(result.score).toBeLessThan(80);
+  });
+
+  it('사전에 없어도 공고와 프로필 양쪽에 있으면 만난다 — 예전에는 둘 다 버려져 못 만났다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['Firebase', 'OpenCV'] }),
+      buildMatchProfile({
+        techTags: ['OpenCV'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['OpenCV']);
+  });
+
+  it('표기만 다른 같은 기술은 키로 비교해 만난다', () => {
+    const result = scorePosting(
+      posting({ skillTags: ['OpenCV'] }),
+      buildMatchProfile({
+        techTags: ['open-cv'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(result.matchedSkills).toEqual(['OpenCV']);
+  });
+
   it('점수는 0~100 정수다', () => {
     const result = scorePosting(
       posting(),

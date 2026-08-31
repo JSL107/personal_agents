@@ -26,7 +26,7 @@ export class ReprocessJobPostingsUsecase {
     let changed = 0;
 
     for (const row of rows) {
-      const next = normalizeSkillTags(row.rawSkillTags).matched;
+      const next = normalizeSkillTags(row.rawSkillTags).identified;
       if (this.isSame(row.skillTags, next)) {
         continue;
       }
