@@ -312,6 +312,14 @@ export class JobPostingPrismaRepository implements JobPostingRepositoryPort {
     });
   }
 
+  async clearScoringMarks(): Promise<number> {
+    const { count } = await this.prisma.jobPosting.updateMany({
+      where: { closedAt: null },
+      data: { scoredProfileId: null, scoredAt: null },
+    });
+    return count;
+  }
+
   async saveSkillTags(id: number, skillTags: string[]): Promise<void> {
     // 점수는 새 태그 기준으로 다시 매겨야 하므로 채점 표식을 지워 다음 채점에서
     // 다시 걸리게 한다.

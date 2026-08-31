@@ -121,13 +121,78 @@ describe('scorePosting', () => {
     expect(result.score).toBeLessThan(50);
   });
 
-  it('공고에 스킬 태그가 없으면 스킬 축을 중립으로 둔다', () => {
+  it('공고에 스킬 태그가 없으면 비율 축만 중립으로 두고 증거 축은 0으로 둔다', () => {
+    // 태그가 없으면 판단 근거가 없다 — 비율은 중립(0.5)이되 "맞힌 게 하나도 없다"는
+    // 사실은 그대로 반영한다. 이 행이 상세 수집에서 빠지는 데드락은 점수가 아니라
+    // findDetailTargets 의 skillTags isEmpty 예외가 막는다.
     const result = scorePosting(
       posting({ skillTags: [] }),
       buildMatchProfile({ techTags: ['Java'], years: 5, locations: ['서울'] }),
     );
     expect(result.skillHitRatio).toBe(0);
-    expect(result.score).toBe(65);
+    expect(result.score).toBe(55);
+  });
+
+  it('요구 기술을 다 맞혀도 한 개뿐이면 여러 개를 맞춘 공고보다 낮다', () => {
+    // 비율만 보던 시절엔 둘 다 100 점이라 알림 상위 10 건이 만점 동점으로만
+    // 채워졌다. 카드에서 무엇이 더 나은 공고인지 구분되지 않던 원인이다.
+    const shallow = scorePosting(
+      posting({ skillTags: ['Java'] }),
+      buildMatchProfile({
+        techTags: ['Java', 'Spring Boot', 'AWS', 'MSA'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    const deep = scorePosting(
+      posting({ skillTags: ['Java', 'Spring Boot', 'AWS', 'MSA'] }),
+      buildMatchProfile({
+        techTags: ['Java', 'Spring Boot', 'AWS', 'MSA'],
+        years: 5,
+        locations: ['서울'],
+      }),
+    );
+    expect(shallow.skillHitRatio).toBe(1);
+    expect(deep.skillHitRatio).toBe(1);
+    expect(shallow.score).toBeLessThan(deep.score);
+    expect(deep.score).toBe(100);
+  });
+
+  it('맞힌 개수가 늘수록 점수가 오른다 — 포화점까지', () => {
+    const profile = buildMatchProfile({
+      techTags: ['Java', 'Spring Boot', 'AWS', 'MSA'],
+      years: 5,
+      locations: ['서울'],
+    });
+    const scoreOf = (skillTags: string[]): number => {
+      return scorePosting(posting({ skillTags }), profile).score;
+    };
+    expect(scoreOf(['Java'])).toBeLessThan(scoreOf(['Java', 'Spring Boot']));
+    expect(scoreOf(['Java', 'Spring Boot'])).toBeLessThan(
+      scoreOf(['Java', 'Spring Boot', 'AWS']),
+    );
+    expect(scoreOf(['Java', 'Spring Boot', 'AWS'])).toBeLessThan(
+      scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA']),
+    );
+  });
+
+  it('포화점을 넘겨 맞혀도 더 오르지 않는다 — 증거 축의 상한', () => {
+    // 증가만 확인하면 상한이 없어도(맞힌 개수를 그대로 더해도) 통과한다.
+    // 4개와 5개 이상이 같은 값이어야 포화가 실제로 작동하는 것이다.
+    const profile = buildMatchProfile({
+      techTags: ['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka', 'Redis'],
+      years: 5,
+      locations: ['서울'],
+    });
+    const scoreOf = (skillTags: string[]): number => {
+      return scorePosting(posting({ skillTags }), profile).score;
+    };
+    const four = scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA']);
+    expect(scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka'])).toBe(four);
+    expect(
+      scoreOf(['Java', 'Spring Boot', 'AWS', 'MSA', 'Kafka', 'Redis']),
+    ).toBe(four);
+    expect(four).toBe(100);
   });
 
   it('연차가 상한을 넘으면 감점하되 미달보다는 덜 깎는다', () => {

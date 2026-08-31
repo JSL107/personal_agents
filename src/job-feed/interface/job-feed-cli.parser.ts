@@ -5,6 +5,9 @@ export interface JobFeedCliOptions {
   dryRun: boolean;
   explain: boolean;
   maxPages: number;
+  // reprocess 전용. 채점 표식을 지워 다음 채점이 전량을 다시 매기게 한다.
+  // 채점식을 고친 배포 뒤에 한 번 돌린다.
+  rescoreAll: boolean;
 }
 
 const COMMANDS: ReadonlySet<string> = new Set([
@@ -40,6 +43,7 @@ export const parseJobFeedCliArguments = (argv: string[]): JobFeedCliOptions => {
     command,
     dryRun: flags.includes('--dry-run'),
     explain: flags.includes('--explain'),
+    rescoreAll: flags.includes('--rescore-all'),
     maxPages:
       Number.isFinite(maxPages) && maxPages > 0 ? maxPages : DEFAULT_MAX_PAGES,
   };
