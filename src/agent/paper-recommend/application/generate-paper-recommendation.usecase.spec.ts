@@ -45,7 +45,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     findPositionsWithTicker: jest.fn(),
     findLatestValuation: jest.fn(),
     findLatestRecommendationScore: jest.fn(),
-    findCorporateActionsForInvariant: jest.fn(),
+    findAccountWithCorporateActions: jest.fn(),
     saveRecommendationAtomically: jest.fn(),
   } as unknown as jest.Mocked<PaperTradingPrismaRepository>;
   const modelRouter = {
@@ -64,7 +64,9 @@ describe('GeneratePaperRecommendationUsecase', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    repository.findCorporateActionsForInvariant.mockResolvedValue([]);
+    // 기본값은 "계좌를 못 찾음" 이다. 기업행동이 없는 계좌에서 이 조회가 무엇을 반환하든
+    // 여력은 잔고와 같으므로, 미수 배당을 다루는 회차만 아래에서 따로 지정한다.
+    repository.findAccountWithCorporateActions.mockResolvedValue(null);
     usecase = new GeneratePaperRecommendationUsecase(
       screenUniverse,
       openPaperAccount,
@@ -358,15 +360,22 @@ describe('GeneratePaperRecommendationUsecase', () => {
       seedAmount: new Prisma.Decimal('10000000'),
       cashBalance: new Prisma.Decimal('2106271'),
     });
-    repository.findCorporateActionsForInvariant.mockResolvedValue([
-      {
-        kind: 'DIVIDEND',
-        tickerId: 178,
-        cashDelta: new Prisma.Decimal('1330319'),
-        quantityDelta: new Prisma.Decimal('0'),
-        payDate: new Date('2026-11-27T00:00:00.000Z'),
+    repository.findAccountWithCorporateActions.mockResolvedValue({
+      account: {
+        id: 41,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('2106271'),
       },
-    ]);
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 178,
+          cashDelta: new Prisma.Decimal('1330319'),
+          quantityDelta: new Prisma.Decimal('0'),
+          payDate: new Date('2026-11-27T00:00:00.000Z'),
+        },
+      ],
+    });
 
     await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
 
@@ -686,6 +695,86 @@ describe('GeneratePaperRecommendationUsecase', () => {
         corporateActions: [],
       });
     expect(decision.orders).toEqual([]);
+  });
+
+  // 프롬프트에 실린 여력만 검증하면 모델 입력만 고치고 실제 주문 수량은 잔고로 내는 구현도
+  // 통과한다. 주문을 만드는 것은 잠금 뒤 이 경로이므로 여기서 수량이 줄어드는지 본다.
+  it('잠금 뒤 원장의 미수 배당만큼 실제 주문 수량이 줄어든다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [],
+        buys: [{ code: '035420', reason: '신규 매수' }],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    screenUniverse.execute.mockResolvedValue({
+      strategy: 'LONG_TERM',
+      ruleVersion: 2,
+      universeCount: 1,
+      evaluatedCount: 1,
+      staleCount: 0,
+      passedCount: 1,
+      asOf: '2026-08-13',
+      recordOutcome: null,
+      includedIndicators: [],
+      stocks: [
+        {
+          tickerId: 72,
+          code: '035420',
+          name: 'NAVER',
+          krxMarket: 'KOSPI',
+          score: 97,
+          indicators,
+        },
+      ],
+    });
+
+    await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
+
+    const lockedState = {
+      account: {
+        id: 41,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('2500000'),
+      },
+      positions: [],
+      latestValuation: {
+        id: 2,
+        tradeDate: decidedAt,
+        totalValue: { toString: () => '10000000' } as never,
+        returnRate: { toString: () => '0' } as never,
+      },
+      existingOrders: [],
+    };
+    const decide = repository.saveRecommendationAtomically.mock.calls[0][0]
+      .decide as (state: never) => { orders: { quantity: string }[] };
+
+    // 종목당 20% = 2,000,000 원 목표. 여력 2,500,000 원이면 종가 10,000 원에 200주.
+    const withoutDividend = decide({
+      ...lockedState,
+      corporateActions: [],
+    } as never);
+    expect(withoutDividend.orders).toEqual([
+      expect.objectContaining({ tickerId: 72, quantity: '200' }),
+    ]);
+
+    // 같은 잔고에 지급일 전 배당 2,000,000 원이 섞여 있으면 쓸 수 있는 돈은 500,000 원뿐이다.
+    const withDividend = decide({
+      ...lockedState,
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 178,
+          cashDelta: new Prisma.Decimal('2000000'),
+          quantityDelta: new Prisma.Decimal('0'),
+          payDate: new Date('2026-11-27T00:00:00.000Z'),
+        },
+      ],
+    } as never);
+    expect(withDividend.orders).toEqual([
+      expect.objectContaining({ tickerId: 72, quantity: '50' }),
+    ]);
   });
 
   it('LLM 지연 뒤 locked state에서 pending cash와 BUY/SELL을 재검증한다', async () => {

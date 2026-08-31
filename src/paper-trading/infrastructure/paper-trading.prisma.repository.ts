@@ -13,7 +13,7 @@ import {
   TradeSide,
   TradeStrategy,
 } from '../domain/paper-account.type';
-import { calculatePendingDividendCash } from '../domain/paper-valuation';
+import { summarizePendingDividends } from '../domain/paper-valuation';
 import {
   ApplyTradeMutation,
   FillPendingOrderInput,
@@ -198,6 +198,11 @@ export interface DuePaperOrderRecord {
   strategy: Exclude<TradeStrategy, 'MANUAL'>;
   reason: string | null;
   targetTradeDate: Date;
+}
+
+export interface AccountWithCorporateActions {
+  account: PaperAccountRecord;
+  corporateActions: InvariantCorporateActionRow[];
 }
 
 export interface LockedPaperRecommendationState {
@@ -1113,11 +1118,11 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         const decision = input.decide({
           account: {
             ...account,
-            pendingDividendCash: calculatePendingDividendCash({
+            pendingDividendCash: summarizePendingDividends({
               asOf: input.tradeDate,
               zero: account.cashBalance.times(0),
               corporateActions,
-            }),
+            }).amount,
           },
           position,
         });
@@ -1235,24 +1240,38 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     }));
   }
 
-  async findCorporateActionsForInvariant(
-    accountId: number,
-  ): Promise<InvariantCorporateActionRow[]> {
-    const corporateActions = await this.prisma.paperCorporateAction.findMany({
-      where: { accountId },
-      select: {
-        kind: true,
-        tickerId: true,
-        cashDelta: true,
-        quantityDelta: true,
-        payDate: true,
-      },
-      orderBy: { id: 'asc' },
+  // 잔고와 기업행동을 한 트랜잭션에서 읽는다. 따로 읽으면 그 사이 배당이 반영됐을 때
+  // 옛 잔고에서 새 미수를 빼게 되어, 실제로는 쓸 수 있는 돈이 여력에서 사라진다.
+  async findAccountWithCorporateActions(
+    accountName: string,
+  ): Promise<AccountWithCorporateActions | null> {
+    return await this.prisma.$transaction(async (transaction) => {
+      const account = await transaction.paperAccount.findUnique({
+        where: { name: accountName },
+        select: { id: true, seedAmount: true, cashBalance: true },
+      });
+      if (!account) {
+        return null;
+      }
+      const corporateActions = await transaction.paperCorporateAction.findMany({
+        where: { accountId: account.id },
+        select: {
+          kind: true,
+          tickerId: true,
+          cashDelta: true,
+          quantityDelta: true,
+          payDate: true,
+        },
+        orderBy: { id: 'asc' },
+      });
+      return {
+        account,
+        corporateActions: corporateActions.map((corporateAction) => ({
+          ...corporateAction,
+          kind: corporateAction.kind as CorporateActionKind,
+        })),
+      };
     });
-    return corporateActions.map((corporateAction) => ({
-      ...corporateAction,
-      kind: corporateAction.kind as CorporateActionKind,
-    }));
   }
 
   async findQuantityAtDate(

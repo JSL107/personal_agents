@@ -21,6 +21,7 @@ const EVALUATION: EvaluateAccountResult = {
   settledCash: '800000',
   unsettledCash: '0',
   pendingDividendCash: '0',
+  pendingDividendCount: 0,
   purchasableCash: '800000',
   nextDividendPayDate: null,
   dividendNetTotal: '0',

@@ -9,8 +9,8 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { parseTradeSide } from '../../../paper-trading/domain/paper-account.type';
 import {
-  calculatePendingDividendCash,
   calculatePurchasableCash,
+  summarizePendingDividends,
 } from '../../../paper-trading/domain/paper-valuation';
 import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
 import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
@@ -56,11 +56,11 @@ const subtractPendingDividend = (input: {
 }): MoneyValue =>
   calculatePurchasableCash({
     cashBalance: input.cashBalance,
-    pendingDividendCash: calculatePendingDividendCash({
+    pendingDividendCash: summarizePendingDividends({
       asOf: input.asOf,
       zero: input.cashBalance.times(0),
       corporateActions: input.corporateActions,
-    }),
+    }).amount,
   });
 
 export interface GeneratePaperRecommendationCommand {
@@ -220,8 +220,11 @@ export class GeneratePaperRecommendationUsecase {
         // 지급일까지 쓸 수 없어(코람코더원리츠는 8/28 락, 11/27 지급) 잔고를 그대로 실으면
         // 받지도 않은 돈을 근거로 매수를 고른다. 실제 수량을 정하는 아래 제약 함수와 같은
         // 기준을 써야 모델이 본 현금과 배정된 현금이 갈리지 않는다.
+        //
+        // 잔고를 위에서 읽어 둔 것으로 쓰지 않는다. 그 사이 스크리닝이 수십 초를 쓰므로,
+        // 그동안 배당이 반영되면 옛 잔고에서 새 미수를 빼 실제로 쓸 수 있는 돈이 사라진다.
         const purchasableCash = await this.findPurchasableCash(
-          account.id,
+          strategy,
           account.cashBalance,
           decidedAt,
         );
@@ -330,14 +333,20 @@ export class GeneratePaperRecommendationUsecase {
   }
 
   private async findPurchasableCash(
-    accountId: number,
-    cashBalance: MoneyValue,
+    accountName: PaperRecommendationStrategy,
+    fallbackCashBalance: MoneyValue,
     asOf: Date,
   ): Promise<MoneyValue> {
+    const state =
+      await this.repository.findAccountWithCorporateActions(accountName);
+    // 계좌가 사라지는 경로는 없지만, 없다고 해서 추천 회차를 통째로 실패시킬 이유도 없다.
+    // 방금 읽어 둔 잔고로 물러선다 — 기업행동을 모르므로 뺄 것도 없다.
+    if (state === null) {
+      return fallbackCashBalance;
+    }
     return subtractPendingDividend({
-      cashBalance,
-      corporateActions:
-        await this.repository.findCorporateActionsForInvariant(accountId),
+      cashBalance: state.account.cashBalance,
+      corporateActions: state.corporateActions,
       asOf,
     });
   }

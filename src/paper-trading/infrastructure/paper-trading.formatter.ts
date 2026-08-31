@@ -152,10 +152,14 @@ export const formatPaperTradingReport = (
   // 결제(D+0/D+2)만 가르므로 그 돈이 어디에도 드러나지 않아, 잔고를 그대로 매수 여력으로
   // 읽게 된다. 미수분이 있는 날만 적는다 — 없는 날 0 원 줄은 읽을 것이 없다.
   if (new Prisma.Decimal(result.pendingDividendCash).comparedTo(0) > 0) {
+    // 여러 건이면 나머지는 그 뒤에 들어온다. 한 건일 때와 같은 문구로 적으면 합계 전액이
+    // 그날 한 번에 들어오는 것으로 읽힌다.
     const payDateNote =
       result.nextDividendPayDate === null
         ? ''
-        : ` (${result.nextDividendPayDate} 지급)`;
+        : result.pendingDividendCount > 1
+          ? ` ${result.pendingDividendCount}건 (첫 지급 ${result.nextDividendPayDate})`
+          : ` (${result.nextDividendPayDate} 지급)`;
     lines.push(
       `미수 배당 ${formatMoney(result.pendingDividendCash)}${payDateNote} · 매수 가능 ${formatMoney(result.purchasableCash)}`,
     );

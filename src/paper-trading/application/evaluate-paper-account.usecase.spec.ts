@@ -269,6 +269,7 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(result.dividendCount).toBe(1);
     // 지급일이 이미 지난 배당이라 잔고 전액을 매수에 쓸 수 있다.
     expect(result.pendingDividendCash).toBe('0');
+    expect(result.pendingDividendCount).toBe(0);
     expect(result.purchasableCash).toBe('1100');
     expect(result.nextDividendPayDate).toBeNull();
     expect(result.invariantViolations).toEqual([]);
@@ -322,6 +323,7 @@ describe('EvaluatePaperAccountUsecase', () => {
       dividendNetTotal: '0',
       dividendCount: 0,
       pendingDividendCash: '0',
+      pendingDividendCount: 0,
       purchasableCash: '800000',
       nextDividendPayDate: null,
       positionValue: '240000',
@@ -394,6 +396,7 @@ describe('EvaluatePaperAccountUsecase', () => {
       dividendNetTotal: '0',
       dividendCount: 0,
       pendingDividendCash: '0',
+      pendingDividendCount: 0,
       purchasableCash: '1000000',
       nextDividendPayDate: null,
       positionValue: '0',
@@ -603,6 +606,7 @@ describe('EvaluatePaperAccountUsecase', () => {
       dividendNetTotal: '0',
       dividendCount: 0,
       pendingDividendCash: '0',
+      pendingDividendCount: 0,
       purchasableCash: '123',
       nextDividendPayDate: null,
       positionValue: null,

@@ -15,6 +15,7 @@ const evaluation = (
   settledCash: '4054273',
   unsettledCash: '0',
   pendingDividendCash: '0',
+  pendingDividendCount: 0,
   purchasableCash: '4054273',
   nextDividendPayDate: null,
   dividendNetTotal: '0',
