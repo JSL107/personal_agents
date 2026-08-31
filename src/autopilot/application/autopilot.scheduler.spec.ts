@@ -1,3 +1,4 @@
+import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
 import { AutopilotScheduler, isLowFrequencyCron } from './autopilot.scheduler';
 
 const makeQueue = () => ({
@@ -263,5 +264,77 @@ describe('AutopilotScheduler', () => {
     expect(applyCall?.[2]).toMatchObject({
       repeat: { pattern: '30 11 * * *', tz: 'Europe/London' },
     });
+  });
+
+  it('AUTOPILOT_INVEST_TARGET → 투자 라인만 채널로, 나머지는 공통 TARGET 유지', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_INVEST_TARGET') {
+          return 'C0STOCK';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const stockCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'stock-monitor',
+    );
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(stockCall?.[1]).toMatchObject({
+      ownerSlackUserId: 'U1',
+      target: 'C0STOCK',
+    });
+    // override 가 없는 그룹까지 끌려가면 안 된다 — 이 단언이 없으면 전역 치환도 통과한다.
+    expect(morningCall?.[1]).toMatchObject({
+      ownerSlackUserId: 'U1',
+      target: 'U1',
+    });
+
+    // 투자 라인은 전수로 확인한다. 대표 한둘만 보면 태그 누락이 조용히 통과한다.
+    const investGroups = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.line === 'invest',
+    ).map((entry) => entry.digestGroup ?? entry.id);
+    expect(investGroups).toHaveLength(10);
+    for (const groupKey of investGroups) {
+      const call = queue.add.mock.calls.find(
+        (item: unknown[]) => item[0] === groupKey,
+      );
+      expect(call?.[1]).toMatchObject({ target: 'C0STOCK' });
+    }
+  });
+
+  it('AUTOPILOT_INVEST_TARGET 미설정이면 투자 라인도 공통 TARGET 을 쓴다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C0COMMON';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const stockCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'stock-monitor',
+    );
+    expect(stockCall?.[1]).toMatchObject({ target: 'C0COMMON' });
   });
 });
