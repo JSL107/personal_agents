@@ -43,6 +43,9 @@ export interface StudyBriefRepositoryPort {
     ownerUserId: string,
     since: Date,
   ): Promise<ExpandableStudyBrief | undefined>;
+  // 실증 CLI(scripts/study-diagram.ts)가 쓰는 조회. 확장 여부와 무관하게 최신 1건.
+  findLatest(ownerUserId: string): Promise<ExpandableStudyBrief | undefined>;
+  findById(id: number): Promise<ExpandableStudyBrief | undefined>;
   save(input: SaveStudyBriefInput): Promise<{ id: number }>;
   updateNotionUrl(id: number, notionUrl: string): Promise<void>;
   markBlogDraftCreated(id: number, blogDraftPageId: string): Promise<void>;
