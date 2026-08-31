@@ -11,6 +11,7 @@ import {
   EveningRetroResult,
   parseEveningRetroOutput,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
+import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-refs';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
@@ -220,19 +221,28 @@ export class EveningRetroPublishTask implements AutopilotTask {
           previewText: `📝 *블로그 발행 후보* (${top.blogValueScore}점) · ${sourceLabel}\n제목: ${top.title}\n근거 PR: ${sourceRefsText}\n왜 쓸 가치: ${top.reason}${outlineText}\n${applyGuide}`,
         });
       }
-      // 경력 카드 — 오늘 머지된 PR 전체를 다건 통합 회고로 반영(#134 활용). payload 는 기존 prRefs 그대로 유지.
+      // 경력 카드 — 저장소별로 나눠 회고한다. 하루치를 한 덩어리로 넘기면 서로 무관한 PR 이
+      // 하나의 성과로 합쳐지고(회고 프롬프트가 "이어진 PR" 을 전제한다), 모델이 공통점을 찾아
+      // 추상화 단계를 올려 제목이 서로 구분되지 않는다 — group-pr-refs.ts 주석 참고.
       if (mergedPrs.length > 0) {
-        const prRefs = mergedPrs.map(
-          (pullRequest) => `${pullRequest.repo}#${pullRequest.number}`,
-        );
+        const { groups, droppedRefCount } = groupPrRefsByRepo(mergedPrs);
         const groupedRefsText = this.formatGroupedPrRefs(
           mergedPrs,
           parsed.prNotes,
         );
+        const reflectedCount = groups.reduce(
+          (total, group) => total + group.refs.length,
+          0,
+        );
+        const droppedNote =
+          droppedRefCount > 0 ? ` · 상한 초과 ${droppedRefCount}건 제외` : '';
         previews.push({
           kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
-          payload: { prRefs, slackUserId: ownerSlackUserId },
-          previewText: `💼 *경력 반영 후보* (오늘 머지 ${prRefs.length}건)\n${groupedRefsText}\n✅ 누르면 이력서 프로필 편입 + 포트폴리오 Notion 반영(다건 통합 회고).`,
+          payload: {
+            prGroups: groups.map((group) => group.refs),
+            slackUserId: ownerSlackUserId,
+          },
+          previewText: `💼 *경력 반영 후보* (오늘 머지 ${reflectedCount}건 · 저장소 ${groups.length}곳${droppedNote})\n${groupedRefsText}\n✅ 누르면 저장소별로 나눠 성과 ${groups.length}건을 이력서 프로필에 편입 + 포트폴리오 Notion 반영.`,
         });
       }
 

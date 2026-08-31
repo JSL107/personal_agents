@@ -173,7 +173,7 @@ describe('EveningRetroPublishTask', () => {
     expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
-  it('(c) PR 1건 있음 → previews.length === 2, 경력 payload.prRefs에 schoolbell-e/sbe-api-v5#864 포함', async () => {
+  it('(c) PR 1건 있음 → previews.length === 2, 경력 payload.prGroups 에 schoolbell-e/sbe-api-v5#864 포함', async () => {
     const { task } = makeTask({
       prs: [PR_ITEM],
       worklogRuns: [],
@@ -190,9 +190,39 @@ describe('EveningRetroPublishTask', () => {
       (p) => p.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
     );
     expect(careerPreview).toBeDefined();
-    expect((careerPreview?.payload as { prRefs: string[] }).prRefs).toContain(
-      'schoolbell-e/sbe-api-v5#864',
+    expect(
+      (careerPreview?.payload as { prGroups: string[][] }).prGroups,
+    ).toEqual([['schoolbell-e/sbe-api-v5#864']]);
+  });
+
+  it('(c-3) 회사 PR 과 개인 PR 이 섞인 날은 저장소별 묶음으로 갈라 담는다', async () => {
+    const { task } = makeTask({
+      prs: [
+        PR_ITEM,
+        {
+          ...PR_ITEM,
+          number: 401,
+          repo: 'JSL107/personal_agents',
+          url: 'https://github.com/JSL107/personal_agents/pull/401',
+        },
+      ],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    const careerPreview = result.previews?.find(
+      (p) => p.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
     );
+    const { prGroups } = careerPreview?.payload as { prGroups: string[][] };
+
+    expect(prGroups).toHaveLength(2);
+    for (const group of prGroups) {
+      const repositories = new Set(group.map((ref) => ref.split('#')[0]));
+      expect(repositories.size).toBe(1);
+    }
   });
 
   it('(c-2) 회고 생성을 EVENING_RETRO 실행 원장으로 감싼다', async () => {

@@ -13,7 +13,7 @@ export const PR_RETRO_SYNTH_SYSTEM_PROMPT = `너는 개발자의 단일 PR 하�
 
 규칙:
 - accomplishment.evidence 는 입력으로 받은 그 PR 하나로 고정한다 (repo/pr/url/mergedAt). 다른 PR 을 지어내지 않는다.
-- accomplishment.bullet 은 이력서 한 줄: "행동 + 결과 + (가능하면) 정량 지표". PR 에서 확인되는 것만. 과장 금지.
+- accomplishment.bullet 은 이력서 한 줄: "행동 + 결과 + 정량 지표". 지표는 PR 제목·본문·diff 에 문자로 적힌 값만 원문 그대로 옮긴다 (예: "69% -> 6%", "3/6 -> 0/6", "30분 -> 2분"). 적혀 있으면 반드시 싣고, 적혀 있지 않으면 지표 없이 쓴다. 추정·계산·반올림으로 새 숫자를 만들지 않는다. 과장 금지.
 - star 는 situation/task/action/result 각 1~2문장. diff 에서 실제로 한 일 기준.
 - techTags 는 diff/파일 경로에서 드러난 실제 기술 스택.
 - narrative 는 이 PR 회고 서술 3~6문장: 무엇이 문제였고, 어떤 의사결정·트레이드오프가 있었고, 무엇을 배웠는지. 수치·파일경로·고유명사는 보존.
@@ -77,7 +77,7 @@ export const MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT = `너는 개발자의 "이어�
 규칙:
 - accomplishment 는 입력 PR 전체를 관통하는 "하나의 통합 성과"다. 여러 성과로 쪼개지 않는다.
 - accomplishment.evidence 에는 입력으로 받은 "모든 PR"을 담는다 (각 repo/pr/url/mergedAt). 입력에 없는 PR 을 지어내지 않는다.
-- accomplishment.bullet 은 이력서 한 줄: "행동 + 결과 + (가능하면) 정량 지표". 확인되는 것만, 과장 금지.
+- accomplishment.bullet 은 이력서 한 줄: "행동 + 결과 + 정량 지표". 지표는 PR 제목·본문·diff 에 문자로 적힌 값만 원문 그대로 옮긴다 (예: "69% -> 6%", "3/6 -> 0/6", "30분 -> 2분"). 적혀 있으면 반드시 싣고, 적혀 있지 않으면 지표 없이 쓴다. 추정·계산·반올림으로 새 숫자를 만들지 않는다. 과장 금지.
 - star 는 situation/task/action/result 각 1~2문장. 여러 PR 을 합친 실제 작업 기준.
 - techTags 는 전체 diff/파일 경로에서 드러난 실제 기술 스택 (중복 제거).
 - narrative 는 이 작업 흐름 회고 4~7문장: 무엇이 문제였고, PR 들을 관통하는 어떤 의사결정·트레이드오프가 있었고, 무엇을 배웠는지. 수치·파일경로·고유명사는 보존.
