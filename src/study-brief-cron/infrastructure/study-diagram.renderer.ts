@@ -32,6 +32,23 @@ export class StudyDiagramRenderer implements StudyDiagramRendererPort {
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
       page = await browser.newPage();
+      // LLM 이 만든 문서는 신뢰 대상이 아니다. 파서가 src/href 속성을 걸러내지만
+      // 인라인 script 의 fetch·CSS url() 까지는 못 막고, setContent 는 스크립트를 실행한다.
+      // 나가는 요청을 전부 끊어 SSRF 가 성립하지 않게 한다 — 스크립트가 돌아도 무해해진다.
+      // setJavaScriptEnabled(false) 는 쓰지 않는다 — page.evaluate 까지 막혀
+      // 글자 크기·가려짐 측정(이 기능의 판정 전부)이 불가능해진다.
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        // setContent 는 CDP Page.setDocumentContent 로 문서를 주입할 뿐 별도 네트워크
+        // 요청을 만들지 않는다(about:blank 그대로). 그래도 브라우저가 자체적으로 붙이는
+        // 요청(예: about:blank 자체)까지 통과시켜 setContent 가 막히지 않게 한다.
+        const url = request.url();
+        if (url.startsWith('data:') || url === 'about:blank') {
+          void request.continue();
+          return;
+        }
+        void request.abort();
+      });
       await page.setViewport({
         width: limits.widthPx,
         height: INITIAL_VIEWPORT_HEIGHT,
