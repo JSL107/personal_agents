@@ -6,10 +6,13 @@ export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 export interface SlackNotifierPort {
   // target: 슬랙 user ID(`U...`) / 채널 ID(`C.../G...`) — chat.postMessage 의 channel 파라미터.
   // threadTs 지정 시 해당 메시지의 스레드 댓글로 발송. 반환 ts 는 후속 스레드 발송용.
+  // unfurlLinks=false 면 링크 미리보기(카드·썸네일)를 끈다. 링크가 여러 개인 요약
+  // 메시지는 미리보기가 붙는 순간 본문보다 길어져 요약 구실을 못 한다. 기본은 종전대로 켜짐.
   postMessage(input: {
     target: string;
     text: string;
     threadTs?: string;
+    unfurlLinks?: boolean;
   }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW preview 버튼 메시지. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
   postPreviewMessage(input: {

@@ -21,6 +21,10 @@ export interface AutopilotTaskResult {
   summaryText?: string;
   // 있으면 메인 메시지의 스레드 댓글로 발송될 상세 본문. 없으면 요약만.
   detailText?: string;
+  // false 면 이 요약이 실린 메시지의 링크 미리보기를 끈다. 한 메시지에 여러 task 의
+  // 요약이 합쳐지므로(orchestrator) 설정은 메시지 단위다 — 하나라도 끄기를 요청하면 끈다.
+  // 링크를 여러 개 싣는 목록형 카드(job-feed 등)가 미리보기에 파묻히는 것을 막는 용도다.
+  unfurlLinks?: boolean;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.

@@ -61,6 +61,9 @@ const formatOutcome = (outcome: SourceFetchOutcome): string => {
   return `${label} ${outcome.accepted}건`;
 };
 
+// 카드에 적는 기술 개수 상한.
+const MAX_SKILL_TAGS = 4;
+
 const STALE_COLLECTION_HOURS = 24;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -105,32 +108,34 @@ export const formatJobFeedDigest = ({
   } else {
     lines.push(`*새 백엔드 공고 ${postings.length}건*`);
     for (const posting of postings) {
+      // 기술은 네 개까지만 적는다. 여섯 개를 다 늘어놓으면 그 줄이 화면을 가로질러
+      // 회사명보다 무거워진다 — 카드는 고를 거리를 주는 자리지 명세를 옮기는 자리가 아니다.
       const skills =
         posting.skillTags.length === 0
           ? '스킬 정보 없음'
-          : posting.skillTags.slice(0, 6).join(' · ');
+          : posting.skillTags.slice(0, MAX_SKILL_TAGS).join(' · ');
       // 랠릿은 고정 지역 코드라 안전하지만, 점핏·원티드는 원본 문자열의 첫 토큰을
       // 그대로 쓰므로 회사명·제목과 마찬가지로 escape 없이는 특수문자가 노출될 수 있다.
       const location =
         posting.locations.length === 0
           ? ''
           : `${escapeMrkdwn(posting.locations.join('/'))} · `;
-      // 건과 건 사이를 빈 줄로 끊는다. 열 건이 같은 간격으로 붙어 있으면 어디서
-      // 한 건이 끝나는지 보이지 않아 두 줄짜리 항목이 한 덩어리로 읽힌다.
-      lines.push('');
       // 회사명을 줄 맨 앞에 굵게 둔다. 예전엔 `[100점]` 배지가 앞자리였는데,
       // 알림은 점수 내림차순 상위 10건이고 만점 행이 수십 건 쌓여 있어 배지가
       // 사실상 항상 같은 값이었다 — 회사명 시작 위치만 줄마다 어긋나 세로로
-      // 훑을 수 없었다. 점수는 값이 갈릴 때만 쓸모가 있으므로 메타 줄 끝으로 옮긴다.
+      // 훑을 수 없었다.
       lines.push(
         `*${escapeMrkdwn(posting.company)}* — <${posting.detailUrl}|${escapeMrkdwn(
           posting.title,
         )}>`,
       );
-      // 연차·지역·스킬·점수는 회사명을 고른 뒤에 보는 부속 정보다. 기울임으로
-      // 눌러 두지 않으면 본문과 같은 무게라 회사명과 시선을 두고 경쟁한다.
+      // 부속 정보는 인용 줄로 내린다. 슬랙이 왼쪽에 세로선을 그려 "위 회사에 딸린
+      // 정보"라는 종속 관계가 위치가 아니라 선으로 보인다. 기울임(`_..._`)을 먼저
+      // 썼다가 되돌렸다 — 슬랙 이탤릭은 색을 바꾸지 않아 눌러쓰기가 되지 않고,
+      // 한글은 기울임체가 없어 강제로 비스듬히 그려지느라 오히려 읽기 나빠졌다.
+      // 인용 줄은 덤으로 문장 분해에서도 보호받는다(mrkdwn.util 의 LIST_OR_QUOTE_LINE).
       lines.push(
-        `_${formatYears(posting.minYears, posting.maxYears)} · ${location}${escapeMrkdwn(skills)} · ${posting.matchScore ?? 0}점_`,
+        `> ${formatYears(posting.minYears, posting.maxYears)} · ${location}${escapeMrkdwn(skills)}`,
       );
     }
   }

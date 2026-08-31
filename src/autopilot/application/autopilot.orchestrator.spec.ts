@@ -42,6 +42,59 @@ describe('AutopilotOrchestrator', () => {
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
 
+  describe('unfurlLinks — 링크가 여러 개인 목록형 카드가 미리보기에 묻히지 않게 한다', () => {
+    const runWith = async (
+      results: { skip: false; summaryText: string; unfurlLinks?: boolean }[],
+    ): Promise<jest.Mock> => {
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const tasks = results.map((result, index) => {
+        return makeTask(index === 0 ? 'daily-eval' : 'work-reviewer', result);
+      });
+      const orchestrator = new AutopilotOrchestrator(
+        tasks as never,
+        { postMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+      const entries = tasks.map((_, index) => {
+        return index === 0
+          ? makeEntry('daily-eval', 'daily-eval')
+          : makeEntry('work-reviewer', 'work-reviewer');
+      });
+      await orchestrator.runGroup('evening', entries, 'U1', 'C1');
+      return postMessage;
+    };
+
+    it('task 가 끄기를 요청하면 발송에 그대로 전달한다', async () => {
+      const postMessage = await runWith([
+        { skip: false, summaryText: '본문', unfurlLinks: false },
+      ]);
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ unfurlLinks: false }),
+      );
+    });
+
+    it('아무도 요청하지 않으면 옵션을 붙이지 않는다 — 기존 발송은 그대로다', async () => {
+      const postMessage = await runWith([{ skip: false, summaryText: '본문' }]);
+      expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
+    });
+
+    it('요약이 합쳐질 때 한 항목만 요청해도 끈다 — 설정은 메시지 단위다', async () => {
+      // 켜 둔 채 합치면 그 항목의 링크가 펼쳐져, 끄려던 이유가 그대로 남는다.
+      const postMessage = await runWith([
+        { skip: false, summaryText: 'A' },
+        { skip: false, summaryText: 'B', unfurlLinks: false },
+      ]);
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ unfurlLinks: false }),
+      );
+    });
+  });
+
   it('2항목 그룹 → task 2개 실행, postMessage 1회(구분자 포함)', async () => {
     const taskA = makeTask('daily-eval', { skip: false, summaryText: 'A' });
     const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });

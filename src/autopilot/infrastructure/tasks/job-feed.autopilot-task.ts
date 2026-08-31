@@ -163,7 +163,9 @@ export class JobFeedAutopilotTask implements AutopilotTask {
             }
           };
 
-    return { skip: false, summaryText, onDelivered };
+    // 카드에 공고 열 건의 링크가 실린다. 미리보기를 켜 두면 채용 사이트가 회사 사진과
+    // 소개문을 하나씩 펼쳐, 열 줄짜리 요약이 화면 몇 배 길이로 늘어나고 정작 목록은 묻힌다.
+    return { skip: false, summaryText, onDelivered, unfurlLinks: false };
   }
 
   private parseLocations(): string[] {
