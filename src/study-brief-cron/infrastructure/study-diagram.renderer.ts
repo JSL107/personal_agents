@@ -42,14 +42,22 @@ export class StudyDiagramRenderer implements StudyDiagramRendererPort {
         timeout: CONTENT_TIMEOUT_MS,
       });
 
-      const measurements = await measureDocument(page);
+      // 가려짐 판정(elementFromPoint)은 뷰포트 밖의 점에는 null 을 돌려준다. 초기 1px
+      // 뷰포트인 채로 재면 콘텐츠 대부분이 화면 밖이라 가려짐을 하나도 못 잡는다.
+      // scrollHeight 만 먼저 얕게 재서 뷰포트를 실제 콘텐츠 높이로 맞춘 뒤에야
+      // 본 측정(가려짐 포함)을 정확히 할 수 있다.
+      const roughContentHeight = await page.evaluate(
+        () => document.documentElement.scrollHeight,
+      );
       // fullPage 는 뷰포트 높이를 하한으로 삼는다. 콘텐츠가 그보다 짧으면 아래에 빈 여백이
-      // 붙으므로, 캡처 직전에 뷰포트를 실제 콘텐츠 높이로 낮춘다.
+      // 붙으므로, 캡처 전에 뷰포트를 실제 콘텐츠 높이로 맞춘다.
       await page.setViewport({
         width: limits.widthPx,
-        height: Math.max(1, Math.ceil(measurements.contentHeight)),
+        height: Math.max(1, Math.ceil(roughContentHeight)),
         deviceScaleFactor: DEVICE_SCALE_FACTOR,
       });
+
+      const measurements = await measureDocument(page);
       const screenshot = await page.screenshot({ fullPage: true, type: 'png' });
 
       return {
@@ -85,11 +93,33 @@ const measureDocument = async (page: Page): Promise<DiagramMeasurements> =>
     const texts = leaves.map((element) => {
       const rect = element.getBoundingClientRect();
       const content = (element.textContent ?? '').trim().slice(0, 20);
+
+      // 글자 자리에서 실제로 보이는 것이 이 요소인지 묻는다. 겹침의 원인(도형·다른 글자·
+      // z-index)을 따지지 않고 결과만 본다 — 사람 눈이 보는 것과 같은 판정이다.
+      // 한 점만 보면 글자 사이 공백에 찍혀 오판하므로 가로로 세 점을 뽑아 다수결로 정한다.
+      const probes = [0.25, 0.5, 0.75].map((ratio) => ({
+        x: rect.left + rect.width * ratio,
+        y: rect.top + rect.height / 2,
+      }));
+      let coveredCount = 0;
+      for (const probe of probes) {
+        const top = document.elementFromPoint(probe.x, probe.y);
+        if (top === null) {
+          continue;
+        }
+        // 자기 자신이거나 자기 자손이면 가려진 것이 아니다.
+        if (top === element || element.contains(top)) {
+          continue;
+        }
+        coveredCount += 1;
+      }
+
       return {
         label: `${element.tagName.toLowerCase()} "${content}"`,
         // CSS font-size 가 아니라 실제 렌더 높이를 쓴다.
         // SVG viewBox 스케일이 걸리면 두 값이 어긋나고, 눈에 보이는 것은 이쪽이다.
         renderedFontPx: rect.height,
+        covered: coveredCount >= 2,
       };
     });
 
