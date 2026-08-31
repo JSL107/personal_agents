@@ -114,14 +114,23 @@ export const formatJobFeedDigest = ({
       const location =
         posting.locations.length === 0
           ? ''
-          : ` · ${escapeMrkdwn(posting.locations.join('/'))}`;
+          : `${escapeMrkdwn(posting.locations.join('/'))} · `;
+      // 건과 건 사이를 빈 줄로 끊는다. 열 건이 같은 간격으로 붙어 있으면 어디서
+      // 한 건이 끝나는지 보이지 않아 두 줄짜리 항목이 한 덩어리로 읽힌다.
+      lines.push('');
+      // 회사명을 줄 맨 앞에 굵게 둔다. 예전엔 `[100점]` 배지가 앞자리였는데,
+      // 알림은 점수 내림차순 상위 10건이고 만점 행이 수십 건 쌓여 있어 배지가
+      // 사실상 항상 같은 값이었다 — 회사명 시작 위치만 줄마다 어긋나 세로로
+      // 훑을 수 없었다. 점수는 값이 갈릴 때만 쓸모가 있으므로 메타 줄 끝으로 옮긴다.
       lines.push(
-        `• [${posting.matchScore ?? 0}점] <${posting.detailUrl}|${escapeMrkdwn(
-          posting.company,
-        )} — ${escapeMrkdwn(posting.title)}>`,
+        `*${escapeMrkdwn(posting.company)}* — <${posting.detailUrl}|${escapeMrkdwn(
+          posting.title,
+        )}>`,
       );
+      // 연차·지역·스킬·점수는 회사명을 고른 뒤에 보는 부속 정보다. 기울임으로
+      // 눌러 두지 않으면 본문과 같은 무게라 회사명과 시선을 두고 경쟁한다.
       lines.push(
-        `    ${formatYears(posting.minYears, posting.maxYears)}${location} · ${escapeMrkdwn(skills)}`,
+        `_${formatYears(posting.minYears, posting.maxYears)} · ${location}${escapeMrkdwn(skills)} · ${posting.matchScore ?? 0}점_`,
       );
     }
   }
