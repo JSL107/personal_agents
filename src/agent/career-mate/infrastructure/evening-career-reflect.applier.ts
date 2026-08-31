@@ -31,7 +31,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     // 순차 실행이어야 한다 — ReflectPrUsecase 는 "최신 프로필 조회 → 병합 → 저장" 이라
     // 병렬로 돌리면 뒤에 저장한 회차가 앞 회차의 성과를 덮어쓴다(lost update).
     const messages: string[] = [];
-    const failedGroups: string[][] = [];
+    const failedGroups: FailedGroup[] = [];
     let lastPortfolioUrl: string | null = null;
     for (const [index, refs] of groups.entries()) {
       // 맥락은 묶음마다 따로 받는다 — 카드 전체에 한 줄만 받으면 회사 저장소의 수치가
@@ -52,7 +52,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
       } catch (error) {
         // 그룹 하나가 실패해도 나머지는 반영한다 — 한 저장소의 PR 접근 실패로 그날 성과가
         // 통째로 사라지면, 승인 카드는 이미 소비돼 다시 누를 수 없다.
-        failedGroups.push(refs);
+        failedGroups.push({ refs, impactContext });
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
           `EVENING_CAREER_REFLECT 그룹 실패 — ${careerGroupRepo(refs)}: ${message}`,
@@ -68,15 +68,35 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     // 실패한 묶음은 PR 참조를 그대로 돌려준다. 카드는 한 번 소비되면 다시 누를 수 없어
     // 사람이 손으로 회고를 다시 요청해야 하는데, 저장소 이름만으로는 무엇을 다시 돌릴지
     // 알 수 없다 — 일시적인 GitHub 호출 실패가 성과의 영구 누락이 된다.
+    //
+    // 줄바꿈은 `\n` 이어야 한다. `\\n` 으로 쓰면 슬랙에 백슬래시와 n 이 글자 그대로 찍혀
+    // 안내가 한 줄로 뭉개진다 — 조용한 유실을 막으려고 만든 문구가 읽히지 않게 된다.
     const failedNote =
       failedGroups.length > 0
-        ? `\\n⚠️ 반영 실패 ${failedGroups.length}묶음 — 아래 PR 로 다시 요청해주세요:\\n${failedGroups
-            .map((refs) => `• ${refs.join(' ')}`)
-            .join('\\n')}`
+        ? `\n⚠️ 반영 실패 ${failedGroups.length}묶음 — 아래 PR 로 다시 요청해주세요:\n${failedGroups
+            .map((failed) => this.formatFailedGroup(failed))
+            .join('\n')}`
         : '';
     return {
       message: `이력서/포트폴리오에 반영했습니다 (${messages.join(', ')})${failedNote} — ${lastPortfolioUrl ?? '완료'}`,
       artifacts: [],
     };
   }
+
+  /**
+   * 실패한 묶음을 다시 돌릴 수 있게 PR 참조를 그대로 돌려준다.
+   *
+   * 적어둔 맥락도 함께 되돌린다. 카드는 한 번 소비되면 다시 누를 수 없고 입력칸도 사라지므로,
+   * 여기서 남기지 않으면 사용자가 손으로 적은 문장이 어디에도 남지 않는다 — 코드에 없는 정보를
+   * 붙잡으려고 만든 기능인데 정작 그 문장만 유실된다.
+   */
+  private formatFailedGroup({ refs, impactContext }: FailedGroup): string {
+    const line = `• ${refs.join(' ')}`;
+    return impactContext ? `${line}\n  적어두신 맥락: ${impactContext}` : line;
+  }
+}
+
+interface FailedGroup {
+  refs: string[];
+  impactContext: string | undefined;
 }

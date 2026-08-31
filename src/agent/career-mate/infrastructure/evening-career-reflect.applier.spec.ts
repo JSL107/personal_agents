@@ -206,4 +206,64 @@ describe('EveningCareerReflectApplier', () => {
       prText: 'o/company#1',
     });
   });
+
+  it('(i) 묶음이 실패하면 적어둔 맥락도 함께 돌려준다 — 카드는 다시 못 누른다', async () => {
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('PR 접근 불가'))
+        .mockResolvedValueOnce({
+          result: { portfolioUrl: 'https://notion.so/portfolio' },
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+        impactContexts: ['결제 실패율 3%→0.5%', null],
+      }),
+    );
+
+    expect(result.message).toContain('반영 실패 1묶음');
+    expect(result.message).toContain('• o/company#1');
+    // 이 줄이 없으면 사용자가 손으로 적은 문장이 어디에도 남지 않는다.
+    expect(result.message).toContain('적어두신 맥락: 결제 실패율 3%→0.5%');
+  });
+
+  it('(j) 맥락 없이 실패한 묶음은 PR 참조만 (군더더기 줄 없음)', async () => {
+    const reflectPr = {
+      execute: jest.fn().mockRejectedValueOnce(new Error('PR 접근 불가')),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    await expect(
+      applier.apply(
+        makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+      ),
+    ).rejects.toThrow('1개 묶음이 모두 실패했습니다');
+  });
+
+  it('(k) 실패 안내는 진짜 줄바꿈을 쓴다 — 백슬래시 n 이 글자로 찍히면 한 줄로 뭉개진다', async () => {
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('PR 접근 불가'))
+        .mockResolvedValueOnce({
+          result: { portfolioUrl: 'https://notion.so/portfolio' },
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(reflectPr as never);
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+    );
+
+    expect(result.message).not.toContain('\\n');
+    expect(result.message.split('\n').length).toBeGreaterThan(1);
+  });
 });

@@ -148,4 +148,92 @@ describe('UpdatePreviewPayloadUsecase', () => {
     ).rejects.toThrow('payload 형식 오류');
     expect(updatePayload).not.toHaveBeenCalled();
   });
+
+  // 경력 카드의 두 입력칸에 연달아 Enter, 분배 카드의 드롭다운 둘을 빠르게 바꾸는 경우.
+  // 직렬화가 없으면 둘 다 같은 payload 를 읽고 각자 한 항목만 고쳐 저장해, 나중 write 가
+  // 앞선 변경을 조용히 덮는다 — 사람이 적어 넣은 문장이 그렇게 사라진다.
+  it('같은 카드에 대한 동시 갱신을 직렬화한다 (lost update 차단)', async () => {
+    let stored: Record<string, unknown> = { contexts: [null, null] };
+    findById.mockImplementation(async () =>
+      buildPreview({ payload: stored } as Partial<PreviewAction>),
+    );
+    updatePayload.mockImplementation(async ({ payload }) => {
+      // 저장은 즉시 끝나지 않는다 — 겹칠 틈을 실제로 만든다.
+      await new Promise((resolve) => setImmediate(resolve));
+      stored = payload as Record<string, unknown>;
+      return buildPreview({ payload } as Partial<PreviewAction>);
+    });
+
+    const writeAt = (index: number, value: string) => (current: unknown) => {
+      const contexts = [...(current as { contexts: unknown[] }).contexts];
+      contexts[index] = value;
+      return { contexts };
+    };
+
+    await Promise.all([
+      usecase.execute({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        update: writeAt(0, '회사 맥락'),
+      }),
+      usecase.execute({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        update: writeAt(1, '개인 맥락'),
+      }),
+    ]);
+
+    expect(stored).toEqual({ contexts: ['회사 맥락', '개인 맥락'] });
+  });
+
+  it('앞 갱신이 실패해도 뒤 갱신은 진행된다 (사슬이 막히지 않는다)', async () => {
+    updatePayload
+      .mockRejectedValueOnce(new Error('일시 실패'))
+      .mockImplementationOnce(async ({ payload }) =>
+        buildPreview({ payload } as Partial<PreviewAction>),
+      );
+
+    const [failed, succeeded] = await Promise.allSettled([
+      usecase.execute({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        update: () => ({ assignments: ['first'] }),
+      }),
+      usecase.execute({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        update: () => ({ assignments: ['second'] }),
+      }),
+    ]);
+
+    expect(failed.status).toBe('rejected');
+    expect(succeeded.status).toBe('fulfilled');
+  });
+
+  it('다른 카드끼리는 서로 기다리지 않는다', async () => {
+    findById.mockImplementation(async () => buildPreview());
+    const order: string[] = [];
+    updatePayload.mockImplementation(async ({ id, payload }) => {
+      if (id === 'slow') {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+      order.push(id as string);
+      return buildPreview({ payload } as Partial<PreviewAction>);
+    });
+
+    await Promise.all([
+      usecase.execute({
+        previewId: 'slow',
+        slackUserId: 'U1',
+        update: () => ({}),
+      }),
+      usecase.execute({
+        previewId: 'fast',
+        slackUserId: 'U1',
+        update: () => ({}),
+      }),
+    ]);
+
+    expect(order).toEqual(['fast', 'slow']);
+  });
 });

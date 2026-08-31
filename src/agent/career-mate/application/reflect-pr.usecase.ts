@@ -27,6 +27,7 @@ import {
   CAREER_PROFILE_REPOSITORY_PORT,
   CareerProfileRepositoryPort,
 } from '../domain/port/career-profile.repository.port';
+import { preserveImpactContexts } from '../domain/preserve-impact-context';
 import {
   buildMultiPrRetroPrompt,
   buildPrRetroPrompt,
@@ -154,11 +155,16 @@ export class ReflectPrUsecase {
 
         const latest = await this.repository.findLatestBySlackUser(slackUserId);
         const todayIsoDate = new Date().toISOString().slice(0, 10);
-        const merged = mergeAccomplishment({
-          latest: latest?.profileJson ?? null,
-          accomplishment,
-          githubLogin,
-          todayIsoDate,
+        const merged = preserveImpactContexts({
+          previous: latest?.profileJson ?? null,
+          // 같은 PR 을 맥락 없이 다시 회고하면 이 병합이 옛 성과를 새 것으로 통째 교체한다.
+          // 사람이 적은 문장은 모델이 다시 만들어 낼 수 없으므로 교체 뒤에 되살린다.
+          next: mergeAccomplishment({
+            latest: latest?.profileJson ?? null,
+            accomplishment,
+            githubLogin,
+            todayIsoDate,
+          }),
         });
         // humanizeCareerProfile 은 서술 필드만 윤문하고 meta 는 spread 로 보존한다(회귀 0).
         const humanized = await humanizeCareerProfile(merged, this.humanizer);
