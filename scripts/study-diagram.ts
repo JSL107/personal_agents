@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import {
@@ -77,9 +77,11 @@ const main = async (): Promise<void> => {
     const repository = app.get<StudyBriefRepositoryPort>(
       STUDY_BRIEF_REPOSITORY_PORT,
     );
+    const configService = app.get(ConfigService);
     const idOption = readOption('id');
     const owner =
-      readOption('owner') ?? process.env.STUDY_BRIEF_OWNER_SLACK_USER_ID;
+      readOption('owner') ??
+      configService.get<string>('STUDY_BRIEF_OWNER_SLACK_USER_ID');
 
     if (idOption === undefined && !owner) {
       throw new Error(
