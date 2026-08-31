@@ -52,6 +52,19 @@ describe('buildStudyDiagramPrompt', () => {
 
     expect(prompt).toMatch(/회사명|사내/);
   });
+
+  it('바깥 여백을 0 으로 두라고 지시한다', () => {
+    const prompt = buildStudyDiagramPrompt(input);
+
+    expect(prompt).toContain('margin');
+    expect(prompt).toMatch(/여백/);
+  });
+
+  it('가로 제한이 여백을 포함한 전체 폭임을 밝힌다', () => {
+    const prompt = buildStudyDiagramPrompt(input);
+
+    expect(prompt).toContain('전체 폭');
+  });
 });
 
 describe('buildStudyDiagramRetryPrompt', () => {
@@ -95,5 +108,12 @@ describe('buildStudyDiagramRetryPrompt', () => {
 
     expect(prompt).toContain('812px');
     expect(prompt).toContain('9px');
+  });
+
+  it('재작업 프롬프트도 여백 포함 전체 폭 규칙을 담는다', () => {
+    const prompt = buildStudyDiagramRetryPrompt({ ...input, violations });
+
+    expect(prompt).toContain('전체 폭');
+    expect(prompt).toMatch(/여백/);
   });
 });
