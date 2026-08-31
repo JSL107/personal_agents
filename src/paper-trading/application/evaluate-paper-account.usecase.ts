@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { DailyBar } from '../../market-data/domain/market-data.type';
+import {
+  DailyBar,
+  MoneyValue,
+} from '../../market-data/domain/market-data.type';
 import {
   MARKET_DATA_PORT,
   MarketDataPort,
@@ -14,8 +17,11 @@ import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
   calculatePositionValuation,
+  calculateUnsettledCash,
 } from '../domain/paper-valuation';
 import {
+  InvariantCorporateActionRow,
+  InvariantTradeRow,
   PaperPositionWithTicker,
   PaperTradingPrismaRepository,
 } from '../infrastructure/paper-trading.prisma.repository';
@@ -52,13 +58,26 @@ export interface EvaluateAccountResult {
   skipReason?: string;
   tradeDate: string | null;
   cashBalance: string;
+  settledCash: string;
+  unsettledCash: string;
+  dividendNetTotal: string;
+  dividendCount?: number;
   positionValue: string | null;
   totalValue: string | null;
   returnRate: string | null;
   // 총 수익률을 "이미 확정한 손익" 과 "아직 들고 있는 손익" 으로 가른 값. 카드가 보유
   // 종목만 보여주면 매도로 확정된 손실이 어디에도 드러나지 않는다.
+  //
+  // realizedPnl 은 `총평가 − 시드 − 평가손익` 으로 역산한 값이라 **배당까지 흡수한다**.
+  // 그대로 "확정 손익" 이라 부르면 종목을 골라 번 돈과 배당으로 들어온 돈이 한 숫자에
+  // 뭉쳐, 이 계좌의 목적인 추천 채점을 할 수 없다. 매매분만 따로 낸다.
   realizedPnl: string | null;
+  tradingRealizedPnl?: string | null;
   unrealizedPnl: string | null;
+  // 전 거래일 스냅샷의 수익률. 카드는 그날 상태만 찍으므로 나아졌는지 나빠졌는지가
+  // 드러나지 않는다. 스냅샷이 없는 첫날에는 null 이다.
+  previousReturnRate?: string | null;
+  previousTradeDate?: string | null;
   benchmarkClose: string | null;
   positions: EvaluatedPositionRow[];
   unpricedPositions: UnpricedPositionRow[];
@@ -84,6 +103,48 @@ interface PositionPrice {
   bars: DailyBar[];
   latest: DailyBar;
 }
+
+interface CashSettlementSummary {
+  settledCash: string;
+  unsettledCash: string;
+  dividendNetTotal: string;
+  dividendCount: number;
+}
+
+const emptyCashSettlementSummary = (
+  cashBalance: string,
+): CashSettlementSummary => ({
+  settledCash: cashBalance,
+  unsettledCash: '0',
+  dividendNetTotal: '0',
+  dividendCount: 0,
+});
+
+const calculateCashSettlementSummary = (input: {
+  cashBalance: MoneyValue;
+  tradeDate: Date;
+  trades: InvariantTradeRow[];
+  corporateActions: InvariantCorporateActionRow[];
+}): CashSettlementSummary => {
+  const unsettledCash = calculateUnsettledCash({
+    asOf: input.tradeDate,
+    zero: input.cashBalance.times(0),
+    trades: input.trades,
+  });
+  const dividendActions = input.corporateActions.filter(
+    (corporateAction) => corporateAction.kind === 'DIVIDEND',
+  );
+  const dividendNetTotal = dividendActions.reduce(
+    (total, corporateAction) => total.plus(corporateAction.cashDelta),
+    input.cashBalance.times(0),
+  );
+  return {
+    settledCash: input.cashBalance.minus(unsettledCash).toString(),
+    unsettledCash: unsettledCash.toString(),
+    dividendNetTotal: dividendNetTotal.toString(),
+    dividendCount: dividendActions.length,
+  };
+};
 
 const buildEvaluatedPositionRows = (
   pricedPositions: PositionPrice[],
@@ -179,6 +240,13 @@ export class EvaluatePaperAccountUsecase {
     }
     const tradeDateText = formatKstTradeDate(command.executedAt);
     const tradeDate = toDateOnly(tradeDateText);
+    // 전 거래일 성적. 스냅샷은 그날 상태만 찍으므로 이 값이 없으면 카드만 보고는
+    // 나아졌는지 나빠졌는지 알 수 없다. 계좌 락 밖에서 읽는다 — 읽기 전용이고
+    // 락 안에서 다시 읽어도 같은 과거 행이라 락 시간만 길어진다.
+    const previousSnapshot = await this.repository.findLatestSnapshotBefore(
+      account.id,
+      tradeDate,
+    );
     const positions = await this.repository.findPositionsWithTicker(account.id);
     const priceResults: {
       position: PaperPositionWithTicker;
@@ -240,6 +308,7 @@ export class EvaluatePaperAccountUsecase {
         skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -263,6 +332,7 @@ export class EvaluatePaperAccountUsecase {
         skipReason: `${unpricedPositions.length}개 보유 종목의 평가 시세를 찾을 수 없습니다: ${missingCodes}`,
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -310,6 +380,7 @@ export class EvaluatePaperAccountUsecase {
           '분할·배당락 등 기업행동이 의심되는 가격 변동을 발견했습니다.',
         tradeDate: tradeDateText,
         cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
         positionValue: null,
         totalValue: null,
         returnRate: null,
@@ -348,6 +419,9 @@ export class EvaluatePaperAccountUsecase {
                 '시세 조회 중 계좌 상태가 변경되어 스냅샷을 적재하지 않았습니다.',
               tradeDate: tradeDateText,
               cashBalance: freshState.account.cashBalance.toString(),
+              ...emptyCashSettlementSummary(
+                freshState.account.cashBalance.toString(),
+              ),
               positionValue: null,
               totalValue: null,
               returnRate: null,
@@ -372,7 +446,14 @@ export class EvaluatePaperAccountUsecase {
             tickerId: position.tickerId,
             quantity: position.quantity,
           })),
+          corporateActions: freshState.corporateActions,
         }).map((violation) => violation.detail);
+        const cashSettlement = calculateCashSettlementSummary({
+          cashBalance: freshState.account.cashBalance,
+          tradeDate,
+          trades: freshState.trades,
+          corporateActions: freshState.corporateActions,
+        });
         if (invariantViolations.length > 0) {
           return {
             snapshot: null,
@@ -381,6 +462,7 @@ export class EvaluatePaperAccountUsecase {
               skipReason: '거래 원장과 계좌 상태의 불변식이 일치하지 않습니다.',
               tradeDate: tradeDateText,
               cashBalance: freshState.account.cashBalance.toString(),
+              ...cashSettlement,
               positionValue: null,
               totalValue: null,
               returnRate: null,
@@ -446,11 +528,19 @@ export class EvaluatePaperAccountUsecase {
             skipped: false,
             tradeDate: tradeDateText,
             cashBalance: freshState.account.cashBalance.toString(),
+            ...cashSettlement,
             positionValue: valuation.positionValue,
             totalValue: valuation.totalValue,
             returnRate: valuation.returnRate,
             realizedPnl: valuation.realizedPnl,
+            tradingRealizedPnl: new Prisma.Decimal(valuation.realizedPnl)
+              .minus(cashSettlement.dividendNetTotal)
+              .toString(),
             unrealizedPnl: valuation.unrealizedPnl,
+            previousReturnRate: previousSnapshot?.returnRate.toString() ?? null,
+            previousTradeDate: previousSnapshot
+              ? dateText(previousSnapshot.tradeDate)
+              : null,
             benchmarkClose: null,
             positions: evaluatedPositions,
             unpricedPositions,

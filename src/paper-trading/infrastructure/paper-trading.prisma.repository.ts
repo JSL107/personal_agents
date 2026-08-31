@@ -26,6 +26,7 @@ import {
   RecommendationScoreSummary,
   RecommendationTradeInput,
 } from '../domain/recommendation-score';
+import { settlementDateOf } from '../domain/trade-calendar';
 
 // 전체 훑기(findAllAccounts)는 어느 계좌인지 밝혀야 하므로 이름을 함께 싣는다.
 export interface PaperAccountNamedRecord extends PaperAccountRecord {
@@ -74,6 +75,59 @@ export interface InvariantTradeRow {
   fee: MoneyValue;
   tax: MoneyValue;
   tickerId: number;
+  settlementDate: Date | null;
+}
+
+export type CorporateActionKind =
+  | 'DIVIDEND'
+  | 'SPLIT'
+  | 'MERGE'
+  | 'BONUS_ISSUE';
+
+export interface InvariantCorporateActionRow {
+  kind: CorporateActionKind;
+  tickerId: number;
+  cashDelta: MoneyValue;
+  quantityDelta: MoneyValue;
+}
+
+export interface ApplyCorporateActionMutation {
+  cashBalance: string;
+  cashDelta: string;
+  quantityDelta: string;
+  avgPriceAfter: string | null;
+  eligibleQuantity: string | null;
+  grossAmount: string | null;
+  taxAmount: string | null;
+}
+
+export interface ApplyCorporateActionInput {
+  accountId: number;
+  tickerId: number;
+  kind: CorporateActionKind;
+  exDate: Date;
+  payDate?: Date;
+  perShareAmount?: string;
+  // fingerprint 재료. 명령이 준 입력이라 몇 번을 실행해도 같은 값이다 — 계산된 수량
+  // 변화는 그때그때의 보유량에 따라 달라져 중복 차단에 쓸 수 없다(fingerprint 주석 참조).
+  quantityRatio?: string;
+  note?: string;
+  decide: (state: {
+    account: PaperAccountRecord;
+    position: PaperPositionRecord | null;
+  }) => ApplyCorporateActionMutation;
+}
+
+export interface ApplyCorporateActionResult extends ApplyCorporateActionMutation {
+  corporateActionId: number;
+}
+
+export interface TickerRecord {
+  id: number;
+}
+
+export interface SettlementBackfillResult {
+  updated: number;
 }
 
 export interface PositionSnapshotInput {
@@ -184,6 +238,7 @@ export interface RevalidatedPaperAccountState {
   account: PaperAccountRecord;
   positions: PaperPositionWithTicker[];
   trades: InvariantTradeRow[];
+  corporateActions: InvariantCorporateActionRow[];
 }
 
 export interface SnapshotDecision<T> {
@@ -708,6 +763,13 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     });
   }
 
+  async findTickerByCode(code: string): Promise<TickerRecord | null> {
+    return await this.prisma.ticker.findUnique({
+      where: { market_code: { market: 'KR', code } },
+      select: { id: true },
+    });
+  }
+
   async findPosition(
     accountId: number,
     tickerId: number,
@@ -848,6 +910,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             tax: mutation.tax,
             realizedPnl: mutation.realizedPnl,
             tradeDate: input.tradeDate,
+            settlementDate: settlementDateOf(input.tradeDate),
             fingerprint,
           },
           select: { id: true },
@@ -881,6 +944,105 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         throw new Error(
           '이미 기록된 가상 매매입니다. 중복 입력을 확인해 주세요.',
         );
+      }
+      throw error;
+    }
+  }
+
+  async applyCorporateActionAtomically(
+    input: ApplyCorporateActionInput,
+  ): Promise<ApplyCorporateActionResult> {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        // 거래·기업행동은 같은 계좌의 현금과 포지션을 함께 바꾼다. 모든 경로가 계좌 행을
+        // 먼저 잠가야 동시 적용이 최신 상태를 보고 순서대로 반영되며, applyTradeAtomically와
+        // 잠금 순서가 달라져 계좌·포지션 사이의 교착이 생기지 않는다.
+        const account = await transaction.paperAccount.update({
+          where: { id: input.accountId },
+          data: { cashBalance: { increment: 0 } },
+          select: { id: true, seedAmount: true, cashBalance: true },
+        });
+        const position = await transaction.paperPosition.findUnique({
+          where: {
+            accountId_tickerId: {
+              accountId: input.accountId,
+              tickerId: input.tickerId,
+            },
+          },
+          select: {
+            id: true,
+            accountId: true,
+            tickerId: true,
+            quantity: true,
+            avgPrice: true,
+          },
+        });
+        const decision = input.decide({ account, position });
+        // 사건을 식별하는 키이므로 **명령이 준 입력만** 넣는다. 계산 결과인
+        // decision.quantityDelta 를 쓰면 2:1 분할을 재실행할 때 100주 → delta 100,
+        // 200주 → delta 200 으로 키가 매번 달라져 유니크 제약이 재실행을 막지 못하고
+        // 수량이 10 → 20 → 40 으로 불어난다. 배당은 perShareAmount 가 고정이라
+        // 우연히 안전했을 뿐이고, 수량을 바꾸는 종류에서는 그대로 뚫린다.
+        const fingerprint = [
+          input.accountId,
+          input.tickerId,
+          input.exDate.toISOString().slice(0, 10),
+          input.kind,
+          input.perShareAmount ?? '',
+          input.quantityRatio ?? '',
+        ].join(':');
+        const corporateAction = await transaction.paperCorporateAction.create({
+          data: {
+            accountId: input.accountId,
+            tickerId: input.tickerId,
+            kind: input.kind,
+            exDate: input.exDate,
+            payDate: input.payDate ?? null,
+            perShareAmount: input.perShareAmount ?? null,
+            eligibleQuantity: decision.eligibleQuantity,
+            grossAmount: decision.grossAmount,
+            taxAmount: decision.taxAmount,
+            cashDelta: decision.cashDelta,
+            quantityDelta: decision.quantityDelta,
+            avgPriceAfter: decision.avgPriceAfter,
+            note: input.note ?? null,
+            fingerprint,
+          },
+          select: { id: true },
+        });
+        if (decision.quantityDelta !== '0') {
+          await transaction.paperPosition.upsert({
+            where: {
+              accountId_tickerId: {
+                accountId: input.accountId,
+                tickerId: input.tickerId,
+              },
+            },
+            create: {
+              accountId: input.accountId,
+              tickerId: input.tickerId,
+              quantity: decision.quantityDelta,
+              avgPrice: decision.avgPriceAfter ?? '0',
+            },
+            update: {
+              quantity: position
+                ? position.quantity.plus(decision.quantityDelta).toString()
+                : decision.quantityDelta,
+              avgPrice: decision.avgPriceAfter ?? position?.avgPrice ?? '0',
+            },
+          });
+        }
+        if (decision.cashDelta !== '0') {
+          await transaction.paperAccount.update({
+            where: { id: input.accountId },
+            data: { cashBalance: decision.cashBalance },
+          });
+        }
+        return { corporateActionId: corporateAction.id, ...decision };
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new Error('이미 기록된 기업행동입니다');
       }
       throw error;
     }
@@ -991,6 +1153,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             tax: decision.tax,
             realizedPnl: decision.realizedPnl,
             tradeDate: input.tradeDate,
+            settlementDate: settlementDateOf(input.tradeDate),
             fingerprint,
           },
         });
@@ -1040,6 +1203,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         fee: true,
         tax: true,
         tickerId: true,
+        settlementDate: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -1047,6 +1211,56 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       ...trade,
       side: trade.side as TradeSide,
     }));
+  }
+
+  async findQuantityAtDate(
+    accountId: number,
+    tickerId: number,
+    asOf: Date,
+  ): Promise<MoneyValue> {
+    const [trades, corporateActions] = await Promise.all([
+      this.prisma.paperTrade.findMany({
+        where: { accountId, tickerId, tradeDate: { lt: asOf } },
+        select: { side: true, quantity: true },
+        orderBy: { id: 'asc' },
+      }),
+      this.prisma.paperCorporateAction.findMany({
+        where: { accountId, tickerId, exDate: { lt: asOf } },
+        select: { quantityDelta: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    let quantity = new Prisma.Decimal(0);
+    for (const trade of trades) {
+      quantity =
+        trade.side === 'BUY'
+          ? quantity.plus(trade.quantity)
+          : quantity.minus(trade.quantity);
+    }
+    for (const corporateAction of corporateActions) {
+      quantity = quantity.plus(corporateAction.quantityDelta);
+    }
+    return quantity;
+  }
+
+  async backfillSettlementDates(): Promise<SettlementBackfillResult> {
+    const trades = await this.prisma.paperTrade.findMany({
+      where: { settlementDate: null },
+      select: { id: true, tradeDate: true },
+      orderBy: { id: 'asc' },
+    });
+    if (trades.length === 0) {
+      return { updated: 0 };
+    }
+    await this.prisma.$transaction(
+      trades.map((trade) =>
+        this.prisma.paperTrade.update({
+          where: { id: trade.id },
+          data: { settlementDate: settlementDateOf(trade.tradeDate) },
+        }),
+      ),
+    );
+    return { updated: trades.length };
   }
 
   async upsertEquitySnapshot(
@@ -1159,6 +1373,18 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         data: { cashBalance: { increment: 0 } },
         select: { id: true, seedAmount: true, cashBalance: true },
       });
+      // 기업행동 적용도 같은 계좌 잠금으로 직렬화된다. 잠금 전에 읽으면 배당 입금과
+      // 평가 재검증이 서로 다른 원장 시점을 보게 되므로 반드시 계좌 잠금 뒤에 읽는다.
+      const corporateActions = await transaction.paperCorporateAction.findMany({
+        where: { accountId },
+        select: {
+          kind: true,
+          tickerId: true,
+          cashDelta: true,
+          quantityDelta: true,
+        },
+        orderBy: { id: 'asc' },
+      });
       const positions = await transaction.paperPosition.findMany({
         where: {
           accountId,
@@ -1183,6 +1409,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           fee: true,
           tax: true,
           tickerId: true,
+          settlementDate: true,
         },
         orderBy: { id: 'asc' },
       });
@@ -1210,6 +1437,10 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         trades: trades.map((trade) => ({
           ...trade,
           side: trade.side as TradeSide,
+        })),
+        corporateActions: corporateActions.map((corporateAction) => ({
+          ...corporateAction,
+          kind: corporateAction.kind as CorporateActionKind,
         })),
       });
       if (decision.snapshot) {
