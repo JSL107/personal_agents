@@ -573,4 +573,12 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.studyBriefPublisher.publish).toHaveBeenCalled();
     expect(dependencies.slackNotifier.postMessage).toHaveBeenCalled();
   });
+
+  it('Notion 발행 대상이 없으면 그림을 생성하지 않는다', async () => {
+    const dependencies = makeConsumer();
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.generateStudyDiagram.execute).not.toHaveBeenCalled();
+  });
 });
