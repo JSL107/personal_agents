@@ -49,6 +49,8 @@ import {
   DEFAULT_RUN_SWEEPER_TIMEZONE,
   DEFAULT_SCREENING_OUTCOME_SCORING_CRON,
   DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
+  DEFAULT_SCREENING_SCORECARD_CRON,
+  DEFAULT_SCREENING_SCORECARD_TIMEZONE,
   DEFAULT_STOCK_ALERT_SCORING_CRON,
   DEFAULT_STOCK_ALERT_SCORING_TIMEZONE,
   DEFAULT_STOCK_MONITOR_CRON,
@@ -363,6 +365,19 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_SCREENING_OUTCOME_SCORING_CRON,
       timezone: DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    line: 'invest',
+  },
+  // 주간 성적 카드 — 산 것과 안 산 것을 나란히 세운다. digestGroup 을 쓰지 않아
+  // 독립 메시지로 나가고, 그룹 첫 항목의 스케줄·라인을 건드리지 않는다.
+  {
+    id: 'screening-scorecard',
+    taskId: 'screening-scorecard',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCREENING_SCORECARD_CRON,
+      timezone: DEFAULT_SCREENING_SCORECARD_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
     line: 'invest',

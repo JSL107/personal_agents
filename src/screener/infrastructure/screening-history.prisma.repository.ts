@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { ScreeningScorecardRow } from '../domain/screening-scorecard';
 
 const ITEM_WRITE_CHUNK_SIZE = 200;
 
@@ -65,6 +66,14 @@ export interface SaveScreeningItemOutcomeInput {
 // 조회 상한을 달력으로 두지 않는다. 지평은 저장된 봉의 수로 세는데 달력으로 자르면
 // 스크리닝 직후 오래 거래정지됐다 재개된 종목이 봉을 다 채우고도 잘려 나가, 영영
 // 미도래로 남는다. 미채점 회차만 조회하므로 범위를 열어 두어도 회차당 종목 수만큼이다.
+
+// 전략·기준일·종목 세 값으로 매수 여부를 가른다. 기준일은 `@db.Date` 라 UTC 자정으로
+// 오므로 날짜 문자열로 좁혀 시각 성분이 키에 섞이지 않게 한다.
+const toBoughtKey = (
+  strategy: string,
+  dataAsOf: Date,
+  tickerId: number,
+): string => `${strategy}|${dataAsOf.toISOString().slice(0, 10)}|${tickerId}`;
 
 @Injectable()
 export class ScreeningHistoryPrismaRepository {
@@ -228,5 +237,103 @@ export class ScreeningHistoryPrismaRepository {
       });
     }
     return rows.length;
+  }
+
+  // 성적 카드용 행. 산 것과 안 산 것을 가르는 조인이 여기 있다.
+  //
+  // Prisma 로는 `screening_run_item` 과 `paper_order` 를 직접 조인할 수 없다 — 둘 사이에
+  // 관계가 없다(한쪽은 그날 보여준 목록, 다른 쪽은 주문 원장이다). 그래서 매수 주문의
+  // `전략|기준일|종목` 키를 따로 뽑아 메모리에서 맞춘다. 매수는 하루 몇 건이라 이 조회가
+  // 무거워지지 않는다.
+  //
+  // 실행이 성공한 회차만 대상이다. 추천이 실패한 날은 회차만 남고 주문이 없어, 그대로
+  // 세면 실린 종목 전부가 "보고도 안 샀다" 로 집계돼 대조군이 오염된다
+  // (findUnscoredRuns 와 같은 이유·같은 조건).
+  async findScorecardRows(
+    horizonDays: number,
+  ): Promise<ScreeningScorecardRow[]> {
+    const outcomes = await this.prisma.screeningItemOutcome.findMany({
+      where: {
+        horizonDays,
+        item: { run: { agentRun: { status: 'SUCCEEDED' } } },
+      },
+      select: {
+        returnPct: true,
+        item: {
+          select: {
+            rank: true,
+            tickerId: true,
+            ticker: { select: { code: true, name: true } },
+            run: { select: { strategy: true, asOf: true, ruleVersion: true } },
+          },
+        },
+      },
+    });
+    if (outcomes.length === 0) {
+      return [];
+    }
+
+    // 기준일을 목록이 아니라 범위로 좁힌다. 목록으로 넣으면 거래일이 쌓이는 만큼 IN 절이
+    // 길어지고(1년 약 250개), 범위는 그렇지 않다. 회차가 없는 날의 주문이 섞여 들어올 수
+    // 있지만 키가 `전략|기준일|종목` 이라 매칭되지 않으므로 판정에는 영향이 없다.
+    const asOfTimes = outcomes.map((row) => row.item.run.asOf.getTime());
+    const orders = await this.prisma.paperOrder.findMany({
+      where: {
+        side: 'BUY',
+        dataAsOf: {
+          gte: new Date(Math.min(...asOfTimes)),
+          lte: new Date(Math.max(...asOfTimes)),
+        },
+      },
+      // 계좌도 주문 상태도 가리지 않는다. 이 축이 재는 것은 "모델이 골랐나" 이고,
+      // 진입가가 양쪽 다 다음 거래일 시가로 통일돼 있어 체결 여부가 성적에 안 들어간다
+      // (`screening_item_outcome.entry_price` 주석). 상태로 걸러 미체결을 "안 골랐다" 로
+      // 옮기면 모델 선택이 아니라 체결 운을 재게 된다.
+      select: { strategy: true, dataAsOf: true, tickerId: true },
+    });
+    const boughtKeys = new Set(
+      orders.map((order) =>
+        toBoughtKey(order.strategy, order.dataAsOf, order.tickerId),
+      ),
+    );
+
+    return outcomes.map((row) => ({
+      strategy: row.item.run.strategy,
+      ruleVersion: row.item.run.ruleVersion,
+      rank: row.item.rank,
+      returnPct: Number(row.returnPct),
+      bought: boughtKeys.has(
+        toBoughtKey(
+          row.item.run.strategy,
+          row.item.run.asOf,
+          row.item.tickerId,
+        ),
+      ),
+      tickerCode: row.item.ticker.code,
+      tickerName: row.item.ticker.name,
+    }));
+  }
+
+  // 그 지평으로 이 시각 이후에 판정된 건수. 누적 표가 그대로여도 표본이 늘고 있는지를
+  // 이 값으로 안다.
+  async countScoredSince(horizonDays: number, since: Date): Promise<number> {
+    return await this.prisma.screeningItemOutcome.count({
+      where: {
+        horizonDays,
+        evaluatedAt: { gte: since },
+        item: { run: { agentRun: { status: 'SUCCEEDED' } } },
+      },
+    });
+  }
+
+  // 그 지평으로 아직 채점되지 않은 회차 수. 표본이 0 일 때 "아직 안 왔다" 와 "채점이
+  // 고장났다" 를 가르는 유일한 단서라, 표본 없는 지평도 이 수를 함께 적는다.
+  async countRunsPendingOutcome(horizonDays: number): Promise<number> {
+    return await this.prisma.screeningRun.count({
+      where: {
+        agentRun: { status: 'SUCCEEDED' },
+        items: { some: { outcomes: { none: { horizonDays } } } },
+      },
+    });
   }
 }

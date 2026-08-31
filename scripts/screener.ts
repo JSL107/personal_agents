@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { getTodayKstDate } from '../src/common/util/kst-date.util';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { BackfillUniversePricesUsecase } from '../src/screener/application/backfill-universe-prices.usecase';
+import { BuildScreeningScorecardUsecase } from '../src/screener/application/build-screening-scorecard.usecase';
 import { CollectBenchmarkClosesUsecase } from '../src/screener/application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from '../src/screener/application/collect-universe-prices.usecase';
 import { ScoreScreeningOutcomesUsecase } from '../src/screener/application/score-screening-outcomes.usecase';
@@ -14,6 +16,10 @@ import { formatPriceCollectionFailures } from '../src/screener/infrastructure/pr
 import { formatPriceCollectionSummary } from '../src/screener/infrastructure/price-collection-summary.formatter';
 import { formatScreenResult } from '../src/screener/infrastructure/screen-result.formatter';
 import { formatScreeningOutcomeResult } from '../src/screener/infrastructure/screening-outcome.formatter';
+import {
+  formatScreeningScorecard,
+  formatScreeningScorecardDetail,
+} from '../src/screener/infrastructure/screening-scorecard.formatter';
 import { parseScreenerCliArguments } from '../src/screener/interface/screener-cli.parser';
 import { ScreenerModule } from '../src/screener/screener.module';
 import { ResolveStrategyParametersUsecase } from '../src/strategy-parameter/application/resolve-strategy-parameters.usecase';
@@ -86,6 +92,23 @@ const main = async (): Promise<void> => {
         .get(ScoreScreeningOutcomesUsecase)
         .execute();
       console.log(formatScreeningOutcomeResult(result));
+      return;
+    }
+
+    if (parsed.subcommand === 'scorecard') {
+      // 운영 카드와 같은 usecase·같은 formatter 를 통과시킨다. 여기서만 따로 조립하면
+      // 화면에서 맞아 보이는 문구가 슬랙에서는 다를 수 있다.
+      const result = await application
+        .get(BuildScreeningScorecardUsecase)
+        // autopilot 경로가 firedAtKst 를 쓰는 것과 같은 달력 날짜를 쓴다.
+        .execute({ asOf: new Date(`${getTodayKstDate()}T00:00:00.000Z`) });
+      console.log(formatScreeningScorecard(result));
+      const detail = formatScreeningScorecardDetail(result);
+      if (detail !== null) {
+        console.log('');
+        console.log('--- 스레드 상세 ---');
+        console.log(detail);
+      }
       return;
     }
 
