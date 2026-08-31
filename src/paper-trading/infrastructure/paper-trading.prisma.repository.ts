@@ -13,6 +13,7 @@ import {
   TradeSide,
   TradeStrategy,
 } from '../domain/paper-account.type';
+import { summarizePendingDividends } from '../domain/paper-valuation';
 import {
   ApplyTradeMutation,
   FillPendingOrderInput,
@@ -89,6 +90,9 @@ export interface InvariantCorporateActionRow {
   tickerId: number;
   cashDelta: MoneyValue;
   quantityDelta: MoneyValue;
+  // 지급일. cashDelta 는 권리락일에 곧바로 cashBalance 에 반영되므로, 이 날이 오기 전까지
+  // 그 금액은 잔고에 있어도 쓸 수 없는 돈이다. 매수 여력을 가르는 유일한 입력이다.
+  payDate: Date | null;
 }
 
 export interface ApplyCorporateActionMutation {
@@ -196,11 +200,17 @@ export interface DuePaperOrderRecord {
   targetTradeDate: Date;
 }
 
+export interface AccountWithCorporateActions {
+  account: PaperAccountRecord;
+  corporateActions: InvariantCorporateActionRow[];
+}
+
 export interface LockedPaperRecommendationState {
   account: PaperAccountRecord;
   positions: PaperPositionWithTicker[];
   latestValuation: SnapshotRow | null;
   existingOrders: ExistingPaperOrderRecord[];
+  corporateActions: InvariantCorporateActionRow[];
 }
 
 export interface PaperRecommendationSaveDecision<T> {
@@ -1098,7 +1108,24 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             avgPrice: true,
           },
         });
-        const decision = input.decide({ account, position });
+        // 계좌 잠금 뒤에 읽는다. 잠금 전에 읽으면 기업행동 적용과 이 체결이 서로 다른
+        // 원장 시점을 보게 되어, 방금 들어온 배당을 못 본 채 매수 여력을 계산한다.
+        const corporateActions =
+          await transaction.paperCorporateAction.findMany({
+            where: { accountId: input.accountId },
+            select: { cashDelta: true, payDate: true },
+          });
+        const decision = input.decide({
+          account: {
+            ...account,
+            pendingDividendCash: summarizePendingDividends({
+              asOf: input.tradeDate,
+              zero: account.cashBalance.times(0),
+              corporateActions,
+            }).amount,
+          },
+          position,
+        });
         if (decision.status === 'EXPIRED') {
           const expired = await transaction.paperOrder.updateMany({
             where: { id: input.orderId, status: 'PENDING' },
@@ -1211,6 +1238,40 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       ...trade,
       side: trade.side as TradeSide,
     }));
+  }
+
+  // 잔고와 기업행동을 한 트랜잭션에서 읽는다. 따로 읽으면 그 사이 배당이 반영됐을 때
+  // 옛 잔고에서 새 미수를 빼게 되어, 실제로는 쓸 수 있는 돈이 여력에서 사라진다.
+  async findAccountWithCorporateActions(
+    accountName: string,
+  ): Promise<AccountWithCorporateActions | null> {
+    return await this.prisma.$transaction(async (transaction) => {
+      const account = await transaction.paperAccount.findUnique({
+        where: { name: accountName },
+        select: { id: true, seedAmount: true, cashBalance: true },
+      });
+      if (!account) {
+        return null;
+      }
+      const corporateActions = await transaction.paperCorporateAction.findMany({
+        where: { accountId: account.id },
+        select: {
+          kind: true,
+          tickerId: true,
+          cashDelta: true,
+          quantityDelta: true,
+          payDate: true,
+        },
+        orderBy: { id: 'asc' },
+      });
+      return {
+        account,
+        corporateActions: corporateActions.map((corporateAction) => ({
+          ...corporateAction,
+          kind: corporateAction.kind as CorporateActionKind,
+        })),
+      };
+    });
   }
 
   async findQuantityAtDate(
@@ -1382,6 +1443,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           tickerId: true,
           cashDelta: true,
           quantityDelta: true,
+          payDate: true,
         },
         orderBy: { id: 'asc' },
       });
@@ -1560,33 +1622,45 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       if (duplicate) {
         throw new Error('이미 저장된 모의투자 추천입니다.');
       }
-      const [positions, latestValuation, existingOrders] = await Promise.all([
-        transaction.paperPosition.findMany({
-          where: { accountId: input.accountId, quantity: { gt: 0 } },
-          include: { ticker: true },
-          orderBy: { tickerId: 'asc' },
-        }),
-        transaction.paperEquitySnapshot.findFirst({
-          where: { accountId: input.accountId },
-          orderBy: { tradeDate: 'desc' },
-          select: {
-            id: true,
-            tradeDate: true,
-            totalValue: true,
-            returnRate: true,
-          },
-        }),
-        transaction.paperOrder.findMany({
-          where: { accountId: input.accountId, status: 'PENDING' },
-          select: {
-            tickerId: true,
-            side: true,
-            quantity: true,
-            indicatorSnapshot: true,
-          },
-          orderBy: { id: 'asc' },
-        }),
-      ]);
+      const [positions, latestValuation, existingOrders, corporateActions] =
+        await Promise.all([
+          transaction.paperPosition.findMany({
+            where: { accountId: input.accountId, quantity: { gt: 0 } },
+            include: { ticker: true },
+            orderBy: { tickerId: 'asc' },
+          }),
+          transaction.paperEquitySnapshot.findFirst({
+            where: { accountId: input.accountId },
+            orderBy: { tradeDate: 'desc' },
+            select: {
+              id: true,
+              tradeDate: true,
+              totalValue: true,
+              returnRate: true,
+            },
+          }),
+          transaction.paperOrder.findMany({
+            where: { accountId: input.accountId, status: 'PENDING' },
+            select: {
+              tickerId: true,
+              side: true,
+              quantity: true,
+              indicatorSnapshot: true,
+            },
+            orderBy: { id: 'asc' },
+          }),
+          transaction.paperCorporateAction.findMany({
+            where: { accountId: input.accountId },
+            select: {
+              kind: true,
+              tickerId: true,
+              cashDelta: true,
+              quantityDelta: true,
+              payDate: true,
+            },
+            orderBy: { id: 'asc' },
+          }),
+        ]);
       const decision = input.decide({
         account,
         positions: positions.flatMap((position) => {
@@ -1610,6 +1684,10 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         }),
         latestValuation,
         existingOrders,
+        corporateActions: corporateActions.map((corporateAction) => ({
+          ...corporateAction,
+          kind: corporateAction.kind as CorporateActionKind,
+        })),
       });
       if (decision.orders.length === 0) {
         return decision.result;

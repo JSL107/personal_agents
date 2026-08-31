@@ -45,6 +45,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     findPositionsWithTicker: jest.fn(),
     findLatestValuation: jest.fn(),
     findLatestRecommendationScore: jest.fn(),
+    findAccountWithCorporateActions: jest.fn(),
     saveRecommendationAtomically: jest.fn(),
   } as unknown as jest.Mocked<PaperTradingPrismaRepository>;
   const modelRouter = {
@@ -63,6 +64,9 @@ describe('GeneratePaperRecommendationUsecase', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    // 기본값은 "계좌를 못 찾음" 이다. 기업행동이 없는 계좌에서 이 조회가 무엇을 반환하든
+    // 여력은 잔고와 같으므로, 미수 배당을 다루는 회차만 아래에서 따로 지정한다.
+    repository.findAccountWithCorporateActions.mockResolvedValue(null);
     usecase = new GeneratePaperRecommendationUsecase(
       screenUniverse,
       openPaperAccount,
@@ -84,8 +88,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       return opened
         ? {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '10000000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('10000000'),
           }
         : null;
     });
@@ -142,12 +146,13 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '10000000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('10000000'),
           },
           positions: [],
           latestValuation: null,
           existingOrders: [],
+          corporateActions: [],
         }).result,
     );
   });
@@ -172,13 +177,13 @@ describe('GeneratePaperRecommendationUsecase', () => {
     repository.findAccountByName
       .mockResolvedValueOnce({
         id: 11,
-        seedAmount: { toString: () => '10000000' } as never,
-        cashBalance: { toString: () => '8000000' } as never,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('8000000'),
       })
       .mockResolvedValueOnce({
         id: 12,
-        seedAmount: { toString: () => '10000000' } as never,
-        cashBalance: { toString: () => '7000000' } as never,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('7000000'),
       });
 
     await usecase.execute({ decidedAt });
@@ -282,8 +287,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
   it('후보 밖 보유 종목도 includedIndicators 지표를 모델 prompt에 포함한다', async () => {
     repository.findAccountByName.mockResolvedValue({
       id: 41,
-      seedAmount: { toString: () => '10000000' } as never,
-      cashBalance: { toString: () => '7000000' } as never,
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('7000000'),
     });
     repository.findLatestValuation.mockResolvedValue({
       id: 2,
@@ -334,7 +339,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
 
     const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(prompt).toContain(JSON.stringify({ ...indicators, close: 70_000 }));
-    expect(prompt).toContain('현금 잔액: 7000000');
+    expect(prompt).toContain('매수 가능 현금: 7000000');
     expect(prompt).toContain('계좌 평가액: 9000000');
     expect(prompt).toContain('005930 삼성전자');
     expect(prompt).not.toContain('지표 없음');
@@ -347,12 +352,44 @@ describe('GeneratePaperRecommendationUsecase', () => {
     });
   });
 
+  // 코람코더원리츠 특별배당(8/28 락, 11/27 지급)처럼 지급 전 배당이 잔고에 섞여 있으면,
+  // 잔고를 그대로 실은 프롬프트가 모델에게 없는 돈을 보여준다. 그 회차 추천 전부가 오염된다.
+  it('지급일 전 배당은 모델에게 보여줄 현금에서 뺀다', async () => {
+    repository.findAccountByName.mockResolvedValue({
+      id: 41,
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('2106271'),
+    });
+    repository.findAccountWithCorporateActions.mockResolvedValue({
+      account: {
+        id: 41,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('2106271'),
+      },
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 178,
+          cashDelta: new Prisma.Decimal('1330319'),
+          quantityDelta: new Prisma.Decimal('0'),
+          payDate: new Date('2026-11-27T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
+
+    const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('매수 가능 현금: 775952');
+    expect(prompt).not.toContain('2106271');
+  });
+
   it('후보 밖 보유 종목 매도 주문에 includedIndicators 근거를 저장한다', async () => {
     const heldIndicators = { ...indicators, close: 70_000 };
     repository.findAccountByName.mockResolvedValue({
       id: 41,
-      seedAmount: { toString: () => '10000000' } as never,
-      cashBalance: { toString: () => '7000000' } as never,
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('7000000'),
     });
     repository.findPositionsWithTicker.mockResolvedValue([
       {
@@ -407,8 +444,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       repository.saveRecommendationAtomically.mock.calls[0][0].decide({
         account: {
           id: 41,
-          seedAmount: { toString: () => '10000000' } as never,
-          cashBalance: { toString: () => '7000000' } as never,
+          seedAmount: new Prisma.Decimal('10000000'),
+          cashBalance: new Prisma.Decimal('7000000'),
         },
         positions: [
           {
@@ -426,6 +463,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
         ],
         latestValuation: null,
         existingOrders: [],
+        corporateActions: [],
       });
 
     expect(decision.orders).toEqual([
@@ -455,12 +493,13 @@ describe('GeneratePaperRecommendationUsecase', () => {
       repository.saveRecommendationAtomically.mock.calls[0][0].decide({
         account: {
           id: 41,
-          seedAmount: { toString: () => '10000000' } as never,
-          cashBalance: { toString: () => '10000000' } as never,
+          seedAmount: new Prisma.Decimal('10000000'),
+          cashBalance: new Prisma.Decimal('10000000'),
         },
         positions: [],
         latestValuation: null,
         existingOrders: [],
+        corporateActions: [],
       });
     expect(decision.orders).toEqual([
       {
@@ -540,8 +579,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '4050000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('4050000'),
           },
           positions: [
             {
@@ -564,6 +603,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
             returnRate: { toString: () => '1.2' } as never,
           },
           existingOrders: [],
+          corporateActions: [],
         }).result,
     );
 
@@ -636,8 +676,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
     });
     repository.findAccountByName.mockResolvedValue({
       id: 41,
-      seedAmount: { toString: () => '10000000' } as never,
-      cashBalance: { toString: () => '1' } as never,
+      seedAmount: new Prisma.Decimal('10000000'),
+      cashBalance: new Prisma.Decimal('1'),
     });
 
     await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
@@ -646,14 +686,95 @@ describe('GeneratePaperRecommendationUsecase', () => {
       repository.saveRecommendationAtomically.mock.calls[0][0].decide({
         account: {
           id: 41,
-          seedAmount: { toString: () => '10000000' } as never,
-          cashBalance: { toString: () => '1' } as never,
+          seedAmount: new Prisma.Decimal('10000000'),
+          cashBalance: new Prisma.Decimal('1'),
         },
         positions: [],
         latestValuation: null,
         existingOrders: [],
+        corporateActions: [],
       });
     expect(decision.orders).toEqual([]);
+  });
+
+  // 프롬프트에 실린 여력만 검증하면 모델 입력만 고치고 실제 주문 수량은 잔고로 내는 구현도
+  // 통과한다. 주문을 만드는 것은 잠금 뒤 이 경로이므로 여기서 수량이 줄어드는지 본다.
+  it('잠금 뒤 원장의 미수 배당만큼 실제 주문 수량이 줄어든다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        sells: [],
+        buys: [{ code: '035420', reason: '신규 매수' }],
+      }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    screenUniverse.execute.mockResolvedValue({
+      strategy: 'LONG_TERM',
+      ruleVersion: 2,
+      universeCount: 1,
+      evaluatedCount: 1,
+      staleCount: 0,
+      passedCount: 1,
+      asOf: '2026-08-13',
+      recordOutcome: null,
+      includedIndicators: [],
+      stocks: [
+        {
+          tickerId: 72,
+          code: '035420',
+          name: 'NAVER',
+          krxMarket: 'KOSPI',
+          score: 97,
+          indicators,
+        },
+      ],
+    });
+
+    await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
+
+    const lockedState = {
+      account: {
+        id: 41,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('2500000'),
+      },
+      positions: [],
+      latestValuation: {
+        id: 2,
+        tradeDate: decidedAt,
+        totalValue: { toString: () => '10000000' } as never,
+        returnRate: { toString: () => '0' } as never,
+      },
+      existingOrders: [],
+    };
+    const decide = repository.saveRecommendationAtomically.mock.calls[0][0]
+      .decide as (state: never) => { orders: { quantity: string }[] };
+
+    // 종목당 20% = 2,000,000 원 목표. 여력 2,500,000 원이면 종가 10,000 원에 200주.
+    const withoutDividend = decide({
+      ...lockedState,
+      corporateActions: [],
+    } as never);
+    expect(withoutDividend.orders).toEqual([
+      expect.objectContaining({ tickerId: 72, quantity: '200' }),
+    ]);
+
+    // 같은 잔고에 지급일 전 배당 2,000,000 원이 섞여 있으면 쓸 수 있는 돈은 500,000 원뿐이다.
+    const withDividend = decide({
+      ...lockedState,
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 178,
+          cashDelta: new Prisma.Decimal('2000000'),
+          quantityDelta: new Prisma.Decimal('0'),
+          payDate: new Date('2026-11-27T00:00:00.000Z'),
+        },
+      ],
+    } as never);
+    expect(withDividend.orders).toEqual([
+      expect.objectContaining({ tickerId: 72, quantity: '50' }),
+    ]);
   });
 
   it('LLM 지연 뒤 locked state에서 pending cash와 BUY/SELL을 재검증한다', async () => {
@@ -707,8 +828,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       repository.saveRecommendationAtomically.mock.calls[0][0].decide({
         account: {
           id: 41,
-          seedAmount: { toString: () => '10000000' } as never,
-          cashBalance: { toString: () => '2500000' } as never,
+          seedAmount: new Prisma.Decimal('10000000'),
+          cashBalance: new Prisma.Decimal('2500000'),
         },
         positions: [
           {
@@ -740,6 +861,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
             indicatorSnapshot: indicators,
           },
         ],
+        corporateActions: [],
       });
 
     expect(decision.orders).toEqual(
@@ -834,8 +956,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '10000000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('10000000'),
           },
           positions: [],
           latestValuation: null,
@@ -847,6 +969,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
               indicatorSnapshot: indicators,
             },
           ],
+          corporateActions: [],
         }).result,
     );
 
@@ -885,8 +1008,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '10000000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('10000000'),
           },
           positions: [],
           latestValuation: null,
@@ -898,6 +1021,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
               indicatorSnapshot: indicators,
             },
           ],
+          corporateActions: [],
         }).result,
     );
 
@@ -922,8 +1046,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         id: 55,
-        seedAmount: { toString: () => '10000000' } as never,
-        cashBalance: { toString: () => '10000000' } as never,
+        seedAmount: new Prisma.Decimal('10000000'),
+        cashBalance: new Prisma.Decimal('10000000'),
       });
     openPaperAccount.execute.mockRejectedValue(
       new Error('같은 이름의 가상 매매 계좌가 이미 있습니다: LONG_TERM'),
@@ -1039,8 +1163,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '4050000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('4050000'),
           },
           positions: [
             {
@@ -1065,6 +1189,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
               indicatorSnapshot: null,
             },
           ],
+          corporateActions: [],
         }).result,
     );
 
@@ -1121,8 +1246,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
         decide({
           account: {
             id: 41,
-            seedAmount: { toString: () => '10000000' } as never,
-            cashBalance: { toString: () => '4050000' } as never,
+            seedAmount: new Prisma.Decimal('10000000'),
+            cashBalance: new Prisma.Decimal('4050000'),
           },
           positions: [
             {
@@ -1140,6 +1265,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           ],
           latestValuation: null,
           existingOrders: [],
+          corporateActions: [],
         }).result,
     );
 
