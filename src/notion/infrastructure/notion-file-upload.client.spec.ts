@@ -145,6 +145,55 @@ describe('NotionFileUploadClient', () => {
     ).rejects.toThrow(/413/);
   });
 
+  it('생성 요청이 상한을 넘겨 AbortError 가 나면 그대로 전달된다', async () => {
+    fetchMock.mockRejectedValueOnce(
+      new DOMException('The operation was aborted.', 'AbortError'),
+    );
+    const client = new NotionFileUploadClient(
+      buildConfigService({ NOTION_TOKEN: 'secret-token' }),
+    );
+
+    await expect(
+      client.uploadImage({ filename: 'diagram.png', png }),
+    ).rejects.toThrow('The operation was aborted.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('전송 요청이 상한을 넘겨 AbortError 가 나면 그대로 전달된다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        okJson({ id: 'upload-6', upload_url: 'https://upload.example/put' }),
+      )
+      .mockRejectedValueOnce(
+        new DOMException('The operation was aborted.', 'AbortError'),
+      );
+    const client = new NotionFileUploadClient(
+      buildConfigService({ NOTION_TOKEN: 'secret-token' }),
+    );
+
+    await expect(
+      client.uploadImage({ filename: 'diagram.png', png }),
+    ).rejects.toThrow('The operation was aborted.');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('생성·전송 두 요청 모두 AbortSignal 을 붙인다', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        okJson({ id: 'upload-7', upload_url: 'https://upload.example/put' }),
+      )
+      .mockResolvedValueOnce(okJson({ status: 'uploaded' }));
+    const client = new NotionFileUploadClient(
+      buildConfigService({ NOTION_TOKEN: 'secret-token' }),
+    );
+
+    await client.uploadImage({ filename: 'diagram.png', png });
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
   it('id 없이 성공 응답이 오면 던진다', async () => {
     fetchMock.mockResolvedValueOnce(
       okJson({ upload_url: 'https://upload.example/put' }),
