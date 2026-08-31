@@ -10,7 +10,8 @@ export const SCREENER_CLI_USAGE =
   '  pnpm exec ts-node scripts/screener.ts backfill-prices [--years <연수>] [--limit <종목수>] [--recheck]\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>] [--years <연수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]\n' +
-  '  pnpm exec ts-node scripts/screener.ts score-outcomes';
+  '  pnpm exec ts-node scripts/screener.ts score-outcomes\n' +
+  '  pnpm exec ts-node scripts/screener.ts scorecard';
 
 export interface SyncUniverseArguments {
   subcommand: 'sync-universe';
@@ -43,13 +44,21 @@ export interface ScoreOutcomesArguments {
   options: Record<string, never>;
 }
 
+// 산 것과 안 산 것을 나란히 세운 주간 성적 카드를 화면으로 낸다. 세는 범위도 지평도
+// 원장이 정하므로 옵션이 없다.
+export interface ScorecardArguments {
+  subcommand: 'scorecard';
+  options: Record<string, never>;
+}
+
 export type ScreenerCliArguments =
   | SyncUniverseArguments
   | CollectPricesArguments
   | BackfillPricesArguments
   | CollectBenchmarkArguments
   | ScreenArguments
-  | ScoreOutcomesArguments;
+  | ScoreOutcomesArguments
+  | ScorecardArguments;
 
 const parsePositiveInteger = (value: string, key: string): number => {
   if (!/^\d+$/.test(value) || Number(value) <= 0) {
@@ -207,6 +216,12 @@ export const parseScreenerCliArguments = (
     return { subcommand, options: parseScreenOptions(optionValues) };
   }
   if (subcommand === 'score-outcomes') {
+    if (optionValues.length > 0) {
+      throw new Error(SCREENER_CLI_USAGE);
+    }
+    return { subcommand, options: {} };
+  }
+  if (subcommand === 'scorecard') {
     if (optionValues.length > 0) {
       throw new Error(SCREENER_CLI_USAGE);
     }

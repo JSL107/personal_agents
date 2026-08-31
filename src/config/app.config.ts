@@ -418,6 +418,14 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  AUTOPILOT_SCREENING_SCORECARD_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SCREENING_SCORECARD_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
   AUTOPILOT_UNIVERSE_SWEEP_SCHEDULE?: string;
 
   @IsOptional()

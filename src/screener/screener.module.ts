@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BackfillUniversePricesUsecase } from './application/backfill-universe-prices.usecase';
+import { BuildScreeningScorecardUsecase } from './application/build-screening-scorecard.usecase';
 import { CollectBenchmarkClosesUsecase } from './application/collect-benchmark-closes.usecase';
 import { CollectUniversePricesUsecase } from './application/collect-universe-prices.usecase';
 import { ScoreScreeningOutcomesUsecase } from './application/score-screening-outcomes.usecase';
@@ -14,6 +15,7 @@ import { ScreeningHistoryPrismaRepository } from './infrastructure/screening-his
   imports: [PrismaModule, MarketDataModule],
   providers: [
     ScreeningHistoryPrismaRepository,
+    BuildScreeningScorecardUsecase,
     SyncUniverseUsecase,
     CollectBenchmarkClosesUsecase,
     CollectUniversePricesUsecase,
@@ -22,6 +24,7 @@ import { ScreeningHistoryPrismaRepository } from './infrastructure/screening-his
     ScoreScreeningOutcomesUsecase,
   ],
   exports: [
+    BuildScreeningScorecardUsecase,
     SyncUniverseUsecase,
     CollectBenchmarkClosesUsecase,
     CollectUniversePricesUsecase,
