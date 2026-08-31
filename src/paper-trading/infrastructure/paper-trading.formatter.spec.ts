@@ -119,17 +119,78 @@ describe('formatPaperTradingReport', () => {
 
   // 매수 대금이 아직 안 빠진 날은 D+0 이 D+2 보다 크다. 그 관계가 뒤집혀 보이지 않아야
   // 어느 쪽이 실제 잔고인지 읽힌다(RESULT 의 cashBalance 800,000 이 D+2 다).
-  it('예수금을 D+0·D+2 로 갈라 표시하고 배당 요약을 붙인다', () => {
+  it('예수금을 D+0·D+2 로 갈라 표시한다', () => {
     const text = formatPaperTradingReport({
       ...RESULT,
       settledCash: '900000',
       unsettledCash: '-100000',
       dividendNetTotal: '1330319',
       dividendCount: 1,
+      tradingRealizedPnl: '-1345319',
     });
 
     expect(text).toContain('예수금 D+0 900,000원 · D+2 800,000원');
-    expect(text).toContain('배당 수취 1건 · 순입금 1,330,319원');
+    // 배당은 손익 줄에서 매매분과 갈려 나온다. 별도 요약 줄을 두면 같은 금액이 카드에
+    // 두 번 적혀 어느 쪽이 합계인지 흐려진다.
+    expect(text).toContain('배당 1건 +1,330,319원');
+  });
+
+  // 실제 사고 값. realizedPnl(-191,840)만 내면 매매로 152만원을 잃은 사실이 배당에
+  // 가려진다. 두 숫자가 갈려 있어야 추천 채점이 매매분만 볼 수 있다.
+  it('배당이 있으면 확정 손익을 매매분과 배당으로 갈라 적는다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      realizedPnl: '-191840',
+      tradingRealizedPnl: '-1522159',
+      dividendNetTotal: '1330319',
+      dividendCount: 1,
+      unrealizedPnl: '150291',
+    });
+
+    expect(text).toContain(
+      '매매 확정손익 -1,522,159원 · 배당 1건 +1,330,319원 · 보유 평가손익 +150,291원',
+    );
+    // 뭉뚱그린 옛 표기가 남아 있으면 두 값이 같은 카드에 공존해 어느 쪽이 매매분인지 흐려진다.
+    expect(text).not.toContain('확정 손익 -191,840원');
+  });
+
+  // 배당이 없는 계좌는 가를 것이 없다. 없는 축을 굳이 만들면 0원 배당 줄이 매일 붙는다.
+  it('배당이 없으면 확정 손익을 한 줄로 유지한다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      realizedPnl: '-191840',
+      tradingRealizedPnl: '-191840',
+      dividendCount: 0,
+      unrealizedPnl: '150291',
+    });
+
+    expect(text).toContain('확정 손익 -191,840원 · 보유 평가손익 +150,291원');
+    expect(text).not.toContain('배당');
+  });
+
+  it('전일 스냅샷이 있으면 전일 대비 수익률을 적고 배당 반영분을 밝힌다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      returnRate: '-0.42',
+      previousReturnRate: '-13.1462',
+      previousTradeDate: '2026-08-28',
+      dividendNetTotal: '1330319',
+      dividendCount: 1,
+    });
+
+    expect(text).toContain(
+      '전일 -13.15% → 오늘 -0.42% (배당 반영 +1,330,319원)',
+    );
+  });
+
+  // 첫 평가일에는 비교 대상이 없다. 없는 값을 0%로 적으면 시드에서 급락한 것처럼 보인다.
+  it('전일 스냅샷이 없으면 전일 대비 줄을 생략한다', () => {
+    const text = formatPaperTradingReport({
+      ...RESULT,
+      previousReturnRate: null,
+    });
+
+    expect(text).not.toContain('전일');
   });
 
   it('포지션이 0건이면 보유 없음이라고 표시한다', () => {

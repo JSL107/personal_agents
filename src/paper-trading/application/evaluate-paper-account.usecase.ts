@@ -67,8 +67,17 @@ export interface EvaluateAccountResult {
   returnRate: string | null;
   // 총 수익률을 "이미 확정한 손익" 과 "아직 들고 있는 손익" 으로 가른 값. 카드가 보유
   // 종목만 보여주면 매도로 확정된 손실이 어디에도 드러나지 않는다.
+  //
+  // realizedPnl 은 `총평가 − 시드 − 평가손익` 으로 역산한 값이라 **배당까지 흡수한다**.
+  // 그대로 "확정 손익" 이라 부르면 종목을 골라 번 돈과 배당으로 들어온 돈이 한 숫자에
+  // 뭉쳐, 이 계좌의 목적인 추천 채점을 할 수 없다. 매매분만 따로 낸다.
   realizedPnl: string | null;
+  tradingRealizedPnl?: string | null;
   unrealizedPnl: string | null;
+  // 전 거래일 스냅샷의 수익률. 카드는 그날 상태만 찍으므로 나아졌는지 나빠졌는지가
+  // 드러나지 않는다. 스냅샷이 없는 첫날에는 null 이다.
+  previousReturnRate?: string | null;
+  previousTradeDate?: string | null;
   benchmarkClose: string | null;
   positions: EvaluatedPositionRow[];
   unpricedPositions: UnpricedPositionRow[];
@@ -231,6 +240,13 @@ export class EvaluatePaperAccountUsecase {
     }
     const tradeDateText = formatKstTradeDate(command.executedAt);
     const tradeDate = toDateOnly(tradeDateText);
+    // 전 거래일 성적. 스냅샷은 그날 상태만 찍으므로 이 값이 없으면 카드만 보고는
+    // 나아졌는지 나빠졌는지 알 수 없다. 계좌 락 밖에서 읽는다 — 읽기 전용이고
+    // 락 안에서 다시 읽어도 같은 과거 행이라 락 시간만 길어진다.
+    const previousSnapshot = await this.repository.findLatestSnapshotBefore(
+      account.id,
+      tradeDate,
+    );
     const positions = await this.repository.findPositionsWithTicker(account.id);
     const priceResults: {
       position: PaperPositionWithTicker;
@@ -517,7 +533,14 @@ export class EvaluatePaperAccountUsecase {
             totalValue: valuation.totalValue,
             returnRate: valuation.returnRate,
             realizedPnl: valuation.realizedPnl,
+            tradingRealizedPnl: new Prisma.Decimal(valuation.realizedPnl)
+              .minus(cashSettlement.dividendNetTotal)
+              .toString(),
             unrealizedPnl: valuation.unrealizedPnl,
+            previousReturnRate: previousSnapshot?.returnRate.toString() ?? null,
+            previousTradeDate: previousSnapshot
+              ? dateText(previousSnapshot.tradeDate)
+              : null,
             benchmarkClose: null,
             positions: evaluatedPositions,
             unpricedPositions,

@@ -319,7 +319,10 @@ describe('EvaluatePaperAccountUsecase', () => {
       totalValue: '1040000',
       returnRate: '4',
       realizedPnl: '0',
+      tradingRealizedPnl: '0',
       unrealizedPnl: '40000',
+      previousReturnRate: null,
+      previousTradeDate: null,
       benchmarkClose: null,
       positions: [
         {
@@ -385,7 +388,10 @@ describe('EvaluatePaperAccountUsecase', () => {
       totalValue: '1000000',
       returnRate: '0',
       realizedPnl: '0',
+      tradingRealizedPnl: '0',
       unrealizedPnl: '0',
+      previousReturnRate: null,
+      previousTradeDate: null,
       benchmarkClose: null,
       positions: [],
       unpricedPositions: [],
