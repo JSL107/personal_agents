@@ -75,7 +75,9 @@ describe('measureKoreanStyle', () => {
     const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
 
     expect(metrics.longestSentence).toBe(`${'가'.repeat(120)}입니다.`);
-    expect(formatKoreanStyleMetrics(metrics)).toContain('최장 문장(124자):');
+    expect(formatKoreanStyleMetrics(metrics)).toContain(
+      '최장 문장(124자 · 1어절):',
+    );
   });
 
   it('최장 문장이 상한 이하면 문장을 덧붙이지 않는다', () => {
@@ -398,8 +400,12 @@ describe('줄표(—) 세기', () => {
     averageLength: 40,
     lengthStandardDeviation: 15,
     shortSentencePercent: 25,
+    // 새 축도 목표 안 값으로 둔다 — 이 픽스처의 전제가 「다른 축은 전부 통과」다.
+    wordsPerSentence: 12,
+    clausesPerSentence: 2,
     longestSentenceLength: 70,
     longestSentence: '이 문장은 상한 안에 든다.',
+    longestSentenceWords: 12,
     colloquialEndingPercent: 15,
     yoEndingPercent: 50,
     endingAlternationPercent: 30,
@@ -508,8 +514,12 @@ describe('재현 목표 판정', () => {
     averageLength: 40,
     lengthStandardDeviation: 15,
     shortSentencePercent: 25,
+    // 새 축도 목표 안 값으로 둔다 — 이 픽스처의 전제가 「다른 축은 전부 통과」다.
+    wordsPerSentence: 12,
+    clausesPerSentence: 2,
     longestSentenceLength: 70,
     longestSentence: '이 문장은 상한 안에 든다.',
+    longestSentenceWords: 12,
     colloquialEndingPercent: 15,
     yoEndingPercent: 50,
     endingAlternationPercent: 30,
@@ -526,6 +536,18 @@ describe('재현 목표 판정', () => {
 
   it('목표 안이면 지적할 것이 없다', () => {
     expect(findKoreanStyleGaps(base)).toEqual([]);
+  });
+
+  it('영문이 길어 글자 수는 넘겨도 어절이 모자라면 목표 밖으로 잡는다', () => {
+    // 이 축을 넣은 이유. 2026-08-24 발행본은 평균 41.9자로 하한(35자)을 넘겨 미달 축이
+    // 하나도 없었는데, 8.7어절이라 「문장마다 끊겨 격자로 읽힌다」 는 판정을 받았다.
+    const gaps = findKoreanStyleGaps({
+      ...base,
+      averageLength: 42,
+      wordsPerSentence: 8.7,
+    });
+
+    expect(gaps).toEqual(['어절 8.7개(≥11개)']);
   });
 
   it('초장문 하나는 여전히 잡는다', () => {
@@ -661,4 +683,64 @@ describe('금지접속사 "즉" 탐지', () => {
       expect(measureKoreanStyle(build(sentence)).bannedConnectiveCount).toBe(0);
     },
   );
+});
+
+describe('어절·절 축', () => {
+  it('어절은 공백으로 나눈 조각 수로 센다', () => {
+    expect(
+      measureKoreanStyle('앱은 gateway model alias 를 호출해요.')
+        .wordsPerSentence,
+    ).toBe(6);
+  });
+
+  it('절은 쉼표와 연결어미로 센다', () => {
+    // 연결어미 뒤에 쉼표가 붙으면(`떨어지고,`) 어미 패턴이 공백을 요구해 걸리지 않고 쉼표로만
+    // 센다. 같은 이음매를 두 번 세지 않아 결과가 실제 절 수(떨어지고 / 취약해요)와 맞는다.
+    expect(
+      measureKoreanStyle(
+        '고정 정책만 쓰면 유용성이 떨어지고, 모델의 판단만 믿으면 오판에 취약해요.',
+      ).clausesPerSentence,
+    ).toBe(2);
+  });
+
+  it('쉼표 없이 이어 붙인 연결어미도 센다', () => {
+    expect(
+      measureKoreanStyle('앱은 결과를 남기고 gateway 는 비용을 기록해요.')
+        .clausesPerSentence,
+    ).toBe(2);
+  });
+
+  it('문장 끝의 `-고요` 는 절로 세지 않는다', () => {
+    // 연결어미 뒤 공백을 요구하는 이유. 종결형까지 세면 홑문장이 복문으로 잡힌다.
+    expect(
+      measureKoreanStyle('앱 밖의 gateway 로 옮기고요.').clausesPerSentence,
+    ).toBe(1);
+  });
+});
+
+describe('연결어미 이중 계상 방지', () => {
+  it.each([
+    ['보고서를 보면서 읽었어요.', 2],
+    // 받침 뒤 활용형. `면서 ` 와 `으면서` 를 함께 세면 3 이 되어 홑문장이 복문으로 찍힌다.
+    ['보고서를 먹으면서 읽었어요.', 2],
+  ])('%s → 절 %d', (sentence, expected) => {
+    expect(measureKoreanStyle(sentence).clausesPerSentence).toBe(expected);
+  });
+});
+
+describe('절 세기의 형태소 경계', () => {
+  it.each([
+    // 인용·간접화법은 앞 절을 닫지 않는다.
+    ['이 위험을 “lethal trifecta”라고 불렀어요.', 1],
+    ['예측하기 어렵다고 설명해요.', 1],
+    // 연결어미로 쓰인 `-고` 는 그대로 센다.
+    ['PR diff 를 읽고 리뷰 초안을 만들어요.', 2],
+  ])('%s → 절 %d', (sentence, expected) => {
+    expect(measureKoreanStyle(sentence).clausesPerSentence).toBe(expected);
+  });
+
+  it('명사 뒤 공백은 여전히 절로 센다 (알려진 한계)', () => {
+    // 형태소 경계를 보지 않는 대가. 판정하지 않는 관측 축이라 감수한다.
+    expect(measureKoreanStyle('사고 났어요.').clausesPerSentence).toBe(2);
+  });
 });
