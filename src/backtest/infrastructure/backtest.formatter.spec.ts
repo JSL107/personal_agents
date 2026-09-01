@@ -38,6 +38,7 @@ const result: ReplayBacktestResult = {
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
+  intradayStopMargin: { meanPercent: -2.04, gapDownCount: 1 },
   highFallback: { candidateCount: 0, tickerCount: 0 },
   anomaliesByType: {},
   metrics: {
@@ -85,6 +86,35 @@ describe('formatBacktestResult', () => {
     expect(text).toContain(
       '청산 밴드 +2%/-0.2% · 익절 매도 주문 12건 · 손절 매도 주문 30건',
     );
+  });
+
+  // 좁은 밴드를 쓸지 판단하는 근거가 이 한 줄이다. 여유폭이 0 에 가까우면 "하루 중 한 틱
+  // 스쳐" 발동한 것이라 그 가격에 팔렸을지 의심스럽다 — 찍지 않으면 판단할 재료가 없다.
+  it('장중 손절이 얼마나 여유 있게 발동했는지 함께 적는다', () => {
+    const text = formatBacktestResult({
+      ...result,
+      exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
+      intradayStopSellCount: 40,
+      intradayStopMargin: { meanPercent: -2.04, gapDownCount: 7 },
+    });
+
+    expect(text).toContain('장중 손절 체결 40건');
+    expect(text).toContain(
+      '저가가 손절선보다 평균 -2.04%p 아래 · 갭하락으로 시가 체결 7건',
+    );
+  });
+
+  it('장중 손절이 0건이면 여유폭 줄을 만들지 않는다', () => {
+    // 분모가 0 인 평균을 0 으로 찍으면 "여유 없이 발동했다" 로 읽힌다.
+    const text = formatBacktestResult({
+      ...result,
+      exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
+      intradayStopSellCount: 0,
+      intradayStopMargin: { meanPercent: null, gapDownCount: 0 },
+    });
+
+    expect(text).toContain('장중 손절 체결 0건');
+    expect(text).not.toContain('저가가 손절선보다');
   });
 
   // 두 조건의 성적을 섞어 읽는 것을 막는 유일한 표식이다. 운영 규칙일 때 조용한 것도

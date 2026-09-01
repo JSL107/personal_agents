@@ -136,6 +136,13 @@ export interface ReplayBacktestResult {
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
   // 한 칸에 묻혀, 장중 재현을 넣기 전후 성적을 비교할 수 없다.
   intradayStopSellCount: number;
+  // 그 손절이 얼마나 여유 있게 발동했나. **얇은 밴드가 믿을 만한지는 이 두 값이 정한다.**
+  //   - `meanMarginPercent` — 저가가 손절선보다 몇 %p 아래였나의 평균. 이 값이 0 에 가까우면
+  //     "하루 중 한 틱 스쳐" 발동한 것이라 실제로 그 가격에 팔렸을지 의심스럽다. 손절선이
+  //     호가 1~2틱밖에 안 되는 좁은 밴드(-0.2% 등)에서 특히 그렇다.
+  //   - `gapDownCount` — 시가부터 이미 손절선 아래여서 체결가가 시가로 잡힌 건수. 이 경로는
+  //     손절선보다 낮은 가격에 팔므로 재생이 **보수적으로** 처리한 쪽이다.
+  intradayStopMargin: { meanPercent: number | null; gapDownCount: number };
   // 고가가 없어 조정 종가로 대신한 봉이 섞인 후보. 폐지 종목은 재적재 대상이 아니어서
   // (`findUniverseTickers` 는 `delistedAt: null` 만 본다) 전 구간이 이 경로를 타고, 토스 404 라
   // 앞으로도 채울 수 없다. 대신 쓴 종가는 분모(200봉 최고가)를 낮추므로 신고가 위치가
@@ -177,6 +184,8 @@ interface ReplayState {
   expiredCount: number;
   exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
   intradayStopSells: number;
+  intradayStopMarginSum: number;
+  intradayStopGapDowns: number;
   highFallbackCandidateCount: number;
   highFallbackTickerIds: Set<number>;
   delistedLiquidatedCount: number;
@@ -268,6 +277,8 @@ export class ReplayBacktestUsecase {
       expiredCount: 0,
       exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
       intradayStopSells: 0,
+      intradayStopMarginSum: 0,
+      intradayStopGapDowns: 0,
       highFallbackCandidateCount: 0,
       highFallbackTickerIds: new Set<number>(),
       delistedLiquidatedCount: 0,
@@ -605,6 +616,9 @@ export class ReplayBacktestUsecase {
         .map((order) => order.tickerId),
     );
     const candidates: IntradayStopCandidate[] = [];
+    // 발동한 뒤에는 보유가 사라져 평단을 다시 읽을 수 없다. 여유폭·갭하락 판정에 필요한
+    // 손절선을 후보를 만들 때 함께 남긴다.
+    const stopLineByTickerId = new Map<number, number>();
     for (const position of context.ledger.openPositions()) {
       if (pendingSellTickerIds.has(position.tickerId)) {
         continue;
@@ -630,6 +644,10 @@ export class ReplayBacktestUsecase {
         continue;
       }
       const low = bar.low.toNumber();
+      stopLineByTickerId.set(
+        position.tickerId,
+        averagePrice * (1 + exitBand.stopLossPercent / 100),
+      );
       candidates.push({
         tickerId: position.tickerId,
         tickerCode: ticker.code,
@@ -693,6 +711,14 @@ export class ReplayBacktestUsecase {
       }
       context.state.filledCount += 1;
       context.state.intradayStopSells += 1;
+      // 저가 손익률이 손절선보다 얼마나 더 내려갔나(%p). 손익률로 비교하므로 조정 계열
+      // 여부와 무관하다 — 가격 좌표계가 아니라 비율이다.
+      context.state.intradayStopMarginSum +=
+        exitBand.stopLossPercent - decision.returnRatePercent;
+      const stopLine = stopLineByTickerId.get(decision.tickerId);
+      if (stopLine !== undefined && price < stopLine) {
+        context.state.intradayStopGapDowns += 1;
+      }
       context.fills.push({
         tradeDate: context.today,
         filledAmount: Number(fill.quantity) * price,
@@ -1008,6 +1034,14 @@ export class ReplayBacktestUsecase {
         stopLoss: context.state.exitBandSells.STOP_LOSS,
       },
       intradayStopSellCount: context.state.intradayStopSells,
+      intradayStopMargin: {
+        meanPercent:
+          context.state.intradayStopSells === 0
+            ? null
+            : context.state.intradayStopMarginSum /
+              context.state.intradayStopSells,
+        gapDownCount: context.state.intradayStopGapDowns,
+      },
       highFallback: {
         candidateCount: context.state.highFallbackCandidateCount,
         tickerCount: context.state.highFallbackTickerIds.size,
