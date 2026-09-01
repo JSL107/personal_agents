@@ -14,6 +14,10 @@ const bar = (date: string, close: string) => ({
   adjClose: decimal(close),
   volume: 10n,
   currency: 'KRW',
+  // 네 값을 서로 다른 숫자로 둔다. 종가와 같은 값을 쓰면 자리가 뒤바뀐 회귀가 통과한다.
+  open: decimal(String(Number(close) - 1)),
+  high: decimal(String(Number(close) + 3)),
+  low: decimal(String(Number(close) - 4)),
 });
 
 describe('CollectUniversePricesUsecase', () => {
@@ -69,6 +73,45 @@ describe('CollectUniversePricesUsecase', () => {
     expect(repository.insertDailyPrices).toHaveBeenCalledTimes(1);
     expect(repository.upsertDailyPrices).toHaveBeenCalledTimes(2);
     expect(repository.findStoredCloses).toHaveBeenCalledTimes(1);
+  });
+
+  it('봉의 시가·고가·저가를 저장 입력으로 넘긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest.fn().mockResolvedValue([bar('2026-08-11', '100')]),
+    } as unknown as MarketDataPort;
+    const insertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 1, blockedIntraday: 0 });
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '005930',
+          name: '종목1',
+          tossSymbol: '005930',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest.fn().mockResolvedValue(new Map()),
+      findStoredCloses: jest.fn().mockResolvedValue(new Map()),
+      insertDailyPrices,
+      upsertDailyPrices: jest
+        .fn()
+        .mockResolvedValue({ written: 1, blockedIntraday: 0 }),
+    } as unknown as MarketDataPrismaRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    await usecase.execute();
+
+    // 이 매핑은 backfill 과 따로 존재하므로 한쪽만 고쳐도 다른 쪽이 조용히 빠진다.
+    expect(insertDailyPrices).toHaveBeenCalledWith([
+      expect.objectContaining({
+        open: '99',
+        high: '103',
+        low: '96',
+        close: '100',
+      }),
+    ]);
   });
 
   it('증분 종가가 다르면 해당 종목만 200봉을 재수집해 upsert한다', async () => {
