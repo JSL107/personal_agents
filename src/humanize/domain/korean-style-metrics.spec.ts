@@ -727,3 +727,20 @@ describe('연결어미 이중 계상 방지', () => {
     expect(measureKoreanStyle(sentence).clausesPerSentence).toBe(expected);
   });
 });
+
+describe('절 세기의 형태소 경계', () => {
+  it.each([
+    // 인용·간접화법은 앞 절을 닫지 않는다.
+    ['이 위험을 “lethal trifecta”라고 불렀어요.', 1],
+    ['예측하기 어렵다고 설명해요.', 1],
+    // 연결어미로 쓰인 `-고` 는 그대로 센다.
+    ['PR diff 를 읽고 리뷰 초안을 만들어요.', 2],
+  ])('%s → 절 %d', (sentence, expected) => {
+    expect(measureKoreanStyle(sentence).clausesPerSentence).toBe(expected);
+  });
+
+  it('명사 뒤 공백은 여전히 절로 센다 (알려진 한계)', () => {
+    // 형태소 경계를 보지 않는 대가. 판정하지 않는 관측 축이라 감수한다.
+    expect(measureKoreanStyle('사고 났어요.').clausesPerSentence).toBe(2);
+  });
+});

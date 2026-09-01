@@ -57,8 +57,8 @@ export type KoreanStyleMetrics = {
   // 문장당 절 수(쉼표 + 연결어미로 추정). 어절이 같아도 절이 하나뿐이면 나열을 쉼표로 이어 붙인
   // 문장이라 호흡이 중간에서 한 번 더 끊긴다.
   //
-  // **판정하지 않는다** — 위 두 무리의 값이 1.46~1.80 vs 1.84~2.39 로 간격이 0.04뿐이다.
-  // 표본 하나가 흔들면 순서가 뒤집히는 폭이라, 간격이 2.1인 어절 축과 달리 관측값으로만 둔다.
+  // **판정하지 않는다** — 위 두 무리의 값이 1.5~1.7 vs 1.8~2.4 로 간격이 0.1뿐이다.
+  // 표본 하나가 흔들면 순서가 뒤집히는 폭이라, 간격이 2.3인 어절 축과 달리 관측값으로만 둔다.
   clausesPerSentence: number;
   colloquialEndingPercent: number;
   // 종결 어미 중 해요체(`~요`·`~죠`) 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
@@ -192,8 +192,13 @@ const FORMAL_ENDING = '니다';
 //
 // 반대로 모음 뒤 활용형은 일부 놓친다 — `으니 ` 는 있지만 "하니 " 는 못 잡는다. `니 ` 로
 // 넓히면 "그러니"·"아니" 가 걸려 절 수가 부풀려지므로, 부풀리는 오탐보다 놓치는 쪽을 택했다.
+//
+// 남는 한계: 형태소 경계를 보지 않으므로 `고` 로 끝나는 명사 뒤에 공백이 오면("사고 났어요",
+// "보고 받았어요") 절로 센다. 위 실측에서 183건 중 7건(3.8%)이었다. 목록으로 막으면 다음
+// 명사에 또 뚫리고, 형태소 분석기는 이 패키지가 쓰지 않는다. **절 축은 판정하지 않는
+// 관측값이라**(`KOREAN_STYLE_UNJUDGED_AXES`) 이 정도 오차를 안고 간다.
 const CLAUSE_CONNECTIVES = [
-  '고 ',
+  // `고 ` 는 인용을 걸러야 해서 이 목록이 아니라 아래 `GO_CONNECTIVE` 정규식이 센다.
   '며 ',
   '지만 ',
   '는데 ',
@@ -647,9 +652,15 @@ const round = (value: number): number => Math.round(value * 10) / 10;
 const countWords = (sentence: string): number =>
   sentence.trim().split(/\s+/).filter(Boolean).length;
 
+// `고 ` 만 정규식으로 따로 센다. 앞 글자가 `다·라·냐·자` 면 인용·간접화법이라 앞 절을 닫지
+// 않는데도 걸린다 — "…“lethal trifecta”라고 불렀잖아요"·"…있다고 설명해요" 가 그렇다.
+// 블로그 9편 실측: `고 ` 매칭 183건 중 43건(23.5%)이 인용이었다.
+const GO_CONNECTIVE = /(?<![다라냐자])고 /g;
+
 const countClauses = (sentence: string): number =>
   1 +
   (sentence.match(/,/g) ?? []).length +
+  (sentence.match(GO_CONNECTIVE) ?? []).length +
   CLAUSE_CONNECTIVES.reduce(
     (count, connective) => count + sentence.split(connective).length - 1,
     0,
