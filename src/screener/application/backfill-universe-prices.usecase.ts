@@ -65,6 +65,8 @@ const toWriteRows = (
     tickerId: ticker.id,
     tradeDate: bar.tradeDate,
     open: bar.open?.toString(),
+    high: bar.high?.toString(),
+    low: bar.low?.toString(),
     close: bar.close.toString(),
     adjClose: bar.adjClose.toString(),
     volume: bar.volume,

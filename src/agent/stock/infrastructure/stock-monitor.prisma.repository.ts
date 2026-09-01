@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DecimalValue } from '../../../market-data/domain/market-data.type';
-import { MarketDataPrismaRepository } from '../../../market-data/infrastructure/market-data.prisma.repository';
+import {
+  DailyPriceWriteInput,
+  MarketDataPrismaRepository,
+} from '../../../market-data/infrastructure/market-data.prisma.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { HoldingChangeKind, HoldingPosition } from '../domain/holding-change';
 import { ValuedPosition } from '../domain/portfolio-exposure';
@@ -227,13 +230,11 @@ export class StockMonitorPrismaRepository {
     });
   }
 
-  async upsertDailyPrice(input: {
-    tickerId: number;
-    tradeDate: Date;
-    close: string;
-    adjClose: string;
-    volume: bigint;
-  }): Promise<void> {
+  // 필드를 따로 나열하지 않고 저장소 입력 타입을 그대로 받는다. 예전에는 이 자리에
+  // 인라인 타입이 있어, `open` 이 컬럼으로 늘어났을 때 이 경로만 조용히 빠진 채로
+  // 남았다 — 감시가 저장한 행에는 시가가 없다. 타입을 공유해 다음 컬럼이 늘 때
+  // 컴파일러가 호출부를 지목하게 한다.
+  async upsertDailyPrice(input: DailyPriceWriteInput): Promise<void> {
     const result = await this.marketDataRepository.upsertDailyPrice(input);
     if (result.blockedIntraday > 0) {
       this.logger.warn(
