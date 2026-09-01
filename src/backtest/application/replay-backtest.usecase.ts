@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 
 import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain/paper-recommendation.constraint';
 import { planPendingOrders } from '../../agent/paper-recommend/domain/pending-order-plan';
-import { calculateIndicators } from '../../market-data/domain/stock-indicator';
+import {
+  calculateIndicators,
+  VolatilityEstimator,
+} from '../../market-data/domain/stock-indicator';
 import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import {
   decideExitBandOrders,
@@ -58,13 +61,18 @@ const INDICATOR_BAR_LIMIT = 200;
  * 통과 불가능한 값으로 줘 주문이 7건만 나와도 60거래일 재생이 39.1초로, 정상 회차 40.1초와
  * 같다). 조합마다 같은 계산을 다시 하면 밴드 축 하나가 13시간이 된다.
  *
- * **구간이 캐시의 정체성이다.** `findUniverse` 는 `from` 으로, 봉 조회는 `from`·`to` 로
- * 범위가 갈리므로 다른 구간에 재사용하면 조용히 다른 표본을 재게 된다. `execute` 가 그
- * 어긋남을 예외로 끊는다.
+ * **구간과 변동성 추정량이 캐시의 정체성이다.** `findUniverse` 는 `from` 으로, 봉 조회는
+ * `from`·`to` 로 범위가 갈리고, `volatilityEstimator` 는 후보의 지표 자체를 바꾼다
+ * (`--volatility parkinson` 은 `volatility20` 을 다른 식으로 재 순위를 재편한다). 어느
+ * 하나라도 다른 재생에 재사용하면 조용히 다른 표본을 재게 되므로 `execute` 가 끊는다.
+ *
+ * 나머지 축(청산 밴드·거래대금 하한·비중)은 후보 산출 뒤에서만 쓰이므로 정체성이 아니다.
+ * **후보 산출에 새 인자가 늘면 이 목록도 함께 늘려야 한다.**
  */
 export interface ReplayWindowCache {
   readonly from: string;
   readonly to: string;
+  readonly volatilityEstimator: VolatilityEstimator;
   tickers?: BacktestTicker[];
   barsByTicker?: Map<number, BacktestBar[]>;
   benchmarkCloses?: BenchmarkCloseInput[];
@@ -74,7 +82,13 @@ export interface ReplayWindowCache {
 export const createReplayWindowCache = (
   from: string,
   to: string,
-): ReplayWindowCache => ({ from, to, candidatesByAsOf: new Map() });
+  volatilityEstimator: VolatilityEstimator,
+): ReplayWindowCache => ({
+  from,
+  to,
+  volatilityEstimator,
+  candidatesByAsOf: new Map(),
+});
 
 export interface ReplayBacktestCommand {
   strategy: ScreenStrategy;
@@ -92,6 +106,9 @@ export interface ReplayBacktestCommand {
   // 기본을 1 로 둔 것은 근거가 있어서가 아니라 없어서다 — 정리매매 회수율은 폐지 사유마다
   // 다르고 그 사유가 우리 데이터에 없다. 값을 낮춰 성적이 얼마나 흔들리는지 재는 손잡이다.
   delistingRecoveryRate: number;
+  // 변동성 추정량. LONG_TERM 의 순위 재료(`volatility20`)를 무엇으로 재는지 가른다.
+  // 운영은 종가→종가 하나뿐이고, 이 손잡이는 다른 추정량의 성적을 재기 위해서만 있다.
+  volatilityEstimator: VolatilityEstimator;
 }
 
 export interface ReplayBacktestResult {
@@ -111,6 +128,9 @@ export interface ReplayBacktestResult {
   meanExcessReturnRate: string | null;
   benchmarkUnavailableCount: number;
   exitBand: ExitBandThreshold | null;
+  // 어느 변동성 추정량으로 돌렸는지. 결과만 보고는 조건을 알 수 없어 두 조건의 성적을
+  // 섞어 읽게 된다 — 손잡이를 남긴 이상 그 값이 산출물에 남아야 한다.
+  volatilityEstimator: VolatilityEstimator;
   exitBandSellCounts: { takeProfit: number; stopLoss: number };
   // 장중에 손절선을 뚫어 그날 안에 팔린 건수. 종가 밴드 손절(`exitBandSellCounts.stopLoss`)과
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
@@ -194,11 +214,14 @@ export class ReplayBacktestUsecase {
   ): Promise<ReplayBacktestResult> {
     if (
       cache !== undefined &&
-      (cache.from !== command.from || cache.to !== command.to)
+      (cache.from !== command.from ||
+        cache.to !== command.to ||
+        cache.volatilityEstimator !== command.volatilityEstimator)
     ) {
       throw new Error(
-        `재생 캐시가 다른 구간의 것입니다 ` +
-          `(캐시 ${cache.from}~${cache.to} / 요청 ${command.from}~${command.to}).`,
+        `재생 캐시가 다른 조건의 것입니다 ` +
+          `(캐시 ${cache.from}~${cache.to}/${cache.volatilityEstimator} / ` +
+          `요청 ${command.from}~${command.to}/${command.volatilityEstimator}).`,
       );
     }
     // 유니버스 기준일은 재생 시작일이다. 그 뒤에 폐지된 종목도 살아 있던 날까지는 후보다.
@@ -804,10 +827,16 @@ export class ReplayBacktestUsecase {
     }
     // 캐시가 있으면 같은 구간의 앞선 재생이 만든 후보를 그대로 쓴다. `screenStocks` 도
     // `constrainPaperRecommendation` 도 후보를 변형하지 않고 새 객체로 복사하므로,
-    // 조합이 바뀌어도 이 배열은 같은 값으로 남는다.
+    // 조합이 바뀌어도 이 배열은 같은 값으로 남는다. 단 변동성 추정량은 후보 자체를
+    // 바꾸므로 캐시의 정체성에 들어가 있다(`execute` 가 어긋남을 예외로 끊는다).
     const candidates =
       context.candidatesByAsOf?.get(asOf) ??
-      this.buildCandidates(context.tickers, context.barsByTicker, asOf);
+      this.buildCandidates(
+        context.tickers,
+        context.barsByTicker,
+        asOf,
+        context.command.volatilityEstimator,
+      );
     context.candidatesByAsOf?.set(asOf, candidates);
     // 후보 단계에서 센다. 추천에 실린 것만 세면 "순위를 부풀린 이득이 얼마나 섞였나" 를
     // 놓친다 — 부풀린 값 때문에 다른 종목을 밀어낸 자리가 그쪽에는 남지 않는다.
@@ -973,6 +1002,7 @@ export class ReplayBacktestUsecase {
       meanExcessReturnRate: benchmark.meanExcessReturnRate,
       benchmarkUnavailableCount: benchmark.benchmarkUnavailableCount,
       exitBand: context.command.exitBand,
+      volatilityEstimator: context.command.volatilityEstimator,
       exitBandSellCounts: {
         takeProfit: context.state.exitBandSells.TAKE_PROFIT,
         stopLoss: context.state.exitBandSells.STOP_LOSS,
@@ -1081,6 +1111,7 @@ export class ReplayBacktestUsecase {
     tickers: BacktestTicker[],
     barsByTicker: Map<number, BacktestBar[]>,
     asOf: string,
+    volatilityEstimator: VolatilityEstimator,
   ): ScreenCandidate[] {
     const candidates: ScreenCandidate[] = [];
     for (const ticker of tickers) {
@@ -1098,7 +1129,10 @@ export class ReplayBacktestUsecase {
       if (!latest || dateTextOf(latest.tradeDate) !== asOf) {
         continue;
       }
-      const indicators = calculateIndicators(bars.slice(-INDICATOR_BAR_LIMIT));
+      const indicators = calculateIndicators(
+        bars.slice(-INDICATOR_BAR_LIMIT),
+        volatilityEstimator,
+      );
       if (indicators === null) {
         continue;
       }

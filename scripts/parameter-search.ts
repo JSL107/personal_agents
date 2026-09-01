@@ -153,7 +153,11 @@ const main = async (): Promise<void> => {
     const startedAt = Date.now();
 
     for (const window of windows) {
-      const cache = createReplayWindowCache(window.from, window.to);
+      const cache = createReplayWindowCache(
+        window.from,
+        window.to,
+        BACKTEST_DEFAULTS.volatilityEstimator,
+      );
       const windowStartedAt = Date.now();
       for (const plan of plans) {
         for (const combination of plan.combinations) {
@@ -177,6 +181,9 @@ const main = async (): Promise<void> => {
                       stopLossPercent: combination.stopLossPercent,
                     },
               delistingRecoveryRate: BACKTEST_DEFAULTS.delistingRecoveryRate,
+              // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
+              // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
+              volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
             },
             cache,
           );

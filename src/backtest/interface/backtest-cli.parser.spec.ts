@@ -31,6 +31,7 @@ describe('parseBacktestCliArguments', () => {
       holdingTradeDays: 60,
       exitBand: null,
       delistingRecoveryRate: 1,
+      volatilityEstimator: 'CLOSE_TO_CLOSE',
     });
   });
 
@@ -237,5 +238,25 @@ describe('parseBacktestCliArguments', () => {
     expect(() =>
       parseBacktestCliArguments([...required, '--seed', '1000.5']),
     ).toThrow('--seed');
+  });
+
+  // 기본값이 운영 규칙이어야 인자를 안 준 재생이 지금 코드의 성적을 낸다.
+  it('변동성 추정량 기본값은 종가→종가다', () => {
+    expect(parseBacktestCliArguments([...required]).volatilityEstimator).toBe(
+      'CLOSE_TO_CLOSE',
+    );
+  });
+
+  it('변동성 추정량으로 parkinson 을 받는다', () => {
+    expect(
+      parseBacktestCliArguments([...required, '--volatility', 'parkinson'])
+        .volatilityEstimator,
+    ).toBe('PARKINSON');
+  });
+
+  it('모르는 변동성 추정량은 실패한다', () => {
+    expect(() =>
+      parseBacktestCliArguments([...required, '--volatility', 'garman-klass']),
+    ).toThrow('--volatility');
   });
 });

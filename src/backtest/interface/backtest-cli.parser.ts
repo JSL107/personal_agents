@@ -1,3 +1,4 @@
+import { VolatilityEstimator } from '../../market-data/domain/stock-indicator';
 import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
 import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../../screener/domain/screener-rule';
 import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
@@ -9,7 +10,8 @@ export const BACKTEST_CLI_USAGE =
   '                [--max-daily-gain <당일상승률상한%, 미지정이면 상한 없음>]\n' +
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
-  '                [--delisting-recovery <폐지청산 회수율, 기본 1>]';
+  '                [--delisting-recovery <폐지청산 회수율, 기본 1>]\n' +
+  '                [--volatility close-to-close|parkinson, 기본 close-to-close]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
 export const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
@@ -23,6 +25,9 @@ export const BACKTEST_DEFAULTS = {
   seedAmount: '10000000',
   maximumPositions: 3,
   delistingRecoveryRate: 1,
+  // 기본값이 운영 규칙(종가→종가)이다. 탐색기가 이 값을 그대로 써야 탐색 결과가
+  // 운영이 실제로 하는 일의 성적이 된다.
+  volatilityEstimator: 'CLOSE_TO_CLOSE',
 } as const;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
@@ -147,6 +152,20 @@ export interface BacktestCliOptions extends Omit<
   weightPercent?: number;
 }
 
+// 기본값이 운영 규칙(종가→종가)이라 인자를 안 주면 지금 코드의 성적이 그대로 나온다.
+const readVolatilityEstimator = (argv: string[]): VolatilityEstimator => {
+  const raw = readOption(argv, 'volatility');
+  if (raw === undefined || raw === 'close-to-close') {
+    return BACKTEST_DEFAULTS.volatilityEstimator;
+  }
+  if (raw === 'parkinson') {
+    return 'PARKINSON';
+  }
+  throw new Error(
+    `--volatility 는 close-to-close 또는 parkinson 이어야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+  );
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): BacktestCliOptions => {
@@ -190,5 +209,6 @@ export const parseBacktestCliArguments = (
     ),
     exitBand: readExitBand(argv),
     delistingRecoveryRate: readDelistingRecoveryRate(argv),
+    volatilityEstimator: readVolatilityEstimator(argv),
   };
 };
