@@ -346,4 +346,193 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
     expect(update).toHaveProperty('high', undefined);
     expect(update).toHaveProperty('low', undefined);
   });
+  describe('applyDelistingHistory', () => {
+    const delisting = (
+      code: string,
+      delistedAt: string,
+      reason: string,
+    ): {
+      code: string;
+      name: string;
+      market: 'KOSPI';
+      delistedAt: Date;
+      reason: string;
+    } => {
+      return {
+        code,
+        name: `종목${code}`,
+        market: 'KOSPI',
+        delistedAt: new Date(`${delistedAt}T00:00:00.000Z`),
+        reason,
+      };
+    };
+
+    it('유니버스에 행이 있는 종목만 폐지일과 사유로 갱신한다', async () => {
+      const findMany = jest.fn().mockResolvedValue([
+        // 목록 차분이 이미 폐지로 찍은 행이다(날짜는 동기화가 돈 날이라 부정확).
+        {
+          id: 7,
+          code: '299900',
+          delistedAt: new Date('2026-08-31T00:00:00.000Z'),
+          delistingReason: null,
+        },
+      ]);
+      const update = jest.fn().mockReturnValue({ id: 7 });
+      const $transaction = jest.fn().mockResolvedValue([{ id: 7 }]);
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      const result = await repository.applyDelistingHistory([
+        delisting('299900', '2026-08-18', '피흡수합병'),
+        // 유니버스에 없는 과거 폐지 종목. 봉이 없어 재생에 쓰이지 못하므로 행을 만들지 않는다.
+        delisting('114120', '2024-02-15', '감사의견 거절'),
+      ]);
+
+      expect(result).toBe(1);
+      expect(findMany).toHaveBeenCalledWith({
+        where: {
+          market: 'KR',
+          krxMarket: { not: null },
+          delistedAt: { not: null },
+          code: { in: ['299900', '114120'] },
+        },
+        select: {
+          id: true,
+          code: true,
+          delistedAt: true,
+          delistingReason: true,
+        },
+      });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: {
+          delistedAt: new Date('2026-08-18T00:00:00.000Z'),
+          delistingReason: '피흡수합병',
+        },
+      });
+    });
+
+    it('동기화가 돈 날로 찍힌 폐지일을 KIND 의 실제 폐지일로 덮는다', async () => {
+      const findMany = jest.fn().mockResolvedValue([
+        {
+          id: 7,
+          code: '299900',
+          // 목록 차분이 8/31 동기화 때 찍은 값. 실제 폐지는 8/18 이다.
+          delistedAt: new Date('2026-08-31T00:00:00.000Z'),
+          delistingReason: null,
+        },
+      ]);
+      const update = jest.fn().mockReturnValue({ id: 7 });
+      const $transaction = jest.fn().mockResolvedValue([{ id: 7 }]);
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      await expect(
+        repository.applyDelistingHistory([
+          delisting('299900', '2026-08-18', '피흡수합병'),
+        ]),
+      ).resolves.toBe(1);
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: {
+          delistedAt: new Date('2026-08-18T00:00:00.000Z'),
+          delistingReason: '피흡수합병',
+        },
+      });
+    });
+
+    it('시장 간 중복이 섞여 들어와도 최신 폐지를 고른다', async () => {
+      // 목록을 어디서 받았든 `new Map(...)` 은 입력 순서로 덮어쓴다. 옛 이전상장이 뒤에 오면
+      // 이미 폐지된 종목에 틀린 날짜·사유가 저장된다.
+      const findMany = jest.fn().mockResolvedValue([
+        {
+          id: 9,
+          code: '032390',
+          delistedAt: new Date('2026-08-31T00:00:00.000Z'),
+          delistingReason: null,
+        },
+      ]);
+      const update = jest.fn().mockReturnValue({ id: 9 });
+      const $transaction = jest.fn().mockResolvedValue([{ id: 9 }]);
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      await expect(
+        repository.applyDelistingHistory([
+          delisting('032390', '2009-06-23', '해산 사유 발생'),
+          delisting('032390', '2004-04-29', '증권거래소 상장'),
+        ]),
+      ).resolves.toBe(1);
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 9 },
+        data: {
+          delistedAt: new Date('2009-06-23T00:00:00.000Z'),
+          delistingReason: '해산 사유 발생',
+        },
+      });
+    });
+
+    it('상장 중인 종목은 폐지 목록에 있어도 건드리지 않는다', async () => {
+      // KIND 코스닥 폐지 목록에는 '유가증권시장 상장'(시장 이전) 이 섞여 있다. 실측 54건.
+      // 이 가드가 없으면 셀트리온·키움증권처럼 지금 상장 중인 종목이 폐지 처리된다 —
+      // 실제로 그렇게 56건이 유니버스에서 빠졌다.
+      const findMany = jest.fn().mockResolvedValue([]);
+      const update = jest.fn();
+      const $transaction = jest.fn();
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      await expect(
+        repository.applyDelistingHistory([
+          delisting('068270', '2018-02-09', '유가증권시장 상장'),
+        ]),
+      ).resolves.toBe(0);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ delistedAt: { not: null } }),
+        }),
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('이미 같은 값이면 쓰지 않는다', async () => {
+      const findMany = jest.fn().mockResolvedValue([
+        {
+          id: 7,
+          code: '299900',
+          delistedAt: new Date('2026-08-18T00:00:00.000Z'),
+          delistingReason: '피흡수합병',
+        },
+      ]);
+      const update = jest.fn();
+      const $transaction = jest.fn();
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      await expect(
+        repository.applyDelistingHistory([
+          delisting('299900', '2026-08-18', '피흡수합병'),
+        ]),
+      ).resolves.toBe(0);
+      // 매 회차 전량을 받으므로, 이 검사가 없으면 updatedAt 이 매일 갱신돼
+      // "언제 실제로 바뀌었나" 를 되짚을 수 없다.
+      expect(update).not.toHaveBeenCalled();
+      expect($transaction).not.toHaveBeenCalled();
+    });
+  });
 });
