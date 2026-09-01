@@ -32,7 +32,15 @@ export class CrawlerRequester implements CrawlerRequesterPort {
     try {
       // 샌드박스를 끄지 않는다. 이 브라우저가 여는 것은 바깥에서 받은 주소이고,
       // 렌더러 샌드박스는 그 콘텐츠와 호스트 사이의 마지막 경계다.
-      browser = await puppeteer.launch({ headless: true });
+      //
+      // `--block-new-web-contents`: 팝업·새 탭 생성을 브라우저가 아예 거부한다. 페이지 단위
+      // 요청 인터셉트는 새 target 에 걸리지 않고, `targetcreated` 를 받아 닫는 것은 늦다 —
+      // 이벤트를 받아 `target.page()` 를 기다리는 사이에 그 창의 첫 요청은 이미 나간다.
+      // 크롤러는 준 주소 한 장만 읽으면 되므로 창이 늘어날 이유가 없다.
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--block-new-web-contents'],
+      });
 
       page = await browser.newPage();
       const blocked = await guardOutboundRequests(browser, page);
@@ -177,8 +185,21 @@ const guardOutboundRequests = async (
     return allowed;
   };
 
-  // 팝업으로 열린 창에는 이 인터셉트가 걸리지 않는다. 크롤러는 준 주소 한 장만 읽으면
-  // 되므로 새 창은 아예 닫는다.
+  // 팝업은 페이지 스크립트가 실행되기 전에 `window.open` 을 막아 원천 차단한다.
+  //
+  // 새 창은 이 인터셉트가 걸리지 않는 별도 target 이라 그대로 두면 내부 주소로 첫 요청을
+  // 보낼 수 있다. `targetcreated` 를 받아 닫는 것으로는 늦다 — 이벤트를 받아 `target.page()`
+  // 를 기다리는 사이에 그 창의 첫 요청은 이미 나간다(실측: 내부 서버가 2회 호출됐다).
+  // launch 의 `--block-new-web-contents` 도 headless 에서는 이 경로를 막지 못했다.
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(window, 'open', {
+      value: () => null,
+      writable: false,
+      configurable: false,
+    });
+  });
+
+  // 위 두 겹을 지나 어떤 경위로든 창이 생겼다면 닫는다. 첫 요청을 막지는 못하는 안전망이다.
   browser.on('targetcreated', (target) => {
     void (async () => {
       const opened = await target.page().catch(() => null);
