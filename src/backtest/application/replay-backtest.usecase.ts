@@ -43,6 +43,7 @@ import {
   BacktestMetricSummary,
   summarizeBacktestMetrics,
 } from '../domain/backtest-metric';
+import { applySlippage } from '../domain/slippage';
 import { selectDeterministicRecommendation } from '../domain/top-scored-selection';
 import { BacktestPrismaRepository } from '../infrastructure/backtest.prisma.repository';
 import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
@@ -109,6 +110,10 @@ export interface ReplayBacktestCommand {
   // 변동성 추정량. LONG_TERM 의 순위 재료(`volatility20`)를 무엇으로 재는지 가른다.
   // 운영은 종가→종가 하나뿐이고, 이 손잡이는 다른 추정량의 성적을 재기 위해서만 있다.
   volatilityEstimator: VolatilityEstimator;
+  // 체결가를 몇 % 불리하게 잡을지(매수 +x%, 매도 −x%). 0 이 미반영이고 그것이 기본이다.
+  // 슬리피지를 흉내 내려는 값이 아니라 "얼마부터 결론이 무너지나" 를 재는 손잡이다
+  // (`applySlippage` 주석). 후보 산출 뒤에서만 쓰이므로 창 캐시의 정체성이 아니다.
+  slippagePercent: number;
 }
 
 export interface ReplayBacktestResult {
@@ -131,6 +136,8 @@ export interface ReplayBacktestResult {
   // 어느 변동성 추정량으로 돌렸는지. 결과만 보고는 조건을 알 수 없어 두 조건의 성적을
   // 섞어 읽게 된다 — 손잡이를 남긴 이상 그 값이 산출물에 남아야 한다.
   volatilityEstimator: VolatilityEstimator;
+  // 같은 이유로 체결가 가정도 산출물에 남긴다. 0 이 아닌 회차는 운영 재현이 아니다.
+  slippagePercent: number;
   exitBandSellCounts: { takeProfit: number; stopLoss: number };
   // 장중에 손절선을 뚫어 그날 안에 팔린 건수. 종가 밴드 손절(`exitBandSellCounts.stopLoss`)과
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
@@ -449,6 +456,12 @@ export class ReplayBacktestUsecase {
         context.barsByTicker,
         context.today,
       );
+      // 시가 그대로가 아니라 손잡이만큼 불리하게 민 값으로 체결한다(기본 0 = 시가 그대로).
+      const fillPrice = applySlippage(
+        bar.open,
+        order.side,
+        context.command.slippagePercent,
+      );
       const fill = await context.executeOrder.execute({
         orderId: order.orderId,
         accountId: context.ledger.accountId,
@@ -456,7 +469,7 @@ export class ReplayBacktestUsecase {
         market: ticker.krxMarket as PaperMarket,
         side: order.side,
         requestedQuantity: String(order.quantity),
-        price: String(bar.open),
+        price: String(fillPrice),
         tradeDate: context.today,
         strategy: context.command.strategy,
       });
@@ -464,7 +477,7 @@ export class ReplayBacktestUsecase {
         context.state.filledCount += 1;
         context.fills.push({
           tradeDate: context.today,
-          filledAmount: Number(fill.quantity) * bar.open,
+          filledAmount: Number(fill.quantity) * fillPrice,
           accountValuation: valuationBefore,
         });
         if (order.side === 'BUY') {
@@ -520,8 +533,13 @@ export class ReplayBacktestUsecase {
       if (latest === undefined) {
         continue;
       }
-      const price =
-        latest.close.toNumber() * context.command.delistingRecoveryRate;
+      // 회수율에 더해 체결가 손잡이도 태운다 — 재생의 모든 체결에 같은 규칙을 적용해야
+      // "이 조합만 슬리피지를 안 문다" 는 구멍이 안 생긴다. 폐지 청산은 매도다.
+      const price = applySlippage(
+        latest.close.toNumber() * context.command.delistingRecoveryRate,
+        'SELL',
+        context.command.slippagePercent,
+      );
       // 비중 지표는 체결 직전 평가액 대비로 잰다. 일반 체결과 같은 기준이어야 한 표에서 읽힌다.
       const valuationBefore = this.valuate(
         context.ledger,
@@ -658,7 +676,13 @@ export class ReplayBacktestUsecase {
       if (ticker === undefined) {
         continue;
       }
-      const price = Number(decision.price);
+      // 판정가(`decision.price`)는 도메인이 정한 `min(시가, 손절선)` 그대로 두고, 체결가만
+      // 민다 — 손잡이는 "그 가격에 팔린다" 는 가정을 흔드는 것이지 발동 조건이 아니다.
+      const price = applySlippage(
+        Number(decision.price),
+        'SELL',
+        context.command.slippagePercent,
+      );
       const valuationBefore = this.valuate(
         context.ledger,
         context.barsByTicker,
@@ -1003,6 +1027,7 @@ export class ReplayBacktestUsecase {
       benchmarkUnavailableCount: benchmark.benchmarkUnavailableCount,
       exitBand: context.command.exitBand,
       volatilityEstimator: context.command.volatilityEstimator,
+      slippagePercent: context.command.slippagePercent,
       exitBandSellCounts: {
         takeProfit: context.state.exitBandSells.TAKE_PROFIT,
         stopLoss: context.state.exitBandSells.STOP_LOSS,

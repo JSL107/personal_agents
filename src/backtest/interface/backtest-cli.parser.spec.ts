@@ -32,6 +32,7 @@ describe('parseBacktestCliArguments', () => {
       exitBand: null,
       delistingRecoveryRate: 1,
       volatilityEstimator: 'CLOSE_TO_CLOSE',
+      slippagePercent: 0,
     });
   });
 
@@ -258,5 +259,25 @@ describe('parseBacktestCliArguments', () => {
     expect(() =>
       parseBacktestCliArguments([...required, '--volatility', 'garman-klass']),
     ).toThrow('--volatility');
+  });
+
+  it('슬리피지는 안 주면 0 이고 음수는 받지 않는다', () => {
+    const required = [
+      '--strategy',
+      'SWING',
+      '--from',
+      '2026-01-02',
+      '--to',
+      '2026-08-18',
+    ];
+
+    expect(parseBacktestCliArguments(required).slippagePercent).toBe(0);
+    expect(
+      parseBacktestCliArguments([...required, '--slippage', '0.3'])
+        .slippagePercent,
+    ).toBe(0.3);
+    expect(() =>
+      parseBacktestCliArguments([...required, '--slippage', '-1']),
+    ).toThrow('--slippage');
   });
 });
