@@ -608,6 +608,52 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
   });
 
+  // 포매터 테스트는 결과 객체에 값을 직접 주입하므로 이 집계의 회귀를 잡지 못한다
+  // (PR #447 이대리 리뷰 지적). 여유폭이 판정 근거이므로 계산 자체를 여기서 지킨다.
+  it('장중 손절 여유폭을 저가와 손절선의 차이로 집계한다', async () => {
+    // 저가를 종가의 80% 로 두면 손절선(-5%)보다 훨씬 아래라 여유폭이 크게 나온다.
+    // 여유폭은 `손절선 - 저가손익률` 이므로 **항상 양수**여야 한다.
+    const result = await new ReplayBacktestUsecase(
+      repositoryOf(
+        risingBars(
+          (_, close) => Math.round(close * 1.1),
+          (_, close) => Math.round(close * 0.8),
+        ),
+      ),
+    ).execute({
+      ...commandWithExitBand,
+      exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+    });
+
+    const margin = result.intradayStopMargin;
+    expect(result.intradayStopSellCount).toBeGreaterThan(0);
+    expect(margin.meanPercent as number).toBeGreaterThan(0);
+    expect(margin.minPercent as number).toBeGreaterThan(0);
+    // 분포는 순서가 지켜져야 한다 — 뒤집히면 분위수 계산이 깨진 것이다.
+    expect(margin.minPercent as number).toBeLessThanOrEqual(
+      margin.p10Percent as number,
+    );
+    expect(margin.p10Percent as number).toBeLessThanOrEqual(
+      margin.medianPercent as number,
+    );
+  });
+
+  it('장중 손절이 없으면 여유폭은 0 이 아니라 값 없음이다', async () => {
+    // 0 으로 내면 "여유 없이 발동했다" 와 구분되지 않는다.
+    const result = await new ReplayBacktestUsecase(
+      repositoryOf(risingBars()),
+    ).execute(command);
+
+    expect(result.intradayStopSellCount).toBe(0);
+    expect(result.intradayStopMargin).toEqual({
+      meanPercent: null,
+      medianPercent: null,
+      p10Percent: null,
+      minPercent: null,
+      gapDownCount: 0,
+    });
+  });
+
   // 체결가 규칙(`min(시가, 손절선)`) 자체는 도메인 단위 테스트가 지킨다. 여기서 보는 것은
   // **재생 루프가 그 함수에 실제 시가와 평단을 연결하는가** 다 — 시가를 넘기지 않고 손절선만
   // 쓰면 아래 두 회차가 같은 성적을 내고, 갭하락 구간의 낙관 편향이 그대로 성적이 된다.
@@ -647,6 +693,15 @@ describe('ReplayBacktestUsecase', () => {
     // 시가가 낮은 쪽이 그만큼 적게 받아야 한다. 두 값이 같으면 시가가 체결가에 닿지 않은 것이다.
     expect(Number(gapDown.finalCashBalance)).toBeLessThan(
       Number(intraday.finalCashBalance),
+    );
+
+    // 갭하락 계수는 이 두 회차를 갈라야 한다 — 갈리지 않으면 "손절선보다 낮게 팔린 건"
+    // 이 집계에서 보이지 않고, 재생이 보수적으로 처리한 몫을 읽을 수 없다.
+    expect(gapDown.intradayStopMargin.gapDownCount).toBe(1);
+    expect(intraday.intradayStopMargin.gapDownCount).toBe(0);
+    // 여유폭은 같은 저가에서 나오므로 두 회차가 같다 — 체결가가 아니라 판정으로 재기 때문이다.
+    expect(gapDown.intradayStopMargin.meanPercent).toBe(
+      intraday.intradayStopMargin.meanPercent,
     );
   });
 
