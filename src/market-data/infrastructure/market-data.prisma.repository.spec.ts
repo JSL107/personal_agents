@@ -2,7 +2,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MarketDataPrismaRepository } from './market-data.prisma.repository';
 
 describe('MarketDataPrismaRepository', () => {
-  it('종목 일봉을 5개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
+  it('종목 일봉을 7개 컬럼만 읽어 종목별 최근 limit봉을 오름차순으로 반환한다', async () => {
     const aggregate = jest.fn().mockResolvedValue({
       _max: { tradeDate: new Date('2026-08-12T00:00:00.000Z') },
     });
@@ -58,6 +58,8 @@ describe('MarketDataPrismaRepository', () => {
         tradeDate: true,
         close: true,
         adjClose: true,
+        high: true,
+        low: true,
         volume: true,
       },
     });

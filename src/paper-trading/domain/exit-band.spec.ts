@@ -4,6 +4,7 @@ import {
   DEFAULT_EXIT_BAND,
   describeExitBandReason,
   describeIntradayStopReason,
+  resolveIntradayStopFillPrice,
   summarizeExitBandUsage,
 } from './exit-band';
 
@@ -253,5 +254,43 @@ describe('장부 불일치 하한', () => {
     ]);
     expect(decisions).toHaveLength(1);
     expect(decisions[0].reason).toBe('STOP_LOSS');
+  });
+});
+
+describe('resolveIntradayStopFillPrice', () => {
+  // 시가가 손절선 위면 장중에 손절선을 지나며 팔린다. 운영이 5분마다 재다 그 값을 만나는
+  // 지점이고, 실운영 씨젠 2026-08-31(시가 35,100 · 손절선 33,350)이 이 경우였다.
+  it('시가가 손절선보다 높으면 손절선으로 체결한다', () => {
+    expect(
+      resolveIntradayStopFillPrice({
+        open: 35_100,
+        averagePrice: 35_105.26,
+        stopLossPercent: -5,
+      }),
+    ).toBeCloseTo(33_350, 0);
+  });
+
+  // 갭하락은 발동일의 24.2% 다. 그날은 손절선 가격이 장중에 존재한 적이 없으므로 그 값으로
+  // 체결하면 실제로 불가능한 매도를 성적에 넣게 된다.
+  it('시가가 이미 손절선 아래면 손절선이 아니라 시가로 체결한다', () => {
+    expect(
+      resolveIntradayStopFillPrice({
+        open: 9_000,
+        averagePrice: 10_000,
+        stopLossPercent: -5,
+      }),
+    ).toBe(9_000);
+  });
+
+  // 저가는 후보가 아니다 — 이 함수는 저가를 입력으로 받지도 않는다. 그날 최저점에 팔았다는
+  // 가정이 성적을 평균 3.35% 비관적으로 만드는 것을 실측으로 확인해 뺐다.
+  it('저가가 아무리 낮아도 체결가는 시가와 손절선만으로 정해진다', () => {
+    expect(
+      resolveIntradayStopFillPrice({
+        open: 10_200,
+        averagePrice: 10_000,
+        stopLossPercent: -5,
+      }),
+    ).toBe(9_500);
   });
 });

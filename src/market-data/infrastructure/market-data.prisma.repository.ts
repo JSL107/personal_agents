@@ -79,6 +79,8 @@ export class MarketDataPrismaRepository {
         tradeDate: true,
         close: true,
         adjClose: true,
+        high: true,
+        low: true,
         volume: true,
       },
     });
@@ -91,6 +93,8 @@ export class MarketDataPrismaRepository {
           tradeDate: price.tradeDate,
           close: price.close,
           adjClose: price.adjClose,
+          high: price.high,
+          low: price.low,
           volume: price.volume,
         });
         grouped.set(price.tickerId, bars);

@@ -6,17 +6,26 @@ const decimal = (value: number): DecimalValue => ({
   toString: () => String(value),
 });
 
+// 고가·저가를 따로 주지 않으면 진폭이 0 인 봉(고가=저가=조정 종가)으로 만든다. 그러면
+// 최고가 기준 `high200Position` 이 옛 최고 종가 기준과 같은 값을 내므로, 기존 기대값이
+// 그대로 회귀 감시 역할을 한다.
 const barsFromCloses = (
   closes: number[],
   volumes: bigint[] = closes.map(() => 100n),
   rawCloses: number[] = closes,
+  highs?: (number | null)[],
 ): IndicatorBar[] =>
-  closes.map((close, index) => ({
-    tradeDate: new Date(Date.UTC(2025, 0, index + 1)),
-    close: decimal(rawCloses[index]),
-    adjClose: decimal(close),
-    volume: volumes[index],
-  }));
+  closes.map((close, index) => {
+    const high = highs === undefined ? close : highs[index];
+    return {
+      tradeDate: new Date(Date.UTC(2025, 0, index + 1)),
+      close: decimal(rawCloses[index]),
+      adjClose: decimal(close),
+      high: high === null ? null : decimal(high),
+      low: high === null ? null : decimal(close),
+      volume: volumes[index],
+    };
+  });
 
 describe('calculateIndicators', () => {
   it('빈 봉은 계산 대상이 아니므로 null을 반환한다', () => {
@@ -184,6 +193,63 @@ describe('calculateIndicators', () => {
     );
 
     expect(indicators?.high200Position).toBe(1);
+  });
+
+  // 이 변경의 핵심이다. 장중에 120 까지 찍고 100 으로 내려온 날이 있으면 신고가는 120 이고
+  // 오늘 종가 100 은 그 아래다. 종가만 보던 옛 기준은 이 날을 100 으로 읽어 "신고가에 있다"
+  // (=1) 는 잘못된 값을 냈다.
+  it('장중에 찍고 내려온 고점을 신고가로 센다', () => {
+    const closes = Array.from({ length: 200 }, () => 100);
+    const highs: (number | null)[] = closes.map(() => 100);
+    highs[50] = 120;
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.high200Position).toBeCloseTo(100 / 120, 10);
+  });
+
+  // 5년 재적재 밖 구간과 공급자가 봉을 주지 않는 소수 종목에는 고가가 없다. 그 봉을 통째로
+  // 빼면 200봉 계약이 깨지므로 조정 종가로 대신한다 — 종가는 고가 이하라 최대값을 낮출
+  // 뿐이고, 없는 신고가를 지어내지 않는다.
+  it('고가가 없는 봉은 그 봉의 조정 종가로 대신한다', () => {
+    const closes = [...Array.from({ length: 199 }, () => 100), 90];
+    const highs: (number | null)[] = closes.map(() => null);
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.high200Position).toBeCloseTo(90 / 100, 10);
+  });
+
+  // 계수 없이는 성적을 읽을 때 어느 종목이 종가 대체 이득을 봤는지 알 수 없다.
+  it('고가가 없어 종가로 대신한 봉 수를 센다', () => {
+    const closes = Array.from({ length: 200 }, () => 100);
+    const highs: (number | null)[] = closes.map((_, index) =>
+      index < 3 ? null : 100,
+    );
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.highFallbackBarCount).toBe(3);
+  });
+
+  // 200봉 계약과 같은 창을 본다. 창 밖의 결측을 세면 "지금 순위에 섞인 양" 이 아니게 된다.
+  it('200봉 창 밖의 고가 결측은 세지 않는다', () => {
+    const closes = Array.from({ length: 201 }, () => 100);
+    const highs: (number | null)[] = closes.map((_, index) =>
+      index === 0 ? null : 100,
+    );
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.highFallbackBarCount).toBe(0);
   });
 
   it('20개 일간 수익률의 표본표준편차는 n-1 분모로 계산한다', () => {

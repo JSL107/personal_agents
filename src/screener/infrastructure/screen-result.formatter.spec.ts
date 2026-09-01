@@ -17,6 +17,7 @@ const indicators: StockIndicators = {
   high200Position: 0.9,
   volatility20: 18.9,
   turnover60: 650_000_000,
+  highFallbackBarCount: 0,
   barCount: 200,
 };
 
@@ -27,6 +28,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
   evaluatedCount: 2_500,
   staleCount: 5,
   passedCount: 100,
+  highFallbackCount: 0,
   includedIndicators: [],
   stocks: [
     {
@@ -70,11 +72,40 @@ describe('formatScreenResult', () => {
       ...result('LONG_TERM'),
       evaluatedCount: 2_300,
       passedCount: 0,
+      highFallbackCount: 0,
       stocks: [],
     });
 
     expect(output).toBe(
       '스크리닝 통과 종목이 없습니다. 유니버스 2,595종목 중 봉이 있는 것 2,300종목, 기준일 제외 5종목, 통과 0건입니다.',
     );
+  });
+
+  // 계수를 화면에 내지 않으면 종가로 대신한 봉이 섞여 신고가 위치가 부풀려진 후보가 있어도
+  // 정상 결과처럼 읽힌다. 통과 여부와 무관한 값이라 두 분기 모두에서 나와야 한다.
+  it('고가 결측이 있으면 통과 목록 머리글에 종목 수를 적는다', () => {
+    const output = formatScreenResult({
+      ...result('LONG_TERM'),
+      highFallbackCount: 3,
+    });
+
+    expect(output).toContain('고가 결측 종가대체 3종목(신고가 위치 부풀려짐)');
+  });
+
+  it('통과 0건이어도 고가 결측은 적는다', () => {
+    const output = formatScreenResult({
+      ...result('LONG_TERM'),
+      passedCount: 0,
+      highFallbackCount: 2,
+      stocks: [],
+    });
+
+    expect(output).toContain('고가 결측 종가대체 2종목(신고가 위치 부풀려짐)');
+  });
+
+  // 운영 유니버스는 폐지 종목을 보지 않아 구조적으로 0 이다. 매 회차 `0종목` 을 붙이면
+  // 읽을 것이 없는 줄이 늘 뿐이라, 값이 있는 회차에만 나타나게 둔다.
+  it('고가 결측이 없으면 그 문구를 붙이지 않는다', () => {
+    expect(formatScreenResult(result('LONG_TERM'))).not.toContain('고가 결측');
   });
 });
