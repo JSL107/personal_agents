@@ -43,6 +43,23 @@ export type KoreanStyleMetrics = {
   // 가장 긴 문장 그대로. 상한을 넘겼을 때 **무엇이 길었는지** 사람이 봐야 처방이 갈린다 —
   // 끊어야 할 만연체와, 끊을 수 없는 영문 이름 나열은 길이만으로 구분되지 않는다.
   longestSentence: string;
+  // 가장 긴 문장의 어절 수. 최장 판정은 글자 수로 하는데 그 값이 영문 이름 나열에 부풀려지므로
+  // (위 주석의 「91자 중 77자가 영문」 사례), 어절을 함께 적어 사람이 끊어야 할 만연체와
+  // 끊을 수 없는 이름 나열을 가를 수 있게 한다.
+  longestSentenceWords: number;
+  // 문장당 어절 수. **평균 글자 수가 통과해도 숨이 가쁠 수 있다** — 영문 식별자 하나가 20~30자를
+  // 먹어서, 영문 비중이 10~46% 로 갈리는 글들은 글자 수로 비교되지 않는다.
+  //
+  // 실측(2026-09-01, 블로그 8월 글 9편): 사용자가 「문장 호흡이 짧다」 고 지적한 7편이
+  // 8.7~9.9어절인데 평균 글자 수로는 41.9~50.9자라 하한(35자)을 **전부 넘겼다**. 지적받지 않은
+  // 2편은 12.0~12.2어절이다. 두 무리가 겹치지 않아 이 축을 판정에 넣는다.
+  wordsPerSentence: number;
+  // 문장당 절 수(쉼표 + 연결어미로 추정). 어절이 같아도 절이 하나뿐이면 나열을 쉼표로 이어 붙인
+  // 문장이라 호흡이 중간에서 한 번 더 끊긴다.
+  //
+  // **판정하지 않는다** — 위 두 무리의 값이 1.46~1.80 vs 1.84~2.39 로 간격이 0.04뿐이다.
+  // 표본 하나가 흔들면 순서가 뒤집히는 폭이라, 간격이 2.1인 어절 축과 달리 관측값으로만 둔다.
+  clausesPerSentence: number;
   colloquialEndingPercent: number;
   // 종결 어미 중 해요체(`~요`·`~죠`) 비율. 프로파일 실측은 "`~습니다` 와 `~요` 가 거의 반반이고,
   // 여기에 구어 어미가 6분의 1쯤 얹힌다" 다 — 즉 문체는 두 축이고, 구어 어미는 `~요` 축의
@@ -166,6 +183,35 @@ const FORMAL_ENDING = '니다';
 // 많은 글의 종결체 비율이 통째로 내려가 축이 무의미해진다.
 // 문단 벽 임계. 문장 길이와 달리 **공백을 포함해** 센다 — 이 지표가 재는 것은 어휘량이 아니라
 // 화면에서 덩어리가 차지하는 면적이고, 거기엔 공백도 자리를 차지한다.
+// 절 경계 추정에 쓰는 연결어미. 앞 절을 닫고 다음 절로 넘기는 것만 골랐다. 뒤에 공백을 둔
+// 이유는 종결형과 겹치는 형태(`-고요`·`-지만요`)를 문장 끝에서 세지 않기 위해서다.
+//
+// 서로 포함 관계인 어미를 함께 넣지 않는다 — `면서 ` 와 `으면서` 를 같이 두면 "먹으면서 " 가
+// 두 번 세어져 홑문장이 복문으로 찍힌다(실측으로 걸렸다). 받침 뒤 활용형(`-으면서`)은 짧은
+// 쪽(`면서 `)이 이미 덮는다.
+//
+// 반대로 모음 뒤 활용형은 일부 놓친다 — `으니 ` 는 있지만 "하니 " 는 못 잡는다. `니 ` 로
+// 넓히면 "그러니"·"아니" 가 걸려 절 수가 부풀려지므로, 부풀리는 오탐보다 놓치는 쪽을 택했다.
+const CLAUSE_CONNECTIVES = [
+  '고 ',
+  '며 ',
+  '지만 ',
+  '는데 ',
+  '면서 ',
+  '어서 ',
+  '아서 ',
+  '니까 ',
+  '으니 ',
+  '도록 ',
+  '다가 ',
+  '거나 ',
+  '든지 ',
+  '기에 ',
+  '느라 ',
+  '자마자',
+  '라서 ',
+];
+
 const PARAGRAPH_WALL_SENTENCE_MIN = 6;
 const PARAGRAPH_WALL_LENGTH_MAX = 250;
 const NO_SHORT_SENTENCE_MIN = 3;
@@ -289,6 +335,9 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       shortSentencePercent: 0,
       longestSentenceLength: 0,
       longestSentence: '',
+      longestSentenceWords: 0,
+      wordsPerSentence: 0,
+      clausesPerSentence: 0,
       colloquialEndingPercent: 0,
       yoEndingPercent: 0,
       endingAlternationPercent: 0,
@@ -310,6 +359,9 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     lengths.length;
 
   const longestIndex = lengths.indexOf(Math.max(...lengths));
+
+  const wordCounts = sentences.map(countWords);
+  const clauseCounts = sentences.map(countClauses);
 
   const colloquialCount = sentences.filter((sentence) =>
     COLLOQUIAL_ENDINGS.some((ending) =>
@@ -370,6 +422,13 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     ),
     longestSentenceLength: lengths[longestIndex],
     longestSentence: sentences[longestIndex],
+    longestSentenceWords: wordCounts[longestIndex],
+    wordsPerSentence: round(
+      wordCounts.reduce((sum, count) => sum + count, 0) / wordCounts.length,
+    ),
+    clausesPerSentence: round(
+      clauseCounts.reduce((sum, count) => sum + count, 0) / clauseCounts.length,
+    ),
     colloquialEndingPercent: toPercent(colloquialCount, sentences.length),
     yoEndingPercent:
       yoCount + formalCount === 0
@@ -435,6 +494,16 @@ export const KOREAN_STYLE_TARGETS = {
   // **재현하는** 목표치였다. 35 는 의심 군집(29.9·31.4자)에서 **멀어지는 방향의 하한**이라
   // 의심 리듬을 되먹이지 않는다.
   averageLengthMin: 35,
+  // 호흡을 어절로 잰 하한. 위 `averageLengthMin` 이 글자 수라 영문 비중에 휘둘리는 것을 보완한다.
+  //
+  // 실측(2026-09-01, 블로그 8월 글 9편): 「호흡이 짧다」 고 지적받은 7편 8.7~9.9어절 vs 지적
+  // 없던 2편 12.0~12.2어절. 두 무리가 겹치지 않아 그 사이에 둔다. 종결체 교대율과 같은 방식으로
+  // 얻은 경계다.
+  //
+  // **이 축이 필요한 이유는 지적받은 7편이 글자 수 기준을 전부 통과했다는 데 있다.** 그중
+  // 2026-08-24 발행본은 미달 축이 하나도 없는 상태로 「문장마다 끊겨 격자로 읽힌다」 는 판정을
+  // 받았다. 평균 41.9자로 하한을 넘겼지만 8.7어절이었다.
+  wordsPerSentenceMin: 11,
   // 스킬 룰북 J-3 의 "1문서 1~2회 이하" 를 그대로 옮긴다. 0 이 아닌 이유는 한 번쯤은
   // 자연스러운 자리가 있기 때문이고, 상한을 두는 이유는 15개가 들어간 발행본이 실제로 나갔기 때문이다.
   emDashMax: 2,
@@ -460,6 +529,7 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
   '구어',
   '요체 비율',
   '문단 축',
+  '절',
 ] as const;
 
 /**
@@ -507,6 +577,12 @@ const collectKoreanStyleGaps = (
         text: `금지접속사 ${metrics.bannedConnectiveCount}회(0회)`,
       });
     }
+    if (metrics.wordsPerSentence < T.wordsPerSentenceMin) {
+      gaps.push({
+        axis: 'wordsPerSentence',
+        text: `어절 ${metrics.wordsPerSentence}개(≥${T.wordsPerSentenceMin}개)`,
+      });
+    }
     if (metrics.averageLength < T.averageLengthMin) {
       gaps.push({
         axis: 'averageLength',
@@ -537,7 +613,7 @@ export const formatKoreanStyleMetrics = (
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 어절 ${metrics.wordsPerSentence}개 · 절 ${metrics.clausesPerSentence}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
@@ -558,7 +634,7 @@ export const formatKoreanStyleMetrics = (
   // 같은 91자로 찍힌다. 넘겼을 때만 그 문장을 덧붙여 사람이 읽고 판단하게 한다.
   const longest =
     metrics.longestSentenceLength > KOREAN_STYLE_TARGETS.longestSentenceMax
-      ? `\n최장 문장(${metrics.longestSentenceLength}자): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
+      ? `\n최장 문장(${metrics.longestSentenceLength}자 · ${metrics.longestSentenceWords}어절): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
       : '';
   return `${sentenceLine}\n${paragraph}${verdict}${longest}`;
 };
@@ -567,6 +643,17 @@ const truncate = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}…`;
 
 const round = (value: number): number => Math.round(value * 10) / 10;
+
+const countWords = (sentence: string): number =>
+  sentence.trim().split(/\s+/).filter(Boolean).length;
+
+const countClauses = (sentence: string): number =>
+  1 +
+  (sentence.match(/,/g) ?? []).length +
+  CLAUSE_CONNECTIVES.reduce(
+    (count, connective) => count + sentence.split(connective).length - 1,
+    0,
+  );
 
 const toPercent = (count: number, total: number): number =>
   Math.round((count / total) * 100);
