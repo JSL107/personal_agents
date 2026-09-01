@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
+import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { CrawlUsecase } from './application/crawl.usecase';
 import { ProcessCrawlJobUsecase } from './application/process-crawl-job.usecase';
 import { CRAWL_QUEUE_PORT } from './domain/port/crawl-queue.port';
@@ -20,6 +21,7 @@ import { CrawlerProvider } from './interface/crawler.provider';
   ],
   controllers: [CrawlerController],
   providers: [
+    LoopbackOnlyGuard,
     CrawlerConsumer,
     ProcessCrawlJobUsecase,
     CrawlUsecase,

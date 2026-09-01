@@ -177,11 +177,22 @@ public actor ConsoleClient {
         self.session = session
     }
 
+    /// 읽기 요청에도 토큰을 싣는다. 백엔드는 loopback 이면 토큰 없이도 열어 주지만,
+    /// 원격 주소로 붙을 때는 이게 없으면 401 이라 화면이 빈 채로 열린다.
+    private func authorized(_ request: URLRequest) -> URLRequest {
+        guard let token, !token.isEmpty else {
+            return request
+        }
+        var authorizedRequest = request
+        authorizedRequest.setValue(token, forHTTPHeaderField: "x-console-token")
+        return authorizedRequest
+    }
+
     /// `GET /v1/console/snapshot`. REST 응답은 ResponseInterceptor 가 `{code,message,data}` 로
     /// 감싸므로 envelope 에서 `data` 를 꺼낸다.
     public func fetchSnapshot() async throws -> ConsoleSnapshot {
         let url = baseURL.appendingPathComponent("v1/console/snapshot")
-        let (data, response) = try await session.data(from: url)
+        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
         guard let http = response as? HTTPURLResponse else {
             throw ConsoleClientError.notHTTP
         }
@@ -199,7 +210,7 @@ public actor ConsoleClient {
     /// 요청 자체를 나눠 둔다.
     public func fetchBriefing() async throws -> ConsoleBriefing {
         let url = baseURL.appendingPathComponent("v1/console/briefing")
-        let (data, response) = try await session.data(from: url)
+        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
         guard let http = response as? HTTPURLResponse else {
             throw ConsoleClientError.notHTTP
         }
@@ -216,11 +227,15 @@ public actor ConsoleClient {
     public func events() -> AsyncStream<ConsoleEvent> {
         let url = baseURL.appendingPathComponent("v1/console/stream")
         let session = self.session
+        let token = self.token
         return AsyncStream { continuation in
             let task = Task {
                 do {
                     var request = URLRequest(url: url)
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    if let token, !token.isEmpty {
+                        request.setValue(token, forHTTPHeaderField: "x-console-token")
+                    }
                     let (bytes, response) = try await session.bytes(for: request)
                     guard
                         let http = response as? HTTPURLResponse,
