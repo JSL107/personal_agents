@@ -1,6 +1,7 @@
 import { DecimalValue } from './market-data.type';
 
 const TRADING_DAYS_PER_YEAR = 252;
+const VOLATILITY_LOOKBACK_BARS = 20;
 // 이름이 200일인데 짧은 구간 값을 섞으면 고점 표본이 낮아 신규·부분 이력 종목이 부당하게 유리해진다.
 const HIGH_POSITION_MINIMUM_BARS = 200;
 const TURNOVER_LOOKBACK_BARS = 60;
@@ -89,11 +90,15 @@ const calculateTurnover60 = (bars: IndicatorBar[]): number | null => {
   );
 };
 
+// 변동성 추정량. 기본은 종가→종가이고, Parkinson 은 백테스트에서 전후를 재기 위한
+// 손잡이다(2026-09-01 실측 → docs/superpowers/specs/2026-09-01-volatility-estimator-measurement.md).
+export type VolatilityEstimator = 'CLOSE_TO_CLOSE' | 'PARKINSON';
+
 const calculateVolatility20 = (closes: number[]): number | null => {
-  if (closes.length <= 20) {
+  if (closes.length <= VOLATILITY_LOOKBACK_BARS) {
     return null;
   }
-  const selected = closes.slice(-21);
+  const selected = closes.slice(-(VOLATILITY_LOOKBACK_BARS + 1));
   const returns: number[] = [];
   for (let index = 1; index < selected.length; index += 1) {
     if (selected[index - 1] === 0) {
@@ -108,8 +113,43 @@ const calculateVolatility20 = (closes: number[]): number | null => {
   return Math.sqrt(variance) * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100;
 };
 
+// Parkinson(1980). 하루 고가·저가의 로그 범위로 재므로 장중 진폭을 담지만, 전날 종가에서
+// 오늘 시가로 건너뛴 갭은 통째로 놓친다. 고가·저가가 없는 봉은 창에서 뺀다 — 그 봉을 종가로
+// 대신하면 범위가 0 이 되어 "그날은 안 움직였다" 로 읽혀 변동성을 실제보다 낮춘다.
+// 창이 다 차지 않으면 null 이다. 결측이 소수 종목에 뭉쳐 있어(2026-09-01 실측: 5종목)
+// 부분 창으로 계산하면 그 종목만 다른 표본 크기의 값을 받아 횡단면 순위에 섞인다.
+const calculateParkinsonVolatility20 = (
+  bars: IndicatorBar[],
+): number | null => {
+  const selected = bars.slice(-VOLATILITY_LOOKBACK_BARS);
+  let logRangeSquareSum = 0;
+  let usableBars = 0;
+  for (const bar of selected) {
+    if (bar.high === null || bar.low === null) {
+      continue;
+    }
+    const high = bar.high.toNumber();
+    const low = bar.low.toNumber();
+    if (high <= 0 || low <= 0) {
+      continue;
+    }
+    logRangeSquareSum += Math.log(high / low) ** 2;
+    usableBars += 1;
+  }
+  if (usableBars < VOLATILITY_LOOKBACK_BARS) {
+    return null;
+  }
+  return (
+    Math.sqrt(logRangeSquareSum / (4 * Math.LN2 * usableBars)) *
+    Math.sqrt(TRADING_DAYS_PER_YEAR) *
+    100
+  );
+};
+
 export const calculateIndicators = (
   bars: IndicatorBar[],
+  // 기본값이 운영 규칙이다. 백테스트만 다른 추정량을 주입해 전후를 가른다.
+  volatilityEstimator: VolatilityEstimator = 'CLOSE_TO_CLOSE',
 ): StockIndicators | null => {
   if (bars.length === 0) {
     return null;
@@ -152,7 +192,10 @@ export const calculateIndicators = (
         ? null
         : close / highest,
     highFallbackBarCount: recentBars.filter((bar) => bar.high === null).length,
-    volatility20: calculateVolatility20(closes),
+    volatility20:
+      volatilityEstimator === 'PARKINSON'
+        ? calculateParkinsonVolatility20(bars)
+        : calculateVolatility20(closes),
     // 거래대금은 그날 실제 체결 금액이므로 원본 종가를 쓴다. 현재 수집은 adjusted=true이고
     // 토스 매퍼가 close·adjClose에 같은 값을 넣어 저장하지만, 최근 60봉 실측은 차이가 없었다.
     // 수집이 미조정 계열로 바뀌면 이 계산은 별도 변경 없이 원본 종가를 사용하게 된다.

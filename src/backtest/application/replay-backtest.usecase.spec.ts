@@ -165,6 +165,7 @@ const command = {
   holdingTradeDays: 5,
   exitBand: null,
   delistingRecoveryRate: 1,
+  volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
 };
 
 const commandWithExitBand = {
