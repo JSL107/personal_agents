@@ -447,6 +447,40 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
       });
     });
 
+    it('시장 간 중복이 섞여 들어와도 최신 폐지를 고른다', async () => {
+      // 목록을 어디서 받았든 `new Map(...)` 은 입력 순서로 덮어쓴다. 옛 이전상장이 뒤에 오면
+      // 이미 폐지된 종목에 틀린 날짜·사유가 저장된다.
+      const findMany = jest.fn().mockResolvedValue([
+        {
+          id: 9,
+          code: '032390',
+          delistedAt: new Date('2026-08-31T00:00:00.000Z'),
+          delistingReason: null,
+        },
+      ]);
+      const update = jest.fn().mockReturnValue({ id: 9 });
+      const $transaction = jest.fn().mockResolvedValue([{ id: 9 }]);
+      const prisma = {
+        ticker: { findMany, update },
+        $transaction,
+      } as unknown as PrismaService;
+      const repository = new MarketDataPrismaRepository(prisma);
+
+      await expect(
+        repository.applyDelistingHistory([
+          delisting('032390', '2009-06-23', '해산 사유 발생'),
+          delisting('032390', '2004-04-29', '증권거래소 상장'),
+        ]),
+      ).resolves.toBe(1);
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 9 },
+        data: {
+          delistedAt: new Date('2009-06-23T00:00:00.000Z'),
+          delistingReason: '해산 사유 발생',
+        },
+      });
+    });
+
     it('상장 중인 종목은 폐지 목록에 있어도 건드리지 않는다', async () => {
       // KIND 코스닥 폐지 목록에는 '유가증권시장 상장'(시장 이전) 이 섞여 있다. 실측 54건.
       // 이 가드가 없으면 셀트리온·키움증권처럼 지금 상장 중인 종목이 폐지 처리된다 —

@@ -33,15 +33,37 @@ const parseDate = (text: string): Date | null => {
   return candidate;
 };
 
+// 같은 종목코드가 여러 번 폐지될 수 있다 — 코스닥에서 시장을 옮기며 한 번(이전상장),
+// 나중에 코스피에서 실제로 한 번(2026-09-01 실측 9건, 예: KTF 2004 이전 → 2009 해산).
+// 최신 폐지가 그 종목의 결말이므로 날짜로 비교해 늦은 쪽을 남긴다.
+//
+// 🔴 한 응답 안의 중복만이 아니라 **시장을 합칠 때도** 이 규칙이 필요하다. 시장별로 파싱한
+// 결과를 그냥 이어 붙이면 뒤에 온 쪽이 이기고, 실측 7건 전부가 KOSDAQ 의 옛 이전상장으로
+// 덮였다(KH 필룩스 — 2026 감사의견 거절이 2001 이전상장으로 기록된다). 사유가 뒤집히면
+// 청산 회수율이 정반대로 갈린다.
+export const pickLatestByCode = (
+  delistings: KrxDelisting[],
+): KrxDelisting[] => {
+  const latestByCode = new Map<string, KrxDelisting>();
+  for (const item of delistings) {
+    const previous = latestByCode.get(item.code);
+    if (
+      previous &&
+      previous.delistedAt.getTime() >= item.delistedAt.getTime()
+    ) {
+      continue;
+    }
+    latestByCode.set(item.code, item);
+  }
+  return [...latestByCode.values()];
+};
+
 export const parseKrxDelistingHtml = (
   html: string,
   market: 'KOSPI' | 'KOSDAQ',
 ): KrxDelisting[] => {
-  // 같은 종목코드가 여러 번 폐지될 수 있다 — 코스닥에서 시장을 옮기며 한 번(이전상장),
-  // 나중에 코스피에서 실제로 한 번(2026-09-01 실측 9건, 예: KTF 2004 이전 → 2009 해산).
-  // 응답 순서는 폐지일 순이 아니므로(앞이 2001년, 끝이 2025년) 첫 행을 최신으로 믿으면 안 된다.
-  // 최신 폐지가 그 종목의 결말이므로 날짜로 비교해 늦은 쪽을 남긴다.
-  const latestByCode = new Map<string, KrxDelisting>();
+  // 응답 순서는 폐지일 순이 아니다(앞이 2001년, 끝이 2025년). 첫 행을 최신으로 믿으면 안 된다.
+  const parsed: KrxDelisting[] = [];
   const rows = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
 
   for (const row of rows) {
@@ -60,12 +82,7 @@ export const parseKrxDelistingHtml = (
     if (!delistedAt) {
       continue;
     }
-    const previous = latestByCode.get(code);
-    if (previous && previous.delistedAt.getTime() >= delistedAt.getTime()) {
-      continue;
-    }
-
-    latestByCode.set(code, {
+    parsed.push({
       code,
       name,
       market,
@@ -76,9 +93,9 @@ export const parseKrxDelistingHtml = (
     });
   }
 
-  if (latestByCode.size === 0) {
+  if (parsed.length === 0) {
     throw new Error('KRX 상장폐지 목록에 유효한 행이 없습니다.');
   }
 
-  return [...latestByCode.values()];
+  return pickLatestByCode(parsed);
 };

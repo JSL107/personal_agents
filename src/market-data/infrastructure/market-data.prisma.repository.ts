@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isIntradayCapture } from '../domain/intraday-guard';
 import { IndicatorBar } from '../domain/stock-indicator';
-import { KrxDelisting } from './krx/krx-delisting.mapper';
+import { KrxDelisting, pickLatestByCode } from './krx/krx-delisting.mapper';
 import { KrxListing } from './krx/krx-listing.mapper';
 
 const WRITE_CHUNK_SIZE = 200;
@@ -277,7 +277,11 @@ export class MarketDataPrismaRepository {
   }
 
   async applyDelistingHistory(delistings: KrxDelisting[]): Promise<number> {
-    const byCode = new Map(delistings.map((item) => [item.code, item]));
+    // 클라이언트가 이미 골라 주지만 여기서도 날짜로 고른다. `new Map(...)` 은 같은 키를
+    // 입력 순서로 덮어써서, 목록을 어디서 받았든 옛 이력이 최신 폐지를 이길 수 있다.
+    const byCode = new Map(
+      pickLatestByCode(delistings).map((item) => [item.code, item]),
+    );
     // 상장폐지 목록 전량은 1,400건이 넘지만 그중 유니버스에 행이 있는 것은 우리가 수집을
     // 시작한 뒤 사라진 종목뿐이다. 없는 종목의 행을 새로 만들지는 않는다 — 봉이 한 개도 없어
     // 재생 후보에 오르지 못하므로, 만들면 유니버스만 부풀고 쓰이지 않는다.

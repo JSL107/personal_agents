@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import { getTodayKstDate } from '../../../common/util/kst-date.util';
-import { KrxDelisting, parseKrxDelistingHtml } from './krx-delisting.mapper';
+import {
+  KrxDelisting,
+  parseKrxDelistingHtml,
+  pickLatestByCode,
+} from './krx-delisting.mapper';
 
 const KRX_DELISTING_URL = 'https://kind.krx.co.kr/investwarn/delcompany.do';
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -74,6 +78,8 @@ export class KrxDelistingClient {
       delistings.push(...parsed);
     }
 
-    return delistings;
+    // 시장별 매퍼는 자기 응답 안에서만 중복을 걸렀다. 같은 종목이 코스닥에서 이전상장으로,
+    // 나중에 코스피에서 실제로 폐지되는 경우가 있어(실측 7건) 합친 뒤 한 번 더 골라야 한다.
+    return pickLatestByCode(delistings);
   }
 }
