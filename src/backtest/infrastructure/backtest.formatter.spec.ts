@@ -36,6 +36,7 @@ const result: ReplayBacktestResult = {
   benchmarkUnavailableCount: 0,
   exitBand: null,
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
+  slippagePercent: 0,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
   highFallback: { candidateCount: 0, tickerCount: 0 },

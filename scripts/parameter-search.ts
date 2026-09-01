@@ -51,15 +51,27 @@ import { StrategyParameterModule } from '../src/strategy-parameter/strategy-para
 })
 class ParameterSearchCliModule {}
 
+const slippageLabelOf = (value: number): string =>
+  value === 0 ? '슬리피지 0% (미반영)' : `슬리피지 ${value}%`;
+
 const ratioToPercent = (value: string | null): number | null =>
   value === null ? null : Number(value) * 100;
 
+/**
+ * 한 회차 = (전략 × 슬리피지) 한 쌍. 슬리피지는 격자 축이 아니라 회차를 가르는 조건이라
+ * 순위·walk-forward 가 회차 안에서만 이뤄진다(파서 주석). 한 프로세스에서 값만 바꿔 도는
+ * 것은 창 캐시를 나눠 쓰기 위해서고, 덤으로 회차끼리 **같은 후보 산출**을 놓고 비교하게 된다.
+ */
 interface StrategyPlan {
   strategy: 'LONG_TERM' | 'SWING';
+  slippagePercent: number;
   baseline: ParameterCombination;
   baselineLabel: string;
   combinations: ParameterCombination[];
 }
+
+const planKeyOf = (plan: StrategyPlan): string =>
+  `${plan.strategy}|${plan.slippagePercent}`;
 
 const buildStrategyPlans = async (
   options: ParameterSearchCliOptions,
@@ -74,28 +86,31 @@ const buildStrategyPlans = async (
       minimumTurnover60: active.minimumTurnover60,
       maximumWeightPercent: active.maximumWeightPercent,
     };
-    plans.push({
-      strategy,
-      baseline,
-      baselineLabel: formatCombinationLabel(baseline),
-      combinations: buildParameterGrid({
-        // 축에 값을 안 주면 현행값 하나로 고정한다 — 그 축은 이번 회차의 탐색 대상이 아니다.
-        takeProfitPercents: options.takeProfitPercents ?? [
-          baseline.takeProfitPercent as number,
-        ],
-        stopLossPercents: options.stopLossPercents ?? [
-          baseline.stopLossPercent as number,
-        ],
-        minimumTurnover60s: options.minimumTurnover60s ?? [
-          baseline.minimumTurnover60,
-        ],
-        maximumWeightPercents: options.maximumWeightPercents ?? [
-          baseline.maximumWeightPercent,
-        ],
-        includeBandless: options.includeBandless,
+    for (const slippagePercent of options.slippagePercents) {
+      plans.push({
+        strategy,
+        slippagePercent,
         baseline,
-      }),
-    });
+        baselineLabel: formatCombinationLabel(baseline),
+        combinations: buildParameterGrid({
+          // 축에 값을 안 주면 현행값 하나로 고정한다 — 그 축은 이번 회차의 탐색 대상이 아니다.
+          takeProfitPercents: options.takeProfitPercents ?? [
+            baseline.takeProfitPercent as number,
+          ],
+          stopLossPercents: options.stopLossPercents ?? [
+            baseline.stopLossPercent as number,
+          ],
+          minimumTurnover60s: options.minimumTurnover60s ?? [
+            baseline.minimumTurnover60,
+          ],
+          maximumWeightPercents: options.maximumWeightPercents ?? [
+            baseline.maximumWeightPercent,
+          ],
+          includeBandless: options.includeBandless,
+          baseline,
+        }),
+      });
+    }
   }
   return plans;
 };
@@ -184,6 +199,8 @@ const main = async (): Promise<void> => {
               // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
               // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
               volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
+              // 회차 전체에 같은 값이 걸린다 — 축이 아니다(파서 주석).
+              slippagePercent: plan.slippagePercent,
             },
             cache,
           );
@@ -198,7 +215,7 @@ const main = async (): Promise<void> => {
           const score = result.scores.find(
             (candidate) => candidate.strategy === plan.strategy,
           );
-          const bucket = outcomes.get(plan.strategy) ?? [];
+          const bucket = outcomes.get(planKeyOf(plan)) ?? [];
           bucket.push({
             windowIndex: window.index,
             label: formatCombinationLabel(combination),
@@ -209,10 +226,10 @@ const main = async (): Promise<void> => {
             closedCount: score?.closedCount ?? 0,
             filledCount: result.filledCount,
           });
-          outcomes.set(plan.strategy, bucket);
+          outcomes.set(planKeyOf(plan), bucket);
 
           if (formatCombinationLabel(combination) === plan.baselineLabel) {
-            const summaries = windowSummaries.get(plan.strategy) ?? [];
+            const summaries = windowSummaries.get(planKeyOf(plan)) ?? [];
             summaries.push({
               window,
               tradeDateCount: result.tradeDateCount,
@@ -222,7 +239,7 @@ const main = async (): Promise<void> => {
               baselineFilledCount: result.filledCount,
               baselineClosedCount: score?.closedCount ?? 0,
             });
-            windowSummaries.set(plan.strategy, summaries);
+            windowSummaries.set(planKeyOf(plan), summaries);
           }
         }
       }
@@ -236,9 +253,10 @@ const main = async (): Promise<void> => {
 
     const reports = plans.map((plan) => ({
       strategy: plan.strategy,
+      conditionLabel: slippageLabelOf(plan.slippagePercent),
       baselineLabel: plan.baselineLabel,
-      windows: windowSummaries.get(plan.strategy) ?? [],
-      outcomes: outcomes.get(plan.strategy) ?? [],
+      windows: windowSummaries.get(planKeyOf(plan)) ?? [],
+      outcomes: outcomes.get(planKeyOf(plan)) ?? [],
     }));
     console.log(
       [
@@ -246,6 +264,11 @@ const main = async (): Promise<void> => {
         '',
         `창 ${options.windowMonths}개월 · 이동 ${options.stepMonths}개월 · ` +
           `재생 ${replayCount}회 · 소요 ${((Date.now() - startedAt) / 60000).toFixed(1)}분`,
+        '',
+        // 0 일 때도 적는다. 여러 회차의 표를 나란히 놓고 읽는 도구라, 값이 안 적힌 표가
+        // 하나 섞이면 그것이 미반영 회차인지 옛 회차인지 구분되지 않는다.
+        `체결가 슬리피지 ${options.slippagePercents.map((value) => `${value}%`).join(' · ')} ` +
+          '(매수 +x% · 매도 −x% · 왕복 2x% · 회차마다 따로 순위를 매긴다)',
         '',
         ...reports.map((report) => formatParameterSearchReport(report)),
       ].join('\n'),

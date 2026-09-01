@@ -89,4 +89,26 @@ describe('parseParameterSearchCliArguments', () => {
 
     expect(options.strategies).toEqual(['SWING']);
   });
+
+  // 미지정이 빈 배열이 되면 회차가 하나도 안 돌고, 그때 리포트는 "조합이 없다" 가 아니라
+  // 그냥 비어 나온다 — 미지정은 미반영 회차 하나여야 한다.
+  it('슬리피지를 안 주면 미반영 회차 하나만 돈다', () => {
+    expect(
+      parseParameterSearchCliArguments(argv(REQUIRED)).slippagePercents,
+    ).toEqual([0]);
+  });
+
+  it('슬리피지는 목록으로 받는다', () => {
+    expect(
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage 0,0.1,0.5`))
+        .slippagePercents,
+    ).toEqual([0, 0.1, 0.5]);
+  });
+
+  // 음수는 "유리하게 체결됐다" 는 가정이라 손잡이의 방향 자체가 뒤집힌다.
+  it('음수 슬리피지는 받지 않는다', () => {
+    expect(() =>
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage -0.1`)),
+    ).toThrow('--slippage');
+  });
 });
