@@ -7,8 +7,11 @@ import { calculateIndicators } from '../../market-data/domain/stock-indicator';
 import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import {
   decideExitBandOrders,
+  decideIntradayStopOrders,
   ExitBandCandidate,
   ExitBandThreshold,
+  IntradayStopCandidate,
+  resolveIntradayStopFillPrice,
 } from '../../paper-trading/domain/exit-band';
 import { PaperMarket } from '../../paper-trading/domain/paper-account.type';
 import { verifyPaperInvariants } from '../../paper-trading/domain/paper-invariant';
@@ -82,6 +85,16 @@ export interface ReplayBacktestResult {
   benchmarkUnavailableCount: number;
   exitBand: ExitBandThreshold | null;
   exitBandSellCounts: { takeProfit: number; stopLoss: number };
+  // 장중에 손절선을 뚫어 그날 안에 팔린 건수. 종가 밴드 손절(`exitBandSellCounts.stopLoss`)과
+  // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
+  // 한 칸에 묻혀, 장중 재현을 넣기 전후 성적을 비교할 수 없다.
+  intradayStopSellCount: number;
+  // 고가가 없어 조정 종가로 대신한 봉이 섞인 후보. 폐지 종목은 재적재 대상이 아니어서
+  // (`findUniverseTickers` 는 `delistedAt: null` 만 본다) 전 구간이 이 경로를 타고, 토스 404 라
+  // 앞으로도 채울 수 없다. 대신 쓴 종가는 분모(200봉 최고가)를 낮추므로 신고가 위치가
+  // **부풀려진다** — 활성 종목 2,559개 실측으로 평균 7.26% 다. 그 종목이 후보에 얼마나
+  // 올랐는지 모르면 성적에 섞인 이 이득의 크기를 읽을 수 없다.
+  highFallback: { candidateCount: number; tickerCount: number };
   // 보유 중 폐지돼 강제 청산된 건수와 그 청산 대금. 0 이면 이 구간에 폐지 보유가 없었다는
   // 뜻이지 폐지 종목이 후보에서 빠졌다는 뜻이 아니다.
   delistedLiquidation: { count: number; proceeds: string };
@@ -116,6 +129,9 @@ interface ReplayState {
   filledCount: number;
   expiredCount: number;
   exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
+  intradayStopSells: number;
+  highFallbackCandidateCount: number;
+  highFallbackTickerIds: Set<number>;
   delistedLiquidatedCount: number;
   delistedProceeds: number;
 }
@@ -181,6 +197,9 @@ export class ReplayBacktestUsecase {
       filledCount: 0,
       expiredCount: 0,
       exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
+      intradayStopSells: 0,
+      highFallbackCandidateCount: 0,
+      highFallbackTickerIds: new Set<number>(),
       delistedLiquidatedCount: 0,
       delistedProceeds: 0,
     };
@@ -190,8 +209,9 @@ export class ReplayBacktestUsecase {
     ].sort();
 
     for (const today of allDates) {
-      // 하루 순서는 체결(시가) → 밴드 판정(종가) → 추천이다. 운영에서 장마감 평가·밴드가
-      // 19:30 추천보다 먼저 도는 것과 같고, 밴드는 종가가 있는 거래일에만 판정한다.
+      // 하루 순서는 체결(시가) → 장중 손절(저가) → 밴드 판정(종가) → 추천이다. 운영에서
+      // 장 시작 체결·장중 감시(5분)·장마감 평가·밴드가 19:30 추천보다 먼저 도는 것과 같고,
+      // 밴드는 종가가 있는 거래일에만 판정한다.
       if (tradeDateIndex.has(today)) {
         await this.fillDueOrders({
           today,
@@ -209,6 +229,19 @@ export class ReplayBacktestUsecase {
         // 폐지 청산은 체결 뒤·밴드 앞이다. 그날 대기 주문이 먼저 처리돼야 이미 팔린 것을
         // 두 번 팔지 않고, 폐지로 사라진 보유는 밴드 판정에 오르지 않는다.
         await this.liquidateDelisted({
+          today,
+          command,
+          barsByTicker,
+          tickerById,
+          ledger,
+          executeOrder,
+          fills,
+          entryIndexByTicker,
+          state,
+        });
+        // 폐지 청산 뒤다 — 폐지로 이미 정리된 보유를 다시 팔지 않는다. 종가 밴드 앞이라
+        // 장중에 손절선을 뚫은 보유는 그날 안에 정리되고, 밴드는 살아남은 것만 본다.
+        await this.applyIntradayStop({
           today,
           command,
           barsByTicker,
@@ -464,6 +497,135 @@ export class ReplayBacktestUsecase {
     }
   }
 
+  // 운영은 장중 5분마다 현재가를 재 손절선을 뚫으면 그 자리에서 판다. 일봉만 있는 재생이
+  // 그 하루를 볼 수 있는 창은 저가 하나뿐이므로, "그날 저가가 손절선 아래였는가" 로 발동을
+  // 판정한다 — 5분 관측이 놓친 순간까지 잡으므로 발동 횟수는 운영보다 많거나 같다.
+  //
+  // 체결가는 `resolveIntradayStopFillPrice` 가 정한다(고른 근거는 그 함수의 주석).
+  //
+  // 종가 밴드 손절은 저가가 있는 봉에서는 거의 발동하지 않게 된다 — 종가가 손절선 아래면
+  // 저가도 반드시 아래라(저가 <= 종가) 이 판정이 그날 먼저 판다. 운영에서도 장중 감시가
+  // 도는 한 같은 순서이므로 재현이 맞다. 종가 밴드는 저가를 모르는 봉의 안전망으로 남는다.
+  private async applyIntradayStop(context: {
+    today: string;
+    command: ReplayBacktestCommand;
+    barsByTicker: Map<number, BacktestBar[]>;
+    tickerById: Map<number, BacktestTicker>;
+    ledger: InMemoryPaperLedger;
+    executeOrder: ExecutePaperOrderUsecase;
+    fills: BacktestFillRecord[];
+    entryIndexByTicker: Map<number, number>;
+    state: ReplayState;
+  }): Promise<void> {
+    const exitBand = context.command.exitBand;
+    if (exitBand === null) {
+      return;
+    }
+    // 이미 대기 매도가 있는 종목은 건너뛴다. 운영도 pending SELL 이 있으면 판정만 하고
+    // 넘긴다(skippedByPendingSell) — 없으면 같은 보유에 매도가 겹쳐 쌓인다.
+    const pendingSellTickerIds = new Set(
+      context.state.pendingOrders
+        .filter((order) => order.side === 'SELL')
+        .map((order) => order.tickerId),
+    );
+    const candidates: IntradayStopCandidate[] = [];
+    for (const position of context.ledger.openPositions()) {
+      if (pendingSellTickerIds.has(position.tickerId)) {
+        continue;
+      }
+      const ticker = context.tickerById.get(position.tickerId);
+      if (ticker === undefined) {
+        continue;
+      }
+      const bar = this.findBar(
+        context.barsByTicker,
+        position.tickerId,
+        context.today,
+      );
+      // 저가가 없으면 그 하루 안에서 손절선을 뚫었는지 알 방법이 없다. 시가가 없으면
+      // 갭하락일 때 체결가를 만들 수 없다. 어느 쪽이든 판정하지 않고 넘긴다 — 종가 밴드가
+      // 그날 종가로 다시 판정하므로 손절 자체가 사라지지는 않는다.
+      if (bar === null || bar.low === null || bar.open === null) {
+        continue;
+      }
+      const averagePrice = Number(position.avgPrice.toString());
+      // 평단 0 은 손익률을 정의할 수 없다(운영 판정과 같은 조건).
+      if (!Number.isFinite(averagePrice) || averagePrice <= 0) {
+        continue;
+      }
+      const low = bar.low.toNumber();
+      candidates.push({
+        tickerId: position.tickerId,
+        tickerCode: ticker.code,
+        quantity: position.quantity.toString(),
+        // 발동 판정은 저가 기준 손익률로 한다. `low <= stopLine` 과 같은 조건이며,
+        // 손익률로 넘겨야 기업행동 가드(isLedgerMismatch)가 운영과 같은 잣대로 걸린다.
+        returnRatePercent: (low / averagePrice - 1) * 100,
+        // 운영은 판정가와 체결가가 같지만(그 순간 현재가로 판다) 재생은 다르다 — 판정은
+        // 저가로, 체결은 도메인이 정한 `min(시가, 손절선)` 으로 한다.
+        price: String(
+          resolveIntradayStopFillPrice({
+            open: bar.open,
+            averagePrice,
+            stopLossPercent: exitBand.stopLossPercent,
+          }),
+        ),
+      });
+    }
+
+    const decisions = decideIntradayStopOrders(
+      candidates,
+      exitBand.stopLossPercent,
+    );
+    for (const decision of decisions) {
+      const ticker = context.tickerById.get(decision.tickerId);
+      if (ticker === undefined) {
+        continue;
+      }
+      const price = Number(decision.price);
+      const valuationBefore = this.valuate(
+        context.ledger,
+        context.barsByTicker,
+        context.today,
+      );
+      const orderId = context.state.nextOrderId;
+      context.ledger.recordOrder({
+        id: orderId,
+        accountId: context.ledger.accountId,
+        tickerId: decision.tickerId,
+        side: 'SELL',
+        strategy: context.command.strategy,
+        status: 'PENDING',
+        quantity: new Prisma.Decimal(decision.quantity),
+        // 밴드 매도와 같은 이유로 규칙 버전을 남기지 않는다 — 스크리너가 만든 매도가 아니다.
+        ruleVersion: null,
+      });
+      context.state.nextOrderId += 1;
+      const fill = await context.executeOrder.execute({
+        orderId,
+        accountId: context.ledger.accountId,
+        tickerId: decision.tickerId,
+        market: ticker.krxMarket as PaperMarket,
+        side: 'SELL',
+        requestedQuantity: decision.quantity,
+        price: String(price),
+        tradeDate: context.today,
+        strategy: context.command.strategy,
+      });
+      if (fill.status !== 'FILLED') {
+        continue;
+      }
+      context.state.filledCount += 1;
+      context.state.intradayStopSells += 1;
+      context.fills.push({
+        tradeDate: context.today,
+        filledAmount: Number(fill.quantity) * price,
+        accountValuation: valuationBefore,
+      });
+      context.entryIndexByTicker.delete(decision.tickerId);
+    }
+  }
+
   private applyExitBand(context: {
     today: string;
     command: ReplayBacktestCommand;
@@ -591,6 +753,14 @@ export class ReplayBacktestUsecase {
       context.barsByTicker,
       asOf,
     );
+    // 후보 단계에서 센다. 추천에 실린 것만 세면 "순위를 부풀린 이득이 얼마나 섞였나" 를
+    // 놓친다 — 부풀린 값 때문에 다른 종목을 밀어낸 자리가 그쪽에는 남지 않는다.
+    for (const candidate of candidates) {
+      if (candidate.indicators.highFallbackBarCount > 0) {
+        context.state.highFallbackCandidateCount += 1;
+        context.state.highFallbackTickerIds.add(candidate.tickerId);
+      }
+    }
     const ranked = screenStocks(
       candidates,
       context.command.strategy,
@@ -750,6 +920,11 @@ export class ReplayBacktestUsecase {
       exitBandSellCounts: {
         takeProfit: context.state.exitBandSells.TAKE_PROFIT,
         stopLoss: context.state.exitBandSells.STOP_LOSS,
+      },
+      intradayStopSellCount: context.state.intradayStopSells,
+      highFallback: {
+        candidateCount: context.state.highFallbackCandidateCount,
+        tickerCount: context.state.highFallbackTickerIds.size,
       },
       delistedLiquidation: {
         count: context.state.delistedLiquidatedCount,

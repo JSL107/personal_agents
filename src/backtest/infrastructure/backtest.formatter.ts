@@ -84,7 +84,18 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
         `익절 매도 주문 ${result.exitBandSellCounts.takeProfit}건 · ` +
         `손절 매도 주문 ${result.exitBandSellCounts.stopLoss}건`,
     );
+    // 종가 밴드와 한 줄에 합치지 않는다. 이쪽은 주문이 아니라 그날 체결까지 끝난 건수라
+    // 성격이 다르고, 0 건이면 "장중에 손절선을 뚫은 날이 없었다" 는 사실 자체가 정보다.
+    lines.push(
+      `장중 손절 체결 ${result.intradayStopSellCount}건 (저가로 판정 · min(시가, 손절선)으로 체결)`,
+    );
   }
+  // 0 건도 적는다. 줄이 없으면 "섞이지 않았다" 와 "세지 않았다" 가 구분되지 않는다.
+  // 값이 있으면 그 종목의 신고가 위치가 부풀려진 채 순위에 올랐다는 뜻이다.
+  lines.push(
+    `고가 결측 종가대체 후보 ${result.highFallback.candidateCount}건` +
+      ` · ${result.highFallback.tickerCount}종목 (신고가 위치가 부풀려짐)`,
+  );
   // 0 건도 적는다. 줄이 없으면 "폐지가 없던 구간" 과 "폐지를 안 본 구간" 이 구분되지 않는다.
   lines.push(
     `보유 중 상장폐지 청산 ${result.delistedLiquidation.count}건` +

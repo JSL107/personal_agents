@@ -175,6 +175,26 @@ export const decideIntradayStopOrders = (
     ];
   });
 
+// 재생(백테스트)이 장중 손절을 체결하는 가격. 운영은 손절선을 뚫는 그 순간의 현재가로
+// 팔지만, 일봉만 있는 재생에는 그 순간이 없다. 남는 후보는 셋이고 실제 봉 22,107건으로
+// 재서 골랐다.
+//   - 그날 저가: 최저점에 팔았다고 가정한다. 손절선보다 평균 3.35%(중앙값 1.91%,
+//     상위 10% 8.01%) 낮아 성적을 그만큼 비관적으로 만든다. 5분마다 재는 운영은 최저점을
+//     겨냥하지 않으므로 이 값이 실제보다 나쁘다.
+//   - 손절선 그대로: 시가부터 이미 손절선 아래인 갭하락이 발동일의 24.2% 인데, 그날은
+//     그 가격에 팔 수가 없다. 그 구간이 통째로 낙관 편향이 된다.
+//   - 둘 중 낮은 쪽(이 함수): 갭하락이면 장이 열리자마자 만나는 시가로, 아니면 손절선으로
+//     체결한다. 실운영 장중 손절 2건(위더스제약 2026-08-27 · 씨젠 2026-08-31)의 판정가가
+//     이 값과 원 단위로 일치했다.
+// 남은 낙관은 손절선 그 가격에 체결된다는 가정이다 — 급락장 슬리피지는 별도 실측 대상이고,
+// 자체 슬리피지를 모델링하지 않기로 한 결정이 여기에도 적용된다.
+export const resolveIntradayStopFillPrice = (input: {
+  open: number;
+  averagePrice: number;
+  stopLossPercent: number;
+}): number =>
+  Math.min(input.open, input.averagePrice * (1 + input.stopLossPercent / 100));
+
 export const describeExitBandReason = (
   decision: ExitBandDecision,
   threshold: ExitBandThreshold = DEFAULT_EXIT_BAND,
