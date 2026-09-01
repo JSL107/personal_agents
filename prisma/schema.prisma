@@ -403,6 +403,13 @@ model DailyPrice {
   // 백테스트가 실전과 같은 "다음 영업일 시가 체결"을 재현하려면 시가가 필요하다.
   // 기존 행을 보존해야 하므로 nullable 이다. 재수집이 끝나면 사실상 전 행이 채워진다.
   open           Decimal?  @db.Decimal(18, 4)
+  // 장중 고가·저가. 종가만 있으면 하루 안의 진폭이 통째로 사라져,
+  // (1) `high200Position` 이 이름과 달리 최고 *종가* 기준이 되고
+  // (2) 장중 손절(5분 주기 현재가 관측)을 과거 봉으로 재현할 수 없다.
+  // open 과 같은 이유로 nullable 이다. 값 계열은 close·adjClose 와 같아서,
+  // `adjusted=false` 로 받은 봉의 high 는 조정 고가가 아니라 미조정 실제 고가다.
+  high           Decimal?  @db.Decimal(18, 4)
+  low            Decimal?  @db.Decimal(18, 4)
   close          Decimal   @db.Decimal(18, 4)
   adjClose       Decimal   @map("adj_close") @db.Decimal(18, 4)
   volume         BigInt
