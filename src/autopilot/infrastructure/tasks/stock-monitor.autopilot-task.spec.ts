@@ -30,6 +30,10 @@ const bar = (
   adjClose: decimal(adjClose),
   volume: 100n,
   currency,
+  // 네 값을 서로 다른 숫자로 둔다. 종가와 같은 값을 쓰면 자리가 뒤바뀐 회귀가 통과한다.
+  open: decimal(adjClose - 1),
+  high: decimal(adjClose + 3),
+  low: decimal(adjClose - 4),
 });
 
 const holdings = [
@@ -229,6 +233,34 @@ describe('StockMonitorAutopilotTask', () => {
     expect(marketData.fetchDailyBars).toHaveBeenCalledWith('SOLD', 5);
     expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
       expect.objectContaining({ tickerId: 99 }),
+    );
+  });
+
+  it('감시가 저장하는 일봉에 봉 네 값을 모두 싣는다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 104)]),
+    };
+    const repository = makeRepository();
+
+    await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      makeSyncHoldings(),
+    ).run(context);
+
+    // 이 경로는 예전에 인라인 타입으로 필드를 나열해 `open` 이 늘어난 뒤에도 종가·거래량만
+    // 저장했다. 감시가 저장한 날만 꼬리가 비면 그 종목의 그날이 지표에서 조용히 빠진다.
+    expect(repository.upsertDailyPrice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: '103',
+        high: '107',
+        low: '100',
+        close: '104',
+      }),
     );
   });
 

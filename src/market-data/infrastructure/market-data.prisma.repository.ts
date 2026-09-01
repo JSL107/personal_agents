@@ -17,6 +17,10 @@ export interface DailyPriceWriteInput {
   tradeDate: Date;
   // 토스 응답에 시가가 없는 캔들이 섞일 수 있어 optional 이다.
   open?: string;
+  // 고가·저가도 같은 이유로 optional 이다. 셋은 같은 캔들에서 함께 오지만,
+  // 하나가 빠진 응답에서 나머지까지 버리면 그 종목의 그날이 통째로 사라진다.
+  high?: string;
+  low?: string;
   close: string;
   adjClose: string;
   volume: bigint;
@@ -114,9 +118,11 @@ export class MarketDataPrismaRepository {
       },
       create: input,
       update: {
-        // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가를 빠뜨린
-        // 회차에 null 을 덮어써 이미 모은 시가를 잃는 일을 막는다.
+        // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가·고가·저가를
+        // 빠뜨린 회차에 null 을 덮어써 이미 모은 값을 잃는 일을 막는다.
         open: input.open,
+        high: input.high,
+        low: input.low,
         close: input.close,
         adjClose: input.adjClose,
         volume: input.volume,
@@ -165,9 +171,11 @@ export class MarketDataPrismaRepository {
             },
             create: row,
             update: {
-              // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가를 빠뜨린
-              // 회차에 null 을 덮어써 이미 모은 시가를 잃는 일을 막는다.
+              // undefined 면 Prisma 가 컬럼을 건드리지 않는다. 공급자가 시가·고가·저가를
+              // 빠뜨린 회차에 null 을 덮어써 이미 모은 값을 잃는 일을 막는다.
               open: row.open,
+              high: row.high,
+              low: row.low,
               close: row.close,
               adjClose: row.adjClose,
               volume: row.volume,

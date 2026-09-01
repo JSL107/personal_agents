@@ -274,7 +274,7 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
     volume: 1000n,
   };
 
-  it('insertDailyPrices 가 시가를 함께 저장한다', async () => {
+  it('insertDailyPrices 가 봉 네 값을 함께 저장한다', async () => {
     const createMany = jest.fn().mockResolvedValue({ count: 1 });
     const prisma = {
       dailyPrice: { createMany },
@@ -282,18 +282,24 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
     const repository = new MarketDataPrismaRepository(prisma);
 
     await repository.insertDailyPrices(
-      [{ ...row, open: '69000' }],
+      [{ ...row, open: '69000', high: '71000', low: '68500' }],
       settledDate,
     );
 
     expect(createMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: [expect.objectContaining({ open: '69000' })],
+        data: [
+          expect.objectContaining({
+            open: '69000',
+            high: '71000',
+            low: '68500',
+          }),
+        ],
       }),
     );
   });
 
-  it('upsertDailyPrices 가 신규 생성과 갱신 양쪽에 시가를 싣는다', async () => {
+  it('upsertDailyPrices 가 신규 생성과 갱신 양쪽에 봉 네 값을 싣는다', async () => {
     const upsert = jest.fn((input) => input);
     const prisma = {
       dailyPrice: { upsert },
@@ -302,19 +308,27 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
     const repository = new MarketDataPrismaRepository(prisma);
 
     await repository.upsertDailyPrices(
-      [{ ...row, open: '69000' }],
+      [{ ...row, open: '69000', high: '71000', low: '68500' }],
       settledDate,
     );
 
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({ open: '69000' }),
-        update: expect.objectContaining({ open: '69000' }),
+        create: expect.objectContaining({
+          open: '69000',
+          high: '71000',
+          low: '68500',
+        }),
+        update: expect.objectContaining({
+          open: '69000',
+          high: '71000',
+          low: '68500',
+        }),
       }),
     );
   });
 
-  it('공급자가 시가를 빠뜨린 봉은 저장된 시가를 null 로 덮지 않는다', async () => {
+  it('공급자가 시가·고가·저가를 빠뜨린 봉은 저장된 값을 null 로 덮지 않는다', async () => {
     const upsert = jest.fn((input) => input);
     const prisma = {
       dailyPrice: { upsert },
@@ -324,7 +338,10 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
 
     await repository.upsertDailyPrices([row], settledDate);
 
-    // 키 자체가 있어야 통과하므로 open 줄을 지우는 회귀도, null 로 되돌리는 회귀도 잡는다.
-    expect(upsert.mock.calls[0][0].update).toHaveProperty('open', undefined);
+    // 키 자체가 있어야 통과하므로 줄을 지우는 회귀도, null 로 되돌리는 회귀도 잡는다.
+    const update = upsert.mock.calls[0][0].update;
+    expect(update).toHaveProperty('open', undefined);
+    expect(update).toHaveProperty('high', undefined);
+    expect(update).toHaveProperty('low', undefined);
   });
 });

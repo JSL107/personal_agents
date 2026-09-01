@@ -478,6 +478,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         await this.repository.upsertDailyPrice({
           tickerId: holding.tickerId,
           tradeDate: today.tradeDate,
+          open: today.open?.toString(),
+          high: today.high?.toString(),
+          low: today.low?.toString(),
           close: today.close.toString(),
           adjClose: today.adjClose.toString(),
           volume: today.volume,
@@ -601,6 +604,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         await this.repository.upsertDailyPrice({
           tickerId: target.tickerId,
           tradeDate: today.tradeDate,
+          open: today.open?.toString(),
+          high: today.high?.toString(),
+          low: today.low?.toString(),
           close: today.close.toString(),
           adjClose: today.adjClose.toString(),
           volume: today.volume,
