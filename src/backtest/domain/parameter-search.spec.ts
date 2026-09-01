@@ -283,6 +283,27 @@ describe('summarizeCombinations', () => {
     expect(candidate?.comparableCount).toBe(3);
   });
 
+  it('회전은 합계와 창 수를 함께 남겨 창당으로 환산되게 한다', () => {
+    // 창 수를 안 남기면 합계만으로는 창당 회전을 낼 수 없고, 창 수가 다른 조합
+    // (한 창에서 값이 없어 빠진 조합)끼리 합계를 견주면 회전이 부풀거나 줄어든다.
+    const summaries = summarizeCombinations({
+      outcomes: [
+        { ...outcomeOf(1, '후보', 1), filledCount: 37, closedCount: 18 },
+        { ...outcomeOf(2, '후보', 1), filledCount: 41, closedCount: 20 },
+        { ...outcomeOf(1, '현행', 0), filledCount: 10, closedCount: 5 },
+      ],
+      baselineLabel: '현행',
+    });
+    const candidate = summaries.find((summary) => summary.label === '후보');
+    const baseline = summaries.find((summary) => summary.label === '현행');
+
+    expect(candidate?.filledCountTotal).toBe(78);
+    expect(candidate?.windowCount).toBe(2);
+    expect(candidate?.closedCountTotal).toBe(38);
+    expect(baseline?.filledCountTotal).toBe(10);
+    expect(baseline?.windowCount).toBe(1);
+  });
+
   it('최대손실은 평균이 아니라 최악을 남긴다', () => {
     const summaries = summarizeCombinations({
       outcomes: [
