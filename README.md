@@ -317,7 +317,7 @@ Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 
 | 대시보드 | 에이전트 32종 상태 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
 | 오피스 | 부서 6개 방(기획 · 개발 · 리뷰 · 경영 · 성장 · 내부)으로 나뉜 픽셀 사무실 — 상태는 발밑 링, 진행은 몸짓(타이핑·엎드림·줄서기)으로 |
 
-- **읽기** — `GET /v1/console/{snapshot,agents,runs,approvals,briefing,ledger}` + `GET /v1/console/stream`(SSE) 로 실시간 반영
+- **읽기** — `GET /v1/console/{snapshot,agents,runs,approvals,briefing,ledger}` + `GET /v1/console/stream`(SSE) 로 실시간 반영. 같은 머신(loopback)은 그대로 통과하고, **원격에서 읽으려면 `CONSOLE_REMOTE_TOKEN` 과 같은 값을 `x-console-token` 헤더로** 보내야 한다(미설정이면 원격은 아예 막힌다). 스냅샷에 세션 경로·pid 가, 스트림에 워커 산출물이 실려 나가기 때문이다.
 - **쓰기** — `POST /v1/console/command`(지시) · `approvals/:id/{apply,cancel}`(승인·거절) · `sessions/:sessionId/inject`(유휴 CLI 세션에 작업 주입). 기존 dispatch·PreviewGate usecase 에 위임하므로 Slack 경로와 판정이 갈리지 않는다. `CONSOLE_OWNER_SLACK_USER_ID` 가 없으면 쓰기는 503 으로 막힌다.
 - 앱 안에는 지능 로직을 두지 않는다. 상태 판정은 전부 백엔드가 하고 앱은 표시·조작만 한다.
 
