@@ -139,6 +139,33 @@ const manyTickerBars = (
   );
 };
 
+// 종가는 `manyTickerBars` 와 같게 두고 장중 진폭을 **기울기와 무관한 순서**로 준다.
+// 종가→종가 변동성은 기울기가 정하고 Parkinson 변동성은 진폭이 정하므로, 두 축을 나란히
+// 정렬하면 두 추정량이 같은 순위를 내 아무것도 검증하지 못한다(실제로 그렇게 만들었다가
+// 테스트가 통과했다). 축을 어긋나게 두면 순위합이 갈려 매수 종목이 달라진다 —
+// 배선이 끊기거나 추정량이 상수로 고정되면 두 결과가 같아져 아래 테스트가 깨진다.
+const RANGE_SPREADS = [1.06, 1.02, 1.1, 1.04, 1.08];
+
+const manyTickerBarsWithRange = (): Map<number, BacktestBar[]> =>
+  new Map(
+    MANY_TICKERS.map((ticker, order) => [
+      ticker.tickerId,
+      TRADE_DATES.map((tradeDate, index) => {
+        const price = 5000 + index * (32 - order * 2);
+        const spread = RANGE_SPREADS[order];
+        return {
+          tradeDate,
+          open: price,
+          close: new Prisma.Decimal(price),
+          adjClose: new Prisma.Decimal(price),
+          high: new Prisma.Decimal(price * spread),
+          low: new Prisma.Decimal(price / spread),
+          volume: BigInt(200_000),
+        };
+      }),
+    ]),
+  );
+
 const repositoryOf = (
   bars: Map<number, BacktestBar[]>,
   tickers: BacktestTicker[] = TICKERS,
@@ -165,6 +192,7 @@ const command = {
   holdingTradeDays: 5,
   exitBand: null,
   delistingRecoveryRate: 1,
+  volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
 };
 
 const commandWithExitBand = {
@@ -669,6 +697,26 @@ describe('ReplayBacktestUsecase', () => {
 
     expect(result.filledCount).toBeGreaterThan(0);
     expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  // 손잡이가 죽어도 parser·domain·formatter 단위 테스트는 전부 통과한다. 재생이 실제로
+  // 그 값을 써서 순위를 다르게 세우는지는 여기서만 잡힌다.
+  it('변동성 추정량을 바꾸면 순위가 갈려 성적이 달라진다', async () => {
+    const runWith = async (
+      volatilityEstimator: 'CLOSE_TO_CLOSE' | 'PARKINSON',
+    ): Promise<ReplayBacktestResult> =>
+      new ReplayBacktestUsecase(
+        repositoryOf(manyTickerBarsWithRange(), MANY_TICKERS),
+      ).execute({ ...command, maximumPositions: 2, volatilityEstimator });
+
+    const baseline = await runWith('CLOSE_TO_CLOSE');
+    const parkinson = await runWith('PARKINSON');
+
+    expect(baseline.volatilityEstimator).toBe('CLOSE_TO_CLOSE');
+    expect(parkinson.volatilityEstimator).toBe('PARKINSON');
+    expect(JSON.stringify(parkinson.scores)).not.toBe(
+      JSON.stringify(baseline.scores),
+    );
   });
 
   it('밴드를 켠 같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
