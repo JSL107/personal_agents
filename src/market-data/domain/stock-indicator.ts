@@ -9,6 +9,11 @@ export interface IndicatorBar {
   tradeDate: Date;
   close: DecimalValue;
   adjClose: DecimalValue;
+  // 장중 고가·저가. 저장 계열은 `adjClose` 와 같은 조정 계열이라 종가와 섞어 써도 기준이
+  // 어긋나지 않는다. 5년 재적재(#436) 이전 구간과 공급자가 봉을 주지 않는 소수 종목에는
+  // 값이 없어 null 을 허용한다.
+  high: DecimalValue | null;
+  low: DecimalValue | null;
   volume: bigint;
 }
 
@@ -26,7 +31,7 @@ export interface StockIndicators {
   return1m: number | null;
   return3m: number | null;
   return6m: number | null;
-  // 저장 일봉에 장중 고가가 없어 최근 200봉의 최고 종가 기준이다. 장중에 찍고 내려온 고점은 반영하지 못한다.
+  // 최근 200봉의 **장중 최고가** 기준. 고가가 없는 봉은 그 봉의 조정 종가로 대신한다.
   high200Position: number | null;
   volatility20: number | null;
   turnover60: number | null;
@@ -117,8 +122,12 @@ export const calculateIndicators = (
       ? null
       : ma5 > ma20 && ma20 > ma60 && ma60 > ma120;
   // 공용 함수 호출자가 더 긴 이력을 넘겨도 이름대로 마지막 200거래일만 본다.
-  // 저장 계층에 고가가 없으므로 장중 고점이 아니라 조정 종가의 최대값을 쓴다.
-  const highest = Math.max(...closes.slice(-200));
+  // 장중에 찍고 내려온 고점까지 세려면 종가가 아니라 고가의 최대값이어야 한다.
+  // 고가가 없는 봉은 그 봉의 조정 종가로 대신한다 — 종가는 언제나 고가 이하라 최대값을
+  // 낮출 뿐 높이지 않으므로, 빠진 봉이 신고가를 지어내는 방향으로는 틀리지 않는다.
+  const highest = Math.max(
+    ...bars.slice(-200).map((bar) => (bar.high ?? bar.adjClose).toNumber()),
+  );
 
   return {
     close,

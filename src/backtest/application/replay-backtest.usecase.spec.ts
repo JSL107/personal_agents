@@ -26,18 +26,25 @@ const weekdayDates = (count: number): Date[] => {
 const TRADE_DATES = weekdayDates(BAR_COUNT);
 const dateText = (value: Date): string => value.toISOString().slice(0, 10);
 
+// 고가·저가를 따로 주지 않으면 진폭 0 인 봉(고가=저가=종가)이다. 그러면 장중 손절이
+// 종가 밴드보다 먼저 걸리는 일이 없어 기존 기대값이 그대로 회귀 감시가 된다.
+// lowAt 을 주면 그날 안에 손절선을 뚫는 봉을 만들 수 있다.
 const buildBars = (
   priceAt: (index: number) => number,
   volumeAt: (index: number) => number,
   openAt?: (index: number, close: number) => number | null,
+  lowAt?: (index: number, close: number) => number | null,
 ): BacktestBar[] =>
   TRADE_DATES.map((tradeDate, index) => {
     const price = priceAt(index);
+    const low = lowAt ? lowAt(index, price) : price;
     return {
       tradeDate,
       open: openAt ? openAt(index, price) : price,
       close: new Prisma.Decimal(price),
       adjClose: new Prisma.Decimal(price),
+      high: new Prisma.Decimal(price),
+      low: low === null ? null : new Prisma.Decimal(low),
       volume: BigInt(volumeAt(index)),
     };
   });
@@ -55,6 +62,7 @@ const TICKERS: BacktestTicker[] = [
 // 5,000 에서 완만히 오르는 정배열 종목. 거래대금 2e9 로 유동성 필터를 통과한다.
 const risingBars = (
   openAt?: (index: number, close: number) => number | null,
+  lowAt?: (index: number, close: number) => number | null,
 ): Map<number, BacktestBar[]> =>
   new Map([
     [
@@ -63,6 +71,7 @@ const risingBars = (
         (index) => 5000 + index * 32,
         () => 200_000,
         openAt,
+        lowAt,
       ),
     ],
   ]);
@@ -78,6 +87,8 @@ const staleExitBandBars = (): Map<number, BacktestBar[]> => {
     open: 1,
     close: new Prisma.Decimal(1),
     adjClose: new Prisma.Decimal(1),
+    high: new Prisma.Decimal(1),
+    low: new Prisma.Decimal(1),
     volume: BigInt(1),
   }));
   return new Map([
@@ -115,6 +126,8 @@ const manyTickerBars = (
             open: price,
             close: new Prisma.Decimal(price),
             adjClose: new Prisma.Decimal(price),
+            high: new Prisma.Decimal(price),
+            low: new Prisma.Decimal(price),
             volume: BigInt(200_000),
           },
         ];
@@ -523,11 +536,45 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.scores.every((score) => score.anomalyCount === 0)).toBe(true);
   });
 
-  it('손절 밴드를 넘기면 STOP_LOSS 매도를 만들어 체결한다', async () => {
+  it('저가가 손절선을 뚫으면 그날 안에 장중 손절로 팔고 종가 밴드까지 가지 않는다', async () => {
+    // 시가를 종가보다 10% 높게 두면 매수 직후 평가 손익률이 -9% 대로 시작하고, 저가를
+    // 종가의 80% 로 두면 그날 안에 손절선(-5%)을 뚫는다. 익절은 사실상 끈다(+999%).
+    const usecase = new ReplayBacktestUsecase(
+      repositoryOf(
+        risingBars(
+          (_, close) => Math.round(close * 1.1),
+          (_, close) => Math.round(close * 0.8),
+        ),
+      ),
+    );
+
+    const result = await usecase.execute({
+      ...commandWithExitBand,
+      exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+    });
+
+    expect(result.intradayStopSellCount).toBeGreaterThan(0);
+    // 같은 봉을 종가 밴드가 다시 잡지 않는다. 저가 <= 종가라 장중 판정이 항상 먼저다 —
+    // 이 값이 0 이 아니면 같은 보유가 두 경로로 팔렸다는 뜻이다.
+    expect(result.exitBandSellCounts.stopLoss).toBe(0);
+    expect(result.scores.some((score) => score.closedCount > 0)).toBe(true);
+    expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  it('저가를 모르는 봉은 종가 밴드가 손절을 잡는다', async () => {
     // 시가를 종가보다 10% 높게 두면 매수 체결 직후 평가 손익률이 -9% 대로 시작한다.
     // 익절은 사실상 끄고(+999%) 손절만 켜서 STOP_LOSS 경로만 태운다.
+    //
+    // 저가를 비운 것이 이 테스트의 조건이다. 저가가 있으면 종가가 손절선 아래인 날은
+    // 저가도 반드시 아래라(저가 <= 종가) 장중 손절이 그날 먼저 팔아, 종가 밴드까지
+    // 오지 않는다. 5년 재적재 밖 구간처럼 저가가 없는 봉에서 이 경로가 남는다.
     const usecase = new ReplayBacktestUsecase(
-      repositoryOf(risingBars((_, close) => Math.round(close * 1.1))),
+      repositoryOf(
+        risingBars(
+          (_, close) => Math.round(close * 1.1),
+          () => null,
+        ),
+      ),
     );
 
     const result = await usecase.execute({

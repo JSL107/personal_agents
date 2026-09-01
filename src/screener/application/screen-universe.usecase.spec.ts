@@ -38,6 +38,9 @@ const risingBars = (count: number, endDate: string): IndicatorBar[] => {
     // 유동성 하한을 통과시키는 원본 종가를 별도로 고정해 추세용 조정 종가와 의도를 분리한다.
     close: decimal(10_000),
     adjClose: decimal(index + 1),
+    // 진폭 0 인 봉. 최고가 기준 신고가 위치가 조정 종가 기준과 같은 값을 낸다.
+    high: decimal(index + 1),
+    low: decimal(index + 1),
     volume: index === count - 1 ? 150_000n : 50_000n,
   }));
 };
@@ -74,7 +77,7 @@ describe('ScreenUniverseUsecase', () => {
     expect(findBarsForTickers).toHaveBeenNthCalledWith(2, [201], 200);
     expect(result).toEqual({
       strategy: 'LONG_TERM',
-      ruleVersion: 3,
+      ruleVersion: 4,
       universeCount: 201,
       evaluatedCount: 2,
       staleCount: 1,
@@ -106,7 +109,7 @@ describe('ScreenUniverseUsecase', () => {
 
     await expect(usecase.execute({ strategy: 'SWING' })).resolves.toEqual({
       strategy: 'SWING',
-      ruleVersion: 3,
+      ruleVersion: 4,
       universeCount: 1,
       evaluatedCount: 0,
       staleCount: 0,
@@ -266,7 +269,7 @@ describe('ScreenUniverseUsecase', () => {
       expect.objectContaining({
         strategy: 'LONG_TERM',
         asOf: new Date('2026-08-13T00:00:00.000Z'),
-        ruleVersion: 3,
+        ruleVersion: 4,
         // 회차를 만든 실행 id. 이 값이 없으면 추천이 실패한 회차와 정상 회차를
         // 구분할 수 없어, 실린 종목 전부가 "보고도 안 샀다" 로 집계된다.
         agentRunId: 55,

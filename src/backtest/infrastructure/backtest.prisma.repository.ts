@@ -58,6 +58,8 @@ export class BacktestPrismaRepository {
         open: true,
         close: true,
         adjClose: true,
+        high: true,
+        low: true,
         volume: true,
       },
     });
@@ -68,6 +70,8 @@ export class BacktestPrismaRepository {
         open: row.open === null ? null : Number(row.open.toString()),
         close: row.close,
         adjClose: row.adjClose,
+        high: row.high,
+        low: row.low,
         volume: row.volume,
       });
       bars.set(row.tickerId, list);
