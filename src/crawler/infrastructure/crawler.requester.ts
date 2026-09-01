@@ -163,6 +163,8 @@ export class CrawlerRequester implements CrawlerRequesterPort {
 //
 // 반환값의 `hit` 은 "정책이 실제로 막았다" 는 표시다. 호출부가 이걸 보고 실패를 영구 거부로
 // 분류한다(재시도 금지).
+type HostVerdict = 'ALLOWED' | 'BLOCKED' | 'UNRESOLVED';
+
 interface BlockRecord {
   hit: string | null;
 }
@@ -172,17 +174,24 @@ const guardOutboundRequests = async (
   page: Page,
 ): Promise<BlockRecord> => {
   const record: BlockRecord = { hit: null };
-  const verdicts = new Map<string, boolean>();
+  const verdicts = new Map<string, HostVerdict>();
 
-  const isAllowed = async (hostname: string): Promise<boolean> => {
+  // 판정을 세 갈래로 남긴다. 이름을 못 푼 것(UNRESOLVED)을 차단과 같이 다루면 일시적인 DNS
+  // 흔들림이 영구 거부로 굳어 재시도조차 하지 않는다 — 막힌 것과 못 푼 것은 다른 실패다.
+  const isAllowed = async (hostname: string): Promise<HostVerdict> => {
     const cached = verdicts.get(hostname);
     if (cached !== undefined) {
       return cached;
     }
     const policy = await resolveHostPolicy(hostname);
-    const allowed = policy.kind === 'ALLOWED';
-    verdicts.set(hostname, allowed);
-    return allowed;
+    const verdict: HostVerdict =
+      policy.kind === 'ALLOWED'
+        ? 'ALLOWED'
+        : policy.kind === 'BLOCKED'
+          ? 'BLOCKED'
+          : 'UNRESOLVED';
+    verdicts.set(hostname, verdict);
+    return verdict;
   };
 
   // 팝업은 페이지 스크립트가 실행되기 전에 `window.open` 을 막아 원천 차단한다.
@@ -219,11 +228,16 @@ const guardOutboundRequests = async (
           await request.continue();
           return;
         }
-        if (await isAllowed(hostname)) {
+        const verdict = await isAllowed(hostname);
+        if (verdict === 'ALLOWED') {
           await request.continue();
           return;
         }
-        record.hit = hostname;
+        // 정책이 막은 것만 영구 거부로 표시한다. UNRESOLVED 는 표시하지 않아 호출부가
+        // puppeteer 의 원래 오류를 그대로 보고, crawl-error.util 이 일시 오류로 분류한다.
+        if (verdict === 'BLOCKED') {
+          record.hit = hostname;
+        }
         await request.abort('blockedbyclient');
       } catch {
         // 판정 자체가 실패하면 보내지 않는다 — 막는 쪽이 기본값이다.

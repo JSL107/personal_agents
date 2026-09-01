@@ -30,6 +30,7 @@ const BLOCKED_IPV6_SUBNETS: ReadonlyArray<readonly [string, number]> = [
   ['fc00::', 7], // ULA
   ['fe80::', 10], // link-local
   ['fec0::', 10], // 구 site-local (deprecated 이지만 아직 쓰는 내부망이 있다)
+  ['ff00::', 8], // 멀티캐스트 — IPv4 의 224/4 에 대응한다
 ];
 
 const buildBlockList = (): BlockList => {

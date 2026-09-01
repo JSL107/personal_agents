@@ -11,6 +11,7 @@ import type { Request } from 'express';
 
 import {
   isLoopbackAddress,
+  isLoopbackHostHeader,
   timingSafeStringEqual,
 } from '../../common/guard/loopback.util';
 
@@ -35,7 +36,11 @@ export class ConsoleReadGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    if (isLoopbackAddress(request.ip)) {
+    // 출발지가 loopback 이라도 Host 가 남의 이름이면 DNS rebinding 이다 — 토큰을 받게 둔다.
+    if (
+      isLoopbackAddress(request.ip) &&
+      isLoopbackHostHeader(request.header('host'))
+    ) {
       return true;
     }
 

@@ -11,6 +11,7 @@ function contextWith(
   ip: string,
   headerToken?: string,
   fetchSite?: string,
+  host = '127.0.0.1:3099',
 ): ExecutionContext {
   const request = {
     ip,
@@ -21,6 +22,9 @@ function contextWith(
       }
       if (key === 'sec-fetch-site') {
         return fetchSite;
+      }
+      if (key === 'host') {
+        return host;
       }
       return undefined;
     },
@@ -96,5 +100,25 @@ describe('LoopbackOnlyGuard', () => {
     expect(guardWith(undefined).canActivate(contextWith('127.0.0.1'))).toBe(
       true,
     );
+  });
+
+  // DNS rebinding — 출발지는 loopback 이 되지만 Host 에는 공격자 이름이 남는다.
+  it('Host 가 남의 이름이면 loopback 이어도 거부한다', () => {
+    expect(() =>
+      guardWith(undefined).canActivate(
+        contextWith('127.0.0.1', undefined, undefined, 'evil.example.com:3099'),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it.each([
+    ['localhost:3099', '개발용 프록시'],
+    ['[::1]:3002', 'IPv6 loopback'],
+  ])('Host %s 는 통과한다 (%s)', (host) => {
+    expect(
+      guardWith(undefined).canActivate(
+        contextWith('127.0.0.1', undefined, undefined, host),
+      ),
+    ).toBe(true);
   });
 });

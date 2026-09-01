@@ -11,6 +11,7 @@ import type { Request } from 'express';
 import {
   isCrossSiteBrowserRequest,
   isLoopbackAddress,
+  isLoopbackHostHeader,
   timingSafeStringEqual,
 } from './loopback.util';
 
@@ -27,7 +28,10 @@ export class LoopbackOnlyGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    if (!isLoopbackAddress(request.ip)) {
+    if (
+      !isLoopbackAddress(request.ip) ||
+      !isLoopbackHostHeader(request.header('host'))
+    ) {
       throw new ForbiddenException('localhost 에서만 허용됩니다.');
     }
     // 출발지가 loopback 이어도 브라우저가 다른 사이트에서 쏜 것이면 사용자의 의도가 아니다.
