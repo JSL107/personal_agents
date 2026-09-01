@@ -17,6 +17,10 @@ const bar = (tradeDate: string, close = '100') => ({
   adjClose: decimal(close),
   volume: 10n,
   currency: 'KRW',
+  // 네 값을 서로 다른 숫자로 둔다. 종가와 같은 값을 쓰면 자리가 뒤바뀐 회귀가 통과한다.
+  open: decimal(String(Number(close) - 1)),
+  high: decimal(String(Number(close) + 3)),
+  low: decimal(String(Number(close) - 4)),
 });
 
 const ticker = (
@@ -127,6 +131,29 @@ describe('BackfillUniversePricesUsecase', () => {
       }),
     );
     expect(fixture.upsertDailyPrices).not.toHaveBeenCalled();
+  });
+
+  it('봉의 시가·고가·저가를 저장 입력으로 넘긴다', async () => {
+    const fetchDailyBars = jest
+      .fn()
+      .mockResolvedValueOnce([bar('2025-01-02', '90')])
+      .mockResolvedValue([]);
+    const upsertDailyPrices = jest
+      .fn()
+      .mockResolvedValue({ written: 1, blockedIntraday: 0 });
+    const fixture = createFixture({ fetchDailyBars, upsertDailyPrices });
+
+    await fixture.usecase.execute();
+
+    // 이 매핑은 collect 와 따로 존재하므로 한쪽만 고쳐도 다른 쪽이 조용히 빠진다.
+    expect(upsertDailyPrices).toHaveBeenCalledWith([
+      expect.objectContaining({
+        open: '89',
+        high: '93',
+        low: '86',
+        close: '90',
+      }),
+    ]);
   });
 
   it('같은 페이지가 반복되어 커서가 진전하지 않으면 유한 호출 후 stalled로 끝낸다', async () => {
