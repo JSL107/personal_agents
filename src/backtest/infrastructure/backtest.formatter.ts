@@ -96,6 +96,20 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
     lines.push(
       `장중 손절 체결 ${result.intradayStopSellCount}건 (저가로 판정 · min(시가, 손절선)으로 체결)`,
     );
+    // 좁은 밴드를 쓸지 판단하는 근거가 이 한 줄이다. **평균만 찍으면 안 된다** — 소수의
+    // 큰 하락이 평균을 끌어올려 "여유 있다" 로 보이는데, 정작 물어야 하는 것은 손절선을
+    // 겨우 스쳐 발동한 건이 얼마나 잦은가다. 10분위가 호가 한 틱(주가의 약 0.13%) 수준이면
+    // 그 밴드는 노이즈로 발동하는 것이다.
+    const margin = result.intradayStopMargin;
+    if (margin.meanPercent !== null) {
+      lines.push(
+        `  저가가 손절선보다 (%p) 평균 ${margin.meanPercent.toFixed(2)} · ` +
+          `중앙 ${(margin.medianPercent as number).toFixed(2)} · ` +
+          `10분위 ${(margin.p10Percent as number).toFixed(2)} · ` +
+          `최소 ${(margin.minPercent as number).toFixed(2)} 아래` +
+          ` · 갭하락으로 시가 체결 ${margin.gapDownCount}건`,
+      );
+    }
   }
   // 0 건도 적는다. 줄이 없으면 "섞이지 않았다" 와 "세지 않았다" 가 구분되지 않는다.
   // 값이 있으면 그 종목의 신고가 위치가 부풀려진 채 순위에 올랐다는 뜻이다.
