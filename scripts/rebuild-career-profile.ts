@@ -273,6 +273,30 @@ const runRetro = async (
       mergedAt: detail.mergedAt,
     })),
   });
+
+  // 모델이 근거 PR 을 빠뜨리거나 입력에 없는 PR 을 지어내도 reconcileAccomplishmentEvidence 는
+  // mergedAt 만 보정할 뿐 목록 자체는 모델이 준 대로 둔다(그 함수 주석 — 목록에 없는 근거는
+  // 환각일 수 있어 판단을 보류한다). 그대로 저장하면 이 CLI 의 불변식인 "근거 PR 무손실" 이
+  // 조용히 깨지므로 집합이 정확히 같은지 확인하고, 다르면 실패로 돌린다.
+  // 실패한 그룹의 성과는 원본이 그대로 유지되어 근거 PR 이 살아남는다.
+  const expectedKeys = new Set(
+    items.map(({ detail }) => `${detail.repo}#${detail.number}`),
+  );
+  const returnedKeys = new Set(
+    accomplishment.evidence.map(
+      (each) => `${each.repo}#${toPrNumber(each.pr)}`,
+    ),
+  );
+  const missing = [...expectedKeys].filter((key) => !returnedKeys.has(key));
+  const extra = [...returnedKeys].filter((key) => !expectedKeys.has(key));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `모델이 돌려준 근거 PR 이 입력과 다릅니다 — 누락: ${
+        missing.join(' ') || '없음'
+      } / 입력에 없는 것: ${extra.join(' ') || '없음'}`,
+    );
+  }
+
   return { accomplishment, modelUsed: completion.modelUsed };
 };
 
@@ -472,22 +496,41 @@ const main = async (): Promise<void> => {
             limit === undefined
               ? []
               : originalProfile.accomplishments.slice(limit);
-          const accomplishments = [...rebuilt.accomplishments, ...untouched];
 
           console.log('\n윤문:');
+          // 윤문은 이번에 다시 만든 성과에만 건다. 범위 밖 성과까지 넘기면 --limit 실행이
+          // 처리 대상이 아닌 데이터의 문장을 바꾼다 — "손대지 않는다" 는 위 약속이 깨진다.
           const humanized = await humanizeInChunks(
-            { ...originalProfile, accomplishments },
+            { ...originalProfile, accomplishments: rebuilt.accomplishments },
             humanizer,
           );
+          const accomplishments = [...humanized.accomplishments, ...untouched];
 
           const profileJson: CareerProfileData = {
             ...humanized,
+            accomplishments,
             meta: {
               ...humanized.meta,
               githubLogin,
-              prCount: countProfilePrCount(humanized.accomplishments),
+              prCount: countProfilePrCount(accomplishments),
             },
           };
+          // 모델 호출이 수십 분이라 그 사이 다른 경로(저녁 회고의 ReflectPrUsecase,
+          // BuildCareerProfileUsecase)가 같은 사용자의 프로필을 저장할 수 있다. 그대로
+          // INSERT 하면 이 행이 더 최신이 되어 조회(findLatestBySlackUser)가 이쪽을 고르고,
+          // 그 사이 추가된 성과는 없던 일이 된다. 시작 시점과 달라졌으면 저장하지 않는다.
+          const current = await repository.findLatestBySlackUser(owner);
+          if (current?.id !== latest.id) {
+            throw new Error(
+              [
+                '저장을 중단합니다 — 실행 중 프로필이 바뀌었습니다',
+                `(시작 #${latest.id} → 현재 #${current?.id ?? '없음'}).`,
+                '그 회차의 성과를 덮지 않으려면 재구축을 다시 돌려야 합니다.',
+                `백업: ${backupPath}`,
+              ].join(' '),
+            );
+          }
+
           const saved = await repository.save({
             agentRunId: context.agentRunId,
             slackUserId: owner,
