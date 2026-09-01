@@ -50,8 +50,13 @@ export interface ScreenUniverseResult {
   evaluatedCount: number;
   staleCount: number;
   passedCount: number;
-  // 평가 후보 중 고가가 없어 조정 종가로 대신한 봉이 섞인 종목 수. 대신 쓴 종가는 분모를
-  // 낮춰 `high200Position` 을 부풀리므로(활성 종목 실측 평균 7.26%) 순위에 이득을 준다.
+  // 고가가 없어 조정 종가로 대신한 봉이 섞인 종목 수. 대신 쓴 종가는 분모를 낮춰
+  // `high200Position` 을 부풀리므로(활성 종목 실측 평균 7.26%) 순위에 이득을 준다.
+  //
+  // 모집단은 `evaluatedCount`(=봉이 있는 종목)가 아니라 **순위에 실제로 오른 후보**다.
+  // 기준일이 다른 종목은 `staleCount` 로 빠져 `screenStocks` 에 들어가지 않으므로, 그것까지
+  // 세면 순위에 영향을 주지 않은 종목이 편향 지표에 섞인다.
+  //
   // 운영 유니버스는 폐지 종목을 보지 않아 이 값이 보통 0 이다 — 0 이 아니면 5년 재적재 밖
   // 구간이나 봉을 못 받는 종목이 섞였다는 신호다.
   highFallbackCount: number;

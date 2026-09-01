@@ -4,7 +4,10 @@ import { SCREENER_RULE_VERSION } from '../../screener/domain/screener-rule';
 import { BacktestBar, BacktestTicker } from '../domain/backtest-bar.type';
 import { BacktestPrismaRepository } from '../infrastructure/backtest.prisma.repository';
 import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
-import { ReplayBacktestUsecase } from './replay-backtest.usecase';
+import {
+  ReplayBacktestResult,
+  ReplayBacktestUsecase,
+} from './replay-backtest.usecase';
 
 const BAR_COUNT = 240;
 
@@ -559,6 +562,48 @@ describe('ReplayBacktestUsecase', () => {
     expect(result.exitBandSellCounts.stopLoss).toBe(0);
     expect(result.scores.some((score) => score.closedCount > 0)).toBe(true);
     expect(result.orderCount).toBe(result.filledCount + result.expiredCount);
+  });
+
+  // 체결가 규칙(`min(시가, 손절선)`) 자체는 도메인 단위 테스트가 지킨다. 여기서 보는 것은
+  // **재생 루프가 그 함수에 실제 시가와 평단을 연결하는가** 다 — 시가를 넘기지 않고 손절선만
+  // 쓰면 아래 두 회차가 같은 성적을 내고, 갭하락 구간의 낙관 편향이 그대로 성적이 된다.
+  //
+  // 두 회차는 **저가가 같다**(종가의 70%). 다른 것은 220일째 시가뿐이다. 갭하락 회차는 그날
+  // 시가가 평단의 80% 라 손절선(-5%)보다 아래이므로 시가로 체결해야 하고, 대조 회차는 시가가
+  // 종가와 같아 손절선으로 체결해야 한다.
+  it('갭하락이면 손절선이 아니라 그날 시가로 체결한다', async () => {
+    const replayWithOpenFactor = async (
+      openFactor: number,
+    ): Promise<ReplayBacktestResult> => {
+      const usecase = new ReplayBacktestUsecase(
+        repositoryOf(
+          risingBars(
+            (index, close) =>
+              index === 220 ? Math.round(close * openFactor) : close,
+            (index, close) => (index === 220 ? Math.round(close * 0.7) : close),
+          ),
+        ),
+      );
+      return usecase.execute({
+        ...commandWithExitBand,
+        exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+      });
+    };
+
+    const gapDown = await replayWithOpenFactor(0.8);
+    const intraday = await replayWithOpenFactor(1);
+
+    // 같은 저가라 두 회차 모두 같은 날 한 건이 발동한다. 발동 수가 다르면 아래 현금 비교가
+    // 체결가 차이를 보는 것이 아니게 된다.
+    expect(gapDown.intradayStopSellCount).toBe(1);
+    expect(intraday.intradayStopSellCount).toBe(1);
+    expect(gapDown.exitBandSellCounts.stopLoss).toBe(0);
+    expect(intraday.exitBandSellCounts.stopLoss).toBe(0);
+
+    // 시가가 낮은 쪽이 그만큼 적게 받아야 한다. 두 값이 같으면 시가가 체결가에 닿지 않은 것이다.
+    expect(Number(gapDown.finalCashBalance)).toBeLessThan(
+      Number(intraday.finalCashBalance),
+    );
   });
 
   it('저가를 모르는 봉은 종가 밴드가 손절을 잡는다', async () => {
