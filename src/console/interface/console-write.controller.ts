@@ -9,17 +9,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { LoopbackOnlyGuard } from '../../common/guard/loopback-only.guard';
 import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConsoleWriteService } from '../application/console-write.service';
-import { ConsoleWriteGuard } from './console-write.guard';
 import { ConsoleCommandDto } from './dto/console-command.dto';
 import { SessionInjectDto } from './dto/session-inject.dto';
 
 // 콘솔 리모컨 write 표면 — 지시(fire-and-forget 202) + 승인/거절(await 200).
-// 모든 경로는 ConsoleWriteGuard(loopback+토큰) 뒤에 있다.
+// 모든 경로는 LoopbackOnlyGuard(loopback+토큰) 뒤에 있다.
 @Controller('v1/console')
-@UseGuards(ConsoleWriteGuard)
+@UseGuards(LoopbackOnlyGuard)
 export class ConsoleWriteController {
   constructor(
     private readonly consoleWrite: ConsoleWriteService,

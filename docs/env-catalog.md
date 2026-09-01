@@ -207,7 +207,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `CONSOLE_CHAIN_IMPACT_RECENT_DAYS` | ❌ | 콘솔 리모컨 2A.2 — PO_EVAL 자동 체이닝 시 IMPACT_REPORTER --recent 조회 일수. 기본 7. |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 리모컨 write — 지시/승인 실행 주체 owner. 미설정 시 write 요청은 503(ServiceUnavailable). |
-| `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증. |
+| `CONSOLE_REMOTE_TOKEN` | ❌ | 콘솔 인증 토큰. 두 가드가 같은 값을 본다 (헤더는 x-console-token). |
 
 ## 주식 모니터링
 

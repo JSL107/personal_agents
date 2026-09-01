@@ -121,11 +121,12 @@
       </label>
 
       <label>
-        <span>토큰 (선택)</span>
-        <input id="token" type="password" placeholder="비워 두면 안 보낸다" spellcheck="false" />
+        <span>토큰</span>
+        <input id="token" type="password" placeholder="맥의 CONSOLE_REMOTE_TOKEN 과 같은 값" spellcheck="false" />
         <small>
-          지금 백엔드는 읽기 요청에 토큰을 요구하지 않는다. 미리 넣어 두면 서버를 잠그는 날
-          앱을 다시 깔지 않아도 된다.
+          맥 밖에서 붙을 때는 반드시 필요하다. 맥의 <code>.env</code> 에 넣은
+          <code>CONSOLE_REMOTE_TOKEN</code> 과 같은 값이어야 한다. 비우면 사무실이
+          열리지 않는다.
         </small>
       </label>
 

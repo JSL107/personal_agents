@@ -797,8 +797,11 @@ export class EnvironmentVariables {
   @IsString()
   CONSOLE_OWNER_SLACK_USER_ID?: string;
 
-  // 콘솔 리모컨 write 인증 토큰(선택). 설정 시 ConsoleWriteGuard 가 x-console-token 헤더를 검증.
-  // 미설정 시 loopback 바인딩만으로 신뢰(부팅 시 경고). 앱은 env IDAERI_CONSOLE_TOKEN 으로 주입.
+  // 콘솔 인증 토큰. 두 가드가 같은 값을 본다 (헤더는 x-console-token).
+  // - write(LoopbackOnlyGuard): loopback 만 받으므로 토큰은 선택.
+  // - read(ConsoleReadGuard): loopback 은 통과, **원격은 이 토큰이 있어야만** 통과.
+  //   미설정 + 원격 = 거부(fail-closed) — 스냅샷·스트림이 세션 경로와 워커 산출물을 실어 나른다.
+  // 앱은 env IDAERI_CONSOLE_TOKEN(맥) / 서버 설정 화면(윈도우) 으로 주입.
   @IsOptional()
   @IsString()
   CONSOLE_REMOTE_TOKEN?: string;
