@@ -53,6 +53,15 @@ describe('formatParameterSearchReport', () => {
     expect(report).toContain('조합 2개 · 창 3개 · 재생 6회');
   });
 
+  it('회전을 창당 체결로 함께 낸다', () => {
+    // 순위 기준인 초과수익은 사이클당 평균이라 회전을 보지 않는다. 체결마다 붙는
+    // 비용(슬리피지)이 순위에 안 잡히므로, 회전이 표에 없으면 판단이 성립하지 않는다.
+    const report = formatParameterSearchReport(REPORT);
+
+    expect(report).toContain('창당 체결');
+    expect(report).toContain('사이클당 평균');
+  });
+
   it('현행값 행을 표에서 눈에 띄게 표시한다', () => {
     const report = formatParameterSearchReport(REPORT);
 

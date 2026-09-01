@@ -65,6 +65,7 @@ const formatSummaryTable = (
       '최종수익 평균',
       '최악 최대손실',
       '현행 대비 승',
+      '창당 체결',
       '종결계',
     ],
     summaries.map((summary) => [
@@ -77,6 +78,12 @@ const formatSummaryTable = (
       summary.label === baselineLabel
         ? '—'
         : `${summary.winCount}/${summary.comparableCount}`,
+      plainNumber(
+        summary.windowCount === 0
+          ? null
+          : summary.filledCountTotal / summary.windowCount,
+        0,
+      ),
       String(summary.closedCountTotal),
     ]),
   );
@@ -168,6 +175,9 @@ export const formatParameterSearchReport = (
     formatWindowTable(report.windows),
     '',
     '### 조합 종합 (창 전체 · 표본 내)',
+    '',
+    '> 순위는 코스피 초과수익 기준이고, 그 값은 **사이클당 평균**이라 회전을 보지 않는다 —',
+    '> 슬리피지처럼 체결마다 붙는 비용은 이 순위에 잡히지 않는다. 창당 체결 열을 함께 읽을 것.',
     '',
     formatSummaryTable(report.outcomes, report.baselineLabel),
     '',
