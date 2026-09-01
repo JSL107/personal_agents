@@ -38,7 +38,13 @@ const result: ReplayBacktestResult = {
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
-  intradayStopMargin: { meanPercent: -2.04, gapDownCount: 1 },
+  intradayStopMargin: {
+    meanPercent: 6.0,
+    medianPercent: 4.28,
+    p10Percent: 1.11,
+    minPercent: 0.02,
+    gapDownCount: 4,
+  },
   highFallback: { candidateCount: 0, tickerCount: 0 },
   anomaliesByType: {},
   metrics: {
@@ -90,17 +96,26 @@ describe('formatBacktestResult', () => {
 
   // 좁은 밴드를 쓸지 판단하는 근거가 이 한 줄이다. 여유폭이 0 에 가까우면 "하루 중 한 틱
   // 스쳐" 발동한 것이라 그 가격에 팔렸을지 의심스럽다 — 찍지 않으면 판단할 재료가 없다.
-  it('장중 손절이 얼마나 여유 있게 발동했는지 함께 적는다', () => {
+  it('장중 손절 여유폭을 평균만이 아니라 분포로 적는다', () => {
+    // 평균만 찍으면 소수의 큰 하락이 판정을 뒤집는다. 손절선을 겨우 스쳐 발동한 건이
+    // 얼마나 잦은지는 10분위·최소로만 보인다.
     const text = formatBacktestResult({
       ...result,
       exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
       intradayStopSellCount: 40,
-      intradayStopMargin: { meanPercent: -2.04, gapDownCount: 7 },
+      intradayStopMargin: {
+        meanPercent: 7.59,
+        medianPercent: 5.2,
+        p10Percent: 0.83,
+        minPercent: 0.01,
+        gapDownCount: 7,
+      },
     });
 
     expect(text).toContain('장중 손절 체결 40건');
     expect(text).toContain(
-      '저가가 손절선보다 평균 -2.04%p 아래 · 갭하락으로 시가 체결 7건',
+      '저가가 손절선보다 (%p) 평균 7.59 · 중앙 5.20 · 10분위 0.83 · 최소 0.01 아래' +
+        ' · 갭하락으로 시가 체결 7건',
     );
   });
 
@@ -110,7 +125,13 @@ describe('formatBacktestResult', () => {
       ...result,
       exitBand: { takeProfitPercent: 10, stopLossPercent: -5 },
       intradayStopSellCount: 0,
-      intradayStopMargin: { meanPercent: null, gapDownCount: 0 },
+      intradayStopMargin: {
+        meanPercent: null,
+        medianPercent: null,
+        p10Percent: null,
+        minPercent: null,
+        gapDownCount: 0,
+      },
     });
 
     expect(text).toContain('장중 손절 체결 0건');

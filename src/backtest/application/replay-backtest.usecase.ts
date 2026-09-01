@@ -136,13 +136,23 @@ export interface ReplayBacktestResult {
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
   // 한 칸에 묻혀, 장중 재현을 넣기 전후 성적을 비교할 수 없다.
   intradayStopSellCount: number;
-  // 그 손절이 얼마나 여유 있게 발동했나. **얇은 밴드가 믿을 만한지는 이 두 값이 정한다.**
-  //   - `meanMarginPercent` — 저가가 손절선보다 몇 %p 아래였나의 평균. 이 값이 0 에 가까우면
-  //     "하루 중 한 틱 스쳐" 발동한 것이라 실제로 그 가격에 팔렸을지 의심스럽다. 손절선이
-  //     호가 1~2틱밖에 안 되는 좁은 밴드(-0.2% 등)에서 특히 그렇다.
-  //   - `gapDownCount` — 시가부터 이미 손절선 아래여서 체결가가 시가로 잡힌 건수. 이 경로는
-  //     손절선보다 낮은 가격에 팔므로 재생이 **보수적으로** 처리한 쪽이다.
-  intradayStopMargin: { meanPercent: number | null; gapDownCount: number };
+  // 그 손절이 얼마나 여유 있게 발동했나 — 저가가 손절선보다 몇 %p 아래였나. 얇은 밴드가
+  // 믿을 만한지를 이 분포가 정한다.
+  //
+  // **평균만으로는 판정할 수 없다.** 소수의 큰 하락이 평균을 끌어올리면 "대체로 여유 있다"
+  // 처럼 보이지만, 정작 물어야 하는 것은 "손절선을 겨우 스쳐 발동한 건이 얼마나 잦은가" 다
+  // (PR #447 이대리 리뷰 지적). 그래서 최소·10분위·중앙값을 함께 낸다 — 10분위가 호가 한 틱
+  // (주가의 약 0.13%) 수준이면 그 밴드는 노이즈로 발동하는 것이다.
+  //
+  // `gapDownCount` 는 시가부터 이미 손절선 아래여서 체결가가 시가로 잡힌 건수다. 그 경로는
+  // 손절선보다 낮은 가격에 팔므로 재생이 **보수적으로** 처리한 쪽이다.
+  intradayStopMargin: {
+    meanPercent: number | null;
+    medianPercent: number | null;
+    p10Percent: number | null;
+    minPercent: number | null;
+    gapDownCount: number;
+  };
   // 고가가 없어 조정 종가로 대신한 봉이 섞인 후보. 폐지 종목은 재적재 대상이 아니어서
   // (`findUniverseTickers` 는 `delistedAt: null` 만 본다) 전 구간이 이 경로를 타고, 토스 404 라
   // 앞으로도 채울 수 없다. 대신 쓴 종가는 분모(200봉 최고가)를 낮추므로 신고가 위치가
@@ -184,7 +194,8 @@ interface ReplayState {
   expiredCount: number;
   exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
   intradayStopSells: number;
-  intradayStopMarginSum: number;
+  // 여유폭 전량. 분위수를 내려면 값을 들고 있어야 한다 — 손절은 창당 수백 건이라 무해하다.
+  intradayStopMargins: number[];
   intradayStopGapDowns: number;
   highFallbackCandidateCount: number;
   highFallbackTickerIds: Set<number>;
@@ -202,6 +213,38 @@ const countAnomaliesByType = (
     counts[anomaly.type] = (counts[anomaly.type] ?? 0) + 1;
   }
   return counts;
+};
+
+/**
+ * 여유폭 분포. **평균만 내면 소수의 큰 하락이 판정을 뒤집는다** — 10분위가 호가 한 틱
+ * 수준이면 그 밴드는 손절선을 겨우 스쳐 발동하는 것이고, 평균이 커도 그 사실은 가려진다.
+ */
+const summarizeMargins = (
+  margins: number[],
+): {
+  meanPercent: number | null;
+  medianPercent: number | null;
+  p10Percent: number | null;
+  minPercent: number | null;
+} => {
+  if (margins.length === 0) {
+    return {
+      meanPercent: null,
+      medianPercent: null,
+      p10Percent: null,
+      minPercent: null,
+    };
+  }
+  const sorted = [...margins].sort((left, right) => left - right);
+  const at = (fraction: number): number =>
+    sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+  return {
+    meanPercent:
+      margins.reduce((sum, margin) => sum + margin, 0) / margins.length,
+    medianPercent: at(0.5),
+    p10Percent: at(0.1),
+    minPercent: sorted[0],
+  };
 };
 
 const nextWeekdayText = (dateText: string): string => {
@@ -277,7 +320,7 @@ export class ReplayBacktestUsecase {
       expiredCount: 0,
       exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
       intradayStopSells: 0,
-      intradayStopMarginSum: 0,
+      intradayStopMargins: [],
       intradayStopGapDowns: 0,
       highFallbackCandidateCount: 0,
       highFallbackTickerIds: new Set<number>(),
@@ -713,8 +756,9 @@ export class ReplayBacktestUsecase {
       context.state.intradayStopSells += 1;
       // 저가 손익률이 손절선보다 얼마나 더 내려갔나(%p). 손익률로 비교하므로 조정 계열
       // 여부와 무관하다 — 가격 좌표계가 아니라 비율이다.
-      context.state.intradayStopMarginSum +=
-        exitBand.stopLossPercent - decision.returnRatePercent;
+      context.state.intradayStopMargins.push(
+        exitBand.stopLossPercent - decision.returnRatePercent,
+      );
       const stopLine = stopLineByTickerId.get(decision.tickerId);
       if (stopLine !== undefined && price < stopLine) {
         context.state.intradayStopGapDowns += 1;
@@ -1035,11 +1079,7 @@ export class ReplayBacktestUsecase {
       },
       intradayStopSellCount: context.state.intradayStopSells,
       intradayStopMargin: {
-        meanPercent:
-          context.state.intradayStopSells === 0
-            ? null
-            : context.state.intradayStopMarginSum /
-              context.state.intradayStopSells,
+        ...summarizeMargins(context.state.intradayStopMargins),
         gapDownCount: context.state.intradayStopGapDowns,
       },
       highFallback: {
