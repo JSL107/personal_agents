@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 
 import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain/paper-recommendation.constraint';
 import { planPendingOrders } from '../../agent/paper-recommend/domain/pending-order-plan';
-import { calculateIndicators } from '../../market-data/domain/stock-indicator';
+import {
+  calculateIndicators,
+  VolatilityEstimator,
+} from '../../market-data/domain/stock-indicator';
 import { ExecutePaperOrderUsecase } from '../../paper-trading/application/execute-paper-order.usecase';
 import {
   decideExitBandOrders,
@@ -65,6 +68,9 @@ export interface ReplayBacktestCommand {
   // 기본을 1 로 둔 것은 근거가 있어서가 아니라 없어서다 — 정리매매 회수율은 폐지 사유마다
   // 다르고 그 사유가 우리 데이터에 없다. 값을 낮춰 성적이 얼마나 흔들리는지 재는 손잡이다.
   delistingRecoveryRate: number;
+  // 변동성 추정량. LONG_TERM 의 순위 재료(`volatility20`)를 무엇으로 재는지 가른다.
+  // 운영은 종가→종가 하나뿐이고, 이 손잡이는 다른 추정량의 성적을 재기 위해서만 있다.
+  volatilityEstimator: VolatilityEstimator;
 }
 
 export interface ReplayBacktestResult {
@@ -84,6 +90,9 @@ export interface ReplayBacktestResult {
   meanExcessReturnRate: string | null;
   benchmarkUnavailableCount: number;
   exitBand: ExitBandThreshold | null;
+  // 어느 변동성 추정량으로 돌렸는지. 결과만 보고는 조건을 알 수 없어 두 조건의 성적을
+  // 섞어 읽게 된다 — 손잡이를 남긴 이상 그 값이 산출물에 남아야 한다.
+  volatilityEstimator: VolatilityEstimator;
   exitBandSellCounts: { takeProfit: number; stopLoss: number };
   // 장중에 손절선을 뚫어 그날 안에 팔린 건수. 종가 밴드 손절(`exitBandSellCounts.stopLoss`)과
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
@@ -752,6 +761,7 @@ export class ReplayBacktestUsecase {
       context.tickers,
       context.barsByTicker,
       asOf,
+      context.command.volatilityEstimator,
     );
     // 후보 단계에서 센다. 추천에 실린 것만 세면 "순위를 부풀린 이득이 얼마나 섞였나" 를
     // 놓친다 — 부풀린 값 때문에 다른 종목을 밀어낸 자리가 그쪽에는 남지 않는다.
@@ -917,6 +927,7 @@ export class ReplayBacktestUsecase {
       meanExcessReturnRate: benchmark.meanExcessReturnRate,
       benchmarkUnavailableCount: benchmark.benchmarkUnavailableCount,
       exitBand: context.command.exitBand,
+      volatilityEstimator: context.command.volatilityEstimator,
       exitBandSellCounts: {
         takeProfit: context.state.exitBandSells.TAKE_PROFIT,
         stopLoss: context.state.exitBandSells.STOP_LOSS,
@@ -1025,6 +1036,7 @@ export class ReplayBacktestUsecase {
     tickers: BacktestTicker[],
     barsByTicker: Map<number, BacktestBar[]>,
     asOf: string,
+    volatilityEstimator: VolatilityEstimator,
   ): ScreenCandidate[] {
     const candidates: ScreenCandidate[] = [];
     for (const ticker of tickers) {
@@ -1042,7 +1054,10 @@ export class ReplayBacktestUsecase {
       if (!latest || dateTextOf(latest.tradeDate) !== asOf) {
         continue;
       }
-      const indicators = calculateIndicators(bars.slice(-INDICATOR_BAR_LIMIT));
+      const indicators = calculateIndicators(
+        bars.slice(-INDICATOR_BAR_LIMIT),
+        volatilityEstimator,
+      );
       if (indicators === null) {
         continue;
       }

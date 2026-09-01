@@ -73,6 +73,13 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
   lines.push(
     `최종 평가액 ${won(result.finalTotalValue)} (${percent(result.finalReturnRate)}) · 현금 ${won(result.finalCashBalance)}`,
   );
+  // 운영 규칙일 때는 찍지 않는다. 기본값을 매번 알리면 실제로 다른 조건으로 돌린 회차가
+  // 눈에 안 띈다 — 비운영 조건일 때만 결과에 남긴다.
+  if (result.volatilityEstimator !== 'CLOSE_TO_CLOSE') {
+    lines.push(
+      `⚠ 변동성 추정량 ${result.volatilityEstimator} — 운영 규칙(종가→종가)이 아니다`,
+    );
+  }
   if (result.exitBand === null) {
     lines.push(
       '청산 밴드 없음 — 보유일수 청산만 (--take-profit/--stop-loss 미지정)',

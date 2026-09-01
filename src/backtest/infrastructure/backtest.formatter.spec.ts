@@ -35,6 +35,7 @@ const result: ReplayBacktestResult = {
   meanExcessReturnRate: '0.037',
   benchmarkUnavailableCount: 0,
   exitBand: null,
+  volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
   highFallback: { candidateCount: 0, tickerCount: 0 },
@@ -84,6 +85,21 @@ describe('formatBacktestResult', () => {
     expect(text).toContain(
       '청산 밴드 +2%/-0.2% · 익절 매도 주문 12건 · 손절 매도 주문 30건',
     );
+  });
+
+  // 두 조건의 성적을 섞어 읽는 것을 막는 유일한 표식이다. 운영 규칙일 때 조용한 것도
+  // 함께 확인한다 — 매번 찍으면 다른 조건으로 돌린 회차가 눈에 띄지 않는다.
+  it('운영 규칙이 아닌 변동성 추정량으로 돌리면 결과에 표시한다', () => {
+    const text = formatBacktestResult({
+      ...result,
+      volatilityEstimator: 'PARKINSON',
+    });
+
+    expect(text).toContain('⚠ 변동성 추정량 PARKINSON');
+  });
+
+  it('운영 규칙인 종가→종가로 돌리면 추정량을 표시하지 않는다', () => {
+    expect(formatBacktestResult(result)).not.toContain('변동성 추정량');
   });
 
   it('기간·승률·비중 초과 경고를 담는다', () => {

@@ -259,4 +259,73 @@ describe('calculateIndicators', () => {
 
     expect(indicators?.volatility20).toBeCloseTo(35.4964786985977, 10);
   });
+
+  describe('Parkinson 추정량', () => {
+    // 종가는 21봉 내내 100 이라 종가→종가로 재면 변동성이 0 이다. 같은 봉에서 장중
+    // 진폭만 있는 상황이므로, 두 추정량이 실제로 다른 것을 보는지 이 대비로 확인한다.
+    const barsWithRange = (
+      count: number,
+      ranges: { high: number | null; low: number | null }[],
+    ): IndicatorBar[] =>
+      Array.from({ length: count }, (_, index) => ({
+        tradeDate: new Date(Date.UTC(2025, 0, index + 1)),
+        close: decimal(100),
+        adjClose: decimal(100),
+        high: ranges[index].high === null ? null : decimal(ranges[index].high),
+        low: ranges[index].low === null ? null : decimal(ranges[index].low),
+        volume: 100n,
+      }));
+
+    it('고가·저가의 로그 범위로 잰다', () => {
+      const bars = barsWithRange(
+        21,
+        Array.from({ length: 21 }, () => ({ high: 110, low: 100 })),
+      );
+
+      expect(calculateIndicators(bars, 'PARKINSON')?.volatility20).toBeCloseTo(
+        90.86504229114065,
+        10,
+      );
+      // 종가가 평평하므로 기존 추정량은 0 이다.
+      expect(calculateIndicators(bars)?.volatility20).toBeCloseTo(0, 10);
+    });
+
+    it('창의 마지막 20봉만 본다', () => {
+      const bars = barsWithRange(
+        21,
+        Array.from({ length: 21 }, (_, index) => ({
+          // 창 밖인 첫 봉만 진폭이 다르다. 값이 달라지면 창을 잘못 잡은 것이다.
+          high: index === 0 ? 200 : 110,
+          low: 100,
+        })),
+      );
+
+      expect(calculateIndicators(bars, 'PARKINSON')?.volatility20).toBeCloseTo(
+        90.86504229114065,
+        10,
+      );
+    });
+
+    // 결측이 소수 종목에 뭉쳐 있어(2026-09-01 실측) 부분 창으로 계산하면 그 종목만
+    // 다른 표본 크기의 값을 받는다. 창이 다 차지 않으면 값을 내지 않는다.
+    it('고가·저가가 없는 봉이 창에 있으면 null 이다', () => {
+      const bars = barsWithRange(
+        21,
+        Array.from({ length: 21 }, (_, index) => ({
+          high: index === 20 ? null : 110,
+          low: index === 20 ? null : 100,
+        })),
+      );
+
+      expect(calculateIndicators(bars, 'PARKINSON')?.volatility20).toBeNull();
+    });
+
+    it('추정량을 주지 않으면 종가→종가로 잰다', () => {
+      const indicators = calculateIndicators(
+        barsFromCloses([...Array.from({ length: 20 }, () => 100), 110]),
+      );
+
+      expect(indicators?.volatility20).toBeCloseTo(35.4964786985977, 10);
+    });
+  });
 });
