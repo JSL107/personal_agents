@@ -12,7 +12,18 @@ export const BACKTEST_CLI_USAGE =
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
-const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
+export const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
+
+/**
+ * 탐색 축이 아닌 재생 손잡이의 기본값. 탐색기가 이 값을 그대로 써야 탐색 결과와
+ * `pnpm backtest` 한 회차가 같은 조건의 숫자가 된다 — 각자 상수를 들면 어느 날 둘이
+ * 갈려도 아무도 모른다.
+ */
+export const BACKTEST_DEFAULTS = {
+  seedAmount: '10000000',
+  maximumPositions: 3,
+  delistingRecoveryRate: 1,
+} as const;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
 const readOption = (argv: string[], key: string): string | undefined => {
@@ -107,7 +118,7 @@ const readExitBand = (argv: string[]): ExitBandThreshold | null => {
 const readDelistingRecoveryRate = (argv: string[]): number => {
   const raw = readOption(argv, 'delisting-recovery');
   if (raw === undefined) {
-    return 1;
+    return BACKTEST_DEFAULTS.delistingRecoveryRate;
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0 || value > 1) {
@@ -145,7 +156,7 @@ export const parseBacktestCliArguments = (
       `--strategy 는 LONG_TERM 또는 SWING 이어야 합니다.\n${BACKTEST_CLI_USAGE}`,
     );
   }
-  const seedAmount = readOption(argv, 'seed') ?? '10000000';
+  const seedAmount = readOption(argv, 'seed') ?? BACKTEST_DEFAULTS.seedAmount;
   if (!/^\d+$/u.test(seedAmount)) {
     throw new Error(
       `--seed 는 양의 정수여야 합니다. 받은 값: ${seedAmount}\n${BACKTEST_CLI_USAGE}`,
@@ -166,7 +177,11 @@ export const parseBacktestCliArguments = (
       'max-daily-gain',
       DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
     ),
-    maximumPositions: readPositiveNumber(argv, 'max-positions', 3),
+    maximumPositions: readPositiveNumber(
+      argv,
+      'max-positions',
+      BACKTEST_DEFAULTS.maximumPositions,
+    ),
     weightPercent: readOptionalPositiveNumber(argv, 'weight'),
     holdingTradeDays: readPositiveNumber(
       argv,

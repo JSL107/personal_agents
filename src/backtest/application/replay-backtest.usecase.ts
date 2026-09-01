@@ -49,6 +49,33 @@ import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
 const WARMUP_CALENDAR_DAYS = 400;
 const INDICATOR_BAR_LIMIT = 200;
 
+/**
+ * 같은 구간을 파라미터만 바꿔가며 여러 번 재생할 때, **파라미터와 무관한 계산**을 나눠 쓰는
+ * 그릇. 탐색기가 이것을 창 하나당 하나씩 만들어 넘긴다.
+ *
+ * 재생 1회의 97% 가 후보 산출(전 종목 지표 계산)이고, 그 계산의 입력은 `(종목·봉·기준일)`
+ * 뿐이라 청산 밴드·거래대금 하한·비중 어느 것에도 의존하지 않는다(실측: 거래대금 하한을
+ * 통과 불가능한 값으로 줘 주문이 7건만 나와도 60거래일 재생이 39.1초로, 정상 회차 40.1초와
+ * 같다). 조합마다 같은 계산을 다시 하면 밴드 축 하나가 13시간이 된다.
+ *
+ * **구간이 캐시의 정체성이다.** `findUniverse` 는 `from` 으로, 봉 조회는 `from`·`to` 로
+ * 범위가 갈리므로 다른 구간에 재사용하면 조용히 다른 표본을 재게 된다. `execute` 가 그
+ * 어긋남을 예외로 끊는다.
+ */
+export interface ReplayWindowCache {
+  readonly from: string;
+  readonly to: string;
+  tickers?: BacktestTicker[];
+  barsByTicker?: Map<number, BacktestBar[]>;
+  benchmarkCloses?: BenchmarkCloseInput[];
+  readonly candidatesByAsOf: Map<string, ScreenCandidate[]>;
+}
+
+export const createReplayWindowCache = (
+  from: string,
+  to: string,
+): ReplayWindowCache => ({ from, to, candidatesByAsOf: new Map() });
+
 export interface ReplayBacktestCommand {
   strategy: ScreenStrategy;
   from: string;
@@ -161,16 +188,36 @@ const nextWeekdayText = (dateText: string): string => {
 export class ReplayBacktestUsecase {
   constructor(private readonly repository: BacktestPrismaRepository) {}
 
-  async execute(command: ReplayBacktestCommand): Promise<ReplayBacktestResult> {
+  async execute(
+    command: ReplayBacktestCommand,
+    cache?: ReplayWindowCache,
+  ): Promise<ReplayBacktestResult> {
+    if (
+      cache !== undefined &&
+      (cache.from !== command.from || cache.to !== command.to)
+    ) {
+      throw new Error(
+        `재생 캐시가 다른 구간의 것입니다 ` +
+          `(캐시 ${cache.from}~${cache.to} / 요청 ${command.from}~${command.to}).`,
+      );
+    }
     // 유니버스 기준일은 재생 시작일이다. 그 뒤에 폐지된 종목도 살아 있던 날까지는 후보다.
-    const tickers = await this.repository.findUniverse(
-      new Date(`${command.from}T00:00:00.000Z`),
-    );
-    const barsByTicker = await this.repository.findBarsInRange(
-      tickers.map((ticker) => ticker.tickerId),
-      this.warmupFrom(command.from),
-      new Date(`${command.to}T00:00:00.000Z`),
-    );
+    const tickers =
+      cache?.tickers ??
+      (await this.repository.findUniverse(
+        new Date(`${command.from}T00:00:00.000Z`),
+      ));
+    const barsByTicker =
+      cache?.barsByTicker ??
+      (await this.repository.findBarsInRange(
+        tickers.map((ticker) => ticker.tickerId),
+        this.warmupFrom(command.from),
+        new Date(`${command.to}T00:00:00.000Z`),
+      ));
+    if (cache !== undefined) {
+      cache.tickers = tickers;
+      cache.barsByTicker = barsByTicker;
+    }
     const tickerById = new Map(
       tickers.map((ticker) => [ticker.tickerId, ticker]),
     );
@@ -274,14 +321,20 @@ export class ReplayBacktestUsecase {
           ledger,
           entryIndexByTicker,
           state,
+          candidatesByAsOf: cache?.candidatesByAsOf,
         });
       }
     }
 
-    const benchmarkCloses = await this.repository.findBenchmarkCloses(
-      new Date(`${command.from}T00:00:00.000Z`),
-      new Date(`${command.to}T00:00:00.000Z`),
-    );
+    const benchmarkCloses =
+      cache?.benchmarkCloses ??
+      (await this.repository.findBenchmarkCloses(
+        new Date(`${command.from}T00:00:00.000Z`),
+        new Date(`${command.to}T00:00:00.000Z`),
+      ));
+    if (cache !== undefined) {
+      cache.benchmarkCloses = benchmarkCloses;
+    }
 
     return this.buildResult({
       command,
@@ -732,6 +785,7 @@ export class ReplayBacktestUsecase {
     ledger: InMemoryPaperLedger;
     entryIndexByTicker: Map<number, number>;
     state: ReplayState;
+    candidatesByAsOf: Map<string, ScreenCandidate[]> | undefined;
   }): void {
     const targetTradeDate = nextWeekdayText(context.today);
     // 체결될 거래일이 구간 안에 없으면 그 주문은 영원히 PENDING 으로 남는다. 채점기는 이를
@@ -748,11 +802,13 @@ export class ReplayBacktestUsecase {
     if (asOf === null) {
       return;
     }
-    const candidates = this.buildCandidates(
-      context.tickers,
-      context.barsByTicker,
-      asOf,
-    );
+    // 캐시가 있으면 같은 구간의 앞선 재생이 만든 후보를 그대로 쓴다. `screenStocks` 도
+    // `constrainPaperRecommendation` 도 후보를 변형하지 않고 새 객체로 복사하므로,
+    // 조합이 바뀌어도 이 배열은 같은 값으로 남는다.
+    const candidates =
+      context.candidatesByAsOf?.get(asOf) ??
+      this.buildCandidates(context.tickers, context.barsByTicker, asOf);
+    context.candidatesByAsOf?.set(asOf, candidates);
     // 후보 단계에서 센다. 추천에 실린 것만 세면 "순위를 부풀린 이득이 얼마나 섞였나" 를
     // 놓친다 — 부풀린 값 때문에 다른 종목을 밀어낸 자리가 그쪽에는 남지 않는다.
     for (const candidate of candidates) {
