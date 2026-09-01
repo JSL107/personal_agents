@@ -453,6 +453,8 @@ pnpm docs:sync | docs:check | check:env        # 자동 생성 문서 갱신 · 
 pnpm check:invariants                          # 프로젝트 불변식 (TypeORM 금지 · 자율 플래그 등록 등)
 pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
                                                # 과거 구간 재생으로 매매 규칙 성적 측정 (DB 읽기 전용)
+pnpm param-search --from 2021-10-01 --to 2026-08-31 --take-profit 5,10,15 --stop-loss -3,-5,-7
+                                               # 파라미터 후보를 창마다 재생해 walk-forward 로 비교 (보고만)
 ```
 
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.
@@ -470,6 +472,17 @@ pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
 > 수집을 시작하기 전에 이미 폐지된 종목은 표본에 아예 없다. 역사적 유니버스를 따로 수집하기 전까지는 이 편향이 남는다.
 > 과거 깊이도 `before` 커서 백필로 상장일까지 소급할 수 있어 고정 상한이 아니다(실제 깊이는 백필을 어디까지 돌렸는지에 달렸다).
 > 배경은 [설계서 §12](./docs/superpowers/specs/2026-08-16-paper-trading-backtest-design.md) 에 있다 — 그날의 스냅샷이라 위 두 항목은 이후 바뀌었다.
+
+> **파라미터 탐색**: 백테스트를 여러 번 돌려 "어떤 값이 나은가" 를 비교한다. 구간을 6개월 창으로 잘라
+> 창마다 후보를 재생하고, **앞선 창들로 고른 값이 다음 창에서 현행값을 이겼는지**(walk-forward)로 판정한다.
+> 표본 밖 구간을 한 번만 여는 방식은 루프가 반복되면 그 구간에 맞춰진 값이 뽑히지만, 창을 미끄러뜨리면
+> 창이 하나 늘 때마다 표본 밖 판정이 하나 늘어 닳지 않는다.
+> `--take-profit` `--stop-loss` `--turnover-min` `--weight` 에 쉼표로 후보를 주면 그 축들의 전수 조합을 돈다.
+> **값을 주지 않은 축은 `strategy_parameter` 활성 행(현행값)으로 고정**되므로 축 하나만 훑을 수 있다.
+> **이 도구는 보고만 한다** — 활성 행을 바꾸지 않는다(원장 목표 12 의 PR ③ 범위).
+> 창 하나 안에서는 파라미터와 무관한 후보 산출(재생 시간의 97%)을 조합끼리 나눠 쓰므로 조합 하나를
+> 더하는 비용이 약 0.8초다. 대신 창 하나가 메모리를 2GB 넘게 쓰므로
+> `NODE_OPTIONS=--max-old-space-size=6144` 을 앞에 붙인다.
 
 ---
 
