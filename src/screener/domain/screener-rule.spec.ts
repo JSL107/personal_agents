@@ -25,6 +25,7 @@ const indicators = (
   high200Position: 0.9,
   volatility20: 15,
   turnover60: LIQUID_TURNOVER60,
+  highFallbackBarCount: 0,
   barCount: 200,
   ...overrides,
 });

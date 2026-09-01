@@ -17,6 +17,7 @@ const indicators: StockIndicators = {
   high200Position: 0.9,
   volatility20: 18.9,
   turnover60: 650_000_000,
+  highFallbackBarCount: 0,
   barCount: 200,
 };
 
@@ -27,6 +28,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
   evaluatedCount: 2_500,
   staleCount: 5,
   passedCount: 100,
+  highFallbackCount: 0,
   includedIndicators: [],
   stocks: [
     {
@@ -70,6 +72,7 @@ describe('formatScreenResult', () => {
       ...result('LONG_TERM'),
       evaluatedCount: 2_300,
       passedCount: 0,
+      highFallbackCount: 0,
       stocks: [],
     });
 

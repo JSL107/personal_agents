@@ -50,6 +50,11 @@ export interface ScreenUniverseResult {
   evaluatedCount: number;
   staleCount: number;
   passedCount: number;
+  // 평가 후보 중 고가가 없어 조정 종가로 대신한 봉이 섞인 종목 수. 대신 쓴 종가는 분모를
+  // 낮춰 `high200Position` 을 부풀리므로(활성 종목 실측 평균 7.26%) 순위에 이득을 준다.
+  // 운영 유니버스는 폐지 종목을 보지 않아 이 값이 보통 0 이다 — 0 이 아니면 5년 재적재 밖
+  // 구간이나 봉을 못 받는 종목이 섞였다는 신호다.
+  highFallbackCount: number;
   stocks: ScreenedStock[];
   includedIndicators: IncludedStockIndicators[];
   asOf: string | null;
@@ -152,6 +157,9 @@ export class ScreenUniverseUsecase {
       evaluatedCount: datedCandidates.length,
       staleCount,
       passedCount: passed.length,
+      highFallbackCount: candidates.filter(
+        (candidate) => candidate.indicators.highFallbackBarCount > 0,
+      ).length,
       stocks,
       includedIndicators,
       asOf,

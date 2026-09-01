@@ -90,6 +90,12 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
       `장중 손절 체결 ${result.intradayStopSellCount}건 (저가로 판정 · min(시가, 손절선)으로 체결)`,
     );
   }
+  // 0 건도 적는다. 줄이 없으면 "섞이지 않았다" 와 "세지 않았다" 가 구분되지 않는다.
+  // 값이 있으면 그 종목의 신고가 위치가 부풀려진 채 순위에 올랐다는 뜻이다.
+  lines.push(
+    `고가 결측 종가대체 후보 ${result.highFallback.candidateCount}건` +
+      ` · ${result.highFallback.tickerCount}종목 (신고가 위치가 부풀려짐)`,
+  );
   // 0 건도 적는다. 줄이 없으면 "폐지가 없던 구간" 과 "폐지를 안 본 구간" 이 구분되지 않는다.
   lines.push(
     `보유 중 상장폐지 청산 ${result.delistedLiquidation.count}건` +

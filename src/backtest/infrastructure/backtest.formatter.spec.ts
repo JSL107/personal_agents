@@ -37,6 +37,7 @@ const result: ReplayBacktestResult = {
   exitBand: null,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
+  highFallback: { candidateCount: 0, tickerCount: 0 },
   anomaliesByType: {},
   metrics: {
     weightExceededCount: 4,

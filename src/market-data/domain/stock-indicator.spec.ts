@@ -224,6 +224,34 @@ describe('calculateIndicators', () => {
     expect(indicators?.high200Position).toBeCloseTo(90 / 100, 10);
   });
 
+  // 계수 없이는 성적을 읽을 때 어느 종목이 종가 대체 이득을 봤는지 알 수 없다.
+  it('고가가 없어 종가로 대신한 봉 수를 센다', () => {
+    const closes = Array.from({ length: 200 }, () => 100);
+    const highs: (number | null)[] = closes.map((_, index) =>
+      index < 3 ? null : 100,
+    );
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.highFallbackBarCount).toBe(3);
+  });
+
+  // 200봉 계약과 같은 창을 본다. 창 밖의 결측을 세면 "지금 순위에 섞인 양" 이 아니게 된다.
+  it('200봉 창 밖의 고가 결측은 세지 않는다', () => {
+    const closes = Array.from({ length: 201 }, () => 100);
+    const highs: (number | null)[] = closes.map((_, index) =>
+      index === 0 ? null : 100,
+    );
+
+    const indicators = calculateIndicators(
+      barsFromCloses(closes, undefined, undefined, highs),
+    );
+
+    expect(indicators?.highFallbackBarCount).toBe(0);
+  });
+
   it('20개 일간 수익률의 표본표준편차는 n-1 분모로 계산한다', () => {
     const indicators = calculateIndicators(
       barsFromCloses([...Array.from({ length: 20 }, () => 100), 110]),

@@ -33,6 +33,11 @@ export interface StockIndicators {
   return6m: number | null;
   // 최근 200봉의 **장중 최고가** 기준. 고가가 없는 봉은 그 봉의 조정 종가로 대신한다.
   high200Position: number | null;
+  // 그 200봉 창에서 고가가 없어 조정 종가로 대신한 봉 수. 0 이 아니면 이 종목의
+  // `high200Position` 은 그만큼 옛 기준(최고 종가)이 섞인 값이고, 분모가 작아지는 방향이라
+  // **값이 부풀려진다**(활성 종목 2,559개 실측: 고가 기준 분모가 종가 기준보다 평균 7.26%
+  // 크다). 계수 없이는 성적을 읽을 때 어느 종목이 그 이득을 봤는지 알 수 없다.
+  highFallbackBarCount: number;
   volatility20: number | null;
   turnover60: number | null;
   barCount: number;
@@ -125,8 +130,9 @@ export const calculateIndicators = (
   // 장중에 찍고 내려온 고점까지 세려면 종가가 아니라 고가의 최대값이어야 한다.
   // 고가가 없는 봉은 그 봉의 조정 종가로 대신한다 — 종가는 언제나 고가 이하라 최대값을
   // 낮출 뿐 높이지 않으므로, 빠진 봉이 신고가를 지어내는 방향으로는 틀리지 않는다.
+  const recentBars = bars.slice(-200);
   const highest = Math.max(
-    ...bars.slice(-200).map((bar) => (bar.high ?? bar.adjClose).toNumber()),
+    ...recentBars.map((bar) => (bar.high ?? bar.adjClose).toNumber()),
   );
 
   return {
@@ -145,6 +151,7 @@ export const calculateIndicators = (
       bars.length < HIGH_POSITION_MINIMUM_BARS || highest === 0
         ? null
         : close / highest,
+    highFallbackBarCount: recentBars.filter((bar) => bar.high === null).length,
     volatility20: calculateVolatility20(closes),
     // 거래대금은 그날 실제 체결 금액이므로 원본 종가를 쓴다. 현재 수집은 adjusted=true이고
     // 토스 매퍼가 close·adjClose에 같은 값을 넣어 저장하지만, 최근 60봉 실측은 차이가 없었다.

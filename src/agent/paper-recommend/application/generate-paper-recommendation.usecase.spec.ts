@@ -30,6 +30,7 @@ const indicators = {
   high200Position: 0.95,
   volatility20: 15,
   turnover60: 800_000_000,
+  highFallbackBarCount: 0,
   barCount: 200,
 };
 
@@ -108,6 +109,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 2,
       staleCount: 0,
       passedCount: 1,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [],
@@ -313,6 +315,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 2,
       staleCount: 0,
       passedCount: 1,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [
@@ -408,6 +411,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 2,
       staleCount: 0,
       passedCount: 1,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [
@@ -529,6 +533,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 2,
       staleCount: 0,
       passedCount: 1,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [
@@ -715,6 +720,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 1,
       staleCount: 0,
       passedCount: 1,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [],
@@ -799,6 +805,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 2,
       staleCount: 0,
       passedCount: 2,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [],
@@ -900,6 +907,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 4,
       staleCount: 0,
       passedCount: 4,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [],
@@ -1128,6 +1136,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 1,
       staleCount: 0,
       passedCount: 0,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [
@@ -1218,6 +1227,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       evaluatedCount: 1,
       staleCount: 1,
       passedCount: 0,
+      highFallbackCount: 0,
       asOf: '2026-08-13',
       recordOutcome: null,
       includedIndicators: [],

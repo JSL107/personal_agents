@@ -89,6 +89,12 @@ export interface ReplayBacktestResult {
   // 따로 센다 — 둘을 합치면 "하루 안에 끝난 손절" 과 "다음 거래일 시가에 넘긴 손절" 이
   // 한 칸에 묻혀, 장중 재현을 넣기 전후 성적을 비교할 수 없다.
   intradayStopSellCount: number;
+  // 고가가 없어 조정 종가로 대신한 봉이 섞인 후보. 폐지 종목은 재적재 대상이 아니어서
+  // (`findUniverseTickers` 는 `delistedAt: null` 만 본다) 전 구간이 이 경로를 타고, 토스 404 라
+  // 앞으로도 채울 수 없다. 대신 쓴 종가는 분모(200봉 최고가)를 낮추므로 신고가 위치가
+  // **부풀려진다** — 활성 종목 2,559개 실측으로 평균 7.26% 다. 그 종목이 후보에 얼마나
+  // 올랐는지 모르면 성적에 섞인 이 이득의 크기를 읽을 수 없다.
+  highFallback: { candidateCount: number; tickerCount: number };
   // 보유 중 폐지돼 강제 청산된 건수와 그 청산 대금. 0 이면 이 구간에 폐지 보유가 없었다는
   // 뜻이지 폐지 종목이 후보에서 빠졌다는 뜻이 아니다.
   delistedLiquidation: { count: number; proceeds: string };
@@ -124,6 +130,8 @@ interface ReplayState {
   expiredCount: number;
   exitBandSells: { TAKE_PROFIT: number; STOP_LOSS: number };
   intradayStopSells: number;
+  highFallbackCandidateCount: number;
+  highFallbackTickerIds: Set<number>;
   delistedLiquidatedCount: number;
   delistedProceeds: number;
 }
@@ -190,6 +198,8 @@ export class ReplayBacktestUsecase {
       expiredCount: 0,
       exitBandSells: { TAKE_PROFIT: 0, STOP_LOSS: 0 },
       intradayStopSells: 0,
+      highFallbackCandidateCount: 0,
+      highFallbackTickerIds: new Set<number>(),
       delistedLiquidatedCount: 0,
       delistedProceeds: 0,
     };
@@ -743,6 +753,14 @@ export class ReplayBacktestUsecase {
       context.barsByTicker,
       asOf,
     );
+    // 후보 단계에서 센다. 추천에 실린 것만 세면 "순위를 부풀린 이득이 얼마나 섞였나" 를
+    // 놓친다 — 부풀린 값 때문에 다른 종목을 밀어낸 자리가 그쪽에는 남지 않는다.
+    for (const candidate of candidates) {
+      if (candidate.indicators.highFallbackBarCount > 0) {
+        context.state.highFallbackCandidateCount += 1;
+        context.state.highFallbackTickerIds.add(candidate.tickerId);
+      }
+    }
     const ranked = screenStocks(
       candidates,
       context.command.strategy,
@@ -904,6 +922,10 @@ export class ReplayBacktestUsecase {
         stopLoss: context.state.exitBandSells.STOP_LOSS,
       },
       intradayStopSellCount: context.state.intradayStopSells,
+      highFallback: {
+        candidateCount: context.state.highFallbackCandidateCount,
+        tickerCount: context.state.highFallbackTickerIds.size,
+      },
       delistedLiquidation: {
         count: context.state.delistedLiquidatedCount,
         proceeds: String(context.state.delistedProceeds),
