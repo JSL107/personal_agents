@@ -80,6 +80,21 @@ const risingBars = (
     ],
   ]);
 
+// SWING 은 `close > ma20` 에 더해 `volumeSurge >= 1.5` 를 요구한다. 거래량이 상수면
+// surge 가 1.0 이라 SWING 후보가 0 건이 되고, 전략 축을 태우는 테스트가 아무것도
+// 검증하지 못한 채 통과한다. 하루걸러 거래량을 띄우면 직전 20봉 평균이 400k 이고
+// 그날은 700k 라 surge 가 1.75 다.
+const swingPassingBars = (): Map<number, BacktestBar[]> =>
+  new Map([
+    [
+      11,
+      buildBars(
+        (index) => 5000 + index * 32,
+        (index) => (index % 2 === 0 ? 700_000 : 100_000),
+      ),
+    ],
+  ]);
+
 const staleExitBandBars = (): Map<number, BacktestBar[]> => {
   const tickerBars = buildBars(
     (index) => (index === 213 ? (5000 + index * 32) * 1.1 : 5000 + index * 32),
@@ -722,6 +737,33 @@ describe('ReplayBacktestUsecase', () => {
 
       expect(JSON.stringify(banded)).toBe(JSON.stringify(bandedAlone));
       expect(JSON.stringify(bandless)).toBe(JSON.stringify(bandlessAlone));
+    });
+
+    it('두 전략이 한 캐시를 나눠 써도 각각 단독으로 돌린 것과 같다', async () => {
+      // 탐색기는 창 하나의 캐시를 LONG_TERM·SWING 이 함께 쓴다. 후보 산출이 전략을
+      // 인자로 받지 않아 지금은 안전하지만, 누가 그 함수에 전략을 들이면 이 경로가
+      // 조용히 깨진다 — 그때 실패할 자리를 만들어 둔다.
+      const swingCommand = { ...command, strategy: 'SWING' as const };
+      const longTermAlone = await new ReplayBacktestUsecase(
+        repositoryOf(swingPassingBars()),
+      ).execute(command);
+      const swingAlone = await new ReplayBacktestUsecase(
+        repositoryOf(swingPassingBars()),
+      ).execute(swingCommand);
+
+      const repository = repositoryOf(swingPassingBars());
+      const usecase = new ReplayBacktestUsecase(repository);
+      const cache = createReplayWindowCache(command.from, command.to);
+      const longTerm = await usecase.execute(command, cache);
+      const swing = await usecase.execute(swingCommand, cache);
+
+      // 두 전략이 실제로 주문을 내야 이 비교가 검증력을 갖는다. 0 건끼리 같은 것은
+      // 캐시가 전략을 섞어도 통과한다.
+      expect(swingAlone.orderCount).toBeGreaterThan(0);
+      expect(longTermAlone.orderCount).toBeGreaterThan(0);
+      expect(JSON.stringify(longTerm)).toBe(JSON.stringify(longTermAlone));
+      expect(JSON.stringify(swing)).toBe(JSON.stringify(swingAlone));
+      expect(repository.findUniverse).toHaveBeenCalledTimes(1);
     });
 
     it('캐시를 재사용하면 종목·봉 조회를 다시 하지 않는다', async () => {

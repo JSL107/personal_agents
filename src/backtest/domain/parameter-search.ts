@@ -110,11 +110,35 @@ export interface ParameterCombination {
   maximumWeightPercent: number;
 }
 
+/**
+ * 라벨은 표시용이지만 **값과 일대일이어야 한다** — 리포트가 라벨로 조합을 집계하므로,
+ * 서로 다른 값이 같은 라벨을 받으면 표에서 두 행이 겹친다. 억 단위 두 자리로 반올림하면
+ * 3.001억과 3.002억이 둘 다 `3.00억` 이 되므로, 반올림이 값을 잃으면 원 단위로 적는다.
+ */
 export const formatTurnoverLabel = (value: number): string => {
   const billion = value / 100_000_000;
-  const text = Number.isInteger(billion) ? String(billion) : billion.toFixed(2);
-  return `${text}억`;
+  if (Number.isInteger(billion)) {
+    return `${billion}억`;
+  }
+  const rounded = Number(billion.toFixed(2));
+  if (rounded * 100_000_000 === value) {
+    return `${rounded}억`;
+  }
+  return `${value}원`;
 };
+
+/**
+ * 중복 제거에 쓰는 키. **표시용 라벨이 아니라 값으로 가른다** — 라벨은 사람이 읽으라고
+ * 반올림·축약이 들어갈 수 있고, 그때 서로 다른 후보가 같은 키를 받으면 격자가 후보를
+ * 조용히 하나 삼킨다. 사용자가 준 후보 수와 실제로 도는 수가 갈리는데 아무 신호가 없다.
+ */
+const combinationKeyOf = (combination: ParameterCombination): string =>
+  [
+    combination.takeProfitPercent,
+    combination.stopLossPercent,
+    combination.minimumTurnover60,
+    combination.maximumWeightPercent,
+  ].join('|');
 
 export const formatCombinationLabel = (
   combination: ParameterCombination,
@@ -152,11 +176,11 @@ export const buildParameterGrid = (
   const combinations: ParameterCombination[] = [];
   const seen = new Set<string>();
   const push = (combination: ParameterCombination): void => {
-    const label = formatCombinationLabel(combination);
-    if (seen.has(label)) {
+    const key = combinationKeyOf(combination);
+    if (seen.has(key)) {
       return;
     }
-    seen.add(label);
+    seen.add(key);
     combinations.push(combination);
   };
   push(input.baseline);
@@ -230,10 +254,10 @@ export const rankWithinWindow = (
   let previousValue: number | null = null;
   let previousRank = 0;
   sorted.forEach((outcome, index) => {
-    const isTie =
-      outcome.excessReturnPercent !== null &&
-      previousValue !== null &&
-      outcome.excessReturnPercent === previousValue;
+    // 값이 없는 조합끼리도 동점이다. `null` 을 동점에서 빼면 라벨 알파벳 순이 순위가 되어,
+    // 아무것도 재지 못한 조합들 사이에 **이름으로 매긴 서열**이 생기고 그 서열이 순위
+    // 평균을 타고 walk-forward 후보 선택까지 개입한다.
+    const isTie = index > 0 && outcome.excessReturnPercent === previousValue;
     const rank = isTie ? previousRank : index + 1;
     ranks.set(outcome.label, rank);
     previousValue = outcome.excessReturnPercent;

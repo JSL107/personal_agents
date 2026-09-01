@@ -163,6 +163,25 @@ describe('buildParameterGrid', () => {
     expect(grid).toHaveLength(1);
   });
 
+  it('라벨이 같아 보이는 값도 서로 다른 후보로 남긴다', () => {
+    // 억 단위 두 자리 반올림으로 3.001억과 3.002억이 같은 라벨이 되면, 중복 제거가
+    // 후보 하나를 조용히 삼켜 사용자가 준 수와 실제로 도는 수가 갈린다.
+    const grid = buildParameterGrid({
+      takeProfitPercents: [10],
+      stopLossPercents: [-5],
+      minimumTurnover60s: [300_100_000, 300_200_000],
+      maximumWeightPercents: [20],
+      includeBandless: false,
+      baseline: BASELINE,
+    });
+
+    expect(
+      grid.slice(1).map((combination) => combination.minimumTurnover60),
+    ).toEqual([300_100_000, 300_200_000]);
+    // 리포트가 라벨로 조합을 집계하므로 라벨도 갈려 있어야 표에서 두 행이 겹치지 않는다.
+    expect(new Set(grid.map(formatCombinationLabel)).size).toBe(grid.length);
+  });
+
   it('무밴드 대조군은 밴드 축과 무관하게 조합마다 하나만 붙는다', () => {
     const grid = buildParameterGrid({
       takeProfitPercents: [5, 10],
@@ -202,6 +221,20 @@ describe('rankWithinWindow', () => {
 
     expect(ranks.get('B')).toBe(1);
     expect(ranks.get('A')).toBe(2);
+  });
+
+  it('값이 없는 조합끼리도 동점이다', () => {
+    // null 을 동점에서 빼면 라벨 알파벳 순이 순위가 되어, 아무것도 재지 못한 조합들
+    // 사이에 이름으로 매긴 서열이 생기고 그것이 walk-forward 후보 선택까지 개입한다.
+    const ranks = rankWithinWindow([
+      outcomeOf(1, 'A', null),
+      outcomeOf(1, 'B', null),
+      outcomeOf(1, 'C', -5),
+    ]);
+
+    expect(ranks.get('C')).toBe(1);
+    expect(ranks.get('A')).toBe(2);
+    expect(ranks.get('B')).toBe(2);
   });
 
   it('동점은 같은 순위를 준다', () => {
