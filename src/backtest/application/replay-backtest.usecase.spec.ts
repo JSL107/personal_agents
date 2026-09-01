@@ -5,6 +5,7 @@ import { BacktestBar, BacktestTicker } from '../domain/backtest-bar.type';
 import { BacktestPrismaRepository } from '../infrastructure/backtest.prisma.repository';
 import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
 import {
+  createReplayWindowCache,
   ReplayBacktestResult,
   ReplayBacktestUsecase,
 } from './replay-backtest.usecase';
@@ -75,6 +76,21 @@ const risingBars = (
         () => 200_000,
         openAt,
         lowAt,
+      ),
+    ],
+  ]);
+
+// SWING 은 `close > ma20` 에 더해 `volumeSurge >= 1.5` 를 요구한다. 거래량이 상수면
+// surge 가 1.0 이라 SWING 후보가 0 건이 되고, 전략 축을 태우는 테스트가 아무것도
+// 검증하지 못한 채 통과한다. 하루걸러 거래량을 띄우면 직전 20봉 평균이 400k 이고
+// 그날은 700k 라 surge 가 1.75 다.
+const swingPassingBars = (): Map<number, BacktestBar[]> =>
+  new Map([
+    [
+      11,
+      buildBars(
+        (index) => 5000 + index * 32,
+        (index) => (index % 2 === 0 ? 700_000 : 100_000),
       ),
     ],
   ]);
@@ -729,5 +745,128 @@ describe('ReplayBacktestUsecase', () => {
 
     expect(first.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  // 탐색기가 창 하나를 수십 번 재생하려고 후보 산출을 나눠 쓴다. 그 재사용이 성적을
+  // 조금이라도 바꾸면 탐색 결과 전체가 재생의 성적이 아니라 캐시의 성적이 된다.
+  describe('창 캐시', () => {
+    it('캐시를 껴도 캐시 없이 돌린 것과 완전히 같은 결과가 나온다', async () => {
+      const withoutCache = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(commandWithExitBand);
+      const withCache = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(
+        commandWithExitBand,
+        createReplayWindowCache(
+          commandWithExitBand.from,
+          commandWithExitBand.to,
+          commandWithExitBand.volatilityEstimator,
+        ),
+      );
+
+      expect(JSON.stringify(withCache)).toBe(JSON.stringify(withoutCache));
+    });
+
+    it('한 캐시로 다른 파라미터를 이어 돌려도 각각 단독으로 돌린 것과 같다', async () => {
+      const bandlessAlone = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(command);
+      const bandedAlone = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute({ ...commandWithExitBand, from: command.from, to: command.to });
+
+      const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+      const cache = createReplayWindowCache(
+        command.from,
+        command.to,
+        command.volatilityEstimator,
+      );
+      const banded = await usecase.execute(
+        { ...commandWithExitBand, from: command.from, to: command.to },
+        cache,
+      );
+      const bandless = await usecase.execute(command, cache);
+
+      expect(JSON.stringify(banded)).toBe(JSON.stringify(bandedAlone));
+      expect(JSON.stringify(bandless)).toBe(JSON.stringify(bandlessAlone));
+    });
+
+    it('두 전략이 한 캐시를 나눠 써도 각각 단독으로 돌린 것과 같다', async () => {
+      // 탐색기는 창 하나의 캐시를 LONG_TERM·SWING 이 함께 쓴다. 후보 산출이 전략을
+      // 인자로 받지 않아 지금은 안전하지만, 누가 그 함수에 전략을 들이면 이 경로가
+      // 조용히 깨진다 — 그때 실패할 자리를 만들어 둔다.
+      const swingCommand = { ...command, strategy: 'SWING' as const };
+      const longTermAlone = await new ReplayBacktestUsecase(
+        repositoryOf(swingPassingBars()),
+      ).execute(command);
+      const swingAlone = await new ReplayBacktestUsecase(
+        repositoryOf(swingPassingBars()),
+      ).execute(swingCommand);
+
+      const repository = repositoryOf(swingPassingBars());
+      const usecase = new ReplayBacktestUsecase(repository);
+      const cache = createReplayWindowCache(
+        command.from,
+        command.to,
+        command.volatilityEstimator,
+      );
+      const longTerm = await usecase.execute(command, cache);
+      const swing = await usecase.execute(swingCommand, cache);
+
+      // 두 전략이 실제로 주문을 내야 이 비교가 검증력을 갖는다. 0 건끼리 같은 것은
+      // 캐시가 전략을 섞어도 통과한다.
+      expect(swingAlone.orderCount).toBeGreaterThan(0);
+      expect(longTermAlone.orderCount).toBeGreaterThan(0);
+      expect(JSON.stringify(longTerm)).toBe(JSON.stringify(longTermAlone));
+      expect(JSON.stringify(swing)).toBe(JSON.stringify(swingAlone));
+      expect(repository.findUniverse).toHaveBeenCalledTimes(1);
+    });
+
+    it('캐시를 재사용하면 종목·봉 조회를 다시 하지 않는다', async () => {
+      const repository = repositoryOf(risingBars());
+      const usecase = new ReplayBacktestUsecase(repository);
+      const cache = createReplayWindowCache(
+        command.from,
+        command.to,
+        command.volatilityEstimator,
+      );
+
+      await usecase.execute(command, cache);
+      await usecase.execute(command, cache);
+
+      expect(repository.findUniverse).toHaveBeenCalledTimes(1);
+      expect(repository.findBarsInRange).toHaveBeenCalledTimes(1);
+      expect(repository.findBenchmarkCloses).toHaveBeenCalledTimes(1);
+    });
+
+    it('변동성 추정량이 다른 캐시를 넘기면 끊는다', async () => {
+      // 추정량은 후보의 지표 자체를 바꿔 순위를 재편한다(바로 위 테스트가 그것을
+      // 증명한다). 캐시가 그것을 정체성으로 안 들면 PARKINSON 회차가 CLOSE_TO_CLOSE
+      // 후보를 조용히 재사용해, 손잡이를 돌려도 성적이 안 바뀌는 것처럼 보인다.
+      const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+      await expect(
+        usecase.execute(
+          { ...command, volatilityEstimator: 'PARKINSON' },
+          createReplayWindowCache(command.from, command.to, 'CLOSE_TO_CLOSE'),
+        ),
+      ).rejects.toThrow('재생 캐시가 다른 조건의 것입니다');
+    });
+
+    it('다른 구간의 캐시를 넘기면 조용히 쓰지 않고 끊는다', async () => {
+      const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+      await expect(
+        usecase.execute(
+          command,
+          createReplayWindowCache(
+            command.from,
+            dateText(TRADE_DATES[239]),
+            command.volatilityEstimator,
+          ),
+        ),
+      ).rejects.toThrow('재생 캐시가 다른 조건의 것입니다');
+    });
   });
 });
