@@ -62,6 +62,22 @@ describe('formatParameterSearchReport', () => {
     expect(report).toContain('사이클당 평균');
   });
 
+  it('창당 체결을 합계가 아니라 창당 평균으로 찍는다', () => {
+    // 합계를 그대로 찍으면 창 수가 다른 조합끼리 회전을 견줄 수 없다.
+    const report = formatParameterSearchReport({
+      ...REPORT,
+      outcomes: REPORT.outcomes.map((outcome) => ({
+        ...outcome,
+        filledCount: outcome.label === '+5/-3 · 5억 · 20%' ? 411 : 100,
+      })),
+    });
+
+    // 창 3개 x 411 = 1,233 이므로 창당 411 이 찍혀야 한다(합계 1233 이 아니다).
+    expect(report).toContain('| 411 |');
+    expect(report).not.toContain('| 1233 |');
+    expect(report).toContain('| 100 |');
+  });
+
   it('현행값 행을 표에서 눈에 띄게 표시한다', () => {
     const report = formatParameterSearchReport(REPORT);
 

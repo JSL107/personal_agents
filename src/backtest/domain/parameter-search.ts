@@ -294,9 +294,11 @@ export interface CombinationSummary {
   winCount: number;
   comparableCount: number;
   closedCountTotal: number;
-  // 회전. 초과수익은 **사이클당 평균**이라 회전이 두 배인 조합과 아닌 조합을 같게 대우한다
-  // (`shadow-performance.ts` 의 `meanExcessReturnRate`). 슬리피지·시장충격처럼 체결마다
-  // 붙는 비용은 그 지표에 아예 안 잡히므로, 순위와 나란히 회전을 보여야 판단이 성립한다.
+  // 회전. 초과수익은 **사이클당 평균**이라(`shadow-performance.ts` 의
+  // `meanExcessReturnRate`) 체결마다 붙는 비용이 사이클마다 같은 비율이면 모든 조합을
+  // 똑같이 깎아 순위에 잡히지 않는다 — 회전이 두 배인 조합도 같은 대우를 받는다. 비용률이
+  // 종목마다 다르면 순위가 조금 움직이지만 회전 차이가 반영되지 않는 방향은 같으므로,
+  // 순위와 나란히 회전을 보여야 판단이 성립한다.
   filledCountTotal: number;
   windowCount: number;
 }
