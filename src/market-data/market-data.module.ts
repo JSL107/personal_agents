@@ -5,6 +5,7 @@ import { BROKER_HOLDINGS_PORT } from './domain/port/broker-holdings.port';
 import { MARKET_DATA_PORT } from './domain/port/market-data.port';
 import { MARKET_INDICATOR_PORT } from './domain/port/market-indicator.port';
 import { BenchmarkPrismaRepository } from './infrastructure/benchmark.prisma.repository';
+import { KrxDelistingClient } from './infrastructure/krx/krx-delisting.client';
 import { KrxListingClient } from './infrastructure/krx/krx-listing.client';
 import { MarketDataPrismaRepository } from './infrastructure/market-data.prisma.repository';
 import { TossApiClient } from './infrastructure/toss/toss-api.client';
@@ -17,6 +18,7 @@ import { YahooFinanceMarketDataClient } from './infrastructure/yahoo-finance.mar
   imports: [PrismaModule],
   providers: [
     TossApiClient,
+    KrxDelistingClient,
     KrxListingClient,
     MarketDataPrismaRepository,
     BenchmarkPrismaRepository,
@@ -32,6 +34,7 @@ import { YahooFinanceMarketDataClient } from './infrastructure/yahoo-finance.mar
     MARKET_DATA_PORT,
     MARKET_INDICATOR_PORT,
     BROKER_HOLDINGS_PORT,
+    KrxDelistingClient,
     KrxListingClient,
     MarketDataPrismaRepository,
     BenchmarkPrismaRepository,
