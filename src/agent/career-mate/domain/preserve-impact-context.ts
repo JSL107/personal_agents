@@ -1,5 +1,5 @@
-import { evidenceKey } from '../application/merge-accomplishment';
 import { CareerProfileData } from './career-mate.type';
+import { evidenceKey } from './evidence-key';
 
 // 사람이 승인 카드에 직접 적은 맥락(impactContext)을 프로필을 다시 쓸 때 지켜낸다.
 //

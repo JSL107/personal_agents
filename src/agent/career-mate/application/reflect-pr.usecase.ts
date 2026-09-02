@@ -167,7 +167,13 @@ export class ReflectPrUsecase {
           }),
         });
         // humanizeCareerProfile 은 서술 필드만 윤문하고 meta 는 spread 로 보존한다(회귀 0).
-        const humanized = await humanizeCareerProfile(merged, this.humanizer);
+        // 직전 프로필을 함께 넘겨 이번에 바뀐 성과만 윤문한다 — 안 넘기면 누적 성과 전체를
+        // 회차마다 다시 윤문해 payload 가 계속 커지고, 끝내 codex timeout 을 넘겨 실패한다.
+        const humanized = await humanizeCareerProfile(
+          merged,
+          this.humanizer,
+          latest?.profileJson ?? null,
+        );
 
         await this.repository.save({
           agentRunId: context.agentRunId,
