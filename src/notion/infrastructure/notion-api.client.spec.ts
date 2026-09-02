@@ -389,7 +389,7 @@ describe('NotionApiClient', () => {
       { block_id: 'draft-page', start_cursor: 'cursor-2', page_size: 100 },
     ]);
     expect(markdown).toBe(
-      '# 제목\n\n```typescript\nconst page = 1;\n```\n\n```typescript\nconst page = 2;\n```',
+      '## 제목\n\n```typescript\nconst page = 1;\n```\n\n```typescript\nconst page = 2;\n```',
     );
   });
 

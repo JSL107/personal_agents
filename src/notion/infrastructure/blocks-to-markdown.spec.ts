@@ -2,14 +2,14 @@ import { blocksToMarkdown } from './blocks-to-markdown';
 import { markdownToBlocks } from './markdown-to-blocks';
 
 describe('blocksToMarkdown', () => {
-  it('heading_2, heading_3, paragraph을 원본 마크다운 구조로 복원한다', () => {
+  it('heading 세 층과 paragraph 을 원본 마크다운 구조로 복원한다', () => {
     const markdown = blocksToMarkdown([
       { type: 'heading_2', text: '제목' },
       { type: 'heading_3', text: '소제목' },
       { type: 'paragraph', text: '본문' },
     ]);
 
-    expect(markdown).toBe(['# 제목', '## 소제목', '본문'].join('\n\n'));
+    expect(markdown).toBe(['## 제목', '### 소제목', '본문'].join('\n\n'));
   });
 
   it('paragraph code fence 사이에는 빈 줄을 넣지 않는다', () => {
@@ -106,13 +106,15 @@ describe('blocksToMarkdown', () => {
 
   // 저녁 블로그 applier 가 마크다운을 적재할 때 `# ` 를 heading_2, `## ` 를 heading_3 으로 넣는다
   // (evening-blog-publish.applier.ts). 역변환은 그 대칭을 지켜야 원본 제목 계층이 복원된다.
-  it('heading_2 는 # 로, heading_3 는 ## 로 되돌린다', () => {
+  // 층을 뭉치면 적재 전에 미리 내리는 보정이 필요해지고, 그 보정이 `##`·`###` 를 한 층으로
+  // 만들어 계층을 쓴 글이 발행본에서 평탄화된다(`study-deepdive.parser.ts`).
+  it('heading_2 는 ## 로, heading_3 는 ### 로 층을 지켜 되돌린다', () => {
     const markdown = blocksToMarkdown([
       { type: 'heading_2', text: '제목' },
       { type: 'heading_3', text: '소제목' },
       { type: 'paragraph', text: '본문' },
     ]);
 
-    expect(markdown).toBe(['# 제목', '', '## 소제목', '', '본문'].join('\n'));
+    expect(markdown).toBe(['## 제목', '', '### 소제목', '', '본문'].join('\n'));
   });
 });

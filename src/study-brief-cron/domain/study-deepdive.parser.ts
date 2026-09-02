@@ -55,11 +55,14 @@ export const parseStudyDeepdive = (raw: string): StudyDeepdiveDraft => {
   };
 };
 
-// Notion 왕복은 헤딩 레벨을 한 단계 **올린다**: `## ` 는 heading_2 로 적재되고
-// (markdown-to-blocks.ts 가 `##` 를 heading, `###` 를 subheading 으로 본다), 발행 라인이
-// 되읽을 때 heading_2 는 `# ` 로 복원된다(blocks-to-markdown.ts). 그대로 두면 소제목마다
-// h1 이 생긴다 — 실측에서 소제목 7개가 전부 `# ` 로 돌아왔다.
-// 적재 전에 한 단계 내려 두면 왕복 후 `## ` 로 제자리에 온다.
+// `# ` 로 시작하는 줄만 `## ` 로 내린다. 글 제목은 발행 라인이 front matter 로 따로 붙이므로
+// 본문에 h1 이 있으면 제목이 둘이 되고, `markdown-to-blocks.ts` 에는 `# ` 규칙이 아예 없어
+// 그 줄이 헤딩이 아니라 평문 문단으로 적재된다.
+//
+// **`## ` 와 `### ` 는 건드리지 않는다.** 예전에는 세 층을 전부 `### ` 로 만들었다 — Notion
+// 왕복이 헤딩을 한 단계 올리던 시절의 보정이었는데(heading_2 가 `# ` 로 복원됐다), 그 보정이
+// 두 층을 한 층으로 뭉개 계층을 쓴 글이 발행본에서 평탄화됐다. 이제 `blocks-to-markdown.ts`
+// 가 heading_2 를 `## ` 로 되돌리므로 층이 그대로 왕복한다.
 //
 // 코드블록 안은 건드리지 않는다. 셸·Python 예시의 `# 주석` 이 소제목으로 바뀌면 코드가 깨진다.
 const normalizeHeadingLevels = (body: string): string => {
@@ -74,7 +77,7 @@ const normalizeHeadingLevels = (body: string): string => {
       if (insideFence) {
         return line;
       }
-      return line.replace(/^#{1,3}(\s+)/, '###$1');
+      return line.replace(/^#(?!#)(\s+)/, '##$1');
     })
     .join('\n');
 };

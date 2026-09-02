@@ -19,8 +19,8 @@ describe('parseStudyDeepdive', () => {
 
     expect(parsed.title).toBe('에이전트 권한 경계 설계');
     expect(parsed.tags).toEqual(['llm', 'security', 'agent']);
-    // 적재 전에 한 단계 내려 둔다 — Notion 왕복이 레벨을 올려 `## ` 로 되돌아온다.
-    expect(parsed.bodyMd.startsWith('### 어디서 문제가 되나')).toBe(true);
+    // `## ` 는 그대로 둔다 — Notion 왕복이 층을 지키므로 내릴 이유가 없다.
+    expect(parsed.bodyMd.startsWith('## 어디서 문제가 되나')).toBe(true);
   });
 
   it('헤더 앞에 붙은 잡담을 건너뛴다', () => {
@@ -101,7 +101,9 @@ describe('parseStudyDeepdive', () => {
 
   // Notion 왕복(`## ` → heading_2 → `# `)이 소제목마다 h1 을 만드는 것을 막는 정규화.
   // 실측에서 소제목 7개가 전부 `# ` 로 되돌아왔다.
-  it('본문 헤딩을 세 단계로 내려 적재한다', () => {
+  // 두 층을 보존해야 한다. 예전에는 세 층을 전부 `### ` 로 만들어, 계층을 쓴 글이 발행본에서
+  // 한 층으로 평탄화됐다.
+  it('h1 만 h2 로 내리고 나머지 층은 그대로 둔다', () => {
     const raw = [
       'TITLE: 제목',
       'TAGS: a',
@@ -115,8 +117,8 @@ describe('parseStudyDeepdive', () => {
     const lines = parseStudyDeepdive(raw).bodyMd.split('\n');
 
     expect(lines.slice(0, 3)).toEqual([
-      '### 한 단계',
-      '### 두 단계',
+      '## 한 단계',
+      '## 두 단계',
       '### 세 단계',
     ]);
   });
@@ -138,7 +140,7 @@ describe('parseStudyDeepdive', () => {
     const bodyMd = parseStudyDeepdive(raw).bodyMd;
 
     expect(bodyMd).toContain('# 이건 주석이다');
-    expect(bodyMd).not.toContain('### 이건 주석이다');
-    expect(bodyMd).toContain('### 소제목');
+    expect(bodyMd).not.toContain('## 이건 주석이다');
+    expect(bodyMd).toContain('## 소제목');
   });
 });
