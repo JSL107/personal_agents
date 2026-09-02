@@ -47,10 +47,15 @@ const toMarkdown = (block: NotionReadBlock, fenceOpen: boolean): string => {
 
   switch (block.type) {
     case 'heading_1':
-    case 'heading_2':
       return `# ${text}`;
-    case 'heading_3':
+    // heading_2 를 `##` 로 되돌린다. 예전에는 heading_1 과 함께 `#` 로 뭉쳤고, 그래서
+    // 왕복이 헤딩을 한 단계 올리는 셈이라 적재 전에 미리 내리는 정규화가 필요했다
+    // (`study-deepdive.parser.ts`). 그 정규화가 `##`·`###` 를 한 층으로 뭉개, 두 층으로 쓴
+    // 글이 발행본에서 평탄화됐다. 층을 그대로 옮기면 정규화도 h1 방어만 남는다.
+    case 'heading_2':
       return `## ${text}`;
+    case 'heading_3':
+      return `### ${text}`;
     case 'bulleted_list_item':
       return `- ${text}`;
     case 'numbered_list_item':
