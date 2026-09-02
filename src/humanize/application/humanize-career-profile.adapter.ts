@@ -1,8 +1,8 @@
-import { evidenceKey } from '../../agent/career-mate/application/merge-accomplishment';
 import {
   CareerProfileData,
   ProfileAccomplishment,
 } from '../../agent/career-mate/domain/career-mate.type';
+import { evidenceKey } from '../../agent/career-mate/domain/evidence-key';
 import { HumanizeService } from './humanize.service';
 
 // 이전 프로필에서 같은 PR 의 성과를 찾기 위한 색인. evidence 가 없는 항목은 evidenceKey 가

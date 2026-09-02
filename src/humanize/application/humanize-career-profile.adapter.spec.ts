@@ -190,6 +190,24 @@ describe('humanizeCareerProfile', () => {
       expect(result.accomplishments[0].title).toBe('타이틀1');
     });
 
+    it('바뀐 필드가 하나도 없으면 payload 가 비고 프로필은 원본 그대로다', async () => {
+      const previous: CareerProfileData = {
+        ...baseProfile(),
+        summary: '이미 다듬은 요약',
+        accomplishments: [accomplishmentAt(1)],
+      };
+      const humanizer = passthroughHumanizer();
+
+      // 같은 PR 을 다시 회고했는데 모델이 같은 문장을 돌려준 경우 — 모든 필드가 "이전과 같음" 이다.
+      const result = await humanizeCareerProfile(previous, humanizer, previous);
+
+      const payload = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+      expect(payload).toEqual({});
+      // 빈 payload 에는 HumanizeService 가 모델을 부르지 않고 빈 맵을 돌려준다.
+      // 그때도 `?? 원본` 역참조가 저장된 윤문본을 그대로 복원해야 한다.
+      expect(result).toEqual(previous);
+    });
+
     it('evidence 가 없어 짝을 못 찾는 성과는 건너뛰지 않고 전부 윤문한다', async () => {
       const orphan = { ...accomplishmentAt(1), evidence: [] };
       const previous: CareerProfileData = {
