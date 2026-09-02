@@ -17,6 +17,9 @@ export interface SearchWindowSummary {
 
 export interface ParameterSearchReport {
   strategy: ScreenStrategy;
+  // 전략 말고도 회차를 가르는 조건이 있으면 제목에 함께 적는다(예: 슬리피지 회차).
+  // 없으면 제목이 전략 하나다 — 조건이 안 적힌 표는 어느 가정의 성적인지 알 수 없다.
+  conditionLabel?: string;
   baselineLabel: string;
   windows: SearchWindowSummary[];
   outcomes: WindowOutcome[];
@@ -165,7 +168,7 @@ export const formatParameterSearchReport = (
     report.outcomes.map((outcome) => outcome.label),
   ).size;
   return [
-    `## ${report.strategy}`,
+    `## ${report.strategy}${report.conditionLabel === undefined ? '' : ` · ${report.conditionLabel}`}`,
     '',
     `현행값 ${report.baselineLabel} · 조합 ${combinationCount}개 · ` +
       `창 ${report.windows.length}개 · 재생 ${report.outcomes.length}회`,

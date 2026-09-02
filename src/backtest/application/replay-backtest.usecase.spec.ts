@@ -209,6 +209,7 @@ const command = {
   exitBand: null,
   delistingRecoveryRate: 1,
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
+  slippagePercent: 0,
 };
 
 const commandWithExitBand = {
@@ -800,6 +801,112 @@ describe('ReplayBacktestUsecase', () => {
 
     expect(first.exitBandSellCounts.takeProfit).toBeGreaterThan(0);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  // 슬리피지 손잡이는 "체결가가 x% 불리했다면 결론이 살아남나" 를 재는 수단이라,
+  // 값을 올릴수록 성적이 나빠지지 않으면 그 측정이 통째로 무의미하다.
+  describe('체결가 슬리피지', () => {
+    // 재생의 체결 경로는 셋이다 — 시가 체결·장중 손절·폐지 청산. 한 경로만 빠져도 그 경로를
+    // 많이 타는 조합이 슬리피지를 덜 물어 순위가 왜곡되므로, 시가 체결 말고 나머지 둘도 각각
+    // 지킨다.
+    it('폐지 청산 대금에도 걸린다', async () => {
+      const tickers = [{ ...TICKERS[0], delistedAt: TRADE_DATES[230] }];
+      const proceedsOf = async (slippagePercent: number): Promise<number> => {
+        const result = await new ReplayBacktestUsecase(
+          repositoryOf(risingBars(), tickers),
+        ).execute({ ...command, slippagePercent });
+        expect(result.delistedLiquidation.count).toBe(1);
+        return Number(result.delistedLiquidation.proceeds);
+      };
+
+      const base = await proceedsOf(0);
+      // 값이 작아야 한다. 매수 체결가가 눈에 띄게 오르면 살 수 있는 수량이 줄어 두 회차가
+      // 다른 표본이 되고, 그러면 아래 비율이 매도 슬리피지가 아니라 수량 차이를 재게 된다.
+      const slipped = await proceedsOf(0.001);
+
+      // 정확히 (1−x) 배여야 한다. 1 이면 이 경로가 슬리피지를 안 문 것이다.
+      expect(slipped / base).toBeCloseTo(0.99999, 8);
+    });
+
+    it('장중 손절이 걸리는 회차에서도 성적이 나빠진다', async () => {
+      // 시가를 종가와 같게, 저가를 70% 로 두면 220일째 장중 손절이 한 건 발동한다.
+      const resultOf = async (
+        slippagePercent: number,
+      ): Promise<ReplayBacktestResult> =>
+        new ReplayBacktestUsecase(
+          repositoryOf(
+            risingBars(
+              (_, close) => close,
+              (index, close) =>
+                index === 220 ? Math.round(close * 0.7) : close,
+            ),
+          ),
+        ).execute({
+          ...commandWithExitBand,
+          exitBand: { takeProfitPercent: 999, stopLossPercent: -5 },
+          slippagePercent,
+        });
+
+      const base = await resultOf(0);
+      const slipped = await resultOf(1);
+
+      // 발동 수가 같아야 두 회차가 같은 사건을 비교하는 것이 된다. 체결가만 밀고 판정가는
+      // 그대로 두었으므로 이 값은 변하지 않아야 한다.
+      expect(base.intradayStopSellCount).toBe(1);
+      expect(slipped.intradayStopSellCount).toBe(1);
+      // 갭하락 판별도 판정가로 해야 한다. 민 값으로 비교하면 비갭 손절도 `손절선 x (1−x%)`
+      // 가 손절선보다 낮아 전건이 갭하락으로 집계된다(PR #448 codex 리뷰 지적). 이 회차는
+      // 시가가 종가와 같은 비갭이므로 두 회차 모두 0 이어야 한다.
+      expect(base.intradayStopMargin.gapDownCount).toBe(0);
+      expect(slipped.intradayStopMargin.gapDownCount).toBe(0);
+      expect(Number(slipped.finalTotalValue)).toBeLessThan(
+        Number(base.finalTotalValue),
+      );
+      // 정직히 — 이 단언은 매수 체결가에도 반응하므로 장중 손절 경로만 고립시키지는
+      // 못한다. 그 경로가 실제로 슬리피지를 문다는 증거는 실측 쪽에 있다: 슬리피지 0.2%
+      // 회차에서 −0.2% 밴드가 붕괴하는데(익절 값이 성적에 안 닿고 종결이 3,703건으로 늘어남)
+      // 그 밴드의 청산은 거의 전부 이 경로다.
+      // docs/superpowers/specs/2026-09-02-slippage-breakeven-remeasurement.md
+    });
+
+    it('값을 올리면 최종 평가액이 낮아진다', async () => {
+      const zero = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(commandWithExitBand);
+      const slipped = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute({ ...commandWithExitBand, slippagePercent: 1 });
+
+      expect(zero.filledCount).toBeGreaterThan(0);
+      expect(slipped.slippagePercent).toBe(1);
+      expect(Number(slipped.finalTotalValue)).toBeLessThan(
+        Number(zero.finalTotalValue),
+      );
+    });
+
+    // 슬리피지는 후보 산출 뒤에서만 쓰이므로 캐시 정체성이 아니다. 그 전제가 깨지면
+    // 탐색기가 값만 바꿔 이어 돌릴 때 앞 회차의 성적을 그대로 재사용하게 된다.
+    it('한 캐시로 값만 바꿔 이어 돌려도 각각 단독으로 돌린 것과 같다', async () => {
+      const slippedCommand = { ...commandWithExitBand, slippagePercent: 1 };
+      const zeroAlone = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(commandWithExitBand);
+      const slippedAlone = await new ReplayBacktestUsecase(
+        repositoryOf(risingBars()),
+      ).execute(slippedCommand);
+
+      const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+      const cache = createReplayWindowCache(
+        commandWithExitBand.from,
+        commandWithExitBand.to,
+        commandWithExitBand.volatilityEstimator,
+      );
+      const zero = await usecase.execute(commandWithExitBand, cache);
+      const slipped = await usecase.execute(slippedCommand, cache);
+
+      expect(JSON.stringify(zero)).toBe(JSON.stringify(zeroAlone));
+      expect(JSON.stringify(slipped)).toBe(JSON.stringify(slippedAlone));
+    });
   });
 
   // 탐색기가 창 하나를 수십 번 재생하려고 후보 산출을 나눠 쓴다. 그 재사용이 성적을

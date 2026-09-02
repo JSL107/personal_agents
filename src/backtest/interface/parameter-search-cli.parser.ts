@@ -1,4 +1,5 @@
 import { ScreenStrategy } from '../../screener/domain/screener-rule';
+import { BACKTEST_DEFAULTS } from './backtest-cli.parser';
 
 export const PARAMETER_SEARCH_CLI_USAGE =
   '사용법:\n' +
@@ -9,6 +10,7 @@ export const PARAMETER_SEARCH_CLI_USAGE =
   '                    [--stop-loss -0.2,-2,-3,-5,-7,-15]\n' +
   '                    [--turnover-min 300000000,500000000]\n' +
   '                    [--weight 15,20,25]\n' +
+  '                    [--slippage 0,0.1,0.3 <체결가를 불리하게 밀 %, 기본 0>]\n' +
   '                    [--include-bandless] [--out <경로.json>]\n' +
   '\n' +
   '  값을 주지 않은 축은 그 전략의 활성 행(현행값) 하나로 고정된다.\n' +
@@ -64,9 +66,16 @@ const readNumberList = (
   if (raw === undefined) {
     return undefined;
   }
-  // `split(',')` 은 빈 배열을 주지 않는다 — `--take-profit ,,` 같은 오타는 `['','','']` 이
-  // 되어 아래 유한성 검사에 걸린다. 그래서 길이 검사를 따로 두지 않는다.
-  const values = raw.split(',').map((part) => Number(part.trim()));
+  // 빈 항목을 숫자로 바꾸기 **전에** 끊는다. `Number('')` 은 0 이라, 0 을 받는 축
+  // (`--slippage`)에서는 `--slippage ,,` 가 "0% 회차 세 개" 로 조용히 통과한다. 0 을 안 받는
+  // 축들은 아래 `accept` 가 걸러 왔지만, 그것은 축의 값 범위에 기댄 우연이었다.
+  const parts = raw.split(',').map((part) => part.trim());
+  if (parts.some((part) => part === '')) {
+    throw new Error(
+      `--${key} 에 빈 항목이 있습니다. 받은 값: ${raw}\n${PARAMETER_SEARCH_CLI_USAGE}`,
+    );
+  }
+  const values = parts.map((part) => Number(part));
   for (const value of values) {
     if (!Number.isFinite(value) || !accept(value)) {
       throw new Error(
@@ -128,6 +137,19 @@ export interface ParameterSearchCliOptions {
   maximumWeightPercents?: number[];
   includeBandless: boolean;
   outPath?: string;
+  /**
+   * 체결가를 몇 % 불리하게 밀지. **격자 축이 아니다** — 값마다 독립된 회차로 돌고,
+   * 순위·walk-forward 판정은 회차 안에서만 이뤄진다.
+   *
+   * 한 격자에 섞으면 순위가 무의미해진다. 창 안의 순위는 조합끼리 초과수익으로 겨루고
+   * walk-forward 는 그 1위를 현행값과 견주는데, 슬리피지가 다른 조합이 같은 격자에 있으면
+   * **"덜 불리하게 가정한 쪽" 이 늘 이긴다.** 재려는 것은 조합 간 우열이 그 가정에 얼마나
+   * 견디는가이므로, 회차를 갈라 놓고 회차끼리 비교해야 한다.
+   *
+   * 여러 값을 한 번에 주는 것은 창 캐시를 나눠 쓰기 위해서다 — 재생의 대부분이 후보
+   * 산출이고 그 계산은 슬리피지와 무관하다.
+   */
+  slippagePercents: number[];
 }
 
 export const parseParameterSearchCliArguments = (
@@ -172,5 +194,19 @@ export const parseParameterSearchCliArguments = (
     ),
     includeBandless: argv.includes('--include-bandless'),
     outPath: readOption(argv, 'out'),
+    // 백테스트 CLI 와 같은 규칙(0 이상 100 미만)이되 목록을 받는다. 미지정이면 미반영
+    // 회차 하나만 돈다 — 옛 회차와 같은 조건이라 기준선이 그대로 재현된다.
+    // 중복은 제거한다. 같은 값이 두 번 오면 회차가 둘 생기는데 `planKeyOf` 가 같아 한 버킷에
+    // 결과가 합쳐져, 재생만 두 배로 하고 리포트에는 창·재생 수가 부풀려진 표가 나온다.
+    slippagePercents: [
+      ...new Set(
+        readNumberList(
+          argv,
+          'slippage',
+          (value) => value >= 0 && value < 100,
+          '0 이상 100 미만의 수여야 합니다',
+        ) ?? [BACKTEST_DEFAULTS.slippagePercent],
+      ),
+    ],
   };
 };
