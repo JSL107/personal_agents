@@ -66,9 +66,16 @@ const readNumberList = (
   if (raw === undefined) {
     return undefined;
   }
-  // `split(',')` 은 빈 배열을 주지 않는다 — `--take-profit ,,` 같은 오타는 `['','','']` 이
-  // 되어 아래 유한성 검사에 걸린다. 그래서 길이 검사를 따로 두지 않는다.
-  const values = raw.split(',').map((part) => Number(part.trim()));
+  // 빈 항목을 숫자로 바꾸기 **전에** 끊는다. `Number('')` 은 0 이라, 0 을 받는 축
+  // (`--slippage`)에서는 `--slippage ,,` 가 "0% 회차 세 개" 로 조용히 통과한다. 0 을 안 받는
+  // 축들은 아래 `accept` 가 걸러 왔지만, 그것은 축의 값 범위에 기댄 우연이었다.
+  const parts = raw.split(',').map((part) => part.trim());
+  if (parts.some((part) => part === '')) {
+    throw new Error(
+      `--${key} 에 빈 항목이 있습니다. 받은 값: ${raw}\n${PARAMETER_SEARCH_CLI_USAGE}`,
+    );
+  }
+  const values = parts.map((part) => Number(part));
   for (const value of values) {
     if (!Number.isFinite(value) || !accept(value)) {
       throw new Error(
@@ -189,11 +196,17 @@ export const parseParameterSearchCliArguments = (
     outPath: readOption(argv, 'out'),
     // 백테스트 CLI 와 같은 규칙(0 이상 100 미만)이되 목록을 받는다. 미지정이면 미반영
     // 회차 하나만 돈다 — 옛 회차와 같은 조건이라 기준선이 그대로 재현된다.
-    slippagePercents: readNumberList(
-      argv,
-      'slippage',
-      (value) => value >= 0 && value < 100,
-      '0 이상 100 미만의 수여야 합니다',
-    ) ?? [BACKTEST_DEFAULTS.slippagePercent],
+    // 중복은 제거한다. 같은 값이 두 번 오면 회차가 둘 생기는데 `planKeyOf` 가 같아 한 버킷에
+    // 결과가 합쳐져, 재생만 두 배로 하고 리포트에는 창·재생 수가 부풀려진 표가 나온다.
+    slippagePercents: [
+      ...new Set(
+        readNumberList(
+          argv,
+          'slippage',
+          (value) => value >= 0 && value < 100,
+          '0 이상 100 미만의 수여야 합니다',
+        ) ?? [BACKTEST_DEFAULTS.slippagePercent],
+      ),
+    ],
   };
 };
