@@ -515,10 +515,15 @@ export const summarizeAcrossConditions = (input: {
     const present = meanRankByCondition.filter(
       (rank): rank is number => rank !== null,
     );
+    // **한 조건이라도 성적이 없으면 강건 후보가 아니다.** 없는 조건을 빼고 최악을 내면
+    // "측정되지 않은 조건" 이 "좋은 조건" 과 같은 대우를 받아, 일부 슬리피지에서 재 보지도
+    // 않은 조합이 1위로 올라선다(PR #454 이대리 리뷰 지적). 정렬에서 맨 뒤로 민다.
+    const measuredEveryCondition =
+      present.length === meanRankByCondition.length;
     return {
       label,
       meanRankByCondition,
-      worstMeanRank: present.length === 0 ? null : Math.max(...present),
+      worstMeanRank: measuredEveryCondition ? Math.max(...present) : null,
       bestMeanRank: present.length === 0 ? null : Math.min(...present),
       closedCountTotal: summariesByCondition.reduce(
         (sum, byLabel) => sum + (byLabel.get(label)?.closedCountTotal ?? 0),
@@ -610,16 +615,17 @@ export const evaluateRobustWalkForward = (input: {
             : chosenExcessReturnPercent > baselineExcessReturnPercent,
       };
     });
-    const judged = byCondition.filter((entry) => entry.won !== null);
     verdicts.push({
       windowIndex: targetIndex,
       trainedWindowCount: trainedIndexes.length,
       chosenLabel: chosen.label,
       byCondition,
-      wonEveryCondition:
-        judged.length === 0
-          ? null
-          : judged.every((entry) => entry.won === true),
+      // **하나라도 판정 불가면 승이 아니다.** 미판정을 빼고 나머지로 `every` 를 돌리면,
+      // 슬리피지에 따라 체결이 갈려 한 조건만 값이 없는 창이 "전 조건 승" 으로 집계된다
+      // (PR #454 에서 두 봇이 함께 지적). 승수에 섞이면 실험 결론이 그만큼 부풀려진다.
+      wonEveryCondition: byCondition.some((entry) => entry.won === null)
+        ? null
+        : byCondition.every((entry) => entry.won === true),
     });
   }
   return verdicts;

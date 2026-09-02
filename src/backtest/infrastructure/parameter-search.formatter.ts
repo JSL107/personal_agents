@@ -215,20 +215,26 @@ export const formatRobustnessReport = (report: RobustnessReport): string => {
   });
   const table = tableOf(
     ['조합', ...labels, '**최악**', '최선', '종결계'],
-    summaries
+    // 현행값이 상위 12 밖이면 잘려 나가 후보와 나란히 볼 수 없다. 그때만 뒤에 이어 붙인다
+    // (앞 판은 두 분기가 모두 빈 배열이라 아무 일도 하지 않았다 — PR #454 codex 리뷰 지적).
+    (summaries
       .slice(0, 12)
-      .concat(
-        summaries.some((summary) => summary.label === report.baselineLabel)
-          ? []
-          : [],
-      )
-      .map((summary) => [
-        labelCell(summary.label, report.baselineLabel),
-        ...summary.meanRankByCondition.map((rank) => plainNumber(rank)),
-        `**${plainNumber(summary.worstMeanRank)}**`,
-        plainNumber(summary.bestMeanRank),
-        String(summary.closedCountTotal),
-      ]),
+      .some((summary) => summary.label === report.baselineLabel)
+      ? summaries.slice(0, 12)
+      : summaries
+          .slice(0, 12)
+          .concat(
+            summaries.filter(
+              (summary) => summary.label === report.baselineLabel,
+            ),
+          )
+    ).map((summary) => [
+      labelCell(summary.label, report.baselineLabel),
+      ...summary.meanRankByCondition.map((rank) => plainNumber(rank)),
+      `**${plainNumber(summary.worstMeanRank)}**`,
+      plainNumber(summary.bestMeanRank),
+      String(summary.closedCountTotal),
+    ]),
   );
 
   const verdicts = evaluateRobustWalkForward({
