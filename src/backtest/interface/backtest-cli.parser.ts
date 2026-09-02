@@ -11,7 +11,8 @@ export const BACKTEST_CLI_USAGE =
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]\n' +
-  '                [--volatility close-to-close|parkinson, 기본 close-to-close]';
+  '                [--volatility close-to-close|parkinson, 기본 close-to-close]\n' +
+  '                [--slippage <체결가를 불리하게 밀 %, 기본 0>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
 export const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
@@ -28,6 +29,10 @@ export const BACKTEST_DEFAULTS = {
   // 기본값이 운영 규칙(종가→종가)이다. 탐색기가 이 값을 그대로 써야 탐색 결과가
   // 운영이 실제로 하는 일의 성적이 된다.
   volatilityEstimator: 'CLOSE_TO_CLOSE',
+  // 0 = 체결가 가정을 그대로 둔다. 이 값이 기본인 것은 슬리피지가 없어서가 아니라,
+  // 우리가 그 크기를 모르기 때문이다 — 0 이 아닌 회차는 "얼마부터 결론이 무너지나" 를
+  // 재는 민감도 측정이지 운영 재현이 아니다.
+  slippagePercent: 0,
 } as const;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
@@ -166,6 +171,23 @@ const readVolatilityEstimator = (argv: string[]): VolatilityEstimator => {
   );
 };
 
+// 체결가를 몇 % 불리하게 밀지. 음수를 허용하면 "유리하게 체결됐다" 는 가정이 되어
+// 손잡이의 방향 자체가 뒤집히므로 0 이상만 받는다. 상한 100 은 매도가가 0 이하가 되는
+// 구간을 끊기 위한 것이고, 현실적인 값은 소수점 아래다.
+const readSlippagePercent = (argv: string[]): number => {
+  const raw = readOption(argv, 'slippage');
+  if (raw === undefined) {
+    return BACKTEST_DEFAULTS.slippagePercent;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value >= 100) {
+    throw new Error(
+      `--slippage 는 0 이상 100 미만의 수여야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return value;
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): BacktestCliOptions => {
@@ -210,5 +232,6 @@ export const parseBacktestCliArguments = (
     exitBand: readExitBand(argv),
     delistingRecoveryRate: readDelistingRecoveryRate(argv),
     volatilityEstimator: readVolatilityEstimator(argv),
+    slippagePercent: readSlippagePercent(argv),
   };
 };

@@ -187,7 +187,11 @@ export const decideIntradayStopOrders = (
 //     체결한다. 실운영 장중 손절 2건(위더스제약 2026-08-27 · 씨젠 2026-08-31)의 판정가가
 //     이 값과 원 단위로 일치했다.
 // 남은 낙관은 손절선 그 가격에 체결된다는 가정이다 — 급락장 슬리피지는 별도 실측 대상이고,
-// 자체 슬리피지를 모델링하지 않기로 한 결정이 여기에도 적용된다.
+// 자체 슬리피지를 모델링하지 않기로 한 결정이 여기에도 적용된다. 그 낙관이 얼마나 큰지는
+// 모델링 대신 임계값으로 쟀다(docs/superpowers/specs/2026-09-02-slippage-breakeven-remeasurement.md):
+// 체결가를 편도 0.2% 불리하게 잡으면 손절 -0.2% 밴드는 "사는 즉시 손절" 이 되어 무너지는데,
+// 우리 유니버스의 1틱이 가격의 0.127%(중앙값)라 그 밴드는 애초에 1.58틱짜리다. 밴드를 이
+// 폭까지 좁히는 변경은 그 마찰의 크기를 알기 전에는 근거가 서지 않는다.
 export const resolveIntradayStopFillPrice = (input: {
   open: number;
   averagePrice: number;
