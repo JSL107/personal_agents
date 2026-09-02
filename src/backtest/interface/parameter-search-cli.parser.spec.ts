@@ -74,6 +74,20 @@ describe('parseParameterSearchCliArguments', () => {
     ).toThrow('--from 이 --to 보다 늦습니다');
   });
 
+  it('슬리피지는 축이 아니라 전 조합에 물리는 고정값이다', () => {
+    // 축으로 순회하면 "어느 조합이 나은가" 와 "얼마나 불리해지면 무너지나" 가 한 표에 섞인다.
+    expect(
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage 0.2`))
+        .slippagePercent,
+    ).toBe(0.2);
+    expect(
+      parseParameterSearchCliArguments(argv(REQUIRED)).slippagePercent,
+    ).toBe(0);
+    expect(() =>
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage 100`)),
+    ).toThrow('--slippage');
+  });
+
   it('모르는 전략은 받지 않는다', () => {
     expect(() =>
       parseParameterSearchCliArguments(

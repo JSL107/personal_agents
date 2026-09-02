@@ -43,6 +43,7 @@ import {
   BacktestMetricSummary,
   summarizeBacktestMetrics,
 } from '../domain/backtest-metric';
+import { applySlippage } from '../domain/slippage';
 import { selectDeterministicRecommendation } from '../domain/top-scored-selection';
 import { BacktestPrismaRepository } from '../infrastructure/backtest.prisma.repository';
 import { InMemoryPaperLedger } from '../infrastructure/in-memory-paper-ledger';
@@ -109,6 +110,10 @@ export interface ReplayBacktestCommand {
   // 변동성 추정량. LONG_TERM 의 순위 재료(`volatility20`)를 무엇으로 재는지 가른다.
   // 운영은 종가→종가 하나뿐이고, 이 손잡이는 다른 추정량의 성적을 재기 위해서만 있다.
   volatilityEstimator: VolatilityEstimator;
+  // 체결가를 한 방향으로 불리하게 미는 폭(%). **슬리피지를 흉내 내는 값이 아니라 임계값을
+  // 찾는 손잡이**다(`applySlippage` 주석). 후보 산출 뒤에서만 쓰이므로 창 캐시의 정체성이
+  // 아니다 — 같은 캐시로 여러 슬리피지 회차를 이어 돌려도 된다.
+  slippagePercent: number;
 }
 
 export interface ReplayBacktestResult {
@@ -168,6 +173,9 @@ export interface ReplayBacktestResult {
   anomaliesByType: Record<string, number>;
   metrics: BacktestMetricSummary;
   invariantViolations: string[];
+  // 0 이 아니면 이 회차는 운영 재현이 아니라 민감도 측정이다. 출력이 그 사실을 알린다 —
+  // 안 적으면 임계값 탐색 회차의 성적이 기준선으로 인용된다.
+  slippagePercent: number;
 }
 
 interface BenchmarkOutcome {
@@ -503,6 +511,12 @@ export class ReplayBacktestUsecase {
         context.barsByTicker,
         context.today,
       );
+      // 시가 그대로가 아니라 손잡이만큼 불리하게 민 값으로 체결한다(기본 0 = 시가 그대로).
+      const fillPrice = applySlippage(
+        bar.open,
+        order.side,
+        context.command.slippagePercent,
+      );
       const fill = await context.executeOrder.execute({
         orderId: order.orderId,
         accountId: context.ledger.accountId,
@@ -510,7 +524,7 @@ export class ReplayBacktestUsecase {
         market: ticker.krxMarket as PaperMarket,
         side: order.side,
         requestedQuantity: String(order.quantity),
-        price: String(bar.open),
+        price: String(fillPrice),
         tradeDate: context.today,
         strategy: context.command.strategy,
       });
@@ -518,7 +532,7 @@ export class ReplayBacktestUsecase {
         context.state.filledCount += 1;
         context.fills.push({
           tradeDate: context.today,
-          filledAmount: Number(fill.quantity) * bar.open,
+          filledAmount: Number(fill.quantity) * fillPrice,
           accountValuation: valuationBefore,
         });
         if (order.side === 'BUY') {
@@ -574,8 +588,13 @@ export class ReplayBacktestUsecase {
       if (latest === undefined) {
         continue;
       }
-      const price =
-        latest.close.toNumber() * context.command.delistingRecoveryRate;
+      // 회수율에 더해 체결가 손잡이도 태운다 — 재생의 모든 체결에 같은 규칙을 적용해야
+      // "이 조합만 슬리피지를 안 문다" 는 구멍이 안 생긴다. 폐지 청산은 매도다.
+      const price = applySlippage(
+        latest.close.toNumber() * context.command.delistingRecoveryRate,
+        'SELL',
+        context.command.slippagePercent,
+      );
       // 비중 지표는 체결 직전 평가액 대비로 잰다. 일반 체결과 같은 기준이어야 한 표에서 읽힌다.
       const valuationBefore = this.valuate(
         context.ledger,
@@ -719,7 +738,13 @@ export class ReplayBacktestUsecase {
       if (ticker === undefined) {
         continue;
       }
-      const price = Number(decision.price);
+      // 판정가(`decision.price`)는 도메인이 정한 `min(시가, 손절선)` 그대로 두고, 체결가만
+      // 민다 — 손잡이는 "그 가격에 팔린다" 는 가정을 흔드는 것이지 발동 조건이 아니다.
+      const price = applySlippage(
+        Number(decision.price),
+        'SELL',
+        context.command.slippagePercent,
+      );
       const valuationBefore = this.valuate(
         context.ledger,
         context.barsByTicker,
@@ -1092,6 +1117,7 @@ export class ReplayBacktestUsecase {
       },
       delistingRecoveryRate: context.command.delistingRecoveryRate,
       anomaliesByType: countAnomaliesByType(matched.anomalies),
+      slippagePercent: context.command.slippagePercent,
       metrics: summarizeBacktestMetrics({
         fills: context.fills,
         expirations: context.expirations,

@@ -80,6 +80,13 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
       `⚠ 변동성 추정량 ${result.volatilityEstimator} — 운영 규칙(종가→종가)이 아니다`,
     );
   }
+  // 0 이 아닌 회차의 성적이 기준선으로 인용되는 것을 막는 유일한 표식이다.
+  if (result.slippagePercent > 0) {
+    lines.push(
+      `⚠ 체결가 슬리피지 ${result.slippagePercent}% (매수 +x% · 매도 −x%) — ` +
+        '민감도 측정 조건이지 운영 재현이 아니다',
+    );
+  }
   if (result.exitBand === null) {
     lines.push(
       '청산 밴드 없음 — 보유일수 청산만 (--take-profit/--stop-loss 미지정)',

@@ -38,6 +38,7 @@ const result: ReplayBacktestResult = {
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
   exitBandSellCounts: { takeProfit: 0, stopLoss: 0 },
   intradayStopSellCount: 2,
+  slippagePercent: 0,
   intradayStopMargin: {
     meanPercent: 6.0,
     medianPercent: 4.28,

@@ -11,7 +11,8 @@ export const BACKTEST_CLI_USAGE =
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]\n' +
-  '                [--volatility close-to-close|parkinson, 기본 close-to-close]';
+  '                [--volatility close-to-close|parkinson, 기본 close-to-close]\n' +
+  '                [--slippage <체결가를 불리하게 밀 %, 기본 0>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
 export const DEFAULT_HOLDING_TRADE_DAYS = { LONG_TERM: 60, SWING: 5 } as const;
@@ -28,6 +29,9 @@ export const BACKTEST_DEFAULTS = {
   // 기본값이 운영 규칙(종가→종가)이다. 탐색기가 이 값을 그대로 써야 탐색 결과가
   // 운영이 실제로 하는 일의 성적이 된다.
   volatilityEstimator: 'CLOSE_TO_CLOSE',
+  // 0 은 미반영이다. 이 손잡이는 슬리피지를 흉내 내는 것이 아니라 "체결가가 얼마나
+  // 불리해지면 결론이 무너지나" 를 재는 것이라, 기본값 회차는 손잡이가 없던 때와 같다.
+  slippagePercent: 0,
 } as const;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
@@ -166,6 +170,22 @@ const readVolatilityEstimator = (argv: string[]): VolatilityEstimator => {
   );
 };
 
+// 슬리피지는 지어내는 값이 아니라 **임계값을 찾는 손잡이**다(`applySlippage` 주석).
+// 100% 이상이면 매도가가 0 이하가 되어 체결이 성립하지 않는다.
+const readSlippagePercent = (argv: string[]): number => {
+  const raw = readOption(argv, 'slippage');
+  if (raw === undefined) {
+    return BACKTEST_DEFAULTS.slippagePercent;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value >= 100) {
+    throw new Error(
+      `--slippage 는 0 이상 100 미만의 수여야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return value;
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): BacktestCliOptions => {
@@ -210,5 +230,6 @@ export const parseBacktestCliArguments = (
     exitBand: readExitBand(argv),
     delistingRecoveryRate: readDelistingRecoveryRate(argv),
     volatilityEstimator: readVolatilityEstimator(argv),
+    slippagePercent: readSlippagePercent(argv),
   };
 };

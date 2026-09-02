@@ -184,6 +184,8 @@ const main = async (): Promise<void> => {
               // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
               // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
               volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
+              // 전 조합에 같은 값을 물린다. 0 이면 손잡이가 없던 때와 같은 결과다.
+              slippagePercent: options.slippagePercent,
             },
             cache,
           );

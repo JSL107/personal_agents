@@ -32,7 +32,23 @@ describe('parseBacktestCliArguments', () => {
       exitBand: null,
       delistingRecoveryRate: 1,
       volatilityEstimator: 'CLOSE_TO_CLOSE',
+      slippagePercent: 0,
     });
+  });
+
+  // 지어내는 값이 아니라 임계값을 찾는 손잡이다. 범위를 안 막으면 100% 이상에서 매도가가
+  // 0 이하가 되어 체결이 성립하지 않는 회차가 조용히 돈다.
+  it('슬리피지를 읽고 범위를 강제한다', () => {
+    expect(
+      parseBacktestCliArguments([...required, '--slippage', '0.2'])
+        .slippagePercent,
+    ).toBe(0.2);
+    expect(() =>
+      parseBacktestCliArguments([...required, '--slippage', '100']),
+    ).toThrow('--slippage');
+    expect(() =>
+      parseBacktestCliArguments([...required, '--slippage', '-1']),
+    ).toThrow('--slippage');
   });
 
   it('파라미터 두 값을 명시하면 그 값이 그대로 남는다', () => {

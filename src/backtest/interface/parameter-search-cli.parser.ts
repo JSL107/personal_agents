@@ -9,7 +9,8 @@ export const PARAMETER_SEARCH_CLI_USAGE =
   '                    [--stop-loss -0.2,-2,-3,-5,-7,-15]\n' +
   '                    [--turnover-min 300000000,500000000]\n' +
   '                    [--weight 15,20,25]\n' +
-  '                    [--include-bandless] [--out <경로.json>]\n' +
+  '                    [--include-bandless] [--slippage <체결가를 불리하게 밀 %, 기본 0>]\n' +
+  '                    [--out <경로.json>]\n' +
   '\n' +
   '  값을 주지 않은 축은 그 전략의 활성 행(현행값) 하나로 고정된다.\n' +
   '  축 하나만 훑고 싶으면 그 축에만 목록을 주면 된다.';
@@ -95,6 +96,21 @@ const readPositiveInteger = (
   return value;
 };
 
+// 슬리피지는 지어내는 값이 아니라 임계값을 찾는 손잡이다. 100% 이상이면 매도가가 0 이하다.
+const readSlippagePercent = (argv: string[]): number => {
+  const raw = readOption(argv, 'slippage');
+  if (raw === undefined) {
+    return 0;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value >= 100) {
+    throw new Error(
+      `--slippage 는 0 이상 100 미만의 수여야 합니다. 받은 값: ${raw}\n${PARAMETER_SEARCH_CLI_USAGE}`,
+    );
+  }
+  return value;
+};
+
 const readStrategies = (argv: string[]): ScreenStrategy[] => {
   const raw = readOption(argv, 'strategy');
   if (raw === undefined) {
@@ -127,6 +143,9 @@ export interface ParameterSearchCliOptions {
   minimumTurnover60s?: number[];
   maximumWeightPercents?: number[];
   includeBandless: boolean;
+  // 전 조합에 같은 값을 물린다. **탐색 축이 아니다** — 축으로 순회하면 "어느 조합이 나은가"
+  // 와 "얼마나 불리해지면 무너지나" 가 한 표에 섞인다. 회차를 갈라 돌리고 표를 비교한다.
+  slippagePercent: number;
   outPath?: string;
 }
 
@@ -171,6 +190,7 @@ export const parseParameterSearchCliArguments = (
       '0 초과 100 이하의 수여야 합니다',
     ),
     includeBandless: argv.includes('--include-bandless'),
+    slippagePercent: readSlippagePercent(argv),
     outPath: readOption(argv, 'out'),
   };
 };
