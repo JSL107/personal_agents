@@ -60,6 +60,7 @@ import {
   DEFAULT_BLOG_STATUS_HOLD,
 } from '../domain/blog-publish-properties';
 import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
+import { liftLegacyHeadings } from '../domain/legacy-heading';
 import { selectAnonymizeSystemPrompt } from '../domain/prompt/blog-anonymize.prompt';
 import {
   EditedBlogDraft,
@@ -303,7 +304,11 @@ export class PublishNotionDraftUsecase {
       };
     }
 
-    const markdown = await this.notionClient.getPageMarkdown(target.pageId);
+    // 큐에 남은 옛 초안은 헤딩이 전부 heading_3 이라 `### ` 만 있는 글로 나온다. 발행 직전에
+    // 되돌린다 — 자세한 경위는 `legacy-heading.ts` 주석에.
+    const markdown = liftLegacyHeadings(
+      await this.notionClient.getPageMarkdown(target.pageId),
+    );
     if (markdown.trim().length === 0) {
       throw new BlogException({
         code: BlogErrorCode.EMPTY_DRAFT_BODY,
