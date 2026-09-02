@@ -18,12 +18,10 @@
 //
 // `gh` CLI 인증과 DATABASE_URL 이 필요하다. 읽기만 하고 아무것도 바꾸지 않는다.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { PrismaClient } from '@prisma/client';
 
+import { countRevision } from '../src/agent/blog/domain/revision-rate';
 import {
   KoreanStyleMetrics,
   measureKoreanStyle,
@@ -88,38 +86,6 @@ const fetchFinal = (path: string): string | null => {
   }
 };
 
-/**
- * 두 판의 차이를 줄 수로 잰다.
- *
- * `git diff --numstat` 을 쓰는 이유는 이미 있는 도구이기 때문이고, `--no-index` 라 저장소
- * 바깥의 임시 파일에도 쓸 수 있다. 바뀐 줄은 추가 + 삭제다 — 한 줄을 고치면 양쪽에 1씩 잡히니
- * 실제 손댄 양보다 크게 나오지만, 회차끼리 비교하는 데는 같은 기준이면 충분하다.
- */
-const countChangedLines = (
-  directory: string,
-  published: string,
-  final: string,
-): number => {
-  const publishedPath = join(directory, 'published.md');
-  const finalPath = join(directory, 'final.md');
-  writeFileSync(publishedPath, published);
-  writeFileSync(finalPath, final);
-  try {
-    execFileSync(
-      'git',
-      ['diff', '--no-index', '--numstat', publishedPath, finalPath],
-      { encoding: 'utf8' },
-    );
-    // 차이가 없으면 exit 0 에 빈 출력이다.
-    return 0;
-  } catch (error: unknown) {
-    // 차이가 있으면 git 이 exit 1 로 끝낸다 — 실패가 아니라 「다르다」는 뜻이다.
-    const stdout = (error as { stdout?: string }).stdout ?? '';
-    const [added, deleted] = stdout.trim().split('\t');
-    return Number(added ?? 0) + Number(deleted ?? 0);
-  }
-};
-
 const formatMetricShift = (row: RevisionRow): string => {
   const before = row.publishedMetrics;
   const after = row.finalMetrics;
@@ -142,7 +108,6 @@ const formatMetricShift = (row: RevisionRow): string => {
 };
 
 const main = async (): Promise<void> => {
-  const directory = mkdtempSync(join(tmpdir(), 'blog-revision-'));
   const posts = await fetchPublished();
   const rows: RevisionRow[] = [];
   const missing: string[] = [];
@@ -153,14 +118,15 @@ const main = async (): Promise<void> => {
       missing.push(post.path);
       continue;
     }
-    const changedLines = countChangedLines(directory, post.published, final);
-    const totalLines = post.published.split('\n').length;
+    // 서버(주간 카드)와 **같은 도메인 함수**를 쓴다. 두 곳이 각자 계산하면 같은 글에 다른
+    // 수정률이 찍혀 어느 쪽이 맞는지 가릴 수 없다.
+    const count = countRevision(post.published, final);
     rows.push({
       path: post.path,
       publishedAt: post.publishedAt,
-      changedLines,
-      totalLines,
-      revisionPercent: Math.round((changedLines / totalLines) * 100),
+      changedLines: count.addedLines + count.removedLines,
+      totalLines: count.totalLines,
+      revisionPercent: count.percent,
       publishedMetrics: measureKoreanStyle(post.published),
       finalMetrics: measureKoreanStyle(final),
     });

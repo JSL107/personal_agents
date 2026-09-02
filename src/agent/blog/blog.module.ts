@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { WebClient } from '@slack/web-api';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { GithubModule } from '../../github/github.module';
 import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { GenerateBlogDraftUsecase } from './application/generate-blog-draft.usecase';
+import { MeasureBlogRevisionUsecase } from './application/measure-blog-revision.usecase';
 import { PublishNotionDraftUsecase } from './application/publish-notion-draft.usecase';
 import { HERMES_RUNNER_PORT } from './domain/port/hermes-runner.port';
 import { BLOG_SLACK_NOTIFIER_PORT } from './domain/port/slack-notifier.port';
@@ -25,10 +27,18 @@ import {
 // (SlackCollectorModule 의 SLACK_WEB_CLIENT 패턴을 모듈 격리 위해 자체 useFactory 로 복제.)
 @Module({
   // HumanizeModule — 발행 전 마지막 단계에서 본문 문단을 사용자 문체로 윤문한다.
-  imports: [AgentRunModule, HumanizeModule, ModelRouterModule, NotionModule],
+  // GithubModule — 주간 수정률 집계가 발행된 글의 최종본을 저장소에서 읽는다.
+  imports: [
+    AgentRunModule,
+    GithubModule,
+    HumanizeModule,
+    ModelRouterModule,
+    NotionModule,
+  ],
   providers: [
     GenerateBlogDraftUsecase,
     PublishNotionDraftUsecase,
+    MeasureBlogRevisionUsecase,
     BlogDispatcher,
     BlogPublishDispatcher,
     { provide: HERMES_RUNNER_PORT, useClass: HermesCliRunner },
@@ -48,6 +58,7 @@ import {
   exports: [
     GenerateBlogDraftUsecase,
     PublishNotionDraftUsecase,
+    MeasureBlogRevisionUsecase,
     BlogDispatcher,
     BlogPublishDispatcher,
   ],

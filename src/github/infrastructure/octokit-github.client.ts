@@ -755,8 +755,20 @@ export class OctokitGithubClient implements GithubClientPort {
         path,
         ref: branch,
       });
-      const data = response.data as { html_url?: string };
-      return { fileUrl: data.html_url ?? '' };
+      const data = response.data as {
+        html_url?: string;
+        content?: string;
+        encoding?: string;
+      };
+      return {
+        fileUrl: data.html_url ?? '',
+        // 1MB 를 넘는 파일은 GitHub 이 본문을 비우고 encoding 을 'none' 으로 준다. 그때
+        // base64 로 디코드하면 빈 문자열이 「내용이 없는 파일」로 읽히므로 아예 넘기지 않는다.
+        content:
+          data.encoding === 'base64' && typeof data.content === 'string'
+            ? Buffer.from(data.content, 'base64').toString('utf8')
+            : undefined,
+      };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,
