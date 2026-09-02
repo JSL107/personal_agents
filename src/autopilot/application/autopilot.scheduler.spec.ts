@@ -70,8 +70,9 @@ describe('AutopilotScheduler', () => {
     //   + screening-outcome-scoring(회차 종목 사후 채점, 단독 그룹)
     //   + paper-intraday-stop(모의투자 장중 손절, 단독 그룹)
     //   + job-feed(백엔드 채용공고 수집, 단독 그룹) + job-feed-gap(공고 갭 분석, 단독 그룹)
-    //   + screening-scorecard(주간 성적 카드, 단독 그룹) = 32그룹.
-    expect(queue.add).toHaveBeenCalledTimes(32);
+    //   + screening-scorecard(주간 성적 카드, 단독 그룹)
+    //   + blog-revision-report(주간 블로그 수정률, 단독 그룹) = 33그룹.
+    expect(queue.add).toHaveBeenCalledTimes(33);
     expect(addCalls).toContain('screening-outcome-scoring');
     expect(addCalls).toContain('screening-scorecard');
     expect(addCalls).toContain('evening');

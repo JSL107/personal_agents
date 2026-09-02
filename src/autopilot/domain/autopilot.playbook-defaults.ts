@@ -170,3 +170,8 @@ export const DEFAULT_JOB_FEED_TIMEZONE = 'Asia/Seoul';
 // 그룹 잠금 시간 예산(모델 호출 1회분)을 넘긴다.
 export const DEFAULT_JOB_FEED_GAP_CRON = '30 7 * * 1-5';
 export const DEFAULT_JOB_FEED_GAP_TIMEZONE = 'Asia/Seoul';
+
+// 주간 블로그 수정률 보고 — 발행한 글을 사람이 얼마나 다시 썼는지. 주간 실행 회고(월 09:00)
+// 뒤에 둔다. 같은 아침에 함께 읽히되 슬롯을 나눠 그룹 잠금 시간을 다투지 않는다.
+export const DEFAULT_BLOG_REVISION_REPORT_CRON = '30 9 * * 1';
+export const DEFAULT_BLOG_REVISION_REPORT_TIMEZONE = 'Asia/Seoul';

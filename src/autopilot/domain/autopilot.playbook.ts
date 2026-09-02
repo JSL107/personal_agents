@@ -3,6 +3,8 @@ import {
   DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE,
   DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON,
   DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE,
+  DEFAULT_BLOG_REVISION_REPORT_CRON,
+  DEFAULT_BLOG_REVISION_REPORT_TIMEZONE,
   DEFAULT_CEO_META_CRON,
   DEFAULT_CEO_META_TIMEZONE,
   DEFAULT_DAILY_EVAL_CRON,
@@ -230,6 +232,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_RUN_RETRO_CRON,
       timezone: DEFAULT_RUN_RETRO_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // 주간 블로그 수정률 — 발행한 글을 사람이 얼마나 다시 썼는지. 이 파이프라인에서 글의 품질을
+  // 판정하는 유일한 자리다. 읽기만 하고 모델도 부르지 않아 T0_AUTO.
+  {
+    id: 'blog-revision-report',
+    taskId: 'blog-revision-report',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_BLOG_REVISION_REPORT_CRON,
+      timezone: DEFAULT_BLOG_REVISION_REPORT_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },
