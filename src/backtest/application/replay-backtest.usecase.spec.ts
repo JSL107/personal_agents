@@ -854,6 +854,11 @@ describe('ReplayBacktestUsecase', () => {
       // 그대로 두었으므로 이 값은 변하지 않아야 한다.
       expect(base.intradayStopSellCount).toBe(1);
       expect(slipped.intradayStopSellCount).toBe(1);
+      // 갭하락 판별도 판정가로 해야 한다. 민 값으로 비교하면 비갭 손절도 `손절선 x (1−x%)`
+      // 가 손절선보다 낮아 전건이 갭하락으로 집계된다(PR #448 codex 리뷰 지적). 이 회차는
+      // 시가가 종가와 같은 비갭이므로 두 회차 모두 0 이어야 한다.
+      expect(base.intradayStopMargin.gapDownCount).toBe(0);
+      expect(slipped.intradayStopMargin.gapDownCount).toBe(0);
       expect(Number(slipped.finalTotalValue)).toBeLessThan(
         Number(base.finalTotalValue),
       );

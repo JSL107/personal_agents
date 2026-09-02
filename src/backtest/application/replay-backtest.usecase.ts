@@ -784,7 +784,10 @@ export class ReplayBacktestUsecase {
         exitBand.stopLossPercent - decision.returnRatePercent,
       );
       const stopLine = stopLineByTickerId.get(decision.tickerId);
-      if (stopLine !== undefined && price < stopLine) {
+      // 갭하락 판별은 **슬리피지를 먹이기 전** 판정가로 한다. 민 값으로 비교하면 비갭 손절도
+      // `손절선 x (1−x%) < 손절선` 이 되어 슬리피지를 켠 회차의 전건이 갭하락으로 집계된다 —
+      // 이 열이 "시가 갭이 있었나" 가 아니라 "슬리피지를 켰나" 를 세게 된다.
+      if (stopLine !== undefined && Number(decision.price) < stopLine) {
         context.state.intradayStopGapDowns += 1;
       }
       context.fills.push({

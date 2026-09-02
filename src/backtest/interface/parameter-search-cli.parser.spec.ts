@@ -111,4 +111,22 @@ describe('parseParameterSearchCliArguments', () => {
       parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage -0.1`)),
     ).toThrow('--slippage');
   });
+
+  // `Number('')` 은 0 이라, 0 을 받는 축에서는 빈 항목이 "0% 회차" 로 조용히 통과한다.
+  it('빈 항목이 섞이면 끊는다', () => {
+    expect(() =>
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage ,0.1`)),
+    ).toThrow('빈 항목');
+    expect(() =>
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --take-profit 2,`)),
+    ).toThrow('빈 항목');
+  });
+
+  // 같은 값이 두 번 오면 회차가 둘 생기는데 결과는 한 버킷에 합쳐져 리포트가 부풀려진다.
+  it('같은 슬리피지를 두 번 주면 한 회차로 친다', () => {
+    expect(
+      parseParameterSearchCliArguments(argv(`${REQUIRED} --slippage 0,0.1,0`))
+        .slippagePercents,
+    ).toEqual([0, 0.1]);
+  });
 });
