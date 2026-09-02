@@ -2,10 +2,13 @@ import {
   addMonths,
   buildParameterGrid,
   buildSearchWindows,
+  ConditionOutcomes,
+  evaluateRobustWalkForward,
   evaluateWalkForward,
   formatCombinationLabel,
   ParameterCombination,
   rankWithinWindow,
+  summarizeAcrossConditions,
   summarizeCombinations,
   WindowOutcome,
 } from './parameter-search';
@@ -369,5 +372,211 @@ describe('evaluateWalkForward', () => {
 
     expect(verdicts[0].chosenLabel).toBe('현행');
     expect(verdicts[0].won).toBeNull();
+  });
+});
+
+describe('summarizeAcrossConditions', () => {
+  // **평균과 최악이 서로 다른 답을 내는 배치여야 이 함수를 검증한다.**
+  // 취약: 1위·1위·3위 (평균 1.67) · 강건: 2위·2위·2위 (평균 2.00)
+  //   → 평균으로 세우면 취약이 이기고, 최악으로 세우면 강건(2)이 취약(3)을 이긴다.
+  // 앞 판의 픽스처는 평균으로도 강건이 이겨 핵심 동작을 못 봤다(PR #454 이대리 리뷰 지적).
+  const SPLIT_CONDITIONS: ConditionOutcomes[] = [1, 2]
+    .map((index) => ({
+      conditionLabel: `마찰 없음 ${index}`,
+      outcomes: [
+        outcomeOf(index, '취약', 10),
+        outcomeOf(index, '강건', 5),
+        outcomeOf(index, '현행', 0),
+      ],
+    }))
+    .concat([
+      {
+        // 여기서 취약이 꼴찌가 되고 **현행이 1위**여야 강건이 2위로 남는다. 앞 판은
+        // 강건이 1위가 돼 평균이 동점(1.67)이었고, 그래서 핵심 동작을 못 봤다.
+        conditionLabel: '마찰 큼',
+        outcomes: [
+          outcomeOf(1, '취약', -20),
+          outcomeOf(1, '강건', 5),
+          outcomeOf(1, '현행', 10),
+        ],
+      },
+    ]);
+
+  it('평균으로는 취약이 이기는 배치에서 최악은 강건을 고른다', () => {
+    const summaries = summarizeAcrossConditions({
+      conditions: SPLIT_CONDITIONS,
+      baselineLabel: '현행',
+    });
+    const fragile = summaries.find((summary) => summary.label === '취약');
+    const robust = summaries.find((summary) => summary.label === '강건');
+
+    // 평균은 취약이 낫다 — 이 배치가 그것을 보장한다.
+    const mean = (ranks: Array<number | null>): number =>
+      (ranks as number[]).reduce((sum, rank) => sum + rank, 0) / ranks.length;
+    expect(mean(fragile?.meanRankByCondition ?? [])).toBeLessThan(
+      mean(robust?.meanRankByCondition ?? []),
+    );
+    // 그런데 최악으로 세우면 강건이 1위다.
+    expect(summaries[0].label).toBe('강건');
+    expect(robust?.worstMeanRank).toBe(2);
+    expect(fragile?.worstMeanRank).toBe(3);
+  });
+
+  it('한 조건이라도 성적이 없으면 강건 후보로 세우지 않는다', () => {
+    // 없는 조건을 빼고 최악을 내면 "재 보지도 않은 조합" 이 1위로 올라선다.
+    const summaries = summarizeAcrossConditions({
+      conditions: [
+        SPLIT_CONDITIONS[0],
+        {
+          conditionLabel: '마찰 큼',
+          outcomes: [outcomeOf(1, '강건', 5), outcomeOf(1, '현행', 0)],
+        },
+      ],
+      baselineLabel: '현행',
+    });
+    const fragile = summaries.find((summary) => summary.label === '취약');
+
+    expect(fragile?.meanRankByCondition).toEqual([1, null]);
+    expect(fragile?.worstMeanRank).toBeNull();
+    // 정렬에서 맨 뒤로 밀린다 — 1위는 모든 조건에서 잰 조합이어야 한다.
+    expect(summaries[0].label).not.toBe('취약');
+    expect(summaries.at(-1)?.label).toBe('취약');
+  });
+
+  // 한 조건에서 1위이고 다른 조건에서 꼴찌인 값 vs 두 조건 모두 중위인 값.
+  const CONDITIONS: ConditionOutcomes[] = [
+    {
+      conditionLabel: '마찰 없음',
+      outcomes: [
+        outcomeOf(1, '취약', 10),
+        outcomeOf(1, '강건', 5),
+        outcomeOf(1, '현행', 0),
+        outcomeOf(2, '취약', 10),
+        outcomeOf(2, '강건', 5),
+        outcomeOf(2, '현행', 0),
+      ],
+    },
+    {
+      conditionLabel: '마찰 큼',
+      outcomes: [
+        outcomeOf(1, '취약', -20),
+        outcomeOf(1, '강건', 5),
+        outcomeOf(1, '현행', 0),
+        outcomeOf(2, '취약', -20),
+        outcomeOf(2, '강건', 5),
+        outcomeOf(2, '현행', 0),
+      ],
+    },
+  ];
+
+  it('한 조건의 붕괴를 다른 조건의 우수함이 덮지 못한다', () => {
+    const summaries = summarizeAcrossConditions({
+      conditions: CONDITIONS,
+      baselineLabel: '현행',
+    });
+
+    // '강건' 은 마찰 없음에서 2위(취약이 1위)·마찰 큼에서 1위라 최악이 2 이고,
+    // '취약' 은 1위·3위라 최악이 3 이다. 최악 기준이라 '강건' 이 이긴다 —
+    // 평균으로 세우면 취약(2.0)이 강건(1.5)에 밀리지 않아 붕괴가 가려진다.
+    expect(summaries[0].label).toBe('강건');
+    expect(summaries[0].worstMeanRank).toBe(2);
+    expect(summaries[0].meanRankByCondition).toEqual([2, 1]);
+    const fragile = summaries.find((summary) => summary.label === '취약');
+    expect(fragile?.meanRankByCondition).toEqual([1, 3]);
+    expect(fragile?.worstMeanRank).toBe(3);
+    expect(fragile?.bestMeanRank).toBe(1);
+  });
+});
+
+describe('evaluateRobustWalkForward', () => {
+  // 창 1·2 에서는 '취약' 이 마찰 없음 조건에서 앞서지만 마찰 큼 조건에서 뒤진다.
+  // 최악 기준으로 고르면 '강건' 이 뽑히고, 창 3 에서 두 조건 모두를 본다.
+  const conditionsOf = (
+    fragileAtWindow3: number,
+    robustAtWindow3: number,
+  ): ConditionOutcomes[] => [
+    {
+      conditionLabel: '마찰 없음',
+      outcomes: [
+        outcomeOf(1, '취약', 10),
+        outcomeOf(1, '강건', 5),
+        outcomeOf(1, '현행', 0),
+        outcomeOf(2, '취약', 10),
+        outcomeOf(2, '강건', 5),
+        outcomeOf(2, '현행', 0),
+        outcomeOf(3, '취약', fragileAtWindow3),
+        outcomeOf(3, '강건', robustAtWindow3),
+        outcomeOf(3, '현행', 1),
+      ],
+    },
+    {
+      conditionLabel: '마찰 큼',
+      outcomes: [
+        outcomeOf(1, '취약', -20),
+        outcomeOf(1, '강건', 5),
+        outcomeOf(1, '현행', 0),
+        outcomeOf(2, '취약', -20),
+        outcomeOf(2, '강건', 5),
+        outcomeOf(2, '현행', 0),
+        outcomeOf(3, '취약', fragileAtWindow3),
+        outcomeOf(3, '강건', robustAtWindow3),
+        outcomeOf(3, '현행', 1),
+      ],
+    },
+  ];
+
+  it('최악 기준으로 고르고 모든 조건에서 이겨야 승이다', () => {
+    const verdicts = evaluateRobustWalkForward({
+      conditions: conditionsOf(9, 9),
+      baselineLabel: '현행',
+    });
+
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].chosenLabel).toBe('강건');
+    expect(verdicts[0].byCondition.map((entry) => entry.won)).toEqual([
+      true,
+      true,
+    ]);
+    expect(verdicts[0].wonEveryCondition).toBe(true);
+  });
+
+  it('한 조건이 판정 불가면 나머지가 다 이겨도 승이 아니다', () => {
+    // 미판정을 빼고 나머지로 every 를 돌리면 "전 조건 승" 이 부풀려진다.
+    const conditions = conditionsOf(9, 9);
+    conditions[1].outcomes = conditions[1].outcomes.map((outcome) =>
+      outcome.windowIndex === 3 && outcome.label === '강건'
+        ? { ...outcome, excessReturnPercent: null }
+        : outcome,
+    );
+    const verdicts = evaluateRobustWalkForward({
+      conditions,
+      baselineLabel: '현행',
+    });
+
+    expect(verdicts[0].byCondition.map((entry) => entry.won)).toEqual([
+      true,
+      null,
+    ]);
+    expect(verdicts[0].wonEveryCondition).toBeNull();
+  });
+
+  it('한 조건에서만 져도 승이 아니다', () => {
+    // 창 3 의 두 조건 성적을 갈라 한쪽만 현행보다 낮게 만든다.
+    const conditions = conditionsOf(9, 9);
+    conditions[1].outcomes = conditions[1].outcomes.map((outcome) =>
+      outcome.windowIndex === 3 && outcome.label === '강건'
+        ? { ...outcome, excessReturnPercent: -5 }
+        : outcome,
+    );
+    const verdicts = evaluateRobustWalkForward({
+      conditions,
+      baselineLabel: '현행',
+    });
+
+    expect(verdicts[0].byCondition.map((entry) => entry.won)).toEqual([
+      true,
+      false,
+    ]);
+    expect(verdicts[0].wonEveryCondition).toBe(false);
   });
 });

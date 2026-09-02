@@ -18,6 +18,7 @@ import {
 } from '../src/backtest/domain/parameter-search';
 import {
   formatParameterSearchReport,
+  formatRobustnessReport,
   SearchWindowSummary,
 } from '../src/backtest/infrastructure/parameter-search.formatter';
 import {
@@ -271,6 +272,23 @@ const main = async (): Promise<void> => {
           '(매수 +x% · 매도 −x% · 왕복 2x% · 회차마다 따로 순위를 매긴다)',
         '',
         ...reports.map((report) => formatParameterSearchReport(report)),
+        // 슬리피지 수준이 둘 이상일 때만 낸다. 하나면 가로지를 것이 없어 위 표와 같은 말이다.
+        ...(options.slippagePercents.length > 1
+          ? options.strategies.map((strategy) =>
+              formatRobustnessReport({
+                strategy,
+                baselineLabel:
+                  plans.find((plan) => plan.strategy === strategy)
+                    ?.baselineLabel ?? '',
+                conditions: plans
+                  .filter((plan) => plan.strategy === strategy)
+                  .map((plan) => ({
+                    conditionLabel: slippageLabelOf(plan.slippagePercent),
+                    outcomes: outcomes.get(planKeyOf(plan)) ?? [],
+                  })),
+              }),
+            )
+          : []),
       ].join('\n'),
     );
 
