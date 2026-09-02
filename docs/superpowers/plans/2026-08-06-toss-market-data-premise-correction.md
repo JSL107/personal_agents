@@ -4,7 +4,7 @@
 > 아니다. 그 위에서 벌인 배당락 논의와 52주 판정 보류는 필요 없던 일이었다.
 
 작성 2026-08-06 · 정정 대상 [시세 소스 전환 설계 §3](../specs/2026-08-06-toss-market-data-migration-design.md),
-[투자 라인 개발 지표 §D](./2026-08-06-invest-line-roadmap.md)
+[투자 라인 개발 지표 §D](./2026-08-06-invest-line-roadmap.md) (PR #325 로 `tasks/goals-invest-line.md` 에 흡수돼 삭제된 문서다 — 2026-09-02 확인)
 
 ---
 

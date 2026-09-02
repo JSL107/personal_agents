@@ -41,7 +41,7 @@
 |---|---|
 | `docs/superpowers/specs/2026-08-11-paper-trading-toss-design.md` | **정본 설계.** §7이 2~4단계 개요, §9가 미검증·한계 |
 | `docs/superpowers/plans/2026-08-11-paper-trading-phase1.md` | 1단계 구현 계획 (태스크 분해 형식의 참고) |
-| `docs/superpowers/plans/2026-08-06-invest-line-roadmap.md` | 선행 로드맵. §D(지표 규칙)·§E(장중 시세 적재 사고)가 2단계와 직접 겹친다 |
+| ~~`docs/superpowers/plans/2026-08-06-invest-line-roadmap.md`~~ → `tasks/goals-invest-line.md` | 선행 로드맵. §D(지표 규칙)·§E(장중 시세 적재 사고)가 2단계와 직접 겹친다. **그 로드맵은 PR #325 로 목표 원장에 흡수돼 삭제됐다** — 원장이 대체이고, 그쪽은 갱신된다 (2026-09-02 확인) |
 | `docs/superpowers/specs/2026-08-06-toss-market-data-migration-design.md` | 토스 API 실측 기록 (§2.1 캔들, §2.2 현재가) |
 | `docs/superpowers/plans/2026-08-06-toss-market-data-premise-correction.md` | 페이지네이션 전제 정정 |
 

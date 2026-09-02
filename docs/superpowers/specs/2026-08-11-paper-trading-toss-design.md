@@ -387,7 +387,7 @@ src/paper-trading/
 
 이유: 휴장 판정은 달력이 아니라 "저장된 마지막 시세 날짜 == 방금 받은 시세 날짜" 비교다(`stock-anomaly.ts:147-158`, `previousStoredDate`는 `DailyPrice`에서 온다). 즉 **17:10 이전에 누가 `DailyPrice(tickerId, 오늘)`을 쓰면 그날 그 종목의 감시 판정이 통째로 건너뛰어진다** — 저장된 알림 복구 경로로 빠져 급변 판정이 아예 돌지 않는데 원장에는 성공으로 남는다.
 
-이것은 가설이 아니라 실제 사고다. `docs/superpowers/plans/2026-08-06-invest-line-roadmap.md` §E에 기록돼 있다("2026-08-06 오전 11:30에 수동으로 시세를 적재한 뒤, 그날 17:10 감시가 재판정 없이 저장된 알림 복구 경로로 빠졌다… 에러도 로그도 남지 않는다").
+이것은 가설이 아니라 실제 사고다. `docs/superpowers/plans/2026-08-06-invest-line-roadmap.md` §E (PR #325 로 `tasks/goals-invest-line.md` 에 흡수돼 삭제된 문서다 — 2026-09-02 확인)에 기록돼 있다("2026-08-06 오전 11:30에 수동으로 시세를 적재한 뒤, 그날 17:10 감시가 재판정 없이 저장된 알림 복구 경로로 빠졌다… 에러도 로그도 남지 않는다").
 
 17:40 실행이면 감시(17:10)보다 뒤라 직접 충돌은 없지만, 재시도·수동 실행이 앞당겨질 여지가 있어 아예 쓰지 않는 것으로 못박는다. 휴장 여부는 받은 봉의 거래일이 실행일과 같은지로 직접 판정한다.
 
@@ -516,7 +516,7 @@ orchestrator (autopilot.orchestrator.ts:130-134, 227) → summaryText 만 읽어
 
 ## 8. 선행 로드맵과의 관계
 
-`docs/superpowers/plans/2026-08-06-invest-line-roadmap.md`(2026-08-06)와 이 스펙의 접점을 정리한다.
+`docs/superpowers/plans/2026-08-06-invest-line-roadmap.md`(2026-08-06) (PR #325 로 `tasks/goals-invest-line.md` 에 흡수돼 삭제된 문서다 — 2026-09-02 확인)와 이 스펙의 접점을 정리한다.
 
 | 로드맵 항목 | 이 스펙과의 관계 |
 |---|---|
