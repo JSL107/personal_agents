@@ -1,7 +1,10 @@
 import { ScreenStrategy } from '../../screener/domain/screener-rule';
 import {
+  ConditionOutcomes,
+  evaluateRobustWalkForward,
   evaluateWalkForward,
   SearchWindow,
+  summarizeAcrossConditions,
   summarizeCombinations,
   WindowOutcome,
 } from '../domain/parameter-search';
@@ -192,5 +195,85 @@ export const formatParameterSearchReport = (
     '### walk-forward 표본 밖 판정',
     '',
     formatWalkForward(report.outcomes, report.baselineLabel),
+  ].join('\n');
+};
+
+export interface RobustnessReport {
+  strategy: ScreenStrategy;
+  baselineLabel: string;
+  conditions: ConditionOutcomes[];
+}
+
+/**
+ * 슬리피지 수준을 가로지른 판정. **한 수준의 1위가 아니라 모든 수준에서 버티는 값**을 찾는다.
+ */
+export const formatRobustnessReport = (report: RobustnessReport): string => {
+  const labels = report.conditions.map((condition) => condition.conditionLabel);
+  const summaries = summarizeAcrossConditions({
+    conditions: report.conditions,
+    baselineLabel: report.baselineLabel,
+  });
+  const table = tableOf(
+    ['조합', ...labels, '**최악**', '최선', '종결계'],
+    summaries
+      .slice(0, 12)
+      .concat(
+        summaries.some((summary) => summary.label === report.baselineLabel)
+          ? []
+          : [],
+      )
+      .map((summary) => [
+        labelCell(summary.label, report.baselineLabel),
+        ...summary.meanRankByCondition.map((rank) => plainNumber(rank)),
+        `**${plainNumber(summary.worstMeanRank)}**`,
+        plainNumber(summary.bestMeanRank),
+        String(summary.closedCountTotal),
+      ]),
+  );
+
+  const verdicts = evaluateRobustWalkForward({
+    conditions: report.conditions,
+    baselineLabel: report.baselineLabel,
+  });
+  const judged = verdicts.filter(
+    (verdict) => verdict.wonEveryCondition !== null,
+  );
+  const wins = judged.filter(
+    (verdict) => verdict.wonEveryCondition === true,
+  ).length;
+  const verdictTable = tableOf(
+    ['창', '앞선 창들의 1위 (최악 기준)', ...labels, '전 조건 승'],
+    verdicts.map((verdict) => [
+      String(verdict.windowIndex),
+      verdict.chosenLabel === report.baselineLabel
+        ? `${verdict.chosenLabel} (현행 선택)`
+        : verdict.chosenLabel,
+      ...verdict.byCondition.map((entry) =>
+        entry.won === null ? '—' : entry.won ? '승' : '패',
+      ),
+      verdict.wonEveryCondition === null
+        ? '—'
+        : verdict.wonEveryCondition
+          ? '승'
+          : '패',
+    ]),
+  );
+
+  return [
+    `## ${report.strategy} · 슬리피지 가정을 가로지른 판정`,
+    '',
+    '> 한 수준에서 1위여도 다른 수준에서 무너지는 값은 "이겼다" 가 아니라 **"그 가정에서',
+    '> 이겼다"** 다. 슬리피지 크기는 봉으로 알 수 없고 모델링은 검증할 수 없으므로, 값을',
+    '> 고르려면 가정에 흔들리지 않는 쪽을 골라야 한다. 순위는 **가장 나쁜 조건**으로 세운다.',
+    '',
+    '### 조건별 순위평균 (상위 12)',
+    '',
+    table,
+    '',
+    '### 최악 기준 walk-forward — 모든 조건에서 이겨야 승',
+    '',
+    verdictTable,
+    '',
+    `판정 ${judged.length}회 중 전 조건 승 ${wins}회`,
   ].join('\n');
 };

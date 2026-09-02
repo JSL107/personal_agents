@@ -457,3 +457,170 @@ export const evaluateWalkForward = (input: {
   }
   return verdicts;
 };
+
+/**
+ * 한 슬리피지 수준에서 나온 성적 한 벌. 수준을 가로질러 판정하려면 이 단위로 묶어야 한다.
+ */
+export interface ConditionOutcomes {
+  conditionLabel: string;
+  outcomes: WindowOutcome[];
+}
+
+export interface RobustSummary {
+  label: string;
+  // 조건 순서 그대로. 그 조건에서 성적이 없으면 null 이다.
+  meanRankByCondition: Array<number | null>;
+  // **가장 나쁜 조건의 순위평균.** 이 값으로 세우는 것이 이 집계의 요점이다.
+  worstMeanRank: number | null;
+  bestMeanRank: number | null;
+  closedCountTotal: number;
+}
+
+/**
+ * 여러 슬리피지 수준을 가로질러 조합을 세운다 — **가장 나쁜 조건의 순위평균**이 기준이다.
+ *
+ * 한 수준에서 1위여도 다른 수준에서 9위로 떨어지는 값은 "이겼다" 가 아니라 "그 가정에서
+ * 이겼다" 다. 슬리피지의 크기는 봉으로 알 수 없고 모델링은 검증할 수 없으므로(원장 §하지
+ * 않기로 한 것), 값을 고르려면 **가정에 흔들리지 않는 쪽**을 골라야 한다.
+ *
+ * 최댓값(최악)을 쓰는 이유는 평균이 한 수준의 붕괴를 다른 수준의 우수함으로 덮기 때문이다 —
+ * 실제로 `+30/-0.2` 는 슬리피지 0 에서 1위이고 0.2% 에서 9위인데, 평균으로 세우면 그 붕괴가
+ * 보이지 않는다.
+ */
+export const summarizeAcrossConditions = (input: {
+  conditions: ConditionOutcomes[];
+  baselineLabel: string;
+}): RobustSummary[] => {
+  const summariesByCondition = input.conditions.map(
+    (condition) =>
+      new Map(
+        summarizeCombinations({
+          outcomes: condition.outcomes,
+          baselineLabel: input.baselineLabel,
+        }).map((summary) => [summary.label, summary]),
+      ),
+  );
+  const labels = [
+    ...new Set(
+      input.conditions.flatMap((condition) =>
+        condition.outcomes.map((outcome) => outcome.label),
+      ),
+    ),
+  ];
+
+  const summaries = labels.map((label) => {
+    const meanRankByCondition = summariesByCondition.map(
+      (byLabel) => byLabel.get(label)?.meanRank ?? null,
+    );
+    const present = meanRankByCondition.filter(
+      (rank): rank is number => rank !== null,
+    );
+    return {
+      label,
+      meanRankByCondition,
+      worstMeanRank: present.length === 0 ? null : Math.max(...present),
+      bestMeanRank: present.length === 0 ? null : Math.min(...present),
+      closedCountTotal: summariesByCondition.reduce(
+        (sum, byLabel) => sum + (byLabel.get(label)?.closedCountTotal ?? 0),
+        0,
+      ),
+    };
+  });
+  return summaries.sort(
+    (left, right) =>
+      (left.worstMeanRank ?? Number.POSITIVE_INFINITY) -
+        (right.worstMeanRank ?? Number.POSITIVE_INFINITY) ||
+      left.label.localeCompare(right.label),
+  );
+};
+
+export interface RobustConditionVerdict {
+  conditionLabel: string;
+  chosenExcessReturnPercent: number | null;
+  baselineExcessReturnPercent: number | null;
+  won: boolean | null;
+}
+
+export interface RobustWalkForwardVerdict {
+  windowIndex: number;
+  trainedWindowCount: number;
+  chosenLabel: string;
+  byCondition: RobustConditionVerdict[];
+  // **모든 조건에서 이겼을 때만 참**이다. 하나라도 지면 그 값은 가정에 걸려 있다.
+  wonEveryCondition: boolean | null;
+}
+
+/**
+ * 슬리피지 가정을 판정 절차 안에 넣은 walk-forward.
+ *
+ * 고르는 단계에서 **최악 조건의 순위평균**을 쓰고, 시험하는 단계에서 **모든 조건**을 본다.
+ * 표를 다 보고 사람이 강건한 값을 집으면 그 순간 표본 밖이 아니게 되므로, 선택을 절차
+ * 안으로 넣는 것이 이 함수의 존재 이유다.
+ */
+export const evaluateRobustWalkForward = (input: {
+  conditions: ConditionOutcomes[];
+  baselineLabel: string;
+  warmupWindows?: number;
+}): RobustWalkForwardVerdict[] => {
+  const warmup = input.warmupWindows ?? WALK_FORWARD_WARMUP_WINDOWS;
+  const windowIndexes = [
+    ...new Set(
+      input.conditions.flatMap((condition) =>
+        condition.outcomes.map((outcome) => outcome.windowIndex),
+      ),
+    ),
+  ].sort((left, right) => left - right);
+
+  const verdicts: RobustWalkForwardVerdict[] = [];
+  for (let position = warmup; position < windowIndexes.length; position += 1) {
+    const trainedIndexes = windowIndexes.slice(0, position);
+    const targetIndex = windowIndexes[position];
+    const trained = summarizeAcrossConditions({
+      conditions: input.conditions.map((condition) => ({
+        conditionLabel: condition.conditionLabel,
+        outcomes: condition.outcomes.filter((outcome) =>
+          trainedIndexes.includes(outcome.windowIndex),
+        ),
+      })),
+      baselineLabel: input.baselineLabel,
+    });
+    const chosen = trained.at(0);
+    if (chosen === undefined) {
+      continue;
+    }
+    const byCondition = input.conditions.map((condition) => {
+      const target = condition.outcomes.filter(
+        (outcome) => outcome.windowIndex === targetIndex,
+      );
+      const chosenExcessReturnPercent =
+        target.find((outcome) => outcome.label === chosen.label)
+          ?.excessReturnPercent ?? null;
+      const baselineExcessReturnPercent =
+        target.find((outcome) => outcome.label === input.baselineLabel)
+          ?.excessReturnPercent ?? null;
+      return {
+        conditionLabel: condition.conditionLabel,
+        chosenExcessReturnPercent,
+        baselineExcessReturnPercent,
+        won:
+          chosen.label === input.baselineLabel ||
+          chosenExcessReturnPercent === null ||
+          baselineExcessReturnPercent === null
+            ? null
+            : chosenExcessReturnPercent > baselineExcessReturnPercent,
+      };
+    });
+    const judged = byCondition.filter((entry) => entry.won !== null);
+    verdicts.push({
+      windowIndex: targetIndex,
+      trainedWindowCount: trainedIndexes.length,
+      chosenLabel: chosen.label,
+      byCondition,
+      wonEveryCondition:
+        judged.length === 0
+          ? null
+          : judged.every((entry) => entry.won === true),
+    });
+  }
+  return verdicts;
+};
