@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 import { MeasureBlogRevisionUsecase } from '../../../agent/blog/application/measure-blog-revision.usecase';
 import { formatBlogRevision } from '../../../slack/format/blog-revision.formatter';
@@ -20,7 +20,6 @@ import {
 @Injectable()
 export class BlogRevisionReportAutopilotTask implements AutopilotTask {
   readonly id = 'blog-revision-report';
-  private readonly logger = new Logger(BlogRevisionReportAutopilotTask.name);
 
   constructor(
     private readonly measureBlogRevision: MeasureBlogRevisionUsecase,
@@ -32,23 +31,15 @@ export class BlogRevisionReportAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
 
-    try {
-      const report = await this.measureBlogRevision.execute();
-      const summaryText = formatBlogRevision(report, new Date());
-      if (summaryText === null) {
-        // 구간에 발행이 없으면 보고할 것이 없다.
-        return { skip: true };
-      }
-      return { skip: false, summaryText };
-    } catch (error: unknown) {
-      // 관측용 카드 하나 때문에 같은 회차의 다른 보고까지 끊지 않는다. 대신 조용히 사라지지
-      // 않게 로그로 남긴다 — 이 카드가 몇 주째 안 보이면 여기부터 본다.
-      this.logger.warn(
-        `블로그 수정률 집계 실패, 이 회차는 건너뛴다: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    // 집계 실패를 삼키지 않는다. orchestrator 가 이미 그룹을 계속 진행시키면서 digest 에
+    // 「⚠️ 자동 생성 실패」를 적고, 저빈도 cron 은 BullMQ 로 4회까지 재시도한다. 여기서
+    // `skip: true` 로 정상 종료하면 그 두 경로가 모두 죽어 그 주 보고가 조용히 유실된다.
+    const report = await this.measureBlogRevision.execute();
+    const summaryText = formatBlogRevision(report, new Date());
+    if (summaryText === null) {
+      // 구간에 발행이 없으면 보고할 것이 없다. 이건 실패가 아니다.
       return { skip: true };
     }
+    return { skip: false, summaryText };
   }
 }

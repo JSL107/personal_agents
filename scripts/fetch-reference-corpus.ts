@@ -16,8 +16,20 @@
 // 수집이 되는 곳만 담았다(2026-09-02 확인). 카카오는 RSS 에 본문이 없고(요약만), Medium 을 쓰는
 // 곳(당근·쿠팡·무신사)은 RSS 요청에 HTML 을 돌려주며, 컬리는 403 이다. 브라우저 User-Agent 는
 // 필수다 — 없으면 우아한형제들이 403 으로 막힌다.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// 옛 산출물을 지우고 시작한다. 대상이 줄어든 회차에서 지난번 `.md` 가 남으면 다음 측정이
+// glob 으로 그것까지 집어 들어, 코퍼스에 없는 글이 기준값에 섞인다.
+// 디렉터리를 통째로 지우지 않고 `.md` 만 지운다 — 인자로 받은 경로라 사용자가 다른 것을
+// 가리켰을 때 그 안의 다른 파일까지 날리면 안 된다.
+const clearMarkdown = (directory: string): void => {
+  for (const name of readdirSync(directory)) {
+    if (name.endsWith('.md')) {
+      rmSync(join(directory, name));
+    }
+  }
+};
 
 interface ReferenceFeed {
   name: string;
@@ -111,7 +123,10 @@ const parseFeed = (xml: string): ReferencePost[] => {
     if (!bodyMatch) {
       continue;
     }
-    const body = htmlToMarkdown(decodeEntities(stripCdata(bodyMatch[1])));
+    // 여기서 디코딩하지 않는다. `htmlToMarkdown` 이 태그를 지운 **뒤에** 한 번만 푼다 —
+    // 먼저 풀면 본문에 인용된 `&lt;div&gt;` 같은 예시가 진짜 태그가 되어 통째로 지워지고,
+    // 그만큼 참조 코퍼스의 문체 지표가 왜곡된다.
+    const body = htmlToMarkdown(stripCdata(bodyMatch[1]));
     if (body.length < MINIMUM_BODY_LENGTH) {
       continue;
     }
@@ -138,6 +153,7 @@ const fetchFeed = async (feed: ReferenceFeed): Promise<ReferencePost[]> => {
 const main = async (): Promise<void> => {
   const outputDirectory = process.argv[2] ?? DEFAULT_OUTPUT_DIRECTORY;
   mkdirSync(outputDirectory, { recursive: true });
+  clearMarkdown(outputDirectory);
 
   let total = 0;
   for (const feed of FEEDS) {

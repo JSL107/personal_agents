@@ -10,8 +10,11 @@
 // 판정을 숫자로 꺼내 온다.
 //
 // 두 짝을 맞춘다:
-//   발행본  실행 원장 `agent_run.output.content` (모델이 만들어 커밋한 그대로)
+//   발행본  승인된 발행 카드의 `payload.content` (사용자가 ✅ 눌러 실제로 커밋된 그대로)
 //   최종본  블로그 저장소의 현재 파일 (사람이 고친 뒤)
+//
+// **실행 원장(`BLOG_PUBLISH` AgentRun)을 쓰지 않는다.** 그 회차는 승인 카드를 만든 시점에 이미
+// SUCCEEDED 라(`output.status` 가 `ready`), 거절·만료된 카드의 본문까지 발행본으로 집계된다.
 //
 // 사용 (.env 로딩은 Node 22 내장 --env-file 사용 — dotenv 파서 직접 구현 X):
 //   node --env-file=.env -r ts-node/register/transpile-only scripts/blog-revision-report.ts
@@ -48,25 +51,29 @@ interface RevisionRow {
 }
 
 const fetchPublished = async (): Promise<PublishedPost[]> => {
-  const runs = await prisma.agentRun.findMany({
-    where: { agentType: 'BLOG_PUBLISH', status: 'SUCCEEDED' },
-    select: { output: true, startedAt: true },
-    orderBy: { startedAt: 'asc' },
+  const previews = await prisma.previewAction.findMany({
+    where: { kind: 'BLOG_GITHUB_PUBLISH', status: 'APPLIED' },
+    select: { payload: true, appliedAt: true },
+    orderBy: { appliedAt: 'asc' },
   });
   const posts: PublishedPost[] = [];
-  for (const run of runs) {
-    const output = run.output as { path?: unknown; content?: unknown } | null;
+  for (const preview of previews) {
+    const payload = preview.payload as {
+      path?: unknown;
+      content?: unknown;
+    } | null;
     if (
-      typeof output?.path !== 'string' ||
-      typeof output.content !== 'string'
+      typeof payload?.path !== 'string' ||
+      typeof payload.content !== 'string' ||
+      preview.appliedAt === null
     ) {
-      // 원장에는 이 필드가 없던 시절의 회차가 섞여 있다. 그 회차는 짝을 못 맞추므로 뺀다.
+      // 이 필드가 없던 시절의 카드. 짝을 못 맞추므로 뺀다.
       continue;
     }
     posts.push({
-      path: output.path,
-      publishedAt: run.startedAt,
-      published: output.content,
+      path: payload.path,
+      publishedAt: preview.appliedAt,
+      published: payload.content,
     });
   }
   return posts;

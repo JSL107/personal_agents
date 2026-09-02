@@ -1421,5 +1421,54 @@ describe('OctokitGithubClient', () => {
       });
       expect(result.fileUrl).toContain('/hello.md');
     });
+
+    // 본문은 주간 수정률 집계가 발행본과 대조하는 값이다. 디코딩이 어긋나면 글 전체가
+    // 「바뀐 것」으로 잡혀 수정률이 100% 로 튄다.
+    it('getFileFromBranch — base64 본문을 디코딩해 함께 돌려준다', async () => {
+      const getContent = jest.fn().mockResolvedValue({
+        data: {
+          html_url: 'https://github.com/owner/repo/blob/main/a.md',
+          encoding: 'base64',
+          content: Buffer.from('첫 줄이에요.\n둘째 줄이에요.', 'utf8').toString(
+            'base64',
+          ),
+        },
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { getContent } },
+      } as unknown as Octokit);
+
+      const result = await client.getFileFromBranch({
+        repo: 'owner/repo',
+        branch: 'main',
+        path: 'a.md',
+      });
+
+      expect(result.content).toBe('첫 줄이에요.\n둘째 줄이에요.');
+    });
+
+    // GitHub 은 1MB 를 넘는 파일에 본문을 싣지 않고 encoding 을 'none' 으로 준다. 그때
+    // base64 로 디코딩하면 빈 문자열이 「내용이 없는 파일」로 읽혀, 부르는 쪽이 그 글을
+    // 「통째로 지워졌다」로 집계한다.
+    it('getFileFromBranch — 본문이 실려 오지 않으면 content 를 넘기지 않는다', async () => {
+      const getContent = jest.fn().mockResolvedValue({
+        data: {
+          html_url: 'https://github.com/owner/repo/blob/main/big.md',
+          encoding: 'none',
+          content: '',
+        },
+      });
+      const client = new OctokitGithubClient({
+        rest: { repos: { getContent } },
+      } as unknown as Octokit);
+
+      const result = await client.getFileFromBranch({
+        repo: 'owner/repo',
+        branch: 'main',
+        path: 'big.md',
+      });
+
+      expect(result.content).toBeUndefined();
+    });
   });
 });

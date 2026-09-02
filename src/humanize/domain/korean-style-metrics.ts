@@ -28,7 +28,7 @@ import { maskFencedCodeBlocks, scanMarkdownBlocks } from './markdown-blocks';
 //
 // **2026-09-02 — 그 조건이 충족됐다.** 기준 코퍼스는 이제 GitHub 블로그
 // (`JSL107/JSL107.github.io`) 의 **사람이 손댄 발행본 9편 · 881문장**이다
-// (`scripts/measure-blog-baseline.ts` 로 재현). 아래 임계값은 전부 이 실측에서 나온다.
+// (`scripts/fetch-blog-baseline.ts` 로 재현). 아래 임계값은 전부 이 실측에서 나온다.
 //
 //   축        합산    편별 분포                                    옛 기준
 //   평균     49.6자   38.6 ~ 57.0                                  ≥35 (임시 눈금)

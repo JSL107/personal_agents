@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../../github/domain/port/github-client.port';
-import { AgentType } from '../../../model-router/domain/model-router.type';
+import { FindRecentAppliedPreviewsUsecase } from '../../../preview-gate/application/find-recent-applied-previews.usecase';
+import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
   countRevision,
   RevisionCount,
@@ -31,6 +31,7 @@ export interface BlogRevisionReport {
 const LOOKBACK_DAYS = 28;
 // 한 회차에서 GitHub 을 두드리는 상한. 글이 하루 한 편이라 4주면 30편 이하다.
 const FETCH_LIMIT = 40;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface PublishedSnapshot {
   path: string;
@@ -51,7 +52,7 @@ export class MeasureBlogRevisionUsecase {
   private readonly logger = new Logger(MeasureBlogRevisionUsecase.name);
 
   constructor(
-    private readonly agentRunService: AgentRunService,
+    private readonly findRecentAppliedPreviews: FindRecentAppliedPreviewsUsecase,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
     private readonly config: ConfigService,
@@ -91,27 +92,43 @@ export class MeasureBlogRevisionUsecase {
     };
   }
 
+  /**
+   * 실제로 커밋된 글만 모은다.
+   *
+   * **실행 원장(`BLOG_PUBLISH` AgentRun)을 쓰면 안 된다.** 그 회차는 승인 카드를 만든 시점에
+   * 이미 SUCCEEDED 라(`output.status` 가 `ready`), 사용자가 거절하거나 만료된 카드의 본문까지
+   * 발행본으로 집계된다. 실측(2026-09-02)상 성공 회차 14건 중 실제 발행은 10건이고, 저녁
+   * 카드 쪽에는 CANCELLED 1건 · EXPIRED 5건이 남아 있다. 같은 초안을 다시 올리면 같은 경로로
+   * 두 회차가 생겨 중복 집계되기도 한다.
+   *
+   * 승인된 카드(`APPLIED`)는 그 셋을 한 번에 푼다 — 실제로 커밋된 것만 남고, `appliedAt` 이
+   * 발행 시각이며, 카드 하나가 발행 하나다.
+   */
   private async findPublished(): Promise<PublishedSnapshot[]> {
-    const runs = await this.agentRunService.findRecentSucceededRuns({
-      agentType: AgentType.BLOG_PUBLISH,
-      sinceDays: LOOKBACK_DAYS,
+    const previews = await this.findRecentAppliedPreviews.execute({
+      kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+      since: new Date(Date.now() - LOOKBACK_DAYS * DAY_MS),
       limit: FETCH_LIMIT,
     });
 
     const snapshots: PublishedSnapshot[] = [];
-    for (const run of runs) {
-      const output = run.output as { path?: unknown; content?: unknown } | null;
+    for (const preview of previews) {
+      const payload = preview.payload as {
+        path?: unknown;
+        content?: unknown;
+      } | null;
       if (
-        typeof output?.path !== 'string' ||
-        typeof output.content !== 'string'
+        typeof payload?.path !== 'string' ||
+        typeof payload.content !== 'string' ||
+        preview.appliedAt === null
       ) {
-        // 원장에는 이 필드가 없던 시절의 회차가 섞여 있다. 짝을 못 맞추므로 뺀다.
+        // 이 필드가 없던 시절의 카드. 짝을 못 맞추므로 뺀다.
         continue;
       }
       snapshots.push({
-        path: output.path,
-        content: output.content,
-        publishedAt: run.endedAt,
+        path: payload.path,
+        content: payload.content,
+        publishedAt: preview.appliedAt,
       });
     }
     return snapshots;

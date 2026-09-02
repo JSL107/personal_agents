@@ -16,8 +16,20 @@
 //
 // `gh` CLI 인증을 그대로 쓴다(공개 저장소라 토큰이 없어도 되지만 rate limit 이 넉넉해진다).
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// 옛 산출물을 지우고 시작한다. 대상이 줄어든 회차에서 지난번 `.md` 가 남으면 다음 측정이
+// glob 으로 그것까지 집어 들어, 코퍼스에 없는 글이 기준값에 섞인다.
+// 디렉터리를 통째로 지우지 않고 `.md` 만 지운다 — 인자로 받은 경로라 사용자가 다른 것을
+// 가리켰을 때 그 안의 다른 파일까지 날리면 안 된다.
+const clearMarkdown = (directory: string): void => {
+  for (const name of readdirSync(directory)) {
+    if (name.endsWith('.md')) {
+      rmSync(join(directory, name));
+    }
+  }
+};
 
 // 기본값은 이 사용자의 블로그다. 다른 저장소를 재려면 env 로 덮는다.
 // (Nest DI 컨텍스트 밖의 스크립트라 `process.env` 직접 접근이 허용된다 — CODE_RULES §9)
@@ -77,6 +89,7 @@ const fetchBody = (name: string): string =>
 const main = (): void => {
   const outputDirectory = process.argv[2] ?? DEFAULT_OUTPUT_DIRECTORY;
   mkdirSync(outputDirectory, { recursive: true });
+  clearMarkdown(outputDirectory);
 
   const names = listMarkdownNames();
   const entries: PostEntry[] = names.map((name) => ({

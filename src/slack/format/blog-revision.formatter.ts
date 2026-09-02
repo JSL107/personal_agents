@@ -68,7 +68,12 @@ export const formatBlogRevision = (
     );
   }
 
-  const worst = [...report.rows]
+  // 헤더의 평균·편수와 **같은 표본**에서 고른다. 조회 창(4주) 전체를 정렬하면 직전 구간의
+  // 글이 「최근 2주」 카드에 실려, 본문 수치와 상세 목록이 서로 다른 표본을 설명하게 된다.
+  const recentSince =
+    now.getTime() - REVISION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const worst = report.rows
+    .filter((row) => row.publishedAt.getTime() >= recentSince)
     .sort((left, right) => right.count.percent - left.count.percent)
     .slice(0, DETAIL_LIMIT);
   if (worst.length > 0) {
