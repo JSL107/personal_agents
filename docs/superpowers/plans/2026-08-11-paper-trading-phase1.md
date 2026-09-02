@@ -548,7 +548,7 @@ findLatestSnapshotBefore(accountId: number, tradeDate: Date): Promise<SnapshotRo
 ⑧ 시세 조회를 `{ adjusted: false }` 로 호출한다 — mock 호출 인자로 단언
 ⑨ `DailyPrice` 에 **쓰지 않는다** — Prisma mock 에 `dailyPrice.upsert` 가 호출되지 않음을 단언
 
-⑨ 가 중요하다. 장중이든 아니든 `DailyPrice(tickerId, 오늘)` 이 생기면 그날 주가 감시가 "휴장이었다"로 오판해 판정을 건너뛴다(실제 사고: `docs/superpowers/plans/2026-08-06-invest-line-roadmap.md` §E). 테스트로 못박아 후속 변경이 이 제약을 깨지 못하게 한다.
+⑨ 가 중요하다. 장중이든 아니든 `DailyPrice(tickerId, 오늘)` 이 생기면 그날 주가 감시가 "휴장이었다"로 오판해 판정을 건너뛴다(실제 사고: `docs/superpowers/plans/2026-08-06-invest-line-roadmap.md` §E (PR #325 로 `tasks/goals-invest-line.md` 에 흡수돼 삭제된 문서다 — 2026-09-02 확인)). 테스트로 못박아 후속 변경이 이 제약을 깨지 못하게 한다.
 
 - [ ] **Step 7: 실패 확인 → Step 8: 구현 → Step 9: 통과 확인**
 

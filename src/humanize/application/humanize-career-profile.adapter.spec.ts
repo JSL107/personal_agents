@@ -99,4 +99,135 @@ describe('humanizeCareerProfile', () => {
       result: 'r',
     });
   });
+  describe('previous(직전 프로필) 를 넘기면', () => {
+    const accomplishmentAt = (
+      pr: number,
+    ): CareerProfileData['accomplishments'][number] => ({
+      title: `타이틀${pr}`,
+      bullet: `불릿${pr}`,
+      star: {
+        situation: `s${pr}`,
+        task: `t${pr}`,
+        action: `a${pr}`,
+        result: `r${pr}`,
+      },
+      techTags: [],
+      evidence: [
+        {
+          repo: 'o/r',
+          pr,
+          url: `https://x/${pr}`,
+          mergedAt: '2026-01-01',
+        },
+      ],
+    });
+
+    const passthroughHumanizer = (): HumanizeService =>
+      ({
+        humanize: jest.fn(async (fields: Record<string, string>) => {
+          const out: Record<string, string> = {};
+          for (const key of Object.keys(fields)) {
+            out[key] = `다듬:${fields[key]}`;
+          }
+          return out;
+        }),
+      }) as unknown as HumanizeService;
+
+    it('값이 그대로인 성과는 윤문 payload 에서 빠져 누적분이 재윤문되지 않는다', async () => {
+      const kept = Array.from({ length: 60 }, (_, order) =>
+        accomplishmentAt(order + 1),
+      );
+      const previous: CareerProfileData = {
+        ...baseProfile(),
+        summary: '이미 다듬은 요약',
+        accomplishments: kept,
+      };
+      // 새 PR 성과 1건만 맨 앞에 붙은 상태 (mergeAccomplishment 결과와 같은 모양)
+      const merged: CareerProfileData = {
+        ...previous,
+        accomplishments: [accomplishmentAt(999), ...kept],
+      };
+      const humanizer = passthroughHumanizer();
+
+      const result = await humanizeCareerProfile(merged, humanizer, previous);
+
+      // payload 는 성과 61건이 아니라 새 성과 6필드만 — 성과 수에 비례해 커지지 않는다.
+      const payload = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+      expect(Object.keys(payload).sort()).toEqual([
+        'acc.0.action',
+        'acc.0.bullet',
+        'acc.0.result',
+        'acc.0.situation',
+        'acc.0.task',
+        'acc.0.title',
+      ]);
+      // 새 성과는 윤문되고, 건너뛴 옛 성과는 저장된 값 그대로 남는다.
+      expect(result.accomplishments[0].title).toBe('다듬:타이틀999');
+      expect(result.accomplishments[1]).toEqual(kept[0]);
+      expect(result.summary).toBe('이미 다듬은 요약');
+    });
+
+    it('같은 PR 이라도 값이 바뀐 필드는 다시 윤문한다', async () => {
+      const previous: CareerProfileData = {
+        ...baseProfile(),
+        accomplishments: [accomplishmentAt(1)],
+      };
+      const rewritten = {
+        ...accomplishmentAt(1),
+        bullet: '새로 쓴 불릿',
+      };
+      const humanizer = passthroughHumanizer();
+
+      const result = await humanizeCareerProfile(
+        { ...previous, accomplishments: [rewritten] },
+        humanizer,
+        previous,
+      );
+
+      const payload = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+      expect(Object.keys(payload)).toEqual(['acc.0.bullet']);
+      expect(result.accomplishments[0].bullet).toBe('다듬:새로 쓴 불릿');
+      expect(result.accomplishments[0].title).toBe('타이틀1');
+    });
+
+    it('바뀐 필드가 하나도 없으면 payload 가 비고 프로필은 원본 그대로다', async () => {
+      const previous: CareerProfileData = {
+        ...baseProfile(),
+        summary: '이미 다듬은 요약',
+        accomplishments: [accomplishmentAt(1)],
+      };
+      const humanizer = passthroughHumanizer();
+
+      // 같은 PR 을 다시 회고했는데 모델이 같은 문장을 돌려준 경우 — 모든 필드가 "이전과 같음" 이다.
+      const result = await humanizeCareerProfile(previous, humanizer, previous);
+
+      const payload = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+      expect(payload).toEqual({});
+      // 빈 payload 에는 HumanizeService 가 모델을 부르지 않고 빈 맵을 돌려준다.
+      // 그때도 `?? 원본` 역참조가 저장된 윤문본을 그대로 복원해야 한다.
+      expect(result).toEqual(previous);
+    });
+
+    it('evidence 가 없어 짝을 못 찾는 성과는 건너뛰지 않고 전부 윤문한다', async () => {
+      const orphan = { ...accomplishmentAt(1), evidence: [] };
+      const previous: CareerProfileData = {
+        ...baseProfile(),
+        summary: '이미 다듬은 요약',
+        accomplishments: [orphan],
+      };
+      const humanizer = passthroughHumanizer();
+
+      await humanizeCareerProfile(previous, humanizer, previous);
+
+      const payload = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+      expect(Object.keys(payload).sort()).toEqual([
+        'acc.0.action',
+        'acc.0.bullet',
+        'acc.0.result',
+        'acc.0.situation',
+        'acc.0.task',
+        'acc.0.title',
+      ]);
+    });
+  });
 });
