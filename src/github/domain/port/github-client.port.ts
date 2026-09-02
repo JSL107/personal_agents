@@ -151,6 +151,15 @@ export interface GetFileFromBranchInput {
 
 export interface GetFileFromBranchResult {
   fileUrl: string;
+  /**
+   * 파일 본문. 이미 하던 `getContent` 응답에 실려 오던 것을 버리지 않고 함께 돌려준다 —
+   * 추가 요청은 없다.
+   *
+   * optional 인 이유가 둘이다. GitHub 이 1MB 를 넘는 파일에는 본문을 비워 보내고, 이 필드가
+   * 없던 시절에 쓰인 mock 들이 `fileUrl` 만 돌려주기 때문이다. 부르는 쪽은 없을 수 있다는
+   * 전제로 다뤄야 한다.
+   */
+  content?: string;
 }
 
 export interface GithubClientPort {
