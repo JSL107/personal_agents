@@ -9,7 +9,7 @@
 > - [src/agent/impact-reporter/impact-reporter.module.ts](src/agent/impact-reporter/impact-reporter.module.ts) — `/impact-report` 명령 운영 중
 > - [src/agent/be/be.module.ts](src/agent/be/be.module.ts) — `/plan-task` 명령으로 BackendPlan 텍스트 산출
 > - [package.json](package.json) — `@nestjs/schedule` / pgvector / langchain 미설치, `@nestjs/bullmq` 는 설치됨
-> - [AGENTS.md](AGENTS.md) §5 / §6 — CLI subscription 격리·Prisma 단일 ORM·HOME throwaway 보안 원칙
+> - [AGENTS.md](../../AGENTS.md) §5 / §6 — CLI subscription 격리·Prisma 단일 ORM·HOME throwaway 보안 원칙
 
 ---
 
@@ -61,7 +61,7 @@
 
 | 액션 | 현재 상태 | 사실관계 | 권고 |
 |---|---|---|---|
-| n8n / Zapier 연동 | **재설계** | 이대리 정체성([AGENTS.md §0](AGENTS.md))은 자체 호스팅 NestJS — n8n 도입은 운영 부담 추가, 가치 < 비용 | **반대**. 대신 **OPS-2 단일 webhook 수신부** 만 자체 구현 |
+| n8n / Zapier 연동 | **재설계** | 이대리 정체성([AGENTS.md §0](../../AGENTS.md))은 자체 호스팅 NestJS — n8n 도입은 운영 부담 추가, 가치 < 비용 | **반대**. 대신 **OPS-2 단일 webhook 수신부** 만 자체 구현 |
 | 단일 Webhook (`POST /v1/agent/trigger`) | **미구현 (가치 ○)** | 현재 진입점은 Slack 슬래시뿐 | **OPS-2** 로 채택 — n8n 없이도 가치 있음 |
 | Polling 로직 제거 | **사실관계 오류** | 현재 코드 어디에도 polling 없음 — 모든 외부 호출은 슬래시 호출 시 on-demand + graceful fallback | **폐기** |
 
@@ -162,7 +162,7 @@
 - **OPS-1 Cost / Quota Observability Pane**
   - `agent_run` 에 `cli_provider` / `duration_ms` / `quota_estimated` 컬럼 추가 (Prisma 스키마 변경 + `db:push`).
   - `/quota` 슬래시: 오늘/이번주 실행 수 + 추정 quota 소진율.
-  - 코드 변경 후 lint:check + test + build 3중 green ([AGENTS.md §1](AGENTS.md)) 필수.
+  - 코드 변경 후 lint:check + test + build 3중 green ([AGENTS.md §1](../../AGENTS.md)) 필수.
 
 - **OPS-2 단일 Webhook 수신부 (`POST /v1/agent/trigger`)**
   - n8n 없이 직접 구현. GitHub webhook (issue.opened, pr.opened) → `/impact-report` 자동 트리거 → PO-3 Impact Challenger 훅 가능해짐.
@@ -253,4 +253,4 @@ P0/P1 전부 완료. 남은 미구현 항목은 P2/P3/Hold 뿐.
 3. **PRO-4** Weekly Summarizer — PRO-1 Morning Briefing 운영 후 패턴 확인 시 착수.
 4. **PM-3'** FTS 기반 유사 plan — Postgres tsvector + GIN 인덱스, v3 Phase 2 와 중복 검토 필요.
 
-> 모든 코드 변경 후 [AGENTS.md §1](AGENTS.md) 의 `pnpm lint:check && pnpm test && pnpm build` 3중 green 필수. commit 은 사용자가 명시적으로 요청한 시점에만.
+> 모든 코드 변경 후 [AGENTS.md §1](../../AGENTS.md) 의 `pnpm lint:check && pnpm test && pnpm build` 3중 green 필수. commit 은 사용자가 명시적으로 요청한 시점에만.
