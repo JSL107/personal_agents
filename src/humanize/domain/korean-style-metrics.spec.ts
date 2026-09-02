@@ -64,7 +64,7 @@ describe('measureKoreanStyle', () => {
   });
 
   it('만연체 한 문장은 최장 문장 길이로 드러난다', () => {
-    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
+    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`);
 
     expect(metrics.longestSentenceLength).toBeGreaterThan(80);
   });
@@ -72,11 +72,11 @@ describe('measureKoreanStyle', () => {
   // 「최장 91자」만 보면 만연체인지 영문 이름 나열인지 갈리지 않는다. 둘은 처방이 정반대다
   // — 만연체는 끊어야 하고, 나열은 끊을 수 없다(고유명사 불변이 절대 규칙이다).
   it('최장 문장이 상한을 넘으면 그 문장을 함께 돌려준다', () => {
-    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(120)}입니다.`);
+    const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`);
 
-    expect(metrics.longestSentence).toBe(`${'가'.repeat(120)}입니다.`);
+    expect(metrics.longestSentence).toBe(`${'가'.repeat(160)}입니다.`);
     expect(formatKoreanStyleMetrics(metrics)).toContain(
-      '최장 문장(124자 · 1어절):',
+      '최장 문장(164자 · 1어절):',
     );
   });
 
@@ -522,7 +522,8 @@ describe('재현 목표 판정', () => {
     longestSentenceWords: 12,
     colloquialEndingPercent: 15,
     yoEndingPercent: 50,
-    endingAlternationPercent: 30,
+    // 코퍼스 9편이 전부 0% 라 상한이 5 로 내려갔다(헤더 표). 옛 값 30 은 이제 목표 밖이다.
+    endingAlternationPercent: 0,
     bannedConnectiveCount: 0,
     emDashCount: 0,
     measurable: true,
@@ -547,7 +548,7 @@ describe('재현 목표 판정', () => {
       wordsPerSentence: 8.7,
     });
 
-    expect(gaps).toEqual(['어절 8.7개(≥11개)']);
+    expect(gaps).toEqual(['어절 8.7개(≥10개)']);
   });
 
   it('초장문 하나는 여전히 잡는다', () => {
@@ -614,13 +615,13 @@ describe('재현 목표 판정', () => {
   it('카드에 판정 결과가 함께 실린다', () => {
     expect(formatKoreanStyleMetrics(base)).toContain('판정 대상 충족');
     expect(
-      formatKoreanStyleMetrics({ ...base, longestSentenceLength: 120 }),
-    ).toContain('목표 밖: 최장 120자(≤80)');
+      formatKoreanStyleMetrics({ ...base, longestSentenceLength: 160 }),
+    ).toContain('목표 밖: 최장 160자(≤150)');
   });
 
   it.each([
     ['금지접속사', { bannedConnectiveCount: 3 }, '금지접속사 3회(0회)'],
-    ['종결체교대', { endingAlternationPercent: 85 }, '종결체교대 85%(≤60%)'],
+    ['종결체교대', { endingAlternationPercent: 85 }, '종결체교대 85%(≤5%)'],
   ])('%s 분기도 기준을 넘으면 잡는다', (_name, patch, expected) => {
     // 분기마다 테스트가 없으면 비교 방향(< vs >)이 뒤집혀도 초록이 유지된다.
     const gaps = findKoreanStyleGaps({ ...base, ...patch });
@@ -628,8 +629,8 @@ describe('재현 목표 판정', () => {
   });
 
   it.each([
-    ['최장 상한 경계', { longestSentenceLength: 80 }],
-    ['교대율 상한 경계', { endingAlternationPercent: 60 }],
+    ['최장 상한 경계', { longestSentenceLength: 150 }],
+    ['교대율 상한 경계', { endingAlternationPercent: 5 }],
   ])('%s 값은 통과다(경계 포함)', (_name, patch) => {
     expect(findKoreanStyleGaps({ ...base, ...patch })).toEqual([]);
   });
