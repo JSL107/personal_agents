@@ -3,7 +3,10 @@
 // preview 카드 생성·GitHub 커밋은 execute() 쪽이라 여기서는 외부 부작용이 없다.
 //
 // 사용법:
-//   pnpm exec ts-node scripts/verify-blog-publish.ts [--dump <파일경로>]
+//   pnpm exec ts-node scripts/verify-blog-publish.ts [--dump <파일경로>] [--page <Notion pageId>]
+//
+// --page 를 주면 그 초안만 검증한다. 지목이 없으면 큐 순번대로 고르는데, 최근 차단된 초안은
+// 3일간 뒤로 밀리므로 막혔던 글이 지금 통과하는지 확인하려면 지목이 필요하다.
 //
 // --dump 를 주면 발행본 전문을 그 경로에 쓴다. 앞 500자만 봐서는 고유명사 보존·코드블록·
 // 분류처럼 본문 전체에 흩어진 것을 확인할 수 없어, 매번 스크립트를 손대는 대신 옵션으로 둔다.
@@ -47,6 +50,7 @@ const readOption = (name: string): string | undefined => {
 
 const main = async (): Promise<void> => {
   const dumpPath = readOption('dump');
+  const pageId = readOption('page');
   const application = await NestFactory.createApplicationContext(
     VerifyBlogPublishModule,
     { logger: ['error', 'warn'] },
@@ -67,6 +71,7 @@ const main = async (): Promise<void> => {
 
     const { candidate, modelUsed } = await usecase.buildPublishCandidate({
       slackUserId: process.env.OWNER_SLACK_USER_ID ?? 'U091CF9REP6',
+      ...(pageId ? { pageId } : {}),
     });
 
     console.log('modelUsed =', modelUsed);
