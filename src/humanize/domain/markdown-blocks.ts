@@ -51,7 +51,9 @@ export type HumanizeMarkdownResult = {
 
 // 펜스는 **길이까지** 잡는다. ```` 로 열고 안쪽에 ``` 가 들어간 블록을 3글자 마커로만 보면
 // 안쪽 펜스에서 닫힌 것으로 착각해 코드가 산문으로 새어 나온다(실측 확인).
-const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
+// 펜스 열기 — 백틱·틸드 3개 이상. 발행 라인의 옛 초안 보정(`legacy-heading.ts`)도 같은 판정을
+// 써야 한다. 코드블록 인식이 두 곳에서 갈리면 한쪽이 코드 안을 산문으로 보고 고친다.
+export const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
 // 헤딩 / 인용 / 표 / 리스트 / 구분선 / frontmatter 구분자 — 산문이 아니므로 손대지 않는다.
 const KEEP_LINE_PATTERN =
   /^\s*(#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s|-{3,}|={3,}|:::)/;
@@ -64,7 +66,7 @@ const INDENTED_LINE_PATTERN = /^[ \t]+\S/;
 const isKeepLine = (line: string): boolean =>
   KEEP_LINE_PATTERN.test(line) || INDENTED_LINE_PATTERN.test(line);
 
-const isClosingFence = (line: string, openMarker: string): boolean => {
+export const isClosingFence = (line: string, openMarker: string): boolean => {
   const trimmed = line.trim();
   const fenceChar = openMarker[0];
   if (!trimmed.startsWith(fenceChar.repeat(openMarker.length))) {

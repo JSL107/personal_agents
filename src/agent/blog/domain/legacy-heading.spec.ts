@@ -61,3 +61,51 @@ describe('liftLegacyHeadings', () => {
     expect(liftLegacyHeadings(tricky)).toContain('## 진짜 소제목');
   });
 });
+
+describe('liftLegacyHeadings — 펜스 종류와 길이', () => {
+  // 자체 펜스 판정을 쓰면 `~~~` 를 놓쳐 코드 안의 `### ` 를 헤딩으로 고친다(PR #460 리뷰 지적).
+  it('틸드 펜스 안의 헤딩 표기는 건드리지 않는다', () => {
+    const withTilde = [
+      '### 설정하기',
+      '~~~markdown',
+      '### 이건 예시 문서의 소제목',
+      '~~~',
+    ].join('\n');
+
+    const lifted = liftLegacyHeadings(withTilde);
+
+    expect(lifted).toContain('## 설정하기');
+    expect(lifted).toContain('### 이건 예시 문서의 소제목');
+  });
+
+  // ```` 로 연 블록은 안쪽 ``` 로 닫히지 않는다(CommonMark). 오인하면 그 뒤가 산문으로 취급돼
+  // 코드 안의 헤딩까지 바뀐다.
+  it('긴 펜스 안의 짧은 펜스를 닫는 것으로 보지 않는다', () => {
+    const nested = [
+      '### 마크다운 예시',
+      '````markdown',
+      '```bash',
+      'pnpm test',
+      '```',
+      '### 코드 안의 소제목',
+      '````',
+      '본문이에요.',
+    ].join('\n');
+
+    const lifted = liftLegacyHeadings(nested);
+
+    expect(lifted).toContain('## 마크다운 예시');
+    expect(lifted).toContain('### 코드 안의 소제목');
+  });
+
+  it('코드블록 안에만 ## 가 있으면 옛 초안 판정을 방해하지 않는다', () => {
+    const tricky = [
+      '### 진짜 소제목',
+      '~~~bash',
+      '## 이건 주석이에요',
+      '~~~',
+    ].join('\n');
+
+    expect(liftLegacyHeadings(tricky)).toContain('## 진짜 소제목');
+  });
+});
