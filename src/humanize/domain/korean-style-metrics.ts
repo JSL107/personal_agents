@@ -726,7 +726,7 @@ export const formatKoreanStyleMetrics = (
     c.headingCount >= COMPOSITION_HEADING_MIN
       ? `헤딩 ${c.headingCount}개 중 명사구 ${c.nounPhraseHeadingPercent}%`
       : null,
-    c.leafSectionCount > 0 ? `최장 절 ${c.longestLeafSectionLength}자` : null,
+    c.sectionCount > 0 ? `최장 절 ${c.longestSectionProse}자` : null,
   ].filter((part): part is string => part !== null);
   const composition =
     compositionParts.length > 0

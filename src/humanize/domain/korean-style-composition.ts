@@ -43,8 +43,8 @@ export type KoreanStyleCompositionMetrics = {
   // 900자가 아니라 1600자인 이유 — 채점 회차에 쓴 900자 상한은 방어선(최대 1528자)도 참조
   // 코퍼스(중앙 1087자)도 통과하지 못하는 값이었다. 여기서 잡으려는 것은 화면에서 실제로 벽인
   // 절이지, 조금 긴 절이 아니다.
-  leafSectionCount: number;
-  longestLeafSectionLength: number;
+  sectionCount: number;
+  longestSectionProse: number;
   // 어디까지 확인했는지 밝힌 문장이 있나. **판정하지 않고 경고만 한다.**
   //
   // 장르 표준이 아니기 때문이다 — 참조 코퍼스는 18%, 방어선도 22%만 밝힌다. 판정에 넣으면 거의
@@ -58,11 +58,13 @@ export type KoreanStyleCompositionMetrics = {
 const ATTRIBUTION_PATTERN = new RegExp(
   [
     '에 따르면',
-    '라고 (해요|합니다|하죠|설명|불러|부릅|언급|밝혀|적혀|돼)',
+    // 「~라고 해요/불러요」는 출처 주어가 없으면 그냥 정의문이다 — 「이 패턴을 어댑터라고 해요」
+    // 가 인용체로 집계됐다(리뷰 지적). 귀속 동사만 남기고, 명명 표현은 아래 출처 패턴에 맡긴다.
+    '라고 (설명|언급|밝혀|적혀)',
     '(명시|설명|언급|안내|기술)(돼|되어) 있',
     // `공식` 을 단독으로 두면 「공식 API 사용법을 설명해요」 처럼 출처가 주어가 아닌 문장까지
     // 잡는다(리뷰 지적). 뒤에 오는 말까지 묶어 출처를 가리킬 때만 걸리게 한다.
-    '(문서|README|블로그|가이드|레퍼런스|reference|스펙|릴리스 노트|공식 (문서|저장소|예제|가이드|레퍼런스))[^.!?]{0,24}(설명|언급|밝혀|적혀|명시|소개|정의)',
+    '(문서|README|블로그|가이드|레퍼런스|reference|스펙|릴리스 노트|공식 (문서|저장소|예제|가이드|레퍼런스))[^.!?]{0,60}(설명|언급|밝혀|적혀|명시|소개|정의|불러|부릅|한다고 해)',
   ].join('|'),
 );
 
@@ -86,13 +88,18 @@ const VERIFICATION_SCOPE_PATTERN = new RegExp(
 //
 // **활용형까지 함께 본다.** `요`·`다` 한 글자로 판정하면 `## 개요`·`## 제도` 같은 명사가
 // 문장형으로 잡히고, 거꾸로 `## 왜 필요한가` 같은 의문형은 명사구로 잡힌다(리뷰 지적).
+// `라`·`자` 를 넣으면 `## 인프라`·`## 연산자` 가 문장형이 된다(리뷰 지적). 의문형은 `한가`·`던가`
+// 까지 봐야 `## 왜 필요한가` 가 잡힌다.
 const SENTENCE_HEADING_ENDING =
-  /(니다|습니다|[어아여해예에]요|죠|[는은]가|인가|나요|[다라]|[았었겠]다|[한된される]다|까|자|\?|!)$/;
+  /(니다|습니다|[어아여해예에]요|죠|[는은인한던]가|나요|다|까|\?|!)$/;
 
 const HEADING_PATTERN = /^(#{2,6}) +(.+)$/gm;
 // 목록·표·인용은 산문이 아니라 절 길이에서 뺀다. 펜스 코드는 마스킹이 걷어내고, 4칸 들여쓴
 // 코드블록은 여기서 뺀다 — 마스킹은 펜스만 다루기 때문이다(코드 리뷰 지적).
-const NON_PROSE_LINE = /^(\s*([-*+|>]|\d+\.)\s?.*| {4,}\S.*)$/gm;
+// 마커 뒤 **공백을 요구한다.** 선택으로 두면 `**핵심은 이렇습니다.**` 처럼 강조로 시작하는 산문이
+// 목록으로 오인돼 절 길이에서 통째로 빠진다(리뷰 지적). 순서 목록은 `1.` 과 `1)` 을 모두 받는다.
+const NON_PROSE_LINE =
+  /^(\s*[-*+]\s+.*|\s*\d+[.)]\s+.*|\s*[|>].*| {4,}\S.*)$/gm;
 
 const stripHeadings = (text: string): string =>
   text.replace(/^#{1,6} .*$/gm, '');
@@ -128,21 +135,17 @@ const splitByHeadings = (markdown: string): HeadingBlock[] => {
 };
 
 /**
- * 하위 헤딩이 없는 절(리프)의 산문 글자 수만 모은다.
+ * 헤딩마다 **그 헤딩 바로 아래 산문**의 글자 수를 모은다.
  *
- * 상위 절은 세지 않는다 — `## A` 아래 `### B`·`### C` 가 있으면 A 의 길이는 B·C 를 합친 값이라
- * 늘 크게 나오고, 정작 사람이 한 화면에서 읽는 덩어리는 B 와 C 다.
+ * 하위 헤딩이 있는 절도 센다. `splitByHeadings` 가 이미 다음 헤딩 전까지만 자르므로 각 body 는
+ * 그 절의 자체 산문뿐이고, 하위 절의 분량은 섞이지 않는다. 이전에는 하위 헤딩이 있으면 통째로
+ * 건너뛰었는데, 그러면 `## A` 아래 500자를 쓰고 `### B` 를 연 글에서 그 500자가 사라졌다
+ * (리뷰 지적 — 「A 의 길이는 B·C 를 합친 값」이라던 전제가 틀렸다).
  */
-const measureLeafSections = (markdown: string): number[] => {
-  const blocks = splitByHeadings(markdown);
-  return blocks
-    .filter((block, index) => {
-      const next = blocks[index + 1];
-      return next === undefined || next.level <= block.level;
-    })
+const measureSectionProse = (markdown: string): number[] =>
+  splitByHeadings(markdown)
     .map((block) => countProseChars(block.body))
     .filter((length) => length > 0);
-};
 
 const toPercent = (count: number, total: number): number =>
   total === 0 ? 0 : Math.round((count / total) * 100);
@@ -164,7 +167,7 @@ export const measureKoreanStyleComposition = (
   const nounPhraseHeadings = headings.filter(
     (heading) => !SENTENCE_HEADING_ENDING.test(heading),
   );
-  const leafSections = measureLeafSections(masked);
+  const sections = measureSectionProse(masked);
   const attributionCount = sentences.filter((sentence) =>
     ATTRIBUTION_PATTERN.test(sentence),
   ).length;
@@ -177,9 +180,8 @@ export const measureKoreanStyleComposition = (
       nounPhraseHeadings.length,
       headings.length,
     ),
-    leafSectionCount: leafSections.length,
-    longestLeafSectionLength:
-      leafSections.length === 0 ? 0 : Math.max(...leafSections),
+    sectionCount: sections.length,
+    longestSectionProse: sections.length === 0 ? 0 : Math.max(...sections),
     hasVerificationScope: VERIFICATION_SCOPE_PATTERN.test(
       stripHeadings(masked),
     ),

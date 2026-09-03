@@ -5,7 +5,7 @@ describe('인용체 세기', () => {
     '공식 문서는 이 값이 필요하다고 설명해요.',
     'README 에 따르면 기본값은 3초예요.',
     'JavaScript reference 의 목록에는 write_todos 가 명시돼 있어요.',
-    'LangChain 은 이 방식을 batteries-included 라고 불러요.',
+    'LangChain 블로그는 이 방식을 batteries-included 라고 불러요.',
   ])('출처 뒤에 숨은 문장을 센다: %s', (sentence) => {
     expect(
       measureKoreanStyleComposition(sentence).attributionCount,
@@ -13,11 +13,24 @@ describe('인용체 세기', () => {
   });
 
   it.each([
+    '이 패턴을 어댑터라고 해요.',
+    '이걸 트랜잭션이라고 불러요.',
     'planning 도구는 write_todos 하나예요.',
     '이 값이 없으면 재시도가 무한히 돌아요.',
     '설명이 필요한 자리라 주석을 남겼어요.',
   ])('사실을 단언한 문장은 세지 않는다: %s', (sentence) => {
     expect(measureKoreanStyleComposition(sentence).attributionCount).toBe(0);
+  });
+
+  it('출처 이름만 있고 매체가 없으면 못 잡는다 (알려진 한계)', () => {
+    // 「LangChain 은 ~라고 불러요」처럼 회사·제품 이름이 주어인 문장은 놓친다. 출처 이름은
+    // 무한해서 목록으로 담을 수 없고, 「~라고 불러요」만으로 잡으면 「이 패턴을 어댑터라고
+    // 해요」 같은 정의문까지 걸린다. 놓치는 쪽을 골랐고, 상한을 그만큼 낮게 뒀다.
+    expect(
+      measureKoreanStyleComposition(
+        'LangChain 은 이 방식을 batteries-included 라고 불러요.',
+      ).attributionCount,
+    ).toBe(0);
   });
 
   it('코드블록 안의 문장은 세지 않는다', () => {
@@ -61,6 +74,25 @@ describe('헤딩 명사구 판정', () => {
     expect(metrics.nounPhraseHeadingPercent).toBe(0);
   });
 
+  it.each(['## 인프라', '## 연산자', '## 개요'])(
+    '명사로 끝나는 제목은 명사구다: %s',
+    (heading) => {
+      // `라`·`자`·`요` 한 글자로 보면 이런 명사가 문장형으로 잡힌다.
+      expect(
+        measureKoreanStyleComposition(build(heading)).nounPhraseHeadingPercent,
+      ).toBe(100);
+    },
+  );
+
+  it.each(['## 왜 필요한가', '## 무엇이 달라지는가'])(
+    '의문형은 문장으로 센다: %s',
+    (heading) => {
+      expect(
+        measureKoreanStyleComposition(build(heading)).nounPhraseHeadingPercent,
+      ).toBe(0);
+    },
+  );
+
   it('`#` 은 제목이라 세지 않는다', () => {
     // 글 제목은 본문 흐름이 아니다. `##` 이하만 소제목으로 본다.
     const metrics = measureKoreanStyleComposition(
@@ -81,9 +113,9 @@ describe('헤딩 명사구 판정', () => {
 describe('리프 절 길이', () => {
   const prose = (chars: number): string => '가'.repeat(chars);
 
-  it('하위 헤딩이 있는 절은 세지 않는다', () => {
-    // `## A` 의 길이는 아래 `### B`·`### C` 를 합친 값이라 늘 크게 나온다. 사람이 한 화면에서
-    // 읽는 덩어리는 B 와 C 다.
+  it('하위 헤딩이 있는 절도 자체 산문을 센다', () => {
+    // `splitByHeadings` 가 이미 다음 헤딩 전까지만 자르므로 상위 절의 body 에는 하위 절이 섞이지
+    // 않는다. 건너뛰면 `## A` 아래 쓴 분량이 통째로 사라진다(리뷰 지적).
     const markdown = [
       `## 상위 절`,
       prose(100),
@@ -93,9 +125,43 @@ describe('리프 절 길이', () => {
       prose(300),
     ].join('\n\n');
     const metrics = measureKoreanStyleComposition(markdown);
-    expect(metrics.leafSectionCount).toBe(2);
-    expect(metrics.longestLeafSectionLength).toBe(300);
+    expect(metrics.sectionCount).toBe(3);
+    expect(metrics.longestSectionProse).toBe(300);
   });
+
+  it('상위 절에만 긴 산문이 있어도 잡는다', () => {
+    const markdown = [`## 상위 절`, prose(500), `### 아래 절`, prose(100)].join(
+      '\n\n',
+    );
+    expect(measureKoreanStyleComposition(markdown).longestSectionProse).toBe(
+      500,
+    );
+  });
+
+  it('강조로 시작하는 줄을 목록으로 보지 않는다', () => {
+    // 마커 뒤 공백을 선택으로 두면 `**핵심은…**` 이 목록으로 오인돼 절 길이에서 빠진다.
+    const emphasised = [
+      '## 절',
+      '**핵심은 이렇습니다.** 설명이 이어져요.',
+    ].join('\n\n');
+    const plain = ['## 절', '핵심은 이렇습니다. 설명이 이어져요.'].join('\n\n');
+    expect(
+      measureKoreanStyleComposition(emphasised).longestSectionProse,
+    ).toBeGreaterThan(0);
+    expect(measureKoreanStyleComposition(plain).longestSectionProse).toBe(
+      measureKoreanStyleComposition(emphasised).longestSectionProse - 4,
+    );
+  });
+
+  it.each(['- 항목이에요', '1. 항목이에요', '1) 항목이에요', '| 셀 |'])(
+    '목록과 표는 산문에서 뺀다: %s',
+    (line) => {
+      expect(
+        measureKoreanStyleComposition(['## 절', line].join('\n\n'))
+          .longestSectionProse,
+      ).toBe(0);
+    },
+  );
 
   it('코드블록과 목록은 산문 길이에서 뺀다', () => {
     const markdown = [
@@ -109,9 +175,9 @@ describe('리프 절 길이', () => {
       '- 목록 항목이 하나 있어요',
       '- 목록 항목이 둘 있어요',
     ].join('\n');
-    expect(
-      measureKoreanStyleComposition(markdown).longestLeafSectionLength,
-    ).toBe(50);
+    expect(measureKoreanStyleComposition(markdown).longestSectionProse).toBe(
+      50,
+    );
   });
 });
 

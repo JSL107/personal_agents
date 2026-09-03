@@ -423,8 +423,8 @@ describe('줄표(—) 세기', () => {
       attributionPercent: 0,
       headingCount: 5,
       nounPhraseHeadingPercent: 40,
-      leafSectionCount: 5,
-      longestLeafSectionLength: 600,
+      sectionCount: 5,
+      longestSectionProse: 600,
       hasVerificationScope: true,
     },
   };
@@ -547,8 +547,8 @@ describe('재현 목표 판정', () => {
       attributionPercent: 0,
       headingCount: 5,
       nounPhraseHeadingPercent: 40,
-      leafSectionCount: 5,
-      longestLeafSectionLength: 600,
+      sectionCount: 5,
+      longestSectionProse: 600,
       hasVerificationScope: true,
     },
   };
@@ -661,6 +661,49 @@ describe('재현 목표 판정', () => {
     expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('yoEndingPercentMin');
   });
 
+  describe('확인 범위 경고', () => {
+    // 판정이 아니라 힌트다. 표시 조건을 카드 수준에서 고정한다(리뷰 지적).
+    it('밝히지 않은 글에는 경고를 띄운다', () => {
+      const line = formatKoreanStyleMetrics({
+        ...base,
+        composition: { ...base.composition, hasVerificationScope: false },
+      });
+
+      expect(line).toContain('확인 범위 미표시');
+      expect(line).toContain('판정 아님');
+    });
+
+    it('밝힌 글에는 띄우지 않는다', () => {
+      expect(
+        formatKoreanStyleMetrics({
+          ...base,
+          composition: { ...base.composition, hasVerificationScope: true },
+        }),
+      ).not.toContain('확인 범위 미표시');
+    });
+
+    it('표본이 적으면 띄우지 않는다', () => {
+      // 한두 문장짜리 입력에 「범위를 밝히세요」를 띄우면 밝힐 내용 자체가 없는 글을 흔든다.
+      expect(
+        formatKoreanStyleMetrics({
+          ...base,
+          measurable: false,
+          composition: { ...base.composition, hasVerificationScope: false },
+        }),
+      ).not.toContain('확인 범위 미표시');
+    });
+
+    it('경고는 목표 밖 판정에 섞이지 않는다', () => {
+      const metrics = {
+        ...base,
+        composition: { ...base.composition, hasVerificationScope: false },
+      };
+
+      expect(findKoreanStyleGaps(metrics)).toEqual([]);
+      expect(formatKoreanStyleMetrics(metrics)).toContain('판정 대상 충족');
+    });
+  });
+
   it('판정 밖 축이 있음을 카드가 밝힌다', () => {
     // "목표 충족" 이라고만 쓰면 요체·문단까지 통과한 것으로 읽힌다.
     const line = formatKoreanStyleMetrics(base);
@@ -687,19 +730,19 @@ describe('재현 목표 판정', () => {
 
   it('헤딩 명사구와 리프 절은 판정하지 않는다', () => {
     // 실측해 보니 판정할 차이가 없다 — 8~9월 발행 원본 11편은 헤딩 명사구 최대 70% · 리프 절
-    // 최대 868자인데 참조 코퍼스는 중앙 78% · 1087자다. 상한을 어디에 두든 걸리는 것이 없거나
+    // 절 산문 최대 868자인데 참조 코퍼스는 중앙 78% · 1087자다. 상한을 어디에 두든 걸리는 것이 없거나
     // 사용자 문체를 참조 쪽으로 미는 값이 된다.
     expect(KOREAN_STYLE_TARGETS).not.toHaveProperty(
       'nounPhraseHeadingPercentMax',
     );
-    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('longestLeafSectionMax');
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('longestSectionProseMax');
     expect(
       findKoreanStyleGaps({
         ...base,
         composition: {
           ...base.composition,
           nounPhraseHeadingPercent: 100,
-          longestLeafSectionLength: 5000,
+          longestSectionProse: 5000,
         },
       }),
     ).toEqual([]);
