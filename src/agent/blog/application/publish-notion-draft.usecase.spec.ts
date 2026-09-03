@@ -302,6 +302,31 @@ describe('PublishNotionDraftUsecase', () => {
       expect(payload.payload.content).not.toMatch(CODE_MASK_PATTERN);
     });
 
+    // 유틸 단위 테스트만 있으면 usecase 가 실제로 그 보정을 태우는지는 검증되지 않는다.
+    // Notion 큐의 옛 초안은 헤딩이 전부 heading_3 이라 `### ` 만 있는 본문으로 읽혀 온다.
+    it('옛 초안의 ### 만 있는 본문을 ## 로 올려 발행한다', async () => {
+      const { usecase, modelRouter } = buildUsecase({
+        markdown: [
+          '### 첫 절',
+          '',
+          '본문 문단이에요. 여기에 설명이 이어져요.',
+          '',
+          '### 둘째 절',
+          '',
+          '본문 문단이에요. 여기에도 설명이 이어져요.',
+        ].join('\n'),
+      });
+
+      await usecase.buildPublishCandidate({ slackUserId: 'U1' });
+
+      // 편집 단계가 본문을 다시 쓰므로 최종 발행본이 아니라 **다음 단계로 넘어간 입력**을 본다.
+      // 보정은 Notion 조회 직후에 걸리므로 첫 모델 호출(익명화)의 프롬프트에 이미 반영돼 있다.
+      const 첫호출 = modelRouter.route.mock.calls[0];
+      const 넘어간본문 = String(첫호출[0].request.prompt);
+      expect(넘어간본문).toContain('## 첫 절');
+      expect(넘어간본문).not.toContain('### 첫 절');
+    });
+
     // 단계명을 붙인 목적이 진단이다. 두 경로가 서로 다른 이름을 내야 실패 원인을 좁힐 수 있다 —
     // 실제로 같은 메시지 때문에 편집 단계를 고친 뒤에도 어디를 봐야 할지 몰랐다.
     // 공개 프로젝트 계약(오늘의 공부)은 "코드블록 안의 코드·명령어·설정 보존" 을 약속한다.
