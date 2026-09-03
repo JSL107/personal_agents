@@ -1,4 +1,17 @@
+import {
+  KoreanStyleCompositionMetrics,
+  measureKoreanStyleComposition,
+} from './korean-style-composition';
+import {
+  extractProseSentences,
+  splitSentences,
+  stripSentenceTail,
+} from './korean-style-sentences';
 import { maskFencedCodeBlocks, scanMarkdownBlocks } from './markdown-blocks';
+
+// 문장 분해기는 `korean-style-sentences.ts` 로 옮겼다(구성 축과 공유해야 해서다). 이 모듈에서
+// 가져다 쓰던 호출부가 있어 그대로 다시 내보낸다.
+export { extractProseSentences } from './korean-style-sentences';
 
 // 윤문본이 "이 사람 말투" 에 얼마나 가까운지 재는 지표.
 //
@@ -105,6 +118,9 @@ export type KoreanStyleMetrics = {
   // 40문장 미만이면 문장 하나가 비율을 10%p씩 흔들어 정량 판정이 무의미하다.
   measurable: boolean;
   paragraph: KoreanStyleParagraphMetrics;
+  // 구성 축(인용체·헤딩 형태·리프 절·확인 범위). 정의와 기준의 출처는
+  // `korean-style-composition.ts` 헤더에 있다.
+  composition: KoreanStyleCompositionMetrics;
 };
 
 /**
@@ -246,36 +262,13 @@ const CLAUSE_CONNECTIVES = [
 const PARAGRAPH_WALL_SENTENCE_MIN = 6;
 const PARAGRAPH_WALL_LENGTH_MAX = 250;
 const NO_SHORT_SENTENCE_MIN = 3;
+// 구성 축의 표본 하한. 헤딩 2개면 하나가 비율을 50%p 흔들고, 문단 6개 미만이면 같은크기 비율이
+// 늘 높게 나온다(문단 2개면 최소 50%). 표본이 설 때까지 판정하지 않는다.
+const COMPOSITION_HEADING_MIN = 3;
+const COMPOSITION_PARAGRAPH_MIN = 6;
 
 // 마크다운에서 산문 문단만 골라 문장으로 자른다. 코드·표·헤딩이 섞이면 문장 길이 분포가
 // 통째로 왜곡되므로 윤문 대상과 **같은 분해기**를 쓴다.
-// 문장 끝에 붙는 닫는 문자. 마침표 뒤에 인용·강조가 오는 문장이 실제 본문에 흔하다
-// (`"이 정도면 되겠지" 하고`, `**이렇게 해요.**`). 이걸 빼놓으면 두 곳이 함께 어긋난다 —
-// 문장 분리가 안 돼 두 문장이 하나로 합쳐지고, 종결 어미 판정도 닫는 문자에 막혀 누락된다.
-// 스마트 인용부호(“ ” ‘ ’)와 마크다운 강조(* _), 한글 인용부호(」 』)까지 함께 본다.
-const CLOSING_CHARS = '"\'`)\\]*_”’」』';
-const TRAILING_CLOSERS = new RegExp(`[.!?。${CLOSING_CHARS}]+$`);
-const SENTENCE_BOUNDARY = new RegExp(
-  `(?<=[.!?。][${CLOSING_CHARS}]*)\\s+|\\n+`,
-);
-
-// 문장 끝의 마침표·인용·강조를 걷어낸다. 종결 어미를 보는 모든 자리가 이 함수를 지나야
-// 한 쪽만 고쳐져 지표가 갈리는 일이 없다.
-const stripSentenceTail = (sentence: string): string =>
-  sentence.replace(TRAILING_CLOSERS, '');
-
-export const extractProseSentences = (markdown: string): string[] => {
-  const { lines, blocks } = scanMarkdownBlocks(markdown);
-  const prose = blocks
-    .filter((block) => block.kind === 'prose')
-    .map((block) => lines.slice(block.startLine, block.endLine + 1).join(' '))
-    .join(' ');
-
-  return prose
-    .split(SENTENCE_BOUNDARY)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0);
-};
 
 // 산문 문단을 그대로(합치지 않고) 꺼낸다. 윤문 어댑터가 모델에 넘기는 단위와 같아야
 // "몇 번째 문단이 벽인가"가 카드의 `N/M문단 적용` 과 같은 축에서 읽힌다.
@@ -292,12 +285,6 @@ export const extractProseParagraphs = (markdown: string): string[] => {
     )
     .filter((paragraph) => paragraph.length > 0);
 };
-
-const splitSentences = (text: string): string[] =>
-  text
-    .split(SENTENCE_BOUNDARY)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0);
 
 const measureParagraphs = (markdown: string): KoreanStyleParagraphMetrics => {
   const paragraphs = extractProseParagraphs(markdown);
@@ -376,6 +363,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       emDashCount: countEmDashes(markdown),
       measurable: false,
       paragraph: measureParagraphs(markdown),
+      composition: measureKoreanStyleComposition(markdown),
     };
   }
 
@@ -473,6 +461,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     emDashCount: countEmDashes(markdown),
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
+    composition: measureKoreanStyleComposition(markdown),
   };
 };
 
@@ -560,6 +549,41 @@ export const KOREAN_STYLE_TARGETS = {
   // 스킬 룰북 J-3 의 "1문서 1~2회 이하" 를 그대로 옮긴다. 0 이 아닌 이유는 한 번쯤은
   // 자연스러운 자리가 있기 때문이고, 상한을 두는 이유는 15개가 들어간 발행본이 실제로 나갔기 때문이다.
   emDashMax: 2,
+  // 아래 넷은 구성 축이다. **기준을 사용자가 손본 발행본 9편의 실측 최대에서 뽑았다** —
+  // 참조 코퍼스(기업 기술 블로그)로 잡으면 사용자 문체와 반대로 민다(이 파일 헤더의 같은 함정).
+  //
+  // 인용체 상한. **지금 발행본은 전부 이 값을 통과한다 — 회귀를 막는 가드다.**
+  //
+  // 실측(2026-09-03 · 이 파일의 문장 분해기 기준): 참조 코퍼스 60편 중앙 0% · 90퍼센타일 1% ·
+  // 최대 4%, 블로그 발행본 11편 중앙 1% · 90퍼센타일 2% · 최대 3%. 지금 상태를 상한으로 두어
+  // 그 위로 올라가는 글만 걸리게 했다.
+  //
+  // **왜 지금 걸리는 글이 없나** — 2026-09-02 에 인용체 문장 52개를 치환한 판이 머지됐다.
+  // 그 전 상태로 재면 2026-08-27 이 6% 였고, 12항목 채점에서도 인용체가 55/100 으로 가장 낮았다.
+  // 고쳐 놓은 뒤에 상한을 세우는 것이라 지금은 조용한 게 맞다.
+  //
+  // 다른 구성 축과 달리 방어선(사용자 최종본)을 기준으로 쓰지 않는다. 그 코퍼스는 위 치환 이전에
+  // 수집돼 최대가 6% 인데, 그 값을 상한으로 삼으면 이미 고친 결함을 다시 허용하게 된다.
+  //
+  // **정규식은 사람보다 적게 잡는다.** 위 2026-08-27 은 12항목 채점에서 8문장(9.1%)이었는데
+  // 여기서는 6% 로 나온다. 「출처를 주어로 세운 문장」의 형태가 다양해서다. 상한을 그만큼 낮게 뒀다.
+  attributionPercentMax: 3,
+  // **헤딩 명사구와 리프 절은 여기 없다 — 판정하지 않고 카드에 수치만 적는다.**
+  //
+  // 편차·짧은문장·구어를 내린 것과 같은 이유다(파일 헤더). 실측해 보니 **판정할 차이가 없다** —
+  // 8~9월 발행 원본 11편의 헤딩 명사구는 최대 70%, 리프 절은 최대 868자인데, 참조 코퍼스는
+  // 각각 중앙 78% · 중앙 1087자다. 우리 글이 이미 기술 블로그보다 짧고 판단형이라, 상한을
+  // 어디에 두든 걸리는 것이 없거나 사용자 문체를 참조 쪽으로 미는 값이 된다.
+  //
+  // 채점 회차에 쓴 기준(명사구 0% · 900자 절 0개)이 후자였다. 그 기준으로 소제목 18개를 바꾸고
+  // 절 12개를 갈랐는데, 실측이 반대였다. 관측값으로 두어 사람이 극단을 보고 판단하게 한다.
+  // 문단 축 합산(벽 % + 같은크기 %). **두 축은 반대로 움직이므로 따로 판정하면 안 된다** —
+  // 한쪽을 낮추려면 반대쪽으로 밀면 되기 때문이다(각 축 주석 참조). 합으로 재면 그 회피가 막힌다.
+  //
+  // 실측(2026-09-03): 방어선 9편 36~57 · 토스 40 · 우아한형제들 46 · 하이퍼커넥트 58 ·
+  // 격자로 찍힌 2026-08-20 발행본은 같은크기만 67 이었다. 60 이면 사람이 쓴 글은 모두 통과하고
+  // 격자만 걸린다.
+  paragraphCompositeMax: 60,
 } as const;
 
 /**
@@ -581,8 +605,9 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
   '짧은문장',
   '구어',
   '요체 비율',
-  '문단 축',
   '절',
+  '헤딩 명사구',
+  '리프 절 길이',
 ] as const;
 
 /**
@@ -650,6 +675,29 @@ const collectKoreanStyleGaps = (
       text: `줄표 ${metrics.emDashCount}회(≤${T.emDashMax}회)`,
     });
   }
+  // 인용체는 문장 축과 같은 표본 조건을 쓴다 — 10문장짜리 글에서 한 문장이 10% 를 만든다.
+  if (
+    metrics.measurable &&
+    metrics.composition.attributionPercent > T.attributionPercentMax
+  ) {
+    gaps.push({
+      axis: 'attribution',
+      text: `인용체 ${metrics.composition.attributionPercent}%(≤${T.attributionPercentMax}%)`,
+    });
+  }
+  // 문단 축은 **합으로만** 판정한다. 따로 걸면 한쪽을 반대로 밀어 통과할 수 있다.
+  const paragraphComposite =
+    metrics.paragraph.wallPercent +
+    metrics.paragraph.dominantParagraphSizePercent;
+  if (
+    metrics.paragraph.paragraphCount >= COMPOSITION_PARAGRAPH_MIN &&
+    paragraphComposite > T.paragraphCompositeMax
+  ) {
+    gaps.push({
+      axis: 'paragraphComposite',
+      text: `문단 벽+같은크기 ${paragraphComposite}(≤${T.paragraphCompositeMax})`,
+    });
+  }
   return gaps;
 };
 
@@ -668,6 +716,22 @@ export const formatKoreanStyleMetrics = (
   }
   const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 어절 ${metrics.wordsPerSentence}개 · 절 ${metrics.clausesPerSentence}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
+  const c = metrics.composition;
+  // 판정과 같은 표본 조건을 카드에도 쓴다. 헤딩 0개인 글에 「명사구 0%」를 적으면 값이 아니라
+  // 잡음이고, 그 잡음이 옆의 실제 수치를 덮는다.
+  const compositionParts = [
+    metrics.measurable
+      ? `인용체 ${c.attributionPercent}%(${c.attributionCount}문장)`
+      : null,
+    c.headingCount >= COMPOSITION_HEADING_MIN
+      ? `헤딩 ${c.headingCount}개 중 명사구 ${c.nounPhraseHeadingPercent}%`
+      : null,
+    c.sectionCount > 0 ? `최장 절 ${c.longestSectionProse}자` : null,
+  ].filter((part): part is string => part !== null);
+  const composition =
+    compositionParts.length > 0
+      ? `\n구성: ${compositionParts.join(' · ')}`
+      : '';
   // 참고값 단서는 문장 축 이야기다. 문단 줄 뒤에 붙이면 문단 지표까지 참고값이라는 오해를 부른다.
   const sentenceLine = metrics.measurable
     ? head
@@ -689,7 +753,18 @@ export const formatKoreanStyleMetrics = (
     metrics.longestSentenceLength > KOREAN_STYLE_TARGETS.longestSentenceMax
       ? `\n최장 문장(${metrics.longestSentenceLength}자 · ${metrics.longestSentenceWords}어절): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
       : '';
-  return `${sentenceLine}\n${paragraph}${verdict}${longest}`;
+  // 확인 범위는 **판정하지 않고 알려만 준다.** 밝히는 글이 참조 코퍼스 18% · 방어선 22% 라
+  // 장르 표준이 아니어서, 목표 밖에 넣으면 거의 모든 글이 걸려 다른 지적을 덮는다. 그래도 적는
+  // 이유는 2026-08-31 발행본이다 — 문체 지표를 전부 통과했는데 「붙지 않는 전제 위에 쓴 글」로
+  // 판명돼 사용자가 절을 통째로 새로 썼고, 그때 드러난 신호는 수정률 하나뿐이었다.
+  //
+  // 문장 축과 같은 표본 조건을 쓴다 — 한두 문장짜리 입력에 「확인 범위를 밝히세요」를 띄우면
+  // 밝힐 내용 자체가 없는 글을 흔든다.
+  const scopeHint =
+    metrics.measurable && !c.hasVerificationScope
+      ? '\n확인 범위 미표시 — 문서만 읽고 쓴 글이면 그렇다고 한 줄 넣을지 보세요(판정 아님)'
+      : '';
+  return `${sentenceLine}\n${paragraph}${composition}${verdict}${scopeHint}${longest}`;
 };
 
 const truncate = (text: string, max: number): string =>
