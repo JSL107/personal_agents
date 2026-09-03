@@ -1,5 +1,8 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
@@ -204,6 +207,20 @@ describe('WebhookController', () => {
         }),
         expect.any(Object),
       );
+    });
+
+    // 큐 적재가 실패했는데 200 을 주면 GitHub 은 배달 성공으로 기록하고 다시 보내지 않는다
+    // — 이벤트가 조용히 사라진다. 500 으로 올려야 Deliveries 에 실패로 남아 Redeliver 가 된다.
+    it('큐 적재 실패 → 200 이 아니라 500 (조용한 유실 방지)', async () => {
+      mockImpactQueue.add.mockRejectedValue(new Error('redis 연결 끊김'));
+      await expect(
+        controller.github(
+          issuesOpenedBody,
+          sign(issuesOpenedBody, githubSecret),
+          'issues',
+          'delivery-uuid-enqueue-fail',
+        ),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
 
     it('issues opened + auto-label enabled → issue-label 큐에도 enqueue (impact-report 와 병렬)', async () => {
