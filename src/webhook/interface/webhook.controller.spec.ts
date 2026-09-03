@@ -1,5 +1,8 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
@@ -206,6 +209,20 @@ describe('WebhookController', () => {
       );
     });
 
+    // 큐 적재가 실패했는데 200 을 주면 GitHub 은 배달 성공으로 기록하고 다시 보내지 않는다
+    // — 이벤트가 조용히 사라진다. 500 으로 올려야 Deliveries 에 실패로 남아 Redeliver 가 된다.
+    it('큐 적재 실패 → 200 이 아니라 500 (조용한 유실 방지)', async () => {
+      mockImpactQueue.add.mockRejectedValue(new Error('redis 연결 끊김'));
+      await expect(
+        controller.github(
+          issuesOpenedBody,
+          sign(issuesOpenedBody, githubSecret),
+          'issues',
+          'delivery-uuid-enqueue-fail',
+        ),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
     it('issues opened + auto-label enabled → issue-label 큐에도 enqueue (impact-report 와 병렬)', async () => {
       await controller.github(
         issuesOpenedBody,
@@ -222,7 +239,7 @@ describe('WebhookController', () => {
           title: 'crash on login',
           body: 'reproduces on staging',
         }),
-        expect.objectContaining({ jobId: 'issuelabel:foo/bar#42' }),
+        expect.objectContaining({ jobId: 'issuelabel-foo/bar#42' }),
       );
     });
 
@@ -266,6 +283,28 @@ describe('WebhookController', () => {
         expect.any(Object),
         expect.any(Object),
       );
+    });
+
+    // BullMQ 는 custom jobId 에 ':' 를 허용하지 않는다 (`Custom Id cannot contain :`).
+    // 키 재료에 PR/이슈 제목이 들어가는데 제목에는 'fix: ...' 처럼 콜론이 흔하다.
+    // mock 큐는 이 규칙을 검사하지 않으므로 — 실제 add 였다면 throw 다 — 여기서 직접 단언한다.
+    it('제목에 콜론이 있어도 jobId 에는 콜론이 남지 않는다', async () => {
+      await controller.github(
+        prOpenedBody,
+        sign(prOpenedBody, githubSecret),
+        'pull_request',
+        'delivery-uuid-colon-title',
+      );
+      const jobIds = [
+        ...mockImpactQueue.add.mock.calls,
+        ...mockBeFixQueue.add.mock.calls,
+        ...mockCodeReviewerQueue.add.mock.calls,
+      ].map((call) => (call[2] as { jobId?: string } | undefined)?.jobId);
+      expect(jobIds.length).toBeGreaterThan(0);
+      for (const jobId of jobIds) {
+        expect(typeof jobId).toBe('string');
+        expect(jobId).not.toContain(':');
+      }
     });
 
     it('pull_request.opened → impact-report 큐 + BE-FIX 큐 둘 다 add 호출', async () => {
@@ -532,7 +571,7 @@ describe('WebhookController', () => {
           prRef: 'foo/bar#99',
           slackUserId: defaultSlackUser,
         }),
-        expect.objectContaining({ jobId: 'codereview:foo/bar#99' }),
+        expect.objectContaining({ jobId: 'codereview-foo/bar#99' }),
       );
     });
 
@@ -632,7 +671,7 @@ describe('WebhookController', () => {
           prRef: 'foo/bar#99',
           slackUserId: defaultSlackUser,
         }),
-        expect.objectContaining({ jobId: 'prcareerlog:foo/bar#99' }),
+        expect.objectContaining({ jobId: 'prcareerlog-foo/bar#99' }),
       );
     });
 
