@@ -10,6 +10,7 @@ import {
 } from '../domain/idaeri-router.port';
 import { RouterException } from '../domain/router.exception';
 import { RouterErrorCode } from '../domain/router-error-code.enum';
+import { calculateUnresolvedStreak } from '../domain/unresolved-turn.util';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { ConversationalReplyUsecase } from './conversational-reply.usecase';
 
@@ -69,12 +70,22 @@ export class HandleConversationTurnUsecase {
       (await this.conversationMemory.getRecentTurns(input.conversationKey));
 
     try {
+      const priorAgentRunId = [...priorTurns]
+        .reverse()
+        .find(
+          (turn) => turn.agentRunId !== null && turn.agentRunId !== 0,
+        )?.agentRunId;
+      const contextRefs =
+        priorAgentRunId === undefined || priorAgentRunId === null
+          ? undefined
+          : { agentRunId: priorAgentRunId };
       const result = await this.router.dispatch({
         source: input.source,
         slackUserId: input.slackUserId,
         text: input.text,
         agentTypeHint: input.agentTypeHint,
         priorTurns,
+        ...(contextRefs ? { contextRefs } : {}),
       });
       if (input.shouldRemember !== false) {
         await this.appendRoundTripSafely({
@@ -96,7 +107,8 @@ export class HandleConversationTurnUsecase {
         reply = await this.conversationalReply.reply({
           text: input.text,
           priorTurns,
-          unresolvedStreak: input.unresolvedStreak,
+          unresolvedStreak:
+            input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
         });
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);

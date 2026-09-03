@@ -4,12 +4,18 @@ import { ConfigService } from '@nestjs/config';
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
+import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   ConversationalReplyFailedException,
   HandleConversationTurnUsecase,
 } from '../../router/application/handle-conversation-turn.usecase';
+import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -18,9 +24,8 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
 const CONSOLE_CHANNEL_ID = 'CONSOLE';
-const CONSOLE_ANSWER_MAX_CHARS = 600;
-// 콘솔 지시는 Slack message handler 의 say() 경로를 지나지 않아 전문이 Slack 에 게시되지
-// 않는다. "전문은 Slack 에서" 는 없는 곳을 가리키는 거짓 안내였다. 전문 조회 경로 신설은 후속.
+const CONSOLE_ANSWER_MAX_CHARS = 8000;
+// 콘솔은 answered 전문을 별도 시트에서 열 수 있어, 화면을 보호하는 방어 상한만 유지한다.
 const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(길어서 여기까지만 보여드려요)';
 const SUGGESTION_FAILURE_MESSAGE =
   '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
@@ -53,9 +58,18 @@ export class PreconditionChainOrchestrator {
     private readonly config: ConfigService,
     private readonly suggestNextWork: SuggestNextWorkUsecase,
     private readonly pendingTurns: PendingConsoleTurnStore,
+    private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
+    private readonly applyPreview: ApplyPreviewUsecase,
+    private readonly cancelPreview: CancelPreviewUsecase,
   ) {}
 
   async run(input: ConsoleChainInput): Promise<void> {
+    if (input.agentTypeHint === undefined && input.text) {
+      const handled = await this.tryHandlePreviewYesNo(input);
+      if (handled) {
+        return;
+      }
+    }
     await this.runChain(input, {
       depth: 0,
       visited: [],
@@ -105,7 +119,7 @@ export class PreconditionChainOrchestrator {
         this.consoleEvents.publish({
           type: 'command.answered',
           commandId: input.commandId,
-          message: truncateConsoleAnswer(result.formattedText),
+          message: truncateConsoleAnswer(buildDispatchReplyText(result)),
         });
       }
       return { ok: true };
@@ -165,6 +179,95 @@ export class PreconditionChainOrchestrator {
         return prereqOutcome;
       }
       return this.runChain(input, nextChain, true);
+    }
+  }
+
+  private async tryHandlePreviewYesNo(
+    input: ConsoleChainInput,
+  ): Promise<boolean> {
+    const pending = await this.findLatestPendingPreview.execute({
+      slackUserId: input.slackUserId,
+    });
+    if (!pending) {
+      return false;
+    }
+    const intent = detectYesNoIntent(input.text ?? '');
+    if (intent === null) {
+      return false;
+    }
+    if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
+      return false;
+    }
+    try {
+      if (intent === 'yes') {
+        const result = await this.applyPreview.execute({
+          previewId: pending.id,
+          slackUserId: input.slackUserId,
+        });
+        await this.rememberPreviewTurn(input, input.text ?? '');
+        this.publishPreviewAnswer(
+          input,
+          `✅ 적용 완료 (${pending.kind})\n\n${result.resultText}`,
+        );
+      } else {
+        await this.cancelPreview.execute({
+          previewId: pending.id,
+          slackUserId: input.slackUserId,
+        });
+        await this.rememberPreviewTurn(input, input.text ?? '');
+        this.publishPreviewAnswer(input, `❌ 취소했습니다 (${pending.kind}).`);
+      }
+    } catch (error: unknown) {
+      await this.rememberPreviewTurn(input, input.text ?? '');
+      const action = intent === 'yes' ? '적용' : '취소';
+      this.publishPreviewRejection(
+        input,
+        `Preview ${action} 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return true;
+  }
+
+  private async rememberPreviewTurn(
+    input: ConsoleChainInput,
+    text: string,
+  ): Promise<void> {
+    const conversationKey = this.conversationMemory.buildKey({
+      slackUserId: input.slackUserId,
+      channelId: CONSOLE_CHANNEL_ID,
+    });
+    await this.conversationMemory.appendTurn(conversationKey, {
+      role: 'user',
+      text,
+      agentType: null,
+      agentRunId: null,
+      timestampMs: Date.now(),
+    });
+  }
+
+  private publishPreviewAnswer(
+    input: ConsoleChainInput,
+    message: string,
+  ): void {
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.answered',
+        commandId: input.commandId,
+        message,
+      });
+    }
+  }
+
+  private publishPreviewRejection(
+    input: ConsoleChainInput,
+    reason: string,
+  ): void {
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.rejected',
+        commandId: input.commandId,
+        reason,
+      });
     }
   }
 
