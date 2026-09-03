@@ -418,6 +418,15 @@ describe('줄표(—) 세기', () => {
       noShortSentenceParagraphs: 0,
       dominantParagraphSizePercent: 40,
     },
+    composition: {
+      attributionCount: 0,
+      attributionPercent: 0,
+      headingCount: 5,
+      nounPhraseHeadingPercent: 40,
+      sectionCount: 5,
+      longestSectionProse: 600,
+      hasVerificationScope: true,
+    },
   };
 
   // 스킬 룰북 J-3 은 "1문서 1~2회 이하" 인데 프롬프트에만 있고 세는 자리가 없어,
@@ -533,6 +542,15 @@ describe('재현 목표 판정', () => {
       dominantParagraphSizePercent: 50,
       noShortSentenceParagraphs: 2,
     },
+    composition: {
+      attributionCount: 0,
+      attributionPercent: 0,
+      headingCount: 5,
+      nounPhraseHeadingPercent: 40,
+      sectionCount: 5,
+      longestSectionProse: 600,
+      hasVerificationScope: true,
+    },
   };
 
   it('목표 안이면 지적할 것이 없다', () => {
@@ -643,6 +661,49 @@ describe('재현 목표 판정', () => {
     expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('yoEndingPercentMin');
   });
 
+  describe('확인 범위 경고', () => {
+    // 판정이 아니라 힌트다. 표시 조건을 카드 수준에서 고정한다(리뷰 지적).
+    it('밝히지 않은 글에는 경고를 띄운다', () => {
+      const line = formatKoreanStyleMetrics({
+        ...base,
+        composition: { ...base.composition, hasVerificationScope: false },
+      });
+
+      expect(line).toContain('확인 범위 미표시');
+      expect(line).toContain('판정 아님');
+    });
+
+    it('밝힌 글에는 띄우지 않는다', () => {
+      expect(
+        formatKoreanStyleMetrics({
+          ...base,
+          composition: { ...base.composition, hasVerificationScope: true },
+        }),
+      ).not.toContain('확인 범위 미표시');
+    });
+
+    it('표본이 적으면 띄우지 않는다', () => {
+      // 한두 문장짜리 입력에 「범위를 밝히세요」를 띄우면 밝힐 내용 자체가 없는 글을 흔든다.
+      expect(
+        formatKoreanStyleMetrics({
+          ...base,
+          measurable: false,
+          composition: { ...base.composition, hasVerificationScope: false },
+        }),
+      ).not.toContain('확인 범위 미표시');
+    });
+
+    it('경고는 목표 밖 판정에 섞이지 않는다', () => {
+      const metrics = {
+        ...base,
+        composition: { ...base.composition, hasVerificationScope: false },
+      };
+
+      expect(findKoreanStyleGaps(metrics)).toEqual([]);
+      expect(formatKoreanStyleMetrics(metrics)).toContain('판정 대상 충족');
+    });
+  });
+
   it('판정 밖 축이 있음을 카드가 밝힌다', () => {
     // "목표 충족" 이라고만 쓰면 요체·문단까지 통과한 것으로 읽힌다.
     const line = formatKoreanStyleMetrics(base);
@@ -650,14 +711,90 @@ describe('재현 목표 판정', () => {
     expect(line).toContain('요체 비율');
   });
 
-  it('문단 축은 판정하지 않는다', () => {
-    // 프로파일 실측에 대응 항목이 없어 기준을 지어내야 한다 — 수치만 보여준다.
-    const wall = findKoreanStyleGaps({
-      ...base,
-      paragraph: { ...base.paragraph, wallPercent: 90 },
-    });
-    expect(wall).toEqual([]);
+  it('인용체는 참조 코퍼스 기준으로 판정한다', () => {
+    // 방어선(사용자 발행본)이 곧 이 블로그의 글이라, 그 최대(6%)를 기준으로 삼으면 자기 자신을
+    // 재는 셈이 된다. 참조 코퍼스 최대 2% 에 여유 1 을 더한 값을 쓴다.
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        composition: { ...base.composition, attributionPercent: 4 },
+      }),
+    ).toContain('인용체 4%(≤3%)');
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        composition: { ...base.composition, attributionPercent: 3 },
+      }),
+    ).toEqual([]);
+  });
+
+  it('헤딩 명사구와 리프 절은 판정하지 않는다', () => {
+    // 실측해 보니 판정할 차이가 없다 — 8~9월 발행 원본 11편은 헤딩 명사구 최대 70% · 리프 절
+    // 절 산문 최대 868자인데 참조 코퍼스는 중앙 78% · 1087자다. 상한을 어디에 두든 걸리는 것이 없거나
+    // 사용자 문체를 참조 쪽으로 미는 값이 된다.
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty(
+      'nounPhraseHeadingPercentMax',
+    );
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('longestSectionProseMax');
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        composition: {
+          ...base.composition,
+          nounPhraseHeadingPercent: 100,
+          longestSectionProse: 5000,
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('문단 축은 합으로만 판정한다', () => {
+    // 두 축은 반대로 움직인다 — 벽을 낮추려면 잘게 자르면 되고 그러면 같은크기가 올라간다.
+    // 따로 걸면 한쪽을 반대로 밀어 통과할 수 있으니, 상한은 합에만 둔다.
     expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('wallPercentMax');
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty(
+      'dominantParagraphSizePercentMax',
+    );
+    // 벽이 55%로 높아도 같은크기가 낮으면 합이 기준 안이라 통과다.
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        paragraph: {
+          ...base.paragraph,
+          wallPercent: 55,
+          dominantParagraphSizePercent: 5,
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('벽과 같은크기의 합이 상한을 넘으면 걸린다', () => {
+    // 실측: 방어선 9편 36~57 · 토스 40 · 우아한형제들 46 · 하이퍼커넥트 58.
+    // 격자로 찍힌 2026-08-20 발행본은 같은크기만 67 이었다.
+    const gaps = findKoreanStyleGaps({
+      ...base,
+      paragraph: {
+        ...base.paragraph,
+        wallPercent: 0,
+        dominantParagraphSizePercent: 67,
+      },
+    });
+    expect(gaps).toContain('문단 벽+같은크기 67(≤60)');
+  });
+
+  it('문단이 적으면 합을 판정하지 않는다', () => {
+    // 문단 2개면 같은크기가 최소 50% 다 — 표본이 설 때까지 판정하면 짧은 글이 늘 걸린다.
+    expect(
+      findKoreanStyleGaps({
+        ...base,
+        paragraph: {
+          paragraphCount: 2,
+          wallPercent: 50,
+          dominantParagraphSizePercent: 100,
+          noShortSentenceParagraphs: 0,
+        },
+      }),
+    ).toEqual([]);
   });
 });
 
