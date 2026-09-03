@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   Logger,
   Post,
   UnauthorizedException,
@@ -43,6 +44,11 @@ import {
 // (1) /v1/agent/trigger — 이대리 자체 포맷 (WebhookTriggerPayload)
 // (2) /v1/agent/github — GitHub 표준 포맷 (X-GitHub-Event 헤더 + standard issue/PR payload)
 // 둘 다 HMAC-SHA256 시그니처 검증 후 issues.opened / pull_request.opened 만 impact-report 자동 발화.
+// 큐 적재 실패는 200 으로 삼키지 않고 500 으로 올린다. GitHub 은 실패한 배달을 자동으로
+// 재전달하지 않으므로(docs: "GitHub does not automatically redeliver failed deliveries"),
+// 200 을 주면 그 배달은 Deliveries 에 성공으로 기록되고 이벤트는 로그 한 줄만 남긴 채 사라진다.
+// 500 이면 실패로 남아 Redeliver 버튼으로 복구할 수 있다. 5 갈래 모두 jobId dedup 이 있어
+// 재전달이 중복 실행을 만들지 않는 것이 이 정책의 전제다.
 @Controller('v1/agent')
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
@@ -90,7 +96,10 @@ export class WebhookController {
       payload.event === 'pull_request.opened'
     ) {
       const subject = `${payload.event.replace('.', ' ')} — ${payload.repo} #${payload.data.number ?? ''}: ${payload.data.title ?? ''}`;
-      this.fireImpactReport({ subject, slackUserId: payload.slackUserId });
+      await this.fireImpactReport({
+        subject,
+        slackUserId: payload.slackUserId,
+      });
     }
 
     return { accepted: true };
@@ -146,7 +155,7 @@ export class WebhookController {
     if (event === 'pull_request' && this.isPullRequestMerged(payload)) {
       const pr = payload as GithubPullRequestEvent;
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
-      this.maybeFirePrCareerLog({ payload: pr, prRef, slackUserId });
+      await this.maybeFirePrCareerLog({ payload: pr, prRef, slackUserId });
       return { accepted: true };
     }
 
@@ -156,19 +165,19 @@ export class WebhookController {
       return { accepted: true };
     }
 
-    this.fireImpactReport({ subject, slackUserId });
+    await this.fireImpactReport({ subject, slackUserId });
 
     // pull_request.opened → impact-report 와 병렬로 BE-FIX 자동 분석 + (조건부) code-reviewer 자동.
     if (event === 'pull_request' && this.isPullRequestOpened(payload)) {
       const pr = payload as GithubPullRequestEvent;
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
-      this.fireBeFixAnalysis({ prRef, slackUserId });
-      this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
+      await this.fireBeFixAnalysis({ prRef, slackUserId });
+      await this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
     }
 
     // issues.opened → impact-report 와 병렬로 자동 라벨링 (env gate 통과 시).
     if (event === 'issues' && this.isIssueOpened(payload)) {
-      this.maybeFireIssueAutoLabel({ payload });
+      await this.maybeFireIssueAutoLabel({ payload });
     }
 
     return { accepted: true };
@@ -176,11 +185,11 @@ export class WebhookController {
 
   // GITHUB_ISSUE_AUTO_LABEL_ENABLED = 'true' 일 때만 활성. repo allowlist (선택) 도 일치해야 fire.
   // 새 label 생성 X — repo 의 기존 label vocab 안에서 LLM 분류로 부분집합 선택.
-  private maybeFireIssueAutoLabel({
+  private async maybeFireIssueAutoLabel({
     payload,
   }: {
     payload: GithubIssuesEvent;
-  }): void {
+  }): Promise<void> {
     const enabled =
       this.configService
         .get<string>('GITHUB_ISSUE_AUTO_LABEL_ENABLED')
@@ -206,7 +215,7 @@ export class WebhookController {
         return;
       }
     }
-    this.fireIssueAutoLabel({
+    await this.fireIssueAutoLabel({
       repo,
       issueNumber: payload.issue.number,
       title: payload.issue.title,
@@ -214,7 +223,7 @@ export class WebhookController {
     });
   }
 
-  private fireIssueAutoLabel({
+  private async fireIssueAutoLabel({
     repo,
     issueNumber,
     title,
@@ -224,10 +233,10 @@ export class WebhookController {
     issueNumber: number;
     title: string;
     body: string;
-  }): void {
+  }): Promise<void> {
     // 동일 issue 의 webhook 재전달 (edit/reopen 등) 시 BullMQ jobId dedup.
-    const jobId = `issuelabel:${repo}#${issueNumber}`;
-    void this.issueLabelQueue
+    const jobId = this.toJobId(`issuelabel-${repo}#${issueNumber}`);
+    await this.issueLabelQueue
       .add(
         'webhook-issue-label',
         { repo, issueNumber, title, body },
@@ -243,13 +252,16 @@ export class WebhookController {
         this.logger.error(
           `Webhook issue-label enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
+        throw new InternalServerErrorException(
+          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
+        );
       });
   }
 
   // 본인 머지 PR (owner login 일치, bot 제외, env gate 활성) 만 careerLog 자동 적재.
   // PR_CAREERLOG_AUTO_ENABLED 미설정 → 모듈 자체 비활성 (review / impact-report 자동은 그대로 유지).
   // CAREER_LOG_NOTION_PAGE_ID 미설정도 비활성 (적재 대상 페이지 부재).
-  private maybeFirePrCareerLog({
+  private async maybeFirePrCareerLog({
     payload,
     prRef,
     slackUserId,
@@ -257,7 +269,7 @@ export class WebhookController {
     payload: GithubPullRequestEvent;
     prRef: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     const enabled =
       this.configService.get<string>('PR_CAREERLOG_AUTO_ENABLED')?.trim() ===
       'true';
@@ -295,19 +307,19 @@ export class WebhookController {
       );
       return;
     }
-    this.firePrCareerLog({ prRef, slackUserId });
+    await this.firePrCareerLog({ prRef, slackUserId });
   }
 
-  private firePrCareerLog({
+  private async firePrCareerLog({
     prRef,
     slackUserId,
   }: {
     prRef: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     // 동일 PR 의 webhook 재전달 / 재머지 (revert 후 re-merge 등) 시 BullMQ jobId dedup.
-    const jobId = `prcareerlog:${prRef}`;
-    void this.prCareerLogQueue
+    const jobId = this.toJobId(`prcareerlog-${prRef}`);
+    await this.prCareerLogQueue
       .add(
         'webhook-pr-careerlog',
         { prRef, slackUserId },
@@ -322,6 +334,9 @@ export class WebhookController {
       .catch((error: unknown) => {
         this.logger.error(
           `Webhook PR careerLog enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw new InternalServerErrorException(
+          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
         );
       });
   }
@@ -338,7 +353,7 @@ export class WebhookController {
 
   // 본인이 작성한 PR (owner login 일치, bot 제외) 일 때만 자동 /review-pr 발화.
   // OWNER_LOGIN 미설정 → 자동 review 자체 비활성 (impact-report / BE-FIX 는 그대로).
-  private maybeFireCodeReview({
+  private async maybeFireCodeReview({
     payload,
     prRef,
     slackUserId,
@@ -346,7 +361,7 @@ export class WebhookController {
     payload: GithubPullRequestEvent;
     prRef: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     const ownerLogin = this.configService
       .get<string>(GITHUB_WEBHOOK_OWNER_LOGIN_ENV)
       ?.trim();
@@ -372,19 +387,19 @@ export class WebhookController {
       );
       return;
     }
-    this.fireCodeReviewAnalysis({ prRef, slackUserId });
+    await this.fireCodeReviewAnalysis({ prRef, slackUserId });
   }
 
-  private fireCodeReviewAnalysis({
+  private async fireCodeReviewAnalysis({
     prRef,
     slackUserId,
   }: {
     prRef: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     // 동일 PR 의 force-push 등으로 webhook 이 재전달돼도 BullMQ jobId 가 살아있는 동안 dedup.
-    const jobId = `codereview:${prRef}`;
-    void this.codeReviewerQueue
+    const jobId = this.toJobId(`codereview-${prRef}`);
+    await this.codeReviewerQueue
       .add(
         'webhook-code-review',
         { prRef, slackUserId },
@@ -399,6 +414,9 @@ export class WebhookController {
       .catch((error: unknown) => {
         this.logger.error(
           `Webhook code-reviewer enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw new InternalServerErrorException(
+          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
         );
       });
   }
@@ -438,17 +456,17 @@ export class WebhookController {
     );
   }
 
-  private fireBeFixAnalysis({
+  private async fireBeFixAnalysis({
     prRef,
     slackUserId,
   }: {
     prRef: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     // codex P1 — 같은 PR (force-push / re-deliver) 에 대해 BullMQ 가 dedup 하도록 jobId 사용.
     // BullMQ 는 동일 jobId 가 살아있는 동안 같은 job 을 재추가하지 않는다 (removeOnComplete:50 까지 보존).
-    const jobId = `befix:${prRef}`;
-    void this.beFixQueue
+    const jobId = this.toJobId(`befix-${prRef}`);
+    await this.beFixQueue
       .add(
         'webhook-be-fix',
         { prRef, slackUserId },
@@ -464,24 +482,31 @@ export class WebhookController {
         this.logger.error(
           `Webhook BE-Fix enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
+        throw new InternalServerErrorException(
+          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
+        );
       });
   }
 
-  private fireImpactReport({
+  private async fireImpactReport({
     subject,
     slackUserId,
   }: {
     subject: string;
     slackUserId: string;
-  }): void {
+  }): Promise<void> {
     // BullMQ 큐로 enqueue — webhook 응답 200 즉시, consumer (concurrency=1) 가 직렬 처리.
     // 기존 fire-and-forget 은 burst (monorepo 다수 issue 동시 open) 시 LLM CLI 동시 spawn 으로
     // quota/리소스 폭주 위험 (V3 audit B2 #4 / B3 P5 / B4 H-2). 큐 도입으로 backpressure 확보.
-    void this.impactReportQueue
+    await this.impactReportQueue
       .add(
         'webhook-impact-report',
         { subject, slackUserId },
         {
+          // 동일 이벤트의 webhook 재전달 (GitHub 재시도 등) 시 BullMQ jobId dedup.
+          // subject 는 opened 액션에서만 만들어지므로 (toImpactSubject) 제목이 바뀌는
+          // edited 재전달로 키가 갈리지 않는다 — 같은 issue/PR 이면 같은 키다.
+          jobId: this.toJobId(`impactreport-${subject}`),
           // transient 실패 회복 — Slack 일시 장애 / 모델 timeout / 네트워크 흔들림.
           // 30s → 1m 지수 백오프, 최대 2회 시도. quota 폭주 방지를 위해 attempts 제한.
           attempts: 2,
@@ -494,7 +519,20 @@ export class WebhookController {
         this.logger.error(
           `Webhook impact-report enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
+        throw new InternalServerErrorException(
+          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
+        );
       });
+  }
+
+  // BullMQ 는 custom jobId 에 ':' 를 허용하지 않는다 — Job 검증이
+  // `Custom Id cannot contain :` 로 즉시 throw 한다 (bullmq 5.73.1,
+  // dist/cjs/classes/job.js). 콜론이 정확히 2 개일 때만 통과하는 예외가 있으나
+  // 그건 구 repeatable job 호환용이라 기대면 안 된다.
+  // 키 재료에 이슈/PR 제목이 섞여 들어오므로 (사용자가 `fix: ...` 처럼 쓴다)
+  // 만드는 자리에서 한 번에 걷어낸다.
+  private toJobId(raw: string): string {
+    return raw.replace(/:/g, '-');
   }
 
   private verifySignature({
