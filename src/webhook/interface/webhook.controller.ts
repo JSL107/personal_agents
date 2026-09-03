@@ -235,7 +235,7 @@ export class WebhookController {
     body: string;
   }): Promise<void> {
     // 동일 issue 의 webhook 재전달 (edit/reopen 등) 시 BullMQ jobId dedup.
-    const jobId = `issuelabel:${repo}#${issueNumber}`;
+    const jobId = this.toJobId(`issuelabel-${repo}#${issueNumber}`);
     await this.issueLabelQueue
       .add(
         'webhook-issue-label',
@@ -318,7 +318,7 @@ export class WebhookController {
     slackUserId: string;
   }): Promise<void> {
     // 동일 PR 의 webhook 재전달 / 재머지 (revert 후 re-merge 등) 시 BullMQ jobId dedup.
-    const jobId = `prcareerlog:${prRef}`;
+    const jobId = this.toJobId(`prcareerlog-${prRef}`);
     await this.prCareerLogQueue
       .add(
         'webhook-pr-careerlog',
@@ -398,7 +398,7 @@ export class WebhookController {
     slackUserId: string;
   }): Promise<void> {
     // 동일 PR 의 force-push 등으로 webhook 이 재전달돼도 BullMQ jobId 가 살아있는 동안 dedup.
-    const jobId = `codereview:${prRef}`;
+    const jobId = this.toJobId(`codereview-${prRef}`);
     await this.codeReviewerQueue
       .add(
         'webhook-code-review',
@@ -465,7 +465,7 @@ export class WebhookController {
   }): Promise<void> {
     // codex P1 — 같은 PR (force-push / re-deliver) 에 대해 BullMQ 가 dedup 하도록 jobId 사용.
     // BullMQ 는 동일 jobId 가 살아있는 동안 같은 job 을 재추가하지 않는다 (removeOnComplete:50 까지 보존).
-    const jobId = `befix:${prRef}`;
+    const jobId = this.toJobId(`befix-${prRef}`);
     await this.beFixQueue
       .add(
         'webhook-be-fix',
@@ -506,7 +506,7 @@ export class WebhookController {
           // 동일 이벤트의 webhook 재전달 (GitHub 재시도 등) 시 BullMQ jobId dedup.
           // subject 는 opened 액션에서만 만들어지므로 (toImpactSubject) 제목이 바뀌는
           // edited 재전달로 키가 갈리지 않는다 — 같은 issue/PR 이면 같은 키다.
-          jobId: `impactreport:${subject}`,
+          jobId: this.toJobId(`impactreport-${subject}`),
           // transient 실패 회복 — Slack 일시 장애 / 모델 timeout / 네트워크 흔들림.
           // 30s → 1m 지수 백오프, 최대 2회 시도. quota 폭주 방지를 위해 attempts 제한.
           attempts: 2,
@@ -523,6 +523,16 @@ export class WebhookController {
           'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
         );
       });
+  }
+
+  // BullMQ 는 custom jobId 에 ':' 를 허용하지 않는다 — Job 검증이
+  // `Custom Id cannot contain :` 로 즉시 throw 한다 (bullmq 5.73.1,
+  // dist/cjs/classes/job.js). 콜론이 정확히 2 개일 때만 통과하는 예외가 있으나
+  // 그건 구 repeatable job 호환용이라 기대면 안 된다.
+  // 키 재료에 이슈/PR 제목이 섞여 들어오므로 (사용자가 `fix: ...` 처럼 쓴다)
+  // 만드는 자리에서 한 번에 걷어낸다.
+  private toJobId(raw: string): string {
+    return raw.replace(/:/g, '-');
   }
 
   private verifySignature({
