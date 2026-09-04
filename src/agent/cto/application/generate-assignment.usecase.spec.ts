@@ -71,12 +71,17 @@ describe('GenerateAssignmentUsecase', () => {
   let modelRouter: { route: jest.Mock };
   let agentRunServiceExecute: jest.Mock;
   let agentRunServiceFindLatest: jest.Mock;
+  let updateInputSnapshot: jest.Mock;
   let usecase: GenerateAssignmentUsecase;
 
   beforeEach(() => {
     modelRouter = { route: jest.fn() };
+    updateInputSnapshot = jest.fn();
     agentRunServiceExecute = jest.fn(async (input) => {
-      const execution = await input.run({ agentRunId: 21 });
+      const execution = await input.run({
+        agentRunId: 21,
+        updateInputSnapshot,
+      });
       return {
         result: execution.result,
         modelUsed: execution.modelUsed,
@@ -441,6 +446,123 @@ describe('GenerateAssignmentUsecase', () => {
           sourceId: '77',
         }),
       );
+    });
+  });
+
+  describe('계약 되먹임 재생성 — 빈 필수 필드 1회 재생성', () => {
+    // run#2161 실측 형태 — 파싱은 통과하고 계약(missingField: ctoSummary)만 위반.
+    const emptySummaryAssignment: AssignmentOutput = {
+      ...validAssignment,
+      ctoSummary: '',
+    };
+
+    const completionOf = (output: AssignmentOutput): CompletionResponse => ({
+      text: JSON.stringify(output),
+      modelUsed: 'claude-cli',
+      provider: ModelProviderName.CLAUDE,
+    });
+
+    it('첫 응답의 ctoSummary 가 비면 위반을 되먹여 1회 재생성하고 재생성본을 채택', async () => {
+      modelRouter.route
+        .mockResolvedValueOnce(completionOf(emptySummaryAssignment))
+        .mockResolvedValueOnce(completionOf(validAssignment));
+
+      const outcome = await usecase.execute({ slackUserId: 'U1' });
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(2);
+      const retryPrompt = modelRouter.route.mock.calls[1][0].request.prompt;
+      expect(retryPrompt).toContain('[재생성 지시 — 직전 응답의 계약 위반]');
+      expect(retryPrompt).toContain('missingField(ctoSummary)');
+      expect(outcome.result.ctoSummary).toBe(validAssignment.ctoSummary);
+    });
+
+    it('재생성본도 같은 위반이면 첫 판을 채택한다 (재시도는 한 번뿐)', async () => {
+      modelRouter.route.mockResolvedValue(completionOf(emptySummaryAssignment));
+
+      const outcome = await usecase.execute({ slackUserId: 'U1' });
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(2);
+      expect(outcome.result.ctoSummary).toBe('');
+    });
+
+    // 채택본을 기록에 남기지 않으면 "재생성이 효과가 있었나" 를 사후에 셀 수 없다.
+    it('첫 판을 채택한 경우 기록에도 first 로 남는다', async () => {
+      modelRouter.route.mockResolvedValue(completionOf(emptySummaryAssignment));
+
+      await usecase.execute({ slackUserId: 'U1' });
+
+      expect(updateInputSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contractRetry: {
+            firstViolations: ['missingField:ctoSummary'],
+            adopted: 'first',
+          },
+        }),
+      );
+    });
+
+    it('재생성 호출이 실패해도 첫 판으로 진행한다 — 재생성은 부가 시도', async () => {
+      modelRouter.route
+        .mockResolvedValueOnce(completionOf(emptySummaryAssignment))
+        .mockRejectedValueOnce(new Error('쿼터 소진'));
+
+      const outcome = await usecase.execute({ slackUserId: 'U1' });
+
+      expect(outcome.result.ctoSummary).toBe('');
+    });
+
+    it('위반이 없으면 route 1회만 — 기존 경로 회귀 없음', async () => {
+      await usecase.execute({ slackUserId: 'U1' });
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
+      expect(updateInputSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('재생성이 일어나면 inputSnapshot 에 contractRetry 를 기록한다', async () => {
+      modelRouter.route
+        .mockResolvedValueOnce(completionOf(emptySummaryAssignment))
+        .mockResolvedValueOnce(completionOf(validAssignment));
+
+      await usecase.execute({ slackUserId: 'U1' });
+
+      expect(updateInputSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dailyPlanAgentRunId: 99,
+          contractRetry: {
+            firstViolations: ['missingField:ctoSummary'],
+            adopted: 'retry',
+          },
+        }),
+      );
+    });
+
+    it('재생성본을 채택하면 modelUsed 도 재생성 호출의 값을 쓴다', async () => {
+      modelRouter.route
+        .mockResolvedValueOnce({
+          text: JSON.stringify(emptySummaryAssignment),
+          modelUsed: 'first-model',
+          provider: ModelProviderName.CLAUDE,
+        } satisfies CompletionResponse)
+        .mockResolvedValueOnce({
+          text: JSON.stringify(validAssignment),
+          modelUsed: 'retry-model',
+          provider: ModelProviderName.CLAUDE,
+        } satisfies CompletionResponse);
+
+      const outcome = await usecase.execute({ slackUserId: 'U1' });
+
+      expect(outcome.modelUsed).toBe('retry-model');
+    });
+
+    it('기록(updateInputSnapshot)이 실패해도 본체 결과는 반환된다', async () => {
+      updateInputSnapshot.mockRejectedValue(new Error('DB 순단'));
+      modelRouter.route
+        .mockResolvedValueOnce(completionOf(emptySummaryAssignment))
+        .mockResolvedValueOnce(completionOf(validAssignment));
+
+      const outcome = await usecase.execute({ slackUserId: 'U1' });
+
+      expect(outcome.result.ctoSummary).toBe(validAssignment.ctoSummary);
     });
   });
 });

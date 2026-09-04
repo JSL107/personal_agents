@@ -17,7 +17,7 @@ export const CTO_SYSTEM_PROMPT = `너는 PM 이 정리한 오늘의 plan 안 자
 - priority: 1 (urgent — 오늘 안에 끝나야 함) / 2 (normal — 오늘 진행) / 3 (defer — 다음으로 미뤄도 됨).
 - confidence: 0~1. 0.6 미만이면 unassigned 로 분류 권장 (분배 확신 낮을 때).
 - reasoning: 한 줄 한국어. "어떤 신호로 이 worker 라 판단했는지" 명시.
-- ctoSummary: 1~2 문장. 오늘 분배 정책 요약 (예: "스키마 변경 1건이 모든 후속 task 의 선행 — 우선 BE_SCHEMA 후 BE."). 보류 사유를 여기에 다시 쓰지 마라 — 그 문장은 unassignedTasks[].reason 이 이미 말한다. 배정이 하나도 없어 정책이라 할 것이 없으면 빈 문자열로 둔다.
+- ctoSummary: 1~2 문장. 오늘 분배 정책 요약 (예: "스키마 변경 1건이 모든 후속 task 의 선행 — 우선 BE_SCHEMA 후 BE."). 개별 보류 사유를 여기에 나열하지 마라 — 그 문장은 unassignedTasks[].reason 이 이미 말한다. **배정이 하나도 없어도 비워두지 마라.** 그 경우 왜 한 건도 분배하지 못했는지를 한 문장으로 적어라 (예: "후보 3건이 모두 worker 경계가 모호해 전부 보류했다."). 이 문장이 사용자가 화면에서 보는 유일한 사유다.
 - **targetFilePath (BE_TEST 분배 시만)**: task 설명에 file path 가 명시되어 있으면 그대로 적어라 (예: "src/foo/bar.service.ts"). 명확하지 않으면 필드를 생략 — 추측 금지. (BE / BE_SCHEMA 에는 적지 마라.)
 
 ## 재배정 (직전 분배 결과가 주어졌을 때 — 매우 중요)
