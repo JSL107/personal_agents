@@ -1,3 +1,8 @@
+import { CeoErrorCode } from '../../agent/ceo/domain/ceo-error-code.enum';
+import { CtoErrorCode } from '../../agent/cto/domain/cto-error-code.enum';
+import { PmAgentErrorCode } from '../../agent/pm/domain/pm-agent-error-code.enum';
+import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.enum';
+import { PoShadowErrorCode } from '../../agent/po-shadow/domain/po-shadow-error-code.enum';
 import {
   appendBlockReasonGuidance,
   BLOCK_REASON_PHRASES,
@@ -101,5 +106,91 @@ describe('appendBlockReasonGuidance', () => {
     const once = appendBlockReasonGuidance(GITHUB_INTEGRATION_MESSAGE);
 
     expect(appendBlockReasonGuidance(once)).toBe(once);
+  });
+});
+
+// 사전은 errorCode 를 문자열 리터럴로 든다(common → agent 의존을 만들지 않으려고).
+// 그 리터럴이 실제 enum 과 어긋나면 판정이 조용히 죽으므로, 대조는 여기서 한다.
+describe('선행 부재 errorCode 고정', () => {
+  // 문구로는 판정에 못 쓰이는 것만 골랐다 — errorCode 경로가 단독으로 도는지 보기 위해서다.
+  const PROSE_BLIND_MESSAGES: Readonly<Record<string, string>> = {
+    // `없` 이 없어 두 조각 AND 를 비껴간다. src/agent/cto/.../generate-assignment.usecase.ts:238
+    [CtoErrorCode.STALE_PM_RUN]:
+      '직전 PM run 이 23시간 전 — `/today` 로 최신 plan 을 만든 뒤 다시 시도해주세요.',
+    // 실행 지시가 없어 비껴간다. src/agent/po-shadow/.../generate-po-shadow.usecase.ts:65
+    [PoShadowErrorCode.STALE_PLAN]:
+      '직전 PM plan이 22시간 전입니다. 최신 plan이 없어 PO Shadow 자동 검토를 건너뜁니다.',
+  };
+
+  it.each(Object.entries(PROSE_BLIND_MESSAGES))(
+    '문구로는 안 잡히는 %s 를 errorCode 로 잡는다',
+    (errorCode, message) => {
+      // 가드: 이 표본이 정말 "문구로는 안 잡히는" 것이어야 검증이 성립한다.
+      expect(classifyBlockReason(message)).not.toBe('PREREQUISITE');
+      expect(classifyBlockReason(message, errorCode)).toBe('PREREQUISITE');
+    },
+  );
+
+  it('선행 부재 errorCode 를 전부 알아본다', () => {
+    const codes = [
+      CtoErrorCode.NO_RECENT_PM_RUN,
+      CtoErrorCode.STALE_PM_RUN,
+      PmAgentErrorCode.NO_RECENT_PLAN,
+      PoShadowErrorCode.NO_RECENT_PLAN,
+      PoShadowErrorCode.STALE_PLAN,
+      CeoErrorCode.NO_PO_EVAL_RUN,
+      PoEvalErrorCode.NO_SUB_AGENT_RUNS,
+    ];
+
+    for (const code of codes) {
+      expect(classifyBlockReason('아무 문구', code)).toBe('PREREQUISITE');
+    }
+  });
+
+  it('비대상 errorCode 는 문구가 규칙에 걸려도 선행 부재로 보지 않는다', () => {
+    // errorCode 가 정본이라는 것을 재려면 표본이 "문구로는 걸리는" 것이어야 한다.
+    // 문구도 안 걸리는 표본을 쓰면 어느 경로가 막았는지 알 수 없어 초록이 무의미해진다.
+    const prosePositive = PREREQUISITE_MESSAGE;
+
+    expect(classifyBlockReason(prosePositive)).toBe('PREREQUISITE');
+    expect(
+      classifyBlockReason(prosePositive, CtoErrorCode.PARSE_FAILED),
+    ).toBeNull();
+  });
+
+  it('선행 부재가 아닌 errorCode 는 알아보지 않는다', () => {
+    expect(
+      classifyBlockReason(
+        'LLM 출력이 schema 와 안 맞습니다.',
+        CtoErrorCode.PARSE_FAILED,
+      ),
+    ).toBeNull();
+    // 선행은 있으나 조건 미충족(자동 해소 불가)이라 선행 부재가 아니다.
+    expect(
+      classifyBlockReason(
+        '배정 후보가 비었습니다.',
+        CtoErrorCode.NO_ASSIGNABLE_TASKS,
+      ),
+    ).toBeNull();
+  });
+
+  it('STALE_PM_RUN 문구는 행동을 이미 말하므로 선언만 채운다', () => {
+    const filled = appendBlockReasonGuidance(
+      PROSE_BLIND_MESSAGES[CtoErrorCode.STALE_PM_RUN],
+      CtoErrorCode.STALE_PM_RUN,
+    );
+
+    expect(filled).toContain(BLOCK_REASON_PHRASES.PREREQUISITE.noFabrication);
+    expect(filled).not.toContain(BLOCK_REASON_PHRASES.PREREQUISITE.recovery);
+  });
+
+  it('행동이 아예 없는 스킵 문구에는 해결 행동까지 채운다', () => {
+    const filled = appendBlockReasonGuidance(
+      PROSE_BLIND_MESSAGES[PoShadowErrorCode.STALE_PLAN],
+      PoShadowErrorCode.STALE_PLAN,
+    );
+
+    expect(filled).toContain(BLOCK_REASON_PHRASES.PREREQUISITE.noFabrication);
+    expect(filled).toContain(BLOCK_REASON_PHRASES.PREREQUISITE.recovery);
   });
 });
