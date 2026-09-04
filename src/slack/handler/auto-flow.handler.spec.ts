@@ -2,6 +2,7 @@ import { Assignment } from '../../agent/cto/domain/cto.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   buildChainTrail,
+  buildCtoFailureRetry,
   buildStepFailureArgs,
   parseStartBeValue,
   parseStartCtoValue,
@@ -96,6 +97,15 @@ describe('parseStartCtoValue / parseStartBeValue — attempt 왕복', () => {
     expect(parsed).toEqual({ pmAgentRunId: 9, attempt: 1 });
   });
 
+  // BE 쪽이 양의 attempt 를 흘리면 매 실패가 0 으로 돌아가 상한에 영영 닿지 않는다.
+  it('BE value 도 양의 attempt 를 보존한다 — 상한이 무력화되지 않게', () => {
+    const parsed = parseStartBeValue(
+      JSON.stringify({ pmAgentRunId: 9, ctoAgentRunId: 10, attempt: 2 }),
+    );
+
+    expect(parsed).toEqual({ pmAgentRunId: 9, ctoAgentRunId: 10, attempt: 2 });
+  });
+
   it('재시도 도입 전 발행된 버튼(attempt 부재)은 0 으로 수렴한다', () => {
     expect(parseStartCtoValue(JSON.stringify({ pmAgentRunId: 9 }))).toEqual({
       pmAgentRunId: 9,
@@ -143,6 +153,8 @@ describe('buildStepFailureArgs — step 실패 복귀 엣지', () => {
         actionId: 'auto-flow:start-cto',
         attempt: 0,
         nextValueJson,
+        label: '🔁 CTO 다시 시도',
+        guidance: 'PM plan 은 보존되어 있습니다.',
       },
     });
 
@@ -165,6 +177,8 @@ describe('buildStepFailureArgs — step 실패 복귀 엣지', () => {
           ctoAgentRunId: 2,
           attempt: 3,
         }),
+        label: '🔁 BE chain 다시 시도',
+        guidance: 'CTO 분배는 보존되어 있습니다.',
       },
     });
 
@@ -178,5 +192,71 @@ describe('buildStepFailureArgs — step 실패 복귀 엣지', () => {
 
     expect(args.blocks).toBeUndefined();
     expect(args.text).toBe('auto-flow PM step 실패: 실패');
+  });
+
+  // Slack section text 상한 3,000자 — 넘기면 응답 자체가 거부돼 재시도 UI 가 안 뜬다.
+  it('긴 에러 메시지를 잘라 section block 상한 안에 들어간다', () => {
+    const args = buildStepFailureArgs({
+      step: 'CTO',
+      message: 'x'.repeat(5_000),
+      retry: {
+        actionId: 'auto-flow:start-cto',
+        attempt: 0,
+        nextValueJson: JSON.stringify({ pmAgentRunId: 9, attempt: 1 }),
+        label: '🔁 CTO 다시 시도',
+        guidance: 'PM plan 은 보존되어 있습니다.',
+      },
+    });
+
+    const section = args.blocks?.find((block) => block.type === 'section');
+    const sectionText = (section?.text as { text: string }).text;
+    expect(sectionText.length).toBeLessThan(3_000);
+    expect(sectionText).toContain('이하 생략');
+    expect(args.text.length).toBeLessThan(3_000);
+  });
+});
+
+describe('buildCtoFailureRetry — worker 성공 후 실패는 재실행하지 않는다', () => {
+  const value = { pmAgentRunId: 9, attempt: 0 };
+
+  it('worker 실행 자체가 실패했으면 CTO 재시도 버튼', () => {
+    const retry = buildCtoFailureRetry({ value });
+
+    expect(retry.actionId).toBe('auto-flow:start-cto');
+    expect(JSON.parse(retry.nextValueJson)).toEqual({
+      pmAgentRunId: 9,
+      attempt: 1,
+    });
+  });
+
+  // 윤문·Slack 응답 단계에서 실패한 경우. CTO 를 다시 돌리면 원장에 이미 남은 분배가
+  // 중복 생성되고 쿼터도 더 든다.
+  it('worker 가 이미 성공했으면 BE 진행 버튼으로 바꾸고 그 run id 를 싣는다', () => {
+    const retry = buildCtoFailureRetry({
+      value,
+      succeededCtoAgentRunId: 123,
+    });
+
+    expect(retry.actionId).toBe('auto-flow:start-be');
+    expect(JSON.parse(retry.nextValueJson)).toEqual({
+      pmAgentRunId: 9,
+      ctoAgentRunId: 123,
+      attempt: 0,
+    });
+    expect(retry.guidance).toContain('#123');
+  });
+
+  it('CTO 재시도 예산을 이미 쓴 상태여도 worker 성공 시 BE 버튼은 막히지 않는다', () => {
+    const retry = buildCtoFailureRetry({
+      value: { pmAgentRunId: 9, attempt: 2 },
+      succeededCtoAgentRunId: 123,
+    });
+    const args = buildStepFailureArgs({
+      step: 'CTO',
+      message: '표시 단계 실패',
+      retry,
+    });
+
+    expect(args.blocks).toBeDefined();
   });
 });
