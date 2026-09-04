@@ -22,6 +22,9 @@ struct OfficeView: View {
     }()
     @State private var selectedAgent: String?
     @State private var commandText: String = ""
+    @State private var showAnswerSheet = false
+    @State private var selectedAnswer = ""
+    @State private var selectedApproval: ConsoleApproval?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -160,6 +163,24 @@ struct OfficeView: View {
                 idleBar
             }
         }
+        // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
+        // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
+        .sheet(isPresented: $showAnswerSheet) {
+            ScrollView {
+                Text(selectedAnswer)
+                    .font(Typography.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Spacing.xl)
+            }
+            .frame(minWidth: Layout.sheetMinWidth, minHeight: 260)
+        }
+        .sheet(item: $selectedApproval) { approval in
+            ApprovalDetailSheet(
+                approval: approval,
+                onApprove: { onApprove($0); selectedApproval = nil },
+                onReject: { onReject($0); selectedApproval = nil }
+            )
+        }
     }
 
     @ViewBuilder
@@ -173,7 +194,12 @@ struct OfficeView: View {
             }
             if let approval {
                 HStack {
-                    Text("승인 대기: \(approval.title)").lineLimit(1)
+                    Button {
+                        selectedApproval = approval
+                    } label: {
+                        Text("승인 대기: \(approval.title)").lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
                     Spacer()
                     Button("승인") { onApprove(approval.id); selectedAgent = nil }
                         .keyboardShortcut(.defaultAction)
@@ -331,10 +357,18 @@ struct OfficeView: View {
                             .lineLimit(1)
                     }
                     if let reason = command.reason {
-                        Text(reason)
-                            .font(Typography.captionSmall)
-                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                            .lineLimit(command.phase == .answered ? nil : 2)
+                        Button {
+                            selectedAnswer = reason
+                            showAnswerSheet = true
+                        } label: {
+                            Text(reason)
+                                .font(Typography.captionSmall)
+                                .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                                .lineLimit(command.phase == .answered ? 12 : 2)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(command.phase != .answered)
                     }
                 }
                 .padding(.horizontal, Spacing.sm)

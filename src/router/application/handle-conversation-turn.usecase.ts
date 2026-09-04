@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { buildDispatchReplyText } from '../domain/dispatch-reply.util';
 import {
   DispatchResult,
   DispatchSource,
@@ -10,6 +11,7 @@ import {
 } from '../domain/idaeri-router.port';
 import { RouterException } from '../domain/router.exception';
 import { RouterErrorCode } from '../domain/router-error-code.enum';
+import { calculateUnresolvedStreak } from '../domain/unresolved-turn.util';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { ConversationalReplyUsecase } from './conversational-reply.usecase';
 
@@ -69,18 +71,30 @@ export class HandleConversationTurnUsecase {
       (await this.conversationMemory.getRecentTurns(input.conversationKey));
 
     try {
+      const priorAgentRunId = [...priorTurns]
+        .reverse()
+        .find(
+          (turn) => turn.agentRunId !== null && turn.agentRunId !== 0,
+        )?.agentRunId;
+      const contextRefs =
+        priorAgentRunId === undefined || priorAgentRunId === null
+          ? undefined
+          : { agentRunId: priorAgentRunId };
       const result = await this.router.dispatch({
         source: input.source,
         slackUserId: input.slackUserId,
         text: input.text,
         agentTypeHint: input.agentTypeHint,
         priorTurns,
+        ...(contextRefs ? { contextRefs } : {}),
       });
       if (input.shouldRemember !== false) {
         await this.appendRoundTripSafely({
           conversationKey: input.conversationKey,
           userText: input.text,
-          assistantText: result.formattedText,
+          // 사용자에게 보이는 답변(체인 전문 + footer)과 같은 텍스트를 기억한다 — root 만
+          // 남기면 다음 turn 에서 사용자가 방금 본 child 결과를 가리켜도 기억에는 없다.
+          assistantText: buildDispatchReplyText(result),
           agentType: result.workerType,
           agentRunId: result.agentRunId,
         });
@@ -96,7 +110,8 @@ export class HandleConversationTurnUsecase {
         reply = await this.conversationalReply.reply({
           text: input.text,
           priorTurns,
-          unresolvedStreak: input.unresolvedStreak,
+          unresolvedStreak:
+            input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
         });
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);

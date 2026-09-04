@@ -23,6 +23,7 @@ struct DashboardView: View {
     @State private var injectNotice: String?
     @State private var injectNoticeIsFailure = false
     @State private var isInjecting = false
+    @State private var selectedApproval: ConsoleApproval?
 
     private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.md)]
 
@@ -155,6 +156,7 @@ struct DashboardView: View {
                     Text(approval.title)
                         .font(Typography.body)
                         .lineLimit(2)
+                        .onTapGesture { selectedApproval = approval }
                     Spacer(minLength: 0)
                     Text(formatTime(approval.createdAt))
                         .font(Typography.metricMonoSmall)
@@ -174,6 +176,13 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(ConsoleAgentState.awaitingApproval.tintColor)
         )
+        .sheet(item: $selectedApproval) { approval in
+            ApprovalDetailSheet(
+                approval: approval,
+                onApprove: { onApprove($0); selectedApproval = nil },
+                onReject: { onReject($0); selectedApproval = nil }
+            )
+        }
     }
 
     // MARK: - 내 작업 세션 패널

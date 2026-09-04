@@ -4,12 +4,21 @@ import { ConfigService } from '@nestjs/config';
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
+import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import {
+  PREVIEW_KIND,
+  PreviewAction,
+} from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   ConversationalReplyFailedException,
   HandleConversationTurnUsecase,
 } from '../../router/application/handle-conversation-turn.usecase';
+import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -18,9 +27,8 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
 const CONSOLE_CHANNEL_ID = 'CONSOLE';
-const CONSOLE_ANSWER_MAX_CHARS = 600;
-// 콘솔 지시는 Slack message handler 의 say() 경로를 지나지 않아 전문이 Slack 에 게시되지
-// 않는다. "전문은 Slack 에서" 는 없는 곳을 가리키는 거짓 안내였다. 전문 조회 경로 신설은 후속.
+const CONSOLE_ANSWER_MAX_CHARS = 8000;
+// 콘솔은 answered 전문을 별도 시트에서 열 수 있어, 화면을 보호하는 방어 상한만 유지한다.
 const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(길어서 여기까지만 보여드려요)';
 const SUGGESTION_FAILURE_MESSAGE =
   '지금 할 일을 추려보지 못했어요. 잠시 후 다시 말 걸어주세요.';
@@ -53,9 +61,18 @@ export class PreconditionChainOrchestrator {
     private readonly config: ConfigService,
     private readonly suggestNextWork: SuggestNextWorkUsecase,
     private readonly pendingTurns: PendingConsoleTurnStore,
+    private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
+    private readonly applyPreview: ApplyPreviewUsecase,
+    private readonly cancelPreview: CancelPreviewUsecase,
   ) {}
 
   async run(input: ConsoleChainInput): Promise<void> {
+    if (input.agentTypeHint === undefined && input.text) {
+      const handled = await this.tryHandlePreviewYesNo(input);
+      if (handled) {
+        return;
+      }
+    }
     await this.runChain(input, {
       depth: 0,
       visited: [],
@@ -105,7 +122,7 @@ export class PreconditionChainOrchestrator {
         this.consoleEvents.publish({
           type: 'command.answered',
           commandId: input.commandId,
-          message: truncateConsoleAnswer(result.formattedText),
+          message: truncateConsoleAnswer(buildDispatchReplyText(result)),
         });
       }
       return { ok: true };
@@ -165,6 +182,116 @@ export class PreconditionChainOrchestrator {
         return prereqOutcome;
       }
       return this.runChain(input, nextChain, true);
+    }
+  }
+
+  private async tryHandlePreviewYesNo(
+    input: ConsoleChainInput,
+  ): Promise<boolean> {
+    // intent 판별이 먼저다 — 순수 함수라 공짜고, "응/아니" 가 아닌 대부분의 발화가
+    // preview 저장소를 건드리지 않고 지나간다.
+    const intent = detectYesNoIntent(input.text ?? '');
+    if (intent === null) {
+      return false;
+    }
+    // 조회 실패는 인터셉트 포기로 접는다 — preview 저장소 장애가 일반 콘솔 대화의
+    // dispatch 까지 막으면 안 된다 (이 인터셉트는 있으면 좋은 지름길이지 관문이 아니다).
+    let pending: PreviewAction | null;
+    try {
+      pending = await this.findLatestPendingPreview.execute({
+        slackUserId: input.slackUserId,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `pending preview 조회 실패 — yes/no 인터셉트 없이 일반 dispatch 로 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+    if (!pending) {
+      return false;
+    }
+    if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
+      return false;
+    }
+    try {
+      if (intent === 'yes') {
+        const result = await this.applyPreview.execute({
+          previewId: pending.id,
+          slackUserId: input.slackUserId,
+        });
+        await this.rememberPreviewTurn(input, input.text ?? '');
+        this.publishPreviewAnswer(
+          input,
+          `✅ 적용 완료 (${pending.kind})\n\n${result.resultText}`,
+        );
+      } else {
+        await this.cancelPreview.execute({
+          previewId: pending.id,
+          slackUserId: input.slackUserId,
+        });
+        await this.rememberPreviewTurn(input, input.text ?? '');
+        this.publishPreviewAnswer(input, `❌ 취소했습니다 (${pending.kind}).`);
+      }
+    } catch (error: unknown) {
+      await this.rememberPreviewTurn(input, input.text ?? '');
+      const action = intent === 'yes' ? '적용' : '취소';
+      this.publishPreviewRejection(
+        input,
+        `Preview ${action} 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return true;
+  }
+
+  // 기억 기록은 부수 작업 — 여기서 throw 하면 이미 성공한 preview 적용/취소가
+  // "실패" 로 발행되어 사용자가 재시도하게 된다 (HandleConversationTurnUsecase 의
+  // appendRoundTripSafely 와 같은 원칙).
+  private async rememberPreviewTurn(
+    input: ConsoleChainInput,
+    text: string,
+  ): Promise<void> {
+    try {
+      const conversationKey = this.conversationMemory.buildKey({
+        slackUserId: input.slackUserId,
+        channelId: CONSOLE_CHANNEL_ID,
+      });
+      await this.conversationMemory.appendTurn(conversationKey, {
+        role: 'user',
+        text,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `preview 응답 turn 기억 실패 — 적용/취소 결과는 유지한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private publishPreviewAnswer(
+    input: ConsoleChainInput,
+    message: string,
+  ): void {
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.answered',
+        commandId: input.commandId,
+        message,
+      });
+    }
+  }
+
+  private publishPreviewRejection(
+    input: ConsoleChainInput,
+    reason: string,
+  ): void {
+    if (input.commandId) {
+      this.consoleEvents.publish({
+        type: 'command.rejected',
+        commandId: input.commandId,
+        reason,
+      });
     }
   }
 

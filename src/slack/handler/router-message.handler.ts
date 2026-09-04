@@ -3,6 +3,7 @@ import { App, SayFn } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
 import { parseTopicSelection } from '../../common/util/topic-selection.util';
+import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
@@ -14,6 +15,7 @@ import {
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
+import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import {
   DispatchResult,
   IDAERI_ROUTER_PORT,
@@ -21,11 +23,11 @@ import {
 } from '../../router/domain/idaeri-router.port';
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
+import { isUnresolvedFollowUpTurn } from '../../router/domain/unresolved-turn.util';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
-import { detectYesNoIntent } from './yes-no-detector';
 
 // 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
 //   :eyes:               (수신 직후) — 봇이 메시지를 읽었음
@@ -34,12 +36,6 @@ import { detectYesNoIntent } from './yes-no-detector';
 const REACTION_ACK = 'eyes';
 const REACTION_PROCESSING = 'hourglass';
 const REACTION_SUCCESS = 'white_check_mark';
-
-// ponytail: 질문 종결 휴리스틱은 되묻지 않고 미해결로 끝낸 응답을 놓친다; 명시적 turn metadata가 대안이다.
-const isUnresolvedFollowUpTurn = (turn: ConversationTurn): boolean =>
-  turn.role === 'assistant' &&
-  turn.agentType === null &&
-  /[?？]$/.test(turn.text.trim());
 
 // V3 비전 봇 쪼개기 — 자연어 진입 surface.
 // 두 종류 trigger:
@@ -281,7 +277,7 @@ export class RouterMessageHandler implements SlackHandler {
         agentRunId: result.agentRunId,
         timestampMs: Date.now(),
       });
-      const routerReplyText = buildRouterReply(result);
+      const routerReplyText = buildDispatchReplyText(result);
       // worker 가 카드를 만들어 보냈으면 그걸로 답한다. text 는 알림 미리보기와
       // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
       const readableReply = toReadableSlackArgs(routerReplyText);
@@ -546,7 +542,7 @@ export class RouterMessageHandler implements SlackHandler {
       agentRunId: result.agentRunId,
       timestampMs: Date.now(),
     });
-    const replyText = buildRouterReply(result);
+    const replyText = buildDispatchReplyText(result);
     await say({ thread_ts: threadTs, ...toReadableSlackArgs(replyText) });
     await this.conversationMemory.appendTurn(memoryKey, {
       role: 'assistant',
@@ -751,35 +747,3 @@ const resolveReplyBlocks = (
 // (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
 const stripMentionPrefix = (text: string): string =>
   text.replace(/<@[A-Z0-9]+>\s*/g, '').trim();
-
-// Router 결과 → Slack 답글 텍스트.
-// - chain 없으면: root.formattedText + footer (worker · agentRunId).
-// - chain 있으면: root.formattedText + child.formattedText 들을 '---' 구분으로 결합 +
-//   footer 에 worker 시퀀스 (PM → BE → BE_TEST 형태) + 모든 agentRunId.
-const buildRouterReply = (result: DispatchResult): string => {
-  const handoffs = result.handoffResults ?? [];
-  // 비동기 ack(agentRunId=0 sentinel) — "작성 시작" 안내엔 agentRunId footer 가 어색하므로 생략하고
-  // formattedText 만 노출. 실제 결과/agentRunId 는 백그라운드 완료 후 같은 스레드 답장에 담긴다.
-  if (result.agentRunId === 0 && handoffs.length === 0) {
-    return result.formattedText;
-  }
-  if (handoffs.length === 0) {
-    return `${result.formattedText}\n\n_이대리 (${result.workerType}) · agentRunId=${result.agentRunId}_`;
-  }
-  const bodies = [
-    result.formattedText,
-    ...handoffs.map((h) => h.formattedText),
-  ];
-  const workerSequence = [
-    result.workerType,
-    ...handoffs.map((h) => h.workerType),
-  ].join(' → ');
-  const agentRunIds = [
-    result.agentRunId,
-    ...handoffs.map((h) => h.agentRunId),
-  ].join(', ');
-  return [
-    bodies.join('\n\n---\n\n'),
-    `_이대리 chain — ${workerSequence} · agentRunIds=[${agentRunIds}]_`,
-  ].join('\n\n');
-};

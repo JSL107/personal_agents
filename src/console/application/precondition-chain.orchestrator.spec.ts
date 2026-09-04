@@ -12,6 +12,7 @@ import {
   ConversationalReplyFailedException,
   HandleConversationTurnUsecase,
 } from '../../router/application/handle-conversation-turn.usecase';
+import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import * as preconditionChainMap from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PreconditionChainOrchestrator } from './precondition-chain.orchestrator';
@@ -41,6 +42,7 @@ function make(recentDays?: string) {
     buildKey: jest.fn(
       ({ slackUserId, channelId }) => `${slackUserId}:${channelId}`,
     ),
+    appendTurn: jest.fn().mockResolvedValue(undefined),
   };
   const consoleEvents = { publish: jest.fn() };
   const suggestNextWork = {
@@ -54,6 +56,11 @@ function make(recentDays?: string) {
     putSuggestions: jest.fn(),
     putAwaitingInput: jest.fn(),
   };
+  const findLatestPendingPreview = {
+    execute: jest.fn().mockResolvedValue(null),
+  };
+  const applyPreview = { execute: jest.fn() };
+  const cancelPreview = { execute: jest.fn() };
   const orchestrator = new PreconditionChainOrchestrator(
     handleConversationTurn as unknown as HandleConversationTurnUsecase,
     conversationMemory as unknown as ConversationMemoryService,
@@ -61,6 +68,9 @@ function make(recentDays?: string) {
     config,
     suggestNextWork as never,
     pendingTurns as never,
+    findLatestPendingPreview as never,
+    applyPreview as never,
+    cancelPreview as never,
   );
   return {
     orchestrator,
@@ -69,6 +79,9 @@ function make(recentDays?: string) {
     consoleEvents,
     suggestNextWork,
     pendingTurns,
+    findLatestPendingPreview,
+    applyPreview,
+    cancelPreview,
   };
 }
 
@@ -383,10 +396,10 @@ describe('PreconditionChainOrchestrator', () => {
   });
 
   it.each([
-    ['599자', 599, false],
-    ['600자', 600, false],
-    ['601자', 601, true],
-  ])('worker 산출물 %s의 600자 상한을 지킨다', async (_, length, truncated) => {
+    ['7999자', 7999, false],
+    ['8000자', 8000, false],
+    ['8001자', 8001, true],
+  ])('worker 산출물 %s의 8000자 상한을 지킨다', async (_, length) => {
     const { orchestrator, handleConversationTurn, consoleEvents } = make();
     const formattedText = '가'.repeat(length);
     handleConversationTurn.execute.mockResolvedValue(
@@ -399,13 +412,183 @@ describe('PreconditionChainOrchestrator', () => {
       commandId: 'c1',
     });
 
+    const reply = buildDispatchReplyText({
+      agentRunId: 1,
+      workerType: 'PM' as never,
+      output: {},
+      modelUsed: 'codex',
+      formattedText,
+    });
+    const expectedMessage =
+      reply.length > 8000
+        ? `${reply.slice(0, 8000)}\n\n…(길어서 여기까지만 보여드려요)`
+        : reply;
     expect(consoleEvents.publish).toHaveBeenCalledWith({
       type: 'command.answered',
       commandId: 'c1',
-      message: truncated
-        ? `${'가'.repeat(600)}\n\n…(길어서 여기까지만 보여드려요)`
-        : formattedText,
+      message: expectedMessage,
     });
+  });
+
+  it('pending preview에 응답한 응은 apply하고 dispatch하지 않는다', async () => {
+    const {
+      orchestrator,
+      handleConversationTurn,
+      findLatestPendingPreview,
+      applyPreview,
+      consoleEvents,
+    } = make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_PROFILE',
+      status: 'PENDING',
+    });
+    applyPreview.execute.mockResolvedValue({ resultText: '반영했습니다.' });
+
+    await orchestrator.run({ slackUserId: 'U1', text: '응', commandId: 'c1' });
+
+    expect(applyPreview.execute).toHaveBeenCalledWith({
+      previewId: 'p1',
+      slackUserId: 'U1',
+    });
+    expect(handleConversationTurn.execute).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message: '✅ 적용 완료 (CAREER_PROFILE)\n\n반영했습니다.',
+    });
+  });
+
+  it('pending preview에 응답한 아니는 cancel하고 dispatch하지 않는다', async () => {
+    const {
+      orchestrator,
+      handleConversationTurn,
+      findLatestPendingPreview,
+      cancelPreview,
+    } = make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_PROFILE',
+      status: 'PENDING',
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '아니',
+      commandId: 'c1',
+    });
+
+    expect(cancelPreview.execute).toHaveBeenCalledWith({
+      previewId: 'p1',
+      slackUserId: 'U1',
+    });
+    expect(handleConversationTurn.execute).not.toHaveBeenCalled();
+  });
+
+  it('preview 조회가 실패하면 인터셉트를 포기하고 일반 dispatch로 폴백한다', async () => {
+    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+      make();
+    findLatestPendingPreview.execute.mockRejectedValue(
+      new Error('preview 저장소 장애'),
+    );
+    handleConversationTurn.execute.mockResolvedValue(ok('PM'));
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '응',
+        commandId: 'c1',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(handleConversationTurn.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('기억 저장이 실패해도 apply 성공을 answered로 발행한다', async () => {
+    const {
+      orchestrator,
+      conversationMemory,
+      findLatestPendingPreview,
+      applyPreview,
+      consoleEvents,
+    } = make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_PROFILE',
+      status: 'PENDING',
+    });
+    applyPreview.execute.mockResolvedValue({ resultText: '반영했습니다.' });
+    conversationMemory.appendTurn.mockRejectedValue(new Error('redis down'));
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '응',
+        commandId: 'c1',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message: '✅ 적용 완료 (CAREER_PROFILE)\n\n반영했습니다.',
+    });
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected' }),
+    );
+  });
+
+  it('preview가 없으면 일반 dispatch를 수행한다', async () => {
+    const { orchestrator, handleConversationTurn } = make();
+    handleConversationTurn.execute.mockResolvedValue(ok('PM'));
+
+    await orchestrator.run({ slackUserId: 'U1', text: '응', commandId: 'c1' });
+
+    expect(handleConversationTurn.execute).toHaveBeenCalled();
+  });
+
+  it('긴 응답 문장은 yes/no 인터셉트 없이 일반 dispatch를 수행한다', async () => {
+    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+      make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_PROFILE',
+      status: 'PENDING',
+    });
+    handleConversationTurn.execute.mockResolvedValue(ok('PM'));
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '응 그리고 이 내용도 함께 검토해서 다음 작업으로 진행해 주세요',
+      commandId: 'c1',
+    });
+
+    expect(handleConversationTurn.execute).toHaveBeenCalled();
+  });
+
+  it('CAREER_JD_GAP_BLOG의 응은 일반 dispatch로 통과한다', async () => {
+    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+      make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_JD_GAP_BLOG',
+      status: 'PENDING',
+    });
+    handleConversationTurn.execute.mockResolvedValue(ok('PM'));
+
+    await orchestrator.run({ slackUserId: 'U1', text: '응', commandId: 'c1' });
+
+    expect(handleConversationTurn.execute).toHaveBeenCalled();
   });
 
   it('선행 worker 산출물은 숨기고 최종 worker 산출물만 answered 발행한다', async () => {
@@ -427,7 +610,9 @@ describe('PreconditionChainOrchestrator', () => {
       .map((call) => call[0])
       .filter((event) => event.type === 'command.answered')
       .map((event) => event.message);
-    expect(answeredMessages).toEqual(['최종 산출물']);
+    expect(answeredMessages).toEqual([
+      '최종 산출물\n\n_이대리 (CEO) · agentRunId=1_',
+    ]);
 
     // 산출물을 숨기는 것과 같은 이유로 기억에서도 뺀다 — 사용자가 말하지도 보지도 않은 turn 이
     // 5턴 한도를 먹으면 실제 발화가 밀려난다. 선행(PO_EVAL)만 false, 최종(CEO)은 true.

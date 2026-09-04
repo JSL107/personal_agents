@@ -11,6 +11,8 @@ struct AgentCardView: View {
     let onAcknowledge: () -> Void
 
     @State private var showSheet = false
+    @State private var showAnswerSheet = false
+    @State private var selectedAnswer = ""
     @State private var inputText = ""
 
     private var matchingPending: [PendingCommand] {
@@ -90,6 +92,15 @@ struct AgentCardView: View {
         .sheet(isPresented: $showSheet) {
             commandSheet
         }
+        .sheet(isPresented: $showAnswerSheet) {
+            ScrollView {
+                Text(selectedAnswer)
+                    .font(Typography.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Spacing.xl)
+            }
+            .frame(minWidth: Layout.sheetMinWidth, minHeight: 260)
+        }
     }
 
     /// VoiceOver 라벨. `accessibilityElement(children: .combine)` 이 자식 라벨을 이 문자열로
@@ -122,10 +133,18 @@ struct AgentCardView: View {
                         .font(Typography.captionSmall)
                         .foregroundStyle(.secondary)
                     if let reason = command.reason {
-                        Text(reason)
-                            .font(Typography.captionSmall)
-                            .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                            .lineLimit(command.phase == .answered ? nil : 2)
+                        Button {
+                            selectedAnswer = reason
+                            showAnswerSheet = true
+                        } label: {
+                            Text(reason)
+                                .font(Typography.captionSmall)
+                                .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
+                                .lineLimit(command.phase == .answered ? 12 : 2)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(command.phase != .answered)
                     }
                 }
             }
