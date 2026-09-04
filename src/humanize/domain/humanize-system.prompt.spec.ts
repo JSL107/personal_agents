@@ -38,8 +38,7 @@ describe('개인 블로그 목소리 프롬프트', () => {
 
   it('프로파일 실측 지표를 지시문으로 담고 있다', () => {
     for (const marker of [
-      '20자 이하',
-      '80자',
+      '문장 길이',
       '~거든요',
       '또한',
       '비유',
@@ -49,12 +48,10 @@ describe('개인 블로그 목소리 프롬프트', () => {
     }
   });
 
-  // 전역 비율 지시("열 문장에 한두 번")는 모델이 글 전체를 세야 해서 장문에서 안 지켜졌다
-  // (실측 3~5%). 값 단위로 바꾸자 16~23% 가 됐다. 되돌아가면 말투가 조용히 사라진다.
-  it('구어 종결어미를 전역 비율이 아니라 값 단위로 요구한다', () => {
-    // 값 단위 지시는 유지한다 — 전역 비율로 주면 장문에서 3~5% 로 떨어진다(실측).
+  // 구어 종결어미는 빈도나 값 개수로 맞추지 않는다. 필요한 자리에만 섞으라는 방향만 준다.
+  it('구어 종결어미를 숫자나 값 개수로 강제하지 않는다', () => {
     expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
-      '값 두세 개에 한 문장',
+      '필요한 자리에만 드물게 섞어라',
     );
     expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).not.toContain(
       '열 문장에 한두 번',
@@ -62,14 +59,10 @@ describe('개인 블로그 목소리 프롬프트', () => {
   });
 
   it('값마다 넣지 말라는 상한을 함께 요구한다', () => {
-    // 하한만 주면 반대쪽으로 넘어간다. "값마다 하나" 로 주자 문단이 43개로 나뉜 글에서 구어
-    // 어미가 30% 가 됐고 그중 28개가 `~죠` 였다 — 프로파일 상한은 20% 다.
     expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
-      '모든 값에 넣지 마라',
+      '모든 문장에 넣지 마라',
     );
-    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).toContain(
-      '한 어미에 몰지 말고',
-    );
+    expect(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT).not.toContain('값 두세 개');
   });
   // 블로그 글은 해요체로 쓴다는 사용자 진술(2026-08-24)과 결정(2026-08-25)을 고정한다.
   //
@@ -120,11 +113,8 @@ describe('개인 블로그 목소리 프롬프트', () => {
     expect(dashLines).toEqual([]);
   });
 
-  // "짧은 문장을 문단마다 하나 이상" 이 호흡을 끊었다. 발행본이 평균 33.2자에 짧은 문장 30% 였고
-  // 사용자 판정은 "호흡이 너무 짧다" 였다(사용자가 쓴 글은 평균 44.7자). 강제를 걷고 기본 길이를 준다.
-  // 기본 호흡(40~60자)을 준 뒤에도 "이유는 문장을 끊고 뒤에 던져라" 가 같은 블록에 남아 있었다.
-  // 한쪽은 한 문장으로 가라 하고 한쪽은 끊으라 해서 모델에 상충하는 명령이 됐다(리뷰 MUST_FIX).
-  // 구어 어미 지시는 살리고 끊으라는 부분만 치환했다. 되살아나면 긴 호흡이 다시 무너진다.
+  // 문장 길이와 문단 크기를 숫자로 고정하면 모델이 의미보다 숫자를 먼저 맞춘다. 사용자의
+  // 문제는 평균값이 아니라 문장 사이의 흐름이므로, 숫자 기준이 다시 들어오지 않게 고정한다.
   it('이유를 문장에서 끊으라는 지시를 남기지 않는다', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain(
       '이유는 문장을 끊고 뒤에 던져라',
@@ -135,23 +125,30 @@ describe('개인 블로그 목소리 프롬프트', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('~거든요');
   });
 
-  it('기본 문장 길이를 주고 문단마다 짧은 문장을 강제하지 않는다', () => {
-    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('40~60자');
+  it('문장 길이와 문단 크기를 숫자로 강제하지 않는다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '문장 길이를 일정한 범위에 맞추려고 하지 마라',
+    );
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '문장 수나 글자 수를 맞추려고 자르지 마라',
+    );
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('잘게 끊지 마라');
     expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('문단마다 하나 이상');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('40~60자');
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).not.toContain('80자를 넘기지 마라');
   });
-});
 
-it('사용자 네 가지 AI 느낌을 길이 강제가 아닌 흐름 규칙으로 다룬다', () => {
-  for (const rule of [
-    '문장 길이를 짧게 만드는 것 자체를 목표로 삼지 마라',
-    '임의로 줄바꿈하지 마라',
-    '짧은 문장 여러 개로 억지로 나열하지 마라',
-    '앞 문장의 주어·대상·시간을 다음 문장이 자연스럽게 이어받게 써라',
-    '문장 길이 숫자만 보지 말고 문단 전체를',
-  ]) {
-    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(rule);
-  }
+  it('사용자 네 가지 AI 느낌을 길이 강제가 아닌 흐름 규칙으로 다룬다', () => {
+    for (const rule of [
+      '문장 길이를 짧게 만드는 것 자체를 목표로 삼지 마라',
+      '임의로 줄바꿈하지 마라',
+      '짧은 문장 여러 개로 억지로 나열하지 마라',
+      '앞 문장의 주어·대상·시간을 다음 문장이 자연스럽게 이어받게 써라',
+      '문장 길이 숫자만 보지 말고 문단 전체를',
+    ]) {
+      expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(rule);
+    }
+  });
 });
 
 describe('일반 독자 용어 규칙', () => {

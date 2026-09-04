@@ -28,7 +28,6 @@ import {
   measureKoreanStyle,
 } from '../domain/korean-style-metrics';
 import {
-  renderBreathFeedback,
   renderStyleFeedback,
   toStyleFeedbackRun,
 } from '../domain/style-feedback';
@@ -69,17 +68,6 @@ export interface HumanizeOptions {
    * 기본은 `developer` 다 — 지정하지 않은 모든 기존 호출부의 산출물이 그대로 유지된다.
    */
   audience?: HumanizeAudience;
-  /**
-   * 직전 회차 산출물의 실측 평균 문장 길이. 하한에 미달했을 때만 넘긴다.
-   *
-   * 왜 필요한가 — 프롬프트에는 이미 "기본은 40~60자" 가 있는데도 실측이 32.6자로 나왔다.
-   * 모델은 자기가 쓴 글이 몇 자인지 재지 못한다. 재는 것은 코드이고, 그 결과가 모델에게
-   * 돌아가지 않으면 규칙은 지켜졌는지 모르는 채로 끝난다. 수치를 적어 다시 들여보낸다.
-   *
-   * `buildStyleFeedback` 의 되먹임과 다른 축이다. 그쪽은 **지난 글들**의 반복 갭이라 이번
-   * 산출물을 못 보고, 이 값은 **방금 만든 이 글**의 실측이다.
-   */
-  measuredAverageLength?: number;
 }
 
 type PreservationViolationCounts = Record<PreservedTokenKind, number>;
@@ -190,13 +178,9 @@ export class HumanizeService {
             ? audiencePrompt
             : `${audiencePrompt}\n${HUMANIZE_CONCISE_RULES}`;
           const styleFeedback = await this.buildStyleFeedback(options?.voice);
-          const breathFeedback = renderBreathFeedback(
-            options?.measuredAverageLength,
-          );
           const systemPrompt =
             (injection ? `${basePrompt}\n\n${injection}` : basePrompt) +
-            styleFeedback +
-            breathFeedback;
+            styleFeedback;
           const completion = await this.modelRouter.route({
             agentType: AgentType.HUMANIZER,
             request: {
