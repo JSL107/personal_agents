@@ -61,6 +61,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "모의계좌"
     case "PAPER_RECOMMEND":
         return "종목 추천"
+    case "DELAY_REPORT":
+        return "지연 보고"
     case "CTO_STUDY":
         return "학습 코치"
     // 내부
