@@ -32,6 +32,17 @@ export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Review
   - 입력이 "문서 오탈자 3건 고침" 일 때 {"before":"오탈자 3건이 있었다","after":"오탈자 3건을 수정했다"} 는 **오답** 이다. 작업 전/후일 뿐 개선 전/후가 아니다. 정답은 null.
 - 애매하면 null. 비우는 것은 결함이 아니다.
 
+## decisions / risks (대표 결정사항 · 위험)
+- decisions 는 **대표(사용자)가 판단해야 결론이 나는 안건** 만. 방향 선택, 우선순위 조정, 외부 비용·권한
+  승인처럼 실무자가 혼자 못 정하는 것. 각 항목은 "무엇을 정해야 하는지" 가 드러나게 쓴다
+  (예: "A안(캐시 도입) vs B안(쿼리 정리) 중 이번 주 착수 대상 선택").
+- risks 는 **오늘 관찰된 문제·위험** 만. 실패·차단·미검증 구간·되돌리기 어려운 변경 등.
+  근거가 입력에 있어야 한다 (예: "머지된 PR 3건 중 1건이 실 환경 미검증").
+- 두 필드 모두 **입력에서 끌어올 수 없으면 빈 배열** 로 둔다. 안건을 지어내지 않는다.
+  비우는 것은 결함이 아니다 — 화면에는 "결재 안건 없음" 으로 명시된다.
+- summary·nextActions 의 재서술을 옮겨 담지 않는다. "내가 이어서 할 일" 은 nextActions 이고,
+  decisions 는 "대표가 정해줘야 내가 움직일 수 있는 것" 이다.
+
 ## 기타
 - oneLineAchievement 는 한 줄짜리 성과 문장 (30자 내외). 과장 금지.
 - nextActions 는 내일~이번주 안에 할 수 있는 구체적 후속 조치 1~3개. "리팩터링 진행" 같은 추상문구 금지 — "X 함수의 Y 분기 정리" 처럼 구체화.
@@ -46,6 +57,8 @@ export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Review
     "qualitative": string
   },
   "improvementBeforeAfter": null | { "before": string, "after": string },
+  "decisions": string[],
+  "risks": string[],
   "nextActions": string[],
   "oneLineAchievement": string
 }`;

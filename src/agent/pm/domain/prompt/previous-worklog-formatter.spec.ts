@@ -15,6 +15,8 @@ describe('formatPreviousDailyReviewSection', () => {
       before: 'PR 리뷰 수동',
       after: '/review-pr 으로 draft 자동 생성',
     },
+    decisions: [],
+    risks: [],
     nextActions: ['옵션 C 전일 plan 참조', 'AGENTS.md 작성'],
     oneLineAchievement: '/review-pr E2E 가능 상태로 진입',
   };
@@ -69,12 +71,29 @@ describe('coerceToDailyReview', () => {
     summary: 's',
     impact: { quantitative: ['q1'], qualitative: 'q' },
     improvementBeforeAfter: { before: 'b', after: 'a' },
+    decisions: [],
+    risks: [],
     nextActions: ['n'],
     oneLineAchievement: 'o',
   };
 
   it('shape 맞으면 그대로 반환', () => {
     expect(coerceToDailyReview(valid)).toEqual(valid);
+  });
+
+  // decisions / risks 도입 전에 적재된 run output 회귀 — 두 키가 없다고 회고 전체가
+  // "이전 worklog 없음" 으로 조용히 사라지면 안 된다.
+  it('decisions / risks 키가 없는 예전 output 도 빈 배열로 채워 살린다', () => {
+    const legacy: Record<string, unknown> = { ...valid };
+    delete legacy.decisions;
+    delete legacy.risks;
+    expect(coerceToDailyReview(legacy)).toEqual(valid);
+  });
+
+  it('decisions 키가 있는데 형태가 틀리면 채우지 않고 거른다', () => {
+    expect(
+      coerceToDailyReview({ ...valid, decisions: '결재 필요' }),
+    ).toBeNull();
   });
 
   it('improvementBeforeAfter null 도 허용', () => {

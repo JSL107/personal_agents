@@ -107,6 +107,8 @@ export const humanizeDailyReview = async (
     qualitative: review.impact.qualitative,
     oneLineAchievement: review.oneLineAchievement,
   };
+  flattenArray(fields, 'decisions', review.decisions);
+  flattenArray(fields, 'risks', review.risks);
   flattenArray(fields, 'nextActions', review.nextActions);
   if (review.improvementBeforeAfter) {
     fields['improvement.before'] = review.improvementBeforeAfter.before;
@@ -120,6 +122,8 @@ export const humanizeDailyReview = async (
     summary: humanized.summary,
     oneLineAchievement: humanized.oneLineAchievement,
     impact: { ...review.impact, qualitative: humanized.qualitative },
+    decisions: rebuildArray(humanized, 'decisions', review.decisions),
+    risks: rebuildArray(humanized, 'risks', review.risks),
     nextActions: rebuildArray(humanized, 'nextActions', review.nextActions),
     improvementBeforeAfter: review.improvementBeforeAfter
       ? {

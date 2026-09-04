@@ -13,6 +13,8 @@ describe('parseDailyReview', () => {
       before: '자식 CLI 가 parent env/HOME 상속 → .env 노출 가능',
       after: 'throwaway HOME + env allowlist + stdin prompt 로 격리',
     },
+    decisions: [],
+    risks: [],
     nextActions: ['Work Reviewer 유스케이스 구현', 'E2E 검증 문서화'],
     oneLineAchievement: 'codex 어댑터 격리로 Slack 입력 기반 secret 유출 차단',
   };
