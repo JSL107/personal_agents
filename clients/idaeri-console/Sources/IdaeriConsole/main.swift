@@ -78,6 +78,23 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 위에 문패·경고등·말풍선이 한꺼번에 쌓이는 최악을 볼 수 있다.
     //   swift run IdaeriConsole --render /tmp/office.png --briefing-demo --alarm-demo
     let briefingDemo = CommandLine.arguments.contains("--briefing-demo")
+    // 방 하나만 확대해 굽는다. 방 6개는 격자 위치가 달라 한 방만 맞을 수 있어, 앱을 띄우지 않고
+    // 여섯 장을 확인할 입구가 필요하다.
+    //   swift run IdaeriConsole --render /tmp/office.png --room engineering
+    let roomIndex = CommandLine.arguments.firstIndex(of: "--room")
+    let room = roomIndex.flatMap { index -> Department? in
+        guard index + 1 < CommandLine.arguments.count else {
+            return nil
+        }
+        return officeParseDepartment(CommandLine.arguments[index + 1])
+    }
+    if roomIndex != nil, room == nil {
+        let names = Department.allCases.map(\.rawValue).joined(separator: " · ")
+        FileHandle.standardError.write(
+            Data("--room 값을 알아볼 수 없다 — 쓸 수 있는 값: \(names)\n".utf8)
+        )
+        exit(2)
+    }
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -88,7 +105,8 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         busyDemo: busyDemo,
         alarmDemo: alarmDemo,
         briefingDemo: briefingDemo,
-        debugLabels: debugLabels
+        debugLabels: debugLabels,
+        room: room
     )
     exit(succeeded ? 0 : 1)
 }

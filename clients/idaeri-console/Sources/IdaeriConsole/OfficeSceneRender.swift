@@ -22,7 +22,8 @@ func renderOfficeScene(
     busyDemo: Bool = false,
     alarmDemo: Bool = false,
     briefingDemo: Bool = false,
-    debugLabels: Bool = false
+    debugLabels: Bool = false,
+    room: Department? = nil
 ) -> Bool {
     let scene = OfficeScene(size: size)
     scene.scaleMode = .resizeFill
@@ -61,6 +62,17 @@ func renderOfficeScene(
     let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
     let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
+    // 방 뷰는 평면도가 채워진 뒤에 걸어야 한다 — `setFocus` 가 `plan.zones` 에서 그 방을 찾는다.
+    // 여기서 걸면 아래 오버레이·세션이 확대된 좌표계로 그려진다.
+    if let room, !scene.setFocus(room) {
+        FileHandle.standardError.write(
+            Data(
+                "--room \(room.rawValue): 그 방에 사람이 없어 구역이 만들어지지 않았다"
+                    .appending(" (백엔드와 IDAERI_CONSOLE_URL 확인)\n").utf8
+            )
+        )
+        return false
+    }
     // 세션도 함께 그린다 — 빠뜨리면 실제 앱에만 있는 사람들이 회귀 확인에서 통째로 빠진다
     // (세션 이름표가 서로 겹쳐 못 읽던 문제가 이 구멍으로 렌더 점검을 빠져나갔다).
     scene.syncSessions(renderedSessions)

@@ -52,4 +52,51 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         officeSpriteUnit,
         "창 크기가 0 이면 기본 단위"
     )
+
+    // ── 방 포커스 ───────────────────────────────────────────────────────────
+    // 방 하나(10x7 칸)를 실사용 창에 담는다. 방 문과 벽이 경계에 붙어 있어 여유 1칸을 물려
+    // 12x9 칸이 기준이고, 960/12 = 80 이라 2배가 나온다.
+    // `OfficeRect` 는 `OfficeRoomLayout.swift` 에 이미 있는 값 타입이다.
+    let room = OfficeRect(x: 1, y: 6, width: 10, height: 7)
+    let focused = officeFocusedViewMetrics(
+        viewWidth: 960, viewHeight: 1050, columns: 23, rows: 27, focus: room
+    )
+    t.expectEqual(focused.tileSize, 80, "방 뷰는 80px(2배)")
+
+    // 실제 구역 크기로도 2배가 나온다 — `DepartmentZone.width` 는 좌우 벽을 포함한
+    // `zoneWidth + 1 = 11` 이다(`OfficeFloorPlan.swift:1922`). 여유를 1 칸 물리면 13x9 가 되어
+    // 배수가 1 로 떨어진다.
+    let realZone = OfficeRect(x: 1, y: 6, width: 11, height: 7)
+    t.expectEqual(
+        officeFocusedViewMetrics(
+            viewWidth: 960, viewHeight: 1050, columns: 23, rows: 27, focus: realZone
+        ).tileSize,
+        80,
+        "실제 구역 크기(11x7)에서도 80px"
+    )
+
+    // 방 중심이 화면 중심에 온다.
+    let centerX = focused.originX + (room.x + room.width / 2) * focused.tileSize
+    let centerY = focused.originY + (room.y + room.height / 2) * focused.tileSize
+    t.expect(abs(centerX - 480) < 0.5, "방 중심이 가로 중앙 (실제 \(centerX))")
+    t.expect(abs(centerY - 525) < 0.5, "방 중심이 세로 중앙 (실제 \(centerY))")
+
+    for width in stride(from: 500.0, through: 1800.0, by: 53.0) {
+        let zoomed = officeFocusedViewMetrics(
+            viewWidth: width, viewHeight: 900, columns: 23, rows: 27, focus: room
+        )
+        let steps = zoomed.tileSize / officeSpriteUnit
+        t.expect(
+            steps == 0.5 || (steps >= 1 && steps == steps.rounded()),
+            "방 뷰 타일 \(zoomed.tileSize)px 가 정수배도 1/2 배도 아니다 (창 폭 \(width))"
+        )
+        // 눌러서 확대한 것이 축소가 되면 안 된다.
+        let full = officeViewMetrics(
+            viewWidth: width, viewHeight: 900, columns: 23, rows: 27
+        )
+        t.expect(
+            zoomed.tileSize >= full.tileSize,
+            "방 뷰가 전체 뷰보다 크거나 같다 (창 폭 \(width))"
+        )
+    }
 }

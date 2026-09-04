@@ -51,3 +51,46 @@ public func officeViewMetrics(
         originY: (viewHeight - tileSize * Double(rows)) / 2
     )
 }
+
+/// 방 하나를 화면 가운데에 담는 정수 배율 값(순수).
+///
+/// 카메라를 쓰지 않는다. 타일 크기와 원점만 바꿔 기존 재배치 경로를 그대로 태우므로,
+/// 이름표 글자 크기 계산(타일 크기 기반)이 함께 따라온다 — 카메라로 확대하면 글자도 같이
+/// 커져서 겹침 규칙을 다시 짜야 한다.
+///
+/// `margin` 은 방 주변으로 **더** 보여 줄 칸 수다. 기본값이 0 인 이유는 `DepartmentZone` 이
+/// 이미 좌우 벽을 포함한 폭(`zoneWidth + 1`)이기 때문이다 — 여유를 1 칸 물렸더니 실사용 창에서
+/// 구역 11x7 이 13x9 로 잡혀 배수가 2 에서 1 로 떨어졌다(확대가 안 되는 것으로 보였다).
+///
+/// 전체 뷰와 달리 세로 초과를 허용하지 않는다 — 전체 뷰에서 잘리는 것은 바깥벽이지만,
+/// 방 뷰에서 잘리면 보려고 확대한 그 방이 잘린다.
+public func officeFocusedViewMetrics(
+    viewWidth: Double,
+    viewHeight: Double,
+    columns: Int,
+    rows: Int,
+    focus: OfficeRect,
+    margin: Double = 0,
+    unit: Double = officeSpriteUnit
+) -> OfficeViewMetrics {
+    let full = officeViewMetrics(
+        viewWidth: viewWidth, viewHeight: viewHeight,
+        columns: columns, rows: rows, unit: unit
+    )
+    guard viewWidth > 0, viewHeight > 0, focus.width > 0, focus.height > 0, unit > 0 else {
+        return full
+    }
+    let fitting = min(
+        viewWidth / (focus.width + margin * 2),
+        viewHeight / (focus.height + margin * 2)
+    )
+    let steps = (fitting / unit).rounded(.down)
+    // 확대인데 축소가 되면 안 된다 — 창이 작아 배수가 안 나오면 전체 뷰 배율을 그대로 쓰고
+    // 원점만 그 방으로 옮긴다.
+    let tileSize = max(steps >= 1 ? steps * unit : unit, full.tileSize)
+    return OfficeViewMetrics(
+        tileSize: tileSize,
+        originX: viewWidth / 2 - (focus.x + focus.width / 2) * tileSize,
+        originY: viewHeight / 2 - (focus.y + focus.height / 2) * tileSize
+    )
+}

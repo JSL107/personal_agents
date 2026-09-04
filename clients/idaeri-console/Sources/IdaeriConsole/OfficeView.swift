@@ -25,6 +25,8 @@ struct OfficeView: View {
     @State private var showAnswerSheet = false
     @State private var selectedAnswer = ""
     @State private var selectedApproval: ConsoleApproval?
+    /// 방 뷰로 확대해 보고 있는 부서. 씬이 알려준다(`OfficeScene.onFocusChange`).
+    @State private var focusedRoom: Department?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -81,6 +83,7 @@ struct OfficeView: View {
                         commandText = ""
                     }
                     scene.onPresidentClick = { openPresidentBar() }
+                    scene.onFocusChange = { focusedRoom = $0 }
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
@@ -163,6 +166,9 @@ struct OfficeView: View {
                 idleBar
             }
         }
+        .overlay(alignment: .top) { roomHeader }
+        // 방 뷰에서 나가는 길을 마우스 하나로 두지 않는다.
+        .onExitCommand { scene.setFocus(nil) }
         // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
         // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
         .sheet(isPresented: $showAnswerSheet) {
@@ -257,6 +263,22 @@ struct OfficeView: View {
 
     /// 대표에게 지시 — 담당자를 지정하지 않는다. 라우터가 자연어를 보고 워커를 고르고,
     /// 선행 조건이 빠졌으면 그 앞 워커까지 알아서 돌린다.
+    /// 방 뷰에서 지금 어느 방인지와 나가는 방법. 확대하면 방 이름표가 화면 밖으로 밀릴 수 있어
+    /// 씬 밖에 따로 둔다 — 씬 노드가 아니라 오버레이라 타일 크기 변화에 영향받지 않는다.
+    @ViewBuilder
+    private var roomHeader: some View {
+        if let focusedRoom {
+            HStack(spacing: Spacing.sm) {
+                Text(focusedRoom.label).font(Typography.sectionTitle)
+                Text("esc · 바깥을 눌러 전체 보기").foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(.black.opacity(0.55), in: Capsule())
+            .padding(.top, Spacing.sm)
+        }
+    }
+
     private var presidentBar: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
