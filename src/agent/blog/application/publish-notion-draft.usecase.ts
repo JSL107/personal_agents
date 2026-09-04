@@ -12,7 +12,7 @@ import {
   extractJsonObjectText,
 } from '../../../common/util/llm-json-extract.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
-import { humanizeMarkdownProseWithBreathRetry } from '../../../humanize/application/humanize-markdown.adapter';
+import { humanizeMarkdownProseForPublishing } from '../../../humanize/application/humanize-markdown.adapter';
 import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
@@ -412,7 +412,7 @@ export class PublishNotionDraftUsecase {
     this.assertQuotesNotWiped(target, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
-    const humanized = await humanizeMarkdownProseWithBreathRetry(
+    const humanized = await humanizeMarkdownProseForPublishing(
       edited.body,
       this.humanizer,
       this.logger,
