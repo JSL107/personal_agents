@@ -139,6 +139,24 @@ describe('formatDelayReport', () => {
     expect(quota).not.toContain('.env');
   });
 
+  it('선행 산출물 부재에는 선행 부재용 선언을 쓴다', () => {
+    const text = formatDelayReport(
+      verdict({
+        primaryCause: 'UNRESOLVED_FAILURE',
+        detail:
+          'PM 실행이 선행 산출물 부재로 실패했어요. 직전 PM run 이 없습니다. `/today` 먼저 실행해 plan 을 만든 뒤 다시 시도해주세요.',
+        failureKind: 'PREREQUISITE',
+        retryRunId: 9,
+      }),
+    );
+
+    expect(text).toContain('선행 산출물 없이 내용을 지어내지 않습니다');
+    // 사유가 이미 "먼저 실행" 을 말했으므로 사전의 기본 행동 문구는 붙지 않는다.
+    expect(text).not.toContain('선행 작업을 먼저 실행하면');
+    expect(text).not.toContain('.env');
+    expect(text).toContain('/retry-run 9');
+  });
+
   it('실패 사유가 이미 행동을 말하고 있으면 같은 안내를 두 번 하지 않는다', () => {
     const text = formatDelayReport(
       verdict({

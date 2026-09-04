@@ -12,6 +12,10 @@ export type BlockReasonKind = 'QUOTA' | 'INTEGRATION' | 'PREREQUISITE';
 export interface BlockReasonPhrase {
   readonly noFabrication: string;
   readonly recovery: string;
+  // 이 부류에서 ③을 "이미 말했다" 고 볼 문구. 부류마다 다르다 — 미연동 문구의
+  // "잠시 후 다시 시도" 는 키를 넣으라는 말이 아니라서, 공통 신호 하나로 판정하면
+  // 정작 필요한 안내가 사라진다.
+  readonly recoveryStatedSignals: readonly string[];
 }
 
 // 원장(AgentRun.output.error)과 DomainException 은 errorCode 가 아니라 message 문자열만 남긴다.
@@ -26,19 +30,15 @@ export interface BlockReasonPhrase {
 const QUOTA_SIGNAL = '사용량 한도 초과';
 const CONFIGURATION_MISSING_SIGNAL = '설정되지 않';
 const ENV_SIGNAL = '.env';
-const PREREQUISITE_SIGNAL = '먼저 실행';
-
-// 이미 "무엇을 하면 되는지" 를 싣고 있는 문구. 여기에 ③을 또 붙이면 같은 말이 두 번 나온다.
-// PREREQUISITE 신호('먼저 실행') 자체가 행동 문구라 이 목록에 함께 둔다.
-const RECOVERY_ALREADY_STATED_SIGNALS = ['다시 시도', PREREQUISITE_SIGNAL];
-
-// ③을 이미 담고 있는 문구인가. 사전 밖에서 문장을 조립하는 곳(카드 formatter 등)도 같은
-// 기준을 써야 한 화면에서 같은 안내가 두 번 나오지 않는다.
-export const statesRecoveryAlready = (reason: string): boolean => {
-  return RECOVERY_ALREADY_STATED_SIGNALS.some((signal) =>
-    reason.includes(signal),
-  );
-};
+// 선행 부재는 두 조각으로 본다 — "무엇이 없다" + "대표가 실행할 것이 있다".
+// 한 조각(예: 연속 문자열 '먼저 실행')만 보면 같은 사정을 달리 쓴 문구를 통째로 놓친다.
+// `먼저 \`/today\` 로 plan 을 생성한 뒤` (po-shadow·sync-plan) 와
+// `새로운 \`/today\` 실행 후` (구버전 출력 경로) 가 그렇게 빠져 있었다.
+const MISSING_SIGNAL = '없';
+const PREREQUISITE_ACTION_SIGNALS: readonly RegExp[] = [
+  /먼저/,
+  /`\/[a-z][a-z0-9-]*`/,
+];
 
 export const BLOCK_REASON_PHRASES: Readonly<
   Record<BlockReasonKind, BlockReasonPhrase>
@@ -46,15 +46,34 @@ export const BLOCK_REASON_PHRASES: Readonly<
   QUOTA: {
     noFabrication: '한도가 풀릴 때까지 결과를 지어내지 않습니다.',
     recovery: '한도가 리셋되면 자동으로 다시 쓸 수 있습니다.',
+    // 쿼터의 ③은 "리셋될 때까지 기다렸다 다시" 라서, 그 말이 이미 있으면 같은 안내다.
+    recoveryStatedSignals: ['다시 시도'],
   },
   INTEGRATION: {
     noFabrication: '연동 전에는 없는 값을 지어내지 않습니다.',
     recovery: '`.env` 에 해당 키를 넣고 다시 시도하면 바로 돌아요.',
+    // 미연동의 ③은 "어디에 무엇을 넣어라" 다. 일반적인 재시도 권유는 여기에 해당하지 않는다
+    // — `resolve-hire-date.ts:15` 처럼 넣을 키까지 적어 준 문구만 이미 말한 것으로 본다.
+    recoveryStatedSignals: ['설정해주세요'],
   },
   PREREQUISITE: {
     noFabrication: '선행 산출물 없이 내용을 지어내지 않습니다.',
     recovery: '선행 작업을 먼저 실행하면 이어서 진행됩니다.',
+    // 판정 신호 자체가 실행 지시라 사실상 늘 여기 걸린다. recovery 는 신호가 실행 지시를
+    // 담지 않는 문구까지 넓어질 때를 위한 기본값이다.
+    recoveryStatedSignals: ['먼저', '실행'],
   },
+};
+
+// ③을 이미 담고 있는 문구인가. 사전 밖에서 문장을 조립하는 곳(카드 formatter 등)도 같은
+// 기준을 써야 한 화면에서 같은 안내가 두 번 나오지 않는다.
+export const statesRecoveryAlready = (
+  reason: string,
+  kind: BlockReasonKind,
+): boolean => {
+  return BLOCK_REASON_PHRASES[kind].recoveryStatedSignals.some((signal) =>
+    reason.includes(signal),
+  );
 };
 
 export const classifyBlockReason = (reason: string): BlockReasonKind | null => {
@@ -67,7 +86,10 @@ export const classifyBlockReason = (reason: string): BlockReasonKind | null => {
   if (reason.includes(QUOTA_SIGNAL)) {
     return 'QUOTA';
   }
-  if (reason.includes(PREREQUISITE_SIGNAL)) {
+  if (
+    reason.includes(MISSING_SIGNAL) &&
+    PREREQUISITE_ACTION_SIGNALS.some((signal) => signal.test(reason))
+  ) {
     return 'PREREQUISITE';
   }
   return null;
@@ -85,7 +107,10 @@ export const appendBlockReasonGuidance = (reason: string): string => {
   if (!reason.includes(phrase.noFabrication)) {
     parts.push(phrase.noFabrication);
   }
-  if (!statesRecoveryAlready(reason) && !reason.includes(phrase.recovery)) {
+  if (
+    !statesRecoveryAlready(reason, kind) &&
+    !reason.includes(phrase.recovery)
+  ) {
     parts.push(phrase.recovery);
   }
   return parts.join(' ');

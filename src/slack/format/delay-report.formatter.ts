@@ -31,7 +31,7 @@ const failureAction = (verdict: DelayVerdict): string => {
   const phrase = BLOCK_REASON_PHRASES[kind];
   // detail 에는 원장에 남은 실패 사유가 그대로 실린다 — 그 사유가 이미 "다시 시도" 같은 행동을
   // 말하고 있으면 같은 안내를 한 줄 안에서 두 번 하게 된다.
-  const recovery = statesRecoveryAlready(verdict.detail)
+  const recovery = statesRecoveryAlready(verdict.detail, kind)
     ? ''
     : ` ${phrase.recovery}`;
   return `${phrase.noFabrication}${recovery}${retry}`;
