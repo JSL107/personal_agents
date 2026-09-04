@@ -280,14 +280,21 @@ export const buildReviewPrompt = ({
 
   lines.push(
     `[PR 메타]`,
-    `- repo: ${detail.repo}`,
-    `- number: #${detail.number}`,
-    `- title: ${detail.title}`,
-    `- author: ${detail.authorLogin}`,
-    `- branch: ${detail.headRef} → ${detail.baseRef}`,
-    `- additions/deletions: +${detail.additions} / -${detail.deletions}`,
-    `- changed files${truncatedNote}:`,
-    ...detail.changedFiles.map((file) => `  - ${file}`),
+    // 메타 블록도 통째로 감싼다 — title 과 파일명은 PR 작성자가 정하는 값이라
+    // 본문·diff 만 감싸면 같은 지시를 제목에 심어 경계를 비껴갈 수 있다.
+    // repo·number 처럼 우리가 만든 값까지 안에 들어가지만, 데이터로 읽히는 게 맞다.
+    wrapUntrustedInput(
+      [
+        `- repo: ${detail.repo}`,
+        `- number: #${detail.number}`,
+        `- title: ${detail.title}`,
+        `- author: ${detail.authorLogin}`,
+        `- branch: ${detail.headRef} → ${detail.baseRef}`,
+        `- additions/deletions: +${detail.additions} / -${detail.deletions}`,
+        `- changed files${truncatedNote}:`,
+        ...detail.changedFiles.map((file) => `  - ${file}`),
+      ].join('\n'),
+    ),
     '',
     `[PR 본문]`,
     // 본문과 diff 는 외부(fork contributor 포함) 출처 — 분석 대상이지 지시가 아니다.

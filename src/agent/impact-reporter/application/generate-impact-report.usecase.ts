@@ -351,13 +351,18 @@ const buildPrompt = ({
     '',
     `[GitHub PR ${prContext.repo}#${prContext.number}]`,
     `URL: ${prContext.url}`,
-    `Title: ${prContext.title}`,
-    '',
-    `Body:`,
     // 단일 PR 모드도 다중 모드와 같은 외부 데이터다 — 한쪽만 감싸면 경계가 비어 있는 경로가 남는다.
-    prContext.body.length > 0
-      ? wrapUntrustedInput(redactInjectionPhrases(prContext.body))
-      : '(본문 없음)',
+    // title 도 PR 작성자가 정하는 값이라 body 와 같은 경계 안에 둔다.
+    wrapUntrustedInput(
+      [
+        `Title: ${prContext.title}`,
+        '',
+        'Body:',
+        prContext.body.length > 0
+          ? redactInjectionPhrases(prContext.body)
+          : '(본문 없음)',
+      ].join('\n'),
+    ),
   ].join('\n');
 };
 
@@ -439,15 +444,19 @@ const buildRecentModePrompt = ({
         : `UpdatedAt: ${s.updatedAt}`;
     const lines = [
       '',
-      `## ${idx + 1}. ${s.repo}#${s.number} — ${s.title}`,
+      `## ${idx + 1}. ${s.repo}#${s.number}`,
       `URL: ${s.url}`,
       dateLabel,
       `Stat: +${s.additions} / -${s.deletions} (${s.changedFilesCount} files)`,
     ];
+    // title 을 헤딩에서 빼 body 와 한 경계에 담는다 — 제목만 마커 밖에 남으면
+    // 거기에 심은 지시가 그대로 지시로 읽힌다.
+    const untrusted: string[] = [`Title: ${s.title}`];
     const sanitizedBody = redactInjectionPhrases(s.body.trim());
     if (sanitizedBody.length > 0) {
-      lines.push('Body:', wrapUntrustedInput(sanitizedBody));
+      untrusted.push('Body:', sanitizedBody);
     }
+    lines.push(wrapUntrustedInput(untrusted.join('\n')));
     return lines.join('\n');
   };
 
