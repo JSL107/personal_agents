@@ -83,6 +83,15 @@ const buildStrategyPlans = async (
   resolve: ResolveStrategyParametersUsecase,
 ): Promise<StrategyPlan[]> => {
   const plans: StrategyPlan[] = [];
+  // 접었다는 사실을 알린다 — 준 값이 조용히 사라지면 사용자는 그 축을 재 봤다고 읽는다.
+  if (
+    options.volumeSurgeMinimums !== undefined &&
+    options.strategies.includes('LONG_TERM')
+  ) {
+    console.error(
+      '알림: --volume-surge-min 은 SWING 필터 전용이라 LONG_TERM 격자에서는 현행값 하나로 접었다.',
+    );
+  }
   for (const strategy of options.strategies) {
     const active = await resolve.execute(strategy);
     const baseline: ParameterCombination = {
@@ -113,9 +122,14 @@ const buildStrategyPlans = async (
           maximumWeightPercents: options.maximumWeightPercents ?? [
             baseline.maximumWeightPercent,
           ],
-          volumeSurgeMinimums: options.volumeSurgeMinimums ?? [
-            baseline.volumeSurgeMinimum,
-          ],
+          // 거래량 급증 문턱은 `passesSwing` 에만 걸린다(screener-rule.ts 의 SWING 분기).
+          // LONG_TERM 격자에 이 축을 펼치면 라벨만 다르고 성적이 똑같은 조합이 여러 개
+          // 생기고, 동률 정렬이 그중 하나를 라벨 순서로 집어 **현행값과 같은 성적을
+          // 패배로 기록**한다. 그 전략에서는 축을 접는다.
+          volumeSurgeMinimums:
+            strategy === 'SWING'
+              ? (options.volumeSurgeMinimums ?? [baseline.volumeSurgeMinimum])
+              : [baseline.volumeSurgeMinimum],
           rankingWeights: options.rankingWeights ?? [baseline.rankingWeights],
           includeBandless: options.includeBandless,
           baseline,

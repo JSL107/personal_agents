@@ -53,6 +53,16 @@ interface RankingMaterial {
   descending: boolean;
 }
 
+// 재료는 정확히 셋이다. 배열로 두면 재료를 넷으로 늘렸을 때 `rankingWeights[3]` 이
+// undefined 가 되어 순위합이 통째로 NaN 이 되는데, NaN 은 정렬 비교가 전부 false 라
+// 점수가 조용히 무너진다. 튜플로 고정하면 그 변경이 컴파일 단계에서 막힌다 —
+// 재료를 늘리려면 `RankingWeights` 도 함께 늘려야 한다는 사실이 타입으로 강제된다.
+type RankingMaterials = readonly [
+  RankingMaterial,
+  RankingMaterial,
+  RankingMaterial,
+];
+
 const passesLongTerm = (candidate: ScreenCandidate): boolean => {
   const { close, ma120, isAligned } = candidate.indicators;
   return ma120 !== null && isAligned === true && close > ma120;
@@ -84,7 +94,7 @@ const withinDailyGainCap = (
   return return1d <= maximumDailyGainPercent;
 };
 
-const materialsByStrategy: Record<ScreenStrategy, RankingMaterial[]> = {
+const materialsByStrategy: Record<ScreenStrategy, RankingMaterials> = {
   LONG_TERM: [
     { select: (candidate) => candidate.indicators.return6m, descending: true },
     {
@@ -140,8 +150,11 @@ const validateRankingWeights = (rankingWeights: RankingWeights): number => {
     throw new Error('순위 가중치는 유한한 0 이상 수 3개여야 합니다.');
   }
   const totalWeight = rankingWeights.reduce((sum, weight) => sum + weight, 0);
-  if (totalWeight <= 0) {
-    throw new Error('순위 가중치의 합은 0보다 커야 합니다.');
+  // 성분이 각각 유한해도 합은 넘칠 수 있다(`[Number.MAX_VALUE, MAX_VALUE, 0]`).
+  // 그 합으로 점수를 내면 분자·분모가 함께 Infinity 가 되어 NaN 이 나오는데,
+  // 그것은 예외가 아니라 조용히 틀린 순위로 남는다.
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    throw new Error('순위 가중치의 합은 0보다 큰 유한수여야 합니다.');
   }
   return totalWeight;
 };

@@ -83,7 +83,9 @@ const readRankingWeights = (argv: string[]): RankingWeights => {
   if (raw === undefined) {
     return DEFAULT_RANKING_WEIGHTS;
   }
-  const parts = raw.split(':');
+  // 성분을 먼저 다듬고 나서 빈 것을 거른다. `Number(' ')` 은 0 이라, 공백만 있는 성분을
+  // 그냥 두면 `1: :1` 이 "가운데 재료를 빼라(0)" 는 뜻으로 조용히 통과한다.
+  const parts = raw.split(':').map((part) => part.trim());
   const values = parts.map((part) => Number(part));
   if (
     parts.length !== 3 ||

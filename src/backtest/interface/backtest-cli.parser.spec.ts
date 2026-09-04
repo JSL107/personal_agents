@@ -78,7 +78,9 @@ describe('parseBacktestCliArguments', () => {
   });
 
   it('순위 가중치 형식과 급증 임계를 검증한다', () => {
-    for (const value of ['1:2', '-1:1:1', '1::1', '0:0:0']) {
+    // `1: :1` — 공백만 있는 성분. `Number(' ')` 이 0 이라 거르지 않으면 "가운데 재료를
+    // 빼라" 는 뜻으로 조용히 통과한다.
+    for (const value of ['1:2', '-1:1:1', '1::1', '0:0:0', '1: :1']) {
       expect(() =>
         parseBacktestCliArguments([...required, '--rank-weights', value]),
       ).toThrow('--rank-weights');

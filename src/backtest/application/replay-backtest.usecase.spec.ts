@@ -359,6 +359,26 @@ describe('ReplayBacktestUsecase', () => {
     expect(withCap.orderCount).toBe(0);
   });
 
+  it('거래량 급증 문턱은 SWING 후보 선정을 실제로 바꾼다', async () => {
+    // 커맨드의 두 손잡이가 `screenStocks` 까지 실제로 닿는지 보는 배선 시험이다.
+    // 가중치 쪽은 도메인 spec 이 점수까지 검증하고, 여기서 자리가 뒤바뀌면 타입이 막는다
+    // (number 와 3-튜플이라 서로 들어갈 수 없다).
+    const swing = { ...command, strategy: 'SWING' as const };
+    const usecase = new ReplayBacktestUsecase(repositoryOf(risingBars()));
+
+    const lowered = await usecase.execute({
+      ...swing,
+      volumeSurgeMinimum: 0.0001,
+    });
+    const raised = await usecase.execute({
+      ...swing,
+      volumeSurgeMinimum: 1e9,
+    });
+
+    expect(lowered.orderCount).toBeGreaterThan(0);
+    expect(raised.orderCount).toBe(0);
+  });
+
   it('같은 인자로 두 번 돌리면 완전히 같은 결과가 나온다', async () => {
     const first = await new ReplayBacktestUsecase(
       repositoryOf(risingBars()),

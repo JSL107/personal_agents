@@ -13,7 +13,7 @@ export const PARAMETER_SEARCH_CLI_USAGE =
   '                    [--stop-loss -0.2,-2,-3,-5,-7,-15]\n' +
   '                    [--turnover-min 300000000,500000000]\n' +
   '                    [--weight 15,20,25]\n' +
-  '                    [--volume-surge-min 1.0,1.5,2.0]\n' +
+  '                    [--volume-surge-min 1.0,1.5,2.0 <SWING 전용>]\n' +
   '                    [--rank-weights 1:1:1,0:1:1,2:1:1]\n' +
   '                    [--slippage 0,0.1,0.3 <체결가를 불리하게 밀 %, 기본 0>]\n' +
   '                    [--include-bandless] [--out <경로.json>]\n' +

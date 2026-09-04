@@ -140,6 +140,32 @@ describe('buildParameterGrid', () => {
     ]);
   });
 
+  it('새 두 축도 전수 조합에 들어가고 현행 조합은 한 번만 나온다', () => {
+    const grid = buildParameterGrid({
+      takeProfitPercents: [10],
+      stopLossPercents: [-5],
+      minimumTurnover60s: [5e8],
+      maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5, 2],
+      rankingWeights: [
+        [1, 1, 1],
+        [0, 1, 1],
+      ],
+      includeBandless: false,
+      baseline: BASELINE,
+    });
+
+    // 급증 2 x 가중 2 = 4 조합. 그중 (1.5, 1:1:1) 은 현행값과 같아 강제 삽입분과
+    // 겹치는데, 키가 값 전체라 중복 제거가 그것을 한 번으로 접는다.
+    expect(grid).toHaveLength(4);
+    expect(grid.map(formatCombinationLabel)).toEqual([
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중0:1:1',
+      '+10/-5 · 5억 · 20% · 급증2 · 가중1:1:1',
+      '+10/-5 · 5억 · 20% · 급증2 · 가중0:1:1',
+    ]);
+  });
+
   it('격자에 없는 현행값도 반드시 넣는다', () => {
     // 없으면 비교 기준이 사라져 walk-forward 판정 자체가 성립하지 않는다.
     const grid = buildParameterGrid({

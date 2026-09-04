@@ -391,6 +391,22 @@ describe('screenStocks — 측정 손잡이', () => {
     ).toThrow();
   });
 
+  it('성분이 각각 유한해도 합이 넘치면 거부한다', () => {
+    // 합이 Infinity 면 점수의 분자·분모가 함께 Infinity 가 되어 NaN 이 나온다.
+    // NaN 은 정렬 비교가 전부 false 라, 예외 없이 순위만 조용히 무너진다.
+    expect(() =>
+      screenStocks(
+        [candidate('000001'), candidate('000002')],
+        'SWING',
+        10,
+        MINIMUM_TURNOVER60,
+        Number.POSITIVE_INFINITY,
+        SWING_VOLUME_SURGE_MINIMUM,
+        [Number.MAX_VALUE, Number.MAX_VALUE, 0],
+      ),
+    ).toThrow();
+  });
+
   it('급증 임계를 높이면 SWING 후보를 거른다', () => {
     expect(
       screenStocks(
