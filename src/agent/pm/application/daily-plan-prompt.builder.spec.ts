@@ -26,6 +26,8 @@ const buildDailyReview = (note: string): DailyReview => ({
   summary: note,
   impact: { quantitative: [], qualitative: note },
   improvementBeforeAfter: null,
+  decisions: [],
+  risks: [],
   nextActions: [],
   oneLineAchievement: note,
 });

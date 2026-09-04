@@ -20,6 +20,8 @@ describe('GenerateWorklogUsecase', () => {
       qualitative: '회고 자동화 파이프라인 가동',
     },
     improvementBeforeAfter: null,
+    decisions: [],
+    risks: [],
     nextActions: ['/review-pr 설계'],
     oneLineAchievement: 'Phase 3 `/worklog` E2E 착수 완료',
   };

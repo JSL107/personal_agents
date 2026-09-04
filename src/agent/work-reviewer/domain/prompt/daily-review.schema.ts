@@ -8,6 +8,9 @@ import { OutputJsonSchema } from '../../../../model-router/domain/model-router.t
 // isDailyReviewShape 의 런타임 검사는 그대로 둔다 — 스키마는 codex 경로에만 걸리므로
 // (claude CLI 는 미지원, mock provider 는 임의 문자열) 파서는 여전히 최후 방어선이다.
 //
+// decisions / risks 는 "없음" 을 키 누락이 아니라 빈 배열로 표현한다. 렌더 단계에서 빈 배열을
+// 명시적 부정 문장으로 바꾸므로, 여기서 optional 로 두면 "없다" 와 "안 봤다" 가 섞인다.
+//
 // improvementBeforeAfter 는 도메인상 nullable object 다. strict schema 는 선언한 property 를
 // 전부 required 로 요구하므로 "없음" 을 키 누락이 아니라 null 로 표현한다.
 export const DAILY_REVIEW_OUTPUT_SCHEMA: OutputJsonSchema = {
@@ -32,6 +35,8 @@ export const DAILY_REVIEW_OUTPUT_SCHEMA: OutputJsonSchema = {
       required: ['before', 'after'],
       additionalProperties: false,
     },
+    decisions: { type: 'array', items: { type: 'string' } },
+    risks: { type: 'array', items: { type: 'string' } },
     nextActions: { type: 'array', items: { type: 'string' } },
     oneLineAchievement: { type: 'string' },
   },
@@ -39,6 +44,8 @@ export const DAILY_REVIEW_OUTPUT_SCHEMA: OutputJsonSchema = {
     'summary',
     'impact',
     'improvementBeforeAfter',
+    'decisions',
+    'risks',
     'nextActions',
     'oneLineAchievement',
   ],

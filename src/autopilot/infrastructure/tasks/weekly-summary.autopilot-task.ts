@@ -6,7 +6,10 @@ import { CeoException } from '../../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../../agent/ceo/domain/ceo-error-code.enum';
 import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
-import { buildWorklogInput } from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
+import {
+  buildWorklogInput,
+  formatPlanLines,
+} from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { GithubPullRequestSummary } from '../../../github/domain/github.type';
@@ -87,14 +90,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
             if (!plan) {
               return [];
             }
-            const allTasks = [
-              plan.topPriority,
-              ...plan.morning,
-              ...plan.afternoon,
-            ];
             return [
               `[${KST_DATE_FORMATTER.format(run.endedAt)}]`,
-              ...allTasks.map((task) => `- ${task.title}`),
+              ...formatPlanLines(plan),
             ];
           });
 

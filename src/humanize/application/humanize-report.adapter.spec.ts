@@ -99,6 +99,8 @@ describe('humanizeDailyReview', () => {
         summary: '오늘',
         impact: { quantitative: ['-3건'], qualitative: '정성' },
         improvementBeforeAfter: { before: '전', after: '후' },
+        decisions: [],
+        risks: [],
         nextActions: ['a1', 'a2'],
         oneLineAchievement: '성과',
       },

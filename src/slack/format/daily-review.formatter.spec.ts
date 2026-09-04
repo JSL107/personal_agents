@@ -1,4 +1,8 @@
-import { DailyReview } from '../../agent/work-reviewer/domain/work-reviewer.type';
+import {
+  DailyReview,
+  NO_DECISIONS_TEXT,
+  NO_RISKS_TEXT,
+} from '../../agent/work-reviewer/domain/work-reviewer.type';
 import { formatDailyReview } from './daily-review.formatter';
 
 const base: DailyReview = {
@@ -8,6 +12,8 @@ const base: DailyReview = {
     qualitative: '코드 품질 개선',
   },
   improvementBeforeAfter: { before: '수동 배포', after: '자동 배포' },
+  decisions: [],
+  risks: [],
   nextActions: ['리뷰 요청', '문서 업데이트'],
   oneLineAchievement: '배포 자동화 완료',
 };
@@ -29,5 +35,32 @@ describe('formatDailyReview', () => {
     expect(detail).toContain('자동 배포');
     expect(detail).toContain('리뷰 요청');
     expect(detail).toContain('문서 업데이트');
+  });
+
+  it('결정사항·위험이 있으면 각각 별도 섹션으로 나온다', () => {
+    const { detail } = formatDailyReview({
+      ...base,
+      decisions: ['캐시 도입 vs 쿼리 정리 중 착수 대상 선택'],
+      risks: ['머지 3건 중 1건이 실 환경 미검증'],
+    });
+    expect(detail).toContain('*대표 결정사항*');
+    expect(detail).toContain('• 캐시 도입 vs 쿼리 정리 중 착수 대상 선택');
+    expect(detail).toContain('*위험*');
+    expect(detail).toContain('• 머지 3건 중 1건이 실 환경 미검증');
+  });
+
+  it('결정사항·위험이 비면 섹션을 지우지 않고 명시적 부정으로 채운다', () => {
+    const { detail } = formatDailyReview(base);
+    expect(detail).toContain(`*대표 결정사항*\n${NO_DECISIONS_TEXT}`);
+    expect(detail).toContain(`*위험*\n${NO_RISKS_TEXT}`);
+  });
+
+  it('미검토(두 필드 도입 전 회고)면 섹션 자체를 내지 않는다', () => {
+    const legacy: DailyReview = { ...base };
+    delete legacy.decisions;
+    delete legacy.risks;
+    const { detail } = formatDailyReview(legacy);
+    expect(detail).not.toContain('대표 결정사항');
+    expect(detail).not.toContain('위험');
   });
 });

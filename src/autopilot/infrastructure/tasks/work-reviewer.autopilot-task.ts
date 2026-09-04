@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
-import { buildWorklogInput } from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
+import {
+  buildWorklogInput,
+  formatPlanLines,
+} from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
 import { WorkReviewerException } from '../../../agent/work-reviewer/domain/work-reviewer.exception';
 import { WorkReviewerErrorCode } from '../../../agent/work-reviewer/domain/work-reviewer-error-code.enum';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
@@ -133,9 +136,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     evidence: WorklogEvidenceQueryResult,
   ): string {
     const plannedLines = plan
-      ? [plan.topPriority, ...plan.morning, ...plan.afternoon].map(
-          (task) => `- ${task.title}`,
-        )
+      ? formatPlanLines(plan)
       : hasPlanRun
         ? []
         : ['- (오늘 작성된 PM plan 없음)'];

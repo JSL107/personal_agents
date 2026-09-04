@@ -15,6 +15,8 @@ describe('formatPreviousDailyReviewSection', () => {
       before: 'PR 리뷰 수동',
       after: '/review-pr 으로 draft 자동 생성',
     },
+    decisions: [],
+    risks: [],
     nextActions: ['옵션 C 전일 plan 참조', 'AGENTS.md 작성'],
     oneLineAchievement: '/review-pr E2E 가능 상태로 진입',
   };
@@ -64,17 +66,66 @@ describe('formatPreviousDailyReviewSection', () => {
   });
 });
 
+describe('formatPreviousDailyReviewSection — 결정사항·위험 3상태', () => {
+  const base: DailyReview = {
+    summary: 's',
+    impact: { quantitative: [], qualitative: 'q' },
+    improvementBeforeAfter: null,
+    decisions: [],
+    risks: [],
+    nextActions: [],
+    oneLineAchievement: 'o',
+  };
+  const endedAt = new Date('2026-09-03T10:00:00Z');
+
+  it('빈 배열이면 명시적 부정 한 줄로 적는다', () => {
+    const text = formatPreviousDailyReviewSection({ review: base, endedAt });
+    expect(text).toContain('- 대표 결정사항: 결재 안건 없음');
+    expect(text).toContain('- 위험: 식별된 위험 없음');
+  });
+
+  // 미검토를 "없음" 으로 적으면 PM 이 안 본 축을 없다고 읽어 오늘 계획에서 빠뜨린다.
+  it('미검토(두 필드 도입 전 회고)면 그 줄을 아예 쓰지 않는다', () => {
+    const legacy: DailyReview = { ...base };
+    delete legacy.decisions;
+    delete legacy.risks;
+    const text = formatPreviousDailyReviewSection({ review: legacy, endedAt });
+    expect(text).not.toContain('대표 결정사항');
+    expect(text).not.toContain('위험');
+  });
+});
+
 describe('coerceToDailyReview', () => {
   const valid: DailyReview = {
     summary: 's',
     impact: { quantitative: ['q1'], qualitative: 'q' },
     improvementBeforeAfter: { before: 'b', after: 'a' },
+    decisions: [],
+    risks: [],
     nextActions: ['n'],
     oneLineAchievement: 'o',
   };
 
   it('shape 맞으면 그대로 반환', () => {
     expect(coerceToDailyReview(valid)).toEqual(valid);
+  });
+
+  // decisions / risks 도입 전에 적재된 run output 회귀 — 두 키가 없다고 회고 전체가
+  // "이전 worklog 없음" 으로 조용히 사라지면 안 된다.
+  it('decisions / risks 키가 없는 예전 output 도 살리되 빈 배열로 채우지 않는다', () => {
+    const legacy: Record<string, unknown> = { ...valid };
+    delete legacy.decisions;
+    delete legacy.risks;
+    const coerced = coerceToDailyReview(legacy);
+    expect(coerced).not.toBeNull();
+    expect(coerced?.decisions).toBeUndefined();
+    expect(coerced?.risks).toBeUndefined();
+  });
+
+  it('decisions 키가 있는데 형태가 틀리면 거른다', () => {
+    expect(
+      coerceToDailyReview({ ...valid, decisions: '결재 필요' }),
+    ).toBeNull();
   });
 
   it('improvementBeforeAfter null 도 허용', () => {

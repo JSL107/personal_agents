@@ -53,6 +53,8 @@ const makeOutcome = () => ({
       qualitative: '코드 품질 개선',
     },
     improvementBeforeAfter: null,
+    decisions: [],
+    risks: [],
     nextActions: ['내일 리뷰'],
     oneLineAchievement: 'PR 리뷰 완료',
   },

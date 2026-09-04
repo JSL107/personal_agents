@@ -123,6 +123,8 @@ describe('formatDailyReview', () => {
       before: 'codex 가 parent env/HOME 상속',
       after: 'throwaway HOME + stdin prompt 로 격리',
     },
+    decisions: [],
+    risks: [],
     nextActions: ['/review-pr 설계', 'Phase 2b GitHub 커넥터 착수'],
     oneLineAchievement: 'codex 어댑터 격리로 secret 유출 경로 차단',
   };

@@ -1,5 +1,6 @@
 import { formatKstDate } from '../../../../common/util/kst-date.util';
 import { GithubPullRequestSummary } from '../../../../github/domain/github.type';
+import { DailyPlan } from '../../../pm/domain/pm-agent.type';
 
 export interface WorklogInputSource {
   periodLabel: string;
@@ -8,6 +9,21 @@ export interface WorklogInputSource {
   mergedPullRequestLimit: number;
   evidenceUnavailableReason: string | null;
 }
+
+// PM plan 한 건을 회고 입력의 계획 줄로 편다. 일일·주간 두 autopilot task 가 같은 규칙을 쓴다.
+//
+// blocker 를 반드시 함께 넘긴다 — PM 이 이미 "이게 막고 있다" 고 지목한 유일한 신호라
+// 회고의 risks 를 세울 근거가 된다. task 제목만 넘기면 차단 요소가 버젓이 있는 날에도
+// 입력에 근거가 없어 회고가 "식별된 위험 없음" 으로 닫힌다.
+export const formatPlanLines = (plan: DailyPlan): string[] => {
+  const lines = [plan.topPriority, ...plan.morning, ...plan.afternoon].map(
+    (task) => `- ${task.title}`,
+  );
+  if (plan.blocker) {
+    lines.push(`- (PM 이 식별한 차단 요소) ${plan.blocker}`);
+  }
+  return lines;
+};
 
 const formatMergedPullRequest = (
   pullRequest: GithubPullRequestSummary,

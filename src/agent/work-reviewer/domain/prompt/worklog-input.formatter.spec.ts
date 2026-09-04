@@ -1,5 +1,6 @@
 import { GithubPullRequestSummary } from '../../../../github/domain/github.type';
-import { buildWorklogInput } from './worklog-input.formatter';
+import { DailyPlan, TaskItem } from '../../../pm/domain/pm-agent.type';
+import { buildWorklogInput, formatPlanLines } from './worklog-input.formatter';
 
 const makePullRequest = (
   number: number,
@@ -143,5 +144,41 @@ describe('buildWorklogInput', () => {
     });
 
     expect(result).toContain('merged 날짜 미상');
+  });
+});
+
+describe('formatPlanLines', () => {
+  const task = (id: string, title: string): TaskItem => ({
+    id,
+    title,
+    source: 'GITHUB',
+    subtasks: [],
+    isCriticalPath: false,
+  });
+  const plan: DailyPlan = {
+    topPriority: task('t1', '결제 실패 로그 추적'),
+    varianceAnalysis: { rolledOverTasks: [], analysisReasoning: '' },
+    morning: [task('t2', '스키마 리뷰')],
+    afternoon: [],
+    blocker: '스테이징 DB 접근 권한이 아직 안 나옴',
+    estimatedHours: 6,
+    reasoning: '',
+  };
+
+  it('계획 task 제목을 줄로 편다', () => {
+    expect(formatPlanLines(plan)).toEqual([
+      '- 결제 실패 로그 추적',
+      '- 스키마 리뷰',
+      '- (PM 이 식별한 차단 요소) 스테이징 DB 접근 권한이 아직 안 나옴',
+    ]);
+  });
+
+  // blocker 를 버리면 차단 요소가 있는 날에도 회고 입력에 근거가 없어
+  // 새 risks 필드가 "식별된 위험 없음" 으로 닫힌다.
+  it('blocker 가 null 이면 그 줄만 빠지고 나머지는 그대로다', () => {
+    expect(formatPlanLines({ ...plan, blocker: null })).toEqual([
+      '- 결제 실패 로그 추적',
+      '- 스키마 리뷰',
+    ]);
   });
 });

@@ -13,6 +13,8 @@ describe('parseDailyReview', () => {
       before: '자식 CLI 가 parent env/HOME 상속 → .env 노출 가능',
       after: 'throwaway HOME + env allowlist + stdin prompt 로 격리',
     },
+    decisions: [],
+    risks: [],
     nextActions: ['Work Reviewer 유스케이스 구현', 'E2E 검증 문서화'],
     oneLineAchievement: 'codex 어댑터 격리로 Slack 입력 기반 secret 유출 차단',
   };
@@ -25,6 +27,15 @@ describe('parseDailyReview', () => {
   it('```json 코드 펜스 감싼 응답도 벗겨낸 뒤 파싱한다', () => {
     const wrapped = ['```json', JSON.stringify(validReview), '```'].join('\n');
     expect(parseDailyReview(wrapped)).toEqual(validReview);
+  });
+
+  // 관대하게 빈 배열로 채우면 "모델이 그 축을 빠뜨렸다" 가 "안건 없음" 으로 둔갑한다.
+  it('decisions 가 빠진 모델 응답은 오출력으로 거른다', () => {
+    const missing: Record<string, unknown> = { ...validReview };
+    delete missing.decisions;
+    expect(() => parseDailyReview(JSON.stringify(missing))).toThrow(
+      WorkReviewerException,
+    );
   });
 
   it('improvementBeforeAfter 가 null 이어도 유효하다', () => {
