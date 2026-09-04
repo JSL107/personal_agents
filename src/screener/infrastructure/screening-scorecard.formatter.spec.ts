@@ -13,7 +13,9 @@ const row = (
 ): ScreeningScorecardRow => ({
   strategy: 'SWING',
   ruleVersion: 2,
+  runId: 1,
   rank: 1,
+  presented: true,
   returnPct: 0,
   bought: false,
   tickerCode: '000000',
@@ -51,10 +53,41 @@ describe('formatScreeningScorecard', () => {
       ]),
     );
 
-    expect(text).toContain('*5거래일 지평* — 표본 2건');
+    expect(text).toContain('*5거래일 지평* — 표본 2건 (보여준 것 2건)');
     expect(text).toContain('산 것    1건 · 평균 +10.00%');
     expect(text).toContain('안 산 것 1건 · 평균 +4.00%');
     expect(text).toContain('격차 +6.00%p');
+  });
+
+  it('상한 밖 갈래를 따로 세우고 절단 격차를 적는다', () => {
+    const text = formatScreeningScorecard(
+      result([
+        row({ presented: true, bought: true, returnPct: 10, rank: 1 }),
+        row({ presented: true, bought: false, returnPct: 4, rank: 2 }),
+        row({ presented: false, bought: false, returnPct: -20, rank: 21 }),
+      ]),
+    );
+
+    // 헤더의 표본 수가 비교 모집단처럼 읽히지 않게 둘을 나눠 적는다.
+    expect(text).toContain('*5거래일 지평* — 표본 3건 (보여준 것 2건)');
+    expect(text).toContain('상한 밖  1건 · 평균 -20.00%');
+    // 보여준 것 평균(+7.00%) − 상한 밖 평균(-20.00%).
+    expect(text).toContain(
+      '절단 격차 +27.00%p (회차 1개 평균, 보여준 것 − 상한 밖)',
+    );
+    // 상한 밖 성적이 대조군에 새면 이 줄이 -8.00% 로 나온다.
+    expect(text).toContain('안 산 것 1건 · 평균 +4.00%');
+  });
+
+  // 상한 밖 표본이 0 이어도 줄을 빼지 않는다. 빼면 저장이 고장난 것과 아직 안 쌓인 것을
+  // 읽는 사람이 가릴 수 없다.
+  it('상한 밖 표본이 없으면 해당 없음으로 남기고 격차는 적지 않는다', () => {
+    const text = formatScreeningScorecard(
+      result([row({ presented: true, bought: true, returnPct: 10 })]),
+    );
+
+    expect(text).toContain('상한 밖  0건 — 해당 없음');
+    expect(text).not.toContain('절단 격차');
   });
 
   // 표본이 없는 지평을 목록에서 빼면 그 축이 조용히 사라져, 아직 안 온 것과 채점이

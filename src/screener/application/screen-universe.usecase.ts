@@ -173,8 +173,10 @@ export class ScreenUniverseUsecase {
     if (options.record === undefined || asOf === null) {
       return result;
     }
-    // 남기는 것은 통과 전체가 아니라 limit 안에 든 목록이다 — 추천 프롬프트에 실리는 범위와
-    // 같아야 "보여줬는데 안 샀다" 를 뒤에서 가릴 수 있다. 전체 통과 수는 passedCount 로 간다.
+    // 남기는 것은 통과 **전체**다. limit 안에 든 것만 남기면 "안 산 것" 대조군이 매일
+    // 20종목으로 묶여, 상위 절단이 나머지 통과분보다 나았는지를 운영 원장으로는 영영 물을 수
+    // 없다. 대신 역할을 `presented` 로 갈라 남긴다 — 프롬프트에 실린 것만이 "보고도 안 샀다"
+    // 의 모집단이고, 상한 밖 종목은 모델이 본 적이 없어 그 판정에 섞이면 안 된다.
     const recordOutcome = await this.historyRepository.saveScreeningRun({
       strategy: options.strategy,
       asOf: new Date(`${asOf}T00:00:00.000Z`),
@@ -184,10 +186,13 @@ export class ScreenUniverseUsecase {
       evaluatedCount: datedCandidates.length,
       staleCount,
       passedCount: passed.length,
-      items: stocks.map((stock, index) => ({
+      items: passed.map((stock, index) => ({
         tickerId: stock.tickerId,
         rank: index + 1,
         score: stock.score,
+        // 순위가 아니라 실제로 실은 목록으로 가른다. 상한이 0 이거나 통과가 상한보다
+        // 적은 회차에서도 `stocks` 와 이 값이 어긋나지 않는다.
+        presented: index < stocks.length,
         indicatorSnapshot: stock.indicators,
       })),
     });

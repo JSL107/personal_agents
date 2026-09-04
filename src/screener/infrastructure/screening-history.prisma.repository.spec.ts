@@ -50,7 +50,20 @@ const input = (agentRunId: number | null): SaveScreeningRunInput => ({
   staleCount: 1,
   passedCount: 106,
   items: [
-    { tickerId: 1, rank: 1, score: 93.97, indicatorSnapshot: { close: 1_000 } },
+    {
+      tickerId: 1,
+      rank: 1,
+      score: 93.97,
+      presented: true,
+      indicatorSnapshot: { close: 1_000 },
+    },
+    {
+      tickerId: 2,
+      rank: 21,
+      score: 61.3,
+      presented: false,
+      indicatorSnapshot: { close: 500 },
+    },
   ],
 });
 
@@ -62,7 +75,7 @@ describe('ScreeningHistoryPrismaRepository', () => {
     await expect(repository.saveScreeningRun(input(55))).resolves.toEqual({
       saved: true,
       runId: 11,
-      recordedCount: 1,
+      recordedCount: 2,
     });
 
     expect(spies.upsert).toHaveBeenCalledWith(
@@ -80,6 +93,14 @@ describe('ScreeningHistoryPrismaRepository', () => {
     // 옛 항목을 지우지 않으면 상한을 줄여 다시 돌린 회차에 지난 항목이 섞인다.
     expect(spies.deleteMany).toHaveBeenCalledWith({ where: { runId: 11 } });
     expect(spies.createMany).toHaveBeenCalledTimes(1);
+    // 역할이 행마다 그대로 실려야 한다. 빠뜨리면 DB 기본값(true)이 상한 밖 종목까지
+    // "보여줬다" 로 만들어 대조군이 조용히 오염된다.
+    expect(spies.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ tickerId: 1, rank: 1, presented: true }),
+        expect.objectContaining({ tickerId: 2, rank: 21, presented: false }),
+      ],
+    });
   });
 
   it('운영 회차가 있으면 확인용 실행은 덮어쓰지 않고 이유를 돌려준다', async () => {
@@ -105,7 +126,7 @@ describe('ScreeningHistoryPrismaRepository', () => {
     await expect(repository.saveScreeningRun(input(77))).resolves.toEqual({
       saved: true,
       runId: 9,
-      recordedCount: 1,
+      recordedCount: 2,
     });
 
     expect(spies.upsert).toHaveBeenCalledTimes(1);
@@ -119,7 +140,7 @@ describe('ScreeningHistoryPrismaRepository', () => {
     await expect(repository.saveScreeningRun(input(null))).resolves.toEqual({
       saved: true,
       runId: 9,
-      recordedCount: 1,
+      recordedCount: 2,
     });
 
     expect(spies.upsert).toHaveBeenCalledTimes(1);
