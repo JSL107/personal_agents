@@ -56,7 +56,9 @@ describe('formatScreeningScorecard', () => {
     expect(text).toContain('*5거래일 지평* — 표본 2건 (보여준 것 2건)');
     expect(text).toContain('산 것    1건 · 평균 +10.00%');
     expect(text).toContain('안 산 것 1건 · 평균 +4.00%');
-    expect(text).toContain('격차 +6.00%p');
+    // 수치만으로는 누적 평균 차와 구분되지 않는다. 기여 회차 수를 함께 적어야
+    // 이 값이 몇 날의 대조에서 나왔는지 읽는 사람이 안다.
+    expect(text).toContain('격차 +6.00%p (회차 1개 평균, 산 것 − 안 산 것)');
   });
 
   it('상한 밖 갈래를 따로 세우고 절단 격차를 적는다', () => {
@@ -189,7 +191,9 @@ describe('formatScreeningScorecard', () => {
     );
 
     expect(text).toContain('안 산 것 0건 — 해당 없음');
-    expect(text).toContain('격차 - — 한쪽에 표본이 없어 비교 대상이 없음');
+    expect(text).toContain(
+      '격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
+    );
   });
 
   it('산 것 표본이 10건 미만이면 추세가 아니라고 적는다', () => {

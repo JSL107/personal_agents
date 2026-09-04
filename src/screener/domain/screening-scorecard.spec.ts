@@ -172,6 +172,89 @@ describe('buildScorecardHorizon', () => {
     expect(strategy.cutoffRunCount).toBe(1);
   });
 
+  // 추천이 한 종목도 사지 않은 회차는 그날 장세가 안 산 것 쪽에만 걸린다. 5거래일 실측에서
+  // LONG_TERM 은 5회차 중 2회차가 매수 0건이었고, 그 두 날이 대조군에만 실려 누적 격차가
+  // −1.92%p 로 회차별(−3.11%p)의 절반 가까이 눌려 있었다.
+  it('매수가 0건인 회차는 선택 격차에 끼어들지 않는다', () => {
+    const horizon = buildScorecardHorizon({
+      horizonDays: 5,
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+      rows: [
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 1, bought: false, returnPct: 0 }),
+        // 한 종목도 사지 않은 날. 이날 장세는 안 산 것 쪽에만 걸린다.
+        row({ runId: 2, bought: false, returnPct: 100 }),
+      ],
+    });
+
+    const [strategy] = horizon.strategies;
+    // 회차 1 만 격차를 만든다(+10). 통째로 모으면 10 − (0 + 100) / 2 = −40 이 되어
+    // 부호까지 뒤집힌다.
+    expect(strategy.gapPct).toBe(10);
+    expect(strategy.gapRunCount).toBe(1);
+    // 갈래 자체에는 그 회차도 그대로 센다 — 빼면 "안 산 것 평균" 이 아니라 격차 계산용
+    // 부분집합이 되어 두 수가 서로 다른 것을 말하게 된다.
+    expect(strategy.notBought.count).toBe(2);
+    expect(strategy.notBought.meanReturnPct).toBe(50);
+  });
+
+  // 매수 0건 회차가 하나도 없어도 갈린다. 회차마다 산 종목 수가 달라(5거래일 실측 1~3건)
+  // 두 갈래의 날짜별 가중치가 어긋나기 때문이다 — 실측 SWING 은 이것만으로 누적 +0.62%p 와
+  // 회차별 −0.03%p 로 부호가 갈렸다.
+  it('선택 격차는 회차 안에서 재고 그 평균을 낸다', () => {
+    const horizon = buildScorecardHorizon({
+      horizonDays: 5,
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+      rows: [
+        // 오른 날 — 3종목을 샀다. 통째로 모으면 이날 장세가 산 것 쪽에 무겁게 실린다.
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 1, bought: false, returnPct: 11 }),
+        row({ runId: 1, bought: false, returnPct: 11 }),
+        row({ runId: 1, bought: false, returnPct: 11 }),
+        row({ runId: 1, bought: false, returnPct: 11 }),
+        // 내린 날 — 1종목만 샀다. 안 산 것 수는 두 날이 같아, 어긋나는 것은 산 것 쪽뿐이다.
+        row({ runId: 2, bought: true, returnPct: -10 }),
+        row({ runId: 2, bought: false, returnPct: -9 }),
+        row({ runId: 2, bought: false, returnPct: -9 }),
+        row({ runId: 2, bought: false, returnPct: -9 }),
+        row({ runId: 2, bought: false, returnPct: -9 }),
+      ],
+    });
+
+    const [strategy] = horizon.strategies;
+    // 두 날 모두 산 것이 1%p 뒤졌다. 통째로 모으면 5 − 1 = +4 가 되어, 뒤진 선택이
+    // 나은 선택으로 뒤집혀 읽힌다.
+    expect(strategy.gapPct).toBe(-1);
+    expect(strategy.gapRunCount).toBe(2);
+    expect(strategy.bought.meanReturnPct).toBe(5);
+    expect(strategy.notBought.meanReturnPct).toBe(1);
+  });
+
+  // 두 갈래가 각각 다른 날에만 있으면 대조가 성립하지 않는다. 누적 평균 차로 내면 두 날의
+  // 장세 차이가 그대로 격차로 적힌다.
+  it('산 것과 안 산 것이 같은 회차에 함께 없으면 격차를 내지 않는다', () => {
+    const horizon = buildScorecardHorizon({
+      horizonDays: 5,
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+      rows: [
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 2, bought: false, returnPct: -10 }),
+      ],
+    });
+
+    const [strategy] = horizon.strategies;
+    // 갈래는 양쪽 다 차 있다 — 그래서 갈래가 비었는지로 판정하면 +20 이 적힌다.
+    expect(strategy.bought.count).toBe(1);
+    expect(strategy.notBought.count).toBe(1);
+    expect(strategy.gapPct).toBeNull();
+    expect(strategy.gapRunCount).toBe(0);
+  });
+
   // 통째로 모아 평균 차를 내면 회차마다 다른 종목 수가 날짜별 가중치를 흔들어, 순위 절단이
   // 아니라 장세를 재게 된다.
   it('절단 격차는 회차 안에서 재고 그 평균을 낸다', () => {

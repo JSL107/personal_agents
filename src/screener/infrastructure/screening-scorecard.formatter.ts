@@ -57,10 +57,14 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
     formatArm('산 것   ', strategy.bought),
     formatArm('안 산 것', strategy.notBought),
   ];
+  // 기여 회차 수를 함께 적는다. 이 값이 두 갈래의 누적 평균 차가 아니라 회차별 격차의
+  // 평균이라는 사실이 수치만 보면 드러나지 않고, 한 종목도 사지 않은 회차는 격차를 만들지
+  // 못해 빠지므로 위 두 줄의 건수와도 다른 수다.
   const gap =
     strategy.gapPct === null
-      ? '  격차 - — 한쪽에 표본이 없어 비교 대상이 없음'
-      : `  격차 ${formatPercent(strategy.gapPct, '%p')} (산 것 평균 − 안 산 것 평균)`;
+      ? '  격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음'
+      : `  격차 ${formatPercent(strategy.gapPct, '%p')}` +
+        ` (회차 ${strategy.gapRunCount}개 평균, 산 것 − 안 산 것)`;
   lines.push(gap);
   // 순위 축. 모델이 고른 것이 순위 상위 구간보다 나았는지를 이 줄에서만 볼 수 있다.
   lines.push(
@@ -73,8 +77,7 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
   // 사라져, 아직 안 쌓인 것과 저장이 고장난 것을 읽는 사람이 가릴 수 없다.
   lines.push(formatArm('상한 밖 ', strategy.notPresented));
   // 격차는 양쪽이 다 있는 회차가 하나라도 있을 때만 적는다. 없을 때의 사유는 바로 위 줄이
-  // 이미 말한다. 기여 회차 수를 함께 적는 것은 이 값이 회차별 격차의 평균이기 때문이다 —
-  // 두 갈래의 누적 평균 차가 아니라는 사실이 수치만 보면 드러나지 않는다.
+  // 이미 말한다. 회차 수를 함께 적는 이유는 선택 격차와 같다.
   if (strategy.cutoffGapPct !== null) {
     lines.push(
       `  절단 격차 ${formatPercent(strategy.cutoffGapPct, '%p')}` +
