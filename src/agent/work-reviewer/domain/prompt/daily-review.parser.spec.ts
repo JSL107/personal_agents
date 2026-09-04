@@ -29,6 +29,15 @@ describe('parseDailyReview', () => {
     expect(parseDailyReview(wrapped)).toEqual(validReview);
   });
 
+  // 관대하게 빈 배열로 채우면 "모델이 그 축을 빠뜨렸다" 가 "안건 없음" 으로 둔갑한다.
+  it('decisions 가 빠진 모델 응답은 오출력으로 거른다', () => {
+    const missing: Record<string, unknown> = { ...validReview };
+    delete missing.decisions;
+    expect(() => parseDailyReview(JSON.stringify(missing))).toThrow(
+      WorkReviewerException,
+    );
+  });
+
   it('improvementBeforeAfter 가 null 이어도 유효하다', () => {
     const r = { ...validReview, improvementBeforeAfter: null };
     expect(parseDailyReview(JSON.stringify(r))).toEqual(r);

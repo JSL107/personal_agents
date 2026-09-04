@@ -43,8 +43,8 @@ export const formatDailyReview = (review: DailyReview): FormattedReport => {
     );
   }
 
-  // 결정사항·위험은 비어도 섹션을 지우지 않는다. 섹션이 사라지면 "결재할 것이 없었다" 와
-  // "회고가 그 축을 아예 안 봤다" 가 화면에서 똑같아 보인다.
+  // 결정사항·위험은 빈 배열이어도 섹션을 지우지 않는다. 섹션이 사라지면
+  // "결재할 것이 없었다" 와 "회고가 그 축을 아예 안 봤다" 가 화면에서 똑같아 보인다.
   detailLines.push(
     ...formatBriefingSection(
       '대표 결정사항',
@@ -68,11 +68,16 @@ export const formatDailyReview = (review: DailyReview): FormattedReport => {
   };
 };
 
+// 미검토(undefined)는 섹션 자체를 내지 않는다 — 두 필드 도입 전 회고를 다시 렌더하는
+// 경우뿐이며, 안 본 축을 "없음" 으로 적으면 화면이 거짓을 말한다.
 const formatBriefingSection = (
   label: string,
-  items: string[],
+  items: string[] | undefined,
   emptyText: string,
 ): string[] => {
+  if (items === undefined) {
+    return [];
+  }
   if (items.length === 0) {
     return [`*${label}*`, emptyText, ''];
   }

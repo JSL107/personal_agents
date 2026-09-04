@@ -54,4 +54,13 @@ describe('formatDailyReview', () => {
     expect(detail).toContain(`*대표 결정사항*\n${NO_DECISIONS_TEXT}`);
     expect(detail).toContain(`*위험*\n${NO_RISKS_TEXT}`);
   });
+
+  it('미검토(두 필드 도입 전 회고)면 섹션 자체를 내지 않는다', () => {
+    const legacy: DailyReview = { ...base };
+    delete legacy.decisions;
+    delete legacy.risks;
+    const { detail } = formatDailyReview(legacy);
+    expect(detail).not.toContain('대표 결정사항');
+    expect(detail).not.toContain('위험');
+  });
 });

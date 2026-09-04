@@ -107,8 +107,9 @@ export const humanizeDailyReview = async (
     qualitative: review.impact.qualitative,
     oneLineAchievement: review.oneLineAchievement,
   };
-  flattenArray(fields, 'decisions', review.decisions);
-  flattenArray(fields, 'risks', review.risks);
+  // 미검토(undefined)는 윤문 대상이 아니다 — 넣으면 없는 축이 빈 배열로 되살아난다.
+  flattenArray(fields, 'decisions', review.decisions ?? []);
+  flattenArray(fields, 'risks', review.risks ?? []);
   flattenArray(fields, 'nextActions', review.nextActions);
   if (review.improvementBeforeAfter) {
     fields['improvement.before'] = review.improvementBeforeAfter.before;
@@ -122,8 +123,12 @@ export const humanizeDailyReview = async (
     summary: humanized.summary,
     oneLineAchievement: humanized.oneLineAchievement,
     impact: { ...review.impact, qualitative: humanized.qualitative },
-    decisions: rebuildArray(humanized, 'decisions', review.decisions),
-    risks: rebuildArray(humanized, 'risks', review.risks),
+    decisions: review.decisions
+      ? rebuildArray(humanized, 'decisions', review.decisions)
+      : undefined,
+    risks: review.risks
+      ? rebuildArray(humanized, 'risks', review.risks)
+      : undefined,
     nextActions: rebuildArray(humanized, 'nextActions', review.nextActions),
     improvementBeforeAfter: review.improvementBeforeAfter
       ? {

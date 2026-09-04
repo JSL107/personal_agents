@@ -1,7 +1,4 @@
-import {
-  fillMissingBriefingFields,
-  isDailyReviewShape,
-} from '../../../work-reviewer/domain/prompt/daily-review.shape';
+import { isStoredDailyReviewShape } from '../../../work-reviewer/domain/prompt/daily-review.shape';
 import {
   DailyReview,
   NO_DECISIONS_TEXT,
@@ -65,21 +62,23 @@ export const formatPreviousDailyReviewSection = ({
 
 // previous output (DB 의 Json) 을 안전하게 DailyReview 로 narrow.
 // shape 가 안 맞으면 null — 호출자는 "이전 worklog 없음" 으로 graceful 처리.
-// shape 판정은 work-reviewer domain 의 isDailyReviewShape 로 통합 (parser 와 동일 규칙).
-// decisions / risks 도입 전에 적재된 output 은 두 키가 없으므로 판정 전에 빈 배열로 채운다 —
-// 안 채우면 그 이전 회고가 전부 "이전 worklog 없음" 으로 조용히 사라진다.
-export const coerceToDailyReview = (value: unknown): DailyReview | null => {
-  const filled = fillMissingBriefingFields(value);
-  return isDailyReviewShape(filled) ? filled : null;
-};
+// 여기는 원장에 이미 적재된 과거 output 을 읽는 자리라 파서보다 느슨한 판정을 쓴다
+// (isStoredDailyReviewShape) — decisions / risks 도입 전 회고에는 두 키가 없기 때문이다.
+// 누락은 채우지 않고 undefined 로 남긴다. 포매터가 그것을 "미검토" 로 구분해 렌더한다.
+export const coerceToDailyReview = (value: unknown): DailyReview | null =>
+  isStoredDailyReviewShape(value) ? value : null;
 
-// 비면 항목을 지우지 않고 명시적 부정 한 줄로 남긴다 — PM 이 "어제 결재 안건이 없었다" 와
-// "어제 회고가 그 축을 안 봤다" 를 구분할 수 있어야 오늘 계획에 반영할지 판단한다.
+// 세 상태를 다르게 말한다 — 안건이 있으면 나열, 빈 배열이면 명시적 부정 한 줄,
+// 미검토(두 필드 도입 전 회고)면 아무 줄도 쓰지 않는다.
+// 미검토를 "없음" 으로 적으면 PM 이 안 본 것을 없다고 읽어 오늘 계획에서 통째로 빠뜨린다.
 const formatBriefingSection = (
   label: string,
-  items: string[],
+  items: string[] | undefined,
   emptyText: string,
 ): string[] => {
+  if (items === undefined) {
+    return [];
+  }
   if (items.length === 0) {
     return [`- ${label}: ${emptyText}`];
   }
