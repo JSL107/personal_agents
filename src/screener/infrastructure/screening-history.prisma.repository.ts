@@ -10,6 +10,9 @@ export interface ScreeningRunItemInput {
   tickerId: number;
   rank: number;
   score: number;
+  // 그날 프롬프트에 실렸는가. 통과 전체를 남기므로 이 값 없이는 "보고도 안 산 것" 과
+  // "보여준 적조차 없는 것" 이 한 덩어리가 된다.
+  presented: boolean;
   // 레포 관례상 Json 컬럼 입력은 unknown 으로 받고 저장 직전에 좁힌다
   // (paper_order.indicatorSnapshot 과 같은 형태).
   indicatorSnapshot: unknown;
@@ -137,6 +140,7 @@ export class ScreeningHistoryPrismaRepository {
               tickerId: item.tickerId,
               rank: item.rank,
               score: item.score,
+              presented: item.presented,
               indicatorSnapshot:
                 item.indicatorSnapshot as Prisma.InputJsonValue,
             })),
@@ -262,6 +266,7 @@ export class ScreeningHistoryPrismaRepository {
         item: {
           select: {
             rank: true,
+            presented: true,
             tickerId: true,
             ticker: { select: { code: true, name: true } },
             run: { select: { strategy: true, asOf: true, ruleVersion: true } },
@@ -301,6 +306,7 @@ export class ScreeningHistoryPrismaRepository {
       strategy: row.item.run.strategy,
       ruleVersion: row.item.run.ruleVersion,
       rank: row.item.rank,
+      presented: row.item.presented,
       returnPct: Number(row.returnPct),
       bought: boughtKeys.has(
         toBoughtKey(

@@ -873,9 +873,12 @@ model ScreeningRun {
   @@map("screening_run")
 }
 
-// 회차에 기록된 통과 종목. 통과 전체가 아니라 그날 추천 프롬프트에 실제로 실린 상위
-// 목록이다 — "보고도 안 산 것" 이 규칙 개선의 재료이고, 아예 보여주지 않은 종목은
-// 모델이 안 산 이유가 될 수 없다. 전체 통과 수는 회차의 passedCount 에 남는다.
+// 회차의 통과 종목. **통과 전체가 들어온다** — 그날 프롬프트에 실린 상위 목록과 통과만
+// 하고 상한 밖으로 밀린 나머지가 `presented` 로 갈린다.
+//
+// 역할을 가르지 않고 한 덩어리로 쌓으면 "보고도 안 산 것" 대조군에 모델이 본 적조차 없는
+// 종목이 섞여, 안 산 이유가 될 수 없는 것까지 선택의 실패로 집계된다. 읽는 쪽은 그 축을
+// 반드시 갈라야 한다.
 model ScreeningRunItem {
   id    Int          @id @default(autoincrement())
   runId Int          @map("run_id")
@@ -888,6 +891,14 @@ model ScreeningRunItem {
   // 이 순위와 점수는 같은 회차 안에서만 서로 비교된다.
   rank              Int
   score             Decimal @db.Decimal(9, 4)
+  // 그날 추천 프롬프트에 실렸는가. false 는 규칙은 통과했지만 상한 밖이라 모델이 본 적
+  // 없는 종목이다 — "보고도 안 샀다" 의 모집단은 true 뿐이고, false 는 상위 절단이
+  // 나머지 통과분보다 나았는지를 재는 별도의 대조군이다.
+  //
+  // 기본값 true 는 이 컬럼을 모르는 쓰기를 위한 것이다. 컬럼이 생기기 전 440행과, 이
+  // 변경이 배포되기 전 코드가 남기는 행은 전부 상위 목록뿐이라 true 가 사실과 맞는다.
+  // 기본값을 빼면 옛 코드의 그날 회차가 통째로 실패한다.
+  presented         Boolean @default(true)
   // paper_order.indicator_snapshot 과 같은 형태를 담는다. 산 종목과 안 산 종목을
   // 같은 축으로 비교하려면 지표가 양쪽에 같은 꼴로 있어야 한다.
   indicatorSnapshot Json    @map("indicator_snapshot")

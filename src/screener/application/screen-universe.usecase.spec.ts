@@ -225,7 +225,7 @@ describe('ScreenUniverseUsecase', () => {
     ]);
     expect(result.includedIndicators).toEqual([]);
   });
-  it('record를 켜면 limit 안의 통과 목록만 남기고 전체 통과 수는 회차에 적는다', async () => {
+  it('record를 켜면 통과 전체를 남기고 프롬프트에 실린 것만 presented 로 표시한다', async () => {
     const repository = {
       findUniverseTickers: jest.fn().mockResolvedValue([
         {
@@ -262,9 +262,12 @@ describe('ScreenUniverseUsecase', () => {
     expect(result.recordOutcome).toEqual({
       saved: true,
       runId: 7,
-      recordedCount: 1,
+      recordedCount: 2,
     });
     expect(result.passedCount).toBe(2);
+    // 프롬프트에 실리는 목록은 상한 그대로다. 원장에 더 남긴다고 모델이 보는 것이
+    // 늘어나면 이 변경이 성적까지 바꾼다.
+    expect(result.stocks).toHaveLength(1);
     expect(history.saveScreeningRun).toHaveBeenCalledTimes(1);
     const saved = history.saveScreeningRun.mock.calls[0][0];
     expect(saved).toEqual(
@@ -278,18 +281,23 @@ describe('ScreenUniverseUsecase', () => {
         universeCount: 2,
         evaluatedCount: 2,
         staleCount: 0,
-        // 통과는 2종목이지만 프롬프트에 실린 것은 1종목이다 — 둘을 같은 수로 뭉치면
-        // "보여주지도 않은 종목을 모델이 안 샀다" 는 잘못된 대조군이 만들어진다.
         passedCount: 2,
       }),
     );
-    expect(saved.items).toHaveLength(1);
+    // 통과 2종목이 모두 남되, 프롬프트에 실린 1종목만 presented 다. 상한 밖 종목을
+    // presented 로 남기면 "보여주지도 않은 종목을 모델이 안 샀다" 는 잘못된 대조군이
+    // 만들어지고, 아예 안 남기면 순위 상한이 나았는지를 물을 대상이 사라진다.
+    expect(saved.items).toHaveLength(2);
     expect(saved.items[0]).toEqual(
       expect.objectContaining({
         rank: 1,
+        presented: true,
         score: result.stocks[0].score,
         tickerId: result.stocks[0].tickerId,
       }),
+    );
+    expect(saved.items[1]).toEqual(
+      expect.objectContaining({ rank: 2, presented: false }),
     );
     expect(saved.items[0].indicatorSnapshot).toEqual(
       result.stocks[0].indicators,

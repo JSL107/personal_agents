@@ -68,6 +68,16 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
       ` (${strategy.topRankCount}건)` +
       ` · 산 것 평균순위 ${formatRank(strategy.boughtMeanRank)}`,
   );
+  // 절단 축. 위 두 줄과 모집단이 달라(모델이 본 적 없는 종목이다) 같은 표에 두지 않고
+  // 아래에 따로 세운다. 표본이 0 이어도 줄을 빼지 않는다 — 빼면 이 축이 카드에서 조용히
+  // 사라져, 아직 안 쌓인 것과 저장이 고장난 것을 읽는 사람이 가릴 수 없다.
+  lines.push(formatArm('상한 밖 ', strategy.notPresented));
+  // 격차는 양쪽에 표본이 있을 때만 적는다. 없을 때의 사유는 바로 위 줄이 이미 말한다.
+  if (strategy.cutoffGapPct !== null) {
+    lines.push(
+      `  절단 격차 ${formatPercent(strategy.cutoffGapPct, '%p')} (보여준 것 평균 − 상한 밖 평균)`,
+    );
+  }
   return lines;
 };
 
@@ -139,6 +149,8 @@ const formatHorizon = (horizon: ScreeningScorecardHorizon): string[] => {
   }
   const lines = [
     `*${horizon.horizonDays}거래일 지평* — 표본 ${horizon.sampleCount}건` +
+      // 전체만 적으면 상한 밖이 쌓일수록 이 수가 산 것/안 산 것 비교에 쓰인 수처럼 읽힌다.
+      ` (보여준 것 ${horizon.presentedSampleCount}건)` +
       ` · 최근 7일 신규 ${horizon.newlyScoredCount}건` +
       ` · 채점 대기 회차 ${horizon.pendingRunCount}건`,
   ];
@@ -162,6 +174,7 @@ export const formatScreeningScorecard = (
   const lines = [
     `*스크리닝 성적 카드 — ${result.asOf.toISOString().slice(0, 10)}*`,
     '같은 날 후보에 올랐지만 사지 않은 종목을 대조군으로 잡습니다. 진입이 양쪽 다 기준일 다음 거래일 시가라 그 주 장세는 상쇄되고, 남는 차이가 종목 선택의 몫입니다.',
+    '`상한 밖` 은 규칙은 통과했지만 프롬프트에 실리지 않아 모델이 본 적 없는 종목입니다. 재는 것이 선택이 아니라 순위 상한이라 위 두 갈래와 나눠 적습니다.',
   ];
   for (const horizon of result.horizons) {
     lines.push('');
