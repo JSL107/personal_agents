@@ -9,7 +9,10 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
-import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
+import {
+  PREVIEW_KIND,
+  PreviewAction,
+} from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   ConversationalReplyFailedException,
@@ -185,14 +188,26 @@ export class PreconditionChainOrchestrator {
   private async tryHandlePreviewYesNo(
     input: ConsoleChainInput,
   ): Promise<boolean> {
-    const pending = await this.findLatestPendingPreview.execute({
-      slackUserId: input.slackUserId,
-    });
-    if (!pending) {
-      return false;
-    }
+    // intent 판별이 먼저다 — 순수 함수라 공짜고, "응/아니" 가 아닌 대부분의 발화가
+    // preview 저장소를 건드리지 않고 지나간다.
     const intent = detectYesNoIntent(input.text ?? '');
     if (intent === null) {
+      return false;
+    }
+    // 조회 실패는 인터셉트 포기로 접는다 — preview 저장소 장애가 일반 콘솔 대화의
+    // dispatch 까지 막으면 안 된다 (이 인터셉트는 있으면 좋은 지름길이지 관문이 아니다).
+    let pending: PreviewAction | null;
+    try {
+      pending = await this.findLatestPendingPreview.execute({
+        slackUserId: input.slackUserId,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `pending preview 조회 실패 — yes/no 인터셉트 없이 일반 dispatch 로 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+    if (!pending) {
       return false;
     }
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
@@ -228,21 +243,30 @@ export class PreconditionChainOrchestrator {
     return true;
   }
 
+  // 기억 기록은 부수 작업 — 여기서 throw 하면 이미 성공한 preview 적용/취소가
+  // "실패" 로 발행되어 사용자가 재시도하게 된다 (HandleConversationTurnUsecase 의
+  // appendRoundTripSafely 와 같은 원칙).
   private async rememberPreviewTurn(
     input: ConsoleChainInput,
     text: string,
   ): Promise<void> {
-    const conversationKey = this.conversationMemory.buildKey({
-      slackUserId: input.slackUserId,
-      channelId: CONSOLE_CHANNEL_ID,
-    });
-    await this.conversationMemory.appendTurn(conversationKey, {
-      role: 'user',
-      text,
-      agentType: null,
-      agentRunId: null,
-      timestampMs: Date.now(),
-    });
+    try {
+      const conversationKey = this.conversationMemory.buildKey({
+        slackUserId: input.slackUserId,
+        channelId: CONSOLE_CHANNEL_ID,
+      });
+      await this.conversationMemory.appendTurn(conversationKey, {
+        role: 'user',
+        text,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `preview 응답 turn 기억 실패 — 적용/취소 결과는 유지한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private publishPreviewAnswer(

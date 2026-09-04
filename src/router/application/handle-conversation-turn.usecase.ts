@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { buildDispatchReplyText } from '../domain/dispatch-reply.util';
 import {
   DispatchResult,
   DispatchSource,
@@ -91,7 +92,9 @@ export class HandleConversationTurnUsecase {
         await this.appendRoundTripSafely({
           conversationKey: input.conversationKey,
           userText: input.text,
-          assistantText: result.formattedText,
+          // 사용자에게 보이는 답변(체인 전문 + footer)과 같은 텍스트를 기억한다 — root 만
+          // 남기면 다음 turn 에서 사용자가 방금 본 child 결과를 가리켜도 기억에는 없다.
+          assistantText: buildDispatchReplyText(result),
           agentType: result.workerType,
           agentRunId: result.agentRunId,
         });

@@ -72,6 +72,33 @@ describe('HandleConversationTurnUsecase', () => {
       ],
       undefined,
     ],
+    [
+      '최신 sentinel 뒤의 유효 turn',
+      [
+        {
+          role: 'assistant' as const,
+          text: '계획 결과',
+          agentType: AgentType.PM,
+          agentRunId: 7,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '실패한 turn',
+          agentType: null,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+        {
+          role: 'assistant' as const,
+          text: '작성 시작',
+          agentType: AgentType.BLOG,
+          agentRunId: 0,
+          timestampMs: 3,
+        },
+      ],
+      { agentRunId: 7 },
+    ],
   ])(
     'priorTurns의 %s에서 직전 유효 run id만 contextRefs로 전달한다',
     async (_, priorTurns, contextRefs) => {
@@ -196,7 +223,8 @@ describe('HandleConversationTurnUsecase', () => {
       'U1:CONSOLE',
       expect.objectContaining({
         role: 'assistant',
-        text: '오늘 계획을 정리했습니다.',
+        // 사용자에게 보인 답변과 같은 텍스트 — buildDispatchReplyText 가 붙인 footer 포함.
+        text: '오늘 계획을 정리했습니다.\n\n_이대리 (PM) · agentRunId=42_',
         agentType: AgentType.PM,
         agentRunId: 42,
       }),

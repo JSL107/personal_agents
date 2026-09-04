@@ -485,6 +485,69 @@ describe('PreconditionChainOrchestrator', () => {
     expect(handleConversationTurn.execute).not.toHaveBeenCalled();
   });
 
+  it('preview 조회가 실패하면 인터셉트를 포기하고 일반 dispatch로 폴백한다', async () => {
+    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+      make();
+    findLatestPendingPreview.execute.mockRejectedValue(
+      new Error('preview 저장소 장애'),
+    );
+    handleConversationTurn.execute.mockResolvedValue(ok('PM'));
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '응',
+        commandId: 'c1',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(handleConversationTurn.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('기억 저장이 실패해도 apply 성공을 answered로 발행한다', async () => {
+    const {
+      orchestrator,
+      conversationMemory,
+      findLatestPendingPreview,
+      applyPreview,
+      consoleEvents,
+    } = make();
+    findLatestPendingPreview.execute.mockResolvedValue({
+      id: 'p1',
+      kind: 'CAREER_PROFILE',
+      status: 'PENDING',
+    });
+    applyPreview.execute.mockResolvedValue({ resultText: '반영했습니다.' });
+    conversationMemory.appendTurn.mockRejectedValue(new Error('redis down'));
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      await orchestrator.run({
+        slackUserId: 'U1',
+        text: '응',
+        commandId: 'c1',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message: '✅ 적용 완료 (CAREER_PROFILE)\n\n반영했습니다.',
+    });
+    expect(consoleEvents.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command.rejected' }),
+    );
+  });
+
   it('preview가 없으면 일반 dispatch를 수행한다', async () => {
     const { orchestrator, handleConversationTurn } = make();
     handleConversationTurn.execute.mockResolvedValue(ok('PM'));
