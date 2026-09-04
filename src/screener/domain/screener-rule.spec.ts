@@ -1,9 +1,11 @@
 import { StockIndicators } from '../../market-data/domain/stock-indicator';
 import {
+  DEFAULT_RANKING_WEIGHTS,
   MINIMUM_TURNOVER60,
   ScreenCandidate,
   SCREENER_RULE_VERSION,
   screenStocks,
+  SWING_VOLUME_SURGE_MINIMUM,
 } from './screener-rule';
 
 const LIQUID_TURNOVER60 = 600_000_000;
@@ -279,5 +281,129 @@ describe('screenStocks — 당일 상승률 상한', () => {
     );
 
     expect(screened.map((stock) => stock.code)).toEqual(['000002']);
+  });
+});
+
+describe('screenStocks — 측정 손잡이', () => {
+  it('기본 가중치는 기존 1:1:1 순위합과 동일하다', () => {
+    expect(DEFAULT_RANKING_WEIGHTS).toEqual([1, 1, 1]);
+    expect(screenStocks([candidate('000001')], 'LONG_TERM', 10)).toEqual(
+      screenStocks(
+        [candidate('000001')],
+        'LONG_TERM',
+        10,
+        MINIMUM_TURNOVER60,
+        Number.POSITIVE_INFINITY,
+        SWING_VOLUME_SURGE_MINIMUM,
+        [1, 1, 1],
+      ),
+    );
+  });
+
+  it('거래량 재료를 제외한 가중 순위합을 계산한다', () => {
+    const result = screenStocks(
+      [
+        candidate('000001', {
+          volumeSurge: 3,
+          return1m: 1,
+          high200Position: 0.1,
+        }),
+        candidate('000002', {
+          volumeSurge: 2,
+          return1m: 10,
+          high200Position: 0.2,
+        }),
+        candidate('000003', {
+          volumeSurge: 1.6,
+          return1m: 5,
+          high200Position: 0.3,
+        }),
+      ],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      Number.POSITIVE_INFINITY,
+      SWING_VOLUME_SURGE_MINIMUM,
+      [0, 1, 1],
+    );
+    expect(result.map(({ code, score }) => ({ code, score }))).toEqual([
+      { code: '000002', score: 75 },
+      { code: '000003', score: 75 },
+      { code: '000001', score: 0 },
+    ]);
+  });
+
+  it('가중치 합을 정규화해 점수를 계산한다', () => {
+    const result = screenStocks(
+      [
+        candidate('000001', {
+          return6m: 30,
+          volatility20: 10,
+          high200Position: 0.7,
+        }),
+        candidate('000002', {
+          return6m: 20,
+          volatility20: 20,
+          high200Position: 0.8,
+        }),
+        candidate('000003', {
+          return6m: 10,
+          volatility20: 30,
+          high200Position: 0.9,
+        }),
+      ],
+      'LONG_TERM',
+      10,
+      MINIMUM_TURNOVER60,
+      Number.POSITIVE_INFINITY,
+      SWING_VOLUME_SURGE_MINIMUM,
+      [2, 1, 1],
+    );
+    expect(result.map(({ code, score }) => ({ code, score }))).toEqual([
+      { code: '000001', score: 75 },
+      { code: '000002', score: 50 },
+      { code: '000003', score: 25 },
+    ]);
+  });
+
+  it('유효하지 않은 가중치는 거부한다', () => {
+    expect(() =>
+      screenStocks(
+        [],
+        'SWING',
+        10,
+        MINIMUM_TURNOVER60,
+        Number.POSITIVE_INFINITY,
+        1.5,
+        [-1, 1, 1],
+      ),
+    ).toThrow();
+    expect(() =>
+      screenStocks(
+        [],
+        'SWING',
+        10,
+        MINIMUM_TURNOVER60,
+        Number.POSITIVE_INFINITY,
+        1.5,
+        [0, 0, 0],
+      ),
+    ).toThrow();
+  });
+
+  it('급증 임계를 높이면 SWING 후보를 거른다', () => {
+    expect(
+      screenStocks(
+        [
+          candidate('000001', { volumeSurge: 1.5 }),
+          candidate('000002', { volumeSurge: 2 }),
+        ],
+        'SWING',
+        10,
+        MINIMUM_TURNOVER60,
+        Number.POSITIVE_INFINITY,
+        2,
+      ).map((stock) => stock.code),
+    ).toEqual(['000002']);
   });
 });

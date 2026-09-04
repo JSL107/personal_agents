@@ -25,6 +25,9 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 // 앞 버전의 추천과 한 칸에 모으면 이 재편을 성적 변화로 읽게 된다.
 export const SCREENER_RULE_VERSION = 4;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
+export type RankingWeights = readonly [number, number, number];
+export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
+export const DEFAULT_RANKING_WEIGHTS: RankingWeights = [1, 1, 1];
 
 export interface ScreenCandidate {
   tickerId: number;
@@ -55,10 +58,16 @@ const passesLongTerm = (candidate: ScreenCandidate): boolean => {
   return ma120 !== null && isAligned === true && close > ma120;
 };
 
-const passesSwing = (candidate: ScreenCandidate): boolean => {
+const passesSwing = (
+  candidate: ScreenCandidate,
+  volumeSurgeMinimum: number,
+): boolean => {
   const { close, ma20, volumeSurge } = candidate.indicators;
   return (
-    ma20 !== null && close > ma20 && volumeSurge !== null && volumeSurge >= 1.5
+    ma20 !== null &&
+    close > ma20 &&
+    volumeSurge !== null &&
+    volumeSurge >= volumeSurgeMinimum
   );
 };
 
@@ -123,6 +132,20 @@ const rankCandidates = (
   return new Map(sorted.map((candidate, index) => [candidate.code, index + 1]));
 };
 
+const validateRankingWeights = (rankingWeights: RankingWeights): number => {
+  if (
+    rankingWeights.length !== 3 ||
+    rankingWeights.some((weight) => !Number.isFinite(weight) || weight < 0)
+  ) {
+    throw new Error('순위 가중치는 유한한 0 이상 수 3개여야 합니다.');
+  }
+  const totalWeight = rankingWeights.reduce((sum, weight) => sum + weight, 0);
+  if (totalWeight <= 0) {
+    throw new Error('순위 가중치의 합은 0보다 커야 합니다.');
+  }
+  return totalWeight;
+};
+
 export const screenStocks = (
   candidates: ScreenCandidate[],
   strategy: ScreenStrategy,
@@ -131,7 +154,10 @@ export const screenStocks = (
   // 기본값이 운영 규칙이므로 기존 호출부는 그대로 둔다.
   minimumTurnover60: number = MINIMUM_TURNOVER60,
   maximumDailyGainPercent: number = DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  volumeSurgeMinimum: number = SWING_VOLUME_SURGE_MINIMUM,
+  rankingWeights: RankingWeights = DEFAULT_RANKING_WEIGHTS,
 ): ScreenedStock[] => {
+  const totalWeight = validateRankingWeights(rankingWeights);
   const passed = candidates.filter(
     (candidate) =>
       candidate.indicators.turnover60 !== null &&
@@ -139,7 +165,7 @@ export const screenStocks = (
       withinDailyGainCap(candidate, maximumDailyGainPercent) &&
       (strategy === 'LONG_TERM'
         ? passesLongTerm(candidate)
-        : passesSwing(candidate)),
+        : passesSwing(candidate, volumeSurgeMinimum)),
   );
   if (passed.length === 0) {
     return [];
@@ -151,13 +177,16 @@ export const screenStocks = (
   const candidateCount = passed.length;
   const stocks = passed.map((candidate) => {
     const rankSum = rankingMaps.reduce(
-      (sum, ranks) => sum + (ranks.get(candidate.code) as number),
+      (sum, ranks, index) =>
+        sum + rankingWeights[index] * (ranks.get(candidate.code) as number),
       0,
     );
     const rawScore =
       candidateCount === 1
         ? 100
-        : ((3 * candidateCount - rankSum) / (3 * candidateCount - 3)) * 100;
+        : ((totalWeight * candidateCount - rankSum) /
+            (totalWeight * candidateCount - totalWeight)) *
+          100;
     return {
       ...candidate,
       score: Math.round(rawScore * 100) / 100,

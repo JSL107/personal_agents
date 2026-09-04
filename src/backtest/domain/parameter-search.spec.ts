@@ -18,6 +18,8 @@ const BASELINE: ParameterCombination = {
   stopLossPercent: -5,
   minimumTurnover60: 5e8,
   maximumWeightPercent: 20,
+  volumeSurgeMinimum: 1.5,
+  rankingWeights: [1, 1, 1],
 };
 
 const outcomeOf = (
@@ -122,6 +124,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3, -5],
       minimumTurnover60s: [3e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -129,10 +133,10 @@ describe('buildParameterGrid', () => {
     // 밴드 2x2 에 격자 밖 현행값(거래대금 5억)이 하나 더 붙는다.
     expect(grid).toHaveLength(5);
     expect(grid.slice(1).map(formatCombinationLabel)).toEqual([
-      '+5/-3 · 3억 · 20%',
-      '+5/-5 · 3억 · 20%',
-      '+10/-3 · 3억 · 20%',
-      '+10/-5 · 3억 · 20%',
+      '+5/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+5/-5 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-5 · 3억 · 20% · 급증1.5 · 가중1:1:1',
     ]);
   });
 
@@ -143,13 +147,15 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3],
       minimumTurnover60s: [3e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
 
     expect(grid.map(formatCombinationLabel)).toEqual([
-      '+10/-5 · 5억 · 20%',
-      '+5/-3 · 3억 · 20%',
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+      '+5/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
     ]);
   });
 
@@ -159,6 +165,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-5],
       minimumTurnover60s: [5e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -174,6 +182,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-5],
       minimumTurnover60s: [300_100_000, 300_200_000],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -191,6 +201,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3, -5],
       minimumTurnover60s: [5e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: true,
       baseline: BASELINE,
     });
@@ -198,7 +210,9 @@ describe('buildParameterGrid', () => {
     expect(
       grid.filter((combination) => combination.takeProfitPercent === null),
     ).toHaveLength(1);
-    expect(grid.map(formatCombinationLabel)).toContain('무밴드 · 5억 · 20%');
+    expect(grid.map(formatCombinationLabel)).toContain(
+      '무밴드 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+    );
   });
 });
 

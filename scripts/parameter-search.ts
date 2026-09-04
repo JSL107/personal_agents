@@ -30,7 +30,11 @@ import {
   parseParameterSearchCliArguments,
 } from '../src/backtest/interface/parameter-search-cli.parser';
 import { PrismaModule } from '../src/prisma/prisma.module';
-import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../src/screener/domain/screener-rule';
+import {
+  DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  DEFAULT_RANKING_WEIGHTS,
+  SWING_VOLUME_SURGE_MINIMUM,
+} from '../src/screener/domain/screener-rule';
 import { ResolveStrategyParametersUsecase } from '../src/strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { StrategyParameterModule } from '../src/strategy-parameter/strategy-parameter.module';
 
@@ -86,6 +90,8 @@ const buildStrategyPlans = async (
       stopLossPercent: active.exitBand.stopLossPercent,
       minimumTurnover60: active.minimumTurnover60,
       maximumWeightPercent: active.maximumWeightPercent,
+      volumeSurgeMinimum: SWING_VOLUME_SURGE_MINIMUM,
+      rankingWeights: DEFAULT_RANKING_WEIGHTS,
     };
     for (const slippagePercent of options.slippagePercents) {
       plans.push({
@@ -107,6 +113,10 @@ const buildStrategyPlans = async (
           maximumWeightPercents: options.maximumWeightPercents ?? [
             baseline.maximumWeightPercent,
           ],
+          volumeSurgeMinimums: options.volumeSurgeMinimums ?? [
+            baseline.volumeSurgeMinimum,
+          ],
+          rankingWeights: options.rankingWeights ?? [baseline.rankingWeights],
           includeBandless: options.includeBandless,
           baseline,
         }),
@@ -185,6 +195,8 @@ const main = async (): Promise<void> => {
               seedAmount: BACKTEST_DEFAULTS.seedAmount,
               minimumTurnover60: combination.minimumTurnover60,
               maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+              volumeSurgeMinimum: combination.volumeSurgeMinimum,
+              rankingWeights: combination.rankingWeights,
               maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
               weightPercent: combination.maximumWeightPercent,
               holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[plan.strategy],

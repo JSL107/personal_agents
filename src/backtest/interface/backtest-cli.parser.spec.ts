@@ -26,6 +26,8 @@ describe('parseBacktestCliArguments', () => {
       seedAmount: '10000000',
       minimumTurnover60: undefined,
       maximumDailyGainPercent: Number.POSITIVE_INFINITY,
+      volumeSurgeMinimum: 1.5,
+      rankingWeights: [1, 1, 1],
       maximumPositions: 3,
       weightPercent: undefined,
       holdingTradeDays: 60,
@@ -58,6 +60,32 @@ describe('parseBacktestCliArguments', () => {
     ]);
 
     expect(parsed.maximumDailyGainPercent).toBe(15);
+  });
+
+  it('새 순위 손잡이를 기본값과 지정값으로 읽는다', () => {
+    const parsed = parseBacktestCliArguments([
+      ...required,
+      '--volume-surge-min',
+      '2',
+      '--rank-weights',
+      '2:0:1',
+    ]);
+    expect(parsed.volumeSurgeMinimum).toBe(2);
+    expect(parsed.rankingWeights).toEqual([2, 0, 1]);
+    expect(parseBacktestCliArguments(required).rankingWeights).toEqual([
+      1, 1, 1,
+    ]);
+  });
+
+  it('순위 가중치 형식과 급증 임계를 검증한다', () => {
+    for (const value of ['1:2', '-1:1:1', '1::1', '0:0:0']) {
+      expect(() =>
+        parseBacktestCliArguments([...required, '--rank-weights', value]),
+      ).toThrow('--rank-weights');
+    }
+    expect(() =>
+      parseBacktestCliArguments([...required, '--volume-surge-min', '0']),
+    ).toThrow('--volume-surge-min');
   });
 
   it('--max-daily-gain 에 0 이하를 주면 거부한다', () => {

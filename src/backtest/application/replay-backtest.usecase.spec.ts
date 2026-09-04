@@ -210,6 +210,8 @@ const command = {
   delistingRecoveryRate: 1,
   volatilityEstimator: 'CLOSE_TO_CLOSE' as const,
   slippagePercent: 0,
+  volumeSurgeMinimum: 1.5,
+  rankingWeights: [1, 1, 1] as const,
 };
 
 const commandWithExitBand = {
