@@ -1554,6 +1554,28 @@ final class OfficeScene: SKScene {
         }
     }
 
+    /// 잡담을 걸어도 되는 사람인지. **상시 말풍선이 없어야 한다.**
+    ///
+    /// `strollingAgents` 는 이름과 달리 자율 배회자만 담지 않는다 — `visitLounge`(작업을
+    /// 끝내고 탕비실로 가는 사람)와 `holdMeeting`(회의 참가자)도 같은 집합에 들어간다.
+    /// 그 사람들은 "무슨 일 중" 문구를 달고 있을 수 있고, 그 문구는 임시 말풍선과 **같은
+    /// 좌표**를 쓰므로 잡담을 얹으면 글자가 겹쳐 둘 다 못 읽는다.
+    ///
+    /// 상태로 판정하지 않고 **그려진 라벨이 있는지 직접 본다.** 막으려는 것이 정확히 "같은
+    /// 자리를 쓰는 문구가 이미 있다" 이므로, 그것을 직접 재는 편이 상태 전이의 사각지대를
+    /// 남기지 않는다. `setChildLabel` 은 문구가 없으면 라벨을 만들지 않으므로 라벨의 존재가
+    /// 곧 화면에 문구가 있다는 뜻이다.
+    ///
+    /// 스냅샷 원본 필드(`agentBubbles`)를 보면 안 된다. 화면에 그려지는 문구는 그 원본이
+    /// 아니라 `agentTokenInfo` 가 만든 값이고, 원본은 진행 중이 아닌 사람에게도 값이 남아
+    /// 있어서 **평시에도 대화가 전부 막혔다**(대조군 렌더로 확인).
+    private func canChatter(_ agentType: String) -> Bool {
+        guard let node = characters[agentType] else {
+            return false
+        }
+        return node.childNode(withName: officeInfoBubbleLabelName) == nil
+    }
+
     /// 배회 목적지에 도착한 사람의 한 마디. 근처에 멈춰 선 다른 배회자가 있으면 두 마디를 주고받는다.
     ///
     /// 상대를 **매번 다시 센다.** 걸음을 끊고 자리로 순간이동시키는 경로가 여럿이라
@@ -1578,10 +1600,18 @@ final class OfficeScene: SKScene {
         guard let node = characters[agentType], node.tile == spot.tile else {
             return nil
         }
+        // 자기 머리 위에 이미 문구가 있으면 아무 말도 하지 않는다. 상대에게 적용하는 규칙과
+        // 같다 — 두 라벨이 같은 좌표를 쓰므로 겹치면 관제 정보를 못 읽는다. 배회 후보는
+        // `waiting` 뿐이라 평시에 걸릴 일은 없고, 상태가 어긋난 경로의 방어선이다.
+        guard canChatter(agentType) else {
+            return nil
+        }
         let round = strollRound
         var stopped: [(agentType: String, tile: TilePoint)] = []
         for other in strollingAgents where other != agentType {
-            guard let otherNode = characters[other], !otherNode.isWalking else {
+            guard let otherNode = characters[other], !otherNode.isWalking,
+                canChatter(other)
+            else {
                 continue
             }
             stopped.append((agentType: other, tile: otherNode.tile))
@@ -1628,6 +1658,7 @@ final class OfficeScene: SKScene {
                     guard let self,
                         self.strollingAgents.contains(agentType),
                         self.strollingAgents.contains(partner),
+                        self.canChatter(partner),
                         let speaker = self.characters[agentType],
                         let partnerNode = self.characters[partner],
                         officeChatterPartner(
@@ -1718,9 +1749,15 @@ final class OfficeScene: SKScene {
         // 부르면 아직 자기 좌석에 앉아 있는 사람과 짝이 맺힌다.
         for entry in placed {
             let partner = speakOnArrival(entry.agentType, spot: entry.spot, replyDelay: 0)
+            // 말풍선이 실제로 붙었는지 함께 찍는다. 상대 없음(`partner=-`)만으로는 **혼잣말과
+            // 침묵이 구분되지 않아**, 문구를 막는 가드가 도는지 그림으로도 로그로도 판정할 수
+            // 없다 — 정상 동작을 결함으로, 결함을 정상으로 읽게 된다.
+            let spoke =
+                characters[entry.agentType]?
+                .childNode(withName: officeTemporaryBubbleLabelName) != nil
             let line = "chatter-demo \(entry.agentType) at=\(entry.spot.kind.rawValue)"
                 + " tile=(\(entry.spot.tile.x),\(entry.spot.tile.y))"
-                + " partner=\(partner ?? "-")\n"
+                + " spoke=\(spoke) partner=\(partner ?? "-")\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
         return !placed.isEmpty
@@ -2336,6 +2373,15 @@ final class OfficeScene: SKScene {
             // 상시 말풍선은 호버 여부와 무관하게 늘 제자리에 둔다. 호버 쪽지가 커서 옆
             // 판으로 나갔으므로 이 자리를 두고 다투지 않는다 — 예전에는 쪽지가 같은 높이에
             // 붙어서, 호버하는 동안 말풍선을 내리고 마우스가 떠나면 되돌리는 왕복이 필요했다.
+            // 상시 말풍선이 실제로 그려지면 같은 자리의 임시 말풍선을 치운다.
+            //
+            // 두 라벨은 이름만 다르고 **좌표가 완전히 같아서**, 함께 있으면 글자가 겹쳐
+            // 둘 다 못 읽는다. 관제 정보(무슨 일 중)가 연출(배회 대사·거절 `!`)보다 우선이다.
+            // 문구가 있을 때만 치우는 것이 요점이다 — 조건 없이 지우면 진행 중이 아닌 사람의
+            // run 종료 문구가 다음 갱신에서 통째로 사라진다.
+            if let bubble = info.bubble, !bubble.isEmpty {
+                node.childNode(withName: officeTemporaryBubbleLabelName)?.removeFromParent()
+            }
             setChildLabel(
                 node, name: officeInfoBubbleLabelName, text: info.bubble,
                 position: CGPoint(x: 0, y: top + nameplateClearance),

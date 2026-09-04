@@ -57,12 +57,12 @@ func runOfficeChatterTests(_ t: TestRunner) {
         officeChatter(kind: .coffeeMachine, department: .engineering, agentType: "BE", round: 3),
         "같은 입력에 다른 문구"
     )
-    // 실행마다 시드가 바뀌는 `String.hashValue` 를 쓰면 이 값도 실행마다 달라진다.
-    t.expectEqual(
-        officeChatterSeed(agentType: "BE", round: 0),
-        officeChatterSeed(agentType: "BE", round: 0),
-        "씨앗이 실행 안에서 흔들린다"
-    )
+    // **고정 기대값으로 잠근다.** 같은 프로세스 안에서 두 번 부른 값을 비교하는 방식은
+    // `String.hashValue`(프로세스마다 시드가 다름)로 회귀해도 통과한다 — 한 실행 안에서는
+    // 그것도 일관되기 때문이다. 실행을 넘는 재현성은 값 자체를 박아야 검증된다.
+    t.expectEqual(officeChatterSeed(agentType: "BE", round: 0), 2115, "BE 씨앗이 바뀌었다")
+    t.expectEqual(officeChatterSeed(agentType: "PM", round: 0), 2557, "PM 씨앗이 바뀌었다")
+    t.expectEqual(officeChatterSeed(agentType: "BE", round: 3), 2136, "회차 반영이 바뀌었다")
     t.expect(
         officeChatterSeed(agentType: "BE", round: 0)
             != officeChatterSeed(agentType: "PM", round: 0),
@@ -93,12 +93,11 @@ func runOfficeChatterTests(_ t: TestRunner) {
             smallTalkCount += 1
         }
     }
-    t.expect(destinationCount > 0, "목적지 대사가 한 번도 안 나온다")
-    t.expect(smallTalkCount > 0, "부서 잡담이 한 번도 안 나온다")
-    t.expect(
-        destinationCount > smallTalkCount,
-        "목적지 대사가 다수여야 한다 (목적지 \(destinationCount) · 잡담 \(smallTalkCount))"
-    )
+    // **비율을 값으로 잠근다.** "목적지가 더 많다" 만 보면 확률 상수가 3 에서 5 로 바뀌어도
+    // 통과할 수 있어, PR 이 약속한 7:3 이 지켜지는지를 테스트가 말해 주지 않는다.
+    t.expectEqual(destinationCount, 28, "40회 중 목적지 대사 횟수가 7:3 에서 벗어났다")
+    t.expectEqual(smallTalkCount, 12, "40회 중 부서 잡담 횟수가 7:3 에서 벗어났다")
+    t.expectEqual(officeChatterSmallTalkChance, 3, "섞임 상수가 바뀌었다 — 위 기대값도 다시 재라")
 
     // 목적지 대사가 없는 가구에서도 말은 나와야 한다(빈 말풍선 금지).
     t.expect(
@@ -120,6 +119,14 @@ func runOfficeChatterTests(_ t: TestRunner) {
         "PM",
         "대각선 이웃을 놓친다"
     )
+    // 허용 경계를 **단독으로** 잰다. 거리 1 허용과 거리 3 거부만 있으면 비교가 `<` 로
+    // 회귀해도(거리 2 거부) 둘 다 통과해, 상한이 조용히 1 로 줄어든다.
+    t.expectEqual(
+        officeChatterPartner(arrivedAt: arrived, others: [("PM", TilePoint(x: 12, y: 10))]),
+        "PM",
+        "허용 경계(거리 2)가 거부된다"
+    )
+    t.expectEqual(officeChatterPartnerMaxDistance, 2, "상한이 바뀌었다 — 경계 케이스도 다시 맞춰라")
     t.expectEqual(
         officeChatterPartner(arrivedAt: arrived, others: [("PM", TilePoint(x: 13, y: 10))]),
         nil,
