@@ -34,6 +34,21 @@ OUT = ROOT / "Sources/IdaeriConsole/Resources/sprites"
 # 원본 1 도트 = 8 화면픽셀 (dotsize 실측). 정수배 축소라야 도트가 균일하게 남는다.
 SCALE = 8
 
+# 타일 한 칸의 목표 픽셀 수. 화면 배율이 정수여야 도트가 깨지지 않는데, 정수 배수는 확대에만
+# 쓸 수 있다 — 40px 에셋은 실사용 창(960x1050, 격자 23x27)에서 1배면 세로가 30px 넘치고
+# 1/2배면 화면의 4분의 1만 쓴다. 그 사이가 비어 있어 규격을 32px 로 내린다.
+# Swift 쪽 짝은 `ConsoleCore/OfficeViewMetrics.swift` 의 `officeSpriteUnit`.
+TILE_PX = 32
+
+# 스프라이트 1개의 색 상한. 생성 AI 시트는 도트 블록 안쪽에도 음영이 있어, 블록 중앙을
+# 정확히 뽑아도 블록마다 색이 달라진다 — 재정합 전 102개 중 95개가 이 상한을 넘었고
+# 중앙값이 535색이었다(`PALETTE-BASELINE.md`). 양자화가 그 뒤를 받는다.
+PALETTE_MAX = 64
+
+# 타일·가구·소품이 함께 쓰는 공통 팔레트의 색 수. 파일마다 따로 양자화하면 같은 재질이
+# 파일 간에 갈린다(`shared_palette` 주석의 나무 타일 실측). 캐릭터는 여기서 빠진다.
+SHARED_PALETTE_MAX = 64
+
 # 걸음 프레임을 만들 포즈. 앉은 자세는 걷지 않으므로 뺀다.
 WALK_POSES = ("down", "up", "side")
 
@@ -227,6 +242,60 @@ def shrink(cell: Image.Image) -> Image.Image:
     shifted = cell.crop((offset, offset, width, height))
     target = (max(shifted.width // SCALE, 1), max(shifted.height // SCALE, 1))
     return shifted.resize(target, Image.NEAREST)
+
+
+def quantize_sprite(image: Image.Image, colors: int) -> Image.Image:
+    """색을 `colors` 개로 줄인다. 디더링은 끈다 — 켜면 점무늬가 생겨 도트가 다시 지저분해진다.
+
+    알파는 양자화 대상이 아니다. RGB 만 줄인 뒤 원래 알파를 되돌려 붙인다.
+    """
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    reduced = rgba.convert("RGB").quantize(
+        colors=colors, method=Image.MEDIANCUT, dither=Image.Dither.NONE
+    )
+    result = reduced.convert("RGBA")
+    result.putalpha(alpha)
+    return result
+
+
+def opaque_color_count(image: Image.Image) -> int:
+    """불투명 픽셀의 고유색 수. `scripts/measure-palette.py` 와 같은 잣대다."""
+    rgba = image.convert("RGBA")
+    return len({pixel for pixel in rgba.getdata() if pixel[3] > 8})
+
+
+def shared_palette(images: list[Image.Image], colors: int) -> Image.Image:
+    """여러 스프라이트의 색을 모아 공통 팔레트를 만든다.
+
+    파일마다 따로 양자화하면 같은 재질이 파일 간에 갈린다 — 실측으로 tile-wood-a 와
+    tile-wood-b 가 각각 64색인데 공유가 15색뿐이고 서로 3 이내로 다른 색 쌍이 894개였다
+    (2026-09-04). 두 타일은 번갈아 깔려 나무 무늬를 만들므로, 그 차이가 화면에서 얼룩이 된다.
+
+    투명 픽셀은 넣지 않는다 — 투명부의 검정이 팔레트 한 칸을 차지해 실제 색이 밀린다.
+    """
+    pixels: list[tuple[int, int, int]] = []
+    for image in images:
+        rgba = image.convert("RGBA")
+        pixels.extend(pixel[:3] for pixel in rgba.getdata() if pixel[3] > 8)
+    if not pixels:
+        pixels = [(0, 0, 0)]
+    # 색 분포만 쓰므로 배치는 무관하다. 한 줄로 이어붙인다.
+    canvas = Image.new("RGB", (len(pixels), 1))
+    canvas.putdata(pixels)
+    return canvas.quantize(
+        colors=colors, method=Image.MEDIANCUT, dither=Image.Dither.NONE
+    )
+
+
+def apply_palette(image: Image.Image, palette: Image.Image) -> Image.Image:
+    """공통 팔레트로 색을 옮긴다. 알파는 그대로 되돌려 붙인다."""
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    reduced = rgba.convert("RGB").quantize(palette=palette, dither=Image.Dither.NONE)
+    result = reduced.convert("RGBA")
+    result.putalpha(alpha)
+    return result
 
 
 # 마젠타 성향 = r 과 b 가 g 보다 얼마나 높은가. 실측:
@@ -435,7 +504,8 @@ def save_walk_frames(sprite: Image.Image, name: str, sheet_name: str) -> int:
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    total = 0
+    # 1패스에서 굽고 모아 두었다가, 공통 팔레트를 만든 뒤 2패스에서 저장한다.
+    baked: list[tuple[str, Image.Image, str]] = []
     for sheet_name, names in SHEETS.items():
         source = RAW / f"{sheet_name}.png"
         if not source.exists():
@@ -471,10 +541,46 @@ def main() -> int:
                 sprite = sprite.crop(
                     (1, 1, max(sprite.width - 1, 2), max(sprite.height - 1, 2))
                 )
-            sprite.save(OUT / f"{name}.png")
-            print(f"  {name}.png  {sprite.width}x{sprite.height}")
-            total += 1
-            total += save_walk_frames(sprite, name, sheet_name)
+                # 자른 뒤에 규격을 맞춘다 — 먼저 맞추면 1px 손실이 규격을 다시 깨뜨린다.
+                # 타일은 반복해 깔리므로 정확한 정사각이어야 이음매가 맞는다.
+                sprite = sprite.resize((TILE_PX, TILE_PX), Image.NEAREST)
+            # 가구·캐릭터는 규격을 강제하지 않는다. 화면에서 실물 크기(`targetHeightCm`)를 기준으로
+            # 스케일되므로(`OfficeFloorPlan.swift:1099` 가 원본 높이를 나눈다), 원본 크기를 바꾸면
+            # 그 계산의 입력이 흔들려 실물 비율이 어긋난다. 짧은 변을 32의 배수로 맞춰 봤더니
+            # prop-papers 가 10x6 에서 53x32 로 5배 부풀었다(2026-09-04). 이들의 도트 정합은
+            # 원본 크기가 아니라 화면 스케일에서 해결한다.
+            baked.append((name, sprite, sheet_name))
+
+    # 팔레트를 공유하는 것은 **타일뿐**이다. 타일은 같은 재질이 여러 파일에 걸쳐 반복해 깔리므로
+    # 파일마다 색이 갈리면 얼룩이 된다(파일별 양자화 시 tile-wood-a 와 tile-wood-b 의 공유색이
+    # 64색 중 15색뿐이고 서로 3 이내로 다른 색 쌍이 894개였다).
+    #
+    # 가구·소품·캐릭터는 공유하지 않는다. 가구 45종을 한 팔레트에 넣어 봤더니 채도 높은 물건이
+    # 표를 독점해 회색 계열이 5색만 받았고, 세라믹 타일의 격자선이 배경과 뭉쳐 사라지면서 남은
+    # 픽셀이 엉뚱한 청록·베이지로 매핑됐다(2026-09-04 렌더 확인). 서로 다른 물건은 색을 나눌
+    # 이유가 없고, 나눠 쓰면 서로를 밀어낸다.
+    #
+    # 캐릭터는 더 강한 이유로 빠진다 — 런타임 리컬러가 밝기·채도 임계값으로 머리·셔츠·바지를
+    # 가르므로(`SpriteLoader.swift:43-47, 104-106`), 색을 뭉치면 그 판정이 밀려 사람마다 옷 색이
+    # 뒤섞인다. 파일별 양자화가 그 대역을 지키는지는 실측했다(변화 3~5%).
+    tiles = [sprite for name, sprite, _ in baked if name.startswith("tile-")]
+    tile_palette = shared_palette(tiles, SHARED_PALETTE_MAX)
+    total = 0
+    for name, sprite, sheet_name in baked:
+        if name.startswith("tile-"):
+            sprite = apply_palette(sprite, tile_palette)
+        else:
+            sprite = quantize_sprite(sprite, PALETTE_MAX)
+        colors = opaque_color_count(sprite)
+        if colors > PALETTE_MAX:
+            print(f"✗ {name}: 색 {colors}개 — 상한 {PALETTE_MAX} 초과")
+            return 1
+        # 양자화 뒤에 걸음 프레임을 파생한다 — 파생은 픽셀을 옮기기만 하므로 같은 팔레트를
+        # 물려받는다.
+        sprite.save(OUT / f"{name}.png")
+        print(f"  {name}.png  {sprite.width}x{sprite.height}")
+        total += 1
+        total += save_walk_frames(sprite, name, sheet_name)
     print(f"\n{total}개 스프라이트 → {OUT.relative_to(ROOT)}")
     return 0
 
