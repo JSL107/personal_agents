@@ -139,6 +139,20 @@ describe('formatDelayReport', () => {
     expect(quota).not.toContain('.env');
   });
 
+  it('실패 사유가 이미 행동을 말하고 있으면 같은 안내를 두 번 하지 않는다', () => {
+    const text = formatDelayReport(
+      verdict({
+        primaryCause: 'UNRESOLVED_FAILURE',
+        detail:
+          'ChatGPT 사용량 한도 초과로 PM 실행이 실패했어요. 04:00 KST 에 리셋됩니다. 잠시 후 다시 시도해주세요.',
+        failureKind: 'QUOTA',
+      }),
+    );
+
+    expect(text).toContain('지어내지 않습니다');
+    expect(text).not.toContain('자동으로 다시 쓸 수 있습니다');
+  });
+
   it('미해소 실패와 확인 불가 축을 함께 표시한다', () => {
     const text = formatDelayReport(
       verdict({

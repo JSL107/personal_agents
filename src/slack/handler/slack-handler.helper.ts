@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { RespondFn } from '@slack/bolt';
 
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
+import { appendBlockReasonGuidance } from '../../common/domain/block-reason';
 import { DomainException } from '../../common/exception/domain.exception';
 import { FormattedReport } from '../format/formatted-report.type';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
@@ -17,9 +18,13 @@ const toSlackText = (formatted: FormattedReport | string): string => {
 
 // 도메인 예외 message 는 그대로 노출, 그 외 (Prisma/네트워크/내부) 는 generic 으로 가린다.
 // stack trace / Prisma 내부 메시지가 사용자에게 새는 걸 막는 1차 방어선.
+//
+// 도메인 message 는 "왜 안 됐는지" 만 말하고 "그래서 뭘 하면 되는지" 와 "없는 값을 지어내지
+// 않는다" 를 빠뜨리는 경우가 많다. 슬래시·버튼 실패 카드가 전부 이 한 지점을 지나므로
+// (25곳 이상 호출) 여기서 한 번만 채운다. 알아보지 못한 실패는 원문 그대로 둔다.
 export const toUserFacingErrorMessage = (error: unknown): string => {
   if (error instanceof DomainException) {
-    return error.message;
+    return appendBlockReasonGuidance(error.message);
   }
   return '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 };

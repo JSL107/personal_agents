@@ -4,6 +4,10 @@ import {
   FailedRunDetail,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
 import {
+  BLOCK_REASON_PHRASES,
+  classifyBlockReason,
+} from '../../../common/domain/block-reason';
+import {
   AXIS_ACTIVE_RUN,
   AXIS_APPROVAL,
   AXIS_FAILED_RUN,
@@ -16,15 +20,6 @@ import {
 } from './delay-report.type';
 
 const MINUTE_MS = 60 * 1000;
-// 원장에는 errorCode가 아니라 예외 message만 저장된다. 실측 문구는
-// `src/github/infrastructure/octokit-github.client.ts`의 `GITHUB_TOKEN 이 .env 에 설정되지 않아...`와
-// `src/notion/infrastructure/notion-api.client.ts`의 `NOTION_TOKEN 이 .env 에 설정되지 않아...`다.
-// 레포 전반에는 `... 가 설정되지 않았습니다 (.env 확인).` 변형도 있다. 이 문자열 계약은
-// 문구가 바뀌면 조용히 깨질 수 있으므로, errorCode를 원장에 보존하는 별도 변경 전까지 유지한다.
-const CONFIGURATION_MISSING_SIGNAL = '설정되지 않';
-const ENV_SIGNAL = '.env';
-// 쿼터 안내 문구는 `model-router.usecase.ts:223` 의 `describeQuotaExhaustion` 이 만든다.
-const QUOTA_SIGNAL = '사용량 한도 초과';
 
 // 귀속 순서. 조회 축 하나가 죽은 채로 그 아래 원인을 "이게 원인" 이라고 확정하면 진짜 첫 원인을
 // 놓친 채 단정하게 된다(승인 대기를 못 읽고 "진행 중이라 정상" 이라 답하는 식). 그래서 선택된
@@ -64,19 +59,24 @@ const isFreshRun = (run: ActiveRunSnapshot, now: Date): boolean => {
   return minutesSince(run.startedAt, now) < STALE_RUN_THRESHOLD_MINUTES;
 };
 
+// 미연동 메모도 카드와 같은 상용구를 쓴다 — 같은 사정을 두 화면이 다른 말로 설명하면
+// 대표가 다른 문제로 읽는다.
+// subject 는 조사까지 붙여서 받는다 — 이름 끝 받침에 따라 조사가 갈리는데(GitHub'가' / Notion'이')
+// 템플릿이 조사를 고정하면 한쪽이 조용히 틀린 문장이 된다.
+const integrationNote = (subject: string): string => {
+  const phrase = BLOCK_REASON_PHRASES.INTEGRATION;
+  return `${subject} 아직 연동 전이라 관련 작업은 못 읽어요. ${phrase.noFabrication} ${phrase.recovery}`;
+};
+
 const buildIntegrationNotes = (
   integrations: DelayReportInput['integrations'],
 ): string[] => {
   const notes: string[] = [];
   if (!integrations.githubConfigured) {
-    notes.push(
-      'GitHub가 아직 연동 전이라 관련 작업은 못 읽어요. 없는 값을 지어내지 않습니다. 연동되면 바로 돌아요.',
-    );
+    notes.push(integrationNote('GitHub가'));
   }
   if (!integrations.notionConfigured) {
-    notes.push(
-      'Notion이 아직 연동 전이라 관련 작업은 못 읽어요. 없는 값을 지어내지 않습니다. 연동되면 바로 돌아요.',
-    );
+    notes.push(integrationNote('Notion이'));
   }
   return notes;
 };
@@ -115,25 +115,14 @@ const findUnresolvedFailure = (
   };
 };
 
-const classifyFailure = (reason: string): FailureKind => {
-  if (
-    reason.includes(CONFIGURATION_MISSING_SIGNAL) &&
-    reason.includes(ENV_SIGNAL)
-  ) {
-    return 'INTEGRATION';
-  }
-  if (reason.includes(QUOTA_SIGNAL)) {
-    return 'QUOTA';
-  }
-  return 'OTHER';
-};
-
 const failureDetail = (failure: FailedRunDetail, kind: FailureKind): string => {
   switch (kind) {
     case 'INTEGRATION':
       return `${failure.agentType} 실행이 미연동 상태라 실패했어요. ${failure.reason}`;
     case 'QUOTA':
       return `ChatGPT 사용량 한도 초과로 ${failure.agentType} 실행이 실패했어요. ${failure.reason}`;
+    case 'PREREQUISITE':
+      return `${failure.agentType} 실행이 선행 산출물 부재로 실패했어요. ${failure.reason}`;
     case 'OTHER':
       return `${failure.agentType} 실행이 실패했어요. ${failure.reason}`;
   }
@@ -204,7 +193,7 @@ export const attributeDelay = (input: DelayReportInput): DelayVerdict => {
     input.recentlyFinished,
   );
   if (unresolved !== null) {
-    const kind = classifyFailure(unresolved.failure.reason);
+    const kind = classifyBlockReason(unresolved.failure.reason) ?? 'OTHER';
     return withContext(
       'UNRESOLVED_FAILURE',
       failureDetail(unresolved.failure, kind),

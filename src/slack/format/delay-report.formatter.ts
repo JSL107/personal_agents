@@ -1,4 +1,8 @@
 import { DelayVerdict } from '../../agent/delay-report/domain/delay-report.type';
+import {
+  BLOCK_REASON_PHRASES,
+  statesRecoveryAlready,
+} from '../../common/domain/block-reason';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 const MAX_NOTES = 3;
@@ -14,19 +18,23 @@ const retryHint = (retryRunId: number | null | undefined): string => {
 };
 
 // 실패 조치는 유형별로 다르다 — 일반 실패에 "연동·쿼터를 해결하라" 고 하면 실패 원인과 무관한
-// 조치를 시키는 셈이 된다.
+// 조치를 시키는 셈이 된다. 알아본 부류의 문구는 BLOCK_REASON 사전에서 가져와, 같은 사정을
+// 슬래시 실패 카드와 이 워커가 다른 말로 설명하지 않게 한다.
 const failureAction = (verdict: DelayVerdict): string => {
   const retry = retryHint(verdict.retryRunId);
-  switch (verdict.failureKind) {
-    case 'INTEGRATION':
-      return `\`.env\` 에 해당 키를 설정하면 풀립니다.${retry}`;
-    case 'QUOTA':
-      return `한도가 리셋되면 자동으로 다시 쓸 수 있습니다.${retry}`;
-    default:
-      return retry.length > 0
-        ? `위 사유를 보고 조치한 뒤${retry}`
-        : '위 사유를 보고 조치한 뒤 다시 시도해주세요.';
+  const kind = verdict.failureKind;
+  if (kind === undefined || kind === 'OTHER') {
+    return retry.length > 0
+      ? `위 사유를 보고 조치한 뒤${retry}`
+      : '위 사유를 보고 조치한 뒤 다시 시도해주세요.';
   }
+  const phrase = BLOCK_REASON_PHRASES[kind];
+  // detail 에는 원장에 남은 실패 사유가 그대로 실린다 — 그 사유가 이미 "다시 시도" 같은 행동을
+  // 말하고 있으면 같은 안내를 한 줄 안에서 두 번 하게 된다.
+  const recovery = statesRecoveryAlready(verdict.detail)
+    ? ''
+    : ` ${phrase.recovery}`;
+  return `${phrase.noFabrication}${recovery}${retry}`;
 };
 
 const primaryAction = (verdict: DelayVerdict): string => {
