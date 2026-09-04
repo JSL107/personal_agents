@@ -476,6 +476,48 @@ describe('SlackService.postMessage', () => {
     expect(result.ts).toBe('111.222');
   });
 
+  // 힌트 사전이 실제로 이 경로를 지나는지 — 겨냥한 조건(Slack platform error)에서 확인한다.
+  // 발송이 실패한 상황이라 이 문구는 호출부의 로그·원장으로만 간다.
+  it('채널을 못 찾으면 실패 문구에 다음 행동이 붙는다', async () => {
+    const platformError = Object.assign(
+      new Error('An API error occurred: channel_not_found'),
+      {
+        code: 'slack_webapi_platform_error',
+        data: { ok: false, error: 'channel_not_found' },
+      },
+    );
+    const service = buildService(jest.fn().mockRejectedValue(platformError));
+
+    await expect(
+      service.postMessage({ target: 'C_NOPE', text: '본문' }),
+    ).rejects.toThrow(/앱 설치 워크스페이스/);
+  });
+
+  it('봇이 채널에 없으면 초대 방법을 알려준다', async () => {
+    const platformError = Object.assign(
+      new Error('An API error occurred: not_in_channel'),
+      {
+        code: 'slack_webapi_platform_error',
+        data: { ok: false, error: 'not_in_channel' },
+      },
+    );
+    const service = buildService(jest.fn().mockRejectedValue(platformError));
+
+    await expect(
+      service.postMessage({ target: 'C_PRIVATE', text: '본문' }),
+    ).rejects.toThrow(/\/invite @이대리/);
+  });
+
+  it('모르는 Slack 실패는 원문만 남긴다 — 아는 척하는 조치를 붙이지 않는다', async () => {
+    const service = buildService(
+      jest.fn().mockRejectedValue(new Error('socket hang up')),
+    );
+
+    await expect(
+      service.postMessage({ target: 'C1', text: '본문' }),
+    ).rejects.toThrow('Slack 발송 실패: socket hang up');
+  });
+
   it('threadTs 없으면 thread_ts 를 넘기지 않는다', async () => {
     const postMessageMock = jest.fn(async () => ({ ts: '111.222' }));
     const service = buildService(postMessageMock);

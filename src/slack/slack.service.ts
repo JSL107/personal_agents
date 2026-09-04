@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { App, LogLevel } from '@slack/bolt';
+import {
+  ChatPostMessageArguments,
+  ChatPostMessageResponse,
+} from '@slack/web-api';
 
+import { appendIntegrationHint } from '../common/domain/integration-failure-hint';
 import { PreviewCardMessage } from '../preview-gate/domain/preview-action.type';
 import {
   SLACK_HANDLER_PORT,
@@ -223,6 +228,33 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  // 발송 3종이 전부 이 한 지점을 지난다. Slack 이 준 코드(`channel_not_found` 등)는 그대로
+  // 두면 영어 한 단어라, 여기서 한국어 행동 한 줄을 붙여 다시 던진다.
+  // 발송이 실패한 상황이라 이 문구는 Slack 이 아니라 호출부의 로그·원장으로 간다 —
+  // 대표가 "왜 안 왔지" 를 되짚을 때 읽는 자리가 거기다.
+  private async postChat(
+    args: ChatPostMessageArguments,
+  ): Promise<ChatPostMessageResponse> {
+    const app = this.assertAppReady();
+    try {
+      return await app.client.chat.postMessage(args);
+    } catch (error: unknown) {
+      // 새 Error 로 감싸지 않고 원본의 message 만 고쳐 던진다. 감싸면 Slack SDK 가 준
+      // `data.error` · 클래스 · 원본 스택이 사라져, 나중에 코드로 분기하려는 호출부가 막힌다.
+      // (`stack` 첫 줄에는 옛 message 가 남지만, 로거가 읽는 건 `message` 다.)
+      if (!(error instanceof Error)) {
+        throw new Error(
+          appendIntegrationHint(`Slack 발송 실패: ${String(error)}`, error),
+        );
+      }
+      error.message = appendIntegrationHint(
+        `Slack 발송 실패: ${error.message}`,
+        error,
+      );
+      throw error;
+    }
+  }
+
   async postMessage({
     target,
     text,
@@ -234,8 +266,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     threadTs?: string;
     unfurlLinks?: boolean;
   }): Promise<{ ts: string | undefined }> {
-    const app = this.assertAppReady();
-    const response = await app.client.chat.postMessage({
+    const response = await this.postChat({
       channel: target,
       ...toReadableSlackArgs(text),
       ...(threadTs ? { thread_ts: threadTs } : {}),
@@ -258,8 +289,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     target: string;
     preview: PreviewCardMessage;
   }): Promise<{ channelId: string; messageTs: string }> {
-    const app = this.assertAppReady();
-    const response = await app.client.chat.postMessage({
+    const response = await this.postChat({
       channel: target,
       text: preview.previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
@@ -287,8 +317,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     proposalText: string;
     proposalId: number;
   }): Promise<{ channelId: string; messageTs: string }> {
-    const app = this.assertAppReady();
-    const response = await app.client.chat.postMessage({
+    const response = await this.postChat({
       channel: target,
       text: proposalText,
       blocks: buildSubconsciousProposalBlocks({

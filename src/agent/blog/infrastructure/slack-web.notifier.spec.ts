@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 
 import { SlackWebNotifier } from './slack-web.notifier';
@@ -40,6 +41,29 @@ describe('SlackWebNotifier', () => {
     await expect(
       notifier.notify({ channel: 'C1', text: 'x' }),
     ).resolves.toBeUndefined();
+  });
+
+  // 삼키는 경로라 로그가 유일한 단서 — 힌트가 그 로그에 실리는지 확인한다.
+  it('봇 미초대로 답장이 막히면 경고 로그에 초대 방법이 실린다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const postMessage = jest.fn().mockRejectedValue(
+      Object.assign(new Error('An API error occurred: not_in_channel'), {
+        code: 'slack_webapi_platform_error',
+        data: { ok: false, error: 'not_in_channel' },
+      }),
+    );
+    const notifier = new SlackWebNotifier({
+      chat: { postMessage },
+    } as unknown as WebClient);
+
+    await notifier.notify({ channel: 'C1', text: 'x' });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('/invite @이대리'),
+    );
+    warn.mockRestore();
   });
 
   it('client 가 null 이면 noop(throw 안 함)', async () => {
