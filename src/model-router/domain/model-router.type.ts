@@ -9,8 +9,6 @@ export enum AgentType {
   WORK_REVIEWER = 'WORK_REVIEWER',
   IMPACT_REPORTER = 'IMPACT_REPORTER',
   PO_SHADOW = 'PO_SHADOW',
-  // 기술 판단 담당. 현재는 스터디 주제 평가(CTO_STUDY)가 이 자리의 실무다.
-  CTO = 'CTO',
   // V3 비전 workflow phase plan §4.4 P4 Evaluate — Work Reviewer / PO Shadow /
   // Impact Reporter 3 sub-agent 직전 snapshot 을 합성 → 정성/정량 + 이력서용 careerLog.
   PO_EVAL = 'PO_EVAL',

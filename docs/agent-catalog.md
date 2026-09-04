@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 27종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -13,7 +13,6 @@
 | CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
-| CTO | `CTO` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | 스터디 주제를 판정한다 |
 | CTO Study | `CTO_STUDY` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용) |
 | Delay Report | `DELAY_REPORT` | — (webhook/자동) | CHATGPT | `src/agent/delay-report/application/build-delay-report.usecase.ts` | 회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론) |
 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |

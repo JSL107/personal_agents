@@ -1048,7 +1048,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn().mockResolvedValue({
       agentRunId: 7,
-      workerType: AgentType.CTO,
+      workerType: AgentType.CTO_STUDY,
       output: {},
       modelUsed: 'codex-cli',
       formattedText: '재분배 결과',

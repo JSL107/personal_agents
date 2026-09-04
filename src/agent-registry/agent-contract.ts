@@ -181,7 +181,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '오늘 할 일 목록과 우선순위를 정한다',
     deliverableFields: ['topPriority', 'morning', 'afternoon'],
     requireEvidence: true,
-    nextAgent: AgentType.CTO,
+    nextAgent: null,
   },
   [AgentType.PO_SHADOW]: stub(
     Department.PLANNING,
@@ -230,7 +230,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   },
 
   // ──────────────────────────────── 경영 ────────────────────────────────
-  [AgentType.CTO]: stub(Department.EXECUTIVE, '기술 주제를 판정한다'),
   [AgentType.CEO]: {
     department: Department.EXECUTIVE,
     job: '주간 실행을 메타 관점에서 총평한다',

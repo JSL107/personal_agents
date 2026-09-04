@@ -68,8 +68,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_SECRETARIAT_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_SCHEDULE` | ❌ | deprecated — morning 그룹 첫 항목이 secretariat 으로 바뀌면서 더 이상 읽히지 않는다. |
 | `AUTOPILOT_MORNING_BRIEFING_TIMEZONE` | ❌ | — |
-| `AUTOPILOT_ASSIGN_SCHEDULE` | ❌ | — |
-| `AUTOPILOT_ASSIGN_TIMEZONE` | ❌ | — |
+| `AUTOPILOT_PO_SHADOW_SCHEDULE` | ❌ | — |
+| `AUTOPILOT_PO_SHADOW_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_WEEKLY_SUMMARY_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_CEO_META_SCHEDULE` | ❌ | — |

@@ -219,7 +219,7 @@ describe('ConsoleReadService', () => {
     ).toBe('FAILED');
     // 창 안에 종료 기록이 없는 에이전트는 대기로 남는다(과표시 방지).
     expect(
-      snapshot.agents.find((agent) => agent.agentType === 'CTO')?.state,
+      snapshot.agents.find((agent) => agent.agentType === 'CTO_STUDY')?.state,
     ).toBe('WAITING');
   });
 

@@ -41,7 +41,7 @@ let sampleAgents: [ConsoleAgent] =
             "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE", "PO_EVAL",
         ]
     )
-    + planAgents(.executive, ["CTO", "CEO"])
+    + planAgents(.executive, ["CEO"])
     + planAgents(
         .growth,
         [

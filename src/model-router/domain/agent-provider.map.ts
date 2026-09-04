@@ -15,7 +15,6 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.WORK_REVIEWER]: ModelProviderName.CHATGPT,
   [AgentType.IMPACT_REPORTER]: ModelProviderName.CHATGPT,
   [AgentType.PO_SHADOW]: ModelProviderName.CHATGPT,
-  [AgentType.CTO]: ModelProviderName.CHATGPT,
   [AgentType.PO_EVAL]: ModelProviderName.CHATGPT,
   [AgentType.CEO]: ModelProviderName.CHATGPT,
   [AgentType.ISSUE_LABELER]: ModelProviderName.CHATGPT,

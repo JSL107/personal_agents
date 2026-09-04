@@ -775,7 +775,7 @@ describe('PreconditionChainOrchestrator', () => {
     const { orchestrator, handleConversationTurn, consoleEvents } = make();
     const prereqWorkers: Record<string, AgentType> = {
       CHAIN_1: AgentType.PM,
-      CHAIN_2: AgentType.CTO,
+      CHAIN_2: AgentType.CTO_STUDY,
       CHAIN_3: AgentType.PO_SHADOW,
       CHAIN_4: AgentType.PO_EVAL,
     };
@@ -808,7 +808,7 @@ describe('PreconditionChainOrchestrator', () => {
       expect(consoleEvents.publish).toHaveBeenCalledWith({
         type: 'command.rejected',
         commandId: 'c1',
-        reason: 'CEO ← PM ← CTO ← PO_SHADOW: 자동 체이닝 깊이 초과',
+        reason: 'CEO ← PM ← CTO_STUDY ← PO_SHADOW: 자동 체이닝 깊이 초과',
       });
     } finally {
       resolveChainSpy.mockRestore();

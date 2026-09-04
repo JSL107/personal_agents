@@ -27,7 +27,6 @@ export enum TriggerType {
   FAILURE_REPLAY = 'FAILURE_REPLAY',
   WEBHOOK = 'WEBHOOK',
   // V3 비전 P2 Assign — CTO worker (/assign 슬래시). PM 직전 plan 의 assignableTaskIds → BE 5종 분배.
-  SLACK_COMMAND_ASSIGN = 'SLACK_COMMAND_ASSIGN',
   // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.
   SLACK_COMMAND_PO_EVAL = 'SLACK_COMMAND_PO_EVAL',
   // V3 비전 P5 Meta — CEO worker (/ceo-review 슬래시). PO_EVAL + PM/CTO snapshot 합성 → drift/docs review.
@@ -35,10 +34,8 @@ export enum TriggerType {
   // PRO-4 Weekly Summary CRON 연계 — 매주 금 17:00 worklog 발송 직후 자동 CEO meta 발화 (range=WEEK).
   // WEEKLY_SUMMARY_CRON (worklog) 과 별도 — 분석/Failure Replay 시 trigger 출처 구분 가능.
   WEEKLY_CEO_META_CRON = 'WEEKLY_CEO_META_CRON',
-  // V3 비전 phase loop chain — `/auto-flow` 슬래시 (PM → CTO → BE chain).
   // 사용자 명시 트리거 1회로 P1 (PM plan) → P2 (CTO 분배) → P3 (BE worker) 자동 chain 호출.
   // 본 trigger 는 chain 의 PM step 에만 명시 — CTO/BE step 은 기존 trigger 유지, chain 추적은 parentId.
-  SLACK_COMMAND_AUTO_FLOW = 'SLACK_COMMAND_AUTO_FLOW',
   // workflow-phase-definition §5.2 의 Daily Eval — 매일 19:00 KST PO_EVAL (range=TODAY) 자동 트리거.
   // 수동 /po-eval (SLACK_COMMAND_PO_EVAL) 와 구분 — 분석 / Failure Replay 시 trigger 출처 명확.
   DAILY_EVAL_CRON = 'DAILY_EVAL_CRON',

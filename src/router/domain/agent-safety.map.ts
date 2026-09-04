@@ -30,7 +30,6 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.WORK_REVIEWER]: AgentSafetyLevel.READ_ONLY,
   [AgentType.IMPACT_REPORTER]: AgentSafetyLevel.READ_ONLY,
   [AgentType.PO_SHADOW]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.CTO]: AgentSafetyLevel.READ_ONLY,
   [AgentType.PO_EVAL]: AgentSafetyLevel.READ_ONLY,
   [AgentType.CEO]: AgentSafetyLevel.READ_ONLY,
   // 자연어 경로(CareerMateDispatcher)는 프로필·이력서·포트폴리오 렌더링까지만 한다.

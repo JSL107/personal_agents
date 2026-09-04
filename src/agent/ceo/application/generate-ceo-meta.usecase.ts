@@ -32,7 +32,6 @@ const TODAY_SINCE_DAYS = 1;
 interface PhaseSnapshots {
   poEval: SucceededAgentRunSnapshot;
   pm: SucceededAgentRunSnapshot | null;
-  cto: SucceededAgentRunSnapshot | null;
 }
 
 @Injectable()
@@ -53,7 +52,6 @@ export class GenerateCeoMetaUsecase {
     const refs: SourcePhaseRunRefs = {
       poEvalRunId: snapshots.poEval.id,
       pmRunId: snapshots.pm?.id,
-      ctoRunId: snapshots.cto?.id,
     };
 
     return this.agentRunService.execute({
@@ -64,7 +62,6 @@ export class GenerateCeoMetaUsecase {
         range,
         poEvalRunId: refs.poEvalRunId,
         pmRunId: refs.pmRunId,
-        ctoRunId: refs.ctoRunId,
       },
       evidence: this.toEvidence(refs),
       run: async () => {
@@ -83,7 +80,7 @@ export class GenerateCeoMetaUsecase {
           schemaVersion: 1,
         };
         this.logger.log(
-          `CEO meta 합성 완료 — range=${range} refs=poEval=${refs.poEvalRunId} pm=${refs.pmRunId ?? '-'} cto=${refs.ctoRunId ?? '-'}`,
+          `CEO meta 합성 완료 — range=${range} refs=poEval=${refs.poEvalRunId} pm=${refs.pmRunId ?? '-'}`,
         );
         return {
           result: output,
@@ -115,10 +112,9 @@ export class GenerateCeoMetaUsecase {
       });
       return runs[0] ?? null;
     };
-    const [poEval, pm, cto] = await Promise.all([
+    const [poEval, pm] = await Promise.all([
       fetchLatestInRange(AgentType.PO_EVAL),
       fetchLatestInRange(AgentType.PM),
-      fetchLatestInRange(AgentType.CTO),
     ]);
     if (!poEval) {
       throw new CeoException({
@@ -130,7 +126,7 @@ export class GenerateCeoMetaUsecase {
         status: DomainStatus.NOT_FOUND,
       });
     }
-    return { poEval, pm, cto };
+    return { poEval, pm };
   }
 
   // PO_EVAL 1 + PM/CTO 선택 — EvidenceRecord.sourceId 가 single string 이라 phase 별 1 record.
@@ -156,13 +152,6 @@ export class GenerateCeoMetaUsecase {
         payload: { agentType: AgentType.PM },
       });
     }
-    if (refs.ctoRunId !== undefined) {
-      evidence.push({
-        sourceType: 'CEO_META_SOURCE_CTO',
-        sourceId: String(refs.ctoRunId),
-        payload: { agentType: AgentType.CTO },
-      });
-    }
     return evidence;
   }
 }
@@ -177,7 +166,6 @@ const buildPrompt = ({
   const lines: string[] = [`[range] ${range}`, ''];
   pushSection(lines, 'PO_EVAL 직전 output', snapshots.poEval);
   pushSection(lines, 'PM 직전 plan', snapshots.pm);
-  pushSection(lines, 'CTO 직전 분배', snapshots.cto);
   lines.push('');
   lines.push('[합성 지시]');
   lines.push(

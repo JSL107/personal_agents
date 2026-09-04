@@ -73,13 +73,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: 'PO 관점 그림자 검토',
   },
   {
-    agentType: AgentType.CTO,
-    displayName: 'CTO',
-    slashCommands: [],
-    usecasePath: 'src/agent/cto/application/evaluate-study-topic.usecase.ts',
-    description: '스터디 주제를 판정한다',
-  },
-  {
     agentType: AgentType.PO_EVAL,
     displayName: 'PO Eval',
     slashCommands: ['/po-eval'],

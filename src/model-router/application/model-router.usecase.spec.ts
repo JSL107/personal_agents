@@ -38,7 +38,7 @@ describe('ModelRouterUsecase', () => {
       [AgentType.PM],
       [AgentType.CODE_REVIEWER],
       [AgentType.CODE_REVIEWER],
-      [AgentType.CTO],
+      [AgentType.CTO_STUDY],
       [AgentType.PO_EVAL],
       [AgentType.CEO],
       [AgentType.CAREER_MATE],
