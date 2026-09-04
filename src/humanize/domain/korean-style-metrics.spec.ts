@@ -69,18 +69,16 @@ describe('measureKoreanStyle', () => {
     expect(metrics.longestSentenceLength).toBeGreaterThan(80);
   });
 
-  // 「최장 91자」만 보면 만연체인지 영문 이름 나열인지 갈리지 않는다. 둘은 처방이 정반대다
-  // — 만연체는 끊어야 하고, 나열은 끊을 수 없다(고유명사 불변이 절대 규칙이다).
-  it('최장 문장이 상한을 넘으면 그 문장을 함께 돌려준다', () => {
+  // 최장 문장 자체는 사람이 읽을 수 있도록 관측한다. 길이만으로 만연체인지 영문 이름 나열인지
+  // 갈리지 않으므로, 숫자를 기준으로 자동 판정하지 않는다.
+  it('최장 문장 길이와 원문을 관측한다', () => {
     const metrics = measureKoreanStyle(`짧다. ${'가'.repeat(160)}입니다.`);
 
     expect(metrics.longestSentence).toBe(`${'가'.repeat(160)}입니다.`);
-    expect(formatKoreanStyleMetrics(metrics)).toContain(
-      '최장 문장(164자 · 1어절):',
-    );
+    expect(formatKoreanStyleMetrics(metrics)).toContain('최장 164자');
   });
 
-  it('최장 문장이 상한 이하면 문장을 덧붙이지 않는다', () => {
+  it('최장 문장이 짧아도 별도 판정 문장을 덧붙이지 않는다', () => {
     const metrics = measureKoreanStyle('짧습니다. 이것도 짧아요.');
 
     expect(formatKoreanStyleMetrics(metrics)).not.toContain('최장 문장(');
@@ -557,24 +555,15 @@ describe('재현 목표 판정', () => {
     expect(findKoreanStyleGaps(base)).toEqual([]);
   });
 
-  it('영문이 길어 글자 수는 넘겨도 어절이 모자라면 목표 밖으로 잡는다', () => {
-    // 이 축을 넣은 이유. 2026-08-24 발행본은 평균 41.9자로 하한(35자)을 넘겨 미달 축이
-    // 하나도 없었는데, 8.7어절이라 「문장마다 끊겨 격자로 읽힌다」 는 판정을 받았다.
+  it('평균·어절·최장 길이는 모두 목표 밖으로 잡지 않는다', () => {
     const gaps = findKoreanStyleGaps({
       ...base,
       averageLength: 42,
       wordsPerSentence: 8.7,
+      longestSentenceLength: 159,
     });
 
-    expect(gaps).toEqual(['어절 8.7개(≥10개)']);
-  });
-
-  it('초장문 하나는 여전히 잡는다', () => {
-    // 편차가 판정에서 내려가며 AND 짝은 사라졌다. 최장은 상한이라 홀로 남아도 의심 표본의
-    // 리듬을 재현시키지 않는다 — 지금 이 축이 막는 것은 읽기 어려운 만연체뿐이다.
-    const gaps = findKoreanStyleGaps({ ...base, longestSentenceLength: 159 });
-    expect(gaps).toHaveLength(1);
-    expect(gaps[0]).toContain('최장 159자');
+    expect(gaps).toEqual([]);
   });
 
   it('출처가 의심되는 세 축(편차·짧은문장·구어)은 판정하지 않는다', () => {
@@ -609,12 +598,18 @@ describe('재현 목표 판정', () => {
     }
   });
 
+  it('평균·최장 문장 길이 임계값은 코드에 두지 않는다', () => {
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('averageLengthMin');
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('longestSentenceMax');
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('wordsPerSentenceMin');
+  });
+
   it('내린 축은 카드의 판정 밖 목록에 이름이 실린다', () => {
     // 수치는 계속 보여준다. 「충족」이 편차까지 통과한 뜻으로 읽히면 안 된다.
     const line = formatKoreanStyleMetrics(base);
     expect(line).toContain('편차');
     expect(line).toContain('판정 대상 충족');
-    for (const axis of ['편차', '짧은문장', '구어']) {
+    for (const axis of ['문장 길이', '편차', '짧은문장', '구어']) {
       expect(line).toContain(axis);
     }
   });
@@ -632,9 +627,12 @@ describe('재현 목표 판정', () => {
 
   it('카드에 판정 결과가 함께 실린다', () => {
     expect(formatKoreanStyleMetrics(base)).toContain('판정 대상 충족');
-    expect(
-      formatKoreanStyleMetrics({ ...base, longestSentenceLength: 160 }),
-    ).toContain('목표 밖: 최장 160자(≤150)');
+    const line = formatKoreanStyleMetrics({
+      ...base,
+      longestSentenceLength: 160,
+    });
+    expect(line).toContain('최장 160자');
+    expect(line).not.toContain('목표 밖: 최장');
   });
 
   it.each([
@@ -748,42 +746,7 @@ describe('재현 목표 판정', () => {
     ).toEqual([]);
   });
 
-  it('문단 축은 합으로만 판정한다', () => {
-    // 두 축은 반대로 움직인다 — 벽을 낮추려면 잘게 자르면 되고 그러면 같은크기가 올라간다.
-    // 따로 걸면 한쪽을 반대로 밀어 통과할 수 있으니, 상한은 합에만 둔다.
-    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('wallPercentMax');
-    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty(
-      'dominantParagraphSizePercentMax',
-    );
-    // 벽이 55%로 높아도 같은크기가 낮으면 합이 기준 안이라 통과다.
-    expect(
-      findKoreanStyleGaps({
-        ...base,
-        paragraph: {
-          ...base.paragraph,
-          wallPercent: 55,
-          dominantParagraphSizePercent: 5,
-        },
-      }),
-    ).toEqual([]);
-  });
-
-  it('벽과 같은크기의 합이 상한을 넘으면 걸린다', () => {
-    // 실측: 방어선 9편 36~57 · 토스 40 · 우아한형제들 46 · 하이퍼커넥트 58.
-    // 격자로 찍힌 2026-08-20 발행본은 같은크기만 67 이었다.
-    const gaps = findKoreanStyleGaps({
-      ...base,
-      paragraph: {
-        ...base.paragraph,
-        wallPercent: 0,
-        dominantParagraphSizePercent: 67,
-      },
-    });
-    expect(gaps).toContain('문단 벽+같은크기 67(≤60)');
-  });
-
-  it('문단이 적으면 합을 판정하지 않는다', () => {
-    // 문단 2개면 같은크기가 최소 50% 다 — 표본이 설 때까지 판정하면 짧은 글이 늘 걸린다.
+  it('문단 크기는 관측값으로만 두고 목표 밖으로 잡지 않는다', () => {
     expect(
       findKoreanStyleGaps({
         ...base,
@@ -795,6 +758,7 @@ describe('재현 목표 판정', () => {
         },
       }),
     ).toEqual([]);
+    expect(KOREAN_STYLE_TARGETS).not.toHaveProperty('paragraphCompositeMax');
   });
 });
 
