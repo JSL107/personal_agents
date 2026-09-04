@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import {
+  ContractViolation,
+  evaluateContract,
+} from '../../../agent-registry/contract-inspector';
+import {
   AgentRunOutcome,
   AgentRunService,
 } from '../../../agent-run/application/agent-run.service';
@@ -30,6 +34,12 @@ const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
 interface TaskCandidate {
   id: string;
   title: string;
+}
+
+// LLM 1회 호출 + 파싱의 결과 묶음 — 계약 되먹임 재생성이 같은 경로를 두 번 탄다.
+interface GeneratedAssignment {
+  output: AssignmentOutput;
+  modelUsed: string;
 }
 
 @Injectable()
@@ -66,17 +76,19 @@ export class GenerateAssignmentUsecase {
       ? await this.lookupPriorAssignment({ slackUserId, pmRunId: pmRun.id })
       : undefined;
 
+    const inputSnapshot = {
+      slackUserId,
+      dailyPlanAgentRunId: pmRun.id,
+      assignableCount: assignableIds.length,
+      ...(priorAssignment !== undefined
+        ? { priorAssignmentAgentRunId: priorAssignment.agentRunId }
+        : {}),
+    };
+
     return this.agentRunService.execute({
       agentType: AgentType.CTO,
       triggerType: triggerType ?? TriggerType.SLACK_COMMAND_ASSIGN,
-      inputSnapshot: {
-        slackUserId,
-        dailyPlanAgentRunId: pmRun.id,
-        assignableCount: assignableIds.length,
-        ...(priorAssignment !== undefined
-          ? { priorAssignmentAgentRunId: priorAssignment.agentRunId }
-          : {}),
-      },
+      inputSnapshot,
       evidence: [
         {
           sourceType: 'PM_PLAN',
@@ -101,28 +113,100 @@ export class GenerateAssignmentUsecase {
             ]
           : []),
       ],
-      run: async () => {
+      run: async (context) => {
         const prompt = buildPrompt({
           candidates,
           planContext: plan.reasoning,
           conversationContext,
           priorAssignment,
         });
-        const completion = await this.modelRouter.route({
-          agentType: AgentType.CTO,
-          request: { prompt, systemPrompt: CTO_SYSTEM_PROMPT },
-        });
-        const output = parseAssignmentOutput(completion.text);
+        const first = await this.generateOnce(prompt);
+        const firstEvaluation = evaluateContract(AgentType.CTO, first.output);
+        let adopted = first;
+        if (firstEvaluation.violations.length > 0) {
+          adopted = await this.regenerateOnceForContract({
+            basePrompt: prompt,
+            first,
+            firstViolations: firstEvaluation.violations,
+          });
+          // 재생성 사실을 원장 스냅샷에 남긴다 — 빈 ctoSummary(run#2161·#2311 류) 추적용.
+          // 기록은 부가 정보라 실패해도 본체 진행을 막지 않는다.
+          try {
+            await context.updateInputSnapshot({
+              ...inputSnapshot,
+              contractRetry: {
+                firstViolations: firstEvaluation.violations.map(
+                  (violation) => `${violation.rule}:${violation.detail}`,
+                ),
+                adopted: adopted === first ? 'first' : 'retry',
+              },
+            });
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `CTO 계약 재생성 기록 실패 (진행에는 영향 없음): ${message}`,
+            );
+          }
+        }
         this.logger.log(
-          `CTO 분배 완료 — pmRunId=${pmRun.id} assignments=${output.assignments.length} unassigned=${output.unassignedTasks.length}`,
+          `CTO 분배 완료 — pmRunId=${pmRun.id} assignments=${adopted.output.assignments.length} unassigned=${adopted.output.unassignedTasks.length}`,
         );
         return {
-          result: output,
-          modelUsed: completion.modelUsed,
-          output,
+          result: adopted.output,
+          modelUsed: adopted.modelUsed,
+          output: adopted.output,
         };
       },
     });
+  }
+
+  // LLM 1회 호출 + 파싱. 계약 되먹임 재생성이 같은 경로를 두 번 타므로 분리.
+  private async generateOnce(prompt: string): Promise<GeneratedAssignment> {
+    const completion = await this.modelRouter.route({
+      agentType: AgentType.CTO,
+      request: { prompt, systemPrompt: CTO_SYSTEM_PROMPT },
+    });
+    return {
+      output: parseAssignmentOutput(completion.text),
+      modelUsed: completion.modelUsed,
+    };
+  }
+
+  // 계약 위반(빈 필수 필드 등) 시 위반 내용을 되먹여 딱 한 번 재생성한다.
+  // 두 번째에도 안 되면 세 번째라고 될 이유가 없다 — humanize-markdown.adapter 의
+  // 호흡 되먹임 관례: 재생성본이 더 낫지 않으면(위반 수 기준, 동률 포함) 첫 판을 쓴다.
+  // 재생성 호출 자체가 실패해도 첫 판(파싱까지 통과한 산출물)으로 진행한다 —
+  // 재생성은 부가 시도지 실행 조건이 아니다.
+  private async regenerateOnceForContract({
+    basePrompt,
+    first,
+    firstViolations,
+  }: {
+    basePrompt: string;
+    first: GeneratedAssignment;
+    firstViolations: readonly ContractViolation[];
+  }): Promise<GeneratedAssignment> {
+    this.logger.warn(
+      `CTO 산출물 계약 위반 — ${formatViolations(firstViolations)}. 위반 내용을 되먹여 1회 재생성.`,
+    );
+    try {
+      const retried = await this.generateOnce(
+        buildContractRetryPrompt(basePrompt, firstViolations),
+      );
+      const retriedEvaluation = evaluateContract(AgentType.CTO, retried.output);
+      if (retriedEvaluation.violations.length < firstViolations.length) {
+        return retried;
+      }
+      this.logger.warn(
+        `CTO 재생성본도 계약 위반 ${retriedEvaluation.violations.length}건 (첫 판 ${firstViolations.length}건) — 첫 판 채택.`,
+      );
+      return first;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`CTO 계약 재생성 호출 실패 — 첫 판 채택. (${message})`);
+      return first;
+    }
   }
 
   private async lookupPmRun({
@@ -302,6 +386,24 @@ const buildPrompt = ({
   );
   return lines.join('\n');
 };
+
+// 위반 내용을 프롬프트 끝에 되먹인 재생성 프롬프트. spec 에서 직접 검증하도록 export.
+export const buildContractRetryPrompt = (
+  basePrompt: string,
+  violations: readonly ContractViolation[],
+): string =>
+  [
+    basePrompt,
+    '',
+    '[재생성 지시 — 직전 응답의 계약 위반]',
+    `직전 응답은 다음 항목을 지키지 못했다: ${formatViolations(violations)}`,
+    '모든 필수 필드를 채워 다시 작성하라. 정말 쓸 내용이 없는 필드는 그 사정을 한 문장으로 채워라.',
+  ].join('\n');
+
+const formatViolations = (violations: readonly ContractViolation[]): string =>
+  violations
+    .map((violation) => `${violation.rule}(${violation.detail})`)
+    .join(', ');
 
 // CTO run 의 inputSnapshot 에서 그 실행이 참조한 PM run id 를 꺼낸다.
 // 형식이 다르거나 없으면 null — 호출부는 "대조 불가" 로 보고 이어받지 않는다.
