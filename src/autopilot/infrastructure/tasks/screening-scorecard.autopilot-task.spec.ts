@@ -24,6 +24,7 @@ const horizonWithSample = buildScorecardHorizon({
     {
       strategy: 'SWING',
       ruleVersion: 2,
+      runId: 1,
       rank: 1,
       presented: true,
       returnPct: 10,
@@ -34,6 +35,7 @@ const horizonWithSample = buildScorecardHorizon({
     {
       strategy: 'SWING',
       ruleVersion: 2,
+      runId: 1,
       rank: 2,
       presented: true,
       returnPct: 4,

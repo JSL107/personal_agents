@@ -72,10 +72,13 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
   // 아래에 따로 세운다. 표본이 0 이어도 줄을 빼지 않는다 — 빼면 이 축이 카드에서 조용히
   // 사라져, 아직 안 쌓인 것과 저장이 고장난 것을 읽는 사람이 가릴 수 없다.
   lines.push(formatArm('상한 밖 ', strategy.notPresented));
-  // 격차는 양쪽에 표본이 있을 때만 적는다. 없을 때의 사유는 바로 위 줄이 이미 말한다.
+  // 격차는 양쪽이 다 있는 회차가 하나라도 있을 때만 적는다. 없을 때의 사유는 바로 위 줄이
+  // 이미 말한다. 기여 회차 수를 함께 적는 것은 이 값이 회차별 격차의 평균이기 때문이다 —
+  // 두 갈래의 누적 평균 차가 아니라는 사실이 수치만 보면 드러나지 않는다.
   if (strategy.cutoffGapPct !== null) {
     lines.push(
-      `  절단 격차 ${formatPercent(strategy.cutoffGapPct, '%p')} (보여준 것 평균 − 상한 밖 평균)`,
+      `  절단 격차 ${formatPercent(strategy.cutoffGapPct, '%p')}` +
+        ` (회차 ${strategy.cutoffRunCount}개 평균, 보여준 것 − 상한 밖)`,
     );
   }
   return lines;

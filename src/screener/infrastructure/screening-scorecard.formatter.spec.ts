@@ -13,6 +13,7 @@ const row = (
 ): ScreeningScorecardRow => ({
   strategy: 'SWING',
   ruleVersion: 2,
+  runId: 1,
   rank: 1,
   presented: true,
   returnPct: 0,
@@ -72,7 +73,7 @@ describe('formatScreeningScorecard', () => {
     expect(text).toContain('상한 밖  1건 · 평균 -20.00%');
     // 보여준 것 평균(+7.00%) − 상한 밖 평균(-20.00%).
     expect(text).toContain(
-      '절단 격차 +27.00%p (보여준 것 평균 − 상한 밖 평균)',
+      '절단 격차 +27.00%p (회차 1개 평균, 보여준 것 − 상한 밖)',
     );
     // 상한 밖 성적이 대조군에 새면 이 줄이 -8.00% 로 나온다.
     expect(text).toContain('안 산 것 1건 · 평균 +4.00%');

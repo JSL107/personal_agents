@@ -18,6 +18,9 @@ export const SCORECARD_TOP_RANK_LIMIT = 5;
 export interface ScreeningScorecardRow {
   strategy: string;
   ruleVersion: number;
+  // 이 행이 나온 회차. 절단 격차를 회차 안에서 재기 위한 축이다 — 통째로 모아 평균 차를
+  // 내면 두 갈래가 서로 다른 날짜 집합을 보게 된다(아래 `perRunCutoffGap` 주석).
+  runId: number;
   rank: number;
   // 그날 프롬프트에 실렸는가. false 면 규칙은 통과했지만 모델이 본 적 없는 종목이다.
   presented: boolean;
@@ -55,9 +58,12 @@ export interface ScreeningScorecardStrategy {
   notPresented: ScreeningScorecardArm;
   // 산 것 평균 − 안 산 것 평균 (%p). 어느 한쪽이 비면 null 이다.
   gapPct: number | null;
-  // 보여준 것 전체 평균 − 상한 밖 평균 (%p). 순위 상한이 실제로 나은 종목을 골라냈는지를
-  // 이 값이 답한다. 어느 한쪽이 비면 null 이다.
+  // 회차별 (보여준 것 평균 − 상한 밖 평균) 의 평균 (%p). 순위 상한이 실제로 나은 종목을
+  // 골라냈는지를 이 값이 답한다. 양쪽이 다 있는 회차가 하나도 없으면 null 이다.
   cutoffGapPct: number | null;
+  // 그 격차에 실제로 기여한 회차 수. 통과 전체 저장 이전 회차는 상한 밖 행이 없어 여기서
+  // 빠지므로, 표본이 얼마나 얕은지가 이 수로만 드러난다.
+  cutoffRunCount: number;
   boughtMeanRank: number | null;
   topRankMeanReturnPct: number | null;
   topRankCount: number;
@@ -137,6 +143,43 @@ const worstOf = (
     undefined,
   );
 
+interface CutoffGap {
+  gapPct: number | null;
+  runCount: number;
+}
+
+// 절단 격차는 **회차 안에서** 재서 평균한다. 두 갈래를 통째로 모아 평균 차를 내면 서로 다른
+// 날짜 집합을 비교하게 되어, 순위 절단이 아니라 장세를 재게 된다. 이 카드의 대조가 성립하는
+// 이유가 "같은 날 같은 출발선" 이라는 위 머리말과 같은 자리다.
+//
+// 구체적으로 무너지는 자리가 둘이다. ①통과 전체 저장 이전 회차는 상한 밖 행이 아예 없어
+// 그날의 장세가 보여준 것 쪽에만 걸린다(성적 조회에 기간 상한이 없어 그 회차들이 영구히
+// 섞인다). ②회차마다 통과 종목 수가 달라(SWING 실측 98~117) 두 갈래의 날짜별 가중치가
+// 어긋난다. 회차별로 재면 둘 다 사라진다 — 한쪽이 빈 회차는 격차를 만들지 못해 빠지고,
+// 남은 회차는 각각 하루치 격차 하나로만 센다.
+const perRunCutoffGap = (rows: ScreeningScorecardRow[]): CutoffGap => {
+  const byRun = new Map<
+    number,
+    { presented: number[]; notPresented: number[] }
+  >();
+  for (const row of rows) {
+    const found = byRun.get(row.runId) ?? { presented: [], notPresented: [] };
+    const bucket = row.presented ? found.presented : found.notPresented;
+    bucket.push(row.returnPct);
+    byRun.set(row.runId, found);
+  }
+  const gaps: number[] = [];
+  for (const split of byRun.values()) {
+    const presentedMean = mean(split.presented);
+    const notPresentedMean = mean(split.notPresented);
+    if (presentedMean === null || notPresentedMean === null) {
+      continue;
+    }
+    gaps.push(presentedMean - notPresentedMean);
+  }
+  return { gapPct: mean(gaps), runCount: gaps.length };
+};
+
 const summarizeStrategy = (
   strategy: string,
   rows: ScreeningScorecardRow[],
@@ -147,8 +190,8 @@ const summarizeStrategy = (
   const notBought = presented.filter((row) => !row.bought);
   const boughtArm = summarizeArm(bought);
   const notBoughtArm = summarizeArm(notBought);
-  const presentedArm = summarizeArm(presented);
   const notPresentedArm = summarizeArm(rows.filter((row) => !row.presented));
+  const cutoffGap = perRunCutoffGap(rows);
   const topRank = presented.filter(
     (row) => row.rank <= SCORECARD_TOP_RANK_LIMIT,
   );
@@ -166,11 +209,8 @@ const summarizeStrategy = (
       boughtArm.meanReturnPct === null || notBoughtArm.meanReturnPct === null
         ? null
         : boughtArm.meanReturnPct - notBoughtArm.meanReturnPct,
-    cutoffGapPct:
-      presentedArm.meanReturnPct === null ||
-      notPresentedArm.meanReturnPct === null
-        ? null
-        : presentedArm.meanReturnPct - notPresentedArm.meanReturnPct,
+    cutoffGapPct: cutoffGap.gapPct,
+    cutoffRunCount: cutoffGap.runCount,
     boughtMeanRank: mean(bought.map((row) => row.rank)),
     topRankMeanReturnPct: mean(topRank.map((row) => row.returnPct)),
     topRankCount: topRank.length,

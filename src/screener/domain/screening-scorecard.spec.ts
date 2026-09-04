@@ -8,6 +8,7 @@ const row = (
 ): ScreeningScorecardRow => ({
   strategy: 'SWING',
   ruleVersion: 2,
+  runId: 1,
   rank: 1,
   presented: true,
   returnPct: 0,
@@ -166,8 +167,57 @@ describe('buildScorecardHorizon', () => {
     expect(strategy.gapPct).toBe(6);
     expect(strategy.notPresented.count).toBe(2);
     expect(strategy.notPresented.meanReturnPct).toBe(-30);
-    // 보여준 것 전체 평균(7) − 상한 밖 평균(-30).
+    // 회차가 하나뿐이라 그 회차의 격차가 곧 값이다. 보여준 것 평균(7) − 상한 밖 평균(-30).
     expect(strategy.cutoffGapPct).toBe(37);
+    expect(strategy.cutoffRunCount).toBe(1);
+  });
+
+  // 통째로 모아 평균 차를 내면 회차마다 다른 종목 수가 날짜별 가중치를 흔들어, 순위 절단이
+  // 아니라 장세를 재게 된다.
+  it('절단 격차는 회차 안에서 재고 그 평균을 낸다', () => {
+    const horizon = buildScorecardHorizon({
+      horizonDays: 5,
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+      rows: [
+        // 상승한 날 — 상한 밖이 1종목.
+        row({ runId: 1, presented: true, returnPct: 10 }),
+        row({ runId: 1, presented: false, returnPct: 9 }),
+        // 하락한 날 — 상한 밖이 3종목이라 통째로 모으면 이쪽 장세가 더 무겁게 실린다.
+        row({ runId: 2, presented: true, returnPct: -10 }),
+        row({ runId: 2, presented: false, returnPct: -11 }),
+        row({ runId: 2, presented: false, returnPct: -11 }),
+        row({ runId: 2, presented: false, returnPct: -11 }),
+      ],
+    });
+
+    // 회차별 격차는 두 날 모두 +1 이다. 누적 평균 차로 내면 0 − (−6) = +6 이 되어,
+    // 절단 효과가 실제의 여섯 배로 부풀려진다.
+    expect(horizon.strategies[0].cutoffGapPct).toBe(1);
+    expect(horizon.strategies[0].cutoffRunCount).toBe(2);
+  });
+
+  // 통과 전체 저장 이전 회차는 상한 밖 행이 아예 없다. 성적 조회에 기간 상한이 없어 그
+  // 회차들이 영구히 표본에 남으므로, 통째로 모으면 그날 장세가 보여준 것 쪽에만 걸린다.
+  it('상한 밖이 없는 옛 회차는 절단 격차에 끼어들지 않는다', () => {
+    const horizon = buildScorecardHorizon({
+      horizonDays: 5,
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+      rows: [
+        // 컬럼이 생기기 전 회차 — 보여준 것만 있다.
+        row({ runId: 1, presented: true, returnPct: 10 }),
+        row({ runId: 2, presented: true, returnPct: -10 }),
+        row({ runId: 2, presented: false, returnPct: -12 }),
+      ],
+    });
+
+    // 회차 2 만 격차를 만든다(+2). 옛 회차를 섞으면 0 − (−12) = +12 로 여섯 배가 된다.
+    expect(horizon.strategies[0].cutoffGapPct).toBe(2);
+    expect(horizon.strategies[0].cutoffRunCount).toBe(1);
+    // 갈래 자체에는 옛 회차도 그대로 센다 — 빼면 "상한 밖 평균" 이 아니라 격차 계산용
+    // 부분집합이 되어 두 수가 서로 다른 것을 말하게 된다.
+    expect(horizon.strategies[0].notPresented.count).toBe(1);
   });
 
   it('놓친 최고와 상위 순위 축도 보여준 것 안에서만 센다', () => {
@@ -206,6 +256,7 @@ describe('buildScorecardHorizon', () => {
     // 0 으로 두면 "상한이 아무 차이도 안 냈다" 로 읽혀, 비교 대상이 없었다는 사실이 사라진다.
     expect(horizon.strategies[0].notPresented.count).toBe(0);
     expect(horizon.strategies[0].cutoffGapPct).toBeNull();
+    expect(horizon.strategies[0].cutoffRunCount).toBe(0);
   });
 
   it('표본이 없으면 전략 목록이 비고 표본 수가 0 이다', () => {

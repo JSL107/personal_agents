@@ -269,7 +269,14 @@ export class ScreeningHistoryPrismaRepository {
             presented: true,
             tickerId: true,
             ticker: { select: { code: true, name: true } },
-            run: { select: { strategy: true, asOf: true, ruleVersion: true } },
+            run: {
+              select: {
+                id: true,
+                strategy: true,
+                asOf: true,
+                ruleVersion: true,
+              },
+            },
           },
         },
       },
@@ -305,6 +312,7 @@ export class ScreeningHistoryPrismaRepository {
     return outcomes.map((row) => ({
       strategy: row.item.run.strategy,
       ruleVersion: row.item.run.ruleVersion,
+      runId: row.item.run.id,
       rank: row.item.rank,
       presented: row.item.presented,
       returnPct: Number(row.returnPct),
