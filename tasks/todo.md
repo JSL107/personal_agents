@@ -882,3 +882,26 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 - 독립 리뷰가 malformed 다중 `@` fallback 노출을 발견했다. 회귀 테스트 RED exit 1을 확인하고 보강했으며 재리뷰 범위의 유일한 P2를 해소했다.
 - 최종 검증은 lint exit 0, humanize 10 suites/191 tests, 전체 437 suites/4,047 tests + code-graph 5 suites/40 tests, build exit 0이다.
 - DB/Prisma/env/의존성 변경과 git add/commit/push 없음.
+
+---
+# 갓생맘 AI OFFICE 착안점 — 남은 검증 꼬리 (2026-09-04)
+
+목표 원장(`tasks/goals-ai-office-adoption.md`)은 A(#467)·B(#470·#473)·C(#472)·D(#474) 가 모두
+머지되어 폐기했다. 구현은 끝났고 **실환경에서 아직 못 잰 것만** 여기 남긴다.
+판단 근거·원본 메커니즘은 스냅샷 `docs/superpowers/plans/2026-09-04-godsengmom-ai-office-adoption.md`,
+각 회차의 상세는 PR #467·#470·#472·#473·#474 본문에 있다.
+
+- [ ] **B. 차단 사유 사전 — Slack 실왕복 미측정.** 실패 경로가 없어 못 쟀다(원장 최근 24h 실패 0건,
+  선행 조건 전부 충족, env 키 5종 다 설정). 재는 법: PM run 이 18시간을 넘긴 뒤 `/assign` 을 치면
+  `직전 PM run 이 N시간 전 — \`/today\` 로 … 다시 시도해주세요. 선행 산출물 없이 내용을 지어내지 않습니다.`
+  가 나와야 한다. 꼬리 문장은 `없` 이 없는 문구라 **#473 의 errorCode 판정이 아니면 안 붙는다** —
+  #470·#473 을 한 번에 재는 셈이다.
+  ⚠️ 원장 나이는 `now() - ended_at` 산술로 볼 것. `at time zone 'Asia/Seoul'` 표시는 이중 변환으로
+  6시간 어긋나, 아직 신선한 plan 을 stale 로 오판한다.
+- [ ] **C. 브리핑 decisions/risks — 실 모델이 채우는지 미검증.** 프롬프트와 codex output schema 로
+  요구만 해 뒀고 codex 실호출로 확인하지 않았다. `/worklog` 한 번이면 확인된다.
+- [ ] **D. 연동 힌트 사전 — 실 API 왕복 미검증.** 에러 모양은 각 SDK 설치본 타입 정의에서 읽어
+  재현한 것이고, 잘못된 ID·토큰으로 실제 호출해 보지는 않았다. 가장 싼 확인은 봇이 없는 채널로
+  발송해 `not_in_channel` 힌트가 로그에 실리는지 보는 것.
+- [ ] **공통 — 운영 백엔드(포트 3099) 재시작 필요.** A 는 `3b21c668` 빌드에서 재확인했으나
+  (`"왤캐느려"` → DELAY_REPORT confidence 0.99), B·C·D 는 재시작해야 새 코드가 실린다.
