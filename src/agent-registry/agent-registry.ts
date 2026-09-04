@@ -273,6 +273,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용)',
   },
   {
+    agentType: AgentType.DELAY_REPORT,
+    displayName: 'Delay Report',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/delay-report/application/build-delay-report.usecase.ts',
+    description:
+      '회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론)',
+  },
+  {
     agentType: AgentType.PAPER_RECOMMEND,
     displayName: 'Paper Recommend',
     slashCommands: [],
