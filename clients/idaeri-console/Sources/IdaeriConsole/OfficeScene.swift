@@ -269,15 +269,18 @@ final class OfficeScene: SKScene {
         guard plan.columns > 0, plan.rows > 0, size.width > 0, size.height > 0 else {
             return
         }
-        tileSize = min(size.width / CGFloat(plan.columns), size.height / CGFloat(plan.rows))
+        // 배율 판정은 `ConsoleCore` 순수 함수에 있다 — 창 크기를 격자로 나눈 실수값을 쓰면
+        // 비정수 배율이 되어 도트가 불규칙하게 버려진다(재정합 전 0.83~0.97배).
+        let metrics = officeViewMetrics(
+            viewWidth: Double(size.width),
+            viewHeight: Double(size.height),
+            columns: plan.columns,
+            rows: plan.rows
+        )
+        tileSize = CGFloat(metrics.tileSize)
         spriteScale = tileSize / referenceTileSize
         characterScale = spriteScale * characterScaleFactor
-        let usedWidth = tileSize * CGFloat(plan.columns)
-        let usedHeight = tileSize * CGFloat(plan.rows)
-        gridOrigin = CGPoint(
-            x: (size.width - usedWidth) / 2,
-            y: (size.height - usedHeight) / 2
-        )
+        gridOrigin = CGPoint(x: metrics.originX, y: metrics.originY)
     }
 
     /// 타일의 바닥 중앙(캐릭터 발이 닿는 지점).
