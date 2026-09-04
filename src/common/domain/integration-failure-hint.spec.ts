@@ -20,8 +20,12 @@ const notionError = (code: string): unknown => {
 };
 
 // Octokit 의 RequestError 모양 — name 이 'HttpError' 이고 status 는 숫자.
-const githubError = (status: number, headers?: Record<string, string>) => {
-  const error = new Error('Not Found');
+const githubError = (
+  status: number,
+  headers?: Record<string, string>,
+  message = 'Not Found',
+) => {
+  const error = new Error(message);
   return Object.assign(error, {
     name: 'HttpError',
     status,
@@ -80,6 +84,27 @@ describe('describeIntegrationFailure', () => {
     expect(hint).toContain('scope');
   });
 
+  // secondary rate limit 은 403 이면서 남은 호출 수가 0 이 아니다 — 남은 수만 보면
+  // 기다리면 될 일에 토큰 scope 를 고치라고 안내하게 된다.
+  it('GitHub 403 secondary limit 은 retry-after 헤더로 한도라고 답한다', () => {
+    const hint = describeIntegrationFailure(
+      githubError(403, {
+        'retry-after': '60',
+        'x-ratelimit-remaining': '4712',
+      }),
+    );
+    expect(hint).toContain('Retry-After');
+    expect(hint).not.toContain('scope');
+  });
+
+  it('GitHub 403 secondary limit 은 헤더가 없어도 본문 메시지로 알아본다', () => {
+    const hint = describeIntegrationFailure(
+      githubError(403, undefined, 'You have exceeded a secondary rate limit.'),
+    );
+    expect(hint).toContain('Retry-After');
+    expect(hint).not.toContain('scope');
+  });
+
   // 우리 DomainException 도 `status` 를 든다 — name 을 안 보면 GitHub 실패로 오인한다.
   it('status 만 같은 우리 예외는 GitHub 실패로 보지 않는다', () => {
     const ours = Object.assign(new Error('선행 산출물이 없습니다'), {
@@ -87,6 +112,13 @@ describe('describeIntegrationFailure', () => {
       status: 404,
     });
     expect(describeIntegrationFailure(ours)).toBeNull();
+  });
+
+  // `rejectRateLimitedCalls` 기본값이 false 라 이 코드는 우리 손에 닿지 않는다
+  // (`@slack/web-api` dist/WebClient.js:128 · :478-499). 닿지 않는 항목을 사전에 두면
+  // "처리했다" 는 착각만 남아서 뺐다.
+  it('Slack ratelimited 는 이 설정에서 닿지 않아 사전에 두지 않는다', () => {
+    expect(describeIntegrationFailure(slackError('ratelimited'))).toBeNull();
   });
 
   it('모르는 코드에는 아무 힌트도 붙이지 않는다', () => {
@@ -142,7 +174,6 @@ describe('차단 사유 사전과 겹치지 않는다', () => {
     ['slack invalid_auth', slackError('invalid_auth')],
     ['slack token_revoked', slackError('token_revoked')],
     ['slack account_inactive', slackError('account_inactive')],
-    ['slack ratelimited', slackError('ratelimited')],
     ['notion object_not_found', notionError('object_not_found')],
     ['notion unauthorized', notionError('unauthorized')],
     ['notion restricted_resource', notionError('restricted_resource')],

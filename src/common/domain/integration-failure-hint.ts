@@ -19,6 +19,12 @@
 //   - Notion 코드 목록: `@notionhq/client` 의 `APIErrorCode` enum (설치본 실측)
 //   - GitHub status/`RequestError`: `@octokit/request-error` 의 `status: number` (설치본 실측)
 //
+// 일부러 뺀 것 — Slack `ratelimited`. 우리 설정에서는 이 코드가 손에 닿지 않는다.
+// `WebClient` 는 `rejectRateLimitedCalls` 기본값이 false 라(설치본 `dist/WebClient.js:128`)
+// 429 를 30분간 내부 재시도하고, 그래도 안 되면 `code` 도 `data` 도 없는 평범한 Error 를
+// 던진다(같은 파일 `:478-499`). 전용 타입 `WebAPIRateLimitedError` 는 그 옵션을 켠 앱만 받는다.
+// 닿지 않는 항목을 사전에 두면 "이 경우는 처리했다" 는 착각만 남는다.
+//
 // 일부러 뺀 것 — GitHub 422. 기존 파일·브랜치 충돌, branch protection, 줄 앵커 거부가 전부
 // 같은 422 라 한 줄로 옮길 행동이 없다(`octokit-github.client.ts:1206`,
 // `github-client.port.ts:132`·`:224`). 알아보는 422 는 이미 그 자리에서 전용 문구로
@@ -39,7 +45,6 @@ const SLACK_HINTS: Readonly<Record<string, string>> = {
     '봇 토큰이 회수됐습니다 — 앱을 다시 설치하고 `SLACK_BOT_TOKEN` 을 재발급하세요.',
   account_inactive:
     '봇 계정이 비활성 상태입니다 — 워크스페이스에서 앱을 다시 설치하세요.',
-  ratelimited: 'Slack 호출 한도에 걸렸습니다 — 잠시 후 다시 시도하세요.',
 };
 
 const NOTION_HINTS: Readonly<Record<string, string>> = {
@@ -64,13 +69,14 @@ const NOTION_HINTS: Readonly<Record<string, string>> = {
 const GITHUB_HINTS: Readonly<Record<number, string>> = {
   401: 'GitHub 토큰이 유효하지 않습니다 — `GITHUB_TOKEN` 을 재발급해 `.env` 에 넣으세요.',
   404: '레포·PR 을 못 찾습니다 — 이름·번호가 맞는지, private 레포면 토큰에 `repo` scope 가 있는지 확인하세요.',
-  429: 'GitHub 호출 한도에 걸렸습니다 — 잠시 후 다시 시도하세요.',
 };
 
 const GITHUB_FORBIDDEN_PERMISSION_HINT =
   '그 작업 권한이 없습니다 — 토큰 scope(`repo`) 와 레포 접근 권한을 확인하세요.';
-const GITHUB_FORBIDDEN_RATE_LIMIT_HINT =
-  'GitHub 호출 한도를 다 썼습니다 — 한도가 리셋되면 다시 시도하세요.';
+// 두 종류의 한도가 서로 다른 헤더를 준다 — secondary limit 은 `Retry-After`,
+// primary limit 은 `x-ratelimit-reset`(리셋 시각). 없는 헤더를 보라고 하지 않으려고 둘 다 적는다.
+const GITHUB_RATE_LIMIT_HINT =
+  'GitHub 호출 한도에 걸렸습니다 — 응답 헤더의 `Retry-After`(없으면 `x-ratelimit-reset`) 까지 기다렸다 다시 시도하세요.';
 
 const readString = (source: unknown, key: string): string | null => {
   if (!source || typeof source !== 'object' || !(key in source)) {
@@ -95,20 +101,30 @@ const describeNotionFailure = (error: unknown): string | null => {
   return code === null ? null : (NOTION_HINTS[code] ?? null);
 };
 
-// 403 은 권한 부족과 한도 소진 둘 다 쓴다 — 행동이 정반대라("권한을 주세요" vs "기다리세요")
-// 응답 헤더의 남은 호출 수로 가른다. 헤더가 없으면 권한 쪽으로 답한다(한도 소진이면
-// GitHub 이 거의 항상 헤더를 준다).
+// 403 은 권한 부족과 한도 소진 둘 다 쓴다 — 행동이 정반대다("권한을 주세요" vs "기다리세요").
+// 남은 호출 수 하나로만 가르면 안 된다: GitHub 의 secondary rate limit 은 403 이면서
+// `x-ratelimit-remaining` 이 0 이 아니거나 아예 없는 응답으로도 온다. 그러면 기다리기만 하면
+// 될 일에 토큰 scope 를 뜯어고치라고 안내하게 된다.
+// 그래서 한도 쪽 신호를 셋 다 본다 — ①`retry-after` 헤더(secondary limit 이 붙여 준다)
+// ②남은 호출 수 0(primary limit) ③본문 메시지의 "rate limit"(GitHub 이 직접 그렇게 쓴다).
+// 셋 다 아니면 권한 부족으로 답한다.
+const RATE_LIMIT_MESSAGE_SIGNAL = /rate limit/i;
+
 const describeGithubForbidden = (error: unknown): string => {
+  const message = readString(error, 'message');
+  if (message !== null && RATE_LIMIT_MESSAGE_SIGNAL.test(message)) {
+    return GITHUB_RATE_LIMIT_HINT;
+  }
   const response = (error as { response?: unknown }).response;
   if (!response || typeof response !== 'object' || !('headers' in response)) {
     return GITHUB_FORBIDDEN_PERMISSION_HINT;
   }
-  const remaining = readString(
-    (response as { headers: unknown }).headers,
-    'x-ratelimit-remaining',
-  );
-  return remaining === '0'
-    ? GITHUB_FORBIDDEN_RATE_LIMIT_HINT
+  const headers = (response as { headers: unknown }).headers;
+  if (readString(headers, 'retry-after') !== null) {
+    return GITHUB_RATE_LIMIT_HINT;
+  }
+  return readString(headers, 'x-ratelimit-remaining') === '0'
+    ? GITHUB_RATE_LIMIT_HINT
     : GITHUB_FORBIDDEN_PERMISSION_HINT;
 };
 
@@ -128,6 +144,10 @@ const describeGithubFailure = (error: unknown): string | null => {
   }
   if (status === 403) {
     return describeGithubForbidden(error);
+  }
+  // 429 는 언제나 한도다 — 403 처럼 가를 것이 없다.
+  if (status === 429) {
+    return GITHUB_RATE_LIMIT_HINT;
   }
   return GITHUB_HINTS[status] ?? null;
 };
