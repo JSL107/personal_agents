@@ -108,7 +108,7 @@ export interface AddIssueLabelsInput {
 }
 
 // BE 자율 개발 Phase 2b-2 — 새 branch + single commit + PR open 1-shot.
-// 호출자 (BeSandboxPushPrApplier) 가 변경된 file 의 post-patch content 까지 다 모은 뒤 본 메소드로 전달.
+// 호출자 (DocsAuditPrApplier) 가 변경된 file 의 post-patch content 까지 다 모은 뒤 본 메소드로 전달.
 // Git Data API (createBlob → createTree → createCommit → createRef) + pulls.create chain.
 // main 직접 push 금지 — 항상 새 branch (caller 가 branchName 명시).
 export interface PushBranchAndOpenPrInput {

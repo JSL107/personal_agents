@@ -655,7 +655,7 @@ export class PublishNotionDraftUsecase {
       }
       return parsed;
     } catch (error: unknown) {
-      // 형제 parser (PM / BE / BE_DIFF / ISSUE_LABELER / WORK_REVIEWER) 와 같은 규약으로
+      // 형제 parser (PM / BE / ISSUE_LABELER / WORK_REVIEWER) 와 같은 규약으로
       // raw 응답 앞부분을 cause 에 실어 보낸다. 이게 없으면 실패 원인이 원장에도 로그에도
       // 남지 않아 (run#864) 다음 실패에서도 모델이 무엇을 돌려줬는지 알 수 없다.
       throw new BlogException({

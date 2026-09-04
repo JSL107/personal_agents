@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 155개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 151개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -103,15 +103,6 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `ANTHROPIC_API_KEY` | ❌ | CLAUDE_CODE_OAUTH_TOKEN 의 backward-compat alias — PR #71 시점에 (잘못된 가정으로) `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 호환. |
 | `CLAUDE_MODEL` | ❌ | ClaudeCliProvider 가 spawn 시 사용할 claude 모델 별칭 (예: 'opus', 'sonnet'). |
 
-## BE 자율개발
-
-| 키 | 필수 | 설명 |
-|---|---|---|
-| `BE_SANDBOX_HOST_REPO_PATH` | ❌ | BE 자율 개발 Phase 2a-3 — sandbox 안 `git apply --check` 검증 시 host 의 어느 repo 를 /repo 에 read-only 마운트할지. 미설정 시 process.cwd() (봇 자신의 작업 디렉터리) 사용. |
-| `BE_AUTONOMOUS_FROM_PLAN` | ❌ | BE 자율 개발 자동 chain — BE worker 가 BackendPlan 출력 직후 자동으로 BE_SANDBOX_APPLY preview 생성 (사용자 "응" → Claude diff + sandbox jest + PR open chain). 'true' 일 때만 활성. |
-| `BE_SANDBOX_DEFAULT_REPO_LABEL` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 repoLabel 기본값 ("owner/repo"). |
-| `BE_SANDBOX_DEFAULT_BASE_BRANCH` | ❌ | BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 baseBranch 기본값. 미설정 시 "main". |
-
 ## careerLog / Impact
 
 | 키 | 필수 | 설명 |
@@ -167,7 +158,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `DOCS_AUDIT_MAX_FILES` | ❌ | Layer2 가 점검할 최대 SoT 파일 수(codex 쿼터 가드, 기본 5). |
 | `DOCS_AUDIT_MAX_ITERATIONS` | ❌ | Layer2 자기수정 반복 캡(기본 3). |
 | `DOCS_AUDIT_PR_ENABLED` | ❌ | docs-sync-audit Phase 2 — 확정 제안 docs PR 자동 개설. |
-| `DOCS_AUDIT_PR_REPO` | ❌ | docs PR 대상 "owner/repo". 미설정 시 BE_SANDBOX_DEFAULT_REPO_LABEL → "JSL107/personal_agents". |
+| `DOCS_AUDIT_PR_REPO` | ❌ | docs PR 대상 "owner/repo". 미설정 시 "JSL107/personal_agents". |
 | `DOCS_AUDIT_PR_BASE_BRANCH` | ❌ | PR base. 미설정 시 main. |
 
 ## 블로그 / 저녁 발행
