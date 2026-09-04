@@ -485,6 +485,22 @@ describe('GenerateAssignmentUsecase', () => {
       expect(outcome.result.ctoSummary).toBe('');
     });
 
+    // 채택본을 기록에 남기지 않으면 "재생성이 효과가 있었나" 를 사후에 셀 수 없다.
+    it('첫 판을 채택한 경우 기록에도 first 로 남는다', async () => {
+      modelRouter.route.mockResolvedValue(completionOf(emptySummaryAssignment));
+
+      await usecase.execute({ slackUserId: 'U1' });
+
+      expect(updateInputSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contractRetry: {
+            firstViolations: ['missingField:ctoSummary'],
+            adopted: 'first',
+          },
+        }),
+      );
+    });
+
     it('재생성 호출이 실패해도 첫 판으로 진행한다 — 재생성은 부가 시도', async () => {
       modelRouter.route
         .mockResolvedValueOnce(completionOf(emptySummaryAssignment))
