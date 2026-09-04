@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 
 // prompt 폭증 방지 — 최근 5 turn 정도면 충분한 컨텍스트. 너무 많으면 cost + latency 폭증.
@@ -37,9 +38,8 @@ export class ConversationalReplyUsecase {
     unresolvedStreak?: number;
   }): Promise<string> {
     const systemPrompt = buildSystemPrompt({
-      repoLabel: this.configService
-        .get<string>('BE_SANDBOX_DEFAULT_REPO_LABEL')
-        ?.trim(),
+      // 이대리 자신의 레포. 대화 응답이 "우리 레포" 를 지칭할 때 쓰는 이름이라 상수로 족하다.
+      repoLabel: LEARNING_REPO,
       ownerLogin: this.configService
         .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
         ?.trim(),

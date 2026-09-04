@@ -12,8 +12,6 @@ import { ConsoleApproval, ConsoleSession } from '../domain/console.type';
 export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   PM_WRITE_BACK: AgentType.PM,
   PO_EVAL_CAREERLOG: AgentType.PO_EVAL,
-  BE_SANDBOX_APPLY: AgentType.BE,
-  BE_SANDBOX_PUSH_PR: AgentType.BE,
   CAREER_JD_GAP_BLOG: AgentType.CAREER_MATE,
   DOCS_AUDIT_PR: AgentType.DOCS_AUDIT_OPTIMIZER,
   PREFERENCE_PROFILE: AgentType.PREFERENCE_LEARNING,
