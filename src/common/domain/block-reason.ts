@@ -95,8 +95,9 @@ export const statesRecoveryAlready = (
   );
 };
 
-// errorCode 는 있으면 쓰고 없으면 문구로 떨어진다. 원장(agent_run.output.error)은 실패 이유를
-// 문자열로만 남기므로(errorCode 미보존), DELAY_REPORT 쪽 판정은 문구가 유일한 단서다.
+// errorCode 를 주면 그것만으로 판정한다. 안 주면 문구로 판정한다.
+// 원장(agent_run.output.error)은 실패 이유를 문자열로만 남기므로(errorCode 미보존),
+// DELAY_REPORT 쪽 판정은 문구가 유일한 단서다 — 그래서 문구 경로를 지우지 않는다.
 export const classifyBlockReason = (
   reason: string,
   errorCode?: string,
@@ -110,8 +111,12 @@ export const classifyBlockReason = (
   if (reason.includes(QUOTA_SIGNAL)) {
     return 'QUOTA';
   }
-  if (errorCode !== undefined && PREREQUISITE_ERROR_CODES.has(errorCode)) {
-    return 'PREREQUISITE';
+  // errorCode 가 있으면 그것이 정본이다. 목록에 없다는 건 "선행 부재가 아니다" 라는 뜻이므로
+  // 문구로 되짚지 않는다 — 모르는 실패에 아는 척하는 조치를 붙이는 쪽이 더 나쁘다.
+  // 실측: 문구 규칙에 걸리는 DomainException 5곳은 전부 이 목록에 있다. 문구로 되짚어도
+  // 더 잡히는 것은 없고, 미등록 코드가 우연히 문구와 겹칠 때 틀린 원인만 붙는다.
+  if (errorCode !== undefined) {
+    return PREREQUISITE_ERROR_CODES.has(errorCode) ? 'PREREQUISITE' : null;
   }
   if (
     reason.includes(MISSING_SIGNAL) &&

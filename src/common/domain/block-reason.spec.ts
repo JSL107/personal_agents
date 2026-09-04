@@ -147,6 +147,17 @@ describe('선행 부재 errorCode 고정', () => {
     }
   });
 
+  it('비대상 errorCode 는 문구가 규칙에 걸려도 선행 부재로 보지 않는다', () => {
+    // errorCode 가 정본이라는 것을 재려면 표본이 "문구로는 걸리는" 것이어야 한다.
+    // 문구도 안 걸리는 표본을 쓰면 어느 경로가 막았는지 알 수 없어 초록이 무의미해진다.
+    const prosePositive = PREREQUISITE_MESSAGE;
+
+    expect(classifyBlockReason(prosePositive)).toBe('PREREQUISITE');
+    expect(
+      classifyBlockReason(prosePositive, CtoErrorCode.PARSE_FAILED),
+    ).toBeNull();
+  });
+
   it('선행 부재가 아닌 errorCode 는 알아보지 않는다', () => {
     expect(
       classifyBlockReason(
