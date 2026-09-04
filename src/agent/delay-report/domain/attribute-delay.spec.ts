@@ -6,7 +6,11 @@ import {
 } from '../../../agent-run/domain/port/agent-run.repository.port';
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import { attributeDelay } from './attribute-delay';
-import { DelayReportInput } from './delay-report.type';
+import {
+  AXIS_APPROVAL,
+  AXIS_FAILED_RUN,
+  DelayReportInput,
+} from './delay-report.type';
 
 const now = new Date('2026-09-04T03:00:00.000Z');
 
@@ -104,6 +108,8 @@ describe('attributeDelay', () => {
     expect(verdict.primaryCause).toBe('UNRESOLVED_FAILURE');
     expect(verdict.detail).toContain('사용량 한도 초과');
     expect(verdict.detail).toContain('04:00 KST');
+    // `/retry-run` 은 id 가 필수라, 재시도를 안내하려면 실패 run id 가 실려야 한다.
+    expect(verdict.retryRunId).toBe(3);
   });
 
   it('실측된 GitHub 미연동 문구를 미연동 실패로 귀속하고 해결 행동을 안내한다', () => {
@@ -119,7 +125,8 @@ describe('attributeDelay', () => {
     );
 
     expect(verdict.detail).toContain('미연동');
-    expect(verdict.detail).toContain('.env에 해당 키를 설정한 뒤 재실행');
+    // 조치 문구는 formatter 가 유형(failureKind)별로 쓴다 — 여기서는 유형 판정만 확인한다.
+    expect(verdict.failureKind).toBe('INTEGRATION');
   });
 
   it('실측된 일반 설정 누락 문구도 미연동 실패로 귀속한다', () => {
@@ -133,7 +140,8 @@ describe('attributeDelay', () => {
     );
 
     expect(verdict.detail).toContain('미연동');
-    expect(verdict.detail).toContain('.env에 해당 키를 설정한 뒤 재실행');
+    // 조치 문구는 formatter 가 유형(failureKind)별로 쓴다 — 여기서는 유형 판정만 확인한다.
+    expect(verdict.failureKind).toBe('INTEGRATION');
   });
 
   it('미연동은 단독 원인이 아니고 보조 메모로만 알린다', () => {
@@ -153,6 +161,52 @@ describe('attributeDelay', () => {
       detail: '',
       secondaryNotes: [],
       unavailableAxes: [],
+      unverifiedHigherPriority: [],
+      inconclusiveNotes: [],
     });
+  });
+
+  it('선택된 원인보다 앞선 축이 확인 불가면 그 사실을 함께 싣는다', () => {
+    const verdict = attributeDelay(
+      input({
+        activeRuns: [activeRun(new Date('2026-09-04T02:57:00.000Z'))],
+        unavailableAxes: [AXIS_APPROVAL],
+      }),
+    );
+
+    expect(verdict.primaryCause).toBe('RUN_IN_PROGRESS');
+    expect(verdict.unverifiedHigherPriority).toEqual([AXIS_APPROVAL]);
+  });
+
+  it('선택된 원인보다 뒤인 축의 확인 불가는 단정을 막지 않는다', () => {
+    const verdict = attributeDelay(
+      input({
+        openPreviews: [preview()],
+        unavailableAxes: [AXIS_FAILED_RUN],
+      }),
+    );
+
+    expect(verdict.primaryCause).toBe('APPROVAL_WAIT');
+    expect(verdict.unverifiedHigherPriority).toEqual([]);
+  });
+
+  it('멈춤 의심 run은 결론을 흔드는 신호로 따로 싣는다', () => {
+    const verdict = attributeDelay(
+      input({ activeRuns: [activeRun(new Date('2026-09-04T02:00:00.000Z'))] }),
+    );
+
+    expect(verdict.primaryCause).toBe('NONE');
+    expect(verdict.inconclusiveNotes).toHaveLength(1);
+  });
+
+  it('일반 실패는 연동·쿼터가 아닌 유형으로 판정한다', () => {
+    const verdict = attributeDelay(
+      input({
+        failedRuns: [failedRun('알 수 없는 오류로 중단됐습니다.')],
+        recentlyFinished: [finishedFailure()],
+      }),
+    );
+
+    expect(verdict.failureKind).toBe('OTHER');
   });
 });

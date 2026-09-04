@@ -11,6 +11,8 @@ describe('DelayReportDispatcher', () => {
         detail: '',
         secondaryNotes: [],
         unavailableAxes: [],
+        unverifiedHigherPriority: [],
+        inconclusiveNotes: [],
       }),
     } as unknown as BuildDelayReportUsecase;
     const dispatcher = new DelayReportDispatcher(buildDelayReport);

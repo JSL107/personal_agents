@@ -11,6 +11,10 @@ import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/fi
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import { attributeDelay } from '../domain/attribute-delay';
 import {
+  AXIS_ACTIVE_RUN,
+  AXIS_APPROVAL,
+  AXIS_FAILED_RUN,
+  AXIS_FINISHED_RUN,
   DelayReportInput,
   DelayReportIntegrations,
   DelayVerdict,
@@ -67,12 +71,12 @@ export class BuildDelayReportUsecase {
       this.readOrFallback(
         () => this.agentRunService.findActiveRuns(),
         [] as ActiveRunSnapshot[],
-        '진행 중 작업',
+        AXIS_ACTIVE_RUN,
       ),
       this.readOrFallback(
         () => this.findAllOpenPreviews.execute({ now }),
         [] as PreviewAction[],
-        '승인 대기 카드',
+        AXIS_APPROVAL,
       ),
       this.readOrFallback(
         () =>
@@ -80,7 +84,7 @@ export class BuildDelayReportUsecase {
             withinMinutes: WINDOW_MINUTES,
           }),
         [] as FailedRunDetail[],
-        '최근 실패',
+        AXIS_FAILED_RUN,
       ),
       this.readOrFallback(
         () =>
@@ -88,7 +92,7 @@ export class BuildDelayReportUsecase {
             withinMinutes: WINDOW_MINUTES,
           }),
         [] as RecentlyFinishedRun[],
-        '최근 종료 상태',
+        AXIS_FINISHED_RUN,
       ),
     ]);
     const unavailableAxes = [
