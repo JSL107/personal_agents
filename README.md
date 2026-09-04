@@ -34,7 +34,7 @@ GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 �
 | 🔁 **자기 학습** | PR 리뷰의 채택/기각을 수확해 다음 리뷰 프롬프트에 되먹인다 |
 | 🛡️ **승인 게이트** | 외부 시스템 쓰기는 항상 Slack ✅/❌ 확인 후 실행 |
 
-> 자동화 규칙 [AGENTS.md](./AGENTS.md) · 코드 컨벤션 [CODE_RULES.md](./CODE_RULES.md)
+> 자동화 규칙 [AGENTS.md](./AGENTS.md) · 코드 컨벤션 [CODE_RULES.md](./CODE_RULES.md) · 한국어 기술 블로그 채점표 [docs/korean-it-tech-blog-scorecard.md](./docs/korean-it-tech-blog-scorecard.md)
 
 ---
 
