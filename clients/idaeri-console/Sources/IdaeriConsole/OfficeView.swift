@@ -163,6 +163,24 @@ struct OfficeView: View {
                 idleBar
             }
         }
+        // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
+        // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
+        .sheet(isPresented: $showAnswerSheet) {
+            ScrollView {
+                Text(selectedAnswer)
+                    .font(Typography.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Spacing.xl)
+            }
+            .frame(minWidth: Layout.sheetMinWidth, minHeight: 260)
+        }
+        .sheet(item: $selectedApproval) { approval in
+            ApprovalDetailSheet(
+                approval: approval,
+                onApprove: { onApprove($0); selectedApproval = nil },
+                onReject: { onReject($0); selectedApproval = nil }
+            )
+        }
     }
 
     @ViewBuilder
@@ -308,22 +326,6 @@ struct OfficeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .sheet(isPresented: $showAnswerSheet) {
-            ScrollView {
-                Text(selectedAnswer)
-                    .font(Typography.body)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.xl)
-            }
-            .frame(minWidth: Layout.sheetMinWidth, minHeight: 260)
-        }
-        .sheet(item: $selectedApproval) { approval in
-            ApprovalDetailSheet(
-                approval: approval,
-                onApprove: { onApprove($0); selectedApproval = nil },
-                onReject: { onReject($0); selectedApproval = nil }
-            )
-        }
     }
 
     private func sendToPresident() {
