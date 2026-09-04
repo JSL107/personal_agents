@@ -40,6 +40,23 @@ const PREREQUISITE_ACTION_SIGNALS: readonly RegExp[] = [
   /`\/[a-z][a-z0-9-]*`/,
 ];
 
+// 선행 부재를 뜻하는 errorCode. 문구는 사람이 고쳐 쓰지만 errorCode 는 계약이라 판정이 안 흔들린다.
+// 문자열 매칭을 두 번 넓히고도 계속 샜다 — `직전 PM run 이 N시간 전 — \`/today\` 로 …`
+// (CTO STALE_PM_RUN) 에는 `없` 이 아예 없고, `최신 plan이 없어 … 건너뜁니다`
+// (PO_SHADOW STALE_PLAN) 에는 실행 지시가 없다. 둘 다 두 조각 AND 를 비껴간다.
+//
+// enum 을 여기서 import 하지 않는다 — `common` 이 `agent` 를 의존하면 방향이 거꾸로다.
+// 대신 spec 이 실제 enum 값과 대조해 고정하므로, 값이 바뀌면 테스트가 먼저 깨진다.
+const PREREQUISITE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'NO_RECENT_PM_RUN', // CtoErrorCode.NO_RECENT_PM_RUN
+  'STALE_PM_RUN', // CtoErrorCode.STALE_PM_RUN
+  'PM_AGENT_NO_RECENT_PLAN', // PmAgentErrorCode.NO_RECENT_PLAN
+  'PO_SHADOW_NO_RECENT_PLAN', // PoShadowErrorCode.NO_RECENT_PLAN
+  'PO_SHADOW_STALE_PLAN', // PoShadowErrorCode.STALE_PLAN
+  'NO_PO_EVAL_RUN', // CeoErrorCode.NO_PO_EVAL_RUN
+  'NO_SUB_AGENT_RUNS', // PoEvalErrorCode.NO_SUB_AGENT_RUNS
+]);
+
 export const BLOCK_REASON_PHRASES: Readonly<
   Record<BlockReasonKind, BlockReasonPhrase>
 > = {
@@ -59,9 +76,11 @@ export const BLOCK_REASON_PHRASES: Readonly<
   PREREQUISITE: {
     noFabrication: '선행 산출물 없이 내용을 지어내지 않습니다.',
     recovery: '선행 작업을 먼저 실행하면 이어서 진행됩니다.',
-    // 판정 신호 자체가 실행 지시라 사실상 늘 여기 걸린다. recovery 는 신호가 실행 지시를
-    // 담지 않는 문구까지 넓어질 때를 위한 기본값이다.
-    recoveryStatedSignals: ['먼저', '실행'],
+    // 선행 부재의 ③은 "무엇을 실행해라" 다. `실행` 만 보면 `직전 PM 실행이 없습니다` 처럼
+    // 지시가 아닌 문장까지 걸리므로, 지시 어미가 붙은 형태만 센다.
+    // errorCode 로 잡히는 문구 중 `최신 plan이 없어 … 건너뜁니다` 는 지시가 아예 없어
+    // 여기 안 걸린다 — 그때 사전의 ③이 제 몫을 한다.
+    recoveryStatedSignals: ['먼저', '실행해', '실행 후', '다시 시도'],
   },
 };
 
@@ -76,7 +95,13 @@ export const statesRecoveryAlready = (
   );
 };
 
-export const classifyBlockReason = (reason: string): BlockReasonKind | null => {
+// errorCode 를 주면 그것만으로 판정한다. 안 주면 문구로 판정한다.
+// 원장(agent_run.output.error)은 실패 이유를 문자열로만 남기므로(errorCode 미보존),
+// DELAY_REPORT 쪽 판정은 문구가 유일한 단서다 — 그래서 문구 경로를 지우지 않는다.
+export const classifyBlockReason = (
+  reason: string,
+  errorCode?: string,
+): BlockReasonKind | null => {
   if (
     reason.includes(CONFIGURATION_MISSING_SIGNAL) &&
     reason.includes(ENV_SIGNAL)
@@ -85,6 +110,13 @@ export const classifyBlockReason = (reason: string): BlockReasonKind | null => {
   }
   if (reason.includes(QUOTA_SIGNAL)) {
     return 'QUOTA';
+  }
+  // errorCode 가 있으면 그것이 정본이다. 목록에 없다는 건 "선행 부재가 아니다" 라는 뜻이므로
+  // 문구로 되짚지 않는다 — 모르는 실패에 아는 척하는 조치를 붙이는 쪽이 더 나쁘다.
+  // 실측: 문구 규칙에 걸리는 DomainException 5곳은 전부 이 목록에 있다. 문구로 되짚어도
+  // 더 잡히는 것은 없고, 미등록 코드가 우연히 문구와 겹칠 때 틀린 원인만 붙는다.
+  if (errorCode !== undefined) {
+    return PREREQUISITE_ERROR_CODES.has(errorCode) ? 'PREREQUISITE' : null;
   }
   if (
     reason.includes(MISSING_SIGNAL) &&
@@ -97,8 +129,11 @@ export const classifyBlockReason = (reason: string): BlockReasonKind | null => {
 
 // ①만 있는 기존 문구에 빠진 조각을 채운다. 부류를 못 알아보면 원문 그대로 돌려준다 —
 // 모르는 실패에 아는 척하는 조치를 붙이는 쪽이 더 나쁘다.
-export const appendBlockReasonGuidance = (reason: string): string => {
-  const kind = classifyBlockReason(reason);
+export const appendBlockReasonGuidance = (
+  reason: string,
+  errorCode?: string,
+): string => {
+  const kind = classifyBlockReason(reason, errorCode);
   if (kind === null) {
     return reason;
   }

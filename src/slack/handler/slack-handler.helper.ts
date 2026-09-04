@@ -22,9 +22,11 @@ const toSlackText = (formatted: FormattedReport | string): string => {
 // 도메인 message 는 "왜 안 됐는지" 만 말하고 "그래서 뭘 하면 되는지" 와 "없는 값을 지어내지
 // 않는다" 를 빠뜨리는 경우가 많다. 슬래시·버튼 실패 카드가 전부 이 한 지점을 지나므로
 // (25곳 이상 호출) 여기서 한 번만 채운다. 알아보지 못한 실패는 원문 그대로 둔다.
+// errorCode 를 함께 넘긴다 — 문구는 사람이 고쳐 쓰지만 errorCode 는 계약이라, 같은 사정을
+// 달리 쓴 문구까지 흔들림 없이 잡힌다.
 export const toUserFacingErrorMessage = (error: unknown): string => {
   if (error instanceof DomainException) {
-    return appendBlockReasonGuidance(error.message);
+    return appendBlockReasonGuidance(error.message, error.errorCode);
   }
   return '내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 };
