@@ -25,6 +25,9 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 // 앞 버전의 추천과 한 칸에 모으면 이 재편을 성적 변화로 읽게 된다.
 export const SCREENER_RULE_VERSION = 4;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
+export type RankingWeights = readonly [number, number, number];
+export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
+export const DEFAULT_RANKING_WEIGHTS: RankingWeights = [1, 1, 1];
 
 export interface ScreenCandidate {
   tickerId: number;
@@ -50,15 +53,31 @@ interface RankingMaterial {
   descending: boolean;
 }
 
+// 재료는 정확히 셋이다. 배열로 두면 재료를 넷으로 늘렸을 때 `rankingWeights[3]` 이
+// undefined 가 되어 순위합이 통째로 NaN 이 되는데, NaN 은 정렬 비교가 전부 false 라
+// 점수가 조용히 무너진다. 튜플로 고정하면 그 변경이 컴파일 단계에서 막힌다 —
+// 재료를 늘리려면 `RankingWeights` 도 함께 늘려야 한다는 사실이 타입으로 강제된다.
+type RankingMaterials = readonly [
+  RankingMaterial,
+  RankingMaterial,
+  RankingMaterial,
+];
+
 const passesLongTerm = (candidate: ScreenCandidate): boolean => {
   const { close, ma120, isAligned } = candidate.indicators;
   return ma120 !== null && isAligned === true && close > ma120;
 };
 
-const passesSwing = (candidate: ScreenCandidate): boolean => {
+const passesSwing = (
+  candidate: ScreenCandidate,
+  volumeSurgeMinimum: number,
+): boolean => {
   const { close, ma20, volumeSurge } = candidate.indicators;
   return (
-    ma20 !== null && close > ma20 && volumeSurge !== null && volumeSurge >= 1.5
+    ma20 !== null &&
+    close > ma20 &&
+    volumeSurge !== null &&
+    volumeSurge >= volumeSurgeMinimum
   );
 };
 
@@ -75,7 +94,7 @@ const withinDailyGainCap = (
   return return1d <= maximumDailyGainPercent;
 };
 
-const materialsByStrategy: Record<ScreenStrategy, RankingMaterial[]> = {
+const materialsByStrategy: Record<ScreenStrategy, RankingMaterials> = {
   LONG_TERM: [
     { select: (candidate) => candidate.indicators.return6m, descending: true },
     {
@@ -123,6 +142,23 @@ const rankCandidates = (
   return new Map(sorted.map((candidate, index) => [candidate.code, index + 1]));
 };
 
+const validateRankingWeights = (rankingWeights: RankingWeights): number => {
+  if (
+    rankingWeights.length !== 3 ||
+    rankingWeights.some((weight) => !Number.isFinite(weight) || weight < 0)
+  ) {
+    throw new Error('순위 가중치는 유한한 0 이상 수 3개여야 합니다.');
+  }
+  const totalWeight = rankingWeights.reduce((sum, weight) => sum + weight, 0);
+  // 성분이 각각 유한해도 합은 넘칠 수 있다(`[Number.MAX_VALUE, MAX_VALUE, 0]`).
+  // 그 합으로 점수를 내면 분자·분모가 함께 Infinity 가 되어 NaN 이 나오는데,
+  // 그것은 예외가 아니라 조용히 틀린 순위로 남는다.
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    throw new Error('순위 가중치의 합은 0보다 큰 유한수여야 합니다.');
+  }
+  return totalWeight;
+};
+
 export const screenStocks = (
   candidates: ScreenCandidate[],
   strategy: ScreenStrategy,
@@ -131,7 +167,10 @@ export const screenStocks = (
   // 기본값이 운영 규칙이므로 기존 호출부는 그대로 둔다.
   minimumTurnover60: number = MINIMUM_TURNOVER60,
   maximumDailyGainPercent: number = DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  volumeSurgeMinimum: number = SWING_VOLUME_SURGE_MINIMUM,
+  rankingWeights: RankingWeights = DEFAULT_RANKING_WEIGHTS,
 ): ScreenedStock[] => {
+  const totalWeight = validateRankingWeights(rankingWeights);
   const passed = candidates.filter(
     (candidate) =>
       candidate.indicators.turnover60 !== null &&
@@ -139,7 +178,7 @@ export const screenStocks = (
       withinDailyGainCap(candidate, maximumDailyGainPercent) &&
       (strategy === 'LONG_TERM'
         ? passesLongTerm(candidate)
-        : passesSwing(candidate)),
+        : passesSwing(candidate, volumeSurgeMinimum)),
   );
   if (passed.length === 0) {
     return [];
@@ -151,13 +190,16 @@ export const screenStocks = (
   const candidateCount = passed.length;
   const stocks = passed.map((candidate) => {
     const rankSum = rankingMaps.reduce(
-      (sum, ranks) => sum + (ranks.get(candidate.code) as number),
+      (sum, ranks, index) =>
+        sum + rankingWeights[index] * (ranks.get(candidate.code) as number),
       0,
     );
     const rawScore =
       candidateCount === 1
         ? 100
-        : ((3 * candidateCount - rankSum) / (3 * candidateCount - 3)) * 100;
+        : ((totalWeight * candidateCount - rankSum) /
+            (totalWeight * candidateCount - totalWeight)) *
+          100;
     return {
       ...candidate,
       score: Math.round(rawScore * 100) / 100,

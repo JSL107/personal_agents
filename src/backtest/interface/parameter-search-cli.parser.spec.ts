@@ -26,6 +26,8 @@ describe('parseParameterSearchCliArguments', () => {
     expect(options.stopLossPercents).toBeUndefined();
     expect(options.minimumTurnover60s).toBeUndefined();
     expect(options.maximumWeightPercents).toBeUndefined();
+    expect(options.volumeSurgeMinimums).toBeUndefined();
+    expect(options.rankingWeights).toBeUndefined();
   });
 
   it('쉼표로 이어 붙인 후보를 목록으로 읽는다', () => {
@@ -38,6 +40,27 @@ describe('parseParameterSearchCliArguments', () => {
     expect(options.takeProfitPercents).toEqual([2, 5, 10]);
     expect(options.stopLossPercents).toEqual([-0.2, -5]);
     expect(options.maximumWeightPercents).toEqual([15, 20]);
+  });
+
+  it('새 검색 축을 목록으로 읽는다', () => {
+    const options = parseParameterSearchCliArguments(
+      argv(`${REQUIRED} --volume-surge-min 1,1.5,2 --rank-weights 1:1:1,0:1:1`),
+    );
+    expect(options.volumeSurgeMinimums).toEqual([1, 1.5, 2]);
+    expect(options.rankingWeights).toEqual([
+      [1, 1, 1],
+      [0, 1, 1],
+    ]);
+  });
+
+  it('순위 가중치 조합은 세 성분·유효한 합을 요구한다', () => {
+    for (const value of ['1:1', '-1:1:1', '1::1', '0:0:0']) {
+      expect(() =>
+        parseParameterSearchCliArguments(
+          argv(`${REQUIRED} --rank-weights ${value}`),
+        ),
+      ).toThrow('--rank-weights');
+    }
   });
 
   it('익절은 양수·손절은 음수만 받는다', () => {

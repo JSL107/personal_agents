@@ -18,6 +18,8 @@ const BASELINE: ParameterCombination = {
   stopLossPercent: -5,
   minimumTurnover60: 5e8,
   maximumWeightPercent: 20,
+  volumeSurgeMinimum: 1.5,
+  rankingWeights: [1, 1, 1],
 };
 
 const outcomeOf = (
@@ -122,6 +124,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3, -5],
       minimumTurnover60s: [3e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -129,10 +133,36 @@ describe('buildParameterGrid', () => {
     // 밴드 2x2 에 격자 밖 현행값(거래대금 5억)이 하나 더 붙는다.
     expect(grid).toHaveLength(5);
     expect(grid.slice(1).map(formatCombinationLabel)).toEqual([
-      '+5/-3 · 3억 · 20%',
-      '+5/-5 · 3억 · 20%',
-      '+10/-3 · 3억 · 20%',
-      '+10/-5 · 3억 · 20%',
+      '+5/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+5/-5 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-5 · 3억 · 20% · 급증1.5 · 가중1:1:1',
+    ]);
+  });
+
+  it('새 두 축도 전수 조합에 들어가고 현행 조합은 한 번만 나온다', () => {
+    const grid = buildParameterGrid({
+      takeProfitPercents: [10],
+      stopLossPercents: [-5],
+      minimumTurnover60s: [5e8],
+      maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5, 2],
+      rankingWeights: [
+        [1, 1, 1],
+        [0, 1, 1],
+      ],
+      includeBandless: false,
+      baseline: BASELINE,
+    });
+
+    // 급증 2 x 가중 2 = 4 조합. 그중 (1.5, 1:1:1) 은 현행값과 같아 강제 삽입분과
+    // 겹치는데, 키가 값 전체라 중복 제거가 그것을 한 번으로 접는다.
+    expect(grid).toHaveLength(4);
+    expect(grid.map(formatCombinationLabel)).toEqual([
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중0:1:1',
+      '+10/-5 · 5억 · 20% · 급증2 · 가중1:1:1',
+      '+10/-5 · 5억 · 20% · 급증2 · 가중0:1:1',
     ]);
   });
 
@@ -143,13 +173,15 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3],
       minimumTurnover60s: [3e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
 
     expect(grid.map(formatCombinationLabel)).toEqual([
-      '+10/-5 · 5억 · 20%',
-      '+5/-3 · 3억 · 20%',
+      '+10/-5 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+      '+5/-3 · 3억 · 20% · 급증1.5 · 가중1:1:1',
     ]);
   });
 
@@ -159,6 +191,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-5],
       minimumTurnover60s: [5e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -174,6 +208,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-5],
       minimumTurnover60s: [300_100_000, 300_200_000],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: false,
       baseline: BASELINE,
     });
@@ -191,6 +227,8 @@ describe('buildParameterGrid', () => {
       stopLossPercents: [-3, -5],
       minimumTurnover60s: [5e8],
       maximumWeightPercents: [20],
+      volumeSurgeMinimums: [1.5],
+      rankingWeights: [[1, 1, 1]],
       includeBandless: true,
       baseline: BASELINE,
     });
@@ -198,7 +236,9 @@ describe('buildParameterGrid', () => {
     expect(
       grid.filter((combination) => combination.takeProfitPercent === null),
     ).toHaveLength(1);
-    expect(grid.map(formatCombinationLabel)).toContain('무밴드 · 5억 · 20%');
+    expect(grid.map(formatCombinationLabel)).toContain(
+      '무밴드 · 5억 · 20% · 급증1.5 · 가중1:1:1',
+    );
   });
 });
 

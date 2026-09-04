@@ -1,6 +1,11 @@
 import { VolatilityEstimator } from '../../market-data/domain/stock-indicator';
 import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
-import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../../screener/domain/screener-rule';
+import {
+  DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  DEFAULT_RANKING_WEIGHTS,
+  RankingWeights,
+  SWING_VOLUME_SURGE_MINIMUM,
+} from '../../screener/domain/screener-rule';
 import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
 
 export const BACKTEST_CLI_USAGE =
@@ -8,6 +13,7 @@ export const BACKTEST_CLI_USAGE =
   '  pnpm backtest --strategy LONG_TERM|SWING --from YYYY-MM-DD --to YYYY-MM-DD\n' +
   '                [--seed <금액>] [--turnover-min <거래대금>] [--max-positions <종목수>]\n' +
   '                [--max-daily-gain <당일상승률상한%, 미지정이면 상한 없음>]\n' +
+  '                [--volume-surge-min <거래량 급증 배수, 기본 1.5>] [--rank-weights a:b:c]\n' +
   '                [--weight <비중퍼센트>] [--hold <보유거래일수>]\n' +
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]\n' +
@@ -71,6 +77,28 @@ const readPositiveNumber = (
   key: string,
   fallback: number,
 ): number => readOptionalPositiveNumber(argv, key) ?? fallback;
+
+const readRankingWeights = (argv: string[]): RankingWeights => {
+  const raw = readOption(argv, 'rank-weights');
+  if (raw === undefined) {
+    return DEFAULT_RANKING_WEIGHTS;
+  }
+  // 성분을 먼저 다듬고 나서 빈 것을 거른다. `Number(' ')` 은 0 이라, 공백만 있는 성분을
+  // 그냥 두면 `1: :1` 이 "가운데 재료를 빼라(0)" 는 뜻으로 조용히 통과한다.
+  const parts = raw.split(':').map((part) => part.trim());
+  const values = parts.map((part) => Number(part));
+  if (
+    parts.length !== 3 ||
+    parts.some((part) => part === '') ||
+    values.some((value) => !Number.isFinite(value) || value < 0) ||
+    values.reduce((sum, value) => sum + value, 0) <= 0
+  ) {
+    throw new Error(
+      `--rank-weights 는 0 이상 유한수 3개를 콜론으로 구분하고 합이 0보다 커야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return values as unknown as RankingWeights;
+};
 
 const readDate = (argv: string[], key: string): string => {
   const value = readOption(argv, key);
@@ -218,6 +246,12 @@ export const parseBacktestCliArguments = (
       'max-daily-gain',
       DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
     ),
+    volumeSurgeMinimum: readPositiveNumber(
+      argv,
+      'volume-surge-min',
+      SWING_VOLUME_SURGE_MINIMUM,
+    ),
+    rankingWeights: readRankingWeights(argv),
     maximumPositions: readPositiveNumber(
       argv,
       'max-positions',

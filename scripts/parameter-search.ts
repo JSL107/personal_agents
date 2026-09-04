@@ -30,7 +30,11 @@ import {
   parseParameterSearchCliArguments,
 } from '../src/backtest/interface/parameter-search-cli.parser';
 import { PrismaModule } from '../src/prisma/prisma.module';
-import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../src/screener/domain/screener-rule';
+import {
+  DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  DEFAULT_RANKING_WEIGHTS,
+  SWING_VOLUME_SURGE_MINIMUM,
+} from '../src/screener/domain/screener-rule';
 import { ResolveStrategyParametersUsecase } from '../src/strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { StrategyParameterModule } from '../src/strategy-parameter/strategy-parameter.module';
 
@@ -79,6 +83,15 @@ const buildStrategyPlans = async (
   resolve: ResolveStrategyParametersUsecase,
 ): Promise<StrategyPlan[]> => {
   const plans: StrategyPlan[] = [];
+  // 접었다는 사실을 알린다 — 준 값이 조용히 사라지면 사용자는 그 축을 재 봤다고 읽는다.
+  if (
+    options.volumeSurgeMinimums !== undefined &&
+    options.strategies.includes('LONG_TERM')
+  ) {
+    console.error(
+      '알림: --volume-surge-min 은 SWING 필터 전용이라 LONG_TERM 격자에서는 현행값 하나로 접었다.',
+    );
+  }
   for (const strategy of options.strategies) {
     const active = await resolve.execute(strategy);
     const baseline: ParameterCombination = {
@@ -86,6 +99,8 @@ const buildStrategyPlans = async (
       stopLossPercent: active.exitBand.stopLossPercent,
       minimumTurnover60: active.minimumTurnover60,
       maximumWeightPercent: active.maximumWeightPercent,
+      volumeSurgeMinimum: SWING_VOLUME_SURGE_MINIMUM,
+      rankingWeights: DEFAULT_RANKING_WEIGHTS,
     };
     for (const slippagePercent of options.slippagePercents) {
       plans.push({
@@ -107,6 +122,15 @@ const buildStrategyPlans = async (
           maximumWeightPercents: options.maximumWeightPercents ?? [
             baseline.maximumWeightPercent,
           ],
+          // 거래량 급증 문턱은 `passesSwing` 에만 걸린다(screener-rule.ts 의 SWING 분기).
+          // LONG_TERM 격자에 이 축을 펼치면 라벨만 다르고 성적이 똑같은 조합이 여러 개
+          // 생기고, 동률 정렬이 그중 하나를 라벨 순서로 집어 **현행값과 같은 성적을
+          // 패배로 기록**한다. 그 전략에서는 축을 접는다.
+          volumeSurgeMinimums:
+            strategy === 'SWING'
+              ? (options.volumeSurgeMinimums ?? [baseline.volumeSurgeMinimum])
+              : [baseline.volumeSurgeMinimum],
+          rankingWeights: options.rankingWeights ?? [baseline.rankingWeights],
           includeBandless: options.includeBandless,
           baseline,
         }),
@@ -185,6 +209,8 @@ const main = async (): Promise<void> => {
               seedAmount: BACKTEST_DEFAULTS.seedAmount,
               minimumTurnover60: combination.minimumTurnover60,
               maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+              volumeSurgeMinimum: combination.volumeSurgeMinimum,
+              rankingWeights: combination.rankingWeights,
               maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
               weightPercent: combination.maximumWeightPercent,
               holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[plan.strategy],
