@@ -15,4 +15,19 @@ describe('buildBlogPrompt', () => {
     expect(prompt).not.toContain('Slack');
     expect(prompt).not.toContain('notify_slack');
   });
+
+  it('통합 채점표의 흐름·근거·자연스러움 기준을 생성 프롬프트에 적용한다', () => {
+    const prompt = buildBlogPrompt('루프 엔지니어링 글을 써줘');
+
+    for (const rule of [
+      '문제→접근→결과→교훈',
+      '공식·1차 출처',
+      '문장의 호흡을 무조건 짧게 만들지 않는다',
+      '임의로 줄바꿈하지 않는다',
+      '마침표만 붙여 나열하지 않는다',
+      '실험·체크리스트·후속 읽을거리',
+    ]) {
+      expect(prompt).toContain(rule);
+    }
+  });
 });
