@@ -2,6 +2,7 @@ import {
   REPO_SOURCE_LABEL,
   RepoSource,
 } from '../../../../common/util/repo-source.util';
+import { KOREAN_BLOG_SCORECARD_PROMPT } from './korean-blog-scorecard.prompt';
 
 export interface EveningPrInput {
   repo: string;
@@ -133,6 +134,7 @@ export const buildEveningRetroPrompt = (input: {
 
 export const EVENING_BLOG_BODY_SYSTEM_PROMPT = [
   '당신은 개발 블로그를 쓰는 시니어 엔지니어다. 주어진 작업을 한국어 기술 블로그 초안으로 작성한다.',
+  KOREAN_BLOG_SCORECARD_PROMPT,
   '과장 없이, 문제→접근→결과 흐름으로. 마크다운(## 소제목, 본문 단락) 형식.',
   '제목이 아니라 아래 근거 PR 의 실제 변경 내용(문제→접근→결과)을 바탕으로 구체적으로 작성한다. 근거에 없는 사실은 지어내지 않는다.',
 ].join('\n');
