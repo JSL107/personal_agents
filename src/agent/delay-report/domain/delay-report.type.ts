@@ -3,6 +3,7 @@ import {
   FailedRunDetail,
   RecentlyFinishedRun,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { BlockReasonKind } from '../../../common/domain/block-reason';
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 
 // 조회 축 이름. 수집(usecase)과 우선순위 판정(attribute-delay)이 같은 문자열을 봐야 하므로
@@ -34,8 +35,9 @@ export type DelayCause =
   | 'NONE';
 
 // 실패의 성격. 조치 문구가 유형마다 다르므로(연동은 .env, 쿼터는 리셋 대기, 그 밖은 일반 재시도)
-// 문구를 만드는 쪽이 아니라 판정하는 쪽이 정한다.
-export type FailureKind = 'INTEGRATION' | 'QUOTA' | 'OTHER';
+// 문구를 만드는 쪽이 아니라 판정하는 쪽이 정한다. 부류와 문구는 BLOCK_REASON 사전이 정본이고,
+// 'OTHER' 는 사전이 못 알아본 실패 — 아는 척하는 조치 대신 일반 재시도만 안내한다.
+export type FailureKind = BlockReasonKind | 'OTHER';
 
 export interface DelayVerdict {
   primaryCause: DelayCause;

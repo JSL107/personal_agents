@@ -3,6 +3,7 @@ import { RespondFn } from '@slack/bolt';
 
 import { PmAgentException } from '../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../agent/pm/domain/pm-agent-error-code.enum';
+import { BLOCK_REASON_PHRASES } from '../../common/domain/block-reason';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import {
   runAgentCommand,
@@ -20,6 +21,21 @@ describe('toUserFacingErrorMessage', () => {
     expect(toUserFacingErrorMessage(error)).toBe(
       '오늘 자동 수집된 할 일이 없습니다',
     );
+  });
+
+  it('차단 사유를 알아본 도메인 예외에는 빠진 선언·해결 행동을 채운다', () => {
+    const error = new PmAgentException({
+      message:
+        'GITHUB_TOKEN 이 .env 에 설정되지 않아 GitHub API 를 호출할 수 없습니다.',
+      code: PmAgentErrorCode.EMPTY_TASKS_INPUT,
+      status: DomainStatus.NOT_FOUND,
+    });
+
+    const message = toUserFacingErrorMessage(error);
+
+    expect(message).toContain('GITHUB_TOKEN');
+    expect(message).toContain(BLOCK_REASON_PHRASES.INTEGRATION.noFabrication);
+    expect(message).toContain(BLOCK_REASON_PHRASES.INTEGRATION.recovery);
   });
 
   it('일반 Error 는 generic 메시지로 가린다 (Prisma/네트워크/내부 stack leak 차단)', () => {

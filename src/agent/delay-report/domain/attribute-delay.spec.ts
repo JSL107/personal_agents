@@ -144,6 +144,22 @@ describe('attributeDelay', () => {
     expect(verdict.failureKind).toBe('INTEGRATION');
   });
 
+  it('실측된 선행 산출물 부재 문구를 선행 부재 실패로 귀속한다', () => {
+    const verdict = attributeDelay(
+      input({
+        failedRuns: [
+          failedRun(
+            '직전 PM run 이 없습니다. `/today` 먼저 실행해 plan 을 만든 뒤 다시 시도해주세요.',
+          ),
+        ],
+        recentlyFinished: [finishedFailure()],
+      }),
+    );
+
+    expect(verdict.detail).toContain('선행 산출물 부재');
+    expect(verdict.failureKind).toBe('PREREQUISITE');
+  });
+
   it('미연동은 단독 원인이 아니고 보조 메모로만 알린다', () => {
     const verdict = attributeDelay(
       input({
