@@ -1543,6 +1543,7 @@ final class OfficeScene: SKScene {
         walk(node, to: spot.tile) { [weak self, weak node] in
             node?.apply(facing: spot.facing)
             node?.beginInteraction(pose: spot.pose, facing: spot.facing)
+            self?.speakOnArrival(agentType, spot: spot)
             node?.run(.sequence([
                 .wait(forDuration: spot.dwellSeconds),
                 .run { [weak self, weak node] in
@@ -1551,6 +1552,178 @@ final class OfficeScene: SKScene {
                 },
             ]), withKey: "stroll")
         }
+    }
+
+    /// 배회 목적지에 도착한 사람의 한 마디. 근처에 멈춰 선 다른 배회자가 있으면 두 마디를 주고받는다.
+    ///
+    /// 상대를 **매번 다시 센다.** 걸음을 끊고 자리로 순간이동시키는 경로가 여럿이라
+    /// (`sync`·`cancelStroll`) 짝을 들고 있으면 그중 하나가 정리를 빠뜨렸을 때 화면 반대편
+    /// 사람과 대화가 이어진다 — `refreshDoors` 가 문 앞 사람을 매번 다시 세는 것과 같은 이유다.
+    ///
+    /// 좌석에 앉은 사람은 상대로 쓰지 않는다. 좌석이 서른 개라 목적지 어디든 옆에 누군가
+    /// 앉아 있어서, 도착할 때마다 대화가 붙어 사무실이 수다판이 된다. 걷는 중인 사람도 뺀다 —
+    /// 지나가는 중인 좌표로 짝이 맺히면 답할 때는 이미 그 자리에 없다.
+    ///
+    /// 반환값은 대화 상대(없으면 nil) — 확인용 렌더가 어느 말풍선이 대화인지 로그로 남긴다.
+    @discardableResult
+    private func speakOnArrival(
+        _ agentType: String,
+        spot: OfficeStrollSpot,
+        replyDelay: Double = officeChatterReplyDelaySeconds
+    ) -> String? {
+        // **정말 도착했는지 좌표로 확인한다.** `walk` 은 경로를 못 찾으면 걸음을 접고 콜백을
+        // 그대로 부르므로(§`walk` 의 `path.isEmpty`), 자기 책상에 앉은 채 "커피 한 잔" 이라고
+        // 말하는 그림이 나온다 — 목적지 앞 동작만 제자리에서 재생되던 것과 같은 경로다.
+        // 걸음이 실패했으면 연출도 실패한 것이니 아무 말도 하지 않는다.
+        guard let node = characters[agentType], node.tile == spot.tile else {
+            return nil
+        }
+        let round = strollRound
+        var stopped: [(agentType: String, tile: TilePoint)] = []
+        for other in strollingAgents where other != agentType {
+            guard let otherNode = characters[other], !otherNode.isWalking else {
+                continue
+            }
+            stopped.append((agentType: other, tile: otherNode.tile))
+        }
+        guard let partner = officeChatterPartner(arrivedAt: node.tile, others: stopped) else {
+            showBubble(
+                agentType,
+                text: officeChatter(
+                    kind: spot.kind,
+                    department: node.department,
+                    agentType: agentType,
+                    round: round
+                )
+            )
+            return nil
+        }
+        let exchange = officeChatterExchange(
+            round: round, seed: officeChatterSeed(agentType: agentType, round: round)
+        )
+        // 먼저 띄운 말은 취소되어도 2.5초를 채우고 사라진다. 취소 시점에 임시 말풍선을 함께
+        // 지우면 같은 자리를 쓰는 run 종료 문구·거절 `!` 까지 지워, 연출을 정리하려다 관제
+        // 정보를 없앤다. 사람과 함께 움직이는 두 초는 그대로 두는 편이 싸다.
+        showBubble(agentType, text: exchange.opener)
+        // 정지 렌더는 프레임을 돌리지 않아 지연 액션이 영영 깨어나지 않는다 — 답을 확인해야
+        // 하는 그 경로에서만 지연을 끄고 곧바로 띄운다.
+        guard replyDelay > 0 else {
+            showBubble(partner, text: exchange.reply)
+            return partner
+        }
+        // 답이 뜰 때까지 상대가 **아직 옆에 있는지 거리로 다시 잰다.**
+        //
+        // "걷는 중이 아니다" 로는 부족하다 — 머무름이 끝나 자기 좌석까지 걸어가 앉아 버리면
+        // 걸음이 이미 끝났으므로 그 조건을 통과하고, 답이 화면 반대편 좌석에서 뜬다. 승인 줄로
+        // 불려 가거나 일이 들어와 자리로 돌아간 경로도 마찬가지다. 막으려는 것이 "멀어졌다"
+        // 이므로 그것을 직접 재는 편이 사각지대를 남기지 않는다.
+        run(
+            .sequence([
+                .wait(forDuration: replyDelay),
+                .run { [weak self] in
+                    // 둘이 **아직 배회 중인지** 먼저 본다. 관제 신호(승인 소환·업무 시작·재연결)가
+                    // 배회를 끊으면 `cancelStroll` 이 여기서 지우므로, 그 멤버십이 곧 "취소되지
+                    // 않았다" 는 직접 근거다. 거리만 재면 둘이 각자 옆자리 좌석으로 돌아간
+                    // 경우를 통과시켜, 이미 일을 시작한 사람 머리 위에 상태 문구와 잡담이 겹친다.
+                    guard let self,
+                        self.strollingAgents.contains(agentType),
+                        self.strollingAgents.contains(partner),
+                        let speaker = self.characters[agentType],
+                        let partnerNode = self.characters[partner],
+                        officeChatterPartner(
+                            arrivedAt: speaker.tile,
+                            others: [(agentType: partner, tile: partnerNode.tile)]
+                        ) != nil
+                    else {
+                        return
+                    }
+                    self.showBubble(partner, text: exchange.reply)
+                },
+            ])
+        )
+        return partner
+    }
+
+    /// 확인용 렌더에서 사람 하나를 목적지에 세운다. 데모 자리는 좌석이 아니므로 좌석 몫
+    /// 이름표 제한을 떼고, 진행 중이던 연출도 함께 끊는다.
+    private func place(demoCharacter agentType: String, at spot: OfficeStrollSpot) {
+        guard let node = characters[agentType] else {
+            return
+        }
+        node.removeAllActions()
+        node.sprite.removeAllActions()
+        node.endInteraction()
+        node.setNameplateSpan(nil)
+        place(node, at: spot.tile)
+        node.apply(facing: spot.facing)
+        node.beginInteraction(pose: spot.pose, facing: spot.facing)
+        // 상대 탐색이 배회자 목록을 보므로 데모도 같은 목록에 들어가야 한다. 되돌리지 않는
+        // 것은 이 경로가 렌더 전용이고(`renderOfficeScene`), 굽고 나면 씬이 그대로 버려지기
+        // 때문이다 — 실행 중인 앱이 이 함수를 부르는 경로는 없다.
+        strollingAgents.insert(agentType)
+    }
+
+    /// 배회 대사와 마주친 대화를 정지 화면에 띄운다(확인용 렌더 입구).
+    ///
+    /// 실제 경로는 8초 틱 → 걸음 → 도착 순서라 정지 렌더 한 장에는 절대 잡히지 않고, 대화의
+    /// 답은 그보다 1.2초 더 늦다. 입구가 없으면 문구가 화면에 나오는지를 사람이 앱을 띄워
+    /// 우연히 마주칠 때까지 알 수 없다 — `--busy-demo` 와 같은 이유의 강제 조건이다.
+    ///
+    /// 목적지를 **가능한 만큼 전부** 채우는 것이 요점이다. 한두 명만 세우면 말풍선이 이웃과
+    /// 겹치는지가 드러나지 않고, 목적지끼리 붙어 있는 자리에서만 생기는 대화도 안 나온다.
+    func previewChatter() -> Bool {
+        let spots = officeStrollSpots(plan: plan)
+        let agentTypes = characters.keys.sorted()
+        guard !spots.isEmpty, !agentTypes.isEmpty else {
+            FileHandle.standardError.write(
+                Data("--chatter-demo 는 사람과 배회 목적지가 있어야 한다 (백엔드 확인)\n".utf8)
+            )
+            return false
+        }
+        var placed: [(agentType: String, spot: OfficeStrollSpot)] = []
+        var occupied: [(agentType: String, tile: TilePoint)] = []
+        for spot in spots {
+            guard placed.count < agentTypes.count else {
+                break
+            }
+            // 이미 세운 사람과 3칸 이내면 건너뛴다.
+            //
+            // 목적지는 서로 붙어 있다(탕비실 커피머신·워터쿨러가 한 칸 차이). 순서대로 다
+            // 채우면 서른세 명이 전원 서로의 이웃이 되어 **화면에서 혼잣말이 사라진다** —
+            // 실제 배회는 동시 세 명이라 대개 혼잣말인데, 확인 화면이 그 절반을 못 보여준다.
+            if officeChatterPartner(arrivedAt: spot.tile, others: occupied, maxDistance: 3) != nil {
+                continue
+            }
+            let agentType = agentTypes[placed.count]
+            place(demoCharacter: agentType, at: spot)
+            occupied.append((agentType: agentType, tile: spot.tile))
+            placed.append((agentType: agentType, spot: spot))
+        }
+        // 대화 한 쌍은 강제로 만든다. 띄워 놓기만 하면 이번 변경의 절반(마주친 두 사람)이
+        // 화면에 안 나오고, 말풍선 둘이 한 칸 옆에서 겹치는 최악도 보이지 않는다.
+        if let anchor = placed.first, placed.count < agentTypes.count,
+            let neighbor = spots.first(where: { candidate in
+                candidate.tile != anchor.spot.tile
+                    && officeChatterPartner(
+                        arrivedAt: candidate.tile,
+                        others: [(agentType: anchor.agentType, tile: anchor.spot.tile)]
+                    ) != nil
+            })
+        {
+            let agentType = agentTypes[placed.count]
+            place(demoCharacter: agentType, at: neighbor)
+            placed.append((agentType: agentType, spot: neighbor))
+        }
+        // **배치를 다 끝낸 뒤에** 말을 시킨다. 상대 탐색은 현재 타일을 보므로, 배치 중간에
+        // 부르면 아직 자기 좌석에 앉아 있는 사람과 짝이 맺힌다.
+        for entry in placed {
+            let partner = speakOnArrival(entry.agentType, spot: entry.spot, replyDelay: 0)
+            let line = "chatter-demo \(entry.agentType) at=\(entry.spot.kind.rawValue)"
+                + " tile=(\(entry.spot.tile.x),\(entry.spot.tile.y))"
+                + " partner=\(partner ?? "-")\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
+        return !placed.isEmpty
     }
 
     /// 이벤트가 이미 배회를 취소했다면 늦게 도착한 콜백이 사람을 다시 움직이지 못하게 한다.
@@ -2112,23 +2285,31 @@ final class OfficeScene: SKScene {
         showBubble(agentType, text: "!")
     }
 
+    /// 잠깐 뜨다 사라지는 말풍선. 상시 말풍선과 **같은 헬퍼를 쓴다.**
+    ///
+    /// 예전에는 여기서 `SKLabelNode` 를 직접 만들었다. PR #298 이 좌석 몫 접기를 넣은 곳은
+    /// `setChildLabel` 쪽이라, 이 경로만 접기도 외곽선도 없이 남아 있었다 — 띄우는 문구가
+    /// `!` 하나뿐이던 동안에는 드러나지 않았지만, 배회 대사가 이 길로 흐르는 순간 긴 문구가
+    /// 옆자리와 벽 위로 그대로 나간다.
     private func showBubble(_ agentType: String, text: String) {
-        guard let node = characters[agentType], !text.isEmpty else {
+        guard let node = characters[agentType] else {
             return
         }
-        node.childNode(withName: officeTemporaryBubbleLabelName)?.removeFromParent()
-        let label = SKLabelNode(text: text)
-        label.name = officeTemporaryBubbleLabelName
-        label.fontName = officeLabelFontName
-        label.fontSize = max(officeNameplateMinFontSize, tileSize * 0.28)
-        label.fontColor = SKColor(white: 1, alpha: 1)
-        label.verticalAlignmentMode = .bottom
-        label.position = CGPoint(x: 0, y: node.headTopY + nameplateClearance)
-        label.zPosition = 20
-        node.addChild(label)
-        label.run(
-            .sequence([.wait(forDuration: 2.5), .fadeOut(withDuration: 0.5), .removeFromParent()])
+        setChildLabel(
+            node,
+            name: officeTemporaryBubbleLabelName,
+            text: text,
+            position: CGPoint(x: 0, y: node.headTopY + nameplateClearance),
+            fontSize: tileSize * 0.28,
+            color: SKColor(white: 1, alpha: 1),
+            maxWidth: bubbleMaxWidth(for: agentType)
         )
+        node.childNode(withName: officeTemporaryBubbleLabelName)?
+            .run(
+                .sequence([
+                    .wait(forDuration: 2.5), .fadeOut(withDuration: 0.5), .removeFromParent(),
+                ])
+            )
     }
 
     // MARK: - 관제 정보 오버레이

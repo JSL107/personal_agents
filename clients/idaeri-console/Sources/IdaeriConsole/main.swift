@@ -78,6 +78,11 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 위에 문패·경고등·말풍선이 한꺼번에 쌓이는 최악을 볼 수 있다.
     //   swift run IdaeriConsole --render /tmp/office.png --briefing-demo --alarm-demo
     let briefingDemo = CommandLine.arguments.contains("--briefing-demo")
+    // 배회 대사는 8초 틱 뒤 걸음이 끝나야 뜨고, 마주친 대화의 답은 거기서 1.2초 더 늦다 —
+    // 정지 렌더 한 장으로는 절대 만날 수 없다. 목적지를 가능한 만큼 채우고 전원에게 말을
+    // 시켜 굽는다(겹침은 사람이 많을 때만 드러난다).
+    //   swift run IdaeriConsole --render /tmp/office.png --chatter-demo
+    let chatterDemo = CommandLine.arguments.contains("--chatter-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -88,6 +93,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         busyDemo: busyDemo,
         alarmDemo: alarmDemo,
         briefingDemo: briefingDemo,
+        chatterDemo: chatterDemo,
         debugLabels: debugLabels
     )
     exit(succeeded ? 0 : 1)

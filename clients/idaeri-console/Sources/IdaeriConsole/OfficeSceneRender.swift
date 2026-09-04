@@ -22,6 +22,7 @@ func renderOfficeScene(
     busyDemo: Bool = false,
     alarmDemo: Bool = false,
     briefingDemo: Bool = false,
+    chatterDemo: Bool = false,
     debugLabels: Bool = false
 ) -> Bool {
     let scene = OfficeScene(size: size)
@@ -84,6 +85,12 @@ func renderOfficeScene(
         FileHandle.standardError.write(Data("자세 데모에 필요한 사람 또는 가구가 부족하다\n".utf8))
         return false
     }
+    // 오버레이·브리핑이 다 올라간 뒤에 얹는다. 먼저 띄우면 상시 말풍선을 다시 그리는
+    // `refreshOverlays` 가 배회 대사를 지우고, 두 문구가 같은 자리를 다투는지도 안 보인다.
+    if chatterDemo, !scene.previewChatter() {
+        return false
+    }
+
     // 호버 쪽지는 마우스 이벤트로만 뜨므로 정지 렌더에는 안 잡힌다. 판이 무엇을 가리는지가
     // 이 변경의 요점이라, 확인 경로가 없으면 회귀가 조용히 돌아온다.
     if let hoverAgentType, !scene.previewHoverTooltip(agentType: hoverAgentType) {
