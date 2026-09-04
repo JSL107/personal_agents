@@ -32,6 +32,158 @@ const buildDependencies = (): {
 });
 
 describe('HandleConversationTurnUsecase', () => {
+  it.each([
+    [
+      '최근 worker turn',
+      [
+        {
+          role: 'assistant' as const,
+          text: '결과',
+          agentType: AgentType.PM,
+          agentRunId: 42,
+          timestampMs: 1,
+        },
+      ],
+      { agentRunId: 42 },
+    ],
+    [
+      'null turn만',
+      [
+        {
+          role: 'assistant' as const,
+          text: '결과',
+          agentType: null,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+      undefined,
+    ],
+    [
+      '0 sentinel만',
+      [
+        {
+          role: 'assistant' as const,
+          text: '시작',
+          agentType: AgentType.BLOG,
+          agentRunId: 0,
+          timestampMs: 1,
+        },
+      ],
+      undefined,
+    ],
+    [
+      '최신 sentinel 뒤의 유효 turn',
+      [
+        {
+          role: 'assistant' as const,
+          text: '계획 결과',
+          agentType: AgentType.PM,
+          agentRunId: 7,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '실패한 turn',
+          agentType: null,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+        {
+          role: 'assistant' as const,
+          text: '작성 시작',
+          agentType: AgentType.BLOG,
+          agentRunId: 0,
+          timestampMs: 3,
+        },
+      ],
+      { agentRunId: 7 },
+    ],
+  ])(
+    'priorTurns의 %s에서 직전 유효 run id만 contextRefs로 전달한다',
+    async (_, priorTurns, contextRefs) => {
+      const dependencies = buildDependencies();
+      dependencies.router.dispatch.mockResolvedValue(workerResult);
+      const usecase = new HandleConversationTurnUsecase(
+        dependencies.router,
+        dependencies.conversationMemory,
+        dependencies.conversationalReply,
+      );
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationKey: 'U1:CONSOLE',
+        text: '그거 이어서',
+        source: 'REMOTE_CONSOLE',
+        priorTurns,
+      });
+
+      expect(dependencies.router.dispatch).toHaveBeenCalledWith({
+        source: 'REMOTE_CONSOLE',
+        slackUserId: 'U1',
+        text: '그거 이어서',
+        agentTypeHint: undefined,
+        priorTurns,
+        ...(contextRefs ? { contextRefs } : {}),
+      });
+    },
+  );
+
+  it.each([
+    ['초기', [], 0],
+    [
+      '미해결 2회',
+      [
+        {
+          role: 'assistant' as const,
+          text: '첫 질문?',
+          agentType: null,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '두 번째 질문?',
+          agentType: null,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+      ],
+      2,
+    ],
+  ])(
+    '입력 streak가 없으면 priorTurns의 %s를 conversational reply에 전달한다',
+    async (_, priorTurns, unresolvedStreak) => {
+      const dependencies = buildDependencies();
+      dependencies.router.dispatch.mockRejectedValue(
+        new RouterException({
+          message: '분류 실패',
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        }),
+      );
+      dependencies.conversationalReply.reply.mockResolvedValue('답변');
+      const usecase = new HandleConversationTurnUsecase(
+        dependencies.router,
+        dependencies.conversationMemory,
+        dependencies.conversationalReply,
+      );
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationKey: 'U1:CONSOLE',
+        text: '안녕',
+        source: 'REMOTE_CONSOLE',
+        priorTurns,
+      });
+
+      expect(dependencies.conversationalReply.reply).toHaveBeenCalledWith({
+        text: '안녕',
+        priorTurns,
+        unresolvedStreak,
+      });
+    },
+  );
+
   it('worker 성공 결과와 user/assistant 두 turn을 기억한다', async () => {
     const dependencies = buildDependencies();
     dependencies.router.dispatch.mockResolvedValue(workerResult);
@@ -71,7 +223,8 @@ describe('HandleConversationTurnUsecase', () => {
       'U1:CONSOLE',
       expect.objectContaining({
         role: 'assistant',
-        text: '오늘 계획을 정리했습니다.',
+        // 사용자에게 보인 답변과 같은 텍스트 — buildDispatchReplyText 가 붙인 footer 포함.
+        text: '오늘 계획을 정리했습니다.\n\n_이대리 (PM) · agentRunId=42_',
         agentType: AgentType.PM,
         agentRunId: 42,
       }),

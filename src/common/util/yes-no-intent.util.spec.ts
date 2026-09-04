@@ -1,4 +1,4 @@
-import { detectYesNoIntent } from './yes-no-detector';
+import { detectYesNoIntent } from './yes-no-intent.util';
 
 describe('detectYesNoIntent', () => {
   describe('YES — 단일 키워드', () => {
