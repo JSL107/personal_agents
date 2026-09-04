@@ -31,6 +31,8 @@ import { toReadableSlackArgs } from '../format/message-blocks.builder';
 //   3. button '🚀 BE chain 시작' (auto-flow:start-be, value: {pmAgentRunId, ctoAgentRunId})
 //      → BE chain 실행 → 답글 갱신 = 최종 chain 결과
 //   4. button '❌ 취소' → 답글 갱신 = "chain 중단" 안내
+//   5. CTO/BE step 실패 → 답글 = 에러 + '🔁 다시 시도' 버튼 (같은 run id 상태로 같은 step
+//      재실행, step 당 상한 MAX_STEP_RETRY). PM step 실패는 /auto-flow 재실행이 곧 복구라 대상 외.
 //
 // state 보존: action button value 에 JSON 직렬화 — 별도 DB X. Slack interactive payload 만 활용.
 // response_url TTL 30분 — PreviewGate 대신 자체 cap. 30분 후 클릭 시 Slack 이 자동 expire.
@@ -45,12 +47,50 @@ const ACTION_IDS = {
 
 interface StartCtoValue {
   pmAgentRunId: number;
+  // 이 step 이 실패 후 재시도된 횟수. 실패 응답의 재시도 버튼이 +1 해 싣는다.
+  attempt: number;
 }
 
 interface StartBeValue {
   pmAgentRunId: number;
   ctoAgentRunId: number;
+  attempt: number;
 }
+
+// step 실패 시 같은 지점부터 다시 실행하는 버튼 명세. 상한 판정은 buildStepFailureArgs 가 한다.
+// 이전 단계 산출물(SUCCEEDED run)은 DB 에 남아 있으므로, 잃는 것은 버튼 value 속
+// run id 포인터뿐이다 — 실패 응답이 그 포인터를 다시 실어주면 체인은 복구된다.
+export interface StepRetry {
+  actionId: (typeof ACTION_IDS)[keyof typeof ACTION_IDS];
+  // 실패 시점까지 소진한 재시도 횟수 (초기 실행 = 0)
+  attempt: number;
+  // 재시도 버튼에 실을 value — attempt + 1 반영본
+  nextValueJson: string;
+  // 버튼 문구. 같은 step 재실행이 아니라 다음 step 으로 넘기는 경우
+  // (worker 는 성공했고 그 뒤가 실패) 문구가 달라야 한다.
+  label: string;
+  // 안내문 — 무엇이 보존됐고 버튼이 무엇을 하는지.
+  guidance: string;
+}
+
+interface StepFailureArgs {
+  text: string;
+  blocks?: SlackBlocks;
+}
+
+// Slack section block 의 text 상한은 3,000 자다. 에러 메시지를 그대로 실으면 긴 에러에서
+// 응답 자체가 거부돼 **재시도 UI 가 아예 안 뜬다** — 방어가 자기 목적을 배반한다.
+// 헤더·안내문 자리를 빼고 넉넉히 남긴다.
+const MAX_ERROR_MESSAGE_LENGTH = 2_000;
+
+const truncateErrorMessage = (message: string): string =>
+  message.length <= MAX_ERROR_MESSAGE_LENGTH
+    ? message
+    : `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}… (이하 생략)`;
+
+// step 당 재시도 상한. 주 실패 원인이 쿼터 소진(리셋까지 수 시간)이라 자동 재시도 대신
+// 사람이 누르는 버튼으로 두고, 무한 클릭만 막는다.
+const MAX_STEP_RETRY = 2;
 
 // Slack Block Kit 의 minimal block type — Bolt 의 (Block | KnownBlock)[] 와 호환 위해
 // `as unknown` cast 후 respond 에 전달. KnownBlock 의 strict union 직접 만족시키는 대신
@@ -128,15 +168,36 @@ export class AutoFlowHandler implements SlackHandler {
         await respondInvalidState(respond);
         return;
       }
+      // CTO worker 가 이미 성공했는지 — catch 가 worker 실행 실패와 그 뒤(윤문·응답) 실패를
+      // 함께 받기 때문에 필요하다. 뒤에서 실패했는데 CTO 를 다시 돌리면 이미 원장에 남은
+      // 분배를 중복 생성하고 쿼터만 더 쓴다. 성공했으면 재시도 대신 BE 로 넘긴다.
+      let succeededCtoAgentRunId: number | undefined;
       try {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
           text: `[2/3] CTO 분배 진행 중 (10~30초 소요)... (PM #${value.pmAgentRunId} 기반)`,
         });
+        // 안전 — BE step 의 CTO run 가드와 대칭. 버튼 발행 후 /today 가 다시 돌아
+        // 최신 PM run 이 바뀌었으면, CTO 는 최신 plan 으로 돌면서 parentId 는 버튼의
+        // 옛 run 을 가리켜 chain audit 이 섞인다. 재시도 버튼이 대기 시간을 늘려
+        // 이 창이 넓어졌으므로 불일치면 chain 종료.
+        const pmRun = await this.agentRunService.findLatestSucceededRun({
+          agentType: AgentType.PM,
+          slackUserId,
+        });
+        if (!pmRun || pmRun.id !== value.pmAgentRunId) {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `auto-flow chain — PM run #${value.pmAgentRunId} 가 직전 SUCCEEDED 와 불일치. chain 종료. (다시 \`/auto-flow\` 로 시작)`,
+          });
+          return;
+        }
         const ctoOutcome = await this.generateAssignmentUsecase.execute({
           slackUserId,
         });
+        succeededCtoAgentRunId = ctoOutcome.agentRunId;
         await this.agentRunService.setParentId({
           id: ctoOutcome.agentRunId,
           parentId: value.pmAgentRunId,
@@ -174,6 +235,10 @@ export class AutoFlowHandler implements SlackHandler {
           logger: this.logger,
           step: 'CTO',
           error,
+          retry: buildCtoFailureRetry({
+            value,
+            succeededCtoAgentRunId,
+          }),
         });
       }
     });
@@ -237,6 +302,17 @@ export class AutoFlowHandler implements SlackHandler {
           logger: this.logger,
           step: 'BE',
           error,
+          retry: {
+            actionId: ACTION_IDS.START_BE,
+            attempt: value.attempt,
+            nextValueJson: JSON.stringify({
+              pmAgentRunId: value.pmAgentRunId,
+              ctoAgentRunId: value.ctoAgentRunId,
+              attempt: value.attempt + 1,
+            } satisfies StartBeValue),
+            label: '🔁 BE chain 다시 시도',
+            guidance: `CTO 분배(#${value.ctoAgentRunId})는 보존되어 있어 BE chain 부터 다시 시도할 수 있습니다. (재시도 ${value.attempt + 1}/${MAX_STEP_RETRY}회차)`,
+          },
         });
       }
     });
@@ -279,7 +355,10 @@ const buildPmPreviewBlocks = ({
         text: { type: 'plain_text', text: '📋 분배 시작' },
         action_id: ACTION_IDS.START_CTO,
         style: 'primary',
-        value: JSON.stringify({ pmAgentRunId } satisfies StartCtoValue),
+        value: JSON.stringify({
+          pmAgentRunId,
+          attempt: 0,
+        } satisfies StartCtoValue),
       },
       {
         type: 'button',
@@ -326,6 +405,7 @@ const buildCtoPreviewBlocks = ({
           value: JSON.stringify({
             pmAgentRunId,
             ctoAgentRunId,
+            attempt: 0,
           } satisfies StartBeValue),
         },
         {
@@ -410,7 +490,13 @@ const formatFinalChainResult = ({
 
 // === value parsing ===
 
-const parseStartCtoValue = (raw: string): StartCtoValue | null => {
+// 재시도 도입 전에 발행된 버튼(attempt 부재)과 조작된 payload 모두 0 으로 수렴.
+const normalizeAttempt = (value: unknown): number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : 0;
+
+export const parseStartCtoValue = (raw: string): StartCtoValue | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -418,7 +504,10 @@ const parseStartCtoValue = (raw: string): StartCtoValue | null => {
       parsed !== null &&
       typeof (parsed as { pmAgentRunId?: unknown }).pmAgentRunId === 'number'
     ) {
-      return { pmAgentRunId: (parsed as StartCtoValue).pmAgentRunId };
+      return {
+        pmAgentRunId: (parsed as StartCtoValue).pmAgentRunId,
+        attempt: normalizeAttempt((parsed as { attempt?: unknown }).attempt),
+      };
     }
     return null;
   } catch {
@@ -426,7 +515,7 @@ const parseStartCtoValue = (raw: string): StartCtoValue | null => {
   }
 };
 
-const parseStartBeValue = (raw: string): StartBeValue | null => {
+export const parseStartBeValue = (raw: string): StartBeValue | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -439,6 +528,7 @@ const parseStartBeValue = (raw: string): StartBeValue | null => {
       return {
         pmAgentRunId: obj.pmAgentRunId,
         ctoAgentRunId: obj.ctoAgentRunId,
+        attempt: normalizeAttempt((parsed as { attempt?: unknown }).attempt),
       };
     }
     return null;
@@ -457,22 +547,118 @@ const respondInvalidState = async (respond: RespondFn): Promise<void> => {
   });
 };
 
+// CTO step 실패의 버튼 명세를 고른다.
+//
+// worker 가 이미 성공했으면(`succeededCtoAgentRunId` 존재) 실패한 곳은 그 뒤 — 표시용
+// 윤문이나 Slack 응답이다. 그 상태에서 CTO 재실행 버튼을 주면 원장에 이미 남은 분배를
+// 한 번 더 만들고 쿼터도 더 쓴다. 산출물은 DB 에 있으니 BE 로 넘기는 버튼이 맞다.
+export const buildCtoFailureRetry = ({
+  value,
+  succeededCtoAgentRunId,
+}: {
+  value: StartCtoValue;
+  succeededCtoAgentRunId?: number;
+}): StepRetry => {
+  if (succeededCtoAgentRunId === undefined) {
+    return {
+      actionId: ACTION_IDS.START_CTO,
+      attempt: value.attempt,
+      nextValueJson: JSON.stringify({
+        pmAgentRunId: value.pmAgentRunId,
+        attempt: value.attempt + 1,
+      } satisfies StartCtoValue),
+      label: '🔁 CTO 다시 시도',
+      guidance: `PM plan 은 보존되어 있어 분배부터 다시 시도할 수 있습니다. (재시도 ${value.attempt + 1}/${MAX_STEP_RETRY}회차)`,
+    };
+  }
+  return {
+    actionId: ACTION_IDS.START_BE,
+    // 다음 step 으로 넘기는 것이라 BE 재시도 예산은 쓰지 않는다.
+    attempt: 0,
+    nextValueJson: JSON.stringify({
+      pmAgentRunId: value.pmAgentRunId,
+      ctoAgentRunId: succeededCtoAgentRunId,
+      attempt: 0,
+    } satisfies StartBeValue),
+    label: '🚀 BE chain 시작',
+    guidance: `CTO 분배(#${succeededCtoAgentRunId})는 이미 완료돼 원장에 남아 있습니다. 표시 단계만 실패했으니 분배를 다시 만들지 말고 BE chain 으로 진행하세요.`,
+  };
+};
+
+// 실패 응답 본문 — retry 가 있으면 같은 step 을 다시 실행하는 버튼을 붙인다.
+// 기존 실패 응답(text 만, replace_original)은 버튼 value 속 체인 상태를 파괴해
+// 처음부터 재시작 외 복구 수단이 없었다. 순수 함수로 분리해 spec 에서 직접 검증.
+export const buildStepFailureArgs = ({
+  step,
+  message,
+  retry,
+}: {
+  step: 'PM' | 'CTO' | 'BE';
+  message: string;
+  retry?: StepRetry;
+}): StepFailureArgs => {
+  const safeMessage = truncateErrorMessage(message);
+  const headline = `auto-flow ${step} step 실패: ${safeMessage}`;
+  if (!retry) {
+    return { text: headline };
+  }
+  if (retry.attempt >= MAX_STEP_RETRY) {
+    return {
+      text: `${headline}\n재시도 상한(${MAX_STEP_RETRY}회) 도달 — 다시 \`/auto-flow\` 로 시작해주세요.`,
+    };
+  }
+  return {
+    text: headline,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*auto-flow ${step} step 실패*\n${safeMessage}\n\n_${retry.guidance}_`,
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: retry.label },
+            action_id: retry.actionId,
+            style: 'primary',
+            value: retry.nextValueJson,
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '❌ 취소' },
+            action_id: ACTION_IDS.CANCEL,
+            style: 'danger',
+          },
+        ],
+      },
+    ],
+  };
+};
+
 const respondError = async ({
   respond,
   logger,
   step,
   error,
+  retry,
 }: {
   respond: RespondFn;
   logger: Logger;
   step: 'PM' | 'CTO' | 'BE';
   error: unknown;
+  retry?: StepRetry;
 }): Promise<void> => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error(`/auto-flow ${step} step 실패: ${message}`);
+  const failureArgs = buildStepFailureArgs({ step, message, retry });
   await respond({
     response_type: 'ephemeral',
     replace_original: true,
-    text: `auto-flow ${step} step 실패: ${message}`,
+    text: failureArgs.text,
+    ...(failureArgs.blocks ? { blocks: failureArgs.blocks as never } : {}),
   });
 };
