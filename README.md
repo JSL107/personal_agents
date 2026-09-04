@@ -44,7 +44,7 @@ GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 �
 flowchart TD
     subgraph IN["진입점"]
         direction LR
-        S["슬래시 19종"]
+        S["슬래시 15종"]
         M["@이대리 멘션·DM"]
         W["GitHub Webhook"]
         C["Autopilot Cron"]
@@ -156,9 +156,8 @@ NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 전체 AgentType 은 내부 자동화까지 포함하며, **종수와 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md) 가 기준이다.** 아래는 사용자가 직접 체감하는 것만 추린 것이다.
 
-- **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · BE `/be plan` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · CTO `/assign` · PO_EVAL `/po-eval` · CEO `/ceo-review`
-- **BE 자율 4종** — `/be schema`(Prisma 스키마 제안) · `/be test`(tree-sitter AST 기반 Jest 생성) · `/be sre`(스택트레이스 분석) · BE-FIX(PR 컨벤션) — BE-FIX 는 webhook 자동
-- **체인 / 승인형 실행** — `/auto-flow` PM → CTO → BE 1-shot, BE sandbox apply/test, 성공 후 사용자 승인 기반 branch + commit + PR open preview
+- **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · PO_EVAL `/po-eval` · CEO `/ceo-review`
+- **승인형 실행** — 사용자 승인 기반 branch + commit + PR open preview (문서 감사 · 블로그 발행)
 - **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 지원 추적 CRM(등록/상태/넛지 cron) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
 - **투자** — INVEST(보유 종목 감시, LLM 미사용) · PAPER_RECOMMEND(후보 추천) · PAPER_TRADE(가상 계좌 매매) — 셋 다 cron 발화, PAPER_TRADE 만 자연어 dispatch 가 있다
 - **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish · Ops Supervisor · Review Reply Judge · CTO Study
@@ -192,7 +191,7 @@ pnpm dev              # watch 모드 기동
 
 | 진입 | 무엇 | 인증·게이트 |
 |---|---|---|
-| **슬래시 커맨드** | 19종 (에이전트 호출 · 휴가 · 운영) | Slack Socket Mode |
+| **슬래시 커맨드** | 15종 (에이전트 호출 · 휴가 · 운영) | Slack Socket Mode |
 | **자연어 멘션·DM** | Router 가 19개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
 | **GitHub Webhook** | issue/PR 이벤트로 자동 발화 | HMAC 서명 검증 |
 | **Autopilot cron** | 출근·퇴근·주간 정기 실행 | `AUTOPILOT_OWNER_SLACK_USER_ID` |
@@ -205,12 +204,10 @@ pnpm dev              # watch 모드 기동
 
 | Command | 설명 | 모델 |
 |---|---|:---:|
-| `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/be <plan\|schema\|test\|sre>` `/assign` `/po-eval` `/ceo-review` `/auto-flow` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · BE · CTO · PO · CEO · 체인) | 🟢 ChatGPT(codex) |
+| `/today` `/worklog` `/po-shadow` `/impact-report` `/review-pr` `/po-eval` `/ceo-review` | 전체 에이전트 (계획 · 회고 · PR 리뷰 · PO · CEO) | 🟢 ChatGPT(codex) |
 | `/휴가` | 연차 계산 / 등록 / 취소 (결정론, LLM 미사용) | ⚪ — |
 | `/blog-publish [제목일부]` | Notion 초안 익명화 → 승인 후 GitHub 블로그 발행 | 🟢 ChatGPT(codex) |
 | `/sync-plan` `/sync-context` `/quota` `/ping` `/retry-run` `/search-runs` `/review-feedback` | 동기화 · 운영 · 검색 · 피드백 | ⚪ — |
-
-> BE-FIX 는 슬래시가 없다. GitHub webhook 으로만 발화하고, 수동 재실행은 `/retry-run <AgentRun ID>`.
 
 </details>
 
@@ -238,7 +235,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 | 이벤트 | 발화 | 추가 활성 env |
 |---|---|---|
 | `issues.opened` | Impact Reporter / Auto-Label | `GITHUB_ISSUE_AUTO_LABEL_ENABLED` |
-| `pull_request.opened` | Impact Reporter / BE-FIX / (조건부) Code Reviewer | `GITHUB_WEBHOOK_OWNER_LOGIN` |
+| `pull_request.opened` | Impact Reporter / (조건부) Code Reviewer | `GITHUB_WEBHOOK_OWNER_LOGIN` |
 | `pull_request.closed` (merged) | PR careerLog → Notion | `PR_CAREERLOG_AUTO_ENABLED` + `CAREER_LOG_NOTION_PAGE_ID` |
 
 </details>
@@ -256,7 +253,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 |---|---|
 | 🌅 매일 08:30 | 비서실(하루 한 장 결산) + Morning Briefing(PM `/today` 자동 계획) |
 | 🕚 매일 11:00 | 오늘의 공부 딥다이브 — 아침 브리프를 블로그 초안으로 펼침 |
-| 🕐 매일 13:00 | CTO 배분(`/assign`) + PO Shadow |
+| 🕐 매일 13:00 | PO Shadow |
 | 🌆 매일 19:00 | Worklog + Daily Eval(PO_EVAL) + 저녁 회고 발행 후보 + 블로그 GitHub 발행 카드 |
 | 🌙 매일 23:00 | 포트폴리오 사이트 발행 |
 
@@ -389,7 +386,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
 2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` → install → Bot Token = `SLACK_BOT_TOKEN`
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
-4. **Slash Commands** 에 19종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
+4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
 5. **Event Subscriptions** → `app_mention` + `message.im` 구독 → Reinstall
 6. `.env` 채운 뒤 `pnpm dev` → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
 

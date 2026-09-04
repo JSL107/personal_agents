@@ -17,17 +17,6 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "PO 대행"
     case "PO_EVAL":
         return "PO 평가"
-    // 개발
-    case "BE":
-        return "백엔드"
-    case "BE_SCHEMA":
-        return "스키마"
-    case "BE_TEST":
-        return "테스트"
-    case "BE_SRE":
-        return "장애 대응"
-    case "BE_FIX":
-        return "규약 점검"
     // 리뷰
     case "CODE_REVIEWER":
         return "코드 리뷰"
@@ -37,8 +26,6 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "성과 분석"
     // 경영 — 이 둘만 영문 약칭. 한국 회사에서도 CEO·CTO 는 그대로 직함으로 읽히고,
     // "기술이사"·"경영 리뷰" 로는 옆자리 둘의 관계(대표 / 기술 총괄)가 이름표에서 안 드러났다.
-    case "CTO":
-        return "CTO"
     case "CEO":
         return "CEO"
     // 성장

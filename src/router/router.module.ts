@@ -2,16 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 
-import { BeAgentModule } from '../agent/be/be.module';
-import { BeDispatcher } from '../agent/be/infrastructure/be.dispatcher';
-import { BeFixModule } from '../agent/be-fix/be-fix.module';
-import { BeFixDispatcher } from '../agent/be-fix/infrastructure/be-fix.dispatcher';
-import { BeSchemaModule } from '../agent/be-schema/be-schema.module';
-import { BeSchemaDispatcher } from '../agent/be-schema/infrastructure/be-schema.dispatcher';
-import { BeSreModule } from '../agent/be-sre/be-sre.module';
-import { BeSreDispatcher } from '../agent/be-sre/infrastructure/be-sre.dispatcher';
-import { BeTestModule } from '../agent/be-test/be-test.module';
-import { BeTestDispatcher } from '../agent/be-test/infrastructure/be-test.dispatcher';
 import { BlogModule } from '../agent/blog/blog.module';
 import { BlogDispatcher } from '../agent/blog/infrastructure/blog.dispatcher';
 import { BlogPublishDispatcher } from '../agent/blog/infrastructure/blog-publish.dispatcher';
@@ -22,7 +12,6 @@ import { CeoDispatcher } from '../agent/ceo/infrastructure/ceo.dispatcher';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { CodeReviewerDispatcher } from '../agent/code-reviewer/infrastructure/code-reviewer.dispatcher';
 import { CtoModule } from '../agent/cto/cto.module';
-import { CtoDispatcher } from '../agent/cto/infrastructure/cto.dispatcher';
 import { DelayReportModule } from '../agent/delay-report/delay-report.module';
 import { DelayReportDispatcher } from '../agent/delay-report/infrastructure/delay-report.dispatcher';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
@@ -77,11 +66,6 @@ import {
     CodeReviewerModule,
     ImpactReporterModule,
     PoShadowModule,
-    BeAgentModule,
-    BeSchemaModule,
-    BeTestModule,
-    BeSreModule,
-    BeFixModule,
     CtoModule,
     PoEvalModule,
     CeoModule,
@@ -123,12 +107,6 @@ import {
         CodeReviewerDispatcher,
         ImpactReporterDispatcher,
         PoShadowDispatcher,
-        BeDispatcher,
-        BeSchemaDispatcher,
-        BeTestDispatcher,
-        BeSreDispatcher,
-        BeFixDispatcher,
-        CtoDispatcher,
         PoEvalDispatcher,
         CeoDispatcher,
         VacationDispatcher,

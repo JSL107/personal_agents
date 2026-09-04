@@ -8,7 +8,6 @@ import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 
 import {
-  BE_FIX_QUEUE,
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
   ISSUE_LABEL_QUEUE,
@@ -21,7 +20,6 @@ describe('WebhookController', () => {
   // V3 audit B2 #4 / B3 P5 / B4 H-2 — fire-and-forget 이 BullMQ queue 로 전환됐으므로
   // controller 가 직접 호출하던 GenerateImpactReportUsecase 대신 queue.add 만 검증.
   const mockImpactQueue = { add: jest.fn() };
-  const mockBeFixQueue = { add: jest.fn() };
   const mockCodeReviewerQueue = { add: jest.fn() };
   const mockPrCareerLogQueue = { add: jest.fn() };
   const mockIssueLabelQueue = { add: jest.fn() };
@@ -56,7 +54,6 @@ describe('WebhookController', () => {
           provide: getQueueToken(IMPACT_REPORT_QUEUE),
           useValue: mockImpactQueue,
         },
-        { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
         {
           provide: getQueueToken(CODE_REVIEWER_QUEUE),
           useValue: mockCodeReviewerQueue,
@@ -78,8 +75,6 @@ describe('WebhookController', () => {
     controller = module.get(WebhookController);
     mockImpactQueue.add.mockReset();
     mockImpactQueue.add.mockResolvedValue(undefined);
-    mockBeFixQueue.add.mockReset();
-    mockBeFixQueue.add.mockResolvedValue(undefined);
     mockCodeReviewerQueue.add.mockReset();
     mockCodeReviewerQueue.add.mockResolvedValue(undefined);
     mockPrCareerLogQueue.add.mockReset();
@@ -297,7 +292,6 @@ describe('WebhookController', () => {
       );
       const jobIds = [
         ...mockImpactQueue.add.mock.calls,
-        ...mockBeFixQueue.add.mock.calls,
         ...mockCodeReviewerQueue.add.mock.calls,
       ].map((call) => (call[2] as { jobId?: string } | undefined)?.jobId);
       expect(jobIds.length).toBeGreaterThan(0);
@@ -324,14 +318,6 @@ describe('WebhookController', () => {
         }),
         expect.any(Object),
       );
-      expect(mockBeFixQueue.add).toHaveBeenCalledWith(
-        'webhook-be-fix',
-        expect.objectContaining({
-          prRef: 'foo/bar#99',
-          slackUserId: defaultSlackUser,
-        }),
-        expect.any(Object),
-      );
     });
 
     // 세션 자동 분배 폐지 (2026-08-05) — check_run 은 원래 impact subject 대상이 아니므로
@@ -347,7 +333,6 @@ describe('WebhookController', () => {
 
       expect(result).toEqual({ accepted: true });
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).not.toHaveBeenCalled();
       expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
     });
 
@@ -373,7 +358,6 @@ describe('WebhookController', () => {
       expect(result).toEqual({ accepted: true });
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).not.toHaveBeenCalled();
     });
 
     it('잘못된 시그니처 → 401', async () => {
@@ -445,7 +429,6 @@ describe('WebhookController', () => {
             provide: getQueueToken(IMPACT_REPORT_QUEUE),
             useValue: mockImpactQueue,
           },
-          { provide: getQueueToken(BE_FIX_QUEUE), useValue: mockBeFixQueue },
           {
             provide: getQueueToken(CODE_REVIEWER_QUEUE),
             useValue: mockCodeReviewerQueue,
@@ -467,8 +450,6 @@ describe('WebhookController', () => {
       limitedController = module.get(WebhookController);
       mockImpactQueue.add.mockReset();
       mockImpactQueue.add.mockResolvedValue(undefined);
-      mockBeFixQueue.add.mockReset();
-      mockBeFixQueue.add.mockResolvedValue(undefined);
       mockCodeReviewerQueue.add.mockReset();
       mockCodeReviewerQueue.add.mockResolvedValue(undefined);
       mockPrCareerLogQueue.add.mockReset();
@@ -492,7 +473,6 @@ describe('WebhookController', () => {
       expect(result).toEqual({ accepted: true });
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).not.toHaveBeenCalled();
     });
 
     it('pull_request.opened 수신했지만 DEFAULT slackUser 없음 → 200 accepted, 모든 자동 발화 X', async () => {
@@ -515,7 +495,6 @@ describe('WebhookController', () => {
       expect(result).toEqual({ accepted: true });
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockImpactQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).not.toHaveBeenCalled();
     });
 
     it('check_run.failure 수신했지만 DEFAULT slackUser 없음 → 200 accepted', async () => {
@@ -587,7 +566,6 @@ describe('WebhookController', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
       // BE-FIX / impact-report 는 그대로 발화 (가드는 review 만).
-      expect(mockBeFixQueue.add).toHaveBeenCalled();
       expect(mockImpactQueue.add).toHaveBeenCalled();
     });
 
@@ -602,7 +580,6 @@ describe('WebhookController', () => {
       );
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
-      expect(mockBeFixQueue.add).toHaveBeenCalled();
     });
 
     it('user 필드 누락 → code-reviewer skip (안전 측 가드)', async () => {
@@ -630,7 +607,6 @@ describe('WebhookController', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockCodeReviewerQueue.add).not.toHaveBeenCalled();
       // BE-FIX / impact-report 는 그대로 — 본 가드는 review 만 비활성화.
-      expect(mockBeFixQueue.add).toHaveBeenCalled();
       expect(mockImpactQueue.add).toHaveBeenCalled();
     });
   });

@@ -160,7 +160,7 @@ describe('IdaeriRouterUsecase', () => {
       usecase.dispatch({
         source: 'SLACK_COMMAND',
         slackUserId: 'U1',
-        agentTypeHint: AgentType.BE_TEST,
+        agentTypeHint: AgentType.PO_SHADOW,
       }),
     ).rejects.toMatchObject({
       routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
@@ -293,12 +293,12 @@ describe('IdaeriRouterUsecase', () => {
         output: { plan: 'PM result' },
         modelUsed: 'pm-mock',
         followUp: {
-          toWorker: AgentType.BE,
+          toWorker: AgentType.CODE_REVIEWER,
           reason: 'PM 이 BE 검토 요청',
           passthroughInput: { text: 'user repository 만들어줘' },
         },
       }));
-      const beDispatcher = buildDispatcher(AgentType.BE, () => ({
+      const beDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => ({
         agentRunId: 2,
         output: { plan: 'BE result' },
         modelUsed: 'be-mock',
@@ -322,7 +322,7 @@ describe('IdaeriRouterUsecase', () => {
       expect(result.handoffResults).toHaveLength(1);
       expect(result.handoffResults?.[0]).toMatchObject({
         agentRunId: 2,
-        workerType: AgentType.BE,
+        workerType: AgentType.CODE_REVIEWER,
         output: { plan: 'BE result' },
       });
       // nested 의 handoffResults 는 root 가 평탄화 → leaf 는 자기 자신 외 child 정보 없음.
@@ -332,7 +332,7 @@ describe('IdaeriRouterUsecase', () => {
       expect(beDispatcher.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           source: 'SLACK_COMMAND',
-          agentTypeHint: AgentType.BE,
+          agentTypeHint: AgentType.CODE_REVIEWER,
           text: 'user repository 만들어줘',
           contextRefs: { agentRunId: 1 },
         }),
@@ -353,12 +353,12 @@ describe('IdaeriRouterUsecase', () => {
         output: {},
         modelUsed: 'pm-mock',
         followUp: {
-          toWorker: AgentType.BE,
+          toWorker: AgentType.CODE_REVIEWER,
           reason: 'PM → BE',
           passthroughInput: {},
         },
       }));
-      const beDispatcher = buildDispatcher(AgentType.BE, () => ({
+      const beDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => ({
         agentRunId: 11,
         output: {},
         modelUsed: 'be-mock',
@@ -425,7 +425,7 @@ describe('IdaeriRouterUsecase', () => {
         output: {},
         modelUsed: 'mock',
         followUp: {
-          toWorker: AgentType.BE_TEST,
+          toWorker: AgentType.PO_SHADOW,
           reason: 'PM → BE_TEST',
           passthroughInput: {},
         },

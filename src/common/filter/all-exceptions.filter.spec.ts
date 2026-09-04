@@ -7,8 +7,6 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 
-import { BeFixException } from '../../agent/be-fix/domain/be-fix.exception';
-import { BeFixErrorCode } from '../../agent/be-fix/domain/be-fix-error-code.enum';
 import { CodeReviewerException } from '../../agent/code-reviewer/domain/code-reviewer.exception';
 import { CodeReviewerErrorCode } from '../../agent/code-reviewer/domain/code-reviewer-error-code.enum';
 import { DomainStatus } from '../exception/domain-status.enum';
@@ -45,14 +43,6 @@ describe('AllExceptionsFilter', () => {
       new CodeReviewerException({
         message: '열린 PR을 찾을 수 없습니다.',
         code: 'NO_OPEN_PR_FOUND' as CodeReviewerErrorCode,
-        status: DomainStatus.NOT_FOUND,
-      }),
-    ],
-    [
-      'BeFixException',
-      new BeFixException({
-        message: '열린 PR을 찾을 수 없습니다.',
-        code: 'NO_OPEN_PR_FOUND' as BeFixErrorCode,
         status: DomainStatus.NOT_FOUND,
       }),
     ],

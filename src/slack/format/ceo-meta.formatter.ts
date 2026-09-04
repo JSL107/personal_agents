@@ -62,11 +62,6 @@ const formatSourceFooter = (output: MetaOutput): string => {
   } else {
     missing.push('pm');
   }
-  if (refs.ctoRunId !== undefined) {
-    parts.push(`cto=#${refs.ctoRunId}`);
-  } else {
-    missing.push('cto');
-  }
   const missingPart =
     missing.length > 0 ? ` · missing: ${missing.join(', ')}` : '';
   return `_합성 source: ${parts.join(', ')}${missingPart} (schemaVersion=${output.schemaVersion})_`;
