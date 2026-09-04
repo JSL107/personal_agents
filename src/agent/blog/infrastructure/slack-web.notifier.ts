@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 
+import { appendIntegrationHint } from '../../../common/domain/integration-failure-hint';
 import { toReadableSlackArgs } from '../../../slack/format/message-blocks.builder';
 import {
   BlogSlackNotifierPort,
@@ -41,10 +42,13 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
         ...toReadableSlackArgs(text),
       });
     } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      // 이 경로는 삼키고 로그만 남기므로, 로그가 유일한 단서다 — 행동 한 줄을 여기에 붙인다.
       this.logger.warn(
-        `비동기 BLOG 스레드 답장 실패 (channel=${channel} thread=${threadTs ?? '-'}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        appendIntegrationHint(
+          `비동기 BLOG 스레드 답장 실패 (channel=${channel} thread=${threadTs ?? '-'}): ${reason}`,
+          error,
+        ),
       );
     }
   }

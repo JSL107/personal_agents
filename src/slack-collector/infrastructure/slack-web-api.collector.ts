@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 import { match } from 'ts-pattern';
 
+import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import {
   ListMyMentionsOptions,
@@ -76,10 +77,13 @@ export class SlackWebApiCollector implements SlackCollectorPort {
         });
       } catch (error: unknown) {
         // 한 채널 history 실패는 전체를 무너뜨리지 않는다 (private 미초대 등).
+        // 삼키는 경로라 로그가 유일한 단서다 — 초대 방법까지 여기서 알려 준다.
+        const reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `conversations.history 실패 (channel=${channel.id}): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          appendIntegrationHint(
+            `conversations.history 실패 (channel=${channel.id}): ${reason}`,
+            error,
+          ),
         );
         continue;
       }
@@ -110,11 +114,10 @@ export class SlackWebApiCollector implements SlackCollectorPort {
     error: unknown,
     prefix: string,
   ): SlackCollectorException {
+    const reason = error instanceof Error ? error.message : String(error);
     return new SlackCollectorException({
       code: SlackCollectorErrorCode.REQUEST_FAILED,
-      message: `${prefix}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      message: appendIntegrationHint(`${prefix}: ${reason}`, error),
       cause: error,
     });
   }

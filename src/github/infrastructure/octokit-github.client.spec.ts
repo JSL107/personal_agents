@@ -36,6 +36,29 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  // 힌트 사전이 실제로 이 경로를 지나는지 — 겨냥한 조건(Octokit RequestError)에서 확인한다.
+  it('GitHub 이 404 를 주면 실패 문구에 다음 행동이 붙는다', async () => {
+    const notFound = Object.assign(new Error('Not Found'), {
+      name: 'HttpError',
+      status: 404,
+    });
+    const octokit = {
+      rest: {
+        search: {
+          issuesAndPullRequests: jest.fn().mockRejectedValue(notFound),
+        },
+        pulls: { listReviews: jest.fn() },
+      },
+      paginate: jest.fn().mockResolvedValue([]),
+    } as unknown as Octokit;
+    const client = new OctokitGithubClient(octokit);
+
+    await expect(client.listMyAssignedTasks()).rejects.toMatchObject({
+      githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      message: expect.stringContaining('repo'),
+    });
+  });
+
   it('search 응답을 issues / pullRequests 로 분리한다', async () => {
     const octokit = buildOctokitMock([
       {
