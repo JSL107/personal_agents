@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@notionhq/client';
 
@@ -27,6 +28,82 @@ describe('NotionApiClient', () => {
 
     await expect(adapter.listActiveTasks()).rejects.toMatchObject({
       notionErrorCode: NotionErrorCode.TOKEN_NOT_CONFIGURED,
+    });
+  });
+
+  // 힌트 사전이 실제로 이 경로를 지나는지 — 겨냥한 조건(Notion APIResponseError)에서 확인한다.
+  it('Notion 이 object_not_found 를 주면 실패 문구에 다음 행동이 붙는다', async () => {
+    const notFound = Object.assign(new Error('Could not find page'), {
+      code: 'object_not_found',
+      status: 404,
+    });
+    const adapter = new NotionApiClient(
+      {
+        pages: { create: jest.fn().mockRejectedValue(notFound) },
+      } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(
+      adapter.createDatabasePage({
+        databaseId: 'DATABASE',
+        properties: {},
+        blocks: [],
+      }),
+    ).rejects.toMatchObject({
+      notionErrorCode: NotionErrorCode.REQUEST_FAILED,
+      message: expect.stringContaining('연결(Connections)'),
+    });
+  });
+
+  // listActiveTasks 는 DB 조회 실패를 삼키고 "할 일 0건" 으로 돌려준다 — 로그가 유일한 단서다.
+  it('DB 조회가 막히면 조용히 0건이 되지만 경고 로그에 다음 행동이 남는다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const notShared = Object.assign(new Error('Could not find database'), {
+      code: 'object_not_found',
+      status: 404,
+    });
+    const adapter = new NotionApiClient(
+      {
+        databases: { query: jest.fn().mockRejectedValue(notShared) },
+      } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const tasks = await adapter.listActiveTasks({ databaseIds: ['DB1'] });
+
+    expect(tasks).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('연결(Connections)'),
+    );
+    warn.mockRestore();
+  });
+
+  // resolveTitlePropertyName 은 두 호출부 모두 try 밖에서 부른다 — 감싸지 않으면 원문이 샌다.
+  it('DB schema 조회가 막히면 감싸서 다음 행동까지 붙인다', async () => {
+    const notShared = Object.assign(new Error('Could not find database'), {
+      code: 'object_not_found',
+      status: 404,
+    });
+    const adapter = new NotionApiClient(
+      {
+        databases: { retrieve: jest.fn().mockRejectedValue(notShared) },
+      } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(
+      adapter.createDatabasePage({
+        databaseId: 'DATABASE',
+        title: '제목',
+        properties: {},
+        blocks: [],
+      }),
+    ).rejects.toMatchObject({
+      notionErrorCode: NotionErrorCode.REQUEST_FAILED,
+      message: expect.stringContaining('연결(Connections)'),
     });
   });
 

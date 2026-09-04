@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 
 import { SlackCollectorException } from '../domain/slack-collector.exception';
@@ -71,6 +72,35 @@ describe('SlackWebApiCollector', () => {
     });
   });
 
+  // 삼키는 경로라 로그가 유일한 단서 — 힌트가 그 로그에 실리는지 확인한다.
+  it('봇 미초대로 한 채널을 못 읽으면 경고 로그에 초대 방법이 실린다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const client = {
+      users: {
+        conversations: jest
+          .fn()
+          .mockResolvedValue({ channels: [{ id: 'C1', is_private: true }] }),
+      },
+      conversations: {
+        history: jest.fn().mockRejectedValue(
+          Object.assign(new Error('An API error occurred: not_in_channel'), {
+            code: 'slack_webapi_platform_error',
+            data: { ok: false, error: 'not_in_channel' },
+          }),
+        ),
+      },
+    } as unknown as WebClient;
+
+    await new SlackWebApiCollector(client).listMyMentions({ slackUserId: 'U' });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('/invite @이대리'),
+    );
+    warn.mockRestore();
+  });
+
   it('한 채널의 history 가 throw 해도 다른 채널은 계속 수집', async () => {
     const conversations = jest.fn().mockResolvedValue({
       channels: [
@@ -80,7 +110,12 @@ describe('SlackWebApiCollector', () => {
     });
     const history = jest.fn().mockImplementation(({ channel }) => {
       if (channel === 'C1') {
-        return Promise.reject(new Error('not_in_channel'));
+        return Promise.reject(
+          Object.assign(new Error('An API error occurred: not_in_channel'), {
+            code: 'slack_webapi_platform_error',
+            data: { ok: false, error: 'not_in_channel' },
+          }),
+        );
       }
       return Promise.resolve({
         messages: [{ text: '<@U> here', user: 'U2', ts: '1.0' }],

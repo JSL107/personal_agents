@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Client } from '@notionhq/client';
 import { match } from 'ts-pattern';
 
+import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { NotionException } from '../domain/notion.exception';
 import { NotionTask } from '../domain/notion.type';
@@ -138,13 +139,10 @@ export class NotionApiClient implements NotionClientPort {
       }
       return pages;
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion 블로그 초안 DB ${databaseId} 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion 블로그 초안 DB ${databaseId} 조회 실패`,
+      );
     }
   }
 
@@ -177,13 +175,10 @@ export class NotionApiClient implements NotionClientPort {
         cursor = response.next_cursor ?? undefined;
       }
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} block 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion page ${pageId} block 조회 실패`,
+      );
     }
 
     // 상한에 걸린 채 조용히 반환하면 뒷부분이 잘린 본문이 정상 Markdown 으로 승인·발행된다.
@@ -236,13 +231,10 @@ export class NotionApiClient implements NotionClientPort {
           : '';
       return { pageId, url };
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion DB ${databaseId} page 생성 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion DB ${databaseId} page 생성 실패`,
+      );
     }
   }
 
@@ -254,13 +246,7 @@ export class NotionApiClient implements NotionClientPort {
         archived: true,
       });
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} archive 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(error, `Notion page ${pageId} archive 실패`);
     }
   }
 
@@ -286,10 +272,14 @@ export class NotionApiClient implements NotionClientPort {
           : {}),
       });
     } catch (error: unknown) {
+      // 삼키고 null 을 돌려주는 경로 — 호출부에는 "할 일 0건" 으로만 보인다.
+      // 로그가 유일한 단서라 여기에 행동 한 줄을 붙인다.
+      const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Notion DB ${databaseId} 조회 실패 (skip): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        appendIntegrationHint(
+          `Notion DB ${databaseId} 조회 실패 (skip): ${reason}`,
+          error,
+        ),
       );
       return null;
     }
@@ -337,13 +327,10 @@ export class NotionApiClient implements NotionClientPort {
           : '';
       return { pageId, url };
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion 자식 페이지 생성 실패 (parent ${parentPageId}, title "${title}"): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion 자식 페이지 생성 실패 (parent ${parentPageId}, title "${title}")`,
+      );
     }
   }
 
@@ -385,13 +372,10 @@ export class NotionApiClient implements NotionClientPort {
       } while (cursor !== undefined);
       return null;
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion 부모 페이지 ${parentPageId} children 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion 부모 페이지 ${parentPageId} children 조회 실패`,
+      );
     }
   }
 
@@ -446,13 +430,10 @@ export class NotionApiClient implements NotionClientPort {
           : '';
       return { pageId, url };
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion day-page 생성 실패 (DB ${databaseId}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion day-page 생성 실패 (DB ${databaseId})`,
+      );
     }
   }
 
@@ -476,13 +457,7 @@ export class NotionApiClient implements NotionClientPort {
       }
       return null;
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion DB ${databaseId} 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(error, `Notion DB ${databaseId} 조회 실패`);
     }
   }
 
@@ -544,13 +519,10 @@ export class NotionApiClient implements NotionClientPort {
     try {
       existingIds = await this.collectAllBlockIds(pageId);
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} 의 기존 block 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion page ${pageId} 의 기존 block 조회 실패`,
+      );
     }
 
     // 신규 append 먼저 — 실패 시 기존이 그대로 남는다 (replaceCheckInSection 과 동일 정책).
@@ -560,10 +532,12 @@ export class NotionApiClient implements NotionClientPort {
       try {
         await this.client!.blocks.delete({ block_id: blockId });
       } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Notion page ${pageId} 기존 block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          appendIntegrationHint(
+            `Notion page ${pageId} 기존 block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${reason}`,
+            error,
+          ),
         );
       }
     }
@@ -598,13 +572,10 @@ export class NotionApiClient implements NotionClientPort {
     try {
       existingIds = await this.collectCheckInSectionBlockIds(pageId);
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} 의 기존 Check in 섹션 조회 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion page ${pageId} 의 기존 Check in 섹션 조회 실패`,
+      );
     }
 
     // 신규 append 가 먼저 — 이 단계가 실패하면 기존 Check in 은 그대로 남는다 (P2 mitigation).
@@ -617,10 +588,12 @@ export class NotionApiClient implements NotionClientPort {
         // archive — Notion API 의 blocks.delete 는 archive=true 로 마킹 (hard delete 아님).
         await this.client!.blocks.delete({ block_id: blockId });
       } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Notion page ${pageId} 기존 Check in block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          appendIntegrationHint(
+            `Notion page ${pageId} 기존 Check in block ${blockId} archive 실패 (skip — 신규는 정상 추가됨): ${reason}`,
+            error,
+          ),
         );
       }
     }
@@ -686,13 +659,10 @@ export class NotionApiClient implements NotionClientPort {
           >[0]['children'],
         });
       } catch (error: unknown) {
-        throw new NotionException({
-          code: NotionErrorCode.REQUEST_FAILED,
-          message: `Notion page ${pageId} block append 실패 (chunk ${index}): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          cause: error,
-        });
+        throw this.wrapRequestFailed(
+          error,
+          `Notion page ${pageId} block append 실패 (chunk ${index})`,
+        );
       }
     }
   }
@@ -710,14 +680,23 @@ export class NotionApiClient implements NotionClientPort {
         >[0]['properties'],
       });
     } catch (error: unknown) {
-      throw new NotionException({
-        code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion page ${pageId} 속성 업데이트 실패: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
+      throw this.wrapRequestFailed(
+        error,
+        `Notion page ${pageId} 속성 업데이트 실패`,
+      );
     }
+  }
+
+  // 모든 Notion 호출 실패가 이 한 지점을 지난다 — Notion 이 준 code 를 여기서 한 번
+  // 한국어 행동으로 옮기면 Slack 카드·로그·원장이 같은 안내를 함께 받는다.
+  // GitHub 클라이언트의 같은 이름 helper 와 짝이다.
+  private wrapRequestFailed(error: unknown, prefix: string): NotionException {
+    const reason = error instanceof Error ? error.message : String(error);
+    return new NotionException({
+      code: NotionErrorCode.REQUEST_FAILED,
+      message: appendIntegrationHint(`${prefix}: ${reason}`, error),
+      cause: error,
+    });
   }
 
   private assertClientConfigured(operation: string): void {
@@ -733,9 +712,20 @@ export class NotionApiClient implements NotionClientPort {
   // DB schema 에서 type === 'title' 인 property 의 이름을 반환 (DB 마다 "이름"/"Name"/"Title" 등 다름).
   // 매 호출마다 databases.retrieve 호출 — /today 는 하루 몇 번이라 성능 우려 없음.
   private async resolveTitlePropertyName(databaseId: string): Promise<string> {
-    const db = await this.client!.databases.retrieve({
-      database_id: databaseId,
-    });
+    // 두 호출부(`createDatabasePage` · `resolveDayPage`) 모두 이 호출을 try 밖에서 한다 —
+    // 감싸지 않으면 Notion 원문("Could not find database ...")이 그대로 사용자에게 나간다.
+    // DB 를 통합에 연결하지 않았을 때 가장 먼저 깨지는 자리가 여기다.
+    let db: Awaited<ReturnType<Client['databases']['retrieve']>>;
+    try {
+      db = await this.client!.databases.retrieve({
+        database_id: databaseId,
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `Notion DB ${databaseId} schema 조회 실패`,
+      );
+    }
     if (!('properties' in db)) {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,

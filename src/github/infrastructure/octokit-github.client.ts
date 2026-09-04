@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Octokit } from '@octokit/rest';
 
+import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import {
@@ -348,12 +349,13 @@ export class OctokitGithubClient implements GithubClientPort {
     }
   }
 
+  // 모든 Octokit 호출 실패가 이 한 지점을 지난다 — GitHub 이 준 status 를 여기서 한 번
+  // 한국어 행동으로 옮기면 Slack 카드·로그·원장이 같은 안내를 함께 받는다.
   private wrapRequestFailed(error: unknown, prefix: string): GithubException {
+    const reason = error instanceof Error ? error.message : String(error);
     return new GithubException({
       code: GithubErrorCode.REQUEST_FAILED,
-      message: `${prefix}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      message: appendIntegrationHint(`${prefix}: ${reason}`, error),
       cause: error,
     });
   }
