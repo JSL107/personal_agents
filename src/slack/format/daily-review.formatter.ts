@@ -1,4 +1,8 @@
-import { DailyReview } from '../../agent/work-reviewer/domain/work-reviewer.type';
+import {
+  DailyReview,
+  NO_DECISIONS_TEXT,
+  NO_RISKS_TEXT,
+} from '../../agent/work-reviewer/domain/work-reviewer.type';
 import { FormattedReport } from './formatted-report.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
@@ -39,6 +43,17 @@ export const formatDailyReview = (review: DailyReview): FormattedReport => {
     );
   }
 
+  // 결정사항·위험은 빈 배열이어도 섹션을 지우지 않는다. 섹션이 사라지면
+  // "결재할 것이 없었다" 와 "회고가 그 축을 아예 안 봤다" 가 화면에서 똑같아 보인다.
+  detailLines.push(
+    ...formatBriefingSection(
+      '대표 결정사항',
+      review.decisions,
+      NO_DECISIONS_TEXT,
+    ),
+    ...formatBriefingSection('위험', review.risks, NO_RISKS_TEXT),
+  );
+
   if (review.nextActions.length > 0) {
     detailLines.push(
       '*다음 액션*',
@@ -51,4 +66,24 @@ export const formatDailyReview = (review: DailyReview): FormattedReport => {
     summary: summaryLines.join('\n'),
     detail: detailLines.join('\n'),
   };
+};
+
+// 미검토(undefined)는 섹션 자체를 내지 않는다 — 두 필드 도입 전 회고를 다시 렌더하는
+// 경우뿐이며, 안 본 축을 "없음" 으로 적으면 화면이 거짓을 말한다.
+const formatBriefingSection = (
+  label: string,
+  items: string[] | undefined,
+  emptyText: string,
+): string[] => {
+  if (items === undefined) {
+    return [];
+  }
+  if (items.length === 0) {
+    return [`*${label}*`, emptyText, ''];
+  }
+  return [
+    `*${label}*`,
+    ...items.map((item) => `• ${escapeSlackMrkdwn(item)}`),
+    '',
+  ];
 };
