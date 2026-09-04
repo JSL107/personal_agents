@@ -8,6 +8,8 @@
  * 표본 밖 판정이 하나 늘고 같은 창을 두 번 쓰지 않아 닳을 자원이 없다.
  */
 
+import { RankingWeights } from '../../screener/domain/screener-rule';
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
 export interface SearchWindow {
@@ -108,6 +110,8 @@ export interface ParameterCombination {
   stopLossPercent: number | null;
   minimumTurnover60: number;
   maximumWeightPercent: number;
+  volumeSurgeMinimum: number;
+  rankingWeights: RankingWeights;
 }
 
 /**
@@ -138,6 +142,8 @@ const combinationKeyOf = (combination: ParameterCombination): string =>
     combination.stopLossPercent,
     combination.minimumTurnover60,
     combination.maximumWeightPercent,
+    combination.volumeSurgeMinimum,
+    combination.rankingWeights.join(':'),
   ].join('|');
 
 export const formatCombinationLabel = (
@@ -150,7 +156,8 @@ export const formatCombinationLabel = (
       : `+${combination.takeProfitPercent}/${combination.stopLossPercent}`;
   return (
     `${band} · ${formatTurnoverLabel(combination.minimumTurnover60)} · ` +
-    `${combination.maximumWeightPercent}%`
+    `${combination.maximumWeightPercent}% · 급증${combination.volumeSurgeMinimum} · ` +
+    `가중${combination.rankingWeights.join(':')}`
   );
 };
 
@@ -159,6 +166,8 @@ export interface ParameterGridInput {
   stopLossPercents: number[];
   minimumTurnover60s: number[];
   maximumWeightPercents: number[];
+  volumeSurgeMinimums: number[];
+  rankingWeights: RankingWeights[];
   includeBandless: boolean;
   baseline: ParameterCombination;
 }
@@ -184,24 +193,32 @@ export const buildParameterGrid = (
     combinations.push(combination);
   };
   push(input.baseline);
-  for (const minimumTurnover60 of input.minimumTurnover60s) {
-    for (const maximumWeightPercent of input.maximumWeightPercents) {
-      if (input.includeBandless) {
-        push({
-          takeProfitPercent: null,
-          stopLossPercent: null,
-          minimumTurnover60,
-          maximumWeightPercent,
-        });
-      }
-      for (const takeProfitPercent of input.takeProfitPercents) {
-        for (const stopLossPercent of input.stopLossPercents) {
-          push({
-            takeProfitPercent,
-            stopLossPercent,
-            minimumTurnover60,
-            maximumWeightPercent,
-          });
+  for (const volumeSurgeMinimum of input.volumeSurgeMinimums) {
+    for (const rankingWeights of input.rankingWeights) {
+      for (const minimumTurnover60 of input.minimumTurnover60s) {
+        for (const maximumWeightPercent of input.maximumWeightPercents) {
+          if (input.includeBandless) {
+            push({
+              takeProfitPercent: null,
+              stopLossPercent: null,
+              minimumTurnover60,
+              maximumWeightPercent,
+              volumeSurgeMinimum,
+              rankingWeights,
+            });
+          }
+          for (const takeProfitPercent of input.takeProfitPercents) {
+            for (const stopLossPercent of input.stopLossPercents) {
+              push({
+                takeProfitPercent,
+                stopLossPercent,
+                minimumTurnover60,
+                maximumWeightPercent,
+                volumeSurgeMinimum,
+                rankingWeights,
+              });
+            }
+          }
         }
       }
     }

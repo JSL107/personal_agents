@@ -1,4 +1,7 @@
-import { ScreenStrategy } from '../../screener/domain/screener-rule';
+import {
+  RankingWeights,
+  ScreenStrategy,
+} from '../../screener/domain/screener-rule';
 import { BACKTEST_DEFAULTS } from './backtest-cli.parser';
 
 export const PARAMETER_SEARCH_CLI_USAGE =
@@ -10,6 +13,8 @@ export const PARAMETER_SEARCH_CLI_USAGE =
   '                    [--stop-loss -0.2,-2,-3,-5,-7,-15]\n' +
   '                    [--turnover-min 300000000,500000000]\n' +
   '                    [--weight 15,20,25]\n' +
+  '                    [--volume-surge-min 1.0,1.5,2.0 <SWING 전용>]\n' +
+  '                    [--rank-weights 1:1:1,0:1:1,2:1:1]\n' +
   '                    [--slippage 0,0.1,0.3 <체결가를 불리하게 밀 %, 기본 0>]\n' +
   '                    [--include-bandless] [--out <경로.json>]\n' +
   '\n' +
@@ -86,6 +91,30 @@ const readNumberList = (
   return values;
 };
 
+const readRankingWeightsList = (
+  argv: string[],
+): RankingWeights[] | undefined => {
+  const raw = readOption(argv, 'rank-weights');
+  if (raw === undefined) {
+    return undefined;
+  }
+  return raw.split(',').map((part) => {
+    const components = part.trim().split(':');
+    const values = components.map((component) => Number(component));
+    if (
+      components.length !== 3 ||
+      components.some((component) => component.trim() === '') ||
+      values.some((value) => !Number.isFinite(value) || value < 0) ||
+      values.reduce((sum, value) => sum + value, 0) <= 0
+    ) {
+      throw new Error(
+        `--rank-weights 는 0 이상 유한수 3개 조합을 콜론으로 구분해야 합니다. 받은 값: ${raw}\n${PARAMETER_SEARCH_CLI_USAGE}`,
+      );
+    }
+    return values as unknown as RankingWeights;
+  });
+};
+
 const readPositiveInteger = (
   argv: string[],
   key: string,
@@ -135,6 +164,8 @@ export interface ParameterSearchCliOptions {
   stopLossPercents?: number[];
   minimumTurnover60s?: number[];
   maximumWeightPercents?: number[];
+  volumeSurgeMinimums?: number[];
+  rankingWeights?: RankingWeights[];
   includeBandless: boolean;
   outPath?: string;
   /**
@@ -192,6 +223,13 @@ export const parseParameterSearchCliArguments = (
       (value) => value > 0 && value <= 100,
       '0 초과 100 이하의 수여야 합니다',
     ),
+    volumeSurgeMinimums: readNumberList(
+      argv,
+      'volume-surge-min',
+      (value) => value > 0,
+      '0보다 큰 수여야 합니다',
+    ),
+    rankingWeights: readRankingWeightsList(argv),
     includeBandless: argv.includes('--include-bandless'),
     outPath: readOption(argv, 'out'),
     // 백테스트 CLI 와 같은 규칙(0 이상 100 미만)이되 목록을 받는다. 미지정이면 미반영

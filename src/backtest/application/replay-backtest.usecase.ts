@@ -30,6 +30,7 @@ import {
   ShadowDailyPriceInput,
 } from '../../paper-trading/domain/shadow-performance';
 import {
+  RankingWeights,
   ScreenCandidate,
   SCREENER_RULE_VERSION,
   screenStocks,
@@ -99,6 +100,8 @@ export interface ReplayBacktestCommand {
   minimumTurnover60: number;
   // 당일 상승률 상한(%). 값을 바꿔가며 "급등 당일 매수" 를 얼마나 걸러야 하는지 잰다.
   maximumDailyGainPercent: number;
+  volumeSurgeMinimum: number;
+  rankingWeights: RankingWeights;
   maximumPositions: number;
   weightPercent: number;
   holdingTradeDays: number;
@@ -926,6 +929,7 @@ export class ReplayBacktestUsecase {
     // `constrainPaperRecommendation` 도 후보를 변형하지 않고 새 객체로 복사하므로,
     // 조합이 바뀌어도 이 배열은 같은 값으로 남는다. 단 변동성 추정량은 후보 자체를
     // 바꾸므로 캐시의 정체성에 들어가 있다(`execute` 가 어긋남을 예외로 끊는다).
+    // 거래량 급증 임계와 순위 가중치는 후보 캐시 이후 screenStocks 에서만 작동하므로 정체성이 아니다.
     const candidates =
       context.candidatesByAsOf?.get(asOf) ??
       this.buildCandidates(
@@ -949,6 +953,8 @@ export class ReplayBacktestUsecase {
       candidates.length,
       context.command.minimumTurnover60,
       context.command.maximumDailyGainPercent,
+      context.command.volumeSurgeMinimum,
+      context.command.rankingWeights,
     );
     const asOfIndex = context.tradeDateIndex.get(asOf) as number;
     const heldPositions = context.ledger.openPositions().map((position) => ({
