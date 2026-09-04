@@ -484,7 +484,7 @@ export class EnvironmentVariables {
   @IsString()
   DOCS_AUDIT_PR_ENABLED?: string;
 
-  // DOCS_AUDIT_PR_REPO: docs PR 대상 "owner/repo". 미설정 시 BE_SANDBOX_DEFAULT_REPO_LABEL → "JSL107/personal_agents".
+  // DOCS_AUDIT_PR_REPO: docs PR 대상 "owner/repo". 미설정 시 "JSL107/personal_agents".
   @IsOptional()
   @IsString()
   @Matches(/^[^/\s]+\/[^/\s]+$/, {
@@ -677,34 +677,6 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   GITHUB_ISSUE_AUTO_LABEL_REPOS?: string;
-
-  // BE 자율 개발 Phase 2a-3 — sandbox 안 `git apply --check` 검증 시 host 의 어느 repo 를
-  // /repo 에 read-only 마운트할지. 미설정 시 process.cwd() (봇 자신의 작업 디렉터리) 사용.
-  // 향후 multi-repo 운영 시 자연어 입력에서 추출한 repoLabel → host path mapping 으로 확장.
-  @IsOptional()
-  @IsString()
-  BE_SANDBOX_HOST_REPO_PATH?: string;
-
-  // BE 자율 개발 자동 chain — BE worker 가 BackendPlan 출력 직후 자동으로 BE_SANDBOX_APPLY preview
-  // 생성 (사용자 "응" → Claude diff + sandbox jest + PR open chain). 'true' 일 때만 활성.
-  // 미설정/false → BE worker 결과는 텍스트만 (기존 동작).
-  @IsOptional()
-  @IsString()
-  BE_AUTONOMOUS_FROM_PLAN?: string;
-
-  // BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 repoLabel 기본값 ("owner/repo").
-  // 미설정 시 "JSL107/personal_agents" (봇 자신 repo 가정).
-  @IsOptional()
-  @IsString()
-  @Matches(/^[^/\s]+\/[^/\s]+$/, {
-    message: 'BE_SANDBOX_DEFAULT_REPO_LABEL 은 "owner/repo" 형식이어야 합니다.',
-  })
-  BE_SANDBOX_DEFAULT_REPO_LABEL?: string;
-
-  // BE_AUTONOMOUS_FROM_PLAN 활성 시 preview 의 baseBranch 기본값. 미설정 시 "main".
-  @IsOptional()
-  @IsString()
-  BE_SANDBOX_DEFAULT_BASE_BRANCH?: string;
 
   // 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러.
   // 1인 봇이라 단일 입사일. 향후 멀티 사용자 시 테이블로 승격.

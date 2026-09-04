@@ -3,10 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { BeAgentModule } from './agent/be/be.module';
-import { BeDiffGeneratorModule } from './agent/be-diff-generator/be-diff-generator.module';
 import { BeFixModule } from './agent/be-fix/be-fix.module';
-import { BeSandboxApplier } from './agent/be-sandbox/infrastructure/be-sandbox.applier';
-import { BeSandboxPushPrApplier } from './agent/be-sandbox/infrastructure/be-sandbox-push-pr.applier';
 import { BeSchemaModule } from './agent/be-schema/be-schema.module';
 import { BeSreModule } from './agent/be-sre/be-sre.module';
 import { BeTestModule } from './agent/be-test/be-test.module';
@@ -114,8 +111,8 @@ import { WebhookModule } from './webhook/webhook.module';
     BeAgentModule,
     // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
     BeSchemaModule,
-    // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래) +
-    // BeSandboxApplier (PreviewGate) 가 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
+    // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래)가
+    // 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
     SandboxModule,
     // V3 §8 BE-2 AST Test Gen — /be-test 슬래시. Tree-sitter AST 분석 + spec 생성 +
     // sandbox self-correction 루프 (생성 spec 을 Docker tmpfs 에서 실행 → 실패 시 stderr 로 재생성).
@@ -135,14 +132,11 @@ import { WebhookModule } from './webhook/webhook.module';
     RouterModule,
     // PM-2: PreviewGateModule.forRoot 가 PmWriteBackApplier 를 PREVIEW_APPLIERS multi-provider 로 등록.
     // V3 §P4: PoEvalCareerlogApplier 도 같은 forRoot 로 등록 — Notion appendBlocks 만 의존.
-    // V3 Phase 2a-1: BeSandboxApplier 추가 — 사용자 자연어 Y/N 응답 후 sandbox 안 검증.
     // global: true 라 SlackModule / PmAgentModule 등은 별도 import 없이 ApplyPreviewUsecase 등 사용 가능.
     PreviewGateModule.forRoot({
       appliers: [
         PmWriteBackApplier,
         PoEvalCareerlogApplier,
-        BeSandboxApplier,
-        BeSandboxPushPrApplier,
         DocsAuditPrApplier,
         PreferenceProfilePreviewApplier,
         AiCliEnvApplyPreviewApplier,
@@ -152,15 +146,13 @@ import { WebhookModule } from './webhook/webhook.module';
         // CTO 분배 확정 — "응" 한 마디로 BE / BE_SCHEMA / BE_TEST 실행 (슬래시 직접 호출 대체).
         CtoBeChainApplier,
       ],
-      // 레버 3b: apply 후 결과 검증 — BE_SANDBOX_PUSH_PR 의 PR open 을 getPullRequest 로 재확인.
+      // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubFileVerifier],
       // v2 reject-signal: PREFERENCE_PROFILE 제안 ❌ 거부 시 연결 proposal 을 REJECTED 로 기록.
       cancellers: [PreferenceProfileCanceller],
       imports: [
         GithubModule,
         NotionModule,
-        SandboxModule,
-        BeDiffGeneratorModule,
         PreferenceProfileModule,
         AiCliEnvModule,
         HumanizeModule,
