@@ -10,6 +10,10 @@ import {
   TriggerType,
 } from '../../../agent-run/domain/agent-run.type';
 import {
+  redactInjectionPhrases,
+  wrapUntrustedInput,
+} from '../../../common/llm/untrusted-input.util';
+import {
   PullRequestDetail,
   PullRequestDiff,
 } from '../../../github/domain/github.type';
@@ -286,12 +290,14 @@ export const buildReviewPrompt = ({
     ...detail.changedFiles.map((file) => `  - ${file}`),
     '',
     `[PR 본문]`,
-    detail.body || '(없음)',
+    // 본문과 diff 는 외부(fork contributor 포함) 출처 — 분석 대상이지 지시가 아니다.
+    // diff 에는 redact 를 걸지 않는다: 리뷰 대상 코드를 치환하면 리뷰 품질이 깎인다.
+    detail.body
+      ? wrapUntrustedInput(redactInjectionPhrases(detail.body))
+      : '(없음)',
     '',
     `[diff]${diffNote}`,
-    '```diff',
-    diff.diff,
-    '```',
+    wrapUntrustedInput(['```diff', diff.diff, '```'].join('\n')),
   );
 
   return lines.join('\n');

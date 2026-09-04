@@ -438,8 +438,8 @@ describe('GenerateImpactReportUsecase', () => {
       await usecase.execute({ subject: '--recent 7d', slackUserId: 'U1' });
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
-      expect(prompt).toContain('<pr-body-start>');
-      expect(prompt).toContain('<pr-body-end>');
+      expect(prompt).toContain('<untrusted-input>');
+      expect(prompt).toContain('</untrusted-input>');
       expect(prompt).toContain('[REDACTED]');
       expect(prompt).not.toMatch(/ignore previous instructions/i);
       expect(prompt).not.toMatch(/system:/i);
