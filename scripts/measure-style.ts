@@ -23,7 +23,6 @@ import { readFileSync } from 'node:fs';
 import {
   extractProseSentences,
   formatKoreanStyleMetrics,
-  KOREAN_STYLE_TARGETS,
   measureKoreanStyle,
 } from '../src/humanize/domain/korean-style-metrics';
 
@@ -36,9 +35,7 @@ type SampleReport = {
   markdown: string;
 };
 
-// 짧은 문장 기준(20자)·편차·최장 상한은 `KOREAN_STYLE_TARGETS` 와 `measureKoreanStyle` 이
-// 정본이라 여기서 다시 세지 않는다. 긴 문장(61자 이상)만 도메인에 대응 항목이 없어 남긴다 —
-// 프로파일 §1 이 재현 대상으로 쓰는 축이다.
+// 짧은 문장·편차·최장 문장은 자동 판정 기준이 아니라 코퍼스의 분포를 보기 위한 관측값이다.
 const LONG_SENTENCE_MIN = 61;
 // 문장 끝에 붙는 닫는 문자. `korean-style-metrics` 의 CLOSING_CHARS 를 **손으로 복사한 것**이다
 // (export 되어 있지 않다). 그쪽이 바뀌면 여기도 같이 고쳐야 종결 판정이 갈리지 않는다.
@@ -179,10 +176,7 @@ const describe = (label: string, markdown: string): void => {
   console.log(`\n## ${label}`);
   console.log(`상태    문장 ${sentences.length}개 · ${verdict}`);
   console.log(
-    // 이 줄에 목표를 적지 않는다 — 편차·20자↓ 는 2026-08-26 판정에서 내려갔고, 이 스크립트는
-    // 그 기준을 **다시 세우려고** 코퍼스를 재는 도구다. 내린 목표를 옆에 적으면 새 표본이
-    // 옛 값에 맞는지부터 보게 된다. 최장만 목표를 함께 적는다(아직 판정 축이다).
-    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자(목표 ${KOREAN_STYLE_TARGETS.longestSentenceMax}자↓) · 20자↓ ${metrics.shortSentencePercent}% · 61자↑ ${percent(longCount, sentences.length)}`,
+    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자 · 20자↓ ${metrics.shortSentencePercent}% · 61자↑ ${percent(longCount, sentences.length)}`,
   );
   console.log(
     `종결    해요체 ${metrics.yoEndingPercent}% · 구어 ${metrics.colloquialEndingPercent}% · 교대율 ${metrics.endingAlternationPercent}%`,

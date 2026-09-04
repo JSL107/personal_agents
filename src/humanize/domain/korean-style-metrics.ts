@@ -203,19 +203,6 @@ const BANNED_CONNECTIVES = [
 // 제외해야 하는데, 쉼표를 붙여 피하면 '즉 그래서' 처럼 쉼표 없는 접속 용법을 놓친다.
 const JEUK_PATTERN = /즉(?![가-힣])/;
 const MEASURABLE_SENTENCE_MIN = 40;
-/**
- * 상한을 넘긴 문장을 카드에 보여줄 때 잘라 낼 길이. 상한 자체는 `KOREAN_STYLE_TARGETS`
- * (`longestSentenceMax`)가 정본이다.
- *
- * 왜 문장을 보여주는가 — 넘겼다고 발행을 막지 않으므로 사람이 판단해야 하는데, **숫자만으로는
- * 판단이 안 선다.** 실측(2026-08-24, 같은 입력 4회)에서 80자 초과 네 문장 중 셋은 53·75·59자로
- * 끊겼고, 남은 하나는 네 회차 모두 91자 그대로였다. 그 하나는 공백 제외 91자 중 77자(85%)가
- * 영문 이름이라 절대 규칙(고유명사·항목 순서 불변)이 끊는 것을 막는다 — 끊어야 할 만연체와
- * 끊을 수 없는 이름 나열이 길이로는 갈리지 않는다.
- *
- * 한 줄에 들어갈 만큼만 보여준다. 판정에 필요한 것은 문장의 **성격**이지 전문이 아니다.
- */
-const LONGEST_SENTENCE_PREVIEW = 60;
 // 합쇼체 종결 판정. `습니다` 를 나열하지 않고 `니다` 로 본다 — 합쇼체는 자음 뒤에서 `-습니다`,
 // 모음 뒤에서 `-ㅂ니다` 로 갈려 "씁니다·갑니다·봅니다" 처럼 활용형이 무한하다. 어미를 열거하면
 // 정확히 그 활용형들이 빠져 합쇼체가 0 으로 세어진다(실측으로 걸렸다).
@@ -265,7 +252,6 @@ const NO_SHORT_SENTENCE_MIN = 3;
 // 구성 축의 표본 하한. 헤딩 2개면 하나가 비율을 50%p 흔들고, 문단 6개 미만이면 같은크기 비율이
 // 늘 높게 나온다(문단 2개면 최소 50%). 표본이 설 때까지 판정하지 않는다.
 const COMPOSITION_HEADING_MIN = 3;
-const COMPOSITION_PARAGRAPH_MIN = 6;
 
 // 마크다운에서 산문 문단만 골라 문장으로 자른다. 코드·표·헤딩이 섞이면 문장 길이 분포가
 // 통째로 왜곡되므로 윤문 대상과 **같은 분해기**를 쓴다.
@@ -488,23 +474,6 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
  * 없는 기준으로 판정하느니 수치만 보여주는 편이 낫다.
  */
 export const KOREAN_STYLE_TARGETS = {
-  // 읽기 어려운 만연체 상한.
-  //
-  // 80 이었을 때 이 축은 **최종본 9편을 전부 실패로 찍었다**(분포 100~146자). 사용자가 손봐서
-  // 통과시킨 글을 하나도 남김없이 목표 밖으로 판정하는 기준은 기준이 아니다. 실제 피해도 컸다 —
-  // 2026-08-29 ~ 09-02 윤문 회차에 「최장 82자(≤80)」 류 지적이 매번 찍혔고, 되먹임
-  // (`style-feedback.ts`)이 그 항목을 반복 갭으로 골라 다음 회차 프롬프트에 실었다. 모델은
-  // 사용자가 신경 쓰지 않는 축을 매 회차 붙잡고 있었다.
-  //
-  // 150 은 코퍼스 최대(146)에 여유를 얹은 값이다. 최종본 9편은 전부 통과하고, 발행본에서
-  // 관측된 191자는 그대로 걸린다.
-  //
-  // **프롬프트의 「80자를 넘기지 마라」(`humanize-system.prompt.ts`)와 값이 다른 것은 의도다.**
-  // 그쪽은 짧게 가라는 **방향 지시**이고 이쪽은 「이건 확실히 잘못됐다」는 **방어선**이라 역할이
-  // 다르다. 방향 지시를 150 으로 올리면 모델이 그 길이를 허용 범위로 읽을 수 있는데, 그렇게
-  // 했을 때 어떻게 되는지는 실측이 없다(80 지시로도 191자가 나온 기록만 있다). 두 값을 맞추려면
-  // 프롬프트를 바꿔 돌려 보고 그 결과로 정해야 한다.
-  longestSentenceMax: 150,
   // 종결체 교대율 상한. 비율이 맞아도 문장마다 갈아타면 그 자체가 기계적으로 읽힌다.
   //
   // 실측(2026-09-02 코퍼스): 최종본 9편이 **전부 0%** vs 발행본 3편 9%. 두 무리가 겹치지
@@ -514,38 +483,8 @@ export const KOREAN_STYLE_TARGETS = {
   // 이므로 이 여유가 최종본을 위태롭게 하지 않는다.
   endingAlternationPercentMax: 5,
   bannedConnectiveMax: 0,
-  // 호흡. 편차만 보면 "들쭉날쭉한가" 는 알아도 "숨이 가쁜가" 는 모른다 — 2026-08-26 발행본이
-  // 편차 11(통과)·평균 33.2자였는데 사용자 판정은 "호흡이 너무 짧다" 였다.
-  //
-  // **이 값의 근거는 그 판정 하나다.** 사용자 글의 평균 44.7자를 근거로 들었던 앞선 주석은
-  // 지웠다 — 그 수치는 15문장 표본에서 나왔고, 이 파일이 스스로 집행하는 문턱
-  // (`MEASURABLE_SENTENCE_MIN = 40`)을 통과하지 못한다. 자기가 무의미하다고 판정하는 크기의
-  // 표본을 기준으로 삼고 있었다. 프로파일 문서도 그 항의 수치를 재현 대상으로 쓰지 말라고
-  // 적어 두었는데 주석이 독자를 정확히 그 자리로 안내했다.
-  //
-  // **35 는 임시 눈금이었고, 이제 실측으로 바뀐다.** 코퍼스 9편의 편별 평균은 38.6 ~ 57.0자
-  // (합산 49.6)이고, 38 은 그 최저값 바로 아래다. 최종본을 하나도 실패로 찍지 않는 선에서
-  // 가장 높은 하한이 이 값이다.
-  //
-  // **이 값은 목표가 아니라 최소 방어선이다.** 사용자가 도달시키는 곳은 49.6자 부근이지만,
-  // 하한을 거기 두면 코퍼스 9편 중 3편이 미달로 찍힌다 — 사용자 글을 실패시키는 기준은 틀린
-  // 기준이다. 모델을 더 긴 호흡으로 미는 일은 하한이 아니라 프롬프트가 맡는다
-  // (`renderBreathFeedback` 이 실측값을 돌려주는 경로).
-  averageLengthMin: 38,
-  // 호흡을 어절로 잰 하한. 위 `averageLengthMin` 이 글자 수라 영문 비중에 휘둘리는 것을 보완한다.
-  //
-  // 실측(2026-09-01, 블로그 8월 글 9편): 「호흡이 짧다」 고 지적받은 7편 8.7~9.9어절 vs 지적
-  // 없던 2편 12.0~12.2어절. 두 무리가 겹치지 않아 그 사이에 둔다. 종결체 교대율과 같은 방식으로
-  // 얻은 경계다.
-  //
-  // **이 축이 필요한 이유는 지적받은 7편이 글자 수 기준을 전부 통과했다는 데 있다.** 그중
-  // 2026-08-24 발행본은 미달 축이 하나도 없는 상태로 「문장마다 끊겨 격자로 읽힌다」 는 판정을
-  // 받았다. 평균 41.9자로 하한을 넘겼지만 8.7어절이었다.
-  //
-  // **11 → 10 (2026-09-02).** 위 실측은 지적 **당시**, 즉 사람이 고치기 전 상태였다. 그 뒤
-  // 수정이 끝난 최종본 9편의 분포는 10.9 ~ 12.7어절이라, 11 은 하한이 10.9 편을 미달로 찍는다.
-  // 10 이면 최종본은 전부 통과하고 위 8.7~9.9 무리는 그대로 걸린다 — 두 실측이 모순되지 않는다.
-  wordsPerSentenceMin: 10,
+  // 문장 길이(평균·최장·어절)는 카드에 표시하는 관측값으로만 둔다. 문장마다 필요한 정보량과
+  // 고유명사 비중이 달라 숫자 하한·상한을 두면 모델이 의미보다 길이를 맞추게 된다.
   // 스킬 룰북 J-3 의 "1문서 1~2회 이하" 를 그대로 옮긴다. 0 이 아닌 이유는 한 번쯤은
   // 자연스러운 자리가 있기 때문이고, 상한을 두는 이유는 15개가 들어간 발행본이 실제로 나갔기 때문이다.
   emDashMax: 2,
@@ -577,13 +516,6 @@ export const KOREAN_STYLE_TARGETS = {
   //
   // 채점 회차에 쓴 기준(명사구 0% · 900자 절 0개)이 후자였다. 그 기준으로 소제목 18개를 바꾸고
   // 절 12개를 갈랐는데, 실측이 반대였다. 관측값으로 두어 사람이 극단을 보고 판단하게 한다.
-  // 문단 축 합산(벽 % + 같은크기 %). **두 축은 반대로 움직이므로 따로 판정하면 안 된다** —
-  // 한쪽을 낮추려면 반대쪽으로 밀면 되기 때문이다(각 축 주석 참조). 합으로 재면 그 회피가 막힌다.
-  //
-  // 실측(2026-09-03): 방어선 9편 36~57 · 토스 40 · 우아한형제들 46 · 하이퍼커넥트 58 ·
-  // 격자로 찍힌 2026-08-20 발행본은 같은크기만 67 이었다. 60 이면 사람이 쓴 글은 모두 통과하고
-  // 격자만 걸린다.
-  paragraphCompositeMax: 60,
 } as const;
 
 /**
@@ -598,9 +530,11 @@ export const KOREAN_STYLE_TARGETS = {
  *   "해요체가 기본이고 `~습니다` 는 한 값의 절반을 넘기지 않는다" 라, 지시를 잘 따른 글일수록
  *   해요체가 높다. 낡은 40~60% 로 재면 잘 쓴 글이 목표 밖으로 찍힌다. 새 범위를 정할 실측
  *   분포가 아직 없어 **판정을 보류하고 수치만 보여준다**.
- * - **문단 축(벽·같은크기)**: 프로파일 실측에 대응 항목이 없다.
+ * - **문장 길이와 문단 축(벽·같은크기)**: 문장 수·글자 수로 문단과 문장을 재단하면 같은
+ *   격자형 문단을 만들 수 있으므로 관측값으로만 둔다.
  */
 export const KOREAN_STYLE_UNJUDGED_AXES = [
+  '문장 길이',
   '편차',
   '짧은문장',
   '구어',
@@ -608,6 +542,7 @@ export const KOREAN_STYLE_UNJUDGED_AXES = [
   '절',
   '헤딩 명사구',
   '리프 절 길이',
+  '문단',
 ] as const;
 
 /**
@@ -634,15 +569,9 @@ const collectKoreanStyleGaps = (
 ): KoreanStyleGap[] => {
   const gaps: KoreanStyleGap[] = [];
   const T = KOREAN_STYLE_TARGETS;
-  // 문장 축은 40문장 이상일 때만 판정한다. main 이 표본 출처 의심으로 편차·짧은문장·구어를
-  // 내렸고(#398), 남은 축에 이번 평균 하한이 더해진다.
+  // 문장 축은 40문장 이상일 때만 판정한다. 길이 자체는 판정하지 않고, 종결체·접속사처럼
+  // 별도의 문체 신호만 이 조건에서 본다.
   if (metrics.measurable) {
-    if (metrics.longestSentenceLength > T.longestSentenceMax) {
-      gaps.push({
-        axis: 'longestSentence',
-        text: `최장 ${metrics.longestSentenceLength}자(≤${T.longestSentenceMax})`,
-      });
-    }
     if (metrics.endingAlternationPercent > T.endingAlternationPercentMax) {
       gaps.push({
         axis: 'endingAlternation',
@@ -653,18 +582,6 @@ const collectKoreanStyleGaps = (
       gaps.push({
         axis: 'bannedConnective',
         text: `금지접속사 ${metrics.bannedConnectiveCount}회(0회)`,
-      });
-    }
-    if (metrics.wordsPerSentence < T.wordsPerSentenceMin) {
-      gaps.push({
-        axis: 'wordsPerSentence',
-        text: `어절 ${metrics.wordsPerSentence}개(≥${T.wordsPerSentenceMin}개)`,
-      });
-    }
-    if (metrics.averageLength < T.averageLengthMin) {
-      gaps.push({
-        axis: 'averageLength',
-        text: `평균 ${metrics.averageLength}자(≥${T.averageLengthMin}자)`,
       });
     }
   }
@@ -685,28 +602,11 @@ const collectKoreanStyleGaps = (
       text: `인용체 ${metrics.composition.attributionPercent}%(≤${T.attributionPercentMax}%)`,
     });
   }
-  // 문단 축은 **합으로만** 판정한다. 따로 걸면 한쪽을 반대로 밀어 통과할 수 있다.
-  const paragraphComposite =
-    metrics.paragraph.wallPercent +
-    metrics.paragraph.dominantParagraphSizePercent;
-  if (
-    metrics.paragraph.paragraphCount >= COMPOSITION_PARAGRAPH_MIN &&
-    paragraphComposite > T.paragraphCompositeMax
-  ) {
-    gaps.push({
-      axis: 'paragraphComposite',
-      text: `문단 벽+같은크기 ${paragraphComposite}(≤${T.paragraphCompositeMax})`,
-    });
-  }
   return gaps;
 };
 
 export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] =>
   collectKoreanStyleGaps(metrics).map((gap) => gap.text);
-
-// 목표 밖인 축의 이름만. 재시도 수락 판정이 개수가 아니라 **정체**를 보게 하려고 쓴다.
-export const findKoreanStyleGapAxes = (metrics: KoreanStyleMetrics): string[] =>
-  collectKoreanStyleGaps(metrics).map((gap) => gap.axis);
 
 export const formatKoreanStyleMetrics = (
   metrics: KoreanStyleMetrics,
@@ -746,13 +646,8 @@ export const formatKoreanStyleMetrics = (
       : metrics.measurable
         ? `\n판정 대상 충족 (${KOREAN_STYLE_UNJUDGED_AXES.join('·')}은 판정 밖)`
         : '';
-  // 판정 줄은 「기준에서 얼마나 벗어났나」까지만 알려준다. **무엇이 길었는지**는 숫자로 갈리지
-  // 않는다 — 끊어야 할 만연체와, 고유명사 불변 규칙 때문에 끊을 수 없는 영문 이름 나열이
-  // 같은 91자로 찍힌다. 넘겼을 때만 그 문장을 덧붙여 사람이 읽고 판단하게 한다.
-  const longest =
-    metrics.longestSentenceLength > KOREAN_STYLE_TARGETS.longestSentenceMax
-      ? `\n최장 문장(${metrics.longestSentenceLength}자 · ${metrics.longestSentenceWords}어절): ${truncate(metrics.longestSentence, LONGEST_SENTENCE_PREVIEW)}`
-      : '';
+  // 문장 길이는 숫자만으로 좋고 나쁨을 가르지 않는다. 가장 긴 문장의 길이와 내용은 위 요약의
+  // 관측값으로 남기고, 사람이 문맥과 고유명사 비중을 함께 읽어 판단한다.
   // 확인 범위는 **판정하지 않고 알려만 준다.** 밝히는 글이 참조 코퍼스 18% · 방어선 22% 라
   // 장르 표준이 아니어서, 목표 밖에 넣으면 거의 모든 글이 걸려 다른 지적을 덮는다. 그래도 적는
   // 이유는 2026-08-31 발행본이다 — 문체 지표를 전부 통과했는데 「붙지 않는 전제 위에 쓴 글」로
@@ -764,11 +659,8 @@ export const formatKoreanStyleMetrics = (
     metrics.measurable && !c.hasVerificationScope
       ? '\n확인 범위 미표시 — 문서만 읽고 쓴 글이면 그렇다고 한 줄 넣을지 보세요(판정 아님)'
       : '';
-  return `${sentenceLine}\n${paragraph}${composition}${verdict}${scopeHint}${longest}`;
+  return `${sentenceLine}\n${paragraph}${composition}${verdict}${scopeHint}`;
 };
-
-const truncate = (text: string, max: number): string =>
-  text.length <= max ? text : `${text.slice(0, max)}…`;
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 
