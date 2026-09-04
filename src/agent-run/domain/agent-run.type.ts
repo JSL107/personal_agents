@@ -26,10 +26,6 @@ export enum TriggerType {
   MANUAL = 'MANUAL',
   FAILURE_REPLAY = 'FAILURE_REPLAY',
   WEBHOOK = 'WEBHOOK',
-  SLACK_COMMAND_BE_SCHEMA = 'SLACK_COMMAND_BE_SCHEMA',
-  SLACK_COMMAND_BE_TEST = 'SLACK_COMMAND_BE_TEST',
-  SLACK_COMMAND_BE_SRE = 'SLACK_COMMAND_BE_SRE',
-  SLACK_COMMAND_BE_FIX = 'SLACK_COMMAND_BE_FIX',
   // V3 비전 P2 Assign — CTO worker (/assign 슬래시). PM 직전 plan 의 assignableTaskIds → BE 5종 분배.
   SLACK_COMMAND_ASSIGN = 'SLACK_COMMAND_ASSIGN',
   // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.

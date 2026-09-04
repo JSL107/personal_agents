@@ -2,11 +2,6 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
-import { BeAgentModule } from './agent/be/be.module';
-import { BeFixModule } from './agent/be-fix/be-fix.module';
-import { BeSchemaModule } from './agent/be-schema/be-schema.module';
-import { BeSreModule } from './agent/be-sre/be-sre.module';
-import { BeTestModule } from './agent/be-test/be-test.module';
 import { BlogModule } from './agent/blog/blog.module';
 import { EveningBlogPublishApplier } from './agent/blog/infrastructure/evening-blog-publish.applier';
 import { GithubBlogPublishApplier } from './agent/blog/infrastructure/github-blog-publish.applier';
@@ -29,8 +24,6 @@ import { AgentRunModule } from './agent-run/agent-run.module';
 import { AiCliEnvModule } from './ai-cli-env/ai-cli-env.module';
 import { AiCliEnvApplyPreviewApplier } from './ai-cli-env/infrastructure/ai-cli-env-apply.preview-applier';
 import { AutopilotModule } from './autopilot/autopilot.module';
-import { BeChainModule } from './be-chain/be-chain.module';
-import { CtoBeChainApplier } from './be-chain/infrastructure/cto-be-chain.applier';
 import { CodeGraphModule } from './code-graph/code-graph.module';
 import { CronIdempotencyModule } from './common/queue/cron-idempotency.module';
 import { WorkerStartupCoordinator } from './common/queue/worker-startup.coordinator';
@@ -58,7 +51,6 @@ import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
-import { SandboxModule } from './sandbox/sandbox.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
@@ -108,19 +100,8 @@ import { WebhookModule } from './webhook/webhook.module';
     StockModule,
     PaperTradingModule,
     PaperRecommendModule,
-    BeAgentModule,
-    // V3 BE-3 Schema Architect (lite) — /be-schema 슬래시.
-    BeSchemaModule,
     // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래)가
     // 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
-    SandboxModule,
-    // V3 §8 BE-2 AST Test Gen — /be-test 슬래시. Tree-sitter AST 분석 + spec 생성 +
-    // sandbox self-correction 루프 (생성 spec 을 Docker tmpfs 에서 실행 → 실패 시 stderr 로 재생성).
-    BeTestModule,
-    // V3 §7 BE-1 Auto-SRE — /be-sre 슬래시. Stack trace 파싱 + Code Graph 영향 분석 + LLM patch 제안.
-    BeSreModule,
-    // V3 §9 BE-4 Auto-Remediation — /be-fix 슬래시. PR diff fetch + LLM 컨벤션 위반 식별.
-    BeFixModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO). PM 직전 plan 의 assignableTaskIds → BE 3종 분배.
     CtoModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade). 3 sub-agent snapshot 합성 + careerLog.
@@ -143,8 +124,6 @@ import { WebhookModule } from './webhook/webhook.module';
         EveningBlogPublishApplier,
         GithubBlogPublishApplier,
         EveningCareerReflectApplier,
-        // CTO 분배 확정 — "응" 한 마디로 BE / BE_SCHEMA / BE_TEST 실행 (슬래시 직접 호출 대체).
-        CtoBeChainApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubFileVerifier],
@@ -159,7 +138,6 @@ import { WebhookModule } from './webhook/webhook.module';
         ModelRouterModule,
         CareerMateModule,
         LocalSessionsModule,
-        BeChainModule,
         // CtoBeChainApplier 는 AgentRunService 도 주입받는다. forRoot 는 applier 를
         // PreviewGate 컨텍스트에서 새로 만들므로, BeChainModule 이 그것을 재수출하지
         // 않는 이상 여기 없으면 부팅이 index[1] 에서 끊긴다(런타임에만 드러난다).

@@ -36,7 +36,7 @@ describe('ModelRouterUsecase', () => {
   describe('에이전트 → 모델 라우팅 (전부 ChatGPT)', () => {
     it.each([
       [AgentType.PM],
-      [AgentType.BE],
+      [AgentType.CODE_REVIEWER],
       [AgentType.CODE_REVIEWER],
       [AgentType.CTO],
       [AgentType.PO_EVAL],

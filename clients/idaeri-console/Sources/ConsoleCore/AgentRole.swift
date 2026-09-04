@@ -17,17 +17,6 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "PO 대행"
     case "PO_EVAL":
         return "PO 평가"
-    // 개발
-    case "BE":
-        return "백엔드"
-    case "BE_SCHEMA":
-        return "스키마"
-    case "BE_TEST":
-        return "테스트"
-    case "BE_SRE":
-        return "장애 대응"
-    case "BE_FIX":
-        return "규약 점검"
     // 리뷰
     case "CODE_REVIEWER":
         return "코드 리뷰"

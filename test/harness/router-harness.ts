@@ -88,13 +88,13 @@ export const heuristicClassify: ClassifyFn = (text) => {
   const lowered = text.toLowerCase();
   const rules: ReadonlyArray<[RegExp, AgentType]> = [
     [/휴가|연차/u, AgentType.VACATION],
-    [/스키마|schema/u, AgentType.BE_SCHEMA],
-    [/테스트|test/u, AgentType.BE_TEST],
+    [/스키마|schema/u, AgentType.IMPACT_REPORTER],
+    [/테스트|test/u, AgentType.PO_SHADOW],
     [/리뷰|review|pr/u, AgentType.CODE_REVIEWER],
     [/분배|assign/u, AgentType.CTO],
     [/평가|eval/u, AgentType.PO_EVAL],
     [/회고|worklog|한 일/u, AgentType.WORK_REVIEWER],
-    [/구현|백엔드|backend/u, AgentType.BE],
+    [/구현|백엔드|backend/u, AgentType.CODE_REVIEWER],
     [/오늘|plan|계획|할 일/u, AgentType.PM],
   ];
   const matched = rules.find(

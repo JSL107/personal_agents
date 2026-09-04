@@ -2,23 +2,18 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 33종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
 |---|---|---|---|---|---|
-| Backend | `BE` | `/be plan` | CHATGPT | `src/agent/be/application/generate-backend-plan.usecase.ts` | 백엔드 구현 계획 생성 |
-| BE Fix | `BE_FIX` | — (webhook/자동) | CHATGPT | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | PR 컨벤션 분석 (webhook 자동 트리거) |
-| BE Schema | `BE_SCHEMA` | `/be schema` | CHATGPT | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | Prisma 스키마 변경 제안 |
-| BE SRE | `BE_SRE` | `/be sre` | CHATGPT | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | 스택트레이스 분석 (수동 /be sre) |
-| BE Test | `BE_TEST` | `/be test` | CHATGPT | `src/agent/be-test/application/generate-test.usecase.ts` | Tree-sitter AST 기반 Jest spec 생성 |
 | Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
 | Blog Publish | `BLOG_PUBLISH` | `/blog-publish` | CHATGPT | `src/agent/blog/application/publish-notion-draft.usecase.ts` | Notion 블로그 초안 익명화 + GitHub 발행 승인 |
 | Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
 | CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
-| CTO | `CTO` | `/assign` | CHATGPT | `src/agent/cto/application/generate-assignment.usecase.ts` | PM 작업을 BE worker 로 분배 |
+| CTO | `CTO` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | 스터디 주제를 판정한다 |
 | CTO Study | `CTO_STUDY` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용) |
 | Delay Report | `DELAY_REPORT` | — (webhook/자동) | CHATGPT | `src/agent/delay-report/application/build-delay-report.usecase.ts` | 회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론) |
 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |

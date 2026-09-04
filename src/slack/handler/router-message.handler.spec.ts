@@ -227,7 +227,7 @@ describe('RouterMessageHandler — app_mention', () => {
       handoffResults: [
         {
           agentRunId: 2,
-          workerType: AgentType.BE,
+          workerType: AgentType.CODE_REVIEWER,
           output: {},
           modelUsed: 'be-mock',
           formattedText: 'BE body',
@@ -251,7 +251,7 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(sayText).toContain('PM body');
     expect(sayText).toContain('BE body');
     expect(sayText).toContain('---');
-    expect(sayText).toContain(`${AgentType.PM} → ${AgentType.BE}`);
+    expect(sayText).toContain(`${AgentType.PM} → ${AgentType.CODE_REVIEWER}`);
     expect(sayText).toContain('agentRunIds=[1, 2]');
   });
 
@@ -1003,7 +1003,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
     const pending = buildPendingPreview({
-      kind: PREVIEW_KIND.CTO_BE_CHAIN,
+      kind: PREVIEW_KIND.PM_WRITE_BACK,
     });
     const applyPreviewUsecase = {
       execute: jest.fn().mockResolvedValue({
@@ -1067,7 +1067,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
           execute: jest
             .fn()
             .mockResolvedValue(
-              buildPendingPreview({ kind: PREVIEW_KIND.CTO_BE_CHAIN }),
+              buildPendingPreview({ kind: PREVIEW_KIND.PM_WRITE_BACK }),
             ),
         } as unknown as FindLatestPendingPreviewUsecase,
         applyPreviewUsecase,

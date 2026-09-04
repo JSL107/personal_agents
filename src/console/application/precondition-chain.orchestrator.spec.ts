@@ -685,7 +685,7 @@ describe('PreconditionChainOrchestrator', () => {
   it('NO_ASSIGNABLE_TASKS 는 재시도 없이 즉시 command.rejected', async () => {
     const { orchestrator, handleConversationTurn, consoleEvents } = make();
     handleConversationTurn.execute.mockRejectedValue(
-      new FakeDomainException(CtoErrorCode.NO_ASSIGNABLE_TASKS),
+      new FakeDomainException(CtoErrorCode.INVALID_STUDY_VERDICT),
     );
 
     await orchestrator.run({
@@ -846,7 +846,7 @@ describe('PreconditionChainOrchestrator', () => {
   it('commandId 없으면 SSE 를 발행하지 않는다', async () => {
     const { orchestrator, handleConversationTurn, consoleEvents } = make();
     handleConversationTurn.execute.mockRejectedValue(
-      new FakeDomainException(CtoErrorCode.NO_ASSIGNABLE_TASKS),
+      new FakeDomainException(CtoErrorCode.INVALID_STUDY_VERDICT),
     );
 
     await orchestrator.run({

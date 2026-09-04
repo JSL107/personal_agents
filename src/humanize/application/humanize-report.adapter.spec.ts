@@ -1,15 +1,10 @@
-import { BackendPlan } from '../../agent/be/domain/be-agent.type';
 import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
-import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { EvaluationOutput } from '../../agent/po-eval/domain/po-eval.type';
 import { PoShadowReport } from '../../agent/po-shadow/domain/po-shadow.type';
-import { AgentType } from '../../model-router/domain/model-router.type';
 import { HumanizeService } from './humanize.service';
 import {
-  humanizeAssignmentOutput,
-  humanizeBackendPlan,
   humanizeCalibrationReport,
   humanizeDailyPlan,
   humanizeDailyReview,
@@ -206,50 +201,6 @@ describe('humanizeCalibrationReport', () => {
   });
 });
 
-describe('humanizeAssignmentOutput', () => {
-  const base: AssignmentOutput = {
-    assignments: [
-      {
-        taskId: 'task-1',
-        taskTitle: '결제 검증 API',
-        beAssignment: AgentType.BE,
-        priority: 1,
-        reasoning: '도메인 구현이 필요함',
-        confidence: 0.85,
-        targetFilePath: 'src/payment/payment.service.ts',
-      },
-    ],
-    unassignedTasks: [
-      {
-        taskId: 'task-2',
-        taskTitle: '배포 승인',
-        reason: '운영 권한 확인 필요',
-      },
-    ],
-    ctoSummary: '한 건은 BE에 배정하고 한 건은 보류함',
-  };
-
-  it('CTO 서사 필드만 윤문하고 task 식별자·분배 메타데이터를 보존한다', async () => {
-    const result = await humanizeAssignmentOutput(base, fakeHumanizer());
-
-    expect(result.ctoSummary).toBe('한 건은 BE에 배정하고 한 건은 보류함_H');
-    expect(result.assignments[0].reasoning).toBe('도메인 구현이 필요함_H');
-    expect(result.unassignedTasks[0].reason).toBe('운영 권한 확인 필요_H');
-    expect(result.assignments[0]).toEqual({
-      ...base.assignments[0],
-      reasoning: '도메인 구현이 필요함_H',
-    });
-    expect(result.unassignedTasks[0].taskId).toBe('task-2');
-    expect(result.unassignedTasks[0].taskTitle).toBe('배포 승인');
-  });
-
-  it('비활성 또는 실패 처리된 humanizer가 입력을 반환하면 원본을 유지한다', async () => {
-    const result = await humanizeAssignmentOutput(base, identityHumanizer());
-
-    expect(result).toEqual(base);
-  });
-});
-
 describe('humanizeEvaluationOutput', () => {
   const base: EvaluationOutput = {
     range: 'WEEK',
@@ -384,76 +335,5 @@ describe('humanizePoShadowReport', () => {
     expect(result.factSummary).toEqual(report.factSummary);
     expect(result.droppedFindingCount).toBe(2);
     expect(result.purposeConflict).toBeNull();
-  });
-});
-
-describe('humanizeBackendPlan', () => {
-  const base: BackendPlan = {
-    subject: '결제 검증 API 추가',
-    context: '기존 결제 도메인에 검증 흐름이 없음',
-    implementationChecklist: [
-      {
-        title: '검증 서비스 추가',
-        description: '결제 토큰 검증 로직을 구현함',
-        dependsOn: [],
-      },
-      {
-        title: '검증 API 연결',
-        description: '컨트롤러에서 검증 서비스를 호출함',
-        dependsOn: ['검증 서비스 추가'],
-      },
-    ],
-    apiDesign: [
-      {
-        method: 'POST',
-        path: '/payments/verify',
-        request: 'orderId와 token을 받음',
-        response: '검증 상태를 반환함',
-        notes: '중복 요청을 멱등 처리함',
-      },
-    ],
-    risks: ['PG 재시도 시 중복 요청 위험이 있음'],
-    testPoints: ['동일 요청을 반복해도 결과가 같아야 함'],
-    estimatedHours: 6,
-    reasoning: '도메인 서비스부터 구현해야 의존 방향이 유지됨',
-  };
-
-  it('BE 서사 필드(notes 포함)만 윤문하고 title·dependsOn·API 계약(request/response·method/path)·수치를 보존한다', async () => {
-    const result = await humanizeBackendPlan(base, fakeHumanizer());
-
-    expect(result.context).toBe('기존 결제 도메인에 검증 흐름이 없음_H');
-    expect(result.reasoning).toBe(
-      '도메인 서비스부터 구현해야 의존 방향이 유지됨_H',
-    );
-    expect(result.implementationChecklist[0].description).toBe(
-      '결제 토큰 검증 로직을 구현함_H',
-    );
-    // request/response 는 스키마 조각일 수 있어 원본 보존, notes 만 윤문.
-    expect(result.apiDesign?.[0]).toEqual({
-      method: 'POST',
-      path: '/payments/verify',
-      request: 'orderId와 token을 받음',
-      response: '검증 상태를 반환함',
-      notes: '중복 요청을 멱등 처리함_H',
-    });
-    expect(result.risks).toEqual(['PG 재시도 시 중복 요청 위험이 있음_H']);
-    expect(result.testPoints).toEqual([
-      '동일 요청을 반복해도 결과가 같아야 함_H',
-    ]);
-    expect(result.implementationChecklist.map((item) => item.title)).toEqual([
-      '검증 서비스 추가',
-      '검증 API 연결',
-    ]);
-    expect(result.implementationChecklist[1].dependsOn).toEqual([
-      '검증 서비스 추가',
-    ]);
-    expect(result.subject).toBe('결제 검증 API 추가');
-    expect(result.estimatedHours).toBe(6);
-  });
-
-  it('비활성 또는 실패 처리된 humanizer가 입력을 반환하면 원본을 유지한다', async () => {
-    const result = await humanizeBackendPlan(base, identityHumanizer());
-
-    expect(result).toEqual(base);
   });
 });

@@ -5,17 +5,11 @@ export enum ModelProviderName {
 
 export enum AgentType {
   PM = 'PM',
-  BE = 'BE',
   CODE_REVIEWER = 'CODE_REVIEWER',
   WORK_REVIEWER = 'WORK_REVIEWER',
   IMPACT_REPORTER = 'IMPACT_REPORTER',
   PO_SHADOW = 'PO_SHADOW',
-  BE_SCHEMA = 'BE_SCHEMA',
-  BE_TEST = 'BE_TEST',
-  BE_SRE = 'BE_SRE',
-  BE_FIX = 'BE_FIX',
-  // V3 비전 workflow phase plan §4.2 P2 Assign — PM 의 assignableTaskIds 를
-  // BE worker (BE / BE_SCHEMA / BE_TEST) 로 분배 + priority/reasoning + unassigned 표시.
+  // 기술 판단 담당. 현재는 스터디 주제 평가(CTO_STUDY)가 이 자리의 실무다.
   CTO = 'CTO',
   // V3 비전 workflow phase plan §4.4 P4 Evaluate — Work Reviewer / PO Shadow /
   // Impact Reporter 3 sub-agent 직전 snapshot 을 합성 → 정성/정량 + 이력서용 careerLog.

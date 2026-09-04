@@ -28,7 +28,7 @@ describe('Router 스모크 replay 하네스', () => {
     expect(pm.formattedText).toContain('[MOCK PM]');
 
     const schema = await harness.replayText('user 테이블 스키마 변경해줘');
-    expect(schema.workerType).toBe(AgentType.BE_SCHEMA);
+    expect(schema.workerType).toBe(AgentType.IMPACT_REPORTER);
 
     const vacation = await harness.replayText('남은 휴가 며칠이야?');
     expect(vacation.workerType).toBe(AgentType.VACATION);
@@ -64,7 +64,7 @@ describe('Router 스모크 replay 하네스', () => {
       outcomeOverrides: {
         [AgentType.PM]: {
           followUp: {
-            toWorker: AgentType.BE,
+            toWorker: AgentType.CODE_REVIEWER,
             reason: 'PM → BE 핸드오프',
             passthroughInput: { text: 'user repository 만들어줘' },
           },
@@ -75,7 +75,7 @@ describe('Router 스모크 replay 하네스', () => {
     const result = await harness.replayHint(AgentType.PM, 'plan');
     expect(result.workerType).toBe(AgentType.PM);
     expect(result.handoffResults).toHaveLength(1);
-    expect(result.handoffResults?.[0].workerType).toBe(AgentType.BE);
+    expect(result.handoffResults?.[0].workerType).toBe(AgentType.CODE_REVIEWER);
     expect(result.handoffResults?.[0].formattedText).toContain(
       'user repository 만들어줘',
     );

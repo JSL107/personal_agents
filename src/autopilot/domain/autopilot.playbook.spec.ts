@@ -22,15 +22,12 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(morning?.digestGroup).toBe('morning');
   });
 
-  it('noon 그룹은 매일 13:00 KST에 assign, po-shadow 순서로 실행한다', () => {
+  it('noon 그룹은 매일 13:00 KST에 po-shadow 를 실행한다', () => {
     const noonEntries = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.digestGroup === 'noon',
     );
 
-    expect(noonEntries.map((entry) => entry.id)).toEqual([
-      'assign',
-      'po-shadow',
-    ]);
+    expect(noonEntries.map((entry) => entry.id)).toEqual(['po-shadow']);
     expect(noonEntries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

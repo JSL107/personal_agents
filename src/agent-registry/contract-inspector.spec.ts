@@ -293,15 +293,15 @@ describe('evaluateContract — 점수', () => {
   });
 
   it('금칙어는 분모를 늘리지 않고 분자에서만 깎는다', () => {
-    const clean = evaluateContract(AgentType.CTO, {
-      ctoSummary: '분배 요약',
-      assignments: ['a'],
-      unassignedTasks: [],
+    const clean = evaluateContract(AgentType.EVENING_RETRO, {
+      prNotes: '회고 요약',
+      candidates: ['a'],
+      retrospective: '오늘의 회고',
     });
-    const dirty = evaluateContract(AgentType.CTO, {
-      ctoSummary: '마법 같은 분배 요약',
-      assignments: ['a'],
-      unassignedTasks: [],
+    const dirty = evaluateContract(AgentType.EVENING_RETRO, {
+      prNotes: '마법 같은 회고 요약',
+      candidates: ['a'],
+      retrospective: '오늘의 회고',
     });
 
     // 분모가 같아야 한다 — 금칙어가 항목으로 세어지면 깨끗한 산출물이 공짜 1 점을 받는다.

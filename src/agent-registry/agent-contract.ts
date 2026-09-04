@@ -38,9 +38,9 @@ import { AgentType } from '../model-router/domain/model-router.type';
 export enum Department {
   /** 기획 — 할 일 정의·기획 검토. */
   PLANNING = 'planning',
-  /** 개발 — 구현 계획·스키마·테스트·장애 분석. */
+  /** 개발 — 코드를 다루는 자리. BE 워커 정리(2026-09-04) 뒤로는 PR 리뷰가 남았다. */
   ENGINEERING = 'engineering',
-  /** 리뷰 — 코드/업무 리뷰와 임팩트 평가. */
+  /** 리뷰 — 업무 리뷰와 임팩트 평가. */
   REVIEW = 'review',
   /** 경영 — 배분·총평. */
   EXECUTIVE = 'executive',
@@ -188,21 +188,8 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     'PO 관점에서 기획을 그림자 검토한다',
   ),
 
-  // ──────────────────────────────── 개발 ────────────────────────────────
-  [AgentType.BE]: stub(Department.ENGINEERING, '백엔드 구현 계획을 세운다'),
-  [AgentType.BE_SCHEMA]: stub(
-    Department.ENGINEERING,
-    'DB 스키마 변경안을 제안한다',
-  ),
-  [AgentType.BE_TEST]: stub(Department.ENGINEERING, '테스트 코드를 작성한다'),
-  [AgentType.BE_SRE]: stub(
-    Department.ENGINEERING,
-    '스택 트레이스를 분석해 장애 원인을 찾는다',
-  ),
-
-  // ──────────────────────────────── 리뷰 ────────────────────────────────
   [AgentType.CODE_REVIEWER]: {
-    department: Department.REVIEW,
+    department: Department.ENGINEERING,
     job: 'PR 을 리뷰하고 머지 가부를 판단한다',
     deliverableFields: ['summary', 'findings', 'approvalRecommendation'],
     requireEvidence: true,
@@ -234,14 +221,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   // CODE_REVIEWER 와 대상도 산출물도 같다. 개발 부서의 정의(구현 계획·스키마·테스트·
   // 장애 분석)에는 PR 을 읽는 일이 없다 — `analyze-pr-convention.usecase.ts` 는 코드를
   // 쓰지 않고 GitHub diff 를 받아 위반 목록을 낸다.
-  [AgentType.BE_FIX]: stub(
-    Department.REVIEW,
-    'PR 의 컨벤션 위반을 찾아 고칠 곳을 알린다',
-  ),
-  // 2026-08-25 기획 → 리뷰. 기획 부서의 정의는 "할 일 정의·기획 검토" 인데 이 워커는
-  // 이미 끝난 기간의 성과를 평가한다 — 리뷰 정의의 "임팩트 평가" 그대로이고,
-  // WORK_REVIEWER(리뷰) → PO_EVAL → CEO 라는 인계 순서와도 맞는다. 이름의 PO 는 직군
-  // 명칭일 뿐이고, 부서 편성의 기준은 직군이 아니라 하는 일이다.
   [AgentType.PO_EVAL]: {
     department: Department.REVIEW,
     job: '기간 성과를 정성 평가하고 커리어 로그를 남긴다',
@@ -251,16 +230,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   },
 
   // ──────────────────────────────── 경영 ────────────────────────────────
-  [AgentType.CTO]: {
-    department: Department.EXECUTIVE,
-    job: 'PM 이 뽑은 할 일을 백엔드 워커에 분배한다',
-    // 2026-08-24 실측: 성공 실행 15/15 전건에 세 키가 비어 있지 않은 값으로 등장.
-    // `skipPreamble` 을 켜지 않는다 — output 이 모델 응답 그대로다
-    // (`generate-assignment.usecase.ts` 의 `result: output`, 같은 키를 타입가드가 검증).
-    deliverableFields: ['ctoSummary', 'assignments', 'unassignedTasks'],
-    requireEvidence: false,
-    nextAgent: AgentType.BE,
-  },
+  [AgentType.CTO]: stub(Department.EXECUTIVE, '기술 주제를 판정한다'),
   [AgentType.CEO]: {
     department: Department.EXECUTIVE,
     job: '주간 실행을 메타 관점에서 총평한다',

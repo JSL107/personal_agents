@@ -29,7 +29,7 @@ describe('RepoContextCollector', () => {
     expect(modules).toEqual([
       {
         name: 'agent/cto',
-        description: 'PM 작업을 BE worker 로 분배',
+        description: '스터디 주제를 판정한다',
       },
       { name: 'study-brief-cron', description: '' },
     ]);
