@@ -383,6 +383,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        case 'DELAY_REPORT': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (DELAY_REPORT) 는 실시간 조회라 재실행 개념이 없습니다. 현재 진행 현황을 다시 물어봐주세요.`,
+          });
+          return;
+        }
         case 'PAPER_RECOMMEND': {
           const strategy = snapshot.strategy;
           const decidedAt = snapshot.decidedAt

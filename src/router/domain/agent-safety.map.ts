@@ -43,6 +43,8 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.CAREER_MATE]: AgentSafetyLevel.READ_ONLY,
   // 조회 전용 — 매수/매도 등록 경로가 없다 (분류 프롬프트에도 명시돼 있다).
   [AgentType.PAPER_TRADE]: AgentSafetyLevel.READ_ONLY,
+  // 결정론 조회 전용 — 외부 기록과 LLM 호출이 없다.
+  [AgentType.DELAY_REPORT]: AgentSafetyLevel.READ_ONLY,
 
   // --- 라우터 미등록 (cron·webhook·내부 판정 전용) — 행동 미실측 ---
   // 자연어 분류 후보가 아니라 이번 변경의 소비 경로(프롬프트 표식)에 걸리지 않는다.

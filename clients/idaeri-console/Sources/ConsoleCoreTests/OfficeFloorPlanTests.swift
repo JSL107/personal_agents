@@ -55,7 +55,7 @@ let sampleAgents: [ConsoleAgent] =
         [
             "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE", "HUMANIZER",
             "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
-            "EVENING_RETRO", "OPS_SUPERVISOR",
+            "EVENING_RETRO", "OPS_SUPERVISOR", "DELAY_REPORT",
         ]
     )
 

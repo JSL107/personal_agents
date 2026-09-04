@@ -280,7 +280,8 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     case "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE":
         return [.wallWhiteboard, .whiteboard, .bookshelf]
     // 상태를 지켜본다 — 벽에 걸린 지표 화면.
-    case "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "INVEST", "PAPER_TRADE", "PAPER_RECOMMEND":
+    case "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "INVEST", "PAPER_TRADE", "PAPER_RECOMMEND",
+        "DELAY_REPORT":
         return [.wallMonitor]
     // 기록을 넣고 꺼낸다.
     case "VACATION", "JOB_APPLICATION", "CAREER_MATE", "ISSUE_LABELER":

@@ -23,6 +23,8 @@ import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module'
 import { CodeReviewerDispatcher } from '../agent/code-reviewer/infrastructure/code-reviewer.dispatcher';
 import { CtoModule } from '../agent/cto/cto.module';
 import { CtoDispatcher } from '../agent/cto/infrastructure/cto.dispatcher';
+import { DelayReportModule } from '../agent/delay-report/delay-report.module';
+import { DelayReportDispatcher } from '../agent/delay-report/infrastructure/delay-report.dispatcher';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { ImpactReporterDispatcher } from '../agent/impact-reporter/infrastructure/impact-reporter.dispatcher';
 import { JobApplicationDispatcher } from '../agent/job-application/infrastructure/job-application.dispatcher';
@@ -88,6 +90,7 @@ import {
     CareerMateModule,
     JobApplicationModule,
     PaperTradingModule,
+    DelayReportModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -134,6 +137,7 @@ import {
         CareerMateDispatcher,
         JobApplicationDispatcher,
         PaperTradeDispatcher,
+        DelayReportDispatcher,
       ],
     },
   ],

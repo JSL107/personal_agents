@@ -320,6 +320,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     skipPreamble: true,
     nextAgent: null,
   },
+  [AgentType.DELAY_REPORT]: stub(
+    Department.INTERNAL_OPS,
+    '승인 대기·진행 중 작업·미해소 실패를 조회해 지연 원인을 귀속한다',
+  ),
   [AgentType.PAPER_RECOMMEND]: {
     department: Department.GROWTH,
     job: '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',

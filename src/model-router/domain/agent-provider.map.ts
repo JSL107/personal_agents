@@ -48,6 +48,8 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // PAPER_TRADE — 모의투자 평가는 순수 계산이라 route() 를 거치지 않는다(modelUsed='deterministic').
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST 선례).
   [AgentType.PAPER_TRADE]: ModelProviderName.CHATGPT,
+  // DELAY_REPORT — 결정론 조회 전용이라 실제 route() 를 거치지 않는다.
+  [AgentType.DELAY_REPORT]: ModelProviderName.CHATGPT,
   [AgentType.PAPER_RECOMMEND]: ModelProviderName.CHATGPT,
   [AgentType.CTO_STUDY]: ModelProviderName.CHATGPT,
 };
