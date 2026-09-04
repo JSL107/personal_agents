@@ -8,7 +8,8 @@ import {
 } from '../domain/screening-scorecard';
 
 // 이 수를 밑돌면 격차를 추세로 읽지 말라고 카드에 적는다. 설계 문서 §안전장치의
-// 최소 표본과 같은 값이다 — 3~4건으로 낸 비율은 근거처럼 쓰이면서 사실상 추측이다.
+// 최소 표본과 같은 값이고, 그 규율이 "축당 10건" 이라 격차의 두 축(산 것 건수·기여 회차
+// 수)에 같은 값을 쓴다 — 3~4건으로 낸 비율은 근거처럼 쓰이면서 사실상 추측이다.
 const TREND_MINIMUM_SAMPLE = 10;
 
 // 표시 자리수. 판정(toDisplayGap)도 이 값을 써야 표와 결론이 갈리지 않는다.
@@ -57,10 +58,14 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
     formatArm('산 것   ', strategy.bought),
     formatArm('안 산 것', strategy.notBought),
   ];
+  // 기여 회차 수를 함께 적는다. 이 값이 두 갈래의 누적 평균 차가 아니라 회차별 격차의
+  // 평균이라는 사실이 수치만 보면 드러나지 않고, 한 종목도 사지 않은 회차는 격차를 만들지
+  // 못해 빠지므로 위 두 줄의 건수와도 다른 수다.
   const gap =
     strategy.gapPct === null
-      ? '  격차 - — 한쪽에 표본이 없어 비교 대상이 없음'
-      : `  격차 ${formatPercent(strategy.gapPct, '%p')} (산 것 평균 − 안 산 것 평균)`;
+      ? '  격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음'
+      : `  격차 ${formatPercent(strategy.gapPct, '%p')}` +
+        ` (회차 ${strategy.gapRunCount}개 평균, 산 것 − 안 산 것)`;
   lines.push(gap);
   // 순위 축. 모델이 고른 것이 순위 상위 구간보다 나았는지를 이 줄에서만 볼 수 있다.
   lines.push(
@@ -73,8 +78,7 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
   // 사라져, 아직 안 쌓인 것과 저장이 고장난 것을 읽는 사람이 가릴 수 없다.
   lines.push(formatArm('상한 밖 ', strategy.notPresented));
   // 격차는 양쪽이 다 있는 회차가 하나라도 있을 때만 적는다. 없을 때의 사유는 바로 위 줄이
-  // 이미 말한다. 기여 회차 수를 함께 적는 것은 이 값이 회차별 격차의 평균이기 때문이다 —
-  // 두 갈래의 누적 평균 차가 아니라는 사실이 수치만 보면 드러나지 않는다.
+  // 이미 말한다. 회차 수를 함께 적는 이유는 선택 격차와 같다.
   if (strategy.cutoffGapPct !== null) {
     lines.push(
       `  절단 격차 ${formatPercent(strategy.cutoffGapPct, '%p')}` +
@@ -123,22 +127,38 @@ const formatVerdict = (
   return `고른 것이 안 고른 것보다 나았나 → 갈림${scopeSuffix}: ${label}`;
 };
 
+// 얕은 축을 골라 적는다. 격차는 회차별 격차의 평균이라 관측 단위가 회차인데, 산 것 건수만
+// 보면 하루에 10건을 산 표본이 열흘치와 같아 보인다. 거꾸로 회차 수만 보면 회차마다 1건씩
+// 산 표본이 통과한다. 두 축이 서로를 대신하지 못해 둘 다 센다.
+const thinAxesOf = (strategy: ScreeningScorecardStrategy): string[] => {
+  const axes: string[] = [];
+  if (strategy.bought.count < TREND_MINIMUM_SAMPLE) {
+    axes.push(`산 것 ${strategy.bought.count}건`);
+  }
+  if (strategy.gapRunCount < TREND_MINIMUM_SAMPLE) {
+    axes.push(`회차 ${strategy.gapRunCount}개`);
+  }
+  return axes;
+};
+
 // 표본이 작다는 사실을 격차 옆에 적는다. 적어 두지 않으면 2~3건으로 낸 격차가
 // 추세처럼 읽힌다.
 const formatSampleCaveat = (
   strategies: ScreeningScorecardStrategy[],
 ): string | null => {
-  const thin = strategies.filter(
-    (strategy) =>
-      strategy.bought.count > 0 && strategy.bought.count < TREND_MINIMUM_SAMPLE,
-  );
+  // 격차를 내지 못한 전략은 경고할 대상이 없다 — 그 사유는 격차 줄이 이미 말한다.
+  // 격차가 있으면 양쪽이 다 있는 회차가 하나는 있었으므로 두 축 모두 1 이상이다.
+  const thin = strategies
+    .filter((strategy) => strategy.gapPct !== null)
+    .map((strategy) => ({ strategy, axes: thinAxesOf(strategy) }))
+    .filter((found) => found.axes.length > 0);
   if (thin.length === 0) {
     return null;
   }
   const detail = thin
-    .map((strategy) => `${strategy.strategy} ${strategy.bought.count}건`)
-    .join(' · ');
-  return `산 것 표본이 ${TREND_MINIMUM_SAMPLE}건 미만입니다(${detail}) — 이 격차는 아직 추세가 아닙니다.`;
+    .map(({ strategy, axes }) => `${strategy.strategy} ${axes.join('·')}`)
+    .join(', ');
+  return `표본이 ${TREND_MINIMUM_SAMPLE} 미만인 축이 있습니다(${detail}) — 이 격차는 아직 추세가 아닙니다.`;
 };
 
 const formatHorizon = (horizon: ScreeningScorecardHorizon): string[] => {

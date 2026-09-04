@@ -56,7 +56,9 @@ describe('formatScreeningScorecard', () => {
     expect(text).toContain('*5거래일 지평* — 표본 2건 (보여준 것 2건)');
     expect(text).toContain('산 것    1건 · 평균 +10.00%');
     expect(text).toContain('안 산 것 1건 · 평균 +4.00%');
-    expect(text).toContain('격차 +6.00%p');
+    // 수치만으로는 누적 평균 차와 구분되지 않는다. 기여 회차 수를 함께 적어야
+    // 이 값이 몇 날의 대조에서 나왔는지 읽는 사람이 안다.
+    expect(text).toContain('격차 +6.00%p (회차 1개 평균, 산 것 − 안 산 것)');
   });
 
   it('상한 밖 갈래를 따로 세우고 절단 격차를 적는다', () => {
@@ -189,7 +191,9 @@ describe('formatScreeningScorecard', () => {
     );
 
     expect(text).toContain('안 산 것 0건 — 해당 없음');
-    expect(text).toContain('격차 - — 한쪽에 표본이 없어 비교 대상이 없음');
+    expect(text).toContain(
+      '격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
+    );
   });
 
   it('산 것 표본이 10건 미만이면 추세가 아니라고 적는다', () => {
@@ -199,17 +203,55 @@ describe('formatScreeningScorecard', () => {
         row({ bought: false, returnPct: 1 }),
       ]),
     );
+    expect(thin).toContain('산 것 1건');
     expect(thin).toContain('이 격차는 아직 추세가 아닙니다');
 
     const enough = formatScreeningScorecard(
-      result([
-        ...Array.from({ length: 10 }, () =>
-          row({ bought: true, returnPct: 1 }),
+      result(
+        Array.from({ length: 10 }, (_unused, index) => index + 1).flatMap(
+          (runId) => [
+            row({ runId, bought: true, returnPct: 1 }),
+            row({ runId, bought: false, returnPct: 1 }),
+          ],
         ),
-        row({ bought: false, returnPct: 1 }),
-      ]),
+      ),
     );
     expect(enough).not.toContain('이 격차는 아직 추세가 아닙니다');
+  });
+
+  // 격차의 관측 단위는 회차다. 산 것 건수만 보면 하루에 10건을 산 표본이 열흘치와 같아
+  // 보여, 한 회차짜리 격차가 경고 없이 추세처럼 읽힌다.
+  it('산 것이 10건이어도 기여 회차가 얕으면 추세가 아니라고 적는다', () => {
+    const text = formatScreeningScorecard(
+      result([
+        // 하루에 10종목을 샀다 — 산 것 건수는 기준을 넘지만 관측은 하루뿐이다.
+        ...Array.from({ length: 10 }, () =>
+          row({ runId: 1, bought: true, returnPct: 1 }),
+        ),
+        row({ runId: 1, bought: false, returnPct: 1 }),
+      ]),
+    );
+
+    expect(text).toContain('격차 0.00%p (회차 1개 평균, 산 것 − 안 산 것)');
+    expect(text).toContain('회차 1개');
+    expect(text).not.toContain('산 것 10건');
+    expect(text).toContain('이 격차는 아직 추세가 아닙니다');
+  });
+
+  // 격차를 내지 못한 전략에까지 "이 격차는 추세가 아니다" 를 붙이면, 없는 격차를 두고
+  // 얕다고 말하는 셈이라 격차 줄의 사유와 어긋난다.
+  it('격차가 없는 전략은 추세 경고에서 뺀다', () => {
+    const text = formatScreeningScorecard(
+      result([
+        row({ runId: 1, bought: true, returnPct: 10 }),
+        row({ runId: 2, bought: false, returnPct: -10 }),
+      ]),
+    );
+
+    expect(text).toContain(
+      '격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
+    );
+    expect(text).not.toContain('이 격차는 아직 추세가 아닙니다');
   });
 });
 
