@@ -78,7 +78,7 @@ src/
 11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
 12. 새 환경변수가 필요하면 `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표 4곳 동기 갱신 (§5 환경변수 규칙)
 13. Slack manifest 에 슬래시 커맨드 등록 (사용자 액션, README 에 가이드 포함)
-14. **자연어 멘션도 호출 가능해야 하면** `src/agent/{name}/infrastructure/{name}.dispatcher.ts` (AgentDispatcher) 작성 + `src/router/router.module.ts` 의 `AGENT_DISPATCHER_PORT` useFactory `inject` 배열 끝에 등록 + `src/router/domain/prompt/intent-classifier-system.prompt.ts` 의 분류 후보 표에 한 줄 추가. (분산 multi-provider 패턴 X — NestJS multi 가 module 경계를 넘지 않음. 자세한 lesson 은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md) §2.1)
+14. **자연어 멘션도 호출 가능해야 하면** `src/agent/{name}/infrastructure/{name}.dispatcher.ts` (AgentDispatcher) 작성 + `src/router/router.module.ts` 의 `AGENT_DISPATCHER_PORT` useFactory `inject` 배열 끝에 등록 + `src/router/domain/prompt/intent-classifier-system.prompt.ts` 의 분류 후보 표에 한 줄 추가. **같은 파일의 「UNKNOWN 으로 분류할 케이스」에 새 워커가 맡아야 할 발화가 예시로 박혀 있지 않은지 함께 확인** — 박혀 있으면 그 줄을 **치환**한다(덧붙이면 충돌 라인이 이겨서, 워커를 등록해도 영영 호출되지 않는다. 2026-09-04 `DELAY_REPORT` 실례 — UNKNOWN 예시에 `"지금 뭐해?"` · `"잘 되고 있어?"` 가 있었다). (분산 multi-provider 패턴 X — NestJS multi 가 module 경계를 넘지 않음. 자세한 lesson 은 [`docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md`](./docs/superpowers/plans/2026-05-27-router-step-1-to-8-impl-notes.md) §2.1)
 
 ## 5. 인프라 / 보안 규칙 (절대 위반 금지)
 
