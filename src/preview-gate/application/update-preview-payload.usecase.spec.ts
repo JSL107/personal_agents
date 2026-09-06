@@ -12,7 +12,7 @@ const buildPreview = (overrides: Partial<PreviewAction> = {}): PreviewAction =>
   ({
     id: 'p-1',
     slackUserId: 'U1',
-    kind: PREVIEW_KIND.CTO_BE_CHAIN,
+    kind: PREVIEW_KIND.PM_WRITE_BACK,
     payload: { assignments: ['before'] },
     status: (overrides.status ?? PREVIEW_STATUS.PENDING) as PreviewStatus,
     previewText: '',

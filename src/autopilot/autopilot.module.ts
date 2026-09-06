@@ -49,7 +49,6 @@ import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
-import { AssignAutopilotTask } from './infrastructure/tasks/assign.autopilot-task';
 import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
 import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-revision-report.autopilot-task';
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
@@ -128,7 +127,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AutopilotConsumer,
     AutopilotOrchestrator,
     SystemWakeGuard,
-    AssignAutopilotTask,
     PoEvalAutopilotTask,
     PoShadowAutopilotTask,
     SecretariatAutopilotTask,
@@ -228,7 +226,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       // 접는 편이 낫지만, 이 파일은 병렬 작업이 잦아 별도 변경으로 다룬다.
       provide: AUTOPILOT_TASKS,
       useFactory: (
-        assign: AssignAutopilotTask,
         poShadow: PoShadowAutopilotTask,
         poEval: PoEvalAutopilotTask,
         secretariat: SecretariatAutopilotTask,
@@ -267,7 +264,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         jobFeed: JobFeedAutopilotTask,
         jobFeedGap: JobFeedGapAutopilotTask,
       ) => [
-        assign,
         poShadow,
         poEval,
         secretariat,
@@ -307,7 +303,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         jobFeedGap,
       ],
       inject: [
-        AssignAutopilotTask,
         PoShadowAutopilotTask,
         PoEvalAutopilotTask,
         SecretariatAutopilotTask,

@@ -3,24 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { App } from '@slack/bolt';
 
 import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
-import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
-import { OpenAssignmentApprovalUsecase } from '../../agent/cto/application/open-assignment-approval.usecase';
-import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { PoEvalCareerlogPayload } from '../../agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
 import { HumanizeService } from '../../humanize/application/humanize.service';
-import {
-  humanizeAssignmentOutput,
-  humanizeEvaluationOutput,
-} from '../../humanize/application/humanize-report.adapter';
+import { humanizeEvaluationOutput } from '../../humanize/application/humanize-report.adapter';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { SlackHandler } from '../domain/port/slack-handler.port';
-import { formatAssignmentOutput } from '../format/assignment.formatter';
-import { buildAssignmentCardBlocks } from '../format/assignment-card.builder';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
-import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { formatModelFooter } from '../format/model-footer.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
@@ -29,7 +20,7 @@ import {
   toUserFacingErrorMessage,
 } from './slack-handler.helper';
 
-// V3 phase loop 진입 명령군 — P2 Assign (CTO) / P4 Evaluate (PO_EVAL) / P5 Meta (CEO).
+// V3 phase loop 진입 명령군 — P4 Evaluate (PO_EVAL) / P5 Meta (CEO).
 // 모두 직전 phase 의 SUCCEEDED run 을 참조해 합성하는 worker.
 //
 // agent-command.handler 가 비대해져 (488 LOC 시점) phase 진입군만 본 file 로 분리
@@ -47,8 +38,6 @@ export class PhaseCommandHandler implements SlackHandler {
   private readonly careerLogNotionPageId: string | undefined;
 
   constructor(
-    private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
-    private readonly openAssignmentApprovalUsecase: OpenAssignmentApprovalUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly createPreviewUsecase: CreatePreviewUsecase,
@@ -62,61 +51,6 @@ export class PhaseCommandHandler implements SlackHandler {
   }
 
   register(app: App): void {
-    app.command('/assign', async ({ ack, command, respond }) => {
-      // 인자 미사용 — 직전 PM run 자동 조회. 명시 PM run id 지정은 본 step 미지원 (warn fallback).
-      await ack({
-        response_type: 'ephemeral',
-        text: '이대리 (CTO 모드) 가 직전 plan 의 task 를 BE worker 에 분배 중입니다 (10~30초 소요)...',
-      });
-
-      // 분배는 버튼·드롭다운 카드로 답한다. runAgentCommand 는 text 만 보내므로
-      // (blocks 를 실을 수 없다) /po-eval 카드 경로와 같은 방식으로 직접 처리한다.
-      try {
-        const outcome = await this.generateAssignmentUsecase.execute({
-          slackUserId: command.user_id,
-        });
-        const humanized = await humanizeAssignmentOutput(
-          outcome.result,
-          this.humanizeService,
-        );
-        const previewId = await this.openAssignmentApproval({
-          slackUserId: command.user_id,
-          ctoAgentRunId: outcome.agentRunId,
-          output: outcome.result,
-        });
-        const text =
-          formatAssignmentOutput(humanized, {
-            awaitingApproval: previewId !== null,
-          }) + formatModelFooter(outcome);
-        await respond({
-          response_type: 'ephemeral',
-          replace_original: true,
-          ...toReadableSlackArgs(text),
-          // 실행할 분배가 없으면 카드도 없다 — 텍스트만 보낸다.
-          ...(previewId !== null
-            ? {
-                blocks: buildAssignmentCardBlocks({
-                  output: humanized,
-                  previewId,
-                }) as never,
-              }
-            : {}),
-        });
-      } catch (error: unknown) {
-        const rawMessage =
-          error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `/assign 실패: ${rawMessage}`,
-          error instanceof Error ? error.stack : undefined,
-        );
-        await respond({
-          response_type: 'ephemeral',
-          replace_original: true,
-          text: `이대리 /assign 실패: ${toUserFacingErrorMessage(error)}`,
-        });
-      }
-    });
-
     app.command('/po-eval', async ({ ack, command, respond }) => {
       // 인자: 'today' | 'week' (default: week). 다른 값이면 week 로 fallback.
       const arg = command.text?.trim().toLowerCase() ?? '';
@@ -221,23 +155,5 @@ export class PhaseCommandHandler implements SlackHandler {
         format: formatCeoMetaOutput,
       });
     });
-  }
-
-  // 실행 승인 카드 열기 — 실패해도 분배 결과는 그대로 보여준다 (카드는 부가 경로).
-  // 카드가 안 열렸으면 false 를 돌려 "응 하세요" 안내를 붙이지 않게 한다.
-  private async openAssignmentApproval(input: {
-    slackUserId: string;
-    ctoAgentRunId: number;
-    output: AssignmentOutput;
-  }): Promise<string | null> {
-    try {
-      return await this.openAssignmentApprovalUsecase.execute(input);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `/assign 실행 승인 카드 생성 실패(분배 결과는 그대로 노출) runId=${input.ctoAgentRunId}: ${message}`,
-      );
-      return null;
-    }
   }
 }

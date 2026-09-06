@@ -33,7 +33,7 @@ describe('parseIntentClassification', () => {
     const raw =
       '```json\n' +
       JSON.stringify({
-        agentType: 'BE_TEST',
+        agentType: 'PO_SHADOW',
         confidence: 0.7,
         reason: 'spec 키워드',
       }) +
@@ -41,7 +41,7 @@ describe('parseIntentClassification', () => {
 
     const result = parseIntentClassification(raw);
 
-    expect(result.agentType).toBe(AgentType.BE_TEST);
+    expect(result.agentType).toBe(AgentType.PO_SHADOW);
     expect(result.confidence).toBe(0.7);
   });
 

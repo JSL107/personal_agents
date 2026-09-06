@@ -26,8 +26,6 @@ import {
   GithubWebhookPayload,
 } from '../domain/github-webhook.type';
 import {
-  BE_FIX_QUEUE,
-  BeFixJobData,
   CODE_REVIEWER_QUEUE,
   CodeReviewerJobData,
   IMPACT_REPORT_QUEUE,
@@ -56,8 +54,6 @@ export class WebhookController {
   constructor(
     @InjectQueue(IMPACT_REPORT_QUEUE)
     private readonly impactReportQueue: Queue<ImpactReportJobData>,
-    @InjectQueue(BE_FIX_QUEUE)
-    private readonly beFixQueue: Queue<BeFixJobData>,
     @InjectQueue(CODE_REVIEWER_QUEUE)
     private readonly codeReviewerQueue: Queue<CodeReviewerJobData>,
     @InjectQueue(PR_CAREERLOG_QUEUE)
@@ -167,11 +163,10 @@ export class WebhookController {
 
     await this.fireImpactReport({ subject, slackUserId });
 
-    // pull_request.opened → impact-report 와 병렬로 BE-FIX 자동 분석 + (조건부) code-reviewer 자동.
+    // pull_request.opened → impact-report 와 병렬로 (조건부) code-reviewer 자동.
     if (event === 'pull_request' && this.isPullRequestOpened(payload)) {
       const pr = payload as GithubPullRequestEvent;
       const prRef = `${pr.repository.full_name}#${pr.pull_request.number}`;
-      await this.fireBeFixAnalysis({ prRef, slackUserId });
       await this.maybeFireCodeReview({ payload: pr, prRef, slackUserId });
     }
 
@@ -454,38 +449,6 @@ export class WebhookController {
       'pull_request' in payload &&
       (payload as GithubPullRequestEvent).action === 'opened'
     );
-  }
-
-  private async fireBeFixAnalysis({
-    prRef,
-    slackUserId,
-  }: {
-    prRef: string;
-    slackUserId: string;
-  }): Promise<void> {
-    // codex P1 — 같은 PR (force-push / re-deliver) 에 대해 BullMQ 가 dedup 하도록 jobId 사용.
-    // BullMQ 는 동일 jobId 가 살아있는 동안 같은 job 을 재추가하지 않는다 (removeOnComplete:50 까지 보존).
-    const jobId = this.toJobId(`befix-${prRef}`);
-    await this.beFixQueue
-      .add(
-        'webhook-be-fix',
-        { prRef, slackUserId },
-        {
-          jobId,
-          attempts: 2,
-          backoff: { type: 'exponential', delay: 30_000 },
-          removeOnComplete: 50,
-          removeOnFail: 50,
-        },
-      )
-      .catch((error: unknown) => {
-        this.logger.error(
-          `Webhook BE-Fix enqueue 실패: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        throw new InternalServerErrorException(
-          'Webhook 처리 실패 — 작업 큐에 적재하지 못했습니다.',
-        );
-      });
   }
 
   private async fireImpactReport({

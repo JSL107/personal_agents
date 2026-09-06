@@ -1,8 +1,6 @@
-import { BackendPlan } from '../../agent/be/domain/be-agent.type';
 import { EveningRetroResult } from '../../agent/blog/domain/prompt/evening-retro.prompt';
 import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
-import { AssignmentOutput } from '../../agent/cto/domain/cto.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
 import { EvaluationOutput } from '../../agent/po-eval/domain/po-eval.type';
@@ -195,41 +193,6 @@ export const humanizeCalibrationReport = async (
   };
 };
 
-export const humanizeAssignmentOutput = async (
-  output: AssignmentOutput,
-  humanizer: HumanizeService,
-): Promise<AssignmentOutput> => {
-  const fields: Record<string, string> = {
-    ctoSummary: output.ctoSummary,
-  };
-  flattenArray(
-    fields,
-    'assignments.reasoning',
-    output.assignments.map((assignment) => assignment.reasoning),
-  );
-  flattenArray(
-    fields,
-    'unassignedTasks.reason',
-    output.unassignedTasks.map((task) => task.reason),
-  );
-
-  const humanized = await humanizer.humanize(fields);
-
-  return {
-    ...output,
-    ctoSummary: humanized.ctoSummary ?? output.ctoSummary,
-    assignments: output.assignments.map((assignment, index) => ({
-      ...assignment,
-      reasoning:
-        humanized[`assignments.reasoning.${index}`] ?? assignment.reasoning,
-    })),
-    unassignedTasks: output.unassignedTasks.map((task, index) => ({
-      ...task,
-      reason: humanized[`unassignedTasks.reason.${index}`] ?? task.reason,
-    })),
-  };
-};
-
 export const humanizeEvaluationOutput = async (
   output: EvaluationOutput,
   humanizer: HumanizeService,
@@ -276,56 +239,6 @@ export const humanizeEvaluationOutput = async (
       },
       impact: humanized['careerLog.impact'] ?? output.careerLog.impact,
     },
-  };
-};
-
-export const humanizeBackendPlan = async (
-  plan: BackendPlan,
-  humanizer: HumanizeService,
-): Promise<BackendPlan> => {
-  const fields: Record<string, string> = {
-    context: plan.context,
-    reasoning: plan.reasoning,
-  };
-  flattenArray(
-    fields,
-    'implementationChecklist.description',
-    plan.implementationChecklist.map((item) => item.description),
-  );
-  if (plan.apiDesign) {
-    // request/response 는 스키마 조각(예: {orderId: string})일 수 있어 윤문 시 API 계약이 훼손된다.
-    // method/path 와 함께 원본을 보존하고, 서술 필드인 notes 만 윤문한다.
-    flattenArray(
-      fields,
-      'apiDesign.notes',
-      plan.apiDesign.map((api) => api.notes),
-    );
-  }
-  flattenArray(fields, 'risks', plan.risks);
-  flattenArray(fields, 'testPoints', plan.testPoints);
-
-  const humanized = await humanizer.humanize(fields);
-
-  return {
-    ...plan,
-    context: humanized.context ?? plan.context,
-    reasoning: humanized.reasoning ?? plan.reasoning,
-    implementationChecklist: plan.implementationChecklist.map(
-      (item, index) => ({
-        ...item,
-        description:
-          humanized[`implementationChecklist.description.${index}`] ??
-          item.description,
-      }),
-    ),
-    apiDesign: plan.apiDesign
-      ? plan.apiDesign.map((api, index) => ({
-          ...api,
-          notes: humanized[`apiDesign.notes.${index}`] ?? api.notes,
-        }))
-      : null,
-    risks: rebuildArray(humanized, 'risks', plan.risks),
-    testPoints: rebuildArray(humanized, 'testPoints', plan.testPoints),
   };
 };
 

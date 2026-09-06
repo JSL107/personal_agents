@@ -9,7 +9,6 @@ const sampleOutput: MetaOutput = {
   sourcePhaseRuns: {
     poEvalRunId: 201,
     pmRunId: 202,
-    ctoRunId: 203,
   },
   contextDriftReport: { observations: ['drift 신호 1건'] },
   docsQualityReport: { findings: ['CLAUDE.md 갱신'] },

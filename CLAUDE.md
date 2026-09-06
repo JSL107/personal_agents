@@ -11,7 +11,7 @@
 - Node 22+, NestJS 10, Prisma 6 (TypeORM 절대 X), Slack Bolt 4, BullMQ. (`package.json` `engines` 로 명시 — 20 은 지원 종료)
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 다른 포트 가정 X.
 - LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). 자식 프로세스 spawn 으로만 호출 — 직접 API SDK 사용 X. 인증: 기본은 각 CLI 의 keychain/OAuth (구독). Claude 는 keychain ACL 미등록 환경 (nest start --watch child PID 변동 등) 우회용으로 `CLAUDE_CODE_OAUTH_TOKEN` env 경로 지원 — `.env` 에 `claude setup-token` 발급 OAuth token (`sk-ant-oat01-...`) 두면 자식 env 로 forward, docs precedence priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 라 keychain 시도 자체가 안 일어남 (§6 참조). `ANTHROPIC_API_KEY` 도 backward-compat alias 로 동일하게 인식. 2026-07-02 부터 전체 에이전트가 ChatGPT(codex) 단일 provider — provider 간 fallback 없음 (codex 실패 시 재시도 없이 즉시 실패, 쿼터 소진 시 reset 시각 안내). ClaudeCliProvider 코드·인증 경로는 롤백 대비 보존 (라우팅 경로 없음). 이전 Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.
-- **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 13 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
+- **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `RouterModule.IdaeriRouterUsecase` → `IntentClassifierUsecase` (자연어 분류, multi-turn 5 turn / TTL 30분) → 14 worker dispatcher 중 1. 슬래시는 기존 핸들러 유지 (병행).
 - **NestJS multi-provider 는 single module scope** — 분산 등록 X. dispatcher 류는 PreviewGate.forRoot 패턴처럼 한 모듈 (RouterModule) 의 useFactory + inject 로 중앙 등록.
 
 ---
@@ -23,8 +23,7 @@
 | 슬래시 커맨드 핸들러 (모든 라우팅 진입점) | `src/slack/handler/agent-command.handler.ts` |
 | 자연어 멘션 진입점 (`app_mention` event) | `src/slack/handler/router-message.handler.ts` |
 | Router 본체 (manager + handoff chain) | `src/router/application/idaeri-router.usecase.ts` |
-| Router dispatcher 중앙 등록 (useFactory + inject 13) | `src/router/router.module.ts` |
-| `/auto-flow` PM→CTO→BE 체인 (PreviewGate 버튼 2단) | `src/slack/handler/auto-flow.handler.ts` |
+| Router dispatcher 중앙 등록 (useFactory + inject 14) | `src/router/router.module.ts` |
 | Conversation memory (in-memory, key=slackUserId:channelId) | `src/router/application/conversation-memory.service.ts` |
 | Autopilot 워크데이 플레이북 (모든 cron 통합 — 출근/퇴근/주간) | `src/autopilot/` (`domain/autopilot.playbook.ts`, `application/autopilot.orchestrator.ts`) |
 | AgentDispatcher 인터페이스 + AGENT_DISPATCHER_PORT | `src/router/domain/port/agent-dispatcher.port.ts` |
@@ -51,19 +50,14 @@
 | PM | `/today` | `src/agent/pm/application/generate-daily-plan.usecase.ts` | ChatGPT |
 | Work Reviewer | `/worklog` | `src/agent/work-reviewer/application/generate-worklog.usecase.ts` | ChatGPT |
 | Code Reviewer | `/review-pr` | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | ChatGPT |
-| BE | `/plan-task` | `src/agent/be/application/generate-backend-plan.usecase.ts` | ChatGPT |
 | PO Shadow | `/po-shadow` | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | ChatGPT |
 | Impact Reporter | `/impact-report` | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | ChatGPT |
-| BE Schema | `/be-schema` | `src/agent/be-schema/application/generate-schema-proposal.usecase.ts` | ChatGPT |
-| BE Test | `/be-test` | `src/agent/be-test/application/generate-test.usecase.ts` | ChatGPT |
-| BE SRE | `/be-sre` | `src/agent/be-sre/application/analyze-stack-trace.usecase.ts` | ChatGPT |
-| BE Fix | `/be-fix` | `src/agent/be-fix/application/analyze-pr-convention.usecase.ts` | ChatGPT |
-| CTO | `/assign` | `src/agent/cto/application/generate-assignment.usecase.ts` | ChatGPT |
 | PO_EVAL | `/po-eval` | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | ChatGPT |
 | CEO | `/ceo-review` | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | ChatGPT |
-| (chain) AUTO_FLOW | `/auto-flow` | `src/slack/handler/auto-flow.handler.ts` (PM → CTO → BE 1-shot, PreviewGate 버튼) | — (chain) |
 
-> `/be-test`, `/be-sre`, `/be-fix` Slack 핸들러는 각각 `src/slack/handler/be-{test,sre,fix}.handler.ts` (agent-command.handler.ts 가 아님). `/assign` `/po-eval` `/ceo-review` 는 `src/slack/handler/phase-command.handler.ts`, `/auto-flow` 는 `src/slack/handler/auto-flow.handler.ts` (체인 + button action).
+> `/po-eval` `/ceo-review` 는 `src/slack/handler/phase-command.handler.ts` 에 있다 (agent-command.handler.ts 가 아님).
+>
+> BE 워커 5종(`/plan-task` `/be-schema` `/be-test` `/be-sre` `/be-fix`)과 CTO 배정(`/assign` `/auto-flow`)은 2026-09-04 폐지했다 — 30일 실행 0건.
 
 ---
 
@@ -114,7 +108,7 @@ if (a) { if (b) { ... } }        // → ts-pattern 의 match 검토
 
 CLI latency 10~40초 → Slack 3초 안 ack 강제 (즉시 `ack` → 모델 호출 → `respond({ replace_original: true })` 로 덮어쓰기).
 
-- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (단일 워커 슬래시) + 카테고리 핸들러 (`phase-command.handler.ts` — `/assign` `/po-eval` `/ceo-review`, `feedback-command.handler.ts` — `/review-feedback`) + 개별 파일 (`be-test.handler.ts`, `be-sre.handler.ts`, `be-fix.handler.ts`, `auto-flow.handler.ts`, `retry-run.handler.ts`, `write-back.handler.ts`, `diagnosis.handler.ts`)
+- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (단일 워커 슬래시) + 카테고리 핸들러 (`phase-command.handler.ts` — `/po-eval` `/ceo-review`, `feedback-command.handler.ts` — `/review-feedback`) + 개별 파일 (`retry-run.handler.ts`, `write-back.handler.ts`, `diagnosis.handler.ts`)
 - `replace_original: true` 헬퍼: `src/slack/handler/slack-handler.helper.ts:60-74`
 - ephemeral 응답에서 `replace_original` 가끔 안 먹는 건 Slack API 한계, 그대로 둠.
 

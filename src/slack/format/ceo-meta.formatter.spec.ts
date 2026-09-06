@@ -3,7 +3,7 @@ import { formatCeoMetaOutput } from './ceo-meta.formatter';
 
 const base: MetaOutput = {
   range: 'WEEK',
-  sourcePhaseRuns: { poEvalRunId: 1, pmRunId: 2, ctoRunId: 3 },
+  sourcePhaseRuns: { poEvalRunId: 1, pmRunId: 2 },
   contextDriftReport: { observations: ['drift 신호 1건', 'drift 신호 2건'] },
   docsQualityReport: { findings: ['CLAUDE.md 갱신 필요', '문서 품질 개선'] },
   finalSummary: '본 주는 phase 흐름 정상.',
@@ -29,6 +29,5 @@ describe('formatCeoMetaOutput', () => {
     const { detail } = formatCeoMetaOutput(base);
     expect(detail).toContain('poEval=#1');
     expect(detail).toContain('pm=#2');
-    expect(detail).toContain('cto=#3');
   });
 });

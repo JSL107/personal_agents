@@ -174,17 +174,6 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     digestGroup: 'morning',
   },
   {
-    id: 'assign',
-    taskId: 'assign',
-    trigger: {
-      kind: 'CRON',
-      schedule: DEFAULT_NOON_REVIEW_CRON,
-      timezone: DEFAULT_NOON_REVIEW_TIMEZONE,
-    },
-    riskTier: 'T0_AUTO',
-    digestGroup: 'noon',
-  },
-  {
     id: 'po-shadow',
     taskId: 'po-shadow',
     trigger: {

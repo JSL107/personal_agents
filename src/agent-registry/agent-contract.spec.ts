@@ -57,10 +57,11 @@ describe('AGENT_CONTRACTS', () => {
 
 describe('buildContractPreamble', () => {
   it('계약이 있는 에이전트는 필수 필드를 머리말에 싣는다', () => {
-    const preamble = buildContractPreamble(AgentType.CTO);
+    const preamble = buildContractPreamble(AgentType.EVENING_RETRO);
 
     expect(preamble).not.toBeNull();
-    for (const field of AGENT_CONTRACTS[AgentType.CTO].deliverableFields) {
+    for (const field of AGENT_CONTRACTS[AgentType.EVENING_RETRO]
+      .deliverableFields) {
       expect(preamble).toContain(field);
     }
   });
@@ -87,7 +88,7 @@ describe('buildContractPreamble', () => {
 
   it('output 이 모델 응답 그대로인 에이전트는 머리말을 유지한다', () => {
     // 여기서 머리말을 끄면 모델이 계약을 모른 채 답하게 된다 — 이 기능의 원래 목적을 잃는다.
-    for (const agentType of [AgentType.CTO, AgentType.EVENING_RETRO]) {
+    for (const agentType of [AgentType.EVENING_RETRO]) {
       expect(AGENT_CONTRACTS[agentType].skipPreamble).toBeUndefined();
       expect(buildContractPreamble(agentType)).not.toBeNull();
     }

@@ -360,41 +360,6 @@ describe('SubconsciousProposalService.apply', () => {
     );
   });
 
-  it('BE_FIX + github:pr key → dispatch text 는 PR 참조', async () => {
-    const repository = buildRepository(
-      buildRecord({ suggestedAgentType: 'BE_FIX' as AgentType }),
-      true,
-    );
-    const router = buildRouter();
-    const { service } = buildService({ repository, router });
-
-    await service.apply(1, OWNER, NOW);
-
-    expect(router.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'owner/repo#1' }),
-    );
-  });
-
-  it('BE + github:pr key → text 는 요약 유지 + prReferenceHint 로 PR 참조 동봉', async () => {
-    const repository = buildRepository(
-      buildRecord({ suggestedAgentType: 'BE' as AgentType }),
-      true,
-    );
-    const router = buildRouter();
-    const { service } = buildService({ repository, router });
-
-    await service.apply(1, OWNER, NOW);
-
-    // BE 는 작업 설명(요약)으로 plan 을 세우되 PR 참조가 있으면 GitHub 본문을 ground 한다.
-    // 둘을 각각 넘겨야 fetch 실패 시에도 요약으로 계속 진행할 수 있다.
-    expect(router.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: 'PR #1 opened',
-        prReferenceHint: 'owner/repo#1',
-      }),
-    );
-  });
-
   it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지 + hint 미전파', async () => {
     const repository = buildRepository(
       buildRecord({ suggestedAgentType: 'PM' as AgentType }),

@@ -1,15 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { App } from '@slack/bolt';
 
-import { GenerateBackendPlanUsecase } from '../../agent/be/application/generate-backend-plan.usecase';
-import { AnalyzePrConventionUsecase } from '../../agent/be-fix/application/analyze-pr-convention.usecase';
-import { GenerateSchemaProposalUsecase } from '../../agent/be-schema/application/generate-schema-proposal.usecase';
-import { AnalyzeStackTraceUsecase } from '../../agent/be-sre/application/analyze-stack-trace.usecase';
-import { GenerateTestUsecase } from '../../agent/be-test/application/generate-test.usecase';
 import { PublishNotionDraftUsecase } from '../../agent/blog/application/publish-notion-draft.usecase';
 import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
-import { GenerateAssignmentUsecase } from '../../agent/cto/application/generate-assignment.usecase';
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
 import { GeneratePaperRecommendationUsecase } from '../../agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
@@ -21,19 +15,9 @@ import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
 import { HumanizeService } from '../../humanize/application/humanize.service';
-import {
-  humanizeAssignmentOutput,
-  humanizeBackendPlan,
-  humanizeEvaluationOutput,
-} from '../../humanize/application/humanize-report.adapter';
+import { humanizeEvaluationOutput } from '../../humanize/application/humanize-report.adapter';
 import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
 import { SlackHandler } from '../domain/port/slack-handler.port';
-import { formatAssignmentOutput } from '../format/assignment.formatter';
-import { formatBackendPlan } from '../format/backend-plan.formatter';
-import { formatPrConventionReport } from '../format/be-fix.formatter';
-import { formatSchemaProposal } from '../format/be-schema.formatter';
-import { formatSreAnalysis } from '../format/be-sre.formatter';
-import { formatGeneratedTest } from '../format/be-test.formatter';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
@@ -63,13 +47,7 @@ export class RetryRunHandler implements SlackHandler {
     private readonly generateWorklogUsecase: GenerateWorklogUsecase,
     private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
     private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
-    private readonly generateBackendPlanUsecase: GenerateBackendPlanUsecase,
     private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
-    private readonly generateSchemaProposalUsecase: GenerateSchemaProposalUsecase,
-    private readonly generateTestUsecase: GenerateTestUsecase,
-    private readonly analyzeStackTraceUsecase: AnalyzeStackTraceUsecase,
-    private readonly analyzePrConventionUsecase: AnalyzePrConventionUsecase,
-    private readonly generateAssignmentUsecase: GenerateAssignmentUsecase,
     private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
     private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
     private readonly generatePaperRecommendationUsecase: GeneratePaperRecommendationUsecase,
@@ -209,26 +187,6 @@ export class RetryRunHandler implements SlackHandler {
             onOutcome: this.linkRetryLineage(id),
           });
           break;
-        case 'BE':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (BE)`,
-            execute: () =>
-              this.generateBackendPlanUsecase.execute({
-                subject: snapshot.subject ?? '',
-                slackUserId,
-              }),
-            format: async (result) => {
-              const humanized = await humanizeBackendPlan(
-                result,
-                this.humanizeService,
-              );
-              return formatBackendPlan(humanized);
-            },
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
         case 'PO_SHADOW': {
           const origLen = snapshot.extraContextLength ?? 0;
           if (origLen > 0) {
@@ -253,88 +211,6 @@ export class RetryRunHandler implements SlackHandler {
           });
           break;
         }
-        case 'BE_SCHEMA':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (BE_SCHEMA)`,
-            execute: () =>
-              this.generateSchemaProposalUsecase.execute({
-                request: snapshot.request ?? '',
-                slackUserId,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            format: formatSchemaProposal,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'BE_TEST':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (BE_TEST)`,
-            execute: () =>
-              this.generateTestUsecase.execute({
-                filePath: snapshot.filePath ?? '',
-                slackUserId,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            format: formatGeneratedTest,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'BE_SRE':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (BE_SRE)`,
-            execute: () =>
-              this.analyzeStackTraceUsecase.execute({
-                stackTrace: snapshot.stackTrace ?? '',
-                slackUserId,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            format: formatSreAnalysis,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'BE_FIX':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (BE_FIX)`,
-            execute: () =>
-              this.analyzePrConventionUsecase.execute({
-                prRef: snapshot.prRef ?? '',
-                slackUserId,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            format: formatPrConventionReport,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'CTO':
-          // CTO 의 retry — usecase 가 자동 조회 (직전 PM run) 기반. snapshot.dailyPlanAgentRunId
-          // 는 inputSnapshot 에 기록되어 있지만 명시 지정 분배는 본 step 미지원 (warn fallback).
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (CTO)`,
-            execute: () =>
-              this.generateAssignmentUsecase.execute({
-                slackUserId,
-                dailyPlanAgentRunId: snapshot.dailyPlanAgentRunId,
-              }),
-            format: async (result) => {
-              const humanized = await humanizeAssignmentOutput(
-                result,
-                this.humanizeService,
-              );
-              return formatAssignmentOutput(humanized);
-            },
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
         case 'PO_EVAL': {
           const range: AgentRunRange =
             snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';

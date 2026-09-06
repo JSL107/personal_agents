@@ -205,7 +205,7 @@ describe('ConsoleReadService', () => {
   it('같은 창 안에서 성공·실패가 섞여도 각자 자기 결과로 복원된다', async () => {
     agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
       { agentType: 'PM', status: 'SUCCEEDED', runId: finishedRunId },
-      { agentType: 'BE', status: 'FAILED', runId: finishedRunId },
+      { agentType: 'CODE_REVIEWER', status: 'FAILED', runId: finishedRunId },
     ]);
 
     const snapshot = await service.getSnapshot();
@@ -214,11 +214,12 @@ describe('ConsoleReadService', () => {
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.state,
     ).toBe('COMPLETED');
     expect(
-      snapshot.agents.find((agent) => agent.agentType === 'BE')?.state,
+      snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
+        ?.state,
     ).toBe('FAILED');
     // 창 안에 종료 기록이 없는 에이전트는 대기로 남는다(과표시 방지).
     expect(
-      snapshot.agents.find((agent) => agent.agentType === 'CTO')?.state,
+      snapshot.agents.find((agent) => agent.agentType === 'CTO_STUDY')?.state,
     ).toBe('WAITING');
   });
 

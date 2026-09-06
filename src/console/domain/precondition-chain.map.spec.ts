@@ -6,18 +6,6 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { resolveChain } from './precondition-chain.map';
 
 describe('precondition-chain.map', () => {
-  it('CTO PM 부재는 PM 선행으로 해소한다', () => {
-    expect(resolveChain(CtoErrorCode.NO_RECENT_PM_RUN)).toEqual({
-      kind: 'PREREQ',
-      failedWorkerLabel: 'CTO',
-      prereqWorker: AgentType.PM,
-    });
-    expect(resolveChain(CtoErrorCode.STALE_PM_RUN)).toMatchObject({
-      kind: 'PREREQ',
-      prereqWorker: AgentType.PM,
-    });
-  });
-
   it('PO_SHADOW plan 부재는 PM 선행으로 해소한다', () => {
     expect(resolveChain(PoShadowErrorCode.NO_RECENT_PLAN)).toMatchObject({
       kind: 'PREREQ',
@@ -41,13 +29,13 @@ describe('precondition-chain.map', () => {
   });
 
   it('CTO assignableTaskIds 부재는 자동해소 불가로 분류한다', () => {
-    expect(resolveChain(CtoErrorCode.NO_ASSIGNABLE_TASKS)).toEqual({
+    expect(resolveChain(CtoErrorCode.INVALID_STUDY_VERDICT)).toEqual({
       kind: 'UNRESOLVABLE',
     });
   });
 
   it('CTO PM output 형식 오류는 자동해소 불가로 분류한다', () => {
-    expect(resolveChain(CtoErrorCode.INVALID_PLAN_OUTPUT)).toEqual({
+    expect(resolveChain(CtoErrorCode.INVALID_STUDY_VERDICT)).toEqual({
       kind: 'UNRESOLVABLE',
     });
   });

@@ -16,7 +16,6 @@ export interface SourcePhaseRunRefs {
   // P1 Plan (PM) — 주간 plan 흐름 review 입력 (선택).
   pmRunId?: number;
   // P2 Assign (CTO) — 분배 결과 review 입력 (선택).
-  ctoRunId?: number;
 }
 
 // CEO (P5 Meta) output.

@@ -22,7 +22,7 @@ const makeModelRouterMock = (
   }) as unknown as jest.Mocked<ModelRouterUsecase>;
 
 // few-shot 필터 기준이자 분류 스키마의 후보 목록 — 사용자가 실제로 부를 수 있는 worker 만 담는다.
-const DISPATCHER_AGENT_TYPES = [AgentType.BE, AgentType.PM];
+const DISPATCHER_AGENT_TYPES = [AgentType.CODE_REVIEWER, AgentType.PM];
 const dispatchers = DISPATCHER_AGENT_TYPES.map((agentType) => ({
   agentType,
   dispatch: jest.fn(),
@@ -37,7 +37,7 @@ describe('IntentClassifierUsecase', () => {
   it('LLM 응답을 IntentClassification 으로 반환', async () => {
     const modelRouter = makeModelRouterMock(
       JSON.stringify({
-        agentType: 'BE',
+        agentType: 'CODE_REVIEWER',
         confidence: 0.85,
         reason: '구현 요청',
       }),
@@ -48,7 +48,7 @@ describe('IntentClassifierUsecase', () => {
       '백엔드에서 user repository 만들어줘',
     );
 
-    expect(result.agentType).toBe(AgentType.BE);
+    expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
     expect(result.confidence).toBe(0.85);
     expect(result.reason).toBe('구현 요청');
   });
@@ -96,7 +96,7 @@ describe('IntentClassifierUsecase', () => {
 
   describe('episodic few-shot 주입', () => {
     const beResponse = JSON.stringify({
-      agentType: 'BE',
+      agentType: 'CODE_REVIEWER',
       confidence: 0.9,
       reason: 'r',
     });
@@ -109,7 +109,7 @@ describe('IntentClassifierUsecase', () => {
           {
             id: 1,
             agentRunId: 11,
-            agentType: 'BE',
+            agentType: 'CODE_REVIEWER',
             content: '결제 모듈 PG 리팩토링',
             score: 0.8,
             occurredAt: new Date(),
@@ -129,7 +129,7 @@ describe('IntentClassifierUsecase', () => {
       );
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[유사 과거 작업]');
-      expect(prompt).toContain('worker BE');
+      expect(prompt).toContain('worker CODE_REVIEWER');
     });
 
     // AgentRunService 는 성공한 run 의 output 을 전부 episodic 에 적재한다. 그 안에는 사용자가
@@ -151,7 +151,7 @@ describe('IntentClassifierUsecase', () => {
           {
             id: 2,
             agentRunId: 12,
-            agentType: 'BE',
+            agentType: 'CODE_REVIEWER',
             content: '결제 모듈 PG 리팩토링',
             score: 0.7,
             occurredAt: new Date(),
@@ -167,7 +167,7 @@ describe('IntentClassifierUsecase', () => {
       await usecase.classify('PG 연동 손봐줘');
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
-      expect(prompt).toContain('worker BE');
+      expect(prompt).toContain('worker CODE_REVIEWER');
       expect(prompt).not.toContain('HUMANIZER');
       expect(prompt).not.toContain('humanizedKeys');
     });
@@ -200,7 +200,7 @@ describe('IntentClassifierUsecase', () => {
 
       const result = await usecase.classify('PG 연동 손봐줘');
 
-      expect(result.agentType).toBe(AgentType.BE);
+      expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).not.toContain('[유사 과거 작업]');
     });
@@ -208,7 +208,7 @@ describe('IntentClassifierUsecase', () => {
 
   describe('preference profile routing 주입', () => {
     const beResponse = JSON.stringify({
-      agentType: 'BE',
+      agentType: 'CODE_REVIEWER',
       confidence: 0.9,
       reason: 'r',
     });
@@ -271,28 +271,30 @@ describe('IntentClassifierUsecase', () => {
         {
           role: 'user',
           text: '더 딥다이브 가능해?',
-          agentType: AgentType.BE,
+          agentType: AgentType.CODE_REVIEWER,
           agentRunId: 42,
           timestampMs: Date.now(),
         },
         {
           role: 'assistant',
           text: '가능해요. 어떤 주제인지 한 문장으로 짚어주세요.',
-          agentType: AgentType.BE,
+          agentType: AgentType.CODE_REVIEWER,
           agentRunId: 42,
           timestampMs: Date.now(),
         },
       ]);
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
-      expect(prompt).toContain('[user] "더 딥다이브 가능해?" → worker BE #42');
+      expect(prompt).toContain(
+        '[user] "더 딥다이브 가능해?" → worker CODE_REVIEWER #42',
+      );
       expect(prompt).toContain(
         '[assistant] "가능해요. 어떤 주제인지 한 문장으로 짚어주세요."',
       );
       // 회귀 방지 — 봇 발화가 "사용자:" 로 렌더링되면 분류기가 화자를 반대로 읽는다.
       expect(prompt).not.toContain('사용자: "가능해요');
       // assistant turn 의 agentType 은 직전 user turn 의 미러 — worker 태그를 붙이지 않는다.
-      expect(prompt).not.toMatch(/\[assistant\][^\n]*worker BE/);
+      expect(prompt).not.toMatch(/\[assistant\][^\n]*worker CODE_REVIEWER/);
     });
 
     it('role 미설정(legacy turn)은 user 로 해석한다', async () => {

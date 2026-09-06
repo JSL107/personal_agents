@@ -29,7 +29,8 @@ describe('RepoContextCollector', () => {
     expect(modules).toEqual([
       {
         name: 'agent/cto',
-        description: 'PM 작업을 BE worker 로 분배',
+        description:
+          'Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용)',
       },
       { name: 'study-brief-cron', description: '' },
     ]);
