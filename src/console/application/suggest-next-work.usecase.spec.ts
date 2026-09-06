@@ -269,7 +269,7 @@ describe('SuggestNextWorkUsecase', () => {
   it('지연 후보가 5개여도 지연률 상위 3개만 반환한다', async () => {
     const agentTypes = [
       AgentType.PM,
-      AgentType.BE,
+      AgentType.CODE_REVIEWER,
       AgentType.CODE_REVIEWER,
       AgentType.WORK_REVIEWER,
       AgentType.IMPACT_REPORTER,
@@ -292,7 +292,7 @@ describe('SuggestNextWorkUsecase', () => {
     expect(result.suggestions).toHaveLength(3);
     expect(
       result.suggestions.map((suggestion) => suggestion.agentType),
-    ).toEqual([AgentType.PM, AgentType.BE, AgentType.CODE_REVIEWER]);
+    ).toEqual([AgentType.PM, AgentType.CODE_REVIEWER, AgentType.CODE_REVIEWER]);
     expect(result.alsoDueCount).toBe(2);
   });
 
@@ -305,7 +305,7 @@ describe('SuggestNextWorkUsecase', () => {
           state: ConsoleAgentState.IN_PROGRESS,
         },
         {
-          agentType: AgentType.BE,
+          agentType: AgentType.CODE_REVIEWER,
           displayName: 'Backend',
           state: ConsoleAgentState.AWAITING_APPROVAL,
         },
@@ -313,7 +313,6 @@ describe('SuggestNextWorkUsecase', () => {
       ],
       runsByAgentType: {
         [AgentType.PM]: succeededAt(2, 3),
-        [AgentType.BE]: succeededAt(2, 3),
         [AgentType.CODE_REVIEWER]: succeededAt(2, 3),
       },
     });

@@ -41,15 +41,12 @@ const PREREQUISITE_ACTION_SIGNALS: readonly RegExp[] = [
 ];
 
 // 선행 부재를 뜻하는 errorCode. 문구는 사람이 고쳐 쓰지만 errorCode 는 계약이라 판정이 안 흔들린다.
-// 문자열 매칭을 두 번 넓히고도 계속 샜다 — `직전 PM run 이 N시간 전 — \`/today\` 로 …`
-// (CTO STALE_PM_RUN) 에는 `없` 이 아예 없고, `최신 plan이 없어 … 건너뜁니다`
-// (PO_SHADOW STALE_PLAN) 에는 실행 지시가 없다. 둘 다 두 조각 AND 를 비껴간다.
+// 문자열 매칭을 두 번 넓히고도 계속 샜다 — `최신 plan이 없어 … 건너뜁니다`
+// (PO_SHADOW STALE_PLAN) 에는 실행 지시가 없어 두 조각 AND 를 비껴간다.
 //
 // enum 을 여기서 import 하지 않는다 — `common` 이 `agent` 를 의존하면 방향이 거꾸로다.
 // 대신 spec 이 실제 enum 값과 대조해 고정하므로, 값이 바뀌면 테스트가 먼저 깨진다.
 const PREREQUISITE_ERROR_CODES: ReadonlySet<string> = new Set([
-  'NO_RECENT_PM_RUN', // CtoErrorCode.NO_RECENT_PM_RUN
-  'STALE_PM_RUN', // CtoErrorCode.STALE_PM_RUN
   'PM_AGENT_NO_RECENT_PLAN', // PmAgentErrorCode.NO_RECENT_PLAN
   'PO_SHADOW_NO_RECENT_PLAN', // PoShadowErrorCode.NO_RECENT_PLAN
   'PO_SHADOW_STALE_PLAN', // PoShadowErrorCode.STALE_PLAN

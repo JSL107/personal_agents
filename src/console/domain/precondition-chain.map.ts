@@ -19,16 +19,6 @@ export type ChainResolution =
 
 export const PRECONDITION_CHAIN_MAP: Readonly<Record<string, ChainResolution>> =
   {
-    [CtoErrorCode.NO_RECENT_PM_RUN]: {
-      kind: 'PREREQ',
-      failedWorkerLabel: 'CTO',
-      prereqWorker: AgentType.PM,
-    },
-    [CtoErrorCode.STALE_PM_RUN]: {
-      kind: 'PREREQ',
-      failedWorkerLabel: 'CTO',
-      prereqWorker: AgentType.PM,
-    },
     [PoShadowErrorCode.NO_RECENT_PLAN]: {
       kind: 'PREREQ',
       failedWorkerLabel: 'PO_SHADOW',
@@ -45,8 +35,8 @@ export const PRECONDITION_CHAIN_MAP: Readonly<Record<string, ChainResolution>> =
       prereqWorker: AgentType.IMPACT_REPORTER,
       needsRecentArg: true,
     },
-    [CtoErrorCode.NO_ASSIGNABLE_TASKS]: { kind: 'UNRESOLVABLE' },
-    [CtoErrorCode.INVALID_PLAN_OUTPUT]: { kind: 'UNRESOLVABLE' },
+    // 선행이 아니라 모델 출력이 스키마와 안 맞는 경우 — 재실행으로 자동 해소되지 않는다.
+    [CtoErrorCode.INVALID_STUDY_VERDICT]: { kind: 'UNRESOLVABLE' },
   };
 
 export function resolveChain(errorCode: string): ChainResolution | undefined {

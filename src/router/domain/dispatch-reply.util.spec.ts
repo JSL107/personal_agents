@@ -25,13 +25,13 @@ describe('buildDispatchReplyText', () => {
           {
             ...baseResult,
             agentRunId: 43,
-            workerType: AgentType.BE,
+            workerType: AgentType.CODE_REVIEWER,
             formattedText: '자식 결과',
           },
         ],
       }),
     ).toBe(
-      '루트 결과\n\n---\n\n자식 결과\n\n_이대리 chain — PM → BE · agentRunIds=[42, 43]_',
+      '루트 결과\n\n---\n\n자식 결과\n\n_이대리 chain — PM → CODE_REVIEWER · agentRunIds=[42, 43]_',
     );
   });
 

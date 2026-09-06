@@ -1,10 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
 
-import { BeAgentModule } from '../agent/be/be.module';
-import { BeFixModule } from '../agent/be-fix/be-fix.module';
-import { BeSchemaModule } from '../agent/be-schema/be-schema.module';
-import { BeSreModule } from '../agent/be-sre/be-sre.module';
-import { BeTestModule } from '../agent/be-test/be-test.module';
 import { BlogModule } from '../agent/blog/blog.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
@@ -17,7 +12,6 @@ import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { VacationModule } from '../agent/vacation/vacation.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
-import { BeChainModule } from '../be-chain/be-chain.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
@@ -29,9 +23,6 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { AgentCommandHandler } from './handler/agent-command.handler';
-import { AssignmentActionHandler } from './handler/assignment-action.handler';
-import { AutoFlowHandler } from './handler/auto-flow.handler';
-import { BeHandler } from './handler/be.handler';
 import { BlogPublishHandler } from './handler/blog-publish.handler';
 import { CareerContextActionHandler } from './handler/career-context-action.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
@@ -55,18 +46,11 @@ import { SlackService } from './slack.service';
     ImpactReporterModule,
     PoShadowModule,
     // /be plan|schema|test — 사용자-트리거 백엔드 에이전트 3종 통합 진입점 (SRE/FIX 는 webhook 자동 트리거).
-    BeAgentModule,
-    BeSchemaModule,
-    BeTestModule,
-    BeSreModule,
-    BeFixModule,
     BlogModule,
     PaperRecommendModule,
     PaperTradingModule,
     // V3 비전 P2 Assign — /assign 슬래시 (CTO).
     CtoModule,
-    // /auto-flow 의 BE chain step — 자연어 승인 경로(CtoBeChainApplier)와 같은 실행기를 쓴다.
-    BeChainModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade).
     PoEvalModule,
     // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker).
@@ -96,13 +80,10 @@ import { SlackService } from './slack.service';
     DiagnosisHandler,
     FeedbackCommandHandler,
     WriteBackHandler,
-    BeHandler,
     BlogPublishHandler,
     AgentCommandHandler,
     PhaseCommandHandler,
-    AssignmentActionHandler,
     CareerContextActionHandler,
-    AutoFlowHandler,
     RetryRunHandler,
     RouterMessageHandler,
     SlackInboxReactionHandler,
@@ -117,13 +98,10 @@ import { SlackService } from './slack.service';
         DiagnosisHandler,
         FeedbackCommandHandler,
         WriteBackHandler,
-        BeHandler,
         BlogPublishHandler,
         AgentCommandHandler,
         PhaseCommandHandler,
-        AssignmentActionHandler,
         CareerContextActionHandler,
-        AutoFlowHandler,
         RetryRunHandler,
         RouterMessageHandler,
         SlackInboxReactionHandler,

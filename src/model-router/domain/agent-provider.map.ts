@@ -11,16 +11,10 @@ import { AgentType, ModelProviderName } from './model-router.type';
  */
 export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.PM]: ModelProviderName.CHATGPT,
-  [AgentType.BE]: ModelProviderName.CHATGPT,
   [AgentType.CODE_REVIEWER]: ModelProviderName.CHATGPT,
   [AgentType.WORK_REVIEWER]: ModelProviderName.CHATGPT,
   [AgentType.IMPACT_REPORTER]: ModelProviderName.CHATGPT,
   [AgentType.PO_SHADOW]: ModelProviderName.CHATGPT,
-  [AgentType.BE_SCHEMA]: ModelProviderName.CHATGPT,
-  [AgentType.BE_TEST]: ModelProviderName.CHATGPT,
-  [AgentType.BE_SRE]: ModelProviderName.CHATGPT,
-  [AgentType.BE_FIX]: ModelProviderName.CHATGPT,
-  [AgentType.CTO]: ModelProviderName.CHATGPT,
   [AgentType.PO_EVAL]: ModelProviderName.CHATGPT,
   [AgentType.CEO]: ModelProviderName.CHATGPT,
   [AgentType.ISSUE_LABELER]: ModelProviderName.CHATGPT,

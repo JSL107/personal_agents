@@ -114,9 +114,6 @@ describe('appendBlockReasonGuidance', () => {
 describe('선행 부재 errorCode 고정', () => {
   // 문구로는 판정에 못 쓰이는 것만 골랐다 — errorCode 경로가 단독으로 도는지 보기 위해서다.
   const PROSE_BLIND_MESSAGES: Readonly<Record<string, string>> = {
-    // `없` 이 없어 두 조각 AND 를 비껴간다. src/agent/cto/.../generate-assignment.usecase.ts:238
-    [CtoErrorCode.STALE_PM_RUN]:
-      '직전 PM run 이 23시간 전 — `/today` 로 최신 plan 을 만든 뒤 다시 시도해주세요.',
     // 실행 지시가 없어 비껴간다. src/agent/po-shadow/.../generate-po-shadow.usecase.ts:65
     [PoShadowErrorCode.STALE_PLAN]:
       '직전 PM plan이 22시간 전입니다. 최신 plan이 없어 PO Shadow 자동 검토를 건너뜁니다.',
@@ -133,8 +130,6 @@ describe('선행 부재 errorCode 고정', () => {
 
   it('선행 부재 errorCode 를 전부 알아본다', () => {
     const codes = [
-      CtoErrorCode.NO_RECENT_PM_RUN,
-      CtoErrorCode.STALE_PM_RUN,
       PmAgentErrorCode.NO_RECENT_PLAN,
       PoShadowErrorCode.NO_RECENT_PLAN,
       PoShadowErrorCode.STALE_PLAN,
@@ -154,7 +149,7 @@ describe('선행 부재 errorCode 고정', () => {
 
     expect(classifyBlockReason(prosePositive)).toBe('PREREQUISITE');
     expect(
-      classifyBlockReason(prosePositive, CtoErrorCode.PARSE_FAILED),
+      classifyBlockReason(prosePositive, CtoErrorCode.INVALID_STUDY_VERDICT),
     ).toBeNull();
   });
 
@@ -162,26 +157,16 @@ describe('선행 부재 errorCode 고정', () => {
     expect(
       classifyBlockReason(
         'LLM 출력이 schema 와 안 맞습니다.',
-        CtoErrorCode.PARSE_FAILED,
+        CtoErrorCode.INVALID_STUDY_VERDICT,
       ),
     ).toBeNull();
     // 선행은 있으나 조건 미충족(자동 해소 불가)이라 선행 부재가 아니다.
     expect(
       classifyBlockReason(
         '배정 후보가 비었습니다.',
-        CtoErrorCode.NO_ASSIGNABLE_TASKS,
+        CtoErrorCode.INVALID_STUDY_VERDICT,
       ),
     ).toBeNull();
-  });
-
-  it('STALE_PM_RUN 문구는 행동을 이미 말하므로 선언만 채운다', () => {
-    const filled = appendBlockReasonGuidance(
-      PROSE_BLIND_MESSAGES[CtoErrorCode.STALE_PM_RUN],
-      CtoErrorCode.STALE_PM_RUN,
-    );
-
-    expect(filled).toContain(BLOCK_REASON_PHRASES.PREREQUISITE.noFabrication);
-    expect(filled).not.toContain(BLOCK_REASON_PHRASES.PREREQUISITE.recovery);
   });
 
   it('행동이 아예 없는 스킵 문구에는 해결 행동까지 채운다', () => {

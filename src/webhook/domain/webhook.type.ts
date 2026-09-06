@@ -26,7 +26,6 @@ export interface ImpactReportJobData {
 }
 
 // pull_request.opened webhook 트리거. PR 메타로 BE-Fix 자동 분석.
-export const BE_FIX_QUEUE = 'be-fix-webhook';
 
 export interface BeFixJobData {
   prRef: string; // 'owner/repo#number'

@@ -41,13 +41,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: '오늘 할 일 daily plan 생성',
   },
   {
-    agentType: AgentType.BE,
-    displayName: 'Backend',
-    slashCommands: ['/be plan'],
-    usecasePath: 'src/agent/be/application/generate-backend-plan.usecase.ts',
-    description: '백엔드 구현 계획 생성',
-  },
-  {
     agentType: AgentType.CODE_REVIEWER,
     displayName: 'Code Reviewer',
     slashCommands: ['/review-pr'],
@@ -78,43 +71,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     usecasePath:
       'src/agent/po-shadow/application/generate-po-shadow.usecase.ts',
     description: 'PO 관점 그림자 검토',
-  },
-  {
-    agentType: AgentType.BE_SCHEMA,
-    displayName: 'BE Schema',
-    slashCommands: ['/be schema'],
-    usecasePath:
-      'src/agent/be-schema/application/generate-schema-proposal.usecase.ts',
-    description: 'Prisma 스키마 변경 제안',
-  },
-  {
-    agentType: AgentType.BE_TEST,
-    displayName: 'BE Test',
-    slashCommands: ['/be test'],
-    usecasePath: 'src/agent/be-test/application/generate-test.usecase.ts',
-    description: 'Tree-sitter AST 기반 Jest spec 생성',
-  },
-  {
-    agentType: AgentType.BE_SRE,
-    displayName: 'BE SRE',
-    slashCommands: ['/be sre'],
-    usecasePath: 'src/agent/be-sre/application/analyze-stack-trace.usecase.ts',
-    description: '스택트레이스 분석 (수동 /be sre)',
-  },
-  {
-    agentType: AgentType.BE_FIX,
-    displayName: 'BE Fix',
-    slashCommands: [],
-    usecasePath:
-      'src/agent/be-fix/application/analyze-pr-convention.usecase.ts',
-    description: 'PR 컨벤션 분석 (webhook 자동 트리거)',
-  },
-  {
-    agentType: AgentType.CTO,
-    displayName: 'CTO',
-    slashCommands: ['/assign'],
-    usecasePath: 'src/agent/cto/application/generate-assignment.usecase.ts',
-    description: 'PM 작업을 BE worker 로 분배',
   },
   {
     agentType: AgentType.PO_EVAL,

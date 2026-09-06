@@ -26,16 +26,10 @@ export enum AgentSafetyLevel {
 export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   // --- 문서·분석 산출물만 내는 worker ---
   [AgentType.PM]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.BE]: AgentSafetyLevel.READ_ONLY,
   [AgentType.CODE_REVIEWER]: AgentSafetyLevel.READ_ONLY,
   [AgentType.WORK_REVIEWER]: AgentSafetyLevel.READ_ONLY,
   [AgentType.IMPACT_REPORTER]: AgentSafetyLevel.READ_ONLY,
   [AgentType.PO_SHADOW]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.BE_SCHEMA]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.BE_TEST]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.BE_SRE]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.BE_FIX]: AgentSafetyLevel.READ_ONLY,
-  [AgentType.CTO]: AgentSafetyLevel.READ_ONLY,
   [AgentType.PO_EVAL]: AgentSafetyLevel.READ_ONLY,
   [AgentType.CEO]: AgentSafetyLevel.READ_ONLY,
   // 자연어 경로(CareerMateDispatcher)는 프로필·이력서·포트폴리오 렌더링까지만 한다.

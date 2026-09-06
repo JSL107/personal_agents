@@ -56,7 +56,7 @@ describe('GenerateCeoMetaUsecase', () => {
       if (agentType === AgentType.PM) {
         return [phaseRun(202, { plan: 'pm output' })];
       }
-      if (agentType === AgentType.CTO) {
+      if (agentType === AgentType.PM) {
         return [phaseRun(203, { assignments: [] })];
       }
       return [];
@@ -110,7 +110,7 @@ describe('GenerateCeoMetaUsecase', () => {
     }
   });
 
-  it('PM/CTO 없어도 PO_EVAL 만 있으면 graceful — sourcePhaseRuns 부분 매핑', async () => {
+  it('PM 없어도 PO_EVAL 만 있으면 graceful — sourcePhaseRuns 부분 매핑', async () => {
     agentRunServiceFindRecent.mockImplementation(async ({ agentType }) => {
       if (agentType === AgentType.PO_EVAL) {
         return [phaseRun(201, {})];
@@ -121,7 +121,6 @@ describe('GenerateCeoMetaUsecase', () => {
     expect(outcome.result.sourcePhaseRuns).toEqual({
       poEvalRunId: 201,
       pmRunId: undefined,
-      ctoRunId: undefined,
     });
   });
 
@@ -135,7 +134,6 @@ describe('GenerateCeoMetaUsecase', () => {
     expect(outcome.result.sourcePhaseRuns).toEqual({
       poEvalRunId: 201,
       pmRunId: 202,
-      ctoRunId: 203,
     });
     expect(outcome.result.contextDriftReport.observations).toHaveLength(1);
     expect(outcome.result.docsQualityReport.findings).toHaveLength(1);
@@ -144,7 +142,7 @@ describe('GenerateCeoMetaUsecase', () => {
     expect(outcome.agentRunId).toBe(63);
   });
 
-  it('AgentRunService 에 CEO + SLACK_COMMAND_CEO_REVIEW + 3 evidence 전달', async () => {
+  it('AgentRunService 에 CEO + SLACK_COMMAND_CEO_REVIEW + 2 evidence 전달', async () => {
     await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
     const call = agentRunServiceExecute.mock.calls[0][0];
     expect(call.agentType).toBe(AgentType.CEO);
@@ -154,7 +152,6 @@ describe('GenerateCeoMetaUsecase', () => {
       range: 'WEEK',
       poEvalRunId: 201,
       pmRunId: 202,
-      ctoRunId: 203,
     });
     expect(call.evidence).toEqual(
       expect.arrayContaining([
@@ -166,16 +163,12 @@ describe('GenerateCeoMetaUsecase', () => {
           sourceType: 'CEO_META_SOURCE_PM',
           sourceId: '202',
         }),
-        expect.objectContaining({
-          sourceType: 'CEO_META_SOURCE_CTO',
-          sourceId: '203',
-        }),
       ]),
     );
-    expect(call.evidence).toHaveLength(3);
+    expect(call.evidence).toHaveLength(2);
   });
 
-  it('PM/CTO 없으면 evidence 도 PO_EVAL 만 1건', async () => {
+  it('PM 없으면 evidence 도 PO_EVAL 만 1건', async () => {
     agentRunServiceFindRecent.mockImplementation(async ({ agentType }) => {
       if (agentType === AgentType.PO_EVAL) {
         return [phaseRun(201, {})];
@@ -188,17 +181,16 @@ describe('GenerateCeoMetaUsecase', () => {
     expect(call.evidence[0].sourceType).toBe('CEO_META_SOURCE_PO_EVAL');
   });
 
-  it('prompt 에 3 phase label + range 헤더 포함', async () => {
+  it('prompt 에 2 phase label + range 헤더 포함', async () => {
     await usecase.execute({ slackUserId: 'U1', range: 'TODAY' });
     const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(promptArg).toContain('[range] TODAY');
     expect(promptArg).toContain('[PO_EVAL 직전 output]');
     expect(promptArg).toContain('[PM 직전 plan]');
-    expect(promptArg).toContain('[CTO 직전 분배]');
     expect(promptArg).toContain('[합성 지시]');
   });
 
-  it('빠진 PM/CTO 섹션은 "(없음 — phase run 미존재)" 표시', async () => {
+  it('빠진 PM 섹션은 "(없음 — phase run 미존재)" 표시', async () => {
     agentRunServiceFindRecent.mockImplementation(async ({ agentType }) => {
       if (agentType === AgentType.PO_EVAL) {
         return [phaseRun(201, { finalSummary: 'po_eval only' })];
@@ -208,7 +200,6 @@ describe('GenerateCeoMetaUsecase', () => {
     await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
     const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(promptArg).toContain('[PM 직전 plan] (없음 — phase run 미존재)');
-    expect(promptArg).toContain('[CTO 직전 분배] (없음 — phase run 미존재)');
   });
 
   it('phase output 이 MAX_PHASE_OUTPUT_BYTES 초과 시 truncate suffix 부착', async () => {
@@ -236,14 +227,14 @@ describe('GenerateCeoMetaUsecase', () => {
     ).rejects.toBeInstanceOf(CeoException);
   });
 
-  it('phase 조회는 Promise.all 로 병렬 — PO_EVAL/PM/CTO 3종 호출', async () => {
+  it('phase 조회는 Promise.all 로 병렬 — PO_EVAL/PM 2종 호출', async () => {
     await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
-    expect(agentRunServiceFindRecent).toHaveBeenCalledTimes(3);
+    expect(agentRunServiceFindRecent).toHaveBeenCalledTimes(2);
     const agentTypes = agentRunServiceFindRecent.mock.calls.map(
       (call) => call[0].agentType,
     );
     expect(agentTypes).toEqual(
-      expect.arrayContaining([AgentType.PO_EVAL, AgentType.PM, AgentType.CTO]),
+      expect.arrayContaining([AgentType.PO_EVAL, AgentType.PM]),
     );
   });
 });

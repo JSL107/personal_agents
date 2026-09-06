@@ -354,11 +354,11 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
-  AUTOPILOT_ASSIGN_SCHEDULE?: string;
+  AUTOPILOT_PO_SHADOW_SCHEDULE?: string;
 
   @IsOptional()
   @IsString()
-  AUTOPILOT_ASSIGN_TIMEZONE?: string;
+  AUTOPILOT_PO_SHADOW_TIMEZONE?: string;
 
   @IsOptional()
   @IsString()

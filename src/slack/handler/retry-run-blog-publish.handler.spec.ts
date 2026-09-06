@@ -37,10 +37,10 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
       }),
     };
     const agentRunService = { setParentId: jest.fn() };
-    const dependencies: object[] = Array.from({ length: 19 }, () => ({}));
+    const dependencies: object[] = Array.from({ length: 13 }, () => ({}));
     dependencies[0] = retryRunUsecase;
-    dependencies[15] = publishNotionDraftUsecase;
-    dependencies[17] = agentRunService;
+    dependencies[9] = publishNotionDraftUsecase;
+    dependencies[11] = agentRunService;
     const handler = Reflect.construct(
       RetryRunHandler,
       dependencies,
