@@ -1178,8 +1178,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 운영 방의 벽을 지표 모니터로 바꾸면서 그 액자가 **어느 방에도 안 남았고**,
         // 그림은 있는데 화면에 한 번도 안 나오는 에셋이 될 뻔했다. 아이디어를 모으는 방이라
         // 성격도 맞는다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return [
-            .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
+            .rugGreen,             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
             .wallPinboard, .wallCalendar, .wallAbstract,
         ]
     case .quality:
@@ -1193,8 +1196,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 작은 화분)이 조용히 빠졌다 — `departmentFurnitureSpots` 의 후보가 문까지 아홉 자리뿐이다.
         // 더 채우려면 자리 후보를 늘려야 하고, 그것은 좌석·경로와의 충돌을 함께 봐야 하는
         // 별개의 작업이다. 지금은 자리에 들어가는 만큼만(칸막이 하나 · 큰 화분 하나) 더한다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return [
-            .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
+            .rugNavy,             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
         ]
     case .evaluation:
@@ -1203,14 +1209,20 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // **판은 벽에 건다(`wallWhiteboard`).** 예전에는 이동식 보드(`whiteboard`)를 첫 후보
         // (3,4)에 놓아 방 한가운데에 바퀴 달린 판이 홀로 서 있었다 — 재제작본이 스탠드까지
         // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
-        return [.bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return [.rugBeige, .bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
     case .treasury:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
         //
         // 둘뿐인 방이라 오른쪽 절반이 빈 나무 바닥이었다. 응접 세트 반대편에 서가와 자료
         // 캐비닛을 세워, 사람 수가 적은 것이 "덜 지은 방" 으로 보이지 않게 한다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return [
-            .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
+            .rugGreen,             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
             .clock, .wallCertificate, .wallLandscape,
         ]
     case .content:
@@ -1218,8 +1230,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         //
         // 판도 벽에 건다(리뷰방과 같은 이유). 이동식 보드는 후보 (7,1) 을 받아 **아래 줄
         // 책상 사이에 끼어** 있었다 — 자유석 사이를 나누는 것은 파티션의 몫이다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return [
-            .plantTall, .plantSmall, .sofa2, .partitionLow,
+            .rugBeige,             .plantTall, .plantSmall, .sofa2, .partitionLow,
             .wallWhiteboard, .wallMonitor, .wallPlantHanging,
         ]
     case .internalOps:
@@ -1231,8 +1246,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 운영 이상 징후 감시·상태 변화 판정이라, 액자는 장식일 뿐이고 볼 것이 없었다 —
         // 그래서 감시 담당이 자기 방을 지나쳐 성장방 모니터까지 걸어갔다
         // (`officeWorkAffinity`). 방 벽이 그 방의 일을 말하게 한다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return [
-            .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
+            .rugBeige,             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
             .clock, .wallShelf, .wallMonitor,
         ]
     }
@@ -1292,7 +1310,10 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 뒤 두 자리는 빈 아래쪽을 메우는 몫이다. **맨 아래 줄에만 더한다** — 아래 행 좌석
         // (책상 (1,1)·(7,1) 의 윗칸)에 사람이 앉으면 그 이름표가 y=3 언저리에 뜨므로,
         // 거기 가구를 세우면 인원이 늘었을 때 이름이 가구에 묻힌다.
-        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return spots([(1, 2), (4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
     case .quality:
         // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
         //
@@ -1301,13 +1322,19 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 맨 아래 줄과 오른쪽 끝의 남은 칸을 후보로 더한다 — 이 두 줄이 좌석 열(x=1·4·7)과
         // 겹치지 않는 자리다. **후보는 넉넉해도 된다**(성장 방 주석과 같은 이유) — 좌석·기존
         // 가구에 막힌 후보는 건너뛰므로, 세트보다 많이 두는 편이 안전하다.
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
         return spots([
-            (9, 5), (9, 3), (9, 1), (2, 0), (6, 0),
+            (2, 2),             (9, 5), (9, 3), (9, 1), (2, 0), (6, 0),
             (9, 4), (9, 2), (4, 0), (8, 0),
         ])
     case .evaluation:
         // 자리와 자리 사이를 책장으로 막아 부스처럼 나눈다.
-        return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return spots([(2, 2), (3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
     case .treasury:
         // 응접 세트를 방 가운데에 — 두 사람이 멀찍이 앉고 가운데서 손님을 맞는 모양.
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
@@ -1323,7 +1350,10 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         //
         // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
         // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
-        return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return spots([(7, 2), (4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
     case .content:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
@@ -1335,14 +1365,20 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 사이사이(3·5·7, y=1)를 채우면 자리 하나 건너 가구 하나가 되어 칸막이가 자리를
         // 나누는 모양이 된다. (9,3) 은 맨 뒤다 — 오른쪽 끝 좌석의 이름표가 뜨는 높이라
         // 앞 후보가 다 막힌 경우에만 쓴다.
-        return spots([(3, 4), (5, 1), (1, 1), (7, 1), (3, 1), (9, 5), (9, 3)])
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return spots([(1, 2), (3, 4), (5, 1), (1, 1), (7, 1), (3, 1), (9, 5), (9, 3)])
     case .internalOps:
         // 10명이 x=1~9 를 다 쓰므로 설비는 맨 아래 줄로 내려간다.
         //
         // 예전 목록의 뒤 두 자리는 둘 다 못 쓰는 자리였다 — (8,0) 은 위 규칙이 금지한 문 열이고
         // (9,5) 는 (9,4) 책상의 좌석이라 배치 루프가 건너뛴다. 설비가 셋뿐이라 거기까지 커서가
         // 가지 않아 드러나지 않았을 뿐이다. 실제로 쓸 수 있는 양 끝 칸으로 바꾼다.
-        return spots([(2, 0), (4, 0), (6, 0), (9, 0), (1, 0)])
+        // 깔개는 바닥 장식이라(`isFloorDecor`) 밟고 지나갈 수 있고 사람·가구보다 뒤에
+        // 그려진다. 방이 휑해 보이는 것은 빈 바닥 때문인데 통행·이름표 제약 탓에 집기를
+        // 더 세울 자리가 없었다 — 깔개는 그 제약을 받지 않으면서 2×2 로 네 칸을 덮는다.
+        return spots([(2, 2), (2, 0), (4, 0), (6, 0), (9, 0), (1, 0)])
     }
 }
 
