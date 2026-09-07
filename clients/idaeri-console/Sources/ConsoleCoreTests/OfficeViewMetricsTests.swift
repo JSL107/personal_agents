@@ -22,12 +22,12 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
                 viewWidth: width, viewHeight: height, columns: 23, rows: 27
             )
             let steps = metrics.tileSize / officeSpriteUnit
-            // 허용하는 것은 정수배(1x · 2x · 3x …)와 정확히 1/2 축소뿐이다. 1/2 은 2픽셀에서
-            // 1픽셀을 균일하게 버리므로 도트가 규칙적으로 남는다 — 0.83배처럼 어긋난 축소와
-            // 근본이 다르다. 그 아래로는 내려가지 않는다(글자 하한 때문에 이름표가 안 읽힌다).
+            // **언제나 정수배다.** 축소 폴백(1/2 배)이 있던 것은 단위가 40px 이라 한 배수도 못
+            // 들어가는 창이 있었기 때문인데, 20px 로 내린 뒤에는 최소 배수가 곧 20px 이라
+            // 그 아래로 내려갈 이유가 없다. 그 아래는 글자 하한 때문에 이름표도 안 읽힌다.
             t.expect(
-                steps == 0.5 || (steps >= 1 && steps == steps.rounded()),
-                "타일 \(metrics.tileSize)px 가 \(officeSpriteUnit)px 의 정수배도 1/2 배도 아니다"
+                steps >= 1 && steps == steps.rounded(),
+                "타일 \(metrics.tileSize)px 가 \(officeSpriteUnit)px 의 정수배가 아니다"
                     + " (창 \(width)x\(height))"
             )
         }
@@ -45,6 +45,20 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
     // 가로가 기준이다 — 세로만 아주 큰 창에서 가로를 넘는 배수를 고르면 방이 화면 밖으로 나간다.
     let narrow = officeViewMetrics(viewWidth: 960, viewHeight: 4000, columns: 23, rows: 27)
     t.expectEqual(narrow.tileSize, 40, "세로가 남아도 가로가 허용하는 배수까지만")
+
+    // **계단이 촘촘해진 것을 고정한다.** 단위가 40px 이던 때는 이 창에서 40px 로 떨어졌다
+    // (80px 을 쓰려면 세로 2000 이 필요했고 1900 이라 100px 모자랐다). 20px 단위에서는 60px 이다.
+    t.expectEqual(
+        officeViewMetrics(viewWidth: 1900, viewHeight: 1900, columns: 23, rows: 27).tileSize,
+        60,
+        "큰 창에서 40px 과 80px 사이의 배수를 쓴다"
+    )
+    // 세로 여유를 **결과 타일 두 줄** 로 재는지 — 단위 기준으로 재면 여기서 20px 로 떨어진다.
+    t.expectEqual(
+        officeViewMetrics(viewWidth: 1400, viewHeight: 1000, columns: 23, rows: 27).tileSize,
+        40,
+        "여유를 단위가 아니라 결과 타일로 재므로 40px 을 유지한다"
+    )
 
     // 값이 이상하면 기본 단위로 닫는다(0 나눗셈·음수 방어).
     t.expectEqual(
