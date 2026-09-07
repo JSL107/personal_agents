@@ -81,14 +81,11 @@ SHEETS: dict[str, list[str | None]] = {
     "character-c": ["charc-down", "charc-up", "charc-side", None, "charc-sit"],
     "character-d": ["chard-down", "chard-up", "chard-side", None, "chard-sit"],
     "character-e": ["chare-down", "chare-up", "chare-side", None, "chare-sit"],
-    "tiles-floor": [
-        "tile-wood-a",
-        "tile-wood-b",
-        "tile-carpet-light",
-        "tile-carpet-dark",
-        "tile-ceramic",
-        "tile-wall",
-    ],
+    # 바닥·벽 타일은 `draw-tiles.py` 가 코드로 굽는다 — 40x40 반복 패턴이라 밑색·이음매·무늬를
+    # 규칙으로 적는 편이 정확하고, 그래야 여섯 부서 밝기를 한 축에서 나란히 잡을 수 있다.
+    # 여기를 비워 두지 않으면 다른 raw 시트를 갱신하려고 이 스크립트를 돌릴 때마다 절차형 타일이
+    # 조용히 옛 AI 타일로 되돌아가고, 함께 조정한 `muteStrength` 와도 어긋난다.
+    "tiles-floor": [None, None, None, None, None, None],
     "furniture": [
         None,  # furniture-desk-top 이 정본(위에서 내려다본 재제작본)
         "furn-chair-down",
@@ -248,6 +245,41 @@ def shrink(cell: Image.Image) -> Image.Image:
     shifted = cell.crop((offset, offset, width, height))
     target = (max(shifted.width // SCALE, 1), max(shifted.height // SCALE, 1))
     return shifted.resize(target, Image.NEAREST)
+
+
+def soften_wood(image: Image.Image) -> Image.Image:
+    """가구의 주황 나무색을 연한 베이지로 옮긴다. 캐릭터는 대상이 아니다.
+
+    바닥을 밝은 회백색으로 통일한 뒤 주황 상판만 화면에서 튀었다(책상은 좌석마다 하나씩
+    깔려 화면에서 가장 많이 반복되는 가구다). 색조(주황 15~45도)만 골라 **채도를 절반으로
+    낮추고 명도를 올린다** — 형태와 명암 단계는 건드리지 않으므로 나뭇결이 남는다.
+
+    캐릭터를 제외하는 이유는 런타임 리컬러가 밝기·채도 임계값으로 머리·셔츠·바지를 가르기
+    때문이다(`SpriteLoader.swift:43-47`). 살색도 이 색조 범위에 들어간다.
+    """
+    import colorsys
+
+    rgba = image.convert("RGBA")
+    pixels = list(rgba.getdata())
+    out = []
+    for red, green, blue, alpha in pixels:
+        if alpha <= 8:
+            out.append((red, green, blue, alpha))
+            continue
+        hue, light, sat = colorsys.rgb_to_hls(red / 255, green / 255, blue / 255)
+        degrees = hue * 360
+        if 15 <= degrees <= 45 and sat > 0.18:
+            # 채도를 절반 이하로 깎고 명도를 크게 올렸더니 상판이 바닥(밝기 207~227)과 같아져
+            # 책상이 묻혔다. 색조는 남기고 **바닥보다 한 단 어둡게** 두어 윤곽이 살아 있게 한다.
+            sat *= 0.62
+            light = min(1.0, light * 1.08 + 0.03)
+            r2, g2, b2 = colorsys.hls_to_rgb(hue, light, sat)
+            out.append((round(r2 * 255), round(g2 * 255), round(b2 * 255), alpha))
+        else:
+            out.append((red, green, blue, alpha))
+    result = Image.new("RGBA", rgba.size)
+    result.putdata(out)
+    return result
 
 
 def quantize_sprite(image: Image.Image, colors: int) -> Image.Image:
@@ -573,6 +605,10 @@ def main() -> int:
     tile_palette = shared_palette(tiles, SHARED_PALETTE_MAX)
     total = 0
     for name, sprite, sheet_name in baked:
+        # 가구·소품의 주황 나무색만 연하게. 캐릭터는 리컬러 색 규약이 걸려 있어 건드리지 않고,
+        # 바닥·벽 타일은 `draw-tiles.py` 가 밝기까지 정해서 굽으므로 여기서 다시 손대면 그 값이 깨진다.
+        if not name.startswith("char") and not name.startswith("tile-"):
+            sprite = soften_wood(sprite)
         if name.startswith("tile-"):
             sprite = apply_palette(sprite, tile_palette)
         else:
