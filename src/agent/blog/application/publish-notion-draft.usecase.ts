@@ -87,6 +87,25 @@ import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../domain/study-deepdive-blog-proper
 // 이 카드는 글 전문을 읽고 마스킹을 검토한 뒤 누르는 성격이라 더 긴 여유가 필요하다.
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
 
+// 이 날수를 넘게 기다린 초안은 출처와 무관하게 맨 앞으로 온다.
+//
+// 왜 필요한가 — 아래 우선순위는 '오늘의 공부' 에 0 을 고정으로 주는데, 그 초안이 매일 1건씩
+// 들어오고 발행은 하루 1건이다. 그래서 뒤에 선 회고 초안(한 일을 쓴 글)은 차례가 영원히
+// 오지 않는다: 2026-08~09 발행본 11편이 **전부** 오늘의 공부였고, 그 사이 큐의 회고 초안은
+// 한 건도 나가지 못했다. 굶는 쪽에 통행권을 주지 않으면 우선순위가 곧 영구 배제가 된다.
+const STARVED_DRAFT_DAYS = 14;
+const STARVED_DRAFT_MS = STARVED_DRAFT_DAYS * 24 * 60 * 60 * 1_000;
+
+// 굶음은 출처와 **별개의 정렬 키**다. 출처 가중치에 섞어 한 값으로 만들면(굶은 것에 -1)
+// 큐 전체가 묵었을 때 두 출처가 동급이 되어 아래 새치기 의도가 통째로 사라진다. 키를 나누면
+// 「오늘 만든 오늘의 공부」 는 안 굶었고 「2주 묵은 회고」 는 굶었으므로 회고가 앞서고,
+// 그 회고가 나간 뒤에는 다시 오늘의 공부가 앞선다.
+//
+// `createdTime` 이 비었거나 깨져 있으면 `Date.parse` 가 NaN 이라 비교가 false 로 떨어져
+// 굶지 않은 것으로 본다(잘못 앞당기지 않는다).
+const isStarvedDraft = (draft: NotionDraftPage, nowMs: number): boolean =>
+  nowMs - Date.parse(draft.createdTime) >= STARVED_DRAFT_MS;
+
 // 발행 순서 가중치 — 값이 작을수록 먼저. 출처유형은 Notion 속성이라 비어 있을 수 있다.
 const draftPriority = (sourceType: string): number =>
   sourceType === STUDY_DEEPDIVE_SOURCE_TYPE ? 0 : 1;
@@ -591,11 +610,13 @@ export class PublishNotionDraftUsecase {
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
-    // 같은 출처끼리는 기존과 같이 오래된 것부터.
+    // 같은 출처끼리는 기존과 같이 오래된 것부터. 단 STARVED_DRAFT_DAYS 를 넘게 기다린 초안이
+    // 있으면 그쪽이 출처를 앞지른다 — 그러지 않으면 뒤에 선 출처가 영원히 발행되지 않는다.
     //
     // 최근 금지어로 막힌 초안은 **출처 우선순위보다 먼저** 뒤로 보낸다. 막힌 글이 '오늘의 공부'
     // 이면 우선순위 0 이라 매일 큐 맨 앞을 차지하는데, 그 회차는 카드도 안 만들어져 다음 회차의
     // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
+    const nowMs = Date.now();
     const oldestFirst = [...drafts].sort((first, second) => {
       const blockedGap =
         Number(blockedPageIds.has(first.pageId)) -
@@ -603,10 +624,23 @@ export class PublishNotionDraftUsecase {
       if (blockedGap !== 0) {
         return blockedGap;
       }
-      const priorityGap =
-        draftPriority(first.sourceType) - draftPriority(second.sourceType);
-      if (priorityGap !== 0) {
-        return priorityGap;
+      const firstStarved = isStarvedDraft(first, nowMs);
+      const secondStarved = isStarvedDraft(second, nowMs);
+      const starvedGap = Number(secondStarved) - Number(firstStarved);
+      if (starvedGap !== 0) {
+        return starvedGap;
+      }
+      // 둘 다 굶었으면 출처를 보지 않고 오래된 것부터 간다. 여기서 출처를 다시 보면 통행권이
+      // 14일치만 풀고 다시 막힌다 — 회고가 나가는 동안 쌓인 '오늘의 공부' 도 14일을 넘기는
+      // 순간 같은 굶음 그룹에 들어오고, 그 안에서 우선순위 0 이라 남은 회고를 다시 앞지른다.
+      // 유입과 발행이 하루 1건씩이면 15일째부터 매일 새로 굶은 초안이 하나씩 생기므로
+      // 기아가 그대로 재현된다(리뷰 지적, 40일 시뮬레이션으로 확인).
+      if (!(firstStarved && secondStarved)) {
+        const priorityGap =
+          draftPriority(first.sourceType) - draftPriority(second.sourceType);
+        if (priorityGap !== 0) {
+          return priorityGap;
+        }
       }
       return first.createdTime.localeCompare(second.createdTime);
     });
