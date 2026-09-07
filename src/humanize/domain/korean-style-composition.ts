@@ -52,6 +52,21 @@ export type KoreanStyleCompositionMetrics = {
   // 매일 자동으로 나가는데, 2026-08-31 발행본이 「붙지 않는 전제 위에 쓴 글」로 판명돼 사용자가
   // 절을 통째로 새로 써야 했다. 그 글은 문체 지표를 전부 통과했고 드러난 신호는 수정률뿐이었다.
   hasVerificationScope: boolean;
+  // 이 프로젝트를 뜯어본 사람만 아는 이름이 산문에 몇 번 나오나. 0 이어야 한다.
+  //
+  // 슬래시 명령(`/review-pr`)과 워커 이름(`agent/pm`)이 그것이다. 익명화 게이트는 회사 정보만
+  // 막으므로 이 이름들은 그대로 통과한다 — 2026-08~09 발행본에 `/worklog`·`/today`·`agent/pm`
+  // 이 설명 없이 실려 나갔고, 그중 `agent/be-sre` 는 발행 시점에 이미 폐지된 워커였다.
+  // 읽는 사람에게 아무 정보도 주지 않는 말이라 세어서 카드에 드러낸다. **막지는 않는다** —
+  // 외부 도구의 슬래시 명령(`/loop`)이 같은 모양이라 오탐이 섞이고, 이건 유출 사고가 아니라
+  // 품질 문제라 승인 전에 사람이 거르는 쪽이 맞다.
+  //
+  // URL 경로(`https://…/posts/`)와 파일 경로(`src/agent/…`)는 앞 글자를 보고 뺀다. 코드블록
+  // 안은 애초에 마스킹이 걷어낸다 — 예시 코드에 든 명령은 글쓴이의 말이 아니다.
+  internalNameCount: number;
+  // 잡힌 이름들(중복 제거). 개수만 주면 사람이 오탐인지 판단할 수 없다 — 외부 도구의 슬래시
+  // 명령(`/loop` 등)은 독자에게 통용되므로 정당하고, 그 구분은 이름을 봐야 선다.
+  internalNames: string[];
 };
 
 // 출처 뒤에 숨는 문장. 「~고 해요」류는 앞 글자를 함께 봐야 인용으로 갈린다.
@@ -92,6 +107,10 @@ const VERIFICATION_SCOPE_PATTERN = new RegExp(
 // 까지 봐야 `## 왜 필요한가` 가 잡힌다.
 const SENTENCE_HEADING_ENDING =
   /(니다|습니다|[어아여해예에]요|죠|[는은인한던]가|나요|다|까|\?|!)$/;
+
+// 내부 이름. 앞에 단어·`/`·`:`·`.` 이 오면 URL·파일 경로라 세지 않는다.
+const INTERNAL_NAME_PATTERN =
+  /(?<![\w/:.])(?:\/[a-z][a-z0-9-]*[a-z0-9]{2}|agent\/[a-z][a-z0-9-]*[a-z0-9])\b/g;
 
 const HEADING_PATTERN = /^(#{2,6}) +(.+)$/gm;
 // 목록·표·인용은 산문이 아니라 절 길이에서 뺀다. 펜스 코드는 마스킹이 걷어내고, 4칸 들여쓴
@@ -168,6 +187,7 @@ export const measureKoreanStyleComposition = (
     (heading) => !SENTENCE_HEADING_ENDING.test(heading),
   );
   const sections = measureSectionProse(masked);
+  const internalNames = masked.match(INTERNAL_NAME_PATTERN) ?? [];
   const attributionCount = sentences.filter((sentence) =>
     ATTRIBUTION_PATTERN.test(sentence),
   ).length;
@@ -185,5 +205,7 @@ export const measureKoreanStyleComposition = (
     hasVerificationScope: VERIFICATION_SCOPE_PATTERN.test(
       stripHeadings(masked),
     ),
+    internalNameCount: internalNames.length,
+    internalNames: [...new Set(internalNames)].sort(),
   };
 };

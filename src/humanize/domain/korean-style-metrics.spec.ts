@@ -407,6 +407,7 @@ describe('줄표(—) 세기', () => {
     colloquialEndingPercent: 15,
     yoEndingPercent: 50,
     endingAlternationPercent: 30,
+    questionPercent: 0,
     bannedConnectiveCount: 0,
     emDashCount: 0,
     measurable: true,
@@ -424,6 +425,8 @@ describe('줄표(—) 세기', () => {
       sectionCount: 5,
       longestSectionProse: 600,
       hasVerificationScope: true,
+      internalNameCount: 0,
+      internalNames: [],
     },
   };
 
@@ -531,6 +534,7 @@ describe('재현 목표 판정', () => {
     yoEndingPercent: 50,
     // 코퍼스 9편이 전부 0% 라 상한이 5 로 내려갔다(헤더 표). 옛 값 30 은 이제 목표 밖이다.
     endingAlternationPercent: 0,
+    questionPercent: 0,
     bannedConnectiveCount: 0,
     emDashCount: 0,
     measurable: true,
@@ -548,6 +552,8 @@ describe('재현 목표 판정', () => {
       sectionCount: 5,
       longestSectionProse: 600,
       hasVerificationScope: true,
+      internalNameCount: 0,
+      internalNames: [],
     },
   };
 
@@ -844,5 +850,25 @@ describe('절 세기의 형태소 경계', () => {
   it('명사 뒤 공백은 여전히 절로 센다 (알려진 한계)', () => {
     // 형태소 경계를 보지 않는 대가. 판정하지 않는 관측 축이라 감수한다.
     expect(measureKoreanStyle('사고 났어요.').clausesPerSentence).toBe(2);
+  });
+});
+
+// 종결 어미를 해요체로 통일한 뒤 실제 발행본 1258문장 중 물음이 1개(0.1%)였다. 어미가 같은
+// 것과 문장이 전부 같은 일을 하는 것은 다른 축인데, 어미만 재던 동안 뒤쪽이 보이지 않았다.
+describe('물음 비율', () => {
+  it('물음으로 끝나는 문장을 센다', () => {
+    const metrics = measureKoreanStyle(
+      '그럼 무엇이 문제일까요? 순서가 정해진 일까지 맡긴 것이 문제예요.',
+    );
+
+    expect(metrics.questionPercent).toBe(50);
+  });
+
+  it('평서문만 있으면 0% 다', () => {
+    const metrics = measureKoreanStyle(
+      '순서가 정해진 일도 있어요. 그건 workflow 로 두면 돼요.',
+    );
+
+    expect(metrics.questionPercent).toBe(0);
   });
 });

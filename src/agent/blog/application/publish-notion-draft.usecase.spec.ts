@@ -707,7 +707,7 @@ describe('PublishNotionDraftUsecase', () => {
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
-        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n구조(원문→익명화→편집→최종): 글자 21→26→26→34 · 헤딩 1→1→1→1 · 인용 0→0→0→0 · 링크 0→0→0→0 · 코드 0→0→0→0\n코드 예시: 0개\n문체 지표: 문장 1개 · 평균 13자 · 어절 3개 · 절 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 요체 100% · 종결체교대 0% · 금지접속사 0회 · 줄표 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 같은크기 100% · 짧은문장 없는 문단 0개\n구성: 최장 절 13자\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+        '*GitHub 블로그 발행 미리보기*\n제목: 공유 DB 마이그레이션 회고\n경로: `src/content/posts/2026-08-19-shared-database-migration.md`\n요약: 공유 DB 마이그레이션의 정합성 교훈\nNotion: https://notion.so/page\n정리: 편집 완료 · 말투: 1/1문단 적용\n구조(원문→익명화→편집→최종): 글자 21→26→26→34 · 헤딩 1→1→1→1 · 인용 0→0→0→0 · 링크 0→0→0→0 · 코드 0→0→0→0\n코드 예시: 0개\n문체 지표: 문장 1개 · 평균 13자 · 어절 3개 · 절 1개 · 편차 0 · 짧은문장 100% · 최장 13자 · 구어 100% · 요체 100% · 종결체교대 0% · 물음 0% · 금지접속사 0회 · 줄표 0회 (40문장 미만이라 참고값)\n문단 1개 · 벽 0% · 같은크기 100% · 짧은문장 없는 문단 0개\n구성: 최장 절 13자\n\n아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
       payload: {
         pageId: draft.pageId,
         path: 'src/content/posts/2026-08-19-shared-database-migration.md',
@@ -1401,7 +1401,9 @@ describe('PublishNotionDraftUsecase', () => {
       pageId: 'page-old-pr',
       title: '오래된 PR 회고',
       sourceType: 'PR',
-      createdTime: '2026-08-01T16:00:00.000Z',
+      // 고정 시각(2026-08-19)에서 9일 전. 굶음 기준(14일)을 넘기지 않는다 — 넘기면 이 테스트가
+      // 재려는 것이 새치기인지 굶음 통행권인지 갈리지 않는다.
+      createdTime: '2026-08-10T16:00:00.000Z',
     };
     const todayStudyDraft = {
       ...draft,
@@ -1412,6 +1414,69 @@ describe('PublishNotionDraftUsecase', () => {
     };
     const { usecase, notionClient } = buildUsecase({
       drafts: [oldPrDraft, todayStudyDraft],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
+      'page-study-today',
+    );
+  });
+
+  // 위 새치기가 고정이면 뒤에 선 출처는 영원히 발행되지 않는다 — 오늘의 공부 초안이 매일 1건씩
+  // 들어오고 발행은 하루 1건이라, 2026-08~09 발행본 11편이 전부 오늘의 공부였고 그 사이 큐의
+  // 회고 초안은 한 건도 나가지 못했다. 굶은 쪽에 통행권을 준다.
+  //
+  // 날짜를 상대값으로 만든다. 하드코딩하면 시간이 지나면서 둘 다 굶어 이 테스트가 재려는
+  // "한쪽만 굶은" 상태를 재현하지 못한다.
+  const daysAgo = (days: number): string =>
+    new Date(Date.now() - days * 24 * 60 * 60 * 1_000).toISOString();
+
+  it('2주 넘게 밀린 회고 초안은 오늘 만든 오늘의 공부보다 먼저 집는다', async () => {
+    const starvedPrDraft = {
+      ...draft,
+      pageId: 'page-starved-pr',
+      title: '2주 넘게 밀린 PR 회고',
+      sourceType: 'PR',
+      createdTime: daysAgo(20),
+    };
+    const todayStudyDraft = {
+      ...draft,
+      pageId: 'page-study-today',
+      title: '오늘의 공부 딥다이브',
+      sourceType: '오늘의 공부',
+      createdTime: daysAgo(0),
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [todayStudyDraft, starvedPrDraft],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(
+      'page-starved-pr',
+    );
+  });
+
+  // 통행권이 새치기를 대체하면 안 된다. 굶은 초안이 없을 때는 기존대로 오늘의 공부가 먼저다
+  // — 이 축이 없으면 위 테스트만 보고 우선순위를 통째로 뒤집어도 초록이 뜬다.
+  it('둘 다 밀리지 않았으면 오늘의 공부가 먼저다', async () => {
+    const recentPrDraft = {
+      ...draft,
+      pageId: 'page-recent-pr',
+      title: '최근 PR 회고',
+      sourceType: 'PR',
+      createdTime: daysAgo(3),
+    };
+    const todayStudyDraft = {
+      ...draft,
+      pageId: 'page-study-today',
+      title: '오늘의 공부 딥다이브',
+      sourceType: '오늘의 공부',
+      createdTime: daysAgo(0),
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [recentPrDraft, todayStudyDraft],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });

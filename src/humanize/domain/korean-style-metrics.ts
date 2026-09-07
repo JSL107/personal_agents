@@ -110,6 +110,17 @@ export type KoreanStyleMetrics = {
   // 노션 글 50% · 사용자가 직접 손본 발행본 37% vs 「한쪽으로 몰리지 않게」 지시로 만든
   // 발행본 73~88% (2026-08-21~23 세 편).
   endingAlternationPercent: number;
+  // 물음으로 끝나는 문장의 비율. **관측값으로만 둔다 — 판정하지 않는다.**
+  //
+  // 왜 세는가 — 종결체를 해요체로 통일한 뒤 발행본 1258문장 중 물음이 **1개(0.1%)** 였다.
+  // 어미가 같은 것과 문장이 전부 같은 일을 하는 것은 다른 축인데, 어미만 재던 동안 뒤쪽이
+  // 보이지 않았다. 상위 종결 다섯이 `있어요`·`해요`·`이에요`·`돼요`·`예요` 로 전부 사실을
+  // 하나 놓고 마치는 평서형이라, 문장 길이가 달라도 같은 박자로 읽힌다.
+  //
+  // 하한을 두지 않는 이유는 이 레포가 이미 한 번 겪었다 — 구어 어미에 하한을 열었더니 34%까지
+  // 올라가 `~니까요` 로 문단을 연달아 끝냈다. 억지로 채운 물음은 그것대로 상투적이다.
+  // 기준값은 프롬프트를 고친 뒤 실제 발행본이 얼마로 움직이는지 보고 정한다.
+  questionPercent: number;
   bannedConnectiveCount: number;
   // 줄표(—) 개수. 스킬 룰북(`rewriting-playbook.md` J-3)이 "1문서 1~2회 이하" 로 정한 항목인데
   // 프롬프트에만 있고 세는 자리가 없어 발행본에 15개가 들어가도 어떤 지표에도 안 걸렸다
@@ -345,6 +356,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       colloquialEndingPercent: 0,
       yoEndingPercent: 0,
       endingAlternationPercent: 0,
+      questionPercent: 0,
       bannedConnectiveCount: 0,
       emDashCount: countEmDashes(markdown),
       measurable: false,
@@ -443,6 +455,10 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       rankedEndings.length < 2
         ? 0
         : toPercent(alternationCount, rankedEndings.length - 1),
+    questionPercent: toPercent(
+      sentences.filter((sentence) => sentence.trimEnd().endsWith('?')).length,
+      sentences.length,
+    ),
     bannedConnectiveCount,
     emDashCount: countEmDashes(markdown),
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
@@ -608,13 +624,16 @@ const collectKoreanStyleGaps = (
 export const findKoreanStyleGaps = (metrics: KoreanStyleMetrics): string[] =>
   collectKoreanStyleGaps(metrics).map((gap) => gap.text);
 
+// 카드 한 줄이 목록에 먹히지 않게 이름은 앞에서 이만큼만 보여준다.
+const INTERNAL_NAME_PREVIEW = 5;
+
 export const formatKoreanStyleMetrics = (
   metrics: KoreanStyleMetrics,
 ): string => {
   if (metrics.sentenceCount === 0) {
     return '문체 지표: 측정할 산문이 없음';
   }
-  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 어절 ${metrics.wordsPerSentence}개 · 절 ${metrics.clausesPerSentence}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
+  const head = `문체 지표: 문장 ${metrics.sentenceCount}개 · 평균 ${metrics.averageLength}자 · 어절 ${metrics.wordsPerSentence}개 · 절 ${metrics.clausesPerSentence}개 · 편차 ${metrics.lengthStandardDeviation} · 짧은문장 ${metrics.shortSentencePercent}% · 최장 ${metrics.longestSentenceLength}자 · 구어 ${metrics.colloquialEndingPercent}% · 요체 ${metrics.yoEndingPercent}% · 종결체교대 ${metrics.endingAlternationPercent}% · 물음 ${metrics.questionPercent}% · 금지접속사 ${metrics.bannedConnectiveCount}회 · 줄표 ${metrics.emDashCount}회`;
   const paragraph = `문단 ${metrics.paragraph.paragraphCount}개 · 벽 ${metrics.paragraph.wallPercent}% · 같은크기 ${metrics.paragraph.dominantParagraphSizePercent}% · 짧은문장 없는 문단 ${metrics.paragraph.noShortSentenceParagraphs}개`;
   const c = metrics.composition;
   // 판정과 같은 표본 조건을 카드에도 쓴다. 헤딩 0개인 글에 「명사구 0%」를 적으면 값이 아니라
@@ -627,6 +646,11 @@ export const formatKoreanStyleMetrics = (
       ? `헤딩 ${c.headingCount}개 중 명사구 ${c.nounPhraseHeadingPercent}%`
       : null,
     c.sectionCount > 0 ? `최장 절 ${c.longestSectionProse}자` : null,
+    // 0 이 기본값이라 없을 때는 적지 않는다. 있을 때만 무엇이 잡혔는지 이름까지 보여준다 —
+    // 개수만으로는 오탐인지 판단할 수 없고, 이 값은 승인 전에 사람이 걸러야 하는 축이다.
+    c.internalNameCount > 0
+      ? `⚠️ 내부 이름 ${c.internalNameCount}건(${c.internalNames.slice(0, INTERNAL_NAME_PREVIEW).join(', ')}${c.internalNames.length > INTERNAL_NAME_PREVIEW ? ' 외' : ''})`
+      : null,
   ].filter((part): part is string => part !== null);
   const composition =
     compositionParts.length > 0
