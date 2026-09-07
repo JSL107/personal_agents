@@ -1038,11 +1038,13 @@ final class OfficeScene: SKScene {
                         department: wallDepartment(x: column, y: row, zones: plan.zones)
                     )
                     node.colorBlendFactor = CGFloat(kind.muteStrength)
-                    // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
-                    // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
-                    // 뒤집어 깔면 그 불일치가 원리적으로 사라진다.
-                    node.xScale = column % 2 == 0 ? 1 : -1
-                    node.yScale = row % 2 == 0 ? 1 : -1
+                    // **뒤집지 않는다.** 한 칸 걸러 뒤집어 깔던 것은 생성 이미지 타일의 좌우·상하
+                    // 끝이 서로 안 맞는(실측 색차 15~22) 문제의 대책이었다. 바닥을 `draw-tiles.py`
+                    // 로 굽는 지금은 이음매가 규칙으로 정해져 원리적으로 맞으므로, 뒤집으면 오히려
+                    // 격자가 어긋난다 — 이음매를 0번 가장자리에만 그리므로 반전 칸에서는 반대편으로
+                    // 옮겨 가고, 맞닿는 자리에서 선이 겹쳐 두꺼워지거나 사라진다.
+                    node.xScale = 1
+                    node.yScale = 1
                 }
                 floorLayer.addChild(node)
             }

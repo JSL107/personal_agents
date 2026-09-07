@@ -81,14 +81,11 @@ SHEETS: dict[str, list[str | None]] = {
     "character-c": ["charc-down", "charc-up", "charc-side", None, "charc-sit"],
     "character-d": ["chard-down", "chard-up", "chard-side", None, "chard-sit"],
     "character-e": ["chare-down", "chare-up", "chare-side", None, "chare-sit"],
-    "tiles-floor": [
-        "tile-wood-a",
-        "tile-wood-b",
-        "tile-carpet-light",
-        "tile-carpet-dark",
-        "tile-ceramic",
-        "tile-wall",
-    ],
+    # 바닥·벽 타일은 `draw-tiles.py` 가 코드로 굽는다 — 40x40 반복 패턴이라 밑색·이음매·무늬를
+    # 규칙으로 적는 편이 정확하고, 그래야 여섯 부서 밝기를 한 축에서 나란히 잡을 수 있다.
+    # 여기를 비워 두지 않으면 다른 raw 시트를 갱신하려고 이 스크립트를 돌릴 때마다 절차형 타일이
+    # 조용히 옛 AI 타일로 되돌아가고, 함께 조정한 `muteStrength` 와도 어긋난다.
+    "tiles-floor": [None, None, None, None, None, None],
     "furniture": [
         None,  # furniture-desk-top 이 정본(위에서 내려다본 재제작본)
         "furn-chair-down",
@@ -608,8 +605,9 @@ def main() -> int:
     tile_palette = shared_palette(tiles, SHARED_PALETTE_MAX)
     total = 0
     for name, sprite, sheet_name in baked:
-        # 가구·소품의 주황 나무색만 연하게. 캐릭터는 리컬러 색 규약이 걸려 있어 건드리지 않는다.
-        if not name.startswith("char"):
+        # 가구·소품의 주황 나무색만 연하게. 캐릭터는 리컬러 색 규약이 걸려 있어 건드리지 않고,
+        # 바닥·벽 타일은 `draw-tiles.py` 가 밝기까지 정해서 굽으므로 여기서 다시 손대면 그 값이 깨진다.
+        if not name.startswith("char") and not name.startswith("tile-"):
             sprite = soften_wood(sprite)
         if name.startswith("tile-"):
             sprite = apply_palette(sprite, tile_palette)
