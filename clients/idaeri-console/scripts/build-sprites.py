@@ -132,8 +132,11 @@ SHEETS: dict[str, list[str | None]] = {
         "furn-sink-counter",
         "furn-partition-glass",
     ],
-    # 이 세 종은 draw-props.py의 임시 도트 그림을 AI 에셋으로 교체한다.
-    "props-2": ["prop-papers", "prop-desk-lamp", "prop-plant-desk"],
+    # 이 세 종은 `draw-props.py` 가 도트로 그린다 — 생성 AI 는 이 크기(5~12도트)에서 형태를
+    # 못 잡는다. 실측하면 AI 판 `prop-desk-lamp` 는 8x11 의 88픽셀에 32색이라 색/픽셀이 1.00 이고
+    # (모든 픽셀이 다른 색) 램프로 안 읽혔다. `prop-papers` 0.98 · `prop-plant-desk` 0.86 도 같다.
+    # 대조군은 도트로 그린 `prop-mug`(3색) · `prop-laptop`(6색) — 7~12픽셀인데도 형태가 읽힌다.
+    "props-2": [None, None, None],
     "rugs": ["furn-rug-green", "furn-rug-beige", "furn-rug-navy"],
     # 문·책장·화이트보드 재제작본. 기존 시트의 같은 이름 셀은 None 으로 비웠다 —
     # 두 시트가 같은 파일을 만들면 SHEETS 순서에 따라 승자가 갈려 조용히 어긋난다.

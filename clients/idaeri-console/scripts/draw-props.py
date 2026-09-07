@@ -111,11 +111,56 @@ KccccccccK
 .KKKKKKKK.
 """
 
+# 갓이 빛을 머금은 면으로 읽히게 `y`(전구빛)를 갓 안쪽에 채운다. 회색으로 두면 이 크기에서는
+# 그냥 회색 덩어리다 — 8x11 AI 그림이 88픽셀에 32색을 흩뿌려 무엇인지 안 읽혔던 자리다.
+DESK_LAMP = """
+..KKKK...
+.KyyyyK..
+.KyyyyK..
+..KKKK...
+...KK....
+...KK....
+..KKKK...
+.KddddK..
+..KKKK...
+"""
+
+
+# `desk-paper`(한 장, 처리량 표시용)와 구분해야 하므로 **두 장이 겹친 형태**로 그린다.
+# 겹치는 자리에 검정 한 줄을 넣지 않으면 찌그러진 흰 사각형 하나로 보인다.
+PAPERS = """
+.KKKK.....
+KppppK....
+KpPppKKKK.
+KppppppppK
+KKKKppppK.
+....KKKK..
+"""
+
+
+# 잎을 화분보다 넓게 벌린다. 같은 폭으로 두면 이 크기에서 화분인지 상자인지 안 갈린다.
+PLANT_DESK = """
+...nn.....
+..nlln.N..
+.NnllnnN..
+..nnlnn...
+...KKK....
+..KwwwK...
+..KWWWK...
+...KKK....
+"""
+
+
 PROPS: dict[str, str] = {
     "prop-mug": MUG,
     "prop-laptop": LAPTOP,
     "prop-pen-holder": PEN_HOLDER,
     "prop-book-stack": BOOK_STACK,
+    # 생성 AI 가 형태를 못 잡아 도트로 되돌린 세 종. `build-sprites.py` 의 `SHEETS` 에서
+    # `props-2` 시트를 비워 두었으므로 여기서 그린 것이 정본이다.
+    "prop-desk-lamp": DESK_LAMP,
+    "prop-papers": PAPERS,
+    "prop-plant-desk": PLANT_DESK,
 }
 
 
