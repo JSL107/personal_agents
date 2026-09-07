@@ -1277,10 +1277,13 @@ func runOfficePathfindingTests(_ t: TestRunner) {
         // 집기를 늘릴 때 현재 인원만 보면, 나중에 사람이 늘었을 때 조용히 갇힌다. 자리표를
         // 다 쓴 사람은 `fallbackDeskSpots` 로 밀리는데, 그 자리는 손으로 고른 자리와 달리
         // 집기 후보와의 관계를 따지지 않는다 — 가운데 줄에 세운 집기가 그 좌석을 가둘 수 있다.
+        // **`planAgents` 로 만들지 않는다.** `scripts/sync-docs.ts` 가 이 파일에서 그 호출을
+        // 전부 긁어 사규 표본으로 세므로, 여기서 쓰면 없는 워커 여덟이 표본에 섞여 검사가
+        // 깨진다(실제로 CI 가 그렇게 잡았다). 단수형으로 직접 만든다.
         let crowded =
             sampleAgents
-            + planAgents(.quality, ["Q_1", "Q_2", "Q_3", "Q_4", "Q_5", "Q_6"])
-            + planAgents(.treasury, ["T_1", "T_2"])
+            + (1...6).map { planAgent("Q_\($0)", .quality) }
+            + (1...2).map { planAgent("T_\($0)", .treasury) }
         let crowdedPlan = officeFloorPlan(agents: crowded)
         if let crowdedQueue = crowdedPlan.queueTiles.first {
             let stuck = crowdedPlan.desks.filter {
