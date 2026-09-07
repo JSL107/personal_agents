@@ -167,9 +167,19 @@ let menuBridge = installMainMenu(on: application)
 // 보려면 2열 배치가 1080줄을 요구하는데 맥북 논리 세로가 900 남짓이라 닿지 않는다 — 그래서
 // **가로로 넓은 창이 이 도면의 자연스러운 형태**다.
 //
-// 화면보다 큰 창을 만들지 않도록 실제 표시 영역으로 한 번 자른다.
-let preferredSize = NSSize(width: 1440, height: 860)
-let usableSize = NSScreen.main?.visibleFrame.size ?? preferredSize
+// **화면 모양에 따라 두 가지 중에 고른다.** 도면은 창이 가로로 넓으면 3열×2행으로,
+// 세로로 길면 2열×3행으로 스스로 배치를 바꾸는데, 두 배치의 40px 요구 크기가 다르다.
+//
+//   3열 배치 35×20칸 → 1400×800 이 필요 (가로로 넓은 창)
+//   2열 배치 23×27칸 →  920×1080 이 필요 (세로로 긴 창)
+//
+// 가로형 하나만 두면 세로 모니터에서 **폭만 잘리고 세로 여유는 쓰지 않는** 크기가 나온다.
+// 1080×1920 화면에서 1440×860 을 요청하면 1080×860 이 되는데, 이건 3열에는 폭이(1400 필요)
+// 2열에는 세로가(1080 필요) 모자라 어느 쪽으로도 최저 배율이다. 실제로 그렇게 걸렸다.
+let landscapeSize = NSSize(width: 1440, height: 860)
+let portraitSize = NSSize(width: 960, height: 1140)
+let usableSize = NSScreen.main?.visibleFrame.size ?? landscapeSize
+let preferredSize = usableSize.width >= landscapeSize.width ? landscapeSize : portraitSize
 let windowSize = NSSize(
     width: min(preferredSize.width, usableSize.width),
     height: min(preferredSize.height, usableSize.height)
