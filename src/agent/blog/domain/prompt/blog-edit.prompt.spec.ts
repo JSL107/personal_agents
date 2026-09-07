@@ -57,8 +57,20 @@ describe('학습 규칙 섹션', () => {
     expect(start).toBeGreaterThan(prompt.indexOf('## 정리할 것'));
     expect(start).toBeLessThan(prompt.indexOf('## 절대 건드리지 말 것'));
     expect(prompt).toContain(
-      '## 이 블로그에서 반복된 수정\n- 중복 결론을 덜어낸다.\n- 도입에서 주제를 밝힌다.',
+      '- 중복 결론을 덜어낸다.\n- 도입에서 주제를 밝힌다.',
     );
+  });
+  // 규칙은 지난 글의 수정 이력에서 모델이 뽑은 문장이라, 보호 규칙과 어긋나는 지시가 섞여
+  // 들어올 수 있다. 어느 쪽이 이기는지 프롬프트 안에 남아 있어야 한다.
+  it('보호 규칙이 우선한다는 것을 규칙 앞에 밝힌다', () => {
+    const prompt = buildBlogEditSystemPrompt(['중복 결론을 덜어낸다.']);
+    const notice = prompt.indexOf(
+      '「절대 건드리지 말 것」과 어긋나는 항목이 있으면',
+    );
+    expect(notice).toBeGreaterThan(
+      prompt.indexOf('## 이 블로그에서 반복된 수정'),
+    );
+    expect(notice).toBeLessThan(prompt.indexOf('- 중복 결론을 덜어낸다.'));
   });
   it('규칙이 없으면 빈 섹션도 만들지 않는다', () => {
     expect(buildBlogEditSystemPrompt([])).not.toContain(

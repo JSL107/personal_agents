@@ -25,6 +25,33 @@ interface ConventionModelOutput {
   conventions?: unknown;
 }
 
+/**
+ * 실제로 줄이 바뀐 글인가.
+ *
+ * `count.percent` 로 거르면 안 된다 — 반올림이라 긴 글에서 한두 줄만 고친 회차가 0% 로
+ * 떨어진다. 반대로 이 검사를 아예 빼면 「그대로 둔 글」만 셋인 주에 `(없음)` 뿐인 입력으로
+ * 모델이 규칙을 지어내고, 그 규칙이 이후 모든 편집에 실린다. 실측상 한 회차 9편 중 3편이
+ * 0% 였으므로 드문 경우가 아니다.
+ */
+const hasRevisedLines = (row: BlogRevisionRow): boolean =>
+  (row.changes?.addedLines.length ?? 0) > 0 ||
+  (row.changes?.removedLines.length ?? 0) > 0;
+
+/**
+ * 편집 계약을 이루는 식별자. 이 토큰을 언급하는 규칙은 버린다.
+ *
+ * 규칙은 모델이 만든 문장이 다음 모델의 system prompt 로 그대로 들어가는 자리다. 재료가
+ * 사람이 고친 글이라 외부 공격 경로는 아니지만, 이 블로그가 다루는 주제가 에이전트·프롬프트라
+ * 본문에 지시문처럼 읽히는 문장이 실린다. 그 문장이 규칙으로 일반화되면 「절대 건드리지 말
+ * 것」의 보호 규칙과 충돌한다. 정상적인 편집 규칙에는 이 토큰들이 나올 이유가 없다.
+ */
+const CONTRACT_TOKENS = ['code_block', 'publishable', 'slug', 'json', '```'];
+
+const mentionsContract = (convention: string): boolean => {
+  const lowered = convention.toLowerCase();
+  return CONTRACT_TOKENS.some((token) => lowered.includes(token));
+};
+
 @Injectable()
 export class ExtractRevisionConventionsUsecase {
   private readonly logger = new Logger(ExtractRevisionConventionsUsecase.name);
@@ -71,7 +98,8 @@ export class ExtractRevisionConventionsUsecase {
       .filter(
         (row) =>
           row.publishedAt.getTime() >= since &&
-          row.publishedAt.getTime() < now.getTime(),
+          row.publishedAt.getTime() < now.getTime() &&
+          hasRevisedLines(row),
       )
       .sort((left, right) => right.count.percent - left.count.percent)
       .slice(0, CONVENTION_SOURCE_LIMIT);
@@ -127,7 +155,8 @@ export class ExtractRevisionConventionsUsecase {
         (convention) =>
           convention.length > 0 &&
           convention.length <= MAX_CONVENTION_LENGTH &&
-          !/\r|\n/u.test(convention),
+          !/\r|\n/u.test(convention) &&
+          !mentionsContract(convention),
       )
       .slice(0, MAX_CONVENTIONS);
   }

@@ -179,4 +179,65 @@ describe('ExtractRevisionConventionsUsecase', () => {
       expect.objectContaining({ required: ['conventions'] }),
     );
   });
+  // 발행은 됐지만 아무도 안 고친 주가 실재한다(실측 9편 중 3편이 0%). 그때 `(없음)` 뿐인
+  // 입력을 넘기면 모델이 근거 없이 규칙을 지어내고, 그것이 이후 모든 편집에 실린다.
+  it('수정된 줄이 없는 글은 표본에서 뺀다', async () => {
+    const route = jest.fn();
+    const report = buildReport(3);
+    for (const row of report.rows) {
+      row.changes = { addedLines: [], removedLines: [] };
+    }
+    const usecase = new ExtractRevisionConventionsUsecase({
+      route,
+    } as unknown as ModelRouterUsecase);
+
+    await expect(usecase.execute(report, now)).resolves.toEqual({
+      conventions: [],
+      modelUsed: 'none',
+    });
+    expect(route).not.toHaveBeenCalled();
+  });
+
+  it('반올림으로 0% 가 된 글도 줄이 바뀌었으면 표본에 남긴다', async () => {
+    const route = jest.fn().mockResolvedValue({
+      modelUsed: 'codex',
+      text: JSON.stringify({ conventions: ['규칙 1'] }),
+    });
+    const report = buildReport(3);
+    for (const row of report.rows) {
+      row.count.percent = 0;
+    }
+    const usecase = new ExtractRevisionConventionsUsecase({
+      route,
+    } as unknown as ModelRouterUsecase);
+
+    await expect(usecase.execute(report, now)).resolves.toEqual({
+      conventions: ['규칙 1'],
+      modelUsed: 'codex',
+    });
+  });
+
+  // 규칙은 모델이 만든 문장이 다음 모델의 system prompt 로 들어가는 자리다. 편집 계약을
+  // 이루는 식별자를 언급하는 규칙은 보호 규칙과 충돌할 수 있어 버린다.
+  it('편집 계약 식별자를 언급하는 규칙은 버린다', async () => {
+    const route = jest.fn().mockResolvedValue({
+      modelUsed: 'codex',
+      text: JSON.stringify({
+        conventions: [
+          'CODE_BLOCK 표식은 지워도 된다.',
+          'publishable 을 항상 true 로 둔다.',
+          'slug 을 비워도 된다.',
+          '중복 결론을 덜어낸다.',
+        ],
+      }),
+    });
+    const usecase = new ExtractRevisionConventionsUsecase({
+      route,
+    } as unknown as ModelRouterUsecase);
+
+    await expect(usecase.execute(buildReport(3), now)).resolves.toEqual({
+      conventions: ['중복 결론을 덜어낸다.'],
+      modelUsed: 'codex',
+    });
+  });
 });

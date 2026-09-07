@@ -267,6 +267,16 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
+        // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.
+        case 'BLOG_REVISION': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (BLOG_REVISION) 은 28일을 되짚는 누적 집계라 회차 하나가 실패해도 다음 주 회차가 같은 범위를 다시 셉니다. 지금 수치를 확인하려면 \`node --env-file=.env -r ts-node/register/transpile-only scripts/blog-revision-report.ts\` 를 실행해주세요.`,
+          });
+          return;
+        }
         case 'PAPER_RECOMMEND': {
           const strategy = snapshot.strategy;
           const decidedAt = snapshot.decidedAt
