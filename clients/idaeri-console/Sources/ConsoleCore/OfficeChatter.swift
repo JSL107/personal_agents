@@ -85,13 +85,13 @@ public func officeSmallTalk(department: Department, variant: Int) -> String {
     switch department {
     case .planning:
         lines = ["뭐부터 하지", "순서를 바꿀까", "이건 다음에"]
-    case .engineering:
-        lines = ["빌드 돌리자", "로그 좀 보자", "여기가 느리네"]
-    case .review:
-        lines = ["이건 괜찮나", "한 번 더 보자", "놓친 게 있나"]
-    case .executive:
+    case .quality:
+        lines = ["이 줄이 문제", "짚어야 하나", "라벨을 뭘로"]
+    case .evaluation:
+        lines = ["얼마나 했나", "놓친 게 있나", "이건 어땠나"]
+    case .treasury:
         lines = ["숫자를 보자", "정해야 하는데", "이번 주는 어때"]
-    case .growth:
+    case .content:
         lines = ["반응이 왔네", "글 좀 써야지", "이게 먹히나"]
     case .internalOps:
         lines = ["정리해야지", "많이 쌓였네", "이건 치우자"]

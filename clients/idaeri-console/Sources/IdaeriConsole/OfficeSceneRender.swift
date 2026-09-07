@@ -203,7 +203,7 @@ private func alarmDemoAgent() -> ConsoleAgent {
         description: "",
         state: .awaitingApproval,
         bubble: "",
-        department: Department.executive.rawValue
+        department: Department.treasury.rawValue
     )
 }
 
@@ -227,7 +227,7 @@ private func alarmDemoApproval() -> ConsoleApproval {
 
 private func poseDemoAgents() -> [ConsoleAgent] {
     let departments: [Department] = [
-        .planning, .engineering, .review, .executive, .growth, .internalOps,
+        .planning, .quality, .evaluation, .treasury, .content, .internalOps,
     ]
     let interactionKinds = FurnitureKind.allCases.filter { $0.interactionPose != nil }
     return interactionKinds.enumerated().map { index, kind in

@@ -1130,13 +1130,13 @@ public func departmentFloor(_ department: Department) -> FloorTile {
     switch department {
     case .planning:
         return .carpetLight
-    case .engineering:
+    case .quality:
         return .carpetDark
-    case .review:
+    case .evaluation:
         return .woodA
-    case .executive:
+    case .treasury:
         return .woodB
-    case .growth:
+    case .content:
         return .ceramic
     case .internalOps:
         return .carpetDark
@@ -1182,7 +1182,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
             .wallPinboard, .wallCalendar, .wallAbstract,
         ]
-    case .engineering:
+    case .quality:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
         // 자료 벽 맨 아래 칸은 유리 파티션으로 막아 벽 줄을 아래까지 이어 준다
         // (자리 후보 순서상 책장 둘 다음이 오른쪽 끝 아래 칸이다).
@@ -1197,14 +1197,14 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
         ]
-    case .review:
+    case .evaluation:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
         //
         // **판은 벽에 건다(`wallWhiteboard`).** 예전에는 이동식 보드(`whiteboard`)를 첫 후보
         // (3,4)에 놓아 방 한가운데에 바퀴 달린 판이 홀로 서 있었다 — 재제작본이 스탠드까지
         // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
         return [.bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
-    case .executive:
+    case .treasury:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
         //
         // 둘뿐인 방이라 오른쪽 절반이 빈 나무 바닥이었다. 응접 세트 반대편에 서가와 자료
@@ -1213,7 +1213,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
             .clock, .wallCertificate, .wallLandscape,
         ]
-    case .growth:
+    case .content:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
         //
         // 판도 벽에 건다(리뷰방과 같은 이유). 이동식 보드는 후보 (7,1) 을 받아 **아래 줄
@@ -1293,7 +1293,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // (책상 (1,1)·(7,1) 의 윗칸)에 사람이 앉으면 그 이름표가 y=3 언저리에 뜨므로,
         // 거기 가구를 세우면 인원이 늘었을 때 이름이 가구에 묻힌다.
         return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
-    case .engineering:
+    case .quality:
         // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
         //
         // 후보가 다섯으로 여섯 부서 중 가장 적었다(경영 8 · 기획 7). #479 가 BE 워커 5종을
@@ -1305,10 +1305,10 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
             (9, 5), (9, 3), (9, 1), (2, 0), (6, 0),
             (9, 4), (9, 2), (4, 0), (8, 0),
         ])
-    case .review:
+    case .evaluation:
         // 자리와 자리 사이를 책장으로 막아 부스처럼 나눈다.
         return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
-    case .executive:
+    case .treasury:
         // 응접 세트를 방 가운데에 — 두 사람이 멀찍이 앉고 가운데서 손님을 맞는 모양.
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
         // 높이)를 피해, 오른쪽 벽면과 맨 아래 줄에 붙인다.
@@ -1324,7 +1324,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
         // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
         return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
-    case .growth:
+    case .content:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
         // 후보가 넉넉한 것은 이 방의 바닥 가구가 다섯인데 **후보가 좌석·기존 가구에 막히면
@@ -1588,14 +1588,14 @@ public func departmentDeskSpots(_ department: Department) -> [TilePoint] {
         // 머리 위로 떠올라 테이블 상판에 얹혔다. 이름표가 머리 위에 붙는 한 구조적으로 그렇게
         // 되므로, 사람을 전부 테이블 위쪽에 둔다.
         return spots([(2, 4), (4, 4), (6, 4), (1, 1), (7, 1)])
-    case .engineering:
+    case .quality:
         // 짝지어 일하는 자리 — 같은 열에 위아래로 앉은 2열 종대.
         //
         // 책상 둘을 **가로로** 붙였더니 이름표가 서로 덮었다("백엔드규약 점검"). 이름표 폭이
         // 1.4칸쯤이라 가로 간격은 2칸 아래로 못 내려간다. 세로로 짝지으면 행 간격 3칸이
         // 그대로 살아 겹치지 않는다.
         return spots([(1, 4), (1, 1), (4, 4), (4, 1), (7, 4), (7, 1)])
-    case .review:
+    case .evaluation:
         // 혼자 집중해 읽는 자리 — 위 줄은 끝까지 벌리고 아래 줄은 그 사이로 어긋나게.
         // 사이를 책장으로 막아 부스처럼 나눈다.
         //
@@ -1604,10 +1604,10 @@ public func departmentDeskSpots(_ department: Department) -> [TilePoint] {
         // 넘친 하나가 예비 격자로 밀려 이름표를 덮는다. 방에 몇 명이 사는지는 사규가 정하고,
         // 자리표는 그 인원을 담는다.
         return spots([(1, 4), (5, 4), (9, 4), (1, 1), (3, 1), (7, 1)])
-    case .executive:
+    case .treasury:
         // 둘뿐이고 손님을 맞는 방 — 멀찍이 떨어뜨려 각자 방을 쓰는 것처럼 보이게.
         return spots([(2, 4), (6, 4), (2, 1), (6, 1)])
-    case .growth:
+    case .content:
         // 밝고 트인 방 — 줄을 맞추지 않고 어긋나게 놓아 자유석으로 읽히게 한다.
         // 두 줄을 한 칸씩 엇갈리게 두면 격자로 보이지 않으면서도 행 간격 3 이 유지된다.
         //
@@ -1638,7 +1638,7 @@ public func departmentDeskSpots(_ department: Department) -> [TilePoint] {
 
 /// 부서 배치 순서(왼→오, 위→아래). 방 배치·범례가 공유하는 canonical 순서.
 private let zoneOrder: [Department] = [
-    .planning, .engineering, .review, .executive, .growth, .internalOps,
+    .planning, .quality, .evaluation, .treasury, .content, .internalOps,
 ]
 
 /// 에이전트 목록으로 사무실 평면도를 만든다(순수). 같은 입력이면 항상 같은 배치.
@@ -1920,10 +1920,16 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
     }
 
     // === 부서 구역 ===
-    let presentDepartments = zoneOrder.filter { candidate in
-        agents.contains { $0.resolvedDepartment == candidate }
-    }
-    for (index, zoneDepartment) in presentDepartments.enumerated() {
+    // **인원이 0인 부서도 그린다.** 예전에는 소속이 있는 부서만 구역으로 만들었는데, 도면
+    // 크기는 여섯 부서를 전제로 계산하므로(`officePlanSize`) 빈 부서가 하나 생기면 격자에
+    // 칠 안 된 구멍이 남았다. 그 구멍을 막으려고 백엔드에 "여섯 부서 모두에 최소 한 명"
+    // 테스트가 생겼고, 그 압력이 배정을 직무가 아닌 좌석 사정으로 끌고 갔다 — BE 5종이
+    // 빠졌을 때 `CODE_REVIEWER` 를 개발방으로 옮긴 것이 그 사례다(커밋 `d1affe03`).
+    //
+    // 빈 방은 바닥·벽·문·집기까지 완성된 채로 사람만 없다. 실제 사무실에서 팀이 비는 것과
+    // 같은 모양이고, 그래야 배정이 화면 사정에 끌려다니지 않는다.
+    let zoneDepartments = zoneOrder
+    for (index, zoneDepartment) in zoneDepartments.enumerated() {
         let column = index % zoneColumns
         let row = index / zoneColumns
         let originX = column * zoneStride
@@ -2000,7 +2006,7 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
         // 자리를 후보 목록(`departmentFurnitureSpots`)에서 뽑지 않고 직접 지정하는 이유는
         // 소파·테이블 **아래** 라는 것이 요점이기 때문이다. 후보 순서를 따르면 남은 빈 칸으로
         // 밀려나 방 구석에 깔개만 덩그러니 놓인다.
-        if zoneDepartment == .executive {
+        if zoneDepartment == .treasury {
             place(.rugNavy, originX + 3, originY + 3)
         }
 

@@ -12,7 +12,7 @@ func runOfficeZoneHitTests(_ t: TestRunner) {
             department: .planning, origin: TilePoint(x: 1, y: 6), width: 10, height: 7
         ),
         DepartmentZone(
-            department: .engineering, origin: TilePoint(x: 13, y: 6), width: 10, height: 7
+            department: .quality, origin: TilePoint(x: 13, y: 6), width: 10, height: 7
         ),
     ]
 
@@ -25,7 +25,7 @@ func runOfficeZoneHitTests(_ t: TestRunner) {
     // 개발 방 안쪽(격자 15, 8)
     t.expectEqual(
         officeZoneAt(x: 620, y: 320, zones: zones, tileSize: 40, originX: 0, originY: 0),
-        .engineering,
+        .quality,
         "개발 방 안쪽을 누르면 개발"
     )
     // 복도(격자 12, 8) — 두 방 사이. 방이 아니다.
@@ -71,8 +71,8 @@ func runOfficeZoneHitTests(_ t: TestRunner) {
     t.expectEqual(rect.height, 7, "구역 높이")
 
     // ── `--room` 인자 파싱 ──────────────────────────────────────────────────
-    t.expectEqual(officeParseDepartment("engineering"), .engineering, "영문 키")
-    t.expectEqual(officeParseDepartment("ENGINEERING"), .engineering, "대문자")
+    t.expectEqual(officeParseDepartment("quality"), .quality, "영문 키")
+    t.expectEqual(officeParseDepartment("QUALITY"), .quality, "대문자")
     t.expectEqual(officeParseDepartment("internal-ops"), .internalOps, "하이픈")
     t.expectEqual(officeParseDepartment("internal_ops"), .internalOps, "밑줄")
     t.expectEqual(officeParseDepartment("internalOps"), .internalOps, "케이스 이름 그대로")
@@ -87,8 +87,14 @@ func runOfficeZoneHitTests(_ t: TestRunner) {
     }
 
     // ── 빈 명단에서도 구역이 있는가 ──────────────────────────────────────────
-    // 백엔드가 꺼지면 스냅샷이 빈 배열이다. 그 상태에서 구역이 없으면 `--room` 렌더가
-    // 조용히 전체 뷰로 폴백해 "성공한 그림" 을 저장한다(실제로 그렇게 저장됐다).
+    // 백엔드가 꺼지면 스냅샷이 빈 배열이다. 예전에는 그 상태에서 구역이 0개였고, `--room`
+    // 렌더가 조용히 전체 뷰로 폴백해 "성공한 그림" 을 저장했다(실제로 그렇게 저장됐다).
+    // 이제 구역은 인원과 무관하게 여섯 개다 — 방을 지정한 렌더가 폴백 없이 그 방을 그린다.
     let emptyPlan = officeFloorPlan(agents: [])
-    t.expectEqual(emptyPlan.zones.count, 0, "빈 명단에서는 부서 구역이 없다")
+    t.expectEqual(emptyPlan.zones.count, 6, "빈 명단에서도 부서 구역은 여섯 개")
+    t.expectEqual(
+        Set(emptyPlan.zones.map { $0.department }),
+        Set(Department.allCases),
+        "빈 명단에서도 여섯 부서가 모두 구역을 받는다"
+    )
 }

@@ -53,8 +53,8 @@ func runOfficeChatterTests(_ t: TestRunner) {
 
     // 같은 입력이 같은 문구를 내야 화면이 재현되고, 아래 섞임 검증도 뜻을 갖는다.
     t.expectEqual(
-        officeChatter(kind: .coffeeMachine, department: .engineering, agentType: "BE", round: 3),
-        officeChatter(kind: .coffeeMachine, department: .engineering, agentType: "BE", round: 3),
+        officeChatter(kind: .coffeeMachine, department: .quality, agentType: "BE", round: 3),
+        officeChatter(kind: .coffeeMachine, department: .quality, agentType: "BE", round: 3),
         "같은 입력에 다른 문구"
     )
     // **고정 기대값으로 잠근다.** 같은 프로세스 안에서 두 번 부른 값을 비교하는 방식은
@@ -75,7 +75,7 @@ func runOfficeChatterTests(_ t: TestRunner) {
     t.expectEqual(officeChatterIndex(-7, count: 5), 3, "음수 씨앗 감기가 틀렸다")
     t.expectEqual(officeChatterIndex(12, count: 0), 0, "빈 배열에서 인덱스가 나온다")
     t.expect(
-        !officeSmallTalk(department: .review, variant: Int.min + 1).isEmpty,
+        !officeSmallTalk(department: .evaluation, variant: Int.min + 1).isEmpty,
         "극단 씨앗에서 잡담이 비었다"
     )
 
@@ -85,7 +85,7 @@ func runOfficeChatterTests(_ t: TestRunner) {
     let coffeeLine = officeDestinationChatter(kind: .coffeeMachine)
     for round in 0..<40 {
         let line = officeChatter(
-            kind: .coffeeMachine, department: .engineering, agentType: "BE", round: round
+            kind: .coffeeMachine, department: .quality, agentType: "BE", round: round
         )
         if line == coffeeLine {
             destinationCount += 1

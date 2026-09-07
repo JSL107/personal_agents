@@ -21,10 +21,10 @@ func runDepartmentTests(_ t: TestRunner) {
 
     // 백엔드 계약(`Department` enum)이 쓰는 실제 문자열. 한쪽만 이름을 바꾸면 여기서 걸린다.
     t.expectEqual(departmentFromRaw("planning"), .planning, "planning")
-    t.expectEqual(departmentFromRaw("engineering"), .engineering, "engineering")
-    t.expectEqual(departmentFromRaw("review"), .review, "review")
-    t.expectEqual(departmentFromRaw("executive"), .executive, "executive")
-    t.expectEqual(departmentFromRaw("growth"), .growth, "growth")
+    t.expectEqual(departmentFromRaw("quality"), .quality, "quality")
+    t.expectEqual(departmentFromRaw("evaluation"), .evaluation, "evaluation")
+    t.expectEqual(departmentFromRaw("treasury"), .treasury, "treasury")
+    t.expectEqual(departmentFromRaw("content"), .content, "content")
     t.expectEqual(departmentFromRaw("internalOps"), .internalOps, "internalOps")
 
     // 값이 없거나 앱이 모르는 부서 → 내부 폴백(크래시 없이 흡수).
@@ -37,9 +37,9 @@ func runDepartmentTests(_ t: TestRunner) {
     // 에이전트가 들고 온 값이 그대로 화면 부서가 된다.
     let agent = ConsoleAgent(
         agentType: "REVIEW_REPLY_JUDGE", displayName: "Review Reply Judge", slashCommands: [],
-        description: "", state: .waiting, bubble: "", department: Department.review.rawValue
+        description: "", state: .waiting, bubble: "", department: Department.evaluation.rawValue
     )
-    t.expectEqual(agent.resolvedDepartment, .review, "스냅샷 값이 화면 부서로 쓰인다")
+    t.expectEqual(agent.resolvedDepartment, .evaluation, "스냅샷 값이 화면 부서로 쓰인다")
     let noDepartment = ConsoleAgent(
         agentType: "PM", displayName: "PM", slashCommands: [],
         description: "", state: .waiting, bubble: ""
@@ -62,19 +62,19 @@ func runDepartmentTests(_ t: TestRunner) {
 
     // 같은 사람(같은 shift)이 부서를 옮기면 셔츠색이 반드시 달라진다.
     let beforeMove = officeShirtColorRGB(department: .internalOps, shift: 0.06)
-    let afterMove = officeShirtColorRGB(department: .review, shift: 0.06)
+    let afterMove = officeShirtColorRGB(department: .evaluation, shift: 0.06)
     t.expect(
         beforeMove != afterMove,
         "부서를 옮기면 셔츠색이 바뀐다(내부 → 리뷰)"
     )
     // 같은 부서 안에서도 사람마다 톤이 다르다 — 부서를 옮겨도 이 개성은 유지돼야 한다.
     t.expect(
-        officeShirtColorRGB(department: .review, shift: 0) != afterMove,
+        officeShirtColorRGB(department: .evaluation, shift: 0) != afterMove,
         "같은 부서라도 사람별 보정(shift)이 색을 가른다"
     )
     // 파스텔 규칙: 원색보다 흰색에 가깝다(작업복이지 코스튬이 아니다).
-    let palette = agentDepartmentPaletteRGBA(.review)
-    let shirt = officeShirtColorRGB(department: .review, shift: 0)
+    let palette = agentDepartmentPaletteRGBA(.evaluation)
+    let shirt = officeShirtColorRGB(department: .evaluation, shift: 0)
     t.expect(
         shirt.red > palette.red && shirt.green > palette.green && shirt.blue > palette.blue,
         "셔츠는 부서 원색보다 밝다"

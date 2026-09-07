@@ -28,18 +28,18 @@ func runModelsTests(_ t: TestRunner) {
     // 나타나는 종류의 실패라, 응답 형태 그대로의 픽스처로 못 박는다.
     do {
         let json = """
-        {"agents":[{"agentType":"REVIEW_REPLY_JUDGE","displayName":"Review Reply Judge","slashCommands":[],"description":"","state":"WAITING","bubble":"업무 대기중","department":"review","departmentLabel":"리뷰","job":"리뷰 답변을 판정한다","lastFinishedRunId":null}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-08-04T00:00:00Z"}
+        {"agents":[{"agentType":"REVIEW_REPLY_JUDGE","displayName":"Review Reply Judge","slashCommands":[],"description":"","state":"WAITING","bubble":"업무 대기중","department":"quality","departmentLabel":"품질","job":"PR 리뷰 지적에 달린 답변이 수용인지 판정한다","lastFinishedRunId":null}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-08-04T00:00:00Z"}
         """.data(using: .utf8)!
         let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
-        t.expectEqual(snapshot.agents.first?.department, "review", "department 문자열 디코딩")
+        t.expectEqual(snapshot.agents.first?.department, "quality", "department 문자열 디코딩")
         t.expectEqual(
-            snapshot.agents.first?.resolvedDepartment, .review,
+            snapshot.agents.first?.resolvedDepartment, .quality,
             "department 가 화면 부서로 이어진다"
         )
         // 직무도 같은 종류의 실패를 겪었다 — 백엔드는 계속 보내고 있었는데 앱 모델에 필드가
         // 없어 조용히 버려졌고, 화면에는 여섯 자 직책만 남았다. 필드명이 어긋나면 다시 nil 이
         // 되어 호버 쪽지의 첫 줄만 사라진다(에러가 아니라 빈 값으로 나타나는 실패다).
-        t.expectEqual(snapshot.agents.first?.job, "리뷰 답변을 판정한다", "job 문자열 디코딩")
+        t.expectEqual(snapshot.agents.first?.job, "PR 리뷰 지적에 달린 답변이 수용인지 판정한다", "job 문자열 디코딩")
     } catch {
         t.fail("department 포함 스냅샷 디코딩 실패: \(error)")
     }

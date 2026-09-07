@@ -181,8 +181,8 @@ func runOfficeNameplateFitTests(_ t: TestRunner) {
 
     // 몫은 자리마다 실제로 다르다. 한 값으로 굳으면(예: 늘 2칸) 벽 옆 자리가 다시 삐져나가는데,
     // 위 단언들은 그 회귀를 큰 창에서 통과시킬 수 있다.
-    let review = plan.zones.first { $0.department == .review }
-    if let zone = review {
+    let evaluationZone = plan.zones.first { $0.department == .evaluation }
+    if let zone = evaluationZone {
         let seats = plan.desks.filter { officeZoneContains(zone, $0.seat) }.map(\.seat)
         let widths = seats.map { seat -> Double in
             let span = officeNameplateSpanTiles(

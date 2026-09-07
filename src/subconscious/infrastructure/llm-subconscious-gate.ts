@@ -8,11 +8,23 @@ import { parseGateResponse } from '../application/parse-gate-response';
 import { SubconsciousGate } from '../domain/port/subconscious-gate.port';
 import { GateDecision, RedactedChange } from '../domain/subconscious.type';
 
+/**
+ * 게이트가 제안할 수 있는 워커. **문자열이 아니라 `AgentType` 을 참조한다** — 예전에는
+ * 프롬프트에 이름을 직접 적어 두었고, `BE` 가 삭제된(#479) 뒤에도 선택지에 남아 모델에게
+ * 없는 워커를 권했다. 파서가 걸러 조용히 버렸으므로 넷 중 하나가 무효인 채로 지나갔다.
+ * enum 을 참조하면 워커가 사라질 때 컴파일이 깨져 여기도 함께 고치게 된다.
+ */
+const SUGGESTABLE_AGENTS: readonly AgentType[] = [
+  AgentType.CODE_REVIEWER,
+  AgentType.PM,
+  AgentType.WORK_REVIEWER,
+];
+
 const SYSTEM_PROMPT = [
   '당신은 이대리의 proactive 게이트다. 감지된 상태 변화 목록을 받아,',
   'owner 에게 Slack 으로 "이거 할까요?" 제안을 보낼 가치가 있는 것만 promote 한다.',
   '대부분의 변화는 노이즈다 — 확실히 행동 가치가 있을 때만 promote=true.',
-  'suggestedAgentType 은 다음 중 하나: CODE_REVIEWER, BE, PM, WORK_REVIEWER.',
+  `suggestedAgentType 은 다음 중 하나: ${SUGGESTABLE_AGENTS.join(', ')}.`,
   '출력은 JSON 배열만: [{changeKey, promote, reason, suggestedAgentType?, proposalText?}]',
 ].join('\n');
 
