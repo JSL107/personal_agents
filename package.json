@@ -10,6 +10,7 @@
   },
   "license": "UNLICENSED",
   "scripts": {
+    "office:refresh": "bash scripts/office-refresh.sh",
     "build": "nest build",
     "format": "prettier --write \"{src,test,scripts}/**/*.ts\"",
     "format:check": "prettier --check \"{src,test,scripts}/**/*.ts\"",
