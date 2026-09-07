@@ -1271,6 +1271,27 @@ func runOfficePathfindingTests(_ t: TestRunner) {
         t.expect(!deskToDesk.isEmpty, "책상에서 다른 책상까지 경로가 있다")
         let deskToQueue = officePath(from: first.seat, to: queue, walkable: plan.walkable)
         t.expect(!deskToQueue.isEmpty, "책상에서 대표실 줄까지 경로가 있다")
+
+        // **인원이 늘어 예비 격자까지 쓰는 상태**에서도 좌석이 고립되지 않는가.
+        //
+        // 집기를 늘릴 때 현재 인원만 보면, 나중에 사람이 늘었을 때 조용히 갇힌다. 자리표를
+        // 다 쓴 사람은 `fallbackDeskSpots` 로 밀리는데, 그 자리는 손으로 고른 자리와 달리
+        // 집기 후보와의 관계를 따지지 않는다 — 가운데 줄에 세운 집기가 그 좌석을 가둘 수 있다.
+        let crowded =
+            sampleAgents
+            + planAgents(.quality, ["Q_1", "Q_2", "Q_3", "Q_4", "Q_5", "Q_6"])
+            + planAgents(.treasury, ["T_1", "T_2"])
+        let crowdedPlan = officeFloorPlan(agents: crowded)
+        if let crowdedQueue = crowdedPlan.queueTiles.first {
+            let stuck = crowdedPlan.desks.filter {
+                officePath(from: $0.seat, to: crowdedQueue, walkable: crowdedPlan.walkable)
+                    .isEmpty
+            }
+            t.expectEqual(
+                stuck.count, 0,
+                "인원이 늘어도 갇힌 좌석이 없다 (갇힘: \(stuck.map(\.agentType).sorted()))"
+            )
+        }
     } else {
         t.expect(false, "표본 평면도에 책상·줄 자리가 있어야 한다")
     }
