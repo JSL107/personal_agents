@@ -12,6 +12,26 @@ import Foundation
 /// 창에서 60px 을 쓴다. 바닥이 절차형 타일이라 어느 배수에서도 이음매가 맞는다.
 public let officeSpriteUnit: Double = 20
 
+/// 배율의 최소 단위 — **화면의 실제 픽셀 기준으로 정수배가 되게** 정한다.
+///
+/// 바닥은 20px 타일이지만 캐릭터·가구는 40px 기준(`officeReferenceTileSize`)으로 환산되므로,
+/// 실제 배율 `tileSize / 40 × backingScale` 이 정수여야 도트가 균일하게 남는다.
+///
+/// | 화면 | 단위 | 쓸 수 있는 타일 | 캐릭터 실제 배율 |
+/// |---|---|---|---|
+/// | Retina 2x | 20px | 20 · 40 · 60 · 80 | 1 · 2 · 3 · 4 |
+/// | 외부 1x | 40px | 40 · 80 | 1 · 2 |
+///
+/// 1x 에서 60px 을 쓰면 캐릭터가 1.5배로 그려져 원본 도트 하나가 화면 1px 또는 2px 로 번갈아
+/// 늘어난다 — `filteringMode = .nearest` 로도 막을 수 없고 직선과 걸음 프레임이 불규칙해진다.
+/// 그래서 1x 에서는 60px 단계를 포기하고 화면이 조금 비는 것을 받아들인다.
+public func officeScaleUnit(backingScale: Double) -> Double {
+    guard backingScale > 0 else {
+        return officeReferenceTileSize
+    }
+    return officeReferenceTileSize / backingScale
+}
+
 /// 격자를 화면에 앉히는 값. 타일 크기와 격자 왼쪽 아래 원점.
 public struct OfficeViewMetrics: Equatable, Sendable {
     public let tileSize: Double
@@ -33,8 +53,10 @@ public func officeViewMetrics(
     viewHeight: Double,
     columns: Int,
     rows: Int,
-    unit: Double = officeSpriteUnit
+    backingScale: Double = 2,
+    unit: Double? = nil
 ) -> OfficeViewMetrics {
+    let unit = unit ?? officeScaleUnit(backingScale: backingScale)
     guard viewWidth > 0, viewHeight > 0, columns > 0, rows > 0, unit > 0 else {
         return OfficeViewMetrics(tileSize: unit, originX: 0, originY: 0)
     }
@@ -83,11 +105,13 @@ public func officeFocusedViewMetrics(
     rows: Int,
     focus: OfficeRect,
     margin: Double = 0,
-    unit: Double = officeSpriteUnit
+    backingScale: Double = 2,
+    unit: Double? = nil
 ) -> OfficeViewMetrics {
+    let unit = unit ?? officeScaleUnit(backingScale: backingScale)
     let full = officeViewMetrics(
         viewWidth: viewWidth, viewHeight: viewHeight,
-        columns: columns, rows: rows, unit: unit
+        columns: columns, rows: rows, backingScale: backingScale, unit: unit
     )
     guard viewWidth > 0, viewHeight > 0, focus.width > 0, focus.height > 0, unit > 0 else {
         return full

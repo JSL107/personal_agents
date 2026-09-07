@@ -21,13 +21,13 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
             let metrics = officeViewMetrics(
                 viewWidth: width, viewHeight: height, columns: 23, rows: 27
             )
-            let steps = metrics.tileSize / officeSpriteUnit
+            let steps = metrics.tileSize / officeScaleUnit(backingScale: 2)
             // **언제나 정수배다.** 축소 폴백(1/2 배)이 있던 것은 단위가 40px 이라 한 배수도 못
             // 들어가는 창이 있었기 때문인데, 20px 로 내린 뒤에는 최소 배수가 곧 20px 이라
             // 그 아래로 내려갈 이유가 없다. 그 아래는 글자 하한 때문에 이름표도 안 읽힌다.
             t.expect(
                 steps >= 1 && steps == steps.rounded(),
-                "타일 \(metrics.tileSize)px 가 \(officeSpriteUnit)px 의 정수배가 아니다"
+                "타일 \(metrics.tileSize)px 가 \(officeScaleUnit(backingScale: 2))px 의 정수배가 아니다"
                     + " (창 \(width)x\(height))"
             )
         }
@@ -58,6 +58,46 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         officeViewMetrics(viewWidth: 1400, viewHeight: 1000, columns: 23, rows: 27).tileSize,
         40,
         "여유를 단위가 아니라 결과 타일로 재므로 40px 을 유지한다"
+    )
+
+    // ── backing scale ─────────────────────────────────────────────────────
+    // **캐릭터·가구가 실제 화면 픽셀 기준으로 정수배여야 한다.** 그 에셋은 40px 기준이므로
+    // 실제 배율은 `tileSize / 40 × backingScale` 이다. 1x 모니터에서 60px 단계를 고르면 1.5배가
+    // 되어 원본 도트 하나가 화면 1px 또는 2px 로 번갈아 늘어난다.
+    func characterPixelScale(_ tile: Double, _ scale: Double) -> Double {
+        tile / officeReferenceTileSize * scale
+    }
+    for scale in [1.0, 2.0] {
+        for width in stride(from: 600.0, through: 2400.0, by: 61.0) {
+            for height in stride(from: 500.0, through: 2200.0, by: 67.0) {
+                let metrics = officeViewMetrics(
+                    viewWidth: width, viewHeight: height,
+                    columns: 23, rows: 27, backingScale: scale
+                )
+                let pixels = characterPixelScale(metrics.tileSize, scale)
+                t.expect(
+                    pixels >= 1 && pixels == pixels.rounded(),
+                    "backingScale \(scale) · 창 \(width)x\(height) 에서 캐릭터 실제 배율"
+                        + " \(pixels) 가 정수가 아니다 (타일 \(metrics.tileSize)px)"
+                )
+            }
+        }
+    }
+    // 1x 에서는 60px 단계를 쓰지 않는다 — 캐릭터가 1.5배가 되기 때문이다.
+    t.expectEqual(
+        officeViewMetrics(
+            viewWidth: 1900, viewHeight: 1900, columns: 23, rows: 27, backingScale: 1
+        ).tileSize,
+        40,
+        "1x 에서는 40px 단위라 60px 을 건너뛴다"
+    )
+    // 2x 에서는 같은 창에서 60px 을 쓴다(실제 픽셀로는 캐릭터 3배).
+    t.expectEqual(
+        officeViewMetrics(
+            viewWidth: 1900, viewHeight: 1900, columns: 23, rows: 27, backingScale: 2
+        ).tileSize,
+        60,
+        "2x 에서는 20px 단위라 60px 을 쓴다"
     )
 
     // 값이 이상하면 기본 단위로 닫는다(0 나눗셈·음수 방어).
