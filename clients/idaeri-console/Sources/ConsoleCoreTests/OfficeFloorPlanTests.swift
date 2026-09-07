@@ -744,6 +744,63 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         )
     }
 
+    // 문 **양쪽 칸**이 다 통행 가능해야 한다. 한쪽이라도 막히면 그 문은 그림일 뿐이다.
+    //
+    // 위 단언은 벽에 구멍이 났는지만 본다. 문 칸 자신은 `isWalkThrough` 라 늘 통행 가능이고,
+    // 실제로 막히는 것은 문을 넘어 밟는 칸이다. 두 방향으로 깨진 실례가 각각 있었다 —
+    // 기획 방은 복도 문이 오른쪽 하나뿐인데 그 **안쪽**(9,3)에 화분이 서 있어 사람들이 천장
+    // 문으로 돌아 다녔고, 콘텐츠 방 천장문은 **바깥쪽**, 즉 윗방(품질) 바닥 (8,0)에 놓인
+    // 책장이 막고 있었다. 뒤쪽은 그 방 안에서는 아무 증상이 없어 더 안 보인다.
+    //
+    // 돌아갈 길이 있으니 도달성 테스트는 통과하고, 화면에서도 "문 앞에 놓인 가구" 로만 보여
+    // 여섯 방을 훑어도 눈에 안 띈다. 부서 집기 후보를 손볼 때 가장 밟기 쉬운 지뢰다.
+    //
+    // **2열·3열을 모두 본다.** 어느 벽에 문이 나는지는 그 벽이 복도에 면했는지로 정해지므로
+    // (`facesCorridor`), 배치가 바뀌면 방마다 문이 좌우로 갈린다 — 3열에서 오른쪽 문만 있는
+    // 방이 2열에서는 왼쪽 문만 갖는다. 한쪽만 재면 반대쪽 문턱이 막혀도 통과한다.
+    for doorZoneColumns in [2, 3] {
+        let doorPlan = officeFloorPlan(agents: sampleAgents, zoneColumns: doorZoneColumns)
+        for zone in doorPlan.zones {
+            let lastX = zone.origin.x + zone.width - 1
+            let ceilingY = zone.origin.y + zone.height - 1
+            // 문 하나당 그 문을 **가로지르는 축**의 양옆 두 칸.
+            var crossings: [(door: TilePoint, sides: [TilePoint])] = []
+            for y in zone.origin.y..<ceilingY {
+                for wallX in [zone.origin.x, lastX] where doorPlan.floor[y][wallX] != .wall {
+                    crossings.append(
+                        (
+                            TilePoint(x: wallX, y: y),
+                            [TilePoint(x: wallX - 1, y: y), TilePoint(x: wallX + 1, y: y)]
+                        )
+                    )
+                }
+            }
+            for x in zone.origin.x...lastX where doorPlan.floor[ceilingY][x] != .wall {
+                crossings.append(
+                    (
+                        TilePoint(x: x, y: ceilingY),
+                        [TilePoint(x: x, y: ceilingY - 1), TilePoint(x: x, y: ceilingY + 1)]
+                    )
+                )
+            }
+            for crossing in crossings {
+                // 격자 밖은 검사 대상이 아니다 — 바깥벽에는 문이 나지 않으므로 실제로는
+                // 걸리지 않지만, 좌표를 벗어나면 배열 접근이 죽는다.
+                let inGrid = crossing.sides.filter {
+                    $0.x >= 0 && $0.y >= 0 && $0.x < doorPlan.columns && $0.y < doorPlan.rows
+                }
+                for side in inGrid {
+                    t.expect(
+                        doorPlan.walkable.contains(side),
+                        "\(doorZoneColumns)열 \(zone.department.label)"
+                            + " 문(\(crossing.door.x),\(crossing.door.y)) 옆"
+                            + " (\(side.x),\(side.y)) 이 막혀 문을 못 쓴다"
+                    )
+                }
+            }
+        }
+    }
+
     // 벽에 난 구멍마다 문이 서 있어야 한다.
     //
     // 구멍을 내는 자리(`raiseWall` 을 건너뛰는 분기)와 문을 세우는 자리가 어긋나면 두 가지로
@@ -1280,10 +1337,15 @@ func runOfficePathfindingTests(_ t: TestRunner) {
         // **`planAgents` 로 만들지 않는다.** `scripts/sync-docs.ts` 가 이 파일에서 그 호출을
         // 전부 긁어 사규 표본으로 세므로, 여기서 쓰면 없는 워커 여덟이 표본에 섞여 검사가
         // 깨진다(실제로 CI 가 그렇게 잡았다). 단수형으로 직접 만든다.
+        //
+        // 콘텐츠 방을 함께 채우는 것은 그 방이 **자리표를 다 써야 아래 줄이 좁아지기**
+        // 때문이다. 일곱 명일 때는 (6,1)·(9,1) 이 비어 있어 아래 줄에 구멍이 둘 남고,
+        // 그 상태로만 재면 집기를 늘려도 통로가 넉넉해 보인다.
         let crowded =
             sampleAgents
             + (1...6).map { planAgent("Q_\($0)", .quality) }
             + (1...2).map { planAgent("T_\($0)", .treasury) }
+            + (1...2).map { planAgent("C_\($0)", .content) }
         let crowdedPlan = officeFloorPlan(agents: crowded)
         if let crowdedQueue = crowdedPlan.queueTiles.first {
             let stuck = crowdedPlan.desks.filter {
