@@ -362,7 +362,17 @@ export class OfficeRenderer {
    * 관제 화면이라 스크롤을 두지 않고 사무실 전체가 한 화면에 들어가게 맞춘다.
    */
   measure() {
-    const { width, height } = this.canvas;
+    // 백버퍼는 실제 픽셀이고(`live.js` 의 resize), 그리기 좌표는 논리 픽셀로 쓴다 —
+    // 배치 계산과 스프라이트 크기가 전부 논리 좌표 기준이라 여기서 한 번 되돌려 두면
+    // 나머지 코드가 해상도를 몰라도 된다.
+    this.pixelRatio = window.devicePixelRatio || 1;
+    const width = this.canvas.width / this.pixelRatio;
+    const height = this.canvas.height / this.pixelRatio;
+    this.logicalWidth = width;
+    this.logicalHeight = height;
+    this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
+    // 변환을 다시 걸면 보간 설정이 풀리는 브라우저가 있어 여기서 함께 못 박는다.
+    this.context.imageSmoothingEnabled = false;
     this.tileSize = Math.min(width / this.plan.columns, height / this.plan.rows);
     this.spriteScale = this.tileSize / this.metrics.referenceTileSize;
     this.characterScale = this.spriteScale * this.metrics.characterScaleFactor;
@@ -372,7 +382,7 @@ export class OfficeRenderer {
 
   /** SpriteKit y(위로 증가) → Canvas y(아래로 증가). */
   toCanvasY(y) {
-    return this.canvas.height - y;
+    return this.logicalHeight - y;
   }
 
   /** 타일의 바닥 중앙(캐릭터 발이 닿는 지점) — SpriteKit 좌표. */
@@ -463,7 +473,7 @@ export class OfficeRenderer {
   draw(rawView) {
     const context = this.context;
     context.imageSmoothingEnabled = false;
-    context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    context.clearRect(0, 0, this.logicalWidth, this.logicalHeight);
     // 출근 지연 중이라 아직 문 앞에서 기다리는 사람은 그리지 않는다. 걸러내는 자리를 여기
     // 하나로 두면 사람을 훑는 세 곳(가구·상태 링·라벨)이 저절로 같은 목록을 본다.
     const view = {
