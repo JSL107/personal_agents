@@ -27,16 +27,45 @@ SNAPSHOT="$(curl -fsS -m 5 "$CONSOLE_URL/v1/console/snapshot" 2>/dev/null)" \
   || fail "백엔드에 못 붙었다. 이대리 서버를 먼저 띄울 것 (기본 포트 3099).
    다른 주소면 IDAERI_CONSOLE_URL 로 지정한다."
 
-SERVED="$(printf '%s' "$SNAPSHOT" | python3 -c \
-  'import sys,json; print(len(json.load(sys.stdin)["data"]["agents"]))')"
-DEFINED="$(grep -c '\[AgentType\.' "$REPO_ROOT/src/agent-registry/agent-contract.ts")"
+# **인원수가 아니라 배정 전체를 대조한다.** 수만 세면 사람 수를 그대로 둔 채 부서만
+# 옮긴 변경(이 스크립트가 생긴 계기인 #487 이 그랬다면 잡지 못했다)이 통과해 버린다.
+# 사규는 정규식으로 긁지 않고 ts-node 로 모듈을 그대로 읽는다 — `stub(Department.X, …)`
+# 같은 위치 인자 형태가 섞여 있어 문자열 파싱은 조용히 어긋난다.
+EXPECTED="$(cd "$REPO_ROOT" && pnpm exec ts-node -e '
+const { AGENT_CONTRACTS } = require("./src/agent-registry/agent-contract");
+const map: Record<string, string> = {};
+for (const [type, contract] of Object.entries(AGENT_CONTRACTS)) {
+  map[type] = (contract as { department: string }).department;
+}
+console.log(JSON.stringify(map));
+' 2>/dev/null | tail -1)" || fail "사규를 읽지 못했다 — pnpm install 이 필요할 수 있다"
 
-if [ "$SERVED" != "$DEFINED" ]; then
-  fail "백엔드가 워커 ${SERVED}명을 주는데 사규에는 ${DEFINED}종이 있다 — 실행 중인 서버가
-   옛 코드다. 지금 평면도를 뽑으면 낡은 편성이 그대로 박힌다.
+DIFF="$(printf '%s\n%s' "$SNAPSHOT" "$EXPECTED" | python3 -c '
+import sys, json
+snapshot, expected = sys.stdin.read().rsplit("\n", 1)
+served = {a["agentType"]: a["department"] for a in json.loads(snapshot)["data"]["agents"]}
+want = json.loads(expected)
+lines = []
+for t in sorted(set(want) - set(served)):
+    lines.append(f"  사규에만 있음: {t} ({want[t]})")
+for t in sorted(set(served) - set(want)):
+    lines.append(f"  서버에만 있음: {t} ({served[t]})")
+for t in sorted(set(served) & set(want)):
+    if served[t] != want[t]:
+        lines.append(f"  부서 다름: {t} — 서버 {served[t]} / 사규 {want[t]}")
+print("\n".join(lines))
+print(f"COUNT={len(want)}")
+')" || fail "배정 대조에 실패했다"
+
+COUNT="${DIFF##*COUNT=}"
+DIFF="${DIFF%COUNT=*}"
+if [ -n "$(printf '%s' "$DIFF" | tr -d '[:space:]')" ]; then
+  fail "실행 중인 서버의 편성이 사규와 다르다 — 옛 코드로 돌고 있다.
+$DIFF
+   지금 평면도를 뽑으면 낡은 편성이 그대로 박힌다.
    **백엔드를 다시 띄운 뒤 이 명령을 다시 실행할 것.**"
 fi
-printf '   워커 %s명 · 사규와 일치\n' "$SERVED"
+printf '   워커 %s명 · 배정까지 사규와 일치\n' "$COUNT"
 
 # ── 2. 앱 빌드 ────────────────────────────────────────────────────────────────
 step "콘솔 앱 빌드"
