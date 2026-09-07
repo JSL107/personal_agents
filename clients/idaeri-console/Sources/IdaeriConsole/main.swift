@@ -156,8 +156,27 @@ if let iconURL = Bundle.module.url(forResource: "appicon", withExtension: "png")
 // 브리지는 메뉴 항목이 약하게 참조하므로 앱이 사는 동안 여기서 붙들고 있어야 한다.
 let menuBridge = installMainMenu(on: application)
 
+// 창 기본 크기는 **도면 배율에서 거꾸로 잡았다.**
+//
+// 오피스 타일은 20px(레티나 실제 40px)의 정수배만 고를 수 있다 — 가구·캐릭터 원본이 40px 이라
+// 1.5배 같은 값으로 그리면 도트가 뭉개진다. 그래서 창이 조금만 작아도 다음 계단으로 못 올라가고
+// 최저 배율에 머문다. 예전 기본값 980×680 이 정확히 그랬다: 3열 배치로는 폭이, 2열로는 세로가
+// 모자라 **어느 쪽으로도 20px** 이었고 화면 절반이 검은 여백이었다.
+//
+// 1440×860 은 3열 배치가 40px 로 서는 가장 작은 크기다(도면 1400×800). 세로로 긴 창에서 40px 을
+// 보려면 2열 배치가 1080줄을 요구하는데 맥북 논리 세로가 900 남짓이라 닿지 않는다 — 그래서
+// **가로로 넓은 창이 이 도면의 자연스러운 형태**다.
+//
+// 화면보다 큰 창을 만들지 않도록 실제 표시 영역으로 한 번 자른다.
+let preferredSize = NSSize(width: 1440, height: 860)
+let usableSize = NSScreen.main?.visibleFrame.size ?? preferredSize
+let windowSize = NSSize(
+    width: min(preferredSize.width, usableSize.width),
+    height: min(preferredSize.height, usableSize.height)
+)
+
 let window = NSWindow(
-    contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
+    contentRect: NSRect(origin: .zero, size: windowSize),
     styleMask: [.titled, .closable, .miniaturizable, .resizable],
     backing: .buffered,
     defer: false
