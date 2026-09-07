@@ -179,13 +179,23 @@ function resize() {
   // 사무실이 저장됐다. 값이 실제로 달라졌을 때만 대입해 그 경로를 아예 없앤다.
   const nextWidth = Math.round(width);
   const nextHeight = Math.round(height);
-  const sizeChanged = canvas.width !== nextWidth || canvas.height !== nextHeight;
+  // **백버퍼를 화면 픽셀 수만큼 잡는다.** 예전에는 CSS 픽셀 크기로 두고 브라우저가 늘리게
+  // 맡겼는데, Retina 에서는 그리기 해상도가 절반이라 도트가 두 배로 확대돼 나온다
+  // (`image-rendering: pixelated` 덕에 뭉개지지는 않지만 굵어진다). 맥 앱이 정수 배율로
+  // 도트를 살린 것과 같은 선명도를 웹에서도 얻으려면 백버퍼가 실제 픽셀이어야 한다.
+  const pixelRatio = window.devicePixelRatio || 1;
+  const bufferWidth = Math.round(nextWidth * pixelRatio);
+  const bufferHeight = Math.round(nextHeight * pixelRatio);
+  const sizeChanged = canvas.width !== bufferWidth || canvas.height !== bufferHeight;
   const next = chooseZoneColumns(width, height, zoneColumns);
   const layoutChanged = next !== zoneColumns;
   zoneColumns = next;
   if (sizeChanged) {
-    canvas.width = nextWidth;
-    canvas.height = nextHeight;
+    canvas.width = bufferWidth;
+    canvas.height = bufferHeight;
+    // CSS 크기는 논리 픽셀로 못 박는다 — 안 그러면 백버퍼 크기대로 표시돼 화면을 넘친다.
+    canvas.style.width = `${nextWidth}px`;
+    canvas.style.height = `${nextHeight}px`;
   }
   if (layoutChanged || !renderer) {
     renderer = renderer ?? new OfficeRenderer(canvas, layouts[zoneColumns]);
