@@ -1195,7 +1195,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 별개의 작업이다. 지금은 자리에 들어가는 만큼만(칸막이 하나 · 큰 화분 하나) 더한다.
         return [
             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
-            .partitionLow, .plantTall,
+            .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
         ]
     case .review:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
@@ -1295,7 +1295,16 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
     case .engineering:
         // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
-        return spots([(9, 5), (9, 3), (9, 1), (2, 0), (6, 0)])
+        //
+        // 후보가 다섯으로 여섯 부서 중 가장 적었다(경영 8 · 기획 7). #479 가 BE 워커 5종을
+        // 지운 뒤 좌석이 하나만 남아 70칸 방에 아홉 칸만 차고 나머지가 빈 바닥으로 보였다.
+        // 맨 아래 줄과 오른쪽 끝의 남은 칸을 후보로 더한다 — 이 두 줄이 좌석 열(x=1·4·7)과
+        // 겹치지 않는 자리다. **후보는 넉넉해도 된다**(성장 방 주석과 같은 이유) — 좌석·기존
+        // 가구에 막힌 후보는 건너뛰므로, 세트보다 많이 두는 편이 안전하다.
+        return spots([
+            (9, 5), (9, 3), (9, 1), (2, 0), (6, 0),
+            (9, 4), (9, 2), (4, 0), (8, 0),
+        ])
     case .review:
         // 자리와 자리 사이를 책장으로 막아 부스처럼 나눈다.
         return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
