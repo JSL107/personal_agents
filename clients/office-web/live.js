@@ -11,6 +11,7 @@ import {
   preloadSprites,
   characterSpriteFor,
 } from "./office.js";
+import { canvasSizes } from "./canvas-size.js";
 
 /** 유휴 산책 규칙 — 맥 앱 `OfficeIdle` 과 같은 값. */
 const STROLL_TICK_SECONDS = 8;
@@ -183,19 +184,31 @@ function resize() {
   // 맡겼는데, Retina 에서는 그리기 해상도가 절반이라 도트가 두 배로 확대돼 나온다
   // (`image-rendering: pixelated` 덕에 뭉개지지는 않지만 굵어진다). 맥 앱이 정수 배율로
   // 도트를 살린 것과 같은 선명도를 웹에서도 얻으려면 백버퍼가 실제 픽셀이어야 한다.
-  const pixelRatio = window.devicePixelRatio || 1;
-  const bufferWidth = Math.round(nextWidth * pixelRatio);
-  const bufferHeight = Math.round(nextHeight * pixelRatio);
-  const sizeChanged = canvas.width !== bufferWidth || canvas.height !== bufferHeight;
+  const { cssWidth, cssHeight, bufferWidth, bufferHeight } = canvasSizes(
+    nextWidth,
+    nextHeight,
+    window.devicePixelRatio
+  );
+  // **백버퍼와 CSS 크기는 따로 본다.** 둘이 반대로 움직여 백버퍼만 그대로인 경로가 있다 —
+  // DPR 이 바뀌면서 논리 크기가 반대로 변하면(논리 1000·2x → 논리 2000·1x) 백버퍼는 둘 다
+  // 2000 이다. 백버퍼 조건만 보고 CSS 를 함께 갱신하면 그때 CSS 가 옛 값으로 남아 캔버스가
+  // 잘리거나 화면을 넘친다.
+  const bufferChanged = canvas.width !== bufferWidth || canvas.height !== bufferHeight;
+  const cssChanged =
+    canvas.style.width !== `${cssWidth}px` || canvas.style.height !== `${cssHeight}px`;
+  const sizeChanged = bufferChanged || cssChanged;
   const next = chooseZoneColumns(width, height, zoneColumns);
   const layoutChanged = next !== zoneColumns;
   zoneColumns = next;
-  if (sizeChanged) {
+  // 백버퍼 대입만 조건을 건다 — 그림이 지워지는 것은 이쪽뿐이다(위 주석).
+  if (bufferChanged) {
     canvas.width = bufferWidth;
     canvas.height = bufferHeight;
-    // CSS 크기는 논리 픽셀로 못 박는다 — 안 그러면 백버퍼 크기대로 표시돼 화면을 넘친다.
-    canvas.style.width = `${nextWidth}px`;
-    canvas.style.height = `${nextHeight}px`;
+  }
+  // CSS 크기는 논리 픽셀로 못 박는다 — 안 그러면 백버퍼 크기대로 표시돼 화면을 넘친다.
+  if (cssChanged) {
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
   }
   if (layoutChanged || !renderer) {
     renderer = renderer ?? new OfficeRenderer(canvas, layouts[zoneColumns]);
