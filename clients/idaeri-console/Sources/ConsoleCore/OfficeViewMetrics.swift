@@ -5,7 +5,32 @@ import Foundation
 ///
 /// 화면 배율이 이 값의 정수배가 아니면 도트가 불규칙하게 버려져 직선이 몇 칸마다 어긋난다.
 /// 재정합 전에는 창 크기를 격자로 나눈 실수값을 써서 0.83~0.97배로 그렸다.
-public let officeSpriteUnit: Double = 40
+///
+/// **40px 에서 20px 로 내린 이유는 계단이다.** 40px 이면 쓸 수 있는 배율이 40 · 80 뿐이라
+/// 중간이 없어, 창이 1840x2000 에 못 미치면 곧바로 40px 로 떨어진다 — 실사용 창 1900x1900 에서
+/// 세로가 100px 부족해 화면 절반이 빈 채로 남았다. 20px 이면 20 · 40 · 60 · 80 이 되어 같은
+/// 창에서 60px 을 쓴다. 바닥이 절차형 타일이라 어느 배수에서도 이음매가 맞는다.
+public let officeSpriteUnit: Double = 20
+
+/// 배율의 최소 단위 — **화면의 실제 픽셀 기준으로 정수배가 되게** 정한다.
+///
+/// 바닥은 20px 타일이지만 캐릭터·가구는 40px 기준(`officeReferenceTileSize`)으로 환산되므로,
+/// 실제 배율 `tileSize / 40 × backingScale` 이 정수여야 도트가 균일하게 남는다.
+///
+/// | 화면 | 단위 | 쓸 수 있는 타일 | 캐릭터 실제 배율 |
+/// |---|---|---|---|
+/// | Retina 2x | 20px | 20 · 40 · 60 · 80 | 1 · 2 · 3 · 4 |
+/// | 외부 1x | 40px | 40 · 80 | 1 · 2 |
+///
+/// 1x 에서 60px 을 쓰면 캐릭터가 1.5배로 그려져 원본 도트 하나가 화면 1px 또는 2px 로 번갈아
+/// 늘어난다 — `filteringMode = .nearest` 로도 막을 수 없고 직선과 걸음 프레임이 불규칙해진다.
+/// 그래서 1x 에서는 60px 단계를 포기하고 화면이 조금 비는 것을 받아들인다.
+public func officeScaleUnit(backingScale: Double) -> Double {
+    guard backingScale > 0 else {
+        return officeReferenceTileSize
+    }
+    return officeReferenceTileSize / backingScale
+}
 
 /// 격자를 화면에 앉히는 값. 타일 크기와 격자 왼쪽 아래 원점.
 public struct OfficeViewMetrics: Equatable, Sendable {
@@ -28,8 +53,10 @@ public func officeViewMetrics(
     viewHeight: Double,
     columns: Int,
     rows: Int,
-    unit: Double = officeSpriteUnit
+    backingScale: Double = 2,
+    unit: Double? = nil
 ) -> OfficeViewMetrics {
+    let unit = unit ?? officeScaleUnit(backingScale: backingScale)
     guard viewWidth > 0, viewHeight > 0, columns > 0, rows > 0, unit > 0 else {
         return OfficeViewMetrics(tileSize: unit, originX: 0, originY: 0)
     }
@@ -39,12 +66,19 @@ public func officeViewMetrics(
     // 그 30px 때문에 배율을 1/2 로 떨어뜨리면 460x540 이 되어 이름표가 읽히지 않는다.
     let byWidth = viewWidth / Double(columns)
     var steps = (byWidth / unit).rounded(.down)
-    // 세로 초과가 두 줄을 넘으면 한 단계씩 내린다 — 그 이상 잘리면 아래 방이 사라진다.
-    let verticalSlack = unit * 2
-    while steps >= 1, unit * steps * Double(rows) > viewHeight + verticalSlack {
+    // 세로 초과가 **결과 타일 두 줄** 을 넘으면 한 단계씩 내린다. 여유를 단위(unit) 기준으로
+    // 잡으면 안 된다 — 단위를 20px 로 내렸을 때 여유도 절반이 되어, 40px 이 들어가던 창에서
+    // 20px 로 떨어졌다(1400x1000 에서 실제로 그랬다). "두 줄" 은 그 배율의 타일 두 줄이다.
+    while steps >= 1 {
+        let candidate = unit * steps
+        if candidate * Double(rows) <= viewHeight + candidate * 2 {
+            break
+        }
         steps -= 1
     }
-    let tileSize = steps >= 1 ? steps * unit : unit / 2
+    // 한 배수도 못 들어가면 최소 단위로 둔다. 그 아래로는 내려가지 않는다 — 글자 크기에
+    // 하한이 있어 더 줄이면 이름표가 읽히지 않는다.
+    let tileSize = max(steps, 1) * unit
     return OfficeViewMetrics(
         tileSize: tileSize,
         originX: (viewWidth - tileSize * Double(columns)) / 2,
@@ -71,11 +105,13 @@ public func officeFocusedViewMetrics(
     rows: Int,
     focus: OfficeRect,
     margin: Double = 0,
-    unit: Double = officeSpriteUnit
+    backingScale: Double = 2,
+    unit: Double? = nil
 ) -> OfficeViewMetrics {
+    let unit = unit ?? officeScaleUnit(backingScale: backingScale)
     let full = officeViewMetrics(
         viewWidth: viewWidth, viewHeight: viewHeight,
-        columns: columns, rows: rows, unit: unit
+        columns: columns, rows: rows, backingScale: backingScale, unit: unit
     )
     guard viewWidth > 0, viewHeight > 0, focus.width > 0, focus.height > 0, unit > 0 else {
         return full

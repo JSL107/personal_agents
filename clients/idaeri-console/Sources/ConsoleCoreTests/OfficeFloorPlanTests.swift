@@ -453,8 +453,8 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         .ceramic: 236.9,
         .carpetLight: 227.2,
         .carpetDark: 223.4,
-        .woodA: 222.3,
-        .woodB: 214.5,
+        .woodA: 221.2,
+        .woodB: 213.3,
     ]
     func screenBrightness(_ tile: FloorTile) -> Double {
         guard let texture = textureBrightness[tile] else {

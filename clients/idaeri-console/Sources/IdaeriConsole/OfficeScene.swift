@@ -353,11 +353,15 @@ final class OfficeScene: SKScene {
         let focusRect = focusedDepartment.flatMap { department in
             plan.zones.first { $0.department == department }.map(officeZoneRect)
         }
+        // 배율 단위는 화면의 실제 픽셀 기준이라 backing scale 을 넘겨야 한다 — 1x 모니터에서
+        // 60px 을 쓰면 40px 기준인 캐릭터·가구가 1.5배로 그려져 도트가 불규칙해진다.
+        let backingScale = Double(view?.window?.backingScaleFactor ?? 2)
         let fullMetrics = officeViewMetrics(
             viewWidth: Double(size.width),
             viewHeight: Double(size.height),
             columns: plan.columns,
-            rows: plan.rows
+            rows: plan.rows,
+            backingScale: backingScale
         )
         hudTileSize = CGFloat(fullMetrics.tileSize)
         let metrics: OfficeViewMetrics
@@ -367,7 +371,8 @@ final class OfficeScene: SKScene {
                 viewHeight: Double(size.height),
                 columns: plan.columns,
                 rows: plan.rows,
-                focus: focusRect
+                focus: focusRect,
+                backingScale: backingScale
             )
         } else {
             metrics = fullMetrics

@@ -1186,7 +1186,17 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
         // 자료 벽 맨 아래 칸은 유리 파티션으로 막아 벽 줄을 아래까지 이어 준다
         // (자리 후보 순서상 책장 둘 다음이 오른쪽 끝 아래 칸이다).
-        return [.bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf]
+        // 세트가 여섯 종으로 가장 적었다(경영 9 · 기획 8). #479 가 BE 워커 5종을 지운 뒤
+        // 좌석이 하나만 남아 70칸 방에 일곱 칸만 차고 나머지가 통째로 빈 바닥으로 보였다.
+        //
+        // **자리 후보가 이 방의 상한이다.** 열한 종을 요청해 보니 뒤쪽 세 종(캐비닛·프린터·
+        // 작은 화분)이 조용히 빠졌다 — `departmentFurnitureSpots` 의 후보가 문까지 아홉 자리뿐이다.
+        // 더 채우려면 자리 후보를 늘려야 하고, 그것은 좌석·경로와의 충돌을 함께 봐야 하는
+        // 별개의 작업이다. 지금은 자리에 들어가는 만큼만(칸막이 하나 · 큰 화분 하나) 더한다.
+        return [
+            .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
+            .partitionLow, .plantTall,
+        ]
     case .review:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
         //
