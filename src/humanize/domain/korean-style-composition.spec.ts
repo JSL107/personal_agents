@@ -204,3 +204,35 @@ describe('확인 범위 표시', () => {
     );
   });
 });
+
+describe('내부 이름 세기', () => {
+  it('슬래시 명령과 워커 이름을 센다', () => {
+    const metrics = measureKoreanStyleComposition(
+      '## 문제\n\n사용자가 /review-pr 을 보내면 agent/code-reviewer 가 받아요.\n',
+    );
+
+    expect(metrics.internalNameCount).toBe(2);
+    expect(metrics.internalNames).toEqual([
+      '/review-pr',
+      'agent/code-reviewer',
+    ]);
+  });
+
+  // 앞 글자로 거르지 않으면 링크가 든 글이 전부 내부 이름 투성이로 찍힌다.
+  it('URL 경로와 파일 경로는 세지 않는다', () => {
+    const metrics = measureKoreanStyleComposition(
+      '## 문제\n\n문서는 https://example.com/docs/agent/pm 에 있고 코드는 src/agent/pm 이에요.\n',
+    );
+
+    expect(metrics.internalNameCount).toBe(0);
+  });
+
+  // 예시 코드에 든 명령은 글쓴이가 독자에게 던진 말이 아니다.
+  it('코드블록 안의 명령은 세지 않는다', () => {
+    const metrics = measureKoreanStyleComposition(
+      '## 문제\n\n아래처럼 부릅니다.\n\n```bash\n/review-pr 123\n```\n',
+    );
+
+    expect(metrics.internalNameCount).toBe(0);
+  });
+});
