@@ -131,6 +131,9 @@ final class OfficeScene: SKScene {
     /// 남은 표시가 전부 옆 책상으로 옮겨 가, 아무 일도 없었는데 화면이 통째로 움직인다.
     private var sessionSeats: [String: TilePoint] = [:]
     private var lastSyncedSessions: [ConsoleSession] = []
+    /// 마지막 오버레이 입력 — 포커스 전환 직후 라벨을 새 배율로 다시 그리는 데 쓴다.
+    private var lastSyncedRuns: [ConsoleRun] = []
+    private var lastSyncedPendingCommands: [PendingCommand] = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -265,19 +268,114 @@ final class OfficeScene: SKScene {
     /// 첫 스냅샷이 빈 명단이어도 렌더를 건너뛰지 않는다.
     private var lastPlanSignature: Set<String>?
 
+    /// 화면 고정 UI(요약 바)가 쓰는 타일 크기 — **포커스 배율을 따라가지 않는다.**
+    /// 창 크기에 비례해야 하지만 방을 확대했다고 함께 커지면 안 된다(실제로 2배가 됐다).
+    private var hudTileSize: CGFloat = CGFloat(officeSpriteUnit)
+
+    /// 지금 확대해 보고 있는 방. `nil` 이면 전체 뷰.
+    private(set) var focusedDepartment: Department?
+
+    /// 방 뷰로 들고 나갈 때 뷰에 알린다(머리글 표시용).
+    var onFocusChange: ((Department?) -> Void)?
+
+    /// 방 뷰로 들어가거나(전달값 있음) 전체로 돌아간다(`nil`).
+    ///
+    /// 배율 사이를 보간하지 않는다 — 정수 배율 사이를 부드럽게 이으면 그 중간 프레임이 전부
+    /// 비정수가 되어 도트가 흐려진다.
+    ///
+    /// 기존 재렌더 경로를 그대로 태운다. `sync` 가 `recalculateMetrics()` 를 부르고, 타일 크기가
+    /// 바뀌었으므로 `geometryChanged` 가 참이 되어 바닥·가구·책상·대표가 다시 그려진다.
+    /// 마지막 스냅샷은 `sync` 가 이미 `lastSyncedAgents` · `lastSyncedApprovals` 로 보관해 둔다.
+    ///
+    /// `rebuildPlan: false` — 평면도는 명단·부서 구성으로만 정해진다. 포커스는 좌표계만 바꾼다.
+    /// `consumesAttendanceBoundary: false` — 포커스 전환이 출퇴근 연출을 소비하면 안 된다.
+    /// 그 방이 평면도에 없으면 아무것도 하지 않고 `false` 를 돌려준다 — 사람이 0명이면
+    /// 부서 구역이 만들어지지 않아(`officeFloorPlan(agents: [])` 의 zones 는 빈 배열) 확대할
+    /// 대상이 없다. 조용히 전체 뷰로 남으면 `--room` 렌더가 "성공한 그림" 을 저장한다.
+    @discardableResult
+    func setFocus(_ department: Department?) -> Bool {
+        if let department, !plan.zones.contains(where: { $0.department == department }) {
+            return false
+        }
+        guard focusedDepartment != department else {
+            return true
+        }
+        focusedDepartment = department
+        onFocusChange?(department)
+        sync(
+            agents: lastSyncedAgents, approvals: lastSyncedApprovals,
+            rebuildPlan: false, consumesAttendanceBoundary: false
+        )
+        // 좌표계가 통째로 바뀌었으므로 창 크기가 바뀔 때(`didChangeSize`)와 같은 뒷정리를 한다.
+        //
+        // `sync` 는 배경·가구만 새 배율로 다시 그린다. 이동 중이거나 승인 줄에 선 캐릭터는
+        // 논리 좌표가 그대로라 `place` 를 건너뛰어, 확대된 방 위에 이전 배율의 화면 좌표로
+        // 남거나 화면 밖으로 사라진다.
+        repositionEveryone()
+        // 말풍선·경과 라벨의 위치·글꼴·최대 폭은 여기서만 새 `tileSize` 로 계산된다. 빼면
+        // 다음 주기(최대 30초)까지 이전 배율의 크기로 남아 확대된 몸에 겹친다.
+        refreshOverlays(
+            agents: lastSyncedAgents,
+            runs: lastSyncedRuns,
+            pendingCommands: lastSyncedPendingCommands,
+            now: Date()
+        )
+        return true
+    }
+
+    /// 바닥·여백을 눌렀을 때 — 방을 확대하거나 전체로 돌아간다.
+    ///
+    /// 사람·대표·게시판은 `mouseDown` 이 먼저 걸러내므로 여기 오지 않는다. 기존 클릭 동작을
+    /// 하나도 건드리지 않고 "아무것도 안 맞은" 자리만 쓴다.
+    private func handleFloorClick(at location: CGPoint) {
+        let pressed = officeZoneAt(
+            x: Double(location.x), y: Double(location.y),
+            zones: plan.zones, tileSize: Double(tileSize),
+            originX: Double(gridOrigin.x), originY: Double(gridOrigin.y)
+        )
+        if focusedDepartment == nil {
+            if let pressed {
+                setFocus(pressed)
+            }
+            return
+        }
+        if pressed != focusedDepartment {
+            setFocus(nil)
+        }
+    }
+
     private func recalculateMetrics() {
         guard plan.columns > 0, plan.rows > 0, size.width > 0, size.height > 0 else {
             return
         }
-        tileSize = min(size.width / CGFloat(plan.columns), size.height / CGFloat(plan.rows))
+        // 배율 판정은 `ConsoleCore` 순수 함수에 있다 — 창 크기를 격자로 나눈 실수값을 쓰면
+        // 비정수 배율이 되어 도트가 불규칙하게 버려진다(재정합 전 0.83~0.97배).
+        let focusRect = focusedDepartment.flatMap { department in
+            plan.zones.first { $0.department == department }.map(officeZoneRect)
+        }
+        let fullMetrics = officeViewMetrics(
+            viewWidth: Double(size.width),
+            viewHeight: Double(size.height),
+            columns: plan.columns,
+            rows: plan.rows
+        )
+        hudTileSize = CGFloat(fullMetrics.tileSize)
+        let metrics: OfficeViewMetrics
+        if let focusRect {
+            metrics = officeFocusedViewMetrics(
+                viewWidth: Double(size.width),
+                viewHeight: Double(size.height),
+                columns: plan.columns,
+                rows: plan.rows,
+                focus: focusRect
+            )
+        } else {
+            metrics = fullMetrics
+        }
+        tileSize = CGFloat(metrics.tileSize)
         spriteScale = tileSize / referenceTileSize
         characterScale = spriteScale * characterScaleFactor
-        let usedWidth = tileSize * CGFloat(plan.columns)
-        let usedHeight = tileSize * CGFloat(plan.rows)
-        gridOrigin = CGPoint(
-            x: (size.width - usedWidth) / 2,
-            y: (size.height - usedHeight) / 2
-        )
+        gridOrigin = CGPoint(x: metrics.originX, y: metrics.originY)
     }
 
     /// 타일의 바닥 중앙(캐릭터 발이 닿는 지점).
@@ -322,6 +420,16 @@ final class OfficeScene: SKScene {
         zoneColumns = nextZoneColumns
         if rebuildPlan || layoutChanged {
             plan = officeFloorPlan(agents: agents, zoneColumns: nextZoneColumns)
+        }
+        // 포커스한 방이 이번 평면도에서 사라졌으면(그 부서에 사람이 하나도 남지 않으면 구역이
+        // 만들어지지 않는다) 포커스를 푼다. 배율만 전체 뷰로 돌아가고 상태와 머리글이 남으면
+        // "나갈 수 없는 방 뷰" 가 된다 — `recalculateMetrics` 의 `flatMap` 은 nil 이 되어
+        // 조용히 전체 배율을 쓴다.
+        if let focused = focusedDepartment,
+            !plan.zones.contains(where: { $0.department == focused })
+        {
+            focusedDepartment = nil
+            onFocusChange?(nil)
         }
         let previousTileSize = tileSize
         let previousGridOrigin = gridOrigin
@@ -2358,6 +2466,8 @@ final class OfficeScene: SKScene {
         pendingCommands: [PendingCommand],
         now: Date
     ) {
+        lastSyncedRuns = runs
+        lastSyncedPendingCommands = pendingCommands
         for agent in agents {
             guard let node = characters[agent.agentType] else {
                 continue
@@ -3255,8 +3365,11 @@ final class OfficeScene: SKScene {
         let label = SKLabelNode(text: text)
         // 창이 작아지면 타일이 작아지는데 이 글자만 고정 크기로 남아, 사무실 대비 혼자 커 보였다.
         // 씬의 다른 글자와 같은 방식(타일 비례 + 한글 하한)으로 맞춘다.
+        //
+        // 단 **전체 뷰 기준 타일**을 쓴다(`hudTileSize`). 방을 확대하면 타일이 2배가 되는데
+        // 화면 좌상단 고정 UI 가 함께 커지면 사무실을 덮는다.
         label.fontName = officeLabelFontName
-        label.fontSize = max(officeHudMinFontSize, tileSize * 0.30)
+        label.fontSize = max(officeHudMinFontSize, hudTileSize * 0.30)
         label.fontColor = SKColor(white: 0.96, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top
@@ -3302,7 +3415,9 @@ final class OfficeScene: SKScene {
     // MARK: - 마우스
 
     override func mouseDown(with event: NSEvent) {
-        guard let hit = hitTarget(at: event.location(in: self)) else {
+        let location = event.location(in: self)
+        guard let hit = hitTarget(at: location) else {
+            handleFloorClick(at: location)
             return
         }
         if hit == officeHitTargetDailyReport {

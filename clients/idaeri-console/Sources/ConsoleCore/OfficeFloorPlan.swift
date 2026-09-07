@@ -36,6 +36,13 @@ private let officePixelsPerCentimeter = 54.0 * officeCharacterScaleFactor / 170.
 ///
 /// 렌더 쪽(`OfficeScene`)과 배율 계산(`FurnitureKind.sizeBoost`)이 같은 값을 봐야 한다 —
 /// 두 곳에 따로 두면 한쪽만 바뀌었을 때 폭 상한이 조용히 어긋난다.
+/// 가구·캐릭터 크기 환산의 기준 타일 크기 — **에셋이 제작된 기준**이라 에셋을 다시 뽑지 않는 한
+/// 바꾸지 않는다. `nativeHeight` 류의 실측 상수가 모두 이 값과 짝이다.
+///
+/// 화면 타일 크기(`officeSpriteUnit` = 32)와 다른 것이 정상이다. 둘의 비가 가구·사람이 타일에
+/// 비례해 작아지는 배율이 된다(32/40 = 0.8배). 이 값을 32 로 맞춰 봤더니 사람이 타일 대비 25%
+/// 커져 이름표 12건이 위 행 책상을 침범했고, 에셋을 0.8배로 줄여 맞추려니 가구 38종의 실측
+/// 상수가 전부 어긋났다(2026-09-04).
 public let officeReferenceTileSize: Double = 40
 
 /// 가구가 차지해도 되는 최대 가로폭(타일 배수). 높이 환산이 여기에 걸려 깎인다.
