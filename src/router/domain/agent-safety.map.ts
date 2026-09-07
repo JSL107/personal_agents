@@ -63,6 +63,8 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.JOB_APPLICATION]: AgentSafetyLevel.WRITE,
   // Notion '블로그 초안' DB 에 페이지를 만들고 상태를 갱신한다.
   [AgentType.BLOG]: AgentSafetyLevel.WRITE,
+  // 수정률 보고와 규칙 추출 결과만 원장에 남기는 autopilot 전용 worker.
+  [AgentType.BLOG_REVISION]: AgentSafetyLevel.READ_ONLY,
   // GeneratePaperRecommendationUsecase → saveRecommendationAtomically 로 추천과 모의 주문을
   // 트랜잭션 안에서 저장한다 (paperAccount.update · paperOrder 생성).
   [AgentType.PAPER_RECOMMEND]: AgentSafetyLevel.WRITE,

@@ -24,6 +24,10 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "업무 리뷰"
     case "IMPACT_REPORTER":
         return "성과 분석"
+    // 발행한 글을 사람이 얼마나 고쳤는지 재는 자리. "수정률 분석" 은 리뷰 방 오른쪽 끝에서
+    // 이름표가 하한 밑으로 눌려(실측 0.42, 하한 0.5) 세 글자로 줄였다.
+    case "BLOG_REVISION":
+        return "수정률"
     // 경영 — 이 둘만 영문 약칭. 한국 회사에서도 CEO·CTO 는 그대로 직함으로 읽히고,
     // "기술이사"·"경영 리뷰" 로는 옆자리 둘의 관계(대표 / 기술 총괄)가 이름표에서 안 드러났다.
     case "CEO":

@@ -7,6 +7,7 @@ import { GithubModule } from '../../github/github.module';
 import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
+import { ExtractRevisionConventionsUsecase } from './application/extract-revision-conventions.usecase';
 import { GenerateBlogDraftUsecase } from './application/generate-blog-draft.usecase';
 import { MeasureBlogRevisionUsecase } from './application/measure-blog-revision.usecase';
 import { PublishNotionDraftUsecase } from './application/publish-notion-draft.usecase';
@@ -37,6 +38,7 @@ import {
   ],
   providers: [
     GenerateBlogDraftUsecase,
+    ExtractRevisionConventionsUsecase,
     PublishNotionDraftUsecase,
     MeasureBlogRevisionUsecase,
     BlogDispatcher,
@@ -57,6 +59,7 @@ import {
   ],
   exports: [
     GenerateBlogDraftUsecase,
+    ExtractRevisionConventionsUsecase,
     PublishNotionDraftUsecase,
     MeasureBlogRevisionUsecase,
     BlogDispatcher,

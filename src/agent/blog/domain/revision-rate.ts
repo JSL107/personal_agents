@@ -16,6 +16,20 @@ export interface RevisionCount {
   percent: number;
 }
 
+export interface RevisionLineChanges {
+  addedLines: string[];
+  removedLines: string[];
+}
+
+export interface RevisionMeasurement {
+  count: RevisionCount;
+  changes: RevisionLineChanges;
+}
+
+// 주간 보고가 두 주 창을 사용한다. formatter와 규칙 추출기가 같은 경계를 봐야 표본이
+// 달라지지 않으므로 이 도메인 상수를 단일 출처로 둔다.
+export const REVISION_WINDOW_DAYS = 14;
+
 /**
  * 두 판의 차이를 줄 수로 잰다.
  *
@@ -29,6 +43,14 @@ export const countRevision = (
   published: string,
   final: string,
 ): RevisionCount => {
+  return countRevisionWithLines(published, final).count;
+};
+
+/** 수정률과 함께 최종본에서 사라진 줄·새로 생긴 줄을 반환한다. */
+export const countRevisionWithLines = (
+  published: string,
+  final: string,
+): RevisionMeasurement => {
   const before = published.split('\n');
   const after = final.split('\n');
 
@@ -37,25 +59,37 @@ export const countRevision = (
     remaining.set(line, (remaining.get(line) ?? 0) + 1);
   }
 
-  let kept = 0;
+  const addedLines: string[] = [];
   for (const line of after) {
     const left = remaining.get(line) ?? 0;
     if (left > 0) {
-      kept += 1;
       remaining.set(line, left - 1);
+    } else {
+      addedLines.push(line);
     }
   }
 
-  const removedLines = before.length - kept;
-  const addedLines = after.length - kept;
+  const removedLineTexts: string[] = [];
+  for (const [line, count] of remaining) {
+    for (let index = 0; index < count; index += 1) {
+      removedLineTexts.push(line);
+    }
+  }
+  const removedLineCount = removedLineTexts.length;
+  const addedLineCount = addedLines.length;
   return {
-    addedLines,
-    removedLines,
-    totalLines: before.length,
-    percent:
-      before.length === 0
-        ? 0
-        : Math.round(((addedLines + removedLines) / before.length) * 100),
+    count: {
+      addedLines: addedLineCount,
+      removedLines: removedLineCount,
+      totalLines: before.length,
+      percent:
+        before.length === 0
+          ? 0
+          : Math.round(
+              ((addedLineCount + removedLineCount) / before.length) * 100,
+            ),
+    },
+    changes: { addedLines, removedLines: removedLineTexts },
   };
 };
 
