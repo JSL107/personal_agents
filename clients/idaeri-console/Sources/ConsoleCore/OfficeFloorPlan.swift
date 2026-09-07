@@ -1198,7 +1198,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
             // 가운데 줄에 세운 것 — 책장을 하나 더 세워 자료를 쌓아 두는 방으로.
-            .bookshelf, .trash, .plantSmall, .waterCooler]
+            // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
+            // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
+            .bookshelf, .plantSmall]
     case .evaluation:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
         //
@@ -1220,7 +1222,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
             .clock, .wallCertificate, .wallLandscape,
             // 가운데 줄에 세운 것 — 손님을 맞는 방이라 응접 쪽으로.
-            .bookshelf, .plantTall, .partitionGlass, .coffeeMachine]
+            // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
+            // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
+            .bookshelf, .plantTall]
     case .content:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
         //
@@ -1243,7 +1247,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
             .clock, .wallShelf, .wallMonitor,
             // 가운데 줄에 세운 것 — 설비와 수납이 모이는 방으로.
-            .refrigerator, .filingCabinet, .bookshelf, .partitionLow]
+            // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
+            // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
+            .refrigerator, .filingCabinet]
     }
 }
 
