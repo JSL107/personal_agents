@@ -58,8 +58,14 @@ public enum Department: String, CaseIterable, Codable, Sendable {
 /// `REVIEW_REPLY_JUDGE` 가 앱 표에는 없어 폴백을 타고 내부방에 앉았다. 부서 편성은 사규의
 /// 소관이므로 앱은 그 값을 받아 쓴다.
 ///
-/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 백엔드가 부서를 새로 추가해 앱이 모르는 값이
-/// 오는 경우인데, 크래시보다 한 방에 몰리는 편이 낫다 — 화면에서 바로 보이므로 조용히 틀리지 않는다.
+/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 크래시보다 한 방에 몰리는 편이 낫다 —
+/// 화면에서 바로 보이므로 조용히 틀리지 않는다.
+///
+/// **전원이 총무방에 몰려 보이면 백엔드와 앱의 버전이 어긋난 것이다.** 부서 rawValue 는 두
+/// 쪽이 공유하는 전송 값이라(2026-09-07 재편에서 넷을 개칭했다) 한쪽만 갱신하면 상대의 값을
+/// 못 읽는다. 옛 이름을 별칭으로 받아 주지 않는 것은 의도다 — 별칭이 있으면 옛 백엔드가
+/// 붙어 있어도 화면이 정상으로 보여서, 실제로는 낡은 편성을 보고 있다는 사실을 놓친다.
+/// 여기서는 눈에 띄게 틀리는 편이 낫고, 고치는 방법은 양쪽을 함께 다시 빌드하는 것이다.
 public func departmentFromRaw(_ raw: String?) -> Department {
     guard let raw, let department = Department(rawValue: raw) else {
         return .internalOps

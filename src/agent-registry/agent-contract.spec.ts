@@ -31,37 +31,13 @@ describe('AGENT_CONTRACTS', () => {
   //
   // 회귀 방지는 화면 쪽에 있다: `OfficeFloorPlanTests` 의 "인원이 없는 부서도 구역을 받는다".
 
-  it('어느 부서도 콘솔 자리표 정원을 넘지 않는다', () => {
-    // 자리표를 넘기면 사람이 예비 격자로 밀려 이름표가 서로 겹친다 — 과거에 콘솔 검증
-    // 10건이 그렇게 깨졌다. 정원의 정본은 콘솔이고(`OfficeFloorPlan.swift` 의
-    // `departmentDeskSpots`), 여기 값은 그 좌석 개수를 옮겨 적은 것이다.
-    // **Swift 쪽 좌석을 줄이면 이 표도 함께 줄여야 한다.**
-    const deskCapacity: Record<Department, number> = {
-      [Department.PLANNING]: 6,
-      [Department.QUALITY]: 8,
-      [Department.EVALUATION]: 8,
-      [Department.TREASURY]: 5,
-      [Department.CONTENT]: 12,
-      [Department.INTERNAL_OPS]: 13,
-    };
-
-    const headcount = new Map<Department, number>();
-    for (const contract of Object.values(AGENT_CONTRACTS)) {
-      headcount.set(
-        contract.department,
-        (headcount.get(contract.department) ?? 0) + 1,
-      );
-    }
-
-    const overflowing = [...headcount.entries()]
-      .filter(([department, count]) => count > deskCapacity[department])
-      .map(
-        ([department, count]) =>
-          `${department}: ${count}명 / ${deskCapacity[department]}석`,
-      );
-
-    expect(overflowing).toEqual([]);
-  });
+  // 자리 부족은 여기서 막지 않는다. 정원의 정본은 콘솔이고(`departmentDeskSpots`), 그 값을
+  // 이 파일로 옮겨 적으면 UI 제약이 도메인 계약을 제한하게 된다 — 이 PR 이 없애려던 방향
+  // 그 자체다. 게다가 옮겨 적은 값은 어긋난다(실제로 6·8·8·5 로 부풀려 적어 초과를 허용했다).
+  //
+  // 검증은 화면 쪽에 이미 있다: `OfficeFloorPlanTests` 의 "자리표를 넘겨 예비 격자에 앉은
+  // 사람이 없다" 가 밀린 사람 이름까지 짚고, 그 표본은 `pnpm docs:check` 가 이 사규와
+  // 맞춰 준다. 사규가 인원을 정하고 자리표가 그 인원을 담는다는 순서를 그대로 둔다.
 
   it('모든 계약이 하는 일(job)을 명시한다', () => {
     for (const [agentType, contract] of Object.entries(AGENT_CONTRACTS)) {
