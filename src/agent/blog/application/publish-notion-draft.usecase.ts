@@ -67,14 +67,19 @@ import {
   parseBlogEdit,
 } from '../domain/prompt/blog-edit.parser';
 import {
-  BLOG_EDIT_SYSTEM_PROMPT,
   buildBlogEditPrompt,
+  buildBlogEditSystemPrompt,
   MIN_EDITED_BODY_RATIO,
 } from '../domain/prompt/blog-edit.prompt';
 import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
   BLOG_EDIT_OUTPUT_SCHEMA,
 } from '../domain/prompt/blog-publish.schema';
+import {
+  CONVENTION_FALLBACK_DAYS,
+  CONVENTION_FALLBACK_RUNS,
+  readRevisionConventions,
+} from '../domain/revision-conventions';
 import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../domain/study-deepdive-blog-properties';
 
 // autopilot 의 T1_PREVIEW 와 같은 24시간. 1시간은 이미 실패로 판명된 값이다 — 저녁 블로그 카드가
@@ -772,6 +777,33 @@ export class PublishNotionDraftUsecase {
     return `구조(${stages.map((counts) => counts.stage).join('→')}): ${trail}`;
   }
 
+  // 학습 재료는 부가 입력이다. 예전 원장 형태나 조회 장애가 발행 자체를 막으면 안 된다.
+  //
+  // 최신 한 회차만 보면 안 된다 — 규칙 추출은 실패해도 태스크가 성공으로 끝나므로(카드는
+  // 그대로 나간다), 쿼터 한 번 소진된 회차가 최신 성공이 되어 그때까지 쌓인 정상 규칙을
+  // 통째로 덮는다. 빈 회차는 건너뛰고 최근 창 안에서 규칙이 남은 회차를 쓴다.
+  private async findRevisionConventions(): Promise<string[]> {
+    try {
+      const found = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.BLOG_REVISION,
+        sinceDays: CONVENTION_FALLBACK_DAYS,
+        limit: CONVENTION_FALLBACK_RUNS,
+      });
+      for (const run of found) {
+        const conventions = readRevisionConventions(run.output);
+        if (conventions.length > 0) {
+          return conventions;
+        }
+      }
+      return [];
+    } catch (error: unknown) {
+      this.logger.warn(
+        `블로그 수정 규칙 조회 실패 (발행은 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
   // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
   private async editDraft(
     draft: NotionDraftPage,
@@ -784,7 +816,9 @@ export class PublishNotionDraftUsecase {
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
       request: {
-        systemPrompt: BLOG_EDIT_SYSTEM_PROMPT,
+        systemPrompt: buildBlogEditSystemPrompt(
+          await this.findRevisionConventions(),
+        ),
         outputSchema: BLOG_EDIT_OUTPUT_SCHEMA,
         prompt: buildBlogEditPrompt({
           title: draft.title,

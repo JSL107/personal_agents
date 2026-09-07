@@ -1,6 +1,7 @@
 import {
   compareRevisionWindows,
   countRevision,
+  countRevisionWithLines,
   summarizeRevisions,
 } from './revision-rate';
 
@@ -59,6 +60,24 @@ describe('countRevision', () => {
 
   it('빈 글은 0으로 나누지 않는다', () => {
     expect(countRevision('', '').percent).toBe(0);
+  });
+});
+
+describe('countRevisionWithLines', () => {
+  it('사라진 줄과 새로 쓴 줄을 각각 반환한다', () => {
+    const result = countRevisionWithLines(
+      '유지\n삭제\n중복\n중복',
+      '유지\n추가\n중복',
+    );
+
+    expect(result.changes.removedLines).toEqual(['삭제', '중복']);
+    expect(result.changes.addedLines).toEqual(['추가']);
+    expect(result.count).toEqual({
+      addedLines: 1,
+      removedLines: 2,
+      totalLines: 4,
+      percent: 75,
+    });
   });
 });
 

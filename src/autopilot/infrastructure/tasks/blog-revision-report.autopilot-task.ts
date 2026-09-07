@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
+import { ExtractRevisionConventionsUsecase } from '../../../agent/blog/application/extract-revision-conventions.usecase';
 import { MeasureBlogRevisionUsecase } from '../../../agent/blog/application/measure-blog-revision.usecase';
-import { formatBlogRevision } from '../../../slack/format/blog-revision.formatter';
+import { compareRevisionWindows } from '../../../agent/blog/domain/revision-rate';
+import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  formatBlogRevision,
+  REVISION_WINDOW_DAYS,
+} from '../../../slack/format/blog-revision.formatter';
 import {
   AutopilotTask,
   AutopilotTaskResult,
@@ -15,7 +23,7 @@ import {
  * 그저 그런 글을 가르는 것은 사람이 발행 뒤에 손을 대느냐였고, 그 판정이 지금까지 아무 데도
  * 쌓이지 않았다.
  *
- * LLM 을 부르지 않는다. 원장 조회 + 파일 조회 + 줄 비교뿐이라 쿼터를 쓰지 않는다.
+ * 집계와 skip 모두 원장에 남겨, 다른 주간 회고가 미실행을 감지할 수 있게 한다.
  */
 @Injectable()
 export class BlogRevisionReportAutopilotTask implements AutopilotTask {
@@ -23,23 +31,59 @@ export class BlogRevisionReportAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly measureBlogRevision: MeasureBlogRevisionUsecase,
+    private readonly agentRunService: AgentRunService,
+    private readonly extractRevisionConventions: ExtractRevisionConventionsUsecase,
   ) {}
 
   async run(): Promise<AutopilotTaskResult> {
-    if (!this.measureBlogRevision.isConfigured()) {
-      // 블로그 발행을 설정하지 않은 환경에서는 기능이 없는 것처럼 조용히 넘긴다.
-      return { skip: true };
-    }
-
-    // 집계 실패를 삼키지 않는다. orchestrator 가 이미 그룹을 계속 진행시키면서 digest 에
-    // 「⚠️ 자동 생성 실패」를 적고, 저빈도 cron 은 BullMQ 로 4회까지 재시도한다. 여기서
-    // `skip: true` 로 정상 종료하면 그 두 경로가 모두 죽어 그 주 보고가 조용히 유실된다.
-    const report = await this.measureBlogRevision.execute();
-    const summaryText = formatBlogRevision(report, new Date());
-    if (summaryText === null) {
-      // 구간에 발행이 없으면 보고할 것이 없다. 이건 실패가 아니다.
-      return { skip: true };
-    }
-    return { skip: false, summaryText };
+    const outcome = await this.agentRunService.execute<AutopilotTaskResult>({
+      agentType: AgentType.BLOG_REVISION,
+      triggerType: TriggerType.WEEKLY_BLOG_REVISION_CRON,
+      inputSnapshot: { windowDays: REVISION_WINDOW_DAYS, lookbackDays: 28 },
+      run: async () => {
+        if (!this.measureBlogRevision.isConfigured()) {
+          // 설정이 없어도 회차가 돌았다는 증거는 남긴다. 카드만 생략한다.
+          return {
+            result: { skip: true },
+            modelUsed: 'none',
+            output: {
+              recentAveragePercent: 0,
+              recentPostCount: 0,
+              unmatchedCount: 0,
+              conventions: [],
+              skipReason: 'NOT_CONFIGURED',
+            },
+          };
+        }
+        // 집계 실패는 전파해 orchestrator 경고와 BullMQ 재시도를 유지한다.
+        const report = await this.measureBlogRevision.execute();
+        const now = new Date();
+        const recent = compareRevisionWindows(
+          report.rows,
+          now,
+          REVISION_WINDOW_DAYS,
+        ).recent;
+        const summaryText = formatBlogRevision(report, now);
+        const extraction = await this.extractRevisionConventions.execute(
+          report,
+          now,
+        );
+        return {
+          result:
+            summaryText === null
+              ? { skip: true }
+              : { skip: false, summaryText },
+          modelUsed: extraction.modelUsed,
+          output: {
+            recentAveragePercent: recent.averagePercent,
+            recentPostCount: recent.postCount,
+            unmatchedCount: report.unmatchedCount,
+            conventions: extraction.conventions,
+            ...(summaryText === null ? { skipReason: 'NO_RECENT_POSTS' } : {}),
+          },
+        };
+      },
+    });
+    return outcome.result;
   }
 }

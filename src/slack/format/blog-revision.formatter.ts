@@ -5,12 +5,13 @@ import {
 import {
   compareRevisionWindows,
   REVISION_MIN_SAMPLE,
+  REVISION_WINDOW_DAYS,
   RevisionTrend,
 } from '../../agent/blog/domain/revision-rate';
 
 // 두 주씩 끊어 비교한다. 주간 회차라 한 주 창은 발행 두세 편에 흔들리고, 네 주 창은 이번에
 // 바꾼 것의 효과가 지난 회차에 묻힌다.
-export const REVISION_WINDOW_DAYS = 14;
+export { REVISION_WINDOW_DAYS };
 
 // 카드에 몇 편까지 낱개로 적을지. 많이 고친 순으로 자른다 — 나머지는 평균에 이미 들어 있다.
 const DETAIL_LIMIT = 3;

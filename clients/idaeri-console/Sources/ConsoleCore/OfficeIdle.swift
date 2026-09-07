@@ -273,7 +273,7 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
         return [.printer, .filingCabinet]
     // 남이 만든 것을 검토하고 판정한다 — 체크리스트를 붙여 둔 게시판 앞.
     case "CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "PO_EVAL", "DOCS_AUDIT_EVALUATOR",
-        "CONTRADICTION_JUDGE", "BE_FIX":
+        "CONTRADICTION_JUDGE", "BE_FIX", "BLOG_REVISION":
         return [.wallPinboard, .bookshelf]
     // 구조를 그린다. 장애 원인 추적도 여기 둔다 — 스택을 따라가는 일이라 판에 그리는 쪽이
     // 맞고, 지표 화면은 개발실에 없어서 넣으면 성장방까지 걸어간다(벽 자리가 이미 셋 다 찼다).

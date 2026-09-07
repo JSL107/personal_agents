@@ -27,6 +27,9 @@ export enum AgentType {
   BLOG = 'BLOG',
   // Notion 블로그 초안을 익명화하고 GitHub Pages 발행 승인 카드로 만든다.
   BLOG_PUBLISH = 'BLOG_PUBLISH',
+  // 블로그 수정률 주간 보고 — 수정 패턴 규칙 추출은 model-router 를 실제로 한 번 호출하고,
+  // 수정률 집계 자체는 순수 계산으로 처리한다(autopilot 원장 기록용 내부 에이전트).
+  BLOG_REVISION = 'BLOG_REVISION',
   // 이직 메이트 — merged PR 합성 → 역량 프로필 허브 + 이력서/포트폴리오 (자연어 멘션 전용).
   // 프로필 합성 시 model-router 경유 (구조화 JSON 강점 → Claude).
   CAREER_MATE = 'CAREER_MATE',

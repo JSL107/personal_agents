@@ -23,6 +23,9 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel 일 뿐 실제 호출되지 않음.
   [AgentType.BLOG]: ModelProviderName.CHATGPT,
   [AgentType.BLOG_PUBLISH]: ModelProviderName.CHATGPT,
+  // 규칙 추출 1회만 route() 를 타고 집계 자체는 순수 계산이다. INVEST/PAPER_TRADE sentinel 과
+  // 달리 실제 호출이 있는 autopilot 전용 에이전트다.
+  [AgentType.BLOG_REVISION]: ModelProviderName.CHATGPT,
   [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,

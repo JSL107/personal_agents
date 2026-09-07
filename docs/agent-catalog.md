@@ -2,13 +2,14 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 27종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
 |---|---|---|---|---|---|
 | Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
 | Blog Publish | `BLOG_PUBLISH` | `/blog-publish` | CHATGPT | `src/agent/blog/application/publish-notion-draft.usecase.ts` | Notion 블로그 초안 익명화 + GitHub 발행 승인 |
+| Blog Revision Report | `BLOG_REVISION` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/extract-revision-conventions.usecase.ts` | 블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용) |
 | Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
 | CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM/CTO 합성) |
 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |

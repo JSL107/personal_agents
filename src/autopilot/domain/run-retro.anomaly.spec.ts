@@ -1,8 +1,10 @@
 import { AgentRunStatRow } from '../../agent-run/domain/port/agent-run.repository.port';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   ChainFailureSummary,
   detectChainFailureAnomalies,
   detectContractScoreAnomalies,
+  detectMissingWeeklyRuns,
   detectRunAnomalies,
 } from './run-retro.anomaly';
 
@@ -157,5 +159,59 @@ describe('detectContractScoreAnomalies', () => {
     ]);
 
     expect(anomalies).toEqual([]);
+  });
+});
+
+describe('detectMissingWeeklyRuns', () => {
+  const now = new Date('2026-09-07T00:00:00.000Z');
+
+  it('마지막 성공이 정확히 7일 전이면 결번으로 보지 않는다', () => {
+    const lastSuccessAt = new Map<AgentType, Date | null>([
+      [AgentType.BLOG_REVISION, new Date('2026-08-31T00:00:00.000Z')],
+    ]);
+
+    expect(detectMissingWeeklyRuns(lastSuccessAt, now)).toEqual([]);
+  });
+
+  it('8일 경계 직전 1ms는 결번으로 보지 않는다', () => {
+    const lastSuccessAt = new Map<AgentType, Date | null>([
+      [AgentType.BLOG_REVISION, new Date('2026-08-30T00:00:00.001Z')],
+    ]);
+
+    expect(detectMissingWeeklyRuns(lastSuccessAt, now)).toEqual([]);
+  });
+
+  it('마지막 성공이 정확히 8일 전이면 결번으로 감지한다', () => {
+    const lastSuccessAt = new Map<AgentType, Date | null>([
+      [AgentType.BLOG_REVISION, new Date('2026-08-30T00:00:00.000Z')],
+    ]);
+
+    expect(detectMissingWeeklyRuns(lastSuccessAt, now)).toEqual([
+      expect.objectContaining({
+        agentType: AgentType.BLOG_REVISION,
+        kind: 'MISSING_WEEKLY',
+      }),
+    ]);
+  });
+
+  it('마지막 성공이 8일을 넘겨도 결번으로 감지한다', () => {
+    const lastSuccessAt = new Map<AgentType, Date | null>([
+      [AgentType.BLOG_REVISION, new Date('2026-08-20T00:00:00.000Z')],
+    ]);
+
+    expect(detectMissingWeeklyRuns(lastSuccessAt, now)).toEqual([
+      expect.objectContaining({
+        agentType: AgentType.BLOG_REVISION,
+        kind: 'MISSING_WEEKLY',
+      }),
+    ]);
+  });
+
+  it('최초 실행 전(null)은 결번으로 보고하지 않는다', () => {
+    const lastSuccessAt = new Map<AgentType, Date | null>([
+      [AgentType.BLOG_REVISION, null],
+    ]);
+
+    expect(detectMissingWeeklyRuns(lastSuccessAt, now)).toEqual([]);
   });
 });

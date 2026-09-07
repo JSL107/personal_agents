@@ -8,8 +8,9 @@ import {
 import { FindRecentAppliedPreviewsUsecase } from '../../../preview-gate/application/find-recent-applied-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
-  countRevision,
+  countRevisionWithLines,
   RevisionCount,
+  RevisionLineChanges,
   RevisionSummary,
   summarizeRevisions,
 } from '../domain/revision-rate';
@@ -18,6 +19,7 @@ export interface BlogRevisionRow {
   path: string;
   publishedAt: Date;
   count: RevisionCount;
+  changes?: RevisionLineChanges;
 }
 
 export interface BlogRevisionReport {
@@ -78,10 +80,12 @@ export class MeasureBlogRevisionUsecase {
         unmatchedCount += 1;
         continue;
       }
+      const measurement = countRevisionWithLines(snapshot.content, final);
       rows.push({
         path: snapshot.path,
         publishedAt: snapshot.publishedAt,
-        count: countRevision(snapshot.content, final),
+        count: measurement.count,
+        changes: measurement.changes,
       });
     }
 

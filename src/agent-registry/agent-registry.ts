@@ -117,6 +117,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: 'Notion 블로그 초안 익명화 + GitHub 발행 승인',
   },
   {
+    agentType: AgentType.BLOG_REVISION,
+    displayName: 'Blog Revision Report',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/blog/application/extract-revision-conventions.usecase.ts',
+    description:
+      '블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용)',
+  },
+  {
     agentType: AgentType.CAREER_MATE,
     displayName: 'Career Mate',
     slashCommands: [],
