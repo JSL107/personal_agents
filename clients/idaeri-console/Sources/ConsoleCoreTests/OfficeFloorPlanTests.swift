@@ -435,8 +435,49 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // (실측 벽 87 vs 복도 160) 같은 축의 값이 아니다. 실제로 두 값은 0.43 대 0.40 으로
     // 거의 같은데 화면에서는 두 배 차이가 난다.
     t.expect(
-        FloorTile.corridor.muteStrength > 0.35 && FloorTile.corridor.muteStrength < 0.55,
-        "통로 밝기가 방(아래)과 사람(위) 사이 대역 (실제 \(FloorTile.corridor.muteStrength))"
+        FloorTile.corridor.muteStrength > 0.02 && FloorTile.corridor.muteStrength < 0.20,
+        "통로 누르기가 밝은 사무실 대역 (실제 \(FloorTile.corridor.muteStrength))"
+    )
+    // **전제가 뒤집혔다.** 예전에는 방이 사람보다 어두웠고 통로가 그 사이였다. 바닥 텍스처를
+    // 밝기 208~245 로 통일한 뒤로는 **모든 바닥이 사람보다 밝다**(밝은 사무실 계열) — 셔츠
+    // 실측 186 과 15 이상 떨어뜨리는 것이 규칙이고, 판정은 여전히 렌더 픽셀 실측으로 한다.
+    //
+    // **누르는 양끼리 비교해서는 판정할 수 없다.** 주석의 그 경고가 이 값들에서 그대로
+    // 재현된다 — 통로(0.06)가 woodB(0.04)보다 더 눌리는데도 텍스처가 밝아(236.9 대 214.5)
+    // 화면에서는 통로가 가장 밝다. 그래서 **결과 밝기**로 단정한다.
+    //
+    // 텍스처 밝기는 `scripts/draw-tiles.py` 가 굽고 나서 출력하는 값을 옮긴 것이다. 타일을 다시
+    // 구워 밝기가 달라지면 이 테스트가 깨져서 알려 준다(그 자리에서 값을 갱신하면 된다).
+    let textureBrightness: [FloorTile: Double] = [
+        .corridor: 236.9,  // 세라믹 텍스처를 재사용한다
+        .ceramic: 236.9,
+        .carpetLight: 227.2,
+        .carpetDark: 223.4,
+        .woodA: 222.3,
+        .woodB: 214.5,
+    ]
+    func screenBrightness(_ tile: FloorTile) -> Double {
+        guard let texture = textureBrightness[tile] else {
+            return 0
+        }
+        return texture * (1 - tile.muteStrength)
+    }
+    let roomFloors: [FloorTile] = [.ceramic, .carpetLight, .carpetDark, .woodA, .woodB]
+
+    // 통로는 어느 방과도 혼동되면 안 되는 유일한 자리다 — 화면에서 가장 밝아야 한다.
+    t.expect(
+        roomFloors.allSatisfy { screenBrightness(.corridor) > screenBrightness($0) },
+        "통로가 화면에서 모든 방보다 밝다 (통로 \(screenBrightness(.corridor)),"
+            + " 방 최대 \(roomFloors.map(screenBrightness).max()!))"
+    )
+
+    // 밝은 사무실의 전제 — 모든 바닥이 사람보다 밝다. 셔츠 실측 186 과 10 이상 떨어뜨린다.
+    // 한때 통로를 184 까지 올렸다가 셔츠(185.7)와 겹쳐 같은 문제가 되돌아온 적이 있다.
+    let shirtBrightness = 186.0
+    t.expect(
+        roomFloors.allSatisfy { screenBrightness($0) > shirtBrightness + 10 },
+        "모든 방 바닥이 셔츠보다 10 이상 밝다 (최저"
+            + " \(roomFloors.map(screenBrightness).min()!))"
     )
 
     // 맞닿은 구역끼리는 바닥재가 달라야 한다(가로 이웃 = index 차 1, 세로 이웃 = 같은 열 위아래).

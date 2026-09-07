@@ -628,13 +628,13 @@ public enum FloorTile: String, Codable, Sendable, CaseIterable {
     public var muteStrength: Double {
         switch self {
         case .ceramic:
-            return 0.68
+            return 0.14
         case .carpetLight:
-            return 0.54
+            return 0.12
         case .woodA:
-            return 0.56
+            return 0.06
         case .woodB:
-            return 0.60
+            return 0.04
         // 통로는 **모든 방보다 밝다.** 전용 텍스처가 없어(다섯 텍스처가 여섯 방에 이미 쓰인다)
         // 세라믹을 재사용하므로, 겹치지 않는 축은 밝기뿐이다. 거의 누르지 않아 화면에서 가장
         // 밝은 면이 되게 한다 — 어느 방과도 혼동되지 않는 유일한 자리다.
@@ -657,9 +657,9 @@ public enum FloorTile: String, Codable, Sendable, CaseIterable {
         // 순서와 다르다. 실제로 어두운 카펫은 이 값이 0.40 으로 복도보다 작은데 화면 밝기는
         // 66 대 160 이다. 밝기 판정은 `--render` 픽셀 실측으로만 한다.
         case .corridor:
-            return 0.43
+            return 0.06
         case .carpetDark, .wall:
-            return 0.40
+            return 0.10
         }
     }
 
