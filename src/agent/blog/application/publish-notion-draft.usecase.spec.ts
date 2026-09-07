@@ -1458,6 +1458,33 @@ describe('PublishNotionDraftUsecase', () => {
     );
   });
 
+  // 통행권이 14일치만 풀고 다시 막히지 않는지 본다. 회고가 나가는 동안 쌓인 오늘의 공부도
+  // 14일을 넘기면 같은 굶음 그룹에 들어오는데, 그 안에서 출처 우선순위를 다시 적용하면
+  // 남은 회고가 또 뒤로 밀린다(리뷰 지적). 굶은 것끼리는 오래된 순이어야 한다.
+  it('둘 다 밀렸으면 출처를 보지 않고 오래된 초안을 먼저 집는다', async () => {
+    const olderPrDraft = {
+      ...draft,
+      pageId: 'page-older-pr',
+      title: '가장 오래 밀린 PR 회고',
+      sourceType: 'PR',
+      createdTime: daysAgo(40),
+    };
+    const starvedStudyDraft = {
+      ...draft,
+      pageId: 'page-starved-study',
+      title: '밀린 오늘의 공부',
+      sourceType: '오늘의 공부',
+      createdTime: daysAgo(20),
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [starvedStudyDraft, olderPrDraft],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith('page-older-pr');
+  });
+
   // 통행권이 새치기를 대체하면 안 된다. 굶은 초안이 없을 때는 기존대로 오늘의 공부가 먼저다
   // — 이 축이 없으면 위 테스트만 보고 우선순위를 통째로 뒤집어도 초록이 뜬다.
   it('둘 다 밀리지 않았으면 오늘의 공부가 먼저다', async () => {

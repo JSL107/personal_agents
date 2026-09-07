@@ -184,6 +184,16 @@ export type KoreanStyleParagraphMetrics = {
   dominantParagraphSizePercent: number;
 };
 
+// 물음 판정. 문장 분해기는 `\u201c무엇일까요?\u201d` 처럼 문장부호 뒤에 붙은 닫는 인용부호·강조
+// 문자를 그대로 남기므로, 그냥 `endsWith('?')` 로 보면 실제 물음이 집계에서 빠진다
+// (실측: 따옴표로 감싼 물음 · 볼드로 감싼 물음이 모두 0% 로 찍혔다 — 리뷰 지적).
+// 종결 닫는 문자를 벗긴 뒤 판정한다.
+const SENTENCE_CLOSERS =
+  /[\s"'\u2019\u201d\u203a\u3009\u300b\u300d\u300f\uff09)\]}*_`~]+$/u;
+
+const endsWithQuestion = (sentence: string): boolean =>
+  sentence.replace(SENTENCE_CLOSERS, '').endsWith('?');
+
 const SHORT_SENTENCE_MAX = 20;
 // 프로파일의 구어 종결어미. 이유를 문장 끊고 뒤에 던지는 이 문체의 표식이다.
 //
@@ -456,7 +466,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
         ? 0
         : toPercent(alternationCount, rankedEndings.length - 1),
     questionPercent: toPercent(
-      sentences.filter((sentence) => sentence.trimEnd().endsWith('?')).length,
+      sentences.filter(endsWithQuestion).length,
       sentences.length,
     ),
     bannedConnectiveCount,

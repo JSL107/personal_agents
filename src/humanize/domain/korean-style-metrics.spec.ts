@@ -864,6 +864,19 @@ describe('물음 비율', () => {
     expect(metrics.questionPercent).toBe(50);
   });
 
+  // 문장 분해기가 문장부호 뒤의 닫는 인용부호·강조 문자를 남기므로, 그대로 `endsWith('?')` 를
+  // 보면 따옴표나 볼드로 감싼 물음이 통째로 빠진다(리뷰 지적).
+  it('닫는 인용부호와 강조 문자 뒤의 물음표도 센다', () => {
+    expect(
+      measureKoreanStyle('핵심은 이거예요. “정말 이대로 둬도 될까요?”')
+        .questionPercent,
+    ).toBe(50);
+    expect(
+      measureKoreanStyle('**무엇이 문제일까요?** 순서를 굳히면 돼요.')
+        .questionPercent,
+    ).toBe(50);
+  });
+
   it('평서문만 있으면 0% 다', () => {
     const metrics = measureKoreanStyle(
       '순서가 정해진 일도 있어요. 그건 workflow 로 두면 돼요.',

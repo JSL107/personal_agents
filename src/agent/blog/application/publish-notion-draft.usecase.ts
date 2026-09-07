@@ -624,16 +624,23 @@ export class PublishNotionDraftUsecase {
       if (blockedGap !== 0) {
         return blockedGap;
       }
-      const starvedGap =
-        Number(isStarvedDraft(second, nowMs)) -
-        Number(isStarvedDraft(first, nowMs));
+      const firstStarved = isStarvedDraft(first, nowMs);
+      const secondStarved = isStarvedDraft(second, nowMs);
+      const starvedGap = Number(secondStarved) - Number(firstStarved);
       if (starvedGap !== 0) {
         return starvedGap;
       }
-      const priorityGap =
-        draftPriority(first.sourceType) - draftPriority(second.sourceType);
-      if (priorityGap !== 0) {
-        return priorityGap;
+      // 둘 다 굶었으면 출처를 보지 않고 오래된 것부터 간다. 여기서 출처를 다시 보면 통행권이
+      // 14일치만 풀고 다시 막힌다 — 회고가 나가는 동안 쌓인 '오늘의 공부' 도 14일을 넘기는
+      // 순간 같은 굶음 그룹에 들어오고, 그 안에서 우선순위 0 이라 남은 회고를 다시 앞지른다.
+      // 유입과 발행이 하루 1건씩이면 15일째부터 매일 새로 굶은 초안이 하나씩 생기므로
+      // 기아가 그대로 재현된다(리뷰 지적, 40일 시뮬레이션으로 확인).
+      if (!(firstStarved && secondStarved)) {
+        const priorityGap =
+          draftPriority(first.sourceType) - draftPriority(second.sourceType);
+        if (priorityGap !== 0) {
+          return priorityGap;
+        }
       }
       return first.createdTime.localeCompare(second.createdTime);
     });
