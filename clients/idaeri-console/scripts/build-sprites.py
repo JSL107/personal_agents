@@ -268,11 +268,18 @@ def soften_wood(image: Image.Image) -> Image.Image:
             continue
         hue, light, sat = colorsys.rgb_to_hls(red / 255, green / 255, blue / 255)
         degrees = hue * 360
-        if 15 <= degrees <= 45 and sat > 0.18:
+        if 8 <= degrees <= 50 and sat > 0.12:
             # 채도를 절반 이하로 깎고 명도를 크게 올렸더니 상판이 바닥(밝기 207~227)과 같아져
             # 책상이 묻혔다. 색조는 남기고 **바닥보다 한 단 어둡게** 두어 윤곽이 살아 있게 한다.
-            sat *= 0.62
-            light = min(1.0, light * 1.08 + 0.03)
+            #
+            # 곱셈만으로는 어두운 픽셀이 거의 안 올라간다. 책상(밝기 120)을 기준으로 계수를
+            # 맞췄더니 책장·문(73~109)은 그대로 어두운 덩어리로 남았고, 바닥이 216~244 로
+            # 밝아진 뒤에는 그 격차가 세 배가 됐다(사람 셔츠 186 보다도 어두웠다).
+            #
+            # 곱을 줄이고 더하기를 키워 **어두운 쪽을 더 많이 올린다.** 밝은 픽셀은 상한에
+            # 눌려 조금만 오르므로 회의 테이블(170 → 178)이 바닥에 묻히지 않는다.
+            sat *= 0.5
+            light = min(1.0, light * 0.62 + 0.36)
             r2, g2, b2 = colorsys.hls_to_rgb(hue, light, sat)
             out.append((round(r2 * 255), round(g2 * 255), round(b2 * 255), alpha))
         else:
