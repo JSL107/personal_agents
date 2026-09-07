@@ -1038,11 +1038,13 @@ final class OfficeScene: SKScene {
                         department: wallDepartment(x: column, y: row, zones: plan.zones)
                     )
                     node.colorBlendFactor = CGFloat(kind.muteStrength)
-                    // 이음선 제거 — 한 칸 걸러 뒤집어 깔면 맞닿는 변이 서로 같은 변이 된다.
-                    // 생성 이미지라 타일의 좌우·상하 끝이 서로 안 맞는데(실측 색차 15~22),
-                    // 뒤집어 깔면 그 불일치가 원리적으로 사라진다.
-                    node.xScale = column % 2 == 0 ? 1 : -1
-                    node.yScale = row % 2 == 0 ? 1 : -1
+                    // **뒤집지 않는다.** 한 칸 걸러 뒤집어 깔던 것은 생성 이미지 타일의 좌우·상하
+                    // 끝이 서로 안 맞는(실측 색차 15~22) 문제의 대책이었다. 바닥을 `draw-tiles.py`
+                    // 로 굽는 지금은 이음매가 규칙으로 정해져 원리적으로 맞으므로, 뒤집으면 오히려
+                    // 격자가 어긋난다 — 이음매를 0번 가장자리에만 그리므로 반전 칸에서는 반대편으로
+                    // 옮겨 가고, 맞닿는 자리에서 선이 겹쳐 두꺼워지거나 사라진다.
+                    node.xScale = 1
+                    node.yScale = 1
                 }
                 floorLayer.addChild(node)
             }
@@ -1071,8 +1073,15 @@ final class OfficeScene: SKScene {
             alpha: 1
         )
     }
-    /// 눌러 놓은 벽의 기본색. 벽 원본이 밝은 크림이라 그대로 깔면 도면처럼 보인다.
-    private let wallBaseColor = (red: 0.26, green: 0.22, blue: 0.20)
+    /// 눌러 놓은 벽의 기본색.
+    ///
+    /// 한때 어두운 갈색(0.26, 0.22, 0.20)이었다. "벽 원본이 밝은 크림이라 그대로 깔면 도면처럼
+    /// 보인다" 는 이유였는데, 그때는 **바닥이 어두웠다**(실측 밝기 85~158). 바닥을 밝은 회백색으로
+    /// 통일한 뒤에는 벽만 어두워 방 사이가 검은 띠로 눕는다.
+    ///
+    /// 이제 벽은 바닥보다 **밝게** 두고 경계는 `addWallEdges` 의 테두리에 맡긴다 — 실제 사무실
+    /// 도면과 픽셀 오피스 장르 모두 흰 벽 + 얇은 윤곽선 방식이다.
+    private let wallBaseColor = (red: 0.84, green: 0.84, blue: 0.86)
 
     /// 벽 한 칸의 색·명암을 정한다.
     ///
@@ -1108,13 +1117,14 @@ final class OfficeScene: SKScene {
             )
         }
         node.color = SKColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
-        // 벽 원본이 밝은 크림이라 덜 누르면 눌러 놓은 색이 원본에 씻긴다.
+        // 누르는 색이 이제 원본보다 조금 어두운 회색이라, 많이 섞을수록 어두워진다.
+        // 세 단계의 **순서**(윗면이 가장 밝고 벽면이 가장 어둡다)는 그대로 두어 입체감을 남긴다.
         if isTopOfWall {
-            node.colorBlendFactor = 0.60
+            node.colorBlendFactor = 0.22
         } else if isFlatWall {
-            node.colorBlendFactor = 0.72
+            node.colorBlendFactor = 0.45
         } else {
-            node.colorBlendFactor = 0.84
+            node.colorBlendFactor = 0.62
         }
         node.xScale = 1
         node.yScale = 1
