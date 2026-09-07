@@ -296,3 +296,36 @@ public func nameplateIsVisible(
     }
     return state == .inProgress
 }
+
+/// 화면 좌표가 어느 부서 구역 안인지(순수). 구역 밖이면 `nil`.
+///
+/// 좌표를 격자로 되돌려 구역 사각형에 넣어 본다. 좌석·가구는 보지 않는다 — 좌석을 누른 경우는
+/// 호출부가 `agentTypeAt` 으로 먼저 걸러내고, 여기까지 오면 바닥을 누른 것이다.
+///
+/// 경계는 시작 칸을 포함하고 끝 칸을 제외한다. 두 구역이 붙어 있어도 한 곳으로만 판정된다.
+public func officeZoneAt(
+    x: Double,
+    y: Double,
+    zones: [DepartmentZone],
+    tileSize: Double,
+    originX: Double,
+    originY: Double
+) -> Department? {
+    guard tileSize > 0 else {
+        return nil
+    }
+    let tileX = (x - originX) / tileSize
+    let tileY = (y - originY) / tileSize
+    return zones.first { zone in
+        tileX >= Double(zone.origin.x) && tileX < Double(zone.origin.x + zone.width)
+            && tileY >= Double(zone.origin.y) && tileY < Double(zone.origin.y + zone.height)
+    }?.department
+}
+
+/// 구역을 배율 판정(`officeFocusedViewMetrics`)이 쓰는 사각형으로 옮긴다(순수).
+public func officeZoneRect(_ zone: DepartmentZone) -> OfficeRect {
+    OfficeRect(
+        x: Double(zone.origin.x), y: Double(zone.origin.y),
+        width: Double(zone.width), height: Double(zone.height)
+    )
+}
