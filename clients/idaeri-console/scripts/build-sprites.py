@@ -250,6 +250,41 @@ def shrink(cell: Image.Image) -> Image.Image:
     return shifted.resize(target, Image.NEAREST)
 
 
+def soften_wood(image: Image.Image) -> Image.Image:
+    """가구의 주황 나무색을 연한 베이지로 옮긴다. 캐릭터는 대상이 아니다.
+
+    바닥을 밝은 회백색으로 통일한 뒤 주황 상판만 화면에서 튀었다(책상은 좌석마다 하나씩
+    깔려 화면에서 가장 많이 반복되는 가구다). 색조(주황 15~45도)만 골라 **채도를 절반으로
+    낮추고 명도를 올린다** — 형태와 명암 단계는 건드리지 않으므로 나뭇결이 남는다.
+
+    캐릭터를 제외하는 이유는 런타임 리컬러가 밝기·채도 임계값으로 머리·셔츠·바지를 가르기
+    때문이다(`SpriteLoader.swift:43-47`). 살색도 이 색조 범위에 들어간다.
+    """
+    import colorsys
+
+    rgba = image.convert("RGBA")
+    pixels = list(rgba.getdata())
+    out = []
+    for red, green, blue, alpha in pixels:
+        if alpha <= 8:
+            out.append((red, green, blue, alpha))
+            continue
+        hue, light, sat = colorsys.rgb_to_hls(red / 255, green / 255, blue / 255)
+        degrees = hue * 360
+        if 15 <= degrees <= 45 and sat > 0.18:
+            # 채도를 절반 이하로 깎고 명도를 크게 올렸더니 상판이 바닥(밝기 207~227)과 같아져
+            # 책상이 묻혔다. 색조는 남기고 **바닥보다 한 단 어둡게** 두어 윤곽이 살아 있게 한다.
+            sat *= 0.62
+            light = min(1.0, light * 1.08 + 0.03)
+            r2, g2, b2 = colorsys.hls_to_rgb(hue, light, sat)
+            out.append((round(r2 * 255), round(g2 * 255), round(b2 * 255), alpha))
+        else:
+            out.append((red, green, blue, alpha))
+    result = Image.new("RGBA", rgba.size)
+    result.putdata(out)
+    return result
+
+
 def quantize_sprite(image: Image.Image, colors: int) -> Image.Image:
     """색을 `colors` 개로 줄인다. 디더링은 끈다 — 켜면 점무늬가 생겨 도트가 다시 지저분해진다.
 
@@ -573,6 +608,9 @@ def main() -> int:
     tile_palette = shared_palette(tiles, SHARED_PALETTE_MAX)
     total = 0
     for name, sprite, sheet_name in baked:
+        # 가구·소품의 주황 나무색만 연하게. 캐릭터는 리컬러 색 규약이 걸려 있어 건드리지 않는다.
+        if not name.startswith("char"):
+            sprite = soften_wood(sprite)
         if name.startswith("tile-"):
             sprite = apply_palette(sprite, tile_palette)
         else:

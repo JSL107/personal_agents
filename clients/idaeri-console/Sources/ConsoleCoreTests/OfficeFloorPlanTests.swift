@@ -434,8 +434,22 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // (실측 벽 87 vs 복도 160) 같은 축의 값이 아니다. 실제로 두 값은 0.43 대 0.40 으로
     // 거의 같은데 화면에서는 두 배 차이가 난다.
     t.expect(
-        FloorTile.corridor.muteStrength > 0.35 && FloorTile.corridor.muteStrength < 0.55,
-        "통로 밝기가 방(아래)과 사람(위) 사이 대역 (실제 \(FloorTile.corridor.muteStrength))"
+        FloorTile.corridor.muteStrength > 0.02 && FloorTile.corridor.muteStrength < 0.20,
+        "통로 누르기가 밝은 사무실 대역 (실제 \(FloorTile.corridor.muteStrength))"
+    )
+    // **전제가 뒤집혔다.** 예전에는 방이 사람보다 어두웠고 통로가 그 사이였다. 바닥 텍스처를
+    // 밝기 208~245 로 통일한 뒤로는 **모든 바닥이 사람보다 밝다**(밝은 사무실 계열) — 셔츠
+    // 실측 186 과 15 이상 떨어뜨리는 것이 규칙이고, 판정은 여전히 렌더 픽셀 실측으로 한다.
+    //
+    // 텍스처 밝기가 한 대역에 모였으므로 이제 누르는 양의 순서가 결과 밝기의 순서와 대체로
+    // 같다. 그래도 값끼리 비교해 단정하는 것은 통로 하나로 제한한다 — 통로는 어느 방과도
+    // 혼동되면 안 되는 유일한 자리이므로 **가장 덜 눌려야** 한다.
+    let roomMutes = [
+        FloorTile.ceramic, .carpetLight, .carpetDark, .woodA, .woodB,
+    ].map(\.muteStrength)
+    t.expect(
+        FloorTile.corridor.muteStrength < roomMutes.max()!,
+        "통로가 가장 어두운 방보다 덜 눌린다 (통로 \(FloorTile.corridor.muteStrength) vs 방 최대 \(roomMutes.max()!))"
     )
 
     // 맞닿은 구역끼리는 바닥재가 달라야 한다(가로 이웃 = index 차 1, 세로 이웃 = 같은 열 위아래).
