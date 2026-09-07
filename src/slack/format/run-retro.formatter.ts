@@ -11,6 +11,7 @@ const ICON: Record<RunAnomalyKind, string> = {
   TOTAL_SILENCE: '🚨',
   CHAIN_FAILURE: '🔗',
   CONTRACT_SCORE: '📋',
+  MISSING_WEEKLY: '📅',
 };
 
 // kind 별 사후 해석 힌트(사실은 detail, 해석은 여기 — presentation 책임).
@@ -23,6 +24,7 @@ const HINT: Record<RunAnomalyKind, string> = {
   // 실행은 성공했는데 산출물이 계약과 다른 상태다. 한 AgentType 을 성격이 다른 워커가
   // 나눠 쓰면 한쪽이 남의 계약으로 채점돼 이 값이 통째로 내려간다.
   CONTRACT_SCORE: ' — 산출물이 계약과 어긋남(워커가 이름을 나눠 쓰는지 확인)',
+  MISSING_WEEKLY: ' — 주간 cron 결번 의심',
 };
 
 // 조용한 계기판: 이상 0건이면 1줄 하트비트, 있으면 해당 항목만. LLM 없이 순수 포맷.

@@ -39,6 +39,7 @@ let sampleAgents: [ConsoleAgent] =
         .review,
         [
             "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE", "PO_EVAL",
+            "BLOG_REVISION",
         ]
     )
     + planAgents(.executive, ["CEO"])

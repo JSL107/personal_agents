@@ -3,7 +3,7 @@ import {
   findStrictSchemaViolations,
 } from '../../../../common/util/json-schema-probe.util';
 import { parseBlogEdit } from './blog-edit.parser';
-import { BLOG_EDIT_SYSTEM_PROMPT } from './blog-edit.prompt';
+import { buildBlogEditSystemPrompt } from './blog-edit.prompt';
 import {
   BLOG_ANONYMIZE_OUTPUT_SCHEMA,
   BLOG_EDIT_OUTPUT_SCHEMA,
@@ -68,7 +68,7 @@ describe('BLOG_EDIT_OUTPUT_SCHEMA', () => {
     const promptFields = ['title', 'slug', 'category', 'description', 'body'];
 
     for (const field of promptFields) {
-      expect(BLOG_EDIT_SYSTEM_PROMPT).toContain(`"${field}"`);
+      expect(buildBlogEditSystemPrompt([])).toContain(`"${field}"`);
       expect(BLOG_EDIT_OUTPUT_SCHEMA.properties).toHaveProperty(field);
       expect(BLOG_EDIT_OUTPUT_SCHEMA.required).toContain(field);
     }

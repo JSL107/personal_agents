@@ -67,8 +67,8 @@ import {
   parseBlogEdit,
 } from '../domain/prompt/blog-edit.parser';
 import {
-  BLOG_EDIT_SYSTEM_PROMPT,
   buildBlogEditPrompt,
+  buildBlogEditSystemPrompt,
   MIN_EDITED_BODY_RATIO,
 } from '../domain/prompt/blog-edit.prompt';
 import {
@@ -772,6 +772,38 @@ export class PublishNotionDraftUsecase {
     return `구조(${stages.map((counts) => counts.stage).join('→')}): ${trail}`;
   }
 
+  // 학습 재료는 부가 입력이다. 예전 원장 형태나 조회 장애가 발행 자체를 막으면 안 된다.
+  private async findRevisionConventions(): Promise<string[]> {
+    try {
+      const found = await this.agentRunService.findLatestSucceededRun({
+        agentType: AgentType.BLOG_REVISION,
+      });
+      const output = found?.output;
+      if (
+        output === null ||
+        typeof output !== 'object' ||
+        !('conventions' in output)
+      ) {
+        return [];
+      }
+      const conventions: unknown = output.conventions;
+      if (
+        !Array.isArray(conventions) ||
+        !conventions.every(
+          (convention): convention is string => typeof convention === 'string',
+        )
+      ) {
+        return [];
+      }
+      return conventions;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `블로그 수정 규칙 조회 실패 (발행은 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
   // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
   private async editDraft(
     draft: NotionDraftPage,
@@ -784,7 +816,9 @@ export class PublishNotionDraftUsecase {
     const completion = await this.modelRouter.route({
       agentType: AgentType.BLOG_PUBLISH,
       request: {
-        systemPrompt: BLOG_EDIT_SYSTEM_PROMPT,
+        systemPrompt: buildBlogEditSystemPrompt(
+          await this.findRevisionConventions(),
+        ),
         outputSchema: BLOG_EDIT_OUTPUT_SCHEMA,
         prompt: buildBlogEditPrompt({
           title: draft.title,

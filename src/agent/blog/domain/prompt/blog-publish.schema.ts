@@ -52,3 +52,15 @@ export const BLOG_EDIT_OUTPUT_SCHEMA: OutputJsonSchema = {
   ],
   additionalProperties: false,
 };
+
+// 주간 수정 규칙 추출의 응답 형태. 위 두 호출과 같은 이유로 스키마를 건다 — 이 응답은
+// 실패해도 카드가 정상 발송되므로(규칙만 빈 배열로 폴백) 파싱이 깨져도 아무 신호가 없다.
+// 조용히 0건이 되는 경로일수록 모델이 펜스를 붙일 자리를 애초에 없애는 편이 낫다.
+export const REVISION_CONVENTIONS_OUTPUT_SCHEMA: OutputJsonSchema = {
+  type: 'object',
+  properties: {
+    conventions: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['conventions'],
+  additionalProperties: false,
+};

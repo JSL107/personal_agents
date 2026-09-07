@@ -1,7 +1,10 @@
+import { Logger } from '@nestjs/common';
+
 import {
   AgentContractScoreRow,
   AgentRunStatRow,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { RunRetroAutopilotTask } from './run-retro.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-06' };
@@ -26,6 +29,7 @@ const makeService = (
     .mockImplementation((rootRunId: number) =>
       Promise.resolve(chain.nodesByRoot?.[rootRunId] ?? []),
     ),
+  findLatestSucceededRun: jest.fn().mockResolvedValue(null),
 });
 
 describe('RunRetroAutopilotTask', () => {
@@ -156,6 +160,45 @@ describe('RunRetroAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('전체 침묵');
   });
+
+  it('BLOG_REVISION 마지막 성공이 오래되면 주간 결번을 회고에 표기한다', async () => {
+    const service = makeService(
+      [
+        {
+          agentType: 'PM',
+          total: 11,
+          failed: 0,
+          failRate: 0,
+          avgDurationMs: 40_000,
+        },
+      ],
+      [
+        {
+          agentType: 'PM',
+          total: 10,
+          failed: 0,
+          failRate: 0,
+          avgDurationMs: 40_000,
+        },
+      ],
+    );
+    service.findLatestSucceededRun.mockResolvedValue({
+      id: 1,
+      output: {},
+      inputSnapshot: {},
+      endedAt: new Date('2026-08-20T00:00:00.000Z'),
+    });
+
+    const result = await new RunRetroAutopilotTask(service as never).run(
+      context,
+    );
+
+    expect(service.findLatestSucceededRun).toHaveBeenCalledWith({
+      agentType: AgentType.BLOG_REVISION,
+    });
+    expect(result.summaryText).toContain('BLOG_REVISION');
+    expect(result.summaryText).toContain('주간 실행 결번');
+  });
 });
 
 describe('RunRetroAutopilotTask — 체인 관측', () => {
@@ -225,5 +268,27 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('이상 없음');
+  });
+
+  it('주간 원장 조회가 실패해도 기존 회고는 유지하고 실패를 로그로 남긴다', async () => {
+    const service = makeService(healthyStats, healthyStats);
+    service.findLatestSucceededRun = jest
+      .fn()
+      .mockRejectedValue(new Error('DB 연결 끊김'));
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    try {
+      const result = await new RunRetroAutopilotTask(service as never).run(
+        context,
+      );
+
+      expect(result.skip).toBe(false);
+      expect(result.summaryText).toContain('이상 없음');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('주간 회고 결번 조회 실패'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

@@ -174,6 +174,7 @@ const buildUsecase = (overrides?: {
   // 수단이 없어, 배선이 빠져도 초록이다.
   const runOutputs: unknown[] = [];
   const agentRunService = {
+    findLatestSucceededRun: jest.fn().mockResolvedValue(null),
     findRecentSucceededRuns: jest.fn().mockImplementation(async () => {
       if (overrides?.recentRunsError) {
         throw overrides.recentRunsError;
@@ -2090,5 +2091,66 @@ describe('장문 윤문은 문장 길이로 재시도하지 않는다', () => {
       content: string;
     };
     expect(payload.content).toContain(긴문장);
+  });
+});
+
+describe('블로그 수정 규칙 되먹임', () => {
+  it('최근 성공 회차의 규칙을 편집 모델에게 전달한다', async () => {
+    const { usecase, agentRunService, modelRouter } = buildUsecase();
+    agentRunService.findLatestSucceededRun.mockResolvedValue({
+      id: 9,
+      inputSnapshot: {},
+      endedAt: new Date(),
+      output: { conventions: ['중복 결론을 덜어낸다.'] },
+    });
+    await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      responseUrl: 'https://hooks.slack.test/response',
+    });
+    const call = modelRouter.route.mock.calls.find(([input]) =>
+      String(input.request.systemPrompt).includes('블로그의 편집자'),
+    );
+    expect(call?.[0].request.systemPrompt).toContain('- 중복 결론을 덜어낸다.');
+    expect(agentRunService.findLatestSucceededRun).toHaveBeenCalledWith({
+      agentType: 'BLOG_REVISION',
+    });
+  });
+  it.each([null, {}, { conventions: '규칙' }, { conventions: ['규칙', 1] }])(
+    '과거 회차 형태 %p 는 빈 규칙으로 발행한다',
+    async (output) => {
+      const { usecase, agentRunService, modelRouter, createPreview } =
+        buildUsecase();
+      agentRunService.findLatestSucceededRun.mockResolvedValue({
+        id: 9,
+        inputSnapshot: {},
+        endedAt: new Date(),
+        output,
+      });
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        responseUrl: 'https://hooks.slack.test/response',
+      });
+      const call = modelRouter.route.mock.calls.find(([input]) =>
+        String(input.request.systemPrompt).includes('블로그의 편집자'),
+      );
+      expect(call?.[0].request.systemPrompt).not.toContain(
+        '## 이 블로그에서 반복된 수정',
+      );
+      expect(createPreview.execute).toHaveBeenCalled();
+    },
+  );
+  it('규칙 조회 실패가 발행을 막지 않는다', async () => {
+    const { usecase, agentRunService, createPreview } = buildUsecase();
+    agentRunService.findLatestSucceededRun.mockRejectedValue(
+      new Error('원장 조회 실패'),
+    );
+    await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      responseUrl: 'https://hooks.slack.test/response',
+    });
+    expect(createPreview.execute).toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import {
   AgentContractScoreRow,
   AgentRunStatRow,
 } from '../../agent-run/domain/port/agent-run.repository.port';
+import { AgentType } from '../../model-router/domain/model-router.type';
 
 export type RunAnomalyKind =
   | 'FAILURE_SPIKE'
@@ -9,7 +10,8 @@ export type RunAnomalyKind =
   | 'AGENT_DISAPPEARED'
   | 'TOTAL_SILENCE'
   | 'CHAIN_FAILURE'
-  | 'CONTRACT_SCORE';
+  | 'CONTRACT_SCORE'
+  | 'MISSING_WEEKLY';
 
 // TOTAL_SILENCE 는 시스템 전역 신호라 agentType 없음(null).
 export interface RunAnomaly {
@@ -29,9 +31,40 @@ export const RUN_RETRO_THRESHOLDS = {
   contractScore: 0.5,
   // 표본이 적으면 한 회차의 형식 오류가 평균을 끌어내려 매주 같은 경보가 뜬다.
   minContractScored: 5,
+  // 주간 cron 은 7일 주기다. 8일이면 한 회차를 확실히 건너뛴 것이며, 7일은 실행 시각이
+  // 몇 분 밀린 정상 회차까지 오탐할 수 있어 경계에서 제외한다.
+  weeklyMissingDays: 8,
 } as const;
 
 type Thresholds = typeof RUN_RETRO_THRESHOLDS;
+
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// 원장에 성공 회차가 남은 뒤부터 주간 태스크 결번을 감지한다. 최초 실행 전 환경은
+// 아직 감시할 기준점이 없으므로 경보를 만들지 않는다.
+export const detectMissingWeeklyRuns = (
+  lastSuccessAt: Map<AgentType, Date | null>,
+  now: Date,
+  thresholds: Thresholds = RUN_RETRO_THRESHOLDS,
+): RunAnomaly[] => {
+  const missing: RunAnomaly[] = [];
+  for (const [agentType, endedAt] of lastSuccessAt) {
+    if (endedAt === null) {
+      continue;
+    }
+    const elapsedDays =
+      (now.getTime() - endedAt.getTime()) / MILLISECONDS_PER_DAY;
+    if (elapsedDays < thresholds.weeklyMissingDays) {
+      continue;
+    }
+    missing.push({
+      agentType,
+      kind: 'MISSING_WEEKLY',
+      detail: `주간 실행 결번 (마지막 성공 ${Math.floor(elapsedDays)}일 전)`,
+    });
+  }
+  return missing;
+};
 
 // 두 윈도우(이번주 current, 지난주 previous)로 이상 신호를 판정하는 순수함수.
 // 절대임계값(실패율·소요시간) + 사라짐(지난주 대비) + 전체침묵. 부작용 없음.

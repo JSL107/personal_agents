@@ -250,6 +250,25 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     requireEvidence: true,
     nextAgent: null,
   },
+  [AgentType.BLOG_REVISION]: {
+    // 발행한 글을 사람이 얼마나 고쳤는지가 곧 그 글의 품질 판정이라 리뷰 부서에 둔다.
+    // 내부 운영실은 자리표가 정원 10석으로 꽉 차 있어(OfficeFloorPlan 의 internalOps
+    // 주석: "10명이 들어가야 해서 가장 조밀하다"), 한 명을 더 넣으면 예비 격자로 밀려
+    // 이름표가 겹친다 — 실제로 콘솔 검증 10건이 그렇게 깨졌다.
+    department: Department.REVIEW,
+    job: '블로그 수정률을 집계하고 반복 수정 규칙을 추출한다',
+    deliverableFields: [
+      'recentAveragePercent',
+      'recentPostCount',
+      'unmatchedCount',
+      'conventions',
+    ],
+    requireEvidence: false,
+    // output 은 주간 태스크가 집계·규칙 추출 결과를 조립한다. 이 키를 모델 응답에
+    // 요구하면 규칙 추출 JSON 계약과 충돌하므로 모델 머리말은 넣지 않는다.
+    skipPreamble: true,
+    nextAgent: null,
+  },
   [AgentType.CAREER_MATE]: stub(
     Department.GROWTH,
     '머지된 PR 을 합성해 역량 프로필과 이력서를 만든다',

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { AgentRunStatus } from '../../../agent-run/domain/agent-run.type';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatRunRetro } from '../../../slack/format/run-retro.formatter';
 import {
   AutopilotTask,
@@ -12,6 +13,7 @@ import {
   ChainFailureSummary,
   detectChainFailureAnomalies,
   detectContractScoreAnomalies,
+  detectMissingWeeklyRuns,
   detectRunAnomalies,
   RunAnomaly,
 } from '../../domain/run-retro.anomaly';
@@ -20,6 +22,7 @@ const CURRENT_WINDOW_DAYS = 7;
 const PREVIOUS_WINDOW_DAYS = 14;
 // 한 번의 회고에서 훑을 chain 뿌리 상한 — 재귀 CTE 를 뿌리마다 호출하므로 스캔 폭을 묶어둔다.
 const CHAIN_ROOT_SCAN_LIMIT = 20;
+const WEEKLY_LEDGER_AGENTS: AgentType[] = [AgentType.BLOG_REVISION];
 
 // 주간 실행 회고(조용한 계기판) — 이번주/지난주 두 윈도우로 이상 판정.
 // 이상 0건이면 1줄 하트비트, 있으면 경보. 둘 다 0건이면 skip. LLM 없음.
@@ -44,6 +47,7 @@ export class RunRetroAutopilotTask implements AutopilotTask {
     });
     const anomalies = [
       ...detectRunAnomalies(current, previous),
+      ...(await this.detectMissingWeeklyAnomaliesSafely()),
       ...(await this.detectContractScoreAnomaliesSafely()),
       ...(await this.detectChainAnomaliesSafely()),
     ];
@@ -54,6 +58,26 @@ export class RunRetroAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: formatRunRetro(current, anomalies, firedAtKst),
     };
+  }
+
+  // 주간 원장 조회는 부가 축이다 — 조회 장애가 실패율·지연 회고를 가리지 않도록 삼키되,
+  // 장애 사실은 로그로 남겨 결번 미감지와 정상 상태를 구분한다.
+  private async detectMissingWeeklyAnomaliesSafely(): Promise<RunAnomaly[]> {
+    try {
+      const lastSuccessAt = new Map<AgentType, Date | null>();
+      for (const agentType of WEEKLY_LEDGER_AGENTS) {
+        const latest = await this.agentRunService.findLatestSucceededRun({
+          agentType,
+        });
+        lastSuccessAt.set(agentType, latest?.endedAt ?? null);
+      }
+      return detectMissingWeeklyRuns(lastSuccessAt, new Date());
+    } catch (error: unknown) {
+      this.logger.warn(
+        `주간 회고 결번 조회 실패 (통계 회고는 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   }
 
   // 계약 점수도 chain 과 같은 부가 축이다 — 이 조회 하나가 실패했다고 실패율·지연 회고까지

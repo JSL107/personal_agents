@@ -1,12 +1,12 @@
 import {
-  BLOG_EDIT_SYSTEM_PROMPT,
+  buildBlogEditSystemPrompt,
   MIN_EDITED_BODY_RATIO,
 } from './blog-edit.prompt';
 
 // 프롬프트를 섹션별로 가른다. 「덜어낼 것」에 있는 문구와 「덜어내면 안 되는 것」에 있는
 // 문구는 정반대 뜻이라, 전문 검색(`toContain`)으로는 어느 쪽에 있는지 가릴 수 없다.
 const sectionOf = (heading: string): string => {
-  const lines = BLOG_EDIT_SYSTEM_PROMPT.split('\n');
+  const lines = buildBlogEditSystemPrompt([]).split('\n');
   const start = lines.indexOf(heading);
   if (start < 0) {
     throw new Error(`프롬프트에 '${heading}' 섹션이 없습니다.`);
@@ -43,6 +43,26 @@ describe('BLOG_EDIT_SYSTEM_PROMPT — 분량 예산', () => {
   it('덜어내기 자체가 목적이 아님을 못 박는다', () => {
     expect(sectionOf('## 얼마나 덜어낼 것인가')).toContain(
       '덜어내는 것 자체가 목적이 아니다',
+    );
+  });
+});
+
+describe('학습 규칙 섹션', () => {
+  it('정리 규칙과 보호 규칙 사이에 같은 불릿 형식으로 싣는다', () => {
+    const prompt = buildBlogEditSystemPrompt([
+      '중복 결론을 덜어낸다.',
+      '도입에서 주제를 밝힌다.',
+    ]);
+    const start = prompt.indexOf('## 이 블로그에서 반복된 수정');
+    expect(start).toBeGreaterThan(prompt.indexOf('## 정리할 것'));
+    expect(start).toBeLessThan(prompt.indexOf('## 절대 건드리지 말 것'));
+    expect(prompt).toContain(
+      '## 이 블로그에서 반복된 수정\n- 중복 결론을 덜어낸다.\n- 도입에서 주제를 밝힌다.',
+    );
+  });
+  it('규칙이 없으면 빈 섹션도 만들지 않는다', () => {
+    expect(buildBlogEditSystemPrompt([])).not.toContain(
+      '## 이 블로그에서 반복된 수정',
     );
   });
 });
