@@ -242,17 +242,17 @@ extension Department {
     var iconSymbolName: String {
         switch self {
         case .planning:
-            return "chart.bar.fill"
-        case .engineering:
-            return "gearshape.fill"
-        case .review:
+            return "list.bullet"
+        case .quality:
             return "magnifyingglass"
-        case .executive:
-            return "building.2.fill"
-        case .growth:
-            return "leaf.fill"
+        case .evaluation:
+            return "chart.bar.fill"
+        case .treasury:
+            return "dollarsign.circle.fill"
+        case .content:
+            return "square.and.pencil"
         case .internalOps:
-            return "cpu"
+            return "gearshape.fill"
         }
     }
 }

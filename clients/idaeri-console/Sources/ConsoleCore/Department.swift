@@ -1,13 +1,16 @@
 import Foundation
 
-/// 오피스 부서 구획. 26개 에이전트를 6개 부서로 묶는다(정체성 표현용, 순수).
+/// 오피스 부서 구획. 28개 에이전트를 여섯 부서로 묶는다(정체성 표현용, 순수).
+///
+/// 부서 편성의 정본은 백엔드 사규(`agent-contract.ts` 의 `Department`)이고 rawValue 를
+/// 맞춰 둔다. 이 enum 은 그 값을 받아 화면 표현(아이콘·라벨·색)만 붙인다.
 /// 상태(ConsoleAgentState)와 직교한다 — 상태는 토큰의 링/색, 부서는 아이콘·채움 tint·(Phase 3)방 배치.
 public enum Department: String, CaseIterable, Codable, Sendable {
     case planning
-    case engineering
-    case review
-    case executive
-    case growth
+    case quality
+    case evaluation
+    case treasury
+    case content
     case internalOps
 
     /// 방 문패·카드에 붙는 부서 아이콘. 글자만으로는 구역을 훑을 때 어느 팀인지 안 잡힌다
@@ -16,14 +19,14 @@ public enum Department: String, CaseIterable, Codable, Sendable {
         switch self {
         case .planning:
             return "📋"
-        case .engineering:
-            return "💻"
-        case .review:
+        case .quality:
             return "🔍"
-        case .executive:
-            return "👔"
-        case .growth:
-            return "🌱"
+        case .evaluation:
+            return "📊"
+        case .treasury:
+            return "💰"
+        case .content:
+            return "✍️"
         case .internalOps:
             return "⚙️"
         }
@@ -34,16 +37,16 @@ public enum Department: String, CaseIterable, Codable, Sendable {
         switch self {
         case .planning:
             return "기획"
-        case .engineering:
-            return "개발"
-        case .review:
-            return "리뷰"
-        case .executive:
-            return "경영"
-        case .growth:
-            return "성장"
+        case .quality:
+            return "품질"
+        case .evaluation:
+            return "평가"
+        case .treasury:
+            return "자산"
+        case .content:
+            return "콘텐츠"
         case .internalOps:
-            return "내부"
+            return "총무"
         }
     }
 }
@@ -94,13 +97,13 @@ public func agentDepartmentPaletteRGBA(
     switch department {
     case .planning:
         return (0.28, 0.52, 0.90)  // 파랑
-    case .engineering:
+    case .quality:
         return (0.15, 0.62, 0.70)  // 청록
-    case .review:
+    case .evaluation:
         return (0.52, 0.40, 0.86)  // 인디고
-    case .executive:
+    case .treasury:
         return (0.82, 0.60, 0.20)  // 골드
-    case .growth:
+    case .content:
         return (0.94, 0.48, 0.36)  // 코랄
     case .internalOps:
         return (0.46, 0.52, 0.60)  // 슬레이트

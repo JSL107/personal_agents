@@ -23,7 +23,7 @@ func runConsoleStoreTests(_ t: TestRunner) {
         description: "",
         state: .waiting,
         bubble: "업무 대기중",
-        department: Department.engineering.rawValue
+        department: Department.quality.rawValue
     )
     let snapshot = ConsoleSnapshot(
         agents: [pm, be],

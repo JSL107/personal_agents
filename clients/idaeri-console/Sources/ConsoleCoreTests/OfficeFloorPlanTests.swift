@@ -33,29 +33,28 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
 // 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
 let sampleAgents: [ConsoleAgent] =
-    planAgents(.planning, ["PM", "PO_SHADOW"])
-    + planAgents(.engineering, ["CODE_REVIEWER"])
+    planAgents(.planning, ["PM", "PO_SHADOW", "DELAY_REPORT"])
+    + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "ISSUE_LABELER"])
     + planAgents(
-        .review,
+        .evaluation,
         [
-            "WORK_REVIEWER", "IMPACT_REPORTER", "REVIEW_REPLY_JUDGE", "PO_EVAL",
-            "BLOG_REVISION",
+            "WORK_REVIEWER", "IMPACT_REPORTER", "PO_EVAL", "CEO", "EVENING_RETRO",
         ]
     )
-    + planAgents(.executive, ["CEO"])
     + planAgents(
-        .growth,
+        .content,
         [
-            "CAREER_MATE", "JOB_APPLICATION", "BLOG", "BLOG_PUBLISH", "VACATION", "INVEST", "CTO_STUDY",
-            "PAPER_TRADE", "PAPER_RECOMMEND",
+            "BLOG", "BLOG_PUBLISH", "BLOG_REVISION", "HUMANIZER", "CAREER_MATE",
+            "JOB_APPLICATION", "CTO_STUDY",
         ]
     )
+    + planAgents(.treasury, ["INVEST", "PAPER_TRADE", "PAPER_RECOMMEND"])
     + planAgents(
         .internalOps,
         [
-            "ISSUE_LABELER", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE", "HUMANIZER",
+            "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
             "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
-            "EVENING_RETRO", "OPS_SUPERVISOR", "DELAY_REPORT",
+            "VACATION",
         ]
     )
 
@@ -1038,10 +1037,34 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     let topRowIsWall = plan.floor[plan.rows - 1].allSatisfy { $0 == .wall }
     t.expect(topRowIsWall, "최상단 행은 벽")
 
-    // 빈 입력에서도 크래시 없이 빈 배치를 낸다.
+    // 빈 입력에서도 크래시 없이 배치를 낸다. 사람은 없지만 방은 있다.
     let empty = officeFloorPlan(agents: [])
-    t.expectEqual(empty.desks.count, 0, "에이전트 0명이면 책상 0개")
-    t.expectEqual(empty.zones.count, 0, "에이전트 0명이면 구역 0개")
+    t.expectEqual(empty.desks.count, 0, "에이전트 0명이면 책상 배정 0개")
+
+    // **인원이 없는 부서도 구역을 받는다.** 예전에는 소속이 있는 부서만 구역이 됐고,
+    // 도면 크기는 여섯 부서 기준이라 빈 부서가 칠 안 된 구멍으로 남았다. 그 구멍을 막으려고
+    // 백엔드에 "여섯 부서 모두에 최소 한 명" 강제가 생겼고, 그 압력이 직무와 무관한 배정
+    // 이동을 만들었다(`CODE_REVIEWER` → 개발방, #479). 이 단언이 그 고리의 재발을 막는다.
+    t.expectEqual(empty.zones.count, Department.allCases.count, "0명이어도 구역은 여섯 개")
+    t.expectEqual(
+        Set(empty.zones.map { $0.department }),
+        Set(Department.allCases),
+        "0명이어도 여섯 부서가 모두 구역을 받는다"
+    )
+
+    // 한 부서만 비는 경우도 같다 — 부서 하나가 통째로 빠져도 나머지 배치가 밀리지 않는다.
+    let withoutOneDepartment = officeFloorPlan(
+        agents: sampleAgents.filter { $0.resolvedDepartment != .treasury }
+    )
+    t.expectEqual(
+        withoutOneDepartment.zones.count,
+        Department.allCases.count,
+        "한 부서가 비어도 구역은 여섯 개"
+    )
+    t.expect(
+        withoutOneDepartment.zones.contains { $0.department == .treasury },
+        "인원 0인 자산 부서도 구역으로 남는다"
+    )
 
     // 같은 입력은 같은 배치 — 스냅샷마다 자리가 바뀌면 화면이 요동친다.
     let again = officeFloorPlan(agents: sampleAgents)
@@ -1133,7 +1156,7 @@ func runAgentRoleTests(_ t: TestRunner) {
     // 배정은 입력 순서에 흔들리지 않는다 — 스냅샷마다 사람 순서가 바뀌어도 얼굴은 그대로여야
     // 한다(자리 배정이 같은 이유로 정렬을 강제하는 것과 같은 계약).
     let growthTypes = sampleAgents
-        .filter { $0.resolvedDepartment == .growth }
+        .filter { $0.resolvedDepartment == .content }
         .map(\.agentType)
     t.expectEqual(
         officeCharacterLooks(forRoommates: growthTypes),

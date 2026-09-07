@@ -21,14 +21,46 @@ describe('AGENT_CONTRACTS', () => {
     }
   });
 
-  it('6개 부서 모두에 최소 한 명이 배정된다', () => {
-    // 콘솔 평면도(OfficeFloorPlan)는 소속 에이전트가 있는 부서만 구역으로 그린다.
-    // 빈 부서가 생기면 화면에서 구역이 통째로 사라지므로 배치 누락을 여기서 잡는다.
-    const staffed = new Set(
-      Object.values(AGENT_CONTRACTS).map((contract) => contract.department),
-    );
+  // 예전에는 여기에 "6개 부서 모두에 최소 한 명" 을 강제하는 테스트가 있었다. 콘솔 평면도가
+  // 인원 있는 부서만 구역으로 그려서, 부서가 비면 화면에 칠 안 된 구멍이 남았기 때문이다.
+  //
+  // 그 강제가 배정을 망가뜨렸다. 직무와 무관하게 "누군가 그 방에 있어야 한다" 는 이유로
+  // 워커를 옮기게 되고, 실제로 `CODE_REVIEWER` 가 그렇게 개발방으로 갔다(#479). 원인을
+  // 화면 쪽에서 고쳤으므로(빈 방도 그린다 — `OfficeFloorPlan.zoneDepartments`) 여기서
+  // 인원을 강제할 이유가 없어졌다. 빈 부서는 이제 정상 상태다.
+  //
+  // 회귀 방지는 화면 쪽에 있다: `OfficeFloorPlanTests` 의 "인원이 없는 부서도 구역을 받는다".
 
-    expect([...staffed].sort()).toEqual(Object.values(Department).sort());
+  it('어느 부서도 콘솔 자리표 정원을 넘지 않는다', () => {
+    // 자리표를 넘기면 사람이 예비 격자로 밀려 이름표가 서로 겹친다 — 과거에 콘솔 검증
+    // 10건이 그렇게 깨졌다. 정원의 정본은 콘솔이고(`OfficeFloorPlan.swift` 의
+    // `departmentDeskSpots`), 여기 값은 그 좌석 개수를 옮겨 적은 것이다.
+    // **Swift 쪽 좌석을 줄이면 이 표도 함께 줄여야 한다.**
+    const deskCapacity: Record<Department, number> = {
+      [Department.PLANNING]: 6,
+      [Department.QUALITY]: 8,
+      [Department.EVALUATION]: 8,
+      [Department.TREASURY]: 5,
+      [Department.CONTENT]: 12,
+      [Department.INTERNAL_OPS]: 13,
+    };
+
+    const headcount = new Map<Department, number>();
+    for (const contract of Object.values(AGENT_CONTRACTS)) {
+      headcount.set(
+        contract.department,
+        (headcount.get(contract.department) ?? 0) + 1,
+      );
+    }
+
+    const overflowing = [...headcount.entries()]
+      .filter(([department, count]) => count > deskCapacity[department])
+      .map(
+        ([department, count]) =>
+          `${department}: ${count}명 / ${deskCapacity[department]}석`,
+      );
+
+    expect(overflowing).toEqual([]);
   });
 
   it('모든 계약이 하는 일(job)을 명시한다', () => {
