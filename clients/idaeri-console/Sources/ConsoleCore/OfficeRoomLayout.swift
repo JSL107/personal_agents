@@ -38,7 +38,7 @@ public struct DepartmentLayout: Equatable, Sendable {
 
 /// 부서 canonical 순서(방 배치·범례 공통).
 private let departmentOrder: [Department] = [
-    .planning, .engineering, .review, .executive, .growth, .internalOps,
+    .planning, .quality, .evaluation, .treasury, .content, .internalOps,
 ]
 
 /// 에이전트를 부서 방으로 그룹핑해 배치한다(순수). 상단 `bandHeight` 는 대표실로 비운다.

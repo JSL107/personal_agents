@@ -1,13 +1,16 @@
 import Foundation
 
-/// 오피스 부서 구획. 26개 에이전트를 6개 부서로 묶는다(정체성 표현용, 순수).
+/// 오피스 부서 구획. 28개 에이전트를 여섯 부서로 묶는다(정체성 표현용, 순수).
+///
+/// 부서 편성의 정본은 백엔드 사규(`agent-contract.ts` 의 `Department`)이고 rawValue 를
+/// 맞춰 둔다. 이 enum 은 그 값을 받아 화면 표현(아이콘·라벨·색)만 붙인다.
 /// 상태(ConsoleAgentState)와 직교한다 — 상태는 토큰의 링/색, 부서는 아이콘·채움 tint·(Phase 3)방 배치.
 public enum Department: String, CaseIterable, Codable, Sendable {
     case planning
-    case engineering
-    case review
-    case executive
-    case growth
+    case quality
+    case evaluation
+    case treasury
+    case content
     case internalOps
 
     /// 방 문패·카드에 붙는 부서 아이콘. 글자만으로는 구역을 훑을 때 어느 팀인지 안 잡힌다
@@ -16,14 +19,14 @@ public enum Department: String, CaseIterable, Codable, Sendable {
         switch self {
         case .planning:
             return "📋"
-        case .engineering:
-            return "💻"
-        case .review:
+        case .quality:
             return "🔍"
-        case .executive:
-            return "👔"
-        case .growth:
-            return "🌱"
+        case .evaluation:
+            return "📊"
+        case .treasury:
+            return "💰"
+        case .content:
+            return "✍️"
         case .internalOps:
             return "⚙️"
         }
@@ -34,16 +37,16 @@ public enum Department: String, CaseIterable, Codable, Sendable {
         switch self {
         case .planning:
             return "기획"
-        case .engineering:
-            return "개발"
-        case .review:
-            return "리뷰"
-        case .executive:
-            return "경영"
-        case .growth:
-            return "성장"
+        case .quality:
+            return "품질"
+        case .evaluation:
+            return "평가"
+        case .treasury:
+            return "자산"
+        case .content:
+            return "콘텐츠"
         case .internalOps:
-            return "내부"
+            return "총무"
         }
     }
 }
@@ -55,8 +58,14 @@ public enum Department: String, CaseIterable, Codable, Sendable {
 /// `REVIEW_REPLY_JUDGE` 가 앱 표에는 없어 폴백을 타고 내부방에 앉았다. 부서 편성은 사규의
 /// 소관이므로 앱은 그 값을 받아 쓴다.
 ///
-/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 백엔드가 부서를 새로 추가해 앱이 모르는 값이
-/// 오는 경우인데, 크래시보다 한 방에 몰리는 편이 낫다 — 화면에서 바로 보이므로 조용히 틀리지 않는다.
+/// nil·미지 문자열은 `.internalOps` 로 떨어진다. 크래시보다 한 방에 몰리는 편이 낫다 —
+/// 화면에서 바로 보이므로 조용히 틀리지 않는다.
+///
+/// **전원이 총무방에 몰려 보이면 백엔드와 앱의 버전이 어긋난 것이다.** 부서 rawValue 는 두
+/// 쪽이 공유하는 전송 값이라(2026-09-07 재편에서 넷을 개칭했다) 한쪽만 갱신하면 상대의 값을
+/// 못 읽는다. 옛 이름을 별칭으로 받아 주지 않는 것은 의도다 — 별칭이 있으면 옛 백엔드가
+/// 붙어 있어도 화면이 정상으로 보여서, 실제로는 낡은 편성을 보고 있다는 사실을 놓친다.
+/// 여기서는 눈에 띄게 틀리는 편이 낫고, 고치는 방법은 양쪽을 함께 다시 빌드하는 것이다.
 public func departmentFromRaw(_ raw: String?) -> Department {
     guard let raw, let department = Department(rawValue: raw) else {
         return .internalOps
@@ -94,13 +103,13 @@ public func agentDepartmentPaletteRGBA(
     switch department {
     case .planning:
         return (0.28, 0.52, 0.90)  // 파랑
-    case .engineering:
+    case .quality:
         return (0.15, 0.62, 0.70)  // 청록
-    case .review:
+    case .evaluation:
         return (0.52, 0.40, 0.86)  // 인디고
-    case .executive:
+    case .treasury:
         return (0.82, 0.60, 0.20)  // 골드
-    case .growth:
+    case .content:
         return (0.94, 0.48, 0.36)  // 코랄
     case .internalOps:
         return (0.46, 0.52, 0.60)  // 슬레이트

@@ -21,15 +21,23 @@ describe('AGENT_CONTRACTS', () => {
     }
   });
 
-  it('6개 부서 모두에 최소 한 명이 배정된다', () => {
-    // 콘솔 평면도(OfficeFloorPlan)는 소속 에이전트가 있는 부서만 구역으로 그린다.
-    // 빈 부서가 생기면 화면에서 구역이 통째로 사라지므로 배치 누락을 여기서 잡는다.
-    const staffed = new Set(
-      Object.values(AGENT_CONTRACTS).map((contract) => contract.department),
-    );
+  // 예전에는 여기에 "6개 부서 모두에 최소 한 명" 을 강제하는 테스트가 있었다. 콘솔 평면도가
+  // 인원 있는 부서만 구역으로 그려서, 부서가 비면 화면에 칠 안 된 구멍이 남았기 때문이다.
+  //
+  // 그 강제가 배정을 망가뜨렸다. 직무와 무관하게 "누군가 그 방에 있어야 한다" 는 이유로
+  // 워커를 옮기게 되고, 실제로 `CODE_REVIEWER` 가 그렇게 개발방으로 갔다(#479). 원인을
+  // 화면 쪽에서 고쳤으므로(빈 방도 그린다 — `OfficeFloorPlan.zoneDepartments`) 여기서
+  // 인원을 강제할 이유가 없어졌다. 빈 부서는 이제 정상 상태다.
+  //
+  // 회귀 방지는 화면 쪽에 있다: `OfficeFloorPlanTests` 의 "인원이 없는 부서도 구역을 받는다".
 
-    expect([...staffed].sort()).toEqual(Object.values(Department).sort());
-  });
+  // 자리 부족은 여기서 막지 않는다. 정원의 정본은 콘솔이고(`departmentDeskSpots`), 그 값을
+  // 이 파일로 옮겨 적으면 UI 제약이 도메인 계약을 제한하게 된다 — 이 PR 이 없애려던 방향
+  // 그 자체다. 게다가 옮겨 적은 값은 어긋난다(실제로 6·8·8·5 로 부풀려 적어 초과를 허용했다).
+  //
+  // 검증은 화면 쪽에 이미 있다: `OfficeFloorPlanTests` 의 "자리표를 넘겨 예비 격자에 앉은
+  // 사람이 없다" 가 밀린 사람 이름까지 짚고, 그 표본은 `pnpm docs:check` 가 이 사규와
+  // 맞춰 준다. 사규가 인원을 정하고 자리표가 그 인원을 담는다는 순서를 그대로 둔다.
 
   it('모든 계약이 하는 일(job)을 명시한다', () => {
     for (const [agentType, contract] of Object.entries(AGENT_CONTRACTS)) {

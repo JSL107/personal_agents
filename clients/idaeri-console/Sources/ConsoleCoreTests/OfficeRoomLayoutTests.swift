@@ -17,10 +17,10 @@ func runOfficeRoomLayoutTests(_ t: TestRunner) {
     // 6부서 대표 집합. 부서는 백엔드 사규 값을 그대로 적는다(앱이 유도하지 않는다).
     let agents = [
         roomAgent("PM", .planning), roomAgent("PO_SHADOW", .planning),
-        roomAgent("BE", .engineering), roomAgent("BE_TEST", .engineering),
-        roomAgent("CODE_REVIEWER", .review),
-        roomAgent("CTO", .executive), roomAgent("CEO", .executive),
-        roomAgent("BLOG", .growth),
+        roomAgent("BE", .quality), roomAgent("BE_TEST", .quality),
+        roomAgent("CODE_REVIEWER", .evaluation),
+        roomAgent("CTO", .treasury), roomAgent("CEO", .treasury),
+        roomAgent("BLOG", .content),
         roomAgent("HUMANIZER", .internalOps), roomAgent("OPS_SUPERVISOR", .internalOps),
     ]
     let width = 900.0
@@ -71,7 +71,7 @@ func runOfficeRoomLayoutTests(_ t: TestRunner) {
     // 방은 canonical 순서(기획→개발→리뷰→경영→성장→내부)
     t.expectEqual(
         layout.rooms.map { $0.department },
-        [.planning, .engineering, .review, .executive, .growth, .internalOps],
+        [.planning, .quality, .evaluation, .treasury, .content, .internalOps],
         "방 순서 canonical"
     )
 
@@ -81,11 +81,11 @@ func runOfficeRoomLayoutTests(_ t: TestRunner) {
 
     // 전사 집계
     let mixed = [
-        roomAgent("PM", .planning, .inProgress), roomAgent("BE", .engineering, .inProgress),
-        roomAgent("CTO", .executive, .awaitingApproval),
-        roomAgent("CEO", .executive, .waiting), roomAgent("BLOG", .growth, .waiting),
+        roomAgent("PM", .planning, .inProgress), roomAgent("BE", .quality, .inProgress),
+        roomAgent("CTO", .treasury, .awaitingApproval),
+        roomAgent("CEO", .treasury, .waiting), roomAgent("BLOG", .content, .waiting),
         roomAgent("HUMANIZER", .internalOps, .waiting),
-        roomAgent("BE_TEST", .engineering, .completed),
+        roomAgent("BE_TEST", .quality, .completed),
     ]
     let summary = companySummary(agents: mixed)
     t.expectEqual(summary.inProgress, 2, "진행 2")

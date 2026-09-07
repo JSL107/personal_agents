@@ -24,40 +24,46 @@ import { AgentType } from '../model-router/domain/model-router.type';
  * 지금은 Swift 가 자체 하드코딩 매핑(`Department.swift` 의 `department(for:)`)을 쓰지만,
  * 4단계에서 이 API 값을 소비하도록 전환할 때 `Department(rawValue:)` 파싱이 그대로 되게 한다.
  *
- * 편성은 콘솔 픽셀 오피스(#201)의 평면도가 이미 6구역으로 굳어 있어 그 6부서를 따른다.
- * 실측(2026-07-31)에서는 개발 축 실행 이력이 0이라 5부서 재편을 검토했으나,
- * (1) 화면 평면도와 어긋나고 (2) #199 로 CTO·PO Shadow 가 autopilot 에 편입돼
- * "안 쓰인다" 는 전제가 흔들려 보류했다. 계약의 알맹이(하는 일·산출물 규격·근거 요구)는
- * 부서 구분과 독립이라 편성을 바꿔도 그대로 유효하다.
+ * **배정 근거는 하는 일(`job`) 하나다. 좌석 사정은 근거가 아니다.**
  *
- * 2026-08-25 재배치: 부서 정의문과 각 워커의 `job` 을 한 줄씩 대조해 어긋난 둘을 옮겼다
- * (BE_FIX 개발 → 리뷰, PO_EVAL 기획 → 리뷰). EVENING_RETRO 는 옮기지 않았다 — 산출물이
- * 발행 후보라 성장으로 읽히지만 하루 운영을 되짚는 회고라는 성격이 남아 판정이 갈리고,
- * 성장 구역이 이미 자리표를 넘겨 있어(콘솔 `departmentDeskSpots`) 이동이 배치까지 흔든다.
+ * 예전에는 화면이 배정을 지배했다. 평면도가 여섯 구역으로 굳어 있고 인원 0인 부서를 아예
+ * 그리지 않았으므로, 부서가 비면 격자에 구멍이 남았다. 그래서 "여섯 부서 모두에 최소 한 명"
+ * 을 테스트로 강제했고, 그 압력이 직무와 무관한 이동을 만들었다 — BE 워커 5종이 빠졌을 때
+ * `CODE_REVIEWER` 를 개발방으로 옮긴 것(#479)이 그 사례다. 반대편에서는 내부 운영실이
+ * 정원을 채우고 있어 새 워커가 들어갈 자리가 없다는 이유로 배정이 밀렸다.
+ *
+ * 2026-09-07 재편에서 그 고리를 끊었다. 평면도가 빈 방도 그리도록 고쳐(`OfficeFloorPlan`
+ * 의 `zoneDepartments`) 최소 인원 테스트를 없앴고, 여섯 부서를 직무 축으로 다시 갈랐다.
+ * 기획은 할 일을 정하고, 품질은 코드·이슈를 읽어 판정하고, 평가는 이미 한 일을 채점하고,
+ * 콘텐츠는 대표 명의로 나갈 글을 만들고, 자산은 돈이 걸린 판단을 하고, 총무는 회사 자체를
+ * 돌본다. 인원은 3·3·5·7·3·7 이고 어느 방도 정원에 닿지 않는다.
+ *
+ * 그래서 워커가 늘거나 줄어도 남을 옮길 이유가 없다. 새 워커는 `job` 이 어느 정의에
+ * 들어맞는지만 보고 배정한다.
  */
 export enum Department {
-  /** 기획 — 할 일 정의·기획 검토. */
+  /** 기획 — 할 일을 정의하고 계획을 검토한다. */
   PLANNING = 'planning',
-  /** 개발 — 코드를 다루는 자리. BE 워커 정리(2026-09-04) 뒤로는 PR 리뷰가 남았다. */
-  ENGINEERING = 'engineering',
-  /** 리뷰 — 업무 리뷰와 임팩트 평가. */
-  REVIEW = 'review',
-  /** 경영 — 배분·총평. */
-  EXECUTIVE = 'executive',
-  /** 성장 — 대표 개인의 자산: 블로그·이력서·커리어·휴가, 그리고 투자·모의투자. */
-  GROWTH = 'growth',
-  /** 내부 — 회사 자체 유지보수. */
+  /** 품질 — 코드와 이슈를 읽고 판정한다. PR 리뷰가 이 부서의 본업이다. */
+  QUALITY = 'quality',
+  /** 평가 — 이미 한 일을 사후에 채점한다. 업무 회고·임팩트·총평. */
+  EVALUATION = 'evaluation',
+  /** 자산 — 투자·모의투자. 돈이 걸린 판단만 모은다. */
+  TREASURY = 'treasury',
+  /** 콘텐츠 — 대표 개인 명의로 나가는 글: 블로그·이력서·커리어. */
+  CONTENT = 'content',
+  /** 총무 — 회사 자체를 돌보는 일: 운영 감시·문서·설정·연차. */
   INTERNAL_OPS = 'internalOps',
 }
 
 /** 부서의 한글 표시명. 프롬프트 머리말·콘솔 라벨에 쓰인다(Swift `label` 과 동일). */
 export const DEPARTMENT_LABEL: Record<Department, string> = {
   [Department.PLANNING]: '기획',
-  [Department.ENGINEERING]: '개발',
-  [Department.REVIEW]: '리뷰',
-  [Department.EXECUTIVE]: '경영',
-  [Department.GROWTH]: '성장',
-  [Department.INTERNAL_OPS]: '내부',
+  [Department.QUALITY]: '품질',
+  [Department.EVALUATION]: '평가',
+  [Department.TREASURY]: '자산',
+  [Department.CONTENT]: '콘텐츠',
+  [Department.INTERNAL_OPS]: '총무',
 };
 
 export interface AgentContract {
@@ -189,7 +195,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   ),
 
   [AgentType.CODE_REVIEWER]: {
-    department: Department.ENGINEERING,
+    department: Department.QUALITY,
     job: 'PR 을 리뷰하고 머지 가부를 판단한다',
     deliverableFields: ['summary', 'findings', 'approvalRecommendation'],
     requireEvidence: true,
@@ -198,31 +204,27 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.WORK_REVIEWER]: {
-    department: Department.REVIEW,
+    department: Department.EVALUATION,
     job: '오늘 한 일을 업무 로그로 정리한다',
     deliverableFields: ['summary', 'oneLineAchievement', 'nextActions'],
     requireEvidence: false,
     nextAgent: AgentType.PO_EVAL,
   },
   [AgentType.IMPACT_REPORTER]: {
-    department: Department.REVIEW,
+    department: Department.EVALUATION,
     job: 'PR 이 만든 변화를 정량·정성으로 보고한다',
     deliverableFields: ['headline', 'quantitative', 'qualitative'],
     requireEvidence: false,
     nextAgent: AgentType.PO_EVAL,
   },
-  // 콘솔 Swift 매핑에는 아직 없어 화면에서는 '내부' 로 폴백되지만, 하는 일이 리뷰 보조라
-  // 백엔드 계약은 리뷰로 둔다. 4단계에서 Swift 가 이 API 값을 소비하면 자동으로 리뷰 구역에 선다.
+  // `CODE_REVIEWER` 가 낸 지적의 채택 여부를 매기는 전속 채점기라 같은 방에 둔다 — 판정
+  // 대상이 그 워커의 산출물이고, 학습 신호도 그쪽 리뷰 프롬프트로 되돌아간다.
   [AgentType.REVIEW_REPLY_JUDGE]: stub(
-    Department.REVIEW,
+    Department.QUALITY,
     'PR 리뷰 지적에 달린 답변이 수용인지 판정한다',
   ),
-  // 2026-08-25 개발 → 리뷰. 하는 일이 "PR 의 diff 를 읽고 고칠 곳을 지적한다" 라
-  // CODE_REVIEWER 와 대상도 산출물도 같다. 개발 부서의 정의(구현 계획·스키마·테스트·
-  // 장애 분석)에는 PR 을 읽는 일이 없다 — `analyze-pr-convention.usecase.ts` 는 코드를
-  // 쓰지 않고 GitHub diff 를 받아 위반 목록을 낸다.
   [AgentType.PO_EVAL]: {
-    department: Department.REVIEW,
+    department: Department.EVALUATION,
     job: '기간 성과를 정성 평가하고 커리어 로그를 남긴다',
     deliverableFields: ['qualitative', 'careerLog'],
     requireEvidence: false,
@@ -231,7 +233,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
 
   // ──────────────────────────────── 경영 ────────────────────────────────
   [AgentType.CEO]: {
-    department: Department.EXECUTIVE,
+    department: Department.EVALUATION,
     job: '주간 실행을 메타 관점에서 총평한다',
     deliverableFields: [
       'finalSummary',
@@ -244,18 +246,16 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
 
   // ──────────────────────────────── 성장 ────────────────────────────────
   [AgentType.BLOG]: {
-    department: Department.GROWTH,
+    department: Department.CONTENT,
     job: '블로그 초안을 만들어 노션에 적재한다',
     deliverableFields: ['notionUrl', 'published'],
     requireEvidence: true,
     nextAgent: null,
   },
   [AgentType.BLOG_REVISION]: {
-    // 발행한 글을 사람이 얼마나 고쳤는지가 곧 그 글의 품질 판정이라 리뷰 부서에 둔다.
-    // 내부 운영실은 자리표가 정원 10석으로 꽉 차 있어(OfficeFloorPlan 의 internalOps
-    // 주석: "10명이 들어가야 해서 가장 조밀하다"), 한 명을 더 넣으면 예비 격자로 밀려
-    // 이름표가 겹친다 — 실제로 콘솔 검증 10건이 그렇게 깨졌다.
-    department: Department.REVIEW,
+    // 대상이 블로그 글이고 산출물이 다음 글에 적용할 수정 규칙이라, 글을 만드는 방에 둔다.
+    // 채점처럼 보이지만 채점 대상이 우리 워커의 일이 아니라 대표가 손본 글 자체다.
+    department: Department.CONTENT,
     job: '블로그 수정률을 집계하고 반복 수정 규칙을 추출한다',
     deliverableFields: [
       'recentAveragePercent',
@@ -270,23 +270,23 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.CAREER_MATE]: stub(
-    Department.GROWTH,
+    Department.CONTENT,
     '머지된 PR 을 합성해 역량 프로필과 이력서를 만든다',
   ),
   [AgentType.JOB_APPLICATION]: stub(
-    Department.GROWTH,
+    Department.CONTENT,
     '지원 이력을 기록하고 상태를 추적한다',
   ),
   [AgentType.VACATION]: stub(
-    Department.GROWTH,
+    Department.INTERNAL_OPS,
     '연차 잔여일을 계산하고 사용을 기록한다',
   ),
   [AgentType.INVEST]: stub(
-    Department.GROWTH,
+    Department.TREASURY,
     '보유 종목의 시세 이상을 장 마감 후 점검한다',
   ),
   [AgentType.PAPER_TRADE]: {
-    department: Department.GROWTH,
+    department: Department.TREASURY,
     job: '모의투자 계좌의 포지션과 일일 수익률을 평가한다',
     // 2026-08-24 실측: 성공 실행 8/8 전건. exitBandAccounts 계열은 5/8 로 매도 밴드가
     // 걸린 회차에만 등장해 필수에서 뺐다.
@@ -309,11 +309,11 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.DELAY_REPORT]: stub(
-    Department.INTERNAL_OPS,
+    Department.PLANNING,
     '승인 대기·진행 중 작업·미해소 실패를 조회해 지연 원인을 귀속한다',
   ),
   [AgentType.PAPER_RECOMMEND]: {
-    department: Department.GROWTH,
+    department: Department.TREASURY,
     job: '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',
     // 2026-08-24 실측: 성공 실행 16/16 전건. agentRunId 는 자기 실행 식별자일 뿐
     // 산출물의 내용이 아니라 제외했다(`claimFields` 주석의 taskId 판단과 같은 이유).
@@ -335,7 +335,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.EVENING_RETRO]: {
-    department: Department.INTERNAL_OPS,
+    department: Department.EVALUATION,
     job: '하루를 회고해 발행 초안을 만든다',
     // 2026-08-24 실측: 성공 실행 14/14 전건.
     // `skipPreamble` 을 켜지 않는다 — 세 키를 모델에게 직접 요구하는 프롬프트가 이미 있다
@@ -345,7 +345,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.HUMANIZER]: {
-    department: Department.INTERNAL_OPS,
+    department: Department.CONTENT,
     job: '기계적인 문장을 사람이 쓴 글로 다듬는다',
     // 2026-08-24 실측: 성공 실행 141/141 전건. 산출물이 이 키 하나뿐이라 검사가
     // 잡아내는 것은 "윤문 결과를 아예 못 담은 회차" 로 좁다. 그래도 켜 두는 이유는
@@ -360,7 +360,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.ISSUE_LABELER]: stub(
-    Department.INTERNAL_OPS,
+    Department.QUALITY,
     '새 이슈에 기존 라벨 중 적합한 것을 붙인다',
   ),
   [AgentType.SUBCONSCIOUS_GATE]: {
@@ -392,7 +392,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     '대표의 취향을 관찰해 선호 프로필을 갱신한다',
   ),
   [AgentType.BLOG_PUBLISH]: {
-    department: Department.GROWTH,
+    department: Department.CONTENT,
     job: 'Notion 블로그 초안을 익명화해 GitHub 발행 승인을 요청한다',
     // 2026-08-24 실측에서는 성공 실행 5/5 전건에 path·title·notionUrl 이 있었지만,
     // 그 5 건이 전부 'preview'(발행 진행) 분기였을 뿐이다. `PublishNotionDraftResult`
@@ -409,7 +409,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     nextAgent: null,
   },
   [AgentType.CTO_STUDY]: stub(
-    Department.GROWTH,
+    Department.CONTENT,
     '딥다이브 주제를 대표의 현재 일과 연결해 학습 필요성을 판정한다',
   ),
 };
