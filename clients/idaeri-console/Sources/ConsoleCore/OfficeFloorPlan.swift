@@ -1181,6 +1181,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
             .wallPinboard, .wallCalendar, .wallAbstract,
+            // 가운데 줄(좌석 없는 열)에 세운 것 — 자료와 출력물을 곁에 두는 방으로.
             .filingCabinet, .printer, .plantSmall]
     case .quality:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
@@ -1196,6 +1197,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
+            // 가운데 줄에 세운 것 — 책장을 하나 더 세워 자료를 쌓아 두는 방으로.
             .bookshelf, .trash, .plantSmall, .waterCooler]
     case .evaluation:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
@@ -1205,7 +1207,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
         return [
             .bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard,
-            .wallPoster, .filingCabinet, .plantTall,
+            .wallPoster,
+            // 가운데 한 열에만 — 이 방은 좌우가 통로라 더 넣으면 좌석이 고립된다.
+            .filingCabinet, .plantTall,
         ]
     case .treasury:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
@@ -1215,6 +1219,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
             .clock, .wallCertificate, .wallLandscape,
+            // 가운데 줄에 세운 것 — 손님을 맞는 방이라 응접 쪽으로.
             .bookshelf, .plantTall, .partitionGlass, .coffeeMachine]
     case .content:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
@@ -1237,6 +1242,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
             .clock, .wallShelf, .wallMonitor,
+            // 가운데 줄에 세운 것 — 설비와 수납이 모이는 방으로.
             .refrigerator, .filingCabinet, .bookshelf, .partitionLow]
     }
 }
