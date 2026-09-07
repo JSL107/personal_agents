@@ -26,21 +26,29 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "Sources/IdaeriConsole/Resources/sprites"
 
-# `build-sprites.py` 의 TILE_PX 와 같아야 한다. 어긋나면 화면에서 비정수 배율로 그려진다.
-TILE_PX = 40
+# 타일 한 칸의 픽셀 수. Swift 쪽 짝은 `OfficeViewMetrics.swift` 의 `officeSpriteUnit` 이다.
+#
+# **20px 인 이유는 화면 배율의 계단을 촘촘하게 하기 위해서다.** 40px 이면 정수 배율이 40 · 80
+# 뿐이라 중간이 없어, 창이 1840x2000 에 못 미치면 곧바로 40px 로 떨어진다(실사용 창 1900x1900
+# 에서 세로가 100px 부족해 화면 절반이 빈 채로 남았다). 20px 로 내리면 20 · 40 · 60 · 80 이 되어
+# 같은 창에서 60px 을 쓴다.
+#
+# 바닥은 여기서 굽는 절차형 타일이라 어느 배수에서도 이음매가 맞는다. 가구·캐릭터는 여전히
+# 40px 기준(`officeReferenceTileSize`)으로 환산되며, 그쪽은 실물 크기 환산이라 원래부터 비정수다.
+TILE_PX = 20
 
 
 def flat_floor(
     base: tuple[int, int, int],
     seam: tuple[int, int, int],
-    cells: int = 2,
+    cells: int = 1,
     speckle: tuple[int, int, int] | None = None,
 ) -> Image.Image:
     """밑색 + 이음매 격자 + (선택) 잔점으로 바닥 한 칸을 만든다.
 
-    `cells` 는 타일 한 칸 안에 들어가는 작은 타일 수다. 2 면 20px 격자가 되어 40px 로 그릴 때
-    이음매가 또렷하게 읽힌다. 잔점은 카펫 질감용이며 **격자 위에는 찍지 않는다** — 이음매를
-    덮으면 격자가 끊겨 보인다.
+    `cells` 는 타일 한 칸 안에 들어가는 작은 타일 수다. 20px 타일에서는 1 이 기본이고, 그러면
+    이음매가 타일 경계에만 그려져 화면에서 한 칸이 하나의 바닥 타일로 읽힌다. 잔점은 카펫
+    질감용이며 **격자 위에는 찍지 않는다** — 이음매를 덮으면 격자가 끊겨 보인다.
     """
     image = Image.new("RGBA", (TILE_PX, TILE_PX), (*base, 255))
     pixels = image.load()
