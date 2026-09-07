@@ -7,7 +7,7 @@
 // 사용법:
 //   pnpm exec ts-node scripts/humanize-markdown.ts <입력.md> [--out <출력.md>] [--audience general]
 //
-// 발행 경로와 같은 호흡 되먹임을 태운다(평균이 하한 미달이면 한 번 더 윤문).
+// 발행 경로와 같은 장문 윤문을 태운다. 문장 길이는 재시도 조건으로 사용하지 않는다.
 //
 // --audience 는 독자 축 실측용이다. 같은 파일을 지정 없이 / general 로 두 번 돌려
 // 영어 낱말 수를 대조하면 용어 규칙이 실제로 먹었는지 보인다(프롬프트만 보고는 알 수 없다).
@@ -21,7 +21,7 @@ import {
   HumanizeAudience,
   HumanizeService,
 } from '../src/humanize/application/humanize.service';
-import { humanizeMarkdownProseWithBreathRetry } from '../src/humanize/application/humanize-markdown.adapter';
+import { humanizeMarkdownProseForPublishing } from '../src/humanize/application/humanize-markdown.adapter';
 import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
@@ -73,10 +73,9 @@ const main = async (): Promise<void> => {
       );
     }
     const audience = audienceOption as HumanizeAudience | undefined;
-    // 발행 경로(publish-notion-draft)와 같은 되먹임을 태운다. 문장 평균이 하한에 못 미치면
-    // 그 수치를 지시에 실어 한 번 더 들여보낸다 — 그 경로가 빠지면 여기서 잰 결과가 발행본과
-    // 갈려, 규칙을 손보고 확인하는 이 스크립트의 목적 자체가 무너진다.
-    const result = await humanizeMarkdownProseWithBreathRetry(
+    // 발행 경로(publish-notion-draft)와 같은 윤문 경로를 태운다. 평균 문장 길이는 결과를
+    // 설명하는 관측값일 뿐, 모델을 다시 호출하는 조건으로 쓰지 않는다.
+    const result = await humanizeMarkdownProseForPublishing(
       source,
       humanizer,
       console,

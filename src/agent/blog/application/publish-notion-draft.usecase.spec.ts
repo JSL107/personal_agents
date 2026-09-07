@@ -77,8 +77,8 @@ const buildUsecase = (overrides?: {
   openPreviews?: unknown[];
   forbiddenTerms?: string;
   omitKeys?: string[];
-  // 윤문 호출마다 다른 본문을 돌려준다 — 호흡 되먹임은 1·2회차 결과가 갈려야 판정이 도는데,
-  // suffix 방식 목은 매번 같은 변형을 내서 그 분기를 만들 수 없다.
+  // 윤문 호출마다 다른 본문을 돌려주는 테스트용 목이다. 재시도 여부와 관계없이 첫 호출과
+  // 이후 호출의 선택을 검증해야 하는 테스트가 있어 배열 형태를 유지한다.
   humanizeByCall?: string[];
   // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
   recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
@@ -2029,37 +2029,24 @@ describe('인용 전부 소실 차단', () => {
   });
 });
 
-// 호흡 되먹임은 테스트에서도 프로덕션에서도 한 번도 실행된 적이 없는 분기였다 — 실제 발행에서는
-// 첫 판이 38.2자로 나와 조건에 걸리지 않았다. 네 갈래를 유닛으로 고정한다.
-describe('호흡 되먹임 재시도', () => {
+// 장문 윤문은 문장 길이를 목표로 맞추지 않는다. 길이가 짧거나 길다는 이유만으로 같은 본문을
+// 다시 모델에 보내면, 의미를 보존하는 대신 숫자를 맞추는 결과를 고를 수 있다.
+describe('장문 윤문은 문장 길이로 재시도하지 않는다', () => {
   const 짧은문장 = '이건 짧은 문장이에요.';
   const 긴문장 =
-    '이건 호흡이 넉넉하도록 앞뒤를 이어 붙여 쓴 문장인데 이만하면 읽기에 편하다고 느껴져요.';
-  // 공백을 뺀 167자 — 최장 상한(150)을 넘긴다. 상한이 80 이던 시절에는 짧은 문장으로 충분했는데
-  // 코퍼스 실측으로 상한이 올라가며(2026-09-02) 이 픽스처가 축을 넘기지 못하게 됐다.
-  //
-  // **길이는 공백을 빼고 센다.** 문자열 그대로는 231자인데 `longestSentenceLength` 는 167 로
-  // 잡힌다. 눈으로 센 글자 수로 픽스처를 맞추면 상한을 넘긴 줄 알았는데 안 넘는 일이 생긴다.
-  const 만연체 =
-    '이건 끊지 않고 계속 이어 붙인 문장이라 읽는 사람이 숨을 쉴 자리를 찾지 못하게 되는데 그런 문장이 하나라도 섞이면 최장 축이 바로 넘어가고 그게 이 판정에서 걸려야 하는 대목이며 여기까지 오면 상한으로 잡아 둔 백오십 자를 어느 모로 보나 확실히 넘기고도 남을 만큼 넉넉하게 길어지게 되고 실제로 이 정도까지 늘여 두어야 공백을 빼고 세는 글자 수로도 상한을 훌쩍 넘겨 최장 축이 판정에 제대로 걸리게 되어요.';
+    '이 문장은 길이가 길더라도 내용의 관계가 한 호흡으로 이어지면 굳이 숫자를 기준으로 나눌 필요가 없다고 봐요.';
   const 반복 = (횟수: number, 문장: string): string =>
     Array.from({ length: 횟수 }, () => 문장).join(' ');
 
-  // 실측(measureKoreanStyle): 평균 10자 · 어절 3 · 목표 밖 2개 — 하한 미달이라 재시도가 발동한다.
   const 첫판_짧음 = 반복(45, 짧은문장);
-  // 평균 38자 · 어절 12 · 목표 밖 0개 — 수락되어야 한다.
-  const 재시도_좋아짐 = 반복(45, 긴문장);
-  // 평균 17자(첫판보다 오름) · 최장 167자 · 목표 밖 3개 — **평균만 보면 나아졌지만 기각해야 한다.**
-  const 재시도_다른축_악화 = `${반복(43, 짧은문장)} ${만연체} ${만연체}`;
-  // 40문장 미만이라 정량 판정 자체를 하지 않는다(measurable=false).
-  const 첫판_표본부족 = 반복(10, 짧은문장);
+  const 첫판_긴문장 = 반복(45, 긴문장);
 
-  const buildForRetry = (calls: string[]) =>
+  const buildForLength = (calls: string[]) =>
     buildUsecase({
       markdown: '# 제목\n\n원문 문단입니다.',
       completionText: JSON.stringify({
         slug: 'breath',
-        description: '호흡 되먹임 확인',
+        description: '문장 길이와 무관한 윤문 확인',
         body: '# 제목\n\n원문 문단입니다.',
       }),
       editText: JSON.stringify({
@@ -2067,117 +2054,41 @@ describe('호흡 되먹임 재시도', () => {
         reason: '발행 가능',
         title: draft.title,
         slug: 'breath',
-        description: '호흡 되먹임 확인',
+        description: '문장 길이와 무관한 윤문 확인',
         body: '# 제목\n\n원문 문단입니다.',
       }),
       humanizeByCall: calls,
     });
 
-  it('첫 판이 하한 이상이면 재시도하지 않는다', async () => {
-    const { usecase, humanizer } = buildForRetry([재시도_좋아짐]);
+  it('평균 문장 길이가 짧아도 두 번째 호출을 하지 않는다', async () => {
+    const { usecase, humanizer, createPreview } = buildForLength([
+      첫판_짧음,
+      첫판_긴문장,
+    ]);
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
 
     expect(humanizer.humanize).toHaveBeenCalledTimes(1);
-  });
-
-  // 40문장 미만이면 평균 자체가 판정 대상이 아니다. 여기서 재시도하면 표본이 없는데도 모델을
-  // 한 번 더 부르는 셈이다.
-  it('40문장 미만이면 재시도하지 않는다', async () => {
-    const { usecase, humanizer } = buildForRetry([첫판_표본부족]);
-
-    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
-
-    expect(humanizer.humanize).toHaveBeenCalledTimes(1);
-  });
-
-  it('재시도본이 나아지면 그것을 쓴다', async () => {
-    const { usecase, humanizer, createPreview } = buildForRetry([
-      첫판_짧음,
-      재시도_좋아짐,
-    ]);
-
-    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
-
-    expect(humanizer.humanize).toHaveBeenCalledTimes(2);
-    const payload = createPreview.execute.mock.calls[0][0].payload as {
-      content: string;
-    };
-    const content = payload.content;
-    expect(content).toContain(긴문장);
-  });
-
-  // 실측: 평균 39.2자(첫판 10자보다 오름) · 최장 90자 · 목표 밖 **1개**(`longestSentence`).
-  // 첫 판도 1개(`averageLength`) 라 **개수만 비교하면 통과한다** — 축이 맞바뀐 것을 못 본다.
-  const 재시도_축맞바뀜 = `${반복(44, 긴문장)} ${만연체}`;
-  // 실측: 20문장 → measurable=false. 문장 축 판정을 아예 건너뛰어 갭이 0개로 보인다.
-  const 재시도_표본축소 = 반복(20, 긴문장);
-  // 실측: 평균 4자 — 첫판보다 낮다.
-  const 재시도_평균하락 = 반복(45, '짧아요.');
-
-  // 개수가 같아도 축이 바뀌면 더 나빠진 판이다. 이전 수정(개수 비교)이 통과시켰던 형태다.
-  it('목표 밖 개수가 같아도 축이 새로 생기면 첫 판을 쓴다', async () => {
-    const { usecase, createPreview } = buildForRetry([
-      첫판_짧음,
-      재시도_축맞바뀜,
-    ]);
-
-    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
-
-    const payload = createPreview.execute.mock.calls[0][0].payload as {
-      content: string;
-    };
-    expect(payload.content).not.toContain(만연체);
-  });
-
-  // 문장을 합치는 것이 이 되먹임의 목적이라 문장 수가 줄어든다. 40문장 미만이 되면 문장 축
-  // 판정을 건너뛰어 갭이 사라진 것처럼 보이고, 판정 대상이 아닌 결과를 수락하게 된다.
-  it('재시도본이 40문장 미만으로 줄면 첫 판을 쓴다', async () => {
-    const { usecase, createPreview } = buildForRetry([
-      첫판_짧음,
-      재시도_표본축소,
-    ]);
-
-    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
 
     const payload = createPreview.execute.mock.calls[0][0].payload as {
       content: string;
     };
     expect(payload.content).toContain(짧은문장);
+    expect(payload.content).not.toContain(긴문장);
   });
 
-  // 수락 조건이 둘(평균 오름 · 새 축 없음)인데 평균 쪽 기각에 테스트가 없었다.
-  it('재시도본 평균이 첫 판 이하면 첫 판을 쓴다', async () => {
-    const { usecase, createPreview } = buildForRetry([
+  it('긴 문장을 숫자 기준으로 다시 쪼개지 않는다', async () => {
+    const { usecase, humanizer, createPreview } = buildForLength([
+      첫판_긴문장,
       첫판_짧음,
-      재시도_평균하락,
     ]);
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
 
+    expect(humanizer.humanize).toHaveBeenCalledTimes(1);
     const payload = createPreview.execute.mock.calls[0][0].payload as {
       content: string;
     };
-    expect(payload.content).toContain(짧은문장);
-    expect(payload.content).not.toContain('짧아요.');
-  });
-
-  // D2 의 핵심 — 문장을 합치면 평균과 최장이 **함께** 오른다. 평균 하나만 보면 되먹임이 제대로
-  // 작동한 결과가 곧 가드의 사각지대가 된다. 평균이 올랐어도 다른 축이 나빠지면 첫 판을 쓴다.
-  it('평균은 올랐지만 다른 축이 나빠지면 첫 판을 쓴다', async () => {
-    const { usecase, humanizer, createPreview } = buildForRetry([
-      첫판_짧음,
-      재시도_다른축_악화,
-    ]);
-
-    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
-
-    expect(humanizer.humanize).toHaveBeenCalledTimes(2);
-    const payload = createPreview.execute.mock.calls[0][0].payload as {
-      content: string;
-    };
-    const content = payload.content;
-    expect(content).not.toContain(만연체);
-    expect(content).toContain(짧은문장);
+    expect(payload.content).toContain(긴문장);
   });
 });

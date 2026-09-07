@@ -1,6 +1,6 @@
 // LLM 응답 텍스트에서 JSON object 본문만 robust 하게 추출.
 //
-// 5개 worker parser (PM / BE / ISSUE_LABELER / BE_DIFF / WORK_REVIEWER) 가 LLM 에
+// 4개 worker parser (PM / BE / ISSUE_LABELER / WORK_REVIEWER) 가 LLM 에
 // "JSON 객체 하나만 출력" 을 요구하지만 실제로는 다양한 노이즈 패턴이 섞여 들어와
 // `JSON.parse` 가 던지는 케이스가 잦다. 본 헬퍼는 그 중 흔한 3가지 패턴을 모두 흡수한다.
 //

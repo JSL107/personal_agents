@@ -70,7 +70,7 @@ final class CharacterNode: SKNode {
     private var shirtColor: (red: Double, green: Double, blue: Double)
     private let pantsColor: (red: Double, green: Double, blue: Double)
     /// 지금 입고 있는 옷이 어느 부서 것인지. 스냅샷 부서와 비교해 갱신 여부를 정한다.
-    private var department: Department
+    private(set) var department: Department
     /// 사람마다 다른 셔츠 톤 보정. 부서가 바뀌어도 이 사람의 개성은 유지해야 한다.
     private let shirtShift: Double
 

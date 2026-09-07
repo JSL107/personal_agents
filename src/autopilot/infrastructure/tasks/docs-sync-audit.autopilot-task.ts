@@ -45,9 +45,6 @@ export class DocsSyncAuditTask implements AutopilotTask {
     ) {
       const repoLabel =
         this.configService.get<string>('DOCS_AUDIT_PR_REPO')?.trim() ||
-        this.configService
-          .get<string>('BE_SANDBOX_DEFAULT_REPO_LABEL')
-          ?.trim() ||
         'JSL107/personal_agents';
       const baseBranch =
         this.configService.get<string>('DOCS_AUDIT_PR_BASE_BRANCH')?.trim() ||

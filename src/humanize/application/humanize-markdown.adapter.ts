@@ -1,17 +1,13 @@
 import {
-  findKoreanStyleGapAxes,
-  KOREAN_STYLE_TARGETS,
-  measureKoreanStyle,
-} from '../domain/korean-style-metrics';
-import {
   HumanizeMarkdownResult,
   HumanizeSkipReasons,
   scanMarkdownBlocks,
 } from '../domain/markdown-blocks';
 import { HumanizeAudience, HumanizeService } from './humanize.service';
 
-// 되먹임 진행 상황을 적을 곳. Nest Logger 와 console 이 모두 들어맞는 최소 모양이다.
-export type BreathRetryLogger = {
+// 기존 호출부가 넘기는 로거 모양. 현재 발행 윤문은 길이 되먹임을 하지 않지만,
+// 호출부를 한 번에 바꾸지 않아도 되도록 인자는 호환용으로 유지한다.
+export type HumanizeLogger = {
   log: (message: string) => void;
 };
 
@@ -31,8 +27,6 @@ export const humanizeMarkdownProse = async (
   // 경로다. 저녁 블로그(`humanize-evening-blog`)와 이력서(`humanize-career-profile`)는 독자가
   // 각각 본인·채용 담당이라 완화할 이유가 없다. 필요해지면 같은 방식으로 인자 하나만 통과시키면 된다.
   audience?: HumanizeAudience,
-  // 직전 회차 실측 평균. 하한 미달일 때만 넘겨 그 수치를 지시에 싣는다(호흡 되먹임).
-  measuredAverageLength?: number,
 ): Promise<HumanizeMarkdownResult> => {
   const { lines, blocks } = scanMarkdownBlocks(markdown);
   const proseBlocks = blocks.filter(
@@ -65,7 +59,6 @@ export const humanizeMarkdownProse = async (
     longForm: true,
     voice: 'personal-blog',
     audience,
-    measuredAverageLength,
   });
 
   // 뒤에서부터 갈아끼운다 — 앞에서부터 바꾸면 줄 수가 달라져 뒤 블록의 줄 번호가 밀린다.
@@ -102,81 +95,17 @@ export const humanizeMarkdownProse = async (
   };
 };
 
-// 말투 단계를 돌리고, 호흡이 하한에 못 미치면 그 수치를 적어 한 번 더 들여보낸다.
+// 발행용 윤문은 문장 평균을 맞추기 위한 재시도를 하지 않는다.
 //
-// 왜 필요한가 — 프롬프트에 "기본은 40~60자" 를 넣고 돌린 발행본이 평균 32.6자였다. 규칙은
-// 읽었지만 모델은 자기 글의 평균을 재지 못한다. 재는 것은 코드인데 그 결과가 카드에만 찍히고
-// 모델에게 돌아가지 않아, 지켜졌는지 모르는 채로 끝났다.
-//
-// 재시도는 **한 번뿐**이다. 모델 호출이 그만큼 늘고, 두 번째에도 안 되면 세 번째라고 될
-// 이유가 없다. 여전히 미달이면 그대로 두고 카드의 「목표 밖」 에 남겨 사람이 본다.
-//
-// 재시도본이 더 나쁘면 첫 판을 쓴다. 되먹임이 역효과를 낸 회차까지 받아들일 이유는 없다.
-export const humanizeMarkdownProseWithBreathRetry = async (
+// 평균 문장 길이는 글의 흐름을 설명하는 관측값일 뿐이다. 이 값을 하한으로 두고 재생성하면
+// 모델이 의미가 아니라 숫자를 맞추려고 짧은 문장을 합치거나, 한 문단을 기계적으로 쪼갠다.
+// 사용자가 지적한 AI 느낌을 줄이려면 문장·문단 전체를 읽어 의미 단위로 판단해야 하므로,
+// 재시도 없이 한 번의 윤문 결과를 그대로 사용한다.
+export const humanizeMarkdownProseForPublishing = async (
   body: string,
   humanizer: HumanizeService,
-  // 발행 경로는 Nest Logger 를, 스크립트는 console 을 넘긴다. 없으면 조용히 돈다.
-  logger?: BreathRetryLogger,
+  // 기존 호출부 호환을 위해 남긴다. 평균값에 따른 재시도는 더 이상 하지 않는다.
+  _logger?: HumanizeLogger,
   audience?: HumanizeAudience,
-): Promise<HumanizeMarkdownResult> => {
-  const first = await humanizeMarkdownProse(body, humanizer, audience);
-  const metrics = measureKoreanStyle(first.markdown);
-  if (
-    !metrics.measurable ||
-    metrics.averageLength >= KOREAN_STYLE_TARGETS.averageLengthMin
-  ) {
-    return first;
-  }
-
-  logger?.log(
-    `호흡 되먹임 — 평균 ${metrics.averageLength}자 < ${KOREAN_STYLE_TARGETS.averageLengthMin}자, 한 번 더 윤문한다`,
-  );
-  const retried = await humanizeMarkdownProse(
-    first.markdown,
-    humanizer,
-    audience,
-    metrics.averageLength,
-  );
-  const retriedMetrics = measureKoreanStyle(retried.markdown);
-  // 평균 하나로 판정하면 **되먹임이 제대로 작동한 결과가 곧 가드의 사각지대**가 된다.
-  // 짧은 문장을 합치면 평균과 최장이 함께 오르고, 문장을 이어 붙이는 과정에서 종결체가 한쪽으로
-  // 몰린다. 평균이 0.1자 올라가는 것만 보면 최장이 80자를 넘겨도, 종결체교대가 60%를 넘겨도
-  // 통과한다 — 하필 종결체교대는 이 파일이 의존하는 지표 중 **출처 의심 표본과 무관한 유일한
-  // 정량 기준**이다(`korean-style-metrics.ts` 의 `endingAlternationPercentMax` 주석).
-  // 가장 믿는 축을 팔아 가장 근거가 약한 축을 사는 거래가 된다.
-  //
-  // 그래서 목표 밖 축의 **정체**를 본다. 개수만 비교하면 축이 맞바뀐 재시도본을 통과시킨다
-  // (리뷰 지적): 첫 판의 유일한 갭이 `평균` 이고 재시도에서 평균은 하한을 넘었지만 `최장` 이
-  // 새로 상한을 넘으면, 둘 다 1개라 **더 나빠진 판이 채택된다.**
-  //
-  // 재시도본의 표본 크기도 함께 본다. 문장을 합치는 것이 이 되먹임의 목적이라 문장 수가
-  // 줄어드는데, 40문장 미만이 되면 `findKoreanStyleGaps` 가 문장 축을 아예 건너뛴다 —
-  // 갭이 사라진 것처럼 보여 그대로 수락된다. 판정 대상이 아닌 결과를 판정하는 셈이다.
-  const axesBefore = new Set(findKoreanStyleGapAxes(metrics));
-  const newAxes = findKoreanStyleGapAxes(retriedMetrics).filter(
-    (axis) => !axesBefore.has(axis),
-  );
-  const rejectReason = ((): string | null => {
-    if (!retriedMetrics.measurable) {
-      return `재시도본이 ${retriedMetrics.sentenceCount}문장으로 줄어 정량 판정 대상이 아니다`;
-    }
-    if (retriedMetrics.averageLength <= metrics.averageLength) {
-      return `평균이 오르지 않았다(${metrics.averageLength}자 → ${retriedMetrics.averageLength}자)`;
-    }
-    if (newAxes.length > 0) {
-      return `다른 축이 새로 목표를 벗어났다(${newAxes.join(', ')})`;
-    }
-    return null;
-  })();
-  if (rejectReason) {
-    logger?.log(`호흡 되먹임 무효 — ${rejectReason}, 첫 판을 쓴다`);
-    return first;
-  }
-
-  logger?.log(
-    `호흡 되먹임 적용 — 평균 ${metrics.averageLength}자 → ${retriedMetrics.averageLength}자 · 새로 벗어난 축 없음`,
-  );
-  // 문단 계수는 첫 판 것을 쓴다. 재시도는 같은 문단을 한 번 더 다듬은 것이지 새로 고른 게
-  // 아니라, 두 번째 계수를 카드에 적으면 "몇 문단이 윤문됐나" 가 실제보다 작게 읽힌다.
-  return { ...first, markdown: retried.markdown };
-};
+): Promise<HumanizeMarkdownResult> =>
+  humanizeMarkdownProse(body, humanizer, audience);

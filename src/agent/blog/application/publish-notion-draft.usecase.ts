@@ -12,7 +12,7 @@ import {
   extractJsonObjectText,
 } from '../../../common/util/llm-json-extract.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
-import { humanizeMarkdownProseWithBreathRetry } from '../../../humanize/application/humanize-markdown.adapter';
+import { humanizeMarkdownProseForPublishing } from '../../../humanize/application/humanize-markdown.adapter';
 import {
   formatKoreanStyleMetrics,
   measureKoreanStyle,
@@ -412,7 +412,7 @@ export class PublishNotionDraftUsecase {
     this.assertQuotesNotWiped(target, stages);
 
     // 3) 말투 — 산문 문단만 사용자 문체로 윤문한다(코드·표·헤딩은 손대지 않는다).
-    const humanized = await humanizeMarkdownProseWithBreathRetry(
+    const humanized = await humanizeMarkdownProseForPublishing(
       edited.body,
       this.humanizer,
       this.logger,
@@ -655,7 +655,7 @@ export class PublishNotionDraftUsecase {
       }
       return parsed;
     } catch (error: unknown) {
-      // 형제 parser (PM / BE / BE_DIFF / ISSUE_LABELER / WORK_REVIEWER) 와 같은 규약으로
+      // 형제 parser (PM / BE / ISSUE_LABELER / WORK_REVIEWER) 와 같은 규약으로
       // raw 응답 앞부분을 cause 에 실어 보낸다. 이게 없으면 실패 원인이 원장에도 로그에도
       // 남지 않아 (run#864) 다음 실패에서도 모델이 무엇을 돌려줬는지 알 수 없다.
       throw new BlogException({
