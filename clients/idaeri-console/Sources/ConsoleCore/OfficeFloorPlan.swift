@@ -1181,7 +1181,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
             .wallPinboard, .wallCalendar, .wallAbstract,
-        ]
+            .filingCabinet, .printer, .plantSmall]
     case .quality:
         // 자료 벽을 세운 집중하는 방 — 설계를 그리는 벽과 기술서 선반.
         // 자료 벽 맨 아래 칸은 유리 파티션으로 막아 벽 줄을 아래까지 이어 준다
@@ -1196,14 +1196,17 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
-        ]
+            .bookshelf, .trash, .plantSmall, .waterCooler]
     case .evaluation:
         // 검토하는 방 — 체크리스트 게시판과 자료 캐비닛.
         //
         // **판은 벽에 건다(`wallWhiteboard`).** 예전에는 이동식 보드(`whiteboard`)를 첫 후보
         // (3,4)에 놓아 방 한가운데에 바퀴 달린 판이 홀로 서 있었다 — 재제작본이 스탠드까지
         // 담은 그림이라 자리를 크게 먹는데, 정작 자료 캐비닛·책장이 뒤로 밀렸다.
-        return [.bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard, .wallPoster]
+        return [
+            .bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard,
+            .wallPoster, .filingCabinet, .plantTall,
+        ]
     case .treasury:
         // 손님을 맞는 방 — 상장과 풍경화를 건 응접실.
         //
@@ -1212,7 +1215,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
             .clock, .wallCertificate, .wallLandscape,
-        ]
+            .bookshelf, .plantTall, .partitionGlass, .coffeeMachine]
     case .content:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
         //
@@ -1234,7 +1237,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
             .clock, .wallShelf, .wallMonitor,
-        ]
+            .refrigerator, .filingCabinet, .bookshelf, .partitionLow]
     }
 }
 
@@ -1292,7 +1295,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 뒤 두 자리는 빈 아래쪽을 메우는 몫이다. **맨 아래 줄에만 더한다** — 아래 행 좌석
         // (책상 (1,1)·(7,1) 의 윗칸)에 사람이 앉으면 그 이름표가 y=3 언저리에 뜨므로,
         // 거기 가구를 세우면 인원이 늘었을 때 이름이 가구에 묻힌다.
-        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0)])
+        return spots([(4, 2), (9, 5), (9, 3), (9, 1), (1, 0), (3, 0), (6, 0), (3, 3), (3, 2), (9, 2)])
     case .quality:
         // 2열 종대가 x=1·4·7 을 쓰므로 자료 벽은 오른쪽 끝에 세운다.
         //
@@ -1304,10 +1307,10 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         return spots([
             (9, 5), (9, 3), (9, 1), (2, 0), (6, 0),
             (9, 4), (9, 2), (4, 0), (8, 0),
-        ])
+            (2, 3), (2, 2), (6, 3), (6, 2)])
     case .evaluation:
         // 자리와 자리 사이를 책장으로 막아 부스처럼 나눈다.
-        return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1)])
+        return spots([(3, 4), (7, 4), (5, 1), (9, 1), (1, 1), (4, 3), (4, 2)])
     case .treasury:
         // 응접 세트를 방 가운데에 — 두 사람이 멀찍이 앉고 가운데서 손님을 맞는 모양.
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
@@ -1323,7 +1326,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         //
         // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
         // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
-        return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0)])
+        return spots([(4, 4), (3, 4), (8, 1), (9, 4), (9, 1), (9, 2), (4, 1), (1, 0), (3, 3), (3, 2), (5, 3), (5, 2)])
     case .content:
         // 어긋난 자리 사이를 화분·소파로 메워 자유석 느낌을 만든다.
         //
@@ -1342,7 +1345,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 예전 목록의 뒤 두 자리는 둘 다 못 쓰는 자리였다 — (8,0) 은 위 규칙이 금지한 문 열이고
         // (9,5) 는 (9,4) 책상의 좌석이라 배치 루프가 건너뛴다. 설비가 셋뿐이라 거기까지 커서가
         // 가지 않아 드러나지 않았을 뿐이다. 실제로 쓸 수 있는 양 끝 칸으로 바꾼다.
-        return spots([(2, 0), (4, 0), (6, 0), (9, 0), (1, 0)])
+        return spots([(2, 0), (4, 0), (6, 0), (9, 0), (1, 0), (2, 3), (2, 2), (6, 3), (6, 2)])
     }
 }
 
