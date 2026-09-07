@@ -580,6 +580,47 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         }
     }
 
+    // 짝지어진 물건이 **자기 방 안에** 있어야 한다.
+    //
+    // 아래의 "평면도에 놓여 있다" 단언은 여섯 방 중 **어디든** 하나 있으면 통과한다.
+    // 콘텐츠 방이 그 구멍으로 오래 샜다 — 일곱 명의 짝이 저마다 책장·복합기·캐비닛을
+    // 가리키는데 방 안에 하나도 없어서, 배회할 때마다 방을 나가 위층 품질 방까지 걸어갔다.
+    // 종류만 보는 단언에는 그 상태도 초록이다.
+    //
+    // **회의 테이블은 뺀다.** 회의실이 공용 밴드에 따로 있고 회의는 거기서 하는 것이 맞다 —
+    // 방 안에 없다고 잘못된 상태가 아니다.
+    //
+    // **아직 못 지키는 짝을 명단으로 고정한다.** 늘면 회귀고, 줄면 명단을 갱신하라는
+    // 신호다(숫자만 세면 다른 방이 새로 새도 총합이 같아 통과한다). 여섯을 지우는 것이
+    // 후속 — 자산·기획 방에 지표 모니터가, 총무 방에 게시판이나 책장이 없다.
+    let affinityOutOfRoom: Set<String> = [
+        "DELAY_REPORT",
+        "INVEST", "PAPER_RECOMMEND", "PAPER_TRADE",
+        "CONTRADICTION_JUDGE", "DOCS_AUDIT_EVALUATOR",
+    ]
+    var outOfRoom: Set<String> = []
+    for zone in plan.zones {
+        let inZone = Set(
+            plan.furniture.filter { officeZoneContains(zone, $0.tile) }.map(\.kind)
+        )
+        for desk in plan.desks where officeZoneContains(zone, desk.seat) {
+            let affinity = officeWorkAffinity(agentType: desk.agentType)
+                .filter { $0 != .meetingTable }
+            guard !affinity.isEmpty, !affinity.contains(where: { inZone.contains($0) }) else {
+                continue
+            }
+            outOfRoom.insert(desk.agentType)
+        }
+    }
+    t.expectEqual(
+        outOfRoom.subtracting(affinityOutOfRoom).sorted().joined(separator: ", "), "",
+        "짝지어진 물건이 자기 방에 없어 방을 나가는 사람이 새로 생겼다"
+    )
+    t.expectEqual(
+        affinityOutOfRoom.subtracting(outOfRoom).sorted().joined(separator: ", "), "",
+        "명단에 적힌 사람이 이제 자기 방에서 일감을 찾는다 — 명단에서 빼라"
+    )
+
     // 벽걸이 열 종이 **모두 어느 방엔가** 걸려야 한다. 방마다 벽 자리가 셋뿐이라 한 종을
     // 넣으면 다른 종이 밀려나는데, 밀려난 쪽은 오류 없이 화면에서만 사라진다 — 운영 방의
     // 액자를 지표 모니터로 바꿨을 때 실제로 추상화 액자가 그렇게 빠졌다.

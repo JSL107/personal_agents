@@ -1014,6 +1014,28 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         t.expectEqual(onDoorColumn.count, 0, "\(department.label) 자리가 문 열을 막지 않음")
     }
 
+    // 집기 후보가 **아래 줄 좌석 열의 이름표 높이(상대 y=3)** 를 침범하지 않는다.
+    //
+    // 아래 줄 책상(y=1)에 앉은 사람은 y=2 에 있고 이름표·말풍선이 y=3 으로 올라온다. 거기
+    // 150cm 짜리 책장이 서면 글자가 가구에 묻힌다 — 품질 방 두 번째 후보를 문 앞에서 치우며
+    // (7,3) 으로 옮겼다가 이 실수를 했다. 그 방 좌석 열이 x=1·4·7 이라 정원이 차야 드러나는데,
+    // 표본은 3명이라 렌더로도 안 보인다.
+    //
+    // **배치 결과가 아니라 후보 목록을 본다.** 지금 쓰이지 않는 예비 후보도 잡아야 한다 —
+    // 예비는 인원이 늘어야 쓰이므로, 결과만 보면 그때 가서 터진다.
+    for department in Department.allCases {
+        let seatColumns = Set(
+            departmentDeskSpots(department).filter { $0.y == 1 }.map(\.x)
+        )
+        let onNameplateRow = departmentFurnitureSpots(department)
+            .filter { $0.y == 3 && seatColumns.contains($0.x) }
+        t.expectEqual(
+            onNameplateRow.count, 0,
+            "\(department.label) 집기 후보가 아래 줄 좌석 열의 이름표 높이를 침범"
+                + " \(onNameplateRow.map { "(\($0.x),\($0.y))" })"
+        )
+    }
+
     // 아래 행 사람의 이름표가 위 행 책상을 침범하지 않는다.
     //
     // 예전 3행 배치는 행 간격이 2 칸이라, 아래 행 이름표가 위 행 책상 상판에 얹혀 글자가
