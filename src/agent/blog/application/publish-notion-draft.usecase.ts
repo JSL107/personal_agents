@@ -61,7 +61,10 @@ import {
 } from '../domain/blog-publish-properties';
 import { ForbiddenHit, scanForbiddenTerms } from '../domain/company-info-scan';
 import { liftLegacyHeadings } from '../domain/legacy-heading';
-import { selectAnonymizeSystemPrompt } from '../domain/prompt/blog-anonymize.prompt';
+import {
+  isPublicSourceDraft,
+  selectAnonymizeSystemPrompt,
+} from '../domain/prompt/blog-anonymize.prompt';
 import {
   EditedBlogDraft,
   parseBlogEdit,
@@ -304,7 +307,7 @@ export class PublishNotionDraftUsecase {
       // 제목이나 pageId 로 콕 집은 요청은 후순위를 적용하지 않는다 — 사람이 그 글을 지목했다.
       titleQuery || input.pageId
         ? new Set<string>()
-        : await this.findRecentlyBlockedPageIds(),
+        : await this.findRecentlyStuckPageIds(),
     );
     if (updateInputSnapshot) {
       await updateInputSnapshot({
@@ -348,15 +351,19 @@ export class PublishNotionDraftUsecase {
       { stage: '원문', ...countMarkdownStructure(markdown) },
     ];
 
-    // 공개 프로젝트 계약에서는 코드블록을 표식으로 가려 보낸다. 그 계약은 이미 "코드블록 안의
+    // 공개 자료 계약에서는 코드블록을 표식으로 가려 보낸다. 그 계약은 이미 "코드블록 안의
     // 코드·명령어·설정" 을 보존 대상으로 두는데 프롬프트만으로는 지켜지지 않았다 — 실측하면
     // 실제 주소(`developer.mozilla.org`)를 예시 주소로 바꾸고 `Cache-Control: private` 에 없던
     // `max-age=60` 과 가짜 ETag 를 덧붙였다(편집 단계와 같은 성향이다). 약속에 집행을 붙인다.
     //
     // 회사 PR 회고 계약은 반대다. 사내 클래스·함수·테이블 실명을 지우는 것이 그 단계의 일이고
     // 코드 안에도 그 이름이 있을 수 있어 가리지 않는다.
-    const keepsCodeVerbatim =
-      target.sourceType.trim() === STUDY_DEEPDIVE_SOURCE_TYPE;
+    //
+    // **판정은 프롬프트 선택과 같은 함수를 쓴다.** 여기서만 '오늘의 공부' 로 좁혔더니, 같은
+    // 공개 자료인 '웹' 초안이 코드를 그대로 보낸 채 회사용 프롬프트("코드 속 내부 이름을 역할
+    // 설명으로 바꿔라")를 받았고, 그 결과를 아래 보존 게이트가 막아 그 초안은 몇 번을 돌려도
+    // 발행되지 않았다. 발행 슬롯이 하루 1건이라 그 한 건이 큐 전체를 세웠다(2026-09-07).
+    const keepsCodeVerbatim = isPublicSourceDraft(target.sourceType);
     const { masked, blocks } = keepsCodeVerbatim
       ? maskFencedCodeBlocks(markdown)
       : { masked: markdown, blocks: [] as string[] };
@@ -365,10 +372,7 @@ export class PublishNotionDraftUsecase {
       request: {
         // 익명화 계약은 초안 출처에 따라 갈린다. 회사 PR 회고는 사내 식별자를 지우고,
         // 오늘의 공부 딥다이브는 공개 제품명과 자기 공개 저장소 모듈명을 살린다.
-        systemPrompt: selectAnonymizeSystemPrompt(
-          target.sourceType,
-          STUDY_DEEPDIVE_SOURCE_TYPE,
-        ),
+        systemPrompt: selectAnonymizeSystemPrompt(target.sourceType),
         prompt: this.buildAnonymizePrompt(target, masked),
         // 형태를 샘플링 단계에서 고정한다 — 코드펜스로 감싸거나 앞뒤에 설명을 붙일 수 없다.
         outputSchema: BLOG_ANONYMIZE_OUTPUT_SCHEMA,
@@ -606,7 +610,7 @@ export class PublishNotionDraftUsecase {
     drafts: NotionDraftPage[],
     titleQuery: string,
     pageId?: string,
-    blockedPageIds: Set<string> = new Set(),
+    stuckPageIds: Set<string> = new Set(),
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
@@ -618,11 +622,11 @@ export class PublishNotionDraftUsecase {
     // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
     const nowMs = Date.now();
     const oldestFirst = [...drafts].sort((first, second) => {
-      const blockedGap =
-        Number(blockedPageIds.has(first.pageId)) -
-        Number(blockedPageIds.has(second.pageId));
-      if (blockedGap !== 0) {
-        return blockedGap;
+      const stuckGap =
+        Number(stuckPageIds.has(first.pageId)) -
+        Number(stuckPageIds.has(second.pageId));
+      if (stuckGap !== 0) {
+        return stuckGap;
       }
       const firstStarved = isStarvedDraft(first, nowMs);
       const secondStarved = isStarvedDraft(second, nowMs);
@@ -661,11 +665,11 @@ export class PublishNotionDraftUsecase {
       // 두면 큐가 빈 채로 pageId 재실행이 들어올 때 터진다. 그 경로는 아래 DRAFT_NOT_FOUND 가
       // 맡아야 한다.
       const head = oldestFirst[0];
-      if (blockedPageIds.has(head.pageId)) {
+      if (stuckPageIds.has(head.pageId)) {
         // 후순위로 밀 곳이 없다 = 큐가 전부 차단분이다. 조용히 같은 글을 또 돌리는 것보다
         // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
         this.logger.warn(
-          `발행 후보가 모두 최근 차단된 초안입니다 (${blockedPageIds.size}건). Notion 에서 금지어를 수정해야 합니다.`,
+          `발행 후보가 모두 최근 막힌 초안입니다 (${stuckPageIds.size}건). Notion 에서 금지어나 본문을 고쳐야 합니다.`,
         );
       }
       return head;
@@ -1069,16 +1073,38 @@ export class PublishNotionDraftUsecase {
     }, text);
   }
 
-  // 최근 금지어로 막힌 초안의 pageId. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
+  // 최근 발행이 막혔던 초안의 pageId. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
   // 원장이 안 읽힌다고 그날 발행 자체를 막으면 손해가 더 크다.
   //
-  // **FAILED 가 아니라 SUCCEEDED 를 훑는다.** 금지어 차단은 예외가 아니라 정상 종료다
-  // (`status: 'blocked'` 를 돌려준다). 실패 조회로 찾으면 이 경로가 통째로 빠진다.
+  // **두 갈래를 함께 훑는다.** 같은 "다음 회차에서 피해야 할 초안" 인데 원장에 남는 자리가 다르다:
   //
-  // 과삭제로 **예외를 던진** 회차는 여기 안 잡힌다. 그건 회차마다 흔들리는 실패라 다음 날
-  // 재시도가 합리적이고, 세려면 실패 회차의 pageId 를 돌려주는 조회가 따로 필요하다.
-  private async findRecentlyBlockedPageIds(): Promise<Set<string>> {
-    const blocked = new Set<string>();
+  // - 금지어 차단은 예외가 아니라 정상 종료다(`SUCCEEDED` + `status: 'blocked'`). 실패 조회로
+  //   찾으면 이 경로가 통째로 빠진다.
+  // - 코드 변형·과삭제는 예외를 던져 `FAILED` 로 남고 output 에는 오류 문구만 있다. 한때 이쪽을
+  //   "회차마다 흔들리는 실패라 다음 날 재시도가 합리적" 이라며 세지 않았는데, 그 가정이 틀렸다 —
+  //   초안이 그대로면 매번 같은 자리에서 걸리는 실패가 있고(2026-09-07 nginx 초안, 재현 2/2),
+  //   굶은 초안 우선 규칙과 겹치면 그 한 건이 매일 큐 맨 앞을 차지해 뒤의 31건을 세운다.
+  //
+  // 제외가 아니라 후순위다 — 사람이 Notion 을 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+  //
+  // ⚠️ 남은 한계 둘. 지금 큐에는 해당 초안이 없어 두지만, 재발하면 여기부터 볼 것:
+  //
+  // 1. **실패 원인을 가리지 않는다.** 모델 쿼터 소진·Notion 5xx 로 끊긴 회차도 그 초안을 뒤로
+  //    민다 — 초안 잘못이 아닌데 우선권을 잃는다. 가르려면 `BlogErrorCode` 를 원장 output 에
+  //    남겨야 하는데(`AgentRunService` 는 지금 `{ error: message }` 만 저장한다) 그 저장 경로는
+  //    모든 에이전트가 공유한다. 큐가 30건대라 한 회차 밀리는 손해가 작아 파급 큰 쪽을 미뤘다.
+  // 2. **매번 실패하는 초안이 창(3일) 수만큼 쌓이면 순환한다.** A·B·C 가 모두 결정론적으로
+  //    실패하면 A→B→C→A… 로 슬롯을 돌려 쓰며, 그보다 나중에 만든 정상 초안은 선택되지 않는다
+  //    (12일 시뮬레이션 확인). 고치기 전에는 그런 초안 **한 건**으로 큐 전체가 섰으니 개선이지만
+  //    해소는 아니다. 실패 이력 창을 차단(사람이 고치면 곧 풀림)과 나눠 길게 잡는 것이 다음 수다.
+  private async findRecentlyStuckPageIds(): Promise<Set<string>> {
+    const stuck = new Set<string>();
+    const addPageId = (inputSnapshot: unknown): void => {
+      const snapshot = inputSnapshot as { pageId?: unknown } | null;
+      if (typeof snapshot?.pageId === 'string') {
+        stuck.add(snapshot.pageId);
+      }
+    };
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.BLOG_PUBLISH,
@@ -1090,17 +1116,30 @@ export class PublishNotionDraftUsecase {
         if (output?.status !== 'blocked') {
           continue;
         }
-        const snapshot = run.inputSnapshot as { pageId?: unknown } | null;
-        if (typeof snapshot?.pageId === 'string') {
-          blocked.add(snapshot.pageId);
-        }
+        addPageId(run.inputSnapshot);
       }
     } catch (error: unknown) {
       this.logger.warn(
         `차단 이력 조회 실패 — 후순위 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return blocked;
+    // 두 조회를 한 try 로 묶지 않는다 — 앞이 깨졌다고 뒤까지 버리면 한쪽 이력만으로도 막을 수
+    // 있었던 회차를 놓친다.
+    try {
+      const runs = await this.agentRunService.findRecentFailedRuns({
+        agentType: AgentType.BLOG_PUBLISH,
+        sinceDays: BLOCKED_DRAFT_COOLDOWN_DAYS,
+        limit: BLOCKED_DRAFT_SCAN_LIMIT,
+      });
+      for (const run of runs) {
+        addPageId(run.inputSnapshot);
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `실패 이력 조회 실패 — 후순위 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return stuck;
   }
 
   // 최근 **실제로 나간** 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) —

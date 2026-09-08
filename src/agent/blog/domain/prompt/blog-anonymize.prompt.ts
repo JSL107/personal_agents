@@ -1,3 +1,5 @@
+import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../study-deepdive-blog-properties';
+
 // 초안 → 발행 전 식별정보 제거 단계 system prompt.
 //
 // 초안 출처에 따라 **계약이 다르다**. 하나로 두면 한쪽이 반드시 망가진다:
@@ -63,15 +65,41 @@ export const BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT = [
 ].join('\n');
 
 /**
- * 초안의 Notion `출처유형` 속성으로 익명화 계약을 고른다.
+ * 사람이 공개 기술 문서를 읽고 손수 적재한 초안의 출처유형.
  *
- * 속성이 비어 있거나 모르는 값이면 **회사용(엄격)** 으로 떨어진다 — 새 출처가 생겼을 때
- * 조용히 느슨한 쪽을 타는 것보다, 지나치게 가리고 사람이 알아채는 편이 안전하다.
+ * 자동 적재분('오늘의 공부')과 재료가 같다 — 공개 문서와 공개 도구다. 회사용 계약으로
+ * 떨어지면 본문의 공개 도구 이름까지 지워진다(2026-09-07 실측:
+ * `ingress2gateway print --providers=ingress-nginx` → `<변환 도구> print --providers=<기존 컨트롤러>`).
  */
-export const selectAnonymizeSystemPrompt = (
-  sourceType: string,
-  publicProjectSourceType: string,
-): string =>
-  sourceType.trim() === publicProjectSourceType
+export const WEB_SOURCE_TYPE = '웹';
+
+// 공개 자료 계약을 받는 출처유형. 이 집합에 없는 값은 전부 회사용(엄격)으로 떨어진다 —
+// 새 출처가 생겼을 때 조용히 느슨한 쪽을 타는 것보다, 지나치게 가리고 사람이 알아채는 편이 안전하다.
+const PUBLIC_SOURCE_TYPES: ReadonlySet<string> = new Set([
+  STUDY_DEEPDIVE_SOURCE_TYPE,
+  WEB_SOURCE_TYPE,
+]);
+
+/**
+ * 초안의 Notion `출처유형` 속성이 공개 자료 계약인지 판정한다.
+ *
+ * **익명화 프롬프트 선택과 코드 마스킹이 이 판정 하나를 공유해야 한다.** 둘이 갈리면
+ * "코드는 안 가렸는데 프롬프트는 코드 속 이름을 지우라고 시키는" 조합이 생기고, 그 다음
+ * 코드 보존 게이트가 그 결과를 막아 그 초안은 몇 번을 돌려도 발행되지 않는다. 발행 슬롯은
+ * 하루 1건이라 굶은 초안 우선 규칙과 겹치면 그 한 건이 큐 전체를 세운다(2026-09-07 실제 정지).
+ *
+ * ⚠️ `PR` 은 여전히 코드를 모델에 그대로 보여주면서 같은 보존 게이트를 거친다 — 코드 안 사내
+ * 실명을 지우는 것이 그 계약의 일이라 가릴 수 없기 때문이다. 회고 초안은 산문이라 코드블록이
+ * 드물어 두지만(실측 60일 실패 2건 중 코드 관련은 '웹' 1건), 코드가 든 `PR` 초안이 들어오면
+ * 같은 교착이 그 한 건에서 재현된다. 그때는 게이트를 계약에 맞춰 나눠야 한다.
+ */
+export const isPublicSourceDraft = (sourceType: string): boolean =>
+  PUBLIC_SOURCE_TYPES.has(sourceType.trim());
+
+/**
+ * 초안의 Notion `출처유형` 속성으로 익명화 계약을 고른다.
+ */
+export const selectAnonymizeSystemPrompt = (sourceType: string): string =>
+  isPublicSourceDraft(sourceType)
     ? BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT
     : BLOG_ANONYMIZE_SYSTEM_PROMPT;
