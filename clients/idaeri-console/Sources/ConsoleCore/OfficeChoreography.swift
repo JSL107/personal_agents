@@ -107,10 +107,28 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
     func agent(_ agentType: String) -> ConsoleAgent? {
         context.agents.first { $0.agentType == agentType }
     }
+    /// 이 사람이 지금 결재를 기다리는가 — **스토어가 적용한 결과**를 본다.
+    ///
+    /// 열린 승인이 있으면 스토어가 상태를 `AWAITING_APPROVAL` 로 맞추고 그 뒤 오는 상태
+    /// 변경을 얹지 않는다(`ConsoleStore.markAwaitingApproval` · `hasOpenApproval`).
+    /// 여기서 이벤트가 실은 상태를 따로 판단하면 **두 계층이 다른 답을 낸다** — 실제로
+    /// 그랬다: 스토어는 억제했는데 연출은 사람을 책상으로 걷게 했다.
+    ///
+    /// 스토어는 `apply(event:)` 안에서 상태를 먼저 바꾸고 **마지막에** 이벤트를 흘려보내므로
+    /// (`eventStream.send`), 이 시점의 `context.agents` 는 이미 적용 결과다.
+    func isAwaitingApproval(_ agentType: String) -> Bool {
+        agent(agentType)?.state == .awaitingApproval
+    }
 
     switch event {
     case let .runStarted(run):
         guard knows(run.agentType) else {
+            return []
+        }
+        // 결재를 기다리며 줄에 선 사람은 새 런이 시작돼도 자리로 보내지 않는다.
+        // **`run.started` 가 `state.changed` 보다 먼저 발행되므로**(`AgentRunService.execute`)
+        // 아래 `stateChanged` 분기만 막으면 이 이벤트가 이미 사람을 걷게 한다.
+        guard !isAwaitingApproval(run.agentType) else {
             return []
         }
         // 체인에 여럿이 얽혔으면 회의실로 모은다. 화면에서 자리를 뜨는 사람이 여럿이라
@@ -159,14 +177,7 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         switch state {
         case .inProgress:
-            // 스토어가 이 이벤트를 얹었는지를 보고 걸린다. 열린 승인이 있으면 스토어는 진행을
-            // 억제하고 `AWAITING_APPROVAL` 을 유지하는데(`ConsoleStore.hasOpenApproval`),
-            // 여기서 이벤트만 보고 자리로 보내면 줄에 선 사람이 책상으로 걸어가고 다음
-            // 스냅샷이 그를 다시 줄로 부른다. 색과 자리가 어긋나는 것도 같은 원인이다.
-            //
-            // 스토어는 `apply(event:)` 안에서 상태를 먼저 바꾸고 그 다음 이벤트를 흘려보내므로
-            // (`eventStream.send` 가 마지막), 이 시점의 `context.agents` 는 이미 적용 결과다.
-            guard agent(agentType)?.state != .awaitingApproval else {
+            guard !isAwaitingApproval(agentType) else {
                 return []
             }
             return [.working(agentType: agentType)]

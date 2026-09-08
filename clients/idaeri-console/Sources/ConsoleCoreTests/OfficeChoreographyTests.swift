@@ -13,7 +13,13 @@ private func makeRun(_ id: String, _ type: String, parentId: String? = nil) -> C
 func runOfficeChoreographyTests(_ t: TestRunner) {
     t.suite("OfficeChoreography")
 
-    let agents = [makeAgent("PM", .inProgress), makeAgent("CTO", .awaitingApproval, bubble: "확인해주세요")]
+    // CTO 는 **승인 대기 전용** 표본이다. 이동 연출 단언에 CTO 를 쓰면 승인 억제와 섞여
+    // 무엇을 재는 테스트인지 흐려진다 — 실제로 그렇게 얽혀 있었다. 평범한 상태 표본으로 BE 를 둔다.
+    let agents = [
+        makeAgent("PM", .inProgress),
+        makeAgent("CTO", .awaitingApproval, bubble: "확인해주세요"),
+        makeAgent("BE", .waiting, bubble: "업무 대기중"),
+    ]
 
     // run.started (부모 없음) → working
     let ctx = ChoreographyContext(agents: agents, runs: [], pendingCommands: [])
@@ -25,8 +31,8 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
     // run.started (부모 있음) → handoff(부모→자식) + working
     let ctxChain = ChoreographyContext(agents: agents, runs: [makeRun("r0", "PM")], pendingCommands: [])
     t.expectEqual(
-        visualIntents(for: .runStarted(makeRun("r1", "CTO", parentId: "r0")), context: ctxChain),
-        [.handoff(from: "PM", to: "CTO"), .working(agentType: "CTO")],
+        visualIntents(for: .runStarted(makeRun("r1", "BE", parentId: "r0")), context: ctxChain),
+        [.handoff(from: "PM", to: "BE"), .working(agentType: "BE")],
         "부모 있는 run.started → handoff + working")
 
     // run.finished → 현재 상태로 recolor + bubble
@@ -117,6 +123,23 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         visualIntents(for: .stateChanged(agentType: "CTO", state: .inProgress, bubble: nil), context: ctx),
         [],
         "승인 대기 상태인 사람에게 온 진행 이벤트 → 연출 없음")
+
+    // `run.started` 도 막아야 한다 — 백엔드는 그것을 `state.changed` 보다 **먼저** 발행하므로
+    // (`AgentRunService.execute`), 상태 변경만 막으면 이 이벤트가 이미 사람을 걷게 한다.
+    t.expectEqual(
+        visualIntents(for: .runStarted(makeRun("r9", "CTO")), context: ctx),
+        [],
+        "승인 대기 상태인 사람의 run.started → 연출 없음")
+
+    // 체인(부모 있는 run.started)도 같다. handoff 는 두 사람을 걷게 하므로 더 크게 어긋난다.
+    let ctxQueuedChain = ChoreographyContext(
+        agents: agents, runs: [makeRun("r8", "PM")], pendingCommands: []
+    )
+    t.expectEqual(
+        visualIntents(
+            for: .runStarted(makeRun("r9", "CTO", parentId: "r8")), context: ctxQueuedChain),
+        [],
+        "승인 대기 상태인 사람의 체인 run.started → handoff 도 없음")
 
     // state.changed(AWAITING_APPROVAL) → 집결 + 핑크 recolor
     t.expectEqual(

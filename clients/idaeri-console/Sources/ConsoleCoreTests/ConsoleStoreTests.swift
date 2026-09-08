@@ -159,15 +159,44 @@ func runConsoleStoreTests(_ t: TestRunner) {
         createdAt: "2026-07-27T00:03:00Z", expiresAt: "2026-07-27T01:03:00Z"
     )
     queuedStore.apply(event: .approvalOpened(pmApproval))
+    // 카드가 열리는 순간 상태부터 맞아야 한다. 예전에는 `approvals` 만 갱신하고 상태를
+    // 스냅샷 값(`.waiting`)으로 뒀는데, 그러면 상태를 기준으로 판단하는 연출이 "승인 대기가
+    // 아니다" 로 읽고 사람을 자리로 보낸다 — 스토어는 억제했는데 화면은 걸어가는 어긋남이다.
+    t.expectEqual(
+        queuedStore.agents.first(where: { $0.agentType == "PM" })?.state, .awaitingApproval,
+        "카드가 열리면 그 사람 상태가 승인 대기로 맞는다"
+    )
     queuedStore.apply(
         event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
     t.expectEqual(
-        queuedStore.agents.first(where: { $0.agentType == "PM" })?.state, .waiting,
+        queuedStore.agents.first(where: { $0.agentType == "PM" })?.state, .awaitingApproval,
         "열린 승인이 있으면 진행 이벤트를 얹지 않는다"
     )
     t.expectEqual(
         queuedStore.agents.first(where: { $0.agentType == "PM" })?.bubble, "업무 대기중",
         "억제한 이벤트의 문구도 안 얹힌다"
+    )
+
+    // 승인 중에 그 런이 **끝나도** 승인 대기를 덮지 않는다.
+    //
+    // `run.finished` 가 먼저 종료 시각을 채우면 `hasActiveRun` 은 false 가 되므로, 겹친 런
+    // 가드로는 이 경우가 안 걸린다. 백엔드 집계는 여전히 승인을 먼저 고르니 초록·빨강으로
+    // 바뀌었다 핑크로 돌아오는 왕복이 된다.
+    for terminal in [ConsoleAgentState.completed, .failed] {
+        queuedStore.apply(
+            event: .stateChanged(agentType: "PM", state: terminal, bubble: "완료했어요!"))
+        t.expectEqual(
+            queuedStore.agents.first(where: { $0.agentType == "PM" })?.state, .awaitingApproval,
+            "열린 승인이 있으면 \(terminal) 도 얹지 않는다"
+        )
+    }
+
+    // 승인 이벤트 자체는 당연히 적용된다 — 막으면 카드가 열려도 색이 안 바뀐다.
+    queuedStore.apply(
+        event: .stateChanged(agentType: "PM", state: .awaitingApproval, bubble: "확인해주세요"))
+    t.expectEqual(
+        queuedStore.agents.first(where: { $0.agentType == "PM" })?.bubble, "확인해주세요",
+        "승인 대기 이벤트는 그대로 적용된다"
     )
 
     // 카드에 담당자가 없으면(agentType nil) 누구의 진행도 막지 않는다 — 막을 근거가 없다.

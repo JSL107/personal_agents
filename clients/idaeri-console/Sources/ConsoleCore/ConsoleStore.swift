@@ -94,6 +94,7 @@ public final class ConsoleStore: ObservableObject {
             completePendingOnRunFinished(run)
         case let .approvalOpened(approval):
             upsertApproval(approval)
+            markAwaitingApproval(agentType: approval.agentType)
         case let .approvalResolved(approval):
             approvals.removeAll { $0.id == approval.id }
         case let .stateChanged(agentType, state, bubble):
@@ -161,22 +162,47 @@ public final class ConsoleStore: ObservableObject {
         if isTerminal(state), hasActiveRun(agentType: agentType) {
             return
         }
-        if state == .inProgress, hasOpenApproval(agentType: agentType) {
+        if state != .awaitingApproval, hasOpenApproval(agentType: agentType) {
             return
         }
         agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state, bubble: bubble))
     }
 
+    /// 카드가 열리는 순간 그 사람 상태를 승인 대기로 맞춘다.
+    ///
+    /// **이 한 줄이 없으면 스토어와 연출이 서로 다른 것을 본다.** 예전에는 `approval.opened`
+    /// 가 `approvals` 만 갱신하고 상태는 스냅샷 값 그대로 뒀다(연출이 색만 핑크로 칠했다).
+    /// 그러면 상태가 `.waiting` 인 채로 남아, 상태를 기준으로 판단하는 쪽은 "승인 대기가
+    /// 아니다" 로 읽고 사람을 자리로 보낸다.
+    ///
+    /// 백엔드 집계도 같은 답을 낸다 — `deriveAgentState` 는 열린 승인을 가장 먼저 고른다.
+    /// 여기서 맞춰 두면 다음 스냅샷이 와도 값이 바뀌지 않는다.
+    ///
+    /// 담당자 없는 카드(`agentType` nil)는 맞출 대상이 없다.
+    private func markAwaitingApproval(agentType: String?) {
+        guard
+            let agentType,
+            let index = agents.firstIndex(where: { $0.agentType == agentType })
+        else {
+            return
+        }
+        agents[index] = agents[index].replacing(state: .awaitingApproval)
+    }
+
     /// 이 사람에게 열린 승인 카드가 있는가.
     ///
-    /// 백엔드 집계는 **열린 승인을 활성 런보다 먼저** 고른다(`deriveAgentState` 우선순위).
-    /// 그래서 승인이 열린 채 새 런이 시작되면 이벤트는 `IN_PROGRESS`, 집계는
-    /// `AWAITING_APPROVAL` 로 갈린다. 이벤트를 그대로 얹으면 줄에 선 사람이 자기 자리로
-    /// 돌아가고, 다음 스냅샷이 그를 다시 줄로 부른다 — 화면에서 왕복으로 보인다.
+    /// 백엔드 집계는 **열린 승인을 무엇보다 먼저** 고른다(`deriveAgentState` 우선순위).
+    /// 그래서 승인이 열린 동안 오는 상태 변경은 그것이 시작이든 종료든 집계를 못 이긴다.
+    /// 이벤트를 그대로 얹으면 줄에 선 사람이 노랑·초록·빨강으로 바뀌었다가 다음 스냅샷이
+    /// 다시 핑크로 되돌린다 — 화면에서 왕복으로 보인다.
     ///
-    /// **종료 억제(`hasActiveRun`)와 회복 방식이 다르다.** 종료는 남은 런이 끝날 때 또 다른
-    /// 종료 이벤트가 와서 저절로 회복되지만, 시작은 한 번뿐이라 억제하면 재발행이 없다.
-    /// 그래서 승인이 닫힐 때 정본을 다시 받는다(`AppRootView` 의 `approval.resolved` 처리).
+    /// **처음엔 시작(`.inProgress`)만 막았는데 그게 반쪽이었다.** 승인 중에 그 런이 끝나면
+    /// `run.finished` 가 먼저 종료 시각을 채워 `hasActiveRun` 이 false 가 되고, 뒤따르는
+    /// `.completed`/`.failed` 가 승인 대기를 덮었다.
+    ///
+    /// **회복 방식은 `hasActiveRun` 쪽과 다르다.** 종료 억제는 남은 런이 끝날 때 또 다른
+    /// 종료 이벤트가 와서 저절로 회복되지만, 승인 억제는 재발행이 없다. 그래서 승인이 닫힐 때
+    /// 정본을 다시 받는다(`AppRootView` 의 `approval.resolved` 처리).
     private func hasOpenApproval(agentType: String) -> Bool {
         approvals.contains { $0.agentType == agentType }
     }
