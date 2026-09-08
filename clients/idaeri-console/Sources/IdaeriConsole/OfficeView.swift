@@ -85,7 +85,12 @@ struct OfficeView: View {
                 ) { notification in
                     let startSize = liveResizeStartSize
                     liveResizeStartSize = nil
-                    guard let window = notification.object as? NSWindow else {
+                    // 방 하나를 확대해 보는 중이면 화면을 정하는 것은 전체 도면이 아니라
+                    // `officeFocusedViewMetrics` 다. 그대로 두면 전체 도면 기준으로 창만
+                    // 커지고 방 배율은 그대로여서(11x7 방은 936x904 에서도 이미 80px 이다)
+                    // 늘어난 만큼이 전부 여백이 된다.
+                    guard focusedRoom == nil, let window = notification.object as? NSWindow
+                    else {
                         return
                     }
                     snapWindowUpToFloorPlanStep(window, grownFrom: startSize)

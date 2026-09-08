@@ -226,6 +226,36 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         "여유를 200% 로 열면 같은 창도 40px 로 올라간다"
     )
 
+    // **여유는 다음 계단까지 남은 거리에 상대적이다.** 계단 간격이 구간마다 달라서(20 → 40 은
+    // 2배, 40 → 60 은 1.5배) 고정 비율을 쓰면 뒷 구간이 통째로 덮인다 — 3열 40px 에 정확히
+    // 선 1400x800 뷰가 폭 1px 만 늘어도 60px(2100x1200)로 점프했다. 화면은 그 크기를 담을
+    // 수 있으므로, 막는 것은 화면이 아니라 이 규칙이다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 1401, viewHeight: 800, maxViewWidth: 2560, maxViewHeight: 1276
+        ) == nil,
+        "40px 에 온전히 선 창은 폭이 1px 늘어도 60px 로 뛰지 않는다"
+    )
+    // 같은 창도 40 → 60 구간의 절반(1.25배)을 넘겨 오면 올라간다 — 계단이 아니라 거리가
+    // 기준이라는 뜻이다.
+    t.expectEqual(
+        officeSnapUpFit(
+            viewWidth: 1700, viewHeight: 1000, maxViewWidth: 2560, maxViewHeight: 1276
+        )?.tileSize,
+        60,
+        "60px 까지 1.24 배 남은 창은 마저 올라간다"
+    )
+
+    // **온전한 후보는 배치를 가리지 않고 먼저 이긴다.** 잘라낼 줄 수를 배치 안쪽에서 돌리면
+    // 한 배치가 잘린 후보로 자리를 잡은 뒤 다른 배치의 온전한 후보가 "덜 늘어나지 않는다" 는
+    // 이유로 탈락한다 — 아래 창에서 2열 잘린 후보(1.47배)가 3열 온전한 후보(1.49배)를
+    // 밀어냈다. 온전히 그릴 수 있는데 바깥벽을 자르는 것은 어느 배치에서도 이유가 없다.
+    let wholeBeatsClipped = officeSnapUpFit(
+        viewWidth: 940, viewHeight: 680, maxViewWidth: 1920, maxViewHeight: 1000
+    )
+    t.expectEqual(wholeBeatsClipped?.zoneColumns, 3, "3열 온전한 도면이 2열 잘린 도면을 이긴다")
+    t.expectEqual(wholeBeatsClipped?.height, 800, "3열 20줄 x 40px — 잘라내지 않는다")
+
     // 온전한 크기(2열 1080)를 **화면이 못 줄 때** 바깥벽 두 줄을 내주고 물러난다 — 도면이 두 줄
     // 잘리는 것과 절반 크기로 남는 것 중에서는 앞이 낫다. 작업영역 세로 1100 이 그 경계 안쪽이다
     // (뷰에 주는 몫이 1027 이라 1080 은 못 담고 1000 은 담는다).
