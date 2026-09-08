@@ -4,13 +4,15 @@ import ConsoleCore
 /// 창 스타일. 타이틀바 높이를 재는 데도 쓰므로 창 생성부와 같은 값을 봐야 한다.
 let windowStyleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
 
-/// 창 세로 중 오피스 도면이 **쓰지 못하는** 부분(타이틀바 + 탭 전환 막대).
-///
-/// 타이틀바 높이를 상수로 적지 않는 이유는 스타일 마스크가 정하기 때문이다 — 지금 값은
+/// 타이틀바 높이. 상수로 적지 않는 이유는 스타일 마스크가 정하기 때문이다 — 지금 값은
 /// 32px 이지만, 스타일을 바꾸면 상수 쪽만 남아 조용히 어긋난다. AppKit 에 직접 묻는다.
-func officeWindowChromeHeight(styleMask: NSWindow.StyleMask) -> CGFloat {
+func officeTitleBarHeight(styleMask: NSWindow.StyleMask) -> CGFloat {
     NSWindow.frameRect(forContentRect: .zero, styleMask: styleMask).height
-        + Layout.tabHeaderHeight
+}
+
+/// 창 세로 중 오피스 도면이 **쓰지 못하는** 부분(타이틀바 + 탭 전환 막대).
+func officeWindowChromeHeight(styleMask: NSWindow.StyleMask) -> CGFloat {
+    officeTitleBarHeight(styleMask: styleMask) + Layout.tabHeaderHeight
 }
 
 /// 이 화면에서 도면이 가장 큰 배율 계단에 서는 **창 내용(contentRect) 크기**.
@@ -34,7 +36,17 @@ func officeWindowSizeFittingFloorPlan(
     else {
         return nil
     }
-    return NSSize(width: fit.width, height: CGFloat(fit.height) + Layout.tabHeaderHeight)
+    // **앱 최소 크기 아래로는 내려가지 않는다.** 20px 계단밖에 못 담는 화면에서는 3열 도면이
+    // 700×400 이라 창 내용이 700×441 이 되는데, 루트 뷰는 720×560 을 요구한다(`AppRootView`).
+    // 그대로 두면 SwiftUI 내용이 창 밖으로 밀린다 — 1366×768 · 1280×800 이 그 크기다.
+    // 예전 경로는 상수(1440×860 · 960×1140)가 최소보다 커서 이 구멍을 겪지 않았다.
+    // 도면은 뷰 가운데에 놓이므로 창이 도면보다 커도 여백이 생길 뿐 배율은 그대로다.
+    let contentHeight = CGFloat(fit.height) + Layout.tabHeaderHeight
+    let maxContentHeight = usableSize.height - officeTitleBarHeight(styleMask: styleMask)
+    return NSSize(
+        width: min(max(CGFloat(fit.width), Layout.windowMinWidth), usableSize.width),
+        height: min(max(contentHeight, Layout.windowMinHeight), maxContentHeight)
+    )
 }
 
 /// 지금 창을 도면 크기에 맞춘다 — 창이 놓인 화면에서 가능한 가장 큰 배율 계단으로.
@@ -60,13 +72,22 @@ func fitWindowToFloorPlan(_ window: NSWindow) {
     let frameSize = window.frameRect(
         forContentRect: NSRect(origin: .zero, size: contentSize)
     ).size
-    var frame = NSRect(
-        x: window.frame.minX,
-        y: window.frame.maxY - frameSize.height,
-        width: frameSize.width,
-        height: frameSize.height
+    // 자리잡기(왼쪽 위 고정 + 화면 안 가두기)는 순수 함수가 한다 — AppKit 을 띄우지 않고
+    // 테스트할 수 있는 유일한 조각이고, 실제로 틀리기 쉬운 곳도 여기다.
+    let fitted = officeFittedWindowFrame(
+        currentFrame: OfficeRect(
+            x: Double(window.frame.minX), y: Double(window.frame.minY),
+            width: Double(window.frame.width), height: Double(window.frame.height)
+        ),
+        fittedWidth: Double(frameSize.width),
+        fittedHeight: Double(frameSize.height),
+        visibleFrame: OfficeRect(
+            x: Double(visible.minX), y: Double(visible.minY),
+            width: Double(visible.width), height: Double(visible.height)
+        )
     )
-    frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.maxX - frame.width, visible.minX))
-    frame.origin.y = min(max(frame.origin.y, visible.minY), max(visible.maxY - frame.height, visible.minY))
-    window.setFrame(frame, display: true, animate: true)
+    window.setFrame(
+        NSRect(x: fitted.x, y: fitted.y, width: fitted.width, height: fitted.height),
+        display: true, animate: true
+    )
 }
