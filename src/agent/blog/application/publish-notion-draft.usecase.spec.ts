@@ -1679,6 +1679,45 @@ describe('PublishNotionDraftUsecase', () => {
     });
   });
 
+  it('지목한 발행 날짜를 교체 스냅샷에도 남긴다 — /retry-run 이 여기서 읽는다', async () => {
+    const { usecase, updateInputSnapshot } = buildUsecase({ drafts: [draft] });
+
+    await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      publishedAt: '2026-08-15T00:00:00.000Z',
+    });
+
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ publishedAt: '2026-08-15T00:00:00.000Z' }),
+    );
+  });
+
+  it('지목한 날짜가 발행 경로와 프론트매터에 실제로 박힌다', async () => {
+    // 시계는 2026-08-19 로 고정돼 있다. 지목이 그 값을 이겨야 결번이 채워진다.
+    const { usecase, createPreview } = buildUsecase({ drafts: [draft] });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      publishedAt: '2026-08-15T00:00:00.000Z',
+    });
+
+    expect(outcome.result).toEqual(
+      expect.objectContaining({
+        path: expect.stringContaining('src/content/posts/2026-08-15-'),
+      }),
+    );
+    expect(createPreview.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          path: expect.stringContaining('src/content/posts/2026-08-15-'),
+          content: expect.stringContaining('pubDatetime: 2026-08-15'),
+        }),
+      }),
+    );
+  });
+
   it('같은 제목 일부에 매칭된 초안이 여럿이면 가장 오래된 페이지를 선택한다', async () => {
     const newerDraft = {
       ...draft,

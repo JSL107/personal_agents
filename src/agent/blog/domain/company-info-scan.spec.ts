@@ -29,6 +29,18 @@ describe('scanForbiddenTerms', () => {
     );
   });
 
+  it('일반 기술 용어의 UUID v4 표기는 차단하지 않는다', () => {
+    const hits = scanForbiddenTerms(
+      {
+        body: 'Stripe 문서는 key를 만들 때 UUID v4처럼 entropy가 충분한 값을 권장해요.',
+        tags: [],
+      },
+      [],
+    );
+
+    expect(hits).toEqual([]);
+  });
+
   it('기관명을 차단한다', () => {
     const hits = scanForbiddenTerms(
       { body: '영도초등학교 계정의 정합성을 복구했다.', tags: [] },

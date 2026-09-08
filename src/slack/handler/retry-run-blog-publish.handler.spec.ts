@@ -18,6 +18,7 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
           slackUserId: 'U1',
           titleQuery: '회고',
           pageId: 'notion-page-1',
+          publishedAt: '2026-09-07T00:00:00.000Z',
         },
       }),
     };
@@ -61,9 +62,12 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
       respond,
     });
 
+    // 지목한 발행 날짜를 재실행이 물려받아야 한다 — 빠지면 같은 초안이 오늘 날짜로 나가고
+    // 메우려던 칸은 그대로 빈다.
     expect(publishNotionDraftUsecase.execute).toHaveBeenCalledWith({
       titleQuery: '회고',
       pageId: 'notion-page-1',
+      publishedAt: '2026-09-07T00:00:00.000Z',
       slackUserId: 'U1',
       triggerType: 'FAILURE_REPLAY',
     });

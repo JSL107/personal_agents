@@ -16,7 +16,14 @@ const STRUCTURAL_PATTERNS: Array<{ term: string; expression: RegExp }> = [
     term: '소스 파일명',
     expression: /\b[A-Za-z][\w.]*\.(?:php|blade\.php)\b/g,
   },
-  { term: 'v4/v5', expression: /(?<![\w가-힣])v[45](?![\w.])/gi },
+  // 사내 시스템 세대 표기(레거시 v4 / 신규 v5). `uuid` 뒤는 예외 — 일반 기술 용어의 버전
+  // 표기라 사내 정보가 아니다(실측: 2026-09-04 run 2522 가 "UUID v4처럼 entropy가 충분한"
+  // 한 곳에 걸려 그날 발행이 나가지 못했다. 원장에는 SUCCEEDED 로 남아 실패율에도 안 보였다).
+  // 예외는 실측된 낱말만 늘린다 — 넓히면 사내 v4 가 그 틈으로 새어 나간다.
+  {
+    term: 'v4/v5',
+    expression: /(?<![\w가-힣])(?<!uuid )v[45](?![\w.])/gi,
+  },
   // 사내 포인트 금액 표기 — 사고 규모(초과 지급 100,000P 등)가 정성 표현으로 안 바뀌고 남는 경우.
   { term: '포인트 금액', expression: /\d{1,3}(?:,\d{3})+\s*P\b/gi },
   // 외부 저장소의 PR·이슈 링크 — PR 기반 회고는 본문 끝에 "근거 PR" 링크가 붙어 사내 저장소명·

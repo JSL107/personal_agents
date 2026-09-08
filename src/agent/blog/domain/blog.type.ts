@@ -55,6 +55,8 @@ export interface PublishNotionDraftInput {
   titleQuery?: string;
   // failure replay는 최초 실행이 선택한 같은 Notion page를 우선한다.
   pageId?: string;
+  // 글에 찍을 날짜(ISO). 결번을 메우는 지목 발행만 넘긴다 — 없으면 발행하는 날로 찍는다.
+  publishedAt?: string;
   triggerType?: import('../../../agent-run/domain/agent-run.type').TriggerType;
 }
 

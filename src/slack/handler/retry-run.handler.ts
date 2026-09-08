@@ -354,6 +354,7 @@ export class RetryRunHandler implements SlackHandler {
             const outcome = await this.publishNotionDraftUsecase.execute({
               titleQuery: snapshot.titleQuery ?? '',
               pageId: snapshot.pageId,
+              publishedAt: snapshot.publishedAt,
               slackUserId,
               triggerType: TriggerType.FAILURE_REPLAY,
             });
