@@ -669,15 +669,43 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         for agent in sampleAgents where !officeWorkAffinity(agentType: agent.agentType).isEmpty {
             // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
             guard let seat = zonePlan.desks.first(where: { $0.agentType == agent.agentType })?.seat,
-                  let myZone = zonePlan.zones.first(where: { officeZoneContains($0, seat) }),
-                  // **씬이 부르는 형태 그대로 부른다.** `homeDepartment` 를 빼면 기본값 nil 로
-                  // 옛 경로(거리만 보는 선택)를 재게 되어, 정작 고친 코드가 검증되지 않는다.
-                  let spot = officeStrollSpot(
-                      for: agent.agentType, round: 1, spots: zoneSpots, occupied: [], hour: 14,
-                      home: seat, homeDepartment: myZone.department
-                  ),
-                  spot.kind != .meetingTable
+                  let myZone = zonePlan.zones.first(where: { officeZoneContains($0, seat) })
             else {
+                continue
+            }
+            // **목적지 없음을 `continue` 로 삼키지 않는다.** 명단이 비는 이유가 「전원이 자기
+            // 방에서 찾는다」 인지 「아무도 목적지를 못 받는다」 인지 구별되지 않으면, 선택
+            // 로직이 통째로 죽어도 이 단언은 초록이다.
+            //
+            // **씬이 부르는 형태 그대로 부른다.** `homeDepartment` 를 빼면 기본값 nil 로
+            // 옛 경로(거리만 보는 선택)를 재게 되어, 정작 고친 코드가 검증되지 않는다.
+            guard let spot = officeStrollSpot(
+                for: agent.agentType, round: 1, spots: zoneSpots, occupied: [], hour: 14,
+                home: seat, homeDepartment: myZone.department
+            ) else {
+                t.fail("\(columns)열: \(agent.agentType) 가 목적지를 하나도 못 받았다")
+                continue
+            }
+
+            // **자기 방에 하나도 없으면 전체에서 고른다.** 이 폴백이 없으면 짝지어진 물건이
+            // 자기 방에 없는 사람은 목적지를 아예 못 받아 자리에 굳는다. 지금 표본에서는
+            // 전원이 자기 방에서 해결되므로 이 경로가 **한 번도 실행되지 않는다** — 자기 방
+            // 후보를 일부러 걷어내 강제로 태운다.
+            let withoutOwnRoom = zoneSpots.filter { $0.department != myZone.department }
+            if let fallback = officeStrollSpot(
+                for: agent.agentType, round: 1, spots: withoutOwnRoom, occupied: [], hour: 14,
+                home: seat, homeDepartment: myZone.department
+            ) {
+                t.expect(
+                    fallback.department != myZone.department,
+                    "\(columns)열: \(agent.agentType) 자기 방을 뺀 후보에서 골랐는데 자기 방"
+                )
+            } else {
+                t.fail("\(columns)열: \(agent.agentType) 자기 방 후보를 빼자 목적지를 못 받았다")
+            }
+
+            // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
+            guard spot.kind != .meetingTable else {
                 continue
             }
             let target = zonePlan.furniture.first {
