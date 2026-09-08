@@ -590,14 +590,19 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     // **회의 테이블은 뺀다.** 회의실이 공용 밴드에 따로 있고 회의는 거기서 하는 것이 맞다 —
     // 방 안에 없다고 잘못된 상태가 아니다.
     //
-    // **아직 못 지키는 짝을 명단으로 고정한다.** 늘면 회귀고, 줄면 명단을 갱신하라는
-    // 신호다(숫자만 세면 다른 방이 새로 새도 총합이 같아 통과한다). 여섯을 지우는 것이
-    // 후속 — 자산·기획 방에 지표 모니터가, 총무 방에 게시판이나 책장이 없다.
-    let affinityOutOfRoom: Set<String> = [
-        "DELAY_REPORT",
-        "INVEST", "PAPER_RECOMMEND", "PAPER_TRADE",
-        "CONTRADICTION_JUDGE", "DOCS_AUDIT_EVALUATOR",
-    ]
+    // **못 지키는 짝을 명단으로 고정한다.** 늘면 회귀고, 줄면 명단을 갱신하라는
+    // 신호다(숫자만 세면 다른 방이 새로 새도 총합이 같아 통과한다).
+    //
+    // **지금은 비어 있다** — 남아 있던 여섯(기획 `DELAY_REPORT`, 자산 `INVEST`·
+    // `PAPER_RECOMMEND`·`PAPER_TRADE`, 총무 `CONTRADICTION_JUDGE`·`DOCS_AUDIT_EVALUATOR`)을
+    // 세 방의 벽 자리 하나씩으로 앉혔다(`departmentFurniture`). 비었다고 이 명단을 지우면
+    // 안 된다 — 워커를 새로 넣거나 방 가구를 바꿀 때 이 두 단언이 유일한 방어선이다.
+    //
+    // **이 단언이 재는 것은 "물건이 방에 있는가" 까지다.** 실제로 어디로 걸어가는지는
+    // `officeStrollSpot` 이 **걸음 수**로 정하므로, 옆방 것이 더 가까우면 방에 물건이
+    // 있어도 여전히 나간다 — 명단을 비운 뒤 실측하니 `PAPER_TRADE` 가 그랬다(자기 방
+    // 모니터 11걸음 · 콘텐츠 방 모니터 9걸음). 그 축은 아직 아무 테스트도 안 재고 있다.
+    let affinityOutOfRoom: Set<String> = []
     var outOfRoom: Set<String> = []
     for zone in plan.zones {
         let inZone = Set(
