@@ -56,6 +56,9 @@ export interface IntradayStopAccountFailure {
 
 export interface ApplyIntradayStopResult {
   window: 'BEFORE_OPEN' | 'TRADING' | 'AFTER_CLOSE';
+  // 이 회차를 돌린 시각. 손절은 그 순간의 현재가로 즉시 청산하므로, 카드에 시각이 없으면
+  // 같은 종목의 시가 매수와 구분되지 않아 "언제 판 것인가" 를 원장으로만 알 수 있다.
+  asOf: Date;
   accountCount: number;
   inspectedCount: number;
   // 시세 조회가 예외로 끊긴 종목 수. 공급자 장애 신호다.
@@ -87,8 +90,10 @@ interface CandidateContext {
 
 const emptyResult = (
   window: ApplyIntradayStopResult['window'],
+  asOf: Date,
 ): ApplyIntradayStopResult => ({
   window,
+  asOf,
   accountCount: 0,
   inspectedCount: 0,
   priceErrorCount: 0,
@@ -131,15 +136,15 @@ export class ApplyIntradayStopUsecase {
   ): Promise<ApplyIntradayStopResult> {
     const { tradeDate, minutes } = getKstClock(command.executedAt);
     if (minutes < 9 * 60 + 30) {
-      return emptyResult('BEFORE_OPEN');
+      return emptyResult('BEFORE_OPEN', command.executedAt);
     }
     // 15:20~15:30 마감 동시호가는 가격이 튈 수 있고, 10분 뒤 종가 밴드가 다시 판정한다.
     if (minutes >= 15 * 60 + 20) {
-      return emptyResult('AFTER_CLOSE');
+      return emptyResult('AFTER_CLOSE', command.executedAt);
     }
 
     const accounts = await this.repository.findAllAccounts();
-    const result = emptyResult('TRADING');
+    const result = emptyResult('TRADING', command.executedAt);
     result.accountCount = accounts.length;
     const tradeDay = new Date(`${tradeDate}T00:00:00.000Z`);
     // 손절선은 종가 밴드와 같은 원장(`strategy_parameter`)에서 온다. 상수를 따로 읽으면

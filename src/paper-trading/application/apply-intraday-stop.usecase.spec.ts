@@ -108,6 +108,7 @@ describe('ApplyIntradayStopUsecase', () => {
       usecase.execute({ executedAt: new Date('2026-08-25T00:00:00.000Z') }),
     ).resolves.toEqual({
       window: 'BEFORE_OPEN',
+      asOf: new Date('2026-08-25T00:00:00.000Z'),
       accountCount: 0,
       inspectedCount: 0,
       priceErrorCount: 0,
@@ -134,6 +135,7 @@ describe('ApplyIntradayStopUsecase', () => {
       usecase.execute({ executedAt: new Date('2026-08-25T06:25:00.000Z') }),
     ).resolves.toEqual({
       window: 'AFTER_CLOSE',
+      asOf: new Date('2026-08-25T06:25:00.000Z'),
       accountCount: 0,
       inspectedCount: 0,
       priceErrorCount: 0,
@@ -175,6 +177,7 @@ describe('ApplyIntradayStopUsecase', () => {
 
     expect(result).toEqual({
       window: 'TRADING',
+      asOf: new Date('2026-08-25T02:00:00.000Z'),
       accountCount: 1,
       inspectedCount: 2,
       priceErrorCount: 0,

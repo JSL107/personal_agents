@@ -73,6 +73,21 @@ describe('FillPendingOrdersUsecase', () => {
     expect(marketData.fetchDailyBars).not.toHaveBeenCalled();
   });
 
+  // 카드가 "몇 시 회차의 시가인가" 를 이 값으로 적는다. 창 밖 skip 경로가 비워 두면
+  // 그 회차만 날짜 없는 카드가 나가고, 값이 어긋나면 체결일을 하루 밀어 적는다.
+  it('실행 시각을 창 안팎 어느 경로에서도 그대로 결과에 남긴다', async () => {
+    const { usecase } = createFixture();
+    const beforeOpen = new Date('2026-08-13T00:29:59.000Z');
+    const trading = new Date('2026-08-13T00:30:00.000Z');
+
+    await expect(
+      usecase.execute({ executedAt: beforeOpen }),
+    ).resolves.toMatchObject({ window: 'BEFORE_OPEN', asOf: beforeOpen });
+    await expect(
+      usecase.execute({ executedAt: trading }),
+    ).resolves.toMatchObject({ window: 'TRADING', asOf: trading });
+  });
+
   it('KST 09:30에는 오늘 미조정 봉의 시가로 due 주문을 체결한다', async () => {
     const { usecase, repository, marketData, executeOrder } = createFixture();
 
