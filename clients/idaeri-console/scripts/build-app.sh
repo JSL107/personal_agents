@@ -96,13 +96,27 @@ if [ -z "$CONSOLE_URL" ] && [ -f "$CONSOLE_DIR/../../.env" ]; then
   ENV_PORT="$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$CONSOLE_DIR/../../.env" | tail -1)"
   [ -n "$ENV_PORT" ] && CONSOLE_URL="http://127.0.0.1:$ENV_PORT"
 fi
+# 토큰(`IDAERI_CONSOLE_TOKEN`)도 같은 사정이다 — 백엔드에 `CONSOLE_REMOTE_TOKEN` 이 설정돼
+# 있으면 `LoopbackOnlyGuard` 가 같은 머신에서도 헤더를 요구하므로, 토큰 없이 뜬 앱은 읽기는
+# 되는데 지시·승인만 401 로 죽는다.
+#
+# **그런데 주소와 달리 자동으로 굽지 않는다.** 토큰은 비밀값이고 `Info.plist` 는 앱을 열어
+# 보는 누구나 읽는 평문이다 — 앱을 남에게 넘기면 토큰이 따라간다(`.env` 는 안 따라간다).
+# 그래서 레포 `.env` 를 뒤지지 않고, 셸에 직접 넣어 준 경우에만 굽고 경고를 남긴다.
+CONSOLE_TOKEN="${IDAERI_CONSOLE_TOKEN:-}"
+
 LS_ENVIRONMENT=""
-if [ -n "$CONSOLE_URL" ]; then
+if [ -n "$CONSOLE_URL" ] || [ -n "$CONSOLE_TOKEN" ]; then
   LS_ENVIRONMENT="	<key>LSEnvironment</key>
 	<dict>
-		<key>IDAERI_CONSOLE_URL</key>
+"
+  [ -n "$CONSOLE_URL" ] && LS_ENVIRONMENT="$LS_ENVIRONMENT		<key>IDAERI_CONSOLE_URL</key>
 		<string>$(xml_escape "$CONSOLE_URL")</string>
-	</dict>
+"
+  [ -n "$CONSOLE_TOKEN" ] && LS_ENVIRONMENT="$LS_ENVIRONMENT		<key>IDAERI_CONSOLE_TOKEN</key>
+		<string>$(xml_escape "$CONSOLE_TOKEN")</string>
+"
+  LS_ENVIRONMENT="$LS_ENVIRONMENT	</dict>
 "
 fi
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -189,6 +203,13 @@ if [ -n "$CONSOLE_URL" ]; then
 else
   echo "  백엔드 주소  못 정했다 — Finder 실행은 코드 기본값 3002 로 붙는다."
   echo "              IDAERI_CONSOLE_URL=http://127.0.0.1:3099 ./scripts/build-app.sh 로 다시 구워라."
+fi
+if [ -n "$CONSOLE_TOKEN" ]; then
+  echo "  콘솔 토큰    번들에 구웠다 — Info.plist 에 평문으로 박히니 이 .app 을 남에게 넘기지 마라."
+else
+  echo "  콘솔 토큰    안 구웠다. 백엔드에 CONSOLE_REMOTE_TOKEN 이 설정돼 있으면 Finder 로 연 앱은"
+  echo "              읽기만 되고 지시·승인이 401 로 막힌다 — 그때는 셸에서 두 값을 함께 넘겨 띄우거나"
+  echo "              IDAERI_CONSOLE_TOKEN=... 을 주고 다시 구워라(평문 박제를 감수하는 선택이다)."
 fi
 echo
 echo "  서명은 링커가 붙인 ad-hoc 뿐이라 번들 단위 검증(spctl)은 통과하지 못한다."
