@@ -39,6 +39,9 @@ export interface AgentRetryInputSnapshot {
   decidedAt?: string;
   titleQuery?: string; // BLOG_PUBLISH
   pageId?: string; // BLOG_PUBLISH — 최초 실행에서 선택한 Notion page
+  // BLOG_PUBLISH — 결번을 메우려고 지목한 발행 날짜. 재실행이 이걸 안 물려받으면 같은 초안이
+  // 오늘 날짜로 나가 그 칸은 여전히 빈 채로 남는다.
+  publishedAt?: string;
   prompt?: string;
   ruleVersion?: number;
 }
