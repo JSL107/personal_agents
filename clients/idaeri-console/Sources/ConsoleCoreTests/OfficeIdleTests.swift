@@ -615,17 +615,17 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     //
     // **배치마다 명단이 다르다.** 방의 이웃이 갈리면 어느 옆방이 더 가까운지도 갈린다.
     let strollTargetOutOfZone: [Int: Set<String>] = [
-        // 2열은 방이 3행 2열이라 위아래 이웃이 가깝다. 벽걸이 경쟁을 푼 뒤 열여섯에서 열하나.
+        // 2열은 방이 3행 2열이라 위아래 이웃이 가깝다. 벽걸이 경쟁을 푼 뒤 열여섯에서 열하나,
+        // 평가 방에 복합기를 놓고 열로 줄었다.
         2: [
-            "WORK_REVIEWER", "EVENING_RETRO",
+            // 평가 → 품질 프린터. 2열에서는 품질 방이 바로 위라 자기 방 것보다 가깝다.
+            "EVENING_RETRO",
             "BLOG_REVISION", "CTO_STUDY", "CAREER_MATE", "JOB_APPLICATION",
             "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE",
             "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
         ],
-        // 3열은 2행 3열. 여덟이고, 벽 자리 넷을 바꾸기 전에는 열다섯이었다.
+        // 3열은 2행 3열. 벽 자리 넷을 바꾸기 전 열다섯 → 여덟 → 평가 방 복합기로 여섯.
         3: [
-            // 평가 → 품질 프린터 (평가 방에는 프린터가 없다)
-            "WORK_REVIEWER", "EVENING_RETRO",
             // 콘텐츠 → 총무 게시판 · 품질 책장 (둘 다 콘텐츠 방에도 있지만 옆방이 가깝다)
             "BLOG_REVISION", "CTO_STUDY",
             // 자산 → 콘텐츠 모니터 (자기 방 11걸음 · 콘텐츠 9걸음)
