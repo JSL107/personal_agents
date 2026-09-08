@@ -1679,6 +1679,20 @@ describe('PublishNotionDraftUsecase', () => {
     });
   });
 
+  it('지목한 발행 날짜를 교체 스냅샷에도 남긴다 — /retry-run 이 여기서 읽는다', async () => {
+    const { usecase, updateInputSnapshot } = buildUsecase({ drafts: [draft] });
+
+    await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      publishedAt: '2026-09-07T00:00:00.000Z',
+    });
+
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ publishedAt: '2026-09-07T00:00:00.000Z' }),
+    );
+  });
+
   it('같은 제목 일부에 매칭된 초안이 여럿이면 가장 오래된 페이지를 선택한다', async () => {
     const newerDraft = {
       ...draft,

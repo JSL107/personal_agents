@@ -314,6 +314,10 @@ export class PublishNotionDraftUsecase {
         slackUserId: input.slackUserId,
         ...(titleQuery ? { titleQuery } : {}),
         pageId: target.pageId,
+        // 이 콜백은 스냅샷을 통째로 교체하므로 지목한 날짜를 여기서 다시 실어야 한다.
+        // 빠지면 원장에서 소급 회차인지 갈리지 않고, 무엇보다 `/retry-run` 이 스냅샷에서
+        // 이 값을 읽어 재실행하므로 재시도가 결번이 아닌 그날 날짜로 나간다.
+        ...(input.publishedAt ? { publishedAt: input.publishedAt } : {}),
       });
     }
     // 아직 응답하지 않은 발행 카드가 열려 있으면 이번 회차는 넘긴다. 없으면 같은 글 카드가
