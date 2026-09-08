@@ -102,6 +102,13 @@ enum Layout {
     /// 탭 안쪽 내용의 최소 높이. 탭 전환 막대만큼 창보다 낮다.
     static let contentMinHeight: CGFloat = 520
     static let officeMinWidth: CGFloat = 640
+    /// 탭 전환 막대가 창 세로에서 가져가는 높이 — 세그먼트 피커(24) + 위아래 여백 + 구분선 1.
+    ///
+    /// 창 크기를 도면 배율에서 거꾸로 잡을 때 **이만큼을 먼저 빼야 한다.** 오피스 씬은 창이
+    /// 아니라 이 막대 아래를 받으므로, 창 세로를 그대로 도면 요구치와 견주면 매번 41px 을
+    /// 더 가진 것으로 착각한다(타이틀바까지 더하면 73px — 계단 하나가 40px 인 이 화면에서는
+    /// 두 계단에 가까운 오차다).
+    static let tabHeaderHeight: CGFloat = 24 + Spacing.sm * 2 + 1
     static let sheetMinWidth: CGFloat = 380
     static let editorMinHeight: CGFloat = 120
 }
