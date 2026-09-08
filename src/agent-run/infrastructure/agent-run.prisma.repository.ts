@@ -38,6 +38,7 @@ import {
   AgentSweptCountRow,
   BeginAgentRunInput,
   CountUnsuccessfulSweepReviewsQuery,
+  FailedAgentRunSnapshot,
   FailedRunDetail,
   FailedRunSnapshot,
   FindLatestSweepReviewQuery,
@@ -245,6 +246,38 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       .map((row) => ({
         id: row.id,
         output: row.output as unknown,
+        endedAt: row.endedAt,
+        inputSnapshot: row.inputSnapshot as unknown,
+      }));
+  }
+
+  async findRecentFailedRuns({
+    agentType,
+    sinceDays,
+    limit,
+  }: {
+    agentType: AgentType;
+    sinceDays: number;
+    limit: number;
+  }): Promise<FailedAgentRunSnapshot[]> {
+    const cutoff = getKstDayStartAsUtc(sinceDays - 1);
+    const rows = await this.prisma.agentRun.findMany({
+      where: {
+        agentType,
+        status: AgentRunStatus.FAILED,
+        endedAt: { gte: cutoff },
+      },
+      orderBy: { endedAt: 'desc' },
+      take: limit,
+      select: { id: true, endedAt: true, inputSnapshot: true },
+    });
+
+    return rows
+      .filter(
+        (row): row is typeof row & { endedAt: Date } => row.endedAt !== null,
+      )
+      .map((row) => ({
+        id: row.id,
         endedAt: row.endedAt,
         inputSnapshot: row.inputSnapshot as unknown,
       }));

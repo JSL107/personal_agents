@@ -12,6 +12,7 @@ describe('RetryRunUsecase', () => {
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
     findRecentSucceededRuns: jest.fn(),
+    findRecentFailedRuns: jest.fn().mockResolvedValue([]),
     aggregateQuotaStats: jest.fn(),
     findSimilarPlans: jest.fn().mockResolvedValue([]),
     findSucceededOutputsByIds: jest.fn().mockResolvedValue([]),

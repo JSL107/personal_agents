@@ -14,6 +14,7 @@ const buildRepo = (
   recordEvidence: jest.fn(),
   findLatestSucceededRun: jest.fn(),
   findRecentSucceededRuns: jest.fn(),
+  findRecentFailedRuns: jest.fn().mockResolvedValue([]),
   aggregateQuotaStats: jest.fn().mockResolvedValue(rows),
   findById: jest.fn(),
   findSimilarPlans: jest.fn().mockResolvedValue([]),

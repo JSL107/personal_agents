@@ -53,6 +53,15 @@ export interface SucceededAgentRunSnapshot {
   inputSnapshot: unknown;
 }
 
+// 예외로 끝난 회차. 성공 조회(SucceededAgentRunSnapshot)와 달리 output 에는 오류만 남으므로
+// 무엇을 입력으로 돌다 실패했는지(inputSnapshot)가 유일한 단서다 — 매번 같은 결과를 내는
+// 실패를 다음 회차에서 피하려면 이 값이 필요하다.
+export interface FailedAgentRunSnapshot {
+  id: number;
+  inputSnapshot: unknown;
+  endedAt: Date;
+}
+
 // OPS-1: /quota 슬래시 응답용 — 한 사용자의 특정 시간 범위 내 agent_run 통계.
 export interface QuotaStatRow {
   cliProvider: string; // 'codex-cli' / 'claude-cli' / 'gemini-cli' / 'mock' / 'unknown'
@@ -257,6 +266,12 @@ export interface AgentRunRepositoryPort {
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]>;
+  // 최근 N일간 예외로 끝난 실행 기록 다수 조회.
+  findRecentFailedRuns(input: {
+    agentType: AgentType;
+    sinceDays: number;
+    limit: number;
+  }): Promise<FailedAgentRunSnapshot[]>;
   // OPS-1: cliProvider 별 count + 평균/총 duration 집계 (slackUserId 한정).
   aggregateQuotaStats(input: QuotaStatsQuery): Promise<QuotaStatRow[]>;
   // OPS-5: Failure Replay — id 로 AgentRun 단건 조회.

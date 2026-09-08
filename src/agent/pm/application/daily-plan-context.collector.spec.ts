@@ -43,6 +43,7 @@ const buildCollector = (
     {
       findLatestSucceededRun: jest.fn().mockResolvedValue(null),
       findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
+      findRecentFailedRuns: jest.fn().mockResolvedValue([]),
       findSimilarPlans: jest.fn().mockResolvedValue([]),
     } as unknown as AgentRunService,
     {

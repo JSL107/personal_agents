@@ -82,6 +82,9 @@ const buildUsecase = (overrides?: {
   humanizeByCall?: string[];
   // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
   recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
+  // 최근 예외로 끝난 회차. 차단과 달리 FAILED 로 남아 위 조회에 잡히지 않는다.
+  failedRuns?: Array<{ inputSnapshot: unknown }>;
+  failedRunsError?: Error;
   appliedPreviews?: Array<{ payload: unknown }>;
   appliedPreviewsError?: Error;
   // 원장 조회가 깨진 상황. 발행이 그 때문에 멈추면 안 된다.
@@ -180,6 +183,12 @@ const buildUsecase = (overrides?: {
         throw overrides.recentRunsError;
       }
       return overrides?.recentRuns ?? [];
+    }),
+    findRecentFailedRuns: jest.fn().mockImplementation(async () => {
+      if (overrides?.failedRunsError) {
+        throw overrides.failedRunsError;
+      }
+      return overrides?.failedRuns ?? [];
     }),
     execute: jest.fn().mockImplementation(async (input) => {
       const execution = await input.run({
@@ -359,6 +368,43 @@ describe('PublishNotionDraftUsecase', () => {
       const 익명화프롬프트 = String(익명화호출?.[0].request.prompt);
       expect(익명화프롬프트).not.toContain('developer.mozilla.org');
       expect(익명화프롬프트).toMatch(CODE_MASK_PATTERN);
+    });
+
+    // '웹' 은 사람이 공개 기술 문서를 읽고 손수 적재한 초안이다. 재료가 '오늘의 공부' 와 같은데
+    // 회사용으로 떨어지면 코드를 그대로 보여준 채 "코드 속 내부 이름을 지워라" 를 시키게 되고,
+    // 그 결과를 코드 보존 게이트가 막아 그 초안이 큐를 세운다(2026-09-07 실제 정지, 실측 3/3 변형).
+    it('웹 초안도 공개 자료 계약이라 익명화 모델에 표식을 보낸다', async () => {
+      const 웹초안 = { ...draft, sourceType: '웹' };
+      const { masked } = maskFencedCodeBlocks(코드본문);
+      const { usecase, modelRouter, createPreview } = buildUsecase({
+        drafts: [웹초안],
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          body: masked,
+        }),
+      });
+
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+        responseUrl: 'https://hooks.slack.test/response',
+      });
+
+      const 익명화호출 = modelRouter.route.mock.calls.find(
+        ([input]) =>
+          !String(input.request.systemPrompt).includes('블로그의 편집자'),
+      );
+      expect(String(익명화호출?.[0].request.prompt)).not.toContain(
+        'developer.mozilla.org',
+      );
+      expect(String(익명화호출?.[0].request.prompt)).toMatch(CODE_MASK_PATTERN);
+      // 발행본에는 원본 코드가 글자 그대로 돌아온다 — 가리는 목적이 이것이다.
+      const payload = createPreview.execute.mock.calls[0][0] as {
+        payload: { content: string };
+      };
+      expect(payload.payload.content).toContain('Host: developer.mozilla.org');
     });
 
     // 코드 보존 계약에서는 삭제도 실패다. 표식이 사라지면 복원할 것이 없어 코드가 조용히 빠지고,
@@ -1950,6 +1996,32 @@ describe('차단된 초안 큐 막힘', () => {
 
     // 오래된 순이라면 막힌초안(8/1)이 먼저다. 차단 이력이 그 순서를 뒤집어야 한다.
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
+  // 예외로 끝난 회차는 원장에 FAILED 로 남아 성공 조회에 잡히지 않는다. 코드 변형·과삭제처럼
+  // 그 초안이 있는 한 매번 같은 결과를 내는 실패가 있고, 굶은 초안 우선 규칙과 겹치면 그 한 건이
+  // 매일 큐 맨 앞을 차지한다 — 2026-09-07 에 초안 32건이 그렇게 멈췄다.
+  it('최근 실패한 초안도 뒤로 미루고 다음 초안을 집는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      failedRuns: [{ inputSnapshot: { pageId: 막힌초안.pageId } }],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
+  // 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다 — 차단 이력과 같은 정책.
+  it('실패 이력 조회가 깨져도 발행은 계속한다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      failedRunsError: new Error('DB 연결 실패'),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
   });
 
   // 제외가 아니라 후순위다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
