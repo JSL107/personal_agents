@@ -12,9 +12,11 @@ export enum AgentType {
   // V3 비전 workflow phase plan §4.4 P4 Evaluate — Work Reviewer / PO Shadow /
   // Impact Reporter 3 sub-agent 직전 snapshot 을 합성 → 정성/정량 + 이력서용 careerLog.
   PO_EVAL = 'PO_EVAL',
-  // V3 비전 workflow phase plan §4.5 P5 Meta — PO_EVAL (필수) + PM/CTO (선택) 의 직전 snapshot
+  // V3 비전 workflow phase plan §4.5 P5 Meta — PO_EVAL (필수) + PM (선택) 의 직전 snapshot
   // 을 합성 → contextDriftReport + docsQualityReport + finalSummary. minimal 단계는 LLM 추론만
   // (컨텍스트 오염 알고리즘은 별도 R&D plan).
+  // 원래 PM 과 함께 CTO 도 선택 입력으로 적혀 있었으나, CTO 배정 워커가 2026-09-04 에
+  // 폐지돼 `AgentType.CTO` 자체가 없다 — 조회하는 코드도 PM 하나뿐이다.
   CEO = 'CEO',
   // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 안에서 적합한 label 부분집합
   // 을 LLM 분류 추론으로 골라 issues.addLabels. 새 label 생성 X (vocab 내부 선택).

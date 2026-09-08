@@ -32,7 +32,7 @@ export enum TriggerType {
   // V3 비전 P2 Assign — CTO worker (/assign 슬래시). PM 직전 plan 의 assignableTaskIds → BE 5종 분배.
   // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.
   SLACK_COMMAND_PO_EVAL = 'SLACK_COMMAND_PO_EVAL',
-  // V3 비전 P5 Meta — CEO worker (/ceo-review 슬래시). PO_EVAL + PM/CTO snapshot 합성 → drift/docs review.
+  // V3 비전 P5 Meta — CEO worker (/ceo-review 슬래시). PO_EVAL + PM snapshot 합성 → drift/docs review.
   SLACK_COMMAND_CEO_REVIEW = 'SLACK_COMMAND_CEO_REVIEW',
   // PRO-4 Weekly Summary CRON 연계 — 매주 금 17:00 worklog 발송 직후 자동 CEO meta 발화 (range=WEEK).
   // WEEKLY_SUMMARY_CRON (worklog) 과 별도 — 분석/Failure Replay 시 trigger 출처 구분 가능.
