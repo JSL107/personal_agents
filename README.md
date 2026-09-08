@@ -323,7 +323,14 @@ cd clients/idaeri-console
 swift build
 IDAERI_CONSOLE_URL=http://127.0.0.1:3002 swift run IdaeriConsole
 swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러너
+
+./scripts/build-app.sh                # .app 번들로 감싸 Finder 에서 열 수 있게
+./scripts/build-app.sh /Applications  # 만든 뒤 설치까지
 ```
+
+`.app` 은 Dock 고정과 더블클릭 실행을 위한 껍데기다. 백엔드 주소는 Finder 실행에 셸 env 가
+닿지 않으므로 굽는 시점에 번들에 새긴다(`IDAERI_CONSOLE_URL`, 없으면 `.env` 의 `PORT`).
+코드사인·공증은 하지 않는다 — 직접 빌드한 앱은 Gatekeeper 가 막지 않는다.
 
 </details>
 
