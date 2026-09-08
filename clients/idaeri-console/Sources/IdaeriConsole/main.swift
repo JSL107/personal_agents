@@ -31,6 +31,28 @@ let renderSize =
         return CGSize(width: parsed.width, height: parsed.height)
     } ?? CGSize(width: 1400, height: 820)
 
+// `--hour` 값. 없으면 nil(지금 시각), **있는데 못 읽으면 끊는다.**
+//
+// 조용히 기본값으로 물러서면 `--hour 2p` 같은 오타에서 낮 화면을 보고 밤을 확인한 줄 안다 —
+// `--room`·`--zone-columns` 가 이미 같은 이유로 오타를 끊는다.
+//
+// 값을 읽는 규칙 자체는 `officeParseHour`(ConsoleCore) 가 갖는다 — 여기 두면 실행 파일 안이라
+// 테스트로 고정할 수가 없다(`officeParseRenderSize` 와 같은 이유). 여기 남는 것은 인자를
+// 찾아 끊는 일뿐이다.
+func officeHourArgument() -> Int? {
+    guard let index = CommandLine.arguments.firstIndex(of: "--hour") else {
+        return nil
+    }
+    let raw = index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : ""
+    guard let hour = officeParseHour(raw) else {
+        FileHandle.standardError.write(
+            Data("--hour 는 정수여야 한다 (받은 값: \"\(raw)\")\n".utf8)
+        )
+        exit(2)
+    }
+    return hour
+}
+
 // 화면 회귀 확인 모드 — 창을 띄우지 않고 사무실 한 장을 PNG 로 굽고 끝난다.
 // 시각 변경이 실제로 화면에 나왔는지는 눈으로만 판정되는데, 확인 경로가 "앱을 띄우고
 // 사람이 본다" 하나뿐이면 그 판정을 사람에게 매번 떠넘기게 된다.
@@ -39,13 +61,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     let outputPath =
         renderIndex + 1 < CommandLine.arguments.count
         ? CommandLine.arguments[renderIndex + 1] : "office.png"
-    let hourIndex = CommandLine.arguments.firstIndex(of: "--hour")
-    let hour = hourIndex.flatMap { index -> Int? in
-        guard index + 1 < CommandLine.arguments.count else {
-            return nil
-        }
-        return Int(CommandLine.arguments[index + 1])
-    }
+    let hour = officeHourArgument()
     // 일반 앱 경로에는 닿지 않고, 회귀 렌더에서만 가구 자세 일곱 종류를 강제로 세운다.
     let poseDemo = CommandLine.arguments.contains("--pose-demo")
     // 호버 쪽지는 마우스가 있어야 뜨므로 렌더에 잡히지 않는다 — 그러면 "가려지는지" 를
@@ -116,6 +132,21 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         room: room
     )
     exit(succeeded ? 0 : 1)
+}
+
+// 색 회귀 게이트 — 렌더 픽셀에서 바닥 밝기를 재고 규칙을 어기면 exit 1.
+//
+// 톤이 어긋나도 아무도 모르는 자리를 메운다. 통로 누르기가 0.78 까지 올라가 복도가 벽보다
+// 어두워졌을 때(실측 26.9 대 87.0) 파라미터 단언은 초록이었다 — 화면 밝기는 텍스처 밝기와
+// 누르는 양의 곱이라 값끼리 비교해서는 순서를 알 수 없다.
+//
+// 낮(14시)과 밤(22시) 둘을 잰다. 시간대 조명 자체는 이 축에서 안 보이지만(화면 전체 평균이
+// 2.6/255 만 움직인다 — 판정은 `OfficeIdleTests`), 나중에 밤 전용 색막 같은 것이 들어오면
+// 바닥이 사람 밝기 아래로 가라앉는 것을 여기서 잡는다.
+//   swift run IdaeriConsole --color-check [--hour 14] [--size 1440x860]
+if CommandLine.arguments.contains("--color-check") {
+    let hour = officeHourArgument()
+    exit(officeCheckFloorColors(hours: hour.map { [$0] } ?? [14, 22], size: renderSize) ? 0 : 1)
 }
 
 // 평면도 내보내기 — 다른 기기의 앱이 같은 배치를 그리도록 계산 결과를 JSON 으로 넘긴다.

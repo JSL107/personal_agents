@@ -225,7 +225,9 @@ private func alarmDemoApproval() -> ConsoleApproval {
     )
 }
 
-private func poseDemoAgents() -> [ConsoleAgent] {
+/// 색 실측(`--color-check`)도 같은 표본을 쓴다 — 백엔드 없이 여섯 방이 다 서는 유일한 명단이고,
+/// 실제 스냅샷을 쓰면 인원·상태가 회차마다 달라 밝기 판정이 흔들린다.
+func poseDemoAgents() -> [ConsoleAgent] {
     let departments: [Department] = [
         .planning, .quality, .evaluation, .treasury, .content, .internalOps,
     ]

@@ -861,6 +861,62 @@ final class OfficeScene: SKScene {
         run(SKAction.repeatForever(tick), withKey: "attendanceClock")
     }
 
+    /// 색 실측(`--color-check`)이 픽셀 자리를 계산하는 데 필요한 값.
+    ///
+    /// 좌표계(`gridOrigin`·`tileSize`)와 평면도는 씬이 창 크기에서 정한다 — 밖에서 다시 세면
+    /// 규칙이 둘이 되어, 배율 계단이 바뀐 창에서 재는 자리가 조용히 어긋난다.
+    ///
+    /// 가려진 칸을 함께 넘기는 이유는 **스프라이트가 위로 자라기** 때문이다. 가구·사람은 발이
+    /// 닿는 칸(`footprint`)보다 높게 그려져, 그 위 칸에서 재면 바닥이 아니라 물건의 색이 잡힌다.
+    /// 어디까지 자라는지는 씬만 알고 있다.
+    ///
+    /// **자라는 높이를 숫자로 적어 두지 않는다.** 그림 크기와 배율에서 그때그때 구한다 —
+    /// 손으로 적으면 더 큰 그림이 들어온 날 그 몫이 조용히 새어 바닥색에 섞인다.
+    ///
+    /// 넘치게 빼는 것은 괜찮다(칸이 종류마다 20개 이상 남는다). 모자라게 빼는 것만 위험하다.
+    func colorProbeGeometry() -> OfficeColorProbeGeometry {
+        var occupied: Set<TilePoint> = []
+        for placement in plan.furniture {
+            let footprint = placement.kind.footprint
+            // 바닥 장식(러그)은 납작해서 위로 자라지 않지만, 그 칸 자체는 바닥색이 아니므로
+            // 함께 뺀다.
+            let reach =
+                placement.kind.isFloorDecor
+                ? footprint.height
+                : max(footprint.height, furnitureTileHeight(placement.kind))
+            for dx in 0..<footprint.width {
+                for dy in 0..<reach {
+                    occupied.insert(TilePoint(x: placement.tile.x + dx, y: placement.tile.y + dy))
+                }
+            }
+        }
+        // 캐릭터는 자기 칸 바닥선에서 위로 `officeSeatedSpriteTiles` 칸만큼 자란다.
+        let characterReach = max(1, Int(officeSeatedSpriteTiles.rounded(.up)))
+        for tile in characters.values.map(\.tile) + [plan.presidentTile] {
+            for dy in 0..<characterReach {
+                occupied.insert(TilePoint(x: tile.x, y: tile.y + dy))
+            }
+        }
+        return OfficeColorProbeGeometry(
+            floor: plan.floor,
+            gridOrigin: gridOrigin,
+            tileSize: tileSize,
+            occupiedTiles: occupied
+        )
+    }
+
+    /// 가구 스프라이트가 자기 칸 바닥선에서 위로 차지하는 칸수(올림). 벽걸이는 벽 중턱까지
+    /// 들어 올려 걸리므로 그 몫도 더한다 — `renderFurniture` 의 배치와 같은 근거를 쓴다.
+    private func furnitureTileHeight(_ kind: FurnitureKind) -> Int {
+        guard let texture = SpriteLoader.furnitureTexture(kind) else {
+            return kind.footprint.height
+        }
+        let lift = kind.isWallMounted ? officeWallMountLiftTiles : 0
+        let tiles =
+            Double(texture.size().height) * kind.sizeBoost / officeReferenceTileSize + lift
+        return max(1, Int(tiles.rounded(.up)))
+    }
+
     /// 회귀 렌더가 자세를 실제로 그리지 않으면 누락도 정상 화면처럼 저장되므로 전부 강제 배치한다.
     ///
     /// 자세 종류가 아니라 **가구 종류마다** 한 명씩 세운다. 같은 자세라도 가구가 어디에 어떻게
@@ -1038,8 +1094,8 @@ final class OfficeScene: SKScene {
                     // 바닥은 배경으로 물러나야 한다. 어두운 색을 섞어 대비·채도를 함께 누른다
                     // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
                     //
-                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 0.54~0.78 로 높아 원본 바닥재의
-                    // 차이가 거의 지워지는데, 시간대 색막까지 얹히면 여섯 방이 한 가지 색으로
+                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 한때 0.54~0.78 로 높아 원본
+                    // 바닥재의 차이가 거의 지워졌는데, 시간대 색막까지 얹히면 여섯 방이 한 색으로
                     // 보였다("어디가 어느 부서인지 문패를 읽어야 안다"). 벽이 이미 같은 방식으로
                     // 부서 색조를 띠므로(applyWallShading), 바닥도 같은 규칙을 따르게 해 방 전체가
                     // 한 색조로 묶이게 한다.
