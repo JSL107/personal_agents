@@ -155,6 +155,14 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = { ... };
 `Record<AgentType, ...>` 타입이므로 새 에이전트를 추가하면 계약 누락이 **컴파일 타임에** 걸린다.
 기존 `AGENT_TO_PROVIDER`와 같은 방식이다.
 
+> **정정 (2026-09-08) — 위 인터페이스의 `nextAgent` 는 이후 제거됐다(#517).** 이 설계대로
+> 넣긴 했지만 끝내 읽는 코드가 생기지 않았고, 그 사이 실제 편성과 어긋난 사본이 됐다
+> (`PO_SHADOW`→`PO_EVAL` 과 `PM`→`CEO` 가 빠져 있었다). **이 문서를 근거로 계약을 확장할 때
+> 이 필드를 되살리지 말 것.** 「누가 누구 산출물을 받는가」의 정본은 둘이다 — 실행 순서는
+> `AUTOPILOT_PLAYBOOK` 의 `digestGroup` 선언 순서가 정하고, 무엇을 재료로 쓰는지는 받는 쪽
+> usecase 가 직접 조회한다(`generate-po-evaluation.usecase.ts` · `generate-ceo-meta.usecase.ts`).
+> 위 코드 블록은 2026-07-31 당시의 결정 기록이라 그대로 둔다.
+
 **계약 정밀도는 실사용도에 맞춘다** — 27개를 전부 정밀하게 채우는 비용이 크고, 한 번도
 돌아본 적 없는 에이전트는 산출물 형태를 실측할 방법 자체가 없다.
 
