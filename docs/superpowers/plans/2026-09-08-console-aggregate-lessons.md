@@ -162,8 +162,11 @@
 ```bash
 # GET /v1/console/snapshot 에 {"code":0,"message":"ok","data":{...}} 를 돌려주는 서버면 된다.
 # data.agents 에 WAITING 24명, data.sessions 에 9~19개.
+# `Package.swift` 가 clients/idaeri-console 에 있어서 경로를 줘야 한다 — 안 주면
+# "Could not find Package.swift in this directory or any of its parent directories."
 IDAERI_CONSOLE_URL=http://127.0.0.1:3390 \
-  swift run IdaeriConsole --render /tmp/office.png --hour 14 --size 720x560
+  swift run --package-path clients/idaeri-console \
+  IdaeriConsole --render /tmp/office.png --hour 14 --size 720x560
 ```
 
 **`--render --size` 는 앱 최소 폭을 적용하지 않는다.** `renderOfficeScene` 이
@@ -187,7 +190,17 @@ IDAERI_CONSOLE_URL=http://127.0.0.1:3390 \
 assertion 실패가 아니라 **크래시**(`Index out of range`)로 죽어 무엇이 틀렸는지 안 보였다.
 `guard` 를 넣어 "없으면 없다고 말하게" 고쳤다.
 
-### 4-3. 리뷰 봇의 diff 예산을 lockfile 이 먹는다
+### 4-3. 문서에 적는 명령은 적은 그대로 돌려 봐라
+
+이 문서의 첫 판은 위 재현 명령을 `swift run IdaeriConsole ...` 로 적었다. **저장소 루트에서
+붙여넣으면 즉시 실패한다** — `Package.swift` 가 `clients/idaeri-console` 에 있어서
+`--package-path` 가 필요하다. 리뷰가 잡았다.
+
+내가 실제로 쓴 명령은 그 디렉터리로 `cd` 한 뒤였고, 문서에는 `cd` 없이 옮겨 적었다.
+**돌아가는 명령을 옮겨 적는 것과, 적은 명령이 돌아가는 것은 다르다.** 재현 절차는 붙여넣기
+대상이므로 붙여넣어 봐야 확인된 것이다.
+
+### 4-4. 리뷰 봇의 diff 예산을 lockfile 이 먹는다
 
 #503 에서 이대리 봇이 스스로 밝혔다 — **"diff 가 50,000바이트에서 잘려
 `test/webhook-rawbody.e2e-spec.ts` 의 실제 구현과 lockfile 후반부는 미확인"**.
