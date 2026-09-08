@@ -205,16 +205,21 @@ struct AppRootView: View {
         await MainActor.run { store.apply(briefing: briefing) }
     }
 
-    /// 이벤트만으로는 못 채우는 값이 남았을 때 스냅샷을 한 번 더 받는다.
+    /// 상태가 바뀐 직후 스냅샷을 한 번 더 받는다.
     ///
-    /// 말풍선 문구는 이제 `state.changed` 가 함께 싣고 오므로 그것만으로는 당겨오지 않는다.
-    /// 남는 경우는 둘이다.
+    /// **말풍선 문구 때문은 더 이상 아니다** — `state.changed` 가 문구를 함께 싣고 오므로
+    /// 그 값은 이벤트만으로 즉시 맞는다. 그래도 이 조회를 남기는 이유는 이벤트가 원리상
+    /// 못 담는 값들이 있어서다.
     ///
-    /// - **완료**: 오늘 성공 건수(`doneToday`, 책상 위 서류 더미)가 이때 늘어나는데 그 값은
-    ///   스냅샷에만 있다. 30초 주기를 기다리면 방금 끝낸 일이 책상에 안 쌓인다.
-    /// - **문구가 안 실려 온 경우**: 이 필드를 모르는 옛 서버다. 그때는 예전처럼 정본을 당겨온다.
+    /// - **집계 상태**: 이벤트는 **런 한 건**의 상태를 싣지만 화면의 상태는 **그 사람 전체**의
+    ///   집계다(`deriveAgentState` — 열린 승인 > 활성 런 > 마지막 종료). 같은 사람의 두 런 중
+    ///   하나만 끝나거나 승인이 열린 채 새 런이 시작되면 이벤트와 집계가 갈리고, 이 조회가
+    ///   그것을 정정한다.
+    /// - **오늘 성공 건수**(`doneToday`, 책상 위 서류 더미) 와 **대표 브리핑**(실패 건수·할 일):
+    ///   둘 다 스냅샷·브리핑 응답에만 있다.
     ///
-    /// 체인 실행처럼 상태 변경이 몰릴 때 요청이 폭주하지 않도록 최소 간격을 둔다.
+    /// 체인 실행처럼 상태 변경이 몰릴 때 요청이 폭주하지 않도록 최소 간격을 둔다. 그 간격에
+    /// 걸려 조회를 건너뛰어도 문구만은 이벤트가 실어 온 값으로 이미 맞다.
     private func resyncAfterStateChange(_ event: ConsoleEvent) async {
         // 승인이 열리거나 닫히면 할 일 보드의 첫 줄이 바로 바뀌어야 한다. 30초 주기를
         // 기다리면 방금 누른 결재가 보드에 그대로 남아 "안 눌린 것" 처럼 보인다.
@@ -224,10 +229,7 @@ struct AppRootView: View {
         if case .approvalResolved = event {
             await resyncBriefing()
         }
-        guard case let .stateChanged(_, state, bubble) = event else {
-            return
-        }
-        if state != .completed, bubble != nil {
+        guard case .stateChanged = event else {
             return
         }
         if let lastResyncAt, Date().timeIntervalSince(lastResyncAt) < 2 {
