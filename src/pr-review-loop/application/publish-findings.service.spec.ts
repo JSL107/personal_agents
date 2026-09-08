@@ -167,6 +167,17 @@ describe('PublishFindingsService', () => {
     expect(outcome.issueComment).toBe(1);
   });
 
+  it('diff 에 없는 경로는 인라인 게시를 시도하지 않고 일반 코멘트로 간다', async () => {
+    github.addIssueComment.mockResolvedValue(undefined);
+
+    const outcome = await service.publish(
+      baseInput([finding({ file: 'PR 본문', line: 1 })]),
+    );
+
+    expect(github.createReviewComment).not.toHaveBeenCalled();
+    expect(outcome.issueComment).toBe(1);
+  });
+
   it('연습 모드에서는 GitHub 도 DB 도 건드리지 않는다', async () => {
     const outcome = await service.publish({
       ...baseInput([finding()]),
