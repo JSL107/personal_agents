@@ -5,6 +5,10 @@
 # 자동 판정을 두지 않는다 — 캐릭터가 숨쉬는 위상만으로도 픽셀은 매번 달라져서, 자동 판정을
 # 쓰려면 애니메이션을 멈춰 세우는 장치가 따로 필요하고 그 비용이 얻는 것보다 크다.
 #
+# **이 판단은 여기(실앱 캡처)에만 해당한다.** 오프스크린 렌더는 갱신 루프를 돌리지 않아
+# 동작이 0초에 멈춘 채 찍히므로 `--pose-demo --hour 14` 두 회차가 md5 까지 같다(실측).
+# 그래서 바닥 색·톤은 이미 자동 판정이 있다 — `swift run IdaeriConsole --color-check`.
+#
 # 사용:
 #   scripts/console-screens.sh            → docs/console-screens/current/ 에 캡처
 #   scripts/console-screens.sh baseline   → 기준 이미지를 갱신
