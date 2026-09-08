@@ -200,3 +200,31 @@ public func officeWindowFit(
     }
     return best
 }
+
+/// 창을 새 크기로 바꾸되 **왼쪽 위를 고정**하고 화면 안에 가둔 프레임(순수).
+///
+/// 좌표계는 AppKit 화면 좌표와 같다 — `(x, y)` 는 좌하단이고 y 는 위로 증가한다.
+///
+/// 왼쪽 위를 고정하는 이유: 세로 모니터 위쪽에 붙여 쓰는 배치에서 창이 **위로** 자라면
+/// 화면 밖으로 나가고, 가운데로 옮기면(`center()`) 사용자가 둔 자리를 뺏는다.
+///
+/// 클램프가 필요한 이유: 위를 고정한 채 키우면 아래로 자라 화면 아래 경계를 넘을 수 있다.
+/// 새 크기가 화면보다 크면 **왼쪽 위 모서리에 붙인다** — 그 경우 `max` 를 한 번 더 씌우지
+/// 않으면 하한이 상한보다 커져 창이 화면 밖 음수 자리로 밀린다.
+public func officeFittedWindowFrame(
+    currentFrame: OfficeRect,
+    fittedWidth: Double,
+    fittedHeight: Double,
+    visibleFrame: OfficeRect
+) -> OfficeRect {
+    let anchoredX = currentFrame.x
+    let anchoredY = currentFrame.y + currentFrame.height - fittedHeight
+    let maxX = max(visibleFrame.x + visibleFrame.width - fittedWidth, visibleFrame.x)
+    let maxY = max(visibleFrame.y + visibleFrame.height - fittedHeight, visibleFrame.y)
+    return OfficeRect(
+        x: min(max(anchoredX, visibleFrame.x), maxX),
+        y: min(max(anchoredY, visibleFrame.y), maxY),
+        width: fittedWidth,
+        height: fittedHeight
+    )
+}
