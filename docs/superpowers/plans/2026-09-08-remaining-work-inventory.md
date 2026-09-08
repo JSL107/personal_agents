@@ -121,9 +121,22 @@ Slack `response_url` 은 30분 만료라, 30분이 지나 누르면 카드 상�
 | `extract-zip` (high) | 2.0.1 → **수정본 없음** | `puppeteer@24.40.0` 하위. 상류에 패치가 없어 puppeteer 25 로 올라가야 경로가 갈린다 |
 | `deepmerge-ts` (high) | 7.1.5 → ≥8.0.0 | `@prisma/client@6.19.3` 하위. **Prisma 6 → 7** |
 
-즉 남은 7건을 없애려면 **NestJS 10→12 · Prisma 6→7 · puppeteer 24→25 ·
-`@huggingface/transformers` 업그레이드** 넷 중 하나 이상이 필요하다. 이건 이 레포의 스택
-정의를 바꾸는 일이라 별도 계획으로 다뤄야 한다(`pnpm outdated` 기준 넷 다 major 대기 중이다).
+**7건은 서로 독립된 네 경로에 나뉜다 — 전부 없애려면 넷을 모두 올려야 한다.** 하나만
+올리면 그 경로의 건수만 빠진다.
+
+| 경로 | 필요한 업그레이드 | 빠지는 건수 |
+|---|---|---|
+| NestJS | 10 → **11**(`@nestjs/core` 수정 하한 11.1.18) | 3 (`file-type` ×2 · `@nestjs/core`) |
+| `@huggingface/transformers` | 4.2.0 → 상위 | 2 (`adm-zip` · `sharp`) |
+| puppeteer | 24 → 25 | 1 (`extract-zip`) |
+| Prisma | 6 → 7 | 1 (`deepmerge-ts`) |
+
+**NestJS 는 11 이면 된다. 12 가 아니다.** `pnpm outdated` 의 latest 는 12.0.1 이지만 취약점
+해소에 필요한 하한은 11.1.18 이다 — 최신값을 목표로 삼으면 필요 없는 major 를 한 단계 더
+건너뛰게 된다.
+
+넷 다 이 레포의 스택 정의를 바꾸는 일이라(특히 `CLAUDE.md` §0 이 못 박은 NestJS 10 ·
+Prisma 6) 경로별로 나눠 별도 계획으로 다뤄야 한다.
 
 ### 3-4. override 의 「같은 major」 는 두 가지 뜻이다
 
