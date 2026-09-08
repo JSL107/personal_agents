@@ -218,11 +218,16 @@ public func officeWindowFit(
 ///
 /// - Parameters:
 ///   - maxViewWidth: 화면이 오피스 뷰에 줄 수 있는 최대 폭(창 테두리·탭 막대를 뺀 값).
-///   - tolerance: 늘려도 되는 비율의 상한. 넘으면 `nil` — 사용자가 **일부러** 작게 만든 창을
-///     두 배로 키우는 것은 보정이 아니라 방해다. 기본값 0.5 의 근거는 **계단 하나가 정확히
-///     2배**라는 것이다: 그 절반까지는 "거의 닿았다" 로 보고 마저 늘리고, 그보다 멀면 애초에
-///     다른 배율을 쓰는 창으로 본다. 0.2 로 잡았더니 실사용 창 960x989(1920x1080 화면)에서
-///     3열 40px(폭 1400 필요)이 1.46 배라 걸러져, 정작 고치려던 창에서 아무 일도 안 일어났다.
+///   - tolerance: **다음 계단까지 남은 거리 중** 대신 늘려 줄 비율. 기본값 0.5 는 "절반 넘게
+///     왔으면 마저 간다" 는 뜻이고, 그보다 멀면 애초에 다른 배율을 쓰는 창으로 본다.
+///
+///     남은 거리에 상대적이어야 하는 이유는 **계단 간격이 구간마다 다르기** 때문이다 —
+///     20 → 40 은 2배지만 40 → 60 은 1.5배다. 고정 비율(1.5배)을 쓰면 뒷 구간을 통째로
+///     덮어, 40px 에 온전히 선 창이 폭을 1px 만 늘려도 늘 60px 로 점프한다(1400x800 뷰가
+///     2100x1200 이 된다). 남은 거리로 재면 그 창은 1.25 배 안일 때만 올라간다.
+///
+///     0.2 로 잡았다가 올린 값이다. 실사용 창 960x989(1920x1080 화면)에서 3열 40px
+///     (폭 1400 필요)이 1.46 배라 걸러져, 정작 고치려던 창에서 아무 일도 안 일어났다.
 /// - Returns: 한 계단 위가 화면에 안 들어가거나 `tolerance` 를 넘으면 `nil`.
 public func officeSnapUpFit(
     viewWidth: Double,
@@ -245,27 +250,29 @@ public func officeSnapUpFit(
             columns: planSize.columns, rows: planSize.rows, backingScale: backingScale
         ).tileSize
     }
-    let target = max(drawnTileSize(2), drawnTileSize(3)) + unit
+    let currentTileSize = max(drawnTileSize(2), drawnTileSize(3))
+    let target = currentTileSize + unit
+    guard currentTileSize > 0 else {
+        return nil
+    }
+    let stretchLimit = 1 + (target / currentTileSize - 1) * tolerance
 
-    var best: OfficeWindowFit?
-    var bestStretch = Double.infinity
-    for zoneColumns in [2, 3] {
-        let planSize = officePlanSize(zoneColumns: zoneColumns)
-        let neededWidth = target * Double(planSize.columns)
-        // 앞이 온전한 도면, 뒤가 바깥벽 두 줄을 내주고 배율만 지키는 크기. 순서가 곧 우선순위다.
-        let heightCandidates = [
-            target * Double(planSize.rows),
-            target * Double(planSize.rows - officeViewHeightSlackRows),
-        ]
-        guard neededWidth <= maxViewWidth else {
-            continue
-        }
-        for neededHeight in heightCandidates {
-            guard neededHeight <= maxViewHeight else {
+    // 잘라낼 줄 수를 **바깥 고리**에 둔다. 안쪽에 두면 한 배치가 잘린 후보로 자리를 잡은 뒤
+    // 다음 배치의 온전한 후보가 "덜 늘어나지 않는다" 는 이유로 탈락한다 — 940x680 뷰
+    // (화면 1920x1000)에서 2열 잘린 후보(1.47배)가 3열 온전한 후보(1.49배)를 밀어냈다.
+    // 온전한 도면을 그릴 수 있는데 바깥벽을 자르는 것은 어느 배치에서도 이유가 없다.
+    for clippedRows in [0, officeViewHeightSlackRows] {
+        var best: OfficeWindowFit?
+        var bestStretch = Double.infinity
+        for zoneColumns in [2, 3] {
+            let planSize = officePlanSize(zoneColumns: zoneColumns)
+            let neededWidth = target * Double(planSize.columns)
+            let neededHeight = target * Double(planSize.rows - clippedRows)
+            guard neededWidth <= maxViewWidth, neededHeight <= maxViewHeight else {
                 continue
             }
             let stretch = max(neededWidth / viewWidth, neededHeight / viewHeight)
-            guard stretch <= 1 + tolerance, stretch < bestStretch else {
+            guard stretch <= stretchLimit, stretch < bestStretch else {
                 continue
             }
             bestStretch = stretch
@@ -275,10 +282,12 @@ public func officeSnapUpFit(
                 width: max(neededWidth, viewWidth),
                 height: max(neededHeight, viewHeight)
             )
-            break
+        }
+        if let best {
+            return best
         }
     }
-    return best
+    return nil
 }
 
 /// 창 세로 부족을 봐주는 줄 수 — 이만큼은 바깥벽을 잘라내고 배율을 지킨다.
