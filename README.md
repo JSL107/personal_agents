@@ -95,7 +95,7 @@ prisma/schema.prisma                 # DB 단일 소스 (36 models — 절반이
 
 **🏗️ 기반**
 
-NestJS 10 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode).
+NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode).
 
 **Model Router** 는 모든 에이전트를 `codex`(ChatGPT) CLI 하나로 보낸다. 프롬프트는 argv 가 아닌 stdin 으로 넘겨 `ps aux` 노출을 막는다.
 
