@@ -227,7 +227,11 @@ struct AppRootView: View {
             await resyncBriefing()
         }
         if case .approvalResolved = event {
-            await resyncBriefing()
+            // 브리핑만으로는 부족하다 — 승인이 열린 동안 억제한 `IN_PROGRESS` 는 재발행되지
+            // 않으므로(`ConsoleStore.hasOpenApproval`), 카드가 닫힐 때 정본을 다시 받아야
+            // 그 사람의 상태가 돌아온다. `resyncSnapshot` 은 끝에서 브리핑도 함께 갱신한다.
+            await resyncSnapshot()
+            return
         }
         guard case .stateChanged = event else {
             return
