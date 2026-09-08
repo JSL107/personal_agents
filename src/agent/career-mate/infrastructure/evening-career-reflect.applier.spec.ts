@@ -11,7 +11,6 @@ describe('EveningCareerReflectApplier', () => {
       payload,
       status: 'PENDING',
       previewText: '경력 반영',
-      responseUrl: null,
       expiresAt: new Date(),
       createdAt: new Date(),
       appliedAt: null,

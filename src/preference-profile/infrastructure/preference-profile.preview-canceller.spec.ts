@@ -12,7 +12,6 @@ const buildPreview = (payload: unknown): PreviewAction => ({
   payload,
   status: 'CANCELLED',
   previewText: 'x',
-  responseUrl: null,
   expiresAt: new Date('2026-07-01T00:00:00.000Z'),
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
   appliedAt: null,

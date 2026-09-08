@@ -34,7 +34,6 @@ const preview = (previewText: string, expiresAt: Date): PreviewAction =>
     payload: {},
     status: 'PENDING',
     previewText,
-    responseUrl: null,
     expiresAt,
   }) as PreviewAction;
 

@@ -76,7 +76,6 @@ const buildPendingPreview = (
   payload: {},
   status: PREVIEW_STATUS.PENDING,
   previewText: 'mock preview',
-  responseUrl: null,
   expiresAt: new Date(Date.now() + 30 * 60 * 1000),
   createdAt: new Date(),
   appliedAt: null,

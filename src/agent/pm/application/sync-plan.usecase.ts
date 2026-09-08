@@ -73,7 +73,6 @@ export class SyncPlanUsecase {
       kind: PREVIEW_KIND.PM_WRITE_BACK,
       payload: { tasks: candidates },
       previewText,
-      responseUrl: null,
       ttlMs: ONE_HOUR_MS,
     });
     return {

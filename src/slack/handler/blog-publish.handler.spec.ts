@@ -46,6 +46,9 @@ describe('BlogPublishHandler', () => {
       command: {
         text: '제목',
         user_id: 'U1',
+        // 슬랙은 이 값을 항상 함께 준다. 우리는 쓰지 않는다 — 카드 갱신은 버튼 클릭이 그때
+        // 새로 발급한 주소로 나가므로(`PreviewActionHandler` 의 Bolt `respond`), 여기서 받아
+        // 저장해 둘 이유가 없다. 아래 단언이 그것을 전달하지 않는 것을 고정한다.
         response_url: 'https://hooks.slack.test/response',
       },
       respond,
@@ -55,7 +58,6 @@ describe('BlogPublishHandler', () => {
     expect(execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       titleQuery: '제목',
-      responseUrl: 'https://hooks.slack.test/response',
     });
     expect(respond).toHaveBeenNthCalledWith(
       1,

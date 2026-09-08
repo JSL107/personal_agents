@@ -344,7 +344,6 @@ export class AutopilotOrchestrator {
           kind: preview.kind,
           payload: preview.payload,
           previewText: preview.previewText,
-          responseUrl: null,
           ttlMs: PREVIEW_TTL_MS,
         });
         let coordinateSaved = false;

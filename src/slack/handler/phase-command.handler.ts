@@ -107,7 +107,6 @@ export class PhaseCommandHandler implements SlackHandler {
           kind: PREVIEW_KIND.PO_EVAL_CAREERLOG,
           payload,
           previewText: text,
-          responseUrl: null,
           ttlMs: CAREERLOG_PREVIEW_TTL_MS,
         });
         await respond({

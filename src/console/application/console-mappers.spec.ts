@@ -92,7 +92,6 @@ describe('toConsoleApproval', () => {
       kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
       payload: {},
       status: 'PENDING',
-      responseUrl: null,
       previewText: '초안 발행',
       expiresAt: new Date('2026-08-19T12:00:00.000Z'),
       createdAt: new Date('2026-08-19T11:00:00.000Z'),

@@ -22,7 +22,6 @@ const buildPreview = (
   payload: {},
   status: PREVIEW_STATUS.PENDING,
   previewText: 't',
-  responseUrl: null,
   expiresAt: new Date('2026-07-01T00:00:00Z'),
   createdAt: new Date('2026-06-30T00:00:00Z'),
   appliedAt: null,

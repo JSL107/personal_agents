@@ -10,7 +10,6 @@ const buildPreview = (
   payload: {},
   status: 'PENDING' as PreviewAction['status'],
   previewText: '원본 미리보기',
-  responseUrl: null,
   expiresAt: new Date(),
   createdAt: new Date(),
   appliedAt: null,

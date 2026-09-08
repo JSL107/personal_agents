@@ -25,7 +25,6 @@ const buildPreview = (): PreviewAction => ({
   },
   status: PREVIEW_STATUS.PENDING,
   previewText: 'preview',
-  responseUrl: null,
   expiresAt: new Date('2026-08-14T18:00:00Z'),
   createdAt: new Date('2026-08-14T17:00:00Z'),
   appliedAt: null,

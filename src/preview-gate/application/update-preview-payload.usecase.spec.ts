@@ -16,7 +16,6 @@ const buildPreview = (overrides: Partial<PreviewAction> = {}): PreviewAction =>
     payload: { assignments: ['before'] },
     status: (overrides.status ?? PREVIEW_STATUS.PENDING) as PreviewStatus,
     previewText: '',
-    responseUrl: null,
     expiresAt: overrides.expiresAt ?? new Date(Date.now() + 60_000),
     createdAt: new Date(),
     appliedAt: null,

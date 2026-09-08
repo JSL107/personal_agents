@@ -59,7 +59,6 @@ export interface PreviewAction {
   payload: unknown;
   status: PreviewStatus;
   previewText: string;
-  responseUrl: string | null;
   expiresAt: Date;
   createdAt: Date;
   appliedAt: Date | null;
@@ -75,7 +74,6 @@ export interface CreatePreviewInput {
   kind: PreviewKind;
   payload: unknown;
   previewText: string;
-  responseUrl: string | null;
   // ttl 초과시 사용자가 ✅ 눌러도 EXPIRED 로 거절. default 1h 권고.
   ttlMs: number;
 }

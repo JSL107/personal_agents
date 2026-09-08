@@ -10,7 +10,6 @@ const buildCreated = (): PreviewAction => ({
   payload: {},
   status: 'PENDING',
   previewText: '반영할까요?',
-  responseUrl: null,
   expiresAt: new Date('2026-07-27T01:00:00Z'),
   createdAt: new Date('2026-07-27T00:00:00Z'),
   appliedAt: null,
@@ -24,7 +23,6 @@ const validInput = {
   kind: PREVIEW_KIND.PM_WRITE_BACK,
   payload: {},
   previewText: '반영할까요?',
-  responseUrl: null,
   ttlMs: 3_600_000,
 };
 

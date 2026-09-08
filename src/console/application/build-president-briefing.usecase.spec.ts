@@ -14,7 +14,6 @@ const openPreview = (expiresAt: Date): unknown => ({
   payload: {},
   status: 'PENDING',
   previewText: '',
-  responseUrl: null,
   expiresAt,
   createdAt: new Date(),
   appliedAt: null,

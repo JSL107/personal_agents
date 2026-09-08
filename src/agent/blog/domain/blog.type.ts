@@ -55,7 +55,6 @@ export interface PublishNotionDraftInput {
   titleQuery?: string;
   // failure replay는 최초 실행이 선택한 같은 Notion page를 우선한다.
   pageId?: string;
-  responseUrl?: string | null;
   triggerType?: import('../../../agent-run/domain/agent-run.type').TriggerType;
 }
 

@@ -43,7 +43,6 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
         payload: input.payload as unknown as Prisma.InputJsonValue,
         status: PREVIEW_STATUS.PENDING,
         previewText: input.previewText,
-        responseUrl: input.responseUrl ?? null,
         expiresAt,
         slackChannelId: null,
         slackMessageTs: null,
@@ -284,7 +283,6 @@ const toDomain = (row: {
   payload: Prisma.JsonValue;
   status: string;
   previewText: string;
-  responseUrl: string | null;
   expiresAt: Date;
   createdAt: Date;
   appliedAt: Date | null;
@@ -313,7 +311,6 @@ const toDomain = (row: {
     payload: row.payload as unknown,
     status: row.status as PreviewStatus,
     previewText: row.previewText,
-    responseUrl: row.responseUrl,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
     appliedAt: row.appliedAt,
