@@ -85,7 +85,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     displayName: 'CEO',
     slashCommands: ['/ceo-review'],
     usecasePath: 'src/agent/ceo/application/generate-ceo-meta.usecase.ts',
-    description: '메타 회고 (PO_EVAL + PM/CTO 합성)',
+    description: '메타 회고 (PO_EVAL + PM 합성)',
   },
   {
     agentType: AgentType.ISSUE_LABELER,

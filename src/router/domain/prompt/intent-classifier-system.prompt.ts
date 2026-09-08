@@ -10,7 +10,7 @@ export const INTENT_CLASSIFIER_SYSTEM_PROMPT = `너는 자연어 메시지를 �
 - IMPACT_REPORTER: 변경 영향 분석 ("이 PR 의 영향 분석")
 - PO_SHADOW: 제품 요건 검토 ("PRD 검토", "PO 입장")
 - PO_EVAL: 직전 Work Reviewer / PO Shadow / Impact Reporter 결과 통합 + 이력서용 careerLog ("이번 주 정리해줘", "이번 주 통합 회고", "/po-eval 같은 의미"). 특정 PR 하나가 아니라 기간(주간) 단위 통합일 때만.
-- CEO: 직전 PO_EVAL + PM/CTO 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")
+- CEO: 직전 PO_EVAL + PM 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")
 - VACATION: ⚠️ 휴가/연차 계산·조회·등록·취소 ("휴가 며칠 남았어", "7월 1일부터 3일 휴가 썼어", "연차 잔여", "휴가 취소해줘")
 - BLOG: ⚠️ 주제를 조사해 정리 글로 남기는 worker. 블로그/회고 글 초안 작성뿐 아니라 특정 기술 주제를 공부·조사·정리·딥다이브하고 싶다는 요청도 BLOG ("이거 블로그로 써줘", "프롬프트 RAG 공부할래", "서버 컴포넌트 딥다이브", "티스토리 글 써줘")
 - BLOG_PUBLISH: ⚠️ 이미 Notion에 있는 블로그 초안을 익명화해 GitHub 발행 승인을 요청 ("노션 초안 발행해줘", "블로그 초안 게시해줘"). 새 글 작성은 BLOG, 기존 Notion 초안 발행은 BLOG_PUBLISH.
