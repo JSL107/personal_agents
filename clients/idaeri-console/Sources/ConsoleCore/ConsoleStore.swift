@@ -161,7 +161,24 @@ public final class ConsoleStore: ObservableObject {
         if isTerminal(state), hasActiveRun(agentType: agentType) {
             return
         }
+        if state == .inProgress, hasOpenApproval(agentType: agentType) {
+            return
+        }
         agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state, bubble: bubble))
+    }
+
+    /// 이 사람에게 열린 승인 카드가 있는가.
+    ///
+    /// 백엔드 집계는 **열린 승인을 활성 런보다 먼저** 고른다(`deriveAgentState` 우선순위).
+    /// 그래서 승인이 열린 채 새 런이 시작되면 이벤트는 `IN_PROGRESS`, 집계는
+    /// `AWAITING_APPROVAL` 로 갈린다. 이벤트를 그대로 얹으면 줄에 선 사람이 자기 자리로
+    /// 돌아가고, 다음 스냅샷이 그를 다시 줄로 부른다 — 화면에서 왕복으로 보인다.
+    ///
+    /// **종료 억제(`hasActiveRun`)와 회복 방식이 다르다.** 종료는 남은 런이 끝날 때 또 다른
+    /// 종료 이벤트가 와서 저절로 회복되지만, 시작은 한 번뿐이라 억제하면 재발행이 없다.
+    /// 그래서 승인이 닫힐 때 정본을 다시 받는다(`AppRootView` 의 `approval.resolved` 처리).
+    private func hasOpenApproval(agentType: String) -> Bool {
+        approvals.contains { $0.agentType == agentType }
     }
 
     /// 이 사람에게 아직 안 끝난 런이 남아 있는가.

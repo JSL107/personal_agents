@@ -108,6 +108,16 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         [.working(agentType: "PM")],
         "state.changed(IN_PROGRESS) → working")
 
+    // 줄에 선 사람에게 온 진행 이벤트는 자리로 보내지 않는다.
+    //
+    // 스토어가 열린 승인 때문에 그 이벤트를 억제하면 상태가 `AWAITING_APPROVAL` 로 남는데
+    // (`ConsoleStore.hasOpenApproval`), 연출이 이벤트만 보고 `working` 을 내면 사람이 줄에서
+    // 책상으로 걸어가고 다음 스냅샷이 다시 줄로 부른다. `ctx` 의 CTO 가 그 상태다.
+    t.expectEqual(
+        visualIntents(for: .stateChanged(agentType: "CTO", state: .inProgress, bubble: nil), context: ctx),
+        [],
+        "승인 대기 상태인 사람에게 온 진행 이벤트 → 연출 없음")
+
     // state.changed(AWAITING_APPROVAL) → 집결 + 핑크 recolor
     t.expectEqual(
         visualIntents(for: .stateChanged(agentType: "CTO", state: .awaitingApproval, bubble: nil), context: ctx),

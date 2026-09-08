@@ -159,6 +159,16 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         switch state {
         case .inProgress:
+            // 스토어가 이 이벤트를 얹었는지를 보고 걸린다. 열린 승인이 있으면 스토어는 진행을
+            // 억제하고 `AWAITING_APPROVAL` 을 유지하는데(`ConsoleStore.hasOpenApproval`),
+            // 여기서 이벤트만 보고 자리로 보내면 줄에 선 사람이 책상으로 걸어가고 다음
+            // 스냅샷이 그를 다시 줄로 부른다. 색과 자리가 어긋나는 것도 같은 원인이다.
+            //
+            // 스토어는 `apply(event:)` 안에서 상태를 먼저 바꾸고 그 다음 이벤트를 흘려보내므로
+            // (`eventStream.send` 가 마지막), 이 시점의 `context.agents` 는 이미 적용 결과다.
+            guard agent(agentType)?.state != .awaitingApproval else {
+                return []
+            }
             return [.working(agentType: agentType)]
         case .awaitingApproval:
             return [.summonToBand(agentType: agentType), .recolor(agentType: agentType, state: state)]

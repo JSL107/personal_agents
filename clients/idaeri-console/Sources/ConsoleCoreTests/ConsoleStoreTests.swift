@@ -148,6 +148,55 @@ func runConsoleStoreTests(_ t: TestRunner) {
     store.apply(event: .approvalResolved(approval))
     t.expectEqual(store.approvals.count, 0, "approval 제거")
 
+    // 승인이 열린 채 새 런이 시작되면 진행 이벤트를 얹지 않는다.
+    //
+    // 백엔드 집계는 열린 승인을 활성 런보다 먼저 고른다(`deriveAgentState` 우선순위). 이벤트를
+    // 그대로 얹으면 줄에 선 사람이 자기 자리로 돌아가고 다음 스냅샷이 다시 줄로 부른다.
+    let queuedStore = ConsoleStore()
+    queuedStore.apply(snapshot: snapshot)
+    let pmApproval = ConsoleApproval(
+        id: "p2", agentType: "PM", title: "발행 승인",
+        createdAt: "2026-07-27T00:03:00Z", expiresAt: "2026-07-27T01:03:00Z"
+    )
+    queuedStore.apply(event: .approvalOpened(pmApproval))
+    queuedStore.apply(
+        event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
+    t.expectEqual(
+        queuedStore.agents.first(where: { $0.agentType == "PM" })?.state, .waiting,
+        "열린 승인이 있으면 진행 이벤트를 얹지 않는다"
+    )
+    t.expectEqual(
+        queuedStore.agents.first(where: { $0.agentType == "PM" })?.bubble, "업무 대기중",
+        "억제한 이벤트의 문구도 안 얹힌다"
+    )
+
+    // 카드에 담당자가 없으면(agentType nil) 누구의 진행도 막지 않는다 — 막을 근거가 없다.
+    let ownerlessStore = ConsoleStore()
+    ownerlessStore.apply(snapshot: snapshot)
+    ownerlessStore.apply(event: .approvalOpened(approval))
+    ownerlessStore.apply(
+        event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
+    t.expectEqual(
+        ownerlessStore.agents.first(where: { $0.agentType == "PM" })?.state, .inProgress,
+        "담당자 없는 카드는 진행을 막지 않는다"
+    )
+
+    // 다른 사람의 승인은 이 사람의 진행을 막지 않는다.
+    let otherStore = ConsoleStore()
+    otherStore.apply(snapshot: snapshot)
+    otherStore.apply(
+        event: .approvalOpened(
+            ConsoleApproval(
+                id: "p3", agentType: "BE", title: "발행 승인",
+                createdAt: "2026-07-27T00:03:00Z", expiresAt: "2026-07-27T01:03:00Z"
+            )))
+    otherStore.apply(
+        event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
+    t.expectEqual(
+        otherStore.agents.first(where: { $0.agentType == "PM" })?.state, .inProgress,
+        "남의 승인은 내 진행을 막지 않는다"
+    )
+
     // ===== 승인 write 결과 반영 (SSE 도착 전 낙관적 처리 + 실패 안내) =====
     let writeStore = ConsoleStore()
     writeStore.apply(event: .approvalOpened(approval))
