@@ -3365,16 +3365,17 @@ final class OfficeScene: SKScene {
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
         let summary = companySummary(agents: agents)
-        // "대기" 는 밀린 일감처럼 읽힌다 — 이대리에 대기 큐는 없고, 이 숫자는 **지금 맡은 일이
-        // 없는 사람 수**(29명 중 27명이 예사)다. 적체로 오해하면 화면이 늘 비상처럼 보인다.
-        var text =
-            "진행 \(summary.inProgress)  ·  승인 \(summary.awaitingApproval)  ·  쉬는 중 \(summary.waiting)"
-        if !lastSyncedSessions.isEmpty {
-            // 대표 앞줄에 설 수 있는 세션은 여덟 남짓이라, 그 수가 곧 전체라고 오해하지 않게
-            // 총계를 여기 적는다.
-            let active = lastSyncedSessions.filter { $0.state == officeSessionActiveState }.count
-            text += "  ·  내 세션 \(lastSyncedSessions.count)(도는 중 \(active))"
-        }
+        // 문구와 줄 나눔은 코어가 정한다(`officeCompanySummaryLines`) — 세션 구간은 판이
+        // 대표 이름표에 닿지 않게 둘째 줄로 내려간다. 대표 앞줄에 설 수 있는 세션은 여덟
+        // 남짓이라, 그 수가 곧 전체라고 오해하지 않게 총계를 여기 적는다.
+        let lines = officeCompanySummaryLines(
+            summary: summary,
+            sessionCount: lastSyncedSessions.count,
+            activeSessionCount: lastSyncedSessions
+                .filter { $0.state == officeSessionActiveState }
+                .count
+        )
+        let text = lines.joined(separator: "\n")
         // 판 없이 글자만 얹으면 벽·창처럼 밝은 타일 위에서 글자가 묻힌다. 실제 화면에서
         // "내 세션 9(도는 중 5)" 가 배경에 잠겨 잘린 것처럼 보였다.
         let holder = SKNode()
@@ -3392,6 +3393,9 @@ final class OfficeScene: SKScene {
         label.fontColor = SKColor(white: 0.96, alpha: 1)
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .top
+        // 두 줄을 그리려면 기본값 1 을 풀어야 한다 — 안 풀면 둘째 줄이 조용히 잘려
+        // 세션 총계가 화면에서 사라진다.
+        label.numberOfLines = 0
         label.position = .zero
 
         let textFrame = label.calculateAccumulatedFrame()
