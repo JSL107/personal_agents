@@ -25,6 +25,7 @@ import {
   AgentSucceededCountRow,
   AgentSweptCountRow,
   CountUnsuccessfulSweepReviewsQuery,
+  FailedAgentRunSnapshot,
   FailedRunDetail,
   FindLatestSweepReviewQuery,
   InputSnapshotEquals,
@@ -341,6 +342,16 @@ export class AgentRunService {
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
     return this.repository.findRecentSucceededRuns(input);
+  }
+
+  // 최근 N일간 예외로 끝난 실행 기록. 실패한 회차가 무엇을 입력으로 돌았는지 알아야
+  // 같은 입력을 다음 회차에서 피할 수 있다.
+  async findRecentFailedRuns(input: {
+    agentType: AgentType;
+    sinceDays: number;
+    limit: number;
+  }): Promise<FailedAgentRunSnapshot[]> {
+    return this.repository.findRecentFailedRuns(input);
   }
 
   // 최근 sinceDays~untilDays 윈도우 agentType 별 실행 통계 — Run Retro 회고용.

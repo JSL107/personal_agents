@@ -14,6 +14,7 @@ describe('AgentRunService', () => {
     recordEvidence: jest.fn(),
     findLatestSucceededRun: jest.fn(),
     findRecentSucceededRuns: jest.fn(),
+    findRecentFailedRuns: jest.fn().mockResolvedValue([]),
     aggregateQuotaStats: jest.fn(),
     findById: jest.fn(),
     findSimilarPlans: jest.fn().mockResolvedValue([]),

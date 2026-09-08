@@ -311,6 +311,80 @@ describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.findRecentFailedRuns', () => {
+  const buildRepository = (
+    rows: Array<{ id: number; endedAt: Date | null; inputSnapshot: unknown }>,
+  ): {
+    repository: AgentRunPrismaRepository;
+    findMany: jest.Mock;
+  } => {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const prismaMock = {
+      agentRun: { findMany },
+    } as unknown as PrismaService;
+    return { repository: new AgentRunPrismaRepository(prismaMock), findMany };
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-07T16:30:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // 형제 조회(findRecentSucceededRuns)와 같은 창을 써야 "3일 후순위" 가 두 갈래에서 같은 뜻이 된다.
+  it('FAILED 만, 최근 KST 캘린더일 시작 이후로 조회한다', async () => {
+    const { repository, findMany } = buildRepository([]);
+
+    await repository.findRecentFailedRuns({
+      agentType: 'BLOG_PUBLISH' as never,
+      sinceDays: 3,
+      limit: 5,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          agentType: 'BLOG_PUBLISH',
+          status: 'FAILED',
+          // sinceDays=3 = 오늘 포함 KST 3일치 → 7/5 00:00 KST 부터.
+          endedAt: { gte: new Date('2026-07-05T15:00:00.000Z') },
+        }),
+        orderBy: { endedAt: 'desc' },
+        take: 5,
+      }),
+    );
+  });
+
+  // 진행 중(endedAt=null)인 행이 섞이면 "언제 실패했나" 를 못 세므로 형제 조회와 같이 버린다.
+  it('endedAt 이 없는 행은 버리고 inputSnapshot 을 그대로 돌려준다', async () => {
+    const { repository } = buildRepository([
+      { id: 1, endedAt: null, inputSnapshot: { pageId: 'page-running' } },
+      {
+        id: 2,
+        endedAt: new Date('2026-07-06T10:00:00.000Z'),
+        inputSnapshot: { pageId: 'page-failed' },
+      },
+    ]);
+
+    const runs = await repository.findRecentFailedRuns({
+      agentType: 'BLOG_PUBLISH' as never,
+      sinceDays: 3,
+      limit: 5,
+    });
+
+    expect(runs).toEqual([
+      {
+        id: 2,
+        endedAt: new Date('2026-07-06T10:00:00.000Z'),
+        inputSnapshot: { pageId: 'page-failed' },
+      },
+    ]);
+  });
+});
+
 describe('AgentRunPrismaRepository.findChainFromRoot — V3 chain audit walk', () => {
   const buildRepository = (
     queryResult: Array<{
