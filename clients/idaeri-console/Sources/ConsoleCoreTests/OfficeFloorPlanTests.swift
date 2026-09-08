@@ -260,6 +260,35 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     // 모든 에이전트가 자기 책상을 가진다 — 한 명이라도 자리가 없으면 화면에서 사라진다.
     t.expectEqual(plan.desks.count, sampleAgents.count, "\(sampleAgents.count)명 전원 자리 배정")
 
+    // **요청한 가구가 전부 놓였는가** — 자리 후보가 모자라면 뒤쪽 종류가 **조용히 버려진다.**
+    //
+    // 배치 루프는 후보를 앞에서부터 쓰고 다 떨어지면 그냥 다음 가구로 넘어간다(오류 없음).
+    // 품질 방에 열한 종을 요청했다가 뒤 세 종(캐비닛·프린터·작은 화분)이 그렇게 빠진 적이
+    // 있는데, 화면으로는 "원래 그만큼인 방" 으로 보여 눈으로는 못 잡는다.
+    //
+    // 벽걸이도 같다 — 방당 벽 자리가 셋뿐이라 넷째부터 걸 자리가 없어 사라진다.
+    //
+    // **2열·3열 모두 본다.** 방 배치가 갈리면 어느 후보가 책상에 막히는지도 갈린다.
+    for columns in [2, 3] {
+        let censusPlan = officeFloorPlan(agents: sampleAgents, zoneColumns: columns)
+        for zone in censusPlan.zones {
+            let placed = censusPlan.furniture.filter { officeZoneContains(zone, $0.tile) }
+            var pool = placed.map(\.kind)
+            var missing: [String] = []
+            for kind in departmentFurniture(zone.department) {
+                if let index = pool.firstIndex(of: kind) {
+                    pool.remove(at: index)
+                } else {
+                    missing.append(kind.rawValue)
+                }
+            }
+            t.expectEqual(
+                missing.sorted().joined(separator: ", "), "",
+                "\(columns)열 \(zone.department.rawValue): 요청한 가구가 자리를 못 받았다"
+            )
+        }
+    }
+
     // 인원이 가장 많은 부서도 정원 안에 들어가야 한다. 부서별 인원은 언제든 늘 수 있으므로,
     // "가장 큰 부서 전원이 자리를 받았는가" 를 부서 단위로 못 박는다.
     for zoneDepartment in Department.allCases {

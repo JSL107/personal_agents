@@ -754,6 +754,75 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         )
     }
 
+    // **놓인 가구가 목적지 목록에 들어갔는가** — 앞칸을 못 잡으면 **조용히 빠진다.**
+    //
+    // `officeStrollSpots` 는 가구마다 설 칸을 하나 잡는데, 그 칸이 벽·책상·좌석·문이거나
+    // 이미 다른 가구가 가져갔거나 걸어서 닿을 수 없으면 **그 가구를 목록에서 뺀다**(오류 없음).
+    // 벽에는 멀쩡히 걸려 있고 바닥에도 멀쩡히 서 있으니 **렌더로는 절대 안 보인다** —
+    // 2열에서 자산 모니터와 총무 게시판이 그렇게 빠져 다섯 명이 계속 옆방으로 갔다(#510).
+    //
+    // 지금 못 지키는 것을 배치별 명단으로 고정한다. 늘면 회귀, 줄면 갱신 신호다.
+    let strollAbsent: [Int: Set<String>] = [
+        2: [
+            // 의도된 것 — 대표실 게시판은 연속 도장을 붙이는 판이지 서서 보는 물건이 아니다.
+            "밴드/wallPinboard",
+            // 의도된 것 — 아래 줄을 붙여 놓으면 가운데 하나가 설 자리를 잃는다(원장 참조).
+            "content/bookshelf@(2,0)",
+            // **결함** — 평가 방 아래 줄 책장의 앞칸 (1,1) 이 늘 책상이다.
+            "evaluation/bookshelf@(1,0)",
+            // **결함** — 총무 설비 셋. 아래 줄이 촘촘해 앞칸이 서로 물린다.
+            "internalOps/printer@(2,0)",
+            "internalOps/vendingMachine@(1,0)",
+            "internalOps/filingCabinet@(2,2)",
+        ],
+        3: [
+            "밴드/wallPinboard",
+            // 3열에서만 — 밴드 배치가 달라 이 화분 앞칸이 막힌다.
+            "밴드/plantTall",
+            "content/bookshelf@(2,0)",
+            // 3열에서만 — 콘텐츠 벽 판의 방 안쪽 앞칸이 책상, 복도 쪽은 자산 모니터가 선점.
+            "content/wallWhiteboard@(0,4)",
+            "evaluation/bookshelf@(1,0)",
+            "internalOps/printer@(2,0)",
+            "internalOps/vendingMachine@(1,0)",
+            "internalOps/filingCabinet@(2,2)",
+        ],
+    ]
+    for columns in [2, 3] {
+        let censusPlan = officeFloorPlan(agents: sampleAgents, zoneColumns: columns)
+        let censusSpots = officeStrollSpots(plan: censusPlan)
+        var absent: Set<String> = []
+        for furniture in censusPlan.furniture
+        where furniture.kind.strollDwellSeconds != nil && furniture.kind.interactionPose != nil {
+            let listed = censusSpots.contains { spot in
+                spot.kind == furniture.kind
+                    && officeInteractionNeighbors(furniture: furniture.tile, pose: spot.pose)
+                        .contains(spot.tile)
+            }
+            guard !listed else {
+                continue
+            }
+            if let zone = censusPlan.zones.first(where: { officeZoneContains($0, furniture.tile) }) {
+                // 방 안은 **상대 좌표**로 적는다 — 절대 좌표는 배치가 갈리면 통째로 달라진다.
+                absent.insert(
+                    "\(zone.department.rawValue)/\(furniture.kind.rawValue)"
+                        + "@(\(furniture.tile.x - zone.origin.x),\(furniture.tile.y - zone.origin.y))"
+                )
+            } else {
+                absent.insert("밴드/\(furniture.kind.rawValue)")
+            }
+        }
+        let expected = strollAbsent[columns] ?? []
+        t.expectEqual(
+            absent.subtracting(expected).sorted().joined(separator: ", "), "",
+            "\(columns)열: 놓여 있는데 목적지 목록에서 빠진 가구가 새로 생겼다"
+        )
+        t.expectEqual(
+            expected.subtracting(absent).sorted().joined(separator: ", "), "",
+            "\(columns)열: 명단에 적힌 가구가 이제 목적지 목록에 있다 — 명단에서 빼라"
+        )
+    }
+
     // 벽걸이 열 종이 **모두 어느 방엔가** 걸려야 한다. 방마다 벽 자리가 셋뿐이라 한 종을
     // 넣으면 다른 종이 밀려나는데, 밀려난 쪽은 오류 없이 화면에서만 사라진다 — 운영 방의
     // 액자를 지표 모니터로 바꿨을 때 실제로 추상화 액자가 그렇게 빠졌다.
