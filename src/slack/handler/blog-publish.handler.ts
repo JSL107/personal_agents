@@ -3,6 +3,7 @@ import { App, RespondFn } from '@slack/bolt';
 
 import { PublishNotionDraftUsecase } from '../../agent/blog/application/publish-notion-draft.usecase';
 import { PublishNotionDraftResult } from '../../agent/blog/domain/blog.type';
+import { parseBlogPublishArgs } from '../../agent/blog/domain/blog-publish-args';
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
@@ -23,9 +24,14 @@ export class BlogPublishHandler implements SlackHandler {
         text: 'Notion 블로그 초안을 익명화하고 발행 미리보기를 만드는 중입니다...',
       });
       try {
+        // 날짜 인자를 떼어 낸다. 파싱이 실패하면 아래 catch 가 사용자에게 사유를 돌려준다 —
+        // 모델을 태우기 전에 걸러야 잘못된 날짜로 30초를 쓰고 나서 실패하지 않는다.
+        const args = parseBlogPublishArgs(command.text ?? '');
         const outcome = await this.publishNotionDraft.execute({
           slackUserId: command.user_id,
-          titleQuery: command.text?.trim() ?? '',
+          titleQuery: args.titleQuery,
+          ...(args.publishedAt ? { publishedAt: args.publishedAt } : {}),
+          ...(args.pageId ? { pageId: args.pageId } : {}),
         });
         await respondBlogPublishOutcome(respond, outcome);
       } catch (error: unknown) {

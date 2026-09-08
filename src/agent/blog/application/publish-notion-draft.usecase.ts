@@ -213,6 +213,7 @@ export class PublishNotionDraftUsecase {
         slackUserId: input.slackUserId,
         ...(titleQuery ? { titleQuery } : {}),
         ...(input.pageId ? { pageId: input.pageId } : {}),
+        ...(input.publishedAt ? { publishedAt: input.publishedAt } : {}),
       },
       evidence: [
         {
@@ -475,7 +476,9 @@ export class PublishNotionDraftUsecase {
       slug: edited.slug,
       tags: target.tags,
       // 초안을 쓴 날이 아니라 발행하는 날로 찍는다 — 밀린 초안이 목록 아래에 묻히지 않게.
-      publishedAt: new Date().toISOString(),
+      // 예외는 사람이 날짜를 콕 집은 결번 메우기뿐이다(`--date=`). 그 회차가 나가지 못해
+      // 비어 버린 날짜는 이 인자로만 채울 수 있다 — 큐가 자연히 소화하면 그때 날짜로 찍힌다.
+      publishedAt: input.publishedAt ?? new Date().toISOString(),
       pageId: target.pageId,
       body: structured.markdown,
       // 편집 단계가 고른 분류. 모르는 값이면 파서가 비워 두고 프론트매터에서 생략된다.
