@@ -71,7 +71,7 @@ public func officeViewMetrics(
     // 20px 로 떨어졌다(1400x1000 에서 실제로 그랬다). "두 줄" 은 그 배율의 타일 두 줄이다.
     while steps >= 1 {
         let candidate = unit * steps
-        if candidate * Double(rows) <= viewHeight + candidate * 2 {
+        if candidate * Double(rows) <= viewHeight + candidate * Double(officeViewHeightSlackRows) {
             break
         }
         steps -= 1
@@ -200,6 +200,90 @@ public func officeWindowFit(
     }
     return best
 }
+
+/// 손으로 키운 창이 배율 계단 **바로 아래**에 멈췄을 때, 그 계단에 서는 데 **모자란 만큼만**
+/// 키운 오피스 뷰 크기(순수).
+///
+/// `officeWindowFit` 과 목적이 다르다. 저쪽은 "이 화면이 감당하는 가장 큰 계단" 을 내므로
+/// 창을 화면 크기까지 키우고, 이쪽은 사용자가 잡은 창 크기를 존중한 채 **한 계단만** 올린다.
+/// 계단 하나가 2배(20 → 40px)라, 창을 늘리다 몇십 px 앞에서 멈추면 도면이 통째로 절반
+/// 크기로 남는다 — 사람 눈에는 "창을 늘렸는데 아무 일도 일어나지 않은" 것으로 보인다.
+///
+/// **이미 충분한 축은 줄이지 않는다.** 계단에 서는 데 필요한 폭이 지금 창보다 좁을 수 있는데
+/// (2열 40px 은 920 이면 되고 창은 936 일 수 있다), 그 값을 그대로 쓰면 창이 옆으로 오므라든다.
+///
+/// **잘림 없는 크기를 먼저 시도한다.** `officeViewMetrics` 는 바깥벽 두 줄을 잘라서라도 배율을
+/// 지키지만, 그건 사용자가 창을 줄였을 때의 장치다 — 창 크기를 우리가 올리는 자리에서 굳이
+/// 잘린 도면을 만들 이유가 없다. 온전한 크기가 여유를 넘을 때만 잘림을 받아들이고 물러난다.
+///
+/// - Parameters:
+///   - maxViewWidth: 화면이 오피스 뷰에 줄 수 있는 최대 폭(창 테두리·탭 막대를 뺀 값).
+///   - tolerance: 늘려도 되는 비율의 상한. 넘으면 `nil` — 사용자가 **일부러** 작게 만든 창을
+///     두 배로 키우는 것은 보정이 아니라 방해다. 기본값 0.5 의 근거는 **계단 하나가 정확히
+///     2배**라는 것이다: 그 절반까지는 "거의 닿았다" 로 보고 마저 늘리고, 그보다 멀면 애초에
+///     다른 배율을 쓰는 창으로 본다. 0.2 로 잡았더니 실사용 창 960x989(1920x1080 화면)에서
+///     3열 40px(폭 1400 필요)이 1.46 배라 걸러져, 정작 고치려던 창에서 아무 일도 안 일어났다.
+/// - Returns: 한 계단 위가 화면에 안 들어가거나 `tolerance` 를 넘으면 `nil`.
+public func officeSnapUpFit(
+    viewWidth: Double,
+    viewHeight: Double,
+    maxViewWidth: Double,
+    maxViewHeight: Double,
+    backingScale: Double = 2,
+    tolerance: Double = 0.5
+) -> OfficeWindowFit? {
+    let unit = officeScaleUnit(backingScale: backingScale)
+    guard viewWidth > 0, viewHeight > 0, unit > 0, tolerance >= 0 else {
+        return nil
+    }
+    // 지금 화면에 실제로 그려지는 타일. `officeZoneColumns` 는 둘 중 큰 쪽을 고르므로
+    // (같을 때만 히스테리시스가 끼어들고, 그때는 타일 값이 어차피 같다) 최댓값이 곧 답이다.
+    func drawnTileSize(_ zoneColumns: Int) -> Double {
+        let planSize = officePlanSize(zoneColumns: zoneColumns)
+        return officeViewMetrics(
+            viewWidth: viewWidth, viewHeight: viewHeight,
+            columns: planSize.columns, rows: planSize.rows, backingScale: backingScale
+        ).tileSize
+    }
+    let target = max(drawnTileSize(2), drawnTileSize(3)) + unit
+
+    var best: OfficeWindowFit?
+    var bestStretch = Double.infinity
+    for zoneColumns in [2, 3] {
+        let planSize = officePlanSize(zoneColumns: zoneColumns)
+        let neededWidth = target * Double(planSize.columns)
+        // 앞이 온전한 도면, 뒤가 바깥벽 두 줄을 내주고 배율만 지키는 크기. 순서가 곧 우선순위다.
+        let heightCandidates = [
+            target * Double(planSize.rows),
+            target * Double(planSize.rows - officeViewHeightSlackRows),
+        ]
+        guard neededWidth <= maxViewWidth else {
+            continue
+        }
+        for neededHeight in heightCandidates {
+            guard neededHeight <= maxViewHeight else {
+                continue
+            }
+            let stretch = max(neededWidth / viewWidth, neededHeight / viewHeight)
+            guard stretch <= 1 + tolerance, stretch < bestStretch else {
+                continue
+            }
+            bestStretch = stretch
+            best = OfficeWindowFit(
+                zoneColumns: zoneColumns,
+                tileSize: target,
+                width: max(neededWidth, viewWidth),
+                height: max(neededHeight, viewHeight)
+            )
+            break
+        }
+    }
+    return best
+}
+
+/// 창 세로 부족을 봐주는 줄 수 — 이만큼은 바깥벽을 잘라내고 배율을 지킨다.
+/// `officeViewMetrics` 의 "결과 타일 두 줄" 규칙과 `officeSnapUpFit` 이 같은 값을 봐야 한다.
+public let officeViewHeightSlackRows = 2
 
 /// 창을 새 크기로 바꾸되 **왼쪽 위를 고정**하고 화면 안에 가둔 프레임(순수).
 ///

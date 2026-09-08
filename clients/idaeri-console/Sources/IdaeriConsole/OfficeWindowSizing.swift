@@ -68,6 +68,60 @@ func fitWindowToFloorPlan(_ window: NSWindow) {
     else {
         return
     }
+    applyContentSize(contentSize, to: window, on: screen)
+}
+
+/// 손으로 **키운** 창이 배율 계단 바로 아래에 멈췄으면, 그 계단에 서는 데 모자란 만큼만 더 키운다.
+///
+/// 계단이 2배씩 뛰기 때문에(20 → 40px) 몇십 px 이 모자라면 도면이 통째로 절반 크기가 된다.
+/// ⌘0 은 그때 사람이 눌러야 하는 수동 경로였다 — 창을 늘리다 멈춘 자리가 그 직전이면, 화면에는
+/// "늘렸는데 아무 일도 일어나지 않은" 것으로 보인다(2026-09-08 신고).
+///
+/// **줄인 리사이즈에는 개입하지 않는다.** 계단 바로 아래에서 창을 줄일 때마다 도로 키우면
+/// 사용자가 창 크기를 정할 수 없게 된다 — 어느 축도 줄지 않았을 때만 손댄다.
+///
+/// - Parameter previousSize: 리사이즈가 **시작될 때**의 창 프레임 크기. 방향을 가르는 유일한
+///   근거다. 없으면(시작 통지를 놓쳤으면) 아무것도 하지 않는다.
+func snapWindowUpToFloorPlanStep(_ window: NSWindow, grownFrom previousSize: NSSize?) {
+    guard let previousSize,
+        window.frame.width >= previousSize.width,
+        window.frame.height >= previousSize.height,
+        window.frame.size != previousSize,
+        let screen = window.screen ?? NSScreen.main
+    else {
+        return
+    }
+    let chromeHeight = officeWindowChromeHeight(styleMask: window.styleMask)
+    let contentSize = window.contentRect(forFrameRect: window.frame).size
+    let visible = screen.visibleFrame
+    guard
+        let fit = officeSnapUpFit(
+            viewWidth: Double(contentSize.width),
+            viewHeight: Double(contentSize.height - Layout.tabHeaderHeight),
+            maxViewWidth: Double(visible.width),
+            maxViewHeight: Double(visible.height - chromeHeight),
+            backingScale: Double(window.backingScaleFactor)
+        )
+    else {
+        return
+    }
+    // 앱 최소 크기까지는 키우되 화면 밖으로는 넘기지 않는다 — 순서가 바뀌면 720x560 을
+    // 못 담는 화면에서 창이 화면보다 커진다(`officeWindowSizeFittingFloorPlan` 과 같은 규칙).
+    applyContentSize(
+        NSSize(
+            width: min(max(CGFloat(fit.width), Layout.windowMinWidth), visible.width),
+            height: min(
+                max(CGFloat(fit.height) + Layout.tabHeaderHeight, Layout.windowMinHeight),
+                visible.height - officeTitleBarHeight(styleMask: window.styleMask)
+            )
+        ),
+        to: window,
+        on: screen
+    )
+}
+
+/// 창 내용 크기를 적용한다 — 왼쪽 위를 고정하고 화면 안에 가둔 채로.
+private func applyContentSize(_ contentSize: NSSize, to window: NSWindow, on screen: NSScreen) {
     let visible = screen.visibleFrame
     let frameSize = window.frameRect(
         forContentRect: NSRect(origin: .zero, size: contentSize)
