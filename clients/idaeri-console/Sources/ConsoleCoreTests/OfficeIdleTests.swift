@@ -762,18 +762,15 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     // 2열에서 자산 모니터와 총무 게시판이 그렇게 빠져 다섯 명이 계속 옆방으로 갔다(#510).
     //
     // 지금 못 지키는 것을 배치별 명단으로 고정한다. 늘면 회귀, 줄면 갱신 신호다.
+    //
+    // **남은 셋은 전부 의도된 것이다.** #512 가 붙잡은 여섯·여덟 중 결함 다섯은
+    // 자리 후보를 옮겨 걷어냈다(평가 아래 줄 · 총무 설비 셋 · 콘텐츠 벽 판).
     let strollAbsent: [Int: Set<String>] = [
         2: [
-            // 의도된 것 — 대표실 게시판은 연속 도장을 붙이는 판이지 서서 보는 물건이 아니다.
+            // 대표실 게시판은 연속 도장을 붙이는 판이지 서서 보는 물건이 아니다.
             "밴드/wallPinboard@(9,25)",
-            // 의도된 것 — 아래 줄을 붙여 놓으면 가운데 하나가 설 자리를 잃는다(원장 참조).
+            // 아래 줄을 붙여 놓으면 가운데 하나가 설 자리를 잃는다(원장 참조).
             "content/bookshelf@(2,0)",
-            // **결함** — 평가 방 아래 줄 책장의 앞칸 (1,1) 이 늘 책상이다.
-            "evaluation/bookshelf@(1,0)",
-            // **결함** — 총무 설비 셋. 아래 줄이 촘촘해 앞칸이 서로 물린다.
-            "internalOps/printer@(2,0)",
-            "internalOps/vendingMachine@(1,0)",
-            "internalOps/filingCabinet@(2,2)",
         ],
         3: [
             "밴드/wallPinboard@(13,18)",
@@ -781,12 +778,6 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
             // 있으므로, 종류만 적으면 이 한 건이 그쪽에 묻힌다(#512 · codex 리뷰).
             "밴드/plantTall@(33,17)",
             "content/bookshelf@(2,0)",
-            // 3열에서만 — 콘텐츠 벽 판의 방 안쪽 앞칸이 책상, 복도 쪽은 자산 모니터가 선점.
-            "content/wallWhiteboard@(0,4)",
-            "evaluation/bookshelf@(1,0)",
-            "internalOps/printer@(2,0)",
-            "internalOps/vendingMachine@(1,0)",
-            "internalOps/filingCabinet@(2,2)",
         ],
     ]
     for columns in [2, 3] {
