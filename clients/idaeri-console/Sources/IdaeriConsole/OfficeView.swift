@@ -21,6 +21,9 @@ struct OfficeView: View {
         return scene
     }()
     @State private var selectedAgent: String?
+    /// 리사이즈가 **시작될 때**의 창 크기. 키운 것인지 줄인 것인지 가르는 유일한 근거다 —
+    /// 줄이는 쪽까지 보정하면 계단 바로 아래에서 창이 되튕겨 크기를 정할 수 없게 된다.
+    @State private var liveResizeStartSize: NSSize?
     @State private var commandText: String = ""
     @State private var showAnswerSheet = false
     @State private var selectedAnswer = ""
@@ -65,6 +68,27 @@ struct OfficeView: View {
                     NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)
                 ) { notification in
                     applySceneSleep(notifying: notification.object as? NSWindow)
+                }
+                // 창을 늘리다 배율 계단 직전에서 멈추면 도면이 절반 크기로 남는다 —
+                // 계단이 20 → 40px 로 2배씩 뛰기 때문이다. 손을 뗀 자리에서 모자란 만큼만
+                // 창을 더 키워 그 계단에 세운다. **오피스 탭에서만** 걸려야 하므로 여기 둔다
+                // (`AppRootView` 가 탭을 `switch` 로 갈아, 대시보드에서는 이 뷰가 없다).
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: NSWindow.willStartLiveResizeNotification)
+                ) { notification in
+                    liveResizeStartSize = (notification.object as? NSWindow)?.frame.size
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: NSWindow.didEndLiveResizeNotification)
+                ) { notification in
+                    let startSize = liveResizeStartSize
+                    liveResizeStartSize = nil
+                    guard let window = notification.object as? NSWindow else {
+                        return
+                    }
+                    snapWindowUpToFloorPlanStep(window, grownFrom: startSize)
                 }
                 .onAppear {
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
