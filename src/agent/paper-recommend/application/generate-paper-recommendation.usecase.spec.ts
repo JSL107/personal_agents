@@ -623,6 +623,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       ordersCreated: 2,
       agentRunId: 99,
       dataAsOf: '2026-08-13',
+      targetTradeDate: '2026-08-14',
       orders: [
         {
           side: 'SELL',
@@ -700,6 +701,11 @@ describe('GeneratePaperRecommendationUsecase', () => {
         corporateActions: [],
       });
     expect(decision.orders).toEqual([]);
+    // 주문이 0 건인 회차는 체결될 것이 없다. 카드가 날짜를 적지 않도록 여기서 null 이어야
+    // 한다 — 값이 남으면 아무것도 사지 않은 회차에 "그날 시가 체결 예정" 이 붙는다.
+    expect(
+      (decision.result as PaperRecommendationSuccess).targetTradeDate,
+    ).toBeNull();
   });
 
   // 프롬프트에 실린 여력만 검증하면 모델 입력만 고치고 실제 주문 수량은 잔고로 내는 구현도

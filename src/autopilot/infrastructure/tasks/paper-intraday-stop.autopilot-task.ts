@@ -9,13 +9,19 @@ import {
   ApplyIntradayStopUsecase,
   IntradayStopFill,
 } from '../../../paper-trading/application/apply-intraday-stop.usecase';
+import { getKstClock } from '../../../paper-trading/domain/trade-calendar';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
-import { formatQuantity, formatWon } from '../paper-number.formatter';
+import {
+  formatKstTime,
+  formatQuantity,
+  formatTradeDay,
+  formatWon,
+} from '../paper-number.formatter';
 
 interface PaperIntradayStopAudit {
   inspectedCount: number;
@@ -119,8 +125,15 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
     return { skip: true };
   }
 
+  const clock = getKstClock(result.asOf);
+  // 손절은 판정 그 순간의 현재가로 청산한다. 같은 종목의 시가 매수 카드와 몇 분 차이로 붙어
+  // 나오는 일이 있어(매수 2분 뒤 손절), 시각이 없으면 둘의 선후가 읽히지 않는다.
+  // 청산이 0건인 회차는 장애를 알리는 카드라 팔 가격이 없다 — "현재가" 를 붙이지 않는다.
+  const asOfText =
+    `${formatTradeDay(clock.tradeDate)} ${formatKstTime(clock.minutes)}` +
+    (result.filledCount > 0 ? ' 현재가' : '');
   const lines = [
-    `*장중 손절* — ${result.filledCount}건 청산`,
+    `*장중 손절* — ${asOfText} · ${result.filledCount}건 청산`,
     ...result.fills.map(formatFill),
   ];
   if (result.priceErrorCount > 0) {

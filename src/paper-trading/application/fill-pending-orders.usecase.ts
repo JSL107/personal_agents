@@ -38,6 +38,9 @@ export interface PaperOrderFillDetail {
 
 export interface FillPendingOrdersResult {
   window: FillWindow;
+  // 이 회차를 돌린 시각. 카드가 "언제 체결한 값인가" 를 적으려면 필요하다 — 체결가는 시가라
+  // Slack 발송 시각보다 앞서, 발송 시각을 체결 시점으로 읽으면 30분 이상 어긋난다.
+  asOf: Date;
   attempted: number;
   filled: number;
   expired: number;
@@ -110,6 +113,7 @@ export class FillPendingOrdersUsecase {
     if (minutes < openMinutes) {
       return {
         window: 'BEFORE_OPEN',
+        asOf: executedAt,
         attempted: 0,
         filled: 0,
         expired: 0,
@@ -124,6 +128,7 @@ export class FillPendingOrdersUsecase {
     const orders = await this.repository.findDuePendingOrders(day);
     const result: FillPendingOrdersResult = {
       window,
+      asOf: executedAt,
       attempted: orders.length,
       filled: 0,
       expired: 0,

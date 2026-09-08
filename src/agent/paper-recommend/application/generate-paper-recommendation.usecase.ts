@@ -79,6 +79,10 @@ export interface PaperRecommendationSuccess {
   account: PaperRecommendationAccountSummary;
   // 스크리너 기준일. null 이면 시세가 없어 주문 자체가 생성되지 않은 회차다.
   dataAsOf: string | null;
+  // 이 회차의 주문이 체결될 목표 거래일. 추천은 저녁에 나가고 체결은 다음 거래일 시가라,
+  // 카드가 이 날짜를 안 적으면 추천이 도착한 날을 매수일로 읽게 된다. 주문이 0건이면
+  // 체결될 것이 없으므로 null 이다 — 주문에 박힌 값을 그대로 올려 카드와 원장을 일치시킨다.
+  targetTradeDate: string | null;
 }
 
 export interface PaperRecommendationOrderDetail {
@@ -303,6 +307,8 @@ export class GeneratePaperRecommendationUsecase {
                   constrained: lockedRecommendation.constrained,
                 }),
                 dataAsOf: screen.asOf,
+                targetTradeDate:
+                  orders[0]?.targetTradeDate.toISOString().slice(0, 10) ?? null,
                 account: {
                   cashBalance: Number(state.account.cashBalance.toString()),
                   totalValue: Number(

@@ -25,6 +25,8 @@ const makeTask = (
   new PaperOrderFillAutopilotTask({
     execute: jest.fn().mockResolvedValue({
       window: 'TRADING',
+      // 2026-08-19(수) 09:30 KST — 체결 회차의 첫 시각.
+      asOf: new Date('2026-08-19T00:30:00.000Z'),
       attempted: 0,
       filled: 0,
       expired: 0,

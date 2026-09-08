@@ -18,7 +18,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
-import { formatMoney } from '../paper-number.formatter';
+import { formatMoney, formatTradeDay } from '../paper-number.formatter';
 
 const STRATEGIES: PaperRecommendationStrategy[] = ['LONG_TERM', 'SWING'];
 const STRATEGY_LABELS: Record<PaperRecommendationStrategy, string> = {
@@ -71,11 +71,28 @@ const formatResult = (
     return formatFailureDetail(failedByStrategy.get(strategy)!);
   });
 
+  // 추천은 저녁에 나가고 주문은 **다음 거래일 시가**에 체결된다. 그 시차를 카드가 안 적으면
+  // 추천이 도착한 시각을 매수 시각으로 읽게 되고, 다음날 아침 체결 카드와 이어지지 않는다.
+  // 날짜는 주문에 박힌 목표 거래일을 그대로 쓴다 — 카드에서 다시 계산하면 자정을 넘긴
+  // 재실행에서 원장의 주문과 다른 날짜를 적게 된다. 전략이 여럿이어도 한 회차는 같은
+  // `decidedAt` 에서 목표일을 계산하므로(`generate-paper-recommendation.usecase.ts:140`)
+  // 전략 간 날짜가 갈리지 않는다.
+  //
+  // "체결" 이 아니라 "체결 예정" 인 이유: 목표일은 `nextWeekday` 가 주말만 건너뛴 값이라
+  // (`trade-calendar.ts` — 공휴일 테이블이 없다) 평일 휴장일이면 그날 봉이 없어 주문이
+  // PENDING 으로 남고 다음 개장일에 체결된다. 확정처럼 적으면 휴장일에 카드가 거짓이 된다.
+  const targetTradeDate =
+    result.completed.find((completed) => completed.targetTradeDate !== null)
+      ?.targetTradeDate ?? null;
+  const timing = targetTradeDate
+    ? ` · ${formatTradeDay(targetTradeDate)} 시가 체결 예정`
+    : '';
   return {
     skip: false,
-    summaryText: [`*모의투자 추천* — ${headline}`, ...summarySections].join(
-      '\n',
-    ),
+    summaryText: [
+      `*모의투자 추천* — ${headline}${timing}`,
+      ...summarySections,
+    ].join('\n'),
     detailText: detailSections.join('\n\n'),
   };
 };
