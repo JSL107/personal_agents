@@ -286,6 +286,19 @@ func officeFloorColorViolations(samples: [OfficeColorSample], hour: Int) -> [Str
     }
 
     var violations: [String] = []
+    // **읽히는지부터 본다.** 그리는 쪽(`renderFloor`)은 텍스처를 못 얻으면 그 칸의 노드를
+    // 아예 만들지 않아, 그 자리에 씬 배경색(rgb 23,23,28 → 밝기 24.6)이 남는다. 그런데 어두워진
+    // 쪽이 벽이면 「통로가 벽보다 밝다」가 **벽이 사라졌기 때문에** 통과한다 — 벽 스프라이트
+    // 이름을 어긋내 재현했더니 벽 밝기가 24.7 로 떨어지고 게이트는 exit 0 이었다.
+    //
+    // 방 바닥은 하한 190 이 같은 사고를 잡지만 벽에는 하한이 없다(창·벽등 때문에 값이 흔들려
+    // 절대 범위를 줄 수 없다). 그래서 밝기가 아니라 **에셋이 있는가**를 직접 묻는다.
+    for sample in samples where officeFloorTextureBrightness(sample.tile) == nil {
+        violations.append(
+            "\(prefix) \(sample.tile.rawValue) 타일 텍스처를 읽지 못했다 — 그 칸은 배경색으로"
+                + " 남으므로 밝기 비교가 성립하지 않는다 (실측 \(rounded(sample.median)))"
+        )
+    }
     // 통로는 어느 방과도 혼동되면 안 되는 유일한 자리다 — 전용 텍스처가 없어 겹치지 않는
     // 축이 밝기뿐이고, 복도에 사람이 지나가므로 배경이 사람보다 밝아야 셔츠 색이 산다.
     for room in rooms where corridor.median < room.median + officeCorridorBrightnessMargin {
@@ -316,9 +329,9 @@ func officeFloorColorViolations(samples: [OfficeColorSample], hour: Int) -> [Str
         )
     }
     // 벽은 이 모델을 따르지 않는다 — `applyWallShading` 이 부서 색조·창·벽등을 따로 얹는다.
+    // (텍스처를 못 읽는 경우는 위에서 이미 걸렀으므로 여기서는 건너뛴다.)
     for sample in rooms + [corridor] {
         guard let texture = officeFloorTextureBrightness(sample.tile) else {
-            violations.append("\(prefix) \(sample.tile.rawValue) 타일 텍스처를 읽지 못했다")
             continue
         }
         let model = texture * (1 - sample.tile.muteStrength)
