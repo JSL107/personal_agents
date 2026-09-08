@@ -608,31 +608,18 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     // 여기 적힌 사람은 짝지어진 물건이 자기 방에 있는데도 **옆방 것이 더 가까워** 그리로
     // 간다. 명단 채우기는 위와 같은 양방향이라, 늘면 회귀고 줄면 갱신 신호다.
     //
-    // 3열 기준으로 벽 자리 넷을 바꾸기 전에는 열다섯이었다(#499 에서 실측). 남은 사람은 전부
-    // **바닥 가구**를 찾는 쪽이고, 방 경계가 복도 세 칸뿐이라 옆방 것이 자기 방 반대편보다
-    // 가까운 경우다. 줄이려면 목적지 선택이 방을 알아야 하는데 `officeStrollSpot` 은 지금
-    // `spots` 와 `home` 만 받는다 — `tasks/goals-office-design.md` 「남은 것」 §3 의 후속.
+    // 줄어 온 자취 — 3열은 15(#499 이전) → 8 → 6(#507 평가 방 복합기) → 0,
+    // 2열은 16 → 11 → 10 → 0. 마지막 한 칸은 목적지 선택이 **방을 알게 되면서** 떨어졌다
+    // (`officeStrollSpot` 의 `homeDepartment`).
     //
-    // **배치마다 명단이 다르다.** 방의 이웃이 갈리면 어느 옆방이 더 가까운지도 갈린다.
+    // **배치마다 명단이 다르다** — 방의 이웃이 갈리면 어느 옆방이 더 가까운지도 갈린다.
+    // 지금은 둘 다 비었지만 표를 배치별로 남겨 둔다.
     let strollTargetOutOfZone: [Int: Set<String>] = [
-        // 2열은 방이 3행 2열이라 위아래 이웃이 가깝다. 벽걸이 경쟁을 푼 뒤 열여섯에서 열하나,
-        // 평가 방에 복합기를 놓고 열로 줄었다.
-        2: [
-            // 평가 → 품질 프린터. 2열에서는 품질 방이 바로 위라 자기 방 것보다 가깝다.
-            "EVENING_RETRO",
-            "BLOG_REVISION", "CTO_STUDY", "CAREER_MATE", "JOB_APPLICATION",
-            "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE",
-            "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
-        ],
-        // 3열은 2행 3열. 벽 자리 넷을 바꾸기 전 열다섯 → 여덟 → 평가 방 복합기로 여섯.
-        3: [
-            // 콘텐츠 → 총무 게시판 · 품질 책장 (둘 다 콘텐츠 방에도 있지만 옆방이 가깝다)
-            "BLOG_REVISION", "CTO_STUDY",
-            // 자산 → 콘텐츠 모니터 (자기 방 11걸음 · 콘텐츠 9걸음)
-            "PAPER_TRADE",
-            // 총무 → 평가 책장·캐비닛
-            "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
-        ],
+        // **둘 다 비었다.** 목적지 선택이 방을 알게 되면서(`homeDepartment`) 3열 6 · 2열 10 이
+        // 한 번에 0 이 됐다. 비었다고 이 표를 지우면 안 된다 — 워커·가구·자리표를 손댈 때
+        // 누가 다시 방을 나가는지 알려 주는 유일한 방어선이다.
+        2: [],
+        3: [],
     ]
     var outOfRoom: Set<String> = []
     for zone in plan.zones {
@@ -682,12 +669,14 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         for agent in sampleAgents where !officeWorkAffinity(agentType: agent.agentType).isEmpty {
             // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
             guard let seat = zonePlan.desks.first(where: { $0.agentType == agent.agentType })?.seat,
+                  let myZone = zonePlan.zones.first(where: { officeZoneContains($0, seat) }),
+                  // **씬이 부르는 형태 그대로 부른다.** `homeDepartment` 를 빼면 기본값 nil 로
+                  // 옛 경로(거리만 보는 선택)를 재게 되어, 정작 고친 코드가 검증되지 않는다.
                   let spot = officeStrollSpot(
                       for: agent.agentType, round: 1, spots: zoneSpots, occupied: [], hour: 14,
-                      home: seat
+                      home: seat, homeDepartment: myZone.department
                   ),
-                  spot.kind != .meetingTable,
-                  let myZone = zonePlan.zones.first(where: { officeZoneContains($0, seat) })
+                  spot.kind != .meetingTable
             else {
                 continue
             }
