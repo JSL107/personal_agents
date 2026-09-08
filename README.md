@@ -181,7 +181,7 @@ pnpm db:push          # 스키마 동기화 (synchronize, 마이그레이션 파
 pnpm dev              # watch 모드 기동
 ```
 
-> **사전 요구사항** — Node 22+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행한다([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
+> **사전 요구사항** — Node 22.12+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행한다([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 >
 > **검증** — 로컬은 `pnpm lint:check && pnpm test && pnpm build` 3중 green. CI 는 여기에 `check:env` · `docs:check` · `check:invariants` 를 더 돌린다.
 
