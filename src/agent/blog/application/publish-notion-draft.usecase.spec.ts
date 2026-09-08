@@ -2012,6 +2012,38 @@ describe('차단된 초안 큐 막힘', () => {
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
   });
 
+  // 두 이력을 각각의 try 에 둔 이유가 이것이다 — 한쪽 조회가 깨져도 다른 쪽이 찾아낸 후순위는
+  // 살아 있어야 한다. 한 try 로 묶으면 앞이 던지는 순간 뒤 이력이 통째로 버려져, 막힌 초안을
+  // 알고 있었는데도 그 글을 다시 집는다(리뷰 지적).
+  it('차단 이력 조회가 깨져도 실패 이력 후순위는 남는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRunsError: new Error('DB 연결 실패'),
+      failedRuns: [{ inputSnapshot: { pageId: 막힌초안.pageId } }],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
+  it('실패 이력 조회가 깨져도 차단 이력 후순위는 남는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      recentRuns: [
+        {
+          ...차단이력[0],
+          inputSnapshot: { pageId: 막힌초안.pageId },
+        },
+      ],
+      failedRunsError: new Error('DB 연결 실패'),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
   // 원장이 안 읽힌다고 그날 발행을 통째로 막으면 손해가 더 크다 — 차단 이력과 같은 정책.
   it('실패 이력 조회가 깨져도 발행은 계속한다', async () => {
     const { usecase, notionClient } = buildUsecase({
