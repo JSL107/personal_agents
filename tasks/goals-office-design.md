@@ -516,6 +516,18 @@ SwiftPM 은 스프라이트 26종과 Dock 아이콘을 실행 파일 옆의 별�
 같은 경로에 다시 구우면 Launch Services 가 옛 `Info.plist` 를 들고 있을 수 있어 `lsregister -f`
 로 한 번 밀어 준다.
 
+**토큰도 같은 구멍인데 처방은 다르다.** 백엔드에 `CONSOLE_REMOTE_TOKEN` 이 설정돼 있으면
+`LoopbackOnlyGuard` 가 같은 머신에서도 `x-console-token` 을 요구한다 — 읽기 쪽
+(`ConsoleReadGuard`)은 loopback 을 토큰 없이 통과시키므로 **화면은 멀쩡히 뜨는데 지시·승인만
+401 로 죽는다.** 증상이 「버튼이 안 먹는다」로만 보여 원인을 찾기 어려운 종류다.
+
+그런데 주소와 달리 **자동으로 굽지 않는다.** `Info.plist` 는 앱을 열어 보는 누구나 읽는
+평문이고 `.app` 은 통째로 옮겨 다니는 물건이라, `.env` 를 뒤져 비밀을 말없이 실어 보내면
+안 된다. 셸에 `IDAERI_CONSOLE_TOKEN` 을 직접 넣어 준 경우에만 굽고 그때 경고를 낸다.
+
+이 레포의 현재 설정에서는 `CONSOLE_REMOTE_TOKEN` 이 비어 있어(실측: 토큰 없이 쓰기를 쳐도
+가드를 통과해 404 가 난다) 지금 당장은 증상이 없다. **토큰을 켜는 날 조용히 깨지는 자리다.**
+
 ### 서명 없이 여는 것 — Gatekeeper 는 막지 않았다
 
 직접 빌드한 `.app` 에는 quarantine 속성이 안 붙어 **그냥 열린다**(`open` 으로 확인).
