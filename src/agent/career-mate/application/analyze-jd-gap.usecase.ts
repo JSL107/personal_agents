@@ -134,7 +134,6 @@ export class AnalyzeJdGapUsecase {
             // agentRunId 를 payload 에 실어, 주제 선택 시 BLOG run 의 parentId 로 연결(chain audit).
             payload: { topics: data.topics, agentRunId: context.agentRunId },
             previewText: 'JD 갭 분석 — 블로그 주제 선택 대기',
-            responseUrl: null,
             ttlMs: PREVIEW_TTL_MS,
           });
         }

@@ -8,7 +8,6 @@ const buildPreview = (payload: unknown) =>
     payload,
     status: 'PENDING',
     previewText: '미리보기',
-    responseUrl: null,
     expiresAt: new Date(),
     createdAt: new Date(),
     appliedAt: null,

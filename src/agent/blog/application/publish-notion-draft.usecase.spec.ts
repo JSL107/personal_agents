@@ -293,7 +293,6 @@ describe('PublishNotionDraftUsecase', () => {
       await usecase.execute({
         titleQuery: '',
         slackUserId: 'U1',
-        responseUrl: 'https://hooks.slack.test/response',
       });
 
       const 편집호출 = modelRouter.route.mock.calls.find(([input]) =>
@@ -358,7 +357,6 @@ describe('PublishNotionDraftUsecase', () => {
       await usecase.execute({
         titleQuery: '',
         slackUserId: 'U1',
-        responseUrl: 'https://hooks.slack.test/response',
       });
 
       const 익명화호출 = modelRouter.route.mock.calls.find(
@@ -389,7 +387,6 @@ describe('PublishNotionDraftUsecase', () => {
       await usecase.execute({
         titleQuery: '',
         slackUserId: 'U1',
-        responseUrl: 'https://hooks.slack.test/response',
       });
 
       const 익명화호출 = modelRouter.route.mock.calls.find(
@@ -426,7 +423,6 @@ describe('PublishNotionDraftUsecase', () => {
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
-          responseUrl: 'https://hooks.slack.test/response',
         }),
       ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
     });
@@ -450,7 +446,6 @@ describe('PublishNotionDraftUsecase', () => {
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
-          responseUrl: 'https://hooks.slack.test/response',
         }),
       ).rejects.toThrow(/코드 표식이 사라졌거나 늘어났습니다/);
     });
@@ -464,7 +459,6 @@ describe('PublishNotionDraftUsecase', () => {
       await usecase.execute({
         titleQuery: '',
         slackUserId: 'U1',
-        responseUrl: 'https://hooks.slack.test/response',
       });
 
       const 익명화호출 = modelRouter.route.mock.calls.find(
@@ -492,7 +486,6 @@ describe('PublishNotionDraftUsecase', () => {
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
-          responseUrl: 'https://hooks.slack.test/response',
         }),
       ).rejects.toThrow(/익명화 결과의 코드블록/);
     });
@@ -519,7 +512,6 @@ describe('PublishNotionDraftUsecase', () => {
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
-          responseUrl: 'https://hooks.slack.test/response',
         }),
       ).rejects.toThrow(/편집 결과의 코드블록/);
     });
@@ -538,7 +530,6 @@ describe('PublishNotionDraftUsecase', () => {
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
-          responseUrl: 'https://hooks.slack.test/response',
         }),
       ).rejects.toThrow(/코드 표식/);
     });
@@ -736,7 +727,6 @@ describe('PublishNotionDraftUsecase', () => {
     const outcome = await usecase.execute({
       titleQuery: '',
       slackUserId: 'U1',
-      responseUrl: 'https://hooks.slack.test/response',
     });
 
     expect(outcome.result.status).toBe('preview');
@@ -749,7 +739,6 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
-      responseUrl: 'https://hooks.slack.test/response',
       // autopilot T1_PREVIEW 와 같은 24시간. 1시간은 카드 유실로 이미 기각된 값이다.
       ttlMs: 86_400_000,
       previewText:
@@ -2312,7 +2301,6 @@ describe('블로그 수정 규칙 되먹임', () => {
     await usecase.execute({
       titleQuery: '',
       slackUserId: 'U1',
-      responseUrl: 'https://hooks.slack.test/response',
     });
     const call = modelRouter.route.mock.calls.find(([input]) =>
       String(input.request.systemPrompt).includes('블로그의 편집자'),
@@ -2349,7 +2337,6 @@ describe('블로그 수정 규칙 되먹임', () => {
     await usecase.execute({
       titleQuery: '',
       slackUserId: 'U1',
-      responseUrl: 'https://hooks.slack.test/response',
     });
     const call = modelRouter.route.mock.calls.find(([input]) =>
       String(input.request.systemPrompt).includes('블로그의 편집자'),
@@ -2370,7 +2357,6 @@ describe('블로그 수정 규칙 되먹임', () => {
       await usecase.execute({
         titleQuery: '',
         slackUserId: 'U1',
-        responseUrl: 'https://hooks.slack.test/response',
       });
       const call = modelRouter.route.mock.calls.find(([input]) =>
         String(input.request.systemPrompt).includes('블로그의 편집자'),
@@ -2389,7 +2375,6 @@ describe('블로그 수정 규칙 되먹임', () => {
     await usecase.execute({
       titleQuery: '',
       slackUserId: 'U1',
-      responseUrl: 'https://hooks.slack.test/response',
     });
     expect(createPreview.execute).toHaveBeenCalled();
   });

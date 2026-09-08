@@ -21,7 +21,6 @@ const preview = (overrides: Partial<PreviewAction> = {}): PreviewAction => ({
   payload: {},
   status: 'PENDING',
   previewText: '대표 승인 카드',
-  responseUrl: null,
   expiresAt: new Date('2026-09-04T04:00:00.000Z'),
   createdAt: new Date('2026-09-04T02:00:00.000Z'),
   appliedAt: null,

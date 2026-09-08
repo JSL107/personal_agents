@@ -32,7 +32,6 @@ const buildPreview = (payload: unknown): PreviewAction => ({
   payload,
   status: 'PENDING',
   previewText: '',
-  responseUrl: null,
   expiresAt: new Date(Date.now() + 3_600_000),
   createdAt: new Date(),
   appliedAt: null,
