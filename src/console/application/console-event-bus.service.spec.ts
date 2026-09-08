@@ -12,6 +12,7 @@ describe('ConsoleEventBus', () => {
       type: 'state.changed',
       agentType: 'PM',
       state: ConsoleAgentState.IN_PROGRESS,
+      bubble: '일하는 중…',
     });
     await expect(received).resolves.toMatchObject({
       type: 'state.changed',
@@ -55,12 +56,14 @@ describe('ConsoleEventBus', () => {
       type: 'state.changed',
       agentType: 'PM',
       state: ConsoleAgentState.COMPLETED,
+      bubble: '완료했어요!',
     });
     const next = firstValueFrom(bus.stream().pipe(take(1)));
     bus.publish({
       type: 'state.changed',
       agentType: 'CTO',
       state: ConsoleAgentState.IN_PROGRESS,
+      bubble: '일하는 중…',
     });
     await expect(next).resolves.toMatchObject({ agentType: 'CTO' });
   });

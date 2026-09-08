@@ -129,6 +129,15 @@ export type ConsoleEvent =
       readonly type: 'state.changed';
       readonly agentType: string;
       readonly state: ConsoleAgentState;
+      /**
+       * 바뀐 상태에 맞는 말풍선 문구. 스냅샷의 `ConsoleAgent.bubble` 과 같은 값이다.
+       *
+       * 상태만 실어 보내면 화면은 직전 스냅샷의 문구를 그대로 들고 있게 된다 — 지금 무슨
+       * 일을 하는지 알려 주는 활동 문구(`#495 리뷰 중`)가 바로 그 자리에 실리므로, 그래서
+       * 앱은 상태가 바뀔 때마다 스냅샷을 한 번 더 당겨와야 했다. 30초 주기 재동기화만
+       * 기다리면 그 안에 끝나는 실행은 활동 문구가 한 번도 안 뜬다(워커 실행은 대개 10~40초).
+       */
+      readonly bubble: string;
     }
   | {
       readonly type: 'session.opened' | 'session.updated';

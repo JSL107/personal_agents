@@ -13,9 +13,21 @@ func runSSEParserTests(_ t: TestRunner) {
         let events = parseSSELine(&buffer)
         t.expectEqual(events.count, 1, "단일 이벤트 파싱")
         t.expectEqual(buffer, "", "완성 후 버퍼 소진")
-        if case let .stateChanged(agentType, state) = events.first {
+        if case let .stateChanged(agentType, state, bubble) = events.first {
             t.expectEqual(agentType, "PM", "파싱된 agentType")
             t.expectEqual(state, .inProgress, "파싱된 state")
+            t.expectEqual(bubble, nil, "문구가 없는 이벤트는 nil")
+        } else {
+            t.fail("stateChanged 로 파싱되어야 함")
+        }
+    }
+
+    // 서버가 말풍선 문구를 함께 실어 보내면 그대로 파싱된다 — 앱은 이 값을 그대로 표시한다.
+    do {
+        var buffer = "data: {\"type\":\"state.changed\",\"agentType\":\"CODE_REVIEWER\",\"state\":\"IN_PROGRESS\",\"bubble\":\"#495 리뷰 중\"}\n\n"
+        let events = parseSSELine(&buffer)
+        if case let .stateChanged(_, _, bubble) = events.first {
+            t.expectEqual(bubble, "#495 리뷰 중", "이벤트가 실어 온 말풍선 문구")
         } else {
             t.fail("stateChanged 로 파싱되어야 함")
         }
@@ -158,7 +170,7 @@ private func runSSEByteAccumulatorTests(_ t: TestRunner) {
             ["id: 1\r\ndata: \(payload)\r\n\r\nid: 2\r\ndata: \(second)\r\n\r\n"], into: &accumulator
         )
         t.expectEqual(events.count, 2, "CRLF 프레이밍도 2건 수신")
-        if case let .stateChanged(agentType, state) = events.first {
+        if case let .stateChanged(agentType, state, _) = events.first {
             t.expectEqual(agentType, "PM", "CRLF payload 보존 — agentType")
             t.expectEqual(state, .inProgress, "CRLF payload 보존 — state")
         } else {

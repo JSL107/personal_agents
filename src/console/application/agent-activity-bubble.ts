@@ -1,6 +1,9 @@
+import { ConsoleAgentState } from '../domain/console.type';
+import { bubbleForState } from './derive-agent-state';
+
 export const ACTIVITY_BUBBLE_MAX_LENGTH = 12;
 
-type ActivityBubbleInput = {
+export type ActivityBubbleInput = {
   agentType: string;
   triggerType: string;
   inputSnapshot: Record<string, unknown> | null;
@@ -54,6 +57,16 @@ export function activityBubble(input: ActivityBubbleInput): string | null {
     return null;
   }
   return bubble;
+}
+
+/**
+ * 진행 중인 런 한 건이 화면에 띄울 말풍선 문구. 규칙에 없는 트리거면 상태 기본 문구로 떨어진다.
+ *
+ * 스냅샷(`ConsoleReadService`)과 SSE `state.changed`(`AgentRunService`)가 같은 문구를 내야
+ * 한다 — 두 경로가 각자 조립하면 이벤트로 뜬 문구가 다음 스냅샷에서 다른 값으로 덮인다.
+ */
+export function bubbleForActiveRun(input: ActivityBubbleInput): string {
+  return activityBubble(input) ?? bubbleForState(ConsoleAgentState.IN_PROGRESS);
 }
 
 function createPullRequestReviewBubble(

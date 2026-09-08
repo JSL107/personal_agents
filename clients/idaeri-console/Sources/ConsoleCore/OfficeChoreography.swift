@@ -153,7 +153,7 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         return [.returnHome(agentType: agentType)]
 
-    case let .stateChanged(agentType, state):
+    case let .stateChanged(agentType, state, _):
         guard knows(agentType) else {
             return []
         }

@@ -242,7 +242,11 @@ public enum ConsoleEvent: Decodable, Sendable {
     case runFinished(ConsoleRun)
     case approvalOpened(ConsoleApproval)
     case approvalResolved(ConsoleApproval)
-    case stateChanged(agentType: String, state: ConsoleAgentState)
+    /// `bubble` 은 서버가 함께 실어 보내는 말풍선 문구다. 옵셔널인 이유는 버전 스큐 —
+    /// 앱은 한 번 빌드해 두고 쓰는데 서버는 따로 재시작하므로, 이 필드를 모르는 옛 서버가
+    /// 이벤트를 내려도 디코딩이 통째로 실패해서는 안 된다. 값이 없으면 앱은 예전처럼
+    /// 스냅샷을 한 번 더 당겨와 문구를 맞춘다.
+    case stateChanged(agentType: String, state: ConsoleAgentState, bubble: String?)
     case sessionOpened(ConsoleSession)
     case sessionUpdated(ConsoleSession)
     case sessionClosed(sessionId: String)
@@ -256,6 +260,7 @@ public enum ConsoleEvent: Decodable, Sendable {
         case approval
         case agentType
         case state
+        case bubble
         case session
         case sessionId
         case commandId
@@ -278,7 +283,8 @@ public enum ConsoleEvent: Decodable, Sendable {
         case "state.changed":
             self = .stateChanged(
                 agentType: try container.decode(String.self, forKey: .agentType),
-                state: try container.decode(ConsoleAgentState.self, forKey: .state)
+                state: try container.decode(ConsoleAgentState.self, forKey: .state),
+                bubble: try container.decodeIfPresent(String.self, forKey: .bubble)
             )
         case "session.opened":
             self = .sessionOpened(try container.decode(ConsoleSession.self, forKey: .session))

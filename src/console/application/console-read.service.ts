@@ -18,7 +18,7 @@ import {
   ConsoleRun,
   ConsoleSnapshot,
 } from '../domain/console.type';
-import { activityBubble } from './agent-activity-bubble';
+import { bubbleForActiveRun } from './agent-activity-bubble';
 import { toConsoleApproval, toConsoleSession } from './console-mappers';
 import { bubbleForState, deriveAgentState } from './derive-agent-state';
 
@@ -108,7 +108,7 @@ export class ConsoleReadService {
       const activeRun = latestActiveRunByAgentType.get(entry.agentType);
       const bubble =
         state === ConsoleAgentState.IN_PROGRESS && activeRun !== undefined
-          ? (activityBubble(activeRun) ?? bubbleForState(state))
+          ? bubbleForActiveRun(activeRun)
           : bubbleForState(state);
       return {
         agentType: entry.agentType,
