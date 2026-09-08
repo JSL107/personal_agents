@@ -1685,11 +1685,36 @@ describe('PublishNotionDraftUsecase', () => {
     await usecase.execute({
       titleQuery: '',
       slackUserId: 'U1',
-      publishedAt: '2026-09-07T00:00:00.000Z',
+      publishedAt: '2026-08-15T00:00:00.000Z',
     });
 
     expect(updateInputSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ publishedAt: '2026-09-07T00:00:00.000Z' }),
+      expect.objectContaining({ publishedAt: '2026-08-15T00:00:00.000Z' }),
+    );
+  });
+
+  it('지목한 날짜가 발행 경로와 프론트매터에 실제로 박힌다', async () => {
+    // 시계는 2026-08-19 로 고정돼 있다. 지목이 그 값을 이겨야 결번이 채워진다.
+    const { usecase, createPreview } = buildUsecase({ drafts: [draft] });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+      publishedAt: '2026-08-15T00:00:00.000Z',
+    });
+
+    expect(outcome.result).toEqual(
+      expect.objectContaining({
+        path: expect.stringContaining('src/content/posts/2026-08-15-'),
+      }),
+    );
+    expect(createPreview.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          path: expect.stringContaining('src/content/posts/2026-08-15-'),
+          content: expect.stringContaining('pubDatetime: 2026-08-15'),
+        }),
+      }),
     );
   });
 

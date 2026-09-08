@@ -74,12 +74,25 @@ describe('parseBlogPublishArgs', () => {
   });
 
   it('앞날로는 발행하지 못하게 막는다', () => {
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1_000)
-      .toISOString()
-      .slice(0, 10);
+    // 시계를 고정한다. 실행 시각의 UTC 로 '내일'을 만들면 KST 기준인 구현과 어긋나,
+    // 한국 시간 00:00~08:59 에는 그 '내일'이 KST 오늘과 같은 날이 되어 통과해 버린다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-08T06:00:00.000Z'));
 
-    expect(() => parseBlogPublishArgs(`--date=${tomorrow}`)).toThrow(
+    expect(() => parseBlogPublishArgs('--date=2026-09-09')).toThrow(
       '앞날로는 발행할 수 없습니다',
     );
+
+    jest.useRealTimers();
+  });
+
+  it('한국 시간 새벽에도 내일은 여전히 막는다', () => {
+    // KST 2026-09-08 00:30. 위 경계 테스트의 반대편 — 새벽이라고 앞날이 열리면 안 된다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-07T15:30:00.000Z'));
+
+    expect(() => parseBlogPublishArgs('--date=2026-09-09')).toThrow(
+      '앞날로는 발행할 수 없습니다',
+    );
+
+    jest.useRealTimers();
   });
 });
