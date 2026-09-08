@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { evaluateContract } from '../../agent-registry/contract-inspector';
+import { bubbleForActiveRun } from '../../console/application/agent-activity-bubble';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
+import { bubbleForState } from '../../console/application/derive-agent-state';
 import {
   ConsoleAgentState,
   ConsoleRun,
@@ -40,6 +42,17 @@ import {
 // 변동 — production 운영 후 P99 측정 결과 따라 조정 가능. 본 상수가 hard upper bound 도 겸함 —
 // caller 가 더 큰 값 넘겨도 service 가 clamp 하여 DoS (recursive CTE 깊이 폭발) 차단.
 const DEFAULT_CHAIN_MAX_DEPTH = 16;
+
+// 말풍선 규칙은 `inputSnapshot` 의 키를 읽는다(`#495 리뷰 중` 의 pullNumber 등). execute 가
+// 받는 값은 임의의 JSON 이므로, 객체가 아니면(배열·스칼라·null) null 로 접는다 —
+// `ActiveRunSnapshot.inputSnapshot` 을 만드는 저장소 경계와 같은 규칙이라, 이벤트로 뜬 문구와
+// 다음 스냅샷의 문구가 같은 입력에서 갈리지 않는다.
+function toBubbleSnapshot(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
 
 // episodic 인덱스에 적재하지 않는 워커 — output 에 사람이 읽을 서술이 없고 카운트·id·날짜만
 // 있는 계측이라, 이 인덱스의 용도(유사 plan 검색·intent few-shot)에 쓸 내용이 없다.
@@ -162,6 +175,11 @@ export class AgentRunService {
       type: 'state.changed',
       agentType,
       state: ConsoleAgentState.IN_PROGRESS,
+      bubble: bubbleForActiveRun({
+        agentType,
+        triggerType,
+        inputSnapshot: toBubbleSnapshot(inputSnapshot),
+      }),
     });
 
     // evidence loop 을 try 안에 둬서 recordEvidence 가 throw 하더라도 AgentRun 이 IN_PROGRESS 에 고착되지 않도록 한다.
@@ -225,6 +243,7 @@ export class AgentRunService {
         type: 'state.changed',
         agentType,
         state: ConsoleAgentState.COMPLETED,
+        bubble: bubbleForState(ConsoleAgentState.COMPLETED),
       });
 
       // Episodic Memory 적재 — fire-and-forget(await 안 함). 임베딩 모델 로드/추론이 본 흐름을
@@ -272,6 +291,7 @@ export class AgentRunService {
         type: 'state.changed',
         agentType,
         state: ConsoleAgentState.FAILED,
+        bubble: bubbleForState(ConsoleAgentState.FAILED),
       });
 
       throw error;
@@ -391,6 +411,7 @@ export class AgentRunService {
         type: 'state.changed',
         agentType: zombie.agentType,
         state: ConsoleAgentState.FAILED,
+        bubble: bubbleForState(ConsoleAgentState.FAILED),
       });
     }
     return count;

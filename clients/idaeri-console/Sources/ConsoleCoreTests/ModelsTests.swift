@@ -114,7 +114,7 @@ func runModelsTests(_ t: TestRunner) {
         {"type":"state.changed","agentType":"PM","state":"COMPLETED"}
         """.data(using: .utf8)!
         let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
-        if case let .stateChanged(agentType, state) = event {
+        if case let .stateChanged(agentType, state, _) = event {
             t.expectEqual(agentType, "PM", "state.changed agentType")
             t.expectEqual(state, .completed, "state.changed state")
         } else {
@@ -130,7 +130,7 @@ func runModelsTests(_ t: TestRunner) {
         {"type":"state.changed","agentType":"PM","state":"FAILED"}
         """.data(using: .utf8)!
         let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
-        if case let .stateChanged(agentType, state) = event {
+        if case let .stateChanged(agentType, state, _) = event {
             t.expectEqual(agentType, "PM", "state.changed(FAILED) agentType")
             t.expectEqual(state, .failed, "state.changed(FAILED) state")
         } else {

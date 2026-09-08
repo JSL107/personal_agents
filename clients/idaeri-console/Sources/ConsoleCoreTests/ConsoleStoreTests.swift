@@ -40,12 +40,24 @@ func runConsoleStoreTests(_ t: TestRunner) {
     t.expectEqual(store.serverTime, "2026-07-27T00:00:00Z", "serverTime 적재")
 
     // state.changed 는 해당 에이전트 state 만 바꾸고 나머지는 불변
-    store.apply(event: .stateChanged(agentType: "PM", state: .inProgress))
+    store.apply(event: .stateChanged(agentType: "PM", state: .inProgress, bubble: nil))
     t.expectEqual(store.agents.first(where: { $0.agentType == "PM" })?.state, .inProgress, "PM 상태 변경")
     t.expectEqual(store.agents.first(where: { $0.agentType == "BE" })?.state, .waiting, "BE 상태 불변")
 
-    // state.changed 시 bubble 은 백엔드 소유라 클라이언트가 임의 변경하지 않는다(스냅샷 정정 대기)
-    t.expectEqual(store.agents.first(where: { $0.agentType == "PM" })?.bubble, "업무 대기중", "bubble 유지")
+    // 문구를 안 실어 온 이벤트(옛 서버)는 bubble 을 건드리지 않는다 — 앱이 문구를 지어내지 않는다.
+    t.expectEqual(store.agents.first(where: { $0.agentType == "PM" })?.bubble, "업무 대기중", "문구 없는 이벤트는 bubble 유지")
+
+    // 서버가 문구를 실어 보내면 스냅샷을 다시 받지 않고도 그 자리에서 바뀐다. 이게 없으면
+    // 30초 주기 재동기화 전에 끝나는 실행은 활동 문구가 한 번도 안 뜬다(워커 실행은 대개 10~40초).
+    store.apply(event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "오늘 계획 짜는 중"))
+    t.expectEqual(
+        store.agents.first(where: { $0.agentType == "PM" })?.bubble, "오늘 계획 짜는 중",
+        "이벤트가 실어 온 문구 즉시 반영"
+    )
+    t.expectEqual(
+        store.agents.first(where: { $0.agentType == "BE" })?.bubble, "업무 대기중",
+        "다른 사람 문구는 불변"
+    )
 
     // 부서도 유지된다. 상태 변경은 에이전트를 새로 만들어 갈아 끼우는데, 그때 필드를 손으로
     // 나열하면 새 필드가 조용히 빠진다 — 부서가 빠지면 상태가 바뀐 사람이 자기 방에서
@@ -55,8 +67,45 @@ func runConsoleStoreTests(_ t: TestRunner) {
         "상태 변경 후에도 부서 유지"
     )
 
+    // 같은 사람의 런이 둘 겹쳤을 때, 하나가 끝나도 남은 런이 있으면 종료로 내리지 않는다.
+    // 이벤트는 런 한 건의 결과지만 화면 상태는 그 사람 전체의 집계라서다. 여기서 안 막으면
+    // 일하는 중인 사람이 "완료" 로 바뀌고 활동 문구까지 종료 문구로 덮인다.
+    let overlapStore = ConsoleStore()
+    overlapStore.apply(snapshot: snapshot)
+    for (id, finishedAt) in [("rA", nil as String?), ("rB", nil as String?)] {
+        overlapStore.apply(event: .runStarted(ConsoleRun(
+            id: id, agentType: "PM", status: "IN_PROGRESS", parentId: nil,
+            startedAt: "2026-07-27T00:01:00Z", finishedAt: finishedAt
+        )))
+    }
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
+    overlapStore.apply(event: .runFinished(ConsoleRun(
+        id: "rB", agentType: "PM", status: "SUCCEEDED", parentId: nil,
+        startedAt: "2026-07-27T00:01:00Z", finishedAt: "2026-07-27T00:02:00Z"
+    )))
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .completed, bubble: "완료했어요!"))
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.state, .inProgress,
+        "남은 런이 있으면 종료 이벤트를 적용하지 않는다"
+    )
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.bubble, "#495 리뷰 중",
+        "남은 런의 활동 문구가 종료 문구로 덮이지 않는다"
+    )
+
+    // 마지막 런까지 끝나면 그때 종료를 적용한다.
+    overlapStore.apply(event: .runFinished(ConsoleRun(
+        id: "rA", agentType: "PM", status: "SUCCEEDED", parentId: nil,
+        startedAt: "2026-07-27T00:01:00Z", finishedAt: "2026-07-27T00:03:00Z"
+    )))
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .completed, bubble: "완료했어요!"))
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.state, .completed,
+        "활성 런이 다 끝나면 종료 적용"
+    )
+
     // 존재하지 않는 agentType 은 무시(크래시·추가 없음)
-    store.apply(event: .stateChanged(agentType: "GHOST", state: .completed))
+    store.apply(event: .stateChanged(agentType: "GHOST", state: .completed, bubble: nil))
     t.expectEqual(store.agents.count, 2, "미지의 agentType 무시")
 
     // run.started → runs 에 추가
@@ -327,11 +376,11 @@ func runConsoleStoreTests(_ t: TestRunner) {
         runs: [], approvals: [], sessions: [], serverTime: "t"))
     var receivedStateChange = false
     let cancellable = emitStore.eventStream.sink { event in
-        if case .stateChanged(let agentType, _) = event, agentType == "PM" {
+        if case .stateChanged(let agentType, _, _) = event, agentType == "PM" {
             receivedStateChange = true
         }
     }
-    emitStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress))
+    emitStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress, bubble: nil))
     t.expect(receivedStateChange, "apply(event:) 가 eventStream 으로 방출")
     cancellable.cancel()
 
@@ -401,7 +450,7 @@ private func runAcknowledgeCompletionTests(_ t: TestRunner) {
             )
         )
     )
-    sseThenSnapshotStore.apply(event: .stateChanged(agentType: "CTO", state: .completed))
+    sseThenSnapshotStore.apply(event: .stateChanged(agentType: "CTO", state: .completed, bubble: nil))
     t.expectEqual(sseThenSnapshotStore.agents.first?.state, .completed, "SSE 완료 표시")
     sseThenSnapshotStore.acknowledgeCompletion(agentType: "CTO")
     t.expectEqual(sseThenSnapshotStore.agents.first?.state, .waiting, "라이브 완료 확인 직후 대기")
@@ -431,7 +480,7 @@ private func runAcknowledgeCompletionTests(_ t: TestRunner) {
             )
         )
     )
-    liveStore.apply(event: .stateChanged(agentType: "CTO", state: .completed))
+    liveStore.apply(event: .stateChanged(agentType: "CTO", state: .completed, bubble: nil))
     t.expectEqual(liveStore.agents.first?.state, .completed, "SSE 로 온 새 완료는 즉시 표시")
 
     // 런 id 를 모르는 완료는 확인해도 판정 키가 없어 그대로 둔다(확인 버튼도 숨는 조건)
