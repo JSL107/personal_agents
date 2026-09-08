@@ -176,6 +176,129 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         )
     }
 
+    // ── 계단 바로 아래에 멈춘 창을 한 계단만 올리기 ───────────────────────
+    //
+    // 표본은 **실측한 창과 화면**이다(2026-09-08 신고). 임의의 숫자를 쓰면 계단 경계를 비껴간
+    // 값만 검사하게 되어, 정작 사용자가 쓰는 화면에서 깨지는 것을 못 잡는다.
+    //
+    // 첫 표본은 세로 모니터(1080x1920)에 붙인 창 936x945 다 — 오피스 뷰는 945 - 41(탭 막대)
+    // = 904 뿐이라 2열 40px(1080 필요)에 세로가 모자라 20px 로 그려졌다.
+    let stuckJustBelow = officeSnapUpFit(
+        viewWidth: 936, viewHeight: 904,
+        maxViewWidth: 1080, maxViewHeight: 1890 - 73
+    )
+    t.expectEqual(stuckJustBelow?.tileSize, 40, "20px 에 걸린 창을 40px 로 올린다")
+    t.expectEqual(stuckJustBelow?.zoneColumns, 2, "폭 936 은 3열(1400 필요)을 못 담는다")
+    t.expectEqual(stuckJustBelow?.height, 1080, "2열 27줄 x 40px — 잘림 없는 크기가 여유 안에 든다")
+    // **이미 충분한 축은 줄이지 않는다.** 2열 40px 은 폭 920 이면 되지만 창은 936 이다 —
+    // 필요치를 그대로 쓰면 세로로 키우면서 옆으로 오므라든다.
+    t.expectEqual(stuckJustBelow?.width, 936, "필요보다 넓은 폭은 그대로 둔다")
+
+    // 신고 당시 실제로 떠 있던 창 — 1920x1080 화면(작업영역 세로 1019)의 왼쪽 절반에 붙은
+    // 960x989 다. 이 화면은 세로가 1019 뿐이라 2열(1080·잘라도 1000)이 **어느 쪽으로도**
+    // 불가능하고, 남는 길은 폭을 3열 40px(1400)까지 넓히는 것뿐이다. 여유를 0.2 로 잡았을 때
+    // 걸러진 것이 정확히 이 창이었다(1400/960 = 1.46).
+    let reportedWindow = officeSnapUpFit(
+        viewWidth: 960, viewHeight: 989 - 32 - 41,
+        maxViewWidth: 1920, maxViewHeight: 1019 - 73
+    )
+    t.expectEqual(reportedWindow?.tileSize, 40, "신고 창은 폭을 넓혀 40px 에 닿는다")
+    t.expectEqual(reportedWindow?.zoneColumns, 3, "세로가 1019 뿐이라 2열은 어느 쪽으로도 불가")
+    t.expectEqual(reportedWindow?.width, 1400, "3열 35칸 x 40px")
+    t.expectEqual(reportedWindow?.height, 916, "세로는 이미 3열 20줄(800)을 넘어 그대로 둔다")
+
+    // 사용자가 **일부러** 작게 만든 창은 건드리지 않는다. 계단이 2배씩 뛰어 한 계단 위가
+    // 늘 손 닿는 거리에 있는 것은 아니다 — 그때 자동으로 키우면 보정이 아니라 방해다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 500, viewHeight: 500, maxViewWidth: 2560, maxViewHeight: 1400
+        ) == nil,
+        "40px(3열 1400)까지 180% 를 늘려야 하는 창은 그냥 둔다"
+    )
+    // 여유(tolerance)를 열어 주면 같은 창도 올라간다 — 막은 것이 화면이 아니라 정책임을
+    // 못 박는다. 가드를 빼면 위 단언이 실패한다.
+    t.expectEqual(
+        officeSnapUpFit(
+            viewWidth: 500, viewHeight: 500, maxViewWidth: 2560, maxViewHeight: 1400,
+            tolerance: 2.0
+        )?.tileSize,
+        40,
+        "여유를 200% 로 열면 같은 창도 40px 로 올라간다"
+    )
+
+    // **여유는 다음 계단까지 남은 거리에 상대적이다.** 계단 간격이 구간마다 달라서(20 → 40 은
+    // 2배, 40 → 60 은 1.5배) 고정 비율을 쓰면 뒷 구간이 통째로 덮인다 — 3열 40px 에 정확히
+    // 선 1400x800 뷰가 폭 1px 만 늘어도 60px(2100x1200)로 점프했다. 화면은 그 크기를 담을
+    // 수 있으므로, 막는 것은 화면이 아니라 이 규칙이다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 1401, viewHeight: 800, maxViewWidth: 2560, maxViewHeight: 1276
+        ) == nil,
+        "40px 에 온전히 선 창은 폭이 1px 늘어도 60px 로 뛰지 않는다"
+    )
+    // 같은 창도 40 → 60 구간의 절반(1.25배)을 넘겨 오면 올라간다 — 계단이 아니라 거리가
+    // 기준이라는 뜻이다.
+    t.expectEqual(
+        officeSnapUpFit(
+            viewWidth: 1700, viewHeight: 1000, maxViewWidth: 2560, maxViewHeight: 1276
+        )?.tileSize,
+        60,
+        "60px 까지 1.24 배 남은 창은 마저 올라간다"
+    )
+
+    // **온전한 후보는 배치를 가리지 않고 먼저 이긴다.** 잘라낼 줄 수를 배치 안쪽에서 돌리면
+    // 한 배치가 잘린 후보로 자리를 잡은 뒤 다른 배치의 온전한 후보가 "덜 늘어나지 않는다" 는
+    // 이유로 탈락한다 — 아래 창에서 2열 잘린 후보(1.47배)가 3열 온전한 후보(1.49배)를
+    // 밀어냈다. 온전히 그릴 수 있는데 바깥벽을 자르는 것은 어느 배치에서도 이유가 없다.
+    let wholeBeatsClipped = officeSnapUpFit(
+        viewWidth: 940, viewHeight: 680, maxViewWidth: 1920, maxViewHeight: 1000
+    )
+    t.expectEqual(wholeBeatsClipped?.zoneColumns, 3, "3열 온전한 도면이 2열 잘린 도면을 이긴다")
+    t.expectEqual(wholeBeatsClipped?.height, 800, "3열 20줄 x 40px — 잘라내지 않는다")
+
+    // 온전한 크기(2열 1080)를 **화면이 못 줄 때** 바깥벽 두 줄을 내주고 물러난다 — 도면이 두 줄
+    // 잘리는 것과 절반 크기로 남는 것 중에서는 앞이 낫다. 작업영역 세로 1100 이 그 경계 안쪽이다
+    // (뷰에 주는 몫이 1027 이라 1080 은 못 담고 1000 은 담는다).
+    let fallsBackToClipped = officeSnapUpFit(
+        viewWidth: 936, viewHeight: 950,
+        maxViewWidth: 1080, maxViewHeight: 1100 - 73
+    )
+    t.expectEqual(fallsBackToClipped?.tileSize, 40, "온전한 크기가 안 되면 잘림을 받아들인다")
+    t.expectEqual(fallsBackToClipped?.height, 1000, "2열 27줄 중 바깥벽 두 줄만큼 물러난다")
+
+    // 한 계단 위가 화면에 안 들어가면 nil — 화면에 남는 안내(⌘0)가 그때의 유일한 길이다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 936, viewHeight: 904, maxViewWidth: 1080, maxViewHeight: 950
+        ) == nil,
+        "화면 세로가 1000 을 못 주면 올릴 수 없다"
+    )
+
+    // 이미 40px 인 창은 60px(1380x1620)을 요구하게 되므로 여유 안에 들어오지 않는다 —
+    // 계단 위에 선 창을 매번 더 키우려 들지 않는다는 뜻이다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 920, viewHeight: 1000, maxViewWidth: 2560, maxViewHeight: 1400
+        ) == nil,
+        "이미 계단 위에 선 창은 그냥 둔다"
+    )
+
+    // 1x 모니터는 계단이 40 · 80 뿐이라 한 계단 위가 2배다 — 어떤 창도 여유 안에 못 든다.
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 1400, viewHeight: 760, maxViewWidth: 2560, maxViewHeight: 1400,
+            backingScale: 1
+        ) == nil,
+        "1x 에서 40px 다음은 80px 이라 손댈 수 있는 창이 없다"
+    )
+
+    t.expect(
+        officeSnapUpFit(
+            viewWidth: 0, viewHeight: 904, maxViewWidth: 1080, maxViewHeight: 1400
+        ) == nil,
+        "폭이 0 이면 nil"
+    )
+
     // ── 창 자리잡기(왼쪽 위 고정 + 화면 안 가두기) ────────────────────────
     //
     // 세로 모니터(2560,0,1080,1890)의 **위 절반**에 붙은 창을 ⌘0 으로 키우는 실제 경우다.
