@@ -19,7 +19,7 @@ import {
 } from '../domain/prompt/ceo-system.prompt';
 import { parseMetaOutput } from '../domain/prompt/meta.parser';
 
-// V3 phase P5 Meta — PO_EVAL 직전 run (필수) + PM/CTO 최근 run (선택) 을 LLM 1회 (Claude) 로 합성
+// V3 phase P5 Meta — PO_EVAL 직전 run (필수) + PM 최근 run (선택) 을 LLM 1회 로 합성
 // → contextDriftReport + docsQualityReport + finalSummary.
 //
 // minimal 단계 — 컨텍스트 오염 알고리즘은 외부 선례 없어 별도 R&D plan 으로 보류 (CLAUDE.md §7).
@@ -129,7 +129,7 @@ export class GenerateCeoMetaUsecase {
     return { poEval, pm };
   }
 
-  // PO_EVAL 1 + PM/CTO 선택 — EvidenceRecord.sourceId 가 single string 이라 phase 별 1 record.
+  // PO_EVAL 1 + PM 선택 — EvidenceRecord.sourceId 가 single string 이라 phase 별 1 record.
   // 합성 chain 의 audit log 역할 (PO_EVAL 패턴 차용).
   private toEvidence(
     refs: SourcePhaseRunRefs,
@@ -169,7 +169,7 @@ const buildPrompt = ({
   lines.push('');
   lines.push('[합성 지시]');
   lines.push(
-    '위 phase 결과 (PM/CTO 일부 누락 가능) 를 종합해 contextDriftReport + docsQualityReport + finalSummary 를 system prompt schema 대로 작성하라.',
+    '위 phase 결과 (PM 누락 가능) 를 종합해 contextDriftReport + docsQualityReport + finalSummary 를 system prompt schema 대로 작성하라.',
   );
   return lines.join('\n');
 };

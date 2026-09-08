@@ -106,7 +106,7 @@ import { WebhookModule } from './webhook/webhook.module';
     CtoModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade). 3 sub-agent snapshot 합성 + careerLog.
     PoEvalModule,
-    // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker). PO_EVAL (필수) + PM/CTO (선택) 합성.
+    // V3 비전 P5 Meta — /ceo-review 슬래시 (CEO worker). PO_EVAL (필수) + PM (선택) 합성.
     CeoModule,
     // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern (IdaeriRouterPort).
     // 자연어 멘션 → IntentClassifier → 19 worker dispatcher registry 로 dispatch (동작 완료).

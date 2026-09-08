@@ -46,12 +46,6 @@ describe('AGENT_CONTRACTS', () => {
     }
   });
 
-  it('다음 부서로 자기 자신을 지정하지 않는다', () => {
-    for (const [agentType, contract] of Object.entries(AGENT_CONTRACTS)) {
-      expect(contract.nextAgent).not.toBe(agentType);
-    }
-  });
-
   it('근거를 요구하는 계약은 산출물 필수 필드도 함께 정의한다', () => {
     // 산출물 형태를 실측하지 못해 스텁으로 둔 계약에 근거만 요구하면,
     // 무엇을 근거로 담아야 하는지 모델에게 알려줄 방법이 없다.

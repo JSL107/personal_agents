@@ -5,7 +5,7 @@ import { AgentType } from '../model-router/domain/model-router.type';
  *
  * `agent-registry.ts` 가 "문서 메타데이터"(slash / usecase 경로 / 설명) 를 담는다면,
  * 이 파일은 **런타임 검증에 쓰이는 직무 계약**을 담는다 — 소속 부서, 하는 일,
- * 산출물이 반드시 가져야 할 필드, 근거 요구 여부, 다음 부서.
+ * 산출물이 반드시 가져야 할 필드, 근거 요구 여부.
  *
  * 두 가지 용도로 소비된다.
  *   1. `contract-inspector.ts` — 산출물이 계약을 지켰는지 결정론 검사 (LLM 미사용)
@@ -145,8 +145,6 @@ export interface AgentContract {
    * 출력 스키마와 충돌한다" 로 예고한 리스크의 구체형이다.
    */
   readonly skipPreamble?: boolean;
-  /** 산출물을 넘겨받는 다음 부서. 체인 끝이면 null. */
-  readonly nextAgent: AgentType | null;
 }
 
 /**
@@ -177,9 +175,26 @@ const stub = (department: Department, job: string): AgentContract => ({
   job,
   deliverableFields: [],
   requireEvidence: false,
-  nextAgent: null,
 });
 
+/**
+ * 「이 워커 다음에 누가 받나」는 여기에 없다 — 찾는다면 두 곳이다.
+ *
+ * 예전에는 계약에 `nextAgent` 칸이 있었다. 읽는 코드가 0개인 채로 값만 살아 있었고,
+ * 그래서 실제 편성과 조용히 어긋나 있었다 — `PO_SHADOW`→`PO_EVAL` 과 `PM`→`CEO` 가
+ * 빠진 사본이었다. 아무도 안 읽으니 아무도 안 고친 것이라 지웠다.
+ *
+ * 1. **순서를 굴리는 것은 `AUTOPILOT_PLAYBOOK` 의 `digestGroup` 선언 순서다.** 같은
+ *    그룹은 배열 순서대로 순차 실행된다(`AutopilotOrchestrator`). 저녁 그룹의
+ *    `work-reviewer` → `daily-eval` 이 그것이고, 역순이면 `PO_EVAL` 이 그날 worklog run 을
+ *    못 봐 매일 `NO_SUB_AGENT_RUNS` 로 skip 된다(플레이북에 그 사고가 주석으로 남아 있다).
+ * 2. **누가 누구를 재료로 쓰는지는 받는 쪽 usecase 가 직접 조회한다.**
+ *    `generate-po-evaluation.usecase.ts` 가 셋(WORK_REVIEWER·PO_SHADOW·IMPACT_REPORTER),
+ *    `generate-ceo-meta.usecase.ts` 가 PO_EVAL(필수)+PM(선택)을 가져간다. 조회하는
+ *    코드가 정본이라 어긋날 수가 없다.
+ *
+ * 막혔을 때 선행을 거꾸로 당기는 것은 또 다른 표다 — `PRECONDITION_CHAIN_MAP`(콘솔 전용).
+ */
 export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   // ──────────────────────────────── 기획 ────────────────────────────────
   [AgentType.PM]: {
@@ -187,7 +202,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '오늘 할 일 목록과 우선순위를 정한다',
     deliverableFields: ['topPriority', 'morning', 'afternoon'],
     requireEvidence: true,
-    nextAgent: null,
   },
   [AgentType.PO_SHADOW]: stub(
     Department.PLANNING,
@@ -201,21 +215,18 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     requireEvidence: true,
     // 지적이 곧 주장이다. 둘 다 비면 승인 리뷰라 근거를 붙일 대상이 없다.
     claimFields: ['findings', 'mustFix'],
-    nextAgent: null,
   },
   [AgentType.WORK_REVIEWER]: {
     department: Department.EVALUATION,
     job: '오늘 한 일을 업무 로그로 정리한다',
     deliverableFields: ['summary', 'oneLineAchievement', 'nextActions'],
     requireEvidence: false,
-    nextAgent: AgentType.PO_EVAL,
   },
   [AgentType.IMPACT_REPORTER]: {
     department: Department.EVALUATION,
     job: 'PR 이 만든 변화를 정량·정성으로 보고한다',
     deliverableFields: ['headline', 'quantitative', 'qualitative'],
     requireEvidence: false,
-    nextAgent: AgentType.PO_EVAL,
   },
   // `CODE_REVIEWER` 가 낸 지적의 채택 여부를 매기는 전속 채점기라 같은 방에 둔다 — 판정
   // 대상이 그 워커의 산출물이고, 학습 신호도 그쪽 리뷰 프롬프트로 되돌아간다.
@@ -228,7 +239,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '기간 성과를 정성 평가하고 커리어 로그를 남긴다',
     deliverableFields: ['qualitative', 'careerLog'],
     requireEvidence: false,
-    nextAgent: AgentType.CEO,
   },
 
   // ──────────────────────────────── 경영 ────────────────────────────────
@@ -241,7 +251,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
       'docsQualityReport',
     ],
     requireEvidence: false,
-    nextAgent: null,
   },
 
   // ──────────────────────────────── 성장 ────────────────────────────────
@@ -250,7 +259,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '블로그 초안을 만들어 노션에 적재한다',
     deliverableFields: ['notionUrl', 'published'],
     requireEvidence: true,
-    nextAgent: null,
   },
   [AgentType.BLOG_REVISION]: {
     // 대상이 블로그 글이고 산출물이 다음 글에 적용할 수정 규칙이라, 글을 만드는 방에 둔다.
@@ -267,7 +275,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // output 은 주간 태스크가 집계·규칙 추출 결과를 조립한다. 이 키를 모델 응답에
     // 요구하면 규칙 추출 JSON 계약과 충돌하므로 모델 머리말은 넣지 않는다.
     skipPreamble: true,
-    nextAgent: null,
   },
   [AgentType.CAREER_MATE]: stub(
     Department.CONTENT,
@@ -306,7 +313,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 모델을 부르지 않아 머리말 경로 자체가 없지만, 조립 output 이라는 성질은 그대로다 —
     // 나중에 모델 호출이 붙는 순간 함정이 되므로 미리 끈다.
     skipPreamble: true,
-    nextAgent: null,
   },
   [AgentType.DELAY_REPORT]: stub(
     Department.PLANNING,
@@ -323,7 +329,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // (`generate-paper-recommendation.usecase.ts` 의 `result` 조립). 머리말이 이 키를
     // 요구하면 모델이 추천 스키마 대신 집계값을 지어낸다.
     skipPreamble: true,
-    nextAgent: null,
   },
 
   // ──────────────────────────────── 내부 ────────────────────────────────
@@ -332,7 +337,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     job: '운영 이상 징후를 찾아 조치를 제안한다',
     deliverableFields: ['advice'],
     requireEvidence: false,
-    nextAgent: null,
   },
   [AgentType.EVENING_RETRO]: {
     department: Department.EVALUATION,
@@ -342,7 +346,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // (`evening-retro.prompt.ts`). 머리말이 같은 스키마를 되짚어 주는 셈이라 안전하다.
     deliverableFields: ['prNotes', 'candidates', 'retrospective'],
     requireEvidence: false,
-    nextAgent: null,
   },
   [AgentType.HUMANIZER]: {
     department: Department.CONTENT,
@@ -357,7 +360,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // (2) humanizedKeys 는 모델이 내는 키가 아니라 어댑터가 만드는 메타 필드라
     // 머리말이 모델에게 없는 스키마를 요구한다.
     skipPreamble: true,
-    nextAgent: null,
   },
   [AgentType.ISSUE_LABELER]: stub(
     Department.QUALITY,
@@ -373,7 +375,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 모델은 판정 목록만 내고 promotedCount 는 코드가 세어 붙인다
     // (`llm-subconscious-gate.ts` 의 `decisions.filter(...).length`).
     skipPreamble: true,
-    nextAgent: null,
   },
   [AgentType.CONTRADICTION_JUDGE]: stub(
     Department.INTERNAL_OPS,
@@ -406,7 +407,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 모델은 익명화된 본문을 내고, output 의 path·status·notionUrl 은 발행 경로가
     // 만든다. 머리말이 이 키를 요구하면 익명화 응답 형태가 깨진다.
     skipPreamble: true,
-    nextAgent: null,
   },
   [AgentType.CTO_STUDY]: stub(
     Department.CONTENT,

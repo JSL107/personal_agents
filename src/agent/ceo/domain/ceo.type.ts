@@ -9,13 +9,12 @@ export interface MetaInput {
   triggerType?: TriggerType;
 }
 
-// 합성 input 으로 사용된 phase run 들의 id. PO_EVAL 은 필수, PM/CTO 는 graceful.
+// 합성 input 으로 사용된 phase run 들의 id. PO_EVAL 은 필수, PM 은 graceful.
 export interface SourcePhaseRunRefs {
   // P4 Evaluate (PO_EVAL) — CEO 합성의 핵심 입력 (필수).
   poEvalRunId: number;
   // P1 Plan (PM) — 주간 plan 흐름 review 입력 (선택).
   pmRunId?: number;
-  // P2 Assign (CTO) — 분배 결과 review 입력 (선택).
 }
 
 // CEO (P5 Meta) output.
