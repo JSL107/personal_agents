@@ -96,8 +96,8 @@ public final class ConsoleStore: ObservableObject {
             upsertApproval(approval)
         case let .approvalResolved(approval):
             approvals.removeAll { $0.id == approval.id }
-        case let .stateChanged(agentType, state):
-            changeAgentState(agentType: agentType, state: state)
+        case let .stateChanged(agentType, state, bubble):
+            changeAgentState(agentType: agentType, state: state, bubble: bubble)
         case let .sessionOpened(session):
             upsertSession(session)
         case let .sessionUpdated(session):
@@ -147,17 +147,18 @@ public final class ConsoleStore: ObservableObject {
         sessions.append(session)
     }
 
-    /// 해당 에이전트의 상태만 교체한다. bubble 은 백엔드 소유라 건드리지 않고 다음 스냅샷에서 정정된다.
+    /// 해당 에이전트의 상태를, 서버가 문구를 함께 보냈으면 말풍선까지 교체한다.
+    /// 문구는 여전히 백엔드 소유다 — 앱은 옮겨 담기만 하고, 값이 없으면(옛 서버) 손대지 않는다.
     /// 미지의 agentType 이면 아무것도 하지 않는다.
     ///
     /// 이미 확인한 완료로 되돌아가는 것은 막는다. 백엔드는 `run.finished` 를 항상 `state.changed`
     /// 바로 앞에 발행하므로, 이 시점의 `lastFinishedRunId` 는 방금 끝난 런의 것이다 — 새 완료는
     /// 확인 기록과 런 id 가 달라 그대로 통과한다.
-    private func changeAgentState(agentType: String, state: ConsoleAgentState) {
+    private func changeAgentState(agentType: String, state: ConsoleAgentState, bubble: String?) {
         guard let index = agents.firstIndex(where: { $0.agentType == agentType }) else {
             return
         }
-        agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state))
+        agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state, bubble: bubble))
     }
 
     /// `run.finished` 가 알려준 런 id 를 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고

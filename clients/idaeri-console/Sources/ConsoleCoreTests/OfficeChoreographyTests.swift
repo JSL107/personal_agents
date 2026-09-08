@@ -78,7 +78,7 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
 
     // state.changed → recolor
     t.expectEqual(
-        visualIntents(for: .stateChanged(agentType: "PM", state: .completed), context: ctx),
+        visualIntents(for: .stateChanged(agentType: "PM", state: .completed, bubble: nil), context: ctx),
         [.recolor(agentType: "PM", state: .completed)],
         "state.changed → recolor")
 
@@ -93,7 +93,7 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
 
     // 미지 agentType → 빈 결과
     t.expectEqual(
-        visualIntents(for: .stateChanged(agentType: "UNKNOWN", state: .completed), context: ctx),
+        visualIntents(for: .stateChanged(agentType: "UNKNOWN", state: .completed, bubble: nil), context: ctx),
         [],
         "미지 agentType → 빈 결과")
 
@@ -104,19 +104,19 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
 
     // state.changed(IN_PROGRESS) → working (펄스 유지, recolor 아님)
     t.expectEqual(
-        visualIntents(for: .stateChanged(agentType: "PM", state: .inProgress), context: ctx),
+        visualIntents(for: .stateChanged(agentType: "PM", state: .inProgress, bubble: nil), context: ctx),
         [.working(agentType: "PM")],
         "state.changed(IN_PROGRESS) → working")
 
     // state.changed(AWAITING_APPROVAL) → 집결 + 핑크 recolor
     t.expectEqual(
-        visualIntents(for: .stateChanged(agentType: "CTO", state: .awaitingApproval), context: ctx),
+        visualIntents(for: .stateChanged(agentType: "CTO", state: .awaitingApproval, bubble: nil), context: ctx),
         [.summonToBand(agentType: "CTO"), .recolor(agentType: "CTO", state: .awaitingApproval)],
         "state.changed(AWAITING_APPROVAL) → 집결 + 핑크")
 
     // state.changed(COMPLETED) → recolor (기존 유지)
     t.expectEqual(
-        visualIntents(for: .stateChanged(agentType: "PM", state: .completed), context: ctx),
+        visualIntents(for: .stateChanged(agentType: "PM", state: .completed, bubble: nil), context: ctx),
         [.recolor(agentType: "PM", state: .completed)],
         "state.changed(COMPLETED) → recolor")
 

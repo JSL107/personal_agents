@@ -509,9 +509,64 @@ describe('AgentRunService', () => {
       expect(stateEvents[0]).toMatchObject({
         agentType: 'PM',
         state: ConsoleAgentState.IN_PROGRESS,
+        bubble: '오늘 계획 짜는 중',
       });
       expect(stateEvents[1]).toMatchObject({
         state: ConsoleAgentState.COMPLETED,
+        bubble: '완료했어요!',
+      });
+    });
+
+    // 말풍선 문구를 이벤트가 실어 보내지 않으면, 앱은 상태가 바뀔 때마다 스냅샷을 한 번 더
+    // 당겨와야 문구를 맞출 수 있다. 대상까지 들어간 문구(`#495 리뷰 중`)는 inputSnapshot 에서
+    // 나오므로, 규칙이 그 값을 읽는지까지 여기서 못 박는다.
+    it('state.changed(IN_PROGRESS) 가 inputSnapshot 기반 활동 문구를 싣는다', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      await serviceWithBus.execute({
+        agentType: AgentType.CODE_REVIEWER,
+        triggerType: TriggerType.SLACK_COMMAND_REVIEW_PR,
+        inputSnapshot: { pullNumber: 495 },
+        run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+      });
+
+      const events = bus.publish.mock.calls.map((call) => call[0]);
+      expect(
+        events.find((event) => event.type === 'state.changed'),
+      ).toMatchObject({
+        state: ConsoleAgentState.IN_PROGRESS,
+        bubble: '#495 리뷰 중',
+      });
+    });
+
+    // inputSnapshot 이 객체가 아니면(배열·스칼라) 규칙이 키를 읽을 수 없다. 그때도 문구 없이
+    // 발행하는 대신 상태 기본 문구로 떨어져야, 화면이 빈 말풍선을 띄우지 않는다.
+    it('inputSnapshot 이 객체가 아니면 상태 기본 문구로 떨어진다', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      await serviceWithBus.execute({
+        agentType: AgentType.CODE_REVIEWER,
+        triggerType: TriggerType.SLACK_COMMAND_REVIEW_PR,
+        inputSnapshot: [495],
+        run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+      });
+
+      const events = bus.publish.mock.calls.map((call) => call[0]);
+      expect(
+        events.find((event) => event.type === 'state.changed'),
+      ).toMatchObject({
+        state: ConsoleAgentState.IN_PROGRESS,
+        bubble: '일하는 중…',
       });
     });
 

@@ -205,16 +205,16 @@ struct AppRootView: View {
         await MainActor.run { store.apply(briefing: briefing) }
     }
 
-    /// 상태가 바뀐 직후 스냅샷을 한 번 더 받는다.
+    /// 이벤트만으로는 못 채우는 값이 남았을 때 스냅샷을 한 번 더 받는다.
     ///
-    /// `state.changed` 는 **상태만** 싣는다(`agentType`·`state`). 그래서 이벤트만으로는 말풍선
-    /// 문구가 갱신되지 않고 이전 스냅샷 값이 그대로 남는데, 지금 무슨 일을 하는지 알려 주는
-    /// 활동 문구가 바로 그 자리에 실려 온다. 30초 주기 재동기화를 기다리면 **그 안에 끝나는 실행은
-    /// 활동 문구가 한 번도 표시되지 않는다** — 이대리 워커 실행은 대개 10~40초다.
+    /// 말풍선 문구는 이제 `state.changed` 가 함께 싣고 오므로 그것만으로는 당겨오지 않는다.
+    /// 남는 경우는 둘이다.
     ///
-    /// 이벤트 스키마에 문구를 실어 보내는 쪽이 근본이지만, 그건 백엔드 이벤트 계약을 바꾸는 일이라
-    /// 여기서는 화면 쪽에서 정본을 한 번 더 당겨온다. 체인 실행처럼 상태 변경이 몰릴 때 요청이
-    /// 폭주하지 않도록 최소 간격을 둔다.
+    /// - **완료**: 오늘 성공 건수(`doneToday`, 책상 위 서류 더미)가 이때 늘어나는데 그 값은
+    ///   스냅샷에만 있다. 30초 주기를 기다리면 방금 끝낸 일이 책상에 안 쌓인다.
+    /// - **문구가 안 실려 온 경우**: 이 필드를 모르는 옛 서버다. 그때는 예전처럼 정본을 당겨온다.
+    ///
+    /// 체인 실행처럼 상태 변경이 몰릴 때 요청이 폭주하지 않도록 최소 간격을 둔다.
     private func resyncAfterStateChange(_ event: ConsoleEvent) async {
         // 승인이 열리거나 닫히면 할 일 보드의 첫 줄이 바로 바뀌어야 한다. 30초 주기를
         // 기다리면 방금 누른 결재가 보드에 그대로 남아 "안 눌린 것" 처럼 보인다.
@@ -224,7 +224,10 @@ struct AppRootView: View {
         if case .approvalResolved = event {
             await resyncBriefing()
         }
-        guard case .stateChanged = event else {
+        guard case let .stateChanged(_, state, bubble) = event else {
+            return
+        }
+        if state != .completed, bubble != nil {
             return
         }
         if let lastResyncAt, Date().timeIntervalSince(lastResyncAt) < 2 {
