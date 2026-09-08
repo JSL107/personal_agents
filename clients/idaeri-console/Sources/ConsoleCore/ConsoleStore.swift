@@ -158,7 +158,27 @@ public final class ConsoleStore: ObservableObject {
         guard let index = agents.firstIndex(where: { $0.agentType == agentType }) else {
             return
         }
+        if isTerminal(state), hasActiveRun(agentType: agentType) {
+            return
+        }
         agents[index] = demoteIfAcknowledged(agents[index].replacing(state: state, bubble: bubble))
+    }
+
+    /// 이 사람에게 아직 안 끝난 런이 남아 있는가.
+    ///
+    /// 종료 이벤트는 **런 한 건**의 결과지만 화면 상태는 **그 사람 전체**의 집계다. 같은 사람의
+    /// 런이 둘 겹쳤을 때 하나가 먼저 끝나면, 종료를 그대로 적용해 일하는 중인 사람이 "완료" 로
+    /// 바뀌고 활동 문구까지 종료 문구로 덮인다. 서버가 집계 상태를 보내 주기 전까지는 여기서
+    /// 막는다 — 놓친 종료 때문에 활성 런이 남아 있는 경우는 30초 주기 스냅샷이 정정한다.
+    ///
+    /// 백엔드는 `run.finished` 를 항상 `state.changed` 바로 앞에 발행하므로, 이 시점의 `runs`
+    /// 에서 방금 끝난 런은 이미 종료 시각을 갖고 있다 — 자기 자신이 이 판정에 걸리지 않는다.
+    private func hasActiveRun(agentType: String) -> Bool {
+        runs.contains { $0.agentType == agentType && $0.finishedAt == nil }
+    }
+
+    private func isTerminal(_ state: ConsoleAgentState) -> Bool {
+        state == .completed || state == .failed
     }
 
     /// `run.finished` 가 알려준 런 id 를 카드에 반영한다. 스냅샷(최대 30초 지연)을 기다리지 않고

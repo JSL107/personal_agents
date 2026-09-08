@@ -67,6 +67,43 @@ func runConsoleStoreTests(_ t: TestRunner) {
         "상태 변경 후에도 부서 유지"
     )
 
+    // 같은 사람의 런이 둘 겹쳤을 때, 하나가 끝나도 남은 런이 있으면 종료로 내리지 않는다.
+    // 이벤트는 런 한 건의 결과지만 화면 상태는 그 사람 전체의 집계라서다. 여기서 안 막으면
+    // 일하는 중인 사람이 "완료" 로 바뀌고 활동 문구까지 종료 문구로 덮인다.
+    let overlapStore = ConsoleStore()
+    overlapStore.apply(snapshot: snapshot)
+    for (id, finishedAt) in [("rA", nil as String?), ("rB", nil as String?)] {
+        overlapStore.apply(event: .runStarted(ConsoleRun(
+            id: id, agentType: "PM", status: "IN_PROGRESS", parentId: nil,
+            startedAt: "2026-07-27T00:01:00Z", finishedAt: finishedAt
+        )))
+    }
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .inProgress, bubble: "#495 리뷰 중"))
+    overlapStore.apply(event: .runFinished(ConsoleRun(
+        id: "rB", agentType: "PM", status: "SUCCEEDED", parentId: nil,
+        startedAt: "2026-07-27T00:01:00Z", finishedAt: "2026-07-27T00:02:00Z"
+    )))
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .completed, bubble: "완료했어요!"))
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.state, .inProgress,
+        "남은 런이 있으면 종료 이벤트를 적용하지 않는다"
+    )
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.bubble, "#495 리뷰 중",
+        "남은 런의 활동 문구가 종료 문구로 덮이지 않는다"
+    )
+
+    // 마지막 런까지 끝나면 그때 종료를 적용한다.
+    overlapStore.apply(event: .runFinished(ConsoleRun(
+        id: "rA", agentType: "PM", status: "SUCCEEDED", parentId: nil,
+        startedAt: "2026-07-27T00:01:00Z", finishedAt: "2026-07-27T00:03:00Z"
+    )))
+    overlapStore.apply(event: .stateChanged(agentType: "PM", state: .completed, bubble: "완료했어요!"))
+    t.expectEqual(
+        overlapStore.agents.first(where: { $0.agentType == "PM" })?.state, .completed,
+        "활성 런이 다 끝나면 종료 적용"
+    )
+
     // 존재하지 않는 agentType 은 무시(크래시·추가 없음)
     store.apply(event: .stateChanged(agentType: "GHOST", state: .completed, bubble: nil))
     t.expectEqual(store.agents.count, 2, "미지의 agentType 무시")
