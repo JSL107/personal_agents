@@ -12,7 +12,7 @@ let client = ConsoleClient(baseURL: baseURL, token: token)
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
-// 굽는 크기를 넘길 수 있다 — `--size 980x680`. 회귀 렌더와 스트림이 함께 쓴다.
+// 굽는 크기를 넘길 수 있다 — `--size 980×680`. 회귀 렌더와 스트림이 함께 쓴다.
 //
 // 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서
 // 세로로 옮겨 간다.** 그래서 격자 규격을 바꾸면 어떤 창에서는 타일이 그대로이고 어떤
@@ -156,38 +156,39 @@ if let iconURL = Bundle.module.url(forResource: "appicon", withExtension: "png")
 // 브리지는 메뉴 항목이 약하게 참조하므로 앱이 사는 동안 여기서 붙들고 있어야 한다.
 let menuBridge = installMainMenu(on: application)
 
-// 창 기본 크기는 **도면 배율에서 거꾸로 잡았다.**
+// 창 기본 크기는 **도면 배율에서 거꾸로 잡는다.**
 //
 // 오피스 타일은 20px(레티나 실제 40px)의 정수배만 고를 수 있다 — 가구·캐릭터 원본이 40px 이라
 // 1.5배 같은 값으로 그리면 도트가 뭉개진다. 그래서 창이 조금만 작아도 다음 계단으로 못 올라가고
 // 최저 배율에 머문다. 예전 기본값 980×680 이 정확히 그랬다: 3열 배치로는 폭이, 2열로는 세로가
 // 모자라 **어느 쪽으로도 20px** 이었고 화면 절반이 검은 여백이었다.
 //
-// 1440×860 은 3열 배치가 40px 로 서는 가장 작은 크기다(도면 1400×800). 세로로 긴 창에서 40px 을
-// 보려면 2열 배치가 1080줄을 요구하는데 맥북 논리 세로가 900 남짓이라 닿지 않는다 — 그래서
-// **가로로 넓은 창이 이 도면의 자연스러운 형태**다.
+// 계산은 `officeWindowFit`(ConsoleCore)이 한다. 여기 상수 두 개(1440×860 · 960×1140)와
+// `usableSize.width >= 1440` 한 줄로 고르던 때에는 세 가지가 새고 있었다 —
+// 그 두 값이 맞는지 테스트할 수 없었고, `min(preferred, usable)` 로 자른 결과가 여전히 계단
+// 위에 서는지 아무도 보지 않았으며, 두 값보다 큰 화면의 여유를 쓰지 못했다(2560×1349 는
+// 60px 을 감당하는데 40px 로 떴다).
 //
-// **화면 모양에 따라 두 가지 중에 고른다.** 도면은 창이 가로로 넓으면 3열×2행으로,
-// 세로로 길면 2열×3행으로 스스로 배치를 바꾸는데, 두 배치의 40px 요구 크기가 다르다.
-//
-//   3열 배치 35×20칸 → 1400×800 이 필요 (가로로 넓은 창)
-//   2열 배치 23×27칸 →  920×1080 이 필요 (세로로 긴 창)
-//
-// 가로형 하나만 두면 세로 모니터에서 **폭만 잘리고 세로 여유는 쓰지 않는** 크기가 나온다.
-// 1080×1920 화면에서 1440×860 을 요청하면 1080×860 이 되는데, 이건 3열에는 폭이(1400 필요)
-// 2열에는 세로가(1080 필요) 모자라 어느 쪽으로도 최저 배율이다. 실제로 그렇게 걸렸다.
-let landscapeSize = NSSize(width: 1440, height: 860)
-let portraitSize = NSSize(width: 960, height: 1140)
-let usableSize = NSScreen.main?.visibleFrame.size ?? landscapeSize
-let preferredSize = usableSize.width >= landscapeSize.width ? landscapeSize : portraitSize
-let windowSize = NSSize(
-    width: min(preferredSize.width, usableSize.width),
-    height: min(preferredSize.height, usableSize.height)
-)
+// **도면이 받는 세로는 창 세로가 아니다.** 타이틀바와 탭 전환 막대가 먼저 가져간다(합쳐 73px).
+// 그만큼을 빼고 계산하지 않으면 계단 하나(40px)의 두 배 가까이 어긋난다.
+let fallbackWindowSize = NSSize(width: 1440, height: 860)
+let usableSize = NSScreen.main?.visibleFrame.size ?? fallbackWindowSize
+// 한 계단도 못 들어가는 화면(폭 700 미만)이면 기본값으로 물러서되 **화면 안에 가둔다** —
+// 예전 `min(preferred, usable)` 이 해 주던 몫이라, 빼면 작은 화면에서 창이 밖으로 넘친다.
+let windowSize =
+    officeWindowSizeFittingFloorPlan(
+        usableSize: usableSize,
+        backingScale: Double(NSScreen.main?.backingScaleFactor ?? 2),
+        styleMask: windowStyleMask
+    )
+    ?? NSSize(
+        width: min(fallbackWindowSize.width, usableSize.width),
+        height: min(fallbackWindowSize.height, usableSize.height)
+    )
 
 let window = NSWindow(
     contentRect: NSRect(origin: .zero, size: windowSize),
-    styleMask: [.titled, .closable, .miniaturizable, .resizable],
+    styleMask: windowStyleMask,
     backing: .buffered,
     defer: false
 )

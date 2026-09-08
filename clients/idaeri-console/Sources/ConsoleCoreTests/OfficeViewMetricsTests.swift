@@ -107,6 +107,63 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         "창 크기가 0 이면 기본 단위"
     )
 
+    // ── 창 크기를 도면에서 거꾸로 잡기 ────────────────────────────────────
+    //
+    // 표본은 **실측한 모니터 셋**이다(2026-09-07, 전부 backingScale 2). 임의의 숫자를 쓰면
+    // 계단 경계를 비껴간 값만 검사하게 되어, 정작 사용자가 쓰는 화면에서 깨지는 것을 못 잡는다.
+    // 여유는 창 세로에서 타이틀바(32)+탭 막대(41)=73 을 뺀 값이다.
+    let studioDisplay = officeWindowFit(availableWidth: 2560, availableHeight: 1349 - 73)
+    t.expectEqual(studioDisplay?.tileSize, 60, "2560x1349 는 3열 60px 을 감당한다")
+    t.expectEqual(studioDisplay?.zoneColumns, 3, "가로로 넓은 화면은 3열")
+    t.expectEqual(studioDisplay?.width, 2100, "3열 35칸 x 60px")
+    t.expectEqual(studioDisplay?.height, 1200, "3열 20줄 x 60px")
+
+    let portraitMonitor = officeWindowFit(availableWidth: 1080, availableHeight: 1890 - 73)
+    t.expectEqual(portraitMonitor?.tileSize, 40, "세로 모니터는 폭이 3열 60px 에 못 미친다")
+    t.expectEqual(portraitMonitor?.zoneColumns, 2, "세로로 긴 화면은 2열")
+    t.expectEqual(portraitMonitor?.height, 1080, "2열 27줄 x 40px — 잘라내기 없이 꼭 맞는다")
+
+    let landscapeMonitor = officeWindowFit(availableWidth: 1920, availableHeight: 1050 - 73)
+    t.expectEqual(landscapeMonitor?.tileSize, 40, "1920x1050 은 3열 40px")
+    t.expectEqual(landscapeMonitor?.zoneColumns, 3, "3열 20줄이 977 에 들어간다")
+
+    // **여유 두 줄은 쓰지 않는다.** `officeViewMetrics` 는 바깥벽 두 줄을 잘라서라도 배율을
+    // 지키지만, 창 크기를 우리가 정하는 자리에서 잘라낼 이유가 없다. 2열 27줄 x 40px 은
+    // 1080 이 온전히 필요하고, 1px 이라도 모자라면 한 계단 내려가야 맞다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 1080)?.tileSize, 40,
+        "세로가 딱 1080 이면 40px"
+    )
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 1079)?.tileSize, 20,
+        "1px 모자라면 잘라내지 않고 20px 로 내려간다"
+    )
+
+    // 사용자가 실제로 쓰는 창(세로 모니터 위 절반 1080x945). 오피스 뷰는 872 뿐이라 어느
+    // 배치로도 40px 이 안 나온다 — 2열은 세로가(1080 필요), 3열은 폭이(1400 필요) 모자란다.
+    // 이 창을 고치는 길은 창을 키우는 것뿐이라는 근거가 여기 남는다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 945 - 73)?.tileSize, 20,
+        "1080x945 창에서는 40px 이 구조적으로 불가능하다"
+    )
+
+    // 1x 모니터는 계단이 40 · 80 뿐이라 같은 화면에서도 답이 다르다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 2560, availableHeight: 1276, backingScale: 1)?.tileSize,
+        40,
+        "1x 에서는 60px 단계가 없어 40px 에 머문다"
+    )
+
+    // 한 계단도 못 들어가는 화면이면 nil — 부르는 쪽이 자기 기본값으로 처리한다.
+    t.expect(
+        officeWindowFit(availableWidth: 300, availableHeight: 300) == nil,
+        "20px 한 배수도 안 들어가면 nil"
+    )
+    t.expect(
+        officeWindowFit(availableWidth: 0, availableHeight: 800) == nil,
+        "폭이 0 이면 nil"
+    )
+
     // ── 방 포커스 ───────────────────────────────────────────────────────────
     // 방 하나(10x7 칸)를 실사용 창에 담는다. 방 문과 벽이 경계에 붙어 있어 여유 1칸을 물려
     // 12x9 칸이 기준이고, 960/12 = 80 이라 2배가 나온다.
