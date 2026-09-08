@@ -1641,15 +1641,22 @@ final class OfficeScene: SKScene {
         var occupied = Set(characters.values.map(\.tile))
         let hour = currentHour()
         for agentType in picks {
-            // 자기 자리를 함께 넘긴다 — 일에 짝지어진 가구가 여섯 방에 흩어져 있어서,
-            // 기준점이 없으면 자기 방에 같은 가구가 있는데도 남의 방까지 걸어간다.
+            // 자기 자리와 **자기 방**을 함께 넘긴다 — 일에 짝지어진 가구가 여섯 방에 흩어져
+            // 있어서, 기준점이 없으면 자기 방에 같은 가구가 있는데도 남의 방까지 걸어간다.
+            //
+            // 자리만 넘기던 동안에는 거리로만 골랐는데, 방 사이가 벽 한 칸뿐이라 옆방 물건이
+            // 자기 방 반대편보다 가까운 경우가 흔해서 그것만으로는 부족했다.
+            let seat = plan.desks.first { $0.agentType == agentType }?.seat
             guard let spot = officeStrollSpot(
                 for: agentType,
                 round: strollRound,
                 spots: spots,
                 occupied: occupied,
                 hour: hour,
-                home: plan.desks.first { $0.agentType == agentType }?.seat
+                home: seat,
+                homeDepartment: seat.flatMap { tile in
+                    plan.zones.first { officeZoneContains($0, tile) }?.department
+                }
             ) else {
                 continue
             }

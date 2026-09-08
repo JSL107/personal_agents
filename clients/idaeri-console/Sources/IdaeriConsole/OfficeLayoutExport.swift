@@ -138,6 +138,11 @@ struct StrollSpotInfo: Codable {
     let dwellSeconds: Double
     let facing: String
     let pose: String
+    /// **가구가 놓인 방**(서는 칸이 아니라). 받는 쪽이 자기 방 것을 먼저 고르는 데 쓴다.
+    ///
+    /// 이 값을 안 실으면 웹·Windows 렌더러가 거리로만 골라 **맥 앱과 동작이 갈린다** —
+    /// 같은 평면도를 보면서 한쪽 사람만 옆방으로 걸어간다. 공용 밴드 가구는 nil.
+    let department: String?
 }
 
 /// 출퇴근·점심 시각 경계. 받는 쪽이 **판정은 직접 하되** 경계값은 옮겨 적지 않는다.
@@ -283,7 +288,8 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
                 tile: spot.tile,
                 dwellSeconds: spot.dwellSeconds,
                 facing: spot.facing.rawValue,
-                pose: spot.pose.rawValue
+                pose: spot.pose.rawValue,
+                department: spot.department?.rawValue
             )
         },
         metrics: OfficeRenderMetrics(

@@ -126,19 +126,29 @@ public struct OfficeStrollSpot: Equatable, Sendable {
     /// 가구 방향을 목적지와 함께 보존해야 씬이 다시 좌표를 추측하다 잘못된 쪽을 보지 않는다.
     public let facing: Facing
     public let pose: OfficeInteractionPose
+    /// **가구가 놓인 방**(서는 칸이 아니라). 자기 방 것을 먼저 고르는 데 쓴다.
+    ///
+    /// 서는 칸으로 방을 판정하면 안 된다 — 벽걸이는 방과 복도 사이 벽에 걸리고 방 안쪽
+    /// 이웃이 막히면 앞칸이 복도로 잡히므로(`officeInteractionNeighbors`), 자기 방 물건을
+    /// 보는 사람까지 전부 "남의 구역" 이 된다.
+    ///
+    /// 공용 밴드(회의실·대표실·탕비실)의 가구는 어느 부서 방에도 없으므로 nil 이다.
+    public let department: Department?
 
     public init(
         kind: FurnitureKind,
         tile: TilePoint,
         dwellSeconds: Double,
         facing: Facing,
-        pose: OfficeInteractionPose
+        pose: OfficeInteractionPose,
+        department: Department? = nil
     ) {
         self.kind = kind
         self.tile = tile
         self.dwellSeconds = dwellSeconds
         self.facing = facing
         self.pose = pose
+        self.department = department
     }
 }
 
@@ -256,7 +266,11 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
                 tile: tile,
                 dwellSeconds: dwellSeconds,
                 facing: officeFacing(from: tile, to: placement.tile),
-                pose: pose
+                pose: pose,
+                // **가구 칸**으로 방을 정한다(서는 칸이 아니라 — 위 필드 주석 참조).
+                department: plan.zones.first {
+                    officeZoneContains($0, placement.tile)
+                }?.department
             )
         )
     }
@@ -327,7 +341,8 @@ public func officeStrollSpot(
     spots: [OfficeStrollSpot],
     occupied: Set<TilePoint>,
     hour: Int,
-    home: TilePoint? = nil
+    home: TilePoint? = nil,
+    homeDepartment: Department? = nil
 ) -> OfficeStrollSpot? {
     let candidates = spots.filter { !occupied.contains($0.tile) }
     guard !candidates.isEmpty else {
@@ -351,29 +366,102 @@ public func officeStrollSpot(
         )
     }
     // 점심이 아니면 자기 일에 필요한 물건이 먼저다. 짝지어진 가구가 없는 사람만 아래로 내려간다.
+    // `spots` 를 함께 넘긴다 — 자기 방에 그 물건이 **원래 없는지**, 지금 **누가 서 있는지**를
+    // 구별하려면 occupied 를 빼기 전 목록이 필요하다.
     if let affinity = officeAffinitySpot(
-        agentType: agentType, candidates: candidates, home: home
+        agentType: agentType, candidates: candidates, allSpots: spots, home: home,
+        homeDepartment: homeDepartment
     ) {
         return affinity
+    }
+    // 자기 방에 짝지어진 물건이 있는데 지금 다 차 있으면 **이번 회차는 쉰다.** 옆방으로
+    // 보내면 8초마다 그 그림이 반복돼, 방에 물건을 둔 의미가 사라진다(다음 회차에 자리가
+    // 나면 자기 방으로 간다). 자기 방에 아예 없는 사람만 아래 전체 선택으로 내려간다.
+    if officeOwnRoomHasAffinity(
+        agentType: agentType, spots: spots, homeDepartment: homeDepartment
+    ) {
+        return nil
     }
     return officeRotatingPick(from: candidates, agentType: agentType, round: round)
 }
 
 /// 일과 어울리는 목적지 하나. 없으면 nil.
 ///
-/// **가장 가까운 것을 고른다.** 같은 종류 가구가 여섯 방에 흩어져 있어서, 거리를 안 보면
-/// 개발실 사람이 성장실 벽 모니터까지 20칸을 걸어간다 — 왕복 30초가 넘으면 화면에서는
-/// "일하러 간 사람" 이 아니라 "자리를 비운 사람" 으로 읽힌다. 거리를 보면 자기 방 안의
-/// 가구가 자연히 먼저 뽑히므로 방 정보를 따로 넘길 필요가 없다.
+/// **자기 방 것이 먼저고, 그다음이 거리다.**
+///
+/// 예전에는 거리만 봤다. 주석에는 「거리를 보면 자기 방 안의 가구가 자연히 먼저 뽑히므로 방
+/// 정보를 따로 넘길 필요가 없다」고 적혀 있었는데, **재어 보니 사실이 아니었다** — 방 사이가
+/// 벽 한 칸뿐이라 옆방 물건이 자기 방 반대편보다 가까운 경우가 흔하다. 자기 방에 같은 종류가
+/// 멀쩡히 있는데도 남의 방으로 걸어가는 사람이 3열에서 여섯, 2열에서 열이었다.
+///
+/// 화면에서 이건 꽤 크게 어긋난다 — 방마다 성격에 맞는 집기를 넣어 두는 이유가 「저 방 사람은
+/// 저기서 저 일을 한다」를 보이게 하려는 것인데, 정작 그 사람이 남의 방에 서 있으면 방과 일의
+/// 연결이 끊긴다.
+///
+/// 그래서 같은 종류가 자기 방에 하나라도 있으면 **거리와 무관하게** 그 안에서 고른다. 자기 방에
+/// 없을 때만 예전처럼 전체에서 가장 가까운 것을 잡는다(방 밖으로 나가는 것 자체는 막지 않는다
+/// — 막으면 짝지어진 물건이 없는 사람이 목적지를 아예 못 받는다).
+///
+/// 방 안에서도 여전히 거리를 본다. 한 방에 같은 종류가 둘 이상 놓인 경우가 흔하다
+/// (품질 책장 셋 · 평가 캐비닛 셋).
 ///
 /// 우선순위가 높은 종류부터 보고, 그 종류가 하나도 안 남아 있으면(다른 사람이 이미 서 있으면)
 /// 다음 종류로 내려간다. 거리가 같으면 카탈로그 순서 — `sorted` 가 안정 정렬이 아니라서
 /// 원래 자리(offset)를 tie-break 에 넣어야 실행마다 같은 결과가 나온다.
 private func officeAffinitySpot(
-    agentType: String, candidates: [OfficeStrollSpot], home: TilePoint?
+    agentType: String, candidates: [OfficeStrollSpot], allSpots: [OfficeStrollSpot],
+    home: TilePoint?, homeDepartment: Department?
 ) -> OfficeStrollSpot? {
-    for kind in officeWorkAffinity(agentType: agentType) {
-        let matched = candidates.enumerated().filter { $0.element.kind == kind }
+    let kinds = officeWorkAffinity(agentType: agentType)
+    guard !kinds.isEmpty else {
+        return nil
+    }
+    let indexed = Array(candidates.enumerated())
+    // **방이 종류보다 먼저다.** 1순위 종류가 자기 방에 없다고 곧장 남의 방으로 가면, 2순위가
+    // 자기 방에 멀쩡히 있어도 지나친다 — 총무 방 문서 담당 둘이 그랬다(1순위 책장이 없어
+    // 평가 방까지 갔는데, 2순위 벽 선반은 자기 방 벽에 걸려 있었다).
+    if let department = homeDepartment {
+        let mine = indexed.filter { $0.element.department == department }
+        if let picked = officePickByKind(kinds: kinds, pool: mine, home: home) {
+            return picked
+        }
+    }
+    // 자기 방에 그 종류가 **원래 있는데** 지금 다 차 있는 경우는 여기서 nil 을 돌려, 호출자가
+    // 「이번 회차 쉼」과 「자기 방에 아예 없음」을 가를 수 있게 한다.
+    if officeOwnRoomHasAffinity(
+        agentType: agentType, spots: allSpots, homeDepartment: homeDepartment
+    ) {
+        return nil
+    }
+    return officePickByKind(kinds: kinds, pool: indexed, home: home)
+}
+
+/// 자기 방에 짝지어진 종류가 **놓여 있는가**(지금 누가 서 있는지와 무관).
+///
+/// 점유를 뺀 목록으로 판단하면 「원래 없다」와 「잠시 차 있다」가 구별되지 않는다. 자산 방
+/// 모니터는 하나뿐인데 그 방 셋이 같은 회차에 뽑히면, 첫 사람이 앞자리를 차지한 순간 나머지
+/// 둘에게는 자기 방에 모니터가 없는 것처럼 보여 옆방으로 밀려났다.
+private func officeOwnRoomHasAffinity(
+    agentType: String, spots: [OfficeStrollSpot], homeDepartment: Department?
+) -> Bool {
+    guard let homeDepartment else {
+        return false
+    }
+    let kinds = Set(officeWorkAffinity(agentType: agentType))
+    guard !kinds.isEmpty else {
+        return false
+    }
+    return spots.contains { $0.department == homeDepartment && kinds.contains($0.kind) }
+}
+
+/// 우선순위 종류대로 훑어 가장 가까운 하나. 어느 종류도 못 찾으면 nil.
+private func officePickByKind(
+    kinds: [FurnitureKind],
+    pool: [(offset: Int, element: OfficeStrollSpot)],
+    home: TilePoint?
+) -> OfficeStrollSpot? {
+    for kind in kinds {
+        let matched = pool.filter { $0.element.kind == kind }
         guard !matched.isEmpty else {
             continue
         }
