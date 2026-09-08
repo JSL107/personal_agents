@@ -222,7 +222,8 @@ let officeFloorBrightnessFloor = 190.0
 
 /// 통로가 방·벽보다 밝다고 인정할 최소 여유. 순서만 지키게 하고 절대값은 묶지 않는다 —
 /// 타일을 다시 구우면 값은 함께 움직여도 순서는 유지돼야 하는 것이 규칙이다.
-/// (실측 여유는 통로−방 14.4 · 통로−벽 19.0 이라 이 문턱에 정상 변동으로 걸리지 않는다.)
+/// (실측 여유는 통로−방 14.4 · 통로−벽 19~29 이라 이 문턱에 정상 변동으로 걸리지 않는다.
+/// 벽 값만 창 크기·시각에 따라 197.7~207.7 로 흔들린다 — 창·벽등이 함께 잡히기 때문이다.)
 let officeCorridorBrightnessMargin = 5.0
 
 /// 실측이 모델(`텍스처 × (1 - 누르기)`)에서 벗어나도 되는 폭.
@@ -295,13 +296,18 @@ func officeFloorColorViolations(samples: [OfficeColorSample], hour: Int) -> [Str
     }
     // 벽과의 관계는 따로 본다. 0.78 사고가 정확히 이 자리였다 — 복도가 벽보다 어두워
     // 통로가 아니라 바닥에 뚫린 구멍으로 읽혔다.
-    if let wall = samples.first(where: { $0.tile == .wall }),
-        corridor.median < wall.median + officeCorridorBrightnessMargin
-    {
-        violations.append(
-            "\(prefix) 통로(\(rounded(corridor.median)))가 벽(\(rounded(wall.median))) 보다"
-                + " 밝지 않다 — 통로가 바닥에 뚫린 구멍으로 읽힌다"
-        )
+    //
+    // 벽이 표본에 없으면 **건너뛰지 않고 위반으로 낸다.** 격자 테두리가 벽이라 없을 수 없는데,
+    // 그래도 없다면 재는 자리가 어긋난 것이다 — 그 상태의 침묵은 통과와 구별되지 않는다.
+    if let wall = samples.first(where: { $0.tile == .wall }) {
+        if corridor.median < wall.median + officeCorridorBrightnessMargin {
+            violations.append(
+                "\(prefix) 통로(\(rounded(corridor.median)))가 벽(\(rounded(wall.median))) 보다"
+                    + " 밝지 않다 — 통로가 바닥에 뚫린 구멍으로 읽힌다"
+            )
+        }
+    } else {
+        violations.append("\(prefix) 벽 칸을 하나도 재지 못했다 — 재는 자리가 어긋났다")
     }
     for sample in rooms + [corridor] where sample.median < officeFloorBrightnessFloor {
         violations.append(
