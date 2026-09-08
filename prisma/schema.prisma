@@ -88,8 +88,6 @@ model PreviewAction {
   kind           String
   payload        Json
   status         String
-  // Slack interactivity payload 의 response_url — apply/cancel 후 원본 메시지를 update 하기 위해 보관.
-  responseUrl    String?   @map("response_url")
   // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
   previewText    String    @map("preview_text") @db.Text
   expiresAt      DateTime  @map("expires_at")

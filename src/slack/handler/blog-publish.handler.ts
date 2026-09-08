@@ -26,7 +26,6 @@ export class BlogPublishHandler implements SlackHandler {
         const outcome = await this.publishNotionDraft.execute({
           slackUserId: command.user_id,
           titleQuery: command.text?.trim() ?? '',
-          responseUrl: command.response_url,
         });
         await respondBlogPublishOutcome(respond, outcome);
       } catch (error: unknown) {

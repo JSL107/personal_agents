@@ -241,7 +241,6 @@ export class PublishNotionDraftUsecase {
           kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
           payload: candidate.payload,
           previewText: candidate.previewText,
-          responseUrl: input.responseUrl ?? null,
           ttlMs: PREVIEW_TTL_MS,
         });
         const result: PublishNotionDraftResult = {

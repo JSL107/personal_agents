@@ -10,7 +10,6 @@ const basePreview = {
   kind: PREVIEW_KIND.DOCS_AUDIT_PR,
   status: 'PENDING',
   previewText: 't',
-  responseUrl: null,
   expiresAt: new Date(0),
   createdAt: new Date(0),
   appliedAt: null,
