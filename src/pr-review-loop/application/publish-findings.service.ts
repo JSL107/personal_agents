@@ -185,7 +185,12 @@ export class PublishFindingsService {
     fallback: { record: PrReviewFindingRecord; body: string }[];
   }): Promise<void> {
     const filePath = finding.file;
-    if (filePath === undefined) {
+    // diff 에 없는 경로는 GitHub 이 422 로 거절한다 — 모델이 file 자리에 "PR 본문" 같은
+    // 라벨을 넣는 경우가 실제로 있었다(#492). 헛호출 없이 곧장 묶음 코멘트로 보낸다.
+    if (
+      filePath === undefined ||
+      !hunks.some((file) => file.filePath === filePath)
+    ) {
       fallback.push({ record, body: finding.body });
       return;
     }
