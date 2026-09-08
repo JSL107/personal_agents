@@ -608,19 +608,31 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     // 여기 적힌 사람은 짝지어진 물건이 자기 방에 있는데도 **옆방 것이 더 가까워** 그리로
     // 간다. 명단 채우기는 위와 같은 양방향이라, 늘면 회귀고 줄면 갱신 신호다.
     //
-    // 벽 자리 넷을 바꾸기 전에는 열다섯이었다(#499 에서 실측). 남은 여덟은 전부 **바닥
-    // 가구**를 찾는 사람이고, 방 경계가 복도 세 칸뿐이라 옆방 것이 자기 방 반대편보다
+    // 3열 기준으로 벽 자리 넷을 바꾸기 전에는 열다섯이었다(#499 에서 실측). 남은 사람은 전부
+    // **바닥 가구**를 찾는 쪽이고, 방 경계가 복도 세 칸뿐이라 옆방 것이 자기 방 반대편보다
     // 가까운 경우다. 줄이려면 목적지 선택이 방을 알아야 하는데 `officeStrollSpot` 은 지금
     // `spots` 와 `home` 만 받는다 — `tasks/goals-office-design.md` 「남은 것」 §3 의 후속.
-    let strollTargetOutOfZone: Set<String> = [
-        // 평가 → 품질 프린터 (평가 방에는 프린터가 없다)
-        "WORK_REVIEWER", "EVENING_RETRO",
-        // 콘텐츠 → 총무 게시판 · 품질 책장 (둘 다 콘텐츠 방에도 있지만 옆방이 가깝다)
-        "BLOG_REVISION", "CTO_STUDY",
-        // 자산 → 콘텐츠 모니터 (자기 방 11걸음 · 콘텐츠 9걸음)
-        "PAPER_TRADE",
-        // 총무 → 평가 책장·캐비닛
-        "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
+    //
+    // **배치마다 명단이 다르다.** 방의 이웃이 갈리면 어느 옆방이 더 가까운지도 갈린다.
+    let strollTargetOutOfZone: [Int: Set<String>] = [
+        // 2열은 방이 3행 2열이라 위아래 이웃이 가깝다. 벽걸이 경쟁을 푼 뒤 열여섯에서 열하나.
+        2: [
+            "WORK_REVIEWER", "EVENING_RETRO",
+            "BLOG_REVISION", "CTO_STUDY", "CAREER_MATE", "JOB_APPLICATION",
+            "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE",
+            "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
+        ],
+        // 3열은 2행 3열. 여덟이고, 벽 자리 넷을 바꾸기 전에는 열다섯이었다.
+        3: [
+            // 평가 → 품질 프린터 (평가 방에는 프린터가 없다)
+            "WORK_REVIEWER", "EVENING_RETRO",
+            // 콘텐츠 → 총무 게시판 · 품질 책장 (둘 다 콘텐츠 방에도 있지만 옆방이 가깝다)
+            "BLOG_REVISION", "CTO_STUDY",
+            // 자산 → 콘텐츠 모니터 (자기 방 11걸음 · 콘텐츠 9걸음)
+            "PAPER_TRADE",
+            // 총무 → 평가 책장·캐비닛
+            "DOCS_AUDIT_OPTIMIZER", "PREFERENCE_LEARNING", "VACATION",
+        ],
     ]
     var outOfRoom: Set<String> = []
     for zone in plan.zones {
@@ -658,34 +670,50 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     // **서는 칸이 아니라 가구 칸으로 잰다.** 벽걸이는 방과 복도 사이 벽에 걸리고 방 안쪽
     // 이웃이 막히면 앞칸이 복도로 잡히므로(`officeInteractionNeighbors`), 서는 칸으로 재면
     // 자기 방 물건을 보는 사람까지 전부 "나갔다" 가 된다.
-    var strollOutOfZone: Set<String> = []
-    for agent in sampleAgents where !officeWorkAffinity(agentType: agent.agentType).isEmpty {
-        // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
-        guard let seat = home(agent.agentType),
-              let spot = destination(agent.agentType),
-              spot.kind != .meetingTable,
-              let myZone = plan.zones.first(where: { officeZoneContains($0, seat) })
-        else {
-            continue
+    //
+    // **2열·3열을 모두 잰다.** 배치가 갈리면 어느 방이 어느 방과 마주 보는지가 갈리고,
+    // 그러면 **어느 벽걸이가 같은 복도 칸을 두고 경쟁하는지**도 갈린다 — 3열만 재던 동안
+    // 2열에서는 자산 모니터와 총무 게시판이 목적지 목록에서 통째로 빠져 다섯 명이 계속 남의
+    // 방으로 걸어갔고, 3열 명단이 초록이라 아무 신호도 없었다(#499 · codex 리뷰가 짚었다).
+    for columns in [2, 3] {
+        let zonePlan = officeFloorPlan(agents: sampleAgents, zoneColumns: columns)
+        let zoneSpots = officeStrollSpots(plan: zonePlan)
+        var strollOutOfZone: Set<String> = []
+        for agent in sampleAgents where !officeWorkAffinity(agentType: agent.agentType).isEmpty {
+            // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
+            guard let seat = zonePlan.desks.first(where: { $0.agentType == agent.agentType })?.seat,
+                  let spot = officeStrollSpot(
+                      for: agent.agentType, round: 1, spots: zoneSpots, occupied: [], hour: 14,
+                      home: seat
+                  ),
+                  spot.kind != .meetingTable,
+                  let myZone = zonePlan.zones.first(where: { officeZoneContains($0, seat) })
+            else {
+                continue
+            }
+            let target = zonePlan.furniture.first {
+                $0.kind == spot.kind
+                    && officeInteractionNeighbors(furniture: $0.tile, pose: spot.pose)
+                        .contains(spot.tile)
+            }
+            t.expect(
+                target != nil,
+                "\(columns)열: \(agent.agentType) 목적지 \(spot.kind.rawValue) 의 가구 칸을 찾음"
+            )
+            if let target, !officeZoneContains(myZone, target.tile) {
+                strollOutOfZone.insert(agent.agentType)
+            }
         }
-        let target = plan.furniture.first {
-            $0.kind == spot.kind
-                && officeInteractionNeighbors(furniture: $0.tile, pose: spot.pose)
-                    .contains(spot.tile)
-        }
-        t.expect(target != nil, "\(agent.agentType) 목적지 \(spot.kind.rawValue) 의 가구 칸을 찾음")
-        if let target, !officeZoneContains(myZone, target.tile) {
-            strollOutOfZone.insert(agent.agentType)
-        }
+        let expected = strollTargetOutOfZone[columns] ?? []
+        t.expectEqual(
+            strollOutOfZone.subtracting(expected).sorted().joined(separator: ", "), "",
+            "\(columns)열: 짝지어진 물건이 방에 있는데도 옆방 것으로 걸어가는 사람이 새로 생겼다"
+        )
+        t.expectEqual(
+            expected.subtracting(strollOutOfZone).sorted().joined(separator: ", "), "",
+            "\(columns)열: 명단에 적힌 사람이 이제 자기 방 물건으로 간다 — 명단에서 빼라"
+        )
     }
-    t.expectEqual(
-        strollOutOfZone.subtracting(strollTargetOutOfZone).sorted().joined(separator: ", "), "",
-        "짝지어진 물건이 방에 있는데도 옆방 것으로 걸어가는 사람이 새로 생겼다"
-    )
-    t.expectEqual(
-        strollTargetOutOfZone.subtracting(strollOutOfZone).sorted().joined(separator: ", "), "",
-        "명단에 적힌 사람이 이제 자기 방 물건으로 간다 — 명단에서 빼라"
-    )
 
     // 벽걸이 열 종이 **모두 어느 방엔가** 걸려야 한다. 방마다 벽 자리가 셋뿐이라 한 종을
     // 넣으면 다른 종이 밀려나는데, 밀려난 쪽은 오류 없이 화면에서만 사라진다 — 운영 방의

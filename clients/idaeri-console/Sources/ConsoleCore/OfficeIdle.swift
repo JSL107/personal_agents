@@ -228,13 +228,28 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         else {
             continue
         }
+        // **이미 쓰인 칸은 건너뛰고 다음 이웃을 본다.** 예전에는 첫 이웃 하나만 고른 뒤 그
+        // 칸이 쓰였으면 가구를 통째로 버렸다 — 그런데 **마주 보는 두 방의 벽걸이는 같은 복도
+        // 칸을 앞자리로 삼는다.** 왼쪽 방 벽(x)의 오른쪽 이웃과 오른쪽 방 벽(x+2)의 왼쪽
+        // 이웃이 같은 칸(x+1)이라, 먼저 등록된 쪽이 그 칸을 가져가면 맞은편 벽걸이가 목적지
+        // 목록에서 조용히 사라졌다.
+        //
+        // 2열 배치에서 자산 방 지표 모니터와 총무 방 게시판이 그렇게 빠져, 그 방 다섯 명이
+        // 방에 물건이 걸려 있는데도 계속 남의 방으로 걸어갔다(3열에서는 콘텐츠 방 벽 판이
+        // 같은 이유로 빠져 있었다). 배치가 갈리면 어느 벽이 겹칠지도 갈리므로 한쪽 배치만
+        // 재면 안 보인다.
+        //
+        // 다음 이웃으로 넘어가면 대개 **방 안쪽 칸**이 잡혀 그림도 낫다 — 복도에 서서 벽을
+        // 보는 대신 자기 방 안에서 본다. 앉는 가구는 이웃이 정면 한 칸뿐이라 이 완화의
+        // 영향을 받지 않는다(정면이 막히면 여전히 목적지에서 빠지고, 그게 맞다).
         let neighbors = officeInteractionNeighbors(furniture: placement.tile, pose: pose)
         guard let tile = neighbors.first(where: {
             plan.walkable.contains($0) && !seatTiles.contains($0) && !doorTiles.contains($0)
-                && (reachable?.contains($0) ?? true)
-        }), usedTiles.insert(tile).inserted else {
+                && (reachable?.contains($0) ?? true) && !usedTiles.contains($0)
+        }) else {
             continue
         }
+        usedTiles.insert(tile)
         spots.append(
             OfficeStrollSpot(
                 kind: placement.kind,
