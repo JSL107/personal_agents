@@ -6,6 +6,7 @@ import {
   PaperOrderFillDetail,
 } from '../../../paper-trading/application/fill-pending-orders.usecase';
 import { TradeSide } from '../../../paper-trading/domain/paper-account.type';
+import { getKstClock } from '../../../paper-trading/domain/trade-calendar';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
@@ -15,6 +16,7 @@ import {
 import {
   formatMoney,
   formatQuantity,
+  formatTradeDay,
   formatWon,
 } from '../paper-number.formatter';
 
@@ -60,7 +62,9 @@ const formatResult = (result: FillPendingOrdersResult): AutopilotTaskResult => {
   return { skip: false, summaryText: lines.join('\n') };
 };
 
-// 헤더는 "얼마어치 사고팔았나" 를 먼저 알린다. 체결이 없으면 그 이유를 대신 적는다.
+// 헤더는 "언제 얼마어치 사고팔았나" 를 먼저 알린다. 체결가는 그날 **시가**라 카드가 도착한
+// 장중 시각과 30분 이상 벌어진다 — 날짜와 "시가" 를 안 적으면 발송 시각이 체결 시점으로
+// 읽힌다. 체결이 없으면 적을 가격 자체가 없으므로 그 이유를 대신 적는다.
 const formatHeadline = (
   result: FillPendingOrdersResult,
   filled: PaperOrderFillDetail[],
@@ -73,13 +77,14 @@ const formatHeadline = (
   }
   const buy = filled.filter((detail) => detail.side === 'BUY');
   const sell = filled.filter((detail) => detail.side === 'SELL');
-  return [buy, sell]
+  const tradeDay = formatTradeDay(getKstClock(result.asOf).tradeDate);
+  return `${tradeDay} 시가 · ${[buy, sell]
     .filter((group) => group.length > 0)
     .map(
       (group) =>
         `${sideLabel(group[0].side)} ${group.length}건 ${formatMoney(totalAmount(group))}`,
     )
-    .join(' · ');
+    .join(' · ')}`;
 };
 
 const formatFilledLine = (detail: PaperOrderFillDetail): string =>

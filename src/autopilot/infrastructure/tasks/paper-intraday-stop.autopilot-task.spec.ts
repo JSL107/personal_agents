@@ -16,6 +16,8 @@ const resultOf = (
   overrides: Partial<ApplyIntradayStopResult> = {},
 ): ApplyIntradayStopResult => ({
   window: 'TRADING',
+  // 2026-08-11(화) 09:32 KST — 손절 판정 첫 회차.
+  asOf: new Date('2026-08-11T00:32:00.000Z'),
   accountCount: 2,
   inspectedCount: 2,
   priceErrorCount: 0,
@@ -149,7 +151,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 0건 청산\n' +
+        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
         ' • 기업행동 의심으로 손절 판정 보류 1건 — 그 종목은 이번 회차에 청산되지 ' +
         '않았습니다. 배당락이면 받을 배당금이, 분할이면 늘어난 수량이 장부에 아직 ' +
         '없으니 확인이 필요합니다\n' +
@@ -222,7 +224,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 2건 청산\n' +
+        '*장중 손절* — 8/11(화) 09:32 현재가 · 2건 청산\n' +
         ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
         ' • [LONG<&>] 020120 키다리&lt;스튜디오&gt; 1,358주 @ 4,900원 (-7.55%)',
     });
@@ -236,7 +238,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 0건 청산\n' +
+        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
         ' • 시세 조회 실패 3건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다',
     });
   });
@@ -254,7 +256,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 0건 청산\n' +
+        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
         ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
     });
   });
@@ -272,7 +274,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 0건 청산\n' +
+        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
         ' • 손절 판정 후 미체결 3건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건 · 기타 체결 미완료 1건',
     });
   });
@@ -319,7 +321,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
       result: {
         skip: false,
         summaryText:
-          '*장중 손절* — 1건 청산\n' +
+          '*장중 손절* — 8/11(화) 09:32 현재가 · 1건 청산\n' +
           ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
           ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
           ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',

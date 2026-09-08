@@ -623,6 +623,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       ordersCreated: 2,
       agentRunId: 99,
       dataAsOf: '2026-08-13',
+      targetTradeDate: '2026-08-14',
       orders: [
         {
           side: 'SELL',

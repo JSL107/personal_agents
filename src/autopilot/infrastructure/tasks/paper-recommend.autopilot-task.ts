@@ -18,7 +18,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
-import { formatMoney } from '../paper-number.formatter';
+import { formatMoney, formatTradeDay } from '../paper-number.formatter';
 
 const STRATEGIES: PaperRecommendationStrategy[] = ['LONG_TERM', 'SWING'];
 const STRATEGY_LABELS: Record<PaperRecommendationStrategy, string> = {
@@ -71,11 +71,22 @@ const formatResult = (
     return formatFailureDetail(failedByStrategy.get(strategy)!);
   });
 
+  // 추천은 저녁에 나가고 주문은 **다음 거래일 시가**에 체결된다. 그 시차를 카드가 안 적으면
+  // 추천이 도착한 시각을 매수 시각으로 읽게 되고, 다음날 아침 체결 카드와 이어지지 않는다.
+  // 날짜는 주문에 박힌 목표 거래일을 그대로 쓴다 — 카드에서 다시 계산하면 자정을 넘긴
+  // 재실행에서 원장의 주문과 다른 날짜를 적게 된다.
+  const targetTradeDate =
+    result.completed.find((completed) => completed.targetTradeDate !== null)
+      ?.targetTradeDate ?? null;
+  const timing = targetTradeDate
+    ? ` · ${formatTradeDay(targetTradeDate)} 시가에 주문 체결`
+    : '';
   return {
     skip: false,
-    summaryText: [`*모의투자 추천* — ${headline}`, ...summarySections].join(
-      '\n',
-    ),
+    summaryText: [
+      `*모의투자 추천* — ${headline}${timing}`,
+      ...summarySections,
+    ].join('\n'),
     detailText: detailSections.join('\n\n'),
   };
 };

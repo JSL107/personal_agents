@@ -13,6 +13,7 @@ describe('PaperRecommendAutopilotTask', () => {
             ordersCreated: 1,
             agentRunId: 31,
             dataAsOf: '2026-08-17',
+            targetTradeDate: '2026-08-18',
             orders: [
               {
                 side: 'BUY',
@@ -57,7 +58,7 @@ describe('PaperRecommendAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '*모의투자 추천* — 장기 1건 · 스윙 0건\n' +
+        '*모의투자 추천* — 장기 1건 · 스윙 0건 · 8/18(화) 시가에 주문 체결\n' +
         '*장기* 매수 1 · 매도 0 | 현금 405만 · 보유 3종목 · 평가 1,012만\n' +
         ' • 매수 코웨이(021240) 20주 ≈ 195만\n' +
         '*스윙* 주문 없음 | 현금 9,000원 · 보유 6종목 · 평가 987만\n' +
@@ -115,6 +116,7 @@ describe('PaperRecommendAutopilotTask', () => {
             ordersCreated: 2,
             agentRunId: 31,
             dataAsOf: '2026-08-17',
+            targetTradeDate: '2026-08-18',
             orders: [
               {
                 side: 'BUY',
@@ -381,6 +383,7 @@ describe('PaperRecommendAutopilotTask', () => {
             ordersCreated: 1,
             agentRunId: 32,
             dataAsOf: '2026-08-17',
+            targetTradeDate: '2026-08-18',
             orders: [
               {
                 side: 'SELL',
@@ -428,6 +431,7 @@ describe('PaperRecommendAutopilotTask', () => {
             ordersCreated: 1,
             agentRunId: 31,
             dataAsOf: '2026-08-17',
+            targetTradeDate: '2026-08-18',
             orders: [
               {
                 side: 'BUY',
@@ -476,6 +480,7 @@ describe('PaperRecommendAutopilotTask', () => {
             ordersCreated: 1,
             agentRunId: 32,
             dataAsOf: '2026-08-17',
+            targetTradeDate: '2026-08-18',
             orders: [
               {
                 side: 'BUY',
@@ -510,7 +515,7 @@ describe('PaperRecommendAutopilotTask', () => {
     });
 
     expect(result.summaryText).toBe(
-      '*모의투자 추천* — 장기 실패 · 스윙 1건\n' +
+      '*모의투자 추천* — 장기 실패 · 스윙 1건 · 8/18(화) 시가에 주문 체결\n' +
         '*장기* 실패 — 모델 호출 실패\n' +
         '*스윙* 매수 1 · 매도 0 | 현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)\n' +
         ' • 매수 DN오토모티브(007340) 26주 ≈ 153만',
