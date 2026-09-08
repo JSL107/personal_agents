@@ -765,7 +765,7 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
     let strollAbsent: [Int: Set<String>] = [
         2: [
             // 의도된 것 — 대표실 게시판은 연속 도장을 붙이는 판이지 서서 보는 물건이 아니다.
-            "밴드/wallPinboard",
+            "밴드/wallPinboard@(9,25)",
             // 의도된 것 — 아래 줄을 붙여 놓으면 가운데 하나가 설 자리를 잃는다(원장 참조).
             "content/bookshelf@(2,0)",
             // **결함** — 평가 방 아래 줄 책장의 앞칸 (1,1) 이 늘 책상이다.
@@ -776,9 +776,10 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
             "internalOps/filingCabinet@(2,2)",
         ],
         3: [
-            "밴드/wallPinboard",
-            // 3열에서만 — 밴드 배치가 달라 이 화분 앞칸이 막힌다.
-            "밴드/plantTall",
+            "밴드/wallPinboard@(13,18)",
+            // 3열에서만 — 탕비실 오른쪽 끝 화분. 같은 종류가 (9,17) 에도 있고 그쪽은 살아
+            // 있으므로, 종류만 적으면 이 한 건이 그쪽에 묻힌다(#512 · codex 리뷰).
+            "밴드/plantTall@(33,17)",
             "content/bookshelf@(2,0)",
             // 3열에서만 — 콘텐츠 벽 판의 방 안쪽 앞칸이 책상, 복도 쪽은 자산 모니터가 선점.
             "content/wallWhiteboard@(0,4)",
@@ -817,7 +818,12 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
                         + "@(\(furniture.tile.x - zone.origin.x),\(furniture.tile.y - zone.origin.y))"
                 )
             } else {
-                absent.insert("밴드/\(furniture.kind.rawValue)")
+                // **밴드도 좌표를 넣는다.** 종류만 적으면 같은 종류 여럿이 한 키로 합쳐져,
+                // 3열 밴드의 큰 화분 둘 중 하나가 더 빠져도 명단이 그대로다. 밴드는 방 원점이
+                // 없으므로 절대 좌표를 쓴다 — 명단이 배치별이라 값이 갈려도 괜찮다.
+                absent.insert(
+                    "밴드/\(furniture.kind.rawValue)@(\(furniture.tile.x),\(furniture.tile.y))"
+                )
             }
         }
         let expected = strollAbsent[columns] ?? []
