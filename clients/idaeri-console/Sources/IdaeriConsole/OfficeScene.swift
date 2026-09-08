@@ -898,7 +898,7 @@ final class OfficeScene: SKScene {
             }
         }
         return OfficeColorProbeGeometry(
-            plan: plan,
+            floor: plan.floor,
             gridOrigin: gridOrigin,
             tileSize: tileSize,
             occupiedTiles: occupied

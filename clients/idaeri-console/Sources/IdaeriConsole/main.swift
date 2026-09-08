@@ -35,12 +35,16 @@ let renderSize =
 //
 // 조용히 기본값으로 물러서면 `--hour 2p` 같은 오타에서 낮 화면을 보고 밤을 확인한 줄 안다 —
 // `--room`·`--zone-columns` 가 이미 같은 이유로 오타를 끊는다.
+//
+// 값을 읽는 규칙 자체는 `officeParseHour`(ConsoleCore) 가 갖는다 — 여기 두면 실행 파일 안이라
+// 테스트로 고정할 수가 없다(`officeParseRenderSize` 와 같은 이유). 여기 남는 것은 인자를
+// 찾아 끊는 일뿐이다.
 func officeHourArgument() -> Int? {
     guard let index = CommandLine.arguments.firstIndex(of: "--hour") else {
         return nil
     }
     let raw = index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : ""
-    guard let hour = Int(raw) else {
+    guard let hour = officeParseHour(raw) else {
         FileHandle.standardError.write(
             Data("--hour 는 정수여야 한다 (받은 값: \"\(raw)\")\n".utf8)
         )
