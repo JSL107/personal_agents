@@ -1578,25 +1578,47 @@ public func officePlanSize(zoneColumns: Int) -> (columns: Int, rows: Int) {
 
 /// 현재 창에서 더 큰 타일을 만드는 부서 열 수. 직전 배치가 있으면 반대쪽이 5% 이상 커질
 /// 때만 바꿔, 리사이즈 경계에서 두 도면이 번갈아 재구성되는 떨림을 막는다.
+///
+/// **먼저 「실제로 그려지는 타일」로 비교한다.** 배율은 20px(레티나)의 정수배만 고를 수 있어
+/// 창에 들어가는 실수값이 그대로 쓰이지 않는데, 예전에는 그 **내림 전 값**으로 배치를 골랐다.
+/// 내림하면 순위가 뒤집히는 창이 있어서, 이긴 배치가 20px 로 그려지는 동안 진 배치가 40px 로
+/// 그려질 수 있었다 — 화면에서는 도면이 이유 없이 절반 크기로 뜬다(1300×1000 부터 그렇다).
+///
+/// 두 배치가 **같은 계단**에 서면 그때 연속값으로 가른다. 계단이 같으면 어느 쪽을 골라도
+/// 타일 크기가 같으므로, 남는 판단은 "어느 쪽이 창에 여유롭게 들어가는가" 뿐이다.
 public func officeZoneColumns(
-    width: Double, height: Double, currentZoneColumns: Int? = nil
+    width: Double, height: Double, currentZoneColumns: Int? = nil, backingScale: Double = 2
 ) -> Int {
     guard width > 0, height > 0 else {
         return currentZoneColumns ?? 3
     }
-    func tileSize(_ zoneColumns: Int) -> Double {
+    /// 내림 전 값. 같은 계단에 선 두 배치를 가르는 데만 쓴다.
+    func fittingSize(_ zoneColumns: Int) -> Double {
         let planSize = officePlanSize(zoneColumns: zoneColumns)
         return min(width / Double(planSize.columns), height / Double(planSize.rows))
     }
+    /// 화면에 실제로 나가는 타일 크기.
+    func drawnSize(_ zoneColumns: Int) -> Double {
+        let planSize = officePlanSize(zoneColumns: zoneColumns)
+        return officeViewMetrics(
+            viewWidth: width, viewHeight: height,
+            columns: planSize.columns, rows: planSize.rows, backingScale: backingScale
+        ).tileSize
+    }
 
-    let twoColumnSize = tileSize(2)
-    let threeColumnSize = tileSize(3)
+    let twoColumnDrawn = drawnSize(2)
+    let threeColumnDrawn = drawnSize(3)
+    // 계단이 갈리면 그대로 따른다. 떨림 방지(5%)를 여기 걸면 안 된다 — 계단 하나가 2배라,
+    // 유지하는 대가가 "도면이 절반 크기로 남는 것" 이 된다.
+    if twoColumnDrawn != threeColumnDrawn {
+        return twoColumnDrawn > threeColumnDrawn ? 2 : 3
+    }
     guard let currentZoneColumns else {
-        return twoColumnSize > threeColumnSize ? 2 : 3
+        return fittingSize(2) > fittingSize(3) ? 2 : 3
     }
     precondition(currentZoneColumns == 2 || currentZoneColumns == 3)
     let candidate = currentZoneColumns == 2 ? 3 : 2
-    return tileSize(candidate) >= tileSize(currentZoneColumns) * 1.05
+    return fittingSize(candidate) >= fittingSize(currentZoneColumns) * 1.05
         ? candidate : currentZoneColumns
 }
 

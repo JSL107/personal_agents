@@ -56,6 +56,8 @@ final class OfficeScene: SKScene {
     private let floorLayer = SKNode()
     private let objectLayer = SKNode()
     private let overlayLayer = SKNode()
+    /// 배율 안내 쪽지 노드 이름. 갱신 때 먼저 걷어내야 하므로 이름으로 찾는다.
+    private let scaleHintNodeName = "scaleHintHUD"
 
     /// 실제로 만든 도면이 생기기 전에는 nil. 첫 선택은 순수 최대값이어야 하고, 그 뒤에만
     /// 현재 배치를 기준으로 5% 히스테리시스를 적용한다.
@@ -381,6 +383,7 @@ final class OfficeScene: SKScene {
         spriteScale = tileSize / referenceTileSize
         characterScale = spriteScale * characterScaleFactor
         gridOrigin = CGPoint(x: metrics.originX, y: metrics.originY)
+        updateScaleHint()
     }
 
     /// 타일의 바닥 중앙(캐릭터 발이 닿는 지점).
@@ -419,7 +422,8 @@ final class OfficeScene: SKScene {
         lastSyncedApprovals = approvals
         let nextZoneColumns = officeZoneColumns(
             width: Double(size.width), height: Double(size.height),
-            currentZoneColumns: zoneColumns
+            currentZoneColumns: zoneColumns,
+            backingScale: Double(view?.window?.backingScaleFactor ?? 2)
         )
         let layoutChanged = nextZoneColumns != zoneColumns
         zoneColumns = nextZoneColumns
@@ -3408,6 +3412,77 @@ final class OfficeScene: SKScene {
         holder.addChild(plate)
         holder.addChild(label)
         holder.position = CGPoint(x: 12 + padding, y: size.height - 10 - padding * 0.7)
+        overlayLayer.addChild(holder)
+    }
+
+    /// 도면이 **왜** 작게 떴는지를 화면에 적는다.
+    ///
+    /// 배율은 20px(레티나)의 정수배만 고를 수 있어, 창이 요구치보다 조금만 모자라도 다음
+    /// 계단에 못 올라가고 최저 배율에 머문다. 그때 화면은 "가운데 작은 도면 + 사방의 검은
+    /// 여백" 이 되는데, 원인이 창 크기라는 신호가 화면에 하나도 없어 고장으로 읽힌다
+    /// (2026-09-07 신고 — 실제로는 창 1080×945 에 27줄×40px = 1080px 이 안 들어간 것이었다).
+    ///
+    /// **최저 계단일 때만** 띄운다. "지금보다 크게 그릴 수 있다" 를 조건으로 잡으면 40px 로
+    /// 잘 뜨는 창에서도 계속 잔소리가 된다.
+    private func updateScaleHint() {
+        overlayLayer.childNode(withName: scaleHintNodeName)?.removeFromParent()
+        // 창이 없는 경로(오프스크린 회귀 렌더)에서도 그린다 — 창에서만 뜨는 요소는 렌더에
+        // "정상" 으로 찍혀, 안 그려지는 것과 구별할 수가 없다.
+        let window = view?.window
+        guard focusedDepartment == nil,
+            let visible = (window?.screen ?? NSScreen.main)?.visibleFrame
+        else {
+            return
+        }
+        let backingScale = Double(
+            window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        )
+        guard Double(hudTileSize) <= officeScaleUnit(backingScale: backingScale) else {
+            return
+        }
+        // 창 세로 중 도면이 못 쓰는 부분을 **실측한다.** 타이틀바 높이는 스타일이 정하고 탭
+        // 막대는 SwiftUI 가 정하므로, 상수로 적어 두면 둘 중 하나가 바뀔 때 조용히 어긋난다.
+        let chromeHeight =
+            window.map { Double($0.frame.height) - Double(size.height) }
+            ?? Double(officeWindowChromeHeight(styleMask: windowStyleMask))
+        guard
+            let fit = officeWindowFit(
+                availableWidth: Double(visible.width),
+                availableHeight: Double(visible.height) - chromeHeight,
+                backingScale: backingScale
+            ), fit.tileSize > Double(hudTileSize)
+        else {
+            return
+        }
+
+        let holder = SKNode()
+        holder.name = scaleHintNodeName
+        holder.zPosition = officeHudZPosition
+        let label = SKLabelNode(text: "도면이 최저 배율입니다 — ⌘0 으로 창을 도면 크기에 맞춥니다")
+        label.fontName = officeLabelFontName
+        label.fontSize = max(officeHudMinFontSize, hudTileSize * 0.26)
+        label.fontColor = SKColor(white: 0.82, alpha: 1)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .baseline
+
+        let textFrame = label.calculateAccumulatedFrame()
+        let padding = label.fontSize * 0.55
+        let plate = SKShapeNode(
+            rect: CGRect(
+                x: textFrame.minX - padding,
+                y: textFrame.minY - padding * 0.7,
+                width: textFrame.width + padding * 2,
+                height: textFrame.height + padding * 1.4
+            ),
+            cornerRadius: label.fontSize * 0.45
+        )
+        plate.fillColor = SKColor(white: 0.05, alpha: 0.72)
+        plate.strokeColor = SKColor(white: 1.0, alpha: 0.10)
+        plate.lineWidth = 1
+        holder.addChild(plate)
+        holder.addChild(label)
+        // 도면 아래 검은 여백에 놓는다 — 여백이 곧 증상이라 설명이 붙을 자리로 맞다.
+        holder.position = CGPoint(x: size.width / 2, y: 14 + padding)
         overlayLayer.addChild(holder)
     }
 
