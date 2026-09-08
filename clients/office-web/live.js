@@ -768,18 +768,47 @@ function facingBetween(from, to) {
  * 어느 워커가 무엇을 쓰는지는 워커가 늘 때마다 바뀌는 표라, 두 곳에 적으면 새 워커가
  * 한쪽 화면에서만 제 일을 한다.
  *
- * 같은 종류 가구가 여섯 방에 흩어져 있으므로 **자기 자리에서 가장 가까운 것**을 고른다.
- * 거리를 안 보면 개발실 사람이 성장실 벽 모니터까지 스무 칸을 걸어가, 왕복하는 동안
+ * **자기 방이 먼저고 그다음이 거리다.** 오래 거리만 봤는데, 방 사이가 벽 한 칸뿐이라
+ * 옆방 물건이 자기 방 반대편보다 가까운 경우가 흔하다 — 자기 방에 같은 종류가 멀쩡히
+ * 있는데도 남의 방으로 걸어가는 사람이 배치에 따라 여섯~열이었다.
+ *
+ * 거리도 여전히 본다. 한 방에 같은 종류가 둘 이상인 경우가 흔하다(품질 책장 셋).
+ * 거리를 아예 안 보면 개발실 사람이 성장실 벽 모니터까지 스무 칸을 걸어가, 왕복하는 동안
  * 화면에서는 일하러 간 것이 아니라 자리를 비운 것으로 읽힌다.
+ *
+ * **맥 앱 `officeAffinitySpot` 과 같은 규칙이어야 한다** — 두 화면이 같은 평면도를 보는데
+ * 선택만 갈리면, 같은 사무실이 창을 어디서 여느냐에 따라 다르게 움직인다.
  */
-function affinitySpot(agentType, free) {
-  const kinds = renderer.layout.agentLooks?.[agentType]?.workAffinity ?? [];
-  if (kinds.length === 0) {
+function zoneOf(tile) {
+  if (!tile) {
     return null;
   }
-  const home = seatOf(agentType);
+  const zones = renderer.layout.plan?.zones ?? [];
+  const found = zones.find(
+    (zone) =>
+      tile.x >= zone.origin.x &&
+      tile.x < zone.origin.x + zone.width &&
+      tile.y >= zone.origin.y &&
+      tile.y < zone.origin.y + zone.height
+  );
+  return found?.department ?? null;
+}
+
+/** 자기 방에 짝지어진 종류가 **놓여 있는가**(지금 누가 서 있는지와 무관). */
+function ownRoomHasAffinity(kinds, department) {
+  if (!department) {
+    return false;
+  }
+  const all = renderer.layout.strollSpots ?? [];
+  return all.some(
+    (spot) => spot.department === department && kinds.includes(spot.kind)
+  );
+}
+
+/** 우선순위 종류대로 훑어 자리에서 가장 가까운 하나. 어느 종류도 못 찾으면 null. */
+function pickByKind(kinds, pool, home) {
   for (const kind of kinds) {
-    const matched = free.filter((spot) => spot.kind === kind);
+    const matched = pool.filter((spot) => spot.kind === kind);
     if (matched.length === 0) {
       continue;
     }
@@ -794,6 +823,30 @@ function affinitySpot(agentType, free) {
     );
   }
   return null;
+}
+
+function affinitySpot(agentType, free) {
+  const kinds = renderer.layout.agentLooks?.[agentType]?.workAffinity ?? [];
+  if (kinds.length === 0) {
+    return null;
+  }
+  const home = seatOf(agentType);
+  const department = zoneOf(home);
+  // 방이 종류보다 먼저다 — 1순위 종류가 자기 방에 없다고 곧장 남의 방으로 가면, 2순위가
+  // 자기 방에 멀쩡히 있어도 지나친다.
+  if (department) {
+    const mine = free.filter((spot) => spot.department === department);
+    const picked = pickByKind(kinds, mine, home);
+    if (picked) {
+      return picked;
+    }
+    // 자기 방에 물건이 **있는데** 지금 다 차 있으면 이번 회차는 쉰다. 옆방으로 보내면
+    // 그 그림이 틱마다 반복돼, 방에 물건을 둔 의미가 사라진다.
+    if (ownRoomHasAffinity(kinds, department)) {
+      return null;
+    }
+  }
+  return pickByKind(kinds, free, home);
 }
 
 function strollTick(now) {

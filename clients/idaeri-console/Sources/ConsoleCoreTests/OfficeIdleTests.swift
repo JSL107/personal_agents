@@ -704,6 +704,28 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
                 t.fail("\(columns)열: \(agent.agentType) 자기 방 후보를 빼자 목적지를 못 받았다")
             }
 
+            // **자기 방 것이 지금 차 있다고 옆방으로 보내지 않는다.** 같은 방 사람 여럿이 한
+            // 회차에 뽑히면 첫 사람이 앞자리를 차지하는데, 그때 나머지에게 자기 방에 그 물건이
+            // 없는 것처럼 보이면 8초마다 옆방으로 걸어가는 그림이 반복된다. 이번 회차를 쉬고
+            // 다음에 자리가 나면 자기 방으로 가는 것이 맞다.
+            let ownKinds = Set(officeWorkAffinity(agentType: agent.agentType))
+            let ownRoomSpots = zoneSpots.filter {
+                $0.department == myZone.department && ownKinds.contains($0.kind)
+            }
+            if !ownRoomSpots.isEmpty {
+                let allBusy = officeStrollSpot(
+                    for: agent.agentType, round: 1, spots: zoneSpots,
+                    occupied: Set(ownRoomSpots.map(\.tile)), hour: 14,
+                    home: seat, homeDepartment: myZone.department
+                )
+                t.expect(
+                    allBusy == nil,
+                    "\(columns)열: \(agent.agentType) 자기 방이 다 찼는데 "
+                        + "\(allBusy.map { "\($0.kind.rawValue)[\($0.department?.rawValue ?? "밴드")]" } ?? "")"
+                        + " 로 나갔다"
+                )
+            }
+
             // 회의 테이블은 공용 밴드에 따로 있다(위 명단과 같은 이유로 뺀다).
             guard spot.kind != .meetingTable else {
                 continue

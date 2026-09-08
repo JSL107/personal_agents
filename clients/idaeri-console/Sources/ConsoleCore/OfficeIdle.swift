@@ -366,11 +366,21 @@ public func officeStrollSpot(
         )
     }
     // 점심이 아니면 자기 일에 필요한 물건이 먼저다. 짝지어진 가구가 없는 사람만 아래로 내려간다.
+    // `spots` 를 함께 넘긴다 — 자기 방에 그 물건이 **원래 없는지**, 지금 **누가 서 있는지**를
+    // 구별하려면 occupied 를 빼기 전 목록이 필요하다.
     if let affinity = officeAffinitySpot(
-        agentType: agentType, candidates: candidates, home: home,
+        agentType: agentType, candidates: candidates, allSpots: spots, home: home,
         homeDepartment: homeDepartment
     ) {
         return affinity
+    }
+    // 자기 방에 짝지어진 물건이 있는데 지금 다 차 있으면 **이번 회차는 쉰다.** 옆방으로
+    // 보내면 8초마다 그 그림이 반복돼, 방에 물건을 둔 의미가 사라진다(다음 회차에 자리가
+    // 나면 자기 방으로 간다). 자기 방에 아예 없는 사람만 아래 전체 선택으로 내려간다.
+    if officeOwnRoomHasAffinity(
+        agentType: agentType, spots: spots, homeDepartment: homeDepartment
+    ) {
+        return nil
     }
     return officeRotatingPick(from: candidates, agentType: agentType, round: round)
 }
@@ -399,8 +409,8 @@ public func officeStrollSpot(
 /// 다음 종류로 내려간다. 거리가 같으면 카탈로그 순서 — `sorted` 가 안정 정렬이 아니라서
 /// 원래 자리(offset)를 tie-break 에 넣어야 실행마다 같은 결과가 나온다.
 private func officeAffinitySpot(
-    agentType: String, candidates: [OfficeStrollSpot], home: TilePoint?,
-    homeDepartment: Department?
+    agentType: String, candidates: [OfficeStrollSpot], allSpots: [OfficeStrollSpot],
+    home: TilePoint?, homeDepartment: Department?
 ) -> OfficeStrollSpot? {
     let kinds = officeWorkAffinity(agentType: agentType)
     guard !kinds.isEmpty else {
@@ -416,7 +426,32 @@ private func officeAffinitySpot(
             return picked
         }
     }
+    // 자기 방에 그 종류가 **원래 있는데** 지금 다 차 있는 경우는 여기서 nil 을 돌려, 호출자가
+    // 「이번 회차 쉼」과 「자기 방에 아예 없음」을 가를 수 있게 한다.
+    if officeOwnRoomHasAffinity(
+        agentType: agentType, spots: allSpots, homeDepartment: homeDepartment
+    ) {
+        return nil
+    }
     return officePickByKind(kinds: kinds, pool: indexed, home: home)
+}
+
+/// 자기 방에 짝지어진 종류가 **놓여 있는가**(지금 누가 서 있는지와 무관).
+///
+/// 점유를 뺀 목록으로 판단하면 「원래 없다」와 「잠시 차 있다」가 구별되지 않는다. 자산 방
+/// 모니터는 하나뿐인데 그 방 셋이 같은 회차에 뽑히면, 첫 사람이 앞자리를 차지한 순간 나머지
+/// 둘에게는 자기 방에 모니터가 없는 것처럼 보여 옆방으로 밀려났다.
+private func officeOwnRoomHasAffinity(
+    agentType: String, spots: [OfficeStrollSpot], homeDepartment: Department?
+) -> Bool {
+    guard let homeDepartment else {
+        return false
+    }
+    let kinds = Set(officeWorkAffinity(agentType: agentType))
+    guard !kinds.isEmpty else {
+        return false
+    }
+    return spots.contains { $0.department == homeDepartment && kinds.contains($0.kind) }
 }
 
 /// 우선순위 종류대로 훑어 가장 가까운 하나. 어느 종류도 못 찾으면 nil.
