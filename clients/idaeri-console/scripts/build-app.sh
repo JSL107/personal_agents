@@ -70,7 +70,10 @@ cp "$EXECUTABLE" "$APP/Contents/MacOS/$APP_NAME"
 # 함정 1 — 접근자가 `.app` 루트를 본다. Contents/Resources 에 두면 못 찾는다.
 cp -R "$SOURCE_BUNDLE" "$APP/$RESOURCE_BUNDLE"
 
-VERSION="$(git -C "$CONSOLE_DIR" rev-parse --short HEAD 2>/dev/null || echo dev)"
+# `CFBundleVersion` 은 점으로 구분한 숫자여야 한다(Apple 규격) — 짧은 해시를 넣으면
+# 규격 밖이고 Launch Services 가 버전을 견줄 때 기댈 것이 없어진다. 커밋 수는 숫자이면서
+# 단조 증가라 「어느 시점 빌드인가」를 그대로 답한다.
+VERSION="$(git -C "$CONSOLE_DIR" rev-list --count HEAD 2>/dev/null || echo 0)"
 
 # 백엔드 주소를 번들에 굽는다.
 #
@@ -78,6 +81,16 @@ VERSION="$(git -C "$CONSOLE_DIR" rev-parse --short HEAD 2>/dev/null || echo dev)
 # 코드 기본값 3002 로 붙어 「백엔드에 연결하지 못했습니다」만 뜬다(실측). 실 운영은 3099 다.
 # `LSEnvironment` 는 Launch Services 가 앱을 띄울 때 주입하므로 그 경로를 메운다.
 # 셸에서 직접 실행할 때는 셸 env 가 그대로 이긴다 — 이 값은 Finder 실행에만 관여한다.
+# plist 는 XML 이라 `&` `<` `>` 가 그대로 들어가면 문법이 깨진다. `&` 를 먼저 바꾼다 —
+# 나중에 하면 앞서 만든 `&lt;` 의 `&` 까지 다시 바꿔 버린다.
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  printf '%s' "$value"
+}
+
 CONSOLE_URL="${IDAERI_CONSOLE_URL:-}"
 if [ -z "$CONSOLE_URL" ] && [ -f "$CONSOLE_DIR/../../.env" ]; then
   ENV_PORT="$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$CONSOLE_DIR/../../.env" | tail -1)"
@@ -88,7 +101,7 @@ if [ -n "$CONSOLE_URL" ]; then
   LS_ENVIRONMENT="	<key>LSEnvironment</key>
 	<dict>
 		<key>IDAERI_CONSOLE_URL</key>
-		<string>$CONSOLE_URL</string>
+		<string>$(xml_escape "$CONSOLE_URL")</string>
 	</dict>
 "
 fi
@@ -138,8 +151,16 @@ for required in \
   [ -e "$required" ] || { echo "✗ 빠졌다: $required" >&2; exit 1; }
 done
 # 접근자가 보는 경로가 바뀌었는지 — 툴체인이 규칙을 바꾸면 여기서 걸린다.
+#
+# **파일이 없어도 실패시킨다.** 방금 릴리스 빌드를 했으니 반드시 있어야 하고, 없다는 것은
+# 생성 경로 자체가 바뀌었다는 뜻이다 — 건너뛰면 이 가드가 겨냥한 바로 그 경우에 눈을 감는다.
 ACCESSOR="$CONSOLE_DIR/.build/$(uname -m)-apple-macosx/release/$APP_NAME.build/DerivedSources/resource_bundle_accessor.swift"
-if [ -f "$ACCESSOR" ] && ! grep -q 'Bundle.main.bundleURL.appendingPathComponent' "$ACCESSOR"; then
+if [ ! -f "$ACCESSOR" ]; then
+  echo "✗ 리소스 접근자 생성 파일이 없다: $ACCESSOR" >&2
+  echo "  경로 규칙이 바뀌었을 수 있다 — 실제 생성 위치를 찾아 이 스크립트를 맞춰라." >&2
+  exit 1
+fi
+if ! grep -q 'Bundle.main.bundleURL.appendingPathComponent' "$ACCESSOR"; then
   echo "✗ Bundle.module 탐색 규칙이 바뀌었다 — $ACCESSOR 를 읽고 배치를 맞춰라" >&2
   exit 1
 fi
