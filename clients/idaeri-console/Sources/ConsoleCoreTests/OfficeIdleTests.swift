@@ -792,14 +792,22 @@ func runOfficeWorkAffinityTests(_ t: TestRunner) {
         let censusPlan = officeFloorPlan(agents: sampleAgents, zoneColumns: columns)
         let censusSpots = officeStrollSpots(plan: censusPlan)
         var absent: Set<String> = []
+        // **목적지를 소비해 가며 1:1 로 맞춘다.** `contains` 로 가구마다 독립 판정하면, 같은
+        // 종류 두 가구가 한 칸을 이웃으로 공유할 때 **목적지가 하나뿐인데 둘 다 있다고**
+        // 판정한다 — 그러면 이 단언의 요점(가구마다 목적지가 있다)이 그 자리에서 새 버린다.
+        //
+        // `officeStrollSpots` 도 `plan.furniture` 순서로 훑으며 칸을 하나씩 점유하므로
+        // (`usedTiles`), 같은 순서로 소비하면 그 배정을 그대로 되짚는다.
+        var unclaimed = censusSpots
         for furniture in censusPlan.furniture
         where furniture.kind.strollDwellSeconds != nil && furniture.kind.interactionPose != nil {
-            let listed = censusSpots.contains { spot in
+            let claimed = unclaimed.firstIndex { spot in
                 spot.kind == furniture.kind
                     && officeInteractionNeighbors(furniture: furniture.tile, pose: spot.pose)
                         .contains(spot.tile)
             }
-            guard !listed else {
+            if let claimed {
+                unclaimed.remove(at: claimed)
                 continue
             }
             if let zone = censusPlan.zones.first(where: { officeZoneContains($0, furniture.tile) }) {
