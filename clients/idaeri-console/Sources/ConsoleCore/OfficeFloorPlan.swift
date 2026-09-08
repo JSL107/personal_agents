@@ -1164,6 +1164,28 @@ public func wallDepartment(x: Int, y: Int, zones: [DepartmentZone]) -> Departmen
 /// **벽 자리는 방당 정확히 세 칸이다(`zoneWallMountSpots`).** 네 번째부터는 걸 자리가 없어
 /// 조용히 버려지므로, 방마다 벽걸이가 셋을 넘지 않아야 한다.
 ///
+/// **그래서 무언가를 걸려면 무언가를 내려야 한다.** 내릴 것을 고르는 기준이 둘이다.
+/// 하나는 **유일본인가** — 그 종류가 이 방에만 걸려 있으면 내리는 순간 화면 어디에도 안
+/// 남는다(「벽걸이 열 종이 모두 걸려 있다」 단언이 잡는다). 다른 하나는 **이 방 사람이
+/// 찾는 물건인가** — 누군가의 `officeWorkAffinity` 가 가리키는 것을 내리면 그 사람이 방을
+/// 나가 남의 방까지 걸어간다.
+///
+/// 둘 다 아닌 것이 내릴 자리다. 실제로 여섯 방을 세어 보니 기획 게시판·품질 화이트보드·
+/// 자산 시계·총무 시계 넷이 그랬고, 그 넷을 내주는 것으로 여덟 명을 자기 방에 앉혔다.
+/// 시계는 `strollDwellSeconds` 가 nil 이라 애초에 배회 목적지가 아니다 — 걸려 있어도 아무도
+/// 가지 않는 물건이다.
+///
+/// **한 방을 고치면 옆방이 나빠질 수 있다.** 기획 게시판을 모니터로 바꾸자 그것을 보러 오던
+/// 품질 방 둘이 더 먼 평가 방으로 밀렸다. 벽걸이는 방 밖에서도 목적지가 되므로, 내리기 전에
+/// **다른 방 사람이 그것을 보러 오고 있지 않은지**도 함께 본다.
+///
+/// **벽걸이를 걸었다고 사람이 방 안에 서는 것은 아니다.** 서는 칸은 가구 칸이 아니라 그
+/// **앞 칸**인데(`officeInteractionNeighbors`), 방 안쪽 이웃이 막혀 있으면 반대쪽 복도 칸이
+/// 잡힌다. 자산 방이 그렇다 — 오른쪽 벽 세 자리의 안쪽 칸이 rel(9,4) 책장 · rel(9,2) 화분,
+/// rel(9,0) 은 캐비닛(rel 9,1)이 자기 앞자리로 먼저 가져가 **셋 다 막혀 있다.** 벽 자리
+/// 순서를 바꿔 봐도(세 자리를 다 시도했다) 결과가 같아 되돌렸다. 방 안에서 보게 하려면
+/// 바닥 가구를 옮겨야 하고, 그건 그 방 자리표를 다시 세는 별개의 작업이다.
+///
 /// 무엇을 거는지가 방의 성격을 말한다 — 리뷰방 게시판, 성장방 지표 모니터, 경영방 상장처럼
 /// 문패를 읽지 않아도 무슨 일을 하는 방인지 벽이 먼저 알려주게.
 public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
@@ -1178,9 +1200,16 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 운영 방의 벽을 지표 모니터로 바꾸면서 그 액자가 **어느 방에도 안 남았고**,
         // 그림은 있는데 화면에 한 번도 안 나오는 에셋이 될 뻔했다. 아이디어를 모으는 방이라
         // 성격도 맞는다.
+        //
+        // **게시판 자리를 지표 화면에 내줬다.** 이 방 지연 리포트 담당(`DELAY_REPORT`)이
+        // 찾는 것이 벽 모니터인데 방에 없어서, 배회할 때마다 방을 나가 콘텐츠 방까지
+        // 걸어가고 있었다. 세 자리 중 내릴 수 있는 것은 게시판뿐이다 — 달력과 액자는 이
+        // 방에만 걸린 유일본이라 내리면 화면에서 사라지고, 게시판은 평가 방에도 있다.
+        // 이 방 사람 중 게시판을 찾는 사람도 없다(PM·PO_SHADOW 는 회의 테이블).
+        // 일정을 붙여 두는 벽이라는 성격은 달력이 그대로 들고 있다.
         return [
             .meetingTable, .whiteboard, .plantSmall, .bookshelf, .plantTall,
-            .wallPinboard, .wallCalendar, .wallAbstract,
+            .wallMonitor, .wallCalendar, .wallAbstract,
             // 가운데 줄(좌석 없는 열)에 세운 것 — 자료와 출력물을 곁에 두는 방으로.
             .filingCabinet, .printer, .plantSmall]
     case .quality:
@@ -1190,12 +1219,22 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 세트가 여섯 종으로 가장 적었다(경영 9 · 기획 8). #479 가 BE 워커 5종을 지운 뒤
         // 좌석이 하나만 남아 70칸 방에 일곱 칸만 차고 나머지가 통째로 빈 바닥으로 보였다.
         //
+        // **화이트보드 자리를 게시판에 내줬다.** 이 방 둘(`CODE_REVIEWER`·
+        // `REVIEW_REPLY_JUDGE`)이 찾는 것이 게시판인데 방에 없어서, 기획 방 게시판까지
+        // 걸어가고 있었다. 그 게시판을 지표 모니터로 바꾸자 더 먼 평가 방으로 밀려나
+        // 두 걸음씩 늘었다 — 한 방을 고치면서 옆방을 나쁘게 만든 셈이라 함께 고친다.
+        //
+        // 벽에 거는 판(`wallWhiteboard`)은 설계를 그리는 BE 계열이 찾던 물건인데 그 5종은
+        // 2026-09-04 에 폐지돼 이 방에 아무도 안 남았다. 평가·콘텐츠 방에도 걸려 있어
+        // 내려도 화면에서 사라지지 않는다. 코드와 답변을 판정하는 방이라 체크리스트를 붙여
+        // 두는 판이 성격에도 맞는다.
+        //
         // **자리 후보가 이 방의 상한이다.** 열한 종을 요청해 보니 뒤쪽 세 종(캐비닛·프린터·
         // 작은 화분)이 조용히 빠졌다 — `departmentFurnitureSpots` 의 후보가 문까지 아홉 자리뿐이다.
         // 더 채우려면 자리 후보를 늘려야 하고, 그것은 좌석·경로와의 충돌을 함께 봐야 하는
         // 별개의 작업이다. 지금은 자리에 들어가는 만큼만(칸막이 하나 · 큰 화분 하나) 더한다.
         return [
-            .bookshelf, .bookshelf, .partitionGlass, .clock, .wallWhiteboard, .wallShelf,
+            .bookshelf, .bookshelf, .partitionGlass, .clock, .wallPinboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
             // 가운데 줄에 세운 것 — 책장을 하나 더 세워 자료를 쌓아 두는 방으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
@@ -1218,9 +1257,17 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         //
         // 둘뿐인 방이라 오른쪽 절반이 빈 나무 바닥이었다. 응접 세트 반대편에 서가와 자료
         // 캐비닛을 세워, 사람 수가 적은 것이 "덜 지은 방" 으로 보이지 않게 한다.
+        //
+        // **시계 자리를 지표 화면에 내줬다.** 이 방 셋(`INVEST`·`PAPER_TRADE`·
+        // `PAPER_RECOMMEND`)이 전부 벽 모니터를 찾는데 방에 없어서, 세 명 모두 방을 나가
+        // 콘텐츠 방까지 걸어가고 있었다. 시세를 보는 방에 시세 화면이 걸리는 것이 맞다.
+        //
+        // **풍경화가 아니라 시계다.** 풍경화 자리를 내주는 쪽이 먼저 떠오르지만, 풍경화와
+        // 상장은 **이 방에만** 걸린 유일본이라 내리면 그 그림이 화면 어디에도 안 남는다.
+        // 시계는 품질 방에도 걸려 있고, 아무도 찾아가지 않는 물건이다.
         return [
             .sofa2, .coffeeTable, .plantTall, .bookshelf, .filingCabinet, .plantSmall,
-            .clock, .wallCertificate, .wallLandscape,
+            .wallMonitor, .wallCertificate, .wallLandscape,
             // 가운데 줄에 세운 것 — 손님을 맞는 방이라 응접 쪽으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
             // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
@@ -1253,9 +1300,21 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 운영 이상 징후 감시·상태 변화 판정이라, 액자는 장식일 뿐이고 볼 것이 없었다 —
         // 그래서 감시 담당이 자기 방을 지나쳐 성장방 모니터까지 걸어갔다
         // (`officeWorkAffinity`). 방 벽이 그 방의 일을 말하게 한다.
+        //
+        // **시계 자리는 게시판에 내줬다.** 모순 판정(`CONTRADICTION_JUDGE`)과 문서 감사
+        // 평가(`DOCS_AUDIT_EVALUATOR`)가 찾는 것이 게시판이나 책장인데 방에 하나도 없어서,
+        // 둘 다 방을 나가 평가 방까지 걸어가고 있었다. 체크리스트를 붙여 두는 판이 이 둘의
+        // 일이다.
+        //
+        // **바닥 책장이 아니라 벽 게시판이다.** 바닥 후보 아홉 중 (6,3)·(6,2) 둘이 남아
+        // 있고 정원 10명을 채워도 죽지 않아 책장을 세울 수는 있었다. 다만 x=2 가 이미 세로
+        // 쌍(냉장고·캐비닛)이라 그 둘을 다 쓰면 쌍이 둘이 되어 예비 격자 좌석이 갇힌다 —
+        // 실제로 쓸 수 있는 것은 한 칸이다. 벽에 아무도 안 찾는 자리(시계)가 이미 있는데
+        // 그 한 칸을 태울 이유가 없고, 두 사람의 1순위도 게시판 쪽이다.
+        // 남은 두 칸은 이 방을 더 채울 때를 위해 그대로 둔다.
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
-            .clock, .wallShelf, .wallMonitor,
+            .wallPinboard, .wallShelf, .wallMonitor,
             // 가운데 줄에 세운 것 — 설비와 수납이 모이는 방으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
             // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
