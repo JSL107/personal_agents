@@ -130,3 +130,101 @@ public func officeFocusedViewMetrics(
         originY: viewHeight / 2 - (focus.y + focus.height / 2) * tileSize
     )
 }
+
+/// 도면이 배율 계단 위에 **잘리지 않고** 꼭 서는 오피스 뷰 크기.
+public struct OfficeWindowFit: Equatable, Sendable {
+    public let zoneColumns: Int
+    public let tileSize: Double
+    public let width: Double
+    public let height: Double
+    public init(zoneColumns: Int, tileSize: Double, width: Double, height: Double) {
+        self.zoneColumns = zoneColumns
+        self.tileSize = tileSize
+        self.width = width
+        self.height = height
+    }
+}
+
+/// 주어진 여유 안에서 도면이 설 수 있는 **가장 큰 계단**과, 그때 도면이 꼭 맞는 뷰 크기(순수).
+///
+/// 창 크기를 도면 배율에서 거꾸로 잡는 계산이 예전에는 `main.swift` 에 상수 두 개
+/// (1440×860 · 960×1140)와 `width >= 1440` 한 줄로 박혀 있었다. 그래서 (1) 그 두 값이 맞는지
+/// 테스트할 수가 없었고, (2) `min(preferred, usable)` 로 자른 결과가 여전히 계단 위에 서는지
+/// 아무도 보지 않았으며, (3) 두 값보다 큰 화면에서 남는 여유를 쓰지 못했다 — 2560×1349
+/// 모니터는 60px 계단을 감당하는데 40px 로 떴다.
+///
+/// **여유 두 줄(`officeViewMetrics` 의 세로 초과 허용)은 여기서 쓰지 않는다.** 그건 사용자가
+/// 창을 줄였을 때 바깥벽 한두 줄을 잘라 배율을 지키는 장치이고, 창 크기를 우리가 정하는
+/// 자리에서는 잘라낼 이유가 없다.
+///
+/// - Returns: 한 계단도 못 들어가면 `nil`. 부르는 쪽이 자기 기본값으로 처리한다.
+public func officeWindowFit(
+    availableWidth: Double,
+    availableHeight: Double,
+    backingScale: Double = 2
+) -> OfficeWindowFit? {
+    let unit = officeScaleUnit(backingScale: backingScale)
+    guard availableWidth > 0, availableHeight > 0, unit > 0 else {
+        return nil
+    }
+    var best: OfficeWindowFit?
+    for zoneColumns in [2, 3] {
+        let planSize = officePlanSize(zoneColumns: zoneColumns)
+        let steps = min(
+            (availableWidth / Double(planSize.columns) / unit).rounded(.down),
+            (availableHeight / Double(planSize.rows) / unit).rounded(.down)
+        )
+        guard steps >= 1 else {
+            continue
+        }
+        let tileSize = steps * unit
+        let candidate = OfficeWindowFit(
+            zoneColumns: zoneColumns,
+            tileSize: tileSize,
+            width: tileSize * Double(planSize.columns),
+            height: tileSize * Double(planSize.rows)
+        )
+        guard let current = best else {
+            best = candidate
+            continue
+        }
+        // 계단이 같으면 더 넓게 그려지는 배치를 고른다 — 같은 타일이면 칸이 많은 쪽이
+        // 화면을 더 채우고, 남는 검은 여백이 곧 사용자가 신고한 증상이다.
+        let isBigger =
+            candidate.tileSize > current.tileSize
+            || (candidate.tileSize == current.tileSize
+                && candidate.width * candidate.height > current.width * current.height)
+        if isBigger {
+            best = candidate
+        }
+    }
+    return best
+}
+
+/// 창을 새 크기로 바꾸되 **왼쪽 위를 고정**하고 화면 안에 가둔 프레임(순수).
+///
+/// 좌표계는 AppKit 화면 좌표와 같다 — `(x, y)` 는 좌하단이고 y 는 위로 증가한다.
+///
+/// 왼쪽 위를 고정하는 이유: 세로 모니터 위쪽에 붙여 쓰는 배치에서 창이 **위로** 자라면
+/// 화면 밖으로 나가고, 가운데로 옮기면(`center()`) 사용자가 둔 자리를 뺏는다.
+///
+/// 클램프가 필요한 이유: 위를 고정한 채 키우면 아래로 자라 화면 아래 경계를 넘을 수 있다.
+/// 새 크기가 화면보다 크면 **왼쪽 위 모서리에 붙인다** — 그 경우 `max` 를 한 번 더 씌우지
+/// 않으면 하한이 상한보다 커져 창이 화면 밖 음수 자리로 밀린다.
+public func officeFittedWindowFrame(
+    currentFrame: OfficeRect,
+    fittedWidth: Double,
+    fittedHeight: Double,
+    visibleFrame: OfficeRect
+) -> OfficeRect {
+    let anchoredX = currentFrame.x
+    let anchoredY = currentFrame.y + currentFrame.height - fittedHeight
+    let maxX = max(visibleFrame.x + visibleFrame.width - fittedWidth, visibleFrame.x)
+    let maxY = max(visibleFrame.y + visibleFrame.height - fittedHeight, visibleFrame.y)
+    return OfficeRect(
+        x: min(max(anchoredX, visibleFrame.x), maxX),
+        y: min(max(anchoredY, visibleFrame.y), maxY),
+        width: fittedWidth,
+        height: fittedHeight
+    )
+}

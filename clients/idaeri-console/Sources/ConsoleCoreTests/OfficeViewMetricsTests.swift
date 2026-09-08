@@ -107,6 +107,113 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         "창 크기가 0 이면 기본 단위"
     )
 
+    // ── 창 크기를 도면에서 거꾸로 잡기 ────────────────────────────────────
+    //
+    // 표본은 **실측한 모니터 셋**이다(2026-09-07, 전부 backingScale 2). 임의의 숫자를 쓰면
+    // 계단 경계를 비껴간 값만 검사하게 되어, 정작 사용자가 쓰는 화면에서 깨지는 것을 못 잡는다.
+    // 여유는 창 세로에서 타이틀바(32)+탭 막대(41)=73 을 뺀 값이다.
+    let studioDisplay = officeWindowFit(availableWidth: 2560, availableHeight: 1349 - 73)
+    t.expectEqual(studioDisplay?.tileSize, 60, "2560x1349 는 3열 60px 을 감당한다")
+    t.expectEqual(studioDisplay?.zoneColumns, 3, "가로로 넓은 화면은 3열")
+    t.expectEqual(studioDisplay?.width, 2100, "3열 35칸 x 60px")
+    t.expectEqual(studioDisplay?.height, 1200, "3열 20줄 x 60px")
+
+    let portraitMonitor = officeWindowFit(availableWidth: 1080, availableHeight: 1890 - 73)
+    t.expectEqual(portraitMonitor?.tileSize, 40, "세로 모니터는 폭이 3열 60px 에 못 미친다")
+    t.expectEqual(portraitMonitor?.zoneColumns, 2, "세로로 긴 화면은 2열")
+    t.expectEqual(portraitMonitor?.height, 1080, "2열 27줄 x 40px — 잘라내기 없이 꼭 맞는다")
+
+    let landscapeMonitor = officeWindowFit(availableWidth: 1920, availableHeight: 1050 - 73)
+    t.expectEqual(landscapeMonitor?.tileSize, 40, "1920x1050 은 3열 40px")
+    t.expectEqual(landscapeMonitor?.zoneColumns, 3, "3열 20줄이 977 에 들어간다")
+
+    // **여유 두 줄은 쓰지 않는다.** `officeViewMetrics` 는 바깥벽 두 줄을 잘라서라도 배율을
+    // 지키지만, 창 크기를 우리가 정하는 자리에서 잘라낼 이유가 없다. 2열 27줄 x 40px 은
+    // 1080 이 온전히 필요하고, 1px 이라도 모자라면 한 계단 내려가야 맞다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 1080)?.tileSize, 40,
+        "세로가 딱 1080 이면 40px"
+    )
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 1079)?.tileSize, 20,
+        "1px 모자라면 잘라내지 않고 20px 로 내려간다"
+    )
+
+    // 사용자가 실제로 쓰는 창(세로 모니터 위 절반 1080x945). 오피스 뷰는 872 뿐이라 어느
+    // 배치로도 40px 이 안 나온다 — 2열은 세로가(1080 필요), 3열은 폭이(1400 필요) 모자란다.
+    // 이 창을 고치는 길은 창을 키우는 것뿐이라는 근거가 여기 남는다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 1080, availableHeight: 945 - 73)?.tileSize, 20,
+        "1080x945 창에서는 40px 이 구조적으로 불가능하다"
+    )
+
+    // 1x 모니터는 계단이 40 · 80 뿐이라 같은 화면에서도 답이 다르다.
+    t.expectEqual(
+        officeWindowFit(availableWidth: 2560, availableHeight: 1276, backingScale: 1)?.tileSize,
+        40,
+        "1x 에서는 60px 단계가 없어 40px 에 머문다"
+    )
+
+    // 한 계단도 못 들어가는 화면이면 nil — 부르는 쪽이 자기 기본값으로 처리한다.
+    t.expect(
+        officeWindowFit(availableWidth: 300, availableHeight: 300) == nil,
+        "20px 한 배수도 안 들어가면 nil"
+    )
+    t.expect(
+        officeWindowFit(availableWidth: 0, availableHeight: 800) == nil,
+        "폭이 0 이면 nil"
+    )
+
+    // 20px 계단밖에 못 담는 화면에서는 도면이 앱 최소 크기(720×560)보다 작아진다 —
+    // 1366×768 · 1280×800 에서 3열 20px 도면이 700×400 이다. 창을 그 크기로 만들면 루트 뷰가
+    // 창 밖으로 밀리므로, 부르는 쪽(`officeWindowSizeFittingFloorPlan`)이 최소까지 키운다.
+    // 여기서는 그 보정이 필요한 화면이 실재한다는 사실만 못 박는다.
+    for (width, height) in [(1366.0, 768.0), (1280.0, 800.0)] {
+        let fit = officeWindowFit(availableWidth: width, availableHeight: height - 73)
+        t.expect(
+            fit != nil && fit!.width < 720,
+            "화면 \(width)x\(height) 은 도면(\(fit?.width ?? -1))이 앱 최소 폭보다 작다"
+        )
+    }
+
+    // ── 창 자리잡기(왼쪽 위 고정 + 화면 안 가두기) ────────────────────────
+    //
+    // 세로 모니터(2560,0,1080,1890)의 **위 절반**에 붙은 창을 ⌘0 으로 키우는 실제 경우다.
+    // 창은 아래로 자라야 하고 위 모서리는 그대로여야 한다 — 위로 자라면 화면 밖으로 나간다.
+    let portraitVisible = OfficeRect(x: 2560, y: 0, width: 1080, height: 1890)
+    let tiledTopHalf = OfficeRect(x: 2560, y: 945, width: 1080, height: 945)
+    let grown = officeFittedWindowFrame(
+        currentFrame: tiledTopHalf, fittedWidth: 920, fittedHeight: 1153,
+        visibleFrame: portraitVisible
+    )
+    t.expectEqual(grown.x, 2560, "왼쪽 끝 유지")
+    t.expectEqual(grown.y + grown.height, 1890, "위 모서리 유지(아래로 자란다)")
+    t.expectEqual(grown.width, 920, "새 폭")
+    t.expectEqual(grown.height, 1153, "새 세로")
+
+    // 아래쪽에 붙은 창이 커지면 화면 아래를 넘으므로 안으로 민다.
+    let bottomEdge = officeFittedWindowFrame(
+        currentFrame: OfficeRect(x: 2560, y: 0, width: 1080, height: 400),
+        fittedWidth: 920, fittedHeight: 1153, visibleFrame: portraitVisible
+    )
+    t.expectEqual(bottomEdge.y, 0, "화면 아래 경계 안으로 민다")
+
+    // 오른쪽으로 넘치면 왼쪽으로 당긴다.
+    let rightEdge = officeFittedWindowFrame(
+        currentFrame: OfficeRect(x: 3500, y: 700, width: 140, height: 900),
+        fittedWidth: 920, fittedHeight: 1153, visibleFrame: portraitVisible
+    )
+    t.expectEqual(rightEdge.x, 2560 + 1080 - 920, "화면 오른쪽 경계 안으로 당긴다")
+
+    // **새 크기가 화면보다 크면 왼쪽 위 모서리에 붙인다.** `max` 를 한 번 더 씌우지 않으면
+    // 하한(화면 원점)이 상한(화면 끝 - 창 크기)보다 커져 창이 화면 밖 음수 자리로 밀린다.
+    let oversized = officeFittedWindowFrame(
+        currentFrame: OfficeRect(x: 2600, y: 500, width: 300, height: 300),
+        fittedWidth: 1400, fittedHeight: 2400, visibleFrame: portraitVisible
+    )
+    t.expectEqual(oversized.x, 2560, "화면보다 넓으면 왼쪽 끝에 붙인다")
+    t.expectEqual(oversized.y, 0, "화면보다 높으면 아래 끝에 붙인다(밖으로 안 나간다)")
+
     // ── 방 포커스 ───────────────────────────────────────────────────────────
     // 방 하나(10x7 칸)를 실사용 창에 담는다. 방 문과 벽이 경계에 붙어 있어 여유 1칸을 물려
     // 12x9 칸이 기준이고, 960/12 = 80 이라 2배가 나온다.

@@ -82,13 +82,26 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         officeZoneColumns(width: 1280, height: 1000), 2,
         "첫 배치는 히스테리시스 없이 근소하게 큰 2열을 고른다"
     )
+    // **떨림 방지(5%)는 두 배치가 같은 계단에 설 때만 건다.** 1310x1000 은 내림 전 값으로는
+    // 2열 이점이 5% 미만이라 예전에는 3열을 유지했는데, 실제로 그려지는 타일은 2열 40px ·
+    // 3열 20px 이었다 — 떨림을 막으려고 도면을 절반 크기로 붙들고 있었던 셈이다.
     t.expectEqual(
-        officeZoneColumns(width: 1310, height: 1000, currentZoneColumns: 3), 3,
-        "2열 이점이 5% 미만이면 현재 3열을 유지한다"
+        officeZoneColumns(width: 1310, height: 1000, currentZoneColumns: 3), 2,
+        "계단이 갈리면(2열 40px · 3열 20px) 떨림 방지를 무시하고 큰 쪽으로 간다"
     )
     t.expectEqual(
         officeZoneColumns(width: 1200, height: 1000, currentZoneColumns: 3), 2,
         "2열 이점이 5% 이상이면 3열에서 전환한다"
+    )
+    // 계단이 갈리는 창에서는 직전 배치와 무관하게 같은 답이 나와야 한다 — 그러지 않으면
+    // 같은 창인데 어떤 순서로 리사이즈해 왔는지에 따라 도면 크기가 달라진다.
+    t.expectEqual(
+        officeZoneColumns(width: 1310, height: 1000, currentZoneColumns: 2), 2,
+        "계단이 갈리는 창은 직전 배치와 무관하게 큰 쪽을 고른다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1310, height: 1000), 2,
+        "첫 배치도 같은 답을 낸다"
     )
     t.expectEqual(
         officeZoneColumns(width: 1320, height: 1000, currentZoneColumns: 2), 2,
@@ -98,6 +111,30 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         officeZoneColumns(width: 1400, height: 1000, currentZoneColumns: 2), 3,
         "3열 이점이 5% 이상이면 2열에서 전환한다"
     )
+
+    // **고른 배치가 실제로 더 크게 그려지는지 창 전체를 훑어 확인한다.**
+    //
+    // 예전 판정은 내림 전 값으로 골라서, 이긴 배치가 20px 로 그려지는 동안 진 배치가 40px 로
+    // 그려지는 창이 있었다(1300x1000 부터 1440 칸). 화면에서는 도면이 이유 없이 절반 크기로
+    // 뜨는데, 두 배치 중 하나만 재 보면 "이 창에서는 원래 이렇다" 로 읽혀 영영 안 보인다.
+    for width in stride(from: 700.0, through: 2800.0, by: 30.0) {
+        for height in stride(from: 500.0, through: 1900.0, by: 30.0) {
+            let chosen = officeZoneColumns(width: width, height: height)
+            let other = chosen == 2 ? 3 : 2
+            func drawnTile(_ zoneColumns: Int) -> Double {
+                let planSize = officePlanSize(zoneColumns: zoneColumns)
+                return officeViewMetrics(
+                    viewWidth: width, viewHeight: height,
+                    columns: planSize.columns, rows: planSize.rows
+                ).tileSize
+            }
+            t.expect(
+                drawnTile(chosen) >= drawnTile(other),
+                "창 \(width)x\(height): \(chosen)열을 골랐는데 \(other)열이 더 크게 그려진다"
+                    + " (\(drawnTile(chosen))px vs \(drawnTile(other))px)"
+            )
+        }
+    }
 
     // 표본은 **사규 인원 그대로**다. 한때 여기에 내부 부서 두 명을 덧붙여 33명으로 검사했는데,
     // 그러면 내부 부서가 11명이 되어 방 정원(예비 격자 10석)을 넘는다. 그 초과는 자리표가
