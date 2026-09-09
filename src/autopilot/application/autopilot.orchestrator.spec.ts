@@ -1495,4 +1495,40 @@ describe('AutopilotOrchestrator', () => {
       'autopilot:slot:morning-briefing:repeat:abc:1',
     );
   });
+
+  // 최후 방어선 — 대상이 0개면 발송 루프가 전부 no-op 이 되는데 preview 생성은 그대로 돌아
+  // 슬랙엔 한 건도 안 나간 채 PENDING 카드만 남고 cron 은 성공으로 끝난다(그 카드가 다음
+  // 회차의 발행 큐를 24h 막는다). 정상 경로는 scheduler 가 막지만 여기서도 무동작은 만들지 않는다.
+  it('발송 대상이 콤마뿐이면 owner DM 으로 떨어뜨린다 (조용한 무동작 금지)', async () => {
+    const task = makeTask('daily-eval', {
+      skip: false,
+      summaryText: '본문',
+      preview: {
+        kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+        payload: { pageId: 'p1' },
+        previewText: '카드',
+      },
+    });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const postPreviewMessage = jest
+      .fn()
+      .mockResolvedValue({ channelId: 'D1', messageTs: '1.1' });
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage, postPreviewMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn().mockResolvedValue({ id: 'pa1' }) } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', ', ,');
+
+    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
+    expect(postPreviewMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'U1' }),
+    );
+  });
 });
