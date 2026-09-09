@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -41,6 +43,15 @@ interface PullRequestCardGroup {
   pullNumber: number;
   cards: PrReviewFindingRecord[];
 }
+
+// 👎 만 달리고 답글이 아직 없는 기각을 확정하기 전에 기다리는 시간.
+// CLAUDE.md §8-1 이 "답변을 먼저, 👎 를 나중에" 를 운영 규칙으로 두지만 코드 방어가 없어
+// 순서가 뒤집히면 기각 이유가 유실된다. 사람이 반박을 적는 데 걸리는 시간이라 넉넉히 잡는다.
+const REJECTION_REPLY_GRACE_MS = 24 * 60 * 60 * 1000;
+
+// 답글 판정 체크포인트의 키. 같은 답글을 다시 물어보지 않기 위한 것이라 답글 본문만 본다.
+const replyFingerprint = (replyBody: string): string =>
+  createHash('sha256').update(replyBody).digest('hex');
 
 // 모델·사용자 문자열을 로그 한 줄로 누른다. 제어문자를 그대로 찍으면 로그 행을 위조하거나
 // 터미널 escape 를 흘려보낼 수 있다.
@@ -90,6 +101,14 @@ export class HarvestReviewSignalsUsecase {
   // pr_review_finding 에 checked_sha 컬럼을 두면 되지만, 공유 DB 에 db:push 를 거는
   // 비용 대비 이득이 작아 보류했다. 재시작이 잦아지면 컬럼으로 올릴 것.
   private readonly resolutionCheckpoints = new Map<number, string>();
+
+  // 카드 id → 답글 판정을 마지막으로 물어본 답글 지문.
+  // 없으면 UNCLEAR 판정이 난 카드가 status=OPEN 그대로 남아 5분마다 **같은 답글로**
+  // 다시 판정된다("확인했습니다" 류가 전형). 해소 판정에는 위 checkpoint 가 있는데
+  // 답글 판정에만 없었다 — 같은 비용 구조인데 가드가 한쪽에만 있었다.
+  // ponytail: 프로세스 메모리라 재시작하면 카드당 1회 더 물어본다. 위 checkpoint 와
+  // 같은 판단으로 컬럼까지는 만들지 않는다.
+  private readonly replyJudgmentCheckpoints = new Map<number, string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -280,8 +299,29 @@ export class HarvestReviewSignalsUsecase {
             outcome,
           });
           break;
-        case 'REJECTED':
+        case 'REJECTED': {
           if (thread === null) {
+            outcome.skipped += 1;
+            break;
+          }
+          // 👎 만 있고 답글이 아직 없으면 이번 회차는 확정하지 않는다. 확정하면 status 가
+          // OPEN 이 아니게 되어 다음 회차 조회에서 빠지고(`findOpenPostedCards`), 뒤늦게
+          // 단 반박 답글은 영영 수확되지 않는다 — 이유 없는 기각은 길이 하한에 걸려
+          // 규약 재료가 못 되므로(`MIN_REASON_LENGTH`) 학습 관점에서는 카드가 통째로
+          // 사라지는 것과 같다. 실측(2026-07-31~09-09): REJECTED 40건 중 2건.
+          // 유예가 지나도 답글이 없으면 그때는 지금처럼 이유 없이 확정한다 — 계속 미루면
+          // PR 이 닫힐 때 STALE 로 끝나 기각 사실 자체가 사라진다.
+          // reactedAt 이 파싱 불가면 waitedMs 는 NaN 이고 아래 비교가 false 라 바로
+          // 확정된다 — 유예 전 동작 그대로다. 시각을 모르면 유예 상한도 걸 수 없고,
+          // 무한 보류는 PR 이 닫힐 때 STALE 이 되어 기각 사실 자체를 지운다.
+          const waitedMs = Date.now() - new Date(signal.reactedAt).getTime();
+          // 기다리는 것은 **owner 답글**이다. 규약이 될 문장은 owner 가 쓴 것만 남기므로
+          // (`rejectReason`), 제3자 답글이 먼저 달렸다고 유예를 끝내면 이유 없는 기각이
+          // 그대로 확정된다 — 이 유예가 막으려는 바로 그 상황이다.
+          if (
+            signal.ownerReplyBody === null &&
+            waitedMs < REJECTION_REPLY_GRACE_MS
+          ) {
             outcome.skipped += 1;
             break;
           }
@@ -294,6 +334,7 @@ export class HarvestReviewSignalsUsecase {
             outcome,
           });
           break;
+        }
         case 'STALE':
           await this.repository.markDecided({
             id: card.id,
@@ -498,10 +539,24 @@ export class HarvestReviewSignalsUsecase {
       return;
     }
 
+    // 지난 회차와 답글이 그대로면 답도 같다. 다시 묻지 않는다.
+    const fresh = pendingJudgments.filter((pending) => {
+      const unchanged =
+        this.replyJudgmentCheckpoints.get(pending.card.id) ===
+        replyFingerprint(pending.replyBody);
+      if (unchanged) {
+        outcome.skipped += 1;
+      }
+      return !unchanged;
+    });
+    if (fresh.length === 0) {
+      return;
+    }
+
     let judgments: ReviewReplyJudgment[];
     try {
       judgments = await this.judgeReviewReply.execute({
-        items: pendingJudgments.map(({ card, replyBody }) => ({
+        items: fresh.map(({ card, replyBody }) => ({
           id: card.id,
           body: card.body,
           replyBody,
@@ -511,9 +566,9 @@ export class HarvestReviewSignalsUsecase {
       if (extractCodexQuota(error)) {
         throw error; // 위와 같은 이유 — 회차를 끊는다.
       }
-      outcome.skipped += pendingJudgments.length;
+      outcome.skipped += fresh.length;
       this.logger.warn(
-        `PR 리뷰 답글 판정 실패 — 답글 ${pendingJudgments.length}건 미결 유지: ${
+        `PR 리뷰 답글 판정 실패 — 답글 ${fresh.length}건 미결 유지: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -524,10 +579,26 @@ export class HarvestReviewSignalsUsecase {
     // 돌려주므로(실패분은 UNCLEAR) judgments.length 를 그대로 더하면 시도 건수가 되고,
     // UNCLEAR 는 아래에서 skipped 로도 세어져 같은 카드가 두 번 집계된다.
     const byId = new Map(judgments.map((judgment) => [judgment.id, judgment]));
-    for (const pending of pendingJudgments) {
+    for (const pending of fresh) {
       const judgment = byId.get(pending.card.id);
-      if (!judgment || judgment.verdict === 'UNCLEAR') {
+      const checkpoint = (): void => {
+        this.replyJudgmentCheckpoints.set(
+          pending.card.id,
+          replyFingerprint(pending.replyBody),
+        );
+      };
+      if (judgment === undefined) {
+        // 배열은 뽑혔는데 이 id 가 응답에 없다. 모델의 판단이 아니라 형식 불완전이므로
+        // 기록하지 않는다 — 기록하면 답글이 바뀌기 전까지 영구 미결로 굳는다.
         outcome.skipped += 1;
+        continue;
+      }
+      if (judgment.verdict === 'UNCLEAR') {
+        outcome.skipped += 1;
+        // 모델이 실제로 판단을 유보한 경우다. 같은 답글을 다시 묻지 않는 것이 이
+        // checkpoint 의 목적이므로 기록한다. 배열 자체를 못 뽑은 경우는 여기 오지
+        // 않는다(위 catch 로 빠져 기록 없이 다음 회차에 재시도된다).
+        checkpoint();
         continue;
       }
       outcome.judged += 1;
@@ -555,6 +626,10 @@ export class HarvestReviewSignalsUsecase {
           judgment.verdict === 'REJECTED' ? pending.ownerReplyBody : null,
         outcome,
       });
+      // DB 확정이 끝난 뒤에 기록한다. 배치 전체를 미리 찍으면 첫 카드의 쓰기 실패가
+      // (`markDecided` 는 try 로 감싸이지 않아 루프를 끊는다) 뒤 카드까지 다음 회차에서
+      // 제외시킨다.
+      checkpoint();
     }
   }
 

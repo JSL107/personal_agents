@@ -926,4 +926,170 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(outcome.acked).toBe(1);
     expect(outcome.adoption).toEqual([]);
   });
+
+  it('답글 없는 THUMBS_DOWN 은 유예 동안 확정하지 않는다', async () => {
+    // 확정하면 status 가 OPEN 이 아니게 되어 다음 회차 조회에서 빠지고, 뒤늦게 단
+    // 반박 답글이 영영 수확되지 않는다. 이유 없는 기각은 규약 재료도 못 된다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(outcome.rejected).toBe(0);
+    expect(outcome.skipped).toBe(1);
+  });
+
+  it('유예가 지난 답글 없는 THUMBS_DOWN 은 이유 없이라도 확정한다', async () => {
+    // 계속 미루면 PR 이 닫힐 때 STALE 로 끝나 기각 사실 자체가 사라진다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: new Date(
+                Date.now() - 25 * 60 * 60 * 1000,
+              ).toISOString(),
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
+  it('답글이 그대로면 다음 회차에 같은 답글을 다시 판정하지 않는다', async () => {
+    // UNCLEAR 는 카드를 OPEN 으로 남기므로, 가드가 없으면 5분마다 같은 답글로 CLI 를
+    // 다시 태운다. 해소 판정에는 같은 checkpoint 가 이미 있다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'UNCLEAR', reason: '' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '확인했습니다',
+              createdAt: '2026-07-31T02:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+    await usecase.execute();
+
+    expect(judge.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('판정 호출이 실패하면 다음 회차에 다시 판정한다 — 미결로 굳지 않는다', async () => {
+    // checkpoint 를 판정 성공 전에 찍으면 응답 형식 위반 한 번으로 그 답글이 영구히
+    // 미결이 된다. 실패 회차는 기록하지 않아야 한다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockRejectedValue(
+      new Error('답글 판정 응답에서 JSON 배열을 뽑지 못했다 (항목 1건)'),
+    );
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '확인했습니다',
+              createdAt: '2026-07-31T02:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+    await usecase.execute();
+
+    expect(judge.execute).toHaveBeenCalledTimes(2);
+    expect(repository.markDecided).not.toHaveBeenCalled();
+  });
+
+  it('제3자 답글만 있고 owner 답글이 없으면 유예를 유지한다', async () => {
+    // 기각 이유로 저장되는 값은 owner 답글뿐이다. 임의 답글의 존재로 유예를 끝내면
+    // rejectReason 이 null 인 채 확정돼 이 유예가 막으려는 유실이 그대로 일어난다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'pr-author',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'pr-author',
+              body: '제3자가 남긴 답글',
+              createdAt: '2026-07-31T02:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(outcome.rejected).toBe(0);
+  });
 });
