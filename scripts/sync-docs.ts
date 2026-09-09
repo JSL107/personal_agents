@@ -286,18 +286,40 @@ function assertConsoleAgentSync(): void {
   }
   const roleBody = roleSource.slice(roleBodyStart, roleBodyEnd);
   // 반환값이 비어 있지 않은 case 만 인정한다 — 빈 이름표는 없는 것과 같다.
-  // 길이·표기 규칙은 Swift 쪽 `runAgentRoleTests` 가 검사한다(CEO·CTO 는 의도적 영문).
-  const labeled = new Set(
+  // 길이·중복 규칙은 Swift 쪽 `runAgentRoleTests` 가 검사한다.
+  const labeled = new Map(
     [...roleBody.matchAll(/case "(\w+)":\s*return\s*"([^"]+)"/gu)].map(
-      (match) => match[1],
+      (match) => [match[1], match[2]] as const,
     ),
   );
   const unlabeled = declared.filter((type) => !labeled.has(type));
   if (unlabeled.length > 0) {
     throw new Error(
-      `[sync-docs] 오피스 한글 직책이 없는 에이전트: ${unlabeled.join(', ')}\n` +
+      `[sync-docs] 오피스 한글 닉네임이 없는 에이전트: ${unlabeled.join(', ')}\n` +
         `  ${toRepoRelative(CONSOLE_ROLE_PATH)} 의 agentRoleLabel 에 추가하세요(이름표가 겹치지 않게 7자 이내).\n` +
         '  없으면 그 사람만 영문 표시명으로 폴백해 이름표가 뒤섞입니다.',
+    );
+  }
+
+  // 값까지 명부와 같아야 한다.
+  //
+  // 앱은 서버 `nickname` 을 우선하고 Swift 표는 구버전 서버 폴백으로만 쓴다. 그래서 두 값이
+  // 갈려도 실행은 조용히 돌아간다 — 그런데 **오피스 이름표가 겹치는지 재는 게이트**
+  // (`OfficeNameplateFitTests`)는 Swift 표를 재고, 화면에 실제로 뜨는 이름은 서버 값이다.
+  // 두 값이 갈리는 순간 그 게이트는 화면에 없는 이름을 재게 되고, 겹침은 게이트 밖에서 생긴다
+  // (이 레포는 이름표 겹침으로 PR #266·#268 을 이미 겪었다).
+  const drifted = AGENT_REGISTRY.filter(
+    (entry) => labeled.get(entry.agentType) !== entry.nickname,
+  ).map(
+    (entry) =>
+      `${entry.agentType}: 명부 "${entry.nickname}" ↔ 앱 "${labeled.get(entry.agentType) ?? ''}"`,
+  );
+  if (drifted.length > 0) {
+    throw new Error(
+      `[sync-docs] 담당자 닉네임이 명부와 앱에서 갈렸습니다:\n` +
+        drifted.map((line) => `  - ${line}`).join('\n') +
+        `\n  ${toRepoRelative(CONSOLE_ROLE_PATH)} 의 agentRoleLabel 을 명부 값으로 맞추세요.\n` +
+        '  갈린 채 두면 이름표 겹침 검사가 화면에 없는 이름을 재게 됩니다.',
     );
   }
 
