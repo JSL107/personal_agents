@@ -210,6 +210,26 @@ describe('ReviewPullRequestUsecase', () => {
     });
   });
 
+  it('dryRun 을 주면 게시도 연습 모드로 넘어간다', async () => {
+    configGet.mockImplementation((key: string) => {
+      if (key === 'PR_REVIEW_INLINE_REPOS') {
+        return 'foo/bar';
+      }
+      return undefined;
+    });
+
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+      dryRun: true,
+    });
+
+    expect(publishFindings).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: true }),
+    );
+  });
+
   it.each([undefined, '   '])(
     'PR_REVIEW_INLINE_MAX=%p면 게시 상한 기본값 4를 쓴다',
     async (inlineMax) => {
