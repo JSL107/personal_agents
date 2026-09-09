@@ -92,6 +92,7 @@ const emptyOutcome = (): HarvestOutcome => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  quotaStopped: false,
   adoption: [],
 });
 
@@ -162,6 +163,9 @@ export class HarvestReviewSignalsUsecase {
             .slice(index)
             .reduce((sum, rest) => sum + rest.cards.length, 0);
           outcome.skipped += remaining;
+          // 로그만 남기면 이 중단은 Slack 에서 "할 일이 없었다" 와 똑같이 보인다
+          // (실측: 2026-08-07~08 쿼터 소진 26회차 동안 요약이 한 번도 안 나갔다).
+          outcome.quotaStopped = true;
           this.logger.warn(
             `PR 리뷰 수확 중단 — 모델 쿼터 소진 (남은 카드 ${remaining}건은 다음 회차에 재시도).`,
           );

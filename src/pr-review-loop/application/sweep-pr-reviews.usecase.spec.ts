@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
+import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
 import { PublishFindingsService } from './publish-findings.service';
 import { SweepPrReviewsUsecase } from './sweep-pr-reviews.usecase';
 
@@ -143,7 +144,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('마스터 스위치가 꺼져 있으면 아무것도 하지 않는다', async () => {
-    const results = await buildUsecase({
+    const { results } = await buildUsecase({
       ...ENABLED,
       PR_REVIEW_LOOP_ENABLED: 'false',
     }).execute();
@@ -153,7 +154,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('owner login 이 없으면 아무것도 하지 않는다', async () => {
-    const results = await buildUsecase({
+    const { results } = await buildUsecase({
       ...ENABLED,
       GITHUB_WEBHOOK_OWNER_LOGIN: undefined,
     }).execute();
@@ -162,7 +163,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('Slack owner id 가 없으면 아무것도 하지 않는다', async () => {
-    const results = await buildUsecase({
+    const { results } = await buildUsecase({
       ...ENABLED,
       AUTOPILOT_OWNER_SLACK_USER_ID: undefined,
     }).execute();
@@ -172,7 +173,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('allowlist 가 비어 있으면 스윕 자체를 하지 않는다', async () => {
-    const results = await buildUsecase({
+    const { results } = await buildUsecase({
       ...ENABLED,
       PR_REVIEW_INLINE_REPOS: undefined,
     }).execute();
@@ -182,7 +183,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('allowlist 레포의 열린 PR 을 리뷰하고 게시 서비스에 넘긴다 (레코드 없음 → 리뷰함)', async () => {
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(agentRunService.findLatestSweepReview).toHaveBeenCalledWith({
       prRef: 'JSL107/personal_agents#180',
@@ -230,7 +231,7 @@ describe('SweepPrReviewsUsecase', () => {
       dryRun: false,
     });
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(
@@ -275,7 +276,7 @@ describe('SweepPrReviewsUsecase', () => {
       dryRun: true,
     });
 
-    const results = await buildUsecase({
+    const { results } = await buildUsecase({
       ...ENABLED,
       PR_REVIEW_INLINE_DRYRUN: 'false',
     }).execute();
@@ -309,7 +310,7 @@ describe('SweepPrReviewsUsecase', () => {
       dryRun: false,
     });
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
@@ -322,7 +323,7 @@ describe('SweepPrReviewsUsecase', () => {
       dryRun: false,
     });
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(1);
@@ -335,7 +336,7 @@ describe('SweepPrReviewsUsecase', () => {
       dryRun: false,
     });
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(
       agentRunService.countUnsuccessfulSweepReviews,
@@ -352,7 +353,7 @@ describe('SweepPrReviewsUsecase', () => {
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(3);
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(agentRunService.countUnsuccessfulSweepReviews).toHaveBeenCalledWith({
       prRef: 'JSL107/personal_agents#180',
@@ -370,7 +371,7 @@ describe('SweepPrReviewsUsecase', () => {
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(2);
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(1);
@@ -386,7 +387,7 @@ describe('SweepPrReviewsUsecase', () => {
       new Error('DB 순간 오류'),
     );
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(agentRunService.countUnsuccessfulSweepReviews).toHaveBeenCalledWith({
       prRef: 'JSL107/personal_agents#180',
@@ -437,7 +438,7 @@ describe('SweepPrReviewsUsecase', () => {
       .mockRejectedValueOnce(new Error('모델 호출 실패'))
       .mockResolvedValueOnce(REVIEW_OUTCOME);
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(results).toHaveLength(1);
   });
@@ -464,7 +465,7 @@ describe('SweepPrReviewsUsecase', () => {
       new Error('PR #180 diff 조회 실패: too_large'),
     );
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
@@ -589,7 +590,7 @@ describe('SweepPrReviewsUsecase', () => {
       .mockRejectedValueOnce(new Error('DB 순간 오류'))
       .mockResolvedValueOnce(null);
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(1);
@@ -601,7 +602,7 @@ describe('SweepPrReviewsUsecase', () => {
       result: { ...REVIEW_OUTCOME.result, findings: [] },
     });
 
-    const results = await buildUsecase(ENABLED).execute();
+    const { results } = await buildUsecase(ENABLED).execute();
 
     expect(publishService.publish).not.toHaveBeenCalled();
     expect(results).toEqual([]);
@@ -665,7 +666,7 @@ describe('SweepPrReviewsUsecase', () => {
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
 
-      const results = await buildUsecase({
+      const { results } = await buildUsecase({
         ...ENABLED,
         PR_REVIEW_INLINE_DRYRUN: 'false',
       }).execute();
@@ -696,7 +697,7 @@ describe('SweepPrReviewsUsecase', () => {
         },
       });
 
-      const results = await buildUsecase({
+      const { results } = await buildUsecase({
         ...ENABLED,
         PR_REVIEW_INLINE_DRYRUN: 'false',
       }).execute();
@@ -747,5 +748,68 @@ describe('SweepPrReviewsUsecase', () => {
     expect(publishService.publish).toHaveBeenCalledWith(
       expect.objectContaining({ max: 4 }),
     );
+  });
+  // 쿼터는 PR 1건의 문제가 아니라 회차 전체가 못 도는 상황이다. 삼키면 남은 PR 에
+  // 같은 실패를 반복하고, 무엇보다 호출부가 "볼 게 없었다" 와 구분하지 못해 Slack 이
+  // 조용해진다(실측 2026-08-07~08, 26 회차).
+  it('쿼터가 소진되면 회차를 끊고 그 사실을 올린다', async () => {
+    // PR 은 회차 상한(NEW_REVIEW_LIMIT_PER_SWEEP=3)만큼 둔다. 2 개만 두면 조기 종료를
+    // 지워도 호출이 2 회로 끝나 이 단언이 그대로 통과해, 중단 동작을 검증하지 못한다.
+    github.listAuthorOpenPullRequests.mockResolvedValue([
+      OPEN_PR,
+      { ...OPEN_PR, number: 181 },
+      { ...OPEN_PR, number: 182 },
+    ]);
+    reviewUsecase.execute
+      .mockResolvedValueOnce(REVIEW_OUTCOME)
+      .mockRejectedValueOnce(new CodexQuotaExceededException('Aug 8th 7:00 PM'))
+      .mockResolvedValueOnce(REVIEW_OUTCOME);
+
+    const { results, quotaStopped } = await buildUsecase(ENABLED).execute();
+
+    expect(quotaStopped).toBe(true);
+    // 끊기 전에 끝난 PR 의 결과는 버리지 않는다 — 이미 카드가 나갔을 수 있다.
+    expect(results).toHaveLength(1);
+    expect(results[0].prRef).toBe('JSL107/personal_agents#180');
+    // 세 번째 PR 은 시도하지 않는다 — 끊지 않으면 여기서 3 회가 된다.
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('쿼터가 아닌 실패는 종전대로 삼키고 다음 PR 을 계속한다', async () => {
+    github.listAuthorOpenPullRequests.mockResolvedValue([
+      OPEN_PR,
+      { ...OPEN_PR, number: 181 },
+    ]);
+    reviewUsecase.execute
+      .mockRejectedValueOnce(new Error('모델 응답 파싱 실패'))
+      .mockResolvedValueOnce(REVIEW_OUTCOME);
+
+    const { results, quotaStopped } = await buildUsecase(ENABLED).execute();
+
+    expect(quotaStopped).toBe(false);
+    expect(results).toHaveLength(1);
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(2);
+  });
+
+  // reviewAndPublish 는 쿼터만 올려보내지만, 계약이 깨져 다른 예외가 새면 그것을
+  // '쿼터 소진' 으로 보고해선 안 된다 — 원인이 아닌 곳을 보게 만든다.
+  it('쿼터가 아닌 예외가 새어나오면 쿼터로 단정하지 않고 올린다', async () => {
+    const spy = jest
+      .spyOn(
+        SweepPrReviewsUsecase.prototype as unknown as {
+          reviewAndPublish: () => Promise<never>;
+        },
+        'reviewAndPublish',
+      )
+      .mockRejectedValue(new Error('예상 못 한 실패'));
+
+    try {
+      await expect(buildUsecase(ENABLED).execute()).rejects.toThrow(
+        '예상 못 한 실패',
+      );
+    } finally {
+      // 프로토타입에 건 스파이는 파일 전체에 남는다 — 이 테스트 안에서 되돌린다.
+      spy.mockRestore();
+    }
   });
 });
