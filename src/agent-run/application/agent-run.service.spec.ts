@@ -1,3 +1,5 @@
+import { DomainException } from '../../common/exception/domain.exception';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -214,6 +216,35 @@ describe('AgentRunService', () => {
       id: 42,
       status: AgentRunStatus.FAILED,
       output: { error: 'boom' },
+      durationMs: expect.any(Number),
+    });
+  });
+
+  // 실패 문구만 남기면 소비자가 "그 입력 탓인가" 를 가리려고 메시지 패턴을 들고 판정하게 되고,
+  // 문구가 바뀌는 순간 조용히 오분류된다. 실제 사례 — 블로그 초안 큐는 재시도해도 같은 결과를
+  // 내는 실패만 후순위로 미뤄야 하는데, 모델 쿼터 소진과 초안 내용 결함을 가릴 근거가 없었다.
+  it('도메인 예외로 실패하면 errorCode 도 함께 남긴다', async () => {
+    class 테스트도메인예외 extends DomainException {
+      readonly errorCode = 'TEST_DRAFT_BROKEN';
+      readonly status = DomainStatus.BAD_GATEWAY;
+    }
+    const bomb = new 테스트도메인예외('초안이 깨졌습니다.');
+
+    await expect(
+      service.execute({
+        agentType: AgentType.PM,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: {},
+        run: async () => {
+          throw bomb;
+        },
+      }),
+    ).rejects.toBe(bomb);
+
+    expect(repository.finish).toHaveBeenCalledWith({
+      id: 42,
+      status: AgentRunStatus.FAILED,
+      output: { error: '초안이 깨졌습니다.', errorCode: 'TEST_DRAFT_BROKEN' },
       durationMs: expect.any(Number),
     });
   });

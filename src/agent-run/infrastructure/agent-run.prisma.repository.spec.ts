@@ -313,7 +313,12 @@ describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
 
 describe('AgentRunPrismaRepository.findRecentFailedRuns', () => {
   const buildRepository = (
-    rows: Array<{ id: number; endedAt: Date | null; inputSnapshot: unknown }>,
+    rows: Array<{
+      id: number;
+      endedAt: Date | null;
+      inputSnapshot: unknown;
+      output?: unknown;
+    }>,
   ): {
     repository: AgentRunPrismaRepository;
     findMany: jest.Mock;
@@ -359,13 +364,17 @@ describe('AgentRunPrismaRepository.findRecentFailedRuns', () => {
   });
 
   // 진행 중(endedAt=null)인 행이 섞이면 "언제 실패했나" 를 못 세므로 형제 조회와 같이 버린다.
-  it('endedAt 이 없는 행은 버리고 inputSnapshot 을 그대로 돌려준다', async () => {
+  it('endedAt 이 없는 행은 버리고 inputSnapshot·output 을 그대로 돌려준다', async () => {
     const { repository } = buildRepository([
       { id: 1, endedAt: null, inputSnapshot: { pageId: 'page-running' } },
       {
         id: 2,
         endedAt: new Date('2026-07-06T10:00:00.000Z'),
         inputSnapshot: { pageId: 'page-failed' },
+        output: {
+          error: '코드블록이 다릅니다.',
+          errorCode: 'BLOG_EDIT_CODE_CHANGED',
+        },
       },
     ]);
 
@@ -380,8 +389,30 @@ describe('AgentRunPrismaRepository.findRecentFailedRuns', () => {
         id: 2,
         endedAt: new Date('2026-07-06T10:00:00.000Z'),
         inputSnapshot: { pageId: 'page-failed' },
+        output: {
+          error: '코드블록이 다릅니다.',
+          errorCode: 'BLOG_EDIT_CODE_CHANGED',
+        },
       },
     ]);
+  });
+
+  // output 을 select 에서 빼면 소비자가 원인을 볼 수 없다 — 실패가 전부 "원인 미상" 이 되어
+  // 초안 큐의 후순위가 조용히 통째로 사라진다(예외도 빈 결과도 나지 않아 눈에 안 띈다).
+  it('output 을 select 에 포함해 조회한다', async () => {
+    const { repository, findMany } = buildRepository([]);
+
+    await repository.findRecentFailedRuns({
+      agentType: 'BLOG_PUBLISH' as never,
+      sinceDays: 3,
+      limit: 5,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ output: true }),
+      }),
+    );
   });
 });
 

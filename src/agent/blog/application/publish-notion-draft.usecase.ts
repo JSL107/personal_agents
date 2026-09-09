@@ -137,18 +137,80 @@ interface PublishCandidateContext {
   holdStatusValue: string;
 }
 
-// 금지어로 막힌 초안을 며칠 뒤로 미룰지. 발행 슬롯이 하루 1회라 이 값이 곧 건너뛰는 횟수다.
+// 발행이 막힌 초안을 며칠 뒤로 미룰지 — 막힌 횟수 n 에 대해 2^(n-1) 일(상한 아래).
+// 발행 슬롯이 하루 1회라 이 값이 곧 건너뛰는 횟수다.
 //
-// 왜 필요한가 — 금지어 차단은 과삭제와 성질이 다르다. 과삭제는 회차마다 결과가 흔들리지만
-// 금지어는 **사람이 Notion 을 고치기 전까지 매일 같은 결과**를 낸다. 하루 1회 슬롯에서 그
-// 한 건이 뒤에 쌓인 초안 전부를 무기한 막는다(실측 큐 20건).
+// 왜 후순위가 필요한가 — 금지어 차단이나 코드블록 변형은 **사람이 Notion 을 고치기 전까지 매일
+// 같은 결과**를 낸다. 하루 1회 슬롯에서 그 한 건이 뒤에 쌓인 초안 전부를 무기한 막는다.
 //
-// 제외가 아니라 **후순위**다. 큐에 다른 초안이 없으면 여전히 시도되고, 며칠 뒤 창을 벗어나면
-// 저절로 다시 차례가 온다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
-const BLOCKED_DRAFT_COOLDOWN_DAYS = 3;
+// 왜 고정 창(옛 3일)이 아닌가 — 고정 창은 창 길이만큼 막힌 초안이 쌓이면 무력해진다. 창을 벗어난
+// 초안이 정상 초안과 다시 동급이 되고, 그쪽이 더 오래됐으므로 앞선다. A·B·C 가 모두 결정론적으로
+// 실패하면 A→B→C→A… 로 슬롯을 돌려 쓰며 그보다 나중에 만든 정상 초안이 굶는다. 창을 7일로
+// 늘리는 것은 같은 결함을 7건 뒤로 옮기는 것뿐이다.
+//
+// 횟수로 미루면 되풀이 실패하는 초안일수록 창이 길어져 후순위 상태를 유지하므로, 정상 초안이
+// 큐에 있는 한 막힌 초안끼리 슬롯을 돌려 쓰지 않는다.
+//
+// 제외가 아니라 **후순위**다. 큐에 다른 초안이 없으면 여전히 시도되고, 백오프가 지나면 저절로
+// 다시 차례가 온다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+// 막힌 이력이 있는 초안의 후순위 등급. 값이 클수록 뒤로 간다. 이력이 없으면 등급이 없다(0).
+//
+// **왜 두 등급인가** — 백오프가 지난 것을 "이력 없음" 과 같이 취급하면 상한 수만큼 쌓인 초안이
+// 하루에 하나씩 만료되며 슬롯을 돌려 쓰고, 그들이 정상 초안보다 오래됐으므로 정상 초안이 영구히
+// 굶는다(고정 3일 창의 순환이 상한 길이에서 재현된다). 만료는 순위를 되돌리는 것이 아니라
+// **막힌 초안끼리 누구를 먼저 재시도할지**만 정한다.
+const enum StuckRank {
+  // 이력이 있고 백오프가 지났다 — 큐에 정상 초안이 없을 때 이쪽이 먼저 재시도된다.
+  RETRYABLE = 1,
+  // 이력이 있고 백오프가 아직 남았다.
+  DEFERRED = 2,
+}
 
-// 위 창 안에서 훑을 실행 기록 수. 하루 1~2회 도는 워커라 넉넉하다.
-const BLOCKED_DRAFT_SCAN_LIMIT = 50;
+// 상한을 두는 이유 — 지수는 금방 몇 달이 된다. 사람이 Notion 을 고쳐도 코드는 그것을 모르므로
+// 재시도 간격이 무한정 벌어지면 막힌 초안끼리의 순서마저 굳는다. 상한이 순환을 만들지 않는 것은
+// 위 `StuckRank` 덕분이다 — 만료가 정상 초안을 앞지르지 못한다.
+const STUCK_DEFER_DAYS_CAP = 16;
+const stuckDeferDays = (stuckCount: number): number =>
+  Math.min(2 ** (stuckCount - 1), STUCK_DEFER_DAYS_CAP);
+
+// 훑을 실행 기록의 범위.
+//
+// ⚠️ **이 창이 곧 순환의 임계다.** 막힌 초안이 큐에 밀려 이 기간 동안 시도되지 않으면 마지막
+// 기록이 창을 벗어나 등급이 사라지고(rank 0), 그 초안이 정상 초안보다 오래됐으므로 다시 앞선다
+// — `StuckRank` 가 상한(16일)에서 막은 순환이 창 길이에서 재현된다(리뷰 지적).
+//
+// 이 레포는 raw SQL 을 쓰지 않아 pageId 별 집계를 DB 에 맡길 수 없고, 행을 받아 애플리케이션에서
+// 세므로 유한한 창·건수가 불가피하다. 그래서 **임계를 큐 규모 밖으로 밀어낸다**: 실측 큐가
+// 30건대라 30일 창은 도달 가능한 거리였고, 1년이면 그렇지 않다. 완전한 해소는 막힌 횟수를 초안
+// 자체에 영속화하는 것이고 그건 별도 설계다.
+const STUCK_SCAN_DAYS = 365;
+
+// 위 창 안에서 훑을 실행 기록 수. 실측이 22일 24건이라 1년이면 400건 안팎이다.
+//
+// **잘리면 굶음 쪽으로 기운다** — 오래된 기록이 빠지면 횟수가 줄 뿐 아니라 그 초안의 등급이
+// 통째로 사라져 정상 초안 앞으로 복귀한다. 그래서 포화를 조용히 넘기지 않고 로그로 남긴다.
+const STUCK_SCAN_LIMIT = 500;
+
+// 실패를 후순위 대상으로 셀지 가르는 기준 — **초안 내용 탓인 실패만** 센다.
+//
+// 왜 가리는가 — 모델 쿼터 소진·타임아웃·Notion 5xx 는 초안 잘못이 아니라 그 시각의 사정이다.
+// 원장 실측(8주, 전 에이전트): 실패 75건 중 54건(72%)이 그 부류였고(쿼터 30 · 모델 타임아웃 9 ·
+// 원인 미기록 15), 쿼터는 사흘에 몰린 버스트였다(하루 10~19건). 그런 날 회차는 어느 초안이
+// 걸려도 실패하는데, 그 초안에 벌점을 주면 잘못 없는 글이 우선권을 잃는다.
+//
+// **블랙리스트가 아니라 화이트리스트인 이유**: 새 에러코드가 생겼을 때 블랙리스트는 그것을 초안
+// 탓으로 오분류해 굶음을 만든다. 화이트리스트는 관대한 쪽(벌점 없음)으로 떨어져 재시도 한 번을
+// 낭비할 뿐이다. 굶음(치명적)보다 낭비(경미)가 낫다.
+//
+// 여기에 없는 코드는 초안을 고쳐도 풀리지 않거나(설정 누락·Hermes 실행 실패) 초안과 무관하다.
+const DRAFT_FAULT_ERROR_CODES: ReadonlySet<string> = new Set<string>([
+  BlogErrorCode.ANONYMIZE_PARSE_FAILED,
+  BlogErrorCode.EDIT_PARSE_FAILED,
+  BlogErrorCode.EDIT_TOO_SHORT,
+  BlogErrorCode.EDIT_CODE_CHANGED,
+  BlogErrorCode.EDIT_QUOTES_WIPED,
+  BlogErrorCode.EMPTY_DRAFT_BODY,
+]);
 
 // 같은 주제를 다시 쓴 초안을 가리기 위해 훑을 발행 이력의 범위.
 //
@@ -306,8 +368,8 @@ export class PublishNotionDraftUsecase {
       input.pageId,
       // 제목이나 pageId 로 콕 집은 요청은 후순위를 적용하지 않는다 — 사람이 그 글을 지목했다.
       titleQuery || input.pageId
-        ? new Set<string>()
-        : await this.findRecentlyStuckPageIds(),
+        ? new Map<string, StuckRank>()
+        : await this.findStuckRanks(),
     );
     if (updateInputSnapshot) {
       await updateInputSnapshot({
@@ -548,7 +610,7 @@ export class PublishNotionDraftUsecase {
     const slug = extractPostSlug(post.path);
     const publishedSlugs =
       titleQuery || input.pageId
-        ? new Set<string>()
+        ? new Map<string, StuckRank>()
         : await this.findRecentlyPublishedSlugs();
     if (slug.length > 0 && publishedSlugs.has(slug)) {
       await this.holdDraft(target, context, DUPLICATE_TOPIC_REASON);
@@ -640,7 +702,7 @@ export class PublishNotionDraftUsecase {
     drafts: NotionDraftPage[],
     titleQuery: string,
     pageId?: string,
-    stuckPageIds: Set<string> = new Set(),
+    stuckRanks: Map<string, StuckRank> = new Map(),
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
@@ -650,11 +712,16 @@ export class PublishNotionDraftUsecase {
     // 최근 금지어로 막힌 초안은 **출처 우선순위보다 먼저** 뒤로 보낸다. 막힌 글이 '오늘의 공부'
     // 이면 우선순위 0 이라 매일 큐 맨 앞을 차지하는데, 그 회차는 카드도 안 만들어져 다음 회차의
     // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
+    //
+    // **막힌 이력이 있는 초안은 백오프가 지나도 정상 초안보다 앞서지 못한다** (`StuckRank`).
+    // 백오프 만료를 "정상 초안과 동급" 으로 되돌리면 상한 수만큼 쌓인 초안들이 하루에 하나씩
+    // 만료되며 슬롯을 돌려 쓰고, 그들이 더 오래됐으므로 정상 초안은 영구히 굶는다(리뷰 지적).
+    // 만료는 "정상 초안이 없을 때 어느 것부터 재시도할지" 만 정한다.
     const nowMs = Date.now();
     const oldestFirst = [...drafts].sort((first, second) => {
       const stuckGap =
-        Number(stuckPageIds.has(first.pageId)) -
-        Number(stuckPageIds.has(second.pageId));
+        (stuckRanks.get(first.pageId) ?? 0) -
+        (stuckRanks.get(second.pageId) ?? 0);
       if (stuckGap !== 0) {
         return stuckGap;
       }
@@ -695,11 +762,11 @@ export class PublishNotionDraftUsecase {
       // 두면 큐가 빈 채로 pageId 재실행이 들어올 때 터진다. 그 경로는 아래 DRAFT_NOT_FOUND 가
       // 맡아야 한다.
       const head = oldestFirst[0];
-      if (stuckPageIds.has(head.pageId)) {
+      if (stuckRanks.has(head.pageId)) {
         // 후순위로 밀 곳이 없다 = 큐가 전부 차단분이다. 조용히 같은 글을 또 돌리는 것보다
         // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
         this.logger.warn(
-          `발행 후보가 모두 최근 막힌 초안입니다 (${stuckPageIds.size}건). Notion 에서 금지어나 본문을 고쳐야 합니다.`,
+          `발행 후보가 모두 최근 막힌 초안입니다 (${stuckRanks.size}건). Notion 에서 금지어나 본문을 고쳐야 합니다.`,
         );
       }
       return head;
@@ -1148,36 +1215,56 @@ export class PublishNotionDraftUsecase {
   //
   // 제외가 아니라 후순위다 — 사람이 Notion 을 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
   //
-  // ⚠️ 남은 한계 둘. 지금 큐에는 해당 초안이 없어 두지만, 재발하면 여기부터 볼 것:
+  // **막힌 횟수만큼 지수로 미룬다** (`stuckDeferDays`). 고정 창이던 옛 판은 창 길이만큼 막힌
+  // 초안이 쌓이면 그들끼리 슬롯을 돌려 쓰고 정상 초안이 굶었다 — 창을 벗어난 초안이 정상 초안과
+  // 동급이 되면서 더 오래된 쪽이 이기기 때문이다. 횟수로 미루면 되풀이 실패할수록 창이 길어져
+  // 후순위 상태를 유지하므로 그 순환이 성립하지 않는다.
   //
-  // 1. **실패 원인을 가리지 않는다.** 모델 쿼터 소진·Notion 5xx 로 끊긴 회차도 그 초안을 뒤로
-  //    민다 — 초안 잘못이 아닌데 우선권을 잃는다. 가르려면 `BlogErrorCode` 를 원장 output 에
-  //    남겨야 하는데(`AgentRunService` 는 지금 `{ error: message }` 만 저장한다) 그 저장 경로는
-  //    모든 에이전트가 공유한다. 큐가 30건대라 한 회차 밀리는 손해가 작아 파급 큰 쪽을 미뤘다.
-  // 2. **매번 실패하는 초안이 창(3일) 수만큼 쌓이면 순환한다.** A·B·C 가 모두 결정론적으로
-  //    실패하면 A→B→C→A… 로 슬롯을 돌려 쓰며, 그보다 나중에 만든 정상 초안은 선택되지 않는다
-  //    (12일 시뮬레이션 확인). 고치기 전에는 그런 초안 **한 건**으로 큐 전체가 섰으니 개선이지만
-  //    해소는 아니다. 실패 이력 창을 차단(사람이 고치면 곧 풀림)과 나눠 길게 잡는 것이 다음 수다.
-  private async findRecentlyStuckPageIds(): Promise<Set<string>> {
-    const stuck = new Set<string>();
-    const addPageId = (inputSnapshot: unknown): void => {
+  // 성공한 회차로 횟수를 되돌리지 않는다 — 발행까지 간 초안은 Notion 상태가 '발행됨' 으로 바뀌어
+  // 큐에서 빠지므로 되돌릴 대상이 남지 않는다. 카드가 만료돼 큐에 남는 경우엔 옛 횟수가 유지되는데,
+  // 그 초안은 실제로 되풀이 막힌 이력이 있으니 후순위가 타당하고 큐가 비면 여전히 시도된다.
+  //
+  // ⚠️ errorCode 는 그 저장을 넣은 배포 이후 회차에만 있다. 그 이전 실패는 원인을 알 수 없어
+  // 초안 탓으로 세지 않는다 — 배포 직후 며칠은 과거 실패분의 후순위가 풀린다(재실패하며 다시 쌓인다).
+  private async findStuckRanks(): Promise<Map<string, StuckRank>> {
+    // pageId → 그 초안이 막힌 회차들의 종료 시각. 횟수와 가장 최근 시각을 함께 써야
+    // "몇 번 막혔나(백오프 길이)" 와 "언제부터 세나(기산점)" 가 갈리지 않는다.
+    const stuckAt = new Map<string, Date[]>();
+    const addStuck = (inputSnapshot: unknown, endedAt: Date): void => {
       const snapshot = inputSnapshot as { pageId?: unknown } | null;
-      if (typeof snapshot?.pageId === 'string') {
-        stuck.add(snapshot.pageId);
+      if (typeof snapshot?.pageId !== 'string') {
+        return;
       }
+      const found = stuckAt.get(snapshot.pageId);
+      if (found) {
+        found.push(endedAt);
+        return;
+      }
+      stuckAt.set(snapshot.pageId, [endedAt]);
+    };
+    // 조회가 상한에 닿으면 오래된 기록이 잘려 그 초안의 등급이 통째로 사라진다 — 후순위가
+    // 조용히 풀리고 굶음이 다시 생긴다. 예외도 빈 결과도 나지 않는 자리라 로그로만 보인다.
+    const warnIfSaturated = (kind: string, count: number): void => {
+      if (count < STUCK_SCAN_LIMIT) {
+        return;
+      }
+      this.logger.warn(
+        `${kind} 조회가 상한(${STUCK_SCAN_LIMIT}건)에 닿았습니다 — 오래된 기록이 잘려 후순위가 풀릴 수 있습니다. STUCK_SCAN_LIMIT 을 올려야 합니다.`,
+      );
     };
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.BLOG_PUBLISH,
-        sinceDays: BLOCKED_DRAFT_COOLDOWN_DAYS,
-        limit: BLOCKED_DRAFT_SCAN_LIMIT,
+        sinceDays: STUCK_SCAN_DAYS,
+        limit: STUCK_SCAN_LIMIT,
       });
+      warnIfSaturated('차단 이력', runs.length);
       for (const run of runs) {
         const output = run.output as { status?: unknown } | null;
         if (output?.status !== 'blocked') {
           continue;
         }
-        addPageId(run.inputSnapshot);
+        addStuck(run.inputSnapshot, run.endedAt);
       }
     } catch (error: unknown) {
       this.logger.warn(
@@ -1189,18 +1276,33 @@ export class PublishNotionDraftUsecase {
     try {
       const runs = await this.agentRunService.findRecentFailedRuns({
         agentType: AgentType.BLOG_PUBLISH,
-        sinceDays: BLOCKED_DRAFT_COOLDOWN_DAYS,
-        limit: BLOCKED_DRAFT_SCAN_LIMIT,
+        sinceDays: STUCK_SCAN_DAYS,
+        limit: STUCK_SCAN_LIMIT,
       });
+      warnIfSaturated('실패 이력', runs.length);
       for (const run of runs) {
-        addPageId(run.inputSnapshot);
+        if (!isDraftFaultFailure(run.output)) {
+          continue;
+        }
+        addStuck(run.inputSnapshot, run.endedAt);
       }
     } catch (error: unknown) {
       this.logger.warn(
         `실패 이력 조회 실패 — 후순위 없이 진행합니다: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return stuck;
+    const nowMs = Date.now();
+    const ranks = new Map<string, StuckRank>();
+    for (const [pageId, endedAtList] of stuckAt) {
+      const latestMs = Math.max(...endedAtList.map((date) => date.getTime()));
+      const deferUntilMs =
+        latestMs + stuckDeferDays(endedAtList.length) * 24 * 60 * 60 * 1_000;
+      ranks.set(
+        pageId,
+        deferUntilMs > nowMs ? StuckRank.DEFERRED : StuckRank.RETRYABLE,
+      );
+    }
+    return ranks;
   }
 
   // 최근 **실제로 나간** 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
@@ -1302,6 +1404,20 @@ export class PublishNotionDraftUsecase {
 
 const maskTerm = (term: string): string =>
   term.length <= 1 ? '*' : `${term[0]}${'*'.repeat(term.length - 1)}`;
+
+// 실패한 회차가 **초안 내용 탓**이었는지. `AgentRunService` 가 실패 output 에 남기는
+// `errorCode` 로 판정한다 (`DRAFT_FAULT_ERROR_CODES` 참조).
+//
+// errorCode 가 없으면 false — 그 저장을 넣기 전 회차이거나 도메인 예외가 아닌 실패다.
+// 문구(`output.error`)로 되짚지 않는다: 소비자가 생산자의 메시지 형식을 들고 있게 되어,
+// 생산자가 문구를 바꾸는 순간 조용히 오분류된다.
+const isDraftFaultFailure = (output: unknown): boolean => {
+  const failure = output as { errorCode?: unknown } | null;
+  return (
+    typeof failure?.errorCode === 'string' &&
+    DRAFT_FAULT_ERROR_CODES.has(failure.errorCode)
+  );
+};
 
 const isAnonymizedBlogDraft = (
   value: unknown,

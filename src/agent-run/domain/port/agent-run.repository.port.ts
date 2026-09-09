@@ -53,12 +53,16 @@ export interface SucceededAgentRunSnapshot {
   inputSnapshot: unknown;
 }
 
-// 예외로 끝난 회차. 성공 조회(SucceededAgentRunSnapshot)와 달리 output 에는 오류만 남으므로
-// 무엇을 입력으로 돌다 실패했는지(inputSnapshot)가 유일한 단서다 — 매번 같은 결과를 내는
-// 실패를 다음 회차에서 피하려면 이 값이 필요하다.
+// 예외로 끝난 회차. 무엇을 입력으로 돌다 실패했는지(inputSnapshot)가 "매번 같은 결과를 내는
+// 실패를 다음 회차에서 피한다" 의 단서다.
+//
+// output 도 함께 준다 — `{ error, errorCode? }` 형태다(AgentRunService 실패 경로). 실패를
+// 회피 대상으로 쓰려면 "그 입력 탓인가" 를 가려야 하고, 그 판정에 필요한 것이 errorCode 다.
+// 모델 쿼터 소진·타임아웃처럼 입력과 무관한 실패까지 회피하면 잘못 없는 입력이 우선권을 잃는다.
 export interface FailedAgentRunSnapshot {
   id: number;
   inputSnapshot: unknown;
+  output: unknown;
   endedAt: Date;
 }
 
