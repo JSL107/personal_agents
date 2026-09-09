@@ -112,6 +112,7 @@ describe('ApplyIntradayStopUsecase', () => {
       accountCount: 0,
       inspectedCount: 0,
       priceErrorCount: 0,
+      priceErrors: [],
       notTradedCount: 0,
       corporateActionCount: 0,
       corporateActions: [],
@@ -139,6 +140,7 @@ describe('ApplyIntradayStopUsecase', () => {
       accountCount: 0,
       inspectedCount: 0,
       priceErrorCount: 0,
+      priceErrors: [],
       notTradedCount: 0,
       corporateActionCount: 0,
       corporateActions: [],
@@ -181,6 +183,7 @@ describe('ApplyIntradayStopUsecase', () => {
       accountCount: 1,
       inspectedCount: 2,
       priceErrorCount: 0,
+      priceErrors: [],
       notTradedCount: 0,
       corporateActionCount: 0,
       corporateActions: [],
@@ -259,10 +262,79 @@ describe('ApplyIntradayStopUsecase', () => {
     });
 
     expect(result.priceErrorCount).toBe(1);
+    // 건수만 세면 어느 종목이 왜 빠졌는지 카드도 원장도 답하지 못한다.
+    expect(result.priceErrors).toEqual([
+      '종목 005930(005930): provider unavailable',
+    ]);
     expect(result.inspectedCount).toBe(0);
     expect(result.decidedCount).toBe(0);
     expect(repository.createExitBandOrders).not.toHaveBeenCalled();
     expect(executeOrder.execute).not.toHaveBeenCalled();
+  });
+
+  // 종가가 0 으로 오는 것은 조회가 끊긴 것과 다른 사고다. 같은 카운터에 들어가더라도
+  // 사유가 갈려야 카드를 받은 사람이 공급자 장애와 오염 응답을 구분할 수 있다.
+  it('종가가 0이면 조회 예외와 다른 사유로 남긴다', async () => {
+    const { usecase, marketData } = createFixture();
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockResolvedValue([dailyBar('2026-08-25', '0')]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.priceErrorCount).toBe(1);
+    expect(result.priceErrors).toEqual([
+      '종목 005930(005930): 쓸 수 없는 종가 0',
+    ]);
+    expect(result.inspectedCount).toBe(0);
+  });
+
+  // `DailyBar.close` 는 `DecimalValue`(toNumber/toString) 구조적 인터페이스라, 숫자로 읽을 수
+  // 없는 값을 담은 봉이 오는 것이 타입으로 막히지 않는다. 이 분기의 사유가 나머지 둘과
+  // 갈리는지는 여기서만 확인된다.
+  it('종가를 숫자로 읽을 수 없으면 그 사유로 남긴다', async () => {
+    const { usecase, marketData } = createFixture();
+    jest.mocked(marketData.fetchDailyBars).mockResolvedValue([
+      {
+        ...dailyBar('2026-08-25', '94'),
+        close: { toNumber: () => 94, toString: () => 'abc' },
+      },
+    ]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.priceErrorCount).toBe(1);
+    expect(result.priceErrors).toEqual([
+      '종목 005930(005930): 종가를 숫자로 읽지 못했습니다',
+    ]);
+    expect(result.inspectedCount).toBe(0);
+  });
+
+  // 전면 장애면 보유 종목 수만큼 같은 줄이 카드를 채운다. 건수는 전부 세고 사유만 자른다.
+  it('실패가 상한을 넘으면 건수는 다 세고 사유는 5건만 남긴다', async () => {
+    const { usecase, repository, marketData } = createFixture();
+    repository.findPositionsWithTicker.mockResolvedValue(
+      ['005930', '000660', '035420', '051910', '005380', '068270'].map(
+        (code, index) => position(21 + index, code),
+      ),
+    );
+    jest
+      .mocked(marketData.fetchDailyBars)
+      .mockRejectedValue(new Error('provider unavailable'));
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.priceErrorCount).toBe(6);
+    expect(result.priceErrors).toHaveLength(5);
+    expect(result.priceErrors[0]).toBe(
+      '종목 005930(005930): provider unavailable',
+    );
   });
 
   it('오늘 KST 봉이 없으면 어제 봉으로 손절하지 않는다', async () => {

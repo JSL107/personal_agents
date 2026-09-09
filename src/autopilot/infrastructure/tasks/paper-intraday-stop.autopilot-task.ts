@@ -26,6 +26,7 @@ import {
 interface PaperIntradayStopAudit {
   inspectedCount: number;
   priceErrorCount: number;
+  priceErrors: string[];
   notTradedCount: number;
   corporateActionCount: number;
   corporateActions: string[];
@@ -43,6 +44,8 @@ const buildAudit = (
 ): PaperIntradayStopAudit => ({
   inspectedCount: result.inspectedCount,
   priceErrorCount: result.priceErrorCount,
+  // 카드는 앞 몇 건만 보이지만 원장에는 같은 줄이 그대로 남아야 뒤늦게도 되짚을 수 있다.
+  priceErrors: result.priceErrors,
   notTradedCount: result.notTradedCount,
   corporateActionCount: result.corporateActionCount,
   corporateActions: result.corporateActions,
@@ -139,6 +142,11 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
   if (result.priceErrorCount > 0) {
     lines.push(
       ` • 시세 조회 실패 ${result.priceErrorCount}건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다`,
+      // 종목과 사유가 없으면 한도 초과·타임아웃·공급 중단이 같은 문장으로 보이고, 그러면
+      // 이 카드를 받아도 무엇을 확인해야 하는지 알 수 없다.
+      ...result.priceErrors.map(
+        (description) => `   - ${escapeSlackMrkdwn(description)}`,
+      ),
     );
   }
   if (result.notTradedCount > 0 && result.inspectedCount > 0) {
