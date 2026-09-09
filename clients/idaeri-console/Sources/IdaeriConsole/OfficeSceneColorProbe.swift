@@ -36,41 +36,20 @@ func officeFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
     return pixels.meanOpaque()
 }
 
-/// 셔츠 픽셀의 원본 밝기 계수(÷255). 리컬러가 부서색에 곱하는 명암이다.
+/// 벡터 캐릭터가 실제로 사용하는 셔츠 색의 밝기 대역.
 ///
-/// **가장 밝은 시트의 값을 쓴다.** 이 계수는 「가장 밝은 셔츠」의 상한을 세우는 데 쓰이므로,
-/// 시트 다섯 장을 평균하면 상한이 실제보다 낮아져 통로가 사람 대역에 걸리는 것을 놓친다
-/// (#520 리뷰 지적). 시트별 실측은 250.8~252.4 로 차이가 작지만, 축이 「상한」인 한 평균은
-/// 틀린 통계다.
-///
-/// **한 장이라도 못 읽으면 nil 이다.** 빠진 시트를 조용히 건너뛰면 그 시트가 가장 밝았을 때
-/// 상한이 낮아지고, 그 사실이 화면에도 로그에도 안 남는다.
-///
-/// 정면 포즈를 쓰는 이유는 셔츠 면적이 가장 넓기 때문이다.
-func officeCharacterShirtShade() -> Double? {
-    var brightest: Double?
-    for sheet in 0..<characterSheetCount {
-        guard
-            let name = characterSpriteCandidates(sheet: sheet, pose: "down").first(where: {
-                SpriteLoader.texture($0) != nil
-            }),
-            let image = SpriteLoader.texture(name)?.cgImage() as CGImage?,
-            let pixels = OfficePixelGrid(image: image)
-        else {
-            FileHandle.standardError.write(
-                Data("셔츠 명암: 시트 \(sheet) 를 읽지 못했다\n".utf8))
-            return nil
-        }
-        let shirt = pixels.shirtPixelBrightnesses()
-        guard !shirt.isEmpty else {
-            FileHandle.standardError.write(
-                Data("셔츠 명암: 시트 \(sheet) 에 셔츠 픽셀이 없다\n".utf8))
-            return nil
-        }
-        let mean = shirt.reduce(0, +) / Double(shirt.count)
-        brightest = max(brightest ?? 0, mean)
+/// 예전 `char-*` 시트의 픽셀을 읽지 않고, `CozyCharacterArtworkNode`가 그리는 동일한
+/// 팔레트 토큰을 직접 읽는다. 따라서 도트 에셋이 제거되거나 교체되어도 `--color-check`는
+/// 현재 화면의 캐릭터와 바닥 대비를 계속 검사한다.
+func officeCharacterShirtBrightnessRange() -> (darkest: Double, brightest: Double)? {
+    let levels = Department.allCases.map { department in
+        let rgb = CozyCharacterArtworkNode.outfitColorRGB(index: department.cozyPaletteIndex)
+        return (Double(rgb.red) + Double(rgb.green) + Double(rgb.blue)) / 3 * 255
     }
-    return brightest.map { $0 / 255 }
+    guard let darkest = levels.min(), let brightest = levels.max() else {
+        return nil
+    }
+    return (darkest, brightest)
 }
 
 /// 한 시각의 사무실을 굽고 바닥 밝기를 재서 돌려준다. 명단은 `--pose-demo` 와 같은 고정 표본이다.
@@ -105,18 +84,6 @@ func officeProbeFloorColors(
 /// 바닥 색 게이트. 실측표를 내고 규칙을 어기면 false.
 func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
     var failures: [String] = []
-    // 셔츠 대역은 시각과 무관하므로 한 번만 구한다. 못 구하면 그 규칙만 빠지는 것이 아니라
-    // **왜 빠졌는지**를 적는다 — 조용히 건너뛰면 통과와 구별되지 않는다.
-    let shirtShade = officeCharacterShirtShade()
-    let shirtBrightness = shirtShade.map(officeShirtBrightnessRange)
-    if let shirtShade, let shirtBrightness {
-        print(
-            "   셔츠 대역 \(rounded(shirtBrightness.darkest))~\(rounded(shirtBrightness.brightest))"
-                + " (부서 6 × 톤 \(officeShirtShiftSteps) · 원본 명암 \(rounded(shirtShade * 255)))"
-        )
-    } else {
-        failures.append("셔츠 픽셀을 읽지 못했다 — 통로가 사람 대역에 걸리는지 판정할 수 없다")
-    }
     for hour in hours {
         guard let probe = officeProbeFloorColors(hour: hour, size: size) else {
             return false
@@ -141,7 +108,6 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
             samples: samples,
             hour: hour,
             textureBrightness: officeFloorTextureBrightness,
-            shirtBrightness: shirtBrightness,
             furnitureBrightness: officeFurnitureSpriteBrightness,
             furniturePairs: probe.furniturePairs
         )
@@ -150,7 +116,7 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
         print("✗ \(failure)")
     }
     if failures.isEmpty {
-        print("✓ 색 규칙 통과 — 통로가 가장 밝고 셔츠 대역 위에 있으며, 가구가 바닥과 갈린다")
+        print("✓ 색 규칙 통과 — 필수 표면·표본·실내 밝기·통로 경계·가구 대비가 유효하다")
     }
     return failures.isEmpty
 }

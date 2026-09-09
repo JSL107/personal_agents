@@ -7,11 +7,10 @@ import SpriteKit
 /// 상태색을 캐릭터 몸에 칠하지 않고 발밑 링으로 빼는 이유는, 픽셀 캐릭터를 상태색으로 물들이면
 /// 부서 구분(옷 색)과 상태 구분이 같은 채널에서 싸우기 때문이다. 링은 바닥에 눕혀 두 신호를 분리한다.
 ///
-/// 스프라이트는 한 장뿐이라 29명이 전부 같은 사람으로 보인다. 그래서 머리색·셔츠색을 사람마다
-/// 갈아끼운 텍스처를 쓴다(`SpriteLoader.characterTexture`). 실루엣이 같아도 도트 그림에서는
-/// 색만으로 충분히 구별된다.
+/// 결정론적 외형·상태 소품을 가진 cozy 벡터 아트워크를 사람마다 렌더링한다.
 final class CharacterNode: SKNode {
     let sprite = SKSpriteNode()
+    private let cozyArtwork = CozyCharacterArtworkNode()
     private let ring = SKShapeNode()
     /// 선택 하이라이트 — 몸을 감싸는 흰 테두리. 자세·타일 크기가 바뀌면 함께 다시 잡아야 해서
     /// 씬이 아니라 캐릭터가 들고 있는다(씬이 한 번 만들어 붙이면 갱신 경로가 없다).
@@ -33,6 +32,7 @@ final class CharacterNode: SKNode {
     /// 상호작용 중에는 상태 몸짓을 다시 걸면 자세가 즉시 덮이므로 씬이 이를 판별해야 한다.
     private(set) var isInteracting = false
     private var interactionFacing: Facing?
+    private var activeInteractionPose: OfficeInteractionPose?
     /// 라운지 자세로 전체 노드를 옮긴 양. 종료 때 정확히 빼고, 절대 배치는 새 기준에서 재계산한다.
     private var interactionOffset: CGPoint = .zero
 
@@ -66,14 +66,16 @@ final class CharacterNode: SKNode {
     /// 얼굴·머리색은 방 구성이 바뀌면 다시 배정될 수 있다(`apply(look:)`).
     private var sheetIndex: Int
     private var hairColor: (red: Double, green: Double, blue: Double)
-    /// 셔츠색은 부서에서 파생하므로 부서가 바뀌면 함께 바뀐다(`apply(department:)`).
-    private var shirtColor: (red: Double, green: Double, blue: Double)
-    private let pantsColor: (red: Double, green: Double, blue: Double)
+    private var pantsIndex: Int
     /// 지금 입고 있는 옷이 어느 부서 것인지. 스냅샷 부서와 비교해 갱신 여부를 정한다.
     private(set) var department: Department
     /// 사람마다 다른 셔츠 톤 보정. 부서가 바뀌어도 이 사람의 개성은 유지해야 한다.
     /// 방 구성이 바뀌면 다시 배정될 수 있다(`apply(look:)`) — 얼굴·머리색과 같은 축이다.
     private var shirtShift: Double
+    private var cozyAppearance: CozyAgentAppearance
+    /// 연속 몸짓은 macOS의 동작 줄이기 설정을 따른다. 클로저로 주입할 수 있어
+    /// UI 환경에 의존하지 않고 정적 자세 분기를 검증할 수 있다.
+    private let shouldReduceMotion: () -> Bool
 
     /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
     /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
@@ -86,7 +88,10 @@ final class CharacterNode: SKNode {
         roleName: String,
         department: Department,
         look: CharacterLook,
-        tile: TilePoint
+        tile: TilePoint,
+        shouldReduceMotion: @escaping () -> Bool = {
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
     ) {
         self.tile = tile
         nameText = roleName
@@ -94,10 +99,9 @@ final class CharacterNode: SKNode {
         hairColor = hairPalette[look.hairIndex]
         self.department = department
         shirtShift = look.shirtShift
-        shirtColor = officeShirtColorRGB(department: department, shift: look.shirtShift)
-        // 바지는 부서색과 엮지 않는다. 셔츠가 이미 부서를 나타내므로 같은 축을 두 번 쓰면
-        // 구별 수단이 늘지 않는다 — 사람을 가르는 축으로만 쓴다.
-        pantsColor = pantsPalette[look.pantsIndex]
+        pantsIndex = look.pantsIndex
+        cozyAppearance = cozyAgentAppearance(agentType: agentType, department: department)
+        self.shouldReduceMotion = shouldReduceMotion
         super.init()
         name = agentType
 
@@ -114,6 +118,8 @@ final class CharacterNode: SKNode {
         // 캐릭터 — 발이 칸 바닥에 닿도록 아래쪽을 기준점으로.
         sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
         sprite.zPosition = 1
+        sprite.texture = nil
+        sprite.addChild(cozyArtwork)
         addChild(sprite)
 
         namePlate.strokeColor = .clear
@@ -184,6 +190,7 @@ final class CharacterNode: SKNode {
 
     func apply(state: ConsoleAgentState) {
         currentState = state
+        refreshCozyArtwork(pose: currentPose())
         let palette = agentStatePaletteRGBA(state)
         ring.strokeColor = SKColor(
             red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.95
@@ -288,10 +295,12 @@ final class CharacterNode: SKNode {
         nameLabel.xScale = 1
         // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
         // 라벨이 머리에서 한 뼘 떠 있다.
+        let demoLabelBelow = name?.starts(with: "POSE_DEMO_") == true || name?.starts(with: "SHOWCASE_") == true
         nameLabel.position = CGPoint(
             x: 0,
-            y: spriteBaseY + sprite.size.height
-                + currentTileSize * CGFloat(officeNameplateGapTiles)
+            y: demoLabelBelow
+                ? spriteBaseY - currentTileSize * 0.18
+                : spriteBaseY + sprite.size.height + currentTileSize * CGFloat(officeNameplateGapTiles)
         )
         fitNameplateToSeat()
         // 판 여백은 Core 가 배치 계산에 쓰는 값과 같아야 한다 — 여기만 넓히면 판이 자리 몫을
@@ -386,14 +395,15 @@ final class CharacterNode: SKNode {
     func apply(look: CharacterLook) {
         let newHairColor = hairPalette[look.hairIndex]
         let shirtChanged = look.shirtShift != shirtShift
-        guard look.sheetIndex != sheetIndex || newHairColor != hairColor || shirtChanged else {
+        let pantsChanged = look.pantsIndex != pantsIndex
+        guard look.sheetIndex != sheetIndex || newHairColor != hairColor || shirtChanged || pantsChanged else {
             return
         }
         sheetIndex = look.sheetIndex
         hairColor = newHairColor
+        pantsIndex = look.pantsIndex
         if shirtChanged {
             shirtShift = look.shirtShift
-            shirtColor = officeShirtColorRGB(department: department, shift: look.shirtShift)
         }
         if isSeated {
             setTexture("sit")
@@ -412,7 +422,7 @@ final class CharacterNode: SKNode {
             return
         }
         department = newDepartment
-        shirtColor = officeShirtColorRGB(department: newDepartment, shift: shirtShift)
+        cozyAppearance = cozyAgentAppearance(agentType: name ?? nameText, department: newDepartment)
         // 새 색으로 다시 굽는다. 걷는 중이면 다음 걸음 프레임이 자연히 새 색으로 그려진다.
         if isSeated {
             setTexture("sit")
@@ -441,6 +451,7 @@ final class CharacterNode: SKNode {
         clearMotion()
         isInteracting = true
         interactionFacing = facing
+        activeInteractionPose = pose
 
         if pose == .sitting {
             sit()
@@ -452,21 +463,16 @@ final class CharacterNode: SKNode {
             stand()
             applySpriteSize()
         }
-
-        if let spriteName = pose.handPropSprite,
-           let texture = SpriteLoader.texture(spriteName) {
-            let prop = SKSpriteNode(texture: texture)
-            prop.name = "handProp"
-            prop.zPosition = 1.2
-            addChild(prop)
-            layoutHandProp(prop, facing: facing)
-            animateHandProp(prop, pose: pose)
-        }
+        refreshCozyArtwork(pose: pose.rawValue)
 
         switch pose {
         case .reading:
             startBreathing()
         case .tending:
+            if shouldReduceMotion() {
+                clearMotion()
+                return
+            }
             let tend = SKAction.sequence([
                 .scaleY(to: 0.94, duration: 0.34),
                 .scaleY(to: 1, duration: 0.34),
@@ -480,99 +486,42 @@ final class CharacterNode: SKNode {
 
     /// 같은 취소 신호가 겹쳐도 소품·오프셋·앉은 그림이 남지 않도록 항상 완전한 기본값을 복원한다.
     func endInteraction() {
-        guard isInteracting
-            || childNode(withName: "handProp") != nil
-            || sprite.action(forKey: "interaction") != nil
+        guard isInteracting || sprite.action(forKey: "interaction") != nil
         else {
             return
         }
-        childNode(withName: "handProp")?.removeFromParent()
         sprite.removeAction(forKey: "interaction")
         isInteracting = false
         interactionFacing = nil
+        activeInteractionPose = nil
         refreshInteractionOffset()
         stand()
         clearMotion()
-    }
-
-    private func animateHandProp(_ prop: SKSpriteNode, pose: OfficeInteractionPose) {
-        switch pose {
-        case .drinking:
-            let sip = SKAction.sequence([
-                .moveBy(x: 0, y: currentTileSize * 0.20, duration: 0.20),
-                .wait(forDuration: 0.25),
-                .moveBy(x: 0, y: -currentTileSize * 0.20, duration: 0.20),
-                .wait(forDuration: 0.25),
-            ])
-            prop.run(.repeat(sip, count: 2), withKey: "interaction")
-        case .writing:
-            let stroke = SKAction.sequence([
-                .moveBy(x: -currentTileSize * 0.07, y: 0, duration: 0.18),
-                .moveBy(x: currentTileSize * 0.14, y: 0, duration: 0.36),
-                .moveBy(x: -currentTileSize * 0.07, y: 0, duration: 0.18),
-            ])
-            prop.run(.repeatForever(stroke), withKey: "interaction")
-        case .carryingPapers, .stowing:
-            prop.run(
-                .moveBy(x: 0, y: currentTileSize * 0.12, duration: 0.24),
-                withKey: "interaction"
-            )
-        case .sitting, .reading, .tending:
-            break
-        }
-    }
-
-    private func layoutHandProp(_ prop: SKSpriteNode, facing: Facing) {
-        guard let texture = prop.texture else {
-            return
-        }
-        let sourceSize = texture.size()
-        // **캐릭터와 같은 도트 배율을 쓴다.** "타일의 몇 할" 로 크기를 정하면 7×6px 짜리 머그가
-        // 캐릭터보다 훨씬 굵은 도트로 확대돼, 픽셀 그림에서 가장 먼저 눈에 걸리는 부조화가 된다
-        // (렌더에서 머그가 흰 사각형 덩어리로 보였다). 소품 원본은 캐릭터와 같은 해상도로 그려져
-        // 있으므로 같은 배율이면 손에 든 물건으로 읽힌다.
-        //
-        // 다만 1배로 두면 7px 머그가 몸에 묻혀 아예 안 보였다(렌더 확인). 2배는 정수배라 도트가
-        // 깨지지 않으면서 손에 든 것이 실루엣 밖으로 나온다 — 가시성이 도트 정합보다 앞선다.
-        let propScale = spriteScale * 2
-        prop.size = CGSize(
-            width: sourceSize.width * propScale, height: sourceSize.height * propScale
-        )
-
-        let handOffset: CGPoint
-        switch facing {
-        case .left:
-            handOffset = CGPoint(x: -currentTileSize * 0.20, y: 0)
-        case .right:
-            handOffset = CGPoint(x: currentTileSize * 0.20, y: 0)
-        // 위·아래를 볼 때는 몸이 소품을 가린다(뒤·앞모습이라 손이 실루엣 안에 들어간다).
-        // 옆으로 더 내보내 어깨선 밖에서 보이게 한다.
-        case .up:
-            handOffset = CGPoint(x: currentTileSize * 0.26, y: currentTileSize * 0.06)
-        case .down:
-            handOffset = CGPoint(x: -currentTileSize * 0.26, y: -currentTileSize * 0.04)
-        }
-        prop.position = CGPoint(
-            x: handOffset.x,
-            y: spriteBaseY + sprite.size.height * 0.55 + handOffset.y
-        )
+        refreshCozyArtwork(pose: currentPose())
     }
 
     private func setTexture(_ pose: String) {
-        sprite.texture = SpriteLoader.characterTexture(
-            pose: pose, sheet: sheetIndex, hair: hairColor, shirt: shirtColor, pants: pantsColor
-        )
+        sprite.texture = nil
+        refreshCozyArtwork(pose: pose)
         applySpriteSize()
+    }
+
+    private func refreshCozyArtwork(pose: String) {
+        cozyArtwork.update(
+            appearance: cozyAppearance,
+            mood: cozyAgentMood(for: currentState),
+            department: department,
+            state: currentState,
+            pose: activeInteractionPose?.rawValue ?? pose
+        )
     }
 
     /// 텍스처 원본 크기 × 배율로 표시한다 — 도트 크기가 다른 스프라이트끼리 비율이 맞도록.
     private func applySpriteSize() {
-        guard let texture = sprite.texture else {
-            return
-        }
-        let base = texture.size()
+        let base = CGSize(width: 72, height: 100)
+        let artworkScale = CozyCharacterArtworkNode.officeScaleFactor
         sprite.size = CGSize(
-            width: base.width * spriteScale, height: base.height * spriteScale
+            width: base.width * artworkScale * spriteScale, height: base.height * artworkScale * spriteScale
         )
         let flipped = !isSeated && characterSprite(for: facing).flipped
         sprite.xScale = flipped ? -1 : 1
@@ -580,11 +529,9 @@ final class CharacterNode: SKNode {
         // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
         spriteBaseY = isSeated ? -currentTileSize * CGFloat(officeSeatedSpriteDrop) : 0
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
+        cozyArtwork.position = .zero
+        cozyArtwork.setReferenceScale(spriteScale * artworkScale)
         refreshInteractionOffset()
-        if let prop = childNode(withName: "handProp") as? SKSpriteNode,
-           let interactionFacing {
-            layoutHandProp(prop, facing: interactionFacing)
-        }
         // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
@@ -644,6 +591,10 @@ final class CharacterNode: SKNode {
 
     /// 작업 중 — 키보드를 두드리듯 짧고 빠르게 위아래로.
     func startTyping() {
+        if shouldReduceMotion() {
+            clearMotion()
+            return
+        }
         guard sprite.action(forKey: "typing") == nil else {
             return
         }
@@ -662,6 +613,10 @@ final class CharacterNode: SKNode {
     /// 군무로 보이고, 스프라이트가 한 장뿐인 이 화면에서는 "다 똑같아 보인다" 는 인상을
     /// 한 번 더 굳힌다.
     func startBreathing() {
+        if shouldReduceMotion() {
+            clearMotion()
+            return
+        }
         guard sprite.action(forKey: "breathing") == nil else {
             return
         }
@@ -700,6 +655,10 @@ final class CharacterNode: SKNode {
 
     /// 승인 대기 — 줄에서 발을 구르며 기다린다.
     func startWaitTap() {
+        if shouldReduceMotion() {
+            clearMotion()
+            return
+        }
         guard sprite.action(forKey: "waitTap") == nil else {
             return
         }
