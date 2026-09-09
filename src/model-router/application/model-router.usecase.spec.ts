@@ -31,8 +31,8 @@ describe('ModelRouterUsecase', () => {
     usecase = new ModelRouterUsecase(chatgptProvider, claudeProvider);
   });
 
-  // 2026-07-02 정책: 이대리 전체가 ChatGPT(codex) 단일 provider.
-  // Claude 는 primary·fallback 어디서도 호출되지 않는다(ClaudeCliProvider 코드는 보존).
+  // primary 는 전 에이전트가 ChatGPT(codex). Claude 는 2026-09-09 부터 폴백으로만 불리므로
+  // primary 가 성공하는 이 블록에서는 호출 0 이어야 한다.
   describe('에이전트 → 모델 라우팅 (전부 ChatGPT)', () => {
     it.each([
       [AgentType.PM],
@@ -62,7 +62,7 @@ describe('ModelRouterUsecase', () => {
         expect.objectContaining({ prompt: expect.stringContaining('hi') }),
       );
       expect(result.provider).toBe(ModelProviderName.CHATGPT);
-      // Claude 는 primary·fallback 어디서도 불리지 않는다.
+      // primary 가 성공했으므로 폴백은 타지 않는다.
       expect(claudeProvider.complete).not.toHaveBeenCalled();
     });
   });
@@ -115,24 +115,30 @@ describe('ModelRouterUsecase', () => {
     });
   });
 
-  describe('fallback 없음 — primary(CHATGPT) 실패 시 즉시 실패', () => {
-    it('CHATGPT 실패 시 Claude 로 넘어가지 않고 COMPLETION_FAILED', async () => {
+  describe('fallback — primary(CHATGPT) 실패 시 CLAUDE 로 한 번 재시도', () => {
+    it('CHATGPT 실패 시 Claude 로 넘어가 성공하면 그 응답을 돌려준다', async () => {
       chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+      claudeProvider.complete.mockResolvedValue({
+        text: 'claude 가 대신 답함',
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      });
 
-      await expect(
-        usecase.route({
-          agentType: AgentType.CODE_REVIEWER,
-          request: { prompt: 'x' },
-        }),
-      ).rejects.toMatchObject({ errorCode: 'MODEL_COMPLETION_FAILED' });
+      const result = await usecase.route({
+        agentType: AgentType.CODE_REVIEWER,
+        request: { prompt: 'x' },
+      });
 
+      expect(result.provider).toBe(ModelProviderName.CLAUDE);
       expect(chatgptProvider.complete).toHaveBeenCalledTimes(1);
-      expect(claudeProvider.complete).not.toHaveBeenCalled();
+      expect(claudeProvider.complete).toHaveBeenCalledTimes(1);
     });
 
-    it('실패 시 cause 는 primary 에러만 (fallback 없음)', async () => {
+    it('둘 다 실패하면 COMPLETION_FAILED — cause 에 primary·fallback 에러가 모두 실린다', async () => {
       const chatgptError = new Error('codex down');
+      const claudeError = new Error('claude down');
       chatgptProvider.complete.mockRejectedValue(chatgptError);
+      claudeProvider.complete.mockRejectedValue(claudeError);
 
       try {
         await usecase.route({
@@ -142,14 +148,36 @@ describe('ModelRouterUsecase', () => {
         fail('should have thrown');
       } catch (error) {
         expect(error).toMatchObject({ errorCode: 'MODEL_COMPLETION_FAILED' });
-        expect((error as { cause: unknown }).cause).toBe(chatgptError);
+        expect((error as { cause: unknown }).cause).toEqual({
+          primaryError: chatgptError,
+          lastError: claudeError,
+        });
       }
     });
 
-    it('CodexQuotaExceededException 시 reset 시각을 친절히 안내', async () => {
+    it('CodexQuotaExceededException 도 Claude 로 넘어간다 (쿼터 소진이 곧 실행 실패가 되지 않게)', async () => {
       chatgptProvider.complete.mockRejectedValue(
         new CodexQuotaExceededException('Jun 11th, 2026 9:28 AM'),
       );
+      claudeProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      });
+
+      const result = await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(result.provider).toBe(ModelProviderName.CLAUDE);
+    });
+
+    it('쿼터 소진 후 Claude 도 실패하면 reset 시각을 친절히 안내', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new CodexQuotaExceededException('Jun 11th, 2026 9:28 AM'),
+      );
+      claudeProvider.complete.mockRejectedValue(new Error('claude down'));
 
       await expect(
         usecase.route({ agentType: AgentType.PM, request: { prompt: 'x' } }),
@@ -157,6 +185,39 @@ describe('ModelRouterUsecase', () => {
         errorCode: 'MODEL_COMPLETION_FAILED',
         message: expect.stringContaining('Jun 11th, 2026 9:28 AM'),
       });
+    });
+
+    it('noFallback 이면 Claude 로 넘어가지 않는다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.HUMANIZER,
+          request: { prompt: 'x' },
+          noFallback: true,
+        }),
+      ).rejects.toMatchObject({ errorCode: 'MODEL_COMPLETION_FAILED' });
+
+      expect(claudeProvider.complete).not.toHaveBeenCalled();
+    });
+
+    // claude CLI 에는 codex 의 `--output-schema` 에 해당하는 인자가 없다. 스키마를 건 요청을
+    // 폴백시키면 형태 강제 없이 프롬프트 지시만 남아, 호출자의 "파싱은 안전하다" 는 전제가 깨진다.
+    it('outputSchema 를 건 요청은 Claude 로 넘어가지 않는다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.WORK_REVIEWER,
+          request: {
+            prompt: 'x',
+            outputSchema: {
+              type: 'object',
+              properties: { summary: { type: 'string' } },
+            },
+          },
+        }),
+      ).rejects.toMatchObject({ errorCode: 'MODEL_COMPLETION_FAILED' });
 
       expect(claudeProvider.complete).not.toHaveBeenCalled();
     });
@@ -226,7 +287,29 @@ describe('ModelRouterUsecase', () => {
   // "모델 호출 실패 (CHATGPT)" 뿐이라 그 32분이 route() 안인지 밖(context 수집·Notion 적재)인지
   // 가릴 수 없었다. 실패 메시지에 route 소요시간을 실어 AgentRun.output 으로 보존한다.
   describe('실패 진단 — route 소요시간 보존', () => {
-    it('실패 메시지에 route 소요시간을 남긴다', async () => {
+    it('실패 메시지에 route 소요시간을 남긴다 (폴백까지 실패한 경우)', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new Error('codex CLI 응답 시간 초과 (180000ms)'),
+      );
+      claudeProvider.complete.mockRejectedValue(new Error('claude down'));
+
+      let caught: Error | undefined;
+      try {
+        await usecase.route({
+          agentType: AgentType.PM,
+          request: { prompt: 'x' },
+        });
+      } catch (error) {
+        caught = error as Error;
+      }
+
+      expect(caught?.message).toMatch(
+        /모델 호출 실패 — primary CHATGPT → fallback CLAUDE 모두 실패 \(\d+s 소요\)/,
+      );
+    });
+
+    // 폴백을 타지 않는 경로(noFallback)에서는 단일 provider 형식이 유지되는지도 함께 본다.
+    it('폴백을 타지 않으면 단일 provider 형식으로 소요시간을 남긴다', async () => {
       chatgptProvider.complete.mockRejectedValue(
         new Error('codex CLI 응답 시간 초과 (180000ms)'),
       );
@@ -236,6 +319,7 @@ describe('ModelRouterUsecase', () => {
         await usecase.route({
           agentType: AgentType.PM,
           request: { prompt: 'x' },
+          noFallback: true,
         });
       } catch (error) {
         caught = error as Error;
@@ -248,6 +332,7 @@ describe('ModelRouterUsecase', () => {
       chatgptProvider.complete.mockRejectedValue(
         new CodexQuotaExceededException('2026-07-31 14:00'),
       );
+      claudeProvider.complete.mockRejectedValue(new Error('claude down'));
 
       let caught: Error | undefined;
       try {
