@@ -8,6 +8,10 @@ import {
   stripSentenceTail,
 } from './korean-style-sentences';
 import { maskFencedCodeBlocks, scanMarkdownBlocks } from './markdown-blocks';
+import {
+  measureTranslationese,
+  TranslationeseMetrics,
+} from './translationese-metrics';
 
 // 문장 분해기는 `korean-style-sentences.ts` 로 옮겼다(구성 축과 공유해야 해서다). 이 모듈에서
 // 가져다 쓰던 호출부가 있어 그대로 다시 내보낸다.
@@ -132,6 +136,9 @@ export type KoreanStyleMetrics = {
   // 구성 축(인용체·헤딩 형태·리프 절·확인 범위). 정의와 기준의 출처는
   // `korean-style-composition.ts` 헤더에 있다.
   composition: KoreanStyleCompositionMetrics;
+  // 번역투 축(이중 피동·`에 의해`·직역 경동사·무생물 주어). 전부 관측값이고 판정하지
+  // 않는다 — 출처와 이유는 `translationese-metrics.ts` 헤더에 있다.
+  translationese: TranslationeseMetrics;
 };
 
 /**
@@ -372,6 +379,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       measurable: false,
       paragraph: measureParagraphs(markdown),
       composition: measureKoreanStyleComposition(markdown),
+      translationese: measureTranslationese(markdown),
     };
   }
 
@@ -474,6 +482,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     measurable: sentences.length >= MEASURABLE_SENTENCE_MIN,
     paragraph: measureParagraphs(markdown),
     composition: measureKoreanStyleComposition(markdown),
+    translationese: measureTranslationese(markdown),
   };
 };
 
@@ -693,7 +702,25 @@ export const formatKoreanStyleMetrics = (
     metrics.measurable && !c.hasVerificationScope
       ? '\n확인 범위 미표시 — 문서만 읽고 쓴 글이면 그렇다고 한 줄 넣을지 보세요(판정 아님)'
       : '';
-  return `${sentenceLine}\n${paragraph}${composition}${verdict}${scopeHint}`;
+  // 번역투는 걸린 것이 있을 때만 적는다. 「0회」 세 개가 늘 붙으면 옆의 실제 수치를 덮는다
+  // (구성 축의 `internalNameCount` 와 같은 판단).
+  const t = metrics.translationese;
+  const translationeseParts = [
+    t.doublePassiveCount > 0 ? `이중피동 ${t.doublePassiveCount}회` : null,
+    t.byAgentPhraseCount > 0 ? `에의해 ${t.byAgentPhraseCount}회` : null,
+    t.literalLightVerbCount > 0
+      ? `직역경동사 ${t.literalLightVerbCount}회`
+      : null,
+    // 비율 축이라 문장 축과 같은 표본 조건을 건다 — 세 문장짜리 글의 「33%」는 값이 아니라 잡음이다.
+    metrics.measurable && t.inanimateSubjectPercent > 0
+      ? `무생물주어 ${t.inanimateSubjectPercent}%`
+      : null,
+  ].filter((part): part is string => part !== null);
+  const translationese =
+    translationeseParts.length > 0
+      ? `\n번역투(관측값): ${translationeseParts.join(' · ')} — ${t.samples.join(', ')}`
+      : '';
+  return `${sentenceLine}\n${paragraph}${composition}${translationese}${verdict}${scopeHint}`;
 };
 
 const round = (value: number): number => Math.round(value * 10) / 10;

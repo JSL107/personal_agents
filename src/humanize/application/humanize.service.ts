@@ -9,6 +9,7 @@ import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
+import { isContentDropped, measureChangeRate } from '../domain/change-rate';
 import {
   findPreservationViolations,
   PreservationViolation,
@@ -31,6 +32,7 @@ import {
   renderStyleFeedback,
   toStyleFeedbackRun,
 } from '../domain/style-feedback';
+import { toTranslationeseLedger } from '../domain/translationese-metrics';
 
 /**
  * 목표 문체.
@@ -193,6 +195,8 @@ export class HumanizeService {
           });
           const humanized = parseHumanizeOutput(completion.text, keys);
           const rolledBackKeys: string[] = [];
+          const overRewrittenKeys: string[] = [];
+          const changeRates: Record<string, number> = {};
           const violationsByKey: Record<string, PreservationViolation[]> = {};
           const preservationViolations = createViolationSummary();
 
@@ -206,6 +210,19 @@ export class HumanizeService {
               humanized[key] = fields[key];
               rolledBackKeys.push(key);
               violationsByKey[key] = violations;
+              continue;
+            }
+            // 변경률은 관측값으로만 남긴다. 판정에 쓰지 않는 이유는 `change-rate.ts` 의
+            // `MIN_LENGTH_RETENTION` 주석에 실측과 함께 있다 — 정상 간결화(0.804)와 완전히
+            // 무관한 글(0.816)이 갈리지 않는다.
+            changeRates[key] =
+              Math.round(measureChangeRate(fields[key], humanized[key]) * 100) /
+              100;
+            // 되돌리는 것은 내용을 통째로 날린 출력뿐이다. 숫자·고유명사·URL 훼손은 위
+            // 보존 검사가 잡고, 길이는 비슷한데 내용만 다른 글은 어느 축도 잡지 못한다.
+            if (isContentDropped(fields[key], humanized[key])) {
+              humanized[key] = fields[key];
+              overRewrittenKeys.push(key);
             }
           }
 
@@ -214,6 +231,18 @@ export class HumanizeService {
               buildRollbackWarning(rolledBackKeys, violationsByKey),
             );
           }
+          if (overRewrittenKeys.length > 0) {
+            this.logger.warn(
+              `내용 날림 롤백 — 원문 대비 너무 짧아 되돌림: ${overRewrittenKeys
+                .map((key) => `${key}(변경률 ${changeRates[key]})`)
+                .join(' · ')}`,
+            );
+          }
+
+          // 실제로 발행되는 본문을 한 번만 재서 아래 두 축(문체 갭·번역투)이 나눠 쓴다.
+          const publishedMetrics = measureKoreanStyle(
+            appliedText(fields, humanized),
+          );
 
           return {
             result: { ...fields, ...humanized },
@@ -224,6 +253,14 @@ export class HumanizeService {
             output: {
               humanizedKeys: Object.keys(humanized),
               rolledBackKeys,
+              overRewrittenKeys,
+              // 변경률과 번역투는 판정 축이 아니라 관측값이다. **그래도 원장에 남긴다** —
+              // 카드에만 찍으면 지나가면 끝이라, 두 무리가 갈리는지 나중에 잴 표본이 안 모인다.
+              // 임계를 조이는 판단(`OVER_REWRITE_RATE`)은 이 값이 쌓여야 설 수 있다.
+              changeRates,
+              translationese: toTranslationeseLedger(
+                publishedMetrics.translationese,
+              ),
               preservationViolations,
               // 실제로 발행되는 본문을 잰다(`appliedText`). `humanized` 만 재면 모델이
               // 비워 돌려줘 원문이 유지된 문단이 측정에서 빠져, 발행본은 40문장을 넘는데
@@ -232,9 +269,7 @@ export class HumanizeService {
               // 보존 롤백은 위에서 이미 `humanized` 를 원문으로 되돌린 뒤라, 여기서 재는
               // 것은 롤백까지 반영된 실제 발행본이다. 롤백된 문단은 원문이 나가므로
               // 원문의 문체 갭이 잡히는 것이 맞다.
-              styleGaps: findKoreanStyleGaps(
-                measureKoreanStyle(appliedText(fields, humanized)),
-              ),
+              styleGaps: findKoreanStyleGaps(publishedMetrics),
             },
           };
         },

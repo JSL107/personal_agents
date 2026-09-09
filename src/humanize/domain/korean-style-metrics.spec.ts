@@ -327,6 +327,38 @@ describe('measureKoreanStyle — 문단 축', () => {
 });
 
 describe('formatKoreanStyleMetrics', () => {
+  // 번역투 줄은 걸린 것이 있을 때만 붙는다. 세 조건을 모두 잰다 — 양성 출력 · 전부 0 이면
+  // 생략 · 40문장 미만이면 비율 축(무생물주어) 억제.
+  it('번역투가 걸리면 관측값 줄을 붙이고 표면형을 함께 적는다', () => {
+    const line = formatKoreanStyleMetrics(
+      measureKoreanStyle(
+        '결과가 보여진다. AI에 의해 만든다. 경쟁력을 가지고 있다.',
+      ),
+    );
+
+    expect(line).toContain('번역투(관측값)');
+    expect(line).toContain('이중피동 1회');
+    expect(line).toContain('에의해 1회');
+    expect(line).toContain('직역경동사 1회');
+    expect(line).toContain('보여진');
+  });
+
+  it('번역투가 없으면 줄 자체를 적지 않는다', () => {
+    const line = formatKoreanStyleMetrics(
+      measureKoreanStyle('어제 팀이 결과를 확인했어요. 방향도 같이 정했고요.'),
+    );
+
+    expect(line).not.toContain('번역투');
+  });
+
+  it('40문장 미만이면 무생물주어 비율은 적지 않는다 — 비율 축이라 표본이 서야 한다', () => {
+    const line = formatKoreanStyleMetrics(
+      measureKoreanStyle('데이터는 그 사실을 보여준다.'),
+    );
+
+    expect(line).not.toContain('무생물주어');
+  });
+
   it('관측값임이 드러나게 한 줄로 적는다', () => {
     const line = formatKoreanStyleMetrics(
       measureKoreanStyle('짧다. 조금 더 긴 문장을 하나 넣습니다.'),
@@ -427,6 +459,14 @@ describe('줄표(—) 세기', () => {
       hasVerificationScope: true,
       internalNameCount: 0,
       internalNames: [],
+    },
+    // 번역투는 관측값이라 이 픽스처의 전제(「다른 축은 전부 통과」)에서는 전부 0 이다.
+    translationese: {
+      doublePassiveCount: 0,
+      byAgentPhraseCount: 0,
+      literalLightVerbCount: 0,
+      inanimateSubjectPercent: 0,
+      samples: [],
     },
   };
 
@@ -554,6 +594,14 @@ describe('재현 목표 판정', () => {
       hasVerificationScope: true,
       internalNameCount: 0,
       internalNames: [],
+    },
+    // 번역투는 관측값이라 이 픽스처의 전제(「다른 축은 전부 통과」)에서는 전부 0 이다.
+    translationese: {
+      doublePassiveCount: 0,
+      byAgentPhraseCount: 0,
+      literalLightVerbCount: 0,
+      inanimateSubjectPercent: 0,
+      samples: [],
     },
   };
 
