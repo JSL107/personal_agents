@@ -121,11 +121,68 @@ describe('HumanizeService', () => {
     expect(agentRunService.lastOutput).toEqual({
       humanizedKeys: ['changed', 'safe'],
       rolledBackKeys: ['changed'],
+      overRewrittenKeys: [],
+      // 롤백된 필드는 변경률을 재기 전에 빠진다.
+      changeRates: { safe: expect.any(Number) },
+      translationese: {
+        doublePassiveCount: 0,
+        byAgentPhraseCount: 0,
+        literalLightVerbCount: 0,
+        inanimateSubjectPercent: 0,
+      },
       preservationViolations: {
         injected: { code: 0, url: 0, pr: 1, number: 0 },
         lost: { code: 0, url: 0, pr: 1, number: 0 },
       },
       styleGaps: expect.any(Array),
+    });
+  });
+
+  // 모델이 내용을 통째로 날리고 한 줄로 요약해 돌려주는 갈래. 숫자·고유명사를 건드리지
+  // 않으므로 `content-preservation.ts` 는 이것을 잡지 못한다.
+  it('원문 대비 너무 짧아진 필드는 되돌리고 경고를 남긴다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const original =
+      '재고 문서가 틀린 자리가 둘 있었고, 둘 다 범위를 넘겨 읽은 탓이었습니다.';
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ dropped: '틀렸어요.' }),
+      }),
+    });
+
+    const result = await service.humanize({ dropped: original });
+
+    expect(result).toEqual({ dropped: original });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('내용 날림 롤백'),
+    );
+    expect(agentRunService.lastOutput).toMatchObject({
+      overRewrittenKeys: ['dropped'],
+    });
+  });
+
+  // codex 리뷰가 반례로 낸 쌍이다. 길이를 절반으로 줄인 정상 간결화라 통과해야 한다 —
+  // 변경률로 판정했다면 0.804 로 여기서 걸렸다.
+  it('절반으로 줄인 정상 간결화는 되돌리지 않는다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const concise = '지금은 이 기능을 쓸 수 없어요.';
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ polished: concise }),
+      }),
+    });
+
+    const result = await service.humanize({
+      polished:
+        '현재 시점에서는 해당 기능을 사용하는 것이 불가능한 상태입니다.',
+    });
+
+    expect(result).toEqual({ polished: concise });
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(agentRunService.lastOutput).toMatchObject({
+      overRewrittenKeys: [],
     });
   });
 
@@ -145,6 +202,14 @@ describe('HumanizeService', () => {
     expect(agentRunService.lastOutput).toEqual({
       humanizedKeys: ['count'],
       rolledBackKeys: [],
+      overRewrittenKeys: [],
+      changeRates: { count: expect.any(Number) },
+      translationese: {
+        doublePassiveCount: 0,
+        byAgentPhraseCount: 0,
+        literalLightVerbCount: 0,
+        inanimateSubjectPercent: 0,
+      },
       preservationViolations: {
         injected: { code: 0, url: 0, pr: 0, number: 0 },
         lost: { code: 0, url: 0, pr: 0, number: 1 },
@@ -255,10 +320,18 @@ describe('HumanizeService', () => {
     // 보고서 전문이 원장에 복제되면 안 된다 — 키 목록만 남긴다.
     const runArg = agentRunService.execute.mock.calls[0][0] as ExecuteArgs;
     const executed = await runArg.run({ agentRunId: 1 });
-    // 본문은 없고 키 목록·보존 판정·문체 갭(숫자 몇 줄)만 남는다.
+    // 본문은 없고 키 목록·보존 판정·문체 갭·변경률·번역투(전부 숫자 몇 줄)만 남는다.
     expect(executed.output).toEqual({
       humanizedKeys: ['a'],
       rolledBackKeys: [],
+      overRewrittenKeys: [],
+      changeRates: { a: expect.any(Number) },
+      translationese: {
+        doublePassiveCount: 0,
+        byAgentPhraseCount: 0,
+        literalLightVerbCount: 0,
+        inanimateSubjectPercent: 0,
+      },
       preservationViolations: {
         injected: { code: 0, url: 0, pr: 0, number: 0 },
         lost: { code: 0, url: 0, pr: 0, number: 0 },

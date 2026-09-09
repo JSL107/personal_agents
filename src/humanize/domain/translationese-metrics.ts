@@ -206,3 +206,24 @@ export const measureTranslationese = (
     ]),
   };
 };
+
+/**
+ * 원장에 남기는 형태. `samples` 는 뺀다 — 본문 조각이라 원장에 본문을 담지 않는다는 규칙
+ * (`humanize.service.ts` 의 `output` 주석)에 걸리고, 나중에 임계를 정할 때 필요한 것은
+ * 개수뿐이다.
+ */
+export type TranslationeseLedger = {
+  doublePassiveCount: number;
+  byAgentPhraseCount: number;
+  literalLightVerbCount: number;
+  inanimateSubjectPercent: number;
+};
+
+export const toTranslationeseLedger = (
+  metrics: TranslationeseMetrics,
+): TranslationeseLedger => ({
+  doublePassiveCount: metrics.doublePassiveCount,
+  byAgentPhraseCount: metrics.byAgentPhraseCount,
+  literalLightVerbCount: metrics.literalLightVerbCount,
+  inanimateSubjectPercent: metrics.inanimateSubjectPercent,
+});
