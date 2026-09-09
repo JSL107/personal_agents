@@ -63,6 +63,11 @@ final class OfficeScene: SKScene {
     /// 현재 배치를 기준으로 5% 히스테리시스를 적용한다.
     private var zoneColumns: Int?
     private var plan = officeFloorPlan(agents: [])
+    /// 청소기·먼지를 담는 노드 이름. 갱신 때 통째로 지우고 다시 세운다.
+    private static let housekeepingNodeName = "housekeeping"
+    /// 창 크기가 바뀌면 타일 크기·격자 원점이 다시 잡힌다. 마지막 실태를 들고 있어야
+    /// 그때 같은 그림을 새 좌표로 다시 세울 수 있다(안 그러면 청소기가 딴 자리에 남는다).
+    private var lastHousekeeping: ConsoleHousekeeping?
     private var tileSize: CGFloat = 32
     private var gridOrigin: CGPoint = .zero
     private var spriteScale: CGFloat = 1
@@ -603,6 +608,9 @@ final class OfficeScene: SKScene {
         updateDaylight()
         // 사람 배치가 끝난 뒤라야 한다 — 문 여닫이는 지금 누가 어디 서 있는지로만 정해진다.
         refreshDoors()
+        // 평면도·타일 크기가 다시 잡힌 뒤라야 청소기가 제 자리에 선다. 창 크기 변경도
+        // 이 경로로 들어오므로(didChangeSize → sync) 갱신 자리는 여기 하나면 된다.
+        renderHousekeeping()
     }
 
     // MARK: - 출근
@@ -3427,6 +3435,134 @@ final class OfficeScene: SKScene {
     }
 
     /// 전사 요약을 화면 좌상단에 띄운다.
+    // MARK: - 기억 청소기
+
+    /// 세션 기억 청소 실태를 사무실 바닥에 올린다.
+    ///
+    /// 청소기는 장식이 아니라 **신호**다 — 멈춰 선 청소기가 곧 "주간 청소가 끊겼다" 를 뜻한다.
+    /// 쓰레기통 옆에 쌓인 먼지는 청소기가 스스로 못 치우고 사람 판단으로 넘긴 몫(묶음·폐기)이다.
+    func applyHousekeeping(_ housekeeping: ConsoleHousekeeping?) {
+        lastHousekeeping = housekeeping
+        renderHousekeeping()
+    }
+
+    private func renderHousekeeping() {
+        objectLayer.childNode(withName: Self.housekeepingNodeName)?.removeFromParent()
+        let housekeeping = lastHousekeeping
+        // 서버가 이 필드를 모르는 구버전이면 아무것도 그리지 않는다. 없는 상태를 "청소가 죽었다"
+        // 로 그리면 멀쩡한 배포가 고장으로 보인다 — 모름과 고장은 다른 사실이다.
+        guard let housekeeping else {
+            return
+        }
+        // 쓰레기통이 평면도에 없으면 청소기가 설 자리도 없다(방 구성에 따라 빠질 수 있다).
+        guard let trash = plan.furniture.first(where: { $0.kind == .trash }) else {
+            return
+        }
+
+        let holder = SKNode()
+        holder.name = Self.housekeepingNodeName
+        holder.position = centerPoint(trash.tile)
+        // 왕복 구간이 통 앞을 지나므로 통보다 앞에 놓는다. 같은 깊이면 그리는 순서가
+        // 정해지지 않아, 청소기가 통 뒤로 사라지는 회차가 생긴다.
+        holder.zPosition = depth(of: trash.tile) + 0.05
+        objectLayer.addChild(holder)
+
+        let mode = officeVacuumMode(
+            ranAt: officeParseIsoDate(housekeeping.ranAt), now: Date()
+        )
+        addVacuumRobot(to: holder, mode: mode)
+        addPendingDust(
+            to: holder,
+            level: officeTrashFillLevel(pendingProjects: housekeeping.pendingProjects)
+        )
+    }
+
+    /// 청소기·먼지가 실제로 씬에 올라갔는지. 렌더 확인 입구가 "굽기는 했다" 만 보면
+    /// 아무것도 안 그려진 그림을 성공으로 저장한다(같은 함정을 이 앱에서 이미 겪었다).
+    func housekeepingNodeCount() -> Int {
+        guard let holder = objectLayer.childNode(withName: Self.housekeepingNodeName) else {
+            return 0
+        }
+        return holder.children.count
+    }
+
+    private func addVacuumRobot(to holder: SKNode, mode: OfficeVacuumMode) {
+        // 쓰레기통(55px 높이)보다 작아야 로봇청소기로 읽힌다.
+        let radius = tileSize * 0.15
+        let body = SKShapeNode(circleOfRadius: radius)
+        body.fillColor = SKColor(red: 0.16, green: 0.17, blue: 0.20, alpha: 1)
+        body.strokeColor = SKColor(red: 0.42, green: 0.44, blue: 0.48, alpha: 1)
+        body.lineWidth = max(1, tileSize * 0.025)
+
+        let led = SKShapeNode(circleOfRadius: max(1.2, radius * 0.26))
+        led.strokeColor = .clear
+        led.position = CGPoint(x: 0, y: radius * 0.34)
+        switch mode {
+        case .sweeping:
+            led.fillColor = SKColor(red: 0.36, green: 0.86, blue: 0.44, alpha: 1)
+        case .docked:
+            led.fillColor = SKColor(red: 0.40, green: 0.62, blue: 0.94, alpha: 1)
+        case .stalled:
+            led.fillColor = SKColor(red: 0.94, green: 0.34, blue: 0.31, alpha: 1)
+        }
+        body.addChild(led)
+        holder.addChild(body)
+
+        guard mode == .sweeping else {
+            // 순회 액션을 주지 않는다. 도는 그림을 그대로 두면 죽은 스케줄이 살아 있는 것처럼
+            // 보여, 이 화면을 만든 이유가 사라진다.
+            body.position = CGPoint(x: tileSize * 0.34, y: -tileSize * 0.46)
+            if mode == .stalled {
+                led.run(
+                    .repeatForever(
+                        .sequence([
+                            .fadeAlpha(to: 0.25, duration: 0.6),
+                            .fadeAlpha(to: 1.0, duration: 0.6),
+                        ])
+                    )
+                )
+            }
+            return
+        }
+
+        // 쓰레기통은 대개 벽에 붙어 서 있어 둘레에 한 타일이 채 안 남는다. 타원 궤도로 돌리면
+        // 청소기가 칸막이를 통과해 옆방 바닥을 지난다(실제로 렌더에서 벽 밖으로 나갔다).
+        // 그래서 통 바로 앞에서 좌우로만 짧게 오간다 — 벽을 넘을 수 없는 폭이다.
+        let travel = tileSize * 0.62
+        body.position = CGPoint(x: -travel / 2, y: -tileSize * 0.46)
+        body.run(
+            .repeatForever(
+                .sequence([
+                    .moveBy(x: travel, y: 0, duration: 7),
+                    .moveBy(x: -travel, y: 0, duration: 7),
+                ])
+            )
+        )
+    }
+
+    /// 청소기가 못 치우고 남긴 몫. 사람이 묶음·폐기를 판단해야 비워진다.
+    private func addPendingDust(to holder: SKNode, level: Int) {
+        guard level > 0 else {
+            return
+        }
+        for index in 0..<level {
+            let dust = SKShapeNode(circleOfRadius: max(1.4, tileSize * 0.055))
+            dust.fillColor = SKColor(red: 0.55, green: 0.51, blue: 0.44, alpha: 0.92)
+            dust.strokeColor = .clear
+            // 한 점씩 위로 쌓되 좌우로 어긋낸다 — 자로 맞춰 쌓으면 한 덩이로 뭉쳐 보여
+            // 1건과 3건이 구분되지 않는다(책상 서류 더미에서 같은 것을 겪었다).
+            let jitter = index % 2 == 0 ? 1.0 : -1.0
+            // 통 아가리 폭 안에서 넘치게 쌓는다 — 통과 떨어뜨려 놓으면 바닥에 흘린 것처럼
+            // 보여, "치우지 못하고 쌓인 몫" 이라는 뜻이 전달되지 않는다.
+            dust.position = CGPoint(
+                x: tileSize * CGFloat(0.06 * Double(index + 1)) * CGFloat(jitter),
+                y: tileSize * CGFloat(0.14 + 0.08 * Double(index))
+            )
+            dust.zPosition = 0.02 + CGFloat(index) * 0.01
+            holder.addChild(dust)
+        }
+    }
+
     func updateCompanySummary(_ agents: [ConsoleAgent]) {
         overlayLayer.childNode(withName: "summaryHUD")?.removeFromParent()
         let summary = companySummary(agents: agents)

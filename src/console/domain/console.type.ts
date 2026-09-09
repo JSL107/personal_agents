@@ -114,12 +114,29 @@ export interface ConsoleSession {
 }
 
 /** 앱 부팅 시 1콜로 받는 전체 상태 스냅샷. */
+/**
+ * 세션 기억 청소 실태 — 오피스의 로봇청소기·쓰레기통 표현 재료.
+ *
+ * 주 1회 청소기가 갱신한 요약 한 장을 그대로 싣는다. 매 스냅샷마다 기억 파일 수백 개를
+ * 다시 훑으면 장식용 조회 하나가 관제 화면 전체를 멎게 한다.
+ */
+export interface ConsoleHousekeeping {
+  /** 마지막 청소 시각. 한 번도 안 돌았으면 null. */
+  readonly ranAt: string | null;
+  /** 그 회차에 청소기가 실제로 치운 건수. */
+  readonly cleanedCount: number;
+  /** 청소 뒤에도 초과라 사람이 묶음·폐기를 판단해야 하는 프로젝트 수 = 쓰레기통에 쌓인 것. */
+  readonly pendingProjects: number;
+}
+
 export interface ConsoleSnapshot {
   readonly agents: ConsoleAgent[];
   readonly runs: ConsoleRun[];
   readonly approvals: ConsoleApproval[];
   readonly sessions: ConsoleSession[];
   readonly serverTime: string;
+  /** 앱 버전 스큐 대비 옵셔널 — 이 필드를 모르는 서버도 그대로 동작한다. */
+  readonly housekeeping?: ConsoleHousekeeping;
 }
 
 /** SSE 로 흘려보내는 증분 이벤트. 앱은 이걸 스냅샷 위에 적용한다. */
