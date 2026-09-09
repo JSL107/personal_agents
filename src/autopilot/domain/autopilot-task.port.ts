@@ -57,6 +57,14 @@ export interface AutopilotTaskResult {
   // 완전한 해결은 "무엇을 어느 target 에 보냈나" 를 target 별로 추적하는 것인데 그건
   // 이 콜백 하나가 감당할 범위가 아니다. target 이 하나면 애초에 해당 없다.
   onDelivered?: () => Promise<void>;
+  // 하루 1회 발송 가드는 그날 첫 회차만 통과시킨다. 나중 회차에서 새로 생긴, 사람이
+  // 개입해야 하는 상태는 그대로면 묻힌다. 이 값이 바뀌면 새 키가 되어 한 번 더 나간다.
+  // (예: pr-review-sweep 이 보류(contradicted) 건수를 담아 준다 — 09:00 회차가 이미
+  // 가드를 소비한 뒤 09:30 에 모순이 새로 발견돼도 건수가 바뀌었으니 다시 발송된다.)
+  // 여러 task 가 각자 접미사를 낼 수 있어 orchestrator 가 정렬해 이어 붙인다 — task
+  // 실행 순서에 값이 흔들리면 안 되기 때문이다. 접미사를 안 주는 task 만 있으면
+  // 가드 키는 종전과 완전히 같다(하위 호환).
+  guardKeySuffix?: string;
 }
 
 export interface AutopilotTask {

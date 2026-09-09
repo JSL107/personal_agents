@@ -1,3 +1,4 @@
+import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { PlaybookEntry } from '../domain/playbook.type';
 import { AutopilotOrchestrator } from './autopilot.orchestrator';
@@ -732,6 +733,135 @@ describe('AutopilotOrchestrator', () => {
 
       expect(failingOnDelivered).toHaveBeenCalledTimes(1);
       expect(succeedingOnDelivered).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // pr-review-sweep 이 도입한 계약 — 하루 1회 발송 가드(그룹×날짜)가 그날 첫 회차 이후
+  // "이미 발송됨" 으로 막는 것을, 나중 회차에 새로 생긴 상태(예: 👎+수용 답글 모순 보류)
+  // 까지 조용히 묻어 버리던 문제의 수정(카드 57 관련 봇 리뷰 대응).
+  describe('AutopilotTaskResult.guardKeySuffix — 하루 1회 가드에 상태 변화를 반영한다', () => {
+    it('guardKeySuffix 를 주지 않는 task 만 있으면 가드 키가 종전과 완전히 같다', async () => {
+      const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const acquireOnce = jest.fn().mockResolvedValue(true);
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+      expect(acquireOnce).toHaveBeenCalledWith(
+        `autopilot:daily-eval:${getTodayKstDate()}`,
+        expect.anything(),
+      );
+    });
+
+    it('task 가 guardKeySuffix 를 주면 가드 키 끝에 붙는다', async () => {
+      const task = makeTask('pr-review-sweep', {
+        skip: false,
+        summaryText: '본문',
+        guardKeySuffix: 'contradicted-3',
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const acquireOnce = jest.fn().mockResolvedValue(true);
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup(
+        'pr-review-sweep',
+        [makeEntry('pr-review-sweep', 'pr-review-sweep')],
+        'U1',
+        'C1',
+      );
+
+      expect(acquireOnce).toHaveBeenCalledWith(
+        `autopilot:pr-review-sweep:${getTodayKstDate()}:contradicted-3`,
+        expect.anything(),
+      );
+    });
+
+    it('여러 task 가 각자 접미사를 내면 실행 순서와 무관하게 정렬해 이어 붙인다', async () => {
+      const taskB = makeTask('task-b', {
+        skip: false,
+        summaryText: 'B',
+        guardKeySuffix: 'zeta-1',
+      });
+      const taskA = makeTask('task-a', {
+        skip: false,
+        summaryText: 'A',
+        guardKeySuffix: 'alpha-2',
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const acquireOnce = jest.fn().mockResolvedValue(true);
+      // 실행 순서는 taskB → taskA 로 접미사 생성 순서와 정렬 순서를 일부러 어긋나게 둔다.
+      const orchestrator = new AutopilotOrchestrator(
+        [taskB, taskA] as never,
+        { postMessage } as never,
+        { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup(
+        'mixed',
+        [makeEntry('task-b', 'task-b'), makeEntry('task-a', 'task-a')],
+        'U1',
+        'C1',
+      );
+
+      expect(acquireOnce).toHaveBeenCalledWith(
+        `autopilot:mixed:${getTodayKstDate()}:alpha-2:zeta-1`,
+        expect.anything(),
+      );
+    });
+
+    it('접미사가 붙은 키로 발송이 실패해도 같은 키를 release 한다', async () => {
+      // 🔴 acquireOnce 로 선점한 키와 release 로 롤백하는 키가 갈리면 가드가 영구히
+      // 남아 그 그룹의 발송이 하루 내내 막힌다 — 접미사 도입으로 이 불변식이 깨지지
+      // 않는지 직접 확인한다.
+      const task = makeTask('pr-review-sweep', {
+        skip: false,
+        summaryText: '본문',
+        guardKeySuffix: 'contradicted-2',
+      });
+      const postMessage = jest
+        .fn()
+        .mockRejectedValue(new Error('Slack API 일시 오류'));
+      const acquireOnce = jest.fn().mockResolvedValue(true);
+      const release = jest.fn().mockResolvedValue(undefined);
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        {
+          acquireOnce,
+          release,
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await expect(
+        orchestrator.runGroup(
+          'pr-review-sweep',
+          [makeEntry('pr-review-sweep', 'pr-review-sweep')],
+          'U1',
+          'C1',
+        ),
+      ).rejects.toThrow('Slack API 일시 오류');
+
+      const acquiredKey: string = acquireOnce.mock.calls[0][0];
+      expect(acquiredKey).toContain('contradicted-2');
+      expect(release).toHaveBeenCalledWith(acquiredKey);
     });
   });
 

@@ -45,7 +45,7 @@ const COUNT_LABELS: { key: keyof PublishOutcome; label: string }[] = [
 // 키를 숫자 카운터로 한정한다 — HarvestOutcome 에는 누적 채택률(배열)도 들어 있어
 // `keyof` 를 그대로 쓰면 `> 0` 비교가 타입에서 깨진다.
 const HARVEST_COUNT_LABELS: {
-  key: 'acked' | 'rejected' | 'fixed' | 'stale' | 'resolved';
+  key: 'acked' | 'rejected' | 'fixed' | 'stale' | 'resolved' | 'contradicted';
   label: string;
 }[] = [
   { key: 'acked', label: '👍' },
@@ -53,6 +53,7 @@ const HARVEST_COUNT_LABELS: {
   { key: 'fixed', label: '🔧 해소' },
   { key: 'stale', label: '종료' },
   { key: 'resolved', label: '스레드 정리' },
+  { key: 'contradicted', label: '보류' },
 ];
 
 // 스윕 결과 요약. 게시할 게 없으면 빈 문자열 — 호출자가 skip 처리한다.

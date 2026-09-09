@@ -41,13 +41,23 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
       harvest.rejected > 0 ||
       harvest.fixed > 0 ||
       harvest.stale > 0 ||
-      harvest.resolved > 0;
+      harvest.resolved > 0 ||
+      // 보류는 사람이 손대야 풀린다 — 이 조건에 없으면 보류만 있는 회차가 통째로
+      // skip 되어 카드가 조용히 OPEN 에 쌓인다.
+      harvest.contradicted > 0;
     if (!hasHarvestResult && results.length === 0) {
       return { skip: true };
     }
     return {
       skip: false,
       summaryText: formatPrReviewSweep({ harvest, results }),
+      // 하루 1회 발송 가드는 그룹×날짜 키다(autopilot.orchestrator buildGuardKey) — 그날
+      // 첫 회차가 이미 소비했으면 뒤에 새로 생긴 보류도 "이미 발송됨" 으로 묻힌다.
+      // 건수를 접미사로 실어 건수가 유지되는 동안은 하루 1회를 지키고, 늘거나 줄면(사람이
+      // 개입해 해소되거나 새로 하나 더 걸리면) 새 키가 되어 다시 발송된다.
+      ...(harvest.contradicted > 0
+        ? { guardKeySuffix: `contradicted-${harvest.contradicted}` }
+        : {}),
     };
   }
 }
@@ -60,5 +70,6 @@ const emptyHarvestOutcome = (): HarvestOutcome => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  contradicted: 0,
   adoption: [],
 });

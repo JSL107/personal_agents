@@ -21,6 +21,7 @@ const harvest = (overrides = {}) => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  contradicted: 0,
   adoption: [],
   ...overrides,
 });
@@ -148,6 +149,17 @@ describe('formatPrReviewSweep', () => {
     expect(text).toContain('👍 2 · 👎 1 · 종료 3 · 스레드 정리 3');
     expect(text).not.toContain('판정');
     expect(text).not.toContain('skip');
+  });
+
+  it('보류(contradicted)만 있어도 수확 줄에 실린다 — 사람이 봐야 하는 카드다', () => {
+    // 👎 와 답글이 어긋나 확정을 미룬 카드. 이 값이 요약에서 빠지면 카드가 조용히
+    // OPEN 에 쌓인다(카드 57 사고).
+    const text = formatPrReviewSweep({
+      harvest: harvest({ contradicted: 2 }),
+      results: [],
+    });
+
+    expect(text).toContain('보류 2');
   });
 
   it('수확 결과가 전부 0이면 수확 줄을 생략한다', () => {
