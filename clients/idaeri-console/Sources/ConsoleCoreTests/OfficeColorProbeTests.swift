@@ -19,7 +19,143 @@ func runOfficeColorProbeTests(_ t: TestRunner) {
     verifyShirtBrightnessRange(t)
     verifyCorridorAgainstShirts(t)
     verifyFurnitureContrast(t)
+    verifyPixelReaders(t)
+    verifyFurnitureFloorPairs(t)
     verifyHourParsing(t)
+}
+
+// MARK: - 픽셀 읽기
+
+/// `meanOpaque` 와 `shirtPixelBrightnesses` 를 합성 픽셀로 직접 돌린다.
+///
+/// 규칙 쪽 테스트는 밝기를 숫자로 주입하므로 **알파 처리와 픽셀 선택**의 오류를 잡지 못한다
+/// (#520 리뷰 지적). 두 함수가 게이트에 들어오는 모든 가구·셔츠 숫자의 출처다.
+private func verifyPixelReaders(_ t: TestRunner) {
+    // 절반은 투명(검정), 절반은 불투명(200). 투명을 함께 세면 평균이 100 쪽으로 끌린다.
+    let half = pixelImage(
+        width: 2, height: 1,
+        pixels: [(0, 0, 0, 0), (200, 200, 200, 255)])
+    guard let half, let grid = OfficePixelGrid(image: half) else {
+        t.expect(false, "합성 픽셀 이미지를 만들지 못했다")
+        return
+    }
+    t.expect(
+        abs((grid.meanOpaque() ?? 0) - 200) < 0.5,
+        "불투명 픽셀만 재면 200 — 실제 \(grid.meanOpaque() ?? -1)"
+    )
+    t.expect(
+        grid.mean() < 150,
+        "전체 평균은 투명 픽셀에 끌려 내려간다(그래서 가구는 meanOpaque 로 잰다) — 실제 \(grid.mean())"
+    )
+    t.expectNil(
+        OfficePixelGrid(image: pixelImage(width: 1, height: 1, pixels: [(0, 0, 0, 0)])!)?
+            .meanOpaque(),
+        "불투명 픽셀이 없으면 nil"
+    )
+
+    // 셔츠 선택 — 하한 아래·채도 있음·투명은 모두 빠진다.
+    let mixed = pixelImage(
+        width: 4, height: 1,
+        pixels: [
+            (255, 255, 255, 255),  // 셔츠
+            (227, 227, 227, 255),  // 밝기 하한(228) 아래
+            (255, 229, 229, 255),  // 채도 26 — 얼굴·소품 대역
+            // 알파 하한(16) 아래. **곱셈 저장에서는 반투명 픽셀의 RGB 가 알파를 넘지 못하므로**
+            // 흐린 가장자리는 밝기로도 셔츠 대역 밖이다 — 두 조건이 같은 방향으로 걸린다.
+            (8, 8, 8, 8),
+        ])
+    guard let mixed, let mixedGrid = OfficePixelGrid(image: mixed) else {
+        t.expect(false, "셔츠 판정용 합성 이미지를 만들지 못했다")
+        return
+    }
+    let shirt = mixedGrid.shirtPixelBrightnesses()
+    t.expectEqual(shirt.count, 1, "네 픽셀 중 셔츠는 하나 — 실제 \(shirt)")
+    t.expect(abs((shirt.first ?? 0) - 255) < 0.5, "셔츠 픽셀의 원본 밝기 255")
+}
+
+// MARK: - 가구 짝
+
+/// 대비를 견줄 짝을 **실제 배치**에서 만든다. 부서 요청 목록을 훑으면 밴드 가구와 깔개가 빠진다.
+private func verifyFurnitureFloorPairs(_ t: TestRunner) {
+    // 3×2 격자: 아래 줄은 세라믹, 위 줄은 벽.
+    let floor: [[FloorTile]] = [
+        [.ceramic, .ceramic, .ceramic],
+        [.wall, .wall, .wall],
+    ]
+    let pairs = officeFurnitureFloorPairs(
+        floor: floor,
+        furniture: [
+            FurniturePlacement(kind: .rugBeige, tile: TilePoint(x: 0, y: 0)),
+            // 같은 종류·같은 바닥이 여러 개 놓여도 한 번만 본다.
+            FurniturePlacement(kind: .rugBeige, tile: TilePoint(x: 1, y: 0)),
+            // 벽걸이는 견주는 면이 벽이라 빠진다.
+            FurniturePlacement(kind: .wallCalendar, tile: TilePoint(x: 0, y: 1)),
+            // 문도 벽 칸에 선다.
+            FurniturePlacement(kind: .doorClosed, tile: TilePoint(x: 1, y: 1)),
+            // 격자 밖 좌표는 조용히 건너뛴다(평면도가 줄어든 회차).
+            FurniturePlacement(kind: .desk, tile: TilePoint(x: 9, y: 9)),
+            // **벽 칸에 선 평범한 가구도 뺀다.** 벽걸이·문은 앞 조건에서 이미 빠지므로,
+            // 이 표본이 없으면 벽 칸 제외가 죽은 코드가 된다(대조군에서 실제로 그랬다).
+            // 벽은 `wallBaseColor` 물들임을 따로 받아 바닥과 같은 축의 값이 아니다.
+            FurniturePlacement(kind: .printer, tile: TilePoint(x: 2, y: 1)),
+        ]
+    )
+    t.expectEqual(pairs.count, 1, "실제로 견줄 짝은 깔개 하나 — 실제 \(pairs)")
+    t.expect(
+        !pairs.contains { $0.kind == .printer },
+        "벽 칸에 선 가구는 바닥과 견주지 않는다"
+    )
+    t.expectEqual(pairs.first?.kind, .rugBeige, "깔개가 포함된다")
+    t.expectEqual(pairs.first?.floor, .ceramic, "그 깔개가 선 칸의 바닥과 짝지어진다")
+
+    // 같은 종류가 **다른 바닥** 위에 놓이면 둘 다 본다 — 방마다 바닥이 다르다.
+    let twoFloors: [[FloorTile]] = [[.ceramic, .woodB]]
+    let spread = officeFurnitureFloorPairs(
+        floor: twoFloors,
+        furniture: [
+            FurniturePlacement(kind: .bookshelf, tile: TilePoint(x: 0, y: 0)),
+            FurniturePlacement(kind: .bookshelf, tile: TilePoint(x: 1, y: 0)),
+        ]
+    )
+    t.expectEqual(spread.count, 2, "바닥이 다르면 짝이 둘 — 실제 \(spread)")
+}
+
+/// RGBA 픽셀을 그대로 굽는다(가로 나열). 알파·채도 경계를 겨냥한 표본을 만들 때 쓴다.
+private func pixelImage(
+    width: Int, height: Int, pixels: [(UInt8, UInt8, UInt8, UInt8)]
+) -> CGImage? {
+    guard pixels.count == width * height else {
+        return nil
+    }
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    for (index, pixel) in pixels.enumerated() {
+        bytes[index * 4] = pixel.0
+        bytes[index * 4 + 1] = pixel.1
+        bytes[index * 4 + 2] = pixel.2
+        bytes[index * 4 + 3] = pixel.3
+    }
+    var image: CGImage?
+    bytes.withUnsafeMutableBytes { buffer in
+        guard let base = buffer.baseAddress,
+            let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                // 알파를 **살려서** 굽는다. 처음에 `noneSkipLast` 로 두었더니 알파 채널이
+                // 버려져 전부 불투명이 됐고, 알파 처리를 확인하려는 표본이 통째로 무의미해졌다
+                // (테스트가 곧바로 잡아냈다). 비곱셈(`last`)은 비트맵 컨텍스트가 지원하지
+                // 않으므로 곱셈으로 두고, 값도 곱셈 규칙(RGB ≤ 알파)에 맞춰 넣는다.
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return
+        }
+        image = context.makeImage()
+    }
+    return image
 }
 
 // MARK: - 셔츠 대역
@@ -137,13 +273,26 @@ private func verifyFurnitureContrast(_ t: TestRunner) {
     func realistic(_ kind: FurnitureKind) -> Double? {
         kind == .refrigerator ? 192.6 : 110.0
     }
+    // 짝은 실제 배치에서 온다 — 냉장고는 총무(carpetDark), 책장은 평가(woodA) 위에 선다.
+    let pairs: [(kind: FurnitureKind, floor: FloorTile)] = [
+        (.refrigerator, .carpetDark), (.bookshelf, .woodA),
+    ]
     t.expectEqual(
         officeFloorColorViolations(
             samples: healthy, hour: 14, textureBrightness: brightness,
-            furnitureBrightness: realistic
+            furnitureBrightness: realistic, furniturePairs: pairs
         ).count,
         0,
         "실측 밝기로는 위반 0"
+    )
+    // 짝을 안 넘기면 이 규칙만 빠진다 — 밝기 함수만 줘도 검사할 대상이 없다.
+    t.expectEqual(
+        officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness,
+            furnitureBrightness: { _ in 250 }
+        ).count,
+        0,
+        "짝이 없으면 가구 규칙이 돌지 않는다"
     )
 
     // 가구를 바닥까지 끌어올리면 잡힌다 — 목재 보정을 과하게 올렸을 때의 증상이다.
@@ -152,7 +301,7 @@ private func verifyFurnitureContrast(_ t: TestRunner) {
     }
     let violations = officeFloorColorViolations(
         samples: healthy, hour: 14, textureBrightness: brightness,
-        furnitureBrightness: brightened)
+        furnitureBrightness: brightened, furniturePairs: pairs)
     t.expect(
         violations.contains { $0.contains("refrigerator") },
         "가구가 바닥 밝기에 닿으면 잡는다 — 실제 \(violations)"
@@ -162,16 +311,17 @@ private func verifyFurnitureContrast(_ t: TestRunner) {
     t.expect(
         officeFloorColorViolations(
             samples: healthy, hour: 14, textureBrightness: brightness,
-            furnitureBrightness: { _ in nil }
+            furnitureBrightness: { _ in nil }, furniturePairs: pairs
         ).contains { $0.contains("가구 스프라이트를 읽지 못했다") },
         "가구 스프라이트 부재는 위반"
     )
 
-    // 벽걸이는 견주는 면이 바닥이 아니라 벽이다 — 실제로 벽걸이 달력(207.8)은 벽보다 밝다.
+    // 벽걸이는 짝을 만드는 단계에서 이미 빠진다(`officeFurnitureFloorPairs`) — 견주는 면이
+    // 바닥이 아니라 벽이고, 실제로 벽걸이 달력(207.8)은 벽(205.4~207.7)보다 밝다.
     t.expect(
         !officeFloorColorViolations(
             samples: healthy, hour: 14, textureBrightness: brightness,
-            furnitureBrightness: { $0.isWallMounted ? 207.8 : 110.0 }
+            furnitureBrightness: { $0.isWallMounted ? 207.8 : 110.0 }, furniturePairs: pairs
         ).contains { $0.contains("wall") },
         "벽걸이는 이 규칙에서 빠진다"
     )

@@ -27,17 +27,21 @@ public struct OfficeColorProbeGeometry {
     /// 가구·사람이 덮은 칸. 바닥색을 재는 대상에서 뺀다 — 스프라이트가 위로 자라므로
     /// 발이 닿는 칸만 빼면 그 위 칸에서 가구 색을 바닥색으로 잘못 잰다.
     public let occupiedTiles: Set<TilePoint>
+    /// **실제로 놓인** 가구. 부서별 요청 목록이 아니라 평면도가 배치한 결과다.
+    public let furniture: [FurniturePlacement]
 
     public init(
         floor: [[FloorTile]],
         gridOrigin: CGPoint,
         tileSize: CGFloat,
-        occupiedTiles: Set<TilePoint>
+        occupiedTiles: Set<TilePoint>,
+        furniture: [FurniturePlacement] = []
     ) {
         self.floor = floor
         self.gridOrigin = gridOrigin
         self.tileSize = tileSize
         self.occupiedTiles = occupiedTiles
+        self.furniture = furniture
     }
 }
 
@@ -345,6 +349,42 @@ public let officeFloorModelTolerance = 12.0
 /// "표본이 사실상 없다" 만 잡는다(세 크기 실측: 1440×860 · 1400×820 · 901×819 에서 최소 33·33·32).
 public let officeFloorColorMinimumTiles = 10
 
+/// 대비를 견줄 (가구, 그 가구가 선 칸의 바닥) 짝. **실제 배치에서 만든다.**
+///
+/// 부서별 요청 목록(`departmentFurniture`)을 순회하면 두 가지가 빠진다 — 상단 밴드(회의실·
+/// 대표실·탕비실)에 놓이는 가구 전부와, 목록에 없이 평면도가 직접 놓는 깔개 셋이다
+/// (`rugGreen`·`rugBeige` 는 밴드 후보, `rugNavy` 는 자산 방). #520 리뷰에서 지적받아 고쳤다.
+///
+/// 벽 칸에 걸린 것(벽걸이·문)은 뺀다 — 견주는 면이 바닥이 아니라 벽이고, 실제로 벽걸이
+/// 달력(207.8)은 벽(205.4~207.7)보다 밝다. 같은 종류가 여러 개 놓이는 방이 있어 중복도 접는다.
+public func officeFurnitureFloorPairs(
+    floor: [[FloorTile]],
+    furniture: [FurniturePlacement]
+) -> [(kind: FurnitureKind, floor: FloorTile)] {
+    var seen: Set<String> = []
+    var pairs: [(kind: FurnitureKind, floor: FloorTile)] = []
+    for placement in furniture where !placement.kind.isWallMounted && !placement.kind.isDoorway {
+        guard placement.tile.y >= 0, placement.tile.y < floor.count,
+            placement.tile.x >= 0, placement.tile.x < floor[placement.tile.y].count
+        else {
+            continue
+        }
+        let tile = floor[placement.tile.y][placement.tile.x]
+        guard tile != .wall else {
+            continue
+        }
+        let key = "\(placement.kind.rawValue)|\(tile.rawValue)"
+        guard seen.insert(key).inserted else {
+            continue
+        }
+        pairs.append((placement.kind, tile))
+    }
+    return pairs.sorted {
+        $0.kind.rawValue == $1.kind.rawValue
+            ? $0.floor.rawValue < $1.floor.rawValue : $0.kind.rawValue < $1.kind.rawValue
+    }
+}
+
 /// 실측표가 어기는 규칙을 모아 돌려준다(빈 배열 = 통과).
 ///
 /// 판정을 목록으로 내는 이유는 **첫 위반에서 멈추지 않기** 위해서다 — 색을 손볼 때는 여러
@@ -357,7 +397,8 @@ public func officeFloorColorViolations(
     hour: Int,
     textureBrightness: (FloorTile) -> Double?,
     shirtBrightness: (darkest: Double, brightest: Double)? = nil,
-    furnitureBrightness: ((FurnitureKind) -> Double?)? = nil
+    furnitureBrightness: ((FurnitureKind) -> Double?)? = nil,
+    furniturePairs: [(kind: FurnitureKind, floor: FloorTile)] = []
 ) -> [String] {
     let prefix = "\(hour)시:"
     guard let corridor = samples.first(where: { $0.tile == .corridor }) else {
@@ -437,28 +478,22 @@ public func officeFloorColorViolations(
     // 밝기로 그려지므로 스프라이트 밝기를 그대로 견준다 — 칸을 온전히 채우지 않아 렌더에서
     // 재면 배경이 섞인다(그래서 렌더 픽셀이 아니라 에셋을 읽는다).
     if let furnitureBrightness {
-        for department in Department.allCases {
-            let floor = departmentFloor(department)
-            guard let floorSample = samples.first(where: { $0.tile == floor }) else {
+        for pair in furniturePairs {
+            guard let floorSample = samples.first(where: { $0.tile == pair.floor }) else {
                 continue
             }
-            // 같은 종류를 여러 개 놓는 방이 있어(평가 방 책장 셋) 목록에 중복이 있다.
-            // 그대로 훑으면 같은 위반이 여러 줄로 나온다.
-            for kind in Set(departmentFurniture(department)).sorted(by: { $0.rawValue < $1.rawValue })
-            where !kind.isWallMounted && !kind.isDoorway {
-                guard let brightness = furnitureBrightness(kind) else {
-                    violations.append(
-                        "\(prefix) \(kind.rawValue) 가구 스프라이트를 읽지 못했다")
-                    continue
-                }
-                guard brightness > floorSample.median - officeFurnitureContrastMargin else {
-                    continue
-                }
-                violations.append(
-                    "\(prefix) \(department.label) 방의 \(kind.rawValue)(\(rounded(brightness)))가"
-                        + " 바닥(\(rounded(floorSample.median)))과 밝기가 겹친다 — 물건이 무늬로 읽힌다"
-                )
+            guard let brightness = furnitureBrightness(pair.kind) else {
+                violations.append("\(prefix) \(pair.kind.rawValue) 가구 스프라이트를 읽지 못했다")
+                continue
             }
+            guard brightness > floorSample.median - officeFurnitureContrastMargin else {
+                continue
+            }
+            violations.append(
+                "\(prefix) \(pair.kind.rawValue)(\(rounded(brightness)))가"
+                    + " \(pair.floor.rawValue) 바닥(\(rounded(floorSample.median)))과 밝기가 겹친다"
+                    + " — 물건이 무늬로 읽힌다"
+            )
         }
     }
     // 벽은 이 모델을 따르지 않는다 — `applyWallShading` 이 부서 색조·창·벽등을 따로 얹는다.
