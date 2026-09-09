@@ -142,6 +142,29 @@ describe('extractJsonArrayText — 판정 배열 추출', () => {
     expect(parsed[0].id).toBe(1);
   });
 
+  it('라벨과 함께 pretty JSON 을 출력해도 뽑는다', () => {
+    // `[\n  {` 처럼 경계 사이에 개행이 들어가면 `indexOf('[{')` 로는 후보가 안 잡힌다.
+    const raw = '[판정 결과]\n[\n  {"id": 1, "verdict": "ACCEPTED"}\n]\n[참고]';
+    const extracted = extractJsonArrayText(raw);
+
+    expect(extracted).not.toBeNull();
+    const parsed = JSON.parse(extracted as string) as { id: number }[];
+    expect(parsed).toEqual([{ id: 1, verdict: 'ACCEPTED' }]);
+  });
+
+  it('라벨·꼬리·공백 시작·중첩 배열이 한꺼번에 있어도 바깥 배열을 고른다', () => {
+    // 넓은 후보가 라벨·꼬리로 깨진 상태에서 좁은 후보가 중첩 배열을 가리키면
+    // 내부 배열이 단독 파싱에 성공해 잘못 선택된다.
+    const raw =
+      '[판정 결과]\n[ {"id": 1, "verdict": "ACCEPTED", "evidence": [{"x": 1}]} ]\n[참고]';
+    const extracted = extractJsonArrayText(raw);
+
+    expect(extracted).not.toBeNull();
+    const parsed = JSON.parse(extracted as string) as { id: number }[];
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(1);
+  });
+
   it('배열이 없으면 null 을 돌려준다 — 호출부가 파싱 실패를 구분할 수 있어야 한다', () => {
     expect(extractJsonArrayText('판단할 수 없습니다')).toBeNull();
   });

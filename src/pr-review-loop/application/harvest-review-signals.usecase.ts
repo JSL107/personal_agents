@@ -315,8 +315,11 @@ export class HarvestReviewSignalsUsecase {
           // 확정된다 — 유예 전 동작 그대로다. 시각을 모르면 유예 상한도 걸 수 없고,
           // 무한 보류는 PR 이 닫힐 때 STALE 이 되어 기각 사실 자체를 지운다.
           const waitedMs = Date.now() - new Date(signal.reactedAt).getTime();
+          // 기다리는 것은 **owner 답글**이다. 규약이 될 문장은 owner 가 쓴 것만 남기므로
+          // (`rejectReason`), 제3자 답글이 먼저 달렸다고 유예를 끝내면 이유 없는 기각이
+          // 그대로 확정된다 — 이 유예가 막으려는 바로 그 상황이다.
           if (
-            signal.replyBody === null &&
+            signal.ownerReplyBody === null &&
             waitedMs < REJECTION_REPLY_GRACE_MS
           ) {
             outcome.skipped += 1;
@@ -584,11 +587,17 @@ export class HarvestReviewSignalsUsecase {
           replyFingerprint(pending.replyBody),
         );
       };
-      if (!judgment || judgment.verdict === 'UNCLEAR') {
+      if (judgment === undefined) {
+        // 배열은 뽑혔는데 이 id 가 응답에 없다. 모델의 판단이 아니라 형식 불완전이므로
+        // 기록하지 않는다 — 기록하면 답글이 바뀌기 전까지 영구 미결로 굳는다.
         outcome.skipped += 1;
-        // 미결도 기록한다 — 같은 답글을 다시 묻지 않는 것이 이 checkpoint 의 목적이다.
-        // 응답에서 판정 배열을 아예 못 뽑은 경우는 여기 오지 않는다(위 catch 로 빠져
-        // 기록 없이 다음 회차에 재시도된다).
+        continue;
+      }
+      if (judgment.verdict === 'UNCLEAR') {
+        outcome.skipped += 1;
+        // 모델이 실제로 판단을 유보한 경우다. 같은 답글을 다시 묻지 않는 것이 이
+        // checkpoint 의 목적이므로 기록한다. 배열 자체를 못 뽑은 경우는 여기 오지
+        // 않는다(위 catch 로 빠져 기록 없이 다음 회차에 재시도된다).
         checkpoint();
         continue;
       }

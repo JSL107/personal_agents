@@ -1055,4 +1055,41 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(judge.execute).toHaveBeenCalledTimes(2);
     expect(repository.markDecided).not.toHaveBeenCalled();
   });
+
+  it('제3자 답글만 있고 owner 답글이 없으면 유예를 유지한다', async () => {
+    // 기각 이유로 저장되는 값은 owner 답글뿐이다. 임의 답글의 존재로 유예를 끝내면
+    // rejectReason 이 null 인 채 확정돼 이 유예가 막으려는 유실이 그대로 일어난다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'pr-author',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'pr-author',
+              body: '제3자가 남긴 답글',
+              createdAt: '2026-07-31T02:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(outcome.rejected).toBe(0);
+  });
 });

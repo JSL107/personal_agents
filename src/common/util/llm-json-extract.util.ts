@@ -99,10 +99,20 @@ export const extractJsonArrayText = (rawText: string): string | null => {
   // 넓은 구간이 라벨·꼬리 때문에 깨질 때만 배열-of-객체를 직접 겨냥한다.
   // 순서가 중요하다: 이쪽을 먼저 쓰면 값 안의 중첩 배열(`"evidence": [{...}]`)이
   // 단독으로 파싱에 성공해 바깥 배열 대신 선택될 수 있다.
-  const firstObjectBracket = trimmed.indexOf('[{');
-  const lastObjectBracket = trimmed.lastIndexOf('}]');
-  if (firstObjectBracket !== -1 && lastObjectBracket > firstObjectBracket) {
-    candidates.push(trimmed.slice(firstObjectBracket, lastObjectBracket + 2));
+  //
+  // 경계 사이 공백·개행을 허용해야 한다. `indexOf('[{')` 로 찾으면 모델이 흔히 쓰는
+  // pretty JSON(`[\n  {`)에서 후보가 아예 안 잡히고, 바깥이 `[ {` 로 시작하는 응답에서는
+  // 첫 매치가 값 안의 중첩 배열을 가리켜 그쪽이 선택된다(둘 다 재현 확인).
+  const objectArrayStart = /\[\s*\{/.exec(trimmed);
+  const objectArrayEndPattern = /\}\s*\]/g;
+  let objectArrayEnd = -1;
+  let endMatch: RegExpExecArray | null = objectArrayEndPattern.exec(trimmed);
+  while (endMatch !== null) {
+    objectArrayEnd = endMatch.index + endMatch[0].length;
+    endMatch = objectArrayEndPattern.exec(trimmed);
+  }
+  if (objectArrayStart !== null && objectArrayEnd > objectArrayStart.index) {
+    candidates.push(trimmed.slice(objectArrayStart.index, objectArrayEnd));
   }
 
   return candidates.find(isJsonArrayText) ?? null;
