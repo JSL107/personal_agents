@@ -70,7 +70,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       return;
     }
 
-    const target = this.readNonEmpty('AUTOPILOT_TARGET', owner);
+    const target = this.readTarget('AUTOPILOT_TARGET', owner);
     await this.cleanupExistingRepeatables();
 
     const groups = new Map<string, PlaybookEntry[]>();
@@ -105,7 +105,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       // 라인별 발송 대상. 투자 라인만 전용 채널로 빼고 나머지는 공통 target(기본 owner DM)을
       // 쓴다. 그룹 안에서 라인이 섞이지 않는 것은 validatePlaybook 이 부팅 때 보장한다.
       const groupTarget = primary.line
-        ? this.readNonEmpty(LINE_TARGET_ENV_KEYS[primary.line], target)
+        ? this.readTarget(LINE_TARGET_ENV_KEYS[primary.line], target)
         : target;
       this.warnIgnoredScheduleOverrides(groupKey, entries);
       const payload: AutopilotJobData = {
@@ -180,6 +180,37 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       };
     }
     return undefined;
+  }
+
+  /**
+   * 발송 대상 env 를 읽는다. 대상은 콤마 다중 값이라 "비었다" 의 기준이 schedule/timezone 과
+   * 다르다 — `", ,"` 는 trim 후에도 길이가 남아 readNonEmpty 를 통과하지만, 수신 측
+   * (AutopilotOrchestrator) 이 콤마로 쪼개 빈 조각을 버리면 대상이 0개가 된다. 그러면 메인
+   * 다이제스트도 스레드 상세도 승인 카드 메시지도 한 건 안 나가는데 카드 생성 루프는 그대로
+   * 돌아 preview_action PENDING 행만 남고, 그 행이 다음 회차의 발행 큐를 TTL 24h 동안 막는다.
+   * 게다가 예외가 없어 cron 은 성공으로 끝난다 — 모든 그룹이 조용히 무동작이 되는 경로다.
+   *
+   * 그래서 여기서 "실제 대상 0개 = 값 없음" 으로 보고 fallback 으로 떨어뜨린다. 이 판정을
+   * readNonEmpty 에 넣으면 안 된다 — 같은 함수를 쓰는 schedule 은 `0 9,18 * * *` 처럼 콤마가
+   * 정상 문법이다. 오설정을 삼키지 않도록 경고를 남기되, 부팅 1회라 3분마다 도는 고빈도
+   * 그룹에서도 알람이 도배되지 않는다.
+   */
+  private readTarget(key: string, fallback: string): string {
+    const raw = this.configService.get<string>(key);
+    const targets = (raw ?? '')
+      .split(',')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+    if (targets.length > 0) {
+      return targets.join(',');
+    }
+    if (raw && raw.trim().length > 0) {
+      this.logger.warn(
+        `Autopilot — ${key}="${raw}" 에 실제 발송 대상이 없습니다(콤마 구분자만 있음). ` +
+          `${fallback} 로 대체합니다.`,
+      );
+    }
+    return fallback;
   }
 
   private readNonEmpty(key: string, fallback: string): string {

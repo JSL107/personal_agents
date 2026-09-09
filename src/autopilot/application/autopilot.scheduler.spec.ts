@@ -409,4 +409,105 @@ describe('AutopilotScheduler', () => {
     );
     expect(stockCall?.[1]).toMatchObject({ target: 'C0COMMON' });
   });
+
+  it('AUTOPILOT_TARGET 이 콤마뿐이면 값 없음으로 보고 owner 로 떨어진다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return ', ,';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    // 이 값을 그대로 흘리면 orchestrator 의 split/filter 가 대상 0개를 만들어 슬랙에 한 건도
+    // 나가지 않는데 cron 은 성공으로 끝난다. 전 그룹이 대상이므로 전수로 확인한다.
+    expect(queue.add.mock.calls.length).toBeGreaterThan(0);
+    for (const call of queue.add.mock.calls) {
+      expect(call[1]).toMatchObject({ target: 'U1' });
+    }
+  });
+
+  it('라인 TARGET 이 콤마뿐이면 owner 가 아니라 공통 TARGET 으로 떨어진다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C0COMMON';
+        }
+        if (key === 'AUTOPILOT_INVEST_TARGET') {
+          return ',,';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    // 미설정과 같은 취급이므로 문서화된 폴백 사슬(라인 → 공통 → owner)의 한 칸만 내려가야 한다.
+    // 수신 측에서 막으면 owner 까지 한 번에 떨어져 이 단언이 깨진다.
+    const stockCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'stock-monitor',
+    );
+    expect(stockCall?.[1]).toMatchObject({ target: 'C0COMMON' });
+  });
+
+  it('빈 조각이 섞인 TARGET 은 실제 대상만 남긴다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C1, ,C2,';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(morningCall?.[1]).toMatchObject({ target: 'C1,C2' });
+  });
+
+  it('콤마 규칙은 schedule 로 번지지 않는다 — `0 9,18 * * *` 는 그대로 쓴다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_WEEKLY_SUMMARY_SCHEDULE') {
+          return '0 9,18 * * 5';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const weeklySummaryCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'weekly-summary',
+    );
+    expect(weeklySummaryCall?.[2]).toMatchObject({
+      repeat: { pattern: '0 9,18 * * 5', tz: 'Asia/Seoul' },
+    });
+  });
 });
