@@ -8,6 +8,7 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { AutopilotOrchestrator } from '../application/autopilot.orchestrator';
 import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
+import { MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS } from '../domain/autopilot.playbook-defaults';
 import {
   AUTOPILOT_CRON_QUEUE,
   AutopilotJobData,
@@ -18,6 +19,10 @@ import {
 @Processor(AUTOPILOT_CRON_QUEUE, AUTOPILOT_WORKER_OPTIONS)
 export class AutopilotConsumer extends WorkerHost {
   private readonly logger = new Logger(AutopilotConsumer.name);
+  // 배타 그룹의 실행을 잇는 사슬. worker 는 한 프로세스 안에서 도므로 프로세스 안의 사슬이면
+  // 충분하다(BullMQ 동시 처리도 같은 worker 인스턴스 안에서 일어난다). 인스턴스를 여러 개
+  // 띄우게 되면 이 자리는 Redis 잠금으로 바꿔야 한다.
+  private exclusiveChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly orchestrator: AutopilotOrchestrator,
@@ -53,13 +58,19 @@ export class AutopilotConsumer extends WorkerHost {
     try {
       // job.id 를 슬롯 식별자로 넘긴다 — stalled 재큐는 같은 job 을 다시 처리하므로 id 가
       // 같고, 다음 스케줄 슬롯은 새 job = 새 id 라 재진입 차단이 슬롯 밖으로 번지지 않는다.
-      await this.orchestrator.runGroup(
-        groupKey,
-        entries,
-        ownerSlackUserId,
-        target,
-        job.id,
-      );
+      const runGroup = (): Promise<void> =>
+        this.orchestrator.runGroup(
+          groupKey,
+          entries,
+          ownerSlackUserId,
+          target,
+          job.id,
+        );
+      if (MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS.includes(groupKey)) {
+        await this.runExclusively(runGroup);
+      } else {
+        await runGroup();
+      }
     } catch (error) {
       this.logger.error(
         `Autopilot[${groupKey}] 실패 (owner=${ownerSlackUserId})`,
@@ -68,6 +79,17 @@ export class AutopilotConsumer extends WorkerHost {
       this.notifyOwnerFailure(ownerSlackUserId, groupKey, error);
       throw error;
     }
+  }
+
+  // 배타 그룹을 앞선 배타 실행 뒤로 줄 세운다. 앞선 실행이 실패해도 뒤를 막지 않는다 —
+  // 사슬이 rejected 로 남으면 그 뒤의 모든 배타 그룹이 영영 실행되지 않는다.
+  private async runExclusively<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.exclusiveChain.then(task, task);
+    this.exclusiveChain = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await result;
   }
 
   private notifyOwnerFailure(

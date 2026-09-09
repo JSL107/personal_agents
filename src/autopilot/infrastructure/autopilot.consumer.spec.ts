@@ -27,6 +27,79 @@ const makeConsumer = (orchestrator: unknown, notificationPublisher?: unknown) =>
   );
 
 describe('AutopilotConsumer', () => {
+  // #530 으로 워커 동시 처리 수를 2 로 올린 뒤, 스케줄 오프셋(2-57/5 vs */10)만으로는 두
+  // 모의투자 작업이 겹치지 않는다는 보장이 사라졌다 — 긴 작업 뒤에 나란히 밀리면 같이 출발한다.
+  // 겹치면 체결기가 손절이 막 만든 PENDING SELL 을 집어 당일 시가로 체결해 원장에 틀린 가격이 남는다.
+  describe('모의투자 체결·손절 상호 배제', () => {
+    it('앞선 배타 그룹이 끝나기 전에는 다른 배타 그룹을 시작하지 않는다', async () => {
+      let releaseFirst: () => void = () => undefined;
+      const firstStarted = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      // 호출 순서가 아니라 그룹 이름으로 배정한다 — 두 process 가 모두 비동기로 진입해서
+      // 순서로 배정하면 어느 쪽이 먼저 mock 을 집을지 정해지지 않는다.
+      const runGroup = jest.fn().mockImplementation(async (group: string) => {
+        if (group === 'paper-order-fill') {
+          await firstStarted;
+        }
+      });
+      const consumer = makeConsumer({ runGroup });
+
+      const first = consumer.process(makeJob('paper-order-fill'));
+      const second = consumer.process(makeJob('paper-intraday-stop'));
+      // 두 번째가 대기에 걸렸는지 확인하려면 마이크로태스크를 한 번 비워야 한다.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(runGroup).toHaveBeenCalledTimes(1);
+      expect(runGroup.mock.calls[0][0]).toBe('paper-order-fill');
+
+      releaseFirst();
+      await Promise.all([first, second]);
+      expect(runGroup).toHaveBeenCalledTimes(2);
+      expect(runGroup.mock.calls[1][0]).toBe('paper-intraday-stop');
+    });
+
+    it('앞선 배타 그룹이 실패해도 다음 배타 그룹은 실행된다', async () => {
+      const runGroup = jest.fn().mockImplementation(async (group: string) => {
+        if (group === 'paper-order-fill') {
+          throw new Error('boom');
+        }
+      });
+      const consumer = makeConsumer(
+        { runGroup },
+        { publishCronFailure: jest.fn() },
+      );
+
+      await expect(
+        consumer.process(makeJob('paper-order-fill')),
+      ).rejects.toThrow('boom');
+      await consumer.process(makeJob('paper-intraday-stop'));
+
+      expect(runGroup).toHaveBeenCalledTimes(2);
+    });
+
+    // 배타는 두 그룹 사이에만 건다 — 굶김을 줄이려고 올린 동시성을 되돌리면 안 된다.
+    it('배타 목록 밖의 그룹은 앞선 실행을 기다리지 않는다', async () => {
+      const runGroup = jest.fn().mockImplementation(async (group: string) => {
+        if (group === 'paper-order-fill') {
+          await new Promise<void>(() => undefined);
+        }
+      });
+      const consumer = makeConsumer({ runGroup });
+
+      // paper-order-fill 은 영원히 끝나지 않는다. 그런데도 아래 await 가 반환되는 것 자체가
+      // "배타 목록 밖 그룹은 기다리지 않는다" 의 증명이다.
+      void consumer.process(makeJob('paper-order-fill'));
+      await consumer.process(makeJob('morning'));
+
+      // 순서로 단언하지 않는다 — morning 은 사슬을 거치지 않아 오히려 먼저 도달한다.
+      expect(runGroup.mock.calls.map((call) => call[0])).toEqual(
+        expect.arrayContaining(['morning', 'paper-order-fill']),
+      );
+    });
+  });
+
   it('job.name = "evening"(groupKey) → 기존 선두부터 GitHub 발행까지 4건을 순서대로 위임한다', async () => {
     const runGroup = jest.fn().mockResolvedValue(undefined);
     const consumer = makeConsumer({ runGroup });
