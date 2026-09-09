@@ -116,6 +116,12 @@ export class HarvestReviewSignalsUsecase {
   // 같은 판단으로 컬럼까지는 만들지 않는다.
   private readonly replyJudgmentCheckpoints = new Map<number, string>();
 
+  // 카드 id → 마지막으로 모순 판정에 넣은 답글 원문. 보류(contradicted)로 남은 카드는
+  // OPEN 인 채 다음 회차에도 같은 signal 로 다시 걸린다 — 답글이 그대로면 재판정은
+  // 매번 같은 결론만 확인하면서 쿼터만 태운다(스윕 */3, 카드 1건이 하루 최대 480회).
+  // 위 resolutionCheckpoints 와 같은 패턴 — 답글이 바뀌면(사람이 정정) 그때만 다시 묻는다.
+  private readonly contradictionCheckpoints = new Map<number, string>();
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(GITHUB_CLIENT_PORT)
@@ -312,17 +318,33 @@ export class HarvestReviewSignalsUsecase {
           }
           // 답글·리액션이 페이지 상한에서 잘렸으면 수용 답글이 조회 밖에 있을 수 있다.
           // 잘못 확정하면 되돌릴 경로가 없으므로(확정 카드는 OPEN 전용 조회에서 빠진다)
-          // 미결로 남긴다.
+          // 미결로 남긴다. truncated 는 PR 단위 플래그라(다른 스레드 하나가 상한을
+          // 넘어도 참이 된다) 멀쩡한 스레드까지 매 회차 조용히 이 분기로 떨어질 수
+          // 있다 — skip 카운터만으로는 사람이 알 길이 없어 경고를 남긴다.
           if (reviewThreads.truncated) {
             outcome.skipped += 1;
+            this.logger.warn(
+              `PR 리뷰 기각 보류 — 스레드 조회가 잘려 기각을 확정하지 않았다 (${group.repo}#${group.pullNumber}, 카드 ${card.id}).`,
+            );
             break;
           }
-          // 답글이 있으면 리액션만으로 확정하지 않는다 — 같은 배치 판정에 얹어 모순을 본다.
-          if (signal.replyBody !== null) {
+          // 게이트는 owner 답글 유무로만 연다 — 규약이 될 수 있는 결정은 owner 것뿐이다
+          // (`harvest-signal.ts` 의 `ownerLogin` 주석). PR 작성자만 답글을 단 경우는
+          // 종전대로 리액션만으로 즉시 확정한다.
+          if (signal.ownerReplyBody !== null) {
+            // ownerReplyBody 가 있으면 그 문장은 항상 replyBody 에도 포함돼 있다
+            // (도메인 불변식) — 그래도 타입은 별개라 null 대비 fallback 을 둔다.
+            const replyBody = signal.replyBody ?? signal.ownerReplyBody;
+            if (this.contradictionCheckpoints.get(card.id) === replyBody) {
+              // 지난 회차에 이미 같은 답글로 모순 판정을 받았다. 답글이 안 바뀌었으면
+              // 다시 물어도 같은 결론이라 재확인은 사람 몫으로 남긴다.
+              outcome.contradicted += 1;
+              break;
+            }
             pendingJudgments.push({
               card,
               thread,
-              replyBody: signal.replyBody,
+              replyBody,
               ownerReplyBody: signal.ownerReplyBody,
               reactionRejected: true,
             });
@@ -617,6 +639,8 @@ export class HarvestReviewSignalsUsecase {
         // 좋은 지적을 억제한다(카드 57) — 사람이 볼 때까지 OPEN 으로 둔다.
         if (judgment?.verdict === 'ACCEPTED') {
           outcome.contradicted += 1;
+          // 같은 답글로 다음 회차가 다시 걸리면 재판정 없이 이 결론을 재사용한다.
+          this.contradictionCheckpoints.set(pending.card.id, pending.replyBody);
           this.logger.warn(
             `PR 리뷰 기각 보류: 카드 ${pending.card.id} — 👎 리액션과 답글이 어긋난다 (${flattenForLog(judgment.reason)})`,
           );

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
@@ -400,7 +401,13 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(judge.execute).not.toHaveBeenCalled();
   });
 
-  it('스레드가 잘렸으면 👎 여도 확정하지 않는다', async () => {
+  it('스레드가 잘렸으면 👎 여도 확정하지 않고 경고를 남긴다', async () => {
+    // truncated 는 PR 단위 플래그다 — 다른 스레드가 상한을 넘겨도 참이 되므로 이
+    // 카드는 멀쩡한데도 매 회차 조용히 이 분기로 떨어질 수 있다. skip 카운터만으로는
+    // 아무도 못 보므로 사유가 로그에 드러나야 한다.
+    const warnLog = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     github.listReviewThreads.mockResolvedValue({
@@ -422,6 +429,101 @@ describe('HarvestReviewSignalsUsecase', () => {
 
     await usecase.execute();
 
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('JSL107/personal_agents#180'),
+    );
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('스레드 조회가 잘려'),
+    );
+
+    warnLog.mockRestore();
+  });
+
+  it('PR 작성자만 답글을 달고 owner 가 👎 를 누르면 판정기를 부르지 않고 종전대로 확정한다', async () => {
+    // 모순 게이트는 owner 답글이 있을 때만 열려야 한다(harvest-signal.ts 의 ownerLogin
+    // 주석 — 제3자 답글이 owner 결정에 개입하면 안 된다). PR 작성자(owner 아님)가
+    // "고치겠다" 고 답해도 owner 의 👎 는 그대로 기각으로 확정돼야 한다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'pr-author',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'pr-author',
+              body: '네, 고치겠습니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('같은 답글로 모순이 반복되면 다음 회차는 판정기를 다시 부르지 않는다', async () => {
+    // 보류(contradicted)로 남은 카드는 OPEN 인 채 다음 회차에도 같은 signal 로 다시
+    // 걸린다. 답글이 안 바뀌었으면 재판정은 매번 같은 결론만 확인하며 쿼터만 태운다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '타당합니다. 8e0d19ad 에 테스트를 추가했습니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const first = await usecase.execute();
+    const second = await usecase.execute();
+
+    expect(judge.execute).toHaveBeenCalledTimes(1);
+    expect(first.contradicted).toBe(1);
+    expect(second.contradicted).toBe(1);
     expect(repository.markDecided).not.toHaveBeenCalled();
   });
 
