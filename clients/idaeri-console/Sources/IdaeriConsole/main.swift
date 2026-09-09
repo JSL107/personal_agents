@@ -117,6 +117,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 시켜 굽는다(겹침은 사람이 많을 때만 드러난다).
     //   swift run IdaeriConsole --render /tmp/office.png --chatter-demo
     let chatterDemo = CommandLine.arguments.contains("--chatter-demo")
+    let vacuumDemo = CommandLine.arguments.contains("--vacuum-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -128,6 +129,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         alarmDemo: alarmDemo,
         briefingDemo: briefingDemo,
         chatterDemo: chatterDemo,
+        vacuumDemo: vacuumDemo,
         debugLabels: debugLabels,
         room: room
     )

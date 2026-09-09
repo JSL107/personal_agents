@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   AGENT_CONTRACTS,
@@ -10,11 +10,16 @@ import { STALE_RUN_THRESHOLD_MINUTES } from '../../agent-run/domain/agent-run.ty
 import { AgentSucceededCountRow } from '../../agent-run/domain/port/agent-run.repository.port';
 import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
+import {
+  MEMORY_VACUUM_PORT,
+  MemoryVacuumPort,
+} from '../../memory-vacuum/domain/port/memory-vacuum.port';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
   ConsoleAgent,
   ConsoleAgentState,
   ConsoleApproval,
+  ConsoleHousekeeping,
   ConsoleRun,
   ConsoleSnapshot,
 } from '../domain/console.type';
@@ -40,6 +45,8 @@ export class ConsoleReadService {
     private readonly agentRunService: AgentRunService,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
     private readonly localSessions: LocalSessionService,
+    @Inject(MEMORY_VACUUM_PORT)
+    private readonly memoryVacuum: MemoryVacuumPort,
   ) {}
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
@@ -143,7 +150,28 @@ export class ConsoleReadService {
       approvals,
       sessions,
       serverTime: now.toISOString(),
+      housekeeping: await this.readHousekeeping(),
     };
+  }
+
+  // 청소 실태는 화면의 장식이지 관제의 본체가 아니다. 위 Promise.all 에 끼우면 이 조회
+  // 하나가 실패했을 때 스냅샷 전체가 죽는다(같은 사고가 있었다) — 그래서 밖에서 따로
+  // 읽고, 실패하면 필드를 비운 채 나머지를 내보낸다.
+  private async readHousekeeping(): Promise<ConsoleHousekeeping | undefined> {
+    try {
+      const state = await this.memoryVacuum.lastState();
+      if (state === null) {
+        return { ranAt: null, cleanedCount: 0, pendingProjects: 0 };
+      }
+      return {
+        ranAt: state.ranAtIso,
+        cleanedCount: state.cleanedCount,
+        pendingProjects: state.pendingProjects,
+      };
+    } catch (error) {
+      this.logger.warn(`청소 실태를 읽지 못했습니다: ${String(error)}`);
+      return undefined;
+    }
   }
 
   // 오늘(KST 자정 이후) 성공으로 끝낸 실행을 agentType 별로 센다. 책상 위 서류 더미의 재료다.

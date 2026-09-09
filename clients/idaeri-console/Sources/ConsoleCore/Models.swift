@@ -194,25 +194,46 @@ public struct ConsoleSession: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// 앱 부팅 시 1콜로 받는 전체 상태 스냅샷.
+/// 세션 기억 청소 실태 — 오피스의 로봇청소기·쓰레기통 표현 재료.
+/// 서버가 이 필드를 모르는 구버전이면 통째로 없으므로 옵셔널이다.
+public struct ConsoleHousekeeping: Codable, Sendable, Equatable {
+    /// 마지막 청소 시각(ISO8601). 한 번도 안 돌았으면 nil.
+    public let ranAt: String?
+    /// 그 회차에 청소기가 실제로 치운 건수.
+    public let cleanedCount: Int
+    /// 청소 뒤에도 남아 사람이 판단해야 하는 프로젝트 수 = 쓰레기통에 쌓인 것.
+    public let pendingProjects: Int
+
+    public init(ranAt: String?, cleanedCount: Int, pendingProjects: Int) {
+        self.ranAt = ranAt
+        self.cleanedCount = cleanedCount
+        self.pendingProjects = pendingProjects
+    }
+}
+
 public struct ConsoleSnapshot: Codable, Sendable {
     public let agents: [ConsoleAgent]
     public let runs: [ConsoleRun]
     public let approvals: [ConsoleApproval]
     public let sessions: [ConsoleSession]
     public let serverTime: String
+    /// 옵셔널인 이유는 `ConsoleAgent.doneToday` 와 같다(버전 스큐).
+    public let housekeeping: ConsoleHousekeeping?
 
     public init(
         agents: [ConsoleAgent],
         runs: [ConsoleRun],
         approvals: [ConsoleApproval],
         sessions: [ConsoleSession],
-        serverTime: String
+        serverTime: String,
+        housekeeping: ConsoleHousekeeping? = nil
     ) {
         self.agents = agents
         self.runs = runs
         self.approvals = approvals
         self.sessions = sessions
         self.serverTime = serverTime
+        self.housekeeping = housekeeping
     }
 }
 

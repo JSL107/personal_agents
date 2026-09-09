@@ -2,6 +2,7 @@ import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
+import { MemoryVacuumPort } from '../../memory-vacuum/domain/port/memory-vacuum.port';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConsoleReadService } from './console-read.service';
@@ -22,6 +23,12 @@ describe('ConsoleReadService', () => {
   // 실려 나간다. 종료 시각이 아닌 이유 — DB 기록과 SSE 발행이 시각을 각각 생성해 어긋난다.
   const finishedRunId = 77;
 
+  // 청소 실태는 화면 장식이라, 실패해도 스냅샷이 살아야 한다(아래 별도 케이스에서 검증).
+  const memoryVacuum = {
+    run: jest.fn(),
+    lastState: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(() => {
     agentRunService = {
       findActiveRuns: jest.fn().mockResolvedValue([]),
@@ -34,6 +41,7 @@ describe('ConsoleReadService', () => {
       agentRunService as unknown as AgentRunService,
       findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
       localSessions as unknown as LocalSessionService,
+      memoryVacuum as unknown as MemoryVacuumPort,
     );
   });
 
@@ -389,5 +397,33 @@ describe('ConsoleReadService', () => {
         lastActivityAt: null,
       },
     ]);
+  });
+
+  it('청소 실태 조회가 실패해도 스냅샷은 살아남는다', async () => {
+    // 장식용 조회 하나가 관제 화면 전체를 죽인 전례가 있다. 이 필드는 없어도 되지만
+    // 화면은 없으면 안 된다.
+    memoryVacuum.lastState.mockRejectedValueOnce(new Error('디스크 오류'));
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.housekeeping).toBeUndefined();
+    expect(snapshot.serverTime).toEqual(expect.any(String));
+  });
+
+  it('청소 실태가 있으면 스냅샷에 실린다', async () => {
+    memoryVacuum.lastState.mockResolvedValueOnce({
+      ranAtIso: '2026-09-09T00:00:00.000Z',
+      projectCount: 14,
+      cleanedCount: 110,
+      pendingProjects: 2,
+    });
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.housekeeping).toEqual({
+      ranAt: '2026-09-09T00:00:00.000Z',
+      cleanedCount: 110,
+      pendingProjects: 2,
+    });
   });
 });

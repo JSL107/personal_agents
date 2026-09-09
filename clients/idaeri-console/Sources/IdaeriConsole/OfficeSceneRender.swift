@@ -23,6 +23,7 @@ func renderOfficeScene(
     alarmDemo: Bool = false,
     briefingDemo: Bool = false,
     chatterDemo: Bool = false,
+    vacuumDemo: Bool = false,
     debugLabels: Bool = false,
     room: Department? = nil
 ) -> Bool {
@@ -63,6 +64,28 @@ func renderOfficeScene(
     let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
     let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
+
+    // 청소는 주 1회라 실 백엔드로는 "돌고 있는 청소기" 를 만날 확률이 거의 없고, 백엔드가
+    // 꺼져 있으면 실태가 아예 nil 이라 청소기가 그려지지 않는다. 회귀를 눈으로 보려면
+    // 상태를 세워 주는 입구가 있어야 한다.
+    //   swift run IdaeriConsole --render /tmp/office.png --vacuum-demo
+    if vacuumDemo {
+        scene.applyHousekeeping(
+            ConsoleHousekeeping(
+                ranAt: ISO8601DateFormatter().string(from: Date()),
+                cleanedCount: 110,
+                pendingProjects: 2
+            )
+        )
+        // 쓰레기통이 평면도에 없으면 청소기도 먼지도 안 그려진다. 그때 그림을 성공으로
+        // 저장하면 "확인했다" 는 기록만 남고 확인 대상은 화면에 없다.
+        guard scene.housekeepingNodeCount() > 0 else {
+            FileHandle.standardError.write(
+                Data("--vacuum-demo 가 아무것도 그리지 못했다 — 평면도에 쓰레기통이 없다\n".utf8)
+            )
+            return false
+        }
+    }
     // 방 뷰는 평면도가 채워진 뒤에 걸어야 한다 — `setFocus` 가 `plan.zones` 에서 그 방을 찾는다.
     // 여기서 걸면 아래 오버레이·세션이 확대된 좌표계로 그려진다.
     if let room, !scene.setFocus(room) {

@@ -101,6 +101,7 @@ struct OfficeView: View {
                     applySceneSleep()
                     scene.syncSessions(store.sessions)
                     scene.sync(agents: store.agents, approvals: store.approvals)
+                    scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
@@ -121,8 +122,12 @@ struct OfficeView: View {
                         hour: Calendar.current.component(.hour, from: Date())
                     )
                 }
+                .onChange(of: store.housekeeping) { next in
+                    scene.applyHousekeeping(next)
+                }
                 .onChange(of: store.agents) { newAgents in
                     scene.sync(agents: newAgents, approvals: store.approvals)
+                    scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: newAgents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
