@@ -20,6 +20,7 @@ const makeSnapshot = (agents: readonly AgentFixture[]): ConsoleSnapshot => ({
     agentType: agent.agentType,
     displayName: agent.displayName,
     nickname: agent.displayName,
+    canDispatch: true,
     slashCommands: [],
     description: '',
     state: agent.state ?? ConsoleAgentState.WAITING,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   AGENT_CONTRACTS,
@@ -11,6 +11,10 @@ import { AgentSucceededCountRow } from '../../agent-run/domain/port/agent-run.re
 import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
+import {
+  AGENT_DISPATCHER_PORT,
+  AgentDispatcher,
+} from '../../router/domain/port/agent-dispatcher.port';
 import {
   ConsoleAgent,
   ConsoleAgentState,
@@ -40,6 +44,8 @@ export class ConsoleReadService {
     private readonly agentRunService: AgentRunService,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
     private readonly localSessions: LocalSessionService,
+    @Inject(AGENT_DISPATCHER_PORT)
+    private readonly dispatchers: readonly Pick<AgentDispatcher, 'agentType'>[],
   ) {}
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
@@ -114,6 +120,9 @@ export class ConsoleReadService {
         agentType: entry.agentType,
         displayName: entry.displayName,
         nickname: entry.nickname,
+        canDispatch: this.dispatchers.some(
+          (dispatcher) => dispatcher.agentType === entry.agentType,
+        ),
         slashCommands: entry.slashCommands,
         description: entry.description,
         state,

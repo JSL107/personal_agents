@@ -218,6 +218,89 @@ describe('IdaeriRouterUsecase', () => {
     );
   });
 
+  it('일반 동사와 우연히 같은 닉네임은 직접 호출로 해석하지 않는다', async () => {
+    const blogDispatcher = buildDispatcher(AgentType.BLOG, () => ({
+      agentRunId: 101,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const classifier = buildClassifierMock({
+      agentType: AgentType.BLOG,
+      confidence: 0.9,
+      reason: '문서 검토 요청',
+    });
+    const { usecase } = buildUsecase([blogDispatcher], classifier);
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '이 문서를 배포해도 되는지 검토해줘',
+    });
+
+    expect(classifier.classify).toHaveBeenCalledWith(
+      '이 문서를 배포해도 되는지 검토해줘',
+      undefined,
+    );
+    expect(result.workerType).toBe(AgentType.BLOG);
+  });
+
+  it('dispatcher가 없는 내부 담당자 닉네임은 직접 호출하지 않고 classifier로 돌린다', async () => {
+    const blogDispatcher = buildDispatcher(AgentType.BLOG, () => ({
+      agentRunId: 102,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const classifier = buildClassifierMock({
+      agentType: AgentType.BLOG,
+      confidence: 0.8,
+      reason: '문장 작성 요청',
+    });
+    const { usecase } = buildUsecase([blogDispatcher], classifier);
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '윤다정님 이 문장을 다듬어줘',
+    });
+
+    expect(classifier.classify).toHaveBeenCalledWith(
+      '윤다정님 이 문장을 다듬어줘',
+      undefined,
+    );
+    expect(result.workerType).toBe(AgentType.BLOG);
+  });
+
+  it('여러 담당자를 함께 지칭하면 명부 순서로 한 명을 고르지 않고 classifier로 돌린다', async () => {
+    const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
+      agentRunId: 103,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const reviewerDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => ({
+      agentRunId: 104,
+      output: {},
+      modelUsed: 'mock',
+    }));
+    const classifier = buildClassifierMock({
+      agentType: AgentType.CODE_REVIEWER,
+      confidence: 0.8,
+      reason: 'PR 리뷰 요청',
+    });
+    const { usecase } = buildUsecase(
+      [pmDispatcher, reviewerDispatcher],
+      classifier,
+    );
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '김기획과 박꼼꼼에게 같이 맡겨줘 owner/repo#42',
+    });
+
+    expect(classifier.classify).toHaveBeenCalled();
+    expect(result.workerType).toBe(AgentType.CODE_REVIEWER);
+  });
+
   it('자연어 분류 시 classifier 의 userInstruction + 직전 runId 를 conversationContext 로 dispatcher 에 전달', async () => {
     const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
       agentRunId: 50,

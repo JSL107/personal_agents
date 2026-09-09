@@ -35,12 +35,11 @@ struct AgentCardView: View {
     }
 
     private var primaryActionForeground: Color {
-        switch agent.resolvedDepartment {
-        case .content, .treasury:
-            return Color.black.opacity(0.82)
-        case .planning, .quality, .evaluation, .internalOps:
-            return .white
-        }
+        Color(
+            red: agentPrimaryActionTextRGBA.red,
+            green: agentPrimaryActionTextRGBA.green,
+            blue: agentPrimaryActionTextRGBA.blue
+        )
     }
 
     var body: some View {
@@ -90,12 +89,18 @@ struct AgentCardView: View {
                 }
 
                 HStack(spacing: Spacing.sm) {
-                    Button { showSheet = true } label: {
-                        Text(primaryAction.label)
-                            .foregroundStyle(primaryActionForeground)
+                    if agent.canReceiveCommand {
+                        Button { showSheet = true } label: {
+                            Text(primaryAction.label)
+                                .foregroundStyle(primaryActionForeground)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(departmentColor)
+                    } else {
+                        Label("자동 업무 전용", systemImage: "gearshape.2")
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(departmentColor)
                     if canAcknowledge {
                         Button("확인", action: onAcknowledge)
                     }
@@ -138,7 +143,8 @@ struct AgentCardView: View {
             agent.roleName == agent.displayName
             ? agent.roleName
             : "\(agent.roleName), \(agent.displayName)"
-        return "\(name), \(agent.state.label), \(agent.bubble)"
+        let action = agent.canReceiveCommand ? "직접 업무를 맡길 수 있음" : "자동 업무 전용"
+        return "\(name), \(agent.state.label), \(agent.bubble), \(action)"
     }
 
     private var statusBadge: some View {

@@ -26,6 +26,8 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public let displayName: String
     /// 백엔드 담당자 명부가 소유하는 회사사람형 닉네임. 구버전 서버와의 호환을 위해 옵셔널.
     public let nickname: String?
+    /// 실제 Router dispatcher 등록 여부. 구버전 서버에는 필드가 없으므로 옵셔널로 받는다.
+    public let canDispatch: Bool?
     public let slashCommands: [String]
     public let description: String
     public let state: ConsoleAgentState
@@ -67,6 +69,9 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// 오피스 이름표와 대시보드 카드가 같은 사람을 같은 이름으로 부르게 하는 단일 출처다.
     public var roleName: String { nickname ?? agentRoleLabel(for: agentType) ?? displayName }
 
+    /// 구버전 서버에서는 기존 지시 동작을 유지하고, 새 서버가 명시적으로 막은 카드만 비활성화한다.
+    public var canReceiveCommand: Bool { canDispatch ?? true }
+
     /// 화면이 쓰는 부서. 백엔드 문자열을 앱 enum 으로 옮긴 것뿐이다(판정 아님).
     public var resolvedDepartment: Department { departmentFromRaw(department) }
 
@@ -85,6 +90,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
             agentType: agentType,
             displayName: displayName,
             nickname: nickname,
+            canDispatch: canDispatch,
             slashCommands: slashCommands,
             description: description,
             state: state ?? self.state,
@@ -100,6 +106,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         agentType: String,
         displayName: String,
         nickname: String? = nil,
+        canDispatch: Bool? = nil,
         slashCommands: [String],
         description: String,
         state: ConsoleAgentState,
@@ -112,6 +119,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         self.agentType = agentType
         self.displayName = displayName
         self.nickname = nickname
+        self.canDispatch = canDispatch
         self.slashCommands = slashCommands
         self.description = description
         self.state = state
