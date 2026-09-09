@@ -15,3 +15,10 @@ export interface SweepPullRequestResult {
   riskLevel: string;
   outcome: PublishOutcome;
 }
+
+// 스윕 1회차 전체의 결과. 배열만 돌려주면 "리뷰할 PR 이 없었다" 와 "쿼터가 말라
+// 못 돌았다" 가 똑같이 빈 배열이라, 호출부(autopilot task)가 후자를 조용히 skip 한다.
+export interface SweepExecution {
+  results: SweepPullRequestResult[];
+  quotaStopped: boolean;
+}

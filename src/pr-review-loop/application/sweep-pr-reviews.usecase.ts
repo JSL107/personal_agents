@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
+import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
   AgentRunStatus,
@@ -15,8 +16,15 @@ import {
 } from '../../github/domain/port/github-client.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { buildNoFindingsCommentBody } from '../domain/finding-comment.body';
-import { SweepPullRequestResult } from '../domain/publish-outcome.type';
+import {
+  SweepExecution,
+  SweepPullRequestResult,
+} from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
+
+// 리뷰를 한 건도 돌리지 못하고 끝난 회차. 쿼터와 무관한 정상 종료다(기능 off,
+// env 미설정, allowlist 비어 있음).
+const emptySweep = (): SweepExecution => ({ results: [], quotaStopped: false });
 
 // 스윕 1회에 새로 리뷰할 PR 최대 개수. LLM 호출 폭주를 막는 상한.
 //
@@ -69,9 +77,9 @@ export class SweepPrReviewsUsecase {
     private readonly configService: ConfigService,
   ) {}
 
-  async execute(): Promise<SweepPullRequestResult[]> {
+  async execute(): Promise<SweepExecution> {
     if (!this.isEnabled()) {
-      return [];
+      return emptySweep();
     }
     const ownerLogin = this.configService.get<string>(
       'GITHUB_WEBHOOK_OWNER_LOGIN',
@@ -83,19 +91,20 @@ export class SweepPrReviewsUsecase {
       this.logger.warn(
         'owner login 또는 Slack owner id 미설정 — PR 리뷰 스윕 skip',
       );
-      return [];
+      return emptySweep();
     }
 
     const repos = this.allowlistRepos();
     if (repos.length === 0) {
-      return [];
+      return emptySweep();
     }
 
     const results: SweepPullRequestResult[] = [];
     let reviewed = 0;
+    let quotaStopped = false;
 
     for (const repo of repos) {
-      if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP) {
+      if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP || quotaStopped) {
         break;
       }
       const pullRequests = await this.listOpenPullRequests({
@@ -103,7 +112,7 @@ export class SweepPrReviewsUsecase {
         ownerLogin,
       });
       for (const pullRequest of pullRequests) {
-        if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP) {
+        if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP || quotaStopped) {
           break;
         }
         const prRef = `${pullRequest.repo}#${pullRequest.number}`;
@@ -112,18 +121,37 @@ export class SweepPrReviewsUsecase {
           continue;
         }
         reviewed += 1;
-        const result = await this.reviewAndPublish({
-          repo: pullRequest.repo,
-          pullNumber: pullRequest.number,
-          slackUserId,
-        });
-        if (result !== null) {
-          results.push(result);
+        // reviewAndPublish 는 PR 1건의 실패를 스스로 삼키지만 쿼터만은 올려보낸다 —
+        // 남은 PR 도 같은 이유로 실패할 것이 확정이라, 수확 쪽과 같은 판단으로 회차를
+        // 끊는다(이 시점까지의 results 는 살려 보낸다).
+        try {
+          const result = await this.reviewAndPublish({
+            repo: pullRequest.repo,
+            pullNumber: pullRequest.number,
+            slackUserId,
+          });
+          if (result !== null) {
+            results.push(result);
+          }
+        } catch (error: unknown) {
+          // 올라온 것이 정말 쿼터인지 여기서 다시 확인한다. 무조건 쿼터로 단정하면
+          // 나중에 다른 예외가 이 자리로 새어들어올 때 무관한 장애가 "쿼터 소진"으로
+          // 보고돼, 원인이 아닌 곳을 보게 만든다. 아니면 그대로 올려 orchestrator 의
+          // task 실패 경로(⚠️ 표기)가 받게 둔다.
+          if (!extractCodexQuota(error)) {
+            throw error;
+          }
+          quotaStopped = true;
+          this.logger.warn(
+            `PR 리뷰 스윕 중단 — 모델 쿼터 소진 (${prRef} 이후는 다음 회차에 재시도): ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
     }
 
-    return results;
+    return { results, quotaStopped };
   }
 
   private async listOpenPullRequests({
@@ -320,6 +348,11 @@ export class SweepPrReviewsUsecase {
           dryRun,
           error,
         });
+      }
+      // 쿼터 소진만 호출부로 올린다. 원장은 이미 이 시점에 FAILED 로 닫혀 있고(리뷰
+      // usecase 가 스스로 마감한다), 여기서 삼키면 회차 전체가 조용해진다.
+      if (extractCodexQuota(error)) {
+        throw error;
       }
       return null;
     }
