@@ -18,9 +18,18 @@ describe('measureTranslationese', () => {
       ['결과가 보여져요.', 1],
       ['결과가 보여집니다.', 1],
       ['그렇게 판단되어져요.', 1],
-    ])('해요체·합쇼체 활용도 잡는다 — %s → %i회', (markdown, expected) => {
-      expect(measureTranslationese(markdown).doublePassiveCount).toBe(expected);
-    });
+      ['결과가 보여졌다.', 1],
+      ['결과가 보여졌어요.', 1],
+      ['그렇게 판단되어졌습니다.', 1],
+      ['언젠가 보여질 것이다.', 1],
+    ])(
+      '해요체·합쇼체·과거형 활용도 잡는다 — %s → %i회',
+      (markdown, expected) => {
+        expect(measureTranslationese(markdown).doublePassiveCount).toBe(
+          expected,
+        );
+      },
+    );
 
     it('단일 피동은 자연스러운 표현이라 세지 않는다', () => {
       expect(
@@ -126,6 +135,15 @@ describe('measureTranslationese', () => {
       ).toBe(100);
     });
 
+    // `-원` 은 사람 쪽이 훨씬 흔한데 `보여주다`·`말해주다` 가 보편 서술어에 있어 AND 조건도
+    // 이 오탐을 못 거른다. 그래서 접미사 목록에서 뺐다.
+    it.each(['직원은 결과를 보여줬어요.', '연구원은 의미를 말해줬어요.'])(
+      '사람을 가리키는 `-원` 주어는 세지 않는다 — %s',
+      (markdown) => {
+        expect(measureTranslationese(markdown).inanimateSubjectPercent).toBe(0);
+      },
+    );
+
     it('사람 주어에 보편 서술어가 붙은 문장은 세지 않는다', () => {
       expect(
         measureTranslationese('철수는 그 사실을 보여준다.')
@@ -166,6 +184,16 @@ describe('measureTranslationese', () => {
 
       expect(metrics.samples).toContain('보여진');
       expect(metrics.samples).toContain('에 의해');
+    });
+
+    it('축을 번갈아 뽑아 비어 있지 않은 축은 모두 표본을 낸다', () => {
+      const metrics = measureTranslationese(
+        '보여진다. 되어진다. 잊혀진다. 닫혀진다. 열려진다. AI에 의해 만든다. 경쟁력을 가지고 있다.',
+      );
+
+      // 앞 축부터 이어 붙이면 이중 피동 다섯 개가 자리를 다 먹는다.
+      expect(metrics.samples).toContain('에 의해');
+      expect(metrics.samples).toContain('가지고 있');
     });
 
     it('표면형은 중복을 걷고 다섯 개까지만 낸다', () => {

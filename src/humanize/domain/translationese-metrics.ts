@@ -45,12 +45,17 @@ export type TranslationeseMetrics = {
 // 그래서 표면형 나열 대신 **어간 + 활용 음절**로 잡는다. 종결어미가 바뀌어도 값이 흔들리지
 // 않고, 부분문자열 겹침이 없어 중복 계수도 함께 사라진다.
 
-// 이중 피동 — `되어/보여/쓰여/…` 어간에 `지` 계열 활용(지다·진다·져요·집니다)이 붙은 것.
+// 이중 피동 — `되어/보여/쓰여/…` 어간에 `지` 계열 활용이 붙은 것.
+//
+// 활용 음절을 빠짐없이 적는다. 처음에 `지·진·져·집` 만 두었다가 **과거형을 통째로 놓쳤다** —
+// `보여졌다`·`보여졌어요`·`판단되어졌습니다` 가 전부 0 이었다(`져`+`ㅆ` 이 `졌` 한 음절로
+// 합쳐진다). 상류 사전에는 `보여졌다`·`되어졌다`·`잊혀졌` 이 들어 있었으니 어간 방식으로
+// 옮기면서 오히려 재현율을 떨어뜨린 셈이었다. `질`(보여질 것이다)도 같은 이유로 넣는다.
 //
 // 어간을 열거하는 이유는 범용 `여진` 을 쓰면 엉뚱한 것이 걸리기 때문이다 — "여진이 계속됐다"
 // (명사)·"제안이 받아들여진다"(자연스러운 단일 피동)가 그렇다. 상류 사전은 둘 다 센다.
 const DOUBLE_PASSIVE_PATTERN =
-  /(?:되어|보여|쓰여|잊혀|닫혀|열려|불려|놓여)(?:지|진|져|집)/g;
+  /(?:되어|보여|쓰여|잊혀|닫혀|열려|불려|놓여)(?:지|진|져|졌|질|집)/g;
 
 // `에 의해` 마커. **상류와 다르다** — 상류(`_BY_PASSIVE_RE`)는 뒤에 피동 서술어가 붙은 것만
 // 세려고 `(?:되|받|당하|지)` 를 AND 조건으로 걸었는데, 한국어는 이 어간이 뒤 어미와 한 음절로
@@ -109,10 +114,15 @@ const UNIVERSAL_VERB_PATTERN =
 
 // 추상 명사를 만드는 한자 접미사. `-성`·`-적`·`-화` 처럼 무생물 주어가 되기 쉬운 형태다.
 //
-// **정밀도 한계** — "정도"·"노력"처럼 접미사가 아닌데 같은 글자로 끝나는 낱말도 걸린다. 위
-// 보편 서술어와 동시에 나올 때만 세는 AND 조건이 대부분을 거르지만 오탐이 남는다. 그래서 이
-// 축은 판정에 넣지 않고 `samples` 로 무엇이 잡혔는지 함께 낸다.
-const HANJA_SUFFIXES = ['성', '적', '화', '도', '력', '감', '원'] as const;
+// 상류에 있던 `-원` 은 뺐다. 사람을 가리키는 쪽이 이 레포 글에 훨씬 자주 나온다 —
+// `직원은 결과를 보여줬어요`·`연구원은 의미를 말해줬어요` 가 통째로 무생물 주어로 잡혔다.
+// 하필 `보여주다`·`말해주다` 가 아래 보편 서술어에 있어 AND 조건도 이 오탐을 못 거른다.
+// 대신 `자원은 한계를 보여준다` 류를 놓치는데, 사람 오탐보다 그쪽이 훨씬 드물다.
+//
+// **정밀도 한계** — "정도"·"노력"처럼 접미사가 아닌데 같은 글자로 끝나는 낱말은 여전히
+// 걸린다. 보편 서술어와 동시에 나올 때만 세는 AND 조건이 대부분을 거르지만 오탐이 남는다.
+// 그래서 이 축은 판정에 넣지 않고 `samples` 로 무엇이 잡혔는지 함께 낸다.
+const HANJA_SUFFIXES = ['성', '적', '화', '도', '력', '감'] as const;
 
 const SUBJECT_PARTICLES = ['은', '는', '이', '가', '도'] as const;
 
@@ -158,8 +168,21 @@ const toSubjectIndex = (words: string[]): number =>
 const toPercent = (count: number, total: number): number =>
   total === 0 ? 0 : Math.round((count / total) * 100);
 
-const toSamples = (found: string[]): string[] =>
-  [...new Set(found)].slice(0, SAMPLE_LIMIT);
+// 축을 번갈아 뽑는다. 앞 축부터 이어 붙이면 이중 피동만 다섯 개 나온 글에서 `에 의해`·
+// 경동사 표본이 하나도 안 실린다 — 사람이 축별 오탐을 가리라고 내는 값인데 그 목적이 깨진다.
+const toSamples = (groups: string[][]): string[] => {
+  const interleaved: string[] = [];
+  const longest = Math.max(0, ...groups.map((group) => group.length));
+  for (let index = 0; index < longest; index += 1) {
+    for (const group of groups) {
+      const sample = group[index];
+      if (sample !== undefined) {
+        interleaved.push(sample);
+      }
+    }
+  }
+  return [...new Set(interleaved)].slice(0, SAMPLE_LIMIT);
+};
 
 /**
  * 산문 문장만 대상으로 번역투 네 축을 잰다.
@@ -199,10 +222,10 @@ export const measureTranslationese = (
     literalLightVerbCount: literalLightVerb.length,
     inanimateSubjectPercent: toPercent(inanimateHeads.length, sentences.length),
     samples: toSamples([
-      ...doublePassive,
-      ...byAgentPhrase,
-      ...literalLightVerb,
-      ...inanimateHeads,
+      doublePassive,
+      byAgentPhrase,
+      literalLightVerb,
+      inanimateHeads,
     ]),
   };
 };
