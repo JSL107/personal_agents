@@ -28,6 +28,7 @@ const createFixture = (enabled = 'true') => {
         readjusted: 1,
         retried: 5,
         failures: ['000001: 시세 조회 실패'],
+        dormant: ['094800'],
       };
     }),
   };
@@ -92,7 +93,7 @@ describe('UniverseSweepAutopilotTask', () => {
     expect(result).toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 벤치마크 KOSPI 4봉',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
       detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
     });
     expect(fixture.agentRun.execute).toHaveBeenCalledWith(
@@ -110,7 +111,7 @@ describe('UniverseSweepAutopilotTask', () => {
       result: {
         skip: false,
         summaryText:
-          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 벤치마크 KOSPI 4봉',
+          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
         detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
       },
       modelUsed: 'deterministic',
@@ -125,6 +126,7 @@ describe('UniverseSweepAutopilotTask', () => {
           readjusted: 1,
           retried: 5,
           failures: ['000001: 시세 조회 실패'],
+          dormant: ['094800'],
         },
         benchmark: {
           symbol: 'KOSPI',
@@ -145,7 +147,7 @@ describe('UniverseSweepAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 벤치마크 KOSPI 4봉',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
       detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
     });
 
@@ -167,7 +169,7 @@ describe('UniverseSweepAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 벤치마크 KOSPI 실패(시장 지표 rate limit)',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 실패(시장 지표 rate limit)',
       detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
     });
     expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark']);
@@ -185,6 +187,31 @@ describe('UniverseSweepAutopilotTask', () => {
           },
         },
       }),
+    );
+  });
+
+  it('시세 공급 중단이 3종목을 넘으면 코드 3개만 적고 나머지는 수로 적는다', async () => {
+    const fixture = createFixture();
+    fixture.collectPrices.execute.mockImplementationOnce(async () => ({
+      targetCount: 2595,
+      succeeded: 2590,
+      failed: 1,
+      written: 12970,
+      blockedIntraday: 0,
+      readjusted: 1,
+      retried: 5,
+      failures: ['000001: 시세 조회 실패'],
+      dormant: ['094800', '123456', '222222', '333333', '444444'],
+    }));
+
+    const result = await fixture.task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-18',
+    });
+
+    // 코드를 전부 적으면 요약 한 줄이 종목 목록으로 덮인다.
+    expect(result.summaryText).toContain(
+      '시세 공급 중단 5종목(094800, 123456, 222222 외 2종목)',
     );
   });
 });

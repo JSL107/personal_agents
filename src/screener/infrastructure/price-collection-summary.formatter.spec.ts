@@ -12,10 +12,11 @@ describe('formatPriceCollectionSummary', () => {
       readjusted: 2,
       retried: 5,
       failures: ['000020: rate limited'],
+      dormant: ['094800'],
     };
 
     expect(formatPriceCollectionSummary(result)).toBe(
-      '유니버스 시세 수집을 마쳤습니다. 대상 120종목 중 119종목 성공, 1종목 실패, 일봉 595건 저장, 장중 0건 차단, 조정가 2종목 재수집, 429 재시도 성공 5종목입니다.',
+      '유니버스 시세 수집을 마쳤습니다. 대상 120종목 중 119종목 성공, 1종목 실패, 일봉 595건 저장, 장중 0건 차단, 조정가 2종목 재수집, 429 재시도 성공 5종목, 시세 공급 중단 1종목입니다.',
     );
   });
 });

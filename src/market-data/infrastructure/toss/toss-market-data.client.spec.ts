@@ -1,4 +1,5 @@
 import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
+import { MarketDataSymbolNotFoundError } from '../../domain/market-data-symbol-not-found.error';
 import { YahooFinanceMarketDataClient } from '../yahoo-finance.market-data.client';
 import { TossApiClient, TossApiHttpError } from './toss-api.client';
 import { TossMarketDataClient } from './toss-market-data.client';
@@ -114,6 +115,20 @@ describe('TossMarketDataClient', () => {
 
     await expect(client.fetchDailyBars('PFE', 1)).rejects.toBeInstanceOf(
       MarketDataRateLimitError,
+    );
+  });
+
+  it('토스 HTTP 404 오류를 심볼 미존재 도메인 오류로 변환한다', async () => {
+    const tossApi = createTossApi();
+    const yahooMarketData = createYahooMarketData();
+    tossApi.requestJson.mockRejectedValue(
+      new TossApiHttpError('토스증권 일봉 조회 실패: HTTP 404 Not Found', 404),
+    );
+    const client = new TossMarketDataClient(tossApi, yahooMarketData);
+
+    // 호출부가 "공급자가 이 종목을 모른다" 와 "지금 장애다" 를 갈라야 한다.
+    await expect(client.fetchDailyBars('094800', 5)).rejects.toBeInstanceOf(
+      MarketDataSymbolNotFoundError,
     );
   });
 
