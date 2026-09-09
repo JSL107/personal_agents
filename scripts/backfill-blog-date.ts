@@ -20,6 +20,12 @@ import { WebClient } from '@slack/web-api';
 import { PublishNotionDraftUsecase } from '../src/agent/blog/application/publish-notion-draft.usecase';
 import { BlogModule } from '../src/agent/blog/blog.module';
 import { parseBlogPublishArgs } from '../src/agent/blog/domain/blog-publish-args';
+import { TriggerType } from '../src/agent-run/domain/agent-run.type';
+import {
+  NOTION_CLIENT_PORT,
+  NotionClientPort,
+} from '../src/notion/domain/port/notion-client.port';
+import { CancelPreviewUsecase } from '../src/preview-gate/application/cancel-preview.usecase';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
@@ -78,6 +84,18 @@ const main = async (): Promise<void> => {
     const usecase = application.get(PublishNotionDraftUsecase);
 
     if (dryRun) {
+      // 편집 단계가 "발행할 만하지 않다" 로 판정하면 usecase 는 holdDraft 로 Notion 초안을
+      // 보류 상태로 옮긴다(`publish-notion-draft.usecase.ts:500`). 발행본만 확인하려던
+      // 실행이 프로덕션 초안 상태를 바꾸면 안 되므로 쓰기만 가로막는다 —
+      // `verify-blog-publish.ts` 와 같은 방식이고, 나머지 단계는 실제 모델을 그대로 호출한다.
+      const notionClient =
+        application.get<NotionClientPort>(NOTION_CLIENT_PORT);
+      notionClient.updatePageProperties = async (input): Promise<void> => {
+        console.log(
+          '[dry-run] Notion 속성 갱신 생략 =',
+          JSON.stringify(input.properties),
+        );
+      };
       const { candidate } = await usecase.buildPublishCandidate({
         slackUserId: ownerSlackUserId,
         pageId: args.pageId as string,
@@ -96,6 +114,9 @@ const main = async (): Promise<void> => {
       slackUserId: ownerSlackUserId,
       pageId: args.pageId as string,
       publishedAt: args.publishedAt as string,
+      // 생략하면 기본값 SLACK_COMMAND_BLOG_PUBLISH 로 적재돼, 스크립트로 메운 회차가
+      // Slack 명령 실행으로 집계된다.
+      triggerType: TriggerType.MANUAL,
     });
     const result = outcome.result;
     console.log('run =', outcome.agentRunId, '/ status =', result.status);
@@ -106,23 +127,25 @@ const main = async (): Promise<void> => {
 
     console.log('path =', result.path);
     const slack = new WebClient(requireConfig(config, 'SLACK_BOT_TOKEN'));
-    const posted = await slack.chat.postMessage({
-      channel: ownerSlackUserId,
-      text: result.previewText,
-      blocks: buildPreviewBlocks({
-        previewText: result.previewText,
-        previewId: result.previewId,
-      }) as never,
-    });
-
-    // 전문은 스레드로. 카드 요약만 보고 ✅ 를 누르면 익명화 실패를 잡을 수 없다.
-    if (posted.ts) {
-      await slack.chat.postMessage({
+    // execute 는 이미 PENDING preview 를 저장했다. 카드·좌표·전문 중 하나라도 못 나가면
+    // 승인 버튼만 살아 있는 카드가 남아, 전문을 못 본 채 ✅ 를 누르면 익명화 실패가
+    // 공개 저장소로 나간다. #528 이 autopilot 경로에 세운 판단을, 그 게이트를 지나지 않는
+    // 이 경로에도 둔다 — 실패하면 preview 를 취소해 카드를 CANCELLED 로 닫는다.
+    try {
+      const posted = await slack.chat.postMessage({
         channel: ownerSlackUserId,
-        thread_ts: posted.ts,
-        text: `*발행될 파일* \`${result.path}\`\n\n${result.content}`,
+        text: result.previewText,
+        blocks: buildPreviewBlocks({
+          previewText: result.previewText,
+          previewId: result.previewId,
+        }) as never,
       });
-      // 좌표를 남겨야 승인·취소·만료 때 카드가 갱신돼 버튼이 사라진다.
+      if (!posted.ts) {
+        throw new Error('Slack 이 카드 ts 를 돌려주지 않았습니다.');
+      }
+
+      // 좌표를 전문보다 먼저 남긴다. 순서가 반대면 전문 발송이 실패했을 때 취소가
+      // 카드를 찾지 못해 버튼이 그대로 남는다.
       const previewRepository = application.get<PreviewActionRepositoryPort>(
         PREVIEW_ACTION_REPOSITORY_PORT,
       );
@@ -131,6 +154,29 @@ const main = async (): Promise<void> => {
         slackChannelId: posted.channel as string,
         slackMessageTs: posted.ts,
       });
+
+      // 전문은 스레드로. 카드 요약만 보고 ✅ 를 누르면 익명화 실패를 잡을 수 없다.
+      await slack.chat.postMessage({
+        channel: ownerSlackUserId,
+        thread_ts: posted.ts,
+        text: `*발행될 파일* \`${result.path}\`\n\n${result.content}`,
+      });
+    } catch (error: unknown) {
+      // 취소가 또 실패해도 원인 예외는 삼키지 않는다.
+      await application
+        .get(CancelPreviewUsecase)
+        .execute({
+          previewId: result.previewId,
+          slackUserId: ownerSlackUserId,
+        })
+        .catch((cancelError: unknown) => {
+          console.error(
+            'preview 취소도 실패 — 손으로 정리해야 합니다:',
+            result.previewId,
+            cancelError,
+          );
+        });
+      throw error;
     }
     console.log('카드 발송 완료 — Slack DM 에서 ✅ 를 눌러주세요.');
   } finally {
