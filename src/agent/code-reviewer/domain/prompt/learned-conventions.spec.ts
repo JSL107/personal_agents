@@ -255,6 +255,101 @@ describe('renderLearnedConventions', () => {
     expect(block).not.toMatch(/\n### SECURITY/);
   });
 
+  it('기각 이유 앞의 멘션과 인사말을 규약에 싣지 않는다', () => {
+    const { block } = renderLearnedConventions([
+      row(
+        'RELIABILITY',
+        '@gemini-code-assist 검토 감사합니다. 다만 이번에는 반영하지 않았습니다. 운영 DB 실측 결과 해당 행은 0건입니다.',
+        '2026-08-20',
+      ),
+      row(
+        'RELIABILITY',
+        '이 조건은 실현되지 않습니다. mysql2 의 terminal 메서드에는 동기 throw 경로가 없습니다.',
+        '2026-08-19',
+      ),
+    ]);
+
+    expect(block).not.toContain('@gemini-code-assist');
+    expect(block).not.toContain('검토 감사합니다');
+    expect(block).toContain('운영 DB 실측 결과 해당 행은 0건입니다');
+  });
+
+  it('멘션·인사말로 부풀린 길이가 하한 통과에 쓰이지 않는다 — 정규화 후 길이로 판정한다', () => {
+    // 인사말을 걷어내면 9자로 하한(40자) 미달인 이유. 정규화보다 길이 검사가 먼저면
+    // 원문 길이(42자)로 통과해 세 번째 이유를 밀어낸다.
+    const { block } = renderLearnedConventions([
+      row(
+        'RELIABILITY',
+        '@gemini-code-assist 코드 리뷰 감사합니다. 짧은 이유입니다.',
+        '2026-08-21',
+      ),
+      row('RELIABILITY', enough('두 번째 기각 이유입니다'), '2026-08-20'),
+      row('RELIABILITY', enough('세 번째 기각 이유입니다'), '2026-08-19'),
+    ]);
+
+    expect(block).not.toContain('짧은 이유입니다');
+    expect(block).toContain(enough('두 번째 기각 이유입니다'));
+    expect(block).toContain(enough('세 번째 기각 이유입니다'));
+  });
+
+  it('확인했습니다는 인사치레가 아니라 실질 서술어로 흔하다 — 인사말로 지우지 않는다', () => {
+    // "이미 확인했습니다" 는 누가 어떻게 확인했는지가 본문의 핵심이다. 인사말 키워드로
+    // 취급해 첫 문장째 지우면 그 근거가 통째로 사라진다.
+    const { block } = renderLearnedConventions([
+      row(
+        'RELIABILITY',
+        '이 부분은 이미 다른 팀에서 확인했습니다. 그 결과 재현이 안 되어 반영하지 않습니다.',
+        '2026-08-20',
+      ),
+      row('RELIABILITY', enough('두 번째 기각 이유입니다'), '2026-08-19'),
+    ]);
+
+    expect(block).toContain(
+      '이 부분은 이미 다른 팀에서 확인했습니다. 그 결과 재현이 안 되어 반영하지 않습니다.',
+    );
+  });
+
+  it('인사말 뒤에 붙는 조사까지 흡수해 비문을 남기지 않는다', () => {
+    // "고맙습니다만" 은 완곡한 거절을 여는 흔한 어미다. 조사만 못 지우면
+    // "만 이 지적은..." 처럼 앞이 잘린 비문이 규약에 남는다.
+    const { block } = renderLearnedConventions([
+      row(
+        'ARCHITECTURE',
+        '고맙습니다만 이 지적은 기존 설계 의도와 다릅니다. 포트는 어댑터 경계에서만 두는 게 이 레포의 관례입니다.',
+        '2026-08-20',
+      ),
+      row('ARCHITECTURE', enough('두 번째 기각 이유입니다'), '2026-08-19'),
+    ]);
+
+    expect(block).not.toContain('고맙습니다');
+    expect(block).not.toMatch(/•\s*만\s/);
+    expect(block).toContain(
+      '이 지적은 기존 설계 의도와 다릅니다. 포트는 어댑터 경계에서만 두는 게 이 레포의 관례입니다.',
+    );
+  });
+
+  it('머리말 없는 문장은 그대로 보존한다', () => {
+    const { block } = renderLearnedConventions([
+      row(
+        'CORRECTNESS',
+        '확인해 봤는데 현재 구조에서는 그 충돌이 일어나지 않습니다. 큐가 순차 처리라 동시 접근 자체가 없습니다.',
+        '2026-08-20',
+      ),
+      row(
+        'CORRECTNESS',
+        '이 지적은 수용하지 않습니다. 이 레포는 이미 같은 패턴을 열두 곳에서 쓰고 있습니다.',
+        '2026-08-19',
+      ),
+    ]);
+
+    expect(block).toContain(
+      '확인해 봤는데 현재 구조에서는 그 충돌이 일어나지 않습니다. 큐가 순차 처리라 동시 접근 자체가 없습니다.',
+    );
+    expect(block).toContain(
+      '이 지적은 수용하지 않습니다. 이 레포는 이미 같은 패턴을 열두 곳에서 쓰고 있습니다.',
+    );
+  });
+
   it('규약을 이유로 실제 결함을 덮지 말라는 단서를 함께 싣는다', () => {
     const { block } = renderLearnedConventions([
       row('TEST', enough('이유 하나'), '2026-08-20'),

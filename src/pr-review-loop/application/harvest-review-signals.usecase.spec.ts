@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
@@ -134,6 +135,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       resolved: 0,
       judged: 0,
       skipped: 0,
+      contradicted: 0,
       adoption: [],
     });
     expect(repository.findOpenPostedCards).not.toHaveBeenCalled();
@@ -252,6 +254,10 @@ describe('HarvestReviewSignalsUsecase', () => {
   it('THUMBS_DOWN과 owner 답글을 기각 이유로 보존한다', async () => {
     const { usecase, github, repository, judge } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
+    // 👎 만으로 확정하지 않고 판정기에 얹는다 — 답글이 수용이면 보류해야 하므로.
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'REJECTED', reason: '의도된 동작이라 반박했다' },
+    ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestAuthorLogin: null,
       pullRequestState: 'OPEN',
@@ -280,11 +286,380 @@ describe('HarvestReviewSignalsUsecase', () => {
 
     await usecase.execute();
 
-    expect(judge.execute).not.toHaveBeenCalled();
     expect(repository.markDecided).toHaveBeenCalledWith({
       id: 1,
       status: 'REJECTED',
       rejectReason: '의도된 동작이라 변경하지 않습니다',
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
+  it('👎 인데 답글이 수용이면 기각으로 확정하지 않고 보류한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '타당합니다. 8e0d19ad 에 테스트를 추가했습니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(outcome.contradicted).toBe(1);
+  });
+
+  it('👎 이고 답글도 기각이면 종전대로 확정한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'REJECTED', reason: '반박했다' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '전제가 반대입니다. 이 레포에서는 정상 동작입니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'REJECTED',
+        rejectReason: '전제가 반대입니다. 이 레포에서는 정상 동작입니다.',
+      }),
+    );
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('👎 인데 판정기가 UNCLEAR 면 REJECTED 로 확정하되 이유는 남기지 않는다', async () => {
+    // UNCLEAR 는 "판단 못 하겠다" 는 뜻이다. 그 애매한 상태를 owner 답글로 대신
+    // 채워 규약 재료로 쓰면, 다음 리뷰는 애매한 사례를 판단 기준으로 학습한다.
+    // 상태는 owner 의 👎 대로 확정하되 이유는 비운다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'UNCLEAR', reason: '' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '음... 애매하네요.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REJECTED', rejectReason: null }),
+    );
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('👎 인데 판정기 결과에 그 카드가 누락돼도 REJECTED 로 확정하되 이유는 남기지 않는다', async () => {
+    // 판정기가 입력 전건에 결과를 돌려준다는 계약이 깨진 경우(누락)도 UNCLEAR 와
+    // 같은 취급 — 판정을 신뢰할 수 없다는 뜻이니 owner 답글을 규약으로 실으면 안 된다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '전제가 반대입니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REJECTED', rejectReason: null }),
+    );
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('👎 인데 답글이 없으면 판정기를 부르지 않는다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    // 유예(Task 4) 와 겹치지 않도록 리액션을 충분히 과거로 둔다.
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+  });
+
+  it('스레드가 잘렸으면 👎 여도 확정하지 않고 경고를 남긴다', async () => {
+    // truncated 는 PR 단위 플래그다 — 다른 스레드가 상한을 넘겨도 참이 되므로 이
+    // 카드는 멀쩡한데도 매 회차 조용히 이 분기로 떨어질 수 있다. skip 카운터만으로는
+    // 아무도 못 보므로 사유가 로그에 드러나야 한다.
+    const warnLog = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: true,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2020-01-01T00:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('JSL107/personal_agents#180'),
+    );
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('스레드 조회가 잘려'),
+    );
+
+    warnLog.mockRestore();
+  });
+
+  it('PR 작성자만 답글을 달고 owner 가 👎 를 누르면 판정기를 부르지 않고 종전대로 확정한다', async () => {
+    // 모순 게이트는 owner 답글이 있을 때만 열려야 한다(harvest-signal.ts 의 ownerLogin
+    // 주석 — 제3자 답글이 owner 결정에 개입하면 안 된다). PR 작성자(owner 아님)가
+    // "고치겠다" 고 답해도 owner 의 👎 는 그대로 기각으로 확정돼야 한다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'pr-author',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'pr-author',
+              body: '네, 고치겠습니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: null,
+      githubThreadNodeId: 'PRRT_555',
+    });
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('같은 답글로 모순이 반복되면 다음 회차는 판정기를 다시 부르지 않는다', async () => {
+    // 보류(contradicted)로 남은 카드는 OPEN 인 채 다음 회차에도 같은 signal 로 다시
+    // 걸린다. 답글이 안 바뀌었으면 재판정은 매번 같은 결론만 확인하며 쿼터만 태운다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '타당합니다. 8e0d19ad 에 테스트를 추가했습니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const first = await usecase.execute();
+    const second = await usecase.execute();
+
+    expect(judge.execute).toHaveBeenCalledTimes(1);
+    expect(first.contradicted).toBe(1);
+    expect(second.contradicted).toBe(1);
+    expect(repository.markDecided).not.toHaveBeenCalled();
+  });
+
+  it('답글만 있던 회차에 지문이 찍혀도 뒤늦게 달린 👎 는 확정된다', async () => {
+    // 규약(CLAUDE.md §8-1)이 "답변 먼저, 👎 나중" 이라 이 순서가 정상 경로다. 1회차에
+    // 답글 판정이 UNCLEAR 로 끝나면 답글 지문이 찍히는데, 그 가드가 모순 판정 경로까지
+    // 걸러내면 뒤늦은 리액션이 영영 확정되지 않는다(답글은 그대로라 지문도 그대로다).
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    const ownerReply = {
+      databaseId: 556,
+      authorLogin: 'owner',
+      body: LONG_REJECT_REPLY,
+      createdAt: '2026-08-04T02:03:13Z',
+      reactions: [],
+    };
+    const threadsWith = (
+      reactions: ReviewThread['comments'][number]['reactions'],
+    ) => ({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN' as const,
+      truncated: false,
+      threads: [reviewThread({ reactions, replies: [ownerReply] })],
+    });
+    github.listReviewThreads
+      .mockResolvedValueOnce(threadsWith([]))
+      .mockResolvedValueOnce(
+        threadsWith([
+          {
+            content: 'THUMBS_DOWN',
+            userLogin: 'owner',
+            createdAt: '2026-08-04T02:03:47Z',
+          },
+        ]),
+      );
+    judge.execute
+      .mockResolvedValueOnce([
+        { id: 1, verdict: 'UNCLEAR', reason: '판단 보류' },
+      ])
+      .mockResolvedValueOnce([
+        { id: 1, verdict: 'REJECTED', reason: '반박으로 읽힌다' },
+      ]);
+
+    const first = await usecase.execute();
+    const second = await usecase.execute();
+
+    expect(first.skipped).toBe(1);
+    expect(judge.execute).toHaveBeenCalledTimes(2);
+    expect(second.rejected).toBe(1);
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'REJECTED',
+      rejectReason: LONG_REJECT_REPLY,
       githubThreadNodeId: 'PRRT_555',
     });
   });

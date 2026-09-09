@@ -71,6 +71,11 @@ interface PendingJudgment {
   replyBody: string;
   // 규약 재료 — owner 가 쓴 답글만. 없으면 기각 이유를 남기지 않는다.
   ownerReplyBody: string | null;
+  /**
+   * 👎 리액션으로 이미 기각이 정해진 카드. 판정기가 "수용" 이라고 읽으면 둘 중 하나가
+   * 틀린 것이므로 확정하지 않는다. 판정기를 새로 부르지 않고 기존 배치에 얹는다.
+   */
+  reactionRejected?: boolean;
 }
 
 interface PendingResolution {
@@ -86,6 +91,7 @@ const emptyOutcome = (): HarvestOutcome => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  contradicted: 0,
   adoption: [],
 });
 
@@ -109,6 +115,12 @@ export class HarvestReviewSignalsUsecase {
   // ponytail: 프로세스 메모리라 재시작하면 카드당 1회 더 물어본다. 위 checkpoint 와
   // 같은 판단으로 컬럼까지는 만들지 않는다.
   private readonly replyJudgmentCheckpoints = new Map<number, string>();
+
+  // 카드 id → 마지막으로 모순 판정에 넣은 답글 원문. 보류(contradicted)로 남은 카드는
+  // OPEN 인 채 다음 회차에도 같은 signal 로 다시 걸린다 — 답글이 그대로면 재판정은
+  // 매번 같은 결론만 확인하면서 쿼터만 태운다(스윕 */3, 카드 1건이 하루 최대 480회).
+  // 위 resolutionCheckpoints 와 같은 패턴 — 답글이 바뀌면(사람이 정정) 그때만 다시 묻는다.
+  private readonly contradictionCheckpoints = new Map<number, string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -302,6 +314,40 @@ export class HarvestReviewSignalsUsecase {
         case 'REJECTED': {
           if (thread === null) {
             outcome.skipped += 1;
+            break;
+          }
+          // 답글·리액션이 페이지 상한에서 잘렸으면 수용 답글이 조회 밖에 있을 수 있다.
+          // 잘못 확정하면 되돌릴 경로가 없으므로(확정 카드는 OPEN 전용 조회에서 빠진다)
+          // 미결로 남긴다. truncated 는 PR 단위 플래그라(다른 스레드 하나가 상한을
+          // 넘어도 참이 된다) 멀쩡한 스레드까지 매 회차 조용히 이 분기로 떨어질 수
+          // 있다 — skip 카운터만으로는 사람이 알 길이 없어 경고를 남긴다.
+          if (reviewThreads.truncated) {
+            outcome.skipped += 1;
+            this.logger.warn(
+              `PR 리뷰 기각 보류 — 스레드 조회가 잘려 기각을 확정하지 않았다 (${group.repo}#${group.pullNumber}, 카드 ${card.id}).`,
+            );
+            break;
+          }
+          // 게이트는 owner 답글 유무로만 연다 — 규약이 될 수 있는 결정은 owner 것뿐이다
+          // (`harvest-signal.ts` 의 `ownerLogin` 주석). PR 작성자만 답글을 단 경우는
+          // 종전대로 리액션만으로 즉시 확정한다.
+          if (signal.ownerReplyBody !== null) {
+            // ownerReplyBody 가 있으면 그 문장은 항상 replyBody 에도 포함돼 있다
+            // (도메인 불변식) — 그래도 타입은 별개라 null 대비 fallback 을 둔다.
+            const replyBody = signal.replyBody ?? signal.ownerReplyBody;
+            if (this.contradictionCheckpoints.get(card.id) === replyBody) {
+              // 지난 회차에 이미 같은 답글로 모순 판정을 받았다. 답글이 안 바뀌었으면
+              // 다시 물어도 같은 결론이라 재확인은 사람 몫으로 남긴다.
+              outcome.contradicted += 1;
+              break;
+            }
+            pendingJudgments.push({
+              card,
+              thread,
+              replyBody,
+              ownerReplyBody: signal.ownerReplyBody,
+              reactionRejected: true,
+            });
             break;
           }
           // 👎 만 있고 답글이 아직 없으면 이번 회차는 확정하지 않는다. 확정하면 status 가
@@ -541,6 +587,12 @@ export class HarvestReviewSignalsUsecase {
 
     // 지난 회차와 답글이 그대로면 답도 같다. 다시 묻지 않는다.
     const fresh = pendingJudgments.filter((pending) => {
+      // 👎 모순 판정은 이 지문 가드를 타지 않는다. 규약(CLAUDE.md §8-1)이 "답변 먼저,
+      // 👎 나중" 이라 답글만 있던 회차에 이미 판정(UNCLEAR)돼 지문이 찍혀 있고, 그 뒤
+      // 👎 가 달려도 답글은 그대로다 — 여기서 걸러내면 리액션이 영영 확정되지 않는다.
+      if (pending.reactionRejected === true) {
+        return true;
+      }
       const unchanged =
         this.replyJudgmentCheckpoints.get(pending.card.id) ===
         replyFingerprint(pending.replyBody);
@@ -581,6 +633,35 @@ export class HarvestReviewSignalsUsecase {
     const byId = new Map(judgments.map((judgment) => [judgment.id, judgment]));
     for (const pending of fresh) {
       const judgment = byId.get(pending.card.id);
+
+      if (pending.reactionRejected === true) {
+        // 리액션은 👎 인데 판정기가 수용으로 읽었다. 확정하면 그 답글이 규약이 되어
+        // 좋은 지적을 억제한다(카드 57) — 사람이 볼 때까지 OPEN 으로 둔다.
+        if (judgment?.verdict === 'ACCEPTED') {
+          outcome.contradicted += 1;
+          // 같은 답글로 다음 회차가 다시 걸리면 재판정 없이 이 결론을 재사용한다.
+          this.contradictionCheckpoints.set(pending.card.id, pending.replyBody);
+          this.logger.warn(
+            `PR 리뷰 기각 보류: 카드 ${pending.card.id} — 👎 리액션과 답글이 어긋난다 (${flattenForLog(judgment.reason)})`,
+          );
+          continue;
+        }
+        // 판정기가 기각이라 했거나 판단 불가면 리액션을 따른다(종전 동작) — 단
+        // 규약 재료는 판정기가 명시적으로 REJECTED 라고 답한 경우에만 남긴다.
+        // UNCLEAR·결과 누락은 "판단 못 하겠다" 는 뜻인데 그 문장을 규약으로 실으면
+        // 애매한 사례가 다음 리뷰의 판단 기준이 된다 — 상태는 owner 의 👎 대로 확정
+        // 하되 이유는 비워 학습 재료에서 뺀다.
+        await this.markDecisionAndResolve({
+          card: pending.card,
+          thread: pending.thread,
+          status: 'REJECTED',
+          rejectReason:
+            judgment?.verdict === 'REJECTED' ? pending.ownerReplyBody : null,
+          outcome,
+        });
+        continue;
+      }
+
       const checkpoint = (): void => {
         this.replyJudgmentCheckpoints.set(
           pending.card.id,

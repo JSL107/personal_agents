@@ -160,7 +160,10 @@ export class ReviewPullRequestUsecase {
           diff: reviewedDiff.diff,
           findings: outcome.result.findings,
           max: this.inlineMax(),
-          dryRun: false,
+          // 호출자가 연습 모드를 요구하면 게시도 연습으로 간다. 하드코딩된 false 는
+          // 과거 PR 재리뷰(검증)가 실제 코멘트를 다는 사고를 만들었다 — 게시 없는
+          // 재현 경로가 없으면 이후 개선을 실증할 방법 자체가 없다.
+          dryRun: dryRun === true,
           allowlistRaw: this.configService?.get<string>(
             'PR_REVIEW_INLINE_REPOS',
           ),

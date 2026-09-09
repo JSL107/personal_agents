@@ -19,6 +19,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         resolved: 0,
         judged: 0,
         skipped: 0,
+        contradicted: 0,
         adoption: [],
       }),
     };
@@ -75,6 +76,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         resolved: 0,
         judged: 0,
         skipped: 0,
+        contradicted: 0,
         adoption: [],
       };
     });
@@ -97,6 +99,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       resolved: 3,
       judged: 0,
       skipped: 0,
+      contradicted: 0,
       adoption: [
         {
           category: 'TEST',
@@ -153,10 +156,57 @@ describe('PrReviewSweepAutopilotTask', () => {
       resolved: 0,
       judged: 2,
       skipped: 1,
+      contradicted: 0,
       adoption: [],
     });
     sweepUsecase.execute.mockResolvedValue([]);
 
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+  });
+
+  it('보류(contradicted)만 있어도 알림을 보낸다 — 사람이 손대야 풀린다', async () => {
+    // hasHarvestResult 가 이 카운터를 안 보면 보류만 있는 회차가 통째로 skip 되어
+    // 카드가 조용히 OPEN 에 쌓인다(👎 + 수용 답글 모순, 카드 57 사고).
+    harvestUsecase.execute.mockResolvedValue({
+      acked: 0,
+      fixed: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 0,
+      judged: 1,
+      skipped: 0,
+      contradicted: 1,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue([]);
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('보류 1');
+    // 하루 1회 발송 가드(그룹×날짜)는 그날 첫 회차만 통과시킨다 — 뒤 회차에 새로
+    // 생긴 보류가 묻히지 않도록 건수를 접미사로 실어 orchestrator 의 가드 키에
+    // 반영한다(autopilot-task.port.ts AutopilotTaskResult.guardKeySuffix 참조).
+    expect(result.guardKeySuffix).toBe('contradicted-1');
+  });
+
+  it('보류가 없으면 guardKeySuffix 를 주지 않는다 — 종전 가드 동작을 그대로 유지한다', async () => {
+    harvestUsecase.execute.mockResolvedValue({
+      acked: 1,
+      fixed: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 1,
+      judged: 0,
+      skipped: 0,
+      contradicted: 0,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue([]);
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBeUndefined();
   });
 });
