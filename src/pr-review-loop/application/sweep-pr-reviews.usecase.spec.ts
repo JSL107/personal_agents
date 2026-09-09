@@ -762,9 +762,7 @@ describe('SweepPrReviewsUsecase', () => {
     ]);
     reviewUsecase.execute
       .mockResolvedValueOnce(REVIEW_OUTCOME)
-      .mockRejectedValueOnce(
-        new CodexQuotaExceededException('Aug 8th 7:00 PM'),
-      )
+      .mockRejectedValueOnce(new CodexQuotaExceededException('Aug 8th 7:00 PM'))
       .mockResolvedValueOnce(REVIEW_OUTCOME);
 
     const { results, quotaStopped } = await buildUsecase(ENABLED).execute();
