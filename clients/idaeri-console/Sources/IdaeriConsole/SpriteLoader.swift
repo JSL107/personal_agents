@@ -113,7 +113,10 @@ enum SpriteLoader {
                 if brightness >= 40, brightness <= 110, y < hairZoneBottom {
                     replacement = hair
                     shadeDivisor = 60
-                } else if brightness >= 228 {
+                } else if officeIsShirtPixel(brightness: brightness, saturation: saturation) {
+                    // 판정을 코어 함수로 둔 이유는 **셔츠 밝기를 재는 쪽**(`--color-check`)이
+                    // 같은 픽셀을 세야 하기 때문이다. 두 곳에 적으면 재는 픽셀과 칠하는
+                    // 픽셀이 갈려 대역 계산이 화면과 무관해진다.
                     replacement = shirt
                     shadeDivisor = 255
                 } else if brightness <= 24, y >= hairZoneBottom {
