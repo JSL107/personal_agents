@@ -54,16 +54,25 @@ export class JudgeReviewReplyUsecase {
                 systemPrompt: REVIEW_REPLY_JUDGE_SYSTEM_PROMPT,
               },
             });
-            const judgments = parseVerdictBatch<ReplyVerdict>({
+            const parsed = parseVerdictBatch<ReplyVerdict>({
               text: completion.text,
               ids: items.map((item) => item.id),
               validVerdicts: VALID_VERDICTS,
               fallback: 'UNCLEAR',
             });
+            if (!parsed.extracted) {
+              // 전건 UNCLEAR 로 조용히 넘기지 않는다. 형식 위반은 모델 호출 실패이고,
+              // 미결로 통과시키면 원장에는 성공으로 남는다. 게다가 수확 쪽은 미결도
+              // checkpoint 에 기록하므로(같은 답글 재판정 방지) 답글이 바뀌기 전까지
+              // 그 카드가 영구히 미결로 굳는다. 실패로 올려 재시도 경로에 태운다.
+              throw new Error(
+                `답글 판정 응답에서 JSON 배열을 뽑지 못했다 (항목 ${items.length}건)`,
+              );
+            }
             return {
-              result: judgments,
+              result: parsed.rows,
               modelUsed: completion.modelUsed,
-              output: judgments,
+              output: parsed.rows,
             };
           },
         },

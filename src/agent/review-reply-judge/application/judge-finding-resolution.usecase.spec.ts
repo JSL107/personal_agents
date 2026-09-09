@@ -60,15 +60,14 @@ describe('JudgeFindingResolutionUsecase', () => {
     ]);
   });
 
-  it('JSON 파싱 실패 시 전건을 UNCLEAR 로 보수 처리한다', async () => {
+  it('판정 배열을 아예 못 뽑으면 실패로 올린다 — 미결로 통과시키지 않는다', async () => {
     const usecase = new JudgeFindingResolutionUsecase(
       router('판정 불가합니다') as never,
     );
 
-    await expect(usecase.execute({ items })).resolves.toEqual([
-      { id: 21, verdict: 'UNCLEAR', reason: '' },
-      { id: 22, verdict: 'UNCLEAR', reason: '' },
-    ]);
+    await expect(usecase.execute({ items })).rejects.toThrow(
+      'JSON 배열을 뽑지 못했다',
+    );
   });
 
   it('알 수 없는 verdict 만 UNCLEAR 로 내리고 유효한 판정은 유지한다', async () => {

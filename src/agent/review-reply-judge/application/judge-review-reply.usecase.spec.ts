@@ -72,14 +72,30 @@ describe('JudgeReviewReplyUsecase', () => {
     );
   });
 
-  it('JSON 배열 파싱 실패 시 모든 항목을 UNCLEAR로 보수 처리한다', async () => {
+  it('판정 배열을 아예 못 뽑으면 실패로 올린다 — 미결로 통과시키지 않는다', async () => {
+    // 미결로 통과시키면 원장에 성공으로 남고, 수확 쪽 checkpoint 에도 기록돼
+    // 답글이 바뀌기 전까지 그 카드가 영구히 미결로 굳는다.
     const usecase = new JudgeReviewReplyUsecase(
       router('JSON 아닌 답변') as never,
       makeAgentRunService() as never,
     );
 
+    await expect(usecase.execute({ items })).rejects.toThrow(
+      'JSON 배열을 뽑지 못했다',
+    );
+  });
+
+  it('배열은 뽑혔고 일부 id 만 빠졌으면 그 항목만 UNCLEAR 로 채운다', async () => {
+    // 부분 누락은 여전히 보수 처리다 — 바꾼 것은 "배열 자체를 못 뽑은 경우" 뿐이다.
+    const usecase = new JudgeReviewReplyUsecase(
+      router(
+        '[{"id": 11, "verdict": "ACCEPTED", "reason": "수정함"}]',
+      ) as never,
+      makeAgentRunService() as never,
+    );
+
     await expect(usecase.execute({ items })).resolves.toEqual([
-      { id: 11, verdict: 'UNCLEAR', reason: '' },
+      { id: 11, verdict: 'ACCEPTED', reason: '수정함' },
       { id: 12, verdict: 'UNCLEAR', reason: '' },
     ]);
   });

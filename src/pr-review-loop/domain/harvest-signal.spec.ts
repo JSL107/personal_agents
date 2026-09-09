@@ -99,6 +99,7 @@ describe('resolveHarvestSignal', () => {
       source: 'REACTION',
       replyBody: null,
       ownerReplyBody: null,
+      reactedAt: '2026-07-31T01:00:00Z',
     });
   });
 
@@ -150,6 +151,7 @@ describe('resolveHarvestSignal', () => {
       source: 'REACTION',
       replyBody: null,
       ownerReplyBody: null,
+      reactedAt: '2026-07-31T01:00:00Z',
     });
   });
 
@@ -297,6 +299,7 @@ describe('resolveHarvestSignal', () => {
       source: 'REACTION',
       replyBody: '의도된 동작이라 변경하지 않습니다',
       ownerReplyBody: '의도된 동작이라 변경하지 않습니다',
+      reactedAt: '2026-07-31T01:00:00Z',
     });
   });
 
@@ -506,6 +509,7 @@ describe('resolveHarvestSignal', () => {
       source: 'REACTION',
       replyBody: null,
       ownerReplyBody: null,
+      reactedAt: '2026-07-31T01:00:00Z',
     });
   });
 });

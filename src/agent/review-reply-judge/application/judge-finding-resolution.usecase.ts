@@ -41,12 +41,21 @@ export class JudgeFindingResolutionUsecase {
           systemPrompt: FINDING_RESOLUTION_SYSTEM_PROMPT,
         },
       });
-      return parseVerdictBatch<ResolutionVerdict>({
+      const parsed = parseVerdictBatch<ResolutionVerdict>({
         text: completion.text,
         ids: items.map((item) => item.id),
         validVerdicts: VALID_VERDICTS,
         fallback: 'UNCLEAR',
       });
+      if (!parsed.extracted) {
+        // 답글 판정과 같은 이유 — 형식 위반은 미결이 아니라 실패다.
+        // 해소 판정 쪽은 checkpoint 가 headSha 기준이라 굳지는 않지만, 원장이 거짓
+        // 성공으로 남는 것은 같다.
+        throw new Error(
+          `해소 판정 응답에서 JSON 배열을 뽑지 못했다 (항목 ${items.length}건)`,
+        );
+      }
+      return parsed.rows;
     } catch (error: unknown) {
       const quota = extractCodexQuota(error);
       if (quota) {

@@ -11,6 +11,9 @@ export type HarvestSignal =
       source: 'REACTION';
       replyBody: string | null;
       ownerReplyBody: string | null;
+      // 👎 가 달린 시각. 이유 없는 기각을 곧장 확정하지 않고 답글을 기다리는 데 쓴다
+      // (`REJECTION_REPLY_GRACE_MS`).
+      reactedAt: string;
     }
   | { kind: 'NEEDS_JUDGE'; replyBody: string; ownerReplyBody: string | null }
   | { kind: 'STALE' }
@@ -114,6 +117,7 @@ export const resolveHarvestSignal = ({
         source: 'REACTION',
         replyBody,
         ownerReplyBody,
+        reactedAt: latestReaction.createdAt,
       };
     }
 
