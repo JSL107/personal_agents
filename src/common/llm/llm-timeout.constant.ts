@@ -40,8 +40,8 @@ const PRIMARY_PROVIDER_WORST_CASE_MS =
   LLM_CLI_MAX_ATTEMPTS * LLM_CLI_PROCESS_OVERHEAD_MS;
 
 // 폴백(claude) 예산. ClaudeCliProvider 는 bounded retry 를 하지 않으므로 timeout 1회 + 부대비용.
-// 이 항을 빼면 lockDuration 이 폴백 구간을 흡수하지 못해 lock 갱신 실패 → stalled 재처리로
-// 같은 job 이 중복 실행된다 (worker-options.constant.ts 에 기록된 2026-07 사고와 동일 구조).
+// 이 값은 lockDuration 의 입력이기도 하다 — lock 은 자동 갱신되므로 실행이 길다고 곧바로
+// 잃지는 않지만, 갱신이 밀렸을 때의 여유가 이 예산에서 나온다 (worker-options.constant.ts 참조).
 const FALLBACK_PROVIDER_WORST_CASE_MS =
   LLM_CLI_TIMEOUT_MS + LLM_CLI_PROCESS_OVERHEAD_MS;
 

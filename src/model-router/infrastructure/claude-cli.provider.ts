@@ -41,8 +41,14 @@ const STREAM_TAIL_LIMIT = 2000;
 //        priority 5 (OAUTH_TOKEN) > priority 6 (keychain) 이라 keychain 시도 자체가 안 일어남.
 //        ACL 미등록 환경 (nest start --watch 같은 child PID 변동) 의 침묵 exit=1 자연 우회.
 // - 프롬프트는 argv 가 아니라 **stdin 으로 전달** — argv 는 `ps aux` 로 유출될 수 있음 + ARG_MAX 회피.
+//   systemPrompt 도 `--system-prompt` argv 가 아니라 buildClaudePrompt 로 합쳐 stdin 에 싣는다
+//   (codex 의 buildCodexPrompt 와 동일 정책). PM 경로는 학습된 planPreference 를 systemPrompt 에
+//   합치므로 정적 지침만 담긴다는 전제가 성립하지 않고, redactPii 가 업무·프로필 정보를 전부
+//   지우지도 못한다 (PR #523 codex 리뷰 지적).
 // - cwd 는 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo 접근을 차단.
-//   HOME 은 real (A 경로 keychain context 보존) — `~/.ssh` 등은 file system 권한으로 보호.
+//   HOME 은 OAuth token 이 있으면 throwaway (경로 B 는 keychain 을 쓰지 않으므로 격리해도
+//   인증이 깨지지 않는다 — 임시 HOME + token 만으로 exit=0 응답을 확인했다). token 이 없을 때만
+//   real HOME 을 쓴다 — 경로 A 는 keychain access context 가 필요해 격리하면 침묵 exit=1 이 된다.
 
 // 이대리가 Claude 를 쓰는 건 개발형 에이전트 (BE, Code Reviewer) 뿐이라 기본 `opus` 로 격상.
 // 구독 quota 소진 우려가 있으면 env 로 `sonnet` / `haiku` override 가능.
@@ -67,26 +73,33 @@ export const buildClaudeAdditionalEnv = (
   return { CLAUDE_CODE_OAUTH_TOKEN: oauthToken };
 };
 
-export const buildClaudeArgs = ({
+// systemPrompt 를 stdin 페이로드에 합친다 (codex 의 buildCodexPrompt 와 같은 형식).
+// `--system-prompt` argv 로 넘기면 `ps aux` 로 host 의 다른 프로세스가 내용을 읽을 수 있다.
+export const buildClaudePrompt = ({
+  prompt,
   systemPrompt,
+}: {
+  prompt: string;
+  systemPrompt?: string;
+}): string => {
+  if (!systemPrompt) {
+    return prompt;
+  }
+  return `[System Instructions]\n${systemPrompt}\n\n[User]\n${prompt}`;
+};
+
+export const buildClaudeArgs = ({
   model = DEFAULT_CLAUDE_MODEL,
 }: {
-  systemPrompt?: string;
   model?: string;
-}): string[] => {
-  const args = [
-    '-p',
-    '--output-format',
-    'json',
-    '--no-session-persistence',
-    '--model',
-    model,
-  ];
-  if (systemPrompt) {
-    args.push('--system-prompt', systemPrompt);
-  }
-  return args;
-};
+}): string[] => [
+  '-p',
+  '--output-format',
+  'json',
+  '--no-session-persistence',
+  '--model',
+  model,
+];
 
 // claude CLI 가 exit=1 + 빈 stderr 로 침묵 실패하는 경우는 거의 항상 인증 만료 / 쿼터 소진 패턴이다
 // (2026-05-30 사고 사례). stderr 에 "Please run /login", "credentials", "unauthorized", "rate limit"
@@ -185,33 +198,40 @@ export class ClaudeCliProvider implements ModelProviderPort {
       );
     }
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-claude-'));
-    // keychain 경로 (A) 보존: throwaway HOME 으로 바꾸면 keychain access context 가 깨져
-    // 침묵 exit=1. real HOME 사용 — `~/.ssh` 등은 fs 권한 + cwd 격리로 보호.
-    const homeDir = getRealHomeDir();
+
+    const model = this.configService.get<string>('CLAUDE_MODEL')?.trim();
+    // OAuth token 경로 (B) — `claude setup-token` 으로 발급한 subscription OAuth token.
+    // env 로 직접 주입하면 keychain (priority 6) 보다 위 (priority 5) 라 ACL 우회 자연 성립.
+    // ConfigService 가 두 env name 다 받음 — docs 정통 = `CLAUDE_CODE_OAUTH_TOKEN`,
+    // PR #71 시점에 `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 도 fallback 으로 호환 유지.
+    const oauthToken =
+      this.configService.get<string>('CLAUDE_CODE_OAUTH_TOKEN')?.trim() ||
+      this.configService.get<string>('ANTHROPIC_API_KEY')?.trim() ||
+      undefined;
+
+    // HOME 격리 — token 이 있으면 keychain 을 아예 쓰지 않으므로 throwaway HOME 으로 묶어
+    // prompt-injected agent 가 `~/.ssh` 등 봇 계정 홈에 닿지 못하게 한다. token 이 없을 때만
+    // real HOME 을 쓴다 (경로 A 는 keychain access context 가 필요해 격리하면 침묵 exit=1).
+    const isolatedHome = oauthToken
+      ? await mkdtemp(join(tmpdir(), 'idaeri-claude-home-'))
+      : undefined;
+    const homeDir = isolatedHome ?? getRealHomeDir();
 
     try {
-      const model = this.configService.get<string>('CLAUDE_MODEL')?.trim();
-      // OAuth token 경로 (B) — `claude setup-token` 으로 발급한 subscription OAuth token.
-      // env 로 직접 주입하면 keychain (priority 6) 보다 위 (priority 5) 라 ACL 우회 자연 성립.
-      // ConfigService 가 두 env name 다 받음 — docs 정통 = `CLAUDE_CODE_OAUTH_TOKEN`,
-      // PR #71 시점에 `ANTHROPIC_API_KEY` 로 안내됐던 사용자 .env 도 fallback 으로 호환 유지.
-      const oauthToken =
-        this.configService.get<string>('CLAUDE_CODE_OAUTH_TOKEN')?.trim() ||
-        this.configService.get<string>('ANTHROPIC_API_KEY')?.trim() ||
-        undefined;
-      // OPS-4: stdin (사용자 입력 경로) 뿐 아니라 --system-prompt argv 까지 redact —
-      // 정적 상수만 들어오는 경로지만 codex 와 동일 정책으로 일관성 유지 (codex P1 지적).
       const args = buildClaudeArgs({
-        systemPrompt: request.systemPrompt
-          ? redactPii(request.systemPrompt)
-          : undefined,
         model: model && model.length > 0 ? model : undefined,
       });
       const stdout = await this.spawnClaude({
         args,
         cwd: workDir,
         homeDir,
-        stdinPayload: redactPii(request.prompt),
+        // systemPrompt 는 argv 가 아니라 stdin 페이로드에 합쳐 보낸다 (ps aux 노출 차단).
+        stdinPayload: buildClaudePrompt({
+          prompt: redactPii(request.prompt),
+          systemPrompt: request.systemPrompt
+            ? redactPii(request.systemPrompt)
+            : undefined,
+        }),
         oauthToken,
       });
       const { text, modelUsed } = parseClaudeJsonOutput(stdout);
@@ -222,8 +242,12 @@ export class ClaudeCliProvider implements ModelProviderPort {
         provider: ModelProviderName.CLAUDE,
       };
     } finally {
-      // real HOME 은 봇 소유 아님 — rm 금지. workDir 만 정리.
+      // real HOME 은 봇 소유 아님 — rm 금지. 우리가 만든 것만 정리한다
+      // (workDir, 그리고 token 경로에서 만든 throwaway HOME).
       await rm(workDir, { recursive: true, force: true });
+      if (isolatedHome) {
+        await rm(isolatedHome, { recursive: true, force: true });
+      }
     }
   }
 

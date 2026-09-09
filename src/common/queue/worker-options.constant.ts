@@ -9,8 +9,15 @@ import { WAKE_PROBE_MAX_WAIT_MS } from '../system/system-wake-guard.service';
 // codex timeout 2회 + claude timeout 1회 누적 = 약 908s (MODEL_ROUTER_WORST_CASE_MS) 다.
 // 여기에 context fetch(GitHub/Notion/DB, 수십 초) + slack 발송(수 초)이 더해진다.
 //
-// 과거 lockDuration(5분)은 "가장 긴 LLM 호출 1회(180s)"만 가정해 2회 누적 경로를 흡수하지
-// 못했고, 그 결과 codex full timeout + 후속 시도가 겹친 날 lock 갱신을 못 해 다음 에러가 났다:
+// ⚠️ lock 은 실행 중 lockDuration/2 주기로 자동 갱신되므로, "총 실행시간 > lockDuration" 자체가
+// lock 상실을 뜻하지는 않는다. 잃는 건 **갱신에 실패했을 때**다 (Node 프로세스 종료, 이벤트 루프
+// 블로킹, Redis 문제). BullMQ 문서가 그 완화책으로 제시하는 것이 lockDuration 을 키우는 것이고
+// — 갱신을 한 번 놓쳐도 만료 전에 다음 시도가 오게 한다 — 트레이드오프는 "실제 stalled 인지가
+// 그만큼 늦어진다" 이다. 이 프로젝트는 정각에 여러 cron 이 겹치는 환경이라(아래 #321 사례)
+// 갱신 지연이 실재하므로 그 완화책을 택하고, 예산을 route worst-case 에 연동해 둔다.
+//
+// 과거 lockDuration(5분)은 "가장 긴 LLM 호출 1회(180s)"만 가정했고, codex full timeout + 후속
+// 시도가 겹친 날 갱신이 밀려 다음 에러가 났다:
 //
 //   Error: could not renew lock for job <repeat:...>
 //   Error: Missing lock for job <repeat:...>. moveToFinished  (code -2)
