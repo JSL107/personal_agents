@@ -41,7 +41,10 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
       harvest.rejected > 0 ||
       harvest.fixed > 0 ||
       harvest.stale > 0 ||
-      harvest.resolved > 0;
+      harvest.resolved > 0 ||
+      // 보류는 사람이 손대야 풀린다 — 이 조건에 없으면 보류만 있는 회차가 통째로
+      // skip 되어 카드가 조용히 OPEN 에 쌓인다.
+      harvest.contradicted > 0;
     if (!hasHarvestResult && results.length === 0) {
       return { skip: true };
     }
@@ -60,5 +63,6 @@ const emptyHarvestOutcome = (): HarvestOutcome => ({
   resolved: 0,
   judged: 0,
   skipped: 0,
+  contradicted: 0,
   adoption: [],
 });
