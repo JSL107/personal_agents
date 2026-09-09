@@ -65,6 +65,15 @@ func renderOfficeScene(
     let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
 
+    // 실제 스냅샷의 청소 실태를 먼저 싣는다. 이것을 데모 안에만 두면 렌더가 실앱과 다른
+    // 그림을 그려, 정작 "실서버 상태로 청소기가 보이는가" 를 확인할 방법이 없어진다.
+    //
+    // `--pose-demo` 는 제외한다. 그 모드는 agents 를 고정 표본으로 세우고 approvals·runs·
+    // sessions 를 비우며 briefing 조회도 건너뛰는, **서버 상태에 기대지 않는 기준 이미지**
+    // 경로다. 여기에 실태를 섞으면 주간 청소가 한 번 돌거나 `pendingProjects` 가 바뀔 때마다
+    // 같은 명령의 결과가 달라져 대조군으로 못 쓴다.
+    scene.applyHousekeeping(poseDemo ? nil : snapshot?.housekeeping)
+
     // 청소는 주 1회라 실 백엔드로는 "돌고 있는 청소기" 를 만날 확률이 거의 없고, 백엔드가
     // 꺼져 있으면 실태가 아예 nil 이라 청소기가 그려지지 않는다. 회귀를 눈으로 보려면
     // 상태를 세워 주는 입구가 있어야 한다.
