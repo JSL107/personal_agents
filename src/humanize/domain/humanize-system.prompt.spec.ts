@@ -204,3 +204,73 @@ describe('완화본이 보호 범위를 좁히지 않는다', () => {
     expect(firstLine).not.toContain('영문 약어');
   });
 });
+
+describe('번역투 처방 목록', () => {
+  // 목록을 통째로 꺼내 센다. 항목 이름만 검사하면 화살표 오른쪽 처방을 지워도 통과한다
+  // (리뷰 지적 — 실제로 두 항목의 처방을 지운 판이 28개 테스트를 전부 통과했다).
+  // 개인 블로그 톤 블록에도 들여쓴 불릿이 있으므로 번역투 머리글 다음 구간만 잘라낸다.
+  const prescriptionLines = (prompt: string): string[] => {
+    const lines = prompt.split('\n');
+    const start = lines.findIndex((line) =>
+      line.startsWith('- 번역투는 아래 패턴을 만나면'),
+    );
+    const body = lines.slice(start + 1);
+    const end = body.findIndex((line) => !line.startsWith('  - '));
+    return body.slice(0, end === -1 ? body.length : end);
+  };
+
+  it('열네 개 패턴을 모두 담고, 어느 하나도 처방 없이 놓지 않는다', () => {
+    const lines = prescriptionLines(HUMANIZE_SYSTEM_PROMPT);
+
+    expect(lines).toHaveLength(14);
+    for (const line of lines) {
+      expect(line).toContain('→');
+      // 화살표 오른쪽이 비어 있으면 패턴만 있고 처방이 없는 것이다.
+      expect(line.split('→')[1].trim().length).toBeGreaterThan(3);
+    }
+  });
+
+  it('개인 블로그 프롬프트도 같은 목록을 물려받는다', () => {
+    // 블로그 쪽은 보고체 라인만 갈아끼운 파생본이라 목록이 통째로 따라와야 한다.
+    expect(prescriptionLines(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT)).toEqual(
+      prescriptionLines(HUMANIZE_SYSTEM_PROMPT),
+    );
+  });
+
+  it('대표 패턴의 처방이 그대로 있다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '"~에 대해(서)" → 목적격 조사로 직결',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '"~에 의해" 피동 → 행위자를 주어로',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '이중 피동 "~되어진다/~보여진다" → 단일 피동',
+    );
+  });
+
+  // 아래 세 단언이 룰북을 통째로 베껴 넣는 것을 막는다. 원본에는 있지만 이 레포와
+  // 부딪히는 항목이 있고, 넣으면 지시와 게이트가 반대 방향으로 당긴다.
+  it('가능성 표현을 단언으로 바꾸라고 하지 않는다 — 주장이 바뀐다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('단언으로');
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '가능·의무의 뜻 자체는 지우지 마라',
+    );
+  });
+
+  it('출처를 밝히는 문장을 늘리라고 하지 않는다 — 인용체는 판정 축이다', () => {
+    // `korean-style-metrics.ts` 의 `attributionPercentMax` 가 3% 를 넘으면 목표 밖으로 찍는다.
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('~에 따르면');
+  });
+
+  it('없는 행위자를 지어내라고 하지 않는다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('없는 행위자를 지어내지 마라');
+  });
+
+  it('처방 예문의 양쪽이 같은 정보를 담는다 — 한쪽만 줄이면 만들어 내라는 뜻이 된다', () => {
+    // 왼쪽에서 `강한` 을 빠뜨렸더니 없던 강도를 더하라는 지시가 됐다(리뷰 지적).
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '"강한 경쟁력을 가지고 있다" → "경쟁력이 강하다"',
+    );
+  });
+});
