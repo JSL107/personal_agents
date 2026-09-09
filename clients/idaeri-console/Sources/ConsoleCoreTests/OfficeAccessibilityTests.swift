@@ -2,9 +2,13 @@ import Foundation
 
 @testable import ConsoleCore
 
-private func makeAgent(_ type: String, _ state: ConsoleAgentState) -> ConsoleAgent {
+private func makeAgent(
+    _ type: String,
+    _ state: ConsoleAgentState,
+    nickname: String? = nil
+) -> ConsoleAgent {
     ConsoleAgent(
-        agentType: type, displayName: type, slashCommands: [],
+        agentType: type, displayName: type, nickname: nickname, slashCommands: [],
         description: "", state: state, bubble: ""
     )
 }
@@ -51,13 +55,19 @@ func runOfficeAccessibilityTests(_ t: TestRunner) {
         t.expect(failedIndex < progressIndex, "실패가 진행 중보다 앞")
     }
 
-    // 이름은 영문 식별명이 아니라 화면 이름표와 같은 직책으로 읽힌다.
+    // 이름은 영문 식별명이 아니라 화면 이름표와 같은 닉네임으로 읽힌다.
     if let role = agentRoleLabel(for: "BE") {
-        t.expect(summary.contains(role), "진행 중인 사람을 직책(\(role))으로 부른다")
+        t.expect(summary.contains(role), "진행 중인 사람을 닉네임(\(role))으로 부른다")
     }
     t.expect(summary.contains("나머지 1명 대기"), "대기는 수만 밝힌다")
     t.expect(!summary.contains("CTO"), "대기 인원의 이름은 읽지 않는다")
     t.expect(summary.hasSuffix("."), "문장으로 끝난다")
+
+    let serverNamed = officeAccessibilitySummary(
+        agents: [makeAgent("CODE_REVIEWER", .inProgress, nickname: "서버꼼꼼")],
+        approvals: []
+    )
+    t.expect(serverNamed.contains("서버꼼꼼"), "접근성 요약도 서버 nickname을 우선한다")
 
     // 실패만 있어도 "나머지" 가 아니라 온전한 문장이 된다.
     let onlyFailed = [makeAgent("BE", .failed)]
@@ -74,7 +84,7 @@ func runOfficeAccessibilityTests(_ t: TestRunner) {
     )
     t.expect(lateState.hasPrefix("승인 대기 1명"), "상태가 늦어도 승인 목록으로 읽는다")
     if let role = agentRoleLabel(for: "PM") {
-        t.expect(lateState.contains(role), "승인 대기자를 직책으로 부른다")
+        t.expect(lateState.contains(role), "승인 대기자를 닉네임으로 부른다")
     }
     t.expect(lateState.contains("나머지 1명 대기"), "승인 대기자를 대기에서 이중으로 세지 않는다")
 

@@ -25,10 +25,10 @@ public func officeAccessibilitySummary(
     func awaitsApproval(_ agent: ConsoleAgent) -> Bool {
         agent.state == .awaitingApproval || approvalAgentTypes.contains(agent.agentType)
     }
-    // 백엔드 표시명은 영문 식별명이라, 화면 이름표와 같은 직책으로 부른다.
+    // 화면 이름표와 같은 서버 닉네임으로 부른다(구버전 서버는 로컬 별칭으로 폴백).
     func names(_ matched: [ConsoleAgent]) -> String {
         matched
-            .map { agentRoleLabel(for: $0.agentType) ?? $0.displayName }
+            .map(\.roleName)
             .joined(separator: ", ")
     }
 

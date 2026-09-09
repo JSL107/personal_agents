@@ -26,6 +26,8 @@ export enum ConsoleAgentState {
 export interface ConsoleAgent {
   readonly agentType: string;
   readonly displayName: string;
+  /** 회사사람형 닉네임. `agent-registry.ts` 가 단일 소스다. */
+  readonly nickname: string;
   readonly slashCommands: readonly string[];
   readonly description: string;
   readonly state: ConsoleAgentState;

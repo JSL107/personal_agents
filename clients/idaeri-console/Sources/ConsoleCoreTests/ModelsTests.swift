@@ -44,6 +44,18 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("department 포함 스냅샷 디코딩 실패: \(error)")
     }
 
+    // 닉네임은 서버 담당자 명부가 정본이다. 앱의 호환용 로컬 별칭과 값이 달라도 서버 값을
+    // 우선해야 대시보드·슬랙 자연어 호출이 같은 사람을 가리킨다.
+    do {
+        let json = """
+        {"agents":[{"agentType":"CODE_REVIEWER","displayName":"Code Reviewer","nickname":"서버꼼꼼","slashCommands":["/review-pr"],"description":"","state":"WAITING","bubble":"업무 대기중"}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-09-09T00:00:00Z"}
+        """.data(using: .utf8)!
+        let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
+        t.expectEqual(snapshot.agents.first?.roleName, "서버꼼꼼", "서버 nickname 우선")
+    } catch {
+        t.fail("nickname 포함 스냅샷 디코딩 실패: \(error)")
+    }
+
     // 부서가 빠진 응답도 디코딩은 성공해야 한다(앱이 빈 화면이 되면 원인을 알 수 없다).
     do {
         let json = """

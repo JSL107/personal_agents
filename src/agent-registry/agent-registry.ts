@@ -21,6 +21,8 @@ export interface AgentRegistryEntry {
   readonly agentType: AgentType;
   /** 사람이 읽는 표시 이름. */
   readonly displayName: string;
+  /** 회사 동료처럼 부르는 한글 닉네임. 콘솔 표시와 자연어 직접 호출의 단일 소스. */
+  readonly nickname: string;
   /**
    * 이 에이전트로 진입하는 Slack 슬래시 커맨드(서브커맨드 포함, 예: `/be plan`).
    * webhook/자동 트리거 전용 에이전트는 빈 배열.
@@ -36,6 +38,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PM,
     displayName: 'PM',
+    nickname: '김기획',
     slashCommands: ['/today'],
     usecasePath: 'src/agent/pm/application/generate-daily-plan.usecase.ts',
     description: '오늘 할 일 daily plan 생성',
@@ -43,6 +46,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.CODE_REVIEWER,
     displayName: 'Code Reviewer',
+    nickname: '박꼼꼼',
     slashCommands: ['/review-pr'],
     usecasePath:
       'src/agent/code-reviewer/application/review-pull-request.usecase.ts',
@@ -51,6 +55,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.WORK_REVIEWER,
     displayName: 'Work Reviewer',
+    nickname: '정리나',
     slashCommands: ['/worklog'],
     usecasePath:
       'src/agent/work-reviewer/application/generate-worklog.usecase.ts',
@@ -59,6 +64,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.IMPACT_REPORTER,
     displayName: 'Impact Reporter',
+    nickname: '이보람',
     slashCommands: ['/impact-report'],
     usecasePath:
       'src/agent/impact-reporter/application/generate-impact-report.usecase.ts',
@@ -67,6 +73,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PO_SHADOW,
     displayName: 'PO Shadow',
+    nickname: '박보좌',
     slashCommands: ['/po-shadow'],
     usecasePath:
       'src/agent/po-shadow/application/generate-po-shadow.usecase.ts',
@@ -75,6 +82,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PO_EVAL,
     displayName: 'PO Eval',
+    nickname: '최성과',
     slashCommands: ['/po-eval'],
     usecasePath:
       'src/agent/po-eval/application/generate-po-evaluation.usecase.ts',
@@ -83,6 +91,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.CEO,
     displayName: 'CEO',
+    nickname: '이총평',
     slashCommands: ['/ceo-review'],
     usecasePath: 'src/agent/ceo/application/generate-ceo-meta.usecase.ts',
     description: '메타 회고 (PO_EVAL + PM 합성)',
@@ -90,6 +99,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.ISSUE_LABELER,
     displayName: 'Issue Labeler',
+    nickname: '나누리',
     slashCommands: [],
     usecasePath:
       'src/agent/issue-labeler/application/infer-issue-labels.usecase.ts',
@@ -98,6 +108,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.VACATION,
     displayName: 'Vacation',
+    nickname: '오휴가',
     slashCommands: ['/휴가'],
     usecasePath: 'src/agent/vacation/application/calculate-balance.usecase.ts',
     description: '휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용)',
@@ -105,6 +116,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.BLOG,
     displayName: 'Blog',
+    nickname: '문작가',
     slashCommands: [],
     usecasePath: 'src/agent/blog/application/generate-blog-draft.usecase.ts',
     description: '블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬)',
@@ -112,6 +124,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.BLOG_PUBLISH,
     displayName: 'Blog Publish',
+    nickname: '배포해',
     slashCommands: ['/blog-publish'],
     usecasePath: 'src/agent/blog/application/publish-notion-draft.usecase.ts',
     description: 'Notion 블로그 초안 익명화 + GitHub 발행 승인',
@@ -119,6 +132,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.BLOG_REVISION,
     displayName: 'Blog Revision Report',
+    nickname: '한교정',
     slashCommands: [],
     usecasePath:
       'src/agent/blog/application/extract-revision-conventions.usecase.ts',
@@ -128,6 +142,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.CAREER_MATE,
     displayName: 'Career Mate',
+    nickname: '강성장',
     slashCommands: [],
     usecasePath:
       'src/agent/career-mate/application/build-career-profile.usecase.ts',
@@ -137,6 +152,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.JOB_APPLICATION,
     displayName: 'Job Application',
+    nickname: '서지원',
     slashCommands: [],
     usecasePath:
       'src/agent/job-application/application/add-application.usecase.ts',
@@ -146,6 +162,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.SUBCONSCIOUS_GATE,
     displayName: 'Subconscious Gate',
+    nickname: '제안나',
     slashCommands: [],
     usecasePath: 'src/subconscious/infrastructure/llm-subconscious-gate.ts',
     description:
@@ -154,6 +171,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.CONTRADICTION_JUDGE,
     displayName: 'Contradiction Judge',
+    nickname: '차모순',
     slashCommands: [],
     usecasePath:
       'src/agent/contradiction-judge/application/judge-contradiction.usecase.ts',
@@ -163,6 +181,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.REVIEW_REPLY_JUDGE,
     displayName: 'Review Reply Judge',
+    nickname: '정판단',
     slashCommands: [],
     usecasePath:
       'src/agent/review-reply-judge/application/judge-review-reply.usecase.ts',
@@ -171,6 +190,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.HUMANIZER,
     displayName: 'Humanizer',
+    nickname: '윤다정',
     slashCommands: [],
     usecasePath: 'src/humanize/application/humanize.service.ts',
     description:
@@ -179,6 +199,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.DOCS_AUDIT_OPTIMIZER,
     displayName: 'Docs Audit Optimizer',
+    nickname: '문고침',
     slashCommands: [],
     usecasePath: 'src/docs-audit/infrastructure/codex-docs-judge.adapter.ts',
     description:
@@ -187,6 +208,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.DOCS_AUDIT_EVALUATOR,
     displayName: 'Docs Audit Evaluator',
+    nickname: '문바름',
     slashCommands: [],
     usecasePath: 'src/docs-audit/infrastructure/codex-docs-judge.adapter.ts',
     description:
@@ -195,6 +217,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PREFERENCE_LEARNING,
     displayName: 'Preference Learning',
+    nickname: '최취향',
     slashCommands: [],
     usecasePath:
       'src/preference-profile/application/preference-inference.adapter.ts',
@@ -204,6 +227,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.EVENING_RETRO,
     displayName: 'Evening Retro Publish',
+    nickname: '하루미',
     slashCommands: [],
     usecasePath:
       'src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts',
@@ -213,6 +237,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.OPS_SUPERVISOR,
     displayName: 'Ops Supervisor',
+    nickname: '안정민',
     slashCommands: [],
     usecasePath:
       'src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts',
@@ -222,6 +247,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.INVEST,
     displayName: 'Invest Monitor',
+    nickname: '주지킴',
     slashCommands: [],
     usecasePath:
       'src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts',
@@ -231,6 +257,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PAPER_TRADE,
     displayName: 'Paper Trade',
+    nickname: '백장부',
     slashCommands: [],
     usecasePath:
       'src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts',
@@ -240,6 +267,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.DELAY_REPORT,
     displayName: 'Delay Report',
+    nickname: '신지연',
     slashCommands: [],
     usecasePath:
       'src/agent/delay-report/application/build-delay-report.usecase.ts',
@@ -249,6 +277,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.PAPER_RECOMMEND,
     displayName: 'Paper Recommend',
+    nickname: '추천호',
     slashCommands: [],
     usecasePath:
       'src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts',
@@ -258,9 +287,23 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
   {
     agentType: AgentType.CTO_STUDY,
     displayName: 'CTO Study',
+    nickname: '배운이',
     slashCommands: [],
     usecasePath: 'src/agent/cto/application/evaluate-study-topic.usecase.ts',
     description:
       'Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용)',
   },
 ];
+
+/**
+ * 자연어에 회사사람형 닉네임이 명시되면 해당 담당자를 바로 찾는다.
+ *
+ * 닉네임은 사용자가 직접 대상을 고른 신호라 LLM 분류보다 우선한다. 원문은 바꾸지 않는다 —
+ * dispatcher 가 PR 참조나 세부 지시를 그대로 읽어야 하기 때문이다.
+ */
+export function resolveAgentTypeByNickname(
+  text: string,
+): AgentType | undefined {
+  return AGENT_REGISTRY.find((entry) => text.includes(entry.nickname))
+    ?.agentType;
+}

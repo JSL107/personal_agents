@@ -113,6 +113,7 @@ export class ConsoleReadService {
       return {
         agentType: entry.agentType,
         displayName: entry.displayName,
+        nickname: entry.nickname,
         slashCommands: entry.slashCommands,
         description: entry.description,
         state,

@@ -1,10 +1,38 @@
 import Foundation
 
-/// agentType → 오피스에 표시할 한글 직책.
+/// 개인 사무실 카드의 주 행동 문구. 필요한 입력을 버튼을 누르기 전에 예측할 수 있게 한다.
+public struct AgentPrimaryAction: Equatable, Sendable {
+    public let label: String
+    public let title: String
+    public let placeholder: String
+
+    public init(label: String, title: String, placeholder: String) {
+        self.label = label
+        self.title = title
+        self.placeholder = placeholder
+    }
+}
+
+public func agentPrimaryAction(for agentType: String, roleName: String) -> AgentPrimaryAction {
+    if agentType == "CODE_REVIEWER" {
+        return AgentPrimaryAction(
+            label: "리뷰 맡기기",
+            title: "\(roleName)에게 리뷰 맡기기",
+            placeholder: "PR URL이나 owner/repo#번호를 붙여주세요"
+        )
+    }
+    return AgentPrimaryAction(
+        label: "업무 맡기기",
+        title: "\(roleName)에게 업무 맡기기",
+        placeholder: "맡길 일을 적어주세요"
+    )
+}
+
+/// agentType → 오피스에 표시할 회사사람형 닉네임.
 ///
 /// 백엔드 `displayName` 은 슬랙·문서와 공유하는 영문 식별명이라 그대로 두고, 화면에 사람으로
-/// 그릴 때만 직책으로 바꾼다. 회사 롤플레이에서 "Docs Audit Optimizer" 같은 이름은 사람의
-/// 직책으로 읽히지 않는다.
+/// 그릴 때만 직무를 연상할 수 있는 한글 닉네임으로 바꾼다. `김기획`·`박꼼꼼`처럼 실제
+/// 회사 동료처럼 부를 수 있어야 하고, 이름만 봐도 어떤 일을 돕는지 대략 짐작할 수 있어야 한다.
 ///
 /// 이름표가 서로 겹치지 않도록 6자 안팎으로 짧게 유지한다.
 /// 미등록 타입은 nil — 호출자가 백엔드 displayName 으로 폴백한다.
@@ -12,71 +40,69 @@ public func agentRoleLabel(for agentType: String) -> String? {
     switch agentType {
     // 기획
     case "PM":
-        return "기획 PM"
+        return "김기획"
     case "PO_SHADOW":
-        return "PO 대행"
+        return "박보좌"
     case "PO_EVAL":
-        return "PO 평가"
+        return "최성과"
     // 리뷰
     case "CODE_REVIEWER":
-        return "코드 리뷰"
+        return "박꼼꼼"
     case "WORK_REVIEWER":
-        return "업무 리뷰"
+        return "정리나"
     case "IMPACT_REPORTER":
-        return "성과 분석"
-    // 발행한 글을 사람이 얼마나 고쳤는지 재는 자리. "수정률 분석" 은 리뷰 방 오른쪽 끝에서
-    // 이름표가 하한 밑으로 눌려(실측 0.42, 하한 0.5) 세 글자로 줄였다.
+        return "이보람"
+    // 발행한 글을 사람이 얼마나 고쳤는지 재는 자리. 오른쪽 끝 이름표가 벽에 눌리지 않도록 `한교정`으로
+    // 세 글자를 유지한다.
     case "BLOG_REVISION":
-        return "수정률"
-    // 경영 — 이 둘만 영문 약칭. 한국 회사에서도 CEO·CTO 는 그대로 직함으로 읽히고,
-    // "기술이사"·"경영 리뷰" 로는 옆자리 둘의 관계(대표 / 기술 총괄)가 이름표에서 안 드러났다.
+        return "한교정"
+    // 경영 — 사용자인 대표와 헷갈리지 않게 이 워커의 실제 업무인 총평을 닉네임에 남긴다.
     case "CEO":
-        return "CEO"
+        return "이총평"
     // 성장
     case "CAREER_MATE":
-        return "커리어"
+        return "강성장"
     case "JOB_APPLICATION":
-        return "지원 관리"
+        return "서지원"
     case "BLOG":
-        return "블로그"
+        return "문작가"
     case "BLOG_PUBLISH":
-        return "글 발행"
+        return "배포해"
     case "VACATION":
-        return "휴가 관리"
+        return "오휴가"
     case "INVEST":
-        return "투자 관리"
-    // 셋 다 주식을 보지만 하는 일이 다르다 — 보유 종목 감시(투자 관리) · 가상 계좌 평가
-    // (모의계좌) · 매수 후보 판단(종목 추천). 이름표가 여섯 자라 "모의투자" 로 뭉치면
-    // 뒤 둘이 한 사람으로 읽힌다.
+        return "주지킴"
+    // 셋 다 주식을 보지만 하는 일이 다르다 — 보유 종목 감시(주지킴) · 가상 계좌 평가(백장부) ·
+    // 매수 후보 판단(추천호)으로 각자 연상되는 단어를 달리 준다.
     case "PAPER_TRADE":
-        return "모의계좌"
+        return "백장부"
     case "PAPER_RECOMMEND":
-        return "종목 추천"
+        return "추천호"
     case "DELAY_REPORT":
-        return "지연 보고"
+        return "신지연"
     case "CTO_STUDY":
-        return "학습 코치"
+        return "배운이"
     // 내부
     case "ISSUE_LABELER":
-        return "이슈 분류"
+        return "나누리"
     case "SUBCONSCIOUS_GATE":
-        return "제안 게이트"
+        return "제안나"
     case "CONTRADICTION_JUDGE":
-        return "모순 판정"
+        return "차모순"
     case "REVIEW_REPLY_JUDGE":
-        return "답변 판정"
+        return "정판단"
     case "HUMANIZER":
-        return "윤문"
+        return "윤다정"
     case "DOCS_AUDIT_OPTIMIZER":
-        return "문서 개선"
+        return "문고침"
     case "DOCS_AUDIT_EVALUATOR":
-        return "문서 평가"
+        return "문바름"
     case "PREFERENCE_LEARNING":
-        return "선호 학습"
+        return "최취향"
     case "EVENING_RETRO":
-        return "회고 발행"
+        return "하루미"
     case "OPS_SUPERVISOR":
-        return "운영 감독"
+        return "안정민"
     default:
         return nil
     }
