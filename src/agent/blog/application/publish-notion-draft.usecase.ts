@@ -397,12 +397,36 @@ export class PublishNotionDraftUsecase {
     if (keepsCodeVerbatim) {
       this.assertNoCodeMaskLeft(target, anonymized.body);
     }
-    // 익명화가 코드를 바꾸지 않았는지도 **원본 기준으로** 대조한다. 아래 편집 검사는
-    // anonymized.body 를 기준선으로 삼기 때문에, 익명화가 이미 코드를 고쳐 놓았으면 그
-    // 변경이 기준선이 되어 그대로 통과한다(리뷰 지적). 지금까지 드러나지 않은 이유는
-    // 초안에 코드가 아예 없었기 때문이고, 확장 프롬프트가 코드 예시를 요구하기 시작하면
-    // 이 구멍으로 실제 코드가 지나간다.
-    this.assertCodeBlocksPreserved(target, markdown, anonymized.body, '익명화');
+    // 익명화 결과의 코드를 **원본 기준으로** 대조한다. 아래 편집 검사는 anonymized.body 를
+    // 기준선으로 삼기 때문에, 익명화가 이미 코드를 고쳐 놓았으면 그 변경이 기준선이 되어
+    // 그대로 통과한다(리뷰 지적).
+    //
+    // 검사 강도는 **익명화 계약과 같은 판정(`keepsCodeVerbatim`)으로 갈린다.** 둘이 어긋나면
+    // 프롬프트가 바꾸라 시킨 것을 게이트가 막아, 그 초안은 몇 번을 돌려도 발행되지 않는다
+    // (2026-09-07·09-08 연속 정지 — 코드블록 3개·4개 변경으로 차단, 각각 수동 재실행으로만 통과).
+    //
+    // - 공개 자료 계약: 코드를 마스킹해 모델에 보이지 않았다. 그런데도 바뀌었다면 모델이
+    //   자리표시자를 건드린 것이므로 **내용까지 동일**해야 한다.
+    // - 회사 계약: 코드 안 사내 실명을 지우는 것이 이 단계의 일이라 내용 변경이 정상이다.
+    //   대신 **블록이 사라지거나 늘지 않았는지**만 본다. 변형된 코드가 그대로 동작하지 않을
+    //   수 있다는 것은 이 계약이 감수하는 비용이고, 사람이 승인 전에 본문을 보는 것이 그
+    //   자리를 맡는다.
+    //
+    //   🔴 그 보완책에는 공백이 있다 — 전문은 스레드 댓글로 나가는데 그 발송이 실패해도
+    //   승인 카드는 그대로 뜬다(`autopilot.orchestrator` 의 `detailUndelivered` 는 onDelivered
+    //   후처리만 건너뛴다). 그래서 요약 카드 본문에도 코드가 익명화 대상이라는 경고를 싣는다
+    //   (`buildCodeBlockNote`). 카드 생성 자체를 전문 전달에 묶는 것은 모든 autopilot 카드가
+    //   공유하는 경로라 이 변경의 범위 밖이다.
+    if (keepsCodeVerbatim) {
+      this.assertCodeBlocksPreserved(
+        target,
+        markdown,
+        anonymized.body,
+        '익명화',
+      );
+    } else {
+      this.assertCodeBlockCountPreserved(target, markdown, anonymized.body);
+    }
     stages.push({
       stage: '익명화',
       ...countMarkdownStructure(anonymized.body),
@@ -948,7 +972,13 @@ export class PublishNotionDraftUsecase {
   private buildCodeBlockNote(markdown: string, draft: NotionDraftPage): string {
     const count = extractFencedCodeBlocks(markdown).length;
     if (count > 0) {
-      return `코드 예시: ${count}개`;
+      // 회사 계약에서는 코드블록이 익명화 대상이라 원문과 달라질 수 있다(개수만 집행한다).
+      // 그 사실을 **요약 카드 본문에** 적는다 — 전문은 스레드 댓글로 따로 나가는데, 그 발송이
+      // 실패해도 승인 카드는 그대로 뜬다(autopilot.orchestrator 의 detailUndelivered 는 후처리만
+      // 건너뛴다). 요약만 보고 ✅ 를 누르는 경로가 남아 있으므로 경고는 요약 쪽에 있어야 한다.
+      return isPublicSourceDraft(draft.sourceType)
+        ? `코드 예시: ${count}개`
+        : `코드 예시: ${count}개 (회사 계약 — 익명화가 코드 안 사내 실명을 바꿉니다. 전문에서 코드를 확인하세요)`;
     }
     return draft.sourceType.trim() === STUDY_DEEPDIVE_SOURCE_TYPE
       ? '코드 예시: 0개 (오늘의 공부 초안은 예시를 요구한다 — 확장 단계에 없었거나 편집이 덜어냈다)'
@@ -983,6 +1013,31 @@ export class PublishNotionDraftUsecase {
     throw new BlogException({
       code: BlogErrorCode.EDIT_CODE_CHANGED,
       message: `'${draft.title}' ${stage} 결과의 코드블록이 원문과 다릅니다 (${changed.length}개). 코드는 ${stage} 대상이 아닙니다.`,
+      status: DomainStatus.BAD_GATEWAY,
+    });
+  }
+
+  // 회사 계약 전용 — 코드블록의 **개수만** 본다.
+  //
+  // 내용을 대조하지 않는 이유는 이 계약에서 코드 안 사내 실명(테이블·컬럼·클래스·함수)을
+  // 지우는 것이 익명화의 일이기 때문이다. 내용 동일을 요구하면 프롬프트의 지시와 정면으로
+  // 부딪쳐, 코드가 든 회고 초안은 재시도로 풀리지 않는 영구 차단에 걸린다.
+  //
+  // 그래도 개수는 집행한다. 블록이 통째로 사라지면 근거를 잃은 글이 나가고, 없던 블록이
+  // 늘면 모델이 코드를 지어낸 것이다 — 둘 다 어느 계약에서도 익명화가 아니다.
+  private assertCodeBlockCountPreserved(
+    draft: NotionDraftPage,
+    before: string,
+    after: string,
+  ): void {
+    const expected = extractFencedCodeBlocks(before).length;
+    const actual = extractFencedCodeBlocks(after).length;
+    if (expected === actual) {
+      return;
+    }
+    throw new BlogException({
+      code: BlogErrorCode.EDIT_CODE_CHANGED,
+      message: `'${draft.title}' 익명화 결과의 코드블록 개수가 원문과 다릅니다 (${expected}개 → ${actual}개). 익명화는 코드 안 사내 실명만 바꾸고 블록을 없애거나 만들지 않습니다.`,
       status: DomainStatus.BAD_GATEWAY,
     });
   }

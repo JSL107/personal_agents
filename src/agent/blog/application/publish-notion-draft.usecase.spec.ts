@@ -471,8 +471,17 @@ describe('PublishNotionDraftUsecase', () => {
       );
     });
 
-    it('익명화가 코드를 바꾸면 익명화 단계로 알린다', async () => {
-      const { usecase } = buildUsecase({
+    // 회사 계약은 코드 내용 변경을 **허용한다.** 코드 안 사내 실명을 지우는 것이 이 단계의
+    // 일이라, 내용 동일을 요구하면 프롬프트가 시킨 변경을 게이트가 되받아쳐 코드가 든 회고
+    // 초안이 영구 차단된다(2026-09-07·09-08 이틀 연속 정지).
+    //
+    // 🔴 이 완화로 잃는 것 — 아래 시나리오는 실측된 **오익명화**다. `developer.mozilla.org`
+    // 는 사내 식별자가 아닌데 모델이 예시 주소로 바꿨다. 사내 실명과 공개 주소를 게이트가
+    // 구분할 방법이 없어, 전자를 지우려면 후자가 바뀌는 것도 함께 통과시킬 수밖에 없다.
+    // 이 자리를 대신 맡는 것은 승인 카드다 — 본문 전문이 스레드로 함께 나가고, 사람이 ✅ 를
+    // 누르기 전까지는 공개 저장소에 커밋되지 않는다.
+    it('회사 계약이면 익명화가 코드를 바꿔도 통과한다 (오익명화도 함께 통과한다)', async () => {
+      const { usecase, createPreview } = buildUsecase({
         markdown: 코드본문,
         completionText: JSON.stringify({
           slug: 'cache-flow',
@@ -482,12 +491,39 @@ describe('PublishNotionDraftUsecase', () => {
         }),
       });
 
+      await usecase.execute({
+        titleQuery: '',
+        slackUserId: 'U1',
+      });
+
+      expect(createPreview.execute).toHaveBeenCalled();
+      // preview 호출만 보면 게이트를 지났는지만 알 수 있다. 익명화된 코드가 **실제 발행될
+      // 본문까지** 살아남았는지 확인한다.
+      const [[{ payload }]] = createPreview.execute.mock.calls as unknown as [
+        [{ payload: { content: string } }],
+      ];
+      expect(payload.content).toContain('example.com');
+      expect(payload.content).not.toContain('developer.mozilla.org');
+    });
+
+    // 감소만 막으면 모델이 없던 코드를 지어내 붙이는 쪽이 열린다. 개수 게이트는 양방향이다.
+    it('회사 계약이어도 익명화가 코드블록을 늘리면 끊는다', async () => {
+      const { usecase, createPreview } = buildUsecase({
+        markdown: 코드본문,
+        completionText: JSON.stringify({
+          slug: 'cache-flow',
+          description: '캐시 흐름 정리',
+          body: `${코드본문}\n\n\`\`\`http\nGET /invented HTTP/1.1\n\`\`\``,
+        }),
+      });
+
       await expect(
         usecase.execute({
           titleQuery: '',
           slackUserId: 'U1',
         }),
-      ).rejects.toThrow(/익명화 결과의 코드블록/);
+      ).rejects.toThrow('코드블록 개수가 원문과 다릅니다');
+      expect(createPreview.execute).not.toHaveBeenCalled();
     });
 
     it('편집이 코드를 바꾸면 편집 단계로 알린다', async () => {
@@ -1050,18 +1086,36 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
-  // 외부 리뷰 지적 — 편집 검사는 anonymized.body 를 기준선으로 삼는다. 익명화가 이미 코드를
-  // 고쳐 놓으면 그 변경이 기준선이 되어 그대로 통과한다. 초안에 코드가 없던 동안에는 드러나지
-  // 않았고, 확장 프롬프트가 코드 예시를 요구하기 시작하면 이 구멍으로 실제 코드가 지나간다.
-  it('익명화가 코드를 바꾸면 원문 기준으로 끊는다', async () => {
+  // 개수까지 놓으면 익명화가 코드를 통째로 지워도 통과한다. 근거가 빠진 글이 나가고, 반대로
+  // 없던 블록이 늘면 모델이 코드를 지어낸 것이다 — 둘 다 어느 계약에서도 익명화가 아니다.
+  it('회사 계약이어도 익명화가 코드블록을 없애면 끊는다', async () => {
     const { usecase, createPreview } = buildUsecase({
       markdown:
         '레거시에서 이렇게 조회했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.\n\n```php\n$row = query("SELECT 1");\n```',
       completionText: JSON.stringify({
         slug: 'safe-post',
         description: '설명',
-        // 익명화가 테이블명을 지운다며 코드를 고친 상태.
-        body: '레거시에서 이렇게 조회했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.\n\n```php\n$row = query("SELECT masked");\n```',
+        body: '레거시에서 이렇게 조회했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.',
+      }),
+    });
+
+    await expect(
+      usecase.execute({ titleQuery: '', slackUserId: 'U1' }),
+    ).rejects.toThrow('코드블록 개수가 원문과 다릅니다');
+    expect(createPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // 공개 자료 계약은 코드를 마스킹해 모델에 보내므로, 돌아온 본문에 없던 코드블록이 생겼다면
+  // 모델이 자리표시자 자리에 코드를 지어낸 것이다. 이쪽은 내용까지 원문과 같아야 한다.
+  it('공개 계약이면 익명화가 코드를 지어낼 때 내용 기준으로 끊는다', async () => {
+    const { usecase, createPreview } = buildUsecase({
+      drafts: [{ ...draft, sourceType: '오늘의 공부' }],
+      markdown:
+        '공개 문서를 읽고 정리했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.',
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: '공개 문서를 읽고 정리했다. 이 문장은 60% 가드를 넘길 만큼 길게 둔다.\n\n```php\n$row = query("INVENTED");\n```',
       }),
     });
 
