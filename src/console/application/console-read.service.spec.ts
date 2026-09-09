@@ -61,6 +61,21 @@ describe('ConsoleReadService', () => {
     ).toBe('박꼼꼼');
   });
 
+  // 라우터가 같은 토큰에서 겪은 회귀(commit cbef813)의 콘솔 쪽 방어선. 배열이 아닌 값이
+  // 들어오면 `getSnapshot()` 안에서 TypeError 가 터져 관제 화면이 통째로 비므로, 조용히
+  // 물러서지 않고 부팅에서 끊는지 고정한다.
+  it('dispatcher 목록이 배열이 아니면 부팅에서 끊는다', () => {
+    expect(
+      () =>
+        new ConsoleReadService(
+          agentRunService as unknown as AgentRunService,
+          findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
+          localSessions as unknown as LocalSessionService,
+          { agentType: AgentType.PM } as unknown as { agentType: AgentType }[],
+        ),
+    ).toThrow('AGENT_DISPATCHER_PORT 가 array 가 아닙니다');
+  });
+
   it('스냅샷은 실제 dispatcher 등록 여부를 카드 실행 가능 여부로 보낸다', async () => {
     const snapshot = await service.getSnapshot();
 
