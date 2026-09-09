@@ -901,7 +901,8 @@ final class OfficeScene: SKScene {
             floor: plan.floor,
             gridOrigin: gridOrigin,
             tileSize: tileSize,
-            occupiedTiles: occupied
+            occupiedTiles: occupied,
+            furniture: plan.furniture
         )
     }
 
