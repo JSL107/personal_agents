@@ -905,3 +905,34 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
   발송해 `not_in_channel` 힌트가 로그에 실리는지 보는 것.
 - [ ] **공통 — 운영 백엔드(포트 3099) 재시작 필요.** A 는 `3b21c668` 빌드에서 재확인했으나
   (`"왤캐느려"` → DELAY_REPORT confidence 0.99), B·C·D 는 재시작해야 새 코드가 실린다.
+
+---
+# Slack 발송 길이 미검사 — 보류 판정 (2026-09-09)
+
+PR #528 에서 codex 봇이 지적한 건. **지적은 코드상 사실이지만 실측 여유가 커서 고치지 않기로 했다.**
+다시 판단할 시점과 그때 고칠 자리만 여기 남긴다.
+
+무엇이 문제인가: Slack 은 `chat.postMessage` 의 `text` 가 40,000자를 넘으면 에러 대신 **뒤를 잘라내고
+성공을 돌려준다**. `SlackService.postMessage`(`src/slack/slack.service.ts:258`) 에는 길이 검사가 없어
+잘림을 발송 성공으로 회계한다. `requiresDetailDelivery` 게이트(#528)는 예외 발생만 보므로 그대로
+통과하고, 사용자가 뒷부분을 못 본 채 ✅ 를 누르면 payload 전문이 공개 저장소로 커밋된다.
+
+왜 지금 안 고치나 (2026-09-09 실측, 운영 DB):
+- `select ... from preview_action where kind='BLOG_GITHUB_PUBLISH'` → n=16 (2026-08-19~09-08),
+  `length(payload->>'content')` min 1,498 / median 8,199 / p90 10,082 / **max 11,330**.
+  PR #528 당시 수치와 동일 — 09-08 이후 신규 행이 없다.
+- 실제 발송 문자열은 `detailText`(헤더 + content, `blog-github-publish.autopilot-task.ts:104`) 라
+  최대 약 11,4xx자. 상한 40,000 대비 28%, 재검토 기준 20,000 대비 57%.
+
+⚠️ 전제 정정: "blocks 경로는 50×2,950 이라 13배 여유" 는 blocks 배열에만 맞다.
+`toReadableMessage`(`src/slack/format/message-blocks.builder.ts:117-121`) 가 blocks 유무와 무관하게
+`text` 를 항상 전문으로 채우므로 **실효 상한은 두 경로 모두 40,000** 이다. 결론은 바뀌지 않는다.
+
+- [ ] **재검토 트리거 — 아래가 20,000 을 넘으면 착수.** 그 전까지는 손대지 않는다.
+  `select max(length(payload->>'content')) from preview_action where kind='BLOG_GITHUB_PUBLISH'`
+- [ ] **착수하게 되면: 분할 발송이 아니라 길이 사전 검사.** 고칠 자리는 `slack.service.ts:258` 한 곳.
+  초과 시 throw 만 하면 `requiresDetailDelivery` 게이트가 카드 생성을 막아 기존 안전장치가 그대로
+  작동한다. 분할 발송은 `detailText` 를 싣는 **task 13종**(ceo-meta · screening-scorecard ·
+  morning-briefing · portfolio-publish · impact-report · weekly-summary · universe-sweep ·
+  work-reviewer · job-feed · evening-retro-publish · po-eval · paper-recommend ·
+  blog-github-publish) 의 스레드 렌더를 전부 바꾼다 — 회귀 표면이 비교가 안 된다.
