@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
@@ -2145,6 +2146,47 @@ describe('차단된 초안 큐 막힘', () => {
   });
 
   // errorCode 저장을 넣기 전 회차에는 그 키가 없다. 원인을 모르는 실패를 초안 탓으로 세면
+  // 조회 창이 곧 순환의 임계다 — 막힌 초안이 큐에 밀려 창 기간 동안 시도되지 않으면 등급이
+  // 사라져 정상 초안 앞으로 복귀한다. 실측 큐가 30건대라 창은 그보다 훨씬 커야 한다(리뷰 지적).
+  it('막힘 이력을 큐 규모 밖(1년)까지 훑는다', async () => {
+    const { usecase, agentRunService } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(agentRunService.findRecentFailedRuns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentType: 'BLOG_PUBLISH',
+        sinceDays: 365,
+      }),
+    );
+  });
+
+  // 조회가 상한에 닿으면 오래된 기록이 잘려 후순위가 조용히 풀린다 — 예외도 빈 결과도 나지
+  // 않는 자리라 로그가 유일한 신호다.
+  it('조회가 상한에 닿으면 경고를 남긴다', async () => {
+    const warning = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      failedRuns: Array.from({ length: 500 }, (_unused, index) => ({
+        id: index,
+        inputSnapshot: { pageId: `page-${index}` },
+        output: { error: '실패', errorCode: BlogErrorCode.EDIT_CODE_CHANGED },
+        endedAt: 며칠전(1),
+      })),
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('실패 이력 조회가 상한(500건)에 닿았습니다'),
+    );
+    warning.mockRestore();
+  });
+
   // 인프라 실패까지 벌점이 되므로 관대한 쪽(벌점 없음)으로 떨어뜨린다.
   it('원인(errorCode)이 없는 실패는 미루지 않는다', async () => {
     const { usecase, notionClient } = buildUsecase({

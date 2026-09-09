@@ -173,14 +173,23 @@ const STUCK_DEFER_DAYS_CAP = 16;
 const stuckDeferDays = (stuckCount: number): number =>
   Math.min(2 ** (stuckCount - 1), STUCK_DEFER_DAYS_CAP);
 
-// 훑을 실행 기록의 범위. **상한(16일)보다 넉넉해야 한다** — 창이 상한보다 짧으면 오래된 기록이
-// 조회에서 빠져 횟수가 1 로 되돌아가고 백오프가 리셋된다(고정 창의 순환이 그대로 재현된다).
-const STUCK_SCAN_DAYS = 30;
+// 훑을 실행 기록의 범위.
+//
+// ⚠️ **이 창이 곧 순환의 임계다.** 막힌 초안이 큐에 밀려 이 기간 동안 시도되지 않으면 마지막
+// 기록이 창을 벗어나 등급이 사라지고(rank 0), 그 초안이 정상 초안보다 오래됐으므로 다시 앞선다
+// — `StuckRank` 가 상한(16일)에서 막은 순환이 창 길이에서 재현된다(리뷰 지적).
+//
+// 이 레포는 raw SQL 을 쓰지 않아 pageId 별 집계를 DB 에 맡길 수 없고, 행을 받아 애플리케이션에서
+// 세므로 유한한 창·건수가 불가피하다. 그래서 **임계를 큐 규모 밖으로 밀어낸다**: 실측 큐가
+// 30건대라 30일 창은 도달 가능한 거리였고, 1년이면 그렇지 않다. 완전한 해소는 막힌 횟수를 초안
+// 자체에 영속화하는 것이고 그건 별도 설계다.
+const STUCK_SCAN_DAYS = 365;
 
-// 위 창 안에서 훑을 실행 기록 수. 하루 1~2회 도는 워커라 30일이면 최대 60여 건이다(실측 22일
-// 24건). 잘리는 쪽은 오래된 기록이라, 상한에 닿으면 횟수가 줄어 백오프가 짧아진다 — 굶음이
-// 아니라 재시도 낭비 쪽으로 기운다.
-const STUCK_SCAN_LIMIT = 120;
+// 위 창 안에서 훑을 실행 기록 수. 실측이 22일 24건이라 1년이면 400건 안팎이다.
+//
+// **잘리면 굶음 쪽으로 기운다** — 오래된 기록이 빠지면 횟수가 줄 뿐 아니라 그 초안의 등급이
+// 통째로 사라져 정상 초안 앞으로 복귀한다. 그래서 포화를 조용히 넘기지 않고 로그로 남긴다.
+const STUCK_SCAN_LIMIT = 500;
 
 // 실패를 후순위 대상으로 셀지 가르는 기준 — **초안 내용 탓인 실패만** 센다.
 //
@@ -1233,12 +1242,23 @@ export class PublishNotionDraftUsecase {
       }
       stuckAt.set(snapshot.pageId, [endedAt]);
     };
+    // 조회가 상한에 닿으면 오래된 기록이 잘려 그 초안의 등급이 통째로 사라진다 — 후순위가
+    // 조용히 풀리고 굶음이 다시 생긴다. 예외도 빈 결과도 나지 않는 자리라 로그로만 보인다.
+    const warnIfSaturated = (kind: string, count: number): void => {
+      if (count < STUCK_SCAN_LIMIT) {
+        return;
+      }
+      this.logger.warn(
+        `${kind} 조회가 상한(${STUCK_SCAN_LIMIT}건)에 닿았습니다 — 오래된 기록이 잘려 후순위가 풀릴 수 있습니다. STUCK_SCAN_LIMIT 을 올려야 합니다.`,
+      );
+    };
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.BLOG_PUBLISH,
         sinceDays: STUCK_SCAN_DAYS,
         limit: STUCK_SCAN_LIMIT,
       });
+      warnIfSaturated('차단 이력', runs.length);
       for (const run of runs) {
         const output = run.output as { status?: unknown } | null;
         if (output?.status !== 'blocked') {
@@ -1259,6 +1279,7 @@ export class PublishNotionDraftUsecase {
         sinceDays: STUCK_SCAN_DAYS,
         limit: STUCK_SCAN_LIMIT,
       });
+      warnIfSaturated('실패 이력', runs.length);
       for (const run of runs) {
         if (!isDraftFaultFailure(run.output)) {
           continue;
