@@ -189,4 +189,29 @@ describe('UniverseSweepAutopilotTask', () => {
       }),
     );
   });
+
+  it('시세 공급 중단이 3종목을 넘으면 코드 3개만 적고 나머지는 수로 적는다', async () => {
+    const fixture = createFixture();
+    fixture.collectPrices.execute.mockImplementationOnce(async () => ({
+      targetCount: 2595,
+      succeeded: 2590,
+      failed: 1,
+      written: 12970,
+      blockedIntraday: 0,
+      readjusted: 1,
+      retried: 5,
+      failures: ['000001: 시세 조회 실패'],
+      dormant: ['094800', '123456', '222222', '333333', '444444'],
+    }));
+
+    const result = await fixture.task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-18',
+    });
+
+    // 코드를 전부 적으면 요약 한 줄이 종목 목록으로 덮인다.
+    expect(result.summaryText).toContain(
+      '시세 공급 중단 5종목(094800, 123456, 222222 외 2종목)',
+    );
+  });
 });
