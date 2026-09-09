@@ -72,7 +72,8 @@ final class CharacterNode: SKNode {
     /// 지금 입고 있는 옷이 어느 부서 것인지. 스냅샷 부서와 비교해 갱신 여부를 정한다.
     private(set) var department: Department
     /// 사람마다 다른 셔츠 톤 보정. 부서가 바뀌어도 이 사람의 개성은 유지해야 한다.
-    private let shirtShift: Double
+    /// 방 구성이 바뀌면 다시 배정될 수 있다(`apply(look:)`) — 얼굴·머리색과 같은 축이다.
+    private var shirtShift: Double
 
     /// 부서는 백엔드 스냅샷 값을 그대로 받는다 — 노드가 agentType 을 보고 다시 분류하면
     /// 배치(방)와 셔츠색이 서로 다른 부서를 가리킬 수 있다.
@@ -369,15 +370,23 @@ final class CharacterNode: SKNode {
     /// 사람은 옛 얼굴로 남는다. 그러면 "한 방에 같은 얼굴 없음" 이 재동기화 경로에서만
     /// 깨진다 — 앱을 껐다 켜면 멀쩡해지므로 조용히 틀린 채 굴러간다.
     ///
-    /// 옷·바지는 배정이 건드리지 않으므로(`officeCharacterLooks` 가 해시 값을 그대로 둔다)
-    /// 여기서도 보지 않는다. 셔츠는 부서가 정하고, 그 갱신은 `apply(department:)` 가 맡는다.
+    /// **셔츠 톤도 배정 대상이라 여기서 함께 본다.** 배정이 방 안에서 톤을 돌리므로
+    /// (`officeCharacterLooks`), 얼굴만 갱신하면 인원이 바뀐 방에서 옛 톤이 그대로 남아
+    /// 다시 겹친다 — 얼굴이 그랬던 것과 같은 함정이고, 앱을 껐다 켜면 멀쩡해져서 눈에 안 띈다.
+    /// 셔츠의 **색상**은 여전히 부서가 정하며 그 갱신은 `apply(department:)` 가 맡는다.
+    /// 바지는 배정이 건드리지 않으므로 보지 않는다.
     func apply(look: CharacterLook) {
         let newHairColor = hairPalette[look.hairIndex]
-        guard look.sheetIndex != sheetIndex || newHairColor != hairColor else {
+        let shirtChanged = look.shirtShift != shirtShift
+        guard look.sheetIndex != sheetIndex || newHairColor != hairColor || shirtChanged else {
             return
         }
         sheetIndex = look.sheetIndex
         hairColor = newHairColor
+        if shirtChanged {
+            shirtShift = look.shirtShift
+            shirtColor = officeShirtColorRGB(department: department, shift: look.shirtShift)
+        }
         if isSeated {
             setTexture("sit")
         } else {
