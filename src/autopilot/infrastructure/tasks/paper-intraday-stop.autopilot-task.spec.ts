@@ -307,6 +307,12 @@ describe('PaperIntradayStopAutopilotTask', () => {
     const applyResult = resultOf({
       inspectedCount: 7,
       priceErrorCount: 2,
+      // 빈 배열로 두면 사유를 잃는 구현도 통과한다(실측: `priceErrors: []` 로 바꿔치기해도
+      // 이 파일 전건이 통과했다). 원장까지 값이 살아 오는지는 여기서 고정한다.
+      priceErrors: [
+        '한미사이언스(008930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error',
+        '키다리스튜디오(020120): 쓸 수 없는 종가 0',
+      ],
       decidedCount: 3,
       filledCount: 1,
       skippedByPendingSell: 1,
@@ -347,13 +353,18 @@ describe('PaperIntradayStopAutopilotTask', () => {
           '*장중 손절* — 8/11(화) 09:32 현재가 · 1건 청산\n' +
           ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
           ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
+          '   - 한미사이언스(008930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error\n' +
+          '   - 키다리스튜디오(020120): 쓸 수 없는 종가 0\n' +
           ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
       },
       modelUsed: 'deterministic',
       output: {
         inspectedCount: 7,
         priceErrorCount: 2,
-        priceErrors: [],
+        priceErrors: [
+          '한미사이언스(008930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error',
+          '키다리스튜디오(020120): 쓸 수 없는 종가 0',
+        ],
         notTradedCount: 0,
         corporateActionCount: 0,
         corporateActions: [],

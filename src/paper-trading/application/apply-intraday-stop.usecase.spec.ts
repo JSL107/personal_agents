@@ -291,6 +291,29 @@ describe('ApplyIntradayStopUsecase', () => {
     expect(result.inspectedCount).toBe(0);
   });
 
+  // `DailyBar.close` 는 `DecimalValue`(toNumber/toString) 구조적 인터페이스라, 숫자로 읽을 수
+  // 없는 값을 담은 봉이 오는 것이 타입으로 막히지 않는다. 이 분기의 사유가 나머지 둘과
+  // 갈리는지는 여기서만 확인된다.
+  it('종가를 숫자로 읽을 수 없으면 그 사유로 남긴다', async () => {
+    const { usecase, marketData } = createFixture();
+    jest.mocked(marketData.fetchDailyBars).mockResolvedValue([
+      {
+        ...dailyBar('2026-08-25', '94'),
+        close: { toNumber: () => 94, toString: () => 'abc' },
+      },
+    ]);
+
+    const result = await usecase.execute({
+      executedAt: new Date('2026-08-25T02:00:00.000Z'),
+    });
+
+    expect(result.priceErrorCount).toBe(1);
+    expect(result.priceErrors).toEqual([
+      '종목 005930(005930): 종가를 숫자로 읽지 못했습니다',
+    ]);
+    expect(result.inspectedCount).toBe(0);
+  });
+
   // 전면 장애면 보유 종목 수만큼 같은 줄이 카드를 채운다. 건수는 전부 세고 사유만 자른다.
   it('실패가 상한을 넘으면 건수는 다 세고 사유는 5건만 남긴다', async () => {
     const { usecase, repository, marketData } = createFixture();
