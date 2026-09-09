@@ -40,8 +40,29 @@ export const LONG_RUNNING_WORKER_OPTIONS = {
 // 최대 WAKE_PROBE_MAX_WAIT_MS 폴링한 뒤 runGroup 을 실행하므로, 그 대기가 lock 안에서 소화되도록
 // probe 예산을 lockDuration 에 더한다. (probe 하지 않는 나머지 worker 는 LONG_RUNNING_WORKER_OPTIONS 유지 —
 // 이들의 lock 을 불필요하게 늘려 stalled 복구를 지연시키지 않는다.)
+// 동시 처리 수. 지금까지 이 값을 적은 적이 없어 BullMQ 기본값 1 로 돌았고, 그 탓에 autopilot 의
+// 모든 cron 그룹이 한 줄로 선다 — LLM 을 쓰는 긴 작업 하나가 5분 주기의 짧은 작업을 통째로 굶긴다.
+//
+// 실측 (2026-09-09, 원장 2026-08-26~09-09): 5분 주기인 `paper-intraday-stop` 은 예정 슬롯 870 회
+// 중 **63 회(7.2%)가 아예 실행되지 않았다.** 굶은 회차는 지연이 아니라 소실이다 — BullMQ 반복
+// job 은 이전 회차가 소비돼야 다음 회차를 만들기 때문에, 워커가 막힌 동안의 슬롯은 만들어지지
+// 않고 원장에 행조차 남지 않는다. 그래서 실패율에도 보이지 않는다.
+//
+// 막고 있던 것: PR 리뷰 스윕(평균 824초, 최대 4,553초) 31 회차 · 스터디 딥다이브(평균 578초)
+// 13 회차. 스윕이 끝난 초와 다음 손절 회차가 시작한 초가 같았다(11:21:29).
+//
+// 굶은 슬롯을 그 시각의 동시 점유 작업 수로 가르면 0개 22 · 1개 38 · 2개 3 이다. 2 로 올리면
+// 38 회차를 회수한다(0개는 서버 중단 구간이라 이 값과 무관하다).
+//
+// ponytail: 동시 점유가 2개였던 3 회차는 여전히 굶는다. 3 이상으로 올리지 않는 것은 이 큐의
+// 작업 대부분이 LLM CLI 를 spawn 해서 늘린 만큼 codex 동시 호출과 쿼터 소모가 늘기 때문이다.
+// 근본 형태는 LLM 을 쓰지 않는 결정론 task(`paper-intraday-stop` 은 2초·모델 미사용)를 별도
+// 큐로 빼는 것이고, 그때 이 값을 1 로 되돌린다.
+const AUTOPILOT_WORKER_CONCURRENCY = 2;
+
 export const AUTOPILOT_WORKER_OPTIONS = {
   lockDuration: LONG_RUNNING_WORKER_LOCK_DURATION_MS + WAKE_PROBE_MAX_WAIT_MS,
+  concurrency: AUTOPILOT_WORKER_CONCURRENCY,
 } as const;
 
 // cron 발송 idempotency 가드 TTL (초). stalled 재처리 중복 발송 차단용 키의 만료 시간.
