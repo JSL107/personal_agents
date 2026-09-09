@@ -50,6 +50,15 @@ describe('ConsoleReadService', () => {
     expect(snapshot.sessions).toEqual([]);
   });
 
+  it('스냅샷은 담당자의 회사사람형 닉네임을 함께 보낸다', async () => {
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
+        ?.nickname,
+    ).toBe('박꼼꼼');
+  });
+
   it('활성 런이 있는 에이전트는 IN_PROGRESS, 런은 뷰 형태(string id/ISO)로 매핑된다', async () => {
     const startedAt = new Date(Date.now() - 60_000); // 1분 전 — 좀비 임계(30분) 이내
     agentRunService.findActiveRuns.mockResolvedValue([

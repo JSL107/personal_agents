@@ -1,7 +1,7 @@
 import ConsoleCore
 import SwiftUI
 
-/// 부서 그리드의 카드 하나. 에이전트 이름·상태 색·말풍선·담당 슬래시를 보여준다.
+/// 담당자 한 명의 개인 사무실 카드. 방 장면·이름·직무·상태와 주 행동을 한 덩어리로 보여준다.
 struct AgentCardView: View {
     let agent: ConsoleAgent
     /// 전체 pending 목록 — 카드는 자신의 agentType 에 매칭되는 항목만 걸러 배지로 보여준다.
@@ -25,68 +25,95 @@ struct AgentCardView: View {
         agent.state == .completed && agent.lastFinishedRunId != nil
     }
 
+    private var primaryAction: AgentPrimaryAction {
+        agentPrimaryAction(for: agent.agentType, roleName: agent.roleName)
+    }
+
+    private var departmentColor: Color {
+        let color = agentDepartmentPaletteRGBA(agent.resolvedDepartment)
+        return Color(red: color.red, green: color.green, blue: color.blue)
+    }
+
+    private var primaryActionForeground: Color {
+        switch agent.resolvedDepartment {
+        case .content, .treasury:
+            return Color.black.opacity(0.82)
+        case .planning, .quality, .evaluation, .internalOps:
+            return .white
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: Spacing.tight) {
-                HStack(spacing: Spacing.sm) {
-                    Text(agent.roleName)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.tight) {
+                    Text("\(agent.roleName)의 자리")
                         .font(Typography.sectionTitle)
                         .lineLimit(1)
-                    Spacer(minLength: 0)
-                    statusBadge
-                }
-                // 직책으로 바꿔 부르는 대신 백엔드 식별명을 캡션으로 남긴다. 슬래시가 없는
-                // 내부 에이전트는 이 줄이 유일한 식별 단서다(로그·슬랙과 이름을 맞출 때 필요).
-                if agent.roleName != agent.displayName {
-                    Text(agent.displayName)
+                    Text(agent.resolvedDepartment.label)
                         .font(Typography.captionSmall)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(departmentColor)
+                }
+                Spacer(minLength: 0)
+                statusBadge
+            }
+            .padding(Spacing.lg)
+
+            AgentRoomView(agent: agent)
+
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    VStack(alignment: .leading, spacing: Spacing.tight) {
+                        Text(agent.roleName)
+                            .font(Typography.sectionTitle)
+                        Text(agent.job ?? agent.description)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    Text(agent.displayName)
+                        .font(Typography.badgeMono)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-            }
 
-            // 말풍선 — 백엔드가 소유한 상태 문구
-            Text(agent.bubble)
-                .font(Typography.body)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.sm)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
-                )
-
-            if !matchingPending.isEmpty {
-                pendingBadgeRow
-            }
-
-            if !agent.slashCommands.isEmpty {
-                Text(agent.slashCommands.joined(separator: "  "))
-                    .font(Typography.metricMono)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            HStack(spacing: Spacing.sm) {
-                Button("지시") { showSheet = true }
-                // 완료는 최근 종료 창(60분) 동안 유지되므로, 다 본 결과를 손으로 내려둘 수 있게 한다.
-                if canAcknowledge {
-                    Button("확인", action: onAcknowledge)
+                if !matchingPending.isEmpty {
+                    pendingBadgeRow
                 }
+
+                if !agent.slashCommands.isEmpty {
+                    Text(agent.slashCommands.joined(separator: "  "))
+                        .font(Typography.metricMono)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: Spacing.sm) {
+                    Button { showSheet = true } label: {
+                        Text(primaryAction.label)
+                            .foregroundStyle(primaryActionForeground)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(departmentColor)
+                    if canAcknowledge {
+                        Button("확인", action: onAcknowledge)
+                    }
+                }
+                .controlSize(.regular)
             }
-            .font(Typography.caption)
+            .padding(Spacing.lg)
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 390, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
-                .fill(agent.state.tintColor)
+                .fill(Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: Stroke.emphasis)
         )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
         .sheet(isPresented: $showSheet) {
@@ -104,7 +131,7 @@ struct AgentCardView: View {
     }
 
     /// VoiceOver 라벨. `accessibilityElement(children: .combine)` 이 자식 라벨을 이 문자열로
-    /// 대체하므로, 화면에 캡션으로 보이는 백엔드 식별명을 여기에 직접 넣어야 스크린리더에서도
+    /// 대체하므로, 닉네임과 화면에 캡션으로 보이는 백엔드 식별명을 함께 넣어야 스크린리더에서도
     /// 읽힌다 — 넣지 않으면 시각 UI 에만 있는 정보가 된다.
     private var accessibilityDescription: String {
         let name =
@@ -154,9 +181,12 @@ struct AgentCardView: View {
     /// "지시" 버튼으로 여는 텍스트 입력 시트 — 이 카드의 agentType 을 힌트로 고정해 전송한다.
     private var commandSheet: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("\(agent.roleName)에 지시")
+            Text(primaryAction.title)
                 .font(Typography.sectionTitle)
-            TextField("지시 내용…", text: $inputText, axis: .vertical)
+            Text(agent.job ?? agent.description)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+            TextField(primaryAction.placeholder, text: $inputText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
             HStack {
@@ -165,7 +195,7 @@ struct AgentCardView: View {
                     inputText = ""
                     showSheet = false
                 }
-                Button("전송") {
+                Button(primaryAction.label) {
                     onSend(inputText, agent.agentType)
                     inputText = ""
                     showSheet = false

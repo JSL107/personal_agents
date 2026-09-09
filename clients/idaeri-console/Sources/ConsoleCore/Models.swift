@@ -24,6 +24,8 @@ public enum ConsoleAgentState: String, Codable, Sendable {
 public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public let agentType: String
     public let displayName: String
+    /// 백엔드 담당자 명부가 소유하는 회사사람형 닉네임. 구버전 서버와의 호환을 위해 옵셔널.
+    public let nickname: String?
     public let slashCommands: [String]
     public let description: String
     public let state: ConsoleAgentState
@@ -61,9 +63,9 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     /// SwiftUI 리스트/그리드 식별자. agentType 이 레지스트리 내에서 유일.
     public var id: String { agentType }
 
-    /// 화면에서 사람으로 부를 이름 — 한글 직책이 있으면 그것, 없으면 백엔드 표시명.
+    /// 화면에서 사람으로 부를 이름 — 한글 닉네임이 있으면 그것, 없으면 백엔드 표시명.
     /// 오피스 이름표와 대시보드 카드가 같은 사람을 같은 이름으로 부르게 하는 단일 출처다.
-    public var roleName: String { agentRoleLabel(for: agentType) ?? displayName }
+    public var roleName: String { nickname ?? agentRoleLabel(for: agentType) ?? displayName }
 
     /// 화면이 쓰는 부서. 백엔드 문자열을 앱 enum 으로 옮긴 것뿐이다(판정 아님).
     public var resolvedDepartment: Department { departmentFromRaw(department) }
@@ -82,6 +84,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
         ConsoleAgent(
             agentType: agentType,
             displayName: displayName,
+            nickname: nickname,
             slashCommands: slashCommands,
             description: description,
             state: state ?? self.state,
@@ -96,6 +99,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     public init(
         agentType: String,
         displayName: String,
+        nickname: String? = nil,
         slashCommands: [String],
         description: String,
         state: ConsoleAgentState,
@@ -107,6 +111,7 @@ public struct ConsoleAgent: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.agentType = agentType
         self.displayName = displayName
+        self.nickname = nickname
         self.slashCommands = slashCommands
         self.description = description
         self.state = state

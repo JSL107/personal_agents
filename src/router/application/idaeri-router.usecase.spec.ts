@@ -194,6 +194,30 @@ describe('IdaeriRouterUsecase', () => {
     expect(result.output).toEqual({ plan: 'classified' });
   });
 
+  it('회사사람형 닉네임으로 지시하면 classifier 없이 해당 담당자에게 dispatch한다', async () => {
+    const reviewerDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => ({
+      agentRunId: 100,
+      output: { summary: 'reviewed' },
+      modelUsed: 'mock',
+    }));
+    const { usecase, classifier } = buildUsecase([reviewerDispatcher]);
+
+    const result = await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '박꼼꼼에게 이 PR 리뷰 맡겨줘 owner/repo#42',
+    });
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(result.workerType).toBe(AgentType.CODE_REVIEWER);
+    expect(reviewerDispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentTypeHint: AgentType.CODE_REVIEWER,
+        text: '박꼼꼼에게 이 PR 리뷰 맡겨줘 owner/repo#42',
+      }),
+    );
+  });
+
   it('자연어 분류 시 classifier 의 userInstruction + 직전 runId 를 conversationContext 로 dispatcher 에 전달', async () => {
     const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
       agentRunId: 50,

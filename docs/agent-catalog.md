@@ -5,33 +5,33 @@
 이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
-| 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
-|---|---|---|---|---|---|
-| Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
-| Blog Publish | `BLOG_PUBLISH` | `/blog-publish` | CHATGPT | `src/agent/blog/application/publish-notion-draft.usecase.ts` | Notion 블로그 초안 익명화 + GitHub 발행 승인 |
-| Blog Revision Report | `BLOG_REVISION` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/extract-revision-conventions.usecase.ts` | 블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용) |
-| Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
-| CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM 합성) |
-| Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
-| Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
-| CTO Study | `CTO_STUDY` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용) |
-| Delay Report | `DELAY_REPORT` | — (webhook/자동) | CHATGPT | `src/agent/delay-report/application/build-delay-report.usecase.ts` | 회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론) |
-| Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
-| Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
-| Evening Retro Publish | `EVENING_RETRO` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts` | 저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용) |
-| Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
-| Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
-| Invest Monitor | `INVEST` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts` | 보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용) |
-| Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CHATGPT | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
-| Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
-| Ops Supervisor | `OPS_SUPERVISOR` | — (webhook/자동) | CHATGPT | `src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts` | 월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용) |
-| Paper Recommend | `PAPER_RECOMMEND` | — (webhook/자동) | CHATGPT | `src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts` | 모의투자 전략별 추천 — 후보와 보유 종목을 함께 LLM 판단 (슬래시 없음, autopilot/CLI 전용) |
-| Paper Trade | `PAPER_TRADE` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts` | 모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용) |
-| PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
-| PO Eval | `PO_EVAL` | `/po-eval` | CHATGPT | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
-| PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
-| Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
-| Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
-| Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
-| Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |
-| Work Reviewer | `WORK_REVIEWER` | `/worklog` | CHATGPT | `src/agent/work-reviewer/application/generate-worklog.usecase.ts` | 업무 로그 / 주간보고 초안 생성 |
+| 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
+|---|---|---|---|---|---|---|
+| 문작가 | Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
+| 배포해 | Blog Publish | `BLOG_PUBLISH` | `/blog-publish` | CHATGPT | `src/agent/blog/application/publish-notion-draft.usecase.ts` | Notion 블로그 초안 익명화 + GitHub 발행 승인 |
+| 한교정 | Blog Revision Report | `BLOG_REVISION` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/extract-revision-conventions.usecase.ts` | 블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용) |
+| 강성장 | Career Mate | `CAREER_MATE` | — (webhook/자동) | CHATGPT | `src/agent/career-mate/application/build-career-profile.usecase.ts` | 이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션) |
+| 이총평 | CEO | `CEO` | `/ceo-review` | CHATGPT | `src/agent/ceo/application/generate-ceo-meta.usecase.ts` | 메타 회고 (PO_EVAL + PM 합성) |
+| 박꼼꼼 | Code Reviewer | `CODE_REVIEWER` | `/review-pr` | CHATGPT | `src/agent/code-reviewer/application/review-pull-request.usecase.ts` | PR 코드 리뷰 |
+| 차모순 | Contradiction Judge | `CONTRADICTION_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/contradiction-judge/application/judge-contradiction.usecase.ts` | knowledge-lint L4 — 유사 에피소드 쌍의 의미 충돌 판정 (슬래시 없음, 내부 전용) |
+| 배운이 | CTO Study | `CTO_STUDY` | — (webhook/자동) | CHATGPT | `src/agent/cto/application/evaluate-study-topic.usecase.ts` | Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용) |
+| 신지연 | Delay Report | `DELAY_REPORT` | — (webhook/자동) | CHATGPT | `src/agent/delay-report/application/build-delay-report.usecase.ts` | 회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론) |
+| 문바름 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
+| 문고침 | Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
+| 하루미 | Evening Retro Publish | `EVENING_RETRO` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts` | 저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용) |
+| 윤다정 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
+| 이보람 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
+| 주지킴 | Invest Monitor | `INVEST` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts` | 보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용) |
+| 나누리 | Issue Labeler | `ISSUE_LABELER` | — (webhook/자동) | CHATGPT | `src/agent/issue-labeler/application/infer-issue-labels.usecase.ts` | issue 자동 라벨링 (webhook 자동 트리거) |
+| 서지원 | Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
+| 안정민 | Ops Supervisor | `OPS_SUPERVISOR` | — (webhook/자동) | CHATGPT | `src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts` | 월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용) |
+| 추천호 | Paper Recommend | `PAPER_RECOMMEND` | — (webhook/자동) | CHATGPT | `src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts` | 모의투자 전략별 추천 — 후보와 보유 종목을 함께 LLM 판단 (슬래시 없음, autopilot/CLI 전용) |
+| 백장부 | Paper Trade | `PAPER_TRADE` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts` | 모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용) |
+| 김기획 | PM | `PM` | `/today` | CHATGPT | `src/agent/pm/application/generate-daily-plan.usecase.ts` | 오늘 할 일 daily plan 생성 |
+| 최성과 | PO Eval | `PO_EVAL` | `/po-eval` | CHATGPT | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
+| 박보좌 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
+| 최취향 | Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
+| 정판단 | Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
+| 제안나 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
+| 오휴가 | Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |
+| 정리나 | Work Reviewer | `WORK_REVIEWER` | `/worklog` | CHATGPT | `src/agent/work-reviewer/application/generate-worklog.usecase.ts` | 업무 로그 / 주간보고 초안 생성 |

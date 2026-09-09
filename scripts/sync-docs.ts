@@ -416,7 +416,7 @@ function renderAgentCatalog(): string {
         ? entry.slashCommands.map((command) => `\`${command}\``).join(', ')
         : '— (webhook/자동)';
       const model = AGENT_TO_PROVIDER[entry.agentType];
-      return `| ${escapeCell(entry.displayName)} | \`${entry.agentType}\` | ${slash} | ${model} | \`${escapeCell(entry.usecasePath)}\` | ${escapeCell(entry.description)} |`;
+      return `| ${escapeCell(entry.nickname)} | ${escapeCell(entry.displayName)} | \`${entry.agentType}\` | ${slash} | ${model} | \`${escapeCell(entry.usecasePath)}\` | ${escapeCell(entry.description)} |`;
     });
 
   return [
@@ -427,8 +427,8 @@ function renderAgentCatalog(): string {
     `이대리의 에이전트 ${AGENT_REGISTRY.length}종. SoT: \`src/agent-registry/agent-registry.ts\` + \`AGENT_TO_PROVIDER\`(\`src/model-router/domain/agent-provider.map.ts\`).`,
     '드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.',
     '',
-    '| 에이전트 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |',
-    '|---|---|---|---|---|---|',
+    '| 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |',
+    '|---|---|---|---|---|---|---|',
     ...rows,
     '',
   ].join('\n');

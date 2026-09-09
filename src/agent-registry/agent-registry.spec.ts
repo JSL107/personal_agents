@@ -49,4 +49,19 @@ describe('AGENT_REGISTRY 교차검증', () => {
       expect(entry.description.trim().length).toBeGreaterThan(0);
     }
   });
+
+  it('모든 담당자는 짧고 고유한 회사사람형 닉네임을 가진다', () => {
+    const nicknames = AGENT_REGISTRY.map((entry) => entry.nickname);
+
+    expect(nicknames.every((nickname) => nickname.trim().length > 0)).toBe(
+      true,
+    );
+    expect(nicknames.every((nickname) => nickname.length <= 7)).toBe(true);
+    expect(new Set(nicknames).size).toBe(nicknames.length);
+    expect(
+      AGENT_REGISTRY.find(
+        (entry) => entry.agentType === AgentType.CODE_REVIEWER,
+      )?.nickname,
+    ).toBe('박꼼꼼');
+  });
 });

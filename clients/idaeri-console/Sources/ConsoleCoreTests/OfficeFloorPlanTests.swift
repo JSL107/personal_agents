@@ -1246,18 +1246,37 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
 func runAgentRoleTests(_ t: TestRunner) {
     t.suite("AgentRole")
 
-    // 운영 29종 전부에 한글 직책이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
+    let reviewAction = agentPrimaryAction(for: "CODE_REVIEWER", roleName: "박꼼꼼")
+    t.expectEqual(reviewAction.label, "리뷰 맡기기", "코드 리뷰 담당자의 주 행동")
+    t.expectEqual(reviewAction.title, "박꼼꼼에게 리뷰 맡기기", "리뷰 시트 제목")
+    t.expect(
+        reviewAction.placeholder.contains("PR URL"),
+        "리뷰 입력은 필요한 PR 참조를 안내한다"
+    )
+
+    let defaultAction = agentPrimaryAction(for: "PM", roleName: "김기획")
+    t.expectEqual(defaultAction.label, "업무 맡기기", "일반 담당자의 주 행동")
+
+    // 기능명을 사람처럼 기억할 수 있는 회사사람형 닉네임으로 부른다. 이 네 명은 부서를 건너뛰어
+    // 명명 톤을 대표한다 — 직책명으로 돌아가면 여기서 잡힌다.
+    t.expectEqual(agentRoleLabel(for: "PM"), "김기획", "기획 닉네임")
+    t.expectEqual(agentRoleLabel(for: "CODE_REVIEWER"), "박꼼꼼", "품질 닉네임")
+    t.expectEqual(agentRoleLabel(for: "HUMANIZER"), "윤다정", "콘텐츠 닉네임")
+    t.expectEqual(agentRoleLabel(for: "OPS_SUPERVISOR"), "안정민", "총무 닉네임")
+
+    // 운영 28종 전부에 한글 닉네임이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
     // 폴백해 이름표가 뒤섞인다(agentType 과 displayName 을 혼동하면 조용히 빠진다).
     let missing = sampleAgents
         .map(\.agentType)
         .filter { agentRoleLabel(for: $0) == nil }
-    t.expectEqual(missing.count, 0, "직책 미매핑: \(missing.sorted())")
+    t.expectEqual(missing.count, 0, "닉네임 미매핑: \(missing.sorted())")
 
     // 이름표가 겹치지 않도록 짧게 유지한다.
-    let tooLong = sampleAgents
+    let nicknames = sampleAgents
         .compactMap { agentRoleLabel(for: $0.agentType) }
-        .filter { $0.count > 7 }
-    t.expectEqual(tooLong.count, 0, "직책이 너무 김(7자 초과): \(tooLong)")
+    let tooLong = nicknames.filter { $0.count > 7 }
+    t.expectEqual(tooLong.count, 0, "닉네임이 너무 김(7자 초과): \(tooLong)")
+    t.expectEqual(Set(nicknames).count, nicknames.count, "닉네임은 전원 고유")
 
     // 미등록 타입은 nil — 호출자가 displayName 으로 폴백한다.
     t.expect(agentRoleLabel(for: "NOT_A_REAL_AGENT") == nil, "미등록 타입은 nil")
