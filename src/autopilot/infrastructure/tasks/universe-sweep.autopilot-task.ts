@@ -36,6 +36,21 @@ interface BenchmarkFailureAudit {
 
 const formatCount = (count: number): string => count.toLocaleString('en-US');
 
+// 시세 공급이 끊긴 종목은 실패와 따로 센다. 숫자만 적으면 어느 종목인지 몰라 매번 다시 캐야 한다.
+const DORMANT_SAMPLE_SIZE = 3;
+
+const formatDormant = (codes: string[]): string => {
+  if (codes.length === 0) {
+    return '';
+  }
+  const sample = codes.slice(0, DORMANT_SAMPLE_SIZE).join(', ');
+  const rest =
+    codes.length > DORMANT_SAMPLE_SIZE
+      ? ` 외 ${formatCount(codes.length - DORMANT_SAMPLE_SIZE)}종목`
+      : '';
+  return `시세 공급 중단 ${formatCount(codes.length)}종목(${sample}${rest}), `;
+};
+
 const formatSummary = (audit: UniverseSweepAudit): string => {
   const syncText = `동기화 ${formatCount(audit.sync.upserted)}건(상폐 ${formatCount(audit.sync.delisted)}건), `;
   const collection = audit.collection;
@@ -49,6 +64,7 @@ const formatSummary = (audit: UniverseSweepAudit): string => {
     `저장 ${formatCount(collection.written)}봉, 재조정 ${formatCount(collection.readjusted)}종목, ` +
     `429 재시도 성공 ${formatCount(collection.retried)}종목, ` +
     `장중 차단 ${formatCount(collection.blockedIntraday)}봉, 실패 ${formatCount(collection.failed)}종목, ` +
+    formatDormant(collection.dormant) +
     benchmarkText
   );
 };

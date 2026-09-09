@@ -1,4 +1,5 @@
 import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
+import { MarketDataSymbolNotFoundError } from '../../market-data/domain/market-data-symbol-not-found.error';
 import { MarketDataPort } from '../../market-data/domain/port/market-data.port';
 import { MarketDataPrismaRepository } from '../../market-data/infrastructure/market-data.prisma.repository';
 import { CollectUniversePricesUsecase } from './collect-universe-prices.usecase';
@@ -66,6 +67,7 @@ describe('CollectUniversePricesUsecase', () => {
       readjusted: 0,
       retried: 0,
       failures: [],
+      dormant: [],
     });
     expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(1, '005930', 200);
     expect(marketData.fetchDailyBars).toHaveBeenNthCalledWith(2, '000660', 200);
@@ -181,6 +183,115 @@ describe('CollectUniversePricesUsecase', () => {
 
     expect(result.targetCount).toBe(21);
     expect(result.failed).toBe(21);
+    expect(result.failures).toHaveLength(20);
+  });
+
+  it('마지막 봉이 2주 넘게 멈춘 종목의 실패는 공급 중단으로 분리한다', async () => {
+    const daysAgo = (days: number): string =>
+      new Date(Date.now() - days * 24 * 60 * 60 * 1_000)
+        .toISOString()
+        .slice(0, 10);
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockRejectedValue(new MarketDataSymbolNotFoundError('094800')),
+    } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue(
+        [
+          [1, '094800'],
+          [2, '005930'],
+          [3, '999999'],
+        ].map(([id, code]) => ({
+          id,
+          code,
+          name: `종목${id}`,
+          tossSymbol: code,
+          krxMarket: 'KOSPI',
+        })),
+      ),
+      findStoredBarStats: jest.fn().mockResolvedValue(
+        new Map([
+          [1, { barCount: 203, latestTradeDate: daysAgo(20) }],
+          [2, { barCount: 203, latestTradeDate: daysAgo(3) }],
+        ]),
+      ),
+    } as unknown as MarketDataPrismaRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    const result = await usecase.execute();
+
+    expect(result.dormant).toEqual(['094800']);
+    // 최근까지 봉이 있던 종목은 진짜 장애이므로 실패로 남아야 하고, 봉이 0개인 신규 종목의
+    // 첫 수집 실패도 공급 중단으로 숨기지 않는다.
+    expect(result.failed).toBe(2);
+    expect(result.failures).toEqual([
+      '005930: 시세 공급자에 없는 심볼입니다 — 094800',
+      '999999: 시세 공급자에 없는 심볼입니다 — 094800',
+    ]);
+  });
+
+  it('마지막 봉이 멈춘 종목이어도 404 가 아닌 실패는 실패로 남긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest.fn().mockRejectedValue(new Error('timeout')),
+    } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          code: '094800',
+          name: '맵스리얼티',
+          tossSymbol: '094800',
+          krxMarket: 'KOSPI',
+        },
+      ]),
+      findStoredBarStats: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([[1, { barCount: 203, latestTradeDate: '2020-01-02' }]]),
+        ),
+    } as unknown as MarketDataPrismaRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    const result = await usecase.execute();
+
+    expect(result.dormant).toEqual([]);
+    expect(result.failed).toBe(1);
+  });
+
+  it('공급 중단이 대상의 1%를 넘으면 공급자 장애로 보고 실패로 되돌린다', async () => {
+    const tickers = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      code: String(index).padStart(6, '0'),
+      name: `종목${index}`,
+      tossSymbol: String(index).padStart(6, '0'),
+      krxMarket: 'KOSPI',
+    }));
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockRejectedValue(new MarketDataSymbolNotFoundError('000000')),
+    } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue(tickers),
+      findStoredBarStats: jest
+        .fn()
+        .mockResolvedValue(
+          new Map(
+            tickers.map((ticker) => [
+              ticker.id,
+              { barCount: 203, latestTradeDate: '2020-01-02' },
+            ]),
+          ),
+        ),
+    } as unknown as MarketDataPrismaRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    const result = await usecase.execute();
+
+    // 조용히 넘기면 실패 0 으로 보고돼 공급자 장애가 며칠 묻힌다.
+    expect(result.dormant).toEqual([]);
+    expect(result.failed).toBe(100);
     expect(result.failures).toHaveLength(20);
   });
 
