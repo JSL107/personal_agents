@@ -72,6 +72,18 @@ export class AutopilotOrchestrator {
       .split(',')
       .map((resolved) => resolved.trim())
       .filter((resolved) => resolved.length > 0);
+    // 대상이 0개면 아래 발송 루프가 전부 no-op 이 되는데, preview 생성과 onDelivered 후처리는
+    // 그대로 돈다 — 슬랙엔 한 건도 안 나간 채 preview_action PENDING 행과 "전달 완료" 표식만
+    // 남고 cron 은 성공으로 끝난다(그 PENDING 행이 다음 회차 발행 큐를 TTL 24h 동안 막는다).
+    // 정상 경로는 AutopilotScheduler.readTarget 이 이미 막으므로 여기까지 오지 않는다. 그래도
+    // owner DM 으로 떨어뜨려 무동작만은 만들지 않는다 — 여기서 throw 하면 3분 그룹이 회차마다
+    // cron 실패 DM 을 쏘게 된다.
+    if (targets.length === 0) {
+      this.logger.warn(
+        `Autopilot[${groupKey}] — 발송 대상이 비어 owner DM 으로 대체 (target="${target}")`,
+      );
+      targets.push(ownerSlackUserId);
+    }
 
     // 재진입 차단 — 이 슬롯이 이미 완주했으면 task 를 하나도 실행하지 않고 끝낸다.
     //
