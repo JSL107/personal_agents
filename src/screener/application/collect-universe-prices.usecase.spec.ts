@@ -295,6 +295,49 @@ describe('CollectUniversePricesUsecase', () => {
     expect(result.failures).toHaveLength(20);
   });
 
+  it('공급 중단이 20건을 넘어도 대상의 1% 이하면 공급자 장애로 보지 않는다', async () => {
+    // 되돌림은 건수와 비율을 함께 넘길 때만이다. 건수 축만 검증하면 비율 조건을 통째로
+    // 지워도 테스트가 전부 통과한다(대조군으로 확인).
+    const totalCount = 2_100;
+    const dormantCount = 20;
+    const tickers = Array.from({ length: totalCount }, (_, index) => ({
+      id: index + 1,
+      code: String(index).padStart(6, '0'),
+      name: `종목${index}`,
+      tossSymbol: String(index).padStart(6, '0'),
+      krxMarket: 'KOSPI',
+    }));
+    const recent = new Date(Date.now() - 24 * 60 * 60 * 1_000)
+      .toISOString()
+      .slice(0, 10);
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockRejectedValue(new MarketDataSymbolNotFoundError('000000')),
+    } as unknown as MarketDataPort;
+    const repository = {
+      findUniverseTickers: jest.fn().mockResolvedValue(tickers),
+      findStoredBarStats: jest.fn().mockResolvedValue(
+        new Map(
+          tickers.map((ticker, index) => [
+            ticker.id,
+            {
+              barCount: 203,
+              latestTradeDate: index < dormantCount ? '2020-01-02' : recent,
+            },
+          ]),
+        ),
+      ),
+    } as unknown as MarketDataPrismaRepository;
+    const usecase = new CollectUniversePricesUsecase(marketData, repository);
+
+    const result = await usecase.execute();
+
+    // 20 >= 20 으로 건수는 넘지만 20 > 21 이 아니라 비율은 못 넘는다 — 유지가 맞다.
+    expect(result.dormant).toHaveLength(dormantCount);
+    expect(result.failed).toBe(totalCount - dormantCount);
+  });
+
   it('429가 한 번 발생하면 1초 뒤 한 번 재시도해 성공과 retried를 집계한다', async () => {
     jest.useFakeTimers();
     const fetchDailyBars = jest
