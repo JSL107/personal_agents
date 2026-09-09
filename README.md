@@ -381,7 +381,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 **기본 ON 이라 끌 때만 만지는 것** — `'false'` 로 끈다. `HUMANIZE_REPORTS_ENABLED`(보고서 자동 윤문) · `BRIEFING_WAITING_SECTION_ENABLED`(아침 브리핑 PR 분류 섹션) · `EVENING_RETRO_PUBLISH_ENABLED`(저녁 회고 발행 후보) · `BLOG_GITHUB_PUBLISH_ENABLED`(저녁 Notion 초안 GitHub 발행 승인 카드) · `STUDY_DEEPDIVE_ENABLED`(오늘의 공부 → 블로그 초안 딥다이브 확장) · `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED`(모순 판정).
 
-**Model provider** — 전체 에이전트가 ChatGPT(Codex CLI) 단일 provider 다. provider 간 fallback 은 없다. codex 가 실패하면 재시도 없이 즉시 실패하고, 쿼터가 소진된 경우 reset 시각을 안내한다. `ClaudeCliProvider` 와 `CLAUDE_CODE_OAUTH_TOKEN` 인증 경로는 롤백 대비로 코드만 남아 있고 현재 호출되는 경로는 없다.
+**Model provider** — 전체 에이전트의 primary 는 ChatGPT(Codex CLI) 다. codex 가 실패하면 Claude(`ClaudeCliProvider`, `CLAUDE_CODE_OAUTH_TOKEN` 인증)로 한 번 재시도하고, 둘 다 실패해야 최종 실패로 처리한다(쿼터 소진 시 reset 시각 안내). 다만 출력 스키마를 강제하는 요청은 폴백하지 않는다 — claude CLI 에 `--output-schema` 에 해당하는 인자가 없어 형태 보장이 사라지기 때문이다.
 
 </details>
 

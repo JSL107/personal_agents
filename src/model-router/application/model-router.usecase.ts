@@ -20,12 +20,15 @@ import {
 import { ClaudeAuthSuspectException } from '../infrastructure/claude-cli.provider';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
 
-// fallback 테이블 — 2026-07-02 부터 비어 있음(Claude 제거로 ChatGPT 단일 provider).
-// route() 의 `!fallbackName` 가드가 즉시 전파하므로, 모든 provider 는 실패 시 재시도 없이 즉시 throw 한다.
-// (롤백: CLAUDE↔CHATGPT 대칭 매핑을 되살리면 이전 양방향 fallback 으로 복구된다.
-//  되살릴 때 outputSchema 를 쓰는 호출을 함께 확인할 것 — claude CLI 에는 형태 강제 인자가
-//  없어 그 경로로 넘어가면 프롬프트 지시만 남는다.)
-const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {};
+// fallback 테이블 — 2026-09-09 부터 CHATGPT 실패 시 CLAUDE 로 한 번 재시도한다.
+// (2026-07-02 ~ 09-09 는 비어 있었다. codex 쿼터 소진·인증 만료가 그대로 실행 실패가 되는 구간이었다.)
+//
+// 역방향(CLAUDE → CHATGPT)은 넣지 않는다. AGENT_TO_PROVIDER 의 primary 가 전부 CHATGPT 라
+// CLAUDE 가 primary 인 경로가 없고, 죽은 항목은 "양방향으로 돈다" 는 오해만 남긴다.
+// CLAUDE 를 primary 로 쓰는 에이전트가 생기면 그때 대칭 항목을 추가할 것.
+const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {
+  [ModelProviderName.CHATGPT]: ModelProviderName.CLAUDE,
+};
 
 @Injectable()
 export class ModelRouterUsecase {
@@ -114,7 +117,13 @@ export class ModelRouterUsecase {
 
       // noFallback (예: HUMANIZER 윤문) — primary 실패 시 반대편 provider 로 재시도하지 않고 즉시 전파.
       // best-effort 후처리가 ChatGPT 실패 시 Claude 로 새지 않도록 호출자가 명시 차단한다.
-      if (noFallback) {
+      //
+      // outputSchema 를 건 요청도 같이 막는다. codex 는 `--output-schema` 로 형태를 강제하지만
+      // claude CLI 에는 대응 인자가 없어(claude-cli.provider.ts 가 warn 을 남긴다) 프롬프트 지시만
+      // 남는다. 호출자는 "스키마를 걸었으니 파싱은 안전하다" 는 전제로 결과를 다루므로, 형태가
+      // 무너진 응답을 조용히 돌려주느니 primary 실패를 그대로 올린다.
+      // (해당 호출: work-reviewer · po-shadow · blog 계열 · intent-classifier)
+      if (noFallback || request.outputSchema !== undefined) {
         throw this.wrapCompletionFailed({
           attempted: [primaryName],
           lastError: primaryError,
