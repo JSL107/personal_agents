@@ -143,4 +143,46 @@ describe('MemoryStoreFsAdapter', () => {
     expect(unreadable).toEqual([]);
     expect(snapshots.map((snapshot) => snapshot.project)).toEqual(['fresh']);
   });
+
+  it('진단 이후 색인이 바뀌었으면 쓰지 않는다', async () => {
+    // 스냅샷을 읽은 뒤 세션이 기억을 한 줄 더했는데 그대로 덮어쓰면 그 줄이 조용히
+    // 사라진다. 파일 락이 아니라 창을 좁히는 것이라 완전하지는 않다.
+    const dir = await writeProject('p', { 'MEMORY.md': '원본', 'a.md': 'x' });
+    const adapter = buildAdapter(root);
+    const snapshot: MemoryIndexSnapshot = {
+      project: 'p',
+      indexPath: join(dir, 'MEMORY.md'),
+      indexContent: '원본',
+      files: [],
+    };
+    await fs.writeFile(
+      snapshot.indexPath,
+      '원본 + 다른 세션이 더한 줄',
+      'utf8',
+    );
+
+    await expect(
+      adapter.writeIndex(snapshot, '청소본', '원본'),
+    ).rejects.toThrow('진단 이후 바뀌었습니다');
+    await expect(fs.readFile(snapshot.indexPath, 'utf8')).resolves.toBe(
+      '원본 + 다른 세션이 더한 줄',
+    );
+  });
+
+  it('바뀌지 않았으면 그대로 쓴다', async () => {
+    const dir = await writeProject('p', { 'MEMORY.md': '원본', 'a.md': 'x' });
+    const adapter = buildAdapter(root);
+    const snapshot: MemoryIndexSnapshot = {
+      project: 'p',
+      indexPath: join(dir, 'MEMORY.md'),
+      indexContent: '원본',
+      files: [],
+    };
+
+    await adapter.writeIndex(snapshot, '청소본', '원본');
+
+    await expect(fs.readFile(snapshot.indexPath, 'utf8')).resolves.toBe(
+      '청소본',
+    );
+  });
 });

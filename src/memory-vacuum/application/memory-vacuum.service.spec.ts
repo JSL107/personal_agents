@@ -117,4 +117,53 @@ describe('MemoryVacuumService', () => {
       expect.objectContaining({ cleanedCount: 0, pendingProjects: 1 }),
     );
   });
+
+  it('색인 쓰기가 실패하면 실패로 보고하고 실적으로 세지 않는다', async () => {
+    // 백업만 검증하면 "백업은 됐는데 쓰기가 죽은" 회차가 그대로 성공으로 남는다.
+    const store = buildStore({
+      writeIndex: jest.fn().mockRejectedValue(new Error('디스크 가득참')),
+    });
+    const service = new MemoryVacuumService(store);
+
+    const result = await service.run({ apply: true });
+
+    expect(result.failures).toEqual([
+      { project: 'p', reason: expect.stringContaining('쓰기 실패') },
+    ]);
+    expect(store.saveState).toHaveBeenCalledWith(
+      expect.objectContaining({ cleanedCount: 0, pendingProjects: 1 }),
+    );
+  });
+
+  it('일부만 실패하면 성공한 몫만 실적으로 센다', async () => {
+    // 한 곳이 죽었다고 나머지 청소까지 없던 일이 되면 안 되고, 반대로 죽은 곳의
+    // "하려던" 작업이 실적에 섞여도 안 된다.
+    const good = {
+      ...snapshot,
+      project: 'good',
+      indexPath: '/tmp/good/MEMORY.md',
+    };
+    const bad = {
+      ...snapshot,
+      project: 'bad',
+      indexPath: '/tmp/bad/MEMORY.md',
+    };
+    const store = buildStore({
+      loadSnapshots: jest
+        .fn()
+        .mockResolvedValue({ snapshots: [good, bad], unreadable: [] }),
+      writeIndex: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('디스크 가득참')),
+    });
+    const service = new MemoryVacuumService(store);
+
+    const result = await service.run({ apply: true });
+
+    expect(result.failures.map((failure) => failure.project)).toEqual(['bad']);
+    expect(store.saveState).toHaveBeenCalledWith(
+      expect.objectContaining({ cleanedCount: 1, pendingProjects: 1 }),
+    );
+  });
 });

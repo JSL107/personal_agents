@@ -70,6 +70,10 @@ const main = async (): Promise<void> => {
   for (const failure of failures) {
     console.error(`🔴 ${failure.project}: ${failure.reason}`);
   }
+  // 로그만 남기고 0 으로 끝내면 호출자(자동화·CI)가 적용 실패를 감지할 수 없다.
+  if (failures.length > 0) {
+    process.exitCode = 1;
+  }
   if (!apply) {
     console.log('※ 진단만 했습니다. 실제로 고치려면 --apply 를 붙이세요.');
   }

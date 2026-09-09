@@ -115,7 +115,12 @@ export class MemoryVacuumService implements MemoryVacuumPort {
     }
 
     try {
-      await this.store.writeIndex(snapshot, outcome.nextIndexContent as string);
+      await this.store.writeIndex(
+        snapshot,
+        outcome.nextIndexContent as string,
+        // 진단이 기준으로 삼은 색인. 그 사이 파일이 바뀌었으면 어댑터가 쓰기를 끊는다.
+        snapshot.indexContent,
+      );
       this.logger.log(
         `[${snapshot.project}] 색인 청소 완료 (백업 ${backupPath})`,
       );

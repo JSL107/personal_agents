@@ -81,7 +81,16 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
   async writeIndex(
     snapshot: MemoryIndexSnapshot,
     content: string,
+    expected: string,
   ): Promise<void> {
+    // 진단은 스냅샷 시점의 색인을 기준으로 만든 결과라, 그 사이 세션이 기억을 한 줄
+    // 추가했다면 그대로 덮어써 잃는다. 쓰기 직전에 한 번 더 읽어 대조한다.
+    const current = await this.readIndex(snapshot.indexPath);
+    if (current !== expected) {
+      throw new Error(
+        '색인이 진단 이후 바뀌었습니다 — 이번 회차는 건너뜁니다(다음 회차에 다시 봅니다).',
+      );
+    }
     await fs.writeFile(snapshot.indexPath, content, 'utf8');
   }
 

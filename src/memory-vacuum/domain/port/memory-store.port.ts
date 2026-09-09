@@ -25,7 +25,14 @@ export interface MemoryStorePort {
   // 청소 직전 통째 백업. 되돌릴 수 없는 쓰기 앞에 두는 유일한 안전장치라,
   // 실패하면 쓰기를 하지 않는다(호출자가 예외를 그대로 전파시킬 것).
   backup(snapshot: MemoryIndexSnapshot): Promise<string>;
-  writeIndex(snapshot: MemoryIndexSnapshot, content: string): Promise<void>;
+  // `expected` 는 스냅샷을 읽던 시점의 색인 내용이다. 쓰기 직전에 실제 파일과 대조해
+  // 다르면 쓰지 않는다 — 진단 이후 다른 세션이 추가한 기억을 통째로 덮어써 조용히
+  // 잃는 경로(lost update)를 막는다. 파일 락이 아니라 창을 좁히는 것이라 완전하지는 않다.
+  writeIndex(
+    snapshot: MemoryIndexSnapshot,
+    content: string,
+    expected: string,
+  ): Promise<void>;
   saveState(state: MemoryVacuumState): Promise<void>;
   loadState(): Promise<MemoryVacuumState | null>;
 }
