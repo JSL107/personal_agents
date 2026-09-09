@@ -1,6 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import {
+  FailedAgentRunSnapshot,
+  SucceededAgentRunSnapshot,
+} from '../../../agent-run/domain/port/agent-run.repository.port';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import {
   CODE_MASK_PATTERN,
@@ -12,6 +16,7 @@ import { CreatePreviewUsecase } from '../../../preview-gate/application/create-p
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { FindRecentAppliedPreviewsUsecase } from '../../../preview-gate/application/find-recent-applied-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { BlogErrorCode } from '../domain/blog-error-code.enum';
 import {
   BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT,
   BLOG_ANONYMIZE_SYSTEM_PROMPT,
@@ -80,10 +85,11 @@ const buildUsecase = (overrides?: {
   // 윤문 호출마다 다른 본문을 돌려주는 테스트용 목이다. 재시도 여부와 관계없이 첫 호출과
   // 이후 호출의 선택을 검증해야 하는 테스트가 있어 배열 형태를 유지한다.
   humanizeByCall?: string[];
-  // 최근 금지어 차단 이력 — 원장이 돌려주는 형태 그대로 준다.
-  recentRuns?: Array<{ output: unknown; inputSnapshot: unknown }>;
+  // 최근 금지어 차단 이력 — **원장 포트의 타입 그대로** 못 박는다. 느슨한 형태로 두면 코드가
+  // 실제로 읽는 필드(`endedAt` 처럼)가 목에서 빠져도 타입체크가 통과해 거짓 초록이 된다.
+  recentRuns?: SucceededAgentRunSnapshot[];
   // 최근 예외로 끝난 회차. 차단과 달리 FAILED 로 남아 위 조회에 잡히지 않는다.
-  failedRuns?: Array<{ inputSnapshot: unknown }>;
+  failedRuns?: FailedAgentRunSnapshot[];
   failedRunsError?: Error;
   appliedPreviews?: Array<{ payload: unknown }>;
   appliedPreviewsError?: Error;
@@ -2069,23 +2075,37 @@ describe('차단된 초안 큐 막힘', () => {
     title: '다음 회고',
     createdTime: '2026-08-10T00:00:00.000Z',
   };
+  // 목의 시각은 spec 의 고정 시각(2026-08-19T01:00:00Z)을 기준으로 며칠 전인지로 준다.
+  const 며칠전 = (days: number): Date =>
+    new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
+
   // 원장이 돌려주는 형태 그대로 — 차단은 예외가 아니라 정상 종료라 SUCCEEDED 로 남는다.
-  const 차단이력 = [
-    {
-      output: { status: 'blocked', message: '금지어가 남았습니다.' },
-      inputSnapshot: { pageId: '막힌초안-자리표시' },
-    },
-  ];
+  const 차단회차 = (
+    pageId: string,
+    daysAgo: number,
+  ): SucceededAgentRunSnapshot => ({
+    id: 1,
+    output: { status: 'blocked', message: '금지어가 남았습니다.' },
+    inputSnapshot: { pageId },
+    endedAt: 며칠전(daysAgo),
+  });
+
+  // 예외로 끝난 회차. errorCode 가 후순위 판정의 유일한 근거다 — 기본값은 초안 내용 탓인 코드.
+  const 실패회차 = (
+    pageId: string,
+    daysAgo: number,
+    errorCode: string = BlogErrorCode.EDIT_CODE_CHANGED,
+  ): FailedAgentRunSnapshot => ({
+    id: 2,
+    inputSnapshot: { pageId },
+    output: { error: '실패했습니다.', errorCode },
+    endedAt: 며칠전(daysAgo),
+  });
 
   it('최근 차단된 초안은 뒤로 미루고 다음 초안을 집는다', async () => {
     const { usecase, notionClient } = buildUsecase({
       drafts: [막힌초안, 다음초안],
-      recentRuns: [
-        {
-          ...차단이력[0],
-          inputSnapshot: { pageId: 막힌초안.pageId },
-        },
-      ],
+      recentRuns: [차단회차(막힌초안.pageId, 0)],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
@@ -2100,12 +2120,110 @@ describe('차단된 초안 큐 막힘', () => {
   it('최근 실패한 초안도 뒤로 미루고 다음 초안을 집는다', async () => {
     const { usecase, notionClient } = buildUsecase({
       drafts: [막힌초안, 다음초안],
-      failedRuns: [{ inputSnapshot: { pageId: 막힌초안.pageId } }],
+      failedRuns: [실패회차(막힌초안.pageId, 0)],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
 
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(다음초안.pageId);
+  });
+
+  // 쿼터 소진·타임아웃은 초안 잘못이 아니라 그 시각의 사정이다. 그 초안을 뒤로 밀면 잘못 없는
+  // 글이 우선권을 잃는다 — 원장 실측(8주 전 에이전트)에서 실패의 72%가 그 부류였다.
+  it('모델 쿼터 소진으로 끊긴 회차는 그 초안을 미루지 않는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      failedRuns: [
+        실패회차(막힌초안.pageId, 0, 'MODEL_ROUTER_COMPLETION_FAILED'),
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    // 후순위가 걸리지 않으므로 원래 순서(오래된 것 먼저)대로 막힌초안이 다시 나간다.
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+  });
+
+  // errorCode 저장을 넣기 전 회차에는 그 키가 없다. 원인을 모르는 실패를 초안 탓으로 세면
+  // 인프라 실패까지 벌점이 되므로 관대한 쪽(벌점 없음)으로 떨어뜨린다.
+  it('원인(errorCode)이 없는 실패는 미루지 않는다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      failedRuns: [
+        {
+          id: 3,
+          inputSnapshot: { pageId: 막힌초안.pageId },
+          output: { error: '모델 호출 실패 (CHATGPT, 3s 소요)' },
+          endedAt: 며칠전(0),
+        },
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+  });
+
+  // 고정 창(옛 3일)이던 판의 결함을 그대로 재현한 대조군이다.
+  //
+  // A·B·C 는 각각 4번 막혔고 마지막 실패가 5·4·3일 전이다. **고정 3일 창에서는 셋 다 창을
+  // 벗어나** 후순위가 풀리고, 정상 초안보다 오래됐으므로 셋이 슬롯을 돌려 쓴다(A→B→C→A…).
+  // 막힌 횟수로 미루면 4회는 8일이라 셋 다 아직 후순위여서 정상 초안이 앞선다.
+  it('되풀이 실패한 초안이 여러 건이어도 정상 초안을 앞세운다', async () => {
+    const 실패A = {
+      ...draft,
+      pageId: 'page-a',
+      createdTime: '2026-07-01T00:00:00.000Z',
+    };
+    const 실패B = {
+      ...draft,
+      pageId: 'page-b',
+      createdTime: '2026-07-02T00:00:00.000Z',
+    };
+    const 실패C = {
+      ...draft,
+      pageId: 'page-c',
+      createdTime: '2026-07-03T00:00:00.000Z',
+    };
+    const 정상 = {
+      ...draft,
+      pageId: 'page-ok',
+      createdTime: '2026-07-10T00:00:00.000Z',
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [실패A, 실패B, 실패C, 정상],
+      failedRuns: [
+        실패회차(실패A.pageId, 8),
+        실패회차(실패A.pageId, 7),
+        실패회차(실패A.pageId, 6),
+        실패회차(실패A.pageId, 5),
+        실패회차(실패B.pageId, 7),
+        실패회차(실패B.pageId, 6),
+        실패회차(실패B.pageId, 5),
+        실패회차(실패B.pageId, 4),
+        실패회차(실패C.pageId, 6),
+        실패회차(실패C.pageId, 5),
+        실패회차(실패C.pageId, 4),
+        실패회차(실패C.pageId, 3),
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(정상.pageId);
+  });
+
+  // 영구 배제가 아니다 — 백오프가 지나면 다시 차례가 온다. 사람이 고쳤는지 코드는 모른다.
+  it('백오프가 지난 초안은 다시 차례가 온다', async () => {
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [막힌초안, 다음초안],
+      // 1회만 막혔으면 백오프는 1일. 3일 전 실패는 이미 창을 벗어났다.
+      failedRuns: [실패회차(막힌초안.pageId, 3)],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
   });
 
   // 두 이력을 각각의 try 에 둔 이유가 이것이다 — 한쪽 조회가 깨져도 다른 쪽이 찾아낸 후순위는
@@ -2115,7 +2233,7 @@ describe('차단된 초안 큐 막힘', () => {
     const { usecase, notionClient } = buildUsecase({
       drafts: [막힌초안, 다음초안],
       recentRunsError: new Error('DB 연결 실패'),
-      failedRuns: [{ inputSnapshot: { pageId: 막힌초안.pageId } }],
+      failedRuns: [실패회차(막힌초안.pageId, 0)],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
@@ -2126,12 +2244,7 @@ describe('차단된 초안 큐 막힘', () => {
   it('실패 이력 조회가 깨져도 차단 이력 후순위는 남는다', async () => {
     const { usecase, notionClient } = buildUsecase({
       drafts: [막힌초안, 다음초안],
-      recentRuns: [
-        {
-          ...차단이력[0],
-          inputSnapshot: { pageId: 막힌초안.pageId },
-        },
-      ],
+      recentRuns: [차단회차(막힌초안.pageId, 0)],
       failedRunsError: new Error('DB 연결 실패'),
     });
 
@@ -2156,12 +2269,7 @@ describe('차단된 초안 큐 막힘', () => {
   it('큐에 막힌 초안뿐이면 그래도 시도한다', async () => {
     const { usecase, notionClient } = buildUsecase({
       drafts: [막힌초안],
-      recentRuns: [
-        {
-          ...차단이력[0],
-          inputSnapshot: { pageId: 막힌초안.pageId },
-        },
-      ],
+      recentRuns: [차단회차(막힌초안.pageId, 0)],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
@@ -2173,12 +2281,7 @@ describe('차단된 초안 큐 막힘', () => {
   it('제목으로 지목하면 후순위를 적용하지 않는다', async () => {
     const { usecase, notionClient, agentRunService } = buildUsecase({
       drafts: [막힌초안, 다음초안],
-      recentRuns: [
-        {
-          ...차단이력[0],
-          inputSnapshot: { pageId: 막힌초안.pageId },
-        },
-      ],
+      recentRuns: [차단회차(막힌초안.pageId, 0)],
     });
 
     await usecase.execute({ titleQuery: '차단된', slackUserId: 'U1' });
@@ -2197,8 +2300,10 @@ describe('차단된 초안 큐 막힘', () => {
       drafts: [막힌초안, 다음초안],
       recentRuns: [
         {
+          id: 4,
           output: { status: 'preview', previewId: 'preview-1' },
           inputSnapshot: { pageId: 막힌초안.pageId },
+          endedAt: 며칠전(0),
         },
       ],
     });
