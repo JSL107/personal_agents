@@ -242,7 +242,7 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             hair: [hair.red, hair.green, hair.blue],
             shirt: [shirt.red, shirt.green, shirt.blue],
             pants: [pants.red, pants.green, pants.blue],
-            roleLabel: agentRoleLabel(for: agent.agentType) ?? agent.displayName,
+            roleLabel: agent.roleName,
             deskProp: officeDeskProp(agentType: agent.agentType),
             workAffinity: officeWorkAffinity(agentType: agent.agentType).map(\.rawValue)
         )

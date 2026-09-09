@@ -21,7 +21,6 @@ import { formatPullRequestReview } from '../../../slack/format/pull-request-revi
 import { ReviewPullRequestUsecase } from '../application/review-pull-request.usecase';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
-import { parsePrReference } from '../domain/pr-reference.parser';
 
 // 콘솔에서 PR 미지정 시 최근 open PR을 조회하는 범위.
 const AUTO_RESOLVE_LOOKBACK_DAYS = 180;
@@ -43,7 +42,7 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     let prRef = input.text ?? '';
     let autoResolvedNotice: string | undefined;
 
-    if (input.source === 'REMOTE_CONSOLE' && !isValidPrReference(prRef)) {
+    if (input.source === 'REMOTE_CONSOLE' && prRef.trim().length === 0) {
       const resolved = await this.resolveLatestOpenPrOrThrow();
       if (resolved) {
         prRef = resolved.prRef;
@@ -106,12 +105,3 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     return resolved;
   }
 }
-
-const isValidPrReference = (raw: string): boolean => {
-  try {
-    parsePrReference(raw);
-    return true;
-  } catch {
-    return false;
-  }
-};
