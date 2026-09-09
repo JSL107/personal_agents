@@ -1301,6 +1301,26 @@ func runAgentRoleTests(_ t: TestRunner) {
             hairs.count, min(types.count, hairPalette.count),
             "\(department.label) 방 머리색이 팔레트를 다 쓴다 (\(types.count)명 / \(hairs.count)종)"
         )
+
+        // **셔츠 톤도 방 안에서 갈린다.** 톤 폭을 키운 작업(`officeShirtShiftStep` 0.05 → 0.09)이
+        // 배정까지 오지 않아 해시가 그대로 통과하고 있었다 — 평가 방 세 명이 렌더 픽셀까지
+        // 같은 218.0 이었다(2026-09-09 실측).
+        //
+        // 단계가 5개뿐이라 그보다 붐비는 방에서 「전원 유일」은 요구할 수 없다. 요구하는 것은
+        // **단계를 다 쓰고 고르게 나눈다**는 것이다 — 눈에 걸리던 것은 겹침 자체가 아니라
+        // 한 톤에 셋이 몰린 자리였다.
+        let tones = types.compactMap { looks[$0] }
+            .map { Int(($0.shirtShift / officeShirtShiftStep).rounded()) }
+        t.expectEqual(
+            Set(tones).count, min(types.count, officeShirtShiftSteps),
+            "\(department.label) 방 셔츠 톤이 단계를 다 쓴다 (\(types.count)명 / \(Set(tones).count)종)"
+        )
+        let crowdedTone = Dictionary(grouping: tones, by: { $0 }).values.map(\.count).max() ?? 0
+        let toneCap = (types.count + officeShirtShiftSteps - 1) / officeShirtShiftSteps
+        t.expect(
+            crowdedTone <= toneCap,
+            "\(department.label) 방 한 톤에 \(crowdedTone)명 (상한 \(toneCap))"
+        )
     }
 
     // 배정은 입력 순서에 흔들리지 않는다 — 스냅샷마다 사람 순서가 바뀌어도 얼굴은 그대로여야

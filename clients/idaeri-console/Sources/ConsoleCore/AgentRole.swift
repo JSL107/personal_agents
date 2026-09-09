@@ -185,11 +185,17 @@ public let officeShirtShiftSteps = 5
 /// 사전순 앞자리에 사람이 들어오면 일부는 밀리므로, 방 전체가 뒤집히지 않는지(과반 유지)를
 /// 테스트가 고정한다.
 ///
-/// 옷과 바지는 조정하지 않는다 — 얼굴·머리가 갈리면 사람은 이미 구별되고, 옷까지 흔들면
-/// 부서색(방을 읽는 신호)이 흐려진다.
+/// **셔츠 톤도 같은 방식으로 돌린다.** 톤 폭을 0.05 → 0.09 로 키운 것이(`officeShirtShiftStep`)
+/// 한 방 사람들의 옷을 갈라 놓으려던 일인데, 배정이 해시 값을 그대로 통과시켜 절반만
+/// 실현돼 있었다 — 평가 방 세 명이 렌더 픽셀까지 같은 218.0 이었다(2026-09-09 실측).
+/// 부서색이 흐려지지는 않는다: 셔츠는 색상을 부서에서 받고 여기서 갈리는 것은 명도뿐이다.
+///
+/// 바지는 조정하지 않는다 — 부서와 엮이지 않은 축이라 방 단위로 돌릴 근거가 없고,
+/// 어두운 계열로 좁게 잡아(`pantsPalette`) 단계 차이가 화면에서 읽히지도 않는다.
 public func officeCharacterLooks(forRoommates agentTypes: [String]) -> [String: CharacterLook] {
     var usedHair: Set<Int> = []
     var usedFace: Set<Int> = []
+    var usedShirt: Set<Int> = []
     var looks: [String: CharacterLook] = [:]
     // 배정 순서가 입력 순서에 흔들리면 스냅샷마다 얼굴이 뒤바뀐다.
     for agentType in agentTypes.sorted() {
@@ -216,12 +222,24 @@ public func officeCharacterLooks(forRoommates agentTypes: [String]) -> [String: 
                 }
             }
         }
+        // 셔츠 톤은 **단계를 다 쓰면 라운드를 새로 연다.** 머리처럼 「소진 뒤에는 해시 그대로」
+        // 로 두면 뒤늦게 오는 사람이 앞사람과 그대로 겹쳐, 정작 가장 붐비는 방이 안 고쳐진다 —
+        // 콘텐츠 7명에서 톤 4 인 셋이 사전순 뒤쪽이라 셋 다 그대로 남았다(시뮬레이션 실측).
+        // 라운드를 열면 한 톤에 몰리는 인원이 ⌈인원 ÷ 단계⌉ 로 묶인다.
+        var shirtStep = Int((base.shirtShift / officeShirtShiftStep).rounded())
+        if usedShirt.count == officeShirtShiftSteps {
+            usedShirt.removeAll()
+        }
+        while usedShirt.contains(shirtStep) {
+            shirtStep = (shirtStep + 1) % officeShirtShiftSteps
+        }
         usedHair.insert(hair)
         usedFace.insert(sheet * hairPalette.count + hair)
+        usedShirt.insert(shirtStep)
         looks[agentType] = CharacterLook(
             sheetIndex: sheet,
             hairIndex: hair,
-            shirtShift: base.shirtShift,
+            shirtShift: Double(shirtStep) * officeShirtShiftStep,
             pantsIndex: base.pantsIndex
         )
     }
