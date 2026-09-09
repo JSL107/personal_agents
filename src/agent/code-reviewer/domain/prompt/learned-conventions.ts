@@ -67,6 +67,26 @@ const NEVER_LEARNED_CATEGORIES = new Set(['SECURITY']);
 // 불릿 하나 = 한 항목이 되게 한다.
 const flatten = (reason: string): string => reason.trim().replace(/\s+/g, ' ');
 
+/**
+ * 답글 머리말을 걷어낸다. 기각 이유는 그대로 다음 리뷰의 규약이 되는데, 사람이 쓴 답글은
+ * 다른 봇 앞으로 시작하는 일이 잦다 — `@gemini-code-assist 검토 감사합니다` 가 규약에
+ * 실린 사례가 셋 있었다(카드 687·693·694). 문장은 버리지 않고 머리말만 지운다.
+ *
+ * 첫 줄에만 적용한다. 본문 중간의 멘션은 근거의 일부일 수 있어 건드리지 않는다.
+ */
+const stripSalutation = (reason: string): string => {
+  const withoutMentions = reason.replace(/^(?:\s*@[\w-]+)+\s*/, '');
+  const firstBreak = withoutMentions.indexOf('\n');
+  const head =
+    firstBreak < 0 ? withoutMentions : withoutMentions.slice(0, firstBreak);
+  const rest = firstBreak < 0 ? '' : withoutMentions.slice(firstBreak);
+  const cleanedHead = head.replace(
+    /^[^.!?]*?(?:감사합니다|고맙습니다|확인했습니다)[.!]?\s*/,
+    '',
+  );
+  return `${cleanedHead}${rest}`.trim();
+};
+
 const truncate = (reason: string): string => {
   const flattened = flatten(reason);
   if (flattened.length <= MAX_REASON_LENGTH) {
@@ -83,7 +103,9 @@ const groupByCategory = (
     if (NEVER_LEARNED_CATEGORIES.has(row.category)) {
       continue;
     }
-    if (flatten(row.rejectReason).length < MIN_REASON_LENGTH) {
+    // 머리말을 걷어낸 뒤 길이를 잰다 — 인사말째로 재면 본문이 짧은 답글도 하한을
+    // 통과해 규약 재료로 잘못 채택된다.
+    if (flatten(stripSalutation(row.rejectReason)).length < MIN_REASON_LENGTH) {
       continue;
     }
     const bucket = grouped.get(row.category) ?? [];
@@ -122,7 +144,7 @@ export const renderLearnedConventions = (
       )
       .slice(0, MAX_REASONS_PER_CATEGORY);
     const lines = recent
-      .map((item) => `• ${truncate(item.rejectReason)}`)
+      .map((item) => `• ${truncate(stripSalutation(item.rejectReason))}`)
       .join('\n');
     sections.push(`### ${category} (기각 ${bucket.length}건)\n${lines}`);
     categories.push(category);

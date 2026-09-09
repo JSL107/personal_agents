@@ -255,6 +255,43 @@ describe('renderLearnedConventions', () => {
     expect(block).not.toMatch(/\n### SECURITY/);
   });
 
+  it('기각 이유 앞의 멘션과 인사말을 규약에 싣지 않는다', () => {
+    const { block } = renderLearnedConventions([
+      row(
+        'RELIABILITY',
+        '@gemini-code-assist 검토 감사합니다. 다만 이번에는 반영하지 않았습니다. 운영 DB 실측 결과 해당 행은 0건입니다.',
+        '2026-08-20',
+      ),
+      row(
+        'RELIABILITY',
+        '이 조건은 실현되지 않습니다. mysql2 의 terminal 메서드에는 동기 throw 경로가 없습니다.',
+        '2026-08-19',
+      ),
+    ]);
+
+    expect(block).not.toContain('@gemini-code-assist');
+    expect(block).not.toContain('검토 감사합니다');
+    expect(block).toContain('운영 DB 실측 결과 해당 행은 0건입니다');
+  });
+
+  it('멘션·인사말로 부풀린 길이가 하한 통과에 쓰이지 않는다 — 정규화 후 길이로 판정한다', () => {
+    // 인사말을 걷어내면 9자로 하한(40자) 미달인 이유. 정규화보다 길이 검사가 먼저면
+    // 원문 길이(42자)로 통과해 세 번째 이유를 밀어낸다.
+    const { block } = renderLearnedConventions([
+      row(
+        'RELIABILITY',
+        '@gemini-code-assist 코드 리뷰 감사합니다. 짧은 이유입니다.',
+        '2026-08-21',
+      ),
+      row('RELIABILITY', enough('두 번째 기각 이유입니다'), '2026-08-20'),
+      row('RELIABILITY', enough('세 번째 기각 이유입니다'), '2026-08-19'),
+    ]);
+
+    expect(block).not.toContain('짧은 이유입니다');
+    expect(block).toContain(enough('두 번째 기각 이유입니다'));
+    expect(block).toContain(enough('세 번째 기각 이유입니다'));
+  });
+
   it('규약을 이유로 실제 결함을 덮지 말라는 단서를 함께 싣는다', () => {
     const { block } = renderLearnedConventions([
       row('TEST', enough('이유 하나'), '2026-08-20'),
