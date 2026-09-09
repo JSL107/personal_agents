@@ -303,7 +303,24 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
  */
 export function resolveAgentTypeByNickname(
   text: string,
+  routableAgentTypes: Iterable<AgentType>,
 ): AgentType | undefined {
-  return AGENT_REGISTRY.find((entry) => text.includes(entry.nickname))
-    ?.agentType;
+  const routable = new Set(routableAgentTypes);
+  const matches = AGENT_REGISTRY.filter(
+    (entry) =>
+      routable.has(entry.agentType) &&
+      isExplicitNicknameAddress(text, entry.nickname),
+  );
+  return matches.length === 1 ? matches[0].agentType : undefined;
 }
+
+const isExplicitNicknameAddress = (text: string, nickname: string): boolean => {
+  const escaped = nickname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const punctuationBoundary = '(?=$|[\\s,.:!?()[\\]{}，。！？])';
+  const atMention = new RegExp(`@${escaped}${punctuationBoundary}`, 'u');
+  const addressParticle = new RegExp(
+    `(?:^|\\s)${escaped}(?:님께서|님께|님에게|님한테|님|에게|한테|과|와)${punctuationBoundary}`,
+    'u',
+  );
+  return atMention.test(text) || addressParticle.test(text);
+};

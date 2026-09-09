@@ -62,7 +62,7 @@ final class CharacterNode: SKNode {
     private var currentState: ConsoleAgentState = .waiting
     private var isHovered = false
     private var isSelected = false
-    private let nameText: String
+    private var nameText: String
     /// 얼굴·머리색은 방 구성이 바뀌면 다시 배정될 수 있다(`apply(look:)`).
     private var sheetIndex: Int
     private var hairColor: (red: Double, green: Double, blue: Double)
@@ -83,14 +83,13 @@ final class CharacterNode: SKNode {
     /// 자기 자신만 안다.
     init(
         agentType: String,
-        displayName: String,
+        roleName: String,
         department: Department,
         look: CharacterLook,
         tile: TilePoint
     ) {
         self.tile = tile
-        // 백엔드 표시명은 슬랙·문서와 공유하는 영문 식별명이라, 화면에서는 직책으로 바꿔 부른다.
-        nameText = agentRoleLabel(for: agentType) ?? displayName
+        nameText = roleName
         sheetIndex = look.sheetIndex
         hairColor = hairPalette[look.hairIndex]
         self.department = department
@@ -137,6 +136,15 @@ final class CharacterNode: SKNode {
         addChild(selectionRing)
 
         apply(facing: .down)
+    }
+
+    /// 서버 닉네임이 바뀌어도 노드를 다시 만들지 않고 이름표만 갱신한다.
+    func apply(roleName: String) {
+        guard nameText != roleName else {
+            return
+        }
+        nameText = roleName
+        refreshNameplate()
     }
 
     @available(*, unavailable)

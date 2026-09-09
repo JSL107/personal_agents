@@ -72,6 +72,7 @@ private let dashboardPreviewAgents: [ConsoleAgent] = [
     ),
     ConsoleAgent(
         agentType: "HUMANIZER", displayName: "Humanizer", nickname: "윤다정",
+        canDispatch: false,
         slashCommands: [], description: "윤문", state: .completed,
         bubble: "완료했어요!", lastFinishedRunId: "44", department: "content",
         doneToday: 3, job: "기계적인 문장을 사람이 쓴 글로 다듬는다"

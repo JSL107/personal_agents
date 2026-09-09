@@ -17,6 +17,10 @@ func runModelsTests(_ t: TestRunner) {
         t.expectEqual(snapshot.agents.first?.agentType, "PM", "agentType")
         t.expectEqual(snapshot.agents.first?.state, .inProgress, "state 디코딩")
         t.expectEqual(snapshot.agents.first?.slashCommands ?? [], ["/today"], "slashCommands")
+        t.expectEqual(
+            snapshot.agents.first?.canReceiveCommand, true,
+            "구버전 서버는 기존 지시 동작을 유지한다"
+        )
         t.expectEqual(snapshot.serverTime, "2026-07-27T00:00:00Z", "serverTime")
     } catch {
         t.fail("스냅샷 디코딩 실패: \(error)")
@@ -48,10 +52,14 @@ func runModelsTests(_ t: TestRunner) {
     // 우선해야 대시보드·슬랙 자연어 호출이 같은 사람을 가리킨다.
     do {
         let json = """
-        {"agents":[{"agentType":"CODE_REVIEWER","displayName":"Code Reviewer","nickname":"서버꼼꼼","slashCommands":["/review-pr"],"description":"","state":"WAITING","bubble":"업무 대기중"}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-09-09T00:00:00Z"}
+        {"agents":[{"agentType":"CODE_REVIEWER","displayName":"Code Reviewer","nickname":"서버꼼꼼","canDispatch":false,"slashCommands":["/review-pr"],"description":"","state":"WAITING","bubble":"업무 대기중"}],"runs":[],"approvals":[],"sessions":[],"serverTime":"2026-09-09T00:00:00Z"}
         """.data(using: .utf8)!
         let snapshot = try JSONDecoder().decode(ConsoleSnapshot.self, from: json)
         t.expectEqual(snapshot.agents.first?.roleName, "서버꼼꼼", "서버 nickname 우선")
+        t.expectEqual(
+            snapshot.agents.first?.canReceiveCommand, false,
+            "dispatcher 없는 담당자는 지시할 수 없다"
+        )
     } catch {
         t.fail("nickname 포함 스냅샷 디코딩 실패: \(error)")
     }

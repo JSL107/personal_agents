@@ -108,7 +108,33 @@ describe('CodeReviewerDispatcher', () => {
     expect(outcome).not.toHaveProperty('autoResolvedNotice');
   });
 
-  it('REMOTE_CONSOLE 자연어와 저자 설정 누락 시 원문을 전달하고 usecase의 INVALID_PR_REFERENCE 예외를 전파한다', async () => {
+  it('REMOTE_CONSOLE에 잘못된 PR 참조를 입력하면 최근 PR로 바꾸지 않고 검증 오류를 전파한다', async () => {
+    const {
+      dispatcher,
+      reviewPullRequestExecute,
+      configGet,
+      listAuthorOpenPullRequests,
+    } = makeFixture();
+    configGet.mockReturnValue('JSL107');
+    const invalidReferenceException = new CodeReviewerException({
+      code: CodeReviewerErrorCode.INVALID_PR_REFERENCE,
+      message: 'PR 참조 형식이 잘못되었습니다.',
+      status: DomainStatus.BAD_REQUEST,
+    });
+    reviewPullRequestExecute.mockRejectedValueOnce(invalidReferenceException);
+
+    await expect(
+      dispatcher.dispatch({
+        source: 'REMOTE_CONSOLE',
+        slackUserId: 'U1',
+        text: 'https://github.com/JSL107/personal_agents/issues/537',
+      }),
+    ).rejects.toBe(invalidReferenceException);
+    expect(configGet).not.toHaveBeenCalled();
+    expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
+  });
+
+  it('REMOTE_CONSOLE 자연어는 설정과 무관하게 원문 검증 오류를 전파한다', async () => {
     const {
       dispatcher,
       reviewPullRequestExecute,
@@ -129,7 +155,7 @@ describe('CodeReviewerDispatcher', () => {
         text: '최근 PR을 리뷰해줘',
       }),
     ).rejects.toBe(invalidReferenceException);
-    expect(configGet).toHaveBeenCalledWith('IMPACT_REPORT_GITHUB_AUTHOR');
+    expect(configGet).not.toHaveBeenCalled();
     expect(listAuthorOpenPullRequests).not.toHaveBeenCalled();
     expect(reviewPullRequestExecute).toHaveBeenCalledWith({
       prRef: '최근 PR을 리뷰해줘',
@@ -139,7 +165,7 @@ describe('CodeReviewerDispatcher', () => {
     });
   });
 
-  it('REMOTE_CONSOLE 자연어와 open PR이 있으면 최근 PR로 보정하고 notice를 반환한다', async () => {
+  it('REMOTE_CONSOLE 입력이 비어 있고 open PR이 있으면 최근 PR로 보정하고 notice를 반환한다', async () => {
     const {
       dispatcher,
       reviewPullRequestExecute,
@@ -174,7 +200,7 @@ describe('CodeReviewerDispatcher', () => {
     const outcome = await dispatcher.dispatch({
       source: 'REMOTE_CONSOLE',
       slackUserId: 'U1',
-      text: '최근 PR을 리뷰해줘',
+      text: '   ',
     });
 
     expect(listAuthorOpenPullRequests).toHaveBeenCalledWith({
@@ -194,7 +220,7 @@ describe('CodeReviewerDispatcher', () => {
     );
   });
 
-  it('REMOTE_CONSOLE 자연어에 open PR이 없으면 review를 실행하지 않고 NO_OPEN_PR_FOUND를 던진다', async () => {
+  it('REMOTE_CONSOLE 입력이 비었는데 open PR도 없으면 review를 실행하지 않고 NO_OPEN_PR_FOUND를 던진다', async () => {
     const {
       dispatcher,
       reviewPullRequestExecute,
@@ -210,7 +236,7 @@ describe('CodeReviewerDispatcher', () => {
       dispatcher.dispatch({
         source: 'REMOTE_CONSOLE',
         slackUserId: 'U1',
-        text: '최근 PR을 리뷰해줘',
+        text: '',
       }),
     ).rejects.toMatchObject({
       codeReviewerErrorCode: CodeReviewerErrorCode.NO_OPEN_PR_FOUND,

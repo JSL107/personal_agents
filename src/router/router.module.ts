@@ -121,6 +121,7 @@ import {
   ],
   exports: [
     IDAERI_ROUTER_PORT,
+    AGENT_DISPATCHER_PORT,
     ConversationMemoryService,
     ConversationalReplyUsecase,
     HandleConversationTurnUsecase,

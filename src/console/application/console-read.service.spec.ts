@@ -2,6 +2,7 @@ import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConsoleReadService } from './console-read.service';
@@ -34,6 +35,7 @@ describe('ConsoleReadService', () => {
       agentRunService as unknown as AgentRunService,
       findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
       localSessions as unknown as LocalSessionService,
+      [{ agentType: AgentType.PM }, { agentType: AgentType.CODE_REVIEWER }],
     );
   });
 
@@ -57,6 +59,19 @@ describe('ConsoleReadService', () => {
       snapshot.agents.find((agent) => agent.agentType === 'CODE_REVIEWER')
         ?.nickname,
     ).toBe('박꼼꼼');
+  });
+
+  it('스냅샷은 실제 dispatcher 등록 여부를 카드 실행 가능 여부로 보낸다', async () => {
+    const snapshot = await service.getSnapshot();
+
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === AgentType.PM)
+        ?.canDispatch,
+    ).toBe(true);
+    expect(
+      snapshot.agents.find((agent) => agent.agentType === AgentType.HUMANIZER)
+        ?.canDispatch,
+    ).toBe(false);
   });
 
   it('활성 런이 있는 에이전트는 IN_PROGRESS, 런은 뷰 형태(string id/ISO)로 매핑된다', async () => {
