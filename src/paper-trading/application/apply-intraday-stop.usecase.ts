@@ -63,6 +63,9 @@ export interface ApplyIntradayStopResult {
   inspectedCount: number;
   // 시세 조회가 예외로 끊긴 종목 수. 공급자 장애 신호다.
   priceErrorCount: number;
+  // 실패한 종목과 사유. 건수만 세면 한도 초과·타임아웃·공급 중단·못 읽는 종가가 같은 문장
+  // 하나로 뭉개져, 카드도 원장도 "무엇을 확인해야 하는가" 에 답하지 못한다.
+  priceErrors: string[];
   // 조회는 됐는데 오늘 봉이 없는 종목 수. 휴장이거나 그 종목만 거래정지다.
   // 예외와 합쳐 세면 "장이 안 열렸다" 와 "시세가 안 온다" 를 가를 수 없다.
   notTradedCount: number;
@@ -97,6 +100,7 @@ const emptyResult = (
   accountCount: 0,
   inspectedCount: 0,
   priceErrorCount: 0,
+  priceErrors: [],
   notTradedCount: 0,
   corporateActionCount: 0,
   corporateActions: [],
@@ -114,6 +118,21 @@ const findTodayBarIndex = (bars: DailyBar[], tradeDate: string): number =>
   bars.findIndex(
     (candidate) => candidate.tradeDate.toISOString().slice(0, 10) === tradeDate,
   );
+
+// 공급자 전면 장애면 보유 종목 수만큼 같은 줄이 카드를 채운다. 건수는 그대로 남으므로
+// 사유는 앞 몇 건만 남긴다(유니버스 수집이 `FAILURE_SAMPLE_LIMIT` 을 두는 것과 같은 자리).
+const PRICE_ERROR_SAMPLE_LIMIT = 5;
+
+const recordPriceError = (
+  result: ApplyIntradayStopResult,
+  tickerLabel: string,
+  reason: string,
+): void => {
+  result.priceErrorCount += 1;
+  if (result.priceErrors.length < PRICE_ERROR_SAMPLE_LIMIT) {
+    result.priceErrors.push(`${tickerLabel}: ${reason}`);
+  }
+};
 
 const parseMarket = (value: string | null): PaperMarket | null => {
   if (value === 'KOSPI' || value === 'KOSDAQ' || value === 'KONEX') {
@@ -341,6 +360,7 @@ export class ApplyIntradayStopUsecase {
   ): Promise<IntradayStopCandidate[]> {
     const candidates: IntradayStopCandidate[] = [];
     for (const position of positions) {
+      const tickerLabel = `${position.ticker.name}(${position.ticker.code})`;
       let bars: DailyBar[];
       try {
         // 2봉을 받는다. 전일 종가가 없으면 기업행동 판정 자체가 불가능하고, 그러면
@@ -350,8 +370,12 @@ export class ApplyIntradayStopUsecase {
           2,
           { adjusted: false },
         );
-      } catch {
-        result.priceErrorCount += 1;
+      } catch (error) {
+        recordPriceError(
+          result,
+          tickerLabel,
+          error instanceof Error ? error.message : String(error),
+        );
         continue;
       }
       // 오늘 봉이 없는 것은 장애가 아니다 — 휴장이거나 그 종목만 거래정지다. 예외와
@@ -367,17 +391,20 @@ export class ApplyIntradayStopUsecase {
       try {
         price = new Prisma.Decimal(todayBar.close.toString());
       } catch {
-        result.priceErrorCount += 1;
+        recordPriceError(result, tickerLabel, '종가를 숫자로 읽지 못했습니다');
         continue;
       }
       // 봉은 왔는데 값이 쓸 수 없는 꼴이면 공급자 쪽 문제다.
       if (!price.isFinite() || price.comparedTo(0) <= 0) {
-        result.priceErrorCount += 1;
+        recordPriceError(
+          result,
+          tickerLabel,
+          `쓸 수 없는 종가 ${price.toString()}`,
+        );
         continue;
       }
       // 전일 봉이 없으면(신규 상장 첫 봉) 판정 근거가 없어 건너뛴다 — 장마감 평가가
       // `bars.length < 2` 를 다루는 방식과 같다.
-      const tickerLabel = `${position.ticker.name}(${position.ticker.code})`;
       const previousBar = todayIndex > 0 ? bars[todayIndex - 1] : null;
       if (previousBar) {
         const [suspicion] = detectSuspiciousPriceJump([
