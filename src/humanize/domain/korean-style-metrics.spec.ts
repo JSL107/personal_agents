@@ -428,6 +428,14 @@ describe('줄표(—) 세기', () => {
       internalNameCount: 0,
       internalNames: [],
     },
+    // 번역투는 관측값이라 이 픽스처의 전제(「다른 축은 전부 통과」)에서는 전부 0 이다.
+    translationese: {
+      doublePassiveCount: 0,
+      byAgentPhraseCount: 0,
+      literalLightVerbCount: 0,
+      inanimateSubjectPercent: 0,
+      samples: [],
+    },
   };
 
   // 스킬 룰북 J-3 은 "1문서 1~2회 이하" 인데 프롬프트에만 있고 세는 자리가 없어,
@@ -554,6 +562,14 @@ describe('재현 목표 판정', () => {
       hasVerificationScope: true,
       internalNameCount: 0,
       internalNames: [],
+    },
+    // 번역투는 관측값이라 이 픽스처의 전제(「다른 축은 전부 통과」)에서는 전부 0 이다.
+    translationese: {
+      doublePassiveCount: 0,
+      byAgentPhraseCount: 0,
+      literalLightVerbCount: 0,
+      inanimateSubjectPercent: 0,
+      samples: [],
     },
   };
 
