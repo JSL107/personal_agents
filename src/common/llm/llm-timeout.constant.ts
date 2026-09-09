@@ -1,8 +1,9 @@
 // LLM CLI(codex / claude) 자식 프로세스 호출의 표준 응답 timeout (ms).
 //
-// ModelRouterUsecase.route() 는 현재 전체 에이전트를 codex 단일 provider 로 호출한다.
-// fallback 은 2026-07-02 제거됐고, CodexCliProvider 가 일시성 실패를 bounded retry 한다.
-// 따라서 한 번의 route() 호출은 최악의 경우 codex timeout 을 2회 누적한다.
+// ModelRouterUsecase.route() 는 전체 에이전트의 primary 를 codex 로 호출하고, 실패하면
+// claude 로 한 번 폴백한다(2026-09-09 복원). CodexCliProvider 는 일시성 실패를 bounded retry
+// 하지만 ClaudeCliProvider 는 재시도하지 않는다.
+// 따라서 한 번의 route() 최악 경로는 codex timeout 2회 + claude timeout 1회의 누적이다.
 //
 // 이 값을 단일 소스로 두고 두 CLI provider(codex-cli / claude-cli.provider.ts) 와
 // BullMQ worker lockDuration 계산(common/queue/worker-options.constant.ts) 이 함께 참조한다.
@@ -31,12 +32,21 @@ export const LLM_CLI_RETRY_BACKOFF_JITTER_MS = 1_000;
 // 작으면 정상 실행이 "이상" 으로 오탐되고, 커봐야 32분급 이상 징후 탐지에는 영향이 없다.
 const LLM_CLI_PROCESS_OVERHEAD_MS = 2_000;
 
-// route() 한 번의 worst-case latency.
-//   timeout × attempts + attempt 사이 backoff 상한 + attempt 당 프로세스 부대비용
-// backoff/부대비용을 빼면 "두 attempt 가 모두 정상 timeout 된" 경로(180s + 최대 2s + 180s)만으로도
-// 임계를 넘겨, ModelRouterUsecase.warnIfSlow 가 정상 동작에 이상 경고를 남긴다 (PR #182 리뷰 지적).
-export const MODEL_ROUTER_WORST_CASE_MS =
+// primary(codex) 가 모든 attempt 를 소진하기까지의 예산.
+const PRIMARY_PROVIDER_WORST_CASE_MS =
   LLM_CLI_MAX_ATTEMPTS * LLM_CLI_TIMEOUT_MS +
   (LLM_CLI_MAX_ATTEMPTS - 1) *
     (LLM_CLI_RETRY_BACKOFF_BASE_MS + LLM_CLI_RETRY_BACKOFF_JITTER_MS) +
   LLM_CLI_MAX_ATTEMPTS * LLM_CLI_PROCESS_OVERHEAD_MS;
+
+// 폴백(claude) 예산. ClaudeCliProvider 는 bounded retry 를 하지 않으므로 timeout 1회 + 부대비용.
+// 이 값은 lockDuration 의 입력이기도 하다 — lock 은 자동 갱신되므로 실행이 길다고 곧바로
+// 잃지는 않지만, 갱신이 밀렸을 때의 여유가 이 예산에서 나온다 (worker-options.constant.ts 참조).
+const FALLBACK_PROVIDER_WORST_CASE_MS =
+  LLM_CLI_TIMEOUT_MS + LLM_CLI_PROCESS_OVERHEAD_MS;
+
+// route() 한 번의 worst-case latency = primary 전 attempt 소진 + 폴백 1회.
+// backoff/부대비용을 빼면 "attempt 가 모두 정상 timeout 된" 경로만으로도 임계를 넘겨,
+// ModelRouterUsecase.warnIfSlow 가 정상 동작에 이상 경고를 남긴다 (PR #182 리뷰 지적).
+export const MODEL_ROUTER_WORST_CASE_MS =
+  PRIMARY_PROVIDER_WORST_CASE_MS + FALLBACK_PROVIDER_WORST_CASE_MS;

@@ -107,8 +107,8 @@ src/
 ## 6. 모델 / CLI 라우팅
 
 현재 매핑 (`src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER`):
-- **전체 에이전트** → ChatGPT (`codex` CLI, `codex exec`). 2026-07-02 정책으로 Claude 라우팅 제거.
-- **Fallback** — 없음. `FALLBACK_OF` 가 비어 있어 primary(ChatGPT) 실패 시 재시도 없이 즉시 `MODEL_COMPLETION_FAILED` throw (쿼터 소진 시 reset 시각 안내). `ClaudeCliProvider` 코드는 롤백 대비 보존(호출 경로 없음). (Gemini fallback 은 2026-06-04, Claude 는 2026-07-02 제거.)
+- **전체 에이전트** → ChatGPT (`codex` CLI, `codex exec`) 가 primary. 2026-07-02 정책으로 Claude primary 라우팅 제거.
+- **Fallback** — `CHATGPT → CLAUDE` 단방향 (2026-09-09 복원). primary 실패 시 `ClaudeCliProvider` 로 한 번 재시도하고, 둘 다 실패해야 `MODEL_COMPLETION_FAILED` throw (쿼터 소진 시 reset 시각 안내). 역방향은 두지 않는다 — primary 가 전부 ChatGPT 라 CLAUDE 가 primary 인 경로가 없다. **폴백을 타지 않는 예외 둘**: `noFallback: true` (HUMANIZER 등 best-effort 후처리), `outputSchema` 를 건 요청 (claude CLI 에 형태 강제 인자가 없어 "스키마를 걸었으니 파싱은 안전하다" 는 전제가 깨진다). (Gemini fallback 은 2026-06-04 제거. Claude 는 2026-07-02 제거 → 09-09 복원.)
 
 CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_original)` 패턴 강제 (사용자가 19초 침묵 X).
 

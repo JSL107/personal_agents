@@ -2,6 +2,7 @@ import {
   buildClaudeAdditionalEnv,
   buildClaudeArgs,
   buildClaudeExitErrorMessage,
+  buildClaudePrompt,
   ClaudeAuthSuspectException,
   isClaudeAuthSuspect,
   parseClaudeJsonOutput,
@@ -35,19 +36,31 @@ describe('buildClaudeArgs', () => {
   });
 
   it('positional prompt 를 argv 로 넘기지 않는다 (stdin 전달이라 `--` 등 terminator 불필요)', () => {
-    const args = buildClaudeArgs({ systemPrompt: 'be concise' });
+    const args = buildClaudeArgs({});
     expect(args).not.toContain('--');
   });
 
-  it('systemPrompt 이 있으면 --system-prompt 플래그를 추가한다', () => {
-    const args = buildClaudeArgs({ systemPrompt: 'you are helpful' });
-    expect(args).toContain('--system-prompt');
-    expect(args).toContain('you are helpful');
-  });
-
-  it('systemPrompt 이 없으면 --system-prompt 플래그를 추가하지 않는다', () => {
+  // PM 경로는 학습된 planPreference 까지 systemPrompt 에 합치므로 argv 로 넘기면 `ps aux` 로
+  // 업무·프로필 정보가 노출된다. codex 와 동일하게 stdin 페이로드로만 보낸다 (PR #523 codex 지적).
+  it('systemPrompt 를 argv 로 넘기지 않는다 (ps aux 노출 차단)', () => {
     const args = buildClaudeArgs({});
     expect(args).not.toContain('--system-prompt');
+  });
+});
+
+describe('buildClaudePrompt', () => {
+  it('systemPrompt 가 있으면 [System Instructions] / [User] 로 합친다', () => {
+    const payload = buildClaudePrompt({
+      prompt: '오늘 할 일 정리해줘',
+      systemPrompt: 'you are helpful',
+    });
+    expect(payload).toBe(
+      '[System Instructions]\nyou are helpful\n\n[User]\n오늘 할 일 정리해줘',
+    );
+  });
+
+  it('systemPrompt 가 없으면 prompt 를 그대로 돌려준다', () => {
+    expect(buildClaudePrompt({ prompt: 'hi' })).toBe('hi');
   });
 });
 
