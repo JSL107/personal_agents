@@ -12,6 +12,20 @@ let client = ConsoleClient(baseURL: baseURL, token: token)
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
+// 개인 사무실 카드 대시보드 시각 회귀 렌더. 백엔드 없이 고정 상태 6종을 한 장에 굽는다.
+//   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark]
+if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") {
+    let outputPath =
+        renderIndex + 1 < CommandLine.arguments.count
+        ? CommandLine.arguments[renderIndex + 1] : "dashboard.png"
+    exit(
+        renderDashboardPreview(
+            path: outputPath,
+            darkMode: CommandLine.arguments.contains("--dark")
+        ) ? 0 : 1
+    )
+}
+
 // 굽는 크기를 넘길 수 있다 — `--size 980×680`. 회귀 렌더와 스트림이 함께 쓴다.
 //
 // 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서

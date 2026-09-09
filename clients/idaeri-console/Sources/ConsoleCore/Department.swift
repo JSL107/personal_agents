@@ -116,6 +116,10 @@ public func agentDepartmentPaletteRGBA(
     }
 }
 
+/// 부서색을 배경으로 쓰는 주요 CTA의 공통 텍스트색.
+/// 여섯 팔레트 모두 WCAG 일반 텍스트 대비 4.5:1 이상이 되도록 불투명한 짙은색을 쓴다.
+public let agentPrimaryActionTextRGBA = (red: 0.05, green: 0.05, blue: 0.05)
+
 /// `--room` 인자 문자열을 부서로 바꾼다(순수). 모르는 값은 `nil`.
 ///
 /// 대소문자와 하이픈·밑줄 차이를 흡수한다 — 셸에서는 `internal-ops` 로 치는 것이 자연스럽지만

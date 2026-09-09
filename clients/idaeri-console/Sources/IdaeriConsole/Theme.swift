@@ -95,7 +95,8 @@ enum Stroke {
 /// 창·컴포넌트의 최소 치수. 여백이 아니라 레이아웃 뼈대라 따로 둔다.
 enum Layout {
     static let sidebarWidth: CGFloat = 240
-    static let cardMinWidth: CGFloat = 220
+    /// 개인 사무실 장면과 두 줄 직무가 찌그러지지 않는 카드 하한.
+    static let cardMinWidth: CGFloat = 340
     static let windowMinWidth: CGFloat = 720
     /// 창 자체의 최소 높이(루트).
     static let windowMinHeight: CGFloat = 560

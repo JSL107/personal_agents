@@ -559,6 +559,7 @@ final class OfficeScene: SKScene {
             node.apply(
                 look: roommateLooks[agent.agentType] ?? characterLook(for: agent.agentType)
             )
+            node.apply(roleName: agent.roleName)
             // 부서는 스냅샷마다 확인한다. 노드는 재사용되므로 여기서 갱신하지 않으면 사규가
             // 사람을 옮겼을 때 방만 바뀌고 옷은 옛 부서색으로 남는다.
             node.apply(department: agent.resolvedDepartment)
@@ -1056,7 +1057,7 @@ final class OfficeScene: SKScene {
 
     private func makeCharacter(for agent: ConsoleAgent, seat: TilePoint) -> CharacterNode {
         let node = CharacterNode(
-            agentType: agent.agentType, displayName: agent.displayName,
+            agentType: agent.agentType, roleName: agent.roleName,
             department: agent.resolvedDepartment,
             // 방 단위 조정본이 없으면 해시 그대로 쓴다(스냅샷 전에 만들어지는 경로).
             look: roommateLooks[agent.agentType] ?? characterLook(for: agent.agentType),
@@ -3341,7 +3342,7 @@ final class OfficeScene: SKScene {
             hideHoverTooltip()
             return
         }
-        let displayName = lastSyncedAgents.first { $0.agentType == hovered }?.displayName
+        let displayName = lastSyncedAgents.first { $0.agentType == hovered }?.roleName
         guard
             let text = officeHoverNote(
                 name: displayName, job: agentJobs[hovered], activity: agentBubbles[hovered]

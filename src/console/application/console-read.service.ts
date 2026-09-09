@@ -16,6 +16,10 @@ import {
 } from '../../memory-vacuum/domain/port/memory-vacuum.port';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
+  AGENT_DISPATCHER_PORT,
+  AgentDispatcher,
+} from '../../router/domain/port/agent-dispatcher.port';
+import {
   ConsoleAgent,
   ConsoleAgentState,
   ConsoleApproval,
@@ -40,6 +44,8 @@ const FINISHED_SNAPSHOT_WINDOW_MINUTES = 60;
 @Injectable()
 export class ConsoleReadService {
   private readonly logger = new Logger(ConsoleReadService.name);
+  /** 사용자가 카드에서 직접 업무를 맡길 수 있는 담당자 — RouterModule 등록분. */
+  private readonly dispatchableAgentTypes: ReadonlySet<string>;
 
   constructor(
     private readonly agentRunService: AgentRunService,
@@ -47,7 +53,23 @@ export class ConsoleReadService {
     private readonly localSessions: LocalSessionService,
     @Inject(MEMORY_VACUUM_PORT)
     private readonly memoryVacuum: MemoryVacuumPort,
-  ) {}
+    @Inject(AGENT_DISPATCHER_PORT)
+    dispatchers: readonly Pick<AgentDispatcher, 'agentType'>[],
+  ) {
+    // 라우터가 같은 토큰에서 이미 겪은 회귀(commit cbef813) — NestJS multi-provider 가
+    // module 경계를 넘으면 배열이 아니라 단일 객체로 주입될 수 있다. 그때 `.some` 은
+    // TypeError 를 던지고, 그 자리가 `getSnapshot()` 안이라 **관제 화면이 통째로 빈다.**
+    // 조용히 빈 집합으로 물러서면 28명 전원이 "자동 업무 전용" 으로 보여 더 나쁘다
+    // (없는 것이 정상처럼 읽힌다) — 부팅에서 끊는다.
+    if (!Array.isArray(dispatchers)) {
+      throw new Error(
+        `AGENT_DISPATCHER_PORT 가 array 가 아닙니다 (typeof=${typeof dispatchers}). RouterModule 의 exports 와 ConsoleModule 의 imports 를 확인하세요.`,
+      );
+    }
+    this.dispatchableAgentTypes = new Set(
+      dispatchers.map((dispatcher) => dispatcher.agentType),
+    );
+  }
 
   async getSnapshot(): Promise<ConsoleSnapshot> {
     const now = new Date();
@@ -120,6 +142,8 @@ export class ConsoleReadService {
       return {
         agentType: entry.agentType,
         displayName: entry.displayName,
+        nickname: entry.nickname,
+        canDispatch: this.dispatchableAgentTypes.has(entry.agentType),
         slashCommands: entry.slashCommands,
         description: entry.description,
         state,

@@ -2,6 +2,25 @@ import Foundation
 
 @testable import ConsoleCore
 
+private func relativeLuminance(_ color: (red: Double, green: Double, blue: Double)) -> Double {
+    func linear(_ component: Double) -> Double {
+        component <= 0.04045
+            ? component / 12.92
+            : pow((component + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * linear(color.red) + 0.7152 * linear(color.green)
+        + 0.0722 * linear(color.blue)
+}
+
+private func contrastRatio(
+    _ foreground: (red: Double, green: Double, blue: Double),
+    _ background: (red: Double, green: Double, blue: Double)
+) -> Double {
+    let brighter = max(relativeLuminance(foreground), relativeLuminance(background))
+    let darker = min(relativeLuminance(foreground), relativeLuminance(background))
+    return (brighter + 0.05) / (darker + 0.05)
+}
+
 /// 부서 값 변환·부서 팔레트(순수)의 검증.
 ///
 /// 예전에는 이 파일이 "agentType 26종이 어느 부서인가" 를 고정했다. 그 매핑은 백엔드 사규로
@@ -90,6 +109,17 @@ func runDepartmentTests(_ t: TestRunner) {
     }
     t.expectEqual(seen.count, 6, "부서 6색이 서로 다름")
     t.expectEqual(Department.allCases.count, 6, "부서 6종")
+
+    for department in Department.allCases {
+        let ratio = contrastRatio(
+            agentPrimaryActionTextRGBA,
+            agentDepartmentPaletteRGBA(department)
+        )
+        t.expect(
+            ratio >= 4.5,
+            "\(department.label) 주요 버튼 텍스트 대비 4.5:1 이상 (실측 \(ratio))"
+        )
+    }
 
     // label 은 6종 모두 비어있지 않고 서로 다름
     let labels = Set(Department.allCases.map { $0.label })
