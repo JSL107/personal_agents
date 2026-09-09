@@ -43,6 +43,10 @@ export const DEFAULT_STUDY_DEEPDIVE_TIMEZONE = 'Asia/Seoul';
 // Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).
 // episodic-memory 규모가 작아 일간은 과함 → 주간 무결성 점검.
 export const DEFAULT_KNOWLEDGE_LINT_CRON = '0 10 * * 0';
+// 주간 세션 기억 색인 청소. knowledge-lint(10:00) 앞에 단독 그룹으로 둔다 —
+// 같은 시각에 붙이면 그룹 첫 항목 id 가 발송 가드 키를 이루어 기존 키가 바뀐다.
+export const DEFAULT_MEMORY_VACUUM_CRON = '0 9 * * 0';
+export const DEFAULT_MEMORY_VACUUM_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_KNOWLEDGE_LINT_TIMEZONE = 'Asia/Seoul';
 
 // docs-sync-audit 기본 스케줄 — 매주 일 11:00 KST (knowledge-lint 일 10:00 과 1시간 분리).

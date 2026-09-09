@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
+import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
 import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
 import { BuildLedgerUsecase } from './application/build-ledger.usecase';
@@ -25,6 +26,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
 // ConsoleEventBus 는 ConsoleEventBusModule(@Global) 이, IDAERI_ROUTER_PORT 는 RouterModule 이 제공한다.
 @Module({
   imports: [
+    MemoryVacuumModule,
     AgentRunModule,
     LocalSessionsModule,
     PrReviewPublishModule,

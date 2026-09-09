@@ -19,6 +19,8 @@ import {
   DEFAULT_JOB_FEED_TIMEZONE,
   DEFAULT_KNOWLEDGE_LINT_CRON,
   DEFAULT_KNOWLEDGE_LINT_TIMEZONE,
+  DEFAULT_MEMORY_VACUUM_CRON,
+  DEFAULT_MEMORY_VACUUM_TIMEZONE,
   DEFAULT_MORNING_BRIEFING_CRON,
   DEFAULT_MORNING_BRIEFING_TIMEZONE,
   DEFAULT_NOON_REVIEW_CRON,
@@ -395,6 +397,19 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
     line: 'invest',
+  },
+  // Memory Vacuum — 주간 세션 기억 색인 청소. 파일을 쓰지만 T0_AUTO 다:
+  // 손실 없는 작업(색인 누락 등록·죽은 링크 제거)과 원본이 파일 본문에 남는 작업(설명 절단)만
+  // 하고, 쓰기 전 색인을 백업하며 백업 실패 시 쓰지 않는다. 묶음·폐기는 사람이 판단한다.
+  {
+    id: 'memory-vacuum',
+    taskId: 'memory-vacuum',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_MEMORY_VACUUM_CRON,
+      timezone: DEFAULT_MEMORY_VACUUM_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
   },
   // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락). 읽기 전용이라 T0_AUTO.
   {

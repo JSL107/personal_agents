@@ -30,6 +30,7 @@ import {
   MarketDataPort,
 } from '../market-data/domain/port/market-data.port';
 import { MarketDataModule } from '../market-data/market-data.module';
+import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
@@ -58,6 +59,7 @@ import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.
 import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
 import { JobFeedGapAutopilotTask } from './infrastructure/tasks/job-feed-gap.autopilot-task';
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
+import { MemoryVacuumAutopilotTask } from './infrastructure/tasks/memory-vacuum.autopilot-task';
 import { MorningBriefingAutopilotTask } from './infrastructure/tasks/morning-briefing.autopilot-task';
 import { OpsSupervisorAutopilotTask } from './infrastructure/tasks/ops-supervisor.autopilot-task';
 import { PaperIntradayStopAutopilotTask } from './infrastructure/tasks/paper-intraday-stop.autopilot-task';
@@ -108,6 +110,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PoShadowModule,
     AgentRunModule,
     EpisodicMemoryModule,
+    MemoryVacuumModule,
     HumanizeModule,
     DocsAuditModule,
     PreferenceProfileModule,
@@ -141,6 +144,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PortfolioWarmupAutopilotTask,
     PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
+    MemoryVacuumAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
@@ -240,6 +244,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         portfolioWarmup: PortfolioWarmupAutopilotTask,
         previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
+        memoryVacuum: MemoryVacuumAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
         eveningRetro: EveningRetroPublishTask,
@@ -278,6 +283,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         portfolioWarmup,
         previewSweeper,
         knowledgeLint,
+        memoryVacuum,
         docsSyncAudit,
         preferenceLearning,
         eveningRetro,
@@ -317,6 +323,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PortfolioWarmupAutopilotTask,
         PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,
+        MemoryVacuumAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,

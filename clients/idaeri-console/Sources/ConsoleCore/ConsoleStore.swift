@@ -12,6 +12,8 @@ private let CONVERSATION_LIMIT = 40
 /// 호출자(B5 배선)가 메인 스레드에서 `apply(...)` 를 호출해야 한다.
 public final class ConsoleStore: ObservableObject {
     @Published public private(set) var agents: [ConsoleAgent] = []
+    /// 세션 기억 청소 실태. 서버 구버전이면 nil 이라 화면에 청소기를 그리지 않는다.
+    @Published public private(set) var housekeeping: ConsoleHousekeeping?
     @Published public private(set) var runs: [ConsoleRun] = []
     @Published public private(set) var approvals: [ConsoleApproval] = []
     @Published public private(set) var sessions: [ConsoleSession] = []
@@ -50,6 +52,7 @@ public final class ConsoleStore: ObservableObject {
         approvals = snapshot.approvals
         sessions = snapshot.sessions
         serverTime = snapshot.serverTime
+        housekeeping = snapshot.housekeeping
     }
 
     /// 이 에이전트의 현재 완료를 "확인했다" 로 표시해 대기로 내린다.
