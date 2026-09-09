@@ -646,12 +646,17 @@ export class HarvestReviewSignalsUsecase {
           );
           continue;
         }
-        // 판정기가 기각이라 했거나 판단 불가면 리액션을 따른다(종전 동작).
+        // 판정기가 기각이라 했거나 판단 불가면 리액션을 따른다(종전 동작) — 단
+        // 규약 재료는 판정기가 명시적으로 REJECTED 라고 답한 경우에만 남긴다.
+        // UNCLEAR·결과 누락은 "판단 못 하겠다" 는 뜻인데 그 문장을 규약으로 실으면
+        // 애매한 사례가 다음 리뷰의 판단 기준이 된다 — 상태는 owner 의 👎 대로 확정
+        // 하되 이유는 비워 학습 재료에서 뺀다.
         await this.markDecisionAndResolve({
           card: pending.card,
           thread: pending.thread,
           status: 'REJECTED',
-          rejectReason: pending.ownerReplyBody,
+          rejectReason:
+            judgment?.verdict === 'REJECTED' ? pending.ownerReplyBody : null,
           outcome,
         });
         continue;

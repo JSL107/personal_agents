@@ -66,7 +66,6 @@ export class AutopilotOrchestrator {
     slotId?: string,
   ): Promise<void> {
     const firedAtKst = getTodayKstDate();
-    const guardKey = buildGuardKey(groupKey, firedAtKst);
     const slotKey = slotId ? buildSlotKey(groupKey, slotId) : null;
     const targets = target
       .split(',')
@@ -120,6 +119,11 @@ export class AutopilotOrchestrator {
     }[] = [];
     let hasDeliverableSummary = false;
     let failedTaskCount = 0;
+    // 하루 1회 발송 가드는 그룹×날짜 키다 — 그날 첫 회차 이후로는 내용이 새로 생겨도
+    // "이미 발송됨" 으로 막힌다. task 가 guardKeySuffix 를 주면 그 값을 모아 키에
+    // 붙여서, 접미사가 달라진 회차만 새 키로 다시 통과시킨다(autopilot-task.port.ts
+    // AutopilotTaskResult.guardKeySuffix 참조).
+    const guardKeySuffixes: string[] = [];
 
     for (const entry of entries) {
       const task = this.tasks.get(entry.taskId);
@@ -133,6 +137,9 @@ export class AutopilotOrchestrator {
       // T1_PREVIEW entry 는 preview 가 없으면(게이트 OFF) 자연히 텍스트 경로로 폴백한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
+        if (result.guardKeySuffix) {
+          guardKeySuffixes.push(result.guardKeySuffix);
+        }
         // item 을 먼저 싣고 카드를 나중에 담는다 — 카드가 자기 전문의 인덱스를 알아야 하는데,
         // 그 인덱스는 item 을 실어 봐야 정해진다. 순서를 되돌리면 `items.length` 가 아직
         // 없는 item 을 가리켜, 뒤 task 의 전문 실패로 엉뚱한 카드가 막힌다
@@ -209,6 +216,17 @@ export class AutopilotOrchestrator {
       this.logger.log(`Autopilot[${groupKey}] — 보고 내용 없음, 전달 skip`);
       return;
     }
+
+    // 여러 task 가 각자 접미사를 낼 수 있어 정렬해 이어 붙인다 — task 실행 순서에
+    // 따라 키가 흔들리면 같은 상태인데도 매번 다른 키로 취급돼 가드가 무력화된다.
+    // 접미사가 하나도 없으면 join 결과가 base 그대로라 기존 동작과 완전히 같다.
+    // 이 아래(발송 실패 롤백 포함) 전부 이 하나의 guardKey 를 재사용해야 한다 —
+    // acquireOnce 로 선점한 키와 release 로 롤백하는 키가 갈리면 가드가 영구히
+    // 남아 그 그룹의 발송이 하루 내내 막힌다.
+    const guardKey = [
+      buildGuardKey(groupKey, firedAtKst),
+      ...[...guardKeySuffixes].sort(),
+    ].join(':');
 
     const firstRun = await this.cronIdempotency.acquireOnce(
       guardKey,

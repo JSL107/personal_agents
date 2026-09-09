@@ -51,6 +51,13 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: formatPrReviewSweep({ harvest, results }),
+      // 하루 1회 발송 가드는 그룹×날짜 키다(autopilot.orchestrator buildGuardKey) — 그날
+      // 첫 회차가 이미 소비했으면 뒤에 새로 생긴 보류도 "이미 발송됨" 으로 묻힌다.
+      // 건수를 접미사로 실어 건수가 유지되는 동안은 하루 1회를 지키고, 늘거나 줄면(사람이
+      // 개입해 해소되거나 새로 하나 더 걸리면) 새 키가 되어 다시 발송된다.
+      ...(harvest.contradicted > 0
+        ? { guardKeySuffix: `contradicted-${harvest.contradicted}` }
+        : {}),
     };
   }
 }

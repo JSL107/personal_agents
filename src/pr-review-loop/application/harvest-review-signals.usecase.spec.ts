@@ -375,6 +375,89 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(outcome.contradicted).toBe(0);
   });
 
+  it('👎 인데 판정기가 UNCLEAR 면 REJECTED 로 확정하되 이유는 남기지 않는다', async () => {
+    // UNCLEAR 는 "판단 못 하겠다" 는 뜻이다. 그 애매한 상태를 owner 답글로 대신
+    // 채워 규약 재료로 쓰면, 다음 리뷰는 애매한 사례를 판단 기준으로 학습한다.
+    // 상태는 owner 의 👎 대로 확정하되 이유는 비운다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([
+      { id: 1, verdict: 'UNCLEAR', reason: '' },
+    ]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '음... 애매하네요.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REJECTED', rejectReason: null }),
+    );
+    expect(outcome.contradicted).toBe(0);
+  });
+
+  it('👎 인데 판정기 결과에 그 카드가 누락돼도 REJECTED 로 확정하되 이유는 남기지 않는다', async () => {
+    // 판정기가 입력 전건에 결과를 돌려준다는 계약이 깨진 경우(누락)도 UNCLEAR 와
+    // 같은 취급 — 판정을 신뢰할 수 없다는 뜻이니 owner 답글을 규약으로 실으면 안 된다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    judge.execute.mockResolvedValue([]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_DOWN',
+              userLogin: 'owner',
+              createdAt: '2026-08-04T02:03:47Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '전제가 반대입니다.',
+              createdAt: '2026-08-04T02:03:13Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REJECTED', rejectReason: null }),
+    );
+    expect(outcome.contradicted).toBe(0);
+  });
+
   it('👎 인데 답글이 없으면 판정기를 부르지 않는다', async () => {
     const { usecase, github, repository, judge } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
