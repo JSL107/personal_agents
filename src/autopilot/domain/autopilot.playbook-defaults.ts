@@ -84,8 +84,23 @@ export const DEFAULT_PAPER_ORDER_FILL_TIMEZONE = 'Asia/Seoul';
 // 20분… 마다 두 슬롯이 동시에 발화한다. 장중 손절은 주문을 만든 뒤 같은 회차 안에서
 // 현재가로 체결하는데, 그 찰나에 체결기가 같은 주문을 집어 **시가**로 체결해 버릴 수 있다.
 // 2분 어긋내면 두 cron 의 발화 분(0·10·20…과 2·7·12…)이 영원히 겹치지 않는다.
+//
+// ⚠️ 다만 **발화 시각이 겹치지 않는 것과 실행이 겹치지 않는 것은 다르다.** 오프셋은 두 job 이
+// 같은 순간에 큐에 들어가는 것만 막는다. autopilot 워커가 한 번에 하나만 처리하던 동안에는
+// 그것으로 충분했지만, 동시 처리 수를 올린 뒤(#530)에는 둘이 긴 작업 뒤에 나란히 밀렸다가
+// 같이 출발할 수 있다. 그래서 실행 자체를 아래 목록으로 배타 처리한다.
 export const DEFAULT_PAPER_INTRADAY_STOP_CRON = '2-57/5 9-15 * * 1-5';
 export const DEFAULT_PAPER_INTRADAY_STOP_TIMEZONE = 'Asia/Seoul';
+
+// 서로 겹쳐 실행되면 안 되는 autopilot 그룹. 위 오프셋이 표현하던 불변식을 실행 단계에서
+// 지킨다 — 체결기가 장중 손절이 막 만든 PENDING SELL 을 집으면 현재가가 아니라 당일 시가로
+// 체결해(`fill-pending-orders.usecase.ts` 의 `todayBar.open`) 원장에 틀린 가격이 남는다.
+//
+// 목록에 없는 그룹끼리는 그대로 동시에 돈다 — 굶김을 줄이려고 올린 동시성을 되돌리지 않는다.
+export const MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS: readonly string[] = [
+  'paper-order-fill',
+  'paper-intraday-stop',
+];
 
 // 모의투자 추천 성적 — 금요일 20:10 KST 주 1회.
 //
