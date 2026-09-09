@@ -967,6 +967,254 @@ describe('AutopilotOrchestrator', () => {
     });
   });
 
+  // 승인 근거가 카드 밖(스레드 전문)에 있는 카드는 그 전문이 나간 회차에만 만든다.
+  // blog-github-publish 카드는 본문에 "아래 전문을 확인한 뒤" 라고 적고 있는데, 전문이
+  // 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다 — 익명화가 잘못된 글이 공개
+  // 저장소에 그대로 커밋될 수 있는 자리라 카드를 만들지 않는 쪽으로 닫는다.
+  describe('requiresDetailDelivery — 전문이 나간 회차에만 카드를 만든다', () => {
+    // 등록 id 와 playbook entry 의 taskId 가 어긋나면 orchestrator 가 fail-fast 한다.
+    const entriesFor = (taskId: string): PlaybookEntry[] => [
+      makeEntry(taskId, taskId),
+    ];
+
+    const GATED_PREVIEW = {
+      kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+      payload: { path: 'a.md' },
+      previewText: '아래 전문을 확인한 뒤',
+      requiresDetailDelivery: true,
+    };
+
+    const makeOrchestrator = (
+      tasks: unknown[],
+      postMessage: jest.Mock,
+      createPreview: { execute: jest.Mock },
+      postPreviewMessage: jest.Mock,
+    ): AutopilotOrchestrator =>
+      new AutopilotOrchestrator(
+        tasks as never,
+        { postMessage, postPreviewMessage } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        createPreview as never,
+        { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
+      );
+
+    const makeCardMocks = (): {
+      createPreview: { execute: jest.Mock };
+      postPreviewMessage: jest.Mock;
+    } => ({
+      createPreview: {
+        execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
+      },
+      postPreviewMessage: jest
+        .fn()
+        .mockResolvedValue({ channelId: 'C1', messageTs: 'TS9' }),
+    });
+
+    it('전문 발송이 실패하면 카드를 만들지 않고 보류를 알린다', async () => {
+      const task = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '발행될 본문',
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' }) // 메인
+        .mockRejectedValueOnce(new Error('전문 실패')) // 스레드 전문
+        .mockResolvedValueOnce({ ts: 'TS2' }); // 보류 통지
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [task],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup('evening', entriesFor('blog-github-publish'), 'U1', 'C1');
+
+      expect(createPreview.execute).not.toHaveBeenCalled();
+      expect(postPreviewMessage).not.toHaveBeenCalled();
+      // 조용히 사라지면 안 된다 — 왜 오늘 카드가 없는지 owner 가 알아야 한다.
+      expect(postMessage).toHaveBeenLastCalledWith({
+        target: 'C1',
+        text: expect.stringContaining('승인 카드 보류'),
+      });
+    });
+
+    it('메인 ts 를 못 받아 전문을 붙일 수 없어도 카드를 만들지 않는다', async () => {
+      const task = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '발행될 본문',
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [task],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup('evening', entriesFor('blog-github-publish'), 'U1', 'C1');
+
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    // 플래그를 켰는데 전문 자체가 없으면 확인할 것이 없는 것은 마찬가지다 — 닫는다.
+    it('전문을 싣지 않은 task 가 플래그를 켜면 카드를 만들지 않는다', async () => {
+      const task = makeTask('blog-github-publish', {
+        skip: true,
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [task],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup('evening', entriesFor('blog-github-publish'), 'U1', 'C1');
+
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+
+    it('전문이 정상 전달되면 카드를 만든다 — 위 세 케이스의 대조군', async () => {
+      const task = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '발행될 본문',
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [task],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup('evening', entriesFor('blog-github-publish'), 'U1', 'C1');
+
+      expect(createPreview.execute).toHaveBeenCalledTimes(1);
+      expect(postPreviewMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // 플래그를 켜지 않은 카드는 종전 그대로다. 같은 그룹의 다른 카드(evening 경력 카드 등)는
+    // 승인 근거가 카드 안에 다 있고, 전문 실패로 함께 죽으면 그 회차의 기회가 사라진다.
+    it('플래그가 없는 카드는 전문이 유실돼도 종전대로 발송한다', async () => {
+      const task = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '후보 상세',
+        preview: {
+          kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
+          payload: {},
+          previewText: '경력 반영 후보',
+        },
+      });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' })
+        .mockRejectedValueOnce(new Error('전문 실패'));
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [task],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup('evening', entriesFor('evening-retro-publish'), 'U1', 'C1');
+
+      expect(createPreview.execute).toHaveBeenCalledTimes(1);
+    });
+
+    // 게이트는 카드를 낸 task 단위여야 한다. 단일 task 테스트만으로는 "전문이 하나라도
+    // 실패하면 전부 막는" 전역 구현과 구분되지 않는다 — 같은 그룹에 전문 실패 task 를
+    // 앞에 세워, 뒤 task 의 카드가 자기 전문만 본다는 것을 고정한다.
+    it('다른 task 의 전문이 실패해도 자기 전문이 나갔으면 카드를 만든다', async () => {
+      const noisy = makeTask('job-feed', {
+        skip: false,
+        summaryText: 'A',
+        detailText: '공고 목록',
+      });
+      const gated = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'B',
+        detailText: '발행될 본문',
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' }) // 메인
+        .mockRejectedValueOnce(new Error('job-feed 전문 실패')) // 앞 task 전문
+        .mockResolvedValueOnce({ ts: 'TS2' }); // 뒤 task 전문(성공)
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [noisy, gated],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup(
+        'evening',
+        [
+          makeEntry('job-feed', 'job-feed'),
+          makeEntry('blog-github-publish', 'blog-github-publish'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      expect(createPreview.execute).toHaveBeenCalledTimes(1);
+    });
+
+    // 위 케이스는 카드를 낸 task 가 그룹의 마지막이라, 인덱스를 `items.length - 1` 로 잘못
+    // 잡은 구현도 통과한다. 카드를 낸 task 를 앞에 세워 그 착각을 갈라낸다 — 그 구현은 뒤
+    // task(전달 성공)의 인덱스를 보고 카드를 만들어, 정확히 이 변경이 막으려는 사고가 난다.
+    it('카드를 낸 task 가 앞에 있어도 자기 전문의 실패를 본다', async () => {
+      const gated = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'A',
+        detailText: '발행될 본문',
+        preview: GATED_PREVIEW,
+      });
+      const later = makeTask('job-feed', {
+        skip: false,
+        summaryText: 'B',
+        detailText: '공고 목록',
+      });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: 'TS1' }) // 메인
+        .mockRejectedValueOnce(new Error('전문 실패')) // 앞 task(카드 주인) 전문 — 실패
+        .mockResolvedValueOnce({ ts: 'TS2' }) // 뒤 task 전문 — 성공
+        .mockResolvedValueOnce({ ts: 'TS3' }); // 보류 통지
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+
+      await makeOrchestrator(
+        [gated, later],
+        postMessage,
+        createPreview,
+        postPreviewMessage,
+      ).runGroup(
+        'evening',
+        [
+          makeEntry('blog-github-publish', 'blog-github-publish'),
+          makeEntry('job-feed', 'job-feed'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      expect(createPreview.execute).not.toHaveBeenCalled();
+    });
+  });
+
   // 다중 target 부분 실패 — 앞 target 성공 후 뒤 target 발송 실패 시 release 1회 + rethrow.
   // 가드가 group 단위 단일 키라 재시도는 성공 target 에도 재발송되는 트레이드오프를 고정한다
   // ("전 target 미전송" 보다 작은 해악으로 수용 — orchestrator 주석 참조).

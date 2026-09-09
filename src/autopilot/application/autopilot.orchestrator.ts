@@ -110,7 +110,14 @@ export class AutopilotOrchestrator {
       onDelivered?: () => Promise<void>;
       unfurlLinks?: boolean;
     }[] = [];
-    const previews: AutopilotPreviewRequest[] = [];
+    // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
+    // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
+    // 서로 다른 배열이라, 인덱스를 여기서 붙여 두지 않으면 카드 쪽에서 되찾을 방법이 없다.
+    // 전문을 낸 item 이 없으면 null (전문 없는 task, skip 한 task).
+    const previews: {
+      request: AutopilotPreviewRequest;
+      detailItemIndex: number | null;
+    }[] = [];
     let hasDeliverableSummary = false;
     let failedTaskCount = 0;
 
@@ -126,14 +133,16 @@ export class AutopilotOrchestrator {
       // T1_PREVIEW entry 는 preview 가 없으면(게이트 OFF) 자연히 텍스트 경로로 폴백한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
-        if (result.preview) {
-          previews.push(result.preview);
-        }
-        if (result.previews) {
-          previews.push(...result.previews);
-        }
+        // item 을 먼저 싣고 카드를 나중에 담는다 — 카드가 자기 전문의 인덱스를 알아야 하는데,
+        // 그 인덱스는 item 을 실어 봐야 정해진다. 순서를 되돌리면 `items.length` 가 아직
+        // 없는 item 을 가리켜, 뒤 task 의 전문 실패로 엉뚱한 카드가 막힌다
+        // (카드만 내고 skip 하는 task 가 실존한다 — 그때는 가리킬 item 자체가 없다).
+        let detailItemIndex: number | null = null;
         if (!result.skip && result.summaryText) {
           hasDeliverableSummary = true;
+          if (result.detailText) {
+            detailItemIndex = items.length;
+          }
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
@@ -141,6 +150,13 @@ export class AutopilotOrchestrator {
             unfurlLinks: result.unfurlLinks,
           });
         }
+        const requestedPreviews = [
+          ...(result.preview ? [result.preview] : []),
+          ...(result.previews ?? []),
+        ];
+        previews.push(
+          ...requestedPreviews.map((request) => ({ request, detailItemIndex })),
+        );
       } catch (error: unknown) {
         failedTaskCount += 1;
         const message = error instanceof Error ? error.message : String(error);
@@ -337,7 +353,31 @@ export class AutopilotOrchestrator {
     //     중복 승인/이중 발행)를 유발하지 않게 한다.
     // 실패한 카드는 자동 재발송하지 않는 대신(중복 발행 위험 회피) owner 에게 통지해 조용한
     // 유실을 막는다. (완전 자동 복구는 preview 단위 멱등 가드가 필요 — 후속.)
-    for (const preview of previews) {
+    for (const { request: preview, detailItemIndex } of previews) {
+      // 승인 근거가 스레드 전문에 있는 카드는 그 전문이 나간 회차에만 만든다.
+      // 인덱스가 없는 경우(전문을 안 실은 task 가 이 플래그를 켰다)도 막는다 — 플래그의 뜻은
+      // "전문 없이는 승인 못 한다" 이므로, 애초에 전문이 없으면 확인할 것이 없는 건 마찬가지다.
+      // 거른 카드의 후보는 잠기지 않는다: 카드 행을 만들지 않았으니 "열린 카드" 로도 안 잡히고,
+      // 이 회차는 성공(SUCCEEDED)으로 남아 실패 이력 후순위에도 걸리지 않는다. 다만 다음 발화가
+      // **반드시 같은 후보** 를 집는다는 뜻은 아니다 — 그 시점 큐 우선순위에 따라 다른 후보가
+      // 먼저 나갈 수 있다. 보장되는 것은 "이 후보가 큐에서 사라지지 않는다" 까지다.
+      if (
+        preview.requiresDetailDelivery &&
+        (detailItemIndex === null || detailUndelivered.has(detailItemIndex))
+      ) {
+        const reason =
+          detailItemIndex === null
+            ? '이 카드는 스레드 전문을 승인 근거로 삼는데 task 가 전문을 싣지 않았습니다'
+            : '승인 근거인 스레드 전문이 전달되지 않았습니다';
+        this.logger.error(
+          `Autopilot[${groupKey}] 승인 카드 '${preview.kind}' 생성 보류 — ${reason}`,
+        );
+        await this.notifyOwner(
+          targets,
+          `_⚠️ 승인 카드 보류 (${preview.kind}) — ${reason}. 확인할 본문 없이 승인하지 않도록 카드를 만들지 않았습니다. 후보는 큐에 남아 다음 발화에서 다시 오를 수 있습니다._`,
+        );
+        continue;
+      }
       try {
         const created = await this.createPreview.execute({
           slackUserId: ownerSlackUserId,
@@ -424,7 +464,15 @@ export class AutopilotOrchestrator {
     kind: string,
     message: string,
   ): Promise<void> {
-    const text = `_⚠️ 승인 카드 발송 실패 (${kind}) — ${message.slice(0, 200)}. 자동 재발송되지 않으니 필요 시 수동 재실행해주세요._`;
+    await this.notifyOwner(
+      targets,
+      `_⚠️ 승인 카드 발송 실패 (${kind}) — ${message.slice(0, 200)}. 자동 재발송되지 않으니 필요 시 수동 재실행해주세요._`,
+    );
+  }
+
+  // owner digest 채널에 한 줄 통지. 통지 자체의 실패는 로그만 남긴다 — 이 함수를 부르는 자리는
+  // 이미 무언가 잘못된 상황이라, 여기서 예외를 던지면 원래 원인이 가려진다.
+  private async notifyOwner(targets: string[], text: string): Promise<void> {
     for (const resolved of targets) {
       try {
         await this.slackNotifier.postMessage({ target: resolved, text });
@@ -434,7 +482,7 @@ export class AutopilotOrchestrator {
             ? notifyError.message
             : String(notifyError);
         this.logger.warn(
-          `Autopilot 승인 카드 실패 통지마저 실패 (${resolved}): ${notifyMessage}`,
+          `Autopilot owner 통지마저 실패 (${resolved}): ${notifyMessage}`,
         );
       }
     }

@@ -106,6 +106,11 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
         kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
         payload: candidate.payload,
         previewText: candidate.previewText,
+        // 전문이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "아래 전문을 확인한 뒤"
+        // 라고 적고 있는데, 그 전문이 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다.
+        // Notion 원본으로 대신 확인할 수도 없다 — 커밋되는 것은 익명화를 거친 글이라
+        // 원본과 다르고, 그 차이가 바로 사람이 봐야 하는 부분이다.
+        requiresDetailDelivery: true,
       },
     };
   }

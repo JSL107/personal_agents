@@ -12,6 +12,16 @@ export interface AutopilotPreviewRequest {
   kind: PreviewKind;
   payload: unknown;
   previewText: string;
+  // 승인 근거가 카드 밖(같은 task 의 `detailText` = 스레드 전문)에 있는 카드만 켠다.
+  // 켜면 그 전문이 실제로 전달된 회차에만 카드를 만든다 — 전문이 유실됐는데 카드만 뜨면
+  // 사용자는 확인할 것이 없는 채로 ✅ 를 누른다(blog-github-publish 카드는 본문에
+  // "아래 전문을 확인한 뒤" 라고 적혀 있는데 그 아래가 비어 있게 된다).
+  //
+  // 기본값(미설정)은 종전 동작 — 카드는 전문과 무관하게 발송된다. 승인 근거가 카드 안에
+  // 다 들어 있는 카드는 켜면 안 된다: 전문 실패로 카드까지 죽으면 그 회차의 기회가
+  // 사라지는 쪽이 더 비싸다(evening 경력 카드는 payload 가 그날 머지된 PR 이라, 카드를
+  // 거르면 그 PR 들은 다음 회차 조회 범위 밖이라 영영 반영되지 않는다).
+  requiresDetailDelivery?: boolean;
 }
 
 export interface AutopilotTaskResult {
