@@ -21,6 +21,7 @@ const resultOf = (
   accountCount: 2,
   inspectedCount: 2,
   priceErrorCount: 0,
+  priceErrors: [],
   notTradedCount: 0,
   corporateActionCount: 0,
   corporateActions: [],
@@ -243,6 +244,28 @@ describe('PaperIntradayStopAutopilotTask', () => {
     });
   });
 
+  // 건수만 있으면 한도 초과·타임아웃·공급 중단·못 읽는 종가가 같은 문장으로 보인다.
+  it('시세 조회 실패 사유를 종목별로 붙이고 종목명을 escape한다', async () => {
+    const { task } = createFixture({
+      result: resultOf({
+        priceErrorCount: 2,
+        priceErrors: [
+          '종목<&>(005930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error',
+          '코람코더원리츠(417310): 쓸 수 없는 종가 0',
+        ],
+      }),
+    });
+
+    await expect(task.run(context)).resolves.toEqual({
+      skip: false,
+      summaryText:
+        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
+        '   - 종목&lt;&amp;&gt;(005930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error\n' +
+        '   - 코람코더원리츠(417310): 쓸 수 없는 종가 0',
+    });
+  });
+
   it('손절 판정은 났지만 체결되지 않았으면 skip하지 않는다', async () => {
     const { task } = createFixture({
       result: resultOf({
@@ -330,6 +353,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
       output: {
         inspectedCount: 7,
         priceErrorCount: 2,
+        priceErrors: [],
         notTradedCount: 0,
         corporateActionCount: 0,
         corporateActions: [],
