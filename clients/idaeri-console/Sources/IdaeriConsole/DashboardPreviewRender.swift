@@ -4,16 +4,31 @@ import SwiftUI
 
 /// 백엔드 없이 개편된 대시보드를 PNG로 굽는 시각 회귀 입구.
 /// 실제 화면과 같은 `DashboardView`를 써서 카드 조판·다크 모드·픽셀 에셋을 눈으로 확인한다.
+///
+/// **캔버스가 실제 창보다 세로로 길다(1280×1600).** 대시보드는 ScrollView 라서 창 높이를
+/// 넘는 부분은 PNG 에 아예 안 담긴다 — 승인 패널·세션 패널이 카드 격자 아래에 있어서,
+/// 창 크기(900)로 굽던 동안 그 두 패널은 한 번도 렌더된 적이 없었다. 안 그리는 요소는
+/// "정상" 으로 보이므로, 그리드 아래까지 프레임에 들어오는 높이로 굽는다.
+/// 카드 폭(=열 수)은 1280 그대로라 카드 조판 자체는 실제 창과 같다.
+private let dashboardPreviewSize = CGSize(width: 1280, height: 1600)
+
 func renderDashboardPreview(path: String, darkMode: Bool) -> Bool {
     let store = ConsoleStore()
     store.apply(
         snapshot: ConsoleSnapshot(
             agents: dashboardPreviewAgents,
+            // runs 는 대시보드가 안 쓴다(오피스 탭 전용) — 비워 둬도 사각지대가 아니다.
             runs: [],
-            approvals: [],
-            sessions: [],
+            approvals: dashboardPreviewApprovals,
+            sessions: dashboardPreviewSessions,
             serverTime: "2026-09-09T04:35:00.000Z"
         )
+    )
+    // 지시 배지는 스냅샷이 아니라 사용자 조작으로 쌓인다 — 굽는 쪽에서 직접 세워야
+    // `pendingBadgeRow` 가 프레임에 들어온다(전송 중 · 전송 실패 두 모양).
+    store.enqueueCommand(text: "owner/repo#42 리뷰해줘", agentTypeHint: "CODE_REVIEWER")
+    store.markCommandFailed(
+        id: store.enqueueCommand(text: "오늘 할 일 알려줘", agentTypeHint: "PM")
     )
 
     let dashboard = DashboardView(
@@ -26,12 +41,12 @@ func renderDashboardPreview(path: String, darkMode: Bool) -> Bool {
         onInject: { _, _ in .queued }
     )
     .environment(\.colorScheme, darkMode ? .dark : .light)
-    .frame(width: 1280, height: 900)
+    .frame(width: dashboardPreviewSize.width, height: dashboardPreviewSize.height)
     .background(Color(nsColor: .windowBackgroundColor))
 
     let hostingView = NSHostingView(rootView: dashboard)
     hostingView.appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
-    hostingView.frame = NSRect(x: 0, y: 0, width: 1280, height: 900)
+    hostingView.frame = NSRect(origin: .zero, size: dashboardPreviewSize)
     hostingView.layoutSubtreeIfNeeded()
     guard
         let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds)
@@ -89,4 +104,39 @@ private let dashboardPreviewAgents: [ConsoleAgent] = [
         bubble: "업무 대기중", department: "treasury", doneToday: 1,
         job: "모의투자 계좌의 포지션과 일일 수익률을 평가한다"
     ),
+    // 연동 대기 한 명 — 그리드 위 경고 배너(`bottleneckBanner`)를 프레임에 세운다.
+    // 이 배너 문구는 담당자 개편에서 "부서" → "담당자" 로 바뀌었는데, 표본에 이 상태가
+    // 없던 동안에는 문구가 틀려도 렌더로 드러나지 않았다.
+    ConsoleAgent(
+        agentType: "CAREER_MATE", displayName: "Career Mate", nickname: "강성장",
+        slashCommands: [], description: "역량 프로필", state: .awaitingIntegration,
+        bubble: "연동을 기다려요", department: "content", doneToday: 0,
+        job: "이직용 역량 프로필과 이력서를 모아 둔다"
+    ),
+]
+
+/// 승인 대기 1건 — 없으면 승인/거절 버튼(`approvalPanel`)이 렌더에 아예 안 나온다.
+/// 이 두 버튼은 #187 에서 눌려도 아무 일이 없던 자리다.
+private let dashboardPreviewApprovals: [ConsoleApproval] = [
+    ConsoleApproval(
+        id: "preview-approval-1",
+        agentType: "VACATION",
+        title: "9월 12일 연차 1일 사용을 기록할까요?",
+        createdAt: "2026-09-09T04:20:00.000Z",
+        expiresAt: "2026-09-09T05:20:00.000Z"
+    )
+]
+
+/// 로컬 세션 1건 — 세션 패널(`sessionPanel`)을 프레임에 세운다.
+private let dashboardPreviewSessions: [ConsoleSession] = [
+    ConsoleSession(
+        sessionId: "preview-session-1",
+        pid: 4242,
+        source: "CLAUDE_CODE",
+        name: "feat/friendly-agent-dashboard",
+        cwd: "~/Desktop/backend/personal_agents",
+        state: "ACTIVE",
+        startedAt: "2026-09-09T03:50:00.000Z",
+        lastActivityAt: "2026-09-09T04:34:00.000Z"
+    )
 ]
