@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { evaluateContract } from '../../agent-registry/contract-inspector';
+import { DomainException } from '../../common/exception/domain.exception';
 import { bubbleForActiveRun } from '../../console/application/agent-activity-bubble';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { bubbleForState } from '../../console/application/derive-agent-state';
@@ -269,7 +270,17 @@ export class AgentRunService {
       await this.repository.finish({
         id,
         status: AgentRunStatus.FAILED,
-        output: { error: message },
+        // 원인 유형(errorCode)을 message 와 함께 남긴다. 문구만 남기면 소비자가 "초안 내용 탓"
+        // 과 "모델 쿼터·타임아웃" 을 가리려고 메시지 패턴을 들고 판정하게 되고, 생산자가 문구를
+        // 바꾸는 순간 조용히 오분류된다. 모든 도메인 예외는 DomainException 의 abstract
+        // errorCode 를 구현하므로 여기서 한 번 꺼내면 에이전트별 분기 없이 전부 남는다.
+        // 기존 소비자는 output.error 만 읽으니 키 추가는 하위호환이다.
+        output: {
+          error: message,
+          ...(error instanceof DomainException
+            ? { errorCode: error.errorCode }
+            : {}),
+        },
         // FAILED 시에도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율도 함께 보임.
         // cliProvider 는 run 콜백이 throw 한 경우 모를 수 있어 옵션 (그 경우 'unknown' 으로 집계됨).
         durationMs: Date.now() - startMs,

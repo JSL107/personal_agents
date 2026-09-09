@@ -269,7 +269,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       },
       orderBy: { endedAt: 'desc' },
       take: limit,
-      select: { id: true, endedAt: true, inputSnapshot: true },
+      select: { id: true, endedAt: true, inputSnapshot: true, output: true },
     });
 
     return rows
@@ -280,6 +280,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         id: row.id,
         endedAt: row.endedAt,
         inputSnapshot: row.inputSnapshot as unknown,
+        output: row.output as unknown,
       }));
   }
 
