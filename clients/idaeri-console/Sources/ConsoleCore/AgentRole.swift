@@ -153,7 +153,7 @@ public func characterLook(for agentType: String) -> CharacterLook {
     // (같은 나눗셈을 쓰면 시트 A 는 항상 검은 머리처럼 조합이 고정된다).
     let sheetIndex = (sum / 13) % characterSheetCount
     let hairIndex = sum % hairPalette.count
-    let shirtShift = Double((sum / 7) % 5) * officeShirtShiftStep
+    let shirtShift = Double((sum / 7) % officeShirtShiftSteps) * officeShirtShiftStep
     let pantsIndex = (sum / 17) % pantsPalette.count
     return CharacterLook(
         sheetIndex: sheetIndex,
@@ -169,6 +169,10 @@ public func characterLook(for agentType: String) -> CharacterLook {
 /// 같은 방이면 색상이 같고, 남는 차이가 밝기뿐인데 그 폭이 32픽셀 캐릭터에서 안 보였다.
 /// 폭을 키우되 부서색 계열은 유지한다(색상은 그대로, 연하고 진한 정도만 갈린다).
 public let officeShirtShiftStep: Double = 0.09
+
+/// 셔츠 톤 단계 수. 배정(`characterLook`)과 밝기 대역 계산(`officeShirtBrightnessRange`)이
+/// **같은 값을 봐야 한다** — 두 곳에 적으면 단계를 늘렸을 때 대역 계산이 옛 범위만 훑는다.
+public let officeShirtShiftSteps = 5
 
 /// 한 방 사람들의 얼굴·머리색이 겹치지 않게 조정한 외형표를 만든다(순수·결정론적).
 ///

@@ -16,7 +16,174 @@ func runOfficeColorProbeTests(_ t: TestRunner) {
     verifyOccupiedTilesAreSkipped(t)
     verifyRetinaScale(t)
     verifyViolationRules(t)
+    verifyShirtBrightnessRange(t)
+    verifyCorridorAgainstShirts(t)
+    verifyFurnitureContrast(t)
     verifyHourParsing(t)
+}
+
+// MARK: - 셔츠 대역
+
+/// 리컬러 규칙에서 셔츠 밝기 대역이 나오는지 본다.
+///
+/// 이 대역이 손으로 옮긴 상수를 대체한 것이 요점이다. 예전 원장은 「셔츠 186」 하나만 적어 두고
+/// 「모든 바닥이 사람보다 밝다」를 규칙으로 삼았는데, 계산해 보니 대역이 161.9~217.0 이고
+/// **가장 연한 셔츠는 방 바닥보다 밝다** — 전제 자체가 사실이 아니었다.
+private func verifyShirtBrightnessRange(_ t: TestRunner) {
+    let range = officeShirtBrightnessRange(shirtPixelShade: 1)
+    t.expect(range.darkest < range.brightest, "대역이 뒤집히지 않는다")
+    // 가장 밝은 셔츠는 톤 단계 0(가장 연한 단계)에서 나온다 — 단계가 커질수록 부서색이
+    // 진해지므로 어두워진다.
+    let lightest = Department.allCases
+        .map { officeShirtColorRGB(department: $0, shift: 0) }
+        .map { ($0.red + $0.green + $0.blue) / 3 * 255 }
+        .max() ?? 0
+    t.expect(
+        abs(range.brightest - lightest) < 0.01,
+        "가장 밝은 셔츠 = 톤 0 단계의 최대 (실제 \(range.brightest) 대 \(lightest))"
+    )
+    // `shade` 는 원본 명암 계수다 — 절반이면 화면 밝기도 절반이다.
+    let halfShade = officeShirtBrightnessRange(shirtPixelShade: 0.5)
+    t.expect(
+        abs(halfShade.brightest - range.brightest / 2) < 0.01,
+        "shade 를 절반으로 주면 밝기도 절반"
+    )
+    // 톤 단계 수가 대역을 정한다 — `officeShirtShiftSteps` 를 늘리면 더 진한 셔츠가 생긴다.
+    let darkestStep = officeShirtColorRGB(
+        department: .quality, shift: Double(officeShirtShiftSteps - 1) * officeShirtShiftStep)
+    let darkestLevel = (darkestStep.red + darkestStep.green + darkestStep.blue) / 3 * 255
+    t.expect(
+        abs(range.darkest - darkestLevel) < 0.01,
+        "가장 어두운 셔츠 = 마지막 톤 단계의 최소 (실제 \(range.darkest) 대 \(darkestLevel))"
+    )
+
+    // 셔츠 픽셀 판정 — 실제로 칠하는 쪽(`SpriteLoader`)과 같은 함수를 쓴다.
+    t.expect(officeIsShirtPixel(brightness: 228, saturation: 0), "밝기 하한은 포함")
+    t.expect(!officeIsShirtPixel(brightness: 227, saturation: 0), "하한 아래는 셔츠가 아니다")
+    t.expect(
+        !officeIsShirtPixel(brightness: 255, saturation: 26),
+        "채도가 있으면 얼굴·소품이라 셔츠가 아니다"
+    )
+}
+
+// MARK: - 통로 대 사람
+
+/// 통로가 셔츠 대역 안에 들어가면 위반이다. 방 바닥에는 같은 요구를 하지 않는다.
+private func verifyCorridorAgainstShirts(_ t: TestRunner) {
+    let texture: [FloorTile: Double] = [
+        .corridor: 236.9, .ceramic: 236.9, .carpetLight: 227.2,
+        .carpetDark: 223.4, .woodA: 221.2, .woodB: 213.3, .wall: 244.3,
+    ]
+    func brightness(_ tile: FloorTile) -> Double? {
+        texture[tile]
+    }
+    let healthy = healthySamples()
+    let shirts = (darkest: 161.9, brightest: 217.0)
+
+    t.expectEqual(
+        officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness, shirtBrightness: shirts
+        ).count,
+        0,
+        "통로 226.7 은 가장 밝은 셔츠 217.0 위에 있다"
+    )
+
+    // 통로가 셔츠 대역에 걸리면 잡힌다 — 0.30(밝기 184) 사고의 자리다.
+    //
+    // **통로를 내려서 시험하지 않는다.** 내리면 「통로가 방보다 밝다」가 먼저 깨져 두 규칙이
+    // 함께 발화한다(실측: 213.0 으로 내리면 ceramic 212.3·woodA 210.9 와의 여유가 5 아래).
+    // 그래서 반대로 셔츠 대역을 올려 이 규칙만 단독으로 걸리게 한다.
+    //
+    // 두 규칙의 세기 차이도 여기서 드러난다 — 방 규칙은 통로에 217.3 이상을 요구하고
+    // 셔츠 규칙은 222.0 이상을 요구하므로, 셔츠 규칙이 4.7 만큼 더 조인다.
+    let brightShirts = (darkest: 161.9, brightest: 225.0)
+    let violations = officeFloorColorViolations(
+        samples: healthy, hour: 14, textureBrightness: brightness,
+        shirtBrightness: brightShirts)
+    t.expectEqual(violations.count, 1, "셔츠 규칙만 단독으로 발화 — 실제 \(violations)")
+    t.expect(violations.contains { $0.contains("셔츠") }, "셔츠 대역에 걸리면 잡는다")
+
+    // 방 바닥은 가장 연한 셔츠보다 어두운데(실측 206.7~212.3 대 217.0) 위반이 아니다 —
+    // 렌더로 확인한 결과 색조와 윤곽선으로 읽힌다.
+    t.expect(
+        !officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness, shirtBrightness: shirts
+        ).contains { $0.contains("ceramic") },
+        "방 바닥이 셔츠보다 어두운 것은 위반이 아니다"
+    )
+
+    // 대역을 안 주면 이 규칙만 빠지고 나머지는 그대로 돈다.
+    t.expectEqual(
+        officeFloorColorViolations(samples: healthy, hour: 14, textureBrightness: brightness).count,
+        0,
+        "셔츠 대역이 없으면 그 규칙만 빠진다"
+    )
+}
+
+// MARK: - 가구 대 바닥
+
+/// 바닥에 놓이는 가구가 그 방 바닥과 밝기가 겹치면 위반이다.
+private func verifyFurnitureContrast(_ t: TestRunner) {
+    let texture: [FloorTile: Double] = [
+        .corridor: 236.9, .ceramic: 236.9, .carpetLight: 227.2,
+        .carpetDark: 223.4, .woodA: 221.2, .woodB: 213.3, .wall: 244.3,
+    ]
+    func brightness(_ tile: FloorTile) -> Double? {
+        texture[tile]
+    }
+    let healthy = healthySamples()
+
+    // 실측값(2026-09-09): 가장 밝은 검사 대상이 냉장고 192.6 이고 바닥 최저가 206.7 이다.
+    func realistic(_ kind: FurnitureKind) -> Double? {
+        kind == .refrigerator ? 192.6 : 110.0
+    }
+    t.expectEqual(
+        officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness,
+            furnitureBrightness: realistic
+        ).count,
+        0,
+        "실측 밝기로는 위반 0"
+    )
+
+    // 가구를 바닥까지 끌어올리면 잡힌다 — 목재 보정을 과하게 올렸을 때의 증상이다.
+    func brightened(_ kind: FurnitureKind) -> Double? {
+        kind == .refrigerator ? 205.0 : 110.0
+    }
+    let violations = officeFloorColorViolations(
+        samples: healthy, hour: 14, textureBrightness: brightness,
+        furnitureBrightness: brightened)
+    t.expect(
+        violations.contains { $0.contains("refrigerator") },
+        "가구가 바닥 밝기에 닿으면 잡는다 — 실제 \(violations)"
+    )
+
+    // 스프라이트를 못 읽으면 조용히 건너뛰지 않는다 — 그 침묵은 통과와 구별되지 않는다.
+    t.expect(
+        officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness,
+            furnitureBrightness: { _ in nil }
+        ).contains { $0.contains("가구 스프라이트를 읽지 못했다") },
+        "가구 스프라이트 부재는 위반"
+    )
+
+    // 벽걸이는 견주는 면이 바닥이 아니라 벽이다 — 실제로 벽걸이 달력(207.8)은 벽보다 밝다.
+    t.expect(
+        !officeFloorColorViolations(
+            samples: healthy, hour: 14, textureBrightness: brightness,
+            furnitureBrightness: { $0.isWallMounted ? 207.8 : 110.0 }
+        ).contains { $0.contains("wall") },
+        "벽걸이는 이 규칙에서 빠진다"
+    )
+}
+
+/// 2026-09-08 실측(1440×860)에 맞춘 정상 표본.
+private func healthySamples() -> [OfficeColorSample] {
+    [
+        sample(.corridor, 226.7), sample(.ceramic, 212.3), sample(.woodA, 210.9),
+        sample(.carpetLight, 207.0), sample(.woodB, 206.9), sample(.carpetDark, 206.7),
+        sample(.wall, 205.4),
+    ]
 }
 
 // MARK: - 좌표 변환
@@ -153,11 +320,7 @@ private func verifyViolationRules(_ t: TestRunner) {
     func brightness(_ tile: FloorTile) -> Double? {
         texture[tile]
     }
-    let healthy: [OfficeColorSample] = [
-        sample(.corridor, 226.7), sample(.ceramic, 212.3), sample(.woodA, 210.9),
-        sample(.carpetLight, 207.0), sample(.woodB, 206.9), sample(.carpetDark, 206.7),
-        sample(.wall, 205.4),
-    ]
+    let healthy = healthySamples()
     t.expectEqual(
         officeFloorColorViolations(samples: healthy, hour: 14, textureBrightness: brightness).count,
         0,

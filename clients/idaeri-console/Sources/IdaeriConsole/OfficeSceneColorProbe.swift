@@ -23,6 +23,46 @@ func officeFloorTextureBrightness(_ tile: FloorTile) -> Double? {
     return pixels.mean()
 }
 
+/// 가구 스프라이트의 **불투명 픽셀** 평균 밝기.
+///
+/// 투명 픽셀을 함께 세면 배경이 섞여 가구가 실제보다 어둡게 나온다. 렌더에서 재지 않는 이유도
+/// 같다 — 가구는 칸을 온전히 채우지 않아 칸 평균에 바닥이 섞인다.
+func officeFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
+    guard let image = SpriteLoader.furnitureTexture(kind)?.cgImage() as CGImage?,
+        let pixels = OfficePixelGrid(image: image)
+    else {
+        return nil
+    }
+    return pixels.meanOpaque()
+}
+
+/// 셔츠 픽셀의 원본 밝기 평균 ÷ 255. 리컬러가 부서색에 곱하는 명암 계수다.
+///
+/// 시트 다섯 장을 모두 읽어 평균한다 — 한 장만 보면 그 시트의 옷 무늬에 값이 쏠린다
+/// (실측 시트별 250.8~252.4). 정면 포즈를 쓰는 이유는 셔츠 면적이 가장 넓기 때문이다.
+func officeCharacterShirtShade() -> Double? {
+    var total = 0.0
+    var count = 0
+    for sheet in 0..<characterSheetCount {
+        guard
+            let name = characterSpriteCandidates(sheet: sheet, pose: "down").first(where: {
+                SpriteLoader.texture($0) != nil
+            }),
+            let image = SpriteLoader.texture(name)?.cgImage() as CGImage?,
+            let pixels = OfficePixelGrid(image: image)
+        else {
+            continue
+        }
+        let shirt = pixels.shirtPixelBrightnesses()
+        total += shirt.reduce(0, +)
+        count += shirt.count
+    }
+    guard count > 0 else {
+        return nil
+    }
+    return total / Double(count) / 255
+}
+
 /// 한 시각의 사무실을 굽고 바닥 밝기를 재서 돌려준다. 명단은 `--pose-demo` 와 같은 고정 표본이다.
 ///
 /// **백엔드를 쓰지 않는다.** 실제 스냅샷을 쓰면 인원·상태가 회차마다 달라 사람이 덮는 칸이
@@ -50,6 +90,18 @@ func officeProbeFloorColors(hour: Int, size: CGSize) -> [OfficeColorSample]? {
 /// 바닥 색 게이트. 실측표를 내고 규칙을 어기면 false.
 func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
     var failures: [String] = []
+    // 셔츠 대역은 시각과 무관하므로 한 번만 구한다. 못 구하면 그 규칙만 빠지는 것이 아니라
+    // **왜 빠졌는지**를 적는다 — 조용히 건너뛰면 통과와 구별되지 않는다.
+    let shirtShade = officeCharacterShirtShade()
+    let shirtBrightness = shirtShade.map(officeShirtBrightnessRange)
+    if let shirtShade, let shirtBrightness {
+        print(
+            "   셔츠 대역 \(rounded(shirtBrightness.darkest))~\(rounded(shirtBrightness.brightest))"
+                + " (부서 6 × 톤 \(officeShirtShiftSteps) · 원본 명암 \(rounded(shirtShade * 255)))"
+        )
+    } else {
+        failures.append("셔츠 픽셀을 읽지 못했다 — 통로가 사람 대역에 걸리는지 판정할 수 없다")
+    }
     for hour in hours {
         guard let samples = officeProbeFloorColors(hour: hour, size: size) else {
             return false
@@ -70,13 +122,18 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
             )
         }
         failures += officeFloorColorViolations(
-            samples: samples, hour: hour, textureBrightness: officeFloorTextureBrightness)
+            samples: samples,
+            hour: hour,
+            textureBrightness: officeFloorTextureBrightness,
+            shirtBrightness: shirtBrightness,
+            furnitureBrightness: officeFurnitureSpriteBrightness
+        )
     }
     for failure in failures {
         print("✗ \(failure)")
     }
     if failures.isEmpty {
-        print("✓ 바닥 색 규칙 통과 — 통로가 가장 밝고, 모든 바닥이 사람보다 밝다")
+        print("✓ 색 규칙 통과 — 통로가 가장 밝고 셔츠 대역 위에 있으며, 가구가 바닥과 갈린다")
     }
     return failures.isEmpty
 }
