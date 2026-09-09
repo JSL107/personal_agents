@@ -136,6 +136,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      quotaStopped: false,
       adoption: [],
     });
     expect(repository.findOpenPostedCards).not.toHaveBeenCalled();
@@ -889,10 +890,13 @@ describe('HarvestReviewSignalsUsecase', () => {
         new CodexQuotaExceededException('내일 09:00'),
       );
 
-      await usecase.execute();
+      const outcome = await usecase.execute();
 
       // 첫 PR 에서 끊는다. 두 번째 PR 까지 부르면 쿼터만 더 태운다.
       expect(resolutionJudge.execute).toHaveBeenCalledTimes(1);
+      // 중단 사실을 결과에 남긴다 — skipped 만으로는 "볼 게 없었다" 와 구분되지 않아
+      // 호출부가 회차를 통째로 skip 하고 Slack 이 조용해진다.
+      expect(outcome.quotaStopped).toBe(true);
     });
 
     it('PR 이 닫혀 있으면 해소 판정을 하지 않는다', async () => {

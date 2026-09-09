@@ -30,6 +30,8 @@ const RISK_ICON: Record<string, string> = {
 export interface FormatPrReviewSweepInput {
   harvest: HarvestOutcome;
   results: SweepPullRequestResult[];
+  // 수확·리뷰 중 한쪽이라도 쿼터로 끊겼나. 카운터가 전부 0 이어도 이 회차는 보고 대상이다.
+  quotaStopped?: boolean;
 }
 
 const COUNT_LABELS: { key: keyof PublishOutcome; label: string }[] = [
@@ -60,14 +62,23 @@ const HARVEST_COUNT_LABELS: {
 export const formatPrReviewSweep = ({
   harvest,
   results,
+  quotaStopped = false,
 }: FormatPrReviewSweepInput): string => {
   const harvestCounts = HARVEST_COUNT_LABELS.filter(
     ({ key }) => harvest[key] > 0,
   ).map(({ key, label }) => `${label} ${harvest[key]}`);
-  if (results.length === 0 && harvestCounts.length === 0) {
+  if (results.length === 0 && harvestCounts.length === 0 && !quotaStopped) {
     return '';
   }
   const lines = ['*🤖 PR 리뷰 스윕*'];
+  // 중단은 카운터가 아니라 한 줄 문장으로 낸다. `skipped` 를 라벨로 세우면 판정 대상이
+  // 아니었던 카드까지 같은 숫자에 섞여 평상시 회차가 전부 잡음이 되고, 정작 "이번엔
+  // 못 돌았다" 는 사실은 숫자 하나에 묻힌다. 같은 이유로 잔량도 붙이지 않는다 —
+  // 수확은 멀쩡하고 리뷰만 끊긴 회차에서는 쿼터와 무관한 수가 "대기 중" 으로 보인다.
+  // 정확한 잔량은 로그에 있다.
+  if (quotaStopped) {
+    lines.push('⏸️ 모델 쿼터 소진으로 이번 회차 중단 — 다음 회차에 재시도');
+  }
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
   }

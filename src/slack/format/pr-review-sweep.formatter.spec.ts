@@ -22,6 +22,7 @@ const harvest = (overrides = {}) => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  quotaStopped: false,
   adoption: [],
   ...overrides,
 });
@@ -279,5 +280,27 @@ describe('formatPrReviewSweep', () => {
         results: [],
       }),
     ).toBe('');
+  });
+  it('쿼터로 끊긴 회차는 카운터가 전부 0 이어도 중단을 알린다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({ skipped: 7 }),
+      results: [],
+      quotaStopped: true,
+    });
+
+    expect(text).toContain('쿼터 소진');
+    // 잔량은 붙이지 않는다 — skipped 는 쿼터와 무관한 카드도 함께 세는 값이다.
+    expect(text).not.toContain('7건');
+  });
+
+  it('쿼터 중단이 아니면 skipped 만으로는 아무것도 내지 않는다', () => {
+    // skipped 는 "변경과 안 겹쳐 판정 대상이 아니었다" 도 함께 세는 카운터라,
+    // 그 자체를 알림 사유로 쓰면 평상시 회차가 전부 잡음이 된다.
+    const text = formatPrReviewSweep({
+      harvest: harvest({ skipped: 7, judged: 2 }),
+      results: [],
+    });
+
+    expect(text).toBe('');
   });
 });
