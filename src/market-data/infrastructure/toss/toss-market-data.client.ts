@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { DailyBar } from '../../domain/market-data.type';
 import { MarketDataRateLimitError } from '../../domain/market-data-rate-limit.error';
+import { MarketDataSymbolNotFoundError } from '../../domain/market-data-symbol-not-found.error';
 import {
   FetchDailyBarsOptions,
   MarketDataPort,
@@ -66,6 +67,11 @@ export class TossMarketDataClient implements MarketDataPort {
       if (error instanceof TossApiHttpError && error.status === 429) {
         // 공급자 HTTP 표현을 감춰 application의 재시도 정책이 adapter 교체에도 유지되게 한다.
         throw new MarketDataRateLimitError();
+      }
+      if (error instanceof TossApiHttpError && error.status === 404) {
+        // 토스는 취급하지 않는 심볼에 404 를 준다. 한도 초과·타임아웃과 같은 오류로 뭉개면
+        // 호출부가 "공급자가 이 종목을 모른다" 와 "지금 장애다" 를 가를 수 없다.
+        throw new MarketDataSymbolNotFoundError(symbol);
       }
       throw error;
     }
