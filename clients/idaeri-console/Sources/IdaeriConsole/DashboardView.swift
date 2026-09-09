@@ -25,7 +25,7 @@ struct DashboardView: View {
     @State private var isInjecting = false
     @State private var selectedApproval: ConsoleApproval?
 
-    private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.md)]
+    private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.lg)]
 
     var body: some View {
         ScrollView {
@@ -39,7 +39,7 @@ struct DashboardView: View {
                 if store.agents.isEmpty {
                     emptyState
                 } else {
-                    LazyVGrid(columns: columns, spacing: Spacing.md) {
+                    LazyVGrid(columns: columns, spacing: Spacing.lg) {
                         ForEach(store.agents) { agent in
                             AgentCardView(
                                 agent: agent,
@@ -125,7 +125,7 @@ struct DashboardView: View {
         return HStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(ConsoleAgentState.awaitingIntegration.accentColor)
-            Text("연동 대기로 멈춘 부서: \(names)")
+            Text("연동 대기로 멈춘 담당자: \(names)")
                 .font(Typography.bodyEmphasis)
             Spacer(minLength: 0)
         }

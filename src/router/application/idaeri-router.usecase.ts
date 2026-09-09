@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -70,9 +71,14 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   ): Promise<DispatchResult> {
     // 자연어 진입(agentTypeHint 없음)이면 classify 로 agentType + userInstruction 추출.
     // 슬래시(agentTypeHint 있음)는 classify 우회 — userInstruction 없음.
+    const nicknameAgentType = input.text
+      ? resolveAgentTypeByNickname(input.text, this.dispatcherByType.keys())
+      : undefined;
     const classified = input.agentTypeHint
       ? { agentType: input.agentTypeHint, userInstruction: undefined }
-      : await this.classifyOrThrow(input);
+      : nicknameAgentType
+        ? { agentType: nicknameAgentType, userInstruction: undefined }
+        : await this.classifyOrThrow(input);
     const agentType = classified.agentType;
 
     const dispatcher = this.dispatcherByType.get(agentType);

@@ -26,6 +26,10 @@ export enum ConsoleAgentState {
 export interface ConsoleAgent {
   readonly agentType: string;
   readonly displayName: string;
+  /** 회사사람형 닉네임. `agent-registry.ts` 가 단일 소스다. */
+  readonly nickname: string;
+  /** 현재 RouterModule에 dispatcher가 등록돼 사용자가 직접 업무를 맡길 수 있는지. */
+  readonly canDispatch: boolean;
   readonly slashCommands: readonly string[];
   readonly description: string;
   readonly state: ConsoleAgentState;
