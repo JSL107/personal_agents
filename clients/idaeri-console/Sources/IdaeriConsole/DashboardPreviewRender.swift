@@ -3,14 +3,14 @@ import ConsoleCore
 import SwiftUI
 
 /// 백엔드 없이 개편된 대시보드를 PNG로 굽는 시각 회귀 입구.
-/// 실제 화면과 같은 `DashboardView`를 써서 카드 조판·다크 모드·픽셀 에셋을 눈으로 확인한다.
+/// 실제 화면과 같은 `DashboardView`를 써서 카드 조판·다크 모드·벡터 초상화를 눈으로 확인한다.
 ///
-/// **캔버스가 실제 창보다 세로로 길다(1280×1600).** 대시보드는 ScrollView 라서 창 높이를
+/// **캔버스가 실제 창보다 세로로 길다(1280×2000).** 대시보드는 ScrollView 라서 창 높이를
 /// 넘는 부분은 PNG 에 아예 안 담긴다 — 승인 패널·세션 패널이 카드 격자 아래에 있어서,
 /// 창 크기(900)로 굽던 동안 그 두 패널은 한 번도 렌더된 적이 없었다. 안 그리는 요소는
 /// "정상" 으로 보이므로, 그리드 아래까지 프레임에 들어오는 높이로 굽는다.
 /// 카드 폭(=열 수)은 1280 그대로라 카드 조판 자체는 실제 창과 같다.
-private let dashboardPreviewSize = CGSize(width: 1280, height: 1600)
+private let dashboardPreviewSize = CGSize(width: 1280, height: 2000)
 
 func renderDashboardPreview(path: String, darkMode: Bool) -> Bool {
     let store = ConsoleStore()
@@ -100,8 +100,8 @@ private let dashboardPreviewAgents: [ConsoleAgent] = [
     ),
     ConsoleAgent(
         agentType: "PAPER_TRADE", displayName: "Paper Trade", nickname: "백장부",
-        slashCommands: [], description: "모의투자", state: .waiting,
-        bubble: "업무 대기중", department: "treasury", doneToday: 1,
+        slashCommands: [], description: "모의투자", state: .failed,
+        bubble: "연동에 실패했어요", department: "treasury", doneToday: 1,
         job: "모의투자 계좌의 포지션과 일일 수익률을 평가한다"
     ),
     // 연동 대기 한 명 — 그리드 위 경고 배너(`bottleneckBanner`)를 프레임에 세운다.

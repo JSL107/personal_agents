@@ -155,7 +155,7 @@ final class OfficeScene: SKScene {
     /// 않지만, `perform(_:)`의 `.leave` 케이스가 나중에 실제 이벤트로 발화하면 겹칠 수 있다.
     private var departingAgents: Set<String> = []
     private var windowNodes: [SKSpriteNode] = []
-    private var wallLampNodes: [SKSpriteNode] = []
+    private var wallLampNodes: [SKNode] = []
     private var lightLayers: [OfficeLightLayer] = []
 
     /// 캐릭터 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
@@ -179,7 +179,9 @@ final class OfficeScene: SKScene {
     }
 
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1)
+        // Keep the letterbox around the floor plan in the same warm neutral family as
+        // the dashboard and trailing inspector; selected captures must not read as a dark canvas.
+        backgroundColor = SKColor(red: 0.98, green: 0.95, blue: 0.88, alpha: 1)
         view.window?.acceptsMouseMovedEvents = true
         let tracking = NSTrackingArea(
             rect: view.bounds,
@@ -679,6 +681,54 @@ final class OfficeScene: SKScene {
                 continue
             }
         }
+        renderDeskClusters()
+    }
+
+    /// Presentation-only grouping. Seats remain the exact `OfficePlan` anchors; this only places a
+    /// panel behind deterministic pairs/fours so sparse rooms still read as intentional work zones.
+    private func renderDeskClusters() {
+        floorLayer.children.filter { $0.name == "cozy:cluster-panel" }.forEach { $0.removeFromParent() }
+        objectLayer.children.filter { $0.name == "cozy:decor-desk" || $0.name == "cozy:decor-chair" }.forEach { $0.removeFromParent() }
+        for zone in plan.zones {
+            let zoneSeats: [TilePoint] = plan.desks.filter { assignment in officeZoneContains(zone, assignment.seat) }.map { assignment in assignment.seat }
+            let seats: [TilePoint] = zoneSeats.sorted {
+                $0.y == $1.y ? $0.x < $1.x : $0.y < $1.y
+            }
+            if seats.count < 2,
+               let deskTexture = SpriteLoader.furnitureTexture(.desk),
+               let chairTexture = SpriteLoader.furnitureTexture(.chairDown) {
+                let tile = TilePoint(x: zone.origin.x + max(1, zone.width - 3), y: zone.origin.y + max(1, zone.height / 2))
+                let desk = CozyOfficeNodeFactory.desk(texture: deskTexture, scale: spriteScale, tileSize: tileSize)
+                desk.name = "cozy:decor-desk"
+                desk.position = floorPoint(tile)
+                desk.zPosition = depth(of: tile)
+                objectLayer.addChild(desk)
+                let chair = CozyOfficeNodeFactory.chair(texture: chairTexture, kind: .chairDown, scale: spriteScale, tileSize: tileSize)
+                chair.name = "cozy:decor-chair"
+                chair.position = floorPoint(TilePoint(x: tile.x, y: max(zone.origin.y, tile.y - 1)))
+                chair.zPosition = depth(of: tile) + 1
+                objectLayer.addChild(chair)
+            }
+            var remaining = seats
+            while let first = remaining.first {
+                let nearby: [TilePoint] = remaining.filter { seat in abs(seat.x - first.x) <= 2 && abs(seat.y - first.y) <= 3 }
+                let four: [TilePoint] = Array(nearby.prefix(4))
+                let pairCandidates: [TilePoint] = remaining.filter { seat in
+                    (seat.y == first.y && abs(seat.x - first.x) <= 2) || (seat.x == first.x && abs(seat.y - first.y) <= 3)
+                }
+                let group: [TilePoint] = four.count >= 4 ? four : Array(pairCandidates.prefix(2))
+                let chosen: [TilePoint] = group.isEmpty ? [first] : group
+                let centerX = chosen.map { $0.x }.reduce(0, +) / chosen.count
+                let centerY = chosen.map { $0.y }.reduce(0, +) / chosen.count
+                let center = CGPoint(x: centerX, y: centerY)
+                let panel = CozyOfficeNodeFactory.rug(size: CGSize(width: tileSize * 2.0, height: tileSize * 0.7), accent: CozyOfficeNodeFactory.accent(for: zone.department))
+                panel.name = "cozy:cluster-panel"
+                panel.position = CGPoint(x: gridOrigin.x + (CGFloat(center.x) + 0.5) * tileSize, y: gridOrigin.y + (CGFloat(center.y) + 0.15) * tileSize)
+                panel.zPosition = 1.12
+                floorLayer.addChild(panel)
+                remaining.removeAll { chosen.contains($0) }
+            }
+        }
     }
 
     /// 출근 등장 간격(초). 26명이 같은 순간에 길찾기를 돌리면 CPU가 튄다 — 자율 배회의 동시
@@ -987,10 +1037,7 @@ final class OfficeScene: SKScene {
         for (tile, node) in doorNodes {
             let kind: FurnitureKind =
                 officeDoorIsOpen(door: tile, occupied: occupied) ? .doorOpen : .doorClosed
-            guard let texture = SpriteLoader.furnitureTexture(kind), node.texture !== texture else {
-                continue
-            }
-            node.texture = texture
+            CozyOfficeNodeFactory.setDoor(node, open: kind == .doorOpen)
         }
     }
 
@@ -1088,44 +1135,63 @@ final class OfficeScene: SKScene {
 
     private func renderFloor() {
         floorLayer.removeAllChildren()
-        for row in 0..<plan.rows {
-            for column in 0..<plan.columns {
-                let tile = TilePoint(x: column, y: row)
-                let kind = plan.floor[row][column]
-                guard let texture = SpriteLoader.floorTexture(kind) else {
-                    continue
-                }
-                let node = SKSpriteNode(texture: texture)
-                node.size = CGSize(width: tileSize, height: tileSize)
-                node.position = centerPoint(tile)
-                if kind == .wall {
-                    applyWallShading(node, column: column, row: row)
-                } else {
-                    // 바닥은 배경으로 물러나야 한다. 어두운 색을 섞어 대비·채도를 함께 누른다
-                    // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
-                    //
-                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 한때 0.54~0.78 로 높아 원본
-                    // 바닥재의 차이가 거의 지워졌는데, 시간대 색막까지 얹히면 여섯 방이 한 색으로
-                    // 보였다("어디가 어느 부서인지 문패를 읽어야 안다"). 벽이 이미 같은 방식으로
-                    // 부서 색조를 띠므로(applyWallShading), 바닥도 같은 규칙을 따르게 해 방 전체가
-                    // 한 색조로 묶이게 한다.
-                    node.color = floorMuteColor(
-                        department: wallDepartment(x: column, y: row, zones: plan.zones)
-                    )
-                    node.colorBlendFactor = CGFloat(kind.muteStrength)
-                    // **뒤집지 않는다.** 한 칸 걸러 뒤집어 깔던 것은 생성 이미지 타일의 좌우·상하
-                    // 끝이 서로 안 맞는(실측 색차 15~22) 문제의 대책이었다. 바닥을 `draw-tiles.py`
-                    // 로 굽는 지금은 이음매가 규칙으로 정해져 원리적으로 맞으므로, 뒤집으면 오히려
-                    // 격자가 어긋난다 — 이음매를 0번 가장자리에만 그리므로 반전 칸에서는 반대편으로
-                    // 옮겨 가고, 맞닿는 자리에서 선이 겹쳐 두꺼워지거나 사라진다.
-                    node.xScale = 1
-                    node.yScale = 1
-                }
-                floorLayer.addChild(node)
-            }
-        }
+        let base = SKShapeNode(rectOf: CGSize(width: CGFloat(plan.columns) * tileSize,
+                                               height: CGFloat(plan.rows) * tileSize), cornerRadius: tileSize * 0.18)
+        base.fillColor = SKColor(red: 0.79, green: 0.74, blue: 0.64, alpha: 1)
+        base.strokeColor = .clear
+        base.position = CGPoint(x: gridOrigin.x + CGFloat(plan.columns) * tileSize / 2,
+                                y: gridOrigin.y + CGFloat(plan.rows) * tileSize / 2)
+        base.name = "cozy:base"
+        floorLayer.addChild(base)
+        renderCozyIslands()
         // 벽 타일을 다 깐 뒤에 얹는다 — 먼저 그리면 같은 레이어의 벽이 창을 덮는다.
         renderWallFixtures()
+    }
+
+    /// 계획의 타일을 바꾸지 않고, 방 바닥 위에만 따뜻한 시각적 섬을 얹는다.
+    private func renderCozyIslands() {
+        floorLayer.children
+            .filter { $0.name == "cozy:island" || $0.name == "cozy:walkway" || $0.name == "cozy:rug" }
+            .forEach { $0.removeFromParent() }
+        for zone in plan.zones {
+            let size = CGSize(width: CGFloat(max(1, zone.width - 1)) * tileSize,
+                              height: CGFloat(max(1, zone.height - 1)) * tileSize)
+            let island = CozyOfficeNodeFactory.roundedIsland(
+                size: size, accent: CozyOfficeNodeFactory.accent(for: zone.department)
+            )
+            island.name = "cozy:island"
+            island.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
+                y: gridOrigin.y + (CGFloat(zone.origin.y) + CGFloat(zone.height) / 2) * tileSize
+            )
+            floorLayer.addChild(island)
+            let rug = CozyOfficeNodeFactory.rug(
+                size: CGSize(width: tileSize * min(4.2, CGFloat(max(2, zone.width - 2))),
+                             height: tileSize * min(2.0, CGFloat(max(1, zone.height - 3)))),
+                accent: CozyOfficeNodeFactory.accent(for: zone.department)
+            )
+            rug.name = "cozy:rug"
+            rug.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
+                y: gridOrigin.y + (CGFloat(zone.origin.y) + CGFloat(zone.height) * 0.44) * tileSize
+            )
+            rug.zPosition = 1.08
+            floorLayer.addChild(rug)
+        }
+        let corridorColumns = (0..<plan.columns).filter { column in
+            (0..<plan.rows).contains { plan.floor[$0][column] == .corridor }
+        }
+        for column in corridorColumns {
+            let walkway = CozyOfficeNodeFactory.walkway(
+                size: CGSize(width: tileSize * 0.64, height: tileSize * CGFloat(max(1, plan.rows - 2)))
+            )
+            walkway.name = "cozy:walkway"
+            walkway.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(column) + 0.5) * tileSize,
+                y: gridOrigin.y + CGFloat(max(1, plan.rows - 2)) * tileSize / 2
+            )
+            floorLayer.addChild(walkway)
+        }
     }
 
     /// 바닥 노이즈를 누를 때 섞는 색. 부서 구역 안이면 그 부서 색조를 옅게 태운다.
@@ -1244,7 +1310,7 @@ final class OfficeScene: SKScene {
                 ? CGSize(width: tileSize, height: lineThickness)
                 : CGSize(width: lineThickness, height: tileSize)
             let line = SKSpriteNode(
-                color: SKColor(red: 0.05, green: 0.04, blue: 0.05, alpha: isBottom ? 0.72 : 0.9),
+                color: CozyOfficeNodeFactory.outline.withAlphaComponent(isBottom ? 0.72 : 0.9),
                 size: size
             )
             line.name = "wallEdge"
@@ -1264,7 +1330,6 @@ final class OfficeScene: SKScene {
             .forEach { $0.removeFromParent() }
         var occupiedLabelRanges: [ClosedRange<Double>] = []
         for zone in plan.zones {
-            let palette = agentDepartmentPaletteRGBA(zone.department)
             // 구역 위쪽 경계 줄(칸막이 벽 또는 통로)에 문패처럼 얹는다. 자리 묶음이 구역
             // 맨 아래 줄부터 쌓이므로 아래쪽은 책상·사람과 겹친다.
             let holder = SKNode()
@@ -1286,33 +1351,15 @@ final class OfficeScene: SKScene {
                     ) * tileSize
             )
 
-            let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
-            label.fontName = officeLabelFontName
-            label.fontSize = max(
-                officeZoneLabelMinFontSize, tileSize * CGFloat(officeZoneLabelFontTiles)
+            let pill = CozyOfficeNodeFactory.zonePill(
+                text: "\(zone.department.icon) \(zone.department.label)",
+                accent: CozyOfficeNodeFactory.accent(for: zone.department),
+                fontSize: max(officeZoneLabelMinFontSize, tileSize * 0.24)
             )
-            label.fontColor = SKColor(
-                red: palette.red, green: palette.green, blue: palette.blue, alpha: 1
-            )
-            label.horizontalAlignmentMode = .center
-            label.verticalAlignmentMode = .bottom
-            label.zPosition = 1
-
-            // 문패 판 — 벽돌·나무 무늬 위에 글자가 그냥 놓이면 읽히지 않는다.
-            let plate = SKShapeNode(
-                rect: label.frame.insetBy(dx: -6, dy: -3), cornerRadius: 3
-            )
-            plate.fillColor = SKColor(white: 0.07, alpha: 0.78)
-            plate.strokeColor = SKColor(
-                red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.55
-            )
-            plate.lineWidth = 1
-
-            holder.addChild(plate)
-            holder.addChild(label)
+            holder.addChild(pill)
             overlayLayer.addChild(holder)
-            let occupiedLeading = Double(holder.position.x + plate.frame.minX)
-            let occupiedTrailing = Double(holder.position.x + plate.frame.maxX)
+            let occupiedLeading = Double(holder.position.x + pill.calculateAccumulatedFrame().minX)
+            let occupiedTrailing = Double(holder.position.x + pill.calculateAccumulatedFrame().maxX)
             occupiedLabelRanges.append(occupiedLeading...occupiedTrailing)
         }
         renderCommonAreaLabels(occupiedRanges: occupiedLabelRanges)
@@ -1367,17 +1414,17 @@ final class OfficeScene: SKScene {
 
             let label = SKLabelNode(text: "\(area.icon) \(area.label)")
             label.fontName = officeLabelFontName
-            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.32)
-            label.fontColor = SKColor(white: 0.72, alpha: 1)
+            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.24)
+            label.fontColor = CozyOfficeNodeFactory.outline
             label.horizontalAlignmentMode = .left
             label.verticalAlignmentMode = .bottom
             label.zPosition = 1
 
             let plate = SKShapeNode(
-                rect: label.frame.insetBy(dx: -5, dy: -3), cornerRadius: 3
+                rect: label.frame.insetBy(dx: -7, dy: -4), cornerRadius: tileSize * 0.18
             )
-            plate.fillColor = SKColor(white: 0.07, alpha: 0.62)
-            plate.strokeColor = SKColor(white: 0.45, alpha: 0.4)
+            plate.fillColor = CozyOfficeNodeFactory.cream
+            plate.strokeColor = CozyOfficeNodeFactory.outline.withAlphaComponent(0.35)
             plate.lineWidth = 1
 
             let preferredLeading = Double(
@@ -1415,7 +1462,7 @@ final class OfficeScene: SKScene {
         // 바뀔 때마다 깔개가 겹겹이 쌓인다(`renderFloor` 를 거치지 않는 호출 경로가 있다).
         for layer in [objectLayer, floorLayer] {
             layer.children
-                .filter { $0.name?.hasPrefix("furn:") == true }
+                .filter { $0.name?.hasPrefix("furn:") == true || $0.name == "cozy:decor-desk" || $0.name == "cozy:decor-chair" }
                 .forEach { $0.removeFromParent() }
         }
         deskNodes.removeAll()
@@ -1431,11 +1478,56 @@ final class OfficeScene: SKScene {
         let deskOwners = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.desk, $0.agentType) }
         )
+        var visibleRoomKinds: [String: Set<FurnitureKind>] = [:]
+        var visibleDecorCount: [String: Int] = [:]
+        var visibleShelfTiles: [TilePoint] = []
         for placement in plan.furniture {
             guard let texture = SpriteLoader.furnitureTexture(placement.kind) else {
                 continue
             }
-            let node = SKSpriteNode(texture: texture)
+            let furnitureScale = spriteScale * CGFloat(placement.kind.sizeBoost)
+            let zoneKey = plan.zones.first(where: { officeZoneContains($0, placement.tile) })?.department.rawValue ?? "common"
+            let isWallDecor = placement.kind.isWallMounted && !placement.kind.isDoorway
+            let alreadyKind = visibleRoomKinds[zoneKey]?.contains(placement.kind) == true
+            let adjacentShelf = (placement.kind == .bookshelf || placement.kind == .wallShelf)
+                && visibleShelfTiles.contains(where: { abs($0.y - placement.tile.y) <= 1 && abs($0.x - placement.tile.x) <= 1 })
+            let capped = (placement.kind == .filingCabinet || placement.kind == .lockers2 || placement.kind == .printer || placement.kind == .trash) && alreadyKind
+            let decorCapped = isWallDecor && (visibleDecorCount[zoneKey, default: 0] >= 2)
+            let present = !adjacentShelf && !capped && !decorCapped
+            if present {
+                visibleRoomKinds[zoneKey, default: []].insert(placement.kind)
+                if isWallDecor { visibleDecorCount[zoneKey, default: 0] += 1 }
+                if placement.kind == .bookshelf || placement.kind == .wallShelf { visibleShelfTiles.append(placement.tile) }
+            }
+            let node: SKSpriteNode
+            switch placement.kind {
+            case .desk:
+                node = CozyOfficeNodeFactory.desk(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .chairDown, .chairUp:
+                node = CozyOfficeNodeFactory.chair(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .plantTall, .plantSmall, .wallPlantHanging:
+                node = CozyOfficeNodeFactory.plant(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .sofa2, .sofa3:
+                node = CozyOfficeNodeFactory.sofa(texture: texture, kind: placement.kind, scale: furnitureScale)
+            case .meetingTable, .coffeeTable:
+                node = CozyOfficeNodeFactory.meetingSurface(texture: texture, kind: placement.kind, scale: furnitureScale)
+            case .coffeeMachine:
+                node = CozyOfficeNodeFactory.coffeeMachine(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .waterCooler:
+                node = CozyOfficeNodeFactory.waterCooler(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .vendingMachine:
+                node = CozyOfficeNodeFactory.vendingMachine(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .refrigerator:
+                node = CozyOfficeNodeFactory.refrigerator(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .sinkCounter:
+                node = CozyOfficeNodeFactory.sinkCounter(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .wallWhiteboard, .whiteboard:
+                node = CozyOfficeNodeFactory.whiteboard(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .printer:
+                node = CozyOfficeNodeFactory.printer(texture: texture, scale: furnitureScale, tileSize: tileSize, visible: present)
+            default:
+                node = CozyOfficeNodeFactory.furniture(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize, visible: present)
+            }
             node.name = "furn:\(placement.kind.rawValue)"
             if placement.kind == .desk, let owner = deskOwners[placement.tile] {
                 deskNodes[owner] = node
@@ -1446,12 +1538,6 @@ final class OfficeScene: SKScene {
             if placement.tile == streakBoardTile {
                 streakBoardNode = node
             }
-            node.anchorPoint = CGPoint(x: 0.5, y: 0)
-            let base = texture.size()
-            // 큰 가구만 sizeBoost 로 키운다 — 캐릭터를 한 칸으로 줄인 만큼 책상·소파가
-            // 상대적으로 작아 보이는 것을 되돌린다(배율의 근거는 FurnitureKind.sizeBoost).
-            let scale = spriteScale * CGFloat(placement.kind.sizeBoost)
-            node.size = CGSize(width: base.width * scale, height: base.height * scale)
             // 벽에 거는 물건은 벽면 중턱에 걸린다. 다른 가구와 같은 발밑 기준(anchor y = 0)을
             // 그대로 쓰면 타일 바닥선에 붙어 **벽 앞에 세워 둔 것**처럼 보인다 — 벽시계가
             // 탁상시계가 되고 화이트보드가 이젤이 된다. 창문이 벽 두 줄을 꽉 채워 걸리는 것과
@@ -1566,20 +1652,22 @@ final class OfficeScene: SKScene {
     /// "나(대표)" — 승인 줄의 기준점이면서, 담당자를 정하지 않은 지시의 입구다(클릭 가능).
     private func renderPresident() {
         president?.removeFromParent()
-        guard let texture = SpriteLoader.texture("char-down") else {
-            return
-        }
-        let node = SKSpriteNode(texture: texture)
+        let node = SKSpriteNode()
         node.anchorPoint = CGPoint(x: 0.5, y: 0)
-        let base = texture.size()
-        // 대표도 사람이므로 캐릭터 배율을 따른다 — 여기만 빠지면 대표만 거인이 된다.
-        node.size = CGSize(
-            width: base.width * characterScale, height: base.height * characterScale
+        let artworkScale = CozyCharacterArtworkNode.officeScaleFactor
+        node.size = CGSize(width: 72 * artworkScale * characterScale, height: 100 * artworkScale * characterScale)
+        let artwork = CozyCharacterArtworkNode()
+        artwork.update(
+            appearance: cozyAgentAppearance(agentType: officeHitTargetPresident, department: .planning),
+            mood: cozyAgentMood(for: .waiting),
+            department: .planning,
+            state: .waiting,
+            pose: "default"
         )
+        artwork.setReferenceScale(characterScale * artworkScale)
+        node.addChild(artwork)
         node.position = floorPoint(plan.presidentTile)
         node.zPosition = depth(of: plan.presidentTile)
-        node.color = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 1)
-        node.colorBlendFactor = 0.35
         objectLayer.addChild(node)
         president = node
 
@@ -3043,7 +3131,7 @@ final class OfficeScene: SKScene {
     /// 시작을 켜진 상태(alpha 1)로 두고 낮췄다 올린다. 반대로 두면 정지 화면을 굽는
     /// 회귀 렌더(`--render`)가 늘 꺼진 순간을 잡아, 켜지는지 확인할 방법이 없어진다.
     private func startMonitorGlow(_ agentType: String) {
-        guard let desk = deskNodes[agentType], desk.childNode(withName: "monitor") == nil else {
+        guard let desk = deskNodes[agentType], desk.childNode(withName: "monitor-glow") == nil else {
             return
         }
         let screen = SKSpriteNode(
@@ -3053,7 +3141,7 @@ final class OfficeScene: SKScene {
                 height: desk.size.height * CGFloat(officeDeskScreenHeightRatio)
             )
         )
-        screen.name = "monitor"
+        screen.name = "monitor-glow"
         // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다.
         screen.anchorPoint = CGPoint(x: 0.5, y: 0)
         screen.position = CGPoint(
@@ -3072,7 +3160,7 @@ final class OfficeScene: SKScene {
     }
 
     private func stopMonitorGlow(_ agentType: String) {
-        deskNodes[agentType]?.childNode(withName: "monitor")?.removeFromParent()
+        deskNodes[agentType]?.childNode(withName: "monitor-glow")?.removeFromParent()
     }
 
     /// 시간대에 따라 창유리 색과 빛 세기만 갈아 끼운다(노드는 그대로 둔다).
@@ -3086,8 +3174,8 @@ final class OfficeScene: SKScene {
         if let texture = OfficeLightTexture.window(light, daylight: daylight) {
             windowNodes.forEach { $0.texture = texture }
         }
-        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
-            wallLampNodes.forEach { $0.texture = texture }
+        wallLampNodes.forEach { lamp in
+            lamp.childNode(withName: "lampHalo")?.alpha = light.lampLit ? 0.16 : 0
         }
         for layer in lightLayers {
             layer.apply(light)
@@ -3162,10 +3250,8 @@ final class OfficeScene: SKScene {
                 )
             }
         }
-        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
-            for tile in plan.wallLampTiles {
-                wallLampNodes.append(addWallFixture(texture: texture, at: tile))
-            }
+        for tile in plan.wallLampTiles {
+            wallLampNodes.append(addVectorWallLamp(at: tile, lit: light.lampLit))
         }
         addWindowShaft(light)
         addLampHalos(light)
@@ -3190,6 +3276,14 @@ final class OfficeScene: SKScene {
         node.zPosition = 1
         floorLayer.addChild(node)
         return node
+    }
+
+    private func addVectorWallLamp(at tile: TilePoint, lit: Bool) -> SKNode {
+        let holder = CozyOfficeNodeFactory.wallLamp(tileSize: tileSize, lit: lit)
+        holder.position = floorPoint(tile)
+        holder.zPosition = 2
+        floorLayer.addChild(holder)
+        return holder
     }
 
     /// 창에서 바닥으로 떨어지는 빛. 아래로 갈수록 넓어지고 옅어지는 세 단.

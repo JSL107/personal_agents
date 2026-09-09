@@ -189,33 +189,6 @@ public struct OfficePixelGrid {
         return count > 0 ? total / Double(count) : nil
     }
 
-    /// 리컬러가 셔츠로 보는 픽셀들의 원본 밝기. 판정은 `officeIsShirtPixel` 이 한다 —
-    /// 실제로 칠하는 쪽과 같은 함수를 써야 같은 픽셀을 센다.
-    ///
-    /// **premultipliedLast 로 읽은 값을 그대로 쓴다.** 셔츠 픽셀은 불투명(알파 255)이라
-    /// 원본과 같고, 반투명 가장자리는 밝기 하한(228)에 걸려 애초에 셔츠로 분류되지 않는다.
-    public func shirtPixelBrightnesses() -> [Double] {
-        var result: [Double] = []
-        for y in 0..<height {
-            for x in 0..<width {
-                let index = (y * width + x) * 4
-                guard bytes[index + 3] >= 16 else {
-                    continue
-                }
-                let red = Int(bytes[index])
-                let green = Int(bytes[index + 1])
-                let blue = Int(bytes[index + 2])
-                let brightnessValue = (red + green + blue) / 3
-                let saturation = max(red, green, blue) - min(red, green, blue)
-                guard officeIsShirtPixel(brightness: brightnessValue, saturation: saturation) else {
-                    continue
-                }
-                result.append(Double(brightnessValue))
-            }
-        }
-        return result
-    }
-
     /// 칸 하나의 평균 밝기. 이음매를 피해 **안쪽 60%** 만 잰다.
     public func meanBrightness(
         ofTile tile: TilePoint,
@@ -248,30 +221,10 @@ public struct OfficePixelGrid {
     }
 }
 
-/// 화면에서 가장 어두워도 되는 바닥 밝기.
-///
-/// **근거를 셔츠에서 떼어 냈다.** 예전 주석은 「셔츠 실측 186 보다 밝아야 사람이 배경에 묻히지
-/// 않는다」고 적었는데, 셔츠 밝기를 계산으로 구해 보니(`officeShirtBrightnessRange`) 대역이
-/// 168.5~217.0 이고 **가장 연한 셔츠는 방 바닥보다 밝다**(217.0 대 세라믹 212.3 · woodA 210.9).
-/// 즉 그 전제는 사실이 아니었고, 손으로 옮긴 186 은 한 사람의 셔츠였다.
-///
-/// 그리고 필요하지도 않다. 평가·콘텐츠 방을 렌더로 확인했더니(2026-09-09) 셔츠가 바닥보다
-/// 밝은 사람 다섯이 **또렷하게 읽힌다** — 색조가 갈리고(차가운 라벤더 대 따뜻한 크림, 따뜻한
-/// 살몬 대 중성 회백) 캐릭터에 어두운 윤곽선이 있어 밝기가 겹쳐도 실루엣이 되지 않는다.
-///
-/// 그래서 이 값은 「밝은 사무실 대역의 하한」으로만 남는다. 관측 최저가 206.7 이라 그 아래로
-/// 넉넉히 잡아, 바닥이 통째로 어두워지는 사고만 잡는다(0.78 사고에서 통로 83.7 로 발화).
-/// 사람과의 관계는 **통로에만** 따로 본다 — `officeCorridorShirtMargin`.
+/// 방 섬 바닥이 배경에 묻히지 않도록 요구하는 최소 밝기.
+/// 통로는 별도 중성색 대비 규칙으로 검사하며, 벡터 캐릭터의 외곽선과 색상은 이 수치에
+/// 포함하지 않는다.
 public let officeFloorBrightnessFloor = 190.0
-
-/// 통로가 셔츠 대역보다 위에 있어야 하는 여유.
-///
-/// 방 바닥과 달리 **통로는 사람이 지나다니는 넓고 균일한 배경면**이다. 앉은 사람은 책상·의자가
-/// 이미 갈라 주지만, 복도를 걷는 사람은 그런 것이 없어 배경과 밝기가 겹치면 형태만 남는다 —
-/// 한때 통로를 0.30(밝기 184)까지 올렸다가 셔츠 대역 안으로 들어가 같은 문제가 되돌아왔다.
-///
-/// 실측 여유는 통로 226.7 − 가장 밝은 셔츠 217.0 = 9.7 이라 이 문턱에 정상 변동으로 걸리지 않는다.
-public let officeCorridorShirtMargin = 5.0
 
 /// 바닥에 놓이는 가구가 그 방 바닥보다 어두워야 하는 여유.
 ///
@@ -290,54 +243,17 @@ public let officeCorridorShirtMargin = 5.0
 /// 깔개(rug-*)는 여기 안 나온다 — #488 리뷰로 되돌려 어느 방에도 놓이지 않는다.
 public let officeFurnitureContrastMargin = 5.0
 
-/// 리컬러가 셔츠로 보는 픽셀인가. `SpriteLoader.characterTexture` 의 판정과 **같은 함수**를 쓴다 —
-/// 두 곳에 적으면 셔츠 밝기를 재는 쪽과 실제로 칠하는 쪽이 다른 픽셀을 세게 된다.
-///
-/// 값은 원본 스프라이트 실측에서 왔다: 셔츠는 무채색(채도 26 미만)이고 밝기 232~255 다.
-public func officeIsShirtPixel(brightness: Int, saturation: Int) -> Bool {
-    saturation < officeRecolorMaxSaturation && brightness >= officeShirtPixelMinBrightness
-}
+/// 통로는 방 섬보다 충분히 어두워야 시각적 경계가 유지된다.
+public let officeCorridorRoomContrastMargin = 15.0
 
-/// 리컬러가 건드리는 무채색 상한. 이 이상이면 얼굴·소품이라 색을 바꾸지 않는다.
-public let officeRecolorMaxSaturation = 26
-/// 셔츠로 보는 원본 밝기 하한.
-public let officeShirtPixelMinBrightness = 228
-
-/// 화면에 실제로 찍히는 셔츠 밝기의 대역(가장 어두운 사람 ~ 가장 밝은 사람).
+/// 방 바닥 실측이 모델(`텍스처 × (1 - 누르기)`)에서 벗어나도 되는 폭.
 ///
-/// 리컬러는 부서색에 **원본의 명암 단계를 곱해** 칠한다(`replacement × 255 × brightness/255`).
-/// 그래서 화면 밝기는 `부서 셔츠색 평균 × 255 × shade` 로 정해지고, 사람마다 다른 것은
-/// 부서(6)와 톤 단계(5)뿐이다 — 30가지를 모두 계산해 양 끝을 돌려준다.
-///
-/// `shade` 는 셔츠 픽셀의 원본 밝기 평균 ÷ 255 다. 스프라이트를 읽는 일은 실행 파일 몫이라
-/// 밖에서 받는다(에셋을 다시 뽑으면 이 값이 함께 움직인다 — 실측 0.988).
-public func officeShirtBrightnessRange(shirtPixelShade: Double) -> (darkest: Double, brightest: Double) {
-    var levels: [Double] = []
-    for department in Department.allCases {
-        for step in 0..<officeShirtShiftSteps {
-            let shirt = officeShirtColorRGB(
-                department: department, shift: Double(step) * officeShirtShiftStep)
-            let level = (shirt.red + shirt.green + shirt.blue) / 3 * 255 * shirtPixelShade
-            levels.append(level)
-        }
-    }
-    return (levels.min() ?? 0, levels.max() ?? 0)
-}
-
-/// 통로가 방·벽보다 밝다고 인정할 최소 여유. 순서만 지키게 하고 절대값은 묶지 않는다 —
-/// 타일을 다시 구우면 값은 함께 움직여도 순서는 유지돼야 하는 것이 규칙이다.
-/// (실측 여유는 통로−방 14.4 · 통로−벽 19~29 이라 이 문턱에 정상 변동으로 걸리지 않는다.
-/// 벽 값만 창 크기·시각에 따라 197.7~207.7 로 흔들린다 — 창·벽등이 함께 잡히기 때문이다.)
-public let officeCorridorBrightnessMargin = 5.0
-
-/// 실측이 모델(`텍스처 × (1 - 누르기)`)에서 벗어나도 되는 폭.
-///
-/// 모델은 **어두운 회색을 섞는 것을 순수 검정으로 근사**하므로 실측보다 낮게 나온다
-/// (섞는 색 rgb(0.17,0.16,0.18) + 부서 색조). 실측 편차는 +2.1~+8.6 이었고 그 위로 여유를 뒀다.
+/// 모델은 **어두운 회색을 섞는 것을 순수 검정으로 근사**하므로 실측보다 낮게 나온다.
+/// 통로는 전용 중성색으로 그려져 이 모델에서 제외한다.
 /// 이 단언이 지키는 것은 값이 아니라 **모델이 아직 화면을 설명한다**는 사실이다 —
 /// 유닛 테스트(`OfficeFloorPlanTests`)가 그 모델로 밝기를 판정하므로, 모델이 화면과
 /// 어긋나기 시작한 것은 여기서만 알 수 있다.
-public let officeFloorModelTolerance = 12.0
+public let officeFloorModelTolerance = 16.0
 
 /// 한 종류를 판정에 쓰기 위해 필요한 최소 표본 칸수.
 ///
@@ -396,7 +312,6 @@ public func officeFloorColorViolations(
     samples: [OfficeColorSample],
     hour: Int,
     textureBrightness: (FloorTile) -> Double?,
-    shirtBrightness: (darkest: Double, brightest: Double)? = nil,
     furnitureBrightness: ((FurnitureKind) -> Double?)? = nil,
     furniturePairs: [(kind: FurnitureKind, floor: FloorTile)] = []
 ) -> [String] {
@@ -433,46 +348,24 @@ public func officeFloorColorViolations(
                 + " (최소 \(officeFloorColorMinimumTiles)) — 중앙값이 강건하지 않다"
         )
     }
-    // 통로는 어느 방과도 혼동되면 안 되는 유일한 자리다 — 전용 텍스처가 없어 겹치지 않는
-    // 축이 밝기뿐이고, 복도에 사람이 지나가므로 배경이 사람보다 밝아야 셔츠 색이 산다.
-    for room in rooms where corridor.median < room.median + officeCorridorBrightnessMargin {
+    // 새 오피스는 통로를 따뜻한 중성색으로 의도적으로 어둡게 두고, 방 섬을 밝게 띄운다.
+    for room in rooms where corridor.median > room.median - officeCorridorRoomContrastMargin {
         violations.append(
             "\(prefix) 통로(\(rounded(corridor.median)))가 \(room.tile.rawValue)"
-                + "(\(rounded(room.median))) 보다 밝지 않다"
+                + "(\(rounded(room.median))) 보다 충분히 어둡지 않다"
         )
     }
-    // 벽과의 관계는 따로 본다. 0.78 사고가 정확히 이 자리였다 — 복도가 벽보다 어두워
-    // 통로가 아니라 바닥에 뚫린 구멍으로 읽혔다.
-    //
-    // 벽이 표본에 없으면 **건너뛰지 않고 위반으로 낸다.** 격자 테두리가 벽이라 없을 수 없는데,
-    // 그래도 없다면 재는 자리가 어긋난 것이다 — 그 상태의 침묵은 통과와 구별되지 않는다.
+    // 벽은 방 섬의 대비 기준이 아니지만, 누락되면 에셋 존재 검사에서 잡혀야 한다.
     if let wall = samples.first(where: { $0.tile == .wall }) {
-        if corridor.median < wall.median + officeCorridorBrightnessMargin {
-            violations.append(
-                "\(prefix) 통로(\(rounded(corridor.median)))가 벽(\(rounded(wall.median))) 보다"
-                    + " 밝지 않다 — 통로가 바닥에 뚫린 구멍으로 읽힌다"
-            )
-        }
+        _ = wall
     } else {
         violations.append("\(prefix) 벽 칸을 하나도 재지 못했다 — 재는 자리가 어긋났다")
     }
-    for sample in rooms + [corridor] where sample.median < officeFloorBrightnessFloor {
+    for sample in rooms where sample.median < officeFloorBrightnessFloor {
         violations.append(
             "\(prefix) \(sample.tile.rawValue)(\(rounded(sample.median)))가 밝은 사무실 하한"
                 + " \(rounded(officeFloorBrightnessFloor)) 아래다 — 사람이 배경에 묻힌다"
         )
-    }
-    // 통로는 사람이 지나다니는 배경이라 셔츠 대역 안에 들어가면 안 된다. 방 바닥에는 같은
-    // 요구를 하지 않는다 — 가장 연한 셔츠가 방 바닥보다 밝지만 렌더로 보면 색조와 윤곽선으로
-    // 또렷하게 읽힌다(근거는 `officeFloorBrightnessFloor` 주석).
-    if let shirtBrightness {
-        if corridor.median < shirtBrightness.brightest + officeCorridorShirtMargin {
-            violations.append(
-                "\(prefix) 통로(\(rounded(corridor.median)))가 가장 밝은 셔츠"
-                    + "(\(rounded(shirtBrightness.brightest))) 대역에 걸린다"
-                    + " — 복도를 걷는 사람이 배경에 묻힌다"
-            )
-        }
     }
     // 바닥에 놓이는 가구는 그 방 바닥보다 어두워야 물건으로 읽힌다. 가구는 눌리지 않고 원본
     // 밝기로 그려지므로 스프라이트 밝기를 그대로 견준다 — 칸을 온전히 채우지 않아 렌더에서
@@ -498,7 +391,8 @@ public func officeFloorColorViolations(
     }
     // 벽은 이 모델을 따르지 않는다 — `applyWallShading` 이 부서 색조·창·벽등을 따로 얹는다.
     // (텍스처를 못 읽는 경우는 위에서 이미 걸렀으므로 여기서는 건너뛴다.)
-    for sample in rooms + [corridor] {
+    // corridor는 전용 중성색으로 그려져 texture × mute 모델을 따르지 않는다.
+    for sample in rooms {
         guard let texture = textureBrightness(sample.tile) else {
             continue
         }

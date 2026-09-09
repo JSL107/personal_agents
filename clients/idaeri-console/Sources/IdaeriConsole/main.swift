@@ -78,6 +78,12 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     let hour = officeHourArgument()
     // 일반 앱 경로에는 닿지 않고, 회귀 렌더에서만 가구 자세 일곱 종류를 강제로 세운다.
     let poseDemo = CommandLine.arguments.contains("--pose-demo")
+    // Populated clean fixture: reuses the deterministic agent roster without enabling any
+    // object-pose debug overlay, so nameplate policy can be inspected in a normal-looking office.
+    let populatedDemo = CommandLine.arguments.contains("--populated-demo")
+    // Populate a deterministic roster and reserve a trailing 300pt inspector in the capture.
+    let selectedDemo = CommandLine.arguments.contains("--selected-demo")
+    let selectedApprovalDemo = CommandLine.arguments.contains("--selected-approval-demo")
     // 호버 쪽지는 마우스가 있어야 뜨므로 렌더에 잡히지 않는다 — 그러면 "가려지는지" 를
     // 눈으로 확인할 방법이 사람이 앱을 띄우는 것뿐이다. 대상을 넘겨 강제로 띄운다.
     //   swift run IdaeriConsole --render /tmp/office.png --hover PO_EVAL
@@ -138,6 +144,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         hour: hour,
         size: renderSize,
         poseDemo: poseDemo,
+        populatedDemo: populatedDemo,
         hoverAgentType: hoverAgentType,
         busyDemo: busyDemo,
         alarmDemo: alarmDemo,
@@ -145,7 +152,9 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         chatterDemo: chatterDemo,
         vacuumDemo: vacuumDemo,
         debugLabels: debugLabels,
-        room: room
+        room: room,
+        selectedDemo: selectedDemo,
+        selectedApprovalDemo: selectedApprovalDemo
     )
     exit(succeeded ? 0 : 1)
 }

@@ -1,6 +1,7 @@
 import AppKit
 import ConsoleCore
 import SpriteKit
+import SwiftUI
 
 /// 창을 띄우지 않고 사무실 씬을 PNG 로 굽는다 — 화면 회귀 확인용.
 ///
@@ -18,6 +19,7 @@ func renderOfficeScene(
     hour: Int?,
     size: CGSize,
     poseDemo: Bool,
+    populatedDemo: Bool = false,
     hoverAgentType: String? = nil,
     busyDemo: Bool = false,
     alarmDemo: Bool = false,
@@ -25,18 +27,26 @@ func renderOfficeScene(
     chatterDemo: Bool = false,
     vacuumDemo: Bool = false,
     debugLabels: Bool = false,
-    room: Department? = nil
+    room: Department? = nil,
+    selectedDemo: Bool = false,
+    selectedApprovalDemo: Bool = false
 ) -> Bool {
-    let scene = OfficeScene(size: size)
+    let selectedCapture = selectedDemo || selectedApprovalDemo
+    let inspectorWidth: CGFloat = selectedCapture ? Layout.officeInspectorWidth : 0
+    let sceneSize = CGSize(width: size.width - inspectorWidth, height: size.height)
+    let scene = OfficeScene(size: sceneSize)
     scene.scaleMode = .resizeFill
     scene.hourOverride = hour
     scene.skipsChoreography = true
-    let view = SKView(frame: CGRect(origin: .zero, size: size))
+    let view = SKView(frame: CGRect(origin: .zero, size: sceneSize))
     view.presentScene(scene)
 
-    let snapshot = fetchSnapshotSynchronously(client: client)
+    let snapshot = selectedCapture || populatedDemo ? nil : fetchSnapshotSynchronously(client: client)
     // 데모는 백엔드가 꺼져도 일곱 자세가 모두 보여야 회귀 입구 역할을 한다.
-    var renderedAgents = poseDemo ? poseDemoAgents() : snapshot?.agents ?? []
+    var renderedAgents = poseDemo ? poseDemoAgents() : (populatedDemo ? populatedDemoAgents() : snapshot?.agents ?? [])
+    if selectedCapture {
+        renderedAgents = populatedDemoAgents() + [selectedDemoAgent(approval: selectedApprovalDemo)]
+    }
     if busyDemo {
         // 백엔드가 꺼져 있으면 사람이 0명이라 이 모드는 **빈 사무실을 성공으로 저장한다.**
         // 말풍선 겹침을 보려고 만든 입구인데 정작 확인 대상이 하나도 없는 그림이 나오고,
@@ -52,7 +62,8 @@ func renderOfficeScene(
         }
         renderedAgents = renderedAgents.map(busyDemoAgent)
     }
-    var renderedApprovals = poseDemo ? [] : snapshot?.approvals ?? []
+    var renderedApprovals = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.approvals ?? []
+    if selectedApprovalDemo { renderedApprovals = [selectedDemoApproval()] }
     if alarmDemo {
         // 실 백엔드는 지금(2026-08) 승인 대기가 0건이라, 이 데모 없이는 대표 경고등이
         // 절대 화면에 뜨지 않는다 — `--busy-demo`가 항상 0~2명뿐인 진행 중 상태를 강제로
@@ -61,8 +72,8 @@ func renderOfficeScene(
         renderedAgents.append(alarmDemoAgent())
         renderedApprovals.append(alarmDemoApproval())
     }
-    let renderedRuns = poseDemo ? [] : snapshot?.runs ?? []
-    let renderedSessions = poseDemo ? [] : snapshot?.sessions ?? []
+    let renderedRuns = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.runs ?? []
+    let renderedSessions = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
 
     // 실제 스냅샷의 청소 실태를 먼저 싣는다. 이것을 데모 안에만 두면 렌더가 실앱과 다른
@@ -95,6 +106,9 @@ func renderOfficeScene(
             return false
         }
     }
+    if selectedCapture {
+        scene.setSelected("SELECTED_DEMO")
+    }
     // 방 뷰는 평면도가 채워진 뒤에 걸어야 한다 — `setFocus` 가 `plan.zones` 에서 그 방을 찾는다.
     // 여기서 걸면 아래 오버레이·세션이 확대된 좌표계로 그려진다.
     if let room, !scene.setFocus(room) {
@@ -121,7 +135,7 @@ func renderOfficeScene(
     // 할 일 말풍선·연속 도장·정산 종이도 함께 굽는다. 빠뜨리면 "안 그리는 요소는 정상으로
     // 보인다" 는 사각지대가 그대로 생긴다 — 말풍선이 화면 위로 넘치는지, 도장이 게시판을
     // 벗어나는지, 종이가 대표를 덮는지가 이 경로에서만 보인다.
-    let fetched = poseDemo ? nil : fetchBriefingSynchronously(client: client)
+    let fetched = poseDemo || populatedDemo || selectedCapture ? nil : fetchBriefingSynchronously(client: client)
     let briefing = briefingDemo ? briefingDemoValue() : fetched
     scene.refreshBriefing(briefing, hour: hour ?? Calendar.current.component(.hour, from: Date()))
 
@@ -157,7 +171,16 @@ func renderOfficeScene(
         FileHandle.standardError.write(Data("씬을 이미지로 만들지 못했다\n".utf8))
         return false
     }
-    let bitmap = NSBitmapImageRep(cgImage: image)
+    let finalImage: CGImage
+    if selectedCapture {
+        guard let composed = composeSelectedInspector(sceneImage: image, size: size, agent: selectedDemoAgent(approval: selectedApprovalDemo), approval: selectedApprovalDemo ? selectedDemoApproval() : nil) else {
+            return false
+        }
+        finalImage = composed
+    } else {
+        finalImage = image
+    }
+    let bitmap = NSBitmapImageRep(cgImage: finalImage)
     guard let data = bitmap.representation(using: .png, properties: [:]) else {
         return false
     }
@@ -168,6 +191,48 @@ func renderOfficeScene(
         FileHandle.standardError.write(Data("PNG 저장 실패: \(error)\n".utf8))
         return false
     }
+}
+
+private func selectedDemoAgent(approval: Bool = false) -> ConsoleAgent {
+    ConsoleAgent(
+        agentType: "SELECTED_DEMO", displayName: "모모", slashCommands: ["/review-pr", "/worklog"],
+        description: "완료된 업무를 검토하고 다음 작업을 정리한다", state: approval ? .awaitingApproval : .inProgress,
+        bubble: "PR #299 리뷰 중", department: Department.quality.rawValue, job: "코드 리뷰와 업무 품질을 관리한다"
+    )
+}
+
+private func selectedDemoApproval() -> ConsoleApproval {
+    ConsoleApproval(id: "SELECTED_DEMO_APPROVAL", agentType: "SELECTED_DEMO", title: "PR #299 리뷰 반영", createdAt: "2026-09-09T08:00:00Z", expiresAt: "2026-09-09T12:00:00Z")
+}
+
+/// The offline selected-agent capture reserves the inspector width before rendering the scene,
+/// then composes the panel beside it so no employee is covered by the panel.
+private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: ConsoleAgent, approval: ConsoleApproval?) -> CGImage? {
+    let image = NSImage(size: size)
+    image.lockFocus()
+    NSColor(calibratedRed: 0.98, green: 0.94, blue: 0.86, alpha: 1).setFill()
+    NSRect(origin: .zero, size: size).fill()
+    NSImage(cgImage: sceneImage, size: CGSize(width: size.width - Layout.officeInspectorWidth, height: size.height))
+        .draw(in: NSRect(x: 0, y: 0, width: size.width - Layout.officeInspectorWidth, height: size.height))
+    let hosting = NSHostingView(rootView: AgentInspectorView(
+        agent: agent, approval: approval, commandText: .constant(""), onClose: {}, onSend: { _ in },
+        onApprovalDetail: { _ in }, onApprove: { _ in }, onReject: { _ in }
+    ))
+    hosting.frame = NSRect(x: size.width - Layout.officeInspectorWidth, y: 0, width: Layout.officeInspectorWidth, height: size.height)
+    hosting.layoutSubtreeIfNeeded()
+    guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+        FileHandle.standardError.write(Data("inspector bitmap 생성 실패\n".utf8)); image.unlockFocus(); return nil
+    }
+    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+    guard let inspectorCGImage = rep.cgImage else {
+        FileHandle.standardError.write(Data("inspector CGImage 생성 실패\n".utf8)); image.unlockFocus(); return nil
+    }
+    NSImage(cgImage: inspectorCGImage, size: hosting.bounds.size).draw(in: hosting.frame)
+    image.unlockFocus()
+    guard let result = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        FileHandle.standardError.write(Data("최종 inspector 이미지 생성 실패\n".utf8)); return nil
+    }
+    return result
 }
 
 /// 실제 조직 인원과 무관한 렌더 전용 표본. 여섯 방을 모두 만들면 사물함까지 카탈로그에 포함된다.
@@ -273,6 +338,20 @@ func poseDemoAgents() -> [ConsoleAgent] {
             description: "",
             state: .waiting,
             bubble: "",
+            department: departments[index % departments.count].rawValue
+        )
+    }
+}
+
+/// Six-zone deterministic showroom roster. It deliberately uses normal identities and states so
+/// `--populated-demo` exercises the same office composition as production without pose diagnostics.
+func populatedDemoAgents() -> [ConsoleAgent] {
+    let departments: [Department] = [.planning, .quality, .evaluation, .treasury, .content, .internalOps]
+    let names = ["하루", "모모", "두부", "콩이", "보리", "토리", "라떼", "구름", "단추", "호두", "루루", "밤비"]
+    return names.enumerated().map { index, name in
+        ConsoleAgent(
+            agentType: "SHOWCASE_\(index)", displayName: name, slashCommands: [], description: "",
+            state: [.waiting, .inProgress, .completed, .awaitingApproval][index % 4], bubble: "",
             department: departments[index % departments.count].rawValue
         )
     }

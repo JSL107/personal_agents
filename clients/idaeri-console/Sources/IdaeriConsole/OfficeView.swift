@@ -52,6 +52,24 @@ struct OfficeView: View {
                         agents: store.agents, approvals: store.approvals
                     )
                 )
+                // 선택 패널은 SpriteView 위에 얹지 않고 trailing safe-area에 삽입한다.
+                // SpriteKit 장면의 실제 폭이 줄어들어 사람·가구를 가리지 않는다.
+                .safeAreaInset(edge: .trailing, spacing: 0) {
+                    if let agentType = selectedAgent,
+                        let agent = store.agents.first(where: { $0.agentType == agentType })
+                    {
+                        AgentInspectorView(
+                            agent: agent,
+                            approval: approvalFor(agentType: agent.agentType, in: store.approvals),
+                            commandText: $commandText,
+                            onClose: { selectedAgent = nil; scene.setSelected(nil) },
+                            onSend: { send(to: $0) },
+                            onApprovalDetail: { selectedApproval = $0 },
+                            onApprove: { onApprove($0); selectedAgent = nil; scene.setSelected(nil) },
+                            onReject: { onReject($0); selectedAgent = nil; scene.setSelected(nil) }
+                        )
+                    }
+                }
                 // 창이 가려지거나 최소화되면 씬을 재운다. macOS 는 대신 멈춰주지 않는다(실측).
                 .onReceive(
                     NotificationCenter.default.publisher(
@@ -126,6 +144,12 @@ struct OfficeView: View {
                     scene.applyHousekeeping(next)
                 }
                 .onChange(of: store.agents) { newAgents in
+                    if reconciledSelectedAgent(current: selectedAgent, agents: newAgents) == nil,
+                        selectedAgent != nil
+                    {
+                        selectedAgent = nil
+                        scene.setSelected(nil)
+                    }
                     scene.sync(agents: newAgents, approvals: store.approvals)
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
@@ -190,19 +214,25 @@ struct OfficeView: View {
                     )
                 }
 
-            if let agentType = selectedAgent {
-                interactionBar(for: agentType)
-            } else if isPresidentBarOpen {
+            if selectedAgent == nil, isPresidentBarOpen {
                 presidentBar
-            } else {
+            } else if selectedAgent == nil {
                 // 배지와 승인 실패 사유는 함께 쌓는다. 하나로 분기하면 담당자 미확정 지시가 도는
                 // 몇 분 동안 승인·거절 실패 사유가 배지에 가려 어디에도 안 보인다.
                 idleBar
             }
         }
         .overlay(alignment: .top) { roomHeader }
+        .frame(minWidth: selectedAgent == nil ? Layout.officeMinWidth : Layout.selectedOfficeMinWidth)
         // 방 뷰에서 나가는 길을 마우스 하나로 두지 않는다.
-        .onExitCommand { scene.setFocus(nil) }
+        .onExitCommand {
+            if selectedAgent != nil {
+                selectedAgent = nil
+                scene.setSelected(nil)
+            } else {
+                scene.setFocus(nil)
+            }
+        }
         // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
         // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
         .sheet(isPresented: $showAnswerSheet) {
