@@ -1,4 +1,8 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import {
+  UNTRUSTED_INPUT_NOTICE,
+  wrapUntrustedInput,
+} from '../../../../common/llm/untrusted-input.util';
 import { CareerMateException } from '../career-mate.exception';
 import { CareerProfileData, GapAnalysisData } from '../career-mate.type';
 import { CareerMateErrorCode } from '../career-mate-error-code.enum';
@@ -6,6 +10,8 @@ import { CareerMateErrorCode } from '../career-mate-error-code.enum';
 export const JD_GAP_SYSTEM_PROMPT = `너는 이직 코치다. 지원자의 "증거 기반 역량 프로필"과 목표 공고(JD)를 대조해
 적합도/보유/갭을 진단하고, 갭을 메우는 블로그·학습 주제를 제안한다.
 아래 JSON 하나로만 출력한다. 설명/주석/코드펜스 없이 JSON 만.
+
+${UNTRUSTED_INPUT_NOTICE}
 
 규칙:
 - have: JD 요구 중 프로필에서 이미 입증된 역량.
@@ -33,7 +39,11 @@ export const buildJdGapPrompt = (
     `성과:\n${accomplishments || '(없음)'}`,
     ``,
     `[목표 공고(JD)]`,
-    jdText,
+    // 공고 원문은 외부(채용 사이트 크롤링 · 사용자 붙여넣기) 출처다 — 분석 대상이지
+    // 지시가 아니다. 자동 수집분(JOB_FEED)은 제3자가 쓴 문장이 그대로 실린다.
+    // redact 는 걸지 않는다: 공고 문구를 [REDACTED] 로 바꾸면 갭 분석 품질이 깎인다
+    // (code-reviewer 가 diff 에 redact 를 안 거는 것과 같은 판단).
+    wrapUntrustedInput(jdText),
   ].join('\n');
 };
 
