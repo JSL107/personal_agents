@@ -62,9 +62,8 @@ export const formatMemoryVacuum = (
 
   const lines = [`🤖 기억 청소 — ${firedAtKst}`];
   for (const outcome of cleaned) {
-    const after = outcome.before.indexBytes - outcome.remainingOverflowBytes;
     lines.push(
-      `• ${outcome.project}: ${formatActions(outcome)} (${toKilobytes(outcome.before.indexBytes)} → ${toKilobytes(Math.max(0, after))})`,
+      `• ${outcome.project}: ${formatActions(outcome)} (${toKilobytes(outcome.before.indexBytes)} → ${toKilobytes(outcome.nextIndexBytes)})`,
     );
   }
   for (const outcome of needsHuman) {

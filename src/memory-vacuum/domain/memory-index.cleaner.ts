@@ -139,6 +139,7 @@ export const vacuumMemoryIndex = (
     before: diagnosis,
     actions: actions.filter((action) => action.count > 0),
     nextIndexContent: changed ? nextIndexContent : null,
+    nextIndexBytes: byteLength(nextIndexContent),
     remainingOverflowBytes: Math.max(
       0,
       byteLength(nextIndexContent) - INDEX_TARGET_BYTES,

@@ -66,6 +66,11 @@ export interface VacuumOutcome {
   actions: VacuumAction[];
   // 바꿀 것이 없으면 null — 호출자가 쓰기 자체를 건너뛴다(무의미한 백업·쓰기 방지).
   nextIndexContent: string | null;
+  // 청소 뒤 색인의 실제 바이트 수(바뀐 것이 없으면 원래 크기).
+  // `before.indexBytes - remainingOverflowBytes` 로 되계산하면 안 된다 — 초과분은
+  // 목표를 넘은 몫이지 줄어든 양이 아니라, 목표 밑으로 잘 줄인 회차가 0 이 되어
+  // 보고가 `49KB → 49KB`(줄인 것이 없음)로 뒤집힌다.
+  nextIndexBytes: number;
   // 청소 후에도 남은 초과분. 0 이 아니면 묶음·폐기가 필요하다는 뜻이라 사람을 부른다.
   remainingOverflowBytes: number;
 }

@@ -41,7 +41,7 @@ describe('MemoryStoreFsAdapter', () => {
     await writeProject('with-memory', { 'a.md': 'x' });
     await fs.mkdir(join(root, 'no-memory'), { recursive: true });
 
-    const snapshots = await buildAdapter(root).loadSnapshots();
+    const { snapshots } = await buildAdapter(root).loadSnapshots();
 
     expect(snapshots.map((snapshot) => snapshot.project)).toEqual([
       'with-memory',
@@ -56,7 +56,8 @@ describe('MemoryStoreFsAdapter', () => {
       'a.md': 'x',
     });
 
-    const [snapshot] = await buildAdapter(root).loadSnapshots();
+    const { snapshots } = await buildAdapter(root).loadSnapshots();
+    const [snapshot] = snapshots;
 
     expect(snapshot.files.map((file) => file.fileName)).toEqual(['a.md']);
   });
@@ -66,7 +67,8 @@ describe('MemoryStoreFsAdapter', () => {
       'a.md': '---\ndescription: 핵심 교훈 — 부연 설명\n---\n본문',
     });
 
-    const [snapshot] = await buildAdapter(root).loadSnapshots();
+    const { snapshots } = await buildAdapter(root).loadSnapshots();
+    const [snapshot] = snapshots;
 
     expect(snapshot.files[0].title).toBe('핵심 교훈');
   });
@@ -114,5 +116,31 @@ describe('MemoryStoreFsAdapter', () => {
     );
 
     await expect(buildAdapter(root).loadState()).resolves.toBeNull();
+  });
+
+  it('색인을 읽을 수 없으면 빈 색인으로 삼키지 않고 실패로 낸다', async () => {
+    // 빈 문자열로 물러서면 기억 전부가 고아로 판정되어, 멀쩡한 색인이 파일 목록으로
+    // 덮어씌워진다 — 그때 백업에도 그 빈 내용이 저장돼 되돌릴 수도 없다.
+    // 권한(EACCES)은 root 로 도는 환경에서 재현되지 않으므로 디렉터리(EISDIR)로 막는다.
+    const dir = join(root, 'broken', 'memory');
+    await fs.mkdir(join(dir, 'MEMORY.md'), { recursive: true });
+    await fs.writeFile(join(dir, 'a.md'), 'x', 'utf8');
+
+    const { snapshots, unreadable } = await buildAdapter(root).loadSnapshots();
+
+    expect(snapshots).toEqual([]);
+    expect(unreadable).toEqual([
+      { project: 'broken', reason: expect.stringContaining('색인 읽기 실패') },
+    ]);
+  });
+
+  it('색인 파일이 아직 없는 것은 실패가 아니다', async () => {
+    // 첫 회차에는 색인이 없다. 이것까지 실패로 세면 새 프로젝트가 영영 청소되지 않는다.
+    await writeProject('fresh', { 'a.md': 'x' });
+
+    const { snapshots, unreadable } = await buildAdapter(root).loadSnapshots();
+
+    expect(unreadable).toEqual([]);
+    expect(snapshots.map((snapshot) => snapshot.project)).toEqual(['fresh']);
   });
 });

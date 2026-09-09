@@ -6,6 +6,7 @@ import { join } from 'path';
 
 import { MemoryIndexSnapshot } from '../domain/memory-index.type';
 import {
+  MemoryStoreLoadResult,
   MemoryStorePort,
   MemoryVacuumState,
 } from '../domain/port/memory-store.port';
@@ -32,16 +33,29 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
       join(homedir(), '.claude', 'projects');
   }
 
-  async loadSnapshots(): Promise<MemoryIndexSnapshot[]> {
+  async loadSnapshots(): Promise<MemoryStoreLoadResult> {
     const projects = await this.listProjectDirectories();
     const snapshots: MemoryIndexSnapshot[] = [];
+    const unreadable: { project: string; reason: string }[] = [];
     for (const project of projects) {
-      const snapshot = await this.loadSnapshot(project);
-      if (snapshot !== null) {
-        snapshots.push(snapshot);
+      try {
+        const snapshot = await this.loadSnapshot(project);
+        if (snapshot !== null) {
+          snapshots.push(snapshot);
+        }
+      } catch (error) {
+        // 한 프로젝트를 못 읽었다고 나머지 청소까지 멈추지는 않는다. 다만 조용히 건너뛰면
+        // "이상 없음" 으로 보고되므로 사유를 들고 나가 Slack 에 드러낸다.
+        this.logger.warn(
+          `[${project}] 색인을 읽지 못해 청소에서 제외합니다: ${String(error)}`,
+        );
+        unreadable.push({
+          project,
+          reason: `색인 읽기 실패 — ${String(error)}`,
+        });
       }
     }
-    return snapshots;
+    return { snapshots, unreadable };
   }
 
   async backup(snapshot: MemoryIndexSnapshot): Promise<string> {
@@ -126,7 +140,7 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
     }
 
     const indexPath = join(memoryDir, INDEX_FILE_NAME);
-    const indexContent = await this.readIfExists(indexPath);
+    const indexContent = await this.readIndex(indexPath);
     const files = [];
     for (const fileName of fileNames.sort()) {
       files.push({
@@ -135,6 +149,20 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
       });
     }
     return { project, indexPath, indexContent, files };
+  }
+
+  // 색인 전용. 파일이 없는 것(ENOENT)만 "아직 색인이 없다" 로 보고, 권한·입출력 오류는
+  // 전파한다. 이것을 빈 문자열로 바꾸면 기억 전부가 고아로 판정되어 멀쩡한 색인이
+  // 파일 목록으로 덮어씌워진다 — 되돌릴 백업마저 그 빈 내용으로 저장된다.
+  private async readIndex(path: string): Promise<string> {
+    try {
+      return await fs.readFile(path, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return '';
+      }
+      throw error;
+    }
   }
 
   private async readIfExists(path: string): Promise<string> {

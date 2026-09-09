@@ -29,9 +29,10 @@ export class MemoryVacuumService implements MemoryVacuumPort {
   ) {}
 
   async run(input: RunMemoryVacuumInput): Promise<MemoryVacuumOutcome> {
-    const snapshots = await this.store.loadSnapshots();
+    const { snapshots, unreadable } = await this.store.loadSnapshots();
     const outcomes: VacuumOutcome[] = [];
-    const failures: { project: string; reason: string }[] = [];
+    // 색인을 못 읽어 진단조차 못 한 프로젝트도 실패다. 빼놓으면 "이상 없음" 으로 읽힌다.
+    const failures: { project: string; reason: string }[] = [...unreadable];
 
     for (const snapshot of snapshots) {
       const outcome = vacuumMemoryIndex(
@@ -49,7 +50,7 @@ export class MemoryVacuumService implements MemoryVacuumPort {
     }
 
     if (input.apply) {
-      await this.saveState(outcomes, snapshots.length);
+      await this.saveState(outcomes, failures, snapshots.length);
     }
     return { outcomes, failures };
   }
@@ -62,16 +63,29 @@ export class MemoryVacuumService implements MemoryVacuumPort {
   // 이미 끝난 청소가 실패한 회차로 보인다.
   private async saveState(
     outcomes: VacuumOutcome[],
+    failures: { project: string; reason: string }[],
     projectCount: number,
   ): Promise<void> {
-    const cleanedCount = outcomes.reduce(
-      (total, outcome) =>
-        total + outcome.actions.reduce((sum, action) => sum + action.count, 0),
-      0,
-    );
-    const pendingProjects = outcomes.filter(
-      (outcome) => outcome.remainingOverflowBytes > 0,
-    ).length;
+    const failedProjects = new Set(failures.map((failure) => failure.project));
+    // 실패한 프로젝트의 "하려던" 작업 수를 실적으로 세면, 색인은 그대로인데 화면에는
+    // 110건을 치운 것으로 뜬다. 실제로 쓰인 회차만 집계한다.
+    const cleanedCount = outcomes
+      .filter((outcome) => !failedProjects.has(outcome.project))
+      .reduce(
+        (total, outcome) =>
+          total +
+          outcome.actions.reduce((sum, action) => sum + action.count, 0),
+        0,
+      );
+    // 실패한 프로젝트도 사람이 봐야 할 몫이라 쓰레기통에 함께 쌓는다. 빼면 백업·쓰기가
+    // 죽은 회차에도 청소기가 초록불로 돌아, 이 화면을 만든 이유(청소가 죽은 것을 드러낸다)가
+    // 사라진다.
+    const pendingProjects =
+      outcomes.filter(
+        (outcome) =>
+          outcome.remainingOverflowBytes > 0 &&
+          !failedProjects.has(outcome.project),
+      ).length + failedProjects.size;
     try {
       await this.store.saveState({
         ranAtIso: new Date().toISOString(),

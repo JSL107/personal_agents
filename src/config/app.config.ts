@@ -432,6 +432,12 @@ export class EnvironmentVariables {
   @IsString()
   AUTOPILOT_UNIVERSE_SWEEP_TIMEZONE?: string;
 
+  // 세션 기억 색인 청소(memory-vacuum)가 훑을 프로젝트 루트.
+  // 미설정 시 `~/.claude/projects`. Claude 프로젝트를 홈 밖에 두는 배포에서만 쓴다.
+  @IsOptional()
+  @IsString()
+  MEMORY_VACUUM_PROJECTS_ROOT?: string;
+
   // L4 knowledge-lint contradiction — 주간 codex 모순 판정 가드.
   // - AUTOPILOT_KNOWLEDGE_LINT_L4_MAX_PAIRS: 주 1회 LLM 판정 쌍 상한(기본 5). codex 쿼터 보호.
   // - AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED: 'false' 면 L4 만 끄고 L1/L2(결정론)는 유지. 미설정 시 활성.
