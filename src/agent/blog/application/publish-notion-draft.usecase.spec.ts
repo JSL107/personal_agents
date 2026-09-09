@@ -402,6 +402,13 @@ describe('PublishNotionDraftUsecase', () => {
         payload: { content: string };
       };
       expect(payload.payload.content).toContain('Host: developer.mozilla.org');
+      // 이 계약은 코드가 원본 그대로라 확인 안내가 붙지 않는다 — 모든 계약에 흘리면 승인자가
+      // 대조할 것이 없는 경고를 매번 읽게 되고, 정작 회사 계약의 경고가 묻힌다.
+      const 공개카드 = createPreview.execute.mock.calls[0][0] as {
+        previewText: string;
+      };
+      expect(공개카드.previewText).toContain('코드 예시: 1개');
+      expect(공개카드.previewText).not.toContain('회사 계약');
     });
 
     // 코드 보존 계약에서는 삭제도 실패다. 표식이 사라지면 복원할 것이 없어 코드가 조용히 빠지고,
@@ -504,6 +511,13 @@ describe('PublishNotionDraftUsecase', () => {
       ];
       expect(payload.content).toContain('example.com');
       expect(payload.content).not.toContain('developer.mozilla.org');
+      // 전문은 스레드 댓글로 따로 나가고 그 발송이 실패해도 카드는 뜬다. 코드가 원문과
+      // 달라질 수 있다는 사실은 **요약 카드 본문**에 있어야 승인자에게 닿는다.
+      const 회사카드 = createPreview.execute.mock.calls[0][0] as {
+        previewText: string;
+      };
+      expect(회사카드.previewText).toContain('회사 계약');
+      expect(회사카드.previewText).toContain('전문에서 코드를 확인하세요');
     });
 
     // 감소만 막으면 모델이 없던 코드를 지어내 붙이는 쪽이 열린다. 개수 게이트는 양방향이다.
