@@ -219,10 +219,10 @@ describe('번역투 처방 목록', () => {
     return body.slice(0, end === -1 ? body.length : end);
   };
 
-  it('열네 개 패턴을 모두 담고, 어느 하나도 처방 없이 놓지 않는다', () => {
+  it('열다섯 개 패턴을 모두 담고, 어느 하나도 처방 없이 놓지 않는다', () => {
     const lines = prescriptionLines(HUMANIZE_SYSTEM_PROMPT);
 
-    expect(lines).toHaveLength(14);
+    expect(lines).toHaveLength(15);
     for (const line of lines) {
       expect(line).toContain('→');
       // 화살표 오른쪽이 비어 있으면 패턴만 있고 처방이 없는 것이다.
@@ -272,5 +272,19 @@ describe('번역투 처방 목록', () => {
     expect(HUMANIZE_SYSTEM_PROMPT).toContain(
       '"강한 경쟁력을 가지고 있다" → "경쟁력이 강하다"',
     );
+  });
+
+  it('처방 예문의 양쪽 시제가 같다 — 다르면 시제를 바꾸라는 지시가 된다', () => {
+    // 상류 룰북이 `"회의를 가지다" → "회의를 했다"` 로 적어 둔 것을 그대로 옮겼다가
+    // 기본형이 과거형으로 바뀌는 지시가 됐다(리뷰 지적). 보존 검사는 시제를 보지 않는다.
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('"회의를 가지다" → "회의를 하다"');
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('→ "회의를 했다"');
+  });
+
+  it('단일 피동 남발 처방을 잃지 않았다 — 치환 전 한 줄이 덮던 범위다', () => {
+    // 원래 줄의 `피동 남발("~되어진다/~보여진다/~될 것으로 기대된다")` 중 이중 피동이 아닌
+    // 쪽은 룰북 A-8·A-9 어디에도 없어, 목록으로 옮기며 빠졌다(리뷰 지적).
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('단일 피동 남발');
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('~될 것으로 기대된다');
   });
 });
