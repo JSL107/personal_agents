@@ -40,7 +40,7 @@ func runOfficeAccessibilityTests(_ t: TestRunner) {
 
     // 손이 필요한 상태가 앞에 온다 — 소리는 훑어볼 수 없어 순서가 곧 우선순위다.
     let mixed = [
-        makeAgent("BE", .inProgress),
+        makeAgent("IMPACT_REPORTER", .inProgress),
         makeAgent("PM", .awaitingApproval),
         makeAgent("CTO", .waiting),
         makeAgent("BE_TEST", .failed),
@@ -56,9 +56,14 @@ func runOfficeAccessibilityTests(_ t: TestRunner) {
     }
 
     // 이름은 영문 식별명이 아니라 화면 이름표와 같은 닉네임으로 읽힌다.
-    if let role = agentRoleLabel(for: "BE") {
-        t.expect(summary.contains(role), "진행 중인 사람을 닉네임(\(role))으로 부른다")
-    }
+    //
+    // **`if let` 으로 감싸면 안 된다.** 예전엔 표에서 사라진 `"BE"` 를 물어봐서 nil 이 나왔고,
+    // 그러면 단언 자체가 조용히 건너뛰어진다 — 검사가 있는데 아무것도 검사하지 않았다.
+    let progressNickname = agentRoleLabel(for: "IMPACT_REPORTER") ?? ""
+    t.expect(
+        !progressNickname.isEmpty && summary.contains(progressNickname),
+        "진행 중인 사람을 닉네임(\(progressNickname))으로 부른다"
+    )
     t.expect(summary.contains("나머지 1명 대기"), "대기는 수만 밝힌다")
     t.expect(!summary.contains("CTO"), "대기 인원의 이름은 읽지 않는다")
     t.expect(summary.hasSuffix("."), "문장으로 끝난다")
@@ -83,9 +88,11 @@ func runOfficeAccessibilityTests(_ t: TestRunner) {
         agents: approvalFirst, approvals: [makeApproval("PM")]
     )
     t.expect(lateState.hasPrefix("승인 대기 1명"), "상태가 늦어도 승인 목록으로 읽는다")
-    if let role = agentRoleLabel(for: "PM") {
-        t.expect(lateState.contains(role), "승인 대기자를 닉네임으로 부른다")
-    }
+    let pmNickname = agentRoleLabel(for: "PM") ?? ""
+    t.expect(
+        !pmNickname.isEmpty && lateState.contains(pmNickname),
+        "승인 대기자를 닉네임(\(pmNickname))으로 부른다"
+    )
     t.expect(lateState.contains("나머지 1명 대기"), "승인 대기자를 대기에서 이중으로 세지 않는다")
 
     // 반대 방향 — 승인은 해소됐는데 상태가 아직 awaitingApproval 인 경우.
