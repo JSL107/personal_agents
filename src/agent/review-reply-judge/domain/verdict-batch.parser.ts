@@ -1,7 +1,17 @@
+import { extractJsonArrayText } from '../../../common/util/llm-json-extract.util';
+
 export interface VerdictRow<TVerdict extends string> {
   id: number;
   verdict: TVerdict;
   reason: string;
+}
+
+export interface ParseVerdictBatchResult<TVerdict extends string> {
+  rows: VerdictRow<TVerdict>[];
+  // 응답에서 JSON 배열을 아예 못 뽑았는지. 전건 fallback 이라는 결과만으로는
+  // "모델이 정말 판단 불가라고 답함" 과 "파싱이 깨짐" 이 구분되지 않는다 —
+  // 후자는 새 답글이 없는 한 다음 회차에도 같은 입력으로 그대로 재현된다.
+  extracted: boolean;
 }
 
 export interface ParseVerdictBatchInput<TVerdict extends string> {
@@ -20,43 +30,48 @@ export const parseVerdictBatch = <TVerdict extends string>({
   ids,
   validVerdicts,
   fallback,
-}: ParseVerdictBatchInput<TVerdict>): VerdictRow<TVerdict>[] => {
+}: ParseVerdictBatchInput<TVerdict>): ParseVerdictBatchResult<TVerdict> => {
   const toFallback = (): VerdictRow<TVerdict>[] =>
     ids.map((id) => ({ id, verdict: fallback, reason: '' }));
 
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) {
-    return toFallback();
+  const arrayText = extractJsonArrayText(text);
+  if (arrayText === null) {
+    return { rows: toFallback(), extracted: false };
   }
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(match[0]) as unknown;
-    if (!Array.isArray(parsed)) {
-      return toFallback();
-    }
-    const byId = new Map<number, VerdictRow<TVerdict>>();
-    for (const value of parsed) {
-      if (typeof value !== 'object' || value === null) {
-        continue;
-      }
-      const record = value as Record<string, unknown>;
-      if (
-        typeof record.id !== 'number' ||
-        typeof record.verdict !== 'string' ||
-        !validVerdicts.has(record.verdict)
-      ) {
-        continue;
-      }
-      byId.set(record.id, {
-        id: record.id,
-        verdict: record.verdict as TVerdict,
-        reason: typeof record.reason === 'string' ? record.reason : '',
-      });
-    }
-    return ids.map(
-      (id) => byId.get(id) ?? { id, verdict: fallback, reason: '' },
-    );
+    parsed = JSON.parse(arrayText);
   } catch {
-    return toFallback();
+    return { rows: toFallback(), extracted: false };
   }
+  if (!Array.isArray(parsed)) {
+    return { rows: toFallback(), extracted: false };
+  }
+
+  const byId = new Map<number, VerdictRow<TVerdict>>();
+  for (const value of parsed) {
+    if (typeof value !== 'object' || value === null) {
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.id !== 'number' ||
+      typeof record.verdict !== 'string' ||
+      !validVerdicts.has(record.verdict)
+    ) {
+      continue;
+    }
+    byId.set(record.id, {
+      id: record.id,
+      verdict: record.verdict as TVerdict,
+      reason: typeof record.reason === 'string' ? record.reason : '',
+    });
+  }
+  return {
+    rows: ids.map(
+      (id) => byId.get(id) ?? { id, verdict: fallback, reason: '' },
+    ),
+    extracted: true,
+  };
 };

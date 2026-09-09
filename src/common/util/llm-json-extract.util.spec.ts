@@ -1,5 +1,6 @@
 import {
   buildJsonParseCauseMessage,
+  extractJsonArrayText,
   extractJsonObjectText,
 } from './llm-json-extract.util';
 
@@ -105,5 +106,43 @@ describe('buildJsonParseCauseMessage — debug log 친화 cause', () => {
     const cause = buildJsonParseCauseMessage(new Error('boom'), longRaw);
     expect(cause).toContain('a'.repeat(300));
     expect(cause).not.toContain('a'.repeat(310));
+  });
+});
+
+describe('extractJsonArrayText — 판정 배열 추출', () => {
+  it('앞에 라벨이 붙어도 JSON 배열만 뽑는다', () => {
+    // 첫 `[` 부터 마지막 `]` 까지 한 번에 잡으면 라벨까지 삼켜 파싱이 깨진다.
+    const raw = '[판정 결과]\n[{"id": 1, "verdict": "ACCEPTED"}]';
+    expect(extractJsonArrayText(raw)).toBe(
+      '[{"id": 1, "verdict": "ACCEPTED"}]',
+    );
+  });
+
+  it('뒤에 꼬리가 붙어도 JSON 배열만 뽑는다', () => {
+    const raw = '[{"id": 1, "verdict": "REJECTED"}]\n[참고] 근거는 위와 같다';
+    expect(extractJsonArrayText(raw)).toBe(
+      '[{"id": 1, "verdict": "REJECTED"}]',
+    );
+  });
+
+  it('code fence 안의 배열도 뽑는다', () => {
+    const raw = '```json\n[{"id": 2, "verdict": "UNCLEAR"}]\n```';
+    expect(extractJsonArrayText(raw)).toBe('[{"id": 2, "verdict": "UNCLEAR"}]');
+  });
+
+  it('값 안에 중첩 배열이 있어도 바깥 배열을 고른다', () => {
+    // 좁은 후보(`[{` ~ `}]`)를 먼저 쓰면 중첩 배열만 단독으로 파싱에 성공해
+    // 바깥 배열 대신 선택된다. 넓은 후보를 먼저 시도해야 한다.
+    const raw = '[ {"id": 1, "verdict": "ACCEPTED", "evidence": [{"x": 1}]} ]';
+    const extracted = extractJsonArrayText(raw);
+
+    expect(extracted).not.toBeNull();
+    const parsed = JSON.parse(extracted as string) as { id: number }[];
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(1);
+  });
+
+  it('배열이 없으면 null 을 돌려준다 — 호출부가 파싱 실패를 구분할 수 있어야 한다', () => {
+    expect(extractJsonArrayText('판단할 수 없습니다')).toBeNull();
   });
 });

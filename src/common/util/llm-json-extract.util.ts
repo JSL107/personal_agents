@@ -63,3 +63,55 @@ export const buildJsonParseCauseMessage = (
   const tail = rawText.trim().slice(0, RAW_TAIL_LIMIT);
   return `${baseMessage} — raw=${tail}`;
 };
+
+// LLM 응답에서 JSON **배열** 본문만 추출. 위 object 용과 원칙은 같다 — 후보를 여러 개
+// 모아 실제로 파싱되는 첫 후보를 고른다.
+//
+// 별도 함수인 이유: `extractJsonObjectText` 는 `{`/`}` 로 후보를 만들고 파싱 성공 기준도
+// object 라, 배열 응답에 그대로 쓰면 후보가 하나도 안 잡힌다. 기존 4개 worker parser 의
+// 동작을 건드리지 않으려고 확장 대신 나란히 둔다.
+//
+// 첫 `[` ~ 마지막 `]` 하나만 쓰면 모델이 `[판정 결과]` 같은 라벨을 앞에 붙이거나 뒤에
+// `[참고]` 를 덧붙이는 순간 매치 구간이 JSON 이 아니게 되고, 호출부는 그것을 "모델이
+// 판단 불가라고 답했다" 와 구분하지 못한다.
+export const extractJsonArrayText = (rawText: string): string | null => {
+  const trimmed = rawText.trim();
+  const candidates: string[] = [];
+
+  const wholeFenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  if (wholeFenceMatch) {
+    candidates.push(wholeFenceMatch[1].trim());
+  }
+
+  const innerFenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (innerFenceMatch) {
+    candidates.push(innerFenceMatch[1].trim());
+  }
+
+  // 넓은 구간(첫 `[` ~ 마지막 `]`)을 먼저 시도한다 — 이것이 기존 동작이고, 응답이
+  // 깨끗할 때 항상 맞는다.
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    candidates.push(trimmed.slice(firstBracket, lastBracket + 1));
+  }
+
+  // 넓은 구간이 라벨·꼬리 때문에 깨질 때만 배열-of-객체를 직접 겨냥한다.
+  // 순서가 중요하다: 이쪽을 먼저 쓰면 값 안의 중첩 배열(`"evidence": [{...}]`)이
+  // 단독으로 파싱에 성공해 바깥 배열 대신 선택될 수 있다.
+  const firstObjectBracket = trimmed.indexOf('[{');
+  const lastObjectBracket = trimmed.lastIndexOf('}]');
+  if (firstObjectBracket !== -1 && lastObjectBracket > firstObjectBracket) {
+    candidates.push(trimmed.slice(firstObjectBracket, lastObjectBracket + 2));
+  }
+
+  return candidates.find(isJsonArrayText) ?? null;
+};
+
+const isJsonArrayText = (candidate: string): boolean => {
+  try {
+    return Array.isArray(JSON.parse(candidate));
+  } catch {
+    return false;
+  }
+};
