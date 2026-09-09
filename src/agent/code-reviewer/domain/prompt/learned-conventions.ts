@@ -73,6 +73,12 @@ const flatten = (reason: string): string => reason.trim().replace(/\s+/g, ' ');
  * 실린 사례가 셋 있었다(카드 687·693·694). 문장은 버리지 않고 머리말만 지운다.
  *
  * 첫 줄에만 적용한다. 본문 중간의 멘션은 근거의 일부일 수 있어 건드리지 않는다.
+ *
+ * 인사말 키워드는 `감사합니다`·`고맙습니다` 둘만 쓴다. `확인했습니다`는 한때 포함했으나
+ * 리뷰에서 정탐으로 지적됐다 — 인사치레보다 "이미 확인했습니다" 류 실질 서술어로 훨씬
+ * 흔해, 그 문장을 통째로 날려버린다. 키워드 뒤에 붙는 조사(`고맙습니다만` 의 `만`)도
+ * 함께 흡수한다 — 공백 없이 바로 이어지는 한글 연속만 조사로 보고, 공백으로 끊긴 다음
+ * 단어(`감사합니다. 다만 ...` 의 `다만`)는 본문이라 건드리지 않는다.
  */
 const stripSalutation = (reason: string): string => {
   const withoutMentions = reason.replace(/^(?:\s*@[\w-]+)+\s*/, '');
@@ -81,7 +87,7 @@ const stripSalutation = (reason: string): string => {
     firstBreak < 0 ? withoutMentions : withoutMentions.slice(0, firstBreak);
   const rest = firstBreak < 0 ? '' : withoutMentions.slice(firstBreak);
   const cleanedHead = head.replace(
-    /^[^.!?]*?(?:감사합니다|고맙습니다|확인했습니다)[.!]?\s*/,
+    /^[^.!?]*?(?:감사합니다|고맙습니다)(?:[.!]|[가-힣]+)?\s*/,
     '',
   );
   return `${cleanedHead}${rest}`.trim();
