@@ -2213,17 +2213,61 @@ describe('차단된 초안 큐 막힘', () => {
     expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(정상.pageId);
   });
 
-  // 영구 배제가 아니다 — 백오프가 지나면 다시 차례가 온다. 사람이 고쳤는지 코드는 모른다.
-  it('백오프가 지난 초안은 다시 차례가 온다', async () => {
+  // 영구 배제가 아니다 — 큐에 정상 초안이 없으면 백오프가 지난 쪽이 다시 시도된다.
+  it('큐가 전부 막힌 초안이면 백오프가 지난 쪽을 먼저 재시도한다', async () => {
+    const 대기중 = {
+      ...draft,
+      pageId: 'page-waiting',
+      title: '대기 회고',
+      createdTime: '2026-08-05T00:00:00.000Z',
+    };
     const { usecase, notionClient } = buildUsecase({
-      drafts: [막힌초안, 다음초안],
-      // 1회만 막혔으면 백오프는 1일. 3일 전 실패는 이미 창을 벗어났다.
-      failedRuns: [실패회차(막힌초안.pageId, 3)],
+      // 막힌초안(8/1)이 대기중(8/5)보다 오래됐지만 백오프가 남아 뒤로 간다.
+      drafts: [막힌초안, 대기중],
+      failedRuns: [
+        // 1회만 막혔으면 백오프는 1일 — 3일 전 실패는 이미 지났다.
+        실패회차(대기중.pageId, 3),
+        // 3회 막혔으면 4일 — 오늘 실패라 아직 남았다.
+        실패회차(막힌초안.pageId, 2),
+        실패회차(막힌초안.pageId, 1),
+        실패회차(막힌초안.pageId, 0),
+      ],
     });
 
     await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
 
-    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(막힌초안.pageId);
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(대기중.pageId);
+  });
+
+  // 상한(16일)에 닿은 초안들이 하루씩 엇갈려 만료되면, 만료를 "이력 없음" 과 동급으로 되돌리는
+  // 순간 그들이 정상 초안보다 오래됐다는 이유로 매일 슬롯을 차지한다 — 고정 3일 창의 순환이
+  // 상한 길이에서 그대로 재현된다(리뷰 지적). 만료는 순위를 되돌리지 않는다.
+  it('백오프가 지난 초안도 정상 초안을 앞지르지 못한다', async () => {
+    const 만료 = {
+      ...draft,
+      pageId: 'page-expired',
+      createdTime: '2026-07-01T00:00:00.000Z',
+    };
+    const 정상 = {
+      ...draft,
+      pageId: 'page-ok',
+      createdTime: '2026-08-10T00:00:00.000Z',
+    };
+    const { usecase, notionClient } = buildUsecase({
+      drafts: [만료, 정상],
+      // 5회 막혀 상한(16일)까지 갔고, 마지막 실패가 20일 전이라 백오프는 이미 지났다.
+      failedRuns: [
+        실패회차(만료.pageId, 28),
+        실패회차(만료.pageId, 26),
+        실패회차(만료.pageId, 24),
+        실패회차(만료.pageId, 22),
+        실패회차(만료.pageId, 20),
+      ],
+    });
+
+    await usecase.execute({ titleQuery: '', slackUserId: 'U1' });
+
+    expect(notionClient.getPageMarkdown).toHaveBeenCalledWith(정상.pageId);
   });
 
   // 두 이력을 각각의 try 에 둔 이유가 이것이다 — 한쪽 조회가 깨져도 다른 쪽이 찾아낸 후순위는

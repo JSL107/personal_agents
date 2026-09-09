@@ -153,9 +153,22 @@ interface PublishCandidateContext {
 //
 // 제외가 아니라 **후순위**다. 큐에 다른 초안이 없으면 여전히 시도되고, 백오프가 지나면 저절로
 // 다시 차례가 온다 — 사람이 고쳤는지 코드가 알 방법이 없으니 영구 배제는 위험하다.
+// 막힌 이력이 있는 초안의 후순위 등급. 값이 클수록 뒤로 간다. 이력이 없으면 등급이 없다(0).
+//
+// **왜 두 등급인가** — 백오프가 지난 것을 "이력 없음" 과 같이 취급하면 상한 수만큼 쌓인 초안이
+// 하루에 하나씩 만료되며 슬롯을 돌려 쓰고, 그들이 정상 초안보다 오래됐으므로 정상 초안이 영구히
+// 굶는다(고정 3일 창의 순환이 상한 길이에서 재현된다). 만료는 순위를 되돌리는 것이 아니라
+// **막힌 초안끼리 누구를 먼저 재시도할지**만 정한다.
+const enum StuckRank {
+  // 이력이 있고 백오프가 지났다 — 큐에 정상 초안이 없을 때 이쪽이 먼저 재시도된다.
+  RETRYABLE = 1,
+  // 이력이 있고 백오프가 아직 남았다.
+  DEFERRED = 2,
+}
+
 // 상한을 두는 이유 — 지수는 금방 몇 달이 된다. 사람이 Notion 을 고쳐도 코드는 그것을 모르므로
-// 재시도 간격이 무한정 벌어지면 사실상 영구 배제가 된다. 실측 큐가 30건대라 16일이면 그 초안
-// 없이도 슬롯이 돌아가고, 5회 이상 막힌 초안은 그 간격으로 계속 재시도된다.
+// 재시도 간격이 무한정 벌어지면 막힌 초안끼리의 순서마저 굳는다. 상한이 순환을 만들지 않는 것은
+// 위 `StuckRank` 덕분이다 — 만료가 정상 초안을 앞지르지 못한다.
 const STUCK_DEFER_DAYS_CAP = 16;
 const stuckDeferDays = (stuckCount: number): number =>
   Math.min(2 ** (stuckCount - 1), STUCK_DEFER_DAYS_CAP);
@@ -346,8 +359,8 @@ export class PublishNotionDraftUsecase {
       input.pageId,
       // 제목이나 pageId 로 콕 집은 요청은 후순위를 적용하지 않는다 — 사람이 그 글을 지목했다.
       titleQuery || input.pageId
-        ? new Set<string>()
-        : await this.findDeferredPageIds(),
+        ? new Map<string, StuckRank>()
+        : await this.findStuckRanks(),
     );
     if (updateInputSnapshot) {
       await updateInputSnapshot({
@@ -588,7 +601,7 @@ export class PublishNotionDraftUsecase {
     const slug = extractPostSlug(post.path);
     const publishedSlugs =
       titleQuery || input.pageId
-        ? new Set<string>()
+        ? new Map<string, StuckRank>()
         : await this.findRecentlyPublishedSlugs();
     if (slug.length > 0 && publishedSlugs.has(slug)) {
       await this.holdDraft(target, context, DUPLICATE_TOPIC_REASON);
@@ -680,7 +693,7 @@ export class PublishNotionDraftUsecase {
     drafts: NotionDraftPage[],
     titleQuery: string,
     pageId?: string,
-    deferredPageIds: Set<string> = new Set(),
+    stuckRanks: Map<string, StuckRank> = new Map(),
   ): NotionDraftPage {
     // 오늘의 공부 딥다이브 초안을 먼저 집는다. 기존 초안 큐(회사 PR 기반 회고 다수)는 하루
     // 1건씩만 나가므로 뒤에 붙이면 오늘 만든 글이 2주 뒤에 발행된다 — 그 사이 기술 내용이 낡는다.
@@ -690,11 +703,16 @@ export class PublishNotionDraftUsecase {
     // 최근 금지어로 막힌 초안은 **출처 우선순위보다 먼저** 뒤로 보낸다. 막힌 글이 '오늘의 공부'
     // 이면 우선순위 0 이라 매일 큐 맨 앞을 차지하는데, 그 회차는 카드도 안 만들어져 다음 회차의
     // '카드 열림' 스킵에도 안 걸린다 — 그대로 두면 그 한 건이 큐 전체를 무기한 막는다.
+    //
+    // **막힌 이력이 있는 초안은 백오프가 지나도 정상 초안보다 앞서지 못한다** (`StuckRank`).
+    // 백오프 만료를 "정상 초안과 동급" 으로 되돌리면 상한 수만큼 쌓인 초안들이 하루에 하나씩
+    // 만료되며 슬롯을 돌려 쓰고, 그들이 더 오래됐으므로 정상 초안은 영구히 굶는다(리뷰 지적).
+    // 만료는 "정상 초안이 없을 때 어느 것부터 재시도할지" 만 정한다.
     const nowMs = Date.now();
     const oldestFirst = [...drafts].sort((first, second) => {
       const stuckGap =
-        Number(deferredPageIds.has(first.pageId)) -
-        Number(deferredPageIds.has(second.pageId));
+        (stuckRanks.get(first.pageId) ?? 0) -
+        (stuckRanks.get(second.pageId) ?? 0);
       if (stuckGap !== 0) {
         return stuckGap;
       }
@@ -735,11 +753,11 @@ export class PublishNotionDraftUsecase {
       // 두면 큐가 빈 채로 pageId 재실행이 들어올 때 터진다. 그 경로는 아래 DRAFT_NOT_FOUND 가
       // 맡아야 한다.
       const head = oldestFirst[0];
-      if (deferredPageIds.has(head.pageId)) {
+      if (stuckRanks.has(head.pageId)) {
         // 후순위로 밀 곳이 없다 = 큐가 전부 차단분이다. 조용히 같은 글을 또 돌리는 것보다
         // 로그에 남는 편이 낫다 — 사람이 Notion 을 고쳐야 풀리는 상태다.
         this.logger.warn(
-          `발행 후보가 모두 최근 막힌 초안입니다 (${deferredPageIds.size}건). Notion 에서 금지어나 본문을 고쳐야 합니다.`,
+          `발행 후보가 모두 최근 막힌 초안입니다 (${stuckRanks.size}건). Notion 에서 금지어나 본문을 고쳐야 합니다.`,
         );
       }
       return head;
@@ -1199,7 +1217,7 @@ export class PublishNotionDraftUsecase {
   //
   // ⚠️ errorCode 는 그 저장을 넣은 배포 이후 회차에만 있다. 그 이전 실패는 원인을 알 수 없어
   // 초안 탓으로 세지 않는다 — 배포 직후 며칠은 과거 실패분의 후순위가 풀린다(재실패하며 다시 쌓인다).
-  private async findDeferredPageIds(): Promise<Set<string>> {
+  private async findStuckRanks(): Promise<Map<string, StuckRank>> {
     // pageId → 그 초안이 막힌 회차들의 종료 시각. 횟수와 가장 최근 시각을 함께 써야
     // "몇 번 막혔나(백오프 길이)" 와 "언제부터 세나(기산점)" 가 갈리지 않는다.
     const stuckAt = new Map<string, Date[]>();
@@ -1253,16 +1271,17 @@ export class PublishNotionDraftUsecase {
       );
     }
     const nowMs = Date.now();
-    const deferred = new Set<string>();
+    const ranks = new Map<string, StuckRank>();
     for (const [pageId, endedAtList] of stuckAt) {
       const latestMs = Math.max(...endedAtList.map((date) => date.getTime()));
       const deferUntilMs =
         latestMs + stuckDeferDays(endedAtList.length) * 24 * 60 * 60 * 1_000;
-      if (deferUntilMs > nowMs) {
-        deferred.add(pageId);
-      }
+      ranks.set(
+        pageId,
+        deferUntilMs > nowMs ? StuckRank.DEFERRED : StuckRank.RETRYABLE,
+      );
     }
-    return deferred;
+    return ranks;
   }
 
   // 최근 **실제로 나간** 글의 주소 식별자. 조회 실패는 빈 집합으로 삼킨다(best-effort) —
