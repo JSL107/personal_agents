@@ -119,11 +119,21 @@ export const measureLengthRetention = (
 };
 
 /**
+ * 이 필드가 길이 유지율 판정의 대상인가.
+ *
+ * 판정과 적재가 같은 조건을 봐야 한다. 대상이 아닌 필드의 유지율까지 원장에 쌓으면 나중에
+ * 임계를 조일 때 판정 대상과 비대상이 섞여 분포가 왜곡된다 — 원장에는 원문 길이가 남지
+ * 않아 사후에 갈라낼 수도 없다(리뷰 지적).
+ */
+export const isOverRewriteEligible = (before: string): boolean =>
+  normalize(before).length >= OVER_REWRITE_MIN_LENGTH;
+
+/**
  * 내용을 통째로 날린 출력인가. 원문으로 되돌려야 한다.
  *
  * 이름에 「과윤문」을 쓰지 않은 것은 실제로 재는 것이 길이 유지율이기 때문이다 — 문장을
  * 통째로 갈아 끼웠지만 길이가 비슷한 경우는 여기 안 걸린다(위 상수 주석 참조).
  */
 export const isContentDropped = (before: string, after: string): boolean =>
-  normalize(before).length >= OVER_REWRITE_MIN_LENGTH &&
+  isOverRewriteEligible(before) &&
   measureLengthRetention(before, after) < MIN_LENGTH_RETENTION;

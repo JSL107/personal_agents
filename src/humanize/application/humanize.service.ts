@@ -11,6 +11,7 @@ import {
 } from '../../preference-profile/domain/port/preference-profile.port';
 import {
   isContentDropped,
+  isOverRewriteEligible,
   measureChangeRate,
   measureLengthRetention,
 } from '../domain/change-rate';
@@ -202,7 +203,8 @@ export class HumanizeService {
           const overRewrittenKeys: string[] = [];
           const changeRates: Record<string, number> = {};
           // 롤백선(`MIN_LENGTH_RETENTION`)은 판정에 쓰는 값인데 원장에 남는 것이 없어
-          // 나중에 임계를 조일 근거가 안 모였다. 판정에 쓰는 그 값을 그대로 적재한다.
+          // 나중에 임계를 조일 근거가 안 모였다. 판정에 쓰는 그 값을, 판정과 같은 조건
+          // (`isOverRewriteEligible`)을 통과한 필드에 대해서만 적재한다.
           const lengthRetentions: Record<string, number> = {};
           const violationsByKey: Record<string, PreservationViolation[]> = {};
           const preservationViolations = createViolationSummary();
@@ -225,10 +227,14 @@ export class HumanizeService {
             changeRates[key] =
               Math.round(measureChangeRate(fields[key], humanized[key]) * 100) /
               100;
-            lengthRetentions[key] =
-              Math.round(
-                measureLengthRetention(fields[key], humanized[key]) * 100,
-              ) / 100;
+            // 판정 대상인 필드만 남긴다. 대상이 아닌 짧은 필드까지 섞으면 이 분포로
+            // 임계를 조일 수 없다 — 그게 이 값을 쌓는 유일한 이유다.
+            if (isOverRewriteEligible(fields[key])) {
+              lengthRetentions[key] =
+                Math.round(
+                  measureLengthRetention(fields[key], humanized[key]) * 100,
+                ) / 100;
+            }
             // 되돌리는 것은 내용을 통째로 날린 출력뿐이다. 숫자·고유명사·URL 훼손은 위
             // 보존 검사가 잡고, 길이는 비슷한데 내용만 다른 글은 어느 축도 잡지 못한다.
             if (isContentDropped(fields[key], humanized[key])) {
