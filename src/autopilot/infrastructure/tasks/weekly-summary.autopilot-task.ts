@@ -5,6 +5,8 @@ import { GenerateCeoMetaUsecase } from '../../../agent/ceo/application/generate-
 import { CeoException } from '../../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../../agent/ceo/domain/ceo-error-code.enum';
 import { coerceToDailyPlan } from '../../../agent/pm/domain/prompt/previous-plan-formatter';
+import { DEGRADED_UNCOMPARABLE } from '../../../agent/po-shadow/domain/plan-reality.diff';
+import { hasDegradedSource } from '../../../agent/po-shadow/domain/prompt/po-shadow-report.coercer';
 import { GenerateWorklogUsecase } from '../../../agent/work-reviewer/application/generate-worklog.usecase';
 import {
   buildWorklogInput,
@@ -36,6 +38,11 @@ import {
 const WEEKLY_MERGED_PULL_REQUEST_LIMIT = 60;
 const WEEKLY_LOOKBACK_DAYS_AGO = 6;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 정오 cron 1회/일 위에 `/po-shadow` 수동 실행이 얹히므로 7이면 분모가 조용히 잘린다.
+const PO_SHADOW_WEEKLY_RUN_LIMIT = 20;
+// 대조 불가 라벨이 회차의 이 비율을 넘으면 회수 기반을 재검토한다.
+// 3주 연속일 때가 판단 시점이라 한 주만으로 내리지 않는다 — 표시만 하고 사람이 센다.
+const UNCOMPARABLE_ALERT_RATIO = 0.4;
 const KST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Seoul',
   year: 'numeric',
@@ -154,7 +161,10 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
     const ceo = await this.buildCeoMeta(ownerSlackUserId, firedAtKst);
 
-    const summaryText = `${worklogSummary}\n\n────────\n\n${ceo.summary}`;
+    const recoveryHealthLine =
+      await this.buildRecoveryHealthLine(ownerSlackUserId);
+
+    const summaryText = `${worklogSummary}\n\n${recoveryHealthLine}\n\n────────\n\n${ceo.summary}`;
     const detailParts = [worklogDetail];
     if (ceo.detail.trim().length > 0) {
       detailParts.push(ceo.detail);
@@ -162,6 +172,52 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const detailText = detailParts.join('\n\n────────\n\n');
 
     return { skip: false, summaryText, detailText };
+  }
+
+  // PO 회수 대조의 건강도 한 줄. 회수 건수를 합산하지 않는다 — 각 회차의 recoverySummary 는
+  // 30일 누적이라 주간 합계를 내면 같은 지적이 회차 수만큼 중복된다.
+  // 대신 「대조 불가」 라벨이 뜬 회차의 비율을 본다(이미 저장되는 필드라 추가 비용 0).
+  private async buildRecoveryHealthLine(
+    ownerSlackUserId: string,
+  ): Promise<string> {
+    const runs = await this.loadPoShadowRuns(ownerSlackUserId);
+    if (runs === null) {
+      return '🔁 *PO 회수 대조* — 회차 조회 실패로 이번 주 지표 생략';
+    }
+    if (runs.length === 0) {
+      return '🔁 *PO 회수 대조* — 이번 주 PO 회차 없음';
+    }
+    const uncomparableCount = runs.filter((run) =>
+      hasDegradedSource(run.output, DEGRADED_UNCOMPARABLE),
+    ).length;
+    const ratio = uncomparableCount / runs.length;
+    const percentage = Math.round(ratio * 100);
+    const alert =
+      ratio >= UNCOMPARABLE_ALERT_RATIO
+        ? ` ⚠️ 임계(${Math.round(UNCOMPARABLE_ALERT_RATIO * 100)}%) 초과 — 3주 연속이면 회수 기반 재검토`
+        : '';
+    return (
+      `🔁 *PO 회수 대조* — ${runs.length}회차 중 ${uncomparableCount}회차 대조 불가 ` +
+      `(${percentage}%)${alert}`
+    );
+  }
+
+  private async loadPoShadowRuns(
+    ownerSlackUserId: string,
+  ): Promise<{ output: unknown }[] | null> {
+    try {
+      return await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.PO_SHADOW,
+        slackUserId: ownerSlackUserId,
+        sinceDays: 7,
+        limit: PO_SHADOW_WEEKLY_RUN_LIMIT,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Weekly Summary PO 회수 지표 조회 실패: ${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 
   private async loadEvidence(
