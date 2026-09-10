@@ -381,21 +381,15 @@ private func verifyViolationRules(_ t: TestRunner) {
         0,
         "야간의 어두운 통로는 모듈형 게이트를 통과"
     )
+    // 통로가 방보다 밝아도 위반이 아니다 — 공용 복도가 들어온 뒤로 밝기는 분리 축이 아니고
+    // 문·기둥이 그 일을 한다(실측 통로 189.9 대 woodB 151.1).
     let cozyBrightCorridor = cozyHealthy.map {
         $0.tile == .corridor ? selfContainedSample(.corridor, 205, tiles: $0.tiles) : $0
     }
-    t.expect(
-        officeCozyRoomColorViolations(samples: cozyBrightCorridor, hour: 22)
-            .contains { $0.contains("충분히 어둡지 않다") },
-        "모듈형 방에서도 통로 대비가 사라지면 잡는다"
-    )
-    let cozyDarkRoomBoundary = cozyHealthy.map {
-        $0.tile == .corridor ? selfContainedSample(.corridor, 158, tiles: $0.tiles) : $0
-    }
-    t.expect(
-        officeCozyRoomColorViolations(samples: cozyDarkRoomBoundary, hour: 14)
-            .contains { $0.contains("woodB") && $0.contains("충분히 어둡지 않다") },
-        "가장 어두운 부서 방과 통로의 경계가 사라져도 잡는다"
+    t.expectEqual(
+        officeCozyRoomColorViolations(samples: cozyBrightCorridor, hour: 22).count,
+        0,
+        "방보다 밝은 통로는 통과한다"
     )
     // 통로에는 하한이 없어 어디까지든 어두워질 수 있었다 — 옛 0.78 사고의 26.9 도 통과했다.
     let cozySunkenCorridor = cozyHealthy.map {

@@ -280,9 +280,6 @@ public let officeCozyCorridorBrightnessFloor = 80.0
 /// In illustrated rooms furniture may be lighter or darker than the shell; only
 /// near-equal values make it disappear into the floor.
 public let officeCozyFurnitureContrastMargin = 0.5
-/// Shells are individually lit, so the shared circulation band is compared
-/// against the brightest room with a tighter, measured boundary margin.
-public let officeCozyCorridorRoomContrastMargin = 3.0
 
 /// Color gate for the modular 2.5D room path. The five logical floor kinds remain useful sampling
 /// regions, but their old palette ordering is no longer a visual contract because each department
@@ -335,23 +332,19 @@ public func officeCozyRoomColorViolations(
                 + " — 모든 방이 같은 빈 카드처럼 보인다"
         )
     }
-    if let corridor = samples.first(where: { $0.tile == .corridor }) {
-        // The circulation band surrounds every shell, including the darker treasury room.
-        // Compare with the darkest room so no individual boundary disappears.
-        if let darkestRoom = rooms.min(by: { $0.median < $1.median }),
-            corridor.median > darkestRoom.median - officeCozyCorridorRoomContrastMargin
-        {
-            violations.append(
-                "\(prefix) 통로(\(rounded(corridor.median)))가 \(darkestRoom.tile.rawValue)"
-                    + "(\(rounded(darkestRoom.median))) 보다 충분히 어둡지 않다"
-            )
-        }
-    }
-    // 통로는 `rooms` 필터 밖이라 위의 방 밝기 범위 검사를 받지 않는다 — 방은 이미
-    // `officeCozyRoomBrightnessRange` 가 아래위를 다 막지만 통로는 **어느 쪽도 없었다.**
-    // 통로를 방보다 어둡게 두는 것은 새 디자인의 의도이고 100 대까지 내려가도 된다(표본 100·
-    // 실측 140.7). 다만 「어둡게」와 「바닥이 뚫린 것처럼」 사이에는 선이 있다 — 옛 사고에서
-    // 통로는 26.9 까지 내려가 구멍으로 읽혔고, 그 회차에도 게이트는 초록이었다.
+    // **통로와 방의 밝기 방향은 강제하지 않는다.** 한때 통로는 「가장 어두운 방보다 3 이상
+    // 어두울 것」을 요구했다. 방이 저마다 뜬 섬이고 그 사이가 빈 배경이던 시절에는 밝기가
+    // 유일한 분리 축이었기 때문이다.
+    //
+    // 공용 복도 에셋(`shared-oak-corridor`)이 들어오면서 사무실은 하나로 이어졌고, 복도와
+    // 방을 가르는 것은 **문·기둥·벽**이 됐다. 실측도 뒤집혔다 — 통로 189.9 대 woodB 151.1
+    // (2026-09-11, `--color-check --hour 14 --size 1440x860`). 렌더를 열어 보면 복도와 방은
+    // 밝기가 비슷해도 문과 기둥으로 분명히 갈린다. 이 상태에서 방향을 강제하면 규칙이
+    // 디자인을 거스르고 전 시간대가 빨간불이 된다.
+    //
+    // 통로가 지켜야 할 것은 방향이 아니라 **바닥선**이다. 통로는 `rooms` 필터 밖이라 위의
+    // 방 밝기 범위 검사도 받지 않으므로, 하한이 없으면 어디까지든 내려갈 수 있다 — 옛 사고에서
+    // 통로는 26.9 까지 떨어져 바닥에 뚫린 구멍으로 읽혔고 그 회차에도 게이트는 초록이었다.
     if let corridor = samples.first(where: { $0.tile == .corridor }),
         corridor.median < officeCozyCorridorBrightnessFloor
     {
