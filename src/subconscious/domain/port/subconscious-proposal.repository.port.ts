@@ -39,6 +39,9 @@ export interface SubconsciousProposalRepository {
     changeKey: string,
     createdAfter: Date,
   ): Promise<boolean>;
+  // 아직 응답하지 않은 카드 전량 — 사후 무효화가 훑는 입력.
+  // hasPending 과 달리 TTL 하한을 두지 않는다: 만료된 죽은 카드도 닫아야 목록에서 사라진다.
+  listPending(ownerUserId: string): Promise<SubconsciousProposalRecord[]>;
   markStatus(
     id: number,
     status: Exclude<ProposalStatus, 'PENDING'>,

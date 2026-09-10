@@ -23,7 +23,17 @@ import {
 } from '../domain/port/subconscious-proposal.repository.port';
 import { GateDecision, StateChange } from '../domain/subconscious.type';
 
-const DEFAULT_TTL_MS = 3_600_000; // 1시간
+// 카드 유효 시간. 1시간이었으나 실측(2026-09-10)에서 미응답 카드 22건이 만료로 죽었고, 그중
+// 상당수는 스윕이 조회하지 않는 PR(남이 작성해 나에게 할당) 이라 카드가 유일한 리뷰 경로였다.
+// 한 시간 안에 Slack 을 보지 못하면 그 기회가 사라진다. 게시를 하지 않게 바뀐 뒤(apply 의
+// publish:false)로는 카드가 오래 살아도 외부에 흔적을 남기지 않으므로 하루로 늘린다.
+const DEFAULT_TTL_MS = 86_400_000; // 24시간
+
+// 한 회차에 사후 판정할 카드 수 상한. 카드 1장마다 원장을 한 번 조회하므로 상한이 없으면
+// 쌓인 카드 수만큼 tick 이 길어지고, lockDuration 을 넘기면 BullMQ 가 stalled 로 보고 같은
+// job 을 재큐한다(autopilot.orchestrator 주석의 자기 증폭 루프와 같은 함정). 오래된 카드부터
+// 처리하고 남은 것은 다음 회차로 넘긴다 — 20분 주기면 누적분도 몇 회차 안에 소진된다.
+const DISMISS_SCAN_LIMIT = 50;
 
 // review-pr(CODE_REVIEWER) 워커는 dispatch text 에서 PR 참조(owner/repo#num)를
 // 파싱한다. 사람용 요약(PR 제목)은 파싱되지 않으므로, StateItem.key ('github:pr:owner/repo#num')
@@ -97,6 +107,41 @@ export class SubconsciousProposalService implements ProposalEmitter {
         this.ttlMs = parsed;
       }
     }
+  }
+
+  // 이미 뜬 카드 중 스윕이 대신 리뷰한 것을 닫는다.
+  //
+  // shouldEmit 의 생성 시점 판정은 "지금 이미 게시됐나" 만 본다. 새 PR 은 아직 아니므로
+  // 카드가 뜨고, 스윕(5분 주기)이 곧 같은 PR 을 리뷰하면서 그 카드가 무의미해진다. 이 창은
+  // 구조적으로 항상 열려 있어(잠재의식 20분 > 스윕 5분) 생성 시점만으로는 막을 수 없다.
+  // 판정 근거는 shouldEmit 과 동일한 원장 기록이라, 레포 allowlist 로 자를 때 생기는
+  // "스윕이 조회하지 않는 PR(남이 작성해 나에게 할당 등)의 리뷰 경로 상실" 이 없다.
+  async dismissSweptPending(ownerUserId: string): Promise<number> {
+    const pending = await this.repository.listPending(ownerUserId);
+    let dismissed = 0;
+    for (const proposal of pending.slice(0, DISMISS_SCAN_LIMIT)) {
+      const swept = await this.isAlreadySweptPullRequest(
+        proposal.suggestedAgentType as AgentType,
+        proposal.changeKey,
+      );
+      if (!swept) {
+        continue;
+      }
+      // 경쟁 상태 — 사용자가 방금 눌러 PENDING 을 벗어났으면 false. 그때는 사용자의 조작이
+      // 이긴다(카드를 되돌리지 않는다).
+      const moved = await this.repository.transitionFromPending(
+        proposal.id,
+        'DISMISSED',
+        new Date(),
+      );
+      if (moved) {
+        dismissed += 1;
+        this.logger.log(
+          `제안 #${proposal.id} (changeKey="${proposal.changeKey}") 는 PR 리뷰 스윕이 대신 처리함 — 카드 자동 종료`,
+        );
+      }
+    }
+    return dismissed;
   }
 
   // 카드를 만들 이유가 있는지 — 엔진이 예산을 소비하기 전에 호출한다.
@@ -216,6 +261,10 @@ export class SubconsciousProposalService implements ProposalEmitter {
       source: 'SLACK_MESSAGE',
       slackUserId: byUserId,
       agentTypeHint: agentType,
+      // 카드 경로는 게시하지 않는다 — 리뷰 결과는 Slack 으로만 온다. 카드는 봇이 스스로
+      // 만든 제안이라 누른 것을 "게시 의도" 로 읽을 수 없고, 대상이 남이 작성해 나에게
+      // 할당된 PR 일 수 있다(협의되지 않은 봇 코멘트). 내가 쓴 PR 이면 스윕이 이미 게시했다.
+      publish: false,
       // PR 참조 워커는 사람용 요약(제목)이 아니라 key 에서 복원한 PR 참조를 받아야 한다.
       text: resolveDispatchText(agentType, changeKey, changeSummary),
       // 설명과 참조가 모두 필요한 워커(BE)에는 요약을 유지한 채 참조를 따로 동봉한다.

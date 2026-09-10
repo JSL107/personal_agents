@@ -88,6 +88,20 @@ describe('CodeReviewerDispatcher', () => {
     expect(outcome).not.toHaveProperty('autoResolvedNotice');
   });
 
+  it('호출부가 publish:false 를 주면 그대로 내려 게시하지 않는다 (잠재의식 카드 경로)', async () => {
+    const { dispatcher, reviewPullRequestExecute } = makeFixture();
+
+    await dispatcher.dispatch({
+      ...baseInput,
+      text: 'owner/repo#1',
+      publish: false,
+    });
+
+    expect(reviewPullRequestExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ publish: false }),
+    );
+  });
+
   it('REMOTE_CONSOLE 유효 PR 참조는 자동 보정하지 않는다', async () => {
     const { dispatcher, reviewPullRequestExecute, listAuthorOpenPullRequests } =
       makeFixture();
