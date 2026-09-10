@@ -1,5 +1,6 @@
 import {
   isContentDropped,
+  isOverRewriteEligible,
   measureChangeRate,
   measureLengthRetention,
 } from './change-rate';
@@ -123,5 +124,26 @@ describe('isContentDropped', () => {
         '고양이가 담장 위를 천천히 걸어갔고, 해는 이미 기울어 있었어요.',
       ),
     ).toBe(false);
+  });
+});
+
+describe('isOverRewriteEligible', () => {
+  // 판정과 적재가 같은 조건을 봐야 원장의 분포로 임계를 조일 수 있다.
+  it('스무 자 이상이면 판정 대상이다', () => {
+    expect(isOverRewriteEligible('가'.repeat(20))).toBe(true);
+  });
+
+  it('열아홉 자면 대상이 아니다', () => {
+    expect(isOverRewriteEligible('가'.repeat(19))).toBe(false);
+  });
+
+  it('공백을 접은 뒤의 길이로 본다', () => {
+    // 공백을 세면 스무 자를 넘지만 접으면 열 자다.
+    expect(isOverRewriteEligible('가 나 다 라 마 바 사 아 자 차')).toBe(false);
+  });
+
+  it('내용 날림 판정도 같은 조건을 쓴다', () => {
+    expect(isContentDropped('가'.repeat(19), '가')).toBe(false);
+    expect(isContentDropped('가'.repeat(20), '가')).toBe(true);
   });
 });

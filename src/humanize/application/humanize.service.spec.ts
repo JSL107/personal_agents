@@ -124,6 +124,8 @@ describe('HumanizeService', () => {
       overRewrittenKeys: [],
       // 롤백된 필드는 변경률을 재기 전에 빠진다.
       changeRates: { safe: expect.any(Number) },
+      // 이 픽스처의 원문은 20자 미만이라 길이 유지율 판정 대상이 아니다.
+      lengthRetentions: {},
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
@@ -136,6 +138,51 @@ describe('HumanizeService', () => {
       },
       styleGaps: expect.any(Array),
     });
+  });
+
+  // 값이 숫자라는 것만 보면 계산이나 반올림이 틀려도 통과한다(리뷰 지적). 길이를 아는
+  // 입력으로 정확한 값을 못박는다.
+  it('길이 유지율을 원문 대비 비율로 소수 둘째 자리까지 적재한다', async () => {
+    // 원문 40자 → 윤문 20자. 공백은 하나로 접힌 뒤 세므로 둘 다 공백이 없다.
+    const original = '가'.repeat(40);
+    const shortened = '나'.repeat(20);
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ field: shortened }) }),
+    });
+
+    await service.humanize({ field: original });
+
+    expect(agentRunService.lastOutput).toMatchObject({
+      lengthRetentions: { field: 0.5 },
+    });
+  });
+
+  it('나누어떨어지지 않는 비율은 반올림해 적재한다', async () => {
+    // 30자 → 20자 = 0.666… → 0.67
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({
+        text: JSON.stringify({ field: '나'.repeat(20) }),
+      }),
+    });
+
+    await service.humanize({ field: '가'.repeat(30) });
+
+    expect(agentRunService.lastOutput).toMatchObject({
+      lengthRetentions: { field: 0.67 },
+    });
+  });
+
+  it('판정 대상이 아닌 짧은 필드는 적재하지 않는다 — 분포가 왜곡된다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ field: '짧게 줄임' }) }),
+    });
+
+    await service.humanize({ field: '열아홉 자짜리 짧은 값이다' });
+
+    expect(agentRunService.lastOutput).toMatchObject({ lengthRetentions: {} });
   });
 
   // 모델이 내용을 통째로 날리고 한 줄로 요약해 돌려주는 갈래. 숫자·고유명사를 건드리지
@@ -204,6 +251,8 @@ describe('HumanizeService', () => {
       rolledBackKeys: [],
       overRewrittenKeys: [],
       changeRates: { count: expect.any(Number) },
+      // 이 픽스처의 원문은 20자 미만이라 길이 유지율 판정 대상이 아니다.
+      lengthRetentions: {},
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
@@ -326,6 +375,8 @@ describe('HumanizeService', () => {
       rolledBackKeys: [],
       overRewrittenKeys: [],
       changeRates: { a: expect.any(Number) },
+      // 이 픽스처의 원문은 20자 미만이라 길이 유지율 판정 대상이 아니다.
+      lengthRetentions: {},
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
