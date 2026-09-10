@@ -52,17 +52,28 @@ const response: CompletionResponse = {
 };
 
 describe('buildCodexPrompt', () => {
-  it('systemPrompt 이 없으면 원본 프롬프트를 그대로 반환한다', () => {
-    expect(buildCodexPrompt({ prompt: 'hello' })).toBe('hello');
+  // `--ephemeral` 세션에서 collab spawn 은 반드시 실패하고, 뒤이은 collab wait 이 hang 해
+  // timeout 을 통째로 태운다. CLI 인자로 끌 수 없어 프롬프트로 억제하므로 (provider 주석 참조)
+  // systemPrompt 유무와 무관하게 항상 실려야 한다 — 빠지면 억제가 조용히 사라진다.
+  it('systemPrompt 이 없어도 collab 억제 문구를 실은 [System Instructions] 블록을 만든다', () => {
+    const built = buildCodexPrompt({ prompt: 'hello' });
+    expect(built).toContain('서브에이전트 spawn(collab 도구)');
+    expect(built).toContain('[User]\nhello');
   });
 
-  it('systemPrompt 이 있으면 [System Instructions] / [User] 블록으로 합친다', () => {
-    expect(
-      buildCodexPrompt({
-        prompt: 'user message',
-        systemPrompt: 'you are helpful',
-      }),
-    ).toBe('[System Instructions]\nyou are helpful\n\n[User]\nuser message');
+  it('systemPrompt 이 있으면 그 뒤에 억제 문구를 붙여 [System Instructions] / [User] 로 합친다', () => {
+    const built = buildCodexPrompt({
+      prompt: 'user message',
+      systemPrompt: 'you are helpful',
+    });
+    expect(built.startsWith('[System Instructions]\nyou are helpful')).toBe(
+      true,
+    );
+    expect(built).toContain('[User]\nuser message');
+    // 순서 고정: 억제가 명시 유도를 이긴 실측 배치가 systemPrompt → 억제였다 (provider 주석 참조).
+    expect(built.indexOf('you are helpful')).toBeLessThan(
+      built.indexOf('서브에이전트 spawn(collab 도구)'),
+    );
   });
 });
 
