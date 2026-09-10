@@ -95,6 +95,16 @@
 - 변경 후 `swift run ConsoleCoreTests`, `swift build`, asset/color/render check와 루트 `pnpm lint:check`, `pnpm test`, `pnpm build`를 통과한다.
 - 최종 시각 평가는 승인 초안과 최신 캐릭터 레퍼런스를 기준으로 독립 검토한다.
 
+## Visual acceptance score
+
+- Character style and consistency: 20
+- Gender, face, hair, outfit, and accessory diversity: 10
+- Department-specific office completeness: 15
+- 2.5D perspective, lighting, grounding, and occlusion: 20
+- Furniture use and believable work poses: 25
+- Dashboard and office visual consistency: 10
+- 합격 조건은 동일한 대표 렌더 세트에서 모든 항목 감점 없이 100/100이다. 서로 다른 채점표의 점수는 비교하지 않는다.
+
 ## Open questions
 
 - [ ] pose별 원화 1차 범위를 idle/walk/seated-work/talk 네 종류로 확정할지 — owner: product — impact: 애니메이션 제작량.
