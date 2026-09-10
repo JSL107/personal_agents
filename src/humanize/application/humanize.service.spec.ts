@@ -126,6 +126,39 @@ describe('HumanizeService', () => {
     });
   });
 
+  // 조건이 `>` 라 240개는 호출해야 한다. 경계를 고정해두지 않으면 나중에 `>=` 로 바뀌어도
+  // 241개 테스트만으로는 통과해, 정상 회차가 조용히 잘리기 시작한다.
+  it('필드 수가 상한과 같으면(240개) 모델을 부른다', async () => {
+    const 경계필드: Record<string, string> = {};
+    for (let index = 0; index < 240; index += 1) {
+      경계필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+    const { service, routeMock } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify(경계필드) }),
+    });
+
+    await service.humanize(경계필드);
+
+    expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+
+  // 건너뜀 기록은 부수 효과다 — 그것이 실패해도 결과(원본 유지)는 같아야 한다.
+  it('건너뜀 기록이 실패해도 원본을 반환하고 예외를 던지지 않는다', async () => {
+    const { service, agentRunService } = makeService({ enabled: 'true' });
+    agentRunService.execute = jest
+      .fn()
+      .mockRejectedValue(new Error('원장 기록 실패')) as never;
+    const 많은필드: Record<string, string> = {};
+    for (let index = 0; index < 241; index += 1) {
+      많은필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+
+    const result = await service.humanize(많은필드);
+
+    expect(result).toEqual(많은필드);
+  });
+
   it('상한 이하이면 평소대로 모델을 부른다', async () => {
     const { service, routeMock } = makeService({
       enabled: 'true',

@@ -354,6 +354,19 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 잡아내는 것은 "윤문 결과를 아예 못 담은 회차" 로 좁다. 그래도 켜 두는 이유는
     // 141 회차가 무검사로 남는 쪽이 더 나쁘기 때문이다.
     deliverableFields: ['humanizedKeys'],
+    // 건너뛴 회차는 형태가 다르다. 필드 수 상한을 넘으면 모델을 부르지 않고 원본을 내면서
+    // `{skipped, fieldCount, limit}` 만 남기므로(`humanize.service.ts` 의 recordSkippedRun),
+    // 이 형태를 후보로 등록하지 않으면 의도된 건너뜀이 전부 missingField 위반 + score 0 으로
+    // 적재된다. 그러면 위반 표본이 오염돼 "산출물이 실제로 망가진 회차" 를 가리는 신호가
+    // 흐려진다 — PAPER_TRADE 가 198 회차를 그렇게 쌓은 선례가 있다.
+    //
+    // `humanizedKeys: []` 를 대신 넣는 방법은 쓰지 않는다. 위 주석이 말하는 이 검사의 유일한
+    // 효용이 "윤문 결과를 아예 못 담은 회차" 를 잡는 것인데, 빈 배열을 정상으로 인정하면
+    // 그 좁은 검사마저 무력해진다.
+    deliverableVariants: [
+      ['humanizedKeys'],
+      ['skipped', 'fieldCount', 'limit'],
+    ],
     requireEvidence: false,
     // 두 겹으로 위험하다. (1) `humanize.service.ts` 는 `prompt` 에 윤문 대상 JSON 을
     // 그대로 담고 응답도 JSON 파싱을 기대하는데, 머리말이 그 JSON 앞에 붙는다.
