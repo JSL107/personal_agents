@@ -447,6 +447,80 @@ private func verifyViolationRules(_ t: TestRunner) {
         texture[tile]
     }
     let healthy = healthySamples()
+    let cozyHealthy = healthy.map { sample in
+        switch sample.tile {
+        case .carpetLight: return selfContainedSample(sample.tile, 188, tiles: sample.tiles)
+        case .woodA: return selfContainedSample(sample.tile, 185, tiles: sample.tiles)
+        case .carpetDark: return selfContainedSample(sample.tile, 178, tiles: sample.tiles)
+        case .ceramic: return selfContainedSample(sample.tile, 171, tiles: sample.tiles)
+        case .woodB: return selfContainedSample(sample.tile, 159, tiles: sample.tiles)
+        case .corridor: return selfContainedSample(.corridor, 100, tiles: sample.tiles)
+        default: return sample
+        }
+    }
+    t.expectEqual(
+        officeCozyRoomColorViolations(samples: cozyHealthy, hour: 14).count,
+        0,
+        "모듈형 2.5D 방의 실제 밝기 표본은 통과"
+    )
+    // Modular shells must retain the shared corridor contrast rule. A dark
+    // corridor is valid; a bright corridor that erases the room boundary is not.
+    let cozyDarkCorridor = cozyHealthy.map {
+        $0.tile == .corridor ? selfContainedSample(.corridor, 100, tiles: $0.tiles) : $0
+    }
+    t.expectEqual(
+        officeCozyRoomColorViolations(samples: cozyDarkCorridor, hour: 22).filter {
+            $0.contains("충분히 어둡지 않다")
+        }.count,
+        0,
+        "야간의 어두운 통로는 모듈형 게이트를 통과"
+    )
+    let cozyBrightCorridor = cozyHealthy.map {
+        $0.tile == .corridor ? selfContainedSample(.corridor, 205, tiles: $0.tiles) : $0
+    }
+    t.expect(
+        officeCozyRoomColorViolations(samples: cozyBrightCorridor, hour: 22)
+            .contains { $0.contains("충분히 어둡지 않다") },
+        "모듈형 방에서도 통로 대비가 사라지면 잡는다"
+    )
+    let cozyDarkRoomBoundary = cozyHealthy.map {
+        $0.tile == .corridor ? selfContainedSample(.corridor, 158, tiles: $0.tiles) : $0
+    }
+    t.expect(
+        officeCozyRoomColorViolations(samples: cozyDarkRoomBoundary, hour: 14)
+            .contains { $0.contains("woodB") && $0.contains("충분히 어둡지 않다") },
+        "가장 어두운 부서 방과 통로의 경계가 사라져도 잡는다"
+    )
+    let missingCozyTexture = officeCozyRoomColorViolations(
+        samples: cozyHealthy,
+        hour: 14,
+        textureBrightness: { $0 == .wall ? nil : texture[$0] }
+    )
+    t.expect(
+        missingCozyTexture.contains { $0.contains("타일 텍스처를 읽지 못했다") },
+        "모듈형 경로에서도 누락된 표면 에셋은 통과하지 않는다"
+    )
+    let cozyFurniturePairs: [(kind: FurnitureKind, floor: FloorTile)] = [
+        (.refrigerator, .woodB),
+    ]
+    let cozyFurnitureViolation = officeCozyRoomColorViolations(
+        samples: cozyHealthy,
+        hour: 14,
+        furnitureBrightness: { _ in 159.2 },
+        furniturePairs: cozyFurniturePairs
+    )
+    t.expect(
+        cozyFurnitureViolation.contains { $0.contains("refrigerator") },
+        "모듈형 경로에서도 바닥과 겹치는 가구 밝기를 잡는다"
+    )
+    let cozyTooDark = cozyHealthy.map {
+        $0.tile == .woodB ? selfContainedSample(.woodB, 100, tiles: $0.tiles) : $0
+    }
+    t.expect(
+        officeCozyRoomColorViolations(samples: cozyTooDark, hour: 14)
+            .contains { $0.contains("허용 범위") },
+        "모듈형 방이 과도하게 어두워지면 잡는다"
+    )
     t.expectEqual(
         officeFloorColorViolations(samples: healthy, hour: 14, textureBrightness: brightness).count,
         0,
@@ -528,6 +602,12 @@ private func verifyViolationRules(_ t: TestRunner) {
         1,
         "통로 부재는 한 줄로 끊는다"
     )
+}
+
+private func selfContainedSample(
+    _ tile: FloorTile, _ median: Double, tiles: Int
+) -> OfficeColorSample {
+    OfficeColorSample(tile: tile, median: median, low: median - 8, high: median + 8, tiles: tiles)
 }
 
 // MARK: - 인자 파싱

@@ -135,8 +135,8 @@ final class CharacterNode: SKNode {
         // 선택했을 때만 보인다. 노드를 붙였다 뗐다 하지 않고 숨김만 토글해, 위치 갱신 경로를
         // "선택 중인지" 와 무관하게 한 곳(layoutSelectionRing)으로 유지한다.
         selectionRing.strokeColor = SKColor(white: 1, alpha: 0.85)
-        selectionRing.lineWidth = 1.5
-        selectionRing.fillColor = .clear
+        selectionRing.lineWidth = 2.2
+        selectionRing.fillColor = SKColor(white: 1, alpha: 0.05)
         selectionRing.zPosition = 15
         selectionRing.isHidden = true
         addChild(selectionRing)
@@ -218,6 +218,7 @@ final class CharacterNode: SKNode {
         }
         isSelected = selected
         selectionRing.isHidden = !selected
+        selectionRing.alpha = selected ? 1 : 0
         refreshNameplate()
     }
 
@@ -258,10 +259,15 @@ final class CharacterNode: SKNode {
             state: currentState, isHovered: isHovered, isSelected: isSelected
         )
         // 창이 작아 이름표가 서로 겹치는 구간에서는 읽히는 몇 개만 남긴다.
-        let visible = nameplateIsVisible(
+        let visibleAtThisScale = nameplateIsVisible(
             tileSize: Double(currentTileSize), state: currentState,
             isHovered: isHovered, isSelected: isSelected
         )
+        // The illustrated office already carries substantial environmental
+        // detail. At overview scale, persistent black name tags turn the
+        // central group into a text pile; reveal them on hover/selection and
+        // again in close room views where there is enough spacing.
+        let visible = visibleAtThisScale && (isHovered || isSelected || currentTileSize >= 48)
         nameLabel.isHidden = !visible
         namePlate.isHidden = !visible
         // 문패를 이 글자 위로 올리는 계산이 Core 에 있으므로, 크기도 같은 함수에서 받는다.
@@ -641,6 +647,10 @@ final class CharacterNode: SKNode {
     /// 예전에는 몸을 -0.18 rad 기울였는데, 탑다운에서 앉은 캐릭터를 회전시키면 "엎드림" 이
     /// 아니라 "의자에서 미끄러져 기우뚱한 사람" 으로 읽혔다. 회전 대신 압축을 쓴다.
     func startSlump() {
+        if shouldReduceMotion() {
+            clearMotion()
+            return
+        }
         guard sprite.action(forKey: "slump") == nil else {
             return
         }
@@ -673,6 +683,10 @@ final class CharacterNode: SKNode {
 
     /// 완료 — 한 번 튀어오른다(1회성이라 상시 동작을 지우지 않는다).
     func playHop() {
+        if shouldReduceMotion() {
+            clearMotion()
+            return
+        }
         let hop = SKAction.sequence([
             .moveBy(x: 0, y: 7, duration: 0.14),
             .moveBy(x: 0, y: -7, duration: 0.14),

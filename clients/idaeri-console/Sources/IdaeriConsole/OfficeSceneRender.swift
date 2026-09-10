@@ -29,13 +29,16 @@ func renderOfficeScene(
     debugLabels: Bool = false,
     room: Department? = nil,
     selectedDemo: Bool = false,
-    selectedApprovalDemo: Bool = false
+    selectedApprovalDemo: Bool = false,
+    darkMode: Bool = false
 ) -> Bool {
     let selectedCapture = selectedDemo || selectedApprovalDemo
     let inspectorWidth: CGFloat = selectedCapture ? Layout.officeInspectorWidth : 0
     let sceneSize = CGSize(width: size.width - inspectorWidth, height: size.height)
     let scene = OfficeScene(size: sceneSize)
     scene.scaleMode = .resizeFill
+    scene.darkModeOverride = darkMode
+    scene.usesVectorMetrics = selectedCapture
     scene.hourOverride = hour
     scene.skipsChoreography = true
     let view = SKView(frame: CGRect(origin: .zero, size: sceneSize))
@@ -173,7 +176,7 @@ func renderOfficeScene(
     }
     let finalImage: CGImage
     if selectedCapture {
-        guard let composed = composeSelectedInspector(sceneImage: image, size: size, agent: selectedDemoAgent(approval: selectedApprovalDemo), approval: selectedApprovalDemo ? selectedDemoApproval() : nil) else {
+        guard let composed = composeSelectedInspector(sceneImage: image, size: size, agent: selectedDemoAgent(approval: selectedApprovalDemo), approval: selectedApprovalDemo ? selectedDemoApproval() : nil, darkMode: darkMode) else {
             return false
         }
         finalImage = composed
@@ -207,10 +210,10 @@ private func selectedDemoApproval() -> ConsoleApproval {
 
 /// The offline selected-agent capture reserves the inspector width before rendering the scene,
 /// then composes the panel beside it so no employee is covered by the panel.
-private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: ConsoleAgent, approval: ConsoleApproval?) -> CGImage? {
+private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: ConsoleAgent, approval: ConsoleApproval?, darkMode: Bool = false) -> CGImage? {
     let image = NSImage(size: size)
     image.lockFocus()
-    NSColor(calibratedRed: 0.98, green: 0.94, blue: 0.86, alpha: 1).setFill()
+    NSColor(calibratedRed: darkMode ? 0.12 : 0.98, green: darkMode ? 0.10 : 0.94, blue: darkMode ? 0.10 : 0.86, alpha: 1).setFill()
     NSRect(origin: .zero, size: size).fill()
     NSImage(cgImage: sceneImage, size: CGSize(width: size.width - Layout.officeInspectorWidth, height: size.height))
         .draw(in: NSRect(x: 0, y: 0, width: size.width - Layout.officeInspectorWidth, height: size.height))
@@ -218,6 +221,7 @@ private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: 
         agent: agent, approval: approval, commandText: .constant(""), onClose: {}, onSend: { _ in },
         onApprovalDetail: { _ in }, onApprove: { _ in }, onReject: { _ in }
     ))
+    hosting.appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
     hosting.frame = NSRect(x: size.width - Layout.officeInspectorWidth, y: 0, width: Layout.officeInspectorWidth, height: size.height)
     hosting.layoutSubtreeIfNeeded()
     guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
@@ -232,7 +236,31 @@ private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: 
     guard let result = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
         FileHandle.standardError.write(Data("최종 inspector 이미지 생성 실패\n".utf8)); return nil
     }
-    return result
+    // NSImage's off-screen AppKit compositor can return a premultiplied image with a
+    // non-opaque alpha plane even though both the scene and inspector backgrounds were
+    // filled.  That alpha is interpreted as black by some PNG viewers, making the
+    // selected dark capture look like it has clipped black rectangles.  Flatten once
+    // into an explicit opaque RGB context before handing the image to the PNG encoder.
+    return opaqueRGBImage(result)
+}
+
+private func opaqueRGBImage(_ image: CGImage) -> CGImage? {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue
+    guard let context = CGContext(
+        data: nil,
+        width: image.width,
+        height: image.height,
+        bitsPerComponent: 8,
+        bytesPerRow: image.width * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        FileHandle.standardError.write(Data("opaque RGB context 생성 실패\n".utf8))
+        return nil
+    }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return context.makeImage()
 }
 
 /// 실제 조직 인원과 무관한 렌더 전용 표본. 여섯 방을 모두 만들면 사물함까지 카탈로그에 포함된다.

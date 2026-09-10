@@ -13,13 +13,22 @@ struct CozyAgentAvatarView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                avatarShadow(in: proxy.size)
-                roundedBody(in: proxy.size)
-                ears(in: proxy.size)
-                roundedHead(in: proxy.size)
-                hair(in: proxy.size)
-                face(in: proxy.size)
-                accessory(in: proxy.size)
+                if let image = SpriteLoader.cozyCharacterImage(assetIndex: appearance.assetIndex) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .scaledToFit()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                } else {
+                    avatarShadow(in: proxy.size)
+                    roundedBody(in: proxy.size)
+                    ears(in: proxy.size)
+                    roundedHead(in: proxy.size)
+                    hair(in: proxy.size)
+                    face(in: proxy.size)
+                    accessory(in: proxy.size)
+                }
                 stateProp(in: proxy.size)
             }
         }
@@ -39,25 +48,34 @@ struct CozyAgentAvatarView: View {
 
     private func roundedBody(in size: CGSize) -> some View {
         ZStack {
-            Capsule()
-                .fill(coatColor)
-                .frame(width: size.width * 0.48, height: size.height * 0.38)
-                .overlay(Capsule().stroke(CozyPalette.outline, lineWidth: outlineWidth))
-                .position(x: size.width * 0.50, y: size.height * 0.68)
+            RoundedRectangle(cornerRadius: size.width * 0.12, style: .continuous)
+                .fill(LinearGradient(colors: [coatColor.opacity(0.96), coatColor], startPoint: .top, endPoint: .bottom))
+                .frame(width: size.width * 0.42, height: size.height * 0.29)
+                .overlay(RoundedRectangle(cornerRadius: size.width * 0.12, style: .continuous).stroke(CozyPalette.outline.opacity(0.8), lineWidth: outlineWidth))
+                .position(x: size.width * 0.50, y: size.height * 0.70)
             outfitDetails(in: size)
             Capsule()
                 .fill(CozyPalette.avatarSkin)
-                .frame(width: size.width * 0.12, height: size.height * 0.27)
+                .frame(width: size.width * 0.105, height: size.height * 0.22)
                 .overlay(Capsule().stroke(CozyPalette.outline, lineWidth: outlineWidth))
                 .rotationEffect(.degrees(8))
-                .position(x: size.width * 0.29, y: size.height * 0.75)
+                .position(x: size.width * 0.315, y: size.height * 0.75)
             Capsule()
                 .fill(CozyPalette.avatarSkin)
-                .frame(width: size.width * 0.12, height: size.height * 0.27)
+                .frame(width: size.width * 0.105, height: size.height * 0.22)
                 .overlay(Capsule().stroke(CozyPalette.outline, lineWidth: outlineWidth))
                 .rotationEffect(.degrees(-8))
-                .position(x: size.width * 0.71, y: size.height * 0.75)
+                .position(x: size.width * 0.685, y: size.height * 0.75)
+            foot(in: size, x: 0.43)
+            foot(in: size, x: 0.57)
         }
+    }
+
+    private func foot(in size: CGSize, x: CGFloat) -> some View {
+        Capsule()
+            .fill(CozyPalette.avatarFaceInk.opacity(0.72))
+            .frame(width: size.width * 0.14, height: size.height * 0.035)
+            .position(x: size.width * x, y: size.height * 0.86)
     }
 
     @ViewBuilder private func outfitDetails(in size: CGSize) -> some View {
@@ -89,7 +107,7 @@ struct CozyAgentAvatarView: View {
     }
 
     private func roundedHead(in size: CGSize) -> some View {
-        let head = min(size.height * 0.42, size.width * 0.76)
+        let head = min(size.height * 0.43, size.width * 0.68)
         return Group {
             switch appearance.headShapeIndex {
             case 1:
@@ -101,9 +119,9 @@ struct CozyAgentAvatarView: View {
                     .fill(CozyPalette.avatarSkin)
                     .overlay(Ellipse().stroke(CozyPalette.outline, lineWidth: outlineWidth))
             default:
-                Circle()
-                    .fill(CozyPalette.avatarSkin)
-                    .overlay(Circle().stroke(CozyPalette.outline, lineWidth: outlineWidth))
+                Ellipse()
+                    .fill(LinearGradient(colors: [CozyPalette.avatarSkin, CozyPalette.avatarSkin.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(Ellipse().stroke(CozyPalette.outline, lineWidth: outlineWidth))
             }
         }
         .frame(width: head, height: head)
@@ -112,26 +130,24 @@ struct CozyAgentAvatarView: View {
 
     private func hair(in size: CGSize) -> some View {
         let hairColor = appearance.hairStyleIndex.isMultiple(of: 2) ? CozyPalette.avatarHair : CozyPalette.avatarFaceInk
-        return Group {
-            if appearance.hairStyleIndex % 3 == 0 {
-                Path { path in
-                    path.move(to: CGPoint(x: size.width * 0.27, y: size.height * 0.28))
-                    path.addQuadCurve(to: CGPoint(x: size.width * 0.73, y: size.height * 0.28), control: CGPoint(x: size.width * 0.52, y: size.height * -0.16))
-                    path.addLine(to: CGPoint(x: size.width * 0.69, y: size.height * 0.35))
-                    path.addQuadCurve(to: CGPoint(x: size.width * 0.31, y: size.height * 0.35), control: CGPoint(x: size.width * 0.50, y: size.height * 0.25))
-                    path.closeSubpath()
-                }
-                .fill(hairColor)
-                .overlay(Path { path in
-                    path.move(to: CGPoint(x: size.width * 0.27, y: size.height * 0.28))
-                    path.addQuadCurve(to: CGPoint(x: size.width * 0.73, y: size.height * 0.28), control: CGPoint(x: size.width * 0.52, y: size.height * -0.16))
-                }.stroke(CozyPalette.outline, lineWidth: outlineWidth))
-            } else {
-                Capsule()
-                    .fill(hairColor)
-                    .frame(width: size.width * 0.37, height: size.height * 0.12)
-                    .position(x: size.width * 0.50, y: size.height * 0.10)
+        return ZStack {
+            Circle().fill(hairColor).frame(width: size.width * 0.43, height: size.height * 0.30).position(x: size.width * 0.40, y: size.height * 0.20)
+            Circle().fill(hairColor).frame(width: size.width * 0.34, height: size.height * 0.26).position(x: size.width * 0.62, y: size.height * 0.20)
+            if appearance.hairStyleIndex % 3 == 1 {
+                Capsule().fill(hairColor).frame(width: size.width * 0.10, height: size.height * 0.22).position(x: size.width * 0.30, y: size.height * 0.32)
+                Capsule().fill(hairColor).frame(width: size.width * 0.10, height: size.height * 0.22).position(x: size.width * 0.70, y: size.height * 0.32)
+            } else if appearance.hairStyleIndex % 3 == 2 {
+                Circle().fill(hairColor).frame(width: size.width * 0.13).position(x: size.width * 0.30, y: size.height * 0.16)
             }
+            Path { path in
+                path.move(to: CGPoint(x: size.width * 0.29, y: size.height * 0.27))
+                path.addQuadCurve(to: CGPoint(x: size.width * 0.72, y: size.height * 0.27), control: CGPoint(x: size.width * 0.52, y: size.height * -0.02))
+                path.addQuadCurve(to: CGPoint(x: size.width * 0.64, y: size.height * 0.36), control: CGPoint(x: size.width * 0.60, y: size.height * 0.28))
+                path.addQuadCurve(to: CGPoint(x: size.width * 0.52, y: size.height * 0.29), control: CGPoint(x: size.width * 0.56, y: size.height * 0.40))
+                path.addQuadCurve(to: CGPoint(x: size.width * 0.38, y: size.height * 0.36), control: CGPoint(x: size.width * 0.43, y: size.height * 0.40))
+                path.closeSubpath()
+            }.fill(hairColor)
+            Circle().fill(Color.white.opacity(0.13)).frame(width: size.width * 0.06).position(x: size.width * 0.39, y: size.height * 0.12)
         }
     }
 
@@ -145,8 +161,11 @@ struct CozyAgentAvatarView: View {
                 waitingEye(at: CGPoint(x: size.width * 0.43, y: eyeY), in: size)
                 waitingEye(at: CGPoint(x: size.width * 0.57, y: eyeY), in: size)
             } else {
-                Circle().fill(CozyPalette.avatarFaceInk).frame(width: size.width * 0.035, height: size.width * 0.035).position(x: size.width * 0.43, y: eyeY)
-                Circle().fill(CozyPalette.avatarFaceInk).frame(width: size.width * 0.035, height: size.width * 0.035).position(x: size.width * 0.57, y: eyeY)
+                glossyEye(at: CGPoint(x: size.width * 0.43, y: eyeY), in: size)
+                glossyEye(at: CGPoint(x: size.width * 0.57, y: eyeY), in: size)
+            }
+            if mood == .happy || mood == .calm || mood == .focused {
+                blush(in: size)
             }
             if mood == .focused {
                 Capsule().fill(CozyPalette.outline).frame(width: size.width * 0.12, height: outlineWidth).rotationEffect(.degrees(-12)).position(x: size.width * 0.43, y: eyeY - size.height * 0.035)
@@ -163,6 +182,21 @@ struct CozyAgentAvatarView: View {
                 Capsule().fill(CozyPalette.outline).frame(width: size.width * 0.10, height: outlineWidth).position(x: size.width * 0.50, y: size.height * 0.415)
             }
         }
+    }
+
+    private func glossyEye(at point: CGPoint, in size: CGSize) -> some View {
+        ZStack {
+            Ellipse().fill(CozyPalette.avatarFaceInk).frame(width: size.width * 0.075, height: size.height * 0.095)
+            Circle().fill(Color.white.opacity(0.92)).frame(width: size.width * 0.027).offset(x: -size.width * 0.012, y: -size.height * 0.018)
+            Circle().fill(Color.white.opacity(0.62)).frame(width: size.width * 0.014).offset(x: size.width * 0.014, y: size.height * 0.022)
+        }.position(point)
+    }
+
+    private func blush(in size: CGSize) -> some View {
+        HStack(spacing: size.width * 0.16) {
+            Capsule().fill(CozyPalette.apricot.opacity(0.32)).frame(width: size.width * 0.09, height: size.height * 0.022)
+            Capsule().fill(CozyPalette.apricot.opacity(0.32)).frame(width: size.width * 0.09, height: size.height * 0.022)
+        }.position(x: size.width * 0.50, y: size.height * 0.415)
     }
 
     private func happyEye(at point: CGPoint, in size: CGSize) -> some View {

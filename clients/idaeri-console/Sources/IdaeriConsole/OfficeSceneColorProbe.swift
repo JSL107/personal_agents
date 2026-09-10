@@ -36,6 +36,18 @@ func officeFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
     return pixels.meanOpaque()
 }
 
+/// Brightness of the furniture actually used by modular room shells. The legacy
+/// sprites are intentionally not mixed into this branch because they are hidden
+/// when a complete shell is present.
+func officeCozyFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
+    guard let image = SpriteLoader.cozyFurnitureTexture(kind)?.cgImage() as CGImage?,
+        let pixels = OfficePixelGrid(image: image)
+    else {
+        return nil
+    }
+    return pixels.meanOpaque()
+}
+
 /// 벡터 캐릭터가 실제로 사용하는 셔츠 색의 밝기 대역.
 ///
 /// 예전 `char-*` 시트의 픽셀을 읽지 않고, `CozyCharacterArtworkNode`가 그리는 동일한
@@ -84,6 +96,11 @@ func officeProbeFloorColors(
 /// 바닥 색 게이트. 실측표를 내고 규칙을 어기면 false.
 func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
     var failures: [String] = []
+    let usesModularCozyRooms = Department.allCases.allSatisfy {
+        SpriteLoader.cozyDepartmentRoomTexture($0) != nil
+    } && [CommonAreaKind.meeting, .president, .pantry].allSatisfy {
+        SpriteLoader.cozyCommonAreaTexture($0) != nil
+    }
     for hour in hours {
         guard let probe = officeProbeFloorColors(hour: hour, size: size) else {
             return false
@@ -104,19 +121,37 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
                     + "   \(model.map { signed(sample.median - $0) } ?? "—")"
             )
         }
-        failures += officeFloorColorViolations(
-            samples: samples,
-            hour: hour,
-            textureBrightness: officeFloorTextureBrightness,
-            furnitureBrightness: officeFurnitureSpriteBrightness,
-            furniturePairs: probe.furniturePairs
-        )
+        if usesModularCozyRooms {
+            failures += officeCozyRoomColorViolations(
+                samples: samples,
+                hour: hour,
+                textureBrightness: officeFloorTextureBrightness,
+                furnitureBrightness: officeCozyFurnitureSpriteBrightness,
+                furniturePairs: probe.furniturePairs.filter {
+                    switch $0.kind {
+                    case .desk, .chairDown, .chairUp, .sofa2, .sofa3,
+                         .meetingTable, .coffeeTable, .coffeeMachine, .sinkCounter:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+            )
+        } else {
+            failures += officeFloorColorViolations(
+                samples: samples,
+                hour: hour,
+                textureBrightness: officeFloorTextureBrightness,
+                furnitureBrightness: officeFurnitureSpriteBrightness,
+                furniturePairs: probe.furniturePairs
+            )
+        }
     }
     for failure in failures {
         print("✗ \(failure)")
     }
     if failures.isEmpty {
-        print("✓ 색 규칙 통과 — 필수 표면·표본·실내 밝기·통로 경계·가구 대비가 유효하다")
+        print("✓ 색 규칙 통과 — 필수 표면·표본·실내 밝기와 부서별 톤 차이가 유효하다")
     }
     return failures.isEmpty
 }

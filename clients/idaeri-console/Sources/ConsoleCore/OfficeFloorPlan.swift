@@ -409,6 +409,16 @@ public func officeNameplateClearance(tileSize: Double) -> Double {
         + tileSize * officeNameplateGapTiles + officeNameplateClearancePadding
 }
 
+/// 선택된 담당자의 상태 말풍선을 이름표 줄에서 분리할 x 오프셋(px).
+/// 대표실 상단처럼 좌석이 촘촘한 곳에서도 선택 담당자의 활동 문구가 주변 이름표를 덮지
+/// 않도록 왼쪽 빈 공간으로 한 쌍 이동한다. 선택되지 않은 담당자는 기존 중심 위치를 유지한다.
+public func officeInfoBubbleOffsetX(isSelected: Bool, tileSize: Double) -> Double {
+    guard isSelected, tileSize > 0 else {
+        return 0
+    }
+    return -tileSize * 2
+}
+
 /// 이름표를 자리 몫에 맞추는 가로 배율과 중심 이동량(px). 몫은 좌석 중심 기준 좌우 여유다.
 ///
 /// **패딩은 눌리지 않는다.** 배율은 글자에만 걸리고 판의 좌우 여백은 그대로 남으므로, 판

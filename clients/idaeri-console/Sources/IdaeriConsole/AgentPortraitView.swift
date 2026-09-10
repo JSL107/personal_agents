@@ -22,7 +22,7 @@ struct AgentPortraitView: View {
                     department: agent.resolvedDepartment,
                     state: agent.state
                 )
-                .frame(height: 150)
+                .frame(height: 178)
                 Spacer(minLength: 0)
                 roleObject
                     .frame(width: 48, height: 78)
@@ -41,7 +41,7 @@ struct AgentPortraitView: View {
                 .padding(.bottom, Spacing.sm)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 190)
+        .frame(height: 218)
         .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(agent.roleName)의 초상화, \(agent.state.label), \(agent.bubble)")

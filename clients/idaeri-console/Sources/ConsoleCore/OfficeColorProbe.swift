@@ -265,6 +265,106 @@ public let officeFloorModelTolerance = 16.0
 /// "표본이 사실상 없다" 만 잡는다(세 크기 실측: 1440×860 · 1400×820 · 901×819 에서 최소 33·33·32).
 public let officeFloorColorMinimumTiles = 10
 
+/// Generated room shells contain baked lighting, material variation, and wall shadows, so their
+/// rendered brightness cannot be predicted by the legacy `tile texture × muteStrength` model.
+/// This range instead guards the actual requirement: the rooms stay warm and legible without
+/// clipping into a white card or sinking into a dark photographic background.
+public let officeCozyRoomBrightnessRange = 110.0...235.0
+/// In illustrated rooms furniture may be lighter or darker than the shell; only
+/// near-equal values make it disappear into the floor.
+public let officeCozyFurnitureContrastMargin = 0.5
+/// Shells are individually lit, so the shared circulation band is compared
+/// against the brightest room with a tighter, measured boundary margin.
+public let officeCozyCorridorRoomContrastMargin = 3.0
+
+/// Color gate for the modular 2.5D room path. The five logical floor kinds remain useful sampling
+/// regions, but their old palette ordering is no longer a visual contract because each department
+/// shell owns its material and daylight.
+public func officeCozyRoomColorViolations(
+    samples: [OfficeColorSample],
+    hour: Int,
+    textureBrightness: ((FloorTile) -> Double?)? = nil,
+    furnitureBrightness: ((FurnitureKind) -> Double?)? = nil,
+    furniturePairs: [(kind: FurnitureKind, floor: FloorTile)] = []
+) -> [String] {
+    let prefix = "\(hour)시:"
+    let rooms = samples.filter { $0.tile.isRoomFloor }
+    guard rooms.count == 5 else {
+        let measured = rooms.map(\.tile.rawValue).joined(separator: " · ")
+        return ["\(prefix) 2.5D 방 표면 다섯 종류를 다 재지 못했다 (실측: \(measured))"]
+    }
+    var violations: [String] = []
+    for sample in samples where sample.tiles < officeFloorColorMinimumTiles {
+        violations.append(
+            "\(prefix) \(sample.tile.rawValue) 표본이 \(sample.tiles)칸뿐이다"
+                + " (최소 \(officeFloorColorMinimumTiles)) — 중앙값이 강건하지 않다"
+        )
+    }
+    for room in rooms where !officeCozyRoomBrightnessRange.contains(room.median) {
+        violations.append(
+            "\(prefix) \(room.tile.rawValue) 2.5D 방 밝기 \(rounded(room.median))가"
+                + " 허용 범위 \(rounded(officeCozyRoomBrightnessRange.lowerBound))"
+                + "~\(rounded(officeCozyRoomBrightnessRange.upperBound)) 밖이다"
+        )
+    }
+    // Shell artwork owns room materials, but the shared corridor, wall, and any
+    // legacy surface still need the same asset-presence guard as the tile path.
+    // Keeping this check here prevents the modular branch from treating a missing
+    // texture as a successful dark sample.
+    if let textureBrightness {
+        for sample in samples where textureBrightness(sample.tile) == nil {
+            violations.append(
+                "\(prefix) \(sample.tile.rawValue) 타일 텍스처를 읽지 못했다 — 모듈형 방의 누락 표면"
+            )
+        }
+    }
+    guard samples.contains(where: { $0.tile == .corridor }) else {
+        violations.append("\(prefix) 통로 칸이 화면에 없다 — 방 사이 여백을 확인할 것")
+        return violations
+    }
+    guard samples.contains(where: { $0.tile == .wall }) else {
+        violations.append("\(prefix) 벽 칸을 하나도 재지 못했다 — 재는 자리가 어긋났다")
+        return violations
+    }
+    let medians = rooms.map(\.median)
+    if let darkest = medians.min(), let brightest = medians.max(), brightest - darkest < 12 {
+        violations.append(
+            "\(prefix) 부서 방 밝기 차가 \(rounded(brightest - darkest))뿐이다"
+                + " — 모든 방이 같은 빈 카드처럼 보인다"
+        )
+    }
+    if let corridor = samples.first(where: { $0.tile == .corridor }) {
+        // The circulation band surrounds every shell, including the darker treasury room.
+        // Compare with the darkest room so no individual boundary disappears.
+        if let darkestRoom = rooms.min(by: { $0.median < $1.median }),
+            corridor.median > darkestRoom.median - officeCozyCorridorRoomContrastMargin
+        {
+            violations.append(
+                "\(prefix) 통로(\(rounded(corridor.median)))가 \(darkestRoom.tile.rawValue)"
+                    + "(\(rounded(darkestRoom.median))) 보다 충분히 어둡지 않다"
+            )
+        }
+    }
+    if let furnitureBrightness {
+        for pair in furniturePairs {
+            guard let floorSample = samples.first(where: { $0.tile == pair.floor }) else {
+                continue
+            }
+            guard let brightness = furnitureBrightness(pair.kind) else {
+                violations.append("\(prefix) \(pair.kind.rawValue) 가구 스프라이트를 읽지 못했다")
+                continue
+            }
+            if abs(brightness - floorSample.median) < officeCozyFurnitureContrastMargin {
+                violations.append(
+                    "\(prefix) \(pair.kind.rawValue)(\(rounded(brightness)))가"
+                        + " \(pair.floor.rawValue) 바닥(\(rounded(floorSample.median)))과 밝기가 겹친다"
+                )
+            }
+        }
+    }
+    return violations
+}
+
 /// 대비를 견줄 (가구, 그 가구가 선 칸의 바닥) 짝. **실제 배치에서 만든다.**
 ///
 /// 부서별 요청 목록(`departmentFurniture`)을 순회하면 두 가지가 빠진다 — 상단 밴드(회의실·
