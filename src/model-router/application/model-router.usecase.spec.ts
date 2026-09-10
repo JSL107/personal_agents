@@ -94,8 +94,10 @@ describe('ModelRouterUsecase', () => {
     });
 
     it('스텁 계약 에이전트는 아무것도 붙이지 않는다', async () => {
+      // PO_SHADOW 는 2026-09-10 실측 이후 스텁이 아니다(agent-contract.ts 참조) —
+      // 여전히 스텁인 에이전트로 바꿔 이 테스트의 취지를 유지한다.
       await usecase.route({
-        agentType: AgentType.PO_SHADOW,
+        agentType: AgentType.CONTRADICTION_JUDGE,
         request: { prompt: 'hi' },
       });
 
