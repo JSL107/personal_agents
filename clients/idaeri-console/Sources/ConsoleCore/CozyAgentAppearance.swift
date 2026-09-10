@@ -1,7 +1,7 @@
 import Foundation
 
 /// Number of transparent, production-ready character portraits available to the cozy office.
-public let cozyCharacterAssetCount = 12
+public let cozyCharacterAssetCount = 16
 
 /// Deterministic visual traits for an agent's cozy character.
 public struct CozyAgentAppearance: Equatable, Sendable {

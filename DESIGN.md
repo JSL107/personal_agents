@@ -49,6 +49,8 @@
 - Shape/elevation: 큰 라운드 모서리, 부드러운 그림자, 얇은 테두리. 강한 유리광택과 검은 그림자는 피한다.
 - Motion: 짧고 부드러운 보행·타이핑·대기 모션. Reduce Motion에서는 즉시 배치한다.
 - Character art: 머리 40~45%, 큰 단순형 glossy eyes, 짧고 둥근 팔다리, 장난감형 3D 재질, 밝은 크림 조명, 전신 투명 PNG.
+- Character constants: 둥근 얼굴·눈 비율·compact chibi 체형·부드러운 3D 음영·따뜻한 광원은 전 캐릭터에서 고정한다.
+- Character variants: 헤어 길이와 질감, 얼굴 인상과 표정, 셔츠·가디건·후드·재킷·하의, 안경·리본·헤드셋·사원증은 자유롭게 조합하되 신규 캐릭터마다 최소 두 축을 기존 인원과 다르게 한다.
 - Office art: 살짝 기울어진 3/4 high-angle 2.5D. 방 shell은 건축·조명만 포함하고 실제 책상·의자·소파는 동적 자산으로 배치한다.
 
 ## Components
@@ -77,7 +79,7 @@
 - Loading/offline/error는 기존 콘솔 상태 표현을 유지한다.
 - Agent states: waiting, inProgress, awaitingApproval, awaitingIntegration, completed, failed.
 - Pose contract: idle, walk, seated-work, talk을 우선하고 reading/writing/drinking 등 상호작용 pose를 확장한다.
-- pose 자산이 없으면 동일 스타일의 idle 자산으로 fallback하되, 위치·가림 애니메이션은 계속 동작한다.
+- pose 자산이 없으면 동일 스타일의 idle 자산으로 fallback하되 개발 로그에 누락을 남기고, 전용 pose가 존재할 때는 fallback용 축소·위치 보정을 적용하지 않는다.
 
 ## Content voice
 

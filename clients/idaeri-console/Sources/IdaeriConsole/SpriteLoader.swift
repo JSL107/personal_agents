@@ -7,9 +7,28 @@ enum SpriteLoader {
     private static var cozyCharacterCache: [String: NSImage] = [:]
     private static var cozyRoomCache: [String: SKTexture] = [:]
     private static var cozyFurnitureCache: [String: SKTexture] = [:]
+
+    private static func normalizedCozyPose(_ pose: String) -> String {
+        let normalized = pose.lowercased().replacingOccurrences(of: "_", with: "-")
+        return normalized == "sitting" ? "sit" : normalized
+    }
+
+    static func cozyCharacterHasDedicatedPose(assetIndex: Int, pose: String) -> Bool {
+        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
+        let normalizedPose = normalizedCozyPose(pose)
+        guard normalizedPose != "idle" else {
+            return false
+        }
+        return Bundle.module.url(
+            forResource: "agent-\(normalizedIndex)-\(normalizedPose)",
+            withExtension: "png",
+            subdirectory: "cozy/characters"
+        ) != nil
+    }
+
     static func cozyCharacterImage(assetIndex: Int, pose: String = "idle") -> NSImage? {
         let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
-        let normalizedPose = pose.lowercased().replacingOccurrences(of: "_", with: "-")
+        let normalizedPose = normalizedCozyPose(pose)
         let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
         let cacheKey = "\(normalizedIndex):\(normalizedPose)"
         if let cached = cozyCharacterCache[cacheKey] {
@@ -21,6 +40,12 @@ enum SpriteLoader {
         let fallbackURL = Bundle.module.url(
             forResource: "agent-\(normalizedIndex)", withExtension: "png", subdirectory: "cozy/characters"
         )
+        if posedURL == nil, normalizedPose != "idle" {
+            fputs(
+                "cozy character pose fallback: \(posedName).png → agent-\(normalizedIndex).png\n",
+                stderr
+            )
+        }
         guard let url = posedURL ?? fallbackURL, let image = NSImage(contentsOf: url) else {
             return nil
         }

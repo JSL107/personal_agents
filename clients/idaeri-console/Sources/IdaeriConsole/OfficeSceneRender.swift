@@ -272,7 +272,28 @@ private func opaqueRGBImage(_ image: CGImage) -> CGImage? {
 /// 자세 데모용 agentType. 이름을 만드는 쪽(여기)과 찾는 쪽(`applyPoseDemo`)이 어긋나면
 /// 데모가 조용히 비거나 이름표와 자세가 뒤섞인다 — 한 곳에서만 만든다.
 func poseDemoAgentType(for kind: FurnitureKind) -> String {
-    "POSE_DEMO_\(kind.rawValue)"
+    let interactionKinds = FurnitureKind.allCases.filter { $0.interactionPose != nil }
+    guard let kindIndex = interactionKinds.firstIndex(of: kind) else {
+        return "POSE_DEMO_\(kind.rawValue)"
+    }
+    let desiredAssetIndex: Int
+    switch kind.interactionPose {
+    case .sitting, .writing:
+        // The pilot pack currently has true seated and writing renders for agents 0 and 1.
+        // Cycle those two through the matching furniture so the regression capture proves
+        // the dedicated art path instead of silently exercising only idle fallbacks.
+        desiredAssetIndex = kindIndex % 2
+    default:
+        desiredAssetIndex = kindIndex % cozyCharacterAssetCount
+    }
+    let base = "POSE_DEMO_\(kind.rawValue)"
+    for suffix in 0..<256 {
+        let candidate = "\(base)_\(suffix)"
+        if cozyAgentAppearance(agentType: candidate, department: .planning).assetIndex == desiredAssetIndex {
+            return candidate
+        }
+    }
+    return base
 }
 
 /// 전원을 진행 중으로 세워 머리 위 상시 말풍선을 강제로 띄운다(렌더 전용).
@@ -375,7 +396,10 @@ func poseDemoAgents() -> [ConsoleAgent] {
 /// `--populated-demo` exercises the same office composition as production without pose diagnostics.
 func populatedDemoAgents() -> [ConsoleAgent] {
     let departments: [Department] = [.planning, .quality, .evaluation, .treasury, .content, .internalOps]
-    let names = ["하루", "모모", "두부", "콩이", "보리", "토리", "라떼", "구름", "단추", "호두", "루루", "밤비"]
+    let names = [
+        "하루", "모모", "두부", "콩이", "보리", "토리", "라떼", "구름",
+        "단추", "호두", "루루", "밤비", "여울", "새봄", "다온", "별하",
+    ]
     return names.enumerated().map { index, name in
         ConsoleAgent(
             agentType: "SHOWCASE_\(index)", displayName: name, slashCommands: [], description: "",
