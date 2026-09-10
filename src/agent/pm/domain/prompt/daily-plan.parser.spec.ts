@@ -29,6 +29,20 @@ describe('parseDailyPlan', () => {
     expect(result).toEqual(validPlan);
   });
 
+  // assignableTaskIds 는 폐지된 배정 워커를 향하던 필드라 스키마와 검증에서 걷어냈다(#553).
+  // 그 키가 남은 과거 plan 레코드가 계속 읽혀야 하는데, 그것을 보장하던 테스트가 필드와 함께
+  // 삭제됐다 — 호환성 주장을 코드로 붙들어 두는 자리가 없어졌으므로 다시 세운다.
+  it('폐지된 assignableTaskIds 가 남은 과거 레코드도 그대로 파싱된다', () => {
+    const 과거레코드 = {
+      ...validPlan,
+      assignableTaskIds: ['user:prisma schema 확인'],
+    };
+
+    const result = parseDailyPlan(JSON.stringify(과거레코드));
+
+    expect(result).toEqual(과거레코드);
+  });
+
   it('```json 코드 펜스 감싼 응답도 벗겨낸 뒤 파싱한다', () => {
     const wrapped = ['```json', JSON.stringify(validPlan), '```'].join('\n');
     const result = parseDailyPlan(wrapped);
@@ -95,38 +109,6 @@ describe('parseDailyPlan', () => {
     expect(() => parseDailyPlan(JSON.stringify(broken))).toThrow(
       PmAgentException,
     );
-  });
-
-  it('assignableTaskIds 가 포함된 신버전 schema 를 정상 파싱', () => {
-    const withAssignable: DailyPlan = {
-      ...validPlan,
-      assignableTaskIds: ['user:prisma schema 확인', 'user:코드 리뷰 2건'],
-    };
-    expect(parseDailyPlan(JSON.stringify(withAssignable))).toEqual(
-      withAssignable,
-    );
-  });
-
-  it('assignableTaskIds 가 누락된 구버전 plan 도 graceful 통과', () => {
-    const withoutAssignable = JSON.parse(
-      JSON.stringify(validPlan),
-    ) as Partial<DailyPlan>;
-    delete withoutAssignable.assignableTaskIds;
-    expect(parseDailyPlan(JSON.stringify(withoutAssignable))).toEqual(
-      withoutAssignable,
-    );
-  });
-
-  it('assignableTaskIds 가 string 배열이 아니면 예외', () => {
-    const broken = { ...validPlan, assignableTaskIds: [1, 2, 3] };
-    expect(() => parseDailyPlan(JSON.stringify(broken))).toThrow(
-      PmAgentException,
-    );
-  });
-
-  it('assignableTaskIds 가 빈 배열인 정상 케이스 ("후보 없음" 명시) 통과', () => {
-    const empty: DailyPlan = { ...validPlan, assignableTaskIds: [] };
-    expect(parseDailyPlan(JSON.stringify(empty))).toEqual(empty);
   });
 
   it('stalledTasks 가 있으면 방어 파싱해 유효 항목만 정규화한다', () => {
