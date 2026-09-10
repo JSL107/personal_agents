@@ -118,6 +118,10 @@ enum SpriteLoader {
         cozyRoomTexture(named: "\(department.rawValue)-shell")
     }
 
+    static func cozySharedOakFloorTexture() -> SKTexture? {
+        cozyRoomTexture(named: "shared-oak-corridor")
+    }
+
     static func cozyDepartmentRoomImage(_ department: Department) -> NSImage? {
         let name = "\(department.rawValue)-shell"
         if let cached = cozyRoomImageCache[name] { return cached }

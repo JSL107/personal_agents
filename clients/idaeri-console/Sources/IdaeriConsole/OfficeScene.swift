@@ -1183,11 +1183,13 @@ final class OfficeScene: SKScene {
             node.setNameplateSpan(nil)
             node.tile = seat
             let meetingPoint = floorPoint(seat)
-            let horizontalOffset = tileSize * (index == 0 ? 0.35 : -0.20)
+            // 두 사람이 같은 테이블을 바라보도록 서로의 좌석 안쪽으로 모은다.
+            // 기존 간격은 두 번째 사람이 테이블에서 떠 보이는 원인이 됐다.
+            let horizontalOffset = tileSize * (index == 0 ? 0.42 : -0.60)
             node.place(
                 at: CGPoint(
                     x: meetingPoint.x + horizontalOffset,
-                    y: meetingPoint.y - tileSize * 0.76
+                    y: meetingPoint.y - tileSize * 0.68
                 ),
                 depth: depth(of: seat) + 0.24
             )
@@ -1386,12 +1388,14 @@ final class OfficeScene: SKScene {
             .internalOps: 0.19,
         ]
         let verticalOffsetTiles: [Department: CGFloat] = [
-            .planning: 0.50,
-            .quality: 0.40,
-            .evaluation: 0.43,
-            .treasury: 0.51,
-            .content: 0.43,
-            .internalOps: 0.55,
+            // 각 캐릭터의 손·상체가 작업면에 닿는 지점을 기준으로 보정한다.
+            // 양수 방향은 작업면 안쪽(화면 위쪽)이다.
+            .planning: 0.82,
+            .quality: 0.68,
+            .evaluation: 0.60,
+            .treasury: 0.62,
+            .content: 0.50,
+            .internalOps: 0.72,
         ]
         node.place(
             at: CGPoint(
@@ -1425,14 +1429,29 @@ final class OfficeScene: SKScene {
 
     private func renderFloor() {
         floorLayer.removeAllChildren()
-        let base = SKShapeNode(rectOf: CGSize(width: CGFloat(plan.columns) * tileSize,
-                                               height: CGFloat(plan.rows) * tileSize), cornerRadius: tileSize * 0.18)
-        base.fillColor = SKColor(red: 0.62, green: 0.56, blue: 0.48, alpha: 1)
+        let floorSize = CGSize(
+            width: CGFloat(plan.columns) * tileSize,
+            height: CGFloat(plan.rows) * tileSize
+        )
+        let base = SKShapeNode(rectOf: floorSize, cornerRadius: tileSize * 0.18)
+        base.fillColor = SKColor(red: 0.91, green: 0.85, blue: 0.75, alpha: 1)
         base.strokeColor = .clear
         base.position = CGPoint(x: gridOrigin.x + CGFloat(plan.columns) * tileSize / 2,
                                 y: gridOrigin.y + CGFloat(plan.rows) * tileSize / 2)
         base.name = "cozy:base"
         base.zPosition = -2
+        if let oakTexture = SpriteLoader.cozySharedOakFloorTexture() {
+            let grain = SKShapeNode(rectOf: floorSize, cornerRadius: tileSize * 0.18)
+            grain.fillColor = .white
+            grain.fillTexture = oakTexture
+            grain.strokeColor = .clear
+            // Enough grain must remain visible in the exposed corridor gaps for them to read
+            // as walkable oak floor, not blank spacing between screenshot cards.
+            grain.alpha = 0.46
+            grain.zPosition = 0.1
+            grain.name = "cozy:oak-grain"
+            base.addChild(grain)
+        }
         floorLayer.addChild(base)
         renderCozyIslands()
         // Generated room shells already own their windows, walls, and ambient lighting.
@@ -1452,9 +1471,13 @@ final class OfficeScene: SKScene {
         floorLayer.children
             .filter { $0.name == "cozy:island" || $0.name == "cozy:walkway" || $0.name == "cozy:rug" }
             .forEach { $0.removeFromParent() }
+        renderCozyWalkways()
         for zone in plan.zones {
-            let size = CGSize(width: CGFloat(max(1, zone.width - 1)) * tileSize,
-                              height: CGFloat(max(1, zone.height - 1)) * tileSize)
+            // Fill the complete logical zone footprint. The earlier one-tile inset on every
+            // edge multiplied into thick beige gutters, so the modular rooms read as a 3×3
+            // screenshot gallery instead of neighboring areas of one office.
+            let size = CGSize(width: CGFloat(max(1, zone.width)) * tileSize,
+                              height: CGFloat(max(1, zone.height)) * tileSize)
             let room = CozyOfficeNodeFactory.departmentRoomModule(
                 size: size,
                 department: zone.department,
@@ -1470,8 +1493,8 @@ final class OfficeScene: SKScene {
         for area in plan.commonAreas {
             let surface = CozyOfficeNodeFactory.commonAreaSurface(
                 size: CGSize(
-                    width: tileSize * CGFloat(max(1, area.width - 1)),
-                    height: tileSize * 3.35
+                    width: tileSize * CGFloat(max(1, area.width)),
+                    height: tileSize * 3.70
                 ),
                 kind: area.kind,
                 texture: SpriteLoader.cozyCommonAreaTexture(area.kind)
@@ -1482,6 +1505,37 @@ final class OfficeScene: SKScene {
                 y: gridOrigin.y + (CGFloat(area.labelY) + 2.35) * tileSize
             )
             floorLayer.addChild(surface)
+        }
+    }
+
+    /// Rebuilds the logical corridor as a continuous oak path beneath the independent room
+    /// illustrations. Horizontal and vertical runs overlap deliberately at junctions, producing
+    /// one circulation network without changing collision, doors, or the floor-plan contract.
+    private func renderCozyWalkways() {
+        guard let zoneColumns else {
+            return
+        }
+        let thickness = tileSize * 0.42
+        let horizontal = CozyOfficeNodeFactory.walkway(
+            size: CGSize(width: CGFloat(plan.columns) * tileSize, height: thickness)
+        )
+        horizontal.name = "cozy:walkway"
+        horizontal.position = CGPoint(
+            x: gridOrigin.x + CGFloat(plan.columns) * tileSize / 2,
+            y: gridOrigin.y + (CGFloat(officeCorridorRow(zoneColumns: zoneColumns)) + 0.5) * tileSize
+        )
+        floorLayer.addChild(horizontal)
+
+        for column in officeCorridorColumns(zoneColumns: zoneColumns) {
+            let vertical = CozyOfficeNodeFactory.walkway(
+                size: CGSize(width: thickness, height: CGFloat(plan.rows) * tileSize)
+            )
+            vertical.name = "cozy:walkway"
+            vertical.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(column) + 0.5) * tileSize,
+                y: gridOrigin.y + CGFloat(plan.rows) * tileSize / 2
+            )
+            floorLayer.addChild(vertical)
         }
     }
 
@@ -1868,9 +1922,17 @@ final class OfficeScene: SKScene {
             }
             if placement.kind.isDoorway {
                 doorNodes[placement.tile] = node
-                if usesCompleteRoomArchitecture {
+                let isCeilingDoor = plan.zones.contains { zone in
+                    placement.tile.y == zone.origin.y + zone.height - 1
+                        && zone.origin.x <= placement.tile.x
+                        && placement.tile.x < zone.origin.x + zone.width
+                }
+                if usesCompleteRoomArchitecture && !isCeilingDoor {
                     // The fallback sprite remains as a logical/hitbox node, but it is hidden by
-                    // design. Attach live door state to an independent visible marker instead.
+                    // design. The room art already contains its rear wall, so drawing the second
+                    // (ceiling) exit on top of that image looks like a floating door icon. Expose
+                    // live state only at the corridor-facing side portal; both logical exits keep
+                    // their original walkability and open/close state.
                     let statusNode = CozyOfficeNodeFactory.doorStatusOverlay(tileSize: tileSize)
                     statusNode.name = "cozy:door-status:\(placement.tile.x)-\(placement.tile.y)"
                     statusNode.position = position
@@ -3701,8 +3763,8 @@ final class OfficeScene: SKScene {
         }
         let isNight = daylight == .night
         base.fillColor = isNight
-            ? SKColor(red: 0.40, green: 0.36, blue: 0.34, alpha: 1)
-            : SKColor(red: 0.62, green: 0.56, blue: 0.48, alpha: 1)
+            ? SKColor(red: 0.34, green: 0.31, blue: 0.30, alpha: 1)
+            : SKColor(red: 0.91, green: 0.85, blue: 0.75, alpha: 1)
     }
 
     /// 앉아 있는 사람 책상에 스탠드 빛을 켠다.

@@ -113,6 +113,7 @@ func runCozyAssetCheck() -> Bool {
         "planning-shell", "quality-shell", "evaluation-shell",
         "treasury-shell", "content-shell", "internalOps-shell",
         "meeting-shell", "president-shell", "pantry-shell",
+        "shared-oak-corridor",
     ]
     for name in roomAssets {
         guard let url = Bundle.module.url(
@@ -164,7 +165,7 @@ func runCozyAssetCheck() -> Bool {
         }
     }
     if valid {
-        print("cozy asset check passed: 9 modular rooms + 12 interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets")
+        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + 12 interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets")
     }
     return valid
 }
