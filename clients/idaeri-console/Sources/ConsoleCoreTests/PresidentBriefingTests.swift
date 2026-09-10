@@ -24,6 +24,11 @@ private let sampleStreak = ConsoleStreak(
 func runPresidentBriefingTests(_ t: TestRunner) {
     t.suite("PresidentBriefing")
 
+    t.expect(
+        officePresidentBubbleOffsetXTiles >= 2.5,
+        "대표 상태 말풍선은 대표 문패와 담당자 이름표에서 충분히 떨어져야 한다"
+    )
+
     // MARK: 대표 머리 위 할 일 말풍선
 
     // 할 일이 없으면 말풍선이 뜨지 않는다. 빈 말풍선을 띄우면 "할 일 없음" 을 종일 이고

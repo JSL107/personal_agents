@@ -63,6 +63,7 @@ struct DashboardView: View {
             }
             .padding(Spacing.xl)
         }
+        .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
         .sheet(item: $injectTarget) { target in
             injectSheet(target: target)
@@ -153,10 +154,17 @@ struct DashboardView: View {
                     Circle()
                         .fill(ConsoleAgentState.awaitingApproval.accentColor)
                         .frame(width: Stroke.dot, height: Stroke.dot)
-                    Text(approval.title)
-                        .font(Typography.body)
-                        .lineLimit(2)
-                        .onTapGesture { selectedApproval = approval }
+                    Button {
+                        selectedApproval = approval
+                    } label: {
+                        Text(approval.title)
+                            .font(Typography.body)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("승인 상세 \(approval.title)")
+                    .accessibilityHint("승인 상세 화면 열기")
                     Spacer(minLength: 0)
                     Text(formatTime(approval.createdAt))
                         .font(Typography.metricMonoSmall)

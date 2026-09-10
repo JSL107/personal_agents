@@ -46,12 +46,9 @@ struct OfficeView: View {
                 // 씬은 보조기술 트리에 이름 없는 이미지 덩어리로만 잡힌다(실측). 자식을 덮고
                 // 한 문장으로 대신 읽게 한다 — 그림 안의 몸짓·자리로만 전하던 정보를
                 // 소리로 듣는 유일한 통로다.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(
-                    officeAccessibilitySummary(
-                        agents: store.agents, approvals: store.approvals
-                    )
-                )
+                .accessibilityRepresentation {
+                    officeAccessibilityControls
+                }
                 // 선택 패널은 SpriteView 위에 얹지 않고 trailing safe-area에 삽입한다.
                 // SpriteKit 장면의 실제 폭이 줄어들어 사람·가구를 가리지 않는다.
                 .safeAreaInset(edge: .trailing, spacing: 0) {
@@ -163,6 +160,7 @@ struct OfficeView: View {
                     scene.reconcileQueue(agents: store.agents, approvals: newApprovals)
                 }
                 .onChange(of: selectedAgent) { newSelection in
+                    scene.setVectorMetricsEnabled(newSelection != nil)
                     scene.setSelected(newSelection)
                 }
                 .onChange(of: isPresidentBarOpen) { isOpen in
@@ -313,6 +311,29 @@ struct OfficeView: View {
             }
         }
         .padding(.bottom, Spacing.md)
+    }
+
+    /// SpriteKit is exposed as a picture to VoiceOver, so provide an equivalent keyboard and
+    /// VoiceOver surface without placing visible controls over the office canvas.
+    private var officeAccessibilityControls: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(officeAccessibilitySummary(agents: store.agents, approvals: store.approvals))
+            Button("대표에게 지시") { openPresidentBar() }
+                .accessibilityHint("담당자를 지정하지 않고 지시 입력")
+            Button("오늘의 리포트") { scene.toggleDailyReportCard(store.briefing) }
+            ForEach(store.agents) { agent in
+                Button("\(agent.roleName) 선택") {
+                    selectedAgent = agent.agentType
+                    isPresidentBarOpen = false
+                    commandText = ""
+                }
+                .accessibilityHint("담당자 상세와 지시 입력 열기")
+            }
+            ForEach(store.approvals) { approval in
+                Button("승인 상세 \(approval.title)") { selectedApproval = approval }
+                    .accessibilityHint("승인 상세 화면 열기")
+            }
+        }
     }
 
     /// 씬 안의 대표를 클릭했을 때. 마우스 말고 지시 바를 여는 길은 메뉴 바의 「지시 ▸ 대표에게

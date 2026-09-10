@@ -1,7 +1,11 @@
 import Foundation
 
+/// Number of transparent, production-ready character portraits available to the cozy office.
+public let cozyCharacterAssetCount = 12
+
 /// Deterministic visual traits for an agent's cozy character.
 public struct CozyAgentAppearance: Equatable, Sendable {
+    public let assetIndex: Int
     public let headShapeIndex: Int
     public let hairStyleIndex: Int
     public let outfitStyleIndex: Int
@@ -9,12 +13,14 @@ public struct CozyAgentAppearance: Equatable, Sendable {
     public let paletteIndex: Int
 
     public init(
+        assetIndex: Int = 0,
         headShapeIndex: Int,
         hairStyleIndex: Int,
         outfitStyleIndex: Int,
         accessoryIndex: Int?,
         paletteIndex: Int
     ) {
+        self.assetIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
         self.headShapeIndex = headShapeIndex
         self.hairStyleIndex = hairStyleIndex
         self.outfitStyleIndex = outfitStyleIndex
@@ -41,6 +47,7 @@ public func cozyAgentAppearance(
         ($0 ^ UInt64($1)) &* 1099511628211
     }
     return CozyAgentAppearance(
+        assetIndex: Int(seed % UInt64(cozyCharacterAssetCount)),
         headShapeIndex: Int(seed % 3),
         hairStyleIndex: Int((seed / 3) % 8),
         outfitStyleIndex: Int((seed / 24) % 6),

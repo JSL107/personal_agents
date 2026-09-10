@@ -16,6 +16,15 @@ private func makeInteractionAgent(_ type: String, _ state: ConsoleAgentState) ->
 func runOfficeInteractionTests(_ t: TestRunner) {
     t.suite("OfficeInteraction")
 
+    t.expectEqual(
+        officeInfoBubbleOffsetX(isSelected: true, tileSize: 40), -80,
+        "선택 담당자 말풍선은 주변 이름표에서 분리한다"
+    )
+    t.expectEqual(
+        officeInfoBubbleOffsetX(isSelected: false, tileSize: 40), 0,
+        "일반 담당자 말풍선은 기존 중심 위치를 유지한다"
+    )
+
     t.expect(
         reconciledSelectedAgent(current: "present", agents: [makeInteractionAgent("present", .waiting)]) == "present",
         "existing selection is retained"

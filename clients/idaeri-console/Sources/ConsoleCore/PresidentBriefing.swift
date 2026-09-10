@@ -133,6 +133,11 @@ public func officeDailyReportLines(
 /// 지킬 수단이 없다.
 public let officePresidentBubbleWidthTiles: Double = 4.6
 
+/// 대표실 상단의 담당자 줄과 겹치지 않게 말풍선을 대표의 오른쪽으로 옮기는 칸 수.
+/// 대표 문패는 머리 바로 위에 남겨 두고, PR 상태는 빈 창가 쪽에 분리해 두 신호를 한 번에
+/// 읽게 한다. 선택 Inspector에서 오피스가 확대되어도 같은 타일 기준으로 유지된다.
+public let officePresidentBubbleOffsetXTiles: Double = 3.0
+
 /// 대표 말풍선 줄 수 — **한 줄이다.**
 ///
 /// 대표실은 화면 최상단 밴드라 머리 위로 쌓을 여유가 한 줄뿐이다. 왕관 문패 위에 경고등까지

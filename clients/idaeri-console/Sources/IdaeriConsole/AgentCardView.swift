@@ -122,7 +122,7 @@ struct AgentCardView: View {
             .padding(Spacing.lg)
         }
         .foregroundStyle(CozyPalette.ink)
-        .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(CozyPalette.surface)
@@ -131,6 +131,7 @@ struct AgentCardView: View {
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: Stroke.emphasis)
         )
+        .shadow(color: CozyPalette.outline.opacity(0.08), radius: 12, y: 6)
         .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)

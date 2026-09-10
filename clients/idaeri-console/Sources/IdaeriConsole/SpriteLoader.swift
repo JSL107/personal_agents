@@ -4,6 +4,100 @@ import SpriteKit
 
 enum SpriteLoader {
     private static var cache: [String: SKTexture] = [:]
+    private static var cozyCharacterCache: [String: NSImage] = [:]
+    private static var cozyRoomCache: [String: SKTexture] = [:]
+    private static var cozyFurnitureCache: [String: SKTexture] = [:]
+    static func cozyCharacterImage(assetIndex: Int, pose: String = "idle") -> NSImage? {
+        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
+        let normalizedPose = pose.lowercased().replacingOccurrences(of: "_", with: "-")
+        let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
+        let cacheKey = "\(normalizedIndex):\(normalizedPose)"
+        if let cached = cozyCharacterCache[cacheKey] {
+            return cached
+        }
+        let posedURL = Bundle.module.url(
+            forResource: posedName, withExtension: "png", subdirectory: "cozy/characters"
+        )
+        let fallbackURL = Bundle.module.url(
+            forResource: "agent-\(normalizedIndex)", withExtension: "png", subdirectory: "cozy/characters"
+        )
+        guard let url = posedURL ?? fallbackURL, let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        cozyCharacterCache[cacheKey] = image
+        return image
+    }
+
+    static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
+        guard let image = cozyCharacterImage(assetIndex: assetIndex, pose: pose) else {
+            return nil
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        return texture
+    }
+
+    static func cozyDepartmentRoomTexture(_ department: Department) -> SKTexture? {
+        cozyRoomTexture(named: "\(department.rawValue)-shell")
+    }
+
+    static func cozyCommonAreaTexture(_ kind: CommonAreaKind) -> SKTexture? {
+        cozyRoomTexture(named: "\(kind.rawValue)-shell")
+    }
+
+    static func cozyFurnitureTexture(_ kind: FurnitureKind) -> SKTexture? {
+        let assetName: String?
+        switch kind {
+        case .desk:
+            assetName = "workstation"
+        case .chairDown, .chairUp:
+            assetName = "chair"
+        case .sofa2, .sofa3:
+            assetName = "sofa"
+        case .meetingTable, .coffeeTable:
+            assetName = "meeting-table"
+        case .bookshelf, .wallShelf:
+            assetName = "bookshelf"
+        case .coffeeMachine, .sinkCounter:
+            assetName = "coffee-station"
+        default:
+            assetName = nil
+        }
+        guard let assetName else {
+            return nil
+        }
+        if let cached = cozyFurnitureCache[assetName] {
+            return cached
+        }
+        guard let url = Bundle.module.url(
+            forResource: assetName,
+            withExtension: "png",
+            subdirectory: "cozy/furniture-3d"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        cozyFurnitureCache[assetName] = texture
+        return texture
+    }
+
+    private static func cozyRoomTexture(named name: String) -> SKTexture? {
+        if let cached = cozyRoomCache[name] {
+            return cached
+        }
+        guard let url = Bundle.module.url(
+            forResource: name,
+            withExtension: "png",
+            subdirectory: "cozy/rooms"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        cozyRoomCache[name] = texture
+        return texture
+    }
 
     static func texture(_ name: String) -> SKTexture? {
         if let cached = cache[name] {

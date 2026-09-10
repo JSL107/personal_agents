@@ -27,18 +27,44 @@ struct AppRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: Spacing.lg) {
+                HStack(spacing: Spacing.sm) {
+                    Circle().fill(Color(red: 0.96, green: 0.33, blue: 0.27)).frame(width: 12, height: 12)
+                    Circle().fill(Color(red: 1.00, green: 0.68, blue: 0.24)).frame(width: 12, height: 12)
+                    Circle().fill(Color(red: 0.27, green: 0.72, blue: 0.43)).frame(width: 12, height: 12)
+                }
+                HStack(spacing: Spacing.sm) {
+                    ZStack {
+                        Circle().fill(CozyPalette.butter.opacity(0.30))
+                        Image(systemName: "sun.max.fill")
+                            .foregroundStyle(CozyPalette.butter)
+                    }
+                    .frame(width: 32, height: 32)
+                    Text("이대리 오피스")
+                        .font(.title3.bold())
+                        .foregroundStyle(CozyPalette.ink)
+                }
                 Picker("보기", selection: $tab) {
-                    Text("대시보드").tag(Tab.dashboard)
-                    Text("오피스").tag(Tab.office)
+                    Label("대시보드", systemImage: "rectangle.grid.2x2.fill").tag(Tab.dashboard)
+                    Label("오피스", systemImage: "person.3.fill").tag(Tab.office)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: Layout.sidebarWidth)
                 Spacer()
+                HStack(spacing: Spacing.sm) {
+                    Circle().fill(status.color).frame(width: Stroke.dot, height: Stroke.dot)
+                    Text(status.label).font(Typography.captionEmphasis).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(CozyPalette.canvas, in: Capsule())
             }
-            .padding(Spacing.sm)
-
-            Divider()
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(CozyPalette.surface)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(CozyPalette.outline.opacity(0.12)).frame(height: 1)
+            }
 
             switch tab {
             case .dashboard:
@@ -61,6 +87,7 @@ struct AppRootView: View {
                 )
             }
         }
+        .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.windowMinHeight)
         .onReceive(
             NotificationCenter.default.publisher(for: .idaeriOpenPresidentCommand)
