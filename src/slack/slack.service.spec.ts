@@ -547,6 +547,36 @@ describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
   });
 });
 
+// closeProposalCard 는 호출자에게 예외를 주지 않기로 약속한 자리다 — 던지면 자동 정리
+// 순회가 끊기고, 이미 DISMISSED 로 전이된 카드는 다음 회차에 재시도되지 않아 활성 버튼이
+// 영구히 남는다. app 부재 두 갈래 모두 no-op 이어야 한다.
+describe('SlackService.closeProposalCard — app 부재 best-effort', () => {
+  it('토큰 미설정이어도 던지지 않는다', async () => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+
+    await expect(
+      service.closeProposalCard({
+        channelId: 'C1',
+        messageTs: '1.2',
+        text: 'closed',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('토큰은 설정됐지만 기동 전(app 없음)이어도 던지지 않는다', async () => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+    (service as unknown as { isConfigured: boolean }).isConfigured = true;
+
+    await expect(
+      service.closeProposalCard({
+        channelId: 'C1',
+        messageTs: '1.2',
+        text: 'closed',
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('shouldRefreshSocketAfterDrift', () => {
   it('정상 interval 근처 tick 은 socket refresh 대상이 아니다', () => {
     expect(shouldRefreshSocketAfterDrift(30_000, 30_000, 90_000)).toBe(false);
