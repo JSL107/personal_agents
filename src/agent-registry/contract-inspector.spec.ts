@@ -449,6 +449,140 @@ describe('evaluateContract — 점수', () => {
     });
   });
 
+  // PO_SHADOW 는 quiet(조용한 날)/개입 두 형태를 같은 8개 키 스키마로 낸다.
+  // purposeConflict 는 계약에서 뺐다 — 정상 실행에서도 흔히 null 이라 필수로 두면
+  // 오탐이 쌓인다(agent-contract.ts 의 PO_SHADOW 주석 참조).
+  describe('PO_SHADOW — quiet/개입 두 형태', () => {
+    it('조용한 날 형태(quiet=true, findings 빈 배열, purposeConflict=null)를 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(AgentType.PO_SHADOW, {
+        schemaVersion: 2,
+        quiet: true,
+        headline: '계획대로 진행 중',
+        findings: [],
+        purposeConflict: null,
+        factSummary: ['담당 PR #200 오픈 — 진행 중'],
+        droppedFindingCount: 0,
+        degradedSources: [],
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('개입 형태(quiet=false, purposeConflict=null)도 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(AgentType.PO_SHADOW, {
+        schemaVersion: 2,
+        quiet: false,
+        headline: '#264 업로드 차단부터 처리',
+        findings: [
+          {
+            factIds: ['fact-1'],
+            point: '업로드 실패',
+            suggestion: '로그 확인',
+          },
+        ],
+        purposeConflict: null,
+        factSummary: ['fact-1 — 업로드 API 500'],
+        droppedFindingCount: 0,
+        degradedSources: [],
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('quiet 키가 아예 없으면 위반으로 잡는다', () => {
+      const evaluation = evaluateContract(AgentType.PO_SHADOW, {
+        headline: '계획대로 진행 중',
+        findings: [],
+        factSummary: [],
+        droppedFindingCount: 0,
+        degradedSources: [],
+      });
+
+      expect(evaluation.violations).toContainEqual({
+        rule: 'missingField',
+        detail: 'quiet',
+      });
+    });
+  });
+
+  // CTO_STUDY 는 이름 하나를 판정(EvaluateStudyTopicUsecase, kind 별로 두 갈래)과
+  // 발행(ExpandStudyBriefUsecase, 성공/스킵 두 갈래)이 나눠 쓴다 — 네 형태 전부
+  // 위반 없이 채점돼야 한다(agent-contract.ts 의 CTO_STUDY 주석 참조).
+  describe('CTO_STUDY — 판정 두 갈래 + 발행 두 갈래', () => {
+    it('CONCEPT 판정 형태를 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        kind: 'CONCEPT',
+        whyNow: '지금 담당 모듈이 이 개념을 쓰기 시작했다',
+        whereItLands: 'src/router',
+        minutes: 20,
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('TOOL 판정 형태는 caution 이 없어도 만점이다 (프롬프트가 없으면 생략하라고 명시)', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        kind: 'TOOL',
+        whatImproves: '수동 배포를 대체한다',
+        adoptionCost: '설치 10분',
+        minutes: 15,
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('TOOL 판정 형태는 caution 이 있어도 만점이다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        kind: 'TOOL',
+        whatImproves: '수동 배포를 대체한다',
+        adoptionCost: '설치 10분',
+        caution: '무료 티어 한도 확인',
+        minutes: 15,
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('발행 성공 형태를 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        status: 'created',
+        briefId: 10,
+        topic: 'BullMQ 재시도 전략',
+        title: 'BullMQ 재시도 전략 딥다이브',
+        tags: ['backend'],
+        bodyLength: 3200,
+        notionUrl: 'https://notion.so/study-brief-10',
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('발행 스킵 형태도 만점으로 인정한다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        status: 'empty',
+        message: '확장할 오늘의 공부가 없습니다.',
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('어느 형태에도 맞지 않으면 그대로 위반이다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        somethingElse: 1,
+      });
+
+      expect(evaluation.score).toBe(0);
+      expect(evaluation.violations.length).toBeGreaterThan(0);
+    });
+  });
+
   it('inspectContract 는 같은 검수의 위반 목록과 일치한다', () => {
     const output = { topPriority: '', morning: '오전', afternoon: '오후' };
 

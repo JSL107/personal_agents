@@ -203,10 +203,40 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     deliverableFields: ['topPriority', 'morning', 'afternoon'],
     requireEvidence: true,
   },
-  [AgentType.PO_SHADOW]: stub(
-    Department.PLANNING,
-    'PO 관점에서 기획을 그림자 검토한다',
-  ),
+  [AgentType.PO_SHADOW]: {
+    department: Department.PLANNING,
+    job: 'PO 관점에서 기획을 그림자 검토한다',
+    // 2026-09-10 원장 실측: 30일 29건 · 최근 7일 7건, 전부 codex-cli. 최상위 키는
+    // 두 세대다 — 현행(v2) 21건(마지막 2026-09-10)과 구버전 17건(마지막 2026-08-19
+    // 이후 없음, 스키마 v2 도입 전 죽은 형태). 구버전은 죽었으므로 variant 없이
+    // 현행 형태 단일 계약으로 둔다.
+    //
+    // `PoShadowReport` 8개 키 중 6개만 골랐다 — 나머지 둘을 뺀 이유:
+    //   - schemaVersion: 리터럴 2 고정. `evaluateContract` 의 `isEmptyValue` 는
+    //     문자열/null/undefined 만 "비어 있음"으로 본다. 숫자·불리언은 값과 무관하게
+    //     항상 통과하므로, 넣어도 "키가 존재하는가" 이상을 검사하지 못하는 순수
+    //     프로토콜 표식이다(PAPER_RECOMMEND 가 `agentRunId` 를 같은 이유로 뺀 전례).
+    //   - purposeConflict: 프롬프트 규칙상("headline 이 이미 가리킨 사건이면 null")
+    //     정상 실행에서도 흔히 null 이다. `isEmptyValue` 는 null 을 "비어 있음"으로
+    //     판정하므로, 필수로 두면 정상 회차마다 missingField 오탐이 쌓인다.
+    // quiet 은 같은 불리언(값과 무관하게 통과)이지만 "오늘 개입할 게 있었는가"라는
+    // 실제 내용이라 남겼다
+    // (BLOG 의 `published` 와 같은 성격). findings·factSummary·degradedSources 는
+    // 빈 배열이어도 `isEmptyValue` 가 비어 있다고 보지 않아(주석 참조) quiet 회차에도
+    // 안전하게 필수로 둘 수 있다.
+    deliverableFields: [
+      'quiet',
+      'headline',
+      'findings',
+      'factSummary',
+      'droppedFindingCount',
+      'degradedSources',
+    ],
+    // 근거율을 실측하지 않았다 — findings[].factIds 가 사실표 id 를 인용하지만,
+    // EVIDENCE_PATTERN(URL·#PR·파일:라인·구조화 file/url/prNumber/line) 어느 것과도
+    // 안 맞는 형식이라 무근거로 오판정될 수 있다. 꺼 둔다.
+    requireEvidence: false,
+  },
 
   [AgentType.CODE_REVIEWER]: {
     department: Department.QUALITY,
@@ -421,10 +451,56 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 만든다. 머리말이 이 키를 요구하면 익명화 응답 형태가 깨진다.
     skipPreamble: true,
   },
-  [AgentType.CTO_STUDY]: stub(
-    Department.CONTENT,
-    '딥다이브 주제를 대표의 현재 일과 연결해 학습 필요성을 판정한다',
-  ),
+  [AgentType.CTO_STUDY]: {
+    department: Department.CONTENT,
+    job: '딥다이브 주제를 대표의 현재 일과 연결해 학습 필요성을 판정한다',
+    // 2026-09-10 원장 실측: 30일 53건 · 최근 7일 15건. 이름 하나를 워커 둘이 나눠 쓴다
+    // (`expand-study-brief.usecase.ts` 의 주석 참조: 오피스 방 정원 때문에 별도
+    // AgentType 을 안 둔 결정) — 판정
+    // (`EvaluateStudyTopicUsecase`, kind 별로 응답 스키마가 갈린다) 과 발행
+    // (`ExpandStudyBriefUsecase`, 판정 결과를 딥다이브 글로 펼쳐 Notion 에 적재)이다.
+    // 그래서 형태가 넷이다.
+    //   - CONCEPT 판정 20건: kind·whyNow·whereItLands·minutes (LLM 산출물)
+    //   - TOOL 판정 12건: kind·whatImproves·adoptionCost·minutes (LLM 산출물).
+    //     caution 은 프롬프트가 "없으면 필드를 생략한다"고 명시해 일부 회차에만
+    //     등장하므로 뺐다 — 성공 실행 전건에 등장하지 않는 키는 필수에서 뺀다는
+    //     `deliverableFields` 규약(위 인터페이스 주석) 그대로다.
+    //   - 발행 성공 20건: status·briefId·topic·title·tags·bodyLength·notionUrl
+    //     (usecase 가 Hermes 확장 결과 + Notion 페이지를 조립)
+    //   - 발행 스킵 3건: status·message (오늘 확장할 브리프가 없거나 동시 실행 잠금에
+    //     걸린 경우, `expand-study-brief.usecase.ts` 의 `status: 'empty'` 분기)
+    // CONCEPT 을 deliverableFields 로 둔다(20건으로 최다, `job` 이 말하는 "판정"의
+    // 본 형태). 나머지 셋은 variants.
+    //
+    // skipPreamble 을 켠다 — 이 계약은 HUMANIZER/PAPER_TRADE 류의 통상적인 "머리말이
+    // 조립 스키마를 요구하는" 문제에 더해 한 겹이 더 있다. `buildContractPreamble` 은
+    // AgentType 하나에 프롬프트 문구 하나만 낸다. 그런데 CONCEPT 호출은
+    // `STUDY_CONCEPT_SYSTEM_PROMPT`, TOOL 호출은 `STUDY_TOOL_SYSTEM_PROMPT` 로 이미
+    // 서로 다른 스키마를 못박고 있어(`study-topic.prompt.ts`), deliverableFields 를
+    // 어느 한쪽으로 고정해도 반드시 나머지 한쪽 호출에는 모순된 "반드시 포함할 것"
+    // 문구가 붙는다(TOOL 호출에 CONCEPT 필드를 요구하거나 그 반대). 게다가 발행 경로
+    // (`ExpandStudyBriefUsecase`)는 애초에 modelRouter 를 거치지 않고 Hermes CLI 를 직접
+    // 부르므로 머리말이 닿지도 않는다 — 검사만 켜 두고 주입은 끈다.
+    deliverableFields: ['kind', 'whyNow', 'whereItLands', 'minutes'],
+    deliverableVariants: [
+      ['kind', 'whatImproves', 'adoptionCost', 'minutes'],
+      [
+        'status',
+        'briefId',
+        'topic',
+        'title',
+        'tags',
+        'bodyLength',
+        'notionUrl',
+      ],
+      ['status', 'message'],
+    ],
+    // 근거율을 재보지 않았다. LLM 산출물(판정)은 Hermes 조사 전문을 요약할 뿐 URL·PR·
+    // 파일:라인 형태의 근거를 담지 않고, 발행 형태는 사람이 읽을 근거 문장이 아니라
+    // 메타데이터다. 켜면 거의 전부 위반으로 잡혀 신호가 묻힌다.
+    requireEvidence: false,
+    skipPreamble: true,
+  },
 };
 
 /**
