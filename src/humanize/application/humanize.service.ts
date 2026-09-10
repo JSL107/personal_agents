@@ -53,6 +53,12 @@ const STYLE_FEEDBACK_VOICE = 'personal-blog';
 const STYLE_FEEDBACK_RUNS = 5;
 const STYLE_FEEDBACK_DAYS = 60;
 
+// 윤문에 넣을 필드 수 상한. 값의 근거는 실측이다 — 2026-08-11~09-10 agent_run 에서 성공한
+// 397 회차의 최대가 217 개였고, 상한을 넘긴 3 회차(373·385·385 개)는 전부 codex 캡(300초)을
+// 재시도까지 소진해 601초를 태운 뒤 원본으로 되돌아갔다. 성공 최댓값에 마진을 얹어 정상
+// 회차를 자르지 않으면서 그 구간만 걸러낸다.
+const HUMANIZE_MAX_FIELD_COUNT = 240;
+
 export type HumanizeVoice = 'report' | 'personal-blog';
 
 /**
@@ -134,6 +140,19 @@ export class HumanizeService {
       (key) => fields[key]?.trim().length > 0,
     );
     if (keys.length === 0) {
+      return fields;
+    }
+
+    // 필드가 너무 많으면 윤문을 건너뛰고 원본을 그대로 낸다. 윤문은 실패해도 원본을 내보내는
+    // best-effort 경로라(아래 catch) 큰 입력의 대가가 품질이 아니라 시간으로만 나온다 —
+    // 실측(agent_run #2090·#2095·#2100, 2026-09-01~02): 필드 373·385·385개 회차 3건이
+    // codex 캡(300초)을 재시도까지 소진해 601초를 태운 뒤 결국 원본을 반환했다. 같은 기간
+    // 성공한 397건의 최대는 217개다. 상한을 넘으면 601초를 쓰지 않고 같은 결과를 즉시 낸다.
+    if (keys.length > HUMANIZE_MAX_FIELD_COUNT) {
+      this.logger.warn(
+        `윤문 건너뜀 — 필드 ${keys.length}개가 상한 ${HUMANIZE_MAX_FIELD_COUNT}개를 넘어 원본 유지`,
+      );
+      await this.recordSkippedRun(keys, options);
       return fields;
     }
 
@@ -305,6 +324,40 @@ export class HumanizeService {
    * 조회 실패는 되먹임 없이 진행(best-effort) — 윤문 자체가 best-effort 경로라
    * 되먹임 때문에 본문이 원본으로 떨어지면 손해가 더 크다.
    */
+  // 건너뛴 회차도 원장에 남긴다. 로그로만 남기면 "윤문이 며칠째 안 먹고 있다" 가 겉으로
+  // 드러나지 않는다 — 이 서비스가 원장을 붙인 이유와 같은 근거다. 모델을 부르지 않았으므로
+  // modelUsed 는 계측 워커와 같은 `deterministic` 으로 남기고, output 에 사유와 실제 개수를
+  // 실어 상한이 현실과 어긋났을 때(정상 회차가 잘리기 시작할 때) 조회로 잡히게 한다.
+  // 원장 기록이 실패해도 윤문 경로를 막지 않는다 — 어차피 결과는 원본 유지로 같다.
+  private async recordSkippedRun(
+    keys: string[],
+    options?: HumanizeOptions,
+  ): Promise<void> {
+    try {
+      await this.agentRunService.execute<null>({
+        agentType: AgentType.HUMANIZER,
+        triggerType: TriggerType.REPORT_HUMANIZE,
+        inputSnapshot: {
+          fieldKeys: keys,
+          voice: options?.voice ?? 'report',
+          audience: options?.audience ?? 'developer',
+        },
+        run: async () => ({
+          result: null,
+          modelUsed: 'deterministic',
+          output: {
+            skipped: 'FIELD_COUNT_EXCEEDED',
+            fieldCount: keys.length,
+            limit: HUMANIZE_MAX_FIELD_COUNT,
+          },
+        }),
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`윤문 건너뜀 기록 실패: ${message}`);
+    }
+  }
+
   private async buildStyleFeedback(voice?: HumanizeVoice): Promise<string> {
     if (voice !== STYLE_FEEDBACK_VOICE) {
       return '';
