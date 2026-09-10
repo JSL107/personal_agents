@@ -251,43 +251,6 @@ struct OfficeView: View {
         }
     }
 
-    @ViewBuilder
-    private func interactionBar(for agentType: String) -> some View {
-        let approval = approvalFor(agentType: agentType, in: store.approvals)
-        VStack(spacing: Spacing.sm) {
-            HStack {
-                Text(agentType).font(Typography.sectionTitle)
-                Spacer()
-                Button("닫기") { selectedAgent = nil }
-            }
-            if let approval {
-                HStack {
-                    Button {
-                        selectedApproval = approval
-                    } label: {
-                        Text("승인 대기: \(approval.title)").lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    Button("승인") { onApprove(approval.id); selectedAgent = nil }
-                        .keyboardShortcut(.defaultAction)
-                    Button("거절") { onReject(approval.id); selectedAgent = nil }
-                }
-            } else {
-                HStack {
-                    TextField("\(agentType)에게 지시…", text: $commandText)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { send(to: agentType) }
-                    Button("전송") { send(to: agentType) }
-                        .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
-        .padding(Spacing.md)
-        .background(.thinMaterial)
-        .cornerRadius(10)
-        .padding(Spacing.md)
-    }
 
     /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지. 둘 다 없으면 비어 있다
     /// (사무실을 가리지 않도록 상시 표시하는 것을 두지 않는다).

@@ -246,6 +246,7 @@ public let officeFurnitureContrastMargin = 5.0
 /// 통로는 방 섬보다 충분히 어두워야 시각적 경계가 유지된다.
 public let officeCorridorRoomContrastMargin = 15.0
 
+
 /// 방 바닥 실측이 모델(`텍스처 × (1 - 누르기)`)에서 벗어나도 되는 폭.
 ///
 /// 모델은 **어두운 회색을 섞는 것을 순수 검정으로 근사**하므로 실측보다 낮게 나온다.
@@ -270,6 +271,12 @@ public let officeFloorColorMinimumTiles = 10
 /// This range instead guards the actual requirement: the rooms stay warm and legible without
 /// clipping into a white card or sinking into a dark photographic background.
 public let officeCozyRoomBrightnessRange = 110.0...235.0
+
+/// 통로 밝기 하한. 방 범위(`officeCozyRoomBrightnessRange`)와 **따로 두는 이유**는 통로가
+/// 방보다 어두운 것이 의도라서다 — 방 하한 110 을 통로에 그대로 걸면 그 의도가 막힌다.
+/// 값은 「의도적으로 어두운 통로」(표본 100)는 통과시키고 「바닥에 뚫린 구멍」(옛 사고 26.9)은
+/// 잡는 자리에 둔다.
+public let officeCozyCorridorBrightnessFloor = 80.0
 /// In illustrated rooms furniture may be lighter or darker than the shell; only
 /// near-equal values make it disappear into the floor.
 public let officeCozyFurnitureContrastMargin = 0.5
@@ -283,7 +290,6 @@ public let officeCozyCorridorRoomContrastMargin = 3.0
 public func officeCozyRoomColorViolations(
     samples: [OfficeColorSample],
     hour: Int,
-    textureBrightness: ((FloorTile) -> Double?)? = nil,
     furnitureBrightness: ((FurnitureKind) -> Double?)? = nil,
     furniturePairs: [(kind: FurnitureKind, floor: FloorTile)] = []
 ) -> [String] {
@@ -307,17 +313,13 @@ public func officeCozyRoomColorViolations(
                 + "~\(rounded(officeCozyRoomBrightnessRange.upperBound)) 밖이다"
         )
     }
-    // Shell artwork owns room materials, but the shared corridor, wall, and any
-    // legacy surface still need the same asset-presence guard as the tile path.
-    // Keeping this check here prevents the modular branch from treating a missing
-    // texture as a successful dark sample.
-    if let textureBrightness {
-        for sample in samples where textureBrightness(sample.tile) == nil {
-            violations.append(
-                "\(prefix) \(sample.tile.rawValue) 타일 텍스처를 읽지 못했다 — 모듈형 방의 누락 표면"
-            )
-        }
-    }
+    // 타일 텍스처 존재 검사는 두지 않는다. 모듈형 경로의 바닥은 방 셸 일러스트와 단색
+    // base 로 그려지고 `FloorTile` 텍스처를 한 장도 읽지 않으므로, 「텍스처가 없어 그 칸이
+    // 배경색으로 남는」 옛 사고가 이 경로에서는 일어나지 않는다. 없는 위험을 지키는 검사는
+    // 쓰이지 않는 PNG 를 지웠을 때 빨간불을 켜는 쪽으로만 작동한다.
+    //
+    // 그 자리를 대신하는 것은 아래 **밝기 하한**이다 — 바닥이 통째로 어두워지는 사고는
+    // 원인이 무엇이든 실측으로 잡힌다.
     guard samples.contains(where: { $0.tile == .corridor }) else {
         violations.append("\(prefix) 통로 칸이 화면에 없다 — 방 사이 여백을 확인할 것")
         return violations
@@ -344,6 +346,19 @@ public func officeCozyRoomColorViolations(
                     + "(\(rounded(darkestRoom.median))) 보다 충분히 어둡지 않다"
             )
         }
+    }
+    // 통로는 `rooms` 필터 밖이라 위의 방 밝기 범위 검사를 받지 않는다 — 방은 이미
+    // `officeCozyRoomBrightnessRange` 가 아래위를 다 막지만 통로는 **어느 쪽도 없었다.**
+    // 통로를 방보다 어둡게 두는 것은 새 디자인의 의도이고 100 대까지 내려가도 된다(표본 100·
+    // 실측 140.7). 다만 「어둡게」와 「바닥이 뚫린 것처럼」 사이에는 선이 있다 — 옛 사고에서
+    // 통로는 26.9 까지 내려가 구멍으로 읽혔고, 그 회차에도 게이트는 초록이었다.
+    if let corridor = samples.first(where: { $0.tile == .corridor }),
+        corridor.median < officeCozyCorridorBrightnessFloor
+    {
+        violations.append(
+            "\(prefix) 통로(\(rounded(corridor.median)))가 하한"
+                + " \(rounded(officeCozyCorridorBrightnessFloor)) 아래다 — 바닥에 뚫린 구멍으로 읽힌다"
+        )
     }
     if let furnitureBrightness {
         for pair in furniturePairs {
@@ -455,10 +470,8 @@ public func officeFloorColorViolations(
                 + "(\(rounded(room.median))) 보다 충분히 어둡지 않다"
         )
     }
-    // 벽은 방 섬의 대비 기준이 아니지만, 누락되면 에셋 존재 검사에서 잡혀야 한다.
-    if let wall = samples.first(where: { $0.tile == .wall }) {
-        _ = wall
-    } else {
+    // 벽은 방 섬의 대비 기준이 아니다. 밝기는 보지 않고 재는 자리만 확인한다.
+    if !samples.contains(where: { $0.tile == .wall }) {
         violations.append("\(prefix) 벽 칸을 하나도 재지 못했다 — 재는 자리가 어긋났다")
     }
     for sample in rooms where sample.median < officeFloorBrightnessFloor {

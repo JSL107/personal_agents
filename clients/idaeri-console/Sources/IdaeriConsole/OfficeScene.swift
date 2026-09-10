@@ -1798,9 +1798,12 @@ final class OfficeScene: SKScene {
             // old top-view fallback sprites over them makes the result look like a collage. Keep
             // only furniture that employees actively use and that has a matching 3D asset; hidden
             // doorway nodes remain alive below so path/door interaction state is unchanged.
+            // `.trash` 가 여기 있는 이유는 상호작용 때문이 아니라 **청소 표시의 기준점**이기
+            // 때문이다. `renderHousekeeping` 이 이 통의 자리에 청소기와 먼지를 놓으므로, 방 셸에
+            // 통이 그려져 있지 않은 지금 이것을 셸 소유로 넘기면 그 둘이 기준물 없이 바닥에 뜬다.
             let interactiveCozyKinds: Set<FurnitureKind> = [
                 .desk, .chairDown, .chairUp, .sofa2, .sofa3,
-                .meetingTable, .coffeeTable, .coffeeMachine, .sinkCounter,
+                .meetingTable, .coffeeTable, .coffeeMachine, .sinkCounter, .trash,
             ]
             let shellOwnsVisual = usesCompleteRoomArchitecture
                 && !interactiveCozyKinds.contains(placement.kind)

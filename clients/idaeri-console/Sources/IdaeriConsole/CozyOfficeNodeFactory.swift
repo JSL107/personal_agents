@@ -237,7 +237,10 @@ enum CozyOfficeNodeFactory {
         shadow.position = CGPoint(x: 0, y: -max(1, texture.size().height * scale * 0.035))
         shadow.zPosition = -0.1
         anchor.addChild(shadow)
-        let hiddenKinds: Set<FurnitureKind> = [.filingCabinet, .lockers2, .partitionLow, .partitionGlass, .printer, .trash]
+        // `.trash` 는 숨기지 않는다 — 청소 표시(`OfficeScene.renderHousekeeping`)가 이 통의
+        // 자리를 기준점으로 삼아 청소기와 먼지를 놓는다. 통을 투명하게 두면 그 둘이 아무
+        // 기준물 없이 바닥에 떠서 청소 신호의 뜻이 사라진다.
+        let hiddenKinds: Set<FurnitureKind> = [.filingCabinet, .lockers2, .partitionLow, .partitionGlass, .printer]
         if hiddenKinds.contains(kind) || !visible {
             anchor.removeAllChildren()
             return anchor
@@ -352,6 +355,17 @@ enum CozyOfficeNodeFactory {
             visual = face
         case .wallLandscape, .wallAbstract, .wallCalendar, .wallCertificate, .wallPinboard, .wallMonitor, .wallPoster:
             visual = wallArt(kind: kind, width: width * 0.82, height: height * 0.64)
+        case .trash:
+            let group = SKNode()
+            let body = roundedFurniture(width: width * 0.46, height: height * 0.46,
+                                        fill: SKColor(red: 0.46, green: 0.51, blue: 0.53, alpha: 1))
+            body.position = CGPoint(x: 0, y: height * 0.06)
+            group.addChild(body)
+            let lid = roundedFurniture(width: width * 0.54, height: max(2, height * 0.09),
+                                       fill: SKColor(red: 0.34, green: 0.39, blue: 0.41, alpha: 1))
+            lid.position = CGPoint(x: 0, y: height * 0.32)
+            group.addChild(lid)
+            visual = group
         default:
             visual = roundedFurniture(width: width * 0.72, height: max(5, height * 0.34), fill: SKColor(red: 0.67, green: 0.51, blue: 0.34, alpha: 1))
         }

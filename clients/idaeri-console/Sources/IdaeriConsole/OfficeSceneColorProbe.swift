@@ -48,22 +48,6 @@ func officeCozyFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
     return pixels.meanOpaque()
 }
 
-/// 벡터 캐릭터가 실제로 사용하는 셔츠 색의 밝기 대역.
-///
-/// 예전 `char-*` 시트의 픽셀을 읽지 않고, `CozyCharacterArtworkNode`가 그리는 동일한
-/// 팔레트 토큰을 직접 읽는다. 따라서 도트 에셋이 제거되거나 교체되어도 `--color-check`는
-/// 현재 화면의 캐릭터와 바닥 대비를 계속 검사한다.
-func officeCharacterShirtBrightnessRange() -> (darkest: Double, brightest: Double)? {
-    let levels = Department.allCases.map { department in
-        let rgb = CozyCharacterArtworkNode.outfitColorRGB(index: department.cozyPaletteIndex)
-        return (Double(rgb.red) + Double(rgb.green) + Double(rgb.blue)) / 3 * 255
-    }
-    guard let darkest = levels.min(), let brightest = levels.max() else {
-        return nil
-    }
-    return (darkest, brightest)
-}
-
 /// 한 시각의 사무실을 굽고 바닥 밝기를 재서 돌려준다. 명단은 `--pose-demo` 와 같은 고정 표본이다.
 ///
 /// **백엔드를 쓰지 않는다.** 실제 스냅샷을 쓰면 인원·상태가 회차마다 달라 사람이 덮는 칸이
@@ -125,7 +109,6 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
             failures += officeCozyRoomColorViolations(
                 samples: samples,
                 hour: hour,
-                textureBrightness: officeFloorTextureBrightness,
                 furnitureBrightness: officeCozyFurnitureSpriteBrightness,
                 furniturePairs: probe.furniturePairs.filter {
                     switch $0.kind {

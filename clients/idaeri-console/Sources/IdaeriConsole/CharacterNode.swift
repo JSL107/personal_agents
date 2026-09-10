@@ -249,8 +249,8 @@ final class CharacterNode: SKNode {
 
     /// 이름표 불투명도. 유휴가 스물아홉이라 전부 선명하면 활성 세 명이 묻힌다.
     ///
-    /// 이름표를 **지우지는 않는다** — 누가 어디 앉아 있는지는 유휴일 때도 읽혀야 한다.
-    /// 대비만 낮춰 눈이 활성 쪽으로 가게 한다.
+    /// 표시 여부는 `nameplateIsVisible` 이 따로 정한다 — 유휴(`waiting`) 상태는 호버·선택
+    /// 했을 때만 보이므로, 여기의 `.waiting` 값은 그 경우에 쓰인다.
     private func nameplateOpacity(for state: ConsoleAgentState) -> CGFloat {
         switch state {
         case .waiting:
