@@ -219,10 +219,10 @@ describe('번역투 처방 목록', () => {
     return body.slice(0, end === -1 ? body.length : end);
   };
 
-  it('열다섯 개 패턴을 모두 담고, 어느 하나도 처방 없이 놓지 않는다', () => {
+  it('실측으로 남은 여섯 개이고, 어느 하나도 처방 없이 놓지 않는다', () => {
     const lines = prescriptionLines(HUMANIZE_SYSTEM_PROMPT);
 
-    expect(lines).toHaveLength(15);
+    expect(lines).toHaveLength(6);
     for (const line of lines) {
       expect(line).toContain('→');
       // 화살표 오른쪽이 비어 있으면 패턴만 있고 처방이 없는 것이다.
@@ -319,10 +319,27 @@ describe('번역투 처방 목록', () => {
     );
   });
 
-  it('대표 패턴의 처방이 그대로 있다', () => {
-    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+  // 솎아낸 아홉은 「룰북에 있으니 넣자」 로 되살아나기 쉽다. 없어도 결과가 같다는 것을
+  // 2회합 대조로 확인했으니, 다시 넣으려면 먼저 재야 한다.
+  it('효과가 없어 솎아낸 줄이 다시 들어오지 않는다', () => {
+    const removed = [
       '"~에 대해(서)" → 목적격 조사로 직결',
-    );
+      '"~를 통해/통하여" 남발',
+      '"~에 있어(서)" →',
+      '"~와 관련하여/관련된" →',
+      '"~에 기반하여/바탕으로" 남발',
+      '"~을 위해" 목적절 남발',
+      '"~라는 점에서" 반복',
+      '"그/그녀/그것/그들" 이 한 문단에',
+      '이중 조사 "~에서의',
+    ];
+
+    for (const line of removed) {
+      expect(HUMANIZE_SYSTEM_PROMPT).not.toContain(line);
+    }
+  });
+
+  it('대표 패턴의 처방이 그대로 있다', () => {
     expect(HUMANIZE_SYSTEM_PROMPT).toContain(
       '"~에 의해" 피동 → 행위자를 주어로',
     );
