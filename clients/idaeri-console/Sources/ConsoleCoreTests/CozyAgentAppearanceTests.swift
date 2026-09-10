@@ -10,6 +10,18 @@ func runCozyAgentAppearanceTests(_ t: TestRunner) {
     t.expectEqual(cozyCharacterVisualScale(assetIndex: 2), 1.12, "short alpha silhouette receives optical correction")
     t.expectEqual(cozyCharacterVisualScale(assetIndex: 17), 0.91, "large alpha silhouette receives optical correction")
     t.expectEqual(cozyCharacterVisualScale(assetIndex: 22), 1.12, "optical correction wraps asset index")
+    t.expectEqual(
+        cozyDashboardCharacterVisualScale(assetIndex: 3, pose: "typing"), 1.025,
+        "dashboard typing silhouette receives height-only correction"
+    )
+    t.expectEqual(
+        cozyDashboardCharacterVisualScale(assetIndex: 23, pose: "typing"), 1.025,
+        "dashboard optical correction wraps asset index"
+    )
+    t.expectEqual(
+        cozyDashboardCharacterVisualScale(assetIndex: 16, pose: "writing"), 1.00,
+        "dashboard does not inherit office width correction"
+    )
     let departmentVariant = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .planning)
     t.expectEqual(first.assetIndex, departmentVariant.assetIndex, "asset identity is independent of department")
     t.expect(first.assetIndex >= 0 && first.assetIndex < cozyCharacterAssetCount, "character asset is in range")

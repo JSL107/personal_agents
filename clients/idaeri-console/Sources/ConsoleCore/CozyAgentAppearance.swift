@@ -27,6 +27,27 @@ public func cozyCharacterVisualScale(assetIndex: Int) -> CGFloat {
     }
 }
 
+/// Optical correction for dashboard portraits, whose square SwiftUI envelope is height-bound.
+///
+/// Office sprites also have a width cap and therefore need the broader correction above. Reusing
+/// those values on the dashboard made PM/Vacation visibly smaller and Paper Trade/Career Mate
+/// larger even though every card had the same frame. These values normalize the measured alpha
+/// silhouette of the production PNGs around one shared shoe-to-hair height.
+public func cozyDashboardCharacterVisualScale(assetIndex: Int, pose: String) -> CGFloat {
+    let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+        % cozyCharacterAssetCount
+    switch (normalizedIndex, pose) {
+    case (3, "typing"):
+        return 1.025
+    case (2, "reading"):
+        return 1.005
+    case (17, "drinking"), (19, "reading"):
+        return 0.995
+    default:
+        return 1.00
+    }
+}
+
 /// Deterministic visual traits for an agent's cozy character.
 public struct CozyAgentAppearance: Equatable, Sendable {
     public let assetIndex: Int

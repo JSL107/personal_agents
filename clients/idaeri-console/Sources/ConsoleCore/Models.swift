@@ -190,6 +190,7 @@ public struct ConsoleSession: Codable, Identifiable, Equatable, Sendable {
     public let lastActivityAt: String?
 
     public var id: String { sessionId }
+    public var isActive: Bool { state.caseInsensitiveCompare("active") == .orderedSame }
 
     public init(
         sessionId: String, pid: Int, source: String, name: String,

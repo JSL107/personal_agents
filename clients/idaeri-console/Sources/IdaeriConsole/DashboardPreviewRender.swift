@@ -5,13 +5,13 @@ import SwiftUI
 /// 백엔드 없이 개편된 대시보드를 PNG로 굽는 시각 회귀 입구.
 /// 실제 화면과 같은 `DashboardView`를 써서 카드 조판·다크 모드·벡터 초상화를 눈으로 확인한다.
 ///
-/// **콘텐츠 끝에 맞춘 캔버스(1280×1680).** 대시보드는 ScrollView 라서 창 높이를
+/// **콘텐츠 끝에 맞춘 캔버스(1280×1500).** 대시보드는 ScrollView 라서 창 높이를
 /// 넘는 부분은 PNG 에 아예 안 담긴다 — 승인 패널·세션 패널이 카드 격자 아래에 있어서,
 /// 창 크기(900)로 굽던 동안 그 두 패널은 한 번도 렌더된 적이 없었다. 반대로 2000pt까지
 /// 무작정 늘리면 세션 패널 뒤에 빈 여백만 700pt 이상 남는다. 고정 표본(7 카드·승인 1건·
 /// 세션 1건)의 마지막 패널 아래 32pt 여백까지만 담아, 실제 콘텐츠가 PNG 끝에 오도록 한다.
 /// 카드 폭(=열 수)은 1280 그대로라 카드 조판 자체는 실제 창과 같다.
-private let dashboardPreviewSize = CGSize(width: 1280, height: 1680)
+private let dashboardPreviewSize = CGSize(width: 1280, height: 1500)
 
 func renderDashboardPreview(path: String, darkMode: Bool) -> Bool {
     let store = ConsoleStore()
