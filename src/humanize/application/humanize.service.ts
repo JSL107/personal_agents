@@ -9,7 +9,11 @@ import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
-import { isContentDropped, measureChangeRate } from '../domain/change-rate';
+import {
+  isContentDropped,
+  measureChangeRate,
+  measureLengthRetention,
+} from '../domain/change-rate';
 import {
   findPreservationViolations,
   PreservationViolation,
@@ -197,6 +201,9 @@ export class HumanizeService {
           const rolledBackKeys: string[] = [];
           const overRewrittenKeys: string[] = [];
           const changeRates: Record<string, number> = {};
+          // 롤백선(`MIN_LENGTH_RETENTION`)은 판정에 쓰는 값인데 원장에 남는 것이 없어
+          // 나중에 임계를 조일 근거가 안 모였다. 판정에 쓰는 그 값을 그대로 적재한다.
+          const lengthRetentions: Record<string, number> = {};
           const violationsByKey: Record<string, PreservationViolation[]> = {};
           const preservationViolations = createViolationSummary();
 
@@ -218,6 +225,10 @@ export class HumanizeService {
             changeRates[key] =
               Math.round(measureChangeRate(fields[key], humanized[key]) * 100) /
               100;
+            lengthRetentions[key] =
+              Math.round(
+                measureLengthRetention(fields[key], humanized[key]) * 100,
+              ) / 100;
             // 되돌리는 것은 내용을 통째로 날린 출력뿐이다. 숫자·고유명사·URL 훼손은 위
             // 보존 검사가 잡고, 길이는 비슷한데 내용만 다른 글은 어느 축도 잡지 못한다.
             if (isContentDropped(fields[key], humanized[key])) {
@@ -258,6 +269,7 @@ export class HumanizeService {
               // 카드에만 찍으면 지나가면 끝이라, 두 무리가 갈리는지 나중에 잴 표본이 안 모인다.
               // 임계를 조이는 판단(`OVER_REWRITE_RATE`)은 이 값이 쌓여야 설 수 있다.
               changeRates,
+              lengthRetentions,
               translationese: toTranslationeseLedger(
                 publishedMetrics.translationese,
               ),

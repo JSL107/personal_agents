@@ -124,6 +124,7 @@ describe('HumanizeService', () => {
       overRewrittenKeys: [],
       // 롤백된 필드는 변경률을 재기 전에 빠진다.
       changeRates: { safe: expect.any(Number) },
+      lengthRetentions: { safe: expect.any(Number) },
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
@@ -204,6 +205,7 @@ describe('HumanizeService', () => {
       rolledBackKeys: [],
       overRewrittenKeys: [],
       changeRates: { count: expect.any(Number) },
+      lengthRetentions: { count: expect.any(Number) },
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
@@ -326,6 +328,7 @@ describe('HumanizeService', () => {
       rolledBackKeys: [],
       overRewrittenKeys: [],
       changeRates: { a: expect.any(Number) },
+      lengthRetentions: { a: expect.any(Number) },
       translationese: {
         doublePassiveCount: 0,
         byAgentPhraseCount: 0,
