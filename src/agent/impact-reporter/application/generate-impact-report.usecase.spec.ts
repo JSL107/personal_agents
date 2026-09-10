@@ -52,7 +52,7 @@ describe('GenerateImpactReportUsecase', () => {
     githubClient = {
       listMyAssignedTasks: jest.fn(),
       getPullRequest: jest.fn(),
-      getPullRequestLifecycle: jest.fn(),
+      getItemLifecycle: jest.fn(),
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),

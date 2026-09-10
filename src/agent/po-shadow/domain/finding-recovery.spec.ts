@@ -119,6 +119,7 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
       lifecycles: lifecycle({
         state: 'closed',
         mergedAt: '2026-09-08T00:00:00Z',
+        isPullRequest: true,
       }),
       now: NOW,
     });
@@ -130,7 +131,11 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
     const result = buildFindingRecoveryFacts({
       priorFindings: prior,
       context: contextWith(),
-      lifecycles: lifecycle({ state: 'closed', mergedAt: null }),
+      lifecycles: lifecycle({
+        state: 'closed',
+        mergedAt: null,
+        isPullRequest: true,
+      }),
       now: NOW,
     });
     expect(result.facts[0].kind).toBe('FINDING_ABANDONED');
@@ -138,11 +143,32 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
     expect(result.movementTally.merged).toBe(0);
   });
 
+  it('닫힌 이슈도 ABANDONED 로 회수한다 — 머지 문구는 쓰지 않는다', () => {
+    const result = buildFindingRecoveryFacts({
+      priorFindings: prior,
+      context: contextWith(),
+      lifecycles: lifecycle({
+        state: 'closed',
+        mergedAt: null,
+        isPullRequest: false,
+      }),
+      now: NOW,
+    });
+    expect(result.facts[0].kind).toBe('FINDING_ABANDONED');
+    expect(result.facts[0].detail).toContain('이슈가 닫힘');
+    expect(result.facts[0].detail).not.toContain('머지');
+    expect(result.movementTally.abandoned).toBe(1);
+  });
+
   it('열려 있는데 담당에서 빠졌으면 UNASSIGNED 이고 분모에서 빠진다', () => {
     const result = buildFindingRecoveryFacts({
       priorFindings: prior,
       context: contextWith(),
-      lifecycles: lifecycle({ state: 'open', mergedAt: null }),
+      lifecycles: lifecycle({
+        state: 'open',
+        mergedAt: null,
+        isPullRequest: true,
+      }),
       now: NOW,
     });
     expect(result.facts[0].kind).toBe('FINDING_UNASSIGNED');
@@ -161,7 +187,14 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
       context: contextWith(),
       lifecycles: new Map<string, RecoveryLifecycle | null>([
         [KEY, null],
-        [other, { state: 'closed', mergedAt: '2026-09-08T00:00:00Z' }],
+        [
+          other,
+          {
+            state: 'closed',
+            mergedAt: '2026-09-08T00:00:00Z',
+            isPullRequest: true,
+          },
+        ],
       ]),
       now: NOW,
     });
@@ -174,7 +207,11 @@ describe('buildFindingRecoveryFacts — 네 갈래가 전수를 덮는다', () =
     const result = buildFindingRecoveryFacts({
       priorFindings: prior,
       context: contextWith({ assignedTasks: null }),
-      lifecycles: lifecycle({ state: 'closed', mergedAt: null }),
+      lifecycles: lifecycle({
+        state: 'closed',
+        mergedAt: null,
+        isPullRequest: true,
+      }),
       now: NOW,
     });
     expect(result.facts).toEqual([]);
@@ -193,7 +230,7 @@ describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한�
       priorFindings: [{ key: longKey, firstReportedAt: day(9) }],
       context: contextWith(),
       lifecycles: new Map<string, RecoveryLifecycle | null>([
-        [longKey, { state: 'closed', mergedAt: null }],
+        [longKey, { state: 'closed', mergedAt: null, isPullRequest: true }],
       ]),
       now: NOW,
     });
@@ -206,7 +243,14 @@ describe('회수 사실의 label·url — 실측 키가 잘리지 않아야 한�
       priorFindings: [{ key: longKey, firstReportedAt: day(9) }],
       context: contextWith(),
       lifecycles: new Map<string, RecoveryLifecycle | null>([
-        [longKey, { state: 'closed', mergedAt: '2026-09-08T00:00:00Z' }],
+        [
+          longKey,
+          {
+            state: 'closed',
+            mergedAt: '2026-09-08T00:00:00Z',
+            isPullRequest: true,
+          },
+        ],
       ]),
       now: NOW,
     });

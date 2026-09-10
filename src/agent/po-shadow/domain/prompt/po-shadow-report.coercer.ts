@@ -23,10 +23,12 @@ export const coerceToPoShadowReport = (
 };
 
 // 저장된 리포트에서 회수 대조에 쓸 factId 를 모은다.
-export const collectStoredFactIds = (value: unknown): string[] => {
+// **해석 실패는 `null`** 이다 — 빈 배열로 뭉개면 "지적이 없던 회차" 와 구별되지 않아
+// 저장 형태가 깨져도 회수 대상이 열화 라벨 없이 조용히 사라진다.
+export const collectStoredFactIds = (value: unknown): string[] | null => {
   const report = coerceToPoShadowReport(value);
   if (report === null) {
-    return [];
+    return null;
   }
   return report.findings.flatMap((finding) => finding.factIds);
 };

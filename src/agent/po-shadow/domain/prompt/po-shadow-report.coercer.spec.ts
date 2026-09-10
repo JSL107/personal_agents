@@ -53,6 +53,7 @@ describe('coerceToPoShadowReport', () => {
       'unplanned:acme/app#52',
     ]);
     expect(collectStoredFactIds(storedQuietReport)).toEqual([]);
-    expect(collectStoredFactIds({ broken: true })).toEqual([]);
+    // 해석 실패는 null — 빈 배열로 뭉개면 '지적 없던 회차' 와 구별되지 않는다.
+    expect(collectStoredFactIds({ broken: true })).toBeNull();
   });
 });

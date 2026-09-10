@@ -43,6 +43,8 @@ export interface PriorFinding {
 export interface RecoveryLifecycle {
   state: 'open' | 'closed';
   mergedAt: string | null;
+  // 이슈에는 머지 개념이 없다. 종결을 "머지 없이 닫힘" 이라 부르면 거짓이 되므로 문구를 가른다.
+  isPullRequest: boolean;
 }
 
 export interface FindingRecoveryResult {
@@ -499,9 +501,14 @@ export const buildFindingRecoveryFacts = ({
       continue;
     }
     if (lifecycle.state === 'closed') {
+      // 이슈의 종결도 포기로 센다 — 코드 변경으로 이어지지 않고 닫혔다는 신호가 같다.
       tally.abandoned += 1;
       facts.push(
-        buildRecoveryFact(prior, 'FINDING_ABANDONED', '머지 없이 닫힘'),
+        buildRecoveryFact(
+          prior,
+          'FINDING_ABANDONED',
+          lifecycle.isPullRequest ? '머지 없이 닫힘' : '이슈가 닫힘',
+        ),
       );
       continue;
     }

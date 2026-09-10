@@ -213,6 +213,7 @@ export class GeneratePoShadowUsecase {
     };
 
     let priorFindings: PriorFinding[];
+    let malformedRunCount = 0;
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.PO_SHADOW,
@@ -220,9 +221,16 @@ export class GeneratePoShadowUsecase {
         sinceDays: RECOVERY_LOOKBACK_DAYS,
         limit: RECOVERY_LOOKBACK_LIMIT,
       });
+      const parsedRuns = runs.map((run) => ({
+        factIds: collectStoredFactIds(run.output),
+        endedAt: run.endedAt,
+      }));
+      malformedRunCount = parsedRuns.filter(
+        (run) => run.factIds === null,
+      ).length;
       priorFindings = extractPriorFindingKeys(
-        runs.map((run) => ({
-          factIds: collectStoredFactIds(run.output),
+        parsedRuns.map((run) => ({
+          factIds: run.factIds ?? [],
           endedAt: run.endedAt,
         })),
       );
@@ -235,6 +243,14 @@ export class GeneratePoShadowUsecase {
         ...empty,
         degradedSources: [...degradedSources, DEGRADED_PRIOR_REPORT],
       };
+    }
+
+    if (malformedRunCount > 0) {
+      // 조회는 됐지만 저장 형태가 깨진 회차. 예외가 아니라 catch 에 안 걸리므로 여기서 센다.
+      this.logger.warn(
+        `직전 PO 보고 ${malformedRunCount}건 해석 실패 — 회수 대상에서 빠짐`,
+      );
+      degradedSources.push(DEGRADED_PRIOR_REPORT);
     }
 
     if (priorFindings.length === 0) {
@@ -298,7 +314,7 @@ export class GeneratePoShadowUsecase {
       try {
         lifecycles.set(
           prior.key,
-          await this.githubClient.getPullRequestLifecycle({ repo, number }),
+          await this.githubClient.getItemLifecycle({ repo, number }),
         );
       } catch {
         // 이슈 번호(PR 아님)거나 권한·네트워크 실패. 그 키만 대조 불가로 센다.
