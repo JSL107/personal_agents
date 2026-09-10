@@ -39,6 +39,15 @@ export interface SubconsciousProposalRepository {
     changeKey: string,
     createdAfter: Date,
   ): Promise<boolean>;
+  // 아직 응답하지 않은 카드 전량 — 사후 무효화가 훑는 입력.
+  listPending(ownerUserId: string): Promise<SubconsciousProposalRecord[]>;
+  // createdBefore 이전에 만들어진 미응답 카드를 한 번에 DISMISSED 로 닫고 닫은 수를 돌려준다.
+  // 만료 카드는 눌러도 실행되지 않으므로(assertReadyToResolve) 개별 판정이 필요 없다. 순회
+  // 대신 일괄 갱신인 이유는 회차 상한을 먹지 않아야 하기 때문 — 아래 dismissSweptPending 주석 참조.
+  expirePendingOlderThan(
+    ownerUserId: string,
+    createdBefore: Date,
+  ): Promise<number>;
   markStatus(
     id: number,
     status: Exclude<ProposalStatus, 'PENDING'>,

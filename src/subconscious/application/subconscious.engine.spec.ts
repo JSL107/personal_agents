@@ -19,7 +19,11 @@ describe('SubconsciousEngine', () => {
   };
   let fakeGate: { judge: jest.Mock };
   let fakeBudget: { tryConsume: jest.Mock };
-  let fakeProposalEmitter: { shouldEmit: jest.Mock; emit: jest.Mock };
+  let fakeProposalEmitter: {
+    shouldEmit: jest.Mock;
+    emit: jest.Mock;
+    dismissSweptPending: jest.Mock;
+  };
   let engine: SubconsciousEngine;
 
   const NOW = 1_000_000;
@@ -35,6 +39,7 @@ describe('SubconsciousEngine', () => {
     fakeProposalEmitter = {
       shouldEmit: jest.fn().mockResolvedValue(true),
       emit: jest.fn().mockResolvedValue(undefined),
+      dismissSweptPending: jest.fn().mockResolvedValue(0),
     };
 
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -196,5 +201,36 @@ describe('SubconsciousEngine', () => {
     expect(fakeGate.judge).toHaveBeenCalledTimes(1);
     expect(fakeBudget.tryConsume).not.toHaveBeenCalled();
     expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+  });
+
+  it('케이스 4-1: tick 은 변경을 보기 전에 스윕이 대신 처리한 카드를 먼저 닫는다', async () => {
+    const snapshot = makeSnapshot('github', 'hash-A');
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(snapshot),
+    };
+    fakeProposalEmitter.dismissSweptPending.mockResolvedValue(3);
+
+    engine = buildEngine([source]);
+    await engine.runTick(OWNER, NOW);
+
+    expect(fakeProposalEmitter.dismissSweptPending).toHaveBeenCalledWith(OWNER);
+  });
+
+  it('케이스 4-2: 카드 정리가 실패해도 tick 본체는 계속 진행한다', async () => {
+    const snapshot = makeSnapshot('github', 'hash-A');
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(snapshot),
+    };
+    fakeProposalEmitter.dismissSweptPending.mockRejectedValue(
+      new Error('원장 조회 실패'),
+    );
+
+    engine = buildEngine([source]);
+    await expect(engine.runTick(OWNER, NOW)).resolves.toBeUndefined();
+
+    // 정리 실패가 baseline 갱신까지 막지 않는다 — 다음 회차에 다시 시도된다.
+    expect(fakeBaselineRepository.upsert).toHaveBeenCalledTimes(1);
   });
 });

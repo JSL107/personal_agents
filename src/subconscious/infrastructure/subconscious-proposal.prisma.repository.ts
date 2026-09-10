@@ -53,6 +53,31 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     return count > 0;
   }
 
+  async listPending(
+    ownerUserId: string,
+  ): Promise<SubconsciousProposalRecord[]> {
+    const rows = await this.prisma.subconsciousProposal.findMany({
+      where: { ownerUserId, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(toDomain);
+  }
+
+  async expirePendingOlderThan(
+    ownerUserId: string,
+    createdBefore: Date,
+  ): Promise<number> {
+    const { count } = await this.prisma.subconsciousProposal.updateMany({
+      where: {
+        ownerUserId,
+        status: 'PENDING',
+        createdAt: { lt: createdBefore },
+      },
+      data: { status: 'DISMISSED', resolvedAt: new Date() },
+    });
+    return count;
+  }
+
   async markStatus(
     id: number,
     status: Exclude<ProposalStatus, 'PENDING'>,

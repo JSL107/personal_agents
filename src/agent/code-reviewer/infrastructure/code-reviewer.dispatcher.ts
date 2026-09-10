@@ -53,7 +53,7 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     const outcome = await this.reviewPullRequest.execute({
       prRef,
       slackUserId: input.slackUserId,
-      publish: true,
+      publish: input.publish ?? true,
       // 이 dispatcher 는 자연어 멘션과 콘솔 지시를 함께 받는다. 한 값으로 뭉뚱그리면
       // 트리거 타입을 나눈 목적(경로별 집계·감사)이 콘솔 실행에서 그대로 무너진다.
       triggerType:

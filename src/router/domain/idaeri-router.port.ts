@@ -22,6 +22,12 @@ export interface DispatchInput {
   text?: string;
   // 슬래시 명령 / 명시적 호출 시 worker 지정. 없으면 manager 가 intent classifier 호출.
   agentTypeHint?: AgentType;
+  // 리뷰 결과를 GitHub 에 게시할지. 미지정이면 게시(사람이 직접 요청한 경로의 기존 동작).
+  // false 는 "리뷰는 하되 흔적은 남기지 않는다" — 잠재의식 제안이 이 값을 쓴다. 제안 카드는
+  // 봇이 스스로 만든 것이라 사람이 게시를 의도했다고 볼 수 없고, 대상이 남이 작성한 PR 일 수
+  // 있어서다(팀과 협의되지 않은 자동 코멘트). 내가 작성한 PR 은 스윕이 이미 게시하므로
+  // 카드 경로의 게시는 중복이기도 하다.
+  publish?: boolean;
   // handoff chain 안에서 parent.id 전달 — 신규 AgentRun 의 parentId 컬럼에 기록.
   contextRefs?: { agentRunId?: number };
   // 자연어 multi-turn 메모리 (Slack message handler 가 주입). intent classifier 가
