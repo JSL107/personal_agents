@@ -1,17 +1,20 @@
 import { PoShadowFinding, PoShadowReport } from '../po-shadow.type';
 
 const MAX_FINDING_COUNT = 3;
-const MAX_HEADLINE_LENGTH = 80;
-const MAX_FINDING_TEXT_LENGTH = 60;
+const MAX_HEADLINE_LENGTH = 120;
+const MAX_FINDING_TEXT_LENGTH = 140;
+// 사실표 밖 판단은 두 줄까지. 개수를 늘리면 카드가 추정으로 채워진다.
+export const MAX_JUDGMENT_COUNT = 2;
 const REPORT_KEYS = new Set([
   'schemaVersion',
   'quiet',
   'headline',
   'findings',
-  'purposeConflict',
+  'judgments',
   'factSummary',
   'droppedFindingCount',
   'degradedSources',
+  'recoverySummary',
 ]);
 const FINDING_KEYS = new Set(['factIds', 'point', 'suggestion']);
 
@@ -22,19 +25,30 @@ export const isPoShadowReportShape = (
     return false;
   }
   const record = value as Record<string, unknown>;
-  const purposeConflict = record.purposeConflict;
   return (
     hasOnlyAllowedKeys(record, REPORT_KEYS) &&
     record.schemaVersion === 2 &&
     record.quiet === false &&
     isNonBlankBoundedString(record.headline, MAX_HEADLINE_LENGTH) &&
     isFindingArray(record.findings) &&
-    (purposeConflict === null || isNonBlankString(purposeConflict)) &&
+    isJudgmentArray(record.judgments) &&
     isEmptyArray(record.factSummary) &&
     record.droppedFindingCount === 0 &&
     // factSummary·droppedFindingCount 와 같은 자리 — 사실은 코드가 채운다. 모델에게는
     // 빈 값을 요구해 두고, 채우는 주체가 코드임을 스키마로 못박는다.
-    isEmptyArray(record.degradedSources)
+    isEmptyArray(record.degradedSources) &&
+    // 회수 요약도 코드가 채운다 — 모델에게는 null 을 요구해 채우는 주체를 스키마로 못박는다.
+    record.recoverySummary === null
+  );
+};
+
+const isJudgmentArray = (value: unknown): value is string[] => {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_JUDGMENT_COUNT &&
+    value.every((item) =>
+      isNonBlankBoundedString(item, MAX_FINDING_TEXT_LENGTH),
+    )
   );
 };
 
@@ -69,9 +83,6 @@ const isNonBlankBoundedString = (
     value.length <= maxLength
   );
 };
-
-const isNonBlankString = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
 
 const isEmptyArray = (value: unknown): value is [] =>
   Array.isArray(value) && value.length === 0;

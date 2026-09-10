@@ -27,6 +27,14 @@ export interface PullRequestRef {
   number: number;
 }
 
+// PO Shadow 회수 전용 경량 상태. `getPullRequest` 는 변경 파일 목록까지 끌어오므로(페이지네이션)
+// "머지됐나 / 닫혔나" 만 필요한 회수 경로에는 과하다. `pulls.get` 한 번으로 끝낸다.
+export interface PullRequestLifecycle {
+  state: 'open' | 'closed';
+  // 머지됐으면 ISO 8601, 아니면 null. state='closed' 이고 mergedAt=null 이면 "머지 없이 닫힘"(포기).
+  mergedAt: string | null;
+}
+
 export interface ReviewThreadReaction {
   content: string;
   userLogin: string | null;
@@ -168,6 +176,9 @@ export interface GithubClientPort {
   ): Promise<AssignedTasks>;
 
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetail>;
+
+  // 회수 경로 전용 — 변경 파일을 가져오지 않는다. 미존재(이슈 번호 등)면 throw.
+  getPullRequestLifecycle(ref: PullRequestRef): Promise<PullRequestLifecycle>;
 
   getPullRequestDiff(
     options: GetPullRequestDiffOptions,

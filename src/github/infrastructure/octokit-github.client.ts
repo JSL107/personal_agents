@@ -28,6 +28,7 @@ import {
   ListAuthorMergedPullRequestsOptions,
   ListReviewThreadsResult,
   OCTOKIT_INSTANCE,
+  PullRequestLifecycle,
   PullRequestRef,
   PushBranchAndOpenPrInput,
   PushBranchAndOpenPrResult,
@@ -238,6 +239,30 @@ export class OctokitGithubClient implements GithubClientPort {
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} 조회 실패`);
+    }
+  }
+
+  // 회수 전용 경량 조회 — `getPullRequest` 와 달리 변경 파일 목록을 가져오지 않는다.
+  // 지적한 항목이 머지됐는지 / 머지 없이 닫혔는지만 판별하면 되므로 `pulls.get` 한 번이면 끝난다.
+  async getPullRequestLifecycle({
+    repo,
+    number,
+  }: PullRequestRef): Promise<PullRequestLifecycle> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+
+    try {
+      const response = await this.octokit!.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: number,
+      });
+      return {
+        state: response.data.state === 'closed' ? 'closed' : 'open',
+        mergedAt: response.data.merged_at,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(error, `PR #${number} 상태 조회 실패`);
     }
   }
 

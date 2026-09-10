@@ -14,7 +14,8 @@ const validReport = (): PoShadowReport => ({
       suggestion: '리뷰어를 지정하세요.',
     },
   ],
-  purposeConflict: null,
+  judgments: [],
+  recoverySummary: null,
   factSummary: [],
   droppedFindingCount: 0,
   degradedSources: [],
@@ -34,7 +35,7 @@ describe('parsePoShadowReport', () => {
     ['quiet', { ...validReport(), quiet: 'false' }],
     ['headline', { ...validReport(), headline: 264 }],
     ['findings', { ...validReport(), findings: 'not-an-array' }],
-    ['purposeConflict', { ...validReport(), purposeConflict: 264 }],
+    ['judgments', { ...validReport(), judgments: 264 }],
     ['factSummary', { ...validReport(), factSummary: [264] }],
     ['droppedFindingCount', { ...validReport(), droppedFindingCount: -1 }],
   ])('%s 필드 타입이나 값이 틀리면 거부한다', (_field, report) => {
@@ -48,7 +49,7 @@ describe('parsePoShadowReport', () => {
     'quiet',
     'headline',
     'findings',
-    'purposeConflict',
+    'judgments',
     'factSummary',
     'droppedFindingCount',
   ])('%s 필드가 없으면 거부한다', (field) => {
@@ -126,10 +127,11 @@ describe('parsePoShadowReport', () => {
     );
   });
 
-  it('purposeConflict는 문자열도 허용한다', () => {
+  it('judgments는 문자열도 허용한다', () => {
     const report = {
       ...validReport(),
-      purposeConflict: '계획 1순위보다 실패 복구가 먼저입니다.',
+      judgments: ['계획 1순위보다 실패 복구가 먼저입니다.'],
+      recoverySummary: null,
     };
 
     expect(parsePoShadowReport(JSON.stringify(report))).toEqual(report);
@@ -153,7 +155,7 @@ describe('parsePoShadowReport', () => {
 
   it.each([
     ['공백 headline', { ...validReport(), headline: '   ' }],
-    ['80자를 넘는 headline', { ...validReport(), headline: '가'.repeat(81) }],
+    ['120자를 넘는 headline', { ...validReport(), headline: '가'.repeat(121) }],
     [
       '공백 point',
       {
@@ -162,10 +164,10 @@ describe('parsePoShadowReport', () => {
       },
     ],
     [
-      '60자를 넘는 point',
+      '140자를 넘는 point',
       {
         ...validReport(),
-        findings: [{ ...validReport().findings[0], point: '가'.repeat(61) }],
+        findings: [{ ...validReport().findings[0], point: '가'.repeat(141) }],
       },
     ],
     [
@@ -176,15 +178,15 @@ describe('parsePoShadowReport', () => {
       },
     ],
     [
-      '60자를 넘는 suggestion',
+      '140자를 넘는 suggestion',
       {
         ...validReport(),
         findings: [
-          { ...validReport().findings[0], suggestion: '가'.repeat(61) },
+          { ...validReport().findings[0], suggestion: '가'.repeat(141) },
         ],
       },
     ],
-    ['공백 purposeConflict', { ...validReport(), purposeConflict: '   ' }],
+    ['공백 judgments', { ...validReport(), judgments: '   ' }],
   ])('%s을 거부한다', (_caseName, report) => {
     expect(() => parsePoShadowReport(JSON.stringify(report))).toThrow(
       PoShadowException,
@@ -202,20 +204,26 @@ describe('parsePoShadowReport', () => {
 
     expect(properties.quiet.enum).toEqual([false]);
     expect(properties.factSummary.maxItems).toBe(0);
+    // 회수 요약도 코드 충전 필드다 — 모델이 채우면 다음 회차 카드가 환각 숫자를 싣는다.
+    expect(properties.recoverySummary).toMatchObject({ type: 'null' });
+    expect(properties.judgments.maxItems).toBe(2);
     expect(properties.droppedFindingCount.enum).toEqual([0]);
     expect(properties.headline).toMatchObject({
-      maxLength: 80,
+      maxLength: 120,
       pattern: '.*\\S.*',
     });
     expect(findingProperties.point).toMatchObject({
-      maxLength: 60,
+      maxLength: 140,
       pattern: '.*\\S.*',
     });
     expect(findingProperties.suggestion).toMatchObject({
-      maxLength: 60,
+      maxLength: 140,
       pattern: '.*\\S.*',
     });
-    expect(properties.purposeConflict).toMatchObject({ pattern: '.*\\S.*' });
+    expect(properties.judgments.items).toMatchObject({
+      maxLength: 140,
+      pattern: '.*\\S.*',
+    });
   });
 
   it('허용되지 않은 top-level key가 있으면 거부한다', () => {

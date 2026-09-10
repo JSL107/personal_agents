@@ -55,6 +55,7 @@ describe('ReviewPullRequestUsecase', () => {
     githubClient = {
       listMyAssignedTasks: jest.fn(),
       getPullRequest: jest.fn(),
+      getPullRequestLifecycle: jest.fn(),
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
@@ -465,6 +466,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
     githubClient = {
       listMyAssignedTasks: jest.fn(),
       getPullRequest: jest.fn(),
+      getPullRequestLifecycle: jest.fn(),
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),

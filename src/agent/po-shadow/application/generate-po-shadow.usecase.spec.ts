@@ -1,5 +1,6 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -106,7 +107,8 @@ const modelReport = (findings: PoShadowReport['findings']): PoShadowReport => ({
   quiet: false,
   headline: '#264 업로드 차단부터 해소하세요.',
   findings,
-  purposeConflict: null,
+  judgments: [],
+  recoverySummary: null,
   factSummary: [],
   droppedFindingCount: 0,
   degradedSources: [],
@@ -117,6 +119,8 @@ describe('GeneratePoShadowUsecase', () => {
   let agentRunServiceExecute: jest.Mock;
   let agentRunServiceFindLatest: jest.Mock;
   let contextCollectorCollect: jest.Mock;
+  let agentRunServiceFindRecent: jest.Mock;
+  let githubGetLifecycle: jest.Mock;
   let usecase: GeneratePoShadowUsecase;
 
   beforeEach(() => {
@@ -136,15 +140,22 @@ describe('GeneratePoShadowUsecase', () => {
     });
     contextCollectorCollect = jest.fn().mockResolvedValue(emptyContext());
 
+    agentRunServiceFindRecent = jest.fn().mockResolvedValue([]);
+    githubGetLifecycle = jest.fn();
+
     usecase = new GeneratePoShadowUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       {
         execute: agentRunServiceExecute,
         findLatestSucceededRun: agentRunServiceFindLatest,
+        findRecentSucceededRuns: agentRunServiceFindRecent,
       } as unknown as AgentRunService,
       {
         collect: contextCollectorCollect,
       } as unknown as PoShadowContextCollector,
+      {
+        getPullRequestLifecycle: githubGetLifecycle,
+      } as unknown as GithubClientPort,
     );
 
     modelRouter.route.mockResolvedValue({
@@ -269,7 +280,8 @@ describe('GeneratePoShadowUsecase', () => {
         quiet: true,
         headline: '계획대로 진행 중',
         findings: [],
-        purposeConflict: null,
+        judgments: [],
+        recoverySummary: null,
         factSummary: ['릴리즈 체크 — 외부 상태로 자동 확인 불가'],
         droppedFindingCount: 0,
         degradedSources: [],
