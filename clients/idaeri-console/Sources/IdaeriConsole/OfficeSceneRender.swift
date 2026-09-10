@@ -296,6 +296,25 @@ func poseDemoAgentType(for kind: FurnitureKind) -> String {
     return base
 }
 
+/// Returns a render-only identity that resolves to one exact character asset.
+///
+/// Sequential names do not produce sequential FNV buckets: `SHOWCASE_0...15`
+/// previously repeated six assets and omitted six others. That made the roster
+/// preview hide valid characters, including masculine-presenting variants.
+func showcaseAgentType(forAssetIndex assetIndex: Int) -> String {
+    let normalizedAssetIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+        % cozyCharacterAssetCount
+    let base = "SHOWCASE_ASSET_\(normalizedAssetIndex)"
+    for suffix in 0..<256 {
+        let candidate = "\(base)_\(suffix)"
+        if cozyAgentAppearance(agentType: candidate, department: .planning).assetIndex
+            == normalizedAssetIndex {
+            return candidate
+        }
+    }
+    return base
+}
+
 /// 전원을 진행 중으로 세워 머리 위 상시 말풍선을 강제로 띄운다(렌더 전용).
 ///
 /// 말풍선은 일이 도는 사람에게만 붙는다(`agentTokenInfo`). 그런데 평소 사무실은 29명 중
@@ -402,7 +421,10 @@ func populatedDemoAgents() -> [ConsoleAgent] {
     ]
     return names.enumerated().map { index, name in
         ConsoleAgent(
-            agentType: "SHOWCASE_\(index)", displayName: name, slashCommands: [], description: "",
+            agentType: showcaseAgentType(forAssetIndex: index),
+            displayName: name,
+            slashCommands: [],
+            description: "",
             state: [.waiting, .inProgress, .completed, .awaitingApproval][index % 4], bubble: "",
             department: departments[index % departments.count].rawValue
         )

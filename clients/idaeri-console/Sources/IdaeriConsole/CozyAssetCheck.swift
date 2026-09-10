@@ -46,6 +46,15 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
+    let showcaseIndices = populatedDemoAgents().map {
+        cozyAgentAppearance(agentType: $0.agentType, department: $0.resolvedDepartment).assetIndex
+    }
+    let expectedShowcaseIndices = Set(0..<cozyCharacterAssetCount)
+    if showcaseIndices.count != cozyCharacterAssetCount
+        || Set(showcaseIndices) != expectedShowcaseIndices {
+        fputs("cozy showcase roster does not cover every character asset exactly once\n", stderr)
+        valid = false
+    }
     // Pose art is introduced in a small, quality-controlled pilot. The loader
     // still falls back to the matching idle art for agents without a pose, but
     // the release check must prove that the high-frequency interactions have
