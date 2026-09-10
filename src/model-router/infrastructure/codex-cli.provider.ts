@@ -199,6 +199,21 @@ const delay = (ms: number): Promise<void> =>
 // - 프롬프트는 argv 가 아니라 **stdin 으로 전달** — argv 는 `ps aux` 로 host 의 다른 프로세스가 볼 수 있어 Slack 입력이 유출될 수 있다.
 // - cwd / HOME 모두 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo / ~/.ssh 접근을 차단.
 
+// `--ephemeral` 로 띄우면 스레드가 저장소에 남지 않는데, codex 는 그 상태에서도 collab(서브에이전트)
+// 도구를 모델에게 그대로 노출한다. 모델이 full-history fork 를 시도하면 부모 스레드를 못 찾아
+// `collab spawn failed: no thread with id ...` 로 반드시 실패한다 (2026-09-10 실측 재현).
+// spawn 실패 자체는 모델이 대개 복구하지만, 이어서 `collab wait` 로 넘어가면 돌아올 자식이 없어
+// hang 하고 timeout(300s) × 재시도 2회 + claude 폴백까지 그대로 태운다 (관측된 실패 모드).
+//
+// CLI 인자로 이 도구를 끄는 스위치는 없다 — `--disable multi_agent`,
+// `-c orchestrator.max_depth=0`, `-c orchestrator.max_concurrent_threads_per_session=0`,
+// `-c include_collaboration_mode_instructions=false` 를 각각 걸어도 도구가 그대로 붙는 것을
+// 실측 확인했다 (codex-cli 0.153.4). 그래서 프롬프트로 억제한다.
+// **강제 게이트가 아니라 완화다** — "collab 으로 서브에이전트를 띄워라" 는 명시 유도에도 억제가
+// 이기는 것까지는 확인했지만, 프롬프트 준수는 보장이 아니므로 timeout 방어를 걷어내면 안 된다.
+const CODEX_EPHEMERAL_NOTICE = `## 실행 환경 제약
+이 세션은 스레드를 저장하지 않는 일회성 실행이다. 서브에이전트 spawn(collab 도구)은 이 환경에서 반드시 실패하므로 호출하지 말고, 요청받은 작업 전부를 이 세션에서 직접 처리한다.`;
+
 export const buildCodexPrompt = ({
   prompt,
   systemPrompt,
@@ -206,10 +221,13 @@ export const buildCodexPrompt = ({
   prompt: string;
   systemPrompt?: string;
 }): string => {
-  if (!systemPrompt) {
-    return prompt;
-  }
-  return `[System Instructions]\n${systemPrompt}\n\n[User]\n${prompt}`;
+  // 억제 문구는 systemPrompt **뒤**에 붙인다 — 실측(2026-09-10)에서 억제가 명시 유도를 이긴
+  // 배치가 이 순서였다. 앞에 두면 검증하지 않은 배치가 되고, 각 에이전트의 역할 정의("당신은
+  // ~ 에이전트다")가 환경 공지에 밀려 첫 문장 자리를 잃는다.
+  const instructions = systemPrompt
+    ? `${systemPrompt}\n\n${CODEX_EPHEMERAL_NOTICE}`
+    : CODEX_EPHEMERAL_NOTICE;
+  return `[System Instructions]\n${instructions}\n\n[User]\n${prompt}`;
 };
 
 export const buildCodexArgs = ({
