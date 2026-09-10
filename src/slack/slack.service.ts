@@ -331,6 +331,39 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  // Subconscious proposal 카드 종료 표시 — 자동 정리로 닫힌 카드의 버튼을 걷어낸다.
+  //
+  // blocks 를 빈 배열로 덮어써야 버튼이 사라진다. 생략하면 Slack 이 기존 blocks 를 유지해
+  // 활성 버튼이 남고, 누른 사용자는 "이미 처리된 제안입니다" 오류만 받는다.
+  // 발송이 성공하지 못해 좌표가 기록되지 않은 카드는 조용히 넘긴다. chat.update 실패도
+  // swallow 한다 — 카드 표시는 부가 효과고, DB 상태 전이가 정본이다
+  // (SlackPreviewCardUpdater 선례).
+  async closeProposalCard({
+    channelId,
+    messageTs,
+    text,
+  }: {
+    channelId: string;
+    messageTs: string;
+    text: string;
+  }): Promise<void> {
+    const app = this.assertAppReady();
+    try {
+      await app.client.chat.update({
+        channel: channelId,
+        ts: messageTs,
+        text,
+        blocks: [],
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `제안 카드 종료 표시 실패(swallow) channel=${channelId} ts=${messageTs}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   // C-4 완결 + C-5 — SLACK_HANDLER_PORT multi-provider 로 등록된 모든 핸들러 (명령/액션/이벤트) 일괄 register.
   // 새 핸들러는 SlackHandler 구현 + SlackModule providers 등록만 하면 자동 합류.
   private registerHandlers(app: App): void {

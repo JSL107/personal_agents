@@ -10,6 +10,7 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   DispatchInput,
+  DispatchResult,
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
@@ -156,9 +157,35 @@ export class SubconsciousProposalService implements ProposalEmitter {
         this.logger.log(
           `제안 #${proposal.id} (changeKey="${proposal.changeKey}") 는 PR 리뷰 스윕이 대신 처리함 — 카드 자동 종료`,
         );
+        await this.closeCardBestEffort(proposal);
       }
     }
     return expired + dismissed;
+  }
+
+  // DB 상태만 닫으면 Slack DM 의 카드는 활성 버튼째 남고, 누른 사용자는 "이미 처리된
+  // 제안입니다" 오류만 받는다 — 목록에서 사라지는 것이 사용자에게는 카드가 사라지는 것이므로
+  // 상태 전이와 카드 표시를 함께 맞춘다. 실패는 SlackService 가 swallow 한다(정본은 DB).
+  //
+  // 만료 일괄 종료(expirePendingOlderThan)는 updateMany 라 대상 레코드를 모르므로 카드를
+  // 갱신하지 않는다. 그쪽은 종전에도 눌렀을 때 "만료되었습니다" 로 막혀 있어 회귀가 아니고,
+  // 좌표를 얻으려면 select 순회가 되살아나 상한 문제를 다시 부른다.
+  private async closeCardBestEffort(
+    proposal: SubconsciousProposalRecord,
+  ): Promise<void> {
+    if (
+      proposal.slackChannelId === null ||
+      proposal.slackMessageTs === null ||
+      proposal.slackChannelId.length === 0 ||
+      proposal.slackMessageTs.length === 0
+    ) {
+      return;
+    }
+    await this.slackService.closeProposalCard({
+      channelId: proposal.slackChannelId,
+      messageTs: proposal.slackMessageTs,
+      text: `~${proposal.proposalText}~\n\n_PR 리뷰 스윕이 대신 처리해 이 카드는 닫혔습니다._`,
+    });
   }
 
   // 카드를 만들 이유가 있는지 — 엔진이 예산을 소비하기 전에 호출한다.
@@ -288,8 +315,9 @@ export class SubconsciousProposalService implements ProposalEmitter {
       ...(prReferenceHint !== null ? { prReferenceHint } : {}),
     };
 
+    let dispatched: DispatchResult;
     try {
-      await this.router.dispatch(dispatchInput);
+      dispatched = await this.router.dispatch(dispatchInput);
     } catch (error: unknown) {
       // dispatch 실패는 이미 DISPATCHED 전이된 상태라 status 를 롤백하지 않는다 (v1 정책).
       // 호출자(Slack handler)가 사용자에게 dispatch 시도는 했으나 실패했음을 안내할 수 있도록 re-throw.
@@ -301,7 +329,15 @@ export class SubconsciousProposalService implements ProposalEmitter {
       throw error;
     }
 
-    return `✅ ${record.suggestedAgentType} 실행 요청 완료 — "${changeSummary}"`;
+    // 워커 산출물을 그대로 돌려준다. 이 문자열이 버튼 응답(replace_original)으로 나가므로,
+    // publish:false 로 GitHub 게시를 끊은 뒤에는 **이것이 사용자가 리뷰 내용을 보는 유일한
+    // 경로**다. 반환값을 버리면 리뷰가 GitHub 에도 Slack 에도 남지 않는다.
+    // formattedText 는 worker 별 Slack mrkdwn formatter 결과이며 타입상 필수지만, 빈 문자열을
+    // 넣는 워커가 생기면 응답이 통째로 비므로 그때만 종전 요약 문구로 떨어진다.
+    const workerText = dispatched.formattedText.trim();
+    return workerText.length > 0
+      ? workerText
+      : `✅ ${record.suggestedAgentType} 실행 요청 완료 — "${changeSummary}"`;
   }
 
   async dismiss(proposalId: number, byUserId: string): Promise<void> {

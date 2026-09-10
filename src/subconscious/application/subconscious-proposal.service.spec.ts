@@ -103,11 +103,12 @@ const buildRouter = (): jest.Mocked<IdaeriRouterPort> => ({
 });
 
 const buildSlackService = (): jest.Mocked<
-  Pick<SlackService, 'postProposalMessage'>
+  Pick<SlackService, 'postProposalMessage' | 'closeProposalCard'>
 > => ({
   postProposalMessage: jest
     .fn()
     .mockResolvedValue({ channelId: 'C-dm', messageTs: '1234.5678' }),
+  closeProposalCard: jest.fn().mockResolvedValue(undefined),
 });
 
 const buildConfigService = (
@@ -134,7 +135,9 @@ const buildService = ({
 }: {
   repository?: jest.Mocked<SubconsciousProposalRepository>;
   router?: jest.Mocked<IdaeriRouterPort>;
-  slack?: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
+  slack?: jest.Mocked<
+    Pick<SlackService, 'postProposalMessage' | 'closeProposalCard'>
+  >;
   ttlMs?: number;
   transitionFromPendingResult?: boolean;
   env?: Record<string, string>;
@@ -143,7 +146,9 @@ const buildService = ({
   service: SubconsciousProposalService;
   repository: jest.Mocked<SubconsciousProposalRepository>;
   router: jest.Mocked<IdaeriRouterPort>;
-  slack: jest.Mocked<Pick<SlackService, 'postProposalMessage'>>;
+  slack: jest.Mocked<
+    Pick<SlackService, 'postProposalMessage' | 'closeProposalCard'>
+  >;
   agentRunRepository: SweepReviewLedger;
 } => {
   const resolvedRepository =
@@ -345,7 +350,9 @@ describe('SubconsciousProposalService.apply', () => {
       expect.any(Date),
     );
     expect(router.dispatch).toHaveBeenCalledTimes(1);
-    expect(result).toContain('CODE_REVIEWER');
+    // 반환값은 워커 산출물(formattedText)이다 — publish:false 로 GitHub 게시를 끊은 뒤
+    // 사용자가 리뷰 내용을 보는 유일한 경로라 요약 문구로 덮어쓰지 않는다.
+    expect(result).toBe('done');
   });
 
   it('CODE_REVIEWER + github:pr key → dispatch text 는 key 에서 복원한 PR 참조(owner/repo#num)', async () => {
@@ -360,6 +367,28 @@ describe('SubconsciousProposalService.apply', () => {
     expect(router.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'owner/repo#1' }),
     );
+  });
+
+  it('워커가 빈 formattedText 를 주면 종전 요약 문구로 떨어진다 (응답이 통째로 비는 것 방지)', async () => {
+    const repository = buildRepository(buildRecord(), true);
+    const router = buildRouter();
+    router.dispatch.mockResolvedValue({
+      agentRunId: 42,
+      workerType: 'CODE_REVIEWER' as AgentType,
+      output: {},
+      modelUsed: 'claude',
+      formattedText: '   ',
+    });
+
+    const { service } = buildService({ repository, router });
+
+    const result = await service.apply(
+      1,
+      OWNER,
+      new Date('2026-06-26T09:30:00.000Z'),
+    );
+
+    expect(result).toContain('CODE_REVIEWER');
   });
 
   it('카드 경로는 publish:false 로 dispatch 한다 (협의되지 않은 봇 코멘트 차단)', async () => {
@@ -608,6 +637,45 @@ describe('SubconsciousProposalService.dismissSweptPending', () => {
     expect(await service.dismissSweptPending(OWNER)).toBe(0);
     expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
     expect(repository.transitionFromPending).not.toHaveBeenCalled();
+  });
+
+  it('스윕 처리로 닫은 카드는 Slack 카드도 버튼을 걷어 닫는다 (활성 버튼 잔존 방지)', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([
+      buildRecord({ slackChannelId: 'C-dm', slackMessageTs: '1234.5678' }),
+    ]);
+    const slack = buildSlackService();
+
+    const { service } = buildService({
+      repository,
+      slack,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    await service.dismissSweptPending(OWNER);
+
+    expect(slack.closeProposalCard).toHaveBeenCalledWith({
+      channelId: 'C-dm',
+      messageTs: '1234.5678',
+      text: expect.stringContaining('닫혔습니다'),
+    });
+  });
+
+  it('Slack 좌표가 없는 카드(발송 실패로 미기록)는 갱신을 시도하지 않는다', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([
+      buildRecord({ slackChannelId: null, slackMessageTs: null }),
+    ]);
+    const slack = buildSlackService();
+
+    const { service } = buildService({
+      repository,
+      slack,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    expect(await service.dismissSweptPending(OWNER)).toBe(1);
+    expect(slack.closeProposalCard).not.toHaveBeenCalled();
   });
 
   it('만료 카드를 판정 전에 일괄 종료한다 — 선두 점유로 뒤쪽이 영구히 안 닫히는 것 방지', async () => {
